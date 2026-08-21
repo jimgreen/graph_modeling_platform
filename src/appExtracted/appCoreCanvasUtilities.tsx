@@ -1006,7 +1006,7 @@ export const CONTEXT_MENU_SUBMENU_FALLBACK_WIDTH = 172;
 
 export const CONTEXT_MENU_SUBMENU_FALLBACK_HEIGHT = 156;
 
-export type UnsavedChangeAction =
+export type UnsavedChangeAction = (
   | {
       kind: "load-project";
       project: SavedProjectRecord;
@@ -1022,7 +1022,11 @@ export type UnsavedChangeAction =
       kind: "export";
       label: string;
       onResolved: () => void;
-    };
+    }
+) & {
+  resolving?: boolean;
+  resolutionError?: string;
+};
 
 export type ModelImportCompletionFeedback = {
   successMessage: string;

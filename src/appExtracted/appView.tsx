@@ -3840,9 +3840,11 @@ export function renderAppView(__appScope: Record<string, any>) {
             </div>
           </section>
         </div>)}
-      {pendingUnsavedAction && (<div className="image-picker-backdrop unsaved-change-backdrop" onPointerDown={() => resolveUnsavedChangeAction("cancel")}>
-          <section className="unsaved-change-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveUnsavedChangeAction("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="unsaved-change-title">
-            <WindowCloseButton label="关闭未保存修改提示" onClick={() => resolveUnsavedChangeAction("cancel")} />
+      {pendingUnsavedAction && (() => {
+        const pendingUnsavedActionResolving = Boolean(pendingUnsavedAction.resolving);
+        return (<div className="image-picker-backdrop unsaved-change-backdrop" onPointerDown={() => { if (!pendingUnsavedActionResolving) resolveUnsavedChangeAction("cancel"); }}>
+          <section className="unsaved-change-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape" && !pendingUnsavedActionResolving) { resolveUnsavedChangeAction("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="unsaved-change-title" aria-busy={pendingUnsavedActionResolving}>
+            <WindowCloseButton label="关闭未保存修改提示" onClick={() => { if (!pendingUnsavedActionResolving) resolveUnsavedChangeAction("cancel"); }} />
             <div className="image-picker-title">
               <div>
                 <h2 id="unsaved-change-title">当前模型尚未保存</h2>
@@ -3851,18 +3853,20 @@ export function renderAppView(__appScope: Record<string, any>) {
             </div>
             <div className="unsaved-change-actions">
               {pendingUnsavedAction.kind !== "export" && (
-                <button type="button" onClick={() => resolveUnsavedChangeAction("discard")}>
+                <button type="button" disabled={pendingUnsavedActionResolving} onClick={() => resolveUnsavedChangeAction("discard")}>
                   {pendingUnsavedAction.kind === "enter-browse" ? "不保存直接浏览" : "不保存继续切换/关闭"}
                 </button>
               )}
-              <button type="button" onClick={() => resolveUnsavedChangeAction("save")}>
-                {pendingUnsavedAction.kind === "enter-browse" ? "保存后浏览" : pendingUnsavedAction.kind === "export" ? "保存后导出" : "保存后切换/关闭"}
+              <button type="button" disabled={pendingUnsavedActionResolving} onClick={() => resolveUnsavedChangeAction("save")}>
+                {pendingUnsavedActionResolving ? "正在保存..." : pendingUnsavedAction.kind === "enter-browse" ? "保存后浏览" : pendingUnsavedAction.kind === "export" ? "保存后导出" : "保存后切换/关闭"}
               </button>
-              <button type="button" onClick={() => resolveUnsavedChangeAction("cancel")}>退出操作</button>
+              <button type="button" disabled={pendingUnsavedActionResolving} onClick={() => resolveUnsavedChangeAction("cancel")}>退出操作</button>
             </div>
+            {pendingUnsavedAction.resolutionError && <p className="unsaved-change-error" role="alert">{pendingUnsavedAction.resolutionError}</p>}
             <p className="unsaved-change-note">关闭网页时，浏览器也会在离开前提示当前模型未保存。</p>
           </section>
-        </div>)}
+        </div>);
+      })()}
       {unsavedChangesDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setUnsavedChangesDialogOpen(false)}>
           <section className="unsaved-changes-dialog window-close-host" style={{ width: "80vw", height: "80vh" }} onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="unsaved-changes-list-title">
             <WindowCloseButton label="关闭未保存修改列表" onClick={() => setUnsavedChangesDialogOpen(false)} />

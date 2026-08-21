@@ -80,6 +80,52 @@ describe("跨模型告警定位的未保存修改衔接", () => {
     expect(setPendingUnsavedAction).toHaveBeenCalledWith(null);
   });
 
+  test("保存仍在进行或失败时，未保存提示显示明确状态并保留待切换操作", async () => {
+    let finishSave: ((saved: boolean) => void) | undefined;
+    const savePromise = new Promise<boolean>((resolve) => {
+      finishSave = resolve;
+    });
+    const action = {
+      kind: "load-project" as const,
+      project: {
+        id: "feeder-2",
+        name: "二号馈线",
+        updatedAt: "2026-08-21T00:00:00.000Z",
+        project: { version: 1 as const, name: "二号馈线", nodes: [], edges: [] }
+      },
+      schemeId: "scheme-1",
+      label: "切换到二号馈线"
+    };
+    const loadSavedProjectRecord = vi.fn();
+    const setPendingUnsavedAction = vi.fn();
+    const resolve = createResolveUnsavedChangeAction({
+      enterBrowseMode: vi.fn(),
+      loadSavedProjectRecord,
+      pendingUnsavedAction: action,
+      saveCurrentProject: vi.fn(() => savePromise),
+      setPendingUnsavedAction
+    });
+
+    const resolution = resolve("save");
+
+    expect(setPendingUnsavedAction).toHaveBeenCalledWith({
+      ...action,
+      resolving: true,
+      resolutionError: ""
+    });
+    expect(loadSavedProjectRecord).not.toHaveBeenCalled();
+
+    finishSave?.(false);
+    await resolution;
+
+    expect(setPendingUnsavedAction).toHaveBeenLastCalledWith({
+      ...action,
+      resolving: false,
+      resolutionError: "保存未完成，请根据页面顶部提示处理后重试。"
+    });
+    expect(loadSavedProjectRecord).not.toHaveBeenCalled();
+  });
+
   test("放弃修改进入浏览态时，撤回保存基线后的操作并清除未保存状态", async () => {
     const enterBrowseMode = vi.fn();
     const setHasUnsavedChanges = vi.fn();
