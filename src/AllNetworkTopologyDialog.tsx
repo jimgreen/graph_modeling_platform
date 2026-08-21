@@ -185,8 +185,12 @@ function modelLoadError(model: AllNetworkTopologyModel, error: unknown): AllNetw
   };
 }
 
-async function loadFullModel<T extends AllNetworkTopologyReferenceModel>(scope: Record<string, any>, model: T): Promise<T> {
-  if (!scope.savedProjectRecordIsSummary?.(model.record)) {
+export async function loadFullModel<T extends AllNetworkTopologyReferenceModel>(
+  scope: Record<string, any>,
+  model: T,
+  forceBackendReload = false
+): Promise<T> {
+  if (!forceBackendReload && !scope.savedProjectRecordIsSummary?.(model.record)) {
     return model;
   }
   const loadedRecord = await scope.fetchBackendProjectRecord(model.schemePath, model.name);
@@ -914,7 +918,9 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
         loadGlobalLineRecordsForTopology(),
         Promise.all(models.map(async (model) => {
           try {
-            return { model: await loadFullModel(scope, model) };
+            // 一致性校验面对的是已保存的全局线路表与模型文件；不能复用
+            // 可能在另一端模型保存前载入的内存快照。
+            return { model: await loadFullModel(scope, model, true) };
           } catch (error) {
             return { error: modelLoadError(model, error) };
           }

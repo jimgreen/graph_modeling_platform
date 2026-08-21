@@ -305,9 +305,12 @@ export function deriveLocalDeviceIndexCounters(nodes: readonly ModelNode[]) {
 }
 
 export function applyGlobalLineRecordToNode<T extends ModelNode>(node: T, record: GlobalLineRecord): T {
+  const localParams = Object.fromEntries(
+    Object.entries(node.params).filter(([key]) => key.startsWith("_") || GLOBAL_LINE_LOCAL_PARAM_KEYS.has(key))
+  );
   const nextParams = {
-    ...node.params,
     ...record.params,
+    ...localParams,
     idx: String(record.idx),
     [GLOBAL_LINE_ID_PARAM]: record.id
   };
@@ -471,6 +474,7 @@ export function previewGlobalLineRecordsForProject(
     const requestedId = String(node.params[GLOBAL_LINE_ID_PARAM] ?? "").trim();
     const persisted = requestedId ? persistedById.get(requestedId) : undefined;
     const id = persisted?.id ?? (requestedId || `draft-global-line:${node.id}`);
+    const energyType = globalLineEnergyTypeForNode(node) as GlobalLineEnergyType;
     const pairMode = String(node.params[GLOBAL_LINE_MODEL_PAIR_PARAM] ?? "").trim();
     const repairingModelAssociationReuse = Boolean(
       persisted && persisted.degree <= 1 && (pairMode === "source" || pairMode === "target")
@@ -481,21 +485,26 @@ export function previewGlobalLineRecordsForProject(
     }
     let preview = previewById.get(id);
     if (!preview) {
-      const requestedIndex = Number(node.params.idx);
-      const idx = Number.isSafeInteger(requestedIndex) && requestedIndex > 0 ? requestedIndex : nextDraftIndex;
-      nextDraftIndex = Math.max(nextDraftIndex, idx + 1);
-      const now = new Date(0).toISOString();
-      preview = globalLineRecordWithReferences({
-        id,
-        idx,
-        name: node.name,
-        energyType: globalLineEnergyTypeForNode(node) as GlobalLineEnergyType,
-        params: globalLineSharedParamsFromNode(node),
-        references: [],
-        degree: 0,
-        createdAt: now,
-        updatedAt: now
-      }, []);
+      if (persisted) {
+        preview = globalLineRecordWithReferences(persisted, [...persisted.references]);
+      } else {
+        const requestedIndex = Number(node.params.idx);
+        const idx = Number.isSafeInteger(requestedIndex) && requestedIndex > 0 ? requestedIndex : nextDraftIndex;
+        nextDraftIndex = Math.max(nextDraftIndex, idx + 1);
+        const now = new Date(0).toISOString();
+        const name = String(node.name ?? "").trim() || `${energyType === "ac" ? "交流" : "直流"}线路-${idx}`;
+        preview = globalLineRecordWithReferences({
+          id,
+          idx,
+          name,
+          energyType,
+          params: globalLineSharedParamsFromNode(node),
+          references: [],
+          degree: 0,
+          createdAt: now,
+          updatedAt: now
+        }, []);
+      }
     }
 
     const endpoints = globalLinePlacementEndpointsForNode(node, nodeById);
@@ -523,10 +532,16 @@ export function previewGlobalLineRecordsForProject(
     const nextReferences = repairingModelAssociationReuse
       ? references
       : mergeGlobalLineReferences(preview.references, references);
-    previewById.set(id, globalLineRecordWithReferences({
+    previewById.set(id, globalLineRecordWithReferences(persisted ? {
       ...preview,
-      name: node.name,
-      energyType: globalLineEnergyTypeForNode(node) as GlobalLineEnergyType,
+      name: persisted.name,
+      energyType: persisted.energyType,
+      params: persisted.params,
+      updatedAt: preview.updatedAt
+    } : {
+      ...preview,
+      name: String(node.name ?? "").trim() || preview.name,
+      energyType,
       params: globalLineSharedParamsFromNode(node),
       updatedAt: preview.updatedAt
     }, nextReferences));

@@ -209,16 +209,16 @@ describe("全局线路数据同步", () => {
     expect(previewGlobalLineRecordsForProject(persisted, [stationSource, localLoad], "馈线", identity)).toEqual([]);
   });
 
-  test("已有线路参数随页面修改预览，并在撤回节点后恢复后台基线", () => {
+  test("已有线路始终使用全局表名称和参数，模型加载时缺少名称也不会使预览排序崩溃", () => {
     const station = createDefaultNode("static-model-interaction-station", { x: 0, y: 0 });
     const load = createDefaultNode("ac-load", { x: 500, y: 0 });
     const savedLine = connectLine("ac-routable-line", load.id, station.id);
-    savedLine.name = "已保存线路";
     savedLine.params = {
       ...savedLine.params,
       [GLOBAL_LINE_ID_PARAM]: "global-line-1",
       idx: "7",
-      rated_capacity: "220"
+      rated_capacity: "500",
+      r: "0.25"
     };
     const identity = {
       modelKey: "model:1",
@@ -227,37 +227,28 @@ describe("全局线路数据同步", () => {
       projectName: "模型一",
       nodeId: ""
     };
-    const persisted = [record()];
-    const editedLine = {
+    const persisted = [
+      record(),
+      record({ id: "global-line-2", idx: 7, name: "同序号线路", references: [] })
+    ];
+    const loadingLine = {
       ...savedLine,
-      name: "页面草稿名称",
-      params: { ...savedLine.params, rated_capacity: "500", r: "0.25" }
+      name: undefined as unknown as string
     };
 
-    const editedPreview = previewGlobalLineRecordsForProject(
+    const preview = previewGlobalLineRecordsForProject(
       persisted,
-      [station, load, editedLine],
+      [station, load, loadingLine],
       "厂站",
       identity
     );
-    expect(editedPreview[0]).toMatchObject({
-      name: "页面草稿名称",
-      params: expect.objectContaining({ rated_capacity: "500", r: "0.25" })
+    expect(preview.find((item) => item.id === "global-line-1")).toMatchObject({
+      name: "中心厂站-一号线",
+      params: { rated_capacity: "220", r: "0.1", run_stat: "1" }
     });
     expect(persisted[0]).toMatchObject({
       name: "中心厂站-一号线",
       params: expect.objectContaining({ rated_capacity: "220", r: "0.1" })
-    });
-
-    const undonePreview = previewGlobalLineRecordsForProject(
-      persisted,
-      [station, load, savedLine],
-      "厂站",
-      identity
-    );
-    expect(undonePreview[0]).toMatchObject({
-      name: "已保存线路",
-      params: expect.objectContaining({ rated_capacity: "220" })
     });
   });
 
@@ -327,16 +318,24 @@ describe("全局线路数据同步", () => {
     expect(globalLineSharedParamsFromNode(line)).not.toHaveProperty("_routableLineSourceNodeId");
   });
 
-  test("应用全局记录时统一名称序号和共享参数，同时保留本图路由与拓扑字段", () => {
+  test("应用全局记录时以表中名称和参数覆盖运行态，同时清除模型中的陈旧全局参数", () => {
     const line = connectLine("ac-routable-line", "source", "target");
     line.name = "旧名称";
-    line.params = { ...line.params, idx: "2", i_node: "101", j_node: "102", rated_capacity: "100" };
+    line.params = {
+      ...line.params,
+      idx: "2",
+      i_node: "101",
+      j_node: "102",
+      rated_capacity: "100",
+      stale_global_param: "只存在于旧模型"
+    };
 
     const updated = applyGlobalLineRecordToNode(line, record());
 
     expect(updated.name).toBe("中心厂站-一号线");
     expect(updated.params.idx).toBe("7");
     expect(updated.params.rated_capacity).toBe("220");
+    expect(updated.params.stale_global_param).toBeUndefined();
     expect(updated.params.i_node).toBe("101");
     expect(updated.params.j_node).toBe("102");
     expect(updated.params._routableLineSourceNodeId).toBe("source");

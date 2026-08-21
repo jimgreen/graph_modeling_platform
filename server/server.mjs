@@ -479,7 +479,9 @@ async function readLegacySchemeDirectoryMeta(schemeDir) {
 
 async function readSchemeProjectFile(filePath, fileName) {
   try {
-    const project = normalizeProjectForStorage(JSON.parse(await readFile(filePath, "utf-8")));
+    const storedProject = normalizeProjectForStorage(JSON.parse(await readFile(filePath, "utf-8")));
+    const hydrated = await globalLineRegistry.hydrateProject({ project: storedProject });
+    const project = hydrated.project;
     const fileBaseName = fileName.replace(/\.json$/iu, "");
     const name = storageProjectDisplayName(project.name || storedProjectFilePartDisplayName(fileBaseName));
     return {
@@ -4760,6 +4762,7 @@ export async function saveSchemeProjectRecord(options) {
     schemePath
   });
   const project = synchronizedGlobalLines.project;
+  const storageProject = synchronizedGlobalLines.storageProject ?? project;
   const storedRecord = {
     ...record,
     name,
@@ -4779,7 +4782,7 @@ export async function saveSchemeProjectRecord(options) {
   const svgContent = options.svg ?? buildSvgFile(storedRecord.project, measurementConfig, { imagePathById });
   const eContent = options.eFile ?? buildDeviceParameterFile(storedRecord.project, schemePath);
   await Promise.all([
-    writeTextIfChanged(jsonPath, stringifyJson(storedRecord.project)),
+    writeTextIfChanged(jsonPath, stringifyJson({ ...storageProject, name })),
     writeTextIfChanged(ePath, eContent, "gbk"),
     writeTextIfChanged(svgPath, svgContent)
   ]);

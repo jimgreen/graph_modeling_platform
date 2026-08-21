@@ -7475,7 +7475,10 @@ function numericNodeParamForRoute(node: ModelNode, key: string, fallback: number
 }
 
 function routeNodeLabelText(node: ModelNode) {
-  return node.params._labelText ?? node.name;
+  // schema v3 global-line model files persist only idx and local geometry.
+  // The registry hydrates the display name asynchronously, so the first
+  // spatial-index pass must tolerate the short-lived name-less node.
+  return String(node.params._labelText ?? node.name ?? "");
 }
 
 function routeNodeLabelDisplayMode(node: ModelNode) {

@@ -24,7 +24,6 @@ import {
   globalLineEndpointReference,
   globalLineEnergyTypeForNode,
   globalLineModelKey,
-  globalLineSharedParamsFromNode,
   type GlobalLineEndpoint,
   type GlobalLineRecord,
   type GlobalLineReference
@@ -219,15 +218,6 @@ function globalLineReferenceMatchesEndpointModelIdentity(
   return Boolean(identity.modelKey) && reference.modelKey === identity.modelKey;
 }
 
-function differingGlobalLineParamKeys(
-  recordParams: Readonly<Record<string, string>>,
-  modelParams: Readonly<Record<string, string>>
-) {
-  return [...new Set([...Object.keys(recordParams), ...Object.keys(modelParams)])]
-    .filter((key) => String(recordParams[key] ?? "") !== String(modelParams[key] ?? ""))
-    .sort((left, right) => left.localeCompare(right));
-}
-
 function globalLineDefinitionDifferences(
   record: GlobalLineRecord,
   reference: GlobalLineReference,
@@ -253,19 +243,11 @@ function globalLineDefinitionDifferences(
   if (modelEnergyType !== record.energyType) {
     differences.push(`能源类型不一致（模型=${modelEnergyType || "未知"}，全局=${record.energyType}）`);
   }
-  if (line.name !== record.name) {
-    differences.push(`名称不一致（模型=${line.name || "空"}，全局=${record.name}）`);
-  }
+  // 名称和全局业务参数只存在于全局线路表，不参与模型文件一致性判断。
+  // 模型文件持久化设备 idx；加载后的运行态节点再补充 _globalLineId 以兼容交互流程。
   const modelIndex = String(line.params.idx ?? "").trim();
   if (modelIndex !== String(record.idx)) {
     differences.push(`idx不一致（模型=${modelIndex || "空"}，全局=${record.idx}）`);
-  }
-  const differingParams = differingGlobalLineParamKeys(
-    record.params,
-    globalLineSharedParamsFromNode(line)
-  );
-  if (differingParams.length > 0) {
-    differences.push(`共享参数不一致（${differingParams.join("、")}）`);
   }
   const modelEndpoint = routableLineDeviceEndpointRefs(line)[endpoint];
   const referenceEndpoint = normalizedGlobalLineReferenceEndpoint(reference);
