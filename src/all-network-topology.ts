@@ -396,6 +396,147 @@ function globalLineModelOccurrences(
   }));
 }
 
+/**
+ * Limits full-network global-line validation to registry rows that are either
+ * referenced by a loaded model or actually occur in a loaded model file.
+ */
+export function globalLineRecordsForAllNetworkTopologySelection(
+  records: readonly GlobalLineRecord[],
+  loadedModels: readonly AllNetworkTopologyReferenceModel[]
+): GlobalLineRecord[] {
+  const occurringGlobalLineIds = new Set(
+    globalLineModelOccurrences(loadedModels).map((occurrence) => occurrence.globalLineId)
+  );
+  return records.filter((record) => (
+    occurringGlobalLineIds.has(record.id) ||
+    (["source", "target"] as const).some((endpoint) => (
+      Boolean(modelForGlobalLineReference(globalLineEndpointReference(record, endpoint), loadedModels))
+    ))
+  ));
+}
+
+/**
+ * Keeps every global-line occurrence from explicitly loaded models, but only
+ * the currently relevant occurrences from supporting endpoint models that
+ * were read solely for consistency validation.
+ */
+export function globalLineConsistencyModelsForAllNetworkTopology(
+  records: readonly GlobalLineRecord[],
+  selectedModels: readonly AllNetworkTopologyReferenceModel[],
+  loadedModels: readonly AllNetworkTopologyReferenceModel[]
+): AllNetworkTopologyReferenceModel[] {
+  const selectedProjectIds = new Set(selectedModels.map((model) => model.projectId));
+  const relevantGlobalLineIds = new Set(records.map((record) => record.id));
+  return loadedModels.map((model) => {
+    if (selectedProjectIds.has(model.projectId)) return model;
+    const nodes = model.record.project.nodes.filter((node) => {
+      const globalLineId = String(node.params[GLOBAL_LINE_ID_PARAM] ?? "").trim();
+      return !globalLineId || !globalLineEnergyTypeForNode(node) || relevantGlobalLineIds.has(globalLineId);
+    });
+    if (nodes.length === model.record.project.nodes.length) return model;
+    return {
+      ...model,
+      record: {
+        ...model.record,
+        project: {
+          ...model.record.project,
+          nodes
+        }
+      }
+    };
+  });
+}
+
+function loadedGlobalLineEndpointWarning(
+  record: GlobalLineRecord,
+  loadedEndpoint: GlobalLineEndpoint,
+  loadedModel: AllNetworkTopologyReferenceModel,
+  unloadedReference: GlobalLineReference
+): AllNetworkTopologyAlert {
+  const loadedOccurrence = globalLineModelOccurrences([loadedModel]).find(
+    (occurrence) => occurrence.globalLineId === record.id
+  );
+  const loadedReference = globalLineEndpointReference(record, loadedEndpoint);
+  const unloadedEndpoint = oppositeGlobalLineEndpoint(loadedEndpoint);
+  const loadedModelName = loadedModel.name || loadedReference?.projectName || loadedReference?.modelKey || "未命名模型";
+  const unloadedModelName = unloadedReference.projectName || unloadedReference.modelKey || "未命名模型";
+  const nodeId = loadedOccurrence?.line.id || loadedReference?.nodeId;
+  return {
+    id: `global-line:${record.id}:single-loaded-endpoint:${loadedEndpoint}`,
+    projectId: loadedModel.projectId,
+    schemeId: loadedModel.schemeId,
+    modelName: loadedModel.name,
+    deviceName: record.name || loadedOccurrence?.line.name || record.id,
+    message: `全局线路“${record.name || record.id}”本次只有${globalLineEndpointLabel(loadedEndpoint)}模型“${loadedModelName}”已加载，${globalLineEndpointLabel(unloadedEndpoint)}模型“${unloadedModelName}”未加载。`,
+    ...(nodeId ? { nodeId } : {}),
+    relatedNodeIds: nodeId ? [nodeId] : []
+  };
+}
+
+function modelAssociationNotLoadedWarnings(
+  loadedModels: readonly AllNetworkTopologyReferenceModel[],
+  availableModels: readonly AllNetworkTopologyReferenceModel[]
+): AllNetworkTopologyAlert[] {
+  const warnings: AllNetworkTopologyAlert[] = [];
+  for (const ownerModel of loadedModels) {
+    for (const node of ownerModel.record.project.nodes) {
+      const associationModelType = modelAssociationModelTypeForKind(node.kind);
+      if (!associationModelType) continue;
+      const targetModelIndex = normalizedModelIndex(node.params.model_id);
+      if (targetModelIndex <= 0) continue;
+      const targetModel = availableModels.find((model) => (
+        model.idx === targetModelIndex && model.modelType === associationModelType
+      ));
+      // Unknown ids remain part of the existing enum/topology error path.
+      if (!targetModel) continue;
+      const targetIsLoaded = loadedModels.some((model) => (
+        model.projectId === targetModel.projectId ||
+        (model.idx === targetModel.idx && model.modelType === targetModel.modelType)
+      ));
+      if (targetIsLoaded) continue;
+      warnings.push({
+        id: `model:${ownerModel.projectId}:association-model-not-loaded:${node.id}:${targetModelIndex}`,
+        projectId: ownerModel.projectId,
+        schemeId: ownerModel.schemeId,
+        modelName: ownerModel.name,
+        deviceName: node.name || node.id,
+        message: `模型“${ownerModel.name}”中的${node.name || node.id}关联了model_id=${targetModelIndex}，但对应的${associationModelType}模型“${targetModel.name}”未加载到本次全网拓扑。`,
+        nodeId: node.id,
+        relatedNodeIds: [node.id]
+      });
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Reports selection/load coverage without changing registry consistency
+ * semantics: one loaded global-line end and valid but unloaded model links are
+ * warnings, while consistency errors are produced by analyzeGlobalLineConsistency.
+ */
+export function analyzeAllNetworkTopologyLoadCoverage(
+  records: readonly GlobalLineRecord[],
+  loadedModels: readonly AllNetworkTopologyReferenceModel[],
+  availableModels: readonly AllNetworkTopologyReferenceModel[] = loadedModels
+): AllNetworkTopologyResult {
+  const warnings: AllNetworkTopologyAlert[] = [];
+  for (const record of records) {
+    const sourceReference = globalLineEndpointReference(record, "source");
+    const targetReference = globalLineEndpointReference(record, "target");
+    if (!sourceReference || !targetReference) continue;
+    const sourceModel = modelForGlobalLineReference(sourceReference, loadedModels);
+    const targetModel = modelForGlobalLineReference(targetReference, loadedModels);
+    if (Boolean(sourceModel) === Boolean(targetModel)) continue;
+    if (sourceModel) {
+      warnings.push(loadedGlobalLineEndpointWarning(record, "source", sourceModel, targetReference));
+    } else if (targetModel) {
+      warnings.push(loadedGlobalLineEndpointWarning(record, "target", targetModel, sourceReference));
+    }
+  }
+  warnings.push(...modelAssociationNotLoadedWarnings(loadedModels, availableModels));
+  return { errors: [], warnings };
+}
+
 function setPreferLocatableAlert(
   alerts: Map<string, AllNetworkTopologyAlert>,
   alert: AllNetworkTopologyAlert
