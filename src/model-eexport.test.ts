@@ -236,6 +236,7 @@ import {
   type ProjectFile
 } from "./model";
 import { degreesToRadians } from "./formatUtils";
+import type { GlobalLineRecord } from "./global-lines";
 
 type ParsedESection = {
   columns: string[];
@@ -4101,6 +4102,134 @@ describe("全网 E 文件导出", () => {
       ]
     });
     assertAssociationDevicesAreCollapsed(emsFile.text);
+  });
+
+  test("模型设备写入所属 model_id 且全局线路按表记录合并为 parent=0 的唯一线路", () => {
+    const globalLineId = "global-line-parent-and-dedup";
+    const stationSource = createDefaultNode("ac-source", { x: 100, y: 120 });
+    stationSource.name = "厂站本地电源";
+    stationSource.params.idx = "3";
+    stationSource.terminals[0].vbase = "10";
+    const feederBoundary = createDefaultNode("ac-feeder-load", { x: 420, y: 120 });
+    feederBoundary.params.model_id = "7";
+    feederBoundary.terminals[0].vbase = "10";
+    const stationLine = connectLine(
+      "模型内线路副本A",
+      { node: stationSource, terminalId: stationSource.terminals[0].id },
+      { node: feederBoundary, terminalId: feederBoundary.terminals[0].id }
+    );
+    stationLine.params.idx = "42";
+    stationLine.params._globalLineId = globalLineId;
+    stationLine.params._globalLineModelPair = "target";
+
+    const stationBoundary = createDefaultNode("ac-station-source", { x: 100, y: 320 });
+    stationBoundary.params.model_id = "6";
+    stationBoundary.terminals[0].vbase = "10";
+    const feederLoad = createDefaultNode("ac-load", { x: 420, y: 320 });
+    feederLoad.name = "馈线本地负荷";
+    feederLoad.params.idx = "4";
+    feederLoad.terminals[0].vbase = "10";
+    const feederLine = connectLine(
+      "模型内线路副本B",
+      { node: stationBoundary, terminalId: stationBoundary.terminals[0].id },
+      { node: feederLoad, terminalId: feederLoad.terminals[0].id }
+    );
+    feederLine.params.idx = "42";
+    feederLine.params._globalLineId = globalLineId;
+    feederLine.params._globalLineModelPair = "source";
+
+    const sourceReference = {
+      modelKey: "model:6",
+      projectIdx: 6,
+      schemePath: ["主方案"],
+      projectName: "厂站A",
+      nodeId: stationLine.id,
+      terminalSlot: "i" as const,
+      boundaryEndpoint: "source" as const
+    };
+    const targetReference = {
+      modelKey: "model:7",
+      projectIdx: 7,
+      schemePath: ["主方案"],
+      projectName: "馈线A",
+      nodeId: feederLine.id,
+      terminalSlot: "j" as const,
+      boundaryEndpoint: "target" as const
+    };
+    const globalLineRecord: GlobalLineRecord = {
+      id: globalLineId,
+      idx: 42,
+      name: "全局统一线路名",
+      energyType: "ac",
+      params: {
+        run_stat: "1",
+        vbase: "10",
+        rated_capacity: "250",
+        i_max: "500",
+        r: "0.25",
+        x: "0.75",
+        b: "0.01",
+        dev_type: "ACBranch"
+      },
+      references: [sourceReference, targetReference],
+      endpointSlots: { source: sourceReference, target: targetReference },
+      terminalSlots: { i: sourceReference, j: targetReference },
+      degree: 2,
+      createdAt: "2026-08-21T00:00:00.000Z",
+      updatedAt: "2026-08-21T00:00:00.000Z"
+    };
+
+    const file = buildMultiModelEFileExport([
+      {
+        id: "station-6",
+        schemePath: ["主方案"],
+        project: {
+          version: 1,
+          name: "厂站A",
+          idx: 6,
+          modelType: "厂站",
+          nodes: [stationSource, feederBoundary, stationLine],
+          edges: []
+        }
+      },
+      {
+        id: "feeder-7",
+        schemePath: ["主方案"],
+        project: {
+          version: 1,
+          name: "馈线A",
+          idx: 7,
+          modelType: "馈线",
+          nodes: [stationBoundary, feederLoad, feederLine],
+          edges: []
+        }
+      }
+    ], {}, [globalLineRecord]);
+    const payload = parseESections(file.text);
+    const globalLineRows = payload.ACBranch.rows.filter((row) => row.idx === "42");
+
+    expect(payload.ACBranch.columns.slice(0, 3)).toEqual(["idx", "name", "parent"]);
+    expect(globalLineRows).toHaveLength(1);
+    expect(globalLineRows[0]).toMatchObject({
+      idx: "42",
+      name: "全局统一线路名",
+      parent: "0",
+      rated_capacity: "250",
+      r: "0.25",
+      x: "0.75"
+    });
+    expect(Number(globalLineRows[0].i_node)).toBeGreaterThanOrEqual(60000);
+    expect(Number(globalLineRows[0].i_node)).toBeLessThan(70000);
+    expect(Number(globalLineRows[0].j_node)).toBeGreaterThanOrEqual(70000);
+    expect(Number(globalLineRows[0].j_node)).toBeLessThan(80000);
+    expect(payload.ACBranch.rows.map((row) => row.name)).not.toEqual(
+      expect.arrayContaining(["模型内线路副本A", "模型内线路副本B"])
+    );
+    expect(payload.ACGenerator.columns.slice(0, 3)).toEqual(["idx", "name", "parent"]);
+    expect(payload.ACGenerator.rows.find((row) => row.name === "厂站本地电源")?.parent).toBe("6");
+    expect(payload.ACLoad.columns.slice(0, 3)).toEqual(["idx", "name", "parent"]);
+    expect(payload.ACLoad.rows.find((row) => row.name === "馈线本地负荷")?.parent).toBe("7");
+    expect(payload.ACNode.rows.every((row) => row.parent === "6" || row.parent === "7")).toBe(true);
   });
 
   test("按模型 idx 合并记录并把设备及节点序号重编号为模型 idx * 10000 + 单模型序号", () => {

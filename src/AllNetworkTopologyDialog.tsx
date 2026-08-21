@@ -1047,6 +1047,7 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
         eDeviceDefinitionTableIds: scope.eDeviceDefinitionTableIds,
         resolveDefinitionComponentLibrary: scope.resolveTemplateComponentLibrary
       });
+      const globalLineRecords = await loadGlobalLineRecordsForTopology();
       const saved = await saveLazyTextFile({
         filename: "全网拓扑.e",
         loadText: () => buildMultiModelEFileExport(
@@ -1055,7 +1056,8 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
             schemePath: model.schemePath,
             project: model.record.project
           })),
-          exportOptions
+          exportOptions,
+          globalLineRecords
         ).text,
         mime: "text/plain",
         description: "E 文件",
