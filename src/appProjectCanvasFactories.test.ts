@@ -964,6 +964,48 @@ describe("saved project definition migration", () => {
     expect(setGraphArrays).toHaveBeenCalledWith([blocker, repairedLine], [], 0);
   });
 
+  test("hydrates a large model without synchronously rebuilding every stored adaptive-line path", () => {
+    const blocker = {
+      ...createDefaultNode("static-rect", { x: 500, y: 240 }),
+      id: "large-model-route-blocker"
+    };
+    const line = {
+      ...createDefaultNode("ac-routable-line", { x: 760, y: 360 }),
+      id: "large-model-stored-route"
+    };
+    const ordinaryNode = {
+      ...createDefaultNode("ac-load", { x: 920, y: 360 }),
+      id: "large-model-ordinary-node"
+    };
+    const rebuildRoutableLineDeviceRouteUpdates = vi.fn(() => [{
+      ...line,
+      params: { ...line.params, _routableLinePoints: "unexpected-rebuild" }
+    }]);
+    const setGraphArrays = vi.fn();
+    const scope = createLoadScope({
+      CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT: 2,
+      rebuildRoutableLineDeviceRouteUpdates,
+      setGraphArrays
+    });
+
+    createLoadSavedProject(scope as any)({
+      id: "large-project-with-saved-routes",
+      name: "大型已保存模型",
+      project: {
+        nodes: [blocker, line, ordinaryNode],
+        edges: [],
+        groups: [],
+        layers: [],
+        activeLayerId: "layer-default",
+        canvasWidth: 1200,
+        canvasHeight: 800
+      }
+    } as any, "scheme-1");
+
+    expect(rebuildRoutableLineDeviceRouteUpdates).not.toHaveBeenCalled();
+    expect(setGraphArrays).toHaveBeenCalledWith([blocker, line, ordinaryNode], [], 0);
+  });
+
   test("keeps the loaded project clean after automatic definition and measurement migration", () => {
     const knownNode = {
       id: "known-node",

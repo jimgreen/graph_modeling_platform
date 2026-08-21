@@ -6,8 +6,12 @@ const reactDialogFiles = [
   "./VoltageLevelDialog.tsx",
   "./UserCustomizationManagerDialog.tsx",
   "./appExtracted/appCanvasInteractionFactories.tsx",
+  "./appExtracted/appCanvasDialogs.tsx",
+  "./appExtracted/appDeviceDefinitionDialogs.tsx",
   "./appExtracted/appPersistenceLibraryExport.tsx",
+  "./appExtracted/appProjectDialogs.tsx",
   "./appExtracted/appProjectCanvasFactories.tsx",
+  "./appExtracted/appResourceDialogs.tsx",
   "./appExtracted/appView.tsx"
 ];
 

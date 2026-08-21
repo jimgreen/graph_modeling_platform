@@ -1335,8 +1335,9 @@ describe("graph template library filtering", () => {
 
   test("keeps the right-floating template flyout open while the template context menu is hovered", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
-    const templateMenuMatch = appViewSource.match(
-      /\{templateMenu && \(\(\) => \{[\s\S]*?\{renderMeasurementConfigDialog\(\)\}/u
+    const contextMenuSource = readFileSync(new URL("./appExtracted/appContextMenus.tsx", import.meta.url), "utf8");
+    const templateMenuMatch = contextMenuSource.match(
+      /\{templateMenu && \(\(\) => \{[\s\S]*?\}\)\(\)\}/u
     );
 
     expect(appViewSource).toContain("const keepTemplateContextMenuFlyoutOpen");
@@ -1361,7 +1362,7 @@ describe("graph template library filtering", () => {
       + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
       + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
       + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
-    const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const appViewSource = readFileSync(new URL("./appExtracted/appProjectDialogs.tsx", import.meta.url), "utf8");
     const projectFactorySource = readFileSync(new URL("./appExtracted/appProjectCanvasFactories.tsx", import.meta.url), "utf8");
 
     expect(appSource).toContain("libraryPackageDialogOpen");
@@ -1638,7 +1639,7 @@ describe("graph template library filtering", () => {
   });
 
   test("renders E export controls only in the centralized E interface definition table", () => {
-    const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const appViewSource = readFileSync(new URL("./appExtracted/appDeviceDefinitionDialogs.tsx", import.meta.url), "utf8");
 
     expect(appViewSource.match(/<th>是否导出<\/th>/gu)).toHaveLength(1);
     expect(appViewSource.match(/<th>导出名称<\/th>/gu)).toHaveLength(2);
@@ -1649,7 +1650,7 @@ describe("graph template library filtering", () => {
   });
 
   test("merges terminal anchors into the state icon editor base layer", () => {
-    const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const appViewSource = readFileSync(new URL("./appExtracted/appDeviceDefinitionDialogs.tsx", import.meta.url), "utf8");
     const appCoreSource = readFileSync(new URL("./appExtracted/appCoreCanvasUtilities.tsx", import.meta.url), "utf8");
     const deviceDefinitionSource = readFileSync(new URL("./appExtracted/appDeviceDefinitionFactories.tsx", import.meta.url), "utf8");
     const deviceDefinitionRenderersSource = readFileSync(new URL("./appExtracted/appDeviceDefinitionRenderers.tsx", import.meta.url), "utf8");
