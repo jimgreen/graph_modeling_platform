@@ -17,6 +17,7 @@ import { buildExportDeviceIdMap } from "../svgExportUtils";
 import { E_SECTION_COLUMNS, inferESection, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, modelAssociationDevicesModelTypeFailureMessage, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { resolveEditableComponentLibraryDefinition } from "../componentLibraryDefinitions";
+import { TOPOLOGY_WARNING_PAGE_SIZE } from "./appCoreCanvasUtilities";
 import type { CustomComponentLibraryDefinition } from "./appCoreCanvasUtilities";
 import { decodeAuto } from "../encoding/gbk";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
