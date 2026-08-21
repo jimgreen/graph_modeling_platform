@@ -6642,6 +6642,7 @@ export function buildDefaultDeviceParameterDefinitions(
   const baseDefinitions: DeviceParameterDefinition[] = [
     { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
     { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+    { cnName: "所属模型", enName: "parent", valueType: "numberEnum", typicalValue: "", enumValues: [], enumValueType: "number", enumOptions: [], readonly: false, exportEnabled: true, exportName: "parent" },
     { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
     { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false }
   ];
@@ -6687,6 +6688,40 @@ export function buildDefaultDeviceParameterDefinitions(
     };
   });
   return [...baseDefinitions, ...nodeDefinitions];
+}
+
+export function withNodeParentModelId(node: ModelNode, modelId: unknown): ModelNode {
+  const numericModelId = Number(modelId);
+  const normalizedModelId = Number.isInteger(numericModelId) && numericModelId > 0
+    ? String(numericModelId)
+    : "0";
+  const existingParentModelId = Number(node.params?.parent);
+  const normalizedExistingParentModelId = Number.isInteger(existingParentModelId) && existingParentModelId > 0
+    ? String(existingParentModelId)
+    : "";
+  const parent = String(node.params?._globalLineId ?? "").trim()
+    ? "0"
+    : normalizedExistingParentModelId || normalizedModelId;
+  if (String(node.params?.parent ?? "") === parent) {
+    return node;
+  }
+  return {
+    ...node,
+    params: {
+      ...node.params,
+      parent
+    }
+  };
+}
+
+export function withNodesParentModelId(nodes: ModelNode[], modelId: unknown): ModelNode[] {
+  let changed = false;
+  const normalizedNodes = nodes.map((node) => {
+    const normalizedNode = withNodeParentModelId(node, modelId);
+    changed ||= normalizedNode !== node;
+    return normalizedNode;
+  });
+  return changed ? normalizedNodes : nodes;
 }
 
 export function isGeneratorKind(kind: DeviceKind): boolean {
@@ -7440,7 +7475,7 @@ function normalizeTemplateDefinition(definition: DeviceParameterDefinition): Dev
   const normalizedDefinition: DeviceParameterDefinition = {
     ...normalized,
     valueType: enumDefinitionValueTypeForEnumValueType(enumValueType),
-    ...(enName === "run_stat" ? { enumValueType: "number" as const } : {}),
+    ...(enumValueType === "number" ? { enumValueType: "number" as const } : {}),
     enumOptions
   };
   const normalizedTypicalValue = enumValueForDefinition(normalizedDefinition, typicalValue);
@@ -7460,6 +7495,56 @@ export function templateTerminalTypes(template: DeviceTemplate): TerminalType[] 
   return terminalTypes;
 }
 
+function ensureParentBeforeDevTypeParameterDefinition(
+  definitions: readonly DeviceParameterDefinition[]
+): DeviceParameterDefinition[] {
+  const remaining: DeviceParameterDefinition[] = [];
+  let existingParent: DeviceParameterDefinition | undefined;
+  for (const definition of definitions) {
+    if (definition.enName.trim().toLowerCase() === "parent") {
+      existingParent ??= definition;
+      continue;
+    }
+    remaining.push(definition);
+  }
+  const parentDefinition: DeviceParameterDefinition = {
+    ...existingParent,
+    cnName: existingParent?.cnName?.trim() || "所属模型",
+    enName: "parent",
+    valueType: "numberEnum",
+    typicalValue: "",
+    enumValues: [],
+    enumValueType: "number",
+    enumOptions: [],
+    readonly: false,
+    exportEnabled: true,
+    exportName: "parent"
+  };
+  const devTypeIndex = remaining.findIndex((definition) => definition.enName.trim() === "dev_type");
+  const nameIndex = remaining.findIndex((definition) => definition.enName.trim() === "name");
+  const idxIndex = remaining.findIndex((definition) => definition.enName.trim() === "idx");
+  const insertionIndex = devTypeIndex >= 0
+    ? devTypeIndex
+    : nameIndex >= 0
+      ? nameIndex + 1
+      : idxIndex >= 0
+        ? idxIndex + 1
+        : 0;
+  remaining.splice(insertionIndex, 0, parentDefinition);
+  return remaining;
+}
+
+function finalizeTemplateParameterDefinitions(
+  template: DeviceTemplate,
+  definitions: readonly DeviceParameterDefinition[]
+): DeviceParameterDefinition[] {
+  const section = inferESection(template.kind, template.params);
+  if (section.startsWith("Static") && (E_SECTION_COLUMNS[section]?.length ?? 0) === 0) {
+    return definitions.filter((definition) => definition.enName.trim().toLowerCase() !== "parent");
+  }
+  return ensureParentBeforeDevTypeParameterDefinition(definitions);
+}
+
 export function getTemplateParameterDefinitions(template: DeviceTemplate): DeviceParameterDefinition[] {
   if (template.parameterDefinitionsComplete && Array.isArray(template.parameterDefinitions)) {
     const normalizedParamDefs = template.parameterDefinitions
@@ -7467,10 +7552,13 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
       .filter((definition): definition is DeviceParameterDefinition => (
         Boolean(definition) && !isContainerAssociatedParameterName(template, definition?.enName ?? "")
       ));
-    return normalizeESectionParameterDefinitions(
+    const normalizedDefinitions = normalizeESectionParameterDefinitions(
       inferESection(template.kind, template.params),
       normalizedParamDefs
     );
+    return template.parameterDefinitionsIntent === "delete-all" && normalizedDefinitions.length === 0
+      ? []
+      : finalizeTemplateParameterDefinitions(template, normalizedDefinitions);
   }
   if (template.parameterDefinitions?.length) {
     const normalizedParamDefs = template.parameterDefinitions
@@ -7531,10 +7619,12 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
             allDefs.splice(nameIndex + 1, 0, devTypeDef);
           }
         }
-        return normalizeESectionParameterDefinitions(section, allDefs);
+        return finalizeTemplateParameterDefinitions(template,
+          normalizeESectionParameterDefinitions(section, allDefs)
+        );
       }
     }
-    return paramDefs;
+    return finalizeTemplateParameterDefinitions(template, paramDefs);
   }
   if (template.isContainer) {
     const defaultDefinitions = buildDefaultDeviceParameterDefinitions(templateTerminalTypes(template), {
@@ -7563,7 +7653,9 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
     ]
       .map((definition) => normalizeTemplateDefinition(definition))
       .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
-    return normalizeESectionParameterDefinitions(inferESection(template.kind, template.params), generatedDefinitions);
+    return finalizeTemplateParameterDefinitions(template,
+      normalizeESectionParameterDefinitions(inferESection(template.kind, template.params), generatedDefinitions)
+    );
   }
   const eKeys = getEParameterKeys(template.kind, template.params);
   const keys = eKeys.length > 0 ? [...eKeys] : Object.keys(template.params);
@@ -7592,7 +7684,9 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
     return normalizeTemplateDefinition(base)!;
   });
   const section = inferESection(template.kind, template.params);
-  return normalizeESectionParameterDefinitions(section, generatedDefinitions);
+  return finalizeTemplateParameterDefinitions(template,
+    normalizeESectionParameterDefinitions(section, generatedDefinitions)
+  );
 }
 
 export type EffectiveTemplateParameterDefinitionGroups = {
@@ -8332,6 +8426,9 @@ export function validateNodeEnumParameters(
 ): DeviceEnumParameterIssue[] {
   return resolveNodeEnumParameterBindings(node, template).flatMap((binding) => {
     const allowedValues = enumValuesForParameterDefinition(binding.definition);
+    if (binding.definition.enName === "parent" && allowedValues.length === 0) {
+      return [];
+    }
     if (!binding.value && binding.definition.typicalValue && allowedValues.includes(binding.definition.typicalValue)) {
       return [];
     }

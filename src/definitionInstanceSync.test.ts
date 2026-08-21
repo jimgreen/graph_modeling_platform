@@ -264,7 +264,15 @@ describe("definition instance node reconciliation", () => {
     expect(reconciled.params.addedField).toBe("added-default");
     expect(reconciled.params).not.toHaveProperty("removedField");
     expect(JSON.parse(reconciled.params[CUSTOM_PARAM_DEFINITIONS_KEY])).toEqual(
-      nextDefinitions.map((definition) => ({ ...definition, readonly: false }))
+      [
+        expect.objectContaining({
+          enName: "parent",
+          valueType: "numberEnum",
+          enumValueType: "number",
+          readonly: false
+        }),
+        ...nextDefinitions.map((definition) => ({ ...definition, readonly: false }))
+      ]
     );
     expect(reconciled.params.backgroundImage).toBe("data:image/svg+xml,new-definition");
     expect(reconciled.params.backgroundImageFit).toBe("stretch");

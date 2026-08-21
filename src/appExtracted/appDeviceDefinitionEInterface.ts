@@ -97,7 +97,20 @@ function eDeviceInterfaceOrderFieldName(value: unknown) {
   return E_DEVICE_INTERFACE_CURRENT_FIELD_ALIASES[snakeName] ?? rawName;
 }
 
-const E_DEVICE_INTERFACE_FIXED_FIELD_NAMES = new Set(["idx", "name", "dev_type"]);
+function ensureEDeviceInterfaceParentBeforeDevType(fieldOrder: readonly string[]) {
+  const normalizedOrder = fieldOrder
+    .map((fieldName) => eDeviceInterfaceOrderFieldName(fieldName));
+  const devTypeIndex = normalizedOrder.findIndex((fieldName) => String(fieldName).trim().toLowerCase() === "dev_type");
+  if (devTypeIndex < 0) {
+    return normalizedOrder;
+  }
+  const withoutParent = normalizedOrder.filter((fieldName) => String(fieldName).trim().toLowerCase() !== "parent");
+  const normalizedDevTypeIndex = withoutParent.findIndex((fieldName) => String(fieldName).trim().toLowerCase() === "dev_type");
+  withoutParent.splice(normalizedDevTypeIndex, 0, "parent");
+  return withoutParent;
+}
+
+const E_DEVICE_INTERFACE_FIXED_FIELD_NAMES = new Set(["idx", "name", "parent", "dev_type"]);
 // 拓扑引用字段：生成 E 文件时由拓扑连接关系填入 ACNode 的 idx，不对应元件属性
 const E_DEVICE_INTERFACE_TOPOLOGY_FIELD_NAMES = new Set(["ind", "znd", "nd"]);
 // 量测字段：生成 E 文件时由量测系统填充，不对应元件属性
@@ -110,6 +123,7 @@ const E_DEVICE_INTERFACE_RUNTIME_DERIVED_FIELD_NAMES: Record<string, string> = {
 const E_DEVICE_INTERFACE_DERIVED_BASE_FIELD_NAMES = new Set([
   "idx",
   "name",
+  "parent",
   "dev_type",
   "status",
   "run_stat",
@@ -188,7 +202,7 @@ export function applyEDeviceInterfaceFieldOrder(fields: readonly any[] = [], con
   return ordered;
 }
 
-const E_DEVICE_INTERFACE_DISPLAY_FIXED_FIELDS = new Set(["idx", "name", "dev_type"]);
+const E_DEVICE_INTERFACE_DISPLAY_FIXED_FIELDS = new Set(["idx", "name", "parent", "dev_type"]);
 
 function eDeviceInterfaceDisplayCoreFieldName(value: unknown) {
   const fieldName = String(value ?? "").trim().toLowerCase();
@@ -216,15 +230,18 @@ export function orderEDeviceInterfaceFields(
   configuredOrder: readonly string[] = []
 ) {
   if ((configuredOrder ?? []).length > 0) {
-    return applyEDeviceInterfaceFieldOrder(fields, configuredOrder);
+    return applyEDeviceInterfaceFieldOrder(fields, ensureEDeviceInterfaceParentBeforeDevType(configuredOrder));
   }
-  const preferredOrder = [...(E_SECTION_COLUMNS[componentLibrary] ?? [])].map((fieldName) => fieldName.toLowerCase());
+  const preferredOrder = [...(E_SECTION_COLUMNS[componentLibrary] ?? ["idx", "name"])]
+    .map((fieldName) => fieldName.toLowerCase());
   if (!preferredOrder.includes("dev_type")) {
     const nameIndex = preferredOrder.indexOf("name");
-    preferredOrder.splice(nameIndex >= 0 ? nameIndex + 1 : 0, 0, "dev_type");
+    const idxIndex = preferredOrder.indexOf("idx");
+    preferredOrder.splice(nameIndex >= 0 ? nameIndex + 1 : idxIndex >= 0 ? idxIndex + 1 : 0, 0, "dev_type");
   }
+  const normalizedPreferredOrder = ensureEDeviceInterfaceParentBeforeDevType(preferredOrder);
   const preferredIndex = new Map(
-    preferredOrder
+    normalizedPreferredOrder
       .filter((fieldName) => eDeviceInterfaceDisplayCoreFieldName(fieldName))
       .map((fieldName, index) => [fieldName, index])
   );
@@ -390,6 +407,20 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
       readonly: true
     });
     appendField(derivedGroup, {
+      sourceName: "parent",
+      cnName: "所属模型",
+      exportEnabled: true,
+      exportName: "parent",
+      readonly: true
+    });
+    appendField(derivedGroup, {
+      sourceName: "dev_type",
+      cnName: "设备类型",
+      exportEnabled: true,
+      exportName: "dev_type",
+      readonly: true
+    });
+    appendField(derivedGroup, {
       sourceName: eDeviceInterfaceRelationKey(derivedInfo.baseComponentLibrary),
       cnName: "原类关联idx",
       exportEnabled: true,
@@ -432,7 +463,10 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
   }
   return Array.from(groups.values()).map((group) => {
     const { fieldBySourceName, ...row } = group;
-    const orderedFields = applyEDeviceInterfaceFieldOrder(row.fields, eDeviceDefinitionFieldOrder[row.componentLibrary] ?? []);
+    const configuredOrder = eDeviceDefinitionFieldOrder[row.componentLibrary] ?? [];
+    const orderedFields = configuredOrder.length > 0
+      ? orderEDeviceInterfaceFields(row.componentLibrary, row.fields, configuredOrder)
+      : row.fields;
     // 有模板字段定义时，用模板字段的 exportName 覆盖设备参数名
     const templateFields = eDeviceDefinitionTemplateFields[row.componentLibrary];
     if (templateFields && templateFields.length > 0) {

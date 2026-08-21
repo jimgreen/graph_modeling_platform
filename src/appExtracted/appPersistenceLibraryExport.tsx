@@ -1898,7 +1898,7 @@ export const normalizeDefinitionRowEnumFields = <T extends DeviceParameterDefini
     ...plainRow,
     valueType: enumDefinitionValueTypeForEnumValueType(enumValueType),
     typicalValue: typicalValue || enumValues[0] || "",
-    ...(sourceRow.enName.trim() === "run_stat" ? { enumValueType: "number" as const } : {}),
+    ...(enumValueType === "number" ? { enumValueType: "number" as const } : {}),
     enumOptions,
     enumValues
   } as T;

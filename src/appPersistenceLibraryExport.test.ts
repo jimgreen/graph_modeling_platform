@@ -1499,12 +1499,20 @@ describe("graph template library filtering", () => {
   test("normalizes persisted status definitions as editable while keeping structural rows readonly", () => {
     const definitions = normalizeDefinitionRows([
       { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+      { cnName: "所属模型", enName: "parent", valueType: "numberEnum", typicalValue: "", enumValueType: "number", enumValues: [], readonly: false },
       { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: true },
       { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: true },
       { cnName: "节点", enName: "node", valueType: "integer", typicalValue: "", readonly: true }
     ]);
 
     expect(definitions.find((definition) => definition.enName === "idx")).toMatchObject({ readonly: true });
+    expect(definitions.find((definition) => definition.enName === "parent")).toMatchObject({
+      readonly: false,
+      valueType: "numberEnum",
+      enumValueType: "number",
+      enumValues: [],
+      enumOptions: []
+    });
     expect(definitions.find((definition) => definition.enName === "status")).toMatchObject({ readonly: false });
     expect(definitions.find((definition) => definition.enName === "run_stat")).toMatchObject({
       readonly: false,

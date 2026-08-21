@@ -5376,6 +5376,7 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
     const expectedOrder = [
       "idx",
       "name",
+      "parent",
       "dev_type",
       "node",
       "control_type",
@@ -5524,6 +5525,7 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
     expect(baseRow?.fields.map((field: any) => field.sourceName)).toEqual([
       "idx",
       "name",
+      "parent",
       "dev_type",
       "node",
       "run_stat",
@@ -5563,6 +5565,7 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
     expect(rows[0].fields.map((field: any) => field.sourceName)).toEqual([
       "idx",
       "name",
+      "parent",
       "dev_type",
       "node",
       "rated_capacity",
@@ -5595,6 +5598,7 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
 
     expect(rows[0].fields.map((field: any) => field.sourceName)).toEqual([
       "run_stat",
+      "parent",
       "dev_type",
       "idx",
       "node",
@@ -5631,6 +5635,8 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
 
     expect(derivedRow?.fields.map((field: any) => field.sourceName)).toEqual([
       "idx",
+      "parent",
+      "dev_type",
       "idx_acgenerator",
       "windTurbineModel"
     ]);
@@ -5716,7 +5722,8 @@ describe("createExportEFile", () => {
     );
     const acGenerator = generatedExportOptions.interfaceDefinitions
       .find((row: any) => row.componentLibrary === "ACGenerator");
-    expect(acGenerator.fields.slice(0, 3).map((field: any) => field.sourceName)).toEqual([
+    expect(acGenerator.fields.slice(0, 4).map((field: any) => field.sourceName)).toEqual([
+      "parent",
       "dev_type",
       "name",
       "idx"
@@ -5770,7 +5777,8 @@ describe("createExportEFile", () => {
     const generatorDefinition = generatedExportOptions.interfaceDefinitions.find(
       (definition: any) => definition.componentLibrary === "ACGenerator"
     );
-    expect(generatorDefinition.fields.slice(0, 3).map((field: any) => field.sourceName)).toEqual([
+    expect(generatorDefinition.fields.slice(0, 4).map((field: any) => field.sourceName)).toEqual([
+      "parent",
       "dev_type",
       "name",
       "idx"
@@ -5888,7 +5896,6 @@ describe("导出 E 文件与国网 E 格式模板一致性", () => {
       eDeviceDefinitionTemplateFields: result.eDeviceDefinitionTemplateFields,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     });
-
     const nodes = ([
       "ac-source", "ac-load", "ac-storage", "ac-switch", "ac-line", "ac-transformer"
     ] as const).map((kind, i) => createDefaultNode(kind, { x: (i + 1) * 100, y: 100 }));

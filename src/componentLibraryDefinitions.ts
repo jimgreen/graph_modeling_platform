@@ -71,6 +71,8 @@ export function buildComponentLibraryDefaultParameterDefinitions(
   const generated = isCanonicalBranchClass(className)
     ? normalizeBranchTopologyParameterDefinitions(generatedDefaults)
     : generatedDefaults;
+  const parentDefinition = generated.find((definition) => definition.enName === "parent");
+  const definitionsWithoutParent = generated.filter((definition) => definition.enName !== "parent");
   const devTypeDefinition: DeviceParameterDefinition = {
     cnName: "设备类型",
     enName: "dev_type",
@@ -78,12 +80,13 @@ export function buildComponentLibraryDefaultParameterDefinitions(
     typicalValue: String(className ?? "").trim(),
     readonly: false
   };
-  const runStatIndex = generated.findIndex((definition) => definition.enName === "run_stat");
-  const insertionIndex = runStatIndex >= 0 ? runStatIndex + 1 : generated.length;
+  const runStatIndex = definitionsWithoutParent.findIndex((definition) => definition.enName === "run_stat");
+  const insertionIndex = runStatIndex >= 0 ? runStatIndex + 1 : definitionsWithoutParent.length;
   return [
-    ...generated.slice(0, insertionIndex),
+    ...definitionsWithoutParent.slice(0, insertionIndex),
+    ...(parentDefinition ? [parentDefinition] : []),
     devTypeDefinition,
-    ...generated.slice(insertionIndex)
+    ...definitionsWithoutParent.slice(insertionIndex)
   ];
 }
 

@@ -999,6 +999,7 @@ test("creates container device definitions with association idx fields instead o
   expect(definitions.map((definition) => definition.enName)).toEqual([
     "idx",
     "name",
+    "parent",
     "status",
     "run_stat",
     "idx_ac_load_t1",

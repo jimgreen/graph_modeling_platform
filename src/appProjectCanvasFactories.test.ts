@@ -864,7 +864,8 @@ describe("save current project E export options", () => {
     const generatorDefinition = generatedExportOptions.interfaceDefinitions.find(
       (definition: any) => definition.componentLibrary === "ACGenerator"
     );
-    expect(generatorDefinition.fields.slice(0, 3).map((field: any) => field.sourceName)).toEqual([
+    expect(generatorDefinition.fields.slice(0, 4).map((field: any) => field.sourceName)).toEqual([
+      "parent",
       "dev_type",
       "name",
       "idx"
@@ -897,6 +898,7 @@ describe("saved project definition migration", () => {
         id: `project-${kind}`,
         name: `${kind} 拉伸持久化`,
         project: {
+          idx: 17,
           nodes: [storedBus],
           edges: [],
           groups: [],
@@ -913,7 +915,7 @@ describe("saved project definition migration", () => {
           size: storedBus.size,
           params: expect.objectContaining({ definitionSynced: "1" })
         })
-      ], []);
+      ], [], 17);
     }
   );
 
@@ -956,7 +958,7 @@ describe("saved project definition migration", () => {
       [line.id],
       { width: 1200, height: 800 }
     );
-    expect(setGraphArrays).toHaveBeenCalledWith([station, repairedLine], []);
+    expect(setGraphArrays).toHaveBeenCalledWith([station, repairedLine], [], 0);
   });
 
   test("keeps the loaded project clean after automatic definition and measurement migration", () => {
@@ -1009,7 +1011,7 @@ describe("saved project definition migration", () => {
 
     expect(reconcileNodeWithDefinition).toHaveBeenCalledTimes(1);
     expect(reconcileNodeWithDefinition).toHaveBeenCalledWith(knownNode, template);
-    expect(setGraphArrays).toHaveBeenCalledWith([migratedNode, orphanNode], []);
+    expect(setGraphArrays).toHaveBeenCalledWith([migratedNode, orphanNode], [], 0);
     expect(reconcileProjectMeasurementsWithConfig).toHaveBeenCalledWith(
       storedMeasurements,
       [migratedNode, orphanNode],

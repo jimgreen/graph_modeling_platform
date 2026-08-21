@@ -971,6 +971,27 @@ function eParameterFieldsFromInterfaceDefinition(
   return fields;
 }
 
+function orderEParameterFieldsWithParent(fields: readonly EParameterField[]): EParameterField[] {
+  const parentIndex = fields.findIndex((field) => field.exportName === "parent");
+  if (parentIndex < 0) {
+    return [...fields];
+  }
+  const ordered = fields.filter((_, index) => index !== parentIndex);
+  const parentField = fields[parentIndex];
+  const devTypeIndex = ordered.findIndex((field) => field.exportName === "dev_type");
+  const nameIndex = ordered.findIndex((field) => field.exportName === "name");
+  const idxIndex = ordered.findIndex((field) => field.exportName === "idx");
+  const insertionIndex = devTypeIndex >= 0
+    ? devTypeIndex
+    : nameIndex >= 0
+      ? nameIndex + 1
+      : idxIndex >= 0
+        ? idxIndex + 1
+        : 0;
+  ordered.splice(insertionIndex, 0, parentField);
+  return ordered;
+}
+
 function resolveEParameterFields(
   kind: string,
   params: Record<string, string>,
@@ -980,10 +1001,15 @@ function resolveEParameterFields(
   if (!section) {
     return [];
   }
-  if (interfaceDefinition) {
-    return eParameterFieldsFromInterfaceDefinition(section, interfaceDefinition);
-  }
   const builtInColumns = E_SECTION_COLUMNS[section];
+  if (section.startsWith("Static") && (builtInColumns?.length ?? 0) === 0) {
+    return [];
+  }
+  if (interfaceDefinition) {
+    return orderEParameterFieldsWithParent(
+      eParameterFieldsFromInterfaceDefinition(section, interfaceDefinition)
+    );
+  }
   const splitControlSections = new Set(["DCACConverter", "ACACConverter", "DCDCConverter"]);
   const definitions = customEParameterDefinitions(params).filter((definition) => {
     if (
@@ -1000,14 +1026,14 @@ function resolveEParameterFields(
   });
   const derivedInfo = electricGenerationDerivedComponentLibraryInfo(kind);
   if (definitions.length === 0) {
-    return (builtInColumns ?? []).map((column) => ({
+    return orderEParameterFieldsWithParent((builtInColumns ?? []).map((column) => ({
       sourceName: section === "DCDCConverter"
         ? ({ p_set: "i_p_set", i_set: "i_i_set", v_set: "i_v_set" } as Record<string, string>)[column] ?? column
         : section === "ACACConverter" && column === "p_set"
           ? "i_p_set"
           : column,
       exportName: column
-    }));
+    })));
   }
 
   const fields: EParameterField[] = [];
@@ -1064,7 +1090,7 @@ function resolveEParameterFields(
         appendField({ sourceName: definition.enName, exportName: settings.exportName, definition });
       }
     }
-    return fields;
+    return orderEParameterFieldsWithParent(fields);
   }
 
   for (const definition of definitions) {
@@ -1073,7 +1099,7 @@ function resolveEParameterFields(
       appendField({ sourceName: definition.enName, exportName: settings.exportName, definition });
     }
   }
-  return fields;
+  return orderEParameterFieldsWithParent(fields);
 }
 
 export function getEParamValue(
@@ -1123,6 +1149,7 @@ const DERIVED_COMPONENT_METADATA_PARAM_NAMES = new Set([
 const DERIVED_COMPONENT_COMMON_PARAM_NAMES = new Set([
   "idx",
   "name",
+  "parent",
   "dev_type",
   "status",
   "run_stat",
@@ -1774,8 +1801,13 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
     const derivedSpecificParameterNames = builtInDerivedSpecificParameterNames(node.kind);
     const builtInTemplate = DEVICE_LIBRARY_BY_KIND.get(node.kind);
     const builtInDerivedInfo = builtInTemplate ? templateDerivedComponentLibraryInfo(builtInTemplate) : null;
-    const resolvedFields = resolveEParameterFields(node.kind, node.params, interfaceDefinitionBySection.get(section));
-    if (builtInDerivedInfo && !resolvedFields.some((field) => field.exportName === "dev_type")) {
+    const interfaceDefinition = interfaceDefinitionBySection.get(section);
+    const resolvedFields = resolveEParameterFields(node.kind, node.params, interfaceDefinition);
+    if (
+      builtInDerivedInfo &&
+      !interfaceDefinition &&
+      !resolvedFields.some((field) => field.exportName === "dev_type")
+    ) {
       const nameIndex = resolvedFields.findIndex((field) => field.exportName === "name");
       resolvedFields.splice(nameIndex >= 0 ? nameIndex + 1 : 0, 0, {
         sourceName: "dev_type",
@@ -2979,9 +3011,17 @@ type MultiModelGlobalLineEndpointRecord = {
 function multiModelRecordWithParent(record: EDeviceExport, parent: number): EDeviceExport {
   const columns = [...(record.columns ?? E_SECTION_COLUMNS[record.section] ?? Object.keys(record.params))]
     .filter((column) => column !== "parent");
+  const devTypeIndex = columns.indexOf("dev_type");
+  if (devTypeIndex >= 0) {
+    columns.splice(devTypeIndex, 1);
+  }
   const nameIndex = columns.indexOf("name");
   const idxIndex = columns.indexOf("idx");
-  columns.splice(nameIndex >= 0 ? nameIndex + 1 : idxIndex >= 0 ? idxIndex + 1 : 0, 0, "parent");
+  const parentIndex = nameIndex >= 0 ? nameIndex + 1 : idxIndex >= 0 ? idxIndex + 1 : 0;
+  columns.splice(parentIndex, 0, "parent");
+  if (devTypeIndex >= 0) {
+    columns.splice(parentIndex + 1, 0, "dev_type");
+  }
   return {
     ...record,
     params: { ...record.params, parent: String(parent) },
@@ -3519,15 +3559,19 @@ export function buildEDeviceDefinitionFile(
     if (eDeviceDefinitionClassExportEnabled?.[componentLibrary] === false) {
       continue;
     }
-    if (group.fields.size === 0) {
+    const hasExportedBusinessField = Array.from(group.fields.keys()).some((exportName) => (
+      !["idx", "name", "parent", "dev_type"].includes(exportName)
+    ));
+    if (!hasExportedBusinessField) {
       continue;
     }
-    // 字段顺序：idx/dev_type 固定在前，普通设备再补 name；派生类只保留 idx、dev_type、原类关联字段和个性化字段
+    // 字段顺序：idx/name/parent/dev_type 固定在前；派生类不含 name，只保留 parent、设备类型、原类关联字段和个性化字段
     const fields: EDeviceDefinitionField[] = [];
     // E 文件固定标准列的中文名映射（不取图元 cnName 并集，避免混入英文 key）
     const fixedCnName: Record<string, string> = {
       idx: "序号",
       name: "名称",
+      parent: "所属模型",
       dev_type: "设备类型",
       node: "节点",
       i_node: "首节点",
@@ -3539,11 +3583,14 @@ export function buildEDeviceDefinitionFile(
     if (!group.isDerivedComponentLibrary) {
       fields.push({ exportName: "name", cnName: fixedCnName.name });
     }
+    fields.push({ exportName: "parent", cnName: fixedCnName.parent });
     fields.push({ exportName: "dev_type", cnName: fixedCnName.dev_type });
     for (const [exportName, cnNames] of group.fields) {
       if (
         exportName === "idx" ||
-        (!group.isDerivedComponentLibrary && exportName === "name") ||
+        exportName === "name" ||
+        exportName === "parent" ||
+        exportName === "dev_type" ||
         (group.isDerivedComponentLibrary && DERIVED_COMPONENT_COMMON_PARAM_NAMES.has(exportName))
       ) {
         continue;
@@ -3582,6 +3629,7 @@ export function buildEDeviceDefinitionFile(
 export function buildEDeviceDefinitionFileFromInterfaceDefinitions(
   definitions: readonly EFileInterfaceSectionDefinition[] = []
 ): TextFileExport {
+  const fixedFieldNames = new Set(["idx", "name", "parent", "dev_type"]);
   const sections = (definitions ?? []).flatMap((definition): EDeviceDefinitionSection[] => {
     const componentLibrary = String(definition.componentLibrary ?? "").trim();
     const kind = String(definition.exportName ?? componentLibrary).trim() || componentLibrary;
@@ -3598,7 +3646,10 @@ export function buildEDeviceDefinitionFileFromInterfaceDefinitions(
         exportName
       }];
     });
-    if (!componentLibrary || definition.exportEnabled === false || !fields.some((field) => field.exportEnabled !== false)) {
+    const hasExportedBusinessField = fields.some((field) => (
+      field.exportEnabled !== false && !fixedFieldNames.has(field.exportName)
+    ));
+    if (!componentLibrary || definition.exportEnabled === false || !hasExportedBusinessField) {
       return [];
     }
     return [{

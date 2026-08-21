@@ -325,7 +325,8 @@ describe("serializeEFile", () => {
     const generatorDefinition = exportOptions.interfaceDefinitions.find(
       (definition: any) => definition.componentLibrary === "ACGenerator"
     );
-    expect(generatorDefinition.fields.slice(0, 3).map((field: any) => field.sourceName)).toEqual([
+    expect(generatorDefinition.fields.slice(0, 4).map((field: any) => field.sourceName)).toEqual([
+      "parent",
       "dev_type",
       "name",
       "idx"

@@ -3161,6 +3161,7 @@ export const compactPreviewNodes = (...nodes: Array<ModelNode | null | undefined
 
 export const PARAM_LABELS: Record<string, string> = {
   name: "名称",
+  parent: "所属模型",
   schemeName: "所属方案",
   updatedAt: "更新时间",
   canvasWidth: "显示宽度",

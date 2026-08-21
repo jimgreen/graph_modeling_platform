@@ -162,14 +162,18 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     options: string[];
     optionLabels: Record<string, string>;
   } | undefined => {
+    const isParentModelOption = key === "parent";
     const targetModelType = key === "model_id" && node ? modelAssociationModelTypeForKind(node.kind) : "";
-    if (!targetModelType) {
+    if (!isParentModelOption && !targetModelType) {
       return undefined;
     }
     const optionByValue = new Map<string, string>();
+    if (isParentModelOption && String(node?.params?._globalLineId ?? "").trim()) {
+      optionByValue.set("0", "0 / 全局线路");
+    }
     flattenSavedSchemes(schemes).forEach((scheme) => {
       scheme.projects.forEach((project) => {
-        if (project.project.modelType !== targetModelType) {
+        if (targetModelType && project.project.modelType !== targetModelType) {
           return;
         }
         const numericIndex = Number(project.project.idx);
@@ -305,7 +309,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
       };
     }
 
-    if (row.key === "model_id") {
+    if (row.key === "model_id" || row.key === "parent") {
       const configs = selectedNodes.flatMap((node) => modelAssociationProjectOptionConfig(row.key, node) ?? []);
       if (configs.length > 0) {
         return {
@@ -362,8 +366,13 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     const { options, invalidValue } = selectOptionConfig(rawOptions, value);
     const modelAssociationPrompt = key === "model_id" && Boolean(modelAssociationModelTypeForKind(editorNode?.kind ?? ""));
     const lockedNode = key === "model_id" ? lockedModelAssociationNode(editorNode) : undefined;
-    const disabled = isBrowseMode || Boolean(lockedNode);
-    const title = lockedNode ? modelAssociationModelIdLockMessage(lockedNode) : undefined;
+    const parentLocked = key === "parent" && Boolean(String(editorNode?.params?._globalLineId ?? "").trim());
+    const disabled = isBrowseMode || Boolean(lockedNode) || parentLocked;
+    const title = lockedNode
+      ? modelAssociationModelIdLockMessage(lockedNode)
+      : parentLocked
+        ? "全局线路的所属模型固定为 0。"
+        : undefined;
     const control: ReactNode = options ? (
       <select value={value} disabled={disabled} title={title} onChange={(event) => updateParam(key, event.target.value)}>
         {options.map((option: string) => (
@@ -406,6 +415,9 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
         return node;
       }
       const currentNode = nodeById.get(nodeId) ?? node;
+      if (key === "parent" && String(currentNode.params._globalLineId ?? "").trim()) {
+        return node;
+      }
       if (
         key === "model_id" &&
         currentNode.params.model_id !== storedValue &&
@@ -449,8 +461,13 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     const { options, invalidValue } = selectOptionConfig(rawOptions, value);
     const modelAssociationPrompt = key === "model_id" && Boolean(modelAssociationModelTypeForKind(node.kind));
     const lockedNode = key === "model_id" ? lockedModelAssociationNode(node) : undefined;
-    const disabled = isBrowseMode || Boolean(lockedNode);
-    const title = lockedNode ? modelAssociationModelIdLockMessage(lockedNode) : undefined;
+    const parentLocked = key === "parent" && Boolean(String(node.params._globalLineId ?? "").trim());
+    const disabled = isBrowseMode || Boolean(lockedNode) || parentLocked;
+    const title = lockedNode
+      ? modelAssociationModelIdLockMessage(lockedNode)
+      : parentLocked
+        ? "全局线路的所属模型固定为 0。"
+        : undefined;
     const control: ReactNode = options ? (
       <select value={value} disabled={disabled} title={title} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value)}>
         {options.map((option: string) => (
@@ -646,8 +663,17 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     const lockedNode = row.key === "model_id"
       ? activeSelectedNodeIds.map((nodeId) => lockedModelAssociationNode(nodeById.get(nodeId))).find(Boolean)
       : undefined;
-    const disabled = isBrowseMode || Boolean(lockedNode);
-    const title = lockedNode ? modelAssociationModelIdLockMessage(lockedNode) : undefined;
+    const parentLockedNode = row.key === "parent"
+      ? activeSelectedNodeIds
+        .map((nodeId) => nodeById.get(nodeId))
+        .find((node) => Boolean(String(node?.params?._globalLineId ?? "").trim()))
+      : undefined;
+    const disabled = isBrowseMode || Boolean(lockedNode) || Boolean(parentLockedNode);
+    const title = lockedNode
+      ? modelAssociationModelIdLockMessage(lockedNode)
+      : parentLockedNode
+        ? "全局线路的所属模型固定为 0。"
+        : undefined;
     if (options) {
       return (
         <select value={value} disabled={disabled} title={title} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>

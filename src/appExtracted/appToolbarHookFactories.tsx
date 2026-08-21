@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
 import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
-import { resolveEffectiveTemplateParameterDefinitions } from "../model";
+import { resolveEffectiveTemplateParameterDefinitions, withNodesParentModelId } from "../model";
 
 export function createOpenNodeDoubleClickEditor(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
@@ -791,7 +791,8 @@ export function createAppHookCallback2(__appScope: Record<string, any>) {
   return () => {
   const { assignMissingDeviceIndexes, initialDraft, initialLayeredProject } = __appScope;
     const indexed = assignMissingDeviceIndexes(initialLayeredProject.nodes, initialDraft?.deviceIndexCounters);
-    return indexed;
+    const nodes = withNodesParentModelId(indexed.nodes, initialDraft?.idx);
+    return nodes === indexed.nodes ? indexed : { ...indexed, nodes };
   };
 }
 
