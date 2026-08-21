@@ -4,12 +4,15 @@ import { describe, expect, test, vi } from "vitest";
 import { loadFullModel } from "./AllNetworkTopologyDialog";
 
 import {
+  analyzeAllNetworkTopologyLoadCoverage,
   analyzeAllNetworkTopology,
   analyzeGlobalLineConsistency,
   analyzeGlobalLinesForAllNetworkTopology,
   collectAllNetworkTopologyModels,
   collectAllNetworkTopologyReferenceModels,
   defaultAllNetworkTopologySelection,
+  globalLineConsistencyModelsForAllNetworkTopology,
+  globalLineRecordsForAllNetworkTopologySelection,
   modelForGlobalLineReference,
   referencedModelsForGlobalLines
 } from "./all-network-topology";
@@ -353,17 +356,21 @@ describe("全网拓扑模型选择", () => {
     expect(dialogSource).toContain("completedRun.result.errors.length > 0");
   });
 
-  test("全网拓扑在模型拓扑完成后最后执行全局线路注册表检查", () => {
+  test("全网拓扑在模型拓扑完成后筛选待加载线路并执行双向一致性与加载覆盖检查", () => {
     const dialogSource = readFileSync(new URL("./AllNetworkTopologyDialog.tsx", import.meta.url), "utf8");
     const runStart = dialogSource.indexOf("const runTopology = async () =>");
     const modelTopologyCheck = dialogSource.indexOf("analyzeAllNetworkTopology(loadedModels", runStart);
-    const globalLineCheck = dialogSource.indexOf("analyzeGlobalLinesForAllNetworkTopology", runStart);
+    const relevantRecords = dialogSource.indexOf("globalLineRecordsForAllNetworkTopologySelection", runStart);
+    const globalLineCheck = dialogSource.indexOf("analyzeGlobalLineConsistency", runStart);
+    const loadCoverageCheck = dialogSource.indexOf("analyzeAllNetworkTopologyLoadCoverage", runStart);
     const resultMerge = dialogSource.indexOf("const nextResult =", runStart);
 
     expect(runStart).toBeGreaterThanOrEqual(0);
     expect(modelTopologyCheck).toBeGreaterThan(runStart);
-    expect(globalLineCheck).toBeGreaterThan(modelTopologyCheck);
-    expect(resultMerge).toBeGreaterThan(globalLineCheck);
+    expect(relevantRecords).toBeGreaterThan(modelTopologyCheck);
+    expect(globalLineCheck).toBeGreaterThan(relevantRecords);
+    expect(loadCoverageCheck).toBeGreaterThan(globalLineCheck);
+    expect(resultMerge).toBeGreaterThan(loadCoverageCheck);
   });
 });
 
@@ -505,6 +512,191 @@ describe("全网拓扑全局线路预检查", () => {
       errors: [],
       warnings: []
     });
+  });
+
+  test("只校验与本次已加载模型有关的全局线路", () => {
+    const first = completeGlobalLineConsistencyFixture("selected-global-line");
+    const unrelated = completeGlobalLineConsistencyFixture("unrelated-global-line");
+    const shiftedReference = (reference: GlobalLineReference | null) => reference ? {
+      ...reference,
+      projectIdx: Number(reference.projectIdx) + 100,
+      modelKey: `model:${Number(reference.projectIdx) + 100}`,
+      projectName: `无关-${reference.projectName}`
+    } : null;
+    const unrelatedSource = shiftedReference(unrelated.record.endpointSlots!.source);
+    const unrelatedTarget = shiftedReference(unrelated.record.endpointSlots!.target);
+    const unrelatedRecord = {
+      ...unrelated.record,
+      references: [unrelatedSource, unrelatedTarget].filter(Boolean) as GlobalLineReference[],
+      endpointSlots: { source: unrelatedSource, target: unrelatedTarget },
+      terminalSlots: { i: unrelatedSource, j: unrelatedTarget }
+    };
+
+    expect(globalLineRecordsForAllNetworkTopologySelection(
+      [first.record, unrelatedRecord],
+      [first.sourceModel]
+    )).toEqual([first.record]);
+  });
+
+  test("临时读取的未选对端模型只校验待加载线路，不带入该模型的其他全局线路", () => {
+    const { record, sourceLine, sourceModel, targetModel } = completeGlobalLineConsistencyFixture(
+      "selected-consistency-line"
+    );
+    const unrelatedSupportingLine = {
+      ...sourceLine,
+      id: "supporting-model-unrelated-global-line",
+      name: "未选对端中的其他全局线路",
+      params: {
+        ...sourceLine.params,
+        [GLOBAL_LINE_ID_PARAM]: "supporting-model-unrelated-id"
+      }
+    };
+    targetModel.record.project.nodes.push(unrelatedSupportingLine);
+
+    const consistencyModels = globalLineConsistencyModelsForAllNetworkTopology(
+      [record],
+      [sourceModel],
+      [sourceModel, targetModel]
+    );
+    const result = analyzeGlobalLineConsistency([record], consistencyModels);
+
+    expect(result.errors.some((alert) => (
+      alert.id.includes("supporting-model-unrelated-id") ||
+      alert.nodeId === unrelatedSupportingLine.id
+    ))).toBe(false);
+    expect(result).toEqual({ errors: [], warnings: [] });
+
+    const selectedModelMissingRecordLine = {
+      ...unrelatedSupportingLine,
+      id: "selected-model-missing-record-line",
+      params: {
+        ...unrelatedSupportingLine.params,
+        [GLOBAL_LINE_ID_PARAM]: "selected-model-missing-record-id"
+      }
+    };
+    sourceModel.record.project.nodes.push(selectedModelMissingRecordLine);
+    const selectedModelResult = analyzeGlobalLineConsistency(
+      [record],
+      globalLineConsistencyModelsForAllNetworkTopology(
+        [record],
+        [sourceModel],
+        [sourceModel, targetModel]
+      )
+    );
+    expect(selectedModelResult.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: expect.stringContaining("selected-model-missing-record-id"),
+        projectId: sourceModel.projectId,
+        nodeId: selectedModelMissingRecordLine.id
+      })
+    ]));
+  });
+
+  test("全局线路仅一个端点模型被加载时给出可定位告警，两端均加载时不报警", () => {
+    const { record, sourceLine, sourceModel, targetModel } = completeGlobalLineConsistencyFixture(
+      "single-loaded-endpoint"
+    );
+
+    const partial = analyzeAllNetworkTopologyLoadCoverage(
+      [record],
+      [sourceModel],
+      [sourceModel, targetModel]
+    );
+
+    expect(partial.errors).toEqual([]);
+    expect(partial.warnings).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("single-loaded-endpoint"),
+        projectId: sourceModel.projectId,
+        nodeId: sourceLine.id,
+        message: expect.stringMatching(/只有首端模型.*已加载.*末端模型.*未加载/)
+      })
+    ]);
+
+    expect(analyzeAllNetworkTopologyLoadCoverage(
+      [record],
+      [sourceModel, targetModel],
+      [sourceModel, targetModel]
+    )).toEqual({ errors: [], warnings: [] });
+  });
+
+  test("模型关联图元的model_id存在但对应模型未加载时告警，加载后告警消失", () => {
+    const feederLoad = createDefaultNode("ac-feeder-load", { x: 100, y: 100 });
+    feederLoad.name = "关联一号馈线";
+    feederLoad.params.model_id = "7";
+    const station = {
+      projectId: "coverage-station",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "覆盖校验厂站",
+      idx: 1,
+      modelType: "厂站" as const,
+      record: projectRecord("coverage-station", "覆盖校验厂站", 1, "厂站", [feederLoad])
+    };
+    const feeder = {
+      projectId: "coverage-feeder",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "一号馈线",
+      idx: 7,
+      modelType: "馈线" as const,
+      record: projectRecord("coverage-feeder", "一号馈线", 7, "馈线")
+    };
+
+    const partial = analyzeAllNetworkTopologyLoadCoverage([], [station], [station, feeder]);
+    expect(partial.errors).toEqual([]);
+    expect(partial.warnings).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("association-model-not-loaded"),
+        projectId: station.projectId,
+        nodeId: feederLoad.id,
+        deviceName: feederLoad.name,
+        message: expect.stringMatching(/model_id=7.*馈线模型.*一号馈线.*未加载/)
+      })
+    ]);
+
+    expect(analyzeAllNetworkTopologyLoadCoverage(
+      [],
+      [station, feeder],
+      [station, feeder]
+    )).toEqual({ errors: [], warnings: [] });
+  });
+
+  test("model_id找不到可用模型时保留既有错误且不重复生成未加载告警", () => {
+    const feederLoad = createDefaultNode("ac-feeder-load", { x: 100, y: 100 });
+    feederLoad.params.model_id = "99";
+    const station = {
+      projectId: "invalid-association-station",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "无效关联厂站",
+      idx: 1,
+      modelType: "厂站" as const,
+      record: projectRecord("invalid-association-station", "无效关联厂站", 1, "厂站", [feederLoad])
+    };
+    const feeder = {
+      projectId: "known-feeder",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "已知馈线",
+      idx: 7,
+      modelType: "馈线" as const,
+      record: projectRecord("known-feeder", "已知馈线", 7, "馈线")
+    };
+
+    expect(analyzeAllNetworkTopology([station], [station, feeder]).errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          nodeId: feederLoad.id,
+          topologyError: expect.objectContaining({ type: "device-enum-invalid" })
+        })
+      ])
+    );
+    expect(analyzeAllNetworkTopologyLoadCoverage(
+      [],
+      [station],
+      [station, feeder]
+    ).warnings).toEqual([]);
   });
 });
 

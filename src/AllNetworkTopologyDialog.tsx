@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { AlertTriangle, Cable, ChevronRight, Download, FolderTree, MapPin, Network, RefreshCw, Trash2 } from "lucide-react";
 
 import {
+  analyzeAllNetworkTopologyLoadCoverage,
   analyzeAllNetworkTopology,
   analyzeGlobalLineConsistency,
-  analyzeGlobalLinesForAllNetworkTopology,
   collectAllNetworkTopologyModels,
   collectAllNetworkTopologyReferenceModels,
   defaultAllNetworkTopologySelection,
+  globalLineConsistencyModelsForAllNetworkTopology,
+  globalLineRecordsForAllNetworkTopologySelection,
   modelForGlobalLineReference,
   referencedModelsForGlobalLines,
   type AllNetworkTopologyAlert,
@@ -803,8 +805,22 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
       const result = analyzeAllNetworkTopology(loadedModels, referenceModels);
 
       const globalLineRecords = await loadGlobalLineRecordsForTopology();
-      const referencedGlobalLineModels = referencedModelsForGlobalLines(globalLineRecords, referenceModels);
+      const topologyGlobalLineRecords = globalLineRecordsForAllNetworkTopologySelection(
+        globalLineRecords,
+        loadedModels
+      );
+      const referencedGlobalLineModels = referencedModelsForGlobalLines(
+        topologyGlobalLineRecords,
+        referenceModels
+      );
+      const loadedSelectedModelByProjectId = new Map(
+        loadedModels.map((model) => [model.projectId, model])
+      );
       const loadedGlobalLineModelResults = await Promise.all(referencedGlobalLineModels.map(async (model) => {
+        const loadedSelectedModel = loadedSelectedModelByProjectId.get(model.projectId);
+        if (loadedSelectedModel) {
+          return loadedSelectedModel;
+        }
         try {
           return await loadFullModel(scope, model);
         } catch {
@@ -814,13 +830,30 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
       const loadedGlobalLineModels = loadedGlobalLineModelResults.filter(
         (model): model is AllNetworkTopologyReferenceModel => Boolean(model)
       );
-      const globalLineResult = analyzeGlobalLinesForAllNetworkTopology(
-        globalLineRecords,
-        loadedGlobalLineModels
+      const consistencyModelByProjectId = new Map(
+        [...loadedModels, ...loadedGlobalLineModels].map((model) => [model.projectId, model])
+      );
+      const consistencyModels = globalLineConsistencyModelsForAllNetworkTopology(
+        topologyGlobalLineRecords,
+        loadedModels,
+        [...consistencyModelByProjectId.values()]
+      );
+      const globalLineResult = analyzeGlobalLineConsistency(
+        topologyGlobalLineRecords,
+        consistencyModels
+      );
+      const loadCoverageResult = analyzeAllNetworkTopologyLoadCoverage(
+        topologyGlobalLineRecords,
+        loadedModels,
+        referenceModels
       );
       const nextResult = {
         errors: [...loadErrors, ...result.errors, ...globalLineResult.errors],
-        warnings: [...result.warnings, ...globalLineResult.warnings]
+        warnings: [
+          ...result.warnings,
+          ...globalLineResult.warnings,
+          ...loadCoverageResult.warnings
+        ]
       };
       setCompletedRun({
         selectionKey: selectionKey(selectedProjectIds),
