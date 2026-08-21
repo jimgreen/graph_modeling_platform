@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # 电力能源系统图上建模平台
 
 <!-- Generated: 2026-05-26 | Updated: 2026-06-22 -->
@@ -80,11 +84,20 @@ graph_modeling_platform/
 # 开发（前端 + 后端）
 pnpm dev
 
+# 仅前端
+pnpm dev:frontend
+
+# 仅后端
+pnpm server
+
 # 构建
 pnpm build
 
 # 测试（单元 + 集成）
 pnpm vitest run
+
+# 单文件测试
+pnpm vitest run src/<file>.test.ts
 
 # E2E 测试（Playwright，需浏览器）
 pnpm test:e2e
@@ -94,6 +107,9 @@ pnpm tsc --noEmit
 
 # 预览构建
 pnpm preview
+
+# 图标库审计
+pnpm audit:icons
 ```
 
 ## 注意事项
