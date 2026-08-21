@@ -20,6 +20,7 @@ import type {
   ModelGroup,
   ModelLayer,
   ModelNode,
+  ModelType,
   OverlappingTerminalConnectionReconcileResult,
   OverlappingTerminalGroup,
   OverlappingTerminalRef,
@@ -4259,9 +4260,11 @@ function collectVoltageBaseScopeTargets(
     return { nodeIds: new Set(), terminalIdsByNodeId: new Map() };
   }
 
-  const connectivity = buildTopologyConnectivity(nodes, edges);
+  const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
+  const scopeNodes = synchronized.nodes;
+  const connectivity = buildTopologyConnectivity(scopeNodes, synchronized.edges);
   const selectedIslandRoots = new Set<string>();
-  for (const node of nodes) {
+  for (const node of scopeNodes) {
     if (!selected.has(node.id)) {
       continue;
     }
@@ -4278,7 +4281,7 @@ function collectVoltageBaseScopeTargets(
 
   const nodeIds = new Set<string>();
   const terminalIdsByNodeId = new Map<string, Set<string>>();
-  for (const node of nodes) {
+  for (const node of scopeNodes) {
     for (const terminal of node.terminals) {
       if (!selectedIslandRoots.has(connectivity.islandRoot(node.id, terminal.id))) {
         continue;
@@ -5903,10 +5906,61 @@ function modelTypeVoltageRangeFor(modelType?: string): { min: number; max: numbe
   return null;
 }
 
+type ModelAssociationProjectModelType = Extract<ModelType, "厂站" | "馈线" | "台区">;
+
+export type ModelAssociationProjectIndexes = Readonly<
+  Record<ModelAssociationProjectModelType, readonly string[]>
+>;
+
+export function buildModelAssociationProjectIndexes(
+  projects: readonly { modelType?: unknown; idx?: unknown }[]
+): ModelAssociationProjectIndexes {
+  const indexes = {
+    "厂站": new Set<string>(),
+    "馈线": new Set<string>(),
+    "台区": new Set<string>()
+  } satisfies Record<ModelAssociationProjectModelType, Set<string>>;
+  for (const project of projects) {
+    const modelType = String(project.modelType ?? "").trim() as ModelAssociationProjectModelType;
+    if (!Object.prototype.hasOwnProperty.call(indexes, modelType)) {
+      continue;
+    }
+    const numericIndex = Number(project.idx);
+    if (!Number.isInteger(numericIndex) || numericIndex <= 0) {
+      continue;
+    }
+    indexes[modelType].add(String(numericIndex));
+  }
+  return {
+    "厂站": [...indexes["厂站"]].sort((left, right) => Number(left) - Number(right)),
+    "馈线": [...indexes["馈线"]].sort((left, right) => Number(left) - Number(right)),
+    "台区": [...indexes["台区"]].sort((left, right) => Number(left) - Number(right))
+  };
+}
+
+export function modelAssociationProjectIndexesForSchemes(
+  schemes: SavedSchemeRecord[]
+): ModelAssociationProjectIndexes {
+  return buildModelAssociationProjectIndexes(
+    flattenSavedSchemes(schemes).flatMap((scheme) =>
+      scheme.projects.map((record) => ({
+        modelType: record.project.modelType,
+        idx: record.project.idx
+      }))
+    )
+  );
+}
+
+export type ValidateTopologyOptions = {
+  includeVoltageSetpointDeviations?: boolean;
+  modelType?: string;
+  modelAssociationProjectIndexes?: ModelAssociationProjectIndexes;
+};
+
 export function validateTopology(
   nodes: ModelNode[],
   edges: Edge[],
-  options: { includeVoltageSetpointDeviations?: boolean; modelType?: string } = {}
+  options: ValidateTopologyOptions = {}
 ): TopologyValidationError[] {
   const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
   nodes = synchronized.nodes;
@@ -5915,13 +5969,23 @@ export function validateTopology(
   const errors: TopologyValidationError[] = duplicateDeviceIdentityErrors(nodes);
   for (const node of nodes) {
     for (const issue of validateNodeEnumParameters(node)) {
+      const associationModelType = issue.paramKey === "model_id"
+        ? modelAssociationModelTypeForKind(node.kind)
+        : "";
+      const dynamicAllowedValues = associationModelType && options.modelAssociationProjectIndexes
+        ? [...(options.modelAssociationProjectIndexes[associationModelType] ?? [])]
+        : undefined;
+      if (dynamicAllowedValues?.includes(issue.value)) {
+        continue;
+      }
+      const allowedValues = dynamicAllowedValues ?? issue.allowedValues;
       const parameterLabel = issue.definition.cnName || issue.definition.enName;
       errors.push({
         id: `device-enum-invalid:${node.id}:${issue.paramKey}`,
         type: "device-enum-invalid",
         nodeId: node.id,
         relatedNodeIds: [node.id],
-        message: `图上拓扑失败：设备“${node.name}”的枚举参数 ${parameterLabel}（${issue.paramKey}）值“${issue.value || "<空>"}”无效，允许值为：${issue.allowedValues.join("、")}。`
+        message: `图上拓扑失败：设备“${node.name}”的枚举参数 ${parameterLabel}（${issue.paramKey}）值“${issue.value || "<空>"}”无效，允许值为：${allowedValues.join("、")}。`
       });
     }
   }

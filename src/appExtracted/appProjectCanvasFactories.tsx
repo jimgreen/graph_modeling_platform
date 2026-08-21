@@ -5,7 +5,7 @@ import { WindowCloseButton } from "../WindowCloseButton";
 import { buildEFileExportOptionsFromLibrary, setSkipSaveCheck } from "./appDeviceDefinitionFactories";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
 import { GLOBAL_LINE_ID_PARAM, applyGlobalLineRecordToNode, deriveLocalDeviceIndexCounters, globalLineEndpointPlacementFailureMessage, globalLineSourcePlacementFailureMessage, shouldManageLineGlobally, shouldUseGlobalLineForEndpoints } from "../global-lines";
-import { isLineOnlyConnectionNode, modelAssociationLineConnectionFailureMessage } from "../model";
+import { isLineOnlyConnectionNode, modelAssociationLineConnectionFailureMessage, modelAssociationProjectIndexesForSchemes } from "../model";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return async (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[], globalLineChoice?: GlobalLineChoice) => {
@@ -5236,12 +5236,17 @@ export function createLocateTopologyError(__appScope: Record<string, any>) {
 
 export function createRunTopologyCalculation(__appScope: Record<string, any>) {
   return () => {
-  const { EMPTY_TOPOLOGY, buildTopology, calculateElectricalTopology, currentUnit, edges, isBlockingTopologyValidationError, locateTopologyError, modelType, nodes, normalizeDeviceOperatingLimitsAfterTopology, powerUnit, pushUndoSnapshot, requireEditMode, setNodes, setTopology, setTopologyErrors, setTopologyStatus, skipNextTopologyStaleRef, topologyCalculationMessage, validateTopology, validateVoltageSetpointDeviations, voltageUnit, writeOperationLog } = __appScope;
+  const { EMPTY_TOPOLOGY, buildTopology, calculateElectricalTopology, currentUnit, edges, isBlockingTopologyValidationError, locateTopologyError, modelType, nodes, normalizeDeviceOperatingLimitsAfterTopology, powerUnit, pushUndoSnapshot, requireEditMode, schemes, setNodes, setTopology, setTopologyErrors, setTopologyStatus, skipNextTopologyStaleRef, topologyCalculationMessage, validateTopology, validateVoltageSetpointDeviations, voltageUnit, writeOperationLog } = __appScope;
     if (!requireEditMode("执行图上拓扑计算")) {
       return;
     }
     const calculatedNodes = calculateElectricalTopology(nodes, edges);
-    const topologyErrors = validateTopology(calculatedNodes, edges, { includeVoltageSetpointDeviations: false, modelType });
+    const modelAssociationProjectIndexes = modelAssociationProjectIndexesForSchemes(schemes ?? []);
+    const topologyErrors = validateTopology(calculatedNodes, edges, {
+      includeVoltageSetpointDeviations: false,
+      modelType,
+      modelAssociationProjectIndexes
+    });
     const invalidVoltageBaseNodeIds = new Set(
       topologyErrors
         .filter((error) => [

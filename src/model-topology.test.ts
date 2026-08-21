@@ -1849,6 +1849,41 @@ test("sets voltage base values for the topology island containing the selected d
   expect(byId.get(other.id)?.params.vbase).toBe("750");
 });
 
+test("treats a feeder source, routable line, bus, and loads as one voltage island and assigns formal node numbers from 1", () => {
+  const bus = createDefaultNode("ac-bus", { x: 1000, y: 560 });
+  const loadA = createDefaultNode("ac-load", { x: 850, y: 720 });
+  const loadB = createDefaultNode("ac-load", { x: 1130, y: 720 });
+  const source = createDefaultNode("ac-feeder-source", { x: 1165, y: 245 });
+  source.params.model_id = "7";
+  const line = createRoutableLineDeviceFromEndpoints(
+    DEVICE_LIBRARY.find((template) => template.kind === "ac-routable-line")!,
+    { x: 1090, y: 245 },
+    { x: 1000, y: 560 },
+    undefined,
+    {
+      source: { nodeId: source.id, terminalId: source.terminals[0].id },
+      target: { nodeId: bus.id, terminalId: "t1" }
+    }
+  );
+  const nodes = [bus, loadA, loadB, source, line];
+  const edges: Edge[] = [
+    { id: "load-a-bus", sourceId: loadA.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+    { id: "load-b-bus", sourceId: loadB.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t2" }
+  ];
+
+  const scopeResult = setVoltageBaseValuesForScope(nodes, edges, [source.id], "island", "10");
+  expect(new Set(scopeResult.targetNodeIds)).toEqual(new Set(nodes.map((node) => node.id)));
+
+  const calculated = calculateElectricalTopology(nodes, edges);
+  const topologyNumbers = Array.from(new Set(
+    calculated.flatMap((node) => node.terminals.map((terminal) => terminal.nodeNumber))
+  )).sort((left, right) => Number(left) - Number(right));
+  expect(topologyNumbers).toEqual(["1", "2"]);
+  expect(calculated.flatMap((node) => node.terminals)).not.toEqual(expect.arrayContaining([
+    expect.objectContaining({ nodeNumber: expect.stringMatching(/^N\d+$/) })
+  ]));
+});
+
 test("sets connected converter terminals through uniform topology island setting without crossing converter sides", () => {
   const source = createDefaultNode("ac-source", { x: 100, y: 100 });
   const load = createDefaultNode("ac-load", { x: 500, y: 100 });
@@ -2840,6 +2875,43 @@ test("blocks topology for invalid enum values from built-in and custom definitio
       nodeId: converter.id,
       message: expect.stringContaining("BAD")
     })
+  ]));
+});
+
+test("validates model association model_id against the matching dynamic model catalog", () => {
+  const feederLoad = createDefaultNode("ac-feeder-load", { x: 100, y: 100 });
+  feederLoad.name = "交流馈线负荷-1";
+  feederLoad.params.model_id = "7";
+  const modelAssociationProjectIndexes = {
+    "厂站": ["5"],
+    "馈线": ["7", "8"],
+    "台区": ["9"]
+  };
+
+  const validErrors = validateTopology([feederLoad], [], { modelAssociationProjectIndexes });
+  expect(validErrors).not.toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: "device-enum-invalid", nodeId: feederLoad.id })
+  ]));
+
+  const missingFeeder = {
+    ...feederLoad,
+    params: { ...feederLoad.params, model_id: "99" }
+  };
+  const missingErrors = validateTopology([missingFeeder], [], { modelAssociationProjectIndexes });
+  expect(missingErrors).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      type: "device-enum-invalid",
+      nodeId: feederLoad.id,
+      message: expect.stringContaining("允许值为：7、8")
+    })
+  ]));
+
+  const wrongModelType = {
+    ...feederLoad,
+    params: { ...feederLoad.params, model_id: "5" }
+  };
+  expect(validateTopology([wrongModelType], [], { modelAssociationProjectIndexes })).toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: "device-enum-invalid", nodeId: feederLoad.id })
   ]));
 });
 

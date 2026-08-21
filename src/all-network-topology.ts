@@ -2,6 +2,7 @@ import {
   DEFAULT_CURRENT_UNIT,
   DEFAULT_POWER_UNIT,
   DEFAULT_VOLTAGE_UNIT,
+  buildModelAssociationProjectIndexes,
   calculateElectricalTopology,
   equivalentBoundaryModelInteractionType,
   isBlockingTopologyValidationError,
@@ -13,6 +14,7 @@ import {
   validateTopology,
   validateVoltageSetpointDeviations,
   type ModelNode,
+  type ModelAssociationProjectIndexes,
   type ModelType,
   type SavedProjectRecord,
   type SavedSchemeRecord,
@@ -561,12 +563,16 @@ function topologyAlert(
   };
 }
 
-function topologyErrorsForModel(model: AllNetworkTopologyModel): AllNetworkTopologyAlert[] {
+function topologyErrorsForModel(
+  model: AllNetworkTopologyModel,
+  modelAssociationProjectIndexes: ModelAssociationProjectIndexes
+): AllNetworkTopologyAlert[] {
   const project = model.record.project;
   const calculatedNodes = calculateElectricalTopology(project.nodes, project.edges);
   const initialErrors = validateTopology(calculatedNodes, project.edges, {
     includeVoltageSetpointDeviations: false,
-    modelType: project.modelType
+    modelType: project.modelType,
+    modelAssociationProjectIndexes
   });
   const invalidVoltageBaseNodeIds = new Set(
     initialErrors
@@ -756,8 +762,12 @@ export function analyzeAllNetworkTopology(
   const orderedModels = [...selectedModels].sort((left, right) => left.idx - right.idx);
   const modelInteractionWarnings = missingModelWarnings(orderedModels, availableModels);
   const hierarchyErrors = duplicateHierarchyParentErrors(orderedModels, availableModels);
+  const modelAssociationProjectIndexes = buildModelAssociationProjectIndexes(availableModels);
   return {
-    errors: [...hierarchyErrors, ...orderedModels.flatMap(topologyErrorsForModel)],
+    errors: [
+      ...hierarchyErrors,
+      ...orderedModels.flatMap((model) => topologyErrorsForModel(model, modelAssociationProjectIndexes))
+    ],
     warnings: modelInteractionWarnings
   };
 }

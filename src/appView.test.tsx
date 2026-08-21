@@ -14,7 +14,8 @@ import {
   resolveEDeviceInterfaceFieldsForDisplay,
   moveEDeviceInterfaceFieldOrder,
   resolveInspectorGraphId,
-  resolveInspectorTopologyEntry
+  resolveInspectorTopologyEntry,
+  voltageBaseSetScopeDeviceCount
 } from "./appExtracted/appView";
 import {
   CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT,
@@ -64,6 +65,15 @@ describe("app view topology inspector", () => {
       "source-bus",
       "target-bus"
     ]);
+  });
+});
+
+describe("voltage base scope counts", () => {
+  test("shows every device in the topology island instead of only devices whose value changes", () => {
+    expect(voltageBaseSetScopeDeviceCount({
+      targetNodeIds: ["source", "line", "bus", "load-a", "load-b"],
+      changedNodeIds: ["source"]
+    } as any)).toBe(5);
   });
 });
 
