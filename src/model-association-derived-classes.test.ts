@@ -9,6 +9,9 @@ import {
   buildEDeviceRecords,
   createDefaultNode,
   hasDefinedModelAssociationId,
+  modelAssociationDeviceAllowedInModelType,
+  modelAssociationDeviceModelTypeFailureMessage,
+  modelAssociationDevicesModelTypeFailureMessage,
   modelAssociationLineConnectionFailureMessage,
   modelAssociationModelIdLockMessage,
   modelAssociationModelIdLocked,
@@ -55,6 +58,58 @@ const modelAssociationVisualParamKeys = [
 ] as const;
 
 describe("model association derived power-source and load classes", () => {
+  test("rejects station/district cross-level devices and feeder-level devices in feeder models", () => {
+    const forbiddenCases = [
+      ...["ac-district-source", "dc-district-source", "ac-district-load", "dc-district-load"].map((kind) => ({
+        modelType: "厂站",
+        kind,
+        message: "厂站模型不能包含台区类电源/负荷。"
+      })),
+      ...["ac-feeder-source", "dc-feeder-source", "ac-feeder-load", "dc-feeder-load"].map((kind) => ({
+        modelType: "馈线",
+        kind,
+        message: "馈线模型不能包含馈线类电源/负荷。"
+      })),
+      ...["ac-station-source", "dc-station-source", "ac-station-load", "dc-station-load"].map((kind) => ({
+        modelType: "台区",
+        kind,
+        message: "台区模型不能包含厂站类电源/负荷。"
+      }))
+    ] as const;
+
+    for (const { modelType, kind, message } of forbiddenCases) {
+      expect(modelAssociationDeviceAllowedInModelType(modelType, kind), `${modelType}:${kind}`).toBe(false);
+      expect(modelAssociationDeviceModelTypeFailureMessage(modelType, kind), `${modelType}:${kind}`).toBe(message);
+      expect(modelAssociationDevicesModelTypeFailureMessage(modelType, [
+        createDefaultNode("ac-source", { x: 0, y: 0 }),
+        createDefaultNode(kind, { x: 100, y: 0 })
+      ])).toBe(message);
+    }
+  });
+
+  test("allows ordinary devices, unspecified model types, and association levels not explicitly forbidden", () => {
+    const allowedCases = [
+      { modelType: "厂站", kind: "ac-source" },
+      { modelType: "厂站", kind: "ac-station-source" },
+      { modelType: "厂站", kind: "dc-feeder-load" },
+      { modelType: "馈线", kind: "ac-station-load" },
+      { modelType: "馈线", kind: "dc-district-source" },
+      { modelType: "台区", kind: "dc-load" },
+      { modelType: "台区", kind: "ac-district-load" },
+      { modelType: "台区", kind: "dc-feeder-source" },
+      { modelType: "", kind: "ac-feeder-source" }
+    ] as const;
+
+    for (const { modelType, kind } of allowedCases) {
+      expect(modelAssociationDeviceAllowedInModelType(modelType, kind), `${modelType}:${kind}`).toBe(true);
+      expect(modelAssociationDeviceModelTypeFailureMessage(modelType, kind), `${modelType}:${kind}`).toBe("");
+    }
+    expect(modelAssociationDevicesModelTypeFailureMessage("厂站", [
+      createDefaultNode("ac-source", { x: 0, y: 0 }),
+      createDefaultNode("dc-feeder-load", { x: 100, y: 0 })
+    ])).toBe("");
+  });
+
   test("defines all 12 classes as non-container derivatives of the requested four base classes", () => {
     for (const expected of modelAssociationDerivedClassCases) {
       const template = DEVICE_LIBRARY_BY_KIND.get(expected.kind);
@@ -78,7 +133,11 @@ describe("model association derived power-source and load classes", () => {
       });
       expect(template?.size).toEqual(normalizeDefaultDeviceSize(expected.kind, visualTemplate!.size));
       expect(template?.size).not.toBe(visualTemplate?.size);
-      expect(template?.terminalAnchors).toEqual(baseTemplate?.terminalAnchors);
+      expect(template?.terminalAnchors).toEqual(
+        expected.modelType === "馈线"
+          ? [{ x: -0.5, y: 0 }]
+          : baseTemplate?.terminalAnchors
+      );
       for (const key of modelAssociationVisualParamKeys) {
         expect(template?.params[key], `${expected.kind}:${key}`).toBe(visualTemplate?.params[key]);
       }

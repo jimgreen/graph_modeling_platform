@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
-import { isLineOnlyConnectionNode, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage } from "../model";
+import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage } from "../model";
 
 export function createUpdateSingleNodeDragImperativePreview(__appScope: Record<string, any>) {
   return (dragState: DraggingState, previewDelta: Point) => {
@@ -3445,8 +3445,14 @@ export function createRenderInteractiveStaticDrawingPreview(__appScope: Record<s
 
 export function createStartLibraryDevicePlacement(__appScope: Record<string, any>) {
   return (template: DeviceTemplate) => {
-  const { componentLibraryDisplayMode, hideLibraryFlyout, isRoutableLineDeviceKind, requireEditMode, resetConnectPreviewState, resetRoutableLinePreviewState, setCanvasSelectionScope, setConnectSource, setContextMenu, setLibraryPlacement, setMode, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, writeOperationLog } = __appScope;
+  const { componentLibraryDisplayMode, hideLibraryFlyout, isRoutableLineDeviceKind, modelType, requireEditMode, resetConnectPreviewState, resetRoutableLinePreviewState, setCanvasSelectionScope, setConnectSource, setContextMenu, setLibraryPlacement, setMode, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, writeOperationLog } = __appScope;
     if (!requireEditMode("放置图元")) {
+      return;
+    }
+    const modelTypeFailureMessage = modelAssociationDeviceModelTypeFailureMessage(modelType, template.kind);
+    if (modelTypeFailureMessage) {
+      showGlobalMessage(modelTypeFailureMessage);
+      writeOperationLog(`拒绝放置图元：${modelTypeFailureMessage}`);
       return;
     }
     setCanvasSelectionScope("group");
@@ -3579,8 +3585,14 @@ export function createClearLibraryPlacementPreview(__appScope: Record<string, an
 
 export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, pointerPosition: Point) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, createNodeFromTemplate, deviceIndexCounters, edges, hasCanvasOriginShift, isInteractiveStaticDrawingKind, isRoutableLineDeviceKind, isStaticBoxLikeTemplate, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, nodes, pushUndoSnapshot, rebuildRoutableLineDeviceRouteUpdates, rejectAutoCanvasExpansionForContent, requireEditMode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setLibraryPlacement, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, startInteractiveStaticDrawing, startLibraryDevicePlacement, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
+  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, createNodeFromTemplate, deviceIndexCounters, edges, hasCanvasOriginShift, isInteractiveStaticDrawingKind, isRoutableLineDeviceKind, isStaticBoxLikeTemplate, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, modelType, nodes, pushUndoSnapshot, rebuildRoutableLineDeviceRouteUpdates, rejectAutoCanvasExpansionForContent, requireEditMode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setLibraryPlacement, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, startInteractiveStaticDrawing, startLibraryDevicePlacement, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
     if (!requireEditMode("放置图元")) {
+      return;
+    }
+    const modelTypeFailureMessage = modelAssociationDeviceModelTypeFailureMessage(modelType, template.kind);
+    if (modelTypeFailureMessage) {
+      showGlobalMessage(modelTypeFailureMessage);
+      writeOperationLog(`拒绝放置图元：${modelTypeFailureMessage}`);
       return;
     }
     const kind = template.kind;
@@ -4739,7 +4751,11 @@ export function createFindRoutableLineEndpointTargetAtPoint(__appScope: Record<s
       nodeById.values(),
       { excludedLineNodeId: options.excludedNodeId, excludedEndpoint: options.excludedEndpoint }
     );
-    for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)) {
+    for (const indexedNode of queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)) {
+      // The spatial index is geometry-oriented and intentionally skips
+      // parameter-only updates. Always resolve its hit back to the live node
+      // before checking terminals or model-association parameters.
+      const node = nodeById.get(indexedNode.id) ?? indexedNode;
       if (!activeLayerNodeIdSet.has(node.id) || node.id === options.excludedNodeId || isRoutableLineDeviceKind(node.kind)) {
         continue;
       }

@@ -8,7 +8,7 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { E_SECTION_COLUMNS, inferESection, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
+import { E_SECTION_COLUMNS, inferESection, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, modelAssociationDevicesModelTypeFailureMessage, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { resolveEditableComponentLibraryDefinition } from "../componentLibraryDefinitions";
 import type { CustomComponentLibraryDefinition } from "./appCoreCanvasUtilities";
@@ -2708,8 +2708,13 @@ export function renderAppView(__appScope: Record<string, any>) {
                     {batchEditors.renderChineseParamHeader("modelType")}
                     <td>
                       <select value={modelType} disabled={isBrowseMode} onChange={(event) => {
-                pushUndoSnapshot();
                 const nextType = event.target.value;
+                const modelTypeFailureMessage = modelAssociationDevicesModelTypeFailureMessage(nextType, nodes);
+                if (modelTypeFailureMessage) {
+                  showGlobalMessage(modelTypeFailureMessage);
+                  return;
+                }
+                pushUndoSnapshot();
                 setModelType(nextType);
                 if (nextType === "厂站") {
                   setSubstation(projectName);

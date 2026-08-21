@@ -737,6 +737,7 @@ function createLoadScope(overrides: Record<string, unknown> = {}) {
     setViewBox: noop,
     setVoltageUnit: noop,
     suppressNextGraphDirtyRef: { current: 0 },
+    isLineSegmentBusNode,
     isRoutableLineDeviceKind,
     writeOperationLog: noop,
     ...overrides
@@ -826,6 +827,50 @@ describe("save current project E export options", () => {
 });
 
 describe("saved project definition migration", () => {
+  test.each(["ac-bus", "dc-bus"])(
+    "preserves a saved stretched %s instance while reconciling its template on load",
+    (kind) => {
+      const storedBus = {
+        ...createDefaultNode(kind as "ac-bus" | "dc-bus", { x: 640, y: 320 }),
+        size: { width: 740, height: 28 }
+      };
+      const template = DEVICE_LIBRARY_BY_KIND.get(kind)!;
+      const reconciledBus = {
+        ...storedBus,
+        size: { ...template.size },
+        params: { ...storedBus.params, definitionSynced: "1" }
+      };
+      const setGraphArrays = vi.fn();
+      const scope = createLoadScope({
+        libraryTemplateByKind: new Map([[kind, template]]),
+        reconcileNodeWithDefinition: vi.fn(() => reconciledBus),
+        setGraphArrays
+      });
+
+      createLoadSavedProject(scope as any)({
+        id: `project-${kind}`,
+        name: `${kind} 拉伸持久化`,
+        project: {
+          nodes: [storedBus],
+          edges: [],
+          groups: [],
+          layers: [],
+          activeLayerId: "layer-default",
+          canvasWidth: 1200,
+          canvasHeight: 800
+        }
+      } as any, "scheme-1");
+
+      expect(setGraphArrays).toHaveBeenCalledWith([
+        expect.objectContaining({
+          id: storedBus.id,
+          size: storedBus.size,
+          params: expect.objectContaining({ definitionSynced: "1" })
+        })
+      ], []);
+    }
+  );
+
   test("repairs an unsafe stored adaptive-line path while loading a model", () => {
     const station = {
       ...createDefaultNode("static-model-interaction-station", { x: 500, y: 240 }),

@@ -94,6 +94,44 @@ describe("DeviceGlyph static nodes", () => {
 });
 
 describe("DeviceGlyph model-association derived devices", () => {
+  it("enlarges station feeder and district source/load pictograms without enlarging hierarchy buttons", () => {
+    const hierarchyIconScale = (kind: string) => {
+      const node = createDefaultNode(kind, { x: 0, y: 0 });
+      const markup = renderToStaticMarkup(<svg><DeviceGlyph node={node} mode="geometry" /></svg>);
+      const scale = markup.match(/transform="translate\(0 [^)]+\) scale\(([^)]+)\)"/)?.[1];
+      return Number(scale);
+    };
+
+    const cases = [
+      ["ac-station-source", "static-model-interaction-station", 2],
+      ["dc-station-load", "static-model-interaction-station", 2],
+      ["ac-feeder-source", "static-model-interaction-feeder", 2],
+      ["dc-feeder-load", "static-model-interaction-feeder", 2],
+      ["ac-district-source", "static-model-interaction-district", 1.84],
+      ["dc-district-load", "static-model-interaction-district", 1.84]
+    ] as const;
+    const buttonScales = new Set<number>();
+
+    for (const [associationKind, buttonKind, visibleScaleMultiplier] of cases) {
+      const associationScale = hierarchyIconScale(associationKind);
+      const buttonScale = hierarchyIconScale(buttonKind);
+      expect(buttonScale).toBeGreaterThan(0);
+      expect(associationScale).toBeCloseTo(52 / 48 * visibleScaleMultiplier, 4);
+      buttonScales.add(buttonScale);
+    }
+    expect(buttonScales.size).toBe(1);
+  });
+
+  it("keeps feeder association pictograms as a left-to-right branching structure", () => {
+    const node = createDefaultNode("ac-feeder-source", { x: 0, y: 0 });
+    const markup = renderToStaticMarkup(<svg><DeviceGlyph node={node} mode="geometry" /></svg>);
+
+    expect(markup).toContain('d="M -16 0 H -7 M -7 0 L 4 -11 H 15 M -7 0 H 15 M -7 0 L 4 11 H 15"');
+    expect(markup).toContain('cx="-16" cy="0"');
+    expect(markup).toContain('cx="15" cy="-11"');
+    expect(markup).toContain('cx="15" cy="11"');
+  });
+
   it("renders station feeder and district pictograms without redundant source load or energy badges", () => {
     const cases = [
       ["ac-station-source", "station", "source", "ac", "ACGenerator"],

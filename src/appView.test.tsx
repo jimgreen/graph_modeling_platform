@@ -67,6 +67,23 @@ describe("app view topology inspector", () => {
   });
 });
 
+describe("model-association device containment wiring", () => {
+  test("disables forbidden library buttons and blocks incompatible model-type changes before creating undo state", () => {
+    const rendererSource = readFileSync(new URL("./appExtracted/appDeviceDefinitionRenderers.tsx", import.meta.url), "utf8");
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const modelTypeSelect = viewSource.match(/<select value=\{modelType\}[\s\S]*?<\/select>/)?.[0] ?? "";
+
+    expect(rendererSource).toContain("modelAssociationDeviceModelTypeFailureMessage(modelType, item.kind)");
+    expect(rendererSource).toContain("draggable={isEditMode && !modelTypeFailureMessage}");
+    expect(rendererSource).toContain("disabled={isBrowseMode || Boolean(modelTypeFailureMessage)}");
+    expect(modelTypeSelect).toContain("modelAssociationDevicesModelTypeFailureMessage(nextType, nodes)");
+    expect(modelTypeSelect.indexOf("modelAssociationDevicesModelTypeFailureMessage(nextType, nodes)")).toBeLessThan(
+      modelTypeSelect.indexOf("pushUndoSnapshot()")
+    );
+    expect(modelTypeSelect).toContain("showGlobalMessage(modelTypeFailureMessage)");
+  });
+});
+
 describe("全网拓扑入口", () => {
   test("在顶栏把仅图标的全局线路按钮放到全网拓扑按钮左侧并挂载独立弹窗", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
