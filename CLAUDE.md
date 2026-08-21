@@ -61,6 +61,7 @@ graph_modeling_platform/
 | 模块系统 | ES Modules（`"type": "module"`），后端统一 `.mjs` |
 | 数据隔离 | 测试用 `GRAPH_MODEL_DATA_DIR` env 指向 tmpdir |
 | v1 响应信封 | `{ok:true,data}` / `{ok:false,error:{code,message}}` |
+| UI 组件 | 优先使用 antd 组件,避免自造轮子 |
 
 ## 独特风格
 
