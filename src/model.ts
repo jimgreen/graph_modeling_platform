@@ -2761,6 +2761,39 @@ export function modelAssociationModelTypeForKind(kind: string): Extract<ModelTyp
   return MODEL_ASSOCIATION_DERIVED_CLASS_SPEC_BY_KIND.get(baseDeviceKind(kind) as DeviceKind)?.modelType ?? "";
 }
 
+/** 当前模型类型不能容纳指定模型关联电源/负荷时，返回可直接展示的原因。 */
+export function modelAssociationDeviceModelTypeFailureMessage(modelType: string, kind: string): string {
+  const associatedModelType = modelAssociationModelTypeForKind(kind);
+  if (modelType === "厂站" && associatedModelType === "台区") {
+    return "厂站模型不能包含台区类电源/负荷。";
+  }
+  if (modelType === "馈线" && associatedModelType === "馈线") {
+    return "馈线模型不能包含馈线类电源/负荷。";
+  }
+  if (modelType === "台区" && associatedModelType === "厂站") {
+    return "台区模型不能包含厂站类电源/负荷。";
+  }
+  return "";
+}
+
+export function modelAssociationDeviceAllowedInModelType(modelType: string, kind: string): boolean {
+  return modelAssociationDeviceModelTypeFailureMessage(modelType, kind) === "";
+}
+
+/** 对粘贴、组合模板和模型类型切换执行整批校核，避免部分插入破坏连线或组合关系。 */
+export function modelAssociationDevicesModelTypeFailureMessage(
+  modelType: string,
+  nodes: Iterable<Pick<ModelNode, "kind">>
+): string {
+  for (const node of nodes) {
+    const failureMessage = modelAssociationDeviceModelTypeFailureMessage(modelType, node.kind);
+    if (failureMessage) {
+      return failureMessage;
+    }
+  }
+  return "";
+}
+
 /** 模型关联派生设备只有引用正整数模型编号时，才算已经定义关联模型。 */
 export function hasDefinedModelAssociationId(node: Pick<ModelNode, "kind" | "params">): boolean {
   if (!modelAssociationModelTypeForKind(node.kind)) {
@@ -4534,7 +4567,9 @@ function createModelAssociationDerivedDeviceTemplate(
     },
     terminalTypes: baseTemplate.terminalTypes ? [...baseTemplate.terminalTypes] : undefined,
     terminalLabels: baseTemplate.terminalLabels ? [...baseTemplate.terminalLabels] : undefined,
-    terminalAnchors: baseTemplate.terminalAnchors?.map((anchor) => ({ ...anchor })),
+    terminalAnchors: spec.modelType === "馈线"
+      ? [{ x: -0.5, y: 0 }]
+      : baseTemplate.terminalAnchors?.map((anchor) => ({ ...anchor })),
     terminalRoles: baseTemplate.terminalRoles ? [...baseTemplate.terminalRoles] : undefined,
     terminalAssociations: baseTemplate.terminalAssociations ? [...baseTemplate.terminalAssociations] : undefined,
     isContainer: false,

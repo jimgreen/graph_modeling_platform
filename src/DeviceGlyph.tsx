@@ -206,7 +206,12 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       const associationLineWidth = clampNumber(Number(node.params.lineWidth || 2), 1, 3.5);
       const iconAvailableHeight = hierarchyRole === "button" ? Math.max(28, h - 16) : Math.max(30, h - 6);
       const iconSize = clampNumber(Math.min(w * 0.54, iconAvailableHeight), miniature ? 28 : 34, miniature ? 40 : 52);
-      const iconScale = iconSize / 48;
+      const visibleScaleMultiplier = isModelInteractionGlyph
+        ? 1
+        : modelHierarchyGlyphFamily === "district"
+          ? 1.84
+          : 2;
+      const iconScale = iconSize / 48 * visibleScaleMultiplier;
       const iconY = hierarchyRole === "button" ? (miniature ? -4 : -5) : 0;
       const interactionLabel = miniature
         ? (modelHierarchyGlyphFamily === "station" ? "厂站" : modelHierarchyGlyphFamily === "feeder" ? "馈线" : "台区")
@@ -266,7 +271,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
               className={`model-hierarchy-icon model-hierarchy-icon-${modelHierarchyGlyphFamily}`}
               fill="none"
               stroke={associationStroke}
-              strokeWidth={Math.max(1.8, associationLineWidth)}
+              strokeWidth={Math.max(1.8, associationLineWidth) / visibleScaleMultiplier}
               strokeLinecap="round"
               strokeLinejoin="round"
             >

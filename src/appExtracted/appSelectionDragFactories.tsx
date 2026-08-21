@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
+import { modelAssociationDevicesModelTypeFailureMessage } from "../model";
 
 export function createEnsureDraggingUndoSnapshot(__appScope: Record<string, any>) {
   return () => {
@@ -778,11 +779,17 @@ export function createCutSelection(__appScope: Record<string, any>) {
 
 export function createPasteSelection(__appScope: Record<string, any>) {
   return () => {
-  const { CANVAS_AUTO_EXPAND_PADDING, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, canvasClipboard, canvasClipboardBounds, canvasHeight, canvasWidth, clampNodePositionToBounds, clampPointToBounds, cloneCanvasClipboard, deviceIndexCounters, edges, hasCanvasOriginShift, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, markStoredRouteEdgesDirty, nodes, normalizeDeviceIndexCounters, normalizeModelGroups, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, requireEditMode, resetConnectPreviewState, setCanvasSelectionScope, setConnectSource, setContextMenu, setDeviceIndexCounters, setGraphArrays, setGroups, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
+  const { CANVAS_AUTO_EXPAND_PADDING, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, canvasClipboard, canvasClipboardBounds, canvasHeight, canvasWidth, clampNodePositionToBounds, clampPointToBounds, cloneCanvasClipboard, deviceIndexCounters, edges, hasCanvasOriginShift, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, markStoredRouteEdgesDirty, modelType, nodes, normalizeDeviceIndexCounters, normalizeModelGroups, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, requireEditMode, resetConnectPreviewState, setCanvasSelectionScope, setConnectSource, setContextMenu, setDeviceIndexCounters, setGraphArrays, setGroups, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
     if (!requireEditMode("粘贴图元")) {
       return;
     }
     if (canvasClipboard.nodes.length === 0 && canvasClipboard.edges.length === 0) {
+      return;
+    }
+    const modelTypeFailureMessage = modelAssociationDevicesModelTypeFailureMessage(modelType, canvasClipboard.nodes);
+    if (modelTypeFailureMessage) {
+      showGlobalMessage(`无法粘贴：${modelTypeFailureMessage}`);
+      writeOperationLog(`拒绝粘贴图元：${modelTypeFailureMessage}`);
       return;
     }
     const targetPoint = lastRawCanvasPointerRef.current ?? lastCanvasPointerRef.current;
@@ -1378,8 +1385,14 @@ export function createDeleteGraphTemplateType(__appScope: Record<string, any>) {
 
 export function createDropGraphTemplate(__appScope: Record<string, any>) {
   return (template: GraphTemplate, pointerPosition: Point) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, cloneCanvasClipboard, deviceIndexCounters, edges, hasCanvasOriginShift, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, markStoredRouteEdgesDirty, nodes, normalizeDeviceIndexCounters, normalizeModelGroups, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, requireEditMode, resetConnectPreviewState, setCanvasSelectionScope, setConnectSource, setDeviceIndexCounters, setGraphArrays, setGroups, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
+  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, cloneCanvasClipboard, deviceIndexCounters, edges, hasCanvasOriginShift, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, markStoredRouteEdgesDirty, modelType, nodes, normalizeDeviceIndexCounters, normalizeModelGroups, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, requireEditMode, resetConnectPreviewState, setCanvasSelectionScope, setConnectSource, setDeviceIndexCounters, setGraphArrays, setGroups, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
     if (!requireEditMode("放置模板")) {
+      return;
+    }
+    const modelTypeFailureMessage = modelAssociationDevicesModelTypeFailureMessage(modelType, template.clipboard.nodes);
+    if (modelTypeFailureMessage) {
+      showGlobalMessage(`无法放置模板：${modelTypeFailureMessage}`);
+      writeOperationLog(`拒绝放置模板：${modelTypeFailureMessage}`);
       return;
     }
     const targetTopLeft = {

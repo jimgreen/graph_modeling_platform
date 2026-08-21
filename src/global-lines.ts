@@ -643,7 +643,7 @@ export function globalLineExistingPlacementConflictMessage(
 export function candidateGlobalLines(
   records: readonly GlobalLineRecord[],
   energyType: GlobalLineEnergyType,
-  modelKey: string,
+  _modelKey: string,
   boundaryEndpoint: GlobalLineEndpoint,
   placementNodes?: {
     source: Pick<ModelNode, "kind" | "params">;
@@ -654,11 +654,11 @@ export function candidateGlobalLines(
   const modelAssociationPlacement = placementNodes
     ? globalLineModelAssociationPlacementForEndpoints(placementNodes.source, placementNodes.target)
     : null;
+  // 全局表端点可以先指向当前模型、再由当前模型补画对应线路；只有画布中真实存在的全局线路 ID 才表示重复。
   return records
     .filter((record) => (
       record.energyType === energyType &&
       !usedGlobalLineIds.has(record.id) &&
-      !record.references.some((reference) => reference.modelKey === modelKey) &&
       (modelAssociationPlacement !== null || (
         record.degree < 2 &&
         globalLineEndpointReference(record, boundaryEndpoint) === null

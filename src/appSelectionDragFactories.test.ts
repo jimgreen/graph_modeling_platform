@@ -1,8 +1,10 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   createDeleteGraphTemplate,
   createDeleteGraphTemplateType,
+  createDropGraphTemplate,
   createLightweightMovedEndpointRoute,
+  createPasteSelection,
   createPersistDeviceLibraryChange,
   createRoutableLineRouteCandidateIdsForMovedNodes,
   createRoutePointsForMovedEdgesBlockedByStationaryNodes,
@@ -202,6 +204,83 @@ describe("graph template library actions", () => {
     }]);
     expect(templateMenu).toBeNull();
     expect(operationLogs).toContain("删除模板类型：自定义类型（2 个模板）");
+  });
+});
+
+describe("model-association containment guards for multi-node insertion", () => {
+  test("rejects an entire paste when any clipboard node is forbidden in the current model type", () => {
+    const originalShowGlobalMessage = (globalThis as any).showGlobalMessage;
+    const messages: string[] = [];
+    (globalThis as any).showGlobalMessage = (message: string) => messages.push(message);
+    const pushUndoSnapshot = vi.fn();
+    const setGraphArrays = vi.fn();
+    const canvasClipboard = {
+      nodes: [
+        createDefaultNode("ac-source", { x: 0, y: 0 }),
+        createDefaultNode("dc-district-load", { x: 100, y: 0 })
+      ],
+      edges: [],
+      groups: []
+    };
+    const pasteSelection = createPasteSelection({
+      canvasClipboard,
+      modelType: "厂站",
+      pushUndoSnapshot,
+      requireEditMode: () => true,
+      setGraphArrays,
+      writeOperationLog: vi.fn()
+    });
+
+    try {
+      pasteSelection();
+
+      expect(messages).toEqual(["无法粘贴：厂站模型不能包含台区类电源/负荷。"]);
+      expect(pushUndoSnapshot).not.toHaveBeenCalled();
+      expect(setGraphArrays).not.toHaveBeenCalled();
+    } finally {
+      if (originalShowGlobalMessage === undefined) {
+        delete (globalThis as any).showGlobalMessage;
+      } else {
+        (globalThis as any).showGlobalMessage = originalShowGlobalMessage;
+      }
+    }
+  });
+
+  test("rejects an entire graph template when any template node is forbidden in the current model type", () => {
+    const originalShowGlobalMessage = (globalThis as any).showGlobalMessage;
+    const messages: string[] = [];
+    (globalThis as any).showGlobalMessage = (message: string) => messages.push(message);
+    const pushUndoSnapshot = vi.fn();
+    const setGraphArrays = vi.fn();
+    const template = {
+      ...sampleGraphTemplate("forbidden-template", "厂站类模板"),
+      clipboard: {
+        nodes: [createDefaultNode("ac-station-source", { x: 0, y: 0 })],
+        edges: [],
+        groups: []
+      }
+    };
+    const dropGraphTemplate = createDropGraphTemplate({
+      modelType: "台区",
+      pushUndoSnapshot,
+      requireEditMode: () => true,
+      setGraphArrays,
+      writeOperationLog: vi.fn()
+    });
+
+    try {
+      dropGraphTemplate(template as any, { x: 300, y: 200 });
+
+      expect(messages).toEqual(["无法放置模板：台区模型不能包含厂站类电源/负荷。"]);
+      expect(pushUndoSnapshot).not.toHaveBeenCalled();
+      expect(setGraphArrays).not.toHaveBeenCalled();
+    } finally {
+      if (originalShowGlobalMessage === undefined) {
+        delete (globalThis as any).showGlobalMessage;
+      } else {
+        (globalThis as any).showGlobalMessage = originalShowGlobalMessage;
+      }
+    }
   });
 });
 

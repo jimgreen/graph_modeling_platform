@@ -358,7 +358,7 @@ describe("全局线路数据同步", () => {
     expect(Math.max(0, ...Object.values(counters))).toBe(3);
   });
 
-  test("既有线路候选包含出线度为0或方向互补的出线度为1记录，并排除已满或本模型已用记录", () => {
+  test("既有线路候选包含可补画记录，并仅按当前画布已用的全局线路ID排除重复", () => {
     const sourceReference = {
       modelKey: "model:3",
       schemePath: [],
@@ -369,13 +369,13 @@ describe("全局线路数据同步", () => {
     const records = [
       record({ id: "empty", idx: 6, references: [], endpointSlots: { source: null, target: null }, degree: 0 }),
       record(),
-      record({ id: "same-model", idx: 8, references: [{ modelKey: "model:2", schemePath: [], projectName: "二", nodeId: "x" }] }),
+      record({ id: "referenced-current-model", idx: 8, references: [{ modelKey: "model:2", schemePath: [], projectName: "二", nodeId: "x" }] }),
       record({ id: "full", idx: 9, degree: 2 }),
       record({ id: "dc", idx: 10, energyType: "dc" }),
       record({ id: "source-occupied", idx: 11, references: [sourceReference], endpointSlots: { source: sourceReference, target: null } })
     ];
 
-    expect(candidateGlobalLines(records, "ac", "model:2", "source").map((item) => item.id)).toEqual(["empty", "global-line-1"]);
+    expect(candidateGlobalLines(records, "ac", "model:2", "source").map((item) => item.id)).toEqual(["empty", "global-line-1", "referenced-current-model"]);
     expect(candidateGlobalLines(records, "ac", "model:2", "target").map((item) => item.id)).toEqual(["empty", "source-occupied"]);
     expect(candidateGlobalLines(
       records,
@@ -383,8 +383,55 @@ describe("全局线路数据同步", () => {
       "model:2",
       "source",
       undefined,
-      new Set(["empty"])
+      new Set(["empty", "referenced-current-model"])
     ).map((item) => item.id)).toEqual(["global-line-1"]);
+  });
+
+  test("全局表引用当前模型但当前画布尚未使用该线路时仍允许补画另一端", () => {
+    const stationSource = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+    stationSource.params.model_id = "6";
+    const localLoad = createDefaultNode("ac-load", { x: 500, y: 0 });
+    const sourceReference = {
+      modelKey: "model:6",
+      projectIdx: 6,
+      schemePath: ["新建方案222"],
+      projectName: "厂站1",
+      nodeId: "remote-line",
+      boundaryEndpoint: "source" as const
+    };
+    const targetReference = {
+      modelKey: "model:7",
+      projectIdx: 7,
+      schemePath: ["新建方案222"],
+      projectName: "馈线1",
+      nodeId: "missing-local-line",
+      boundaryEndpoint: "target" as const
+    };
+    const reciprocalLine = record({
+      id: "reciprocal-line",
+      idx: 6,
+      name: "馈线1",
+      references: [sourceReference, targetReference],
+      endpointSlots: { source: sourceReference, target: targetReference },
+      degree: 2
+    });
+    const placementNodes = { source: stationSource, target: localLoad };
+
+    expect(candidateGlobalLines(
+      [reciprocalLine],
+      "ac",
+      "model:7",
+      "source",
+      placementNodes
+    ).map((item) => item.id)).toEqual(["reciprocal-line"]);
+    expect(candidateGlobalLines(
+      [reciprocalLine],
+      "ac",
+      "model:7",
+      "source",
+      placementNodes,
+      new Set(["reciprocal-line"])
+    )).toEqual([]);
   });
 
   test("模型关联设备复用既有线路时预校核 model_id 与首末端方向", () => {
@@ -438,7 +485,14 @@ describe("全局线路数据同步", () => {
       "source",
       { source: stationSource, target: localLoad }
     );
-    expect(candidates.map((item) => item.id)).toEqual(["empty", "repairable-single", "wrong-local-project"]);
+    expect(candidates.map((item) => item.id)).toEqual([
+      "empty",
+      "repairable-single",
+      "matching",
+      "wrong-direction",
+      "wrong-project",
+      "wrong-local-project"
+    ]);
     expect(globalLineExistingPlacementConflictMessage(empty, stationSource, localLoad, localModel)).toBe("");
     expect(globalLineExistingPlacementConflictMessage(repairableSingle, stationSource, localLoad, localModel)).toBe("");
     expect(globalLineExistingPlacementConflictMessage(matching, stationSource, localLoad, localModel)).toBe("");

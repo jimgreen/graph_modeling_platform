@@ -4,6 +4,7 @@ import { formatStateIconDrawingNumber, normalizeStateIconDrawingFontSize, normal
 import { STATE_ICON_DRAWING_MIN_FONT_SIZE, appendDistinctStateIconDrawingPoint, clampStateIconDrawingPoint, clearGeneratedDefinitionVisualDraftImage, cloneStateIconDrawingElements, createDefinitionStateDraftRowsWithDefaultImages, createStateIconDrawingElementFromStaticTemplate, cutStateIconDrawingSelection, expandStateIconDrawingElementIds, finishStateIconDrawingDraft, groupStateIconDrawingSelection, pushStateIconDrawingHistorySnapshot, stateIconDrawingElementBounds, stateIconDrawingElementFromPoints, stateIconDrawingElementIdsInRect, stateIconDrawingFrameDashArray, stateIconDrawingImportedSvgSelectionFrame, stateIconDrawingPolylineElementFromPoints, stateIconDrawingRectFromPoints, stateIconDrawingSelectedIds, stateIconDrawingSelectionBounds, stateIconDrawingTerminalPointSnap, stateIconStaticTemplateParam, ungroupStateIconDrawingSelection } from "./appDeviceDefinitionFactories";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, STATE_ICON_CLOSED_SHAPE_KINDS, STATE_ICON_LINE_SHAPE_KINDS, STATE_ICON_STATIC_TEMPLATE_SECTIONS_COVERED_BY_BASIC_TOOLS, STATE_ICON_STATIC_TEMPLATE_SECTION_ORDER } from "./appDeviceDefinitionEInterface";
+import { modelAssociationDeviceModelTypeFailureMessage } from "../model";
 
 import type { DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
 
@@ -2919,7 +2920,8 @@ export function createRenderGraphTemplatePreview(__appScope: Record<string, any>
 
 export function createRenderLibraryTemplateButton(__appScope: Record<string, any>) {
   return (item: DeviceTemplate, section: string) => {
-  const { MemoDeviceGlyph, SvgMarkupChunk, button, cancelLibraryPlacement, clipPath, colorPalette, componentLibraryDisplayMode, createNodeFromTemplate, defs, formatSvgNumber, g, hideLibraryFlyout, image, isBrowseMode, isBusNode, isEditMode, libraryPreviewByKind, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, rect, resolveNodeStateVisual, startLibraryDevicePlacement, svg, svgImageContentMarkup } = __appScope;
+  const { MemoDeviceGlyph, SvgMarkupChunk, button, cancelLibraryPlacement, clipPath, colorPalette, componentLibraryDisplayMode, createNodeFromTemplate, defs, formatSvgNumber, g, hideLibraryFlyout, image, isBrowseMode, isBusNode, isEditMode, libraryPreviewByKind, modelType, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, rect, resolveNodeStateVisual, startLibraryDevicePlacement, svg, svgImageContentMarkup } = __appScope;
+    const modelTypeFailureMessage = modelAssociationDeviceModelTypeFailureMessage(modelType, item.kind);
     const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
     const libraryPreviewImageHref = nodeImage(preview);
     const libraryPreviewForegroundHref = nodeForegroundImage(preview);
@@ -2936,16 +2938,16 @@ export function createRenderLibraryTemplateButton(__appScope: Record<string, any
       <button
         key={item.kind}
         className="library-item"
-        draggable={isEditMode}
-        disabled={isBrowseMode}
-        title={`${item.label} / ${section}`}
+        draggable={isEditMode && !modelTypeFailureMessage}
+        disabled={isBrowseMode || Boolean(modelTypeFailureMessage)}
+        title={`${item.label} / ${section}${modelTypeFailureMessage ? `（${modelTypeFailureMessage}）` : ""}`}
         onClick={() => startLibraryDevicePlacement(item)}
         onContextMenu={(event) => {
           event.preventDefault();
           cancelLibraryPlacement();
         }}
         onDragStart={(event) => {
-          if (!isEditMode) {
+          if (!isEditMode || modelTypeFailureMessage) {
             event.preventDefault();
             return;
           }

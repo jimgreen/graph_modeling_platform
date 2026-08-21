@@ -23,6 +23,8 @@ import {
 import {
   DEFAULT_MODEL_LAYER_ID,
   DEVICE_LIBRARY_BY_KIND,
+  ROUTABLE_LINE_SOURCE_NODE_PARAM,
+  ROUTABLE_LINE_SOURCE_TERMINAL_PARAM,
   createDefaultNode,
   createRoutableLineDeviceFromEndpoints,
   getTerminalPoint,
@@ -512,6 +514,57 @@ describe("全局线路双向一致性校验", () => {
       errors: [],
       warnings: []
     });
+  });
+
+  test("两个模型内线路节点ID不同但全局线路ID与端点模型ID一致时不报警", () => {
+    const { record, sourceLine, targetLine, sourceModel, targetModel } = completeGlobalLineConsistencyFixture(
+      "same-model-endpoints-different-line-node-ids"
+    );
+    const targetReference = {
+      ...record.endpointSlots!.target!,
+      // 注册表可以保留首次创建页面的线路节点 ID；跨模型一致性不能依赖这个本地 ID。
+      nodeId: sourceLine.id
+    };
+    const registryOwnedNodeIds = {
+      ...record,
+      references: record.references.map((reference) => (
+        reference.boundaryEndpoint === "target" ? targetReference : reference
+      )),
+      endpointSlots: {
+        source: record.endpointSlots!.source!,
+        target: targetReference
+      },
+      terminalSlots: {
+        i: record.endpointSlots!.source!,
+        j: targetReference
+      }
+    };
+
+    expect(targetLine.id).not.toBe(sourceLine.id);
+    expect(analyzeGlobalLineConsistency([registryOwnedNodeIds], [sourceModel, targetModel])).toEqual({
+      errors: [],
+      warnings: []
+    });
+  });
+
+  test("线路端点连接模型关联图元时按其model_id校验全局线路端点模型", () => {
+    const { record, sourceLine, sourceModel, targetModel } = completeGlobalLineConsistencyFixture(
+      "endpoint-model-id-mismatch"
+    );
+    const wrongAssociation = createDefaultNode("ac-station-source", { x: 100, y: 100 });
+    wrongAssociation.params.model_id = "999";
+    sourceModel.record.project.nodes.push(wrongAssociation);
+    sourceLine.params[ROUTABLE_LINE_SOURCE_NODE_PARAM] = wrongAssociation.id;
+    sourceLine.params[ROUTABLE_LINE_SOURCE_TERMINAL_PARAM] = wrongAssociation.terminals[0].id;
+
+    const result = analyzeGlobalLineConsistency([record], [sourceModel, targetModel]);
+
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: expect.stringContaining("definition-mismatch:source"),
+        message: expect.stringMatching(/端点所在模型ID不一致.*model_id=999.*model_id=71/)
+      })
+    ]));
   });
 
   test("模型中定义了全局线路但全局线路表没有对应记录时可定位模型线路", () => {

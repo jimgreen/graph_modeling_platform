@@ -339,6 +339,41 @@ describe("model interaction routable-line targets", () => {
       });
     }
   });
+
+  test("空间索引节点参数过期时返回 nodeById 中的当前模型关联节点", () => {
+    const indexedNode = createDefaultNode("ac-feeder-load", { x: 300, y: 200 });
+    expect(indexedNode.params.model_id).toBe("");
+    const currentNode = {
+      ...indexedNode,
+      params: { ...indexedNode.params, model_id: "8" }
+    };
+    const terminal = currentNode.terminals[0];
+    const point = getTerminalPoint(currentNode, terminal.id);
+    const findTarget = createFindRoutableLineEndpointTargetAtPoint({
+      CONNECT_BUS_SNAP_TOLERANCE: 18,
+      CONNECT_TERMINAL_SNAP_TOLERANCE: 28,
+      activeLayerNodeIdSet: new Set([currentNode.id]),
+      busAnchorFromPoint: projectPointToBusCenterline,
+      connectTargetSearchBounds: vi.fn(() => ({ left: 0, right: 800, top: 0, bottom: 500 })),
+      getBusTerminalType,
+      getTerminalPoint,
+      isBusNode,
+      isModelInteractionNode,
+      isPointNearBus: vi.fn(() => false),
+      isRoutableLineDeviceKind,
+      modelInteractionTerminalConnectionLocalPointsByNodeId,
+      nodeById: new Map([[currentNode.id, currentNode]]),
+      projectPointToModelInteractionBoundaryIfInRange,
+      queryNodeSpatialIndex: vi.fn(() => [indexedNode]),
+      routableLinePlacement: null,
+      routableLineTemplateTerminalType: vi.fn(),
+      visibleNodeSpatialIndex: {}
+    });
+
+    const target = findTarget(point, { terminalType: terminal.type });
+    expect(target?.node).toBe(currentNode);
+    expect(target?.node.params.model_id).toBe("8");
+  });
 });
 
 describe("batch common parameter updates", () => {
@@ -787,6 +822,88 @@ describe("library device placement selection", () => {
     expect(setSelectedEdgeIds).toHaveBeenCalledWith([]);
     expect(setLibraryPlacement).toHaveBeenCalledWith({ kind: "device", template, previewPoint: null });
     expect(setMode).toHaveBeenCalledWith("select");
+  });
+
+  test("rejects forbidden model-association templates before clearing the current selection", () => {
+    const originalShowGlobalMessage = (globalThis as any).showGlobalMessage;
+    const messages: string[] = [];
+    (globalThis as any).showGlobalMessage = (message: string) => messages.push(message);
+    const cases = [
+      { modelType: "厂站", kind: "ac-district-source", message: "厂站模型不能包含台区类电源/负荷。" },
+      { modelType: "馈线", kind: "dc-feeder-load", message: "馈线模型不能包含馈线类电源/负荷。" },
+      { modelType: "台区", kind: "ac-station-load", message: "台区模型不能包含厂站类电源/负荷。" }
+    ] as const;
+
+    try {
+      for (const { modelType, kind, message } of cases) {
+        const setSelectedNodeIds = vi.fn();
+        const setLibraryPlacement = vi.fn();
+        const writeOperationLog = vi.fn();
+        const startLibraryDevicePlacement = createStartLibraryDevicePlacement({
+          componentLibraryDisplayMode: "expanded",
+          hideLibraryFlyout: vi.fn(),
+          isRoutableLineDeviceKind,
+          modelType,
+          requireEditMode: vi.fn(() => true),
+          resetConnectPreviewState: vi.fn(),
+          resetRoutableLinePreviewState: vi.fn(),
+          setCanvasSelectionScope: vi.fn(),
+          setConnectSource: vi.fn(),
+          setContextMenu: vi.fn(),
+          setLibraryPlacement,
+          setMode: vi.fn(),
+          setRewiring: vi.fn(),
+          setRoutableLinePlacement: vi.fn(),
+          setSelectedEdgeId: vi.fn(),
+          setSelectedEdgeIds: vi.fn(),
+          setSelectedNodeIds,
+          setStaticDrawing: vi.fn(),
+          writeOperationLog
+        });
+
+        startLibraryDevicePlacement(DEVICE_LIBRARY_BY_KIND.get(kind)!);
+
+        expect(messages.at(-1), `${modelType}:${kind}`).toBe(message);
+        expect(setSelectedNodeIds, `${modelType}:${kind}`).not.toHaveBeenCalled();
+        expect(setLibraryPlacement, `${modelType}:${kind}`).not.toHaveBeenCalled();
+        expect(writeOperationLog).toHaveBeenCalledWith(`拒绝放置图元：${message}`);
+      }
+    } finally {
+      if (originalShowGlobalMessage === undefined) {
+        delete (globalThis as any).showGlobalMessage;
+      } else {
+        (globalThis as any).showGlobalMessage = originalShowGlobalMessage;
+      }
+    }
+  });
+
+  test("keeps graph data and undo history unchanged when a forbidden template reaches the final drop guard", () => {
+    const originalShowGlobalMessage = (globalThis as any).showGlobalMessage;
+    const messages: string[] = [];
+    (globalThis as any).showGlobalMessage = (message: string) => messages.push(message);
+    const setGraphArrays = vi.fn();
+    const pushUndoSnapshot = vi.fn();
+    const placeLibraryDeviceAtPoint = createPlaceLibraryDeviceAtPoint({
+      modelType: "馈线",
+      pushUndoSnapshot,
+      requireEditMode: vi.fn(() => true),
+      setGraphArrays,
+      writeOperationLog: vi.fn()
+    });
+
+    try {
+      placeLibraryDeviceAtPoint(DEVICE_LIBRARY_BY_KIND.get("dc-feeder-source")!, { x: 200, y: 180 });
+
+      expect(messages).toEqual(["馈线模型不能包含馈线类电源/负荷。"]);
+      expect(pushUndoSnapshot).not.toHaveBeenCalled();
+      expect(setGraphArrays).not.toHaveBeenCalled();
+    } finally {
+      if (originalShowGlobalMessage === undefined) {
+        delete (globalThis as any).showGlobalMessage;
+      } else {
+        (globalThis as any).showGlobalMessage = originalShowGlobalMessage;
+      }
+    }
   });
 
   test("reroutes an existing adaptive line after placing a model-interaction blocker across its path", () => {
