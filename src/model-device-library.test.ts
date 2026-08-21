@@ -3458,7 +3458,7 @@ test("creates static drawing primitives without electrical terminals", () => {
 
   expect(DEVICE_LIBRARY.filter((template) => removedControlKinds.includes(template.kind)).map((template) => template.kind)).toEqual([]);
   expect(DEVICE_LIBRARY.filter((template) => (
-    template.categoryLibrary === "静态图元" && !template.kind.startsWith("static-model-interaction-")
+    template.categoryLibrary === "静态图元"
   )).map((template) => template.kind)).toEqual([...expected]);
 
   const errors = validateTopology([createDefaultNode("static-text", { x: 100, y: 100 })], []);

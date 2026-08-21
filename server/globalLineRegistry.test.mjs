@@ -45,7 +45,7 @@ afterEach(async () => {
 
 describe("全局线路注册表迁移", () => {
   test("只迁移接触边界设备的交直流线路，分配跨能源全局唯一序号", async () => {
-    const boundary = node("station", "static-model-interaction-station");
+    const boundary = node("station", "ac-station-source", { model_id: "3" });
     const bus = node("bus", "ac-bus");
     const load = node("load", "ac-load");
     const globalAc = line("global-ac", "ac-routable-line", bus.id, boundary.id, {}, "交流边界线");
@@ -100,7 +100,7 @@ describe("全局线路注册表迁移", () => {
     }, null, 2)}\n`, "utf-8");
 
     for (const [modelIndex, modelName] of [[1, "厂站一"], [2, "馈线二"]]) {
-      const boundary = node(`boundary-${modelIndex}`, modelIndex === 1 ? "static-model-interaction-station" : "static-model-interaction-feeder");
+      const boundary = node(`boundary-${modelIndex}`, modelIndex === 1 ? "ac-station-source" : "ac-feeder-source", { model_id: String(modelIndex) });
       const bus = node(`bus-${modelIndex}`, "ac-bus");
       const sameTargetLine = line(`line-${modelIndex}`, "ac-routable-line", bus.id, boundary.id, { [GLOBAL_LINE_ID_PARAM]: sharedId }, "历史同向线路");
       await writeProject("历史方案", `${modelName}.json`, {
@@ -836,8 +836,8 @@ describe("全局线路首末端槽", () => {
 
 describe("全局线路表是名称和参数的唯一来源", () => {
   test("页面保存把名称和参数写入全局表，但模型文件只保留引用和本地字段", async () => {
-    const boundaryA = node("station-a", "static-model-interaction-station");
-    const boundaryB = node("station-b", "static-model-interaction-feeder");
+    const boundaryA = node("station-a", "ac-station-source", { model_id: "1" });
+    const boundaryB = node("station-b", "ac-feeder-source", { model_id: "2" });
     const lineA = line("line-a", "ac-routable-line", "bus-a", boundaryA.id, {}, "共享线路");
     const first = await registry.attach({
       energyType: "ac",

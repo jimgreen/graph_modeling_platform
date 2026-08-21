@@ -4,7 +4,7 @@ import {
   createHandleTerminalPointerDown,
   createStartConnectFromTerminal
 } from "./appExtracted/appDeviceDefinitionFactories";
-import { createDefaultNode, isModelInteractionNode, type ModelNode, type Point } from "./model";
+import { createDefaultNode, type ModelNode, type Point } from "./model";
 
 function createPointerEvent(pointerId = 7) {
   return {
@@ -37,13 +37,8 @@ function createTerminalPointerScope(node: ModelNode) {
 }
 
 describe("single-terminal pointer interaction", () => {
-  test("does not start an ordinary link from model-interaction buttons or station feeder district source/load terminals", () => {
+  test("does not start an ordinary link from station feeder district source/load terminals", () => {
     for (const kind of [
-      "static-model-interaction-microgrid",
-      "static-model-interaction-station",
-      "static-model-interaction-feeder",
-      "static-model-interaction-district",
-      "static-model-interaction-other",
       "ac-station-source",
       "ac-feeder-source",
       "ac-district-source",
@@ -65,7 +60,6 @@ describe("single-terminal pointer interaction", () => {
         activeLayerNodeIdSet: new Set([node.id]),
         applyConnectPreviewState: vi.fn(),
         getModelEdgeEndpointPoint: vi.fn(() => ({ x: 100, y: 100 })),
-        isModelInteractionNode,
         requireEditMode,
         resetRoutableLinePreviewState: vi.fn(),
         setCanvasSelectionScope: vi.fn(),

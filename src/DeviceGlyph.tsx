@@ -51,14 +51,8 @@ export type DeviceGlyphProps = {
 };
 
 type ModelHierarchyGlyphFamily = "station" | "feeder" | "district";
-type ModelHierarchyGlyphRole = "button" | "source" | "load";
-type ModelHierarchyGlyphEnergy = "mixed" | "ac" | "dc";
-
-const MODEL_INTERACTION_GLYPH_FAMILY_BY_KIND: Record<string, ModelHierarchyGlyphFamily> = {
-  "static-model-interaction-station": "station",
-  "static-model-interaction-feeder": "feeder",
-  "static-model-interaction-district": "district"
-};
+type ModelHierarchyGlyphRole = "source" | "load";
+type ModelHierarchyGlyphEnergy = "ac" | "dc";
 
 function modelHierarchyGlyphFamilyForModelType(modelType: string): ModelHierarchyGlyphFamily | "" {
   if (modelType === "厂站") return "station";
@@ -67,18 +61,12 @@ function modelHierarchyGlyphFamilyForModelType(modelType: string): ModelHierarch
   return "";
 }
 
-function modelInteractionGlyphFamilyForKind(kind: string): ModelHierarchyGlyphFamily | "" {
-  return MODEL_INTERACTION_GLYPH_FAMILY_BY_KIND[baseDeviceKind(kind)] ?? "";
-}
-
-function modelHierarchyGlyphRoleForKind(kind: string, interactionFamily: ModelHierarchyGlyphFamily | ""): ModelHierarchyGlyphRole {
-  if (interactionFamily) return "button";
+function modelHierarchyGlyphRoleForKind(kind: string): ModelHierarchyGlyphRole {
   const baseKind = baseDeviceKind(kind).toLowerCase();
   return baseKind.endsWith("-source") ? "source" : "load";
 }
 
-function modelHierarchyGlyphEnergyForKind(kind: string, role: ModelHierarchyGlyphRole): ModelHierarchyGlyphEnergy {
-  if (role === "button") return "mixed";
+function modelHierarchyGlyphEnergyForKind(kind: string): ModelHierarchyGlyphEnergy {
   const baseKind = baseDeviceKind(kind).toLowerCase();
   return baseKind.startsWith("dc-") ? "dc" : "ac";
 }
@@ -101,8 +89,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
   const rawW = miniature ? 58 : node.size.width;
   const rawH = miniature ? 38 : node.size.height;
   const modelAssociationModelType = modelAssociationModelTypeForKind(node.kind);
-  const modelInteractionGlyphFamily = modelInteractionGlyphFamilyForKind(node.kind);
-  const modelHierarchyGlyphFamily = modelHierarchyGlyphFamilyForModelType(modelAssociationModelType) || modelInteractionGlyphFamily;
+  const modelHierarchyGlyphFamily = modelHierarchyGlyphFamilyForModelType(modelAssociationModelType);
   const isStaticGlyph = isStaticGraphicNode(node);
   const isRoutableLineGlyph = isRoutableLineDeviceKind(node.kind);
   const isLineSegmentBusGlyph = isLineSegmentBusNode(node);
@@ -197,42 +184,17 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       );
     }
     if (modelHierarchyGlyphFamily) {
-      const hierarchyRole = modelHierarchyGlyphRoleForKind(node.kind, modelInteractionGlyphFamily);
-      const hierarchyEnergy = modelHierarchyGlyphEnergyForKind(node.kind, hierarchyRole);
-      const isModelInteractionGlyph = hierarchyRole === "button";
+      const hierarchyRole = modelHierarchyGlyphRoleForKind(node.kind);
+      const hierarchyEnergy = modelHierarchyGlyphEnergyForKind(node.kind);
       const associationStroke = node.params.strokeColor || stroke;
-      const associationFill = node.params.fillColor || fill;
       const associationAccent = node.params.accentColor || associationStroke;
       const associationLineWidth = clampNumber(Number(node.params.lineWidth || 2), 1, 3.5);
-      const iconAvailableHeight = hierarchyRole === "button" ? Math.max(28, h - 16) : Math.max(30, h - 6);
+      const iconAvailableHeight = Math.max(30, h - 6);
       const iconSize = clampNumber(Math.min(w * 0.54, iconAvailableHeight), miniature ? 28 : 34, miniature ? 40 : 52);
-      const visibleScaleMultiplier = isModelInteractionGlyph
-        ? 1
-        : modelHierarchyGlyphFamily === "district"
-          ? 1.84
-          : 2;
+      const visibleScaleMultiplier = modelHierarchyGlyphFamily === "district" ? 1.84 : 2;
       const iconScale = iconSize / 48 * visibleScaleMultiplier;
-      const iconY = hierarchyRole === "button" ? (miniature ? -4 : -5) : 0;
-      const interactionLabel = miniature
-        ? (modelHierarchyGlyphFamily === "station" ? "厂站" : modelHierarchyGlyphFamily === "feeder" ? "馈线" : "台区")
-        : staticSymbolTextValue(node, node.name);
       if (mode === "text") {
-        if (!isModelInteractionGlyph) {
-          return null;
-        }
-        return uprightText(
-          node,
-          0,
-          h / 2 - (miniature ? 3 : 5),
-          {
-            fill: node.params.textColor || "#111827",
-            fontSize: miniature ? 9 : clampNumber(Number(node.params.fontSize || 16) * 0.72, 10, 13),
-            fontWeight: "700",
-            textAnchor: "middle",
-            dominantBaseline: "middle"
-          },
-          interactionLabel
-        );
+        return null;
       }
       if (!renderGeometry) {
         return null;
@@ -242,10 +204,8 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         `model-hierarchy-glyph-${modelHierarchyGlyphFamily}`,
         `model-hierarchy-glyph-role-${hierarchyRole}`,
         `model-hierarchy-glyph-energy-${hierarchyEnergy}`,
-        isModelInteractionGlyph ? "model-interaction-glyph" : "model-association-glyph",
-        isModelInteractionGlyph
-          ? `model-interaction-glyph-${modelHierarchyGlyphFamily}`
-          : `model-association-glyph-${modelHierarchyGlyphFamily}`
+        "model-association-glyph",
+        `model-association-glyph-${modelHierarchyGlyphFamily}`
       ].join(" ");
       return (
         <g
@@ -254,19 +214,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
           data-model-hierarchy-role={hierarchyRole}
           data-model-hierarchy-energy={hierarchyEnergy}
         >
-          <g transform={`translate(0 ${formatSvgNumber(iconY)}) scale(${formatSvgNumber(iconScale)})`}>
-            {isModelInteractionGlyph && (
-              <circle
-                className="model-hierarchy-icon-backplate"
-                cx="0"
-                cy="0"
-                r="20.5"
-                fill={associationFill}
-                stroke={associationStroke}
-                strokeWidth={associationLineWidth}
-                strokeDasharray={svgStrokeDashArray(node.params.strokeStyle)}
-              />
-            )}
+          <g transform={`translate(0 0) scale(${formatSvgNumber(iconScale)})`}>
             <g
               className={`model-hierarchy-icon model-hierarchy-icon-${modelHierarchyGlyphFamily}`}
               fill="none"
@@ -301,12 +249,6 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
                 </>
               )}
             </g>
-            {hierarchyRole === "button" && (
-              <g className="model-hierarchy-role-badge model-hierarchy-role-badge-button" fill="#eef2ff" stroke="#4f46e5" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="17" cy="-16" r="6" />
-                <path d="M 14 -13 L 20 -19 M 16 -19 H 20 V -15" fill="none" />
-              </g>
-            )}
           </g>
         </g>
       );

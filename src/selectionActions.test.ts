@@ -1036,7 +1036,7 @@ describe("canvas selection actions", () => {
     const firstSpread = autoSpreadNodeLayoutUnits(nodes, initialUnits, { padding, bounds: canvasBounds });
     const aligned = autoAlignNodeLayoutUnits(firstSpread, initialUnits, 50);
     const alignedUnits = offsetUnits(initialUnits, nodes, aligned);
-    expect(alignedUnits[0].bounds.bottom).toBeGreaterThan(canvasBounds.height);
+    expect(alignedUnits.some((unit) => unit.bounds.bottom > canvasBounds.height)).toBe(true);
 
     const finalNodes = autoSpreadNodeLayoutUnits(aligned, alignedUnits, { padding, bounds: canvasBounds });
     const finalUnits = offsetUnits(alignedUnits, aligned, finalNodes);
@@ -1110,33 +1110,57 @@ describe("canvas selection actions", () => {
     }
   });
 
-  test("auto-aligns layout units with nearby horizontal or vertical coordinates", () => {
-    const firstColumn = createDefaultNode("ac-source", { x: 100, y: 100 });
-    const secondColumn = createDefaultNode("ac-load", { x: 106, y: 260 });
-    const firstRow = createDefaultNode("dc-load", { x: 360, y: 401 });
-    const secondRow = createDefaultNode("ac-load", { x: 520, y: 406 });
-    const farAway = createDefaultNode("dc-source", { x: 760, y: 640 });
-    const exactThresholdFirst = createDefaultNode("ac-source", { x: 900, y: 900 });
-    const exactThresholdSecond = createDefaultNode("ac-load", { x: 910, y: 960 });
-    const nodes = [firstColumn, secondColumn, firstRow, secondRow, farAway, exactThresholdFirst, exactThresholdSecond];
+  test("auto-aligns device centers to distinct grid intersections without overlap", () => {
+    const first = createDefaultNode("ac-source", { x: 112, y: 113 });
+    const second = createDefaultNode("ac-load", { x: 118, y: 119 });
+    const third = createDefaultNode("dc-load", { x: 171, y: 121 });
+    const fourth = createDefaultNode("dc-source", { x: 224, y: 178 });
+    const nodes = [first, second, third, fourth];
     const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
 
-    const aligned = autoAlignNodeLayoutUnits(nodes, units, 10);
-    const movedFirstColumn = aligned.find((node) => node.id === firstColumn.id)!;
-    const movedSecondColumn = aligned.find((node) => node.id === secondColumn.id)!;
-    const movedFirstRow = aligned.find((node) => node.id === firstRow.id)!;
-    const movedSecondRow = aligned.find((node) => node.id === secondRow.id)!;
-    const movedFarAway = aligned.find((node) => node.id === farAway.id)!;
-    const movedExactThresholdFirst = aligned.find((node) => node.id === exactThresholdFirst.id)!;
-    const movedExactThresholdSecond = aligned.find((node) => node.id === exactThresholdSecond.id)!;
+    const aligned = autoAlignNodeLayoutUnits(nodes, units, 50);
+    const centerKeys = aligned.map((node) => `${node.position.x},${node.position.y}`);
+    expect(new Set(centerKeys).size).toBe(aligned.length);
+    for (const node of aligned) {
+      expect(node.position.x % 50).toBe(0);
+      expect(node.position.y % 50).toBe(0);
+    }
 
-    expect(movedFirstColumn.position.x).toBe(movedSecondColumn.position.x);
-    expect(movedFirstRow.position.y).toBe(movedSecondRow.position.y);
-    expect(movedFirstColumn.position.y).toBe(firstColumn.position.y);
-    expect(movedSecondRow.position.x).toBe(secondRow.position.x);
-    expect(movedFarAway.position).toEqual(farAway.position);
-    expect(movedExactThresholdFirst.position).toEqual(exactThresholdFirst.position);
-    expect(movedExactThresholdSecond.position).toEqual(exactThresholdSecond.position);
+    const visualBounds = aligned.map((node) => calculateNodeVisualBounds(node));
+    for (let firstIndex = 0; firstIndex < visualBounds.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < visualBounds.length; secondIndex += 1) {
+        const firstBounds = visualBounds[firstIndex];
+        const secondBounds = visualBounds[secondIndex];
+        const overlaps =
+          Math.min(firstBounds.right, secondBounds.right) - Math.max(firstBounds.left, secondBounds.left) > 0 &&
+          Math.min(firstBounds.bottom, secondBounds.bottom) - Math.max(firstBounds.top, secondBounds.top) > 0;
+        expect(overlaps).toBe(false);
+      }
+    }
+  });
+
+  test("spreads a dense auto-align cluster across nearby unoccupied grid intersections", () => {
+    const nodes = Array.from({ length: 16 }, (_, index) => createDefaultNode(
+      index % 2 === 0 ? "ac-source" : "ac-load",
+      { x: 111 + index % 4 * 3, y: 112 + Math.floor(index / 4) * 3 }
+    ));
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+
+    const aligned = autoAlignNodeLayoutUnits(nodes, units, 50);
+    expect(new Set(aligned.map((node) => `${node.position.x},${node.position.y}`)).size).toBe(aligned.length);
+    expect(aligned.every((node) => node.position.x % 50 === 0 && node.position.y % 50 === 0)).toBe(true);
+
+    const visualBounds = aligned.map((node) => calculateNodeVisualBounds(node));
+    for (let firstIndex = 0; firstIndex < visualBounds.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < visualBounds.length; secondIndex += 1) {
+        const firstBounds = visualBounds[firstIndex];
+        const secondBounds = visualBounds[secondIndex];
+        expect(
+          Math.min(firstBounds.right, secondBounds.right) - Math.max(firstBounds.left, secondBounds.left) > 0 &&
+          Math.min(firstBounds.bottom, secondBounds.bottom) - Math.max(firstBounds.top, secondBounds.top) > 0
+        ).toBe(false);
+      }
+    }
   });
 
   test("includes grouped connection line geometry in the layout unit bounds", () => {

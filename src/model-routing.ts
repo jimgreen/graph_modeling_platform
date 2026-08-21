@@ -81,7 +81,6 @@ import {
   isImplicitTerminalVbaseForType,
   isLineOnlyConnectionNode,
   modelAssociationModelTypeForKind,
-  isModelInteractionNode,
   isRetiredThreeWindingTransformerParameterName,
   isRetiredTwoWindingTransformerParameterName,
   isRoutableLineDeviceKind,
@@ -551,59 +550,6 @@ export function routableLineDeviceEndpointRefs(node: ModelNode): RoutableLineDev
   };
 }
 
-export function modelInteractionTerminalConnectionLocalPointsByNodeId(
-  nodes: Iterable<ModelNode>,
-  options: {
-    excludedLineNodeId?: string;
-    excludedEndpoint?: "source" | "target";
-  } = {}
-): Map<string, Map<string, Point | undefined>> {
-  const nodeList = Array.from(nodes);
-  const modelInteractionNodeById = new Map(
-    nodeList.filter((node) => isModelInteractionNode(node)).map((node) => [node.id, node] as const)
-  );
-  const localPointsByNodeId = new Map<string, Map<string, Point | undefined>>();
-  const appendEndpoint = (
-    lineNode: ModelNode,
-    endpoint: "source" | "target",
-    ref: RoutableLineDeviceEndpointRef | undefined
-  ) => {
-    const modelInteractionNode = ref ? modelInteractionNodeById.get(ref.nodeId) : undefined;
-    if (
-      !ref ||
-      !modelInteractionNode ||
-      (lineNode.id === options.excludedLineNodeId && endpoint === options.excludedEndpoint)
-    ) {
-      return;
-    }
-    const routePoints = routableLineDeviceCanvasPoints(lineNode);
-    const routeEndpointPoint = endpoint === "source" ? routePoints[0] : routePoints[routePoints.length - 1];
-    const referencePoint = ref.localPoint
-      ? nodeLocalToPoint(modelInteractionNode, ref.localPoint)
-      : routeEndpointPoint;
-    const localPoint = referencePoint
-      ? pointToNodeLocal(
-          modelInteractionNode,
-          projectPointToModelInteractionBoundary(modelInteractionNode, referencePoint)
-        )
-      : undefined;
-    const localPoints = localPointsByNodeId.get(ref.nodeId) ?? new Map<string, Point | undefined>();
-    if (!localPoints.has(ref.terminalId) || localPoint) {
-      localPoints.set(ref.terminalId, localPoint);
-    }
-    localPointsByNodeId.set(ref.nodeId, localPoints);
-  };
-  for (const node of nodeList) {
-    if (!isRoutableLineDeviceKind(node.kind)) {
-      continue;
-    }
-    const refs = routableLineDeviceEndpointRefs(node);
-    appendEndpoint(node, "source", refs.source);
-    appendEndpoint(node, "target", refs.target);
-  }
-  return localPointsByNodeId;
-}
-
 export function routableLineDeviceEndpointRefForNode(
   node: ModelNode,
   terminalId: string,
@@ -806,12 +752,6 @@ function routableLineEndpointPointFromRef(
     const referencePoint = ref.localPoint ? nodeLocalToPoint(node, ref.localPoint) : currentPoint ?? getTerminalPoint(node, ref.terminalId);
     return projectPointToBusCenterline(node, referencePoint);
   }
-  if (isModelInteractionNode(node)) {
-    const referencePoint = ref.localPoint
-      ? nodeLocalToPoint(node, ref.localPoint)
-      : currentPoint ?? getTerminalPoint(node, ref.terminalId);
-    return projectPointToModelInteractionBoundary(node, referencePoint);
-  }
   return getTerminalPoint(node, ref.terminalId);
 }
 
@@ -837,7 +777,7 @@ function routableLineEndpointRoutingRef(
   return {
     nodeId: ref.nodeId,
     terminalId: ref.terminalId,
-    ...(isBusNode(node) || isModelInteractionNode(node) ? { point: endpointPoint } : {})
+    ...(isBusNode(node) ? { point: endpointPoint } : {})
   };
 }
 
@@ -2918,26 +2858,6 @@ function projectPointToNodeBoundary(node: ModelNode, point: Point): Point {
   return nodeLocalToPoint(node, projected);
 }
 
-export function projectPointToModelInteractionBoundary(node: ModelNode, point: Point): Point {
-  return projectPointToNodeBoundary(node, point);
-}
-
-export function projectPointToModelInteractionBoundaryIfInRange(
-  node: ModelNode,
-  point: Point,
-  tolerance = ROUTABLE_LINE_ENDPOINT_BUS_INFER_TOLERANCE
-): Point | undefined {
-  if (!isModelInteractionNode(node)) {
-    return undefined;
-  }
-  const local = pointToNodeLocal(node, point);
-  const halfWidth = Math.max(1, (node.size.width * Math.abs(getNodeScaleX(node))) / 2);
-  const halfHeight = Math.max(1, (node.size.height * Math.abs(getNodeScaleY(node))) / 2);
-  const inside = Math.abs(local.x) <= halfWidth && Math.abs(local.y) <= halfHeight;
-  const projected = projectPointToModelInteractionBoundary(node, point);
-  return inside || pointDistance(projected, point) <= tolerance ? projected : undefined;
-}
-
 function closestPointOnSegment(point: Point, start: Point, end: Point): Point {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
@@ -3137,9 +3057,6 @@ function projectBusEndpointPointToRouteSegmentExtension(
 }
 
 export function getEdgeEndpointPoint(node: ModelNode, endpointPoint?: Point, terminalId?: string): Point {
-  if (endpointPoint && isModelInteractionNode(node)) {
-    return projectPointToModelInteractionBoundary(node, endpointPoint);
-  }
   return endpointPoint && isBusNode(node) ? projectPointToBusCenterline(node, endpointPoint) : getTerminalPoint(node, terminalId);
 }
 
@@ -3341,9 +3258,6 @@ export function getRouteEndpointNormal(node: ModelNode, endpointPoint: Point, ot
   if (isBusNode(node)) {
     return getBusEndpointNormal(node, endpointPoint, otherPoint);
   }
-  if (isModelInteractionNode(node)) {
-    return getBoundaryNormalAtPoint(node, endpointPoint);
-  }
   return getTerminalNormal(node, terminalId);
 }
 
@@ -3473,9 +3387,9 @@ export function validateConnectionEndpointRules(
   const [candidateSource, candidateTarget] = candidateRefs;
   if (isLineOnlyConnectionNode(candidateSource.node) || isLineOnlyConnectionNode(candidateTarget.node)) {
     issues.push({
-      type: "model-interaction-link-forbidden",
+      type: "model-association-link-forbidden",
       edgeId: candidateEdge.id,
-      message: "模型交互边界设备只能连接线路类设备，不能使用普通连接线。"
+      message: "厂站/馈线/台区电源负荷只能连接线路类设备，不能使用普通连接线。"
     });
     return issues;
   }
@@ -6186,12 +6100,6 @@ export function validateTopology(
   const islandVoltageGroups = collectElectricalIslandVoltageGroups(nodes, connectivity);
   for (const [root, group] of islandVoltageGroups) {
     const relatedNodeIds = Array.from(group.relatedNodeIds);
-    const relatedNodes = relatedNodeIds
-      .map((nodeId) => nodes.find((node) => node.id === nodeId))
-      .filter((node): node is ModelNode => Boolean(node));
-    if (relatedNodes.length > 0 && relatedNodes.every((node) => isModelInteractionNode(node))) {
-      continue;
-    }
     if (group.voltages.size === 0) {
       errors.push({
         id: `missing-island-voltage:${root}`,
@@ -6240,7 +6148,7 @@ export function validateTopology(
 
   const topologyTerminalRefs = new Set<string>();
   for (const node of nodes) {
-    if (isStaticNode(node) && !isModelInteractionNode(node)) {
+    if (isStaticNode(node)) {
       continue;
     }
     for (const terminal of node.terminals) {

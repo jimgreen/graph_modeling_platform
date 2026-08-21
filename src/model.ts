@@ -78,11 +78,6 @@ export type DeviceKind =
   | "static-datetime"
   | "static-input"
   | "static-button"
-  | "static-model-interaction-microgrid"
-  | "static-model-interaction-station"
-  | "static-model-interaction-feeder"
-  | "static-model-interaction-district"
-  | "static-model-interaction-other"
   | "ac-source"
   | "ac-station-source"
   | "ac-feeder-source"
@@ -785,11 +780,6 @@ const STATIC_COMPONENT_LIBRARY_BY_KIND: Record<string, string> = {
   "static-toolbar-node": "StaticFlowNode",
   "static-input": "StaticFlowNode",
   "static-button": "StaticButton",
-  "static-model-interaction-microgrid": "ModelInteraction",
-  "static-model-interaction-station": "ModelInteraction",
-  "static-model-interaction-feeder": "ModelInteraction",
-  "static-model-interaction-district": "ModelInteraction",
-  "static-model-interaction-other": "ModelInteraction",
   "static-group-box": "StaticContainerSymbol",
   "static-swimlane": "StaticContainerSymbol",
   "static-resizer-frame": "StaticContainerSymbol",
@@ -813,7 +803,6 @@ const STATIC_COMPONENT_RENDER_KIND_BY_LIBRARY: Record<string, DeviceKind> = {
   StaticBasicShape: "static-rect",
   StaticFlowNode: "static-default-node",
   StaticButton: "static-button",
-  ModelInteraction: "static-button",
   StaticContainerSymbol: "static-group-box",
   StaticConnectorSymbol: "static-straight-connector",
   StaticAnnotationSymbol: "static-callout"
@@ -878,7 +867,7 @@ export function staticComponentLibraryForNodeLike(kind: string, params?: Record<
 export function staticRenderKindForNode(node: Pick<ModelNode, "kind" | "params">): DeviceKind {
   const baseKind = baseDeviceKind(node.kind) as DeviceKind;
   const componentLibrary = staticComponentLibraryForNodeLike(node.kind, node.params);
-  if (STATIC_COMPONENT_LIBRARY_BY_KIND[baseKind] && componentLibrary !== "ModelInteraction") {
+  if (STATIC_COMPONENT_LIBRARY_BY_KIND[baseKind]) {
     return baseKind;
   }
   return STATIC_COMPONENT_RENDER_KIND_BY_LIBRARY[componentLibrary] ?? baseKind;
@@ -2025,7 +2014,7 @@ export type PreparedConnectionEdgeCommit = ConnectionRouteValidationResult & {
 export type ConnectionEndpointRuleIssueType =
   | "duplicate-terminal-pair"
   | "duplicate-terminal-bus"
-  | "model-interaction-link-forbidden"
+  | "model-association-link-forbidden"
   | "same-device-terminals"
   | "same-device-same-bus-endpoints"
   | "shared-opposite-terminal";
@@ -2734,23 +2723,22 @@ export type ModelAssociationDerivedClassSpec = {
   baseComponentLibrary: "ACGenerator" | "DCGenerator" | "ACLoad" | "DCLoad";
   derivedComponentLibrary: string;
   modelType: Extract<ModelType, "厂站" | "馈线" | "台区">;
-  visualTemplateKind: "static-model-interaction-station" | "static-model-interaction-feeder" | "static-model-interaction-district";
 };
 
-/** 内置的模型层级电源/负荷派生类。电气定义继承基类，外观复用对应模型层级图标。 */
+/** 内置的模型层级电源/负荷派生类。电气定义继承基类，外观使用对应模型层级图标。 */
 export const MODEL_ASSOCIATION_DERIVED_CLASS_SPECS: readonly ModelAssociationDerivedClassSpec[] = [
-  { kind: "ac-station-source", label: "交流厂站电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACStationGen", modelType: "厂站", visualTemplateKind: "static-model-interaction-station" },
-  { kind: "ac-feeder-source", label: "交流馈线电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACFeederGen", modelType: "馈线", visualTemplateKind: "static-model-interaction-feeder" },
-  { kind: "ac-district-source", label: "交流台区电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACDistrictGen", modelType: "台区", visualTemplateKind: "static-model-interaction-district" },
-  { kind: "dc-station-source", label: "直流厂站电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCStationGen", modelType: "厂站", visualTemplateKind: "static-model-interaction-station" },
-  { kind: "dc-feeder-source", label: "直流馈线电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCFeederGen", modelType: "馈线", visualTemplateKind: "static-model-interaction-feeder" },
-  { kind: "dc-district-source", label: "直流台区电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCDistrictGen", modelType: "台区", visualTemplateKind: "static-model-interaction-district" },
-  { kind: "ac-station-load", label: "交流厂站负荷", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACStationLoad", modelType: "厂站", visualTemplateKind: "static-model-interaction-station" },
-  { kind: "ac-feeder-load", label: "交流馈线负荷", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACFeederLoad", modelType: "馈线", visualTemplateKind: "static-model-interaction-feeder" },
-  { kind: "ac-district-load", label: "交流台区负载", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACDistrictLoad", modelType: "台区", visualTemplateKind: "static-model-interaction-district" },
-  { kind: "dc-station-load", label: "直流厂站负荷", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCStationLoad", modelType: "厂站", visualTemplateKind: "static-model-interaction-station" },
-  { kind: "dc-feeder-load", label: "直流馈线负荷", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCFeederLoad", modelType: "馈线", visualTemplateKind: "static-model-interaction-feeder" },
-  { kind: "dc-district-load", label: "直流台区负载", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCDistrictLoad", modelType: "台区", visualTemplateKind: "static-model-interaction-district" }
+  { kind: "ac-station-source", label: "交流厂站电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACStationGen", modelType: "厂站" },
+  { kind: "ac-feeder-source", label: "交流馈线电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACFeederGen", modelType: "馈线" },
+  { kind: "ac-district-source", label: "交流台区电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACDistrictGen", modelType: "台区" },
+  { kind: "dc-station-source", label: "直流厂站电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCStationGen", modelType: "厂站" },
+  { kind: "dc-feeder-source", label: "直流馈线电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCFeederGen", modelType: "馈线" },
+  { kind: "dc-district-source", label: "直流台区电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCDistrictGen", modelType: "台区" },
+  { kind: "ac-station-load", label: "交流厂站负荷", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACStationLoad", modelType: "厂站" },
+  { kind: "ac-feeder-load", label: "交流馈线负荷", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACFeederLoad", modelType: "馈线" },
+  { kind: "ac-district-load", label: "交流台区负载", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACDistrictLoad", modelType: "台区" },
+  { kind: "dc-station-load", label: "直流厂站负荷", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCStationLoad", modelType: "厂站" },
+  { kind: "dc-feeder-load", label: "直流馈线负荷", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCFeederLoad", modelType: "馈线" },
+  { kind: "dc-district-load", label: "直流台区负载", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCDistrictLoad", modelType: "台区" }
 ];
 
 const MODEL_ASSOCIATION_DERIVED_CLASS_SPEC_BY_KIND = new Map(
@@ -2849,7 +2837,6 @@ export const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   StaticBasicShape: "基础图形",
   StaticFlowNode: "流程节点",
   StaticButton: "按钮图元",
-  ModelInteraction: "模型交互",
   StaticContainerSymbol: "容器图元",
   StaticConnectorSymbol: "连接图元",
   StaticAnnotationSymbol: "标注图元",
@@ -3333,49 +3320,6 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalType: "ac",
     terminalCount: 0
   },
-  ...([
-    ["static-model-interaction-microgrid", "微网", "微网"],
-    ["static-model-interaction-station", "厂站", "厂站"],
-    ["static-model-interaction-feeder", "馈线", "馈线"],
-    ["static-model-interaction-district", "台区", "台区"],
-    ["static-model-interaction-other", "其他", "其他"]
-  ] as const).map(([kind, label, modelInteractionType]) => ({
-    kind,
-    label,
-    categoryLibrary: "静态图元",
-    size: { width: 132, height: 52 },
-    params: staticSymbolParams(kind, label, {
-      component_type: "ModelInteraction",
-      modelInteractionType,
-      buttonEnabled: "1",
-      buttonActionType: "project",
-      buttonTargetSchemeId: "",
-      buttonTargetProjectId: "",
-      buttonTargetProjectName: "",
-      fillColor: "#eff6ff",
-      strokeColor: "#2563eb",
-      accentColor: "#60a5fa",
-      cornerRadius: "8",
-      shadowEnabled: "1"
-    }),
-    terminalType: "ac" as const,
-    terminalCount: 8,
-    terminalTypes: ["ac", "ac", "ac", "ac", "dc", "dc", "dc", "dc"] as TerminalType[],
-    terminalLabels: [
-      "交流端点1", "交流端点2", "交流端点3", "交流端点4",
-      "直流端点1", "直流端点2", "直流端点3", "直流端点4"
-    ],
-    terminalAnchors: [
-      { x: -0.5, y: -0.25 },
-      { x: 0.5, y: -0.25 },
-      { x: -0.25, y: -0.5 },
-      { x: 0.25, y: -0.5 },
-      { x: -0.5, y: 0.25 },
-      { x: 0.5, y: 0.25 },
-      { x: -0.25, y: 0.5 },
-      { x: 0.25, y: 0.5 }
-    ]
-  })),
   {
     kind: "static-resizer-frame",
     label: "缩放框",
@@ -4532,21 +4476,31 @@ const MODEL_ASSOCIATION_VISUAL_PARAM_KEYS = [
   "verticalAlign"
 ] as const;
 
-function modelAssociationVisualParams(visualTemplate: DeviceTemplate | undefined): Record<string, string> {
-  if (!visualTemplate) {
-    return {};
-  }
-  return Object.fromEntries(
-    MODEL_ASSOCIATION_VISUAL_PARAM_KEYS.flatMap((key) =>
-      visualTemplate.params[key] === undefined ? [] : [[key, visualTemplate.params[key]]]
-    )
-  );
+function modelAssociationVisualParams(label: string): Record<string, string> {
+  return {
+    text: label,
+    fillColor: "#eff6ff",
+    strokeColor: "#2563eb",
+    textColor: "#111827",
+    lineWidth: "2",
+    strokeStyle: "solid",
+    fontSize: "16",
+    fontFamily: "Arial",
+    fontWeight: "500",
+    fontStyle: "normal",
+    textDecoration: "none",
+    cornerRadius: "8",
+    accentColor: "#60a5fa",
+    shadowEnabled: "1",
+    padding: "12",
+    textAlign: "center",
+    verticalAlign: "middle"
+  } satisfies Record<(typeof MODEL_ASSOCIATION_VISUAL_PARAM_KEYS)[number], string>;
 }
 
 function createModelAssociationDerivedDeviceTemplate(
   baseTemplate: DeviceTemplate,
-  spec: ModelAssociationDerivedClassSpec,
-  visualTemplate?: DeviceTemplate
+  spec: ModelAssociationDerivedClassSpec
 ): DeviceTemplate {
   return {
     ...baseTemplate,
@@ -4554,10 +4508,10 @@ function createModelAssociationDerivedDeviceTemplate(
     label: spec.label,
     englishName: spec.derivedComponentLibrary,
     componentClass: spec.derivedComponentLibrary,
-    size: { ...(visualTemplate?.size ?? baseTemplate.size) },
+    size: { width: 132, height: 52 },
     params: {
       ...baseTemplate.params,
-      ...modelAssociationVisualParams(visualTemplate),
+      ...modelAssociationVisualParams(spec.label),
       component_type: spec.baseComponentLibrary,
       derived_from_component_type: spec.baseComponentLibrary,
       derived_component_type: spec.derivedComponentLibrary,
@@ -4588,7 +4542,6 @@ function createModelAssociationDerivedDeviceTemplate(
 
 function insertModelAssociationDerivedDeviceTemplates(templates: readonly DeviceTemplate[]): DeviceTemplate[] {
   const specsByBaseKind = new Map<string, ModelAssociationDerivedClassSpec[]>();
-  const templateByKind = new Map(templates.map((template) => [template.kind, template] as const));
   for (const spec of MODEL_ASSOCIATION_DERIVED_CLASS_SPECS) {
     const specs = specsByBaseKind.get(spec.baseKind) ?? [];
     specs.push(spec);
@@ -4597,7 +4550,7 @@ function insertModelAssociationDerivedDeviceTemplates(templates: readonly Device
   return templates.flatMap((template) => [
     template,
     ...(specsByBaseKind.get(template.kind) ?? []).map((spec) =>
-      createModelAssociationDerivedDeviceTemplate(template, spec, templateByKind.get(spec.visualTemplateKind))
+      createModelAssociationDerivedDeviceTemplate(template, spec)
     )
   ]);
 }
@@ -7180,56 +7133,8 @@ export function isStaticButtonCapableNode(node: Pick<ModelNode, "kind" | "params
   return isStaticButtonCapableKind(node.kind) || staticComponentLibraryForNodeLike(node.kind, node.params) === "StaticButton";
 }
 
-const MODEL_INTERACTION_KIND_SET = new Set<string>([
-  "static-model-interaction-microgrid",
-  "static-model-interaction-station",
-  "static-model-interaction-feeder",
-  "static-model-interaction-district",
-  "static-model-interaction-other"
-]);
-
-export function isModelInteractionNode(node: Pick<ModelNode, "kind" | "params">): boolean {
-  return MODEL_INTERACTION_KIND_SET.has(baseDeviceKind(node.kind)) ||
-    staticComponentLibraryForNodeLike(node.kind, node.params) === "ModelInteraction";
-}
-
 export function isLineOnlyConnectionNode(node: Pick<ModelNode, "kind" | "params">): boolean {
-  return isModelInteractionNode(node) || Boolean(modelAssociationModelTypeForKind(node.kind));
-}
-
-export function isStationModelInteractionNode(node: Pick<ModelNode, "kind" | "params">): boolean {
-  return isModelInteractionNode(node) && (
-    baseDeviceKind(node.kind) === "static-model-interaction-station" ||
-    String(node.params?.modelInteractionType ?? "").trim() === "厂站"
-  );
-}
-
-export type EquivalentBoundaryModelInteractionType = "厂站" | "馈线" | "台区";
-
-const EQUIVALENT_BOUNDARY_MODEL_INTERACTION_TYPE_BY_KIND = new Map<string, EquivalentBoundaryModelInteractionType>([
-  ["static-model-interaction-station", "厂站"],
-  ["static-model-interaction-feeder", "馈线"],
-  ["static-model-interaction-district", "台区"]
-]);
-
-const EQUIVALENT_BOUNDARY_MODEL_INTERACTION_TYPE_SET = new Set<EquivalentBoundaryModelInteractionType>([
-  "厂站",
-  "馈线",
-  "台区"
-]);
-
-export function equivalentBoundaryModelInteractionType(
-  node: Pick<ModelNode, "kind" | "params">
-): EquivalentBoundaryModelInteractionType | "" {
-  if (!isModelInteractionNode(node)) {
-    return "";
-  }
-  const kindType = EQUIVALENT_BOUNDARY_MODEL_INTERACTION_TYPE_BY_KIND.get(baseDeviceKind(node.kind));
-  if (kindType) {
-    return kindType;
-  }
-  const configuredType = String(node.params?.modelInteractionType ?? "").trim() as EquivalentBoundaryModelInteractionType;
-  return EQUIVALENT_BOUNDARY_MODEL_INTERACTION_TYPE_SET.has(configuredType) ? configuredType : "";
+  return Boolean(modelAssociationModelTypeForKind(node.kind));
 }
 
 const TEMPLATE_DEFINITION_READONLY_KEYS = new Set(["idx", "name", "node", "i_node", "j_node", "ac_node", "dc_node"]);

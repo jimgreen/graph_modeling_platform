@@ -9,11 +9,6 @@ const SCHEMA_VERSION = 3;
 const MANAGED_MODEL_TYPES = new Set(["厂站", "馈线", "台区"]);
 const AC_LINE_KINDS = new Set(["ac-routable-line", "ac-zero-routable-branch"]);
 const DC_LINE_KINDS = new Set(["dc-routable-line", "dc-zero-routable-branch"]);
-const BOUNDARY_BUTTON_KINDS = new Set([
-  "static-model-interaction-station",
-  "static-model-interaction-feeder",
-  "static-model-interaction-district"
-]);
 const BOUNDARY_DERIVED_DEVICE_KINDS = new Set([
   "ac-station-source", "ac-feeder-source", "ac-district-source",
   "dc-station-source", "dc-feeder-source", "dc-district-source",
@@ -43,11 +38,7 @@ function energyTypeForKind(kind) {
 
 function isBoundaryNode(node) {
   const kind = baseKind(node?.kind);
-  if (BOUNDARY_BUTTON_KINDS.has(kind) || BOUNDARY_DERIVED_DEVICE_KINDS.has(kind)) {
-    return true;
-  }
-  const interactionType = String(node?.params?.modelInteractionType ?? "").trim();
-  return String(node?.params?.component_type ?? "").trim() === "ModelInteraction" && MANAGED_MODEL_TYPES.has(interactionType);
+  return BOUNDARY_DERIVED_DEVICE_KINDS.has(kind);
 }
 
 function endpointNodeIds(node) {
