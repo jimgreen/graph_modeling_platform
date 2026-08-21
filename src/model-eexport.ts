@@ -2828,6 +2828,26 @@ function boundaryEquivalentRecordIdsToOmit(
   return omittedIds;
 }
 
+function collapsedModelAssociationNodeIds(project: ProjectFile) {
+  return new Set(
+    project.nodes
+      .filter((node) => Boolean(modelAssociationModelTypeForKind(node.kind)))
+      .map((node) => node.id)
+  );
+}
+
+function recordBelongsToCollapsedModelAssociationNode(
+  recordId: string,
+  collapsedNodeIds: ReadonlySet<string>
+) {
+  for (const nodeId of collapsedNodeIds) {
+    if (recordId === nodeId || recordId.startsWith(`${nodeId}:`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function offsetMultiModelRecordIndexes(records: EDeviceExport[], modelIndex: number) {
   const offset = modelIndex * 10000;
   const nextLocalIndexBySection = new Map<string, number>();
@@ -2954,10 +2974,20 @@ export function buildMultiModelEFileExport(
       includedProjectIds,
       includedProjectNames
     );
+    const collapsedAssociationNodeIds = collapsedModelAssociationNodeIds(input.project);
     const modelRecords = buildEDeviceRecords(input.project, options)
-      .filter((record) => !omittedBoundaryRecordIds.has(record.id))
+      .filter((record) => (
+        !omittedBoundaryRecordIds.has(record.id) &&
+        !recordBelongsToCollapsedModelAssociationNode(record.id, collapsedAssociationNodeIds)
+      ))
       .map((record) => ({ ...record, params: { ...record.params }, columns: [...(record.columns ?? [])] }));
-    warnings.push(...getEExportWarningsFromRecords(input.project, modelRecords, options));
+    const warningProject = collapsedAssociationNodeIds.size === 0
+      ? input.project
+      : {
+          ...input.project,
+          nodes: input.project.nodes.filter((node) => !collapsedAssociationNodeIds.has(node.id))
+        };
+    warnings.push(...getEExportWarningsFromRecords(warningProject, modelRecords, options));
     offsetMultiModelRecordIndexes(modelRecords, modelIndex);
     records.push(...modelRecords);
   });

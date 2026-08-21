@@ -178,6 +178,7 @@ import {
   isStaticNode,
   isModelInteractionNode,
   modelAssociationModelTypeForKind,
+  MODEL_ASSOCIATION_DERIVED_CLASS_SPECS,
   modelInteractionTerminalConnectionLocalPointsByNodeId,
   MODEL_TYPES,
   nextGlobalProjectIndex,
@@ -3994,6 +3995,113 @@ describe("全网 E 文件导出", () => {
     line.terminals = line.terminals.map((terminal) => ({ ...terminal, vbase: "10" }));
     return line;
   };
+
+  test("普通 E 文件和 EMS 模板导出都折叠厂站馈线台区关联电源负荷", () => {
+    const modelIdByType = { "厂站": "5", "馈线": "12", "台区": "23" } as const;
+    const associationNodes = MODEL_ASSOCIATION_DERIVED_CLASS_SPECS.map((spec, index) => {
+      const node = createDefaultNode(spec.kind, { x: 100 + index * 80, y: 100 });
+      node.name = `应折叠-${spec.kind}`;
+      node.params.idx = String(index + 1);
+      node.params.model_id = modelIdByType[spec.modelType];
+      node.terminals = node.terminals.map((terminal) => ({ ...terminal, vbase: "10" }));
+      return {
+        node,
+        owner: spec.modelType === "馈线" ? "station" : "feeder",
+        derivedSection: spec.derivedComponentLibrary
+      };
+    });
+    const physicalSource = createDefaultNode("ac-source", { x: 100, y: 300 });
+    physicalSource.name = "实际交流电源";
+    physicalSource.params.idx = "91";
+    physicalSource.terminals[0].vbase = "10";
+    const physicalLoad = createDefaultNode("ac-load", { x: 300, y: 300 });
+    physicalLoad.name = "实际交流负荷";
+    physicalLoad.params.idx = "92";
+    physicalLoad.terminals[0].vbase = "10";
+    const inputs = [
+      {
+        id: "station-5",
+        schemePath: ["主方案"],
+        project: {
+          version: 1 as const,
+          name: "中心厂站",
+          idx: 5,
+          modelType: "厂站" as const,
+          nodes: [physicalSource, ...associationNodes.filter(({ owner }) => owner === "station").map(({ node }) => node)],
+          edges: []
+        }
+      },
+      {
+        id: "feeder-12",
+        schemePath: ["主方案"],
+        project: {
+          version: 1 as const,
+          name: "十千伏一线",
+          idx: 12,
+          modelType: "馈线" as const,
+          nodes: [physicalLoad, ...associationNodes.filter(({ owner }) => owner === "feeder").map(({ node }) => node)],
+          edges: []
+        }
+      },
+      {
+        id: "district-23",
+        schemePath: ["主方案"],
+        project: { version: 1 as const, name: "一号台区", idx: 23, modelType: "台区" as const, nodes: [], edges: [] }
+      }
+    ];
+
+    const assertAssociationDevicesAreCollapsed = (text: string) => {
+      const payload = parseESections(text);
+      const exportedDeviceNames = Object.entries(payload)
+        .filter(([section]) => section !== "ACNode" && section !== "DCNode")
+        .flatMap(([, section]) => section.rows.map((row) => row.name).filter(Boolean));
+      for (const { node } of associationNodes) {
+        expect(exportedDeviceNames).not.toContain(node.name);
+      }
+      for (const section of new Set(associationNodes.map(({ derivedSection }) => derivedSection))) {
+        expect(payload[section]?.rows ?? []).toHaveLength(0);
+      }
+      expect(exportedDeviceNames).toContain("实际交流电源");
+      expect(exportedDeviceNames).toContain("实际交流负荷");
+    };
+
+    const ordinaryFile = buildMultiModelEFileExport(inputs);
+    assertAssociationDevicesAreCollapsed(ordinaryFile.text);
+    expect(ordinaryFile.warnings.map((warning) => warning.nodeId)).not.toEqual(
+      expect.arrayContaining(associationNodes.map(({ node }) => node.id))
+    );
+
+    const emsFile = buildMultiModelEFileExport(inputs, {
+      templateName: "主网实时库",
+      eDeviceDefinitionLabels: {
+        ACGenerator: "generatingunit",
+        ACLoad: "energyconsumer"
+      },
+      interfaceDefinitions: [
+        {
+          componentLibrary: "ACGenerator",
+          exportName: "generatingunit",
+          fields: ["idx", "name", "node"].map((name) => ({
+            sourceName: name,
+            exportName: name,
+            cnName: name,
+            exportEnabled: true
+          }))
+        },
+        {
+          componentLibrary: "ACLoad",
+          exportName: "energyconsumer",
+          fields: ["idx", "name", "node"].map((name) => ({
+            sourceName: name,
+            exportName: name,
+            cnName: name,
+            exportEnabled: true
+          }))
+        }
+      ]
+    });
+    assertAssociationDevicesAreCollapsed(emsFile.text);
+  });
 
   test("按模型 idx 合并记录并把设备及节点序号重编号为模型 idx * 10000 + 单模型序号", () => {
     const stationButton = createDefaultNode("static-model-interaction-station", { x: 120, y: 160 });
