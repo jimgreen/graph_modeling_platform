@@ -54,6 +54,12 @@ export function inspectorTabShowsDevicePanel(inspectorTab: string, hasSelectedNo
   return inspectorTab === "device" && hasSelectedNode;
 }
 
+export function voltageBaseSetScopeDeviceCount(
+  result: { targetNodeIds?: readonly string[] } | null | undefined
+) {
+  return result?.targetNodeIds?.length ?? 0;
+}
+
 export function resolveDeviceModelPanelParameterKeys(
   eKeys: readonly string[] = [],
   customDefinitions: readonly Record<string, unknown>[] = [],
@@ -3975,8 +3981,8 @@ export function renderAppView(__appScope: Record<string, any>) {
             <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label="设置电压基值范围">
               {VOLTAGE_BASE_SET_SCOPES.map((scope) => {
             const result = voltageBaseSetResultForScope(scope);
-            const count = result.changedNodeIds.length;
-            const disabled = count === 0 || !voltageBaseSetReady();
+            const count = voltageBaseSetScopeDeviceCount(result);
+            const disabled = result.changedNodeIds.length === 0 || !voltageBaseSetReady();
             return (<button key={scope} type="button" className={voltageBaseSetScope === scope ? "active" : ""} role="radio" aria-checked={voltageBaseSetScope === scope} onClick={() => setVoltageBaseSetScope(scope)} disabled={disabled}>
                     <span>{VOLTAGE_BASE_SET_SCOPE_LABELS[scope]}</span>
                     <strong>{count}</strong>

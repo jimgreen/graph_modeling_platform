@@ -1501,6 +1501,18 @@ describe("topology calculation operating-limit normalization", () => {
       powerUnit: "kW",
       pushUndoSnapshot: vi.fn(),
       requireEditMode: () => true,
+      schemes: [{
+        id: "scheme-1",
+        name: "主方案",
+        updatedAt: "2026-08-21T00:00:00.000Z",
+        projects: [{
+          id: "feeder-7",
+          name: "馈线一",
+          updatedAt: "2026-08-21T00:00:00.000Z",
+          project: { version: 1, name: "馈线一", idx: 7, modelType: "馈线", nodes: [], edges: [] }
+        }],
+        children: []
+      }],
       setNodes,
       setTopology,
       setTopologyErrors,
@@ -1516,7 +1528,12 @@ describe("topology calculation operating-limit normalization", () => {
     expect(calls).toEqual(["calculate", "validate", "normalize"]);
     expect(validateTopology).toHaveBeenCalledWith(calculatedNodes, [], {
       includeVoltageSetpointDeviations: false,
-      modelType: undefined
+      modelType: undefined,
+      modelAssociationProjectIndexes: {
+        "厂站": [],
+        "馈线": ["7"],
+        "台区": []
+      }
     });
     expect(normalizeDeviceOperatingLimitsAfterTopology).toHaveBeenCalledWith(calculatedNodes, {
       powerUnit: "kW",

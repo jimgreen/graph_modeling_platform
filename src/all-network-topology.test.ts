@@ -940,6 +940,48 @@ describe("全网拓扑模型层级唯一归属", () => {
 });
 
 describe("全网拓扑告警分类", () => {
+  test("模型关联图元按全部可用模型的同类型 idx 通过枚举校验", () => {
+    const feederLoad = createDefaultNode("ac-feeder-load", { x: 100, y: 100 });
+    feederLoad.name = "交流馈线负荷-1";
+    feederLoad.params.model_id = "7";
+    const station = {
+      projectId: "station-1",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "中心厂站",
+      idx: 1,
+      modelType: "厂站" as const,
+      record: projectRecord("station-1", "中心厂站", 1, "厂站", [feederLoad])
+    };
+    const feeder = {
+      projectId: "feeder-7",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "馈线一",
+      idx: 7,
+      modelType: "馈线" as const,
+      record: projectRecord("feeder-7", "馈线一", 7, "馈线")
+    };
+
+    const valid = analyzeAllNetworkTopology([station], [station, feeder]);
+    expect(valid.errors).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        nodeId: feederLoad.id,
+        topologyError: expect.objectContaining({ type: "device-enum-invalid" })
+      })
+    ]));
+
+    feederLoad.params.model_id = "99";
+    const invalid = analyzeAllNetworkTopology([station], [station, feeder]);
+    expect(invalid.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        nodeId: feederLoad.id,
+        message: expect.stringContaining("允许值为：7"),
+        topologyError: expect.objectContaining({ type: "device-enum-invalid" })
+      })
+    ]));
+  });
+
   test("把单模型拓扑检查结果放入错误分页并带上模型名和设备名", () => {
     const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
     const dcLoad = createDefaultNode("dc-load", { x: 300, y: 100 });
