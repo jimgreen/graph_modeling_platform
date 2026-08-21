@@ -56,26 +56,24 @@ function record(overrides: Partial<GlobalLineRecord> = {}): GlobalLineRecord {
 }
 
 describe("全局线路适用边界", () => {
-  test("模型按钮和十二种模型关联电源/负荷都属于跨模型边界设备", () => {
-    expect(isGlobalLineBoundaryNode(createDefaultNode("static-model-interaction-station", { x: 0, y: 0 }))).toBe(true);
-    expect(isGlobalLineBoundaryNode(createDefaultNode("static-model-interaction-feeder", { x: 0, y: 0 }))).toBe(true);
-    expect(isGlobalLineBoundaryNode(createDefaultNode("static-model-interaction-district", { x: 0, y: 0 }))).toBe(true);
+  test("十二种模型关联电源/负荷属于跨模型边界设备", () => {
     expect(isGlobalLineBoundaryNode(createDefaultNode("ac-station-source", { x: 0, y: 0 }))).toBe(true);
     expect(isGlobalLineBoundaryNode(createDefaultNode("dc-feeder-load", { x: 0, y: 0 }))).toBe(true);
     expect(isGlobalLineBoundaryNode(createDefaultNode("ac-load", { x: 0, y: 0 }))).toBe(false);
   });
 
   test("只有厂站馈线台区内接触边界设备的交直流线路才全局维护", () => {
-    const button = createDefaultNode("static-model-interaction-station", { x: 0, y: 0 });
+    const stationSource = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+    stationSource.params.model_id = "22";
     const bus = createDefaultNode("ac-bus", { x: 300, y: 0 });
-    const boundaryLine = connectLine("ac-routable-line", bus.id, button.id);
+    const boundaryLine = connectLine("ac-routable-line", bus.id, stationSource.id);
     const localLoad = createDefaultNode("ac-load", { x: 600, y: 0 });
     const localLine = connectLine("ac-routable-line", bus.id, localLoad.id);
 
-    expect(shouldManageLineGlobally(boundaryLine, [button, bus, localLoad, boundaryLine], "厂站")).toBe(true);
-    expect(shouldManageLineGlobally(localLine, [button, bus, localLoad, localLine], "厂站")).toBe(false);
-    expect(shouldManageLineGlobally(boundaryLine, [button, bus, boundaryLine], "其他")).toBe(false);
-    expect(shouldUseGlobalLineForEndpoints("馈线", boundaryLine.kind, bus, button)).toBe(true);
+    expect(shouldManageLineGlobally(boundaryLine, [stationSource, bus, localLoad, boundaryLine], "厂站")).toBe(true);
+    expect(shouldManageLineGlobally(localLine, [stationSource, bus, localLoad, localLine], "厂站")).toBe(false);
+    expect(shouldManageLineGlobally(boundaryLine, [stationSource, bus, boundaryLine], "其他")).toBe(false);
+    expect(shouldUseGlobalLineForEndpoints("馈线", boundaryLine.kind, bus, stationSource)).toBe(true);
     expect(shouldUseGlobalLineForEndpoints("馈线", localLine.kind, bus, localLoad)).toBe(false);
   });
 });
@@ -210,7 +208,8 @@ describe("全局线路数据同步", () => {
   });
 
   test("已有线路始终使用全局表名称和参数，模型加载时缺少名称也不会使预览排序崩溃", () => {
-    const station = createDefaultNode("static-model-interaction-station", { x: 0, y: 0 });
+    const station = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+    station.params.model_id = "22";
     const load = createDefaultNode("ac-load", { x: 500, y: 0 });
     const savedLine = connectLine("ac-routable-line", load.id, station.id);
     savedLine.params = {
@@ -282,7 +281,8 @@ describe("全局线路数据同步", () => {
       terminalSlots: { i: remoteReference, j: localReference },
       degree: 2
     });
-    const station = createDefaultNode("static-model-interaction-station", { x: 0, y: 0 });
+    const station = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+    station.params.model_id = "22";
     const load = createDefaultNode("ac-load", { x: 500, y: 0 });
     const savedLine = connectLine("ac-routable-line", load.id, station.id);
     savedLine.name = sharedRecord.name;

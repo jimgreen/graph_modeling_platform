@@ -958,57 +958,139 @@ export function autoAlignNodeLayoutUnits(
   threshold = AUTO_ALIGN_DEFAULT_THRESHOLD_PX
 ): ModelNode[] {
   const movableUnits = units.filter((unit) => unit.nodeIds.length > 0);
-  const normalizedThreshold = Math.max(0, threshold);
-  if (movableUnits.length < 2 || normalizedThreshold <= 0) {
+  const gridSpacing = Math.max(0, Math.round(threshold));
+  if (movableUnits.length < 2 || gridSpacing <= 0) {
     return nodes;
   }
+
+  const orderedUnits = movableUnits
+    .map((unit, index) => ({
+      unit,
+      index,
+      center: {
+        x: unitCenter(unit, "x"),
+        y: unitCenter(unit, "y")
+      }
+    }))
+    .sort((first, second) =>
+      first.center.y - second.center.y ||
+      first.center.x - second.center.x ||
+      first.index - second.index
+    );
   const deltas = new Map<string, Point>();
-  const mergeDelta = (unitId: string, delta: Point) => {
-    const current = deltas.get(unitId) ?? { x: 0, y: 0 };
-    deltas.set(unitId, {
-      x: current.x + delta.x,
-      y: current.y + delta.y
-    });
+  const occupiedGridPoints = new Set<string>();
+  const placedCollisionRects: SelectionRect[] = [];
+  const gridPointKey = (gridX: number, gridY: number) => `${gridX}:${gridY}`;
+  const movementDeltaToGridPoint = (gridCoordinate: number, centerCoordinate: number) =>
+    Math.round(gridCoordinate * gridSpacing - centerCoordinate);
+  const ringOffsets = (ring: number) => {
+    if (ring === 0) {
+      return [{ x: 0, y: 0 }];
+    }
+    const offsets: Point[] = [];
+    for (let x = -ring; x <= ring; x += 1) {
+      offsets.push({ x, y: -ring }, { x, y: ring });
+    }
+    for (let y = -ring + 1; y < ring; y += 1) {
+      offsets.push({ x: -ring, y }, { x: ring, y });
+    }
+    return offsets;
   };
-  const collectAxisDeltas = (axis: "x" | "y") => {
-    const ordered = movableUnits
-      .map((unit, index) => ({ unit, index, center: unitCenter(unit, axis) }))
-      .sort((first, second) => first.center - second.center || first.index - second.index);
-    let cluster: typeof ordered = [];
-    const flushCluster = () => {
-      if (cluster.length < 2) {
-        cluster = [];
-        return;
+
+  for (const { unit, center } of orderedUnits) {
+    const baseGridX = Math.round(center.x / gridSpacing);
+    const baseGridY = Math.round(center.y / gridSpacing);
+    const sourceCollisionRects = unit.collisionRects.length > 0 ? unit.collisionRects : [unit.bounds];
+    const baseDelta = {
+      x: movementDeltaToGridPoint(baseGridX, center.x),
+      y: movementDeltaToGridPoint(baseGridY, center.y)
+    };
+    const baseLeft = Math.min(...sourceCollisionRects.map((rect) => rect.left + baseDelta.x));
+    const maxPlacedRight = placedCollisionRects.length > 0
+      ? Math.max(...placedCollisionRects.map((rect) => rect.right))
+      : baseLeft;
+    const guaranteedPositiveXRing = Math.max(0, Math.ceil((maxPlacedRight - baseLeft) / gridSpacing) + 1);
+    let bestCandidate: {
+      gridX: number;
+      gridY: number;
+      delta: Point;
+      collisionRects: SelectionRect[];
+      distanceSquared: number;
+    } | null = null;
+
+    const candidateIsBetter = (candidate: NonNullable<typeof bestCandidate>, current: NonNullable<typeof bestCandidate>) => {
+      if (candidate.distanceSquared !== current.distanceSquared) {
+        return candidate.distanceSquared < current.distanceSquared;
       }
-      const target = Math.round(cluster.reduce((sum, item) => sum + item.center, 0) / cluster.length);
-      for (const item of cluster) {
-        const offset = target - item.center;
-        if (offset === 0) {
-          continue;
-        }
-        mergeDelta(item.unit.id, axis === "x" ? { x: offset, y: 0 } : { x: 0, y: offset });
+      if (Math.abs(candidate.delta.y) !== Math.abs(current.delta.y)) {
+        return Math.abs(candidate.delta.y) < Math.abs(current.delta.y);
       }
-      cluster = [];
+      if (Math.abs(candidate.delta.x) !== Math.abs(current.delta.x)) {
+        return Math.abs(candidate.delta.x) < Math.abs(current.delta.x);
+      }
+      const candidatePositiveX = candidate.delta.x >= 0 ? 0 : 1;
+      const currentPositiveX = current.delta.x >= 0 ? 0 : 1;
+      if (candidatePositiveX !== currentPositiveX) {
+        return candidatePositiveX < currentPositiveX;
+      }
+      const candidatePositiveY = candidate.delta.y >= 0 ? 0 : 1;
+      const currentPositiveY = current.delta.y >= 0 ? 0 : 1;
+      if (candidatePositiveY !== currentPositiveY) {
+        return candidatePositiveY < currentPositiveY;
+      }
+      if (candidate.gridY !== current.gridY) {
+        return candidate.gridY < current.gridY;
+      }
+      return candidate.gridX < current.gridX;
     };
 
-    for (const item of ordered) {
-      if (cluster.length === 0) {
-        cluster = [item];
-        continue;
+    for (let ring = 0; ring <= guaranteedPositiveXRing; ring += 1) {
+      for (const offset of ringOffsets(ring)) {
+        const gridX = baseGridX + offset.x;
+        const gridY = baseGridY + offset.y;
+        if (occupiedGridPoints.has(gridPointKey(gridX, gridY))) {
+          continue;
+        }
+        const delta = {
+          x: movementDeltaToGridPoint(gridX, center.x),
+          y: movementDeltaToGridPoint(gridY, center.y)
+        };
+        const collisionRects = sourceCollisionRects.map((rect) => offsetRect(rect, delta));
+        const overlapsPlacedUnit = collisionRects.some((candidateRect) =>
+          placedCollisionRects.some((placedRect) => rectsOverlap(candidateRect, placedRect))
+        );
+        if (overlapsPlacedUnit) {
+          continue;
+        }
+        const candidate = {
+          gridX,
+          gridY,
+          delta,
+          collisionRects,
+          distanceSquared: delta.x * delta.x + delta.y * delta.y
+        };
+        if (!bestCandidate || candidateIsBetter(candidate, bestCandidate)) {
+          bestCandidate = candidate;
+        }
       }
-      const previous = cluster[cluster.length - 1];
-      if (Math.abs(item.center - previous.center) < normalizedThreshold) {
-        cluster.push(item);
-        continue;
+      if (bestCandidate) {
+        const nextRingMinimumDistance = (ring + 0.5) * gridSpacing;
+        if (bestCandidate.distanceSquared <= nextRingMinimumDistance * nextRingMinimumDistance) {
+          break;
+        }
       }
-      flushCluster();
-      cluster = [item];
     }
-    flushCluster();
-  };
 
-  collectAxisDeltas("x");
-  collectAxisDeltas("y");
+    if (!bestCandidate) {
+      continue;
+    }
+    occupiedGridPoints.add(gridPointKey(bestCandidate.gridX, bestCandidate.gridY));
+    placedCollisionRects.push(...bestCandidate.collisionRects);
+    if (bestCandidate.delta.x !== 0 || bestCandidate.delta.y !== 0) {
+      deltas.set(unit.id, bestCandidate.delta);
+    }
+  }
+
   return deltas.size > 0 ? moveNodesByUnitDeltas(nodes, movableUnits, deltas) : nodes;
 }
 

@@ -214,7 +214,8 @@ describe("保存模型后的全局线路正式身份回填", () => {
 
 describe("线路端点调整的本图/全局维护方式切换", () => {
   function transitionScope(direction: "local-to-global" | "global-to-local") {
-    const boundary = createDefaultNode("static-model-interaction-station", { x: 300, y: 0 });
+    const boundary = createDefaultNode("ac-station-load", { x: 300, y: 0 });
+    boundary.params.model_id = "22";
     const ordinaryA = createDefaultNode("ac-source", { x: 0, y: 0 });
     const ordinaryB = createDefaultNode("ac-load", { x: 200, y: 0 });
     const target = direction === "local-to-global" ? boundary : ordinaryB;
@@ -283,8 +284,10 @@ describe("线路端点调整的本图/全局维护方式切换", () => {
   });
 
   test("全局线路首末端都已关联时禁止把当前边界端改接到另一个边界设备并提示先删除另一端", () => {
-    const boundaryA = createDefaultNode("static-model-interaction-station", { x: 300, y: 0 });
-    const boundaryB = createDefaultNode("static-model-interaction-feeder", { x: 400, y: 0 });
+    const boundaryA = createDefaultNode("ac-station-load", { x: 300, y: 0 });
+    boundaryA.params.model_id = "22";
+    const boundaryB = createDefaultNode("ac-feeder-load", { x: 400, y: 0 });
+    boundaryB.params.model_id = "23";
     const ordinary = createDefaultNode("ac-source", { x: 0, y: 0 });
     const line = createDefaultNode("ac-routable-line", { x: 100, y: 0 });
     line.params = {
@@ -920,9 +923,9 @@ describe("saved project definition migration", () => {
   );
 
   test("repairs an unsafe stored adaptive-line path while loading a model", () => {
-    const station = {
-      ...createDefaultNode("static-model-interaction-station", { x: 500, y: 240 }),
-      id: "loaded-route-station"
+    const blocker = {
+      ...createDefaultNode("static-rect", { x: 500, y: 240 }),
+      id: "loaded-route-blocker"
     };
     const line = {
       ...createDefaultNode("ac-routable-line", { x: 760, y: 360 }),
@@ -943,7 +946,7 @@ describe("saved project definition migration", () => {
       id: "project-with-unsafe-route",
       name: "含穿越线路的模型",
       project: {
-        nodes: [station, line],
+        nodes: [blocker, line],
         edges: [],
         groups: [],
         layers: [],
@@ -954,11 +957,11 @@ describe("saved project definition migration", () => {
     } as any, "scheme-1");
 
     expect(rebuildRoutableLineDeviceRouteUpdates).toHaveBeenCalledWith(
-      [station, line],
+      [blocker, line],
       [line.id],
       { width: 1200, height: 800 }
     );
-    expect(setGraphArrays).toHaveBeenCalledWith([station, repairedLine], [], 0);
+    expect(setGraphArrays).toHaveBeenCalledWith([blocker, repairedLine], [], 0);
   });
 
   test("keeps the loaded project clean after automatic definition and measurement migration", () => {

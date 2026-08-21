@@ -23,39 +23,38 @@ import {
 } from "./model";
 
 const modelAssociationDerivedClassCases = [
-  { kind: "ac-station-source", label: "交流厂站电源", baseKind: "ac-source", baseClass: "ACGenerator", derivedClass: "ACStationGen", terminalType: "ac", relationKey: "idx_acgenerator", modelType: "厂站", visualKind: "static-model-interaction-station" },
-  { kind: "ac-feeder-source", label: "交流馈线电源", baseKind: "ac-source", baseClass: "ACGenerator", derivedClass: "ACFeederGen", terminalType: "ac", relationKey: "idx_acgenerator", modelType: "馈线", visualKind: "static-model-interaction-feeder" },
-  { kind: "ac-district-source", label: "交流台区电源", baseKind: "ac-source", baseClass: "ACGenerator", derivedClass: "ACDistrictGen", terminalType: "ac", relationKey: "idx_acgenerator", modelType: "台区", visualKind: "static-model-interaction-district" },
-  { kind: "dc-station-source", label: "直流厂站电源", baseKind: "dc-source", baseClass: "DCGenerator", derivedClass: "DCStationGen", terminalType: "dc", relationKey: "idx_dcgenerator", modelType: "厂站", visualKind: "static-model-interaction-station" },
-  { kind: "dc-feeder-source", label: "直流馈线电源", baseKind: "dc-source", baseClass: "DCGenerator", derivedClass: "DCFeederGen", terminalType: "dc", relationKey: "idx_dcgenerator", modelType: "馈线", visualKind: "static-model-interaction-feeder" },
-  { kind: "dc-district-source", label: "直流台区电源", baseKind: "dc-source", baseClass: "DCGenerator", derivedClass: "DCDistrictGen", terminalType: "dc", relationKey: "idx_dcgenerator", modelType: "台区", visualKind: "static-model-interaction-district" },
-  { kind: "ac-station-load", label: "交流厂站负荷", baseKind: "ac-load", baseClass: "ACLoad", derivedClass: "ACStationLoad", terminalType: "ac", relationKey: "idx_acload", modelType: "厂站", visualKind: "static-model-interaction-station" },
-  { kind: "ac-feeder-load", label: "交流馈线负荷", baseKind: "ac-load", baseClass: "ACLoad", derivedClass: "ACFeederLoad", terminalType: "ac", relationKey: "idx_acload", modelType: "馈线", visualKind: "static-model-interaction-feeder" },
-  { kind: "ac-district-load", label: "交流台区负载", baseKind: "ac-load", baseClass: "ACLoad", derivedClass: "ACDistrictLoad", terminalType: "ac", relationKey: "idx_acload", modelType: "台区", visualKind: "static-model-interaction-district" },
-  { kind: "dc-station-load", label: "直流厂站负荷", baseKind: "dc-load", baseClass: "DCLoad", derivedClass: "DCStationLoad", terminalType: "dc", relationKey: "idx_dcload", modelType: "厂站", visualKind: "static-model-interaction-station" },
-  { kind: "dc-feeder-load", label: "直流馈线负荷", baseKind: "dc-load", baseClass: "DCLoad", derivedClass: "DCFeederLoad", terminalType: "dc", relationKey: "idx_dcload", modelType: "馈线", visualKind: "static-model-interaction-feeder" },
-  { kind: "dc-district-load", label: "直流台区负载", baseKind: "dc-load", baseClass: "DCLoad", derivedClass: "DCDistrictLoad", terminalType: "dc", relationKey: "idx_dcload", modelType: "台区", visualKind: "static-model-interaction-district" }
+  { kind: "ac-station-source", label: "交流厂站电源", baseKind: "ac-source", baseClass: "ACGenerator", derivedClass: "ACStationGen", terminalType: "ac", relationKey: "idx_acgenerator", modelType: "厂站" },
+  { kind: "ac-feeder-source", label: "交流馈线电源", baseKind: "ac-source", baseClass: "ACGenerator", derivedClass: "ACFeederGen", terminalType: "ac", relationKey: "idx_acgenerator", modelType: "馈线" },
+  { kind: "ac-district-source", label: "交流台区电源", baseKind: "ac-source", baseClass: "ACGenerator", derivedClass: "ACDistrictGen", terminalType: "ac", relationKey: "idx_acgenerator", modelType: "台区" },
+  { kind: "dc-station-source", label: "直流厂站电源", baseKind: "dc-source", baseClass: "DCGenerator", derivedClass: "DCStationGen", terminalType: "dc", relationKey: "idx_dcgenerator", modelType: "厂站" },
+  { kind: "dc-feeder-source", label: "直流馈线电源", baseKind: "dc-source", baseClass: "DCGenerator", derivedClass: "DCFeederGen", terminalType: "dc", relationKey: "idx_dcgenerator", modelType: "馈线" },
+  { kind: "dc-district-source", label: "直流台区电源", baseKind: "dc-source", baseClass: "DCGenerator", derivedClass: "DCDistrictGen", terminalType: "dc", relationKey: "idx_dcgenerator", modelType: "台区" },
+  { kind: "ac-station-load", label: "交流厂站负荷", baseKind: "ac-load", baseClass: "ACLoad", derivedClass: "ACStationLoad", terminalType: "ac", relationKey: "idx_acload", modelType: "厂站" },
+  { kind: "ac-feeder-load", label: "交流馈线负荷", baseKind: "ac-load", baseClass: "ACLoad", derivedClass: "ACFeederLoad", terminalType: "ac", relationKey: "idx_acload", modelType: "馈线" },
+  { kind: "ac-district-load", label: "交流台区负载", baseKind: "ac-load", baseClass: "ACLoad", derivedClass: "ACDistrictLoad", terminalType: "ac", relationKey: "idx_acload", modelType: "台区" },
+  { kind: "dc-station-load", label: "直流厂站负荷", baseKind: "dc-load", baseClass: "DCLoad", derivedClass: "DCStationLoad", terminalType: "dc", relationKey: "idx_dcload", modelType: "厂站" },
+  { kind: "dc-feeder-load", label: "直流馈线负荷", baseKind: "dc-load", baseClass: "DCLoad", derivedClass: "DCFeederLoad", terminalType: "dc", relationKey: "idx_dcload", modelType: "馈线" },
+  { kind: "dc-district-load", label: "直流台区负载", baseKind: "dc-load", baseClass: "DCLoad", derivedClass: "DCDistrictLoad", terminalType: "dc", relationKey: "idx_dcload", modelType: "台区" }
 ] as const;
 
-const modelAssociationVisualParamKeys = [
-  "text",
-  "fillColor",
-  "strokeColor",
-  "textColor",
-  "lineWidth",
-  "strokeStyle",
-  "fontSize",
-  "fontFamily",
-  "fontWeight",
-  "fontStyle",
-  "textDecoration",
-  "cornerRadius",
-  "accentColor",
-  "shadowEnabled",
-  "padding",
-  "textAlign",
-  "verticalAlign"
-] as const;
+const modelAssociationVisualParams = {
+  fillColor: "#eff6ff",
+  strokeColor: "#2563eb",
+  textColor: "#111827",
+  lineWidth: "2",
+  strokeStyle: "solid",
+  fontSize: "16",
+  fontFamily: "Arial",
+  fontWeight: "500",
+  fontStyle: "normal",
+  textDecoration: "none",
+  cornerRadius: "8",
+  accentColor: "#60a5fa",
+  shadowEnabled: "1",
+  padding: "12",
+  textAlign: "center",
+  verticalAlign: "middle"
+} as const;
 
 describe("model association derived power-source and load classes", () => {
   test("rejects station/district cross-level devices and feeder-level devices in feeder models", () => {
@@ -114,11 +113,9 @@ describe("model association derived power-source and load classes", () => {
     for (const expected of modelAssociationDerivedClassCases) {
       const template = DEVICE_LIBRARY_BY_KIND.get(expected.kind);
       const baseTemplate = DEVICE_LIBRARY_BY_KIND.get(expected.baseKind);
-      const visualTemplate = DEVICE_LIBRARY_BY_KIND.get(expected.visualKind);
 
       expect(template, expected.kind).toBeDefined();
       expect(baseTemplate, expected.baseKind).toBeDefined();
-      expect(visualTemplate, expected.visualKind).toBeDefined();
       expect(template).toMatchObject({
         kind: expected.kind,
         label: expected.label,
@@ -131,16 +128,16 @@ describe("model association derived power-source and load classes", () => {
         derivedComponentLibrary: expected.derivedClass,
         derivedComponentLibraryLabel: expected.label
       });
-      expect(template?.size).toEqual(normalizeDefaultDeviceSize(expected.kind, visualTemplate!.size));
-      expect(template?.size).not.toBe(visualTemplate?.size);
+      expect(template?.size).toEqual(normalizeDefaultDeviceSize(expected.kind, { width: 132, height: 52 }));
       expect(template?.terminalAnchors).toEqual(
         expected.modelType === "馈线"
           ? [{ x: -0.5, y: 0 }]
           : baseTemplate?.terminalAnchors
       );
-      for (const key of modelAssociationVisualParamKeys) {
-        expect(template?.params[key], `${expected.kind}:${key}`).toBe(visualTemplate?.params[key]);
-      }
+      expect(template?.params).toMatchObject({
+        ...modelAssociationVisualParams,
+        text: expected.label
+      });
       expect(template?.params.component_type).toBe(expected.baseClass);
       expect(template?.params).not.toHaveProperty("buttonEnabled");
       expect(template?.params).not.toHaveProperty("buttonActionType");

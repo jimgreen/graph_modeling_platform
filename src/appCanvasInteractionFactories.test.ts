@@ -20,20 +20,13 @@ import {
   canConnectTerminals,
   createDefaultNode,
   createNodeFromTemplate,
-  createRoutableLineDeviceFromEndpoints,
-  DEFAULT_MODEL_LAYER_ID,
   DEVICE_LIBRARY_BY_KIND,
   getBusTerminalType,
   getTerminalPoint,
   isBusNode,
-  isModelInteractionNode,
   isRoutableLineDeviceKind,
-  modelInteractionTerminalConnectionLocalPointsByNodeId,
   normalizeRatioParameterInputValue,
-  projectPointToBusCenterline,
-  projectPointToModelInteractionBoundary,
-  projectPointToModelInteractionBoundaryIfInRange,
-  routableLineDeviceEndpointRefForNode
+  projectPointToBusCenterline
 } from "./model";
 
 const createCustomZeroTerminalNode = (componentLibrary: string, terminalType: "ac" | "dc" | "h2" | "heat" = "ac") =>
@@ -62,13 +55,10 @@ describe("custom bus connection targets", () => {
       getBusTerminalType,
       getTerminalPoint,
       isBusNode,
-      isModelInteractionNode,
       isPointNearBus: (node: typeof bus, targetPoint: typeof point, tolerance: number) =>
         Boolean(pointOnBusForSnap(node, targetPoint, tolerance)),
       isRoutableLineDeviceKind: vi.fn(() => false),
-      modelInteractionTerminalConnectionLocalPointsByNodeId,
       nodeById: new Map([[bus.id, bus]]),
-      projectPointToModelInteractionBoundaryIfInRange,
       queryNodeSpatialIndex: vi.fn(() => [bus]),
       visibleNodeSpatialIndex: {}
     };
@@ -123,7 +113,6 @@ describe("custom bus connection targets", () => {
       connectTargetSearchBounds: vi.fn(() => ({ left: 0, right: 600, top: 0, bottom: 400 })),
       getTerminalPoint,
       isBusNode,
-      isModelInteractionNode,
       isPointNearBus: vi.fn(() => true),
       queryNodeSpatialIndex: vi.fn(() => [ordinaryDevice]),
       visibleNodeById: new Map([[source.id, source], [ordinaryDevice.id, ordinaryDevice]]),
@@ -135,47 +124,10 @@ describe("custom bus connection targets", () => {
   });
 });
 
-describe("ordinary link model-interaction restrictions", () => {
-  test("厂站模型中也不把厂站按钮作为普通连接线的吸附目标", () => {
-    const source = createDefaultNode("ac-load", { x: 80, y: 200 });
-    const button = createDefaultNode("static-model-interaction-station", { x: 300, y: 200 });
-    const point = projectPointToModelInteractionBoundary(button, {
-      x: button.position.x + button.size.width / 2,
-      y: button.position.y + 8
-    });
-    const nodeById = new Map([source, button].map((node) => [node.id, node]));
-    const connectTarget = createFindConnectTargetAtPoint({
-      CONNECT_BUS_SNAP_TOLERANCE: 18,
-      CONNECT_TERMINAL_SNAP_TOLERANCE: 28,
-      activeLayerNodeIdSet: new Set([source.id, button.id]),
-      busAnchorFromPoint: projectPointToBusCenterline,
-      canConnectTerminals,
-      connectSource: { nodeId: source.id, terminalId: source.terminals[0].id },
-      connectTargetSearchBounds: vi.fn(() => ({ left: 0, right: 600, top: 0, bottom: 400 })),
-      getTerminalPoint,
-      isBusNode,
-      isModelInteractionNode,
-      isPointNearBus: vi.fn(() => false),
-      modelInteractionTerminalConnectionLocalPointsByNodeId,
-      modelType: "厂站",
-      nodeById,
-      projectPointToModelInteractionBoundaryIfInRange,
-      queryNodeSpatialIndex: vi.fn(() => [button]),
-      visibleNodeById: nodeById,
-      visibleNodeSpatialIndex: {}
-    })(point);
-
-    expect(connectTarget).toBeNull();
-  });
-
-  test("模型交互按钮和十二种厂站馈线台区电源负荷都不能成为普通连接或重接目标", () => {
+describe("ordinary link model-association restrictions", () => {
+  test("十二种厂站馈线台区电源负荷都不能成为普通连接或重接目标", () => {
     const source = createDefaultNode("ac-load", { x: 80, y: 200 });
     for (const kind of [
-      "static-model-interaction-microgrid",
-      "static-model-interaction-station",
-      "static-model-interaction-feeder",
-      "static-model-interaction-district",
-      "static-model-interaction-other",
       "ac-station-source",
       "ac-feeder-source",
       "ac-district-source",
@@ -199,7 +151,6 @@ describe("ordinary link model-interaction restrictions", () => {
         connectTargetSearchBounds: vi.fn(() => ({ left: 0, right: 600, top: 0, bottom: 400 })),
         getTerminalPoint,
         isBusNode,
-        isModelInteractionNode,
         isPointNearBus: vi.fn(() => false),
         modelType: "厂站",
         queryNodeSpatialIndex: vi.fn(() => [button]),
@@ -232,68 +183,7 @@ describe("ordinary link model-interaction restrictions", () => {
   });
 });
 
-describe("model interaction routable-line targets", () => {
-  test("snaps anywhere on the button boundary and allocates an unused terminal of the matching type", () => {
-    const station = createDefaultNode("static-model-interaction-station", { x: 300, y: 200 });
-    const load = createDefaultNode("ac-load", { x: 560, y: 200 });
-    const firstConnectionPoint = projectPointToModelInteractionBoundary(station, {
-      x: station.position.x - station.size.width,
-      y: station.position.y - 8
-    });
-    const line = createRoutableLineDeviceFromEndpoints(
-      DEVICE_LIBRARY_BY_KIND.get("ac-routable-line")!,
-      firstConnectionPoint,
-      getTerminalPoint(load, load.terminals[0].id),
-      DEFAULT_MODEL_LAYER_ID,
-      {
-        source: routableLineDeviceEndpointRefForNode(station, station.terminals[0].id, firstConnectionPoint),
-        target: routableLineDeviceEndpointRefForNode(load, load.terminals[0].id)
-      }
-    );
-    const nodeById = new Map([station, load, line].map((node) => [node.id, node]));
-    const pointer = {
-      x: station.position.x + station.size.width / 2,
-      y: station.position.y + 11
-    };
-    const expectedBoundaryPoint = projectPointToModelInteractionBoundary(station, pointer);
-    const findTarget = createFindRoutableLineEndpointTargetAtPoint({
-      CONNECT_BUS_SNAP_TOLERANCE: 18,
-      CONNECT_TERMINAL_SNAP_TOLERANCE: 28,
-      activeLayerNodeIdSet: new Set([station.id, load.id, line.id]),
-      busAnchorFromPoint: projectPointToBusCenterline,
-      connectTargetSearchBounds: vi.fn(() => ({ left: 0, right: 800, top: 0, bottom: 500 })),
-      getBusTerminalType,
-      getTerminalPoint,
-      isBusNode,
-      isModelInteractionNode,
-      isPointNearBus: vi.fn(() => false),
-      isRoutableLineDeviceKind: (kind: string) => kind === "ac-routable-line" || kind === "dc-routable-line",
-      modelInteractionTerminalConnectionLocalPointsByNodeId,
-      nodeById,
-      projectPointToModelInteractionBoundaryIfInRange,
-      queryNodeSpatialIndex: vi.fn(() => [station]),
-      routableLinePlacement: null,
-      routableLineTemplateTerminalType: vi.fn(),
-      visibleNodeSpatialIndex: {}
-    });
-
-    expect(findTarget(pointer, { terminalType: "ac" })).toMatchObject({
-      node: { id: station.id },
-      terminalId: "t2",
-      point: expectedBoundaryPoint
-    });
-    expect(findTarget(pointer, { terminalType: "dc" })).toMatchObject({
-      node: { id: station.id },
-      terminalId: "t5",
-      point: expectedBoundaryPoint
-    });
-    expect(findTarget(pointer, {
-      terminalType: "ac",
-      excludedNodeId: line.id,
-      excludedEndpoint: "source"
-    })).toMatchObject({ terminalId: "t1", point: expectedBoundaryPoint });
-  });
-
+describe("model-association routable-line targets", () => {
   test("线路设备仍可吸附到十二种厂站馈线台区电源负荷端子", () => {
     for (const kind of [
       "ac-station-source",
@@ -321,12 +211,9 @@ describe("model interaction routable-line targets", () => {
         getBusTerminalType,
         getTerminalPoint,
         isBusNode,
-        isModelInteractionNode,
         isPointNearBus: vi.fn(() => false),
         isRoutableLineDeviceKind,
-        modelInteractionTerminalConnectionLocalPointsByNodeId,
         nodeById: new Map([[boundaryDevice.id, boundaryDevice]]),
-        projectPointToModelInteractionBoundaryIfInRange,
         queryNodeSpatialIndex: vi.fn(() => [boundaryDevice]),
         routableLinePlacement: null,
         routableLineTemplateTerminalType: vi.fn(),
@@ -358,12 +245,9 @@ describe("model interaction routable-line targets", () => {
       getBusTerminalType,
       getTerminalPoint,
       isBusNode,
-      isModelInteractionNode,
       isPointNearBus: vi.fn(() => false),
       isRoutableLineDeviceKind,
-      modelInteractionTerminalConnectionLocalPointsByNodeId,
       nodeById: new Map([[currentNode.id, currentNode]]),
-      projectPointToModelInteractionBoundaryIfInRange,
       queryNodeSpatialIndex: vi.fn(() => [indexedNode]),
       routableLinePlacement: null,
       routableLineTemplateTerminalType: vi.fn(),
@@ -906,9 +790,9 @@ describe("library device placement selection", () => {
     }
   });
 
-  test("reroutes an existing adaptive line after placing a model-interaction blocker across its path", () => {
+  test("reroutes an existing adaptive line after placing a static blocker across its path", () => {
     const canvasBounds = { width: 1200, height: 800 };
-    const template = DEVICE_LIBRARY_BY_KIND.get("static-model-interaction-station")!;
+    const template = DEVICE_LIBRARY_BY_KIND.get("static-rect")!;
     const line = {
       ...createDefaultNode("ac-routable-line", { x: 720, y: 360 }),
       id: "placement-obstacle-line"

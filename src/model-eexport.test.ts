@@ -176,10 +176,8 @@ import {
   isElectricGenerationContainerKind,
   isStaticKind,
   isStaticNode,
-  isModelInteractionNode,
   modelAssociationModelTypeForKind,
   MODEL_ASSOCIATION_DERIVED_CLASS_SPECS,
-  modelInteractionTerminalConnectionLocalPointsByNodeId,
   MODEL_TYPES,
   nextGlobalProjectIndex,
   keyboardMoveStepForViewBox,
@@ -203,8 +201,6 @@ import {
   normalizeViewBoxToCanvas,
   prepareConnectionEdgeForCommit,
   projectPointToBusCenterline,
-  projectPointToModelInteractionBoundary,
-  projectPointToModelInteractionBoundaryIfInRange,
   reconcileOverlappingTerminalConnections,
   resetDeviceIndexesForPaste,
   terminalRenderLocalPoint,
@@ -3737,7 +3733,7 @@ describe("E 文件查看/编辑展示与导出一致性", () => {
   });
 });
 
-describe("模型类型、全局序号与模型交互图元", () => {
+describe("模型类型与全局序号", () => {
   test("支持五种模型类型并跨方案树计算全局下一个模型 idx", () => {
     expect(MODEL_TYPES).toEqual(["微网", "厂站", "馈线", "台区", "其他"]);
     const project = (name: string, idx?: number) => createSavedProject(name, {
@@ -3755,239 +3751,8 @@ describe("模型类型、全局序号与模型交互图元", () => {
     expect(nextGlobalProjectIndex([rootA, rootB])).toBe(10);
   });
 
-  test("静态图元库包含模型交互类及五个可关联模型的 AC/DC 多端点按钮", () => {
-    const expected = [
-      ["static-model-interaction-microgrid", "微网", "微网"],
-      ["static-model-interaction-station", "厂站", "厂站"],
-      ["static-model-interaction-feeder", "馈线", "馈线"],
-      ["static-model-interaction-district", "台区", "台区"],
-      ["static-model-interaction-other", "其他", "其他"]
-    ] as const;
-
-    for (const [kind, label, modelType] of expected) {
-      const template = DEVICE_LIBRARY_BY_KIND.get(kind);
-      expect(template, kind).toBeDefined();
-      expect(template).toMatchObject({
-        label,
-        categoryLibrary: "静态图元",
-        terminalCount: 8,
-        terminalTypes: ["ac", "ac", "ac", "ac", "dc", "dc", "dc", "dc"]
-      });
-      const node = createDefaultNode(kind, { x: 100, y: 100 });
-      expect(isModelInteractionNode(node)).toBe(true);
-      expect(isStaticNode(node)).toBe(true);
-      expect(isStaticButtonCapableNode(node)).toBe(true);
-      expect(staticRenderKindForNode(node)).toBe("static-button");
-      expect(node.params).toMatchObject({
-        component_type: "ModelInteraction",
-        modelInteractionType: modelType,
-        buttonEnabled: "1",
-        buttonActionType: "project"
-      });
-    }
-  });
-
-  test("模型交互端子只记录已连接项并保留线路实际边界连接位置", () => {
-    const station = createDefaultNode("static-model-interaction-station", { x: 300, y: 200 });
-    const load = createDefaultNode("ac-load", { x: 560, y: 200 });
-    const pointer = { x: station.position.x + station.size.width, y: station.position.y + 12 };
-    const connectionPoint = projectPointToModelInteractionBoundary(station, pointer);
-    const line = createRoutableLineDeviceFromEndpoints(
-      DEVICE_LIBRARY_BY_KIND.get("ac-routable-line")!,
-      connectionPoint,
-      getTerminalPoint(load, load.terminals[0].id),
-      DEFAULT_MODEL_LAYER_ID,
-      {
-        source: routableLineDeviceEndpointRefForNode(station, "t1", connectionPoint),
-        target: routableLineDeviceEndpointRefForNode(load, load.terminals[0].id)
-      }
-    );
-    const localPointsByNodeId = modelInteractionTerminalConnectionLocalPointsByNodeId([station, load, line]);
-    const stationLocalPoints = localPointsByNodeId.get(station.id)!;
-
-    expect(projectPointToModelInteractionBoundaryIfInRange(station, station.position)).toEqual(
-      projectPointToModelInteractionBoundary(station, station.position)
-    );
-    expect(stationLocalPoints.has("t1")).toBe(true);
-    expect(stationLocalPoints.has("t2")).toBe(false);
-    expect(stationLocalPoints.get("t1")).toEqual(routableLineDeviceEndpointRefs(line).source?.localPoint);
-    expect(modelInteractionTerminalConnectionLocalPointsByNodeId(
-      [station, load, line],
-      { excludedLineNodeId: line.id, excludedEndpoint: "source" }
-    ).get(station.id)).toBeUndefined();
-  });
 });
 
-describe("厂站、馈线与台区模型交互端点的拓扑与 E 文件边界设备", () => {
-  const terminalPoint = (node: ModelNode, terminalId: string) => getTerminalPoint(node, terminalId);
-  const connectLine = (
-    kind: "ac-routable-line" | "dc-routable-line",
-    name: string,
-    source: { node: ModelNode; terminalId: string },
-    target: { node: ModelNode; terminalId: string }
-  ) => {
-    const line = createRoutableLineDeviceFromEndpoints(
-      DEVICE_LIBRARY_BY_KIND.get(kind)!,
-      terminalPoint(source.node, source.terminalId),
-      terminalPoint(target.node, target.terminalId),
-      DEFAULT_MODEL_LAYER_ID,
-      {
-        source: { nodeId: source.node.id, terminalId: source.terminalId },
-        target: { nodeId: target.node.id, terminalId: target.terminalId }
-      }
-    );
-    line.name = name;
-    line.terminals = line.terminals.map((terminal) => ({ ...terminal, vbase: kind === "ac-routable-line" ? "10" : "0.75" }));
-    return line;
-  };
-
-  test("同一厂站按钮上的不同线路端子保持独立节点号且不产生悬空错误", () => {
-    const station = createDefaultNode("static-model-interaction-station", { x: 100, y: 160 });
-    station.name = "厂站入口";
-    station.params.buttonTargetProjectName = "东城厂站";
-    station.terminals = station.terminals.map((terminal) => ({
-      ...terminal,
-      vbase: terminal.type === "ac" ? "10" : "0.75"
-    }));
-    const load1 = createDefaultNode("ac-load", { x: 420, y: 80 });
-    const load2 = createDefaultNode("ac-load", { x: 420, y: 240 });
-    load1.terminals[0].vbase = "10";
-    load2.terminals[0].vbase = "10";
-    const line1 = connectLine("ac-routable-line", "甲线", { node: station, terminalId: "t1" }, { node: load1, terminalId: "t1" });
-    const line2 = connectLine("ac-routable-line", "乙线", { node: station, terminalId: "t2" }, { node: load2, terminalId: "t1" });
-    const nodes = [station, load1, load2, line1, line2];
-
-    const calculated = calculateElectricalTopology(nodes, []);
-    const calculatedLine1 = calculated.find((node) => node.id === line1.id)!;
-    const calculatedLine2 = calculated.find((node) => node.id === line2.id)!;
-    expect(calculatedLine1.terminals[0].nodeNumber).toBeTruthy();
-    expect(calculatedLine2.terminals[0].nodeNumber).toBeTruthy();
-    expect(calculatedLine1.terminals[0].nodeNumber).not.toBe(calculatedLine2.terminals[0].nodeNumber);
-
-    const errors = validateTopology(nodes, [], { includeVoltageSetpointDeviations: false });
-    expect(errors.filter((error) => error.type === "floating-terminal")).toEqual([]);
-    expect(errors.filter((error) => error.type === "missing-island-voltage")).toEqual([]);
-  });
-
-  test("按 AC/DC 线路方向生成等值电源或负荷并从相应表最大 idx 继续编号", () => {
-    const station = createDefaultNode("static-model-interaction-station", { x: 260, y: 200 });
-    station.name = "按钮默认名";
-    station.params.buttonTargetProjectName = "东城厂站";
-    station.terminals = station.terminals.map((terminal) => ({
-      ...terminal,
-      vbase: terminal.type === "ac" ? "10" : "0.75"
-    }));
-    const acLoad = createDefaultNode("ac-load", { x: 560, y: 80 });
-    const acSource = createDefaultNode("ac-source", { x: 20, y: 160 });
-    const dcLoad = createDefaultNode("dc-load", { x: 560, y: 280 });
-    const dcSource = createDefaultNode("dc-source", { x: 20, y: 360 });
-    acLoad.terminals[0].vbase = "10";
-    acSource.terminals[0].vbase = "10";
-    dcLoad.terminals[0].vbase = "0.75";
-    dcSource.terminals[0].vbase = "0.75";
-    acSource.params.idx = "7";
-    acLoad.params.idx = "11";
-    dcSource.params.idx = "4";
-    dcLoad.params.idx = "6";
-    const lines = [
-      connectLine("ac-routable-line", "交流送出线", { node: station, terminalId: "t1" }, { node: acLoad, terminalId: "t1" }),
-      connectLine("ac-routable-line", "交流受入线", { node: acSource, terminalId: "t1" }, { node: station, terminalId: "t2" }),
-      connectLine("dc-routable-line", "直流送出线", { node: station, terminalId: "t5" }, { node: dcLoad, terminalId: "t1" }),
-      connectLine("dc-routable-line", "直流受入线", { node: dcSource, terminalId: "t1" }, { node: station, terminalId: "t6" })
-    ];
-    const project: ProjectFile = {
-      version: 1,
-      name: "厂站边界闭环",
-      nodes: [station, acLoad, acSource, dcLoad, dcSource, ...lines],
-      edges: []
-    };
-
-    const records = buildEDeviceRecords(project);
-    const boundaryRecords = records.filter((record) => record.id.includes(":station-boundary:"));
-    expect(boundaryRecords).toHaveLength(4);
-    expect(boundaryRecords.map((record) => [record.section, record.params.idx, record.params.name])).toEqual(expect.arrayContaining([
-      ["ACGenerator", "8", "交流送出线-东城厂站-等值电源"],
-      ["ACLoad", "12", "交流受入线-东城厂站-等值负荷"],
-      ["DCGenerator", "5", "直流送出线-东城厂站-等值电源"],
-      ["DCLoad", "7", "直流受入线-东城厂站-等值负荷"]
-    ]));
-    expect(new Set(boundaryRecords.map((record) => `${record.section.startsWith("AC") ? "ac" : "dc"}:${record.params.node}`)).size).toBe(4);
-
-    const exported = parseESections(buildEDeviceParameterFile(project));
-    expect(exported.ACGenerator.rows.some((row) => row.name === "交流送出线-东城厂站-等值电源")).toBe(true);
-    expect(exported.ACLoad.rows.some((row) => row.name === "交流受入线-东城厂站-等值负荷")).toBe(true);
-    expect(exported.DCGenerator.rows.some((row) => row.name === "直流送出线-东城厂站-等值电源")).toBe(true);
-    expect(exported.DCLoad.rows.some((row) => row.name === "直流受入线-东城厂站-等值负荷")).toBe(true);
-  });
-
-  test("馈线和台区按钮沿用厂站的线路方向规则且不扩展到其他模型交互按钮", () => {
-    const supportedButtons = [
-      ["static-model-interaction-feeder", "南城馈线"],
-      ["static-model-interaction-district", "一号台区"]
-    ] as const;
-
-    for (const [kind, targetProjectName] of supportedButtons) {
-      const button = createDefaultNode(kind, { x: 260, y: 200 });
-      button.name = `${targetProjectName}按钮`;
-      button.params.buttonTargetProjectName = targetProjectName;
-      button.terminals = button.terminals.map((terminal) => ({ ...terminal, vbase: "10" }));
-      const load = createDefaultNode("ac-load", { x: 560, y: 120 });
-      const source = createDefaultNode("ac-source", { x: 20, y: 280 });
-      load.terminals[0].vbase = "10";
-      source.terminals[0].vbase = "10";
-      const outgoingLine = connectLine(
-        "ac-routable-line",
-        `${targetProjectName}送出线`,
-        { node: button, terminalId: "t1" },
-        { node: load, terminalId: "t1" }
-      );
-      const incomingLine = connectLine(
-        "ac-routable-line",
-        `${targetProjectName}受入线`,
-        { node: source, terminalId: "t1" },
-        { node: button, terminalId: "t2" }
-      );
-      const project: ProjectFile = {
-        version: 1,
-        name: `${targetProjectName}边界闭环`,
-        nodes: [button, load, source, outgoingLine, incomingLine],
-        edges: []
-      };
-
-      const boundaryRecords = buildEDeviceRecords(project).filter((record) => record.id.includes(":station-boundary:"));
-      expect(boundaryRecords.map((record) => [record.section, record.params.name])).toEqual(expect.arrayContaining([
-        ["ACGenerator", `${targetProjectName}送出线-${targetProjectName}-等值电源`],
-        ["ACLoad", `${targetProjectName}受入线-${targetProjectName}-等值负荷`]
-      ]));
-      expect(boundaryRecords).toHaveLength(2);
-    }
-
-    for (const [kind, modelType] of [
-      ["static-model-interaction-microgrid", "微网"],
-      ["static-model-interaction-other", "其他"]
-    ] as const) {
-      const button = createDefaultNode(kind, { x: 260, y: 200 });
-      button.params.buttonTargetProjectName = `${modelType}项目`;
-      button.terminals = button.terminals.map((terminal) => ({ ...terminal, vbase: "10" }));
-      const load = createDefaultNode("ac-load", { x: 560, y: 200 });
-      load.terminals[0].vbase = "10";
-      const line = connectLine(
-        "ac-routable-line",
-        `${modelType}送出线`,
-        { node: button, terminalId: "t1" },
-        { node: load, terminalId: "t1" }
-      );
-      const project: ProjectFile = {
-        version: 1,
-        name: `${modelType}边界排除验证`,
-        nodes: [button, load, line],
-        edges: []
-      };
-
-      expect(buildEDeviceRecords(project).filter((record) => record.id.includes(":station-boundary:"))).toEqual([]);
-    }
-  });
-});
 
 describe("全网 E 文件导出", () => {
   const terminalPoint = (node: ModelNode, terminalId: string) => getTerminalPoint(node, terminalId);
@@ -4296,17 +4061,16 @@ describe("全网 E 文件导出", () => {
   });
 
   test("按模型 idx 合并记录并把设备及节点序号重编号为模型 idx * 10000 + 单模型序号", () => {
-    const stationButton = createDefaultNode("static-model-interaction-station", { x: 120, y: 160 });
-    stationButton.params.buttonTargetProjectId = "station-5";
-    stationButton.params.buttonTargetProjectName = "中心厂站";
-    stationButton.terminals = stationButton.terminals.map((terminal) => ({ ...terminal, vbase: "10" }));
+    const stationReference = createDefaultNode("ac-station-source", { x: 120, y: 160 });
+    stationReference.params.model_id = "5";
+    stationReference.terminals = stationReference.terminals.map((terminal) => ({ ...terminal, vbase: "10" }));
     const feederLoad = createDefaultNode("ac-load", { x: 440, y: 160 });
     feederLoad.name = "馈线负荷";
     feederLoad.params.idx = "7";
     feederLoad.terminals[0].vbase = "10";
     const line = connectLine(
       "十千伏联络线",
-      { node: stationButton, terminalId: "t1" },
+      { node: stationReference, terminalId: stationReference.terminals[0].id },
       { node: feederLoad, terminalId: feederLoad.terminals[0].id }
     );
     line.params.idx = "3";
@@ -4325,7 +4089,7 @@ describe("全网 E 文件导出", () => {
       {
         id: "feeder-2",
         schemePath: ["主方案"],
-        project: { version: 1, name: "十千伏一线", idx: 2, modelType: "馈线", nodes: [stationButton, feederLoad, line], edges: [] }
+        project: { version: 1, name: "十千伏一线", idx: 2, modelType: "馈线", nodes: [stationReference, feederLoad, line], edges: [] }
       }
     ]);
     const payload = parseESections(file.text);
@@ -4336,7 +4100,7 @@ describe("全网 E 文件导出", () => {
     expect(payload.ACGenerator.rows.find((row) => row.name === "厂站电源")?.idx).toBe("50004");
     expect(Number(payload.ACLoad.rows.find((row) => row.name === "馈线负荷")?.node)).toBeGreaterThanOrEqual(20000);
     expect(Number(payload.ACGenerator.rows.find((row) => row.name === "厂站电源")?.node)).toBeGreaterThanOrEqual(50000);
-    expect(file.text).not.toContain("十千伏联络线-中心厂站-等值电源");
+    expect(payload.ACGenerator.rows.some((row) => row.name === "交流厂站电源")).toBe(false);
   });
 
   test("全网 E 文件分别导出厂站、馈线和台区列表并按模型关联建立 parent", () => {
@@ -4400,61 +4164,4 @@ describe("全网 E 文件导出", () => {
     expect(singleModelFile.text).not.toContain("<District>");
   });
 
-  test("全网 E 文件兼容按项目 ID 或名称配置的历史模型交互按钮层级", () => {
-    const feederButton = createDefaultNode("static-model-interaction-feeder", { x: 100, y: 100 });
-    feederButton.params.buttonTargetProjectId = "feeder-8";
-    feederButton.params.buttonTargetProjectName = "八号馈线";
-    const districtButton = createDefaultNode("static-model-interaction-district", { x: 100, y: 100 });
-    districtButton.params.buttonTargetProjectName = "八号台区";
-
-    const file = buildMultiModelEFileExport([
-      {
-        id: "station-3",
-        schemePath: ["历史方案"],
-        project: { version: 1, name: "三号厂站", idx: 3, modelType: "厂站", nodes: [feederButton], edges: [] }
-      },
-      {
-        id: "feeder-8",
-        schemePath: ["历史方案"],
-        project: { version: 1, name: "八号馈线", idx: 8, modelType: "馈线", nodes: [districtButton], edges: [] }
-      },
-      {
-        id: "district-18",
-        schemePath: ["历史方案"],
-        project: { version: 1, name: "八号台区", idx: 18, modelType: "台区", nodes: [], edges: [] }
-      }
-    ]);
-    const payload = parseESections(file.text);
-
-    expect(payload.Station.rows).toEqual([{ idx: "3", name: "三号厂站" }]);
-    expect(payload.Feeder.rows).toEqual([{ idx: "8", name: "八号馈线", parent: "3" }]);
-    expect(payload.District.rows).toEqual([{ idx: "18", name: "八号台区", parent: "8" }]);
-  });
-
-  test("关联模型未纳入导出时在该线路端生成等值设备", () => {
-    const stationButton = createDefaultNode("static-model-interaction-station", { x: 120, y: 160 });
-    stationButton.params.buttonTargetProjectId = "station-missing";
-    stationButton.params.buttonTargetProjectName = "未选厂站";
-    stationButton.terminals = stationButton.terminals.map((terminal) => ({ ...terminal, vbase: "10" }));
-    const load = createDefaultNode("ac-load", { x: 440, y: 160 });
-    load.params.idx = "8";
-    load.terminals[0].vbase = "10";
-    const line = connectLine(
-      "缺失边界线",
-      { node: stationButton, terminalId: "t1" },
-      { node: load, terminalId: load.terminals[0].id }
-    );
-
-    const file = buildMultiModelEFileExport([{
-      id: "feeder-3",
-      schemePath: ["主方案"],
-      project: { version: 1, name: "边界馈线", idx: 3, modelType: "馈线", nodes: [stationButton, load, line], edges: [] }
-    }]);
-    const payload = parseESections(file.text);
-    const equivalent = payload.ACGenerator.rows.find((row) => row.name === "缺失边界线-未选厂站-等值电源");
-
-    expect(equivalent).toBeTruthy();
-    expect(Number(equivalent?.idx)).toBeGreaterThanOrEqual(30000);
-    expect(Number(equivalent?.idx)).toBeLessThan(40000);
-  });
 });

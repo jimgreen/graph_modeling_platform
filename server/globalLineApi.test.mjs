@@ -166,7 +166,7 @@ describe("/webgrp/global-lines", () => {
   });
 
   test("保存厂站模型时全局表独占名称和参数，读取接口按idx投影完整运行态", async () => {
-    const boundary = { id: "station-x", kind: "static-model-interaction-station", name: "厂站X", params: {}, terminals: [] };
+    const boundary = { id: "station-x", kind: "ac-station-source", name: "厂站X", params: { model_id: "1" }, terminals: [] };
     const bus = { id: "bus-x", kind: "ac-bus", name: "母线X", params: {}, terminals: [] };
     const line = boundaryLine("line-x", boundary.id, "厂站X出线");
     const saved = await fetchJson(apiPath("/schemes/project"), jsonRequest("PUT", {

@@ -2034,19 +2034,19 @@ export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
       writeOperationLog("自动对齐需要至少 2 个可操作图元");
       return;
     }
-    const rawThreshold = window.prompt(
-      `请输入自动对齐判定门槛（${AUTO_ALIGN_MIN_THRESHOLD_PX}-${AUTO_ALIGN_MAX_THRESHOLD_PX}px）`,
+    const rawGridSpacing = window.prompt(
+      `请输入自动对齐网格间距（${AUTO_ALIGN_MIN_THRESHOLD_PX}-${AUTO_ALIGN_MAX_THRESHOLD_PX}px）`,
       String(AUTO_ALIGN_DEFAULT_THRESHOLD_PX)
     );
-    if (rawThreshold === null) {
+    if (rawGridSpacing === null) {
       return;
     }
-    const parsedThreshold = Number.parseFloat(rawThreshold.trim());
-    if (!Number.isFinite(parsedThreshold)) {
-      writeOperationLog("自动对齐判定门槛无效");
+    const parsedGridSpacing = Number.parseFloat(rawGridSpacing.trim());
+    if (!Number.isFinite(parsedGridSpacing)) {
+      writeOperationLog("自动对齐网格间距无效");
       return;
     }
-    const threshold = clampNumber(Math.round(parsedThreshold), AUTO_ALIGN_MIN_THRESHOLD_PX, AUTO_ALIGN_MAX_THRESHOLD_PX);
+    const gridSpacing = clampNumber(Math.round(parsedGridSpacing), AUTO_ALIGN_MIN_THRESHOLD_PX, AUTO_ALIGN_MAX_THRESHOLD_PX);
     const layoutUnits = buildCanvasLayoutUnits(
       activeLayerGroups,
       activeLayerNodes,
@@ -2060,7 +2060,7 @@ export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
       writeOperationLog("自动对齐没有发现可调整的图元");
       return;
     }
-    const arranged = autoAlignNodeLayoutUnits(nodes, layoutUnits, threshold);
+    const arranged = autoAlignNodeLayoutUnits(nodes, layoutUnits, gridSpacing);
     const movedCount = commitLayoutNodePositions(
       Array.from(new Set(layoutUnits.flatMap((unit) => unit.nodeIds))),
       arranged,
@@ -2068,10 +2068,10 @@ export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
     );
     const readjustedRouteCount = movedCount === 0 ? readjustActiveLayerBusEndpointRoutes() : 0;
     writeOperationLog(movedCount > 0
-      ? `自动对齐 ${movedCount} 个图元，门槛 ${threshold}px`
+      ? `自动对齐 ${movedCount} 个图元，网格间距 ${gridSpacing}px`
       : readjustedRouteCount > 0
-        ? `自动对齐未移动图元，已整理 ${readjustedRouteCount} 条母线连接落点，门槛 ${threshold}px`
-        : `自动对齐未发现坐标相近图元，门槛 ${threshold}px`);
+        ? `自动对齐未移动图元，已整理 ${readjustedRouteCount} 条母线连接落点，网格间距 ${gridSpacing}px`
+        : `图元中心已位于 ${gridSpacing}px 网格交叉点`);
   };
 }
 

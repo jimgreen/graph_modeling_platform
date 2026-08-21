@@ -128,19 +128,21 @@ function globalLineRecord(
 }
 
 function completeGlobalLineConsistencyFixture(id = "global-line-consistency-1") {
-  const sourceBoundary = createDefaultNode("static-model-interaction-station", { x: 100, y: 100 });
+  const sourceBoundary = createDefaultNode("ac-station-source", { x: 100, y: 100 });
+  sourceBoundary.params.model_id = "71";
   const sourceLoad = createDefaultNode("ac-load", { x: 420, y: 100 });
   const targetSource = createDefaultNode("ac-source", { x: 100, y: 260 });
-  const targetBoundary = createDefaultNode("static-model-interaction-feeder", { x: 420, y: 260 });
+  const targetBoundary = createDefaultNode("ac-feeder-load", { x: 420, y: 260 });
+  targetBoundary.params.model_id = "72";
   const sourceLine = connectAcLine(
     "跨模型一致性线路",
-    { node: sourceBoundary, terminalId: "t1" },
+    { node: sourceBoundary, terminalId: sourceBoundary.terminals[0].id },
     { node: sourceLoad, terminalId: sourceLoad.terminals[0].id }
   );
   const targetLine = connectAcLine(
     "跨模型一致性线路",
     { node: targetSource, terminalId: targetSource.terminals[0].id },
-    { node: targetBoundary, terminalId: "t1" }
+    { node: targetBoundary, terminalId: targetBoundary.terminals[0].id }
   );
   for (const line of [sourceLine, targetLine]) {
     line.params.idx = "71";
@@ -411,19 +413,21 @@ describe("全网拓扑全局线路预检查", () => {
   });
 
   test("模型文件存在但线路定义与全局线路定义不一致时进入错误分页", () => {
-    const sourceBoundary = createDefaultNode("static-model-interaction-station", { x: 100, y: 100 });
+    const sourceBoundary = createDefaultNode("ac-station-source", { x: 100, y: 100 });
+    sourceBoundary.params.model_id = "31";
     const sourceLoad = createDefaultNode("ac-load", { x: 420, y: 100 });
     const targetSource = createDefaultNode("ac-source", { x: 100, y: 260 });
-    const targetBoundary = createDefaultNode("static-model-interaction-feeder", { x: 420, y: 260 });
+    const targetBoundary = createDefaultNode("ac-feeder-load", { x: 420, y: 260 });
+    targetBoundary.params.model_id = "32";
     const sourceLine = connectAcLine(
       "跨区交流二线",
-      { node: sourceBoundary, terminalId: "t1" },
+      { node: sourceBoundary, terminalId: sourceBoundary.terminals[0].id },
       { node: sourceLoad, terminalId: sourceLoad.terminals[0].id }
     );
     const targetLine = connectAcLine(
       "跨区交流二线",
       { node: targetSource, terminalId: targetSource.terminals[0].id },
-      { node: targetBoundary, terminalId: "t1" }
+      { node: targetBoundary, terminalId: targetBoundary.terminals[0].id }
     );
     const sourceModel = {
       projectId: "station-global-source",
@@ -812,17 +816,16 @@ describe("全网拓扑模型层级唯一归属", () => {
     const feederAssociationByModelId = createDefaultNode("ac-feeder-source", { x: 100, y: 100 });
     feederAssociationByModelId.name = "一号馈线电源";
     feederAssociationByModelId.params.model_id = "12";
-    const feederAssociationByProjectId = createDefaultNode("static-model-interaction-feeder", { x: 200, y: 100 });
-    feederAssociationByProjectId.name = "一号馈线按钮";
-    feederAssociationByProjectId.params.buttonTargetProjectId = "feeder-1";
-    feederAssociationByProjectId.params.buttonTargetProjectName = "十千伏一线";
+    const feederAssociationInSecondStation = createDefaultNode("dc-feeder-load", { x: 200, y: 100 });
+    feederAssociationInSecondStation.name = "一号馈线负荷";
+    feederAssociationInSecondStation.params.model_id = "12";
 
     const districtAssociationByModelId = createDefaultNode("ac-district-load", { x: 100, y: 200 });
     districtAssociationByModelId.name = "一号台区负荷";
     districtAssociationByModelId.params.model_id = "23";
-    const districtAssociationByName = createDefaultNode("static-model-interaction-district", { x: 200, y: 200 });
-    districtAssociationByName.name = "一号台区按钮";
-    districtAssociationByName.params.buttonTargetProjectName = "一号台区";
+    const districtAssociationInSecondFeeder = createDefaultNode("dc-district-source", { x: 200, y: 200 });
+    districtAssociationInSecondFeeder.name = "一号台区电源";
+    districtAssociationInSecondFeeder.params.model_id = "23";
 
     const stationA = {
       projectId: "station-a",
@@ -840,7 +843,7 @@ describe("全网拓扑模型层级唯一归属", () => {
       name: "备用厂站",
       idx: 2,
       modelType: "厂站" as const,
-      record: projectRecord("station-b", "备用厂站", 2, "厂站", [feederAssociationByProjectId])
+      record: projectRecord("station-b", "备用厂站", 2, "厂站", [feederAssociationInSecondStation])
     };
     const feederA = {
       projectId: "feeder-1",
@@ -858,7 +861,7 @@ describe("全网拓扑模型层级唯一归属", () => {
       name: "十千伏二线",
       idx: 13,
       modelType: "馈线" as const,
-      record: projectRecord("feeder-2", "十千伏二线", 13, "馈线", [districtAssociationByName])
+      record: projectRecord("feeder-2", "十千伏二线", 13, "馈线", [districtAssociationInSecondFeeder])
     };
     const district = {
       projectId: "district-1",
@@ -887,7 +890,7 @@ describe("全网拓扑模型层级唯一归属", () => {
       expect.objectContaining({
         projectId: stationB.projectId,
         modelName: stationB.name,
-        nodeId: feederAssociationByProjectId.id,
+        nodeId: feederAssociationInSecondStation.id,
         message: expect.stringMatching(/中心厂站.*备用厂站.*只能归属一个厂站/)
       })
     ]);
@@ -901,7 +904,7 @@ describe("全网拓扑模型层级唯一归属", () => {
       expect.objectContaining({
         projectId: feederB.projectId,
         modelName: feederB.name,
-        nodeId: districtAssociationByName.id,
+        nodeId: districtAssociationInSecondFeeder.id,
         message: expect.stringMatching(/十千伏一线.*十千伏二线.*只能归属一个馈线/)
       })
     ]);
@@ -1051,198 +1054,4 @@ describe("全网拓扑告警分类", () => {
     expect(result.errors.some((alert) => alert.message.includes("i_max=199"))).toBe(false);
   });
 
-  test("线路关联模型未参与本轮拓扑时给出警告，目标模型被选中后警告消失", () => {
-    const stationButton = createDefaultNode("static-model-interaction-station", { x: 120, y: 160 });
-    stationButton.name = "中心厂站入口";
-    stationButton.params.buttonTargetProjectId = "station-1";
-    stationButton.params.buttonTargetProjectName = "中心厂站";
-    stationButton.terminals = stationButton.terminals.map((terminal) => ({
-      ...terminal,
-      vbase: terminal.type === "ac" ? "10" : "0.75"
-    }));
-    const load = createDefaultNode("ac-load", { x: 440, y: 160 });
-    load.name = "末端负荷";
-    load.terminals[0].vbase = "10";
-    const line = connectAcLine(
-      "十千伏联络线",
-      { node: stationButton, terminalId: "t1" },
-      { node: load, terminalId: load.terminals[0].id }
-    );
-
-    const feeder = {
-      projectId: "feeder-1",
-      schemeId: "scheme-root",
-      schemePath: ["主方案"],
-      name: "十千伏一线",
-      idx: 5,
-      modelType: "馈线" as const,
-      record: projectRecord("feeder-1", "十千伏一线", 5, "馈线", [stationButton, load, line])
-    };
-    const station = {
-      projectId: "station-1",
-      schemeId: "scheme-root",
-      schemePath: ["主方案"],
-      name: "中心厂站",
-      idx: 1,
-      modelType: "厂站" as const,
-      record: projectRecord("station-1", "中心厂站", 1, "厂站")
-    };
-
-    const partial = analyzeAllNetworkTopology([feeder], [station, feeder]);
-    expect(partial.warnings.filter((alert) => alert.id.includes("missing-related-model"))).toEqual([
-      expect.objectContaining({
-        modelName: "十千伏一线",
-        deviceName: "十千伏联络线",
-        message: expect.stringMatching(/首端.*中心厂站.*未参与本轮全网拓扑/)
-      })
-    ]);
-    expect(partial.errors.some((alert) => alert.id.includes("missing-related-model"))).toBe(false);
-
-    const complete = analyzeAllNetworkTopology([station, feeder], [station, feeder]);
-    expect(complete.errors.some((alert) => alert.id.includes("missing-related-model"))).toBe(false);
-    expect(complete.warnings.some((alert) => alert.id.includes("missing-related-model"))).toBe(false);
-  });
-
-  test("线路端子连接的厂站馈线台区模型未定义或不存在时给出明确警告", () => {
-    const districtButton = createDefaultNode("static-model-interaction-district", { x: 120, y: 160 });
-    districtButton.name = "台区边界";
-    districtButton.terminals = districtButton.terminals.map((terminal) => ({
-      ...terminal,
-      vbase: terminal.type === "ac" ? "10" : "0.75"
-    }));
-    const load = createDefaultNode("ac-load", { x: 440, y: 160 });
-    load.name = "线路负荷";
-    load.terminals[0].vbase = "10";
-    const line = connectAcLine(
-      "十千伏二线",
-      { node: districtButton, terminalId: "t1" },
-      { node: load, terminalId: load.terminals[0].id }
-    );
-    const feeder = {
-      projectId: "feeder-2",
-      schemeId: "scheme-root",
-      schemePath: ["主方案"],
-      name: "十千伏二线模型",
-      idx: 6,
-      modelType: "馈线" as const,
-      record: projectRecord("feeder-2", "十千伏二线模型", 6, "馈线", [districtButton, load, line])
-    };
-    const district = {
-      projectId: "district-1",
-      schemeId: "scheme-root",
-      schemePath: ["主方案"],
-      name: "一号台区",
-      idx: 7,
-      modelType: "台区" as const,
-      record: projectRecord("district-1", "一号台区", 7, "台区")
-    };
-
-    districtButton.params.buttonTargetProjectName = "一号台区";
-    const undefinedTarget = analyzeAllNetworkTopology([feeder, district], [feeder, district]);
-    expect(undefinedTarget.warnings.filter((alert) => alert.id.includes("missing-related-model"))).toEqual([
-      expect.objectContaining({
-        modelName: "十千伏二线模型",
-        deviceName: "十千伏二线",
-        message: expect.stringMatching(/首端.*台区.*buttonTargetProjectId.*未定义/)
-      })
-    ]);
-    expect(undefinedTarget.errors.some((alert) => alert.id.includes("missing-related-model"))).toBe(false);
-
-    districtButton.params.buttonTargetProjectId = "district-missing";
-    districtButton.params.buttonTargetProjectName = "不存在的台区";
-    const missingTarget = analyzeAllNetworkTopology([feeder, district], [feeder, district]);
-    expect(missingTarget.warnings.filter((alert) => alert.id.includes("missing-related-model"))).toEqual([
-      expect.objectContaining({
-        modelName: "十千伏二线模型",
-        deviceName: "十千伏二线",
-        message: expect.stringMatching(/首端.*不存在的台区.*district-missing.*不存在/)
-      })
-    ]);
-    expect(missingTarget.errors.some((alert) => alert.id.includes("missing-related-model"))).toBe(false);
-
-    districtButton.params.buttonTargetProjectId = feeder.projectId;
-    districtButton.params.buttonTargetProjectName = feeder.name;
-    const selfTarget = analyzeAllNetworkTopology([feeder, district], [feeder, district]);
-    expect(selfTarget.warnings.filter((alert) => alert.id.includes("missing-related-model"))).toEqual([
-      expect.objectContaining({
-        modelName: "十千伏二线模型",
-        deviceName: "十千伏二线",
-        message: expect.stringMatching(/首端.*buttonTargetProjectId.*feeder-2.*当前模型.*相同/)
-      })
-    ]);
-    expect(selfTarget.errors.some((alert) => alert.id.includes("missing-related-model"))).toBe(false);
-  });
-
-  test("线路连接的微网模型按钮目标问题进入警告而不是错误", () => {
-    const microgridButton = createDefaultNode("static-model-interaction-microgrid", { x: 120, y: 160 });
-    microgridButton.name = "微网边界";
-    microgridButton.terminals = microgridButton.terminals.map((terminal) => ({
-      ...terminal,
-      vbase: terminal.type === "ac" ? "10" : "0.75"
-    }));
-    const source = createDefaultNode("ac-source", { x: 440, y: 160 });
-    source.name = "交流电源";
-    source.terminals[0].vbase = "10";
-    const line = connectAcLine(
-      "微网联络线",
-      { node: microgridButton, terminalId: "t1" },
-      { node: source, terminalId: source.terminals[0].id }
-    );
-    const station = {
-      projectId: "station-with-microgrid-boundary",
-      schemeId: "scheme-root",
-      schemePath: ["主方案"],
-      name: "含微网边界的厂站",
-      idx: 8,
-      modelType: "厂站" as const,
-      record: projectRecord(
-        "station-with-microgrid-boundary",
-        "含微网边界的厂站",
-        8,
-        "厂站",
-        [microgridButton, source, line]
-      )
-    };
-
-    const result = analyzeAllNetworkTopology([station], [station]);
-
-    expect(result.warnings.filter((alert) => alert.id.includes("missing-related-model"))).toEqual([
-      expect.objectContaining({
-        modelName: "含微网边界的厂站",
-        deviceName: "微网联络线",
-        message: expect.stringMatching(/首端.*微网.*buttonTargetProjectId.*未定义/)
-      })
-    ]);
-    expect(result.errors.some((alert) => alert.id.includes("missing-related-model"))).toBe(false);
-
-    const targetMicrogrid = {
-      projectId: "microgrid-target",
-      schemeId: "scheme-root",
-      schemePath: ["主方案"],
-      name: "目标微网",
-      idx: 9,
-      modelType: "微网" as const,
-      record: projectRecord("microgrid-target", "目标微网", 9, "微网")
-    };
-    microgridButton.params.buttonTargetProjectId = targetMicrogrid.projectId;
-    microgridButton.params.buttonTargetProjectName = targetMicrogrid.name;
-    const validTarget = analyzeAllNetworkTopology([station], [station, targetMicrogrid]);
-    expect(validTarget.warnings.some((alert) => alert.id.includes("missing-related-model"))).toBe(false);
-
-    microgridButton.params.buttonTargetProjectId = "missing-microgrid";
-    const missingTarget = analyzeAllNetworkTopology([station], [station, targetMicrogrid]);
-    expect(missingTarget.warnings.filter((alert) => alert.id.includes("missing-related-model"))).toEqual([
-      expect.objectContaining({
-        message: expect.stringMatching(/微网.*missing-microgrid.*不存在/)
-      })
-    ]);
-
-    microgridButton.params.buttonTargetProjectId = station.projectId;
-    const selfTarget = analyzeAllNetworkTopology([station], [station, targetMicrogrid]);
-    expect(selfTarget.warnings.filter((alert) => alert.id.includes("missing-related-model"))).toEqual([
-      expect.objectContaining({
-        message: expect.stringMatching(/微网.*buttonTargetProjectId.*station-with-microgrid-boundary.*当前模型.*相同/)
-      })
-    ]);
-  });
 });

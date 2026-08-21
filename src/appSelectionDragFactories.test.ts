@@ -544,13 +544,13 @@ describe("selection drag route cache patches", () => {
     expect(updates.some((node) => node.id === unsafeLine.id)).toBe(true);
   });
 
-  test("finds a long routable line whose path crosses a moved model-interaction blocker outside its node index bounds", () => {
-    const previousStation = {
-      ...createDefaultNode("static-model-interaction-station", { x: 500, y: 420 }),
-      id: "moved-station-route-blocker"
+  test("finds a long routable line whose path crosses a moved static blocker outside its node index bounds", () => {
+    const previousBlocker = {
+      ...createDefaultNode("static-rect", { x: 500, y: 420 }),
+      id: "moved-static-route-blocker"
     };
-    const movedStation = {
-      ...previousStation,
+    const movedBlocker = {
+      ...previousBlocker,
       position: { x: 500, y: 240 }
     };
     const line = setRoutableLineDeviceCanvasPoints(
@@ -563,8 +563,8 @@ describe("selection drag route cache patches", () => {
         { x: 880, y: 240 }
       ]
     );
-    const previousNodes = [previousStation, line];
-    const nextNodes = [movedStation, line];
+    const previousNodes = [previousBlocker, line];
+    const nextNodes = [movedBlocker, line];
     const routeCandidateIdsForMovedNodes = createRoutableLineRouteCandidateIdsForMovedNodes({
       MOVE_ROUTE_LOCAL_SEARCH_PADDING: 28,
       boundsForNodeSet: (
@@ -610,8 +610,8 @@ describe("selection drag route cache patches", () => {
     const candidateIds = routeCandidateIdsForMovedNodes(
       previousNodes,
       nextNodes,
-      [movedStation.id],
-      { [movedStation.id]: previousStation.position }
+      [movedBlocker.id],
+      { [movedBlocker.id]: previousBlocker.position }
     );
 
     expect(candidateIds).toContain(line.id);

@@ -14,7 +14,7 @@ import {
   CUSTOM_PARAM_DEFINITIONS_KEY, deviceParamValue, enumExportValueForDefinition,
   toSnakeCaseDeviceParamName, normalizeVoltageBaseInput, terminalVoltageBaseNumber,
   readVoltageLevelSettings, calculateElectricalTopology, isStaticNode, isBusNode,
-  equivalentBoundaryModelInteractionType, isRoutableLineDeviceKind, routableLineDeviceEndpointRefs,
+  routableLineDeviceEndpointRefs,
   modelAssociationModelTypeForKind,
   resolveEffectiveTemplateParameterDefinitionGroups, associatedNodeColumnValue,
   containerRelationCounterKey, parseContainerRelationField, isContainerTransformerRelationKey,
@@ -1602,72 +1602,6 @@ function applyEInterfaceDefinitionToRecord(
   };
 }
 
-function buildStationBoundaryDeviceRecords(
-  topologyNodes: ModelNode[],
-  existingRecords: EDeviceExport[],
-  interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>
-): EDeviceExport[] {
-  const nodeById = new Map(topologyNodes.map((node) => [node.id, node]));
-  const nextIndexBySection = new Map<string, number>();
-  for (const record of existingRecords) {
-    const idx = Number.parseInt(firstNumericToken(String(record.params.idx ?? "")), 10);
-    if (Number.isSafeInteger(idx) && idx > (nextIndexBySection.get(record.section) ?? 0)) {
-      nextIndexBySection.set(record.section, idx);
-    }
-  }
-  const records: EDeviceExport[] = [];
-  for (const line of topologyNodes) {
-    if (!isRoutableLineDeviceKind(line.kind)) {
-      continue;
-    }
-    const refs = routableLineDeviceEndpointRefs(line);
-    const endpointSpecs = [
-      { side: "source" as const, ref: refs.source, terminal: line.terminals[0], role: "generator" as const },
-      { side: "target" as const, ref: refs.target, terminal: line.terminals[line.terminals.length - 1], role: "load" as const }
-    ];
-    for (const { side, ref, terminal, role } of endpointSpecs) {
-      const boundaryNode = ref ? nodeById.get(ref.nodeId) : undefined;
-      const boundaryType = boundaryNode ? equivalentBoundaryModelInteractionType(boundaryNode) : "";
-      if (!boundaryNode || !terminal || !boundaryType) {
-        continue;
-      }
-      const energyType = terminal.type === "dc" || baseDeviceKind(line.kind).startsWith("dc-") ? "DC" : "AC";
-      const section = `${energyType}${role === "generator" ? "Generator" : "Load"}`;
-      const nextIdx = (nextIndexBySection.get(section) ?? 0) + 1;
-      nextIndexBySection.set(section, nextIdx);
-      const boundaryName = String(boundaryNode.params.buttonTargetProjectName ?? "").trim() ||
-        String(boundaryNode.name ?? "").trim() ||
-        boundaryType;
-      const roleLabel = role === "generator" ? "等值电源" : "等值负荷";
-      const vbase = String(terminal.vbase ?? line.params.vbase ?? "").trim();
-      const columns = E_SECTION_COLUMNS[section] ?? [];
-      const params: Record<string, string> = Object.fromEntries(
-        columns.map((column) => [column, defaultContainerAssociatedColumnValue(section, column, nextIdx - 1)])
-      );
-      Object.assign(params, {
-        idx: String(nextIdx),
-        name: `${line.name || line.id}-${boundaryName}-${roleLabel}`,
-        node: String(terminal.nodeNumber ?? "").trim(),
-        run_stat: "1",
-        _vbase: vbase
-      });
-      if (role === "generator") {
-        params.control_type = section === "ACGenerator" ? "PV" : "P";
-        params.rated_voltage = vbase || params.rated_voltage;
-        params.v_set = vbase || params.v_set;
-      }
-      records.push(applyEInterfaceDefinitionToRecord({
-        id: `${line.id}:station-boundary:${side}`,
-        kind: role === "generator" ? `${energyType.toLowerCase()}-source` : `${energyType.toLowerCase()}-load`,
-        section,
-        params,
-        columns
-      }, interfaceDefinitionBySection.get(section)));
-    }
-  }
-  return records;
-}
-
 // aclinesegment/dclinesegment 同时生成 aclineend/dclineend（端点表）：
 // 每条线段生成 2 条端点记录（首端/末端），name = 线段name + "_首端/_末端"，
 // aclnseg_id/dcln_id 指向所属线段的 idx，nd 继承线段 ind/jnd 拓扑节点号。
@@ -1938,18 +1872,11 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
     }
   }
 
-  const stationBoundaryDevices = buildStationBoundaryDeviceRecords(
-    topologyNodes,
-    [...topologyNodeDevices, ...deviceRecords, ...derivedDeviceRecords, ...containerAssociatedDevices],
-    interfaceDefinitionBySection
-  );
-
   return [
     ...topologyNodeDevices,
     ...deviceRecords,
     ...derivedDeviceRecords,
-    ...containerAssociatedDevices,
-    ...stationBoundaryDevices
+    ...containerAssociatedDevices
   ].filter((record) => {
     const definition = interfaceDefinitionBySection.get(record.section);
     // 模板模式：模板未定义的 section 一律不输出（如 ems_rtdb 未定义 ACNode/DCNode）
@@ -2835,36 +2762,6 @@ function positiveIntegerValue(value: unknown) {
   return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : 0;
 }
 
-function boundaryEquivalentRecordIdsToOmit(
-  project: ProjectFile,
-  includedProjectIds: ReadonlySet<string>,
-  includedProjectNames: ReadonlySet<string>
-) {
-  const omittedIds = new Set<string>();
-  const nodeById = new Map(project.nodes.map((node) => [node.id, node]));
-  for (const line of project.nodes) {
-    if (!isRoutableLineDeviceKind(line.kind)) {
-      continue;
-    }
-    const refs = routableLineDeviceEndpointRefs(line);
-    for (const side of ["source", "target"] as const) {
-      const boundaryNode = refs[side] ? nodeById.get(refs[side]!.nodeId) : undefined;
-      if (!boundaryNode || !equivalentBoundaryModelInteractionType(boundaryNode)) {
-        continue;
-      }
-      const targetProjectId = String(boundaryNode.params.buttonTargetProjectId ?? "").trim();
-      const targetProjectName = String(boundaryNode.params.buttonTargetProjectName ?? "").trim();
-      if (
-        (targetProjectId && includedProjectIds.has(targetProjectId)) ||
-        (targetProjectName && includedProjectNames.has(targetProjectName))
-      ) {
-        omittedIds.add(`${line.id}:station-boundary:${side}`);
-      }
-    }
-  }
-  return omittedIds;
-}
-
 function collapsedModelAssociationNodeIds(project: ProjectFile) {
   return new Set(
     project.nodes
@@ -2920,41 +2817,27 @@ function buildMultiModelHierarchyRecords(
   orderedInputs: readonly MultiModelEFileExportInput[]
 ): EDeviceExport[] {
   const modelIndexByInput = new Map<MultiModelEFileExportInput, number>();
-  const inputByProjectId = new Map<string, MultiModelEFileExportInput>();
   const inputByModelIndex = new Map<number, MultiModelEFileExportInput>();
-  const inputsByName = new Map<string, MultiModelEFileExportInput[]>();
 
   orderedInputs.forEach((input, inputIndex) => {
     const modelIndex = positiveIntegerValue(input.project.idx) || inputIndex + 1;
     modelIndexByInput.set(input, modelIndex);
-    const projectId = String(input.id ?? "").trim();
-    if (projectId) inputByProjectId.set(projectId, input);
     const persistedModelIndex = positiveIntegerValue(input.project.idx);
     if (persistedModelIndex > 0) inputByModelIndex.set(persistedModelIndex, input);
-    const name = String(input.project.name ?? "").trim();
-    if (name) inputsByName.set(name, [...(inputsByName.get(name) ?? []), input]);
   });
 
   const resolveAssociatedInput = (
     node: ModelNode,
     expectedModelType: MultiModelHierarchyType
   ): MultiModelEFileExportInput | undefined => {
-    const associationModelType = modelAssociationModelTypeForKind(node.kind) ||
-      equivalentBoundaryModelInteractionType(node);
+    const associationModelType = modelAssociationModelTypeForKind(node.kind);
     if (associationModelType !== expectedModelType) return undefined;
 
     const modelIndex = positiveIntegerValue(node.params.model_id);
     const byModelIndex = modelIndex > 0 ? inputByModelIndex.get(modelIndex) : undefined;
     if (byModelIndex?.project.modelType === expectedModelType) return byModelIndex;
 
-    const projectId = String(node.params.buttonTargetProjectId ?? "").trim();
-    const byProjectId = projectId ? inputByProjectId.get(projectId) : undefined;
-    if (byProjectId?.project.modelType === expectedModelType) return byProjectId;
-
-    const projectName = String(node.params.buttonTargetProjectName ?? "").trim();
-    return (inputsByName.get(projectName) ?? []).find(
-      (input) => input.project.modelType === expectedModelType
-    );
+    return undefined;
   };
 
   const parentIndexByInput = new Map<MultiModelEFileExportInput, number>();
@@ -3113,10 +2996,7 @@ function multiModelGlobalLineFallbackEndpoint(
     ];
     for (const candidate of endpoints) {
       const boundaryNode = candidate.reference ? nodeById.get(candidate.reference.nodeId) : undefined;
-      if (!boundaryNode || !(
-        modelAssociationModelTypeForKind(boundaryNode.kind) ||
-        equivalentBoundaryModelInteractionType(boundaryNode)
-      )) {
+      if (!boundaryNode || !modelAssociationModelTypeForKind(boundaryNode.kind)) {
         continue;
       }
       const boundaryEndpoint = multiModelGlobalLineBoundaryEndpoint(boundaryNode) ||
@@ -3282,25 +3162,17 @@ export function buildMultiModelEFileExport(
     positiveIntegerValue(left.project.idx) - positiveIntegerValue(right.project.idx) ||
     left.project.name.localeCompare(right.project.name, "zh-CN")
   );
-  const includedProjectIds = new Set(orderedInputs.map((input) => input.id).filter(Boolean));
-  const includedProjectNames = new Set(orderedInputs.map((input) => input.project.name.trim()).filter(Boolean));
   const records: EDeviceExport[] = buildMultiModelHierarchyRecords(orderedInputs);
   const warnings: EExportWarning[] = [];
   const globalLineOccurrences: MultiModelGlobalLineOccurrence[] = [];
 
   orderedInputs.forEach((input, inputIndex) => {
     const modelIndex = positiveIntegerValue(input.project.idx) || inputIndex + 1;
-    const omittedBoundaryRecordIds = boundaryEquivalentRecordIdsToOmit(
-      input.project,
-      includedProjectIds,
-      includedProjectNames
-    );
     const collapsedAssociationNodeIds = collapsedModelAssociationNodeIds(input.project);
     const globalLineNodes = multiModelGlobalLineNodes(input.project);
     const globalLineIdByNodeId = new Map(globalLineNodes.map(({ globalLineId, node }) => [node.id, globalLineId]));
     const allModelRecords = buildEDeviceRecords(input.project, options)
       .filter((record) => (
-        !omittedBoundaryRecordIds.has(record.id) &&
         !recordBelongsToCollapsedModelAssociationNode(record.id, collapsedAssociationNodeIds)
       ))
       .map((record) => multiModelRecordWithParent(record, modelIndex));

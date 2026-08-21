@@ -90,11 +90,6 @@ export const staticComponentLibraryByKind = {
   "static-toolbar-node": "StaticFlowNode",
   "static-input": "StaticFlowNode",
   "static-button": "StaticButton",
-  "static-model-interaction-microgrid": "ModelInteraction",
-  "static-model-interaction-station": "ModelInteraction",
-  "static-model-interaction-feeder": "ModelInteraction",
-  "static-model-interaction-district": "ModelInteraction",
-  "static-model-interaction-other": "ModelInteraction",
   "static-group-box": "StaticContainerSymbol",
   "static-swimlane": "StaticContainerSymbol",
   "static-resizer-frame": "StaticContainerSymbol",
@@ -120,7 +115,6 @@ export const eSectionColumns = {
   StaticBasicShape: [],
   StaticFlowNode: [],
   StaticButton: [],
-  ModelInteraction: [],
   StaticContainerSymbol: [],
   StaticConnectorSymbol: [],
   StaticAnnotationSymbol: [],
@@ -3092,29 +3086,6 @@ function routableLineTopologyEdges(nodes) {
   });
 }
 
-function isStationModelInteractionNode(node) {
-  return node?.kind === "static-model-interaction-station" || (
-    String(node?.params?.component_type ?? "").trim() === "ModelInteraction" &&
-    String(node?.params?.modelInteractionType ?? "").trim() === "厂站"
-  );
-}
-
-const equivalentBoundaryModelInteractionTypeByKind = new Map([
-  ["static-model-interaction-station", "厂站"],
-  ["static-model-interaction-feeder", "馈线"],
-  ["static-model-interaction-district", "台区"]
-]);
-
-const equivalentBoundaryModelInteractionTypes = new Set(["厂站", "馈线", "台区"]);
-
-function equivalentBoundaryModelInteractionType(node) {
-  const kindType = equivalentBoundaryModelInteractionTypeByKind.get(String(node?.kind ?? "").trim());
-  if (kindType) return kindType;
-  if (String(node?.params?.component_type ?? "").trim() !== "ModelInteraction") return "";
-  const configuredType = String(node?.params?.modelInteractionType ?? "").trim();
-  return equivalentBoundaryModelInteractionTypes.has(configuredType) ? configuredType : "";
-}
-
 function getTerminal(node, terminalId) {
   return node?.terminals?.find((terminal) => terminal.id === terminalId) ?? node?.terminals?.[0];
 }
@@ -3247,64 +3218,6 @@ function calculateElectricalTopology(nodes = [], edges = []) {
       terminals
     };
   });
-}
-
-function buildStationBoundaryDeviceRecords(topologyNodes, existingRecords) {
-  const nodeById = new Map(topologyNodes.map((node) => [node.id, node]));
-  const maxIndexBySection = new Map();
-  for (const record of existingRecords) {
-    const idx = Number.parseInt(firstNumericEValue(record?.params?.idx), 10);
-    if (Number.isSafeInteger(idx) && idx > (maxIndexBySection.get(record.section) ?? 0)) {
-      maxIndexBySection.set(record.section, idx);
-    }
-  }
-  const records = [];
-  for (const line of topologyNodes) {
-    if (!isRoutableLineDeviceKind(line?.kind)) continue;
-    const refs = routableLineEndpointRefs(line);
-    const endpoints = [
-      { side: "source", ref: refs.source, terminal: line.terminals?.[0], generator: true },
-      { side: "target", ref: refs.target, terminal: line.terminals?.[line.terminals.length - 1], generator: false }
-    ];
-    for (const endpoint of endpoints) {
-      const boundaryNode = endpoint.ref ? nodeById.get(endpoint.ref.nodeId) : undefined;
-      const boundaryType = equivalentBoundaryModelInteractionType(boundaryNode);
-      if (!boundaryNode || !endpoint.terminal || !boundaryType) continue;
-      const electricalType = endpoint.terminal.type === "dc" || String(line.kind).startsWith("dc-") ? "DC" : "AC";
-      const section = `${electricalType}${endpoint.generator ? "Generator" : "Load"}`;
-      const idx = (maxIndexBySection.get(section) ?? 0) + 1;
-      maxIndexBySection.set(section, idx);
-      const boundaryName = String(boundaryNode.params?.buttonTargetProjectName ?? "").trim() ||
-        String(boundaryNode.name ?? "").trim() ||
-        boundaryType;
-      const roleLabel = endpoint.generator ? "等值电源" : "等值负荷";
-      const vbase = String(endpoint.terminal.vbase ?? line.params?.vbase ?? "").trim();
-      const params = Object.fromEntries((eSectionColumns[section] ?? []).map((column) => [column, defaultEFileColumnValue(column, idx - 1)]));
-      Object.assign(params, {
-        idx: String(idx),
-        name: `${line.name || line.id}-${boundaryName}-${roleLabel}`,
-        node: String(endpoint.terminal.nodeNumber ?? "").trim(),
-        run_stat: "1",
-        _vbase: vbase
-      });
-      if (!endpoint.generator) {
-        params.pv0 = "1.0";
-        params.qv0 = "1.0";
-      } else {
-        params.control_type = section === "ACGenerator" ? "PV" : "P";
-        params.rated_voltage = vbase || params.rated_voltage;
-        params.v_set = vbase || params.v_set;
-      }
-      records.push({
-        id: `${line.id}:station-boundary:${endpoint.side}`,
-        kind: endpoint.generator ? `${electricalType.toLowerCase()}-source` : `${electricalType.toLowerCase()}-load`,
-        section,
-        params,
-        columns: eSectionColumns[section] ?? []
-      });
-    }
-  }
-  return records;
 }
 
 function firstText(values) {
@@ -3443,12 +3356,8 @@ function buildDeviceParameterFile(project, schemePath = ["默认方案"]) {
       };
     })
     .filter(Boolean);
-  const stationBoundaryDevices = buildStationBoundaryDeviceRecords(
-    topologyNodes,
-    [...topologyNodeDevices, ...deviceRecords]
-  );
   const recordsBySection = new Map();
-  for (const record of [...topologyNodeDevices, ...deviceRecords, ...stationBoundaryDevices]) {
+  for (const record of [...topologyNodeDevices, ...deviceRecords]) {
     const columns = record.columns ?? eSectionColumns[record.section] ?? [];
     if (!columns.length) {
       continue;

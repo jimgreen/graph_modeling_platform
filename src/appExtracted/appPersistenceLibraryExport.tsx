@@ -3307,9 +3307,11 @@ export function nodeRotateHandleControlPoints(
   node: ModelNode,
   rotateStemStart: number,
   rotateStemEnd: number,
-  rotateHandleGap: number
+  rotateHandleGap: number,
+  outlinePadding = 0
 ) {
-  const { halfHeight } = nodeScaledLocalHalfExtents(node);
+  const { halfHeight: nodeHalfHeight } = nodeScaledLocalHalfExtents(node);
+  const halfHeight = nodeHalfHeight + Math.max(0, outlinePadding) * Math.abs(getNodeScaleY(node));
   const origin = { x: 0, y: 0 };
   return {
     stemStart: rotatePointAround({ x: 0, y: -halfHeight - rotateStemStart }, origin, node.rotation),
@@ -3337,12 +3339,16 @@ export function scaleHandleControlPoint(
   node: ModelNode,
   handle: ScaleHandleConfig,
   handleGapX: number,
-  handleGapY: number
+  handleGapY: number,
+  outlinePadding = 0
 ) {
   const { halfWidth, halfHeight } = nodeScaledLocalHalfExtents(node);
+  const safeOutlinePadding = Math.max(0, outlinePadding);
+  const paddedHalfWidth = halfWidth + safeOutlinePadding * Math.abs(getNodeScaleX(node));
+  const paddedHalfHeight = halfHeight + safeOutlinePadding * Math.abs(getNodeScaleY(node));
   const localPoint = {
-    x: handle.xDirection === 0 ? 0 : handle.xDirection * (halfWidth + handleGapX),
-    y: handle.yDirection === 0 ? 0 : handle.yDirection * (halfHeight + handleGapY)
+    x: handle.xDirection === 0 ? 0 : handle.xDirection * (paddedHalfWidth + handleGapX),
+    y: handle.yDirection === 0 ? 0 : handle.yDirection * (paddedHalfHeight + handleGapY)
   };
   return rotatePointAround(localPoint, { x: 0, y: 0 }, node.rotation);
 }
@@ -3352,10 +3358,11 @@ export function nodeScaleHandleControlPoint(
   handle: ScaleHandleConfig,
   handleGapX: number,
   handleGapY: number,
-  uprightStaticSelectionOutline = false
+  uprightStaticSelectionOutline = false,
+  outlinePadding = 0
 ) {
   if (!uprightStaticSelectionOutline) {
-    return scaleHandleControlPoint(node, handle, handleGapX, handleGapY);
+    return scaleHandleControlPoint(node, handle, handleGapX, handleGapY, outlinePadding);
   }
   const rect = nodeUprightSelectionOutlineRect(node);
   return {

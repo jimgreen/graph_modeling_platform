@@ -4,10 +4,7 @@ import {
   DEFAULT_VOLTAGE_UNIT,
   buildModelAssociationProjectIndexes,
   calculateElectricalTopology,
-  equivalentBoundaryModelInteractionType,
   isBlockingTopologyValidationError,
-  isModelInteractionNode,
-  isRoutableLineDeviceKind,
   modelAssociationModelTypeForKind,
   normalizeDeviceOperatingLimitsAfterTopology,
   routableLineDeviceEndpointRefs,
@@ -598,69 +595,6 @@ function topologyErrorsForModel(
   return errors.map((error) => topologyAlert(model, error, normalizedLimits.nodes));
 }
 
-function selectedTargetKeys(models: readonly AllNetworkTopologyModel[]) {
-  const ids = new Set(models.map((model) => model.projectId).filter(Boolean));
-  return { ids };
-}
-
-function missingModelWarnings(
-  selectedModels: readonly AllNetworkTopologyModel[],
-  availableModels: readonly AllNetworkTopologyReferenceModel[]
-): AllNetworkTopologyAlert[] {
-  const selectedTargets = selectedTargetKeys(selectedModels);
-  const availableTargetById = new Map(availableModels.map((model) => [model.projectId, model]));
-  const warnings: AllNetworkTopologyAlert[] = [];
-  for (const model of selectedModels) {
-    const nodes = model.record.project.nodes;
-    const nodeById = new Map(nodes.map((node) => [node.id, node]));
-    for (const line of nodes) {
-      if (!isRoutableLineDeviceKind(line.kind)) {
-        continue;
-      }
-      const refs = routableLineDeviceEndpointRefs(line);
-      for (const side of ["source", "target"] as const) {
-        const boundaryNode = refs[side] ? nodeById.get(refs[side]!.nodeId) : undefined;
-        const equivalentBoundaryType = boundaryNode ? equivalentBoundaryModelInteractionType(boundaryNode) : "";
-        const boundaryType = boundaryNode && isModelInteractionNode(boundaryNode)
-          ? equivalentBoundaryType || String(boundaryNode.params.modelInteractionType ?? "").trim() || "模型交互"
-          : "";
-        if (!boundaryNode || !boundaryType) {
-          continue;
-        }
-        const targetProjectId = String(boundaryNode.params.buttonTargetProjectId ?? "").trim();
-        const targetProjectName = String(boundaryNode.params.buttonTargetProjectName ?? "").trim();
-        const selfReferenced = Boolean(targetProjectId && targetProjectId === model.projectId);
-        const selected = Boolean(targetProjectId && selectedTargets.ids.has(targetProjectId));
-        const targetModel = targetProjectId ? availableTargetById.get(targetProjectId) : undefined;
-        const endpointLabel = side === "source" ? "首端" : "末端";
-        const message = !targetProjectId
-          ? `线路“${line.name || line.id}”的${endpointLabel}连接到${boundaryType}模型按钮，但该按钮的关联模型字段 buttonTargetProjectId 未定义。`
-          : selfReferenced
-            ? `线路“${line.name || line.id}”的${endpointLabel}连接到${boundaryType}模型按钮，但其 buttonTargetProjectId=${targetProjectId} 与当前模型“${model.name}”的 projectId 相同，不允许关联本模型。`
-          : !targetModel
-            ? `线路“${line.name || line.id}”的${endpointLabel}连接到${boundaryType}模型“${targetProjectName || targetProjectId}”（buttonTargetProjectId=${targetProjectId}），但该模型不存在，无法参与本轮全网拓扑。`
-          : equivalentBoundaryType && !selected
-            ? `线路“${line.name || line.id}”的${endpointLabel}连接到${boundaryType}模型“${targetModel.name}”，但该模型未参与本轮全网拓扑。`
-            : "";
-        if (!message) {
-          continue;
-        }
-        warnings.push({
-          id: `${model.projectId}:missing-related-model:${line.id}:${side}`,
-          projectId: model.projectId,
-          schemeId: model.schemeId,
-          modelName: model.name,
-          deviceName: line.name || line.id,
-          message,
-          nodeId: line.id,
-          relatedNodeIds: [line.id]
-        });
-      }
-    }
-  }
-  return warnings;
-}
-
 type HierarchyAssociationOccurrence = {
   parent: AllNetworkTopologyModel;
   child: AllNetworkTopologyReferenceModel;
@@ -672,8 +606,7 @@ function hierarchyAssociationTarget(
   expectedModelType: Extract<AllNetworkTopologyModelType, "馈线" | "台区">,
   availableModels: readonly AllNetworkTopologyReferenceModel[]
 ): AllNetworkTopologyReferenceModel | undefined {
-  const associationModelType = modelAssociationModelTypeForKind(node.kind) ||
-    equivalentBoundaryModelInteractionType(node);
+  const associationModelType = modelAssociationModelTypeForKind(node.kind);
   if (associationModelType !== expectedModelType) return undefined;
 
   const modelIndex = normalizedModelIndex(node.params.model_id);
@@ -682,16 +615,7 @@ function hierarchyAssociationTarget(
     : undefined;
   if (byModelIndex?.modelType === expectedModelType) return byModelIndex;
 
-  const projectId = String(node.params.buttonTargetProjectId ?? "").trim();
-  const byProjectId = projectId
-    ? availableModels.find((model) => model.projectId === projectId)
-    : undefined;
-  if (byProjectId?.modelType === expectedModelType) return byProjectId;
-
-  const projectName = String(node.params.buttonTargetProjectName ?? "").trim();
-  return projectName
-    ? availableModels.find((model) => model.modelType === expectedModelType && model.name === projectName)
-    : undefined;
+  return undefined;
 }
 
 function hierarchyModelIdentity(model: AllNetworkTopologyReferenceModel) {
@@ -760,7 +684,6 @@ export function analyzeAllNetworkTopology(
   availableModels: readonly AllNetworkTopologyReferenceModel[] = selectedModels
 ): AllNetworkTopologyResult {
   const orderedModels = [...selectedModels].sort((left, right) => left.idx - right.idx);
-  const modelInteractionWarnings = missingModelWarnings(orderedModels, availableModels);
   const hierarchyErrors = duplicateHierarchyParentErrors(orderedModels, availableModels);
   const modelAssociationProjectIndexes = buildModelAssociationProjectIndexes(availableModels);
   return {
@@ -768,6 +691,6 @@ export function analyzeAllNetworkTopology(
       ...hierarchyErrors,
       ...orderedModels.flatMap((model) => topologyErrorsForModel(model, modelAssociationProjectIndexes))
     ],
-    warnings: modelInteractionWarnings
+    warnings: []
   };
 }

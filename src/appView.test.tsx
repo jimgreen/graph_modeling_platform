@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import { areCanvasPropsEqual, modelInteractionTerminalRenderState } from "./appExtracted/appCanvasArea";
+import { areCanvasPropsEqual } from "./appExtracted/appCanvasArea";
 import * as appViewModule from "./appExtracted/appView";
 import {
   inspectorTabShowsDevicePanel,
@@ -153,36 +153,6 @@ describe("未保存模型的保存后切换提示", () => {
     expect(source).toContain("disabled={pendingUnsavedActionResolving}");
     expect(styles).toMatch(/\.unsaved-change-error\s*\{[\s\S]*?color:\s*#b91c1c/);
     expect(styles).toMatch(/\.global-message\s*\{[\s\S]*?z-index:\s*15000/);
-  });
-});
-
-describe("model interaction terminal visibility", () => {
-  test("hides unused terminals while retaining connected legacy terminals without a saved local point", () => {
-    const localPoints = new Map<string, { x: number; y: number } | undefined>([
-      ["t1", { x: 60, y: 12 }],
-      ["t2", undefined]
-    ]);
-
-    expect(modelInteractionTerminalRenderState(true, localPoints, "t1")).toEqual({
-      connected: true,
-      localPoint: { x: 60, y: 12 },
-      showStub: false
-    });
-    expect(modelInteractionTerminalRenderState(true, localPoints, "t2")).toEqual({
-      connected: true,
-      localPoint: undefined,
-      showStub: false
-    });
-    expect(modelInteractionTerminalRenderState(true, localPoints, "t3")).toEqual({
-      connected: false,
-      localPoint: undefined,
-      showStub: false
-    });
-    expect(modelInteractionTerminalRenderState(false, undefined, "t1")).toEqual({
-      connected: true,
-      localPoint: undefined,
-      showStub: true
-    });
   });
 });
 

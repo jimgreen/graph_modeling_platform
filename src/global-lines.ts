@@ -4,7 +4,6 @@ import {
   ROUTABLE_LINE_TARGET_NODE_PARAM,
   baseDeviceKind,
   deriveDeviceIndexCounters,
-  equivalentBoundaryModelInteractionType,
   modelAssociationModelTypeForKind
 } from "./model";
 
@@ -66,10 +65,7 @@ export function isManagedGlobalLineModelType(modelType: string | undefined): boo
 }
 
 export function isGlobalLineBoundaryNode(node: Pick<ModelNode, "kind" | "params">): boolean {
-  return Boolean(
-    equivalentBoundaryModelInteractionType(node) ||
-    modelAssociationModelTypeForKind(node.kind)
-  );
+  return Boolean(modelAssociationModelTypeForKind(node.kind));
 }
 
 export function modelAssociationGlobalLineEndpointForNode(
@@ -201,8 +197,6 @@ function globalLineReferenceForEndpoint(
  * Builds the two directional references for a newly-created line that touches a
  * model-association source/load. The association endpoint points at model_id;
  * the physical line's opposite endpoint remains owned by the current model.
- * Legacy ModelInteraction buttons without model_id keep their one-reference
- * behavior so they can still be paired with a line from another model.
  */
 export function globalLineReferencesForPlacement(
   localReference: GlobalLineReference,
@@ -214,25 +208,18 @@ export function globalLineReferencesForPlacement(
     target: endpoints[endpoint],
     associatedProjectIdx: positiveModelAssociationProjectIdx(endpoints[endpoint].node)
   }));
-  const hasModelAssociationEndpoint = endpointEntries.some((entry) => entry.associatedProjectIdx > 0);
-  if (hasModelAssociationEndpoint) {
-    return endpointEntries.map(({ endpoint, target, associatedProjectIdx }) => (
-      associatedProjectIdx > 0
-        ? globalLineReferenceForEndpoint({
-            modelKey: globalLineModelKey(associatedProjectIdx, [], ""),
-            projectIdx: associatedProjectIdx,
-            schemePath: [],
-            projectName: "",
-            nodeId: localReference.nodeId
-          }, endpoint, target)
-        : globalLineReferenceForEndpoint(localReference, endpoint)
-    ));
-  }
-
-  const boundaryEntry = endpointEntries.find(({ target }) => isGlobalLineBoundaryNode(target.node));
-  return boundaryEntry
-    ? [globalLineReferenceForEndpoint(localReference, boundaryEntry.endpoint, boundaryEntry.target)]
-    : [];
+  if (!endpointEntries.some((entry) => entry.associatedProjectIdx > 0)) return [];
+  return endpointEntries.map(({ endpoint, target, associatedProjectIdx }) => (
+    associatedProjectIdx > 0
+      ? globalLineReferenceForEndpoint({
+          modelKey: globalLineModelKey(associatedProjectIdx, [], ""),
+          projectIdx: associatedProjectIdx,
+          schemePath: [],
+          projectName: "",
+          nodeId: localReference.nodeId
+        }, endpoint, target)
+      : globalLineReferenceForEndpoint(localReference, endpoint)
+  ));
 }
 
 export function globalLineEndpointNodeIds(node: Pick<ModelNode, "params">): string[] {

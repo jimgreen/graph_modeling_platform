@@ -14,21 +14,6 @@ const STORAGE_BUS_KINDS = new Set([
   "thermal-storage-tank"
 ]);
 
-export function modelInteractionTerminalRenderState(
-  nodeIsModelInteraction: boolean,
-  localPoints: ReadonlyMap<string, { x: number; y: number } | undefined> | undefined,
-  terminalId: string
-) {
-  if (!nodeIsModelInteraction) {
-    return { connected: true, localPoint: undefined, showStub: true };
-  }
-  return {
-    connected: Boolean(localPoints?.has(terminalId)),
-    localPoint: localPoints?.get(terminalId),
-    showStub: false
-  };
-}
-
 function decodeStateIconSvgDataUrl(value: string) {
   const source = String(value ?? "").trim();
   if (!source.startsWith("data:image/svg+xml")) {
@@ -358,8 +343,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     nodeLabelVerticalTokenY, nodeLabelVerticalTokenStyle,
     nodeLabelTextStyle, nodeLabelTransform,
     nodeUsesUprightStaticSelectionOutline, nodeUprightSelectionOutlineRect,
-    isBusNode, isLineSegmentBusNode, isStaticNode, isModelInteractionNode, isRoutableLineDeviceKind,
-    modelInteractionTerminalConnectionLocalPointsByNodeId,
+    isBusNode, isLineSegmentBusNode, isStaticNode, isRoutableLineDeviceKind,
     canConnectTerminals,
     isCanvasGraphicContextMenuTarget,
     isStaticButtonEnabledForNode, isStaticBoxLikeNode,
@@ -462,9 +446,6 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     !terminalPressPreviewEdgeIdSet.has(selectedEdge.id) &&
     rewiring?.edgeId !== selectedEdge.id
   );
-  const modelInteractionTerminalLocalPointsByNodeId =
-    modelInteractionTerminalConnectionLocalPointsByNodeId(nodeById.values());
-
   return (
     <>
         <section className="canvas-frame" ref={canvasFrameRef} tabIndex={-1} onPointerEnter={focusCanvasKeyboardShortcutHost} onPointerMove={focusCanvasKeyboardShortcutHost} style={{
@@ -1020,11 +1001,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         const inactiveLayerGraphic = isEditMode && !editable;
         const nodeIsBus = isBusNode(node);
         const nodeIsStatic = isStaticNode(node);
-        const nodeIsModelInteraction = isModelInteractionNode(node);
         const nodeIsRoutableLineDevice = isRoutableLineDeviceKind(node.kind);
-        const modelInteractionTerminalLocalPoints = nodeIsModelInteraction
-            ? modelInteractionTerminalLocalPointsByNodeId.get(node.id)
-            : undefined;
         const nodeStateVisual = resolveNodeStateVisual(node);
         if (nodeIsRoutableLineDevice &&
             (dragGhostRoutableLineNodeIdSet.has(node.id) ||
@@ -1078,9 +1055,13 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         const rotateStemStart = TRANSFORM_ROTATE_STEM_START;
         const rotateStemEnd = TRANSFORM_ROTATE_STEM_END;
         const rotateHandleGap = TRANSFORM_ROTATE_HANDLE_GAP;
+        const staticSelectionPadding = 24;
+        const staticSelectionOutlinePadding = nodeIsStatic && !uprightStaticSelectionOutline
+            ? staticSelectionPadding
+            : 0;
         const rotateHandlePoints = uprightStaticSelectionOutline
             ? nodeUprightRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap)
-            : nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap);
+            : nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap, staticSelectionOutlinePadding);
         const scaleHandleConfigsForNode = isLineSegmentBusNode(node) || nodeKindAllowsResizeTransform(node.kind)
             ? SCALE_HANDLE_CONFIGS
             : SCALE_HANDLE_CONFIGS.filter((handle) => handle.kind === "scale-both");
@@ -1088,7 +1069,6 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         const staticButtonState = staticButtonVisual?.nodeId === node.id ? staticButtonVisual.state : "";
         const staticButtonCornerRadius = Math.max(0, Number(node.params.cornerRadius || 8));
         const showStaticSelectionFrame = nodeIsStatic && selected && !uprightStaticSelectionOutline;
-        const staticSelectionPadding = 10;
         const staticSelectionCornerSize = 12;
         const staticSelectionX = -node.size.width / 2 - staticSelectionPadding;
         const staticSelectionY = -node.size.height / 2 - staticSelectionPadding;
@@ -1242,14 +1222,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                         </g>
                       </g>)}
                     {node.terminals.map((terminal) => {
-                const modelInteractionTerminalState = modelInteractionTerminalRenderState(
-                  nodeIsModelInteraction,
-                  modelInteractionTerminalLocalPoints,
-                  terminal.id
-                );
                 const hideFixedTerminal = nodeIsBus ||
-                  (nodeIsStatic && !nodeIsModelInteraction) ||
-                  !modelInteractionTerminalState.connected ||
+                  nodeIsStatic ||
                   isRoutableLineDeviceKind(node.kind);
                 const disabled = !hideFixedTerminal &&
                     ((connectTerminalCompatibilityActive &&
@@ -1258,22 +1232,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                             Boolean(routableLineActiveTerminalType) &&
                             terminal.type !== routableLineActiveTerminalType));
                 const overlapped = isEditMode && overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);
-                const connectionLocalPoint = modelInteractionTerminalState.localPoint;
-                const displayTerminal = connectionLocalPoint
-                  ? {
-                      ...terminal,
-                      anchor: {
-                        x: connectionLocalPoint.x / (node.size.width * (nodeScaleX || 1)),
-                        y: connectionLocalPoint.y / (node.size.height * (nodeScaleY || 1))
-                      }
-                    }
-                  : terminal;
-                const renderPoint = connectionLocalPoint
-                  ? {
-                      x: connectionLocalPoint.x / (nodeScaleX || 1),
-                      y: connectionLocalPoint.y / (nodeScaleY || 1)
-                    }
-                  : terminalRenderLocalPoint(displayTerminal, node.size, nodeScaleX, nodeScaleY, node.kind);
+                const displayTerminal = terminal;
+                const renderPoint = terminalRenderLocalPoint(displayTerminal, node.size, nodeScaleX, nodeScaleY, node.kind);
                 const stub = adjustGeneratedStateIconTerminalStub(
                     displayTerminal,
                     renderPoint,
@@ -1284,10 +1244,10 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                 );
                 const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
                 return hideFixedTerminal ? null : (<g key={terminal.id} className={`terminal-control ${terminalDragPreview?.terminalId === terminal.id ? "terminal-drag-active" : ""}`} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
-                          {modelInteractionTerminalState.showStub && (<line className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`} strokeDasharray={terminalStubDashArray} style={{
+                          <line className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`} strokeDasharray={terminalStubDashArray} style={{
                         "--terminal-stub-color": disabled ? "#cbd5e1" : terminalDisplayColor,
                         "--terminal-stub-width": terminalStubStrokeWidth(node, displayTerminal)
-                    } as CSSProperties} x1={stub.from.x} y1={stub.from.y} x2={stub.to.x} y2={stub.to.y}/>)}
+                    } as CSSProperties} x1={stub.from.x} y1={stub.from.y} x2={stub.to.x} y2={stub.to.y}/>
                           <circle className={`terminal-dot ${terminal.type} ${overlapped ? "overlapped" : ""} ${disabled ? "disabled" : ""}`} style={{ "--terminal-color": terminalDisplayColor } as CSSProperties} cx="0" cy="0" r={overlapped ? 7.2 : 6} onPointerDown={isEditMode ? (event) => handleTerminalPointerDown(event, node, terminal.id) : undefined}>
                             <title>{`${terminal.label} / ${terminal.type.toUpperCase()}`}</title>
                           </circle>
@@ -1300,7 +1260,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                         <circle className="rotate-handle" cx="0" cy="0" r="8" onPointerDown={(event) => startSingleTransformDrag(event, node, "rotate")}/>
                       </g>
                       {scaleHandleConfigsForNode.map((handle) => {
-                    const handlePoint = nodeScaleHandleControlPoint(node, handle, handleGapX, handleGapY, uprightStaticSelectionOutline);
+                    const handlePoint = nodeScaleHandleControlPoint(node, handle, handleGapX, handleGapY, uprightStaticSelectionOutline, staticSelectionOutlinePadding);
                     const handleCursorClass = scaleHandleCursorClass(handle, uprightStaticSelectionOutline ? 0 : node.rotation);
                     return (<g key={handle.id} transform={handleTransform(handlePoint.x, handlePoint.y)}>
                             <rect className={`scale-handle ${handleCursorClass}`} x="-8" y="-8" width="16" height="16" rx="3" onPointerDown={(event) => startSingleTransformDrag(event, node, handle.kind, handle)}/>

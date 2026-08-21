@@ -94,7 +94,7 @@ describe("DeviceGlyph static nodes", () => {
 });
 
 describe("DeviceGlyph model-association derived devices", () => {
-  it("enlarges station feeder and district source/load pictograms without enlarging hierarchy buttons", () => {
+  it("enlarges station feeder and district source/load pictograms", () => {
     const hierarchyIconScale = (kind: string) => {
       const node = createDefaultNode(kind, { x: 0, y: 0 });
       const markup = renderToStaticMarkup(<svg><DeviceGlyph node={node} mode="geometry" /></svg>);
@@ -103,23 +103,18 @@ describe("DeviceGlyph model-association derived devices", () => {
     };
 
     const cases = [
-      ["ac-station-source", "static-model-interaction-station", 2],
-      ["dc-station-load", "static-model-interaction-station", 2],
-      ["ac-feeder-source", "static-model-interaction-feeder", 2],
-      ["dc-feeder-load", "static-model-interaction-feeder", 2],
-      ["ac-district-source", "static-model-interaction-district", 1.84],
-      ["dc-district-load", "static-model-interaction-district", 1.84]
+      ["ac-station-source", 2],
+      ["dc-station-load", 2],
+      ["ac-feeder-source", 2],
+      ["dc-feeder-load", 2],
+      ["ac-district-source", 1.84],
+      ["dc-district-load", 1.84]
     ] as const;
-    const buttonScales = new Set<number>();
 
-    for (const [associationKind, buttonKind, visibleScaleMultiplier] of cases) {
+    for (const [associationKind, visibleScaleMultiplier] of cases) {
       const associationScale = hierarchyIconScale(associationKind);
-      const buttonScale = hierarchyIconScale(buttonKind);
-      expect(buttonScale).toBeGreaterThan(0);
       expect(associationScale).toBeCloseTo(52 / 48 * visibleScaleMultiplier, 4);
-      buttonScales.add(buttonScale);
     }
-    expect(buttonScales.size).toBe(1);
   });
 
   it("keeps feeder association pictograms as a left-to-right branching structure", () => {
@@ -162,28 +157,6 @@ describe("DeviceGlyph model-association derived devices", () => {
     }
   });
 
-  it("uses the same three pictogram families for station feeder and district model-interaction buttons", () => {
-    const cases = [
-      ["static-model-interaction-station", "station", "厂站"],
-      ["static-model-interaction-feeder", "feeder", "馈线"],
-      ["static-model-interaction-district", "district", "台区"]
-    ] as const;
-
-    for (const [kind, family, label] of cases) {
-      const node = createDefaultNode(kind, { x: 0, y: 0 });
-      const geometryMarkup = renderToStaticMarkup(<svg><DeviceGlyph node={node} mode="geometry" /></svg>);
-      const textMarkup = renderToStaticMarkup(<svg><DeviceGlyph node={node} mode="text" /></svg>);
-
-      expect(geometryMarkup).toContain("model-interaction-glyph");
-      expect(geometryMarkup).toContain(`model-hierarchy-glyph-${family}`);
-      expect(geometryMarkup).toContain("model-hierarchy-glyph-role-button");
-      expect(geometryMarkup).toContain(`model-hierarchy-icon-${family}`);
-      expect(geometryMarkup).toContain("model-hierarchy-icon-backplate");
-      expect(geometryMarkup).toContain("model-hierarchy-role-badge-button");
-      expect(geometryMarkup).not.toContain(`<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}"`);
-      expect(textMarkup).toContain(`>${label}</text>`);
-    }
-  });
 });
 
 describe("DeviceGlyph custom devices", () => {
