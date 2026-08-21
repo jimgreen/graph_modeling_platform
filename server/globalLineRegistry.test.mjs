@@ -561,6 +561,76 @@ describe("全局线路首末端槽", () => {
     expect(reloaded).toEqual(beforeReuse);
   });
 
+  test("复用既有全局线路时保存名称和参数修改，但保持首末端信息不变", async () => {
+    const sourceAttached = await registry.attach({
+      energyType: "ac",
+      name: "复用线路原名称",
+      node: line("remote-line", "ac-routable-line", "remote-source", "remote-target", {}, "复用线路原名称"),
+      reference: {
+        projectIdx: 22,
+        schemePath: ["主方案"],
+        projectName: "目标厂站",
+        nodeId: "remote-line",
+        boundaryEndpoint: "source"
+      }
+    });
+    const existing = await registry.attach({
+      globalLineId: sourceAttached.id,
+      energyType: "ac",
+      node: line("existing-local-line", "ac-routable-line", "existing-source", "existing-target", {}, "复用线路原名称"),
+      reference: {
+        projectIdx: 7,
+        schemePath: ["主方案"],
+        projectName: "本地馈线",
+        nodeId: "existing-local-line",
+        boundaryEndpoint: "target"
+      }
+    });
+    const referencesBeforeSave = existing.references;
+    const endpointSlotsBeforeSave = existing.endpointSlots;
+    const association = node("station-source", "ac-station-source", { model_id: "22" });
+    const localLoad = node("local-load", "ac-load");
+    const editedLine = line("local-line", "ac-routable-line", association.id, localLoad.id, {
+      [GLOBAL_LINE_ID_PARAM]: existing.id,
+      _globalLineModelPair: "source",
+      idx: String(existing.idx),
+      rated_capacity: "500",
+      r: "0.25"
+    }, "复用线路新名称");
+
+    const saved = await registry.syncProject({
+      projectIdx: 7,
+      schemePath: ["主方案"],
+      projectName: "本地馈线",
+      project: {
+        version: 1,
+        idx: 7,
+        name: "本地馈线",
+        modelType: "馈线",
+        nodes: [association, localLoad, editedLine],
+        edges: []
+      }
+    });
+
+    const updated = saved.records.find((item) => item.id === existing.id);
+    expect(updated).toMatchObject({
+      name: "复用线路新名称",
+      params: expect.objectContaining({ rated_capacity: "500", r: "0.25" })
+    });
+    expect(updated?.references).toEqual(referencesBeforeSave);
+    expect(updated?.endpointSlots).toEqual(endpointSlotsBeforeSave);
+    const runtimeLine = saved.project.nodes.find((item) => item.id === editedLine.id);
+    expect(runtimeLine).toMatchObject({
+      name: "复用线路新名称",
+      params: expect.objectContaining({ rated_capacity: "500", r: "0.25" })
+    });
+    const storedLine = saved.storageProject.nodes.find((item) => item.id === editedLine.id);
+    expect(storedLine).not.toHaveProperty("name");
+    expect(storedLine.params).not.toHaveProperty(GLOBAL_LINE_ID_PARAM);
+    expect(storedLine.params).not.toHaveProperty("rated_capacity");
+    expect(storedLine.params).not.toHaveProperty("r");
+  });
+
   test("保存时仍拒绝出线度为2且与 model_id 模型首末端方向不一致的既有全局线路", async () => {
     const existing = await registry.attach({
       energyType: "ac",

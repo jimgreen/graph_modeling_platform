@@ -123,6 +123,21 @@ describe("全局线路首末端提示", () => {
   });
 });
 
+describe("未保存模型的保存后切换提示", () => {
+  test("保存过程中显示忙碌状态，保存失败信息位于弹窗内且全局提示不被遮罩", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(source).toContain("pendingUnsavedAction.resolving");
+    expect(source).toContain("正在保存...");
+    expect(source).toContain('className="unsaved-change-error"');
+    expect(source).toContain('role="alert"');
+    expect(source).toContain("disabled={pendingUnsavedActionResolving}");
+    expect(styles).toMatch(/\.unsaved-change-error\s*\{[\s\S]*?color:\s*#b91c1c/);
+    expect(styles).toMatch(/\.global-message\s*\{[\s\S]*?z-index:\s*15000/);
+  });
+});
+
 describe("model interaction terminal visibility", () => {
   test("hides unused terminals while retaining connected legacy terminals without a saved local point", () => {
     const localPoints = new Map<string, { x: number; y: number } | undefined>([

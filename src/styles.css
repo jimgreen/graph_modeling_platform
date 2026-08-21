@@ -5593,6 +5593,13 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   padding-top: 4px;
 }
 
+.unsaved-change-error {
+  margin: 0 0 10px;
+  color: #b91c1c;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .model-create-dialog {
   width: min(440px, calc(100vw - 32px));
 }
@@ -9270,7 +9277,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   top: 20px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 10000;
+  z-index: 15000;
   padding: 10px 20px;
   border-radius: 4px;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);

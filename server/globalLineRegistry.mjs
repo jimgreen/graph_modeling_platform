@@ -913,6 +913,19 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
             } else {
               reuseOnlyRecordIds.add(record.id);
             }
+            let sharedFieldsChanged = false;
+            const requestedName = String(node?.name ?? "").trim();
+            if (requestedName && requestedName !== record.name) {
+              assertUniqueName(state, requestedName, record.id);
+              record.name = requestedName;
+              sharedFieldsChanged = true;
+            }
+            const nextParams = sharedParams(node);
+            if (JSON.stringify(nextParams) !== JSON.stringify(record.params)) {
+              record.params = nextParams;
+              sharedFieldsChanged = true;
+            }
+            if (sharedFieldsChanged) record.updatedAt = new Date().toISOString();
             assignments[node.id] = record.id;
             return applyRecordToNode(node, record);
           }

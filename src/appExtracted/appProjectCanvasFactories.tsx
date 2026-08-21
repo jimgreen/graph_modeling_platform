@@ -2924,15 +2924,37 @@ export function createRequestLoadSavedProject(__appScope: Record<string, any>) {
 
 export function createResolveUnsavedChangeAction(__appScope: Record<string, any>) {
   return async (resolution: "discard" | "save" | "cancel") => {
-  const { enterBrowseMode, loadSavedProjectRecord, pendingUnsavedAction, saveCurrentProject, savedUndoStackLengthRef, setHasUnsavedChanges, setPendingUnsavedAction, undoLastOperation, undoStack } = __appScope;
+  const { enterBrowseMode, loadSavedProjectRecord, pendingUnsavedAction, saveCurrentProject, savedUndoStackLengthRef, setHasUnsavedChanges, setPendingUnsavedAction, showGlobalMessage: showScopedGlobalMessage, undoLastOperation, undoStack, writeOperationLog } = __appScope;
     const action = pendingUnsavedAction;
+    if (action?.resolving) {
+      return;
+    }
     if (!action || resolution === "cancel") {
       setPendingUnsavedAction(null);
       return;
     }
     if (resolution === "save") {
-      const saved = await saveCurrentProject();
+      setPendingUnsavedAction({ ...action, resolving: true, resolutionError: "" });
+      let saved = false;
+      try {
+        saved = await saveCurrentProject();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "保存模型时发生未知错误。";
+        setPendingUnsavedAction({
+          ...action,
+          resolving: false,
+          resolutionError: `保存失败：${message}`
+        });
+        showScopedGlobalMessage?.(`保存失败：${message}`, "error", 5000);
+        writeOperationLog?.(`保存模型失败：${message}`);
+        return;
+      }
       if (!saved) {
+        setPendingUnsavedAction({
+          ...action,
+          resolving: false,
+          resolutionError: "保存未完成，请根据页面顶部提示处理后重试。"
+        });
         return;
       }
     }
