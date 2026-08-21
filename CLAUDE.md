@@ -10,6 +10,90 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能/热力系统的拓扑建模和 E 格式导出。后端 Node.js（.mjs ESM）提供图像/方案/配置数据服务，并经 WebSocket 桥接前端运行时态供第三方 `/api/v1` 只读 API 消费。
 
+## 功能清单
+
+### 画布与图形
+
+- 拓扑画布：节点/边/连接/选择/拖拽/缩放/视口
+- 图层管理：显隐、排序、锁定
+- 背景页：多页背景渲染、页切换
+- 对齐工具：节点对齐分布
+- 小地图/浮动工具栏
+- 画布 LOD（细节层次）与视口批处理
+- 键盘快捷键、侧栏显隐
+
+### 设备与图元库
+
+- 设备类型定义（DeviceKind）：内置 + 自定义元件
+- 图元分类树、设备库、量测库、模板库
+- 自定义元件编辑器：参数表、枚举值、中英文表头
+- 自定义元件模板、图元模板
+- 派生设备类（风电/光伏/储能等）动态库名
+- 设备定义覆盖（override）机制
+
+### 方案与模型
+
+- 方案树：多级方案/子方案层级
+- 模型 CRUD：创建/重命名/删除/复制
+- 方案导入/导出 ZIP
+- 模型保存/加载（project JSON）
+- 方案路径编码（encodeURIComponent + JSON.stringify）
+
+### 量测
+
+- 图形量测工厂
+- 量测配置：groupDefaults / measurementTypes / deviceProfiles
+- 量测默认值功能
+
+### 颜色与样式
+
+- 颜色配置：colorDisplayMode / colorPalette
+- 设备配色、背景色、边框样式
+
+### 导出与持久化
+
+- 自包含 SVG 导出（buildSvgDocument，内联样式）
+- 画布截图：SVG → PNG base64
+- E 格式导出：电力系统 E 文件
+- 原生导出保存（nativeExportSave）
+
+### 运行时态桥接
+
+- WS 客户端（runtimeWsClient）：clientId 注册、ping 心跳、fetch/command 响应
+- 运行时态序列化（runtimeSnapshot）：model/devices/selection/tab/snapshot/svg
+- 前端 RT-WS 指示灯，点击复制 clientId
+
+### 第三方 API（/api/v1）
+
+- 只读域：schemes / library / runtime
+- 信封响应：{ok:true,data} / {ok:false,error:{code,message}}
+- v1 方案域：方案树、层级树、模型列表、导出 ZIP、模型 JSON/SVG
+- v1 图元库域：分类树、设备、量测、设备定义、模板
+- v1 运行时态：clients/model/devices/selection/tabs/screenshot/svg/e-file
+
+### 控制台写操作（v1 control）
+
+- 9 端点：device/scheme/model/select/group/delete/update/save/template
+- 经 WS 下发 command 到前端 __appScope 程序化方法
+- 前端回 command-response
+
+### 图片资源
+
+- 图片上传/下载
+- 图片文件夹管理：新建/重命名/删除
+- 图片库配置
+
+### 接口文档
+
+- /swigger 自包含 HTML：接口元数据 + highlight.js + 可折叠 JSON 树 + 复制按钮
+- Try-it 在线测试
+
+### 用户自定义
+
+- 用户定制管理器对话框
+- 自定义元件表单、参数表
+- 批量属性编辑器
+
 ## 目录结构
 
 ```
