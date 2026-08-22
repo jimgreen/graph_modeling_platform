@@ -37,6 +37,49 @@ const node = (id: string, kind = "ac-load"): ModelNode => ({
 });
 
 describe("measurement domain", () => {
+  test("keeps tap-position and endpoint measurement profiles in legacy measurement configurations", () => {
+    const normalized = normalizeMeasurementConfig({
+      measurementTypes: [
+        { id: "activePower", key: "p", name: "有功功率" },
+        { id: "reactivePower", key: "q", name: "无功功率" },
+        { id: "voltage", key: "u", name: "电压" },
+        { id: "current", key: "i", name: "电流" },
+        { id: "status", key: "status", name: "状态" }
+      ]
+    });
+    expect(normalized.measurementTypes.find((type) => type.id === "tapPosition")).toMatchObject({
+      key: "tap",
+      name: "分接头档位",
+      defaultDecimals: 0
+    });
+
+    const profileFields = (kind: string) => normalized.deviceProfiles.find((profile) => profile.deviceKind === kind)
+      ?.items.map((item) => item.associatedField) ?? [];
+    expect(profileFields("ac-line")).toEqual(["i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"]);
+    expect(profileFields("dc-line")).toEqual(["i_p", "i_u", "i_i", "j_p", "j_u", "j_i"]);
+    expect(profileFields("ac-switch")).toEqual(["status", "p", "q", "u", "i"]);
+    expect(profileFields("dc-switch")).toEqual(["status", "p", "u", "i"]);
+    expect(profileFields("ac-transformer")).toEqual([
+      "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i", "tap"
+    ]);
+
+    const legacyBranch = normalizeMeasurementConfig({
+      measurementTypes: normalized.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "ac-line",
+        items: [
+          { measurementTypeId: "activePower", associatedField: "p" },
+          { measurementTypeId: "reactivePower", associatedField: "q" },
+          { measurementTypeId: "current", associatedField: "i" }
+        ]
+      }]
+    });
+    expect(legacyBranch.deviceProfiles.find((profile) => profile.deviceKind === "ac-line")
+      ?.items.map((item) => item.associatedField)).toEqual([
+      "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"
+    ]);
+  });
+
   test("migrates legacy SOC measurement definitions and project bindings", () => {
     const config = normalizeMeasurementConfig({
       measurementTypes: [{ id: "state_of_charge", key: "stateOfCharge", name: "SOC" }],
@@ -618,12 +661,62 @@ describe("measurement domain", () => {
       ]
     };
 
-    const groups = createDefaultMeasurementGroupsForNode(threeTerminalNode, DEFAULT_MEASUREMENT_CONFIG);
+    const legacyConfig = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "ac-transformer",
+        items: [
+          { measurementTypeId: "activePower" },
+          { measurementTypeId: "reactivePower" },
+          { measurementTypeId: "voltage" },
+          { measurementTypeId: "current" }
+        ]
+      }]
+    });
+    const groups = createDefaultMeasurementGroupsForNode(threeTerminalNode, legacyConfig);
 
     expect(groups).toHaveLength(1);
     expect(groups[0].terminalId).toBeUndefined();
     expect(groups[0].id).toBe("measurement-transformer-1");
     expect(groups[0].items[0].sourcePoint).toBe("transformer-1.activePower");
+  });
+
+  test("uses separate high and low side measurement fields for the default two-winding transformer profile", () => {
+    const transformer: ModelNode = {
+      ...node("transformer-sided", "ac-transformer"),
+      params: {
+        i_p: "10",
+        i_q: "2",
+        i_u: "110",
+        i_i: "55",
+        j_p: "9.5",
+        j_q: "1.8",
+        j_u: "10",
+        j_i: "520"
+      },
+      terminals: [
+        { id: "t1", label: "高压", type: "ac", anchor: { x: -0.5, y: 0 }, nodeNumber: "" },
+        { id: "t2", label: "低压", type: "ac", anchor: { x: 0.5, y: 0 }, nodeNumber: "" }
+      ]
+    };
+
+    const profile = DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((item) => item.deviceKind === "ac-transformer");
+    const group = createDefaultMeasurementGroupForNode(transformer, DEFAULT_MEASUREMENT_CONFIG);
+
+    expect(profile?.items.map((item) => item.associatedField)).toEqual([
+      "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i", "tap"
+    ]);
+    expect(group?.items.map((item) => item.sourcePoint)).toEqual([
+      "transformer-sided.i_p",
+      "transformer-sided.i_q",
+      "transformer-sided.i_u",
+      "transformer-sided.i_i",
+      "transformer-sided.j_p",
+      "transformer-sided.j_q",
+      "transformer-sided.j_u",
+      "transformer-sided.j_i",
+      "transformer-sided.tap"
+    ]);
   });
 
   test("keeps device profile row names and measurement positions", () => {

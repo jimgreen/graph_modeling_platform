@@ -404,6 +404,20 @@ const GAS_QUANTITY_MEASUREMENT_TYPE: MeasurementTypeDefinition = {
   defaultFontWeight: "500",
   defaultVisible: true
 };
+const TAP_POSITION_MEASUREMENT_TYPE: MeasurementTypeDefinition = {
+  id: "tapPosition",
+  key: "tap",
+  name: "分接头档位",
+  shortLabel: "档位",
+  defaultUnit: "",
+  valueType: "number",
+  defaultDecimals: 0,
+  defaultColor: "#334155",
+  defaultFontFamily: "Arial",
+  defaultFontSize: 14,
+  defaultFontWeight: "500",
+  defaultVisible: false
+};
 const ELECTRIC_STORAGE_MEASUREMENT_PROFILE_KINDS = new Set(["ac-storage", "dc-storage"]);
 const HYDROGEN_TANK_MEASUREMENT_PROFILE_KINDS = new Set([
   "hydrogen-tank",
@@ -513,6 +527,7 @@ export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
     { id: "level", key: "level", name: "液位", shortLabel: "液位", defaultUnit: "%", valueType: "number", defaultDecimals: 1, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
     STORAGE_SOC_MEASUREMENT_TYPE,
     GAS_QUANTITY_MEASUREMENT_TYPE,
+    TAP_POSITION_MEASUREMENT_TYPE,
     { id: "status", key: "status", name: "状态", shortLabel: "状态", defaultUnit: "", valueType: "string", defaultDecimals: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false }
   ],
   deviceProfiles: [
@@ -529,19 +544,67 @@ export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
     { deviceKind: "dc-pv-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "ac-storage", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "soc" }] },
     { deviceKind: "dc-storage", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }, { measurementTypeId: "soc" }] },
-    { deviceKind: "ac-line", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "current" }] },
+    { deviceKind: "ac-line", items: [
+      { measurementTypeId: "activePower", associatedField: "i_p", labelOverride: "首端有功量测值" },
+      { measurementTypeId: "reactivePower", associatedField: "i_q", labelOverride: "首端无功量测值" },
+      { measurementTypeId: "voltage", associatedField: "i_u", labelOverride: "首端电压量测值" },
+      { measurementTypeId: "current", associatedField: "i_i", labelOverride: "首端电流量测值" },
+      { measurementTypeId: "activePower", associatedField: "j_p", labelOverride: "末端有功量测值" },
+      { measurementTypeId: "reactivePower", associatedField: "j_q", labelOverride: "末端无功量测值" },
+      { measurementTypeId: "voltage", associatedField: "j_u", labelOverride: "末端电压量测值" },
+      { measurementTypeId: "current", associatedField: "j_i", labelOverride: "末端电流量测值" }
+    ] },
     { deviceKind: "ac-capacitor", items: [{ measurementTypeId: "reactivePower", associatedField: "q" }, { measurementTypeId: "current", associatedField: "current" }] },
     { deviceKind: "ac-reactor", items: [{ measurementTypeId: "reactivePower", associatedField: "q" }, { measurementTypeId: "current", associatedField: "current" }] },
     { deviceKind: "ac-series-capacitor", items: [{ measurementTypeId: "activePower", associatedField: "p" }, { measurementTypeId: "reactivePower", associatedField: "q" }, { measurementTypeId: "current", associatedField: "current" }] },
     { deviceKind: "ac-series-reactor", items: [{ measurementTypeId: "activePower", associatedField: "p" }, { measurementTypeId: "reactivePower", associatedField: "q" }, { measurementTypeId: "current", associatedField: "current" }] },
-    { deviceKind: "dc-line", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
+    { deviceKind: "dc-line", items: [
+      { measurementTypeId: "activePower", associatedField: "i_p", labelOverride: "首端有功量测值" },
+      { measurementTypeId: "voltage", associatedField: "i_u", labelOverride: "首端电压量测值" },
+      { measurementTypeId: "current", associatedField: "i_i", labelOverride: "首端电流量测值" },
+      { measurementTypeId: "activePower", associatedField: "j_p", labelOverride: "末端有功量测值" },
+      { measurementTypeId: "voltage", associatedField: "j_u", labelOverride: "末端电压量测值" },
+      { measurementTypeId: "current", associatedField: "j_i", labelOverride: "末端电流量测值" }
+    ] },
     { deviceKind: "ac-bus", items: [{ measurementTypeId: "voltage" }, { measurementTypeId: "frequency" }] },
     { deviceKind: "dc-bus", items: [{ measurementTypeId: "voltage" }, { measurementTypeId: "current", defaultVisible: false }] },
-    { deviceKind: "ac-switch", items: [{ measurementTypeId: "status" }, { measurementTypeId: "current" }] },
-    { deviceKind: "dc-switch", items: [{ measurementTypeId: "status" }, { measurementTypeId: "current" }] },
-    { deviceKind: "ac-breaker", items: [{ measurementTypeId: "status" }, { measurementTypeId: "current" }] },
-    { deviceKind: "dc-breaker", items: [{ measurementTypeId: "status" }, { measurementTypeId: "current" }] },
-    { deviceKind: "ac-transformer", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
+    { deviceKind: "ac-switch", items: [
+      { measurementTypeId: "status", associatedField: "status" },
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "reactivePower", associatedField: "q" },
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "current", associatedField: "i" }
+    ] },
+    { deviceKind: "dc-switch", items: [
+      { measurementTypeId: "status", associatedField: "status" },
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "current", associatedField: "i" }
+    ] },
+    { deviceKind: "ac-breaker", items: [
+      { measurementTypeId: "status", associatedField: "status" },
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "reactivePower", associatedField: "q" },
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "current", associatedField: "i" }
+    ] },
+    { deviceKind: "dc-breaker", items: [
+      { measurementTypeId: "status", associatedField: "status" },
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "current", associatedField: "i" }
+    ] },
+    { deviceKind: "ac-transformer", items: [
+      { labelOverride: "高压侧有功值", measurementTypeId: "activePower", associatedField: "i_p" },
+      { labelOverride: "高压侧无功值", measurementTypeId: "reactivePower", associatedField: "i_q" },
+      { labelOverride: "高压侧电压值", measurementTypeId: "voltage", associatedField: "i_u" },
+      { labelOverride: "高压侧电流值", measurementTypeId: "current", associatedField: "i_i" },
+      { labelOverride: "低压侧有功值", measurementTypeId: "activePower", associatedField: "j_p" },
+      { labelOverride: "低压侧无功值", measurementTypeId: "reactivePower", associatedField: "j_q" },
+      { labelOverride: "低压侧电压值", measurementTypeId: "voltage", associatedField: "j_u" },
+      { labelOverride: "低压侧电流值", measurementTypeId: "current", associatedField: "j_i" },
+      { labelOverride: "分接头档位", measurementTypeId: "tapPosition", associatedField: "tap" }
+    ] },
     { deviceKind: "converter", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "ac-electrolyzer", items: [
       { measurementTypeId: "activePower", position: "t1", associatedField: "p" },
@@ -582,6 +645,47 @@ export const EMPTY_PROJECT_MEASUREMENTS: ProjectMeasurementConfig = {
   version: 1,
   groups: []
 };
+
+const REQUIRED_BUILT_IN_MEASUREMENT_PROFILE_KINDS = new Set([
+  "ac-line",
+  "dc-line"
+]);
+
+function withRequiredBuiltInMeasurementProfileItems(
+  deviceKind: string,
+  items: readonly DeviceMeasurementProfileItem[]
+): DeviceMeasurementProfileItem[] {
+  if (!REQUIRED_BUILT_IN_MEASUREMENT_PROFILE_KINDS.has(deviceKind)) return [...items];
+  const requiredItems = DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((profile) => profile.deviceKind === deviceKind)?.items ?? [];
+  if (requiredItems.length === 0) return [...items];
+  const requiredFields = new Set(requiredItems.map((item) => String(item.associatedField ?? "").trim()).filter(Boolean));
+  const requiredTypeIds = new Set(requiredItems.map((item) => item.measurementTypeId));
+  const overridesByField = new Map<string, DeviceMeasurementProfileItem>();
+  const extras: DeviceMeasurementProfileItem[] = [];
+  const isBranch = deviceKind === "ac-line" || deviceKind === "dc-line";
+  for (const item of items) {
+    const field = String(item.associatedField ?? "").trim();
+    if (requiredFields.has(field)) {
+      overridesByField.set(field, item);
+      continue;
+    }
+    if (
+      (!field && requiredTypeIds.has(item.measurementTypeId)) ||
+      (isBranch && ["p", "q", "u", "i"].includes(field))
+    ) {
+      continue;
+    }
+    extras.push(item);
+  }
+  return [
+    ...requiredItems.map((requiredItem) => {
+      const field = String(requiredItem.associatedField ?? "").trim();
+      const override = overridesByField.get(field);
+      return override ? { ...requiredItem, ...override, associatedField: field } : { ...requiredItem };
+    }),
+    ...extras
+  ];
+}
 
 const typeById = (types: readonly MeasurementTypeDefinition[]) => new Map(types.map((item) => [item.id, item]));
 
@@ -858,6 +962,9 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
   if (!rawTypes.some((item) => String(item.id ?? "").trim() === GAS_QUANTITY_MEASUREMENT_TYPE.id)) {
     rawTypes.push(GAS_QUANTITY_MEASUREMENT_TYPE);
   }
+  if (!rawTypes.some((item) => String(item.id ?? "").trim() === TAP_POSITION_MEASUREMENT_TYPE.id)) {
+    rawTypes.push(TAP_POSITION_MEASUREMENT_TYPE);
+  }
   const seenTypes = new Set<string>();
   const measurementTypes = rawTypes.flatMap((item) => {
     const id = normalizedMeasurementTypeId((item as Partial<MeasurementTypeDefinition>)?.id);
@@ -927,7 +1034,7 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
         styleOverride: normalizeStyleOverride(item.styleOverride)
       }];
     });
-    return [{ deviceKind, items }];
+    return [{ deviceKind, items: withRequiredBuiltInMeasurementProfileItems(deviceKind, items) }];
   });
   return { groupDefaults, measurementTypes, deviceProfiles };
 }

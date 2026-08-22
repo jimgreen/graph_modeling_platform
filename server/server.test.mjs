@@ -258,6 +258,31 @@ describe("device library schema migration", () => {
     expect(normalizeDeviceLibraryConfig(normalized)).toEqual(normalized);
   });
 
+  test("retains switch status while adding closed_status and renaming its setpoint", () => {
+    const normalized = normalizeDeviceLibraryConfig({
+      deviceDefinitionOverrides: {
+        "ac-switch": {
+          kind: "ac-switch",
+          params: { status: "0", status_set: "1" },
+          parameterDefinitions: [
+            { cnName: "状态", enName: "status", valueType: "numberEnum", typicalValue: "0" },
+            { cnName: "开合状态设定值", enName: "status_set", valueType: "numberEnum", typicalValue: "1" }
+          ],
+          measurementDefinitions: [
+            { measurementTypeId: "status", associatedField: "status" }
+          ]
+        }
+      }
+    });
+    const override = normalized.deviceDefinitionOverrides["ac-switch"];
+
+    expect(override.params).toMatchObject({ status: "0", closed_status: "0", closed_status_set: "1" });
+    expect(override.params).not.toHaveProperty("status_set");
+    expect(override.parameterDefinitions.map((definition) => definition.enName)).toEqual(["status", "closed_status_set"]);
+    expect(override.measurementDefinitions.map((definition) => definition.associatedField)).toEqual(["status", "closed_status"]);
+    expect(normalizeDeviceLibraryConfig(normalized)).toEqual(normalized);
+  });
+
   test("moves a custom graphic business default into its existing shared class", () => {
     const normalized = normalizeDeviceLibraryConfig({
       schemaVersion: 2,
@@ -340,6 +365,61 @@ describe("device library schema migration", () => {
 });
 
 describe("measurement configuration normalization", () => {
+  test("preserves tap-position and migrates legacy AC/DC branch measurement profiles", () => {
+    const normalized = normalizeMeasurementConfig({
+      measurementTypes: [{ id: "activePower", key: "p", name: "有功功率" }]
+    });
+    expect(normalized.measurementTypes.find((type) => type.id === "tapPosition")).toMatchObject({
+      key: "tap",
+      name: "分接头档位",
+      defaultDecimals: 0
+    });
+
+    const legacyAcBranch = normalizeMeasurementConfig({
+      measurementTypes: [
+        { id: "activePower", key: "p", name: "有功功率" },
+        { id: "reactivePower", key: "q", name: "无功功率" },
+        { id: "voltage", key: "u", name: "电压" },
+        { id: "current", key: "i", name: "电流" }
+      ],
+      deviceProfiles: [{
+        deviceKind: "ac-line",
+        items: [
+          { measurementTypeId: "activePower", associatedField: "p" },
+          { measurementTypeId: "reactivePower", associatedField: "q" },
+          { measurementTypeId: "current", associatedField: "i" }
+        ]
+      }]
+    });
+    expect(legacyAcBranch.deviceProfiles[0].items.map((item) => item.associatedField)).toEqual([
+      "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"
+    ]);
+
+    const legacyDcBranch = normalizeMeasurementConfig({
+      measurementTypes: [
+        { id: "activePower", key: "p", name: "有功功率" },
+        { id: "reactivePower", key: "q", name: "无功功率" },
+        { id: "voltage", key: "u", name: "电压" },
+        { id: "current", key: "i", name: "电流" }
+      ],
+      deviceProfiles: [{
+        deviceKind: "dc-line",
+        items: [
+          { measurementTypeId: "activePower", associatedField: "p" },
+          { measurementTypeId: "reactivePower", associatedField: "q" },
+          { measurementTypeId: "voltage", associatedField: "u" },
+          { measurementTypeId: "current", associatedField: "i" },
+          { measurementTypeId: "voltage", associatedField: "j_u", defaultVisible: false },
+          { measurementTypeId: "tapPosition", associatedField: "custom_tap" }
+        ]
+      }]
+    });
+    expect(legacyDcBranch.deviceProfiles[0].items.map((item) => item.associatedField)).toEqual([
+      "i_p", "i_u", "i_i", "j_p", "j_u", "j_i", "custom_tap"
+    ]);
+    expect(legacyDcBranch.deviceProfiles[0].items.find((item) => item.associatedField === "j_u")?.defaultVisible).toBe(false);
+  });
+
   test("normalizes legacy SOC measurement types, keys, and associated fields", () => {
     const normalized = normalizeMeasurementConfig({
       measurementTypes: [{ id: "state_of_charge", key: "stateOfCharge", name: "SOC" }],
@@ -454,6 +534,47 @@ describe("measurement configuration normalization", () => {
     ]);
   });
 
+  test("keeps rated voltage columns aligned with the frontend electrical E interface", () => {
+    for (const section of [
+      "ACRealBs",
+      "DCRealBs",
+      "ACLoad",
+      "DCLoad",
+      "ACBranch",
+      "DCBranch",
+      "ACZeroBranch",
+      "DCZeroBranch",
+      "ACSwitch",
+      "DCSwitch",
+      "ACBreak",
+      "DCBreak"
+    ]) {
+      expect(eSectionColumns[section], section).toContain("rated_voltage");
+      expect(eSectionColumns[section].filter((column) => column === "rated_voltage"), section).toHaveLength(1);
+    }
+  });
+
+  test("keeps branch, switch, load, and transformer fields aligned with the frontend E interface", () => {
+    expect(eSectionColumns.ACBranch).toEqual(expect.arrayContaining([
+      "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"
+    ]));
+    expect(eSectionColumns.ACBranch).not.toEqual(expect.arrayContaining(["p", "q", "u", "i"]));
+    expect(eSectionColumns.DCBranch).toEqual(expect.arrayContaining([
+      "i_p", "i_u", "i_i", "j_p", "j_u", "j_i"
+    ]));
+    expect(eSectionColumns.DCBranch).not.toEqual(expect.arrayContaining(["p", "q", "u", "i"]));
+    for (const section of ["ACSwitch", "ACBreak"]) {
+      expect(eSectionColumns[section], section).toEqual(expect.arrayContaining(["status", "closed_status", "closed_status_set", "p", "q", "u", "i"]));
+      expect(eSectionColumns[section], section).not.toContain("status_set");
+    }
+    for (const section of ["DCSwitch", "DCBreak"]) {
+      expect(eSectionColumns[section], section).toEqual(expect.arrayContaining(["status", "closed_status", "closed_status_set", "p", "u", "i"]));
+      expect(eSectionColumns[section], section).not.toContain("status_set");
+    }
+    expect(eSectionColumns.ACLoad).toContain("q_set");
+    expect(eSectionColumns.ACTransformer).toEqual(expect.arrayContaining(["tap", "tap_set"]));
+  });
+
   test("keeps electric-hydrogen control fields aligned with the frontend E interface", () => {
     expect(eSectionColumns.ACLoad).toContain("p_set");
     expect(eSectionColumns.DCLoad).toContain("p_set");
@@ -501,6 +622,50 @@ describe("measurement configuration normalization", () => {
 });
 
 describe("scheme enum validation", () => {
+  test("retains legacy switch status while migrating its independent closed-state fields", async () => {
+    const filesRoot = await mkdtemp(join(tmpdir(), "graph-switch-closed-status-migrate-"));
+    try {
+      const savedRecord = await saveSchemeProjectRecord({
+        filesRoot,
+        schemePath: ["字段迁移"],
+        record: {
+          name: "旧开关状态",
+          project: {
+            version: 1,
+            name: "旧开关状态",
+            nodes: [{
+              id: "switch-1",
+              kind: "ac-switch",
+              name: "交流开关-1",
+              params: { idx: "1", status: "0", status_set: "1", run_stat: "1" },
+              terminals: [{ id: "t1", type: "ac" }, { id: "t2", type: "ac" }]
+            }],
+            edges: []
+          }
+        },
+        svg: "<svg/>",
+        measurementConfig: { measurementTypes: [] }
+      });
+
+      expect(savedRecord.project.nodes[0].params).toMatchObject({
+        status: "0",
+        closed_status: "0",
+        closed_status_set: "1"
+      });
+      expect(savedRecord.project.nodes[0].params).not.toHaveProperty("status_set");
+
+      const loaded = await readSchemeProjectRecord({ filesRoot, schemePath: ["字段迁移"], name: "旧开关状态" });
+      expect(loaded.project.nodes[0].params).toMatchObject({
+        status: "0",
+        closed_status: "0",
+        closed_status_set: "1"
+      });
+      expect(loaded.project.nodes[0].params).not.toHaveProperty("status_set");
+    } finally {
+      await rm(filesRoot, { recursive: true, force: true });
+    }
+  });
+
   test("migrates run_stat values and definitions to numeric enums before writing JSON and E", async () => {
     const filesRoot = await mkdtemp(join(tmpdir(), "graph-run-stat-migrate-"));
     try {
@@ -1279,7 +1444,16 @@ describe("scheme file persistence", () => {
                 name: "盒型开关-1",
                 position: { x: 60, y: 80 },
                 size: { width: 80, height: 40 },
-                params: { idx: "1", rated_capacity: "80 MVA", max_current: "1250 A", status: "1", run_stat: "1" },
+                params: {
+                  idx: "1",
+                  rated_capacity: "80 MVA",
+                  rated_voltage: "0",
+                  max_current: "1250 A",
+                  status: "1",
+                  closed_status: "1",
+                  closed_status_set: "1",
+                  run_stat: "1"
+                },
                 terminals: [
                   { id: "i", type: "ac" },
                   { id: "j", type: "ac" }
@@ -1429,8 +1603,11 @@ describe("scheme file persistence", () => {
       expectEFieldsAlignedWithHeader(
         eFile,
         "ACBreak",
-        ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
-        ["1", "盒型开关-1", "1", "3", "80", "1250", "1", "1"]
+        [
+          "idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max",
+          "status", "closed_status", "closed_status_set", "run_stat"
+        ],
+        ["1", "盒型开关-1", "1", "3", "80", "0", "1250", "1", "1", "1", "1"]
       );
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -1894,6 +2071,236 @@ describe("scheme file persistence", () => {
     }
   });
 
+  test("migrates legacy two-winding measurements to high and low side fields before storage and E export", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-e-two-winding-measurements-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "双绕组分侧量测",
+          updatedAt: "2026-08-22T00:00:00.000Z",
+          project: {
+            version: 1,
+            name: "双绕组分侧量测",
+            nodes: [{
+              id: "transformer-2",
+              kind: "ac-transformer",
+              name: "双绕组主变-1",
+              position: { x: 100, y: 100 },
+              size: { width: 92, height: 70 },
+              params: {
+                idx: "1",
+                high_vbase: "110 kV",
+                high_i_max: "630 A",
+                low_vbase: "10 kV",
+                low_i_max: "1250 A",
+                p: "10.5",
+                q: "2.5",
+                u: "110",
+                i: "55",
+                run_stat: "1",
+                _customParamDefinitions: JSON.stringify([
+                  { cnName: "high_vbase", enName: "high_vbase", valueType: "float", typicalValue: "110" },
+                  { cnName: "high_i_max", enName: "high_i_max", valueType: "float", typicalValue: "630" },
+                  { cnName: "low_vbase", enName: "low_vbase", valueType: "float", typicalValue: "10" },
+                  { cnName: "low_i_max", enName: "low_i_max", valueType: "float", typicalValue: "1250" },
+                  { cnName: "有功值", enName: "p", valueType: "float", typicalValue: "0", exportEnabled: true },
+                  { cnName: "无功值", enName: "q", valueType: "float", typicalValue: "0", exportEnabled: true },
+                  { cnName: "电压值", enName: "u", valueType: "float", typicalValue: "0", exportEnabled: true },
+                  { cnName: "电流值", enName: "i", valueType: "float", typicalValue: "0", exportEnabled: true }
+                ])
+              },
+              terminals: [
+                { id: "t1", type: "ac", vbase: "110" },
+                { id: "t2", type: "ac", vbase: "10" }
+              ]
+            }],
+            edges: [],
+            measurements: {
+              version: 1,
+              groups: [{
+                id: "measurement-transformer-2",
+                nodeId: "transformer-2",
+                visible: true,
+                anchor: "bottom",
+                offset: { x: 0, y: 80 },
+                layout: "vertical",
+                items: [{
+                  id: "item-p",
+                  measurementTypeId: "activePower",
+                  associatedField: "p",
+                  sourcePoint: "transformer-2.p"
+                }]
+              }]
+            }
+          }
+        },
+        measurementConfig: {}
+      });
+
+      const savedProject = JSON.parse(await readFile(join(filesRoot, "默认方案", "双绕组分侧量测.json"), "utf-8"));
+      const params = savedProject.nodes[0].params;
+      const definitions = JSON.parse(params._customParamDefinitions);
+      expect(params).toMatchObject({
+        i_vbase: "110 kV",
+        i_i_max: "630 A",
+        j_vbase: "10 kV",
+        j_i_max: "1250 A",
+        i_p: "10.5",
+        i_q: "2.5",
+        i_u: "110",
+        i_i: "55",
+        j_p: "0",
+        j_q: "0",
+        j_u: "0",
+        j_i: "0"
+      });
+      expect(params).not.toHaveProperty("p");
+      expect(params).not.toHaveProperty("q");
+      expect(params).not.toHaveProperty("u");
+      expect(params).not.toHaveProperty("i");
+      expect(definitions.filter((definition) => /^(?:i|j)_[pqui]$/u.test(definition.enName)).map((definition) => definition.enName)).toEqual([
+        "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"
+      ]);
+      expect(Object.fromEntries(definitions.map((definition) => [definition.enName, definition.cnName]))).toMatchObject({
+        i_vbase: "高压侧电压等级",
+        i_i_max: "高压侧最大电流",
+        j_vbase: "低压侧电压等级",
+        j_i_max: "低压侧最大电流"
+      });
+      expect(savedProject.measurements.groups[0].items[0]).toMatchObject({
+        associatedField: "i_p",
+        sourcePoint: "transformer-2.i_p"
+      });
+
+      const eFile = await readEFileText(join(filesRoot, "默认方案", "双绕组分侧量测.e"));
+      const lines = eSectionLines(eFile, "ACTransformer");
+      const columns = lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1) ?? [];
+      const values = lines.find((line) => line.startsWith("#"))?.trim().split(/\s+/u).slice(1) ?? [];
+      const row = Object.fromEntries(columns.map((column, index) => [column, values[index] ?? ""]));
+      expect(columns).toEqual(expect.arrayContaining([
+        "i_i_max", "j_i_max", "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"
+      ]));
+      expect(columns).not.toEqual(expect.arrayContaining(["high_i_max", "low_i_max"]));
+      expect(columns).not.toEqual(expect.arrayContaining(["p", "q", "u", "i"]));
+      expect(row).toMatchObject({
+        i_i_max: "630",
+        j_i_max: "1250",
+        i_p: "10.5",
+        i_q: "2.5",
+        i_u: "110",
+        i_i: "55",
+        j_p: "0",
+        j_q: "0",
+        j_u: "0",
+        j_i: "0"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("migrates legacy AC and DC branch measurements before storage and E export", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-e-branch-endpoint-measurements-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      const legacyDefinitions = (fields) => JSON.stringify(fields.map((field) => ({
+        cnName: field,
+        enName: field,
+        exportName: field,
+        valueType: "float",
+        typicalValue: "0",
+        exportEnabled: true
+      })));
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "支路分端量测",
+          updatedAt: "2026-08-22T00:00:00.000Z",
+          project: {
+            version: 1,
+            name: "支路分端量测",
+            nodes: [
+              {
+                id: "ac-line-1",
+                kind: "ac-line",
+                name: "交流支路-1",
+                position: { x: 100, y: 100 },
+                size: { width: 108, height: 36 },
+                params: {
+                  idx: "1", p: "11", q: "2", u: "110", i: "50", run_stat: "1",
+                  _customParamDefinitions: legacyDefinitions(["p", "q", "u", "i"])
+                },
+                terminals: [{ id: "t1", type: "ac", vbase: "110" }, { id: "t2", type: "ac", vbase: "110" }]
+              },
+              {
+                id: "dc-line-1",
+                kind: "dc-line",
+                name: "直流支路-1",
+                position: { x: 300, y: 100 },
+                size: { width: 108, height: 36 },
+                params: {
+                  idx: "1", p: "8", q: "retired", u: "750", i: "20", run_stat: "1",
+                  _customParamDefinitions: legacyDefinitions(["p", "q", "u", "i"])
+                },
+                terminals: [{ id: "t1", type: "dc", vbase: "750" }, { id: "t2", type: "dc", vbase: "750" }]
+              }
+            ],
+            edges: [],
+            measurements: {
+              version: 1,
+              groups: [{
+                id: "measurement-ac-line-1",
+                nodeId: "ac-line-1",
+                visible: true,
+                anchor: "bottom",
+                offset: { x: 0, y: 60 },
+                layout: "vertical",
+                items: [{
+                  id: "item-p",
+                  measurementTypeId: "activePower",
+                  associatedField: "p",
+                  sourcePoint: "ac-line-1.p"
+                }]
+              }]
+            }
+          }
+        },
+        measurementConfig: {}
+      });
+
+      const savedProject = JSON.parse(await readFile(join(filesRoot, "默认方案", "支路分端量测.json"), "utf-8"));
+      const acParams = savedProject.nodes.find((node) => node.id === "ac-line-1").params;
+      const dcParams = savedProject.nodes.find((node) => node.id === "dc-line-1").params;
+      expect(acParams).toMatchObject({
+        i_p: "11", i_q: "2", i_u: "110", i_i: "50",
+        j_p: "0", j_q: "0", j_u: "0", j_i: "0"
+      });
+      expect(dcParams).toMatchObject({
+        i_p: "8", i_u: "750", i_i: "20",
+        j_p: "0", j_u: "0", j_i: "0"
+      });
+      for (const params of [acParams, dcParams]) {
+        for (const legacyField of ["p", "q", "u", "i"]) expect(params).not.toHaveProperty(legacyField);
+        const definitions = JSON.parse(params._customParamDefinitions);
+        expect(definitions.every((definition) => /[\u3400-\u9fff]/u.test(definition.cnName))).toBe(true);
+      }
+      expect(savedProject.measurements.groups[0].items[0]).toMatchObject({
+        associatedField: "i_p",
+        sourcePoint: "ac-line-1.i_p"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("writes three-winding transformers as independent E devices with three-side parameters", async () => {
     const root = await mkdtemp(join(tmpdir(), "scheme-e-three-winding-"));
     try {
@@ -1942,7 +2349,26 @@ describe("scheme file persistence", () => {
                   low_magnetizing_susceptance_pu: "0.006",
                   low_tap_ratio: "1.03",
                   low_shift: "3",
-                  run_stat: "1"
+                  p: "11",
+                  q: "12",
+                  u: "13",
+                  i: "14",
+                  run_stat: "1",
+                  _customParamDefinitions: JSON.stringify([
+                    { cnName: "idx", enName: "idx", valueType: "integer", typicalValue: "" },
+                    { cnName: "name", enName: "name", valueType: "string", typicalValue: "" },
+                    { cnName: "parent", enName: "parent", valueType: "integer", typicalValue: "" },
+                    { cnName: "dev_type", enName: "dev_type", valueType: "string", typicalValue: "" },
+                    { cnName: "status", enName: "status", valueType: "numberEnum", typicalValue: "1" },
+                    { cnName: "run_stat", enName: "run_stat", valueType: "numberEnum", typicalValue: "1" },
+                    { cnName: "high_vbase", enName: "high_vbase", valueType: "float", typicalValue: "0" },
+                    { cnName: "medium_rated_capacity", enName: "medium_rated_capacity", valueType: "float", typicalValue: "90" },
+                    { cnName: "low_i_max", enName: "low_i_max", valueType: "float", typicalValue: "0" },
+                    { cnName: "t1_node", enName: "t1_node", valueType: "integer", typicalValue: "" },
+                    { cnName: "mediumResistancePu", enName: "mediumResistancePu", valueType: "float", typicalValue: "0.1" },
+                    { cnName: "low_reactance_pu", enName: "low_reactance_pu", valueType: "float", typicalValue: "0.1" },
+                    { cnName: "p", enName: "p", valueType: "float", typicalValue: "0" }
+                  ])
                 },
                 terminals: [
                   { id: "t1", type: "ac", vbase: "220" },
@@ -1951,7 +2377,24 @@ describe("scheme file persistence", () => {
                 ]
               }
             ],
-            edges: []
+            edges: [],
+            measurements: {
+              version: 1,
+              groups: [{
+                id: "measurement-transformer-3",
+                nodeId: "transformer-3",
+                visible: true,
+                anchor: "bottom",
+                offset: { x: 0, y: 80 },
+                layout: "vertical",
+                items: [{
+                  id: "item-p",
+                  measurementTypeId: "activePower",
+                  associatedField: "p",
+                  sourcePoint: "transformer-3.p"
+                }]
+              }]
+            }
           }
         },
         measurementConfig: {}
@@ -1959,39 +2402,106 @@ describe("scheme file persistence", () => {
 
       const eFile = await readEFileText(join(filesRoot, "默认方案", "三绕组主变模型.e"));
       const lines = eSectionLines(eFile, "ACTransfomer3");
+      const savedProject = JSON.parse(await readFile(join(filesRoot, "默认方案", "三绕组主变模型.json"), "utf-8"));
+      const savedParams = savedProject.nodes[0].params;
+      const savedDefinitions = JSON.parse(savedParams._customParamDefinitions);
+
+      expect(savedParams).toMatchObject({
+        i_rated_capacity: "90 MVA",
+        i_i_max: "300 A",
+        k_rated_capacity: "60 MVA",
+        k_i_max: "315 A",
+        j_rated_capacity: "30 MVA",
+        j_i_max: "1600 A",
+        i_p: "11",
+        i_q: "12",
+        i_u: "13",
+        i_i: "14",
+        k_p: "0",
+        k_q: "0",
+        k_u: "0",
+        k_i: "0",
+        j_p: "0",
+        j_q: "0",
+        j_u: "0",
+        j_i: "0",
+        k_r: "0.02",
+        j_r: "0.03"
+      });
+      expect(savedParams).not.toHaveProperty("p");
+      expect(savedParams).not.toHaveProperty("q");
+      expect(savedParams).not.toHaveProperty("u");
+      expect(savedParams).not.toHaveProperty("i");
+      expect(savedDefinitions.filter((definition) => /^(?:i|j|k)_[pqui]$/u.test(definition.enName)).map((definition) => definition.enName)).toEqual([
+        "i_p", "i_q", "i_u", "i_i",
+        "k_p", "k_q", "k_u", "k_i",
+        "j_p", "j_q", "j_u", "j_i"
+      ]);
+      expect(savedDefinitions.every((definition) => definition.cnName !== definition.enName)).toBe(true);
+      expect(Object.fromEntries(savedDefinitions.map((definition) => [definition.enName, definition.cnName]))).toMatchObject({
+        idx: "序号",
+        name: "名称",
+        parent: "所属模型",
+        dev_type: "设备类型",
+        status: "运行状态",
+        run_stat: "工作状态",
+        i_vbase: "高压侧电压等级",
+        k_rated_capacity: "中压侧额定容量",
+        j_i_max: "低压侧最大电流",
+        i_node: "高压侧节点号",
+        k_r: "中压侧电阻",
+        j_x: "低压侧电抗",
+        i_p: "高压侧有功量测"
+      });
+      expect(savedProject.measurements.groups[0].items[0]).toMatchObject({
+        associatedField: "i_p",
+        sourcePoint: "transformer-3.i_p"
+      });
 
       expect(lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1)).toEqual([
         "idx",
         "name",
-        "t1_node",
-        "t2_node",
-        "t3_node",
+        "i_node",
+        "k_node",
+        "j_node",
         "neutral_node",
-        "high_rated_capacity",
-        "high_i_max",
-        "medium_rated_capacity",
-        "medium_i_max",
-        "low_rated_capacity",
-        "low_i_max",
-        "r1",
-        "x1",
-        "gt1",
-        "bt1",
-        "tap1",
-        "shift1",
-        "r2",
-        "x2",
-        "gt2",
-        "bt2",
-        "tap2",
-        "shift2",
-        "r3",
-        "x3",
-        "gt3",
-        "bt3",
-        "tap3",
-        "shift3",
-        "run_stat"
+        "i_rated_capacity",
+        "i_i_max",
+        "k_rated_capacity",
+        "k_i_max",
+        "j_rated_capacity",
+        "j_i_max",
+        "i_r",
+        "i_x",
+        "i_gt",
+        "i_bt",
+        "i_tap",
+        "i_shift",
+        "k_r",
+        "k_x",
+        "k_gt",
+        "k_bt",
+        "k_tap",
+        "k_shift",
+        "j_r",
+        "j_x",
+        "j_gt",
+        "j_bt",
+        "j_tap",
+        "j_shift",
+        "run_stat",
+        "i_p",
+        "i_q",
+        "i_u",
+        "i_i",
+        "k_p",
+        "k_q",
+        "k_u",
+        "k_i",
+        "j_p",
+        "j_q",
+        "j_u",
+        "j_i"
       ]);
       expect(lines.find((line) => line.startsWith("#"))?.trim().split(/\s+/u).slice(1)).toEqual([
         "1",
@@ -2024,7 +2534,19 @@ describe("scheme file persistence", () => {
         "0.006",
         "1.03",
         "3",
-        "1"
+        "1",
+        "11",
+        "12",
+        "13",
+        "14",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0"
       ]);
       expect(eFile).not.toContain("idx_xf_t1");
       expect(eFile).not.toContain("三绕组主变-1_高压绕组");

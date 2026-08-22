@@ -1121,7 +1121,7 @@ describe("default device state draft rows", () => {
     expect(defaultVisual.image).not.toBe(placeholderImage);
   });
 
-  test("loads built-in binary state pages with status-specific default state images", () => {
+  test("loads built-in binary state pages with closed-status-specific default state images", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-breaker");
     expect(template).toBeTruthy();
     if (!template) {
@@ -1131,7 +1131,7 @@ describe("default device state draft rows", () => {
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
       ...DEFINITION_MEASUREMENT_DRAFT_SCOPE,
       DEFAULT_STATE_PAGE_ID,
-      DeviceGlyph: ({ node, stateVisual }: any) => `<path data-status="${node.params.status}" data-state="${stateVisual?.value ?? ""}"/>`,
+      DeviceGlyph: ({ node, stateVisual }: any) => `<path data-status="${node.params.status}" data-closed-status="${node.params.closed_status}" data-state="${stateVisual?.value ?? ""}"/>`,
       categoryLibraryComponentLibraryKey: (group: string, componentLibrary: string) => `${group}:${componentLibrary}`,
       colorDisplayMode: "energy",
       colorPalette: {},
@@ -1176,11 +1176,13 @@ describe("default device state draft rows", () => {
     expect(stateRows).toHaveLength(2);
     expect(stateRows[0].value).toBe("0");
     expect(stateRows[0].image).toMatch(/^data:image\/svg\+xml/);
-    expect(decodeSvgDataUrl(stateRows[0].image)).toContain('data-status="0"');
+    expect(decodeSvgDataUrl(stateRows[0].image)).toContain('data-status="1"');
+    expect(decodeSvgDataUrl(stateRows[0].image)).toContain('data-closed-status="0"');
     expect(decodeSvgDataUrl(stateRows[0].image)).toContain('data-state="0"');
     expect(stateRows[1].value).toBe("1");
     expect(stateRows[1].image).toMatch(/^data:image\/svg\+xml/);
     expect(decodeSvgDataUrl(stateRows[1].image)).toContain('data-status="1"');
+    expect(decodeSvgDataUrl(stateRows[1].image)).toContain('data-closed-status="1"');
     expect(decodeSvgDataUrl(stateRows[1].image)).toContain('data-state="1"');
   });
 
@@ -1194,7 +1196,7 @@ describe("default device state draft rows", () => {
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
       ...DEFINITION_MEASUREMENT_DRAFT_SCOPE,
       DEFAULT_STATE_PAGE_ID,
-      DeviceGlyph: ({ node, stateVisual }: any) => `<path data-status="${node.params.status}" data-state="${stateVisual?.value ?? ""}"/>`,
+      DeviceGlyph: ({ node, stateVisual }: any) => `<path data-status="${node.params.status}" data-closed-status="${node.params.closed_status}" data-state="${stateVisual?.value ?? ""}"/>`,
       categoryLibraryComponentLibraryKey: (group: string, componentLibrary: string) => `${group}:${componentLibrary}`,
       colorDisplayMode: "energy",
       colorPalette: {},
@@ -1249,11 +1251,13 @@ describe("default device state draft rows", () => {
     expect(stateRows).toHaveLength(2);
     expect(stateRows[0].value).toBe("0");
     expect(stateRows[0].image).toMatch(/^data:image\/svg\+xml/);
-    expect(decodeSvgDataUrl(stateRows[0].image)).toContain('data-status="0"');
+    expect(decodeSvgDataUrl(stateRows[0].image)).toContain('data-status="1"');
+    expect(decodeSvgDataUrl(stateRows[0].image)).toContain('data-closed-status="0"');
     expect(decodeSvgDataUrl(stateRows[0].image)).toContain('data-state="0"');
     expect(stateRows[1].value).toBe("1");
     expect(stateRows[1].image).toMatch(/^data:image\/svg\+xml/);
     expect(decodeSvgDataUrl(stateRows[1].image)).toContain('data-status="1"');
+    expect(decodeSvgDataUrl(stateRows[1].image)).toContain('data-closed-status="1"');
     expect(decodeSvgDataUrl(stateRows[1].image)).toContain('data-state="1"');
   });
 

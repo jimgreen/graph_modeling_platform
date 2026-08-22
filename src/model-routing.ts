@@ -98,6 +98,7 @@ import {
   normalizeHydrogenCouplingBodyParams,
   normalizeHydrogenStorageParams,
   normalizeKnownLegacyNodeEnumValues,
+  normalizeBranchMeasurementParams,
   normalizeLegacyGasQuantityDeviceParams,
   normalizeRoutableLineDeviceStrokeWidthParam,
   normalizeSemanticParameterValues,
@@ -1665,7 +1666,8 @@ export function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, 
 
 export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: DeviceTemplate | undefined): ModelNode {
   const normalizedParamNames = normalizeLegacyGasQuantityDeviceParams(node.params);
-  const semanticParams = normalizeSemanticParameterValues(normalizedParamNames);
+  const branchParams = normalizeBranchMeasurementParams(node.kind, normalizedParamNames);
+  const semanticParams = normalizeSemanticParameterValues(branchParams);
   const semanticNode = semanticParams === node.params ? node : { ...node, params: semanticParams };
   let normalizedNode = normalizeEndpointConverterNodeControlParams(
     normalizeDcacConverterNodeControlParams(normalizeRoutableLineDeviceStrokeWidthParam(semanticNode))
@@ -3621,7 +3623,7 @@ function shouldContractTopologyIslandNode(node: ModelNode): boolean {
     return true;
   }
   if (section === "ACSwitch" || section === "DCSwitch" || section === "ACBreak" || section === "DCBreak") {
-    return normalizeSwitchStatusForE(node.params.status ?? node.params.closedStatus) !== "0";
+    return normalizeSwitchStatusForE(node.params.closed_status ?? node.params.closedStatus ?? node.params.status) !== "0";
   }
   return false;
 }
@@ -3892,6 +3894,35 @@ function setNodeVoltageBaseValues(node: ModelNode, value: string): ModelNode {
     : { ...node, params, terminals };
 }
 
+function setNodeRatedVoltageIfPresent(node: ModelNode, value: string): ModelNode {
+  if (
+    !Object.prototype.hasOwnProperty.call(node.params, "rated_voltage") ||
+    node.params.rated_voltage === value
+  ) {
+    return node;
+  }
+  return {
+    ...node,
+    params: {
+      ...node.params,
+      rated_voltage: value
+    }
+  };
+}
+
+const VOLTAGE_LIMIT_PARAM_KEYS = new Set([
+  "v_max",
+  "v_min",
+  "i_v_max",
+  "i_v_min",
+  "j_v_max",
+  "j_v_min",
+  "ac_v_max",
+  "ac_v_min",
+  "dc_v_max",
+  "dc_v_min"
+]);
+
 function terminalIdSet(...ids: Array<string | undefined>): Set<string> | null {
   const validIds = ids.filter((id): id is string => Boolean(id));
   return validIds.length > 0 ? new Set(validIds) : null;
@@ -3903,6 +3934,51 @@ function terminalIdAt(node: ModelNode, index: number): string | undefined {
 
 function terminalIdByType(node: ModelNode, type: TerminalType, fallbackIndex: number): string | undefined {
   return node.terminals.find((terminal) => terminal.type === type)?.id ?? terminalIdAt(node, fallbackIndex);
+}
+
+function voltageLimitParamTerminalIds(node: ModelNode, key: string): Set<string> | null {
+  const normalized = key.trim().toLowerCase();
+  if (normalized === "i_v_max" || normalized === "i_v_min") {
+    return terminalIdSet(terminalIdAt(node, 0));
+  }
+  if (normalized === "j_v_max" || normalized === "j_v_min") {
+    return terminalIdSet(terminalIdAt(node, 1));
+  }
+  if (normalized === "ac_v_max" || normalized === "ac_v_min") {
+    return terminalIdSet(terminalIdByType(node, "ac", 0));
+  }
+  if (normalized === "dc_v_max" || normalized === "dc_v_min") {
+    return terminalIdSet(terminalIdByType(node, "dc", 1));
+  }
+  return null;
+}
+
+function setNodeVoltageLimitValues(
+  node: ModelNode,
+  targetTerminalIds: ReadonlySet<string> | null,
+  value: string
+): ModelNode {
+  let params = node.params;
+  for (const key of Object.keys(node.params)) {
+    const normalized = key.trim().toLowerCase();
+    if (!VOLTAGE_LIMIT_PARAM_KEYS.has(normalized) || node.params[key] === value) {
+      continue;
+    }
+    if (targetTerminalIds) {
+      const paramTerminalIds = voltageLimitParamTerminalIds(node, normalized);
+      const shouldUpdate = paramTerminalIds
+        ? terminalIdsOverlap(paramTerminalIds, targetTerminalIds)
+        : allVoltageBaseTerminalIdsTargeted(node, targetTerminalIds);
+      if (!shouldUpdate) {
+        continue;
+      }
+    }
+    if (params === node.params) {
+      params = { ...node.params };
+    }
+    params[key] = value;
+  }
+  return params === node.params ? node : { ...node, params };
 }
 
 function containerVoltageBaseParamTerminalIds(node: ModelNode, key: string): Set<string> | null {
@@ -4087,6 +4163,23 @@ function setNodeVoltageBaseValuesByTerminal(
     : { ...node, params, terminals };
 }
 
+function setNodeRatedVoltageFromTerminalValuesIfPresent(
+  node: ModelNode,
+  valueByTerminalId: ReadonlyMap<string, string>
+): ModelNode {
+  const electricalTerminals = node.terminals.filter((terminal) => isElectricalTerminalType(terminal.type));
+  if (
+    electricalTerminals.length === 0 ||
+    electricalTerminals.some((terminal) => !valueByTerminalId.has(terminal.id))
+  ) {
+    return node;
+  }
+  const values = new Set(electricalTerminals.map((terminal) => valueByTerminalId.get(terminal.id)!));
+  return values.size === 1
+    ? setNodeRatedVoltageIfPresent(node, Array.from(values)[0])
+    : node;
+}
+
 function selectedVoltageBaseTerminalValues(
   nodes: ModelNode[],
   terminalValuesByNodeId: VoltageBaseTerminalValuesByNodeId
@@ -4222,9 +4315,15 @@ export function clearVoltageBaseValuesForScope(
       return node;
     }
     const targetTerminalIds = targets.terminalIdsByNodeId?.get(node.id);
-    const nextNode = targetTerminalIds
+    const voltageBaseClearedNode = targetTerminalIds
       ? setNodeVoltageBaseValuesForTerminals(node, targetTerminalIds, "0.0")
       : setNodeVoltageBaseValues(node, "0.0");
+    const voltageLimitsClearedNode = setNodeVoltageLimitValues(
+      voltageBaseClearedNode,
+      targetTerminalIds ?? null,
+      "0.0"
+    );
+    const nextNode = setNodeRatedVoltageIfPresent(voltageLimitsClearedNode, "0.0");
     if (nextNode !== node) {
       nodeUpdates.push(nextNode);
     }
@@ -4253,13 +4352,16 @@ export function setVoltageBaseValuesForScope(
     }
     const settingMode = voltageBaseSettingModeForNode(node);
     const targetTerminalIds = targets.terminalIdsByNodeId?.get(node.id);
-    const nextNode = settingMode === "uniform"
+    const voltageBaseSetNode = settingMode === "uniform"
       ? targetTerminalIds
         ? setNodeVoltageBaseValuesForTerminals(node, targetTerminalIds, value)
         : setNodeVoltageBaseValues(node, value)
       : settingMode === "terminal" && targetTerminalIds
         ? setNodeVoltageBaseValuesForTerminals(node, targetTerminalIds, value)
         : node;
+    const nextNode = settingMode === "uniform"
+      ? setNodeRatedVoltageIfPresent(voltageBaseSetNode, value)
+      : voltageBaseSetNode;
     if (nextNode !== node) {
       nodeUpdates.push(nextNode);
     }
@@ -4288,7 +4390,8 @@ export function setVoltageBaseTerminalValuesForScope(
     if (!valuesByTerminalId) {
       return node;
     }
-    const nextNode = setNodeVoltageBaseValuesByTerminal(node, valuesByTerminalId);
+    const voltageBaseSetNode = setNodeVoltageBaseValuesByTerminal(node, valuesByTerminalId);
+    const nextNode = setNodeRatedVoltageFromTerminalValuesIfPresent(voltageBaseSetNode, valuesByTerminalId);
     if (nextNode !== node) {
       nodeUpdates.push(nextNode);
     }
@@ -4385,15 +4488,15 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
       params.vbase = terminalVoltages[0];
     }
     if (isThreeWindingTransformer(node)) {
-      assignTerminalParam("high_vbase", terminals[0]);
-      assignTerminalParam("medium_vbase", terminals[1]);
-      assignTerminalParam("low_vbase", terminals[2]);
+      assignTerminalParam("i_vbase", terminals[0]);
+      assignTerminalParam("k_vbase", terminals[1]);
+      assignTerminalParam("j_vbase", terminals[2]);
       if (hasVisibleThreeWindingNeutralTerminal(node)) {
         assignTerminalParam("neutral_vbase", terminals[3]);
       }
     } else if (isTwoWindingTransformerNode(node)) {
-      assignTerminalParam("high_vbase", terminals[0]);
-      assignTerminalParam("low_vbase", terminals[1]);
+      assignTerminalParam("i_vbase", terminals[0]);
+      assignTerminalParam("j_vbase", terminals[1]);
     }
     if (Object.prototype.hasOwnProperty.call(params, "source_vbase") || Object.prototype.hasOwnProperty.call(params, "sourceVbase")) {
       assignTerminalParam("source_vbase", terminals[0]);
@@ -4424,6 +4527,29 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
       }
       params[paramKey] = voltage;
     };
+    if (
+      Object.prototype.hasOwnProperty.call(params, "rated_voltage") &&
+      isZeroNumericText(params.rated_voltage)
+    ) {
+      const ratedVoltageCandidates = new Set(
+        terminals
+          .filter((terminal) => isElectricalTerminalType(terminal.type))
+          .map((terminal) => voltageForTerminal(node.id, terminal))
+          .filter((voltage) => Boolean(voltage) && !isZeroNumericText(voltage))
+      );
+      if (ratedVoltageCandidates.size === 0 && terminals.length === 0) {
+        const standaloneVoltage = terminalVoltageBaseNumber(params.vbase);
+        if (standaloneVoltage && !isZeroNumericText(standaloneVoltage)) {
+          ratedVoltageCandidates.add(standaloneVoltage);
+        }
+      }
+      if (ratedVoltageCandidates.size === 1) {
+        if (params === node.params) {
+          params = { ...node.params };
+        }
+        params.rated_voltage = Array.from(ratedVoltageCandidates)[0];
+      }
+    }
     const section = inferESection(node.kind, node.params);
     if (section === "ACGenerator" || section === "DCGenerator") {
       const type: TerminalType = section === "ACGenerator" ? "ac" : "dc";
@@ -4514,9 +4640,9 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     } else if (isThreeWindingTransformer(node)) {
       params = {
         ...normalizeThreeWindingTransformerParams(params),
-        t1_node: terminals[0]?.nodeNumber ?? "",
-        t2_node: terminals[1]?.nodeNumber ?? "",
-        t3_node: terminals[2]?.nodeNumber ?? ""
+        i_node: terminals[0]?.nodeNumber ?? "",
+        k_node: terminals[1]?.nodeNumber ?? "",
+        j_node: terminals[2]?.nodeNumber ?? ""
       };
     }
     params = applyTopologyNodeReferenceParams(topologyNode, terminals, params);
@@ -4696,6 +4822,44 @@ export function validateVoltageSetpointDeviations(nodes: ModelNode[], edges: Edg
     if (isStaticNode(node)) {
       continue;
     }
+    const ratedVoltage = terminalVoltageBaseNumber(node.params.rated_voltage);
+    if (ratedVoltage && !isZeroNumericText(ratedVoltage)) {
+      const topologyVoltageBases = new Set(
+        node.terminals
+          .filter((terminal) => isElectricalTerminalType(terminal.type))
+          .map((terminal) => terminalVoltageBaseNumber(terminal.vbase))
+          .filter((voltage) => Boolean(voltage) && !isZeroNumericText(voltage))
+      );
+      if (topologyVoltageBases.size === 0 && node.terminals.length === 0) {
+        const standaloneVoltageBase = terminalVoltageBaseNumber(node.params.vbase);
+        if (standaloneVoltageBase && !isZeroNumericText(standaloneVoltageBase)) {
+          topologyVoltageBases.add(standaloneVoltageBase);
+        }
+      }
+      const ratedVoltageValue = Number(ratedVoltage);
+      for (const topologyVoltageBase of topologyVoltageBases) {
+        const topologyVoltageBaseValue = Number(topologyVoltageBase);
+        if (
+          !Number.isFinite(ratedVoltageValue) ||
+          !Number.isFinite(topologyVoltageBaseValue) ||
+          topologyVoltageBaseValue <= 0
+        ) {
+          continue;
+        }
+        const deviation = Math.abs(ratedVoltageValue - topologyVoltageBaseValue) / topologyVoltageBaseValue;
+        if (deviation <= 0.3) {
+          continue;
+        }
+        errors.push({
+          id: `rated-voltage-deviation:${node.id}:${encodeURIComponent(topologyVoltageBase)}`,
+          type: "rated-voltage-deviation",
+          nodeId: node.id,
+          relatedNodeIds: [node.id],
+          message: `图上拓扑失败：${node.name} 的额定电压 ${ratedVoltage} 与对应节点电压基值 ${topologyVoltageBase} 偏差超过 30%。`
+        });
+        break;
+      }
+    }
     const section = inferESection(node.kind, node.params);
     const checkedVoltageSetpointKeys = new Set<string>();
     const addNodeVoltageSetpointDeviation = (paramKey: string, terminal?: Terminal) => {
@@ -4750,6 +4914,10 @@ function identityValidationEntriesForNode(node: ModelNode): DeviceIdentityValida
   if (isStaticNode(node)) {
     return [];
   }
+  const localName = String(node.name ?? "").trim();
+  const identityNode = localName === node.name
+    ? node
+    : { ...node, name: localName || String(node.id ?? "").trim() || "未命名设备" };
   const entries: DeviceIdentityValidationEntry[] = [];
   const primaryTypeKey = deviceIndexCounterKey(node);
   const idx = parseDeviceIndex(node.params.idx);
@@ -4757,8 +4925,8 @@ function identityValidationEntriesForNode(node: ModelNode): DeviceIdentityValida
     entries.push({
       typeKey: primaryTypeKey,
       idx: idx > 0 ? String(idx) : "",
-      name: node.name.trim(),
-      node
+      name: localName,
+      node: identityNode
     });
   }
   if (isContainerParams(node.params)) {
@@ -4771,8 +4939,8 @@ function identityValidationEntriesForNode(node: ModelNode): DeviceIdentityValida
       entries.push({
         typeKey: relationTypeKey,
         idx: String(relationIdx),
-        name: containerAssociatedDeviceName(node, fieldName),
-        node
+        name: containerAssociatedDeviceName(identityNode, fieldName),
+        node: identityNode
       });
     }
   }
@@ -4920,13 +5088,13 @@ const RATED_CURRENT_SPECS_BY_SECTION: Record<string, RatedCurrentSpec[]> = {
   ACBreak: [{ currentKey: "i_max", capacityKey: "rated_capacity", terminalSelector: "default", label: "最大电流" }],
   DCBreak: [{ currentKey: "i_max", capacityKey: "rated_capacity", terminalSelector: "default", label: "最大电流" }],
   ACTransformer: [
-    { currentKey: "high_i_max", capacityKey: "rated_capacity", terminalSelector: "i", label: "高压侧最大电流" },
-    { currentKey: "low_i_max", capacityKey: "rated_capacity", terminalSelector: "j", label: "低压侧最大电流" }
+    { currentKey: "i_i_max", capacityKey: "rated_capacity", terminalSelector: "i", label: "高压侧最大电流" },
+    { currentKey: "j_i_max", capacityKey: "rated_capacity", terminalSelector: "j", label: "低压侧最大电流" }
   ],
   ACTransfomer3: [
-    { currentKey: "high_i_max", capacityKey: "high_rated_capacity", terminalSelector: "i", label: "高压侧最大电流" },
-    { currentKey: "medium_i_max", capacityKey: "medium_rated_capacity", terminalSelector: "j", label: "中压侧最大电流" },
-    { currentKey: "low_i_max", capacityKey: "low_rated_capacity", terminalSelector: "t3", label: "低压侧最大电流" }
+    { currentKey: "i_i_max", capacityKey: "i_rated_capacity", terminalSelector: "i", label: "高压侧最大电流" },
+    { currentKey: "k_i_max", capacityKey: "k_rated_capacity", terminalSelector: "j", label: "中压侧最大电流" },
+    { currentKey: "j_i_max", capacityKey: "j_rated_capacity", terminalSelector: "t3", label: "低压侧最大电流" }
   ],
   DCGenerator: [
     { currentKey: "i_max", capacityKey: "rated_capacity", terminalSelector: "default", label: "最大电流" }
@@ -5776,7 +5944,7 @@ function duplicateDeviceIdentityErrors(nodes: ModelNode[]): TopologyValidationEr
   ) => {
     const groups = new Map<string, DeviceIdentityValidationEntry[]>();
     for (const entry of entries) {
-      const value = valueOf(entry).trim();
+      const value = String(valueOf(entry) ?? "").trim();
       if (!value) {
         continue;
       }

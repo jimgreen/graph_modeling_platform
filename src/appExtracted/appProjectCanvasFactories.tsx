@@ -2086,9 +2086,9 @@ export function createDefaultVoltageBaseSetValue(__appScope: Record<string, any>
       const candidates = [
         node.terminals[0]?.vbase,
         node.params.vbase,
+        node.params.i_vbase,
         node.params.highVbase,
         node.params.sourceVbase,
-        node.params.i_vbase,
         node.params.v_set,
         node.params.ac_v_set,
         node.params.dc_v_set,
@@ -5268,14 +5268,20 @@ export function createRunTopologyCalculation(__appScope: Record<string, any>) {
       skipVoltageNodeIds: invalidVoltageBaseNodeIds,
       sourceNodes: nodes
     });
-    const errors = [...topologyErrors, ...normalizedLimits.warnings];
+    const voltageDeviationErrors = validateVoltageSetpointDeviations(normalizedLimits.nodes, edges);
+    const ratedVoltageDeviationErrors = voltageDeviationErrors.filter(
+      (error) => error.type === "rated-voltage-deviation"
+    );
+    const errors = [...topologyErrors, ...normalizedLimits.warnings, ...ratedVoltageDeviationErrors];
     const blockingErrors = errors.filter(isBlockingTopologyValidationError);
     const nonBlockingWarnings = errors.filter((error) => !isBlockingTopologyValidationError(error));
     setTopologyErrors(errors);
     if (blockingErrors.length === 0) {
       pushUndoSnapshot(true, false, undefined, "拓扑计算");
       const nextTopology = buildTopology(normalizedLimits.nodes, edges);
-      const voltageSetpointWarnings = validateVoltageSetpointDeviations(normalizedLimits.nodes, edges);
+      const voltageSetpointWarnings = voltageDeviationErrors.filter(
+        (error) => error.type !== "rated-voltage-deviation"
+      );
       const nextWarnings = [...nonBlockingWarnings, ...voltageSetpointWarnings];
       skipNextTopologyStaleRef.current = true;
       setNodes(normalizedLimits.nodes);

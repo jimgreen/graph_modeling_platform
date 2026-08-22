@@ -81,9 +81,12 @@ const resolveComponentLibrary = (section: any, reverseMap: Map<string, string>, 
 
 const E_DEVICE_INTERFACE_CURRENT_FIELD_ALIASES: Record<string, string> = {
   max_current: "i_max",
-  high_max_current: "high_i_max",
-  medium_max_current: "medium_i_max",
-  low_max_current: "low_i_max"
+  high_max_current: "i_i_max",
+  high_i_max: "i_i_max",
+  medium_max_current: "k_i_max",
+  medium_i_max: "k_i_max",
+  low_max_current: "j_i_max",
+  low_i_max: "j_i_max"
 };
 
 function eDeviceInterfaceOrderFieldName(value: unknown) {
@@ -111,6 +114,24 @@ function ensureEDeviceInterfaceParentBeforeDevType(fieldOrder: readonly string[]
 }
 
 const E_DEVICE_INTERFACE_FIXED_FIELD_NAMES = new Set(["idx", "name", "parent", "dev_type"]);
+const E_DEVICE_INTERFACE_DERIVED_BASE_ONLY_FIELD_NAMES = new Set(["parent", "dev_type"]);
+
+function eDeviceInterfaceIsDerivedBaseOnlyField(value: unknown) {
+  return E_DEVICE_INTERFACE_DERIVED_BASE_ONLY_FIELD_NAMES.has(
+    String(eDeviceInterfaceOrderFieldName(value) ?? "").trim().toLowerCase()
+  );
+}
+
+function eDeviceInterfaceDerivedFields(fields: readonly any[] = []) {
+  return fields.filter((field) => (
+    !eDeviceInterfaceIsDerivedBaseOnlyField(field?.sourceName) &&
+    !eDeviceInterfaceIsDerivedBaseOnlyField(field?.exportName)
+  ));
+}
+
+function eDeviceInterfaceDerivedFieldOrder(fieldOrder: readonly string[] = []) {
+  return fieldOrder.filter((fieldName) => !eDeviceInterfaceIsDerivedBaseOnlyField(fieldName));
+}
 // 拓扑引用字段：生成 E 文件时由拓扑连接关系填入 ACNode 的 idx，不对应元件属性
 const E_DEVICE_INTERFACE_TOPOLOGY_FIELD_NAMES = new Set(["ind", "znd", "nd"]);
 // 量测字段：生成 E 文件时由量测系统填充，不对应元件属性
@@ -133,6 +154,7 @@ const E_DEVICE_INTERFACE_DERIVED_BASE_FIELD_NAMES = new Set([
   "t3_node",
   "i_node",
   "j_node",
+  "k_node",
   "control_type",
   "control_type",
   "ac_control_type",
@@ -227,10 +249,18 @@ function eDeviceInterfaceDisplayCoreFieldName(value: unknown) {
 export function orderEDeviceInterfaceFields(
   componentLibrary: string,
   fields: readonly any[] = [],
-  configuredOrder: readonly string[] = []
+  configuredOrder: readonly string[] = [],
+  isDerivedComponentLibrary = false
 ) {
-  if ((configuredOrder ?? []).length > 0) {
-    return applyEDeviceInterfaceFieldOrder(fields, ensureEDeviceInterfaceParentBeforeDevType(configuredOrder));
+  const availableFields = isDerivedComponentLibrary ? eDeviceInterfaceDerivedFields(fields) : fields;
+  const availableConfiguredOrder = isDerivedComponentLibrary
+    ? eDeviceInterfaceDerivedFieldOrder(configuredOrder)
+    : configuredOrder;
+  if ((availableConfiguredOrder ?? []).length > 0) {
+    return applyEDeviceInterfaceFieldOrder(
+      availableFields,
+      ensureEDeviceInterfaceParentBeforeDevType(availableConfiguredOrder)
+    );
   }
   const preferredOrder = [...(E_SECTION_COLUMNS[componentLibrary] ?? ["idx", "name"])]
     .map((fieldName) => fieldName.toLowerCase());
@@ -246,7 +276,7 @@ export function orderEDeviceInterfaceFields(
       .map((fieldName, index) => [fieldName, index])
   );
 
-  return fields
+  return availableFields
     .map((field, index) => {
       const candidateNames = [field?.sourceName, field?.exportName]
         .map((fieldName) => eDeviceInterfaceDisplayCoreFieldName(fieldName))
@@ -407,20 +437,6 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
       readonly: true
     });
     appendField(derivedGroup, {
-      sourceName: "parent",
-      cnName: "所属模型",
-      exportEnabled: true,
-      exportName: "parent",
-      readonly: true
-    });
-    appendField(derivedGroup, {
-      sourceName: "dev_type",
-      cnName: "设备类型",
-      exportEnabled: true,
-      exportName: "dev_type",
-      readonly: true
-    });
-    appendField(derivedGroup, {
       sourceName: eDeviceInterfaceRelationKey(derivedInfo.baseComponentLibrary),
       cnName: "原类关联idx",
       exportEnabled: true,
@@ -465,7 +481,7 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
     const { fieldBySourceName, ...row } = group;
     const configuredOrder = eDeviceDefinitionFieldOrder[row.componentLibrary] ?? [];
     const orderedFields = configuredOrder.length > 0
-      ? orderEDeviceInterfaceFields(row.componentLibrary, row.fields, configuredOrder)
+      ? orderEDeviceInterfaceFields(row.componentLibrary, row.fields, configuredOrder, row.isDerivedComponentLibrary)
       : row.fields;
     // 有模板字段定义时，用模板字段的 exportName 覆盖设备参数名
     const templateFields = eDeviceDefinitionTemplateFields[row.componentLibrary];
@@ -537,7 +553,8 @@ export function buildEFileExportOptionsFromLibrary(options: {
       fields: orderEDeviceInterfaceFields(
         definition.componentLibrary,
         definition.fields,
-        options.eDeviceDefinitionFieldOrder?.[definition.componentLibrary] ?? []
+        options.eDeviceDefinitionFieldOrder?.[definition.componentLibrary] ?? [],
+        definition.isDerivedComponentLibrary
       )
     })),
     eDeviceDefinitionLabels: options.eDeviceDefinitionLabels ?? {},

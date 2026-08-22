@@ -78,7 +78,9 @@ const templateForClass = (
     if (templateClassName(template).toLowerCase() !== classKey) return false;
     return !categoryKey || normalizeName(template.categoryLibrary).toLowerCase() === categoryKey;
   });
-  return candidates.find((template) => template.custom) ?? candidates[0];
+  return candidates.find((template) => Boolean(templateDerivedComponentLibraryInfo(template))) ??
+    candidates.find((template) => template.custom) ??
+    candidates[0];
 };
 
 const classDefinitionFor = (

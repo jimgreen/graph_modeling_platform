@@ -10,6 +10,7 @@ import { degreesToRadians } from "./formatUtils";
 import { clampNumber } from "./canvasViewport";
 import { normalizeImageFitMode } from "./imageFit";
 import { isCanonicalDeviceVisualParamName } from "./deviceVisualParams";
+import { meaningfulDeviceParameterChineseName } from "./deviceParameterChineseNames";
 
 // E 文件导出相关代码（从 model.ts 提取到独立模块）
 export * from "./model-eexport";
@@ -1002,6 +1003,23 @@ function hasEStatusColumn(kind: string, params: Record<string, string> = {}) {
   return Boolean(section && E_SECTION_COLUMNS[section]?.includes("status"));
 }
 
+const SWITCHING_CLOSED_STATUS_COMPONENT_LIBRARIES = new Set(["acswitch", "dcswitch", "acbreak", "dcbreak"]);
+
+export function switchingDeviceUsesClosedStatus(kind: string, params: Record<string, string> = {}) {
+  const baseKind = baseDeviceKind(kind);
+  if (baseKind.includes("ground-disconnector")) {
+    return false;
+  }
+  const componentLibraries = [
+    staticComponentLibraryFromParams(params),
+    params.derived_from_component_type,
+    params.derived_component_type
+  ];
+  return componentLibraries.some((componentLibrary) =>
+    SWITCHING_CLOSED_STATUS_COMPONENT_LIBRARIES.has(String(componentLibrary ?? "").trim().toLowerCase())
+  ) || baseKind.includes("switch") || baseKind.includes("breaker");
+}
+
 function isDefaultBinaryStateDeviceKind(kind: string, params: Record<string, string> = {}) {
   const baseKind = baseDeviceKind(kind);
   return (
@@ -1088,7 +1106,12 @@ export function defaultDeviceStatusValue(template: Pick<DeviceTemplate, "kind" |
   if (states.length === 0) {
     return "";
   }
-  const explicitStatus = normalizeDeviceStateValue(template.params?.status);
+  const usesClosedStatus = switchingDeviceUsesClosedStatus(template.kind, template.params);
+  const explicitStatus = normalizeDeviceStateValue(
+    usesClosedStatus
+      ? template.params?.closed_status ?? template.params?.closedStatus ?? template.params?.status
+      : template.params?.status
+  );
   if (explicitStatus) {
     const exact = states.find((state) => state.value === explicitStatus);
     if (exact) {
@@ -1122,7 +1145,10 @@ export function resolveDeviceStateVisual(
   if (states.length === 0) {
     return null;
   }
-  const current = normalizeDeviceStateValue(node.params.status) || defaultDeviceStatusValue(template);
+  const currentParamValue = switchingDeviceUsesClosedStatus(template.kind, template.params)
+    ? node.params.closed_status ?? node.params.closedStatus ?? node.params.status
+    : node.params.status;
+  const current = normalizeDeviceStateValue(currentParamValue) || defaultDeviceStatusValue(template);
   const normalizedCurrent = normalizeDeviceStatusForDisplayMatch(current);
   const state = states.find((item) => item.value === current) ??
     (normalizedCurrent
@@ -1864,6 +1890,7 @@ export const E_NODE_REFERENCE_COLUMNS = new Set([
   "node",
   "i_node",
   "j_node",
+  "k_node",
   "ind",
   "znd",
   "nd",
@@ -1888,7 +1915,7 @@ export function numericNodeReference(value: unknown): string {
 }
 
 export function topologyNodeNumberForEField(
-  node: Pick<ModelNode, "nodeNumber" | "terminals">,
+  node: Pick<ModelNode, "nodeNumber" | "terminals"> & Partial<Pick<ModelNode, "kind">>,
   key: string
 ): string {
   if (key === "ac_node") {
@@ -1899,17 +1926,21 @@ export function topologyNodeNumberForEField(
   }
   const numberedNodeMatch = /^node([1-4])$/.exec(key);
   const transformerNodeMatch = /^t([123])_node$/.exec(key);
+  const isThreeWinding = node.kind === "ac-three-winding-transformer" ||
+    node.kind === "ac-three-winding-transformer-neutral";
   const terminalIndex = key === "node" || key === "i_node" || key === "ind" || key === "nd"
     ? 0
     : key === "j_node" || key === "znd"
-      ? 1
-      : key === "neutral_node"
-        ? 3
-        : numberedNodeMatch
-          ? Number.parseInt(numberedNodeMatch[1], 10) - 1
-          : transformerNodeMatch
-            ? Number.parseInt(transformerNodeMatch[1], 10) - 1
-            : -1;
+      ? isThreeWinding ? 2 : 1
+      : key === "k_node"
+        ? isThreeWinding ? 1 : 2
+        : key === "neutral_node"
+          ? 3
+          : numberedNodeMatch
+            ? Number.parseInt(numberedNodeMatch[1], 10) - 1
+            : transformerNodeMatch
+              ? Number.parseInt(transformerNodeMatch[1], 10) - 1
+              : -1;
   return terminalIndex >= 0 ? numericNodeReference(terminalNodeNumber(node, terminalIndex)) : "";
 }
 
@@ -1917,14 +1948,24 @@ export function mappedLegacyEValue(key: string, params: Record<string, string>) 
   if (key === "rated_capacity" || key === "rated_power") {
     return deviceParamValue(params, "rated_capacity") ?? deviceParamValue(params, "rated_power") ?? "";
   }
-  const legacyCurrentKey = ({
-    i_max: "max_current",
-    high_i_max: "high_max_current",
-    medium_i_max: "medium_max_current",
-    low_i_max: "low_max_current"
+  const legacyCurrentKeys = ({
+    i_max: ["max_current"],
+    i_i_max: ["high_i_max", "high_max_current"],
+    k_i_max: ["medium_i_max", "medium_max_current"],
+    j_i_max: ["low_i_max", "low_max_current"]
+  } as Record<string, string[]>)[key];
+  if (legacyCurrentKeys) {
+    return deviceParamValue(params, key) ??
+      legacyCurrentKeys.map((legacyKey) => deviceParamValue(params, legacyKey)).find((value) => value !== undefined) ??
+      "";
+  }
+  const legacySideCapacityKey = ({
+    i_rated_capacity: "high_rated_capacity",
+    k_rated_capacity: "medium_rated_capacity",
+    j_rated_capacity: "low_rated_capacity"
   } as Record<string, string>)[key];
-  if (legacyCurrentKey) {
-    return deviceParamValue(params, key) ?? deviceParamValue(params, legacyCurrentKey) ?? "";
+  if (legacySideCapacityKey) {
+    return deviceParamValue(params, key) ?? deviceParamValue(params, legacySideCapacityKey) ?? "";
   }
   if (key === "pbase") return params.pbase ?? deviceParamValue(params, "rated_active_power") ?? "";
   if (key === "qbase") return params.qbase ?? deviceParamValue(params, "rated_reactive_power") ?? "";
@@ -2044,6 +2085,7 @@ export type TopologyValidationErrorType =
   | "hydrogen-storage-parameter-invalid"
   | "hydrogen-coupling-parameter-invalid"
   | "voltage-limit-out-of-range"
+  | "rated-voltage-deviation"
   | "voltage-setpoint-deviation"
   | "duplicate-device-idx"
   | "duplicate-device-name"
@@ -2072,6 +2114,7 @@ export function isBlockingTopologyValidationError(error: Pick<TopologyValidation
     error.type === "device-setpoint-out-of-range" ||
     error.type === "hydrogen-storage-parameter-invalid" ||
     error.type === "hydrogen-coupling-parameter-invalid" ||
+    error.type === "rated-voltage-deviation" ||
     error.type === "voltage-level-out-of-model-range"
   );
 }
@@ -2084,93 +2127,333 @@ const readonlyIntegerDefinition = (cnName: string, enName: string, typicalValue 
   readonly: true
 });
 
+const TWO_WINDING_TRANSFORMER_MEASUREMENT_FIELDS = [
+  { enName: "i_p", cnName: "高压侧有功值", measurementTypeId: "activePower" },
+  { enName: "i_q", cnName: "高压侧无功值", measurementTypeId: "reactivePower" },
+  { enName: "i_u", cnName: "高压侧电压值", measurementTypeId: "voltage" },
+  { enName: "i_i", cnName: "高压侧电流值", measurementTypeId: "current" },
+  { enName: "j_p", cnName: "低压侧有功值", measurementTypeId: "activePower" },
+  { enName: "j_q", cnName: "低压侧无功值", measurementTypeId: "reactivePower" },
+  { enName: "j_u", cnName: "低压侧电压值", measurementTypeId: "voltage" },
+  { enName: "j_i", cnName: "低压侧电流值", measurementTypeId: "current" },
+  { enName: "tap", cnName: "分接头档位", measurementTypeId: "tapPosition" }
+] as const;
+
+const THREE_WINDING_TRANSFORMER_MEASUREMENT_FIELDS = [
+  { enName: "i_p", cnName: "高压侧有功量测", measurementTypeId: "activePower" },
+  { enName: "i_q", cnName: "高压侧无功量测", measurementTypeId: "reactivePower" },
+  { enName: "i_u", cnName: "高压侧电压量测", measurementTypeId: "voltage" },
+  { enName: "i_i", cnName: "高压侧电流量测", measurementTypeId: "current" },
+  { enName: "k_p", cnName: "中压侧有功量测", measurementTypeId: "activePower" },
+  { enName: "k_q", cnName: "中压侧无功量测", measurementTypeId: "reactivePower" },
+  { enName: "k_u", cnName: "中压侧电压量测", measurementTypeId: "voltage" },
+  { enName: "k_i", cnName: "中压侧电流量测", measurementTypeId: "current" },
+  { enName: "j_p", cnName: "低压侧有功量测", measurementTypeId: "activePower" },
+  { enName: "j_q", cnName: "低压侧无功量测", measurementTypeId: "reactivePower" },
+  { enName: "j_u", cnName: "低压侧电压量测", measurementTypeId: "voltage" },
+  { enName: "j_i", cnName: "低压侧电流量测", measurementTypeId: "current" }
+] as const;
+
+const THREE_WINDING_TRANSFORMER_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] =
+  THREE_WINDING_TRANSFORMER_MEASUREMENT_FIELDS.map(({ enName, cnName, measurementTypeId }) => ({
+    labelOverride: cnName,
+    measurementTypeId,
+    associatedField: enName
+  }));
+
+const THREE_WINDING_TRANSFORMER_SIDE_PARAMETER_FIELDS = [
+  { enName: "i_r", cnName: "高压侧电阻", typicalValue: "0.0" },
+  { enName: "i_x", cnName: "高压侧电抗", typicalValue: "0.1" },
+  { enName: "i_gt", cnName: "高压侧励磁电导", typicalValue: "0.0" },
+  { enName: "i_bt", cnName: "高压侧励磁电纳", typicalValue: "0.0" },
+  { enName: "i_tap", cnName: "高压侧变比", typicalValue: "1.0" },
+  { enName: "i_shift", cnName: "高压侧相移（度）", typicalValue: "0" },
+  { enName: "k_r", cnName: "中压侧电阻", typicalValue: "0.0" },
+  { enName: "k_x", cnName: "中压侧电抗", typicalValue: "0.1" },
+  { enName: "k_gt", cnName: "中压侧励磁电导", typicalValue: "0.0" },
+  { enName: "k_bt", cnName: "中压侧励磁电纳", typicalValue: "0.0" },
+  { enName: "k_tap", cnName: "中压侧变比", typicalValue: "1.0" },
+  { enName: "k_shift", cnName: "中压侧相移（度）", typicalValue: "0" },
+  { enName: "j_r", cnName: "低压侧电阻", typicalValue: "0.0" },
+  { enName: "j_x", cnName: "低压侧电抗", typicalValue: "0.1" },
+  { enName: "j_gt", cnName: "低压侧励磁电导", typicalValue: "0.0" },
+  { enName: "j_bt", cnName: "低压侧励磁电纳", typicalValue: "0.0" },
+  { enName: "j_tap", cnName: "低压侧变比", typicalValue: "1.0" },
+  { enName: "j_shift", cnName: "低压侧相移（度）", typicalValue: "0" }
+] as const;
+
+const TWO_WINDING_TRANSFORMER_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] =
+  TWO_WINDING_TRANSFORMER_MEASUREMENT_FIELDS.map(({ enName, cnName, measurementTypeId }) => ({
+    labelOverride: cnName,
+    measurementTypeId,
+    associatedField: enName
+  }));
+
+const TWO_WINDING_TRANSFORMER_LEGACY_MEASUREMENT_FIELD_ALIASES = new Map<string, string>([
+  ["p", "i_p"],
+  ["q", "i_q"],
+  ["u", "i_u"],
+  ["i", "i_i"]
+]);
+
 export const twoWindingTransformerParameterDefinitions: DeviceParameterDefinition[] = [
   readonlyIntegerDefinition("序号", "idx"),
   { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
   { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
   { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false },
-  { cnName: "高压侧电压等级", enName: "highVbase", valueType: "float", typicalValue: "0", readonly: false },
-  { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "高压侧电压等级", enName: "i_vbase", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "低压侧电压等级", enName: "j_vbase", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "额定容量", enName: "ratedCapacity", valueType: "float", typicalValue: "50", readonly: false },
-  { cnName: "高压侧最大电流", enName: "highIMax", valueType: "float", typicalValue: "0", readonly: false },
-  { cnName: "低压侧最大电流", enName: "lowIMax", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "高压侧最大电流", enName: "i_i_max", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "低压侧最大电流", enName: "j_i_max", valueType: "float", typicalValue: "0", readonly: false },
+  ...TWO_WINDING_TRANSFORMER_MEASUREMENT_FIELDS.map(({ enName, cnName }) => ({
+    cnName,
+    enName,
+    valueType: "float" as const,
+    typicalValue: enName === "tap" ? "1.0" : "0",
+    readonly: false,
+    exportEnabled: true
+  })),
+  { cnName: "分接头档位设定值", enName: "tap_set", valueType: "float", typicalValue: "0", readonly: false, exportEnabled: true },
   { cnName: "相移（度）", enName: "shift", valueType: "float", typicalValue: "0", readonly: false }
 ];
+
+const TWO_WINDING_TRANSFORMER_PARAMETER_ALIASES = [
+  ["i_vbase", ["high_vbase", "highVbase"]],
+  ["i_i_max", ["high_i_max", "highIMax", "high_max_current", "highMaxCurrent"]],
+  ["j_vbase", ["low_vbase", "lowVbase"]],
+  ["j_i_max", ["low_i_max", "lowIMax", "low_max_current", "lowMaxCurrent"]],
+  ["r", ["resistance_pu", "resistancePu"]],
+  ["x", ["reactance_pu", "reactancePu"]],
+  ["gt", ["magnetizing_conductance_pu", "magnetizingConductancePu"]],
+  ["bt", ["magnetizing_susceptance_pu", "magnetizingSusceptancePu"]],
+  ["tap", ["tap_ratio", "tapRatio"]],
+  ["i_p", ["p"]],
+  ["i_q", ["q"]],
+  ["i_u", ["u"]],
+  ["i_i", ["i"]]
+] as const;
 
 const RETIRED_TWO_WINDING_TRANSFORMER_PARAMETER_NAMES = new Set([
   "t1_node",
   "t2_node",
-  "resistance_pu",
-  "reactance_pu",
-  "magnetizing_conductance_pu",
-  "magnetizing_susceptance_pu",
-  "tap_ratio"
+  ...TWO_WINDING_TRANSFORMER_PARAMETER_ALIASES.flatMap(([, aliases]) =>
+    aliases.map((alias) => toSnakeCaseDeviceParamName(alias))
+  )
 ]);
 
 export function isRetiredTwoWindingTransformerParameterName(name: string): boolean {
   return RETIRED_TWO_WINDING_TRANSFORMER_PARAMETER_NAMES.has(toSnakeCaseDeviceParamName(name));
 }
 
+function normalizeTwoWindingTransformerMeasurementDefinitions(
+  definitions: readonly DeviceMeasurementDefinition[] | undefined
+): DeviceMeasurementDefinition[] | undefined {
+  if (definitions === undefined) {
+    return undefined;
+  }
+  const canonicalFields = new Set(
+    TWO_WINDING_TRANSFORMER_MEASUREMENT_DEFINITIONS.map((definition) => definition.associatedField ?? "")
+  );
+  const overrides = new Map<string, { definition: DeviceMeasurementDefinition; canonical: boolean }>();
+  const extras: DeviceMeasurementDefinition[] = [];
+  for (const definition of normalizeDeviceMeasurementDefinitions(definitions)) {
+    const rawField = String(definition.associatedField ?? "").trim();
+    const field = TWO_WINDING_TRANSFORMER_LEGACY_MEASUREMENT_FIELD_ALIASES.get(rawField) ?? rawField;
+    if (!canonicalFields.has(field)) {
+      extras.push({ ...definition });
+      continue;
+    }
+    const canonical = field === rawField;
+    const existing = overrides.get(field);
+    if (!existing || (canonical && !existing.canonical)) {
+      overrides.set(field, {
+        canonical,
+        definition: { ...definition, associatedField: field }
+      });
+    }
+  }
+  return [
+    ...TWO_WINDING_TRANSFORMER_MEASUREMENT_DEFINITIONS.map((baseDefinition) => {
+      const field = baseDefinition.associatedField ?? "";
+      const override = overrides.get(field)?.definition;
+      return {
+        ...baseDefinition,
+        ...override,
+        name: override?.name ?? baseDefinition.name,
+        labelOverride: override?.labelOverride ?? baseDefinition.labelOverride,
+        measurementTypeId: baseDefinition.measurementTypeId,
+        associatedField: field
+      };
+    }),
+    ...extras
+  ];
+}
+
+function normalizeThreeWindingTransformerMeasurementDefinitions(
+  definitions: readonly DeviceMeasurementDefinition[] | undefined
+): DeviceMeasurementDefinition[] | undefined {
+  if (definitions === undefined) {
+    return undefined;
+  }
+  const legacyAliases = new Map<string, string>([
+    ["p", "i_p"],
+    ["q", "i_q"],
+    ["u", "i_u"],
+    ["i", "i_i"]
+  ]);
+  const canonicalFields = new Set(
+    THREE_WINDING_TRANSFORMER_MEASUREMENT_DEFINITIONS.map((definition) => definition.associatedField ?? "")
+  );
+  const overrides = new Map<string, { definition: DeviceMeasurementDefinition; canonical: boolean }>();
+  const extras: DeviceMeasurementDefinition[] = [];
+  for (const definition of normalizeDeviceMeasurementDefinitions(definitions)) {
+    const rawField = String(definition.associatedField ?? "").trim();
+    const field = legacyAliases.get(rawField) ?? rawField;
+    if (!canonicalFields.has(field)) {
+      extras.push({ ...definition });
+      continue;
+    }
+    const canonical = field === rawField;
+    const existing = overrides.get(field);
+    if (!existing || (canonical && !existing.canonical)) {
+      overrides.set(field, {
+        canonical,
+        definition: { ...definition, associatedField: field }
+      });
+    }
+  }
+  return [
+    ...THREE_WINDING_TRANSFORMER_MEASUREMENT_DEFINITIONS.map((baseDefinition) => {
+      const field = baseDefinition.associatedField ?? "";
+      const override = overrides.get(field)?.definition;
+      return {
+        ...baseDefinition,
+        ...override,
+        name: override?.name ?? baseDefinition.name,
+        labelOverride: baseDefinition.labelOverride,
+        measurementTypeId: baseDefinition.measurementTypeId,
+        associatedField: field
+      };
+    }),
+    ...extras
+  ];
+}
+
 export const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] = [
   readonlyIntegerDefinition("序号", "idx"),
   { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+  { cnName: "设备类型", enName: "dev_type", valueType: "string", typicalValue: "", readonly: false, exportEnabled: true, exportName: "dev_type" },
   { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
   { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false },
-  readonlyIntegerDefinition("高压侧节点号", "t1_node"),
-  readonlyIntegerDefinition("中压侧节点号", "t2_node"),
-  readonlyIntegerDefinition("低压侧节点号", "t3_node"),
+  readonlyIntegerDefinition("高压侧节点号", "i_node"),
+  readonlyIntegerDefinition("中压侧节点号", "k_node"),
+  readonlyIntegerDefinition("低压侧节点号", "j_node"),
   readonlyIntegerDefinition("中性点节点号", "neutral_node"),
-  { cnName: "高压侧电压等级", enName: "highVbase", valueType: "float", typicalValue: "0", readonly: false },
-  { cnName: "高压侧额定容量", enName: "highRatedCapacity", valueType: "float", typicalValue: "90", readonly: false },
-  { cnName: "高压侧最大电流", enName: "highIMax", valueType: "float", typicalValue: "0", readonly: false },
-  { cnName: "中压侧电压等级", enName: "mediumVbase", valueType: "float", typicalValue: "0", readonly: false },
-  { cnName: "中压侧额定容量", enName: "mediumRatedCapacity", valueType: "float", typicalValue: "90", readonly: false },
-  { cnName: "中压侧最大电流", enName: "mediumIMax", valueType: "float", typicalValue: "0", readonly: false },
-  { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "float", typicalValue: "0", readonly: false },
-  { cnName: "低压侧额定容量", enName: "lowRatedCapacity", valueType: "float", typicalValue: "90", readonly: false },
-  { cnName: "低压侧最大电流", enName: "lowIMax", valueType: "float", typicalValue: "0", readonly: false }
+  { cnName: "高压侧电压等级", enName: "i_vbase", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "高压侧额定容量", enName: "i_rated_capacity", valueType: "float", typicalValue: "90", readonly: false },
+  { cnName: "高压侧最大电流", enName: "i_i_max", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "中压侧电压等级", enName: "k_vbase", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "中压侧额定容量", enName: "k_rated_capacity", valueType: "float", typicalValue: "90", readonly: false },
+  { cnName: "中压侧最大电流", enName: "k_i_max", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "低压侧电压等级", enName: "j_vbase", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "低压侧额定容量", enName: "j_rated_capacity", valueType: "float", typicalValue: "90", readonly: false },
+  { cnName: "低压侧最大电流", enName: "j_i_max", valueType: "float", typicalValue: "0", readonly: false },
+  ...THREE_WINDING_TRANSFORMER_SIDE_PARAMETER_FIELDS.map(({ enName, cnName, typicalValue }) => ({
+    cnName,
+    enName,
+    valueType: "float" as const,
+    typicalValue,
+    readonly: false,
+    exportEnabled: true
+  })),
+  ...THREE_WINDING_TRANSFORMER_MEASUREMENT_FIELDS.map(({ enName, cnName }) => ({
+    cnName,
+    enName,
+    valueType: "float" as const,
+    typicalValue: "0",
+    readonly: false,
+    exportEnabled: true
+  }))
 ];
 
 const THREE_WINDING_TRANSFORMER_E_DEFAULT_PARAMS = {
-  r1: "0.0",
-  x1: "0.1",
-  gt1: "0.0",
-  bt1: "0.0",
-  tap1: "1.0",
-  shift1: "0",
-  r2: "0.0",
-  x2: "0.1",
-  gt2: "0.0",
-  bt2: "0.0",
-  tap2: "1.0",
-  shift2: "0",
-  r3: "0.0",
-  x3: "0.1",
-  gt3: "0.0",
-  bt3: "0.0",
-  tap3: "1.0",
-  shift3: "0"
+  i_vbase: "0",
+  i_rated_capacity: "90",
+  i_i_max: "0",
+  k_vbase: "0",
+  k_rated_capacity: "90",
+  k_i_max: "0",
+  j_vbase: "0",
+  j_rated_capacity: "90",
+  j_i_max: "0",
+  i_r: "0.0",
+  i_x: "0.1",
+  i_gt: "0.0",
+  i_bt: "0.0",
+  i_tap: "1.0",
+  i_shift: "0",
+  j_r: "0.0",
+  j_x: "0.1",
+  j_gt: "0.0",
+  j_bt: "0.0",
+  j_tap: "1.0",
+  j_shift: "0",
+  k_r: "0.0",
+  k_x: "0.1",
+  k_gt: "0.0",
+  k_bt: "0.0",
+  k_tap: "1.0",
+  k_shift: "0",
+  i_p: "0",
+  i_q: "0",
+  i_u: "0",
+  i_i: "0",
+  k_p: "0",
+  k_q: "0",
+  k_u: "0",
+  k_i: "0",
+  j_p: "0",
+  j_q: "0",
+  j_u: "0",
+  j_i: "0"
 } as const;
 
 const THREE_WINDING_TRANSFORMER_PARAMETER_ALIASES = [
-  ["r1", ["high_resistance_pu", "highResistancePu"]],
-  ["x1", ["high_reactance_pu", "highReactancePu"]],
-  ["gt1", ["high_magnetizing_conductance_pu", "highMagnetizingConductancePu"]],
-  ["bt1", ["high_magnetizing_susceptance_pu", "highMagnetizingSusceptancePu"]],
-  ["tap1", ["high_tap_ratio", "highTapRatio"]],
-  ["shift1", ["high_shift", "highShift"]],
-  ["r2", ["medium_resistance_pu", "mediumResistancePu"]],
-  ["x2", ["medium_reactance_pu", "mediumReactancePu"]],
-  ["gt2", ["medium_magnetizing_conductance_pu", "mediumMagnetizingConductancePu"]],
-  ["bt2", ["medium_magnetizing_susceptance_pu", "mediumMagnetizingSusceptancePu"]],
-  ["tap2", ["medium_tap_ratio", "mediumTapRatio"]],
-  ["shift2", ["medium_shift", "mediumShift"]],
-  ["r3", ["low_resistance_pu", "lowResistancePu"]],
-  ["x3", ["low_reactance_pu", "lowReactancePu"]],
-  ["gt3", ["low_magnetizing_conductance_pu", "lowMagnetizingConductancePu"]],
-  ["bt3", ["low_magnetizing_susceptance_pu", "lowMagnetizingSusceptancePu"]],
-  ["tap3", ["low_tap_ratio", "lowTapRatio"]],
-  ["shift3", ["low_shift", "lowShift"]]
+  ["i_node", ["t1_node"]],
+  ["k_node", ["t2_node"]],
+  ["j_node", ["t3_node"]],
+  ["i_vbase", ["high_vbase", "highVbase"]],
+  ["i_rated_capacity", ["high_rated_capacity", "highRatedCapacity"]],
+  ["i_i_max", ["high_i_max", "highIMax", "high_max_current", "highMaxCurrent"]],
+  ["k_vbase", ["medium_vbase", "mediumVbase"]],
+  ["k_rated_capacity", ["medium_rated_capacity", "mediumRatedCapacity"]],
+  ["k_i_max", ["medium_i_max", "mediumIMax", "medium_max_current", "mediumMaxCurrent"]],
+  ["j_vbase", ["low_vbase", "lowVbase"]],
+  ["j_rated_capacity", ["low_rated_capacity", "lowRatedCapacity"]],
+  ["j_i_max", ["low_i_max", "lowIMax", "low_max_current", "lowMaxCurrent"]],
+  ["i_r", ["r1", "high_resistance_pu", "highResistancePu"]],
+  ["i_x", ["x1", "high_reactance_pu", "highReactancePu"]],
+  ["i_gt", ["gt1", "high_magnetizing_conductance_pu", "highMagnetizingConductancePu"]],
+  ["i_bt", ["bt1", "high_magnetizing_susceptance_pu", "highMagnetizingSusceptancePu"]],
+  ["i_tap", ["tap1", "high_tap_ratio", "highTapRatio"]],
+  ["i_shift", ["shift1", "high_shift", "highShift"]],
+  ["k_r", ["r2", "medium_resistance_pu", "mediumResistancePu"]],
+  ["k_x", ["x2", "medium_reactance_pu", "mediumReactancePu"]],
+  ["k_gt", ["gt2", "medium_magnetizing_conductance_pu", "mediumMagnetizingConductancePu"]],
+  ["k_bt", ["bt2", "medium_magnetizing_susceptance_pu", "mediumMagnetizingSusceptancePu"]],
+  ["k_tap", ["tap2", "medium_tap_ratio", "mediumTapRatio"]],
+  ["k_shift", ["shift2", "medium_shift", "mediumShift"]],
+  ["j_r", ["r3", "low_resistance_pu", "lowResistancePu"]],
+  ["j_x", ["x3", "low_reactance_pu", "lowReactancePu"]],
+  ["j_gt", ["gt3", "low_magnetizing_conductance_pu", "lowMagnetizingConductancePu"]],
+  ["j_bt", ["bt3", "low_magnetizing_susceptance_pu", "lowMagnetizingSusceptancePu"]],
+  ["j_tap", ["tap3", "low_tap_ratio", "lowTapRatio"]],
+  ["j_shift", ["shift3", "low_shift", "lowShift"]],
+  ["i_p", ["p"]],
+  ["i_q", ["q"]],
+  ["i_u", ["u"]],
+  ["i_i", ["i"]]
 ] as const;
 
 const RETIRED_THREE_WINDING_TRANSFORMER_PARAMETER_NAMES = new Set(
@@ -3941,7 +4224,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流线路",
     categoryLibrary: "交流设备",
     size: { width: 108, height: 36 },
-    params: { ratedCapacity: "0", iMax: "0", r: "0.1", x: "1.0", b: "0.0" },
+    params: { ratedCapacity: "0", rated_voltage: "10", iMax: "0", r: "0.1", x: "1.0", b: "0.0" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -4056,7 +4339,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流线路（自适应）",
     categoryLibrary: "交流设备",
     size: { width: 150, height: 36 },
-    params: { ratedCapacity: "0", iMax: "0", r: "0.1", x: "1.0", b: "0.0", component_type: "ACBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
+    params: { ratedCapacity: "0", rated_voltage: "10", iMax: "0", r: "0.1", x: "1.0", b: "0.0", component_type: "ACBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -4065,7 +4348,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流零阻抗支路",
     categoryLibrary: "交流设备",
     size: { width: 108, height: 36 },
-    params: {},
+    params: { rated_voltage: "10" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -4074,7 +4357,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流零阻抗支路（自适应）",
     categoryLibrary: "交流设备",
     size: { width: 150, height: 36 },
-    params: { component_type: "ACZeroBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
+    params: { rated_voltage: "10", component_type: "ACZeroBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -4083,7 +4366,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流母线",
     categoryLibrary: "交流设备",
     size: { width: 120, height: 28 },
-    params: { voltageLevel: "10 kV", vMax: "1.1", vMin: "0.9", section: "I段" },
+    params: { rated_voltage: "10", voltageLevel: "10 kV", vMax: "1.1", vMin: "0.9", section: "I段" },
     terminalType: "ac",
     terminalCount: 0
   },
@@ -4092,7 +4375,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流开关",
     categoryLibrary: "交流设备",
     size: { width: 72, height: 48 },
-    params: { status: "1", ratedCapacity: "0", iMax: "1250 A" },
+    params: { status: "1", closed_status: "1", closed_status_set: "1", ratedCapacity: "0", rated_voltage: "10", iMax: "1250 A" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -4123,7 +4406,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流断路器",
     categoryLibrary: "交流设备",
     size: { width: 78, height: 50 },
-    params: { ratedCapacity: "0", iMax: "1250 A" },
+    params: { status: "1", closed_status: "1", closed_status_set: "1", ratedCapacity: "0", rated_voltage: "10", iMax: "1250 A" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -4132,7 +4415,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "盒型开关",
     categoryLibrary: "交流设备",
     size: { width: 86, height: 44 },
-    params: { status: "1", ratedCapacity: "0", iMax: "1250 A" },
+    params: { status: "1", closed_status: "1", closed_status_set: "1", ratedCapacity: "0", rated_voltage: "10", iMax: "1250 A" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -4146,10 +4429,12 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       reactivePower: "1.2 Mvar",
       powerFactor: "0.95",
       ratedCapacity: "5 MW",
+      rated_voltage: "10",
       pMax: "5 MW",
       pMin: "0",
       qMax: "1.2 Mvar",
       qMin: "0",
+      q_set: "0",
       vMax: "1.1",
       vMin: "0.9"
     },
@@ -4167,10 +4452,12 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       reactivePower: "1.2 Mvar",
       powerFactor: "0.95",
       ratedCapacity: "5 MW",
+      rated_voltage: "10",
       pMax: "5 MW",
       pMin: "0",
       qMax: "1.2 Mvar",
       qMin: "0",
+      q_set: "0",
       vMax: "1.1",
       vMin: "0.9"
     },
@@ -4186,15 +4473,16 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 92, height: 70 },
     params: {
       ratedCapacity: "50",
-      highIMax: "0",
-      lowIMax: "0",
+      i_i_max: "0",
+      j_i_max: "0",
       voltageRatio: "110/10 kV",
       impedance: "10.5%",
       r: "0.0",
       x: "0.1",
       gt: "0.0",
       bt: "0.0",
-      tap: "1.0"
+      tap: "1.0",
+      tap_set: "0"
     },
     terminalType: "ac",
     terminalCount: 2,
@@ -4208,9 +4496,6 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 104, height: 76 },
     params: {
       ratedCapacity: "90",
-      highIMax: "0",
-      mediumIMax: "0",
-      lowIMax: "0",
       voltageRatio: "220/110/10 kV",
       windingType: "三绕组",
       impedance: "12.0%",
@@ -4265,7 +4550,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流线路",
     categoryLibrary: "直流设备",
     size: { width: 108, height: 36 },
-    params: { ratedCapacity: "0", iMax: "0", r: "1.0" },
+    params: { ratedCapacity: "0", rated_voltage: "750", iMax: "0", r: "1.0" },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -4274,7 +4559,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流线路（自适应）",
     categoryLibrary: "直流设备",
     size: { width: 150, height: 36 },
-    params: { ratedCapacity: "0", iMax: "0", r: "1.0", component_type: "DCBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
+    params: { ratedCapacity: "0", rated_voltage: "750", iMax: "0", r: "1.0", component_type: "DCBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -4283,7 +4568,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流零阻抗支路",
     categoryLibrary: "直流设备",
     size: { width: 108, height: 36 },
-    params: {},
+    params: { rated_voltage: "750" },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -4292,7 +4577,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流零阻抗支路（自适应）",
     categoryLibrary: "直流设备",
     size: { width: 150, height: 36 },
-    params: { component_type: "DCZeroBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
+    params: { rated_voltage: "750", component_type: "DCZeroBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -4301,7 +4586,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流母线",
     categoryLibrary: "直流设备",
     size: { width: 120, height: 28 },
-    params: { voltageLevel: "750 V", vMax: "1.1", vMin: "0.9", pole: "正负极" },
+    params: { rated_voltage: "750", voltageLevel: "750 V", vMax: "1.1", vMin: "0.9", pole: "正负极" },
     terminalType: "dc",
     terminalCount: 0
   },
@@ -4310,7 +4595,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流开关",
     categoryLibrary: "直流设备",
     size: { width: 72, height: 48 },
-    params: { status: "1", ratedCapacity: "0", iMax: "1600 A" },
+    params: { status: "1", closed_status: "1", closed_status_set: "1", ratedCapacity: "0", rated_voltage: "750", iMax: "1600 A" },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -4319,7 +4604,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流断路器",
     categoryLibrary: "直流设备",
     size: { width: 78, height: 50 },
-    params: { ratedCapacity: "0", iMax: "1600 A" },
+    params: { status: "1", closed_status: "1", closed_status_set: "1", ratedCapacity: "0", rated_voltage: "750", iMax: "1600 A" },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -4332,6 +4617,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       power: "1.5 MW",
       voltage: "750 V",
       ratedCapacity: "1.5 MW",
+      rated_voltage: "750",
       pMax: "1.5 MW",
       pMin: "0",
       vMax: "1.1",
@@ -4674,6 +4960,18 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   i_q_max: "float",
   i_q_min: "float",
   i_i_max: "float",
+  i_vbase: "float",
+  i_rated_capacity: "float",
+  i_p: "float",
+  i_q: "float",
+  i_u: "float",
+  i_i: "float",
+  i_r: "float",
+  i_x: "float",
+  i_gt: "float",
+  i_bt: "float",
+  i_tap: "float",
+  i_shift: "float",
   i_v_max: "float",
   i_v_min: "float",
   j_p_max: "float",
@@ -4681,8 +4979,29 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   j_q_max: "float",
   j_q_min: "float",
   j_i_max: "float",
+  j_vbase: "float",
+  j_rated_capacity: "float",
+  j_p: "float",
+  j_q: "float",
+  j_u: "float",
+  j_i: "float",
+  j_r: "float",
+  j_x: "float",
+  j_gt: "float",
+  j_bt: "float",
+  j_tap: "float",
+  j_shift: "float",
   j_v_max: "float",
   j_v_min: "float",
+  k_r: "float",
+  k_i_max: "float",
+  k_vbase: "float",
+  k_rated_capacity: "float",
+  k_x: "float",
+  k_gt: "float",
+  k_bt: "float",
+  k_tap: "float",
+  k_shift: "float",
   idx: "integer",
   node: "integer",
   node1: "integer",
@@ -4691,6 +5010,7 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   node4: "integer",
   i_node: "integer",
   j_node: "integer",
+  k_node: "integer",
   ac_node: "integer",
   dc_node: "integer",
   t1_node: "integer",
@@ -4701,6 +5021,9 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   battery_rack_count: "integer",
   mppt_count: "integer",
   status: "numberEnum",
+  status_set: "numberEnum",
+  closed_status: "numberEnum",
+  closed_status_set: "numberEnum",
   run_stat: "numberEnum",
   control_type: "stringEnum",
   i_control_type: "stringEnum",
@@ -4835,6 +5158,7 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   supply_temperature: "float",
   supply_temperature_set: "float",
   tap: "float",
+  tap_set: "float",
   tap1: "float",
   tap2: "float",
   tap3: "float",
@@ -5060,8 +5384,13 @@ function normalizeStoredDeviceParameterDefinitionNames(value: string, legacyAlia
           ? "gas_quantity"
           : /^(?:state_of_charge|stateOfCharge)$/.test(name)
             ? "soc"
-            : name
-        : toSnakeCaseDeviceParamName(name);
+            : name === "status_set"
+              ? "closed_status_set"
+              : name
+        : (() => {
+            const normalizedName = toSnakeCaseDeviceParamName(name);
+            return normalizedName === "status_set" ? "closed_status_set" : normalizedName;
+          })();
       const enName = normalizeName(rawEnName);
       const exportName = typeof rawExportName === "string" ? normalizeName(rawExportName) : rawExportName;
       const normalizedDefinition = normalizeRunStatParameterDefinition({
@@ -5096,6 +5425,142 @@ function normalizeStoredDeviceParameterDefinitionNames(value: string, legacyAlia
   }
 }
 
+const AC_BRANCH_MEASUREMENT_FIELD_NAMES = ["i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"] as const;
+const DC_BRANCH_MEASUREMENT_FIELD_NAMES = ["i_p", "i_u", "i_i", "j_p", "j_u", "j_i"] as const;
+const AC_BRANCH_LEGACY_MEASUREMENT_FIELD_ALIASES: Readonly<Record<string, string>> = {
+  p: "i_p",
+  q: "i_q",
+  u: "i_u",
+  i: "i_i"
+};
+const DC_BRANCH_LEGACY_MEASUREMENT_FIELD_ALIASES: Readonly<Record<string, string | undefined>> = {
+  p: "i_p",
+  q: undefined,
+  u: "i_u",
+  i: "i_i"
+};
+
+function branchMeasurementContract(kind: string): {
+  fields: readonly string[];
+  aliases: Readonly<Record<string, string | undefined>>;
+} | undefined {
+  const normalizedKind = baseDeviceKind(kind);
+  if (normalizedKind === "ac-line" || normalizedKind === "ac-routable-line") {
+    return { fields: AC_BRANCH_MEASUREMENT_FIELD_NAMES, aliases: AC_BRANCH_LEGACY_MEASUREMENT_FIELD_ALIASES };
+  }
+  if (normalizedKind === "dc-line" || normalizedKind === "dc-routable-line") {
+    return { fields: DC_BRANCH_MEASUREMENT_FIELD_NAMES, aliases: DC_BRANCH_LEGACY_MEASUREMENT_FIELD_ALIASES };
+  }
+  return undefined;
+}
+
+function normalizeStoredBranchMeasurementParameterDefinitions(
+  value: string | undefined,
+  contract: NonNullable<ReturnType<typeof branchMeasurementContract>>
+): string | undefined {
+  if (value === undefined) return value;
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return value;
+    const canonicalFields = new Set(contract.fields);
+    const overrides = new Map<string, { definition: DeviceParameterDefinition; canonical: boolean }>();
+    const extras: unknown[] = [];
+    for (const rawDefinition of parsed) {
+      if (!rawDefinition || typeof rawDefinition !== "object" || Array.isArray(rawDefinition)) {
+        extras.push(rawDefinition);
+        continue;
+      }
+      const definition = rawDefinition as DeviceParameterDefinition;
+      const rawName = String(definition.enName ?? "").trim();
+      const isLegacyField = Object.prototype.hasOwnProperty.call(contract.aliases, rawName);
+      const canonicalName = isLegacyField ? contract.aliases[rawName] : rawName;
+      if (!canonicalName) continue;
+      const rawExportName = typeof definition.exportName === "string" ? definition.exportName.trim() : undefined;
+      const exportName = rawExportName && Object.prototype.hasOwnProperty.call(contract.aliases, rawExportName)
+        ? contract.aliases[rawExportName]
+        : rawExportName;
+      const normalizedDefinition: DeviceParameterDefinition = {
+        ...definition,
+        cnName: meaningfulDeviceParameterChineseName(canonicalName, definition.cnName),
+        enName: canonicalName,
+        ...(definition.exportName !== undefined ? { exportName: exportName || canonicalName } : {})
+      };
+      if (!canonicalFields.has(canonicalName)) {
+        extras.push(normalizedDefinition);
+        continue;
+      }
+      const canonical = canonicalName === rawName;
+      const existing = overrides.get(canonicalName);
+      if (!existing || (canonical && !existing.canonical)) {
+        overrides.set(canonicalName, { definition: normalizedDefinition, canonical });
+      }
+    }
+    const normalized = [
+      ...contract.fields.map((field) => {
+        const override = overrides.get(field)?.definition;
+        return {
+          ...override,
+          cnName: meaningfulDeviceParameterChineseName(field, override?.cnName),
+          enName: field,
+          valueType: "float" as const,
+          typicalValue: String(override?.typicalValue ?? "").trim() || "0",
+          readonly: false,
+          exportEnabled: true,
+          exportName: field
+        };
+      }),
+      ...extras
+    ];
+    const serialized = JSON.stringify(normalized);
+    return serialized === value ? value : serialized;
+  } catch {
+    return value;
+  }
+}
+
+export function normalizeBranchMeasurementParams(kind: string, params: Record<string, string>): Record<string, string> {
+  const contract = branchMeasurementContract(kind);
+  if (!contract) return params;
+  let next = params;
+  let changed = false;
+  for (const [legacyField, canonicalField] of Object.entries(contract.aliases)) {
+    if (
+      canonicalField &&
+      !String(next[canonicalField] ?? "").trim() &&
+      Object.prototype.hasOwnProperty.call(next, legacyField)
+    ) {
+      if (!changed) next = { ...next };
+      next[canonicalField] = next[legacyField];
+      changed = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(next, legacyField)) {
+      if (!changed) next = { ...next };
+      delete next[legacyField];
+      changed = true;
+    }
+  }
+  for (const field of contract.fields) {
+    if (Object.prototype.hasOwnProperty.call(next, field)) continue;
+    if (!changed) next = { ...next };
+    next[field] = "0";
+    changed = true;
+  }
+  const storedDefinitions = normalizeStoredBranchMeasurementParameterDefinitions(
+    next[CUSTOM_PARAM_DEFINITIONS_KEY],
+    contract
+  );
+  if (storedDefinitions !== next[CUSTOM_PARAM_DEFINITIONS_KEY]) {
+    if (!changed) next = { ...next };
+    if (storedDefinitions === undefined) {
+      delete next[CUSTOM_PARAM_DEFINITIONS_KEY];
+    } else {
+      next[CUSTOM_PARAM_DEFINITIONS_KEY] = storedDefinitions;
+    }
+    changed = true;
+  }
+  return changed ? next : params;
+}
+
 export function normalizeDeviceParamRecord(params?: Record<string, string>): Record<string, string> | undefined {
   if (!params) {
     return params;
@@ -5104,9 +5569,10 @@ export function normalizeDeviceParamRecord(params?: Record<string, string>): Rec
   const priorities = new Map<string, number>();
   for (const [key, value] of Object.entries(params)) {
     const preserveRawValue = key.startsWith("_") || isCanonicalDeviceVisualParamName(key);
-    const normalizedKey = preserveRawValue
+    const rawNormalizedKey = preserveRawValue
       ? key
       : toSnakeCaseDeviceParamName(key);
+    const normalizedKey = rawNormalizedKey === "status_set" ? "closed_status_set" : rawNormalizedKey;
     const priority = normalizedDeviceParamKeyPriority(key, normalizedKey);
     if ((priorities.get(normalizedKey) ?? -1) > priority) {
       continue;
@@ -5124,8 +5590,10 @@ export function normalizeDeviceParamRecord(params?: Record<string, string>): Rec
 }
 
 function normalizeDeviceParameterDefinition(definition: DeviceParameterDefinition): DeviceParameterDefinition {
-  const enName = toSnakeCaseDeviceParamName(definition.enName);
-  const exportName = definition.exportName ? toSnakeCaseDeviceParamName(definition.exportName) : definition.exportName;
+  const rawEnName = toSnakeCaseDeviceParamName(definition.enName);
+  const rawExportName = definition.exportName ? toSnakeCaseDeviceParamName(definition.exportName) : definition.exportName;
+  const enName = rawEnName === "status_set" ? "closed_status_set" : rawEnName;
+  const exportName = rawExportName === "status_set" ? "closed_status_set" : rawExportName;
   return normalizeRunStatParameterDefinition({
     ...definition,
     enName,
@@ -5137,14 +5605,47 @@ function normalizeDeviceTemplateParameterNames(template: DeviceTemplate): Device
   if (isStaticNode({ kind: template.kind } as ModelNode)) {
     return template;
   }
+  const normalizedParams = normalizeDeviceParamRecord(template.params) ?? template.params;
+  const params = switchingDeviceUsesClosedStatus(template.kind, normalizedParams) &&
+    !String(normalizedParams.closed_status ?? "").trim() && String(normalizedParams.status ?? "").trim()
+    ? { ...normalizedParams, closed_status: normalizedParams.status }
+    : normalizedParams;
   return normalizeHydrogenStorageParams({
     ...template,
-    params: normalizeDeviceParamRecord(template.params) ?? template.params,
+    params,
     parameterDefinitions: template.parameterDefinitions?.map(normalizeDeviceParameterDefinition),
     measurementDefinitions: template.measurementDefinitions === undefined
       ? undefined
       : normalizeDeviceMeasurementDefinitions(template.measurementDefinitions)
   });
+}
+
+function normalizeRatedVoltageTemplateDefaults(template: DeviceTemplate): DeviceTemplate {
+  let params = template.params;
+  for (const key of Object.keys(template.params)) {
+    if (toSnakeCaseDeviceParamName(key) !== "rated_voltage" || template.params[key] === "0") {
+      continue;
+    }
+    if (params === template.params) {
+      params = { ...template.params };
+    }
+    params[key] = "0";
+  }
+  const templateParameterDefinitions = template.parameterDefinitions;
+  let parameterDefinitions = templateParameterDefinitions;
+  for (let index = 0; index < (templateParameterDefinitions?.length ?? 0); index += 1) {
+    const definition = templateParameterDefinitions![index];
+    if (toSnakeCaseDeviceParamName(definition.enName) !== "rated_voltage" || definition.typicalValue === "0") {
+      continue;
+    }
+    if (parameterDefinitions === templateParameterDefinitions) {
+      parameterDefinitions = [...templateParameterDefinitions!];
+    }
+    parameterDefinitions![index] = { ...definition, typicalValue: "0" };
+  }
+  return params === template.params && parameterDefinitions === template.parameterDefinitions
+    ? template
+    : { ...template, params, parameterDefinitions };
 }
 
 const AC_SOURCE_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
@@ -5165,6 +5666,39 @@ const AC_LOAD_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = 
   { measurementTypeId: "current", associatedField: "i" }
 ];
 const DC_LOAD_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", associatedField: "p" },
+  { measurementTypeId: "voltage", associatedField: "u" },
+  { measurementTypeId: "current", associatedField: "i" }
+];
+const AC_BRANCH_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", associatedField: "i_p", labelOverride: "首端有功量测值" },
+  { measurementTypeId: "reactivePower", associatedField: "i_q", labelOverride: "首端无功量测值" },
+  { measurementTypeId: "voltage", associatedField: "i_u", labelOverride: "首端电压量测值" },
+  { measurementTypeId: "current", associatedField: "i_i", labelOverride: "首端电流量测值" },
+  { measurementTypeId: "activePower", associatedField: "j_p", labelOverride: "末端有功量测值" },
+  { measurementTypeId: "reactivePower", associatedField: "j_q", labelOverride: "末端无功量测值" },
+  { measurementTypeId: "voltage", associatedField: "j_u", labelOverride: "末端电压量测值" },
+  { measurementTypeId: "current", associatedField: "j_i", labelOverride: "末端电流量测值" }
+];
+const DC_BRANCH_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", associatedField: "i_p", labelOverride: "首端有功量测值" },
+  { measurementTypeId: "voltage", associatedField: "i_u", labelOverride: "首端电压量测值" },
+  { measurementTypeId: "current", associatedField: "i_i", labelOverride: "首端电流量测值" },
+  { measurementTypeId: "activePower", associatedField: "j_p", labelOverride: "末端有功量测值" },
+  { measurementTypeId: "voltage", associatedField: "j_u", labelOverride: "末端电压量测值" },
+  { measurementTypeId: "current", associatedField: "j_i", labelOverride: "末端电流量测值" }
+];
+const AC_SWITCHING_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "status", associatedField: "status" },
+  { measurementTypeId: "status", associatedField: "closed_status", labelOverride: "开合状态量测值" },
+  { measurementTypeId: "activePower", associatedField: "p" },
+  { measurementTypeId: "reactivePower", associatedField: "q" },
+  { measurementTypeId: "voltage", associatedField: "u" },
+  { measurementTypeId: "current", associatedField: "i" }
+];
+const DC_SWITCHING_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "status", associatedField: "status" },
+  { measurementTypeId: "status", associatedField: "closed_status", labelOverride: "开合状态量测值" },
   { measurementTypeId: "activePower", associatedField: "p" },
   { measurementTypeId: "voltage", associatedField: "u" },
   { measurementTypeId: "current", associatedField: "i" }
@@ -5286,11 +5820,23 @@ function builtInMeasurementDefinitionsForTemplate(template: DeviceTemplate): Dev
       { measurementTypeId: "current", associatedField: "i", defaultVisible: false }
     ]);
   }
+  if (kind === "ac-switch" || kind === "ac-breaker" || kind === "ac-box-breaker") {
+    return copy(AC_SWITCHING_MEASUREMENT_DEFINITIONS);
+  }
+  if (kind === "dc-switch" || kind === "dc-breaker") {
+    return copy(DC_SWITCHING_MEASUREMENT_DEFINITIONS);
+  }
   if (kind.includes("switch") || kind.includes("disconnector") || kind.includes("breaker")) {
     return copy([
       { measurementTypeId: "status", associatedField: "status" },
       { measurementTypeId: "current", associatedField: "i" }
     ]);
+  }
+  if (kind === "ac-transformer" || kind === "ac-two-winding-transformer") {
+    return copy(TWO_WINDING_TRANSFORMER_MEASUREMENT_DEFINITIONS);
+  }
+  if (kind === "ac-three-winding-transformer" || kind === "ac-three-winding-transformer-neutral") {
+    return copy(THREE_WINDING_TRANSFORMER_MEASUREMENT_DEFINITIONS);
   }
   if (kind.includes("transformer")) {
     return copy([
@@ -5306,6 +5852,12 @@ function builtInMeasurementDefinitionsForTemplate(template: DeviceTemplate): Dev
       { measurementTypeId: "voltage", associatedField: "u" },
       { measurementTypeId: "current", associatedField: "i" }
     ]);
+  }
+  if (kind === "ac-line" || kind === "ac-routable-line") {
+    return copy(AC_BRANCH_MEASUREMENT_DEFINITIONS);
+  }
+  if (kind === "dc-line" || kind === "dc-routable-line") {
+    return copy(DC_BRANCH_MEASUREMENT_DEFINITIONS);
   }
   if (kind.includes("line") || kind.includes("branch")) {
     return copy(template.terminalType === "ac" ? [
@@ -5437,6 +5989,7 @@ function withRdfIdParameter(template: DeviceTemplate): DeviceTemplate {
 const NORMALIZED_BASE_DEVICE_LIBRARY = materializeDeviceMeasurementDefinitionFields(insertModelAssociationDerivedDeviceTemplates(BASE_DEVICE_LIBRARY)
   .map(normalizeDeviceTemplateDefaultSize)
   .map(normalizeDeviceTemplateParameterNames)
+  .map(normalizeRatedVoltageTemplateDefaults)
   .map(attachBuiltInDeviceMeasurementDefinitions)
   .map(withRdfIdParameter));
 
@@ -6034,7 +6587,7 @@ export function normalizeElectricGenerationRatedParams(node: ModelNode, template
     "10 MW";
   const ratedVoltage = deviceParamValue(node.params, "rated_voltage") ??
     deviceParamValue(templateParams, "rated_voltage") ??
-    (section === "ACGenerator" ? "10 kV" : "750 V");
+    "0";
   const nextParams = { ...node.params };
   let changed = false;
   for (const key of Object.keys(nextParams)) {
@@ -7071,7 +7624,7 @@ export function normalizeRoutableLineDeviceStrokeWidthParam(node: ModelNode): Mo
 }
 
 export function getSwitchVisualState(node: ModelNode): "open" | "closed" {
-  const status = normalizeSwitchStatusForE(node.params.status ?? deviceParamValue(node.params, "closed_status"));
+  const status = normalizeSwitchStatusForE(deviceParamValue(node.params, "closed_status") ?? node.params.status);
   return status === "0" ? "open" : "closed";
 }
 
@@ -7138,7 +7691,7 @@ export function isLineOnlyConnectionNode(node: Pick<ModelNode, "kind" | "params"
 }
 
 const TEMPLATE_DEFINITION_READONLY_KEYS = new Set(["idx", "name", "node", "i_node", "j_node", "ac_node", "dc_node"]);
-const TEMPLATE_DEFINITION_EDITABLE_DEFAULT_KEYS = new Set(["status", "run_stat"]);
+const TEMPLATE_DEFINITION_EDITABLE_DEFAULT_KEYS = new Set(["status", "closed_status", "closed_status_set", "run_stat"]);
 
 export function templateDefinitionIsReadonly(enName: string, readonly?: boolean): boolean {
   const normalizedName = enName.trim();
@@ -7164,6 +7717,9 @@ function inferDefinitionValueType(key: string, value: string): DeviceParameterVa
 const DEFAULT_TEMPLATE_ENUM_VALUES: Record<string, string[]> = {
   regable: ["0", "1"],
   status: ["1", "0"],
+  status_set: ["1", "0"],
+  closed_status: ["1", "0"],
+  closed_status_set: ["1", "0"],
   run_stat: [...RUN_STAT_ENUM_VALUES]
 };
 
@@ -7173,6 +7729,18 @@ const DEFAULT_TEMPLATE_ENUM_OPTIONS: Record<string, DeviceParameterEnumOption[]>
     { value: "1", label: "可调" }
   ],
   status: [
+    { value: "1", label: "闭合" },
+    { value: "0", label: "打开/开断" }
+  ],
+  status_set: [
+    { value: "1", label: "闭合" },
+    { value: "0", label: "打开/开断" }
+  ],
+  closed_status: [
+    { value: "1", label: "闭合" },
+    { value: "0", label: "打开/开断" }
+  ],
+  closed_status_set: [
     { value: "1", label: "闭合" },
     { value: "0", label: "打开/开断" }
   ],
@@ -7444,10 +8012,14 @@ function finalizeTemplateParameterDefinitions(
   definitions: readonly DeviceParameterDefinition[]
 ): DeviceParameterDefinition[] {
   const section = inferESection(template.kind, template.params);
+  const localizedDefinitions = definitions.map((definition) => ({
+    ...definition,
+    cnName: meaningfulDeviceParameterChineseName(definition.enName, definition.cnName)
+  }));
   if (section.startsWith("Static") && (E_SECTION_COLUMNS[section]?.length ?? 0) === 0) {
-    return definitions.filter((definition) => definition.enName.trim().toLowerCase() !== "parent");
+    return localizedDefinitions.filter((definition) => definition.enName.trim().toLowerCase() !== "parent");
   }
-  return ensureParentBeforeDevTypeParameterDefinition(definitions);
+  return ensureParentBeforeDevTypeParameterDefinition(localizedDefinitions);
 }
 
 export function getTemplateParameterDefinitions(template: DeviceTemplate): DeviceParameterDefinition[] {
@@ -7715,14 +8287,7 @@ export function isTwoWindingTransformerTemplateKind(kind: string): boolean {
 export function normalizeTwoWindingTransformerParams(params: Record<string, string>): Record<string, string> {
   let next = stripThreeWindingTransformerContainerParams(params);
   let changed = next !== params;
-  const aliases = [
-    ["r", ["resistance_pu", "resistancePu"]],
-    ["x", ["reactance_pu", "reactancePu"]],
-    ["gt", ["magnetizing_conductance_pu", "magnetizingConductancePu"]],
-    ["bt", ["magnetizing_susceptance_pu", "magnetizingSusceptancePu"]],
-    ["tap", ["tap_ratio", "tapRatio"]]
-  ] as const;
-  for (const [canonicalKey, legacyKeys] of aliases) {
+  for (const [canonicalKey, legacyKeys] of TWO_WINDING_TRANSFORMER_PARAMETER_ALIASES) {
     const canonicalValue = String(next[canonicalKey] ?? "").trim();
     const legacyValue = legacyKeys.map((legacyKey) => next[legacyKey]).find((value) => value !== undefined);
     if (!canonicalValue && legacyValue !== undefined) {
@@ -7740,6 +8305,23 @@ export function normalizeTwoWindingTransformerParams(params: Record<string, stri
         }
         delete next[legacyKey];
       }
+    }
+  }
+  for (const [legacyKey, canonicalKey] of TWO_WINDING_TRANSFORMER_LEGACY_MEASUREMENT_FIELD_ALIASES) {
+    const canonicalValue = String(next[canonicalKey] ?? "").trim();
+    if (!canonicalValue && Object.prototype.hasOwnProperty.call(next, legacyKey)) {
+      if (!changed) {
+        next = { ...next };
+        changed = true;
+      }
+      next[canonicalKey] = next[legacyKey];
+    }
+    if (Object.prototype.hasOwnProperty.call(next, legacyKey)) {
+      if (!changed) {
+        next = { ...next };
+        changed = true;
+      }
+      delete next[legacyKey];
     }
   }
   for (const legacyNodeKey of ["t1_node", "t2_node"]) {
@@ -7812,6 +8394,43 @@ function mergeCanonicalFloatParameterDefinitions(
   });
 }
 
+function normalizeTransformerParameterDefinitionAliases(
+  definitions: readonly DeviceParameterDefinition[],
+  aliases: readonly (readonly [string, readonly string[]])[]
+): DeviceParameterDefinition[] {
+  const aliasToCanonical = new Map<string, string>();
+  for (const [canonicalName, legacyNames] of aliases) {
+    for (const legacyName of legacyNames) {
+      aliasToCanonical.set(legacyName, canonicalName);
+    }
+  }
+  const normalized: Array<{ canonical: boolean; definition: DeviceParameterDefinition }> = [];
+  const indexByName = new Map<string, number>();
+  for (const definition of definitions) {
+    const rawName = String(definition.enName ?? "").trim();
+    const canonicalName = aliasToCanonical.get(rawName) ?? rawName;
+    const rawExportName = String(definition.exportName ?? "").trim();
+    const canonicalExportName = aliasToCanonical.get(rawExportName) ?? rawExportName;
+    const normalizedDefinition = {
+      ...definition,
+      enName: canonicalName,
+      ...(definition.exportName !== undefined ? { exportName: canonicalExportName } : {})
+    };
+    const key = canonicalName.toLowerCase();
+    const canonical = rawName === canonicalName;
+    const existingIndex = indexByName.get(key);
+    if (existingIndex === undefined) {
+      indexByName.set(key, normalized.length);
+      normalized.push({ canonical, definition: normalizedDefinition });
+      continue;
+    }
+    if (canonical && !normalized[existingIndex].canonical) {
+      normalized[existingIndex] = { canonical, definition: normalizedDefinition };
+    }
+  }
+  return normalized.map(({ definition }) => definition);
+}
+
 function normalizeCanonicalFloatParameterValues(
   params: Record<string, string>,
   canonicalDefinitions: readonly DeviceParameterDefinition[]
@@ -7848,7 +8467,7 @@ export function applyDeviceTemplateDefinitionOverride(
   override?: DeviceTemplateDefinitionOverride
 ): DeviceTemplate {
   if (!override) {
-    return template;
+    return normalizeRatedVoltageTemplateDefaults(template);
   }
   const explicitlyDeletesAllParameterDefinitions =
     override.parameterDefinitionsIntent === "delete-all" &&
@@ -7949,14 +8568,30 @@ export function applyDeviceTemplateDefinitionOverride(
       ? []
       : normalizeDeviceMeasurementDefinitions(override.measurementDefinitions)
     : cloneDeviceMeasurementDefinitions(template.measurementDefinitions);
-  const overrideParams = Object.fromEntries(
+  const rawOverrideParams = Object.fromEntries(
     Object.entries(override.params ?? {}).filter(([key]) => (
       key !== ALLOW_RESIZE_TRANSFORM_PARAM &&
       !retiredElectricGenerationParameterNames.has(toSnakeCaseDeviceParamName(key))
     ))
   );
+  const overrideParams = isTwoWindingTransformerTemplateKind(template.kind)
+    ? normalizeTwoWindingTransformerParams(rawOverrideParams)
+    : isThreeWindingTransformer(template)
+      ? normalizeThreeWindingTransformerParams(rawOverrideParams)
+      : rawOverrideParams;
+  const parameterValueDefinitions = isTwoWindingTransformerTemplateKind(template.kind)
+    ? normalizeTransformerParameterDefinitionAliases(
+        normalizedOverrideParameterDefinitions,
+        TWO_WINDING_TRANSFORMER_PARAMETER_ALIASES
+      )
+    : isThreeWindingTransformer(template)
+      ? normalizeTransformerParameterDefinitionAliases(
+          normalizedOverrideParameterDefinitions,
+          THREE_WINDING_TRANSFORMER_PARAMETER_ALIASES
+        )
+      : normalizedOverrideParameterDefinitions;
   const params = { ...template.params, ...overrideParams };
-  for (const definition of normalizedOverrideParameterDefinitions) {
+  for (const definition of parameterValueDefinitions) {
     if (
       definition.enName === "name" ||
       retiredElectricGenerationParameterNames.has(definition.enName)
@@ -8058,6 +8693,11 @@ export function applyDeviceTemplateDefinitionOverride(
       terminalRoles: undefined,
       terminalAssociations: undefined,
       isContainer: false,
+      measurementDefinitions: explicitlyDeletesAllMeasurementDefinitions
+        ? []
+        : normalizeTwoWindingTransformerMeasurementDefinitions(
+            measurementDefinitions ?? TWO_WINDING_TRANSFORMER_MEASUREMENT_DEFINITIONS
+          ),
       params: normalizeCanonicalFloatParameterValues(
         normalizeTwoWindingTransformerParams(mergedTemplate.params),
         twoWindingTransformerParameterDefinitions
@@ -8067,12 +8707,15 @@ export function applyDeviceTemplateDefinitionOverride(
         ? []
         : mergeCanonicalFloatParameterDefinitions(
             twoWindingTransformerParameterDefinitions,
-            (parameterDefinitions ?? []).filter((definition) => !isRetiredTwoWindingTransformerParameterName(definition.enName))
+            normalizeTransformerParameterDefinitionAliases(
+              parameterDefinitions ?? [],
+              TWO_WINDING_TRANSFORMER_PARAMETER_ALIASES
+            ).filter((definition) => !isRetiredTwoWindingTransformerParameterName(definition.enName))
           )
     };
   }
   if (!isThreeWindingTransformer(template)) {
-    return mergedTemplate;
+    return normalizeRatedVoltageTemplateDefaults(mergedTemplate);
   }
   const canonicalTerminalCount = template.terminalCount;
   return {
@@ -8085,6 +8728,11 @@ export function applyDeviceTemplateDefinitionOverride(
     terminalRoles: undefined,
     terminalAssociations: undefined,
     isContainer: false,
+    measurementDefinitions: explicitlyDeletesAllMeasurementDefinitions
+      ? []
+      : normalizeThreeWindingTransformerMeasurementDefinitions(
+          measurementDefinitions ?? THREE_WINDING_TRANSFORMER_MEASUREMENT_DEFINITIONS
+        ),
     params: normalizeCanonicalFloatParameterValues(
       normalizeThreeWindingTransformerParams(mergedTemplate.params),
       threeWindingTransformerParameterDefinitions
@@ -8094,7 +8742,10 @@ export function applyDeviceTemplateDefinitionOverride(
       ? []
       : mergeCanonicalFloatParameterDefinitions(
           threeWindingTransformerParameterDefinitions,
-          (parameterDefinitions ?? []).filter((definition) => !isRetiredThreeWindingTransformerParameterName(definition.enName))
+          normalizeTransformerParameterDefinitionAliases(
+            parameterDefinitions ?? [],
+            THREE_WINDING_TRANSFORMER_PARAMETER_ALIASES
+          ).filter((definition) => !isRetiredThreeWindingTransformerParameterName(definition.enName))
         )
   };
 }
@@ -8180,7 +8831,7 @@ function sectionEnumParameterDefinition(section: string, enName: string): Device
     enumValues: [...values],
     enumOptions: values.map((value) => ({ value, ...(labels?.[value] ? { label: labels[value] } : {}) }))
   });
-  if (enName === "status") {
+  if (enName === "status" || enName === "closed_status" || enName === "closed_status_set") {
     return base(["1", "0"], { "1": "闭合", "0": "打开/开断" });
   }
   if (enName === "run_stat") {
@@ -8257,7 +8908,7 @@ function normalizeKnownLegacyEnumValue(
     return caseInsensitiveMatch;
   }
   const enName = toSnakeCaseDeviceParamName(definition.enName);
-  if (enName === "status") {
+  if (enName === "status" || enName === "closed_status" || enName === "closed_status_set") {
     const normalizedStatus = normalizeDeviceStatusForE(text);
     if (allowedValues.includes(normalizedStatus)) {
       return normalizedStatus;
@@ -8567,6 +9218,18 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
   const templateIsStaticGraphic = Boolean(templateStaticComponentLibrary);
   const withoutResizeTransformParam = (params: Record<string, string>) =>
     Object.fromEntries(Object.entries(params).filter(([key]) => key !== ALLOW_RESIZE_TRANSFORM_PARAM));
+  const withInitialRatedVoltageDefault = (params: Record<string, string>) => {
+    const ratedVoltageKeys = Object.keys(params)
+      .filter((key) => toSnakeCaseDeviceParamName(key) === "rated_voltage");
+    if (ratedVoltageKeys.length === 0 || ratedVoltageKeys.every((key) => params[key] === "0")) {
+      return params;
+    }
+    const nextParams = { ...params };
+    for (const key of ratedVoltageKeys) {
+      nextParams[key] = "0";
+    }
+    return nextParams;
+  };
   const withStaticGraphicDefaults = (params: Record<string, string>) => {
     const componentLibrary = staticComponentLibraryForNodeLike(template.kind, params) || templateStaticComponentLibrary;
     if (!componentLibrary) {
@@ -8600,28 +9263,43 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
     if (templateIsStaticGraphic) {
       return params;
     }
-    const templateExplicitStatus = normalizeDeviceStateValue(template.params?.status);
-    if (Array.isArray(template.stateDefinitions) && template.stateDefinitions.length > 0 && !templateExplicitStatus) {
+    const usesClosedStatus = switchingDeviceUsesClosedStatus(template.kind, template.params);
+    const stateParamKey = usesClosedStatus ? "closed_status" : "status";
+    const templateExplicitStatus = normalizeDeviceStateValue(
+      usesClosedStatus
+        ? template.params?.closed_status ?? template.params?.closedStatus ?? template.params?.status
+        : template.params?.status
+    );
+    if (
+      stateParamKey === "status" &&
+      Array.isArray(template.stateDefinitions) &&
+      template.stateDefinitions.length > 0 &&
+      !templateExplicitStatus
+    ) {
       const { status, ...rest } = params;
       void status;
       return rest;
     }
     const states = getTemplateStateDefinitions({ ...template, params });
     const defaultStatus = defaultDeviceStatusValue({ ...template, params }) || "1";
-    const explicitStatus = normalizeDeviceStateValue(params.status);
+    const explicitStatus = normalizeDeviceStateValue(
+      usesClosedStatus
+        ? params.closed_status ?? params.closedStatus ?? params.status
+        : params.status
+    );
     if (!explicitStatus) {
-      return { ...params, status: defaultStatus };
+      return { ...params, [stateParamKey]: defaultStatus };
     }
     if (states.length === 0) {
-      return { ...params, status: explicitStatus };
+      return { ...params, [stateParamKey]: explicitStatus };
     }
     const exact = states.find((state) => state.value === explicitStatus);
     if (exact) {
-      return { ...params, status: exact.value };
+      return { ...params, [stateParamKey]: exact.value };
     }
     const normalized = normalizeDeviceStatusForE(explicitStatus);
     const mapped = states.find((state) => normalizeDeviceStatusForE(state.value) === normalized);
-    return { ...params, status: mapped?.value ?? normalized };
+    return { ...params, [stateParamKey]: mapped?.value ?? normalized };
   };
   const withTemplateDefinitions = (
     params: Record<string, string>,
@@ -8642,7 +9320,10 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
         )
       )
     );
-    return templateIsStaticGraphic ? resolved : normalizeDeviceParamRecord(resolved) ?? resolved;
+    const withRatedVoltageDefault = withInitialRatedVoltageDefault(resolved);
+    return templateIsStaticGraphic
+      ? withRatedVoltageDefault
+      : normalizeDeviceParamRecord(withRatedVoltageDefault) ?? withRatedVoltageDefault;
   };
   if (templateIsStaticGraphic) {
     return withTemplateDefinitions({ ...template.params });
@@ -8776,8 +9457,8 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
   }
   if (templateKind === "ac-two-winding-transformer" || templateKind === "ac-transformer") {
     return withTemplateDefinitions(withRunStat({
-      highVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
-      lowVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
+      i_vbase: DEFAULT_INITIAL_TERMINAL_VBASE,
+      j_vbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       ratedCapacity: "50",
       r: "0.0",
       x: "0.1",
@@ -8792,12 +9473,6 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
     return withTemplateDefinitions(withRunStat({
       neutral_node: "",
       neutral_vbase: visibleNeutral ? DEFAULT_INITIAL_TERMINAL_VBASE : "1.0",
-      highVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
-      mediumVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
-      lowVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
-      highRatedCapacity: "90",
-      mediumRatedCapacity: "90",
-      lowRatedCapacity: "90",
       ...THREE_WINDING_TRANSFORMER_E_DEFAULT_PARAMS
     }));
   }
@@ -8851,7 +9526,8 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
     const isGroundDisconnector = templateKind === "ac-ground-disconnector" || templateKind === "ac-ground-disconnector-vertical";
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ratedCapacity: template.terminalType === "ac" ? "1250 A" : "1600 A",
-      status: isGroundDisconnector ? "0" : "1"
+      status: isGroundDisconnector ? "0" : "1",
+      ...(switchingDeviceUsesClosedStatus(templateKind, template.params) ? { closed_status: "1" } : {})
     })));
   }
   return withTemplateDefinitions(withRunStat(withDefaultVbase({ ...template.params })));

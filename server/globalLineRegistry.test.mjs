@@ -83,8 +83,9 @@ describe("全局线路注册表迁移", () => {
   test("历史数据中两个同向引用不会导致初始化失败，而是拆成两条方向有效的全局记录", async () => {
     const sharedId = "global-line-legacy";
     const settingsDir = join(dataRoot, "settings");
+    const legacyRegistryPath = join(settingsDir, "global-lines.json");
     await mkdir(settingsDir, { recursive: true });
-    await writeFile(join(settingsDir, "global-lines.json"), `${JSON.stringify({
+    await writeFile(legacyRegistryPath, `${JSON.stringify({
       schemaVersion: 1,
       lastIndex: 1,
       records: [{
@@ -122,6 +123,10 @@ describe("全局线路注册表迁移", () => {
       .not.toBe(storedB.nodes.find((item) => item.id === "line-2").params.idx);
     expect(storedA.nodes.find((item) => item.id === "line-1").params[GLOBAL_LINE_ID_PARAM]).toBeUndefined();
     expect(storedB.nodes.find((item) => item.id === "line-2").params[GLOBAL_LINE_ID_PARAM]).toBeUndefined();
+    expect(registry.registryPath).toBe(join(dataRoot, "schemes", "global-lines.json"));
+    const migratedRegistry = JSON.parse(await readFile(registry.registryPath, "utf-8"));
+    expect(migratedRegistry.records).toHaveLength(2);
+    await expect(readFile(legacyRegistryPath, "utf-8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 

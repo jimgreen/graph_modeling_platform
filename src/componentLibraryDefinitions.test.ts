@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
+  createDefaultNode,
   DEVICE_LIBRARY,
+  getTemplateParameterDefinitions,
+  templateDerivedComponentLibraryInfo,
   type DeviceTemplate,
   type DeviceTemplateDefinitionOverride
 } from "./model";
@@ -30,6 +33,22 @@ const baseDefinition = {
   terminalRoles: ["single-load"],
   terminalAssociations: ["ac-load"]
 } as const;
+
+const canonicalEndpointClasses = [
+  ["ACBranch", "交流设备"],
+  ["DCBranch", "直流设备"],
+  ["ACZeroBranch", "交流设备"],
+  ["DCZeroBranch", "直流设备"],
+  ["ACSwitch", "交流设备"],
+  ["DCSwitch", "直流设备"],
+  ["ACBreak", "交流设备"],
+  ["DCBreak", "直流设备"],
+  ["ACTransformer", "交流设备"],
+  ["DCDCConverter", "直流设备"],
+  ["DCACConverter", "直流设备"],
+  ["ACACConverter", "交流设备"],
+  ["ACSeriCompensator", "交流设备"]
+] as const;
 
 describe("component library editable definitions", () => {
   test("builds mandatory identity, state, parent, dev_type and single-terminal topo fields", () => {
@@ -78,11 +97,11 @@ describe("component library editable definitions", () => {
     ]);
   });
 
-  test("uses only i_node and j_node for AC and DC branch endpoint fields", () => {
-    for (const className of ["ACBranch", "DCBranch"] as const) {
+  test("uses only i_node and j_node for canonical two-terminal E device endpoint fields", () => {
+    for (const [className] of canonicalEndpointClasses) {
       const rows = buildComponentLibraryDefaultParameterDefinitions(
         className,
-        className === "ACBranch" ? ["ac", "ac"] : ["dc", "dc"]
+        className.startsWith("DC") ? ["dc", "dc"] : ["ac", "ac"]
       );
       const nodeFields = rows
         .map((row) => row.enName)
@@ -92,16 +111,26 @@ describe("component library editable definitions", () => {
     }
   });
 
-  test("removes historical t1_node and t2_node definitions from persisted AC and DC branch classes", () => {
+  test("uses i_node, k_node, and j_node for the high, medium, and low three-winding transformer sides", () => {
+    const rows = buildComponentLibraryDefaultParameterDefinitions("ACTransfomer3", ["ac", "ac", "ac"]);
+    const nodeFields = rows
+      .filter((row) => row.enName.endsWith("_node"))
+      .map((row) => [row.cnName, row.enName]);
+
+    expect(nodeFields).toEqual([
+      ["高压侧节点号", "i_node"],
+      ["中压侧节点号", "k_node"],
+      ["低压侧节点号", "j_node"]
+    ]);
+  });
+
+  test("removes historical t1_node and t2_node definitions from persisted canonical endpoint classes", () => {
     const legacyTopologyDefinitions = [
       { cnName: "端子1节点号", enName: "t1_node", valueType: "integer", typicalValue: "", readonly: true },
       { cnName: "端子2节点号", enName: "t2_node", valueType: "integer", typicalValue: "", readonly: true }
     ] as const;
 
-    for (const [className, categoryLibraryName] of [
-      ["ACBranch", "交流设备"],
-      ["DCBranch", "直流设备"]
-    ] as const) {
+    for (const [className, categoryLibraryName] of canonicalEndpointClasses) {
       const overrideKey = componentLibraryDefinitionOverrideKey(className);
       const resolved = resolveEditableComponentLibraryDefinition({
         className,
@@ -121,6 +150,30 @@ describe("component library editable definitions", () => {
     }
   });
 
+  test("removes historical t1_node, t2_node, and t3_node definitions from persisted three-winding transformers", () => {
+    const overrideKey = componentLibraryDefinitionOverrideKey("ACTransfomer3");
+    const resolved = resolveEditableComponentLibraryDefinition({
+      className: "ACTransfomer3",
+      categoryLibraryName: "交流设备",
+      templates: DEVICE_LIBRARY,
+      overrides: {
+        [overrideKey]: {
+          kind: overrideKey,
+          parameterDefinitions: [
+            { cnName: "高压侧节点号", enName: "t1_node", valueType: "integer", typicalValue: "", readonly: true },
+            { cnName: "中压侧节点号", enName: "t2_node", valueType: "integer", typicalValue: "", readonly: true },
+            { cnName: "低压侧节点号", enName: "t3_node", valueType: "integer", typicalValue: "", readonly: true }
+          ]
+        }
+      }
+    });
+    const nodeFields = resolved?.effectiveParameterDefinitions
+      .filter((definition) => definition.enName.endsWith("_node"))
+      .map((definition) => definition.enName);
+
+    expect(nodeFields).toEqual(["i_node", "k_node", "j_node"]);
+  });
+
   test("exposes the node field for the built-in ACRealBs class", () => {
     const resolved = resolveEditableComponentLibraryDefinition({
       className: "ACRealBs",
@@ -132,6 +185,57 @@ describe("component library editable definitions", () => {
     expect(resolved?.effectiveParameterDefinitions.map((row) => row.enName)).toEqual(
       expect.arrayContaining(["idx", "name", "status", "run_stat", "dev_type", "node"])
     );
+  });
+
+  test.each([
+    ["ACRealBs", "交流设备", "ac-bus", "0"],
+    ["DCRealBs", "直流设备", "dc-bus", "0"],
+    ["ACLoad", "交流设备", "ac-load", "0"],
+    ["DCLoad", "直流设备", "dc-load", "0"],
+    ["ACBranch", "交流设备", "ac-line", "0"],
+    ["DCBranch", "直流设备", "dc-line", "0"],
+    ["ACZeroBranch", "交流设备", "ac-zero-branch", "0"],
+    ["DCZeroBranch", "直流设备", "dc-zero-branch", "0"],
+    ["ACSwitch", "交流设备", "ac-switch", "0"],
+    ["DCSwitch", "直流设备", "dc-switch", "0"],
+    ["ACBreak", "交流设备", "ac-breaker", "0"],
+    ["DCBreak", "直流设备", "dc-breaker", "0"]
+  ] as const)("adds rated voltage to the %s base device class", (className, categoryLibraryName, kind, typicalValue) => {
+    const resolved = resolveEditableComponentLibraryDefinition({
+      className,
+      categoryLibraryName,
+      templates: DEVICE_LIBRARY,
+      overrides: {}
+    });
+    const definition = resolved?.effectiveParameterDefinitions.find((row) => row.enName === "rated_voltage");
+    const node = createDefaultNode(kind, { x: 100, y: 100 });
+
+    expect(definition).toMatchObject({
+      enName: "rated_voltage",
+      valueType: "float",
+      typicalValue,
+      readonly: false
+    });
+    expect(node.params.rated_voltage).toBe(typicalValue);
+  });
+
+  test("uses zero as the initial rated voltage for every built-in device that defines the field", () => {
+    const templatesWithRatedVoltage = DEVICE_LIBRARY.filter((template) => (
+      Object.prototype.hasOwnProperty.call(template.params, "rated_voltage")
+    ));
+
+    expect(templatesWithRatedVoltage.length).toBeGreaterThan(0);
+    for (const template of templatesWithRatedVoltage) {
+      const definition = getTemplateParameterDefinitions(template)
+        .find((candidate) => candidate.enName === "rated_voltage");
+      const node = createDefaultNode(template.kind, { x: 100, y: 100 });
+
+      expect(template.params.rated_voltage, template.kind).toBe("0");
+      expect(node.params.rated_voltage, template.kind).toBe("0");
+      if (definition) {
+        expect(definition.typicalValue, template.kind).toBe("0");
+      }
+    }
   });
 
   test("exposes the built-in ACGenerator control and setpoint fields", () => {
@@ -147,11 +251,88 @@ describe("component library editable definitions", () => {
     );
   });
 
+  test("keeps every built-in derived class definition incremental without parent or dev_type", () => {
+    const derivedClasses = new Map<string, { className: string; categoryLibraryName: string }>();
+    for (const template of DEVICE_LIBRARY) {
+      const derivedInfo = templateDerivedComponentLibraryInfo(template);
+      if (!derivedInfo) continue;
+      const className = derivedInfo.derivedComponentLibrary;
+      const categoryLibraryName = template.categoryLibrary;
+      derivedClasses.set(`${categoryLibraryName}:${className}`, { className, categoryLibraryName });
+    }
+
+    expect(derivedClasses.size).toBeGreaterThan(0);
+    for (const { className, categoryLibraryName } of derivedClasses.values()) {
+      const resolved = resolveEditableComponentLibraryDefinition({
+        className,
+        categoryLibraryName,
+        templates: DEVICE_LIBRARY,
+        overrides: {}
+      });
+      const ownKeys = resolved?.parameterDefinitions.map((row) => row.enName.trim().toLowerCase()) ?? [];
+      const inheritedKeys = new Set(
+        resolved?.inheritedParameterDefinitions.map((row) => row.enName.trim().toLowerCase()) ?? []
+      );
+
+      expect(resolved?.metadata.isDerivedComponentLibrary, className).toBe(true);
+      expect(ownKeys, className).not.toContain("parent");
+      expect(ownKeys, className).not.toContain("dev_type");
+      expect(ownKeys.filter((key) => inheritedKeys.has(key)), className).toEqual([]);
+    }
+  });
+
+  test("does not let a custom diesel glyph copy hide the built-in derived-class relationship", () => {
+    const customDieselCopy = {
+      kind: "custom-ACDieselGen",
+      label: "交流柴油发电机-副本",
+      componentClass: "ACDieselGen",
+      categoryLibrary: "交流设备",
+      terminalType: "ac",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["交流发电机端"],
+      size: { width: 150, height: 94 },
+      params: {},
+      custom: true
+    } as DeviceTemplate;
+    const overrideKey = componentLibraryDefinitionOverrideKey("ACDieselGen");
+    const resolved = resolveEditableComponentLibraryDefinition({
+      className: "ACDieselGen",
+      categoryLibraryName: "交流设备",
+      templates: [...DEVICE_LIBRARY, customDieselCopy],
+      overrides: {
+        [overrideKey]: {
+          kind: overrideKey,
+          parameterDefinitions: [
+            { cnName: "所属模型", enName: "parent", valueType: "integer", typicalValue: "" },
+            { cnName: "设备类型", enName: "dev_type", valueType: "string", typicalValue: "ACDieselGen" },
+            { cnName: "额定容量", enName: "rated_capacity", valueType: "float", typicalValue: "5" },
+            { cnName: "柴油机组型号", enName: "dieselUnitModel", valueType: "string", typicalValue: "DG-2500" }
+          ]
+        }
+      }
+    });
+    const ownKeys = resolved?.parameterDefinitions.map((row) => row.enName) ?? [];
+
+    expect(resolved?.metadata).toMatchObject({
+      isDerivedComponentLibrary: true,
+      baseComponentLibrary: "ACGenerator"
+    });
+    expect(ownKeys).toContain("dieselUnitModel");
+    expect(ownKeys).not.toEqual(expect.arrayContaining(["parent", "dev_type", "rated_capacity"]));
+  });
+
   test("restores built-in class measurements hidden by historical empty shared overrides", () => {
     const cases = [
       ["ACGenerator", "ac-source", ["activePower", "reactivePower", "voltage", "frequency"]],
-      ["ACBranch", "ac-line", ["activePower", "reactivePower", "current"]],
-      ["ACTransformer", "ac-transformer", ["activePower", "reactivePower", "voltage", "current"]]
+      ["ACBranch", "ac-line", [
+        "activePower", "reactivePower", "voltage", "current",
+        "activePower", "reactivePower", "voltage", "current"
+      ]],
+      ["ACTransformer", "ac-transformer", [
+        "activePower", "reactivePower", "voltage", "current",
+        "activePower", "reactivePower", "voltage", "current", "tapPosition"
+      ]]
     ] as const;
 
     for (const [className, kind, expectedMeasurementTypes] of cases) {

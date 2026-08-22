@@ -396,6 +396,91 @@ function globalLineModelOccurrences(
   }));
 }
 
+type GlobalLineEndpointVoltageBase = {
+  occurrence: GlobalLineModelOccurrence;
+  volts: number;
+  displayValue: string;
+};
+
+function globalLineLocalElectricalSlot(
+  occurrence: GlobalLineModelOccurrence
+): "source" | "target" | "" {
+  const pairMode = String(occurrence.line.params[GLOBAL_LINE_MODEL_PAIR_PARAM] ?? "").trim();
+  if (pairMode === "source" || pairMode === "target") return pairMode;
+
+  const refs = routableLineDeviceEndpointRefs(occurrence.line);
+  const nodeById = new Map(occurrence.model.record.project.nodes.map((node) => [node.id, node]));
+  const sourceIsBoundary = Boolean(
+    refs.source && modelAssociationModelTypeForKind(nodeById.get(refs.source.nodeId)?.kind ?? "")
+  );
+  const targetIsBoundary = Boolean(
+    refs.target && modelAssociationModelTypeForKind(nodeById.get(refs.target.nodeId)?.kind ?? "")
+  );
+  if (sourceIsBoundary !== targetIsBoundary) return sourceIsBoundary ? "target" : "source";
+  return "";
+}
+
+function voltageBaseInVolts(
+  value: unknown,
+  fallbackUnit: string | undefined
+): { volts: number; displayValue: string } | null {
+  const text = String(value ?? "").trim();
+  const numericToken = text.match(/[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?/)?.[0];
+  const numeric = Number(numericToken);
+  if (!numericToken || !Number.isFinite(numeric) || numeric <= 0) return null;
+  const explicitUnitToken = text.match(/(?:kV|V)\s*$/i)?.[0]?.trim().toLowerCase();
+  const fallback = String(fallbackUnit ?? DEFAULT_VOLTAGE_UNIT).trim().toLowerCase();
+  const unit = explicitUnitToken === "v" || explicitUnitToken === "kv"
+    ? explicitUnitToken
+    : fallback === "v"
+      ? "v"
+      : "kv";
+  return {
+    volts: numeric * (unit === "kv" ? 1000 : 1),
+    displayValue: explicitUnitToken ? text : `${text} ${unit === "kv" ? "kV" : "V"}`
+  };
+}
+
+function globalLineEndpointVoltageBase(
+  record: GlobalLineRecord,
+  endpoint: GlobalLineEndpoint,
+  models: readonly AllNetworkTopologyReferenceModel[],
+  occurrences: readonly GlobalLineModelOccurrence[]
+): GlobalLineEndpointVoltageBase | null {
+  const reference = globalLineEndpointReference(record, endpoint);
+  const model = modelForGlobalLineReference(reference, models);
+  if (!reference || !model) return null;
+  const candidates = occurrences.filter((occurrence) => (
+    occurrence.globalLineId === record.id && occurrence.model.projectId === model.projectId
+  ));
+  const occurrence = candidates.find((candidate) => candidate.line.id === reference.nodeId) ?? candidates[0];
+  if (!occurrence) return null;
+  const localSlot = globalLineLocalElectricalSlot(occurrence);
+  if (!localSlot) return null;
+
+  const refs = routableLineDeviceEndpointRefs(occurrence.line);
+  const localRef = refs[localSlot];
+  const endpointNode = localRef
+    ? occurrence.model.record.project.nodes.find((node) => node.id === localRef.nodeId)
+    : undefined;
+  const endpointTerminal = localRef
+    ? endpointNode?.terminals.find((terminal) => terminal.id === localRef.terminalId)
+    : undefined;
+  const lineTerminal = localSlot === "source"
+    ? occurrence.line.terminals[0]
+    : occurrence.line.terminals[occurrence.line.terminals.length - 1];
+  const voltageBase = voltageBaseInVolts(
+    endpointTerminal?.vbase || lineTerminal?.vbase,
+    occurrence.model.record.project.voltageUnit
+  );
+  return voltageBase ? { occurrence, ...voltageBase } : null;
+}
+
+function globalLineVoltageBasesDiffer(left: number, right: number): boolean {
+  const tolerance = Math.max(1e-6, Math.max(Math.abs(left), Math.abs(right)) * 1e-9);
+  return Math.abs(left - right) > tolerance;
+}
+
 /**
  * Limits full-network global-line validation to registry rows that are either
  * referenced by a loaded model or actually occur in a loaded model file.
@@ -648,6 +733,28 @@ export function analyzeGlobalLineConsistency(
       );
       errors.set(alert.id, alert);
     }
+  }
+
+  for (const record of records) {
+    const sourceVoltage = globalLineEndpointVoltageBase(record, "source", models, occurrences);
+    const targetVoltage = globalLineEndpointVoltageBase(record, "target", models, occurrences);
+    if (
+      !sourceVoltage ||
+      !targetVoltage ||
+      !globalLineVoltageBasesDiffer(sourceVoltage.volts, targetVoltage.volts)
+    ) {
+      continue;
+    }
+    const alert = globalLineModelOccurrenceAlert(
+      sourceVoltage.occurrence,
+      `global-line:${record.id}:endpoint-voltage-base-mismatch`,
+      `全局线路“${record.name || record.id}”两端电气节点的电压基值不一致：首端模型“${sourceVoltage.occurrence.model.name}”为 ${sourceVoltage.displayValue}，末端模型“${targetVoltage.occurrence.model.name}”为 ${targetVoltage.displayValue}。`
+    );
+    alert.relatedNodeIds = Array.from(new Set([
+      sourceVoltage.occurrence.line.id,
+      targetVoltage.occurrence.line.id
+    ]));
+    errors.set(alert.id, alert);
   }
 
   return {

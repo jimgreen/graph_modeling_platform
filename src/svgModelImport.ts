@@ -8,6 +8,7 @@ import {
   getTerminalPoint,
   isBusNode,
   projectPointToBusCenterlineIfInRange,
+  switchingDeviceUsesClosedStatus,
   type DeviceTemplate,
   type Edge,
   type ModelNode,
@@ -646,6 +647,9 @@ async function parsePlatformSvg(
       const transform = parseGeometryTransform(symbol);
       const baseNode = createNodeFromTemplate(template, { x: x + nodeWidth / 2, y: y + nodeHeight / 2 });
       const status = stateFromHref(href);
+      const stateParamKey = switchingDeviceUsesClosedStatus(template.kind, template.params)
+        ? "closed_status"
+        : "status";
       node = restoreTerminalMetadata({
         ...baseNode,
         id,
@@ -661,7 +665,7 @@ async function parsePlatformSvg(
           ...(firstAttributeValue(element, "idx", "dev-idx", "data-export-device-idx")
             ? { idx: firstAttributeValue(element, "idx", "dev-idx", "data-export-device-idx") }
             : {}),
-          ...(status ? { status } : {})
+          ...(status ? { [stateParamKey]: status } : {})
         }
       }, element);
       deviceCount += 1;

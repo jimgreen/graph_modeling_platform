@@ -107,6 +107,7 @@ import {
   svgSourceFromDataUrl
 } from "./stateIconDrawing";
 import { apiPath } from "./config";
+import { resolveEditableComponentLibraryDefinition } from "./componentLibraryDefinitions";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -3735,6 +3736,61 @@ describe("manual bend interaction helpers", () => {
     expect(scope.setSelectedDefinitionKind).toHaveBeenCalledWith("");
   });
 
+  test("selecting a derived component library does not refill inherited fields from its representative glyph", () => {
+    let customDeviceDraft: any = createEmptyCustomDeviceDraft();
+    const setCustomDeviceDraftCleanBaseline = vi.fn();
+    const scope = {
+      DEFAULT_STATE_PAGE_ID,
+      cancelPendingCustomComponentTemplateLoad: vi.fn(),
+      createCustomDeviceDraftFromTemplate,
+      customComponentLibraries: [],
+      customDeviceDraft,
+      deviceDefinitionOverrides: {},
+      ensureCustomComponentTreeExpanded: vi.fn(),
+      libraryTemplates: DEVICE_LIBRARY,
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      normalizeComponentLibraryName: (name: string) => name.trim(),
+      resolveTemplateComponentLibrary,
+      setCustomComponentTreeSelection: vi.fn(),
+      setCustomDeviceDefinitionMode: vi.fn(),
+      setCustomDeviceDialogView: vi.fn(),
+      setCustomDeviceDraft: (updater: any) => {
+        customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
+        scope.customDeviceDraft = customDeviceDraft;
+      },
+      setCustomDeviceDraftCleanBaseline,
+      setCustomDeviceStatePageId: vi.fn(),
+      setEditingCustomDeviceKind: vi.fn(),
+      setSelectedDefinitionKind: vi.fn()
+    };
+    const expected = resolveEditableComponentLibraryDefinition({
+      className: "ACDieselGen",
+      categoryLibraryName: "交流设备",
+      templates: DEVICE_LIBRARY,
+      overrides: {}
+    });
+
+    createSelectCustomComponentLibrary(scope)("交流设备", "ACDieselGen");
+
+    const draftKeys = customDeviceDraft.params.map((row: any) => row.enName.trim().toLowerCase());
+    const ownKeys = expected?.parameterDefinitions.map((row) => row.enName.trim().toLowerCase()) ?? [];
+    expect(customDeviceDraft).toMatchObject({
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "ACGenerator",
+      derivedComponentLibrary: "ACDieselGen"
+    });
+    expect(draftKeys).toEqual(ownKeys);
+    expect(draftKeys).not.toEqual(expect.arrayContaining(["parent", "dev_type"]));
+    expect(
+      draftKeys.filter((key: string) => (
+        expected?.inheritedParameterDefinitions.some((definition) => (
+          definition.enName.trim().toLowerCase() === key
+        ))
+      ))
+    ).toEqual([]);
+    expect(setCustomDeviceDraftCleanBaseline).toHaveBeenCalled();
+  });
+
   test("class metadata is editable only while creating a class and read-only for concrete components", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8")
       + readFileSync(new URL("./appExtracted/appDeviceDefinitionDialogs.tsx", import.meta.url), "utf8");
@@ -5608,7 +5664,7 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
   });
 
   test("keeps derived component idx and base relation visible", () => {
-    const rows = buildEDeviceInterfaceDefinitionRows({
+    const options = {
       libraryTemplates: [
         {
           kind: "custom-wind-source",
@@ -5629,15 +5685,17 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
           ]
         }
       ],
+      eDeviceDefinitionFieldOrder: {
+        ACWindGen: ["idx", "parent", "dev_type", "idx_acgenerator", "windTurbineModel"]
+      },
       resolveDefinitionComponentLibrary: () => "ACGenerator"
-    });
+    };
+    const rows = buildEDeviceInterfaceDefinitionRows(options);
 
     const derivedRow = rows.find((row: any) => row.componentLibrary === "ACWindGen");
 
     expect(derivedRow?.fields.map((field: any) => field.sourceName)).toEqual([
       "idx",
-      "parent",
-      "dev_type",
       "idx_acgenerator",
       "windTurbineModel"
     ]);
@@ -5646,6 +5704,13 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       exportName: "idx",
       readonly: true
     });
+    const exportedDerivedRow = buildEFileExportOptionsFromLibrary(options).interfaceDefinitions
+      .find((row: any) => row.componentLibrary === "ACWindGen");
+    expect(exportedDerivedRow?.fields.map((field: any) => field.sourceName)).toEqual([
+      "idx",
+      "idx_acgenerator",
+      "windTurbineModel"
+    ]);
   });
 });
 

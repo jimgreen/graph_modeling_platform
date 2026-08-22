@@ -38,6 +38,7 @@ const REFERENCE_FIELD_MAP: Record<string, string> = {
   // 节点引用
   i_node: "ACNode",
   j_node: "ACNode",
+  k_node: "ACNode",
   node: "ACNode",
   ind: "ACNode",
   znd: "ACNode",
@@ -79,7 +80,7 @@ const REFERENCE_FIELD_MAP: Record<string, string> = {
 // 拓扑相关字段（只读，不可编辑）
 const TOPOLOGY_READONLY_FIELDS = new Set([
   "ind", "znd", "ist", "zst",
-  "i_node", "j_node", "node",
+  "i_node", "j_node", "k_node", "node",
   "t1_node", "t2_node", "t3_node", "neutral_node",
   "itrfm", "source_node", "target_node",
 ]);

@@ -190,6 +190,8 @@ import {
   normalizeScaleValue,
   normalizeNodeTerminalsByTemplate,
   normalizeNodeTerminalsWithTemplate,
+  normalizeTwoWindingTransformerParams,
+  normalizeThreeWindingTransformerParams,
   normalizeVoltageBaseInput,
   normalizeViewBoxToCanvas,
   prepareConnectionEdgeForCommit,
@@ -200,6 +202,7 @@ import {
   terminalStubSegment,
   terminalStubStrokeWidth,
   terminalVoltageBaseNumber,
+  topologyNodeNumberForEField,
   formatPowerBaseDisplayValue,
   normalizeRatioParameterInputValue,
   topologyCalculationMessage,
@@ -693,8 +696,7 @@ describe("power system model", () => {
       "idx",
       "name",
       "parent",
-      ...E_SECTION_COLUMNS.ACBreak.slice(2),
-      "i"
+      ...E_SECTION_COLUMNS.ACBreak.slice(2)
     ]);
 
     const exported = parseESections(buildEDeviceParameterFile({
@@ -1093,7 +1095,7 @@ describe("power system model", () => {
         terminalRoles: ["single-source"],
         params: expect.objectContaining({
           source_type: expected.source_type,
-          rated_voltage: expected.rated_voltage,
+          rated_voltage: "0",
           rated_capacity: expected.rated_power
         })
       });
@@ -1107,7 +1109,7 @@ describe("power system model", () => {
       ]);
       expect(node.params).toMatchObject({
         source_type: expected.source_type,
-        rated_voltage: expected.rated_voltage,
+        rated_voltage: "0",
         rated_capacity: expected.rated_power
       });
       expect(node.params).not.toHaveProperty("rated_power");
@@ -1176,21 +1178,174 @@ describe("power system model", () => {
 
   test("does not describe three-winding transformer terminals as internal two-winding devices", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
+    const definitions = getTemplateParameterDefinitions(template);
+    const definitionsByName = new Map(definitions.map((definition) => [definition.enName, definition]));
+    const expectedMeasurements = [
+      ["i_p", "高压侧有功量测"],
+      ["i_q", "高压侧无功量测"],
+      ["i_u", "高压侧电压量测"],
+      ["i_i", "高压侧电流量测"],
+      ["k_p", "中压侧有功量测"],
+      ["k_q", "中压侧无功量测"],
+      ["k_u", "中压侧电压量测"],
+      ["k_i", "中压侧电流量测"],
+      ["j_p", "低压侧有功量测"],
+      ["j_q", "低压侧无功量测"],
+      ["j_u", "低压侧电压量测"],
+      ["j_i", "低压侧电流量测"]
+    ] as const;
 
     expect(template.isContainer).toBe(false);
     expect(describeContainerTerminalAssociations(template)).toEqual([]);
-    expect(getTemplateParameterDefinitions(template).map((definition) => definition.enName)).toEqual(expect.arrayContaining([
+    expect(definitions.map((definition) => definition.enName)).toEqual(expect.arrayContaining([
+      "i_r",
+      "j_r",
+      "k_r"
+    ]));
+    expect(definitions.map((definition) => definition.enName)).not.toEqual(expect.arrayContaining([
       "r1",
       "r2",
       "r3"
     ]));
-    const fieldNames = getTemplateParameterDefinitions(template).map((definition) => definition.enName);
+    const fieldNames = definitions.map((definition) => definition.enName);
     expect(fieldNames).not.toContain("high_resistance_pu");
     expect(fieldNames).not.toContain("medium_resistance_pu");
     expect(fieldNames).not.toContain("low_resistance_pu");
     expect(fieldNames).not.toContain("idx_xf_t1");
     expect(fieldNames).not.toContain("idx_xf_t2");
     expect(fieldNames).not.toContain("idx_xf_t3");
+    expect(fieldNames).not.toEqual(expect.arrayContaining(["p", "q", "u", "i"]));
+    expect(template.measurementDefinitions?.map((definition) => definition.associatedField)).toEqual(
+      expectedMeasurements.map(([field]) => field)
+    );
+    for (const [field, cnName] of expectedMeasurements) {
+      expect(definitionsByName.get(field)).toMatchObject({
+        cnName,
+        valueType: "float",
+        typicalValue: "0",
+        exportEnabled: true
+      });
+      expect(definitionsByName.get(field)?.cnName).not.toBe(field);
+      expect(template.params[field]).toBe("0");
+    }
+    expect(definitionsByName.get("i_r")?.cnName).toBe("高压侧电阻");
+    expect(definitionsByName.get("k_r")?.cnName).toBe("中压侧电阻");
+    expect(definitionsByName.get("j_r")?.cnName).toBe("低压侧电阻");
+    expect(definitionsByName.get("i_node")?.cnName).toBe("高压侧节点号");
+    expect(definitionsByName.get("k_node")?.cnName).toBe("中压侧节点号");
+    expect(definitionsByName.get("j_node")?.cnName).toBe("低压侧节点号");
+    for (const transformerKind of ["ac-three-winding-transformer", "ac-three-winding-transformer-neutral"] as const) {
+      const transformerTemplate = DEVICE_LIBRARY.find((item) => item.kind === transformerKind)!;
+      for (const definition of getTemplateParameterDefinitions(transformerTemplate)) {
+        expect(definition.cnName.trim(), `${transformerKind}.${definition.enName}`).not.toBe("");
+        expect(definition.cnName, `${transformerKind}.${definition.enName}`).not.toBe(definition.enName);
+        expect(definition.cnName, `${transformerKind}.${definition.enName}`).toMatch(/[\u3400-\u9fff]/u);
+      }
+    }
+
+    const normalizedLegacy = normalizeThreeWindingTransformerParams({
+      t1_node: "101",
+      t2_node: "202",
+      t3_node: "303",
+      p: "11",
+      q: "12",
+      u: "13",
+      i: "14",
+      mediumResistancePu: "0.2",
+      low_resistance_pu: "0.3"
+    });
+    expect(normalizedLegacy).toMatchObject({
+      i_node: "101",
+      k_node: "202",
+      j_node: "303",
+      i_p: "11",
+      i_q: "12",
+      i_u: "13",
+      i_i: "14",
+      k_r: "0.2",
+      j_r: "0.3"
+    });
+    expect(normalizedLegacy).not.toEqual(expect.objectContaining({ p: expect.anything() }));
+    expect(normalizedLegacy).not.toEqual(expect.objectContaining({ q: expect.anything() }));
+    expect(normalizedLegacy).not.toEqual(expect.objectContaining({ u: expect.anything() }));
+    expect(normalizedLegacy).not.toEqual(expect.objectContaining({ i: expect.anything() }));
+
+    const node = createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 });
+    node.terminals[0].nodeNumber = "101";
+    node.terminals[1].nodeNumber = "202";
+    node.terminals[2].nodeNumber = "303";
+    expect(topologyNodeNumberForEField(node, "i_node")).toBe("101");
+    expect(topologyNodeNumberForEField(node, "k_node")).toBe("202");
+    expect(topologyNodeNumberForEField(node, "j_node")).toBe("303");
+  });
+
+  test("uses terminal-side prefixes for every two-winding and three-winding transformer side field", () => {
+    const twoWindingTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer")!;
+    const threeWindingTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
+    const twoWindingDefinitions = new Map(
+      getTemplateParameterDefinitions(twoWindingTemplate).map((definition) => [definition.enName, definition.cnName])
+    );
+    const threeWindingDefinitions = new Map(
+      getTemplateParameterDefinitions(threeWindingTemplate).map((definition) => [definition.enName, definition.cnName])
+    );
+
+    expect(Object.fromEntries(twoWindingDefinitions)).toMatchObject({
+      i_vbase: "高压侧电压等级",
+      i_i_max: "高压侧最大电流",
+      j_vbase: "低压侧电压等级",
+      j_i_max: "低压侧最大电流"
+    });
+    expect(Object.fromEntries(threeWindingDefinitions)).toMatchObject({
+      i_vbase: "高压侧电压等级",
+      i_rated_capacity: "高压侧额定容量",
+      i_i_max: "高压侧最大电流",
+      k_vbase: "中压侧电压等级",
+      k_rated_capacity: "中压侧额定容量",
+      k_i_max: "中压侧最大电流",
+      j_vbase: "低压侧电压等级",
+      j_rated_capacity: "低压侧额定容量",
+      j_i_max: "低压侧最大电流"
+    });
+    for (const retiredField of [
+      "high_vbase", "high_i_max", "low_vbase", "low_i_max",
+      "high_rated_capacity", "medium_vbase", "medium_rated_capacity", "medium_i_max", "low_rated_capacity"
+    ]) {
+      expect(twoWindingDefinitions.has(retiredField), `two-winding.${retiredField}`).toBe(false);
+      expect(threeWindingDefinitions.has(retiredField), `three-winding.${retiredField}`).toBe(false);
+    }
+
+    expect(normalizeTwoWindingTransformerParams({
+      high_vbase: "220",
+      high_i_max: "300",
+      low_vbase: "10",
+      low_i_max: "1600"
+    })).toEqual({
+      i_vbase: "220",
+      i_i_max: "300",
+      j_vbase: "10",
+      j_i_max: "1600"
+    });
+    expect(normalizeThreeWindingTransformerParams({
+      high_vbase: "220",
+      high_rated_capacity: "90",
+      high_i_max: "300",
+      medium_vbase: "110",
+      medium_rated_capacity: "60",
+      medium_i_max: "315",
+      low_vbase: "10",
+      low_rated_capacity: "30",
+      low_i_max: "1600"
+    })).toEqual({
+      i_vbase: "220",
+      i_rated_capacity: "90",
+      i_i_max: "300",
+      k_vbase: "110",
+      k_rated_capacity: "60",
+      k_i_max: "315",
+      j_vbase: "10",
+      j_rated_capacity: "30",
+      j_i_max: "1600"
+    });
   });
 
 

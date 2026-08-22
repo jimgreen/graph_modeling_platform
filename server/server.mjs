@@ -15,6 +15,7 @@ import {
   isAllowedNativeExportOrigin
 } from "./nativeExportSave.mjs";
 import { GlobalLineRegistryError, createGlobalLineRegistry } from "./globalLineRegistry.mjs";
+import { meaningfulDeviceParameterChineseName } from "../shared/deviceParameterChineseNames.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -118,57 +119,57 @@ export const eSectionColumns = {
   StaticContainerSymbol: [],
   StaticConnectorSymbol: [],
   StaticAnnotationSymbol: [],
-  ACRealBs: ["idx", "name", "node", "v_max", "v_min", "run_stat"],
-  DCRealBs: ["idx", "name", "node", "v_max", "v_min", "run_stat"],
+  ACRealBs: ["idx", "name", "node", "rated_voltage", "v_max", "v_min", "run_stat"],
+  DCRealBs: ["idx", "name", "node", "rated_voltage", "v_max", "v_min", "run_stat"],
   ACNode: ["idx", "name", "vbase", "run_stat"],
   DCNode: ["idx", "name", "vbase", "voltage", "isl", "run_stat"],
-  ACBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "r", "x", "b", "run_stat"],
-  DCBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "r", "run_stat"],
-  ACLoad: ["idx", "name", "node", "rated_capacity", "pbase", "p_set", "p_max", "p_min", "pv0", "pv1", "pv2", "qbase", "q_max", "q_min", "qv0", "qv1", "qv2", "v_max", "v_min", "run_stat"],
-  DCLoad: ["idx", "name", "node", "rated_capacity", "pbase", "p_set", "p_max", "p_min", "pv0", "pv1", "pv2", "v_max", "v_min", "run_stat"],
+  ACBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "r", "x", "b", "run_stat", "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"],
+  DCBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "r", "run_stat", "i_p", "i_u", "i_i", "j_p", "j_u", "j_i"],
+  ACLoad: ["idx", "name", "node", "rated_capacity", "rated_voltage", "pbase", "p_set", "p_max", "p_min", "pv0", "pv1", "pv2", "qbase", "q_set", "q_max", "q_min", "qv0", "qv1", "qv2", "v_max", "v_min", "run_stat"],
+  DCLoad: ["idx", "name", "node", "rated_capacity", "rated_voltage", "pbase", "p_set", "p_max", "p_min", "pv0", "pv1", "pv2", "v_max", "v_min", "run_stat"],
   ACGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "p_set", "p_max", "p_min", "q_set", "q_max", "q_min", "v_set", "v_max", "v_min", "alpha", "run_stat"],
   DCGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "v_set", "p_set", "p_max", "p_min", "i_set", "v_max", "v_min", "run_stat"],
   ACCompensator: ["idx", "name", "dev_type", "node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"],
   ACSeriCompensator: ["idx", "name", "dev_type", "i_node", "j_node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"],
-  ACZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
-  DCZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
-  ACSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
-  DCSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
-  ACBreak: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
-  DCBreak: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
+  ACZeroBranch: ["idx", "name", "i_node", "j_node", "rated_voltage", "run_stat"],
+  DCZeroBranch: ["idx", "name", "i_node", "j_node", "rated_voltage", "run_stat"],
+  ACSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "status", "closed_status", "closed_status_set", "run_stat", "p", "q", "u", "i"],
+  DCSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "status", "closed_status", "closed_status_set", "run_stat", "p", "u", "i"],
+  ACBreak: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "status", "closed_status", "closed_status_set", "run_stat", "p", "q", "u", "i"],
+  DCBreak: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "status", "closed_status", "closed_status_set", "run_stat", "p", "u", "i"],
   GroundDisconnector: ["idx", "name", "node", "rated_capacity", "i_max", "status", "run_stat"],
-  ACTransformer: ["idx", "name", "i_node", "j_node", "rated_capacity", "high_i_max", "low_i_max", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
+  ACTransformer: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_i_max", "j_i_max", "r", "x", "gt", "bt", "tap", "tap_set", "shift", "run_stat"],
   ACTransfomer3: [
     "idx",
     "name",
-    "t1_node",
-    "t2_node",
-    "t3_node",
+    "i_node",
+    "k_node",
+    "j_node",
     "neutral_node",
-    "high_rated_capacity",
-    "high_i_max",
-    "medium_rated_capacity",
-    "medium_i_max",
-    "low_rated_capacity",
-    "low_i_max",
-    "r1",
-    "x1",
-    "gt1",
-    "bt1",
-    "tap1",
-    "shift1",
-    "r2",
-    "x2",
-    "gt2",
-    "bt2",
-    "tap2",
-    "shift2",
-    "r3",
-    "x3",
-    "gt3",
-    "bt3",
-    "tap3",
-    "shift3",
+    "i_rated_capacity",
+    "i_i_max",
+    "k_rated_capacity",
+    "k_i_max",
+    "j_rated_capacity",
+    "j_i_max",
+    "i_r",
+    "i_x",
+    "i_gt",
+    "i_bt",
+    "i_tap",
+    "i_shift",
+    "k_r",
+    "k_x",
+    "k_gt",
+    "k_bt",
+    "k_tap",
+    "k_shift",
+    "j_r",
+    "j_x",
+    "j_gt",
+    "j_bt",
+    "j_tap",
+    "j_shift",
     "run_stat"
   ],
   DCDCConverter: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_p_max", "i_p_min", "i_i_max", "i_v_max", "i_v_min", "j_p_max", "j_p_min", "j_i_max", "j_v_max", "j_v_min", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_set", "v_set", "run_stat"],
@@ -224,6 +225,13 @@ const eFloatColumns = new Set([
   "rated_capacity",
   "rated_voltage",
   "i_max",
+  "i_vbase",
+  "i_rated_capacity",
+  "k_vbase",
+  "k_rated_capacity",
+  "k_i_max",
+  "j_vbase",
+  "j_rated_capacity",
   "high_rated_capacity",
   "high_i_max",
   "medium_rated_capacity",
@@ -256,11 +264,19 @@ const eFloatColumns = new Set([
   "dc_v_min",
   "i_p_max",
   "i_p_min",
+  "i_p",
+  "i_q",
+  "i_u",
+  "i_i",
   "i_i_max",
   "i_v_max",
   "i_v_min",
   "j_p_max",
   "j_p_min",
+  "j_p",
+  "j_q",
+  "j_u",
+  "j_i",
   "j_i_max",
   "j_v_max",
   "j_v_min",
@@ -275,7 +291,30 @@ const eFloatColumns = new Set([
   "gt",
   "bt",
   "tap",
+  "tap_set",
+  "p",
+  "q",
+  "u",
+  "i",
   "shift",
+  "i_r",
+  "i_x",
+  "i_gt",
+  "i_bt",
+  "i_tap",
+  "i_shift",
+  "j_r",
+  "j_x",
+  "j_gt",
+  "j_bt",
+  "j_tap",
+  "j_shift",
+  "k_r",
+  "k_x",
+  "k_gt",
+  "k_bt",
+  "k_tap",
+  "k_shift",
   "r1",
   "x1",
   "gt1",
@@ -662,6 +701,7 @@ const builtinMeasurementTypeIds = new Set([
   "level",
   "soc",
   "gasQuantity",
+  "tapPosition",
   "status"
 ]);
 const storageSocMeasurementType = {
@@ -684,6 +724,16 @@ const gasQuantityMeasurementType = {
   defaultDecimals: 2,
   defaultVisible: true
 };
+const tapPositionMeasurementType = {
+  id: "tapPosition",
+  key: "tap",
+  name: "分接头档位",
+  shortLabel: "档位",
+  defaultUnit: "",
+  valueType: "number",
+  defaultDecimals: 0,
+  defaultVisible: false
+};
 const electricStorageMeasurementProfileKinds = new Set(["ac-storage", "dc-storage"]);
 const hydrogenTankMeasurementProfileKinds = new Set([
   "hydrogen-tank",
@@ -702,6 +752,26 @@ const hydrogenTankMeasurementProfileItems = [
   { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", unitOverride: "Nm3" },
   { measurementTypeId: "soc", associatedField: "soc", unitOverride: "%" }
 ];
+const requiredStoredBranchMeasurementProfileItems = new Map([
+  ["ac-line", [
+    { measurementTypeId: "activePower", associatedField: "i_p", labelOverride: "首端有功量测值" },
+    { measurementTypeId: "reactivePower", associatedField: "i_q", labelOverride: "首端无功量测值" },
+    { measurementTypeId: "voltage", associatedField: "i_u", labelOverride: "首端电压量测值" },
+    { measurementTypeId: "current", associatedField: "i_i", labelOverride: "首端电流量测值" },
+    { measurementTypeId: "activePower", associatedField: "j_p", labelOverride: "末端有功量测值" },
+    { measurementTypeId: "reactivePower", associatedField: "j_q", labelOverride: "末端无功量测值" },
+    { measurementTypeId: "voltage", associatedField: "j_u", labelOverride: "末端电压量测值" },
+    { measurementTypeId: "current", associatedField: "j_i", labelOverride: "末端电流量测值" }
+  ]],
+  ["dc-line", [
+    { measurementTypeId: "activePower", associatedField: "i_p", labelOverride: "首端有功量测值" },
+    { measurementTypeId: "voltage", associatedField: "i_u", labelOverride: "首端电压量测值" },
+    { measurementTypeId: "current", associatedField: "i_i", labelOverride: "首端电流量测值" },
+    { measurementTypeId: "activePower", associatedField: "j_p", labelOverride: "末端有功量测值" },
+    { measurementTypeId: "voltage", associatedField: "j_u", labelOverride: "末端电压量测值" },
+    { measurementTypeId: "current", associatedField: "j_i", labelOverride: "末端电流量测值" }
+  ]]
+]);
 
 function migrateHydrogenTankLegacyLabelOverride(item) {
   const legacyLabel = hydrogenTankLegacyLabelOverrides.get(String(item?.measurementTypeId ?? "").trim());
@@ -785,6 +855,41 @@ function normalizeMeasurementStyleOverride(value) {
   return Object.keys(style).length > 0 ? style : undefined;
 }
 
+function withRequiredStoredBranchMeasurementProfileItems(deviceKind, items, validTypeIds) {
+  const requiredItems = (requiredStoredBranchMeasurementProfileItems.get(deviceKind) ?? [])
+    .filter((item) => validTypeIds.has(item.measurementTypeId));
+  if (requiredItems.length === 0) {
+    return items;
+  }
+  const requiredFields = new Set(requiredItems.map((item) => item.associatedField));
+  const requiredTypeIds = new Set(requiredItems.map((item) => item.measurementTypeId));
+  const overridesByField = new Map();
+  const extras = [];
+  for (const item of items) {
+    const field = String(item.associatedField ?? "").trim();
+    if (requiredFields.has(field)) {
+      overridesByField.set(field, item);
+      continue;
+    }
+    if (
+      (!field && requiredTypeIds.has(item.measurementTypeId))
+      || ["p", "q", "u", "i"].includes(field)
+    ) {
+      continue;
+    }
+    extras.push(item);
+  }
+  return [
+    ...requiredItems.map((requiredItem) => {
+      const override = overridesByField.get(requiredItem.associatedField);
+      return override
+        ? { ...requiredItem, ...override, associatedField: requiredItem.associatedField }
+        : { ...requiredItem };
+    }),
+    ...extras
+  ];
+}
+
 export function normalizeMeasurementConfig(payload) {
   const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
   const groupDefaults = normalizeMeasurementGroupDefaults(source.groupDefaults);
@@ -796,6 +901,9 @@ export function normalizeMeasurementConfig(payload) {
   }
   if (!rawTypes.some((item) => String(item?.id ?? "").trim() === gasQuantityMeasurementType.id)) {
     rawTypes.push(gasQuantityMeasurementType);
+  }
+  if (!rawTypes.some((item) => String(item?.id ?? "").trim() === tapPositionMeasurementType.id)) {
+    rawTypes.push(tapPositionMeasurementType);
   }
   const seenTypes = new Set();
   const measurementTypes = rawTypes.flatMap((item) => {
@@ -878,7 +986,10 @@ export function normalizeMeasurementConfig(payload) {
         styleOverride: normalizeMeasurementStyleOverride(item.styleOverride)
       }];
     });
-    return [{ deviceKind, items }];
+    return [{
+      deviceKind,
+      items: withRequiredStoredBranchMeasurementProfileItems(deviceKind, items, validTypeIds)
+    }];
   });
   return { groupDefaults, measurementTypes, deviceProfiles };
 }
@@ -986,6 +1097,10 @@ function sharedDeviceDefinitionParams(params) {
 
 export const deviceLibrarySchemaVersion = 4;
 
+export function meaningfulStoredDeviceParameterChineseName(enName, cnName) {
+  return meaningfulDeviceParameterChineseName(enName, cnName);
+}
+
 function normalizeRunStatValue(value, fallback = "") {
   const text = String(value ?? "").trim();
   if (!text) return fallback;
@@ -1011,6 +1126,14 @@ function normalizeRunStatParameterDefinition(definition) {
   };
 }
 
+function serverSwitchingDeviceUsesClosedStatus(kind, params = {}) {
+  const normalizedKind = String(kind ?? "").trim().toLowerCase();
+  if (normalizedKind.includes("ground-disconnector")) return false;
+  const section = inferESection(kind, params);
+  return ["ACSwitch", "DCSwitch", "ACBreak", "DCBreak"].includes(section) ||
+    normalizedKind.includes("switch") || normalizedKind.includes("breaker");
+}
+
 function normalizeDeviceLibraryParameterDefinitions(value) {
   if (!Array.isArray(value)) return value;
   const normalized = [];
@@ -1022,16 +1145,25 @@ function normalizeDeviceLibraryParameterDefinitions(value) {
       continue;
     }
     const rawName = String(rawDefinition.enName ?? "").trim();
-    const enName = /^(?:state_of_charge|stateOfCharge)$/u.test(rawName) ? "soc" : rawName;
+    const enName = /^(?:state_of_charge|stateOfCharge)$/u.test(rawName)
+      ? "soc"
+      : rawName === "status_set"
+        ? "closed_status_set"
+        : rawName;
     const rawExportName = rawDefinition.exportName;
     const definition = normalizeRunStatParameterDefinition({
       ...rawDefinition,
+      cnName: meaningfulStoredDeviceParameterChineseName(enName, rawDefinition.cnName),
       enName,
       ...(enName === "soc" && String(rawDefinition.typicalValue ?? "").trim()
         ? { typicalValue: normalizeDeviceLibraryParams({ soc: rawDefinition.typicalValue }).soc }
         : {}),
-      ...(typeof rawExportName === "string" && /^(?:state_of_charge|stateOfCharge)$/u.test(rawExportName.trim())
-        ? { exportName: "soc" }
+      ...(typeof rawExportName === "string"
+        ? { exportName: /^(?:state_of_charge|stateOfCharge)$/u.test(rawExportName.trim())
+          ? "soc"
+          : rawExportName.trim() === "status_set"
+            ? "closed_status_set"
+            : rawExportName }
         : {})
     });
     if (enName !== "soc") {
@@ -1051,9 +1183,9 @@ function normalizeDeviceLibraryParameterDefinitions(value) {
   return normalized;
 }
 
-function normalizeDeviceLibraryMeasurementDefinitions(value) {
+function normalizeDeviceLibraryMeasurementDefinitions(value, kind = "") {
   if (!Array.isArray(value)) return value;
-  return value.map((rawDefinition) => {
+  const normalized = value.map((rawDefinition) => {
     if (!rawDefinition || typeof rawDefinition !== "object" || Array.isArray(rawDefinition)) {
       return rawDefinition;
     }
@@ -1065,15 +1197,31 @@ function normalizeDeviceLibraryMeasurementDefinitions(value) {
       : rawDefinition.associatedField;
     return { ...rawDefinition, measurementTypeId, associatedField };
   });
+  if (normalized.length > 0 && serverSwitchingDeviceUsesClosedStatus(kind) &&
+    !normalized.some((definition) => definition?.associatedField === "closed_status")) {
+    normalized.splice(
+      Math.max(0, normalized.findIndex((definition) => definition?.associatedField === "status") + 1),
+      0,
+      { measurementTypeId: "status", associatedField: "closed_status", labelOverride: "开合状态量测值" }
+    );
+  }
+  return normalized;
 }
 
-function normalizeDeviceLibraryParams(value, addRunStatDefault = false) {
+function normalizeDeviceLibraryParams(value, addRunStatDefault = false, kind = "") {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   const params = { ...source };
   if (params.run_stat === undefined && params.runStat !== undefined) {
     params.run_stat = params.runStat;
   }
   delete params.runStat;
+  if (params.closed_status_set === undefined && params.status_set !== undefined) {
+    params.closed_status_set = params.status_set;
+  }
+  delete params.status_set;
+  if (serverSwitchingDeviceUsesClosedStatus(kind, params) && params.closed_status === undefined && params.status !== undefined) {
+    params.closed_status = params.status;
+  }
   if (params.soc === undefined) {
     params.soc = params.state_of_charge ?? params.stateOfCharge;
   }
@@ -1176,14 +1324,14 @@ export function normalizeDeviceLibraryConfig(payload) {
     .filter((template) => template && typeof template === "object" && !Array.isArray(template))
     .map((template) => {
       const measurementDefinitions = Array.isArray(template.measurementDefinitions)
-        ? normalizeDeviceLibraryMeasurementDefinitions(template.measurementDefinitions)
+        ? normalizeDeviceLibraryMeasurementDefinitions(template.measurementDefinitions, template.kind)
         : undefined;
       const explicitlyDeletesAllMeasurements = measurementDefinitions?.length === 0 &&
         template.measurementDefinitionsIntent === "delete-all";
       return {
         ...template,
         categoryLibrary: template.categoryLibrary ?? template.attributeLibrary ?? "交流设备",
-        params: normalizeDeviceLibraryParams(template.params, !String(template.kind ?? "").startsWith("static-")),
+        params: normalizeDeviceLibraryParams(template.params, !String(template.kind ?? "").startsWith("static-"), template.kind),
         parameterDefinitions: normalizeDeviceLibraryParameterDefinitions(template.parameterDefinitions),
         ...(measurementDefinitions && (measurementDefinitions.length > 0 || explicitlyDeletesAllMeasurements)
           ? { measurementDefinitions }
@@ -1247,7 +1395,7 @@ export function normalizeDeviceLibraryConfig(payload) {
         ? normalizeDeviceLibraryParameterDefinitions(override.parameterDefinitions)
         : undefined;
       const measurementDefinitions = Array.isArray(override.measurementDefinitions)
-        ? normalizeDeviceLibraryMeasurementDefinitions(override.measurementDefinitions)
+        ? normalizeDeviceLibraryMeasurementDefinitions(override.measurementDefinitions, kind)
         : undefined;
       const explicitlyDeletesAllParameters = parameterDefinitions?.length === 0 &&
         override.parameterDefinitionsIntent === "delete-all";
@@ -1255,7 +1403,7 @@ export function normalizeDeviceLibraryConfig(payload) {
         override.measurementDefinitionsIntent === "delete-all";
       return [kind, {
         ...override,
-        params: normalizeDeviceLibraryParams(override.params),
+        params: normalizeDeviceLibraryParams(override.params, false, kind),
         ...(parameterDefinitions && (parameterDefinitions.length > 0 || explicitlyDeletesAllParameters)
           ? { parameterDefinitions }
           : {}),
@@ -1727,7 +1875,7 @@ function enumOptionsForStoredDefinition(definition) {
 }
 
 function sectionEnumValues(section, name) {
-  if (name === "status" || name === "run_stat") return ["1", "0"];
+  if (["status", "closed_status", "closed_status_set", "run_stat"].includes(name)) return ["1", "0"];
   if (name === "control_type") {
     if (section === "ACGenerator") return ["PV", "PQ", "PH"];
     if (section === "DCGenerator") return ["P", "V", "I", "NONE"];
@@ -1809,7 +1957,7 @@ function normalizeKnownStoredEnumValue(binding) {
   if (labelMatch) return labelMatch.value;
   const caseInsensitiveMatch = values.find((candidate) => candidate.toUpperCase() === value.toUpperCase());
   if (caseInsensitiveMatch) return caseInsensitiveMatch;
-  if (paramKey === "status") {
+  if (paramKey === "status" || paramKey === "closed_status" || paramKey === "closed_status_set") {
     const lower = value.toLowerCase();
     const normalized = ["0", "打开", "开断", "打开/开断", "分闸", "open", "off", "false"].includes(lower) ? "0"
       : ["1", "闭合", "合闸", "closed", "on", "true"].includes(lower) ? "1" : value;
@@ -1860,12 +2008,14 @@ function normalizeStoredDeviceParameterDefinitionNames(value) {
         const text = String(name ?? "").trim();
         if (/^(?:gasQuantity|gasquantity)$/u.test(text)) return "gas_quantity";
         if (/^(?:state_of_charge|stateOfCharge)$/u.test(text)) return "soc";
+        if (text === "status_set") return "closed_status_set";
         return text;
       };
       const enName = normalizeName(definition.enName);
       const exportName = typeof definition.exportName === "string" ? normalizeName(definition.exportName) : definition.exportName;
       return normalizeRunStatParameterDefinition({
         ...definition,
+        cnName: meaningfulStoredDeviceParameterChineseName(enName, definition.cnName),
         enName,
         ...(enName === "soc" && String(definition.typicalValue ?? "").trim()
           ? { typicalValue: normalizeDeviceLibraryParams({ soc: definition.typicalValue }).soc }
@@ -1890,6 +2040,8 @@ function normalizeStoredDeviceParams(params = {}) {
         ? "soc"
       : key === "runStat"
         ? "run_stat"
+        : key === "status_set"
+          ? "closed_status_set"
         : key;
     const priority = normalizedKey === "soc"
       ? key === "soc" ? 2 : 1
@@ -1985,29 +2137,597 @@ function normalizeStoredHydrogenStorageParams(kind, params) {
   return next;
 }
 
+function normalizeStoredSwitchingDeviceParams(kind, params) {
+  if (!serverSwitchingDeviceUsesClosedStatus(kind, params) ||
+    Object.prototype.hasOwnProperty.call(params, "closed_status") ||
+    !Object.prototype.hasOwnProperty.call(params, "status")) {
+    return params;
+  }
+  return { ...params, closed_status: params.status };
+}
+
+const acBranchMeasurementContract = {
+  fields: ["i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"],
+  aliases: { p: "i_p", q: "i_q", u: "i_u", i: "i_i" }
+};
+const dcBranchMeasurementContract = {
+  fields: ["i_p", "i_u", "i_i", "j_p", "j_u", "j_i"],
+  aliases: { p: "i_p", q: undefined, u: "i_u", i: "i_i" }
+};
+
+function storedBranchMeasurementContract(kind) {
+  const normalizedKind = String(kind ?? "").replace(/-vertical$/u, "");
+  if (normalizedKind === "ac-line" || normalizedKind === "ac-routable-line") return acBranchMeasurementContract;
+  if (normalizedKind === "dc-line" || normalizedKind === "dc-routable-line") return dcBranchMeasurementContract;
+  return undefined;
+}
+
+function normalizeStoredBranchParameterDefinitions(value, contract) {
+  if (value === undefined) return value;
+  try {
+    const parsed = JSON.parse(value ?? "[]");
+    if (!Array.isArray(parsed)) return value;
+    const canonicalFields = new Set(contract.fields);
+    const overrides = new Map();
+    const extras = [];
+    for (const rawDefinition of parsed) {
+      if (!rawDefinition || typeof rawDefinition !== "object" || Array.isArray(rawDefinition)) {
+        extras.push(rawDefinition);
+        continue;
+      }
+      const rawName = String(rawDefinition.enName ?? "").trim();
+      const hasAlias = Object.prototype.hasOwnProperty.call(contract.aliases, rawName);
+      const canonicalName = hasAlias ? contract.aliases[rawName] : rawName;
+      if (!canonicalName) continue;
+      const rawExportName = typeof rawDefinition.exportName === "string" ? rawDefinition.exportName.trim() : undefined;
+      const exportName = rawExportName && Object.prototype.hasOwnProperty.call(contract.aliases, rawExportName)
+        ? contract.aliases[rawExportName]
+        : rawExportName;
+      const definition = {
+        ...rawDefinition,
+        cnName: meaningfulStoredDeviceParameterChineseName(canonicalName, rawDefinition.cnName),
+        enName: canonicalName,
+        ...(rawDefinition.exportName !== undefined ? { exportName: exportName || canonicalName } : {})
+      };
+      if (!canonicalFields.has(canonicalName)) {
+        extras.push(definition);
+        continue;
+      }
+      const canonical = canonicalName === rawName;
+      const existing = overrides.get(canonicalName);
+      if (!existing || (canonical && !existing.canonical)) overrides.set(canonicalName, { definition, canonical });
+    }
+    return JSON.stringify([
+      ...contract.fields.map((field) => {
+        const override = overrides.get(field)?.definition;
+        return {
+          ...override,
+          cnName: meaningfulStoredDeviceParameterChineseName(field, override?.cnName),
+          enName: field,
+          valueType: "float",
+          typicalValue: String(override?.typicalValue ?? "").trim() || "0",
+          readonly: false,
+          exportEnabled: true,
+          exportName: field
+        };
+      }),
+      ...extras
+    ]);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeStoredBranchParams(kind, params) {
+  const contract = storedBranchMeasurementContract(kind);
+  if (!contract) return params;
+  const next = { ...params };
+  for (const [legacyField, canonicalField] of Object.entries(contract.aliases)) {
+    if (
+      canonicalField &&
+      !String(next[canonicalField] ?? "").trim() &&
+      Object.prototype.hasOwnProperty.call(next, legacyField)
+    ) {
+      next[canonicalField] = next[legacyField];
+    }
+    delete next[legacyField];
+  }
+  for (const field of contract.fields) {
+    if (!Object.prototype.hasOwnProperty.call(next, field)) next[field] = "0";
+  }
+  if (next._customParamDefinitions !== undefined) {
+    next._customParamDefinitions = normalizeStoredBranchParameterDefinitions(next._customParamDefinitions, contract);
+  }
+  return next;
+}
+
+function normalizeStoredBranchMeasurementItem(nodeId, item, contract) {
+  const associatedField = String(item?.associatedField ?? "").trim();
+  const hasAssociatedAlias = Object.prototype.hasOwnProperty.call(contract.aliases, associatedField);
+  const canonicalAssociatedField = hasAssociatedAlias ? contract.aliases[associatedField] : associatedField;
+  const sourcePoint = String(item?.sourcePoint ?? "").trim();
+  let canonicalSourcePoint = sourcePoint;
+  const nodePrefix = `${nodeId}.`;
+  if (sourcePoint.startsWith(nodePrefix)) {
+    const sourceSegments = sourcePoint.slice(nodePrefix.length).split(".");
+    const sourceField = sourceSegments[sourceSegments.length - 1];
+    if (Object.prototype.hasOwnProperty.call(contract.aliases, sourceField)) {
+      const canonicalSourceField = contract.aliases[sourceField];
+      canonicalSourcePoint = canonicalSourceField
+        ? `${nodePrefix}${[...sourceSegments.slice(0, -1), canonicalSourceField].join(".")}`
+        : "";
+    }
+  }
+  return {
+    ...item,
+    ...(canonicalAssociatedField ? { associatedField: canonicalAssociatedField } : { associatedField: undefined }),
+    sourcePoint: canonicalSourcePoint
+  };
+}
+
+const twoWindingTransformerKinds = new Set([
+  "ac-transformer",
+  "ac-two-winding-transformer"
+]);
+
+const twoWindingTransformerMeasurementDefinitionsForStorage = [
+  { cnName: "高压侧有功值", enName: "i_p" },
+  { cnName: "高压侧无功值", enName: "i_q" },
+  { cnName: "高压侧电压值", enName: "i_u" },
+  { cnName: "高压侧电流值", enName: "i_i" },
+  { cnName: "低压侧有功值", enName: "j_p" },
+  { cnName: "低压侧无功值", enName: "j_q" },
+  { cnName: "低压侧电压值", enName: "j_u" },
+  { cnName: "低压侧电流值", enName: "j_i" },
+  { cnName: "分接头档位", enName: "tap" }
+];
+
+const twoWindingTransformerLegacyMeasurementFieldAliases = {
+  p: "i_p",
+  q: "i_q",
+  u: "i_u",
+  i: "i_i"
+};
+
+const twoWindingTransformerLegacyParameterFieldAliases = {
+  high_vbase: "i_vbase",
+  highVbase: "i_vbase",
+  high_i_max: "i_i_max",
+  highIMax: "i_i_max",
+  high_max_current: "i_i_max",
+  highMaxCurrent: "i_i_max",
+  low_vbase: "j_vbase",
+  lowVbase: "j_vbase",
+  low_i_max: "j_i_max",
+  lowIMax: "j_i_max",
+  low_max_current: "j_i_max",
+  lowMaxCurrent: "j_i_max",
+  ...twoWindingTransformerLegacyMeasurementFieldAliases
+};
+
+const twoWindingTransformerParameterChineseNames = {
+  rdf_id: "原始ID",
+  idx: "序号",
+  name: "名称",
+  parent: "所属模型",
+  dev_type: "设备类型",
+  status: "运行状态",
+  run_stat: "工作状态",
+  i_node: "高压侧节点号",
+  j_node: "低压侧节点号",
+  i_vbase: "高压侧电压等级",
+  i_i_max: "高压侧最大电流",
+  j_vbase: "低压侧电压等级",
+  j_i_max: "低压侧最大电流",
+  rated_capacity: "额定容量",
+  ratedCapacity: "额定容量",
+  r: "电阻",
+  x: "电抗",
+  gt: "励磁电导",
+  bt: "励磁电纳",
+  tap: "分接头档位",
+  tap_set: "分接头档位设定值",
+  shift: "相移（度）",
+  ...Object.fromEntries(twoWindingTransformerMeasurementDefinitionsForStorage.map(({ enName, cnName }) => [enName, cnName]))
+};
+
+function normalizeStoredTwoWindingTransformerParameterDefinitions(value) {
+  try {
+    const parsed = JSON.parse(value ?? "[]");
+    if (!Array.isArray(parsed)) return value;
+    const canonicalFields = new Set(twoWindingTransformerMeasurementDefinitionsForStorage.map((definition) => definition.enName));
+    const overrides = new Map();
+    const extras = [];
+    for (const definition of parsed) {
+      if (!definition || typeof definition !== "object" || Array.isArray(definition)) {
+        extras.push(definition);
+        continue;
+      }
+      const rawField = String(definition.enName ?? "").trim();
+      const canonicalField = twoWindingTransformerLegacyParameterFieldAliases[rawField] ?? rawField;
+      const cnName = twoWindingTransformerParameterChineseNames[canonicalField];
+      const normalizedDefinition = {
+        ...definition,
+        ...(cnName ? { cnName } : {}),
+        enName: canonicalField,
+        ...(definition.exportName !== undefined && twoWindingTransformerLegacyParameterFieldAliases[definition.exportName]
+          ? { exportName: twoWindingTransformerLegacyParameterFieldAliases[definition.exportName] }
+          : {})
+      };
+      if (!canonicalFields.has(canonicalField)) {
+        extras.push(normalizedDefinition);
+        continue;
+      }
+      const canonical = canonicalField === rawField;
+      const existing = overrides.get(canonicalField);
+      if (!existing || (canonical && !existing.canonical)) {
+        overrides.set(canonicalField, { canonical, definition: normalizedDefinition });
+      }
+    }
+    return JSON.stringify([
+      ...twoWindingTransformerMeasurementDefinitionsForStorage.map((baseDefinition) => {
+        const override = overrides.get(baseDefinition.enName)?.definition;
+        return {
+          ...override,
+          cnName: baseDefinition.cnName,
+          enName: baseDefinition.enName,
+          valueType: "float",
+          typicalValue: String(override?.typicalValue ?? "").trim() || "0",
+          readonly: false,
+          exportEnabled: true
+        };
+      }),
+      ...extras
+    ]);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeStoredTwoWindingTransformerParams(kind, params) {
+  if (!twoWindingTransformerKinds.has(String(kind ?? ""))) return params;
+  const next = { ...params };
+  for (const [legacyField, canonicalField] of Object.entries(twoWindingTransformerLegacyParameterFieldAliases)) {
+    if (!String(next[canonicalField] ?? "").trim() && Object.prototype.hasOwnProperty.call(next, legacyField)) {
+      next[canonicalField] = next[legacyField];
+    }
+    delete next[legacyField];
+  }
+  for (const { enName } of twoWindingTransformerMeasurementDefinitionsForStorage) {
+    if (!String(next[enName] ?? "").trim()) {
+      next[enName] = "0";
+    }
+  }
+  next._customParamDefinitions = normalizeStoredTwoWindingTransformerParameterDefinitions(next._customParamDefinitions);
+  return next;
+}
+
+function normalizeStoredTwoWindingTransformerMeasurementItem(nodeId, item) {
+  const associatedField = String(item?.associatedField ?? "").trim();
+  const canonicalAssociatedField = twoWindingTransformerLegacyMeasurementFieldAliases[associatedField] ?? associatedField;
+  const sourcePoint = String(item?.sourcePoint ?? "").trim();
+  let canonicalSourcePoint = sourcePoint;
+  const nodePrefix = `${nodeId}.`;
+  if (sourcePoint.startsWith(nodePrefix)) {
+    const sourceSegments = sourcePoint.slice(nodePrefix.length).split(".");
+    const legacySourceField = sourceSegments[sourceSegments.length - 1];
+    const canonicalSourceField = twoWindingTransformerLegacyMeasurementFieldAliases[legacySourceField];
+    if (canonicalSourceField) {
+      sourceSegments[sourceSegments.length - 1] = canonicalSourceField;
+      canonicalSourcePoint = `${nodePrefix}${sourceSegments.join(".")}`;
+    }
+  }
+  return {
+    ...item,
+    ...(canonicalAssociatedField ? { associatedField: canonicalAssociatedField } : {}),
+    sourcePoint: canonicalSourcePoint
+  };
+}
+
+const threeWindingTransformerKinds = new Set([
+  "ac-three-winding-transformer",
+  "ac-three-winding-transformer-neutral"
+]);
+
+const threeWindingTransformerMeasurementDefinitionsForStorage = [
+  { cnName: "高压侧有功量测", enName: "i_p" },
+  { cnName: "高压侧无功量测", enName: "i_q" },
+  { cnName: "高压侧电压量测", enName: "i_u" },
+  { cnName: "高压侧电流量测", enName: "i_i" },
+  { cnName: "中压侧有功量测", enName: "k_p" },
+  { cnName: "中压侧无功量测", enName: "k_q" },
+  { cnName: "中压侧电压量测", enName: "k_u" },
+  { cnName: "中压侧电流量测", enName: "k_i" },
+  { cnName: "低压侧有功量测", enName: "j_p" },
+  { cnName: "低压侧无功量测", enName: "j_q" },
+  { cnName: "低压侧电压量测", enName: "j_u" },
+  { cnName: "低压侧电流量测", enName: "j_i" }
+];
+
+const threeWindingTransformerLegacyParameterFieldAliases = {
+  t1_node: "i_node",
+  t2_node: "k_node",
+  t3_node: "j_node",
+  high_vbase: "i_vbase",
+  highVbase: "i_vbase",
+  high_rated_capacity: "i_rated_capacity",
+  highRatedCapacity: "i_rated_capacity",
+  high_i_max: "i_i_max",
+  highIMax: "i_i_max",
+  high_max_current: "i_i_max",
+  highMaxCurrent: "i_i_max",
+  medium_vbase: "k_vbase",
+  mediumVbase: "k_vbase",
+  medium_rated_capacity: "k_rated_capacity",
+  mediumRatedCapacity: "k_rated_capacity",
+  medium_i_max: "k_i_max",
+  mediumIMax: "k_i_max",
+  medium_max_current: "k_i_max",
+  mediumMaxCurrent: "k_i_max",
+  low_vbase: "j_vbase",
+  lowVbase: "j_vbase",
+  low_rated_capacity: "j_rated_capacity",
+  lowRatedCapacity: "j_rated_capacity",
+  low_i_max: "j_i_max",
+  lowIMax: "j_i_max",
+  low_max_current: "j_i_max",
+  lowMaxCurrent: "j_i_max",
+  r1: "i_r",
+  x1: "i_x",
+  gt1: "i_gt",
+  bt1: "i_bt",
+  tap1: "i_tap",
+  shift1: "i_shift",
+  high_resistance_pu: "i_r",
+  highResistancePu: "i_r",
+  high_reactance_pu: "i_x",
+  highReactancePu: "i_x",
+  high_magnetizing_conductance_pu: "i_gt",
+  highMagnetizingConductancePu: "i_gt",
+  high_magnetizing_susceptance_pu: "i_bt",
+  highMagnetizingSusceptancePu: "i_bt",
+  high_tap_ratio: "i_tap",
+  highTapRatio: "i_tap",
+  high_shift: "i_shift",
+  highShift: "i_shift",
+  r2: "k_r",
+  x2: "k_x",
+  gt2: "k_gt",
+  bt2: "k_bt",
+  tap2: "k_tap",
+  shift2: "k_shift",
+  medium_resistance_pu: "k_r",
+  mediumResistancePu: "k_r",
+  medium_reactance_pu: "k_x",
+  mediumReactancePu: "k_x",
+  medium_magnetizing_conductance_pu: "k_gt",
+  mediumMagnetizingConductancePu: "k_gt",
+  medium_magnetizing_susceptance_pu: "k_bt",
+  mediumMagnetizingSusceptancePu: "k_bt",
+  medium_tap_ratio: "k_tap",
+  mediumTapRatio: "k_tap",
+  medium_shift: "k_shift",
+  mediumShift: "k_shift",
+  r3: "j_r",
+  x3: "j_x",
+  gt3: "j_gt",
+  bt3: "j_bt",
+  tap3: "j_tap",
+  shift3: "j_shift",
+  low_resistance_pu: "j_r",
+  lowResistancePu: "j_r",
+  low_reactance_pu: "j_x",
+  lowReactancePu: "j_x",
+  low_magnetizing_conductance_pu: "j_gt",
+  lowMagnetizingConductancePu: "j_gt",
+  low_magnetizing_susceptance_pu: "j_bt",
+  lowMagnetizingSusceptancePu: "j_bt",
+  low_tap_ratio: "j_tap",
+  lowTapRatio: "j_tap",
+  low_shift: "j_shift",
+  lowShift: "j_shift",
+  p: "i_p",
+  q: "i_q",
+  u: "i_u",
+  i: "i_i"
+};
+
+const threeWindingTransformerParameterChineseNames = {
+  rdf_id: "原始ID",
+  idx: "序号",
+  name: "名称",
+  parent: "所属模型",
+  dev_type: "设备类型",
+  status: "运行状态",
+  run_stat: "工作状态",
+  i_node: "高压侧节点号",
+  k_node: "中压侧节点号",
+  j_node: "低压侧节点号",
+  neutral_node: "中性点节点号",
+  i_vbase: "高压侧电压等级",
+  i_rated_capacity: "高压侧额定容量",
+  i_i_max: "高压侧最大电流",
+  k_vbase: "中压侧电压等级",
+  k_rated_capacity: "中压侧额定容量",
+  k_i_max: "中压侧最大电流",
+  j_vbase: "低压侧电压等级",
+  j_rated_capacity: "低压侧额定容量",
+  j_i_max: "低压侧最大电流",
+  neutral_vbase: "中性点电压等级",
+  i_r: "高压侧电阻",
+  i_x: "高压侧电抗",
+  i_gt: "高压侧励磁电导",
+  i_bt: "高压侧励磁电纳",
+  i_tap: "高压侧变比",
+  i_shift: "高压侧相移（度）",
+  k_r: "中压侧电阻",
+  k_x: "中压侧电抗",
+  k_gt: "中压侧励磁电导",
+  k_bt: "中压侧励磁电纳",
+  k_tap: "中压侧变比",
+  k_shift: "中压侧相移（度）",
+  j_r: "低压侧电阻",
+  j_x: "低压侧电抗",
+  j_gt: "低压侧励磁电导",
+  j_bt: "低压侧励磁电纳",
+  j_tap: "低压侧变比",
+  j_shift: "低压侧相移（度）",
+  ...Object.fromEntries(threeWindingTransformerMeasurementDefinitionsForStorage.map(({ enName, cnName }) => [enName, cnName]))
+};
+
+function normalizeStoredThreeWindingTransformerParameterDefinitions(value) {
+  try {
+    const parsed = JSON.parse(value ?? "[]");
+    if (!Array.isArray(parsed)) return value;
+    const measurementFields = new Set(threeWindingTransformerMeasurementDefinitionsForStorage.map(({ enName }) => enName));
+    const overrides = new Map();
+    const extras = [];
+    for (const definition of parsed) {
+      if (!definition || typeof definition !== "object" || Array.isArray(definition)) {
+        extras.push(definition);
+        continue;
+      }
+      const rawField = String(definition.enName ?? "").trim();
+      const canonicalField = threeWindingTransformerLegacyParameterFieldAliases[rawField] ?? rawField;
+      const cnName = threeWindingTransformerParameterChineseNames[canonicalField];
+      const normalizedDefinition = {
+        ...definition,
+        ...(cnName ? { cnName } : {}),
+        enName: canonicalField,
+        ...(definition.exportName !== undefined && threeWindingTransformerLegacyParameterFieldAliases[definition.exportName]
+          ? { exportName: threeWindingTransformerLegacyParameterFieldAliases[definition.exportName] }
+          : {})
+      };
+      if (!measurementFields.has(canonicalField)) {
+        extras.push(normalizedDefinition);
+        continue;
+      }
+      const canonical = canonicalField === rawField;
+      const existing = overrides.get(canonicalField);
+      if (!existing || (canonical && !existing.canonical)) {
+        overrides.set(canonicalField, { canonical, definition: normalizedDefinition });
+      }
+    }
+    return JSON.stringify([
+      ...threeWindingTransformerMeasurementDefinitionsForStorage.map((baseDefinition) => {
+        const override = overrides.get(baseDefinition.enName)?.definition;
+        return {
+          ...override,
+          cnName: baseDefinition.cnName,
+          enName: baseDefinition.enName,
+          valueType: "float",
+          typicalValue: String(override?.typicalValue ?? "").trim() || "0",
+          readonly: false,
+          exportEnabled: true,
+          exportName: baseDefinition.enName
+        };
+      }),
+      ...extras
+    ]);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeStoredThreeWindingTransformerParams(kind, params) {
+  if (!threeWindingTransformerKinds.has(String(kind ?? ""))) return params;
+  const next = { ...params };
+  for (const [legacyField, canonicalField] of Object.entries(threeWindingTransformerLegacyParameterFieldAliases)) {
+    if (!String(next[canonicalField] ?? "").trim() && Object.prototype.hasOwnProperty.call(next, legacyField)) {
+      next[canonicalField] = next[legacyField];
+    }
+    if (legacyField !== canonicalField) delete next[legacyField];
+  }
+  for (const { enName } of threeWindingTransformerMeasurementDefinitionsForStorage) {
+    if (!String(next[enName] ?? "").trim()) next[enName] = "0";
+  }
+  next._customParamDefinitions = normalizeStoredThreeWindingTransformerParameterDefinitions(next._customParamDefinitions);
+  return next;
+}
+
+function normalizeStoredThreeWindingTransformerMeasurementItem(nodeId, item) {
+  const associatedField = String(item?.associatedField ?? "").trim();
+  const canonicalAssociatedField = threeWindingTransformerLegacyParameterFieldAliases[associatedField] ?? associatedField;
+  const sourcePoint = String(item?.sourcePoint ?? "").trim();
+  let canonicalSourcePoint = sourcePoint;
+  const nodePrefix = `${nodeId}.`;
+  if (sourcePoint.startsWith(nodePrefix)) {
+    const sourceSegments = sourcePoint.slice(nodePrefix.length).split(".");
+    const legacySourceField = sourceSegments[sourceSegments.length - 1];
+    const canonicalSourceField = threeWindingTransformerLegacyParameterFieldAliases[legacySourceField];
+    if (canonicalSourceField) {
+      sourceSegments[sourceSegments.length - 1] = canonicalSourceField;
+      canonicalSourcePoint = `${nodePrefix}${sourceSegments.join(".")}`;
+    }
+  }
+  return {
+    ...item,
+    ...(canonicalAssociatedField ? { associatedField: canonicalAssociatedField } : {}),
+    sourcePoint: canonicalSourcePoint
+  };
+}
+
 function normalizeProjectDeviceParameterNamesForStorage(project) {
-  const nodes = (Array.isArray(project?.nodes) ? project.nodes : []).map((node) => ({
+  const sourceNodes = Array.isArray(project?.nodes) ? project.nodes : [];
+  const branchMeasurementContractsByNodeId = new Map(sourceNodes.flatMap((node) => {
+    const nodeId = String(node?.id ?? "");
+    const contract = storedBranchMeasurementContract(node?.kind);
+    return nodeId && contract ? [[nodeId, contract]] : [];
+  }));
+  const twoWindingTransformerNodeIds = new Set(sourceNodes
+    .filter((node) => twoWindingTransformerKinds.has(String(node?.kind ?? "")))
+    .map((node) => String(node?.id ?? ""))
+    .filter(Boolean));
+  const threeWindingTransformerNodeIds = new Set(sourceNodes
+    .filter((node) => threeWindingTransformerKinds.has(String(node?.kind ?? "")))
+    .map((node) => String(node?.id ?? ""))
+    .filter(Boolean));
+  const nodes = sourceNodes.map((node) => ({
     ...node,
-    params: normalizeStoredHydrogenStorageParams(node?.kind, normalizeStoredDeviceParams(node?.params ?? {}))
+    params: normalizeStoredThreeWindingTransformerParams(
+      node?.kind,
+      normalizeStoredTwoWindingTransformerParams(
+        node?.kind,
+        normalizeStoredBranchParams(
+          node?.kind,
+          normalizeStoredHydrogenStorageParams(
+            node?.kind,
+            normalizeStoredSwitchingDeviceParams(node?.kind, normalizeStoredDeviceParams(node?.params ?? {}))
+          )
+        )
+      )
+    )
   }));
   const measurements = project?.measurements && typeof project.measurements === "object"
     ? {
         ...project.measurements,
         groups: (Array.isArray(project.measurements.groups) ? project.measurements.groups : []).map((group) => ({
           ...group,
-          items: (Array.isArray(group?.items) ? group.items : []).map((item) => ({
-            ...item,
-            measurementTypeId: /^(?:state_of_charge|stateOfCharge)$/u.test(String(item?.measurementTypeId ?? "").trim())
-              ? "soc"
-              : item?.measurementTypeId,
-            associatedField: /^(?:state_of_charge|stateOfCharge)$/u.test(String(item?.associatedField ?? "").trim())
-              ? "soc"
-              : item?.associatedField,
-            sourcePoint: String(item?.sourcePoint ?? "")
-              .trim()
-              .replace(/(^|\.)(?:gasQuantity|gasquantity)$/u, "$1gas_quantity")
-              .replace(/(^|\.)(?:state_of_charge|stateOfCharge)$/u, "$1soc")
-          }))
+          items: (Array.isArray(group?.items) ? group.items : []).map((item) => {
+            const normalizedItem = {
+              ...item,
+              measurementTypeId: /^(?:state_of_charge|stateOfCharge)$/u.test(String(item?.measurementTypeId ?? "").trim())
+                ? "soc"
+                : item?.measurementTypeId,
+              associatedField: /^(?:state_of_charge|stateOfCharge)$/u.test(String(item?.associatedField ?? "").trim())
+                ? "soc"
+                : item?.associatedField,
+              sourcePoint: String(item?.sourcePoint ?? "")
+                .trim()
+                .replace(/(^|\.)(?:gasQuantity|gasquantity)$/u, "$1gas_quantity")
+                .replace(/(^|\.)(?:state_of_charge|stateOfCharge)$/u, "$1soc")
+            };
+            if (threeWindingTransformerNodeIds.has(String(group?.nodeId ?? ""))) {
+              return normalizeStoredThreeWindingTransformerMeasurementItem(group.nodeId, normalizedItem);
+            }
+            if (twoWindingTransformerNodeIds.has(String(group?.nodeId ?? ""))) {
+              return normalizeStoredTwoWindingTransformerMeasurementItem(group.nodeId, normalizedItem);
+            }
+            const branchContract = branchMeasurementContractsByNodeId.get(String(group?.nodeId ?? ""));
+            return branchContract
+              ? normalizeStoredBranchMeasurementItem(group.nodeId, normalizedItem, branchContract)
+              : normalizedItem;
+          })
         }))
       }
     : project?.measurements;
@@ -2493,7 +3213,10 @@ function serverResolvedStateValue(node, states) {
   if (!states.length) {
     return "";
   }
-  const explicit = normalizeServerDeviceStateValue(node?.params?.status ?? node?.params?.closedStatus);
+  const explicitParam = serverSwitchingDeviceUsesClosedStatus(node?.kind, node?.params ?? {})
+    ? node?.params?.closed_status ?? node?.params?.closedStatus ?? node?.params?.status
+    : node?.params?.status;
+  const explicit = normalizeServerDeviceStateValue(explicitParam);
   if (explicit) {
     const exact = states.find((state) => state.value === explicit);
     if (exact) {
@@ -2531,12 +3254,20 @@ function mappedLegacyEValue(key, params = {}) {
   }
   const currentLimitAliases = {
     i_max: ["i_max", "iMax", "max_current", "maxCurrent"],
-    high_i_max: ["high_i_max", "highIMax", "high_max_current", "highMaxCurrent"],
-    medium_i_max: ["medium_i_max", "mediumIMax", "medium_max_current", "mediumMaxCurrent"],
-    low_i_max: ["low_i_max", "lowIMax", "low_max_current", "lowMaxCurrent"]
+    i_i_max: ["i_i_max", "high_i_max", "highIMax", "high_max_current", "highMaxCurrent"],
+    k_i_max: ["k_i_max", "medium_i_max", "mediumIMax", "medium_max_current", "mediumMaxCurrent"],
+    j_i_max: ["j_i_max", "low_i_max", "lowIMax", "low_max_current", "lowMaxCurrent"]
   }[key];
   if (currentLimitAliases) {
     return firstNumericEValue(currentLimitAliases.map((alias) => params[alias]).find((value) => value !== undefined));
+  }
+  const sideCapacityAliases = {
+    i_rated_capacity: ["i_rated_capacity", "high_rated_capacity", "highRatedCapacity"],
+    k_rated_capacity: ["k_rated_capacity", "medium_rated_capacity", "mediumRatedCapacity"],
+    j_rated_capacity: ["j_rated_capacity", "low_rated_capacity", "lowRatedCapacity"]
+  }[key];
+  if (sideCapacityAliases) {
+    return firstNumericEValue(sideCapacityAliases.map((alias) => params[alias]).find((value) => value !== undefined));
   }
   if (key === "rated_voltage") {
     return firstNumericEValue(params.rated_voltage || params.ratedVoltage);
@@ -2571,8 +3302,16 @@ function getRawEParamValue(key, node, options = {}) {
   if (section === "HydroStorage" && key === "rated_capacity") {
     return params.rated_capacity ?? params.capacity ?? "";
   }
+  if (section === "ACTransformer") {
+    const legacyHighSideField = { i_p: "p", i_q: "q", i_u: "u", i_i: "i" }[key];
+    if (legacyHighSideField) {
+      return params[key] ?? params[legacyHighSideField] ?? "";
+    }
+  }
   if (key === "run_stat") return normalizeRunStatForE(params.run_stat);
-  if (key === "status") return normalizeSwitchStatusForE(params.status ?? params.closedStatus);
+  if (key === "status") return normalizeSwitchStatusForE(params.status);
+  if (key === "closed_status") return normalizeSwitchStatusForE(params.closed_status ?? params.closedStatus ?? params.status);
+  if (key === "closed_status_set") return normalizeSwitchStatusForE(params.closed_status_set ?? params.status_set);
   if ((key === "ac_control_type" || key === "dc_control_type") && section === "DCACConverter") {
     return dcacConverterControlTypePairForE(params)[key];
   }
@@ -2588,8 +3327,23 @@ function getRawEParamValue(key, node, options = {}) {
   }
   if (key === "vbase") return params.vbase ?? node?.terminals?.[0]?.vbase ?? "";
   if (key === "node") return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 0) : params.node ?? terminalNodeNumber(node, 0);
-  if (key === "i_node") return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 0) : params.i_node ?? terminalNodeNumber(node, 0);
-  if (key === "j_node") return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 1) : params.j_node ?? terminalNodeNumber(node, 1);
+  if (key === "i_node") {
+    return options.preferTopologyNodeNumbers
+      ? terminalNodeNumber(node, 0)
+      : params.i_node ?? (section === "ACTransfomer3" ? params.t1_node : undefined) ?? terminalNodeNumber(node, 0);
+  }
+  if (key === "j_node") {
+    const terminalIndex = section === "ACTransfomer3" ? 2 : 1;
+    return options.preferTopologyNodeNumbers
+      ? terminalNodeNumber(node, terminalIndex)
+      : params.j_node ?? (section === "ACTransfomer3" ? params.t3_node : undefined) ?? terminalNodeNumber(node, terminalIndex);
+  }
+  if (key === "k_node") {
+    const terminalIndex = section === "ACTransfomer3" ? 1 : 2;
+    return options.preferTopologyNodeNumbers
+      ? terminalNodeNumber(node, terminalIndex)
+      : params.k_node ?? (section === "ACTransfomer3" ? params.t2_node : params.t3_node) ?? terminalNodeNumber(node, terminalIndex);
+  }
   if (node?.kind === "ac-three-winding-transformer" || node?.kind === "ac-three-winding-transformer-neutral") {
     const terminalNodeMatch = /^t([123])_node$/.exec(key);
     if (terminalNodeMatch) {
@@ -2607,9 +3361,33 @@ function getRawEParamValue(key, node, options = {}) {
         ? visibleNeutralNode || params.neutral_node || ""
         : params.neutral_node ?? visibleNeutralNode;
     }
-    const sideParameterMatch = /^(r|x|gt|bt|tap|shift)([123])$/.exec(key);
-    if (sideParameterMatch) {
-      const sidePrefix = ["high", "medium", "low"][Number.parseInt(sideParameterMatch[2], 10) - 1];
+    const canonicalMatch = /^([ijk])_(r|x|gt|bt|tap|shift)$/.exec(key);
+    const numberedMatch = /^(r|x|gt|bt|tap|shift)([123])$/.exec(key);
+    const namedMatch =
+      /^(high|medium|low)(ResistancePu|ReactancePu|MagnetizingConductancePu|MagnetizingSusceptancePu|TapRatio|Shift)$/.exec(key) ??
+      /^(high|medium|low)_(resistance_pu|reactance_pu|magnetizing_conductance_pu|magnetizing_susceptance_pu|tap_ratio|shift)$/.exec(key);
+    if (canonicalMatch || numberedMatch || namedMatch) {
+      const sideIndex = canonicalMatch
+        ? { i: 0, j: 2, k: 1 }[canonicalMatch[1]]
+        : numberedMatch
+          ? Number.parseInt(numberedMatch[2], 10) - 1
+          : { high: 0, medium: 1, low: 2 }[namedMatch[1]];
+      const parameterKey = canonicalMatch?.[2] ?? numberedMatch?.[1] ?? ({
+        ResistancePu: "r",
+        ReactancePu: "x",
+        MagnetizingConductancePu: "gt",
+        MagnetizingSusceptancePu: "bt",
+        TapRatio: "tap",
+        Shift: "shift",
+        resistance_pu: "r",
+        reactance_pu: "x",
+        magnetizing_conductance_pu: "gt",
+        magnetizing_susceptance_pu: "bt",
+        tap_ratio: "tap",
+        shift: "shift"
+      })[namedMatch?.[2]];
+      const sideCode = ["i", "k", "j"][sideIndex];
+      const sidePrefix = ["high", "medium", "low"][sideIndex];
       const legacyCamelSuffix = {
         r: "ResistancePu",
         x: "ReactancePu",
@@ -2626,8 +3404,8 @@ function getRawEParamValue(key, node, options = {}) {
         tap: "tap_ratio",
         shift: "shift"
       };
-      const parameterKey = sideParameterMatch[1];
-      return params[key] ??
+      return params[`${sideCode}_${parameterKey}`] ??
+        params[`${parameterKey}${sideIndex + 1}`] ??
         params[`${sidePrefix}_${legacySnakeSuffix[parameterKey]}`] ??
         params[`${sidePrefix}${legacyCamelSuffix[parameterKey]}`] ??
         "";
@@ -2648,15 +3426,24 @@ const legacyEDefinitionColumnAliases = {
   maxCurrent: "i_max",
   max_current: "i_max",
   iMax: "i_max",
-  highMaxCurrent: "high_i_max",
-  high_max_current: "high_i_max",
-  highIMax: "high_i_max",
-  mediumMaxCurrent: "medium_i_max",
-  medium_max_current: "medium_i_max",
-  mediumIMax: "medium_i_max",
-  lowMaxCurrent: "low_i_max",
-  low_max_current: "low_i_max",
-  lowIMax: "low_i_max",
+  highMaxCurrent: "i_i_max",
+  high_max_current: "i_i_max",
+  highIMax: "i_i_max",
+  high_i_max: "i_i_max",
+  mediumMaxCurrent: "k_i_max",
+  medium_max_current: "k_i_max",
+  mediumIMax: "k_i_max",
+  medium_i_max: "k_i_max",
+  lowMaxCurrent: "j_i_max",
+  low_max_current: "j_i_max",
+  lowIMax: "j_i_max",
+  low_i_max: "j_i_max",
+  highRatedCapacity: "i_rated_capacity",
+  high_rated_capacity: "i_rated_capacity",
+  mediumRatedCapacity: "k_rated_capacity",
+  medium_rated_capacity: "k_rated_capacity",
+  lowRatedCapacity: "j_rated_capacity",
+  low_rated_capacity: "j_rated_capacity",
   ratedCapacity: "rated_capacity",
   ratedPower: "rated_capacity",
   rated_power: "rated_capacity",
@@ -2740,8 +3527,13 @@ function legacyEColumnForDefinition(section, enName) {
     if (columns.includes("i_node")) return "i_node";
     if (columns.includes("node")) return "node";
   }
-  if (enName === "t2_node" && columns.includes("j_node")) {
-    return "j_node";
+  if (enName === "t2_node") {
+    if (section === "ACTransfomer3" && columns.includes("k_node")) return "k_node";
+    if (columns.includes("j_node")) return "j_node";
+  }
+  if (enName === "t3_node") {
+    if (section === "ACTransfomer3" && columns.includes("j_node")) return "j_node";
+    if (columns.includes("k_node")) return "k_node";
   }
   if (enName === "sourceControlType") {
     if (columns.includes("i_control_type")) return "i_control_type";
@@ -2752,18 +3544,32 @@ function legacyEColumnForDefinition(section, enName) {
     if (columns.includes("control_type")) return "control_type";
   }
   if (section === "ACTransfomer3") {
-    const sideMatch = /^(high|medium|low)(ResistancePu|ReactancePu|MagnetizingConductancePu|MagnetizingSusceptancePu|TapRatio|Shift)$/.exec(enName);
+    const numberedMatch = /^(r|x|gt|bt|tap|shift)([123])$/.exec(enName);
+    if (numberedMatch) {
+      const sideCode = ["i", "k", "j"][Number.parseInt(numberedMatch[2], 10) - 1];
+      const column = `${sideCode}_${numberedMatch[1]}`;
+      return columns.includes(column) ? column : "";
+    }
+    const sideMatch =
+      /^(high|medium|low)(ResistancePu|ReactancePu|MagnetizingConductancePu|MagnetizingSusceptancePu|TapRatio|Shift)$/.exec(enName) ??
+      /^(high|medium|low)_(resistance_pu|reactance_pu|magnetizing_conductance_pu|magnetizing_susceptance_pu|tap_ratio|shift)$/.exec(enName);
     if (sideMatch) {
-      const sideIndex = { high: "1", medium: "2", low: "3" }[sideMatch[1]];
+      const sideCode = { high: "i", medium: "k", low: "j" }[sideMatch[1]];
       const prefix = {
         ResistancePu: "r",
         ReactancePu: "x",
         MagnetizingConductancePu: "gt",
         MagnetizingSusceptancePu: "bt",
         TapRatio: "tap",
-        Shift: "shift"
+        Shift: "shift",
+        resistance_pu: "r",
+        reactance_pu: "x",
+        magnetizing_conductance_pu: "gt",
+        magnetizing_susceptance_pu: "bt",
+        tap_ratio: "tap",
+        shift: "shift"
       }[sideMatch[2]];
-      const column = `${prefix}${sideIndex}`;
+      const column = `${sideCode}_${prefix}`;
       return columns.includes(column) ? column : "";
     }
   }
@@ -3242,12 +4048,26 @@ function normalizeVoltageBaseInput(value) {
 
 function terminalVoltageDisplay(node, terminal) {
   const params = node?.params ?? {};
+  const terminals = Array.isArray(node?.terminals) ? node.terminals : [];
+  const terminalIndex = terminals.findIndex((candidate) => candidate === terminal || candidate?.id === terminal?.id);
+  const kind = String(node?.kind ?? "");
+  const transformerSideVoltages = threeWindingTransformerKinds.has(kind)
+    ? [
+        [params.i_vbase, params.high_vbase, params.highVbase],
+        [params.k_vbase, params.medium_vbase, params.mediumVbase],
+        [params.j_vbase, params.low_vbase, params.lowVbase],
+        [params.neutral_vbase, params.neutralVbase]
+      ][terminalIndex] ?? []
+    : twoWindingTransformerKinds.has(kind)
+      ? [
+          [params.i_vbase, params.high_vbase, params.highVbase],
+          [params.j_vbase, params.low_vbase, params.lowVbase]
+        ][terminalIndex] ?? []
+      : [];
   return normalizeVoltageBaseInput(firstText([
     terminal?.vbase,
+    ...transformerSideVoltages,
     params.vbase,
-    params.highVbase,
-    params.mediumVbase,
-    params.lowVbase,
     params.sourceVbase,
     params.targetVbase,
     params.voltageLevel,
@@ -4178,10 +4998,15 @@ ${nodeBodyMarkup}
     };
     const stateDefinitions = serverTemplateStateDefinitions(node, templateByKind.get(node.kind));
     const stateInputs = stateDefinitions.length > 0
-      ? stateDefinitions.map((state) => ({
-          stateKey: serverStateSymbolKey(state.value),
-          node: { ...node, params: { ...(node.params ?? {}), status: state.value } }
-        }))
+      ? stateDefinitions.map((state) => {
+          const stateParamKey = serverSwitchingDeviceUsesClosedStatus(node?.kind, node?.params ?? {})
+            ? "closed_status"
+            : "status";
+          return {
+            stateKey: serverStateSymbolKey(state.value),
+            node: { ...node, params: { ...(node.params ?? {}), [stateParamKey]: state.value } }
+          };
+        })
       : [{ stateKey: "default", node }];
     const symbolIdByStateKey = new Map();
     for (const stateInput of stateInputs) {

@@ -465,7 +465,7 @@ test("creates electric generation parameters with shared rated defaults but with
   expect(isGeneratorNode(acWind)).toBe(true);
   expect(acWind.nodeNumber).toMatch(/^N\d+$/);
   expect(acWind.params.rated_capacity).toBe("50");
-  expect(acWind.params.rated_voltage).toBe("35");
+  expect(acWind.params.rated_voltage).toBe("0");
   expect(acWind.params.rated_power).toBeUndefined();
   expect(acWind.params.control_type).toBeUndefined();
   expect(acWind.params.vbase).toBeUndefined();
@@ -474,10 +474,28 @@ test("creates electric generation parameters with shared rated defaults but with
   expect(acWind.params.cut_out_wind_speed).toBe("25");
 
   expect(dcPv.params.rated_capacity).toBe("5");
-  expect(dcPv.params.rated_voltage).toBe("1500");
+  expect(dcPv.params.rated_voltage).toBe("0");
   expect(dcPv.params.rated_power).toBeUndefined();
   expect(dcPv.params.control_type).toBeUndefined();
   expect(dcPv.params.vbase).toBeUndefined();
+});
+
+test("forces custom template and definition override rated voltage defaults to zero", () => {
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-load")!;
+  const overridden = applyDeviceTemplateDefinitionOverride(template, {
+    kind: template.kind,
+    params: { rated_voltage: "110" },
+    parameterDefinitions: [
+      { cnName: "额定电压", enName: "rated_voltage", valueType: "float", typicalValue: "110", readonly: false }
+    ]
+  });
+  const ratedVoltageDefinition = getTemplateParameterDefinitions(overridden)
+    .find((definition) => definition.enName === "rated_voltage");
+
+  expect(overridden.params.rated_voltage).toBe("0");
+  expect(ratedVoltageDefinition?.typicalValue).toBe("0");
+  expect(buildDefaultParams(overridden).rated_voltage).toBe("0");
+  expect(createNodeFromTemplate(overridden, { x: 100, y: 100 }).params.rated_voltage).toBe("0");
 });
 
 test("keeps required AC and DC wind parameters when legacy visual overrides contain an empty definition list", () => {
@@ -578,7 +596,7 @@ describe("AC reactive compensation device library", () => {
         terminalCount: expected.terminals,
         params: {
           dev_type: expected.devType,
-          rated_voltage: "10",
+          rated_voltage: "0",
           rated_reactive_power: "1",
           reactance: "100"
         }
@@ -659,6 +677,9 @@ test("defines template device status states separately from run_stat", () => {
 
   const switchNode = createDefaultNode("ac-switch", { x: 100, y: 100 });
   expect(switchNode.params.status).toBe("1");
+  expect(switchNode.params.closed_status).toBe("1");
+  expect(switchNode.params.closed_status_set).toBe("1");
+  expect(switchNode.params.status_set).toBeUndefined();
   expect(switchNode.params.run_stat).toBe("1");
   expect(switchNode.params).not.toHaveProperty("_stateDefinitions");
 
@@ -671,13 +692,18 @@ test("defines template device status states separately from run_stat", () => {
   const exportedOpen = parseESections(buildEDeviceParameterFile({
     version: 1,
     name: "开关状态导出",
-    nodes: [{ ...switchNode, name: "交流开关1", params: { ...switchNode.params, status: "0", run_stat: "停运" } }],
+    nodes: [{
+      ...switchNode,
+      name: "交流开关1",
+      params: { ...switchNode.params, status: "1", closed_status: "0", run_stat: "停运" }
+    }],
     edges: []
   }));
 
   expect(exportedOpen.ACSwitch.rows).toEqual([
     expect.objectContaining({
-      status: "0",
+      status: "1",
+      closed_status: "0",
       run_stat: "0"
     })
   ]);
@@ -1294,25 +1320,38 @@ test("creates load, line, and transformer electrical parameter defaults", () => 
   expect(acLine.params.b).toBe("0.0");
 
   expect(twoWinding.terminals).toHaveLength(2);
-  expect(twoWinding.params.high_vbase).toBe("0");
-  expect(twoWinding.params.low_vbase).toBe("0");
+  expect(twoWinding.params.i_vbase).toBe("0");
+  expect(twoWinding.params.j_vbase).toBe("0");
   expect(twoWinding.params.rated_capacity).toBe("50");
   expect(twoWinding.params.r).toBe("0.0");
   expect(twoWinding.params.x).toBe("0.1");
   expect(twoWinding.params.gt).toBe("0.0");
   expect(twoWinding.params.bt).toBe("0.0");
   expect(twoWinding.params.tap).toBe("1.0");
+  expect(twoWinding.params).toMatchObject({
+    i_p: "0",
+    i_q: "0",
+    i_u: "0",
+    i_i: "0",
+    j_p: "0",
+    j_q: "0",
+    j_u: "0",
+    j_i: "0"
+  });
+  for (const retiredField of ["p", "q", "u", "i"]) {
+    expect(twoWinding.params).not.toHaveProperty(retiredField);
+  }
 
   expect(threeWinding.terminals).toHaveLength(3);
-  expect(threeWinding.params.high_vbase).toBe("0");
-  expect(threeWinding.params.medium_vbase).toBe("0");
-  expect(threeWinding.params.low_vbase).toBe("0");
-  expect(threeWinding.params.high_rated_capacity).toBe("90");
-  expect(threeWinding.params.medium_rated_capacity).toBe("90");
-  expect(threeWinding.params.low_rated_capacity).toBe("90");
-  expect(threeWinding.params.tap1).toBe("1.0");
-  expect(threeWinding.params.tap2).toBe("1.0");
-  expect(threeWinding.params.tap3).toBe("1.0");
+  expect(threeWinding.params.i_vbase).toBe("0");
+  expect(threeWinding.params.k_vbase).toBe("0");
+  expect(threeWinding.params.j_vbase).toBe("0");
+  expect(threeWinding.params.i_rated_capacity).toBe("90");
+  expect(threeWinding.params.k_rated_capacity).toBe("90");
+  expect(threeWinding.params.j_rated_capacity).toBe("90");
+  expect(threeWinding.params.i_tap).toBe("1.0");
+  expect(threeWinding.params.j_tap).toBe("1.0");
+  expect(threeWinding.params.k_tap).toBe("1.0");
   expect(threeWinding.params.is_container).toBeUndefined();
   expect(threeWinding.params.neutral_node).toBe("");
   expect(threeWinding.params.neutral_vbase).toBe("1.0");
@@ -1325,7 +1364,19 @@ test("creates load, line, and transformer electrical parameter defaults", () => 
     getTemplateParameterDefinitions(DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer")!)
       .map((definition) => [definition.enName, definition])
   );
-  for (const fieldName of ["high_vbase", "low_vbase", "rated_capacity"]) {
+  for (const fieldName of [
+    "i_vbase",
+    "j_vbase",
+    "rated_capacity",
+    "i_p",
+    "i_q",
+    "i_u",
+    "i_i",
+    "j_p",
+    "j_q",
+    "j_u",
+    "j_i"
+  ]) {
     expect(twoWindingDefinitions.get(fieldName)?.valueType, fieldName).toBe("float");
   }
   const threeWindingDefinitions = new Map(
@@ -1333,12 +1384,12 @@ test("creates load, line, and transformer electrical parameter defaults", () => 
       .map((definition) => [definition.enName, definition])
   );
   for (const fieldName of [
-    "high_vbase",
-    "medium_vbase",
-    "low_vbase",
-    "high_rated_capacity",
-    "medium_rated_capacity",
-    "low_rated_capacity"
+    "i_vbase",
+    "k_vbase",
+    "j_vbase",
+    "i_rated_capacity",
+    "k_rated_capacity",
+    "j_rated_capacity"
   ]) {
     expect(threeWindingDefinitions.get(fieldName)?.valueType, fieldName).toBe("float");
   }
@@ -1426,16 +1477,17 @@ test("creates load, line, and transformer electrical parameter defaults", () => 
   expect(acSwitch.terminals[1].nodeNumber).toMatch(/^N\d+$/);
   expect(acSwitch.params.rated_capacity).toBe("1250");
   expect(acSwitch.params.status).toBe("1");
-  expect(acSwitch.params.closed_status).toBeUndefined();
+  expect(acSwitch.params.closed_status).toBe("1");
   expect(getSwitchVisualState(acSwitch)).toBe("closed");
   acSwitch.params.status = "0";
-  expect(getSwitchVisualState(acSwitch)).toBe("open");
-  acSwitch.params.status = "1";
   expect(getSwitchVisualState(acSwitch)).toBe("closed");
-  delete dcBreaker.params.status;
+  acSwitch.params.closed_status = "0";
+  expect(getSwitchVisualState(acSwitch)).toBe("open");
   dcBreaker.params.closed_status = "打开";
   expect(getSwitchVisualState(dcBreaker)).toBe("open");
   dcBreaker.params.status = "1";
+  expect(getSwitchVisualState(dcBreaker)).toBe("open");
+  delete dcBreaker.params.closed_status;
   expect(getSwitchVisualState(dcBreaker)).toBe("closed");
 });
 
@@ -1459,11 +1511,11 @@ test("migrates saved transformer engineering fields to float definitions and num
   );
 
   expect(twoWinding.params).toMatchObject({
-    high_vbase: "110",
-    low_vbase: "10",
+    i_vbase: "110",
+    j_vbase: "10",
     rated_capacity: "50"
   });
-  for (const fieldName of ["high_vbase", "low_vbase", "rated_capacity"]) {
+  for (const fieldName of ["i_vbase", "j_vbase", "rated_capacity"]) {
     expect(twoWindingDefinitions.get(fieldName), fieldName).toMatchObject({
       valueType: "float",
       typicalValue: twoWinding.params[fieldName]
@@ -1494,14 +1546,21 @@ test("migrates saved transformer engineering fields to float definitions and num
   );
 
   expect(threeWinding.params).toMatchObject({
-    high_vbase: "220",
-    high_rated_capacity: "90",
-    medium_vbase: "110",
-    medium_rated_capacity: "90",
-    low_vbase: "10",
-    low_rated_capacity: "90"
+    i_vbase: "220",
+    i_rated_capacity: "90",
+    k_vbase: "110",
+    k_rated_capacity: "90",
+    j_vbase: "10",
+    j_rated_capacity: "90"
   });
-  for (const fieldName of Object.keys(legacyThreeWindingValues)) {
+  for (const fieldName of [
+    "i_vbase",
+    "i_rated_capacity",
+    "k_vbase",
+    "k_rated_capacity",
+    "j_vbase",
+    "j_rated_capacity"
+  ]) {
     expect(threeWindingDefinitions.get(fieldName), fieldName).toMatchObject({
       valueType: "float",
       typicalValue: threeWinding.params[fieldName]
@@ -1698,8 +1757,8 @@ test("inherits generator rated defaults in derived sources and migrates legacy r
   const acWind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
   const dcPv = createDefaultNode("dc-pv-source", { x: 240, y: 100 });
 
-  expect(acWind.params).toMatchObject({ rated_capacity: "50", rated_voltage: "35" });
-  expect(dcPv.params).toMatchObject({ rated_capacity: "5", rated_voltage: "1500" });
+  expect(acWind.params).toMatchObject({ rated_capacity: "50", rated_voltage: "0" });
+  expect(dcPv.params).toMatchObject({ rated_capacity: "5", rated_voltage: "0" });
   expect(acWind.params).not.toHaveProperty("rated_power");
   expect(dcPv.params).not.toHaveProperty("rated_power");
 
@@ -1714,7 +1773,7 @@ test("inherits generator rated defaults in derived sources and migrates legacy r
 
   const normalized = normalizeNodeTerminalsByTemplate(legacyWind);
   expect(normalized.params.rated_capacity).toBe("42");
-  expect(normalized.params.rated_voltage).toBe("35");
+  expect(normalized.params.rated_voltage).toBe("0");
   expect(normalized.params).not.toHaveProperty("rated_power");
 
   const payload = parseESections(buildEDeviceParameterFile({
@@ -1725,7 +1784,7 @@ test("inherits generator rated defaults in derived sources and migrates legacy r
   }));
   expect(payload.ACGenerator.rows[0]).toMatchObject({
     rated_capacity: "42",
-    rated_voltage: "35"
+    rated_voltage: "0"
   });
 });
 
@@ -1852,7 +1911,7 @@ test("defines 0-1 SOC defaults and limits for AC and DC storage", () => {
       valueType: "float",
       readonly: false
     });
-    expect(definitions.get("soc")).toMatchObject({ cnName: "SOC", valueType: "float", typicalValue: "0.5" });
+    expect(definitions.get("soc")).toMatchObject({ cnName: "荷电状态（SOC）", valueType: "float", typicalValue: "0.5" });
     expect(node.params.soc).toBe("0.5");
     expect(node.params).not.toHaveProperty("state_of_charge");
     expect(node.params.soc_upper_limit).toBe("0.9");
@@ -1886,7 +1945,7 @@ test("removes inherited rated fields from legacy electric generation definition 
     expect(fieldNames).not.toContain("rated_voltage");
     expect(overridden.params.rated_capacity).toBe(expected.rated_power);
     expect(overridden.params).not.toHaveProperty("rated_power");
-    expect(overridden.params.rated_voltage).toBe(expected.rated_voltage);
+    expect(overridden.params.rated_voltage).toBe("0");
     if (expected.family === "wind") {
       expect(fieldNames).not.toContain("unit_rated_power");
       expect(overridden.params).not.toHaveProperty("unit_rated_power");
@@ -1935,13 +1994,16 @@ test("defines electric generation derived classes within the base power-source l
       isDerivedComponentLibrary: true,
       isContainerComponentLibrary: undefined
     });
-    expect(derivedSection?.fields.map((field) => field.exportName).slice(0, 4)).toEqual(["idx", "parent", "dev_type", expected.relationKey]);
-    expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("name");
-    expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("rated_power");
-    expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("rated_voltage");
+    const derivedFieldNames = derivedSection?.fields.map((field) => field.exportName) ?? [];
+    expect(derivedFieldNames.slice(0, 2)).toEqual(["idx", expected.relationKey]);
+    expect(derivedFieldNames).not.toContain("name");
+    expect(derivedFieldNames).not.toContain("parent");
+    expect(derivedFieldNames).not.toContain("dev_type");
+    expect(derivedFieldNames).not.toContain("rated_power");
+    expect(derivedFieldNames).not.toContain("rated_voltage");
     const baseFieldNames = new Set(baseSection?.fields.map((field) => field.exportName));
     for (const field of derivedSection?.fields ?? []) {
-      if (field.exportName !== "idx" && field.exportName !== "parent" && field.exportName !== "dev_type" && field.exportName !== expected.relationKey) {
+      if (field.exportName !== "idx" && field.exportName !== expected.relationKey) {
         expect(baseFieldNames.has(field.exportName)).toBe(false);
       }
     }
@@ -2240,7 +2302,7 @@ test("adds shared rated defaults to newer electric generation kinds without lega
         is_container: "0",
         legacyCustomValue: "保持原值",
         rated_capacity: expected.rated_power,
-        rated_voltage: expected.rated_voltage
+        rated_voltage: "0"
       });
       expect(normalized.params).not.toHaveProperty("rated_power");
       expect(normalized.params[expected.relationKey]).toBeUndefined();
@@ -2879,7 +2941,7 @@ test("defines static limits and measurement parameters for every hydrogen tank v
     expect(definitionByName.get("pressure")).toMatchObject({ cnName: "储气压(MPa)", valueType: "float", typicalValue: "1" });
     expect(definitionByName.get("flow")).toMatchObject({ cnName: "流量(Nm3/h)", valueType: "float", typicalValue: "0" });
     expect(definitionByName.get("gas_quantity")).toMatchObject({ cnName: "储气量(Nm3)", valueType: "float", typicalValue: "500" });
-    expect(definitionByName.get("soc")).toMatchObject({ cnName: "SOC", valueType: "float", typicalValue: "0.5" });
+    expect(definitionByName.get("soc")).toMatchObject({ cnName: "荷电状态（SOC）", valueType: "float", typicalValue: "0.5" });
   }
 });
 
@@ -3032,11 +3094,35 @@ test("keeps persisted three-winding transformer overrides structurally non-conta
 
   expect(overridden.isContainer).toBe(false);
   expect(overridden.terminalAssociations).toBeUndefined();
-  expect(fieldNames).toContain("r1");
+  expect(fieldNames).toContain("i_r");
+  expect(fieldNames).not.toContain("r1");
   expect(fieldNames).not.toContain("high_resistance_pu");
   expect(fieldNames).not.toContain("idx_xf_t1");
   expect(node.params.is_container).toBeUndefined();
   expect(node.params.idx_xf_t1).toBeUndefined();
+});
+
+test("uses i k j prefixes for the high, medium, and low three-winding transformer side parameters", () => {
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
+  const node = createNodeFromTemplate(template, { x: 100, y: 100 });
+  const fieldNames = getTemplateParameterDefinitions(template).map((definition) => definition.enName);
+  const sideFields = [
+    "i_r", "i_x", "i_gt", "i_bt", "i_tap", "i_shift",
+    "k_r", "k_x", "k_gt", "k_bt", "k_tap", "k_shift",
+    "j_r", "j_x", "j_gt", "j_bt", "j_tap", "j_shift"
+  ];
+  const numberedFields = [
+    "r1", "x1", "gt1", "bt1", "tap1", "shift1",
+    "r2", "x2", "gt2", "bt2", "tap2", "shift2",
+    "r3", "x3", "gt3", "bt3", "tap3", "shift3"
+  ];
+
+  expect(fieldNames).toEqual(expect.arrayContaining(sideFields));
+  expect(Object.keys(node.params)).toEqual(expect.arrayContaining(sideFields));
+  for (const fieldName of numberedFields) {
+    expect(fieldNames).not.toContain(fieldName);
+    expect(node.params[fieldName]).toBeUndefined();
+  }
 });
 
 test("maps electrolysis electric terminals to loads and fuel-cell electric terminals to generators", () => {
@@ -4053,27 +4139,54 @@ test("keeps two-winding and three-winding transformers as separate non-container
     "run_stat",
     "i_node",
     "j_node",
-    "high_vbase",
-    "low_vbase",
+    "i_vbase",
+    "j_vbase",
+    "i_i_max",
+    "j_i_max",
     "rated_capacity",
     "r",
     "x",
     "gt",
     "bt",
     "tap",
-    "shift"
+    "shift",
+    "i_p",
+    "i_q",
+    "i_u",
+    "i_i",
+    "j_p",
+    "j_q",
+    "j_u",
+    "j_i"
   ]));
+  expect(getTemplateParameterDefinitions(acTransformer!).map((definition) => definition.enName)).not.toEqual(
+    expect.arrayContaining(["p", "q", "u", "i"])
+  );
+  expect(acTransformer?.measurementDefinitions?.map((definition) => definition.associatedField)).toEqual([
+    "i_p",
+    "i_q",
+    "i_u",
+    "i_i",
+    "j_p",
+    "j_q",
+    "j_u",
+    "j_i",
+    "tap"
+  ]);
   expect(twoWinding).toBeUndefined();
   expect(threeWinding?.terminalType).toBe("ac");
   expect(threeWinding?.terminalCount).toBe(3);
   expect(threeWinding?.isContainer).toBe(false);
   const fieldNames = getTemplateParameterDefinitions(threeWinding!).map((definition) => definition.enName);
   const canonicalSideFields = [
-    "r1", "x1", "gt1", "bt1", "tap1", "shift1",
-    "r2", "x2", "gt2", "bt2", "tap2", "shift2",
-    "r3", "x3", "gt3", "bt3", "tap3", "shift3"
+    "i_r", "i_x", "i_gt", "i_bt", "i_tap", "i_shift",
+    "k_r", "k_x", "k_gt", "k_bt", "k_tap", "k_shift",
+    "j_r", "j_x", "j_gt", "j_bt", "j_tap", "j_shift"
   ];
   const retiredSideFields = [
+    "r1", "x1", "gt1", "bt1", "tap1", "shift1",
+    "r2", "x2", "gt2", "bt2", "tap2", "shift2",
+    "r3", "x3", "gt3", "bt3", "tap3", "shift3",
     "high_resistance_pu",
     "high_reactance_pu",
     "high_magnetizing_conductance_pu",
@@ -4097,14 +4210,26 @@ test("keeps two-winding and three-winding transformers as separate non-container
     "idx",
     "name",
     "run_stat",
+    "i_node",
+    "k_node",
+    "j_node",
     ...canonicalSideFields
   ]));
+  expect(fieldNames).not.toEqual(expect.arrayContaining(["t1_node", "t2_node", "t3_node"]));
   expect(fieldNames).not.toEqual(expect.arrayContaining(retiredSideFields));
   expect(fieldNames).not.toContain("idx_xf_t1");
   expect(fieldNames).not.toContain("idx_xf_t2");
   expect(fieldNames).not.toContain("idx_xf_t3");
   expect(getEParameterKeys("ac-three-winding-transformer", createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 }).params)).toEqual(
-    ["idx", "name", "parent", ...E_SECTION_COLUMNS.ACTransfomer3.slice(2), "p", "q", "u", "i"]
+    [
+      "idx",
+      "name",
+      "parent",
+      ...E_SECTION_COLUMNS.ACTransfomer3.slice(2),
+      "i_p", "i_q", "i_u", "i_i",
+      "k_p", "k_q", "k_u", "k_i",
+      "j_p", "j_q", "j_u", "j_i"
+    ]
   );
 });
 
@@ -4113,7 +4238,23 @@ test("removes duplicate legacy parameter fields from two-winding transformers", 
   const fieldNames = getTemplateParameterDefinitions(template).map((definition) => definition.enName);
   const transformer = createDefaultNode("ac-transformer", { x: 100, y: 100 });
 
-  expect(fieldNames).toEqual(expect.arrayContaining(["i_node", "j_node", "r", "x", "gt", "bt", "tap"]));
+  expect(fieldNames).toEqual(expect.arrayContaining([
+    "i_node",
+    "j_node",
+    "r",
+    "x",
+    "gt",
+    "bt",
+    "tap",
+    "i_p",
+    "i_q",
+    "i_u",
+    "i_i",
+    "j_p",
+    "j_q",
+    "j_u",
+    "j_i"
+  ]));
   expect(fieldNames).not.toEqual(expect.arrayContaining([
     "t1_node",
     "t2_node",
@@ -4121,7 +4262,11 @@ test("removes duplicate legacy parameter fields from two-winding transformers", 
     "reactance_pu",
     "magnetizing_conductance_pu",
     "magnetizing_susceptance_pu",
-    "tap_ratio"
+    "tap_ratio",
+    "p",
+    "q",
+    "u",
+    "i"
   ]));
   expect(transformer.params).toMatchObject({
     r: "0.0",
@@ -4137,6 +4282,72 @@ test("removes duplicate legacy parameter fields from two-winding transformers", 
   expect(transformer.params).not.toHaveProperty("magnetizing_conductance_pu");
   expect(transformer.params).not.toHaveProperty("magnetizing_susceptance_pu");
   expect(transformer.params).not.toHaveProperty("tap_ratio");
+  expect(transformer.params).not.toHaveProperty("p");
+  expect(transformer.params).not.toHaveProperty("q");
+  expect(transformer.params).not.toHaveProperty("u");
+  expect(transformer.params).not.toHaveProperty("i");
+});
+
+test("migrates legacy two-winding transformer measurements to the high-voltage side without overwriting canonical values", () => {
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer")!;
+  const legacy = createDefaultNode("ac-transformer", { x: 100, y: 100 });
+  delete legacy.params.i_q;
+  delete legacy.params.i_u;
+  delete legacy.params.i_i;
+  Object.assign(legacy.params, {
+    i_p: "19",
+    p: "10",
+    q: "2",
+    u: "110",
+    i: "125"
+  });
+
+  const normalized = normalizeNodeTerminalsWithTemplate(legacy, template);
+
+  expect(normalized.params).toMatchObject({
+    i_p: "19",
+    i_q: "2",
+    i_u: "110",
+    i_i: "125",
+    j_p: "0",
+    j_q: "0",
+    j_u: "0",
+    j_i: "0"
+  });
+  for (const retiredField of ["p", "q", "u", "i"]) {
+    expect(normalized.params).not.toHaveProperty(retiredField);
+  }
+});
+
+test("migrates persisted two-winding measurement overrides to canonical high and low side definitions", () => {
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer")!;
+  const overridden = applyDeviceTemplateDefinitionOverride(template, {
+    kind: "ACTransformer",
+    parameterDefinitions: [
+      ...getTemplateParameterDefinitions(template),
+      { cnName: "有功值", enName: "p", valueType: "float", typicalValue: "7", exportEnabled: true },
+      { cnName: "无功值", enName: "q", valueType: "float", typicalValue: "3", exportEnabled: true },
+      { cnName: "电压值", enName: "u", valueType: "float", typicalValue: "110", exportEnabled: true },
+      { cnName: "电流值", enName: "i", valueType: "float", typicalValue: "65", exportEnabled: true }
+    ],
+    measurementDefinitions: [
+      { measurementTypeId: "activePower", associatedField: "p", decimalsOverride: 2 },
+      { measurementTypeId: "reactivePower", associatedField: "q" },
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "current", associatedField: "i" }
+    ]
+  });
+  const fieldNames = getTemplateParameterDefinitions(overridden).map((definition) => definition.enName);
+  const measurementFields = overridden.measurementDefinitions?.map((definition) => definition.associatedField);
+
+  expect(fieldNames).toEqual(expect.arrayContaining([
+    "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"
+  ]));
+  expect(fieldNames).not.toEqual(expect.arrayContaining(["p", "q", "u", "i"]));
+  expect(measurementFields).toEqual([
+    "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i", "tap"
+  ]);
+  expect(overridden.measurementDefinitions?.find((definition) => definition.associatedField === "i_p")?.decimalsOverride).toBe(2);
 });
 
 test("keeps persisted two-winding transformer overrides aligned with the built-in parameter model", () => {
@@ -4191,5 +4402,136 @@ test("keeps persisted two-winding transformer overrides aligned with the built-i
   expect(normalized.params.magnetizing_susceptance_pu).toBeUndefined();
   expect(normalized.params.tap_ratio).toBeUndefined();
   expect(normalized.params.shift).toBe("0");
+});
+
+test("defines branch, switching, load, and transformer measurement fields with canonical names", () => {
+  const definitionsFor = (kind: string) => getTemplateParameterDefinitions(
+    DEVICE_LIBRARY.find((template) => template.kind === kind)!
+  );
+  const definitionNamesFor = (kind: string) => definitionsFor(kind).map((definition) => definition.enName);
+  const measurementFieldsFor = (kind: string) => DEVICE_LIBRARY.find((template) => template.kind === kind)
+    ?.measurementDefinitions?.map((definition) => definition.associatedField) ?? [];
+
+  for (const kind of ["ac-line", "ac-routable-line"]) {
+    expect(measurementFieldsFor(kind), kind).toEqual([
+      "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"
+    ]);
+    expect(definitionNamesFor(kind), kind).toEqual(expect.arrayContaining([
+      "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"
+    ]));
+    expect(definitionNamesFor(kind), kind).not.toEqual(expect.arrayContaining(["p", "q", "u", "i"]));
+  }
+
+  for (const kind of ["dc-line", "dc-routable-line"]) {
+    expect(measurementFieldsFor(kind), kind).toEqual([
+      "i_p", "i_u", "i_i", "j_p", "j_u", "j_i"
+    ]);
+    expect(definitionNamesFor(kind), kind).toEqual(expect.arrayContaining([
+      "i_p", "i_u", "i_i", "j_p", "j_u", "j_i"
+    ]));
+    expect(definitionNamesFor(kind), kind).not.toEqual(expect.arrayContaining(["p", "q", "u", "i"]));
+  }
+
+  for (const kind of ["ac-switch", "ac-breaker", "ac-box-breaker"]) {
+    expect(measurementFieldsFor(kind), kind).toEqual(["status", "closed_status", "p", "q", "u", "i"]);
+    expect(definitionsFor(kind).find((definition) => definition.enName === "closed_status"), kind).toMatchObject({
+      cnName: "开合状态量测值",
+      valueType: "numberEnum",
+      typicalValue: "1",
+      enumValues: ["1", "0"]
+    });
+    expect(definitionsFor(kind).find((definition) => definition.enName === "closed_status_set"), kind).toMatchObject({
+      cnName: "开合状态设定值",
+      valueType: "numberEnum",
+      typicalValue: "1",
+      enumValues: ["1", "0"]
+    });
+    expect(definitionsFor(kind).some((definition) => definition.enName === "status_set"), kind).toBe(false);
+  }
+
+  for (const kind of ["dc-switch", "dc-breaker"]) {
+    expect(measurementFieldsFor(kind), kind).toEqual(["status", "closed_status", "p", "u", "i"]);
+    expect(definitionsFor(kind).find((definition) => definition.enName === "closed_status_set"), kind).toMatchObject({
+      cnName: "开合状态设定值",
+      valueType: "numberEnum",
+      typicalValue: "1",
+      enumValues: ["1", "0"]
+    });
+    expect(definitionsFor(kind).some((definition) => definition.enName === "status_set"), kind).toBe(false);
+  }
+
+  expect(definitionsFor("ac-load").find((definition) => definition.enName === "q_set")).toMatchObject({
+    cnName: "无功设定值",
+    valueType: "float"
+  });
+  expect(measurementFieldsFor("ac-transformer")).toEqual([
+    "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i", "tap"
+  ]);
+  expect(definitionsFor("ac-transformer").find((definition) => definition.enName === "tap")).toMatchObject({
+    cnName: "分接头档位",
+    valueType: "float"
+  });
+  expect(definitionsFor("ac-transformer").find((definition) => definition.enName === "tap_set")).toMatchObject({
+    cnName: "分接头档位设定值",
+    valueType: "float"
+  });
+});
+
+test("migrates legacy branch measurements to the canonical first-end fields", () => {
+  const cases = [
+    {
+      kind: "ac-line",
+      legacy: { p: "11", q: "2", u: "110", i: "50" },
+      expected: { i_p: "11", i_q: "2", i_u: "110", i_i: "50" }
+    },
+    {
+      kind: "dc-line",
+      legacy: { p: "8", q: "retired", u: "750", i: "20" },
+      expected: { i_p: "8", i_u: "750", i_i: "20" }
+    }
+  ] as const;
+
+  for (const { kind, legacy, expected } of cases) {
+    const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === kind)!;
+    const node = createDefaultNode(kind, { x: 100, y: 100 });
+    for (const field of ["i_p", "i_q", "i_u", "i_i"]) delete node.params[field];
+    Object.assign(node.params, legacy, {
+      [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify(Object.keys(legacy).map((field) => ({
+        cnName: field,
+        enName: field,
+        exportName: field,
+        valueType: "float",
+        typicalValue: "0"
+      })))
+    });
+
+    const normalized = normalizeNodeTerminalsWithTemplate(node, template);
+    expect(normalized.params, kind).toMatchObject(expected);
+    for (const retiredField of ["p", "q", "u", "i"]) {
+      expect(normalized.params, `${kind}:${retiredField}`).not.toHaveProperty(retiredField);
+    }
+    const definitions = JSON.parse(normalized.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
+    expect(definitions.map((definition) => definition.enName), kind).toEqual(expect.arrayContaining(Object.keys(expected)));
+    expect(definitions.map((definition) => definition.enName), kind).not.toEqual(expect.arrayContaining(["p", "q", "u", "i"]));
+  }
+
+  const canonical = createDefaultNode("ac-line", { x: 100, y: 100 });
+  canonical.params.i_p = "99";
+  canonical.params.p = "1";
+  const normalizedCanonical = normalizeNodeTerminalsWithTemplate(
+    canonical,
+    DEVICE_LIBRARY.find((candidate) => candidate.kind === "ac-line")!
+  );
+  expect(normalizedCanonical.params.i_p).toBe("99");
+  expect(normalizedCanonical.params).not.toHaveProperty("p");
+});
+
+test("gives every built-in device parameter a meaningful Chinese name", () => {
+  for (const template of DEVICE_LIBRARY) {
+    for (const definition of getTemplateParameterDefinitions(template)) {
+      expect(definition.cnName.trim(), `${template.kind}:${definition.enName}`).not.toBe(definition.enName.trim());
+      expect(definition.cnName, `${template.kind}:${definition.enName}`).toMatch(/[\u3400-\u9fff]/u);
+    }
+  }
 });
 });

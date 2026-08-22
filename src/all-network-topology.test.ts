@@ -353,6 +353,8 @@ describe("全网拓扑模型选择", () => {
     expect(viewSource).toContain('className="image-picker-backdrop unsaved-change-backdrop"');
     expect(stylesSource).toMatch(/\.all-network-topology-window-layer\s*\{[\s\S]*?pointer-events:\s*none/);
     expect(stylesSource).toMatch(/\.image-picker-backdrop\.unsaved-change-backdrop\s*\{[\s\S]*?z-index:\s*14000/);
+    expect(stylesSource).toMatch(/\.all-network-topology-body\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0,\s*1fr\)/);
+    expect(stylesSource).toMatch(/\.all-network-topology-model-panel\s*\{[\s\S]*?min-height:\s*0/);
     expect(stylesSource).toContain(".all-network-topology-resize-handle");
     expect(dialogSource).toContain("completedRun.result.errors.length > 0");
   });
@@ -709,6 +711,36 @@ describe("全局线路双向一致性校验", () => {
       errors: [],
       warnings: []
     });
+  });
+
+  test("首末端电气节点电压基值按单位换算后比较，不一致时产生错误", () => {
+    const { record, sourceModel, targetModel } = completeGlobalLineConsistencyFixture(
+      "endpoint-voltage-base-check"
+    );
+    const sourceElectricalNode = sourceModel.record.project.nodes.find((node) => node.kind === "ac-load")!;
+    const targetElectricalNode = targetModel.record.project.nodes.find((node) => node.kind === "ac-source")!;
+    sourceElectricalNode.terminals[0].vbase = "10 kV";
+    targetElectricalNode.terminals[0].vbase = "10000 V";
+    sourceModel.record.project.voltageUnit = "kV";
+    targetModel.record.project.voltageUnit = "V";
+
+    expect(analyzeGlobalLineConsistency([record], [sourceModel, targetModel])).toEqual({
+      errors: [],
+      warnings: []
+    });
+
+    targetElectricalNode.terminals[0].vbase = "20 kV";
+    const mismatch = analyzeGlobalLineConsistency([record], [sourceModel, targetModel]);
+    expect(mismatch.warnings).toEqual([]);
+    expect(mismatch.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: `global-line:${record.id}:endpoint-voltage-base-mismatch`,
+        projectId: sourceModel.projectId,
+        nodeId: expect.any(String),
+        message: expect.stringMatching(/电压基值不一致.*首端模型.*10 kV.*末端模型.*20 kV/)
+      })
+    ]));
+    expect(mismatch.errors.filter((alert) => alert.id.endsWith("endpoint-voltage-base-mismatch"))).toHaveLength(1);
   });
 
   test("两个模型内线路节点ID不同但全局线路ID与端点模型ID一致时不报警", () => {
@@ -1211,6 +1243,42 @@ describe("全网拓扑告警分类", () => {
       })
     ]));
     expect(result.errors.every((alert) => Boolean(alert.deviceName))).toBe(true);
+    expect(result.warnings).toEqual([]);
+  });
+
+  test("把设备额定电压偏离节点电压基值超过30%的结果归入全网拓扑错误", () => {
+    const bus = createDefaultNode("ac-bus", { x: 300, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 100, y: 100 });
+    load.name = "偏压交流负荷";
+    load.terminals[0].vbase = "10";
+    load.params.rated_voltage = "14";
+    const model = {
+      projectId: "station-rated-voltage-invalid",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "额定电压异常厂站",
+      idx: 5,
+      modelType: "厂站" as const,
+      record: projectRecord(
+        "station-rated-voltage-invalid",
+        "额定电压异常厂站",
+        5,
+        "厂站",
+        [bus, load],
+        [{ id: "load-bus", sourceId: load.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1" }]
+      )
+    };
+
+    const result = analyzeAllNetworkTopology([model], [model]);
+
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        modelName: "额定电压异常厂站",
+        deviceName: "偏压交流负荷",
+        message: expect.stringContaining("额定电压 14 与对应节点电压基值 10 偏差超过 30%"),
+        topologyError: expect.objectContaining({ type: "rated-voltage-deviation" })
+      })
+    ]));
     expect(result.warnings).toEqual([]);
   });
 

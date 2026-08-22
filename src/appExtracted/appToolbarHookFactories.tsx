@@ -4059,7 +4059,7 @@ export function createAppHookCallback121(__appScope: Record<string, any>) {
         values.add(normalized);
       }
     };
-    const paramKeys = ["vbase", "v_base", "highVbase", "mediumVbase", "lowVbase", "neutral_vbase", "sourceVbase", "targetVbase", "i_vbase", "j_vbase", "v_set", "i_v_set", "j_v_set", "ac_v_set", "dc_v_set", "voltage"];
+    const paramKeys = ["vbase", "v_base", "i_vbase", "k_vbase", "j_vbase", "highVbase", "mediumVbase", "lowVbase", "neutral_vbase", "sourceVbase", "targetVbase", "v_set", "i_v_set", "j_v_set", "ac_v_set", "dc_v_set", "voltage"];
     for (const node of nodes) {
       for (const terminal of node.terminals) {
         includeValue(terminal.vbase);

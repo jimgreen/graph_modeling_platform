@@ -4,7 +4,7 @@ import { formatStateIconDrawingNumber, normalizeStateIconDrawingFontSize, normal
 import { STATE_ICON_DRAWING_MIN_FONT_SIZE, appendDistinctStateIconDrawingPoint, clampStateIconDrawingPoint, clearGeneratedDefinitionVisualDraftImage, cloneStateIconDrawingElements, createDefinitionStateDraftRowsWithDefaultImages, createStateIconDrawingElementFromStaticTemplate, cutStateIconDrawingSelection, expandStateIconDrawingElementIds, finishStateIconDrawingDraft, groupStateIconDrawingSelection, pushStateIconDrawingHistorySnapshot, stateIconDrawingElementBounds, stateIconDrawingElementFromPoints, stateIconDrawingElementIdsInRect, stateIconDrawingFrameDashArray, stateIconDrawingImportedSvgSelectionFrame, stateIconDrawingPolylineElementFromPoints, stateIconDrawingRectFromPoints, stateIconDrawingSelectedIds, stateIconDrawingSelectionBounds, stateIconDrawingTerminalPointSnap, stateIconStaticTemplateParam, ungroupStateIconDrawingSelection } from "./appDeviceDefinitionFactories";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, STATE_ICON_CLOSED_SHAPE_KINDS, STATE_ICON_LINE_SHAPE_KINDS, STATE_ICON_STATIC_TEMPLATE_SECTIONS_COVERED_BY_BASIC_TOOLS, STATE_ICON_STATIC_TEMPLATE_SECTION_ORDER } from "./appDeviceDefinitionEInterface";
-import { modelAssociationDeviceModelTypeFailureMessage } from "../model";
+import { modelAssociationDeviceModelTypeFailureMessage, switchingDeviceUsesClosedStatus } from "../model";
 
 import type { DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
 
@@ -2607,12 +2607,17 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
     if (!definitionVisualDraft) {
       return null;
     }
+    const stateParamKey = switchingDeviceUsesClosedStatus(template.kind, template.params)
+      ? "closed_status"
+      : "status";
     const visualTemplate: DeviceTemplate = {
       ...template,
       size: definitionVisualDraft.size,
       params: {
         ...template.params,
-        ...(definitionStatePreviewVisual?.value !== undefined && definitionStatePreviewVisual.value !== "" ? { status: definitionStatePreviewVisual.value } : {}),
+        ...(definitionStatePreviewVisual?.value !== undefined && definitionStatePreviewVisual.value !== ""
+          ? { [stateParamKey]: definitionStatePreviewVisual.value }
+          : {}),
         backgroundImage: "",
         backgroundImageAssetId: ""
       },

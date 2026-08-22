@@ -70,9 +70,9 @@ const modelAssociationSchemes = [{
 
 describe("model association model_id editors", () => {
   test.each([
-    ["ac-station-source", "11", "11 / 厂站模型甲"],
-    ["dc-feeder-load", "22", "22 / 馈线模型乙"],
-    ["ac-district-load", "33", "33 / 台区模型丙"]
+    ["ac-station-source", "11", "11 / 方案一 / 厂站模型甲"],
+    ["dc-feeder-load", "22", "22 / 方案一 / 馈线模型乙"],
+    ["ac-district-load", "33", "33 / 方案一 / 台区模型丙"]
   ] as const)("filters %s model_id number enum by model type", (kind, expectedValue, expectedLabel) => {
     const node = createDefaultNode(kind, { x: 100, y: 100 });
     const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
@@ -112,6 +112,57 @@ describe("model association model_id editors", () => {
     expect(html).toContain("disabled=\"\"");
     expect(html).toContain("已有线路连接");
   });
+
+  test("shows the complete nested scheme path so same-name models remain distinguishable", () => {
+    const nestedSchemes = [{
+      id: "root-plan",
+      name: "多级方案",
+      updatedAt: "2026-08-22T00:00:00.000Z",
+      projects: [],
+      children: [{
+        id: "north-region",
+        name: "北区",
+        updatedAt: "2026-08-22T00:00:00.000Z",
+        projects: [{
+          id: "station-51",
+          name: "同名厂站",
+          updatedAt: "2026-08-22T00:00:00.000Z",
+          project: { version: 1, name: "同名厂站", idx: 51, modelType: "厂站", nodes: [], edges: [] }
+        }],
+        children: []
+      }, {
+        id: "south-region",
+        name: "南区",
+        updatedAt: "2026-08-22T00:00:00.000Z",
+        projects: [],
+        children: [{
+          id: "south-subregion",
+          name: "片区二",
+          updatedAt: "2026-08-22T00:00:00.000Z",
+          projects: [{
+            id: "station-52",
+            name: "同名厂站",
+            updatedAt: "2026-08-22T00:00:00.000Z",
+            project: { version: 1, name: "同名厂站", idx: 52, modelType: "厂站", nodes: [], edges: [] }
+          }],
+          children: []
+        }]
+      }]
+    }] as SavedSchemeRecord[];
+    const node = createDefaultNode("ac-station-source", { x: 100, y: 100 });
+    const template = DEVICE_LIBRARY.find((item) => item.kind === node.kind)!;
+    const definition = template.parameterDefinitions?.find((item) => item.enName === "model_id");
+    const html = batchParamHtml([node], {
+      key: "model_id",
+      label: "关联模型",
+      value: "",
+      mixed: false,
+      definition
+    }, undefined, nestedSchemes);
+
+    expect(html).toContain('<option value="51">51 / 多级方案 / 北区 / 同名厂站</option>');
+    expect(html).toContain('<option value="52">52 / 多级方案 / 南区 / 片区二 / 同名厂站</option>');
+  });
 });
 
 describe("device parent model editors", () => {
@@ -133,10 +184,61 @@ describe("device parent model editors", () => {
       enumValueType: "number",
       readonly: false
     });
-    expect(html).toContain('<option value="11">11 / 厂站模型甲</option>');
-    expect(html).toContain('<option value="22" selected="">22 / 馈线模型乙</option>');
-    expect(html).toContain('<option value="33">33 / 台区模型丙</option>');
-    expect(html).toContain('<option value="44">44 / 其他模型丁</option>');
+    expect(html).toContain('<option value="11">11 / 方案一 / 厂站模型甲</option>');
+    expect(html).toContain('<option value="22" selected="">22 / 方案一 / 馈线模型乙</option>');
+    expect(html).toContain('<option value="33">33 / 方案一 / 台区模型丙</option>');
+    expect(html).toContain('<option value="44">44 / 方案一 / 其他模型丁</option>');
+  });
+
+  test("shows the complete nested scheme path for parent options", () => {
+    const nestedSchemes = [{
+      id: "root-plan",
+      name: "多级方案",
+      updatedAt: "2026-08-22T00:00:00.000Z",
+      projects: [],
+      children: [{
+        id: "north-region",
+        name: "北区",
+        updatedAt: "2026-08-22T00:00:00.000Z",
+        projects: [{
+          id: "station-51",
+          name: "同名厂站",
+          updatedAt: "2026-08-22T00:00:00.000Z",
+          project: { version: 1, name: "同名厂站", idx: 51, modelType: "厂站", nodes: [], edges: [] }
+        }],
+        children: []
+      }, {
+        id: "south-region",
+        name: "南区",
+        updatedAt: "2026-08-22T00:00:00.000Z",
+        projects: [],
+        children: [{
+          id: "south-subregion",
+          name: "片区二",
+          updatedAt: "2026-08-22T00:00:00.000Z",
+          projects: [{
+            id: "station-52",
+            name: "同名厂站",
+            updatedAt: "2026-08-22T00:00:00.000Z",
+            project: { version: 1, name: "同名厂站", idx: 52, modelType: "厂站", nodes: [], edges: [] }
+          }],
+          children: []
+        }]
+      }]
+    }] as SavedSchemeRecord[];
+    const node = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const template = DEVICE_LIBRARY.find((item) => item.kind === node.kind)!;
+    const definition = getTemplateParameterDefinitions(template).find((item) => item.enName === "parent");
+    const html = batchParamHtml([node], {
+      key: "parent",
+      label: "所属模型",
+      value: "52",
+      mixed: false,
+      definition
+    }, undefined, nestedSchemes);
+
+    expect(html).toContain('<option value="51">51 / 多级方案 / 北区 / 同名厂站</option>');
+    expect(html).toContain('<option value="52" selected="">52 / 多级方案 / 南区 / 片区二 / 同名厂站</option>');
   });
 
   test("keeps global line parent at zero and disables its editor", () => {
@@ -282,6 +384,39 @@ describe("batch common generator control types", () => {
       mixed: true,
       definition: undefined
     }, libraryTemplateByKind)).toEqual(["", "RUN", "STOP", "CHARGE", "DISCHARGE"]);
+  });
+
+  test("uses closed_status rather than status for switch visual-state choices", () => {
+    const switchNode = createDefaultNode("ac-switch", { x: 100, y: 100 });
+    switchNode.params.status = "1";
+    switchNode.params.closed_status = "2";
+    const libraryTemplateByKind = new Map<DeviceKind, DeviceTemplate>(
+      DEVICE_LIBRARY.map((template) => [template.kind, template])
+    );
+    libraryTemplateByKind.set("ac-switch", {
+      ...libraryTemplateByKind.get("ac-switch")!,
+      stateDefinitions: [
+        { value: "0", name: "打开" },
+        { value: "1", name: "闭合" },
+        { value: "2", name: "检修" }
+      ]
+    });
+
+    expect(batchParamOptions([switchNode], {
+      key: "closed_status",
+      label: "开合状态量测值",
+      value: "2",
+      mixed: false,
+      definition: undefined
+    }, libraryTemplateByKind)).toEqual(["0", "1", "2"]);
+
+    expect(batchParamOptions([switchNode], {
+      key: "status",
+      label: "状态",
+      value: "1",
+      mixed: false,
+      definition: undefined
+    }, libraryTemplateByKind)).toEqual(["1", "0"]);
   });
 });
 
