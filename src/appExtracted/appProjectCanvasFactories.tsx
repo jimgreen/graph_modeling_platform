@@ -10,7 +10,7 @@ import { isLineOnlyConnectionNode, modelAssociationLineConnectionFailureMessage,
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return async (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[], globalLineChoice?: GlobalLineChoice) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, attachGlobalLineForNode, buildManualConnectionPreviewRoute, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, connectTargetPoint, createRoutableLineDeviceFromEndpoints, deviceIndexCounters, edges, hasCanvasOriginShift, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, nodes, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, resetRoutableLinePreviewState, routableLineDeviceEndpointRefForNode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setMode, setRecentGlyphKinds, setRoutableLineDeviceCanvasPoints, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, writeOperationLog } = __appScope;
+  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, attachGlobalLineForNode, buildManualConnectionPreviewRoute, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, connectTargetPoint, createRoutableLineDeviceFromEndpoints, deviceIndexCounters, edges, hasCanvasOriginShift, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, nodes, pushRecentGlyph, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, resetRoutableLinePreviewState, routableLineDeviceEndpointRefForNode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setMode, setRecentGlyphKinds, setRoutableLineDeviceCanvasPoints, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, writeOperationLog } = __appScope;
     const connectionIssue = modelAssociationLineConnectionFailureMessage(source.node) ||
       modelAssociationLineConnectionFailureMessage(target.node);
     if (connectionIssue) {
@@ -85,11 +85,7 @@ export function createCommitRoutableLineDevice(__appScope: Record<string, any>) 
     setMode("select");
     activateInspectorFromCanvas();
     writeOperationLog(`新增线路：${indexed.node.name}`);
-    setRecentGlyphKinds?.((prev) => {
-      const next = prev.filter((k) => k !== template.kind);
-      next.push(template.kind);
-      return next.length > 10 ? next.slice(-10) : next;
-    });
+    setRecentGlyphKinds?.((prev) => pushRecentGlyph(prev, template.kind));
     return true;
   };
 }

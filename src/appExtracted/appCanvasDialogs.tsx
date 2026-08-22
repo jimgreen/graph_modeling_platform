@@ -1,6 +1,29 @@
 // @ts-nocheck
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
+
+const formatVoltageLabel = (v: string) => v === "0.22" ? "220V" : `${v}kV`;
+
+function VoltageBaseSetTable({ activeValue, onSelect }) {
+  return (<div className="voltage-base-set-table">
+    <div className="voltage-base-set-table-head">
+      <span>分类</span><span>电压等级</span><span>说明</span>
+    </div>
+    {VOLTAGE_BASE_SET_CATEGORIES.map((cat) => (
+      <div key={cat.label} className="voltage-base-set-table-row">
+        <span className="voltage-base-set-table-cat">{cat.label}</span>
+        <span className="voltage-base-set-table-btns">
+          {cat.values.map((v) => (
+            <button key={v} type="button" className={activeValue === v ? "active" : ""} onClick={() => onSelect(v)}>
+              {formatVoltageLabel(v)}
+            </button>
+          ))}
+        </span>
+        <span className="voltage-base-set-table-desc">{cat.desc}</span>
+      </div>
+    ))}
+  </div>);
+}
 
 export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
   const __appScope = scope;
@@ -34,24 +57,9 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               <span>设置方式</span>
               <strong>{voltageBaseSetModeLabel}</strong>
             </label>
-            {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (<div className="voltage-base-set-table">
-                <div className="voltage-base-set-table-head">
-                  <span>分类</span><span>电压等级</span><span>说明</span>
-                </div>
-                {VOLTAGE_BASE_SET_CATEGORIES.map((cat) => (
-                  <div key={cat.label} className="voltage-base-set-table-row">
-                    <span className="voltage-base-set-table-cat">{cat.label}</span>
-                    <span className="voltage-base-set-table-btns">
-                      {cat.values.map((v) => (
-                        <button key={v} type="button" className={voltageBaseSetValue === v ? "active" : ""} onClick={() => setVoltageBaseSetValue(v)}>
-                          {v === "0.22" ? "220V" : `${v}kV`}
-                        </button>
-                      ))}
-                    </span>
-                    <span className="voltage-base-set-table-desc">{cat.desc}</span>
-                  </div>
-                ))}
-              </div>)}
+            {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (
+              <VoltageBaseSetTable activeValue={voltageBaseSetValue} onSelect={setVoltageBaseSetValue} />
+            )}
             {(voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice") && voltageBaseSetTerminalRows.length > 0 && (<div className="voltage-base-terminal-grid" aria-label="按端子设置电压基值">
                 <label className="voltage-base-set-value-row">
                   <span>端子</span>
@@ -61,24 +69,12 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                       </option>))}
                   </select>
                 </label>
-                {activeVoltageBaseTerminalRow && (<div className="voltage-base-set-table">
-                    <div className="voltage-base-set-table-head">
-                      <span>分类</span><span>电压等级</span><span>说明</span>
-                    </div>
-                    {VOLTAGE_BASE_SET_CATEGORIES.map((cat) => (
-                      <div key={cat.label} className="voltage-base-set-table-row">
-                        <span className="voltage-base-set-table-cat">{cat.label}</span>
-                        <span className="voltage-base-set-table-btns">
-                          {cat.values.map((v) => (
-                            <button key={v} type="button" className={activeVoltageBaseTerminalRow.value === v ? "active" : ""} onClick={() => setVoltageBaseTerminalValue(activeVoltageBaseTerminalRow.nodeId, activeVoltageBaseTerminalRow.terminalId, v)}>
-                              {v === "0.22" ? "220V" : `${v}kV`}
-                            </button>
-                          ))}
-                        </span>
-                        <span className="voltage-base-set-table-desc">{cat.desc}</span>
-                      </div>
-                    ))}
-                  </div>)}
+                {activeVoltageBaseTerminalRow && (
+                  <VoltageBaseSetTable
+                    activeValue={activeVoltageBaseTerminalRow.value}
+                    onSelect={(v) => setVoltageBaseTerminalValue(activeVoltageBaseTerminalRow.nodeId, activeVoltageBaseTerminalRow.terminalId, v)}
+                  />
+                )}
               </div>)}
             <datalist id="voltage-base-set-options">
               {voltageBaseSetOptions.map((value) => (<option key={value} value={value}/>))}
@@ -460,7 +456,14 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
           }}
         />
       )}
-      {ratedCapacityDialogOpen && ratedCapacityDialogNode && (
+      {ratedCapacityDialogOpen && ratedCapacityDialogNode && (() => {
+        const commit = (nextValue: string) => {
+          const nextNode = { ...ratedCapacityDialogNode, params: { ...ratedCapacityDialogNode.params, rated_capacity: nextValue } };
+          patchGraphNodes?.([nextNode]);
+          setRatedCapacityDialogOpen(false);
+          setRatedCapacityDialogNode(null);
+        };
+        return (
         <div className="image-picker-backdrop" onPointerDown={() => { setRatedCapacityDialogOpen(false); setRatedCapacityDialogNode(null); }}>
           <section className="rated-capacity-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
             <WindowCloseButton label="关闭额定容量编辑窗口" onClick={() => { setRatedCapacityDialogOpen(false); setRatedCapacityDialogNode(null); }} />
@@ -476,27 +479,14 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                 <input
                   type="text"
                   defaultValue={ratedCapacityDialogNode.params?.rated_capacity ?? ""}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      const nextValue = (e.target as HTMLInputElement).value;
-                      const nextNode = { ...ratedCapacityDialogNode, params: { ...ratedCapacityDialogNode.params, rated_capacity: nextValue } };
-                      patchGraphNodes?.([nextNode]);
-                      setRatedCapacityDialogOpen(false);
-                      setRatedCapacityDialogNode(null);
-                    }
-                  }}
-                  onBlur={(e) => {
-                    const nextValue = (e.target as HTMLInputElement).value;
-                    const nextNode = { ...ratedCapacityDialogNode, params: { ...ratedCapacityDialogNode.params, rated_capacity: nextValue } };
-                    patchGraphNodes?.([nextNode]);
-                    setRatedCapacityDialogOpen(false);
-                    setRatedCapacityDialogNode(null);
-                  }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); } }}
+                  onBlur={(e) => commit((e.target as HTMLInputElement).value)}
                 />
               </label>
             </div>
           </section>
         </div>
-      )}
+        );
+      })()}
   </>);
 }, areViewSectionPropsEqual);
