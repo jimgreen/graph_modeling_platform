@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 import { createNodeFromTemplate } from "../model-node-ops";
 import { MemoDeviceGlyph } from "../DeviceGlyph";
@@ -260,11 +260,13 @@ type RecentGlyphsToolbarProps = {
   scope: Record<string, any>;
 };
 
-export function RecentGlyphsToolbar({ scope }: RecentGlyphsToolbarProps) {
+export const RecentGlyphsToolbar = memo(function RecentGlyphsToolbar({ scope }: RecentGlyphsToolbarProps) {
   const recentGlyphKinds: string[] = scope.recentGlyphKinds ?? [];
   const libraryTemplates: readonly any[] = scope.libraryTemplates ?? [];
   const [offsetX, setOffsetX] = useState(0);
   const dragRef = useRef<{ startX: number; startOffsetX: number } | null>(null);
+  const offsetXRef = useRef(offsetX);
+  offsetXRef.current = offsetX;
 
   const templateByKind = useMemo(() => {
     const map = new Map<string, any>();
@@ -272,9 +274,18 @@ export function RecentGlyphsToolbar({ scope }: RecentGlyphsToolbarProps) {
     return map;
   }, [libraryTemplates]);
 
+  const nodesByKind = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const kind of recentGlyphKinds) {
+      const template = templateByKind.get(kind);
+      if (template) map.set(kind, createNodeFromTemplate(template, { x: 0, y: 0 }));
+    }
+    return map;
+  }, [templateByKind, recentGlyphKinds]);
+
   const handleDragStart = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
-    dragRef.current = { startX: e.clientX, startOffsetX: offsetX };
+    dragRef.current = { startX: e.clientX, startOffsetX: offsetXRef.current };
     const onMove = (ev: PointerEvent) => {
       if (!dragRef.current) return;
       setOffsetX(dragRef.current.startOffsetX + (ev.clientX - dragRef.current.startX));
@@ -286,7 +297,7 @@ export function RecentGlyphsToolbar({ scope }: RecentGlyphsToolbarProps) {
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-  }, [offsetX]);
+  }, []);
 
   if (recentGlyphKinds.length === 0) return null;
 
@@ -299,7 +310,8 @@ export function RecentGlyphsToolbar({ scope }: RecentGlyphsToolbarProps) {
         {recentGlyphKinds.map((kind) => {
           const template = templateByKind.get(kind);
           if (!template) return null;
-          const node = createNodeFromTemplate(template, { x: 0, y: 0 });
+          const node = nodesByKind.get(kind);
+          if (!node) return null;
           const tw = template.size?.width ?? 40;
           const th = template.size?.height ?? 40;
           const maxDim = Math.max(tw, th);
@@ -338,4 +350,4 @@ export function RecentGlyphsToolbar({ scope }: RecentGlyphsToolbarProps) {
       </div>
     </div>
   );
-}
+});

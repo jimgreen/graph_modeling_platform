@@ -2665,6 +2665,13 @@ export const VOLTAGE_BASE_SET_CATEGORIES = [
   { label: "低压（LV）", values: ["0.4", "0.22"], desc: "台区低压配电 / 用户单相用电" }
 ] as const;
 
+/** Push a glyph kind into the recent list, deduplicating and keeping max 10 */
+export function pushRecentGlyph(prev: string[], kind: string): string[] {
+  const next = prev.filter((k) => k !== kind);
+  next.push(kind);
+  return next.length > 10 ? next.slice(-10) : next;
+}
+
 export type VoltageBaseSetMode = "uniform" | "terminal" | "byDevice";
 
 export type FilterSelectionTypeOption = {

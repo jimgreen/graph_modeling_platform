@@ -21,7 +21,7 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }) {
     ungroupSelectedGraphics
   } = scope;
   const [submenuHovered, setSubmenuHovered] = useState<string | null>(null);
-  const closeTimerRef = useRef(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleSubmenuLeave = () => {
     closeTimerRef.current = setTimeout(() => setSubmenuHovered(null), 150);
   };
