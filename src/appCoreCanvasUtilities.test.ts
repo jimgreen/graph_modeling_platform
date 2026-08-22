@@ -18,6 +18,23 @@ describe("graph parameter classification", () => {
   });
 });
 
+describe("device parameter Chinese labels", () => {
+  test("uses meaningful electrical and endpoint labels", () => {
+    expect(PARAM_LABELS.control_type).toBe("控制模式");
+    expect(PARAM_LABELS.closed_status).toBe("开合状态量测值");
+    expect(PARAM_LABELS.closed_status_set).toBe("开合状态设定值");
+    expect(PARAM_LABELS.p_set).toBe("有功设定值");
+    expect(PARAM_LABELS.i_q_set).toBe("首端无功设定值");
+    expect(PARAM_LABELS.j_q_set).toBe("末端无功设定值");
+    expect(PARAM_LABELS.i_max).toBe("电流上限");
+    expect(PARAM_LABELS.i_min).toBe("电流下限");
+    expect(PARAM_LABELS.r).toBe("电阻");
+    expect(PARAM_LABELS.x).toBe("电抗");
+    expect(PARAM_LABELS.gt).toBe("励磁电导");
+    expect(PARAM_LABELS.bt).toBe("励磁电纳");
+  });
+});
+
 describe("converter parameter options", () => {
   test("uses independent canonical options for the AC and DC control fields", () => {
     expect(paramOptionsForSection("ac_control_type", "DCACConverter")).toEqual(["PQ", "PV", "PH", "NONE"]);

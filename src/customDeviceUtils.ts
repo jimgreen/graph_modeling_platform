@@ -722,6 +722,7 @@ const DERIVED_COMPONENT_BASE_PARAM_NAMES = new Set([
   "t3_node",
   "i_node",
   "j_node",
+  "k_node",
   "control_type",
   "controlType",
   "acControlType",

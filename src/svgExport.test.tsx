@@ -733,7 +733,8 @@ describe("SVG export", () => {
       ...createNodeFromTemplate(template, { x: 140, y: 120 }),
       id: "custom-state-node"
     };
-    node.params.status = "2";
+    node.params.status = "0";
+    node.params.closed_status = "2";
 
     const svg = buildSvgDocument([node], [], { width: 300, height: 240, deviceTemplates: [template] });
 
@@ -745,10 +746,10 @@ describe("SVG export", () => {
   test("deduplicates state symbols and exports all state definitions with state ids", () => {
     const openSwitch = createDefaultNode("ac-switch", { x: 120, y: 120 });
     openSwitch.id = "switch-open";
-    openSwitch.params = { ...openSwitch.params, status: "0" };
+    openSwitch.params = { ...openSwitch.params, status: "1", closed_status: "0" };
     const closedSwitch = createDefaultNode("ac-switch", { x: 280, y: 120 });
     closedSwitch.id = "switch-closed";
-    closedSwitch.params = { ...closedSwitch.params, status: "1" };
+    closedSwitch.params = { ...closedSwitch.params, status: "0", closed_status: "1" };
 
     const svg = buildSvgDocument([openSwitch, closedSwitch], [], { width: 420, height: 260 });
     const defs = svgDefsSection(svg);

@@ -19,6 +19,7 @@ import {
   modelAssociationModelIdLockMessage,
   modelAssociationModelTypeForKind,
   normalizeRatioParameterInputValue,
+  switchingDeviceUsesClosedStatus,
 } from "../model";
 
 import { normalizeNodeLabelDisplayMode } from "../nodeLabelUtils";
@@ -138,6 +139,16 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   const statusOptionLabelsForNode = (node: ModelNode | undefined): Record<string, string> =>
     Object.fromEntries(statusStatesForNode(node).map((state) => [state.value, state.name || state.value]));
 
+  const visualStateParamKeyForNode = (node: ModelNode | undefined): "status" | "closed_status" => {
+    if (!node) {
+      return "status";
+    }
+    const template = libraryTemplateByKind.get(node.kind);
+    return switchingDeviceUsesClosedStatus(template?.kind ?? node.kind, template?.params ?? node.params)
+      ? "closed_status"
+      : "status";
+  };
+
   const renderColorEditor = (key: string, value: string, fallback = "#ffffff"): ReactNode => {
     return (
       <div className="color-field with-none">
@@ -171,19 +182,25 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     if (isParentModelOption && String(node?.params?._globalLineId ?? "").trim()) {
       optionByValue.set("0", "0 / 全局线路");
     }
-    flattenSavedSchemes(schemes).forEach((scheme) => {
-      scheme.projects.forEach((project) => {
-        if (targetModelType && project.project.modelType !== targetModelType) {
-          return;
-        }
-        const numericIndex = Number(project.project.idx);
-        if (!Number.isInteger(numericIndex) || numericIndex <= 0) {
-          return;
-        }
-        const value = String(numericIndex);
-        optionByValue.set(value, `${value} / ${project.name}`);
+    const visitSchemes = (items: readonly SavedSchemeRecord[], parentPath: readonly string[]) => {
+      items.forEach((scheme) => {
+        const schemePath = [...parentPath, scheme.name];
+        scheme.projects.forEach((project) => {
+          if (targetModelType && project.project.modelType !== targetModelType) {
+            return;
+          }
+          const numericIndex = Number(project.project.idx);
+          if (!Number.isInteger(numericIndex) || numericIndex <= 0) {
+            return;
+          }
+          const value = String(numericIndex);
+          const projectDisplayName = [...schemePath, project.name].join(" / ");
+          optionByValue.set(value, `${value} / ${projectDisplayName}`);
+        });
+        visitSchemes(scheme.children ?? [], schemePath);
       });
-    });
+    };
+    visitSchemes(schemes, []);
     const options = Array.from(optionByValue.keys()).sort((left, right) => Number(left) - Number(right));
     return {
       options,
@@ -192,7 +209,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   };
 
   const paramOptionsForNode = (key: string, node: ModelNode | undefined, value: string): string[] | undefined => {
-    if (key === "status") {
+    if (key === visualStateParamKeyForNode(node)) {
       const options = statusOptionsForNode(node);
       return withCurrentOption(options.length > 0 ? options : undefined, value);
     }
@@ -200,7 +217,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   };
 
   const paramOptionLabelsForNode = (key: string, node: ModelNode | undefined, value: string): Record<string, string> => {
-    if (key === "status") {
+    if (key === visualStateParamKeyForNode(node)) {
       const labels = statusOptionLabelsForNode(node);
       return value && !labels[value] ? { ...labels, [value]: value } : labels;
     }
@@ -235,7 +252,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     if (modelAssociationOptions) {
       return modelAssociationOptions.options;
     }
-    const definitionOptions = key === "status" ? undefined : enumOptionsForDefinition(definition, value);
+    const definitionOptions = key === visualStateParamKeyForNode(node) ? undefined : enumOptionsForDefinition(definition, value);
     return definitionOptions ?? paramOptionsForNode(key, node, value);
   };
 
@@ -249,7 +266,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     if (modelAssociationOptions) {
       return modelAssociationOptions.optionLabels;
     }
-    const definitionOptions = key === "status" ? undefined : enumOptionsForDefinition(definition, value);
+    const definitionOptions = key === visualStateParamKeyForNode(node) ? undefined : enumOptionsForDefinition(definition, value);
     return definitionOptions ? enumOptionLabelsForDefinition(definition, value) ?? {} : paramOptionLabelsForNode(key, node, value);
   };
 
@@ -276,8 +293,9 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     return options.length > 0 ? options : undefined;
   };
 
-  const batchStatusOptions = (value: string): string[] | undefined => {
-    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []).filter((node) => Object.prototype.hasOwnProperty.call(node.params, "status"));
+  const batchStatusOptions = (key: string, value: string): string[] | undefined => {
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? [])
+      .filter((node) => Object.prototype.hasOwnProperty.call(node.params, key));
     return withCurrentOption(
       unionOptionRows(
         selectedNodes.map((node) => statusStatesForNode(node).map((state) => state.value))
@@ -286,8 +304,9 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     );
   };
 
-  const batchStatusOptionLabels = (): Record<string, string> => {
-    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []).filter((node) => Object.prototype.hasOwnProperty.call(node.params, "status"));
+  const batchStatusOptionLabels = (key: string): Record<string, string> => {
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? [])
+      .filter((node) => Object.prototype.hasOwnProperty.call(node.params, key));
     const labels: Record<string, string> = {};
     selectedNodes.forEach((node) => {
       Object.entries(statusOptionLabelsForNode(node)).forEach(([value, label]) => {
@@ -302,10 +321,13 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     optionLabels: Record<string, string>;
   } => {
     const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
-    if (row.key === "status") {
+    const selectedNodesWithParam = selectedNodes.filter((node) => Object.prototype.hasOwnProperty.call(node.params, row.key));
+    const rowControlsVisualState = selectedNodesWithParam.length > 0 &&
+      selectedNodesWithParam.every((node) => visualStateParamKeyForNode(node) === row.key);
+    if (rowControlsVisualState) {
       return {
-        options: batchStatusOptions(value),
-        optionLabels: batchStatusOptionLabels()
+        options: batchStatusOptions(row.key, value),
+        optionLabels: batchStatusOptionLabels(row.key)
       };
     }
 

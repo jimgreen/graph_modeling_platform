@@ -177,7 +177,6 @@ import {
   isStaticKind,
   isStaticNode,
   modelAssociationModelTypeForKind,
-  MODEL_ASSOCIATION_DERIVED_CLASS_SPECS,
   MODEL_TYPES,
   nextGlobalProjectIndex,
   keyboardMoveStepForViewBox,
@@ -231,6 +230,27 @@ import {
   type Point,
   type ProjectFile
 } from "./model";
+
+test("keeps electrical measurement and setpoint columns aligned with the device contracts", () => {
+  expect(E_SECTION_COLUMNS.ACBranch).toEqual(expect.arrayContaining([
+    "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"
+  ]));
+  expect(E_SECTION_COLUMNS.ACBranch).not.toEqual(expect.arrayContaining(["p", "q", "u", "i"]));
+  expect(E_SECTION_COLUMNS.DCBranch).toEqual(expect.arrayContaining([
+    "i_p", "i_u", "i_i", "j_p", "j_u", "j_i"
+  ]));
+  expect(E_SECTION_COLUMNS.DCBranch).not.toEqual(expect.arrayContaining(["p", "q", "u", "i"]));
+  for (const section of ["ACSwitch", "ACBreak"] as const) {
+    expect(E_SECTION_COLUMNS[section], section).toEqual(expect.arrayContaining(["status", "closed_status", "closed_status_set", "p", "q", "u", "i"]));
+    expect(E_SECTION_COLUMNS[section], section).not.toContain("status_set");
+  }
+  for (const section of ["DCSwitch", "DCBreak"] as const) {
+    expect(E_SECTION_COLUMNS[section], section).toEqual(expect.arrayContaining(["status", "closed_status", "closed_status_set", "p", "u", "i"]));
+    expect(E_SECTION_COLUMNS[section], section).not.toContain("status_set");
+  }
+  expect(E_SECTION_COLUMNS.ACLoad).toContain("q_set");
+  expect(E_SECTION_COLUMNS.ACTransformer).toEqual(expect.arrayContaining(["tap", "tap_set"]));
+});
 import { degreesToRadians } from "./formatUtils";
 import type { GlobalLineRecord } from "./global-lines";
 
@@ -517,6 +537,57 @@ test("round-trips project files without losing device parameters", () => {
   expect(loaded.measurements?.groups[0].items[0]).toMatchObject({ measurementTypeId: "active_power" });
 });
 
+test("exports separate high and low side measurements for two-winding transformers", () => {
+  const transformer = createDefaultNode("ac-transformer", { x: 160, y: 180 });
+  transformer.name = "双绕组主变-1";
+  Object.assign(transformer.params, {
+    i_p: "10.1",
+    i_q: "2.1",
+    i_u: "110",
+    i_i: "52",
+    j_p: "9.8",
+    j_q: "1.9",
+    j_u: "10",
+    j_i: "515"
+  });
+
+  const payload = parseESections(buildEDeviceParameterFile({
+    version: 1,
+    name: "双绕组分侧量测",
+    nodes: [transformer],
+    edges: []
+  }));
+
+  expect(payload.ACTransformer.columns).toEqual(expect.arrayContaining([
+    "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"
+  ]));
+  expect(payload.ACTransformer.columns).not.toEqual(expect.arrayContaining(["p", "q", "u", "i"]));
+  expect(payload.ACTransformer.rows[0]).toMatchObject({
+    i_p: "10.1",
+    i_q: "2.1",
+    i_u: "110",
+    i_i: "52",
+    j_p: "9.8",
+    j_q: "1.9",
+    j_u: "10",
+    j_i: "515"
+  });
+});
+
+test("uses legacy unqualified two-winding measurements as high-side export fallbacks", () => {
+  const transformer = createDefaultNode("ac-transformer", { x: 160, y: 180 });
+  for (const field of ["i_p", "i_q", "i_u", "i_i"]) {
+    delete transformer.params[field];
+  }
+  Object.assign(transformer.params, { p: "8.5", q: "1.5", u: "110", i: "44" });
+
+  expect(getEParamValue("i_p", transformer)).toBe("8.5");
+  expect(getEParamValue("i_q", transformer)).toBe("1.5");
+  expect(getEParamValue("i_u", transformer)).toBe("110");
+  expect(getEParamValue("i_i", transformer)).toBe("44");
+  expect(getEParamValue("j_p", transformer)).toBe("0");
+});
+
 test("uses snake_case names for every built-in business parameter", () => {
   const snakeCasePattern = /^[a-z0-9_]+$/;
   const violations: string[] = [];
@@ -584,11 +655,30 @@ test("resolves custom multi-state visual overrides without changing E export sha
   };
 
   const node = createNodeFromTemplate(template, { x: 100, y: 100 });
-  expect(node.params.status).toBeUndefined();
+  expect(node.params.status).toBe("1");
+  expect(node.params.closed_status).toBe("1");
   expect(node.params.run_stat).toBe("1");
-  expect(resolveDeviceStateVisual(template, node)).toBeNull();
+  expect(resolveDeviceStateVisual(template, node)).toMatchObject({
+    value: "1",
+    name: "闭合",
+    text: "ON"
+  });
+  expect(resolveDeviceStateVisual({
+    ...template,
+    params: { ...template.params, status: "0", closed_status: "1" }
+  }, { params: {} })).toMatchObject({
+    value: "1",
+    name: "闭合",
+    text: "ON"
+  });
 
-  const visual = resolveDeviceStateVisual(template, { ...node, params: { ...node.params, status: "2" } });
+  const explicitIndependentStateNode = createNodeFromTemplate(template, { x: 200, y: 100 });
+  explicitIndependentStateNode.params.status = "0";
+  explicitIndependentStateNode.params.closed_status = "1";
+  expect(explicitIndependentStateNode.params).toMatchObject({ status: "0", closed_status: "1" });
+  expect(resolveDeviceStateVisual(template, explicitIndependentStateNode)).toMatchObject({ value: "1", name: "闭合" });
+
+  const visual = resolveDeviceStateVisual(template, { ...node, params: { ...node.params, closed_status: "2" } });
   expect(visual).toMatchObject({
     value: "2",
     name: "检修",
@@ -596,12 +686,12 @@ test("resolves custom multi-state visual overrides without changing E export sha
     color: "#f59e0b",
     image: "maint.svg"
   });
-  expect(resolveDeviceStateVisual(template, { ...node, params: { ...node.params, status: "未知" } })).toBeNull();
+  expect(resolveDeviceStateVisual(template, { ...node, params: { ...node.params, closed_status: "未知" } })).toBeNull();
   expect(resolveDeviceStateVisual({
     ...template,
     stateDefinitions: template.stateDefinitions?.filter((state) => state.value !== "2")
-  }, { ...node, params: { ...node.params, status: "2" } })).toBeNull();
-  expect(resolveDeviceStateVisual(template, { ...node, params: { ...node.params, status: "闭合" } })).toMatchObject({
+  }, { ...node, params: { ...node.params, closed_status: "2" } })).toBeNull();
+  expect(resolveDeviceStateVisual(template, { ...node, params: { ...node.params, closed_status: "闭合" } })).toMatchObject({
     value: "闭合",
     name: "闭合",
     text: "ON"
@@ -610,12 +700,12 @@ test("resolves custom multi-state visual overrides without changing E export sha
   const exported = parseESections(buildEDeviceParameterFile({
     version: 1,
     name: "多状态开关导出",
-    nodes: [{ ...node, name: "多状态开关1", params: { ...node.params, status: "2" } }],
+    nodes: [{ ...node, name: "多状态开关1", params: { ...node.params, status: "0", closed_status: "2" } }],
     edges: []
   }));
 
   expect(exported.ACSwitch.rows).toHaveLength(1);
-  expect(exported.ACSwitch.rows[0]).toEqual(expect.objectContaining({ status: "1", run_stat: "1" }));
+  expect(exported.ACSwitch.rows[0]).toEqual(expect.objectContaining({ status: "0", closed_status: "1", run_stat: "1" }));
 });
 
 test("exports the owning class name as dev_type for base and vertical device variants", () => {
@@ -941,7 +1031,7 @@ test("exports parallel and series AC compensators with the defined columns and t
     idx: "1",
     name: "并联电容器1",
     dev_type: "ACCompensator",
-    rated_voltage: "10",
+    rated_voltage: "0",
     rated_reactive_power: "1",
     reactance: "100"
   })]);
@@ -956,7 +1046,7 @@ test("exports parallel and series AC compensators with the defined columns and t
     idx: "1",
     name: "串联电抗器1",
     dev_type: "ACSeriCompensator",
-    rated_voltage: "10",
+    rated_voltage: "0",
     rated_reactive_power: "1",
     reactance: "100"
   })]);
@@ -1004,7 +1094,7 @@ test("uses fixed cnName for idx/name and filters enName-only cnName in union", (
   expect(acGen!.fields.slice(0, 4).map((field) => field.exportName)).toEqual([
     "idx", "name", "parent", "dev_type"
   ]);
-  expect(acGen!.fields.find((f) => f.exportName === "p_set")?.cnName).toBe("有功设定");
+  expect(acGen!.fields.find((f) => f.exportName === "p_set")?.cnName).toBe("有功设定值");
 });
 
 test("uses fixed cnName for node/i_node/j_node/run_stat columns", () => {
@@ -1099,6 +1189,32 @@ test("round trips the complete configured field order through an interface defin
     "rated_voltage",
     "idx",
     "name"
+  ]);
+});
+
+test("removes base-only parent and dev_type fields from historical derived interface definitions", () => {
+  const file = buildEDeviceDefinitionFileFromInterfaceDefinitions([{
+    componentLibrary: "ACFeederGen",
+    categoryLibrary: "交流设备",
+    label: "交流馈线电源",
+    derivedFromComponentLibrary: "ACGenerator",
+    isDerivedComponentLibrary: true,
+    exportEnabled: true,
+    exportName: "ACFeederGen",
+    fields: [
+      { sourceName: "idx", cnName: "序号", exportEnabled: true, exportName: "idx" },
+      { sourceName: "parent", cnName: "所属模型", exportEnabled: true, exportName: "parent" },
+      { sourceName: "dev_type", cnName: "设备类型", exportEnabled: true, exportName: "dev_type" },
+      { sourceName: "idx_acgenerator", cnName: "原类关联idx", exportEnabled: true, exportName: "idx_acgenerator" },
+      { sourceName: "model_id", cnName: "关联模型", exportEnabled: true, exportName: "model_id" }
+    ]
+  }]);
+
+  const [section] = parseEDeviceDefinitionFile(file.text);
+  expect(section.fields.map((field) => field.exportName)).toEqual([
+    "idx",
+    "idx_acgenerator",
+    "model_id"
   ]);
 });
 
@@ -1266,8 +1382,6 @@ test("exports and parses custom derived component library metadata", () => {
   });
   expect(derivedSection?.fields.map((field) => field.exportName)).toEqual([
     "idx",
-    "parent",
-    "dev_type",
     "idx_acgenerator",
     "installed_capacity"
   ]);
@@ -1771,10 +1885,14 @@ test("keeps canonical transformer E fields as export defaults when metadata is a
   });
   expect(getEParameterKeys(transformer.kind, transformer.params)).toEqual([
     "idx", "name", "parent", ...E_SECTION_COLUMNS.ACTransformer.slice(2),
-    "p",
-    "q",
-    "u",
-    "i"
+    "i_p",
+    "i_q",
+    "i_u",
+    "i_i",
+    "j_p",
+    "j_q",
+    "j_u",
+    "j_i"
   ]);
 });
 
@@ -1982,6 +2100,7 @@ test("maps graphical AC and DC buses to real bus sections in E parameter files",
     name: "ac_bus",
     parent: "0",
     node: "1",
+    rated_voltage: "380",
     v_max: "1.1",
     v_min: "0.9",
     run_stat: "1",
@@ -1993,6 +2112,7 @@ test("maps graphical AC and DC buses to real bus sections in E parameter files",
     name: "dc_bus",
     parent: "0",
     node: "1",
+    rated_voltage: "720",
     v_max: "1.1",
     v_min: "0.9",
     run_stat: "1",
@@ -2060,24 +2180,36 @@ test("exports a three-winding transformer as one independent device with three-s
   transformer.terminals[2].vbase = "10 kV";
   transformer.params = {
     ...transformer.params,
-    r1: "0.01",
-    x1: "0.11",
-    gt1: "0.001",
-    bt1: "0.002",
-    tap1: "1.01",
-    shift1: "1",
-    r2: "0.02",
-    x2: "0.12",
-    gt2: "0.003",
-    bt2: "0.004",
-    tap2: "1.02",
-    shift2: "2",
-    r3: "0.03",
-    x3: "0.13",
-    gt3: "0.005",
-    bt3: "0.006",
-    tap3: "1.03",
-    shift3: "3"
+    i_r: "0.01",
+    i_x: "0.11",
+    i_gt: "0.001",
+    i_bt: "0.002",
+    i_tap: "1.01",
+    i_shift: "1",
+    k_r: "0.02",
+    k_x: "0.12",
+    k_gt: "0.003",
+    k_bt: "0.004",
+    k_tap: "1.02",
+    k_shift: "2",
+    j_r: "0.03",
+    j_x: "0.13",
+    j_gt: "0.005",
+    j_bt: "0.006",
+    j_tap: "1.03",
+    j_shift: "3",
+    i_p: "11",
+    i_q: "12",
+    i_u: "13",
+    i_i: "14",
+    k_p: "21",
+    k_q: "22",
+    k_u: "23",
+    k_i: "24",
+    j_p: "31",
+    j_q: "32",
+    j_u: "33",
+    j_i: "34"
   };
   highBus.terminals.forEach((terminal) => { terminal.vbase = "220 kV"; });
   mediumBus.terminals.forEach((terminal) => { terminal.vbase = "110 kV"; });
@@ -2114,78 +2246,119 @@ test("exports a three-winding transformer as one independent device with three-s
     "idx",
     "name",
     "parent",
-    "t1_node",
-    "t2_node",
-    "t3_node",
+    "i_node",
+    "k_node",
+    "j_node",
     "neutral_node",
-    "high_rated_capacity",
-    "high_i_max",
-    "medium_rated_capacity",
-    "medium_i_max",
-    "low_rated_capacity",
-    "low_i_max",
-    "r1",
-    "x1",
-    "gt1",
-    "bt1",
-    "tap1",
-    "shift1",
-    "r2",
-    "x2",
-    "gt2",
-    "bt2",
-    "tap2",
-    "shift2",
-    "r3",
-    "x3",
-    "gt3",
-    "bt3",
-    "tap3",
-    "shift3",
+    "i_rated_capacity",
+    "i_i_max",
+    "k_rated_capacity",
+    "k_i_max",
+    "j_rated_capacity",
+    "j_i_max",
+    "i_r",
+    "i_x",
+    "i_gt",
+    "i_bt",
+    "i_tap",
+    "i_shift",
+    "k_r",
+    "k_x",
+    "k_gt",
+    "k_bt",
+    "k_tap",
+    "k_shift",
+    "j_r",
+    "j_x",
+    "j_gt",
+    "j_bt",
+    "j_tap",
+    "j_shift",
     "run_stat",
-    "p",
-    "q",
-    "u",
-    "i"
+    "i_p",
+    "i_q",
+    "i_u",
+    "i_i",
+    "k_p",
+    "k_q",
+    "k_u",
+    "k_i",
+    "j_p",
+    "j_q",
+    "j_u",
+    "j_i"
   ]);
   expect(acTransfomer3).toEqual({
     idx: "1",
     name: "T3",
     parent: "0",
-    t1_node: "1",
-    t2_node: "2",
-    t3_node: "3",
+    i_node: "1",
+    k_node: "2",
+    j_node: "3",
     neutral_node: "0",
-    high_rated_capacity: "90",
-    high_i_max: "0",
-    medium_rated_capacity: "90",
-    medium_i_max: "0",
-    low_rated_capacity: "90",
-    low_i_max: "0",
-    r1: "0.01",
-    x1: "0.11",
-    gt1: "0.001",
-    bt1: "0.002",
-    tap1: "1.01",
-    shift1: "1",
-    r2: "0.02",
-    x2: "0.12",
-    gt2: "0.003",
-    bt2: "0.004",
-    tap2: "1.02",
-    shift2: "2",
-    r3: "0.03",
-    x3: "0.13",
-    gt3: "0.005",
-    bt3: "0.006",
-    tap3: "1.03",
-    shift3: "3",
+    i_rated_capacity: "90",
+    i_i_max: "0",
+    k_rated_capacity: "90",
+    k_i_max: "0",
+    j_rated_capacity: "90",
+    j_i_max: "0",
+    i_r: "0.01",
+    i_x: "0.11",
+    i_gt: "0.001",
+    i_bt: "0.002",
+    i_tap: "1.01",
+    i_shift: "1",
+    k_r: "0.02",
+    k_x: "0.12",
+    k_gt: "0.003",
+    k_bt: "0.004",
+    k_tap: "1.02",
+    k_shift: "2",
+    j_r: "0.03",
+    j_x: "0.13",
+    j_gt: "0.005",
+    j_bt: "0.006",
+    j_tap: "1.03",
+    j_shift: "3",
     run_stat: "1",
-    p: "0",
-    q: "0",
-    u: "0",
-    i: "0"
+    i_p: "11",
+    i_q: "12",
+    i_u: "13",
+    i_i: "14",
+    k_p: "21",
+    k_q: "22",
+    k_u: "23",
+    k_i: "24",
+    j_p: "31",
+    j_q: "32",
+    j_u: "33",
+    j_i: "34"
   });
+
+  const windingFieldNames = ["idx", "name", "itrfm", "rij", "xij", "gti", "bti", "tap", "ind", "znd"];
+  const windingRecords = buildEDeviceRecords({
+    version: 1,
+    name: "三绕组主变绕组导出",
+    nodes: [highBus, mediumBus, lowBus, transformer],
+    edges
+  }, {
+    interfaceDefinitions: [{
+      componentLibrary: "ACTransWinding",
+      exportEnabled: true,
+      exportName: "transformerwinding",
+      fields: windingFieldNames.map((fieldName) => ({
+        sourceName: fieldName,
+        exportEnabled: true,
+        exportName: fieldName
+      }))
+    }]
+  }).filter((record) => record.section === "ACTransWinding");
+
+  expect(windingRecords.map((record) => record.params)).toEqual([
+    expect.objectContaining({ name: "T3_高", itrfm: "1", rij: "0.01", xij: "0.11", gti: "0.001", bti: "0.002", tap: "1.01", ind: "1" }),
+    expect.objectContaining({ name: "T3_中", itrfm: "1", rij: "0.02", xij: "0.12", gti: "0.003", bti: "0.004", tap: "1.02", ind: "2" }),
+    expect.objectContaining({ name: "T3_低", itrfm: "1", rij: "0.03", xij: "0.13", gti: "0.005", bti: "0.006", tap: "1.03", ind: "3" })
+  ]);
 });
 
 test("distributes selected nodes horizontally and vertically while keeping edge nodes fixed", () => {
@@ -2386,6 +2559,74 @@ test("exports storage SOC limits through the derived E interface", () => {
   ]);
 });
 
+test("includes rated voltage in bus, load, branch, zero-branch, switch and breaker E sections", () => {
+  for (const section of [
+    "ACRealBs",
+    "DCRealBs",
+    "ACLoad",
+    "DCLoad",
+    "ACBranch",
+    "DCBranch",
+    "ACZeroBranch",
+    "DCZeroBranch",
+    "ACSwitch",
+    "DCSwitch",
+    "ACBreak",
+    "DCBreak"
+  ] as const) {
+    expect(E_SECTION_COLUMNS[section], section).toContain("rated_voltage");
+    expect(E_SECTION_COLUMNS[section].filter((column) => column === "rated_voltage"), section).toHaveLength(1);
+  }
+});
+
+test("ignores historical parent and dev_type fields in configured derived records", () => {
+  const feederSource = createDefaultNode("ac-feeder-source", { x: 100, y: 100 });
+  feederSource.params.idx = "7";
+  feederSource.params.model_id = "21";
+  const payload = parseESections(buildEFileExport({
+    version: 1,
+    name: "派生类历史接口字段过滤测试",
+    nodes: [feederSource],
+    edges: []
+  }, ["默认方案"], {
+    interfaceDefinitions: [
+      {
+        componentLibrary: "ACGenerator",
+        exportEnabled: true,
+        exportName: "ACGenerator",
+        fields: [
+          { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+          { sourceName: "name", exportEnabled: true, exportName: "name" },
+          { sourceName: "parent", exportEnabled: true, exportName: "parent" },
+          { sourceName: "dev_type", exportEnabled: true, exportName: "dev_type" }
+        ]
+      },
+      {
+        componentLibrary: "ACFeederGen",
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        exportEnabled: true,
+        exportName: "ACFeederGen",
+        fields: [
+          { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+          { sourceName: "parent", exportEnabled: true, exportName: "parent" },
+          { sourceName: "dev_type", exportEnabled: true, exportName: "dev_type" },
+          { sourceName: "idx_acgenerator", exportEnabled: true, exportName: "idx_acgenerator" },
+          { sourceName: "model_id", exportEnabled: true, exportName: "model_id" }
+        ]
+      }
+    ]
+  }).text);
+
+  expect(payload.ACGenerator.columns).toEqual(["idx", "name", "parent", "dev_type"]);
+  expect(payload.ACFeederGen.columns).toEqual(["idx", "idx_acgenerator", "model_id"]);
+  expect(payload.ACFeederGen.rows[0]).toMatchObject({
+    idx: "1",
+    idx_acgenerator: "7",
+    model_id: "21"
+  });
+});
+
 test("exports legacy container-polluted electric generation derived nodes without container warnings or duplicate associated records", () => {
   const wind = assignPermanentDeviceIndex(createDefaultNode("ac-wind-source", { x: 100, y: 100 }), {}).node;
   wind.name = "交流风电-1";
@@ -2470,7 +2711,7 @@ test("uses the exact Chinese parameter labels for electric generation definition
     storage: [
       { cnName: "储能技术类型", enName: "storage_technology" },
       { cnName: "储能容量", enName: "energy_capacity" },
-      { cnName: "SOC", enName: "soc" },
+      { cnName: "荷电状态（SOC）", enName: "soc" },
       { cnName: "SOC上限", enName: "soc_upper_limit" },
       { cnName: "SOC下限", enName: "soc_lower_limit" }
     ]
@@ -2851,14 +3092,14 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     "design_flow", "design_head", "e2h_coeff", "efficiency", "energy_capacity", "flow", "flow_rate", "flow_set", "flow_max", "flow_min", "frequency", "fuel_tank_capacity",
     "f", "g_set", "gas_quantity", "generator_efficiency", "gt", "gt1", "gt2", "gt3", "head", "heat_demand", "heat_power", "heat_rate",
     "h2e_coeff", "high_i_max", "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "initial_soc", "inlet_pressure",
-    "i", "i_dc_set", "i_i_max", "i_i_set", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_p_set", "i_q_max", "i_q_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_i_set", "j_p_max", "j_p_min", "j_p_set", "j_q_max", "j_q_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "level", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
+    "i", "i_bt", "i_dc_set", "i_gt", "i_i", "i_i_max", "i_i_set", "i_max", "i_p", "i_p_max", "i_p_min", "i_p_set", "i_q", "i_q_max", "i_q_min", "i_q_set", "i_r", "i_rated_capacity", "i_set", "i_shift", "i_tap", "i_u", "i_v_max", "i_v_min", "i_v_set", "i_vbase", "i_x", "input_voltage", "j_bt", "j_gt", "j_i", "j_i_max", "j_i_set", "j_p", "j_p_max", "j_p_min", "j_p_set", "j_q", "j_q_max", "j_q_min", "j_q_set", "j_r", "j_rated_capacity", "j_shift", "j_tap", "j_u", "j_v_max", "j_v_min", "j_v_set", "j_vbase", "j_x", "k_bt", "k_gt", "k_i", "k_i_max", "k_p", "k_q", "k_r", "k_rated_capacity", "k_shift", "k_tap", "k_u", "k_vbase", "k_x", "length", "level", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
     "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_i_max", "medium_rated_capacity",
     "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p", "p_ac_set", "p_dc_set", "p_max", "p_min", "p_set", "pbase", "power",
     "power_factor", "pressure", "pressure_set", "pressure_max", "pressure_min", "primary_loop_pressure", "pv0", "pv1", "pv2", "q", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
     "qv1", "qv2", "r", "r1", "r2", "r3", "rated_capacity", "rated_current", "rated_power", "rated_speed",
     "rated_voltage", "rated_wind_speed", "reactive_power", "reactor_thermal_power", "reference_irradiance", "reference_temperature", "return_temperature", "rotor_diameter",
     "shift", "shift1", "shift2", "shift3", "short_circuit_capacity", "soc", "soc_lower_limit", "soc_upper_limit",
-    "specific_fuel_consumption", "start_time", "supply_temperature", "supply_temperature_set", "tap", "tap1", "tap2", "tap3",
+    "specific_fuel_consumption", "start_time", "supply_temperature", "supply_temperature_set", "tap", "tap_set", "tap1", "tap2", "tap3",
     "temperature", "temperature_coefficient", "thermal_efficiency", "u", "v_ac_set", "v_dc_set", "v_max", "v_min", "v_set", "vbase", "voltage", "voltage_level", "water_volume", "x",
     "x1", "x2", "x3", "x_pu"
   ]);
@@ -2872,7 +3113,7 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     "ac_control_type", "control_type", "dc_control_type", "fuel_type", "i_control_type", "j_control_type", "reactor_type",
     "storage_technology", "turbine_type"
   ]);
-  const numberEnumNames = new Set(["parent", "regable", "run_stat", "status"]);
+  const numberEnumNames = new Set(["parent", "regable", "run_stat", "status", "closed_status", "closed_status_set"]);
   const numericText = /^[-+]?(?:\d+(?:\.\d+)?|\.\d+)$/;
   const integerText = /^[-+]?\d+$/;
   const expectedType = (name: string, kind: DeviceKind) => {
@@ -2883,7 +3124,7 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     if (
       integerNames.has(name) ||
       /^idx_(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+$/.test(name) ||
-      /^(?:node|node[1-4]|i_node|j_node|ac_node|dc_node|t[123]_node|neutral_node)$/.test(name)
+      /^(?:node|node[1-4]|i_node|j_node|k_node|ac_node|dc_node|t[123]_node|neutral_node)$/.test(name)
     ) {
       return "integer";
     }
@@ -3408,11 +3649,18 @@ test("keeps explicitly configured ACAC and DCDC E interface control_type columns
 test("removes duplicate legacy side parameter fields from three-winding transformers", () => {
   const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
   const canonicalFields = [
-    "r1", "x1", "gt1", "bt1", "tap1", "shift1",
-    "r2", "x2", "gt2", "bt2", "tap2", "shift2",
-    "r3", "x3", "gt3", "bt3", "tap3", "shift3"
+    "i_node", "j_node", "k_node",
+    "i_r", "i_x", "i_gt", "i_bt", "i_tap", "i_shift",
+    "j_r", "j_x", "j_gt", "j_bt", "j_tap", "j_shift",
+    "k_r", "k_x", "k_gt", "k_bt", "k_tap", "k_shift"
   ];
   const legacyFields = [
+    "t1_node",
+    "t2_node",
+    "t3_node",
+    "r1", "x1", "gt1", "bt1", "tap1", "shift1",
+    "r2", "x2", "gt2", "bt2", "tap2", "shift2",
+    "r3", "x3", "gt3", "bt3", "tap3", "shift3",
     "high_resistance_pu",
     "high_reactance_pu",
     "high_magnetizing_conductance_pu",
@@ -3438,24 +3686,24 @@ test("removes duplicate legacy side parameter fields from three-winding transfor
   expect(fieldNames).toEqual(expect.arrayContaining(canonicalFields));
   expect(fieldNames).not.toEqual(expect.arrayContaining(legacyFields));
   expect(transformer.params).toMatchObject({
-    r1: "0.0",
-    x1: "0.1",
-    gt1: "0.0",
-    bt1: "0.0",
-    tap1: "1.0",
-    shift1: "0",
-    r2: "0.0",
-    x2: "0.1",
-    gt2: "0.0",
-    bt2: "0.0",
-    tap2: "1.0",
-    shift2: "0",
-    r3: "0.0",
-    x3: "0.1",
-    gt3: "0.0",
-    bt3: "0.0",
-    tap3: "1.0",
-    shift3: "0"
+    i_r: "0.0",
+    i_x: "0.1",
+    i_gt: "0.0",
+    i_bt: "0.0",
+    i_tap: "1.0",
+    i_shift: "0",
+    j_r: "0.0",
+    j_x: "0.1",
+    j_gt: "0.0",
+    j_bt: "0.0",
+    j_tap: "1.0",
+    j_shift: "0",
+    k_r: "0.0",
+    k_x: "0.1",
+    k_gt: "0.0",
+    k_bt: "0.0",
+    k_tap: "1.0",
+    k_shift: "0"
   });
   for (const field of legacyFields) {
     expect(transformer.params).not.toHaveProperty(field);
@@ -3465,6 +3713,9 @@ test("removes duplicate legacy side parameter fields from three-winding transfor
     delete transformer.params[field];
   }
   Object.assign(transformer.params, {
+    t1_node: "101",
+    t2_node: "102",
+    t3_node: "103",
     high_resistance_pu: "0.01",
     high_reactance_pu: "0.11",
     high_magnetizing_conductance_pu: "0.001",
@@ -3488,24 +3739,27 @@ test("removes duplicate legacy side parameter fields from three-winding transfor
   const normalized = normalizeNodeTerminalsWithTemplate(transformer, template);
 
   expect(normalized.params).toMatchObject({
-    r1: "0.01",
-    x1: "0.11",
-    gt1: "0.001",
-    bt1: "0.002",
-    tap1: "1.01",
-    shift1: "1",
-    r2: "0.02",
-    x2: "0.12",
-    gt2: "0.003",
-    bt2: "0.004",
-    tap2: "1.02",
-    shift2: "2",
-    r3: "0.03",
-    x3: "0.13",
-    gt3: "0.005",
-    bt3: "0.006",
-    tap3: "1.03",
-    shift3: "3"
+    i_node: "101",
+    k_node: "102",
+    j_node: "103",
+    i_r: "0.01",
+    i_x: "0.11",
+    i_gt: "0.001",
+    i_bt: "0.002",
+    i_tap: "1.01",
+    i_shift: "1",
+    k_r: "0.02",
+    k_x: "0.12",
+    k_gt: "0.003",
+    k_bt: "0.004",
+    k_tap: "1.02",
+    k_shift: "2",
+    j_r: "0.03",
+    j_x: "0.13",
+    j_gt: "0.005",
+    j_bt: "0.006",
+    j_tap: "1.03",
+    j_shift: "3"
   });
   for (const field of legacyFields) {
     expect(normalized.params).not.toHaveProperty(field);
@@ -3555,7 +3809,7 @@ test("keeps transformer E export controls through override application and node 
 test("keeps three-winding transformer E export controls on canonical side parameters", () => {
   const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
   const parameterDefinitions = getTemplateParameterDefinitions(template).map((definition) =>
-    definition.enName === "r1"
+    definition.enName === "i_r"
       ? { ...definition, exportEnabled: true, exportName: "high_resistance" }
       : {
           ...definition,
@@ -3573,23 +3827,23 @@ test("keeps three-winding transformer E export controls on canonical side parame
   const normalized = normalizeNodeTerminalsWithTemplate(node, overridden);
   const normalizedDefinitions = JSON.parse(normalized.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
 
-  expect(overridden.parameterDefinitions?.find((definition) => definition.enName === "r1")).toMatchObject({
+  expect(overridden.parameterDefinitions?.find((definition) => definition.enName === "i_r")).toMatchObject({
     exportEnabled: true,
     exportName: "high_resistance"
   });
-  expect(storedDefinitions.find((definition) => definition.enName === "r1")).toMatchObject({
+  expect(storedDefinitions.find((definition) => definition.enName === "i_r")).toMatchObject({
     exportEnabled: true,
     exportName: "high_resistance"
   });
-  expect(normalizedDefinitions.find((definition) => definition.enName === "r1")).toMatchObject({
+  expect(normalizedDefinitions.find((definition) => definition.enName === "i_r")).toMatchObject({
     exportEnabled: true,
     exportName: "high_resistance"
   });
-  expect(normalized.params.r1).toBe("0.0");
+  expect(normalized.params.i_r).toBe("0.0");
   expect(getEParameterKeys(node.kind, node.params)).toContain("high_resistance");
-  expect(getEParameterKeys(node.kind, node.params)).not.toContain("r1");
+  expect(getEParameterKeys(node.kind, node.params)).not.toContain("i_r");
   expect(getEParameterKeys(normalized.kind, normalized.params)).toContain("high_resistance");
-  expect(getEParameterKeys(normalized.kind, normalized.params)).not.toContain("r1");
+  expect(getEParameterKeys(normalized.kind, normalized.params)).not.toContain("i_r");
 });
 
 test("validates duplicate idx and names within the same device type", () => {
@@ -3619,6 +3873,21 @@ test("validates duplicate idx and names within the same device type", () => {
   ]));
   expect(errors.some((error) => error.type === "duplicate-device-idx" && error.relatedNodeIds.includes(dcLoad.id))).toBe(false);
   expect(errors.some((error) => error.type === "duplicate-device-name" && error.relatedNodeIds.includes(dcLoad.id))).toBe(false);
+});
+
+test("keeps topology validation running when a persisted global-line node name is missing", () => {
+  const unnamedLine = createDefaultNode("ac-routable-line", { x: 100, y: 100 });
+  unnamedLine.params = {
+    ...unnamedLine.params,
+    idx: "13",
+    _globalLineModelPair: "target"
+  };
+  delete (unnamedLine as Partial<typeof unnamedLine>).name;
+
+  expect(() => validateTopology([unnamedLine], [])).not.toThrow();
+  expect(validateTopology([unnamedLine], [])).not.toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: "duplicate-device-name" })
+  ]));
 });
 
 test("validates duplicate idx and names between container-associated devices and ordinary devices", () => {
@@ -3776,20 +4045,7 @@ describe("全网 E 文件导出", () => {
     return line;
   };
 
-  test("普通 E 文件和 EMS 模板导出都折叠厂站馈线台区关联电源负荷", () => {
-    const modelIdByType = { "厂站": "5", "馈线": "12", "台区": "23" } as const;
-    const associationNodes = MODEL_ASSOCIATION_DERIVED_CLASS_SPECS.map((spec, index) => {
-      const node = createDefaultNode(spec.kind, { x: 100 + index * 80, y: 100 });
-      node.name = `应折叠-${spec.kind}`;
-      node.params.idx = String(index + 1);
-      node.params.model_id = modelIdByType[spec.modelType];
-      node.terminals = node.terminals.map((terminal) => ({ ...terminal, vbase: "10" }));
-      return {
-        node,
-        owner: spec.modelType === "馈线" ? "station" : "feeder",
-        derivedSection: spec.derivedComponentLibrary
-      };
-    });
+  test("单端全局线路的对端未导出时，普通 E 和 EMS 模板都保留该端模型关联边界", () => {
     const physicalSource = createDefaultNode("ac-source", { x: 100, y: 300 });
     physicalSource.name = "实际交流电源";
     physicalSource.params.idx = "91";
@@ -3798,6 +4054,29 @@ describe("全网 E 文件导出", () => {
     physicalLoad.name = "实际交流负荷";
     physicalLoad.params.idx = "92";
     physicalLoad.terminals[0].vbase = "10";
+    const connectedFeederBoundary = createDefaultNode("ac-feeder-load", { x: 420, y: 300 });
+    connectedFeederBoundary.name = "全局线路占用的馈线边界";
+    connectedFeederBoundary.params.idx = "1";
+    connectedFeederBoundary.params.model_id = "12";
+    connectedFeederBoundary.terminals[0].vbase = "10";
+    const independentDistrictBoundary = createDefaultNode("ac-district-load", { x: 520, y: 300 });
+    independentDistrictBoundary.name = "独立台区边界负荷";
+    independentDistrictBoundary.params.idx = "2";
+    independentDistrictBoundary.params.model_id = "23";
+    independentDistrictBoundary.terminals[0].vbase = "10";
+    const independentStationBoundary = createDefaultNode("ac-station-source", { x: 100, y: 480 });
+    independentStationBoundary.name = "独立厂站边界电源";
+    independentStationBoundary.params.idx = "3";
+    independentStationBoundary.params.model_id = "5";
+    independentStationBoundary.terminals[0].vbase = "10";
+    const globalLine = connectLine(
+      "模型内待合并全局线路",
+      { node: physicalSource, terminalId: physicalSource.terminals[0].id },
+      { node: connectedFeederBoundary, terminalId: connectedFeederBoundary.terminals[0].id }
+    );
+    globalLine.params.idx = "41";
+    globalLine.params._globalLineId = "global-line-filter-boundary";
+    globalLine.params._globalLineModelPair = "source";
     const inputs = [
       {
         id: "station-5",
@@ -3807,7 +4086,7 @@ describe("全网 E 文件导出", () => {
           name: "中心厂站",
           idx: 5,
           modelType: "厂站" as const,
-          nodes: [physicalSource, ...associationNodes.filter(({ owner }) => owner === "station").map(({ node }) => node)],
+          nodes: [physicalSource, connectedFeederBoundary, independentDistrictBoundary, globalLine],
           edges: []
         }
       },
@@ -3819,7 +4098,7 @@ describe("全网 E 文件导出", () => {
           name: "十千伏一线",
           idx: 12,
           modelType: "馈线" as const,
-          nodes: [physicalLoad, ...associationNodes.filter(({ owner }) => owner === "feeder").map(({ node }) => node)],
+          nodes: [physicalLoad, independentStationBoundary],
           edges: []
         }
       },
@@ -3830,26 +4109,20 @@ describe("全网 E 文件导出", () => {
       }
     ];
 
-    const assertAssociationDevicesAreCollapsed = (text: string) => {
+    const assertIncompleteGlobalLineBoundaryIsPreserved = (text: string) => {
       const payload = parseESections(text);
       const exportedDeviceNames = Object.entries(payload)
         .filter(([section]) => section !== "ACNode" && section !== "DCNode")
         .flatMap(([, section]) => section.rows.map((row) => row.name).filter(Boolean));
-      for (const { node } of associationNodes) {
-        expect(exportedDeviceNames).not.toContain(node.name);
-      }
-      for (const section of new Set(associationNodes.map(({ derivedSection }) => derivedSection))) {
-        expect(payload[section]?.rows ?? []).toHaveLength(0);
-      }
+      expect(exportedDeviceNames).toContain(connectedFeederBoundary.name);
+      expect(exportedDeviceNames).toContain(independentDistrictBoundary.name);
+      expect(exportedDeviceNames).toContain(independentStationBoundary.name);
       expect(exportedDeviceNames).toContain("实际交流电源");
       expect(exportedDeviceNames).toContain("实际交流负荷");
     };
 
     const ordinaryFile = buildMultiModelEFileExport(inputs);
-    assertAssociationDevicesAreCollapsed(ordinaryFile.text);
-    expect(ordinaryFile.warnings.map((warning) => warning.nodeId)).not.toEqual(
-      expect.arrayContaining(associationNodes.map(({ node }) => node.id))
-    );
+    assertIncompleteGlobalLineBoundaryIsPreserved(ordinaryFile.text);
 
     const emsFile = buildMultiModelEFileExport(inputs, {
       templateName: "主网实时库",
@@ -3880,7 +4153,7 @@ describe("全网 E 文件导出", () => {
         }
       ]
     });
-    assertAssociationDevicesAreCollapsed(emsFile.text);
+    assertIncompleteGlobalLineBoundaryIsPreserved(emsFile.text);
   });
 
   test("模型设备写入所属 model_id 且全局线路按表记录合并为 parent=0 的唯一线路", () => {
@@ -3890,6 +4163,7 @@ describe("全网 E 文件导出", () => {
     stationSource.params.idx = "3";
     stationSource.terminals[0].vbase = "10";
     const feederBoundary = createDefaultNode("ac-feeder-load", { x: 420, y: 120 });
+    feederBoundary.name = "应收缩馈线边界负荷";
     feederBoundary.params.model_id = "7";
     feederBoundary.terminals[0].vbase = "10";
     const stationLine = connectLine(
@@ -3902,6 +4176,7 @@ describe("全网 E 文件导出", () => {
     stationLine.params._globalLineModelPair = "target";
 
     const stationBoundary = createDefaultNode("ac-station-source", { x: 100, y: 320 });
+    stationBoundary.name = "应收缩厂站边界电源";
     stationBoundary.params.model_id = "6";
     stationBoundary.terminals[0].vbase = "10";
     const feederLoad = createDefaultNode("ac-load", { x: 420, y: 320 });
@@ -4004,6 +4279,8 @@ describe("全网 E 文件导出", () => {
     expect(payload.ACBranch.rows.map((row) => row.name)).not.toEqual(
       expect.arrayContaining(["模型内线路副本A", "模型内线路副本B"])
     );
+    expect(payload.ACLoad.rows.map((row) => row.name)).not.toContain(feederBoundary.name);
+    expect(payload.ACGenerator.rows.map((row) => row.name)).not.toContain(stationBoundary.name);
     expect(payload.ACGenerator.columns.slice(0, 3)).toEqual(["idx", "name", "parent"]);
     expect(payload.ACGenerator.rows.find((row) => row.name === "厂站本地电源")?.parent).toBe("6");
     expect(payload.ACLoad.columns.slice(0, 3)).toEqual(["idx", "name", "parent"]);
@@ -4100,7 +4377,16 @@ describe("全网 E 文件导出", () => {
     expect(payload.ACGenerator.rows.find((row) => row.name === "厂站电源")?.idx).toBe("50004");
     expect(Number(payload.ACLoad.rows.find((row) => row.name === "馈线负荷")?.node)).toBeGreaterThanOrEqual(20000);
     expect(Number(payload.ACGenerator.rows.find((row) => row.name === "厂站电源")?.node)).toBeGreaterThanOrEqual(50000);
-    expect(payload.ACGenerator.rows.some((row) => row.name === "交流厂站电源")).toBe(false);
+    expect(payload.ACGenerator.rows.find((row) => row.name === "交流厂站电源")).toMatchObject({
+      parent: "2"
+    });
+    const stationReferenceBase = payload.ACGenerator.rows.find((row) => row.name === stationReference.name);
+    const stationReferenceDerived = payload.ACStationGen.rows[0];
+    expect(payload.ACStationGen.columns).toEqual(["idx", "idx_acgenerator", "model_id"]);
+    expect(stationReferenceDerived).not.toHaveProperty("parent");
+    expect(stationReferenceDerived).not.toHaveProperty("dev_type");
+    expect(stationReferenceDerived.idx_acgenerator).toBe(stationReferenceBase?.idx);
+    expect(stationReferenceDerived.idx_acgenerator).toBe("20001");
   });
 
   test("全网 E 文件分别导出厂站、馈线和台区列表并按模型关联建立 parent", () => {

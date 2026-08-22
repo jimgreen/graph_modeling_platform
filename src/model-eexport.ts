@@ -42,17 +42,18 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   StaticContainerSymbol: [],
   StaticConnectorSymbol: [],
   StaticAnnotationSymbol: [],
-  ACRealBs: ["idx", "name", "node", "v_max", "v_min", "run_stat"],
-  DCRealBs: ["idx", "name", "node", "v_max", "v_min", "run_stat"],
+  ACRealBs: ["idx", "name", "node", "rated_voltage", "v_max", "v_min", "run_stat"],
+  DCRealBs: ["idx", "name", "node", "rated_voltage", "v_max", "v_min", "run_stat"],
   ACNode: ["idx", "name", "vbase", "run_stat"],
   DCNode: ["idx", "name", "vbase", "voltage", "isl", "run_stat"],
-  ACBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "r", "x", "b", "run_stat"],
-  DCBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "r", "run_stat"],
+  ACBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "r", "x", "b", "run_stat", "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"],
+  DCBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "r", "run_stat", "i_p", "i_u", "i_i", "j_p", "j_u", "j_i"],
   ACLoad: [
     "idx",
     "name",
     "node",
     "rated_capacity",
+    "rated_voltage",
     "pbase",
     "p_set",
     "p_max",
@@ -61,6 +62,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "pv1",
     "pv2",
     "qbase",
+    "q_set",
     "q_max",
     "q_min",
     "qv0",
@@ -75,6 +77,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "name",
     "node",
     "rated_capacity",
+    "rated_voltage",
     "pbase",
     "p_set",
     "p_max",
@@ -124,46 +127,46 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   ],
   ACCompensator: ["idx", "name", "dev_type", "node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"],
   ACSeriCompensator: ["idx", "name", "dev_type", "i_node", "j_node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"],
-  ACZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
-  DCZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
-  ACSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
-  DCSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
-  ACBreak: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
-  DCBreak: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
+  ACZeroBranch: ["idx", "name", "i_node", "j_node", "rated_voltage", "run_stat"],
+  DCZeroBranch: ["idx", "name", "i_node", "j_node", "rated_voltage", "run_stat"],
+  ACSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "status", "closed_status", "closed_status_set", "run_stat", "p", "q", "u", "i"],
+  DCSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "status", "closed_status", "closed_status_set", "run_stat", "p", "u", "i"],
+  ACBreak: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "status", "closed_status", "closed_status_set", "run_stat", "p", "q", "u", "i"],
+  DCBreak: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "status", "closed_status", "closed_status_set", "run_stat", "p", "u", "i"],
   GroundDisconnector: ["idx", "name", "node", "rated_capacity", "i_max", "status", "run_stat"],
-  ACTransformer: ["idx", "name", "i_node", "j_node", "rated_capacity", "high_i_max", "low_i_max", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
+  ACTransformer: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_i_max", "j_i_max", "r", "x", "gt", "bt", "tap", "tap_set", "shift", "run_stat"],
   ACTransWinding: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
   ACTransfomer3: [
     "idx",
     "name",
-    "t1_node",
-    "t2_node",
-    "t3_node",
+    "i_node",
+    "k_node",
+    "j_node",
     "neutral_node",
-    "high_rated_capacity",
-    "high_i_max",
-    "medium_rated_capacity",
-    "medium_i_max",
-    "low_rated_capacity",
-    "low_i_max",
-    "r1",
-    "x1",
-    "gt1",
-    "bt1",
-    "tap1",
-    "shift1",
-    "r2",
-    "x2",
-    "gt2",
-    "bt2",
-    "tap2",
-    "shift2",
-    "r3",
-    "x3",
-    "gt3",
-    "bt3",
-    "tap3",
-    "shift3",
+    "i_rated_capacity",
+    "i_i_max",
+    "k_rated_capacity",
+    "k_i_max",
+    "j_rated_capacity",
+    "j_i_max",
+    "i_r",
+    "i_x",
+    "i_gt",
+    "i_bt",
+    "i_tap",
+    "i_shift",
+    "k_r",
+    "k_x",
+    "k_gt",
+    "k_bt",
+    "k_tap",
+    "k_shift",
+    "j_r",
+    "j_x",
+    "j_gt",
+    "j_bt",
+    "j_tap",
+    "j_shift",
     "run_stat"
   ],
   DCDCConverter: [
@@ -479,6 +482,12 @@ const E_FLOAT_COLUMNS = new Set([
   "rated_capacity",
   "rated_voltage",
   "i_max",
+  "i_rated_capacity",
+  "i_i_max",
+  "k_rated_capacity",
+  "k_i_max",
+  "j_rated_capacity",
+  "j_i_max",
   "high_rated_capacity",
   "high_i_max",
   "medium_rated_capacity",
@@ -519,11 +528,19 @@ const E_FLOAT_COLUMNS = new Set([
   "dc_v_min",
   "i_p_max",
   "i_p_min",
+  "i_p",
+  "i_q",
+  "i_u",
+  "i_i",
   "i_i_max",
   "i_v_max",
   "i_v_min",
   "j_p_max",
   "j_p_min",
+  "j_p",
+  "j_q",
+  "j_u",
+  "j_i",
   "j_i_max",
   "j_v_max",
   "j_v_min",
@@ -536,7 +553,30 @@ const E_FLOAT_COLUMNS = new Set([
   "gt",
   "bt",
   "tap",
+  "tap_set",
+  "p",
+  "q",
+  "u",
+  "i",
   "shift",
+  "i_r",
+  "i_x",
+  "i_gt",
+  "i_bt",
+  "i_tap",
+  "i_shift",
+  "j_r",
+  "j_x",
+  "j_gt",
+  "j_bt",
+  "j_tap",
+  "j_shift",
+  "k_r",
+  "k_x",
+  "k_gt",
+  "k_bt",
+  "k_tap",
+  "k_shift",
   "r1",
   "x1",
   "gt1",
@@ -589,11 +629,25 @@ function getRawEParamValue(
   if (section === "HydroStorage" && key === "rated_capacity") {
     return deviceParamValue(node.params, "rated_capacity") ?? deviceParamValue(node.params, "capacity") ?? "";
   }
+  if (section === "ACTransformer") {
+    const legacyHighSideField = ({ i_p: "p", i_q: "q", i_u: "u", i_i: "i" } as const)[
+      key as "i_p" | "i_q" | "i_u" | "i_i"
+    ];
+    if (legacyHighSideField) {
+      return deviceParamValue(node.params, key) ?? deviceParamValue(node.params, legacyHighSideField) ?? "";
+    }
+  }
   if (key === "run_stat") {
     return normalizeRunStatForE(node.params.run_stat);
   }
   if (key === "status") {
-    return normalizeSwitchStatusForE(node.params.status ?? node.params.closedStatus);
+    return normalizeSwitchStatusForE(node.params.status);
+  }
+  if (key === "closed_status") {
+    return normalizeSwitchStatusForE(deviceParamValue(node.params, "closed_status") ?? node.params.status);
+  }
+  if (key === "closed_status_set") {
+    return normalizeSwitchStatusForE(deviceParamValue(node.params, "closed_status_set") ?? node.params.status_set);
   }
   if ((key === "ac_control_type" || key === "dc_control_type") && section === "DCACConverter") {
     return dcacConverterControlTypePairForE(node.params)[key];
@@ -671,9 +725,33 @@ function getRawEParamValue(
     return options.preferTopologyNodeNumbers ? "" : numericNodeReference(node.params[key]);
   }
   if (isThreeWindingTransformer(node)) {
-    const sideParameterMatch = /^(r|x|gt|bt|tap|shift)([123])$/.exec(key);
-    if (sideParameterMatch) {
-      const sidePrefix = ["high", "medium", "low"][Number.parseInt(sideParameterMatch[2], 10) - 1];
+    const canonicalMatch = /^([ijk])_(r|x|gt|bt|tap|shift)$/.exec(key);
+    const numberedMatch = /^(r|x|gt|bt|tap|shift)([123])$/.exec(key);
+    const namedMatch =
+      /^(high|medium|low)(ResistancePu|ReactancePu|MagnetizingConductancePu|MagnetizingSusceptancePu|TapRatio|Shift)$/.exec(key) ??
+      /^(high|medium|low)_(resistance_pu|reactance_pu|magnetizing_conductance_pu|magnetizing_susceptance_pu|tap_ratio|shift)$/.exec(key);
+    if (canonicalMatch || numberedMatch || namedMatch) {
+      const sideIndex = canonicalMatch
+        ? { i: 0, j: 2, k: 1 }[canonicalMatch[1] as "i" | "j" | "k"]
+        : numberedMatch
+          ? Number.parseInt(numberedMatch[2], 10) - 1
+          : { high: 0, medium: 1, low: 2 }[namedMatch![1] as "high" | "medium" | "low"];
+      const parameterKey = canonicalMatch?.[2] ?? numberedMatch?.[1] ?? ({
+        ResistancePu: "r",
+        ReactancePu: "x",
+        MagnetizingConductancePu: "gt",
+        MagnetizingSusceptancePu: "bt",
+        TapRatio: "tap",
+        Shift: "shift",
+        resistance_pu: "r",
+        reactance_pu: "x",
+        magnetizing_conductance_pu: "gt",
+        magnetizing_susceptance_pu: "bt",
+        tap_ratio: "tap",
+        shift: "shift"
+      } as Record<string, string>)[namedMatch![2]];
+      const sideCode = ["i", "k", "j"][sideIndex];
+      const sidePrefix = ["high", "medium", "low"][sideIndex];
       const parameterSuffix: Record<string, string> = {
         r: "resistance_pu",
         x: "reactance_pu",
@@ -682,7 +760,10 @@ function getRawEParamValue(
         tap: "tap_ratio",
         shift: "shift"
       };
-      return node.params[key] ?? deviceParamValue(node.params, `${sidePrefix}_${parameterSuffix[sideParameterMatch[1]]}`) ?? "";
+      return node.params[`${sideCode}_${parameterKey}`] ??
+        node.params[`${parameterKey}${sideIndex + 1}`] ??
+        deviceParamValue(node.params, `${sidePrefix}_${parameterSuffix[parameterKey]}`) ??
+        "";
     }
   }
   return mappedLegacyEValue(key, node.params);
@@ -748,7 +829,10 @@ function normalizeGasQuantityFieldName(value: unknown): string {
 
 function normalizeEInterfaceFieldName(componentLibrary: string, value: unknown): string {
   const normalized = normalizeGasQuantityFieldName(value);
-  return componentLibrary === "HydroStorage" && normalized === "capacity" ? "rated_capacity" : normalized;
+  if (componentLibrary === "HydroStorage" && normalized === "capacity") {
+    return "rated_capacity";
+  }
+  return legacyEColumnForDefinition(componentLibrary, normalized) || normalized;
 }
 
 function normalizeEFileInterfaceDefinition(
@@ -807,15 +891,24 @@ const LEGACY_E_DEFINITION_COLUMN_ALIASES: Record<string, string> = {
   maxCurrent: "i_max",
   max_current: "i_max",
   iMax: "i_max",
-  highMaxCurrent: "high_i_max",
-  high_max_current: "high_i_max",
-  highIMax: "high_i_max",
-  mediumMaxCurrent: "medium_i_max",
-  medium_max_current: "medium_i_max",
-  mediumIMax: "medium_i_max",
-  lowMaxCurrent: "low_i_max",
-  low_max_current: "low_i_max",
-  lowIMax: "low_i_max",
+  highMaxCurrent: "i_i_max",
+  high_max_current: "i_i_max",
+  highIMax: "i_i_max",
+  high_i_max: "i_i_max",
+  mediumMaxCurrent: "k_i_max",
+  medium_max_current: "k_i_max",
+  mediumIMax: "k_i_max",
+  medium_i_max: "k_i_max",
+  lowMaxCurrent: "j_i_max",
+  low_max_current: "j_i_max",
+  lowIMax: "j_i_max",
+  low_i_max: "j_i_max",
+  highRatedCapacity: "i_rated_capacity",
+  high_rated_capacity: "i_rated_capacity",
+  mediumRatedCapacity: "k_rated_capacity",
+  medium_rated_capacity: "k_rated_capacity",
+  lowRatedCapacity: "j_rated_capacity",
+  low_rated_capacity: "j_rated_capacity",
   ratedPower: "rated_capacity",
   rated_power: "rated_capacity",
   ratedActivePower: "pbase",
@@ -880,8 +973,13 @@ export function legacyEColumnForDefinition(section: string, enName: string): str
     if (columns.includes("i_node")) return "i_node";
     if (columns.includes("node")) return "node";
   }
-  if (enName === "t2_node" && columns.includes("j_node")) {
-    return "j_node";
+  if (enName === "t2_node") {
+    if (section === "ACTransfomer3" && columns.includes("k_node")) return "k_node";
+    if (columns.includes("j_node")) return "j_node";
+  }
+  if (enName === "t3_node") {
+    if (section === "ACTransfomer3" && columns.includes("j_node")) return "j_node";
+    if (columns.includes("k_node")) return "k_node";
   }
   if (enName === "sourceControlType" || enName === "source_control_type") {
     if (columns.includes("i_control_type")) return "i_control_type";
@@ -892,11 +990,17 @@ export function legacyEColumnForDefinition(section: string, enName: string): str
     if (columns.includes("control_type")) return "control_type";
   }
   if (section === "ACTransfomer3") {
+    const numberedMatch = /^(r|x|gt|bt|tap|shift)([123])$/.exec(enName);
+    if (numberedMatch) {
+      const sideCode = ["i", "k", "j"][Number.parseInt(numberedMatch[2], 10) - 1];
+      const column = `${sideCode}_${numberedMatch[1]}`;
+      return columns.includes(column) ? column : "";
+    }
     const sideMatch =
       /^(high|medium|low)(ResistancePu|ReactancePu|MagnetizingConductancePu|MagnetizingSusceptancePu|TapRatio|Shift)$/.exec(enName) ??
       /^(high|medium|low)_(resistance_pu|reactance_pu|magnetizing_conductance_pu|magnetizing_susceptance_pu|tap_ratio|shift)$/.exec(enName);
     if (sideMatch) {
-      const sideIndex = { high: "1", medium: "2", low: "3" }[sideMatch[1] as "high" | "medium" | "low"];
+      const sideCode = { high: "i", medium: "k", low: "j" }[sideMatch[1] as "high" | "medium" | "low"];
       const prefix = {
         ResistancePu: "r",
         ReactancePu: "x",
@@ -911,7 +1015,7 @@ export function legacyEColumnForDefinition(section: string, enName: string): str
         tap_ratio: "tap",
         shift: "shift"
       }[sideMatch[2] as "ResistancePu" | "ReactancePu" | "MagnetizingConductancePu" | "MagnetizingSusceptancePu" | "TapRatio" | "Shift" | "resistance_pu" | "reactance_pu" | "magnetizing_conductance_pu" | "magnetizing_susceptance_pu" | "tap_ratio" | "shift"];
-      const column = `${prefix}${sideIndex}`;
+      const column = `${sideCode}_${prefix}`;
       return columns.includes(column) ? column : "";
     }
   }
@@ -1159,6 +1263,7 @@ const DERIVED_COMPONENT_COMMON_PARAM_NAMES = new Set([
   "t3_node",
   "i_node",
   "j_node",
+  "k_node",
   "control_type",
   "controlType",
   "acControlType",
@@ -1183,6 +1288,14 @@ const DERIVED_COMPONENT_COMMON_PARAM_NAMES = new Set([
   "sourceType",
   "source_type"
 ]);
+
+const DERIVED_COMPONENT_BASE_ONLY_FIELD_NAMES = new Set(["parent", "dev_type"]);
+
+function isDerivedComponentBaseOnlyField(field: Pick<EParameterField, "sourceName" | "exportName">): boolean {
+  return [field.sourceName, field.exportName].some((fieldName) => (
+    DERIVED_COMPONENT_BASE_ONLY_FIELD_NAMES.has(String(fieldName ?? "").trim().toLowerCase())
+  ));
+}
 
 function derivedComponentBaseRelationKey(baseComponentLibrary: string): string {
   const normalizedBase = baseComponentLibrary.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -1262,6 +1375,7 @@ function buildDerivedComponentEDeviceRecord(
   const relationKey = derivedComponentBaseRelationKey(derivedInfo.baseComponentLibrary);
   const configuredFields = interfaceDefinition
     ? eParameterFieldsFromInterfaceDefinition(derivedInfo.derivedComponentLibrary, interfaceDefinition)
+        .filter((field) => !isDerivedComponentBaseOnlyField(field))
     : null;
   const builtInTemplate = DEVICE_LIBRARY_BY_KIND.get(node.kind);
   const builtInDerivedInfo = builtInTemplate ? templateDerivedComponentLibraryInfo(builtInTemplate) : null;
@@ -1269,7 +1383,7 @@ function buildDerivedComponentEDeviceRecord(
     builtInDerivedInfo?.derivedComponentLibrary === derivedInfo.derivedComponentLibrary
     ? resolveEffectiveTemplateParameterDefinitionGroups(builtInTemplate).derivedDefinitions
     : customEParameterDefinitions(node.params);
-  const fields = configuredFields
+  const fields = (configuredFields
     ? configuredFields.filter((field) => field.sourceName !== "idx" && field.sourceName !== relationKey)
     : resolveDerivedComponentParameterFields(
         node.kind,
@@ -1277,7 +1391,7 @@ function buildDerivedComponentEDeviceRecord(
         derivedDefinitions,
         derivedInfo.baseComponentLibrary,
         derivedInfo.derivedComponentLibrary
-      );
+      )).filter((field) => !isDerivedComponentBaseOnlyField(field));
   const columns = configuredFields
     ? configuredFields.map((field) => field.exportName)
     : ["idx", relationKey, ...fields.map((field) => field.exportName)];
@@ -1356,12 +1470,13 @@ function terminalSideVoltageBase(node: VoltageDisplayNode, terminalIndex: number
     return "";
   }
   if (isThreeWindingTransformer(node)) {
-    return firstNonZeroVoltageBase([
-      deviceParamValue(node.params, "high_vbase"),
-      deviceParamValue(node.params, "medium_vbase"),
-      deviceParamValue(node.params, "low_vbase"),
-      node.params.neutral_vbase
-    ].slice(terminalIndex, terminalIndex + 1));
+    const sideVoltageValues = [
+      [node.params.i_vbase, deviceParamValue(node.params, "high_vbase")],
+      [node.params.k_vbase, deviceParamValue(node.params, "medium_vbase")],
+      [node.params.j_vbase, deviceParamValue(node.params, "low_vbase")],
+      [node.params.neutral_vbase]
+    ];
+    return firstNonZeroVoltageBase(sideVoltageValues[terminalIndex] ?? []);
   }
   if (terminalIndex === 0) {
     return firstNonZeroVoltageBase([node.params.i_vbase, deviceParamValue(node.params, "source_vbase"), deviceParamValue(node.params, "high_vbase")]);
@@ -1794,7 +1909,7 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
                 params[exportName] = value;
               }
             };
-            const nodeKeys = section === "ACTransformer" ? ["i_node", "j_node"] : ["t1_node", "t2_node", "t3_node"];
+            const nodeKeys = section === "ACTransformer" ? ["i_node", "j_node"] : ["i_node", "k_node", "j_node"];
             for (let side = 0; side < nodeKeys.length; side += 1) {
               const windingParams = buildEDeviceValuesFromFields(node, windingFields, { preferTopologyNodeNumbers: true });
               if (!windingParams._vbase) {
@@ -1823,14 +1938,22 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
                 // name = 所属变压器name + '_' + '高/中/低'
                 const sideLabel = section === "ACTransformer" ? ["高", "低"][side] : ["高", "中", "低"][side];
                 setField(windingParams, "name", `${node.name}_${sideLabel}`);
-                // 阻抗参数：双绕组阻抗归高压侧(side 0)，低压侧为 0；三绕组 r1/r2/r3
-                const sideSuffix = section === "ACTransformer" ? (side === 0 ? "" : null) : String(side + 1);
-                const impVal = (base: string) => sideSuffix === null ? "0" : String(node.params[sideSuffix === "" ? base : `${base}${sideSuffix}`] ?? "0");
+                // 阻抗参数：双绕组阻抗归高压侧(side 0)，低压侧为 0；三绕组按 i/k/j（高/中/低）侧读取
+                const sideSuffix = section === "ACTransformer" ? (side === 0 ? "" : null) : ["i", "k", "j"][side];
+                const impVal = (base: string) => sideSuffix === null
+                  ? "0"
+                  : String(section === "ACTransformer"
+                    ? node.params[base] ?? "0"
+                    : getRawEParamValue(`${sideSuffix}_${base}`, node) || "0");
                 setField(windingParams, "rij", impVal("r"));
                 setField(windingParams, "xij", impVal("x"));
                 setField(windingParams, "gti", impVal("gt"));
                 setField(windingParams, "bti", impVal("bt"));
-                setField(windingParams, "tap", sideSuffix === null ? "1.0" : String(node.params[sideSuffix === "" ? "tap" : `tap${sideSuffix}`] ?? "1.0"));
+                setField(windingParams, "tap", sideSuffix === null
+                  ? "1.0"
+                  : String(section === "ACTransformer"
+                    ? node.params.tap ?? "1.0"
+                    : getRawEParamValue(`${sideSuffix}_tap`, node) || "1.0"));
                 // vl = 该侧端子电压
                 setField(windingParams, "vl", String(node.terminals[side]?.vbase ?? "").trim() || "0");
                 // ind = 该侧节点号；znd = 双绕组互为末端，三绕组为中性点
@@ -2730,6 +2853,7 @@ const MULTI_MODEL_NODE_REFERENCE_COLUMNS = new Set([
   "node",
   "i_node",
   "j_node",
+  "k_node",
   "ind",
   "znd",
   "nd",
@@ -2762,12 +2886,24 @@ function positiveIntegerValue(value: unknown) {
   return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : 0;
 }
 
-function collapsedModelAssociationNodeIds(project: ProjectFile) {
-  return new Set(
-    project.nodes
-      .filter((node) => Boolean(modelAssociationModelTypeForKind(node.kind)))
-      .map((node) => node.id)
-  );
+function collapsedModelAssociationNodeIds(
+  project: ProjectFile,
+  globalLineNodes: readonly { globalLineId: string; node: ModelNode }[],
+  fullyExportedGlobalLineIds: ReadonlySet<string>
+) {
+  const nodeById = new Map(project.nodes.map((node) => [node.id, node]));
+  const collapsedNodeIds = new Set<string>();
+  for (const { globalLineId, node: line } of globalLineNodes) {
+    if (!fullyExportedGlobalLineIds.has(globalLineId)) continue;
+    const refs = routableLineDeviceEndpointRefs(line);
+    for (const ref of [refs.source, refs.target]) {
+      const endpointNode = ref ? nodeById.get(ref.nodeId) : undefined;
+      if (endpointNode && modelAssociationModelTypeForKind(endpointNode.kind)) {
+        collapsedNodeIds.add(endpointNode.id);
+      }
+    }
+  }
+  return collapsedNodeIds;
 }
 
 function recordBelongsToCollapsedModelAssociationNode(
@@ -2798,6 +2934,39 @@ function offsetMultiModelRecordIndexes(records: EDeviceExport[], modelIndex: num
       if (localReference > 0) {
         record.params[column] = String(offset + localReference);
       }
+    }
+  }
+}
+
+function alignMultiModelDerivedBaseReferenceIndexes(
+  records: EDeviceExport[],
+  modelIndex: number,
+  options: EFileExportOptions
+) {
+  const recordById = new Map(records.map((record) => [record.id, record] as const));
+  const interfaceDefinitionBySection = new Map(
+    (options.interfaceDefinitions ?? []).map((definition) => [definition.componentLibrary, definition] as const)
+  );
+  for (const record of records) {
+    const markerIndex = record.id.lastIndexOf(":derived:");
+    if (markerIndex < 0) continue;
+    const baseRecord = recordById.get(record.id.slice(0, markerIndex));
+    const interfaceDefinition = interfaceDefinitionBySection.get(record.section);
+    const baseComponentLibrary = baseRecord?.section || interfaceDefinition?.derivedFromComponentLibrary || "";
+    if (!baseComponentLibrary) continue;
+    const relationSourceName = derivedComponentBaseRelationKey(baseComponentLibrary);
+    const relationExportName = interfaceDefinition
+      ? eParameterFieldsFromInterfaceDefinition(record.section, interfaceDefinition)
+          .find((field) => field.sourceName === relationSourceName)?.exportName ?? relationSourceName
+      : relationSourceName;
+    if (!(record.columns ?? []).includes(relationExportName) && !(relationExportName in record.params)) {
+      continue;
+    }
+    const localReference = positiveIntegerValue(record.params[relationExportName]);
+    const exportedBaseIndex = positiveIntegerValue(baseRecord?.params.idx) ||
+      (localReference > 0 ? modelIndex * 10000 + localReference : 0);
+    if (exportedBaseIndex > 0) {
+      record.params[relationExportName] = String(exportedBaseIndex);
     }
   }
 }
@@ -2892,8 +3061,15 @@ type MultiModelGlobalLineEndpointRecord = {
 };
 
 function multiModelRecordWithParent(record: EDeviceExport, parent: number): EDeviceExport {
+  const isDerivedRecord = record.id.includes(":derived:") && record.kind.includes(":derived:");
   const columns = [...(record.columns ?? E_SECTION_COLUMNS[record.section] ?? Object.keys(record.params))]
-    .filter((column) => column !== "parent");
+    .filter((column) => column !== "parent" && (!isDerivedRecord || column !== "dev_type"));
+  if (isDerivedRecord) {
+    const params = { ...record.params };
+    delete params.parent;
+    delete params.dev_type;
+    return { ...record, params, columns };
+  }
   const devTypeIndex = columns.indexOf("dev_type");
   if (devTypeIndex >= 0) {
     columns.splice(devTypeIndex, 1);
@@ -3165,11 +3341,31 @@ export function buildMultiModelEFileExport(
   const records: EDeviceExport[] = buildMultiModelHierarchyRecords(orderedInputs);
   const warnings: EExportWarning[] = [];
   const globalLineOccurrences: MultiModelGlobalLineOccurrence[] = [];
+  const globalLineNodesByInput = new Map(
+    orderedInputs.map((input) => [input, multiModelGlobalLineNodes(input.project)] as const)
+  );
+  const globalLineInputsById = new Map<string, Set<MultiModelEFileExportInput>>();
+  for (const [input, globalLineNodes] of globalLineNodesByInput) {
+    for (const { globalLineId } of globalLineNodes) {
+      const inputsForLine = globalLineInputsById.get(globalLineId) ?? new Set<MultiModelEFileExportInput>();
+      inputsForLine.add(input);
+      globalLineInputsById.set(globalLineId, inputsForLine);
+    }
+  }
+  const fullyExportedGlobalLineIds = new Set(
+    [...globalLineInputsById]
+      .filter(([, lineInputs]) => lineInputs.size >= 2)
+      .map(([globalLineId]) => globalLineId)
+  );
 
   orderedInputs.forEach((input, inputIndex) => {
     const modelIndex = positiveIntegerValue(input.project.idx) || inputIndex + 1;
-    const collapsedAssociationNodeIds = collapsedModelAssociationNodeIds(input.project);
-    const globalLineNodes = multiModelGlobalLineNodes(input.project);
+    const globalLineNodes = globalLineNodesByInput.get(input) ?? [];
+    const collapsedAssociationNodeIds = collapsedModelAssociationNodeIds(
+      input.project,
+      globalLineNodes,
+      fullyExportedGlobalLineIds
+    );
     const globalLineIdByNodeId = new Map(globalLineNodes.map(({ globalLineId, node }) => [node.id, globalLineId]));
     const allModelRecords = buildEDeviceRecords(input.project, options)
       .filter((record) => (
@@ -3177,6 +3373,7 @@ export function buildMultiModelEFileExport(
       ))
       .map((record) => multiModelRecordWithParent(record, modelIndex));
     offsetMultiModelRecordIndexes(allModelRecords, modelIndex);
+    alignMultiModelDerivedBaseReferenceIndexes(allModelRecords, modelIndex, options);
     for (const { globalLineId, node } of globalLineNodes) {
       globalLineOccurrences.push({
         globalLineId,
@@ -3437,7 +3634,7 @@ export function buildEDeviceDefinitionFile(
     if (!hasExportedBusinessField) {
       continue;
     }
-    // 字段顺序：idx/name/parent/dev_type 固定在前；派生类不含 name，只保留 parent、设备类型、原类关联字段和个性化字段
+    // 字段顺序：基类固定为 idx/name/parent/dev_type；派生类只保留 idx、原类关联字段和个性化字段
     const fields: EDeviceDefinitionField[] = [];
     // E 文件固定标准列的中文名映射（不取图元 cnName 并集，避免混入英文 key）
     const fixedCnName: Record<string, string> = {
@@ -3454,9 +3651,9 @@ export function buildEDeviceDefinitionFile(
     fields.push({ exportName: "idx", cnName: fixedCnName.idx });
     if (!group.isDerivedComponentLibrary) {
       fields.push({ exportName: "name", cnName: fixedCnName.name });
+      fields.push({ exportName: "parent", cnName: fixedCnName.parent });
+      fields.push({ exportName: "dev_type", cnName: fixedCnName.dev_type });
     }
-    fields.push({ exportName: "parent", cnName: fixedCnName.parent });
-    fields.push({ exportName: "dev_type", cnName: fixedCnName.dev_type });
     for (const [exportName, cnNames] of group.fields) {
       if (
         exportName === "idx" ||
@@ -3509,6 +3706,13 @@ export function buildEDeviceDefinitionFileFromInterfaceDefinitions(
       const sourceName = normalizeEInterfaceFieldName(componentLibrary, field.sourceName);
       const exportName = normalizeEInterfaceFieldName(componentLibrary, field.exportName ?? sourceName);
       if (!sourceName || !exportName) {
+        return [];
+      }
+      if (
+        definition.isDerivedComponentLibrary &&
+        (DERIVED_COMPONENT_BASE_ONLY_FIELD_NAMES.has(sourceName.toLowerCase()) ||
+          DERIVED_COMPONENT_BASE_ONLY_FIELD_NAMES.has(exportName.toLowerCase()))
+      ) {
         return [];
       }
       return [{

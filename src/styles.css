@@ -13822,10 +13822,12 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(250px, 29%) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .all-network-topology-model-panel {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 14px;

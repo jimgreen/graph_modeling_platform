@@ -5,7 +5,7 @@ export * from "./appDeviceDefinitionEInterface";
 // 内部使用已提取的符号
 import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, deviceDefinitionComplianceKey, stateIconDrawingFrameHasPersistedContent, buildEFileExportOptionsFromLibrary, applyEDeviceDefinitionSectionsToLibraryState } from "./appDeviceDefinitionEInterface";
 
-import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, getTemplateParameterDefinitions, inferESection, isLineOnlyConnectionNode, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, resolveEffectiveTemplateParameterDefinitionGroups, resolveEffectiveTemplateParameterDefinitions, templateDerivedComponentLibraryInfo } from "../model";
+import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, getTemplateParameterDefinitions, inferESection, isLineOnlyConnectionNode, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, resolveEffectiveTemplateParameterDefinitionGroups, resolveEffectiveTemplateParameterDefinitions, switchingDeviceUsesClosedStatus, templateDerivedComponentLibraryInfo } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
@@ -1429,6 +1429,9 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
   ).slice(0, terminalCount);
   const terminalTypes = sourceTerminalTypes.length > 0 ? sourceTerminalTypes : [template.terminalType ?? "ac"];
   const explicitStatus = options.status !== undefined && options.status !== null && String(options.status) !== "";
+  const stateParamKey = switchingDeviceUsesClosedStatus(String(template.kind ?? ""), template.params ?? {})
+    ? "closed_status"
+    : "status";
   const visualTemplate = {
     ...template,
     label: options.label || template.label,
@@ -1439,7 +1442,7 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
       backgroundImageAssetId: ""
     },
     ...(explicitStatus
-      ? { params: { ...template.params, status: String(options.status), backgroundImage: "", backgroundImageAssetId: "" } }
+      ? { params: { ...template.params, [stateParamKey]: String(options.status), backgroundImage: "", backgroundImageAssetId: "" } }
       : {}),
     terminalType: terminalTypes[0] ?? template.terminalType,
     terminalCount,
@@ -1449,7 +1452,7 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
   };
   const node = createNodeFromTemplate(visualTemplate, { x: 0, y: 0 });
   if (explicitStatus) {
-    node.params = { ...node.params, status: String(options.status) };
+    node.params = { ...node.params, [stateParamKey]: String(options.status) };
   }
   const stateVisual = options.stateVisual
     ? {
@@ -6850,13 +6853,25 @@ function customDeviceDraftPatchForComponentLibrarySelection(
     ? editableClassDefinition?.effectiveParameterDefinitions ?? []
     : editableClassDefinition?.parameterDefinitions ?? [];
   const classDefinitionKeys = new Set(classDefinitions.map((definition) => String(definition.enName ?? "").trim().toLowerCase()));
+  const inheritedClassDefinitionKeys = new Set(
+    (editableClassDefinition?.inheritedParameterDefinitions ?? [])
+      .map((definition) => String(definition.enName ?? "").trim().toLowerCase())
+  );
+  const isDerivedClassDefinition = Boolean(editableClassDefinition?.metadata.isDerivedComponentLibrary);
   const seededDefinitions = editableClassDefinition?.persisted
     ? classDefinitions
     : [
         ...classDefinitions,
-        ...(representativeDraft?.params ?? []).filter((definition: any) => (
-          !classDefinitionKeys.has(String(definition.enName ?? "").trim().toLowerCase())
-        ))
+        ...(representativeDraft?.params ?? []).filter((definition: any) => {
+          const key = String(definition.enName ?? "").trim().toLowerCase();
+          return !classDefinitionKeys.has(key) && (
+            !isDerivedClassDefinition || (
+              key !== "parent" &&
+              key !== "dev_type" &&
+              !inheritedClassDefinitionKeys.has(key)
+            )
+          );
+        })
       ];
   const params = seededDefinitions.map((definition: any) => ({
     ...definition,

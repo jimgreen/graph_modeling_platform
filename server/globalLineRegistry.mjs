@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -214,6 +214,15 @@ async function readState(filePath) {
     return normalizeState(JSON.parse(await readFile(filePath, "utf-8")));
   } catch {
     return normalizeState({});
+  }
+}
+
+async function fileExists(filePath) {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -643,7 +652,8 @@ function otherStoredEndpointRetainsGlobalLine(record, storedProjects, projectIdx
 export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
   const resolvedDataRoot = resolve(dataRoot ?? "data");
   const filesRoot = resolve(schemeFilesRoot ?? join(resolvedDataRoot, "schemes", "files"));
-  const registryPath = join(resolvedDataRoot, "settings", "global-lines.json");
+  const registryPath = join(resolvedDataRoot, "schemes", "global-lines.json");
+  const legacyRegistryPath = join(resolvedDataRoot, "settings", "global-lines.json");
   let queue = Promise.resolve();
   let initialized = false;
 
@@ -732,10 +742,16 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
   }
 
   async function ensureInitialized() {
-    const state = await readState(registryPath);
+    const migrateLegacyRegistry = !initialized &&
+      !(await fileExists(registryPath)) &&
+      await fileExists(legacyRegistryPath);
+    const state = await readState(migrateLegacyRegistry ? legacyRegistryPath : registryPath);
     if (!initialized) {
       await migrateStoredProjects(state);
       await writeState(registryPath, state);
+      if (migrateLegacyRegistry) {
+        await rm(legacyRegistryPath, { force: true });
+      }
       initialized = true;
     }
     return state;

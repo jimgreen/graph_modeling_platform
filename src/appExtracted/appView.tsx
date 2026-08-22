@@ -290,9 +290,10 @@ export function buildEDeviceInterfaceDefinitionTree(rows: readonly any[] = [], l
 export function resolveEDeviceInterfaceFieldsForDisplay(
   componentLibrary: string,
   fields: readonly any[] = [],
-  configuredOrder: readonly string[] = []
+  configuredOrder: readonly string[] = [],
+  isDerivedComponentLibrary = false
 ) {
-  return orderEDeviceInterfaceFields(componentLibrary, fields, configuredOrder);
+  return orderEDeviceInterfaceFields(componentLibrary, fields, configuredOrder, isDerivedComponentLibrary);
 }
 
 export function moveEDeviceInterfaceFieldOrder(fields: readonly any[] = [], sourceName: string, direction: -1 | 1) {
@@ -889,7 +890,8 @@ export function renderAppView(__appScope: Record<string, any>) {
     ? resolveEDeviceInterfaceFieldsForDisplay(
         selectedEDeviceInterfaceRow.componentLibrary,
         selectedEDeviceInterfaceRow.fields,
-        eDeviceDefinitionFieldOrder[selectedEDeviceInterfaceRow.componentLibrary] ?? []
+        eDeviceDefinitionFieldOrder[selectedEDeviceInterfaceRow.componentLibrary] ?? [],
+        selectedEDeviceInterfaceRow.isDerivedComponentLibrary
       )
     : [];
   const eDeviceInterfaceClassSwitchTargetRow =

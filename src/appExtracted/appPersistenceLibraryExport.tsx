@@ -243,6 +243,7 @@ import {
   voltageBaseSettingModeForNode,
   validateVoltageSetpointDeviations,
   resolveDeviceStateVisual,
+  switchingDeviceUsesClosedStatus,
   normalizeViewBoxToCanvas,
   type DeviceKind,
   type DeviceIndexCounters,
@@ -2246,6 +2247,43 @@ export const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { i
   return <EnumValuesEditor row={row} updateRow={updateRow} disabled={disabled} />;
 };
 
+function normalizeSwitchingPersistenceParams(kind: string, params: Record<string, string>) {
+  const next = { ...params };
+  if (next.closed_status_set === undefined && next.status_set !== undefined) {
+    next.closed_status_set = next.status_set;
+  }
+  delete next.status_set;
+  if (switchingDeviceUsesClosedStatus(kind, next) && next.closed_status === undefined && next.status !== undefined) {
+    next.closed_status = next.status;
+  }
+  return next;
+}
+
+function normalizeClosedStatusSetDefinitions(definitions: DeviceParameterDefinition[] | undefined) {
+  return definitions?.map((definition) => ({
+    ...definition,
+    enName: definition.enName === "status_set" ? "closed_status_set" : definition.enName,
+    ...(definition.exportName === "status_set" ? { exportName: "closed_status_set" } : {})
+  }));
+}
+
+function normalizeSwitchingPersistenceMeasurements(kind: string, definitions: ReturnType<typeof normalizeDeviceMeasurementDefinitions>) {
+  if (!Array.isArray(definitions) || definitions.length === 0 || !switchingDeviceUsesClosedStatus(kind)) {
+    return definitions;
+  }
+  if (definitions.some((definition) => definition.associatedField === "closed_status")) {
+    return definitions;
+  }
+  const next = [...definitions];
+  const statusIndex = next.findIndex((definition) => definition.associatedField === "status");
+  next.splice(statusIndex >= 0 ? statusIndex + 1 : 0, 0, {
+    measurementTypeId: "status",
+    associatedField: "closed_status",
+    labelOverride: "开合状态量测值"
+  });
+  return next;
+}
+
 export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {
   if (!Array.isArray(value)) {
     return [];
@@ -2280,10 +2318,13 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
           key !== ALLOW_RESIZE_TRANSFORM_PARAM &&
           key !== "componentLibrary" &&
           key !== "componentType" &&
-          !(key === "status" && stateDefinitions.length > 0)
+          !(key === "status" && stateDefinitions.length > 0 && !switchingDeviceUsesClosedStatus(String(template.kind ?? ""), rawParams))
         )
       );
-      const normalizedParams = normalizeLegacyGasQuantityDeviceParams(params);
+      const normalizedParams = normalizeSwitchingPersistenceParams(
+        String(template.kind ?? ""),
+        normalizeLegacyGasQuantityDeviceParams(params)
+      );
       if (normalizedParams.run_stat === undefined && (rawParams as { runStat?: unknown }).runStat !== undefined) {
         normalizedParams.run_stat = String((rawParams as { runStat?: unknown }).runStat ?? "");
         delete normalizedParams.runStat;
@@ -2379,8 +2420,11 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
         } : {}),
         allowResizeTransform: templateAllowsResizeTransform({ ...template, params: rawParams }),
         custom: true,
-        parameterDefinitions: normalizeDefinitionRows(template.parameterDefinitions ?? []),
-        measurementDefinitions: normalizeDeviceMeasurementDefinitions(template.measurementDefinitions),
+        parameterDefinitions: normalizeClosedStatusSetDefinitions(normalizeDefinitionRows(template.parameterDefinitions ?? [])),
+        measurementDefinitions: normalizeSwitchingPersistenceMeasurements(
+          String(template.kind ?? ""),
+          normalizeDeviceMeasurementDefinitions(template.measurementDefinitions)
+        ),
         stateDefinitions
       };
     })
@@ -2753,7 +2797,7 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
       const hasDerivedFrom = Object.prototype.hasOwnProperty.call(rawOverride, "derivedFromComponentLibrary");
       const hasDerivedComponent = Object.prototype.hasOwnProperty.call(rawOverride, "derivedComponentLibrary");
       const hasDerivedLabel = Object.prototype.hasOwnProperty.call(rawOverride, "derivedComponentLibraryLabel");
-      const normalizedParams = removeGeneratedVerticalBusDefaultBackground(
+      const normalizedParams = normalizeSwitchingPersistenceParams(normalizedKind, removeGeneratedVerticalBusDefaultBackground(
         normalizedKind,
         normalizeLegacyGasQuantityDeviceParams(Object.fromEntries(
           Object.entries(override.params ?? {})
@@ -2763,7 +2807,7 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
               key === "run_stat" ? normalizeRunStatValue(val, "1") : String(val ?? "")
             ])
         ))
-      );
+      ));
       const normalizedOverride: DeviceTemplateDefinitionOverride = {
         kind: normalizedKind,
         label: String(rawOverride.label ?? "").trim() || undefined,
@@ -2790,14 +2834,17 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
         derivedComponentLibraryLabel: hasDerivedLabel ? String(rawOverride.derivedComponentLibraryLabel ?? "").trim() : undefined,
         allowResizeTransform: normalizeDefinitionResizePermission(rawOverride.allowResizeTransform),
         parameterDefinitions: Array.isArray(override.parameterDefinitions)
-          ? normalizeDefinitionRows(override.parameterDefinitions)
+          ? normalizeClosedStatusSetDefinitions(normalizeDefinitionRows(override.parameterDefinitions))
           : undefined,
         parameterDefinitionsIntent: rawOverride.parameterDefinitionsIntent === "delete-all" &&
           Array.isArray(rawOverride.parameterDefinitions) && rawOverride.parameterDefinitions.length === 0
           ? "delete-all"
           : undefined,
         measurementDefinitions: Array.isArray(rawOverride.measurementDefinitions)
-          ? normalizeDeviceMeasurementDefinitions(rawOverride.measurementDefinitions)
+          ? normalizeSwitchingPersistenceMeasurements(
+              normalizedKind,
+              normalizeDeviceMeasurementDefinitions(rawOverride.measurementDefinitions)
+            )
           : undefined,
         measurementDefinitionsIntent: rawOverride.measurementDefinitionsIntent === "delete-all" &&
           Array.isArray(rawOverride.measurementDefinitions) && rawOverride.measurementDefinitions.length === 0
@@ -4837,17 +4884,21 @@ ${scopedBackgroundSvg}
     if (terminalIndex < 0) {
       return "";
     }
+    const isThreeWindingTransformer = node.kind === "ac-three-winding-transformer" ||
+      node.kind === "ac-three-winding-transformer-neutral";
+    if (isThreeWindingTransformer) {
+      return firstNonZeroExportVoltageValue(([
+        [node.params.i_vbase, node.params.high_vbase, node.params.highVbase],
+        [node.params.k_vbase, node.params.medium_vbase, node.params.mediumVbase],
+        [node.params.j_vbase, node.params.low_vbase, node.params.lowVbase],
+        [node.params.neutral_vbase]
+      ] as Array<Array<string | undefined>>)[terminalIndex] ?? []);
+    }
     if (terminalIndex === 0) {
-      return firstNonZeroExportVoltageValue([node.params.i_vbase, node.params.sourceVbase, node.params.highVbase]);
+      return firstNonZeroExportVoltageValue([node.params.i_vbase, node.params.sourceVbase, node.params.high_vbase, node.params.highVbase]);
     }
     if (terminalIndex === 1) {
-      return firstNonZeroExportVoltageValue([node.params.j_vbase, node.params.targetVbase, node.params.lowVbase]);
-    }
-    if (terminalIndex === 2) {
-      return firstNonZeroExportVoltageValue([node.params.mediumVbase]);
-    }
-    if (terminalIndex === 3) {
-      return firstNonZeroExportVoltageValue([node.params.neutral_vbase]);
+      return firstNonZeroExportVoltageValue([node.params.j_vbase, node.params.targetVbase, node.params.low_vbase, node.params.lowVbase]);
     }
     return "";
   };
@@ -5162,7 +5213,10 @@ ${rules.join("\n")}
       const stateDefinitions = template ? getTemplateStateDefinitions(template) : [];
       const activeStateVisual = resolveSvgNodeStateVisual(node);
       const stateSymbolInputs = stateDefinitions.map((state) => {
-        const stateNode = { ...node, params: { ...node.params, status: state.value } };
+        const stateParamKey = template && switchingDeviceUsesClosedStatus(template.kind, template.params)
+          ? "closed_status"
+          : "status";
+        const stateNode = { ...node, params: { ...node.params, [stateParamKey]: state.value } };
         return {
           stateKey: `state_${state.value || "default"}`,
           node: stateNode,

@@ -222,7 +222,7 @@ describe("parseSvgModel platform semantics", () => {
       scaleX: -1,
       scaleY: 1.5
     });
-    expect(breaker?.params).toMatchObject({ idx: "7", status: "0" });
+    expect(breaker?.params).toMatchObject({ idx: "7", status: "1", closed_status: "0" });
     expect(breaker?.terminals.map((terminal) => ({
       id: terminal.id,
       nodeNumber: terminal.nodeNumber,
@@ -401,7 +401,7 @@ describe("parseSvgModel round trip and batching", () => {
     expect(importedBreaker?.params._labelText).toBe("主开关");
     expect(imported.project.measurements?.groups[0]?.items[0]).toMatchObject({
       measurementTypeId: "activePower",
-      sourcePoint: `${importedBreaker?.id}.activePower`
+      sourcePoint: `${importedBreaker?.id}.p`
     });
     expect(createSavedProject("往返模型", imported.project).project.edges).toHaveLength(1);
 
@@ -419,7 +419,7 @@ describe("parseSvgModel round trip and batching", () => {
     expect(reExported).toContain(`source-dev-id="${importedBreaker?.id}"`);
     expect(reExported).toContain(`target-dev-id="${importedBus?.id}"`);
     expect(reExported).toContain('class="mg"');
-    expect(reExported).toContain('mt="activePower" mti="activePower"');
+    expect(reExported).toContain('mt="p" mti="activePower"');
   });
 
   test("imports legacy measurement metadata that used mt as the type id and mf as the binding field", async () => {

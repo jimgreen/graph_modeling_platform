@@ -19,6 +19,23 @@ describe("measurement field parameter definitions", () => {
     });
   });
 
+  test("materializes closed_status as the canonical switch-state numeric enum", () => {
+    expect(createMeasurementFieldParameterDefinition("closed_status")).toEqual({
+      cnName: "开合状态量测值",
+      enName: "closed_status",
+      valueType: "numberEnum",
+      typicalValue: "1",
+      enumValues: ["1", "0"],
+      enumValueType: "number",
+      enumOptions: [
+        { value: "1", label: "闭合" },
+        { value: "0", label: "打开/开断" }
+      ],
+      readonly: false,
+      exportEnabled: true
+    });
+  });
+
   test("normalizes legacy SOC measurement type and field names", () => {
     expect(normalizeDeviceMeasurementDefinitions([{
       measurementTypeId: "state_of_charge",

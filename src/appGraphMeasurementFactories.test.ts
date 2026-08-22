@@ -337,7 +337,8 @@ describe("measurement canvas interactions", () => {
       { value: "device", label: "设备本体" }
     ]);
     const fieldNames = positions[0].parameterDefinitions.map((definition: any) => definition.enName);
-    expect(fieldNames).toContain("r1");
+    expect(fieldNames).toContain("i_r");
+    expect(fieldNames).not.toContain("r1");
     expect(fieldNames).not.toContain("high_resistance_pu");
     expect(fieldNames).not.toContain("highResistancePu");
     expect(fieldNames).not.toContain("idx_xf_t1");

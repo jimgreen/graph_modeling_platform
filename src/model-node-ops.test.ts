@@ -1095,7 +1095,7 @@ test("aligns selected nodes to left, right, top, and bottom edges", () => {
 
 test("normalizes legacy three-winding container metadata on existing nodes", () => {
   const node = createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 });
-  delete node.params.r1;
+  delete node.params.i_r;
   node.params = {
     ...node.params,
     is_container: "1",
@@ -1125,8 +1125,41 @@ test("normalizes legacy three-winding container metadata on existing nodes", () 
   expect(normalized.params.name_ac_unit_t1).toBeUndefined();
   expect(normalized.params.control_type_ac_unit_t1).toBeUndefined();
   expect(normalized.params.status).toBe("0");
-  expect(normalized.params.r1).toBe("0.02");
+  expect(normalized.params.i_r).toBe("0.02");
+  expect(normalized.params.r1).toBeUndefined();
   expect(normalized.params.high_resistance_pu).toBeUndefined();
+});
+
+test("migrates numbered three-winding side parameters without overwriting i j k values", () => {
+  const node = createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 });
+  for (const fieldName of ["i_x", "k_gt", "k_bt", "j_tap", "j_shift"]) {
+    delete node.params[fieldName];
+  }
+  node.params = {
+    ...node.params,
+    i_r: "0.09",
+    r1: "0.01",
+    x1: "0.11",
+    gt2: "0.02",
+    bt2: "0.03",
+    tap3: "1.03",
+    shift3: "3"
+  };
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
+
+  const normalized = normalizeNodeTerminalsWithTemplate(node, template);
+
+  expect(normalized.params).toMatchObject({
+    i_r: "0.09",
+    i_x: "0.11",
+    k_gt: "0.02",
+    k_bt: "0.03",
+    j_tap: "1.03",
+    j_shift: "3"
+  });
+  for (const fieldName of ["r1", "x1", "gt2", "bt2", "tap3", "shift3"]) {
+    expect(normalized.params[fieldName]).toBeUndefined();
+  }
 });
 
 test("deletes selected devices and automatically removes their connected lines", () => {

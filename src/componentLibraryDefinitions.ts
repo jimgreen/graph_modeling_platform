@@ -31,18 +31,51 @@ import {
 
 const definitionKey = (value: unknown) => String(value ?? "").trim().toLowerCase();
 
-const CANONICAL_BRANCH_CLASS_KEYS = new Set(["acbranch", "dcbranch"]);
+const CANONICAL_BRANCH_CLASS_KEYS = new Set([
+  "acbranch",
+  "dcbranch",
+  "aczerobranch",
+  "dczerobranch",
+  "acswitch",
+  "dcswitch",
+  "acbreak",
+  "dcbreak",
+  "actransformer",
+  "dcdcconverter",
+  "dcacconverter",
+  "acacconverter",
+  "acsericompensator"
+]);
+const CANONICAL_THREE_WINDING_TRANSFORMER_CLASS_KEYS = new Set(["actransfomer3", "actransformer3"]);
 const LEGACY_BRANCH_TOPOLOGY_FIELD_KEYS = new Set(["t1_node", "t2_node"]);
+const LEGACY_THREE_WINDING_TOPOLOGY_FIELD_KEYS = new Set(["t1_node", "t2_node", "t3_node"]);
+const DERIVED_CLASS_BASE_ONLY_PARAMETER_KEYS = new Set(["parent", "dev_type"]);
 
 function isCanonicalBranchClass(className: unknown) {
   return CANONICAL_BRANCH_CLASS_KEYS.has(definitionKey(className));
 }
 
+function isCanonicalThreeWindingTransformerClass(className: unknown) {
+  return CANONICAL_THREE_WINDING_TRANSFORMER_CLASS_KEYS.has(definitionKey(className));
+}
+
 function normalizeBranchTopologyParameterDefinitions(
-  definitions: readonly DeviceParameterDefinition[]
+  definitions: readonly DeviceParameterDefinition[],
+  className?: unknown
 ): DeviceParameterDefinition[] {
+  const threeWindingFieldByLegacyName = isCanonicalThreeWindingTransformerClass(className)
+      ? new Map([
+        ["t1_node", { cnName: "高压侧节点号", enName: "i_node" }],
+        ["t2_node", { cnName: "中压侧节点号", enName: "k_node" }],
+        ["t3_node", { cnName: "低压侧节点号", enName: "j_node" }]
+      ])
+    : null;
   return definitions.flatMap((definition) => {
     const enName = definitionKey(definition.enName);
+    const threeWindingField = threeWindingFieldByLegacyName?.get(enName);
+    if (threeWindingField) {
+      return [{ ...definition, ...threeWindingField }];
+    }
     if (enName === "t1_node") {
       return [{ ...definition, cnName: "首端节点号", enName: "i_node" }];
     }
@@ -68,8 +101,8 @@ export function buildComponentLibraryDefaultParameterDefinitions(
   } = {}
 ): DeviceParameterDefinition[] {
   const generatedDefaults = buildDefaultDeviceParameterDefinitions(terminalTypes, options);
-  const generated = isCanonicalBranchClass(className)
-    ? normalizeBranchTopologyParameterDefinitions(generatedDefaults)
+  const generated = isCanonicalBranchClass(className) || isCanonicalThreeWindingTransformerClass(className)
+    ? normalizeBranchTopologyParameterDefinitions(generatedDefaults, className)
     : generatedDefaults;
   const parentDefinition = generated.find((definition) => definition.enName === "parent");
   const definitionsWithoutParent = generated.filter((definition) => definition.enName !== "parent");
@@ -345,13 +378,19 @@ export function resolveEditableComponentLibraryDefinition(options: {
         : matchingTemplates.flatMap((template) => (
             resolveEffectiveTemplateParameterDefinitions(template, templates)
           ));
-      const normalizedSeededDefinitions = isCanonicalBranchClass(metadata.className)
-        ? seededDefinitions.filter(
-            (definition) => !LEGACY_BRANCH_TOPOLOGY_FIELD_KEYS.has(definitionKey(definition.enName))
-          )
+      const legacyTopologyFieldKeys = isCanonicalBranchClass(metadata.className)
+        ? LEGACY_BRANCH_TOPOLOGY_FIELD_KEYS
+        : isCanonicalThreeWindingTransformerClass(metadata.className)
+          ? LEGACY_THREE_WINDING_TOPOLOGY_FIELD_KEYS
+          : null;
+      const normalizedSeededDefinitions = legacyTopologyFieldKeys
+        ? seededDefinitions.filter((definition) => !legacyTopologyFieldKeys.has(definitionKey(definition.enName)))
         : seededDefinitions;
       const ownSeededDefinitions = metadata.isDerivedComponentLibrary
-        ? normalizedSeededDefinitions.filter((definition) => !inheritedParameterKeys.has(definitionKey(definition.enName)))
+        ? normalizedSeededDefinitions.filter((definition) => {
+            const key = definitionKey(definition.enName);
+            return !DERIVED_CLASS_BASE_ONLY_PARAMETER_KEYS.has(key) && !inheritedParameterKeys.has(key);
+          })
         : normalizedSeededDefinitions;
       const parameterDefinitions = mergeParameterDefinitions(defaults, ownSeededDefinitions);
       const persistedDevTypeValue = Array.isArray(persistedOverride?.parameterDefinitions)

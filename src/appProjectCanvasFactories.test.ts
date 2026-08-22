@@ -1658,7 +1658,7 @@ describe("topology calculation operating-limit normalization", () => {
       skipNextTopologyStaleRef: { current: false },
       topologyCalculationMessage: (count: number) => `拓扑失败 ${count}`,
       validateTopology: vi.fn(() => [blockingError]),
-      validateVoltageSetpointDeviations: vi.fn(),
+      validateVoltageSetpointDeviations: vi.fn(() => []),
       voltageUnit: "kV",
       writeOperationLog: vi.fn()
     })();
@@ -1672,6 +1672,72 @@ describe("topology calculation operating-limit normalization", () => {
     expect(setNodes.mock.calls[0][0][0].nodeNumber).toBe("");
     expect(setNodes.mock.calls[0][0][0].params.untouched).toBe("original");
     expect(showGlobalMessage).toHaveBeenCalledWith("拓扑失败 1");
+  });
+
+  test("keeps rated-voltage deviation as a blocking error when another topology error already exists", () => {
+    const node = { id: "source-1", params: { rated_voltage: "14" } };
+    const missingVoltageError = {
+      type: "missing-island-voltage",
+      nodeId: "other-1",
+      relatedNodeIds: ["other-1"],
+      message: "另一拓扑岛缺少电压基值"
+    };
+    const ratedVoltageError = {
+      type: "rated-voltage-deviation",
+      nodeId: node.id,
+      relatedNodeIds: [node.id],
+      message: "额定电压 14 与对应节点电压基值 10 偏差超过 30%"
+    };
+    const ordinarySetpointWarning = {
+      type: "voltage-setpoint-deviation",
+      nodeId: node.id,
+      relatedNodeIds: [node.id],
+      message: "普通电压设定值偏差"
+    };
+    const emptyTopology = { connectedComponents: [] };
+    const setTopologyErrors = vi.fn();
+    const setTopology = vi.fn();
+    const setTopologyStatus = vi.fn();
+    const locateTopologyError = vi.fn();
+    const showGlobalMessage = vi.fn();
+    (globalThis as any).showGlobalMessage = showGlobalMessage;
+
+    createRunTopologyCalculation({
+      EMPTY_TOPOLOGY: emptyTopology,
+      buildTopology: vi.fn(),
+      calculateElectricalTopology: vi.fn(() => [node]),
+      currentUnit: "A",
+      edges: [],
+      isBlockingTopologyValidationError: (error: { type: string }) => (
+        error.type === "missing-island-voltage" || error.type === "rated-voltage-deviation"
+      ),
+      locateTopologyError,
+      nodes: [node],
+      normalizeDeviceOperatingLimitsAfterTopology: vi.fn(() => ({
+        nodes: [node],
+        warnings: [],
+        corrections: []
+      })),
+      powerUnit: "MW",
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: () => true,
+      setNodes: vi.fn(),
+      setTopology,
+      setTopologyErrors,
+      setTopologyStatus,
+      skipNextTopologyStaleRef: { current: false },
+      topologyCalculationMessage: (count: number) => `拓扑失败 ${count}`,
+      validateTopology: vi.fn(() => [missingVoltageError]),
+      validateVoltageSetpointDeviations: vi.fn(() => [ratedVoltageError, ordinarySetpointWarning]),
+      voltageUnit: "kV",
+      writeOperationLog: vi.fn()
+    })();
+
+    expect(setTopologyErrors).toHaveBeenCalledWith([missingVoltageError, ratedVoltageError]);
+    expect(setTopology).toHaveBeenCalledWith(emptyTopology);
+    expect(setTopologyStatus).toHaveBeenCalledWith({ state: "failed", message: "失败，2 条阻断错误" });
+    expect(locateTopologyError).toHaveBeenCalledWith(missingVoltageError);
+    expect(showGlobalMessage).toHaveBeenCalledWith("拓扑失败 2");
   });
 
   test("fails topology when post-topology hydrogen storage validation returns a blocking warning", () => {
@@ -1715,7 +1781,7 @@ describe("topology calculation operating-limit normalization", () => {
       skipNextTopologyStaleRef: { current: false },
       topologyCalculationMessage: (count: number) => `拓扑失败 ${count}`,
       validateTopology: vi.fn(() => []),
-      validateVoltageSetpointDeviations: vi.fn(),
+      validateVoltageSetpointDeviations: vi.fn(() => []),
       voltageUnit: "kV",
       writeOperationLog: vi.fn()
     })();

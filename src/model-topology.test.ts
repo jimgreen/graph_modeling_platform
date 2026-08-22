@@ -835,10 +835,13 @@ test("keeps two-winding node numbers on terminals and three-winding node numbers
     calculatedTwoWinding.terminals.map((terminal) => terminal.nodeNumber)
   );
   expect([
-    calculatedThreeWinding.params.t1_node,
-    calculatedThreeWinding.params.t2_node,
-    calculatedThreeWinding.params.t3_node
+    calculatedThreeWinding.params.i_node,
+    calculatedThreeWinding.params.k_node,
+    calculatedThreeWinding.params.j_node
   ]).toEqual(calculatedThreeWinding.terminals.map((terminal) => terminal.nodeNumber));
+  expect(calculatedThreeWinding.params.t1_node).toBeUndefined();
+  expect(calculatedThreeWinding.params.t2_node).toBeUndefined();
+  expect(calculatedThreeWinding.params.t3_node).toBeUndefined();
 });
 
 test("resolves persisted transformer model node parameters from terminal topology numbers", () => {
@@ -852,9 +855,9 @@ test("resolves persisted transformer model node parameters from terminal topolog
 
   expect([getEParamValue("i_node", twoWinding), getEParamValue("j_node", twoWinding)]).toEqual(["11", "12"]);
   expect([
-    getEParamValue("t1_node", threeWinding),
-    getEParamValue("t2_node", threeWinding),
-    getEParamValue("t3_node", threeWinding)
+    getEParamValue("i_node", threeWinding),
+    getEParamValue("k_node", threeWinding),
+    getEParamValue("j_node", threeWinding)
   ]).toEqual(["21", "22", "23"]);
 });
 
@@ -899,9 +902,9 @@ test("uses the fourth terminal of a neutral-point three-winding transformer as t
   expect(transformer.params.idx_xf_t3).toBeUndefined();
   expect(payload.ACTransfomer3.rows.find((row) => row.name === "T3N")).toMatchObject({
     idx: transformer.params.idx,
-    t1_node: "1",
-    t2_node: "2",
-    t3_node: "3",
+    i_node: "1",
+    k_node: "2",
+    j_node: "3",
     neutral_node: neutralNode
   });
   expect(payload.ACTransformer).toBeUndefined();
@@ -948,8 +951,8 @@ test("allows only terminals with the same electrical type to connect", () => {
 
 test("defines rated capacity and rated voltage as AC and DC generator defaults and exports them to E", () => {
   const baseCases = [
-    { kind: "ac-source", section: "ACGenerator", ratedCapacity: "10", ratedVoltage: "10", exportedVoltage: "10" },
-    { kind: "dc-source", section: "DCGenerator", ratedCapacity: "10", ratedVoltage: "750", exportedVoltage: "750" }
+    { kind: "ac-source", section: "ACGenerator", ratedCapacity: "10", ratedVoltage: "0", exportedVoltage: "0" },
+    { kind: "dc-source", section: "DCGenerator", ratedCapacity: "10", ratedVoltage: "0", exportedVoltage: "0" }
   ] as const;
 
   for (const expected of baseCases) {
@@ -1125,12 +1128,12 @@ test("allows terminal-free electrical buses to use uniform voltage base settings
 test("adds voltage base parameters to devices, transformers, and converters", () => {
   expect(createDefaultNode("ac-load", { x: 100, y: 100 }).params.vbase).toBe("0");
   const twoWinding = createDefaultNode("ac-transformer", { x: 200, y: 100 });
-  expect(twoWinding.params.high_vbase).toBe("0");
-  expect(twoWinding.params.low_vbase).toBe("0");
+  expect(twoWinding.params.i_vbase).toBe("0");
+  expect(twoWinding.params.j_vbase).toBe("0");
   const threeWinding = createDefaultNode("ac-three-winding-transformer", { x: 300, y: 100 });
-  expect(threeWinding.params.high_vbase).toBe("0");
-  expect(threeWinding.params.medium_vbase).toBe("0");
-  expect(threeWinding.params.low_vbase).toBe("0");
+  expect(threeWinding.params.i_vbase).toBe("0");
+  expect(threeWinding.params.k_vbase).toBe("0");
+  expect(threeWinding.params.j_vbase).toBe("0");
   const converter = createDefaultNode("acdc-converter", { x: 400, y: 100 });
   expect(converter.params.source_vbase).toBe("0");
   expect(converter.params.target_vbase).toBe("0");
@@ -1251,10 +1254,13 @@ test("writes numeric topology node numbers to every E node reference field inste
     calculatedConverter.terminals.find((terminal) => terminal.type === "dc")?.nodeNumber
   );
   expect([
-    calculatedTransformer.params.t1_node,
-    calculatedTransformer.params.t2_node,
-    calculatedTransformer.params.t3_node
+    calculatedTransformer.params.i_node,
+    calculatedTransformer.params.k_node,
+    calculatedTransformer.params.j_node
   ]).toEqual(calculatedTransformer.terminals.slice(0, 3).map((terminal) => terminal.nodeNumber));
+  expect(calculatedTransformer.params.t1_node).toBeUndefined();
+  expect(calculatedTransformer.params.t2_node).toBeUndefined();
+  expect(calculatedTransformer.params.t3_node).toBeUndefined();
   expect([
     calculatedExchanger.params.node1,
     calculatedExchanger.params.node2,
@@ -1267,9 +1273,9 @@ test("writes numeric topology node numbers to every E node reference field inste
     calculatedBranch.params.j_node,
     calculatedConverter.params.ac_node,
     calculatedConverter.params.dc_node,
-    calculatedTransformer.params.t1_node,
-    calculatedTransformer.params.t2_node,
-    calculatedTransformer.params.t3_node,
+    calculatedTransformer.params.i_node,
+    calculatedTransformer.params.j_node,
+    calculatedTransformer.params.k_node,
     calculatedTransformer.params.neutral_node,
     calculatedExchanger.params.node1,
     calculatedExchanger.params.node2,
@@ -1660,6 +1666,43 @@ test("fills zero generator voltage setpoints from the topology node rated voltag
   expect(byId.get(dcFuelCell.id)?.params.v_set_dc_unit_t1).toBe("1500");
 });
 
+test("fills zero rated voltage from the topology voltage base without overwriting a non-zero value", () => {
+  const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+  const line = createDefaultNode("ac-line", { x: 260, y: 100 });
+  const load = createDefaultNode("ac-load", { x: 420, y: 100 });
+  source.params.rated_voltage = "0";
+  line.params.rated_voltage = "0.0 kV";
+  load.params.rated_voltage = "66";
+  for (const node of [source, line, load]) {
+    node.terminals.forEach((terminal) => {
+      terminal.vbase = "35 kV";
+    });
+  }
+
+  const calculated = calculateElectricalTopology(
+    [source, line, load],
+    [
+      { id: "source-line", sourceId: source.id, targetId: line.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+      { id: "line-load", sourceId: line.id, targetId: load.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+    ]
+  );
+  const byId = new Map(calculated.map((node) => [node.id, node]));
+
+  expect(byId.get(source.id)?.params.rated_voltage).toBe("35");
+  expect(byId.get(line.id)?.params.rated_voltage).toBe("35");
+  expect(byId.get(load.id)?.params.rated_voltage).toBe("66");
+});
+
+test("keeps zero rated voltage when topology has no usable voltage base", () => {
+  const load = createDefaultNode("dc-load", { x: 100, y: 100 });
+  load.params.rated_voltage = "0";
+  load.terminals[0].vbase = "0.0";
+
+  const [calculated] = calculateElectricalTopology([load], []);
+
+  expect(calculated.params.rated_voltage).toBe("0");
+});
+
 test("clears selected device voltage base and voltage setpoint values without touching other parameters", () => {
   const source = createDefaultNode("ac-source", { x: 100, y: 100 });
   const load = createDefaultNode("ac-load", { x: 260, y: 100 });
@@ -1674,9 +1717,19 @@ test("clears selected device voltage base and voltage setpoint values without to
     ac_v_set: "35",
     v_set_ac_unit_t1: "35",
     voltage: "35",
-    rated_voltage: "35"
+    rated_voltage: "35",
+    v_max: "42",
+    v_min: "28"
   };
-  load.params = { ...load.params, vbase: "10", v_set: "10", voltage: "10", rated_voltage: "10" };
+  load.params = {
+    ...load.params,
+    vbase: "10",
+    v_set: "10",
+    voltage: "10",
+    rated_voltage: "10",
+    v_max: "12",
+    v_min: "8"
+  };
 
   const result = clearVoltageBaseValuesForScope([source, load], [], [source.id], "selected");
   const byId = new Map(result.nodes.map((node) => [node.id, node]));
@@ -1691,10 +1744,15 @@ test("clears selected device voltage base and voltage setpoint values without to
     ac_v_set: "0.0",
     v_set_ac_unit_t1: "0.0",
     voltage: "0.0",
-    rated_voltage: "35"
+    rated_voltage: "0.0",
+    v_max: "0.0",
+    v_min: "0.0"
   });
   expect(byId.get(load.id)?.terminals[0].vbase).toBe("10 kV");
   expect(byId.get(load.id)?.params.vbase).toBe("10");
+  expect(byId.get(load.id)?.params.rated_voltage).toBe("10");
+  expect(byId.get(load.id)?.params.v_max).toBe("12");
+  expect(byId.get(load.id)?.params.v_min).toBe("8");
 });
 
 test("clears voltage base values for the topology island containing the selected device", () => {
@@ -1720,8 +1778,57 @@ test("clears voltage base values for the topology island containing the selected
   expect(byId.get(source.id)?.terminals[0].vbase).toBe("0.0");
   expect(byId.get(line.id)?.terminals.map((terminal) => terminal.vbase)).toEqual(["0.0", "0.0"]);
   expect(byId.get(load.id)?.params.vbase).toBe("0.0");
+  expect(byId.get(source.id)?.params.rated_voltage).toBe("0.0");
+  expect(byId.get(line.id)?.params.rated_voltage).toBe("0.0");
+  expect(byId.get(load.id)?.params.rated_voltage).toBe("0.0");
   expect(byId.get(other.id)?.terminals[0].vbase).toBe("750 V");
   expect(byId.get(other.id)?.params.vbase).toBe("750");
+  expect(byId.get(other.id)?.params.rated_voltage).toBe("0");
+});
+
+test("uses closed_status for switch island connectivity while retaining legacy status fallback", () => {
+  const islandTargets = (status: string, closedStatus?: string) => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const switchNode = createDefaultNode("ac-switch", { x: 240, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 380, y: 100 });
+    switchNode.params.status = status;
+    if (closedStatus === undefined) {
+      delete switchNode.params.closed_status;
+    } else {
+      switchNode.params.closed_status = closedStatus;
+    }
+    const edges: Edge[] = [
+      {
+        id: "source-switch",
+        sourceId: source.id,
+        targetId: switchNode.id,
+        sourceTerminalId: source.terminals[0].id,
+        targetTerminalId: switchNode.terminals[0].id
+      },
+      {
+        id: "switch-load",
+        sourceId: switchNode.id,
+        targetId: load.id,
+        sourceTerminalId: switchNode.terminals[1].id,
+        targetTerminalId: load.terminals[0].id
+      }
+    ];
+    return {
+      loadId: load.id,
+      targetIds: new Set(
+        setVoltageBaseValuesForScope([source, switchNode, load], edges, [source.id], "island", "110").targetNodeIds
+      )
+    };
+  };
+
+  const opened = islandTargets("1", "0");
+  expect(opened.targetIds.has(opened.loadId)).toBe(false);
+
+  const closed = islandTargets("0", "1");
+  expect(closed.targetIds.has(closed.loadId)).toBe(true);
+
+  const legacyClosed = islandTargets("1");
+  expect(legacyClosed.targetIds.has(legacyClosed.loadId)).toBe(true);
 });
 
 test("clears only matching terminal voltage fields on a multi-island transformer", () => {
@@ -1742,7 +1849,11 @@ test("clears only matching terminal voltage fields on a multi-island transformer
     source_vbase: "110",
     target_vbase: "10",
     i_vbase: "110",
-    j_vbase: "10"
+    j_vbase: "10",
+    i_v_max: "121",
+    i_v_min: "99",
+    j_v_max: "11",
+    j_v_min: "9"
   };
   const edges = [
     { id: "high-transformer", sourceId: highSource.id, targetId: transformer.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
@@ -1758,12 +1869,58 @@ test("clears only matching terminal voltage fields on a multi-island transformer
   expect(nextTransformer?.params.high_vbase).toBe("0.0");
   expect(nextTransformer?.params.source_vbase).toBe("0.0");
   expect(nextTransformer?.params.i_vbase).toBe("0.0");
+  expect(nextTransformer?.params.i_v_max).toBe("0.0");
+  expect(nextTransformer?.params.i_v_min).toBe("0.0");
   expect(nextTransformer?.params.low_vbase).toBe("10");
   expect(nextTransformer?.params.target_vbase).toBe("10");
   expect(nextTransformer?.params.j_vbase).toBe("10");
+  expect(nextTransformer?.params.j_v_max).toBe("11");
+  expect(nextTransformer?.params.j_v_min).toBe("9");
   expect(nextTransformer?.params.vbase).toBe("110");
   expect(byId.get(lowLoad.id)?.terminals[0].vbase).toBe("10");
   expect(byId.get(lowLoad.id)?.params.vbase).toBe("10");
+});
+
+test("clears only matching AC-side voltage limits on a multi-island converter", () => {
+  const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+  const converter = createDefaultNode("acdc-converter", { x: 300, y: 100 });
+  const dcLoad = createDefaultNode("dc-load", { x: 500, y: 100 });
+  acSource.terminals[0].vbase = "10";
+  converter.terminals[0].vbase = "10";
+  converter.terminals[1].vbase = "750";
+  dcLoad.terminals[0].vbase = "750";
+  acSource.params = { ...acSource.params, vbase: "10", v_set: "10" };
+  dcLoad.params = { ...dcLoad.params, vbase: "750", v_set: "750" };
+  converter.params = {
+    ...converter.params,
+    source_vbase: "10",
+    target_vbase: "750",
+    v_ac_set: "10",
+    v_dc_set: "750",
+    ac_v_max: "13",
+    ac_v_min: "7",
+    dc_v_max: "975",
+    dc_v_min: "525"
+  };
+  const edges = [
+    { id: "source-converter", sourceId: acSource.id, targetId: converter.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+    { id: "converter-load", sourceId: converter.id, targetId: dcLoad.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+  ];
+
+  const result = clearVoltageBaseValuesForScope([acSource, converter, dcLoad], edges, [acSource.id], "island");
+  const byId = new Map(result.nodes.map((node) => [node.id, node]));
+  const nextConverter = byId.get(converter.id);
+
+  expect(new Set(result.changedNodeIds)).toEqual(new Set([acSource.id, converter.id]));
+  expect(nextConverter?.terminals.map((terminal) => terminal.vbase)).toEqual(["0.0", "750"]);
+  expect(nextConverter?.params.source_vbase).toBe("0.0");
+  expect(nextConverter?.params.v_ac_set).toBe("0.0");
+  expect(nextConverter?.params.ac_v_max).toBe("0.0");
+  expect(nextConverter?.params.ac_v_min).toBe("0.0");
+  expect(nextConverter?.params.target_vbase).toBe("750");
+  expect(nextConverter?.params.v_dc_set).toBe("750");
+  expect(nextConverter?.params.dc_v_max).toBe("975");
+  expect(nextConverter?.params.dc_v_min).toBe("525");
 });
 
 test("clears voltage base values across the whole model", () => {
@@ -1780,6 +1937,7 @@ test("clears voltage base values across the whole model", () => {
   expect(result.nodes.flatMap((node) => node.terminals.map((terminal) => terminal.vbase))).toEqual(["0.0", "0.0"]);
   expect(result.nodes.map((node) => node.params.vbase)).toEqual(["0.0", "0.0"]);
   expect(result.nodes.map((node) => node.params.v_set)).toEqual(["0.0", "0.0"]);
+  expect(result.nodes.map((node) => node.params.rated_voltage)).toEqual(["0.0", "0.0"]);
 });
 
 test("sets selected device voltage base and voltage setpoint values without touching other parameters", () => {
@@ -1817,10 +1975,11 @@ test("sets selected device voltage base and voltage setpoint values without touc
     i_v_set: "110",
     ac_v_set: "110",
     voltage: "110",
-    rated_voltage: "35"
+    rated_voltage: "110"
   });
   expect(byId.get(load.id)?.terminals[0].vbase).toBe("10");
   expect(byId.get(load.id)?.params.vbase).toBe("10");
+  expect(byId.get(load.id)?.params.rated_voltage).toBe("10");
 });
 
 test("sets voltage base values for the topology island containing the selected device", () => {
@@ -1846,8 +2005,12 @@ test("sets voltage base values for the topology island containing the selected d
   expect(byId.get(source.id)?.terminals[0].vbase).toBe("220");
   expect(byId.get(line.id)?.terminals.map((terminal) => terminal.vbase)).toEqual(["220", "220"]);
   expect(byId.get(load.id)?.params.vbase).toBe("220");
+  expect(byId.get(source.id)?.params.rated_voltage).toBe("220");
+  expect(byId.get(line.id)?.params.rated_voltage).toBe("220");
+  expect(byId.get(load.id)?.params.rated_voltage).toBe("220");
   expect(byId.get(other.id)?.terminals[0].vbase).toBe("750");
   expect(byId.get(other.id)?.params.vbase).toBe("750");
+  expect(byId.get(other.id)?.params.rated_voltage).toBe("0");
 });
 
 test("treats a feeder source, routable line, bus, and loads as one voltage island and assigns formal node numbers from 1", () => {
@@ -2008,6 +2171,8 @@ test("sets terminal voltage base through each transformer or converter terminal 
   expect(nextConverter?.params.j_v_set).toBe("35");
   expect(byId.get(load.id)?.terminals[0].vbase).toBe("35");
   expect(byId.get(load.id)?.params.vbase).toBe("35");
+  expect(byId.get(source.id)?.params.rated_voltage).toBe("220");
+  expect(byId.get(load.id)?.params.rated_voltage).toBe("35");
 });
 
 test("fills zero converter voltage setpoints from the related topology node rated voltage", () => {
@@ -2662,6 +2827,41 @@ test("warns when voltage setpoints deviate more than 30 percent from rated topol
   expect(errors.some((error) => error.message.includes("j_v_set=12"))).toBe(false);
 });
 
+test("blocks topology when a non-zero rated voltage deviates more than 30 percent from the node voltage base", () => {
+  const bus = createDefaultNode("ac-bus", { x: 260, y: 100 });
+  const load = createDefaultNode("ac-load", { x: 80, y: 100 });
+  load.name = "交流负荷1";
+  load.terminals[0].vbase = "10 kV";
+  load.params.rated_voltage = "14";
+
+  const errors = validateTopology(
+    [bus, load],
+    [{ id: "load-bus", sourceId: load.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1" }]
+  );
+  const ratedVoltageError = errors.find((error) => error.type === "rated-voltage-deviation");
+
+  expect(ratedVoltageError).toMatchObject({
+    nodeId: load.id,
+    relatedNodeIds: [load.id],
+    message: expect.stringContaining("额定电压 14 与对应节点电压基值 10 偏差超过 30%")
+  });
+  expect(isBlockingTopologyValidationError(ratedVoltageError!)).toBe(true);
+});
+
+test("accepts a non-zero rated voltage within 30 percent of the node voltage base", () => {
+  const bus = createDefaultNode("dc-bus", { x: 260, y: 100 });
+  const load = createDefaultNode("dc-load", { x: 80, y: 100 });
+  load.terminals[0].vbase = "750 V";
+  load.params.rated_voltage = "975";
+
+  const errors = validateTopology(
+    [bus, load],
+    [{ id: "load-bus", sourceId: load.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1" }]
+  );
+
+  expect(errors.some((error) => error.type === "rated-voltage-deviation")).toBe(false);
+});
+
 test("does not warn zero voltage setpoints before topology can fill them", () => {
   const bus = createDefaultNode("ac-bus", { x: 160, y: 100 });
   const source = createDefaultNode("ac-source", { x: 40, y: 100 });
@@ -2720,6 +2920,7 @@ test("treats duplicate identity and voltage setpoint deviations as non-blocking 
   expect(isBlockingTopologyValidationError({ type: "storage-soc-parameter-invalid" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "hydrogen-storage-parameter-invalid" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "hydrogen-coupling-parameter-invalid" })).toBe(true);
+  expect(isBlockingTopologyValidationError({ type: "rated-voltage-deviation" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "device-limit-invalid" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "voltage-limit-out-of-range" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "duplicate-device-idx" })).toBe(false);

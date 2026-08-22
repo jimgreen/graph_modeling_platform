@@ -287,8 +287,6 @@ describe("model association derived power-source and load classes", () => {
       });
       expect(derivedSection?.fields.map((field) => field.exportName), expected.kind).toEqual([
         "idx",
-        "parent",
-        "dev_type",
         expected.relationKey,
         "model_id"
       ]);
