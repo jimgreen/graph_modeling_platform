@@ -1160,15 +1160,23 @@ export function createAppHookCallback13(__appScope: Record<string, any>) {
 
 export function createAppHookCallback14(__appScope: Record<string, any>) {
   return () => {
-  const { normalizeLibrarySearchText, projectSearchNeedle, schemes } = __appScope;
-    if (!projectSearchNeedle) {
+  const { MODEL_TYPES, normalizeLibrarySearchText, projectSearchModelTypes, projectSearchNeedle, schemes } = __appScope;
+    const hasTypeFilter = projectSearchModelTypes && projectSearchModelTypes.length > 0;
+    const typeFilterSet = hasTypeFilter ? new Set(projectSearchModelTypes) : null;
+    const getProjectModelType = (project: any): string => {
+      const modelType = project.project?.modelType;
+      return MODEL_TYPES?.includes(modelType) ? modelType : "其他";
+    };
+    if (!projectSearchNeedle && !hasTypeFilter) {
       return schemes;
     }
     const filterScheme = (scheme: SavedSchemeRecord): SavedSchemeRecord | null => {
-      const schemeMatches = normalizeLibrarySearchText(scheme.name).includes(projectSearchNeedle);
-      const filteredProjects = schemeMatches
-        ? scheme.projects
-        : scheme.projects.filter((project) => normalizeLibrarySearchText(project.name).includes(projectSearchNeedle));
+      const schemeMatches = projectSearchNeedle ? normalizeLibrarySearchText(scheme.name).includes(projectSearchNeedle) : true;
+      const filteredProjects = scheme.projects.filter((project) => {
+        const nameMatch = !projectSearchNeedle || normalizeLibrarySearchText(project.name).includes(projectSearchNeedle);
+        const typeMatch = !typeFilterSet || typeFilterSet.has(getProjectModelType(project));
+        return nameMatch && typeMatch;
+      });
       const filteredChildren = schemeMatches
         ? (scheme.children ?? [])
         : (scheme.children ?? []).map(filterScheme).filter((child): child is SavedSchemeRecord => Boolean(child));

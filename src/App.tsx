@@ -1083,6 +1083,8 @@ const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library" | "templ
 Object.assign(__appScope, { leftPanelTab, setLeftPanelTab });
 const [projectSearchQuery, setProjectSearchQuery] = useState("");
 Object.assign(__appScope, { projectSearchQuery, setProjectSearchQuery });
+const [projectSearchModelTypes, setProjectSearchModelTypes] = useState<string[]>([]);
+Object.assign(__appScope, { projectSearchModelTypes, setProjectSearchModelTypes });
 const [librarySearchQuery, setLibrarySearchQuery] = useState("");
 Object.assign(__appScope, { librarySearchQuery, setLibrarySearchQuery });
 const [componentLibraryDisplayMode, setComponentLibraryDisplayMode] = useState<ComponentLibraryDisplayMode>("right");

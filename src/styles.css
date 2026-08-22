@@ -526,6 +526,24 @@ button:not(.ant-btn):disabled {
   margin: 0 0 8px;
 }
 
+.project-search-type-filter {
+  flex: 0 0 auto;
+  margin: 0 0 8px;
+}
+
+.project-search-type-filter .ant-select {
+  width: 100%;
+}
+
+.project-search-type-filter .ant-select-selector {
+  min-height: 30px;
+  font-size: 13px;
+}
+
+.project-search-type-filter .ant-select-selection-item {
+  font-size: 12px;
+}
+
 .left-panel-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

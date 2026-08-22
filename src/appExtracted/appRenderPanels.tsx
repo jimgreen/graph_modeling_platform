@@ -3,7 +3,7 @@
 // 模式：export function createXxx(__appScope) { ...; return () => <JSX />; }
 
 import { createPortal } from "react-dom";
-import { Input, Button } from "antd";
+import { Input, Button, Select } from "antd";
 
 // 图层管理面板
 export function createRenderLayerManager(__appScope) {
@@ -165,11 +165,20 @@ export function createRenderGraphTemplateFlyout(__appScope) {
 }
 
 // 项目面板
+const PROJECT_MODEL_TYPE_OPTIONS = [
+  { label: "厂站", value: "厂站" },
+  { label: "馈线", value: "馈线" },
+  { label: "台区", value: "台区" },
+  { label: "微网", value: "微网" },
+  { label: "其他", value: "其他" }
+];
+
 export function createRenderProjectPanel(__appScope) {
   const {
     Search, X,
     openBlankProjectLibraryContextMenu,
     projectSearchQuery, setProjectSearchQuery,
+    projectSearchModelTypes, setProjectSearchModelTypes,
     projectListPointerInsideRef,
     backendSchemesLoadedRef,
     schemes, filteredProjectSchemes, renderProjectSchemeNode
@@ -183,12 +192,25 @@ export function createRenderProjectPanel(__appScope) {
           onChange={(event) => setProjectSearchQuery(event.target.value)}
           placeholder="搜索方案/模型"
           aria-label="搜索模型库"
+          style={{ flex: 1, minWidth: 0 }}
         />
         {projectSearchQuery && (
           <button type="button" aria-label="清空模型库搜索" title="清空" onClick={() => setProjectSearchQuery("")}>
             <X size={14} />
           </button>
         )}
+      </div>
+      <div className="project-search-type-filter">
+        <Select
+          mode="multiple"
+          allowClear
+          placeholder="模型类型"
+          value={projectSearchModelTypes}
+          onChange={setProjectSearchModelTypes}
+          options={PROJECT_MODEL_TYPE_OPTIONS}
+          style={{ width: "100%" }}
+          maxTagCount={2}
+        />
       </div>
       <div
         className="project-list listbox"
