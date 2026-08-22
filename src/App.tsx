@@ -955,6 +955,18 @@ const [interactionMode, setInteractionMode] = useState<InteractionMode>(() => re
 Object.assign(__appScope, { interactionMode, setInteractionMode });
 const [smartAlignmentEnabled, setSmartAlignmentEnabled] = useState(true);
 Object.assign(__appScope, { smartAlignmentEnabled, setSmartAlignmentEnabled });
+const [recentGlyphKinds, setRecentGlyphKinds] = useState<string[]>(() => {
+  try {
+    const stored = sessionStorage.getItem("recentGlyphKinds");
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+});
+useEffect(() => {
+  sessionStorage.setItem("recentGlyphKinds", JSON.stringify(recentGlyphKinds));
+}, [recentGlyphKinds]);
+Object.assign(__appScope, { recentGlyphKinds, setRecentGlyphKinds });
 const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
 Object.assign(__appScope, { selectedNodeIds, setSelectedNodeIds });
 const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
@@ -1372,6 +1384,10 @@ const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
 Object.assign(__appScope, { topology, setTopology });
 const [topologyStatus, setTopologyStatus] = useState<TopologyRunStatus>(INITIAL_TOPOLOGY_STATUS);
 Object.assign(__appScope, { topologyStatus, setTopologyStatus });
+const [ratedCapacityDialogOpen, setRatedCapacityDialogOpen] = useState(false);
+Object.assign(__appScope, { ratedCapacityDialogOpen, setRatedCapacityDialogOpen });
+const [ratedCapacityDialogNode, setRatedCapacityDialogNode] = useState<ModelNode | null>(null);
+Object.assign(__appScope, { ratedCapacityDialogNode, setRatedCapacityDialogNode });
 const topologyWarningPanelRef = useRef<HTMLElement | null>(null); Object.assign(__appScope, { topologyWarningPanelRef });
 const [routeRenderingReady, setRouteRenderingReady] = useState(false);
 Object.assign(__appScope, { routeRenderingReady, setRouteRenderingReady });

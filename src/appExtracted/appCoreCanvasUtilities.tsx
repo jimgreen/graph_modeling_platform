@@ -2657,6 +2657,14 @@ export const VOLTAGE_BASE_SET_SCOPE_LABELS: Record<VoltageBaseSetScope, string> 
 
 export const VOLTAGE_BASE_SET_PRESETS = ["0.4", "6", "10", "35", "66", "110", "220", "330", "500", "750", "1000"];
 
+export const VOLTAGE_BASE_SET_CATEGORIES = [
+  { label: "特高压（UHV）", values: ["1000"], desc: "特高压交流输电" },
+  { label: "超高压（EHV）", values: ["750", "500"], desc: "区域骨干输电" },
+  { label: "高压（HV）", values: ["330", "220", "110", "66"], desc: "主网、区域网" },
+  { label: "中压（MV）", values: ["35", "20", "10", "6"], desc: "配电网、工业用户" },
+  { label: "低压（LV）", values: ["0.4", "0.22"], desc: "台区低压配电 / 用户单相用电" }
+] as const;
+
 export type VoltageBaseSetMode = "uniform" | "terminal" | "byDevice";
 
 export type FilterSelectionTypeOption = {

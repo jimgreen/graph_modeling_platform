@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { memo } from "react";
+import { memo, useState, useRef } from "react";
 import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
 
 export const AppContextMenus = memo(function AppContextMenus({ scope }) {
@@ -20,6 +20,15 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }) {
     selectedEdge, setSelectedNodeLabelDisplayMode, startContextMarqueeSelection, templateMenu, tidyRoutableLineRoute, tidySelectedEdgeRoute, undoLastOperation, undoStack,
     ungroupSelectedGraphics
   } = scope;
+  const [submenuHovered, setSubmenuHovered] = useState<string | null>(null);
+  const closeTimerRef = useRef(null);
+  const handleSubmenuLeave = () => {
+    closeTimerRef.current = setTimeout(() => setSubmenuHovered(null), 150);
+  };
+  const handleSubmenuEnter = (id: string) => {
+    clearTimeout(closeTimerRef.current);
+    setSubmenuHovered(id);
+  };
   return (<>
 {contextMenu && (<div ref={contextMenuRef} className={contextMenuClassName(contextMenu)} data-canvas-context-menu="true" style={contextMenuStyle(contextMenu)}>
           {isEditMode && contextMenuFromElementTree && contextMenuForSelection && contextSelectionCount > 0 && (<button onClick={() => runContextMenuAction(deleteSelection)}>
@@ -55,7 +64,7 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }) {
                   <FileInput size={14}/>
                   粘贴
                 </button>)}
-              {isEditMode && nodes.length > 0 && (<div className="context-menu-submenu">
+              {isEditMode && nodes.length > 0 && (<div className={`context-menu-submenu${submenuHovered === "voltage" ? " submenu-hovered" : ""}`} onMouseEnter={() => handleSubmenuEnter("voltage")} onMouseLeave={handleSubmenuLeave}>
                   <button type="button" className="context-menu-submenu-trigger">
                     <Zap size={14}/>
                     电压基值
@@ -118,7 +127,7 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }) {
                   <Plus size={14}/>
                   定义为元件
                 </button>) : null)}
-              {isEditMode && contextMeasurementNode && !__appScope.isStaticGraphicNode(contextMeasurementNode) && (<div className="context-menu-submenu">
+              {isEditMode && contextMeasurementNode && !__appScope.isStaticGraphicNode(contextMeasurementNode) && (<div className={`context-menu-submenu${submenuHovered === "measurement" ? " submenu-hovered" : ""}`} onMouseEnter={() => handleSubmenuEnter("measurement")} onMouseLeave={handleSubmenuLeave}>
                   <button type="button" className="context-menu-submenu-trigger">
                     <CircleDot size={14}/>
                     量测显示
@@ -143,7 +152,7 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }) {
                   <Layers size={14}/>
                   图层修改
                 </button>) : null)}
-              {contextMenuForNode && activeSelectedNodeIds.length > 0 && (isEditMode ? (<div className="context-menu-submenu">
+              {contextMenuForNode && activeSelectedNodeIds.length > 0 && (isEditMode ? (<div className={`context-menu-submenu${submenuHovered === "layer" ? " submenu-hovered" : ""}`} onMouseEnter={() => handleSubmenuEnter("layer")} onMouseLeave={handleSubmenuLeave}>
                   <button type="button" className="context-menu-submenu-trigger">
                     <Layers2 size={14}/>
                     显示层级
@@ -168,7 +177,7 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }) {
                     </button>
                   </div>
                 </div>) : null)}
-              {contextMenuForNode && activeSelectedNodeIds.length > 0 && (isEditMode ? (<div className="context-menu-submenu">
+              {contextMenuForNode && activeSelectedNodeIds.length > 0 && (isEditMode ? (<div className={`context-menu-submenu${submenuHovered === "label" ? " submenu-hovered" : ""}`} onMouseEnter={() => handleSubmenuEnter("label")} onMouseLeave={handleSubmenuLeave}>
                   <button type="button" className="context-menu-submenu-trigger">
                     <Type size={14}/>
                     标识显示

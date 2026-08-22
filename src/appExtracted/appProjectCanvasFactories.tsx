@@ -10,7 +10,7 @@ import { isLineOnlyConnectionNode, modelAssociationLineConnectionFailureMessage,
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return async (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[], globalLineChoice?: GlobalLineChoice) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, attachGlobalLineForNode, buildManualConnectionPreviewRoute, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, connectTargetPoint, createRoutableLineDeviceFromEndpoints, deviceIndexCounters, edges, hasCanvasOriginShift, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, nodes, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, resetRoutableLinePreviewState, routableLineDeviceEndpointRefForNode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setMode, setRoutableLineDeviceCanvasPoints, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, writeOperationLog } = __appScope;
+  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, attachGlobalLineForNode, buildManualConnectionPreviewRoute, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, connectTargetPoint, createRoutableLineDeviceFromEndpoints, deviceIndexCounters, edges, hasCanvasOriginShift, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, nodes, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, resetRoutableLinePreviewState, routableLineDeviceEndpointRefForNode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setMode, setRecentGlyphKinds, setRoutableLineDeviceCanvasPoints, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, writeOperationLog } = __appScope;
     const connectionIssue = modelAssociationLineConnectionFailureMessage(source.node) ||
       modelAssociationLineConnectionFailureMessage(target.node);
     if (connectionIssue) {
@@ -85,6 +85,11 @@ export function createCommitRoutableLineDevice(__appScope: Record<string, any>) 
     setMode("select");
     activateInspectorFromCanvas();
     writeOperationLog(`新增线路：${indexed.node.name}`);
+    setRecentGlyphKinds?.((prev) => {
+      const next = prev.filter((k) => k !== template.kind);
+      next.push(template.kind);
+      return next.length > 10 ? next.slice(-10) : next;
+    });
     return true;
   };
 }
@@ -2255,7 +2260,7 @@ export function createOpenVoltageBaseSetDialog(__appScope: Record<string, any>) 
       return;
     }
     const terminalValues = defaultVoltageBaseTerminalValues();
-    setVoltageBaseSetScope("selected");
+    setVoltageBaseSetScope("island");
     setVoltageBaseSetValue(defaultVoltageBaseSetValue());
     setVoltageBaseTerminalValues(terminalValues);
     setActiveVoltageBaseTerminalKey(defaultVoltageBaseTerminalKey());
@@ -5193,7 +5198,7 @@ export function createCreateBlankProject(__appScope: Record<string, any>) {
 
 export function createLocateTopologyError(__appScope: Record<string, any>) {
   return (error: TopologyValidationError) => {
-    const { activateInspectorFromCanvas, activeLayerEdgeIdSet, activeLayerNodeIdSet, centerViewOnPoint, centerViewOnPointAtZoom, clearRecordSelection, currentZoomPercent, edges, getElementFocusPoint, nodeById, nodes, setCanvasSelectionScope, setInspectorTab, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
+    const { activateInspectorFromCanvas, activeLayerEdgeIdSet, activeLayerNodeIdSet, centerViewOnPoint, centerViewOnPointAtZoom, clearRecordSelection, currentZoomPercent, edges, getElementFocusPoint, isRatedCapacityError, nodeById, nodes, setCanvasSelectionScope, setInspectorTab, setRatedCapacityDialogNode, setRatedCapacityDialogOpen, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
     activateInspectorFromCanvas();
     const firstNodeId = error.nodeId ?? error.relatedNodeIds[0];
     const node = firstNodeId ? nodeById.get(firstNodeId) : undefined;
@@ -5220,12 +5225,16 @@ export function createLocateTopologyError(__appScope: Record<string, any>) {
       setInspectorTab("device");
       clearRecordSelection();
     }
+    if (isRatedCapacityError?.(error) && editableNode && node) {
+      setRatedCapacityDialogNode(node);
+      setRatedCapacityDialogOpen(true);
+    }
   };
 }
 
 export function createRunTopologyCalculation(__appScope: Record<string, any>) {
   return () => {
-  const { EMPTY_TOPOLOGY, buildTopology, calculateElectricalTopology, currentUnit, edges, isBlockingTopologyValidationError, locateTopologyError, modelType, nodes, normalizeDeviceOperatingLimitsAfterTopology, powerUnit, pushUndoSnapshot, requireEditMode, schemes, setNodes, setTopology, setTopologyErrors, setTopologyStatus, skipNextTopologyStaleRef, topologyCalculationMessage, validateTopology, validateVoltageSetpointDeviations, voltageUnit, writeOperationLog } = __appScope;
+  const { EMPTY_TOPOLOGY, buildTopology, calculateElectricalTopology, currentUnit, edges, isBlockingTopologyValidationError, locateTopologyError, modelType, nodes, normalizeDeviceOperatingLimitsAfterTopology, powerUnit, pushUndoSnapshot, requireEditMode, schemes, setNodes, setTopology, setTopologyErrors, setTopologyStatus, setTopologyWarningPanelClosed, skipNextTopologyStaleRef, topologyCalculationMessage, validateTopology, validateVoltageSetpointDeviations, voltageUnit, writeOperationLog } = __appScope;
     if (!requireEditMode("执行图上拓扑计算")) {
       return;
     }

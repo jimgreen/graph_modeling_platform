@@ -4292,6 +4292,14 @@ export function createFinishSchemeRecordDrag(__appScope: Record<string, any>) {
   };
 }
 
+export const MODEL_TYPE_COLORS: Record<string, string> = {
+  "微网": "#7c3aed",
+  "厂站": "#2563eb",
+  "馈线": "#0891b2",
+  "台区": "#059669",
+  "其他": "#94a3b8"
+};
+
 export function projectModelTypeIconName(modelType: unknown) {
   switch (typeof modelType === "string" ? modelType.trim() : "") {
     case "微网":
@@ -4463,6 +4471,7 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
                         size={14}
                       />
                       <span className="project-tree-name">{project.name}</span>
+                      <span className="project-model-type-tag" style={{ background: MODEL_TYPE_COLORS[projectModelType] ?? "#94a3b8" }}>{projectModelType}</span>
                     </div>
                   );
                 })}

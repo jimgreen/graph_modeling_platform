@@ -6,14 +6,14 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
   const __appScope = scope;
   const {
     BufferedTextInput, CONNECTION_REDRAW_SCOPE_LABELS, DEFAULT_COLOR_PALETTE, DeferredColorInput, ENABLE_REACT_FLOW_PREVIEW, ENERGY_COLOR_ROWS, ReactFlowPreview, Suspense,
-    TERMINAL_TYPE_LIBRARY_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VoltageLevelDialog, WindowCloseButton, activeSelectedNodeIds,
+    TERMINAL_TYPE_LIBRARY_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_CATEGORIES, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VoltageLevelDialog, WindowCloseButton, activeSelectedNodeIds,
     activeVoltageBaseTerminalKey, activeVoltageBaseTerminalRow, applyLayerAssignmentDialog, cancelTemplateDialog, colorPaletteDialogOpen, colorPaletteDraft, colorPaletteTab, componentLibraryOptionsByCategoryLibrary,
     confirmAddGraphTemplate, confirmConnectionRedrawDialog, confirmCreateDeviceFromGroup, confirmFilterSelectionDialog, confirmReplaceDeviceIconFromGroup, confirmVoltageBaseClearDialog, confirmVoltageBaseSetDialog, connectionRedrawDialogOpen,
     connectionRedrawScope, connectionRedrawTargetsForScope, createGraphTemplateType, currentModelVoltageColorKeys, defaultComponentLibraryForCategoryLibrary, deleteVoltageColorRow, filterSelectionDialogOpen, filterSelectionTreeLabel,
     filterSelectionTypeKeys, filterSelectionTypeOptions, filterSelectionTypePartial, filterSelectionTypeSelected, graphTemplateTypes, groupDeviceDefinitionDialog, groupDeviceReplacementTemplates, layerAssignmentDialogOpen,
-    layerAssignmentTargetId, layerAssignmentUnchanged, layers, normalizeCategoryLibraryName, reactFlowPreviewOpen, renderGraphTemplatePreview, resetEnergyColors, resetVoltageColors,
+    layerAssignmentTargetId, layerAssignmentUnchanged, layers, normalizeCategoryLibraryName, patchGraphNodes, reactFlowPreviewOpen, ratedCapacityDialogNode, ratedCapacityDialogOpen, renderGraphTemplatePreview, resetEnergyColors, resetVoltageColors,
     resolveTemplateComponentLibrary, saveColorPalette, selectableCategoryLibraries, setActiveVoltageBaseTerminalKey, setColorPaletteDialogOpen, setColorPaletteTab, setConnectionRedrawDialogOpen, setConnectionRedrawScope,
-    setColorPaletteDraft, setFilterSelectionDialogOpen, setFilterSelectionTypeKeys, setGroupDeviceDefinitionDialog, setLayerAssignmentDialogOpen, setLayerAssignmentTargetId, setReactFlowPreviewOpen, setTemplateDraftName, setTemplateDraftType,
+    setColorPaletteDraft, setFilterSelectionDialogOpen, setFilterSelectionTypeKeys, setGroupDeviceDefinitionDialog, setLayerAssignmentDialogOpen, setLayerAssignmentTargetId, setRatedCapacityDialogNode, setRatedCapacityDialogOpen, setReactFlowPreviewOpen, setTemplateDraftName, setTemplateDraftType,
     setVoltageBaseClearDialogOpen, setVoltageBaseClearScope, setVoltageBaseSetDialogOpen, setVoltageBaseSetScope, setVoltageBaseSetValue, setVoltageBaseTerminalValue, setVoltageColorVisibility, setVoltageLevelDialogOpen,
     setVoltageLevelSettings, setVoltageTab, templateDialog, templateDraftName, templateDraftType, toggleColorDisplayMode, toggleFilterSelectionItem, toggleFilterSelectionType,
     updateEnergyColor, updateVoltageColorRow, visibleEdges, visibleNodes, visibleVoltageColorRows, voltageBaseClearDialogOpen, voltageBaseClearResultForScope, voltageBaseClearScope,
@@ -34,10 +34,24 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               <span>设置方式</span>
               <strong>{voltageBaseSetModeLabel}</strong>
             </label>
-            {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (<label className="voltage-base-set-value-row">
-                <span>{voltageBaseSetMode === "byDevice" ? "普通设备电压基值" : "电压基值"}</span>
-                <BufferedTextInput type="text" value={voltageBaseSetValue} onCommit={setVoltageBaseSetValue} list="voltage-base-set-options" placeholder="例如 110" autoFocus/>
-              </label>)}
+            {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (<div className="voltage-base-set-table">
+                <div className="voltage-base-set-table-head">
+                  <span>分类</span><span>电压等级</span><span>说明</span>
+                </div>
+                {VOLTAGE_BASE_SET_CATEGORIES.map((cat) => (
+                  <div key={cat.label} className="voltage-base-set-table-row">
+                    <span className="voltage-base-set-table-cat">{cat.label}</span>
+                    <span className="voltage-base-set-table-btns">
+                      {cat.values.map((v) => (
+                        <button key={v} type="button" className={voltageBaseSetValue === v ? "active" : ""} onClick={() => setVoltageBaseSetValue(v)}>
+                          {v === "0.22" ? "220V" : `${v}kV`}
+                        </button>
+                      ))}
+                    </span>
+                    <span className="voltage-base-set-table-desc">{cat.desc}</span>
+                  </div>
+                ))}
+              </div>)}
             {(voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice") && voltageBaseSetTerminalRows.length > 0 && (<div className="voltage-base-terminal-grid" aria-label="按端子设置电压基值">
                 <label className="voltage-base-set-value-row">
                   <span>端子</span>
@@ -47,10 +61,24 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                       </option>))}
                   </select>
                 </label>
-                {activeVoltageBaseTerminalRow && (<label className="voltage-base-set-value-row">
-                    <span>端子电压基值</span>
-                    <BufferedTextInput type="text" value={activeVoltageBaseTerminalRow.value} onCommit={(nextValue) => setVoltageBaseTerminalValue(activeVoltageBaseTerminalRow.nodeId, activeVoltageBaseTerminalRow.terminalId, nextValue)} list="voltage-base-set-options" placeholder="例如 110" autoFocus={voltageBaseSetMode === "terminal"}/>
-                  </label>)}
+                {activeVoltageBaseTerminalRow && (<div className="voltage-base-set-table">
+                    <div className="voltage-base-set-table-head">
+                      <span>分类</span><span>电压等级</span><span>说明</span>
+                    </div>
+                    {VOLTAGE_BASE_SET_CATEGORIES.map((cat) => (
+                      <div key={cat.label} className="voltage-base-set-table-row">
+                        <span className="voltage-base-set-table-cat">{cat.label}</span>
+                        <span className="voltage-base-set-table-btns">
+                          {cat.values.map((v) => (
+                            <button key={v} type="button" className={activeVoltageBaseTerminalRow.value === v ? "active" : ""} onClick={() => setVoltageBaseTerminalValue(activeVoltageBaseTerminalRow.nodeId, activeVoltageBaseTerminalRow.terminalId, v)}>
+                              {v === "0.22" ? "220V" : `${v}kV`}
+                            </button>
+                          ))}
+                        </span>
+                        <span className="voltage-base-set-table-desc">{cat.desc}</span>
+                      </div>
+                    ))}
+                  </div>)}
               </div>)}
             <datalist id="voltage-base-set-options">
               {voltageBaseSetOptions.map((value) => (<option key={value} value={value}/>))}
@@ -68,7 +96,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
             </div>
             <div className="image-picker-actions connection-redraw-actions">
               <button type="button" onClick={() => setVoltageBaseSetDialogOpen(false)}>退出</button>
-              <button type="button" onClick={confirmVoltageBaseSetDialog} disabled={!voltageBaseSetReady() || voltageBaseSetResultForScope(voltageBaseSetScope).changedNodeIds.length === 0}>
+              <button type="button" onClick={() => { confirmVoltageBaseSetDialog(); setVoltageBaseSetDialogOpen(false); }} disabled={!voltageBaseSetReady() || voltageBaseSetResultForScope(voltageBaseSetScope).changedNodeIds.length === 0}>
                 确定
               </button>
             </div>
@@ -431,6 +459,44 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
             setColorPaletteDraft({ ...colorPaletteDraft, voltage: updatedVoltage });
           }}
         />
+      )}
+      {ratedCapacityDialogOpen && ratedCapacityDialogNode && (
+        <div className="image-picker-backdrop" onPointerDown={() => { setRatedCapacityDialogOpen(false); setRatedCapacityDialogNode(null); }}>
+          <section className="rated-capacity-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <WindowCloseButton label="关闭额定容量编辑窗口" onClick={() => { setRatedCapacityDialogOpen(false); setRatedCapacityDialogNode(null); }} />
+            <div className="image-picker-title">
+              <div>
+                <h2>编辑额定容量</h2>
+                <p>设备：{ratedCapacityDialogNode.name}</p>
+              </div>
+            </div>
+            <div className="rated-capacity-content">
+              <label>
+                <span>当前额定容量</span>
+                <input
+                  type="text"
+                  defaultValue={ratedCapacityDialogNode.params?.rated_capacity ?? ""}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const nextValue = (e.target as HTMLInputElement).value;
+                      const nextNode = { ...ratedCapacityDialogNode, params: { ...ratedCapacityDialogNode.params, rated_capacity: nextValue } };
+                      patchGraphNodes?.([nextNode]);
+                      setRatedCapacityDialogOpen(false);
+                      setRatedCapacityDialogNode(null);
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const nextValue = (e.target as HTMLInputElement).value;
+                    const nextNode = { ...ratedCapacityDialogNode, params: { ...ratedCapacityDialogNode.params, rated_capacity: nextValue } };
+                    patchGraphNodes?.([nextNode]);
+                    setRatedCapacityDialogOpen(false);
+                    setRatedCapacityDialogNode(null);
+                  }}
+                />
+              </label>
+            </div>
+          </section>
+        </div>
       )}
   </>);
 }, areViewSectionPropsEqual);

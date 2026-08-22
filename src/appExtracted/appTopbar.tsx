@@ -1,6 +1,8 @@
 // @ts-nocheck
-import { useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { MemoizedViewSection } from "./appViewRenderBoundary";
+import { createNodeFromTemplate } from "../model-node-ops";
+import { MemoDeviceGlyph } from "../DeviceGlyph";
 
 type AppTopbarProps = {
   scope: Record<string, any>;
@@ -251,5 +253,89 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
       </div>
       <RuntimeWsIndicator scope={scope}/>
     </header>
+  );
+}
+
+type RecentGlyphsToolbarProps = {
+  scope: Record<string, any>;
+};
+
+export function RecentGlyphsToolbar({ scope }: RecentGlyphsToolbarProps) {
+  const recentGlyphKinds: string[] = scope.recentGlyphKinds ?? [];
+  const libraryTemplates: readonly any[] = scope.libraryTemplates ?? [];
+  const [offsetX, setOffsetX] = useState(0);
+  const dragRef = useRef<{ startX: number; startOffsetX: number } | null>(null);
+
+  const templateByKind = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const t of libraryTemplates) map.set(t.kind, t);
+    return map;
+  }, [libraryTemplates]);
+
+  const handleDragStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    dragRef.current = { startX: e.clientX, startOffsetX: offsetX };
+    const onMove = (ev: PointerEvent) => {
+      if (!dragRef.current) return;
+      setOffsetX(dragRef.current.startOffsetX + (ev.clientX - dragRef.current.startX));
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [offsetX]);
+
+  if (recentGlyphKinds.length === 0) return null;
+
+  return (
+    <div
+      className="recent-glyphs-toolbar"
+      style={{ "--rg-drag-x": `${offsetX}px` } as React.CSSProperties}
+    >
+      <div className="recent-glyphs-items">
+        {recentGlyphKinds.map((kind) => {
+          const template = templateByKind.get(kind);
+          if (!template) return null;
+          const node = createNodeFromTemplate(template, { x: 0, y: 0 });
+          const tw = template.size?.width ?? 40;
+          const th = template.size?.height ?? 40;
+          const maxDim = Math.max(tw, th);
+          const pad = maxDim * 0.15;
+          const vb = `${-tw / 2 - pad} ${-th / 2 - pad} ${tw + pad * 2} ${th + pad * 2}`;
+          return (
+            <button
+              key={kind}
+              type="button"
+              className="recent-glyph-item"
+              title={template.label}
+              aria-label={template.label}
+              onClick={() => scope.startLibraryDevicePlacement?.(template)}
+            >
+              <svg width="28" height="28" viewBox={vb}>
+                <MemoDeviceGlyph node={node} colorDisplayMode={scope.colorDisplayMode} colorPalette={scope.colorPalette} />
+              </svg>
+            </button>
+          );
+        })}
+      </div>
+      <div
+        className="recent-glyphs-drag-handle"
+        onPointerDown={handleDragStart}
+        title="拖动工具栏"
+        aria-label="拖动工具栏"
+      >
+        <svg width="8" height="16" viewBox="0 0 8 16">
+          <circle cx="2" cy="3" r="1.2" fill="currentColor" />
+          <circle cx="6" cy="3" r="1.2" fill="currentColor" />
+          <circle cx="2" cy="8" r="1.2" fill="currentColor" />
+          <circle cx="6" cy="8" r="1.2" fill="currentColor" />
+          <circle cx="2" cy="13" r="1.2" fill="currentColor" />
+          <circle cx="6" cy="13" r="1.2" fill="currentColor" />
+        </svg>
+      </div>
+    </div>
   );
 }

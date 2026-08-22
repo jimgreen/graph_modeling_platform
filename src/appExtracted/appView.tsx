@@ -4,7 +4,7 @@ import { MemoizedCanvasArea } from "./appCanvasArea";
 import { AppLeftPanel } from "./appLeftPanel";
 import { AppRightPanel } from "./appRightPanel";
 import { AppStatusbar } from "./appStatusbar";
-import { AppTopbar } from "./appTopbar";
+import { AppTopbar, RecentGlyphsToolbar } from "./appTopbar";
 import { AppResourceDialogs } from "./appResourceDialogs";
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 import { IMAGE_FIT_MODE_OPTIONS, normalizeImageFitMode } from "../imageFit";
@@ -555,6 +555,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   const { voltageLevelSettings, setVoltageLevelSettings, voltageLevelDialogOpen, setVoltageLevelDialogOpen } = __appScope;
   const { measurementConfigDialogOpen, closeMeasurementConfigDialog, userCustomizationManagerOpen, setUserCustomizationManagerOpen } = __appScope;
   const { eFileEditorDialogOpen, setEFileEditorDialogOpen } = __appScope;
+  const { ratedCapacityDialogOpen, setRatedCapacityDialogOpen, ratedCapacityDialogNode, setRatedCapacityDialogNode, patchGraphNodes } = __appScope;
   const {
     copiedCustomComponentTemplate,
     copyCustomComponentTemplate,
@@ -2316,7 +2317,8 @@ export function renderAppView(__appScope: Record<string, any>) {
     filterSelectionDialogOpen ||
     reactFlowPreviewOpen ||
     colorPaletteDialogOpen ||
-    voltageLevelDialogOpen
+    voltageLevelDialogOpen ||
+    ratedCapacityDialogOpen
   );
   const deviceDialogLayerActive = Boolean(
     deviceDefinitionDialogOpen ||
@@ -2491,6 +2493,11 @@ export function renderAppView(__appScope: Record<string, any>) {
             __appScope.runtimeWsBlinkSeq,
             __appScope.runtimeWsClientId
           ]}
+        />
+        <MemoizedViewSection
+          section="recent-glyphs"
+          inputs={[__appScope.recentGlyphKinds]}
+          render={() => <RecentGlyphsToolbar scope={__appScope} />}
         />
 
         <MemoizedCanvasArea scope={__appScope} />

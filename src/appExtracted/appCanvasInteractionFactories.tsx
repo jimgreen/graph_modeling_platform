@@ -3335,7 +3335,7 @@ export function createCancelInteractiveStaticDrawing(__appScope: Record<string, 
 
 export function createFinishInteractiveStaticDrawing(__appScope: Record<string, any>) {
   return (finalPoint?: Point) => {
-  const { activateInspectorFromCanvas, activeLayerId, appendDistinctStaticDrawingPoint, clampPointToCanvas, createInteractiveStaticDrawingNode, createStaticBoxNodeFromDrawing, edges, isStaticBoxLikeTemplate, nodes, pushUndoSnapshot, requireEditMode, setCanvasSelectionScope, setGraphArrays, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, staticDrawingPreviewPoints, updateSmartAlignmentGuides, writeOperationLog } = __appScope;
+  const { activateInspectorFromCanvas, activeLayerId, appendDistinctStaticDrawingPoint, clampPointToCanvas, createInteractiveStaticDrawingNode, createStaticBoxNodeFromDrawing, edges, isStaticBoxLikeTemplate, nodes, pushUndoSnapshot, requireEditMode, setCanvasSelectionScope, setGraphArrays, setMode, setRecentGlyphKinds, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, staticDrawingPreviewPoints, updateSmartAlignmentGuides, writeOperationLog } = __appScope;
     if (!requireEditMode("绘制图元")) {
       return;
     }
@@ -3362,6 +3362,11 @@ export function createFinishInteractiveStaticDrawing(__appScope: Record<string, 
     updateSmartAlignmentGuides([]);
     activateInspectorFromCanvas();
     writeOperationLog(`新增图元：${node.name}`);
+    setRecentGlyphKinds?.((prev) => {
+      const next = prev.filter((k) => k !== staticDrawing.template.kind);
+      next.push(staticDrawing.template.kind);
+      return next.length > 10 ? next.slice(-10) : next;
+    });
     setMode("select");
   };
 }
@@ -3585,7 +3590,7 @@ export function createClearLibraryPlacementPreview(__appScope: Record<string, an
 
 export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, pointerPosition: Point) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, createNodeFromTemplate, deviceIndexCounters, edges, hasCanvasOriginShift, isInteractiveStaticDrawingKind, isRoutableLineDeviceKind, isStaticBoxLikeTemplate, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, modelType, nodes, pushUndoSnapshot, rebuildRoutableLineDeviceRouteUpdates, rejectAutoCanvasExpansionForContent, requireEditMode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setLibraryPlacement, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, startInteractiveStaticDrawing, startLibraryDevicePlacement, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
+  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, createNodeFromTemplate, deviceIndexCounters, edges, hasCanvasOriginShift, isInteractiveStaticDrawingKind, isRoutableLineDeviceKind, isStaticBoxLikeTemplate, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, modelType, nodes, pushUndoSnapshot, rebuildRoutableLineDeviceRouteUpdates, rejectAutoCanvasExpansionForContent, requireEditMode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setLibraryPlacement, setMode, setRecentGlyphKinds, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, startInteractiveStaticDrawing, startLibraryDevicePlacement, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
     if (!requireEditMode("放置图元")) {
       return;
     }
@@ -3665,6 +3670,11 @@ export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>)
     setSelectedEdgeIds([]);
     activateInspectorFromCanvas();
     writeOperationLog(`新增图元：${indexed.node.name}`);
+    setRecentGlyphKinds?.((prev) => {
+      const next = prev.filter((k) => k !== kind);
+      next.push(kind);
+      return next.length > 10 ? next.slice(-10) : next;
+    });
   };
 }
 

@@ -2132,6 +2132,10 @@ export function isBlockingTopologyValidationError(error: Pick<TopologyValidation
   );
 }
 
+export function isRatedCapacityError(error: Pick<TopologyValidationError, "type" | "message">): boolean {
+  return error.type === "device-limit-invalid" && error.message.includes("额定容量");
+}
+
 const readonlyIntegerDefinition = (cnName: string, enName: string, typicalValue = ""): DeviceParameterDefinition => ({
   cnName,
   enName,
