@@ -15,6 +15,8 @@ const renderEmptyProjectPanel = (loaded: boolean) => renderToStaticMarkup(create
     openBlankProjectLibraryContextMenu: () => undefined,
     projectListPointerInsideRef: { current: false },
     projectSearchQuery: "",
+    projectSearchModelTypes: [],
+    setProjectSearchModelTypes: () => undefined,
     renderProjectSchemeNode: () => null,
     schemes: [],
     setProjectSearchQuery: () => undefined
