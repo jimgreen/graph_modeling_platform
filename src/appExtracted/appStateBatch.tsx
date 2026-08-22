@@ -704,6 +704,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     projectMeasurements,
     projectName,
     projectSearchQuery,
+    projectModelTypeFilter,
     refreshRecoveryProjectRef,
     revision,
     rewiring,
@@ -1171,7 +1172,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   const projects = useMemo(() => flattenSavedProjects(schemes), [schemes]); Object.assign(__appScope, { projects });
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]); Object.assign(__appScope, { projectById });
   const projectSearchNeedle = normalizeLibrarySearchText(projectSearchQuery); Object.assign(__appScope, { projectSearchNeedle });
-  const filteredProjectSchemes = useMemo<SavedSchemeRecord[]>(createAppHookCallback14(__appScope), [projectSearchNeedle, schemes]); Object.assign(__appScope, { filteredProjectSchemes });
+  const filteredProjectSchemes = useMemo<SavedSchemeRecord[]>(createAppHookCallback14(__appScope), [projectSearchNeedle, projectModelTypeFilter, schemes]); Object.assign(__appScope, { filteredProjectSchemes });
   const baseLibraryTemplates = useMemo<DeviceTemplate[]>(() => [...DEVICE_LIBRARY, ...customDeviceTemplates], [customDeviceTemplates]); Object.assign(__appScope, { baseLibraryTemplates });
   const libraryTemplates = useMemo<DeviceTemplate[]>(
       () => baseLibraryTemplates.map((template) => applyDeviceTemplateDefinitionOverride(

@@ -1160,27 +1160,21 @@ export function createAppHookCallback13(__appScope: Record<string, any>) {
 
 export function createAppHookCallback14(__appScope: Record<string, any>) {
   return () => {
-  const { MODEL_TYPES, normalizeLibrarySearchText, projectSearchModelTypes, projectSearchNeedle, schemes } = __appScope;
-    const hasTypeFilter = projectSearchModelTypes && projectSearchModelTypes.length > 0;
-    const typeFilterSet = hasTypeFilter ? new Set(projectSearchModelTypes) : null;
-    const getProjectModelType = (project: any): string => {
-      const modelType = project.project?.modelType;
-      return MODEL_TYPES?.includes(modelType) ? modelType : "其他";
-    };
+  const { normalizeLibrarySearchText, projectSearchNeedle, projectModelTypeFilter, schemes } = __appScope;
+    const hasTypeFilter = projectModelTypeFilter && projectModelTypeFilter.length > 0;
+    const typeFilterSet = hasTypeFilter ? new Set(projectModelTypeFilter) : null;
     if (!projectSearchNeedle && !hasTypeFilter) {
       return schemes;
     }
     const filterScheme = (scheme: SavedSchemeRecord): SavedSchemeRecord | null => {
       const schemeMatches = projectSearchNeedle ? normalizeLibrarySearchText(scheme.name).includes(projectSearchNeedle) : true;
       const filteredProjects = scheme.projects.filter((project) => {
-        const nameMatch = !projectSearchNeedle || normalizeLibrarySearchText(project.name).includes(projectSearchNeedle);
-        const typeMatch = !typeFilterSet || typeFilterSet.has(getProjectModelType(project));
+        const nameMatch = projectSearchNeedle ? normalizeLibrarySearchText(project.name).includes(projectSearchNeedle) : true;
+        const typeMatch = typeFilterSet ? typeFilterSet.has(project.project?.modelType ?? "其他") : true;
         return nameMatch && typeMatch;
       });
-      const filteredChildren = schemeMatches
-        ? (scheme.children ?? [])
-        : (scheme.children ?? []).map(filterScheme).filter((child): child is SavedSchemeRecord => Boolean(child));
-      return schemeMatches || filteredProjects.length > 0 || filteredChildren.length > 0
+      const filteredChildren = (scheme.children ?? []).map(filterScheme).filter((child): child is SavedSchemeRecord => Boolean(child));
+      return (schemeMatches || filteredProjects.length > 0 || filteredChildren.length > 0)
         ? { ...scheme, projects: filteredProjects, children: filteredChildren }
         : null;
     };
