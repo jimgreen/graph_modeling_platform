@@ -4317,8 +4317,8 @@ export function projectModelTypeIconName(modelType: unknown) {
 
 export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
   return (scheme: SavedSchemeRecord, depth = 0): ReactNode => {
-  const { Cable, ChevronDown, ChevronRight, Factory, FileJson, FolderOpen, HousePlug, Network, activeProjectKey, div, expandedSchemeIds, finishProjectRecordDrag, finishSchemeRecordDrag, isEditMode, moveProjectRecordToScheme, moveSchemeRecordToScheme, p, projectSearchNeedle, renderProjectSchemeNode, requestLoadSavedProject, selectSingleProject, selectSingleScheme, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setInspectorTab, setProjectMenu, span, startProjectRecordDrag, startSchemeRecordDrag, toggleProjectSelection, toggleSchemeExpanded, toggleSchemeSelection } = __appScope;
-    const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id);
+  const { Cable, ChevronDown, ChevronRight, Factory, FileJson, FolderOpen, HousePlug, Network, activeProjectKey, div, expandedSchemeIds, finishProjectRecordDrag, finishSchemeRecordDrag, isEditMode, moveProjectRecordToScheme, moveSchemeRecordToScheme, p, projectModelTypeFilter, projectSearchNeedle, renderProjectSchemeNode, requestLoadSavedProject, selectSingleProject, selectSingleScheme, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setInspectorTab, setProjectMenu, span, startProjectRecordDrag, startSchemeRecordDrag, toggleProjectSelection, toggleSchemeExpanded, toggleSchemeSelection } = __appScope;
+    const isExpanded = (projectSearchNeedle || (projectModelTypeFilter && projectModelTypeFilter.length > 0)) ? true : expandedSchemeIds.includes(scheme.id);
     const children = scheme.children ?? [];
     const hasContent = scheme.projects.length > 0 || children.length > 0;
     const schemeIndentStyle = { "--scheme-depth": depth } as CSSProperties;

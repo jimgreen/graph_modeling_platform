@@ -1215,7 +1215,7 @@ function isGeneratedDeviceName(name: string, baseName: string): boolean {
 
 function withAllocatedDeviceName<T extends Pick<ModelNode, "kind" | "name" | "params">>(node: T, idx: number): T {
   const baseName = deviceDefaultNameBase(node);
-  const currentName = node.name.trim();
+  const currentName = String(node.name ?? "").trim();
   if (!isGeneratedDeviceName(currentName, baseName)) {
     return node;
   }
@@ -1396,7 +1396,7 @@ function containerAssociatedDeviceDisplayName(
   node: Pick<ModelNode, "name" | "terminals">,
   fieldName: string
 ): string {
-  return `${node.name.trim() || "未命名容器"}_${containerRelationDisplayLabel(node, fieldName)}`;
+  return `${String(node.name ?? "").trim() || "未命名容器"}_${containerRelationDisplayLabel(node, fieldName)}`;
 }
 
 export function containerAssociatedDeviceName(

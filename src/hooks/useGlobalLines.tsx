@@ -286,7 +286,7 @@ export function useGlobalLines(scope: Record<string, any>) {
       saving: false,
       mode: initialCandidates.length > 0 ? "existing" : "new",
       selectedGlobalLineId: initialCandidates[0]?.id ?? "",
-      name: node.name.trim() || nextDefaultLineName(displayRecords, energyType),
+      name: String(node.name ?? "").trim() || nextDefaultLineName(displayRecords, energyType),
       error: ""
     });
     void loadRecords().then((nextRecords) => {

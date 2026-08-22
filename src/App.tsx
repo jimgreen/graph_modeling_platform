@@ -945,6 +945,8 @@ const [powerBaseValue, setPowerBaseValue] = useState(() => initialDraft?.powerBa
 Object.assign(__appScope, { powerBaseValue, setPowerBaseValue });
 const [schemes, setSchemesState] = useState<SavedSchemeRecord[]>([]);
 Object.assign(__appScope, { schemes, setSchemesState });
+const [projectModelTypeFilter, setProjectModelTypeFilter] = useState<string[]>([]);
+Object.assign(__appScope, { projectModelTypeFilter, setProjectModelTypeFilter });
 const [activeProjectKey, setActiveProjectKey] = useState<string>(() => initialDraft?.activeProjectKey ?? "");
 Object.assign(__appScope, { activeProjectKey, setActiveProjectKey });
 const [activeSchemeKey, setActiveSchemeKey] = useState<string>(() => initialDraft?.activeSchemeKey ?? "");
@@ -1083,8 +1085,6 @@ const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library" | "templ
 Object.assign(__appScope, { leftPanelTab, setLeftPanelTab });
 const [projectSearchQuery, setProjectSearchQuery] = useState("");
 Object.assign(__appScope, { projectSearchQuery, setProjectSearchQuery });
-const [projectSearchModelTypes, setProjectSearchModelTypes] = useState<string[]>([]);
-Object.assign(__appScope, { projectSearchModelTypes, setProjectSearchModelTypes });
 const [librarySearchQuery, setLibrarySearchQuery] = useState("");
 Object.assign(__appScope, { librarySearchQuery, setLibrarySearchQuery });
 const [componentLibraryDisplayMode, setComponentLibraryDisplayMode] = useState<ComponentLibraryDisplayMode>("right");

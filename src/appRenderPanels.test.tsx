@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
+import { MODEL_TYPES } from "./model";
 import { createRenderProjectPanel } from "./appExtracted/appRenderPanels";
 
 const Icon = () => createElement("span");
@@ -10,15 +11,16 @@ const renderEmptyProjectPanel = (loaded: boolean) => renderToStaticMarkup(create
   createRenderProjectPanel({
     Search: Icon,
     X: Icon,
+    MODEL_TYPES,
     backendSchemesLoadedRef: { current: loaded },
     filteredProjectSchemes: [],
     openBlankProjectLibraryContextMenu: () => undefined,
     projectListPointerInsideRef: { current: false },
+    projectModelTypeFilter: [],
     projectSearchQuery: "",
-    projectSearchModelTypes: [],
-    setProjectSearchModelTypes: () => undefined,
     renderProjectSchemeNode: () => null,
     schemes: [],
+    setProjectModelTypeFilter: () => undefined,
     setProjectSearchQuery: () => undefined
   })
 ));
