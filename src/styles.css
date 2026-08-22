@@ -841,6 +841,17 @@ button:not(.ant-btn):disabled {
   font-weight: 700;
 }
 
+.project-model-type-tag {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .scheme-option.selected .project-tree-name,
 .project-option.selected .project-tree-name {
   color: #1f2937;
@@ -1230,6 +1241,76 @@ button:not(.ant-btn):disabled {
   align-items: center;
   gap: 10px;
   min-width: 0;
+}
+
+.recent-glyphs-toolbar {
+  position: absolute;
+  top: 62px;
+  left: 50%;
+  transform: translateX(calc(-50% + var(--rg-drag-x, 0px)));
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 30px;
+  background: #f8fafc;
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 2px;
+  transition: transform 0.05s ease-out;
+}
+
+.recent-glyphs-items {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.recent-glyph-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  width: 36px;
+  height: 100%;
+  flex-shrink: 0;
+  color: #475569;
+  transition: background 0.12s, color 0.12s;
+}
+
+.recent-glyph-item:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.recent-glyph-item:active {
+  background: #cbd5e1;
+}
+
+.recent-glyphs-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  cursor: grab;
+  color: #94a3b8;
+  border-left: 1px solid #e2e8f0;
+  padding: 0 3px;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.recent-glyphs-drag-handle:hover {
+  color: #64748b;
+}
+
+.recent-glyphs-drag-handle:active {
+  cursor: grabbing;
 }
 
 .action-cluster button {
@@ -3514,6 +3595,16 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   position: relative;
 }
 
+.context-menu-submenu::after {
+  content: "";
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  width: 8px;
+  height: calc(100% + 12px);
+  pointer-events: auto;
+}
+
 .context-menu-submenu-trigger {
   width: 100%;
 }
@@ -3538,6 +3629,11 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   scrollbar-width: thin;
 }
 
+.context-menu--submenu-left .context-menu-submenu::after {
+  right: auto;
+  left: -8px;
+}
+
 .context-menu--submenu-left .context-menu-submenu-panel {
   right: calc(100% + 4px);
   left: auto;
@@ -3549,7 +3645,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .context-menu-submenu:hover .context-menu-submenu-panel,
-.context-menu-submenu:focus-within .context-menu-submenu-panel {
+.context-menu-submenu:focus-within .context-menu-submenu-panel,
+.context-menu-submenu.submenu-hovered .context-menu-submenu-panel {
   display: grid;
   gap: 2px;
 }
@@ -10194,6 +10291,124 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .voltage-base-set-options {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.voltage-base-set-table {
+  display: grid;
+  gap: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.voltage-base-set-table-head {
+  display: grid;
+  grid-template-columns: 100px 1fr 140px;
+  gap: 8px;
+  padding: 4px 8px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-weight: 800;
+  font-size: 11px;
+}
+
+.voltage-base-set-table-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 140px;
+  gap: 8px;
+  padding: 3px 8px;
+  align-items: center;
+  border-top: 1px solid #f1f5f9;
+}
+
+.voltage-base-set-table-cat {
+  color: #475569;
+  font-weight: 700;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.voltage-base-set-table-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.voltage-base-set-table-btns button {
+  padding: 2px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.4;
+  width: 60px;
+}
+
+.voltage-base-set-table-btns button:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.voltage-base-set-table-btns button.active {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.voltage-base-set-table-desc {
+  color: #94a3b8;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.voltage-base-set-dialog {
+  width: 40vw;
+  height: 70vh;
+  max-width: none;
+  overflow-y: auto;
+}
+
+.voltage-base-set-dialog .connection-redraw-actions {
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
+.rated-capacity-dialog {
+  width: 360px;
+  padding: 18px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.rated-capacity-content label {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.rated-capacity-content input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #0f172a;
+  background: #ffffff;
+  font-size: 14px;
+}
+
+.rated-capacity-content input:focus {
+  border-color: #2563eb;
+  outline: 2px solid rgba(37, 99, 235, 0.16);
+  outline-offset: 0;
 }
 
 .connection-redraw-options button {
