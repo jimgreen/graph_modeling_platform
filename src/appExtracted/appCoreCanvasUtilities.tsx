@@ -2514,15 +2514,16 @@ export const REFRESH_RECOVERY_STORAGE_KEY = "power-system-refresh-recovery";
 
 export const EMPTY_VOLTAGE_COLOR_KEY_SET = new Set<string>();
 
-export const EMPTY_ID_LIST: string[] = [];
+// 审查 T18-P0：共享空集合 freeze，防止消费方 push 污染全局引用
+export const EMPTY_ID_LIST: readonly string[] = Object.freeze([]);
 
-export const EMPTY_EDGE_ID_LIST: string[] = [];
+export const EMPTY_EDGE_ID_LIST: readonly string[] = Object.freeze([]);
 
-export const EMPTY_MODEL_GROUPS: ModelGroup[] = [];
+export const EMPTY_MODEL_GROUPS: readonly ModelGroup[] = Object.freeze([]);
 
 export const EMPTY_MODEL_GROUP_BY_ID = new Map<string, ModelGroup>();
 
-export const EMPTY_CANVAS_LAYOUT_UNITS: CanvasLayoutUnit[] = [];
+export const EMPTY_CANVAS_LAYOUT_UNITS: readonly CanvasLayoutUnit[] = Object.freeze([]);
 
 export const EMPTY_CANVAS_SELECTION: ReturnType<typeof resolveCanvasSelection> = {
   nodeIds: EMPTY_ID_LIST,

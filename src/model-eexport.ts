@@ -2106,10 +2106,10 @@ export function defaultContainerAssociatedColumnValue(section: string, column: s
   return defaultEColumnValue(column, rowIndex);
 }
 
-/** 判断设备是否可调（风力、光伏、水力、储能默认可调） */
+/** 判断设备是否可调（风力、光伏、水力、储能默认可调）。审查 T13-P0：提升为模块级 Set，避免导出循环内每单元格重建数组 */
+const ADJUSTABLE_DEVICE_TYPES = new Set(["ac-wind-source", "ac-pv-source", "ac-hydro-source", "ac-storage"]);
 function isAdjustableDevice(deviceType: string): boolean {
-  const adjustableTypes = ["ac-wind-source", "ac-pv-source", "ac-hydro-source", "ac-storage"];
-  return adjustableTypes.includes(deviceType);
+  return ADJUSTABLE_DEVICE_TYPES.has(deviceType);
 }
 
 function formatEColumnValue(section: string, column: string, value: string | undefined, rowIndex: number) {
