@@ -629,8 +629,11 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
   const dialogRef = useRef<HTMLElement | null>(null);
   const windowDragRef = useRef<FloatingWindowPointerState | null>(null);
   const windowResizeRef = useRef<FloatingWindowPointerState | null>(null);
+  // 审查 T23-P0：runId 竞态防护——models 变化时递增，in-flight 的 runTopology 结果按代丢弃
+  const runIdRef = useRef(0);
 
   useEffect(() => {
+    runIdRef.current += 1;
     setSelectedProjectIds(new Set(defaultAllNetworkTopologySelection(models)));
     setExpandedModelTypes(new Set(MODEL_TYPE_ORDER));
     setActiveTab("errors");
@@ -790,6 +793,8 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
     if (running || selectedProjectIds.size === 0) {
       return;
     }
+    const runId = ++runIdRef.current;
+    const isStale = () => runId !== runIdRef.current;
     setRunning(true);
     const selectedModels = models.filter((model) => selectedProjectIds.has(model.projectId));
     try {
@@ -855,6 +860,10 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
           ...loadCoverageResult.warnings
         ]
       };
+      // 审查 T23-P0：models 已在执行期间变化 → 丢弃本代结果，避免 UI 状态不一致
+      if (isStale()) {
+        return;
+      }
       setCompletedRun({
         selectionKey: selectionKey(selectedProjectIds),
         models: loadedModels,
@@ -865,11 +874,16 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
         `全网拓扑完成：${loadedModels.length} 个模型，${nextResult.errors.length} 条错误，${nextResult.warnings.length} 条警告`
       );
     } catch (error) {
+      if (isStale()) {
+        return;
+      }
       const message = error instanceof Error ? error.message : "全网拓扑失败。";
       scope.showGlobalMessage?.(message, "error");
       scope.writeOperationLog?.(`全网拓扑失败：${message}`);
     } finally {
-      setRunning(false);
+      if (!isStale()) {
+        setRunning(false);
+      }
     }
   };
 

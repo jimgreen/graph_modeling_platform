@@ -1,7 +1,7 @@
 // 静态绘制与画布操作（从 model-routing.ts 提取）
 import { clampNumber } from "./canvasViewport";
 import { degreesToRadians } from "./formatUtils";
-import { normalizeProjectMeasurements } from "./measurements";
+// 审查 T15-P0-1：清理未使用导入（normalizeProjectMeasurements 及 model 内 12 个仅出现在 import 行的符号）
 import type {
   CanvasBounds,
   CanvasResizeDragMetrics,
@@ -14,27 +14,13 @@ import type {
 } from "./model";
 import {
   DEFAULT_MODEL_LAYER_ID,
-  DEFAULT_MODEL_LAYER_NAME,
   STATIC_DRAWING_MIN_SIZE,
   STATIC_DRAWING_PADDING,
   STATIC_DRAW_POINTS_PARAM,
-  baseDeviceKind,
-  isInteractiveStaticDrawingKind,
-  isStaticBoxLikeNode,
-  isStaticButtonCapableKind,
-  isStaticButtonCapableNode,
-  isStaticGraphicNode,
-  isStaticKind,
-  isStaticLineLikeKind,
   normalizeStaticDrawingPoints,
-  parseStaticDrawPoints,
   roundStaticDrawingCoordinate,
   serializeStaticDrawPoints,
-  staticRenderKindForNode,
-  createNodeFromTemplate,
-  deviceParamValue,
-  makeId,
-  makeNodeNumber
+  createNodeFromTemplate
 } from "./model";
 import { calculateNodeVisualBounds } from "./model";
 export function createStaticBoxNodeFromDrawing(
