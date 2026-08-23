@@ -23,11 +23,15 @@ import {
   saveSchemeRecordDirectory
 } from "./server.mjs";
 
+// 审查 A2-P0：找不到起止标记时必须 fail-fast。
+// 旧实现返回 ""，下游所有 not.toContain(...) 否定断言恒真——SVG 结构回退时测试虚假通过。
 const svgSectionBetween = (svg, start, end) => {
   const startIndex = svg.indexOf(start);
   const endIndex = svg.indexOf(end);
   if (startIndex < 0 || endIndex < 0 || endIndex <= startIndex) {
-    return "";
+    throw new Error(
+      `svgSectionBetween: 未找到 section（start=${JSON.stringify(start)}, end=${JSON.stringify(end)}）——SVG 结构已变更或渲染回退`,
+    );
   }
   return svg.slice(startIndex, endIndex);
 };

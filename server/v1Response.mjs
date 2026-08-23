@@ -97,6 +97,12 @@ export async function sendV1JsonNoStore(response, data) {
 
 // 发送 v1 错误响应
 export function sendV1Error(response, code, message, statusOverride) {
+  // 审查 B-P0-3/B-P1-5：headers 已发出（如成功路径 writeHead 后再抛错）时无法再写错误头，
+  // 二次 writeHead 会抛 "Cannot set headers after they are sent" 导致 unhandled rejection 崩进程。
+  if (response.headersSent) {
+    console.error("[v1] 响应头已发送，放弃错误响应:", code, message);
+    return;
+  }
   const status = statusOverride ?? httpStatusForError(code);
   const body = { ok: false, error: { code, message } };
   response.writeHead(status, v1NoStoreJsonHeaders);

@@ -480,6 +480,16 @@ async function writeImageFolders(folders) {
   await writeJsonStoreFile(imageDataDir, imageFoldersPath, withRoot);
 }
 
+// 审查 A1-P0-1：图片存储（manifest + folders）read-modify-write 串行化。
+// 并发上传/删除时两个请求读到同一版本、后写覆盖先写导致条目丢失/复活；
+// 用 Promise 队列把临界区排队执行，单进程内消除 TOCTOU。
+let imageStoreLock = Promise.resolve();
+function withImageStoreLock(task) {
+  const run = imageStoreLock.then(task, task);
+  imageStoreLock = run.then(() => undefined, () => undefined);
+  return run;
+}
+
 async function resolveFolderId(folderId) {
   const folders = await readImageFolders();
   return folders.some((folder) => folder.id === folderId) ? folderId : "root";
@@ -6008,9 +6018,11 @@ async function handleImportIconLibrary(request, response) {
     sendError(response, 400, "未在文件中找到可直接显示的 SVG、PNG、JPEG、WEBP 或 GIF 图片素材。");
     return;
   }
-  await ensureStore();
-  const manifest = await readManifest();
-  await writeManifest([...items, ...manifest]);
+  await withImageStoreLock(async () => {
+    await ensureStore();
+    const manifest = await readManifest();
+    await writeManifest([...items, ...manifest]);
+  });
   sendJson(response, 201, {
     ok: true,
     assets: items.map(publicAsset),
@@ -6027,29 +6039,33 @@ async function handleUpload(request, response) {
   }
   const { mimeType, bytes } = parseDataUrl(dataUrl);
   const folderId = await resolveFolderId(typeof payload.folderId === "string" ? payload.folderId : "root");
-  await ensureStore();
   const item = createImageManifestItem({ name, mimeType, bytes, folderId });
-  await writeImageAssetFile(item, bytes);
-  const manifest = await readManifest();
-  await writeManifest([item, ...manifest]);
+  await withImageStoreLock(async () => {
+    await ensureStore();
+    await writeImageAssetFile(item, bytes);
+    const manifest = await readManifest();
+    await writeManifest([item, ...manifest]);
+  });
   sendJson(response, 201, publicAsset(item));
 }
 
 async function handleCreateImageFolder(request, response) {
   const payload = await readJsonBody(request);
   const name = safeName(payload.name || "新建文件夹");
-  const folders = await readImageFolders();
-  if (folders.some((folder) => folder.name.trim() === name.trim())) {
-    sendError(response, 409, "图片文件夹名称重复。");
-    return;
-  }
   const folder = {
     id: randomId("folder-"),
     name,
     createdAt: new Date().toISOString()
   };
-  await writeImageFolders([...folders, folder]);
-  sendJson(response, 201, folder);
+  await withImageStoreLock(async () => {
+    const current = await readImageFolders();
+    if (current.some((existing) => existing.name.trim() === name.trim())) {
+      sendError(response, 409, "图片文件夹名称重复。");
+      return;
+    }
+    await writeImageFolders([...current, folder]);
+    sendJson(response, 201, folder);
+  });
 }
 
 async function handleRenameImageFolder(folderId, request, response) {
@@ -6063,18 +6079,20 @@ async function handleRenameImageFolder(folderId, request, response) {
     sendError(response, 400, "文件夹名称不能为空。");
     return;
   }
-  const folders = await readImageFolders();
-  if (!folders.some((folder) => folder.id === folderId)) {
-    sendError(response, 404, "图片文件夹不存在。");
-    return;
-  }
-  if (folders.some((folder) => folder.id !== folderId && folder.name.trim() === name.trim())) {
-    sendError(response, 409, "图片文件夹名称重复。");
-    return;
-  }
-  const next = folders.map((folder) => (folder.id === folderId ? { ...folder, name } : folder));
-  await writeImageFolders(next);
-  sendJson(response, 200, next.find((folder) => folder.id === folderId));
+  await withImageStoreLock(async () => {
+    const folders = await readImageFolders();
+    if (!folders.some((folder) => folder.id === folderId)) {
+      sendError(response, 404, "图片文件夹不存在。");
+      return;
+    }
+    if (folders.some((folder) => folder.id !== folderId && folder.name.trim() === name.trim())) {
+      sendError(response, 409, "图片文件夹名称重复。");
+      return;
+    }
+    const next = folders.map((folder) => (folder.id === folderId ? { ...folder, name } : folder));
+    await writeImageFolders(next);
+    sendJson(response, 200, next.find((folder) => folder.id === folderId));
+  });
 }
 
 async function handleDeleteImageFolder(folderId, response) {
@@ -6082,15 +6100,17 @@ async function handleDeleteImageFolder(folderId, response) {
     sendError(response, 400, "默认文件夹不能删除。");
     return;
   }
-  const folders = await readImageFolders();
-  if (!folders.some((folder) => folder.id === folderId)) {
-    sendError(response, 404, "图片文件夹不存在。");
-    return;
-  }
-  await writeImageFolders(folders.filter((folder) => folder.id !== folderId));
-  const manifest = await readManifest();
-  await writeManifest(manifest.map((item) => (item.folderId === folderId ? { ...item, folderId: "root" } : item)));
-  sendJson(response, 200, { ok: true });
+  await withImageStoreLock(async () => {
+    const folders = await readImageFolders();
+    if (!folders.some((folder) => folder.id === folderId)) {
+      sendError(response, 404, "图片文件夹不存在。");
+      return;
+    }
+    await writeImageFolders(folders.filter((folder) => folder.id !== folderId));
+    const manifest = await readManifest();
+    await writeManifest(manifest.map((item) => (item.folderId === folderId ? { ...item, folderId: "root" } : item)));
+    sendJson(response, 200, { ok: true });
+  });
 }
 
 async function handleDownload(id, response) {
@@ -6109,15 +6129,17 @@ async function handleDownload(id, response) {
 }
 
 async function handleDeleteImageAsset(id, response) {
-  const manifest = await readManifest();
-  const item = manifest.find((entry) => entry.id === id);
-  if (!item) {
-    sendError(response, 404, "图片不存在。");
-    return;
-  }
-  await writeManifest(manifest.filter((entry) => entry.id !== id));
-  await rm(join(getAssetDir(item), item.filename), { force: true });
-  sendJson(response, 200, { ok: true });
+  await withImageStoreLock(async () => {
+    const manifest = await readManifest();
+    const item = manifest.find((entry) => entry.id === id);
+    if (!item) {
+      sendError(response, 404, "图片不存在。");
+      return;
+    }
+    await writeManifest(manifest.filter((entry) => entry.id !== id));
+    await rm(join(getAssetDir(item), item.filename), { force: true });
+    sendJson(response, 200, { ok: true });
+  });
 }
 
 async function handleGlobalLineRegistryOperation(response, operation, successStatus = 200) {
