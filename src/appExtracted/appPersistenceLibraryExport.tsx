@@ -3112,6 +3112,21 @@ export function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersist
 // 缓存 IndexedDB 存储模块的动态导入
 const deviceLibraryStoragePromise = import("../lib/deviceLibraryStorage");
 
+function isLocalStorageQuotaError(error: unknown): boolean {
+  return error instanceof DOMException
+    && (error.name === "QuotaExceededError" || error.name === "NS_ERROR_DOM_QUOTA_REACHED");
+}
+
+/** 审查 T07-P0-2：两级存储全败时必须让用户知晓数据未保存，而非静默丢失 */
+function warnLocalStorageWriteFailure(error: unknown): void {
+  console.error("[persist] localStorage 写入失败:", error);
+  if (isLocalStorageQuotaError(error)) {
+    import("../globalMessage").then(({ showGlobalMessage }) => {
+      showGlobalMessage("浏览器本地存储空间已满，本次图元库修改可能未持久化。请导出备份并清理浏览器缓存后重试。");
+    }).catch(() => {});
+  }
+}
+
 /**
  * 降级写入 localStorage（当 IndexedDB 失败时调用）
  */
@@ -3128,8 +3143,9 @@ function fallbackToLocalStorage(data: DeviceLibraryPersistencePayload): void {
     window.localStorage.setItem(E_DEVICE_DEFINITION_TABLE_IDS_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionTableIds ?? {}));
     window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, JSON.stringify(data.customGraphTemplateTypes));
     window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, JSON.stringify(data.customGraphTemplates));
-  } catch {
-    // 浏览器缓存不可写时不阻断当前编辑
+  } catch (error) {
+    // 审查 T07-P0-2：IndexedDB 已失败 + localStorage 也失败 = 数据真正丢失，必须告警
+    warnLocalStorageWriteFailure(error);
   }
 }
 
@@ -3143,8 +3159,11 @@ export function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrar
     window.localStorage.setItem(E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionFieldOrder ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_TEMPLATE_FIELDS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionTemplateFields ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_TABLE_IDS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionTableIds ?? {}));
-  } catch {
-    // 本地接口定义缓存不可写时，不阻断类保存。
+  } catch (error) {
+    // 本地接口定义缓存不可写时，不阻断类保存；但配额满需告警（审查 T07-P0-2）
+    if (isLocalStorageQuotaError(error)) {
+      warnLocalStorageWriteFailure(error);
+    }
   }
   // 阶段 5：只写 IndexedDB，失败时降级到 localStorage
   deviceLibraryStoragePromise.then(({ saveDeviceTemplates, saveGraphTemplates, saveOverrides }) => {

@@ -2989,6 +2989,10 @@ export function alignBusEndpointPointToRouteSegmentExtension(
   routePoints: Point[],
   endpoint: "source" | "target"
 ): Point | null {
+  // 审查 T01-P0-2 语义澄清：本函数并非"几何最近投影"，而是
+  // 「沿路由方向（source 从起点、target 从终点）找到的第一个不同于当前端点位置的投影」——
+  // 方向性遍历保证确定性；若所有投影都等于当前位置则回退第一个有效投影。
+  // 修改为真·最近比较会改变既有吸附行为，需先确认产品预期。
   if (!isBusNode(busNode) || routePoints.length < 2) {
     return null;
   }
@@ -6592,7 +6596,16 @@ export function normalizeModelGroups(
   };
 
   let changed = true;
+  // 审查 T01-P0-3：安全阀——正常情况每轮至少删除一个空组/坏引用，上限取组数+1；
+  // 数据损坏导致不收敛时告警退出，避免 UI 线程死循环阻塞。
+  let iterations = 0;
+  const maxIterations = normalized.length + 2;
   while (changed) {
+    if (iterations >= maxIterations) {
+      console.warn(`normalizeModelGroups: ${maxIterations} 轮未收敛，疑似数据异常，提前退出。`);
+      break;
+    }
+    iterations += 1;
     changed = false;
     const groupIds = new Set(normalized.map((group) => group.id));
     const groupsById = new Map(normalized.map((group) => [group.id, group] as const));

@@ -5,7 +5,8 @@ import { resolveEffectiveTemplateParameterDefinitions, withNodesParentModelId } 
 
 export function createOpenNodeDoubleClickEditor(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
-  const { NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS, activeLayerNodeIdSet, cloneNodeForDoubleClickDraft, doubleClickDialogKindForNode, flattenSavedSchemes, flushSync, isBrowseMode, isEditMode, modelAssociationModelTypeForKind, nodeDoubleClickCloseSuppressUntilRef, nodeDoubleClickDialog, nodeDoubleClickOpenGuardRef, requestLoadSavedProject, schemes, selectCanvasGraphics, setContextMenu, setImageTarget, setNodeDoubleClickDialog, setNodeDoubleClickDraft, writeOperationLog } = __appScope;
+  // 审查 T11-P0-2：showGlobalMessage 纳入 scope 解构（test-setup 有全局桩兜底，但显式依赖可测试）
+  const { NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS, activeLayerNodeIdSet, cloneNodeForDoubleClickDraft, doubleClickDialogKindForNode, flattenSavedSchemes, flushSync, isBrowseMode, isEditMode, modelAssociationModelTypeForKind, nodeDoubleClickCloseSuppressUntilRef, nodeDoubleClickDialog, nodeDoubleClickOpenGuardRef, requestLoadSavedProject, schemes, selectCanvasGraphics, setContextMenu, setImageTarget, setNodeDoubleClickDialog, setNodeDoubleClickDraft, showGlobalMessage = globalThis.showGlobalMessage, writeOperationLog } = __appScope;
     if (isBrowseMode) {
       const targetModelType = modelAssociationModelTypeForKind(node.kind);
       if (!targetModelType) {
