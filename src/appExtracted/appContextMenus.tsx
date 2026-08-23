@@ -1,8 +1,10 @@
-// @ts-nocheck
 import { memo, useState, useRef } from "react";
-import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
 
-export const AppContextMenus = memo(function AppContextMenus({ scope }) {
+type AppContextMenusProps = {
+  scope: Record<string, any>;
+};
+
+export const AppContextMenus = memo(function AppContextMenus({ scope }: AppContextMenusProps) {
   const __appScope = scope;
   const {
     AlignCenterHorizontal, ArrowDown, ArrowUp, BoxSelect, ChevronRight, ChevronsDown, ChevronsUp, CircleDot,
@@ -26,7 +28,7 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }) {
     closeTimerRef.current = setTimeout(() => setSubmenuHovered(null), 150);
   };
   const handleSubmenuEnter = (id: string) => {
-    clearTimeout(closeTimerRef.current);
+    clearTimeout(closeTimerRef.current ?? undefined);
     setSubmenuHovered(id);
   };
   return (<>
@@ -355,4 +357,4 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }) {
         ) : null;
       })()}
   </>);
-}, areViewSectionPropsEqual);
+});

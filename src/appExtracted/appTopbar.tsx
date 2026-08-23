@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 import { createNodeFromTemplate } from "../model-node-ops";
@@ -150,7 +149,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
           </svg>
         )}
       </button>
-      <button type="button" className={`topbar-primary-button ${smartAlignmentEnabled ? "active" : ""}`} onClick={() => setSmartAlignmentEnabled((current) => !current)} title={smartAlignmentEnabled ? "对齐到标线已开启，点击关闭" : "对齐到标线已关闭，点击开启"} aria-label={smartAlignmentEnabled ? "关闭对齐到标线" : "开启对齐到标线"}>
+      <button type="button" className={`topbar-primary-button ${smartAlignmentEnabled ? "active" : ""}`} onClick={() => setSmartAlignmentEnabled((current: boolean) => !current)} title={smartAlignmentEnabled ? "对齐到标线已开启，点击关闭" : "对齐到标线已关闭，点击开启"} aria-label={smartAlignmentEnabled ? "关闭对齐到标线" : "开启对齐到标线"}>
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
           <rect x="2" y="5" width="12" height="6" rx="1"/>
           <line x1="8" y1="0" x2="8" y2="16" strokeDasharray="2 2"/>
@@ -173,7 +172,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
       </button>
       <button className="topbar-primary-button" onClick={openColorPaletteDialog} disabled={isBrowseMode} title="配色设置" aria-label="配色设置"><Palette size={16}/></button>
       <button className="topbar-primary-button" onClick={() => setVoltageLevelDialogOpen(true)} disabled={isBrowseMode} title="电压等级设置" aria-label="电压等级设置"><Zap size={16}/></button>
-      <button className={`topbar-primary-button ${deviceLabelsVisible ? "active" : ""}`} onClick={() => setDeviceLabelsVisible((current) => !current)} title={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"} aria-label={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}><Type size={16}/></button>
+      <button className={`topbar-primary-button ${deviceLabelsVisible ? "active" : ""}`} onClick={() => setDeviceLabelsVisible((current: boolean) => !current)} title={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"} aria-label={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}><Type size={16}/></button>
       <button className="topbar-primary-button" onClick={() => setImageTarget({ kind: "canvasIcon" })} disabled={isBrowseMode} title="分类图标库" aria-label="分类图标库"><FolderOpen size={16}/></button>
       <div className="topbar-center-actions">
         <button className="topbar-primary-button" onClick={() => void openUserCustomizationManager()} disabled={isBrowseMode} title="用户自定义修改管理" aria-label="用户自定义修改管理"><Settings2 size={16}/></button>
