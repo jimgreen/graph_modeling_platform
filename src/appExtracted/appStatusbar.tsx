@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 
 type AppStatusbarProps = {

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // 从 App.tsx 提取的内联工具函数（纯函数，无 React / __appScope 依赖）。
 
 import {
