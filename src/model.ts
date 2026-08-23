@@ -10,6 +10,7 @@ import { degreesToRadians } from "./formatUtils";
 import { clampNumber } from "./canvasViewport";
 import { normalizeImageFitMode } from "./imageFit";
 import { isCanonicalDeviceVisualParamName } from "./deviceVisualParams";
+import { randomId } from "../shared/randomId.mjs";
 import { meaningfulDeviceParameterChineseName } from "./deviceParameterChineseNames";
 
 // E 文件导出相关代码（从 model.ts 提取到独立模块）
@@ -6021,7 +6022,8 @@ export const DEVICE_LIBRARY_BY_KIND: ReadonlyMap<string, DeviceTemplate> = new M
 );
 
 let nodeNumberSeed = 1;
-export const makeId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
+// 审查 T03-P0-1：7 字符 base-36 碰撞概率过高（~33 万元素达 50%），改用共享 UUIDv4 实现
+export const makeId = (prefix: string) => randomId(`${prefix}-`);
 export const makeNodeNumber = () => `N${nodeNumberSeed++}`;
 export const CUSTOM_PARAM_DEFINITIONS_KEY = "_customParamDefinitions";
 export const CUSTOM_DEVICE_TEMPLATE_KEY = "_customDeviceTemplate";

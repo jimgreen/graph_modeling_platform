@@ -434,7 +434,8 @@ export function createConfirmUserCustomizationImport(scope: Record<string, any>)
     }
     const modeLabel = pending.mode === "replace" ? "整体替换" : "增量更新";
     const preview = pending.preview;
-    if (!confirmUser(scope, `确定以“${modeLabel}”方式导入吗？新增 ${preview.additions} 项，更新或删除 ${preview.updates} 项，冲突 ${preview.conflicts.length} 项。`)) {
+    // 审查 T29-P0：confirmUser 返回 Promise，未 await 时恒 truthy，取消按钮形同虚设
+    if (!(await confirmUser(scope, `确定以“${modeLabel}”方式导入吗？新增 ${preview.additions} 项，更新或删除 ${preview.updates} 项，冲突 ${preview.conflicts.length} 项。`))) {
       return;
     }
     try {

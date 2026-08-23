@@ -173,12 +173,40 @@ export function svgLengthNumber(value: string) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+// 审查 T25b-P0-1/P0-2：渲染路径与导入路径（sanitizeDocument/safeUrl 白名单）对齐安全标准——
+// 1) 先解码 XML/HTML 数字实体再匹配危险 scheme，防 "&#106;avascript:" 绕过；
+// 2) 覆盖 vbscript:/data:text/html 等非 javascript 危险协议；
+// 3) <script> 匹配自闭合与无闭合变体，不再遗漏 `<script src=...>`。
+const SVG_ENTITY_ENCODED_COLON = /&#x?0*3a;?|&#58;/giu;
+
+function decodeSvgNumericEntities(value: string) {
+  return value.replace(/&#x([0-9a-f]+);?/giu, (_match, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);?/gu, (_match, dec: string) => String.fromCodePoint(Number.parseInt(dec, 10)));
+}
+
 export function stripUnsafeInlineSvgMarkup(value: string) {
-  return value
-    .replace(/<script\b[\s\S]*?<\/script>/giu, "")
+  let output = value;
+  // 迭代解码实体（防双重编码绕过），最多 3 轮
+  for (let round = 0; round < 3; round += 1) {
+    const decoded = decodeSvgNumericEntities(output);
+    if (decoded === output) {
+      break;
+    }
+    output = decoded;
+  }
+  return output
+    .replace(/<script\b[^>]*(?:\/>|>[\s\S]*?<\/script\s*>|$)/giu, "")
+    .replace(/<\/script\s*>/giu, "")
     .replace(/<style\b[\s\S]*?<\/style>/giu, "")
     .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, "")
-    .replace(/\s+(?:href|xlink:href)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*')/giu, "");
+    .replace(/(\s+(?:href|xlink:href)\s*=\s*)("[^"]*"|'[^']*'|[^\s>]+)/giu, (_match: string, prefix: string, url: string) => {
+      const rawUrl = url.replace(/^["']|["']$/g, "");
+      const normalized = decodeSvgNumericEntities(rawUrl).replace(SVG_ENTITY_ENCODED_COLON, ":").replace(/[\s\u00A0]+/gu, "").toLowerCase();
+      if (/^(?:javascript|vbscript|livescript|mocha):/.test(normalized) || /^data:text\/html/i.test(normalized)) {
+        return "";
+      }
+      return `${prefix}${url}`;
+    });
 }
 
 function escapeRegExp(value: string) {
