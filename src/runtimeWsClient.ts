@@ -3,6 +3,7 @@
 // clientId 持久化于 localStorage，重连复用。
 
 import { apiPath } from "./config";
+import { randomId } from "../shared/randomId.mjs";
 
 const CLIENT_ID_KEY = "runtimeWsClientId";
 const PING_INTERVAL_MS = 15_000;
@@ -17,7 +18,7 @@ function getOrCreateClientId(): string {
   } catch {
     // localStorage 不可用，生成临时 id
   }
-  const id = `client-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const id = randomId("client-");
   try {
     localStorage.setItem(CLIENT_ID_KEY, id);
   } catch {

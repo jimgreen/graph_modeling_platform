@@ -7,9 +7,10 @@ import type {
 } from "./model";
 import { getTemplateStateDefinitions, normalizeDeviceStateDefinitions } from "./model";
 import { imageFitPreserveAspectRatio, normalizeImageFitMode } from "./imageFit";
-import { escapeXml, formatSvgNumber, svgImageContentMarkup } from "./svgUtils";
+import { DEFAULT_SHAPE_STROKE_COLOR, escapeXml, formatSvgNumber, svgImageContentMarkup } from "./svgUtils";
 import { resolveStateVisualImageHref } from "./staticRenderUtils";
 import { apiPath } from "./config";
+import { randomId } from "../shared/randomId.mjs";
 
 export type StateVisualShapeKind =
   | "switch-open"
@@ -139,15 +140,15 @@ export type DeviceDefinitionStateDraftRow = DeviceStateDefinition & {
 };
 
 export function customParamId() {
-  return `param-${Math.random().toString(36).slice(2, 9)}`;
+  return randomId("param-");
 }
 
 export function deviceDefinitionRowId() {
-  return `def-${Math.random().toString(36).slice(2, 9)}`;
+  return randomId("def-");
 }
 
 export function stateDraftRowId() {
-  return `state-${Math.random().toString(36).slice(2, 9)}`;
+  return randomId("state-");
 }
 
 export const DEFAULT_STATE_PAGE_ID = "__default-state__";
@@ -421,7 +422,7 @@ export function stateVisualShapeLabel(kind: StateVisualShapeKind) {
 }
 
 export function generateStateVisualShapeImage(kind: StateVisualShapeKind, row: DeviceDefinitionStateDraftRow) {
-  const stroke = visibleStateIconColor("#2563eb", row.strokeColor, row.color);
+  const stroke = visibleStateIconColor(DEFAULT_SHAPE_STROKE_COLOR, row.strokeColor, row.color);
   const fill = row.fillColor.trim() || "transparent";
   const textFill = visibleStateIconColor(stroke, row.textColor, row.color);
   const label = escapeXml(row.text.trim() || row.icon.trim() || row.name.trim() || row.value.trim() || "状态");
@@ -790,7 +791,7 @@ function parseStateIconPolylinePointsAttribute(value: string) {
 }
 
 export function createStateIconDrawingElement(kind: StateVisualShapeKind, row?: DeviceDefinitionStateDraftRow | null): StateIconDrawingElement {
-  const strokeColor = visibleStateIconColor("#2563eb", row?.strokeColor, row?.color);
+  const strokeColor = visibleStateIconColor(DEFAULT_SHAPE_STROKE_COLOR, row?.strokeColor, row?.color);
   return {
     id: stateIconDrawingElementId(),
     kind,
@@ -1053,7 +1054,7 @@ function stateIconDrawingTextElementFromGeneratedGroupMarkup(
           ? declaredStrokeWidth
           : readSvgMarkupNumber(backgroundRectOpen, "stroke-width", 0)
       ),
-      strokeColor: readSvgMarkupAttribute(groupOpen, "data-state-icon-stroke-color") || readSvgMarkupAttribute(backgroundRectOpen, "stroke") || "#2563eb",
+      strokeColor: readSvgMarkupAttribute(groupOpen, "data-state-icon-stroke-color") || readSvgMarkupAttribute(backgroundRectOpen, "stroke") || DEFAULT_SHAPE_STROKE_COLOR,
       fillColor: readSvgMarkupAttribute(groupOpen, "data-state-icon-fill-color") || readSvgMarkupAttribute(backgroundRectOpen, "fill") || "transparent",
       textColor: textAttribute("fill") || "#111827",
       text,
@@ -1213,7 +1214,7 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
       height: Math.max(1, readSvgMarkupNumber(trimmed, "data-polyline-height", 70)),
       rotation: transform.rotation,
       strokeWidth: Math.max(0, readSvgMarkupNumber(pathOpen, "stroke-width", 6)),
-      strokeColor: readSvgMarkupAttribute(pathOpen, "stroke") || "#2563eb",
+      strokeColor: readSvgMarkupAttribute(pathOpen, "stroke") || DEFAULT_SHAPE_STROKE_COLOR,
       fillColor: "transparent",
       points: polylinePoints,
       startCap: normalizeStateIconLineCapKind(readSvgMarkupAttribute(trimmed, "data-start-cap")),
@@ -1233,7 +1234,7 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
       height: radius * 2,
       rotation: transform.rotation,
       strokeWidth: Math.max(0, readSvgMarkupNumber(circleOpen, "stroke-width", 6)),
-      strokeColor: readSvgMarkupAttribute(circleOpen, "stroke") || "#2563eb",
+      strokeColor: readSvgMarkupAttribute(circleOpen, "stroke") || DEFAULT_SHAPE_STROKE_COLOR,
       fillColor: readSvgMarkupAttribute(circleOpen, "fill") || "transparent",
       ...grouping,
       ...terminalOwnership
@@ -1251,7 +1252,7 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
       height,
       rotation: transform.rotation,
       strokeWidth: Math.max(0, readSvgMarkupNumber(rectOpen, "stroke-width", 6)),
-      strokeColor: readSvgMarkupAttribute(rectOpen, "stroke") || "#2563eb",
+      strokeColor: readSvgMarkupAttribute(rectOpen, "stroke") || DEFAULT_SHAPE_STROKE_COLOR,
       fillColor: readSvgMarkupAttribute(rectOpen, "fill") || "transparent",
       strokeStyle: stateIconDrawingStrokeStyleFromMarkup(rectOpen),
       ...grouping,
@@ -2304,7 +2305,7 @@ export function stateIconDrawingElementMarkup(
   element: StateIconDrawingElement,
   options: StateIconDrawingToImageOptions = {}
 ) {
-  const stroke = escapeXml(element.strokeColor || "#2563eb");
+  const stroke = escapeXml(element.strokeColor || DEFAULT_SHAPE_STROKE_COLOR);
   const fill = escapeXml(element.fillColor || "transparent");
   const textFill = escapeXml(element.textColor || element.strokeColor || "#111827");
   const sw = formatSvgNumber(Math.max(0, element.strokeWidth));
@@ -2506,7 +2507,7 @@ export function stateIconDrawingElementPreviewNode(
   element: StateIconDrawingElement,
   options: { onImageLoad?: (element: StateIconDrawingElement, event: any) => void } = {}
 ) {
-  const stroke = element.strokeColor || "#2563eb";
+  const stroke = element.strokeColor || DEFAULT_SHAPE_STROKE_COLOR;
   const fill = element.fillColor || "transparent";
   const textFill = element.textColor || element.strokeColor || "#111827";
   const sw = Math.max(0, element.strokeWidth);

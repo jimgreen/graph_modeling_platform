@@ -18,9 +18,19 @@ function readClientId(url) {
 }
 
 // 轻量 JSON body 读取（control 模块自包含，不依赖 image-server 内部 readJsonBody）
+// 上限 1MB（审查 B-P0-2）：控制指令均为小 JSON，超限直接 413，防恶意大 body 打爆内存。
+const CONTROL_MAX_BODY_BYTES = 1024 * 1024;
+
 async function readJsonBody(request) {
   const chunks = [];
+  let total = 0;
   for await (const chunk of request) {
+    total += chunk.length;
+    if (total > CONTROL_MAX_BODY_BYTES) {
+      const error = new Error("请求体超过 1MB 上限。");
+      error.code = "payload-too-large";
+      throw error;
+    }
     chunks.push(chunk);
   }
   const body = Buffer.concat(chunks).toString("utf-8");
@@ -58,10 +68,14 @@ export async function handleControlDeviceAdd({ request, url, response }, ctx) {
   let payload;
   try {
     payload = await readJsonBody(request);
-  } catch {
+  } catch (error) {
+    if (error?.code === "payload-too-large") {
+      sendV1Error(response, "payload-too-large", error.message);
+      return;
+    }
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
-  }
+}
   const { kind, x, y, attrs } = payload ?? {};
   if (!kind || typeof kind !== "string") {
     sendV1Error(response, "bad-request", "kind 必填。");
@@ -86,10 +100,14 @@ export async function handleControlSchemeCreate({ request, url, response }, ctx)
   let payload;
   try {
     payload = await readJsonBody(request);
-  } catch {
+  } catch (error) {
+    if (error?.code === "payload-too-large") {
+      sendV1Error(response, "payload-too-large", error.message);
+      return;
+    }
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
-  }
+}
   const { name, parentSchemeId } = payload ?? {};
   if (!name || typeof name !== "string" || !name.trim()) {
     sendV1Error(response, "bad-request", "name 必填。");
@@ -108,10 +126,14 @@ export async function handleControlModelCreate({ request, url, response }, ctx) 
   let payload;
   try {
     payload = await readJsonBody(request);
-  } catch {
+  } catch (error) {
+    if (error?.code === "payload-too-large") {
+      sendV1Error(response, "payload-too-large", error.message);
+      return;
+    }
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
-  }
+}
   const { name, schemeId, modelType } = payload ?? {};
   if (!name || typeof name !== "string" || !name.trim()) {
     sendV1Error(response, "bad-request", "name 必填。");
@@ -134,10 +156,14 @@ export async function handleControlDevicesSelect({ request, url, response }, ctx
   let payload;
   try {
     payload = await readJsonBody(request);
-  } catch {
+  } catch (error) {
+    if (error?.code === "payload-too-large") {
+      sendV1Error(response, "payload-too-large", error.message);
+      return;
+    }
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
-  }
+}
   const { ids, mode } = payload ?? {};
   if (!Array.isArray(ids)) {
     sendV1Error(response, "bad-request", "ids 须为字符串数组。");
@@ -162,10 +188,14 @@ export async function handleControlDeviceDelete({ request, url, response }, ctx)
   let payload;
   try {
     payload = await readJsonBody(request);
-  } catch {
+  } catch (error) {
+    if (error?.code === "payload-too-large") {
+      sendV1Error(response, "payload-too-large", error.message);
+      return;
+    }
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
-  }
+}
   const { ids } = payload ?? {};
   const params = {};
   if (ids !== undefined) {
@@ -184,10 +214,14 @@ export async function handleControlDevicePropertyUpdate({ request, url, response
   let payload;
   try {
     payload = await readJsonBody(request);
-  } catch {
+  } catch (error) {
+    if (error?.code === "payload-too-large") {
+      sendV1Error(response, "payload-too-large", error.message);
+      return;
+    }
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
-  }
+}
   const { id, category, patch } = payload ?? {};
   if (!id || typeof id !== "string") {
     sendV1Error(response, "bad-request", "id 必填。");
@@ -210,10 +244,14 @@ export async function handleControlSave({ request, url, response }, ctx) {
   let payload;
   try {
     payload = await readJsonBody(request);
-  } catch {
+  } catch (error) {
+    if (error?.code === "payload-too-large") {
+      sendV1Error(response, "payload-too-large", error.message);
+      return;
+    }
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
-  }
+}
   const { scope } = payload ?? {};
   if (scope !== "currentModel" && scope !== "schemeTree") {
     sendV1Error(response, "bad-request", "scope 须为 currentModel 或 schemeTree。");
@@ -228,10 +266,14 @@ export async function handleControlTemplateSaveFromSelection({ request, url, res
   let payload;
   try {
     payload = await readJsonBody(request);
-  } catch {
+  } catch (error) {
+    if (error?.code === "payload-too-large") {
+      sendV1Error(response, "payload-too-large", error.message);
+      return;
+    }
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
-  }
+}
   const { name } = payload ?? {};
   const componentLibrary = payload?.componentLibrary ?? payload?.componentType;
   const categoryLibraryName = payload?.categoryLibraryName ?? payload?.attributeLibraryName;
@@ -262,10 +304,14 @@ export async function handleControlImportEDeviceDefinition({ request, url, respo
   let payload;
   try {
     payload = await readJsonBody(request);
-  } catch {
+  } catch (error) {
+    if (error?.code === "payload-too-large") {
+      sendV1Error(response, "payload-too-large", error.message);
+      return;
+    }
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
-  }
+}
   const text = payload?.text;
   if (typeof text !== "string" || !text.trim()) {
     sendV1Error(response, "bad-request", "text 必填（E 文件文本）。");

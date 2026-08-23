@@ -3,8 +3,12 @@
 import { Fragment, isValidElement } from "react";
 import { imageFitPreserveAspectRatio, normalizeImageFitMode } from "./imageFit";
 import { API_PREFIX } from "./config";
+import { escapeXmlFull } from "../shared/xmlEscape.mjs";
 
 /* 常量 */
+
+/** 状态图标/形状默认描边色（审查 T19-P2/F-P3-1：原散布于前后端 13+ 处的 "#2563eb"） */
+export const DEFAULT_SHAPE_STROKE_COLOR = "#2563eb";
 
 const BACKEND_IMAGE_HREF_PATTERN = new RegExp(`^${escapeRegExp(API_PREFIX)}/images/([^/?#]+)`);
 const IMAGE_DATA_URL_PATTERN = /^data:image\//iu;
@@ -39,12 +43,9 @@ export function svgStrokeDashArray(style?: string) {
   return undefined;
 }
 
+/** XML 转义：委托 shared/xmlEscape.mjs 的完整实现（含单引号），保持原导出名兼容下游 */
 export function escapeXml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return escapeXmlFull(value);
 }
 
 export function formatSvgNumber(value: number) {

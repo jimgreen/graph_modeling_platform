@@ -1,18 +1,11 @@
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { escapeXmlFull as escapeXml } from "../shared/xmlEscape.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const iconLibraryDir = path.join(rootDir, "data", "icon-library");
 const mergedCompatibilityLibraryDirs = new Set(["docer-free-compatible", "office-fluent-compatible"]);
-
-function escapeXml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
 
 function normalizeWebPath(...parts) {
   return parts

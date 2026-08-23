@@ -11,6 +11,7 @@
 //   - 只转换"带内嵌位图的 svg+xml data URL"和"直接的位图 data URL",纯 SVG 图标不动。
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from "node:fs";
+import { atomicWriteFileSync } from "../shared/atomicWrite.mjs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { apiPath } from "../server/config.mjs";
@@ -168,6 +169,7 @@ mkdirSync(imageDir, { recursive: true });
 for (const file of filesToWrite) {
   writeFileSync(join(imageDir, file.filename), file.bytes);
 }
-writeFileSync(manifestPath, JSON.stringify([...newManifestItems, ...manifest], null, 2));
-writeFileSync(libraryPath, newLibraryRaw);
+// manifest 与 library 用原子写（审查 G-P1-3）：中途失败不留半写 JSON
+atomicWriteFileSync(manifestPath, JSON.stringify([...newManifestItems, ...manifest], null, 2));
+atomicWriteFileSync(libraryPath, newLibraryRaw);
 console.log(`\nAPPLIED。备份后缀:.${stamp}.bak。请刷新浏览器验证自定义器件状态图标渲染正常。`);

@@ -1,6 +1,8 @@
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { escapeXmlFull as escapeXml } from "../shared/xmlEscape.mjs";
+import { safeJoin } from "../shared/pathSafety.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const iconLibraryDir = path.join(rootDir, "data", "icon-library");
@@ -16,14 +18,6 @@ function normalizeWebPath(...parts) {
     .replace(/\/+/g, "/")
     .replace(/^\//, "")
     .replace(/\/$/, "");
-}
-
-function escapeXml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
 
 function normalizedSvgStructure(svg) {
@@ -259,7 +253,13 @@ for (const sourceLibraryId of mergedLibraryIds) {
       if (!originalFile) {
         continue;
       }
-      const sourcePath = path.join(sourceDir, originalFile);
+      // 防御外部 manifest 中的 ".." 穿越（审查 F-P0-1）：解析后必须仍在 sourceDir 内
+      const sourcePath = safeJoin(sourceDir, originalFile);
+      if (!sourcePath) {
+        console.warn(`[merge] 跳过越界路径: ${sourceLibraryId}/${originalFile}`);
+        librarySummary.skippedDuplicates += 1;
+        continue;
+      }
       const svg = await readFile(sourcePath, "utf8");
       const svgStructure = normalizedSvgStructure(svg);
       if (seenSvgStructures.has(svgStructure)) {

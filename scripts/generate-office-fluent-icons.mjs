@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { escapeXmlFull as escapeXml } from "../shared/xmlEscape.mjs";
 
 const packageName = "@fluentui/svg-icons";
 const packageVersion = "1.1.330";
@@ -1612,14 +1613,6 @@ function run(command, args, options = {}) {
     );
   }
   return result.stdout.trim();
-}
-
-function escapeXml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
 
 function nameTokens(value) {

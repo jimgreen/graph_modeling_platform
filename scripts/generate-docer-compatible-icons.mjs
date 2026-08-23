@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { escapeXmlFull as escapeXml } from "../shared/xmlEscape.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = path.join(rootDir, "data", "icon-library", "docer-free-compatible");
@@ -2721,14 +2722,6 @@ async function renderDocerIcon(icon, category) {
     return renderReusableDocerIcon(icon, category, reuseRef);
   }
   return renderReusableExternalIcon(icon, category, reuseRef);
-}
-
-function escapeXml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
 
 function renderSvg(icon, category) {

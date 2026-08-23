@@ -1,5 +1,6 @@
 // schemePath 编解码工具：方案路径用 JSON 数组表示（如 ["方案A","子方案"]），
 // URL 传输时 encodeURIComponent(JSON.stringify(...))。query 参数 schemePath。
+import { sanitizeSegment } from "../shared/pathSafety.mjs";
 
 // 解码 schemePath query 参数 → 字符串数组。非法返 null。
 export function parseSchemePathParam(value) {
@@ -26,10 +27,8 @@ export function encodeSchemePath(parts) {
 const maxFilePartLength = 80;
 
 function safeFilePart(name, fallback = "未命名") {
-  return String(name || fallback)
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, "_")
-    .slice(0, maxFilePartLength) || fallback;
+  // sanitizeSegment 额外拒绝 "." / ".." 段，防止路径数组携带相对段逃逸（审查 B-P0-1）
+  return sanitizeSegment(name, fallback, maxFilePartLength);
 }
 
 // 校验 schemePath 非空（用于需要方案路径的接口）
