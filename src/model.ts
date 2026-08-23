@@ -593,6 +593,15 @@ export type ElementTreeGroup = {
 export const MODEL_TYPES = ["微网", "厂站", "馈线", "台区", "其他"] as const;
 export type ModelType = (typeof MODEL_TYPES)[number];
 
+/** 模型类型统一元数据：颜色与图标名的唯一来源 */
+export const MODEL_TYPE_META: Record<ModelType, { color: string; icon: string }> = {
+  "微网": { color: "#7c3aed", icon: "Network" },
+  "厂站": { color: "#2563eb", icon: "Factory" },
+  "馈线": { color: "#0891b2", icon: "Cable" },
+  "台区": { color: "#059669", icon: "HousePlug" },
+  "其他": { color: "#94a3b8", icon: "FileJson" }
+};
+
 export type ProjectFile = {
   version: 1;
   name: string;
