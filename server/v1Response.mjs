@@ -31,6 +31,7 @@ const v1NoStoreJsonHeaders = {
 // v1 错误码 → HTTP 状态映射
 const errorCodeStatus = {
   "bad-request": 400,
+  "payload-too-large": 413,
   "not-found": 404,
   "no-online-client": 503,
   "no-active-model": 404,

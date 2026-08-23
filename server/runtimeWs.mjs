@@ -3,6 +3,7 @@
 
 import { WebSocketServer } from "ws";
 import { apiPath } from "./config.mjs";
+import { randomId } from "../shared/randomId.mjs";
 
 const HEARTBEAT_CHECK_INTERVAL_MS = 15_000;
 const HEARTBEAT_TIMEOUT_MS = 60_000;
@@ -20,7 +21,7 @@ function safeParseMessage(raw) {
 }
 
 function generateRequestId() {
-  return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return randomId("req-");
 }
 
 // 挂载 WS 到现有 http server。registry 由 runtimeRegistry.createRuntimeRegistry() 创建。

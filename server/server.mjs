@@ -8,6 +8,9 @@ import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import AdmZip from "adm-zip";
 import iconv from "iconv-lite";
+import { randomId } from "../shared/randomId.mjs";
+import { isPathInside, sanitizeSegment } from "../shared/pathSafety.mjs";
+import { atomicWriteFile } from "../shared/atomicWrite.mjs";
 import { apiPrefix, apiPath, escapeRegExp, backendPort, host, frontendPrefix, stripFrontendBase } from "./config.mjs";
 import {
   NativeExportSaveError,
@@ -391,7 +394,8 @@ async function writeTextIfChanged(filePath, content, encoding = "utf-8") {
   } catch {
     // File is missing or unreadable; write a fresh copy below.
   }
-  await writeFile(filePath, bytes);
+  // 原子写（审查 A1-P0-1）：manifest/配置等 JSON 存储统一经此，崩溃不留半写文件
+  await atomicWriteFile(filePath, bytes);
 }
 
 async function fileExists(filePath) {
@@ -1848,10 +1852,8 @@ function safeName(name) {
 }
 
 function safeFilePart(name, fallback = "未命名") {
-  return String(name || fallback)
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, "_")
-    .slice(0, maxFilePartLength) || fallback;
+  // sanitizeSegment 额外拒绝 "." / ".." 段，防止 schemePath 数组元素相对路径逃逸（审查 B-P0-1）
+  return sanitizeSegment(name, fallback, maxFilePartLength);
 }
 
 const enumDefinitionIsEnum = (definition) => ["stringEnum", "numberEnum", "enum"].includes(definition?.valueType);
@@ -5152,8 +5154,21 @@ function schemeDirectoryFromPath(filesRoot, schemePath) {
 }
 
 function isInsideDirectory(parentDir, childPath) {
-  const relativePath = relative(parentDir, childPath);
-  return Boolean(relativePath) && !relativePath.startsWith("..") && !isAbsolute(relativePath);
+  return isPathInside(parentDir, childPath);
+}
+
+// 审查 A1-P0-2：zip bomb 防护——解压前按 entry 未压缩大小累计校验，防 256MB 压缩包解出数 GB 打爆内存
+const MAX_ZIP_UNCOMPRESSED_BYTES = 512 * 1024 * 1024;
+
+function assertZipUncompressedSizeWithinLimit(zip, label = "压缩包") {
+  const entries = typeof zip.getEntries === "function" ? zip.getEntries() : [];
+  let total = 0;
+  for (const entry of entries) {
+    total += Number(entry?.header?.size) || 0;
+    if (total > MAX_ZIP_UNCOMPRESSED_BYTES) {
+      throw new Error(`${label}解压后总大小超过 ${Math.round(MAX_ZIP_UNCOMPRESSED_BYTES / 1024 / 1024)}MB 上限。`);
+    }
+  }
 }
 
 function parseSchemePathParam(value) {
@@ -5244,6 +5259,7 @@ export async function importSchemeArchiveBuffer(options) {
   const mode = options.mode === "overwrite" ? "overwrite" : "check";
   const requestedName = safeFilePart(options.targetName || "", "");
   const zip = options.zip && typeof options.zip.getEntries === "function" ? options.zip : new AdmZip(options.buffer);
+  assertZipUncompressedSizeWithinLimit(zip, "方案压缩包");
   const entries = zip.getEntries();
   const zipRootName = schemeZipRootName(entries, fileName);
   const importName = requestedName || zipRootName;
@@ -5603,7 +5619,7 @@ function imageCountsByFolder(manifest) {
 }
 
 function createImageManifestItem({ name, mimeType, bytes, folderId }) {
-  const id = `img-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const id = randomId("img-");
   return {
     id,
     name: safeName(name),
@@ -5906,6 +5922,7 @@ function extractOfficeVectorSvgEntries(zip, sourceName, remainingSlots) {
 export function extractIconLibraryImageEntries(buffer, fileName = "导入文档图片") {
   const sourceName = iconLibrarySourceName(fileName);
   const zip = new AdmZip(buffer);
+  assertZipUncompressedSizeWithinLimit(zip, "文档图片压缩包");
   const entries = [];
   const skipped = [];
   const seenHashes = new Set();
@@ -5969,8 +5986,10 @@ async function handleImportIconLibrary(request, response) {
   let extracted;
   try {
     extracted = extractIconLibraryImageEntries(bytes, fileName);
-  } catch {
-    sendError(response, 400, "文档图片导入文件不是有效的压缩容器。");
+  } catch (error) {
+    // 守卫抛出的超限错误透传原因，其余归为容器格式错误
+    const message = error instanceof Error ? error.message : "";
+    sendError(response, 400, message.includes("上限") ? message : "文档图片导入文件不是有效的压缩容器。");
     return;
   }
   const folderId = await resolveFolderId(typeof payload.folderId === "string" ? payload.folderId : "root");
@@ -6025,7 +6044,7 @@ async function handleCreateImageFolder(request, response) {
     return;
   }
   const folder = {
-    id: `folder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: randomId("folder-"),
     name,
     createdAt: new Date().toISOString()
   };
@@ -6373,8 +6392,7 @@ const staticAssetMimeTypes = {
 };
 
 function isPathInsideStaticRoot(targetPath, staticRoot) {
-  const relativePath = relative(staticRoot, targetPath);
-  return Boolean(relativePath) && !relativePath.startsWith("..") && !isAbsolute(relativePath);
+  return isPathInside(staticRoot, targetPath);
 }
 
 // prod 静态资源托管：dist/ 存在时，非 /api、/ws 请求走静态文件 + SPA fallback。

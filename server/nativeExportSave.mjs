@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { atomicWriteFile } from "../shared/atomicWrite.mjs";
 
 const TARGET_TTL_MS = 10 * 60 * 1000;
 const MAX_SUGGESTED_NAME_LENGTH = 240;
@@ -262,7 +262,8 @@ export function isAllowedNativeExportOrigin(request) {
 export function createNativeExportSaveService(dependencies = {}) {
   const platform = dependencies.platform ?? process.platform;
   const chooseFile = dependencies.chooseFile ?? ((options) => showWindowsSaveFileDialog(options, { platform }));
-  const writeFileImpl = dependencies.writeFileImpl ?? writeFile;
+  // 默认走原子写（审查 D-P1-2）：导出中断不留半写损坏文件；测试仍可注入 writeFileImpl
+  const writeFileImpl = dependencies.writeFileImpl ?? atomicWriteFile;
   const now = dependencies.now ?? Date.now;
   const createToken = dependencies.createToken ?? randomUUID;
   const targets = new Map();
