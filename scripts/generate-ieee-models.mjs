@@ -665,17 +665,28 @@ function parseMatrix(text, name) {
 }
 
 function parseMatpowerCase(text) {
-  return {
+  const parsed = {
     baseMva: parseScalar(text, "baseMVA") || 100,
     bus: parseMatrix(text, "bus"),
     gen: parseMatrix(text, "gen"),
     branch: parseMatrix(text, "branch")
   };
+  // 审查 H-P0-1：矩阵解析失败（源格式变更/返回 HTML 错误页）时静默产出 0 节点空壳文件，
+  // 必须在此 fail-fast 而不是把空模型写盘。
+  if (parsed.bus.length === 0 || parsed.branch.length === 0) {
+    throw new Error("parseMatpowerCase: bus/branch 矩阵为空——MATPOWER 源文件缺失、格式变更或响应不是 .m 文本。");
+  }
+  return parsed;
 }
 
 function round(value, digits = 3) {
-  const factor = 10 ** digits;
-  return Math.round((value + Number.EPSILON) * factor) / factor;
+  // 审查 H-P0-3：+Number.EPSILON 在负值上使舍入方向偏移（如 round(-2.55,1) 得 -2.5 而非 -2.6），
+  // 改用 toFixed 的对称四舍五入。
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) {
+    return 0;
+  }
+  return Number(normalized.toFixed(digits));
 }
 
 function numericText(value, digits = 6) {
@@ -1206,6 +1217,11 @@ function buildProject(caseDef, parsed) {
     const index = nextBusTerminalIndex.get(busNo) ?? 0;
     nextBusTerminalIndex.set(busNo, index + 1);
     const terminalId = `t${index + 1}`;
+    // 审查 H-P0-2：busConnectionCounts 统计偏低时 terminal 可能不存在，
+    // busTerminalCanvasPoint 会静默降级到 bus 中心导致走线视觉错误——此处显式告警。
+    if (bus && !bus.terminals.some((item) => item.id === terminalId)) {
+      console.warn(`WARN: bus ${busNo} 缺少端子 ${terminalId}（terminal 计数不足），走线将连到母线中心。`);
+    }
     return {
       node: bus,
       terminalId,

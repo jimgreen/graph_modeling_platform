@@ -1820,12 +1820,18 @@ function run(command, args) {
     process.platform === "win32"
       ? ["/d", "/s", "/c", [command, ...args].map(quoteWindowsArg).join(" ")]
       : args;
+  // 审查 F-P0-2：npm pack 依赖网络，无 timeout 时挂起将永久阻塞脚本
+  const TIMEOUT_MS = 120_000;
   const result = spawnSync(process.platform === "win32" ? "cmd.exe" : command, commandArgs, {
     cwd: rootDir,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     shell: false,
+    timeout: TIMEOUT_MS,
   });
+  if (result.error?.code === "ETIMEDOUT" || (result.signal === "SIGTERM" && result.status === null)) {
+    throw new Error(`${command} ${args.join(" ")} timed out after ${TIMEOUT_MS / 1000}s`);
+  }
   if (result.status !== 0) {
     throw new Error(
       `${command} ${args.join(" ")} failed\nerror:\n${result.error?.message || ""}\nstdout:\n${result.stdout || ""}\nstderr:\n${result.stderr || ""}`,
