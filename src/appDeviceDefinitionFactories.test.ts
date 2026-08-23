@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+﻿import { afterEach, describe, expect, test, vi } from "vitest";
 import { readFileSync } from "node:fs";
 
 import {
@@ -854,7 +854,7 @@ describe("manual bend interaction helpers", () => {
     });
   });
 
-  test("rejects an accidental empty built-in parameter table", () => {
+  test("rejects an accidental empty built-in parameter table (derived variant)", () => {
     const setDefinitionDraftError = vi.fn();
     const setDeviceDefinitionOverrides = vi.fn();
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
@@ -872,7 +872,7 @@ describe("manual bend interaction helpers", () => {
     expect(setDeviceDefinitionOverrides).not.toHaveBeenCalled();
   });
 
-  test("persists an empty built-in parameter table only after explicit delete-all", () => {
+  test("persists an empty built-in parameter table only after explicit delete-all (derived variant)", () => {
     let nextOverrides: Record<string, any> = {};
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
     const deleteAllRef = { current: true };

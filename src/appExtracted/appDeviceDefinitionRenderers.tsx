@@ -1000,7 +1000,16 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       const key = stateIconImageVisibleFrameKey(element);
       const sourceImage = new Image();
       sourceImage.crossOrigin = "anonymous";
+      // 审查 T21-P0-2：加载失败时静默跳过（避免 console 报错）
+      sourceImage.onerror = () => {
+        sourceImage.onload = null;
+        sourceImage.onerror = null;
+        sourceImage.src = ""; // 解除引用
+      };
       sourceImage.onload = () => {
+        // 清理引用避免内存泄漏
+        sourceImage.onload = null;
+        sourceImage.onerror = null;
         const sourceWidth = sourceImage.naturalWidth || sourceImage.width;
         const sourceHeight = sourceImage.naturalHeight || sourceImage.height;
         if (!sourceWidth || !sourceHeight) {

@@ -5,7 +5,7 @@ export * from "./appDeviceDefinitionEInterface";
 // 内部使用已提取的符号
 import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, deviceDefinitionComplianceKey, stateIconDrawingFrameHasPersistedContent, buildEFileExportOptionsFromLibrary, applyEDeviceDefinitionSectionsToLibraryState } from "./appDeviceDefinitionEInterface";
 
-import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, getTemplateParameterDefinitions, inferESection, isLineOnlyConnectionNode, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, resolveEffectiveTemplateParameterDefinitionGroups, resolveEffectiveTemplateParameterDefinitions, switchingDeviceUsesClosedStatus, templateDerivedComponentLibraryInfo } from "../model";
+import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, getTemplateParameterDefinitions, inferESection, isLineOnlyConnectionNode, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, resolveEffectiveTemplateParameterDefinitionGroups, resolveEffectiveTemplateParameterDefinitions, switchingDeviceUsesClosedStatus, templateDerivedComponentLibraryInfo, MODEL_TYPE_META } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
@@ -4292,27 +4292,9 @@ export function createFinishSchemeRecordDrag(__appScope: Record<string, any>) {
   };
 }
 
-export const MODEL_TYPE_COLORS: Record<string, string> = {
-  "微网": "#7c3aed",
-  "厂站": "#2563eb",
-  "馈线": "#0891b2",
-  "台区": "#059669",
-  "其他": "#94a3b8"
-};
-
 export function projectModelTypeIconName(modelType: unknown) {
-  switch (typeof modelType === "string" ? modelType.trim() : "") {
-    case "微网":
-      return "Network";
-    case "厂站":
-      return "Factory";
-    case "馈线":
-      return "Cable";
-    case "台区":
-      return "HousePlug";
-    default:
-      return "FileJson";
-  }
+  const t = typeof modelType === "string" ? modelType.trim() : "";
+  return MODEL_TYPE_META[t]?.icon ?? MODEL_TYPE_META["其他"].icon;
 }
 
 export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
@@ -4471,7 +4453,7 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
                         size={14}
                       />
                       <span className="project-tree-name">{project.name}</span>
-                      <span className="project-model-type-tag" style={{ background: MODEL_TYPE_COLORS[projectModelType] ?? "#94a3b8" }}>{projectModelType}</span>
+                      <span className="project-model-type-tag" style={{ background: MODEL_TYPE_META[projectModelType]?.color ?? "#94a3b8" }}>{projectModelType}</span>
                     </div>
                   );
                 })}
@@ -5065,8 +5047,13 @@ export function createCloseDeviceDefinitionDialog(__appScope: Record<string, any
 
 export function createCloseCustomDeviceDialog(__appScope: Record<string, any>) {
   return () => {
-  const { customMeasurementSelectionAnchorRef, customParameterSelectionAnchorRef, finishDeviceLibraryDialogPointerOperation, measurementConfigDraftRef, setCustomDeviceDialogOpen, setCustomDeviceTerminalAnchorDragIndex, setMeasurementConfigDraft, setMeasurementConfigSaveStatus, setSelectedCustomMeasurementRowIndexes, setSelectedCustomParameterRowIds } = __appScope;
+  const { customMeasurementSelectionAnchorRef, customParameterSelectionAnchorRef, createEmptyCustomDeviceDraft, finishDeviceLibraryDialogPointerOperation, measurementConfigDraftRef, setCustomDeviceDialogOpen, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setMeasurementConfigDraft, setMeasurementConfigSaveStatus, setSelectedCustomMeasurementRowIndexes, setSelectedCustomParameterRowIds } = __appScope;
     finishDeviceLibraryDialogPointerOperation();
+    // 审查 T21-P0-3：关闭时重置 draft，避免下次打开看到残留（防御性，打开路径已覆盖）
+    const emptyDraft = typeof createEmptyCustomDeviceDraft === "function" ? createEmptyCustomDeviceDraft("") : null;
+    if (emptyDraft) {
+      setCustomDeviceDraft?.(emptyDraft);
+    }
     setCustomDeviceDialogOpen(false);
     measurementConfigDraftRef.current = null;
     setMeasurementConfigDraft(null);
