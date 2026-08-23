@@ -23,21 +23,18 @@ button:not(.ant-btn):disabled {
   opacity: 0.45;
 }
 
-/* Antd 组件样式覆盖 - 统一高度 */
+/* Antd 样式迁移说明：高度/圆角/输入框内边距已由 main.tsx 的 ConfigProvider theme token 接管；
+   其余保留的 !important 覆盖（Select 内边距、行高）因 antd v6 无对应 token，
+   且 cssinjs 运行时注入晚于本文件，同特异性下必须 !important 才能生效。 */
 .ant-select-selector,
 .ant-btn {
   font-size: inherit;
-  height: 24px !important;
   min-height: 24px;
-  border-radius: 4px !important;
 }
 
 .ant-input {
   font-size: 14px;
-  height: 24px !important;
   min-height: 24px;
-  border-radius: 4px !important;
-  padding: 2px 8px !important;
 }
 
 .ant-select-selector {
@@ -53,7 +50,6 @@ button:not(.ant-btn):disabled {
 
 .ant-select {
   font-size: 14px;
-  height: 24px !important;
   min-width: fit-content;
 }
 
@@ -61,13 +57,8 @@ button:not(.ant-btn):disabled {
   font-size: 14px;
 }
 
-.ant-select-content {
-  overflow: visible !important;
-}
-
 .ant-input-number {
   font-size: 14px;
-  height: 24px !important;
   min-height: 24px;
 }
 
