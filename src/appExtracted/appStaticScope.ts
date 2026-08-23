@@ -1,4 +1,3 @@
-// @ts-nocheck
 
 import * as ReactScope from "react";
 import * as ReactDomScope from "react-dom";
