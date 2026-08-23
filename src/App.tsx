@@ -1567,6 +1567,9 @@ useEffect(() => {
     onActivity: () => setRuntimeWsBlinkSeq((n) => n + 1),
     commandHandler
   });
+  // 审查 T16-P0-3 备注：空依赖为有意设计——WS 客户端生命周期与组件挂载绑定，
+  // dispatch/commandHandler 捕获的 __appScope 为模块级稳定引用，不存在过期闭包。
+  // 若未来 scope 改为 React state，此处需同步重构依赖。
   setRuntimeWsClientId(client.clientId);
   client.connect();
   return () => {

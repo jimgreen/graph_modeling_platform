@@ -35,24 +35,36 @@ function decodeStateIconSvgDataUrl(value: string) {
   }
 }
 
+// 审查 T20-P0-2：热路径正则提升为模块级常量，避免节点渲染循环内每节点重建
+const STATE_ICON_NUMBER_CACHE = new Map<string, RegExp>();
 function readStateIconSvgNumber(markup: string, name: string, fallback: number) {
-  const match = new RegExp(`\\b${name}\\s*=\\s*["']?([-+]?\\d*\\.?\\d+)`, "i").exec(markup);
+  let pattern = STATE_ICON_NUMBER_CACHE.get(name);
+  if (!pattern) {
+    pattern = new RegExp(`\\b${name}\\s*=\\s*["']?([-+]?\\d*\\.?\\d+)`, "i");
+    STATE_ICON_NUMBER_CACHE.set(name, pattern);
+  }
+  const match = pattern.exec(markup);
   const parsed = Number(match?.[1]);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
+
+const GENERATED_GROUP_PATTERN = /<g\b([^>]*)>([\s\S]*?data-state-icon-preserve-view-box[\s\S]*?)<\/g>/gi;
+const GROUP_TRANSFORM_PATTERN = /transform\s*=\s*["']translate\(([-+]?[\d.]+)[ ,]+([-+]?[\d.]+)\)(?:\s+rotate\(([-+]?[\d.]+)\))?/i;
+const INNER_SVG_PATTERN = /<svg\b([^>]*)/i;
 
 function generatedStateIconVisualTransform(imageHref: string, nodeSize: { width: number; height: number }) {
   const svg = decodeStateIconSvgDataUrl(imageHref);
   if (!svg || !svg.includes("data-state-icon-drawing") || !svg.includes("data-state-icon-preserve-view-box")) {
     return null;
   }
-  const groupPattern = /<g\b([^>]*)>([\s\S]*?data-state-icon-preserve-view-box[\s\S]*?)<\/g>/gi;
+  const groupPattern = GENERATED_GROUP_PATTERN;
+  groupPattern.lastIndex = 0; // /g 正则模块级复用时必须重置，否则跨调用残留扫描位置
   let match: RegExpExecArray | null;
   while ((match = groupPattern.exec(svg))) {
     const groupAttrs = match[1] ?? "";
     const body = match[2] ?? "";
-    const transformMatch = /transform\s*=\s*["']translate\(([-+]?[\d.]+)[ ,]+([-+]?[\d.]+)\)(?:\s+rotate\(([-+]?[\d.]+)\))?/i.exec(groupAttrs);
-    const innerSvgMatch = /<svg\b([^>]*)/i.exec(body);
+    const transformMatch = GROUP_TRANSFORM_PATTERN.exec(groupAttrs);
+    const innerSvgMatch = INNER_SVG_PATTERN.exec(body);
     if (!transformMatch || !innerSvgMatch) {
       continue;
     }
