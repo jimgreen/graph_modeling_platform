@@ -4726,7 +4726,7 @@ export function createConfirmMeasurementEditorDialog(__appScope: Record<string, 
 
 export function createRenderSelectedNodeMeasurementTable(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
-  const { BufferedTextInput, DeferredColorInput, Eye, EyeOff, Fragment, addDefaultMeasurementsToNode, addMeasurementItemToGroup, button, div, isBrowseMode, measurementConfig, measurementGroupBackgroundColor, measurementTypeById, measurementTypeOptionsForMeasurementGroup, option, removeMeasurementItem, removeMeasurementsFromNode, select, selectedMeasurementGroups, span, table, tbody, td, th, tr, updateMeasurementItem, updateSelectedMeasurementGroups } = __appScope;
+  const { BufferedTextInput, DeferredColorInput, Eye, EyeOff, Fragment, Trash2, addDefaultMeasurementsToNode, addMeasurementItemToGroup, button, div, isBrowseMode, measurementConfig, measurementGroupBackgroundColor, measurementTypeById, measurementTypeOptionsForMeasurementGroup, option, removeMeasurementItem, removeMeasurementsFromNode, select, selectedMeasurementGroups, span, table, tbody, td, th, tr, updateMeasurementItem, updateSelectedMeasurementGroups } = __appScope;
     const selectedMeasurementGroupCommonDraft = selectedMeasurementGroups[0];
     const renderCommonMeasurementGroupRows = () => {
       if (!selectedMeasurementGroupCommonDraft) {
@@ -4957,7 +4957,15 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                           ? <EyeOff size={16} aria-hidden="true" />
                           : <Eye size={16} aria-hidden="true" />}
                       </button>
-                      <button type="button" disabled={isBrowseMode} onClick={() => removeMeasurementItem(group.id, item.id)}>删除</button>
+                      <button
+                        type="button"
+                        className="visibility-delete-button"
+                        disabled={isBrowseMode}
+                        onClick={() => removeMeasurementItem(group.id, item.id)}
+                        title="删除量测"
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
                     </div>
                   </td>
                 </tr>
