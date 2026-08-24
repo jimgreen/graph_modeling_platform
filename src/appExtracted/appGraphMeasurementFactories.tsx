@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { Select, Tooltip, InputNumber } from "antd";
+import { EyeTwoTone, EyeInvisibleTwoTone } from "@ant-design/icons";
 import { clampNumber } from "../canvasViewport";
 import { reconcileNodeWithDefinition } from "../definitionInstanceSync";
 import { degreesToRadians } from "../formatUtils";
@@ -4756,8 +4757,8 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 title={selectedMeasurementGroupCommonDraft.visible ? "隐藏量测" : "显示量测"}
               >
                 {selectedMeasurementGroupCommonDraft.visible
-                  ? <Eye size={16} aria-hidden="true" />
-                  : <EyeOff size={16} aria-hidden="true" />}
+                  ? <EyeTwoTone style={{ fontSize: 16 }} />
+                  : <EyeInvisibleTwoTone style={{ fontSize: 16 }} />}
               </button>
             </td>
           </tr>
@@ -4783,8 +4784,8 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 title={selectedMeasurementGroupCommonDraft.labelVisible === false ? "显示标签" : "隐藏标签"}
               >
                 {selectedMeasurementGroupCommonDraft.labelVisible === false
-                  ? <EyeOff size={16} aria-hidden="true" />
-                  : <Eye size={16} aria-hidden="true" />}
+                  ? <EyeInvisibleTwoTone style={{ fontSize: 16 }} />
+                  : <EyeTwoTone style={{ fontSize: 16 }} />}
               </button>
             </td>
           </tr>
@@ -4954,8 +4955,8 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                         title={item.visible === false ? "显示量测" : "隐藏量测"}
                       >
                         {item.visible === false
-                          ? <EyeOff size={16} aria-hidden="true" />
-                          : <Eye size={16} aria-hidden="true" />}
+                          ? <EyeInvisibleTwoTone style={{ fontSize: 16 }} />
+                          : <EyeTwoTone style={{ fontSize: 16 }} />}
                       </button>
                       <button
                         type="button"
