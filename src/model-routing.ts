@@ -122,7 +122,8 @@ import {
   validateNodeEnumParameters,
   twoWindingTransformerParameterDefinitions,
   ELEMENT_TREE_COMPONENT_LIBRARY_LABELS,
-  COMPONENT_LIBRARY_REVERSE_MAPPING
+  COMPONENT_LIBRARY_REVERSE_MAPPING,
+  getRatedCapacityDefaultForKind
 } from "./model";
 import {
   E_SECTION_COLUMNS,
@@ -4363,9 +4364,14 @@ export function setVoltageBaseValuesForScope(
       : settingMode === "terminal" && targetTerminalIds
         ? setNodeVoltageBaseValuesForTerminals(node, targetTerminalIds, value)
         : node;
-    const nextNode = settingMode === "uniform"
+    const voltageSetNode = settingMode === "uniform"
       ? setNodeRatedVoltageIfPresent(voltageBaseSetNode, value)
       : voltageBaseSetNode;
+    // 根据电压等级设置线路/负荷额定容量默认值
+    const ratedCapacityDefault = getRatedCapacityDefaultForKind(baseDeviceKind(node.kind), value);
+    const nextNode = ratedCapacityDefault && voltageSetNode.params.ratedCapacity !== ratedCapacityDefault
+      ? { ...voltageSetNode, params: { ...voltageSetNode.params, ratedCapacity: ratedCapacityDefault } }
+      : voltageSetNode;
     if (nextNode !== node) {
       nodeUpdates.push(nextNode);
     }

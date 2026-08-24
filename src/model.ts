@@ -7420,6 +7420,59 @@ export function writeVoltageLevelSettings(settings: VoltageLevelSettings): void 
   } catch {}
 }
 
+// 电压等级 → 线路/负荷 额定容量默认值映射
+// 线路：ac-line, ac-routable-line, ac-zero-branch, ac-zero-routable-branch, dc-line, dc-routable-line, dc-zero-branch, dc-zero-routable-branch
+// 负荷：ac-load, ac-station-load, ac-feeder-load, ac-district-load, ac-terminal-transformer-load, dc-load, dc-station-load, dc-feeder-load, dc-district-load
+export const VOLTAGE_LINE_RATED_CAPACITY: Record<string, string> = {
+  "0.4": "200 kW",
+  "6": "5 MW",
+  "10": "10 MW",
+  "10.5": "10 MW",
+  "20": "15 MW",
+  "35": "30 MW",
+  "66": "50 MW",
+  "110": "150 MW",
+  "220": "400 MW",
+  "330": "700 MW",
+  "500": "1500 MW",
+  "750": "3000 MW",
+  "800": "4000 MW"
+};
+
+export const VOLTAGE_LOAD_RATED_CAPACITY: Record<string, string> = {
+  "0.4": "100 kW",
+  "6": "2 MW",
+  "10": "5 MW",
+  "10.5": "5 MW",
+  "20": "10 MW",
+  "35": "20 MW",
+  "66": "50 MW",
+  "110": "100 MW",
+  "220": "300 MW",
+  "330": "500 MW",
+  "500": "1000 MW"
+};
+
+export const LINE_DEVICE_KINDS = new Set([
+  "ac-line", "ac-routable-line", "ac-zero-branch", "ac-zero-routable-branch",
+  "dc-line", "dc-routable-line", "dc-zero-branch", "dc-zero-routable-branch"
+]);
+
+export const LOAD_DEVICE_KINDS = new Set([
+  "ac-load", "ac-station-load", "ac-feeder-load", "ac-district-load", "ac-terminal-transformer-load",
+  "dc-load", "dc-station-load", "dc-feeder-load", "dc-district-load"
+]);
+
+export function getRatedCapacityDefaultForKind(kind: string, voltage: string): string | null {
+  if (LINE_DEVICE_KINDS.has(kind)) {
+    return VOLTAGE_LINE_RATED_CAPACITY[voltage] ?? null;
+  }
+  if (LOAD_DEVICE_KINDS.has(kind)) {
+    return VOLTAGE_LOAD_RATED_CAPACITY[voltage] ?? null;
+  }
+  return null;
+}
+
 function normalizeColorRecord(source: unknown, fallback: Record<string, string>): Record<string, string> {
   if (!source || typeof source !== "object") {
     return { ...fallback };
