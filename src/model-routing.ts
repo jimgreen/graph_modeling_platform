@@ -5517,6 +5517,27 @@ function validateDeviceLimitPairs(
     if (capacity && capacity.baseValue > 0) {
       return capacity;
     }
+    // 额定容量无效时，自动根据电压等级填充默认值
+    const voltageText = deviceParamValue(node.params, keyFor("rated_voltage"))
+      ?? node.terminals[0]?.vbase;
+    if (voltageText) {
+      const voltageValue = normalizeVoltageBaseInput(voltageText);
+      const defaultCapacity = getRatedCapacityDefaultForKind(baseDeviceKind(node.kind), voltageValue);
+      if (defaultCapacity) {
+        updateParam(capacityKey, defaultCapacity);
+        const autoCapacity = quantityValue(defaultCapacity, "power", powerUnit);
+        if (autoCapacity && autoCapacity.baseValue > 0) {
+          warnings.push({
+            id: `device-limit-autofill:${node.id}:${encodeURIComponent(capacityKey)}`,
+            type: "device-limit-autofill",
+            nodeId: node.id,
+            relatedNodeIds: [node.id],
+            message: `图上拓扑告警：${ownerName} 的额定容量 ${capacityKey}=${capacityText ?? "未设置"} 无效，已根据电压等级 ${voltageValue} kV 自动填充为 ${defaultCapacity}。`
+          });
+          return autoCapacity;
+        }
+      }
+    }
     if (!invalidCapacityKeys.has(capacityKey)) {
       invalidCapacityKeys.add(capacityKey);
       warnings.push({

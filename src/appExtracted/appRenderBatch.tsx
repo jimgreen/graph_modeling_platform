@@ -201,7 +201,6 @@ import {
   isContainerTerminalAssociationDependent,
   isDoubleContainerTerminalAssociation,
   isBlockingTopologyValidationError,
-  isRatedCapacityError,
   isGeneratorNode,
   isRepeatedEdgePointerClick,
   isStaticButtonCapableNode,
@@ -2608,7 +2607,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const programmaticSave = createProgrammaticSave(__appScope); Object.assign(__appScope, { programmaticSave });
   const programmaticSaveSelectionAsTemplate = createProgrammaticSaveSelectionAsTemplate(__appScope); Object.assign(__appScope, { programmaticSaveSelectionAsTemplate });
   const locateTopologyError = createLocateTopologyError(__appScope); Object.assign(__appScope, { locateTopologyError });
-  Object.assign(__appScope, { isRatedCapacityError, pushRecentGlyph });
+  Object.assign(__appScope, { pushRecentGlyph });
   const runTopologyCalculation = createRunTopologyCalculation(__appScope); Object.assign(__appScope, { runTopologyCalculation });
   const getEdgeEndpointPoint = createGetEdgeEndpointPoint(__appScope); Object.assign(__appScope, { getEdgeEndpointPoint });
   const centerViewOnPoint = createCenterViewOnPoint(__appScope); Object.assign(__appScope, { centerViewOnPoint });
