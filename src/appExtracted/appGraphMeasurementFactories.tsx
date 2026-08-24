@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Select, Tooltip, InputNumber } from "antd";
+import { Select, Tooltip, InputNumber, Button } from "antd";
 import { EyeTwoTone, EyeInvisibleTwoTone } from "@ant-design/icons";
 import { clampNumber } from "../canvasViewport";
 import { reconcileNodeWithDefinition } from "../definitionInstanceSync";
@@ -4749,8 +4749,9 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                   { value: "grid", label: "两列" }
                 ]}
               />
-              <button
-                type="button"
+              <Button
+                type="text"
+                size="small"
                 className="visibility-toggle-button"
                 disabled={isBrowseMode}
                 onClick={() => updateSelectedMeasurementGroups((current) => ({ ...current, visible: !current.visible }))}
@@ -4759,7 +4760,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 {selectedMeasurementGroupCommonDraft.visible
                   ? <EyeTwoTone style={{ fontSize: 16 }} />
                   : <EyeInvisibleTwoTone style={{ fontSize: 16 }} />}
-              </button>
+              </Button>
             </td>
           </tr>
           <tr>
@@ -4776,8 +4777,9 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                   { value: "0", label: "无单位" }
                 ]}
               />
-              <button
-                type="button"
+              <Button
+                type="text"
+                size="small"
                 className="visibility-toggle-button"
                 disabled={isBrowseMode}
                 onClick={() => updateSelectedMeasurementGroups((current) => ({ ...current, labelVisible: current.labelVisible === false ? true : false }))}
@@ -4786,7 +4788,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 {selectedMeasurementGroupCommonDraft.labelVisible === false
                   ? <EyeInvisibleTwoTone style={{ fontSize: 16 }} />
                   : <EyeTwoTone style={{ fontSize: 16 }} />}
-              </button>
+              </Button>
             </td>
           </tr>
           <tr>
@@ -4947,8 +4949,9 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                         ]}
                       />
                       <span style={{ marginLeft: "auto" }} />
-                      <button
-                        type="button"
+                      <Button
+                        type="text"
+                        size="small"
                         className="visibility-toggle-button"
                         disabled={isBrowseMode}
                         onClick={() => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, visible: current.visible === false ? true : false }))}
@@ -4957,16 +4960,17 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                         {item.visible === false
                           ? <EyeInvisibleTwoTone style={{ fontSize: 16 }} />
                           : <EyeTwoTone style={{ fontSize: 16 }} />}
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        type="text"
+                        size="small"
                         className="visibility-delete-button"
                         disabled={isBrowseMode}
                         onClick={() => removeMeasurementItem(group.id, item.id)}
                         title="删除量测"
                       >
                         <Trash2 size={16} aria-hidden="true" />
-                      </button>
+                      </Button>
                     </div>
                   </td>
                 </tr>
