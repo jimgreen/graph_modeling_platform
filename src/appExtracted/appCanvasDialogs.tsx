@@ -35,9 +35,9 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
     confirmAddGraphTemplate, confirmConnectionRedrawDialog, confirmCreateDeviceFromGroup, confirmFilterSelectionDialog, confirmReplaceDeviceIconFromGroup, confirmVoltageBaseClearDialog, confirmVoltageBaseSetDialog, connectionRedrawDialogOpen,
     connectionRedrawScope, connectionRedrawTargetsForScope, createGraphTemplateType, currentModelVoltageColorKeys, defaultComponentLibraryForCategoryLibrary, deleteVoltageColorRow, filterSelectionDialogOpen, filterSelectionTreeLabel,
     filterSelectionTypeKeys, filterSelectionTypeOptions, filterSelectionTypePartial, filterSelectionTypeSelected, graphTemplateTypes, groupDeviceDefinitionDialog, groupDeviceReplacementTemplates, layerAssignmentDialogOpen,
-    layerAssignmentTargetId, layerAssignmentUnchanged, layers, normalizeCategoryLibraryName, patchGraphNodes, reactFlowPreviewOpen, ratedCapacityDialogNode, ratedCapacityDialogOpen, renderGraphTemplatePreview, resetEnergyColors, resetVoltageColors,
+    layerAssignmentTargetId, layerAssignmentUnchanged, layers, normalizeCategoryLibraryName, patchGraphNodes, reactFlowPreviewOpen, renderGraphTemplatePreview, resetEnergyColors, resetVoltageColors,
     resolveTemplateComponentLibrary, saveColorPalette, selectableCategoryLibraries, setActiveVoltageBaseTerminalKey, setColorPaletteDialogOpen, setColorPaletteTab, setConnectionRedrawDialogOpen, setConnectionRedrawScope,
-    setColorPaletteDraft, setFilterSelectionDialogOpen, setFilterSelectionTypeKeys, setGroupDeviceDefinitionDialog, setLayerAssignmentDialogOpen, setLayerAssignmentTargetId, setRatedCapacityDialogNode, setRatedCapacityDialogOpen, setReactFlowPreviewOpen, setTemplateDraftName, setTemplateDraftType,
+    setColorPaletteDraft, setFilterSelectionDialogOpen, setFilterSelectionTypeKeys, setGroupDeviceDefinitionDialog, setLayerAssignmentDialogOpen, setLayerAssignmentTargetId, setReactFlowPreviewOpen, setTemplateDraftName, setTemplateDraftType,
     setVoltageBaseClearDialogOpen, setVoltageBaseClearScope, setVoltageBaseSetDialogOpen, setVoltageBaseSetScope, setVoltageBaseSetValue, setVoltageBaseTerminalValue, setVoltageColorVisibility, setVoltageLevelDialogOpen,
     setVoltageLevelSettings, setVoltageTab, templateDialog, templateDraftName, templateDraftType, toggleColorDisplayMode, toggleFilterSelectionItem, toggleFilterSelectionType,
     updateEnergyColor, updateVoltageColorRow, visibleEdges, visibleNodes, visibleVoltageColorRows, voltageBaseClearDialogOpen, voltageBaseClearResultForScope, voltageBaseClearScope,
@@ -457,37 +457,5 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
           }}
         />
       )}
-      {ratedCapacityDialogOpen && ratedCapacityDialogNode && (() => {
-        const commit = (nextValue: string) => {
-          const nextNode = { ...ratedCapacityDialogNode, params: { ...ratedCapacityDialogNode.params, rated_capacity: nextValue } };
-          patchGraphNodes?.([nextNode]);
-          setRatedCapacityDialogOpen(false);
-          setRatedCapacityDialogNode(null);
-        };
-        return (
-        <div className="image-picker-backdrop" onPointerDown={() => { setRatedCapacityDialogOpen(false); setRatedCapacityDialogNode(null); }}>
-          <section className="rated-capacity-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
-            <WindowCloseButton label="关闭额定容量编辑窗口" onClick={() => { setRatedCapacityDialogOpen(false); setRatedCapacityDialogNode(null); }} />
-            <div className="image-picker-title">
-              <div>
-                <h2>编辑额定容量</h2>
-                <p>设备：{ratedCapacityDialogNode.name}</p>
-              </div>
-            </div>
-            <div className="rated-capacity-content">
-              <label>
-                <span>当前额定容量</span>
-                <input
-                  type="text"
-                  defaultValue={ratedCapacityDialogNode.params?.rated_capacity ?? ""}
-                  onKeyDown={(e) => { if (e.key === "Enter") { (e.target as HTMLInputElement).blur(); } }}
-                  onBlur={(e) => commit((e.target as HTMLInputElement).value)}
-                />
-              </label>
-            </div>
-          </section>
-        </div>
-        );
-      })()}
   </>);
 }, areViewSectionPropsEqual);

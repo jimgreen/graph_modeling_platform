@@ -5194,7 +5194,7 @@ export function createCreateBlankProject(__appScope: Record<string, any>) {
 
 export function createLocateTopologyError(__appScope: Record<string, any>) {
   return (error: TopologyValidationError) => {
-    const { activateInspectorFromCanvas, activeLayerEdgeIdSet, activeLayerNodeIdSet, centerViewOnPoint, centerViewOnPointAtZoom, clearRecordSelection, currentZoomPercent, edges, getElementFocusPoint, isRatedCapacityError, nodeById, nodes, setCanvasSelectionScope, setInspectorTab, setRatedCapacityDialogNode, setRatedCapacityDialogOpen, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
+    const { activateInspectorFromCanvas, activeLayerEdgeIdSet, activeLayerNodeIdSet, centerViewOnPoint, centerViewOnPointAtZoom, clearRecordSelection, currentZoomPercent, edges, getElementFocusPoint, nodeById, nodes, setCanvasSelectionScope, setInspectorTab, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
     activateInspectorFromCanvas();
     const firstNodeId = error.nodeId ?? error.relatedNodeIds[0];
     const node = firstNodeId ? nodeById.get(firstNodeId) : undefined;
@@ -5220,10 +5220,6 @@ export function createLocateTopologyError(__appScope: Record<string, any>) {
     if (node) {
       setInspectorTab("device");
       clearRecordSelection();
-    }
-    if (isRatedCapacityError?.(error) && editableNode && node) {
-      setRatedCapacityDialogNode(node);
-      setRatedCapacityDialogOpen(true);
     }
   };
 }

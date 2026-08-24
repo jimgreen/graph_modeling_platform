@@ -555,7 +555,6 @@ export function renderAppView(__appScope: Record<string, any>) {
   const { voltageLevelSettings, setVoltageLevelSettings, voltageLevelDialogOpen, setVoltageLevelDialogOpen } = __appScope;
   const { measurementConfigDialogOpen, closeMeasurementConfigDialog, userCustomizationManagerOpen, setUserCustomizationManagerOpen } = __appScope;
   const { eFileEditorDialogOpen, setEFileEditorDialogOpen } = __appScope;
-  const { ratedCapacityDialogOpen, setRatedCapacityDialogOpen, ratedCapacityDialogNode, setRatedCapacityDialogNode, patchGraphNodes } = __appScope;
   const {
     copiedCustomComponentTemplate,
     copyCustomComponentTemplate,
@@ -2317,8 +2316,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     filterSelectionDialogOpen ||
     reactFlowPreviewOpen ||
     colorPaletteDialogOpen ||
-    voltageLevelDialogOpen ||
-    ratedCapacityDialogOpen
+    voltageLevelDialogOpen
   );
   const deviceDialogLayerActive = Boolean(
     deviceDefinitionDialogOpen ||
