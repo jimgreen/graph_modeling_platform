@@ -2325,15 +2325,34 @@ function modelUsedVoltageLevels(
     }
   }
   if (used.size === 0) {
+    // 节点参数电压字段（vbase/voltage_level/rated_voltage）兜底
     for (const node of project.nodes) {
-      const vbase = String(node.params.vbase ?? node.terminals[0]?.vbase ?? "").trim();
-      if (vbase && vbase !== "0") {
-        used.add(vbase);
+      const candidates = [
+        node.params.vbase,
+        node.params.voltage_level,
+        node.params.rated_voltage,
+        node.terminals[0]?.vbase
+      ];
+      for (const candidate of candidates) {
+        const v = String(candidate ?? "").trim();
+        if (v && v !== "0") {
+          used.add(v);
+          break;
+        }
       }
     }
   }
   if (used.size === 0) {
-    return allLevels;
+    // 模型无任何电压信息：配置等级按数值去重（ac/dc 同值只保留一份），避免重复
+    const seen = new Set<string>();
+    return allLevels.filter((level) => {
+      const key = String(Number(level.vltp));
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
   }
   const matchVltp = (level: { name: string; vltp: string }, vbase: string) => {
     const a = String(level.vltp).trim();

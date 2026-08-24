@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { memo, useMemo } from "react";
 import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
+import { VOLTAGE_BASE_SET_CATEGORIES } from "./appCoreCanvasUtilities";
 
 const formatVoltageLabel = (v: string) => v === "0.22" ? "220V" : `${v}kV`;
 
@@ -29,7 +30,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
   const __appScope = scope;
   const {
     BufferedTextInput, CONNECTION_REDRAW_SCOPE_LABELS, DEFAULT_COLOR_PALETTE, DeferredColorInput, ENABLE_REACT_FLOW_PREVIEW, ENERGY_COLOR_ROWS, ReactFlowPreview, Suspense,
-    TERMINAL_TYPE_LIBRARY_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_CATEGORIES, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VoltageLevelDialog, WindowCloseButton, activeSelectedNodeIds,
+    TERMINAL_TYPE_LIBRARY_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VoltageLevelDialog, WindowCloseButton, activeSelectedNodeIds,
     activeVoltageBaseTerminalKey, activeVoltageBaseTerminalRow, applyLayerAssignmentDialog, cancelTemplateDialog, colorPaletteDialogOpen, colorPaletteDraft, colorPaletteTab, componentLibraryOptionsByCategoryLibrary,
     confirmAddGraphTemplate, confirmConnectionRedrawDialog, confirmCreateDeviceFromGroup, confirmFilterSelectionDialog, confirmReplaceDeviceIconFromGroup, confirmVoltageBaseClearDialog, confirmVoltageBaseSetDialog, connectionRedrawDialogOpen,
     connectionRedrawScope, connectionRedrawTargetsForScope, createGraphTemplateType, currentModelVoltageColorKeys, defaultComponentLibraryForCategoryLibrary, deleteVoltageColorRow, filterSelectionDialogOpen, filterSelectionTreeLabel,
