@@ -2298,13 +2298,69 @@ function buildBasevalueParameterRecord(project: ProjectFile, columns?: string[])
   };
 }
 
-function buildBasevoltageParameterRecords(columns?: string[]): EDeviceExport[] {
+/** 电压等级配置全量（ac + dc，含重复等级），供无模型上下文时回退 */
+function configuredVoltageLevels(): Array<{ name: string; vltp: string }> {
   const settings = readVoltageLevelSettings();
-  const allLevels: Array<{ name: string; vltp: string }> = [
+  return [
     ...settings.ac.map((row) => ({ name: row.name, vltp: row.vltp })),
     ...settings.dc.map((row) => ({ name: row.name, vltp: row.vltp }))
   ];
-  return allLevels.map((level, index) => {
+}
+
+/**
+ * 模型实际使用的电压等级（按配置顺序、vltp 数值去重）。
+ * basevoltage 段与 bv_id 引用行号共用此列表，避免 ac/dc 全量等级重复导出。
+ * records 为导出记录（优先取其拓扑节点电压）；缺失时回退 project.nodes 原始参数。
+ */
+function modelUsedVoltageLevels(
+  project: ProjectFile,
+  records?: readonly EDeviceExport[]
+): Array<{ name: string; vltp: string }> {
+  const allLevels = configuredVoltageLevels();
+  const used = new Set<string>();
+  for (const record of records ?? []) {
+    const vbase = String(record.params._vbase ?? record.params.vbase ?? "").trim();
+    if (vbase && vbase !== "0") {
+      used.add(vbase);
+    }
+  }
+  if (used.size === 0) {
+    for (const node of project.nodes) {
+      const vbase = String(node.params.vbase ?? node.terminals[0]?.vbase ?? "").trim();
+      if (vbase && vbase !== "0") {
+        used.add(vbase);
+      }
+    }
+  }
+  if (used.size === 0) {
+    return allLevels;
+  }
+  const matchVltp = (level: { name: string; vltp: string }, vbase: string) => {
+    const a = String(level.vltp).trim();
+    return a === vbase || (Number(a) === Number(vbase));
+  };
+  const matched: Array<{ name: string; vltp: string }> = [];
+  for (const level of allLevels) {
+    const vbase = Array.from(used).find((candidate) => matchVltp(level, candidate));
+    if (vbase !== undefined) {
+      matched.push(level);
+      used.delete(vbase);
+    }
+  }
+  // 配置中没有的模型等级追加到末尾（name 缺省用 vltp）
+  for (const vbase of used) {
+    matched.push({ name: vbase, vltp: vbase });
+  }
+  return matched;
+}
+
+function buildBasevoltageParameterRecords(
+  columns?: string[],
+  project?: ProjectFile,
+  records?: readonly EDeviceExport[]
+): EDeviceExport[] {
+  const levels = project ? modelUsedVoltageLevels(project, records) : configuredVoltageLevels();
+  return levels.map((level, index) => {
     // 模板模式下电压值写入模板电压字段（nomvol/name 等），非模板模式用 idx/name/vltp
     const params: Record<string, string> = { idx: String(index + 1), name: level.name, vltp: level.vltp };
     if (columns?.length) {
@@ -2491,7 +2547,7 @@ export function buildEDeviceHeaderParameterRecords(
   schemePath: string[] = ["默认方案"]
 ): EDeviceExport[] {
   if (!hasTemplateConfig(options)) {
-    return [buildPowerBaseParameterRecord(project, schemePath), ...buildBasevoltageParameterRecords()];
+    return [buildPowerBaseParameterRecord(project, schemePath), ...buildBasevoltageParameterRecords(undefined, project)];
   }
   // 模板模式下头表按模板字段输出（含 id 列，导出时经 key_to_long 计算），与「查看/编辑E文件」展示一致
   const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
@@ -2511,8 +2567,7 @@ export function buildEDeviceHeaderParameterRecords(
     list.push(record);
     recordsBySection.set(record.section, list);
   }
-  const basevoltageLevels = readVoltageLevelSettings();
-  const allBasevoltageLevels = [...basevoltageLevels.ac, ...basevoltageLevels.dc];
+  const allBasevoltageLevels = modelUsedVoltageLevels(project, records);
   const nodeRecords = recordsBySection.get("ACNode") ?? [];
   const unitRecords = recordsBySection.get("ACGenerator") ?? [];
   const unitNodeIdxs = new Set(unitRecords.map((r) => r.params.ind).filter(Boolean));
@@ -2527,7 +2582,7 @@ export function buildEDeviceHeaderParameterRecords(
   const substationIdv = basevoltageIdxs.length > 0 ? String(Math.max(...basevoltageIdxs)) : "0";
   const headerRecords = [
     buildBasevalueParameterRecord(project, templateColumnsForSection("basevalue")),
-    ...buildBasevoltageParameterRecords(templateColumnsForSection("basevoltage")),
+    ...buildBasevoltageParameterRecords(templateColumnsForSection("basevoltage"), project, records),
     buildSubcontrolareaParameterRecord(project, templateColumnsForSection("subcontrolarea")),
     buildSubstationParameterRecord(project, substationIdv, templateColumnsForSection("substation"))
   ];
@@ -2624,17 +2679,14 @@ export function applyEReferenceIdValues(
     });
     sectionRowByIdx.set(section, rowByIdx);
   }
-  // basevoltage 行号：vltp 值 → 行号（导出中 basevoltage 段的行号，ac 在前 dc 在后）
-  const basevoltageLevels = readVoltageLevelSettings();
-  const allLevels = [...basevoltageLevels.ac, ...basevoltageLevels.dc];
+  // basevoltage 行号：vltp 值 → 行号（与导出中 basevoltage 段一致，按模型实际使用等级）
+  const allLevels = modelUsedVoltageLevels(project, records);
   const basevoltageRowForVltp = (vltp: string): number => {
-    // 精确匹配（ac 优先，dc 的 0 不会覆盖 ac 的 0）
-    const acIndex = basevoltageLevels.ac.findIndex((level) => String(level.vltp).trim() === vltp);
-    if (acIndex >= 0) {
-      return acIndex + 1;
-    }
-    const dcIndex = basevoltageLevels.dc.findIndex((level) => String(level.vltp).trim() === vltp);
-    return dcIndex >= 0 ? basevoltageLevels.ac.length + dcIndex + 1 : 1;
+    const index = allLevels.findIndex((level) => {
+      const a = String(level.vltp).trim();
+      return a === vltp || (Number(a) === Number(vltp));
+    });
+    return index >= 0 ? index + 1 : 1;
   };
 
   const targetRowFor = (record: EDeviceExport, column: string, options: { preferSection?: string } = {}): number => {

@@ -6071,9 +6071,12 @@ describe("E 文件查看/编辑弹窗头表补全", () => {
     const headerRecords = buildEDeviceHeaderParameterRecords(project, records, exportOptions, ["默认方案"]);
 
     // 头表齐全：basevalue + basevoltage + subcontrolarea + substation
+    // basevoltage 只输出模型实际使用的电压等级（去重），模型无有效等级时回退全量配置
     const headerSections = headerRecords.map((record) => record.section);
     expect(headerSections[0]).toBe("basevalue");
-    expect(headerSections.filter((section) => section === "basevoltage").length).toBeGreaterThanOrEqual(2);
+    const modelVbases = new Set(nodes.map((node) => String(node.params.vbase ?? "").trim()).filter((v) => v && v !== "0"));
+    const expectedBasevoltageRows = modelVbases.size > 0 ? modelVbases.size : 26;
+    expect(headerSections.filter((section) => section === "basevoltage").length).toBe(expectedBasevoltageRows);
     expect(headerSections).toContain("subcontrolarea");
     expect(headerSections).toContain("substation");
 
