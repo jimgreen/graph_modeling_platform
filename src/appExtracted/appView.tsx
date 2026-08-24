@@ -2606,7 +2606,8 @@ export function renderAppView(__appScope: Record<string, any>) {
           inspectorGraphId,
           nodeById,
           singleSelectedDeviceForInspector,
-          colorPalette
+          colorPalette,
+          selectedMeasurementGroups
         ]}
       />
       {contextMenuLayerActive && (<Suspense fallback={null}>
