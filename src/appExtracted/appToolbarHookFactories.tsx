@@ -3757,7 +3757,7 @@ export function createAppHookCallback110(__appScope: Record<string, any>) {
         hideLibraryFlyout();
         return;
       }
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) && !isCanvasShortcutTarget) {
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
         return;
       }
       if (event.key === "Control" && connectSource) {
