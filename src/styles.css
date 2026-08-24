@@ -11676,6 +11676,18 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   height: 12px;
 }
 
+.param-table button.visibility-toggle-button {
+  width: 26px;
+  height: 26px;
+  justify-content: center;
+  padding: 0;
+}
+
+.param-table button.visibility-toggle-button svg {
+  width: 16px;
+  height: 16px;
+}
+
 .unit-value-field,
 .param-table .unit-value-field {
   display: grid;

@@ -4750,10 +4750,10 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
               />
               <button
                 type="button"
+                className="visibility-toggle-button"
                 disabled={isBrowseMode}
                 onClick={() => updateSelectedMeasurementGroups((current) => ({ ...current, visible: !current.visible }))}
                 title={selectedMeasurementGroupCommonDraft.visible ? "隐藏量测" : "显示量测"}
-                style={{ display: "inline-flex", alignItems: "center", padding: "2px 6px", border: "1px solid #cbd5e1", borderRadius: "4px", background: "transparent", cursor: "pointer" }}
               >
                 {selectedMeasurementGroupCommonDraft.visible
                   ? <Eye size={16} aria-hidden="true" />
@@ -4777,10 +4777,10 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
               />
               <button
                 type="button"
+                className="visibility-toggle-button"
                 disabled={isBrowseMode}
                 onClick={() => updateSelectedMeasurementGroups((current) => ({ ...current, labelVisible: current.labelVisible === false ? true : false }))}
                 title={selectedMeasurementGroupCommonDraft.labelVisible === false ? "显示标签" : "隐藏标签"}
-                style={{ display: "inline-flex", alignItems: "center", padding: "2px 6px", border: "1px solid #cbd5e1", borderRadius: "4px", background: "transparent", cursor: "pointer" }}
               >
                 {selectedMeasurementGroupCommonDraft.labelVisible === false
                   ? <EyeOff size={16} aria-hidden="true" />
@@ -4948,10 +4948,10 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                       <span style={{ marginLeft: "auto" }} />
                       <button
                         type="button"
+                        className="visibility-toggle-button"
                         disabled={isBrowseMode}
                         onClick={() => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, visible: current.visible === false ? true : false }))}
                         title={item.visible === false ? "显示量测" : "隐藏量测"}
-                        style={{ display: "inline-flex", alignItems: "center", padding: "2px 6px", border: "1px solid #cbd5e1", borderRadius: "4px", background: "transparent", cursor: "pointer" }}
                       >
                         {item.visible === false
                           ? <EyeOff size={16} aria-hidden="true" />
