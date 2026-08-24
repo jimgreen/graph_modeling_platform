@@ -11676,14 +11676,21 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   height: 12px;
 }
 
-.param-table button.visibility-toggle-button {
+.param-table button.visibility-toggle-button,
+.param-table button.visibility-delete-button {
   width: 26px;
   height: 26px;
   justify-content: center;
   padding: 0;
+  align-items: center;
+  display: flex;
+  border: 1px solid gray;
+  background: transparent;
+  border-radius: 5px;
 }
 
-.param-table button.visibility-toggle-button svg {
+.param-table button.visibility-toggle-button svg,
+.param-table button.visibility-delete-button svg {
   width: 16px;
   height: 16px;
 }
