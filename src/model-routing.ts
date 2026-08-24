@@ -4401,7 +4401,15 @@ export function setVoltageBaseTerminalValuesForScope(
       return node;
     }
     const voltageBaseSetNode = setNodeVoltageBaseValuesByTerminal(node, valuesByTerminalId);
-    const nextNode = setNodeRatedVoltageFromTerminalValuesIfPresent(voltageBaseSetNode, valuesByTerminalId);
+    const voltageSetNode = setNodeRatedVoltageFromTerminalValuesIfPresent(voltageBaseSetNode, valuesByTerminalId);
+    // 根据电压等级设置线路/负荷额定容量默认值（取第一个端子电压值）
+    const firstVoltageValue = Object.values(valuesByTerminalId)[0] ?? "";
+    const ratedCapacityDefault = firstVoltageValue
+      ? getRatedCapacityDefaultForKind(baseDeviceKind(node.kind), firstVoltageValue)
+      : null;
+    const nextNode = ratedCapacityDefault && voltageSetNode.params.ratedCapacity !== ratedCapacityDefault
+      ? { ...voltageSetNode, params: { ...voltageSetNode.params, ratedCapacity: ratedCapacityDefault } }
+      : voltageSetNode;
     if (nextNode !== node) {
       nodeUpdates.push(nextNode);
     }
