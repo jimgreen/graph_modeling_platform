@@ -4753,6 +4753,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 type="text"
                 size="small"
                 className="visibility-toggle-button"
+                data-selected={selectedMeasurementGroupCommonDraft.visible === false}
                 disabled={isBrowseMode}
                 onClick={() => updateSelectedMeasurementGroups((current) => ({ ...current, visible: !current.visible }))}
                 title={selectedMeasurementGroupCommonDraft.visible ? "隐藏量测" : "显示量测"}
@@ -4781,6 +4782,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 type="text"
                 size="small"
                 className="visibility-toggle-button"
+                data-selected={selectedMeasurementGroupCommonDraft.labelVisible === false}
                 disabled={isBrowseMode}
                 onClick={() => updateSelectedMeasurementGroups((current) => ({ ...current, labelVisible: current.labelVisible === false ? true : false }))}
                 title={selectedMeasurementGroupCommonDraft.labelVisible === false ? "显示标签" : "隐藏标签"}
@@ -4953,6 +4955,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                         type="text"
                         size="small"
                         className="visibility-toggle-button"
+                        data-selected={item.visible === false}
                         disabled={isBrowseMode}
                         onClick={() => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, visible: current.visible === false ? true : false }))}
                         title={item.visible === false ? "显示量测" : "隐藏量测"}

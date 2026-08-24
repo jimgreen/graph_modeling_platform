@@ -11689,6 +11689,10 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   border-radius: 5px;
 }
 
+.param-table button.visibility-toggle-button[data-selected="true"] {
+  background: #e2e8f0;
+}
+
 .param-table button.visibility-toggle-button svg,
 .param-table button.visibility-delete-button svg {
   width: 16px;
