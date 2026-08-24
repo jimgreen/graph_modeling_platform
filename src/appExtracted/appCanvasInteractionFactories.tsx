@@ -1,8 +1,16 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
-import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage } from "../model";
+import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind } from "../model";
 import { Button, Input } from "antd";
+
+// 判断额定容量是否在合理范围内（非空、非零、非占位值）
+function isRatedCapacityInReasonableRange(value: string | undefined): boolean {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "0" || trimmed === "0 MW" || trimmed === "0 kW") return false;
+  return true;
+}
 
 export function createUpdateSingleNodeDragImperativePreview(__appScope: Record<string, any>) {
   return (dragState: DraggingState, previewDelta: Point) => {
@@ -2442,7 +2450,22 @@ export function createUpdateParam(__appScope: Record<string, any>) {
             }
             return { ...currentNode, params: { ...currentNode.params, _labelDisplayMode: mode, _labelVisible: visible } };
           })()
-        : { ...currentNode, params: { ...currentNode.params, [key]: storedValue } };
+        : key === "rated_voltage"
+          ? (() => {
+              // 当额定电压变化时，联动更新额定容量默认值
+              const newParams = { ...currentNode.params, [key]: storedValue };
+              const ratedCapacityDefault = getRatedCapacityDefaultForKind(baseDeviceKind(currentNode.kind), storedValue);
+              if (ratedCapacityDefault && !isRatedCapacityInReasonableRange(currentNode.params.rated_capacity ?? currentNode.params.ratedCapacity)) {
+                // 优先写入 rated_capacity（snake_case），保持与 UI 字段一致
+                if (Object.prototype.hasOwnProperty.call(currentNode.params, "rated_capacity") || !Object.prototype.hasOwnProperty.call(currentNode.params, "ratedCapacity")) {
+                  newParams.rated_capacity = ratedCapacityDefault;
+                } else {
+                  newParams.ratedCapacity = ratedCapacityDefault;
+                }
+              }
+              return { ...currentNode, params: newParams };
+            })()
+          : { ...currentNode, params: { ...currentNode.params, [key]: storedValue } };
     if (nextNode === currentNode) {
       return;
     }
