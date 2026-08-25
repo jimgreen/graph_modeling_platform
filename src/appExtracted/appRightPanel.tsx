@@ -1,6 +1,46 @@
 // @ts-nocheck
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 
+// 参数字段 → 单位后缀映射
+const PARAM_UNIT_SUFFIX: Record<string, string> = {
+  rated_voltage: "kV",
+  i_vbase: "kV",
+  j_vbase: "kV",
+  k_vbase: "kV",
+  vbase: "kV",
+  rated_capacity: "MW",
+  i_rated_capacity: "MW",
+  k_rated_capacity: "MW",
+  j_rated_capacity: "MW",
+  high_rated_capacity: "MW",
+  medium_rated_capacity: "MW",
+  low_rated_capacity: "MW",
+  activePower: "MW",
+  reactivePower: "Mvar",
+  ratedPower: "MW",
+  i_max: "A",
+  i_i_max: "A",
+  k_i_max: "A",
+  j_i_max: "A",
+  high_i_max: "A",
+  medium_i_max: "A",
+  low_i_max: "A",
+  water_volume: "m³",
+  pressure_max: "MPa",
+  pressure_min: "MPa",
+  pressure_set: "MPa",
+  flow_max: "Nm³/h",
+  flow_min: "Nm³/h",
+  flow_set: "Nm³/h",
+  cut_in_wind_speed: "m/s",
+  rated_wind_speed: "m/s",
+  cut_out_wind_speed: "m/s"
+};
+
+function getParamUnitSuffix(key: string): string | null {
+  return PARAM_UNIT_SUFFIX[key] ?? null;
+}
+
 type AppRightPanelProps = {
   scope: Record<string, any>;
   inputs: readonly unknown[];
@@ -866,10 +906,12 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                                 ? definition?.typicalValue ?? ""
                                 : resolvedValue;
                             const displayValue = formatDeviceModelParamDisplayValue(key, value);
+                            const unitSuffix = getParamUnitSuffix(key);
+                            const inputElement = key === "name" ? (<BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition) ? (<input value={displayValue} readOnly/>) : (batchEditors.renderParamEditor(key, displayValue, false, definition));
                             return (<tr key={key}>
                                   {batchEditors.renderParamHeader(key, key, definition?.cnName === key ? PARAM_LABELS[key] ?? key : (definition?.cnName ?? PARAM_LABELS[key] ?? key))}
                                   <td>
-                                    {key === "name" ? (<BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition) ? (<input value={displayValue} readOnly/>) : (batchEditors.renderParamEditor(key, displayValue, false, definition))}
+                                    {unitSuffix && key !== "name" ? (<div className="unit-value-field">{inputElement}<span>{unitSuffix}</span></div>) : inputElement}
                                   </td>
                                 </tr>);
                         });
