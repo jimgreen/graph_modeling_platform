@@ -11684,7 +11684,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   padding: 0;
   align-items: center;
   display: flex;
-  border: 1px solid gray;
+  border: none;
   background: transparent;
   border-radius: 5px;
 }
