@@ -1289,7 +1289,7 @@ export function createDefaultMeasurementGroupsForNode(
       id: terminal ? `measurement-${node.id}-${terminal.id}` : `measurement-${node.id}`,
       nodeId: node.id,
       terminalId: terminal?.id,
-      visible: true,
+      visible: false,
       labelVisible: true,
       unitVisible: true,
       backgroundColor: normalizedConfig.groupDefaults.backgroundColor,
