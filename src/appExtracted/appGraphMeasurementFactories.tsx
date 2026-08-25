@@ -4912,7 +4912,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
             <td>
               <div className="measurement-sidebar-actions">
                 <span className="graph-readonly-value">{terminal ? `端子：${terminal.label || terminal.id}` : "设备级量测"}</span>
-                <button type="button" disabled={isBrowseMode} onClick={() => addMeasurementItemToGroup(node, group)}>添加到本组</button>
+                <Button type="default" size="small" disabled={isBrowseMode} onClick={() => addMeasurementItemToGroup(node, group)}>添加到本组</Button>
               </div>
             </td>
           </tr>
@@ -5092,20 +5092,12 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
             <th>动态量测</th>
             <td>
               <div className="measurement-sidebar-actions">
-                <button
-                  type="button"
-                  disabled={isBrowseMode || selectedMeasurementGroups.length > 0}
-                  onClick={() => addDefaultMeasurementsToNode(node)}
-                >
+                <Button type="default" size="small" disabled={isBrowseMode || selectedMeasurementGroups.length > 0} onClick={() => addDefaultMeasurementsToNode(node)}>
                   添加默认量测
-                </button>
-                <button
-                  type="button"
-                  disabled={isBrowseMode || selectedMeasurementGroups.length === 0}
-                  onClick={() => removeMeasurementsFromNode(node)}
-                >
+                </Button>
+                <Button type="default" size="small" disabled={isBrowseMode || selectedMeasurementGroups.length === 0} onClick={() => removeMeasurementsFromNode(node)}>
                   删除量测
-                </button>
+                </Button>
               </div>
             </td>
           </tr>
