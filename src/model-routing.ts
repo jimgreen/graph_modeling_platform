@@ -4358,7 +4358,7 @@ export function setVoltageBaseValuesForScope(
     const settingMode = voltageBaseSettingModeForNode(node);
     const targetTerminalIds = targets.terminalIdsByNodeId?.get(node.id);
     const voltageBaseSetNode = settingMode === "uniform"
-      ? targetTerminalIds
+      ? targetTerminalIds && node.terminals.length > 0
         ? setNodeVoltageBaseValuesForTerminals(node, targetTerminalIds, value)
         : setNodeVoltageBaseValues(node, value)
       : settingMode === "terminal" && targetTerminalIds
