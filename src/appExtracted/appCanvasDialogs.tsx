@@ -3,6 +3,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Tabs } from "antd";
 import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
 import { VOLTAGE_BASE_SET_CATEGORIES } from "./appCoreCanvasUtilities";
+import { buildTopologyConnectivity } from "../model-routing";
 
 const formatVoltageLabel = (v: string) => v === "0.22" ? "220V" : `${v}kV`;
 
@@ -43,7 +44,8 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
     setVoltageLevelSettings, setVoltageTab, templateDialog, templateDraftName, templateDraftType, toggleColorDisplayMode, toggleFilterSelectionItem, toggleFilterSelectionType,
     updateEnergyColor, updateVoltageColorRow, visibleEdges, visibleNodes, visibleVoltageColorRows, nodes, edges, voltageBaseClearDialogOpen, voltageBaseClearResultForScope, voltageBaseClearScope,
     voltageBaseSetDialogOpen, voltageBaseSetHasUniformTargets, voltageBaseSetMode, voltageBaseSetModeLabel, voltageBaseSetOptions, voltageBaseSetReady, voltageBaseSetResultForScope, voltageBaseSetScope,
-    voltageBaseSetScopeDeviceCount, voltageBaseSetTerminalRows, voltageBaseSetValue, voltageBaseTerminalRowKey, voltageColorVisibility, voltageLevelDialogOpen, voltageLevelSettings, voltageTab
+    voltageBaseSetScopeDeviceCount, voltageBaseSetTerminalRows, voltageBaseSetValue, voltageBaseTerminalRowKey, voltageColorVisibility, voltageLevelDialogOpen, voltageLevelSettings, voltageTab,
+    pushUndoSnapshot, writeOperationLog, patchGraphNodes, undoScopeForGraphPatch
   } = scope;
   const [activeVoltageBaseDeviceTab, setActiveVoltageBaseDeviceTab] = useState("");
   const [perDeviceScope, setPerDeviceScope] = useState({});
@@ -100,14 +102,13 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               if (!selectedDevice) { resultCache[cacheKey] = 0; return 0; }
               const terminal = selectedDevice.terminals?.find((t) => t.id === terminalId);
               if (!terminal) { resultCache[cacheKey] = 0; return 0; }
-              const islandResult = voltageBaseSetResultForScope("island");
-              const targetNode = islandResult.nodes?.find((n) => n.id === nodeId);
-              const islandRoot = targetNode?.connectivity?.islandRoot?.(nodeId, terminalId);
+              const connectivity = buildTopologyConnectivity(nodes, edges);
+              const islandRoot = connectivity.islandRoot(nodeId, terminalId);
               if (!islandRoot) { resultCache[cacheKey] = 0; return 0; }
               const islandNodeIds = new Set();
               for (const n of nodes) {
                 for (const t of n.terminals ?? []) {
-                  if (n.connectivity?.islandRoot?.(n.id, t.id) === islandRoot) {
+                  if (connectivity.islandRoot(n.id, t.id) === islandRoot) {
                     islandNodeIds.add(n.id);
                     break;
                   }
