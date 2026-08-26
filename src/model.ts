@@ -2088,6 +2088,7 @@ export type TopologyValidationErrorType =
   | "transformer-island-short"
   | "device-enum-invalid"
   | "device-limit-invalid"
+  | "device-limit-autofill"
   | "device-setpoint-out-of-range"
   | "device-setpoint-auto-corrected"
   | "voltage-setpoint-zero"
@@ -2115,7 +2116,7 @@ export function categorizeTopologyErrorType(type: TopologyValidationErrorType): 
   if (type === "voltage-mismatch" || type === "missing-island-voltage" || type === "island-voltage-mismatch"
     || type === "voltage-setpoint-zero" || type === "voltage-limit-out-of-range"
     || type === "voltage-setpoint-deviation" || type === "voltage-level-out-of-model-range") return "voltage";
-  if (type === "device-limit-invalid" || type === "device-setpoint-out-of-range" || type === "device-setpoint-auto-corrected"
+  if (type === "device-limit-invalid" || type === "device-limit-autofill" || type === "device-setpoint-out-of-range" || type === "device-setpoint-auto-corrected"
     || type === "storage-soc-parameter-invalid" || type === "hydrogen-storage-parameter-invalid"
     || type === "hydrogen-coupling-parameter-invalid") return "capacity";
   if (type === "floating-terminal" || type === "terminal-type-mismatch" || type === "same-bus-endpoints"

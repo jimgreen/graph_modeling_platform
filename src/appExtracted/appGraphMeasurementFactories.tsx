@@ -412,7 +412,11 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
         return [];
       }
       const labelText = group.labelVisible === false ? "" : display.label;
-      const valueText = formatMeasurementDisplayValue(undefined, display.decimals, "");
+      const valueText = formatMeasurementDisplayValue(
+        { sourcePoint: item.sourcePoint, value: display.defaultValue, quality: "good", timestamp: 0 },
+        display.decimals,
+        ""
+      );
       const unitText = group.unitVisible === false ? "" : display.unit;
       const text = [labelText, valueText, unitText].filter(Boolean).join(" ");
       return [{ item, display, labelText, valueText, unitText, text, fontSize: display.fontSize * measurementFontScale }];
@@ -422,11 +426,27 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
     }
     const maxFontSize = Math.max(...rows.map((row) => row.fontSize));
     const lineHeight = Math.max(16, maxFontSize + 6);
-    const columnWidth = Math.max(72, Math.max(...rows.map((row) => row.text.length * row.fontSize * 0.58)) + 12);
     const columns = group.layout === "grid" ? 2 : group.layout === "horizontal" ? rows.length : 1;
+    const columnLabelWidths = columns > 1 && group.layout === "grid"
+      ? Array.from({ length: columns }, (_, column) => {
+          let maxLabelWidth = 0;
+          for (let rowIndex = 0; rowIndex < Math.ceil(rows.length / columns); rowIndex++) {
+            const row = rows[rowIndex * columns + column];
+            if (row && row.labelText) {
+              maxLabelWidth = Math.max(maxLabelWidth, row.labelText.length * row.fontSize * 0.58);
+            }
+          }
+          return maxLabelWidth;
+        })
+      : undefined;
+    const valueEstimate = Math.max(...rows.map((row) => (row.valueText.length + row.unitText.length + 1) * row.fontSize * 0.58));
+    const baseColumnWidth = Math.max(72, Math.max(...rows.map((row) => row.text.length * row.fontSize * 0.58)) + 12);
+    const columnWidth = columnLabelWidths
+      ? Math.max(baseColumnWidth, Math.max(...columnLabelWidths) + valueEstimate + 16)
+      : baseColumnWidth;
     const width = Math.max(64, columnWidth * columns);
     const height = Math.max(lineHeight, Math.ceil(rows.length / columns) * lineHeight);
-    return { rows, maxFontSize, lineHeight, columnWidth, columns, width, height };
+    return { rows, maxFontSize, lineHeight, columnWidth, columns, width, height, columnLabelWidths };
   };
 }
 
@@ -469,6 +489,17 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
       const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
       const textGap = Math.max(4, row.fontSize * 0.36);
       const rowAttributes = `fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
+      const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id);
+      if (metrics.columnLabelWidths) {
+        const labelWidth = metrics.columnLabelWidths[col] ?? 0;
+        const labelMarkup = row.labelText
+          ? `<text class="measurement-label ml" x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" ${rowAttributes}>${escapeXml(row.labelText)}</text>`
+          : "";
+        const valueX = labelWidth > 0 ? textX + labelWidth + textGap : textX;
+        const valueText = [row.valueText, row.unitText].filter(Boolean).join(" ");
+        const valueMarkup = `<text class="measurement-value mv" ${itemMetadata} x="${formatSvgNumber(valueX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" ${rowAttributes}>${escapeXml(valueText)}</text>`;
+        return labelMarkup + valueMarkup;
+      }
       const labelMarkup = row.labelText
         ? `<tspan class="measurement-label ml">${escapeXml(row.labelText)}</tspan>`
         : "";
@@ -477,7 +508,7 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
       const unitMarkup = row.unitText
         ? `<tspan class="measurement-unit mu" dx="${formatSvgNumber(textGap)}">${escapeXml(row.unitText)}</tspan>`
         : "";
-      return `<text class="measurement-item mi" ${exportMeasurementItemMetadataAttributes(row.item, node.id)} x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" ${rowAttributes}>${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
+      return `<text class="measurement-item mi" ${itemMetadata} x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" ${rowAttributes}>${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
     }).join("");
     const extraClass = options.className ? ` ${escapeXml(options.className)}` : "";
     return `<g class="measurement-group drag-preview-measurement-group${selectedClass}${extraClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
@@ -4161,8 +4192,8 @@ export function createAddMeasurementType(__appScope: Record<string, any>) {
           defaultValue: 0,
           defaultColor: "#334155",
           defaultFontFamily: "Arial",
-          defaultFontSize: 14,
-          defaultFontWeight: "500",
+          defaultFontSize: 12,
+          defaultFontWeight: "700",
           defaultVisible: true
         }
       ]
@@ -5120,13 +5151,16 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
 
 export function createBeginMeasurementDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGGElement>, group: MeasurementGroup) => {
-  const { isBrowseMode, screenToSvgPoint, selectCanvasGraphics, setMeasurementDrag, svgRef } = __appScope;
+  const { isBrowseMode, screenToSvgPoint, selectCanvasGraphics, setInspectorTab, setLastCanvasClickTarget, setMeasurementDrag, setSelectedDeviceInfoView, svgRef } = __appScope;
     if (isBrowseMode || event.button !== 0 || !svgRef.current) {
       return;
     }
     event.preventDefault();
     event.stopPropagation();
+    setLastCanvasClickTarget("measurement");
     selectCanvasGraphics([group.nodeId], [], { scope: "direct" });
+    setInspectorTab("device");
+    setSelectedDeviceInfoView("measurement");
     const startPoint = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
     setMeasurementDrag({
       groupId: group.id,

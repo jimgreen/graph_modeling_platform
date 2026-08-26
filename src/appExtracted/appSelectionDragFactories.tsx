@@ -1590,10 +1590,27 @@ export function createFinishMarqueeSelection(__appScope: Record<string, any>) {
 
 export function createDeleteSelection(__appScope: Record<string, any>) {
   return () => {
-  const { activeSelectedEdgeIds, activeSelectedNodeIds, deleteNodesWithConnectedEdges, edgeById, edgeListForNodeIds, edges, groups, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, requireEditMode, setCanvasSelectionScope, setEdges, setGraphArrays, setGroups, setProjectMeasurements, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, syncGlobalLineProjectNodes, writeOperationLog } = __appScope;
+  const { activeSelectedEdgeIds, activeSelectedNodeIds, deleteNodesWithConnectedEdges, edgeById, edgeListForNodeIds, edges, groups, lastCanvasClickTarget, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, requireEditMode, setCanvasSelectionScope, setEdges, setGraphArrays, setGroups, setLastCanvasClickTarget, setProjectMeasurements, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, syncGlobalLineProjectNodes, writeOperationLog } = __appScope;
     if (!requireEditMode("删除图元")) {
       return;
     }
+    // 量测框点击 → 仅删量测，保留设备
+    if (lastCanvasClickTarget === "measurement" && activeSelectedNodeIds.length > 0) {
+      const targetNodeIds = new Set(activeSelectedNodeIds);
+      pushUndoSnapshot();
+      setProjectMeasurements((current) => ({
+        version: 1,
+        groups: (current?.groups ?? []).filter((g) => !targetNodeIds.has(g.nodeId))
+      }));
+      setCanvasSelectionScope("group");
+      setSelectedNodeIds([]);
+      setSelectedEdgeId("");
+      setSelectedEdgeIds([]);
+      setLastCanvasClickTarget(null);
+      writeOperationLog(`删除 ${targetNodeIds.size} 个图元的量测`);
+      return;
+    }
+    setLastCanvasClickTarget(null);
     if (activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0) {
       return;
     }

@@ -272,7 +272,7 @@ describe("measurement canvas interactions", () => {
     const [group] = measurementDefinitions.createDefaultMeasurementGroupsForNode(node as any, config);
 
     expect(group).toBeTruthy();
-    const lineHeight = 20;
+    const lineHeight = 18;
     const measurementHeight = group.items.filter((item) => item.visible !== false).length * lineHeight;
     const measurementTop = group.offset.y - measurementHeight / 2;
     const labelBottom = Number(node.params._labelY) + Number(node.params._labelFontSize) * 0.75;
@@ -1110,7 +1110,8 @@ describe("measurement canvas interactions", () => {
         fontWeight: "500",
         fontStyle: "normal",
         textDecoration: "none",
-        visible: true
+        visible: true,
+        defaultValue: 0
       })
     } as any);
 

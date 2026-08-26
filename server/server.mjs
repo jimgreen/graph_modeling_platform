@@ -699,8 +699,10 @@ function normalizeMeasurementValueType(value) {
   return value === "string" || value === "boolean" ? value : "number";
 }
 
-function normalizeMeasurementFontWeight(value) {
-  return value === "400" || value === "700" ? value : "500";
+function normalizeMeasurementFontWeight(value, id) {
+  // 内置类型旧默认 "500" 迁移到 "700"
+  const normalized = value === "400" || value === "500" || value === "700" ? value : "500";
+  return id && builtinMeasurementTypeIds.has(id) && normalized === "500" ? "700" : normalized;
 }
 
 const builtinMeasurementTypeIds = new Set([
@@ -839,8 +841,9 @@ function normalizeMeasurementGroupDefaults(value) {
 }
 
 function normalizeMeasurementDefaultFontSize(id, value) {
-  const size = Math.max(6, Math.min(96, Number.isFinite(Number(value)) ? Number(value) : 14));
-  return builtinMeasurementTypeIds.has(id) && size === 12 ? 14 : size;
+  const size = Math.max(6, Math.min(96, Number.isFinite(Number(value)) ? Number(value) : 12));
+  // 内置类型旧默认值 14 迁移到 12
+  return builtinMeasurementTypeIds.has(id) && size === 14 ? 12 : size;
 }
 
 function normalizeMeasurementStyleOverride(value) {
@@ -948,7 +951,7 @@ export function normalizeMeasurementConfig(payload) {
       defaultColor: String(item.defaultColor ?? "#334155").trim() || "#334155",
       defaultFontFamily: String(item.defaultFontFamily ?? "Arial").trim() || "Arial",
       defaultFontSize: normalizeMeasurementDefaultFontSize(id, item.defaultFontSize),
-      defaultFontWeight: normalizeMeasurementFontWeight(item.defaultFontWeight),
+      defaultFontWeight: normalizeMeasurementFontWeight(item.defaultFontWeight, id),
       defaultVisible: item.defaultVisible !== false
     }];
   });
@@ -4749,8 +4752,8 @@ function resolveServerMeasurementItemDisplay(node, group, item, measurementConfi
     decimals: item?.decimalsOverride ?? profileItem?.decimalsOverride ?? type?.defaultDecimals ?? 3,
     color: style.color || type?.defaultColor || "#334155",
     fontFamily: style.fontFamily || type?.defaultFontFamily || "Arial",
-    fontSize: style.fontSize ?? type?.defaultFontSize ?? 14,
-    fontWeight: style.fontWeight || type?.defaultFontWeight || "500",
+    fontSize: style.fontSize ?? type?.defaultFontSize ?? 12,
+    fontWeight: style.fontWeight || type?.defaultFontWeight || "700",
     fontStyle: style.fontStyle || "normal",
     textDecoration: style.textDecoration || "none",
     visible: item?.visible !== false
