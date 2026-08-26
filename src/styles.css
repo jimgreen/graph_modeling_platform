@@ -10425,6 +10425,14 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   margin-bottom: 0;
 }
 
+.voltage-base-device-tabs .ant-tabs-tab + .ant-tabs-tab {
+  margin-left: 0;
+}
+
+.voltage-base-device-tabs.ant-tabs-small > .ant-tabs-nav .ant-tabs-tab {
+  padding: 0;
+}
+
 .voltage-base-device-tabs .ant-tabs-tab {
   padding: 4px 12px;
   border: 1px solid #d9d9d9;
