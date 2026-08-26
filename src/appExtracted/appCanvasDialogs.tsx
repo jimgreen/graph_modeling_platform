@@ -100,7 +100,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               if (resultCache[cacheKey] !== undefined) return resultCache[cacheKey];
               const selectedDevice = voltageBaseSetCandidateNodes.find((n) => n.id === nodeId);
               if (!selectedDevice) { resultCache[cacheKey] = 0; return 0; }
-              let effectiveTerminalId = terminalId || selectedDevice.terminals?.[0]?.id ?? "";
+              let effectiveTerminalId = terminalId || (selectedDevice.terminals?.[0]?.id ?? "");
               if (!effectiveTerminalId && isBusNode(selectedDevice)) {
                 effectiveTerminalId = "t1";
               }
