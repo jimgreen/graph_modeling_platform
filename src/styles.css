@@ -10307,13 +10307,21 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .voltage-base-set-dialog .connection-redraw-actions {
-  justify-content: flex-start;
+  justify-content: flex-end;
   margin-top: auto;
-  gap: 20px;
+  gap: 10px;
 }
 
 .voltage-base-set-dialog .connection-redraw-actions button {
   max-width: 100px;
+}
+
+.connection-redraw-options {
+  display: flex;
+}
+
+.connection-redraw-options button {
+  width: 100px;
 }
 
 .voltage-base-set-table {
