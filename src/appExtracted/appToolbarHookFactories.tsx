@@ -179,7 +179,7 @@ export function createPlaceFloatingToolbar(__appScope: Record<string, any>) {
 
 export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
   return (group: MeasurementGroup) => {
-  const { beginMeasurementDrag, dragging, draggingNodeIdSet, formatSvgNumber, g, measurementGroupBackgroundColor, measurementGroupBorderColor, measurementGroupBorderDashArray, measurementGroupBorderWidth, measurementGroupCanvasPosition, measurementGroupRenderMetrics, openMeasurementEditorForNode, rect, selectedMeasurementGroup, text, title, visibleNodeById } = __appScope;
+  const { beginMeasurementDrag, finishMeasurementDrag, dragging, draggingNodeIdSet, formatSvgNumber, g, measurementGroupBackgroundColor, measurementGroupBorderColor, measurementGroupBorderDashArray, measurementGroupBorderWidth, measurementGroupCanvasPosition, measurementGroupRenderMetrics, openMeasurementEditorForNode, rect, selectedMeasurementGroup, text, title, visibleNodeById } = __appScope;
     const node = visibleNodeById.get(group.nodeId);
     if (!node || !group.visible) {
       return null;
@@ -205,6 +205,7 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
         data-export-device-kind={node.kind}
         data-export-measurement-terminal-id={group.terminalId ?? ""}
         onPointerDown={(event) => beginMeasurementDrag(event, group)}
+        onPointerUp={(event) => finishMeasurementDrag(event.pointerId)}
         onDoubleClick={(event) => {
           event.preventDefault();
           event.stopPropagation();

@@ -592,7 +592,7 @@ describe("measurement domain", () => {
       nodeId: "node-1",
       anchor: "bottom",
       layout: "vertical",
-      visible: true,
+      visible: false,
       backgroundColor: "transparent",
       borderColor: "#64748b",
       borderStyle: "none",
