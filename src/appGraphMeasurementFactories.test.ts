@@ -970,12 +970,14 @@ describe("measurement canvas interactions", () => {
       projectMeasurements = typeof updater === "function" ? updater(projectMeasurements) : updater;
     });
     const updateMeasurementDrag = createUpdateMeasurementDrag({
-      measurementDrag: {
-        groupId: "line-measurement",
-        historyCaptured: false,
-        pointerId: 9,
-        startOffset: { x: 12, y: -8 },
-        startPoint: { x: 100, y: 100 }
+      measurementDragRef: {
+        current: {
+          groupId: "line-measurement",
+          historyCaptured: false,
+          pointerId: 9,
+          startOffset: { x: 12, y: -8 },
+          startPoint: { x: 100, y: 100 }
+        }
       },
       measurementOffsetScaleForNode: () => ({ x: 2, y: 4 }),
       nodeById: new Map([

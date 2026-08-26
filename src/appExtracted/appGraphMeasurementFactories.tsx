@@ -5121,7 +5121,6 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
 export function createBeginMeasurementDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGGElement>, group: MeasurementGroup) => {
   const { isBrowseMode, screenToSvgPoint, selectCanvasGraphics, setMeasurementDrag, svgRef } = __appScope;
-    console.log("[DEBUG] beginMeasurementDrag", { groupId: group.id, pointerId: event.pointerId, button: event.button });
     if (isBrowseMode || event.button !== 0 || !svgRef.current) {
       return;
     }
@@ -5142,7 +5141,8 @@ export function createBeginMeasurementDrag(__appScope: Record<string, any>) {
 
 export function createUpdateMeasurementDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGSVGElement>) => {
-  const { measurementDrag, measurementOffsetScaleForNode, nodeById, projectMeasurements, pushUndoSnapshot, screenToSvgPoint, setMeasurementDrag, setProjectMeasurements, svgRef } = __appScope;
+  const { measurementDragRef, measurementOffsetScaleForNode, nodeById, projectMeasurements, pushUndoSnapshot, screenToSvgPoint, setMeasurementDrag, setProjectMeasurements, svgRef } = __appScope;
+    const measurementDrag = measurementDragRef?.current;
     if (!measurementDrag || measurementDrag.pointerId !== event.pointerId || !svgRef.current) {
       return false;
     }
@@ -5150,7 +5150,6 @@ export function createUpdateMeasurementDrag(__appScope: Record<string, any>) {
     const deltaX = point.x - measurementDrag.startPoint.x;
     const deltaY = point.y - measurementDrag.startPoint.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    console.log("[DEBUG] updateMeasurementDrag", { pointerId: event.pointerId, distance, historyCaptured: measurementDrag.historyCaptured });
     if (!measurementDrag.historyCaptured && distance < 4) {
       return true;
     }
@@ -5177,8 +5176,8 @@ export function createUpdateMeasurementDrag(__appScope: Record<string, any>) {
 
 export function createFinishMeasurementDrag(__appScope: Record<string, any>) {
   return (pointerId?: number) => {
-  const { measurementDrag, setHasUnsavedChanges, setMeasurementDrag, writeOperationLog } = __appScope;
-    console.log("[DEBUG] finishMeasurementDrag", { pointerId, hasDrag: !!measurementDrag, dragPointerId: measurementDrag?.pointerId });
+  const { measurementDragRef, setHasUnsavedChanges, setMeasurementDrag, writeOperationLog } = __appScope;
+    const measurementDrag = measurementDragRef?.current;
     if (!measurementDrag) {
       return false;
     }
