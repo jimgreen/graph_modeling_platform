@@ -366,6 +366,7 @@ export type ResolvedMeasurementDisplay = {
   fontStyle: MeasurementFontStyle;
   textDecoration: MeasurementTextDecoration;
   visible: boolean;
+  defaultValue: number;
 };
 
 const DEFAULT_TYPE_VALUES = {
@@ -375,8 +376,8 @@ const DEFAULT_TYPE_VALUES = {
   defaultValue: 0,
   defaultColor: "#334155",
   defaultFontFamily: "Arial",
-  defaultFontSize: 14,
-  defaultFontWeight: "500" as MeasurementFontWeight,
+  defaultFontSize: 12,
+  defaultFontWeight: "700" as MeasurementFontWeight,
   defaultVisible: true
 };
 const LEGACY_DEFAULT_MEASUREMENT_FONT_SIZE = 12;
@@ -391,8 +392,8 @@ const STORAGE_SOC_MEASUREMENT_TYPE: MeasurementTypeDefinition = {
   defaultValue: 0,
   defaultColor: "#334155",
   defaultFontFamily: "Arial",
-  defaultFontSize: 14,
-  defaultFontWeight: "500",
+  defaultFontSize: 12,
+  defaultFontWeight: "700",
   defaultVisible: true
 };
 const GAS_QUANTITY_MEASUREMENT_TYPE: MeasurementTypeDefinition = {
@@ -406,8 +407,8 @@ const GAS_QUANTITY_MEASUREMENT_TYPE: MeasurementTypeDefinition = {
   defaultValue: 0,
   defaultColor: "#334155",
   defaultFontFamily: "Arial",
-  defaultFontSize: 14,
-  defaultFontWeight: "500",
+  defaultFontSize: 12,
+  defaultFontWeight: "700",
   defaultVisible: true
 };
 const TAP_POSITION_MEASUREMENT_TYPE: MeasurementTypeDefinition = {
@@ -418,10 +419,11 @@ const TAP_POSITION_MEASUREMENT_TYPE: MeasurementTypeDefinition = {
   defaultUnit: "",
   valueType: "number",
   defaultDecimals: 0,
+  defaultValue: 0,
   defaultColor: "#334155",
   defaultFontFamily: "Arial",
-  defaultFontSize: 14,
-  defaultFontWeight: "500",
+  defaultFontSize: 12,
+  defaultFontWeight: "700",
   defaultVisible: false
 };
 const ELECTRIC_STORAGE_MEASUREMENT_PROFILE_KINDS = new Set(["ac-storage", "dc-storage"]);
@@ -522,19 +524,19 @@ export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
     borderWidth: DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH
   },
   measurementTypes: [
-    { id: "activePower", key: "p", name: "有功功率", shortLabel: "P", defaultUnit: "MW", valueType: "number", defaultDecimals: 3, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-    { id: "reactivePower", key: "q", name: "无功功率", shortLabel: "Q", defaultUnit: "Mvar", valueType: "number", defaultDecimals: 3, defaultValue: 0, defaultColor: "#475569", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-    { id: "voltage", key: "u", name: "电压", shortLabel: "U", defaultUnit: "kV", valueType: "number", defaultDecimals: 2, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-    { id: "current", key: "i", name: "电流", shortLabel: "I", defaultUnit: "A", valueType: "number", defaultDecimals: 1, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
-    { id: "frequency", key: "f", name: "频率", shortLabel: "f", defaultUnit: "Hz", valueType: "number", defaultDecimals: 2, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
-    { id: "pressure", key: "pressure", name: "压力", shortLabel: "压力", defaultUnit: "MPa", valueType: "number", defaultDecimals: 3, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-    { id: "temperature", key: "temperature", name: "温度", shortLabel: "温度", defaultUnit: "degC", valueType: "number", defaultDecimals: 1, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
-    { id: "flow", key: "flow", name: "流量", shortLabel: "流量", defaultUnit: "kg/s", valueType: "number", defaultDecimals: 2, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-    { id: "level", key: "level", name: "液位", shortLabel: "液位", defaultUnit: "%", valueType: "number", defaultDecimals: 1, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    { id: "activePower", key: "p", name: "有功功率", shortLabel: "P", defaultUnit: "MW", valueType: "number", defaultDecimals: 3, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 12, defaultFontWeight: "700", defaultVisible: true },
+    { id: "reactivePower", key: "q", name: "无功功率", shortLabel: "Q", defaultUnit: "Mvar", valueType: "number", defaultDecimals: 3, defaultValue: 0, defaultColor: "#475569", defaultFontFamily: "Arial", defaultFontSize: 12, defaultFontWeight: "700", defaultVisible: true },
+    { id: "voltage", key: "u", name: "电压", shortLabel: "U", defaultUnit: "kV", valueType: "number", defaultDecimals: 2, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 12, defaultFontWeight: "700", defaultVisible: true },
+    { id: "current", key: "i", name: "电流", shortLabel: "I", defaultUnit: "A", valueType: "number", defaultDecimals: 1, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 12, defaultFontWeight: "700", defaultVisible: false },
+    { id: "frequency", key: "f", name: "频率", shortLabel: "f", defaultUnit: "Hz", valueType: "number", defaultDecimals: 2, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 12, defaultFontWeight: "700", defaultVisible: false },
+    { id: "pressure", key: "pressure", name: "压力", shortLabel: "压力", defaultUnit: "MPa", valueType: "number", defaultDecimals: 3, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 12, defaultFontWeight: "700", defaultVisible: true },
+    { id: "temperature", key: "temperature", name: "温度", shortLabel: "温度", defaultUnit: "degC", valueType: "number", defaultDecimals: 1, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 12, defaultFontWeight: "700", defaultVisible: false },
+    { id: "flow", key: "flow", name: "流量", shortLabel: "流量", defaultUnit: "kg/s", valueType: "number", defaultDecimals: 2, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 12, defaultFontWeight: "700", defaultVisible: true },
+    { id: "level", key: "level", name: "液位", shortLabel: "液位", defaultUnit: "%", valueType: "number", defaultDecimals: 1, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 12, defaultFontWeight: "700", defaultVisible: true },
     STORAGE_SOC_MEASUREMENT_TYPE,
     GAS_QUANTITY_MEASUREMENT_TYPE,
     TAP_POSITION_MEASUREMENT_TYPE,
-    { id: "status", key: "status", name: "状态", shortLabel: "状态", defaultUnit: "", valueType: "string", defaultDecimals: 0, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false }
+    { id: "status", key: "status", name: "状态", shortLabel: "状态", defaultUnit: "", valueType: "string", defaultDecimals: 0, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 12, defaultFontWeight: "700", defaultVisible: false }
   ],
   deviceProfiles: [
     { deviceKind: "ac-load", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
@@ -1517,7 +1519,8 @@ export function resolveMeasurementItemDisplay({
     fontWeight: style.fontWeight || type?.defaultFontWeight || DEFAULT_TYPE_VALUES.defaultFontWeight,
     fontStyle: style.fontStyle || "normal",
     textDecoration: style.textDecoration || "none",
-    visible: item.visible !== false
+    visible: item.visible !== false,
+    defaultValue: finiteNumber(item.defaultValue, finiteNumber(profileItem?.defaultValue, type?.defaultValue ?? 0))
   };
 }
 

@@ -882,6 +882,8 @@ const [projectMeasurements, setProjectMeasurements] = useState<ProjectMeasuremen
     normalizeProjectMeasurements(initialLayeredProject.measurements ?? EMPTY_PROJECT_MEASUREMENTS, initialIndexedNodes.nodes)
   );
 Object.assign(__appScope, { projectMeasurements, setProjectMeasurements });
+const [lastCanvasClickTarget, setLastCanvasClickTarget] = useState<"device" | "measurement" | null>(null);
+Object.assign(__appScope, { lastCanvasClickTarget, setLastCanvasClickTarget });
 const [layers, setLayers] = useState<ModelLayer[]>(() => initialLayeredProject.layers ?? []);
 Object.assign(__appScope, { layers, setLayers });
 const [activeLayerId, setActiveLayerId] = useState(() => initialLayeredProject.activeLayerId ?? DEFAULT_MODEL_LAYER_ID);

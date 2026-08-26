@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { getRatedCapacityDefaultForKind, LINE_DEVICE_KINDS, LOAD_DEVICE_KINDS, VOLTAGE_LINE_RATED_CAPACITY, VOLTAGE_LOAD_RATED_CAPACITY } from "./model";
 import { setVoltageBaseValuesForScope } from "./model-routing";
-import type { ModelNode } from "./model";
+import type { DeviceKind, ModelNode } from "./model";
 
 describe("电压等级 → 额定容量默认值映射", () => {
   test("线路种类集合包含 ac/dc line 变体", () => {
@@ -40,17 +40,17 @@ describe("电压等级 → 额定容量默认值映射", () => {
 describe("setVoltageBaseValuesForScope 更新额定容量", () => {
   const makeNode = (id: string, kind: string, params: Record<string, string> = {}): ModelNode => ({
     id,
-    kind,
+    kind: kind as DeviceKind,
     name: kind,
-    x: 0,
-    y: 0,
-    width: 100,
-    height: 50,
+    nodeNumber: "",
+    acTopologyNode: 0,
+    dcTopologyNode: 0,
+    position: { x: 0, y: 0 },
+    size: { width: 100, height: 50 },
+    rotation: 0,
+    scale: 1,
     params,
-    terminals: [],
-    layer: "default",
-    locked: false,
-    visible: true
+    terminals: []
   });
 
   test("设置 10kV 后线路额定容量变为 10 MW", () => {

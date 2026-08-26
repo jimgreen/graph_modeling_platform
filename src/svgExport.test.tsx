@@ -1363,7 +1363,7 @@ describe("SVG export", () => {
     expect(svg).toContain('mti="activePower"');
     expect(svg).not.toContain('measure_type="activePower"');
     const measurementRow = svg.match(/<text\b[^>]*><tspan>P<\/tspan><tspan id="mv-load-export-m-active"[\s\S]*?<\/text>/)?.[0] ?? "";
-    const valueText = measurementRow.match(/<tspan id="mv-load-export-m-active" class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
+    const valueText = measurementRow.match(/<tspan id="mv-load-export-m-active" class="mv"[^>]*>[^<]+<\/tspan>/)?.[0] ?? "";
     const unitText = measurementRow.match(/<tspan dx="[^"]+">kW<\/tspan>/)?.[0] ?? "";
     expect(measurementRow).toContain('<tspan>P</tspan>');
     expect(valueText).not.toContain('mid=');
@@ -1452,7 +1452,7 @@ describe("SVG export", () => {
     expect(svg).not.toContain(">FLOW</tspan>");
     expect(svg).not.toContain(">GAS_QUANTITY</tspan>");
     expect(svg).not.toContain(">SOC</tspan>");
-    const gasQuantityValue = svg.match(/<tspan[^>]*class="mv"[^>]*mti="gasQuantity"[^>]*>--<\/tspan>/)?.[0] ?? "";
+    const gasQuantityValue = svg.match(/<tspan[^>]*class="mv"[^>]*mti="gasQuantity"[^>]*>[^<]+<\/tspan>/)?.[0] ?? "";
     expect(gasQuantityValue).toContain('mt="gas_quantity"');
     expect(gasQuantityValue).toContain('mti="gasQuantity"');
     expect(gasQuantityValue).not.toContain('mt="gasQuantity"');
@@ -1556,7 +1556,7 @@ describe("SVG export", () => {
     };
 
     const svg = buildSvgDocument([customNode], [], { width: 320, height: 220, measurements, measurementConfig });
-    const valueText = svg.match(/<tspan[^>]*class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
+    const valueText = svg.match(/<tspan[^>]*class="mv"[^>]*>[^<]+<\/tspan>/)?.[0] ?? "";
 
     expect(valueText).toContain('mt="custom_metric_2"');
     expect(valueText).toContain('mti="customMetric"');
