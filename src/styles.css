@@ -10413,6 +10413,11 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   gap: 4px;
 }
 
+.voltage-base-device-tab-content {
+  display: grid;
+  gap: 8px;
+}
+
 .voltage-base-device-scope-label {
   font-size: 12px;
   font-weight: 600;
