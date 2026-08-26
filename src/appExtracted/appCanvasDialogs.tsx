@@ -128,11 +128,17 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
             const handleConfirm = () => {
               const allUpdates = [];
               const allChangedIds = new Set();
+              const processedScopes = new Set();
               for (const device of voltageBaseSetCandidateNodes) {
-                const devResult = getDeviceFilteredResult(device.id);
-                for (const u of devResult.nodeUpdates) {
-                  allUpdates.push(u);
-                  allChangedIds.add(u.id);
+                const deviceScope = perDeviceScope[device.id] ?? "island";
+                const scopeKey = deviceScope;
+                if (!processedScopes.has(scopeKey)) {
+                  processedScopes.add(scopeKey);
+                  const result = voltageBaseSetResultForScope(deviceScope);
+                  for (const u of result.nodeUpdates) {
+                    allUpdates.push(u);
+                    allChangedIds.add(u.id);
+                  }
                 }
               }
               if (allUpdates.length === 0) return;
