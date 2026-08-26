@@ -10417,13 +10417,30 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   color: #1e293b;
 }
 
-.voltage-base-device-tabs,
-.voltage-base-terminal-subtabs {
+.voltage-base-device-tabs {
   margin-bottom: 2px;
 }
 
-.voltage-base-terminal-subtabs {
-  margin-left: 8px;
+.voltage-base-device-tabs .ant-tabs-nav {
+  margin-bottom: 0;
+}
+
+.voltage-base-device-tabs .ant-tabs-tab {
+  padding: 4px 16px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  background: #fff;
+  margin-right: 8px;
+}
+
+.voltage-base-device-tabs .ant-tabs-tab-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.voltage-base-device-terminal-tabs {
+  margin: 4px 0 8px;
 }
 
 .voltage-base-device-scope-section {

@@ -125,19 +125,39 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
             const deviceTabItems = voltageBaseSetCandidateNodes.map((device) => {
               const deviceScope = perDeviceScope[device.id] ?? "island";
               const fullResult = getDeviceResult(device.id);
-              const deviceUniformValue = device.id === activeDeviceId ? voltageBaseSetValue : "";
               const deviceTerminalRows = voltageBaseSetTerminalRows.filter((r) => r.nodeId === device.id);
-              const deviceActiveTerminalRow = deviceTerminalRows.find((r) => voltageBaseTerminalRowKey(r) === activeVoltageBaseTerminalKey) ?? deviceTerminalRows[0] ?? null;
+              const showDeviceTerminalTabs = deviceTerminalRows.length > 1 && (voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice");
+              const deviceActiveTerminalKey = showDeviceTerminalTabs
+                ? (activeVoltageBaseTerminalKey.split(":")[1] && deviceTerminalRows.some((r) => r.terminalId === activeVoltageBaseTerminalKey.split(":")[1])
+                  ? activeVoltageBaseTerminalKey.split(":")[1]
+                  : deviceTerminalRows[0]?.terminalId ?? "")
+                : "";
+              const deviceActiveTerminalRow = deviceActiveTerminalKey
+                ? deviceTerminalRows.find((r) => r.terminalId === deviceActiveTerminalKey) ?? deviceTerminalRows[0] ?? null
+                : deviceTerminalRows[0] ?? null;
+              const handleDeviceTerminalChange = (terminalId) => {
+                setActiveVoltageBaseTerminalKey(`${device.id}:${terminalId}`);
+              };
               return {
                 key: device.id,
                 label: device.name || device.id,
                 children: (<div className="voltage-base-device-tab-content">
                   {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (
-                    <VoltageBaseSetTable activeValue={deviceUniformValue} onSelect={setVoltageBaseSetValue} />
+                    <VoltageBaseSetTable activeValue={voltageBaseSetValue} onSelect={setVoltageBaseSetValue} />
                   )}
-                  {(voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice") && deviceTerminalRows.length > 0 && (
+                  {showDeviceTerminalTabs && (
+                    <Tabs
+                      className="voltage-base-device-terminal-tabs"
+                      activeKey={deviceActiveTerminalKey}
+                      onChange={handleDeviceTerminalChange}
+                      items={deviceTerminalRows.map((r, i) => ({ key: r.terminalId, label: r.terminalLabel || `端子${i + 1}` }))}
+                      size="small"
+                      type="card"
+                    />
+                  )}
+                  {showDeviceTerminalTabs && deviceActiveTerminalRow && (
                     <VoltageBaseSetTable
-                      activeValue={deviceActiveTerminalRow?.value ?? ""}
+                      activeValue={deviceActiveTerminalRow.value}
                       onSelect={(v) => setVoltageBaseTerminalValue(device.id, deviceActiveTerminalRow.terminalId, v)}
                     />
                   )}
@@ -167,16 +187,6 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                   <span>设置方式：</span>
                   <strong>{voltageBaseSetModeLabel}</strong>
                 </div>
-                {showTerminalSubTabs && (
-                  <Tabs
-                    className="voltage-base-terminal-subtabs"
-                    activeKey={activeVoltageBaseTerminalKey.split(":")[1] ?? deviceTerminals[0]?.id ?? ""}
-                    onChange={handleTerminalSubTabChange}
-                    items={deviceTerminals.map((t, i) => ({ key: t.id, label: t.label || `端子${i + 1}` }))}
-                    size="small"
-                    type="card"
-                  />
-                )}
                 {showDeviceTabs ? (
                   <Tabs
                     className="voltage-base-device-tabs"
