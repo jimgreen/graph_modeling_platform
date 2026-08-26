@@ -45,7 +45,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
     updateEnergyColor, updateVoltageColorRow, visibleEdges, visibleNodes, visibleVoltageColorRows, nodes, edges, voltageBaseClearDialogOpen, voltageBaseClearResultForScope, voltageBaseClearScope,
     voltageBaseSetDialogOpen, voltageBaseSetHasUniformTargets, voltageBaseSetMode, voltageBaseSetModeLabel, voltageBaseSetOptions, voltageBaseSetReady, voltageBaseSetResultForScope, voltageBaseSetScope,
     voltageBaseSetScopeDeviceCount, voltageBaseSetTerminalRows, voltageBaseSetValue, voltageBaseTerminalRowKey, voltageColorVisibility, voltageLevelDialogOpen, voltageLevelSettings, voltageTab,
-    pushUndoSnapshot, writeOperationLog, patchGraphNodes, undoScopeForGraphPatch
+    pushUndoSnapshot, writeOperationLog, undoScopeForGraphPatch
   } = scope;
   const [activeVoltageBaseDeviceTab, setActiveVoltageBaseDeviceTab] = useState("");
   const [perDeviceScope, setPerDeviceScope] = useState({});
