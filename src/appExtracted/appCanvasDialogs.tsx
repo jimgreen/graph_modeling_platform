@@ -100,7 +100,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               if (resultCache[cacheKey] !== undefined) return resultCache[cacheKey];
               const selectedDevice = voltageBaseSetCandidateNodes.find((n) => n.id === nodeId);
               if (!selectedDevice) { resultCache[cacheKey] = 0; return 0; }
-              const effectiveTerminalId = terminalId || selectedDevice.terminals?.[0]?.id ?? "";
+              const effectiveTerminalId = terminalId || (selectedDevice.terminals?.[0]?.id ?? "");
               if (!effectiveTerminalId) { resultCache[cacheKey] = 0; return 0; }
               const connectivity = buildTopologyConnectivity(nodes, edges);
               const islandRoot = connectivity.islandRoot(nodeId, effectiveTerminalId);
