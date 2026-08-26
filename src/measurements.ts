@@ -1077,7 +1077,7 @@ export function measurementGroupsForExistingNodes(groups: readonly MeasurementGr
       id: String(group.id || `measurement-${group.nodeId}`),
       nodeId: group.nodeId,
       terminalId: group.terminalId ? String(group.terminalId) : undefined,
-      visible: group.visible !== false,
+      visible: group.visible === true,
       labelVisible: group.labelVisible === undefined ? undefined : group.labelVisible !== false,
       unitVisible: group.unitVisible === undefined ? undefined : group.unitVisible !== false,
       backgroundColor: normalizedGroupColor(group.backgroundColor) ?? DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
