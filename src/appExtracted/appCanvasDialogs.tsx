@@ -41,7 +41,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
     setColorPaletteDraft, setFilterSelectionDialogOpen, setFilterSelectionTypeKeys, setGroupDeviceDefinitionDialog, setLayerAssignmentDialogOpen, setLayerAssignmentTargetId, setReactFlowPreviewOpen, setTemplateDraftName, setTemplateDraftType,
     setVoltageBaseClearDialogOpen, setVoltageBaseClearScope, setVoltageBaseSetDialogOpen, setVoltageBaseSetScope, setVoltageBaseSetValue, setVoltageBaseTerminalValue, setVoltageBaseTerminalValuesForScope, setVoltageBaseValuesForScope, setVoltageColorVisibility, setVoltageLevelDialogOpen,
     setVoltageLevelSettings, setVoltageTab, templateDialog, templateDraftName, templateDraftType, toggleColorDisplayMode, toggleFilterSelectionItem, toggleFilterSelectionType,
-    updateEnergyColor, updateVoltageColorRow, visibleEdges, visibleNodes, visibleVoltageColorRows, voltageBaseClearDialogOpen, voltageBaseClearResultForScope, voltageBaseClearScope,
+    updateEnergyColor, updateVoltageColorRow, visibleEdges, visibleNodes, visibleVoltageColorRows, nodes, edges, voltageBaseClearDialogOpen, voltageBaseClearResultForScope, voltageBaseClearScope,
     voltageBaseSetDialogOpen, voltageBaseSetHasUniformTargets, voltageBaseSetMode, voltageBaseSetModeLabel, voltageBaseSetOptions, voltageBaseSetReady, voltageBaseSetResultForScope, voltageBaseSetScope,
     voltageBaseSetScopeDeviceCount, voltageBaseSetTerminalRows, voltageBaseSetValue, voltageBaseTerminalRowKey, voltageColorVisibility, voltageLevelDialogOpen, voltageLevelSettings, voltageTab
   } = scope;
@@ -93,6 +93,29 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               resultCache[deviceScope] = result;
               return result;
             };
+            const getTerminalIslandDeviceCount = (nodeId, terminalId) => {
+              const cacheKey = `${nodeId}:${terminalId}:islandCount`;
+              if (resultCache[cacheKey] !== undefined) return resultCache[cacheKey];
+              const selectedDevice = voltageBaseSetCandidateNodes.find((n) => n.id === nodeId);
+              if (!selectedDevice) { resultCache[cacheKey] = 0; return 0; }
+              const terminal = selectedDevice.terminals?.find((t) => t.id === terminalId);
+              if (!terminal) { resultCache[cacheKey] = 0; return 0; }
+              const islandResult = voltageBaseSetResultForScope("island");
+              const targetNode = islandResult.nodes?.find((n) => n.id === nodeId);
+              const islandRoot = targetNode?.connectivity?.islandRoot?.(nodeId, terminalId);
+              if (!islandRoot) { resultCache[cacheKey] = 0; return 0; }
+              const islandNodeIds = new Set();
+              for (const n of nodes) {
+                for (const t of n.terminals ?? []) {
+                  if (n.connectivity?.islandRoot?.(n.id, t.id) === islandRoot) {
+                    islandNodeIds.add(n.id);
+                    break;
+                  }
+                }
+              }
+              resultCache[cacheKey] = islandNodeIds.size;
+              return islandNodeIds.size;
+            };
             const getDeviceFilteredResult = (nodeId) => {
               const fullResult = getDeviceResult(nodeId);
               return {
@@ -125,6 +148,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
             const renderTerminalContent = (device, terminalId, terminalLabel) => {
               const deviceScope = perDeviceScope[device.id] ?? "island";
               const fullResult = getDeviceResult(device.id);
+              const islandDeviceCount = getTerminalIslandDeviceCount(device.id, terminalId);
               const row = voltageBaseSetTerminalRows.find((r) => r.nodeId === device.id && r.terminalId === terminalId);
               return (<div className="voltage-base-device-tab-content">
                 {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (
@@ -137,14 +161,14 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                   />
                 )}
                 <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label={`${terminalLabel}设置范围`}>
-                  {VOLTAGE_BASE_SET_SCOPES.map((s) => {
-                    const count = fullResult.targetNodeIds.length;
-                    const disabled = !voltageBaseSetReady();
-                    return (<button key={s} type="button" className={deviceScope === s ? "active" : ""} role="radio" aria-checked={deviceScope === s} onClick={() => setPerDeviceScope((prev) => ({ ...prev, [device.id]: s }))} disabled={disabled}>
-                      <span>{VOLTAGE_BASE_SET_SCOPE_LABELS[s]}</span>
-                      <strong>{count}</strong>
-                    </button>);
-                  })}
+                  <button type="button" className={deviceScope === "selected" ? "active" : ""} role="radio" aria-checked={deviceScope === "selected"} onClick={() => setPerDeviceScope((prev) => ({ ...prev, [device.id]: "selected" }))} disabled={!voltageBaseSetReady()}>
+                    <span>选中设备</span>
+                    <strong>1</strong>
+                  </button>
+                  <button type="button" className={deviceScope === "island" ? "active" : ""} role="radio" aria-checked={deviceScope === "island"} onClick={() => setPerDeviceScope((prev) => ({ ...prev, [device.id]: "island" }))} disabled={!voltageBaseSetReady()}>
+                    <span>所在拓扑岛</span>
+                    <strong>{islandDeviceCount}</strong>
+                  </button>
                 </div>
               </div>);
             };
