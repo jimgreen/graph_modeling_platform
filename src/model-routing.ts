@@ -3641,7 +3641,7 @@ function isTwoTerminalTopologyDevice(node: ModelNode): boolean {
   return !isBusNode(node) && !isStaticNode(node) && node.terminals.length === 2;
 }
 
-type TopologyConnectivity = {
+export type TopologyConnectivity = {
   terminalKey: (nodeId: string, terminalId: string) => string;
   topologyRoot: (nodeId: string, terminalId: string) => string;
   islandRoot: (nodeId: string, terminalId: string) => string;
@@ -3674,7 +3674,7 @@ type VoltageBaseScopeTargets = {
   terminalIdsByNodeId: Map<string, Set<string>> | null;
 };
 
-function buildTopologyConnectivity(nodes: ModelNode[], edges: Edge[]): TopologyConnectivity {
+export function buildTopologyConnectivity(nodes: ModelNode[], edges: Edge[]): TopologyConnectivity {
   const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
   nodes = synchronized.nodes;
   edges = synchronized.edges;
