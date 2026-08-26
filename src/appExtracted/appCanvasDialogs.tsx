@@ -67,10 +67,6 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
   return (<>
 {voltageBaseSetDialogOpen && (() => {
             const showDeviceTabs = voltageBaseSetCandidateNodes.length > 1;
-            const deviceTabItems = voltageBaseSetCandidateNodes.map((node) => ({
-              key: node.id,
-              label: node.name || node.id
-            }));
             const activeDeviceId = showDeviceTabs
               ? (voltageBaseSetCandidateNodes.some((n) => n.id === activeVoltageBaseDeviceTab) ? activeVoltageBaseDeviceTab : voltageBaseSetCandidateNodes[0]?.id ?? "")
               : (voltageBaseSetCandidateNodes[0]?.id ?? "");
@@ -126,6 +122,26 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               setVoltageBaseSetDialogOpen(false);
             };
             const anyDeviceHasChanges = voltageBaseSetCandidateNodes.some((d) => getDeviceFilteredResult(d.id).changedNodeIds.length > 0);
+            const deviceTabItems = voltageBaseSetCandidateNodes.map((device) => {
+              const deviceScope = perDeviceScope[device.id] ?? "island";
+              const fullResult = getDeviceResult(device.id);
+              return {
+                key: device.id,
+                label: device.name || device.id,
+                children: (<div className="voltage-base-device-scope-section">
+                  <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label={`${device.name || device.id}设置范围`}>
+                    {VOLTAGE_BASE_SET_SCOPES.map((s) => {
+                      const count = fullResult.targetNodeIds.length;
+                      const disabled = !voltageBaseSetReady();
+                      return (<button key={s} type="button" className={deviceScope === s ? "active" : ""} role="radio" aria-checked={deviceScope === s} onClick={() => setPerDeviceScope((prev) => ({ ...prev, [device.id]: s }))} disabled={disabled}>
+                        <span>{VOLTAGE_BASE_SET_SCOPE_LABELS[s]}</span>
+                        <strong>{count}</strong>
+                      </button>);
+                    })}
+                  </div>
+                </div>)
+              };
+            });
             return (<div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseSetDialogOpen(false)}>
               <section className="connection-redraw-dialog voltage-base-set-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-set-title">
                 <WindowCloseButton label="关闭设置电压基值窗口" onClick={() => setVoltageBaseSetDialogOpen(false)} />
@@ -139,15 +155,6 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                   <span>设置方式：</span>
                   <strong>{voltageBaseSetModeLabel}</strong>
                 </div>
-                {showDeviceTabs && (
-                  <Tabs
-                    className="voltage-base-device-tabs"
-                    activeKey={activeDeviceId}
-                    onChange={handleDeviceTabChange}
-                    items={deviceTabItems}
-                    size="small"
-                  />
-                )}
                 {showTerminalSubTabs && (
                   <Tabs
                     className="voltage-base-terminal-subtabs"
@@ -167,23 +174,15 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                     onSelect={(v) => setVoltageBaseTerminalValue(activeTerminalRow.nodeId, activeTerminalRow.terminalId, v)}
                   />
                 )}
-                {showDeviceTabs ? voltageBaseSetCandidateNodes.map((device) => {
-                  const deviceScope = perDeviceScope[device.id] ?? "island";
-                  const fullResult = getDeviceResult(device.id);
-                  return (<div key={device.id} className="voltage-base-device-scope-section">
-                    <div className="voltage-base-device-scope-label">{device.name || device.id}</div>
-                    <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label={`${device.name || device.id}设置范围`}>
-                      {VOLTAGE_BASE_SET_SCOPES.map((s) => {
-                        const count = fullResult.targetNodeIds.length;
-                        const disabled = !voltageBaseSetReady();
-                        return (<button key={s} type="button" className={deviceScope === s ? "active" : ""} role="radio" aria-checked={deviceScope === s} onClick={() => setPerDeviceScope((prev) => ({ ...prev, [device.id]: s }))} disabled={disabled}>
-                          <span>{VOLTAGE_BASE_SET_SCOPE_LABELS[s]}</span>
-                          <strong>{count}</strong>
-                        </button>);
-                      })}
-                    </div>
-                  </div>);
-                }) : (
+                {showDeviceTabs ? (
+                  <Tabs
+                    className="voltage-base-device-tabs"
+                    activeKey={activeDeviceId}
+                    onChange={handleDeviceTabChange}
+                    items={deviceTabItems}
+                    size="small"
+                  />
+                ) : (
                   <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label="设置电压基值范围">
                     {VOLTAGE_BASE_SET_SCOPES.map((scope) => {
                       const result = voltageBaseSetResultForScope(scope);
