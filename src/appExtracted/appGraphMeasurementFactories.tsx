@@ -5121,6 +5121,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
 export function createBeginMeasurementDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGGElement>, group: MeasurementGroup) => {
   const { isBrowseMode, screenToSvgPoint, selectCanvasGraphics, setMeasurementDrag, svgRef } = __appScope;
+    console.log("[DEBUG] beginMeasurementDrag", { groupId: group.id, pointerId: event.pointerId, button: event.button });
     if (isBrowseMode || event.button !== 0 || !svgRef.current) {
       return;
     }
@@ -5149,6 +5150,7 @@ export function createUpdateMeasurementDrag(__appScope: Record<string, any>) {
     const deltaX = point.x - measurementDrag.startPoint.x;
     const deltaY = point.y - measurementDrag.startPoint.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    console.log("[DEBUG] updateMeasurementDrag", { pointerId: event.pointerId, distance, historyCaptured: measurementDrag.historyCaptured });
     if (!measurementDrag.historyCaptured && distance < 4) {
       return true;
     }
@@ -5176,6 +5178,7 @@ export function createUpdateMeasurementDrag(__appScope: Record<string, any>) {
 export function createFinishMeasurementDrag(__appScope: Record<string, any>) {
   return (pointerId?: number) => {
   const { measurementDrag, setHasUnsavedChanges, setMeasurementDrag, writeOperationLog } = __appScope;
+    console.log("[DEBUG] finishMeasurementDrag", { pointerId, hasDrag: !!measurementDrag, dragPointerId: measurementDrag?.pointerId });
     if (!measurementDrag) {
       return false;
     }
