@@ -150,12 +150,20 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               const deviceScope = perDeviceScope[device.id] ?? "island";
               const fullResult = getDeviceResult(device.id);
               const islandDeviceCount = getTerminalIslandDeviceCount(device.id, terminalId);
+              const deviceTerminalRows = voltageBaseSetTerminalRows.filter((r) => r.nodeId === device.id);
+              const hasMultiTerminal = deviceTerminalRows.length > 1 && (voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice");
               const row = voltageBaseSetTerminalRows.find((r) => r.nodeId === device.id && r.terminalId === terminalId);
               return (<div className="voltage-base-device-tab-content">
-                {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (
+                {!hasMultiTerminal && (voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (
                   <VoltageBaseSetTable activeValue={voltageBaseSetValue} onSelect={setVoltageBaseSetValue} />
                 )}
-                {(voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice") && row && (
+                {!hasMultiTerminal && (voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice") && deviceTerminalRows.length === 1 && deviceTerminalRows[0] && (
+                  <VoltageBaseSetTable
+                    activeValue={deviceTerminalRows[0].value}
+                    onSelect={(v) => setVoltageBaseTerminalValue(device.id, deviceTerminalRows[0].terminalId, v)}
+                  />
+                )}
+                {hasMultiTerminal && row && (
                   <VoltageBaseSetTable
                     activeValue={row.value}
                     onSelect={(v) => setVoltageBaseTerminalValue(device.id, row.terminalId, v)}
