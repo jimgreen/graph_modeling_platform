@@ -39,13 +39,14 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
     layerAssignmentTargetId, layerAssignmentUnchanged, layers, normalizeCategoryLibraryName, patchGraphNodes, reactFlowPreviewOpen, renderGraphTemplatePreview, resetEnergyColors, resetVoltageColors,
     resolveTemplateComponentLibrary, saveColorPalette, selectableCategoryLibraries, setActiveVoltageBaseTerminalKey, setColorPaletteDialogOpen, setColorPaletteTab, setConnectionRedrawDialogOpen, setConnectionRedrawScope,
     setColorPaletteDraft, setFilterSelectionDialogOpen, setFilterSelectionTypeKeys, setGroupDeviceDefinitionDialog, setLayerAssignmentDialogOpen, setLayerAssignmentTargetId, setReactFlowPreviewOpen, setTemplateDraftName, setTemplateDraftType,
-    setVoltageBaseClearDialogOpen, setVoltageBaseClearScope, setVoltageBaseSetDialogOpen, setVoltageBaseSetScope, setVoltageBaseSetValue, setVoltageBaseTerminalValue, setVoltageColorVisibility, setVoltageLevelDialogOpen,
+    setVoltageBaseClearDialogOpen, setVoltageBaseClearScope, setVoltageBaseSetDialogOpen, setVoltageBaseSetScope, setVoltageBaseSetValue, setVoltageBaseTerminalValue, setVoltageBaseTerminalValuesForScope, setVoltageBaseValuesForScope, setVoltageColorVisibility, setVoltageLevelDialogOpen,
     setVoltageLevelSettings, setVoltageTab, templateDialog, templateDraftName, templateDraftType, toggleColorDisplayMode, toggleFilterSelectionItem, toggleFilterSelectionType,
     updateEnergyColor, updateVoltageColorRow, visibleEdges, visibleNodes, visibleVoltageColorRows, voltageBaseClearDialogOpen, voltageBaseClearResultForScope, voltageBaseClearScope,
     voltageBaseSetDialogOpen, voltageBaseSetHasUniformTargets, voltageBaseSetMode, voltageBaseSetModeLabel, voltageBaseSetOptions, voltageBaseSetReady, voltageBaseSetResultForScope, voltageBaseSetScope,
     voltageBaseSetScopeDeviceCount, voltageBaseSetTerminalRows, voltageBaseSetValue, voltageBaseTerminalRowKey, voltageColorVisibility, voltageLevelDialogOpen, voltageLevelSettings, voltageTab
   } = scope;
   const [activeVoltageBaseDeviceTab, setActiveVoltageBaseDeviceTab] = useState("");
+  const [perDeviceScope, setPerDeviceScope] = useState({});
   const voltageBaseDeviceInitRef = useRef(false);
   useEffect(() => {
     if (!voltageBaseSetDialogOpen) {
@@ -58,6 +59,9 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
       setActiveVoltageBaseDeviceTab(first.id);
       const firstTermRow = voltageBaseSetTerminalRows.find((r) => r.nodeId === first.id);
       if (firstTermRow) setActiveVoltageBaseTerminalKey(voltageBaseTerminalRowKey(firstTermRow));
+      const initScopes = {};
+      voltageBaseSetCandidateNodes.forEach((n) => { initScopes[n.id] = "island"; });
+      setPerDeviceScope(initScopes);
     }
   }, [voltageBaseSetDialogOpen, voltageBaseSetCandidateNodes, voltageBaseSetTerminalRows]);
   return (<>
@@ -85,6 +89,43 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               const key = `${activeDeviceId}:${terminalId}`;
               setActiveVoltageBaseTerminalKey(key);
             };
+            const resultCache = {};
+            const getDeviceResult = (nodeId) => {
+              const deviceScope = perDeviceScope[nodeId] ?? "island";
+              if (resultCache[deviceScope]) return resultCache[deviceScope];
+              const result = voltageBaseSetResultForScope(deviceScope);
+              resultCache[deviceScope] = result;
+              return result;
+            };
+            const getDeviceFilteredResult = (nodeId) => {
+              const fullResult = getDeviceResult(nodeId);
+              return {
+                changedNodeIds: fullResult.changedNodeIds.includes(nodeId) ? [nodeId] : [],
+                nodeUpdates: fullResult.nodeUpdates.filter((n) => n.id === nodeId),
+                targetNodeIds: fullResult.targetNodeIds
+              };
+            };
+            const handleConfirm = () => {
+              const allUpdates = [];
+              const allChangedIds = new Set();
+              for (const device of voltageBaseSetCandidateNodes) {
+                const devResult = getDeviceFilteredResult(device.id);
+                for (const u of devResult.nodeUpdates) {
+                  allUpdates.push(u);
+                  allChangedIds.add(u.id);
+                }
+              }
+              if (allUpdates.length === 0) return;
+              const merged = new Map();
+              allUpdates.forEach((n) => merged.set(n.id, n));
+              const nodeUpdates = Array.from(merged.values());
+              const changedNodeIds = Array.from(allChangedIds);
+              pushUndoSnapshot(true, false, undoScopeForGraphPatch(changedNodeIds, []));
+              patchGraphNodes(nodeUpdates);
+              writeOperationLog(`设置电压基值：${changedNodeIds.length} 个设备`);
+              setVoltageBaseSetDialogOpen(false);
+            };
+            const anyDeviceHasChanges = voltageBaseSetCandidateNodes.some((d) => getDeviceFilteredResult(d.id).changedNodeIds.length > 0);
             return (<div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseSetDialogOpen(false)}>
               <section className="connection-redraw-dialog voltage-base-set-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-set-title">
                 <WindowCloseButton label="关闭设置电压基值窗口" onClick={() => setVoltageBaseSetDialogOpen(false)} />
@@ -126,23 +167,38 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                     onSelect={(v) => setVoltageBaseTerminalValue(activeTerminalRow.nodeId, activeTerminalRow.terminalId, v)}
                   />
                 )}
-                <datalist id="voltage-base-set-options">
-                  {voltageBaseSetOptions.map((value) => (<option key={value} value={value}/>))}
-                </datalist>
-                <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label="设置电压基值范围">
-                  {VOLTAGE_BASE_SET_SCOPES.map((scope) => {
-                    const result = voltageBaseSetResultForScope(scope);
-                    const count = voltageBaseSetScopeDeviceCount(result);
-                    const disabled = result.changedNodeIds.length === 0 || !voltageBaseSetReady();
-                    return (<button key={scope} type="button" className={voltageBaseSetScope === scope ? "active" : ""} role="radio" aria-checked={voltageBaseSetScope === scope} onClick={() => setVoltageBaseSetScope(scope)} disabled={disabled}>
-                      <span>{VOLTAGE_BASE_SET_SCOPE_LABELS[scope]}</span>
-                      <strong>{count}</strong>
-                    </button>);
-                  })}
-                </div>
+                {showDeviceTabs ? voltageBaseSetCandidateNodes.map((device) => {
+                  const deviceScope = perDeviceScope[device.id] ?? "island";
+                  const fullResult = getDeviceResult(device.id);
+                  return (<div key={device.id} className="voltage-base-device-scope-section">
+                    <div className="voltage-base-device-scope-label">{device.name || device.id}</div>
+                    <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label={`${device.name || device.id}设置范围`}>
+                      {VOLTAGE_BASE_SET_SCOPES.map((s) => {
+                        const count = fullResult.targetNodeIds.length;
+                        const disabled = !voltageBaseSetReady();
+                        return (<button key={s} type="button" className={deviceScope === s ? "active" : ""} role="radio" aria-checked={deviceScope === s} onClick={() => setPerDeviceScope((prev) => ({ ...prev, [device.id]: s }))} disabled={disabled}>
+                          <span>{VOLTAGE_BASE_SET_SCOPE_LABELS[s]}</span>
+                          <strong>{count}</strong>
+                        </button>);
+                      })}
+                    </div>
+                  </div>);
+                }) : (
+                  <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label="设置电压基值范围">
+                    {VOLTAGE_BASE_SET_SCOPES.map((scope) => {
+                      const result = voltageBaseSetResultForScope(scope);
+                      const count = voltageBaseSetScopeDeviceCount(result);
+                      const disabled = result.changedNodeIds.length === 0 || !voltageBaseSetReady();
+                      return (<button key={scope} type="button" className={voltageBaseSetScope === scope ? "active" : ""} role="radio" aria-checked={voltageBaseSetScope === scope} onClick={() => setVoltageBaseSetScope(scope)} disabled={disabled}>
+                        <span>{VOLTAGE_BASE_SET_SCOPE_LABELS[scope]}</span>
+                        <strong>{count}</strong>
+                      </button>);
+                    })}
+                  </div>
+                )}
                 <div className="image-picker-actions connection-redraw-actions">
                   <button type="button" onClick={() => setVoltageBaseSetDialogOpen(false)}>退出</button>
-                  <button type="button" onClick={() => { confirmVoltageBaseSetDialog(); setVoltageBaseSetDialogOpen(false); }} disabled={!voltageBaseSetReady() || voltageBaseSetResultForScope(voltageBaseSetScope).changedNodeIds.length === 0}>
+                  <button type="button" onClick={handleConfirm} disabled={!voltageBaseSetReady() || !anyDeviceHasChanges}>
                     确定
                   </button>
                 </div>

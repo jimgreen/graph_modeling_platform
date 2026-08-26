@@ -10303,11 +10303,13 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .voltage-base-set-options {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  height: 50px;
 }
 
 .voltage-base-set-table {
   display: grid;
   gap: 0;
+  margin-top: 10px;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
   overflow: hidden;
@@ -10380,7 +10382,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .voltage-base-set-dialog {
   width: 40vw;
-  height: 40vh;
+  max-height: 70vh;
   max-width: none;
   overflow-y: auto;
 }
@@ -10404,6 +10406,17 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .voltage-base-terminal-subtabs {
   margin-left: 8px;
+}
+
+.voltage-base-device-scope-section {
+  display: grid;
+  gap: 4px;
+}
+
+.voltage-base-device-scope-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
 }
 
 .voltage-base-set-dialog .connection-redraw-actions {
