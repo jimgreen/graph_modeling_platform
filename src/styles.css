@@ -10426,11 +10426,19 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .voltage-base-device-tabs .ant-tabs-tab {
-  padding: 4px 16px;
+  padding: 4px 12px;
   border: 1px solid #d9d9d9;
   border-radius: 4px;
   background: #fff;
   margin-right: 8px;
+  height: 32px;
+  line-height: 22px;
+  white-space: nowrap;
+  flex: none;
+}
+
+.voltage-base-device-tabs .ant-tabs-tab .ant-tabs-tab-btn {
+  white-space: nowrap;
 }
 
 .voltage-base-device-tabs .ant-tabs-tab-active {
