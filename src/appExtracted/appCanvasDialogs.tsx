@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Tabs } from "antd";
 import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
 import { VOLTAGE_BASE_SET_CATEGORIES } from "./appCoreCanvasUtilities";
 
@@ -30,7 +31,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
   const __appScope = scope;
   const {
     BufferedTextInput, CONNECTION_REDRAW_SCOPE_LABELS, DEFAULT_COLOR_PALETTE, DeferredColorInput, ENABLE_REACT_FLOW_PREVIEW, ENERGY_COLOR_ROWS, ReactFlowPreview, Suspense,
-    TERMINAL_TYPE_LIBRARY_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VoltageLevelDialog, WindowCloseButton, activeSelectedNodeIds,
+    TERMINAL_TYPE_LIBRARY_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VoltageLevelDialog, WindowCloseButton, activeSelectedNodeIds, voltageBaseSetCandidateNodes,
     activeVoltageBaseTerminalKey, activeVoltageBaseTerminalRow, applyLayerAssignmentDialog, cancelTemplateDialog, colorPaletteDialogOpen, colorPaletteDraft, colorPaletteTab, componentLibraryOptionsByCategoryLibrary,
     confirmAddGraphTemplate, confirmConnectionRedrawDialog, confirmCreateDeviceFromGroup, confirmFilterSelectionDialog, confirmReplaceDeviceIconFromGroup, confirmVoltageBaseClearDialog, confirmVoltageBaseSetDialog, connectionRedrawDialogOpen,
     connectionRedrawScope, connectionRedrawTargetsForScope, createGraphTemplateType, currentModelVoltageColorKeys, defaultComponentLibraryForCategoryLibrary, deleteVoltageColorRow, filterSelectionDialogOpen, filterSelectionTreeLabel,
@@ -44,61 +45,110 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
     voltageBaseSetDialogOpen, voltageBaseSetHasUniformTargets, voltageBaseSetMode, voltageBaseSetModeLabel, voltageBaseSetOptions, voltageBaseSetReady, voltageBaseSetResultForScope, voltageBaseSetScope,
     voltageBaseSetScopeDeviceCount, voltageBaseSetTerminalRows, voltageBaseSetValue, voltageBaseTerminalRowKey, voltageColorVisibility, voltageLevelDialogOpen, voltageLevelSettings, voltageTab
   } = scope;
+  const [activeVoltageBaseDeviceTab, setActiveVoltageBaseDeviceTab] = useState("");
+  const voltageBaseDeviceInitRef = useRef(false);
+  useEffect(() => {
+    if (!voltageBaseSetDialogOpen) {
+      voltageBaseDeviceInitRef.current = false;
+      return;
+    }
+    if (!voltageBaseDeviceInitRef.current && voltageBaseSetCandidateNodes.length > 0) {
+      voltageBaseDeviceInitRef.current = true;
+      const first = voltageBaseSetCandidateNodes[0];
+      setActiveVoltageBaseDeviceTab(first.id);
+      const firstTermRow = voltageBaseSetTerminalRows.find((r) => r.nodeId === first.id);
+      if (firstTermRow) setActiveVoltageBaseTerminalKey(voltageBaseTerminalRowKey(firstTermRow));
+    }
+  }, [voltageBaseSetDialogOpen, voltageBaseSetCandidateNodes, voltageBaseSetTerminalRows]);
   return (<>
-{voltageBaseSetDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseSetDialogOpen(false)}>
-          <section className="connection-redraw-dialog voltage-base-set-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-set-title">
-            <WindowCloseButton label="关闭设置电压基值窗口" onClick={() => setVoltageBaseSetDialogOpen(false)} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="voltage-base-set-title">设置电压基值</h2>
-                <p>将指定范围内设备端子和电压相关参数中的 vbase、v_base、v_set 等值设为输入值；多端设备可按端子分别设置。</p>
-              </div>
-            </div>
-            <label className="voltage-base-set-value-row">
-              <span>设置方式</span>
-              <strong>{voltageBaseSetModeLabel}</strong>
-            </label>
-            {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (
-              <VoltageBaseSetTable activeValue={voltageBaseSetValue} onSelect={setVoltageBaseSetValue} />
-            )}
-            {(voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice") && voltageBaseSetTerminalRows.length > 0 && (<div className="voltage-base-terminal-grid" aria-label="按端子设置电压基值">
-                <label className="voltage-base-set-value-row">
-                  <span>端子</span>
-                  <select value={activeVoltageBaseTerminalKey} onChange={(event) => setActiveVoltageBaseTerminalKey(event.target.value)}>
-                    {voltageBaseSetTerminalRows.map((row) => (<option key={voltageBaseTerminalRowKey(row)} value={voltageBaseTerminalRowKey(row)}>
-                        {row.nodeName} / {row.terminalLabel} / {row.terminalType}
-                      </option>))}
-                  </select>
-                </label>
-                {activeVoltageBaseTerminalRow && (
-                  <VoltageBaseSetTable
-                    activeValue={activeVoltageBaseTerminalRow.value}
-                    onSelect={(v) => setVoltageBaseTerminalValue(activeVoltageBaseTerminalRow.nodeId, activeVoltageBaseTerminalRow.terminalId, v)}
+{voltageBaseSetDialogOpen && (() => {
+            const showDeviceTabs = voltageBaseSetCandidateNodes.length > 1;
+            const deviceTabItems = voltageBaseSetCandidateNodes.map((node) => ({
+              key: node.id,
+              label: node.name || node.id
+            }));
+            const activeDeviceId = showDeviceTabs
+              ? (voltageBaseSetCandidateNodes.some((n) => n.id === activeVoltageBaseDeviceTab) ? activeVoltageBaseDeviceTab : voltageBaseSetCandidateNodes[0]?.id ?? "")
+              : (voltageBaseSetCandidateNodes[0]?.id ?? "");
+            const activeDevice = voltageBaseSetCandidateNodes.find((n) => n.id === activeDeviceId) ?? voltageBaseSetCandidateNodes[0];
+            const deviceTerminals = activeDevice?.terminals ?? [];
+            const showTerminalSubTabs = deviceTerminals.length > 1 && (voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice");
+            const activeTerminalRow = showTerminalSubTabs
+              ? voltageBaseSetTerminalRows.find((r) => r.nodeId === activeDeviceId && r.terminalId === activeVoltageBaseTerminalKey.split(":")[1]) ?? voltageBaseSetTerminalRows.find((r) => r.nodeId === activeDeviceId) ?? null
+              : activeVoltageBaseTerminalRow;
+            const handleDeviceTabChange = (nodeId) => {
+              setActiveVoltageBaseDeviceTab(nodeId);
+              const firstTermRow = voltageBaseSetTerminalRows.find((r) => r.nodeId === nodeId);
+              if (firstTermRow) setActiveVoltageBaseTerminalKey(voltageBaseTerminalRowKey(firstTermRow));
+            };
+            const handleTerminalSubTabChange = (terminalId) => {
+              const key = `${activeDeviceId}:${terminalId}`;
+              setActiveVoltageBaseTerminalKey(key);
+            };
+            return (<div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseSetDialogOpen(false)}>
+              <section className="connection-redraw-dialog voltage-base-set-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-set-title">
+                <WindowCloseButton label="关闭设置电压基值窗口" onClick={() => setVoltageBaseSetDialogOpen(false)} />
+                <div className="image-picker-title">
+                  <div>
+                    <h2 id="voltage-base-set-title">设置电压基值</h2>
+                    <p>将指定范围内设备端子和电压相关参数中的 vbase、v_base、v_set 等值设为输入值；多端设备可按端子分别设置。</p>
+                  </div>
+                </div>
+                <div className="voltage-base-set-mode-line">
+                  <span>设置方式：</span>
+                  <strong>{voltageBaseSetModeLabel}</strong>
+                </div>
+                {showDeviceTabs && (
+                  <Tabs
+                    className="voltage-base-device-tabs"
+                    activeKey={activeDeviceId}
+                    onChange={handleDeviceTabChange}
+                    items={deviceTabItems}
+                    size="small"
                   />
                 )}
-              </div>)}
-            <datalist id="voltage-base-set-options">
-              {voltageBaseSetOptions.map((value) => (<option key={value} value={value}/>))}
-            </datalist>
-            <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label="设置电压基值范围">
-              {VOLTAGE_BASE_SET_SCOPES.map((scope) => {
-            const result = voltageBaseSetResultForScope(scope);
-            const count = voltageBaseSetScopeDeviceCount(result);
-            const disabled = result.changedNodeIds.length === 0 || !voltageBaseSetReady();
-            return (<button key={scope} type="button" className={voltageBaseSetScope === scope ? "active" : ""} role="radio" aria-checked={voltageBaseSetScope === scope} onClick={() => setVoltageBaseSetScope(scope)} disabled={disabled}>
-                    <span>{VOLTAGE_BASE_SET_SCOPE_LABELS[scope]}</span>
-                    <strong>{count}</strong>
-                  </button>);
-        })}
-            </div>
-            <div className="image-picker-actions connection-redraw-actions">
-              <button type="button" onClick={() => setVoltageBaseSetDialogOpen(false)}>退出</button>
-              <button type="button" onClick={() => { confirmVoltageBaseSetDialog(); setVoltageBaseSetDialogOpen(false); }} disabled={!voltageBaseSetReady() || voltageBaseSetResultForScope(voltageBaseSetScope).changedNodeIds.length === 0}>
-                确定
-              </button>
-            </div>
-          </section>
-        </div>)}
+                {showTerminalSubTabs && (
+                  <Tabs
+                    className="voltage-base-terminal-subtabs"
+                    activeKey={activeVoltageBaseTerminalKey.split(":")[1] ?? deviceTerminals[0]?.id ?? ""}
+                    onChange={handleTerminalSubTabChange}
+                    items={deviceTerminals.map((t, i) => ({ key: t.id, label: t.label || `端子${i + 1}` }))}
+                    size="small"
+                    type="card"
+                  />
+                )}
+                {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (
+                  <VoltageBaseSetTable activeValue={voltageBaseSetValue} onSelect={setVoltageBaseSetValue} />
+                )}
+                {showTerminalSubTabs && activeTerminalRow && (
+                  <VoltageBaseSetTable
+                    activeValue={activeTerminalRow.value}
+                    onSelect={(v) => setVoltageBaseTerminalValue(activeTerminalRow.nodeId, activeTerminalRow.terminalId, v)}
+                  />
+                )}
+                <datalist id="voltage-base-set-options">
+                  {voltageBaseSetOptions.map((value) => (<option key={value} value={value}/>))}
+                </datalist>
+                <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label="设置电压基值范围">
+                  {VOLTAGE_BASE_SET_SCOPES.map((scope) => {
+                    const result = voltageBaseSetResultForScope(scope);
+                    const count = voltageBaseSetScopeDeviceCount(result);
+                    const disabled = result.changedNodeIds.length === 0 || !voltageBaseSetReady();
+                    return (<button key={scope} type="button" className={voltageBaseSetScope === scope ? "active" : ""} role="radio" aria-checked={voltageBaseSetScope === scope} onClick={() => setVoltageBaseSetScope(scope)} disabled={disabled}>
+                      <span>{VOLTAGE_BASE_SET_SCOPE_LABELS[scope]}</span>
+                      <strong>{count}</strong>
+                    </button>);
+                  })}
+                </div>
+                <div className="image-picker-actions connection-redraw-actions">
+                  <button type="button" onClick={() => setVoltageBaseSetDialogOpen(false)}>退出</button>
+                  <button type="button" onClick={() => { confirmVoltageBaseSetDialog(); setVoltageBaseSetDialogOpen(false); }} disabled={!voltageBaseSetReady() || voltageBaseSetResultForScope(voltageBaseSetScope).changedNodeIds.length === 0}>
+                    确定
+                  </button>
+                </div>
+              </section>
+            </div>);
+          })()}
       {voltageBaseClearDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseClearDialogOpen(false)}>
           <section className="connection-redraw-dialog voltage-base-clear-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-clear-title">
             <WindowCloseButton label="关闭清空电压基值窗口" onClick={() => setVoltageBaseClearDialogOpen(false)} />

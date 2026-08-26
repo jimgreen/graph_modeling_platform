@@ -517,7 +517,7 @@ button:not(.ant-btn):disabled {
   min-width: 0;
   padding: 2px 0;
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border-radius: 4px;
   background: #ffffff;
   color: #64748b;
   font-size: 14px;
@@ -10380,9 +10380,30 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .voltage-base-set-dialog {
   width: 40vw;
-  height: 70vh;
+  height: 40vh;
   max-width: none;
   overflow-y: auto;
+}
+
+.voltage-base-set-mode-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.voltage-base-set-mode-line strong {
+  color: #1e293b;
+}
+
+.voltage-base-device-tabs,
+.voltage-base-terminal-subtabs {
+  margin-bottom: 2px;
+}
+
+.voltage-base-terminal-subtabs {
+  margin-left: 8px;
 }
 
 .voltage-base-set-dialog .connection-redraw-actions {
