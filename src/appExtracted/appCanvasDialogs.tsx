@@ -208,7 +208,17 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                     size="small"
                   />
                 ) : (
-                  <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label="设置电压基值范围">
+                  <div className="voltage-base-device-tab-content">
+                    {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (
+                      <VoltageBaseSetTable activeValue={voltageBaseSetValue} onSelect={setVoltageBaseSetValue} />
+                    )}
+                    {(voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice") && voltageBaseSetTerminalRows.length > 0 && (
+                      <VoltageBaseSetTable
+                        activeValue={activeVoltageBaseTerminalRow?.value ?? ""}
+                        onSelect={(v) => setVoltageBaseTerminalValue(activeVoltageBaseTerminalRow.nodeId, activeVoltageBaseTerminalRow.terminalId, v)}
+                      />
+                    )}
+                    <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label="设置电压基值范围">
                     {VOLTAGE_BASE_SET_SCOPES.map((scope) => {
                       const result = voltageBaseSetResultForScope(scope);
                       const count = voltageBaseSetScopeDeviceCount(result);
@@ -218,6 +228,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                         <strong>{count}</strong>
                       </button>);
                     })}
+                    </div>
                   </div>
                 )}
                 <div className="image-picker-actions connection-redraw-actions">
