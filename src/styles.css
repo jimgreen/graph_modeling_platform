@@ -10306,6 +10306,16 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   height: 50px;
 }
 
+.voltage-base-set-dialog .connection-redraw-actions {
+  justify-content: flex-start;
+  margin-top: auto;
+  gap: 20px;
+}
+
+.voltage-base-set-dialog .connection-redraw-actions button {
+  max-width: 100px;
+}
+
 .voltage-base-set-table {
   display: grid;
   gap: 0;
@@ -10422,11 +10432,6 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   font-size: 12px;
   font-weight: 600;
   color: #475569;
-}
-
-.voltage-base-set-dialog .connection-redraw-actions {
-  justify-content: flex-end;
-  margin-top: auto;
 }
 
 .rated-capacity-dialog {
