@@ -3,7 +3,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Tabs } from "antd";
 import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
 import { VOLTAGE_BASE_SET_CATEGORIES } from "./appCoreCanvasUtilities";
-import { buildTopologyConnectivity } from "../model-routing";
+import { buildTopologyConnectivity, isBusNode } from "../model-routing";
 
 const formatVoltageLabel = (v: string) => v === "0.22" ? "220V" : `${v}kV`;
 
@@ -100,7 +100,10 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               if (resultCache[cacheKey] !== undefined) return resultCache[cacheKey];
               const selectedDevice = voltageBaseSetCandidateNodes.find((n) => n.id === nodeId);
               if (!selectedDevice) { resultCache[cacheKey] = 0; return 0; }
-              const effectiveTerminalId = terminalId || (selectedDevice.terminals?.[0]?.id ?? "");
+              let effectiveTerminalId = terminalId || selectedDevice.terminals?.[0]?.id ?? "";
+              if (!effectiveTerminalId && isBusNode(selectedDevice)) {
+                effectiveTerminalId = "t1";
+              }
               if (!effectiveTerminalId) { resultCache[cacheKey] = 0; return 0; }
               const connectivity = buildTopologyConnectivity(nodes, edges);
               const islandRoot = connectivity.islandRoot(nodeId, effectiveTerminalId);
