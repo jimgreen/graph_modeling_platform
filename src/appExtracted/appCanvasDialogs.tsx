@@ -142,25 +142,32 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                 key: device.id,
                 label: device.name || device.id,
                 children: (<div className="voltage-base-device-tab-content">
-                  {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (
+                  {!showDeviceTerminalTabs && (voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (
                     <VoltageBaseSetTable activeValue={voltageBaseSetValue} onSelect={setVoltageBaseSetValue} />
                   )}
-                  {showDeviceTerminalTabs && (
-                    <Tabs
-                      className="voltage-base-device-terminal-tabs"
-                      activeKey={deviceActiveTerminalKey}
-                      onChange={handleDeviceTerminalChange}
-                      items={deviceTerminalRows.map((r, i) => ({ key: r.terminalId, label: r.terminalLabel || `端子${i + 1}` }))}
-                      size="small"
-                      type="card"
-                    />
-                  )}
-                  {showDeviceTerminalTabs && deviceActiveTerminalRow && (
+                  {showDeviceTerminalTabs ? (
+                    <>
+                      <Tabs
+                        className="voltage-base-device-terminal-tabs"
+                        activeKey={deviceActiveTerminalKey}
+                        onChange={handleDeviceTerminalChange}
+                        items={deviceTerminalRows.map((r, i) => ({ key: r.terminalId, label: r.terminalLabel || `端子${i + 1}` }))}
+                        size="small"
+                        type="card"
+                      />
+                      {deviceActiveTerminalRow && (
+                        <VoltageBaseSetTable
+                          activeValue={deviceActiveTerminalRow.value}
+                          onSelect={(v) => setVoltageBaseTerminalValue(device.id, deviceActiveTerminalRow.terminalId, v)}
+                        />
+                      )}
+                    </>
+                  ) : ((voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice") && deviceTerminalRows.length > 0 && (
                     <VoltageBaseSetTable
-                      activeValue={deviceActiveTerminalRow.value}
+                      activeValue={deviceActiveTerminalRow?.value ?? ""}
                       onSelect={(v) => setVoltageBaseTerminalValue(device.id, deviceActiveTerminalRow.terminalId, v)}
                     />
-                  )}
+                  ))}
                   <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label={`${device.name || device.id}设置范围`}>
                     {VOLTAGE_BASE_SET_SCOPES.map((s) => {
                       const count = fullResult.targetNodeIds.length;
