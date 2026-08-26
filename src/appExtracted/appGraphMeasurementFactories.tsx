@@ -5146,6 +5146,12 @@ export function createUpdateMeasurementDrag(__appScope: Record<string, any>) {
       return false;
     }
     const point = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+    const deltaX = point.x - measurementDrag.startPoint.x;
+    const deltaY = point.y - measurementDrag.startPoint.y;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    if (!measurementDrag.historyCaptured && distance < 4) {
+      return true;
+    }
     if (!measurementDrag.historyCaptured) {
       pushUndoSnapshot();
       setMeasurementDrag({ ...measurementDrag, historyCaptured: true });
@@ -5170,7 +5176,7 @@ export function createUpdateMeasurementDrag(__appScope: Record<string, any>) {
 export function createFinishMeasurementDrag(__appScope: Record<string, any>) {
   return (pointerId?: number) => {
   const { measurementDrag, setHasUnsavedChanges, setMeasurementDrag, writeOperationLog } = __appScope;
-    if (!measurementDrag || (pointerId !== undefined && measurementDrag.pointerId !== pointerId)) {
+    if (!measurementDrag) {
       return false;
     }
     setMeasurementDrag(null);
