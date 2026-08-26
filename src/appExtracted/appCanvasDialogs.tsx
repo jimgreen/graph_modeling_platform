@@ -96,14 +96,14 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               return result;
             };
             const getTerminalIslandDeviceCount = (nodeId, terminalId) => {
-              const cacheKey = `${nodeId}:${terminalId}:islandCount`;
+              const cacheKey = `${nodeId}:${terminalId || "default"}:islandCount`;
               if (resultCache[cacheKey] !== undefined) return resultCache[cacheKey];
               const selectedDevice = voltageBaseSetCandidateNodes.find((n) => n.id === nodeId);
               if (!selectedDevice) { resultCache[cacheKey] = 0; return 0; }
-              const terminal = selectedDevice.terminals?.find((t) => t.id === terminalId);
-              if (!terminal) { resultCache[cacheKey] = 0; return 0; }
+              const effectiveTerminalId = terminalId || selectedDevice.terminals?.[0]?.id ?? "";
+              if (!effectiveTerminalId) { resultCache[cacheKey] = 0; return 0; }
               const connectivity = buildTopologyConnectivity(nodes, edges);
-              const islandRoot = connectivity.islandRoot(nodeId, terminalId);
+              const islandRoot = connectivity.islandRoot(nodeId, effectiveTerminalId);
               if (!islandRoot) { resultCache[cacheKey] = 0; return 0; }
               const islandNodeIds = new Set();
               for (const n of nodes) {
