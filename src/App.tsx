@@ -1379,7 +1379,13 @@ Object.assign(__appScope, { measurementEditorDialog, setMeasurementEditorDialog 
 const [measurementEditorColumnWidths, setMeasurementEditorColumnWidths] = useState<Record<string, number>>({});
 Object.assign(__appScope, { measurementEditorColumnWidths, setMeasurementEditorColumnWidths });
 const [measurementDrag, setMeasurementDrag] = useState<MeasurementDragState>(null);
-Object.assign(__appScope, { measurementDrag, setMeasurementDrag });
+const measurementDragRef = useRef<MeasurementDragState>(null);
+const setMeasurementDragWithRef = (value: React.SetStateAction<MeasurementDragState>) => {
+  const nextValue = typeof value === "function" ? value(measurementDragRef.current) : value;
+  measurementDragRef.current = nextValue;
+  setMeasurementDrag(nextValue);
+};
+Object.assign(__appScope, { measurementDrag, setMeasurementDrag: setMeasurementDragWithRef, measurementDragRef });
 const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
 Object.assign(__appScope, { topologyErrors, setTopologyErrors });
 const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
