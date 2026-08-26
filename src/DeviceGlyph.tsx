@@ -14,7 +14,8 @@ import {
   isRoutableLineDeviceKind,
   isStaticGraphicNode,
   staticRenderKindForNode,
-  pointsToOrthogonalPath
+  pointsToOrthogonalPath,
+  getTerminalDisplayColor
 } from "./model";
 import { formatSvgNumber, isPlatformDeviceVisualReplacementImage, svgStrokeDashArray } from "./svgUtils";
 import {
@@ -1703,16 +1704,17 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     const bottomY = miniature ? 10 : hasNeutralTerminal ? 16 : 14;
     const sideX = miniature ? 10 : hasNeutralTerminal ? 17 : 16;
     const neutralLeadTop = topY - windingRadius - (miniature ? 6 : 20);
+    const windingColors = node.terminals.slice(0, 3).map((t) => getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette));
     return (
-      <g className={`three-winding-transformer-glyph${hasNeutralTerminal ? " three-winding-transformer-neutral-glyph" : ""}`} fill={fill} stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle className="transformer-winding" cx={-sideX} cy={topY} r={windingRadius} />
-        <circle className="transformer-winding" cx={sideX} cy={topY} r={windingRadius} />
-        <circle className="transformer-winding" cx="0" cy={bottomY} r={windingRadius} />
-        <path d={`M ${-sideX - windingRadius - 8} ${topY} H ${-sideX - windingRadius} M ${sideX + windingRadius} ${topY} H ${sideX + windingRadius + 8} M 0 ${bottomY + windingRadius} V ${bottomY + windingRadius + 10}`} />
-        <path d={`M ${-sideX + windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${-windingRadius * 0.28} ${bottomY - windingRadius * 0.72} M ${sideX - windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${windingRadius * 0.28} ${bottomY - windingRadius * 0.72}`} strokeWidth="1.6" />
+      <g className={`three-winding-transformer-glyph${hasNeutralTerminal ? " three-winding-transformer-neutral-glyph" : ""}`} fill={fill} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <circle className="transformer-winding" cx={-sideX} cy={topY} r={windingRadius} stroke={windingColors[0] ?? stroke} />
+        <circle className="transformer-winding" cx={sideX} cy={topY} r={windingRadius} stroke={windingColors[1] ?? stroke} />
+        <circle className="transformer-winding" cx="0" cy={bottomY} r={windingRadius} stroke={windingColors[2] ?? stroke} />
+        <path d={`M ${-sideX - windingRadius - 8} ${topY} H ${-sideX - windingRadius} M ${sideX + windingRadius} ${topY} H ${sideX + windingRadius + 8} M 0 ${bottomY + windingRadius} V ${bottomY + windingRadius + 10}`} stroke={stroke} />
+        <path d={`M ${-sideX + windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${-windingRadius * 0.28} ${bottomY - windingRadius * 0.72} M ${sideX - windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${windingRadius * 0.28} ${bottomY - windingRadius * 0.72}`} stroke={stroke} strokeWidth="1.6" />
         {hasNeutralTerminal && (
           <>
-            <path d={`M 0 ${neutralLeadTop} V ${topY - windingRadius}`} />
+            <path d={`M 0 ${neutralLeadTop} V ${topY - windingRadius}`} stroke={stroke} />
             <circle cx="0" cy={topY - windingRadius} r={miniature ? 2.2 : 3.2} fill={stroke} stroke="none" />
           </>
         )}
@@ -1730,13 +1732,15 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     const loadTop = miniature ? 1 : 5;
     const loadWidth = miniature ? 11 : 15;
     const loadHeight = miniature ? 10 : 13;
+    const windingColors = node.terminals.slice(0, 2).map((t) => getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette));
     return (
-      <g className="terminal-transformer-load-glyph" fill={fill} stroke={stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx={leftCoilX} cy="0" r={windingRadius} />
-        <circle cx={rightCoilX} cy="0" r={windingRadius} />
+      <g className="terminal-transformer-load-glyph" fill={fill} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx={leftCoilX} cy="0" r={windingRadius} stroke={windingColors[0] ?? stroke} />
+        <circle cx={rightCoilX} cy="0" r={windingRadius} stroke={windingColors[1] ?? stroke} />
         <path
           d={`M ${-loadWidth / 2} ${loadTop} H ${loadWidth / 2} L 0 ${loadTop + loadHeight} Z`}
           fill="#ffffff"
+          stroke={stroke}
         />
       </g>
     );
@@ -1746,10 +1750,11 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     if (mode === "text") {
       return null;
     }
+    const windingColors = node.terminals.slice(0, 2).map((t) => getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette));
     return (
-      <g fill={fill} stroke={stroke} strokeWidth="2.5">
-        <circle cx="-14" cy="0" r={miniature ? 11 : 18} />
-        <circle cx="14" cy="0" r={miniature ? 11 : 18} />
+      <g fill={fill} strokeWidth="2.5">
+        <circle cx="-14" cy="0" r={miniature ? 11 : 18} stroke={windingColors[0] ?? stroke} />
+        <circle cx="14" cy="0" r={miniature ? 11 : 18} stroke={windingColors[1] ?? stroke} />
       </g>
     );
   }
