@@ -205,7 +205,10 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
         data-export-device-kind={node.kind}
         data-export-measurement-terminal-id={group.terminalId ?? ""}
         onPointerDown={(event) => beginMeasurementDrag(event, group)}
-        onPointerUp={(event) => finishMeasurementDrag(event.pointerId)}
+        onPointerUp={(event) => {
+          console.log("[DEBUG] measurement <g> onPointerUp", { pointerId: event.pointerId, groupId: group.id });
+          finishMeasurementDrag(event.pointerId);
+        }}
         onDoubleClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
