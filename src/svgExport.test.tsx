@@ -764,7 +764,7 @@ describe("SVG export", () => {
     expect(useTags[0]).toContain('href="#symbol_ACSwitch_ac-switch_state_0"');
     expect(useTags[1]).toContain('href="#symbol_ACSwitch_ac-switch_state_1"');
     for (const useTag of useTags) {
-      expect(useTag).not.toContain("xlink:href");
+      expect(useTag).toContain("xlink:href");
       expect(useTag).not.toContain("data-export-node-id");
       expect(useTag).not.toContain("data-export-layer-id");
       expect(useTag).not.toContain("node-id=");
@@ -1125,7 +1125,7 @@ describe("SVG export", () => {
     expect(svg).not.toContain("data-export-device-idx");
     expect(svg).not.toContain("data-export-device-name");
     expect(svg).not.toContain("data-export-device-kind");
-    expect(svgUseTags(svg).every((useTag) => !useTag.includes("xlink:href"))).toBe(true);
+    expect(svgUseTags(svg).every((useTag) => useTag.includes("xlink:href"))).toBe(true);
     expect(svg.indexOf('<g id="Segment_Layer">')).toBeGreaterThan(svg.indexOf('<g id="root_g">'));
 
     expect(svg.indexOf('<g id="ACGenerator_Layer"')).toBeGreaterThan(svg.indexOf('<g id="root_g">'));
