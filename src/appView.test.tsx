@@ -656,13 +656,8 @@ describe("app view device definition parameter rows", () => {
     expect(source).toContain('className="unsaved-change-dialog export-completion-dialog window-close-host"');
     expect(source).toContain('aria-labelledby="export-completion-title"');
     expect(source).toContain("setExportCompletionDialog(null)");
-    expect(source).toContain("确定（{exportCompletionCountdown} 秒）");
+    expect(source).toContain("确定");
     expect(appSource).toContain("Object.assign(__appScope, { globalMessage, setGlobalMessage, globalMessageTimerRef })");
-    expect(appSource).toContain("exportCompletionCountdown");
-    expect(appSource).toContain("const autoCloseMs = 5000");
-    expect(appSource).toContain("Math.ceil((deadline - Date.now()) / 1000)");
-    expect(appSource).toContain("window.clearInterval(countdownTimer)");
-    expect(appSource).toContain("window.clearTimeout(closeTimer)");
     expect(exportActions).toContain('role="menu" aria-label="导出选项"');
     expect(exportActions).not.toContain("exportDropdownOpen");
     expect(exportActions).not.toContain("setExportDropdownOpen");

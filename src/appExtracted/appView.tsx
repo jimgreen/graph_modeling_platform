@@ -619,7 +619,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   const globalLineRepairCandidate = globalLinePlacementDialog?.mode === "existing"
     ? globalLinePlacementCandidates?.find((record: { id: string }) => record.id === globalLinePlacementDialog.selectedGlobalLineId)
     : undefined;
-  const { exportCompletionDialog, exportCompletionCountdown, setExportCompletionDialog } = __appScope;
+  const { exportCompletionDialog, setExportCompletionDialog } = __appScope;
   const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, savedUndoStackLengthRef, setHasUnsavedChanges } = __appScope;
   useEffect(() => {
     if (unsavedChangesDialogOpen) {
@@ -2443,7 +2443,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         )}
         <div className="image-picker-actions export-completion-actions">
           <button type="button" autoFocus onClick={() => setExportCompletionDialog(null)}>
-            确定（{exportCompletionCountdown} 秒）
+            确定
           </button>
         </div>
       </section>
