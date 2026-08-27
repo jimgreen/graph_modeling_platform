@@ -5078,10 +5078,10 @@ ${rules.join("\n")}
     ? {
         ...colorPalette,
         voltage: {
-          ...Object.fromEntries(Object.keys(colorPalette.voltage).map((key) => [key, "currentColor"])),
-          ...Object.fromEntries(Array.from(voltageStyleRules.values()).flatMap(({ type, voltage }) => [
-            [`${type}:${voltage}`, "currentColor"],
-            [voltage, "currentColor"]
+          ...colorPalette.voltage,
+          ...Object.fromEntries(Array.from(voltageStyleRules.values()).flatMap(({ type, voltage, color }) => [
+            [`${type}:${voltage}`, color],
+            [voltage, color]
           ]))
         }
       }
