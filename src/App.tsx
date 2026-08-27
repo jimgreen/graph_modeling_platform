@@ -1245,32 +1245,10 @@ const [exportCompletionDialog, setExportCompletionDialog] = useState<{
   message: string;
   details?: string[];
 } | null>(null);
-const [exportCompletionCountdown, setExportCompletionCountdown] = useState(5);
 Object.assign(__appScope, {
   exportCompletionDialog,
-  setExportCompletionDialog,
-  exportCompletionCountdown
+  setExportCompletionDialog
 });
-useEffect(() => {
-  if (!exportCompletionDialog) {
-    setExportCompletionCountdown(5);
-    return;
-  }
-  const autoCloseMs = 5000;
-  const deadline = Date.now() + autoCloseMs;
-  setExportCompletionCountdown(5);
-  const countdownTimer = window.setInterval(() => {
-    const remainingSeconds = Math.max(1, Math.ceil((deadline - Date.now()) / 1000));
-    setExportCompletionCountdown(remainingSeconds);
-  }, 1000);
-  const closeTimer = window.setTimeout(() => {
-    setExportCompletionDialog(null);
-  }, autoCloseMs);
-  return () => {
-    window.clearInterval(countdownTimer);
-    window.clearTimeout(closeTimer);
-  };
-}, [exportCompletionDialog]);
 const [customDeviceTerminalAnchorDragIndex, setCustomDeviceTerminalAnchorDragIndex] = useState<number | null>(null);
 Object.assign(__appScope, { customDeviceTerminalAnchorDragIndex, setCustomDeviceTerminalAnchorDragIndex });
 const customComponentSelectionRequestRef = useRef(0); Object.assign(__appScope, { customComponentSelectionRequestRef });
