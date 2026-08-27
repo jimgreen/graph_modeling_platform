@@ -29,7 +29,7 @@ describe("SVG export", () => {
   const svgDefsSection = (svg: string) => svg.match(/<defs[^>]*>[\s\S]*?<\/defs>/)?.[0] ?? "";
   const svgUseTags = (svg: string) => Array.from(svg.matchAll(/<use\b[^>]*>/g), (match) => match[0]);
   const svgDeviceUseTag = (svg: string, id: string) =>
-    svg.match(new RegExp(`<use id="${id}"(?=\\s|/?>)[^>]*>`))?.[0] ?? "";
+    svg.match(new RegExp(`<g[^>]*><use id="${id}"(?=\\s|/?>)[^>]*/?></g>`))?.[0] ?? svg.match(new RegExp(`<use id="${id}"(?=\\s|/?>)[^>]*>`))?.[0] ?? "";
   const svgEdgeGroupTag = (svg: string, id: string) =>
     svg.match(new RegExp(`<path id="${id}"(?=\\s|/?>)[^>]*>`))?.[0] ?? "";
 
@@ -1102,8 +1102,8 @@ describe("SVG export", () => {
     expect(svg).toContain(`dev-id="source-1"`);
     expect(svg).toContain(`dev-kind="ac-source"`);
     const generatorUseTag = svgDeviceUseTag(svg, "source-1");
-    expect(generatorUseTag).not.toContain("transform=");
-    expect(generatorUseTag).toContain(`href="#symbol_ACGenerator_ac-source_default" x="${generator.position.x - generator.size.width / 2}" y="${generator.position.y - generator.size.height / 2}" width="${generator.size.width}" height="${generator.size.height}"`);
+    expect(generatorUseTag).toContain(`transform="translate(${generator.position.x - generator.size.width / 2},${generator.position.y - generator.size.height / 2})"`);
+    expect(generatorUseTag).toContain(`href="#symbol_ACGenerator_ac-source_default" width="${generator.size.width}" height="${generator.size.height}"`);
     expect(svg).not.toContain(`<g id="source-1" class="export-device"`);
     expect(svg).not.toContain('data-export-node-id="source-1"');
     expect(svg).toContain('dev-id="source-1"');
@@ -1140,9 +1140,9 @@ describe("SVG export", () => {
     const breaker = { ...createDefaultNode("ac-breaker", { x: 280, y: 140 }), id: "breaker-device" };
 
     const svg = buildSvgDocument([source, breaker], [], { width: 420, height: 260 });
-    const sourceUseStart = svg.indexOf('<use id="source-device"');
+    const sourceUseStart = svg.indexOf('<g transform="translate(45,90)"><use id="source-device"');
     const breakerUseStart = svg.indexOf('<use id="breaker-device"');
-    const sourceUseTag = svg.slice(sourceUseStart, svg.indexOf("/>", sourceUseStart) + 2);
+    const sourceUseTag = svg.slice(sourceUseStart, svg.indexOf("</g>", sourceUseStart) + 4);
 
     expect(sourceUseStart).toBeGreaterThan(-1);
     expect(breakerUseStart).toBeGreaterThan(sourceUseStart);
@@ -1150,8 +1150,7 @@ describe("SVG export", () => {
     expect(sourceUseTag).toContain('layer-id="layer-default"');
     expect(sourceUseTag).toContain('dev-id="source-device"');
     expect(sourceUseTag).toContain('href="#symbol_ACGenerator_ac-source_default"');
-    expect(sourceUseTag).toContain('x="45" y="90"');
-    expect(sourceUseTag).not.toContain("transform=");
+    expect(sourceUseTag).toContain('transform="translate(45,90)"');
     expect(sourceUseTag).not.toContain('class=');
     expect(svg).not.toContain('<g id="source-device" class="export-device"');
     expect(svg).not.toContain('<g id="breaker-device" class="export-device"');
@@ -1189,8 +1188,7 @@ describe("SVG export", () => {
 
     expect(svg).toContain("routable-line-device-glyph");
     expect(svg).toContain('stroke-width="4"');
-    expect(lineUseTag).toContain(`x="${line.position.x - line.size.width / 2}" y="${line.position.y - line.size.height / 2}"`);
-    expect(lineUseTag).not.toContain("transform=");
+    expect(lineUseTag).toContain(`transform="translate(${line.position.x - line.size.width / 2},${line.position.y - line.size.height / 2})"`);
   });
 
   test("exports a large saved-route model without rerouting every connection", () => {
