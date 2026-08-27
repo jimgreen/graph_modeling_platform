@@ -1855,7 +1855,7 @@ describe("SVG export", () => {
     expect(defs).toContain(".lkv10{fill:none;stroke:#ff0000;color:#ff0000}");
     expect(defs).toContain(".dcv750{fill:#00aa88;stroke:#00aa88;stroke-width:1;color:#00aa88}");
     expect(defs).toContain(".ldcv750{fill:none;stroke:#00aa88;color:#00aa88}");
-    expect(defs).toContain('stroke="currentColor"');
+    expect(defs).toContain('stroke="#ff0000"');
     expect(svg).toContain('id="ac-source-10" class="kv10"');
     expect(svg).toContain('id="ac-bus-10" class="kv10"');
     expect(svg).toContain('id="dc-source-750" class="dcv750"');
