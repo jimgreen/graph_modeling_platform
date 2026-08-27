@@ -5335,7 +5335,9 @@ ${rules.join("\n")}
           visible: layerVisible(layerId)
         }));
       }
-      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}"${nodeClassAttribute} layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${topologyNodeAttributes}${voltageAttributes} href="#${escapeXml(symbolId)}" xlink:href="#${escapeXml(symbolId)}" x="${formatSvgNumber(node.position.x - node.size.width / 2)}" y="${formatSvgNumber(node.position.y - node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>`);
+      const useX = formatSvgNumber(node.position.x - node.size.width / 2);
+      const useY = formatSvgNumber(node.position.y - node.size.height / 2);
+      nodeLayerMarkup.get(typeLayerId)?.push(`<g transform="translate(${useX},${useY})"><use id="${escapeXml(useId)}"${nodeClassAttribute} layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${topologyNodeAttributes}${voltageAttributes} href="#${escapeXml(symbolId)}" xlink:href="#${escapeXml(symbolId)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/></g>`);
   });
   const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
