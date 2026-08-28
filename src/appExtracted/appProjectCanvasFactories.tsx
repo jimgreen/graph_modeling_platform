@@ -361,9 +361,8 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
   return (newEdge: Edge, sourceName: string, targetName: string) => {
   const { buildManualConnectionPreviewRoute, canvasBounds, connectionCommitFailureMessage, connectionEndpointRuleFailureMessage, getModelEdgeEndpointPoint, graphStoreApplyPatch, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, prepareConnectionEdgeForCommit, pushUndoSnapshot, resetConnectPreviewState, routedEdges, routingNodesForConnectionEdge, setCanvasSelectionScope, setConnectSource, setGraphStore, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog, __appScopeRef, patchGraphNodes, setGraphArrays, visibleNodeById } = __appScope;
 
-  // 读取 lastPlacedNodeIdRef 并清除
+  // 读取 lastPlacedNodeIdRef 并清除（保留兼容性，但不再作为电压继承的判断依据）
   const lastPlacedNodeIdRef = __appScopeRef?.current?.lastPlacedNodeIdRef;
-  const newDeviceId = lastPlacedNodeIdRef?.current ?? null;
   if (lastPlacedNodeIdRef) {
     lastPlacedNodeIdRef.current = null;
   }
@@ -381,26 +380,25 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
     if (!sourceNode || !targetNode || !actualSourceNode || !actualTargetNode) {
       edgeForCommit = newEdge;
     } else {
-      // Voltage inheritance logic
-      const sourceIsNew = newDeviceId && actualSourceNode.id === newDeviceId;
-      const targetIsNew = newDeviceId && actualTargetNode.id === newDeviceId;
+      // Voltage inheritance: 任意一端电压为0时，从对端继承
+      const sourceVoltage = resolveNodeVoltageAtTerminal(actualSourceNode, newEdge.sourceTerminalId);
+      const targetVoltage = resolveNodeVoltageAtTerminal(actualTargetNode, newEdge.targetTerminalId);
+      const sourceIsDefault = isNodeVoltageDefault(actualSourceNode, newEdge.sourceTerminalId);
+      const targetIsDefault = isNodeVoltageDefault(actualTargetNode, newEdge.targetTerminalId);
+      const nodesToUpdate: ModelNode[] = [];
 
-      if (sourceIsNew && !targetIsNew) {
-        // source is the new device, try to inherit voltage from target
-        const targetVoltage = resolveNodeVoltageAtTerminal(actualTargetNode, newEdge.targetTerminalId);
-        if (targetVoltage && isNodeVoltageDefault(actualSourceNode, newEdge.sourceTerminalId)) {
-          const newParams = applyVoltageInheritance(actualSourceNode, targetVoltage, newEdge.sourceTerminalId);
-          const updatedSourceNode = { ...actualSourceNode, params: newParams };
-          patchGraphNodes([updatedSourceNode]);
-        }
-      } else if (targetIsNew && !sourceIsNew) {
-        // target is the new device, try to inherit voltage from source
-        const sourceVoltage = resolveNodeVoltageAtTerminal(actualSourceNode, newEdge.sourceTerminalId);
-        if (sourceVoltage && isNodeVoltageDefault(actualTargetNode, newEdge.targetTerminalId)) {
-          const newParams = applyVoltageInheritance(actualTargetNode, sourceVoltage, newEdge.targetTerminalId);
-          const updatedTargetNode = { ...actualTargetNode, params: newParams };
-          patchGraphNodes([updatedTargetNode]);
-        }
+      if (sourceIsDefault && targetVoltage) {
+        // source 电压为0，从 target 继承
+        const newParams = applyVoltageInheritance(actualSourceNode, targetVoltage, newEdge.sourceTerminalId);
+        nodesToUpdate.push({ ...actualSourceNode, params: newParams });
+      }
+      if (targetIsDefault && sourceVoltage) {
+        // target 电压为0，从 source 继承
+        const newParams = applyVoltageInheritance(actualTargetNode, sourceVoltage, newEdge.targetTerminalId);
+        nodesToUpdate.push({ ...actualTargetNode, params: newParams });
+      }
+      if (nodesToUpdate.length > 0) {
+        patchGraphNodes(nodesToUpdate);
       }
 
       if (!newEdge.manualPoints?.length) {
