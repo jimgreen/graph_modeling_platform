@@ -12,6 +12,11 @@ import {
   isNodeVoltageDefault,
   applyVoltageInheritance,
 } from "../voltageInheritance";
+import {
+  resolveNodeVoltageAtTerminal,
+  isNodeVoltageDefault,
+  applyVoltageInheritance,
+} from "../voltageInheritance";
 import { getRatedCapacityDefaultForKind } from "../model";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
@@ -359,30 +364,64 @@ export function createFinishRoutableLineEndpointDrag(__appScope: Record<string, 
 
 export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
   return (newEdge: Edge, sourceName: string, targetName: string) => {
-  const { buildManualConnectionPreviewRoute, canvasBounds, connectionCommitFailureMessage, connectionEndpointRuleFailureMessage, getModelEdgeEndpointPoint, graphStoreApplyPatch, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, prepareConnectionEdgeForCommit, pushUndoSnapshot, resetConnectPreviewState, routedEdges, routingNodesForConnectionEdge, setCanvasSelectionScope, setConnectSource, setGraphStore, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog } = __appScope;
+  const { buildManualConnectionPreviewRoute, canvasBounds, connectionCommitFailureMessage, connectionEndpointRuleFailureMessage, getModelEdgeEndpointPoint, graphStoreApplyPatch, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, prepareConnectionEdgeForCommit, pushUndoSnapshot, resetConnectPreviewState, routedEdges, routingNodesForConnectionEdge, setCanvasSelectionScope, setConnectSource, setGraphStore, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog, __appScopeRef, patchGraphNodes, setGraphArrays } = __appScope;
+
+  // 读取 lastPlacedNodeIdRef 并清除
+  const lastPlacedNodeIdRef = __appScopeRef?.current?.lastPlacedNodeIdRef;
+  const newDeviceId = lastPlacedNodeIdRef?.current ?? null;
+  if (lastPlacedNodeIdRef) {
+    lastPlacedNodeIdRef.current = null;
+  }
+
     const routeNodes = routingNodesForConnectionEdge(newEdge);
-    const edgeForCommit = (() => {
+    const routeNodeById = new Map(routeNodes.map((node) => [node.id, node]));
+    const sourceNode = routeNodeById.get(newEdge.sourceId);
+    const targetNode = routeNodeById.get(newEdge.targetId);
+    let edgeForCommit;
+    if (!sourceNode || !targetNode) {
+      edgeForCommit = newEdge;
+    } else {
+      // Voltage inheritance logic
+      const sourceIsNew = newDeviceId && sourceNode.id === newDeviceId;
+      const targetIsNew = newDeviceId && targetNode.id === newDeviceId;
+
+      if (sourceIsNew && !targetIsNew) {
+        // source is the new device, try to inherit voltage from target
+        const targetVoltage = resolveNodeVoltageAtTerminal(target.node, newEdge.targetTerminalId);
+        if (targetVoltage && isNodeVoltageDefault(source.node, newEdge.sourceTerminalId)) {
+          const newParams = applyVoltageInheritance(source.node, targetVoltage, newEdge.sourceTerminalId);
+          const updatedSourceNode = { ...source.node, params: newParams };
+          patchGraphNodes([updatedSourceNode]);
+          // Update the sourceNode variable for consistency (used in point calculation below if manual points exist)
+          sourceNode.node = updatedSourceNode;
+        }
+      } else if (targetIsNew && !sourceIsNew) {
+        // target is the new device, try to inherit voltage from source
+        const sourceVoltage = resolveNodeVoltageAtTerminal(source.node, newEdge.sourceTerminalId);
+        if (sourceVoltage && isNodeVoltageDefault(target.node, newEdge.targetTerminalId)) {
+          const newParams = applyVoltageInheritance(target.node, sourceVoltage, newEdge.targetTerminalId);
+          const updatedTargetNode = { ...target.node, params: newParams };
+          patchGraphNodes([updatedTargetNode]);
+          targetNode.node = updatedTargetNode;
+        }
+      }
+
       if (!newEdge.manualPoints?.length) {
-        return newEdge;
+        edgeForCommit = newEdge;
+      } else {
+        const sourcePoint = getModelEdgeEndpointPoint(sourceNode, newEdge.sourcePoint, newEdge.sourceTerminalId);
+        const targetPoint = getModelEdgeEndpointPoint(targetNode, newEdge.targetPoint, newEdge.targetTerminalId);
+        const manualPreviewRoutePoints = buildManualConnectionPreviewRoute(
+          sourcePoint,
+          newEdge.manualPoints,
+          targetPoint,
+          canvasBounds
+        );
+        edgeForCommit = manualPreviewRoutePoints.length >= 2
+          ? { ...newEdge, routePoints: manualPreviewRoutePoints }
+          : newEdge;
       }
-      const routeNodeById = new Map(routeNodes.map((node) => [node.id, node]));
-      const sourceNode = routeNodeById.get(newEdge.sourceId);
-      const targetNode = routeNodeById.get(newEdge.targetId);
-      if (!sourceNode || !targetNode) {
-        return newEdge;
-      }
-      const sourcePoint = getModelEdgeEndpointPoint(sourceNode, newEdge.sourcePoint, newEdge.sourceTerminalId);
-      const targetPoint = getModelEdgeEndpointPoint(targetNode, newEdge.targetPoint, newEdge.targetTerminalId);
-      const manualPreviewRoutePoints = buildManualConnectionPreviewRoute(
-        sourcePoint,
-        newEdge.manualPoints,
-        targetPoint,
-        canvasBounds
-      );
-      return manualPreviewRoutePoints.length >= 2
-        ? { ...newEdge, routePoints: manualPreviewRoutePoints }
-        : newEdge;
-    })();
+    }
     const endpointRuleMessage = connectionEndpointRuleFailureMessage(edgeForCommit);
     if (endpointRuleMessage) {
       showGlobalMessage(`联络线绘制失败：${endpointRuleMessage}`);
