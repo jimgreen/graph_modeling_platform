@@ -3690,6 +3690,7 @@ export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>)
     activateInspectorFromCanvas();
     writeOperationLog(`新增图元：${indexed.node.name}`);
     setRecentGlyphKinds?.((prev) => pushRecentGlyph(prev, kind));
+    __appScope.lastPlacedNodeIdRef && (__appScope.lastPlacedNodeIdRef.current = indexed.node.id);
   };
 }
 
