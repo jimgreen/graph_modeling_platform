@@ -7467,6 +7467,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   font-weight: 740;
   min-height: 36px;
   padding-block: 4px;
+  border: 1px solid #e9e6e6;
+  border-radius: 5px;
 }
 
 .dialog-compact-tree .custom-component-tree-row.library small,
