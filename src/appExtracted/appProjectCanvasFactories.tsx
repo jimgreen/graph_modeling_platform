@@ -378,6 +378,7 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
     const actualTargetNode = visibleNodeById.get(newEdge.targetId);
 
     let edgeForCommit;
+    const nodesToUpdate: ModelNode[] = [];
     if (!sourceNode || !targetNode || !actualSourceNode || !actualTargetNode) {
       edgeForCommit = newEdge;
     } else {
@@ -386,7 +387,6 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
       const targetVoltage = resolveNodeVoltageAtTerminal(actualTargetNode, newEdge.targetTerminalId);
       const sourceIsDefault = isNodeVoltageDefault(actualSourceNode, newEdge.sourceTerminalId);
       const targetIsDefault = isNodeVoltageDefault(actualTargetNode, newEdge.targetTerminalId);
-      const nodesToUpdate: ModelNode[] = [];
 
       if (sourceIsDefault && targetVoltage) {
         // source 电压为0，从 target 继承
