@@ -20,3 +20,25 @@ Thumbs.db
 .omc
 .sisyphus
 claudedocs
+
+# 本地噪声 / 生成产物（勿提交）
+.workbuddy/
+output/
+nul
+pnpm-workspace.yaml
+*claudetemp_diff.txt
+
+# 文档 / 排查备份
+docs/commits_*.txt
+docs/review_diff.txt
+docs/*.docx
+
+# 临时排查测试文件
+*.temp.test.ts
+src/test-cnnames-inspect.test.ts
+src/test-efile-render.test.tsx
+src/encoding/dms-rtdb-export-rules.test.ts
+src/encoding/dms-rtdb-template.test.ts
+src/encoding/e-file-editor-reference.test.ts
+src/encoding/rdf-id-export.test.ts
+src/encoding/rdf-id-param.test.ts
