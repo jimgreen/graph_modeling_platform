@@ -13,6 +13,7 @@ import {
   applyVoltageInheritance,
 } from "../voltageInheritance";
 import { getRatedCapacityDefaultForKind } from "../model";
+import { graphStorePatchNodes } from "../graphStore";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return async (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[], globalLineChoice?: GlobalLineChoice) => {
@@ -397,9 +398,6 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
         const newParams = applyVoltageInheritance(actualTargetNode, sourceVoltage, newEdge.targetTerminalId);
         nodesToUpdate.push({ ...actualTargetNode, params: newParams });
       }
-      if (nodesToUpdate.length > 0) {
-        patchGraphNodes(nodesToUpdate);
-      }
 
       if (!newEdge.manualPoints?.length) {
         edgeForCommit = newEdge;
@@ -442,7 +440,14 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
     markRouteEdgesDirty([preparedEdge.id]);
     markStoredRouteEdgesDirty([preparedEdge.id]);
     markBusTerminalSyncDirtyForEdges([preparedEdge]);
-    setGraphStore((current) => graphStoreApplyPatch(current, { edgeUpserts: [preparedEdge] }));
+    // 将电压继承的节点更新与边更新合并到一次 setGraphStore 调用中
+    setGraphStore((current) => {
+      let next = current;
+      if (nodesToUpdate.length > 0) {
+        next = graphStorePatchNodes(next, nodesToUpdate);
+      }
+      return graphStoreApplyPatch(next, { edgeUpserts: [preparedEdge] });
+    });
     setCanvasSelectionScope("group");
     setSelectedNodeIds([]);
     setSelectedEdgeId(preparedEdge.id);
