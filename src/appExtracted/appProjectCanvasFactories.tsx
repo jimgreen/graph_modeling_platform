@@ -446,7 +446,8 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
       if (nodesToUpdate.length > 0) {
         next = graphStorePatchNodes(next, nodesToUpdate);
       }
-      return graphStoreApplyPatch(next, { edgeUpserts: [preparedEdge] });
+      const result = graphStoreApplyPatch(next, { edgeUpserts: [preparedEdge] });
+      return result;
     });
     setCanvasSelectionScope("group");
     setSelectedNodeIds([]);

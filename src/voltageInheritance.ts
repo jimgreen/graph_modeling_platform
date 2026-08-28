@@ -163,6 +163,8 @@ export function isNodeVoltageDefault(
  *   - 三绕组变压器：端子 0 → i_vbase，端子 1 → k_vbase，端子 2 → j_vbase
  *   - 双端子设备：端子 0 → i_vbase，端子 1 → j_vbase
  *
+ * 同时更新 rated_voltage 参数（如果存在且为默认值）
+ *
  * @returns 修改后的 params 对象（新对象，不修改原节点）
  */
 export function applyVoltageInheritance(
@@ -179,6 +181,10 @@ export function applyVoltageInheritance(
   // uniform 模式：直接设置通用 vbase
   if (settingMode === "uniform") {
     nextParams.vbase = voltage;
+    // 同时更新 rated_voltage（如果存在且为默认值）
+    if (Object.prototype.hasOwnProperty.call(nextParams, "rated_voltage") && isZeroVoltage(nextParams.rated_voltage)) {
+      nextParams.rated_voltage = voltage;
+    }
     return nextParams;
   }
 
@@ -187,12 +193,20 @@ export function applyVoltageInheritance(
   // 无端子指定 → 设置通用 vbase
   if (!terminalId) {
     nextParams.vbase = voltage;
+    // 同时更新 rated_voltage（如果存在且为默认值）
+    if (Object.prototype.hasOwnProperty.call(nextParams, "rated_voltage") && isZeroVoltage(nextParams.rated_voltage)) {
+      nextParams.rated_voltage = voltage;
+    }
     return nextParams;
   }
 
   const terminalIndex = targetNode.terminals.findIndex((t) => t.id === terminalId);
   if (terminalIndex < 0) {
     nextParams.vbase = voltage;
+    // 同时更新 rated_voltage（如果存在且为默认值）
+    if (Object.prototype.hasOwnProperty.call(nextParams, "rated_voltage") && isZeroVoltage(nextParams.rated_voltage)) {
+      nextParams.rated_voltage = voltage;
+    }
     return nextParams;
   }
 
