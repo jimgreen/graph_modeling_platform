@@ -19,6 +19,8 @@ import {
   THREE_WINDING_TRANSFORMER_SIDES
 } from "./model-eexport";
 
+import { voltageBaseSettingModeForNode } from "./model-routing";
+
 // ─── 辅助函数 ──────────────────────────────────────────────
 
 /** 判断端子类型是否为电气类型（ac / dc） */
@@ -155,12 +157,11 @@ export function isNodeVoltageDefault(
 /**
  * 将电压继承到目标设备
  *
- * 对三绕组变压器，按端子索引设置对应的侧电压参数：
- *   - 端子 0 → i_vbase
- *   - 端子 1 → k_vbase
- *   - 端子 2 → j_vbase
- *
- * 对其它设备，设置 params.vbase（无端子指定时）或按端子索引设置 i_vbase / j_vbase。
+ * 根据设备的电压设置模式选择不同的继承策略：
+ * - uniform 模式（如断路器、母线）：设置 params.vbase
+ * - terminal 模式（如变压器）：按端子索引设置对应的侧电压参数
+ *   - 三绕组变压器：端子 0 → i_vbase，端子 1 → k_vbase，端子 2 → j_vbase
+ *   - 双端子设备：端子 0 → i_vbase，端子 1 → j_vbase
  *
  * @returns 修改后的 params 对象（新对象，不修改原节点）
  */
@@ -171,6 +172,17 @@ export function applyVoltageInheritance(
 ): Record<string, string> {
   const nextParams = { ...targetNode.params };
   const voltage = terminalVoltageBaseNumber(sourceVoltage) || DEFAULT_INITIAL_TERMINAL_VBASE;
+
+  // 检查设备的电压设置模式
+  const settingMode = voltageBaseSettingModeForNode(targetNode as ModelNode);
+
+  // uniform 模式：直接设置通用 vbase
+  if (settingMode === "uniform") {
+    nextParams.vbase = voltage;
+    return nextParams;
+  }
+
+  // terminal 模式或 null：按端子索引设置侧电压
 
   // 无端子指定 → 设置通用 vbase
   if (!terminalId) {
