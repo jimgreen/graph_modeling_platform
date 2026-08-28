@@ -2,6 +2,25 @@
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
 import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind } from "../model";
+import { isThreeWindingTransformer } from "../model-eexport";
+import { setVoltageBaseTerminalValueForTopologySide } from "../model-routing";
+
+/** 变压器侧电压参数(i_vbase/j_vbase/k_vbase) → 对应端子 id；非变压器或非侧电压参数返回 undefined */
+function transformerSideTerminalIdForVoltageParam(node: ModelNode, key: string): string | undefined {
+  const isThree = isThreeWindingTransformer(node);
+  const baseKind = baseDeviceKind(node.kind);
+  const isTwo = baseKind === "ac-transformer" || baseKind === "ac-two-winding-transformer";
+  if (!isThree && !isTwo) {
+    return undefined;
+  }
+  const terminalIndex = isThree
+    ? ({ i_vbase: 0, k_vbase: 1, j_vbase: 2, neutral_vbase: 3 } as Record<string, number>)[key]
+    : ({ i_vbase: 0, j_vbase: 1 } as Record<string, number>)[key];
+  if (terminalIndex === undefined) {
+    return undefined;
+  }
+  return node.terminals[terminalIndex]?.id;
+}
 import { Button, Input } from "antd";
 
 // 判断额定容量是否在合理范围内（非空、非零、非占位值）
@@ -2408,7 +2427,7 @@ export function createHandleCanvasSizeKeyDown(__appScope: Record<string, any>) {
 
 export function createUpdateParam(__appScope: Record<string, any>) {
   return (key: string, value: string) => {
-  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, commitNodeFootprintUpdates, inferESection, nodeById, normalizeNodeLabelDisplayMode, normalizeRatioParameterInputValue, patchGraphNodes, pushNodeOnlyUndoSnapshot, pushUndoSnapshot, requireEditMode, selectedNodeId, undoScopeForNodeFootprintPatch } = __appScope;
+  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, commitNodeFootprintUpdates, inferESection, nodeById, normalizeNodeLabelDisplayMode, normalizeRatioParameterInputValue, patchGraphNodes, pushNodeOnlyUndoSnapshot, pushUndoSnapshot, requireEditMode, selectedNodeId, undoScopeForNodeFootprintPatch, nodes, edges, undoScopeForGraphPatch } = __appScope;
     if (!requireEditMode("修改图元参数")) {
       return;
     }
@@ -2440,6 +2459,17 @@ export function createUpdateParam(__appScope: Record<string, any>) {
     if (key !== "_labelDisplayMode" && currentNode.params[key] === storedValue) {
       return;
     }
+    // 变压器侧电压等级修改 → 只扩散到该侧分压岛（严禁跨分压侧）：
+    // 该侧所有设备（同侧母线/线路/电源等）统一为新电压，变压器对侧不受影响。
+    const transformerSideTerminalId = transformerSideTerminalIdForVoltageParam(currentNode, key);
+    if (transformerSideTerminalId && nodes && edges && typeof setVoltageBaseTerminalValueForTopologySide === "function") {
+      const islandResult = setVoltageBaseTerminalValueForTopologySide(nodes, edges, currentNode.id, transformerSideTerminalId, storedValue);
+      if (islandResult.changedNodeIds.length > 0) {
+        pushUndoSnapshot(true, false, undoScopeForGraphPatch(islandResult.changedNodeIds, []));
+        patchGraphNodes(islandResult.nodeUpdates);
+        return;
+      }
+    }
     const nextNode =
       key === "_labelDisplayMode"
         ? (() => {
@@ -2465,7 +2495,33 @@ export function createUpdateParam(__appScope: Record<string, any>) {
               }
               return { ...currentNode, params: newParams };
             })()
-          : { ...currentNode, params: { ...currentNode.params, [key]: storedValue } };
+          : (() => {
+              const paramsNode = { ...currentNode, params: { ...currentNode.params, [key]: storedValue } };
+              // 变压器侧电压参数(i_vbase/j_vbase/k_vbase)与对应端子 vbase 需保持一致：
+              // 修改侧电压时同步对应端子 vbase，令拓扑着色与【设置电压基值】窗口读取一致。
+              const isThree = isThreeWindingTransformer(currentNode);
+              const baseKind = baseDeviceKind(currentNode.kind);
+              const isTwo = baseKind === "ac-transformer" || baseKind === "ac-two-winding-transformer";
+              if (!isThree && !isTwo) {
+                return paramsNode;
+              }
+              const terminalIndexForVbase = isThree
+                ? ({ i_vbase: 0, k_vbase: 1, j_vbase: 2, neutral_vbase: 3 } as Record<string, number>)[key]
+                : ({ i_vbase: 0, j_vbase: 1 } as Record<string, number>)[key];
+              if (terminalIndexForVbase === undefined) {
+                return paramsNode;
+              }
+              const targetTerminal = currentNode.terminals[terminalIndexForVbase];
+              if (!targetTerminal || targetTerminal.vbase === storedValue) {
+                return paramsNode;
+              }
+              return {
+                ...paramsNode,
+                terminals: currentNode.terminals.map((terminal, index) =>
+                  index === terminalIndexForVbase ? { ...terminal, vbase: storedValue } : terminal
+                )
+              };
+            })()
     if (nextNode === currentNode) {
       return;
     }

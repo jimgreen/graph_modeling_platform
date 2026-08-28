@@ -4423,6 +4423,167 @@ export function setVoltageBaseTerminalValuesForScope(
   };
 }
 
+/**
+ * 从某种子端子出发，沿 edges 收集该侧电气连通岛（含 bus 同类型端子）。
+ * 变压器作为分压元件：对侧端子不经本侧边连通，因此天然只收集单侧，
+ * 用于"修改变压器某侧电压等级 → 只扩散该侧拓扑岛"。
+ */
+/** 判断节点是否为变压器（含 vertical 变体）——分压元件，作为电压等级边界 */
+function isTransformerNodeForTopology(node: ModelNode | undefined): boolean {
+  if (!node) {
+    return false;
+  }
+  if (isThreeWindingTransformer(node)) {
+    return true;
+  }
+  const baseKind = baseDeviceKind(node.kind);
+  return baseKind === "ac-transformer" || baseKind === "ac-two-winding-transformer";
+}
+
+export function collectVoltageBaseIslandForTerminal(
+  nodes: ModelNode[],
+  edges: Edge[],
+  seedNodeId: string,
+  seedTerminalId: string
+): { nodeIds: Set<string>; terminalIdsByNodeId: Map<string, Set<string>> } {
+  const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
+  nodes = synchronized.nodes;
+  edges = synchronized.edges;
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const seedNode = nodeById.get(seedNodeId);
+  const seedTerminal = seedNode?.terminals.find((terminal) => terminal.id === seedTerminalId);
+  if (!seedNode || !seedTerminal || !isElectricalTerminalType(seedTerminal.type)) {
+    return { nodeIds: new Set<string>(), terminalIdsByNodeId: new Map() };
+  }
+  // 完整电气连通邻接：edges + routable-line 拓扑边 + bus contact + overlapping 端子
+  const neighbors = new Map<string, Set<string>>();
+  const link = (a: string, b: string) => {
+    if (!neighbors.has(a)) neighbors.set(a, new Set());
+    if (!neighbors.has(b)) neighbors.set(b, new Set());
+    neighbors.get(a)!.add(b);
+    neighbors.get(b)!.add(a);
+  };
+  const topologyEdges = [...edges, ...routableLineDeviceTopologyEdges(nodes)];
+  for (const edge of topologyEdges) {
+    if (edge.sourceTerminalId && edge.targetTerminalId) {
+      link(`${edge.sourceId}:${edge.sourceTerminalId}`, `${edge.targetId}:${edge.targetTerminalId}`);
+    }
+  }
+  for (const group of getOverlappingTerminalGroups(nodes)) {
+    const keys = group.terminals
+      .map((item) => `${item.nodeId}:${item.terminalId}`)
+      .filter((key) => !isTransformerNodeForTopology(nodeById.get(key.slice(0, key.lastIndexOf(":")))));
+    for (let i = 1; i < keys.length; i += 1) link(keys[0], keys[i]);
+  }
+  for (const contactGroup of getTerminalBusContactGroups(nodes)) {
+    for (const contact of contactGroup.contacts) {
+      if (isTransformerNodeForTopology(nodeById.get(contact.nodeId)) || isTransformerNodeForTopology(nodeById.get(contact.busId))) {
+        continue;
+      }
+      link(`${contact.nodeId}:${contact.terminalId}`, `${contact.busId}:${contact.busTerminalId}`);
+    }
+  }
+  const visited = new Set<string>();
+  const nodeIds = new Set<string>();
+  const terminalIdsByNodeId = new Map<string, Set<string>>();
+  const queue: Array<{ nodeId: string; terminalId: string }> = [{ nodeId: seedNodeId, terminalId: seedTerminalId }];
+  const push = (nodeId: string, terminalId: string) => {
+    const key = `${nodeId}:${terminalId}`;
+    if (!visited.has(key)) {
+      queue.push({ nodeId, terminalId });
+    }
+  };
+  while (queue.length > 0) {
+    const { nodeId, terminalId } = queue.shift()!;
+    const key = `${nodeId}:${terminalId}`;
+    if (visited.has(key)) {
+      continue;
+    }
+    visited.add(key);
+    const node = nodeById.get(nodeId);
+    if (!node) {
+      continue;
+    }
+    const terminal = node.terminals.find((item) => item.id === terminalId);
+    if (terminal && !isElectricalTerminalType(terminal.type)) {
+      continue;
+    }
+    nodeIds.add(nodeId);
+    const terminals = terminalIdsByNodeId.get(nodeId) ?? new Set<string>();
+    terminals.add(terminalId);
+    terminalIdsByNodeId.set(nodeId, terminals);
+    const type = terminal?.type;
+    // uniform 电气设备（母线/线路/支路/开关/分段等，导电）同类型端子连通；
+    // 变压器/换流器等 terminal 模式（分压分侧）不合并，保持侧间隔离。
+    if (terminal && isElectricalTerminalType(terminal.type) && voltageBaseSettingModeForNode(node) !== "terminal") {
+      for (const other of node.terminals) {
+        if (other.type === terminal.type) {
+          push(nodeId, other.id);
+        }
+      }
+    }
+    for (const neighborKey of neighbors.get(key) ?? []) {
+      const colon = neighborKey.lastIndexOf(":");
+      const neighborNodeId = neighborKey.slice(0, colon);
+      const neighborTerminalId = neighborKey.slice(colon + 1);
+      // 变压器作为分压边界：不跨越同一节点的其它端子
+      if (neighborNodeId === nodeId && neighborTerminalId !== terminalId) {
+        continue;
+      }
+      const neighborNode = nodeById.get(neighborNodeId);
+      const neighborTerminal = neighborNode?.terminals.find((item) => item.id === neighborTerminalId);
+      if (neighborTerminal && type && neighborTerminal.type !== type) {
+        continue;
+      }
+      push(neighborNodeId, neighborTerminalId);
+    }
+  }
+  return { nodeIds, terminalIdsByNodeId };
+}
+
+/**
+ * 修改某侧端子电压等级时，将该侧拓扑岛（沿 edges 连通、变压器分侧）的所有设备统一设置为该值。
+ */
+export function setVoltageBaseTerminalValueForTopologySide(
+  nodes: ModelNode[],
+  edges: Edge[],
+  seedNodeId: string,
+  seedTerminalId: string,
+  value: string
+): VoltageBaseSetResult {
+  const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
+  const targets = collectVoltageBaseIslandForTerminal(synchronized.nodes, synchronized.edges, seedNodeId, seedTerminalId);
+  const nodeUpdates: ModelNode[] = [];
+  const nextNodes = synchronized.nodes.map((node) => {
+    const terminalIds = targets.terminalIdsByNodeId.get(node.id);
+    if (!terminalIds) {
+      return node;
+    }
+    const valueByTerminalId = new Map<string, string>();
+    for (const terminalId of terminalIds) {
+      valueByTerminalId.set(terminalId, value);
+    }
+    const voltageBaseSetNode = setNodeVoltageBaseValuesByTerminal(node, valueByTerminalId);
+    const voltageSetNode = setNodeRatedVoltageFromTerminalValuesIfPresent(voltageBaseSetNode, valueByTerminalId);
+    const ratedCapacityDefault = value
+      ? getRatedCapacityDefaultForKind(baseDeviceKind(node.kind), value)
+      : null;
+    const nextNode = ratedCapacityDefault && voltageSetNode.params.ratedCapacity !== ratedCapacityDefault
+      ? { ...voltageSetNode, params: { ...voltageSetNode.params, ratedCapacity: ratedCapacityDefault } }
+      : voltageSetNode;
+    if (nextNode !== node) {
+      nodeUpdates.push(nextNode);
+    }
+    return nextNode;
+  });
+  return {
+    nodes: nextNodes,
+    nodeUpdates,
+    targetNodeIds: Array.from(targets.nodeIds),
+    changedNodeIds: nodeUpdates.map((node) => node.id)
+  };
+}
+
 type IslandVoltageGroup = {
   type: ElectricalTerminalType;
   relatedNodeIds: Set<string>;

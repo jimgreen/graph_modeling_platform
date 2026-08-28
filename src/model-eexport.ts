@@ -1497,6 +1497,13 @@ export function terminalVoltageDisplayValue(node: VoltageDisplayNode, terminal?:
   if (sideVoltage) {
     return sideVoltage;
   }
+  // 端子 vbase 为 "0"（默认占位，DEFAULT_INITIAL_TERMINAL_VBASE）时：
+  // 仅当设备通用电压基值 params.vbase 非零（如连接母线继承而来）才使用，否则保持原版返回原始端子电压，
+  // 避免回退到 voltage_level/rated_voltage 把默认参数混入电气岛电压分组、破坏电压设定值填充与一致性校验。
+  const inheritedNodeVbase = nonZeroTerminalVoltageBaseNumber(node.params.vbase);
+  if (inheritedNodeVbase) {
+    return inheritedNodeVbase;
+  }
   if (rawTerminalVoltage) {
     return rawTerminalVoltage;
   }

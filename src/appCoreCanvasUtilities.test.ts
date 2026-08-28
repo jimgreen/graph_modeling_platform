@@ -5,6 +5,7 @@ import {
   paramOptionsForSection
 } from "./appExtracted/appCoreCanvasUtilities";
 import { DEVICE_VISUAL_PARAM_KEYS } from "./deviceVisualParams";
+import { BUILTIN_VOLTAGE_LEVELS } from "./model";
 
 describe("graph parameter classification", () => {
   test("keeps every canonical visual field out of the business parameter group", () => {
@@ -87,5 +88,18 @@ describe("hydrogen tank parameter labels", () => {
     expect(PARAM_LABELS.water_volume).toBe("水容积(m3)");
     expect(PARAM_LABELS.pressure_max).toBe("储气压力上限(Mpa)");
     expect(PARAM_LABELS.pressure_min).toBe("储气压力下限(Mpa)");
+  });
+});
+
+describe("voltage base parameter options", () => {
+  test("maps voltage base params (vbase/i_vbase/k_vbase/j_vbase) to builtin voltage levels", () => {
+    for (const key of ["vbase", "i_vbase", "k_vbase", "j_vbase"]) {
+      expect(paramOptionsForSection(key, "ACGenerator"), key).toEqual(BUILTIN_VOLTAGE_LEVELS);
+    }
+  });
+
+  test("non-voltage params are unaffected by voltage base handling", () => {
+    expect(paramOptionsForSection("control_type")).toEqual(["PV", "PQ", "PH", "P", "V", "I", "Q", "Z", "DCV", "ACV", "ACP", "PQQ"]);
+    expect(paramOptionsForSection("i_control_type", "ACACConverter")).toEqual(["PQ", "PV", "PH", "NONE"]);
   });
 });

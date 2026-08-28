@@ -3,7 +3,7 @@ import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo,
 import { createPortal, flushSync } from "react-dom";
 import { useTransition } from "react";
 import { apiPath } from "../config";
-import { ELEMENT_TREE_COMPONENT_LIBRARY_LABELS } from "../model";
+import { BUILTIN_VOLTAGE_LEVELS, ELEMENT_TREE_COMPONENT_LIBRARY_LABELS } from "../model";
 import {
   DEVICE_VISUAL_PARAM_KEYS,
   DEVICE_VISUAL_PARAM_PREFIXES
@@ -2656,15 +2656,26 @@ export const VOLTAGE_BASE_SET_SCOPE_LABELS: Record<VoltageBaseSetScope, string> 
   island: "所在拓扑岛"
 };
 
-export const VOLTAGE_BASE_SET_PRESETS = ["0.4", "6", "10", "35", "66", "110", "220", "330", "500", "750", "1000"];
+export const VOLTAGE_BASE_SET_PRESETS = BUILTIN_VOLTAGE_LEVELS.filter((value) => value !== "0");
 
-export const VOLTAGE_BASE_SET_CATEGORIES = [
-  { label: "特高压（UHV）", values: ["1000"], desc: "特高压交流输电" },
-  { label: "超高压（EHV）", values: ["750", "500"], desc: "区域骨干输电" },
-  { label: "高压（HV）", values: ["330", "220", "110", "66"], desc: "主网、区域网" },
-  { label: "中压（MV）", values: ["35", "20", "10", "6"], desc: "配电网、工业用户" },
-  { label: "低压（LV）", values: ["0.4", "0.22"], desc: "台区低压配电 / 用户单相用电" }
+const VOLTAGE_LEVEL_CATEGORY_RANGES = [
+  { label: "特高压（UHV）", min: 1000, max: Number.POSITIVE_INFINITY, desc: "特高压交流输电" },
+  { label: "超高压（EHV）", min: 500, max: 999, desc: "区域骨干输电" },
+  { label: "高压（HV）", min: 66, max: 499, desc: "主网、区域网" },
+  { label: "中压（MV）", min: 6, max: 65, desc: "配电网、工业用户" },
+  { label: "低压（LV）", min: 0.1, max: 5.99, desc: "台区低压配电 / 用户单相用电" }
 ] as const;
+
+/** 电压基值预设与分类均从 BUILTIN_VOLTAGE_LEVELS 派生，保证所有入口（右侧下拉/设置窗口）共用同一份清单 */
+export const VOLTAGE_BASE_SET_CATEGORIES = VOLTAGE_LEVEL_CATEGORY_RANGES.map((cat) => ({
+  ...cat,
+  values: BUILTIN_VOLTAGE_LEVELS
+    .filter((value) => {
+      const numeric = Number(value);
+      return numeric >= cat.min && numeric <= cat.max;
+    })
+    .sort((a, b) => Number(b) - Number(a))
+}));
 
 /** Push a glyph kind into the recent list, deduplicating and keeping max 10 */
 export function pushRecentGlyph(prev: string[], kind: string): string[] {
@@ -3609,6 +3620,8 @@ export const resolveStaticButtonTargetLayers = (node: ModelNode, availableLayers
   return selectedLayers;
 };
 
+export const VOLTAGE_BASE_PARAM_KEYS = new Set(["vbase", "i_vbase", "k_vbase", "j_vbase"]);
+
 export function paramOptionsForSection(key: string, section?: string) {
   if (key === "control_type" && section === "HydroStorage") {
     return [...HYDROGEN_STORAGE_CONTROL_TYPES];
@@ -3648,6 +3661,9 @@ export function paramOptionsForSection(key: string, section?: string) {
   }
   if ((key === "i_control_type" || key === "j_control_type") && section === "DCDCConverter") {
     return [...DCDC_CONVERTER_CONTROL_TYPES];
+  }
+  if (VOLTAGE_BASE_PARAM_KEYS.has(key)) {
+    return [...BUILTIN_VOLTAGE_LEVELS];
   }
   return PARAM_OPTIONS[key];
 }

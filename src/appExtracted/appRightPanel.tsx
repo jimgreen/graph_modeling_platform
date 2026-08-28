@@ -1,5 +1,10 @@
 // @ts-nocheck
 import { MemoizedViewSection } from "./appViewRenderBoundary";
+import { Select } from "antd";
+import { BUILTIN_VOLTAGE_LEVELS } from "../model";
+import { firstNonZeroVoltageBase } from "../model-eexport";
+import { getTerminalVoltageLevel } from "../model-routing";
+import { VOLTAGE_BASE_PARAM_KEYS } from "./appCoreCanvasUtilities";
 
 // 参数字段 → 单位后缀映射
 const PARAM_UNIT_SUFFIX: Record<string, string> = {
@@ -39,6 +44,13 @@ const PARAM_UNIT_SUFFIX: Record<string, string> = {
 
 function getParamUnitSuffix(key: string): string | null {
   return PARAM_UNIT_SUFFIX[key] ?? null;
+}
+
+// 电压等级下拉选项：内置电压等级 + 当前值（若不在内置列表则追加，避免下拉空白）
+function voltageBaseSelectOptions(currentValue: string): string[] {
+  return BUILTIN_VOLTAGE_LEVELS.includes(currentValue)
+    ? BUILTIN_VOLTAGE_LEVELS
+    : [currentValue, ...BUILTIN_VOLTAGE_LEVELS];
 }
 
 type AppRightPanelProps = {
@@ -193,8 +205,64 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     updateParam,
     updateSelectedNode,
     updateTerminalVbase,
-    voltageUnit
+    undoScopeForGraphPatch,
+    voltageUnit,
+    edges,
+    setVoltageBaseValuesForScope,
+    patchGraphNodes
   } = scope;
+
+  // 电压等级下拉行：仅电气设备（含 ac/dc 端子）显示；写入按设备电压设置模式（uniform→params.vbase，terminal→侧电压）
+  // 是否渲染由调用处决定（若设备已有 vbase/i_vbase/k_vbase/j_vbase 参数则不重复添加）
+  const renderVoltageBaseRow = () => {
+    const node = inspectorSelectedNode;
+    const isElectricNode = node
+      ? (node.terminals?.some((terminal) => terminal.type === "ac" || terminal.type === "dc") || isBusNode(node))
+      : false;
+    if (!node || !isElectricNode) {
+      return null;
+    }
+    const electricalTerminal = node.terminals.find((terminal) => terminal.type === "ac" || terminal.type === "dc");
+    const electricalTerminalId = electricalTerminal?.id;
+    const explicitVbase = terminalVoltageBaseNumber(node.params?.vbase);
+    const fallbackVoltage = firstNonZeroVoltageBase([
+      node.params?.voltage_level,
+      node.params?.rated_voltage,
+      node.params?.voltage
+    ]);
+    const currentValue = explicitVbase && explicitVbase !== "0"
+      ? explicitVbase
+      : (fallbackVoltage || (electricalTerminalId ? getTerminalVoltageLevel(node, electricalTerminalId) : ""));
+    const normalizedCurrent = terminalVoltageBaseNumber(currentValue) || "0";
+    const options = voltageBaseSelectOptions(normalizedCurrent);
+    return (
+      <tr>
+        {batchEditors.renderChineseParamHeader("vbase", "电压等级")}
+        <td>
+          <div className="unit-value-field">
+            <Select
+              value={normalizedCurrent}
+              onChange={(nextValue) => {
+                if (nextValue === normalizedCurrent) {
+                  return;
+                }
+                // 电压等级扩散以拓扑岛为范围：整岛统一为新值
+                const result = setVoltageBaseValuesForScope(nodes, edges, [node.id], "island", nextValue);
+                if (result.changedNodeIds.length === 0) {
+                  return;
+                }
+                pushUndoSnapshot(true, false, undoScopeForGraphPatch(result.changedNodeIds, []));
+                patchGraphNodes(result.nodeUpdates);
+              }}
+              options={options.map((level) => ({ value: level, label: level }))}
+              style={{ minWidth: 120 }}
+            />
+            <span>{voltageUnit}</span>
+          </div>
+        </td>
+      </tr>
+    );
+  };
 
   return (
 <aside ref={rightPanelRef} className={`inspector-panel floating-side-panel ${rightPanelVisible ? "visible" : "hidden"}`} onPointerDown={stopSidePanelEventPropagation} onPointerMoveCapture={stopSidePanelEventPropagation} onPointerMove={stopSidePanelEventPropagation} onPointerEnter={() => updateAutoPanelVisibility("right", "panel-enter")} onPointerLeave={(event) => handleSidePanelPointerLeave("right", event)} onMouseMoveCapture={stopSidePanelEventPropagation} onMouseMove={stopSidePanelEventPropagation} onClick={stopSidePanelEventPropagation} onDoubleClick={stopSidePanelEventPropagation} onContextMenu={stopSidePanelEventPropagation} onKeyDown={stopSidePanelEventPropagation} onKeyUp={stopSidePanelEventPropagation}>
@@ -858,16 +926,13 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         const displayValue = formatDeviceModelParamDisplayValue(row.key, row.value);
                         const optionConfig = enumSelectOptionsWithCurrentValue(paramOptionsForSection(row.key, componentLibrary), displayValue);
                         const options = optionConfig.options;
-                        return (<tr key={row.key}>
-                                  {batchEditors.renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
-                                  <td>
-                                    {row.key === "name" && selectedContainerParameterView.kind === "container" ? (<BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : row.readonly || !row.paramKey ? (<input value={displayValue} readOnly/>) : options ? (<select value={displayValue} onChange={(event) => updateParam(row.paramKey!, event.target.value)}>
-                                      {options.map((option) => (<option key={option} value={option} disabled={option === optionConfig.invalidValue}>
-                                          {option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option}
-                                        </option>))}
-                                    </select>) : (<BufferedTextInput value={displayValue} onCommit={(nextValue) => updateParam(row.paramKey!, nextValue)}/>)}
-                                </td>
-                              </tr>);
+                        const hasVoltageParam = selectedContainerParameterView.rows.some((candidate) => VOLTAGE_BASE_PARAM_KEYS.has(candidate.key));
+                        const rowElement = row.key === "name" && selectedContainerParameterView.kind === "container" ? (<td><BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/></td>) : row.readonly || !row.paramKey ? (<td><input value={displayValue} readOnly/></td>) : options ? (<td><Select value={displayValue} onChange={(value) => updateParam(row.paramKey!, value)} options={options.map((option) => ({ value: option, label: option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option, disabled: option === optionConfig.invalidValue }))} style={{ minWidth: 120 }}/></td>) : (<td><BufferedTextInput value={displayValue} onCommit={(nextValue) => updateParam(row.paramKey!, nextValue)}/></td>);
+                        const rowFragment = (<tr key={row.key}>{batchEditors.renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}{rowElement}</tr>);
+                        if (row.key === "name" && !hasVoltageParam) {
+                          return <Fragment key={row.key}>{rowFragment}{renderVoltageBaseRow()}</Fragment>;
+                        }
+                        return rowFragment;
                     })}
                         </tbody>
                       </table>) : (<table className="param-table">
@@ -908,12 +973,17 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             const displayValue = formatDeviceModelParamDisplayValue(key, value);
                             const unitSuffix = getParamUnitSuffix(key);
                             const inputElement = key === "name" ? (<BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition) ? (<input value={displayValue} readOnly/>) : (batchEditors.renderParamEditor(key, displayValue, false, definition));
-                            return (<tr key={key}>
+                            const hasVoltageParam = keys.some((candidate) => VOLTAGE_BASE_PARAM_KEYS.has(candidate));
+                            const rowFragment = (<tr key={key}>
                                   {batchEditors.renderParamHeader(key, key, definition?.cnName === key ? PARAM_LABELS[key] ?? key : (definition?.cnName ?? PARAM_LABELS[key] ?? key))}
                                   <td>
                                     {unitSuffix && key !== "name" ? (<div className="unit-value-field">{inputElement}<span>{unitSuffix}</span></div>) : inputElement}
                                   </td>
                                 </tr>);
+                            if (key === "name" && !hasVoltageParam) {
+                              return <Fragment key={key}>{rowFragment}{renderVoltageBaseRow()}</Fragment>;
+                            }
+                            return rowFragment;
                         });
                     })()}
                         </tbody>
