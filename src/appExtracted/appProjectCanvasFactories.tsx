@@ -2156,7 +2156,8 @@ export function createDefaultVoltageBaseSetValue(__appScope: Record<string, any>
       ];
       for (const candidate of candidates) {
         const normalized = normalizeVoltageBaseInput(candidate);
-        if (normalized) {
+        // 跳过 "0" 值，继续检查下一个候选值
+        if (normalized && normalized !== "0") {
           return normalized;
         }
       }
