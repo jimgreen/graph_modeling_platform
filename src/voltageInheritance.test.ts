@@ -237,20 +237,31 @@ describe("voltageInheritance", () => {
       expect(result.vbase).toBe("110");
     });
 
-    it("双端子设备，端子 0 写入 i_vbase", () => {
+    it("双端子 uniform 设备写入 vbase", () => {
       const node = makeNode(
         "ac-line",
         [makeTerminal("t0"), makeTerminal("t1")],
         {}
       );
       const result = applyVoltageInheritance(node, "110", "t0");
-      expect(result.i_vbase).toBe("110");
+      expect(result.vbase).toBe("110");
+      expect(result.i_vbase).toBeUndefined();
       expect(result.j_vbase).toBeUndefined();
     });
 
-    it("双端子设备，端子 1 写入 j_vbase", () => {
+    it("双端子 terminal 设备，端子 0 写入 i_vbase", () => {
       const node = makeNode(
-        "ac-line",
+        "ac-two-winding-transformer",
+        [makeTerminal("t0"), makeTerminal("t1")],
+        {}
+      );
+      const result = applyVoltageInheritance(node, "110", "t0");
+      expect(result.i_vbase).toBe("110");
+    });
+
+    it("双端子 terminal 设备，端子 1 写入 j_vbase", () => {
+      const node = makeNode(
+        "ac-two-winding-transformer",
         [makeTerminal("t0"), makeTerminal("t1")],
         {}
       );
@@ -338,9 +349,9 @@ describe("voltageInheritance", () => {
         { ratedCapacity: "0" }
       );
       const result = applyVoltageInheritance(node, "10", "t0");
-      expect(result.i_vbase).toBe("10");
+      expect(result.vbase).toBe("10");
 
-      const ratedCapacity = getRatedCapacityDefaultForKind("ac-line", result.i_vbase);
+      const ratedCapacity = getRatedCapacityDefaultForKind("ac-line", result.vbase);
       expect(ratedCapacity).toBe("10 MW");
     });
 
