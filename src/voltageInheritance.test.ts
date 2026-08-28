@@ -138,13 +138,23 @@ describe("voltageInheritance", () => {
       expect(resolveNodeVoltageAtTerminal(heatNode, "t0")).toBe("");
     });
 
-    it("B-04: 端子 ID 不存在时返回空字符串", () => {
+    it("B-04: 端子 ID 不存在且无通用 vbase 时返回空字符串", () => {
       const node = makeNode(
         "ac-line",
         [makeTerminal("t0"), makeTerminal("t1")],
         { i_vbase: "110" }
       );
       expect(resolveNodeVoltageAtTerminal(node, "nonexistent")).toBe("");
+    });
+
+    it("B-04b: 端子 ID 不存在但有通用 vbase 时回退到 params.vbase", () => {
+      const busNode = makeNode(
+        "ac-bus",
+        [makeTerminal("t0")],
+        { vbase: "750" }
+      );
+      // 连接到一个不存在的端子 ID（如总线端子 ID 与 edge 记录不一致时）
+      expect(resolveNodeVoltageAtTerminal(busNode, "nonexistent")).toBe("750");
     });
 
     it("B-05: 端子类型为非电气（h2/heat）时返回空字符串", () => {

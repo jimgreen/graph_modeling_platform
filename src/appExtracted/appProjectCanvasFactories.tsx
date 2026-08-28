@@ -364,7 +364,6 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
   // 读取 lastPlacedNodeIdRef 并清除
   const lastPlacedNodeIdRef = __appScopeRef?.current?.lastPlacedNodeIdRef;
   const newDeviceId = lastPlacedNodeIdRef?.current ?? null;
-  console.log("[电压继承调试] newDeviceId:", newDeviceId);
   if (lastPlacedNodeIdRef) {
     lastPlacedNodeIdRef.current = null;
   }
@@ -385,16 +384,11 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
       // Voltage inheritance logic
       const sourceIsNew = newDeviceId && actualSourceNode.id === newDeviceId;
       const targetIsNew = newDeviceId && actualTargetNode.id === newDeviceId;
-      console.log("[电压继承调试] sourceIsNew:", sourceIsNew, "targetIsNew:", targetIsNew);
-      console.log("[电压继承调试] actualSourceNode.id:", actualSourceNode.id, "actualTargetNode.id:", actualTargetNode.id);
 
       if (sourceIsNew && !targetIsNew) {
         // source is the new device, try to inherit voltage from target
         const targetVoltage = resolveNodeVoltageAtTerminal(actualTargetNode, newEdge.targetTerminalId);
-        console.log("[电压继承调试] targetVoltage:", targetVoltage, "from terminal:", newEdge.targetTerminalId);
-        console.log("[电压继承调试] actualTargetNode.params.vbase:", actualTargetNode.params.vbase);
         if (targetVoltage && isNodeVoltageDefault(actualSourceNode, newEdge.sourceTerminalId)) {
-          console.log("[电压继承调试] 执行电压继承，目标电压:", targetVoltage);
           const newParams = applyVoltageInheritance(actualSourceNode, targetVoltage, newEdge.sourceTerminalId);
           const updatedSourceNode = { ...actualSourceNode, params: newParams };
           patchGraphNodes([updatedSourceNode]);
@@ -402,15 +396,11 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
       } else if (targetIsNew && !sourceIsNew) {
         // target is the new device, try to inherit voltage from source
         const sourceVoltage = resolveNodeVoltageAtTerminal(actualSourceNode, newEdge.sourceTerminalId);
-        console.log("[电压继承调试] sourceVoltage:", sourceVoltage, "from terminal:", newEdge.sourceTerminalId);
         if (sourceVoltage && isNodeVoltageDefault(actualTargetNode, newEdge.targetTerminalId)) {
-          console.log("[电压继承调试] 执行电压继承，目标电压:", sourceVoltage);
           const newParams = applyVoltageInheritance(actualTargetNode, sourceVoltage, newEdge.targetTerminalId);
           const updatedTargetNode = { ...actualTargetNode, params: newParams };
           patchGraphNodes([updatedTargetNode]);
         }
-      } else {
-        console.log("[电压继承调试] 不满足电压继承条件");
       }
 
       if (!newEdge.manualPoints?.length) {

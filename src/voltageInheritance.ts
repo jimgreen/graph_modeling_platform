@@ -99,7 +99,13 @@ export function resolveNodeVoltageAtTerminal(
   terminalId: string
 ): string {
   const terminalIndex = node.terminals.findIndex((t) => t.id === terminalId);
+
+  // 端子 ID 未找到时，回退到通用 vbase
   if (terminalIndex < 0) {
+    const commonVbase = terminalVoltageBaseNumber(node.params.vbase);
+    if (commonVbase && commonVbase !== "0") {
+      return commonVbase;
+    }
     return "";
   }
 
@@ -107,6 +113,7 @@ export function resolveNodeVoltageAtTerminal(
 
   // 仅对 ac/dc 类型端子生效
   if (!isElectricalTerminalType(terminal.type)) {
+    // 非电气端子（h2/heat），不继承电压
     return "";
   }
 
