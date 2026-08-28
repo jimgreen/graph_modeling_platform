@@ -2174,7 +2174,7 @@ export function createRecommendedVoltageBaseSetMode(__appScope: Record<string, a
 
 export function createDefaultVoltageBaseTerminalValues(__appScope: Record<string, any>) {
   return () => {
-  const { defaultVoltageBaseSetValue, normalizeVoltageBaseInput, voltageBaseSetCandidateNodes, voltageBaseSettingModeForNode } = __appScope;
+  const { defaultVoltageBaseSetValue, isThreeWindingTransformer, normalizeVoltageBaseInput, voltageBaseSetCandidateNodes, voltageBaseSettingModeForNode } = __appScope;
     const fallback = defaultVoltageBaseSetValue();
     const values: VoltageBaseTerminalValuesByNodeId = {};
     for (const node of voltageBaseSetCandidateNodes) {
@@ -2182,10 +2182,31 @@ export function createDefaultVoltageBaseTerminalValues(__appScope: Record<string
         continue;
       }
       values[node.id] = Object.fromEntries(
-        node.terminals.map((terminal) => [
-          terminal.id,
-          normalizeVoltageBaseInput(terminal.vbase) || fallback
-        ])
+        node.terminals.map((terminal, index) => {
+          // 优先读取端子自身 vbase
+          const terminalVbase = normalizeVoltageBaseInput(terminal.vbase);
+          if (terminalVbase) return [terminal.id, terminalVbase];
+
+          // 回退到 params 中的侧电压（i_vbase/j_vbase/k_vbase）
+          const isThreeWinding = isThreeWindingTransformer(node);
+          let paramVbase;
+          if (isThreeWinding) {
+            // 三绕组：端子 0→i_vbase, 1→k_vbase, 2→j_vbase
+            const keys = ["i_vbase", "k_vbase", "j_vbase"];
+            paramVbase = normalizeVoltageBaseInput(node.params[keys[index]]);
+          } else {
+            // 双端子：端子 0→i_vbase, 1→j_vbase
+            const keys = ["i_vbase", "j_vbase"];
+            paramVbase = normalizeVoltageBaseInput(node.params[keys[index]]);
+          }
+          if (paramVbase) return [terminal.id, paramVbase];
+
+          // 再回退到通用 vbase
+          const commonVbase = normalizeVoltageBaseInput(node.params.vbase);
+          if (commonVbase) return [terminal.id, commonVbase];
+
+          return [terminal.id, fallback];
+        })
       );
     }
     return values;
