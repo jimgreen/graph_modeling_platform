@@ -697,6 +697,7 @@ const schemeImportParentSchemeIdRef = useRef<string>(""); Object.assign(__appSco
 const libraryPackageImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { libraryPackageImportInputRef });
 const libraryPackageImportScopeRef = useRef<LibraryPackageScope>("device-library"); Object.assign(__appScope, { libraryPackageImportScopeRef });
 const userCustomizationImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { userCustomizationImportInputRef });
+const lastPlacedNodeIdRef = useRef<string | null>(null); Object.assign(__appScope, { lastPlacedNodeIdRef });
 const [libraryPackageDialogOpen, setLibraryPackageDialogOpen] = useState(false);
 const [libraryPackageDialogMode, setLibraryPackageDialogMode] = useState<LibraryPackageDialogMode>("export");
 const [libraryPackageDialogScope, setLibraryPackageDialogScope] = useState<LibraryPackageScope>("all");

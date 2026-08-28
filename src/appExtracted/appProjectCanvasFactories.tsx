@@ -7,6 +7,12 @@ import { buildEFileExportOptionsFromLibrary, setSkipSaveCheck } from "./appDevic
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
 import { GLOBAL_LINE_ID_PARAM, applyGlobalLineRecordToNode, deriveLocalDeviceIndexCounters, globalLineEndpointPlacementFailureMessage, globalLineSourcePlacementFailureMessage, shouldManageLineGlobally, shouldUseGlobalLineForEndpoints } from "../global-lines";
 import { isLineOnlyConnectionNode, modelAssociationLineConnectionFailureMessage, modelAssociationProjectIndexesForSchemes } from "../model";
+import {
+  resolveNodeVoltageAtTerminal,
+  isNodeVoltageDefault,
+  applyVoltageInheritance,
+} from "../voltageInheritance";
+import { getRatedCapacityDefaultForKind } from "../model";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return async (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[], globalLineChoice?: GlobalLineChoice) => {
@@ -36,6 +42,17 @@ export function createCommitRoutableLineDevice(__appScope: Record<string, any>) 
         target: routableLineDeviceEndpointRefForNode(target.node, target.terminalId, target.point)
       }
     );
+
+    // 集成线路电压继承逻辑
+    const sourceVoltage = resolveNodeVoltageAtTerminal(source.node, source.terminalId);
+    if (sourceVoltage) {
+      rawLine.params.rated_voltage = sourceVoltage;
+      const ratedCapacity = getRatedCapacityDefaultForKind(template.kind, sourceVoltage);
+      if (ratedCapacity !== null) {
+        rawLine.params.ratedCapacity = ratedCapacity;
+      }
+    }
+
     const manualRoutePoints = manualPoints?.length
       ? buildManualConnectionPreviewRoute(sourcePoint, manualPoints, targetPoint, canvasBounds)
       : null;
