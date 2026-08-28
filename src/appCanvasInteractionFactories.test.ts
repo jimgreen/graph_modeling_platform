@@ -15,6 +15,7 @@ import {
   createUpdateLibraryPlacementPreview,
   createUpdateParam
 } from "./appExtracted/appCanvasInteractionFactories";
+import { setVoltageBaseTerminalValueForTopologySide } from "./model-routing";
 import { bestSmartAlignmentAxisSnap, pointOnBusForSnap } from "./appExtracted/appCoreCanvasUtilities";
 import {
   canConnectTerminals,
@@ -498,6 +499,113 @@ describe("single device parameter updates", () => {
     updateParam("soc", "120%");
 
     expect(patchGraphNodes).not.toHaveBeenCalled();
+  });
+
+  test("syncs transformer side-voltage param changes to the matching terminal vbase", () => {
+    const node = createDefaultNode("ac-transformer", { x: 100, y: 100 });
+    const patchGraphNodes = vi.fn();
+    const updateParam = createUpdateParam({
+      NODE_LABEL_FOOTPRINT_PARAM_KEYS: new Set<string>(),
+      commitNodeFootprintUpdates: vi.fn(),
+      nodeById: new Map([[node.id, node]]),
+      normalizeNodeLabelDisplayMode: (value: string) => value,
+      normalizeRatioParameterInputValue,
+      patchGraphNodes,
+      pushNodeOnlyUndoSnapshot: vi.fn(),
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: vi.fn(() => true),
+      selectedNodeId: node.id,
+      undoScopeForNodeFootprintPatch: vi.fn(() => ({}))
+    });
+
+    updateParam("i_vbase", "750");
+    expect(patchGraphNodes).toHaveBeenCalledTimes(1);
+    const updated = patchGraphNodes.mock.calls[0][0][0];
+    expect(updated.params.i_vbase).toBe("750");
+    // 双绕组 i_vbase 对应端子 t1 (index 0)，其 vbase 应同步
+    expect(updated.terminals[0].vbase).toBe("750");
+
+    patchGraphNodes.mockClear();
+    updateParam("j_vbase", "35");
+    expect(patchGraphNodes).toHaveBeenCalledTimes(1);
+    const updated2 = patchGraphNodes.mock.calls[0][0][0];
+    expect(updated2.params.j_vbase).toBe("35");
+    // 双绕组 j_vbase 对应端子 t2 (index 1)，其 vbase 应同步
+    expect(updated2.terminals[1].vbase).toBe("35");
+  });
+
+  test("syncs vertical transformer side-voltage param changes to terminal vbase", () => {
+    const node = createDefaultNode("ac-transformer-vertical", { x: 0, y: 0 });
+    const patchGraphNodes = vi.fn();
+    const updateParam = createUpdateParam({
+      NODE_LABEL_FOOTPRINT_PARAM_KEYS: new Set<string>(),
+      commitNodeFootprintUpdates: vi.fn(),
+      nodeById: new Map([[node.id, node]]),
+      normalizeNodeLabelDisplayMode: (value: string) => value,
+      normalizeRatioParameterInputValue,
+      patchGraphNodes,
+      pushNodeOnlyUndoSnapshot: vi.fn(),
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: vi.fn(() => true),
+      selectedNodeId: node.id,
+      undoScopeForNodeFootprintPatch: vi.fn(() => ({}))
+    });
+
+    updateParam("i_vbase", "800");
+    expect(patchGraphNodes).toHaveBeenCalledTimes(1);
+    const updated = patchGraphNodes.mock.calls[0][0][0];
+    expect(updated.params.i_vbase).toBe("800");
+    // -vertical 变体：i_vbase 对应端子 t1 (index 0)，vbase 应同步
+    expect(updated.terminals[0].vbase).toBe("800");
+  });
+
+  test("spreads transformer side-voltage change to the side island only", () => {
+    const t = createDefaultNode("ac-transformer", { x: 0, y: 0 });
+    const hb = createDefaultNode("ac-bus", { x: 100, y: 0 });
+    const lb = createDefaultNode("ac-bus", { x: 200, y: 0 });
+    const load = createDefaultNode("ac-load", { x: 150, y: 0 });
+    hb.params.vbase = "0";
+    lb.params.vbase = "0";
+    load.params.vbase = "0";
+    const edges = [
+      { id: "e1", sourceId: t.id, targetId: hb.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+      { id: "e2", sourceId: t.id, targetId: lb.id, sourceTerminalId: "t2", targetTerminalId: "t2" },
+      { id: "e3", sourceId: load.id, targetId: hb.id, sourceTerminalId: "t1", targetTerminalId: "t2" }
+    ];
+    const nodes = [t, hb, lb, load];
+    const patchGraphNodes = vi.fn();
+    const updateParam = createUpdateParam({
+      NODE_LABEL_FOOTPRINT_PARAM_KEYS: new Set<string>(),
+      commitNodeFootprintUpdates: vi.fn(),
+      nodeById: new Map(nodes.map((n) => [n.id, n])),
+      normalizeNodeLabelDisplayMode: (value: string) => value,
+      normalizeRatioParameterInputValue,
+      patchGraphNodes,
+      pushNodeOnlyUndoSnapshot: vi.fn(),
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: vi.fn(() => true),
+      selectedNodeId: t.id,
+      undoScopeForNodeFootprintPatch: vi.fn(() => ({})),
+      nodes,
+      edges,
+      setVoltageBaseTerminalValueForTopologySide,
+      undoScopeForGraphPatch: vi.fn(() => ({}))
+    });
+
+    updateParam("i_vbase", "750");
+
+    const updated = patchGraphNodes.mock.calls[0][0] as Array<{ id: string; params: Record<string, string>; terminals: Array<{ id: string; vbase: string }> }>;
+    // 仅高压分压侧同步：高压母线 + 其上设备统一为新电压
+    expect(updated.some((node) => node.id === hb.id)).toBe(true);
+    expect(updated.find((node) => node.id === hb.id)?.params.vbase).toBe("750");
+    expect(updated.some((node) => node.id === load.id)).toBe(true);
+    expect(updated.find((node) => node.id === load.id)?.params.vbase).toBe("750");
+    // 低压侧严禁同步（分压隔离）
+    expect(updated.some((node) => node.id === lb.id)).toBe(false);
+    // 变压器自身：该侧侧电压 + 端子 vbase 同步
+    const updatedTransformer = updated.find((node) => node.id === t.id)!;
+    expect(updatedTransformer.params.i_vbase).toBe("750");
+    expect(updatedTransformer.terminals[0].vbase).toBe("750");
   });
 });
 

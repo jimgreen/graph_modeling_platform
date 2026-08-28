@@ -7353,14 +7353,16 @@ export type ColorPalette = {
   voltage: Record<string, string>;
 };
 
-export const BUILTIN_VOLTAGE_LEVELS = ["0", "0.4", "6", "10", "10.5", "35", "66", "110", "220", "330", "500", "750", "800"];
+export const BUILTIN_VOLTAGE_LEVELS = ["0", "0.22", "0.4", "6", "10", "10.5", "20", "35", "66", "110", "220", "330", "500", "750", "800", "1000"];
 
 export const VOLTAGE_LEVEL_COLORS: Record<string, string> = {
   "0": "#64748b",
+  "0.22": "#22c55e",
   "0.4": "#22c55e",
   "6": "#0ea5e9",
   "10": "#f97316",
   "10.5": "#f97316",
+  "20": "#f97316",
   "35": "#a855f7",
   "66": "#6366f1",
   "110": "#ef4444",
@@ -7368,7 +7370,8 @@ export const VOLTAGE_LEVEL_COLORS: Record<string, string> = {
   "330": "#7f1d1d",
   "500": "#dc2626",
   "750": "#0891b2",
-  "800": "#0e7490"
+  "800": "#0e7490",
+  "1000": "#0e7490"
 };
 
 function buildDefaultVoltagePalette(): Record<string, string> {

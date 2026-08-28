@@ -230,6 +230,7 @@ import {
   type Point,
   type ProjectFile
 } from "./model";
+import { terminalVoltageDisplay } from "./model-eexport";
 
 test("keeps electrical measurement and setpoint columns aligned with the device contracts", () => {
   expect(E_SECTION_COLUMNS.ACBranch).toEqual(expect.arrayContaining([
@@ -4450,4 +4451,39 @@ describe("全网 E 文件导出", () => {
     expect(singleModelFile.text).not.toContain("<District>");
   });
 
+});
+
+describe("terminalVoltageDisplay 电压继承着色", () => {
+  test("断路器端子 vbase 为占位 0 但 params.vbase 已继承 750 时，应显示 750 而非 0", () => {
+    const base = createDefaultNode("ac-breaker", { x: 0, y: 0 });
+    // 模拟断路器连接到 750kV 母线后的状态：params.vbase 被继承为 750，
+    // 但端子 vbase 仍是默认占位 "0"（DEFAULT_INITIAL_TERMINAL_VBASE）。
+    const node = {
+      ...base,
+      params: { ...base.params, vbase: "750" },
+      terminals: base.terminals.map((terminal) => ({ ...terminal, vbase: "0" }))
+    };
+    expect(terminalVoltageDisplay(node, node.terminals[0])).toBe("750");
+    expect(terminalVoltageDisplay(node, node.terminals[1])).toBe("750");
+  });
+
+  test("断路器端子 vbase 为 0 且 params.vbase 未被继承时，应回退显示 0（不误用空值）", () => {
+    const base = createDefaultNode("ac-breaker", { x: 0, y: 0 });
+    const node = {
+      ...base,
+      params: { ...base.params, vbase: "0" },
+      terminals: base.terminals.map((terminal) => ({ ...terminal, vbase: "0" }))
+    };
+    expect(terminalVoltageDisplay(node, node.terminals[0])).toBe("0");
+  });
+
+  test("端子自身存在非零 vbase 时优先采用端子电压", () => {
+    const base = createDefaultNode("ac-breaker", { x: 0, y: 0 });
+    const node = {
+      ...base,
+      params: { ...base.params, vbase: "750" },
+      terminals: base.terminals.map((terminal, index) => ({ ...terminal, vbase: index === 0 ? "35" : "0" }))
+    };
+    expect(terminalVoltageDisplay(node, node.terminals[0])).toBe("35");
+  });
 });

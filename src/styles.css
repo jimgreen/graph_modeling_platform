@@ -11796,7 +11796,6 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .unit-value-field span {
-  min-width: 34px;
   color: #475569;
   font-size: 12px;
   text-align: right;

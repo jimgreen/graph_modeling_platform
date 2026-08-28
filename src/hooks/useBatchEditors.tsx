@@ -397,13 +397,17 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
         ? "全局线路的所属模型固定为 0。"
         : undefined;
     const control: ReactNode = options ? (
-      <select value={value} disabled={disabled} title={title} onChange={(event) => updateParam(key, event.target.value)}>
-        {options.map((option: string) => (
-          <option key={option} value={option} disabled={option === invalidValue && !(modelAssociationPrompt && option === "")}>
-            {modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option}
-          </option>
-        ))}
-      </select>
+      <Select
+        value={value}
+        disabled={disabled}
+        title={title}
+        onChange={(nextValue) => updateParam(key, nextValue)}
+        options={options.map((option: string) => ({
+          value: option,
+          label: modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : (optionLabels[option] ?? option),
+          disabled: option === invalidValue && !(modelAssociationPrompt && option === "")
+        }))}
+      />
     ) : (
       <BufferedTextInput value={value} disabled={disabled} title={title} onCommit={(nextValue: string) => updateParam(key, nextValue)} />
     );
