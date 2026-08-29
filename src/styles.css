@@ -834,6 +834,7 @@ button:not(.ant-btn):disabled {
 .project-tree-name {
   flex: 1 1 auto;
   min-width: 0;
+  max-width: calc(100% - 60px - var(--scheme-depth, 0) * 16px);
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
