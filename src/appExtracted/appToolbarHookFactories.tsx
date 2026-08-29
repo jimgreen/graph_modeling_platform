@@ -228,9 +228,14 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
         {metrics.rows.map((row, index) => {
           const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
           const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
-          const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
+          const columnStartX = -metrics.width / 2 + col * metrics.columnWidth;
+          const columnMetric = metrics.columnMetrics?.[col] ?? { labelWidth: 0, valueWidth: 0, unitWidth: 0 };
+          const interColumnGap = metrics.interColumnGap ?? 6;
+          const textX = columnStartX + columnMetric.labelWidth;
           const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
-          const textGap = Math.max(4, row.fontSize * 0.36);
+          const fontFamily = metrics.fontFamily ?? row.display.fontFamily;
+          const labelTextLength = columnMetric.labelWidth;
+          const valueTextLength = columnMetric.valueWidth;
           return (
             <text
               key={row.item.id}
@@ -239,7 +244,7 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
               y={formatSvgNumber(textY)}
               dominantBaseline="middle"
               fill={row.display.color}
-              fontFamily={row.display.fontFamily}
+              fontFamily={fontFamily}
               fontSize={row.fontSize}
               fontWeight={row.display.fontWeight}
               fontStyle={row.display.fontStyle}
@@ -263,6 +268,9 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
               {row.labelText && (
                 <tspan
                   className="measurement-label ml"
+                  textAnchor="end"
+                  textLength={labelTextLength}
+                  lengthAdjust="spacing"
                 >
                   {row.labelText}
                 </tspan>
@@ -270,14 +278,18 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
               <tspan
                 id={`mv-${row.item.id}`}
                 className="measurement-value mv"
-                dx={row.labelText ? formatSvgNumber(textGap) : undefined}
+                textAnchor="end"
+                textLength={valueTextLength}
+                lengthAdjust="spacing"
+                dx={row.labelText ? formatSvgNumber(interColumnGap) : "0"}
               >
                 {row.valueText}
               </tspan>
               {row.unitText && (
                 <tspan
                   className="measurement-unit mu"
-                  dx={formatSvgNumber(textGap)}
+                  textAnchor="start"
+                  dx={formatSvgNumber(interColumnGap)}
                 >
                   {row.unitText}
                 </tspan>

@@ -214,7 +214,7 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
     'marquee', 'connectPreviewDom', 'routableLinePreview', 'resizeSizeHint',
     'draggingDelta', 'smartAlignmentGuides', 'connectSource', 'libraryPlacement',
     'canvasBackgroundColor', 'canvasBackgroundImageUrl', 'canvasBackgroundImageFit', 'backgroundPageRender',
-    'colorDisplayMode', 'colorPalette'
+    'colorDisplayMode', 'colorPalette', 'deviceLabelsVisible'
   ];
 
   for (const key of dataKeys) {
