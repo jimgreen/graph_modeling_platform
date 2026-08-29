@@ -398,6 +398,27 @@ export function createMeasurementGroupCanvasPosition(__appScope: Record<string, 
   };
 }
 
+// 量测框渲染常量
+const MEASUREMENT_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace';
+const MEASUREMENT_LABEL_WIDTH = 10; // 名称固定 10 字符宽
+const MEASUREMENT_VALUE_TOTAL_WIDTH = 7; // 整数3 + 小数点1 + 小数3
+const MEASUREMENT_VALUE_DECIMALS = 3;
+const MEASUREMENT_CHAR_WIDTH_RATIO = 0.6; // 等宽字体字符宽/字号比
+const MEASUREMENT_INTER_COLUMN_GAP = 6;
+
+// 计算量测框列位置
+export function computeMeasurementColumnPositions(
+  metrics: { width: number; columnWidth: number; columnMetrics: Array<{ labelWidth: number; valueWidth: number; unitWidth: number }>; interColumnGap: number },
+  col: number
+) {
+  const columnStartX = -metrics.width / 2 + col * metrics.columnWidth;
+  const columnMetric = metrics.columnMetrics[col];
+  const labelEndX = columnStartX + columnMetric.labelWidth;
+  const valueEndX = labelEndX + metrics.interColumnGap + columnMetric.valueWidth;
+  const unitStartX = valueEndX + metrics.interColumnGap;
+  return { labelEndX, valueEndX, unitStartX };
+}
+
 export function createMeasurementGroupRenderMetrics(__appScope: Record<string, any>) {
   return (node: ModelNode, group: MeasurementGroup) => {
   const { formatMeasurementDisplayValue, measurementConfig, measurementFontScaleForNode, resolveMeasurementItemDisplay } = __appScope;
@@ -406,58 +427,48 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
       return null;
     }
     const measurementFontScale = measurementFontScaleForNode(node);
-    const MEASUREMENT_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace';
-    const MEASUREMENT_LABEL_WIDTH = 10; // 名称固定 10 字符宽
-    const MEASUREMENT_VALUE_TOTAL_WIDTH = 7; // 整数3 + 小数点1 + 小数3
-    const MEASUREMENT_VALUE_DECIMALS = 3;
-    const padText = (raw: string, width: number): string => {
-      if (raw.length >= width) return raw;
-      return " ".repeat(width - raw.length) + raw;
-    };
     const rows = group.items.flatMap((item) => {
       const display = resolveMeasurementItemDisplay({ config: runtimeMeasurementConfig, node, group, item });
       if (!display.visible) {
         return [];
       }
       const rawLabelText = group.labelVisible === false ? "" : display.label;
-      const labelText = padText(rawLabelText, MEASUREMENT_LABEL_WIDTH);
+      const labelText = rawLabelText.padStart(MEASUREMENT_LABEL_WIDTH);
       const rawValueText = formatMeasurementDisplayValue(
         { sourcePoint: item.sourcePoint, value: display.defaultValue, quality: "good", timestamp: 0 },
         MEASUREMENT_VALUE_DECIMALS,
         ""
       );
-      const valueText = padText(rawValueText, MEASUREMENT_VALUE_TOTAL_WIDTH);
+      const valueText = rawValueText.padStart(MEASUREMENT_VALUE_TOTAL_WIDTH);
       const unitText = group.unitVisible === false ? "" : display.unit;
-      const text = [labelText, valueText, unitText].filter(Boolean).join(" ");
-      return [{ item, display, labelText, valueText, unitText, text, fontSize: display.fontSize * measurementFontScale }];
+      return [{ item, display, labelText, valueText, unitText, fontSize: display.fontSize * measurementFontScale }];
     });
     if (rows.length === 0) {
       return null;
     }
-    const maxFontSize = Math.max(...rows.map((row) => row.fontSize));
+    let maxFontSize = 0;
+    for (const row of rows) if (row.fontSize > maxFontSize) maxFontSize = row.fontSize;
     const lineHeight = Math.max(16, maxFontSize + 6);
     const columns = group.layout === "grid" ? 2 : group.layout === "horizontal" ? rows.length : 1;
-    const charWidthFor = (fontSize: number) => fontSize * 0.6;
-    const interColumnGap = 6;
+    const charWidthFor = (fontSize: number) => fontSize * MEASUREMENT_CHAR_WIDTH_RATIO;
+    const rowsPerColumn = Math.ceil(rows.length / columns);
     const columnMetrics = Array.from({ length: columns }, (_, column) => {
       let unitWidth = 0;
-      let columnMaxFontSize = maxFontSize;
-      for (let rowIndex = 0; rowIndex < Math.ceil(rows.length / columns); rowIndex++) {
+      for (let rowIndex = 0; rowIndex < rowsPerColumn; rowIndex++) {
         const row = rows[rowIndex * columns + column];
         if (!row) continue;
-        columnMaxFontSize = Math.max(columnMaxFontSize, row.fontSize);
         if (row.unitText) {
           unitWidth = Math.max(unitWidth, row.unitText.length * charWidthFor(row.fontSize));
         }
       }
-      const labelWidth = MEASUREMENT_LABEL_WIDTH * charWidthFor(columnMaxFontSize);
-      const valueWidth = MEASUREMENT_VALUE_TOTAL_WIDTH * charWidthFor(columnMaxFontSize);
+      const labelWidth = MEASUREMENT_LABEL_WIDTH * charWidthFor(maxFontSize);
+      const valueWidth = MEASUREMENT_VALUE_TOTAL_WIDTH * charWidthFor(maxFontSize);
       return { labelWidth, valueWidth, unitWidth };
     });
-    const columnWidths = columnMetrics.map((metric) => metric.labelWidth + interColumnGap + metric.valueWidth + interColumnGap + metric.unitWidth);
+    const columnWidths = columnMetrics.map((m) => m.labelWidth + m.valueWidth + m.unitWidth + 2 * MEASUREMENT_INTER_COLUMN_GAP);
     const columnWidth = Math.max(72, ...columnWidths);
     const width = Math.max(64, columnWidth * columns);
-    const height = Math.max(lineHeight, Math.ceil(rows.length / columns) * lineHeight);
+    const height = Math.max(lineHeight, rowsPerColumn * lineHeight);
     return {
       rows,
       maxFontSize,
@@ -467,7 +478,7 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
       width,
       height,
       columnMetrics,
-      interColumnGap,
+      interColumnGap: MEASUREMENT_INTER_COLUMN_GAP,
       fontFamily: MEASUREMENT_FONT_FAMILY
     };
   };
@@ -508,15 +519,9 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
     const rowsMarkup = metrics.rows.map((row, index) => {
       const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
       const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
-      const columnStartX = -metrics.width / 2 + col * metrics.columnWidth;
-      const columnMetric = metrics.columnMetrics?.[col] ?? { labelWidth: 0, valueWidth: 0, unitWidth: 0 };
-      const interColumnGap = metrics.interColumnGap ?? 6;
-      const labelEndX = columnStartX + columnMetric.labelWidth;
-      const valueEndX = labelEndX + interColumnGap + columnMetric.valueWidth;
-      const unitStartX = valueEndX + interColumnGap;
+      const { labelEndX, valueEndX, unitStartX } = computeMeasurementColumnPositions(metrics, col);
       const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
-      const fontFamily = metrics.fontFamily ?? row.display.fontFamily;
-      const baseAttributes = `fill="${escapeXml(row.display.color)}" font-family="${escapeXml(fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
+      const baseAttributes = `fill="${escapeXml(row.display.color)}" font-family="${escapeXml(metrics.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
       const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id);
       const labelMarkup = row.labelText
         ? `<tspan class="measurement-label ml" x="${formatSvgNumber(labelEndX)}" text-anchor="end">${escapeXml(row.labelText)}</tspan>`
