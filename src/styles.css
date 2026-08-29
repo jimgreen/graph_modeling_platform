@@ -720,7 +720,7 @@ button:not(.ant-btn):disabled {
   align-items: center;
   gap: 8px;
   min-height: 39px;
-  padding-left: calc(14px + var(--scheme-depth, 0) * 22px);
+  padding-left: calc(14px + var(--scheme-depth, 0) * 18px);
   color: #0f172a;
   background: #f8fafc;
   font-weight: 800;
@@ -750,7 +750,7 @@ button:not(.ant-btn):disabled {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(24px + var(--scheme-depth, 0) * 22px);
+  left: calc(24px + var(--scheme-depth, 0) * 18px);
   width: 1px;
   background: #d7dee8;
   pointer-events: none;
@@ -761,7 +761,7 @@ button:not(.ant-btn):disabled {
   content: "";
   position: absolute;
   top: 50%;
-  left: calc(24px + var(--scheme-depth, 0) * 22px);
+  left: calc(24px + var(--scheme-depth, 0) * 18px);
   width: 9px;
   height: 1px;
   background: #d7dee8;
@@ -778,13 +778,13 @@ button:not(.ant-btn):disabled {
   align-items: center;
   gap: 8px;
   min-height: 38px;
-  padding-left: calc(36px + var(--scheme-depth, 0) * 22px);
+  padding-left: calc(36px + var(--scheme-depth, 0) * 18px);
   color: #334155;
   background: #ffffff;
 }
 
 .scheme-projects > .project-empty {
-  padding-left: calc(36px + var(--scheme-depth, 0) * 22px);
+  padding-left: calc(36px + var(--scheme-depth, 0) * 18px);
 }
 
 .project-item-icon {
