@@ -1079,13 +1079,16 @@ describe("measurement canvas interactions", () => {
       { id: "measurement-group-1", nodeId: "node-42", items: [item] } as any
     );
 
-    expect(markup).toContain('<text class="measurement-label ml" text-anchor="end" xml:space="preserve"');
-    expect(markup).toContain('>         P</text>');
-    expect(markup).toContain('<text class="measurement-value mv" text-anchor="end" xml:space="preserve"');
+    expect(markup).toContain('<text class="measurement-item mi"');
+    expect(markup).toContain('<tspan class="measurement-label ml" text-anchor="end"');
+    expect(markup).toContain('textLength=');
+    expect(markup).toContain('lengthAdjust="spacing"');
+    expect(markup).toContain('>         P</tspan>');
+    expect(markup).toContain('<tspan class="measurement-value mv" text-anchor="end"');
     expect(markup).toContain('mt="activePower"');
-    expect(markup).toContain('>     --</text>');
-    expect(markup).toContain('<text class="measurement-unit mu" text-anchor="start" xml:space="preserve"');
-    expect(markup).toContain('>MW</text>');
+    expect(markup).toContain('>     --</tspan>');
+    expect(markup).toContain('<tspan class="measurement-unit mu" text-anchor="start"');
+    expect(markup).toContain('>MW</tspan>');
   });
 
   test("splits measurement row metrics into label value and unit fragments", () => {
