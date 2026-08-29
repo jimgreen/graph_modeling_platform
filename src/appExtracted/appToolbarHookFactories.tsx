@@ -2,6 +2,7 @@
 import { clampNumber } from "../canvasViewport";
 import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
 import { resolveEffectiveTemplateParameterDefinitions, withNodesParentModelId } from "../model";
+import { computeMeasurementColumnPositions } from "./appGraphMeasurementFactories";
 
 export function createOpenNodeDoubleClickEditor(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
@@ -228,14 +229,8 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
         {metrics.rows.map((row, index) => {
           const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
           const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
-          const columnStartX = -metrics.width / 2 + col * metrics.columnWidth;
-          const columnMetric = metrics.columnMetrics?.[col] ?? { labelWidth: 0, valueWidth: 0, unitWidth: 0 };
-          const interColumnGap = metrics.interColumnGap ?? 6;
-          const labelEndX = columnStartX + columnMetric.labelWidth;
-          const valueEndX = labelEndX + interColumnGap + columnMetric.valueWidth;
-          const unitStartX = valueEndX + interColumnGap;
+          const { labelEndX, valueEndX, unitStartX } = computeMeasurementColumnPositions(metrics, col);
           const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
-          const fontFamily = metrics.fontFamily ?? row.display.fontFamily;
           return (
             <text
               key={row.item.id}
@@ -243,7 +238,7 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
               y={formatSvgNumber(textY)}
               dominantBaseline="middle"
               fill={row.display.color}
-              fontFamily={fontFamily}
+              fontFamily={metrics.fontFamily}
               fontSize={row.fontSize}
               fontWeight={row.display.fontWeight}
               fontStyle={row.display.fontStyle}

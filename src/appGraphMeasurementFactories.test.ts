@@ -1042,6 +1042,7 @@ describe("measurement canvas interactions", () => {
         lineHeight: 24,
         columnMetrics: [{ labelWidth: 8, valueWidth: 40, unitWidth: 16 }],
         interColumnGap: 6,
+        fontFamily: 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
         rows: [
           {
             item,
@@ -1057,8 +1058,7 @@ describe("measurement canvas interactions", () => {
             fontSize: 14,
             labelText: "         P",
             valueText: "     --",
-            unitText: "MW",
-            text: "         P      -- MW"
+            unitText: "MW"
           }
         ],
         width: 80
@@ -1132,8 +1132,7 @@ describe("measurement canvas interactions", () => {
     expect(metrics?.rows[0]).toMatchObject({
       labelText: "         I",
       valueText: "     --",
-      unitText: "A",
-      text: "         I      -- A"
+      unitText: "A"
     });
   });
 
@@ -1333,8 +1332,7 @@ describe("measurement canvas interactions", () => {
           fontSize: 14,
           labelText: "         I",
           valueText: "     --",
-          unitText: "A",
-          text: "         I      -- A"
+          unitText: "A"
         }],
         width: 96
       })

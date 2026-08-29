@@ -39,7 +39,6 @@ import {
   Map as MapIcon,
   Maximize2,
   FolderOpen,
-  Gauge,
   Layers,
   Layers2,
   Minus,

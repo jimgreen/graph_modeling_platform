@@ -96,7 +96,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
     AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
     AlignVerticalDistributeCenter, ArrowDown, ArrowUp, Bell, Cable, ChevronDown,
     ChevronRight, ChevronsDown, ChevronsUp, Download, FileJson, FlipHorizontal,
-    FlipVertical, FolderOpen, Gauge, Grid2X2, Group, Layers, Layers2, Network, Paintbrush,
+    FlipVertical, FolderOpen, Grid2X2, Group, Layers, Layers2, Network, Paintbrush,
     Palette, Pencil, RotateCcw, RotateCw, Save, Settings2, Type, Ungroup, Zap,
     activeLayer, activeModelPathName, adjustSelectedDisplayLayer, alignSelected,
     canAdjustSelectedDisplayLayer, canGroupSelectedGraphics, canUngroupSelectedGraphics,
@@ -181,7 +181,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
       {T("配色设置", <button className="topbar-primary-button" onClick={openColorPaletteDialog} disabled={isBrowseMode} aria-label="配色设置"><Palette size={16}/></button>)}
       {T("电压等级设置", <button className="topbar-primary-button" onClick={() => setVoltageLevelDialogOpen(true)} disabled={isBrowseMode} aria-label="电压等级设置"><Zap size={16}/></button>)}
       {T(deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识", <button className={`topbar-primary-button ${deviceLabelsVisible ? "active" : ""}`} onClick={() => setDeviceLabelsVisible((current: boolean) => !current)} aria-label={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}><Type size={16}/></button>)}
-      {T(deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测", <button className={`topbar-primary-button ${deviceMeasurementsVisible ? "active" : ""}`} onClick={() => setDeviceMeasurementsVisible((current: boolean) => !current)} aria-label={deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测"}><Gauge size={16}/></button>)}
+      {T(deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测", <button className={`topbar-primary-button ${deviceMeasurementsVisible ? "active" : ""}`} onClick={() => setDeviceMeasurementsVisible((current: boolean) => !current)} aria-label={deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测"} style={{ fontWeight: 700, fontSize: 16, fontFamily: "'Times New Roman', Times, serif" }}>M</button>)}
       {T("分类图标库", <button className="topbar-primary-button" onClick={() => setImageTarget({ kind: "canvasIcon" })} disabled={isBrowseMode} aria-label="分类图标库"><FolderOpen size={16}/></button>)}
       <div className="topbar-center-actions">
         {T("用户自定义修改管理", <button className="topbar-primary-button" onClick={() => void openUserCustomizationManager()} disabled={isBrowseMode} aria-label="用户自定义修改管理"><Settings2 size={16}/></button>)}
