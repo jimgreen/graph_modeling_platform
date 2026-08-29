@@ -434,7 +434,23 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
     const maxFontSize = Math.max(...rows.map((row) => row.fontSize));
     const lineHeight = Math.max(16, maxFontSize + 6);
     const columns = group.layout === "grid" ? 2 : group.layout === "horizontal" ? rows.length : 1;
-    const charWidthFor = (fontSize: number) => fontSize * 0.58;
+    // 字符宽度估算：CJK 全角 = fontSize，ASCII 半角 = fontSize * 0.58
+    const textWidth = (text: string, fontSize: number): number => {
+      let width = 0;
+      for (const char of text) {
+        const code = char.codePointAt(0) ?? 0;
+        const isCJK = (code >= 0x4E00 && code <= 0x9FFF) ||
+                      (code >= 0x3400 && code <= 0x4DBF) ||
+                      (code >= 0xF900 && code <= 0xFAFF) ||
+                      (code >= 0x3000 && code <= 0x303F) ||
+                      (code >= 0xFF00 && code <= 0xFFEF) ||
+                      (code >= 0x3040 && code <= 0x309F) || // Hiragana
+                      (code >= 0x30A0 && code <= 0x30FF) || // Katakana
+                      (code >= 0xAC00 && code <= 0xD7AF);   // Hangul
+        width += isCJK ? fontSize : fontSize * 0.58;
+      }
+      return width;
+    };
     const interColumnGap = 6;
     const columnMetrics = Array.from({ length: columns }, (_, column) => {
       let labelWidth = 0;
@@ -445,13 +461,13 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
         if (!row) continue;
         columnMaxFontSize = Math.max(columnMaxFontSize, row.fontSize);
         if (row.labelText) {
-          labelWidth = Math.max(labelWidth, row.labelText.length * charWidthFor(row.fontSize));
+          labelWidth = Math.max(labelWidth, textWidth(row.labelText, row.fontSize));
         }
         if (row.unitText) {
-          unitWidth = Math.max(unitWidth, row.unitText.length * charWidthFor(row.fontSize));
+          unitWidth = Math.max(unitWidth, textWidth(row.unitText, row.fontSize));
         }
       }
-      const valueWidth = MEASUREMENT_VALUE_TOTAL_WIDTH * charWidthFor(columnMaxFontSize);
+      const valueWidth = MEASUREMENT_VALUE_TOTAL_WIDTH * columnMaxFontSize * 0.58;
       return { labelWidth, valueWidth, unitWidth };
     });
     const columnWidths = columnMetrics.map((metric) => metric.labelWidth + interColumnGap + metric.valueWidth + interColumnGap + metric.unitWidth);
