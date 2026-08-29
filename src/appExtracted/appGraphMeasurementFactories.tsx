@@ -406,7 +406,7 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
       return null;
     }
     const measurementFontScale = measurementFontScaleForNode(node);
-    const MEASUREMENT_FONT_FAMILY = "Consolas, monospace";
+    const MEASUREMENT_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace';
     const MEASUREMENT_LABEL_WIDTH = 10; // 名称固定 10 字符宽
     const MEASUREMENT_VALUE_TOTAL_WIDTH = 7; // 整数3 + 小数点1 + 小数3
     const MEASUREMENT_VALUE_DECIMALS = 3;
@@ -511,21 +511,24 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
       const columnStartX = -metrics.width / 2 + col * metrics.columnWidth;
       const columnMetric = metrics.columnMetrics?.[col] ?? { labelWidth: 0, valueWidth: 0, unitWidth: 0 };
       const interColumnGap = metrics.interColumnGap ?? 6;
-      const labelEndX = columnStartX + columnMetric.labelWidth;
-      const valueEndX = labelEndX + interColumnGap + columnMetric.valueWidth;
-      const unitStartX = valueEndX + interColumnGap;
+      const textX = columnStartX;
       const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
       const fontFamily = metrics.fontFamily ?? row.display.fontFamily;
-      const rowAttributes = `fill="${escapeXml(row.display.color)}" font-family="${escapeXml(fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
+      const baseAttributes = `fill="${escapeXml(row.display.color)}" font-family="${escapeXml(fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
       const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id);
+      const labelTextLength = formatSvgNumber(columnMetric.labelWidth);
+      const valueTextLength = formatSvgNumber(columnMetric.valueWidth);
+      const gapDx = formatSvgNumber(interColumnGap);
       const labelMarkup = row.labelText
-        ? `<text class="measurement-label ml" text-anchor="end" xml:space="preserve" x="${formatSvgNumber(labelEndX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" ${rowAttributes}>${escapeXml(row.labelText)}</text>`
+        ? `<tspan class="measurement-label ml" text-anchor="end" textLength="${labelTextLength}" lengthAdjust="spacing">${escapeXml(row.labelText)}</tspan>`
         : "";
-      const valueMarkup = `<text class="measurement-value mv" text-anchor="end" xml:space="preserve" ${itemMetadata} x="${formatSvgNumber(valueEndX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" ${rowAttributes}>${escapeXml(row.valueText)}</text>`;
+      const valueDx = row.labelText ? gapDx : "0";
+      const valueMarkup = `<tspan class="measurement-value mv" text-anchor="end" textLength="${valueTextLength}" lengthAdjust="spacing" dx="${valueDx}" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
+      const unitDx = gapDx;
       const unitMarkup = row.unitText
-        ? `<text class="measurement-unit mu" text-anchor="start" xml:space="preserve" x="${formatSvgNumber(unitStartX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" ${rowAttributes}>${escapeXml(row.unitText)}</text>`
+        ? `<tspan class="measurement-unit mu" text-anchor="start" dx="${unitDx}">${escapeXml(row.unitText)}</tspan>`
         : "";
-      return labelMarkup + valueMarkup + unitMarkup;
+      return `<text class="measurement-item mi" ${baseAttributes} x="${formatSvgNumber(textX + columnMetric.labelWidth)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
     }).join("");
     const extraClass = options.className ? ` ${escapeXml(options.className)}` : "";
     return `<g class="measurement-group drag-preview-measurement-group${selectedClass}${extraClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
