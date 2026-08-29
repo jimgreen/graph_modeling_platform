@@ -4300,8 +4300,11 @@ export function projectModelTypeIconName(modelType: unknown) {
 export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
   return (scheme: SavedSchemeRecord, depth = 0): ReactNode => {
   const { Cable, ChevronDown, ChevronRight, Factory, FileJson, FolderOpen, HousePlug, Network, activeProjectKey, div, expandedSchemeIds, finishProjectRecordDrag, finishSchemeRecordDrag, isEditMode, moveProjectRecordToScheme, moveSchemeRecordToScheme, p, projectModelTypeFilter, projectSearchNeedle, renderProjectSchemeNode, requestLoadSavedProject, selectSingleProject, selectSingleScheme, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setInspectorTab, setProjectMenu, span, startProjectRecordDrag, startSchemeRecordDrag, toggleProjectSelection, toggleSchemeExpanded, toggleSchemeSelection } = __appScope;
-    const isExpanded = (projectSearchNeedle || (projectModelTypeFilter && projectModelTypeFilter.length > 0)) ? true : expandedSchemeIds.includes(scheme.id);
+    const isFiltering = Boolean(projectSearchNeedle || (projectModelTypeFilter && projectModelTypeFilter.length > 0));
+    const isExpanded = isFiltering ? true : expandedSchemeIds.includes(scheme.id);
     const children = scheme.children ?? [];
+    const countModels = (s: SavedSchemeRecord): number => s.projects.length + (s.children ?? []).reduce((sum: number, c: SavedSchemeRecord) => sum + countModels(c), 0);
+    const modelCount = countModels(scheme);
     const hasContent = scheme.projects.length > 0 || children.length > 0;
     const schemeIndentStyle = { "--scheme-depth": depth } as CSSProperties;
     const projectIndentStyle = { "--scheme-depth": depth + 1 } as CSSProperties;
@@ -4378,10 +4381,11 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
           {isExpanded ? <ChevronDown className="scheme-toggle-icon" size={14} /> : <ChevronRight className="scheme-toggle-icon" size={14} />}
           <FolderOpen className="scheme-folder-icon" size={15} />
           <span className="project-tree-name">{scheme.name}</span>
+          <span className="scheme-model-count">{modelCount}</span>
         </div>
         {isExpanded && (
           <div className="scheme-projects">
-            {!hasContent ? (
+            {!hasContent && !isFiltering ? (
               <p className="project-empty" style={projectIndentStyle}>暂无模型或子方案</p>
             ) : (
               <>

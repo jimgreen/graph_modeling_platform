@@ -590,7 +590,7 @@ export type ElementTreeGroup = {
   deviceGroups?: ElementTreeDeviceGroup[];
 };
 
-export const MODEL_TYPES = ["微网", "厂站", "馈线", "台区", "其他"] as const;
+export const MODEL_TYPES = ["厂站", "馈线", "台区", "微网", "其他"] as const;
 export type ModelType = (typeof MODEL_TYPES)[number];
 
 /** 模型类型统一元数据：颜色与图标名的唯一来源 */

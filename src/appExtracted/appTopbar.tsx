@@ -137,7 +137,10 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
       </div>
       <div className="topbar-model" title={`当前模型：${activeModelPathName}`}>
         <span>当前模型</span>
-        <strong>{activeModelPathName}</strong>
+        <strong style={saveRequired ? { color: "#dc2626" } : undefined}>
+          {activeModelPathName}
+          {saveRequired && <sup style={{ fontSize: "0.7em", marginLeft: 2 }}>*</sup>}
+        </strong>
       </div>
       <div ref={layerManagementDropdownRef} className="topbar-dropdown layer-management-dropdown">
         {T(`激活图层：${activeLayer?.name ?? "默认图层"}`, <button type="button" className="topbar-dropdown-trigger layer-management-trigger" disabled={isBrowseMode} aria-label="图层管理">
