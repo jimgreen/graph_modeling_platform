@@ -1538,8 +1538,14 @@ button:not(.ant-btn):disabled {
 
 .topbar-model span {
   flex: 0 0 auto;
-  font-size: 12px;
-  font-weight: 700;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 2px;
+  font-size: 10px;
+  font-family: 黑体;
+  font-weight: 500;
+  background: #000000;
+  color: white;
 }
 
 .topbar-model strong {
