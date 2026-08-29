@@ -511,24 +511,21 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
       const columnStartX = -metrics.width / 2 + col * metrics.columnWidth;
       const columnMetric = metrics.columnMetrics?.[col] ?? { labelWidth: 0, valueWidth: 0, unitWidth: 0 };
       const interColumnGap = metrics.interColumnGap ?? 6;
-      const textX = columnStartX;
+      const labelEndX = columnStartX + columnMetric.labelWidth;
+      const valueEndX = labelEndX + interColumnGap + columnMetric.valueWidth;
+      const unitStartX = valueEndX + interColumnGap;
       const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
       const fontFamily = metrics.fontFamily ?? row.display.fontFamily;
       const baseAttributes = `fill="${escapeXml(row.display.color)}" font-family="${escapeXml(fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
       const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id);
-      const labelTextLength = formatSvgNumber(columnMetric.labelWidth);
-      const valueTextLength = formatSvgNumber(columnMetric.valueWidth);
-      const gapDx = formatSvgNumber(interColumnGap);
       const labelMarkup = row.labelText
-        ? `<tspan class="measurement-label ml" text-anchor="end" textLength="${labelTextLength}" lengthAdjust="spacing">${escapeXml(row.labelText)}</tspan>`
+        ? `<tspan class="measurement-label ml" x="${formatSvgNumber(labelEndX)}" text-anchor="end">${escapeXml(row.labelText)}</tspan>`
         : "";
-      const valueDx = row.labelText ? gapDx : "0";
-      const valueMarkup = `<tspan class="measurement-value mv" text-anchor="end" textLength="${valueTextLength}" lengthAdjust="spacing" dx="${valueDx}" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
-      const unitDx = gapDx;
+      const valueMarkup = `<tspan class="measurement-value mv" x="${formatSvgNumber(valueEndX)}" text-anchor="end" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
       const unitMarkup = row.unitText
-        ? `<tspan class="measurement-unit mu" text-anchor="start" dx="${unitDx}">${escapeXml(row.unitText)}</tspan>`
+        ? `<tspan class="measurement-unit mu" x="${formatSvgNumber(unitStartX)}" text-anchor="start">${escapeXml(row.unitText)}</tspan>`
         : "";
-      return `<text class="measurement-item mi" ${baseAttributes} x="${formatSvgNumber(textX + columnMetric.labelWidth)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
+      return `<text class="measurement-item mi" ${baseAttributes} y="${formatSvgNumber(textY)}" dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
     }).join("");
     const extraClass = options.className ? ` ${escapeXml(options.className)}` : "";
     return `<g class="measurement-group drag-preview-measurement-group${selectedClass}${extraClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>

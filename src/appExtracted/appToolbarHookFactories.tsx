@@ -231,16 +231,15 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
           const columnStartX = -metrics.width / 2 + col * metrics.columnWidth;
           const columnMetric = metrics.columnMetrics?.[col] ?? { labelWidth: 0, valueWidth: 0, unitWidth: 0 };
           const interColumnGap = metrics.interColumnGap ?? 6;
-          const textX = columnStartX + columnMetric.labelWidth;
+          const labelEndX = columnStartX + columnMetric.labelWidth;
+          const valueEndX = labelEndX + interColumnGap + columnMetric.valueWidth;
+          const unitStartX = valueEndX + interColumnGap;
           const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
           const fontFamily = metrics.fontFamily ?? row.display.fontFamily;
-          const labelTextLength = columnMetric.labelWidth;
-          const valueTextLength = columnMetric.valueWidth;
           return (
             <text
               key={row.item.id}
               className="measurement-item mi"
-              x={formatSvgNumber(textX)}
               y={formatSvgNumber(textY)}
               dominantBaseline="middle"
               fill={row.display.color}
@@ -268,9 +267,8 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
               {row.labelText && (
                 <tspan
                   className="measurement-label ml"
+                  x={formatSvgNumber(labelEndX)}
                   textAnchor="end"
-                  textLength={labelTextLength}
-                  lengthAdjust="spacing"
                 >
                   {row.labelText}
                 </tspan>
@@ -278,18 +276,16 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
               <tspan
                 id={`mv-${row.item.id}`}
                 className="measurement-value mv"
+                x={formatSvgNumber(valueEndX)}
                 textAnchor="end"
-                textLength={valueTextLength}
-                lengthAdjust="spacing"
-                dx={row.labelText ? formatSvgNumber(interColumnGap) : "0"}
               >
                 {row.valueText}
               </tspan>
               {row.unitText && (
                 <tspan
                   className="measurement-unit mu"
+                  x={formatSvgNumber(unitStartX)}
                   textAnchor="start"
-                  dx={formatSvgNumber(interColumnGap)}
                 >
                   {row.unitText}
                 </tspan>

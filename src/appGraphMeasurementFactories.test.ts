@@ -1080,14 +1080,14 @@ describe("measurement canvas interactions", () => {
     );
 
     expect(markup).toContain('<text class="measurement-item mi"');
-    expect(markup).toContain('<tspan class="measurement-label ml" text-anchor="end"');
-    expect(markup).toContain('textLength=');
-    expect(markup).toContain('lengthAdjust="spacing"');
+    expect(markup).toContain('<tspan class="measurement-label ml"');
+    expect(markup).toContain('text-anchor="end"');
     expect(markup).toContain('>         P</tspan>');
-    expect(markup).toContain('<tspan class="measurement-value mv" text-anchor="end"');
+    expect(markup).toContain('<tspan class="measurement-value mv"');
     expect(markup).toContain('mt="activePower"');
     expect(markup).toContain('>     --</tspan>');
-    expect(markup).toContain('<tspan class="measurement-unit mu" text-anchor="start"');
+    expect(markup).toContain('<tspan class="measurement-unit mu"');
+    expect(markup).toContain('text-anchor="start"');
     expect(markup).toContain('>MW</tspan>');
   });
 
@@ -1317,6 +1317,8 @@ describe("measurement canvas interactions", () => {
         columns: 1,
         height: 24,
         lineHeight: 24,
+        columnMetrics: [{ labelWidth: 60, valueWidth: 42, unitWidth: 12 }],
+        interColumnGap: 6,
         rows: [{
           item,
           display: {
@@ -1329,10 +1331,10 @@ describe("measurement canvas interactions", () => {
             textDecoration: "none"
           },
           fontSize: 14,
-          labelText: "I",
-          valueText: "--",
+          labelText: "         I",
+          valueText: "     --",
           unitText: "A",
-          text: "I -- A"
+          text: "         I      -- A"
         }],
         width: 96
       })
@@ -1364,10 +1366,9 @@ describe("measurement canvas interactions", () => {
     expect(value?.type).toBe("tspan");
     expect(value?.props).toMatchObject({ id: "mv-current-1" });
     expect(unit?.type).toBe("tspan");
-    expect(unit?.props.x).toBeUndefined();
-    expect(Number(unit?.props.dx)).toBeGreaterThan(0);
-    expect(textNodes).toContain("I");
-    expect(textNodes).toContain("--");
+    expect(unit?.props.x).toBeDefined();
+    expect(textNodes).toContain("         I");
+    expect(textNodes).toContain("     --");
     expect(textNodes).toContain("A");
     expect(textNodes).not.toContain("I -- A");
   });
