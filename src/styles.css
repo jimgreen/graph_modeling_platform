@@ -508,14 +508,14 @@ button:not(.ant-btn):disabled {
 
 .project-model-type-filter {
   display: flex;
-  gap: 15px;
+  justify-content: space-between;
   margin: 0 0 8px;
 }
 
 .project-model-type-btn {
-  flex: 1;
   min-width: 0;
-  padding: 2px 0;
+  width: 35px;
+  padding: 2px 2px;
   border: 1px solid #cbd5e1;
   border-radius: 4px;
   background: #ffffff;
@@ -630,7 +630,7 @@ button:not(.ant-btn):disabled {
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  padding: 0 14px 12px;
+  padding: 10px 10px;
   border-top: 1px solid #e2e8f0;
   border-bottom: 0;
 }
