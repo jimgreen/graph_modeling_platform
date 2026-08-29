@@ -848,6 +848,26 @@ button:not(.ant-btn):disabled {
   font-weight: 850;
 }
 
+.scheme-model-count {
+  margin-left: auto;
+  flex-shrink: 0;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+
+.scheme-option.selected .scheme-model-count {
+  background: #cbd5e1;
+  color: #1e293b;
+}
+
 .project-option .project-tree-name {
   color: #475569;
   font-weight: 700;
