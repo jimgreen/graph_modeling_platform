@@ -1055,10 +1055,10 @@ describe("measurement canvas interactions", () => {
               textDecoration: "none"
             },
             fontSize: 14,
-            labelText: "P",
+            labelText: "         P",
             valueText: "     --",
             unitText: "MW",
-            text: "P      -- MW"
+            text: "         P      -- MW"
           }
         ],
         width: 80
@@ -1079,12 +1079,12 @@ describe("measurement canvas interactions", () => {
       { id: "measurement-group-1", nodeId: "node-42", items: [item] } as any
     );
 
-    expect(markup).toContain('<text class="measurement-label ml" text-anchor="end"');
-    expect(markup).toContain('>P</text>');
+    expect(markup).toContain('<text class="measurement-label ml" text-anchor="end" xml:space="preserve"');
+    expect(markup).toContain('>         P</text>');
     expect(markup).toContain('<text class="measurement-value mv" text-anchor="end" xml:space="preserve"');
     expect(markup).toContain('mt="activePower"');
     expect(markup).toContain('>     --</text>');
-    expect(markup).toContain('<text class="measurement-unit mu" text-anchor="start"');
+    expect(markup).toContain('<text class="measurement-unit mu" text-anchor="start" xml:space="preserve"');
     expect(markup).toContain('>MW</text>');
   });
 
@@ -1127,10 +1127,10 @@ describe("measurement canvas interactions", () => {
     );
 
     expect(metrics?.rows[0]).toMatchObject({
-      labelText: "I",
+      labelText: "         I",
       valueText: "     --",
       unitText: "A",
-      text: "I      -- A"
+      text: "         I      -- A"
     });
   });
 
