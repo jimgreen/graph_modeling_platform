@@ -214,7 +214,7 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
     'marquee', 'connectPreviewDom', 'routableLinePreview', 'resizeSizeHint',
     'draggingDelta', 'smartAlignmentGuides', 'connectSource', 'libraryPlacement',
     'canvasBackgroundColor', 'canvasBackgroundImageUrl', 'canvasBackgroundImageFit', 'backgroundPageRender',
-    'colorDisplayMode', 'colorPalette', 'deviceLabelsVisible'
+    'colorDisplayMode', 'colorPalette', 'deviceLabelsVisible', 'deviceMeasurementsVisible'
   ];
 
   for (const key of dataKeys) {
@@ -403,7 +403,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     floatingToolbarIconSize, floatingToolbarWrapperStyle,
     viewportOverlayStyle, canvasResizeHandles, canvasResizePreviewRect,
     canvasResizeHotzoneStyle,
-    colorDisplayMode, colorPalette, deviceLabelsVisible,
+    colorDisplayMode, colorPalette, deviceLabelsVisible, deviceMeasurementsVisible,
     overlappedTerminalKeys, visibleMeasurementGroups, smartAlignmentGuides,
     draggingDelta, draggingNodeIdSet, dragAffectedEdgeIdSet,
     dragGhostEdgeIdSet, dragGhostEdgeRoutes, dragGhostRoutableLineNodeIdSet,
@@ -1293,7 +1293,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             return ghostMeasurementMarkup ? (<g key={`drag-origin-measurements-${nodeId}`} dangerouslySetInnerHTML={{ __html: ghostMeasurementMarkup }}/>) : null;
         })}
               </g>)}
-            {visibleMeasurementGroups.length > 0 && (<g className="measurement-layer" pointerEvents={isBrowseMode ? "none" : "auto"}>
+            {deviceMeasurementsVisible && visibleMeasurementGroups.length > 0 && (<g className="measurement-layer" pointerEvents={isBrowseMode ? "none" : "auto"}>
                 {visibleMeasurementGroups.map(renderMeasurementGroup)}
               </g>)}
             {renderSingleTransformRotateOriginGhost()}

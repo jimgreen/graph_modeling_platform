@@ -39,6 +39,7 @@ import {
   Map as MapIcon,
   Maximize2,
   FolderOpen,
+  Gauge,
   Layers,
   Layers2,
   Minus,
@@ -1046,6 +1047,8 @@ const [canvasResizeDraft, setCanvasResizeDraft] = useState<CanvasBounds | null>(
 Object.assign(__appScope, { canvasResizeDraft, setCanvasResizeDraft });
 const [deviceLabelsVisible, setDeviceLabelsVisible] = useState(true);
 Object.assign(__appScope, { deviceLabelsVisible, setDeviceLabelsVisible });
+const [deviceMeasurementsVisible, setDeviceMeasurementsVisible] = useState(true);
+Object.assign(__appScope, { deviceMeasurementsVisible, setDeviceMeasurementsVisible });
 const [minimapVisible, setMinimapVisible] = useState(true);
 Object.assign(__appScope, { minimapVisible, setMinimapVisible });
 const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT });

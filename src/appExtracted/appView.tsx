@@ -2482,6 +2482,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             eDeviceDefinitionInterfaceDialogOpen,
             colorDisplayMode,
             deviceLabelsVisible,
+            deviceMeasurementsVisible,
             saveRequired,
             canGroupSelectedGraphics,
             canUngroupSelectedGraphics,
