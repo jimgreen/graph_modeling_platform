@@ -1040,6 +1040,8 @@ describe("measurement canvas interactions", () => {
         columns: 1,
         height: 24,
         lineHeight: 24,
+        columnMetrics: [{ labelWidth: 8, valueWidth: 40, unitWidth: 16 }],
+        interColumnGap: 6,
         rows: [
           {
             item,
@@ -1054,9 +1056,9 @@ describe("measurement canvas interactions", () => {
             },
             fontSize: 14,
             labelText: "P",
-            valueText: "--",
+            valueText: "     --",
             unitText: "MW",
-            text: "P -- MW"
+            text: "P      -- MW"
           }
         ],
         width: 80
@@ -1077,17 +1079,13 @@ describe("measurement canvas interactions", () => {
       { id: "measurement-group-1", nodeId: "node-42", items: [item] } as any
     );
 
-    expect(markup).toContain('<text class="measurement-item mi" mt="activePower" mti="activePower" mr="value"');
-    expect(markup).not.toContain(' mid=');
-    expect(markup).not.toContain(' mf=');
-    expect(markup).toContain('<tspan class="measurement-label ml">P</tspan>');
-    expect(markup).toContain('<tspan class="measurement-value mv"');
-    expect(markup).toContain('>--</tspan>');
-    expect(markup).toContain('<tspan class="measurement-unit mu" dx="');
-    expect(markup).toContain('>MW</tspan>');
-    expect(markup).not.toContain('id="mv-m-active"');
-    expect(markup).not.toContain('<text class="measurement-unit mu"');
-    expect(markup).not.toContain('>P -- MW</text>');
+    expect(markup).toContain('<text class="measurement-label ml" text-anchor="end"');
+    expect(markup).toContain('>P</text>');
+    expect(markup).toContain('<text class="measurement-value mv" text-anchor="end" xml:space="preserve"');
+    expect(markup).toContain('mt="activePower"');
+    expect(markup).toContain('>     --</text>');
+    expect(markup).toContain('<text class="measurement-unit mu" text-anchor="start"');
+    expect(markup).toContain('>MW</text>');
   });
 
   test("splits measurement row metrics into label value and unit fragments", () => {
@@ -1130,9 +1128,9 @@ describe("measurement canvas interactions", () => {
 
     expect(metrics?.rows[0]).toMatchObject({
       labelText: "I",
-      valueText: "--",
+      valueText: "     --",
       unitText: "A",
-      text: "I -- A"
+      text: "I      -- A"
     });
   });
 
