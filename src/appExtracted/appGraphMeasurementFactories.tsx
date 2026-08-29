@@ -434,8 +434,9 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
     const maxFontSize = Math.max(...rows.map((row) => row.fontSize));
     const lineHeight = Math.max(16, maxFontSize + 6);
     const columns = group.layout === "grid" ? 2 : group.layout === "horizontal" ? rows.length : 1;
-    // 字符宽度估算：CJK 全角 = fontSize，ASCII 半角 = fontSize * 0.58
+    // 字符宽度比例：中文:英文:数字/符号 = 2:1.5:1
     const textWidth = (text: string, fontSize: number): number => {
+      const unit = fontSize * 0.58; // 数字/符号基准
       let width = 0;
       for (const char of text) {
         const code = char.codePointAt(0) ?? 0;
@@ -444,10 +445,17 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
                       (code >= 0xF900 && code <= 0xFAFF) ||
                       (code >= 0x3000 && code <= 0x303F) ||
                       (code >= 0xFF00 && code <= 0xFFEF) ||
-                      (code >= 0x3040 && code <= 0x309F) || // Hiragana
-                      (code >= 0x30A0 && code <= 0x30FF) || // Katakana
-                      (code >= 0xAC00 && code <= 0xD7AF);   // Hangul
-        width += isCJK ? fontSize : fontSize * 0.58;
+                      (code >= 0x3040 && code <= 0x309F) ||
+                      (code >= 0x30A0 && code <= 0x30FF) ||
+                      (code >= 0xAC00 && code <= 0xD7AF);
+        const isEnglish = (code >= 0x41 && code <= 0x5A) || (code >= 0x61 && code <= 0x7A); // A-Z, a-z
+        if (isCJK) {
+          width += unit * 2;
+        } else if (isEnglish) {
+          width += unit * 1.5;
+        } else {
+          width += unit; // 数字、符号、空格
+        }
       }
       return width;
     };
@@ -467,7 +475,7 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
           unitWidth = Math.max(unitWidth, textWidth(row.unitText, row.fontSize));
         }
       }
-      const valueWidth = MEASUREMENT_VALUE_TOTAL_WIDTH * columnMaxFontSize * 0.58;
+      const valueWidth = MEASUREMENT_VALUE_TOTAL_WIDTH * columnMaxFontSize * 0.58; // value 全为数字/符号/空格
       return { labelWidth, valueWidth, unitWidth };
     });
     const columnWidths = columnMetrics.map((metric) => metric.labelWidth + interColumnGap + metric.valueWidth + interColumnGap + metric.unitWidth);
