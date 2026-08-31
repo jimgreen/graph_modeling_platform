@@ -214,14 +214,27 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
       // 挂载后获取 bbox，更新 bg rect
       requestAnimationFrame(() => {
         try {
+          // 先删除 bg rect，避免影响 bbox 计算
+          const bgRect = element.querySelector('.measurement-group-bg');
+          if (bgRect) bgRect.remove();
+          // 获取 text 元素的实际边界
           const bbox = element.getBBox();
-          const bgRect = element.querySelector('.measurement-group-bg') as SVGRectElement;
-          if (bgRect && bbox.width > 0 && bbox.height > 0) {
+          if (bbox.width > 0 && bbox.height > 0) {
             const padding = 10;
-            bgRect.setAttribute('x', String(bbox.x - padding));
-            bgRect.setAttribute('y', String(bbox.y - padding));
-            bgRect.setAttribute('width', String(bbox.width + padding * 2));
-            bgRect.setAttribute('height', String(bbox.height + padding * 2));
+            // 重新创建 bg rect 并插入到开头
+            const newBgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            newBgRect.setAttribute('class', 'measurement-group-bg');
+            newBgRect.setAttribute('x', String(bbox.x - padding));
+            newBgRect.setAttribute('y', String(bbox.y - padding));
+            newBgRect.setAttribute('width', String(bbox.width + padding * 2));
+            newBgRect.setAttribute('height', String(bbox.height + padding * 2));
+            newBgRect.setAttribute('rx', '4');
+            newBgRect.setAttribute('fill', measurementGroupBackgroundColor(group));
+            newBgRect.setAttribute('stroke', measurementGroupBorderColor(group));
+            newBgRect.setAttribute('stroke-width', String(measurementGroupBorderWidth(group)));
+            const dashArray = measurementGroupBorderDashArray(group);
+            if (dashArray) newBgRect.setAttribute('stroke-dasharray', dashArray);
+            element.insertBefore(newBgRect, element.firstChild);
           }
         } catch (e) {
           // getBBox 可能在元素未渲染时失败
