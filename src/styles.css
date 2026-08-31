@@ -3272,7 +3272,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .terminal-dot.connect-candidate {
   stroke: var(--terminal-color, #2563eb);
-  stroke-width: 4;
+  stroke-width: 6;
   stroke-dasharray: 3 2;
   animation: terminal-connect-pulse 1s ease-in-out infinite;
 }
@@ -3280,11 +3280,11 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 @keyframes terminal-connect-pulse {
   0%, 100% {
     stroke-opacity: 1;
-    stroke-width: 4;
+    stroke-width: 6;
   }
   50% {
     stroke-opacity: 0.3;
-    stroke-width: 6;
+    stroke-width: 8;
   }
 }
 
