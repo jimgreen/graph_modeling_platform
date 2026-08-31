@@ -280,8 +280,6 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
           const { labelEndX } = computeMeasurementColumnPositions(metrics, col);
           const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
           const charWidth = row.fontSize * 0.5;
-          const valueX = labelEndX + charWidth; // value 从 label 右边缘 + 1 字符开始
-          const unitX = valueX + 7 * charWidth; // unit 从 value 固定 7 字符后开始
           return (
             <text
               key={row.item.id}
