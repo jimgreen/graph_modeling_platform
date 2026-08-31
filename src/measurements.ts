@@ -703,10 +703,8 @@ export function measurementFontScaleForNode(node: ModelNode): number {
 }
 
 export function measurementOffsetScaleForNode(node: ModelNode): { x: number; y: number } {
-  return {
-    x: getSafeNodeScaleX(node),
-    y: getSafeNodeScaleY(node)
-  };
+  // 量测框与设备间距不随设备缩放
+  return { x: 1, y: 1 };
 }
 
 function normalizedFontWeight(value: unknown, fallback: MeasurementFontWeight): MeasurementFontWeight {
