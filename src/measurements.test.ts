@@ -1151,13 +1151,15 @@ describe("measurement domain", () => {
   });
 
   test("scales measurement font size with the owning device scale without text deformation", () => {
-    expect(measurementFontScaleForNode({ ...node("scaled-node"), scaleX: 4, scaleY: 1 })).toBeCloseTo(2);
-    expect(measurementFontScaleForNode({ ...node("mirrored-node"), scaleX: -2.25, scaleY: 1 })).toBeCloseTo(1.5);
+    // 量测框内容不随设备缩放
+    expect(measurementFontScaleForNode({ ...node("scaled-node"), scaleX: 4, scaleY: 1 })).toBeCloseTo(1);
+    expect(measurementFontScaleForNode({ ...node("mirrored-node"), scaleX: -2.25, scaleY: 1 })).toBeCloseTo(1);
   });
 
   test("scales measurement group offset with the owning device axes", () => {
-    expect(measurementOffsetScaleForNode({ ...node("scaled-node"), scaleX: 2, scaleY: 0.5 })).toEqual({ x: 2, y: 0.5 });
-    expect(measurementOffsetScaleForNode({ ...node("mirrored-node"), scaleX: -3, scaleY: -1.5 })).toEqual({ x: 3, y: 1.5 });
+    // 量测框与设备间距不随设备缩放
+    expect(measurementOffsetScaleForNode({ ...node("scaled-node"), scaleX: 2, scaleY: 0.5 })).toEqual({ x: 1, y: 1 });
+    expect(measurementOffsetScaleForNode({ ...node("mirrored-node"), scaleX: -3, scaleY: -1.5 })).toEqual({ x: 1, y: 1 });
   });
 
   test("drops measurement groups whose owning node no longer exists", () => {
