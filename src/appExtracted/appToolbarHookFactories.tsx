@@ -178,21 +178,6 @@ export function createPlaceFloatingToolbar(__appScope: Record<string, any>) {
   };
 }
 
-// 计算字符串视觉宽度（中文=2，其他=1）
-function visualWidth(text: string): number {
-  let width = 0;
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? 0;
-    const isWide = (code >= 0x4E00 && code <= 0x9FFF) ||
-                   (code >= 0x3400 && code <= 0x4DBF) ||
-                   (code >= 0xF900 && code <= 0xFAFF) ||
-                   (code >= 0xFF00 && code <= 0xFFEF) ||
-                   (code >= 0x3000 && code <= 0x303F);
-    width += isWide ? 2 : 1;
-  }
-  return width;
-}
-
 export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
   return (group: MeasurementGroup) => {
   const { beginMeasurementDrag, finishMeasurementDrag, dragging, draggingNodeIdSet, formatSvgNumber, g, measurementGroupBackgroundColor, measurementGroupBorderColor, measurementGroupBorderDashArray, measurementGroupBorderWidth, measurementGroupCanvasPosition, measurementGroupRenderMetrics, openMeasurementEditorForNode, rect, selectedMeasurementGroup, text, title, visibleNodeById } = __appScope;

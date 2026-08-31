@@ -465,8 +465,6 @@ export function buildExportMeasurementGroupMarkup(
     const columnStartX = -metrics.width / 2 + col * metrics.columnWidth;
     const columnMetric = metrics.columnMetrics[col];
     const labelEndX = columnStartX + columnMetric.labelWidth;
-    const valueEndX = labelEndX + metrics.interColumnGap + columnMetric.valueWidth;
-    const unitStartX = valueEndX + metrics.interColumnGap;
     const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
     const exportedItemId = exportMeasurementScopedId(row.item.id, node.id, ownerDeviceId);
     const binding = resolveMeasurementItemBindingMetadata({ config: measurementConfig, node, group, item: row.item });
