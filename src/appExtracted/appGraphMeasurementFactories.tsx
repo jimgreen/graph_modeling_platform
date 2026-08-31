@@ -532,9 +532,14 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
         : "";
       return `<text class="measurement-item mi" ${baseAttributes} y="${formatSvgNumber(textY)}" dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
     }).join("");
+    const padding = 10;
+    const bgWidth = metrics.width + padding * 2;
+    const bgHeight = metrics.height + padding * 2;
+    const bgX = -metrics.width / 2 - padding;
+    const bgY = -metrics.height / 2 - padding;
     const extraClass = options.className ? ` ${escapeXml(options.className)}` : "";
     return `<g class="measurement-group drag-preview-measurement-group${selectedClass}${extraClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
-  <rect class="measurement-group-bg" x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(measurementGroupBackgroundColor(group))}" stroke="${escapeXml(measurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(measurementGroupBorderWidth(group))}"${borderDashAttribute}/>
+  <rect class="measurement-group-bg" x="${formatSvgNumber(bgX)}" y="${formatSvgNumber(bgY)}" width="${formatSvgNumber(bgWidth)}" height="${formatSvgNumber(bgHeight)}" rx="4" fill="${escapeXml(measurementGroupBackgroundColor(group))}" stroke="${escapeXml(measurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(measurementGroupBorderWidth(group))}"${borderDashAttribute}/>
   ${rowsMarkup}
 </g>`;
   };
