@@ -216,10 +216,10 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
         <title>{`${node.name} 动态量测；拖拽可调整位置`}</title>
         <rect
           className="measurement-group-bg"
-          x={formatSvgNumber(-metrics.width / 2)}
-          y={formatSvgNumber(-metrics.height / 2)}
-          width={formatSvgNumber(metrics.width)}
-          height={formatSvgNumber(metrics.height)}
+          x={formatSvgNumber(-metrics.width / 2 - 10)}
+          y={formatSvgNumber(-metrics.height / 2 - 10)}
+          width={formatSvgNumber(metrics.width + 20)}
+          height={formatSvgNumber(metrics.height + 20)}
           rx="4"
           fill={measurementGroupBackgroundColor(group)}
           stroke={measurementGroupBorderColor(group)}
