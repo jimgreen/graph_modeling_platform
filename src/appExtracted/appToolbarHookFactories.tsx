@@ -331,6 +331,7 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
               {row.unitText && (
                 <tspan
                   className="measurement-unit mu"
+                  dx={formatSvgNumber(charWidth)}
                   textAnchor="start"
                 >
                   {row.unitText}
