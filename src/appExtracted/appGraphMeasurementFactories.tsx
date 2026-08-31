@@ -547,8 +547,6 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
       const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
       const fontSize = row.fontSize;
       const charGap = charWidth(fontSize);
-      const valueX = labelEndX + charGap;
-      const unitX = valueX + MEASUREMENT_VALUE_TOTAL_WIDTH * charGap;
       const baseAttributes = `fill="${escapeXml(row.display.color)}" font-family="${escapeXml(metrics.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
       const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id);
       const labelMarkup = row.labelText
