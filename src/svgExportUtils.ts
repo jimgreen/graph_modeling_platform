@@ -1,42 +1,30 @@
 import type { ModelNode, Point } from "./model";
 import { getTerminalPoint, inferESection, isStaticNode } from "./model";
 import type { MeasurementGroup, MeasurementItemBinding, PlatformMeasurementConfig } from "./measurements";
-import { DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR, DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR, DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE, measurementFontScaleForNode, measurementOffsetScaleForNode, resolveMeasurementItemBindingMetadata, resolveMeasurementItemDisplay, formatMeasurementDisplayValue } from "./measurements";
+import {
+  DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
+  DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
+  DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
+  measurementFontScaleForNode,
+  measurementOffsetScaleForNode,
+  resolveMeasurementItemBindingMetadata,
+  resolveMeasurementItemDisplay,
+  formatMeasurementDisplayValue,
+  MEASUREMENT_FONT_FAMILY,
+  MEASUREMENT_LABEL_VISUAL_WIDTH,
+  MEASUREMENT_VALUE_INTEGER_WIDTH,
+  MEASUREMENT_VALUE_DECIMAL_WIDTH,
+  MEASUREMENT_VALUE_TOTAL_WIDTH,
+  MEASUREMENT_VALUE_DECIMALS,
+  MEASUREMENT_CHAR_WIDTH_RATIO,
+  MEASUREMENT_INTER_COLUMN_GAP,
+  measurementVisualWidth,
+  measurementPadTextToVisualWidth,
+  measurementFormatValueText
+} from "./measurements";
 import { escapeXml, formatSvgNumber, svgStrokeDashArray } from "./svgUtils";
 import { nodeLabelText, nodeLabelFontSize, nodeLabelShouldRender, nodeLabelTextAnchor, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenY, nodeLabelCanvasCenter } from "./nodeLabelUtils";
 import { clampNumber } from "./canvasViewport";
-
-// 计算字符串视觉宽度（中文=2，其他=1）
-function visualWidth(text: string): number {
-  let width = 0;
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? 0;
-    const isWide = (code >= 0x4E00 && code <= 0x9FFF) ||
-                   (code >= 0x3400 && code <= 0x4DBF) ||
-                   (code >= 0xF900 && code <= 0xFAFF) ||
-                   (code >= 0xFF00 && code <= 0xFFEF) ||
-                   (code >= 0x3000 && code <= 0x303F);
-    width += isWide ? 2 : 1;
-  }
-  return width;
-}
-
-// 按视觉宽度填充字符串（右对齐）
-function padTextToVisualWidth(text: string, targetWidth: number): string {
-  const currentWidth = visualWidth(text);
-  if (currentWidth >= targetWidth) return text;
-  return " ".repeat(targetWidth - currentWidth) + text;
-}
-
-// 量测框渲染常量
-const MEASUREMENT_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace';
-const MEASUREMENT_LABEL_VISUAL_WIDTH = 14;
-const MEASUREMENT_VALUE_INTEGER_WIDTH = 5;
-const MEASUREMENT_VALUE_DECIMAL_WIDTH = 3;
-const MEASUREMENT_VALUE_TOTAL_WIDTH = MEASUREMENT_VALUE_INTEGER_WIDTH + 1 + MEASUREMENT_VALUE_DECIMAL_WIDTH;
-const MEASUREMENT_VALUE_DECIMALS = 3;
-const MEASUREMENT_CHAR_WIDTH_RATIO = 0.5;
-const MEASUREMENT_INTER_COLUMN_GAP = 6;
 
 function svgNodeLabelBaseAttributes(node: ModelNode) {
   return `dominant-baseline="middle" fill="${escapeXml(node.params._labelColor || "#334155")}" font-family="${escapeXml(node.params._labelFontFamily || "Arial")}" font-size="${formatSvgNumber(nodeLabelFontSize(node))}" font-weight="${escapeXml(node.params._labelFontWeight || "500")}" font-style="${escapeXml(node.params._labelFontStyle || "normal")}" text-decoration="${escapeXml(node.params._labelTextDecoration || "none")}" paint-order="stroke" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-linejoin="round"`;
@@ -376,21 +364,14 @@ export function exportMeasurementGroupMetrics(node: ModelNode, group: Measuremen
     return null;
   }
   const measurementFontScale = measurementFontScaleForNode(node);
-  // 数值格式化：5 整数 + 1 小数点 + 3 小数 = 9 字符
-  const formatValueText = (text: string): string => {
-    if (text === "--" || !text.includes(".")) return text.padStart(MEASUREMENT_VALUE_TOTAL_WIDTH);
-    const [intPart, decPart] = text.split(".");
-    const paddedInt = intPart.padStart(MEASUREMENT_VALUE_INTEGER_WIDTH);
-    const paddedDec = (decPart ?? "").padEnd(MEASUREMENT_VALUE_DECIMAL_WIDTH, "0");
-    return `${paddedInt}.${paddedDec}`;
-  };
+  const formatValueText = measurementFormatValueText;
   const rows = group.items.flatMap((item) => {
     const display = resolveMeasurementItemDisplay({ config: measurementConfig, node, group, item });
     if (!display.visible) {
       return [];
     }
     const rawLabelText = group.labelVisible === false ? "" : display.label;
-    const labelText = padTextToVisualWidth(rawLabelText, MEASUREMENT_LABEL_VISUAL_WIDTH);
+    const labelText = measurementPadTextToVisualWidth(rawLabelText, MEASUREMENT_LABEL_VISUAL_WIDTH);
     const rawValueText = formatMeasurementDisplayValue(
       { sourcePoint: item.sourcePoint, value: display.defaultValue, quality: "good", timestamp: 0 },
       MEASUREMENT_VALUE_DECIMALS,
@@ -415,7 +396,7 @@ export function exportMeasurementGroupMetrics(node: ModelNode, group: Measuremen
       const row = rows[rowIndex * columns + column];
       if (!row) continue;
       if (row.unitText) {
-        unitWidth = Math.max(unitWidth, visualWidth(row.unitText) * charWidthFor(row.fontSize));
+        unitWidth = Math.max(unitWidth, measurementVisualWidth(row.unitText) * charWidthFor(row.fontSize));
       }
     }
     const labelWidth = MEASUREMENT_LABEL_VISUAL_WIDTH * charWidthFor(maxFontSize);
