@@ -323,7 +323,6 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
                 id={`mv-${row.item.id}`}
                 className="measurement-value mv"
                 x={formatSvgNumber(valueX)}
-                dx="-10"
                 textAnchor="start"
                 xmlSpace="preserve"
               >
