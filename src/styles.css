@@ -3199,7 +3199,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   fill: var(--terminal-color, #2563eb);
   stroke: #ffffff;
   stroke-width: 2;
-  cursor: grab;
+  cursor: crosshair;
   transform-box: fill-box;
   transform-origin: center;
   transition:
