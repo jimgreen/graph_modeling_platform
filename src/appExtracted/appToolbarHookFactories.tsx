@@ -321,6 +321,7 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
                 id={`mv-${row.item.id}`}
                 className="measurement-value mv"
                 dx={row.labelText ? formatSvgNumber(charWidth) : "0"}
+                xmlSpace="preserve"
               >
                 {row.valueText}
               </tspan>
