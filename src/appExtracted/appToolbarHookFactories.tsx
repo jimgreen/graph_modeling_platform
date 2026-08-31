@@ -277,8 +277,9 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
         {metrics.rows.map((row, index) => {
           const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
           const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
-          const { labelEndX, valueEndX, unitStartX } = computeMeasurementColumnPositions(metrics, col);
+          const { labelEndX } = computeMeasurementColumnPositions(metrics, col);
           const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
+          const charWidth = row.fontSize * 0.5;
           return (
             <text
               key={row.item.id}
@@ -319,16 +320,14 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
               <tspan
                 id={`mv-${row.item.id}`}
                 className="measurement-value mv"
-                x={formatSvgNumber(valueEndX)}
-                textAnchor="end"
+                dx={row.labelText ? formatSvgNumber(charWidth) : "0"}
               >
                 {row.valueText}
               </tspan>
               {row.unitText && (
                 <tspan
                   className="measurement-unit mu"
-                  x={formatSvgNumber(unitStartX)}
-                  textAnchor="start"
+                  dx={formatSvgNumber(charWidth)}
                 >
                   {row.unitText}
                 </tspan>

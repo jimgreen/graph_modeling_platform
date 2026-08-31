@@ -540,54 +540,32 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
     const borderDashArray = measurementGroupBorderDashArray(group);
     const borderDashAttribute = borderDashArray ? ` stroke-dasharray="${escapeXml(borderDashArray)}"` : "";
     const charWidth = (fontSize: number) => fontSize * MEASUREMENT_CHAR_WIDTH_RATIO;
-    // 计算所有 text 的实际边界
-    let minLeft = Infinity, maxRight = -Infinity, minTop = Infinity, maxBottom = -Infinity;
     const rowsMarkup = metrics.rows.map((row, index) => {
       const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
       const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
-      const { labelEndX, valueEndX, unitStartX } = computeMeasurementColumnPositions(metrics, col);
+      const { labelEndX } = computeMeasurementColumnPositions(metrics, col);
       const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
       const fontSize = row.fontSize;
-      const halfLineHeight = fontSize * 0.6;
-      // label: text-anchor="end", x=labelEndX → 左边界 = labelEndX - labelWidth
-      if (row.labelText) {
-        const left = labelEndX - row.labelText.length * charWidth(fontSize);
-        minLeft = Math.min(minLeft, left);
-        maxRight = Math.max(maxRight, labelEndX);
-      }
-      // value: text-anchor="end", x=valueEndX → 左边界 = valueEndX - valueWidth
-      {
-        const left = valueEndX - row.valueText.length * charWidth(fontSize);
-        minLeft = Math.min(minLeft, left);
-        maxRight = Math.max(maxRight, valueEndX);
-      }
-      // unit: text-anchor="start", x=unitStartX → 左边界 = unitStartX, 右边界 = unitStartX + unitWidth
-      if (row.unitText) {
-        minLeft = Math.min(minLeft, unitStartX);
-        maxRight = Math.max(maxRight, unitStartX + row.unitText.length * charWidth(fontSize));
-      }
-      minTop = Math.min(minTop, textY - halfLineHeight);
-      maxBottom = Math.max(maxBottom, textY + halfLineHeight);
+      const charGap = charWidth(fontSize); // 1 字符间距
       const baseAttributes = `fill="${escapeXml(row.display.color)}" font-family="${escapeXml(metrics.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
       const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id);
+      // label: 设置 x，右对齐
       const labelMarkup = row.labelText
         ? `<tspan class="measurement-label ml" x="${formatSvgNumber(labelEndX)}" text-anchor="end">${escapeXml(row.labelText)}</tspan>`
         : "";
-      const valueMarkup = `<tspan class="measurement-value mv" x="${formatSvgNumber(valueEndX)}" text-anchor="end" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
+      // value: 不设 x，用 dx 控制间距
+      const valueDx = row.labelText ? formatSvgNumber(charGap) : "0";
+      const valueMarkup = `<tspan class="measurement-value mv" dx="${valueDx}" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
+      // unit: 不设 x，用 dx 控制间距
+      const unitDx = formatSvgNumber(charGap);
       const unitMarkup = row.unitText
-        ? `<tspan class="measurement-unit mu" x="${formatSvgNumber(unitStartX)}" text-anchor="start">${escapeXml(row.unitText)}</tspan>`
+        ? `<tspan class="measurement-unit mu" dx="${unitDx}">${escapeXml(row.unitText)}</tspan>`
         : "";
       return `<text class="measurement-item mi" ${baseAttributes} y="${formatSvgNumber(textY)}" dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
     }).join("");
-    const padding = 10;
-    if (!isFinite(minLeft)) { minLeft = -metrics.width / 2; maxRight = metrics.width / 2; minTop = -metrics.height / 2; maxBottom = metrics.height / 2; }
-    const bgX = minLeft - padding;
-    const bgY = minTop - padding;
-    const bgWidth = (maxRight - minLeft) + padding * 2;
-    const bgHeight = (maxBottom - minTop) + padding * 2;
     const extraClass = options.className ? ` ${escapeXml(options.className)}` : "";
     return `<g class="measurement-group drag-preview-measurement-group${selectedClass}${extraClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
-  <rect class="measurement-group-bg" x="${formatSvgNumber(bgX)}" y="${formatSvgNumber(bgY)}" width="${formatSvgNumber(bgWidth)}" height="${formatSvgNumber(bgHeight)}" rx="4" fill="${escapeXml(measurementGroupBackgroundColor(group))}" stroke="${escapeXml(measurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(measurementGroupBorderWidth(group))}"${borderDashAttribute}/>
+  <rect class="measurement-group-bg" x="0" y="0" width="0" height="0" rx="4" fill="${escapeXml(measurementGroupBackgroundColor(group))}" stroke="${escapeXml(measurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(measurementGroupBorderWidth(group))}"${borderDashAttribute}/>
   ${rowsMarkup}
 </g>`;
   };
