@@ -556,7 +556,7 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
         : "";
       const valueMarkup = `<tspan class="measurement-value mv" x="${formatSvgNumber(valueX)}" text-anchor="start" xml:space="preserve" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
       const unitMarkup = row.unitText
-        ? `<tspan class="measurement-unit mu" text-anchor="start">${escapeXml(row.unitText)}</tspan>`
+        ? `<tspan class="measurement-unit mu" dx="${formatSvgNumber(charGap)}" text-anchor="start">${escapeXml(row.unitText)}</tspan>`
         : "";
       return `<text class="measurement-item mi" ${baseAttributes} y="${formatSvgNumber(textY)}" dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
     }).join("");
