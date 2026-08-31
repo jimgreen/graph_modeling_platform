@@ -430,14 +430,13 @@ export function buildExportMeasurementGroupMarkup(
       return labelMarkup + valueMarkup;
     }
     const labelMarkup = row.labelText
-      ? `<tspan>${escapeXml(row.labelText)}</tspan>`
+      ? `<tspan class="measurement-label ml" x="${formatSvgNumber(-metrics.width / 2 + col * metrics.columnWidth + metrics.columnLabelWidths?.[col] ?? 0)}" text-anchor="end">${escapeXml(row.labelText)}</tspan>`
       : "";
-    const valueDxAttribute = row.labelText ? ` dx="${formatSvgNumber(textGap)}"` : "";
-    const valueMarkup = `<tspan${valueIdAttribute} class="mv" ${itemMetadata}${valueDxAttribute}>${escapeXml(row.valueText)}</tspan>`;
+    const valueMarkup = `<tspan class="measurement-value mv"${valueIdAttribute} x="4" text-anchor="start" xml:space="preserve" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
     const unitMarkup = row.unitText
-      ? `<tspan dx="${formatSvgNumber(textGap)}">${escapeXml(row.unitText)}</tspan>`
+      ? `<tspan class="measurement-unit mu" dx="${formatSvgNumber(row.fontSize * 0.5 * 2)}" text-anchor="start">${escapeXml(row.unitText)}</tspan>`
       : "";
-    return `<text x="${formatSvgNumber(textX)}" ${commonAttributes}>${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
+    return `<text class="measurement-item mi" ${commonAttributes} y="${formatSvgNumber(textY)}" dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
   }).join("");
   const layerAttribute = options.layerId ? ` layer-id="${escapeXml(options.layerId)}"` : "";
   return `<g class="mg"${layerAttribute} transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group, deviceId, options.ownerDeviceId ?? deviceId)}${svgDisplayAttribute(options.visible !== false)}>
