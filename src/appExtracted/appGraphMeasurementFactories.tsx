@@ -555,7 +555,7 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
         : "";
       // value: 不设 x，用 dx 控制间距
       const valueDx = row.labelText ? formatSvgNumber(charGap) : "0";
-      const valueMarkup = `<tspan class="measurement-value mv" dx="${valueDx}" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
+      const valueMarkup = `<tspan class="measurement-value mv" dx="${valueDx}" xml:space="preserve" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
       // unit: 不设 x，用 dx 控制间距
       const unitDx = formatSvgNumber(charGap);
       const unitMarkup = row.unitText
