@@ -209,8 +209,28 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
       return null;
     }
     const position = measurementGroupCanvasPosition(node, group);
+    const groupRef = (element: SVGGElement | null) => {
+      if (!element) return;
+      // 挂载后获取 bbox，更新 bg rect
+      requestAnimationFrame(() => {
+        try {
+          const bbox = element.getBBox();
+          const bgRect = element.querySelector('.measurement-group-bg') as SVGRectElement;
+          if (bgRect && bbox.width > 0 && bbox.height > 0) {
+            const padding = 10;
+            bgRect.setAttribute('x', String(bbox.x - padding));
+            bgRect.setAttribute('y', String(bbox.y - padding));
+            bgRect.setAttribute('width', String(bbox.width + padding * 2));
+            bgRect.setAttribute('height', String(bbox.height + padding * 2));
+          }
+        } catch (e) {
+          // getBBox 可能在元素未渲染时失败
+        }
+      });
+    };
     return (
       <g
+        ref={groupRef}
         key={group.id}
         className={`measurement-group ${selectedMeasurementGroup?.id === group.id ? "selected" : ""} ${draggingOrigin ? "drag-origin" : ""}`}
         transform={`translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})`}
@@ -229,46 +249,18 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
         }}
       >
         <title>{`${node.name} 动态量测；拖拽可调整位置`}</title>
-        {(() => {
-          const charWidth = (fontSize: number) => fontSize * 0.5;
-          let minLeft = Infinity, maxRight = -Infinity, minTop = Infinity, maxBottom = -Infinity;
-          metrics.rows.forEach((row, index) => {
-            const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
-            const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
-            const { labelEndX, valueEndX, unitStartX } = computeMeasurementColumnPositions(metrics, col);
-            const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
-            const fontSize = row.fontSize;
-            const halfLineHeight = fontSize * 0.6;
-            if (row.labelText) {
-              minLeft = Math.min(minLeft, labelEndX - visualWidth(row.labelText) * charWidth(fontSize));
-              maxRight = Math.max(maxRight, labelEndX);
-            }
-            minLeft = Math.min(minLeft, valueEndX - row.valueText.length * charWidth(fontSize));
-            maxRight = Math.max(maxRight, valueEndX);
-            if (row.unitText) {
-              minLeft = Math.min(minLeft, unitStartX);
-              maxRight = Math.max(maxRight, unitStartX + row.unitText.length * charWidth(fontSize));
-            }
-            minTop = Math.min(minTop, textY - halfLineHeight);
-            maxBottom = Math.max(maxBottom, textY + halfLineHeight);
-          });
-          if (!isFinite(minLeft)) { minLeft = -metrics.width / 2; maxRight = metrics.width / 2; minTop = -metrics.height / 2; maxBottom = metrics.height / 2; }
-          const padding = 10;
-          return (
-            <rect
-              className="measurement-group-bg"
-              x={formatSvgNumber(minLeft - padding)}
-              y={formatSvgNumber(minTop - padding)}
-              width={formatSvgNumber((maxRight - minLeft) + padding * 2)}
-              height={formatSvgNumber((maxBottom - minTop) + padding * 2)}
-              rx="4"
-              fill={measurementGroupBackgroundColor(group)}
-              stroke={measurementGroupBorderColor(group)}
-              strokeWidth={measurementGroupBorderWidth(group)}
-              strokeDasharray={measurementGroupBorderDashArray(group)}
-            />
-          );
-        })()}
+        <rect
+          className="measurement-group-bg"
+          x="0"
+          y="0"
+          width="0"
+          height="0"
+          rx="4"
+          fill={measurementGroupBackgroundColor(group)}
+          stroke={measurementGroupBorderColor(group)}
+          strokeWidth={measurementGroupBorderWidth(group)}
+          strokeDasharray={measurementGroupBorderDashArray(group)}
+        />
         {metrics.rows.map((row, index) => {
           const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
           const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
