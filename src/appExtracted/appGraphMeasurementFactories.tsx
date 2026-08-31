@@ -424,7 +424,9 @@ function padTextToVisualWidth(text: string, targetWidth: number): string {
 // 量测框渲染常量
 const MEASUREMENT_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace';
 const MEASUREMENT_LABEL_VISUAL_WIDTH = 14; // 名称固定 14 视觉单位宽（约 7 个中文字或 14 个英文字符）
-const MEASUREMENT_VALUE_TOTAL_WIDTH = 7; // 整数3 + 小数点1 + 小数3
+const MEASUREMENT_VALUE_INTEGER_WIDTH = 5; // 整数位 + 符号位
+const MEASUREMENT_VALUE_DECIMAL_WIDTH = 3; // 小数位
+const MEASUREMENT_VALUE_TOTAL_WIDTH = MEASUREMENT_VALUE_INTEGER_WIDTH + 1 + MEASUREMENT_VALUE_DECIMAL_WIDTH; // 9 字符
 const MEASUREMENT_VALUE_DECIMALS = 3;
 const MEASUREMENT_CHAR_WIDTH_RATIO = 0.5; // 等宽字体英文字符宽/字号比
 const MEASUREMENT_INTER_COLUMN_GAP = 6;
@@ -462,7 +464,15 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
         MEASUREMENT_VALUE_DECIMALS,
         ""
       );
-      const valueText = rawValueText.padStart(MEASUREMENT_VALUE_TOTAL_WIDTH);
+      // 格式化为 9 字符：5 整数 + 1 小数点 + 3 小数
+      const formatValueText = (text: string): string => {
+        if (text === "--" || !text.includes(".")) return text.padStart(MEASUREMENT_VALUE_TOTAL_WIDTH);
+        const [intPart, decPart] = text.split(".");
+        const paddedInt = intPart.padStart(MEASUREMENT_VALUE_INTEGER_WIDTH);
+        const paddedDec = (decPart ?? "").padEnd(MEASUREMENT_VALUE_DECIMAL_WIDTH, "0");
+        return `${paddedInt}.${paddedDec}`;
+      };
+      const valueText = formatValueText(rawValueText);
       const unitText = group.unitVisible === false ? "" : display.unit;
       return [{ item, display, labelText, valueText, unitText, fontSize: display.fontSize * measurementFontScale }];
     });
@@ -556,7 +566,7 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
         : "";
       const valueMarkup = `<tspan class="measurement-value mv" id="mv-${escapeXml(row.item.id)}" x="15" text-anchor="start" xml:space="preserve" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
       const unitMarkup = row.unitText
-        ? `<tspan class="measurement-unit mu" dx="${formatSvgNumber(charGap)}" text-anchor="start">${escapeXml(row.unitText)}</tspan>`
+        ? `<tspan class="measurement-unit mu" dx="${formatSvgNumber(charGap * 2)}" text-anchor="start">${escapeXml(row.unitText)}</tspan>`
         : "";
       return `<text class="measurement-item mi" ${baseAttributes} y="${formatSvgNumber(textY)}" dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
     }).join("");
