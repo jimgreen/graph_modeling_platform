@@ -39,10 +39,10 @@ export function createRotateControlAvoidRectFromCanvas(__appScope: AppScope) {
 export function createFloatingToolbarWrapperStyle(__appScope: AppScope) {
   const { floatingToolbarButtonSize, floatingToolbarScreenScale } = __appScope;
   return (toolbar: ScopedToolbar): Record<string, string> => ({
-    left: String(toolbar.x),
-    top: String(toolbar.y),
-    width: String(toolbar.width),
-    height: String(toolbar.height),
+    left: `${toolbar.x}px`,
+    top: `${toolbar.y}px`,
+    width: `${toolbar.width}px`,
+    height: `${toolbar.height}px`,
     "--canvas-floating-toolbar-button-size": `${floatingToolbarButtonSize}px`,
     "--canvas-floating-toolbar-gap": `${Math.max(2, Math.round(4 * (toolbar.scale ?? 1)))}px`,
     "--canvas-floating-toolbar-padding": `${Math.max(3, Math.round(4 * (toolbar.scale ?? 1)))}px`,
