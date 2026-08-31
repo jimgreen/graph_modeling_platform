@@ -6,6 +6,38 @@ import { escapeXml, formatSvgNumber, svgStrokeDashArray } from "./svgUtils";
 import { nodeLabelText, nodeLabelFontSize, nodeLabelShouldRender, nodeLabelTextAnchor, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenY, nodeLabelCanvasCenter } from "./nodeLabelUtils";
 import { clampNumber } from "./canvasViewport";
 
+// 计算字符串视觉宽度（中文=2，其他=1）
+function visualWidth(text: string): number {
+  let width = 0;
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    const isWide = (code >= 0x4E00 && code <= 0x9FFF) ||
+                   (code >= 0x3400 && code <= 0x4DBF) ||
+                   (code >= 0xF900 && code <= 0xFAFF) ||
+                   (code >= 0xFF00 && code <= 0xFFEF) ||
+                   (code >= 0x3000 && code <= 0x303F);
+    width += isWide ? 2 : 1;
+  }
+  return width;
+}
+
+// 按视觉宽度填充字符串（右对齐）
+function padTextToVisualWidth(text: string, targetWidth: number): string {
+  const currentWidth = visualWidth(text);
+  if (currentWidth >= targetWidth) return text;
+  return " ".repeat(targetWidth - currentWidth) + text;
+}
+
+// 量测框渲染常量
+const MEASUREMENT_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace';
+const MEASUREMENT_LABEL_VISUAL_WIDTH = 14;
+const MEASUREMENT_VALUE_INTEGER_WIDTH = 5;
+const MEASUREMENT_VALUE_DECIMAL_WIDTH = 3;
+const MEASUREMENT_VALUE_TOTAL_WIDTH = MEASUREMENT_VALUE_INTEGER_WIDTH + 1 + MEASUREMENT_VALUE_DECIMAL_WIDTH;
+const MEASUREMENT_VALUE_DECIMALS = 3;
+const MEASUREMENT_CHAR_WIDTH_RATIO = 0.5;
+const MEASUREMENT_INTER_COLUMN_GAP = 6;
+
 function svgNodeLabelBaseAttributes(node: ModelNode) {
   return `dominant-baseline="middle" fill="${escapeXml(node.params._labelColor || "#334155")}" font-family="${escapeXml(node.params._labelFontFamily || "Arial")}" font-size="${formatSvgNumber(nodeLabelFontSize(node))}" font-weight="${escapeXml(node.params._labelFontWeight || "500")}" font-style="${escapeXml(node.params._labelFontStyle || "normal")}" text-decoration="${escapeXml(node.params._labelTextDecoration || "none")}" paint-order="stroke" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-linejoin="round"`;
 }
@@ -344,47 +376,68 @@ export function exportMeasurementGroupMetrics(node: ModelNode, group: Measuremen
     return null;
   }
   const measurementFontScale = measurementFontScaleForNode(node);
+  // 数值格式化：5 整数 + 1 小数点 + 3 小数 = 9 字符
+  const formatValueText = (text: string): string => {
+    if (text === "--" || !text.includes(".")) return text.padStart(MEASUREMENT_VALUE_TOTAL_WIDTH);
+    const [intPart, decPart] = text.split(".");
+    const paddedInt = intPart.padStart(MEASUREMENT_VALUE_INTEGER_WIDTH);
+    const paddedDec = (decPart ?? "").padEnd(MEASUREMENT_VALUE_DECIMAL_WIDTH, "0");
+    return `${paddedInt}.${paddedDec}`;
+  };
   const rows = group.items.flatMap((item) => {
     const display = resolveMeasurementItemDisplay({ config: measurementConfig, node, group, item });
     if (!display.visible) {
       return [];
     }
-    const label = group.labelVisible === false ? "" : display.label;
-    const unit = group.unitVisible === false ? "" : display.unit;
-    const valueText = formatMeasurementDisplayValue(
+    const rawLabelText = group.labelVisible === false ? "" : display.label;
+    const labelText = padTextToVisualWidth(rawLabelText, MEASUREMENT_LABEL_VISUAL_WIDTH);
+    const rawValueText = formatMeasurementDisplayValue(
       { sourcePoint: item.sourcePoint, value: display.defaultValue, quality: "good", timestamp: 0 },
-      display.decimals,
+      MEASUREMENT_VALUE_DECIMALS,
       ""
     );
-    const text = [label, valueText, unit].filter(Boolean).join(" ");
-    return [{ item, display, labelText: label, valueText, unitText: unit, text, fontSize: display.fontSize * measurementFontScale }];
+    const valueText = formatValueText(rawValueText);
+    const unitText = group.unitVisible === false ? "" : display.unit;
+    return [{ item, display, labelText, valueText, unitText, fontSize: display.fontSize * measurementFontScale }];
   });
   if (rows.length === 0) {
     return null;
   }
-  const maxFontSize = Math.max(...rows.map((row) => row.fontSize));
+  let maxFontSize = 0;
+  for (const row of rows) if (row.fontSize > maxFontSize) maxFontSize = row.fontSize;
   const lineHeight = Math.max(16, maxFontSize + 6);
   const columns = group.layout === "grid" ? 2 : group.layout === "horizontal" ? rows.length : 1;
-  const columnLabelWidths = columns > 1 && group.layout === "grid"
-    ? Array.from({ length: columns }, (_, column) => {
-        let maxLabelWidth = 0;
-        for (let rowIndex = 0; rowIndex < Math.ceil(rows.length / columns); rowIndex++) {
-          const row = rows[rowIndex * columns + column];
-          if (row && row.labelText) {
-            maxLabelWidth = Math.max(maxLabelWidth, row.labelText.length * row.fontSize * 0.58);
-          }
-        }
-        return maxLabelWidth;
-      })
-    : undefined;
-  const valueEstimate = Math.max(...rows.map((row) => (row.valueText.length + row.unitText.length + 1) * row.fontSize * 0.58));
-  const baseColumnWidth = Math.max(72, Math.max(...rows.map((row) => row.text.length * row.fontSize * 0.58)) + 12);
-  const columnWidth = columnLabelWidths
-    ? Math.max(baseColumnWidth, Math.max(...columnLabelWidths) + valueEstimate + 16)
-    : baseColumnWidth;
-  const width = Math.max(64, columnWidth * columns);
-  const height = Math.max(lineHeight, Math.ceil(rows.length / columns) * lineHeight);
-  return { rows, maxFontSize, lineHeight, columnWidth, columns, width, height, columnLabelWidths };
+  const charWidthFor = (fontSize: number) => fontSize * MEASUREMENT_CHAR_WIDTH_RATIO;
+  const rowsPerColumn = Math.ceil(rows.length / columns);
+  const columnMetrics = Array.from({ length: columns }, (_, column) => {
+    let unitWidth = 0;
+    for (let rowIndex = 0; rowIndex < rowsPerColumn; rowIndex++) {
+      const row = rows[rowIndex * columns + column];
+      if (!row) continue;
+      if (row.unitText) {
+        unitWidth = Math.max(unitWidth, visualWidth(row.unitText) * charWidthFor(row.fontSize));
+      }
+    }
+    const labelWidth = MEASUREMENT_LABEL_VISUAL_WIDTH * charWidthFor(maxFontSize);
+    const valueWidth = MEASUREMENT_VALUE_TOTAL_WIDTH * charWidthFor(maxFontSize);
+    return { labelWidth, valueWidth, unitWidth };
+  });
+  const columnWidths = columnMetrics.map((m) => m.labelWidth + m.valueWidth + m.unitWidth + 2 * MEASUREMENT_INTER_COLUMN_GAP);
+  const columnWidth = Math.max(...columnWidths);
+  const width = columnWidth * columns;
+  const height = rowsPerColumn * lineHeight;
+  return {
+    rows,
+    maxFontSize,
+    lineHeight,
+    columnWidth,
+    columns,
+    width,
+    height,
+    columnMetrics,
+    interColumnGap: MEASUREMENT_INTER_COLUMN_GAP,
+    fontFamily: MEASUREMENT_FONT_FAMILY
+  };
 }
 
 export function buildExportMeasurementGroupMarkup(
@@ -405,12 +458,16 @@ export function buildExportMeasurementGroupMarkup(
   const borderDashAttribute = borderDashArray ? ` stroke-dasharray="${escapeXml(borderDashArray)}"` : "";
   const deviceId = options.deviceId ?? node.id;
   const ownerDeviceId = options.ownerDeviceId ?? deviceId;
+  const charWidthFor = (fontSize: number) => fontSize * MEASUREMENT_CHAR_WIDTH_RATIO;
   const rowsMarkup = metrics.rows.map((row, index) => {
     const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
     const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
-    const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
+    const columnStartX = -metrics.width / 2 + col * metrics.columnWidth;
+    const columnMetric = metrics.columnMetrics[col];
+    const labelEndX = columnStartX + columnMetric.labelWidth;
+    const valueEndX = labelEndX + metrics.interColumnGap + columnMetric.valueWidth;
+    const unitStartX = valueEndX + metrics.interColumnGap;
     const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
-    const textGap = Math.max(4, row.fontSize * 0.36);
     const exportedItemId = exportMeasurementScopedId(row.item.id, node.id, ownerDeviceId);
     const binding = resolveMeasurementItemBindingMetadata({ config: measurementConfig, node, group, item: row.item });
     const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id, deviceId, binding.sourcePoint, binding.bindingField);
@@ -418,29 +475,19 @@ export function buildExportMeasurementGroupMarkup(
       ? exportSvgUniqueId(exportMeasurementValueElementId(exportedItemId, deviceId), usedSvgIds, "mv")
       : "";
     const valueIdAttribute = valueTextId ? ` id="${escapeXml(valueTextId)}"` : "";
-    const commonAttributes = `y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
-    if (metrics.columnLabelWidths) {
-      const labelWidth = metrics.columnLabelWidths[col] ?? 0;
-      const labelMarkup = row.labelText
-        ? `<text class="ml" x="${formatSvgNumber(textX)}" ${commonAttributes}>${escapeXml(row.labelText)}</text>`
-        : "";
-      const valueX = labelWidth > 0 ? textX + labelWidth + textGap : textX;
-      const valueText = [row.valueText, row.unitText].filter(Boolean).join(" ");
-      const valueMarkup = `<text class="mv"${valueIdAttribute} ${itemMetadata} x="${formatSvgNumber(valueX)}" ${commonAttributes}>${escapeXml(valueText)}</text>`;
-      return labelMarkup + valueMarkup;
-    }
+    const commonAttributes = `fill="${escapeXml(row.display.color)}" font-family="${escapeXml(metrics.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
     const labelMarkup = row.labelText
-      ? `<tspan class="measurement-label ml" x="${formatSvgNumber(-metrics.width / 2 + col * metrics.columnWidth + (metrics.columnLabelWidths?.[col] ?? 0))}" text-anchor="end">${escapeXml(row.labelText)}</tspan>`
+      ? `<tspan class="measurement-label ml" x="${formatSvgNumber(labelEndX)}" text-anchor="end">${escapeXml(row.labelText)}</tspan>`
       : "";
-    const valueMarkup = `<tspan class="measurement-value mv"${valueIdAttribute} x="4" text-anchor="start" xml:space="preserve" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
+    const valueMarkup = `<tspan class="measurement-value mv"${valueIdAttribute} x="${formatSvgNumber(labelEndX + metrics.interColumnGap)}" text-anchor="start" xml:space="preserve" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
     const unitMarkup = row.unitText
-      ? `<tspan class="measurement-unit mu" dx="${formatSvgNumber(row.fontSize * 0.5 * 2)}" text-anchor="start">${escapeXml(row.unitText)}</tspan>`
+      ? `<tspan class="measurement-unit mu" dx="${formatSvgNumber(charWidthFor(row.fontSize) * 2)}" text-anchor="start">${escapeXml(row.unitText)}</tspan>`
       : "";
-    return `<text class="measurement-item mi" ${commonAttributes}>${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
+    return `<text class="measurement-item mi" ${commonAttributes} y="${formatSvgNumber(textY)}" dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
   }).join("");
   const layerAttribute = options.layerId ? ` layer-id="${escapeXml(options.layerId)}"` : "";
   return `<g class="mg"${layerAttribute} transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group, deviceId, options.ownerDeviceId ?? deviceId)}${svgDisplayAttribute(options.visible !== false)}>
-  <rect x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(exportMeasurementGroupBackgroundColor(group))}" stroke="${escapeXml(exportMeasurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(exportMeasurementGroupBorderWidth(group))}"${borderDashAttribute}/>
+  <rect x="0" y="0" width="0" height="0" rx="4" fill="${escapeXml(exportMeasurementGroupBackgroundColor(group))}" stroke="${escapeXml(exportMeasurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(exportMeasurementGroupBorderWidth(group))}"${borderDashAttribute}/>
   ${rowsMarkup}
 </g>`;
 }
