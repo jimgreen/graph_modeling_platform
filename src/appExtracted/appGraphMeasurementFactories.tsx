@@ -403,7 +403,7 @@ const MEASUREMENT_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Consolas, "Libera
 const MEASUREMENT_LABEL_WIDTH = 10; // 名称固定 10 字符宽
 const MEASUREMENT_VALUE_TOTAL_WIDTH = 7; // 整数3 + 小数点1 + 小数3
 const MEASUREMENT_VALUE_DECIMALS = 3;
-const MEASUREMENT_CHAR_WIDTH_RATIO = 0.6; // 等宽字体字符宽/字号比
+const MEASUREMENT_CHAR_WIDTH_RATIO = 0.5; // 等宽字体字符宽/字号比
 const MEASUREMENT_INTER_COLUMN_GAP = 6;
 
 // 计算量测框列位置
