@@ -398,12 +398,35 @@ export function createMeasurementGroupCanvasPosition(__appScope: Record<string, 
   };
 }
 
+// 计算字符串视觉宽度（中文=2，其他=1）
+function visualWidth(text: string): number {
+  let width = 0;
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    // CJK 统一表意文字、全角字符范围
+    const isWide = (code >= 0x4E00 && code <= 0x9FFF) || // CJK 统一表意文字
+                   (code >= 0x3400 && code <= 0x4DBF) || // CJK 扩展 A
+                   (code >= 0xF900 && code <= 0xFAFF) || // CJK 兼容表意文字
+                   (code >= 0xFF00 && code <= 0xFFEF) || // 全角 ASCII、半角片假名等
+                   (code >= 0x3000 && code <= 0x303F);   // CJK 标点符号
+    width += isWide ? 2 : 1;
+  }
+  return width;
+}
+
+// 按视觉宽度填充字符串（右对齐）
+function padTextToVisualWidth(text: string, targetWidth: number): string {
+  const currentWidth = visualWidth(text);
+  if (currentWidth >= targetWidth) return text;
+  return " ".repeat(targetWidth - currentWidth) + text;
+}
+
 // 量测框渲染常量
 const MEASUREMENT_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace';
-const MEASUREMENT_LABEL_WIDTH = 10; // 名称固定 10 字符宽
+const MEASUREMENT_LABEL_VISUAL_WIDTH = 14; // 名称固定 14 视觉单位宽（约 7 个中文字或 14 个英文字符）
 const MEASUREMENT_VALUE_TOTAL_WIDTH = 7; // 整数3 + 小数点1 + 小数3
 const MEASUREMENT_VALUE_DECIMALS = 3;
-const MEASUREMENT_CHAR_WIDTH_RATIO = 0.5; // 等宽字体字符宽/字号比
+const MEASUREMENT_CHAR_WIDTH_RATIO = 0.5; // 等宽字体英文字符宽/字号比
 const MEASUREMENT_INTER_COLUMN_GAP = 6;
 
 // 计算量测框列位置
@@ -433,7 +456,7 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
         return [];
       }
       const rawLabelText = group.labelVisible === false ? "" : display.label;
-      const labelText = rawLabelText.padStart(MEASUREMENT_LABEL_WIDTH);
+      const labelText = padTextToVisualWidth(rawLabelText, MEASUREMENT_LABEL_VISUAL_WIDTH);
       const rawValueText = formatMeasurementDisplayValue(
         { sourcePoint: item.sourcePoint, value: display.defaultValue, quality: "good", timestamp: 0 },
         MEASUREMENT_VALUE_DECIMALS,
@@ -461,7 +484,7 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
           unitWidth = Math.max(unitWidth, row.unitText.length * charWidthFor(row.fontSize));
         }
       }
-      const labelWidth = MEASUREMENT_LABEL_WIDTH * charWidthFor(maxFontSize);
+      const labelWidth = MEASUREMENT_LABEL_VISUAL_WIDTH * charWidthFor(maxFontSize);
       const valueWidth = MEASUREMENT_VALUE_TOTAL_WIDTH * charWidthFor(maxFontSize);
       return { labelWidth, valueWidth, unitWidth };
     });
