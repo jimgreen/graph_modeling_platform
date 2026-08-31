@@ -1243,6 +1243,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                         (routableLineTerminalCompatibilityActive &&
                             Boolean(routableLineActiveTerminalType) &&
                             terminal.type !== routableLineActiveTerminalType));
+                const isConnectCandidate = connectSource && !disabled && node.id !== connectSource.nodeId;
                 const overlapped = isEditMode && overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);
                 const displayTerminal = terminal;
                 const renderPoint = terminalRenderLocalPoint(displayTerminal, node.size, nodeScaleX, nodeScaleY, node.kind);
@@ -1260,7 +1261,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                         "--terminal-stub-color": disabled ? "#cbd5e1" : terminalDisplayColor,
                         "--terminal-stub-width": terminalStubStrokeWidth(node, displayTerminal)
                     } as CSSProperties} x1={stub.from.x} y1={stub.from.y} x2={stub.to.x} y2={stub.to.y}/>
-                          <circle className={`terminal-dot ${terminal.type} ${overlapped ? "overlapped" : ""} ${disabled ? "disabled" : ""}`} style={{ "--terminal-color": terminalDisplayColor } as CSSProperties} cx="0" cy="0" r={overlapped ? 7.2 : 6} onPointerDown={isEditMode ? (event) => handleTerminalPointerDown(event, node, terminal.id) : undefined}>
+                          <circle className={`terminal-dot ${terminal.type} ${overlapped ? "overlapped" : ""} ${disabled ? "disabled" : ""} ${isConnectCandidate ? "connect-candidate" : ""}`} style={{ "--terminal-color": terminalDisplayColor } as CSSProperties} cx="0" cy="0" r={overlapped ? 7.2 : 6} onPointerDown={isEditMode ? (event) => handleTerminalPointerDown(event, node, terminal.id) : undefined}>
                             <title>{`${terminal.label} / ${terminal.type.toUpperCase()}`}</title>
                           </circle>
                         </g>);
