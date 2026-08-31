@@ -2489,19 +2489,19 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .bus-connection-dot {
   stroke: #ffffff;
   stroke-width: 2.5;
-  cursor: grab;
+  cursor: crosshair;
   pointer-events: all;
 }
 
 .bus-connection-dot:active {
-  cursor: grabbing;
+  cursor: crosshair;
 }
 
 .edge-endpoint-handle {
   fill: #ffffff;
   stroke: #dc2626;
   stroke-width: 3;
-  cursor: grab;
+  cursor: crosshair;
   pointer-events: all;
   vector-effect: non-scaling-stroke;
   filter: drop-shadow(0 0 0 rgba(220, 38, 38, 0));
