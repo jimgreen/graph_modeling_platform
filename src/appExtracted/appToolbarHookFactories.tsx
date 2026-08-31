@@ -322,7 +322,7 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
               <tspan
                 id={`mv-${row.item.id}`}
                 className="measurement-value mv"
-                x="15"
+                x="4"
                 textAnchor="start"
                 xmlSpace="preserve"
               >
