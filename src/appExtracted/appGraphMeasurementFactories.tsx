@@ -546,20 +546,17 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
       const { labelEndX } = computeMeasurementColumnPositions(metrics, col);
       const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
       const fontSize = row.fontSize;
-      const charGap = charWidth(fontSize); // 1 字符间距
+      const charGap = charWidth(fontSize);
+      const valueX = labelEndX + charGap;
+      const unitX = valueX + MEASUREMENT_VALUE_TOTAL_WIDTH * charGap;
       const baseAttributes = `fill="${escapeXml(row.display.color)}" font-family="${escapeXml(metrics.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
       const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id);
-      // label: 设置 x，右对齐
       const labelMarkup = row.labelText
         ? `<tspan class="measurement-label ml" x="${formatSvgNumber(labelEndX)}" text-anchor="end">${escapeXml(row.labelText)}</tspan>`
         : "";
-      // value: 不设 x，用 dx 控制间距
-      const valueDx = row.labelText ? formatSvgNumber(charGap) : "0";
-      const valueMarkup = `<tspan class="measurement-value mv" dx="${valueDx}" xml:space="preserve" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
-      // unit: 不设 x，用 dx 控制间距
-      const unitDx = formatSvgNumber(charGap);
+      const valueMarkup = `<tspan class="measurement-value mv" x="${formatSvgNumber(valueX)}" text-anchor="start" xml:space="preserve" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
       const unitMarkup = row.unitText
-        ? `<tspan class="measurement-unit mu" dx="${unitDx}">${escapeXml(row.unitText)}</tspan>`
+        ? `<tspan class="measurement-unit mu" x="${formatSvgNumber(unitX)}" text-anchor="start">${escapeXml(row.unitText)}</tspan>`
         : "";
       return `<text class="measurement-item mi" ${baseAttributes} y="${formatSvgNumber(textY)}" dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
     }).join("");
