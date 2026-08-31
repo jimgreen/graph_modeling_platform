@@ -430,7 +430,7 @@ export function buildExportMeasurementGroupMarkup(
       return labelMarkup + valueMarkup;
     }
     const labelMarkup = row.labelText
-      ? `<tspan class="measurement-label ml" x="${formatSvgNumber(-metrics.width / 2 + col * metrics.columnWidth + metrics.columnLabelWidths?.[col] ?? 0)}" text-anchor="end">${escapeXml(row.labelText)}</tspan>`
+      ? `<tspan class="measurement-label ml" x="${formatSvgNumber(-metrics.width / 2 + col * metrics.columnWidth + (metrics.columnLabelWidths?.[col] ?? 0))}" text-anchor="end">${escapeXml(row.labelText)}</tspan>`
       : "";
     const valueMarkup = `<tspan class="measurement-value mv"${valueIdAttribute} x="4" text-anchor="start" xml:space="preserve" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
     const unitMarkup = row.unitText
