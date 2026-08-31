@@ -707,6 +707,45 @@ export function measurementOffsetScaleForNode(node: ModelNode): { x: number; y: 
   return { x: 1, y: 1 };
 }
 
+// 量测框文本布局工具
+
+export const MEASUREMENT_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace';
+export const MEASUREMENT_LABEL_VISUAL_WIDTH = 14;
+export const MEASUREMENT_VALUE_INTEGER_WIDTH = 5;
+export const MEASUREMENT_VALUE_DECIMAL_WIDTH = 3;
+export const MEASUREMENT_VALUE_TOTAL_WIDTH = MEASUREMENT_VALUE_INTEGER_WIDTH + 1 + MEASUREMENT_VALUE_DECIMAL_WIDTH;
+export const MEASUREMENT_VALUE_DECIMALS = 3;
+export const MEASUREMENT_CHAR_WIDTH_RATIO = 0.5;
+export const MEASUREMENT_INTER_COLUMN_GAP = 6;
+
+export function measurementVisualWidth(text: string): number {
+  let width = 0;
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    const isWide = (code >= 0x4E00 && code <= 0x9FFF) ||
+                   (code >= 0x3400 && code <= 0x4DBF) ||
+                   (code >= 0xF900 && code <= 0xFAFF) ||
+                   (code >= 0xFF00 && code <= 0xFFEF) ||
+                   (code >= 0x3000 && code <= 0x303F);
+    width += isWide ? 2 : 1;
+  }
+  return width;
+}
+
+export function measurementPadTextToVisualWidth(text: string, targetWidth: number): string {
+  const currentWidth = measurementVisualWidth(text);
+  if (currentWidth >= targetWidth) return text;
+  return " ".repeat(targetWidth - currentWidth) + text;
+}
+
+export function measurementFormatValueText(text: string): string {
+  if (text === "--" || !text.includes(".")) return text.padStart(MEASUREMENT_VALUE_TOTAL_WIDTH);
+  const [intPart, decPart] = text.split(".");
+  const paddedInt = intPart.padStart(MEASUREMENT_VALUE_INTEGER_WIDTH);
+  const paddedDec = (decPart ?? "").padEnd(MEASUREMENT_VALUE_DECIMAL_WIDTH, "0");
+  return `${paddedInt}.${paddedDec}`;
+}
+
 function normalizedFontWeight(value: unknown, fallback: MeasurementFontWeight): MeasurementFontWeight {
   return value === "400" || value === "500" || value === "700" ? value : fallback;
 }
