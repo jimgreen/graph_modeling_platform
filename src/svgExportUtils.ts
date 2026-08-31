@@ -459,9 +459,7 @@ export function buildExportMeasurementGroupMarkup(
       ? `<tspan class="measurement-label ml" x="${formatSvgNumber(labelEndX)}" text-anchor="end">${escapeXml(row.labelText)}</tspan>`
       : "";
     const valueMarkup = `<tspan class="measurement-value mv"${valueIdAttribute} x="${formatSvgNumber(labelEndX + metrics.interColumnGap)}" text-anchor="start" xml:space="preserve" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
-    const unitMarkup = row.unitText
-      ? `<tspan class="measurement-unit mu" dx="${formatSvgNumber(charWidthFor(row.fontSize) * 2)}" text-anchor="start">${escapeXml(row.unitText)}</tspan>`
-      : "";
+    const unitMarkup = `<tspan class="measurement-unit mu" dx="${formatSvgNumber(charWidthFor(row.fontSize) * 2)}" text-anchor="start">${escapeXml(row.unitText)}</tspan>`;
     return `<text class="measurement-item mi" ${commonAttributes} y="${formatSvgNumber(textY)}" dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
   }).join("");
   const layerAttribute = options.layerId ? ` layer-id="${escapeXml(options.layerId)}"` : "";
