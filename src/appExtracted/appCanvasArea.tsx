@@ -1497,47 +1497,47 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             {isEditMode && (nodeFloatingToolbar || edgeFloatingToolbar) && (<div className="canvas-floating-toolbar-layer">
                 {nodeFloatingToolbar && (<div className="canvas-floating-toolbar-wrapper" style={floatingToolbarWrapperStyle(nodeFloatingToolbar)}>
                     <div className="canvas-floating-toolbar node-toolbar" role="toolbar" aria-label="选中图元快捷操作" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
-                      <button type="button" title="复制" aria-label="复制" onClick={copySelection}>
+                      <button type="button" title="复制" aria-label="复制" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={copySelection}>
                         <Copy size={floatingToolbarIconSize}/>
                       </button>
-                      <button type="button" title="剪切" aria-label="剪切" onClick={cutSelection}>
+                      <button type="button" title="剪切" aria-label="剪切" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={cutSelection}>
                         <Scissors size={floatingToolbarIconSize}/>
                       </button>
-                      <button type="button" title="删除" aria-label="删除" onClick={deleteSelection}>
+                      <button type="button" title="删除" aria-label="删除" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={deleteSelection}>
                         <Trash2 size={floatingToolbarIconSize}/>
                       </button>
-                      <button type="button" title="图层修改" aria-label="图层修改" onClick={openLayerAssignmentDialog}>
+                      <button type="button" title="图层修改" aria-label="图层修改" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={openLayerAssignmentDialog}>
                         <Layers size={floatingToolbarIconSize}/>
                       </button>
-                      <button type="button" title="置于当前图层" aria-label="置于当前图层" onClick={() => assignSelectedNodesToModelLayer(activeLayerId)}>
+                      <button type="button" title="置于当前图层" aria-label="置于当前图层" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={() => assignSelectedNodesToModelLayer(activeLayerId)}>
                         <Layers2 size={floatingToolbarIconSize}/>
                       </button>
-                      {canGroupSelectedGraphics && (<button type="button" title="组合" aria-label="组合" onClick={groupSelectedGraphics}>
+                      {canGroupSelectedGraphics && (<button type="button" title="组合" aria-label="组合" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={groupSelectedGraphics}>
                           <Group size={floatingToolbarIconSize}/>
                         </button>)}
-                      {canUngroupSelectedGraphics && (<button type="button" title="解散" aria-label="解散" onClick={ungroupSelectedGraphics}>
+                      {canUngroupSelectedGraphics && (<button type="button" title="解散" aria-label="解散" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={ungroupSelectedGraphics}>
                           <Ungroup size={floatingToolbarIconSize}/>
                         </button>)}
-                      {canAddTemplateFromSelection && (<button type="button" title="添加到模板库" aria-label="添加到模板库" onClick={openAddTemplateDialog}>
+                      {canAddTemplateFromSelection && (<button type="button" title="添加到模板库" aria-label="添加到模板库" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={openAddTemplateDialog}>
                           <Grid2X2 size={floatingToolbarIconSize}/>
                         </button>)}
-                      {canAddTemplateFromSelection && (<button type="button" title="定义为元件" aria-label="定义为元件" onClick={openGroupDeviceDefinitionDialog}>
+                      {canAddTemplateFromSelection && (<button type="button" title="定义为元件" aria-label="定义为元件" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={openGroupDeviceDefinitionDialog}>
                           <Plus size={floatingToolbarIconSize}/>
                         </button>)}
-                      <button type="button" title="标识显示" aria-label="标识显示" onClick={toggleSelectedNodeLabelDisplay}>
+                      <button type="button" title="标识显示" aria-label="标识显示" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={toggleSelectedNodeLabelDisplay}>
                         <Type size={floatingToolbarIconSize}/>
                       </button>
                     </div>
                   </div>)}
                 {edgeFloatingToolbar && (<div className="canvas-floating-toolbar-wrapper" style={floatingToolbarWrapperStyle(edgeFloatingToolbar)}>
                     <div className="canvas-floating-toolbar edge-toolbar" role="toolbar" aria-label="选中连接线快捷操作" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
-                      <button type="button" title="复制连接线" aria-label="复制连接线" onClick={copySelection}>
+                      <button type="button" title="复制连接线" aria-label="复制连接线" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={copySelection}>
                         <Copy size={floatingToolbarIconSize}/>
                       </button>
-                      <button type="button" title="整理连接线" aria-label="整理连接线" onClick={tidySelectedEdgeRoute}>
+                      <button type="button" title="整理连接线" aria-label="整理连接线" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={tidySelectedEdgeRoute}>
                         <Route size={floatingToolbarIconSize}/>
                       </button>
-                      <button type="button" title="删除连接线" aria-label="删除连接线" onClick={deleteSelection}>
+                      <button type="button" title="删除连接线" aria-label="删除连接线" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={deleteSelection}>
                         <Trash2 size={floatingToolbarIconSize}/>
                       </button>
                     </div>
