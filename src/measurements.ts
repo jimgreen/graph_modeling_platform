@@ -698,9 +698,8 @@ function withRequiredBuiltInMeasurementProfileItems(
 const typeById = (types: readonly MeasurementTypeDefinition[]) => new Map(types.map((item) => [item.id, item]));
 
 export function measurementFontScaleForNode(node: ModelNode): number {
-  const scaleX = getSafeNodeScaleX(node);
-  const scaleY = getSafeNodeScaleY(node);
-  return Math.sqrt(scaleX * scaleY);
+  // 量测框内容不随设备缩放
+  return 1;
 }
 
 export function measurementOffsetScaleForNode(node: ModelNode): { x: number; y: number } {
