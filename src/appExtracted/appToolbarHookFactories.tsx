@@ -3693,7 +3693,12 @@ export function createAppHookCallback109(__appScope: Record<string, any>) {
     };
     const updateKeyboardShortcutPointerPosition = (event: globalThis.PointerEvent) => {
       lastKeyboardShortcutClientPointerRef.current = { x: event.clientX, y: event.clientY };
-      syncPointerButtonsPressed(event.buttons !== 0);
+      // 若 pointer 在 toolbar 内，不设置 pointerButtonsPressed（避免 toolbar 隐藏）
+      const target = event.target as HTMLElement;
+      const isInToolbar = target?.closest?.(".canvas-floating-toolbar");
+      if (!isInToolbar) {
+        syncPointerButtonsPressed(event.buttons !== 0);
+      }
     };
     const updatePointerButtonsPressed = (event: globalThis.PointerEvent) => {
       syncPointerButtonsPressed(event.buttons !== 0);
