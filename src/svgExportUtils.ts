@@ -436,7 +436,7 @@ export function buildExportMeasurementGroupMarkup(
     const unitMarkup = row.unitText
       ? `<tspan class="measurement-unit mu" dx="${formatSvgNumber(row.fontSize * 0.5 * 2)}" text-anchor="start">${escapeXml(row.unitText)}</tspan>`
       : "";
-    return `<text class="measurement-item mi" ${commonAttributes} y="${formatSvgNumber(textY)}" dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
+    return `<text class="measurement-item mi" ${commonAttributes} dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
   }).join("");
   const layerAttribute = options.layerId ? ` layer-id="${escapeXml(options.layerId)}"` : "";
   return `<g class="mg"${layerAttribute} transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group, deviceId, options.ownerDeviceId ?? deviceId)}${svgDisplayAttribute(options.visible !== false)}>
