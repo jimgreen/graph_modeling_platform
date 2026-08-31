@@ -214,18 +214,46 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
         }}
       >
         <title>{`${node.name} 动态量测；拖拽可调整位置`}</title>
-        <rect
-          className="measurement-group-bg"
-          x={formatSvgNumber(-metrics.width / 2 - 10)}
-          y={formatSvgNumber(-metrics.height / 2 - 10)}
-          width={formatSvgNumber(metrics.width + 20)}
-          height={formatSvgNumber(metrics.height + 20)}
-          rx="4"
-          fill={measurementGroupBackgroundColor(group)}
-          stroke={measurementGroupBorderColor(group)}
-          strokeWidth={measurementGroupBorderWidth(group)}
-          strokeDasharray={measurementGroupBorderDashArray(group)}
-        />
+        {(() => {
+          const charWidth = (fontSize: number) => fontSize * 0.5;
+          let minLeft = Infinity, maxRight = -Infinity, minTop = Infinity, maxBottom = -Infinity;
+          metrics.rows.forEach((row, index) => {
+            const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
+            const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
+            const { labelEndX, valueEndX, unitStartX } = computeMeasurementColumnPositions(metrics, col);
+            const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
+            const fontSize = row.fontSize;
+            const halfLineHeight = fontSize * 0.6;
+            if (row.labelText) {
+              minLeft = Math.min(minLeft, labelEndX - row.labelText.length * charWidth(fontSize));
+              maxRight = Math.max(maxRight, labelEndX);
+            }
+            minLeft = Math.min(minLeft, valueEndX - row.valueText.length * charWidth(fontSize));
+            maxRight = Math.max(maxRight, valueEndX);
+            if (row.unitText) {
+              minLeft = Math.min(minLeft, unitStartX);
+              maxRight = Math.max(maxRight, unitStartX + row.unitText.length * charWidth(fontSize));
+            }
+            minTop = Math.min(minTop, textY - halfLineHeight);
+            maxBottom = Math.max(maxBottom, textY + halfLineHeight);
+          });
+          if (!isFinite(minLeft)) { minLeft = -metrics.width / 2; maxRight = metrics.width / 2; minTop = -metrics.height / 2; maxBottom = metrics.height / 2; }
+          const padding = 10;
+          return (
+            <rect
+              className="measurement-group-bg"
+              x={formatSvgNumber(minLeft - padding)}
+              y={formatSvgNumber(minTop - padding)}
+              width={formatSvgNumber((maxRight - minLeft) + padding * 2)}
+              height={formatSvgNumber((maxBottom - minTop) + padding * 2)}
+              rx="4"
+              fill={measurementGroupBackgroundColor(group)}
+              stroke={measurementGroupBorderColor(group)}
+              strokeWidth={measurementGroupBorderWidth(group)}
+              strokeDasharray={measurementGroupBorderDashArray(group)}
+            />
+          );
+        })()}
         {metrics.rows.map((row, index) => {
           const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
           const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
