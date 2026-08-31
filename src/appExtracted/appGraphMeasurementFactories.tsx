@@ -5,6 +5,27 @@ import { clampNumber } from "../canvasViewport";
 import { reconcileNodeWithDefinition } from "../definitionInstanceSync";
 import { degreesToRadians } from "../formatUtils";
 import type { MeasurementProfilePositionDefinition } from "../measurements";
+import {
+  DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
+  DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
+  DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
+  measurementFontScaleForNode,
+  measurementOffsetScaleForNode,
+  resolveMeasurementItemBindingMetadata,
+  resolveMeasurementItemDisplay,
+  formatMeasurementDisplayValue,
+  MEASUREMENT_FONT_FAMILY,
+  MEASUREMENT_LABEL_VISUAL_WIDTH,
+  MEASUREMENT_VALUE_INTEGER_WIDTH,
+  MEASUREMENT_VALUE_DECIMAL_WIDTH,
+  MEASUREMENT_VALUE_TOTAL_WIDTH,
+  MEASUREMENT_VALUE_DECIMALS,
+  MEASUREMENT_CHAR_WIDTH_RATIO,
+  MEASUREMENT_INTER_COLUMN_GAP,
+  measurementVisualWidth,
+  measurementPadTextToVisualWidth,
+  measurementFormatValueText
+} from "../measurements";
 import { withNodesParentModelId } from "../model";
 
 export function createSetNodes(__appScope: Record<string, any>) {
@@ -398,39 +419,6 @@ export function createMeasurementGroupCanvasPosition(__appScope: Record<string, 
   };
 }
 
-// 计算字符串视觉宽度（中文=2，其他=1）
-function visualWidth(text: string): number {
-  let width = 0;
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? 0;
-    // CJK 统一表意文字、全角字符范围
-    const isWide = (code >= 0x4E00 && code <= 0x9FFF) || // CJK 统一表意文字
-                   (code >= 0x3400 && code <= 0x4DBF) || // CJK 扩展 A
-                   (code >= 0xF900 && code <= 0xFAFF) || // CJK 兼容表意文字
-                   (code >= 0xFF00 && code <= 0xFFEF) || // 全角 ASCII、半角片假名等
-                   (code >= 0x3000 && code <= 0x303F);   // CJK 标点符号
-    width += isWide ? 2 : 1;
-  }
-  return width;
-}
-
-// 按视觉宽度填充字符串（右对齐）
-function padTextToVisualWidth(text: string, targetWidth: number): string {
-  const currentWidth = visualWidth(text);
-  if (currentWidth >= targetWidth) return text;
-  return " ".repeat(targetWidth - currentWidth) + text;
-}
-
-// 量测框渲染常量
-const MEASUREMENT_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace';
-const MEASUREMENT_LABEL_VISUAL_WIDTH = 14; // 名称固定 14 视觉单位宽（约 7 个中文字或 14 个英文字符）
-const MEASUREMENT_VALUE_INTEGER_WIDTH = 5; // 整数位 + 符号位
-const MEASUREMENT_VALUE_DECIMAL_WIDTH = 3; // 小数位
-const MEASUREMENT_VALUE_TOTAL_WIDTH = MEASUREMENT_VALUE_INTEGER_WIDTH + 1 + MEASUREMENT_VALUE_DECIMAL_WIDTH; // 9 字符
-const MEASUREMENT_VALUE_DECIMALS = 3;
-const MEASUREMENT_CHAR_WIDTH_RATIO = 0.5; // 等宽字体英文字符宽/字号比
-const MEASUREMENT_INTER_COLUMN_GAP = 6;
-
 // 计算量测框列位置
 export function computeMeasurementColumnPositions(
   metrics: { width: number; columnWidth: number; columnMetrics: Array<{ labelWidth: number; valueWidth: number; unitWidth: number }>; interColumnGap: number },
@@ -458,21 +446,14 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
         return [];
       }
       const rawLabelText = group.labelVisible === false ? "" : display.label;
-      const labelText = padTextToVisualWidth(rawLabelText, MEASUREMENT_LABEL_VISUAL_WIDTH);
+      const labelText = measurementPadTextToVisualWidth(rawLabelText, MEASUREMENT_LABEL_VISUAL_WIDTH);
       const rawValueText = formatMeasurementDisplayValue(
         { sourcePoint: item.sourcePoint, value: display.defaultValue, quality: "good", timestamp: 0 },
         MEASUREMENT_VALUE_DECIMALS,
         ""
       );
       // 格式化为 9 字符：5 整数 + 1 小数点 + 3 小数
-      const formatValueText = (text: string): string => {
-        if (text === "--" || !text.includes(".")) return text.padStart(MEASUREMENT_VALUE_TOTAL_WIDTH);
-        const [intPart, decPart] = text.split(".");
-        const paddedInt = intPart.padStart(MEASUREMENT_VALUE_INTEGER_WIDTH);
-        const paddedDec = (decPart ?? "").padEnd(MEASUREMENT_VALUE_DECIMAL_WIDTH, "0");
-        return `${paddedInt}.${paddedDec}`;
-      };
-      const valueText = formatValueText(rawValueText);
+      const valueText = measurementFormatValueText(rawValueText);
       const unitText = group.unitVisible === false ? "" : display.unit;
       return [{ item, display, labelText, valueText, unitText, fontSize: display.fontSize * measurementFontScale }];
     });
@@ -491,7 +472,7 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
         const row = rows[rowIndex * columns + column];
         if (!row) continue;
         if (row.unitText) {
-          unitWidth = Math.max(unitWidth, row.unitText.length * charWidthFor(row.fontSize));
+          unitWidth = Math.max(unitWidth, measurementVisualWidth(row.unitText) * charWidthFor(row.fontSize));
         }
       }
       const labelWidth = MEASUREMENT_LABEL_VISUAL_WIDTH * charWidthFor(maxFontSize);
