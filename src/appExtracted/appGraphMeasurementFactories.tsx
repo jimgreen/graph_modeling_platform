@@ -564,7 +564,7 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
       const labelMarkup = row.labelText
         ? `<tspan class="measurement-label ml" x="${formatSvgNumber(labelEndX)}" text-anchor="end">${escapeXml(row.labelText)}</tspan>`
         : "";
-      const valueMarkup = `<tspan class="measurement-value mv" id="mv-${escapeXml(row.item.id)}" x="15" text-anchor="start" xml:space="preserve" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
+      const valueMarkup = `<tspan class="measurement-value mv" id="mv-${escapeXml(row.item.id)}" x="4" text-anchor="start" xml:space="preserve" ${itemMetadata}>${escapeXml(row.valueText)}</tspan>`;
       const unitMarkup = row.unitText
         ? `<tspan class="measurement-unit mu" dx="${formatSvgNumber(charGap * 2)}" text-anchor="start">${escapeXml(row.unitText)}</tspan>`
         : "";
