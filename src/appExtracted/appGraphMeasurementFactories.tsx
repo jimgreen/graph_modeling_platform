@@ -466,9 +466,9 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
       return { labelWidth, valueWidth, unitWidth };
     });
     const columnWidths = columnMetrics.map((m) => m.labelWidth + m.valueWidth + m.unitWidth + 2 * MEASUREMENT_INTER_COLUMN_GAP);
-    const columnWidth = Math.max(72, ...columnWidths);
-    const width = Math.max(64, columnWidth * columns);
-    const height = Math.max(lineHeight, rowsPerColumn * lineHeight);
+    const columnWidth = Math.max(...columnWidths);
+    const width = columnWidth * columns;
+    const height = rowsPerColumn * lineHeight;
     return {
       rows,
       maxFontSize,
