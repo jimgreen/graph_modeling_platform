@@ -516,11 +516,35 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
     const selectedClass = selectedMeasurementGroupIdSet.has(group.id) ? " selected" : "";
     const borderDashArray = measurementGroupBorderDashArray(group);
     const borderDashAttribute = borderDashArray ? ` stroke-dasharray="${escapeXml(borderDashArray)}"` : "";
+    const charWidth = (fontSize: number) => fontSize * MEASUREMENT_CHAR_WIDTH_RATIO;
+    // 计算所有 text 的实际边界
+    let minLeft = Infinity, maxRight = -Infinity, minTop = Infinity, maxBottom = -Infinity;
     const rowsMarkup = metrics.rows.map((row, index) => {
       const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
       const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
       const { labelEndX, valueEndX, unitStartX } = computeMeasurementColumnPositions(metrics, col);
       const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
+      const fontSize = row.fontSize;
+      const halfLineHeight = fontSize * 0.6;
+      // label: text-anchor="end", x=labelEndX → 左边界 = labelEndX - labelWidth
+      if (row.labelText) {
+        const left = labelEndX - row.labelText.length * charWidth(fontSize);
+        minLeft = Math.min(minLeft, left);
+        maxRight = Math.max(maxRight, labelEndX);
+      }
+      // value: text-anchor="end", x=valueEndX → 左边界 = valueEndX - valueWidth
+      {
+        const left = valueEndX - row.valueText.length * charWidth(fontSize);
+        minLeft = Math.min(minLeft, left);
+        maxRight = Math.max(maxRight, valueEndX);
+      }
+      // unit: text-anchor="start", x=unitStartX → 左边界 = unitStartX, 右边界 = unitStartX + unitWidth
+      if (row.unitText) {
+        minLeft = Math.min(minLeft, unitStartX);
+        maxRight = Math.max(maxRight, unitStartX + row.unitText.length * charWidth(fontSize));
+      }
+      minTop = Math.min(minTop, textY - halfLineHeight);
+      maxBottom = Math.max(maxBottom, textY + halfLineHeight);
       const baseAttributes = `fill="${escapeXml(row.display.color)}" font-family="${escapeXml(metrics.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
       const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id);
       const labelMarkup = row.labelText
@@ -533,10 +557,11 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
       return `<text class="measurement-item mi" ${baseAttributes} y="${formatSvgNumber(textY)}" dominant-baseline="middle">${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
     }).join("");
     const padding = 10;
-    const bgWidth = metrics.width + padding * 2;
-    const bgHeight = metrics.height + padding * 2;
-    const bgX = -metrics.width / 2 - padding;
-    const bgY = -metrics.height / 2 - padding;
+    if (!isFinite(minLeft)) { minLeft = -metrics.width / 2; maxRight = metrics.width / 2; minTop = -metrics.height / 2; maxBottom = metrics.height / 2; }
+    const bgX = minLeft - padding;
+    const bgY = minTop - padding;
+    const bgWidth = (maxRight - minLeft) + padding * 2;
+    const bgHeight = (maxBottom - minTop) + padding * 2;
     const extraClass = options.className ? ` ${escapeXml(options.className)}` : "";
     return `<g class="measurement-group drag-preview-measurement-group${selectedClass}${extraClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
   <rect class="measurement-group-bg" x="${formatSvgNumber(bgX)}" y="${formatSvgNumber(bgY)}" width="${formatSvgNumber(bgWidth)}" height="${formatSvgNumber(bgHeight)}" rx="4" fill="${escapeXml(measurementGroupBackgroundColor(group))}" stroke="${escapeXml(measurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(measurementGroupBorderWidth(group))}"${borderDashAttribute}/>
