@@ -71,7 +71,7 @@ export interface UseBatchEditorsParams {
 
 export interface BatchEditorsResult {
   renderColorEditor: (key: string, value: string, fallback?: string) => ReactNode;
-  renderParamEditor: (key: string, value: string, wrapLabel?: boolean, definition?: DeviceParameterDefinition) => ReactNode;
+  renderParamEditor: (key: string, value: string, wrapLabel?: boolean, definition?: DeviceParameterDefinition, suffix?: string) => ReactNode;
   updateNodeDoubleClickDraftNode: (nodeId: string, updater: (node: ModelNode) => ModelNode) => void;
   updateNodeDoubleClickDraftPatch: (nodeId: string, patch: Partial<ModelNode>) => void;
   updateNodeDoubleClickDraftParam: (nodeId: string, key: string, value: string) => void;
@@ -381,7 +381,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     };
   };
 
-  const renderParamEditor = (key: string, value: string, wrapLabel = true, definition?: DeviceParameterDefinition): ReactNode => {
+  const renderParamEditor = (key: string, value: string, wrapLabel = true, definition?: DeviceParameterDefinition, suffix?: string): ReactNode => {
     const label = PARAM_LABELS[key] ?? key;
     const editorNode = inspectorSelectedNode ?? selectedNode;
     const rawOptions = paramOptionsForDefinition(key, editorNode, value, definition);
@@ -396,20 +396,38 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
       : parentLocked
         ? "全局线路的所属模型固定为 0。"
         : undefined;
+    const suffixNode = suffix ? <span className="unit-value-suffix">{suffix}</span> : null;
     const control: ReactNode = options ? (
-      <Select
-        value={value}
-        disabled={disabled}
-        title={title}
-        onChange={(nextValue) => updateParam(key, nextValue)}
-        options={options.map((option: string) => ({
-          value: option,
-          label: modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : (optionLabels[option] ?? option),
-          disabled: option === invalidValue && !(modelAssociationPrompt && option === "")
-        }))}
-      />
+      suffix ? (
+        <span className="unit-value-field">
+          <Select
+            value={value}
+            disabled={disabled}
+            title={title}
+            onChange={(nextValue) => updateParam(key, nextValue)}
+            options={options.map((option: string) => ({
+              value: option,
+              label: modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : (optionLabels[option] ?? option),
+              disabled: option === invalidValue && !(modelAssociationPrompt && option === "")
+            }))}
+          />
+          {suffixNode}
+        </span>
+      ) : (
+        <Select
+          value={value}
+          disabled={disabled}
+          title={title}
+          onChange={(nextValue) => updateParam(key, nextValue)}
+          options={options.map((option: string) => ({
+            value: option,
+            label: modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : (optionLabels[option] ?? option),
+            disabled: option === invalidValue && !(modelAssociationPrompt && option === "")
+          }))}
+        />
+      )
     ) : (
-      <BufferedTextInput value={value} disabled={disabled} title={title} onCommit={(nextValue: string) => updateParam(key, nextValue)} />
+      <BufferedTextInput value={value} disabled={disabled} title={title} suffix={suffix} onCommit={(nextValue: string) => updateParam(key, nextValue)} />
     );
     return wrapLabel ? (
       <label key={key}>

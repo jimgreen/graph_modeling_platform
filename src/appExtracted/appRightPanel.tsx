@@ -255,9 +255,9 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                 patchGraphNodes(result.nodeUpdates);
               }}
               options={options.map((level) => ({ value: level, label: level }))}
-              style={{ minWidth: 120 }}
+              style={{ flex: 1, minWidth: 0 }}
             />
-            <span>{voltageUnit}</span>
+            <span className="unit-value-suffix">{voltageUnit}</span>
           </div>
         </td>
       </tr>
@@ -313,13 +313,16 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                   <tr>
                     {batchEditors.renderChineseParamHeader("allowAutoExpandCanvas")}
                     <td>
-                      <select value={allowAutoExpandCanvas ? "allow" : "deny"} disabled={isBrowseMode} onChange={(event) => {
+                      <Select
+                        value={allowAutoExpandCanvas ? "allow" : "deny"}
+                        disabled={isBrowseMode}
+                        onChange={(value) => {
                 pushUndoSnapshot();
-                setAllowAutoExpandCanvas(event.target.value === "allow");
-            }}>
-                        <option value="allow">允许</option>
-                        <option value="deny">不允许</option>
-                      </select>
+                setAllowAutoExpandCanvas(value === "allow");
+            }}
+                        options={[{ value: "allow", label: "允许" }, { value: "deny", label: "不允许" }]}
+                        style={{ width: "100%" }}
+                      />
                     </td>
                   </tr>
                   <tr>
@@ -363,21 +366,27 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                   <tr>
                     {batchEditors.renderChineseParamHeader("canvasBackgroundImageFit")}
                     <td>
-                      <select value={normalizeImageFitMode(__appScope.canvasBackgroundImageFit)} disabled={isBrowseMode} onChange={(event) => {
+                      <Select
+                        value={normalizeImageFitMode(__appScope.canvasBackgroundImageFit)}
+                        disabled={isBrowseMode}
+                        onChange={(value) => {
                 pushUndoSnapshot();
-                __appScope.setCanvasBackgroundImageFit?.(event.target.value);
-            }}>
-                        {IMAGE_FIT_MODE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
-                      </select>
+                __appScope.setCanvasBackgroundImageFit?.(value);
+            }}
+                        options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                        style={{ width: "100%" }}
+                      />
                     </td>
                   </tr>
                   <tr>
                     {batchEditors.renderChineseParamHeader("backgroundProjectId")}
                     <td>
                       <div className="background-page-field">
-                        <select value={backgroundProjectId} disabled={isBrowseMode} onChange={(event) => {
+                        <Select
+                          value={backgroundProjectId}
+                          disabled={isBrowseMode}
+                          onChange={(nextProjectId) => {
                 pushUndoSnapshot();
-                const nextProjectId = event.target.value;
                 setBackgroundProjectId(nextProjectId);
                 const backgroundProject = projectById.get(nextProjectId);
                 if (backgroundProject) {
@@ -386,12 +395,13 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                 else {
                     setBackgroundLayerIds([]);
                 }
-            }}>
-                          <option value="">不使用背景页面</option>
-                          {backgroundProjectOptions.map(({ project, label }) => (<option key={project.id} value={project.id}>
-                              {label}
-                            </option>))}
-                        </select>
+            }}
+                          options={[
+                            { value: "", label: "不使用背景页面" },
+                            ...backgroundProjectOptions.map(({ project, label }) => ({ value: project.id, label }))
+                          ]}
+                          style={{ width: "100%" }}
+                        />
                         <button type="button" onClick={() => {
                 pushUndoSnapshot();
                 setBackgroundProjectId("");
@@ -417,47 +427,64 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                   <tr>
                     {batchEditors.renderChineseParamHeader("powerUnit")}
                     <td>
-                      <select value={powerUnit} disabled={isBrowseMode} onChange={(event) => {
+                      <Select
+                        value={powerUnit}
+                        disabled={isBrowseMode}
+                        onChange={(value) => {
                 pushUndoSnapshot();
-                setPowerUnit(event.target.value);
-            }}>
-                        {POWER_UNIT_OPTIONS.map((unit) => (<option key={unit} value={unit}>{unit}</option>))}
-                      </select>
+                setPowerUnit(value);
+            }}
+                        options={POWER_UNIT_OPTIONS.map((unit) => ({ value: unit, label: unit }))}
+                        style={{ width: "100%" }}
+                      />
                     </td>
                   </tr>
                   <tr>
                     {batchEditors.renderChineseParamHeader("voltageUnit")}
                     <td>
-                      <select value={voltageUnit} disabled={isBrowseMode} onChange={(event) => {
+                      <Select
+                        value={voltageUnit}
+                        disabled={isBrowseMode}
+                        onChange={(value) => {
                 pushUndoSnapshot();
-                setVoltageUnit(event.target.value);
-            }}>
-                        {VOLTAGE_UNIT_OPTIONS.map((unit) => (<option key={unit} value={unit}>{unit}</option>))}
-                      </select>
+                setVoltageUnit(value);
+            }}
+                        options={VOLTAGE_UNIT_OPTIONS.map((unit) => ({ value: unit, label: unit }))}
+                        style={{ width: "100%" }}
+                      />
                     </td>
                   </tr>
                   <tr>
                     {batchEditors.renderChineseParamHeader("currentUnit")}
                     <td>
-                      <select value={currentUnit} disabled={isBrowseMode} onChange={(event) => {
+                      <Select
+                        value={currentUnit}
+                        disabled={isBrowseMode}
+                        onChange={(value) => {
                 pushUndoSnapshot();
-                setCurrentUnit(event.target.value);
-            }}>
-                        {CURRENT_UNIT_OPTIONS.map((unit) => (<option key={unit} value={unit}>{unit}</option>))}
-                      </select>
+                setCurrentUnit(value);
+            }}
+                        options={CURRENT_UNIT_OPTIONS.map((unit) => ({ value: unit, label: unit }))}
+                        style={{ width: "100%" }}
+                      />
                     </td>
                   </tr>
                   <tr>
                     {batchEditors.renderChineseParamHeader("powerBaseValue")}
                     <td>
-                      <div className="unit-value-field">
-                        <BufferedTextInput type="number" min="0" step="0.1" value={powerBaseValue} disabled={isBrowseMode} onCommit={(nextValue) => {
+                        <BufferedTextInput
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={powerBaseValue}
+                          disabled={isBrowseMode}
+                          suffix={powerUnit}
+                          onCommit={(nextValue) => {
                 pushUndoSnapshot();
                 const numericValue = Number(nextValue);
                 setPowerBaseValue(Number.isFinite(numericValue) ? numericValue : DEFAULT_POWER_BASE_VALUE);
-            }}/>
-                        <span>{powerUnit}</span>
-                      </div>
+            }}
+                        />
                     </td>
                   </tr>
                   <tr>
@@ -472,8 +499,10 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                   <tr>
                     {batchEditors.renderChineseParamHeader("modelType")}
                     <td>
-                      <select value={modelType} disabled={isBrowseMode} onChange={(event) => {
-                const nextType = event.target.value;
+                      <Select
+                        value={modelType}
+                        disabled={isBrowseMode}
+                        onChange={(nextType) => {
                 const modelTypeFailureMessage = modelAssociationDevicesModelTypeFailureMessage(nextType, nodes);
                 if (modelTypeFailureMessage) {
                   showGlobalMessage(modelTypeFailureMessage);
@@ -491,12 +520,15 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                   setFeeder("默认馈线");
                   setTaiqu(projectName);
                 }
-            }}>
-                        <option value="">请选择</option>
-                        <option value="厂站">厂站</option>
-                        <option value="馈线">馈线</option>
-                        <option value="台区">台区</option>
-                      </select>
+            }}
+                        options={[
+                          { value: "", label: "请选择" },
+                          { value: "厂站", label: "厂站" },
+                          { value: "馈线", label: "馈线" },
+                          { value: "台区", label: "台区" }
+                        ]}
+                        style={{ width: "100%" }}
+                      />
                     </td>
                   </tr>
                   {(modelType === "厂站" || modelType === "馈线" || modelType === "台区") && (<tr>
@@ -636,20 +668,28 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                     <tr>
                       {batchEditors.renderChineseParamHeader("layerId", "所属图层")}
                       <td>
-                        <select value={inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID} onChange={(event) => updateSelectedNode({ layerId: event.target.value })}>
-                          {layers.map((layer) => (<option key={layer.id} value={layer.id}>{layer.name}</option>))}
-                        </select>
+                        <Select
+                          value={inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID}
+                          onChange={(value) => updateSelectedNode({ layerId: value })}
+                          options={layers.map((layer) => ({ value: layer.id, label: layer.name }))}
+                          style={{ width: "100%" }}
+                        />
                       </td>
                     </tr>
                     {!__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<>
                         <tr>
                           {batchEditors.renderChineseParamHeader("_labelDisplayMode")}
                           <td>
-                            <select value={nodeLabelDisplayMode(inspectorSelectedNode)} onChange={(event) => updateParam("_labelDisplayMode", event.target.value)}>
-                              <option value="always">始终显示</option>
-                              <option value="hidden">始终隐藏</option>
-                              <option value="follow">跟随显示</option>
-                            </select>
+                            <Select
+                              value={nodeLabelDisplayMode(inspectorSelectedNode)}
+                              onChange={(value) => updateParam("_labelDisplayMode", value)}
+                              options={[
+                                { value: "always", label: "始终显示" },
+                                { value: "hidden", label: "始终隐藏" },
+                                { value: "follow", label: "跟随显示" }
+                              ]}
+                              style={{ width: "100%" }}
+                            />
                           </td>
                         </tr>
                         <tr>
@@ -675,12 +715,17 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         <tr>
                           {batchEditors.renderChineseParamHeader("_labelRotation")}
                           <td>
-                            <select value={String(normalizeNodeLabelRotation(inspectorSelectedNode.params._labelRotation))} onChange={(event) => updateParam("_labelRotation", String(normalizeNodeLabelRotation(event.target.value)))}>
-                              <option value="0">0° 横排</option>
-                              <option value="90">90° 纵排</option>
-                              <option value="180">180° 横排</option>
-                              <option value="270">270° 纵排</option>
-                            </select>
+                            <Select
+                              value={String(normalizeNodeLabelRotation(inspectorSelectedNode.params._labelRotation))}
+                              onChange={(value) => updateParam("_labelRotation", String(normalizeNodeLabelRotation(value)))}
+                              options={[
+                                { value: "0", label: "0° 横排" },
+                                { value: "90", label: "90° 纵排" },
+                                { value: "180", label: "180° 横排" },
+                                { value: "270", label: "270° 纵排" }
+                              ]}
+                              style={{ width: "100%" }}
+                            />
                           </td>
                         </tr>
                         <tr>
@@ -702,11 +747,16 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         <tr>
                           {batchEditors.renderChineseParamHeader("_labelTextAnchor")}
                           <td>
-                            <select value={nodeLabelTextAnchor(inspectorSelectedNode)} onChange={(event) => updateParam("_labelTextAnchor", event.target.value)}>
-                              <option value="start">左对齐</option>
-                              <option value="middle">居中</option>
-                              <option value="end">右对齐</option>
-                            </select>
+                            <Select
+                              value={nodeLabelTextAnchor(inspectorSelectedNode)}
+                              onChange={(value) => updateParam("_labelTextAnchor", value)}
+                              options={[
+                                { value: "start", label: "左对齐" },
+                                { value: "middle", label: "居中" },
+                                { value: "end", label: "右对齐" }
+                              ]}
+                              style={{ width: "100%" }}
+                            />
                           </td>
                         </tr>
                         <tr>
@@ -737,10 +787,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             {(terminal.type === "ac" || terminal.type === "dc") && (<tr>
                                 <th title={`${terminal.id}:vbase`}>{`${terminal.label}电压基值`}</th>
                                 <td>
-                                  <div className="unit-value-field">
-                                    <BufferedTextInput inputMode="decimal" value={terminalVoltageBaseNumber(terminal.vbase ?? terminalVbaseFallback(inspectorSelectedNode, terminalIndex))} onCommit={(nextValue) => updateTerminalVbase(terminal.id, nextValue)}/>
-                                    <span>{voltageUnit}</span>
-                                  </div>
+                                    <BufferedTextInput inputMode="decimal" value={terminalVoltageBaseNumber(terminal.vbase ?? terminalVbaseFallback(inspectorSelectedNode, terminalIndex))} suffix={voltageUnit} onCommit={(nextValue) => updateTerminalVbase(terminal.id, nextValue)}/>
                                 </td>
                               </tr>)}
                           </Fragment>))}
@@ -749,10 +796,15 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         <tr>
                           {batchEditors.renderChineseParamHeader(STATIC_ROUTE_AVOIDANCE_PARAM)}
                           <td>
-                            <select value={staticNodeParticipatesInRoutingAvoidance(inspectorSelectedNode) ? "1" : "0"} onChange={(event) => updateParam(STATIC_ROUTE_AVOIDANCE_PARAM, event.target.value)}>
-                              <option value="1">参与</option>
-                              <option value="0">不参与</option>
-                            </select>
+                            <Select
+                              value={staticNodeParticipatesInRoutingAvoidance(inspectorSelectedNode) ? "1" : "0"}
+                              onChange={(value) => updateParam(STATIC_ROUTE_AVOIDANCE_PARAM, value)}
+                              options={[
+                                { value: "1", label: "参与" },
+                                { value: "0", label: "不参与" }
+                              ]}
+                              style={{ width: "100%" }}
+                            />
                           </td>
                         </tr>
                         <tr>
@@ -861,9 +913,12 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         <tr>
                           {batchEditors.renderChineseParamHeader("backgroundImageFit")}
                           <td>
-                            <select value={normalizeImageFitMode(inspectorSelectedNode.params.backgroundImageFit)} onChange={(event) => updateParam("backgroundImageFit", event.target.value)}>
-                              {IMAGE_FIT_MODE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
-                            </select>
+                            <Select
+                              value={normalizeImageFitMode(inspectorSelectedNode.params.backgroundImageFit)}
+                              onChange={(value) => updateParam("backgroundImageFit", value)}
+                              options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                              style={{ width: "100%" }}
+                            />
                           </td>
                         </tr>
                       </>)}
@@ -885,9 +940,12 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         <tr>
                           {batchEditors.renderChineseParamHeader("foregroundImageFit")}
                           <td>
-                            <select value={normalizeImageFitMode(inspectorSelectedNode.params.foregroundImageFit)} onChange={(event) => updateParam("foregroundImageFit", event.target.value)}>
-                              {IMAGE_FIT_MODE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
-                            </select>
+                            <Select
+                              value={normalizeImageFitMode(inspectorSelectedNode.params.foregroundImageFit)}
+                              onChange={(value) => updateParam("foregroundImageFit", value)}
+                              options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                              style={{ width: "100%" }}
+                            />
                           </td>
                         </tr>
                       </>)}
@@ -927,7 +985,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         const optionConfig = enumSelectOptionsWithCurrentValue(paramOptionsForSection(row.key, componentLibrary), displayValue);
                         const options = optionConfig.options;
                         const hasVoltageParam = selectedContainerParameterView.rows.some((candidate) => VOLTAGE_BASE_PARAM_KEYS.has(candidate.key));
-                        const rowElement = row.key === "name" && selectedContainerParameterView.kind === "container" ? (<td><BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/></td>) : row.readonly || !row.paramKey ? (<td><input value={displayValue} readOnly/></td>) : options ? (<td><Select value={displayValue} onChange={(value) => updateParam(row.paramKey!, value)} options={options.map((option) => ({ value: option, label: option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option, disabled: option === optionConfig.invalidValue }))} style={{ minWidth: 120 }}/></td>) : (<td><BufferedTextInput value={displayValue} onCommit={(nextValue) => updateParam(row.paramKey!, nextValue)}/></td>);
+                        const rowElement = row.key === "name" && selectedContainerParameterView.kind === "container" ? (<td><BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/></td>) : row.readonly || !row.paramKey ? (<td><input value={displayValue} readOnly/></td>) : options ? (<td><Select value={displayValue} onChange={(value) => updateParam(row.paramKey!, value)} options={options.map((option) => ({ value: option, label: option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option, disabled: option === optionConfig.invalidValue }))} style={{ width: "100%" }}/></td>) : (<td><BufferedTextInput value={displayValue} onCommit={(nextValue) => updateParam(row.paramKey!, nextValue)}/></td>);
                         const rowFragment = (<tr key={row.key}>{batchEditors.renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}{rowElement}</tr>);
                         if (row.key === "name" && !hasVoltageParam) {
                           return <Fragment key={row.key}>{rowFragment}{renderVoltageBaseRow()}</Fragment>;
@@ -972,12 +1030,12 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                                 : resolvedValue;
                             const displayValue = formatDeviceModelParamDisplayValue(key, value);
                             const unitSuffix = getParamUnitSuffix(key);
-                            const inputElement = key === "name" ? (<BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition) ? (<input value={displayValue} readOnly/>) : (batchEditors.renderParamEditor(key, displayValue, false, definition));
+                            const inputElement = key === "name" ? (<BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition) ? (unitSuffix && key !== "name" ? (<span className="unit-value-field"><input value={displayValue} readOnly/><span className="unit-value-suffix">{unitSuffix}</span></span>) : (<input value={displayValue} readOnly/>)) : (batchEditors.renderParamEditor(key, displayValue, false, definition, unitSuffix ?? undefined));
                             const hasVoltageParam = keys.some((candidate) => VOLTAGE_BASE_PARAM_KEYS.has(candidate));
                             const rowFragment = (<tr key={key}>
                                   {batchEditors.renderParamHeader(key, key, definition?.cnName === key ? PARAM_LABELS[key] ?? key : (definition?.cnName ?? PARAM_LABELS[key] ?? key))}
                                   <td>
-                                    {unitSuffix && key !== "name" ? (<div className="unit-value-field">{inputElement}<span>{unitSuffix}</span></div>) : inputElement}
+                                    {inputElement}
                                   </td>
                                 </tr>);
                             if (key === "name" && !hasVoltageParam) {
