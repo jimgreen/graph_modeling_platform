@@ -1,3 +1,7 @@
+:root {
+  --control-height-sm: 24px;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -7602,7 +7606,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .device-definition-summary-value {
   width: 100%;
-  min-height: 32px;
+  min-height: var(--control-height-sm);
   border: 1px solid transparent;
   border-radius: 7px;
   padding: 0;
@@ -7631,7 +7635,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .device-definition-summary select {
   width: 100%;
-  min-height: 32px;
+  min-height: var(--control-height-sm);
   border: 1px solid #cbd5e1;
   border-radius: 7px;
   padding: 0 9px;
@@ -13274,7 +13278,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .custom-device-dialog .custom-param-table select {
   display: block;
   width: 100%;
-  min-height: 32px;
+  min-height: var(--control-height-sm);
   height: 100%;
   border: 0;
   border-radius: 0;
