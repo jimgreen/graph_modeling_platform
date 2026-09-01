@@ -8346,14 +8346,15 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .state-icon-drawing-property-table th {
-  width: 60px;
+  width: 65px;
   padding-left: 10px;
   padding-right: 10px;
-  color: #475569;
-  font-size: 11px;
+  color: #000000;
+  font-size: 12px;
   font-weight: 900;
   text-align: left;
   white-space: nowrap;
+  background: aliceblue;
 }
 
 .state-icon-drawing-property-table td {
