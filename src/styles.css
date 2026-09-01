@@ -11633,7 +11633,10 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   font-size: 14px;
 }
 
-.param-table td > .ant-select {
+.param-table td > .ant-select,
+.param-table td > .ant-input,
+.param-table td > .ant-input-affix-wrapper,
+.param-table td > .ant-input-number {
   width: 100%;
   max-width: 100%;
 }
