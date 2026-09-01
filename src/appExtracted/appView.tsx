@@ -622,13 +622,12 @@ export function renderAppView(__appScope: Record<string, any>) {
   const { exportCompletionDialog, setExportCompletionDialog } = __appScope;
   const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, savedUndoStackLengthRef, setHasUnsavedChanges } = __appScope;
   useEffect(() => {
-    if (unsavedChangesDialogOpen) {
-      const baseline = savedUndoStackLengthRef?.current ?? 0;
-      if (undoStack.length <= baseline && saveRequired) {
-        setHasUnsavedChanges(false);
-      }
+    // 撤销至保存基线时自动清除"未保存"标记，无需依赖对话框打开
+    const baseline = savedUndoStackLengthRef?.current ?? 0;
+    if (undoStack.length <= baseline && saveRequired) {
+      setHasUnsavedChanges(false);
     }
-  }, [unsavedChangesDialogOpen, undoStack, saveRequired, savedUndoStackLengthRef, setHasUnsavedChanges]);
+  }, [undoStack, saveRequired, savedUndoStackLengthRef, setHasUnsavedChanges]);
   const deleteAllDefinitionParameters = () => {
     if (!__appScope.requireEditMode("删除全部参数")) return;
     const template = __appScope.selectedDefinitionTemplate;
