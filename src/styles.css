@@ -8112,7 +8112,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .state-icon-drawing-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 240px);
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 320px);
   gap: 7px;
   min-width: 0;
   min-height: 0;
@@ -8346,7 +8346,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .state-icon-drawing-property-table th {
-  width: 72px;
+  width: 60px;
   padding-right: 8px;
   color: #475569;
   font-size: 11px;
@@ -8838,7 +8838,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 @media (max-width: 1280px) {
   .state-icon-drawing-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(206px, 220px);
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 300px);
   }
 
   .state-icon-drawing-side {

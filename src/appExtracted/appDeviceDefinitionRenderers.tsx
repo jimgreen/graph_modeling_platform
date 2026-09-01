@@ -2220,8 +2220,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           <tr>
                             <th>状态值</th>
                             <td><BufferedTextInput value={selectedStateRow.value} onCommit={(value) => handlers.update(selectedStateRowId, { value })} /></td>
-                          </tr>
-                          <tr>
                             <th>状态名称</th>
                             <td><BufferedTextInput value={selectedStateRow.name} onCommit={(value) => handlers.update(selectedStateRowId, { name: value })} /></td>
                           </tr>
@@ -2237,32 +2235,36 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                                 options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
                               />
                             </td>
+                            <th>边框线型</th>
+                            <td>
+                              <Select value={frame.strokeStyle} onChange={(value) => setStateIconFramePatch({ strokeStyle: value })} options={[{ value: "solid", label: "实线" }, { value: "dashed", label: "虚线" }, { value: "dotted", label: "点线" }]} />
+                            </td>
                           </tr>
                         </>
                       )}
-                      <tr>
-                        <th>边框线型</th>
-                        <td>
-                          <Select value={frame.strokeStyle} onChange={(value) => setStateIconFramePatch({ strokeStyle: value })} options={[{ value: "solid", label: "实线" }, { value: "dashed", label: "虚线" }, { value: "dotted", label: "点线" }]} />
-                        </td>
-                      </tr>
-                      <tr>
-                        <th>边框线宽</th>
-                        <td>
-                          <InputNumber size="small"
-                            min={0}
-                            step={1}
-                            inputMode="numeric"
-                            value={normalizeStateIconDrawingStrokeWidth(frame.strokeWidth)}
-                            onKeyDown={(event) => {
-                              if ([".", "-", "+", "e", "E"].includes(event.key)) {
-                                event.preventDefault();
-                              }
-                            }}
-                            onChange={(nextValue) => setStateIconFramePatch({ strokeWidth: normalizeStateIconDrawingStrokeWidth(String(nextValue ?? ""), frame.strokeWidth) })}
-                          />
-                        </td>
-                      </tr>
+                      {isDefaultStatePage && (
+                        <tr>
+                          <th>边框线型</th>
+                          <td>
+                            <Select value={frame.strokeStyle} onChange={(value) => setStateIconFramePatch({ strokeStyle: value })} options={[{ value: "solid", label: "实线" }, { value: "dashed", label: "虚线" }, { value: "dotted", label: "点线" }]} />
+                          </td>
+                          <th>边框线宽</th>
+                          <td>
+                            <InputNumber size="small"
+                              min={0}
+                              step={1}
+                              inputMode="numeric"
+                              value={normalizeStateIconDrawingStrokeWidth(frame.strokeWidth)}
+                              onKeyDown={(event) => {
+                                if ([".", "-", "+", "e", "E"].includes(event.key)) {
+                                  event.preventDefault();
+                                }
+                              }}
+                              onChange={(nextValue) => setStateIconFramePatch({ strokeWidth: normalizeStateIconDrawingStrokeWidth(String(nextValue ?? ""), frame.strokeWidth) })}
+                            />
+                          </td>
+                        </tr>
+                      )}
                       <tr>
                         <th>边框线色</th>
                         <td>
@@ -2270,8 +2272,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             <DeferredColorInput value={frame.strokeColor} fallback="#94a3b8" onCommit={(value) => setStateIconFramePatch({ strokeColor: value })} />
                           </div>
                         </td>
-                      </tr>
-                      <tr>
                         <th>背景</th>
                         <td>
                           <div className="state-icon-drawing-color-field">
@@ -2372,24 +2372,18 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         <tr>
                           <th>X</th>
                           <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.x)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { x: Number(nextValue ?? 0) || 0 })} /></td>
-                        </tr>
-                        <tr>
                           <th>Y</th>
                           <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.y)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { y: Number(nextValue ?? 0) || 0 })} /></td>
                         </tr>
                         <tr>
                           <th>宽</th>
                           <td><InputNumber size="small" min={1} step={0.01} value={formatStateIconDrawingNumber(selected.width, 1)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue ?? 0) || 1) })} /></td>
-                        </tr>
-                        <tr>
                           <th>高</th>
                           <td><InputNumber size="small" min={1} step={0.01} value={formatStateIconDrawingNumber(selected.height, 1)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(nextValue ?? 0) || 1) })} /></td>
                         </tr>
                         <tr>
                           <th>角度</th>
                           <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.rotation)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { rotation: Number(nextValue ?? 0) || 0 })} /></td>
-                        </tr>
-                        <tr>
                           <th>粗细</th>
                           <td>
                             <InputNumber size="small"
@@ -2411,8 +2405,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           <td>
                             <Select value={selected.strokeStyle ?? "solid"} onChange={(value) => updateStateIconDrawingElement(selected.id, { strokeStyle: value })} options={[{ value: "solid", label: "实线" }, { value: "dashed", label: "虚线" }, { value: "dotted", label: "点线" }]} />
                           </td>
-                        </tr>
-                        <tr>
                           <th>所属端子</th>
                           <td>
                             <Select
@@ -2429,31 +2421,50 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                               <DeferredColorInput value={visibleStrokeColor} fallback="#2563eb" onCommit={(value) => updateStateIconDrawingElement(selected.id, { strokeColor: value })} />
                             </div>
                           </td>
-                        </tr>
-                        {isLineShape && (
-                          <>
-                            <tr>
+                          {isLineShape ? (
+                            <>
                               <th>起点端型</th>
                               <td>
                                 <Select value={selected.startCap ?? "none"} onChange={(value) => updateStateIconDrawingElement(selected.id, { startCap: value })} options={STATE_ICON_LINE_CAP_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
                               </td>
-                            </tr>
-                            <tr>
-                              <th>终点端型</th>
+                            </>
+                          ) : isClosedShape ? (
+                            <>
+                              <th>填充</th>
                               <td>
-                                <Select value={selected.endCap ?? "none"} onChange={(value) => updateStateIconDrawingElement(selected.id, { endCap: value })} options={STATE_ICON_LINE_CAP_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
+                                <div className="state-icon-drawing-color-field">
+                                  <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value) => updateStateIconDrawingElement(selected.id, { fillColor: value })} />
+                                </div>
                               </td>
-                            </tr>
-                          </>
-                        )}
-                        {isClosedShape && (
+                            </>
+                          ) : (
+                            <>
+                              <th></th>
+                              <td></td>
+                            </>
+                          )}
+                        </tr>
+                        {isLineShape && (
                           <tr>
-                            <th>填充</th>
+                            <th>终点端型</th>
                             <td>
-                              <div className="state-icon-drawing-color-field">
-                                <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value) => updateStateIconDrawingElement(selected.id, { fillColor: value })} />
-                              </div>
+                              <Select value={selected.endCap ?? "none"} onChange={(value) => updateStateIconDrawingElement(selected.id, { endCap: value })} options={STATE_ICON_LINE_CAP_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
                             </td>
+                            {isClosedShape ? (
+                              <>
+                                <th>填充</th>
+                                <td>
+                                  <div className="state-icon-drawing-color-field">
+                                    <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value) => updateStateIconDrawingElement(selected.id, { fillColor: value })} />
+                                  </div>
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <th></th>
+                                <td></td>
+                              </>
+                            )}
                           </tr>
                         )}
                         {selected.kind === "text" && (
@@ -2461,8 +2472,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             <tr>
                               <th>文字</th>
                               <td><BufferedTextInput value={selected.text} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { text: nextValue })} /></td>
-                            </tr>
-                            <tr>
                               <th>文本颜色</th>
                               <td>
                                 <div className="state-icon-drawing-color-field">
@@ -2475,8 +2484,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                               <td>
                                 <Select value={fontFamilyValue} onChange={(value) => updateStateIconDrawingElement(selected.id, { fontFamily: value })} options={fontFamilyOptions.map((fontFamily) => ({ value: fontFamily, label: fontFamilyOptionLabels[fontFamily] ?? fontFamily }))} />
                               </td>
-                            </tr>
-                            <tr>
                               <th>字号</th>
                               <td>
                                 <InputNumber size="small"
@@ -2500,8 +2507,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                               <td>
                                 <Select value={String(selected.fontWeight ?? "800")} onChange={(value) => updateStateIconDrawingElement(selected.id, { fontWeight: value })} options={[{ value: "400", label: "常规" }, { value: "700", label: "加粗" }, { value: "800", label: "特粗" }]} />
                               </td>
-                            </tr>
-                            <tr>
                               <th>字型</th>
                               <td>
                                 <Select value={selected.fontStyle ?? "normal"} onChange={(value) => updateStateIconDrawingElement(selected.id, { fontStyle: value })} options={[{ value: "normal", label: "常规" }, { value: "italic", label: "斜体" }]} />
@@ -2516,16 +2521,12 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                               <td>
                                 <Select value={normalizeImageFitMode(selected.imageFit)} onChange={(value) => updateStateIconDrawingElement(selected.id, { imageFit: value })} options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
                               </td>
-                            </tr>
-                            <tr>
                               <th>图片缩放</th>
                               <td><InputNumber size="small" min={0.05} step={0.01} value={formatStateIconDrawingNumber(selected.imageScale ?? 1, 1)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(nextValue ?? 0) || 0.05) })} /></td>
                             </tr>
                             <tr>
                               <th>裁剪X</th>
                               <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.cropX ?? 0)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { cropX: Number(nextValue ?? 0) || 0 })} /></td>
-                            </tr>
-                            <tr>
                               <th>裁剪Y</th>
                               <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.cropY ?? 0)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { cropY: Number(nextValue ?? 0) || 0 })} /></td>
                             </tr>
