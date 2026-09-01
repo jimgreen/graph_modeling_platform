@@ -8366,6 +8366,12 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   min-width: 0;
 }
 
+.state-icon-drawing-property-table .ant-input-number,
+.state-icon-drawing-property-table .ant-select,
+.state-icon-drawing-property-table .ant-input {
+  width: 100%;
+}
+
 .state-icon-drawing-library > span,
 .state-icon-drawing-state-info > strong,
 .state-icon-drawing-frame-panel > strong {
@@ -11633,10 +11639,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   font-size: 14px;
 }
 
-.param-table td > .ant-select,
-.param-table td > .ant-input,
-.param-table td > .ant-input-affix-wrapper,
-.param-table td > .ant-input-number {
+.param-table td > .ant-select {
   width: 100%;
   max-width: 100%;
 }
