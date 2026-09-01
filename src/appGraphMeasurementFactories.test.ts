@@ -970,6 +970,10 @@ describe("measurement canvas interactions", () => {
       projectMeasurements = typeof updater === "function" ? updater(projectMeasurements) : updater;
     });
     const updateMeasurementDrag = createUpdateMeasurementDrag({
+      bestSmartAlignmentAxisSnap: vi.fn(() => null),
+      canvasScrollScaleRef: { current: { x: 1, y: 1 } },
+      canvasVisibleViewBoxRef: { current: { x: 0, y: 0, width: 1000, height: 800 } },
+      isEditMode: true,
       measurementDragRef: {
         current: {
           groupId: "line-measurement",
@@ -979,6 +983,8 @@ describe("measurement canvas interactions", () => {
           startPoint: { x: 100, y: 100 }
         }
       },
+      measurementGroupCanvasPosition: (_node: any, group: any) => ({ x: 200 + group.offset.x, y: 160 + group.offset.y }),
+      measurementGroupRenderMetrics: () => ({ width: 80, height: 40 }),
       measurementOffsetScaleForNode: () => ({ x: 2, y: 4 }),
       nodeById: new Map([
         [
@@ -992,12 +998,21 @@ describe("measurement canvas interactions", () => {
           }
         ]
       ]),
+      nodeHasUprightBoundsContent: () => false,
+      nodeSmartAlignmentBounds: (node: any) => ({ left: node.position.x - 80, right: node.position.x + 80, top: node.position.y - 40, bottom: node.position.y + 40 }),
+      nodeTerminalOutflowSmartAlignmentAnchors: () => ({ x: [], y: [] }),
       projectMeasurements,
       pushUndoSnapshot,
+      queryNodeSpatialIndex: vi.fn(() => []),
       screenToSvgPoint: vi.fn(() => ({ x: 140, y: 180 })),
       setMeasurementDrag,
       setProjectMeasurements,
-      svgRef: { current: {} }
+      SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE: 12,
+      smartAlignmentEnabled: false,
+      svgRef: { current: {} },
+      updateSmartAlignmentGuides: vi.fn(),
+      viewBoxRef: { current: { x: 0, y: 0, width: 1000, height: 800 } },
+      visibleNodeSpatialIndex: {}
     });
 
     const moved = updateMeasurementDrag({
