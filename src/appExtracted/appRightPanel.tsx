@@ -386,6 +386,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         <Select
                           value={backgroundProjectId}
                           disabled={isBrowseMode}
+                          popupMatchSelectWidth={true}
                           onChange={(nextProjectId) => {
                 pushUndoSnapshot();
                 setBackgroundProjectId(nextProjectId);

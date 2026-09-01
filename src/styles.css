@@ -55,6 +55,13 @@ button:not(.ant-btn):disabled {
 
 .ant-select-dropdown {
   font-size: 14px;
+  max-width: 60vw;
+}
+
+.ant-select-dropdown .ant-select-item-option-content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ant-input-number {
