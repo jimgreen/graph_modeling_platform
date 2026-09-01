@@ -50,7 +50,6 @@ button:not(.ant-btn):disabled {
 
 .ant-select {
   font-size: 14px;
-  min-width: fit-content;
 }
 
 .ant-select-dropdown {
@@ -9911,77 +9910,77 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .deferred-color-input {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  min-width: 32px;
-  height: 28px;
-  min-height: 28px;
-  isolation: isolate;
-  vertical-align: middle;
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 32px !important;
+  min-width: 32px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  isolation: isolate !important;
+  vertical-align: middle !important;
 }
 
 .deferred-color-input input[type="color"] {
-  position: relative;
-  z-index: 1;
+  position: relative !important;
+  z-index: 1 !important;
 }
 
 .deferred-color-input.transparent::before {
-  content: "";
-  position: absolute;
-  inset: 2px;
-  border-radius: 5px;
+  content: "" !important;
+  position: absolute !important;
+  inset: 2px !important;
+  border-radius: 5px !important;
   background:
     linear-gradient(45deg, #cbd5e1 25%, transparent 25%, transparent 75%, #cbd5e1 75%),
     linear-gradient(45deg, #cbd5e1 25%, transparent 25%, transparent 75%, #cbd5e1 75%),
-    #ffffff;
-  background-position: 0 0, 5px 5px, 0 0;
-  background-size: 10px 10px;
-  pointer-events: none;
+    #ffffff !important;
+  background-position: 0 0, 5px 5px, 0 0 !important;
+  background-size: 10px 10px !important;
+  pointer-events: none !important;
 }
 
 .deferred-color-input.transparent input[type="color"] {
-  opacity: 0.55;
+  opacity: 0.55 !important;
 }
 
 .deferred-color-transparent-button,
 .color-field .deferred-color-transparent-button {
-  position: absolute;
-  right: -5px;
-  bottom: -5px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  min-width: 16px;
-  height: 16px;
-  min-height: 16px;
-  padding: 0;
-  border: 1px solid #cbd5e1;
-  border-radius: 999px;
-  color: #475569;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
-  font-size: 9px;
-  font-weight: 850;
-  line-height: 1;
+  position: absolute !important;
+  right: -5px !important;
+  bottom: -5px !important;
+  z-index: 2 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 16px !important;
+  min-width: 16px !important;
+  height: 16px !important;
+  min-height: 16px !important;
+  padding: 0 !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 999px !important;
+  color: #475569 !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22) !important;
+  font-size: 9px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
 }
 
 .deferred-color-transparent-button:hover:not(:disabled),
 .deferred-color-transparent-button:focus-visible {
-  border-color: #60a5fa;
-  color: #1d4ed8;
-  background: #eff6ff;
-  outline: none;
+  border-color: #60a5fa !important;
+  color: #1d4ed8 !important;
+  background: #eff6ff !important;
+  outline: none !important;
 }
 
 .deferred-color-transparent-button[aria-pressed="true"] {
-  border-color: #1d4ed8;
-  color: #ffffff;
-  background: #2563eb;
+  border-color: #1d4ed8 !important;
+  color: #ffffff !important;
+  background: #2563eb !important;
 }
 
 .image-field-actions {
@@ -11428,7 +11427,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .param-table {
   --param-table-row-height: 40px;
-  --param-table-control-height: 26px;
+  --param-table-control-height: 24px;
   width: 100%;
   border-collapse: collapse;
   border: 1px solid #e2e8f0;
@@ -11633,6 +11632,64 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   max-width: 100%;
 }
 
+/* 图元 tab 输入控件高度统一 24px（作为 antd small 输入框/下拉的默认高度） */
+.param-table .ant-select-sm,
+.param-table .ant-input-sm,
+.param-table .ant-input-affix-wrapper-sm,
+.param-table .ant-input-number-sm {
+  height: 24px;
+  min-height: 24px;
+}
+
+/* ========== 右侧面板属性值区域：多控件行输入控件宽度 ==========
+   值区域（td）内多控件时：
+   - 输入控件（输入框/下拉）默认占 1/3 值区域宽度，靠左排列；
+   - 有按钮或颜色选择框且仅 1 个输入控件时，该输入控件占 1/2；
+   - 【图元】→【量测】表：一行多控件时输入控件固定 1/3（覆盖 1/2 特例）。 */
+
+/* 多控件行（td 直接子元素 ≥ 2）：flex 布局 */
+.inspector-panel .param-table td:has(> :nth-child(2)) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 输入控件（输入框/下拉）默认 1/3，靠左 */
+.inspector-panel .param-table td:has(> :nth-child(2)) > :is(.ant-select, .ant-input, .ant-input-affix-wrapper, .ant-input-number) {
+  flex: 1 1 33.333%;
+  max-width: 33.333%;
+  min-width: 0;
+}
+
+/* 按钮/颜色选择框保持固有尺寸 */
+.inspector-panel .param-table td:has(> :nth-child(2)) > :is(button, .deferred-color-input) {
+  flex: 0 0 auto;
+}
+
+/* 有按钮或颜色选择框，且恰好 1 个输入控件 → 输入占 1/2 */
+.inspector-panel .param-table td:has(> :is(button, .deferred-color-input) + :is(.ant-select, .ant-input, .ant-input-affix-wrapper, .ant-input-number)):not(:has(> :nth-child(3))) > :is(.ant-select, .ant-input, .ant-input-affix-wrapper, .ant-input-number),
+.inspector-panel .param-table td:has(> :is(.ant-select, .ant-input, .ant-input-affix-wrapper, .ant-input-number) + :is(button, .deferred-color-input)):not(:has(> :nth-child(3))) > :is(.ant-select, .ant-input, .ant-input-affix-wrapper, .ant-input-number) {
+  flex: 1 1 50%;
+  max-width: 50%;
+}
+
+/* 【图元】→【量测】表：输入控件固定 1/3（含 td 内 div 包裹的输入控件；!important 覆盖 1/2 特例） */
+.inspector-panel .selected-node-measurement-table td:has(> :nth-child(2)) > :is(.ant-select, .ant-input, .ant-input-affix-wrapper, .ant-input-number) {
+  flex: 1 1 33.333% !important;
+  max-width: 33.333% !important;
+}
+
+/* 量测表边框行：div（含 2 输入）+ 颜色框 → div 占 2/3，div 内输入各半（= 值区域 1/3） */
+.inspector-panel .selected-node-measurement-table td:has(> div + .deferred-color-input) > div {
+  flex: 1 1 auto !important;
+  max-width: 66.667% !important;
+}
+.inspector-panel .selected-node-measurement-table td:has(> div + .deferred-color-input) > div > :is(.ant-select, .ant-input, .ant-input-affix-wrapper, .ant-input-number) {
+  flex: 1 1 50% !important;
+  max-width: 50% !important;
+}
+
 .param-table tr:last-child th,
 .param-table tr:last-child td {
   border-bottom: 0;
@@ -11814,20 +11871,6 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   border-color: transparent;
 }
 
-.param-table .color-field .deferred-color-input {
-  width: 100%;
-  min-width: 100%;
-  height: var(--param-table-control-height);
-  min-height: var(--param-table-control-height);
-}
-
-.param-table .color-field .deferred-color-input .ant-color-picker-trigger {
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  border: none;
-}
-
 .param-table .color-field .ant-input-affix-wrapper,
 .param-table .color-field .ant-input {
   width: 100%;
@@ -11835,18 +11878,6 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .param-table .color-field .ant-btn {
   width: 100%;
-}
-
-.param-table .color-field .deferred-color-transparent-button {
-  right: -4px;
-  bottom: -4px;
-  width: 14px;
-  min-width: 14px;
-  height: 14px;
-  min-height: 14px;
-  border-radius: 999px;
-  padding: 0;
-  font-size: 8px;
 }
 
 .param-table button svg {

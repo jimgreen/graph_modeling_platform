@@ -1,6 +1,6 @@
 // 缓冲输入组件 — 延迟提交的表单输入控件
 
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { ColorPicker, Input, Select, Button } from "antd";
 
 const { TextArea } = Input;
@@ -137,6 +137,7 @@ export type BufferedTextInputProps = {
   onClick?: (event: MouseEvent<HTMLInputElement>) => void;
   onDoubleClick?: (event: MouseEvent<HTMLInputElement>) => void;
   onKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
+  suffix?: ReactNode;
   onCommit: (value: string) => void;
 };
 
