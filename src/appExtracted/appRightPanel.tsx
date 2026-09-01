@@ -95,6 +95,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     Save,
     STATIC_ROUTE_AVOIDANCE_PARAM,
     TextStyleToggleButton,
+    Trash2,
     Underline,
     VOLTAGE_UNIT_OPTIONS,
     activeSelectedNodeIds,
@@ -402,12 +403,12 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                           ]}
                           style={{ width: "100%" }}
                         />
-                        <button type="button" onClick={() => {
+                        <button type="button" title="清空背景页面" onClick={() => {
                 pushUndoSnapshot();
                 setBackgroundProjectId("");
                 setBackgroundLayerIds([]);
-            }} disabled={isBrowseMode || !backgroundProjectId}>
-                          清空背景页面
+            }} disabled={isBrowseMode || !backgroundProjectId} className="background-page-clear-btn">
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </td>

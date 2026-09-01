@@ -11789,6 +11789,15 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   color: #000;
   border-color: transparent;
   transition: color 120ms ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.param-table .background-page-clear-btn {
+  width: var(--param-table-control-height);
+  min-width: var(--param-table-control-height);
+  padding: 0;
 }
 
 .param-table .color-field button:hover,
