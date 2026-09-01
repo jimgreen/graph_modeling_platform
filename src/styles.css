@@ -9050,6 +9050,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .custom-param-table input,
 .custom-param-table select {
   width: 100%;
+  height: var(--control-height-sm);
   border: 1px solid #cbd5e1;
   border-radius: 7px;
   padding: 0 9px;
@@ -9125,6 +9126,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .custom-device-form-grid input:disabled,
 .custom-device-form-grid input[readonly] {
+  height: var(--control-height-sm);
   color: #475569;
   background: #f1f5f9;
   cursor: default;
