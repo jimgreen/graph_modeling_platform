@@ -5191,7 +5191,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
 
 export function createBeginMeasurementDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGGElement>, group: MeasurementGroup) => {
-  const { isBrowseMode, screenToSvgPoint, selectCanvasGraphics, setInspectorTab, setLastCanvasClickTarget, setMeasurementDrag, setSelectedDeviceInfoView, svgRef } = __appScope;
+  const { isBrowseMode, measurementGroupCanvasPosition, measurementGroupRenderMetrics, measurementOffsetScaleForNode, nodeById, nodeHasUprightBoundsContent, nodeSmartAlignmentBounds, nodeTerminalOutflowSmartAlignmentAnchors, projectMeasurements, screenToSvgPoint, selectCanvasGraphics, setInspectorTab, setLastCanvasClickTarget, setMeasurementDrag, setSelectedDeviceInfoView, smartAlignmentEnabled, svgRef, visibleNodeById } = __appScope;
     if (isBrowseMode || event.button !== 0 || !svgRef.current) {
       return;
     }
@@ -5202,12 +5202,60 @@ export function createBeginMeasurementDrag(__appScope: Record<string, any>) {
     setInspectorTab("device");
     setSelectedDeviceInfoView("measurement");
     const startPoint = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
+    // 预计算拖动量测框边界（用 metrics，不查 DOM）
+    let draggedBounds: { left: number; right: number; top: number; bottom: number } | undefined;
+    let alignmentCandidates: Array<{ id: string; bounds: { left: number; right: number; top: number; bottom: number }; anchors: { x: []; y: [] } }> | undefined;
+    if (smartAlignmentEnabled) {
+      const node = nodeById?.get(group.nodeId);
+      const metrics = node ? measurementGroupRenderMetrics(node, group) : null;
+      if (node && metrics) {
+        const pos = measurementGroupCanvasPosition(node, group);
+        draggedBounds = {
+          left: pos.x - metrics.width / 2,
+          right: pos.x + metrics.width / 2,
+          top: pos.y - metrics.height / 2,
+          bottom: pos.y + metrics.height / 2
+        };
+        // 预计算所有候选
+        const candidatesMap = new Map<string, { id: string; bounds: { left: number; right: number; top: number; bottom: number }; anchors: { x: []; y: [] } }>();
+        const addCandidate = (id: string, bounds: { left: number; right: number; top: number; bottom: number }) => {
+          if (!candidatesMap.has(id)) {
+            candidatesMap.set(id, { id, bounds, anchors: { x: [], y: [] } });
+          }
+        };
+        // 设备节点
+        const nodes = nodeById?.size > 0 ? nodeById.values() : (visibleNodeById?.size > 0 ? visibleNodeById.values() : []);
+        for (const n of nodes) {
+          addCandidate(n.id, nodeSmartAlignmentBounds(n, n.position, nodeHasUprightBoundsContent(n)));
+        }
+        // 其他量测框
+        if (projectMeasurements?.groups) {
+          for (const otherGroup of projectMeasurements.groups) {
+            if (otherGroup.id === group.id) continue;
+            const otherNode = nodeById?.get(otherGroup.nodeId);
+            if (!otherNode) continue;
+            const otherMetrics = measurementGroupRenderMetrics(otherNode, otherGroup);
+            if (!otherMetrics) continue;
+            const otherPos = measurementGroupCanvasPosition(otherNode, otherGroup);
+            addCandidate(`measurement-${otherGroup.id}`, {
+              left: otherPos.x - otherMetrics.width / 2,
+              right: otherPos.x + otherMetrics.width / 2,
+              top: otherPos.y - otherMetrics.height / 2,
+              bottom: otherPos.y + otherMetrics.height / 2
+            });
+          }
+        }
+        alignmentCandidates = Array.from(candidatesMap.values());
+      }
+    }
     setMeasurementDrag({
       groupId: group.id,
       pointerId: event.pointerId,
       startPoint,
       startOffset: { ...group.offset },
-      historyCaptured: false
+      historyCaptured: false,
+      draggedBounds,
+      alignmentCandidates
     });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -5215,7 +5263,7 @@ export function createBeginMeasurementDrag(__appScope: Record<string, any>) {
 
 export function createUpdateMeasurementDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGSVGElement>) => {
-  const { SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE, canvasScrollScaleRef, measurementDragRef, measurementGroupCanvasPosition, measurementGroupRenderMetrics, measurementOffsetScaleForNode, nodeById, nodeHasUprightBoundsContent, nodeSmartAlignmentBounds, nodeTerminalOutflowSmartAlignmentAnchors, projectMeasurements, pushUndoSnapshot, screenToSvgPoint, setMeasurementDrag, setProjectMeasurements, smartAlignmentEnabled, svgRef, updateSmartAlignmentGuides, visibleNodeById } = __appScope;
+  const { measurementDragRef, measurementOffsetScaleForNode, nodeById, projectMeasurements, pushUndoSnapshot, screenToSvgPoint, setMeasurementDrag, setProjectMeasurements, smartAlignmentEnabled, svgRef, updateSmartAlignmentGuides } = __appScope;
     const measurementDrag = measurementDragRef?.current;
     if (!measurementDrag || measurementDrag.pointerId !== event.pointerId || !svgRef.current) {
       return false;
@@ -5238,109 +5286,24 @@ export function createUpdateMeasurementDrag(__appScope: Record<string, any>) {
       x: measurementDrag.startOffset.x + (point.x - measurementDrag.startPoint.x) / offsetScale.x,
       y: measurementDrag.startOffset.y + (point.y - measurementDrag.startPoint.y) / offsetScale.y
     };
-    // 计算对齐辅助线吸附
+    // 使用缓存的边界和候选（拖动开始时预计算）
+    const draggedBounds = measurementDrag.draggedBounds;
+    const candidates = measurementDrag.alignmentCandidates;
     let offset = {
       x: Math.round(rawOffset.x * 10) / 10,
       y: Math.round(rawOffset.y * 10) / 10
     };
-    if (draggedNode && draggedGroup && smartAlignmentEnabled) {
-      const candidateGroup = { ...draggedGroup, offset: rawOffset, anchor: "custom" };
-      const position = measurementGroupCanvasPosition(draggedNode, candidateGroup);
-      const metrics = measurementGroupRenderMetrics(draggedNode, draggedGroup);
-      if (metrics) {
-        // 用 DOM 实际边界（而非 metrics.width 估算），避免字符宽度估算偏差导致对齐偏移
-        const svgEl = svgRef.current;
-        let draggedBounds: { left: number; right: number; top: number; bottom: number };
-        if (svgEl) {
-          const groupEl = svgEl.querySelector(`[data-export-measurement-group-id="${draggedGroup.id}"]`);
-          if (groupEl) {
-            try {
-              const bbox = groupEl.getBBox();
-              draggedBounds = {
-                left: position.x + bbox.x,
-                right: position.x + bbox.x + bbox.width,
-                top: position.y + bbox.y,
-                bottom: position.y + bbox.y + bbox.height
-              };
-            } catch {
-              draggedBounds = {
-                left: position.x - metrics.width / 2,
-                right: position.x + metrics.width / 2,
-                top: position.y - metrics.height / 2,
-                bottom: position.y + metrics.height / 2
-              };
-            }
-          } else {
-            draggedBounds = {
-              left: position.x - metrics.width / 2,
-              right: position.x + metrics.width / 2,
-              top: position.y - metrics.height / 2,
-              bottom: position.y + metrics.height / 2
-            };
-          }
-        } else {
-          draggedBounds = {
-            left: position.x - metrics.width / 2,
-            right: position.x + metrics.width / 2,
-            top: position.y - metrics.height / 2,
-            bottom: position.y + metrics.height / 2
-          };
-        }
-        const snapThreshold = Math.max(20, (SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE ?? 12) / Math.max(0.2, Math.max(canvasScrollScaleRef?.current?.x ?? 1, canvasScrollScaleRef?.current?.y ?? 1)));
-        const candidatesById = new Map();
-        const includeCandidate = (candidate) => {
-          if (candidatesById.has(candidate.id)) return;
-          candidatesById.set(candidate.id, {
-            id: candidate.id,
-            bounds: nodeSmartAlignmentBounds(candidate, candidate.position, nodeHasUprightBoundsContent(candidate)),
-            anchors: nodeTerminalOutflowSmartAlignmentAnchors(candidate, candidate.position)
-          });
+    if (draggedBounds && candidates && smartAlignmentEnabled) {
+      const xSnap = bestSmartAlignmentAxisSnap("x", draggedBounds, [], candidates, 20);
+      const ySnap = bestSmartAlignmentAxisSnap("y", draggedBounds, [], candidates, 20);
+      const guides = [xSnap?.guide, ySnap?.guide].filter(Boolean);
+      updateSmartAlignmentGuides?.(guides);
+      const adjustment = { x: xSnap?.adjustment ?? 0, y: ySnap?.adjustment ?? 0 };
+      if (adjustment.x || adjustment.y) {
+        offset = {
+          x: Math.round((rawOffset.x + adjustment.x / offsetScale.x) * 10) / 10,
+          y: Math.round((rawOffset.y + adjustment.y / offsetScale.y) * 10) / 10
         };
-        // 优先从 nodeById 直接取全量节点
-        if (nodeById && nodeById.size > 0) {
-          for (const node of nodeById.values()) {
-            includeCandidate(node);
-          }
-        } else if (visibleNodeById && visibleNodeById.size > 0) {
-          for (const node of visibleNodeById.values()) {
-            includeCandidate(node);
-          }
-        }
-        // 添加其他量测框作为对齐候选（排除当前拖动的量测框）
-        if (projectMeasurements?.groups) {
-          for (const otherGroup of projectMeasurements.groups) {
-            if (otherGroup.id === draggedGroup.id) continue;
-            const otherNode = nodeById?.get(otherGroup.nodeId);
-            if (!otherNode) continue;
-            const otherMetrics = measurementGroupRenderMetrics(otherNode, otherGroup);
-            if (!otherMetrics) continue;
-            const otherPosition = measurementGroupCanvasPosition(otherNode, otherGroup);
-            // 量测框在 <g> 局部坐标中居中，需转为画布坐标
-            const otherBounds = {
-              left: otherPosition.x - otherMetrics.width / 2,
-              right: otherPosition.x + otherMetrics.width / 2,
-              top: otherPosition.y - otherMetrics.height / 2,
-              bottom: otherPosition.y + otherMetrics.height / 2
-            };
-            candidatesById.set(`measurement-${otherGroup.id}`, {
-              id: `measurement-${otherGroup.id}`,
-              bounds: otherBounds,
-              anchors: { x: [], y: [] }
-            });
-          }
-        }
-        const candidates = Array.from(candidatesById.values());
-        const xSnap = bestSmartAlignmentAxisSnap("x", draggedBounds, [], candidates, snapThreshold);
-        const ySnap = bestSmartAlignmentAxisSnap("y", draggedBounds, [], candidates, snapThreshold);
-        const guides = [xSnap?.guide, ySnap?.guide].filter(Boolean);
-        updateSmartAlignmentGuides?.(guides);
-        const adjustment = { x: xSnap?.adjustment ?? 0, y: ySnap?.adjustment ?? 0 };
-        if (adjustment.x || adjustment.y) {
-          offset = {
-            x: Math.round((rawOffset.x + adjustment.x / offsetScale.x) * 10) / 10,
-            y: Math.round((rawOffset.y + adjustment.y / offsetScale.y) * 10) / 10
-          };
-        }
       }
     } else {
       updateSmartAlignmentGuides?.([]);

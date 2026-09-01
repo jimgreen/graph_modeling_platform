@@ -1400,6 +1400,10 @@ export type MeasurementDragState = {
   startPoint: Point;
   startOffset: Point;
   historyCaptured: boolean;
+  /** 预计算的量测框边界（开始拖动时缓存） */
+  draggedBounds?: { left: number; right: number; top: number; bottom: number };
+  /** 预计算的对齐候选 */
+  alignmentCandidates?: Array<{ id: string; bounds: { left: number; right: number; top: number; bottom: number }; anchors: { x: []; y: [] } }>;
 } | null;
 
 export type MeasurementEditorDialogState = {
