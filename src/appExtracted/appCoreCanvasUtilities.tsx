@@ -1401,9 +1401,13 @@ export type MeasurementDragState = {
   startOffset: Point;
   historyCaptured: boolean;
   /** 预计算的量测框边界（开始拖动时缓存） */
-  draggedBounds?: { left: number; right: number; top: number; bottom: number };
+  draggedBounds?: RenderViewportBounds;
   /** 预计算的对齐候选 */
-  alignmentCandidates?: Array<{ id: string; bounds: { left: number; right: number; top: number; bottom: number }; anchors: { x: []; y: [] } }>;
+  alignmentCandidates?: SmartAlignmentAxisCandidate[];
+  /** 锚点在画布坐标（开始拖动时缓存，量测框间距不随设备缩放） */
+  anchorPoint?: Point;
+  /** 拖动中的临时偏移（每帧更新，结束时提交） */
+  pendingOffset?: Point;
 } | null;
 
 export type MeasurementEditorDialogState = {

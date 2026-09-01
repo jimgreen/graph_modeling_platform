@@ -5,7 +5,7 @@ import type { BatchCommonParamRow, BatchCommonMeasurementGroupRow, BatchCommonMe
 
 import { DeferredColorInput, BufferedTextInput } from "../components/InputComponents";
 import { StaticButtonLayerMultiSelect } from "../components/StaticButtonComponents";
-import { Select, Button, InputNumber } from "antd";
+import { Select, InputNumber } from "antd";
 
 import {
   inferESection,
@@ -154,12 +154,6 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     return (
       <div className="color-field with-none">
         <DeferredColorInput value={value} fallback={fallback} disabled={isBrowseMode} onCommit={(nextValue: string) => updateParam(key, nextValue)} />
-        <BufferedTextInput
-          value={value === "transparent" ? "无颜色" : value || ""}
-          disabled={isBrowseMode}
-          onCommit={(nextValue: string) => updateParam(key, nextValue === "无颜色" ? "transparent" : nextValue)}
-        />
-        <Button disabled={isBrowseMode} onClick={() => updateParam(key, "transparent")}>无颜色</Button>
       </div>
     );
   };
@@ -489,12 +483,6 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     return (
       <div className="color-field with-none">
         <DeferredColorInput value={value} fallback={fallback} disabled={isBrowseMode} onCommit={(nextValue: string) => updateNodeDoubleClickDraftParam(node.id, key, nextValue)} />
-        <BufferedTextInput
-          value={value === "transparent" ? "无颜色" : value || ""}
-          disabled={isBrowseMode}
-          onCommit={(nextValue: string) => updateNodeDoubleClickDraftParam(node.id, key, nextValue === "无颜色" ? "transparent" : nextValue)}
-        />
-        <Button disabled={isBrowseMode} onClick={() => updateNodeDoubleClickDraftParam(node.id, key, "transparent")}>无颜色</Button>
       </div>
     );
   };
@@ -544,13 +532,6 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
           disabled={isBrowseMode}
           onCommit={(nextValue: string) => applyBatchCommonParam(row.key, nextValue)}
         />
-        <BufferedTextInput
-          value={value === "transparent" ? "无颜色" : value}
-          disabled={isBrowseMode}
-          placeholder={row.mixed ? "多个不同值" : undefined}
-          onCommit={(nextValue: string) => applyBatchCommonParam(row.key, nextValue === "无颜色" ? "transparent" : nextValue)}
-        />
-        <Button disabled={isBrowseMode} onClick={() => applyBatchCommonParam(row.key, "transparent")}>无颜色</Button>
       </div>
     );
   };
@@ -766,13 +747,6 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
           aria-label={row.label}
           onCommit={(nextValue: string) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue)}
         />
-        <BufferedTextInput
-          value={value === "transparent" ? "无颜色" : value}
-          disabled={isBrowseMode}
-          placeholder={row.mixed ? "多个不同值" : undefined}
-          onCommit={(nextValue: string) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue === "无颜色" ? "transparent" : nextValue)}
-        />
-        <Button disabled={isBrowseMode} onClick={() => applyBatchCommonMeasurementGroupSetting(row.key, "transparent")}>无颜色</Button>
       </div>
     );
   };

@@ -7,6 +7,7 @@ import {
   createBeginMeasurementDrag,
   createBuildMultiNodeDragOverlayPreview,
   createBuildMeasurementGroupMarkup,
+  createFinishMeasurementDrag,
   createMeasurementGroupRenderMetrics,
   createRenderSelectedNodeMeasurementTable,
   createRenderMultiNodeDragOverlay,
@@ -969,20 +970,22 @@ describe("measurement canvas interactions", () => {
     const setProjectMeasurements = vi.fn((updater: any) => {
       projectMeasurements = typeof updater === "function" ? updater(projectMeasurements) : updater;
     });
+    const measurementDragRef: { current: { groupId: string; historyCaptured: boolean; pointerId: number; startOffset: { x: number; y: number }; startPoint: { x: number; y: number }; pendingOffset?: { x: number; y: number } } } = {
+      current: {
+        groupId: "line-measurement",
+        historyCaptured: false,
+        pointerId: 9,
+        startOffset: { x: 12, y: -8 },
+        startPoint: { x: 100, y: 100 }
+      }
+    };
     const updateMeasurementDrag = createUpdateMeasurementDrag({
       bestSmartAlignmentAxisSnap: vi.fn(() => null),
       canvasScrollScaleRef: { current: { x: 1, y: 1 } },
       canvasVisibleViewBoxRef: { current: { x: 0, y: 0, width: 1000, height: 800 } },
       isEditMode: true,
-      measurementDragRef: {
-        current: {
-          groupId: "line-measurement",
-          historyCaptured: false,
-          pointerId: 9,
-          startOffset: { x: 12, y: -8 },
-          startPoint: { x: 100, y: 100 }
-        }
-      },
+      measurementDragRef,
+      measurementGroupAnchorPoint: (_node: any, _group: any, absolute: boolean) => absolute ? { x: 200, y: 160 } : { x: 0, y: 0 },
       measurementGroupCanvasPosition: (_node: any, group: any) => ({ x: 200 + group.offset.x, y: 160 + group.offset.y }),
       measurementGroupRenderMetrics: () => ({ width: 80, height: 40 }),
       measurementOffsetScaleForNode: () => ({ x: 2, y: 4 }),
@@ -1026,9 +1029,22 @@ describe("measurement canvas interactions", () => {
     expect(moved).toBe(true);
     expect(pushUndoSnapshot).toHaveBeenCalledTimes(1);
     expect(setMeasurementDrag).toHaveBeenCalledWith(expect.objectContaining({ historyCaptured: true }));
+    // 拖动中仅记录 pendingOffset（量测间距不随设备缩放，scale 恒 1），结束时提交
+    expect(measurementDragRef.current.pendingOffset).toEqual({ x: 52, y: 72 });
+    // 模拟真实应用中 setMeasurementDragWithRef 同步更新 ref
+    measurementDragRef.current.historyCaptured = true;
+    const finishMeasurementDrag = createFinishMeasurementDrag({
+      measurementDragRef,
+      setHasUnsavedChanges: vi.fn(),
+      setMeasurementDrag: vi.fn(),
+      setProjectMeasurements,
+      updateSmartAlignmentGuides: vi.fn(),
+      writeOperationLog: vi.fn()
+    });
+    finishMeasurementDrag(9);
     expect(projectMeasurements.groups[0]).toMatchObject({
       anchor: "custom",
-      offset: { x: 32, y: 12 }
+      offset: { x: 52, y: 72 }
     });
   });
 

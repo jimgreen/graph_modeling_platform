@@ -334,16 +334,6 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                 pushUndoSnapshot();
                 setCanvasBackgroundColor(value);
             }}/>
-                        <BufferedTextInput value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND} disabled={isBrowseMode} onCommit={(nextValue) => {
-                pushUndoSnapshot();
-                setCanvasBackgroundColor(nextValue || DEFAULT_CANVAS_BACKGROUND);
-            }}/>
-                        <button type="button" onClick={() => {
-                pushUndoSnapshot();
-                setCanvasBackgroundColor("");
-            }} disabled={isBrowseMode || !canvasBackgroundColor || canvasBackgroundColor === DEFAULT_CANVAS_BACKGROUND}>
-                          删除背景色
-                        </button>
                       </div>
                     </td>
                   </tr>
