@@ -2436,7 +2436,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   });
 
   return (<>
-    {globalMessage && <div className={`global-message global-message-${globalMessage.type}`} onClick={() => setGlobalMessage(null)} style={{ cursor: "pointer" }} title="点击关闭"><span className="global-message-icon">{globalMessage.type === "success" ? "✓" : globalMessage.type === "error" ? "✕" : "ℹ"}</span>{globalMessage.text}</div>}
+    {globalMessage && <div className={`global-message global-message-${globalMessage.type}`} onClick={() => setGlobalMessage(null)} role="alert" title="点击关闭" style={{ cursor: "pointer" }}><span className="global-message-icon">{globalMessage.type === "success" ? "✓" : globalMessage.type === "error" ? "✕" : "ℹ"}</span>{globalMessage.text}<span style={{ marginLeft: 10, fontWeight: 700, opacity: 0.7 }} aria-hidden="true">×</span></div>}
     {exportCompletionDialog && (<div className="image-picker-backdrop export-completion-backdrop" onPointerDown={() => setExportCompletionDialog(null)}>
       <section
         className="unsaved-change-dialog export-completion-dialog window-close-host"
