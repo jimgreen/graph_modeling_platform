@@ -4345,7 +4345,7 @@ describe("全网 E 文件导出", () => {
     const mk = (idx: number, name: string) => ({
       id: `station-${idx}`,
       schemePath: ["主方案"],
-      project: { version: 1, name, idx, modelType: "厂站", nodes: [], edges: [] }
+      project: { version: 1 as const, name, idx, modelType: "厂站" as const, nodes: [], edges: [] }
     });
     const file = buildMultiModelEFileExport([mk(1, "厂站一"), mk(5, "厂站二")], {
       eDeviceDefinitionLabels: { substation: "substation" }
