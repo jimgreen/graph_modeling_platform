@@ -376,7 +376,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     SCALE_HANDLE_CONFIGS, GROUP_SCALE_HANDLE_CONFIGS,
     Copy, Grid2X2, Group, Layers, Layers2, LocateFixed, MapIcon,
     Maximize2, MemoDeviceGlyph, Minus, Plus, RotateCcw, Route,
-    ScanSearch, Scissors, Shrink, Trash2, Type, Ungroup, X,
+    ArrowUpRight, ScanSearch, Scissors, Shrink, Trash2, Type, Ungroup, X,
     SvgMarkupChunk,
     nodeById, detailedViewportNodes, nodeImage, nodeForegroundImage,
     nodeGeometryTransform, nodeImageContentTransform,
@@ -401,6 +401,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     minimapViewportLeft, minimapViewportRight, minimapViewportTop, minimapViewportBottom,
     nodeFloatingToolbar, edgeFloatingToolbar,
     floatingToolbarIconSize, floatingToolbarWrapperStyle,
+    selectedAssociationJumpNode, jumpToSelectedAssociationNode,
     viewportOverlayStyle, canvasResizeHandles, canvasResizePreviewRect,
     canvasResizeHotzoneStyle,
     colorDisplayMode, colorPalette, deviceLabelsVisible, deviceMeasurementsVisible,
@@ -1527,6 +1528,9 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                       <button type="button" title="标识显示" aria-label="标识显示" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={toggleSelectedNodeLabelDisplay}>
                         <Type size={floatingToolbarIconSize}/>
                       </button>
+                      {selectedAssociationJumpNode && (<button type="button" title="跳转到绑定模型" aria-label="跳转到绑定模型" onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }} onClick={jumpToSelectedAssociationNode}>
+                          <ArrowUpRight size={floatingToolbarIconSize}/>
+                        </button>)}
                     </div>
                   </div>)}
                 {edgeFloatingToolbar && (<div className="canvas-floating-toolbar-wrapper" style={floatingToolbarWrapperStyle(edgeFloatingToolbar)}>

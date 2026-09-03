@@ -4,39 +4,52 @@ import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
 import { resolveEffectiveTemplateParameterDefinitions, withNodesParentModelId } from "../model";
 import { computeMeasurementColumnPositions } from "./appGraphMeasurementFactories";
 
+// 关联图元跳转：解析 node 的 model_id → 目标模型，找到唯一目标即加载该模型。
+// 与双击（browse 模式）共用，供右键菜单/浮动工具栏【跳转】复用。
+function attemptJumpToAssociatedModel(__appScope: Record<string, any>, node: ModelNode) {
+  const { flattenSavedSchemes, modelAssociationModelTypeForKind, requestLoadSavedProject, schemes, showGlobalMessage = globalThis.showGlobalMessage, writeOperationLog } = __appScope;
+  const targetModelType = modelAssociationModelTypeForKind(node.kind);
+  if (!targetModelType) {
+    return;
+  }
+  const rawModelId = String(node.params?.model_id ?? "").trim();
+  const modelIndex = Number(rawModelId);
+  if (!rawModelId || !Number.isInteger(modelIndex) || modelIndex <= 0) {
+    showGlobalMessage(`“${node.name}”未定义有效的关联模型（model_id），无法切换模型。`);
+    return;
+  }
+  const targets = flattenSavedSchemes(schemes).flatMap((scheme: SavedSchemeRecord) =>
+    scheme.projects
+      .filter((project: SavedProjectRecord) =>
+        project.project.modelType === targetModelType && Number(project.project.idx) === modelIndex
+      )
+      .map((project: SavedProjectRecord) => ({ scheme, project }))
+  );
+  if (targets.length === 0) {
+    showGlobalMessage(`未找到${targetModelType}模型 idx=${modelIndex}；请检查“${node.name}”的关联模型（model_id）。`);
+    return;
+  }
+  if (targets.length > 1) {
+    showGlobalMessage(`找到多个${targetModelType}模型 idx=${modelIndex}，无法确定要切换的模型；请先修正重复的模型编号。`);
+    return;
+  }
+  const target = targets[0];
+  writeOperationLog?.(`关联图元切换模型：${node.name} → ${target.project.name}`);
+  requestLoadSavedProject(target.project, target.scheme.id);
+}
+
+export function createJumpToAssociatedModel(__appScope: Record<string, any>) {
+  return (node: ModelNode) => {
+    attemptJumpToAssociatedModel(__appScope, node);
+  };
+}
+
 export function createOpenNodeDoubleClickEditor(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
   // 审查 T11-P0-2：showGlobalMessage 纳入 scope 解构（test-setup 有全局桩兜底，但显式依赖可测试）
   const { NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS, activeLayerNodeIdSet, cloneNodeForDoubleClickDraft, doubleClickDialogKindForNode, flattenSavedSchemes, flushSync, isBrowseMode, isEditMode, modelAssociationModelTypeForKind, nodeDoubleClickCloseSuppressUntilRef, nodeDoubleClickDialog, nodeDoubleClickOpenGuardRef, requestLoadSavedProject, schemes, selectCanvasGraphics, setContextMenu, setImageTarget, setNodeDoubleClickDialog, setNodeDoubleClickDraft, showGlobalMessage = globalThis.showGlobalMessage, writeOperationLog } = __appScope;
     if (isBrowseMode) {
-      const targetModelType = modelAssociationModelTypeForKind(node.kind);
-      if (!targetModelType) {
-        return;
-      }
-      const rawModelId = String(node.params?.model_id ?? "").trim();
-      const modelIndex = Number(rawModelId);
-      if (!rawModelId || !Number.isInteger(modelIndex) || modelIndex <= 0) {
-        showGlobalMessage(`“${node.name}”未定义有效的关联模型（model_id），无法切换模型。`);
-        return;
-      }
-      const targets = flattenSavedSchemes(schemes).flatMap((scheme: SavedSchemeRecord) =>
-        scheme.projects
-          .filter((project: SavedProjectRecord) =>
-            project.project.modelType === targetModelType && Number(project.project.idx) === modelIndex
-          )
-          .map((project: SavedProjectRecord) => ({ scheme, project }))
-      );
-      if (targets.length === 0) {
-        showGlobalMessage(`未找到${targetModelType}模型 idx=${modelIndex}；请检查“${node.name}”的关联模型（model_id）。`);
-        return;
-      }
-      if (targets.length > 1) {
-        showGlobalMessage(`找到多个${targetModelType}模型 idx=${modelIndex}，无法确定要切换的模型；请先修正重复的模型编号。`);
-        return;
-      }
-      const target = targets[0];
-      writeOperationLog?.(`关联图元切换模型：${node.name} → ${target.project.name}`);
-      requestLoadSavedProject(target.project, target.scheme.id);
+      attemptJumpToAssociatedModel(__appScope, node);
       return;
     }
     if (!isEditMode || !activeLayerNodeIdSet.has(node.id)) {

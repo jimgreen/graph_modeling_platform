@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { canBatchEditParam, PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
 import { enumValuesForRow } from "./appExtracted/appPersistenceLibraryExport";
-import { createAppHookCallback12, createAppHookCallback77, createAppHookCallback82, createAppHookCallback100, createAppHookCallback109, createAppHookCallback120, createOpenNodeDoubleClickEditor } from "./appExtracted/appToolbarHookFactories";
+import { createAppHookCallback12, createAppHookCallback77, createAppHookCallback82, createAppHookCallback100, createAppHookCallback109, createAppHookCallback120, createJumpToAssociatedModel, createOpenNodeDoubleClickEditor } from "./appExtracted/appToolbarHookFactories";
 import {
   applyDeviceTemplateDefinitionOverride,
   createDefaultNode,
@@ -326,6 +326,20 @@ describe("model association node double-click navigation", () => {
 
     expect(scope.requestLoadSavedProject).not.toHaveBeenCalled();
     expect(scope.writeOperationLog).not.toHaveBeenCalled();
+  });
+
+  test("createJumpToAssociatedModel jumps to the bound model independent of interaction mode", () => {
+    const scope = createBrowseScope();
+    const node = createDefaultNode("ac-station-load", { x: 100, y: 100 });
+    const targetIndex = associationCases.findIndex(([candidateKind]) => candidateKind === "ac-station-load") + 1;
+    node.params.model_id = String(targetIndex);
+
+    createJumpToAssociatedModel(scope)(node);
+
+    expect(scope.requestLoadSavedProject).toHaveBeenCalledWith(
+      expect.objectContaining({ name: `厂站模型-${targetIndex}`, project: expect.objectContaining({ modelType: "厂站" }) }),
+      "scheme-1"
+    );
   });
 });
 
