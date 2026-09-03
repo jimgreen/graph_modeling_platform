@@ -14838,6 +14838,36 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   padding: 0 12px;
 }
 
+.all-network-topology-e-export-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.all-network-topology-e-encoding {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #334155;
+  font-size: 12px;
+}
+
+.all-network-topology-e-encoding select {
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid #94a3b8;
+  border-radius: 6px;
+  background: #fff;
+  color: #334155;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.all-network-topology-e-encoding select:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
 .all-network-topology-resize-handle {
   position: absolute;
   right: 2px;

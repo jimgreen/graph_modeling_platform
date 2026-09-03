@@ -616,6 +616,7 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
   const [activeTab, setActiveTab] = useState<"errors" | "warnings">("errors");
   const [running, setRunning] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [eExportEncoding, setEExportEncoding] = useState<"utf-8" | "gbk">("gbk");
   const [completedRun, setCompletedRun] = useState<CompletedTopologyRun | null>(null);
   const [globalLineListLoading, setGlobalLineListLoading] = useState(false);
   const [globalLineListError, setGlobalLineListError] = useState("");
@@ -1072,14 +1073,9 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
     });
   };
 
-  const exportEFile = async () => {
-    if (
-      !completedRun ||
-      !resultIsCurrent ||
-      exporting ||
-      completedRun.models.length === 0 ||
-      completedRun.result.errors.length > 0
-    ) {
+  const performNetworkEFileExport = async (encoding: "utf-8" | "gbk") => {
+    const run = completedRun;
+    if (!run) {
       return;
     }
     setExporting(true);
@@ -1098,7 +1094,7 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
       const saved = await saveLazyTextFile({
         filename: "全网拓扑.e",
         loadText: () => buildMultiModelEFileExport(
-          completedRun.models.map((model) => ({
+          run.models.map((model) => ({
             id: model.projectId,
             schemePath: model.schemePath,
             project: model.record.project
@@ -1109,14 +1105,14 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
         mime: "text/plain",
         description: "E 文件",
         extensions: [".e"],
-        encoding: "gbk",
+        encoding,
         pickerId: "all-network-topology-e-export",
         startIn: "downloads",
         preferNativeDialog: true
       });
       if (saved) {
         scope.showGlobalMessage?.("全网拓扑 E 文件导出成功。", "success");
-        scope.writeOperationLog?.(`已导出全网拓扑 E 文件：${completedRun.models.length} 个模型`);
+        scope.writeOperationLog?.(`已导出全网拓扑 E 文件：${run.models.length} 个模型`);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "全网拓扑 E 文件导出失败。";
@@ -1125,6 +1121,53 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
       setExporting(false);
     }
   };
+  // 导出前先按「当前模板」校验：模板有类型限制且网络含不支持的模型类型时，点击提示不导出（与主流程一致）。
+  const exportEFile = async (encoding: "utf-8" | "gbk" = "gbk") => {
+    if (
+      !completedRun ||
+      !resultIsCurrent ||
+      exporting ||
+      running ||
+      completedRun.models.length === 0 ||
+      completedRun.result.errors.length > 0
+    ) {
+      return;
+    }
+    const modelTypes = [...new Set(
+      (completedRun.models ?? [])
+        .map((model) => String(model?.record?.project?.modelType ?? "").trim())
+        .filter(Boolean)
+    )];
+    const mismatchMessage = typeof scope.eDeviceTemplateNetworkMismatchMessage === "function"
+      ? scope.eDeviceTemplateNetworkMismatchMessage(modelTypes)
+      : null;
+    if (mismatchMessage) {
+      scope.showGlobalMessage?.(mismatchMessage, "warning");
+      return;
+    }
+    if (typeof scope.requestUnsavedChangeAction === "function") {
+      scope.requestUnsavedChangeAction({
+        kind: "export",
+        label: "导出全网拓扑 E 文件",
+        onResolved: () => {
+          void performNetworkEFileExport(encoding);
+        }
+      });
+    } else {
+      await performNetworkEFileExport(encoding);
+    }
+  };
+  const canExportNetworkEFile = Boolean(
+    completedRun &&
+    resultIsCurrent &&
+    !exporting &&
+    !running &&
+    completedRun.models.length > 0 &&
+    completedRun.result.errors.length === 0
+  );
+  const exportNetworkEFileDisabledTitle = (displayedResult?.errors?.length ?? 0) > 0
+    ? "存在错误信息，不能导出 E 文件"
+    : "导出 E 文件";
 
   return (
     <>
@@ -1323,22 +1366,29 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
             </div>
             <footer className="all-network-topology-footer">
               <span>双击告警记录可切换到对应模型并居中、选中、放大设备。</span>
-              <button
-                type="button"
-                onClick={() => void exportEFile()}
-                disabled={
-                  !completedRun ||
-                  !resultIsCurrent ||
-                  exporting ||
-                  running ||
-                  completedRun.models.length === 0 ||
-                  completedRun.result.errors.length > 0
-                }
-                title={displayedResult.errors.length > 0 ? "存在错误信息，不能导出 E 文件" : "导出 E 文件"}
-              >
-                <Download size={16} aria-hidden="true" />
-                {exporting ? "正在导出..." : "导出 E 文件"}
-              </button>
+              <span className="all-network-topology-e-export-actions">
+                <button
+                  type="button"
+                  onClick={() => void exportEFile(eExportEncoding)}
+                  disabled={!canExportNetworkEFile}
+                  title={exportNetworkEFileDisabledTitle}
+                >
+                  <Download size={16} aria-hidden="true" />
+                  {exporting ? "正在导出..." : "导出 E 文件"}
+                </button>
+                <label className="all-network-topology-e-encoding" title="导出文件字符编码">
+                  <span>编码</span>
+                  <select
+                    value={eExportEncoding}
+                    onChange={(event) => setEExportEncoding(event.target.value as "utf-8" | "gbk")}
+                    disabled={!canExportNetworkEFile}
+                    aria-label="E 文件导出编码"
+                  >
+                    <option value="utf-8">UTF-8</option>
+                    <option value="gbk">GBK</option>
+                  </select>
+                </label>
+              </span>
             </footer>
           </main>
         </div>
