@@ -709,6 +709,43 @@ export function renderAppView(__appScope: Record<string, any>) {
     const currentLabel = MODEL_TYPE_NETWORK_LABEL[modelType] ?? modelType;
     return `当前模板「${templateName}」仅支持${allowedLabels}模型，当前模型类型为「${currentLabel}」。请转为自定义配置或切换模型类型后重试。`;
   };
+  const PREDEFINED_E_DEVICE_TEMPLATE_NAMES = new Set(Object.keys(TEMPLATE_ALLOWED_MODEL_TYPES));
+  // 把只读模板态（预定义/文件加载）转为可编辑自定义态，标签保留来源：自定义-<预定义名>/自定义-文件模板。
+  const convertEDeviceInterfaceTemplateToCustom = () => {
+    const currentName = eDeviceInterfaceLoadedTemplateName ?? "";
+    const baseLabel = PREDEFINED_E_DEVICE_TEMPLATE_NAMES.has(currentName) ? currentName : "文件模板";
+    const nextName = `自定义-${baseLabel}`;
+    setEDeviceInterfaceLoadedTemplateName(nextName);
+    setEDeviceInterfaceReadonlyMode(false);
+    setTemplateImportResult(null);
+    setShowImportResultDialog(false);
+    setImportResultActiveTab("matched");
+    try {
+      localStorage.setItem("eDeviceInterfaceReadonlyMode", "false");
+      localStorage.setItem("eDeviceInterfaceLoadedTemplateName", nextName);
+      localStorage.removeItem("eDeviceTemplateImportResult");
+    } catch { /* ignore */ }
+  };
+  // 顶部【当前模板】标签文本：按 E 文件接口定义当前来源与只读态派生（原始定义/自定义/自定义-模板/文件模板）。
+  const eDeviceInterfaceTemplateLabel = (() => {
+    if (eDeviceInterfaceReadonlyMode) {
+      return PREDEFINED_E_DEVICE_TEMPLATE_NAMES.has(eDeviceInterfaceLoadedTemplateName ?? "")
+        ? String(eDeviceInterfaceLoadedTemplateName)
+        : "文件模板";
+    }
+    const currentName = eDeviceInterfaceLoadedTemplateName ?? "";
+    if (currentName.startsWith("自定义")) {
+      return currentName;
+    }
+    const hasManualCustomization = Boolean(
+      Object.keys(eDeviceDefinitionLabels ?? {}).length > 0 ||
+      Object.keys(eDeviceDefinitionClassExportEnabled ?? {}).length > 0 ||
+      Object.keys(eDeviceDefinitionFieldOrder ?? {}).length > 0 ||
+      Object.keys(eDeviceDefinitionTemplateFields ?? {}).length > 0 ||
+      Object.keys(eDeviceDefinitionTableIds ?? {}).length > 0
+    );
+    return hasManualCustomization ? "自定义" : "原始定义";
+  })();
   const requestExportWithSave = (doExport: () => void | Promise<void>) => {
     requestUnsavedChangeAction({
       kind: "export",
@@ -733,7 +770,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     requestExportWithSave(() => doExport(encoding));
   };
   Object.assign(__appScope, { requestEncodedExport });
-  Object.assign(__appScope, { setTemplateImportResult, setShowImportResultDialog, setImportResultActiveTab });
+  Object.assign(__appScope, { setTemplateImportResult, setShowImportResultDialog, setImportResultActiveTab, convertEDeviceInterfaceTemplateToCustom, eDeviceInterfaceTemplateLabel });
   // 加载预定义模板前，将用户自定义中的 参数定义/量测定义/E文件接口定义 恢复到默认状态
   // （用户自定义管理对话框左侧的 3 个菜单项），使模板从干净基线应用。
   // 返回恢复后的快照（无自定义项时返回 null），供模板应用直接使用恢复后的值，
@@ -989,13 +1026,13 @@ export function renderAppView(__appScope: Record<string, any>) {
       __appScope.setEDeviceInterfaceDefinitionBaseline?.(null);
       __appScope.setEDeviceInterfaceSelectedClassBaseline?.(null);
       // 退出模板只读模式并清理导入结果展示
-      setEDeviceInterfaceLoadedTemplateName("自定义");
+      setEDeviceInterfaceLoadedTemplateName("原始定义");
       setEDeviceInterfaceReadonlyMode(false);
       setTemplateImportResult(null);
       setShowImportResultDialog(false);
       try {
         localStorage.setItem("eDeviceInterfaceReadonlyMode", "false");
-        localStorage.setItem("eDeviceInterfaceLoadedTemplateName", "自定义");
+        localStorage.setItem("eDeviceInterfaceLoadedTemplateName", "原始定义");
         localStorage.removeItem("eDeviceTemplateImportResult");
       } catch { /* ignore */ }
       writeOperationLog?.("已恢复E文件接口定义为原始定义");
@@ -2489,7 +2526,8 @@ export function renderAppView(__appScope: Record<string, any>) {
             selectedLayoutUnitCount,
             __appScope.runtimeWsStatus,
             __appScope.runtimeWsBlinkSeq,
-            __appScope.runtimeWsClientId
+            __appScope.runtimeWsClientId,
+            eDeviceInterfaceTemplateLabel
           ]}
         />
         <MemoizedViewSection
