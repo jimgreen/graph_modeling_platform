@@ -766,7 +766,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   const libraryComponentLibraryHeaderRefs = useRef<Map<string, HTMLButtonElement>>(new Map()); Object.assign(__appScope, { libraryComponentLibraryHeaderRefs });
   // 图元树虚拟化窗口：每 deviceGroup 维护 [start, end) 可见区间，按可视高度动态滑动
   // 每 deviceGroup 实测 item 平均高度（含 child 列表），供 render 计算 spacer 高度
-  const showGlobalMessage = (text: string, type: "success" | "error" | "info" = "info", duration = 2000) => {
+  const showGlobalMessage = (text: string, type: "success" | "error" | "info" = "info", duration = 5000) => {
     if (globalMessageTimerRef.current) clearTimeout(globalMessageTimerRef.current);
     setGlobalMessage({ text, type });
     globalMessageTimerRef.current = setTimeout(() => setGlobalMessage(null), duration);
