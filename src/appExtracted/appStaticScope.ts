@@ -6,7 +6,7 @@ import * as ReactDomScope from "react-dom";
 import {
   AlignCenter, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical,
   AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical, AlignVerticalDistributeCenter,
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bell, Bold, BoxSelect, Bus, Cable, ChevronDown, ChevronRight,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Bell, Bold, BoxSelect, Bus, Cable, ChevronDown, ChevronRight,
   ChevronsDown, ChevronsUp, CircleDot, Copy, Delete, Dot, Download, Eye, EyeOff, Factory, File, FileInput, FileJson,
   FlipHorizontal, FlipVertical, FolderOpen, Frame, Grid2X2, Group, HousePlug, Icon, Italic, Layers, Layers2, LocateFixed,
   Map, MapIcon, Maximize2, Minus, MousePointer2, Paintbrush, Palette, PanelLeftOpen, PanelRightOpen, Pencil,
@@ -17,7 +17,7 @@ import {
 const LucideReactScope = {
   AlignCenter, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical,
   AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical, AlignVerticalDistributeCenter,
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bell, Bold, BoxSelect, Bus, Cable, ChevronDown, ChevronRight,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Bell, Bold, BoxSelect, Bus, Cable, ChevronDown, ChevronRight,
   ChevronsDown, ChevronsUp, CircleDot, Copy, Delete, Dot, Download, Eye, EyeOff, Factory, File, FileInput, FileJson,
   FlipHorizontal, FlipVertical, FolderOpen, Frame, Grid2X2, Group, HousePlug, Icon, Italic, Layers, Layers2, LocateFixed,
   Map, MapIcon, Maximize2, Minus, MousePointer2, Paintbrush, Palette, PanelLeftOpen, PanelRightOpen, Pencil,

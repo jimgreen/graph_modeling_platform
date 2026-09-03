@@ -7,13 +7,14 @@ type AppContextMenusProps = {
 export const AppContextMenus = memo(function AppContextMenus({ scope }: AppContextMenusProps) {
   const __appScope = scope;
   const {
-    AlignCenterHorizontal, ArrowDown, ArrowUp, BoxSelect, ChevronRight, ChevronsDown, ChevronsUp, CircleDot,
+    AlignCenterHorizontal, ArrowDown, ArrowUp, ArrowUpRight, BoxSelect, ChevronRight, ChevronsDown, ChevronsUp, CircleDot,
     Copy, Download, FileInput, FolderOpen, Grid2X2, Group, Layers, Layers2,
     Pencil, Plus, Route, Save, ScanSearch, Scissors, Trash2, Type,
     Undo2, Ungroup, Zap, ZapOff, activeLayerNodes, activeSelectedNodeIds, addDefaultMeasurementsToNode, addManualBendFromContextMenu,
     addRoutableLineBendFromContextMenu, adjustSelectedDisplayLayer, autoAlignCanvasGraphics, autoSpreadCanvasGraphics, canAddTemplateFromSelection, canGroupSelectedGraphics, canUngroupSelectedGraphics, canvasClipboard,
     contextMeasurementGroup, contextMeasurementNode, contextMenu, contextMenuClassName, contextMenuForEdge, contextMenuForNode, contextMenuForRoutableLine, contextMenuForSelection,
-    contextMenuFromElementTree, contextMenuRef, contextMenuStyle, contextMenuTarget, contextSelectionCount, copyProjectRecord, copySchemeRecord, copySelection,
+    contextMenuFromElementTree, contextMenuJumpToModel, contextMenuRef, contextMenuStyle, contextMenuTarget, contextSelectionCount, copyProjectRecord, copySchemeRecord, copySelection,
+    runContextMenuJumpToModel,
     createBlankProject, createSchemeRecord, customGraphTemplates, cutSelection, deleteGraphTemplate, deleteGraphTemplateType, deleteProjectRecord, deleteSchemeRecord,
     deleteSelection, exportProjectRecordFile, exportSchemeRecord, findSavedSchemeById, groupSelectedGraphics, isEditMode, keepTemplateContextMenuFlyoutOpen, nodes,
     openAddTemplateDialog, openConnectionRedrawDialog, openFilterSelectionDialog, openGroupDeviceDefinitionDialog, openLayerAssignmentDialog, openMeasurementEditorForNode, openModelImportFilePicker, openSchemeImportFilePicker,
@@ -38,6 +39,10 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }: AppConte
               删除
             </button>)}
           {!contextMenuFromElementTree && (<>
+              {contextMenuForNode && contextMenuJumpToModel && (<button onClick={() => runContextMenuAction(runContextMenuJumpToModel)}>
+                  <ArrowUpRight size={14}/>
+                  跳转
+                </button>)}
               {isEditMode && contextMenuTarget === "blank" && contextMenu.canvasPoint && (<button onClick={() => runContextMenuAction(startContextMarqueeSelection)}>
                   <BoxSelect size={14}/>
                   框选
