@@ -4341,6 +4341,22 @@ describe("全网 E 文件导出", () => {
     }
   });
 
+  test("模板态全网：厂站模型写入 <substation>，不再输出合成 <Station> 或默认厂站行", () => {
+    const mk = (idx: number, name: string) => ({
+      id: `station-${idx}`,
+      schemePath: ["主方案"],
+      project: { version: 1, name, idx, modelType: "厂站", nodes: [], edges: [] }
+    });
+    const file = buildMultiModelEFileExport([mk(1, "厂站一"), mk(5, "厂站二")], {
+      eDeviceDefinitionLabels: { substation: "substation" }
+    });
+    const payload = parseESections(file.text);
+    expect(payload.Station).toBeUndefined();
+    expect(payload.substation.rows.map((row: any) => row.idx)).toEqual(["1", "5"]);
+    expect(payload.substation.rows.map((row: any) => row.name)).toEqual(["厂站一", "厂站二"]);
+    expect(payload.substation.rows.every((row: any) => String(row.idv ?? "") === "0")).toBe(true);
+  });
+
   test("按模型 idx 合并记录并把设备及节点序号重编号为模型 idx * 10000 + 单模型序号", () => {
     const stationReference = createDefaultNode("ac-station-source", { x: 120, y: 160 });
     stationReference.params.model_id = "5";

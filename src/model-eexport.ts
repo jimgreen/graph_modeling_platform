@@ -2561,6 +2561,29 @@ function buildDmsSingleRowRecords(
   return records;
 }
 
+// substation idv = max(unit 的 ind 对应 node 的 vbase 对应 basevoltage idx)，与单模型导出一致。
+function deriveSubstationIdv(project: ProjectFile, records: readonly EDeviceExport[]): string {
+  const recordsBySection = new Map<string, EDeviceExport[]>();
+  for (const record of records) {
+    const list = recordsBySection.get(record.section) ?? [];
+    list.push(record);
+    recordsBySection.set(record.section, list);
+  }
+  const allBasevoltageLevels = modelUsedVoltageLevels(project, records);
+  const nodeRecords = recordsBySection.get("ACNode") ?? [];
+  const unitRecords = recordsBySection.get("ACGenerator") ?? [];
+  const unitNodeIdxs = new Set(unitRecords.map((r) => r.params.ind).filter(Boolean));
+  const relevantNodes = unitNodeIdxs.size > 0
+    ? nodeRecords.filter((r) => unitNodeIdxs.has(r.params.idx))
+    : nodeRecords;
+  const nodeVbases = relevantNodes.map((r) => r.params.vbase).filter(Boolean);
+  const basevoltageIdxs = nodeVbases.map((vbase) => {
+    const idx = allBasevoltageLevels.findIndex((level) => String(level.vltp) === String(vbase));
+    return idx >= 0 ? idx + 1 : 0;
+  }).filter((idx) => idx > 0);
+  return basevoltageIdxs.length > 0 ? String(Math.max(...basevoltageIdxs)) : "0";
+}
+
 /**
  * 构建 E 文件头表记录（模板模式：basevalue/basevoltage/subcontrolarea/substation；
  * 非模板模式：Model/basevoltage），取值与导出文件完全一致。
@@ -2586,31 +2609,16 @@ export function buildEDeviceHeaderParameterRecords(
       .map((field) => String(field.exportName ?? field.sourceName ?? "").trim())
       .filter(Boolean);
   };
-  // substation idv = max(unit 的 ind 对应的 node 的 vbase 对应的 basevoltage idx)（与导出一致）
-  const recordsBySection = new Map<string, EDeviceExport[]>();
-  for (const record of records) {
-    const list = recordsBySection.get(record.section) ?? [];
-    list.push(record);
-    recordsBySection.set(record.section, list);
-  }
-  const allBasevoltageLevels = modelUsedVoltageLevels(project, records);
-  const nodeRecords = recordsBySection.get("ACNode") ?? [];
-  const unitRecords = recordsBySection.get("ACGenerator") ?? [];
-  const unitNodeIdxs = new Set(unitRecords.map((r) => r.params.ind).filter(Boolean));
-  const relevantNodes = unitNodeIdxs.size > 0
-    ? nodeRecords.filter((r) => unitNodeIdxs.has(r.params.idx))
-    : nodeRecords;
-  const nodeVbases = relevantNodes.map((r) => r.params.vbase).filter(Boolean);
-  const basevoltageIdxs = nodeVbases.map((vbase) => {
-    const idx = allBasevoltageLevels.findIndex((level) => String(level.vltp) === String(vbase));
-    return idx >= 0 ? idx + 1 : 0;
-  }).filter((idx) => idx > 0);
-  const substationIdv = basevoltageIdxs.length > 0 ? String(Math.max(...basevoltageIdxs)) : "0";
+  const substationIdv = deriveSubstationIdv(project, records);
+  // 全网模板模式下：厂站模型列表已作为 substation 记录提供（见 buildMultiModelEFileExport），头表不再补默认厂站行，避免重复。
+  const hasSubstationRecords = records.some((record) => record.section === "substation");
   const headerRecords = [
     buildBasevalueParameterRecord(project, templateColumnsForSection("basevalue")),
     ...buildBasevoltageParameterRecords(templateColumnsForSection("basevoltage"), project, records),
     buildSubcontrolareaParameterRecord(project, templateColumnsForSection("subcontrolarea")),
-    buildSubstationParameterRecord(project, substationIdv, templateColumnsForSection("substation"))
+    ...(hasSubstationRecords
+      ? []
+      : [buildSubstationParameterRecord(project, substationIdv, templateColumnsForSection("substation"))])
   ];
   // 配网/台区实时库：追加单行表 dms_def_area / dms_def_bulk / dms_def_feeder / dms_def_source
   if (looksLikeDmsRtdbTemplate(options)) {
@@ -3061,7 +3069,8 @@ const MULTI_MODEL_HIERARCHY_SECTIONS: ReadonlyArray<{
 ];
 
 function buildMultiModelHierarchyRecords(
-  orderedInputs: readonly MultiModelEFileExportInput[]
+  orderedInputs: readonly MultiModelEFileExportInput[],
+  templateMode = false
 ): EDeviceExport[] {
   const modelIndexByInput = new Map<MultiModelEFileExportInput, number>();
   const inputByModelIndex = new Map<number, MultiModelEFileExportInput>();
@@ -3104,8 +3113,13 @@ function buildMultiModelHierarchyRecords(
     }
   }
 
-  return MULTI_MODEL_HIERARCHY_SECTIONS.flatMap(({ modelType, section }) =>
-    orderedInputs
+  return MULTI_MODEL_HIERARCHY_SECTIONS.flatMap(({ modelType, section }) => {
+    // 模板模式（国网E格式/主网等）下，厂站模型列表写入模板定义的 <substation>（由
+    // buildMultiModelEFileExport 补充为 substation 记录），不再输出合成 <Station> 表。
+    if (templateMode && section === "Station") {
+      return [];
+    }
+    return orderedInputs
       .filter((input) => input.project.modelType === modelType)
       .map((input, rowIndex) => ({
         id: `model-hierarchy:${section}:${String(input.id ?? "").trim() || rowIndex + 1}`,
@@ -3117,8 +3131,8 @@ function buildMultiModelHierarchyRecords(
           name: String(input.project.name ?? "").trim() || `${modelType}${rowIndex + 1}`,
           ...(section === "Station" ? {} : { parent: String(parentIndexByInput.get(input) ?? 0) })
         }
-      }))
-  );
+      }));
+  });
 }
 
 const MULTI_MODEL_GLOBAL_LINE_ID_PARAM = "_globalLineId";
@@ -3420,7 +3434,9 @@ export function buildMultiModelEFileExport(
     positiveIntegerValue(left.project.idx) - positiveIntegerValue(right.project.idx) ||
     left.project.name.localeCompare(right.project.name, "zh-CN")
   );
-  const records: EDeviceExport[] = buildMultiModelHierarchyRecords(orderedInputs);
+  const templateMode = hasTemplateConfig(options);
+  const templateSubstationInputs: Array<{ input: MultiModelEFileExportInput; modelIndex: number; records: EDeviceExport[] }> = [];
+  const records: EDeviceExport[] = buildMultiModelHierarchyRecords(orderedInputs, templateMode);
   const warnings: EExportWarning[] = [];
   const globalLineOccurrences: MultiModelGlobalLineOccurrence[] = [];
   const globalLineNodesByInput = new Map(
@@ -3454,6 +3470,10 @@ export function buildMultiModelEFileExport(
         !recordBelongsToCollapsedModelAssociationNode(record.id, collapsedAssociationNodeIds)
       ))
       .map((record) => multiModelRecordWithParent(record, modelIndex));
+    // 模板模式下 厂站模型列表写入 <substation>：记录其在重编号前的原始记录，供推导每站 idv。
+    if (templateMode && input.project.modelType === "厂站") {
+      templateSubstationInputs.push({ input, modelIndex, records: allModelRecords });
+    }
     offsetMultiModelRecordIndexes(allModelRecords, modelIndex);
     alignMultiModelDerivedBaseReferenceIndexes(allModelRecords, modelIndex, options);
     for (const { globalLineId, node } of globalLineNodes) {
@@ -3483,6 +3503,19 @@ export function buildMultiModelEFileExport(
     warnings.push(...getEExportWarningsFromRecords(warningProject, modelRecords, options));
     records.push(...modelRecords);
   });
+  // 模板模式下把每个厂站模型写为 <substation> 记录（idx=模型序号, name=模型名, idv=推导），
+  // 替代合成 <Station>；头表因此不再追加默认厂站行（见 buildEDeviceHeaderParameterRecords 的 hasSubstationRecords 判断）。
+  records.push(...templateSubstationInputs.map(({ input, modelIndex, records: modelRecords }) => ({
+    id: `model-hierarchy:substation:${String(input.id ?? "").trim() || modelIndex}`,
+    kind: "model",
+    section: "substation",
+    columns: ["idx", "name", "idv"],
+    params: {
+      idx: String(modelIndex),
+      name: String(input.project.name ?? "").trim() || "默认厂站",
+      idv: deriveSubstationIdv(input.project, modelRecords)
+    }
+  })));
   records.push(...buildMultiModelGlobalLineRecords(globalLineOccurrences, globalLineRecords, records, options));
 
   const firstProject = orderedInputs[0]?.project;
