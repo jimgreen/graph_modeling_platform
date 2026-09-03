@@ -2421,7 +2421,7 @@ function buildSubstationParameterRecord(project: ProjectFile, idv: string, colum
     kind: "model",
     section: "substation",
     columns: columns?.length ? columns : ["idx", "name", "idv"],
-    params: { idx: "1", name: String(project.substation ?? "").trim() || "默认厂站", idv }
+    params: { idx: "1", name: String(project.substation ?? "").trim() || String(project.name ?? "").trim() || "默认厂站", idv }
   };
 }
 
@@ -2485,7 +2485,7 @@ function buildDmsSingleRowRecords(
   const substationName = String(project.substation ?? "").trim() || "默认厂站";
   const subcontrolareaName = String(project.subcontrolarea ?? "").trim() || "默认区域";
   const feederName = String(project.feeder ?? "").trim() || "馈线1";
-  const taiquName = String(project.taiqu ?? "").trim() || "台区1";
+  const taiquName = String(project.taiqu ?? "").trim() || String(project.name ?? "").trim() || "台区1";
   // 配网：feeder.name = project.name（馈线名），bulk.name = substation
   // 台区：feeder.name = taiqu，bulk.name = feeder
   const feederDisplayName = isTaiqu ? taiquName : (String(project.name ?? "").trim() || "馈线1");
