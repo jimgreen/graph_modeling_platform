@@ -3138,15 +3138,23 @@ type MultiModelGlobalLineEndpointRecord = {
   nodeNumber: string;
 };
 
-function multiModelRecordWithParent(record: EDeviceExport, parent: number): EDeviceExport {
+export function multiModelRecordWithParent(record: EDeviceExport, parent: number): EDeviceExport {
   const isDerivedRecord = record.id.includes(":derived:") && record.kind.includes(":derived:");
-  const columns = [...(record.columns ?? E_SECTION_COLUMNS[record.section] ?? Object.keys(record.params))]
+  const originalColumns = record.columns ?? E_SECTION_COLUMNS[record.section] ?? Object.keys(record.params);
+  const hadParentColumn = originalColumns.includes("parent");
+  const columns = [...originalColumns]
     .filter((column) => column !== "parent" && (!isDerivedRecord || column !== "dev_type"));
   if (isDerivedRecord) {
     const params = { ...record.params };
     delete params.parent;
     delete params.dev_type;
     return { ...record, params, columns };
+  }
+  const parentParams = { ...record.params, parent: String(parent) };
+  // 模板态（如国网E格式/实时库）的接口字段里没有 parent 列：不强行注入，
+  // 否则导出列会与模板/单模型不一致（归属关系由模板自身字段如 ist/ind 表达，parent 仅保留在 params 内供引用）。
+  if (!hadParentColumn) {
+    return { ...record, params: parentParams, columns };
   }
   const devTypeIndex = columns.indexOf("dev_type");
   if (devTypeIndex >= 0) {
@@ -3159,11 +3167,7 @@ function multiModelRecordWithParent(record: EDeviceExport, parent: number): EDev
   if (devTypeIndex >= 0) {
     columns.splice(parentIndex + 1, 0, "dev_type");
   }
-  return {
-    ...record,
-    params: { ...record.params, parent: String(parent) },
-    columns
-  };
+  return { ...record, params: parentParams, columns };
 }
 
 function multiModelGlobalLineNodes(project: ProjectFile) {

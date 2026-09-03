@@ -4286,10 +4286,11 @@ describe("全网 E 文件导出", () => {
     expect(payload.ACGenerator.rows.find((row) => row.name === "厂站本地电源")?.parent).toBe("6");
     expect(payload.ACLoad.columns.slice(0, 3)).toEqual(["idx", "name", "parent"]);
     expect(payload.ACLoad.rows.find((row) => row.name === "馈线本地负荷")?.parent).toBe("7");
-    expect(payload.ACNode.rows.every((row) => row.parent === "6" || row.parent === "7")).toBe(true);
+    // ACNode 在本 fixture 的默认接口里没有 parent 字段：全网导出不再为其强制注入 parent 列。
+    expect(payload.ACNode.columns).not.toContain("parent");
   });
 
-  test("全网 E 中所有设备把 parent 固定在 dev_type 之前", () => {
+  test("全网 E 中接口未定义 parent 时不注入 parent 列（列与模板一致）", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 120 });
     source.name = "顺序校验电源";
     source.params.idx = "1";
@@ -4333,8 +4334,10 @@ describe("全网 E 文件导出", () => {
     const payload = parseESections(file.text);
 
     for (const section of ["ACGenerator", "ACLoad"] as const) {
-      expect(payload[section].columns).toEqual(["idx", "name", "parent", "dev_type", "node"]);
-      expect(payload[section].rows.every((row) => row.parent === "19")).toBe(true);
+      // 接口字段未含 parent：全网导出保持接口列（idx,dev_type,name,node），不再注入 parent。
+      expect(payload[section].columns).toEqual(["idx", "dev_type", "name", "node"]);
+      expect(payload[section].columns).not.toContain("parent");
+      expect(payload[section].rows.length).toBeGreaterThan(0);
     }
   });
 
