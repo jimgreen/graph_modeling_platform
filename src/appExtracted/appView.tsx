@@ -21,6 +21,7 @@ import { TOPOLOGY_WARNING_PAGE_SIZE } from "./appCoreCanvasUtilities";
 import type { CustomComponentLibraryDefinition } from "./appCoreCanvasUtilities";
 import { decodeAuto } from "../encoding/gbk";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
+import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES as TEMPLATE_ALLOWED_MODEL_TYPES, eDeviceTemplateNetworkTypeMismatchMessage, eDeviceTemplateSingleTypeMismatchMessage } from "../eDeviceTemplateTypePolicy";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
 import { EFileEditor } from "../EFileEditor";
 import { buildUserCustomizationInventory, restoreUserCustomizationItems, type UserCustomizationDomain } from "../userCustomizations";
@@ -688,43 +689,11 @@ export function renderAppView(__appScope: Record<string, any>) {
     try { return localStorage.getItem("eDeviceInterfaceReadonlyMode") === "true"; } catch { return false; }
   });
   Object.assign(__appScope, { setEDeviceInterfaceLoadedTemplateName, setEDeviceInterfaceReadonlyMode });
-  // 预定义模板对模型类型的限制：国网E格式/主网实时库=主网(厂站)，配网实时库=配网(馈线)，台区实时库=台区；自定义不限
-  const TEMPLATE_ALLOWED_MODEL_TYPES: Record<string, string[]> = {
-    "国网E格式": ["厂站"],
-    "主网实时库": ["厂站"],
-    "配网实时库": ["馈线"],
-    "台区实时库": ["台区"]
-  };
-  const MODEL_TYPE_NETWORK_LABEL: Record<string, string> = { "厂站": "主网", "馈线": "配网", "台区": "台区" };
-  const modelTypeMismatchMessage = (): string | null => {
-    const templateName = eDeviceInterfaceLoadedTemplateName;
-    if (!templateName || templateName === "自定义") {
-      return null;
-    }
-    const allowed = TEMPLATE_ALLOWED_MODEL_TYPES[templateName];
-    if (!allowed || allowed.includes(modelType)) {
-      return null;
-    }
-    const allowedLabels = allowed.map((t) => MODEL_TYPE_NETWORK_LABEL[t] ?? t).join("、");
-    const currentLabel = MODEL_TYPE_NETWORK_LABEL[modelType] ?? modelType;
-    return `当前模板「${templateName}」仅支持${allowedLabels}模型，当前模型类型为「${currentLabel}」。请转为自定义配置或切换模型类型后重试。`;
-  };
-  // 全网拓扑导出校验：当前模板有类型限制且网络存在不支持的模型类型时返回提示文本（无限制/自定义/原始返回 null）。
-  const eDeviceTemplateNetworkMismatchMessage = (modelTypes: readonly (string | null | undefined)[]) => {
-    const templateName = eDeviceInterfaceLoadedTemplateName;
-    if (!templateName) {
-      return null;
-    }
-    const allowed = TEMPLATE_ALLOWED_MODEL_TYPES[templateName];
-    if (!allowed) {
-      return null;
-    }
-    const offending = [...new Set((modelTypes ?? []).map((value) => String(value ?? "").trim()).filter(Boolean))]
-      .filter((modelType) => !allowed.includes(modelType));
-    return offending.length > 0
-      ? `当前模板「${templateName}」不支持模型类型：${offending.join("、")}；请转为自定义配置或切换模板后重试。`
-      : null;
-  };
+  // 单模型/全网类型校验统一由纯函数实现（见 ../eDeviceTemplateTypePolicy），保持模板类型策略单一来源。
+  const modelTypeMismatchMessage = (): string | null =>
+    eDeviceTemplateSingleTypeMismatchMessage(eDeviceInterfaceLoadedTemplateName ?? "", modelType);
+  const eDeviceTemplateNetworkMismatchMessage = (modelTypes: readonly (string | null | undefined)[]) =>
+    eDeviceTemplateNetworkTypeMismatchMessage(eDeviceInterfaceLoadedTemplateName, modelTypes);
   const PREDEFINED_E_DEVICE_TEMPLATE_NAMES = new Set(Object.keys(TEMPLATE_ALLOWED_MODEL_TYPES));
   // 把只读模板态（预定义/文件加载）转为可编辑自定义态，标签保留来源：自定义-<预定义名>/自定义-文件模板。
   const convertEDeviceInterfaceTemplateToCustom = () => {
