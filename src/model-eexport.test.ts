@@ -4286,10 +4286,11 @@ describe("全网 E 文件导出", () => {
     expect(payload.ACGenerator.rows.find((row) => row.name === "厂站本地电源")?.parent).toBe("6");
     expect(payload.ACLoad.columns.slice(0, 3)).toEqual(["idx", "name", "parent"]);
     expect(payload.ACLoad.rows.find((row) => row.name === "馈线本地负荷")?.parent).toBe("7");
-    expect(payload.ACNode.rows.every((row) => row.parent === "6" || row.parent === "7")).toBe(true);
+    // ACNode 在本 fixture 的接口里没有 parent 字段：不再强制注入。
+    expect(payload.ACNode.columns).not.toContain("parent");
   });
 
-  test("全网 E 中所有设备把 parent 固定在 dev_type 之前", () => {
+  test("全网 E 中接口未定义 parent 时不注入 parent 列（列与模板一致）", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 120 });
     source.name = "顺序校验电源";
     source.params.idx = "1";
@@ -4333,8 +4334,10 @@ describe("全网 E 文件导出", () => {
     const payload = parseESections(file.text);
 
     for (const section of ["ACGenerator", "ACLoad"] as const) {
-      expect(payload[section].columns).toEqual(["idx", "name", "parent", "dev_type", "node"]);
-      expect(payload[section].rows.every((row) => row.parent === "19")).toBe(true);
+      // 接口字段未含 parent：保持接口列（idx,dev_type,name,node），不再注入 parent。
+      expect(payload[section].columns).toEqual(["idx", "dev_type", "name", "node"]);
+      expect(payload[section].columns).not.toContain("parent");
+      expect(payload[section].rows.length).toBeGreaterThan(0);
     }
   });
 
@@ -4352,6 +4355,33 @@ describe("全网 E 文件导出", () => {
     expect(payload.substation.rows.map((row: any) => row.idx)).toEqual(["1", "5"]);
     expect(payload.substation.rows.map((row: any) => row.name)).toEqual(["厂站一", "厂站二"]);
     expect(payload.substation.rows.every((row: any) => String(row.idv ?? "") === "0")).toBe(true);
+  });
+
+  test("模板态全网：厂站设备 ist 置为所属模型序号（不依赖 parent 列也能区分多站）", () => {
+    const fields = ["idx", "name", "ist", "node"].map((name) => ({
+      sourceName: name,
+      exportName: name,
+      cnName: name,
+      exportEnabled: true
+    }));
+    const source = createDefaultNode("ac-source", { x: 10, y: 10 });
+    source.name = "厂站二电源";
+    source.params.idx = "1";
+    source.terminals[0].vbase = "10";
+    const options = {
+      eDeviceDefinitionLabels: { ACGenerator: "ACGenerator", ACLoad: "ACLoad" },
+      interfaceDefinitions: [
+        { componentLibrary: "ACGenerator", exportName: "ACGenerator", fields },
+        { componentLibrary: "ACLoad", exportName: "ACLoad", fields }
+      ]
+    };
+    const file = buildMultiModelEFileExport([{
+      id: "station-9",
+      schemePath: ["主方案"],
+      project: { version: 1 as const, name: "厂站二", idx: 9, modelType: "厂站" as const, nodes: [source], edges: [] }
+    }], options);
+    const payload = parseESections(file.text);
+    expect(payload.ACGenerator.rows.find((row: any) => row.name === "厂站二电源")?.ist).toBe("9");
   });
 
   test("按模型 idx 合并记录并把设备及节点序号重编号为模型 idx * 10000 + 单模型序号", () => {

@@ -2121,7 +2121,9 @@ function isAdjustableDevice(deviceType: string): boolean {
 
 function formatEColumnValue(section: string, column: string, value: string | undefined, rowIndex: number) {
   if (column === "ist") {
-    return "1";
+    const text = String(value ?? "").trim();
+    // ist = 所属厂站序号：取记录 params.ist（多厂站按模型序号写入）；单厂站/未设置默认 1。
+    return text || "1";
   }
   const fallback = section === "ACACConverter" && (column === "i_control_type" || column === "j_control_type")
     ? "PQ"
@@ -3154,13 +3156,21 @@ type MultiModelGlobalLineEndpointRecord = {
 
 export function multiModelRecordWithParent(record: EDeviceExport, parent: number): EDeviceExport {
   const isDerivedRecord = record.id.includes(":derived:") && record.kind.includes(":derived:");
-  const columns = [...(record.columns ?? E_SECTION_COLUMNS[record.section] ?? Object.keys(record.params))]
+  const originalColumns = record.columns ?? E_SECTION_COLUMNS[record.section] ?? Object.keys(record.params);
+  const hadParentColumn = originalColumns.includes("parent");
+  const columns = [...originalColumns]
     .filter((column) => column !== "parent" && (!isDerivedRecord || column !== "dev_type"));
   if (isDerivedRecord) {
     const params = { ...record.params };
     delete params.parent;
     delete params.dev_type;
     return { ...record, params, columns };
+  }
+  const parentParams = { ...record.params, parent: String(parent) };
+  // 模板（如国网E格式/实时库）接口字段不含 parent：不强行注入 parent 列，
+  // 多厂站归属由模板 ist 字段表达；parent 仅留在 params 内供引用。
+  if (!hadParentColumn) {
+    return { ...record, params: parentParams, columns };
   }
   const devTypeIndex = columns.indexOf("dev_type");
   if (devTypeIndex >= 0) {
@@ -3173,11 +3183,7 @@ export function multiModelRecordWithParent(record: EDeviceExport, parent: number
   if (devTypeIndex >= 0) {
     columns.splice(parentIndex + 1, 0, "dev_type");
   }
-  return {
-    ...record,
-    params: { ...record.params, parent: String(parent) },
-    columns
-  };
+  return { ...record, params: parentParams, columns };
 }
 
 function multiModelGlobalLineNodes(project: ProjectFile) {
@@ -3466,9 +3472,13 @@ export function buildMultiModelEFileExport(
         !recordBelongsToCollapsedModelAssociationNode(record.id, collapsedAssociationNodeIds)
       ))
       .map((record) => multiModelRecordWithParent(record, modelIndex));
-    // 模板模式下 厂站模型列表写入 <substation>：记录其在重编号前的原始记录，供推导每站 idv。
-    // （多站设备仍用 parent 列区分所属厂站，见 multiModelRecordWithParent。）
+    // 模板模式下 厂站模型列表写入 <substation>：记录重编号前记录以推导每站 idv，
+    // 并把 ist(所属厂站) 置为模型序号（formatEColumnValue 现会读该值），多站可经 ist 区分。
     if (templateMode && input.project.modelType === "厂站") {
+      const ownerIndex = String(modelIndex);
+      for (const record of allModelRecords) {
+        record.params.ist = ownerIndex;
+      }
       templateSubstationInputs.push({ input, modelIndex, records: allModelRecords });
     }
     offsetMultiModelRecordIndexes(allModelRecords, modelIndex);
