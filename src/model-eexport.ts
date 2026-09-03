@@ -3470,8 +3470,15 @@ export function buildMultiModelEFileExport(
         !recordBelongsToCollapsedModelAssociationNode(record.id, collapsedAssociationNodeIds)
       ))
       .map((record) => multiModelRecordWithParent(record, modelIndex));
-    // 模板模式下 厂站模型列表写入 <substation>：记录其在重编号前的原始记录，供推导每站 idv。
+    // 模板模式下 厂站模型列表写入 <substation>：记录其在重编号前的原始记录，供推导每站 idv；
+    // 并把含 ist（所属厂站）列的设备归属置为该模型序号，使多站设备在去掉 parent 列后仍可按站区分。
     if (templateMode && input.project.modelType === "厂站") {
+      const ownerIndex = String(modelIndex);
+      for (const record of allModelRecords) {
+        if (Array.isArray(record.columns) && record.columns.includes("ist")) {
+          record.params.ist = ownerIndex;
+        }
+      }
       templateSubstationInputs.push({ input, modelIndex, records: allModelRecords });
     }
     offsetMultiModelRecordIndexes(allModelRecords, modelIndex);
