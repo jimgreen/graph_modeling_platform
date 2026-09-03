@@ -9523,6 +9523,10 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   align-items: center;
   gap: 8px;
   animation: global-message-fade-in 0.3s ease;
+  /* 兜底底色：任何未匹配到 success/error/info/warning 的类型都有不透明背景，避免文字与界面混叠 */
+  background: #ffffff;
+  border: 1px solid #e4e7ed;
+  color: #303133;
 }
 
 .global-message-success {
@@ -9541,6 +9545,12 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   background: #ffffff;
   border: 1px solid #e4e7ed;
   color: #303133;
+}
+
+.global-message-warning {
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  color: #ad6800;
 }
 
 .global-message-icon {
