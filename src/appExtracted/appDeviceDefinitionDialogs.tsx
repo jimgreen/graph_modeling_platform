@@ -17,7 +17,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
     deleteAllDefinitionParameterRows, deleteCustomDeviceStateDraftRow, deleteSelectedCustomDeviceTreeItem, deleteSelectedCustomParameterRows, deleteSelectedDefinitionParameterRows, deviceDefinitionDialogOpen, deviceDefinitionDialogRef, deviceDefinitionKeyForTemplate,
     deviceDefinitionSearchNeedle, deviceDefinitionSearchQuery, deviceDefinitionView, deviceLibraryDialogLayouts, deviceLibraryDialogStyle, discardEDeviceInterfaceClassAndSwitch, discardEDeviceInterfaceDefinitionChanges, displayedCustomComponentTreeLibraries,
     displayedDeviceDefinitionLibraries, displayedMergedCustomDefaultParams, displayedVisibleCustomParams, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionInterfaceDialogOpen, eDeviceDefinitionLabels, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields,
-    eDeviceInterfaceClassSwitchTarget, eDeviceInterfaceClassSwitchTargetRow, eDeviceInterfaceDefinitionRows, eDeviceInterfaceDefinitionTree, eDeviceInterfaceExitPromptOpen, eDeviceInterfaceGroupInfo, eDeviceInterfaceHasUnsavedChanges, eDeviceInterfaceLoadedTemplateName,
+    convertEDeviceInterfaceTemplateToCustom, eDeviceInterfaceClassSwitchTarget, eDeviceInterfaceClassSwitchTargetRow, eDeviceInterfaceDefinitionRows, eDeviceInterfaceDefinitionTree, eDeviceInterfaceExitPromptOpen, eDeviceInterfaceGroupInfo, eDeviceInterfaceHasUnsavedChanges, eDeviceInterfaceLoadedTemplateName,
     eDeviceInterfaceReadonlyMode, eDeviceInterfaceSaveAndSwitchRef, eDeviceInterfaceSaveMessage, eDeviceInterfaceSelectedGroupKey, eDeviceTemplateDropdownOpen, eFileEditorDialogOpen, eFileEditorExportOptions, eFileEditorFieldCnNames,
     eFileEditorRecords, editingCustomDeviceKind, expandedDefinitionGroups, expandedImportResultSections, exportCustomComponentTemplateSvg, filteredCustomComponentTreeByComponentLibrary, filteredDeviceDefinitionByComponentLibrary, formatCustomDeviceTerminalAnchorValue,
     getContainerTerminalAssociationSourceIndex, handleTreeCollapseChange, importResultActiveTab, isContainerTerminalAssociationDependent, libraryTemplates, loadDefinitionTemplateDraft, loadPredefinedEDeviceTemplate, measurementConfig, measurementConfigDraft, moveSelectedCustomParameterRows,
@@ -936,16 +936,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                 <div className="e-device-interface-template-info">
                   <span className="e-device-interface-template-name">{eDeviceInterfaceLoadedTemplateName}</span>
                   {eDeviceInterfaceReadonlyMode && (
-                    <button type="button" className="e-device-interface-convert-button" onClick={() => {
-                      setEDeviceInterfaceReadonlyMode(false);
-                      setEDeviceInterfaceLoadedTemplateName("自定义");
-                      setTemplateImportResult(null);
-                      try {
-                        localStorage.setItem("eDeviceInterfaceReadonlyMode", "false");
-                        localStorage.setItem("eDeviceInterfaceLoadedTemplateName", "自定义");
-                        localStorage.removeItem("eDeviceTemplateImportResult");
-                      } catch { /* ignore */ }
-                    }}>
+                    <button type="button" className="e-device-interface-convert-button" onClick={convertEDeviceInterfaceTemplateToCustom}>
                       转为自定义配置
                     </button>
                   )}

@@ -105,6 +105,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
     customComponentSvgImportInputRef, customDeviceImageInputRef,
     definitionTemplateIconInputRef, deviceLabelsVisible, deviceMeasurementsVisible, distributeSelected,
     eDeviceDefinitionInterfaceDialogOpen,
+    eDeviceInterfaceTemplateLabel,
     exportEFile, exportJsonFile, exportSvg, exportSvgFile, groupSelectedGraphics,
     imageInputRef, importCustomComponentSvg, importModelFile, importSchemeFile,
     isBrowseMode, isEditMode, layerManagementDropdownRef, mirrorSelectedNodes,
@@ -208,6 +209,10 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
               </div>
             ))}
           </div>
+        </div>
+        <div className="topbar-model" title={`当前模板：${eDeviceInterfaceTemplateLabel}`}>
+          <span>当前模板</span>
+          <strong>{eDeviceInterfaceTemplateLabel}</strong>
         </div>
       </div>
       <div className="action-cluster">
