@@ -635,6 +635,7 @@ button:not(.ant-btn):disabled {
   min-width: 0;
   flex: 1 1 0;
   white-space: nowrap;
+  font-family: '思源黑体';
 }
 
 .left-panel-footer-label {
