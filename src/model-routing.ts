@@ -6251,23 +6251,38 @@ export function validateTopology(
   const errors: TopologyValidationError[] = duplicateDeviceIdentityErrors(nodes);
   for (const node of nodes) {
     for (const issue of validateNodeEnumParameters(node)) {
-      const associationModelType = issue.paramKey === "model_id"
-        ? modelAssociationModelTypeForKind(node.kind)
-        : "";
-      const dynamicAllowedValues = associationModelType && options.modelAssociationProjectIndexes
-        ? [...(options.modelAssociationProjectIndexes[associationModelType] ?? [])]
-        : undefined;
-      if (dynamicAllowedValues?.includes(issue.value)) {
-        continue;
-      }
-      const allowedValues = dynamicAllowedValues ?? issue.allowedValues;
       const parameterLabel = issue.definition.cnName || issue.definition.enName;
       errors.push({
         id: `device-enum-invalid:${node.id}:${issue.paramKey}`,
         type: "device-enum-invalid",
         nodeId: node.id,
         relatedNodeIds: [node.id],
-        message: `图上拓扑失败：设备“${node.name}”的枚举参数 ${parameterLabel}（${issue.paramKey}）值“${issue.value || "<空>"}”无效，允许值为：${allowedValues.join("、")}。`
+        message: `图上拓扑失败：设备“${node.name}”的枚举参数 ${parameterLabel}（${issue.paramKey}）值“${issue.value || "<空>"}”无效，允许值为：${issue.allowedValues.join("、")}。`
+      });
+    }
+  }
+  // model_id 定义为整数（关联模型 idx 动态可变，非枚举），独立校验：非空值须命中同类型模型的动态目录。
+  // 未提供目录时跳过，与 E 导出侧（validateNodeEnumParameters 不再校验 model_id）语义一致。
+  if (options.modelAssociationProjectIndexes) {
+    for (const node of nodes) {
+      const associationModelType = modelAssociationModelTypeForKind(node.kind);
+      if (!associationModelType) {
+        continue;
+      }
+      const value = String(node.params.model_id ?? "").trim();
+      if (!value) {
+        continue;
+      }
+      const allowedValues = options.modelAssociationProjectIndexes[associationModelType] ?? [];
+      if (allowedValues.includes(value)) {
+        continue;
+      }
+      errors.push({
+        id: `device-enum-invalid:${node.id}:model_id`,
+        type: "device-enum-invalid",
+        nodeId: node.id,
+        relatedNodeIds: [node.id],
+        message: `图上拓扑失败：设备“${node.name}”的关联模型（model_id）值“${value}”无效，允许值为：${allowedValues.join("、")}。`
       });
     }
   }

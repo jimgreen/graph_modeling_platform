@@ -4757,14 +4757,13 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   }
 ];
 
+// model_id 取值为方案内其他模型的 idx（正整数），动态可变，故定义为整数而非枚举；
+// 关联模型下拉选项由 useBatchEditors.modelAssociationProjectOptionConfig 按 key 特判提供。
 const MODEL_ASSOCIATION_PARAMETER_DEFINITION: DeviceParameterDefinition = {
   cnName: "关联模型",
   enName: "model_id",
-  valueType: "numberEnum",
+  valueType: "integer",
   typicalValue: "",
-  enumValues: [],
-  enumValueType: "number",
-  enumOptions: [],
   readonly: false,
   exportEnabled: true,
   exportName: "model_id"

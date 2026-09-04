@@ -164,7 +164,7 @@ describe("model association derived power-source and load classes", () => {
       expect(modelId).toMatchObject({
         cnName: "关联模型",
         enName: "model_id",
-        valueType: "numberEnum",
+        valueType: "integer",
         typicalValue: "",
         readonly: false,
         exportEnabled: true,

@@ -3119,7 +3119,7 @@ test("keeps every built-in device parameter aligned with its semantic type and n
   const integerText = /^[-+]?\d+$/;
   const expectedType = (name: string, kind: DeviceKind) => {
     const containerBaseName = name.replace(/_(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+$/, "");
-    if (name === "model_id" && modelAssociationModelTypeForKind(kind)) return "numberEnum";
+    if (name === "model_id" && modelAssociationModelTypeForKind(kind)) return "integer";
     if (numberEnumNames.has(containerBaseName)) return "numberEnum";
     if (stringEnumNames.has(containerBaseName)) return "stringEnum";
     if (
