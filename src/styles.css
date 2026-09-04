@@ -1323,7 +1323,7 @@ button:not(.ant-btn):disabled {
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
-  width: 36px;
+  width: 26px;
   height: 100%;
   flex-shrink: 0;
   color: #475569;
