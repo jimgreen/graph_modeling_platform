@@ -331,7 +331,8 @@ export const RecentGlyphsToolbar = memo(function RecentGlyphsToolbar({ scope }: 
           const tw = template.size?.width ?? 40;
           const th = template.size?.height ?? 40;
           const maxDim = Math.max(tw, th);
-          const pad = maxDim * 0.15;
+          // 收紧四周留白（原 0.15 导致图标仅占容器约 77%），提高图标可视占比
+          const pad = maxDim * 0.04;
           const vb = `${-tw / 2 - pad} ${-th / 2 - pad} ${tw + pad * 2} ${th + pad * 2}`;
           return (
             <button
