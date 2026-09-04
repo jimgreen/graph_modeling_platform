@@ -4564,7 +4564,20 @@ export function createUpdateMeasurementItem(__appScope: Record<string, any>) {
     updater: (item: MeasurementItemBinding) => MeasurementItemBinding,
     logText?: string
   ) => {
-  const { updateMeasurementGroupById } = __appScope;
+  const { updateMeasurementGroupById, projectMeasurements, showGlobalMessage } = __appScope;
+    const targetGroup = (projectMeasurements ?? []).find((group) => group.id === groupId);
+    const targetItem = targetGroup?.items.find((item) => item.id === itemId);
+    const nextItem = targetItem ? updater(targetItem) : undefined;
+    // 测点作为运行时绑定唯一 key：改 sourcePoint 时跨全部量测组查重，重复则拒绝本次修改并提示
+    if (targetItem && nextItem && String(nextItem.sourcePoint ?? "").trim() && nextItem.sourcePoint !== targetItem.sourcePoint) {
+      const duplicate = (projectMeasurements ?? []).some((group) =>
+        group.items.some((item) => item.id !== itemId && String(item.sourcePoint ?? "").trim() === String(nextItem.sourcePoint ?? "").trim())
+      );
+      if (duplicate) {
+        showGlobalMessage?.(`测点 ${nextItem.sourcePoint} 已被其他量测使用，请更换测点。`);
+        return;
+      }
+    }
     updateMeasurementGroupById(groupId, (group) => ({
       ...group,
       items: group.items.map((item) => item.id === itemId ? updater(item) : item)
