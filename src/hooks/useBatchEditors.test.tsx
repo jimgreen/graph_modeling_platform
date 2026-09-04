@@ -73,7 +73,7 @@ describe("model association model_id editors", () => {
     ["ac-station-source", "11", "11 / 方案一 / 厂站模型甲"],
     ["dc-feeder-load", "22", "22 / 方案一 / 馈线模型乙"],
     ["ac-district-load", "33", "33 / 方案一 / 台区模型丙"]
-  ] as const)("filters %s model_id number enum by model type", (kind, expectedValue, expectedLabel) => {
+  ] as const)("filters %s model_id options by model type", (kind, expectedValue, expectedLabel) => {
     const node = createDefaultNode(kind, { x: 100, y: 100 });
     const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
     const definition = template.parameterDefinitions?.find((item) => item.enName === "model_id");
@@ -85,7 +85,7 @@ describe("model association model_id editors", () => {
       definition
     }, undefined, modelAssociationSchemes);
 
-    expect(definition).toMatchObject({ valueType: "numberEnum", enumValueType: "number" });
+    expect(definition).toMatchObject({ valueType: "integer" });
     expect(html).toContain('<option value="" selected="">请选择关联模型</option>');
     expect(html).toContain(`<option value="${expectedValue}">${expectedLabel}</option>`);
     expect(html).not.toContain("其他模型丁");
