@@ -16,7 +16,6 @@ export function AppLeftPanel({ scope, inputs }: AppLeftPanelProps) {
 }
 function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
   const {
-    activeProjectKey,
     effectiveLeftPanelTab,
     handleSidePanelPointerLeave,
     isEditMode,
@@ -24,6 +23,7 @@ function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
     leftPanelRef,
     leftPanelTab,
     leftPanelVisible,
+    projectIdx,
     renderSidePanelModeControls,
     setLeftPanelTab,
     startSidePanelResize,
@@ -31,11 +31,10 @@ function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
     updateAutoPanelVisibility
   } = scope;
 
-  const copyId = (event: any, rawValue: string, kind: "scheme" | "project") => {
+  // 底部显示当前模型的 model_id（project.idx 编号），点击复制该编号
+  const copyModelId = (event: any, projectIdx: number) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const stripped = rawValue.replace(/^[^:]+:/, "");
-    const value = kind === "project" ? stripped.split("/").pop() || "" : stripped;
-    const id = value ? decodeURIComponent(value) : "—";
+    const id = String(projectIdx || "");
     navigator.clipboard.writeText(id).then(() => {
       const toast = document.createElement("span");
       toast.className = "id-copy-toast";
@@ -46,12 +45,6 @@ function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
       document.body.appendChild(toast);
       setTimeout(() => toast.remove(), 1000);
     });
-  };
-
-  const displayId = (rawValue: string, kind: "scheme" | "project") => {
-    const stripped = rawValue.replace(/^[^:]+:/, "");
-    const value = kind === "project" ? stripped.split("/").pop() || "" : stripped;
-    return value ? decodeURIComponent(value) : "—";
   };
 
   return (
@@ -77,8 +70,8 @@ function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
       <div className="left-panel-footer">
         <span className="left-panel-footer-item">
           <span className="left-panel-footer-label">模型ID：</span>
-          <span className="id-copy-cell" title="点击复制模型 ID" onClick={(event) => copyId(event, activeProjectKey || "", "project")}>
-            {displayId(activeProjectKey || "", "project")}
+          <span className="id-copy-cell" title="点击复制模型 ID（model_id）" onClick={(event) => copyModelId(event, projectIdx)}>
+            {projectIdx > 0 ? projectIdx : "—"}
           </span>
         </span>
       </div>
