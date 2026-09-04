@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Select, Tooltip, InputNumber, Button } from "antd";
+import { Select, Tooltip, InputNumber, Button, message } from "antd";
 import { EyeTwoTone, EyeInvisibleTwoTone } from "@ant-design/icons";
 import { clampNumber } from "../canvasViewport";
 import { reconcileNodeWithDefinition } from "../definitionInstanceSync";
@@ -4564,19 +4564,28 @@ export function createUpdateMeasurementItem(__appScope: Record<string, any>) {
     updater: (item: MeasurementItemBinding) => MeasurementItemBinding,
     logText?: string
   ) => {
-  const { updateMeasurementGroupById, projectMeasurements, showGlobalMessage } = __appScope;
+  const { updateMeasurementGroupById, projectMeasurements } = __appScope;
     // projectMeasurements 结构为 { version, groups }，取 groups 数组供查重
     const measurementGroups = Array.isArray(projectMeasurements) ? projectMeasurements : (projectMeasurements?.groups ?? []);
     const targetGroup = measurementGroups.find((group) => group.id === groupId);
     const targetItem = targetGroup?.items.find((item) => item.id === itemId);
     const nextItem = targetItem ? updater(targetItem) : undefined;
-    // 测点作为运行时绑定唯一 key：改 sourcePoint 时跨全部量测组查重，重复则拒绝本次修改并提示
+    // 测点作为运行时绑定唯一 key：改 sourcePoint 时跨全部量测组查重，重复则还原为默认测点并提示
     if (targetItem && nextItem && String(nextItem.sourcePoint ?? "").trim() && nextItem.sourcePoint !== targetItem.sourcePoint) {
       const duplicate = measurementGroups.some((group) =>
         group.items.some((item) => item.id !== itemId && String(item.sourcePoint ?? "").trim() === String(nextItem.sourcePoint ?? "").trim())
       );
-      if (duplicate) {
-        showGlobalMessage?.(`测点 ${nextItem.sourcePoint} 已被其他量测使用，请更换测点。`);
+      if (duplicate && targetGroup) {
+        // 还原为默认测点（节点ID.端子ID.量测类型ID），antd message.error 提示，5 秒自动消失
+        const defaultSourcePoint = `${targetGroup.nodeId}${targetGroup.terminalId ? `.${targetGroup.terminalId}` : ""}.${nextItem.measurementTypeId}`;
+        updateMeasurementGroupById(groupId, (group) => ({
+          ...group,
+          items: group.items.map((item) => item.id === itemId ? { ...item, sourcePoint: defaultSourcePoint } : item)
+        }), "还原量测测点为默认值");
+        message.error({
+          content: `测点 ${nextItem.sourcePoint} 已被其他量测使用，已还原为默认测点 ${defaultSourcePoint}。`,
+          duration: 5
+        });
         return;
       }
     }
