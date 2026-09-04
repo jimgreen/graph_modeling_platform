@@ -1,3 +1,17 @@
+@font-face {
+  font-family: "思源黑体";
+  src: url("./assets/fonts/source-han-sans-cn-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "思源黑体";
+  src: url("./assets/fonts/source-han-sans-cn-500.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+
 :root {
   --control-height-sm: 24px;
 }
@@ -1561,7 +1575,7 @@ button:not(.ant-btn):disabled {
   flex: 0 0 auto;
   padding: 2px 3px;
   font-size: 12px;
-  font-family: 黑体;
+  font-family: 思源黑体;
   font-weight: 500;
   background: #fffefe;
   color: #000000;
