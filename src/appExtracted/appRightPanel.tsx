@@ -199,13 +199,11 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     substation,
     taiqu,
     terminalColor,
-    terminalVbaseFallback,
     terminalVoltageBaseNumber,
     toggleBackgroundLayer,
     updateAutoPanelVisibility,
     updateParam,
     updateSelectedNode,
-    updateTerminalVbase,
     undoScopeForGraphPatch,
     voltageUnit,
     edges,
@@ -771,18 +769,6 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             </span>
                           </td>
                         </tr>
-                        {inspectorSelectedNode.terminals.map((terminal, terminalIndex) => (<Fragment key={terminal.id}>
-                            <tr>
-                              <th title={terminal.id}>{terminal.label}</th>
-                              <td>{`${terminal.type.toUpperCase()} / ${terminal.nodeNumber}`}</td>
-                            </tr>
-                            {(terminal.type === "ac" || terminal.type === "dc") && (<tr>
-                                <th title={`${terminal.id}:vbase`}>{`${terminal.label}电压基值`}</th>
-                                <td>
-                                    <BufferedTextInput inputMode="decimal" value={terminalVoltageBaseNumber(terminal.vbase ?? terminalVbaseFallback(inspectorSelectedNode, terminalIndex))} suffix={voltageUnit} onCommit={(nextValue) => updateTerminalVbase(terminal.id, nextValue)}/>
-                                </td>
-                              </tr>)}
-                          </Fragment>))}
                       </>)}
                     {__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<>
                         <tr>
