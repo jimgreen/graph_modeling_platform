@@ -1,5 +1,8 @@
 // @ts-nocheck
 import { Select, Tooltip, InputNumber, Button, message } from "antd";
+
+// 告警消息下移到画布区域顶部，避免与顶部工具栏重叠
+message.config({ top: 50 });
 import { EyeTwoTone, EyeInvisibleTwoTone } from "@ant-design/icons";
 import { clampNumber } from "../canvasViewport";
 import { reconcileNodeWithDefinition } from "../definitionInstanceSync";
