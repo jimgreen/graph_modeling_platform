@@ -5108,6 +5108,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                             <InputNumber size="small"
                               style={{ width: "100%" }}
                               step={0.01}
+                              precision={type?.defaultDecimals}
                               value={item.defaultValue ?? 0}
                               disabled={isBrowseMode}
                               placeholder="默认值"
