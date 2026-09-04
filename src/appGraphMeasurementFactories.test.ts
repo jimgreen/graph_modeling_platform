@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Children, Fragment, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { message } from "antd";
 
 import {
   createAddDefaultMeasurementsToNode,
@@ -1593,8 +1594,13 @@ describe("measurement canvas interactions", () => {
 });
 
 describe("measurement item sourcePoint uniqueness", () => {
-  test("rejects a sourcePoint already used by another measurement group item", () => {
-    const showGlobalMessage = vi.fn();
+  const messageErrorSpy = vi.spyOn(message, "error").mockImplementation(() => undefined as any);
+
+  beforeEach(() => {
+    messageErrorSpy.mockClear();
+  });
+
+  test("rejects a sourcePoint already used by another group item, restores the default source point and shows an error message", () => {
     const updateMeasurementGroupById = vi.fn();
     const projectMeasurements = {
       version: 1,
@@ -1607,32 +1613,37 @@ describe("measurement item sourcePoint uniqueness", () => {
           ]
         },
         {
-          id: "group-b", nodeId: "node-b",
-          items: [{ id: "item-3", measurementTypeId: "current", sourcePoint: "node-b.p" }]
+          id: "group-b", nodeId: "node-b", terminalId: "t1",
+          items: [{ id: "item-3", measurementTypeId: "current", sourcePoint: "node-b.t1" }]
         }
       ]
     };
     const updateMeasurementItem = createUpdateMeasurementItem({
       updateMeasurementGroupById,
-      projectMeasurements,
-      showGlobalMessage
+      projectMeasurements
     } as any);
 
-    // item-3 改为已被 item-1 占用的测点 → 拒绝并提示
+    // item-3 改为已被 item-1 占用的测点 → 还原为默认测点 node-b.t1.current 并提示
     updateMeasurementItem("group-b", "item-3", (item) => ({ ...item, sourcePoint: "node-a.p" }));
-    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("测点 node-a.p"));
-    expect(updateMeasurementGroupById).not.toHaveBeenCalled();
-
-    // 改为未占用测点 → 放行并应用更新
-    updateMeasurementItem("group-b", "item-3", (item) => ({ ...item, sourcePoint: "node-b.q" }));
-    expect(showGlobalMessage).toHaveBeenCalledTimes(1);
+    expect(messageErrorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringContaining("已被其他量测使用"),
+      duration: 5
+    }));
     expect(updateMeasurementGroupById).toHaveBeenCalledTimes(1);
     const nextGroup = (updateMeasurementGroupById.mock.calls[0][1])(projectMeasurements.groups[1]);
-    expect(nextGroup.items[0].sourcePoint).toBe("node-b.q");
+    expect(nextGroup.items[0].sourcePoint).toBe("node-b.t1.current");
+
+    // 改为未占用测点 → 正常放行，不提示
+    updateMeasurementGroupById.mockClear();
+    messageErrorSpy.mockClear();
+    updateMeasurementItem("group-b", "item-3", (item) => ({ ...item, sourcePoint: "node-b.q" }));
+    expect(messageErrorSpy).not.toHaveBeenCalled();
+    expect(updateMeasurementGroupById).toHaveBeenCalledTimes(1);
+    const appliedGroup = (updateMeasurementGroupById.mock.calls[0][1])(projectMeasurements.groups[1]);
+    expect(appliedGroup.items[0].sourcePoint).toBe("node-b.q");
   });
 
   test("allows keeping the same sourcePoint on the same item", () => {
-    const showGlobalMessage = vi.fn();
     const updateMeasurementGroupById = vi.fn();
     const projectMeasurements = {
       version: 1,
@@ -1643,12 +1654,11 @@ describe("measurement item sourcePoint uniqueness", () => {
     };
     const updateMeasurementItem = createUpdateMeasurementItem({
       updateMeasurementGroupById,
-      projectMeasurements,
-      showGlobalMessage
+      projectMeasurements
     } as any);
 
     updateMeasurementItem("group-a", "item-1", (item) => ({ ...item, sourcePoint: "node-a.p" }));
-    expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(messageErrorSpy).not.toHaveBeenCalled();
     expect(updateMeasurementGroupById).toHaveBeenCalledTimes(1);
   });
 });
