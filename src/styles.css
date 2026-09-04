@@ -599,6 +599,8 @@ button:not(.ant-btn):disabled {
 
 .left-panel-footer {
   display: flex;
+  flex-direction: row;
+  justify-content: space-around;
   flex-shrink: 0;
   flex-wrap: nowrap;
   gap: 12px;

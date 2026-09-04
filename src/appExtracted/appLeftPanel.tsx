@@ -17,7 +17,6 @@ export function AppLeftPanel({ scope, inputs }: AppLeftPanelProps) {
 function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
   const {
     activeProjectKey,
-    activeSchemeKey,
     effectiveLeftPanelTab,
     handleSidePanelPointerLeave,
     isEditMode,
@@ -77,13 +76,7 @@ function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
       </div>
       <div className="left-panel-footer">
         <span className="left-panel-footer-item">
-          <span className="left-panel-footer-label">方案：</span>
-          <span className="id-copy-cell" title="点击复制方案 ID" onClick={(event) => copyId(event, activeSchemeKey || "", "scheme")}>
-            {displayId(activeSchemeKey || "", "scheme")}
-          </span>
-        </span>
-        <span className="left-panel-footer-item">
-          <span className="left-panel-footer-label">模型：</span>
+          <span className="left-panel-footer-label">模型ID：</span>
           <span className="id-copy-cell" title="点击复制模型 ID" onClick={(event) => copyId(event, activeProjectKey || "", "project")}>
             {displayId(activeProjectKey || "", "project")}
           </span>
