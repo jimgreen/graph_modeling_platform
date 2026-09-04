@@ -4096,9 +4096,19 @@ export const measurementProfileItemsComplianceMessage = (
     ? new Map(options.positionDefinitions.map((definition) => [definition.value, definition]))
     : null;
   const seenBindingKeys = new Map<string, number>();
+  const seenSourcePoints = new Map<string, number>();
   const label = options.targetLabel ? `${options.targetLabel}量测` : "量测";
   items.forEach((item, index) => {
     const rowLabel = `${label}第 ${index + 1} 行`;
+    const sourcePoint = String(item.sourcePoint ?? "").trim();
+    if (sourcePoint) {
+      const previousSourcePointIndex = seenSourcePoints.get(sourcePoint);
+      if (previousSourcePointIndex !== undefined) {
+        messages.push(`${rowLabel}：测点 ${sourcePoint} 与第 ${previousSourcePointIndex + 1} 行重复。`);
+      } else {
+        seenSourcePoints.set(sourcePoint, index);
+      }
+    }
     const measurementTypeId = String(item.measurementTypeId ?? "").trim();
     const position = String(item.position ?? "device").trim();
     const associatedField = String(item.associatedField ?? "").trim();
@@ -5066,12 +5076,25 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 <tr>
                   <th>测点</th>
                   <td>
-                    <BufferedTextInput
-                      value={item.sourcePoint}
-                      disabled={isBrowseMode}
-                      placeholder={group.terminalId ? `${node.id}.${group.terminalId}.${item.measurementTypeId}` : `${node.id}.${item.measurementTypeId}`}
-                      onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, sourcePoint: nextValue }))}
-                    />
+                    <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                      <BufferedTextInput
+                        value={item.sourcePoint}
+                        disabled={isBrowseMode}
+                        placeholder={group.terminalId ? `${node.id}.${group.terminalId}.${item.measurementTypeId}` : `${node.id}.${item.measurementTypeId}`}
+                        onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, sourcePoint: nextValue }))}
+                      />
+                      <Button
+                        size="small"
+                        disabled={isBrowseMode}
+                        title="恢复为默认测点（节点ID.端子ID.量测类型）"
+                        onClick={() => updateMeasurementItem(group.id, item.id, (current) => ({
+                          ...current,
+                          sourcePoint: group.terminalId ? `${node.id}.${group.terminalId}.${item.measurementTypeId}` : `${node.id}.${item.measurementTypeId}`
+                        }))}
+                      >
+                        默认
+                      </Button>
+                    </div>
                   </td>
                 </tr>
                 <tr>

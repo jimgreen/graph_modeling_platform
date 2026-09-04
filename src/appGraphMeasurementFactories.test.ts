@@ -332,6 +332,27 @@ describe("measurement canvas interactions", () => {
     expect(profileMessage).toContain("测试元件量测第 3 行：量测类型 missingType 不存在。");
   });
 
+  test("flags duplicated source points while ignoring empty ones", () => {
+    const profileMessage = measurementProfileItemsComplianceMessage([
+      { name: "有功功率", measurementTypeId: "activePower", position: "device", sourcePoint: "node-a.p" },
+      { name: "无功功率", measurementTypeId: "reactivePower", position: "device", sourcePoint: "node-a.p" },
+      { name: "电流", measurementTypeId: "current", position: "device", sourcePoint: "" },
+      { name: "电压", measurementTypeId: "voltage", position: "device" }
+    ] as any, {
+      measurementTypes: [
+        { id: "activePower", name: "有功功率" },
+        { id: "reactivePower", name: "无功功率" },
+        { id: "current", name: "电流" },
+        { id: "voltage", name: "电压" }
+      ] as any,
+      targetLabel: "测试元件"
+    });
+
+    expect(profileMessage).toContain("测试元件量测第 2 行：测点 node-a.p 与第 1 行重复。");
+    expect(profileMessage).not.toContain("测点 node-a.p 与第 3 行重复");
+    expect(profileMessage).not.toContain("测点 node-a.p 与第 4 行重复");
+  });
+
   test("validates associated fields against the selected measurement position", () => {
     const profileMessage = measurementProfileItemsComplianceMessage([
       { name: "首端电阻", measurementTypeId: "activePower", position: "t1", associatedField: "r" },
