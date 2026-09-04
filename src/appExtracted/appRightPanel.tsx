@@ -936,13 +936,13 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
               </div>);
         })()) : inspectorTabShowsDevicePanel(inspectorTab, Boolean(inspectorSelectedNode)) ? (<div className="device-param-stack">
                 {!__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<div className="device-info-tabs" role="tablist" aria-label="图元属性分类">
-                    <button type="button" className="" onClick={() => setInspectorTab("graph")} role="tab" aria-selected={false}>
+                    <button type="button" className="" onMouseEnter={() => setInspectorTab("graph")} onClick={() => setInspectorTab("graph")} role="tab" aria-selected={false}>
                       图形
                     </button>
-                    <button type="button" className={selectedDeviceInfoView === "model" ? "active" : ""} onClick={() => setSelectedDeviceInfoView("model")} role="tab" aria-selected={selectedDeviceInfoView === "model"}>
+                    <button type="button" className={selectedDeviceInfoView === "model" ? "active" : ""} onMouseEnter={() => setSelectedDeviceInfoView("model")} onClick={() => setSelectedDeviceInfoView("model")} role="tab" aria-selected={selectedDeviceInfoView === "model"}>
                       模型
                     </button>
-                    <button type="button" className={selectedDeviceInfoView === "measurement" ? "active" : ""} onClick={() => setSelectedDeviceInfoView("measurement")} role="tab" aria-selected={selectedDeviceInfoView === "measurement"}>
+                    <button type="button" className={selectedDeviceInfoView === "measurement" ? "active" : ""} onMouseEnter={() => setSelectedDeviceInfoView("measurement")} onClick={() => setSelectedDeviceInfoView("measurement")} role="tab" aria-selected={selectedDeviceInfoView === "measurement"}>
                       量测
                     </button>
                   </div>)}
