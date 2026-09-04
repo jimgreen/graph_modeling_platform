@@ -4371,6 +4371,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
                       <td>
                         <InputNumber size="small"
                           step={0.01}
+                          precision={type.defaultDecimals}
                           value={type.defaultValue}
                           onChange={(nextValue) => updateMeasurementType(type.id, { defaultValue: Number(nextValue) })}
                         />
