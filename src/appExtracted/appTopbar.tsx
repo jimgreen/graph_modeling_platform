@@ -331,8 +331,8 @@ export const RecentGlyphsToolbar = memo(function RecentGlyphsToolbar({ scope }: 
           const tw = template.size?.width ?? 40;
           const th = template.size?.height ?? 40;
           const maxDim = Math.max(tw, th);
-          // 收紧四周留白（原 0.15 导致图标仅占容器约 77%），提高图标可视占比
-          const pad = maxDim * 0.04;
+          // viewBox 四周各留 12.5%（1/1.25=0.8），使图标图形占满 SVG 区域 80%，SVG 再铺满整个按钮
+          const pad = maxDim * 0.125;
           const vb = `${-tw / 2 - pad} ${-th / 2 - pad} ${tw + pad * 2} ${th + pad * 2}`;
           return (
             <button
@@ -343,7 +343,7 @@ export const RecentGlyphsToolbar = memo(function RecentGlyphsToolbar({ scope }: 
               aria-label={template.label}
               onClick={() => scope.startLibraryDevicePlacement?.(template)}
             >
-              <svg width="28" height="28" viewBox={vb}>
+              <svg width="100%" height="100%" viewBox={vb}>
                 <MemoDeviceGlyph node={node} colorDisplayMode={scope.colorDisplayMode} colorPalette={scope.colorPalette} />
               </svg>
             </button>
