@@ -2,6 +2,7 @@ import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { Tooltip } from "antd";
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 import { createNodeFromTemplate } from "../model-node-ops";
+import { modelAssociationModelTypeForKind } from "../model";
 import { MemoDeviceGlyph } from "../DeviceGlyph";
 
 type AppTopbarProps = {
@@ -330,10 +331,15 @@ export const RecentGlyphsToolbar = memo(function RecentGlyphsToolbar({ scope }: 
           if (!node) return null;
           const tw = template.size?.width ?? 40;
           const th = template.size?.height ?? 40;
-          const maxDim = Math.max(tw, th);
+          // 模型关联派生设备（ac-station-source 等）在 DeviceGlyph 走 "default" fallback：固定小圆（直径 48，
+          // 见 DeviceGlyph.tsx fallback circle r=24），与模板尺寸无关。viewBox 须按内容实际范围，否则图形只占一角。
+          const fallbackGlyphContentSpan = modelAssociationModelTypeForKind(kind) ? 48 : 0;
+          const contentW = fallbackGlyphContentSpan || tw;
+          const contentH = fallbackGlyphContentSpan || th;
+          const maxDim = Math.max(contentW, contentH);
           // viewBox 四周各留 12.5%（1/1.25=0.8），使图标图形占满 SVG 区域 80%，SVG 再铺满整个按钮
           const pad = maxDim * 0.125;
-          const vb = `${-tw / 2 - pad} ${-th / 2 - pad} ${tw + pad * 2} ${th + pad * 2}`;
+          const vb = `${-contentW / 2 - pad} ${-contentH / 2 - pad} ${contentW + pad * 2} ${contentH + pad * 2}`;
           return (
             <button
               key={kind}
