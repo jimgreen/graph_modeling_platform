@@ -4565,12 +4565,14 @@ export function createUpdateMeasurementItem(__appScope: Record<string, any>) {
     logText?: string
   ) => {
   const { updateMeasurementGroupById, projectMeasurements, showGlobalMessage } = __appScope;
-    const targetGroup = (projectMeasurements ?? []).find((group) => group.id === groupId);
+    // projectMeasurements 结构为 { version, groups }，取 groups 数组供查重
+    const measurementGroups = Array.isArray(projectMeasurements) ? projectMeasurements : (projectMeasurements?.groups ?? []);
+    const targetGroup = measurementGroups.find((group) => group.id === groupId);
     const targetItem = targetGroup?.items.find((item) => item.id === itemId);
     const nextItem = targetItem ? updater(targetItem) : undefined;
     // 测点作为运行时绑定唯一 key：改 sourcePoint 时跨全部量测组查重，重复则拒绝本次修改并提示
     if (targetItem && nextItem && String(nextItem.sourcePoint ?? "").trim() && nextItem.sourcePoint !== targetItem.sourcePoint) {
-      const duplicate = (projectMeasurements ?? []).some((group) =>
+      const duplicate = measurementGroups.some((group) =>
         group.items.some((item) => item.id !== itemId && String(item.sourcePoint ?? "").trim() === String(nextItem.sourcePoint ?? "").trim())
       );
       if (duplicate) {

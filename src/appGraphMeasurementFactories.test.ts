@@ -13,6 +13,7 @@ import {
   createRenderMultiNodeDragOverlay,
   createSaveMeasurementConfigDialog,
   createUpdateMeasurementDrag,
+  createUpdateMeasurementItem,
   measurementProfileItemsComplianceMessage,
   measurementTypeComplianceMessage
 } from "./appExtracted/appGraphMeasurementFactories";
@@ -1588,5 +1589,66 @@ describe("measurement canvas interactions", () => {
     expect(nodeClassList.remove).toHaveBeenCalledWith("single-drag-origin");
     expect(measurementClassList.remove).toHaveBeenCalledWith("drag-origin");
     expect(clearImperativeSingleNodeDragOriginLines).toHaveBeenCalled();
+  });
+});
+
+describe("measurement item sourcePoint uniqueness", () => {
+  test("rejects a sourcePoint already used by another measurement group item", () => {
+    const showGlobalMessage = vi.fn();
+    const updateMeasurementGroupById = vi.fn();
+    const projectMeasurements = {
+      version: 1,
+      groups: [
+        {
+          id: "group-a", nodeId: "node-a",
+          items: [
+            { id: "item-1", measurementTypeId: "activePower", sourcePoint: "node-a.p" },
+            { id: "item-2", measurementTypeId: "reactivePower", sourcePoint: "node-a.q" }
+          ]
+        },
+        {
+          id: "group-b", nodeId: "node-b",
+          items: [{ id: "item-3", measurementTypeId: "current", sourcePoint: "node-b.p" }]
+        }
+      ]
+    };
+    const updateMeasurementItem = createUpdateMeasurementItem({
+      updateMeasurementGroupById,
+      projectMeasurements,
+      showGlobalMessage
+    } as any);
+
+    // item-3 改为已被 item-1 占用的测点 → 拒绝并提示
+    updateMeasurementItem("group-b", "item-3", (item) => ({ ...item, sourcePoint: "node-a.p" }));
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("测点 node-a.p"));
+    expect(updateMeasurementGroupById).not.toHaveBeenCalled();
+
+    // 改为未占用测点 → 放行并应用更新
+    updateMeasurementItem("group-b", "item-3", (item) => ({ ...item, sourcePoint: "node-b.q" }));
+    expect(showGlobalMessage).toHaveBeenCalledTimes(1);
+    expect(updateMeasurementGroupById).toHaveBeenCalledTimes(1);
+    const nextGroup = (updateMeasurementGroupById.mock.calls[0][1])(projectMeasurements.groups[1]);
+    expect(nextGroup.items[0].sourcePoint).toBe("node-b.q");
+  });
+
+  test("allows keeping the same sourcePoint on the same item", () => {
+    const showGlobalMessage = vi.fn();
+    const updateMeasurementGroupById = vi.fn();
+    const projectMeasurements = {
+      version: 1,
+      groups: [{
+        id: "group-a", nodeId: "node-a",
+        items: [{ id: "item-1", measurementTypeId: "activePower", sourcePoint: "node-a.p" }]
+      }]
+    };
+    const updateMeasurementItem = createUpdateMeasurementItem({
+      updateMeasurementGroupById,
+      projectMeasurements,
+      showGlobalMessage
+    } as any);
+
+    updateMeasurementItem("group-a", "item-1", (item) => ({ ...item, sourcePoint: "node-a.p" }));
+    expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(updateMeasurementGroupById).toHaveBeenCalledTimes(1);
   });
 });
