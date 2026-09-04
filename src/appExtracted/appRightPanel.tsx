@@ -273,13 +273,13 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
         </div>
         {inspectorSelectedNode || currentModelRecord ? (<div className={`form-stack ${inspectorTab === "tree" ? "graph-form-stack" : ""}`}>
             <div className="inspector-tabs">
-              <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
+              <button className={inspectorTab === "model" ? "active" : ""} onMouseEnter={() => setInspectorTab("model")} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
                 基础
               </button>
-              <button className={inspectorTab === "tree" ? "active" : ""} onClick={() => setInspectorTab("tree")}>
+              <button className={inspectorTab === "tree" ? "active" : ""} onMouseEnter={() => setInspectorTab("tree")} onClick={() => setInspectorTab("tree")}>
                 图元树
               </button>
-              <button className={inspectorTab === "graph" || inspectorTab === "device" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
+              <button className={inspectorTab === "graph" || inspectorTab === "device" ? "active" : ""} onMouseEnter={() => setInspectorTab("graph")} onClick={() => setInspectorTab("graph")}>
                 图元
               </button>
             </div>
