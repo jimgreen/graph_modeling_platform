@@ -273,13 +273,13 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
         </div>
         {inspectorSelectedNode || currentModelRecord ? (<div className={`form-stack ${inspectorTab === "tree" ? "graph-form-stack" : ""}`}>
             <div className="inspector-tabs">
-              <button className={inspectorTab === "model" ? "active" : ""} onMouseEnter={() => setInspectorTab("model")} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
+              <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
                 基础
               </button>
-              <button className={inspectorTab === "tree" ? "active" : ""} onMouseEnter={() => setInspectorTab("tree")} onClick={() => setInspectorTab("tree")}>
+              <button className={inspectorTab === "tree" ? "active" : ""} onClick={() => setInspectorTab("tree")}>
                 图元树
               </button>
-              <button className={inspectorTab === "graph" || inspectorTab === "device" ? "active" : ""} onMouseEnter={() => setInspectorTab("graph")} onClick={() => setInspectorTab("graph")}>
+              <button className={inspectorTab === "graph" || inspectorTab === "device" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
                 图元
               </button>
             </div>
@@ -936,13 +936,13 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
               </div>);
         })()) : inspectorTabShowsDevicePanel(inspectorTab, Boolean(inspectorSelectedNode)) ? (<div className="device-param-stack">
                 {!__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<div className="device-info-tabs" role="tablist" aria-label="图元属性分类">
-                    <button type="button" className="" onMouseEnter={() => setInspectorTab("graph")} onClick={() => setInspectorTab("graph")} role="tab" aria-selected={false}>
+                    <button type="button" className="" onClick={() => setInspectorTab("graph")} role="tab" aria-selected={false}>
                       图形
                     </button>
-                    <button type="button" className={selectedDeviceInfoView === "model" ? "active" : ""} onMouseEnter={() => setSelectedDeviceInfoView("model")} onClick={() => setSelectedDeviceInfoView("model")} role="tab" aria-selected={selectedDeviceInfoView === "model"}>
+                    <button type="button" className={selectedDeviceInfoView === "model" ? "active" : ""} onClick={() => setSelectedDeviceInfoView("model")} role="tab" aria-selected={selectedDeviceInfoView === "model"}>
                       模型
                     </button>
-                    <button type="button" className={selectedDeviceInfoView === "measurement" ? "active" : ""} onMouseEnter={() => setSelectedDeviceInfoView("measurement")} onClick={() => setSelectedDeviceInfoView("measurement")} role="tab" aria-selected={selectedDeviceInfoView === "measurement"}>
+                    <button type="button" className={selectedDeviceInfoView === "measurement" ? "active" : ""} onClick={() => setSelectedDeviceInfoView("measurement")} role="tab" aria-selected={selectedDeviceInfoView === "measurement"}>
                       量测
                     </button>
                   </div>)}
