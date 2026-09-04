@@ -52,14 +52,14 @@ function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
       <div className="side-panel-resize-handle right-edge" role="separator" aria-orientation="vertical" aria-label="调整左侧栏宽度" title="拖拽调整左侧栏宽度" onPointerDown={(event) => startSidePanelResize(event, "left")}/>
       {renderSidePanelModeControls("left")}
       <div className="left-panel-tabs" role="tablist" aria-label="左侧资源库">
-        <button className={effectiveLeftPanelTab === "projects" ? "active" : ""} onClick={() => setLeftPanelTab("projects")} role="tab" aria-selected={effectiveLeftPanelTab === "projects"}>
+        <button className={effectiveLeftPanelTab === "projects" ? "active" : ""} onMouseEnter={() => setLeftPanelTab("projects")} onClick={() => setLeftPanelTab("projects")} role="tab" aria-selected={effectiveLeftPanelTab === "projects"}>
           模型库
         </button>
         {isEditMode && (<>
-          <button className={leftPanelTab === "library" ? "active" : ""} onClick={() => setLeftPanelTab("library")} role="tab" aria-selected={leftPanelTab === "library"}>
+          <button className={leftPanelTab === "library" ? "active" : ""} onMouseEnter={() => setLeftPanelTab("library")} onClick={() => setLeftPanelTab("library")} role="tab" aria-selected={leftPanelTab === "library"}>
             图元库
           </button>
-          <button className={leftPanelTab === "templates" ? "active" : ""} onClick={() => setLeftPanelTab("templates")} role="tab" aria-selected={leftPanelTab === "templates"}>
+          <button className={leftPanelTab === "templates" ? "active" : ""} onMouseEnter={() => setLeftPanelTab("templates")} onClick={() => setLeftPanelTab("templates")} role="tab" aria-selected={leftPanelTab === "templates"}>
             模板库
           </button>
         </>)}
