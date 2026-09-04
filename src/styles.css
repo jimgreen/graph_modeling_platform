@@ -1576,7 +1576,7 @@ button:not(.ant-btn):disabled {
   padding: 2px 3px;
   font-size: 12px;
   font-family: 思源黑体;
-  font-weight: 500;
+  font-weight: 100;
   background: #fffefe;
   color: #000000;
   border: 1px solid #000000;
@@ -1586,6 +1586,7 @@ button:not(.ant-btn):disabled {
 .topbar-model strong {
   min-width: 0;
   overflow: hidden;
+  margin-top: 4px;
   color: #0f172a;
   font-size: 14px;
   font-weight: 800;
