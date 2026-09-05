@@ -5,6 +5,7 @@ import {
   createDefaultMeasurementGroupForNode,
   createDefaultMeasurementGroupsForNode,
   formatMeasurementDisplayValue,
+  measurementFormatValueText,
   measurementFontScaleForNode,
   measurementOffsetScaleForNode,
   measurementGroupsForExistingNodes,
@@ -989,6 +990,62 @@ describe("measurement domain", () => {
     expect(formatMeasurementDisplayValue(good, 2, "MW")).toBe("12.35 MW");
     expect(formatMeasurementDisplayValue(missing, 3, "Mvar")).toBe("-- Mvar");
     expect(formatMeasurementDisplayValue(undefined, 1, "")).toBe("--");
+  });
+
+  test("supports the measurement display printf subset", () => {
+    const value = (input: number | string): MeasurementRuntimeValue => ({
+      sourcePoint: "node-1.p",
+      value: input,
+      quality: "good",
+      timestamp: 1000
+    });
+
+    expect(formatMeasurementDisplayValue(value(12.3456), 3, "", "%.3f")).toBe("12.346");
+    expect(formatMeasurementDisplayValue(value(12.3456), 3, "", "%3.2f")).toBe("12.35");
+    expect(formatMeasurementDisplayValue(value(5), 3, "", "%5.2f")).toBe(" 5.00");
+    expect(formatMeasurementDisplayValue(value(12.9), 3, "", "%04d")).toBe("0012");
+    expect(formatMeasurementDisplayValue(value(12.9), 3, "", "%d")).toBe("12");
+    expect(formatMeasurementDisplayValue(value("RUN"), 3, "", "%s")).toBe("RUN");
+    expect(formatMeasurementDisplayValue(value(12.3456), 3, "", "%unsupported")).toBe("12.346");
+    // 自定义格式保持其精度/补零语义；小数点固定在同一列，末尾补空格保持值列宽度。
+    expect(measurementFormatValueText(formatMeasurementDisplayValue(value(0), 3, "", "%.3f"))).toBe("    0.000");
+    expect(measurementFormatValueText(formatMeasurementDisplayValue(value(0), 3, "", "%4.2f"))).toBe("    0.00 ");
+    expect(measurementFormatValueText(formatMeasurementDisplayValue(value(12.9), 3, "", "%04d"), "%04d")).toBe(" 0012    ");
+    expect(measurementFormatValueText(formatMeasurementDisplayValue(value(12.9), 3, "", "%d"), "%d")).toBe("   12    ");
+    expect(measurementFormatValueText(formatMeasurementDisplayValue(value("RUN"), 3, "", "%s"), "%s")).toBe("      RUN");
+    const twoDecimals = measurementFormatValueText(formatMeasurementDisplayValue(value(0), 3, "", "%4.2f"));
+    const threeDecimals = measurementFormatValueText(formatMeasurementDisplayValue(value(0), 3, "", "%.3f"));
+    const fiveWidth = measurementFormatValueText(formatMeasurementDisplayValue(value(5), 3, "", "%5.2f"), "%5.2f");
+    expect(fiveWidth).toBe("    5.00 ");
+    expect(twoDecimals.indexOf(".")).toBe(threeDecimals.indexOf("."));
+    expect(fiveWidth.indexOf(".")).toBe(threeDecimals.indexOf("."));
+  });
+
+  test("preserves explicitly empty measurement labels and units", () => {
+    const config = normalizeMeasurementConfig({
+      measurementTypes: [{ id: "activePower", shortLabel: "P", defaultUnit: "MW" }],
+      deviceProfiles: [{
+        deviceKind: "ac-load",
+        items: [{ measurementTypeId: "activePower", labelOverride: "", unitOverride: "" }]
+      }]
+    });
+    const item = {
+      id: "measurement-1-activePower-0",
+      measurementTypeId: "activePower",
+      sourcePoint: "node-1.p",
+      labelOverride: "",
+      unitOverride: ""
+    };
+    const display = resolveMeasurementItemDisplay({
+      config,
+      node: node("node-1"),
+      group: { id: "measurement-node-1", nodeId: "node-1", visible: true, anchor: "bottom", offset: { x: 0, y: 0 }, layout: "vertical", items: [item] },
+      item
+    });
+
+    expect(display.label).toBe("");
+    expect(display.unit).toBe("");
+    expect(config.deviceProfiles[0]?.items[0]).toMatchObject({ labelOverride: "", unitOverride: "" });
   });
 
   test("keeps measurement group label and unit visibility flags", () => {

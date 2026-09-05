@@ -374,10 +374,12 @@ export function exportMeasurementGroupMetrics(node: ModelNode, group: Measuremen
     const labelText = measurementPadTextToVisualWidth(rawLabelText, MEASUREMENT_LABEL_VISUAL_WIDTH);
     const rawValueText = formatMeasurementDisplayValue(
       { sourcePoint: item.sourcePoint, value: display.defaultValue, quality: "good", timestamp: 0 },
-      MEASUREMENT_VALUE_DECIMALS,
-      ""
+      display.decimals,
+      "",
+      display.format
     );
-    const valueText = formatValueText(rawValueText);
+    // 与画布渲染保持一致：自定义格式保留其内容，但值列仍按定宽规则补齐。
+    const valueText = formatValueText(rawValueText, display.format);
     const unitText = group.unitVisible === false ? "" : display.unit;
     return [{ item, display, labelText, valueText, unitText, fontSize: display.fontSize * measurementFontScale }];
   });
@@ -464,7 +466,7 @@ export function buildExportMeasurementGroupMarkup(
   }).join("");
   const layerAttribute = options.layerId ? ` layer-id="${escapeXml(options.layerId)}"` : "";
   return `<g class="mg"${layerAttribute} transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group, deviceId, options.ownerDeviceId ?? deviceId)}${svgDisplayAttribute(options.visible !== false)}>
-  <rect x="0" y="0" width="0" height="0" rx="4" fill="${escapeXml(exportMeasurementGroupBackgroundColor(group))}" stroke="${escapeXml(exportMeasurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(exportMeasurementGroupBorderWidth(group))}"${borderDashAttribute}/>
+  <rect x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(exportMeasurementGroupBackgroundColor(group))}" stroke="${escapeXml(exportMeasurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(exportMeasurementGroupBorderWidth(group))}"${borderDashAttribute}/>
   ${rowsMarkup}
 </g>`;
 }

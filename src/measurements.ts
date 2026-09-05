@@ -47,6 +47,7 @@ export type MeasurementTypeDefinition = {
   defaultUnit: string;
   valueType: MeasurementValueType;
   defaultDecimals: number;
+  defaultFormat?: string;
   defaultValue: number;
   defaultColor: string;
   defaultFontFamily: string;
@@ -64,6 +65,7 @@ export type DeviceMeasurementProfileItem = {
   defaultVisible?: boolean;
   labelOverride?: string;
   unitOverride?: string;
+  formatOverride?: string;
   decimalsOverride?: number;
   defaultValue?: number;
   styleOverride?: MeasurementStyleOverride;
@@ -313,6 +315,7 @@ export type MeasurementItemBinding = {
   visible?: boolean;
   labelOverride?: string;
   unitOverride?: string;
+  formatOverride?: string;
   decimalsOverride?: number;
   defaultValue?: number;
   styleOverride?: MeasurementStyleOverride;
@@ -358,6 +361,8 @@ export type MeasurementRuntimeValue = {
 export type ResolvedMeasurementDisplay = {
   label: string;
   unit: string;
+  format: string;
+  formatOverride?: string;
   decimals: number;
   color: string;
   fontFamily: string;
@@ -373,6 +378,7 @@ const DEFAULT_TYPE_VALUES = {
   defaultUnit: "",
   valueType: "number" as MeasurementValueType,
   defaultDecimals: 3,
+  defaultFormat: "%.3f",
   defaultValue: 0,
   defaultColor: "#334155",
   defaultFontFamily: "Arial",
@@ -738,12 +744,23 @@ export function measurementPadTextToVisualWidth(text: string, targetWidth: numbe
   return " ".repeat(targetWidth - currentWidth) + text;
 }
 
-export function measurementFormatValueText(text: string): string {
-  if (text === "--" || !text.includes(".")) return text.padStart(MEASUREMENT_VALUE_TOTAL_WIDTH);
+export function measurementFormatValueText(text: string, displayFormat?: string): string {
+  if (text === "--") return text.padStart(MEASUREMENT_VALUE_TOTAL_WIDTH);
+  if (!text.includes(".")) {
+    // Integer formats occupy the integer column and end immediately before
+    // the decimal column, even though they do not render a decimal point.
+    const isIntegerFormat = /^%0?\d*(?:\.0)?[df]$/.test(displayFormat?.trim() ?? "");
+    if (isIntegerFormat) {
+      return text.padStart(MEASUREMENT_VALUE_INTEGER_WIDTH).padEnd(MEASUREMENT_VALUE_TOTAL_WIDTH);
+    }
+    return text.padStart(MEASUREMENT_VALUE_TOTAL_WIDTH);
+  }
   const [intPart, decPart] = text.split(".");
-  const paddedInt = intPart.padStart(MEASUREMENT_VALUE_INTEGER_WIDTH);
-  const paddedDec = (decPart ?? "").padEnd(MEASUREMENT_VALUE_DECIMAL_WIDTH, "0");
-  return `${paddedInt}.${paddedDec}`;
+  const decimalText = decPart ?? "";
+  // Keep the decimal point in one fixed column. The number of decimals may
+  // vary by format, so fill the remaining width after the decimal part.
+  const alignedText = `${intPart.padStart(MEASUREMENT_VALUE_INTEGER_WIDTH)}.${decimalText}`;
+  return alignedText.padEnd(MEASUREMENT_VALUE_TOTAL_WIDTH);
 }
 
 function normalizedFontWeight(value: unknown, fallback: MeasurementFontWeight): MeasurementFontWeight {
@@ -760,6 +777,28 @@ function normalizedTextDecoration(value: unknown): MeasurementTextDecoration {
 
 function normalizedValueType(value: unknown, fallback: MeasurementValueType): MeasurementValueType {
   return value === "string" || value === "boolean" || value === "number" ? value : fallback;
+}
+
+function normalizedOptionalStringPreservingEmpty(value: unknown): string | undefined {
+  return value === undefined || value === null ? undefined : String(value);
+}
+
+function normalizedMeasurementFormat(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const format = String(value).trim();
+  return format || undefined;
+}
+
+export function defaultMeasurementDisplayFormat(
+  valueType: MeasurementValueType = DEFAULT_TYPE_VALUES.valueType,
+  decimals: number = DEFAULT_TYPE_VALUES.defaultDecimals
+): string {
+  if (valueType === "string" || valueType === "boolean") {
+    return "%s";
+  }
+  return `%.${clampNumber(decimals, 0, 8)}f`;
 }
 
 function normalizedAnchor(value: unknown): MeasurementGroupAnchor {
@@ -1032,6 +1071,7 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
       defaultUnit: String(item.defaultUnit ?? fallback?.defaultUnit ?? DEFAULT_TYPE_VALUES.defaultUnit),
       valueType: normalizedValueType(item.valueType, fallback?.valueType ?? DEFAULT_TYPE_VALUES.valueType),
       defaultDecimals: clampNumber(finiteNumber(item.defaultDecimals, fallback?.defaultDecimals ?? DEFAULT_TYPE_VALUES.defaultDecimals), 0, 8),
+      defaultFormat: normalizedMeasurementFormat(item.defaultFormat ?? fallback?.defaultFormat),
       defaultValue: finiteNumber(item.defaultValue, fallback?.defaultValue ?? DEFAULT_TYPE_VALUES.defaultValue),
       defaultColor: String(item.defaultColor ?? fallback?.defaultColor ?? DEFAULT_TYPE_VALUES.defaultColor),
       defaultFontFamily: String(item.defaultFontFamily ?? fallback?.defaultFontFamily ?? DEFAULT_TYPE_VALUES.defaultFontFamily),
@@ -1073,8 +1113,9 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
           : associatedField,
         role: item.role ? String(item.role) : undefined,
         defaultVisible: item.defaultVisible,
-        labelOverride: item.labelOverride ? String(item.labelOverride) : undefined,
-        unitOverride: item.unitOverride ? String(item.unitOverride) : undefined,
+        labelOverride: normalizedOptionalStringPreservingEmpty(item.labelOverride),
+        unitOverride: normalizedOptionalStringPreservingEmpty(item.unitOverride),
+        formatOverride: normalizedMeasurementFormat(item.formatOverride),
         decimalsOverride: item.decimalsOverride === undefined ? undefined : clampNumber(finiteNumber(item.decimalsOverride, 3), 0, 8),
         defaultValue: item.defaultValue === undefined ? undefined : finiteNumber(item.defaultValue, 0),
         styleOverride: normalizeStyleOverride(item.styleOverride)
@@ -1100,6 +1141,7 @@ function normalizeMeasurementItem(item: Partial<MeasurementItemBinding>, validTy
     visible: item.visible,
     labelOverride: item.labelOverride !== undefined ? String(item.labelOverride) : undefined,
     unitOverride: item.unitOverride !== undefined ? String(item.unitOverride) : undefined,
+    formatOverride: normalizedMeasurementFormat(item.formatOverride),
     decimalsOverride: item.decimalsOverride === undefined ? undefined : clampNumber(finiteNumber(item.decimalsOverride, 3), 0, 8),
     defaultValue: item.defaultValue === undefined ? undefined : finiteNumber(item.defaultValue, 0),
     styleOverride: normalizeStyleOverride(item.styleOverride)
@@ -1347,6 +1389,7 @@ export function createDefaultMeasurementGroupsForNode(
         visible: item.defaultVisible !== false,
         labelOverride: item.name ?? item.labelOverride,
         unitOverride: item.unitOverride,
+        formatOverride: item.formatOverride,
         decimalsOverride: item.decimalsOverride,
         defaultValue: item.defaultValue ?? 0,
         styleOverride: item.styleOverride
@@ -1418,6 +1461,7 @@ function reconcileGeneratedMeasurementItem(
     visible: mergeInheritedMeasurementValue(existing.visible, previousGenerated?.visible, nextGenerated.visible),
     labelOverride: mergeInheritedMeasurementValue(existing.labelOverride, previousGenerated?.labelOverride, nextGenerated.labelOverride),
     unitOverride: mergeInheritedMeasurementValue(existing.unitOverride, previousGenerated?.unitOverride, nextGenerated.unitOverride),
+    formatOverride: mergeInheritedMeasurementValue(existing.formatOverride, previousGenerated?.formatOverride, nextGenerated.formatOverride),
     decimalsOverride: mergeInheritedMeasurementValue(existing.decimalsOverride, previousGenerated?.decimalsOverride, nextGenerated.decimalsOverride),
     defaultValue: mergeInheritedMeasurementValue(existing.defaultValue, previousGenerated?.defaultValue, nextGenerated.defaultValue),
     styleOverride: mergeInheritedMeasurementValue(existing.styleOverride, previousGenerated?.styleOverride, nextGenerated.styleOverride)
@@ -1546,8 +1590,14 @@ export function resolveMeasurementItemDisplay({
     ...(item.styleOverride ?? {})
   };
   return {
-    label: item.labelOverride || profileItem?.labelOverride || type?.shortLabel || item.measurementTypeId,
+    label: item.labelOverride !== undefined
+      ? item.labelOverride
+      : profileItem?.labelOverride !== undefined
+        ? profileItem.labelOverride
+        : type?.shortLabel ?? item.measurementTypeId,
     unit: item.unitOverride ?? profileItem?.unitOverride ?? type?.defaultUnit ?? "",
+    format: item.formatOverride ?? profileItem?.formatOverride ?? type?.defaultFormat ?? defaultMeasurementDisplayFormat(type?.valueType, type?.defaultDecimals),
+    formatOverride: item.formatOverride ?? profileItem?.formatOverride,
     decimals: item.decimalsOverride ?? profileItem?.decimalsOverride ?? type?.defaultDecimals ?? 3,
     color: style.color || type?.defaultColor || DEFAULT_TYPE_VALUES.defaultColor,
     fontFamily: style.fontFamily || type?.defaultFontFamily || DEFAULT_TYPE_VALUES.defaultFontFamily,
@@ -1563,14 +1613,51 @@ export function resolveMeasurementItemDisplay({
 export function formatMeasurementDisplayValue(
   value: MeasurementRuntimeValue | undefined,
   decimals: number,
-  fallbackUnit: string
+  fallbackUnit: string,
+  displayFormat?: string
 ): string {
   const unit = value?.unit ?? fallbackUnit;
   if (!value || value.value === null || value.quality === "missing") {
     return unit ? `-- ${unit}` : "--";
   }
-  const rendered = typeof value.value === "number"
-    ? value.value.toFixed(clampNumber(decimals, 0, 8))
-    : String(value.value);
+  const rendered = formatMeasurementValue(value.value, displayFormat, decimals);
   return unit ? `${rendered} ${unit}` : rendered;
+}
+
+function formatMeasurementValue(
+  value: MeasurementRuntimeValue["value"],
+  displayFormat: string | undefined,
+  decimals: number
+): string {
+  const format = normalizedMeasurementFormat(displayFormat);
+  const match = format?.match(/^%(0)?(\d+)?(?:\.(\d+))?([dfs])$/);
+  if (!match) {
+    return typeof value === "number"
+      ? value.toFixed(clampNumber(decimals, 0, 8))
+      : String(value);
+  }
+  const [, zeroFlag, widthText, precisionText, conversion] = match;
+  const width = widthText ? Number(widthText) : 0;
+  const precision = precisionText === undefined ? clampNumber(decimals, 0, 8) : Number(precisionText);
+  let rendered: string;
+  if (conversion === "f") {
+    const numeric = Number(value);
+    rendered = Number.isFinite(numeric) ? numeric.toFixed(clampNumber(precision, 0, 8)) : String(value);
+  } else if (conversion === "d") {
+    const numeric = Number(value);
+    rendered = Number.isFinite(numeric) ? String(Math.trunc(numeric)) : String(value);
+  } else {
+    rendered = typeof value === "boolean" ? (value ? "true" : "false") : String(value);
+  }
+  if (width <= rendered.length) {
+    return rendered;
+  }
+  const padding = width - rendered.length;
+  if (zeroFlag && conversion !== "s") {
+    if (rendered.startsWith("-")) {
+      return `-${"0".repeat(padding)}${rendered.slice(1)}`;
+    }
+    return `${"0".repeat(padding)}${rendered}`;
+  }
+  return `${" ".repeat(padding)}${rendered}`;
 }
