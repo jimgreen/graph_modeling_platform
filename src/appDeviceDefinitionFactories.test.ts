@@ -97,7 +97,8 @@ import {
   getTemplateParameterDefinitions,
   parseEDeviceDefinitionFile,
   Point,
-  templateDerivedComponentLibraryInfo
+  templateDerivedComponentLibraryInfo,
+  BUILTIN_VOLTAGE_LEVELS
 } from "./model";
 import { normalizeDeviceLibraryPersistencePayload } from "./appExtracted/appPersistenceLibraryExport";
 import {
@@ -6075,7 +6076,7 @@ describe("E 文件查看/编辑弹窗头表补全", () => {
     const headerSections = headerRecords.map((record) => record.section);
     expect(headerSections[0]).toBe("basevalue");
     const modelVbases = new Set(nodes.map((node) => String(node.params.vbase ?? "").trim()).filter((v) => v && v !== "0"));
-    const expectedBasevoltageRows = modelVbases.size > 0 ? modelVbases.size : 13;
+    const expectedBasevoltageRows = modelVbases.size > 0 ? modelVbases.size : new Set(BUILTIN_VOLTAGE_LEVELS.map((v) => String(Number(v)))).size;
     expect(headerSections.filter((section) => section === "basevoltage").length).toBe(expectedBasevoltageRows);
     expect(headerSections).toContain("subcontrolarea");
     expect(headerSections).toContain("substation");

@@ -4005,7 +4005,7 @@ describe("E 文件查看/编辑展示与导出一致性", () => {
 
 describe("模型类型与全局序号", () => {
   test("支持五种模型类型并跨方案树计算全局下一个模型 idx", () => {
-    expect(MODEL_TYPES).toEqual(["微网", "厂站", "馈线", "台区", "其他"]);
+    expect(MODEL_TYPES).toEqual(["厂站", "馈线", "台区", "微网", "其他"]);
     const project = (name: string, idx?: number) => createSavedProject(name, {
       version: 1,
       name,
