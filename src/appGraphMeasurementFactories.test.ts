@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Children, Fragment, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { message } from "antd";
+import { Button, message } from "antd";
 
 import {
   createAddDefaultMeasurementsToNode,
@@ -920,7 +920,8 @@ describe("measurement canvas interactions", () => {
         if (!isValidElement(child)) {
           return;
         }
-        if (child.type === "button") {
+        // 实现已改用 antd <Button> 组件（原生 button 字符串仅作兼容保留）
+        if (child.type === "button" || child.type === Button) {
           buttonTexts.push(Children.toArray((child as ReactElement<{ children?: ReactNode }>).props.children).join(""));
         }
         collectButtonTexts((child as ReactElement<{ children?: ReactNode }>).props.children);
@@ -955,12 +956,18 @@ describe("measurement canvas interactions", () => {
     const selectCanvasGraphics = vi.fn();
     const setMeasurementDrag = vi.fn();
     const setPointerCapture = vi.fn();
+    const setLastCanvasClickTarget = vi.fn();
+    const setInspectorTab = vi.fn();
+    const setSelectedDeviceInfoView = vi.fn();
     const beginMeasurementDrag = createBeginMeasurementDrag({
       isBrowseMode: false,
       screenToSvgPoint: vi.fn(() => ({ x: 120, y: 80 })),
       selectCanvasGraphics,
       setMeasurementDrag,
-      svgRef: { current: {} }
+      svgRef: { current: {} },
+      setLastCanvasClickTarget,
+      setInspectorTab,
+      setSelectedDeviceInfoView
     });
 
     beginMeasurementDrag(
@@ -980,6 +987,7 @@ describe("measurement canvas interactions", () => {
       } as any
     );
 
+    expect(setLastCanvasClickTarget).toHaveBeenCalledWith("measurement");
     expect(selectCanvasGraphics).toHaveBeenCalledWith(["node-42"], [], { scope: "direct" });
     expect(setMeasurementDrag).toHaveBeenCalledWith({
       groupId: "measurement-group-1",
@@ -1200,6 +1208,7 @@ describe("measurement canvas interactions", () => {
       } as any
     );
 
+    // 共享布局常量：MEASUREMENT_LABEL_VISUAL_WIDTH=14、MEASUREMENT_VALUE_TOTAL_WIDTH=5+1+3=9（src/measurements.ts）
     expect(metrics?.rows[0]).toMatchObject({
       labelText: "             I",
       valueText: "       --",
@@ -1444,7 +1453,8 @@ describe("measurement canvas interactions", () => {
     expect(value?.type).toBe("tspan");
     expect(value?.props).toMatchObject({ id: "mv-current-1" });
     expect(unit?.type).toBe("tspan");
-    expect(unit?.props.x).toBeDefined();
+    // unit tspan 定位已从固定 x 改为跟随 value 的 dx（commit 3402ee48/6a14f99b）
+    expect(unit?.props.dx).toBeDefined();
     expect(textNodes).toContain("         I");
     expect(textNodes).toContain("     --");
     expect(textNodes).toContain("A");

@@ -104,7 +104,7 @@ describe("model-association device containment wiring", () => {
   test("disables forbidden library buttons and blocks incompatible model-type changes before creating undo state", () => {
     const rendererSource = readFileSync(new URL("./appExtracted/appDeviceDefinitionRenderers.tsx", import.meta.url), "utf8");
     const viewSource = readFileSync(new URL("./appExtracted/appRightPanel.tsx", import.meta.url), "utf8");
-    const modelTypeSelect = viewSource.match(/<select value=\{modelType\}[\s\S]*?<\/select>/)?.[0] ?? "";
+    const modelTypeSelect = viewSource.match(/<Select\s+value=\{modelType\}[\s\S]*?\/>/)?.[0] ?? "";
 
     expect(rendererSource).toContain("modelAssociationDeviceModelTypeFailureMessage(modelType, item.kind)");
     expect(rendererSource).toContain("draggable={isEditMode && !modelTypeFailureMessage}");
@@ -680,7 +680,6 @@ describe("app view device definition parameter rows", () => {
       /\.state-icon-context-menu button\s*\{([\s\S]*?)\}/
     )?.[1] ?? "";
 
-    expect(groupDropdown).toContain('title="组合操作"');
     expect(groupDropdown).toContain('aria-label="组合操作"');
     expect(groupDropdown).toContain('role="menu" aria-label="组合操作"');
     expect(groupDropdown).toContain("onClick={groupSelectedGraphics}");
