@@ -8,6 +8,7 @@ import {
   createBeginMeasurementDrag,
   createBuildMultiNodeDragOverlayPreview,
   createBuildMeasurementGroupMarkup,
+  createConfirmMeasurementEditorDialog,
   createFinishMeasurementDrag,
   createMeasurementGroupRenderMetrics,
   createRenderSelectedNodeMeasurementTable,
@@ -1696,5 +1697,172 @@ describe("measurement item sourcePoint uniqueness", () => {
     updateMeasurementItem("group-a", "item-1", (item) => ({ ...item, sourcePoint: "node-a.p" }));
     expect(messageErrorSpy).not.toHaveBeenCalled();
     expect(updateMeasurementGroupById).toHaveBeenCalledTimes(1);
+  });
+
+  test("restores to profile-derived default sourcePoint (with associatedField/role) when rejecting duplicate", () => {
+    const updateMeasurementGroupById = vi.fn();
+    const nodeById = new Map([
+      ["node-a", { id: "node-a", name: "A", terminals: [{ id: "t1" }] }]
+    ]);
+    // Mock 返回当前量测类型对应的 profile 项（含 associatedField）
+    const measurementProfileItemsForMeasurementGroup = (_node: any, _terminalId: string | undefined) => [
+      { measurementTypeId: "current", role: "measure", associatedField: "Ia" },
+      { measurementTypeId: "voltage", role: "measure", associatedField: "Ua" }
+    ];
+    const measurementSourcePointForNodeItem = (node: any, item: any, terminalId?: string) => {
+      const sourceKey = item.associatedField || `${item.role ? `${item.role}.` : ""}${item.measurementTypeId}`;
+      return terminalId ? `${node.id}.${terminalId}.${sourceKey}` : `${node.id}.${sourceKey}`;
+    };
+    const projectMeasurements = {
+      version: 1,
+      groups: [
+        {
+          id: "group-a", nodeId: "node-a", terminalId: "t1",
+          items: [
+            { id: "item-1", measurementTypeId: "current", sourcePoint: "node-a.t1.Ia" },
+            { id: "item-2", measurementTypeId: "voltage", sourcePoint: "node-a.t1.Ua" }
+          ]
+        }
+      ]
+    };
+    const updateMeasurementItem = createUpdateMeasurementItem({
+      updateMeasurementGroupById,
+      projectMeasurements,
+      nodeById,
+      measurementProfileItemsForMeasurementGroup,
+      measurementSourcePointForNodeItem
+    } as any);
+
+    // item-2 改为已被 item-1 占用的测点 → 还原为 profile 默认测点 node-a.t1.Ua（非 node-a.t1.voltage）
+    updateMeasurementItem("group-a", "item-2", (item) => ({ ...item, sourcePoint: "node-a.t1.Ia" }));
+    expect(messageErrorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringContaining("已被其他量测使用"),
+      duration: 5
+    }));
+    expect(updateMeasurementGroupById).toHaveBeenCalledTimes(1);
+    const nextGroup = (updateMeasurementGroupById.mock.calls[0][1])(projectMeasurements.groups[0]);
+    expect(nextGroup.items[1].sourcePoint).toBe("node-a.t1.Ua");
+  });
+
+  test("keeps original sourcePoint when restored default is already occupied by another item", () => {
+    const updateMeasurementGroupById = vi.fn();
+    const nodeById = new Map([
+      ["node-a", { id: "node-a", name: "A", terminals: [] }]
+    ]);
+    // Mock 返回当前量测类型对应的 profile 项（含 role）
+    const measurementProfileItemsForMeasurementGroup = (_node: any, _terminalId: string | undefined) => [
+      { measurementTypeId: "current", role: "measure" },
+      { measurementTypeId: "voltage", role: "measure" }
+    ];
+    const measurementSourcePointForNodeItem = (node: any, item: any, terminalId?: string) => {
+      const sourceKey = item.associatedField || `${item.role ? `${item.role}.` : ""}${item.measurementTypeId}`;
+      return terminalId ? `${node.id}.${terminalId}.${sourceKey}` : `${node.id}.${sourceKey}`;
+    };
+    const projectMeasurements = {
+      version: 1,
+      groups: [
+        {
+          id: "group-a", nodeId: "node-a",
+          items: [
+            { id: "item-1", measurementTypeId: "current", sourcePoint: "node-a.measure.current" },
+            { id: "item-2", measurementTypeId: "voltage", sourcePoint: "node-a.measure.voltage" },
+            { id: "item-3", measurementTypeId: "voltage", sourcePoint: "node-a.p" }
+          ]
+        },
+        {
+          id: "group-b", nodeId: "node-b",
+          items: [{ id: "item-9", measurementTypeId: "voltage", sourcePoint: "node-b.measure.voltage" }]
+        }
+      ]
+    };
+    const updateMeasurementItem = createUpdateMeasurementItem({
+      updateMeasurementGroupById,
+      projectMeasurements,
+      nodeById,
+      measurementProfileItemsForMeasurementGroup,
+      measurementSourcePointForNodeItem
+    } as any);
+
+    // item-3 改为已被 item-9 占用的测点 node-b.measure.voltage → 默认测点 node-a.measure.voltage 也被 item-2 占用 → 保留原测点 node-a.p
+    updateMeasurementItem("group-a", "item-3", (item) => ({ ...item, sourcePoint: "node-b.measure.voltage" }));
+    expect(messageErrorSpy).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringContaining("默认测点"),
+      duration: 5
+    }));
+    expect(updateMeasurementGroupById).not.toHaveBeenCalled();
+  });
+
+  test("rejects measurement editor dialog with duplicate sourcePoint inside drafts", () => {
+    const setMeasurementEditorDialog = vi.fn();
+    const updateProjectMeasurementsWithUndo = vi.fn();
+    const cloneMeasurementGroupForDraft = (group: any) => ({ ...group });
+    const measurementEditorItemName = (item: any) => item.name;
+    const nodeById = new Map([["node-a", { id: "node-a", name: "A" }]]);
+    const projectMeasurements = { version: 1, groups: [] };
+    const confirmMeasurementEditorDialog = createConfirmMeasurementEditorDialog({
+      cloneMeasurementGroupForDraft,
+      duplicateMeasurementEditorItemNames: () => [],
+      measurementEditorDialog: {
+        nodeId: "node-a",
+        drafts: [{
+          id: "draft-1",
+          nodeId: "node-a",
+          items: [
+            { id: "draft-item-1", measurementTypeId: "current", sourcePoint: "node-a.p", name: "I1" },
+            { id: "draft-item-2", measurementTypeId: "voltage", sourcePoint: "node-a.p", name: "U1" }
+          ]
+        }]
+      },
+      measurementEditorItemName,
+      nodeById,
+      projectMeasurements,
+      setMeasurementEditorDialog,
+      updateProjectMeasurementsWithUndo
+    } as any);
+
+    (globalThis as any).showGlobalMessage = vi.fn();
+    confirmMeasurementEditorDialog();
+    expect((globalThis as any).showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("量测测点不能重复"));
+    expect(updateProjectMeasurementsWithUndo).not.toHaveBeenCalled();
+    delete (globalThis as any).showGlobalMessage;
+  });
+
+  test("rejects measurement editor dialog with sourcePoint conflicting with other nodes", () => {
+    const setMeasurementEditorDialog = vi.fn();
+    const updateProjectMeasurementsWithUndo = vi.fn();
+    const cloneMeasurementGroupForDraft = (group: any) => ({ ...group });
+    const measurementEditorItemName = (item: any) => item.name;
+    const nodeById = new Map([["node-a", { id: "node-a", name: "A" }]]);
+    const projectMeasurements = {
+      version: 1,
+      groups: [{
+        id: "group-b",
+        nodeId: "node-b",
+        items: [{ id: "item-9", measurementTypeId: "current", sourcePoint: "node-b.p" }]
+      }]
+    };
+    const confirmMeasurementEditorDialog = createConfirmMeasurementEditorDialog({
+      cloneMeasurementGroupForDraft,
+      duplicateMeasurementEditorItemNames: () => [],
+      measurementEditorDialog: {
+        nodeId: "node-a",
+        drafts: [{
+          id: "draft-1",
+          nodeId: "node-a",
+          items: [{ id: "draft-item-1", measurementTypeId: "voltage", sourcePoint: "node-b.p", name: "U1" }]
+        }]
+      },
+      measurementEditorItemName,
+      nodeById,
+      projectMeasurements,
+      setMeasurementEditorDialog,
+      updateProjectMeasurementsWithUndo
+    } as any);
+
+    (globalThis as any).showGlobalMessage = vi.fn();
+    confirmMeasurementEditorDialog();
+    expect((globalThis as any).showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("量测测点不能重复"));
+    expect(updateProjectMeasurementsWithUndo).not.toHaveBeenCalled();
+    delete (globalThis as any).showGlobalMessage;
   });
 });

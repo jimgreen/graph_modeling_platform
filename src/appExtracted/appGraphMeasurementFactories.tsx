@@ -4565,6 +4565,28 @@ export function createAddMeasurementItemToNode(__appScope: Record<string, any>) 
   };
 }
 
+// 默认测点与创建量测项时（measurementSourcePointForNodeItem）保持同一公式：
+// associatedField || (role ? "role." : "") + measurementTypeId，前缀 节点ID[.端子ID]。
+// profile 查不到（节点缺失或 scope 未注入）时退化为 节点ID[.端子ID].量测类型ID。
+const measurementDefaultSourcePointForGroupItem = (
+  __appScope: Record<string, any>,
+  group: { nodeId: string; terminalId?: string },
+  item: { measurementTypeId: string; role?: string }
+): string => {
+  const { nodeById, measurementProfileItemsForMeasurementGroup, measurementSourcePointForNodeItem } = __appScope;
+  const node = nodeById?.get?.(group.nodeId);
+  if (node && measurementProfileItemsForMeasurementGroup && measurementSourcePointForNodeItem) {
+    const profileItem = measurementProfileItemsForMeasurementGroup(node, group.terminalId)
+      .find((profile: { measurementTypeId: string }) => profile.measurementTypeId === item.measurementTypeId);
+    return measurementSourcePointForNodeItem(
+      node,
+      { measurementTypeId: item.measurementTypeId, role: profileItem?.role ?? item.role, associatedField: profileItem?.associatedField },
+      group.terminalId
+    );
+  }
+  return group.terminalId ? `${group.nodeId}.${group.terminalId}.${item.measurementTypeId}` : `${group.nodeId}.${item.measurementTypeId}`;
+};
+
 export function createUpdateMeasurementItem(__appScope: Record<string, any>) {
   return (
     groupId: string,
@@ -4584,8 +4606,19 @@ export function createUpdateMeasurementItem(__appScope: Record<string, any>) {
         group.items.some((item) => item.id !== itemId && String(item.sourcePoint ?? "").trim() === String(nextItem.sourcePoint ?? "").trim())
       );
       if (duplicate && targetGroup) {
-        // 还原为默认测点（节点ID.端子ID.量测类型ID），antd message.error 提示，5 秒自动消失
-        const defaultSourcePoint = `${targetGroup.nodeId}${targetGroup.terminalId ? `.${targetGroup.terminalId}` : ""}.${nextItem.measurementTypeId}`;
+        // 还原为创建时的默认测点（按量测 profile 反查 associatedField/role），antd message.error 提示，5 秒自动消失
+        const defaultSourcePoint = measurementDefaultSourcePointForGroupItem(__appScope, targetGroup, nextItem);
+        // 还原值自身已被其他项占用时不自动改写，保留原测点并提示，避免制造新重复
+        const defaultDuplicate = measurementGroups.some((group) =>
+          group.items.some((item) => item.id !== itemId && String(item.sourcePoint ?? "").trim() === String(defaultSourcePoint ?? "").trim())
+        );
+        if (defaultDuplicate) {
+          message.error({
+            content: `测点 ${nextItem.sourcePoint} 已被其他量测使用，且默认测点 ${defaultSourcePoint} 也被占用，已保留原测点，请手动更换。`,
+            duration: 5
+          });
+          return;
+        }
         updateMeasurementGroupById(groupId, (group) => ({
           ...group,
           items: group.items.map((item) => item.id === itemId ? { ...item, sourcePoint: defaultSourcePoint } : item)
@@ -4815,7 +4848,7 @@ export function createDuplicateMeasurementEditorItemNames(__appScope: Record<str
 
 export function createConfirmMeasurementEditorDialog(__appScope: Record<string, any>) {
   return () => {
-  const { cloneMeasurementGroupForDraft, duplicateMeasurementEditorItemNames, measurementEditorDialog, measurementEditorItemName, nodeById, setMeasurementEditorDialog, updateProjectMeasurementsWithUndo } = __appScope;
+  const { cloneMeasurementGroupForDraft, duplicateMeasurementEditorItemNames, measurementEditorDialog, measurementEditorItemName, nodeById, projectMeasurements, setMeasurementEditorDialog, updateProjectMeasurementsWithUndo } = __appScope;
     if (!measurementEditorDialog) {
       return;
     }
@@ -4829,8 +4862,36 @@ export function createConfirmMeasurementEditorDialog(__appScope: Record<string, 
       showGlobalMessage(`同一个设备下量测名称不能重复：${duplicateNames.join("、")}`);
       return;
     }
-    const drafts = measurementEditorDialog.drafts
-      .filter((group) => group.items.length > 0)
+    // 测点查重（与右侧面板编辑/保存校验同一策略）：drafts 内部互查 + 与其他节点的现有量测组互查。
+    // 本节点现有组将被 drafts 整体替换，不参与查重。
+    const draftGroups = measurementEditorDialog.drafts.filter((group) => group.items.length > 0);
+    const otherNodeGroups = (Array.isArray(projectMeasurements) ? projectMeasurements : (projectMeasurements?.groups ?? []))
+      .filter((group) => group.nodeId !== node.id);
+    const seenSourcePoints = new Map<string, string>();
+    const duplicateSourcePoints = new Set<string>();
+    const collectSourcePoint = (ownerLabel: string, item: { sourcePoint?: string }) => {
+      const sourcePoint = String(item.sourcePoint ?? "").trim();
+      if (!sourcePoint) {
+        return;
+      }
+      const previousOwner = seenSourcePoints.get(sourcePoint);
+      if (previousOwner !== undefined) {
+        duplicateSourcePoints.add(`${sourcePoint}（${previousOwner} / ${ownerLabel}）`);
+      } else {
+        seenSourcePoints.set(sourcePoint, ownerLabel);
+      }
+    };
+    draftGroups.forEach((group, groupIndex) => {
+      group.items.forEach((item, itemIndex) => collectSourcePoint(`本设备第 ${groupIndex + 1} 组第 ${itemIndex + 1} 项`, item));
+    });
+    otherNodeGroups.forEach((group) => {
+      group.items.forEach((item) => collectSourcePoint(`设备 ${group.nodeId}`, item));
+    });
+    if (duplicateSourcePoints.size > 0) {
+      showGlobalMessage(`量测测点不能重复：${Array.from(duplicateSourcePoints).join("、")}`);
+      return;
+    }
+    const drafts = draftGroups
       .map((group) => cloneMeasurementGroupForDraft({
         ...group,
         nodeId: node.id,
@@ -5201,10 +5262,10 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                       <Button
                         size="small"
                         disabled={isBrowseMode}
-                        title="恢复为默认测点（节点ID.端子ID.量测类型）"
+                        title="恢复为默认测点（与创建量测时一致）"
                         onClick={() => updateMeasurementItem(group.id, item.id, (current) => ({
                           ...current,
-                          sourcePoint: group.terminalId ? `${node.id}.${group.terminalId}.${item.measurementTypeId}` : `${node.id}.${item.measurementTypeId}`
+                          sourcePoint: measurementDefaultSourcePointForGroupItem(__appScope, group, current)
                         }))}
                       >
                         默认
