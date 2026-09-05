@@ -1315,6 +1315,15 @@ describe("measurement canvas interactions", () => {
     expect(originTextRule).toContain("opacity");
   });
 
+  test("does not override configured measurement border color or width when selected", () => {
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+    const selectedBoxRule = styles.match(/\.measurement-group\.selected\s+\.measurement-group-bg\s*\{[\s\S]*?\}/u)?.[0] ?? "";
+
+    expect(selectedBoxRule).not.toMatch(/\bstroke\s*:/u);
+    expect(selectedBoxRule).not.toMatch(/\bstroke-width\s*:/u);
+    expect(selectedBoxRule).toContain("filter:");
+  });
+
   const createMeasurementGroupRenderer = (overrides: Record<string, any> = {}) =>
     createRenderMeasurementGroup({
       beginMeasurementDrag: vi.fn(),
