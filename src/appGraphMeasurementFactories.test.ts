@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { Children, Fragment, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { Button, message } from "antd";
+import { DeferredColorInput } from "./components/InputComponents";
 
 import {
   createAddDefaultMeasurementsToNode,
@@ -870,7 +871,11 @@ describe("measurement canvas interactions", () => {
   test("keeps only the measurement-group add action in the selected-node measurement panel", () => {
     const renderSelectedNodeMeasurementTable = createRenderSelectedNodeMeasurementTable({
       BufferedTextInput: (props: any) => createElement("input", props),
-      DeferredColorInput: (props: any) => createElement("input", { ...props, type: "color" }),
+      DeferredColorInput: (props: any) => {
+        // React createElement 需要 camelCase 形式的 ariaLabel
+        const { "aria-label": ariaLabel, ...restProps } = props;
+        return createElement("input", { ...restProps, type: "color", ariaLabel });
+      },
       Fragment,
       addDefaultMeasurementsToNode: vi.fn(),
       addMeasurementItemToGroup: vi.fn(),
@@ -942,7 +947,10 @@ describe("measurement canvas interactions", () => {
           return;
         }
         const element = child as ReactElement<any>;
-        if (element.type === "input" && element.props["aria-label"] === "量测组背景颜色") {
+        // 实现已改用 DeferredColorInput 组件（而非原生 input）
+        // mock 场景下渲染为 input，需要检查 ariaLabel 属性（React 内部形式）
+        if ((element.type === "input" || element.type === DeferredColorInput) && 
+            (element.props["aria-label"] === "量测组背景颜色" || element.props.ariaLabel === "量测组背景颜色")) {
           backgroundColorInputs.push(element);
         }
         collectBackgroundColorInputs(element.props.children);
