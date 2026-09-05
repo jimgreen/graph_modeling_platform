@@ -104,7 +104,8 @@ describe("model-association device containment wiring", () => {
   test("disables forbidden library buttons and blocks incompatible model-type changes before creating undo state", () => {
     const rendererSource = readFileSync(new URL("./appExtracted/appDeviceDefinitionRenderers.tsx", import.meta.url), "utf8");
     const viewSource = readFileSync(new URL("./appExtracted/appRightPanel.tsx", import.meta.url), "utf8");
-    const modelTypeSelect = viewSource.match(/<Select\s+value=\{modelType\}[\s\S]*?\/>/)?.[0] ?? "";
+    // 实现已改用 InlineEditableValue 组件（而非 Select）
+    const modelTypeSelect = viewSource.match(/<InlineEditableValue\s+value=\{modelType\}[\s\S]*?\/>/)?.[0] ?? "";
 
     expect(rendererSource).toContain("modelAssociationDeviceModelTypeFailureMessage(modelType, item.kind)");
     expect(rendererSource).toContain("draggable={isEditMode && !modelTypeFailureMessage}");
