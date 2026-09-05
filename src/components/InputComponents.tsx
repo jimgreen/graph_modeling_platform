@@ -20,6 +20,7 @@ export type DeferredColorInputProps = {
   value: string;
   fallback?: string;
   disabled?: boolean;
+  modified?: boolean;
   className?: string;
   title?: string;
   "aria-label"?: string;
@@ -30,6 +31,7 @@ export function DeferredColorInput({
   value,
   fallback = "#ffffff",
   disabled,
+  modified,
   className,
   title,
   "aria-label": ariaLabel,
@@ -97,7 +99,10 @@ export function DeferredColorInput({
   }, [normalizedCommittedValue, normalizedValue]);
 
   return (
-    <span className={`deferred-color-input ${transparent ? "transparent" : ""} ${disabled ? "disabled" : ""}`}>
+    <span
+      className={`deferred-color-input ${transparent ? "transparent" : ""} ${disabled ? "disabled" : ""} ${modified ? "modified" : ""}`}
+      data-modified={modified ? "true" : undefined}
+    >
       <ColorPicker
         value={draft}
         disabled={disabled}

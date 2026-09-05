@@ -45,4 +45,18 @@ describe("measurement field parameter definitions", () => {
       associatedField: "soc"
     }]);
   });
+
+  test("preserves explicitly empty measurement names and units", () => {
+    expect(normalizeDeviceMeasurementDefinitions([{
+      measurementTypeId: "activePower",
+      name: "",
+      labelOverride: "",
+      unitOverride: ""
+    }])).toEqual([{
+      measurementTypeId: "activePower",
+      name: "",
+      labelOverride: "",
+      unitOverride: ""
+    }]);
+  });
 });

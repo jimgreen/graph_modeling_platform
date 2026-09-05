@@ -20,6 +20,7 @@ export type DeviceMeasurementDefinition = {
   defaultVisible?: boolean;
   labelOverride?: string;
   unitOverride?: string;
+  formatOverride?: string;
   decimalsOverride?: number;
   styleOverride?: MeasurementStyleOverride;
 };
@@ -174,13 +175,14 @@ export function normalizeDeviceMeasurementDefinitions(
     const decimals = Number(source.decimalsOverride);
     return [{
       measurementTypeId,
-      ...(normalizedOptionalString(source.name) ? { name: normalizedOptionalString(source.name) } : {}),
+      ...(source.name !== undefined ? { name: String(source.name) } : {}),
       ...(normalizedOptionalString(source.position) ? { position: normalizedOptionalString(source.position) } : {}),
       ...(normalizedAssociatedField(source.associatedField) ? { associatedField: normalizedAssociatedField(source.associatedField) } : {}),
       ...(normalizedOptionalString(source.role) ? { role: normalizedOptionalString(source.role) } : {}),
       ...(typeof source.defaultVisible === "boolean" ? { defaultVisible: source.defaultVisible } : {}),
       ...(source.labelOverride !== undefined ? { labelOverride: String(source.labelOverride) } : {}),
       ...(source.unitOverride !== undefined ? { unitOverride: String(source.unitOverride) } : {}),
+      ...(source.formatOverride !== undefined ? { formatOverride: String(source.formatOverride) } : {}),
       ...(Number.isFinite(decimals) ? { decimalsOverride: Math.max(0, Math.min(8, Math.round(decimals))) } : {}),
       ...(styleOverride && Object.keys(styleOverride).length > 0 ? { styleOverride } : {})
     }];

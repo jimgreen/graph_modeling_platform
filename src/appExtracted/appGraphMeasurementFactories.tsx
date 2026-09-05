@@ -12,6 +12,7 @@ import {
   DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
   DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
   DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
+  DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH,
   measurementFontScaleForNode,
   measurementOffsetScaleForNode,
   resolveMeasurementItemBindingMetadata,
@@ -4854,7 +4855,72 @@ export function createConfirmMeasurementEditorDialog(__appScope: Record<string, 
 
 export function createRenderSelectedNodeMeasurementTable(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
-  const { BufferedTextInput, DeferredColorInput, Eye, EyeOff, Fragment, Trash2, addDefaultMeasurementsToNode, addMeasurementItemToGroup, button, div, isBrowseMode, measurementConfig, measurementGroupBackgroundColor, measurementTypeById, measurementTypeOptionsForMeasurementGroup, option, removeMeasurementItem, removeMeasurementsFromNode, select, selectedMeasurementGroups, span, table, tbody, td, th, tr, updateMeasurementItem, updateSelectedMeasurementGroups } = __appScope;
+  const { DeferredColorInput, Fragment, Trash2, addDefaultMeasurementsToNode, addMeasurementItemToGroup, isBrowseMode, measurementConfig, measurementGroupBackgroundColor, measurementTypeById, measurementTypeOptionsForMeasurementGroup, removeMeasurementItem, removeMeasurementsFromNode, currentModelRecord, selectedProjectRecord, activeProjectRecord, selectedMeasurementGroups, table, tbody, td, th, updateMeasurementItem, updateSelectedMeasurementGroups } = __appScope;
+    const persistedMeasurementConfig = currentModelRecord?.project?.measurements;
+    const hasPersistedMeasurementBaseline = Boolean(
+      (selectedProjectRecord || activeProjectRecord) &&
+      persistedMeasurementConfig &&
+      Array.isArray(persistedMeasurementConfig.groups)
+    );
+    const persistedGroupById = new Map(
+      (hasPersistedMeasurementBaseline ? persistedMeasurementConfig.groups : []).map((group) => [group.id, group])
+    );
+    const valuesEqual = (left: unknown, right: unknown) => {
+      const leftText = String(left ?? "").trim();
+      const rightText = String(right ?? "").trim();
+      if (leftText === rightText) return true;
+      const numericPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
+      if (numericPattern.test(leftText) && numericPattern.test(rightText)) {
+        return Number(leftText) === Number(rightText);
+      }
+      return false;
+    };
+    const effectiveGroupValue = (group: MeasurementGroup, key: string) => {
+      switch (key) {
+        case "visible": return group.visible !== false;
+        case "labelVisible": return group.labelVisible !== false;
+        case "unitVisible": return group.unitVisible !== false;
+        case "backgroundColor": return group.backgroundColor ?? DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR;
+        case "borderColor": return group.borderColor ?? DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR;
+        case "borderStyle": return group.borderStyle ?? DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE;
+        case "borderWidth": return group.borderWidth ?? DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH;
+        case "layout": return group.layout ?? "vertical";
+        case "fontSize": return group.groupStyleOverride?.fontSize ?? 14;
+        case "fontColor": return group.groupStyleOverride?.color ?? "#334155";
+        default: return group[key];
+      }
+    };
+    const isMeasurementGroupModified = (group: MeasurementGroup, key: string) => {
+      if (!hasPersistedMeasurementBaseline) return false;
+      const savedGroup = persistedGroupById.get(group.id);
+      return !savedGroup || !valuesEqual(effectiveGroupValue(group, key), effectiveGroupValue(savedGroup, key));
+    };
+    const isCommonMeasurementGroupModified = (key: string) =>
+      selectedMeasurementGroups.some((group) => isMeasurementGroupModified(group, key));
+    const effectiveItemValue = (group: MeasurementGroup, item: MeasurementItemBinding, key: string) => {
+      const type = measurementTypeById.get(item.measurementTypeId);
+      const defaultSourcePoint = group.terminalId
+        ? `${node.id}.${group.terminalId}.${item.measurementTypeId}`
+        : `${node.id}.${item.measurementTypeId}`;
+      switch (key) {
+        case "measurementTypeId": return item.measurementTypeId;
+        case "sourcePoint": return item.sourcePoint || defaultSourcePoint;
+        case "label": return item.labelOverride !== undefined ? item.labelOverride : type?.shortLabel || "标签";
+        case "format": return item.formatOverride !== undefined ? item.formatOverride : defaultMeasurementDisplayFormat(type?.valueType, type?.defaultDecimals);
+        case "unit": return item.unitOverride !== undefined ? item.unitOverride : type?.defaultUnit || "单位";
+        case "visible": return item.visible !== false;
+        case "fontSize": return item.styleOverride?.fontSize ?? group.groupStyleOverride?.fontSize ?? type?.defaultFontSize ?? 14;
+        case "fontWeight": return item.styleOverride?.fontWeight ?? group.groupStyleOverride?.fontWeight ?? type?.defaultFontWeight ?? "500";
+        case "color": return item.styleOverride?.color ?? group.groupStyleOverride?.color ?? type?.defaultColor ?? "#334155";
+        default: return item[key];
+      }
+    };
+    const isMeasurementItemModified = (group: MeasurementGroup, item: MeasurementItemBinding, key: string) => {
+      if (!hasPersistedMeasurementBaseline) return false;
+      const savedGroup = persistedGroupById.get(group.id);
+      const savedItem = savedGroup?.items?.find((candidate) => candidate.id === item.id);
+      return !savedItem || !valuesEqual(effectiveItemValue(group, item, key), effectiveItemValue(savedGroup, savedItem, key));
+    };
     const selectedMeasurementGroupCommonDraft = selectedMeasurementGroups[0];
     const renderCommonMeasurementGroupRows = () => {
       if (!selectedMeasurementGroupCommonDraft) {
@@ -4868,6 +4934,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
               <InlineEditableValue
                 value={selectedMeasurementGroupCommonDraft.layout}
                 displayValue={({ vertical: "竖向", horizontal: "横向", grid: "两列" } as Record<string, string>)[selectedMeasurementGroupCommonDraft.layout] ?? selectedMeasurementGroupCommonDraft.layout}
+                modified={isCommonMeasurementGroupModified("layout")}
                 disabled={isBrowseMode}
                 options={[
                   { value: "vertical", label: "竖向" },
@@ -4879,7 +4946,8 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
               <Button
                 type="text"
                 size="small"
-                className="visibility-toggle-button"
+                className={`visibility-toggle-button${isCommonMeasurementGroupModified("visible") ? " modified" : ""}`}
+                data-modified={isCommonMeasurementGroupModified("visible") ? "true" : undefined}
                 data-selected={selectedMeasurementGroupCommonDraft.visible === false}
                 disabled={isBrowseMode}
                 onClick={() => updateSelectedMeasurementGroups((current) => ({ ...current, visible: !current.visible }))}
@@ -4897,6 +4965,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
               <InlineEditableValue
                 value={selectedMeasurementGroupCommonDraft.unitVisible === false ? "0" : "1"}
                 displayValue={selectedMeasurementGroupCommonDraft.unitVisible === false ? "无单位" : "单位"}
+                modified={isCommonMeasurementGroupModified("unitVisible")}
                 disabled={isBrowseMode}
                 options={[
                   { value: "1", label: "单位" },
@@ -4907,7 +4976,8 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
               <Button
                 type="text"
                 size="small"
-                className="visibility-toggle-button"
+                className={`visibility-toggle-button${isCommonMeasurementGroupModified("labelVisible") ? " modified" : ""}`}
+                data-modified={isCommonMeasurementGroupModified("labelVisible") ? "true" : undefined}
                 data-selected={selectedMeasurementGroupCommonDraft.labelVisible === false}
                 disabled={isBrowseMode}
                 onClick={() => updateSelectedMeasurementGroups((current) => ({ ...current, labelVisible: current.labelVisible === false ? true : false }))}
@@ -4925,6 +4995,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
               <InlineEditableValue
                 value={selectedMeasurementGroupCommonDraft.groupStyleOverride?.fontSize ?? 14}
                 displayValue={String(selectedMeasurementGroupCommonDraft.groupStyleOverride?.fontSize ?? 14)}
+                modified={isCommonMeasurementGroupModified("fontSize")}
                 disabled={isBrowseMode}
                 type="number"
                 min={8}
@@ -4941,6 +5012,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
               <DeferredColorInput
                 value={selectedMeasurementGroupCommonDraft.groupStyleOverride?.color ?? "#334155"}
                 fallback="#334155"
+                modified={isCommonMeasurementGroupModified("fontColor")}
                 disabled={isBrowseMode}
                 aria-label="量测组字体颜色"
                 onCommit={(value) => updateSelectedMeasurementGroups((current) => ({
@@ -4956,6 +5028,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
               <InlineEditableValue
                 value={measurementGroupBackgroundColor(selectedMeasurementGroupCommonDraft) === "transparent" ? "0" : "1"}
                 displayValue={measurementGroupBackgroundColor(selectedMeasurementGroupCommonDraft) === "transparent" ? "透明" : "显示"}
+                modified={isCommonMeasurementGroupModified("backgroundColor")}
                 disabled={isBrowseMode}
                 options={[{ value: "1", label: "显示" }, { value: "0", label: "透明" }]}
                 onCommit={(value) => updateSelectedMeasurementGroups((current) => ({
@@ -4968,6 +5041,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
               <DeferredColorInput
                 value={selectedMeasurementGroupCommonDraft.backgroundColor ?? ""}
                 fallback="#ffffff"
+                modified={isCommonMeasurementGroupModified("backgroundColor")}
                 disabled={isBrowseMode}
                 aria-label="量测组背景颜色"
                 onCommit={(value) => updateSelectedMeasurementGroups((current) => ({ ...current, backgroundColor: value }), "修改量测组背景颜色")}
@@ -4981,6 +5055,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 <InlineEditableValue
                   value={selectedMeasurementGroupCommonDraft.borderStyle ?? "none"}
                   displayValue={({ solid: "实线", dashed: "虚线", dotted: "点线", none: "无边框" } as Record<string, string>)[selectedMeasurementGroupCommonDraft.borderStyle ?? "none"] ?? selectedMeasurementGroupCommonDraft.borderStyle ?? "none"}
+                  modified={isCommonMeasurementGroupModified("borderStyle")}
                   disabled={isBrowseMode}
                   options={[
                     { value: "solid", label: "实线" },
@@ -5003,6 +5078,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                   step={0.5}
                   value={selectedMeasurementGroupCommonDraft.borderWidth ?? 0}
                   displayValue={Number(selectedMeasurementGroupCommonDraft.borderWidth ?? 0).toFixed(3).replace(/\.?(0+)$/, "")}
+                  modified={isCommonMeasurementGroupModified("borderWidth")}
                   disabled={isBrowseMode || (selectedMeasurementGroupCommonDraft.borderStyle ?? "none") === "none"}
                   aria-label="量测组边框宽度"
                   onCommit={(nextValue) => updateSelectedMeasurementGroups((current) => ({
@@ -5014,6 +5090,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
               <DeferredColorInput
                 value={selectedMeasurementGroupCommonDraft.borderColor ?? ""}
                 fallback="#64748b"
+                modified={isCommonMeasurementGroupModified("borderColor")}
                 disabled={isBrowseMode || (selectedMeasurementGroupCommonDraft.borderStyle ?? "none") === "none"}
                 aria-label="量测组边框颜色"
                 onCommit={(value) => updateSelectedMeasurementGroups((current) => ({ ...current, borderColor: value }), "修改量测组边框颜色")}
@@ -5062,6 +5139,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                       <InlineEditableValue
                         value={item.measurementTypeId}
                         displayValue={measurementTypeOptions.find((candidate) => candidate.id === item.measurementTypeId)?.name ?? item.measurementTypeId}
+                        modified={isMeasurementItemModified(group, item, "measurementTypeId")}
                         disabled={isBrowseMode}
                         options={[
                           ...(!measurementTypeOptions.some((candidate) => candidate.id === item.measurementTypeId) ? [{ value: item.measurementTypeId, label: item.measurementTypeId }] : []),
@@ -5080,7 +5158,8 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                       <Button
                         type="text"
                         size="small"
-                        className="visibility-toggle-button"
+                        className={`visibility-toggle-button${isMeasurementItemModified(group, item, "visible") ? " modified" : ""}`}
+                        data-modified={isMeasurementItemModified(group, item, "visible") ? "true" : undefined}
                         data-selected={item.visible === false}
                         disabled={isBrowseMode}
                         onClick={() => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, visible: current.visible === false ? true : false }))}
@@ -5110,6 +5189,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                       <InlineEditableValue
                         value={item.sourcePoint}
                         displayValue={item.sourcePoint || (group.terminalId ? `${node.id}.${group.terminalId}.${item.measurementTypeId}` : `${node.id}.${item.measurementTypeId}`)}
+                        modified={isMeasurementItemModified(group, item, "sourcePoint")}
                         disabled={isBrowseMode}
                         onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, sourcePoint: nextValue }))}
                       />
@@ -5137,6 +5217,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                             <InlineEditableValue
                               value={item.labelOverride ?? ""}
                               displayValue={item.labelOverride !== undefined ? item.labelOverride : type?.shortLabel || "标签"}
+                              modified={isMeasurementItemModified(group, item, "label")}
                               disabled={isBrowseMode}
                               aria-label="量测标签"
                               onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, labelOverride: nextValue }))}
@@ -5148,6 +5229,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                             <InlineEditableValue
                               value={item.formatOverride ?? ""}
                               displayValue={item.formatOverride ?? defaultMeasurementDisplayFormat(type?.valueType, type?.defaultDecimals)}
+                              modified={isMeasurementItemModified(group, item, "format")}
                               disabled={isBrowseMode}
                               aria-label="量测显示格式"
                               onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, formatOverride: nextValue.trim() || undefined }))}
@@ -5159,6 +5241,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                             <InlineEditableValue
                               value={item.unitOverride ?? ""}
                               displayValue={item.unitOverride !== undefined ? item.unitOverride : type?.defaultUnit || "单位"}
+                              modified={isMeasurementItemModified(group, item, "unit")}
                               disabled={isBrowseMode}
                               aria-label="量测单位"
                               onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, unitOverride: nextValue }))}
@@ -5172,6 +5255,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                             <InlineEditableValue
                               value={itemFontSize}
                               displayValue={String(itemFontSize)}
+                              modified={isMeasurementItemModified(group, item, "fontSize")}
                               disabled={isBrowseMode}
                               aria-label="量测字号"
                               options={Array.from({ length: 17 }, (_, i) => i + 8).map((size) => ({ value: size, label: String(size) }))}
@@ -5187,6 +5271,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                             <InlineEditableValue
                               value={item.styleOverride?.fontWeight ?? "500"}
                               displayValue={({ "400": "细", "500": "中", "700": "粗" } as Record<string, string>)[item.styleOverride?.fontWeight ?? "500"] ?? item.styleOverride?.fontWeight ?? "500"}
+                              modified={isMeasurementItemModified(group, item, "fontWeight")}
                               disabled={isBrowseMode}
                               aria-label="量测字重"
                               options={[{ value: "400", label: "细" }, { value: "500", label: "中" }, { value: "700", label: "粗" }]}
@@ -5201,6 +5286,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                           <Tooltip title="颜色" mouseEnterDelay={0} mouseLeaveDelay={0}>
                             <DeferredColorInput
                               value={itemColor}
+                              modified={isMeasurementItemModified(group, item, "color")}
                               disabled={isBrowseMode}
                               aria-label="量测颜色"
                               onCommit={(value) => updateMeasurementItem(group.id, item.id, (current) => ({

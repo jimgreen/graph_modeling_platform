@@ -594,7 +594,7 @@ describe("measurement canvas interactions", () => {
         if (!isValidElement(child)) {
           return;
         }
-        if (child.type === BufferedTextInput) {
+        if (child.type === BufferedTextInput && ["压力", "流量", "储气量", "soc"].includes(String((child as ReactElement<any>).props.placeholder))) {
           nameInputs.push(child as ReactElement<any>);
         }
         if (isSelectLike(child as ReactElement<any>) && String((child as ReactElement<any>).props.title ?? "").includes("关联")) {
@@ -932,6 +932,23 @@ describe("measurement canvas interactions", () => {
     expect(buttonTexts).toContain("添加到本组");
     expect(buttonTexts).toContain("删除量测");
     expect(buttonTexts).not.toContain("添加量测项");
+
+    const backgroundColorInputs: ReactElement<any>[] = [];
+    const collectBackgroundColorInputs = (node: ReactNode) => {
+      Children.forEach(node, (child) => {
+        if (!isValidElement(child)) {
+          return;
+        }
+        const element = child as ReactElement<any>;
+        if (element.type === "input" && element.props["aria-label"] === "量测组背景颜色") {
+          backgroundColorInputs.push(element);
+        }
+        collectBackgroundColorInputs(element.props.children);
+      });
+    };
+    collectBackgroundColorInputs(panel);
+    expect(backgroundColorInputs).toHaveLength(1);
+    expect(backgroundColorInputs[0].props.disabled).toBe(false);
   });
 
   test("selects the owning device when pressing a measurement group", () => {
@@ -1184,8 +1201,8 @@ describe("measurement canvas interactions", () => {
     );
 
     expect(metrics?.rows[0]).toMatchObject({
-      labelText: "         I",
-      valueText: "     --",
+      labelText: "             I",
+      valueText: "       --",
       unitText: "A"
     });
   });
