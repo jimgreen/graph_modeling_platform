@@ -5130,6 +5130,10 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
             const measurementTypeOptions = measurementTypeOptionsForMeasurementGroup(node, group);
             const itemColor = item.styleOverride?.color ?? group.groupStyleOverride?.color ?? type?.defaultColor ?? "#334155";
             const itemFontSize = item.styleOverride?.fontSize ?? group.groupStyleOverride?.fontSize ?? type?.defaultFontSize ?? 14;
+            const sourcePointValue = item.sourcePoint || (group.terminalId ? `${node.id}.${group.terminalId}.${item.measurementTypeId}` : `${node.id}.${item.measurementTypeId}`);
+            const labelValue = item.labelOverride !== undefined ? item.labelOverride : type?.shortLabel || "标签";
+            const formatValue = item.formatOverride ?? defaultMeasurementDisplayFormat(type?.valueType, type?.defaultDecimals);
+            const unitValue = item.unitOverride !== undefined ? item.unitOverride : type?.defaultUnit || "单位";
             return (
               <Fragment key={item.id}>
                 <tr className="measurement-item-row">
@@ -5187,11 +5191,12 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                   <td>
                     <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
                       <InlineEditableValue
-                        value={item.sourcePoint}
-                        displayValue={item.sourcePoint || (group.terminalId ? `${node.id}.${group.terminalId}.${item.measurementTypeId}` : `${node.id}.${item.measurementTypeId}`)}
+                        value={sourcePointValue}
                         modified={isMeasurementItemModified(group, item, "sourcePoint")}
                         disabled={isBrowseMode}
-                        onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, sourcePoint: nextValue }))}
+                        onCommit={(nextValue) => {
+                          if (nextValue !== sourcePointValue) updateMeasurementItem(group.id, item.id, (current) => ({ ...current, sourcePoint: nextValue }));
+                        }}
                       />
                       <Button
                         size="small"
@@ -5215,36 +5220,39 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                         <div className="measurement-display-inline-control">
                           <Tooltip title="名称" mouseEnterDelay={0} mouseLeaveDelay={0}>
                             <InlineEditableValue
-                              value={item.labelOverride ?? ""}
-                              displayValue={item.labelOverride !== undefined ? item.labelOverride : type?.shortLabel || "标签"}
+                              value={labelValue}
                               modified={isMeasurementItemModified(group, item, "label")}
                               disabled={isBrowseMode}
                               aria-label="量测标签"
-                              onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, labelOverride: nextValue }))}
+                              onCommit={(nextValue) => {
+                                if (nextValue !== labelValue) updateMeasurementItem(group.id, item.id, (current) => ({ ...current, labelOverride: nextValue }));
+                              }}
                             />
                           </Tooltip>
                         </div>
                         <div className="measurement-display-inline-control">
                           <Tooltip title="显示格式" mouseEnterDelay={0} mouseLeaveDelay={0}>
                             <InlineEditableValue
-                              value={item.formatOverride ?? ""}
-                              displayValue={item.formatOverride ?? defaultMeasurementDisplayFormat(type?.valueType, type?.defaultDecimals)}
+                              value={formatValue}
                               modified={isMeasurementItemModified(group, item, "format")}
                               disabled={isBrowseMode}
                               aria-label="量测显示格式"
-                              onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, formatOverride: nextValue.trim() || undefined }))}
+                              onCommit={(nextValue) => {
+                                if (nextValue.trim() !== formatValue) updateMeasurementItem(group.id, item.id, (current) => ({ ...current, formatOverride: nextValue.trim() || undefined }));
+                              }}
                             />
                           </Tooltip>
                         </div>
                         <div className="measurement-display-inline-control">
                           <Tooltip title="单位" mouseEnterDelay={0} mouseLeaveDelay={0}>
                             <InlineEditableValue
-                              value={item.unitOverride ?? ""}
-                              displayValue={item.unitOverride !== undefined ? item.unitOverride : type?.defaultUnit || "单位"}
+                              value={unitValue}
                               modified={isMeasurementItemModified(group, item, "unit")}
                               disabled={isBrowseMode}
                               aria-label="量测单位"
-                              onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, unitOverride: nextValue }))}
+                              onCommit={(nextValue) => {
+                                if (nextValue !== unitValue) updateMeasurementItem(group.id, item.id, (current) => ({ ...current, unitOverride: nextValue }));
+                              }}
                             />
                           </Tooltip>
                         </div>
