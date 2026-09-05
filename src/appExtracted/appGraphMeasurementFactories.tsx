@@ -5062,6 +5062,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 min={8}
                 max={24}
                 step={1}
+                aria-label="量测组字体大小"
                 onCommit={(value) => updateSelectedMeasurementGroups((current) => ({
                   ...current,
                   groupStyleOverride: {
