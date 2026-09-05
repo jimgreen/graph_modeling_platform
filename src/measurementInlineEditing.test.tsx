@@ -49,6 +49,13 @@ test("measurement editors retain explicit overrides including empty labels and u
   expect(field("量测显示格式").value).toBe("%.1f");
 });
 
+test("leaving a legacy format with surrounding whitespace does not create a change", () => {
+  const { field, update } = measurementEditors({ formatOverride: "%.3f " });
+  field("量测显示格式").onCommit("%.3f ");
+  field("量测显示格式").onCommit("%.3f");
+  expect(update).not.toHaveBeenCalled();
+});
+
 test("measurement editors commit edits, explicit clears and format reset", () => {
   const { field, update, item } = measurementEditors();
   field("量测标签").onCommit("");
