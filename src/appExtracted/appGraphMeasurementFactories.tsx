@@ -5238,7 +5238,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                               disabled={isBrowseMode}
                               aria-label="量测显示格式"
                               onCommit={(nextValue) => {
-                                if (nextValue.trim() !== formatValue) updateMeasurementItem(group.id, item.id, (current) => ({ ...current, formatOverride: nextValue.trim() || undefined }));
+                                if (nextValue.trim() !== formatValue.trim()) updateMeasurementItem(group.id, item.id, (current) => ({ ...current, formatOverride: nextValue.trim() || undefined }));
                               }}
                             />
                           </Tooltip>
