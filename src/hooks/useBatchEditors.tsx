@@ -3,9 +3,9 @@ import type { DeviceParameterDefinition, DeviceParameterEnumOption, ModelLayer, 
 import type { ProjectMeasurementConfig } from "../measurements";
 import type { BatchCommonParamRow, BatchCommonMeasurementGroupRow, BatchCommonMeasurementGroupKey, BatchCommonParamPatch } from "../App";
 
-import { DeferredColorInput, BufferedTextInput } from "../components/InputComponents";
+import { DeferredColorInput, BufferedTextInput, InlineEditableValue } from "../components/InputComponents";
 import { StaticButtonLayerMultiSelect } from "../components/StaticButtonComponents";
-import { Select, InputNumber } from "antd";
+import { Select } from "antd";
 
 import {
   inferESection,
@@ -43,6 +43,25 @@ import {
   enumDisplayText,
 } from "../App";
 
+const INLINE_NUMERIC_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
+
+const formatAtMostThreeDecimals = (value: string | number): string => {
+  const text = String(value ?? "").trim();
+  if (!INLINE_NUMERIC_PATTERN.test(text)) {
+    return text;
+  }
+  const numericValue = Number(text);
+  return Number.isFinite(numericValue)
+    ? numericValue.toFixed(3).replace(/\.?(0+)$/, "")
+    : text;
+};
+
+const formatInlineDisplayText = (key: string, value: string | number): string => {
+  const text = formatPowerBaseDisplayValue(key, String(value ?? "")).trim();
+  const withoutUnit = text.replace(/\s*(?:kV|MW|Mvar|kW|kvar|A|m³|MPa|Nm³\/h|m\/s|[%°])$/i, "").trim();
+  return formatAtMostThreeDecimals(withoutUnit);
+};
+
 export interface UseBatchEditorsParams {
   isBrowseMode: boolean;
   activeSelectedNodeIds: string[];
@@ -71,7 +90,7 @@ export interface UseBatchEditorsParams {
 
 export interface BatchEditorsResult {
   renderColorEditor: (key: string, value: string, fallback?: string) => ReactNode;
-  renderParamEditor: (key: string, value: string, wrapLabel?: boolean, definition?: DeviceParameterDefinition, suffix?: string) => ReactNode;
+  renderParamEditor: (key: string, value: string, wrapLabel?: boolean, definition?: DeviceParameterDefinition, suffix?: string, modified?: boolean) => ReactNode;
   updateNodeDoubleClickDraftNode: (nodeId: string, updater: (node: ModelNode) => ModelNode) => void;
   updateNodeDoubleClickDraftPatch: (nodeId: string, patch: Partial<ModelNode>) => void;
   updateNodeDoubleClickDraftParam: (nodeId: string, key: string, value: string) => void;
@@ -375,7 +394,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     };
   };
 
-  const renderParamEditor = (key: string, value: string, wrapLabel = true, definition?: DeviceParameterDefinition, suffix?: string): ReactNode => {
+  const renderParamEditor = (key: string, value: string, wrapLabel = true, definition?: DeviceParameterDefinition, suffix?: string, modified = false): ReactNode => {
     const label = PARAM_LABELS[key] ?? key;
     const editorNode = inspectorSelectedNode ?? selectedNode;
     const rawOptions = paramOptionsForDefinition(key, editorNode, value, definition);
@@ -390,38 +409,22 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
       : parentLocked
         ? "全局线路的所属模型固定为 0。"
         : undefined;
-    const suffixNode = suffix ? <span className="unit-value-suffix">{suffix}</span> : null;
-    const control: ReactNode = options ? (
-      suffix ? (
-        <span className="unit-value-field">
-          <Select
-            value={value}
-            disabled={disabled}
-            title={title}
-            onChange={(nextValue) => updateParam(key, nextValue)}
-            options={options.map((option: string) => ({
-              value: option,
-              label: modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : (optionLabels[option] ?? option),
-              disabled: option === invalidValue && !(modelAssociationPrompt && option === "")
-            }))}
-          />
-          {suffixNode}
-        </span>
-      ) : (
-        <Select
-          value={value}
-          disabled={disabled}
-          title={title}
-          onChange={(nextValue) => updateParam(key, nextValue)}
-          options={options.map((option: string) => ({
-            value: option,
-            label: modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : (optionLabels[option] ?? option),
-            disabled: option === invalidValue && !(modelAssociationPrompt && option === "")
-          }))}
-        />
-      )
-    ) : (
-      <BufferedTextInput value={value} disabled={disabled} title={title} suffix={suffix} onCommit={(nextValue: string) => updateParam(key, nextValue)} />
+    const optionList = options?.map((option: string) => ({
+      value: option,
+      label: modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : (optionLabels[option] ?? option),
+      disabled: option === invalidValue && !(modelAssociationPrompt && option === "")
+    }));
+    const currentOption = optionList?.find((option) => option.value === value);
+    const control: ReactNode = (
+      <InlineEditableValue
+        value={value}
+        displayValue={currentOption?.label ?? formatInlineDisplayText(key, value)}
+        options={optionList}
+        modified={modified}
+        disabled={disabled}
+        title={title}
+        onCommit={(nextValue) => updateParam(key, nextValue)}
+      />
     );
     return wrapLabel ? (
       <label key={key}>
@@ -561,19 +564,37 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
         ? projectOptions.find((item) => item.project.name === row.value)?.project.id ?? ""
         : row.value;
     return (
-      <Select value={selectedProjectId || undefined} disabled={isBrowseMode} onChange={(val) => applyBatchStaticButtonTargetProject(val ?? "")} placeholder={row.mixed ? "多个不同值" : "请选择目标模型"} options={projectOptions.map(({ schemeId, schemeName, project }) => ({ value: project.id, label: `${schemeName} / ${project.name}` }))} />
+      <InlineEditableValue
+        value={selectedProjectId}
+        displayValue={row.mixed ? "多个不同值" : projectOptions.find((item) => item.project.id === selectedProjectId)?.project.name ?? "请选择目标模型"}
+        disabled={isBrowseMode}
+        options={projectOptions.map(({ schemeId, schemeName, project }) => ({ value: project.id, label: `${schemeName} / ${project.name}` }))}
+        onCommit={(value) => applyBatchStaticButtonTargetProject(value)}
+      />
     );
   };
 
   const renderBatchCommonSchemeSelect = (row: BatchCommonParamRow): ReactNode => (
-    <Select value={row.mixed ? undefined : (row.value || undefined)} disabled={isBrowseMode} onChange={(val) => applyBatchCommonParam(row.key, val ?? "")} placeholder={row.mixed ? "多个不同值" : "请选择目标方案"} options={flattenSavedSchemes(schemes).map((scheme) => ({ value: scheme.id, label: scheme.name }))} />
+    <InlineEditableValue
+      value={row.mixed ? "" : row.value || ""}
+      displayValue={row.mixed ? "多个不同值" : flattenSavedSchemes(schemes).find((scheme) => scheme.id === row.value)?.name ?? "请选择目标方案"}
+      disabled={isBrowseMode}
+      options={flattenSavedSchemes(schemes).map((scheme) => ({ value: scheme.id, label: scheme.name }))}
+      onCommit={(value) => applyBatchCommonParam(row.key, value)}
+    />
   );
 
   const renderBatchCommonModelLayerSelect = (row: BatchCommonParamRow): ReactNode => {
     const currentLayerId = row.mixed ? "" : row.value || DEFAULT_MODEL_LAYER_ID;
     const hasCurrentLayer = !currentLayerId || layers.some((layer) => layer.id === currentLayerId);
     return (
-      <Select value={currentLayerId || undefined} disabled={isBrowseMode} onChange={(val) => assignSelectedNodesToModelLayer(val ?? "")} placeholder={row.mixed ? "多个不同值" : "请选择所属图层"} options={[...(!hasCurrentLayer && currentLayerId ? [{ value: currentLayerId, label: currentLayerId }] : []), ...layers.map((layer) => ({ value: layer.id, label: layer.name }))]} />
+      <InlineEditableValue
+        value={currentLayerId}
+        displayValue={row.mixed ? "多个不同值" : layers.find((layer) => layer.id === currentLayerId)?.name ?? "请选择所属图层"}
+        disabled={isBrowseMode}
+        options={[...(!hasCurrentLayer && currentLayerId ? [{ value: currentLayerId, label: currentLayerId }] : []), ...layers.map((layer) => ({ value: layer.id, label: layer.name }))]}
+        onCommit={(value) => assignSelectedNodesToModelLayer(value)}
+      />
     );
   };
 
@@ -607,7 +628,13 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   const renderBatchCommonLayerSelect = (row: BatchCommonParamRow): ReactNode => {
     const selectedLayerId = row.mixed ? "" : normalizeBatchTargetLayerIds(row.value)[0] ?? "";
     return (
-      <Select value={selectedLayerId || undefined} disabled={isBrowseMode} onChange={(val) => applyBatchStaticButtonTargetLayers(val ? [val] : [])} placeholder={row.mixed ? "多个不同值" : "请选择目标图层"} options={layers.map((layer) => ({ value: layer.id, label: layer.name }))} />
+      <InlineEditableValue
+        value={selectedLayerId}
+        displayValue={row.mixed ? "多个不同值" : layers.find((layer) => layer.id === selectedLayerId)?.name ?? "请选择目标图层"}
+        disabled={isBrowseMode}
+        options={layers.map((layer) => ({ value: layer.id, label: layer.name }))}
+        onCommit={(value) => applyBatchStaticButtonTargetLayers(value ? [value] : [])}
+      />
     );
   };
 
@@ -639,7 +666,8 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   };
 
   const renderBatchCommonParamEditor = (row: BatchCommonParamRow): ReactNode => {
-    const value = row.mixed ? "" : formatPowerBaseDisplayValue(row.key, row.value);
+    const value = row.mixed ? "" : row.value;
+    const displayValue = row.mixed ? "" : formatInlineDisplayText(row.key, row.value);
     if (isColorParamKey(row.key)) {
       return renderBatchCommonColorParamEditor(row);
     }
@@ -677,25 +705,19 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
       : parentLockedNode
         ? "全局线路的所属模型固定为 0。"
         : undefined;
-    if (options) {
-      return (
-        <select value={value} disabled={disabled} title={title} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>
-          {row.mixed && <option value="">多个不同值</option>}
-          {options.map((option: string) => (
-            <option key={option} value={option} disabled={option === invalidValue && !(modelAssociationPrompt && option === "")}>
-              {modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option}
-            </option>
-          ))}
-        </select>
-      );
-    }
+    const optionList = options?.map((option: string) => ({
+      value: option,
+      label: modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option,
+      disabled: option === invalidValue && !(modelAssociationPrompt && option === "")
+    }));
     return (
-      <BufferedTextInput
+      <InlineEditableValue
         value={value}
+        displayValue={row.mixed ? "多个不同值" : (optionList?.find((option) => option.value === value)?.label ?? displayValue) || "\u00a0"}
+        options={optionList}
         disabled={disabled}
         title={title}
-        placeholder={row.mixed ? "多个不同值" : undefined}
-        onCommit={(nextValue: string) => applyBatchCommonParam(row.key, nextValue)}
+        onCommit={(nextValue) => applyBatchCommonParam(row.key, nextValue)}
       />
     );
   };
@@ -755,37 +777,29 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     const value = row.mixed ? "" : row.value;
     if (row.key === "visible" || row.key === "labelVisible" || row.key === "unitVisible") {
       return (
-        <Select value={value || undefined} disabled={isBrowseMode} onChange={(val) => applyBatchCommonMeasurementGroupSetting(row.key, val ?? "")} options={[...(row.mixed ? [{ value: "", label: "多个不同值", disabled: true }] : []), { value: "1", label: "显示" }, { value: "0", label: "隐藏" }]} />
+        <InlineEditableValue value={value} displayValue={row.mixed ? "多个不同值" : value === "1" ? "显示" : value === "0" ? "隐藏" : value || "\u00a0"} disabled={isBrowseMode} options={[...(row.mixed ? [{ value: "", label: "多个不同值", disabled: true }] : []), { value: "1", label: "显示" }, { value: "0", label: "隐藏" }]} onCommit={(val) => applyBatchCommonMeasurementGroupSetting(row.key, val)} />
       );
     }
     if (row.key === "backgroundVisible") {
       return (
-        <Select value={value || undefined} disabled={isBrowseMode} onChange={(val) => applyBatchCommonMeasurementGroupSetting(row.key, val ?? "")} options={[...(row.mixed ? [{ value: "", label: "多个不同值", disabled: true }] : []), { value: "1", label: "显示" }, { value: "0", label: "透明" }]} />
+        <InlineEditableValue value={value} displayValue={row.mixed ? "多个不同值" : value === "1" ? "显示" : value === "0" ? "透明" : value || "\u00a0"} disabled={isBrowseMode} options={[...(row.mixed ? [{ value: "", label: "多个不同值", disabled: true }] : []), { value: "1", label: "显示" }, { value: "0", label: "透明" }]} onCommit={(val) => applyBatchCommonMeasurementGroupSetting(row.key, val)} />
       );
     }
     if (row.key === "layout") {
       return (
-        <Select value={value || undefined} disabled={isBrowseMode} onChange={(val) => applyBatchCommonMeasurementGroupSetting(row.key, val ?? "")} options={[...(row.mixed ? [{ value: "", label: "多个不同值", disabled: true }] : []), { value: "vertical", label: "竖向" }, { value: "horizontal", label: "横向" }, { value: "grid", label: "两列" }]} />
+        <InlineEditableValue value={value} displayValue={row.mixed ? "多个不同值" : (({ vertical: "竖向", horizontal: "横向", grid: "两列" } as Record<string, string>)[value] ?? value) || "\u00a0"} disabled={isBrowseMode} options={[...(row.mixed ? [{ value: "", label: "多个不同值", disabled: true }] : []), { value: "vertical", label: "竖向" }, { value: "horizontal", label: "横向" }, { value: "grid", label: "两列" }]} onCommit={(val) => applyBatchCommonMeasurementGroupSetting(row.key, val)} />
       );
     }
     if (row.key === "borderStyle") {
       return (
-        <Select value={value || undefined} disabled={isBrowseMode} onChange={(val) => applyBatchCommonMeasurementGroupSetting(row.key, val ?? "")} options={[...(row.mixed ? [{ value: "", label: "多个不同值", disabled: true }] : []), { value: "solid", label: "实线" }, { value: "dashed", label: "虚线" }, { value: "dotted", label: "点线" }, { value: "none", label: "无边框" }]} />
+        <InlineEditableValue value={value} displayValue={row.mixed ? "多个不同值" : (({ solid: "实线", dashed: "虚线", dotted: "点线", none: "无边框" } as Record<string, string>)[value] ?? value) || "\u00a0"} disabled={isBrowseMode} options={[...(row.mixed ? [{ value: "", label: "多个不同值", disabled: true }] : []), { value: "solid", label: "实线" }, { value: "dashed", label: "虚线" }, { value: "dotted", label: "点线" }, { value: "none", label: "无边框" }]} onCommit={(val) => applyBatchCommonMeasurementGroupSetting(row.key, val)} />
       );
     }
     if (row.key === "backgroundColor" || row.key === "borderColor") {
       return renderBatchCommonMeasurementGroupColorEditor(row);
     }
     return (
-      <InputNumber size="small"
-        min={0}
-        max={12}
-        step={0.5}
-        value={Number(value) || 0}
-        disabled={isBrowseMode}
-        placeholder={row.mixed ? "多个不同值" : undefined}
-        onChange={(nextValue: number | null) => applyBatchCommonMeasurementGroupSetting(row.key, String(nextValue ?? ""))}
-      />
+      <InlineEditableValue type="number" min={0} max={12} step={0.5} value={value} displayValue={row.mixed ? "多个不同值" : formatAtMostThreeDecimals(value) || "\u00a0"} disabled={isBrowseMode} onCommit={(nextValue) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue)} />
     );
   };
 
@@ -877,11 +891,12 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
         <tr>
           {renderChineseParamHeader("buttonEnabled")}
           <td>
-            <Select
+            <InlineEditableValue
               value={buttonEnabled ? "1" : "0"}
+              displayValue={buttonEnabled ? "启用" : "禁用"}
               disabled={isBrowseMode}
-              onChange={(val) => writeParam("buttonEnabled", val)}
               options={[{ value: "1", label: "启用" }, { value: "0", label: "禁用" }]}
+              onCommit={(val) => writeParam("buttonEnabled", val)}
             />
           </td>
         </tr>
@@ -890,17 +905,19 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
             <tr>
               {renderChineseParamHeader("buttonActionType")}
               <td>
-                <Select value={actionType} disabled={isBrowseMode} onChange={(val) => writeParam("buttonActionType", val)} options={Object.entries(STATIC_BUTTON_ACTION_LABELS).map(([value, label]) => ({ value, label }))} />
+                <InlineEditableValue value={actionType} displayValue={STATIC_BUTTON_ACTION_LABELS[actionType] ?? actionType} disabled={isBrowseMode} options={Object.entries(STATIC_BUTTON_ACTION_LABELS).map(([value, label]) => ({ value, label }))} onCommit={(val) => writeParam("buttonActionType", val)} />
               </td>
             </tr>
             {actionType === "project" && (
               <tr>
                 {renderChineseParamHeader("buttonTargetProjectId")}
                 <td>
-                  <Select
-                    value={node.params.buttonTargetProjectId || undefined}
+                  <InlineEditableValue
+                    value={node.params.buttonTargetProjectId || ""}
+                    displayValue={projectOptions.find((item) => item.project.id === node.params.buttonTargetProjectId)?.project.name ?? "请选择目标模型"}
                     disabled={isBrowseMode}
-                    onChange={(val) => {
+                    options={projectOptions.map(({ schemeId, schemeName, project }) => ({ value: project.id, label: `${schemeName} / ${project.name}` }))}
+                    onCommit={(val) => {
                       const selected = projectOptions.find((item) => item.project.id === val);
                       writeNode({
                         params: {
@@ -911,8 +928,6 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
                         }
                       });
                     }}
-                    placeholder="请选择目标模型"
-                    options={projectOptions.map(({ schemeId, schemeName, project }) => ({ value: project.id, label: `${schemeName} / ${project.name}` }))}
                   />
                 </td>
               </tr>
@@ -937,7 +952,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
               <tr>
                 {renderChineseParamHeader("buttonCommand")}
                 <td>
-                  <Select value={node.params.buttonCommand || "none"} disabled={isBrowseMode} onChange={(val) => writeParam("buttonCommand", val)} options={Object.entries(STATIC_BUTTON_COMMAND_LABELS).map(([value, label]) => ({ value, label }))} />
+                  <InlineEditableValue value={node.params.buttonCommand || "none"} displayValue={(STATIC_BUTTON_COMMAND_LABELS[node.params.buttonCommand || "none"] ?? node.params.buttonCommand) || "none"} disabled={isBrowseMode} options={Object.entries(STATIC_BUTTON_COMMAND_LABELS).map(([value, label]) => ({ value, label }))} onCommit={(val) => writeParam("buttonCommand", val)} />
                 </td>
               </tr>
             )}
