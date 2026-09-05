@@ -12750,8 +12750,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .measurement-group.selected .measurement-group-bg {
-  stroke: rgba(37, 99, 235, 0.72);
-  stroke-width: 1.4;
+  /* Keep the configured SVG stroke/stroke-width visible while indicating selection. */
+  filter: drop-shadow(0 0 1px rgba(37, 99, 235, 0.72)) drop-shadow(0 2px 5px rgba(15, 23, 42, 0.12));
 }
 
 .measurement-item {
