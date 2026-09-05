@@ -9970,6 +9970,22 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   vertical-align: middle !important;
 }
 
+.deferred-color-input.modified {
+  border-radius: 5px;
+  background: #fff7ed;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35), inset 0 0 0 1px #f59e0b;
+}
+
+.deferred-color-input.modified .ant-color-picker-trigger {
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.24) !important;
+}
+
+.deferred-color-input.modified .deferred-color-transparent-button {
+  border-color: #f59e0b !important;
+  color: #9a3412 !important;
+  background: #ffedd5 !important;
+}
+
 .deferred-color-input input[type="color"] {
   position: relative !important;
   z-index: 1 !important;
@@ -12113,6 +12129,19 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .param-table button.visibility-toggle-button[data-selected="true"] {
   background: #e2e8f0;
+}
+
+.param-table button.visibility-toggle-button.modified,
+.param-table button.visibility-delete-button.modified {
+  color: #c2410c;
+  background: #ffedd5;
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+.param-table button.visibility-toggle-button.modified:hover:not(:disabled),
+.param-table button.visibility-delete-button.modified:hover:not(:disabled) {
+  color: #9a3412;
+  background: #fed7aa;
 }
 
 .param-table button.visibility-toggle-button svg,

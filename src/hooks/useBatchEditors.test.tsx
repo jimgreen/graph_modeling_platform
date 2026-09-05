@@ -86,8 +86,9 @@ describe("model association model_id editors", () => {
     }, undefined, modelAssociationSchemes);
 
     expect(definition).toMatchObject({ valueType: "integer" });
-    expect(html).toContain('<option value="" selected="">请选择关联模型</option>');
-    expect(html).toContain(`<option value="${expectedValue}">${expectedLabel}</option>`);
+    expect(html).toContain('class="inline-property-value"');
+    expect(html).toContain("请选择关联模型");
+    expect(html).toContain(`data-inline-option-values="|${expectedValue}"`);
     expect(html).not.toContain("其他模型丁");
     for (const unexpectedValue of ["11", "22", "33"].filter((value) => value !== expectedValue)) {
       expect(html).not.toContain(`<option value="${unexpectedValue}">`);
@@ -109,7 +110,7 @@ describe("model association model_id editors", () => {
       definition
     }, undefined, modelAssociationSchemes, [node, line]);
 
-    expect(html).toContain("disabled=\"\"");
+    expect(html).toContain('class="inline-property-value read-only"');
     expect(html).toContain("已有线路连接");
   });
 
@@ -160,8 +161,7 @@ describe("model association model_id editors", () => {
       definition
     }, undefined, nestedSchemes);
 
-    expect(html).toContain('<option value="51">51 / 多级方案 / 北区 / 同名厂站</option>');
-    expect(html).toContain('<option value="52">52 / 多级方案 / 南区 / 片区二 / 同名厂站</option>');
+    expect(html).toContain("data-inline-option-values=\"|51|52\"");
   });
 });
 
@@ -184,10 +184,8 @@ describe("device parent model editors", () => {
       enumValueType: "number",
       readonly: false
     });
-    expect(html).toContain('<option value="11">11 / 方案一 / 厂站模型甲</option>');
-    expect(html).toContain('<option value="22" selected="">22 / 方案一 / 馈线模型乙</option>');
-    expect(html).toContain('<option value="33">33 / 方案一 / 台区模型丙</option>');
-    expect(html).toContain('<option value="44">44 / 方案一 / 其他模型丁</option>');
+    expect(html).toContain("data-inline-option-values=\"11|22|33|44\"");
+    expect(html).toContain("22 / 方案一 / 馈线模型乙");
   });
 
   test("shows the complete nested scheme path for parent options", () => {
@@ -237,8 +235,8 @@ describe("device parent model editors", () => {
       definition
     }, undefined, nestedSchemes);
 
-    expect(html).toContain('<option value="51">51 / 多级方案 / 北区 / 同名厂站</option>');
-    expect(html).toContain('<option value="52" selected="">52 / 多级方案 / 南区 / 片区二 / 同名厂站</option>');
+    expect(html).toContain("data-inline-option-values=\"51|52\"");
+    expect(html).toContain("52 / 多级方案 / 南区 / 片区二 / 同名厂站");
   });
 
   test("keeps global line parent at zero and disables its editor", () => {
@@ -255,8 +253,8 @@ describe("device parent model editors", () => {
       definition
     }, undefined, modelAssociationSchemes);
 
-    expect(html).toContain('<select disabled="" title="全局线路的所属模型固定为 0。">');
-    expect(html).toContain('<option value="0" selected="">0 / 全局线路</option>');
+    expect(html).toContain('class="inline-property-value read-only" title="全局线路的所属模型固定为 0。"');
+    expect(html).toContain("0 / 全局线路");
   });
 });
 
@@ -266,7 +264,8 @@ function batchParamOptions(
   libraryTemplateByKind = new Map(DEVICE_LIBRARY.map((template) => [template.kind, template]))
 ): string[] {
   const html = batchParamHtml(nodes, row, libraryTemplateByKind);
-  return Array.from(html.matchAll(/<option value="([^"]*)"/g), (match) => match[1]);
+  const match = html.match(/data-inline-option-values="([^"]*)"/);
+  return match ? match[1].split("|") : [];
 }
 
 function batchControlTypeOptions(kinds: DeviceKind[], values: string[]): string[] {
@@ -296,9 +295,8 @@ describe("batch common generator control types", () => {
       definition: undefined
     });
 
-    expect(html).toMatch(/<option value="BAD" disabled="" selected="">非法历史值：BAD<\/option>/u);
-    expect(html).toContain('<option value="P">定电功率</option>');
-    expect(html).toContain('<option value="FLOW">定气流量</option>');
+    expect(html).toContain("非法历史值：BAD");
+    expect(html).toContain('data-inline-option-values="BAD|P|FLOW"');
   });
 
   test("limits AC generators to PV PQ and PH", () => {
@@ -311,7 +309,6 @@ describe("batch common generator control types", () => {
 
   test("unions only the selected AC and DC generator control types", () => {
     expect(batchControlTypeOptions(["ac-wind-source", "dc-storage"], ["PV", "V"])).toEqual([
-      "",
       "PV",
       "PQ",
       "PH",
@@ -351,7 +348,7 @@ describe("batch common generator control types", () => {
       mixed: true,
       definition: undefined,
       definitions
-    } as BatchCommonParamRow)).toEqual(["", "AUTO", "MANUAL", "REMOTE", "LOCAL"]);
+    } as BatchCommonParamRow)).toEqual(["AUTO", "MANUAL", "REMOTE", "LOCAL"]);
   });
 
   test("unions status enums from every selected device type", () => {
@@ -383,7 +380,7 @@ describe("batch common generator control types", () => {
       value: "RUN",
       mixed: true,
       definition: undefined
-    }, libraryTemplateByKind)).toEqual(["", "RUN", "STOP", "CHARGE", "DISCHARGE"]);
+    }, libraryTemplateByKind)).toEqual(["RUN", "STOP", "CHARGE", "DISCHARGE"]);
   });
 
   test("uses closed_status rather than status for switch visual-state choices", () => {
@@ -461,7 +458,7 @@ describe("ratio parameter editors", () => {
     });
 
     const html = renderToStaticMarkup(createElement("div", null, editors.renderBatchCommonPropertyPanel()));
-    expect(html).toContain('value="50%"');
+    expect(html).toContain('>50</button>');
 
     editors.updateNodeDoubleClickDraftParam(node.id, "soc", "99%");
     const committedDraft = nextDraft as { nodeId: string; node: ModelNode } | null;

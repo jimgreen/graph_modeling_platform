@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Select, Input, Button, InputNumber } from "antd";
 import { clampNumber } from "../canvasViewport";
-import { DEFAULT_MEASUREMENT_CONFIG } from "../measurements";
+import { DEFAULT_MEASUREMENT_CONFIG, defaultMeasurementDisplayFormat } from "../measurements";
 import { WindowCloseButton } from "../WindowCloseButton";
 import { buildEFileExportOptionsFromLibrary, setSkipSaveCheck } from "./appDeviceDefinitionFactories";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
@@ -4115,6 +4115,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
               <tr>
                 <th>序号</th>
                 <th>量测名称</th>
+                <th>显示格式</th>
                 <th>量测类型</th>
                 <th>量测位置</th>
                 <th>关联字段</th>
@@ -4141,8 +4142,18 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                         disabled={isBrowseMode}
                         placeholder={currentType?.name ?? "量测名称"}
                         onCommit={(nextValue) => updateItem(itemIndex, {
-                          name: nextValue || undefined,
+                          name: nextValue,
                           labelOverride: undefined
+                        })}
+                      />
+                    </td>
+                    <td>
+                      <BufferedTextInput
+                        value={item.formatOverride ?? ""}
+                        disabled={isBrowseMode}
+                        placeholder={defaultMeasurementDisplayFormat(currentType?.valueType, currentType?.defaultDecimals)}
+                        onCommit={(nextValue) => updateItem(itemIndex, {
+                          formatOverride: nextValue.trim() || undefined
                         })}
                       />
                     </td>
@@ -4231,7 +4242,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                 );
               }) : (
                 <tr>
-                  <td colSpan={7}>当前类还没有默认量测模板。</td>
+                  <td colSpan={8}>当前类还没有默认量测模板。</td>
                 </tr>
               )}
             </tbody>
@@ -4461,6 +4472,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
       { key: "visible", label: "显示", width: 80 },
       { key: "sourcePoint", label: "测点", width: 170 },
       { key: "label", label: "标签", width: 92 },
+      { key: "format", label: "显示格式", width: 108 },
       { key: "unit", label: "单位", width: 92 },
       { key: "decimals", label: "小数位", width: 88 },
       { key: "defaultValue", label: "默认值", width: 88 },
@@ -4766,7 +4778,18 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                           placeholder={type?.shortLabel ?? "标签"}
                           onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
-                            labelOverride: nextValue || undefined
+                            labelOverride: nextValue
+                          }))}
+                        />
+                      </td>
+                      <td>
+                        <BufferedTextInput
+                          value={item.formatOverride ?? ""}
+                          disabled={isBrowseMode}
+                          placeholder={defaultMeasurementDisplayFormat(type?.valueType, type?.defaultDecimals)}
+                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                            ...current,
+                            formatOverride: nextValue.trim() || undefined
                           }))}
                         />
                       </td>
@@ -4777,7 +4800,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                           placeholder={type?.defaultUnit ?? "单位"}
                           onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
-                            unitOverride: nextValue || undefined
+                            unitOverride: nextValue
                           }))}
                         />
                       </td>

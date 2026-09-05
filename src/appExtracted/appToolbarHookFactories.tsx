@@ -207,41 +207,8 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
       return null;
     }
     const position = measurementGroupCanvasPosition(node, group);
-    const groupRef = (element: SVGGElement | null) => {
-      if (!element) return;
-      // 挂载后获取 bbox，更新 bg rect
-      requestAnimationFrame(() => {
-        try {
-          // 先删除 bg rect，避免影响 bbox 计算
-          const bgRect = element.querySelector('.measurement-group-bg');
-          if (bgRect) bgRect.remove();
-          // 获取 text 元素的实际边界
-          const bbox = element.getBBox();
-          if (bbox.width > 0 && bbox.height > 0) {
-            const padding = 10;
-            // 重新创建 bg rect 并插入到开头
-            const newBgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            newBgRect.setAttribute('class', 'measurement-group-bg');
-            newBgRect.setAttribute('x', String(bbox.x - padding));
-            newBgRect.setAttribute('y', String(bbox.y - padding));
-            newBgRect.setAttribute('width', String(bbox.width + padding * 2));
-            newBgRect.setAttribute('height', String(bbox.height + padding * 2));
-            newBgRect.setAttribute('rx', '4');
-            newBgRect.setAttribute('fill', measurementGroupBackgroundColor(group));
-            newBgRect.setAttribute('stroke', measurementGroupBorderColor(group));
-            newBgRect.setAttribute('stroke-width', String(measurementGroupBorderWidth(group)));
-            const dashArray = measurementGroupBorderDashArray(group);
-            if (dashArray) newBgRect.setAttribute('stroke-dasharray', dashArray);
-            element.insertBefore(newBgRect, element.firstChild);
-          }
-        } catch (e) {
-          // getBBox 可能在元素未渲染时失败
-        }
-      });
-    };
     return (
       <g
-        ref={groupRef}
         key={group.id}
         className={`measurement-group ${selectedMeasurementGroup?.id === group.id ? "selected" : ""} ${draggingOrigin ? "drag-origin" : ""}`}
         transform={`translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})`}
@@ -262,10 +229,10 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
         <title>{`${node.name} 动态量测；拖拽可调整位置`}</title>
         <rect
           className="measurement-group-bg"
-          x="0"
-          y="0"
-          width="0"
-          height="0"
+          x={formatSvgNumber(-metrics.width / 2)}
+          y={formatSvgNumber(-metrics.height / 2)}
+          width={formatSvgNumber(metrics.width)}
+          height={formatSvgNumber(metrics.height)}
           rx="4"
           fill={measurementGroupBackgroundColor(group)}
           stroke={measurementGroupBorderColor(group)}
