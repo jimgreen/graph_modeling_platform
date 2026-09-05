@@ -11675,6 +11675,159 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   font-size: 14px;
 }
 
+/* 属性值默认以无边框文本呈现，点击后才切换到同样无边框的编辑控件。 */
+.param-table .inline-property-value {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--param-table-control-height);
+  height: var(--param-table-control-height);
+  box-sizing: border-box;
+  border: 0 !important;
+  border-radius: 0;
+  padding: 0 7px;
+  overflow: hidden;
+  background: transparent !important;
+  color: #0f172a;
+  font: inherit;
+  line-height: var(--param-table-control-height);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.param-table button.inline-property-value {
+  appearance: none;
+  cursor: pointer;
+}
+
+.param-table button.inline-property-value:hover,
+.param-table button.inline-property-value:focus-visible {
+  background: #f8fafc !important;
+  color: #0f172a;
+}
+
+.param-table .inline-property-value.read-only {
+  color: #475569;
+  cursor: default;
+}
+
+.param-table .inline-property-value.editor.ant-input,
+.param-table .inline-property-value.editor.ant-input-affix-wrapper,
+.param-table .inline-property-value.editor.ant-input-number,
+.param-table .inline-property-value.editor.ant-select {
+  width: 100%;
+  max-width: 100%;
+}
+
+.param-table .inline-property-value.editor.ant-input,
+.param-table .inline-property-value.editor.ant-input-number,
+.param-table .inline-property-value.editor.ant-select .ant-select-selector {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.param-table .inline-property-value.editor.ant-input {
+  padding: 0 7px;
+}
+
+.param-table textarea.inline-property-value.editor.ant-input {
+  height: auto;
+  min-height: 82px;
+  padding: 7px 8px;
+  line-height: 1.45;
+  resize: vertical;
+  white-space: pre-wrap;
+}
+
+.param-table .inline-property-value.editor.ant-select {
+  line-height: var(--param-table-control-height);
+}
+
+.param-table .inline-property-value.editor.ant-select .ant-select-selector {
+  height: var(--param-table-control-height) !important;
+  min-height: var(--param-table-control-height) !important;
+  padding: 0 7px !important;
+}
+
+.param-table .inline-property-value.editor.ant-select .ant-select-selection-item,
+.param-table .inline-property-value.editor.ant-select .ant-select-selection-placeholder {
+  line-height: calc(var(--param-table-control-height) - 2px) !important;
+}
+
+.param-table .inline-property-value.editor.ant-select .ant-select-arrow {
+  display: none;
+}
+
+/* 编辑态保持无传统边框，但用浅色底、强调线和焦点光晕明确可编辑区域。 */
+.param-table .inline-property-value.editor {
+  background: #eff6ff !important;
+  color: #1e3a8a;
+  box-shadow: inset 0 -2px 0 #60a5fa !important;
+  cursor: text;
+}
+
+.param-table .inline-property-value.editor.ant-select .ant-select-selector {
+  background: #eff6ff !important;
+  color: #1e3a8a;
+  box-shadow: inset 0 -2px 0 #60a5fa !important;
+}
+
+.param-table .inline-property-value.editor:focus,
+.param-table .inline-property-value.editor:focus-visible,
+.param-table .inline-property-value.editor.ant-select-focused {
+  background: #dbeafe !important;
+  color: #172554;
+  box-shadow: inset 0 -2px 0 #2563eb, 0 0 0 2px rgba(37, 99, 235, 0.2) !important;
+}
+
+.param-table .inline-property-value.editor.ant-select.ant-select-focused .ant-select-selector {
+  background: #dbeafe !important;
+  color: #172554;
+  box-shadow: inset 0 -2px 0 #2563eb, 0 0 0 2px rgba(37, 99, 235, 0.2) !important;
+}
+
+.param-table .inline-property-value.modified {
+  background: #fff7ed !important;
+  color: #9a3412;
+  box-shadow: inset 3px 0 0 #f59e0b !important;
+  font-weight: 650;
+}
+
+.param-table button.inline-property-value.modified:hover,
+.param-table button.inline-property-value.modified:focus-visible {
+  background: #ffedd5 !important;
+  color: #7c2d12;
+}
+
+.param-table .inline-property-value.modified.editor,
+.param-table .inline-property-value.modified.editor.ant-input,
+.param-table .inline-property-value.modified.editor.ant-input-affix-wrapper,
+.param-table .inline-property-value.modified.editor.ant-input-number,
+.param-table .inline-property-value.modified.editor.ant-select .ant-select-selector {
+  background: #ffedd5 !important;
+  color: #9a3412;
+  box-shadow: inset 3px 0 0 #f59e0b, inset 0 -2px 0 #f97316 !important;
+}
+
+.param-table .inline-property-value.modified.editor:focus,
+.param-table .inline-property-value.modified.editor:focus-visible,
+.param-table .inline-property-value.modified.editor.ant-select-focused {
+  background: #fed7aa !important;
+  color: #7c2d12;
+  box-shadow: inset 3px 0 0 #ea580c, inset 0 -2px 0 #ea580c, 0 0 0 2px rgba(234, 88, 12, 0.2) !important;
+}
+
+.param-table .inline-property-value.modified.editor.ant-select.ant-select-focused .ant-select-selector {
+  background: #fed7aa !important;
+  color: #7c2d12;
+  box-shadow: inset 3px 0 0 #ea580c, inset 0 -2px 0 #ea580c, 0 0 0 2px rgba(234, 88, 12, 0.2) !important;
+}
+
 .param-table td > .ant-select {
   width: 100%;
   max-width: 100%;
@@ -11736,6 +11889,18 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .inspector-panel .selected-node-measurement-table td:has(> div + .deferred-color-input) > div > :is(.ant-select, .ant-input, .ant-input-affix-wrapper, .ant-input-number) {
   flex: 1 1 50% !important;
   max-width: 50% !important;
+}
+
+/* 量测组设置中的两个直接控件（文本/下拉 + 显示按钮或颜色框）保持左右排列。 */
+.inspector-panel .selected-node-measurement-table td:has(> .inline-property-value):has(> :is(button, .deferred-color-input)) {
+  flex-wrap: nowrap;
+}
+
+.inspector-panel .selected-node-measurement-table td:has(> .inline-property-value):has(> :is(button, .deferred-color-input)) > .inline-property-value {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  max-width: none !important;
+  min-width: 0;
 }
 
 .param-table tr:last-child th,
@@ -13427,6 +13592,54 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   flex-wrap: wrap;
   align-items: center;
   gap: 5px;
+}
+
+/* 量测“显示”属性拆成两行，避免六个控件在窄面板中互相挤压。 */
+.measurement-display-inline-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+}
+
+.measurement-display-inline-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.measurement-display-inline-control {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.measurement-display-inline-control .inline-property-value {
+  padding-left: 2px;
+  padding-right: 2px;
+  text-align: center;
+}
+
+.measurement-display-inline-color {
+  display: flex;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  overflow: visible;
+}
+
+.measurement-display-inline-color .deferred-color-input {
+  width: 28px !important;
+  min-width: 28px !important;
+  height: 24px !important;
+  min-height: 24px !important;
 }
 
 @keyframes reactFlowSavedPathDash {

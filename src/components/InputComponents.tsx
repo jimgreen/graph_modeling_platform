@@ -74,9 +74,15 @@ export function DeferredColorInput({
     }
   };
 
-  const handleColorChange = (color: string) => {
+  const handleColorChange = (color: unknown, hex?: string) => {
     if (!disabled) {
-      commitColor(color);
+      const colorObject = color as { toHexString?: () => string } | null | undefined;
+      const nextColor = typeof hex === "string" && hex.trim()
+        ? hex
+        : typeof colorObject?.toHexString === "function"
+          ? colorObject.toHexString()
+          : String(color ?? "");
+      commitColor(nextColor);
     }
   };
 
@@ -97,7 +103,8 @@ export function DeferredColorInput({
         disabled={disabled}
         className={className}
         aria-label={ariaLabel}
-        onChange={(_, hex) => handleColorChange(hex)}
+        onChange={(color) => handleColorChange(color)}
+        onChangeComplete={(color) => handleColorChange(color)}
       />
       <button
         type="button"
@@ -194,6 +201,173 @@ export function BufferedTextInput({
         }
       }}
     />
+  );
+}
+
+/* 属性表的行内编辑器：浏览态显示文本，点击后才进入输入/下拉状态。 */
+export type InlineEditableValueOption = {
+  value: string;
+  label?: ReactNode;
+  disabled?: boolean;
+};
+
+export type InlineEditableValueProps = {
+  value: string | number;
+  displayValue?: ReactNode;
+  options?: readonly InlineEditableValueOption[];
+  /** Whether the value differs from the last persisted value. */
+  modified?: boolean;
+  disabled?: boolean;
+  readOnly?: boolean;
+  className?: string;
+  type?: string;
+  multiline?: boolean;
+  rows?: number;
+  min?: string | number;
+  max?: string | number;
+  step?: string | number;
+  title?: string;
+  "aria-label"?: string;
+  onCommit: (value: string) => void;
+};
+
+export function InlineEditableValue({
+  value,
+  displayValue,
+  options,
+  modified,
+  disabled,
+  readOnly,
+  className,
+  type,
+  multiline,
+  rows,
+  min,
+  max,
+  step,
+  title,
+  "aria-label": ariaLabel,
+  onCommit
+}: InlineEditableValueProps) {
+  const normalizedValue = String(value ?? "");
+  const [editing, setEditing] = useState(false);
+  const [draftValue, setDraftValue] = useState(normalizedValue);
+  const [selectOpen, setSelectOpen] = useState(false);
+
+  useEffect(() => {
+    if (!editing) {
+      setDraftValue(normalizedValue);
+    }
+  }, [editing, normalizedValue]);
+
+  const activate = () => {
+    if (disabled || readOnly) {
+      return;
+    }
+    setDraftValue(normalizedValue);
+    setEditing(true);
+    setSelectOpen(Boolean(options?.length));
+  };
+
+  const commitText = () => {
+    onCommit(draftValue);
+    setEditing(false);
+  };
+
+  const cancelText = () => {
+    setDraftValue(normalizedValue);
+    setEditing(false);
+  };
+
+  const optionList = options?.map((option) => ({
+    value: String(option.value),
+    label: option.label ?? String(option.value),
+    disabled: option.disabled
+  }));
+  const currentOption = optionList?.find((option) => option.value === normalizedValue);
+  const shownValue = displayValue ?? currentOption?.label ?? normalizedValue;
+  const sharedClassName = [
+    "inline-property-value",
+    modified ? "modified" : "",
+    className
+  ].filter(Boolean).join(" ");
+  const modifiedAttributes = modified ? { "data-modified": "true" as const } : {};
+
+  if (disabled || readOnly) {
+    return <span {...modifiedAttributes} className={`${sharedClassName} read-only`} title={title} aria-label={ariaLabel}>{shownValue || "\u00a0"}</span>;
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className={sharedClassName}
+        title={title}
+        aria-label={ariaLabel}
+        {...modifiedAttributes}
+        data-inline-option-values={optionList?.map((option) => option.value).join("|")}
+        onClick={activate}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            activate();
+          }
+        }}
+      >
+        {shownValue || "\u00a0"}
+      </button>
+    );
+  }
+
+  if (optionList && optionList.length > 0) {
+    return (
+      <Select
+        className={`${sharedClassName} editor`}
+        value={normalizedValue}
+        open={selectOpen}
+        autoFocus
+        title={title}
+        aria-label={ariaLabel}
+        {...modifiedAttributes}
+        options={optionList}
+        onChange={(nextValue) => {
+          onCommit(String(nextValue ?? ""));
+          setSelectOpen(false);
+          setEditing(false);
+        }}
+        onOpenChange={(open) => {
+          setSelectOpen(open);
+          if (!open) {
+            setEditing(false);
+          }
+        }}
+      />
+    );
+  }
+
+  const inputProps = {
+    className: `${sharedClassName} editor`,
+    autoFocus: true,
+    value: draftValue,
+    title,
+    "aria-label": ariaLabel,
+    ...modifiedAttributes,
+    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraftValue(event.target.value),
+    onBlur: commitText,
+    onKeyDown: (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      if (event.key === "Enter" && !multiline) {
+        event.preventDefault();
+        commitText();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        cancelText();
+      }
+    }
+  };
+  return multiline ? (
+    <TextArea {...inputProps} rows={rows ?? 4} />
+  ) : (
+    <Input {...inputProps} type={type} min={min} max={max} step={step} />
   );
 }
 
