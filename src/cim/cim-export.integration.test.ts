@@ -7,6 +7,7 @@ import { buildCimXml } from "./cim-export";
 import { buildCimPackage } from "./cim-builder";
 import type { CimPackage } from "./cim-types";
 import type { DeviceKind, Edge, ModelNode } from "../model";
+import type { MeasurementGroup } from "../measurements";
 
 function makeNode(partial: Partial<ModelNode>): ModelNode {
   return {
@@ -67,6 +68,81 @@ describe("CIM 导出集成", () => {
     expect(tags).toContain("cim:PowerTransformerEnd");
     expect(tags).toContain("cim:ConnectivityNode");
     expect(tags).toContain("cim:Terminal");
+  });
+});
+
+describe("CIM 导出量测接入真实导出路径", () => {
+  it("量测组经 buildCimXml 输出 Analog（valueType=number 真源判定）", () => {
+    const load = makeNode({
+      id: "load1", kind: "ac-load", name: "负荷1", params: { i_vbase: "110" },
+      terminals: [{ id: "t1", label: "1", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1" }]
+    });
+    const groups: MeasurementGroup[] = [{
+      id: "g1", nodeId: "load1", visible: true,
+      anchor: "top", offset: { x: 0, y: 0 }, layout: "vertical",
+      items: [
+        { id: "i1", measurementTypeId: "mw", sourcePoint: "P", labelOverride: "有功" },
+        { id: "i2", measurementTypeId: "breaker-status", sourcePoint: "S", labelOverride: "开关状态" }
+      ]
+    }];
+    const measurementTypes = [
+      { id: "mw", key: "mw", name: "有功", shortLabel: "P", defaultUnit: "MW", valueType: "number", defaultDecimals: 2, defaultValue: 0, defaultColor: "#fff", defaultFontFamily: "sans", defaultFontSize: 12, defaultFontWeight: "400", defaultVisible: true },
+      { id: "breaker-status", key: "breaker-status", name: "开关状态", shortLabel: "S", defaultUnit: "", valueType: "string", defaultDecimals: 0, defaultValue: 0, defaultColor: "#fff", defaultFontFamily: "sans", defaultFontSize: 12, defaultFontWeight: "400", defaultVisible: true }
+    ];
+    const xml = buildCimXml([load], [], "量测站", "m1", groups, measurementTypes);
+    expect(xml).toContain('<cim:Analog rdf:ID="M_1">');
+    expect(xml).toContain('<cim:Discrete rdf:ID="M_2">');
+  });
+
+  it("量测类型未命中时回退启发式（含 analog 字样的按 Analog）", () => {
+    const load = makeNode({
+      id: "load1", kind: "ac-load", name: "负荷1", params: { i_vbase: "110" }
+    });
+    const groups: MeasurementGroup[] = [{
+      id: "g1", nodeId: "load1", visible: true,
+      anchor: "top", offset: { x: 0, y: 0 }, layout: "vertical",
+      items: [{ id: "i1", measurementTypeId: "analog-current", sourcePoint: "P" }]
+    }];
+    const xml = buildCimXml([load], [], "量测站", "m1", groups, []);
+    expect(xml).toContain('<cim:Analog rdf:ID="M_1">');
+  });
+});
+
+describe("CIM 导出无悬挂 UNKNOWN 引用", () => {
+  it("缺电压参数设备 → XML 不含 _UNKNOWN 且仍可解析", () => {
+    const busNoVoltage = makeNode({
+      id: "busX", kind: "ac-bus", name: "无压母线", params: {}
+    });
+    const line = makeNode({
+      id: "lineX", kind: "ac-line", name: "线路X", params: { r: "0.1", x: "0.2" },
+      terminals: [
+        { id: "l1", label: "1", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1" },
+        { id: "l2", label: "2", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1" }
+      ]
+    });
+    const tr = makeNode({
+      id: "trX", kind: "ac-two-winding-transformer", name: "无压主变", params: {},
+      terminals: [
+        { id: "h1", label: "H", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1" },
+        { id: "l1", label: "L", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1" }
+      ]
+    });
+    const xml = buildCimXml([busNoVoltage, line, tr], [], "缺压站", "m1");
+    expect(xml).not.toContain("_UNKNOWN");
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    expect(doc.getElementsByTagName("parsererror")).toHaveLength(0);
+    // 引用闭环仍然成立（省略悬挂引用后无 dangling）
+    const ids = new Set<string>();
+    for (const el of Array.from(doc.getElementsByTagName("*"))) {
+      const id = el.getAttribute("rdf:ID");
+      if (id) ids.add(id);
+    }
+    const dangling: string[] = [];
+    for (const el of Array.from(doc.getElementsByTagName("*"))) {
+      const ref = el.getAttribute("rdf:resource");
+      if (ref && ref.startsWith("#") && !ids.has(ref.slice(1))) dangling.push(ref);
+    }
+    expect(dangling).toEqual([]);
   });
 });
 

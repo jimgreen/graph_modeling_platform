@@ -51,7 +51,8 @@ export interface CimACLineSegment extends CimIdentifiedObject {
 }
 
 export interface CimBusbarSection extends CimIdentifiedObject {
-  voltageLevelId: string;
+  /** 无电压参数时省略，序列化器跳过悬挂引用 */
+  voltageLevelId?: string;
 }
 
 export interface CimPowerTransformer extends CimIdentifiedObject {

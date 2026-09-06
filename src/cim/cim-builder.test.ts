@@ -311,4 +311,38 @@ describe("buildCimPackage 量测", () => {
     });
     expect(base.measurements).toEqual([]);
   });
+
+  it("measurementTypes 命中时以 valueType 判定 Analog/Discrete（真源优先于 id 启发式）", () => {
+    const groups: MeasurementGroup[] = [{
+      id: "g1", nodeId: "load1", visible: true,
+      anchor: "top", offset: { x: 0, y: 0 }, layout: "vertical",
+      items: [
+        { id: "i1", measurementTypeId: "status-analog", sourcePoint: "S" },
+        { id: "i2", measurementTypeId: "plain", sourcePoint: "V" }
+      ]
+    }];
+    const measurementTypes = [
+      { id: "status-analog", valueType: "string" },
+      { id: "plain", valueType: "number" }
+    ];
+    const pkg = buildCimPackage({
+      nodes: [makeNode({ id: "load1", kind: "ac-load" })],
+      edges: [], projectName: "t", modelId: "m",
+      measurementGroups: groups, measurementTypes
+    });
+    expect(pkg.measurements).toHaveLength(2);
+    expect(pkg.measurements[0].measurementType).toBe("Discrete"); // id 含 analog 但 valueType 为 string
+    expect(pkg.measurements[1].measurementType).toBe("Analog"); // 无启发式特征，仅 valueType=number 判定
+  });
+
+  it("无电压设备 → BusbarSection 省略 voltageLevelId，CN 容器回填保持空串", () => {
+    const pkg = buildCimPackage({
+      nodes: [makeNode({ id: "bus1", kind: "ac-bus", params: {} })],
+      edges: [], projectName: "t", modelId: "m"
+    });
+    expect(pkg.busbarSections[0].voltageLevelId).toBeUndefined();
+    for (const cn of pkg.connectivityNodes) {
+      expect(cn.containerId).not.toBe("VL_UNKNOWN");
+    }
+  });
 });

@@ -1,6 +1,7 @@
 // CIM/XML 导出入口：工厂函数装配进 __appScope（参照 createExportEFile 模式）
 
 import type { Edge, ModelNode } from "../model";
+import type { MeasurementGroup, ProjectMeasurementConfig } from "../measurements";
 import { buildCimPackage } from "./cim-builder";
 import { serializeCimPackage } from "./cim-serializer";
 
@@ -23,6 +24,10 @@ export type CimExportScope = {
     onSaveTargetReady?: () => void;
   }) => Promise<boolean>;
   writeOperationLog?: (message: string) => void;
+  /** 模型量测配置（阶段 5 量测导出数据源，取 groups） */
+  projectMeasurements?: ProjectMeasurementConfig;
+  /** 平台量测类型定义（阶段 5 Analog/Discrete 判定真源） */
+  measurementTypes?: readonly { id: string; valueType?: string }[];
 };
 
 /** 纯函数：model state → XML 文本（供测试与外部复用） */
@@ -30,9 +35,11 @@ export function buildCimXml(
   nodes: readonly ModelNode[],
   edges: readonly Edge[],
   projectName: string,
-  modelId: string
+  modelId: string,
+  measurementGroups?: readonly MeasurementGroup[],
+  measurementTypes?: readonly { id: string; valueType?: string }[]
 ): string {
-  const pkg = buildCimPackage({ nodes, edges, projectName, modelId });
+  const pkg = buildCimPackage({ nodes, edges, projectName, modelId, measurementGroups, measurementTypes });
   return serializeCimPackage(pkg);
 }
 
@@ -54,14 +61,16 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
       activeModelId,
       activeProjectKey,
       saveLazyTextFile,
-      writeOperationLog
+      writeOperationLog,
+      projectMeasurements,
+      measurementTypes
     } = scope;
     const electricalNodes = nodes.filter((n) => !n.kind.startsWith("static-"));
     if (electricalNodes.length === 0) {
       return false;
     }
     const modelId = activeModelId ?? activeProjectKey ?? "current";
-    const xml = buildCimXml(nodes, edges, projectName, modelId);
+    const xml = buildCimXml(nodes, edges, projectName, modelId, projectMeasurements?.groups, measurementTypes);
     const saved = typeof saveLazyTextFile === "function"
       ? await saveLazyTextFile({
           filename: cimFilename(projectName),

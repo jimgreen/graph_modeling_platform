@@ -33,6 +33,12 @@ function refTag(qname: string, resourceId: string, indent: number): string {
   return `${pad}<${qname} rdf:resource="#${escapeXmlText(resourceId)}"/>`;
 }
 
+/** 引用元素入行：空 id 或 *_UNKNOWN 悬挂引用直接省略（评审 I2 固化） */
+function pushRef(lines: string[], qname: string, resourceId: string, indent: number): void {
+  if (!resourceId || resourceId.endsWith("_UNKNOWN")) return;
+  lines.push(refTag(qname, resourceId, indent));
+}
+
 /** 带 rdf:ID 的对象开标签 */
 function openWithId(qname: string, rdfId: string, indent: number): string {
   return `${"  ".repeat(indent)}<${qname} rdf:ID="${escapeXmlText(rdfId)}">`;
@@ -60,8 +66,8 @@ function identifiedObjectBody(obj: { name: string; description?: string; mRID?: 
 function serializeVoltageLevel(vl: CimVoltageLevel): string[] {
   const lines = [openWithId("cim:VoltageLevel", vl.rdfId, 1)];
   lines.push(...identifiedObjectBody(vl, 2));
-  lines.push(refTag("cim:VoltageLevel.Substation", vl.substationId, 2));
-  lines.push(refTag("cim:VoltageLevel.BaseVoltage", vl.baseVoltageId, 2));
+  pushRef(lines, "cim:VoltageLevel.Substation", vl.substationId, 2);
+  pushRef(lines, "cim:VoltageLevel.BaseVoltage", vl.baseVoltageId, 2);
   lines.push(close("cim:VoltageLevel", 1));
   return lines;
 }
@@ -75,7 +81,7 @@ function serializeACLineSegment(line: CimACLineSegment): string[] {
   if (line.length !== undefined) {
     lines.push(tag("cim:ACLineSegment.length", { text: numberText(line.length) }, 2));
   }
-  lines.push(refTag("cim:ConductingEquipment.BaseVoltage", line.baseVoltageId, 2));
+  pushRef(lines, "cim:ConductingEquipment.BaseVoltage", line.baseVoltageId, 2);
   lines.push(close("cim:ACLineSegment", 1));
   return lines;
 }
@@ -116,7 +122,9 @@ export function serializeCimPackage(pkg: CimPackage): string {
   for (const bus of pkg.busbarSections) {
     lines.push(openWithId("cim:BusbarSection", bus.rdfId, 1));
     lines.push(...identifiedObjectBody(bus, 2));
-    lines.push(refTag("cim:Equipment.EnergyIdentifiers", bus.voltageLevelId, 2));
+    if (bus.voltageLevelId) {
+      pushRef(lines, "cim:Equipment.EquipmentContainer", bus.voltageLevelId, 2);
+    }
     lines.push(close("cim:BusbarSection", 1));
   }
   for (const line of pkg.acLineSegments) {
@@ -126,7 +134,7 @@ export function serializeCimPackage(pkg: CimPackage): string {
     lines.push(openWithId("cim:PowerTransformer", pt.rdfId, 1));
     lines.push(...identifiedObjectBody(pt, 2));
     if (pt.substationId) {
-      lines.push(refTag("cim:Equipment.EnergyIdentifiers", pt.substationId, 2));
+      pushRef(lines, "cim:Equipment.EquipmentContainer", pt.substationId, 2);
     }
     if (pt.vectorGroup) {
       lines.push(tag("cim:PowerTransformer.vectorGroup", { text: escapeXmlText(pt.vectorGroup) }, 2));
@@ -136,8 +144,8 @@ export function serializeCimPackage(pkg: CimPackage): string {
   for (const end of pkg.transformerEnds) {
     lines.push(openWithId("cim:PowerTransformerEnd", end.rdfId, 1));
     lines.push(...identifiedObjectBody(end, 2));
-    lines.push(refTag("cim:PowerTransformerEnd.PowerTransformer", end.transformerId, 2));
-    lines.push(refTag("cim:PowerTransformerEnd.BaseVoltage", end.baseVoltageId, 2));
+    pushRef(lines, "cim:PowerTransformerEnd.PowerTransformer", end.transformerId, 2);
+    pushRef(lines, "cim:PowerTransformerEnd.BaseVoltage", end.baseVoltageId, 2);
     lines.push(tag("cim:PowerTransformerEnd.ratedU", { text: numberText(end.ratedU) }, 2));
     if (end.ratedS !== undefined) {
       lines.push(tag("cim:PowerTransformerEnd.ratedS", { text: numberText(end.ratedS) }, 2));
@@ -150,7 +158,7 @@ export function serializeCimPackage(pkg: CimPackage): string {
   for (const src of pkg.energySources) {
     lines.push(openWithId("cim:EnergySource", src.rdfId, 1));
     lines.push(...identifiedObjectBody(src, 2));
-    lines.push(refTag("cim:ConductingEquipment.BaseVoltage", src.baseVoltageId, 2));
+    pushRef(lines, "cim:ConductingEquipment.BaseVoltage", src.baseVoltageId, 2);
     if (src.activePower !== undefined) lines.push(tag("cim:EnergySource.activePower", { text: numberText(src.activePower) }, 2));
     if (src.reactivePower !== undefined) lines.push(tag("cim:EnergySource.reactivePower", { text: numberText(src.reactivePower) }, 2));
     lines.push(close("cim:EnergySource", 1));
@@ -158,15 +166,15 @@ export function serializeCimPackage(pkg: CimPackage): string {
   for (const load of pkg.energyConsumers) {
     lines.push(openWithId("cim:EnergyConsumer", load.rdfId, 1));
     lines.push(...identifiedObjectBody(load, 2));
-    lines.push(refTag("cim:ConductingEquipment.BaseVoltage", load.baseVoltageId, 2));
-    if (load.activePower !== undefined) lines.push(tag("cim:EnergyConsumer.activePower", { text: numberText(load.activePower) }, 2));
-    if (load.reactivePower !== undefined) lines.push(tag("cim:EnergyConsumer.reactivePower", { text: numberText(load.reactivePower) }, 2));
+    pushRef(lines, "cim:ConductingEquipment.BaseVoltage", load.baseVoltageId, 2);
+    if (load.activePower !== undefined) lines.push(tag("cim:EnergyConsumer.p", { text: numberText(load.activePower) }, 2));
+    if (load.reactivePower !== undefined) lines.push(tag("cim:EnergyConsumer.q", { text: numberText(load.reactivePower) }, 2));
     lines.push(close("cim:EnergyConsumer", 1));
   }
   for (const gen of pkg.generatingUnits) {
     lines.push(openWithId(`cim:${gen.cimClass}`, gen.rdfId, 1));
     lines.push(...identifiedObjectBody(gen, 2));
-    lines.push(refTag("cim:ConductingEquipment.BaseVoltage", gen.baseVoltageId, 2));
+    pushRef(lines, "cim:ConductingEquipment.BaseVoltage", gen.baseVoltageId, 2);
     if (gen.ratedGrossMaxP !== undefined) lines.push(tag("cim:GeneratingUnit.ratedGrossMaxP", { text: numberText(gen.ratedGrossMaxP) }, 2));
     if (gen.ratedGrossMinP !== undefined) lines.push(tag("cim:GeneratingUnit.ratedGrossMinP", { text: numberText(gen.ratedGrossMinP) }, 2));
     lines.push(close(`cim:${gen.cimClass}`, 1));
@@ -188,14 +196,14 @@ export function serializeCimPackage(pkg: CimPackage): string {
   for (const cn of pkg.connectivityNodes) {
     lines.push(openWithId("cim:ConnectivityNode", cn.rdfId, 1));
     lines.push(...identifiedObjectBody(cn, 2));
-    lines.push(refTag("cim:ConnectivityNode.ConnectivityNodeContainer", cn.containerId, 2));
+    pushRef(lines, "cim:ConnectivityNode.ConnectivityNodeContainer", cn.containerId, 2);
     lines.push(close("cim:ConnectivityNode", 1));
   }
   for (const term of pkg.terminals) {
     lines.push(openWithId("cim:Terminal", term.rdfId, 1));
     lines.push(...identifiedObjectBody(term, 2));
-    lines.push(refTag("cim:Terminal.ConductingEquipment", term.conductingEquipmentId, 2));
-    lines.push(refTag("cim:Terminal.ConnectivityNode", term.connectivityNodeId, 2));
+    pushRef(lines, "cim:Terminal.ConductingEquipment", term.conductingEquipmentId, 2);
+    pushRef(lines, "cim:Terminal.ConnectivityNode", term.connectivityNodeId, 2);
     lines.push(tag("cim:Terminal.sequenceNumber", { text: String(term.sequenceNumber) }, 2));
     lines.push(close("cim:Terminal", 1));
   }
@@ -205,8 +213,8 @@ export function serializeCimPackage(pkg: CimPackage): string {
     lines.push(...identifiedObjectBody(m, 2));
     if (m.unit) lines.push(tag("cim:Analog.unit", { text: escapeXmlText(m.unit) }, 2));
     if (m.measurementClass) lines.push(tag("cim:Measurement.measurementClass", { text: escapeXmlText(m.measurementClass) }, 2));
-    lines.push(refTag("cim:Measurement.PowerSystemResource", m.powerSystemResourceId, 2));
-    if (m.terminalId) lines.push(refTag("cim:Measurement.Terminal", m.terminalId, 2));
+    pushRef(lines, "cim:Measurement.PowerSystemResource", m.powerSystemResourceId, 2);
+    if (m.terminalId) pushRef(lines, "cim:Measurement.Terminal", m.terminalId, 2);
     lines.push(close(root, 1));
   }
   lines.push("</rdf:RDF>");
