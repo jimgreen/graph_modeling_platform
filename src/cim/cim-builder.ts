@@ -2,14 +2,16 @@
 
 import { deviceParamValue } from "../model";
 import type { DeviceKind, Edge, ModelNode } from "../model";
+import type { MeasurementGroup } from "../measurements";
 import { CIM_NS } from "./cim-namespaces";
-import type { CimBaseVoltage, CimConnectivityNode, CimGeneratingUnit, CimPackage, CimSubstation, CimTerminal, CimVoltageLevel } from "./cim-types";
+import type { CimBaseVoltage, CimConnectivityNode, CimGeneratingUnit, CimMeasurement, CimPackage, CimSubstation, CimTerminal, CimVoltageLevel } from "./cim-types";
 
 export type CimBuildInput = {
   nodes: readonly ModelNode[];
   edges: readonly Edge[];
   projectName: string;
   modelId: string;
+  measurementGroups?: readonly MeasurementGroup[];
 };
 
 const VOLTAGE_PARAM_KEYS = ["i_vbase", "j_vbase", "k_vbase", "high_vbase", "medium_vbase", "low_vbase", "source_vbase", "target_vbase"] as const;
@@ -420,6 +422,49 @@ export function buildCimPackage(input: CimBuildInput): CimPackage {
   // 阶段 4a：AC 核心设备映射
   for (const node of input.nodes) {
     mapDeviceObjects(node, vbaseById, sink);
+  }
+  // 阶段 5：量测映射（跳过 nodeId 无对应节点的组）
+  const nodesById = new Map(input.nodes.map((n) => [n.id, n]));
+  let mIndex = 0;
+  for (const group of input.measurementGroups ?? []) {
+    if (!nodesById.has(group.nodeId)) continue;
+    for (const item of group.items) {
+      mIndex += 1;
+      const analogType = String(item.measurementTypeId ?? "").toLowerCase().includes("analog")
+        || item.decimalsOverride !== undefined
+        || typeof item.defaultValue === "number";
+      sink.measurements.push({
+        rdfId: `M_${mIndex}`,
+        name: item.labelOverride ?? item.name ?? item.sourcePoint,
+        measurementType: analogType ? "Analog" : "Discrete",
+        unit: item.unitOverride,
+        powerSystemResourceId: `N_${group.nodeId}`
+      });
+    }
+  }
+  // CN 容器回填：端子设备主电压 → VL id（众数投票；无电压成员保持 VL_UNKNOWN）
+  const terminalsByCn = new Map<string, string[]>();
+  for (const terminal of terminals) {
+    const bucket = terminalsByCn.get(terminal.connectivityNodeId);
+    if (bucket) bucket.push(terminal.conductingEquipmentId);
+    else terminalsByCn.set(terminal.connectivityNodeId, [terminal.conductingEquipmentId]);
+  }
+  for (const cn of connectivityNodes) {
+    const counts = new Map<string, number>();
+    for (const equipmentId of terminalsByCn.get(cn.rdfId) ?? []) {
+      const nodeId = equipmentId.startsWith("N_") ? equipmentId.slice(2) : equipmentId;
+      const node = nodesById.get(nodeId);
+      if (!node) continue;
+      const primary = nodePrimaryVoltage(node);
+      if (primary <= 0) continue;
+      counts.set(`VL_${primary}`, (counts.get(`VL_${primary}`) ?? 0) + 1);
+    }
+    let best = "VL_UNKNOWN";
+    let bestCount = -1;
+    for (const [vlId, count] of counts) {
+      if (count > bestCount) { best = vlId; bestCount = count; }
+    }
+    cn.containerId = best;
   }
   return sink;
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildCimPackage, cimClassForKind, extractBaseVoltages, inferTopology } from "./cim-builder";
 import type { ModelNode } from "../model";
+import type { MeasurementGroup } from "../measurements";
 
 function makeNode(partial: Partial<ModelNode>): ModelNode {
   return {
@@ -280,5 +281,34 @@ describe("buildCimPackage 开关与补偿器", () => {
     });
     expect(pkg.busbarSections).toHaveLength(0);
     expect(pkg.acLineSegments).toHaveLength(0);
+  });
+});
+
+describe("buildCimPackage 量测", () => {
+  it("量测组 items → CimMeasurement（Analog，关联设备 rdfId）", () => {
+    const groups: MeasurementGroup[] = [{
+      id: "g1", nodeId: "load1", visible: true,
+      anchor: "top", offset: { x: 0, y: 0 }, layout: "vertical",
+      items: [{
+        id: "i1", measurementTypeId: "analog-current", sourcePoint: "P",
+        labelOverride: "有功", unitOverride: "MW", decimalsOverride: 2
+      }]
+    }];
+    const pkg = buildCimPackage({
+      nodes: [makeNode({ id: "load1", kind: "ac-load", params: { i_vbase: "110" } })],
+      edges: [], projectName: "t", modelId: "m", measurementGroups: groups
+    });
+    expect(pkg.measurements).toHaveLength(1);
+    expect(pkg.measurements[0].measurementType).toBe("Analog");
+    expect(pkg.measurements[0].unit).toBe("MW");
+    expect(pkg.measurements[0].powerSystemResourceId).toBe("N_load1");
+  });
+
+  it("无 measurements 输入时容错（undefined / 空数组）", () => {
+    const base = buildCimPackage({
+      nodes: [makeNode({ id: "load1", kind: "ac-load" })],
+      edges: [], projectName: "t", modelId: "m"
+    });
+    expect(base.measurements).toEqual([]);
   });
 });
