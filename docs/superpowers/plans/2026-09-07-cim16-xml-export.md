@@ -891,8 +891,9 @@ class TerminalUnionFind {
     if (parent !== key) {
       const root = this.find(parent);
       this.parent.set(key, root);
+      return root; // 必须返回压缩后的根；返回旧 parent 会在并行边场景成环导致栈溢出
     }
-    return parent;
+    return key;
   }
   union(a: string, b: string): void {
     const ra = this.find(a);
