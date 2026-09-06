@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCimPackage, extractBaseVoltages, inferTopology } from "./cim-builder";
+import { buildCimPackage, cimClassForKind, extractBaseVoltages, inferTopology } from "./cim-builder";
 import type { ModelNode } from "../model";
 
 function makeNode(partial: Partial<ModelNode>): ModelNode {
@@ -10,6 +10,18 @@ function makeNode(partial: Partial<ModelNode>): ModelNode {
     rotation: 0, scale: 1, terminals: [], params: {},
     ...partial
   };
+}
+
+function makeTransformer(partial: Partial<ModelNode>): ModelNode {
+  return makeNode({
+    id: "tr1", kind: "ac-two-winding-transformer", name: "主变1",
+    params: { i_vbase: "110", j_vbase: "10", sn: "50", vector_group: "YNd11" },
+    terminals: [
+      { id: "h1", label: "H", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1" },
+      { id: "l1", label: "L", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1" }
+    ],
+    ...partial
+  });
 }
 
 describe("extractBaseVoltages", () => {
@@ -151,5 +163,79 @@ describe("inferTopology", () => {
       .toBe(termByEquipAndId("N_busA", "bt1")?.connectivityNodeId);
     expect(termByEquipAndId("N_lineA", "a1")?.connectivityNodeId)
       .not.toBe(termByEquipAndId("N_lineA", "a2")?.connectivityNodeId);
+  });
+});
+
+describe("cimClassForKind", () => {
+  it("ac-line → ACLineSegment", () => {
+    expect(cimClassForKind("ac-line").className).toBe("ACLineSegment");
+  });
+  it("ac-two-winding-transformer → PowerTransformer", () => {
+    expect(cimClassForKind("ac-two-winding-transformer").className).toBe("PowerTransformer");
+  });
+  it("custom-device → skip", () => {
+    expect(cimClassForKind("custom-device").skip).toBe(true);
+  });
+  it("hydrogen-tank → skip", () => {
+    expect(cimClassForKind("hydrogen-tank").skip).toBe(true);
+  });
+});
+
+describe("buildCimPackage 设备对象", () => {
+  it("ac-bus → BusbarSection", () => {
+    const pkg = buildCimPackage({
+      nodes: [makeNode({ id: "bus1", name: "bus1", kind: "ac-bus", params: { i_vbase: "110" } })],
+      edges: [], projectName: "t", modelId: "m"
+    });
+    expect(pkg.busbarSections).toHaveLength(1);
+    expect(pkg.busbarSections[0].rdfId).toBe("N_bus1");
+    expect(pkg.busbarSections[0].name).toBe("bus1");
+  });
+
+  it("ac-line → ACLineSegment 带 r/x/bch 参数", () => {
+    const pkg = buildCimPackage({
+      nodes: [makeNode({
+        id: "line1", kind: "ac-line",
+        params: { i_vbase: "110", r: "0.12", x: "0.45", b: "0.000034" }
+      })],
+      edges: [], projectName: "t", modelId: "m"
+    });
+    expect(pkg.acLineSegments).toHaveLength(1);
+    expect(pkg.acLineSegments[0].r).toBeCloseTo(0.12);
+    expect(pkg.acLineSegments[0].x).toBeCloseTo(0.45);
+    expect(pkg.acLineSegments[0].bch).toBeCloseTo(0.000034);
+    expect(pkg.acLineSegments[0].baseVoltageId).toBe("BV_110");
+  });
+
+  it("双绕组变压器 → PowerTransformer + 2 End", () => {
+    const pkg = buildCimPackage({
+      nodes: [makeTransformer({})],
+      edges: [], projectName: "t", modelId: "m"
+    });
+    expect(pkg.powerTransformers).toHaveLength(1);
+    expect(pkg.transformerEnds).toHaveLength(2);
+    expect(pkg.transformerEnds[0].ratedU).toBe(110);
+    expect(pkg.transformerEnds[1].ratedU).toBe(10);
+    expect(pkg.transformerEnds[0].endNumber).toBe(1);
+    expect(pkg.transformerEnds[1].endNumber).toBe(2);
+    expect(pkg.transformerEnds[0].transformerId).toBe(pkg.powerTransformers[0].rdfId);
+  });
+
+  it("ac-load → EnergyConsumer", () => {
+    const pkg = buildCimPackage({
+      nodes: [makeNode({ id: "load1", kind: "ac-load", params: { i_vbase: "110", p: "5", q: "2" } })],
+      edges: [], projectName: "t", modelId: "m"
+    });
+    expect(pkg.energyConsumers).toHaveLength(1);
+    expect(pkg.energyConsumers[0].activePower).toBeCloseTo(5);
+    expect(pkg.energyConsumers[0].reactivePower).toBeCloseTo(2);
+  });
+
+  it("ac-source → EnergySource（等效电源类）", () => {
+    const pkg = buildCimPackage({
+      nodes: [makeNode({ id: "src1", kind: "ac-station-source", params: { i_vbase: "110" } })],
+      edges: [], projectName: "t", modelId: "m"
+    });
+    expect(pkg.energySources).toHaveLength(1);
   });
 });

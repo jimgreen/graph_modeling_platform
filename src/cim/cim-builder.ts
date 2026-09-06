@@ -1,9 +1,9 @@
 // model state → CimPackage IR 构建器（纯函数，五阶段）
 
 import { deviceParamValue } from "../model";
-import type { Edge, ModelNode } from "../model";
+import type { DeviceKind, Edge, ModelNode } from "../model";
 import { CIM_NS } from "./cim-namespaces";
-import type { CimBaseVoltage, CimConnectivityNode, CimPackage, CimSubstation, CimTerminal, CimVoltageLevel } from "./cim-types";
+import type { CimBaseVoltage, CimConnectivityNode, CimGeneratingUnit, CimPackage, CimSubstation, CimTerminal, CimVoltageLevel } from "./cim-types";
 
 export type CimBuildInput = {
   nodes: readonly ModelNode[];
@@ -202,13 +202,170 @@ export function inferTopology(input: CimBuildInput): {
   return { connectivityNodes, terminals };
 }
 
-/** 五阶段总入口。当前实现阶段 1-3；阶段 4-5 由后续任务填充对应数组。 */
+// ── 阶段 4a：AC 核心设备映射 ──
+
+export type CimClassDecision = {
+  className: string;
+  skip?: boolean;
+};
+
+/** DeviceKind → CIM 类决策（单一真源，Task 6/7 复用） */
+export function cimClassForKind(kind: DeviceKind): CimClassDecision {
+  switch (kind) {
+    case "ac-line": case "ac-routable-line":
+    case "ac-zero-branch": case "ac-zero-routable-branch":
+      return { className: "ACLineSegment" };
+    case "ac-bus":
+      return { className: "BusbarSection" };
+    case "ac-transformer": case "ac-two-winding-transformer":
+    case "ac-three-winding-transformer": case "ac-three-winding-transformer-neutral":
+      return { className: "PowerTransformer" };
+    case "ac-load": case "ac-station-load": case "ac-feeder-load":
+    case "ac-district-load": case "ac-terminal-transformer-load":
+      return { className: "EnergyConsumer" };
+    case "ac-source": case "ac-station-source": case "ac-feeder-source":
+    case "ac-district-source":
+      return { className: "EnergySource" };
+    case "ac-wind-source": case "ac-pv-source": case "ac-thermal-source":
+    case "ac-diesel-source": case "ac-hydro-source": case "ac-nuclear-source":
+    case "ac-storage":
+      return { className: "GeneratingUnit" };
+    case "ac-breaker": case "ac-box-breaker":
+      return { className: "Breaker" };
+    case "ac-switch": case "ac-disconnector": case "ac-ground-disconnector":
+    case "ac-ground-disconnector-vertical":
+      return { className: "Disconnector" };
+    case "ac-capacitor": case "ac-reactor":
+      return { className: "LinearShuntCompensator" };
+    case "ac-series-capacitor": case "ac-series-reactor":
+      return { className: "SeriesCompensator" };
+    default:
+      return { className: "", skip: true };
+  }
+}
+
+const GENERATING_UNIT_CLASS_BY_KIND: Record<string, CimGeneratingUnit["cimClass"]> = {
+  "ac-wind-source": "WindGeneratingUnit",
+  "ac-pv-source": "SolarGeneratingUnit",
+  "ac-thermal-source": "ThermalGeneratingUnit",
+  "ac-diesel-source": "ThermalGeneratingUnit",
+  "ac-nuclear-source": "ThermalGeneratingUnit",
+  "ac-hydro-source": "HydroGeneratingUnit",
+  "ac-storage": "ThermalGeneratingUnit" // 储能退化为机组占位；细化留待 Task 8 侦察储能参数
+};
+
+function numericParam(params: Record<string, string>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const raw = String(deviceParamValue(params, key) ?? "").trim();
+    if (!raw) continue;
+    const value = Number(raw);
+    if (Number.isFinite(value)) return value;
+  }
+  return undefined;
+}
+
+/** 阶段 4a：单一节点 → IR 设备对象（追加到对应数组） */
+function mapDeviceObjects(node: ModelNode, vbaseById: Map<number, string>, sink: CimPackage): void {
+  const decision = cimClassForKind(node.kind);
+  if (decision.skip) return;
+  const nodeRdfId = `N_${node.id}`;
+  const baseVoltageId = vbaseById.get(nodePrimaryVoltage(node)) ?? "BV_UNKNOWN";
+  switch (decision.className) {
+    case "BusbarSection": {
+      sink.busbarSections.push({
+        rdfId: nodeRdfId,
+        name: node.name,
+        voltageLevelId: voltageLevelIdForNode(node)
+      });
+      return;
+    }
+    case "ACLineSegment": {
+      sink.acLineSegments.push({
+        rdfId: nodeRdfId,
+        name: node.name,
+        r: numericParam(node.params, ["r", "r1", "resistance"]) ?? 0,
+        x: numericParam(node.params, ["x", "x1", "reactance"]) ?? 0,
+        bch: numericParam(node.params, ["b", "bch", "b1"]) ?? 0,
+        baseVoltageId
+      });
+      return;
+    }
+    case "PowerTransformer": {
+      sink.powerTransformers.push({
+        rdfId: nodeRdfId,
+        name: node.name,
+        vectorGroup: String(deviceParamValue(node.params, "vector_group") ?? deviceParamValue(node.params, "vectorGroup") ?? "").trim() || undefined
+      });
+      const isThree = node.kind === "ac-three-winding-transformer" || node.kind === "ac-three-winding-transformer-neutral";
+      const sideKeys: Array<[number, string]> = isThree
+        ? [[0, "i_vbase"], [1, "k_vbase"], [2, "j_vbase"]]
+        : [[0, "i_vbase"], [1, "j_vbase"]];
+      const ratedS = numericParam(node.params, ["sn", "rated_s", "rated_capacity", "capacity"]) ?? 0;
+      sideKeys.forEach(([sideIndex, voltageKey], index) => {
+        const ratedU = numericParam(node.params, [voltageKey]) ?? 0;
+        const endId = `PTE_${node.id}_${index + 1}`;
+        sink.transformerEnds.push({
+          rdfId: endId,
+          name: `${node.name}绕组${index + 1}`,
+          transformerId: nodeRdfId,
+          baseVoltageId: ratedU > 0 ? (vbaseById.get(ratedU) ?? `BV_${ratedU}`) : "BV_UNKNOWN",
+          ratedU,
+          ratedS: ratedS > 0 ? ratedS : undefined,
+          r: 0, x: 0,
+          endNumber: index + 1
+        });
+      });
+      return;
+    }
+    case "EnergyConsumer": {
+      sink.energyConsumers.push({
+        rdfId: nodeRdfId,
+        name: node.name,
+        baseVoltageId,
+        activePower: numericParam(node.params, ["p", "active_power"]),
+        reactivePower: numericParam(node.params, ["q", "reactive_power"])
+      });
+      return;
+    }
+    case "EnergySource": {
+      sink.energySources.push({
+        rdfId: nodeRdfId,
+        name: node.name,
+        baseVoltageId,
+        activePower: numericParam(node.params, ["p", "active_power"]),
+        reactivePower: numericParam(node.params, ["q", "reactive_power"])
+      });
+      return;
+    }
+    case "GeneratingUnit": {
+      sink.generatingUnits.push({
+        rdfId: nodeRdfId,
+        name: node.name,
+        cimClass: GENERATING_UNIT_CLASS_BY_KIND[node.kind] ?? "ThermalGeneratingUnit",
+        baseVoltageId,
+        ratedGrossMaxP: numericParam(node.params, ["pn", "rated_capacity", "capacity"])
+      });
+      return;
+    }
+    default:
+      return;
+  }
+}
+
+/** 节点所属 VoltageLevel rdfId（按主电压线性索引；阶段 2 同序生成） */
+function voltageLevelIdForNode(node: ModelNode): string {
+  const voltage = nodePrimaryVoltage(node);
+  if (voltage <= 0) return "VL_UNKNOWN";
+  return `VL_${voltage}`;
+}
+
+/** 五阶段总入口。当前实现阶段 1-3 + 4a；阶段 4b/5 由后续任务填充对应数组。 */
 export function buildCimPackage(input: CimBuildInput): CimPackage {
   const vbaseById = voltageBaseMap(input.nodes);
   const { substations, voltageLevels } = buildContainers(input, vbaseById);
   const { connectivityNodes, terminals } = inferTopology(input);
   const now = new Date().toISOString();
-  return {
+  const sink: CimPackage = {
     fullModel: {
       rdfAbout: `urn:uuid:${input.modelId}`,
       created: now,
@@ -232,4 +389,9 @@ export function buildCimPackage(input: CimBuildInput): CimPackage {
     terminals,
     measurements: []
   };
+  // 阶段 4a：AC 核心设备映射
+  for (const node of input.nodes) {
+    mapDeviceObjects(node, vbaseById, sink);
+  }
+  return sink;
 }
