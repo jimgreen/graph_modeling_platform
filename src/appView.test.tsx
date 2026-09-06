@@ -665,6 +665,17 @@ describe("app view device definition parameter rows", () => {
     expect(toolbarPreviewButton).toBeNull();
   });
 
+  test("export dropdown menu includes 导出 CIM/XML item", () => {
+    const source = readSourceFiles("./appExtracted/appTopbar.tsx", ...APP_VIEW_SOURCE_FILES);
+    const exportActions = source.match(
+      /<div className="topbar-center-actions">[\s\S]*?<\/div>\s*(?:<div className="action-cluster"|<button)/
+    )?.[0] ?? "";
+
+    expect(exportActions).toContain('label: "导出 CIM/XML"');
+    expect(exportActions).toContain("action: exportCimFile, validatesEInterface: false");
+    expect(source).toContain("exportCimFile,");
+  });
+
   test("combines grouping actions into a borderless popup menu", () => {
     const source = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
     const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
