@@ -2669,7 +2669,12 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const loadSvgImageExportPathById = createLoadSvgImageExportPathById(__appScope); Object.assign(__appScope, { loadSvgImageExportPathById });
   const exportSvg = createExportSvg(__appScope); Object.assign(__appScope, { exportSvg });
   const exportEFile = createExportEFile(__appScope); Object.assign(__appScope, { exportEFile });
-  const exportCimFile = createCimExport(__appScope); Object.assign(__appScope, { exportCimFile });
+  const exportCimFile = createCimExport({
+      ...__appScope,
+      measurementTypes: measurementConfig?.measurementTypes,
+      showGlobalMessage
+    });
+  Object.assign(__appScope, { exportCimFile });
   const exportSvgFile = createExportSvgFile(__appScope); Object.assign(__appScope, { exportSvgFile });
   const exportJsonFile = createExportJsonFile(__appScope); Object.assign(__appScope, { exportJsonFile });
   const exportEDeviceDefinitionFile = createExportEDeviceDefinitionFile(__appScope); Object.assign(__appScope, { exportEDeviceDefinitionFile });
