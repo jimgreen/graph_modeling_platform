@@ -239,6 +239,13 @@ export function cimClassForKind(kind: DeviceKind): CimClassDecision {
       return { className: "LinearShuntCompensator" };
     case "ac-series-capacitor": case "ac-series-reactor":
       return { className: "SeriesCompensator" };
+    case "dc-line": case "dc-routable-line": case "dc-zero-branch":
+    case "dc-bus": case "dc-breaker": case "dc-switch": case "dc-load":
+    case "dc-source": case "dc-transformer": case "dcdc-converter":
+    case "acdc-converter": case "dcac-converter": case "acac-converter":
+    case "dc-storage":
+      // CIM16 RDF 对 DC 类支持不全，退化跳过（保持兼容性，留待未来扩展）
+      return { className: "", skip: true };
     default:
       return { className: "", skip: true };
   }
@@ -344,6 +351,27 @@ function mapDeviceObjects(node: ModelNode, vbaseById: Map<number, string>, sink:
         cimClass: GENERATING_UNIT_CLASS_BY_KIND[node.kind] ?? "ThermalGeneratingUnit",
         baseVoltageId,
         ratedGrossMaxP: numericParam(node.params, ["pn", "rated_capacity", "capacity"])
+      });
+      return;
+    }
+    case "Breaker":
+    case "Disconnector": {
+      const closedRaw = String(deviceParamValue(node.params, "closed_status") ?? node.params.status ?? "1").trim();
+      sink.switches.push({
+        rdfId: nodeRdfId,
+        name: node.name,
+        cimClass: decision.className === "Breaker" ? "Breaker" : "Disconnector",
+        normalOpen: closedRaw === "0" || closedRaw.toLowerCase() === "open"
+      });
+      return;
+    }
+    case "LinearShuntCompensator":
+    case "SeriesCompensator": {
+      sink.shuntCompensators.push({
+        rdfId: nodeRdfId,
+        name: node.name,
+        cimClass: decision.className === "SeriesCompensator" ? "SeriesCompensator" : "LinearShuntCompensator",
+        sections: 1
       });
       return;
     }
