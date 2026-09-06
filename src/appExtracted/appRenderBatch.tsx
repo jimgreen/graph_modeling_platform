@@ -619,6 +619,7 @@ import {
 } from "../iconLibraryCatalog";
 import { imagePickerUsesLibraryTabs, renderAppView } from "./appView";
 import { MemoizedCanvasArea } from "./appCanvasArea";
+import { createCimExport } from "../cim/cim-export";
 
 export function useRenderBatch(__appScope: Record<string, any>) {
   const {
@@ -2668,6 +2669,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const loadSvgImageExportPathById = createLoadSvgImageExportPathById(__appScope); Object.assign(__appScope, { loadSvgImageExportPathById });
   const exportSvg = createExportSvg(__appScope); Object.assign(__appScope, { exportSvg });
   const exportEFile = createExportEFile(__appScope); Object.assign(__appScope, { exportEFile });
+  const exportCimFile = createCimExport(__appScope); Object.assign(__appScope, { exportCimFile });
   const exportSvgFile = createExportSvgFile(__appScope); Object.assign(__appScope, { exportSvgFile });
   const exportJsonFile = createExportJsonFile(__appScope); Object.assign(__appScope, { exportJsonFile });
   const exportEDeviceDefinitionFile = createExportEDeviceDefinitionFile(__appScope); Object.assign(__appScope, { exportEDeviceDefinitionFile });
