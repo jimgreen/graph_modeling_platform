@@ -321,6 +321,19 @@ describe("buildCimPackage 量测", () => {
     expect(base.measurements).toEqual([]);
   });
 
+  it("未导出设备（dc/氢能等 skip 类）不挂量测，避免悬挂 N_ 引用", () => {
+    const groups: MeasurementGroup[] = [{
+      id: "g-dc", nodeId: "dcbus1", visible: true,
+      anchor: "top", offset: { x: 0, y: 0 }, layout: "vertical",
+      items: [{ id: "i1", measurementTypeId: "p", sourcePoint: "P" }]
+    }];
+    const pkg = buildCimPackage({
+      nodes: [makeNode({ id: "dcbus1", kind: "dc-bus" })],
+      edges: [], projectName: "t", modelId: "m", measurementGroups: groups
+    });
+    expect(pkg.measurements).toEqual([]);
+  });
+
   it("measurementTypes 命中时以 valueType 判定 Analog/Discrete（真源优先于 id 启发式）", () => {
     const groups: MeasurementGroup[] = [{
       id: "g1", nodeId: "load1", visible: true,
