@@ -64,7 +64,7 @@ src/cim/                          # 新增目录
 2. **构建器纯函数**：输入 model state，输出 IR，无副作用，易测试
 3. **序列化器纯函数**：输入 IR，输出 XML 字符串，无 DOM 依赖
 4. **ID 策略**：rdf:ID 复用现有 model ID（node.id / edge.id），保证跨文件引用稳定
-5. **命名空间**：`cim:` = `http://iec.ch/TC57/CIM100#`（CIM16 标准命名空间）
+5. **命名空间**：`cim:` = `http://iec.ch/TC57/2013/CIM-schema-cim16#`（CIM16 RDFS 命名空间，国内 EMS 广泛兼容）；Model Description 头用 `md:` = `http://iec.ch/TC57/61970-552/ModelDescription/1#`
 
 ---
 
@@ -153,7 +153,7 @@ export interface CimFullModel {
   created: string;           // ISO 8601
   description: string;
   version: number;
-  profile: string;           // "http://iec.ch/TC57/CIM100#Equipment"
+  profile: string;           // "http://iec.ch/TC57/2013/CIM-schema-cim16#EquipmentCore"
 }
 
 // ── 公共基础 ──
@@ -292,13 +292,21 @@ export interface CimMeasurement extends CimIdentifiedObject {
 ### 5.3 阶段 3：建立拓扑（关键）
 
 ```
-从 edges 构建端子连接图
-├── 每个 edge = (sourceNodeId, sourcePort, targetNodeId, targetPort)
+收集全部连通关系（不止 edges！）
+├── 显式 edges：每个 edge = (sourceNodeId, sourcePort, targetNodeId, targetPort)
+├── 隐式连通：bus contact / overlap / routable-line 端点等
+│   复用平台连通性函数（如 routableLineDeviceTopologyEdges、
+│   collectVoltageBaseScopeTargets 同族拓扑函数）收集，
+│   不得只读 edges —— 否则拓扑导出不全
 ├── 合并共享连接点的端子 → 推导 ConnectivityNode
 │   同一电气连接点的所有端子 → 一个 ConnectivityNode
 ├── 为每个设备端子生成 CimTerminal
 └── 为每个连接点生成 CimConnectivityNode
 ```
+
+> ⚠️ 实现时须先核对平台连通性函数的实际行为（参考既往调试经验：
+> 平台 connectivity 会合并同侧端子、routable-line 需端点合并等），
+> 用最小复现 probe 验证收集结果后再落代码。
 
 **拓扑推导示例：**
 ```
@@ -325,7 +333,11 @@ export interface CimMeasurement extends CimIdentifiedObject {
 │   └── 引用关系（baseVoltageId, substationId 等）
 └── 特殊处理：
     ├── 三绕组变压器 → 3 个 PowerTransformerEnd
-    ├── 线路参数 per-unit 转换
+    ├── 线路参数单位策略：CIM ACLineSegment.r/x/bch 要求物理
+    │   单位（Ω/S），实施时先核对平台参数语义：
+    │   - 若 params 为有名值（Ω/S）→ 直接输出
+    │   - 若 params 为标幺值 → 按基准电压换算（Zbase = U²/Sbase）
+    │   单位策略在实施计划任务 1 中确定（读 model.ts 参数注释/测试用例）
     └── 派生设备（风电/光伏）→ GeneratingUnit
 ```
 
@@ -359,8 +371,8 @@ export interface CimMeasurement extends CimIdentifiedObject {
 ```xml
 <rdf:RDF
   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-  xmlns:cim="http://iec.ch/TC57/CIM100#"
-  xmlns:md="http://iec.ch/TC57/CIM100/MetaModel#">
+  xmlns:cim="http://iec.ch/TC57/2013/CIM-schema-cim16#"
+  xmlns:md="http://iec.ch/TC57/61970-552/ModelDescription/1#">
 ```
 
 ### 6.2 输出样例
@@ -368,15 +380,15 @@ export interface CimMeasurement extends CimIdentifiedObject {
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-         xmlns:cim="http://iec.ch/TC57/CIM100#"
-         xmlns:md="http://iec.ch/TC57/CIM100/MetaModel#">
+         xmlns:cim="http://iec.ch/TC57/2013/CIM-schema-cim16#"
+         xmlns:md="http://iec.ch/TC57/61970-552/ModelDescription/1#">
 
-  <!-- FullModel 头 -->
+  <!-- Model Description 头（IEC 61970-552） -->
   <md:FullModel rdf:about="urn:uuid:model-001">
     <md:Model.created>2026-09-06T10:00:00Z</md:Model.created>
     <md:Model.description>导出自图形建模平台</md:Model.description>
     <md:Model.version>1</md:Model.version>
-    <md:Model.profile>http://iec.ch/TC57/CIM100#Equipment</md:Model.profile>
+    <md:Model.profile>http://iec.ch/TC57/2013/CIM-schema-cim16#EquipmentCore</md:Model.profile>
   </md:FullModel>
 
   <!-- BaseVoltage -->
@@ -410,8 +422,9 @@ export interface CimMeasurement extends CimIdentifiedObject {
 | 属性顺序 | `IdentifiedObject.name` 优先，其他按字母序 |
 | 空值跳过 | undefined 字段不输出 XML 元素 |
 | 浮点数格式 | 科学计数法用 `e`，保留 6 位有效数字 |
-| XML 转义 | name/description 中的 `<>&"'` 转义 |
+| XML 转义 | 文本节点只转义 `&` `<` `>`（`'` `"` 在文本内容中无需转义） |
 | 缩进 | 2 空格缩进，可读性优先 |
+| 量测子类映射 | `measurementType` 决定 XML 根元素：`Analog` → `<cim:Analog>`，`Discrete` → `<cim:Discrete>`，`StringMeasurement` → `<cim:StringMeasurement>`；`measurementClass` 映射单元属性（如 Voltage→kV、CurrentFlow→A、ActivePower→MW） |
 
 ---
 
@@ -430,7 +443,7 @@ export interface CimMeasurement extends CimIdentifiedObject {
 
 ### 7.2 入口代码位置
 
-`src/appExtracted/appTopbar.tsx` 或 `src/appExtracted/appPersistenceLibraryExport.tsx`
+`src/appExtracted/appTopbar.tsx`（顶栏导出下拉菜单所在模块）。菜单项与处理函数均加于此，引用 `src/cim/cim-export.ts` 的 `buildCimXml`。若实施时发现导出菜单实际装配在导出工厂模块（appPersistenceLibraryExport.tsx），以实际菜单装配处为准，但入口只应有一处。
 
 ```typescript
 const handleExportCIM = async () => {
@@ -459,13 +472,15 @@ const handleExportCIM = async () => {
 3. 校验通过 → 直接导出
 4. 校验失败 → 用户确认后仍导出（非阻断）
 
-### 7.5 性能预期
+### 7.5 性能预期（预估，实施后实测校正）
 
-| 模型规模 | 设备数 | 导出耗时（预估） |
-|----------|--------|------------------|
-| 小 | <50 | <100ms |
-| 中 | 50-500 | 0.5-2s |
-| 大 | 500+ | 2-5s |
+纯 CPU 内存内遍历 + 字符串拼接，预期快于下表；数值仅为估算上限。
+
+| 模型规模 | 设备数 | 导出耗时上限 |
+|----------|--------|--------------|
+| 小 | <50 | 100ms |
+| 中 | 50-500 | 2s |
+| 大 | 500+ | 5s |
 
 ---
 
