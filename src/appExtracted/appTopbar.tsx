@@ -107,7 +107,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
     definitionTemplateIconInputRef, deviceLabelsVisible, deviceMeasurementsVisible, distributeSelected,
     eDeviceDefinitionInterfaceDialogOpen,
     eDeviceInterfaceTemplateLabel,
-    exportEFile, exportJsonFile, exportSvg, exportSvgFile, groupSelectedGraphics,
+    exportCimFile, exportEFile, exportJsonFile, exportSvg, exportSvgFile, groupSelectedGraphics,
     imageInputRef, importCustomComponentSvg, importModelFile, importSchemeFile,
     isBrowseMode, isEditMode, layerManagementDropdownRef, mirrorSelectedNodes,
     modelImportInputRef, openColorPaletteDialog, openTopologyWarningPanel,
@@ -199,7 +199,8 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
               { key: "bundle", label: "导出 E、JSON 和 SVG", icon: <Download size={16}/>, action: exportSvg, validatesEInterface: true },
               { key: "e", label: "导出 E 文件", icon: <FileJson size={16}/>, action: exportEFile, validatesEInterface: true },
               { key: "svg", label: "导出 SVG", icon: <Download size={16}/>, action: exportSvgFile, validatesEInterface: false },
-              { key: "json", label: "导出 JSON", icon: <Download size={16}/>, action: exportJsonFile, validatesEInterface: false }
+              { key: "json", label: "导出 JSON", icon: <Download size={16}/>, action: exportJsonFile, validatesEInterface: false },
+              { key: "cim", label: "导出 CIM/XML", icon: <FileJson size={16}/>, action: exportCimFile, validatesEInterface: false }
             ].map((item) => (
               <div className="export-menu-item" key={item.key}>
                 <button type="button" className="export-menu-trigger" title={item.label} aria-label={item.label} aria-haspopup="menu">{item.icon}<span>{item.label}</span><ChevronRight className="export-submenu-chevron" size={14}/></button>
