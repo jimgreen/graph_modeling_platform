@@ -130,7 +130,7 @@ describe("inferTopology", () => {
         { id: "b2", label: "2", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1" }
       ]
     });
-    const { connectivityNodes } = inferTopology({
+    const { connectivityNodes, terminals } = inferTopology({
       nodes: [lineA, lineB, busA, busB],
       edges: [
         { id: "e1", sourceId: "lineA", sourceTerminalId: "a1", targetId: "busA", targetTerminalId: "bt1" },
@@ -142,5 +142,14 @@ describe("inferTopology", () => {
     });
     // busA 侧两端子同组，busB 侧两端子同组
     expect(connectivityNodes).toHaveLength(2);
+    // 回归区分力：旧 bug（find 返回压缩前父节点）会把 bus 端子丢出组，只剩 4 个 Terminal
+    expect(terminals).toHaveLength(6);
+    const termByEquipAndId = (equipmentId: string, terminalId: string) =>
+      terminals.find((t) => t.conductingEquipmentId === equipmentId && t.name.endsWith(`端子${terminalId}`));
+    // busA 侧：lineA::a1 与 busA::bt1 同组；与 busB 侧异组
+    expect(termByEquipAndId("N_lineA", "a1")?.connectivityNodeId)
+      .toBe(termByEquipAndId("N_busA", "bt1")?.connectivityNodeId);
+    expect(termByEquipAndId("N_lineA", "a1")?.connectivityNodeId)
+      .not.toBe(termByEquipAndId("N_lineA", "a2")?.connectivityNodeId);
   });
 });
