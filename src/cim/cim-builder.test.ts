@@ -239,3 +239,46 @@ describe("buildCimPackage 设备对象", () => {
     expect(pkg.energySources).toHaveLength(1);
   });
 });
+
+describe("buildCimPackage 开关与补偿器", () => {
+  it("ac-breaker → Breaker", () => {
+    const pkg = buildCimPackage({
+      nodes: [makeNode({ id: "brk1", kind: "ac-breaker", params: { i_vbase: "110", closed_status: "0" } })],
+      edges: [], projectName: "t", modelId: "m"
+    });
+    expect(pkg.switches).toHaveLength(1);
+    expect(pkg.switches[0].cimClass).toBe("Breaker");
+  });
+
+  it("ac-capacitor → LinearShuntCompensator", () => {
+    const pkg = buildCimPackage({
+      nodes: [makeNode({ id: "cap1", kind: "ac-capacitor", params: { i_vbase: "110" } })],
+      edges: [], projectName: "t", modelId: "m"
+    });
+    expect(pkg.shuntCompensators).toHaveLength(1);
+    expect(pkg.shuntCompensators[0].cimClass).toBe("LinearShuntCompensator");
+    expect(pkg.shuntCompensators[0].sections).toBe(1);
+  });
+
+  it("ac-wind-source → WindGeneratingUnit", () => {
+    const pkg = buildCimPackage({
+      nodes: [makeNode({ id: "wind1", kind: "ac-wind-source", params: { i_vbase: "110" } })],
+      edges: [], projectName: "t", modelId: "m"
+    });
+    expect(pkg.generatingUnits).toHaveLength(1);
+    expect(pkg.generatingUnits[0].cimClass).toBe("WindGeneratingUnit");
+  });
+
+  it("dc-equipment 退化映射不崩且不产生 AC 类对象", () => {
+    const pkg = buildCimPackage({
+      nodes: [
+        makeNode({ id: "dcb", kind: "dc-bus", params: {} }),
+        makeNode({ id: "dcl", kind: "dc-line", params: {} }),
+        makeNode({ id: "h2t", kind: "hydrogen-tank", params: {} })
+      ],
+      edges: [], projectName: "t", modelId: "m"
+    });
+    expect(pkg.busbarSections).toHaveLength(0);
+    expect(pkg.acLineSegments).toHaveLength(0);
+  });
+});
