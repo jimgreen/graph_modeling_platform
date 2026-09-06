@@ -76,6 +76,7 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 - 自包含 SVG 导出（buildSvgDocument，内联样式）
 - 画布截图：SVG → PNG base64
 - E 格式导出：电力系统 E 文件
+- CIM/XML (IEC 61970 CIM16) 导出：单文件整合，AC 设备 + 拓扑端子连接 + 量测；`src/cim/` 独立模块（IR 中间表示 → RDF/XML 序列化），顶栏导出菜单入口
 - E 文件编辑器（EFileEditor）
 - 原生导出保存（nativeExportSave）
 - DMS/EMS 实时数据库导出规则（dms-rtdb-export-rules / ems-rtdb-export-rules）
