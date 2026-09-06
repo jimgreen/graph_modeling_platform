@@ -21,6 +21,10 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 - 小地图/浮动工具栏
 - 画布 LOD（细节层次）与视口批处理
 - 键盘快捷键、侧栏显隐
+- ReactFlow 预览适配器（reactFlowAdapter + ReactFlowPreview）
+- 端子锚点交互（terminalAnchor）
+- 设备图元渲染（DeviceGlyph）与状态图标绘制（stateIconDrawing）
+- 连线分段母线调整策略（lineSegmentBusResizePolicy）
 
 ### 设备与图元库
 
@@ -29,7 +33,10 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 - 自定义元件编辑器：参数表、枚举值、中英文表头
 - 自定义元件模板、图元模板
 - 派生设备类（风电/光伏/储能等）动态库名
-- 设备定义覆盖（override）机制
+- 设备定义覆盖（override）机制与定义-实例同步（definitionInstanceSync）
+- 组件库定义与元数据（componentLibraryDefinitions / componentLibraryMetadata）
+- 共享图标库管理：图标库目录、完整性审计（iconLibraryCatalog / iconLibraryIntegrity / sharedIconLibrary）
+- 最近使用图元快选（顶栏）
 
 ### 方案与模型
 
@@ -38,24 +45,43 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 - 方案导入/导出 ZIP
 - 模型保存/加载（project JSON）
 - 方案路径编码（encodeURIComponent + JSON.stringify）
+- SVG 模型导入（svgModelImport）
+- 模型节点操作与画布操作（model-node-ops / model-canvas-ops）
+- 模型路由算法：拓扑布线/路径规划（model-routing，470KB）
 
 ### 量测
 
 - 图形量测工厂
 - 量测配置：groupDefaults / measurementTypes / deviceProfiles
 - 量测默认值功能
+- 量测行内编辑（measurementInlineEditing）
+- 量测测点查重：跨量测组测点唯一性校验，重复拒绝并提示
+- 量测测点【默认】按钮恢复默认测点
+
+### 拓扑与电气
+
+- 全网拓扑导出：多厂站拓扑 E 文件导出，模板类型策略（all-network-topology / eDeviceTemplateTypePolicy）
+- 电压等级继承传播（voltageInheritance）
+- 电压等级设置对话框（VoltageLevelDialog）
+- 全局线路管理：跨模型线路注册与同步（global-lines / globalLineRegistry）
 
 ### 颜色与样式
 
 - 颜色配置：colorDisplayMode / colorPalette
 - 设备配色、背景色、边框样式
+- 思源黑体（Source Han Sans CN）字体引入
 
 ### 导出与持久化
 
 - 自包含 SVG 导出（buildSvgDocument，内联样式）
 - 画布截图：SVG → PNG base64
 - E 格式导出：电力系统 E 文件
+- E 文件编辑器（EFileEditor）
 - 原生导出保存（nativeExportSave）
+- DMS/EMS 实时数据库导出规则（dms-rtdb-export-rules / ems-rtdb-export-rules）
+- RDF ID 导出
+- GBK 字符编码支持（encoding/gbk + gbkTable）
+- 当前模板标签：顶栏导出按钮旁显示模板来源状态
 
 ### 运行时态桥接
 
@@ -70,6 +96,7 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 - v1 方案域：方案树、层级树、模型列表、导出 ZIP、模型 JSON/SVG
 - v1 图元库域：分类树、设备、量测、设备定义、模板
 - v1 运行时态：clients/model/devices/selection/tabs/screenshot/svg/e-file
+- 全局线路 API（globalLineApi / globalLineRegistry）
 
 ### 控制台写操作（v1 control）
 
@@ -90,9 +117,15 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 
 ### 用户自定义
 
-- 用户定制管理器对话框
+- 用户定制管理器对话框（UserCustomizationManagerDialog）
 - 自定义元件表单、参数表
-- 批量属性编辑器
+- 批量属性编辑器（useBatchEditors Hook）
+- 用户定制管理（userCustomizations）
+
+### 全局消息
+
+- 全局消息提示系统（globalMessage），替代 alert/confirm
+- Toast 自动消失 + 手动关闭
 
 ## 目录结构
 
@@ -135,11 +168,22 @@ graph_modeling_platform/
 | `src/runtimeWsClient.ts` | 前端 WS 客户端：注册 clientId、ping 心跳、响应 server fetch + command |
 | `src/runtimeSnapshot.ts` | 运行时态序列化（model/devices/selection/tab/snapshot/svg） |
 | `src/styles.css` | 全局样式（含 .diagram-canvas、.canvas-boundary 等） |
+| `src/model-routing.ts` | 模型路由算法：拓扑布线/路径规划（470KB 大型模块） |
+| `src/all-network-topology.ts` | 全网拓扑导出：多厂站 E 文件导出逻辑 |
+| `src/global-lines.ts` | 全局线路管理：跨模型线路注册与同步 |
+| `src/svgModelImport.ts` | SVG 模型导入 |
+| `src/EFileEditor.tsx` | E 格式文件在线编辑器 |
+| `src/globalMessage.ts` | 全局消息提示系统 |
+| `src/voltageInheritance.ts` | 电压等级继承传播 |
+| `src/measurements.ts` | 量测核心逻辑（含测点查重、默认值、行内编辑） |
+| `src/model-eexport.ts` | E 格式导出核心（157KB） |
 | `server/server.mjs` | 主服务创建：HTTP 路由分发、静态托管、WS 挂载、v1 路由装配 |
 | `server/dev.mjs` | 开发入口：起 image-server + spawn vite |
 | `server/runtimeWs.mjs` | /ws 升级 + 客户端注册表 + fetchFromClient |
+| `server/globalLineRegistry.mjs` | 全局线路注册表（43KB） |
 | `server/apiV1*.mjs` | v1 各域端点（Runtime/Schemes/Library/Control） |
 | `server/swaggerPage.mjs` | /swigger 自包含 HTML 接口文档页 |
+| `server/nativeExportSave.mjs` | 原生导出保存 |
 | `server/config.mjs` | 共享配置（host、端口、前缀） |
 | `vite.config.ts` | Vite 配置（含测试配置 + /api、/ws 代理） |
 | `vite.e2e.config.ts` | E2E 测试专用 Vite 配置 |
