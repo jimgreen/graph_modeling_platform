@@ -12,6 +12,8 @@ export type CimBuildInput = {
   projectName: string;
   modelId: string;
   measurementGroups?: readonly MeasurementGroup[];
+  /** 平台量测类型定义（阶段 5 Analog/Discrete 判定真源；缺省回退启发式） */
+  measurementTypes?: readonly { id: string; valueType?: string }[];
 };
 
 const VOLTAGE_PARAM_KEYS = ["i_vbase", "j_vbase", "k_vbase", "high_vbase", "medium_vbase", "low_vbase", "source_vbase", "target_vbase"] as const;
@@ -183,7 +185,7 @@ export function inferTopology(input: CimBuildInput): {
     connectivityNodes.push({
       rdfId: cnId,
       name: `节点${cnIndex}`,
-      containerId: "VL_UNKNOWN", // 归属电压等级由 Task 7 回填
+      containerId: "", // 归属电压等级由回填阶段按众数投票填充；无电压成员保持空（序列化器省略）
       containerType: "VoltageLevel"
     });
     for (const key of keys) {
@@ -382,10 +384,10 @@ function mapDeviceObjects(node: ModelNode, vbaseById: Map<number, string>, sink:
   }
 }
 
-/** 节点所属 VoltageLevel rdfId（按主电压线性索引；阶段 2 同序生成） */
-function voltageLevelIdForNode(node: ModelNode): string {
+/** 节点所属 VoltageLevel rdfId（按主电压线性索引；阶段 2 同序生成；无电压省略，序列化器跳过悬挂引用） */
+function voltageLevelIdForNode(node: ModelNode): string | undefined {
   const voltage = nodePrimaryVoltage(node);
-  if (voltage <= 0) return "VL_UNKNOWN";
+  if (voltage <= 0) return undefined;
   return `VL_${voltage}`;
 }
 
@@ -430,9 +432,13 @@ export function buildCimPackage(input: CimBuildInput): CimPackage {
     if (!nodesById.has(group.nodeId)) continue;
     for (const item of group.items) {
       mIndex += 1;
-      const analogType = String(item.measurementTypeId ?? "").toLowerCase().includes("analog")
-        || item.decimalsOverride !== undefined
-        || typeof item.defaultValue === "number";
+      // Analog/Discrete 判定：优先查平台量测类型定义（valueType 为真源），未命中回退启发式
+      const typeDef = input.measurementTypes?.find((type) => type.id === item.measurementTypeId);
+      const analogType = typeDef
+        ? typeDef.valueType === "number"
+        : String(item.measurementTypeId ?? "").toLowerCase().includes("analog")
+          || item.decimalsOverride !== undefined
+          || typeof item.defaultValue === "number";
       sink.measurements.push({
         rdfId: `M_${mIndex}`,
         name: item.labelOverride ?? item.name ?? item.sourcePoint,
@@ -442,7 +448,7 @@ export function buildCimPackage(input: CimBuildInput): CimPackage {
       });
     }
   }
-  // CN 容器回填：端子设备主电压 → VL id（众数投票；无电压成员保持 VL_UNKNOWN）
+  // CN 容器回填：端子设备主电压 → VL id（众数投票；无电压成员保持空串，序列化器省略引用）
   const terminalsByCn = new Map<string, string[]>();
   for (const terminal of terminals) {
     const bucket = terminalsByCn.get(terminal.connectivityNodeId);
@@ -459,7 +465,7 @@ export function buildCimPackage(input: CimBuildInput): CimPackage {
       if (primary <= 0) continue;
       counts.set(`VL_${primary}`, (counts.get(`VL_${primary}`) ?? 0) + 1);
     }
-    let best = "VL_UNKNOWN";
+    let best = "";
     let bestCount = -1;
     for (const [vlId, count] of counts) {
       if (count > bestCount) { best = vlId; bestCount = count; }

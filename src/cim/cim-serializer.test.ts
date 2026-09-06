@@ -76,4 +76,38 @@ describe("serializeCimPackage", () => {
       baseVoltages: [{ rdfId: "BV_10", name: "10kV", nominalVoltage: 10 }]
     })).toContain(`<cim:BaseVoltage.nominalVoltage>10</cim:BaseVoltage.nominalVoltage>`);
   });
+
+  it("EnergyConsumer 使用 CIM16 属性名 p/q", () => {
+    const pkg = emptyPackage();
+    pkg.energyConsumers = [{
+      rdfId: "N_load1", name: "负荷1", baseVoltageId: "BV_110", activePower: 5, reactivePower: 2
+    }];
+    const xml = serializeCimPackage(pkg);
+    expect(xml).toContain(`<cim:EnergyConsumer.p>5</cim:EnergyConsumer.p>`);
+    expect(xml).toContain(`<cim:EnergyConsumer.q>2</cim:EnergyConsumer.q>`);
+    expect(xml).not.toContain("EnergyConsumer.activePower");
+  });
+
+  it("BusbarSection/PowerTransformer 容器引用使用 EquipmentContainer", () => {
+    const pkg = emptyPackage();
+    pkg.busbarSections = [{ rdfId: "N_bus1", name: "母线1", voltageLevelId: "VL_110" }];
+    pkg.powerTransformers = [{ rdfId: "N_tr1", name: "主变1", substationId: "SUB_m" }];
+    const xml = serializeCimPackage(pkg);
+    expect(xml).toContain(`<cim:Equipment.EquipmentContainer rdf:resource="#VL_110"/>`);
+    expect(xml).toContain(`<cim:Equipment.EquipmentContainer rdf:resource="#SUB_m"/>`);
+    expect(xml).not.toContain("EnergyIdentifiers");
+  });
+
+  it("悬挂 _UNKNOWN 引用整体省略", () => {
+    const pkg = emptyPackage();
+    pkg.busbarSections = [{ rdfId: "N_bus1", name: "母线1", voltageLevelId: "VL_UNKNOWN" }];
+    pkg.acLineSegments = [{ rdfId: "N_line1", name: "线路1", r: 0, x: 0, bch: 0, baseVoltageId: "BV_UNKNOWN" }];
+    pkg.connectivityNodes = [{ rdfId: "CN_1", name: "节点1", containerId: "", containerType: "VoltageLevel" }];
+    const xml = serializeCimPackage(pkg);
+    expect(xml).not.toContain("_UNKNOWN");
+    expect(xml).not.toContain(`rdf:resource="#VL_UNKNOWN"`);
+    expect(xml).not.toContain(`rdf:resource="#BV_UNKNOWN"`);
+    // 空容器引用同样省略
+    expect(xml).not.toContain(`<cim:ConnectivityNode.ConnectivityNodeContainer`);
+  });
 });
