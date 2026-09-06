@@ -97,8 +97,9 @@ class TerminalUnionFind {
     if (parent !== key) {
       const root = this.find(parent);
       this.parent.set(key, root);
+      return root; // 返回压缩后的根，避免并行边 union 场景成环
     }
-    return parent;
+    return key;
   }
   union(a: string, b: string): void {
     const ra = this.find(a);
