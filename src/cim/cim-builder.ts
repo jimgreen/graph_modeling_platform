@@ -429,7 +429,9 @@ export function buildCimPackage(input: CimBuildInput): CimPackage {
   const nodesById = new Map(input.nodes.map((n) => [n.id, n]));
   let mIndex = 0;
   for (const group of input.measurementGroups ?? []) {
-    if (!nodesById.has(group.nodeId)) continue;
+    const groupNode = nodesById.get(group.nodeId);
+    // 未导出设备（dc/氢能/热力等 skip 类）不挂量测，避免悬挂 N_ 引用
+    if (!groupNode || cimClassForKind(groupNode.kind).skip) continue;
     for (const item of group.items) {
       mIndex += 1;
       // Analog/Discrete 判定：优先查平台量测类型定义（valueType 为真源），未命中回退启发式
