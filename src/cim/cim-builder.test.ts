@@ -114,4 +114,33 @@ describe("inferTopology", () => {
     expect(connectivityNodes).toHaveLength(0);
     expect(terminals).toHaveLength(0);
   });
+
+  it("并行双回线场景（多路径 union）不成环、正常分组", () => {
+    const lineA = makeNode({
+      id: "lineA", kind: "ac-line",
+      terminals: [
+        { id: "a1", label: "1", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1" },
+        { id: "a2", label: "2", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1" }
+      ]
+    });
+    const lineB = makeNode({
+      id: "lineB", kind: "ac-line",
+      terminals: [
+        { id: "b1", label: "1", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1" },
+        { id: "b2", label: "2", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1" }
+      ]
+    });
+    const { connectivityNodes } = inferTopology({
+      nodes: [lineA, lineB, busA, busB],
+      edges: [
+        { id: "e1", sourceId: "lineA", sourceTerminalId: "a1", targetId: "busA", targetTerminalId: "bt1" },
+        { id: "e2", sourceId: "lineA", sourceTerminalId: "a2", targetId: "busB", targetTerminalId: "bt2" },
+        { id: "e3", sourceId: "lineB", sourceTerminalId: "b1", targetId: "busA", targetTerminalId: "bt1" },
+        { id: "e4", sourceId: "lineB", sourceTerminalId: "b2", targetId: "busB", targetTerminalId: "bt2" }
+      ],
+      projectName: "t", modelId: "m"
+    });
+    // busA 侧两端子同组，busB 侧两端子同组
+    expect(connectivityNodes).toHaveLength(2);
+  });
 });
