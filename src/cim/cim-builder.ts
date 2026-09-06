@@ -262,7 +262,7 @@ const GENERATING_UNIT_CLASS_BY_KIND: Record<string, CimGeneratingUnit["cimClass"
   "ac-diesel-source": "ThermalGeneratingUnit",
   "ac-nuclear-source": "ThermalGeneratingUnit",
   "ac-hydro-source": "HydroGeneratingUnit",
-  "ac-storage": "ThermalGeneratingUnit" // 储能退化为机组占位；细化留待 Task 8 侦察储能参数
+  "ac-storage": "BatteryUnit" // 储能：CIM16 标准 BatteryUnit（原 ThermalGeneratingUnit 占位纠正）
 };
 
 function numericParam(params: Record<string, string>, keys: string[]): number | undefined {

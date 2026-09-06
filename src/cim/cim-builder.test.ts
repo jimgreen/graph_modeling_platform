@@ -270,6 +270,15 @@ describe("buildCimPackage 开关与补偿器", () => {
     expect(pkg.generatingUnits[0].cimClass).toBe("WindGeneratingUnit");
   });
 
+  it("ac-storage → BatteryUnit（CIM16 标准储能类）", () => {
+    const pkg = buildCimPackage({
+      nodes: [makeNode({ id: "st1", kind: "ac-storage", params: { i_vbase: "110" } })],
+      edges: [], projectName: "t", modelId: "m"
+    });
+    expect(pkg.generatingUnits).toHaveLength(1);
+    expect(pkg.generatingUnits[0].cimClass).toBe("BatteryUnit");
+  });
+
   it("dc-equipment 退化映射不崩且不产生 AC 类对象", () => {
     const pkg = buildCimPackage({
       nodes: [

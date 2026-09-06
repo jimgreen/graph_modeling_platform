@@ -86,7 +86,7 @@ export interface CimEnergyConsumer extends CimIdentifiedObject {
 }
 
 export interface CimGeneratingUnit extends CimIdentifiedObject {
-  cimClass: "WindGeneratingUnit" | "SolarGeneratingUnit" | "ThermalGeneratingUnit" | "HydroGeneratingUnit";
+  cimClass: "WindGeneratingUnit" | "SolarGeneratingUnit" | "ThermalGeneratingUnit" | "HydroGeneratingUnit" | "BatteryUnit";
   voltageLevelId?: string;
   baseVoltageId: string;
   ratedGrossMaxP?: number;

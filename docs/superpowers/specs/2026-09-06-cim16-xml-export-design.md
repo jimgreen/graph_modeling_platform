@@ -540,3 +540,13 @@ cim-export.test.ts
 4. **增量导出**：只导出变更部分
 5. **地理信息**：cim:CoordinateSystem + cim:Location 映射设备坐标
 6. **动态模型**：cim:Regulator / cim:Governor 等控制设备导出
+
+---
+
+## 11. 裁剪范围记录（评审收口）
+
+以下为终审时确认的延迟项，后续任务按需补齐：
+
+1. **GeographicalRegion（§3.3）延迟**：`cim:Substation.Region` 引用暂不输出，`Substation.regionId` 当前从不设置；未来接入地区/区域建模后再启用序列化分支。
+2. **§7.4 导出前校验对话框延迟**：缺参数警告（"X 个设备缺少关键参数…是否继续？"）作为后续任务补充，当前导出不弹警告、不阻断。
+3. **空模型提示已实现**：§7.4 条件 2 的"空模型提示用户、不导出"已落地——`createCimExport` 在无电力设备时调用 `showGlobalMessage("当前模型无可导出的电力设备，未生成 CIM/XML 文件")` 并返回 `false`。
