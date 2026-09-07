@@ -1,6 +1,8 @@
 // dot 厂站图解析器：把 powsybi sld 输出的 graphviz dot 文本解析为中间图结构。
 // 后续 classify/collapse/map 阶段（同一文件追加）基于本结构继续加工。
 
+import type { DeviceKind } from "./model";
+
 export interface DotNode {
   id: string;
   label: string;
@@ -79,4 +81,66 @@ export function parseDot(text: string): DotGraph {
     }
   }
   return g;
+}
+
+// ===== 类型判定（classify）阶段 =====
+
+// 一级映射：dot 外观 `shape|fillcolor` → 平台 DeviceKind（spec §3.1 九条目）
+const STYLE_KIND_MAP: Record<string, DeviceKind> = {
+  "diamond|green": "ac-breaker",
+  "invtriangle|orange": "ac-switch",
+  "rect|yellow": "ac-bus",
+  "ellipse|lightblue": "ac-load",
+  "circle|lightgreen": "ac-generator",
+  "house|lightgray": "ac-line",
+  "octagon|pink": "ac-capacitor",
+  "doubleoctagon|plum": "ac-two-winding-transformer",
+  "tripleoctagon|thistle": "ac-three-winding-transformer",
+};
+
+// 三绕组变压器外形（绕组端子 fallback 依赖其 label 集合）
+const TRIPLE_OCTAGON = "tripleoctagon";
+
+// 节点分类结果：三选一联合（static-rect 置灰样式由 Task 4 装配段处理，此处只判 kind）
+export type DotNodeClass =
+  | { role: "device"; kind: DeviceKind; flag?: "shunt-assumed-capacitor" }
+  | { role: "collapse" }
+  | { role: "winding-terminal"; transformerLabel: string };
+
+// 分类上下文：预收集全图信息供单节点判定
+export interface ClassifyContext {
+  // tripleoctagon 节点 label 集合（box/white fallback 判定同名绕组端子）
+  tripleLabels: Set<string>;
+}
+
+/**
+ * 收集图内全部 tripleoctagon 节点 label 集合，供 classifyDotNode 判定绕组端子。
+ */
+export function buildClassifyContext(graph: DotGraph): ClassifyContext {
+  const tripleLabels = new Set<string>();
+  for (const node of graph.nodes) {
+    if (node.shape === TRIPLE_OCTAGON) tripleLabels.add(node.label);
+  }
+  return { tripleLabels };
+}
+
+/**
+ * 三级类型判定：
+ * ① point → collapse（拓扑连接点，不落画布）
+ * ② box/white → fallback：label 与 tripleoctagon 同名=绕组端子；SH_ 前缀=ac-capacitor（默认容性）；其余 static-rect
+ * ③ shape|fillcolor 查表命中 → device；未命中 → static-rect
+ */
+export function classifyDotNode(node: DotNode, ctx: ClassifyContext): DotNodeClass {
+  if (node.shape === "point") return { role: "collapse" };
+  if (node.shape === "box" && node.fillcolor === "white") {
+    if (ctx.tripleLabels.has(node.label)) {
+      return { role: "winding-terminal", transformerLabel: node.label };
+    }
+    if (node.label.startsWith("SH_")) {
+      return { role: "device", kind: "ac-capacitor", flag: "shunt-assumed-capacitor" };
+    }
+    return { role: "device", kind: "static-rect" };
+  }
+  const kind = STYLE_KIND_MAP[`${node.shape}|${node.fillcolor}`];
+  return kind ? { role: "device", kind } : { role: "device", kind: "static-rect" };
 }
