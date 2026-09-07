@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCimPackage, cimClassForKind, extractBaseVoltages, inferTopology } from "./cim-builder";
+import { buildCimPackage, cimClassForKind, collectMissingCriticalParams, extractBaseVoltages, inferTopology } from "./cim-builder";
 import type { ModelNode } from "../model";
 import type { MeasurementGroup } from "../measurements";
 
@@ -366,5 +366,43 @@ describe("buildCimPackage 量测", () => {
     for (const cn of pkg.connectivityNodes) {
       expect(cn.containerId).not.toBe("VL_UNKNOWN");
     }
+  });
+});
+
+describe("collectMissingCriticalParams", () => {
+  it("无电压母线报电压等级缺失", () => {
+    const missing = collectMissingCriticalParams([
+      makeNode({ id: "bus1", kind: "ac-bus", name: "母线1", params: {} })
+    ]);
+    expect(missing).toEqual([{ nodeId: "bus1", name: "母线1", missing: ["电压等级"] }]);
+  });
+
+  it("线路无 r 且无 x 报线路阻抗缺失", () => {
+    const missing = collectMissingCriticalParams([
+      makeNode({ id: "line1", name: "线路1", params: { i_vbase: "110" } })
+    ]);
+    expect(missing).toEqual([{ nodeId: "line1", name: "线路1", missing: ["线路阻抗 r/x"] }]);
+  });
+
+  it("三绕组变压器缺 k_vbase 报绕组额定电压", () => {
+    const missing = collectMissingCriticalParams([
+      makeNode({ id: "tr1", kind: "ac-three-winding-transformer", name: "三绕组主变", params: { i_vbase: "220", j_vbase: "110" } })
+    ]);
+    expect(missing).toEqual([{ nodeId: "tr1", name: "三绕组主变", missing: ["绕组额定电压（k_vbase）"] }]);
+  });
+
+  it("参数齐全不报；负荷缺 p/q 不报（可选参数非关键）", () => {
+    const missing = collectMissingCriticalParams([
+      makeNode({ id: "line2", name: "线路2", params: { i_vbase: "110", r: "0.5", x: "1.2" } }),
+      makeNode({ id: "load1", kind: "ac-load", name: "负荷1", params: { i_vbase: "10" } })
+    ]);
+    expect(missing).toEqual([]);
+  });
+
+  it("dc 类 skip 设备不报", () => {
+    const missing = collectMissingCriticalParams([
+      makeNode({ id: "dc1", kind: "dc-line", name: "直流线路", params: {} })
+    ]);
+    expect(missing).toEqual([]);
   });
 });

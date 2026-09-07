@@ -2,7 +2,7 @@
 
 import type { Edge, ModelNode } from "../model";
 import type { MeasurementGroup, ProjectMeasurementConfig } from "../measurements";
-import { buildCimPackage } from "./cim-builder";
+import { buildCimPackage, collectMissingCriticalParams } from "./cim-builder";
 import { serializeCimPackage } from "./cim-serializer";
 
 export type CimExportScope = {
@@ -30,6 +30,8 @@ export type CimExportScope = {
   measurementTypes?: readonly { id: string; valueType?: string }[];
   /** 空模型提示（真实 scope 传全局 message；测试传 mock） */
   showGlobalMessage?: (message: string) => void;
+  /** 缺参数警告对话框（§7.4 非阻断设计；未装配时默认继续导出） */
+  showGlobalConfirm?: (text: string) => Promise<boolean>;
 };
 
 /** 纯函数：model state → XML 文本（供测试与外部复用） */
@@ -73,6 +75,14 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
     if (electricalNodes.length === 0) {
       scope.showGlobalMessage?.("当前模型无可导出的电力设备，未生成 CIM/XML 文件");
       return false;
+    }
+    // 导出前校验（§7.4）：关键参数缺失时警告确认（非阻断，确认后仍导出）
+    const missing = collectMissingCriticalParams(electricalNodes);
+    if (missing.length > 0) {
+      const names = missing.slice(0, 3).map((m) => `"${m.name}"缺${m.missing.join("、")}`).join("；");
+      const suffix = missing.length > 3 ? "等" : "";
+      const confirmed = scope.showGlobalConfirm ? await scope.showGlobalConfirm(`${missing.length} 个设备缺少关键参数（${names}${suffix}），导出文件可能不完整，是否继续？`) : true;
+      if (!confirmed) return false;
     }
     const rawModelId = [activeModelId, activeProjectKey].find((v) => typeof v === "string" && v.trim()) ?? "current";
     const modelId = rawModelId.replace(/[^A-Za-z0-9_.-]/g, "_"); // 卫生化为 NCName 安全字符

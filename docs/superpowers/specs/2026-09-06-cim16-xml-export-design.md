@@ -548,5 +548,5 @@ cim-export.test.ts
 以下为终审时确认的延迟项，后续任务按需补齐：
 
 1. **GeographicalRegion（§3.3）延迟**：`cim:Substation.Region` 引用暂不输出，`Substation.regionId` 当前从不设置；未来接入地区/区域建模后再启用序列化分支。
-2. **§7.4 导出前校验对话框延迟**：缺参数警告（"X 个设备缺少关键参数…是否继续？"）作为后续任务补充，当前导出不弹警告、不阻断。
+2. **§7.4 导出前校验对话框已实现**：导出前经 `collectMissingCriticalParams`（cim-builder）按设备映射退化兜底对齐判定关键参数缺失——无主电压等级、AC 线路缺 r 与 x、变压器绕组侧额定电压缺失；有缺失时经 `scope.showGlobalConfirm`（装配点 appRenderBatch.tsx，取全局 `showGlobalConfirm`）弹出"X 个设备缺少关键参数（…），导出文件可能不完整，是否继续？"，非阻断，确认后仍导出，取消返回 false；未装配 confirm（旧 mock/测试）时默认继续导出。
 3. **空模型提示已实现**：§7.4 条件 2 的"空模型提示用户、不导出"已落地——`createCimExport` 在无电力设备时调用 `showGlobalMessage("当前模型无可导出的电力设备，未生成 CIM/XML 文件")` 并返回 `false`。

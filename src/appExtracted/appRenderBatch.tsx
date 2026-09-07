@@ -2672,7 +2672,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const exportCimFile = createCimExport({
       ...__appScope,
       measurementTypes: measurementConfig?.measurementTypes,
-      showGlobalMessage
+      showGlobalMessage,
+      showGlobalConfirm
     });
   Object.assign(__appScope, { exportCimFile });
   const exportSvgFile = createExportSvgFile(__appScope); Object.assign(__appScope, { exportSvgFile });
