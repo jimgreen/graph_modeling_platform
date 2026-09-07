@@ -1,7 +1,10 @@
 // dot 厂站图解析器：把 powsybi sld 输出的 graphviz dot 文本解析为中间图结构。
 // 后续 classify/collapse/map 阶段（同一文件追加）基于本结构继续加工。
 
-import type { DeviceKind } from "./model";
+import { DEFAULT_MODEL_LAYER_ID, DEFAULT_MODEL_LAYER_NAME, makeId } from "./model";
+import type { DeviceKind, Edge, ModelNode, Point, ProjectFile, Terminal } from "./model";
+import { createDefaultNode } from "./model-node-ops";
+import { applyVoltageInheritance } from "./voltageInheritance";
 
 export interface DotNode {
   id: string;
@@ -169,12 +172,16 @@ export interface CollapsedDotGraph {
 }
 
 /**
- * 图收缩：point 与绕组端子并入设备组，设备间直连成 links。
- * R1：point 与所有直接邻居 union；无设备整组丢弃。
- * R3：绕组端子 box 与同名 tripleoctagon union。
- * R4/R5：边重写自环/悬空丢弃并计数。
+ * 收缩并查集与设备组构建（collapse 与电压 BFS 共用）：
+ * 返回并查集（find/parent）、端点→设备集解析（resolve）、按根分组的设备表与全设备列表。
  */
-export function collapseDotGraph(graph: DotGraph): CollapsedDotGraph {
+function buildCollapseGroups(graph: DotGraph): {
+  find: (x: string) => string;
+  parent: Map<string, string>;
+  resolve: (id: string) => DotNode[];
+  deviceGroups: Map<string, DotNode[]>;
+  devices: DotNode[];
+} {
   const ctx = buildClassifyContext(graph);
   // 节点角色缓存（id → class）
   const cls = new Map<string, DotNodeClass>();
@@ -225,23 +232,34 @@ export function collapseDotGraph(graph: DotGraph): CollapsedDotGraph {
   for (const node of graph.nodes) nodeById.set(node.id, node);
 
   // 每组设备集（role=device 成员；供 point/绕组端子端点解析）
-  const groupDevices = new Map<string, DotNode[]>();
+  const deviceGroups = new Map<string, DotNode[]>();
   for (const node of graph.nodes) {
     if (role(node.id) === "device") {
       const root = find(node.id);
-      const list = groupDevices.get(root);
+      const list = deviceGroups.get(root);
       if (list) list.push(node);
-      else groupDevices.set(root, [node]);
+      else deviceGroups.set(root, [node]);
     }
   }
   // 端点解析：设备→自身；point/绕组端子→所在组全部设备
   const resolve = (id: string): DotNode[] => {
     if (role(id) === "device") return [nodeById.get(id)!];
-    return groupDevices.get(find(id)) ?? [];
+    return deviceGroups.get(find(id)) ?? [];
   };
 
-  // 输出设备：全部 device 节点按图序（组内多设备并存——A3 两 point 链即此情形）
+  // 全设备列表（按图序，组内多设备并存——A3 两 point 链即此情形）
   const devices = graph.nodes.filter((n) => role(n.id) === "device");
+  return { find, parent, resolve, deviceGroups, devices };
+}
+
+/**
+ * 图收缩：point 与绕组端子并入设备组，设备间直连成 links。
+ * R1：point 与所有直接邻居 union；无设备整组丢弃。
+ * R3：绕组端子 box 与同名 tripleoctagon union。
+ * R4/R5：边重写自环/悬空丢弃并计数。
+ */
+export function collapseDotGraph(graph: DotGraph): CollapsedDotGraph {
+  const { find, parent, resolve, devices } = buildCollapseGroups(graph);
 
   // 边重写：端点 → 设备集；两端同单一设备=自环；端点不存在=悬空
   let selfLoopDropped = 0;
@@ -282,4 +300,277 @@ export function collapseDotGraph(graph: DotGraph): CollapsedDotGraph {
       danglingEdgeDropped,
     },
   };
+}
+
+// ===== 模型装配（map）阶段 =====
+
+// 导入报告：设备/边计数、类型分布、收缩与丢边计数、开关分位、兜底与容性假设清单、电压推断数
+export interface DotImportReport {
+  deviceCount: number;
+  edgeCount: number;
+  kindCounts: Record<DeviceKind, number>;
+  collapsedCount: number;
+  selfLoopDropped: number;
+  danglingEdgeDropped: number;
+  openSwitchCount: number;
+  unknownStaticCount: number;
+  unknownStaticNames: string[];
+  shuntAssumedCapacitorNames: string[];
+  voltageInferredCount: number;
+}
+
+// 装配结果：平台 ProjectFile + 导入报告
+export interface DotImportResult {
+  project: ProjectFile;
+  report: DotImportReport;
+}
+
+// 平台设备库缺模板的归类 kind → 真实模板 kind：
+// ac-generator 仅是图元变体名（平台交流电源模板为 ac-source）；
+// ac-two-winding-transformer 平台以 ac-transformer（双绕组主变）模板实例化
+const KIND_TEMPLATE_FALLBACK: Partial<Record<string, DeviceKind>> = {
+  "ac-generator": "ac-source",
+  "ac-two-winding-transformer": "ac-transformer",
+};
+
+// 变压器 = 电压 BFS 边界（写对应端子电压后停止扩展）
+const TRANSFORMER_KINDS = new Set<DeviceKind>([
+  "ac-transformer",
+  "ac-two-winding-transformer",
+  "ac-three-winding-transformer",
+  "ac-three-winding-transformer-neutral",
+]);
+const isTransformerKind = (kind: DeviceKind): boolean => TRANSFORMER_KINDS.has(kind);
+
+// INTERNAL_VL 电压前缀：INTERNAL_VL_厂站号_电压_……（如 INTERNAL_VL_6_230_21_FictitiousBus → 230）
+// 捕获组取第二段数字（kV 数字字符串，可能带小数）
+const INTERNAL_VL_RE = /^INTERNAL_VL_\d+_(\d+(?:\.\d+)?)_/;
+
+/**
+ * 模型装配：收缩图转平台 ProjectFile。
+ * 坐标：全图 bounding box 归零后平移 (100,100)，y 不取反。
+ * 设备：createDefaultNode 实例化 → 覆盖 name=label；[OPEN] 开关 status="0"；static-rect 置灰。
+ * 边：每 link 一条 Edge，设备侧端子按几何最近未占用端子分配，母线侧 terminalId 留空。
+ * 电压：INTERNAL_VL 前缀节点（母线或连接点）为源，沿 links BFS 传播，变压器为边界。
+ */
+export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
+  const collapsed = collapseDotGraph(graph);
+
+  // —— 坐标变换：bbox 归零后平移 (100,100) ——
+  let minX = Infinity;
+  let minY = Infinity;
+  for (const d of collapsed.devices) {
+    minX = Math.min(minX, d.x);
+    minY = Math.min(minY, d.y);
+  }
+  if (!Number.isFinite(minX)) {
+    minX = 0;
+    minY = 0;
+  }
+  const ox = 100 - minX;
+  const oy = 100 - minY;
+  const tx = (d: DotNode): Point => ({ x: d.x + ox, y: d.y + oy });
+
+  // —— 报告累计 ——
+  const kindCounts = {} as Record<DeviceKind, number>;
+  const unknownStaticNames: string[] = [];
+  const shuntAssumedCapacitorNames: string[] = [];
+  let openSwitchCount = 0;
+  let extraSelfLoopDropped = 0;
+
+  // —— 设备实例化 ——
+  const nodes: ModelNode[] = [];
+  const nodeByLabel = new Map<string, ModelNode[]>(); // label → 实例（devices 数组序即 instance 序）
+  const modelByDotNode = new Map<DotNode, ModelNode>();
+  const ctx = buildClassifyContext(graph);
+  for (const d of collapsed.devices) {
+    const cls = classifyDotNode(d, ctx);
+    const classifiedKind = cls.role === "device" ? cls.kind : "static-rect";
+    if (cls.role === "device" && cls.flag === "shunt-assumed-capacitor") {
+      shuntAssumedCapacitorNames.push(d.label);
+    }
+    const kind = KIND_TEMPLATE_FALLBACK[classifiedKind] ?? classifiedKind;
+    if (kind === "static-rect") {
+      unknownStaticNames.push(d.label);
+    }
+    const node = createDefaultNode(kind, tx(d));
+    node.name = d.label;
+    // [OPEN] 开关分位 → params.status
+    if (kind === "ac-switch" || kind === "ac-breaker") {
+      node.params.status = d.open ? "0" : "1";
+      if (d.open) openSwitchCount++;
+    }
+    // static-rect 置灰兜底（fillColor 参数名与 static-rect 模板一致）
+    if (kind === "static-rect") {
+      node.params.fillColor = "#cccccc";
+    }
+    kindCounts[kind] = (kindCounts[kind] ?? 0) + 1;
+    nodes.push(node);
+    modelByDotNode.set(d, node);
+    const list = nodeByLabel.get(d.label);
+    if (list) list.push(node);
+    else nodeByLabel.set(d.label, [node]);
+  }
+
+  // —— 边构造：端子按设备侧几何最近未占用端子分配；母线侧留空 ——
+  const usedTerminals = new Map<string, Set<string>>();
+  const assignTerminal = (node: ModelNode, otherPos: Point): { id?: string; point?: Point } => {
+    if (node.terminals.length === 0) return {}; // 母线无端子，terminalId 留空
+    const used = usedTerminals.get(node.id) ?? new Set<string>();
+    let best: Terminal | undefined;
+    let bestDist = Infinity;
+    for (const t of node.terminals) {
+      if (used.has(t.id)) continue;
+      const wx = node.position.x + t.anchor.x * node.size.width;
+      const wy = node.position.y + t.anchor.y * node.size.height;
+      const dist = (wx - otherPos.x) ** 2 + (wy - otherPos.y) ** 2;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = t;
+      }
+    }
+    if (!best) return {};
+    used.add(best.id);
+    usedTerminals.set(node.id, used);
+    return {
+      id: best.id,
+      point: { x: node.position.x + best.anchor.x * node.size.width, y: node.position.y + best.anchor.y * node.size.height },
+    };
+  };
+
+  const edges: Edge[] = [];
+  for (const link of collapsed.links) {
+    const a = nodeByLabel.get(link.from)?.[0];
+    const b = nodeByLabel.get(link.to)?.[0];
+    if (!a || !b) continue; // 防御：label 未命中（收缩保证端点均为设备 label，不应发生）
+    if (a === b) {
+      extraSelfLoopDropped++; // 同名多实例 from==to 视为自环丢弃
+      continue;
+    }
+    const sa = assignTerminal(a, b.position);
+    const sb = assignTerminal(b, a.position);
+    edges.push({
+      id: makeId("edge"),
+      sourceId: a.id,
+      targetId: b.id,
+      sourceTerminalId: sa.id,
+      targetTerminalId: sb.id,
+      sourcePoint: sa.point,
+      targetPoint: sb.point,
+    });
+  }
+
+  // —— 邻接表（母线宽与电压 BFS 共用） ——
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const adjacency = new Map<string, Array<{ neighbor: ModelNode; terminalId?: string }>>();
+  for (const e of edges) {
+    const a = nodeById.get(e.sourceId);
+    const b = nodeById.get(e.targetId);
+    if (!a || !b) continue;
+    const la = adjacency.get(a.id) ?? [];
+    la.push({ neighbor: b, terminalId: e.targetTerminalId });
+    adjacency.set(a.id, la);
+    const lb = adjacency.get(b.id) ?? [];
+    lb.push({ neighbor: a, terminalId: e.sourceTerminalId });
+    adjacency.set(b.id, lb);
+  }
+
+  // —— 母线宽启发式：max(120, 连接设备 x 范围 + 60) ——
+  for (const node of nodes) {
+    if (node.kind !== "ac-bus") continue;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const nb of adjacency.get(node.id) ?? []) {
+      lo = Math.min(lo, nb.neighbor.position.x);
+      hi = Math.max(hi, nb.neighbor.position.x);
+    }
+    if (Number.isFinite(lo)) {
+      node.size = { ...node.size, width: Math.max(120, hi - lo + 60) };
+    }
+  }
+
+  // —— 电压 BFS：INTERNAL_VL 前缀节点为源，沿 links 传播，变压器为边界 ——
+  const written = new Set<string>();
+  // 已有电压的节点跳过（BFS 去重）；变压器各端子独立计（三侧电压不同）
+  const writtenKey = (node: ModelNode, terminalId?: string): string =>
+    isTransformerKind(node.kind) ? `${node.id}|${terminalId ?? ""}` : node.id;
+  const writeVoltage = (node: ModelNode, voltage: string, terminalId?: string): void => {
+    node.params = applyVoltageInheritance(node, voltage, terminalId);
+  };
+
+  let voltageInferredCount = 0;
+  const queue: Array<{ node: ModelNode; voltage: string }> = [];
+  // 种子：INTERNAL_VL 前缀节点（母线或连接点）及其直接设备邻居。
+  // 不能用「收缩组整体播种」——三绕组各侧绕组端子经 R3 并入同一组，
+  // 会把变压器另一侧的开关也误播成同一电压；直接邻居播种后 BFS 沿 links
+  // 自然覆盖整个收缩组，变压器为边界不会跨侧传播。
+  const dotById = new Map(graph.nodes.map((n) => [n.id, n]));
+  for (const source of graph.nodes) {
+    const m = source.label.match(INTERNAL_VL_RE);
+    if (!m) continue;
+    const voltage = m[1];
+    const seed = (target: ModelNode | undefined): void => {
+      if (!target || isTransformerKind(target.kind)) return;
+      if (written.has(target.id)) return;
+      written.add(target.id);
+      writeVoltage(target, voltage); // 源侧 terminalId 传 undefined（母线无端子）
+      queue.push({ node: target, voltage });
+    };
+    // 源自身为设备（母线）→ 直接播种
+    seed(modelByDotNode.get(source));
+    // 源为 point/连接点 → 直接设备邻居播种
+    for (const e of graph.edges) {
+      const otherId = e.from === source.id ? e.to : e.to === source.id ? e.from : undefined;
+      if (otherId === undefined) continue;
+      seed(modelByDotNode.get(dotById.get(otherId)!));
+    }
+  }
+  while (queue.length > 0) {
+    const { node, voltage } = queue.shift()!;
+    for (const nb of adjacency.get(node.id) ?? []) {
+      const key = writtenKey(nb.neighbor, nb.terminalId);
+      if (written.has(key)) continue;
+      written.add(key);
+      writeVoltage(nb.neighbor, voltage, nb.terminalId);
+      voltageInferredCount++;
+      if (isTransformerKind(nb.neighbor.kind)) continue; // 变压器为电压边界，不再扩展
+      queue.push({ node: nb.neighbor, voltage });
+    }
+  }
+
+  // —— 结果装配 ——
+  const project: ProjectFile = {
+    version: 1,
+    name: graph.stationName ? `${graph.stationName}_${graph.stationId}` : "dot 导入模型",
+    layers: [{ id: DEFAULT_MODEL_LAYER_ID, name: DEFAULT_MODEL_LAYER_NAME, visible: true }],
+    activeLayerId: DEFAULT_MODEL_LAYER_ID,
+    nodes,
+    edges,
+  };
+  const report: DotImportReport = {
+    deviceCount: nodes.length,
+    edgeCount: edges.length,
+    kindCounts,
+    collapsedCount: collapsed.reportPart.collapsedCount,
+    selfLoopDropped: collapsed.reportPart.selfLoopDropped + extraSelfLoopDropped,
+    danglingEdgeDropped: collapsed.reportPart.danglingEdgeDropped,
+    openSwitchCount,
+    unknownStaticCount: unknownStaticNames.length,
+    unknownStaticNames,
+    shuntAssumedCapacitorNames,
+    voltageInferredCount,
+  };
+  return { project, report };
+}
+
+/**
+ * dot 文本导入入口：parseDot → 校验 → mapDotGraphToModel。
+ * 空文件/无 digraph 抛错拒绝（spec §7），不留半成品。
+ */
+export function importDotFile(text: string): DotImportResult {
+  const graph = parseDot(text);
+  if (graph.nodes.length === 0) {
+    throw new Error("dot 文件为空或格式无法解析，请确认是 powsybi sld 导出的 .dot 文件");
+  }
+  return mapDotGraphToModel(graph);
 }

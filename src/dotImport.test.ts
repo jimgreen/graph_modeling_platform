@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { parseDot, buildClassifyContext, classifyDotNode, collapseDotGraph } from "./dotImport";
+import { parseDot, buildClassifyContext, classifyDotNode, collapseDotGraph, mapDotGraphToModel, importDotFile } from "./dotImport";
 import type { DotGraph, DotNode } from "./dotImport";
 
 // 内联最小 dot 样本（4 节点，覆盖 pos 剥 !、[OPEN] 剥离、Station 提取）
@@ -260,5 +260,159 @@ describe("collapseDotGraph", () => {
     expect(r.reportPart.selfLoopDropped).toBe(24);
     expect(r.reportPart.danglingEdgeDropped).toBe(0);
     expect(r.links.filter((l) => l.from === l.to)).toEqual([]);
+  });
+});
+
+// ===== A4 模型装配（mapDotGraphToModel / importDotFile）测试 =====
+
+describe("mapDotGraphToModel", () => {
+  it("A4 MINI_DOT：收缩后 3 设备（母线+隔离开关+断路器）、2 边，坐标平移 (100,100)", () => {
+    const { project, report } = mapDotGraphToModel(parseDot(MINI_DOT));
+    expect(report.deviceCount).toBe(3);
+    expect(project.nodes.length).toBe(3);
+    expect(project.edges.length).toBe(2);
+    expect(report.edgeCount).toBe(2);
+    expect(project.nodes.map((n) => n.name).sort()).toEqual(["BBS_1", "CB_1", "SW_1"]);
+    // y 不取反：dot y=300 的母线平移后 y=200（bbox 归零后 +100）
+    const bus = project.nodes.find((n) => n.name === "BBS_1")!;
+    expect(bus.position).toEqual({ x: 100, y: 200 });
+  });
+
+  it("A4 电压 BFS：INTERNAL_VL point 源 → 母线 vbase=230、开关链设备 vbase 同为 230", () => {
+    const { project } = mapDotGraphToModel(parseDot(MINI_DOT));
+    const byName = new Map(project.nodes.map((n) => [n.name, n]));
+    expect(byName.get("BBS_1")!.params.vbase).toBe("230");
+    expect(byName.get("SW_1")!.params.vbase).toBe("230");
+    expect(byName.get("CB_1")!.params.vbase).toBe("230");
+    expect(byName.get("BBS_1")!.params.rated_voltage).toBe("230");
+  });
+
+  it("A4 [OPEN] 开关：status=0；非 OPEN 开关 status=1", () => {
+    const { project } = mapDotGraphToModel(parseDot(MINI_DOT));
+    const byName = new Map(project.nodes.map((n) => [n.name, n]));
+    expect(byName.get("SW_1")!.params.status).toBe("0");
+    expect(byName.get("CB_1")!.params.status).toBe("1");
+  });
+
+  it("A4 边构造：母线侧 terminalId 留空，设备侧端子已分配", () => {
+    const { project } = mapDotGraphToModel(parseDot(MINI_DOT));
+    const bus = project.nodes.find((n) => n.kind === "ac-bus")!;
+    expect(bus.terminals.length).toBe(0);
+    const busEdge = project.edges.find((e) => e.sourceId === bus.id || e.targetId === bus.id)!;
+    expect(busEdge.sourceTerminalId ?? busEdge.targetTerminalId).toBeDefined();
+    // 母线侧（source 或 target）terminalId 为 undefined
+    const busSideIsSource = busEdge.sourceId === bus.id;
+    expect(busSideIsSource ? busEdge.sourceTerminalId : busEdge.targetTerminalId).toBeUndefined();
+    // 非母线侧端子已分配且端点坐标已填
+    const deviceSideTerminalId = busSideIsSource ? busEdge.targetTerminalId : busEdge.sourceTerminalId;
+    const deviceSidePoint = busSideIsSource ? busEdge.targetPoint : busEdge.sourcePoint;
+    expect(deviceSideTerminalId).toBeDefined();
+    expect(deviceSidePoint).toBeDefined();
+  });
+
+  it("A4 母线宽启发式：≥120 且 ≥ 连接设备 x 范围+60", () => {
+    const g: DotGraph = {
+      stationName: "",
+      stationId: "",
+      nodes: [
+        { id: "n0", label: "BBS_1", open: false, shape: "rect", fillcolor: "yellow", x: 0, y: 0 },
+        { id: "n1", label: "SW_1", open: false, shape: "invtriangle", fillcolor: "orange", x: 150, y: 0 },
+        { id: "n2", label: "LD_1", open: false, shape: "ellipse", fillcolor: "lightblue", x: 400, y: 0 },
+      ],
+      edges: [
+        { from: "n0", to: "n1" },
+        { from: "n0", to: "n2" },
+      ],
+    };
+    const { project } = mapDotGraphToModel(g);
+    const bus = project.nodes.find((n) => n.kind === "ac-bus")!;
+    expect(bus.size.width).toBeGreaterThanOrEqual(120);
+    // 连接设备 x 范围 = 400 - 150 = 250 → 宽 ≥ 310
+    expect(bus.size.width).toBeGreaterThanOrEqual(250 + 60);
+  });
+
+  it("A4 report.kindCounts 一致性：Σ = deviceCount；collapsedCount 与收缩数一致", () => {
+    const { report } = mapDotGraphToModel(parseDot(MINI_DOT));
+    const sum = Object.values(report.kindCounts).reduce((a, b) => a + b, 0);
+    expect(sum).toBe(report.deviceCount);
+    expect(report.kindCounts["ac-bus"]).toBe(1);
+    expect(report.kindCounts["ac-switch"]).toBe(1);
+    expect(report.kindCounts["ac-breaker"]).toBe(1);
+    expect(report.collapsedCount).toBe(1); // 仅 point 收缩
+    expect(report.selfLoopDropped).toBe(0);
+    expect(report.danglingEdgeDropped).toBe(0);
+  });
+
+  it("A4 static-rect 置灰 + SH_ 容性假设清单", () => {
+    const g: DotGraph = {
+      stationName: "",
+      stationId: "",
+      nodes: [
+        { id: "n0", label: "SH_1", open: false, shape: "box", fillcolor: "white", x: 0, y: 0 },
+        { id: "n1", label: "UNK_1", open: false, shape: "box", fillcolor: "white", x: 100, y: 0 },
+      ],
+      edges: [],
+    };
+    const { project, report } = mapDotGraphToModel(g);
+    expect(report.shuntAssumedCapacitorNames).toEqual(["SH_1"]);
+    expect(report.unknownStaticNames).toEqual(["UNK_1"]);
+    expect(report.unknownStaticCount).toBe(1);
+    const rect = project.nodes.find((n) => n.kind === "static-rect")!;
+    expect(rect.params.fillColor).toBe("#cccccc");
+    expect(project.nodes.find((n) => n.kind === "ac-capacitor")?.name).toBe("SH_1");
+  });
+
+  it("A4 空图：返回空 project 与 report，不抛错", () => {
+    const { project, report } = mapDotGraphToModel({ stationName: "", stationId: "", nodes: [], edges: [] });
+    expect(project.nodes).toEqual([]);
+    expect(project.edges).toEqual([]);
+    expect(report.deviceCount).toBe(0);
+    expect(report.edgeCount).toBe(0);
+    expect(Object.keys(report.kindCounts).length).toBe(0);
+    expect(report.collapsedCount).toBe(0);
+  });
+});
+
+describe("importDotFile", () => {
+  it("MINI_DOT 文本 → 装配结果", () => {
+    const { project, report } = importDotFile(MINI_DOT);
+    expect(report.deviceCount).toBe(3);
+    expect(project.nodes.length).toBe(3);
+    expect(project.name).toBe("望道变_6");
+  });
+
+  it("空文本抛错拒绝（spec §7）", () => {
+    expect(() => importDotFile("")).toThrow(/dot 文件为空/);
+    expect(() => importDotFile("some random text\n")).toThrow(/dot 文件为空/);
+  });
+
+  it("望道变 fixture 全链路装配无碍（实跑校验）", () => {
+    const text = readFileSync(new URL("./__fixtures__/dot/望道变_6.dot", import.meta.url), "utf8");
+    const { project, report } = importDotFile(text);
+    expect(project.name).toBe("望道变_6");
+    expect(report.deviceCount).toBe(141);
+    expect(report.edgeCount).toBe(185);
+    expect(project.nodes.length).toBe(report.deviceCount);
+    expect(project.edges.length).toBe(report.edgeCount);
+    const sum = Object.values(report.kindCounts).reduce((a, b) => a + b, 0);
+    expect(sum).toBe(report.deviceCount);
+    expect(report.collapsedCount).toBe(109);
+    expect(report.selfLoopDropped).toBe(24);
+    expect(report.danglingEdgeDropped).toBe(0);
+    expect(report.unknownStaticNames).toEqual([]);
+    // G8 实跑：fixture 仅 4 个 SH_ box 节点（SH_1..SH_4），计划预估 8 有误
+    expect(report.shuntAssumedCapacitorNames).toHaveLength(4);
+    expect(report.kindCounts["ac-three-winding-transformer"]).toBe(2);
+    // 电压：母线 vbase 非空比例 >80%
+    const buses = project.nodes.filter((n) => n.kind === "ac-bus");
+    expect(buses.length).toBeGreaterThanOrEqual(8);
+    const busesWithVoltage = buses.filter((n) => n.params.vbase && n.params.vbase !== "0");
+    expect(busesWithVoltage.length / buses.length).toBeGreaterThan(0.8);
+    // [OPEN] 设备 status=0（fixture 实跑无 [OPEN] 标记，openSwitchCount=0；计数与 status 一致）
+    expect(project.nodes.filter((n) => n.params.status === "0").length).toBe(report.openSwitchCount);
+    // 三绕组两侧端子电压均已传播写入（230/115/35 三侧各得其值）
+    for (const t of project.nodes.filter((n) => n.kind === "ac-three-winding-transformer")) {
+      expect([t.params.i_vbase, t.params.k_vbase, t.params.j_vbase].sort()).toEqual(["115", "230", "35"]);
+    }
   });
 });
