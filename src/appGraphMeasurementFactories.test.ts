@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { Children, Fragment, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { Button, message } from "antd";
-import { DeferredColorInput } from "./components/InputComponents";
 
 import {
   createAddDefaultMeasurementsToNode,
@@ -947,10 +946,10 @@ describe("measurement canvas interactions", () => {
           return;
         }
         const element = child as ReactElement<any>;
-        // 实现已改用 DeferredColorInput 组件（而非原生 input）
-        // mock 场景下渲染为 input，需要检查 ariaLabel 属性（React 内部形式）
-        if ((element.type === "input" || element.type === DeferredColorInput) && 
-            (element.props["aria-label"] === "量测组背景颜色" || element.props.ariaLabel === "量测组背景颜色")) {
+        // DeferredColorInput 经 scope mock 注入，element.type 为 mock 函数（element 树未经 React 渲染），
+        // 不能按 type 引用比对；按组件透传的 aria 标签识别
+        const ariaLabel = element.props["aria-label"] ?? element.props.ariaLabel;
+        if (ariaLabel === "量测组背景颜色") {
           backgroundColorInputs.push(element);
         }
         collectBackgroundColorInputs(element.props.children);
