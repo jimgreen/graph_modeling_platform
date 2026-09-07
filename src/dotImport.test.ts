@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolveDeviceStateVisual } from "./model";
 import { getTemplate } from "./model-node-ops";
 import { parseDot, buildClassifyContext, classifyDotNode, collapseDotGraph, mapDotGraphToModel, importDotFile } from "./dotImport";
-import type { DotGraph, DotNode } from "./dotImport";
+import type { DotGraph, DotNode, DotImportResult } from "./dotImport";
 
 // 内联最小 dot 样本（4 节点，覆盖 pos 剥 !、[OPEN] 剥离、Station 提取）
 const MINI_DOT = `digraph "6" {
@@ -424,5 +424,96 @@ describe("importDotFile", () => {
     for (const t of project.nodes.filter((n) => n.kind === "ac-three-winding-transformer")) {
       expect([t.params.i_vbase, t.params.k_vbase, t.params.j_vbase].sort()).toEqual(["115", "230", "35"]);
     }
+  });
+});
+
+// ===== A6 集成测试（Task 6）：望道变 fixture 全链路 =====
+// 数字以 G8 实跑为准（fixture：250 节点/255 边 → 141 设备/185 边/109 收缩/24 自环）。
+
+describe("importDotFile 望道变 fixture 全链路集成（A6）", () => {
+  const text = readFileSync(new URL("./__fixtures__/dot/望道变_6.dot", import.meta.url), "utf8");
+  let result!: DotImportResult;
+  beforeAll(() => {
+    result = importDotFile(text);
+  });
+
+  it("A6-1 节点/边计数 = 报告值（141 设备 / 185 边，均 >0）", () => {
+    expect(result.project.nodes.length).toBe(result.report.deviceCount);
+    expect(result.report.deviceCount).toBeGreaterThan(0);
+    expect(result.report.deviceCount).toBe(141);
+    expect(result.project.edges.length).toBe(result.report.edgeCount);
+    expect(result.report.edgeCount).toBeGreaterThan(0);
+    expect(result.report.edgeCount).toBe(185);
+  });
+
+  it("A6-2 kindCounts：Σ=deviceCount；母线≥1、断路器≥20、隔离开关≥70（实跑 72，A6 预估≥100 按实跑修正）", () => {
+    const sum = Object.values(result.report.kindCounts).reduce((a, b) => a + b, 0);
+    expect(sum).toBe(result.report.deviceCount);
+    expect(result.report.kindCounts["ac-bus"]).toBeGreaterThanOrEqual(1);
+    expect(result.report.kindCounts["ac-breaker"]).toBeGreaterThanOrEqual(20);
+    // 实跑锚定：隔离开关最多（72 > 断路器 37 > 母线 8）
+    expect(result.report.kindCounts["ac-switch"]).toBeGreaterThanOrEqual(70);
+    expect(result.report.kindCounts["ac-switch"]).toBe(72);
+    expect(result.report.kindCounts["ac-breaker"]).toBe(37);
+  });
+
+  it("A6-3 三绕组 =2（T3_1/T3_2），绕组端子已收缩不出现在 nodes", () => {
+    expect(result.report.kindCounts["ac-three-winding-transformer"]).toBe(2);
+    // T3_ 名下节点全部为三绕组本体：绕组端子 box 经 R3 收缩后不产生额外节点
+    const t3 = result.project.nodes.filter((n) => n.name === "T3_1" || n.name === "T3_2");
+    expect(t3).toHaveLength(2);
+    expect(t3.every((n) => n.kind === "ac-three-winding-transformer")).toBe(true);
+  });
+
+  it("A6-4 电压：母线 8 个 vbase 全非空（>80%）；三绕组分侧 i=230/k=35/j=115", () => {
+    const buses = result.project.nodes.filter((n) => n.kind === "ac-bus");
+    expect(buses.length).toBe(8);
+    const busesWithVoltage = buses.filter((n) => n.params.vbase && n.params.vbase !== "0");
+    expect(busesWithVoltage.length / buses.length).toBeGreaterThan(0.8);
+    for (const t of result.project.nodes.filter((n) => n.kind === "ac-three-winding-transformer")) {
+      expect([t.params.i_vbase, t.params.k_vbase, t.params.j_vbase].sort()).toEqual(["115", "230", "35"]);
+    }
+  });
+
+  it("A6-5 [OPEN] 设备 status=0：fixture 无 [OPEN] 实例（openSwitchCount=0，fixture 断言跳过），由 MINI_DOT 合成样本覆盖", () => {
+    expect(result.report.openSwitchCount).toBe(0);
+    expect(result.project.nodes.filter((n) => n.params.status === "0").length).toBe(result.report.openSwitchCount);
+    // 合成样本（MINI_DOT 含 [OPEN] 隔离开关）覆盖 status=0 行为
+    const mini = importDotFile(MINI_DOT);
+    const sw = mini.project.nodes.find((n) => n.name === "SW_1")!;
+    expect(sw.params.status).toBe("0");
+    expect(sw.params.closed_status).toBe("0");
+  });
+
+  it("A6-6 兜底清单：unknownStaticNames 空；shuntAssumedCapacitorNames 长度 4（实跑 SH_1..SH_4，A6 预估 8 按实跑修正）", () => {
+    expect(result.report.unknownStaticNames).toEqual([]);
+    expect(result.report.unknownStaticCount).toBe(0);
+    expect(result.report.shuntAssumedCapacitorNames).toHaveLength(4);
+    expect(result.report.shuntAssumedCapacitorNames.sort()).toEqual(["SH_1", "SH_2", "SH_3", "SH_4"]);
+  });
+
+  it("A6-7 端子耗尽（遗留抽查）：SW_56 4 连接/2 端子部分边 terminalId 留空，edges 总数不受影响", () => {
+    const sw56 = result.project.nodes.find((n) => n.name === "SW_56")!;
+    expect(sw56.terminals.length).toBe(2);
+    const sw56Edges = result.project.edges.filter((e) => e.sourceId === sw56.id || e.targetId === sw56.id);
+    expect(sw56Edges.length).toBe(4);
+    // 2 条分配到端子，其余设备侧 terminalId 留空（端子耗尽）
+    const sw56TermAssigned = sw56Edges.filter(
+      (e) => (e.sourceId === sw56.id ? e.sourceTerminalId : e.targetTerminalId) !== undefined,
+    );
+    expect(sw56TermAssigned.length).toBe(2);
+    // 全 fixture 存在设备侧 terminalId 为 undefined 的边（实跑 73 条），不影响 edges 总数
+    const nodeById = new Map(result.project.nodes.map((n) => [n.id, n]));
+    const deviceSideUndefined = result.project.edges.filter((e) => {
+      const a = nodeById.get(e.sourceId)!;
+      const b = nodeById.get(e.targetId)!;
+      return (
+        (a.kind !== "ac-bus" && e.sourceTerminalId === undefined) ||
+        (b.kind !== "ac-bus" && e.targetTerminalId === undefined)
+      );
+    });
+    expect(deviceSideUndefined.length).toBeGreaterThan(0);
+    expect(deviceSideUndefined.length).toBe(73);
+    expect(result.project.edges.length).toBe(result.report.edgeCount);
   });
 });
