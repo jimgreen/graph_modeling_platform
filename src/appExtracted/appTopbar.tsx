@@ -265,6 +265,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
         <input ref={stateIconDrawingImportInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateIconDrawingImport}/>
         <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile}/>
         <input ref={scope.svgModelImportInputRef} type="file" accept=".svg,image/svg+xml" hidden onChange={scope.importSvgModelFile}/>
+        <input ref={scope.dotModelImportInputRef} type="file" accept=".dot,text/vnd.graphviz" hidden onChange={scope.importDotModelFile}/>
         <input ref={schemeImportInputRef} type="file" accept=".zip,application/zip,.json,application/json" hidden onChange={importSchemeFile}/>
         <input ref={scope.libraryPackageImportInputRef} type="file" accept=".json,application/json" hidden onChange={scope.importLibraryPackageFile}/>
         <input ref={scope.userCustomizationImportInputRef} type="file" accept=".json,application/json" hidden onChange={scope.importUserCustomizationFile}/>

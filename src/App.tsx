@@ -526,6 +526,7 @@ import {
 import { DeviceGlyph, MemoDeviceGlyph, SvgMarkupChunk } from "./DeviceGlyph";
 import { buildSvgNodeLabelMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "./svgExportUtils";
 import { parseSvgModel } from "./svgModelImport";
+import { importDotFile } from "./dotImport";
 import {
   createCompleteImportedModelFeedback,
   createImportSvgModelFile,
@@ -691,6 +692,7 @@ const stateIconDrawingClipboardRef = useRef<StateIconDrawingElement[]>([]); Obje
 const stateIconDrawingInitialImageRef = useRef<{ key: string; image: string; sourceImage: string } | null>(null); Object.assign(__appScope, { stateIconDrawingInitialImageRef });
 const modelImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { modelImportInputRef });
 const svgModelImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { svgModelImportInputRef, parseSvgModel });
+const dotModelImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { dotModelImportInputRef, importDotFile });
 const modelImportTargetSchemeIdRef = useRef<string>(""); Object.assign(__appScope, { modelImportTargetSchemeIdRef });
 const schemeImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { schemeImportInputRef });
 const schemeImportParentSchemeIdRef = useRef<string>(""); Object.assign(__appScope, { schemeImportParentSchemeIdRef });

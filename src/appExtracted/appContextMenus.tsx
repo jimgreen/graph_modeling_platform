@@ -308,6 +308,10 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }: AppConte
                 <FileInput size={14}/>
                 从 SVG 生成模型
               </button>)}
+              {isEditMode && (<button onClick={() => runContextMenuAction(() => __appScope.openDotModelImportFilePicker(projectMenu.schemeId ?? ""))}>
+                <FileInput size={14}/>
+                从 dot 生成模型
+              </button>)}
               {recordClipboard?.kind === "project" && projectMenu.schemeId && (isEditMode ? (<button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId ?? ""))}>
                   <FileInput size={14}/>
                   模型粘贴
