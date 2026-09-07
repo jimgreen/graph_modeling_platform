@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { parseDot } from "./dotImport";
+import { parseDot, buildClassifyContext, classifyDotNode } from "./dotImport";
+import type { DotGraph } from "./dotImport";
 
 // 内联最小 dot 样本（4 节点，覆盖 pos 剥 !、[OPEN] 剥离、Station 提取）
 const MINI_DOT = `digraph "6" {
@@ -88,5 +89,83 @@ describe("parseDot", () => {
     expect(g.stationName).toBe("");
     expect(g.nodes.length).toBe(0);
     expect(g.edges.length).toBe(0);
+  });
+});
+
+// A2 样本图：覆盖全部九种一级映射组合 + box/white 三种 fallback + point + 未知组合
+const CLASSIFY_GRAPH: DotGraph = {
+  stationName: "",
+  stationId: "",
+  nodes: [
+    { id: "n0", label: "CB_1", open: false, shape: "diamond", fillcolor: "green", x: 0, y: 0 },
+    { id: "n1", label: "SW_1", open: false, shape: "invtriangle", fillcolor: "orange", x: 0, y: 0 },
+    { id: "n2", label: "BBS_1", open: false, shape: "rect", fillcolor: "yellow", x: 0, y: 0 },
+    { id: "n3", label: "LD_1", open: false, shape: "ellipse", fillcolor: "lightblue", x: 0, y: 0 },
+    { id: "n4", label: "G_1", open: false, shape: "circle", fillcolor: "lightgreen", x: 0, y: 0 },
+    { id: "n5", label: "LN_1", open: false, shape: "house", fillcolor: "lightgray", x: 0, y: 0 },
+    { id: "n6", label: "SC_1", open: false, shape: "octagon", fillcolor: "pink", x: 0, y: 0 },
+    { id: "n7", label: "T2_1", open: false, shape: "doubleoctagon", fillcolor: "plum", x: 0, y: 0 },
+    { id: "n8", label: "T3_1", open: false, shape: "tripleoctagon", fillcolor: "thistle", x: 0, y: 0 },
+    { id: "n9", label: "P_1", open: false, shape: "point", fillcolor: "black", x: 0, y: 0 },
+    { id: "n10", label: "T3_1", open: false, shape: "box", fillcolor: "white", x: 0, y: 0 },
+    { id: "n11", label: "SH_1", open: false, shape: "box", fillcolor: "white", x: 0, y: 0 },
+    { id: "n12", label: "UNK_1", open: false, shape: "box", fillcolor: "white", x: 0, y: 0 },
+    { id: "n13", label: "UNK_2", open: false, shape: "hexagon", fillcolor: "purple", x: 0, y: 0 },
+  ],
+  edges: [],
+};
+
+describe("classifyDotNode", () => {
+  const ctx = buildClassifyContext(CLASSIFY_GRAPH);
+  // 按索引取分类结果，行文简短
+  const cls = (i: number) => classifyDotNode(CLASSIFY_GRAPH.nodes[i], ctx);
+
+  it("A2 一级映射：九种 shape|fillcolor 组合命中对应 DeviceKind", () => {
+    const cases: Array<[number, string]> = [
+      [0, "ac-breaker"],
+      [1, "ac-switch"],
+      [2, "ac-bus"],
+      [3, "ac-load"],
+      [4, "ac-generator"],
+      [5, "ac-line"],
+      [6, "ac-capacitor"],
+      [7, "ac-two-winding-transformer"],
+      [8, "ac-three-winding-transformer"],
+    ];
+    for (const [i, kind] of cases) {
+      expect(cls(i)).toEqual({ role: "device", kind });
+    }
+  });
+
+  it("A2 point → collapse", () => {
+    expect(cls(9)).toEqual({ role: "collapse" });
+  });
+
+  it("A2 box/white 且 label 与 tripleoctagon 同名 → winding-terminal，transformerLabel=该名", () => {
+    expect(cls(10)).toEqual({ role: "winding-terminal", transformerLabel: "T3_1" });
+  });
+
+  it("A2 box/white 且 label 前缀 SH_ → device ac-capacitor + flag=shunt-assumed-capacitor", () => {
+    expect(cls(11)).toEqual({ role: "device", kind: "ac-capacitor", flag: "shunt-assumed-capacitor" });
+  });
+
+  it("A2 box/white 其它 → device static-rect", () => {
+    expect(cls(12)).toEqual({ role: "device", kind: "static-rect" });
+  });
+
+  it("A2 未知组合（hexagon/purple）→ device static-rect", () => {
+    expect(cls(13)).toEqual({ role: "device", kind: "static-rect" });
+  });
+});
+
+describe("buildClassifyContext", () => {
+  it("收集图内全部 tripleoctagon 节点 label 集合", () => {
+    const ctx = buildClassifyContext(CLASSIFY_GRAPH);
+    expect(ctx.tripleLabels).toEqual(new Set(["T3_1"]));
+  });
+
+  it("图内无 tripleoctagon 时集合为空", () => {
+    const g: DotGraph = { stationName: "", stationId: "", nodes: [CLASSIFY_GRAPH.nodes[0]], edges: [] };
+    expect(buildClassifyContext(g).tripleLabels.size).toBe(0);
   });
 });
