@@ -83,4 +83,41 @@ describe("createCimExport", () => {
     expect(text).toContain('rdf:about="urn:uuid:___1__"');
     expect(text).not.toContain('rdf:about="urn:uuid:current"');
   });
+
+  it("缺关键参数时弹确认，确认后继续导出", async () => {
+    const saveLazyTextFile = vi.fn().mockResolvedValue(true);
+    const showGlobalConfirm = vi.fn().mockResolvedValue(true);
+    const exportFn = createCimExport({
+      nodes: [
+        node("line1", "ac-line", {}), // 无电压等级 + 无阻抗参数
+        node("bus1", "ac-bus", { i_vbase: "110" })
+      ],
+      edges: [], projectName: "示范站", activeModelId: "m1",
+      saveLazyTextFile, showGlobalConfirm
+    } as never);
+    await expect(exportFn()).resolves.toBe(true);
+    expect(showGlobalConfirm).toHaveBeenCalledTimes(1);
+    const text = showGlobalConfirm.mock.calls[0][0];
+    expect(text).toContain("缺少关键参数");
+    expect(text).toContain("1 个设备");
+    expect(text).toContain("电压等级");
+    expect(text).toContain("线路阻抗 r/x");
+    expect(saveLazyTextFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("缺参数且用户取消则不导出", async () => {
+    const saveLazyTextFile = vi.fn().mockResolvedValue(true);
+    const showGlobalConfirm = vi.fn().mockResolvedValue(false);
+    const exportFn = createCimExport({
+      nodes: [
+        node("line1", "ac-line", {}),
+        node("bus1", "ac-bus", { i_vbase: "110" })
+      ],
+      edges: [], projectName: "示范站", activeModelId: "m1",
+      saveLazyTextFile, showGlobalConfirm
+    } as never);
+    await expect(exportFn()).resolves.toBe(false);
+    expect(showGlobalConfirm).toHaveBeenCalledTimes(1);
+    expect(saveLazyTextFile).not.toHaveBeenCalled();
+  });
 });

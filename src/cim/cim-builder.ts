@@ -275,6 +275,12 @@ function numericParam(params: Record<string, string>, keys: string[]): number | 
   return undefined;
 }
 
+/** 变压器绕组侧电压参数 key（三绕组 i/k/j、双绕组 i/j；映射与导出前校验共用，防两处硬编码漂移） */
+function transformerSideVoltageKeys(kind: DeviceKind): string[] {
+  const isThree = kind === "ac-three-winding-transformer" || kind === "ac-three-winding-transformer-neutral";
+  return isThree ? ["i_vbase", "k_vbase", "j_vbase"] : ["i_vbase", "j_vbase"];
+}
+
 /** 阶段 4a：单一节点 → IR 设备对象（追加到对应数组） */
 function mapDeviceObjects(node: ModelNode, vbaseById: Map<number, string>, sink: CimPackage): void {
   const decision = cimClassForKind(node.kind);
@@ -307,10 +313,7 @@ function mapDeviceObjects(node: ModelNode, vbaseById: Map<number, string>, sink:
         name: node.name,
         vectorGroup: String(deviceParamValue(node.params, "vector_group") ?? deviceParamValue(node.params, "vectorGroup") ?? "").trim() || undefined
       });
-      const isThree = node.kind === "ac-three-winding-transformer" || node.kind === "ac-three-winding-transformer-neutral";
-      const sideKeys: Array<[number, string]> = isThree
-        ? [[0, "i_vbase"], [1, "k_vbase"], [2, "j_vbase"]]
-        : [[0, "i_vbase"], [1, "j_vbase"]];
+      const sideKeys: Array<[number, string]> = transformerSideVoltageKeys(node.kind).map((key, index) => [index, key] as [number, string]);
       const ratedS = numericParam(node.params, ["sn", "rated_s", "rated_capacity", "capacity"]) ?? 0;
       sideKeys.forEach(([sideIndex, voltageKey], index) => {
         const ratedU = numericParam(node.params, [voltageKey]) ?? 0;
@@ -384,11 +387,50 @@ function mapDeviceObjects(node: ModelNode, vbaseById: Map<number, string>, sink:
   }
 }
 
-/** 节点所属 VoltageLevel rdfId（按主电压线性索引；阶段 2 同序生成；无电压省略，序列化器跳过悬挂引用） */
+/** 节点所属 VoltageLevel rdfId（按主电压线性索引；阶段 2 同序启用；无电压省略，序列化器跳过悬挂引用） */
 function voltageLevelIdForNode(node: ModelNode): string | undefined {
   const voltage = nodePrimaryVoltage(node);
   if (voltage <= 0) return undefined;
   return `VL_${voltage}`;
+}
+
+/** 导出前校验（§7.4）：收集关键参数缺失设备。判定与 mapDeviceObjects 退化兜底对齐：
+ * 无主电压 → BV_UNKNOWN/无 VoltageLevel；线路缺 r 与 x → 0 兜底；变压器侧电压缺失 → 绕组 BV_UNKNOWN。 */
+export type MissingCriticalParam = {
+  nodeId: string;
+  name: string;
+  missing: string[];
+};
+
+export function collectMissingCriticalParams(nodes: readonly ModelNode[]): MissingCriticalParam[] {
+  function collect(node: ModelNode): string[] {
+    const decision = cimClassForKind(node.kind);
+    if (decision.skip) return [];
+    const missing: string[] = [];
+    if (nodePrimaryVoltage(node) <= 0) {
+      missing.push("电压等级");
+    }
+    if (decision.className === "ACLineSegment"
+      && numericParam(node.params, ["r", "r1", "resistance"]) === undefined
+      && numericParam(node.params, ["x", "x1", "reactance"]) === undefined) {
+      missing.push("线路阻抗 r/x");
+    }
+    if (decision.className === "PowerTransformer") {
+      const badSides = transformerSideVoltageKeys(node.kind).filter((key) => (numericParam(node.params, [key]) ?? 0) <= 0);
+      if (badSides.length > 0) {
+        missing.push(`绕组额定电压（${badSides.join("、")}）`);
+      }
+    }
+    return missing;
+  }
+  const result: MissingCriticalParam[] = [];
+  for (const node of nodes) {
+    const missing = collect(node);
+    if (missing.length > 0) {
+      result.push({ nodeId: node.id, name: node.name, missing });
+    }
+  }
+  return result;
 }
 
 /** 五阶段总入口。当前实现阶段 1-3 + 4a；阶段 4b/5 由后续任务填充对应数组。 */
