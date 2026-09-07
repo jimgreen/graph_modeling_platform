@@ -3550,6 +3550,115 @@ export function createImportSvgModelFile(__appScope: Record<string, any>) {
   };
 }
 
+// dot 导入完成反馈：仿 SVG 版，报告字段映射设备/连接线/收缩点/未知图元/容性假设/[OPEN] 开关，
+// 警告来自 unknownStaticNames 与 shuntAssumedCapacitorNames，前 20 条内联、其余写入操作日志。
+function dotModelImportCompletionFeedback(importedName: string, result: any) {
+  const report = result?.report ?? {};
+  const warnings = [
+    ...(Array.isArray(report.unknownStaticNames) ? report.unknownStaticNames.map((name: string) => `未知图元：${name}（按静态图元导入）`) : []),
+    ...(Array.isArray(report.shuntAssumedCapacitorNames) ? report.shuntAssumedCapacitorNames.map((name: string) => `容性假设：${name}（按电容器导入）`) : [])
+  ];
+  const warningLines = warnings.slice(0, 20).map((warning: string, index: number) => `${index + 1}. ${warning}`);
+  return {
+    warnings,
+    successMessage: [
+      `从 dot 生成模型成功：${importedName}`,
+      `设备：${Number(report.deviceCount) || 0}`,
+      `连接线：${Number(report.edgeCount) || 0}`,
+      `收缩点：${Number(report.collapsedCount) || 0}`,
+      `未知图元：${Number(report.unknownStaticCount) || 0}`,
+      `容性假设：${Array.isArray(report.shuntAssumedCapacitorNames) ? report.shuntAssumedCapacitorNames.length : 0}`,
+      `[OPEN] 开关：${Number(report.openSwitchCount) || 0}`,
+      `警告：${warnings.length}`,
+      ...(warningLines.length > 0 ? ["", ...warningLines] : []),
+      ...(warnings.length > warningLines.length ? ["", `其余 ${warnings.length - warningLines.length} 条警告已写入操作日志。`] : [])
+    ].join("\n")
+  };
+}
+
+export function createOpenDotModelImportFilePicker(__appScope: Record<string, any>) {
+  return (targetSchemeId = "") => {
+  const { dotModelImportInputRef, modelImportTargetSchemeIdRef, requireEditMode } = __appScope;
+    if (!requireEditMode("从 dot 生成模型")) {
+      return;
+    }
+    modelImportTargetSchemeIdRef.current = targetSchemeId;
+    if (dotModelImportInputRef.current) {
+      dotModelImportInputRef.current.value = "";
+      dotModelImportInputRef.current.click();
+    }
+  };
+}
+
+export function createImportDotModelFile(__appScope: Record<string, any>) {
+  return async (event: ChangeEvent<HTMLInputElement>) => {
+  const {
+    activeSchemeRecord,
+    commitImportedModelRecord,
+    createSavedProject,
+    createSavedScheme,
+    findSavedSchemeById,
+    importDotFile,
+    modelImportTargetSchemeIdRef,
+    requireEditMode,
+    schemes,
+    selectedSchemeRecord,
+    setPendingModelImportConflict,
+    writeOperationLog
+  } = __appScope;
+    const input = event.currentTarget;
+    if (!requireEditMode("从 dot 生成模型")) {
+      modelImportTargetSchemeIdRef.current = "";
+      input.value = "";
+      return;
+    }
+    const file = input.files?.[0];
+    if (!file) {
+      modelImportTargetSchemeIdRef.current = "";
+      input.value = "";
+      return;
+    }
+    try {
+      if (!/\.dot$/iu.test(file.name)) {
+        throw new Error("请选择 dot 文件。");
+      }
+      writeOperationLog(`正在从 dot 生成模型：${file.name}`);
+      const text = await file.text();
+      const importedName = file.name.replace(/\.dot$/iu, "").trim() || "dot 导入模型";
+      const result = importDotFile(text);
+      const targetScheme =
+        findSavedSchemeById(schemes, modelImportTargetSchemeIdRef.current) ??
+        activeSchemeRecord ??
+        selectedSchemeRecord ??
+        schemes[0] ??
+        createSavedScheme("默认方案");
+      const completionFeedback = dotModelImportCompletionFeedback(importedName, result);
+      const duplicateProject = targetScheme.projects.find((project: any) => project.name.trim() === importedName);
+      if (duplicateProject) {
+        setPendingModelImportConflict({
+          targetSchemeId: targetScheme.id,
+          importedProject: result.project,
+          importedName,
+          duplicateProjectId: duplicateProject.id,
+          duplicateProjectName: duplicateProject.name,
+          completionFeedback
+        });
+        return;
+      }
+      commitImportedModelRecord(targetScheme, createSavedProject(importedName, result.project));
+      for (const warning of completionFeedback.warnings) {
+        writeOperationLog(`dot 导入警告：${warning}`);
+      }
+      showGlobalMessage(completionFeedback.successMessage);
+    } catch (error) {
+      showGlobalMessage(error instanceof Error ? `从 dot 生成模型失败：${error.message}` : "从 dot 生成模型失败。");
+    } finally {
+      modelImportTargetSchemeIdRef.current = "";
+      input.value = "";
+    }
+  };
+}
+
 export function createResolveDuplicateSchemeImport(__appScope: Record<string, any>) {
   return (action: "merge" | "rename" | "cancel") => {
   const { applyBackendSchemeArchiveImport, commitImportedSchemeRecord, findSavedSchemeById, mergeImportedSchemeIntoExisting, pendingSchemeImportConflict, persistSchemeTreeToBackend, promptUniqueRecordName, replaceSavedSchemeById, requireEditMode, savedChildSchemeNames, schemePathForRecord, schemePathForScheme, schemes, selectSingleScheme, setExpandedSchemeIds, setPendingSchemeImportConflict, setSchemes, uniqueRecordName, uploadBackendSchemeArchive, writeOperationLog } = __appScope;

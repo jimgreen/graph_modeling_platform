@@ -540,6 +540,8 @@ import {
   createCompleteImportedModelFeedback,
   createImportSvgModelFile,
   createOpenSvgModelImportFilePicker,
+  createImportDotModelFile,
+  createOpenDotModelImportFilePicker,
   createProgrammaticExportEDeviceDefinition,
   createProgrammaticImportEDeviceDefinition
 } from "./appDeviceDefinitionFactories";
@@ -2691,6 +2693,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const exportCurrentModelFile = createExportCurrentModelFile(__appScope); Object.assign(__appScope, { exportCurrentModelFile });
   const openModelImportFilePicker = createOpenModelImportFilePicker(__appScope); Object.assign(__appScope, { openModelImportFilePicker });
   const openSvgModelImportFilePicker = createOpenSvgModelImportFilePicker(__appScope); Object.assign(__appScope, { openSvgModelImportFilePicker });
+  const openDotModelImportFilePicker = createOpenDotModelImportFilePicker(__appScope); Object.assign(__appScope, { openDotModelImportFilePicker });
   const openSchemeImportFilePicker = createOpenSchemeImportFilePicker(__appScope); Object.assign(__appScope, { openSchemeImportFilePicker });
   const mergeImportedSchemeIntoExisting = createMergeImportedSchemeIntoExisting(__appScope); Object.assign(__appScope, { mergeImportedSchemeIntoExisting });
   const commitImportedSchemeRecord = createCommitImportedSchemeRecord(__appScope); Object.assign(__appScope, { commitImportedSchemeRecord });
@@ -2700,6 +2703,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const completeImportedModelFeedback = createCompleteImportedModelFeedback(__appScope); Object.assign(__appScope, { completeImportedModelFeedback });
   const importModelFile = createImportModelFile(__appScope); Object.assign(__appScope, { importModelFile });
   const importSvgModelFile = createImportSvgModelFile(__appScope); Object.assign(__appScope, { importSvgModelFile });
+  const importDotModelFile = createImportDotModelFile(__appScope); Object.assign(__appScope, { importDotModelFile });
   const resolveDuplicateSchemeImport = createResolveDuplicateSchemeImport(__appScope); Object.assign(__appScope, { resolveDuplicateSchemeImport });
   const resolveDuplicateModelImport = createResolveDuplicateModelImport(__appScope); Object.assign(__appScope, { resolveDuplicateModelImport });
   const exportSchemeRecord = createExportSchemeRecord(__appScope); Object.assign(__appScope, { exportSchemeRecord });

@@ -1,9 +1,12 @@
 ﻿import { afterEach, describe, expect, test, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   createSyncExistingNodesWithTemplateDefinitions
 } from "./appExtracted/appGraphMeasurementFactories";
+import { AppContextMenus } from "./appExtracted/appContextMenus";
 import { normalizeCustomComponentLibraries, normalizeDefinitionRowEnumFields } from "./appExtracted/appPersistenceLibraryExport";
 import {
   createComputeStateIconDrawingSmartAlignmentSnap,
@@ -11,6 +14,7 @@ import {
   createCompleteImportedModelFeedback,
   createFindEditableRouteSegmentIndex,
   createImportSvgModelFile,
+  createImportDotModelFile,
   createApplyExistingImage,
   createApplyIconLibraryCatalogIcon,
   createApplyStateIconDrawingDialog,
@@ -46,6 +50,7 @@ import {
   createSelectCustomCategoryLibrary,
   createSvgExportReferencedImageHrefById,
   createOpenSvgModelImportFilePicker,
+  createOpenDotModelImportFilePicker,
   createOpenStateIconDrawingDialog,
   createImportCustomComponentSvg,
   createPasteCustomComponentTemplate,
@@ -348,6 +353,221 @@ describe("SVG model import factories", () => {
     expect(commitImportedModelRecord).toHaveBeenCalledWith(targetScheme, expect.objectContaining({ name: "一次图 (2)" }));
     expect(completeImportedModelFeedback).toHaveBeenCalledWith(conflict.completionFeedback);
     expect(setPendingModelImportConflict).toHaveBeenCalledWith(null);
+  });
+});
+
+describe("dot model import factories", () => {
+  test("blocks the dot picker before entering edit mode", () => {
+    const click = vi.fn();
+    const target = { current: "" };
+    const open = createOpenDotModelImportFilePicker({
+      requireEditMode: vi.fn(() => false),
+      dotModelImportInputRef: { current: { value: "old", click } },
+      modelImportTargetSchemeIdRef: target
+    });
+
+    open("scheme-2");
+
+    expect(target.current).toBe("");
+    expect(click).not.toHaveBeenCalled();
+  });
+
+  test("opens the dot picker for the right-clicked scheme in edit mode", () => {
+    const click = vi.fn();
+    const target = { current: "" };
+    const input = { value: "old", click };
+    const open = createOpenDotModelImportFilePicker({
+      requireEditMode: vi.fn(() => true),
+      dotModelImportInputRef: { current: input },
+      modelImportTargetSchemeIdRef: target
+    });
+
+    open("scheme-2");
+
+    expect(target.current).toBe("scheme-2");
+    expect(input.value).toBe("");
+    expect(click).toHaveBeenCalledOnce();
+  });
+
+  test("imports a dot file into the target scheme and reports statistics", async () => {
+    const targetScheme = { id: "scheme-2", name: "目标方案", projects: [] };
+    const commitImportedModelRecord = vi.fn();
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    const importDotFile = vi.fn(() => ({
+      project: { version: 1, name: "望道变_6", nodes: [], edges: [] },
+      report: {
+        deviceCount: 5,
+        edgeCount: 6,
+        collapsedCount: 2,
+        openSwitchCount: 1,
+        unknownStaticCount: 1,
+        unknownStaticNames: ["未知A"],
+        shuntAssumedCapacitorNames: ["SH_电容"],
+        kindCounts: {},
+        selfLoopDropped: 0,
+        danglingEdgeDropped: 0,
+        voltageInferredCount: 3
+      }
+    }));
+    const importFile = createImportDotModelFile({
+      activeSchemeRecord: null,
+      selectedSchemeRecord: null,
+      schemes: [targetScheme],
+      modelImportTargetSchemeIdRef: { current: "scheme-2" },
+      requireEditMode: vi.fn(() => true),
+      findSavedSchemeById: (_schemes: unknown, id: string) => id === "scheme-2" ? targetScheme : null,
+      createSavedScheme: vi.fn(),
+      createSavedProject: (name: string, project: unknown) => ({ id: "project-new", name, project }),
+      commitImportedModelRecord,
+      setPendingModelImportConflict: vi.fn(),
+      importDotFile,
+      writeOperationLog: vi.fn()
+    });
+    const input = { files: [{ name: "望道变.dot", text: async () => "digraph G {}" }], value: "chosen" };
+
+    await importFile({ currentTarget: input } as never);
+
+    expect(importDotFile).toHaveBeenCalledWith("digraph G {}");
+    expect(commitImportedModelRecord).toHaveBeenCalledWith(targetScheme, expect.objectContaining({ name: "望道变" }));
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("从 dot 生成模型成功：望道变"));
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("设备：5"));
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("连接线：6"));
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("收缩点：2"));
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("未知图元：1"));
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("容性假设：1"));
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("[OPEN] 开关：1"));
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("1. 未知图元：未知A（按静态图元导入）"));
+    expect(input.value).toBe("");
+  });
+
+  test("rejects a non-dot file without creating a model", async () => {
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    const importDotFile = vi.fn();
+    const commitImportedModelRecord = vi.fn();
+    const importFile = createImportDotModelFile({
+      activeSchemeRecord: null,
+      selectedSchemeRecord: null,
+      schemes: [],
+      modelImportTargetSchemeIdRef: { current: "" },
+      requireEditMode: vi.fn(() => true),
+      findSavedSchemeById: () => null,
+      createSavedScheme: vi.fn(),
+      createSavedProject: vi.fn(),
+      commitImportedModelRecord,
+      setPendingModelImportConflict: vi.fn(),
+      importDotFile,
+      writeOperationLog: vi.fn()
+    });
+    const input = { files: [{ name: "望道变.txt", text: async () => "x" }], value: "chosen" };
+
+    await importFile({ currentTarget: input } as never);
+
+    expect(importDotFile).not.toHaveBeenCalled();
+    expect(commitImportedModelRecord).not.toHaveBeenCalled();
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("从 dot 生成模型失败：请选择 dot 文件。"));
+    expect(input.value).toBe("");
+  });
+
+  test("stores dot completion feedback when a duplicate model needs resolution", async () => {
+    const targetScheme = {
+      id: "scheme-2",
+      name: "目标方案",
+      projects: [{ id: "project-old", name: "望道变" }]
+    };
+    const setPendingModelImportConflict = vi.fn();
+    const importFile = createImportDotModelFile({
+      activeSchemeRecord: null,
+      selectedSchemeRecord: null,
+      schemes: [targetScheme],
+      modelImportTargetSchemeIdRef: { current: "scheme-2" },
+      requireEditMode: vi.fn(() => true),
+      findSavedSchemeById: () => targetScheme,
+      createSavedScheme: vi.fn(),
+      createSavedProject: vi.fn(),
+      commitImportedModelRecord: vi.fn(),
+      setPendingModelImportConflict,
+      importDotFile: vi.fn(() => ({
+        project: { version: 1, name: "望道变_6", nodes: [], edges: [] },
+        report: {
+          deviceCount: 0,
+          edgeCount: 0,
+          collapsedCount: 0,
+          openSwitchCount: 0,
+          unknownStaticCount: 0,
+          unknownStaticNames: ["未知B"],
+          shuntAssumedCapacitorNames: [],
+          kindCounts: {},
+          selfLoopDropped: 0,
+          danglingEdgeDropped: 0,
+          voltageInferredCount: 0
+        }
+      })),
+      writeOperationLog: vi.fn()
+    });
+
+    await importFile({
+      currentTarget: { files: [{ name: "望道变.dot", text: async () => "digraph G {}" }], value: "chosen" }
+    } as never);
+
+    const conflict = setPendingModelImportConflict.mock.calls[0]?.[0];
+    expect(conflict).toMatchObject({
+      targetSchemeId: "scheme-2",
+      importedName: "望道变",
+      duplicateProjectId: "project-old",
+      duplicateProjectName: "望道变",
+      completionFeedback: { warnings: ["未知图元：未知B（按静态图元导入）"] }
+    });
+    expect(conflict.completionFeedback.successMessage).toContain("从 dot 生成模型成功：望道变");
+  });
+
+  test("renders the dot import entry in the scheme context menu while in edit mode", () => {
+    const Icon = () => null;
+    const scope = {
+      contextMenu: undefined,
+      projectMenu: { schemeId: "scheme-1" },
+      isEditMode: true,
+      contextMenuClassName: () => "ctx",
+      contextMenuStyle: () => ({}),
+      contextMenuRef: { current: null },
+      runContextMenuAction: () => undefined,
+      FolderOpen: Icon,
+      Trash2: Icon,
+      Download: Icon,
+      FileInput: Icon,
+      Pencil: Icon,
+      Copy: Icon,
+      Plus: Icon
+    };
+    const markup = renderToStaticMarkup(createElement(AppContextMenus, { scope }));
+
+    expect(markup).toContain("从 dot 生成模型");
+    expect(markup).toContain("从 SVG 生成模型");
+  });
+
+  test("hides the dot import entry from the scheme context menu in browse mode", () => {
+    const Icon = () => null;
+    const scope = {
+      contextMenu: undefined,
+      projectMenu: { schemeId: "scheme-1" },
+      isEditMode: false,
+      contextMenuClassName: () => "ctx",
+      contextMenuStyle: () => ({}),
+      contextMenuRef: { current: null },
+      runContextMenuAction: () => undefined,
+      FolderOpen: Icon,
+      Trash2: Icon,
+      Download: Icon,
+      FileInput: Icon,
+      Pencil: Icon,
+      Copy: Icon,
+      Plus: Icon
+    };
+    const markup = renderToStaticMarkup(createElement(AppContextMenus, { scope }));
+
+    expect(markup).not.toContain("从 dot 生成模型");
+    expect(markup).not.toContain("从 SVG 生成模型");
   });
 });
 
