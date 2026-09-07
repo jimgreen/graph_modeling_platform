@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { parseDot, buildClassifyContext, classifyDotNode } from "./dotImport";
-import type { DotGraph } from "./dotImport";
+import { parseDot, buildClassifyContext, classifyDotNode, collapseDotGraph } from "./dotImport";
+import type { DotGraph, DotNode } from "./dotImport";
 
 // 内联最小 dot 样本（4 节点，覆盖 pos 剥 !、[OPEN] 剥离、Station 提取）
 const MINI_DOT = `digraph "6" {
@@ -167,5 +167,98 @@ describe("buildClassifyContext", () => {
   it("图内无 tripleoctagon 时集合为空", () => {
     const g: DotGraph = { stationName: "", stationId: "", nodes: [CLASSIFY_GRAPH.nodes[0]], edges: [] };
     expect(buildClassifyContext(g).tripleLabels.size).toBe(0);
+  });
+});
+
+// ===== A3 收缩（collapse）测试 =====
+// 内联建图辅助：节点简写（缺省 shape/fillcolor 兜底）与图构造，风格同 CLASSIFY_GRAPH
+const nd = (id: string, label: string, shape: string, fillcolor = "black"): DotNode => ({
+  id,
+  label,
+  open: false,
+  shape,
+  fillcolor,
+  x: 0,
+  y: 0,
+});
+const mg = (nodes: DotNode[], edges: Array<[string, string]>): DotGraph => ({
+  stationName: "",
+  stationId: "",
+  nodes,
+  edges: edges.map(([from, to]) => ({ from, to })),
+});
+
+describe("collapseDotGraph", () => {
+  it("A3 链 A→point→B：point 收缩，devices=[A,B] links=[A-B]", () => {
+    const g = mg(
+      [nd("n0", "A", "rect", "yellow"), nd("n1", "P_1", "point"), nd("n2", "B", "ellipse", "lightblue")],
+      [["n0", "n1"], ["n1", "n2"]],
+    );
+    const r = collapseDotGraph(g);
+    expect(r.devices.map((d) => d.label)).toEqual(["A", "B"]);
+    expect(r.links).toEqual([{ from: "A", to: "B" }]);
+  });
+
+  it("A3 两 point 相邻 A→p1→p2→B：point 全并组，devices=[A,B] links=[A-B]", () => {
+    const g = mg(
+      [
+        nd("n0", "A", "rect", "yellow"),
+        nd("n1", "P_1", "point"),
+        nd("n2", "P_2", "point"),
+        nd("n3", "B", "ellipse", "lightblue"),
+      ],
+      [["n0", "n1"], ["n1", "n2"], ["n2", "n3"]],
+    );
+    const r = collapseDotGraph(g);
+    expect(r.devices.map((d) => d.label)).toEqual(["A", "B"]);
+    expect(r.links).toEqual([{ from: "A", to: "B" }]);
+  });
+
+  it("A3 绕组端子链 开关→point→T3_box→tripleoctagon：links 收缩到 tripleoctagon 设备", () => {
+    const g = mg(
+      [
+        nd("n0", "SW_1", "invtriangle", "orange"),
+        nd("n1", "P_1", "point"),
+        nd("n2", "T3_1", "box", "white"),
+        nd("n3", "T3_1", "tripleoctagon", "thistle"),
+      ],
+      [["n0", "n1"], ["n1", "n2"], ["n2", "n3"]],
+    );
+    const r = collapseDotGraph(g);
+    // 收缩后设备为开关与三绕组本体；边收敛到 tripleoctagon 设备
+    expect(r.devices.map((d) => d.label)).toEqual(["SW_1", "T3_1"]);
+    expect(r.links).toEqual([{ from: "SW_1", to: "T3_1" }]);
+  });
+
+  it("A3 自环 A→p→A：link 丢弃，selfLoopDropped=1", () => {
+    const g = mg(
+      [nd("n0", "A", "rect", "yellow"), nd("n1", "P_1", "point")],
+      [["n0", "n1"], ["n1", "n0"]],
+    );
+    const r = collapseDotGraph(g);
+    expect(r.links).toEqual([]);
+    expect(r.reportPart.selfLoopDropped).toBe(1);
+  });
+
+  it("A3 悬空边 n99→n100（n99 不存在）：忽略，danglingEdgeDropped=1", () => {
+    const g = mg([nd("n0", "A", "rect", "yellow")], [["n99", "n100"]]);
+    const r = collapseDotGraph(g);
+    expect(r.links).toEqual([]);
+    expect(r.devices.map((d) => d.label)).toEqual(["A"]);
+    expect(r.reportPart.danglingEdgeDropped).toBe(1);
+  });
+
+  it("A3 望道变 fixture：devices+collapsedCount=250，links 数与实跑一致（G8）", () => {
+    const text = readFileSync(new URL("./__fixtures__/dot/望道变_6.dot", import.meta.url), "utf8");
+    const r = collapseDotGraph(parseDot(text));
+    // 250 节点 = 141 设备 + 109 收缩（103 point + 6 绕组端子）
+    expect(r.devices.length).toBe(141);
+    expect(r.reportPart.collapsedCount).toBe(109);
+    expect(r.devices.length + r.reportPart.collapsedCount).toBe(250);
+    // 实跑值（G8：以实跑为准）；T3_1/T3_2 各收 3 条绕组侧边
+    expect(r.links.length).toBe(185);
+    expect(r.reportPart.selfLoopDropped).toBe(24);
+    expect(r.reportPart.danglingEdgeDropped).toBe(0);
+    expect(r.links.filter((l) => l.from === l.to)).toEqual([]);
   });
 });
