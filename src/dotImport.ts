@@ -395,9 +395,13 @@ export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
     }
     const node = createDefaultNode(kind, tx(d));
     node.name = d.label;
-    // [OPEN] 开关分位 → params.status
+    // [OPEN] 开关分位：status 与 closed_status 同写。
+    // 平台状态解析 resolveDeviceStateVisual 对开关类读 closed_status ?? closedStatus ?? status
+    // （模板默认 closed_status="1"），只写 status 时画布/CIM 仍按闭合渲染。
     if (kind === "ac-switch" || kind === "ac-breaker") {
-      node.params.status = d.open ? "0" : "1";
+      const state = d.open ? "0" : "1";
+      node.params.status = state;
+      node.params.closed_status = state;
       if (d.open) openSwitchCount++;
     }
     // static-rect 置灰兜底（fillColor 参数名与 static-rect 模板一致）

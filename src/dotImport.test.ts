@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { resolveDeviceStateVisual } from "./model";
+import { getTemplate } from "./model-node-ops";
 import { parseDot, buildClassifyContext, classifyDotNode, collapseDotGraph, mapDotGraphToModel, importDotFile } from "./dotImport";
 import type { DotGraph, DotNode } from "./dotImport";
 
@@ -287,11 +289,19 @@ describe("mapDotGraphToModel", () => {
     expect(byName.get("BBS_1")!.params.rated_voltage).toBe("230");
   });
 
-  it("A4 [OPEN] 开关：status=0；非 OPEN 开关 status=1", () => {
+  it("A4 [OPEN] 开关：status=0 且 closed_status=0；非 OPEN 开关 status=1 且 closed_status=1", () => {
     const { project } = mapDotGraphToModel(parseDot(MINI_DOT));
     const byName = new Map(project.nodes.map((n) => [n.name, n]));
-    expect(byName.get("SW_1")!.params.status).toBe("0");
-    expect(byName.get("CB_1")!.params.status).toBe("1");
+    const sw = byName.get("SW_1")!;
+    const br = byName.get("CB_1")!;
+    expect(sw.params.status).toBe("0");
+    expect(sw.params.closed_status).toBe("0");
+    expect(br.params.status).toBe("1");
+    expect(br.params.closed_status).toBe("1");
+    // 画布渲染状态锁定：平台对开关类读 closed_status（resolveDeviceStateVisual）
+    // OPEN 开关渲染为分位（value=0），非 OPEN 断路器渲染为闭合（value=1）
+    expect(resolveDeviceStateVisual(getTemplate("ac-switch"), sw)?.value).toBe("0");
+    expect(resolveDeviceStateVisual(getTemplate("ac-breaker"), br)?.value).toBe("1");
   });
 
   it("A4 边构造：母线侧 terminalId 留空，设备侧端子已分配", () => {
