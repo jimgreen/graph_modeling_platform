@@ -372,6 +372,31 @@ describe("mapDotGraphToModel", () => {
     expect(project.nodes.find((n) => n.kind === "ac-capacitor")?.name).toBe("SH_1");
   });
 
+  it("A4 同名多实例设备：独立实例保留，duplicateLabelNames 报告计数，连接落在首个实例", () => {
+    const g: DotGraph = {
+      stationName: "",
+      stationId: "",
+      nodes: [
+        { id: "n0", label: "BBS_1", open: false, shape: "rect", fillcolor: "yellow", x: 0, y: 0 },
+        { id: "n1", label: "BBS_1", open: false, shape: "rect", fillcolor: "yellow", x: 100, y: 0 },
+        { id: "n2", label: "LD_1", open: false, shape: "ellipse", fillcolor: "lightblue", x: 200, y: 0 },
+      ],
+      edges: [
+        { from: "n0", to: "n2" },
+        { from: "n1", to: "n2" },
+      ],
+    };
+    const { project, report } = mapDotGraphToModel(g);
+    // 独立实例保留（2 个同名母线都在，spec §7）
+    expect(project.nodes.filter((n) => n.name === "BBS_1")).toHaveLength(2);
+    // 报告计数收录重复 label
+    expect(report.duplicateLabelNames).toEqual(["BBS_1"]);
+    // 同名对直积跳过 + 重复 label 对 link 去重后仅 1 边，落在首个实例（图序 n0，平移后 x=100）
+    expect(project.edges).toHaveLength(1);
+    const firstBus = project.nodes.find((n) => n.name === "BBS_1" && n.position.x === 100)!;
+    expect(project.edges[0].sourceId === firstBus.id || project.edges[0].targetId === firstBus.id).toBe(true);
+  });
+
   it("A4 空图：返回空 project 与 report，不抛错", () => {
     const { project, report } = mapDotGraphToModel({ stationName: "", stationId: "", nodes: [], edges: [] });
     expect(project.nodes).toEqual([]);

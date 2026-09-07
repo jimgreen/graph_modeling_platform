@@ -274,7 +274,7 @@ export function collapseDotGraph(graph: DotGraph): CollapsedDotGraph {
     const su = resolve(e.from);
     const sv = resolve(e.to);
     if (su.length === 1 && sv.length === 1 && su[0].id === sv[0].id) {
-      const key = e.from < e.to ? `${e.from} ${e.to}` : `${e.to} ${e.from}`;
+      const key = e.from < e.to ? `${e.from}|${e.to}` : `${e.to}|${e.from}`;
       if (!seenSelfEdge.has(key)) {
         seenSelfEdge.add(key);
         selfLoopDropped++;
@@ -286,7 +286,7 @@ export function collapseDotGraph(graph: DotGraph): CollapsedDotGraph {
       for (const b of sv) {
         if (a.label === b.label) continue;
         const [x, y] = a.label < b.label ? [a.label, b.label] : [b.label, a.label];
-        linkSet.set(`${x} ${y}`, { from: x, to: y });
+        linkSet.set(`${x}|${y}`, { from: x, to: y });
       }
     }
   }
@@ -316,6 +316,9 @@ export interface DotImportReport {
   unknownStaticCount: number;
   unknownStaticNames: string[];
   shuntAssumedCapacitorNames: string[];
+  // 同名多实例设备 label 清单（角色 device 且 label 重复，非绕组端子场景）；
+  // 同名设备已按首个实例连接，请人工核查（spec §7：独立实例保留 + 报告计数）
+  duplicateLabelNames: string[];
   voltageInferredCount: number;
 }
 
@@ -375,6 +378,7 @@ export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
   const kindCounts = {} as Record<DeviceKind, number>;
   const unknownStaticNames: string[] = [];
   const shuntAssumedCapacitorNames: string[] = [];
+  const duplicateLabels = new Set<string>(); // 同名多实例设备 label（去重收集，图序首次重复即记录）
   let openSwitchCount = 0;
   let extraSelfLoopDropped = 0;
 
@@ -412,8 +416,12 @@ export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
     nodes.push(node);
     modelByDotNode.set(d, node);
     const list = nodeByLabel.get(d.label);
-    if (list) list.push(node);
-    else nodeByLabel.set(d.label, [node]);
+    if (list) {
+      list.push(node);
+      duplicateLabels.add(d.label); // 第二实例起计入同名清单（首实例仍由 [0] 消歧连接）
+    } else {
+      nodeByLabel.set(d.label, [node]);
+    }
   }
 
   // —— 边构造：端子按设备侧几何最近未占用端子分配；母线侧留空 ——
@@ -562,6 +570,7 @@ export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
     unknownStaticCount: unknownStaticNames.length,
     unknownStaticNames,
     shuntAssumedCapacitorNames,
+    duplicateLabelNames: [...duplicateLabels],
     voltageInferredCount,
   };
   return { project, report };
