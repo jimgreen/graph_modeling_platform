@@ -144,3 +144,142 @@ export function classifyDotNode(node: DotNode, ctx: ClassifyContext): DotNodeCla
   const kind = STYLE_KIND_MAP[`${node.shape}|${node.fillcolor}`];
   return kind ? { role: "device", kind } : { role: "device", kind: "static-rect" };
 }
+
+// ===== 图收缩（collapse）阶段 =====
+
+// 收缩后连接：端点均为设备 label（非 n 序号）；
+// 同名设备多实例时由 devices 数组出现序（=instance 序号）在 Task 4 消歧
+export interface DotLink {
+  from: string;
+  to: string;
+}
+
+// 收缩报告片段（Task 4 并入导入总报告）
+export interface CollapseReportPart {
+  collapsedCount: number;
+  selfLoopDropped: number;
+  danglingEdgeDropped: number;
+}
+
+export interface CollapsedDotGraph {
+  // 收缩后剩余设备：全部 device 节点（原值含坐标，R6；坐标变换留给 Task 4）
+  devices: DotNode[];
+  links: DotLink[];
+  reportPart: CollapseReportPart;
+}
+
+/**
+ * 图收缩：point 与绕组端子并入设备组，设备间直连成 links。
+ * R1：point 与所有直接邻居 union；无设备整组丢弃。
+ * R3：绕组端子 box 与同名 tripleoctagon union。
+ * R4/R5：边重写自环/悬空丢弃并计数。
+ */
+export function collapseDotGraph(graph: DotGraph): CollapsedDotGraph {
+  const ctx = buildClassifyContext(graph);
+  // 节点角色缓存（id → class）
+  const cls = new Map<string, DotNodeClass>();
+  for (const node of graph.nodes) cls.set(node.id, classifyDotNode(node, ctx));
+  const role = (id: string): DotNodeClass["role"] | undefined => cls.get(id)?.role;
+
+  // 简易并查集（父指针 + 路径压缩）
+  const parent = new Map<string, string>();
+  for (const node of graph.nodes) parent.set(node.id, node.id);
+  const find = (x: string): string => {
+    let root = x;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    while (parent.get(x) !== root) {
+      const next = parent.get(x)!;
+      parent.set(x, root);
+      x = next;
+    }
+    return root;
+  };
+  const union = (a: string, b: string): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+
+  // R1：point 与所有直接邻居 union；绕组端子与其邻居（含 tripleoctagon）union
+  for (const e of graph.edges) {
+    const ru = role(e.from);
+    const rv = role(e.to);
+    if (ru === undefined || rv === undefined) continue; // 悬空端点不参与并组
+    if (ru === "collapse" || rv === "collapse" || ru === "winding-terminal" || rv === "winding-terminal") {
+      union(e.from, e.to);
+    }
+  }
+  // R3：绕组端子与同名 tripleoctagon union（即使不相邻也生效）
+  const triples = graph.nodes.filter((n) => n.shape === TRIPLE_OCTAGON);
+  for (const node of graph.nodes) {
+    if (role(node.id) === "winding-terminal") {
+      const wt = cls.get(node.id) as { role: "winding-terminal"; transformerLabel: string };
+      for (const t of triples) {
+        if (t.label === wt.transformerLabel) union(node.id, t.id);
+      }
+    }
+  }
+
+  // 节点本体索引（resolve 需返回 DotNode 原值）
+  const nodeById = new Map<string, DotNode>();
+  for (const node of graph.nodes) nodeById.set(node.id, node);
+
+  // 每组设备集（role=device 成员；供 point/绕组端子端点解析）
+  const groupDevices = new Map<string, DotNode[]>();
+  for (const node of graph.nodes) {
+    if (role(node.id) === "device") {
+      const root = find(node.id);
+      const list = groupDevices.get(root);
+      if (list) list.push(node);
+      else groupDevices.set(root, [node]);
+    }
+  }
+  // 端点解析：设备→自身；point/绕组端子→所在组全部设备
+  const resolve = (id: string): DotNode[] => {
+    if (role(id) === "device") return [nodeById.get(id)!];
+    return groupDevices.get(find(id)) ?? [];
+  };
+
+  // 输出设备：全部 device 节点按图序（组内多设备并存——A3 两 point 链即此情形）
+  const devices = graph.nodes.filter((n) => role(n.id) === "device");
+
+  // 边重写：端点 → 设备集；两端同单一设备=自环；端点不存在=悬空
+  let selfLoopDropped = 0;
+  let danglingEdgeDropped = 0;
+  const linkSet = new Map<string, DotLink>(); // key=label 对（无向规范化）
+  const seenSelfEdge = new Set<string>(); // 自环按无向边去重计数
+  for (const e of graph.edges) {
+    if (!parent.has(e.from) || !parent.has(e.to)) {
+      danglingEdgeDropped++;
+      continue;
+    }
+    const su = resolve(e.from);
+    const sv = resolve(e.to);
+    if (su.length === 1 && sv.length === 1 && su[0].id === sv[0].id) {
+      const key = e.from < e.to ? `${e.from} ${e.to}` : `${e.to} ${e.from}`;
+      if (!seenSelfEdge.has(key)) {
+        seenSelfEdge.add(key);
+        selfLoopDropped++;
+      }
+      continue;
+    }
+    // 两端设备集做直积；同名自配对丢弃
+    for (const a of su) {
+      for (const b of sv) {
+        if (a.label === b.label) continue;
+        const [x, y] = a.label < b.label ? [a.label, b.label] : [b.label, a.label];
+        linkSet.set(`${x} ${y}`, { from: x, to: y });
+      }
+    }
+  }
+
+  return {
+    devices,
+    links: [...linkSet.values()],
+    reportPart: {
+      collapsedCount: graph.nodes.length - devices.length,
+      selfLoopDropped,
+      danglingEdgeDropped,
+    },
+  };
+}
