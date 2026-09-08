@@ -386,6 +386,166 @@ export function deviceRotation(
   return 0;
 }
 
+// ===== 锚点到锚点正交布线（spec §3.3：拐点 ≤2，预算内避让，超预算接受交叉） =====
+
+// 避让净距：Z 形 lane 由阻挡盒边界再外扩此值（语义同引擎 ROUTE_BLOCKER_PADDING 的最小净距）
+const IMPORT_ROUTE_PADDING = 2;
+
+// 阻挡盒（position 为中心；90/270 旋转交换宽高，语义同引擎 bodyVisualBoxForNode）
+function importRouteBlockerBox(node: Pick<ModelNode, "position" | "size" | "rotation">): {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+} {
+  const swap = Math.abs(Math.sin((node.rotation * Math.PI) / 180)) > 0.5;
+  const hw = (swap ? node.size.height : node.size.width) / 2;
+  const hh = (swap ? node.size.width : node.size.height) / 2;
+  return {
+    minX: node.position.x - hw,
+    minY: node.position.y - hh,
+    maxX: node.position.x + hw,
+    maxY: node.position.y + hh,
+  };
+}
+
+// 轴对齐线段是否与盒相交（含边界）
+function segmentIntersectsBox(
+  a: Point,
+  b: Point,
+  box: { minX: number; minY: number; maxX: number; maxY: number },
+): boolean {
+  if (a.y === b.y) {
+    return (
+      a.y >= box.minY &&
+      a.y <= box.maxY &&
+      Math.max(a.x, b.x) >= box.minX &&
+      Math.min(a.x, b.x) <= box.maxX
+    );
+  }
+  return (
+    a.x >= box.minX &&
+    a.x <= box.maxX &&
+    Math.max(a.y, b.y) >= box.minY &&
+    Math.min(a.y, b.y) <= box.maxY
+  );
+}
+
+function routeIntersectsBlockers(
+  route: Point[],
+  boxes: Array<{ minX: number; minY: number; maxX: number; maxY: number }>,
+): boolean {
+  for (let i = 1; i < route.length; i++) {
+    for (const box of boxes) {
+      if (segmentIntersectsBox(route[i - 1], route[i], box)) return true;
+    }
+  }
+  return false;
+}
+
+// 压缩：去连续重复点与共线中间点
+function compactRoute(route: Point[]): Point[] {
+  const deduped: Point[] = [];
+  for (const p of route) {
+    const prev = deduped[deduped.length - 1];
+    if (!prev || prev.x !== p.x || prev.y !== p.y) deduped.push(p);
+  }
+  const result: Point[] = [];
+  for (let i = 0; i < deduped.length; i++) {
+    const prev = result[result.length - 1];
+    const cur = deduped[i];
+    const next = deduped[i + 1];
+    if (prev && next && ((prev.x === cur.x && cur.x === next.x) || (prev.y === cur.y && cur.y === next.y))) {
+      continue; // 共线中间点
+    }
+    result.push(cur);
+  }
+  return result;
+}
+
+function routeLength(route: Point[]): number {
+  let sum = 0;
+  for (let i = 1; i < route.length; i++) {
+    sum += Math.abs(route[i].x - route[i - 1].x) + Math.abs(route[i].y - route[i - 1].y);
+  }
+  return sum;
+}
+
+/**
+ * 锚点到锚点正交布线（spec §3.3）：拐点 ≤ maxCorners（默认 2）。
+ * 候选：直连（0 拐）→ L 形两条（1 拐）→ Z 形 lane（2 拐，由与点对走廊相交的阻挡盒边界外扩导出）。
+ * 评分：不穿第三方设备优先 → 拐点少 → 路径短；全部候选都穿则接受交叉，取拐点最少/路径最短者。
+ * excludedIds 为本边两端点设备 id（端点设备不算阻挡）。
+ */
+export function orthogonalRouteWithinCorners(
+  start: Point,
+  end: Point,
+  blockers: ModelNode[],
+  excludedIds: string[],
+  maxCorners = 2,
+): Point[] {
+  const excluded = new Set(excludedIds);
+  const boxes = blockers.filter((n) => !excluded.has(n.id)).map((n) => importRouteBlockerBox(n));
+  const rawCandidates: Point[][] = [];
+  if (start.x === end.x || start.y === end.y) {
+    rawCandidates.push([start, end]); // 直连（0 拐）
+  }
+  rawCandidates.push([start, { x: end.x, y: start.y }, end]); // L 形（1 拐）
+  rawCandidates.push([start, { x: start.x, y: end.y }, end]);
+  if (maxCorners >= 2) {
+    // Z 形 lane（2 拐）：仅取与点对走廊相交的阻挡盒，lane 落在其边界外扩净距处
+    const corridor = {
+      minX: Math.min(start.x, end.x),
+      maxX: Math.max(start.x, end.x),
+      minY: Math.min(start.y, end.y),
+      maxY: Math.max(start.y, end.y),
+    };
+    const horizontalLanes = new Set<number>();
+    const verticalLanes = new Set<number>();
+    for (const box of boxes) {
+      if (box.minX > corridor.maxX || box.maxX < corridor.minX || box.minY > corridor.maxY || box.maxY < corridor.minY) {
+        continue;
+      }
+      horizontalLanes.add(box.minY - IMPORT_ROUTE_PADDING);
+      horizontalLanes.add(box.maxY + IMPORT_ROUTE_PADDING);
+      verticalLanes.add(box.minX - IMPORT_ROUTE_PADDING);
+      verticalLanes.add(box.maxX + IMPORT_ROUTE_PADDING);
+    }
+    for (const y of horizontalLanes) {
+      if (y === start.y || y === end.y) continue;
+      rawCandidates.push([start, { x: start.x, y }, { x: end.x, y }, end]);
+    }
+    for (const x of verticalLanes) {
+      if (x === start.x || x === end.x) continue;
+      rawCandidates.push([start, { x, y: start.y }, { x, y: end.y }, end]);
+    }
+  }
+  let best: Point[] | undefined;
+  let bestCrossing = 0;
+  let bestCorners = 0;
+  let bestLength = 0;
+  for (const raw of rawCandidates) {
+    const route = compactRoute(raw);
+    if (route.length < 2) continue;
+    const crossing = routeIntersectsBlockers(route, boxes) ? 1 : 0;
+    const corners = route.length - 2;
+    const length = routeLength(route);
+    if (
+      !best ||
+      crossing < bestCrossing ||
+      (crossing === bestCrossing && corners < bestCorners) ||
+      (crossing === bestCrossing && corners === bestCorners && length < bestLength)
+    ) {
+      best = route;
+      bestCrossing = crossing;
+      bestCorners = corners;
+      bestLength = length;
+    }
+  }
+  // 兜底：L 形（候选集理论非空，此支防御 start===end 等退化输入）
+  return best ?? compactRoute([start, { x: start.x, y: end.y }, end]);
+}
+
 // ===== 模型装配（map）阶段 =====
 
 // 导入报告：设备/边计数、类型分布、收缩与丢边计数、开关分位、兜底与容性假设清单、电压推断数
@@ -589,6 +749,7 @@ export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
   };
 
   const edges: Edge[] = [];
+  const edgeEndpointPairs: Array<{ a: ModelNode; b: ModelNode }> = []; // 供母线宽定型后计算 routePoints
   for (const link of collapsed.links) {
     const a = nodeByLabel.get(link.from)?.[0];
     const b = nodeByLabel.get(link.to)?.[0];
@@ -616,6 +777,7 @@ export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
       sourcePoint,
       targetPoint,
     });
+    edgeEndpointPairs.push({ a, b });
   }
 
   // —— 邻接表（母线宽与电压 BFS 共用） ——
@@ -646,6 +808,14 @@ export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
       node.size = { ...node.size, width: Math.max(120, hi - lo + 60) };
     }
   }
+
+  // —— 锚点到锚点正交布线（spec §3.3）：母线宽定型后计算（阻挡盒用最终尺寸） ——
+  // 拐点 ≤2 硬约束；预算内优先避让第三方设备，超预算接受交叉。缺端点（端子耗尽等）不写，渲染兜底。
+  edges.forEach((edge, i) => {
+    const { a, b } = edgeEndpointPairs[i];
+    if (!edge.sourcePoint || !edge.targetPoint) return;
+    edge.routePoints = orthogonalRouteWithinCorners(edge.sourcePoint, edge.targetPoint, nodes, [a.id, b.id]);
+  });
 
   // —— 电压 BFS：INTERNAL_VL 前缀节点为源，沿 links 传播，变压器为边界 ——
   const written = new Set<string>();
