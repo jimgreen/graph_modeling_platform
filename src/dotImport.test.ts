@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolveDeviceStateVisual } from "./model";
-import { getTemplate } from "./model-node-ops";
-import { parseDot, buildClassifyContext, classifyDotNode, collapseDotGraph, mapDotGraphToModel, importDotFile } from "./dotImport";
+import { getTemplate, createDefaultNode } from "./model-node-ops";
+import { parseDot, buildClassifyContext, classifyDotNode, collapseDotGraph, mapDotGraphToModel, importDotFile, deviceAdjacentReferencePoints, deviceRotation } from "./dotImport";
 import type { DotGraph, DotNode, DotImportResult } from "./dotImport";
 
 // 内联最小 dot 样本（4 节点，覆盖 pos 剥 !、[OPEN] 剥离、Station 提取）
@@ -540,5 +540,128 @@ describe("importDotFile 望道变 fixture 全链路集成（A6）", () => {
     expect(deviceSideUndefined.length).toBeGreaterThan(0);
     expect(deviceSideUndefined.length).toBe(73);
     expect(result.project.edges.length).toBe(result.report.edgeCount);
+  });
+});
+
+// ===== B1 设备朝向（rotation）测试（plan Task 1）=====
+
+// 带坐标节点简写（nd 固定 (0,0)，朝向测试需要任意坐标）
+const ndp = (id: string, label: string, shape: string, fillcolor: string, x: number, y: number): DotNode => ({
+  id,
+  label,
+  open: false,
+  shape,
+  fillcolor,
+  x,
+  y,
+});
+
+describe("deviceAdjacentReferencePoints", () => {
+  it("B1-1 提取设备相邻收缩节点坐标（按 dot 节点 id 键；point 自身不是设备）", () => {
+    const g = mg(
+      [
+        ndp("n0", "SW_1", "invtriangle", "orange", 100, 200),
+        ndp("n1", "P_1", "point", "black", 100, 150),
+        ndp("n2", "LD_1", "ellipse", "lightblue", 100, 100),
+      ],
+      [["n0", "n1"], ["n1", "n2"]],
+    );
+    const refs = deviceAdjacentReferencePoints(g);
+    expect(refs.get("n0")).toEqual([{ x: 100, y: 150 }]);
+    expect(refs.get("n2")).toEqual([{ x: 100, y: 150 }]);
+    expect(refs.has("n1")).toBe(false);
+  });
+
+  it("B1-2 绕组端子 box 作为三绕组本体的朝向参考（而非 point）", () => {
+    const g = mg(
+      [
+        ndp("n0", "SW_1", "invtriangle", "orange", 100, 100),
+        ndp("n1", "P_1", "point", "black", 100, 150),
+        ndp("n2", "T3_1", "box", "white", 100, 200),
+        ndp("n3", "T3_1", "tripleoctagon", "thistle", 300, 200),
+      ],
+      [["n0", "n1"], ["n1", "n2"], ["n2", "n3"]],
+    );
+    const refs = deviceAdjacentReferencePoints(g);
+    expect(refs.get("n0")).toEqual([{ x: 100, y: 150 }]);
+    expect(refs.get("n3")).toEqual([{ x: 100, y: 200 }]);
+  });
+});
+
+describe("deviceRotation", () => {
+  const pos = { x: 0, y: 0 };
+
+  it("B1-3 单端子设备（ac-load 锚点 (0,-0.5) 默认朝上）：上0/右90/下180/左270", () => {
+    const load = createDefaultNode("ac-load", pos);
+    expect(deviceRotation(load, [{ x: 0, y: -50 }], pos)).toBe(0);
+    expect(deviceRotation(load, [{ x: 50, y: 0 }], pos)).toBe(90);
+    expect(deviceRotation(load, [{ x: 0, y: 50 }], pos)).toBe(180);
+    expect(deviceRotation(load, [{ x: -50, y: 0 }], pos)).toBe(270);
+  });
+
+  it("B1-4 双端子设备（ac-switch 锚点左右）：垂直 90、水平 0", () => {
+    const sw = createDefaultNode("ac-switch", pos);
+    expect(deviceRotation(sw, [{ x: 0, y: -50 }], pos)).toBe(90);
+    expect(deviceRotation(sw, [{ x: 0, y: 50 }], pos)).toBe(90);
+    expect(deviceRotation(sw, [{ x: -50, y: 0 }], pos)).toBe(0);
+    expect(deviceRotation(sw, [{ x: 50, y: 0 }], pos)).toBe(0);
+  });
+
+  it("B1-5 无端子（母线）/无参考点/零向量：rotation=0", () => {
+    const bus = createDefaultNode("ac-bus", pos);
+    const sw = createDefaultNode("ac-switch", pos);
+    expect(deviceRotation(bus, [{ x: 0, y: -50 }], pos)).toBe(0);
+    expect(deviceRotation(sw, [], pos)).toBe(0);
+    expect(deviceRotation(sw, [{ x: 0, y: 0 }], pos)).toBe(0); // 黑点与设备同坐标
+  });
+
+  it("B1-6 邻侧歧义：以首个参考点方位为准", () => {
+    const sw = createDefaultNode("ac-switch", pos);
+    expect(deviceRotation(sw, [{ x: 0, y: -50 }, { x: 50, y: 0 }], pos)).toBe(90); // 首参考点在上
+    expect(deviceRotation(sw, [{ x: 50, y: 0 }, { x: 0, y: -50 }], pos)).toBe(0); // 首参考点在右
+  });
+});
+
+describe("mapDotGraphToModel 朝向落位", () => {
+  it("B1-7 垂直串：开关/断路器 rotation=90，母线不旋转", () => {
+    const g = mg(
+      [
+        ndp("n0", "BBS_1", "rect", "yellow", 100, 100),
+        ndp("n1", "P_1", "point", "black", 100, 150),
+        ndp("n2", "SW_1", "invtriangle", "orange", 100, 200),
+        ndp("n3", "P_2", "point", "black", 100, 250),
+        ndp("n4", "CB_1", "diamond", "green", 100, 300),
+      ],
+      [["n0", "n1"], ["n1", "n2"], ["n2", "n3"], ["n3", "n4"]],
+    );
+    const { project } = mapDotGraphToModel(g);
+    const byName = new Map(project.nodes.map((n) => [n.name, n]));
+    expect(byName.get("SW_1")!.rotation).toBe(90);
+    expect(byName.get("CB_1")!.rotation).toBe(90);
+    expect(byName.get("BBS_1")!.rotation).toBe(0);
+  });
+
+  it("B1-8 水平串 rotation=0；设备直连设备（无 point）rotation=0", () => {
+    const g = mg(
+      [
+        ndp("n0", "BBS_1", "rect", "yellow", 100, 100),
+        ndp("n1", "P_1", "point", "black", 150, 100),
+        ndp("n2", "CB_1", "diamond", "green", 200, 100),
+      ],
+      [["n0", "n1"], ["n1", "n2"]],
+    );
+    const { project } = mapDotGraphToModel(g);
+    const byName = new Map(project.nodes.map((n) => [n.name, n]));
+    expect(byName.get("CB_1")!.rotation).toBe(0);
+
+    const g2 = mg(
+      [
+        ndp("n0", "CB_2", "diamond", "green", 100, 100),
+        ndp("n1", "LD_2", "ellipse", "lightblue", 200, 100),
+      ],
+      [["n0", "n1"]],
+    );
+    const r2 = mapDotGraphToModel(g2);
+    for (const n of r2.project.nodes) expect(n.rotation).toBe(0);
   });
 });

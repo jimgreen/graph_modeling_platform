@@ -302,6 +302,89 @@ export function collapseDotGraph(graph: DotGraph): CollapsedDotGraph {
   };
 }
 
+// ===== 朝向（rotation）阶段 =====
+
+// 轴对齐四向方位（平台坐标系 y 向下：dy<0 为上）
+type OrientationBearing = "left" | "right" | "up" | "down";
+
+// 向量主轴方向归类（|x|>=|y| 归水平，否则垂直；零向量无方位）
+function dominantBearing(vx: number, vy: number): OrientationBearing | undefined {
+  if (vx === 0 && vy === 0) return undefined;
+  if (Math.abs(vx) >= Math.abs(vy)) return vx < 0 ? "left" : "right";
+  return vy < 0 ? "up" : "down";
+}
+
+/**
+ * 朝向参考提取（spec §3.1）：设备（dot 节点 id）→ 相邻收缩节点坐标列表。
+ * 收缩节点 = shape=point 黑点或绕组端子 box（role 非 device）。
+ * 坐标仅用于设备朝向判定，不写入 routePoints；collapseDotGraph 语义不变。
+ */
+export function deviceAdjacentReferencePoints(graph: DotGraph): Map<string, Point[]> {
+  const ctx = buildClassifyContext(graph);
+  const cls = new Map<string, DotNodeClass>();
+  for (const node of graph.nodes) cls.set(node.id, classifyDotNode(node, ctx));
+  const nodeById = new Map(graph.nodes.map((n) => [n.id, n] as const));
+  const isCollapsedRole = (r?: DotNodeClass["role"]): boolean => r === "collapse" || r === "winding-terminal";
+  const refs = new Map<string, Point[]>();
+  const push = (id: string, p: Point): void => {
+    const list = refs.get(id);
+    if (list) list.push(p);
+    else refs.set(id, [p]);
+  };
+  for (const e of graph.edges) {
+    const a = nodeById.get(e.from);
+    const b = nodeById.get(e.to);
+    if (!a || !b) continue;
+    const ra = cls.get(a.id)?.role;
+    const rb = cls.get(b.id)?.role;
+    if (ra === "device" && isCollapsedRole(rb)) push(a.id, { x: b.x, y: b.y });
+    else if (rb === "device" && isCollapsedRole(ra)) push(b.id, { x: a.x, y: a.y });
+  }
+  return refs;
+}
+
+// 参考点相对设备中心的方位（零向量=黑点与设备同坐标，不参与朝向，spec §4）
+function bearingOf(devicePos: Point, ref: Point): OrientationBearing | undefined {
+  return dominantBearing(ref.x - devicePos.x, ref.y - devicePos.y);
+}
+
+// 端子锚点在给定旋转下的世界朝向（world = position + R(rotation)·(anchor·size)，与引擎 getTerminalPoint 同语义）
+function anchorBearingAtRotation(
+  anchor: Point,
+  size: { width: number; height: number },
+  rotation: number,
+): OrientationBearing | undefined {
+  const lx = anchor.x * size.width;
+  const ly = anchor.y * size.height;
+  const rad = (rotation * Math.PI) / 180;
+  return dominantBearing(lx * Math.cos(rad) - ly * Math.sin(rad), lx * Math.sin(rad) + ly * Math.cos(rad));
+}
+
+/**
+ * 设备旋转角（spec §3.2/§4）：取首个参考点方位为目标，在 0/90/180/270 中找最小角，
+ * 使某端子锚点（按模板 anchor + size 旋转）朝向该方位。
+ * 2 端子设备（默认锚点左右）因此自然满足：垂直参考→90、水平参考→0；
+ * 邻侧/多参考点歧义以首个参考点为准；母线（无端子）/无参考点/零向量 → 0 不旋转。
+ */
+export function deviceRotation(
+  node: Pick<ModelNode, "terminals" | "size">,
+  refs: Point[],
+  devicePos: Point,
+): number {
+  if (node.terminals.length === 0 || refs.length === 0) return 0;
+  const bearings = refs
+    .map((ref) => bearingOf(devicePos, ref))
+    .filter((b): b is OrientationBearing => b !== undefined);
+  if (bearings.length === 0) return 0;
+  const target = bearings[0];
+  for (const rotation of [0, 90, 180, 270]) {
+    if (node.terminals.some((t) => anchorBearingAtRotation(t.anchor, node.size, rotation) === target)) {
+      return rotation;
+    }
+  }
+  return 0;
+}
+
 // ===== 模型装配（map）阶段 =====
 
 // 导入报告：设备/边计数、类型分布、收缩与丢边计数、开关分位、兜底与容性假设清单、电压推断数
@@ -387,6 +470,8 @@ export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
   const nodeByLabel = new Map<string, ModelNode[]>(); // label → 实例（devices 数组序即 instance 序）
   const modelByDotNode = new Map<DotNode, ModelNode>();
   const ctx = buildClassifyContext(graph);
+  // 朝向参考（spec §3.1）：设备 dot 节点 id → 相邻收缩节点坐标，仅用于 rotation 判定
+  const orientationRefs = deviceAdjacentReferencePoints(graph);
   for (const d of collapsed.devices) {
     const cls = classifyDotNode(d, ctx);
     const classifiedKind = cls.role === "device" ? cls.kind : "static-rect";
@@ -399,6 +484,8 @@ export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
     }
     const node = createDefaultNode(kind, tx(d));
     node.name = d.label;
+    // 朝向（spec §3.2）：据相邻收缩节点方位设置旋转；母线（无端子）与无参考点不旋转
+    node.rotation = deviceRotation(node, orientationRefs.get(d.id) ?? [], { x: d.x, y: d.y });
     // [OPEN] 开关分位：status 与 closed_status 同写。
     // 平台状态解析 resolveDeviceStateVisual 对开关类读 closed_status ?? closedStatus ?? status
     // （模板默认 closed_status="1"），只写 status 时画布/CIM 仍按闭合渲染。
