@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolveDeviceStateVisual } from "./model";
 import { getTemplate, createDefaultNode } from "./model-node-ops";
+import { getTerminalPoint } from "./model-routing";
 import { parseDot, buildClassifyContext, classifyDotNode, collapseDotGraph, mapDotGraphToModel, importDotFile, deviceAdjacentReferencePoints, deviceRotation } from "./dotImport";
 import type { DotGraph, DotNode, DotImportResult } from "./dotImport";
 
@@ -663,5 +664,51 @@ describe("mapDotGraphToModel 朝向落位", () => {
     );
     const r2 = mapDotGraphToModel(g2);
     for (const n of r2.project.nodes) expect(n.rotation).toBe(0);
+  });
+});
+
+// ===== B2 端子分配对齐方位 + 母线投影端点（plan Task 2）=====
+
+describe("mapDotGraphToModel 端子对齐与端点", () => {
+  // 垂直串：母线(100,100) → point(100,150) → 开关(100,200)
+  const verticalGraph = () =>
+    mg(
+      [
+        ndp("n0", "BBS_1", "rect", "yellow", 100, 100),
+        ndp("n1", "P_1", "point", "black", 100, 150),
+        ndp("n2", "SW_1", "invtriangle", "orange", 100, 200),
+      ],
+      [["n0", "n1"], ["n1", "n2"]],
+    );
+
+  it("B2-1 设备侧端点朝向相邻 point 方位（点在上→端点在设备中心上方）", () => {
+    const { project } = mapDotGraphToModel(verticalGraph());
+    const sw = project.nodes.find((n) => n.name === "SW_1")!;
+    const swEdge = project.edges.find((e) => e.sourceId === sw.id || e.targetId === sw.id)!;
+    const swPoint = (swEdge.sourceId === sw.id ? swEdge.sourcePoint : swEdge.targetPoint)!;
+    expect(swPoint.y).toBeLessThan(sw.position.y); // point 在开关上方
+  });
+
+  it("B2-2 设备侧端点 = getTerminalPoint(node, 分配端子)（与渲染端点严格一致）", () => {
+    const { project } = mapDotGraphToModel(verticalGraph());
+    const sw = project.nodes.find((n) => n.name === "SW_1")!;
+    const swEdge = project.edges.find((e) => e.sourceId === sw.id || e.targetId === sw.id)!;
+    const swIsSource = swEdge.sourceId === sw.id;
+    const swTid = swIsSource ? swEdge.sourceTerminalId : swEdge.targetTerminalId;
+    const swPoint = swIsSource ? swEdge.sourcePoint : swEdge.targetPoint;
+    expect(swTid).toBeDefined();
+    expect(swPoint).toEqual(getTerminalPoint(sw, swTid));
+  });
+
+  it("B2-3 母线侧：terminalId 留空，端点投影到母线中心线（y=母线中心）", () => {
+    const { project } = mapDotGraphToModel(verticalGraph());
+    const bus = project.nodes.find((n) => n.kind === "ac-bus")!;
+    const busEdge = project.edges.find((e) => e.sourceId === bus.id || e.targetId === bus.id)!;
+    const busIsSource = busEdge.sourceId === bus.id;
+    const busTid = busIsSource ? busEdge.sourceTerminalId : busEdge.targetTerminalId;
+    const busPoint = busIsSource ? busEdge.sourcePoint : busEdge.targetPoint;
+    expect(busTid).toBeUndefined();
+    expect(busPoint).toBeDefined();
+    expect(busPoint!.y).toBe(bus.position.y); // 水平母线中心线
   });
 });

@@ -4,6 +4,7 @@
 import { DEFAULT_MODEL_LAYER_ID, DEFAULT_MODEL_LAYER_NAME, makeId } from "./model";
 import type { DeviceKind, Edge, ModelNode, Point, ProjectFile, Terminal } from "./model";
 import { createDefaultNode } from "./model-node-ops";
+import { getTerminalPoint, projectPointToBusCenterline } from "./model-routing";
 import { applyVoltageInheritance } from "./voltageInheritance";
 
 export interface DotNode {
@@ -511,30 +512,80 @@ export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
     }
   }
 
-  // —— 边构造：端子按设备侧几何最近未占用端子分配；母线侧留空 ——
+  // —— 边构造：端子按参考方位分配（spec §3.2）；母线侧端点投影中心线 ——
+  // 链上邻接参考所需的原始图结构（邻接表 / 节点表 / 角色表 / label→首实例 dot 节点）
+  const origNodeById = new Map(graph.nodes.map((n) => [n.id, n] as const));
+  const origAdjacency = new Map<string, string[]>();
+  for (const e of graph.edges) {
+    const la = origAdjacency.get(e.from) ?? [];
+    la.push(e.to);
+    origAdjacency.set(e.from, la);
+    const lb = origAdjacency.get(e.to) ?? [];
+    lb.push(e.from);
+    origAdjacency.set(e.to, lb);
+  }
+  const clsById = new Map<string, DotNodeClass>();
+  for (const node of graph.nodes) clsById.set(node.id, classifyDotNode(node, ctx));
+  const firstDotNodeByLabel = new Map<string, DotNode>();
+  for (const d of collapsed.devices) {
+    if (!firstDotNodeByLabel.has(d.label)) firstDotNodeByLabel.set(d.label, d);
+  }
+  const isCollapsedId = (id: string): boolean => {
+    const r = clsById.get(id)?.role;
+    return r === "collapse" || r === "winding-terminal";
+  };
+  // 链上邻接参考（spec §3.2）：从 from 设备沿收缩节点链 BFS 到 to 设备，
+  // 返回路径上第一个收缩节点坐标；直连/不可达返回 undefined（退化为对端设备中心）
+  const chainAdjacentReference = (fromDotId: string, toDotId: string): Point | undefined => {
+    const visited = new Set<string>([fromDotId]);
+    const queue: Array<{ id: string; first?: string }> = [{ id: fromDotId }];
+    while (queue.length > 0) {
+      const { id, first } = queue.shift()!;
+      for (const nb of origAdjacency.get(id) ?? []) {
+        if (visited.has(nb)) continue;
+        visited.add(nb);
+        const nextFirst = first ?? (isCollapsedId(nb) ? nb : undefined);
+        if (nb === toDotId) {
+          const refNode = nextFirst ? origNodeById.get(nextFirst) : undefined;
+          return refNode ? { x: refNode.x, y: refNode.y } : undefined;
+        }
+        if (isCollapsedId(nb)) queue.push({ id: nb, first: nextFirst }); // 只沿收缩节点扩展，不穿其它设备
+      }
+    }
+    return undefined;
+  };
+
   const usedTerminals = new Map<string, Set<string>>();
-  const assignTerminal = (node: ModelNode, otherPos: Point): { id?: string; point?: Point } => {
-    if (node.terminals.length === 0) return {}; // 母线无端子，terminalId 留空
+  const assignTerminal = (node: ModelNode, refPos: Point): { id?: string; point?: Point } => {
+    if (node.terminals.length === 0) return {}; // 母线无端子；端点由母线中心线投影计算
     const used = usedTerminals.get(node.id) ?? new Set<string>();
-    let best: Terminal | undefined;
-    let bestDist = Infinity;
-    for (const t of node.terminals) {
-      if (used.has(t.id)) continue;
-      const wx = node.position.x + t.anchor.x * node.size.width;
-      const wy = node.position.y + t.anchor.y * node.size.height;
-      const dist = (wx - otherPos.x) ** 2 + (wy - otherPos.y) ** 2;
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = t;
+    // 首选：旋转后锚点朝向参考方位的未占用端子（spec §3.2，不再按对端中心最近）
+    const target = dominantBearing(refPos.x - node.position.x, refPos.y - node.position.y);
+    const facing = target
+      ? node.terminals.find(
+          (t) => !used.has(t.id) && anchorBearingAtRotation(t.anchor, node.size, node.rotation) === target,
+        )
+      : undefined;
+    let best: Terminal | undefined = facing;
+    if (!best) {
+      // 兜底：最近未占用端子（无朝向命中，spec §4）
+      let bestDist = Infinity;
+      for (const t of node.terminals) {
+        if (used.has(t.id)) continue;
+        const wx = node.position.x + t.anchor.x * node.size.width;
+        const wy = node.position.y + t.anchor.y * node.size.height;
+        const dist = (wx - refPos.x) ** 2 + (wy - refPos.y) ** 2;
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = t;
+        }
       }
     }
     if (!best) return {};
     used.add(best.id);
     usedTerminals.set(node.id, used);
-    return {
-      id: best.id,
-      point: { x: node.position.x + best.anchor.x * node.size.width, y: node.position.y + best.anchor.y * node.size.height },
-    };
+    // 端点与渲染层严格一致：复用引擎 getTerminalPoint（旋转感知 + 端子外扩）
+    return { id: best.id, point: getTerminalPoint(node, best.id) };
   };
 
   const edges: Edge[] = [];
@@ -546,16 +597,24 @@ export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
       extraSelfLoopDropped++; // 同名多实例 from==to 视为自环丢弃
       continue;
     }
-    const sa = assignTerminal(a, b.position);
-    const sb = assignTerminal(b, a.position);
+    // 源/目标侧参考点：链上邻接收缩节点，无链退化为对端设备中心（spec §3.2）
+    const aDot = firstDotNodeByLabel.get(link.from);
+    const bDot = firstDotNodeByLabel.get(link.to);
+    const aRef = (aDot && bDot ? chainAdjacentReference(aDot.id, bDot.id) : undefined) ?? b.position;
+    const bRef = (aDot && bDot ? chainAdjacentReference(bDot.id, aDot.id) : undefined) ?? a.position;
+    const sa = assignTerminal(a, aRef);
+    const sb = assignTerminal(b, bRef);
+    // 母线侧端点：相邻参考点向母线中心线投影（复用引擎 projectPointToBusCenterline）
+    const sourcePoint = sa.point ?? (a.kind === "ac-bus" ? projectPointToBusCenterline(a, aRef) : undefined);
+    const targetPoint = sb.point ?? (b.kind === "ac-bus" ? projectPointToBusCenterline(b, bRef) : undefined);
     edges.push({
       id: makeId("edge"),
       sourceId: a.id,
       targetId: b.id,
       sourceTerminalId: sa.id,
       targetTerminalId: sb.id,
-      sourcePoint: sa.point,
-      targetPoint: sb.point,
+      sourcePoint,
+      targetPoint,
     });
   }
 
