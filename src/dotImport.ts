@@ -741,7 +741,22 @@ export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
         }
       }
     }
-    if (!best) return {};
+    if (!best) {
+      // 端子耗尽：terminalId 不分配（A6-7 语义不变），但复用最近端子锚点作为端点，
+      // 保证每条边都有端点可参与正交布线（spec §5 B4-1）
+      let nearest: Terminal | undefined;
+      let nearestDist = Infinity;
+      for (const t of node.terminals) {
+        const wx = node.position.x + t.anchor.x * node.size.width;
+        const wy = node.position.y + t.anchor.y * node.size.height;
+        const dist = (wx - refPos.x) ** 2 + (wy - refPos.y) ** 2;
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearest = t;
+        }
+      }
+      return nearest ? { point: getTerminalPoint(node, nearest.id) } : {};
+    }
     used.add(best.id);
     usedTerminals.set(node.id, used);
     // 端点与渲染层严格一致：复用引擎 getTerminalPoint（旋转感知 + 端子外扩）
