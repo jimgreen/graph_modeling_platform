@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolveDeviceStateVisual } from "./model";
 import { getTemplate, createDefaultNode } from "./model-node-ops";
 import { getTerminalPoint } from "./model-routing";
-import { parseDot, buildClassifyContext, classifyDotNode, collapseDotGraph, mapDotGraphToModel, importDotFile, deviceAdjacentReferencePoints, deviceRotation } from "./dotImport";
+import { parseDot, buildClassifyContext, classifyDotNode, collapseDotGraph, mapDotGraphToModel, importDotFile, deviceAdjacentReferencePoints, deviceRotation, orthogonalRouteWithinCorners } from "./dotImport";
 import type { DotGraph, DotNode, DotImportResult } from "./dotImport";
 
 // 内联最小 dot 样本（4 节点，覆盖 pos 剥 !、[OPEN] 剥离、Station 提取）
@@ -669,18 +669,18 @@ describe("mapDotGraphToModel 朝向落位", () => {
 
 // ===== B2 端子分配对齐方位 + 母线投影端点（plan Task 2）=====
 
-describe("mapDotGraphToModel 端子对齐与端点", () => {
-  // 垂直串：母线(100,100) → point(100,150) → 开关(100,200)
-  const verticalGraph = () =>
-    mg(
-      [
-        ndp("n0", "BBS_1", "rect", "yellow", 100, 100),
-        ndp("n1", "P_1", "point", "black", 100, 150),
-        ndp("n2", "SW_1", "invtriangle", "orange", 100, 200),
-      ],
-      [["n0", "n1"], ["n1", "n2"]],
-    );
+// 垂直串：母线(100,100) → point(100,150) → 开关(100,200)
+const verticalGraph = () =>
+  mg(
+    [
+      ndp("n0", "BBS_1", "rect", "yellow", 100, 100),
+      ndp("n1", "P_1", "point", "black", 100, 150),
+      ndp("n2", "SW_1", "invtriangle", "orange", 100, 200),
+    ],
+    [["n0", "n1"], ["n1", "n2"]],
+  );
 
+describe("mapDotGraphToModel 端子对齐与端点", () => {
   it("B2-1 设备侧端点朝向相邻 point 方位（点在上→端点在设备中心上方）", () => {
     const { project } = mapDotGraphToModel(verticalGraph());
     const sw = project.nodes.find((n) => n.name === "SW_1")!;
@@ -710,5 +710,83 @@ describe("mapDotGraphToModel 端子对齐与端点", () => {
     expect(busTid).toBeUndefined();
     expect(busPoint).toBeDefined();
     expect(busPoint!.y).toBe(bus.position.y); // 水平母线中心线
+  });
+});
+
+// ===== B3 锚点到锚点正交布线（plan Task 3）=====
+
+describe("orthogonalRouteWithinCorners", () => {
+  // 折线段与盒（含边界）是否相交（测试本地判定，与实现无关）
+  const hitsBox = (a: { x: number; y: number }, b: { x: number; y: number }, box: { minX: number; minY: number; maxX: number; maxY: number }): boolean => {
+    const loX = Math.min(a.x, b.x);
+    const hiX = Math.max(a.x, b.x);
+    const loY = Math.min(a.y, b.y);
+    const hiY = Math.max(a.y, b.y);
+    return hiX >= box.minX && loX <= box.maxX && hiY >= box.minY && loY <= box.maxY;
+  };
+  const assertOrthogonal = (route: Array<{ x: number; y: number }>): void => {
+    for (let i = 1; i < route.length; i++) {
+      expect(route[i].x === route[i - 1].x || route[i].y === route[i - 1].y).toBe(true);
+    }
+  };
+
+  it("B3-1 同轴直连：0 拐 2 点", () => {
+    const route = orthogonalRouteWithinCorners({ x: 0, y: 0 }, { x: 0, y: 100 }, [], []);
+    expect(route).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 100 },
+    ]);
+  });
+
+  it("B3-2 异轴无阻挡：L 形 1 拐，每段正交", () => {
+    const route = orthogonalRouteWithinCorners({ x: 0, y: 0 }, { x: 100, y: 50 }, [], []);
+    expect(route).toHaveLength(3);
+    expect(route[0]).toEqual({ x: 0, y: 0 });
+    expect(route[2]).toEqual({ x: 100, y: 50 });
+    assertOrthogonal(route);
+  });
+
+  it("B3-3 直连与 L 形被挡、Z 形可避让：选 2 拐且避开阻挡盒", () => {
+    // ac-switch 归一化后 150x100 @ (100,0)，横穿 start(0,0)→end(200,0) 的直连
+    const blocker = createDefaultNode("ac-switch", { x: 100, y: 0 });
+    const route = orthogonalRouteWithinCorners({ x: 0, y: 0 }, { x: 200, y: 0 }, [blocker], []);
+    expect(route).toHaveLength(4); // 2 拐
+    assertOrthogonal(route);
+    const hw = blocker.size.width / 2;
+    const hh = blocker.size.height / 2;
+    const box = { minX: 100 - hw, minY: -hh, maxX: 100 + hw, maxY: hh };
+    for (let i = 1; i < route.length; i++) {
+      expect(hitsBox(route[i - 1], route[i], box)).toBe(false);
+    }
+  });
+
+  it("B3-4 拐点预算内全穿：接受交叉，取拐点最少的直连", () => {
+    // 上下相邻阻挡盒恰好堵住 blocker0 导出的两条 Z lane（lane=盒边界外扩净距处），
+    // 且外侧阻挡盒与走廊不相交、不再贡献新 lane → 全部候选穿 → 直连兜底
+    const blocker0 = createDefaultNode("ac-switch", { x: 100, y: 0 });
+    const laneOffset = blocker0.size.height / 2 + 2;
+    const blockers = [
+      blocker0,
+      createDefaultNode("ac-switch", { x: 100, y: -laneOffset }),
+      createDefaultNode("ac-switch", { x: 100, y: laneOffset }),
+    ];
+    const route = orthogonalRouteWithinCorners({ x: 0, y: 0 }, { x: 200, y: 0 }, blockers, []);
+    expect(route).toEqual([
+      { x: 0, y: 0 },
+      { x: 200, y: 0 },
+    ]);
+  });
+
+  it("B3-5 map 落位：每条边写 routePoints，首末与端点一致、正交、拐点 ≤2", () => {
+    const { project } = mapDotGraphToModel(verticalGraph());
+    expect(project.edges.length).toBeGreaterThan(0);
+    for (const edge of project.edges) {
+      const route = edge.routePoints!;
+      expect(route).toBeDefined();
+      expect(route[0]).toEqual(edge.sourcePoint);
+      expect(route[route.length - 1]).toEqual(edge.targetPoint);
+      expect(route.length - 2).toBeLessThanOrEqual(2);
+      assertOrthogonal(route);
+    }
   });
 });
