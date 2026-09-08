@@ -790,3 +790,88 @@ describe("orthogonalRouteWithinCorners", () => {
     }
   });
 });
+
+// ===== B4 朝向+正交布线 fixture 集成（plan Task 4）=====
+
+describe("importDotFile 望道变 fixture 朝向+正交布线集成（B4）", () => {
+  const text = readFileSync(new URL("./__fixtures__/dot/望道变_6.dot", import.meta.url), "utf8");
+  let result!: DotImportResult;
+  beforeAll(() => {
+    result = importDotFile(text);
+  });
+
+  // 线段与盒相交（含边界，本地判定）
+  const boxHitsSegment = (
+    a: { x: number; y: number },
+    b: { x: number; y: number },
+    box: { minX: number; minY: number; maxX: number; maxY: number },
+  ): boolean => {
+    const loX = Math.min(a.x, b.x);
+    const hiX = Math.max(a.x, b.x);
+    const loY = Math.min(a.y, b.y);
+    const hiY = Math.max(a.y, b.y);
+    return hiX >= box.minX && loX <= box.maxX && hiY >= box.minY && loY <= box.maxY;
+  };
+  // 设备阻挡盒（position 为中心，90/270 交换宽高，与实现 importRouteBlockerBox 同语义）
+  const blockerBoxOf = (n: (typeof result.project.nodes)[number]) => {
+    const swap = Math.abs(Math.sin((n.rotation * Math.PI) / 180)) > 0.5;
+    const hw = (swap ? n.size.height : n.size.width) / 2;
+    const hh = (swap ? n.size.width : n.size.height) / 2;
+    return { minX: n.position.x - hw, minY: n.position.y - hh, maxX: n.position.x + hw, maxY: n.position.y + hh };
+  };
+  const assertOrthogonal = (route: Array<{ x: number; y: number }>): void => {
+    for (let i = 1; i < route.length; i++) {
+      expect(route[i].x === route[i - 1].x || route[i].y === route[i - 1].y).toBe(true);
+    }
+  };
+
+  it("B4-1 全部边 routePoints 存在、首末点与端点一致", () => {
+    expect(result.project.edges.length).toBe(185);
+    for (const edge of result.project.edges) {
+      expect(edge.sourcePoint).toBeDefined();
+      expect(edge.targetPoint).toBeDefined();
+      expect(edge.routePoints).toBeDefined();
+      expect(edge.routePoints![0]).toEqual(edge.sourcePoint);
+      expect(edge.routePoints![edge.routePoints!.length - 1]).toEqual(edge.targetPoint);
+    }
+  });
+
+  it("B4-2 每段严格正交（100% 硬断言）", () => {
+    for (const edge of result.project.edges) {
+      assertOrthogonal(edge.routePoints!);
+    }
+  });
+
+  it("B4-3 每边拐点 ≤2（硬断言）", () => {
+    for (const edge of result.project.edges) {
+      expect(edge.routePoints!.length - 2).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it("B4-4 设备 rotation 已写入（非全 0）", () => {
+    const rotated = result.project.nodes.filter((n) => n.rotation !== 0);
+    expect(rotated.length).toBeGreaterThan(0);
+  });
+
+  it("B4-5 穿第三方设备边数（软指标，仅统计打印，不设硬门槛）", () => {
+    let crossing = 0;
+    for (const edge of result.project.edges) {
+      const route = edge.routePoints!;
+      const boxes = result.project.nodes
+        .filter((n) => n.id !== edge.sourceId && n.id !== edge.targetId)
+        .map(blockerBoxOf);
+      let hit = false;
+      for (let i = 1; i < route.length && !hit; i++) {
+        for (const box of boxes) {
+          if (boxHitsSegment(route[i - 1], route[i], box)) {
+            hit = true;
+            break;
+          }
+        }
+      }
+      if (hit) crossing++;
+    }
+    console.log(`[B4-5 软指标] 穿第三方设备边数 ${crossing}/${result.project.edges.length}（导入基线 177/185）`);
+    expect(crossing).toBeLessThanOrEqual(result.project.edges.length);
+  });
+});
