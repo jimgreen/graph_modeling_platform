@@ -2214,6 +2214,34 @@ test("sets voltage base for dynamic-terminal buses in a transformer island via t
   expect(result.changedNodeIds).not.toContain(busL.id);
 });
 
+test("sets voltage base for dynamic-terminal buses in uniform island mode after sync", () => {
+  // 姊妹回归：uniform 模式（setVoltageBaseValuesForScope）写回前同步动态端子，
+  // 母线 params 与端子 vbase 均需写入，保证着色与后续设置窗口读取一致。
+  const busH = createDefaultNode("ac-bus", { x: 0, y: 0 });
+  const transformer = createDefaultNode("ac-transformer", { x: 300, y: 0 });
+  const load = createDefaultNode("ac-load", { x: 600, y: 0 });
+  transformer.terminals[0].vbase = "220";
+  transformer.terminals[1].vbase = "35";
+  load.terminals[0].vbase = "35";
+  load.params.vbase = "35";
+  const edges = [
+    { id: "e1", sourceId: busH.id, targetId: transformer.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+    { id: "e2", sourceId: transformer.id, targetId: load.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+  ];
+  const result = setVoltageBaseValuesForScope(
+    [busH, transformer, load],
+    edges,
+    [transformer.id],
+    "island",
+    "110"
+  );
+  const byId = new Map(result.nodes.map((n) => [n.id, n]));
+  const nextBusH = byId.get(busH.id)!;
+  expect(result.changedNodeIds).toContain(busH.id);
+  expect(nextBusH.terminals[0].vbase).toBe("110");
+  expect(nextBusH.params.vbase).toBe("110");
+});
+
 test("fills zero converter voltage setpoints from the related topology node rated voltage", () => {
   const dcdc = createDefaultNode("dcdc-converter", { x: 100, y: 100 });
   dcdc.params.i_v_set = "0.0";

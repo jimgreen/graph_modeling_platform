@@ -4313,9 +4313,10 @@ export function clearVoltageBaseValuesForScope(
   selectedNodeIds: Iterable<string>,
   scope: VoltageBaseClearScope
 ): VoltageBaseClearResult {
-  const targets = collectVoltageBaseScopeTargets(nodes, edges, selectedNodeIds, scope);
+  const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
+  const targets = collectVoltageBaseScopeTargets(synchronized.nodes, synchronized.edges, selectedNodeIds, scope);
   const nodeUpdates: ModelNode[] = [];
-  const nextNodes = nodes.map((node) => {
+  const nextNodes = synchronized.nodes.map((node) => {
     if (!targets.nodeIds.has(node.id)) {
       return node;
     }
@@ -4349,9 +4350,12 @@ export function setVoltageBaseValuesForScope(
   scope: VoltageBaseSetScope,
   value: string
 ): VoltageBaseSetResult {
-  const targets = collectVoltageBaseScopeTargets(nodes, edges, selectedNodeIds, scope);
+  // 母线端子由运行时按边动态补齐（不随设备持久化），先同步端子再写回，
+  // 动态端子母线在岛内命中但无端子可写（端子 vbase）时不再漏（与 setVoltageBaseTerminalValueForTopologySide 行为一致）。
+  const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
+  const targets = collectVoltageBaseScopeTargets(synchronized.nodes, synchronized.edges, selectedNodeIds, scope);
   const nodeUpdates: ModelNode[] = [];
-  const nextNodes = nodes.map((node) => {
+  const nextNodes = synchronized.nodes.map((node) => {
     if (!targets.nodeIds.has(node.id)) {
       return node;
     }
