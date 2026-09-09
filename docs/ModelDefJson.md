@@ -15,6 +15,15 @@ JSON.stringify(project, null, 2)   // src/appExtracted/appDeviceDefinitionFactor
 - 导出与导入同构（round-trip）：导出的文件可直接重新导入恢复完整画布。
 - 同一次导出同时产生 `.e`（E 格式）与 `.svg`，两者均从同一 `ProjectFile` 对象派生；JSON 是唯一完整快照。
 
+**JSON 不含图元 SVG**。文件只存逻辑描述（`kind` + 几何 + `params`），外观由渲染时查表生成：
+
+| 节点类别 | 图形来源 | 离开本平台能否还原形状 |
+|----------|----------|:----:|
+| 内置设备 | `src/model.ts` `DEVICE_LIBRARY`（模板编译进前端代码）→ `DeviceGlyph.tsx` 按 kind 绘制 | ✓ 前端代码在手即可 |
+| 自定义元件 | 后端图元库（componentLibrary）；JSON 内仅 `kind` 字符串 | ✗ 需同源图元库数据，否则退化渲染 |
+
+需要自包含外观时：用同次导出的 `.svg`（形状/样式/量测已内联）或截图 PNG。第三方程序化还原走 `/api/v1`：library 域建 kind→模板映射 + model JSON 几何，或直接取 runtime SVG。
+
 ## 2. 顶层结构 `ProjectFile`（`src/model.ts:605`）
 
 | 字段 | 类型 | 必填 | 含义 |
