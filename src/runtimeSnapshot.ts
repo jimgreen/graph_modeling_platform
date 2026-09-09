@@ -3,6 +3,10 @@
 // 供 WS 客户端 fetchHandler 调用
 
 import { buildEFileExportOptionsFromLibrary } from "./appExtracted/appDeviceDefinitionFactories";
+import { applyEDeviceDefinitionSectionsToLibraryState } from "./appExtracted/appDeviceDefinitionEInterface";
+import { parseEDeviceDefinitionFile } from "./model-eexport";
+import { eDeviceTemplateSingleTypeMismatchMessage } from "./eDeviceTemplateTypePolicy";
+import { decodeAuto } from "./encoding/gbk";
 
 /** 可用 runtime resource 类型 */
 export type RuntimeSnapshotResource =
@@ -417,8 +421,15 @@ export function serializeSvg(appScope: Record<string, any>): V1Result<string> {
   });
 }
 
-/** runtime.e-file → E 文件文本 */
-export function serializeEFile(appScope: Record<string, any>): V1Result<{
+/**
+ * runtime.e-file → E 文件文本
+ * params.templateText（可选）: 指定模板 E 定义文本 → 按该模板生成（纯后台计算，不读写前端当前模板状态）
+ * params.templateName（可选）: 模板名，用于模板类型限制校验与错误提示
+ */
+export function serializeEFile(
+  appScope: Record<string, any>,
+  params?: Record<string, any>
+): V1Result<{
   filename: string;
   text: string;
   mime: string;
@@ -437,17 +448,82 @@ export function serializeEFile(appScope: Record<string, any>): V1Result<{
     const schemePath = typeof appScope.schemePathForScheme === "function"
       ? appScope.schemePathForScheme(appScope.activeSchemeKey)
       : [];
+    // 指定模板：从模板文本解析 override（纯函数，不触碰 appScope 的当前模板状态）
+    // templateData（base64，兼容 GBK 模板字节）优先；templateText 为纯文本直传
+    const hasTemplateParam = params != null && ("templateData" in params || "templateText" in params);
+    let templateText = typeof params?.templateText === "string" ? params.templateText : "";
+    if (!templateText && typeof params?.templateData === "string" && params.templateData) {
+      const binary = atob(params.templateData);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      templateText = decodeAuto(bytes);
+    }
+    if (hasTemplateParam && !templateText.trim()) {
+      return { ok: false, error: { code: "bad-request", message: "模板文本为空。" } };
+    }
+    const templateName = typeof params?.templateName === "string" ? params.templateName.trim() : "";
+    let templateOverrides: {
+      eDeviceDefinitionLabels: Record<string, string>;
+      eDeviceDefinitionClassExportEnabled: Record<string, boolean>;
+      eDeviceDefinitionFieldOrder: Record<string, string[]>;
+      eDeviceDefinitionTemplateFields: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>;
+      eDeviceDefinitionTableIds: Record<string, string>;
+    } | null = null;
+    if (templateText) {
+      const sections = parseEDeviceDefinitionFile(templateText);
+      if (sections.length === 0) {
+        return { ok: false, error: { code: "bad-request", message: "模板文本中未解析到元件定义" } };
+      }
+      const result = applyEDeviceDefinitionSectionsToLibraryState({
+        sections,
+        customDeviceTemplates: Array.isArray(appScope.customDeviceTemplates) ? appScope.customDeviceTemplates : [],
+        libraryTemplates: Array.isArray(appScope.libraryTemplates) ? appScope.libraryTemplates : [],
+        deviceDefinitionOverrides: appScope.deviceDefinitionOverrides ?? {},
+        eDeviceDefinitionLabels: {},
+        eDeviceDefinitionClassExportEnabled: {},
+        eDeviceDefinitionFieldOrder: {},
+        eDeviceDefinitionTemplateFields: {},
+        labels: appScope.PARAM_LABELS,
+        resolveDefinitionComponentLibrary: appScope.resolveTemplateComponentLibrary
+      });
+      templateOverrides = {
+        eDeviceDefinitionLabels: result.eDeviceDefinitionLabels,
+        eDeviceDefinitionClassExportEnabled: result.eDeviceDefinitionClassExportEnabled,
+        eDeviceDefinitionFieldOrder: result.eDeviceDefinitionFieldOrder,
+        eDeviceDefinitionTemplateFields: result.eDeviceDefinitionTemplateFields,
+        eDeviceDefinitionTableIds: result.eDeviceDefinitionTableIds
+      };
+      // 模板类型限制校验（仅预定义模板名有映射）
+      if (templateName) {
+        const mismatch = eDeviceTemplateSingleTypeMismatchMessage(templateName, String(project?.modelType ?? ""));
+        if (mismatch) {
+          return { ok: false, error: { code: "bad-request", message: mismatch } };
+        }
+      }
+    }
     const file = buildEFile(
       project,
       Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"],
       buildEFileExportOptionsFromLibrary({
         libraryTemplates: appScope.libraryTemplates,
         labels: appScope.PARAM_LABELS,
-        eDeviceDefinitionLabels: appScope.eDeviceDefinitionLabels,
-        eDeviceDefinitionClassExportEnabled: appScope.eDeviceDefinitionClassExportEnabled,
-        eDeviceDefinitionFieldOrder: appScope.eDeviceDefinitionFieldOrder,
-        eDeviceDefinitionTemplateFields: appScope.eDeviceDefinitionTemplateFields,
-        eDeviceDefinitionTableIds: appScope.eDeviceDefinitionTableIds,
+        eDeviceDefinitionLabels: templateOverrides
+          ? templateOverrides.eDeviceDefinitionLabels
+          : appScope.eDeviceDefinitionLabels,
+        eDeviceDefinitionClassExportEnabled: templateOverrides
+          ? templateOverrides.eDeviceDefinitionClassExportEnabled
+          : appScope.eDeviceDefinitionClassExportEnabled,
+        eDeviceDefinitionFieldOrder: templateOverrides
+          ? templateOverrides.eDeviceDefinitionFieldOrder
+          : appScope.eDeviceDefinitionFieldOrder,
+        eDeviceDefinitionTemplateFields: templateOverrides
+          ? templateOverrides.eDeviceDefinitionTemplateFields
+          : appScope.eDeviceDefinitionTemplateFields,
+        eDeviceDefinitionTableIds: templateOverrides
+          ? templateOverrides.eDeviceDefinitionTableIds
+          : appScope.eDeviceDefinitionTableIds,
         resolveDefinitionComponentLibrary: appScope.resolveTemplateComponentLibrary
       })
     );
@@ -487,7 +563,7 @@ export function createRuntimeSnapshotHandler(appScope: Record<string, any>) {
         case "runtime.devices":
           return serializeDevices(appScope);
         case "runtime.e-file":
-          return serializeEFile(appScope);
+          return serializeEFile(appScope, params);
         case "runtime.svg":
           return serializeSvg(appScope);
         default:

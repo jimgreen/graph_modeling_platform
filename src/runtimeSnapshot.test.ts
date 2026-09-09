@@ -1,5 +1,6 @@
 // runtimeSnapshot.test.ts — 运行时态序列化单测
 import { describe, it, expect, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   serializeModel,
   serializeDevices,
@@ -345,6 +346,90 @@ describe("serializeEFile", () => {
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.error.code).toBe("internal");
+  });
+});
+
+describe("serializeEFile 指定模板（纯后台计算，不影响前端状态）", () => {
+  // 真实预定义模板（可能 GBK 编码，经 templateData base64 传字节，decodeAuto 兼容解码）
+  const templateBytes = readFileSync(new URL("../public/e-templates/sgcc.e", import.meta.url));
+  const templateBase64 = Buffer.from(templateBytes).toString("base64");
+
+  const templateScope = (): any => mockScope({
+    // 当前 override 与模板不同，用于验证模板优先且状态不被改动
+    eDeviceDefinitionLabels: { ACGenerator: "手动改过" },
+    eDeviceDefinitionClassExportEnabled: { ACGenerator: true },
+    eDeviceDefinitionFieldOrder: { ACGenerator: ["dev_type", "name"] },
+    eDeviceDefinitionTemplateFields: { ACGenerator: [{ exportName: "手动字段" }] },
+    eDeviceDefinitionTableIds: { ACGenerator: "00099" },
+    libraryTemplates: [{
+      kind: "generator",
+      label: "发电机",
+      categoryLibrary: "发电设备",
+      size: { width: 84, height: 56 },
+      params: {},
+      terminalType: "ac",
+      terminalCount: 1
+    }],
+    PARAM_LABELS: {},
+    resolveTemplateComponentLibrary: undefined as unknown as (template: any) => string,
+    currentProject: () => ({ version: 1, name: "测试模型", modelType: "厂站", nodes: [], edges: [] }),
+    buildEFileExport: vi.fn((_project: any, _schemePath: string[], _options: any) => ({
+      filename: "model.e",
+      text: "E file content",
+      mime: "text/plain"
+    }))
+  });
+
+  it("templateData 生效：按模板 override 生成，appScope 当前模板状态引用不变", () => {
+    const scope = templateScope();
+    const before = {
+      labels: scope.eDeviceDefinitionLabels,
+      classExportEnabled: scope.eDeviceDefinitionClassExportEnabled,
+      fieldOrder: scope.eDeviceDefinitionFieldOrder,
+      templateFields: scope.eDeviceDefinitionTemplateFields,
+      tableIds: scope.eDeviceDefinitionTableIds
+    };
+    const res = serializeEFile(scope, { templateName: "国网E格式", templateData: templateBase64 });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.text).toBe("E file content");
+    // 当前状态引用不变（模板 override 未写回 appScope）
+    expect(scope.eDeviceDefinitionLabels).toBe(before.labels);
+    expect(scope.eDeviceDefinitionClassExportEnabled).toBe(before.classExportEnabled);
+    expect(scope.eDeviceDefinitionFieldOrder).toBe(before.fieldOrder);
+    expect(scope.eDeviceDefinitionTemplateFields).toBe(before.templateFields);
+    expect(scope.eDeviceDefinitionTableIds).toBe(before.tableIds);
+    // 传给 buildEFileExport 的 options 用模板 override 而非当前值
+    const buildEFileExport = scope.buildEFileExport as unknown as { mock: { calls: any[][] } };
+    const exportOptions = buildEFileExport.mock.calls[0]?.[2];
+    expect(exportOptions).toBeTruthy();
+    expect(exportOptions.eDeviceDefinitionLabels).not.toBe(scope.eDeviceDefinitionLabels);
+    expect(exportOptions.eDeviceDefinitionLabels["ACGenerator"]).not.toBe("手动改过");
+  });
+
+  it("templateName 类型不匹配 → bad-request（配网实时库 + 厂站）", () => {
+    const res = serializeEFile(templateScope(), {
+      templateName: "配网实时库",
+      templateData: templateBase64
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("bad-request");
+    expect(res.error.message).toContain("仅支持");
+  });
+
+  it("templateData 为空文本 → bad-request", () => {
+    const res = serializeEFile(templateScope(), { templateData: Buffer.from("").toString("base64") });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("bad-request");
+  });
+
+  it("templateText 显式为空白 → bad-request", () => {
+    const res = serializeEFile(templateScope(), { templateText: "   " });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("bad-request");
   });
 });
 
