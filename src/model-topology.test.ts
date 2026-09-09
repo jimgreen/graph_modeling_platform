@@ -2175,6 +2175,45 @@ test("sets terminal voltage base through each transformer or converter terminal 
   expect(byId.get(load.id)?.params.rated_voltage).toBe("35");
 });
 
+test("sets voltage base for dynamic-terminal buses in a transformer island via terminal-mode dialog path", () => {
+  // 回归测试：右键【设置电压基值】弹窗 terminal 模式 island 扩散。
+  // 母线端子由运行时按边动态补齐（不随设备持久化，terminalCount: 0），
+  // 修复前写回遍历原始 nodes，动态端子母线在岛内命中却无端子可写而被漏掉。
+  const busH = createDefaultNode("ac-bus", { x: 0, y: 0 });
+  const busL = createDefaultNode("ac-bus", { x: 600, y: 0 });
+  const transformer = createDefaultNode("ac-transformer", { x: 300, y: 0 });
+  busH.params.vbase = "220";
+  busL.params.vbase = "35";
+  transformer.terminals[0].vbase = "220";
+  transformer.terminals[1].vbase = "35";
+  transformer.params.i_vbase = "220";
+  transformer.params.j_vbase = "35";
+  const edges = [
+    { id: "e1", sourceId: busH.id, targetId: transformer.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+    { id: "e2", sourceId: transformer.id, targetId: busL.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+  ];
+
+  // 模拟弹窗：用户仅修改高压侧端子行（activeVoltageBaseTerminalValues 只含当前活跃行）
+  const result = setVoltageBaseTerminalValuesForScope(
+    [busH, transformer, busL],
+    edges,
+    { [transformer.id]: { t1: "110" } },
+    "island"
+  );
+  const byId = new Map(result.nodes.map((node) => [node.id, node]));
+  const nextBusH = byId.get(busH.id)!;
+
+  expect(result.changedNodeIds).toContain(busH.id);
+  expect(nextBusH.terminals[0].vbase).toBe("110");
+  expect(nextBusH.params.vbase).toBe("110");
+  // 变压器高压端子与参数同步
+  expect(byId.get(transformer.id)?.terminals[0].vbase).toBe("110");
+  expect(byId.get(transformer.id)?.params.i_vbase).toBe("110");
+  // 低压侧不受影响
+  expect(byId.get(busL.id)?.params.vbase).toBe("35");
+  expect(result.changedNodeIds).not.toContain(busL.id);
+});
+
 test("fills zero converter voltage setpoints from the related topology node rated voltage", () => {
   const dcdc = createDefaultNode("dcdc-converter", { x: 100, y: 100 });
   dcdc.params.i_v_set = "0.0";

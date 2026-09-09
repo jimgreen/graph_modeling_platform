@@ -4391,11 +4391,14 @@ export function setVoltageBaseTerminalValuesForScope(
   terminalValuesByNodeId: VoltageBaseTerminalValuesByNodeId,
   scope: VoltageBaseSetScope
 ): VoltageBaseSetResult {
+  // 母线端子由运行时按边动态补齐（不随设备持久化）。先同步端子，再基于同步后的节点计算与写回，
+  // 避免动态端子母线在岛内命中却无端子可写而被漏掉（与 setVoltageBaseTerminalValueForTopologySide 行为一致）。
+  const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
   const valuesByNodeId = scope === "island"
-    ? islandVoltageBaseTerminalValues(nodes, edges, terminalValuesByNodeId)
-    : selectedVoltageBaseTerminalValues(nodes, terminalValuesByNodeId);
+    ? islandVoltageBaseTerminalValues(synchronized.nodes, synchronized.edges, terminalValuesByNodeId)
+    : selectedVoltageBaseTerminalValues(synchronized.nodes, terminalValuesByNodeId);
   const nodeUpdates: ModelNode[] = [];
-  const nextNodes = nodes.map((node) => {
+  const nextNodes = synchronized.nodes.map((node) => {
     const valuesByTerminalId = valuesByNodeId.get(node.id);
     if (!valuesByTerminalId) {
       return node;
