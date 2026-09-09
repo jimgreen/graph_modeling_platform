@@ -242,6 +242,67 @@ describe(apiPath("/v1/runtime/e-file"), () => {
     expect(await res.text()).toBe("<Section>");
     ws.close();
   });
+
+  test("GET ?template= 预定义模板 → 透传 templateName + templateData", async () => {
+    let received = null;
+    const ws = await connectResponder("c1", (resource, params) => {
+      received = params;
+      return { ok: true, data: { filename: "model.e", text: "E", mime: "text/plain" } };
+    });
+    const res = await fetch(`${baseUrl}${apiPath("/v1/runtime/e-file")}?template=${encodeURIComponent("配网实时库")}`);
+    expect(res.status).toBe(200);
+    expect(received.templateName).toBe("配网实时库");
+    expect(typeof received.templateData).toBe("string");
+    expect(received.templateData.length).toBeGreaterThan(0);
+    ws.close();
+  });
+
+  test("GET ?template= 未知模板 → 400", async () => {
+    const { status, json } = await fetchV1(`${apiPath("/v1/runtime/e-file")}?template=不存在模板`);
+    expect(status).toBe(400);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("bad-request");
+    expect(json.error.message).toContain("可用模板");
+  });
+
+  test("POST templateText → 透传 templateName + templateData", async () => {
+    let received = null;
+    const ws = await connectResponder("c1", (resource, params) => {
+      received = params;
+      return { ok: true, data: { filename: "model.e", text: "E", mime: "text/plain" } };
+    });
+    const res = await fetch(`${baseUrl}${apiPath("/v1/runtime/e-file")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ templateName: "自定义模板A", templateText: "<ACLoad>\nname=名称\n</ACLoad>" })
+    });
+    expect(res.status).toBe(200);
+    expect(received.templateName).toBe("自定义模板A");
+    expect(Buffer.from(received.templateData, "base64").toString("utf8")).toContain("ACLoad");
+    ws.close();
+  });
+
+  test("POST 空 templateText → 400", async () => {
+    const res = await fetch(`${baseUrl}${apiPath("/v1/runtime/e-file")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ templateText: "  " })
+    });
+    const json = await res.json();
+    expect(res.status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+  });
+
+  test("POST 非法 JSON → 400", async () => {
+    const r = await fetch(`${baseUrl}${apiPath("/v1/runtime/e-file")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{invalid"
+    });
+    expect(r.status).toBe(400);
+    const json = await r.json();
+    expect(json.error.code).toBe("bad-request");
+  });
 });
 
 describe(apiPath("/v1/runtime") + " 超时降级", () => {

@@ -161,8 +161,12 @@ const ENDPOINTS = [
   { group: "v1 运行时态", method: "GET", path: "/webgrp/v1/runtime/svg", desc: "画布 SVG 文本", query: [{ name: "clientId", desc: "可选" }], response: "<image/svg+xml>", examples: [
     { label: "画布 SVG", params: {} }
   ]},
-  { group: "v1 运行时态", method: "GET", path: "/webgrp/v1/runtime/e-file", desc: "E 文件文本", query: [{ name: "clientId", desc: "可选" }], response: "<text/plain，attachment>", examples: [
-    { label: "E 文件", params: {} }
+  { group: "v1 运行时态", method: "GET", path: "/webgrp/v1/runtime/e-file", desc: "E 文件文本（可指定预定义模板，纯后台计算不影响前端状态）", query: [{ name: "template", desc: "可选，预定义模板名（国网E格式|主网实时库|配网实时库|台区实时库）" }, { name: "clientId", desc: "可选" }], response: "<text/plain，attachment>", examples: [
+    { label: "E 文件（前端当前模板状态）", params: {} },
+    { label: "E 文件（按「配网实时库」模板生成）", params: { q_template: "配网实时库" } }
+  ]},
+  { group: "v1 运行时态", method: "POST", path: "/webgrp/v1/runtime/e-file", desc: "E 文件文本（指定模板定义文本，纯后台计算不影响前端状态）", query: [{ name: "clientId", desc: "可选" }], body: { templateText: "<ACLoad>...</ACLoad>", templateName: "自定义模板A" }, response: "<text/plain，attachment>", examples: [
+    { label: "按自定义模板文本生成", params: { __body__: { templateText: "<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>", templateName: "" } } }
   ]},
 
   // ---- v1 控制台域（经 WS 下发前端 __appScope，写操作 no-store）----
