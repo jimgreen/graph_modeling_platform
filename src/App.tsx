@@ -1050,7 +1050,7 @@ const [deviceLabelsVisible, setDeviceLabelsVisible] = useState(true);
 Object.assign(__appScope, { deviceLabelsVisible, setDeviceLabelsVisible });
 const [deviceMeasurementsVisible, setDeviceMeasurementsVisible] = useState(true);
 Object.assign(__appScope, { deviceMeasurementsVisible, setDeviceMeasurementsVisible });
-const [minimapVisible, setMinimapVisible] = useState(true);
+const [minimapVisible, setMinimapVisible] = useState(false);
 Object.assign(__appScope, { minimapVisible, setMinimapVisible });
 const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT });
 Object.assign(__appScope, { viewBox, setViewBox });
