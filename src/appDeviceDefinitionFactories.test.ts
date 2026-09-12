@@ -5965,22 +5965,22 @@ describe("createExportEFile", () => {
     vi.unstubAllGlobals();
   });
 
-  test("uses the configured field order when refreshing E files for a scheme export", async () => {
-    let generatedExportOptions: any;
+  test("导出方案不再刷新磁盘 SVG/E 产物，直接打包下载", async () => {
     const project = { version: 1, name: "方案模型", nodes: [], edges: [] };
     const projectRecord = { id: "project-1", name: "方案模型", project };
     const scheme = { id: "scheme-1", name: "方案一", projects: [projectRecord], children: [] };
+    const buildSvgDocument = vi.fn(() => "<svg/>");
+    const buildEFileExport = vi.fn(() => ({ filename: "方案模型.e", text: "", mime: "text/plain" }));
+    const saveBackendProjectArtifacts = vi.fn(async () => undefined);
+    const downloadBackendSchemeArchive = vi.fn(async () => false);
     const exportScheme = createExportSchemeRecord({
       DEFAULT_CANVAS_BACKGROUND: "#ffffff",
       PARAM_LABELS: {},
       backgroundPageRender: null,
-      buildEFileExport: vi.fn((_project: any, _path: string[], options: any) => {
-        generatedExportOptions = options;
-        return { filename: "方案模型.e", text: "", mime: "text/plain" };
-      }),
-      buildSvgDocument: vi.fn(() => "<svg/>"),
+      buildEFileExport,
+      buildSvgDocument,
       colorPalette: {},
-      downloadBackendSchemeArchive: vi.fn(async () => false),
+      downloadBackendSchemeArchive,
       eDeviceDefinitionClassExportEnabled: { ACGenerator: true },
       eDeviceDefinitionFieldOrder: { ACGenerator: ["dev_type", "name", "idx"] },
       eDeviceDefinitionLabels: { ACGenerator: "ACGenerator" },
@@ -5999,7 +5999,7 @@ describe("createExportEFile", () => {
       measurementConfig: undefined,
       resolveTemplateComponentLibrary: () => "ACGenerator",
       safeFilePart: (value: string) => value,
-      saveBackendProjectArtifacts: vi.fn(async () => undefined),
+      saveBackendProjectArtifacts,
       savedProjectRecordIsSummary: () => false,
       schemePathForRecord: () => ["方案一"],
       schemePathForScheme: () => ["方案一"],
@@ -6009,15 +6009,10 @@ describe("createExportEFile", () => {
 
     await exportScheme(scheme as any);
 
-    const generatorDefinition = generatedExportOptions.interfaceDefinitions.find(
-      (definition: any) => definition.componentLibrary === "ACGenerator"
-    );
-    expect(generatorDefinition.fields.slice(0, 4).map((field: any) => field.sourceName)).toEqual([
-      "parent",
-      "dev_type",
-      "name",
-      "idx"
-    ]);
+    expect(buildSvgDocument).not.toHaveBeenCalled();
+    expect(buildEFileExport).not.toHaveBeenCalled();
+    expect(saveBackendProjectArtifacts).not.toHaveBeenCalled();
+    expect(downloadBackendSchemeArchive).toHaveBeenCalledWith(["方案一"], "方案一.zip");
   });
 });
 
