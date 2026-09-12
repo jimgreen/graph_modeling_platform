@@ -354,6 +354,20 @@ button:not(.ant-btn):disabled {
   padding: 0;
 }
 
+/* 渐变流光的两个色标注册为可插值颜色：线性渐变本身无法在 keyframes 间平滑过渡，
+   注册 <color> 后浏览器才会对色标做数值插值（不支持 @property 时退化为静态深色渐变） */
+@property --brand-c1 {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: #0f172a;
+}
+
+@property --brand-c2 {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: #1e293b;
+}
+
 .brand-mark {
   display: grid;
   place-items: center;
@@ -362,8 +376,27 @@ button:not(.ant-btn):disabled {
   border-radius: 8px;
   color: #ffffff;
   background: #0f172a;
+  background-image: linear-gradient(135deg, var(--brand-c1, #0f172a), var(--brand-c2, #1e293b));
   font-weight: 800;
   letter-spacing: 0;
+  animation: brand-flow 6s ease-in-out infinite;
+}
+
+@keyframes brand-flow {
+  0%, 100% {
+    --brand-c1: #0f172a;
+    --brand-c2: #1e293b;
+  }
+  50% {
+    --brand-c1: #1e3a8a;
+    --brand-c2: #0e7490;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-mark {
+    animation: none;
+  }
 }
 
 .topbar-brand .brand-mark {
