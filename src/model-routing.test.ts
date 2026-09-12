@@ -218,6 +218,11 @@ import {
   type ProjectFile
 } from "./model";
 import { degreesToRadians } from "./formatUtils";
+import {
+  BUS_CONNECTABLE_INSET_RATIO,
+  busConnectableHalfWidth,
+  setBusConnectableInsetRatio
+} from "./model-routing";
 
 function hasImmediateRouteReversal(points: Point[]) {
   for (let index = 1; index < points.length - 1; index += 1) {
@@ -992,7 +997,11 @@ test("cached stored rendering refreshes crossing-neighbor paths after a move com
   expect(nextCached?.points).toEqual(previousCached?.points);
   expect(nextCached?.path).not.toBe("cached-path");
   expect(nextCached?.path).toContain("M");
-  expect(nextRoutes.find((route) => route.edgeId === "moved")?.points[0]).toEqual(getTerminalPoint(movedLeft, "t2"));
+  expect(nextRoutes.find((route) => route.edgeId === "moved")?.points[0]).toEqual({
+    // 母线宽 150，两端各留 10% 禁绘区（BUS_CONNECTABLE_INSET_RATIO），可连接半宽 60
+    x: movedLeft.position.x + 60,
+    y: 470
+  });
 });
 
 
@@ -2981,6 +2990,45 @@ test("renders custom static button graphics during drawing previews", () => {
   expect(geometryMarkup).toContain('height="68"');
   expect(geometryMarkup).not.toContain('stroke="none"');
   expect(textMarkup).toContain("操作按钮");
+});
+
+describe("bus connectable inset", () => {
+  test("keeps connection points inside the 10%~90% span", () => {
+    const bus = createDefaultNode("ac-bus", { x: 400, y: 240 });
+    const halfWidth = bus.size.width / 2;
+    const limit = busConnectableHalfWidth(halfWidth);
+    expect(BUS_CONNECTABLE_INSET_RATIO).toBe(0.1);
+    expect(limit).toBeCloseTo(halfWidth * 0.8, 6);
+
+    expect(projectPointToBusCenterline(bus, { x: bus.position.x - 1000, y: bus.position.y })).toEqual({
+      x: bus.position.x - limit,
+      y: bus.position.y
+    });
+    expect(projectPointToBusCenterline(bus, { x: bus.position.x + 1000, y: bus.position.y })).toEqual({
+      x: bus.position.x + limit,
+      y: bus.position.y
+    });
+    // 落在禁绘区内的点同样收敛到可连接范围边界
+    expect(projectPointToBusCenterline(bus, { x: bus.position.x + halfWidth, y: bus.position.y })).toEqual({
+      x: bus.position.x + limit,
+      y: bus.position.y
+    });
+  });
+
+  test("honors a customized inset ratio and falls back on invalid input", () => {
+    const bus = createDefaultNode("ac-bus", { x: 400, y: 240 });
+    try {
+      setBusConnectableInsetRatio(0.25);
+      expect(busConnectableHalfWidth(bus.size.width / 2)).toBeCloseTo((bus.size.width / 2) * 0.5, 6);
+      setBusConnectableInsetRatio(Number.NaN);
+      expect(BUS_CONNECTABLE_INSET_RATIO).toBe(0.1);
+      setBusConnectableInsetRatio(0.9);
+      expect(BUS_CONNECTABLE_INSET_RATIO).toBe(0.45);
+    } finally {
+      setBusConnectableInsetRatio(0.1);
+    }
+    expect(busConnectableHalfWidth(bus.size.width / 2)).toBeCloseTo(bus.size.width / 2 * 0.8, 6);
+  });
 });
 
 

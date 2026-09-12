@@ -194,6 +194,7 @@ import {
   normalizeViewBoxToCanvas,
   prepareConnectionEdgeForCommit,
   projectPointToBusCenterline,
+  busConnectableHalfWidth,
   reconcileOverlappingTerminalConnections,
   resetDeviceIndexesForPaste,
   terminalRenderLocalPoint,
@@ -800,7 +801,8 @@ test("adds vertical library variants for buses and non-routable two-terminal dev
       expect(getBusTerminalType(node)).toBe(getBusTerminalType(createDefaultNode(kind, { x: 200, y: 200 })));
       expect(projectPointToBusCenterline(node, { x: 210, y: node.position.y - node.size.width })).toEqual({
         x: node.position.x,
-        y: node.position.y - node.size.width / 2
+        // 母线两端各 10% 禁绘区（BUS_CONNECTABLE_INSET_RATIO），端点收敛到可连接范围
+        y: node.position.y - busConnectableHalfWidth(node.size.width / 2)
       });
     } else {
       expect(node.terminals).toHaveLength(2);

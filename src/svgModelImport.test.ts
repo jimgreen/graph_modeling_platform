@@ -186,7 +186,8 @@ describe("parseSvgModel platform semantics", () => {
       targetId: "legacy-bus",
       sourceTerminalId: "t2",
       targetTerminalId: "t1",
-      targetPoint: { x: 765, y: 170 },
+      // 母线实体长 1750（symbol scale 11.66667），两端各 10% 禁绘区 → 端点由 170 收敛到 948-700
+      targetPoint: { x: 765, y: 248 },
       routePoints: [{ x: 673, y: 170 }, { x: 733, y: 170 }, { x: 765, y: 170 }]
     })]);
     expect(result.stats).toEqual({ nodes: 2, edges: 1, measurementGroups: 0, staticNodes: 0 });

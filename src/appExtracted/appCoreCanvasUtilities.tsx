@@ -110,6 +110,7 @@ import {
   type NodeLabelDisplayMode
 } from "../nodeLabelUtils";
 import { snapSingleTerminalAnchorToNearestSide, projectedProportionalScaleFromHandleDelta, resizeLineSegmentBusGeometryFromHandleDrag } from "../transformUtils";
+import { busConnectableHalfWidth } from "../model-routing";
 import { type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
 export const ENABLE_REACT_FLOW_PREVIEW = import.meta.env.DEV;
 
@@ -2013,9 +2014,9 @@ export const pointOnBusForSnap = (bus: ModelNode, point: Point, tolerance = CONN
     x: dx * Math.cos(radians) - dy * Math.sin(radians),
     y: dx * Math.sin(radians) + dy * Math.cos(radians)
   };
-  const halfWidth = (bus.size.width * Math.abs(getNodeScaleX(bus))) / 2;
+  const limit = busConnectableHalfWidth((bus.size.width * Math.abs(getNodeScaleX(bus))) / 2);
   const halfHeight = Math.max(4, (bus.size.height * Math.abs(getNodeScaleY(bus))) / 2);
-  if (local.x < -halfWidth - tolerance || local.x > halfWidth + tolerance || Math.abs(local.y) > halfHeight + tolerance) {
+  if (local.x < -limit - tolerance || local.x > limit + tolerance || Math.abs(local.y) > halfHeight + tolerance) {
     return null;
   }
   return projectPointToBusCenterline(bus, point);
