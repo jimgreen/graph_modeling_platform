@@ -1,6 +1,7 @@
 // 发送模型弹窗：SSR 静态标记断言（不依赖 DOM 环境，与项目其它组件测试同模式）
 // + 请求装配纯函数契约。端到端 multipart 行为见 server/sendModel.test.mjs。
 import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SendModelDialog, buildSendRequest } from "./SendModelDialog";
 
@@ -59,22 +60,40 @@ describe("SendModelDialog", () => {
     expect(html).toContain(">UTF-8<");
   });
 
-  test("展示 Python 与 Node 两种接收端示例及各自的复制按钮", () => {
+  test("右侧展示接收端示例：Python / Node 页签、语法高亮、复制按钮", () => {
     const html = render({});
     expect(html).toContain("接收端示例");
+    expect(html).toContain('id="send-model-sample-tabs"');
+    expect(html).toContain("Python");
+    expect(html).toContain("Node.js");
+    expect(html).toContain('id="send-model-sample-copy"');
+
+    // 两段代码都在 DOM 中，默认只显示 Python（Node 面板 display:none）
     expect(html).toContain('id="send-model-sample-code-python"');
     expect(html).toContain('id="send-model-sample-code-node"');
-    expect(html).toContain('id="send-model-sample-copy-python"');
-    expect(html).toContain('id="send-model-sample-copy-node"');
+    expect(html).toContain("display:none");
 
-    // 两段代码都在 DOM 中（details 收起也会渲染内容），照抄即可起服务
-    expect(html).toContain("request.files.get(field)");
-    expect(html).toContain("raw.decode(encoding");
-    expect(html).toContain("formData()");
-    expect(html).toContain("value.arrayBuffer()");
-    // 契约要点：字段名与 GBK 处理都要在示例里体现
-    expect(html).toContain("e_file");
-    expect(html).toContain("iconv.decode");
+    // 语法高亮：highlight.js 输出的 span class
+    expect(html).toContain("hljs-keyword");
+
+    // 契约要点：高亮会把标识符包进 span，逐字断言改看源码
+    const source = readFileSync(new URL("./SendModelDialog.tsx", import.meta.url), "utf8");
+    expect(source).toContain("request.files.get(field)");
+    expect(source).toContain("formData()");
+    expect(source).toContain("value.arrayBuffer()");
+    expect(source).toContain("e_file");
+    expect(source).toContain("iconv.decode");
+  });
+
+  test("发送成功后保留弹窗，不再调用 onClose", () => {
+    const source = readFileSync(new URL("./SendModelDialog.tsx", import.meta.url), "utf8");
+    const successBranch = source.slice(
+      source.indexOf('scope.showGlobalMessage?.("发送成功")'),
+      source.indexOf("} catch (err) {")
+    );
+
+    expect(successBranch).toContain("setSuccess");
+    expect(successBranch).not.toContain("onClose()");
   });
 });
 

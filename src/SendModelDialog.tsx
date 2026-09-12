@@ -1,7 +1,15 @@
 // @ts-nocheck
 import { useEffect, useState } from "react";
 import { Send } from "lucide-react";
-import { Input, Button, Checkbox, Select } from "antd";
+import { Input, Button, Checkbox, Select, Segmented } from "antd";
+import hljs from "highlight.js/lib/core";
+import python from "highlight.js/lib/languages/python";
+import javascript from "highlight.js/lib/languages/javascript";
+import "highlight.js/styles/github-dark.css";
+
+// 只注册用到的两种语言：highlight.js 全量包含几十种语言，按需注册才不会拖大包
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("javascript", javascript);
 import { WindowCloseButton } from "./WindowCloseButton";
 import { apiPath } from "./config";
 import { schemePathQueryParam } from "./appExtracted/appPersistenceLibraryExport";
@@ -103,6 +111,13 @@ createServer(async (req, res) => {
   }
 ];
 
+// 示例 key → highlight.js 语言名；代码是常量，高亮结果在模块级算一次即可
+const RECEIVER_SAMPLE_LANGUAGES = { python: "python", node: "javascript" };
+const HIGHLIGHTED_SAMPLES = RECEIVER_SAMPLES.map((sample) => {
+  const language = RECEIVER_SAMPLE_LANGUAGES[sample.key] ?? "javascript";
+  return { ...sample, language, html: hljs.highlight(sample.code, { language }).value };
+});
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -154,6 +169,10 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
   );
   // 复制接收端示例后的反馈：{ key: 哪个示例, ok: 是否复制成功 }
   const [copyState, setCopyState] = useState<{ key: string; ok: boolean } | null>(null);
+  // 当前展示的接收端示例（默认 Python）
+  const [activeSample, setActiveSample] = useState("python");
+  // 发送成功提示：成功后保留弹窗，便于继续发送或核对接收结果
+  const [success, setSuccess] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -163,6 +182,7 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
       setUrl("");
     }
     setError("");
+    setSuccess("");
   }, [open]);
 
   // ESC 键关闭弹窗（document 级别监听）
@@ -187,6 +207,10 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
     }
   };
 
+  // 右侧当前展示的示例（复制按钮据此取代码）
+  const activeSampleDefinition =
+    HIGHLIGHTED_SAMPLES.find((sample) => sample.key === activeSample) ?? HIGHLIGHTED_SAMPLES[0];
+
   const submit = async () => {
     const target = url.trim();
     if (!target) {
@@ -207,6 +231,7 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
 
     setSending(true);
     setError("");
+    setSuccess("");
     try {
       const { requestUrl, init } = buildSendRequest(scope, target, files);
       const response = await fetch(requestUrl, init);
@@ -220,7 +245,8 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
         /* 隐私模式等场景下忽略 */
       }
       scope.showGlobalMessage?.("发送成功");
-      onClose();
+      // 成功后保留弹窗：便于继续发送或对照右侧示例核对接收结果，成功文案给在弹窗内
+      setSuccess(`发送成功（接收端返回 HTTP ${payload?.data?.status ?? 200}，用时 ${payload?.data?.elapsedMs ?? "-"}ms）。`);
     } catch (err) {
       // 失败保留弹窗，便于改地址重试
       setError(err instanceof Error ? err.message : "发送失败。");
@@ -235,14 +261,16 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
         className="e-device-interface-dialog window-close-host"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
-        style={{ width: 460, display: "flex", flexDirection: "column", maxHeight: "80vh", fontSize: 12 }}
+        style={{ width: 900, maxWidth: "94vw", display: "flex", flexDirection: "column", maxHeight: "80vh", fontSize: 12 }}
         aria-label="发送模型"
       >
         <WindowCloseButton label="关闭发送模型" onClick={onClose} />
         <div className="image-picker-title" style={{ padding: "8px 58px 8px 12px" }}>
           <h2 style={{ fontSize: 14, margin: 0 }}>发送模型</h2>
         </div>
-        <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 4, overflowY: "auto" }}>
+        <div style={{ display: "flex", gap: 12, padding: "8px 12px", flex: "1 1 auto", minHeight: 0, overflow: "hidden" }}>
+          {/* 左栏：目标 URL + 发送格式 */}
+          <div style={{ flex: "0 0 400px", display: "flex", flexDirection: "column", gap: 4, minWidth: 0, overflowY: "auto" }}>
           <div style={{ fontWeight: 600 }}>目标 URL</div>
           <Input
             id="send-model-url"
@@ -289,34 +317,58 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
               ))}
             </tbody>
           </table>
-          <div style={{ fontWeight: 600, marginTop: 8 }}>接收端示例</div>
-          <div style={{ color: "#64748b" }}>
-            把目标 URL 填成下面服务监听的地址（示例为 http://127.0.0.1:8080/receive），即可收到上面勾选格式的文件。
-          </div>
-          {RECEIVER_SAMPLES.map((sample) => (
-            <details key={sample.key} style={{ marginTop: 4, border: "1px solid #e2e8f0", borderRadius: 5, background: "#f8fafc" }}>
-              <summary style={{ cursor: "pointer", padding: "4px 8px", fontWeight: 600 }}>{sample.label}</summary>
-              <div style={{ padding: "0 8px 8px" }}>
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
-                  <button
-                    type="button"
-                    id={`send-model-sample-copy-${sample.key}`}
-                    onClick={() => void copySample(sample)}
-                    style={{ border: "1px solid #cbd5e1", borderRadius: 4, background: "#ffffff", color: "#334155", cursor: "pointer", fontSize: 12, padding: "1px 8px" }}
-                  >
-                    {copyState?.key === sample.key ? (copyState.ok ? "已复制" : "复制失败") : "复制"}
-                  </button>
-                </div>
-                <pre
-                  id={`send-model-sample-code-${sample.key}`}
-                  style={{ margin: 0, maxHeight: 240, overflow: "auto", padding: 8, borderRadius: 4, background: "#0f172a", color: "#e2e8f0", fontSize: 11, lineHeight: 1.5 }}
-                >{sample.code}</pre>
-              </div>
-            </details>
-          ))}
           {error && (
             <div id="send-model-error" style={{ color: "#dc2626", marginTop: 4 }}>{error}</div>
           )}
+          {!error && success && (
+            <div id="send-model-success" style={{ color: "#16a34a", marginTop: 4 }}>{success}</div>
+          )}
+          </div>
+
+          {/* 右栏：接收端示例。默认 Python，Segmented 切换；与左栏同一 flex 行故等高 */}
+          <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: 4, borderLeft: "1px solid #e2e8f0", paddingLeft: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div style={{ fontWeight: 600 }}>接收端示例</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <Segmented
+                  id="send-model-sample-tabs"
+                  size="small"
+                  value={activeSample}
+                  onChange={(value) => setActiveSample(String(value))}
+                  options={[{ value: "python", label: "Python" }, { value: "node", label: "Node.js" }]}
+                />
+                <button
+                  type="button"
+                  id="send-model-sample-copy"
+                  onClick={() => void copySample(activeSampleDefinition)}
+                  style={{ border: "1px solid #cbd5e1", borderRadius: 4, background: "#ffffff", color: "#334155", cursor: "pointer", fontSize: 12, padding: "1px 8px" }}
+                >
+                  {copyState?.key === activeSample ? (copyState.ok ? "已复制" : "复制失败") : "复制"}
+                </button>
+              </div>
+            </div>
+            <div style={{ color: "#64748b" }}>
+              把目标 URL 填成示例服务监听的地址（如 http://127.0.0.1:8080/receive）即可收到勾选格式的文件；Python 需 pip install flask，Node 仅 GBK 预览需 iconv-lite。
+            </div>
+            {HIGHLIGHTED_SAMPLES.map((sample) => (
+              <pre
+                key={sample.key}
+                id={`send-model-sample-code-${sample.key}`}
+                style={{
+                  display: sample.key === activeSample ? "block" : "none",
+                  margin: 0,
+                  flex: "1 1 auto",
+                  minHeight: 0,
+                  overflow: "auto",
+                  padding: 8,
+                  borderRadius: 4,
+                  background: "#0d1117",
+                  fontSize: 11,
+                  lineHeight: 1.5
+                }}
+              ><code className="hljs" dangerouslySetInnerHTML={{ __html: sample.html }}/></pre>
+            ))}
+          </div>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "8px 12px", borderTop: "1px solid #e2e8f0" }}>
           <Button id="send-model-cancel" onClick={onClose} disabled={sending}>取消</Button>
