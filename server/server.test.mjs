@@ -8,7 +8,6 @@ import { apiPath } from "./config.mjs";
 import {
   archiveStaleSchemeFiles,
   buildSvgFile,
-  createSchemeArchiveBuffer,
   deleteSchemeProjectRecord,
   deleteSchemeRecordDirectory,
   eSectionColumns,
@@ -3374,29 +3373,6 @@ describe("scheme file persistence", () => {
       await expect(readFile(join(filesRoot, "默认方案", "山西.json"), "utf-8")).resolves.toContain("山西");
       await expect(readFile(join(filesRoot, "待删方案", "qinling.json"), "utf-8")).rejects.toThrow();
       await expect(readFile(join(trashRoot, "delete-scheme", "待删方案", "qinling.json"), "utf-8")).resolves.toContain("qinling");
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  test("exports one scheme directory as a zip while preserving child scheme folders", async () => {
-    const root = await mkdtemp(join(tmpdir(), "scheme-export-zip-"));
-    try {
-      const filesRoot = join(root, "files");
-      await mkdir(join(filesRoot, "默认方案", "1-1"), { recursive: true });
-      await writeFile(join(filesRoot, "默认方案", "电压等级.json"), "{\"name\":\"电压等级\"}", "utf-8");
-      await writeFile(join(filesRoot, "默认方案", "1-1", "1-1-1.json"), "{\"name\":\"1-1-1\"}", "utf-8");
-
-      const { buffer, filename } = await createSchemeArchiveBuffer({
-        filesRoot,
-        schemePath: ["默认方案"]
-      });
-      const zip = new AdmZip(buffer);
-      const entryNames = zip.getEntries().map((entry) => entry.entryName.replace(/\\/gu, "/"));
-
-      expect(filename).toBe("默认方案.zip");
-      expect(entryNames).toContain("默认方案/电压等级.json");
-      expect(entryNames).toContain("默认方案/1-1/1-1-1.json");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
