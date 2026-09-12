@@ -7065,15 +7065,9 @@ function savedRecordTimestamp(value: string | undefined): number {
 }
 
 function savedProjectDisplayName(name: string, fallback = "未命名模型"): string {
-  const normalized = name.trim().replace(/电力系统/g, "电力能源系统") || fallback;
-  const suffixMatch = /^(.*?)\s*\((\d+)\)$/u.exec(normalized);
-  if (!suffixMatch) {
-    return normalized;
-  }
-  const base = suffixMatch[1].trim();
-  // Explicit copies are intentionally named "副本", while numeric suffixes on
-  // ordinary model names come from older duplicate-normalization bugs.
-  return base && !base.endsWith("副本") ? base : normalized;
+  // 名称即标识：`uniqueRecordName` 会用 “(N)” 区分重名模型，此处若把 “(N)” 归一化掉，
+  // 新建/重命名/导入的同名模型会被静默合并进已有模型，模型列表看不到新条目。
+  return name.trim().replace(/电力系统/g, "电力能源系统") || fallback;
 }
 
 export function savedProjectRecordNameKey(name: string): string {
