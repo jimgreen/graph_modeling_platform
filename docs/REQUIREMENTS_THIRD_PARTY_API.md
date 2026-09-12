@@ -29,7 +29,10 @@ server/image-server.mjs 已实现并可作为基础：
 - `/api/schemes/project` — 模型读写删
 - `/api/color-config`、`/api/measurement-config` — 颜色/量测配置
 - `/api/device-library` — 设备/图元/模板库配置（`customDeviceTemplates`、`customAttributeLibraries`、`customComponentTypes`、`customGraphTemplateTypes`、`customGraphTemplates`、`deviceDefinitionOverrides`）
-- 服务端 SVG 生成（`buildSvgFile`）、E 文件生成（`buildDeviceParameterFile`）、ZIP 打包（`createSchemeArchiveBuffer`）
+- ZIP 打包（`server/schemeArchive.mjs` 的 `buildSchemeArchiveBuffer`，包内 SVG / E 实时渲染）
+- 静态 E 段列元数据 `eSectionColumns`（`server/server.mjs`）——保留，供 v1 图元库域与解析/校验复用
+
+> **[2026-09-13 更新]** 原列于此的「服务端 SVG 生成 `buildSvgFile`」「E 文件生成 `buildDeviceParameterFile`」两项**已删除**：保存模型不再落盘 `.e` / `.svg`，`data/schemes/files/**` 只含 `.json`，E / SVG / CIM 一律按需实时生成；`eSectionColumns` 保留。
 
 > 当前 image-server 监听独立端口（默认 5174，可由 `IMAGE_SERVER_PORT` 环境变量覆盖），前端经 Vite（另一端口）托管。"同端口"为**新增需求**，与现状不同。
 

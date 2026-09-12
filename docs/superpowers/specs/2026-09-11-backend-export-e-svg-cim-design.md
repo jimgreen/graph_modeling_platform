@@ -215,7 +215,7 @@ E 编码选择器保留，默认 GBK 不变。CIM 原前端「缺参确认弹窗
 | 风险 | 等级 | 缓解 |
 |------|------|------|
 | 去 JSX 改动画布实时渲染核心（`DeviceGlyph` 466 行） | **高** | 逐图元视觉对照：转换前后渲染同一模型，截图逐设备比对；现有 `svgExport.test.tsx` / 画布相关测试全量回归 |
-| SVG 端点输出变化影响已有第三方调用方 | 中 | 在 `docs/DESIGN_THIRD_PARTY_API.md` 记录变更；老 `buildSvgFile` 仅保留作落盘 `.svg` 兜底 |
+| SVG 端点输出变化影响已有第三方调用方 | 中 | 在 `docs/DESIGN_THIRD_PARTY_API.md` 记录变更；老 `buildSvgFile` 兜底策略**已移除**（[2026-09-13] 该函数与 `buildDeviceParameterFile` 一并删除，保存模型不再落盘 `.svg` / `.e`，`schemes/files/**` 只含 `.json`，端点与前端导出共用同一实时实现） |
 | Node 原生 TS 对闭包有 `.tsx`/enum 漏网 | 中 | `erasableSyntaxOnly` + 启动冒烟测试（`server/*.test.mjs` 直接 import `.ts` 跑通） |
 | 前端「先保存再导出」改变用户预期（隐式落盘） | 低 | 导出前给全局提示；导出失败时明确报错不回滚 |
 | CIM `modelId` 与前端 `activeProjectKey` 不一致 | 低 | D10 提供 query 覆盖；文档写明默认规则 |

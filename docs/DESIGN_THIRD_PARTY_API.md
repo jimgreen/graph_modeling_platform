@@ -197,11 +197,15 @@ HTTP 状态：200 成功 / 400 参数非法 / 404 不存在或无在线客户端
 | `/api/v1/schemes/{schemePath}/models/{name}/json` | GET | — | 模型 project JSON |
 | `/api/v1/schemes/{schemePath}/models/{name}/svg` | GET | `colorMode=energy\|voltage`（默认 energy）、`encoding=utf-8\|gbk`（默认 utf-8） | SVG 文本（复用前端 `buildSvgDocument`，含图层/测量/状态图标；配色取自部署配色配置；自带 XML 声明） |
 
-> **[2026-09-11 更新]** `schemes/model/svg` 已改为复用前端 `buildSvgDocument`（`src/export/svg.ts`），不再使用 server 简化实现 `buildSvgFile`（该函数保留为兜底：`server.mjs:5556` 在调用方未提供 SVG 产物时调用、`5604` 在批量写盘时目标文件不存在才调用，两处调用点均不传 `deviceTemplates`；常规保存优先落盘前端上传的 SVG 产物，其中已含库模板与元件定义覆盖）。渲染器与前端导出为同一实现；入参为磁盘模型 + 库配置，输出含图层、测量、状态图标、画布背景图。配色取自部署的配色配置（`settings/color-config.json`，文件缺失或为空时回落内置默认调色板），`colorMode` 选择 `energy`（默认，端子类型配色）/ `voltage`（电压等级配色）两套，非法值返回 400 `bad-request`。已知限制：服务端无 `backgroundPageRender` 运行时产物，故不含背景页图层（元件定义覆盖 `deviceDefinitionOverrides` 已套用）。响应头由 `no-cache` 改为 `no-store`（与 v1 运行时态一致）；旧 `no-cache` 未配 ETag（响应由 handler 自行 `writeHead`，v1 动态路由分发无 ETag 包装，ETag/304 仅在 JSON 信封路径），第三方不再获得条件缓存。
+> **[2026-09-11 更新]** `schemes/model/svg` 已改为复用前端 `buildSvgDocument`（`src/export/svg.ts`），不再使用 server 简化实现 `buildSvgFile`（该函数已在 [2026-09-13] 删除，见下方更新）。渲染器与前端导出为同一实现；入参为磁盘模型 + 库配置，输出含图层、测量、状态图标、画布背景图。配色取自部署的配色配置（`settings/color-config.json`，文件缺失或为空时回落内置默认调色板），`colorMode` 选择 `energy`（默认，端子类型配色）/ `voltage`（电压等级配色）两套，非法值返回 400 `bad-request`。已知限制：服务端无 `backgroundPageRender` 运行时产物，故不含背景页图层（元件定义覆盖 `deviceDefinitionOverrides` 已套用）。响应头由 `no-cache` 改为 `no-store`（与 v1 运行时态一致）；旧 `no-cache` 未配 ETag（响应由 handler 自行 `writeHead`，v1 动态路由分发无 ETag 包装，ETag/304 仅在 JSON 信封路径），第三方不再获得条件缓存。
+
+> **[2026-09-13 更新 · 落盘只留 json]** server 简化渲染器 `buildSvgFile` 与 `buildDeviceParameterFile` **已删除**，保存模型时也不再落盘 `.e` / `.svg`：`data/schemes/files/**` 只含 `.json`。SVG / E / CIM 三种派生格式全部改为**按需实时生成**——`/api/v1/schemes/model/svg`、`/api/v1/schemes/model/e-file`、`/api/v1/schemes/model/cim-xml` 与方案 ZIP 导出（`server/schemeArchive.mjs`）都在请求时读盘模型实时装配，前端导出按钮亦复用之，不再依赖磁盘上的派生文件。存量派生文件用 `pnpm purge:derived`（默认 dry-run，`--apply` 才归档）移入 `data/schemes/trash/<timestamp>/`。
 
 > **[2026-09-11 更新 · 图片内联]** 该端点已把模型实际引用的后端图片（画布背景、图元背景/前景、状态图元图片，含内嵌 SVG 里的嵌套引用）读盘转 base64 `data:` URL 内联进 SVG，与前端导出的「自包含 SVG」语义一致——离线或拷贝到别处打开仍能显示图片。「哪些图片被引用」与前端导出共用同一纯函数 `collectSvgExportReferencedImageHrefById`（`src/export/svg-images.ts`），未被引用的图片不读不内联。代价：响应体随所引用图片的原始体积线性膨胀（base64 编码约 4/3 倍），大图/多图模型请留出传输体积与超时余量（响应用于导出文件时该体积正是自包含所需）。单张图片文件缺失或读取失败不阻断导出：该图保留原始 `/webgrp/images/{id}` href（离线不显示），其余图片照常内联。
 
-> **[2026-09-11 更新 · 已保存模型 E 文件]** 决策 B 已取代：新增 `/api/v1/schemes/model/e-file`（后端读盘生成，见 §8.3）；未保存的当前模型仍走运行时态 `/api/v1/runtime/e-file`（§8、§5.3）。与 `buildSvgFile` 同为落盘兜底：`server.mjs:4175` 的 `buildDeviceParameterFile` 是第二份 E 生成器，仅在调用方保存时未提供 `eFile` 产物时使用（常规前端保存会带产物，见 `appProjectCanvasFactories.tsx:4934`），故「E 已单源」仅对端点与前端导出路径成立。
+> **[2026-09-11 更新 · 已保存模型 E 文件]** 决策 B 已取代：新增 `/api/v1/schemes/model/e-file`（后端读盘生成，见 §8.3）；未保存的当前模型仍走运行时态 `/api/v1/runtime/e-file`（§8、§5.3）。
+
+> **[2026-09-13 更新]** 上一段提到的落盘兜底路径已不存在：`server.mjs` 的 `buildDeviceParameterFile` 已删除，保存模型时也不再落盘 `.e`。E 生成现在**单一真源、无双实现**——`src/model-eexport.ts` 的 `buildEFileExport` 同时服务运行时态 `runtime.e-file`（前端生成）与已保存模型 `/api/v1/schemes/model/e-file`（后端适配层 `server/eFileExport.mjs`）。
 
 > **[2026-09-11 更新 · CIM/XML]** 新增 `/api/v1/schemes/model/cim-xml`（`server/cimExport.mjs` 读盘模型后调 `src/cim/cim-export.ts` 生成 IEC 61970 CIM16 RDF/XML；`modelId` 可覆盖模型 ID，`strict=1` 时关键参数缺失返回 400 `bad-request`）。本设计文档正文未展开该端点，参数与示例见 `/swigger`。
 
@@ -334,9 +338,9 @@ E 文件**单一真源 = `buildEFileExport`**（现位于 `src/model-eexport.ts`
 > `docs/superpowers/specs/2026-09-11-backend-export-e-svg-cim-design.md`）。
 > `/api/v1/runtime/e-file` 保留，用于「当前打开且可能未保存」的模型。
 
-### 8.4 server 端 `buildDeviceParameterFile` 处置
+### 8.4 server 端第二份 E 生成器处置
 
-server 端 `buildDeviceParameterFile`（`server.mjs`，JSON）**保留不动**：仅用于保存模型时落盘 `.e`（内部缓存，非第三方路径）。既有 JSON 内容 `.e` 不影响第三方（接口不读磁盘 `.e`）。不主动迁移（M3-A）。
+**[2026-09-13 更新]** server 端的 `buildDeviceParameterFile`（原 `server.mjs`，产 JSON）与简化渲染器 `buildSvgFile` **已删除**（M3-A 的「保留不动」决策作废）。保存模型不再落盘 `.e` / `.svg`，`writeSchemeFiles` 只登记 `.json`；`data/schemes/files/**` 只含 `.json`。派生格式（E / SVG / CIM）全部按需实时生成，server 端不再留第二份实现。
 
 ### 8.5 前端 `buildEFileExport` 复用
 
