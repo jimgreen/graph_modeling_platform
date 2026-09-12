@@ -1,11 +1,10 @@
 // CIM IR → CIM/XML (RDF/XML) 序列化器
 
-import { CIM_NS } from "./cim-namespaces";
+import { CIM_NS } from "./cim-namespaces.ts";
 import type {
-  CimACLineSegment, CimBaseVoltage, CimBusbarSection, CimConnectivityNode,
-  CimEnergyConsumer, CimEnergySource, CimGeneratingUnit, CimMeasurement,
-  CimPackage, CimPowerTransformer, CimPowerTransformerEnd, CimShuntCompensator,
-  CimSubstation, CimSwitch, CimTerminal, CimVoltageLevel
+  CimACLineSegment,
+  CimPackage,
+  CimVoltageLevel
 } from "./cim-types";
 
 /** XML 文本内容转义：仅 & < >（' " 在文本节点无需转义） */

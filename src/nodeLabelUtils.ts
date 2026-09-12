@@ -8,8 +8,8 @@ import {
   isStaticNode,
   type ModelNode,
   type Point
-} from "./model";
-import { formatSvgNumber } from "./svgUtils";
+} from "./model.ts";
+import { formatSvgNumber } from "./svgUtils.ts";
 
 export type NodeLabelDisplayMode = "always" | "hidden" | "follow";
 

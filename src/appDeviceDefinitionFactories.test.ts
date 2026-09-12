@@ -81,7 +81,6 @@ import {
   createEmptyCustomDeviceDraft,
   createCustomDeviceDraftFromTemplate,
   customDefaultDefinitions,
-  deviceDefinitionKeyForTemplate,
   deviceDefinitionSharedKeyForTemplate,
   deviceDefinitionOverrideForTemplate,
   isDerivedComponentBaseParamName,
@@ -5537,7 +5536,6 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
       deviceDefinitionOverrides: {},
       eDeviceDefinitionLabels: {},
       eDeviceDefinitionClassExportEnabled: {},
-      deviceDefinitionKeyForTemplate: (template: any) => template.params.component_type,
       deviceDefinitionOverrideForTemplate,
       resolveDefinitionComponentLibrary: (template: any) => template.params.component_type
     });
@@ -5580,7 +5578,6 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
       deviceDefinitionOverrides: {},
       eDeviceDefinitionLabels: {},
       eDeviceDefinitionClassExportEnabled: {},
-      deviceDefinitionKeyForTemplate,
       deviceDefinitionOverrideForTemplate,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     });
@@ -5612,7 +5609,6 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
       deviceDefinitionOverrides: {},
       eDeviceDefinitionLabels: {},
       eDeviceDefinitionClassExportEnabled: {},
-      deviceDefinitionKeyForTemplate,
       deviceDefinitionOverrideForTemplate,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     });
@@ -5936,85 +5932,37 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
 });
 
 describe("createExportEFile", () => {
-  test("uses warnings returned by E generation without rebuilding export records", async () => {
-    const project = { version: 1, name: "当前模型", nodes: [], edges: [] };
-    const currentProject = vi.fn(() => project);
-    const executionOrder: string[] = [];
-    let generatedExportOptions: any;
-    const buildEFileExport = vi.fn((_project: any, _schemePath: string[], options: any) => {
-      executionOrder.push("generate");
-      generatedExportOptions = options;
-      return { filename: "当前模型.e", text: "", mime: "text/plain", warnings: [] };
-    });
-    const getEExportWarnings = vi.fn(() => []);
+  test("从后端 /v1/schemes/model/e-file 拉取文本并交给保存层", async () => {
+    const fetchMock = vi.fn(async (_url: string) => new Response("<Model>\n</Model>\n", {
+      status: 200,
+      headers: { "content-type": "text/plain; charset=gbk" }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const saved: any[] = [];
     const saveLazyTextFile = vi.fn(async ({ loadText }: { loadText: () => Promise<string> | string }) => {
-      executionOrder.push("save-picker");
-      await loadText();
+      saved.push({ text: await loadText() });
       return false;
     });
     const exportEFile = createExportEFile({
       activeSchemeKey: "scheme-1",
-      buildEFileExport,
-      currentProject,
-      edges: project.edges,
       ensureSavedBeforeExport: () => true,
-      getEExportWarnings,
-      nodes: project.nodes,
-      projectName: project.name,
+      projectName: "当前模型",
+      safeFilePart: (name: string) => name,
       saveLazyTextFile,
       schemePathForScheme: () => ["默认方案"],
-      writeOperationLog: vi.fn(),
-      libraryTemplates: [{
-        kind: "ac-source",
-        label: "交流电源",
-        categoryLibrary: "交流设备",
-        size: { width: 84, height: 56 },
-        params: {},
-        terminalType: "ac",
-        terminalCount: 1
-      }],
-      PARAM_LABELS: {},
-      eDeviceDefinitionLabels: { ACGenerator: "GeneratorTable" },
-      eDeviceDefinitionClassExportEnabled: { ACGenerator: true },
-      eDeviceDefinitionFieldOrder: { ACGenerator: ["dev_type", "name", "idx"] },
-      resolveTemplateComponentLibrary: () => "ACGenerator"
+      writeOperationLog: vi.fn()
     });
 
     await exportEFile();
 
-    const exportOptions = expect.objectContaining({
-      interfaceDefinitions: expect.arrayContaining([
-        expect.objectContaining({
-          componentLibrary: "ACGenerator",
-          exportEnabled: true,
-          exportName: "GeneratorTable",
-          fields: expect.arrayContaining([
-            expect.objectContaining({ sourceName: "dev_type", exportEnabled: true, exportName: "dev_type" })
-          ])
-        })
-      ])
-    });
-    expect(getEExportWarnings).not.toHaveBeenCalled();
-    expect(executionOrder.slice(0, 2)).toEqual(["save-picker", "generate"]);
-    expect(currentProject).not.toHaveBeenCalled();
-    expect(buildEFileExport).toHaveBeenCalledWith(
-      expect.objectContaining({
-        version: 1,
-        name: project.name,
-        nodes: project.nodes,
-        edges: project.edges
-      }),
-      ["默认方案"],
-      exportOptions
-    );
-    const acGenerator = generatedExportOptions.interfaceDefinitions
-      .find((row: any) => row.componentLibrary === "ACGenerator");
-    expect(acGenerator.fields.slice(0, 4).map((field: any) => field.sourceName)).toEqual([
-      "parent",
-      "dev_type",
-      "name",
-      "idx"
-    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("/v1/schemes/model/e-file");
+    expect(url).toContain(`schemePath=${encodeURIComponent(JSON.stringify(["默认方案"]))}`);
+    expect(url).toContain(`name=${encodeURIComponent("当前模型")}`);
+    expect(url).toContain("encoding=gbk");
+    expect(saved[0].text).toContain("<Model>");
+    vi.unstubAllGlobals();
   });
 
   test("uses the configured field order when refreshing E files for a scheme export", async () => {
@@ -6171,7 +6119,6 @@ describe("导出 E 文件与国网 E 格式模板一致性", () => {
       deviceDefinitionOverrides: {},
       eDeviceDefinitionLabels: {},
       eDeviceDefinitionClassExportEnabled: {},
-      deviceDefinitionKeyForTemplate,
       deviceDefinitionOverrideForTemplate,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     });
@@ -6259,7 +6206,6 @@ describe("E 文件查看/编辑弹窗头表补全", () => {
       deviceDefinitionOverrides: {},
       eDeviceDefinitionLabels: {},
       eDeviceDefinitionClassExportEnabled: {},
-      deviceDefinitionKeyForTemplate,
       deviceDefinitionOverrideForTemplate,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     });

@@ -377,6 +377,45 @@ describe("collectMissingCriticalParams", () => {
     expect(missing).toEqual([{ nodeId: "bus1", name: "母线1", missing: ["电压等级"] }]);
   });
 
+  it("端子 vbase 为默认占位 0、params.vbase 已设置时不再报缺失", () => {
+    const missing = collectMissingCriticalParams([
+      makeNode({
+        id: "bus1",
+        kind: "ac-bus",
+        name: "交流母线-1",
+        params: { vbase: "500", rated_voltage: "500", voltage_level: "10" },
+        terminals: [
+          { id: "t1", label: "t", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1", vbase: "0" },
+          { id: "t2", label: "t", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "2", vbase: "0" }
+        ]
+      })
+    ]);
+    expect(missing).toEqual([]);
+  });
+
+  it("通用电压基值计入 BaseVoltage / VoltageLevel，端子与分侧 vbase 优先", () => {
+    const nodes = [
+      makeNode({
+        id: "bus1",
+        kind: "ac-bus",
+        name: "母线1",
+        params: { vbase: "10" },
+        terminals: [{ id: "t1", label: "t", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1", vbase: "0" }]
+      }),
+      makeNode({
+        id: "line1",
+        name: "线路1",
+        params: { vbase: "500", r: "0.1", x: "0.2" },
+        terminals: [{ id: "t1", label: "t", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1", vbase: "110" }]
+      })
+    ];
+    expect(extractBaseVoltages(nodes).map((bv) => bv.nominalVoltage)).toEqual([10, 110, 500]);
+    // 主电压（VoltageLevel 分组依据）仍以端子/分侧 vbase 为准：线路归 110 而非其 params.vbase=500
+    const pkg = buildCimPackage({ nodes, edges: [], projectName: "t", modelId: "m" });
+    expect(pkg.voltageLevels.map((vl) => vl.name)).toEqual(["10kV母线", "110kV母线"]);
+    expect(pkg.busbarSections[0].voltageLevelId).toBe("VL_10");
+  });
+
   it("线路无 r 且无 x 报线路阻抗缺失", () => {
     const missing = collectMissingCriticalParams([
       makeNode({ id: "line1", name: "线路1", params: { i_vbase: "110" } })

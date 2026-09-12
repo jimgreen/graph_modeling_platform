@@ -2696,7 +2696,7 @@ export function createCloneSchemeRecordWithName(__appScope: Record<string, any>)
 
 export function createCloneSchemeRecordForPaste(__appScope: Record<string, any>) {
   return (scheme: SavedSchemeRecord, name = scheme.name, existingScheme?: SavedSchemeRecord): SavedSchemeRecord => {
-  const { cloneProjectRecordForPaste, createSavedScheme, hasSameName, upsertSavedProject } = __appScope;
+  const { cloneProjectRecordForPaste, cloneSchemeRecordForPaste, createSavedScheme, hasSameName, upsertSavedProject } = __appScope;
     const projects = scheme.projects.reduce<SavedProjectRecord[]>((current, project) => {
       const duplicateProject = existingScheme?.projects.find((item) => hasSameName(item.name, [project.name]));
       return upsertSavedProject(current, cloneProjectRecordForPaste(project, project.name, duplicateProject?.id));

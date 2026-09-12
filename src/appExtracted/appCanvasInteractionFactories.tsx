@@ -1711,7 +1711,7 @@ export function createAppendPendingKeyboardMoveDelta(__appScope: Record<string, 
 
 export function createScheduleKeyboardNudgeFrame(__appScope: Record<string, any>) {
   return () => {
-  const { KEYBOARD_MOVE_FRAME_INTERVAL_MS, appendPendingKeyboardMoveDelta, flushPendingKeyboardMove, keyboardMoveActiveFrameDelta, keyboardMoveActiveKeyDeltasRef, keyboardMoveFrameElapsedMsRef, keyboardMoveFrameRef, keyboardMoveLastFrameTimeRef } = __appScope;
+  const { KEYBOARD_MOVE_FRAME_INTERVAL_MS, appendPendingKeyboardMoveDelta, flushPendingKeyboardMove, keyboardMoveActiveFrameDelta, keyboardMoveActiveKeyDeltasRef, keyboardMoveFrameElapsedMsRef, keyboardMoveFrameRef, keyboardMoveLastFrameTimeRef, scheduleKeyboardNudgeFrame } = __appScope;
     if (keyboardMoveFrameRef.current !== null) {
       return;
     }

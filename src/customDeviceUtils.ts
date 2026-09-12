@@ -11,32 +11,23 @@ import type {
 } from "./model";
 import {
   ALLOW_RESIZE_TRANSFORM_PARAM,
-  DEVICE_LIBRARY,
   buildDefaultDeviceParameterDefinitions,
-  baseDeviceKind,
   CUSTOM_PARAM_DEFINITIONS_KEY,
   E_SECTION_COLUMNS,
   TERMINAL_TYPE_LIBRARY_LABELS,
-  inferESection,
   isDoubleContainerTerminalAssociation,
   resolveDeviceParameterDefinitionExportSettings,
   resolveEffectiveTemplateParameterDefinitionGroups,
-  resolveEffectiveTemplateParameterDefinitions,
   templateDerivedComponentLibraryInfo as modelTemplateDerivedComponentLibraryInfo,
   toSnakeCaseDeviceParamName
 } from "./model";
 import type { OrthogonalAxis } from "./App";
-import {
-  DEVICE_DEFINITION_VISUAL_PARAM_KEYS,
-  DEVICE_VISUAL_PARAM_PREFIXES
-} from "./deviceVisualParams";
 import {
   CONTAINER_TERMINAL_ASSOCIATION_OPTIONS,
   CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION,
   MAX_CUSTOM_DEVICE_TERMINALS,
   PARAM_LABELS,
   normalizeCategoryLibraryName,
-  normalizeComponentLibraryName,
   normalizeDefinitionRows,
   templateResizeTransformValue,
   terminalColor
@@ -46,100 +37,21 @@ import { createDefinitionStateDraftRows, customParamId, deviceDefinitionRowId } 
 import { decodeSvgImageSource, escapeXml, formatSvgNumber } from "./svgUtils";
 import { clampNumber } from "./canvasViewport";
 import { cloneDeviceMeasurementDefinitions } from "./measurementDefinitionTypes";
-
-export function fallbackComponentLibraryForCategoryLibrary(categoryLibraryName: string) {
-  const normalized = normalizeCategoryLibraryName(categoryLibraryName);
-  if (normalized.includes("静态")) return "StaticBasicShape";
-  if (normalized.includes("直流")) return "DCLoad";
-  if (normalized.includes("变流")) return "DCDCConverter";
-  if (normalized.includes("氢")) return "HydroLoad";
-  if (normalized.includes("热")) return "HeatLoad";
-  return "ACLoad";
-}
-
-const BUILT_IN_DEVICE_TEMPLATE_BY_KIND = new Map(
-  DEVICE_LIBRARY.map((template) => [template.kind, template] as const)
-);
-
-function restoreBuiltInTemplateComponentMetadata(
-  template: DeviceTemplate,
-  params: Record<string, string>
-) {
-  const builtInTemplate = template.custom
-    ? undefined
-    : BUILT_IN_DEVICE_TEMPLATE_BY_KIND.get(template.kind);
-  if (!builtInTemplate) return params;
-  const restored = { ...params };
-  for (const name of SHARED_DEFINITION_METADATA_PARAM_NAMES) {
-    delete restored[name];
-    const canonicalValue = builtInTemplate.params?.[name];
-    if (canonicalValue !== undefined) {
-      restored[name] = canonicalValue;
-    }
-  }
-  return restored;
-}
-
-export function resolveTemplateComponentLibrary(template: DeviceTemplate) {
-  const builtInTemplate = template.custom
-    ? undefined
-    : BUILT_IN_DEVICE_TEMPLATE_BY_KIND.get(template.kind);
-  if (builtInTemplate) {
-    const builtInDerivedInfo = modelTemplateDerivedComponentLibraryInfo(builtInTemplate);
-    if (builtInDerivedInfo) {
-      return builtInDerivedInfo.componentLibrary;
-    }
-    const builtInComponentLibrary = inferESection(builtInTemplate.kind, builtInTemplate.params);
-    if (builtInComponentLibrary) {
-      return builtInComponentLibrary;
-    }
-  }
-  const derivedInfo = modelTemplateDerivedComponentLibraryInfo(template);
-  if (derivedInfo) {
-    return derivedInfo.componentLibrary;
-  }
-  const inferred = inferESection(template.kind, template.params);
-  if (inferred) {
-    return inferred;
-  }
-  const categoryLibrary = template.categoryLibrary ?? (template as DeviceTemplate & { attributeLibrary?: string }).attributeLibrary ?? "交流设备";
-  return fallbackComponentLibraryForCategoryLibrary(categoryLibrary);
-}
+export * from "./export/device-definition-shared";
+import {
+  SHARED_DEFINITION_METADATA_PARAM_NAMES,
+  componentClassForConcreteTemplate,
+  concreteDeviceDefinitionParams,
+  deviceDefinitionSharedIdentityForTemplate,
+  deviceDefinitionSharedKeyForTemplate,
+  fallbackComponentLibraryForCategoryLibrary,
+  isConcreteDeviceDefinitionParamName,
+  normalizeComponentLibraryName,
+  normalizeSharedDeviceDefinitionOverrides,
+  resolveTemplateComponentLibrary
+} from "./export/device-definition-shared";
 
 export const templateDerivedComponentLibraryInfo = modelTemplateDerivedComponentLibraryInfo;
-
-export function deviceDefinitionKeyForTemplate(template: DeviceTemplate) {
-  return normalizeComponentLibraryName(resolveTemplateComponentLibrary(template)) || template.kind;
-}
-
-const SHARED_DEFINITION_METADATA_PARAM_NAMES = new Set([
-  "component_type",
-  "derived_from_component_type",
-  "derived_component_type",
-  "derived_component_library_label",
-  "is_derived_component_library"
-]);
-
-export function isConcreteDeviceDefinitionParamName(name: string) {
-  return SHARED_DEFINITION_METADATA_PARAM_NAMES.has(name) ||
-    DEVICE_DEFINITION_VISUAL_PARAM_KEYS.has(name) ||
-    DEVICE_VISUAL_PARAM_PREFIXES.some((prefix) => name.startsWith(prefix));
-}
-
-export function concreteDeviceDefinitionParams(params: Record<string, string> | undefined) {
-  return Object.fromEntries(Object.entries(params ?? {}).filter(([name]) => (
-    isConcreteDeviceDefinitionParamName(name)
-  )));
-}
-
-export function componentClassForConcreteTemplate(template: DeviceTemplate) {
-  const explicitClass = normalizeComponentLibraryName(template.componentClass ?? "");
-  if (explicitClass) return explicitClass;
-  const derivedInfo = modelTemplateDerivedComponentLibraryInfo(template);
-  return normalizeComponentLibraryName(
-    derivedInfo?.derivedComponentLibrary || resolveTemplateComponentLibrary(template)
-  );
-}
 
 export function concreteDeviceTemplateForStorage(template: DeviceTemplate): DeviceTemplate {
   const {
@@ -173,330 +85,12 @@ export function concreteDeviceTemplateForStorage(template: DeviceTemplate): Devi
   } as DeviceTemplate;
 }
 
-function deviceDefinitionSharedIdentityForTemplate(template: DeviceTemplate) {
-  const baseKind = baseDeviceKind(template.kind);
-  if (modelTemplateDerivedComponentLibraryInfo(template)) {
-    return baseKind;
-  }
-  const componentLibrary = normalizeComponentLibraryName(resolveTemplateComponentLibrary(template));
-  const devType = String(template.params?.dev_type ?? "").trim();
-  if (!componentLibrary || componentLibrary.startsWith("Static")) {
-    return baseKind;
-  }
-  return devType ? `${componentLibrary}::${devType}` : componentLibrary;
-}
-
-export function deviceDefinitionSharedKeyForTemplate(template: DeviceTemplate) {
-  return `shared:${deviceDefinitionSharedIdentityForTemplate(template)}`;
-}
-
 export function deviceTemplatesShareParameterDefinitions(
   first: Pick<DeviceTemplate, "kind" | "params"> & Partial<DeviceTemplate>,
   second: Pick<DeviceTemplate, "kind" | "params"> & Partial<DeviceTemplate>
 ) {
   return deviceDefinitionSharedIdentityForTemplate(first as DeviceTemplate) ===
     deviceDefinitionSharedIdentityForTemplate(second as DeviceTemplate);
-}
-
-function overrideTimestamp(override: DeviceTemplateDefinitionOverride | undefined) {
-  const timestamp = Date.parse(String(override?.updatedAt ?? ""));
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function preferredDefinitionSource(
-  sharedOverride: DeviceTemplateDefinitionOverride | undefined,
-  candidates: readonly DeviceTemplateDefinitionOverride[],
-  predicate: (override: DeviceTemplateDefinitionOverride) => boolean
-) {
-  if (sharedOverride && predicate(sharedOverride)) {
-    return sharedOverride;
-  }
-  return candidates
-    .filter(predicate)
-    .sort((left, right) => overrideTimestamp(right) - overrideTimestamp(left))[0];
-}
-
-function latestDefinitionSource(
-  ...sources: Array<DeviceTemplateDefinitionOverride | undefined>
-) {
-  return sources
-    .filter((source): source is DeviceTemplateDefinitionOverride => Boolean(source))
-    .sort((left, right) => overrideTimestamp(right) - overrideTimestamp(left))[0];
-}
-
-function sharedDefinitionParams(override: DeviceTemplateDefinitionOverride | undefined) {
-  if (!override?.params) return {};
-  return Object.fromEntries(Object.entries(override.params).filter(([key]) => (
-    !isConcreteDeviceDefinitionParamName(key) || SHARED_DEFINITION_METADATA_PARAM_NAMES.has(key)
-  )));
-}
-
-function visualOnlyOverride(
-  override: DeviceTemplateDefinitionOverride | undefined,
-  _businessParameterNames: ReadonlySet<string> = new Set()
-) {
-  if (!override) return undefined;
-  const next: DeviceTemplateDefinitionOverride = {
-    ...override,
-    params: concreteDeviceDefinitionParams(override.params)
-  };
-  delete next.parameterDefinitions;
-  delete next.parameterDefinitionsIntent;
-  delete next.measurementDefinitions;
-  delete next.measurementDefinitionsIntent;
-  return next;
-}
-
-function sharedDefinitionSourceForTemplate(
-  template: DeviceTemplate,
-  overrides: Record<string, DeviceTemplateDefinitionOverride>,
-  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY
-) {
-  const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
-  const legacySharedKey = deviceDefinitionSharedIdentityForTemplate(template);
-  const derived = Boolean(modelTemplateDerivedComponentLibraryInfo(template));
-  const peerKinds = templates
-    .filter((candidate) => deviceDefinitionSharedKeyForTemplate(candidate) === sharedKey)
-    .map((candidate) => candidate.kind);
-  const candidateKeys = Array.from(new Set([
-    sharedKey,
-    legacySharedKey,
-    ...(derived ? [] : [deviceDefinitionKeyForTemplate(template)]),
-    template.kind,
-    baseDeviceKind(template.kind),
-    ...peerKinds
-  ]));
-  const candidates = candidateKeys.map((key) => overrides[key]).filter(Boolean);
-  return {
-    parameterSource: preferredDefinitionSource(overrides[sharedKey], candidates, (override) => (
-      Array.isArray(override.parameterDefinitions) && (
-        override.parameterDefinitions.length > 0 || override.parameterDefinitionsIntent === "delete-all"
-      )
-    )),
-    measurementSource: preferredDefinitionSource(overrides[sharedKey], candidates, (override) => (
-      Array.isArray(override.measurementDefinitions) && (
-        override.measurementDefinitions.length > 0 || override.measurementDefinitionsIntent === "delete-all"
-      )
-    ))
-  };
-}
-
-export function deviceDefinitionOverrideForTemplate(
-  template: DeviceTemplate,
-  overrides: Record<string, DeviceTemplateDefinitionOverride>,
-  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY
-) {
-  const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
-  const { parameterSource, measurementSource } = sharedDefinitionSourceForTemplate(template, overrides, templates);
-  const sharedOverride = parameterSource ?? measurementSource ?? overrides[sharedKey];
-  const exactOverride = overrides[template.kind];
-  const derivedInfo = modelTemplateDerivedComponentLibraryInfo(template);
-  const terminalDefinitionClass = normalizeComponentLibraryName(
-    derivedInfo?.baseComponentLibrary || componentClassForConcreteTemplate(template)
-  );
-  const classOverride = terminalDefinitionClass
-    ? overrides[`class:${terminalDefinitionClass}`]
-    : undefined;
-  const classTerminalTypes = Array.isArray(classOverride?.terminalTypes)
-    ? classOverride.terminalTypes.slice(0, classOverride.terminalCount ?? classOverride.terminalTypes.length)
-    : undefined;
-  const businessParameterNames = new Set(
-    (parameterSource?.parameterDefinitions ?? []).map((definition) => definition.enName)
-  );
-  const visualOverride = visualOnlyOverride(exactOverride, businessParameterNames);
-  if (!sharedOverride && !visualOverride && !classTerminalTypes) return undefined;
-  const storedParameterDefinitions = parameterSource?.parameterDefinitions;
-  const explicitlyDeletesAllParameterDefinitions =
-    parameterSource?.parameterDefinitionsIntent === "delete-all" &&
-    Array.isArray(storedParameterDefinitions) &&
-    storedParameterDefinitions.length === 0;
-  const builtInParameterDefinitions = template.custom ? [] : resolveEffectiveTemplateParameterDefinitions(template, templates);
-  const parameterDefinitions = explicitlyDeletesAllParameterDefinitions
-    ? []
-    : Array.isArray(storedParameterDefinitions) && storedParameterDefinitions.length > 0
-      ? storedParameterDefinitions
-      : builtInParameterDefinitions.length > 0
-        ? builtInParameterDefinitions
-        : undefined;
-  const storedMeasurementDefinitions = measurementSource?.measurementDefinitions;
-  const explicitlyDeletesAllMeasurementDefinitions =
-    measurementSource?.measurementDefinitionsIntent === "delete-all" &&
-    Array.isArray(storedMeasurementDefinitions) &&
-    storedMeasurementDefinitions.length === 0;
-  const mergedParams = restoreBuiltInTemplateComponentMetadata(template, {
-    ...sharedDefinitionParams(sharedOverride),
-    ...sharedDefinitionParams(parameterSource),
-    ...sharedDefinitionParams(measurementSource),
-    ...(visualOverride?.params ?? {})
-  });
-  return {
-    ...(visualOverride ?? {}),
-    kind: template.kind,
-    params: mergedParams,
-    ...(classTerminalTypes ? {
-      terminalType: classTerminalTypes[0] ?? template.terminalType,
-      terminalCount: classTerminalTypes.length,
-      terminalTypes: [...classTerminalTypes],
-      ...(Array.isArray(classOverride?.terminalLabels)
-        ? { terminalLabels: classOverride.terminalLabels.slice(0, classTerminalTypes.length) }
-        : {}),
-      ...(Array.isArray(classOverride?.terminalRoles)
-        ? { terminalRoles: classOverride.terminalRoles.slice(0, classTerminalTypes.length) }
-        : {}),
-      ...(Array.isArray(classOverride?.terminalAssociations)
-        ? { terminalAssociations: classOverride.terminalAssociations.slice(0, classTerminalTypes.length) }
-        : {}),
-      ...(typeof classOverride?.isContainer === "boolean"
-        ? { isContainer: classOverride.isContainer }
-        : {})
-    } : {}),
-    ...(Array.isArray(parameterDefinitions)
-      ? { parameterDefinitions: parameterDefinitions.map((definition) => ({ ...definition })) }
-      : {}),
-    ...(explicitlyDeletesAllParameterDefinitions ? { parameterDefinitionsIntent: "delete-all" as const } : {}),
-    ...(Array.isArray(storedMeasurementDefinitions)
-      ? { measurementDefinitions: cloneDeviceMeasurementDefinitions(storedMeasurementDefinitions) }
-      : {}),
-    ...(explicitlyDeletesAllMeasurementDefinitions ? { measurementDefinitionsIntent: "delete-all" as const } : {})
-  };
-}
-
-export function normalizeSharedDeviceDefinitionOverrides(
-  overrides: Record<string, DeviceTemplateDefinitionOverride>,
-  templates: readonly DeviceTemplate[]
-) {
-  const next = Object.fromEntries(Object.entries(overrides).map(([key, override]) => {
-    const sanitized = { ...override };
-    if (Array.isArray(sanitized.parameterDefinitions)) {
-      if (sanitized.parameterDefinitions.length > 0) {
-        delete sanitized.parameterDefinitionsIntent;
-      } else if (sanitized.parameterDefinitionsIntent === "delete-all") {
-        sanitized.parameterDefinitions = [];
-      } else {
-        delete sanitized.parameterDefinitions;
-        delete sanitized.parameterDefinitionsIntent;
-      }
-    } else {
-      delete sanitized.parameterDefinitionsIntent;
-    }
-    if (Array.isArray(sanitized.measurementDefinitions)) {
-      if (sanitized.measurementDefinitions.length > 0) {
-        delete sanitized.measurementDefinitionsIntent;
-      } else if (sanitized.measurementDefinitionsIntent === "delete-all") {
-        sanitized.measurementDefinitions = [];
-      } else {
-        delete sanitized.measurementDefinitions;
-        delete sanitized.measurementDefinitionsIntent;
-      }
-    } else {
-      delete sanitized.measurementDefinitionsIntent;
-    }
-    return [key, sanitized];
-  })) as Record<string, DeviceTemplateDefinitionOverride>;
-  const templatesBySharedIdentity = new Map<string, DeviceTemplate[]>();
-  for (const template of templates) {
-    const identity = deviceDefinitionSharedIdentityForTemplate(template);
-    templatesBySharedIdentity.set(identity, [...(templatesBySharedIdentity.get(identity) ?? []), template]);
-  }
-  for (const [sharedIdentity, peers] of templatesBySharedIdentity) {
-    const sharedKey = deviceDefinitionSharedKeyForTemplate(peers[0]);
-    const candidateKeys = Array.from(new Set([
-      sharedKey,
-      sharedIdentity,
-      ...peers.flatMap((template) => modelTemplateDerivedComponentLibraryInfo(template)
-        ? []
-        : [deviceDefinitionKeyForTemplate(template)]),
-      ...peers.map((template) => template.kind)
-    ]));
-    const candidates = candidateKeys.map((key) => next[key]).filter(Boolean);
-    const parameterSource = preferredDefinitionSource(next[sharedKey], candidates, (override) => (
-      Array.isArray(override.parameterDefinitions) && (
-        override.parameterDefinitions.length > 0 || override.parameterDefinitionsIntent === "delete-all"
-      )
-    ));
-    const measurementSource = preferredDefinitionSource(next[sharedKey], candidates, (override) => (
-      Array.isArray(override.measurementDefinitions) && (
-        override.measurementDefinitions.length > 0 || override.measurementDefinitionsIntent === "delete-all"
-      )
-    ));
-    const sharedSource = parameterSource ?? measurementSource;
-    const currentShared = next[sharedKey];
-    const migratedBusinessParams = Object.fromEntries(
-      candidates
-        .filter((candidate) => candidate !== currentShared)
-        .flatMap((candidate) => Object.entries(sharedDefinitionParams(candidate)))
-    );
-    if (!sharedSource && !currentShared && Object.keys(migratedBusinessParams).length === 0) {
-      for (const peer of peers) {
-        if (!next[peer.kind]) continue;
-        const visual = visualOnlyOverride(next[peer.kind]);
-        const hasVisualContent = visual && Object.keys(visual).some((key) => ![
-          "kind",
-          "updatedAt",
-          "params",
-          "isDerivedComponentLibrary",
-          "derivedFromComponentLibrary",
-          "derivedComponentLibrary",
-          "derivedComponentLibraryLabel"
-        ].includes(key)) || Boolean(visual && Object.keys(visual.params ?? {}).length > 0);
-        if (hasVisualContent) {
-          next[peer.kind] = visual!;
-        } else {
-          delete next[peer.kind];
-        }
-      }
-      if (sharedIdentity !== sharedKey && !peers.some((peer) => peer.kind === sharedIdentity)) {
-        delete next[sharedIdentity];
-      }
-      continue;
-    }
-    next[sharedKey] = {
-      kind: sharedKey,
-      params: {
-        ...migratedBusinessParams,
-        ...sharedDefinitionParams(parameterSource),
-        ...sharedDefinitionParams(measurementSource),
-        ...sharedDefinitionParams(currentShared)
-      },
-      ...(Array.isArray(parameterSource?.parameterDefinitions)
-        ? { parameterDefinitions: parameterSource.parameterDefinitions.map((definition) => ({ ...definition })) }
-        : {}),
-      ...(parameterSource?.parameterDefinitionsIntent === "delete-all"
-        ? { parameterDefinitionsIntent: "delete-all" as const }
-        : {}),
-      ...(Array.isArray(measurementSource?.measurementDefinitions)
-        ? { measurementDefinitions: cloneDeviceMeasurementDefinitions(measurementSource.measurementDefinitions) }
-        : {}),
-      ...(measurementSource?.measurementDefinitionsIntent === "delete-all"
-        ? { measurementDefinitionsIntent: "delete-all" as const }
-        : {}),
-      updatedAt: latestDefinitionSource(parameterSource, measurementSource)?.updatedAt
-    };
-    const businessParameterNames = new Set((next[sharedKey].parameterDefinitions ?? []).map((definition) => definition.enName));
-    for (const peer of peers) {
-      if (peer.kind === sharedKey || !next[peer.kind]) continue;
-      const visual = visualOnlyOverride(next[peer.kind], businessParameterNames);
-      const hasVisualContent = visual && Object.keys(visual).some((key) => ![
-        "kind",
-        "updatedAt",
-        "params",
-        "isDerivedComponentLibrary",
-        "derivedFromComponentLibrary",
-        "derivedComponentLibrary",
-        "derivedComponentLibraryLabel"
-      ].includes(key)) ||
-        Boolean(visual && Object.keys(visual.params ?? {}).length > 0);
-      if (hasVisualContent) {
-        next[peer.kind] = visual!;
-      } else {
-        delete next[peer.kind];
-      }
-    }
-    if (sharedIdentity !== sharedKey && !peers.some((peer) => peer.kind === sharedIdentity)) {
-      delete next[sharedIdentity];
-    }
-  }
-  return next;
 }
 
 function templateBusinessDefinitionOverride(template: DeviceTemplate): DeviceTemplateDefinitionOverride | undefined {

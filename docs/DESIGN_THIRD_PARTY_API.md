@@ -50,7 +50,7 @@ image-server 作唯一 HTTP 入口，dev/prod 同端口（默认 5174）托管�
 
 ### 2.2 复用与扩展
 
-现有 `exactRouteHandlers`（Map）+ `dynamicRouteHandlers`（数组）结构保留。新增 `/api/v1/*` handler 集合，复用底层纯函数（`readSchemes`、`readDeviceLibraryConfig`、`readMeasurementConfig`、`createSchemeArchiveBuffer`、`buildSvgFile`、E 文件逻辑）。
+现有 `exactRouteHandlers`（Map）+ `dynamicRouteHandlers`（数组）结构保留。新增 `/api/v1/*` handler 集合，复用底层纯函数（`readSchemes`、`readDeviceLibraryConfig`、`readMeasurementConfig`、`createSchemeArchiveBuffer`、E 文件逻辑）与前端共享模块（`src/export/svg.ts` 的 `buildSvgDocument`）。
 
 旧 `/api/*` 内部 handler 不改动（避免前端回归）；改的是 dev 启动方式（spawn 独立 Vite 进程 → Vite middleware 挂入 image-server，见 T1）。后续旧 `/api` 可逐步迁入 `/api/v1`。两者并存期间，第三方只用 `/api/v1`，前端只用 `/api`。
 
@@ -183,7 +183,7 @@ function pickDefaultClient(): ClientEntry | null {
 
 v1 handler 复用旧 `/api` 纯函数产出后包装入 `{ok:true,data}`；错误统一映射为 `{ok:false,error:{code,message}}`。旧 `/api` 内部 handler 不改，仅 v1 层包装。
 
-HTTP 状态：200 成功 / 400 参数非法 / 404 不存在或无在线客户端 / 500 内部错 / 503 无在线客户端或 WS 超时。所有 GET 支持 gzip + ETag/304（v1 专用 cacheable 函数，运行时态接口除外——实时不缓存，`cache-control: no-store`）。
+HTTP 状态：200 成功 / 400 参数非法 / 404 不存在或无在线客户端 / 500 内部错 / 503 无在线客户端或 WS 超时。JSON 信封 GET 支持 gzip + ETag/304（v1 专用 cacheable 函数）；运行时态接口与二进制/文本产物接口（ZIP / E 文件 / CIM XML / SVG / PNG）均 `cache-control: no-store`，不参与条件缓存。
 
 ### 5.1 方案域（FR-1）
 
@@ -195,9 +195,15 @@ HTTP 状态：200 成功 / 400 参数非法 / 404 不存在或无在线客户端
 | `/api/v1/schemes/{schemePath}/export` | GET | — | ZIP 二进制（`createSchemeArchiveBuffer`），`application/zip` + attachment |
 | `/api/v1/schemes/{schemePath}/models/{name}/export` | GET | — | 单模型导出包（JSON+SVG+E 聚合 ZIP 或分别取，见下） |
 | `/api/v1/schemes/{schemePath}/models/{name}/json` | GET | — | 模型 project JSON |
-| `/api/v1/schemes/{schemePath}/models/{name}/svg` | GET | — | SVG 文本（`buildSvgFile`） |
+| `/api/v1/schemes/{schemePath}/models/{name}/svg` | GET | `colorMode=energy\|voltage`（默认 energy）、`encoding=utf-8\|gbk`（默认 utf-8） | SVG 文本（复用前端 `buildSvgDocument`，含图层/测量/状态图标；配色取自部署配色配置；自带 XML 声明） |
 
-> E 文件不提供已保存模型接口（决策 B），统一走运行时态 `/api/v1/runtime/e-file`（§8、§5.3）。
+> **[2026-09-11 更新]** `schemes/model/svg` 已改为复用前端 `buildSvgDocument`（`src/export/svg.ts`），不再使用 server 简化实现 `buildSvgFile`（该函数保留为兜底：`server.mjs:5556` 在调用方未提供 SVG 产物时调用、`5604` 在批量写盘时目标文件不存在才调用，两处调用点均不传 `deviceTemplates`；常规保存优先落盘前端上传的 SVG 产物，其中已含库模板与元件定义覆盖）。渲染器与前端导出为同一实现；入参为磁盘模型 + 库配置，输出含图层、测量、状态图标、画布背景图。配色取自部署的配色配置（`settings/color-config.json`，文件缺失或为空时回落内置默认调色板），`colorMode` 选择 `energy`（默认，端子类型配色）/ `voltage`（电压等级配色）两套，非法值返回 400 `bad-request`。已知限制：服务端无 `backgroundPageRender` 运行时产物，故不含背景页图层（元件定义覆盖 `deviceDefinitionOverrides` 已套用）。响应头由 `no-cache` 改为 `no-store`（与 v1 运行时态一致）；旧 `no-cache` 未配 ETag（响应由 handler 自行 `writeHead`，v1 动态路由分发无 ETag 包装，ETag/304 仅在 JSON 信封路径），第三方不再获得条件缓存。
+
+> **[2026-09-11 更新 · 图片内联]** 该端点已把模型实际引用的后端图片（画布背景、图元背景/前景、状态图元图片，含内嵌 SVG 里的嵌套引用）读盘转 base64 `data:` URL 内联进 SVG，与前端导出的「自包含 SVG」语义一致——离线或拷贝到别处打开仍能显示图片。「哪些图片被引用」与前端导出共用同一纯函数 `collectSvgExportReferencedImageHrefById`（`src/export/svg-images.ts`），未被引用的图片不读不内联。代价：响应体随所引用图片的原始体积线性膨胀（base64 编码约 4/3 倍），大图/多图模型请留出传输体积与超时余量（响应用于导出文件时该体积正是自包含所需）。单张图片文件缺失或读取失败不阻断导出：该图保留原始 `/webgrp/images/{id}` href（离线不显示），其余图片照常内联。
+
+> **[2026-09-11 更新 · 已保存模型 E 文件]** 决策 B 已取代：新增 `/api/v1/schemes/model/e-file`（后端读盘生成，见 §8.3）；未保存的当前模型仍走运行时态 `/api/v1/runtime/e-file`（§8、§5.3）。与 `buildSvgFile` 同为落盘兜底：`server.mjs:4175` 的 `buildDeviceParameterFile` 是第二份 E 生成器，仅在调用方保存时未提供 `eFile` 产物时使用（常规前端保存会带产物，见 `appProjectCanvasFactories.tsx:4934`），故「E 已单源」仅对端点与前端导出路径成立。
+
+> **[2026-09-11 更新 · CIM/XML]** 新增 `/api/v1/schemes/model/cim-xml`（`server/cimExport.mjs` 读盘模型后调 `src/cim/cim-export.ts` 生成 IEC 61970 CIM16 RDF/XML；`modelId` 可覆盖模型 ID，`strict=1` 时关键参数缺失返回 400 `bad-request`）。本设计文档正文未展开该端点，参数与示例见 `/swigger`。
 
 `schemePath` 编码：`/api/v1/schemes/<encodeURIComponent(JSON.stringify(["方案A","子方案"]))>/...`。或 query `?schemePath=<encoded>`。design 实现时择一（倾向路径段，RESTful）。
 
@@ -294,15 +300,15 @@ HTTP 状态：200 成功 / 400 参数非法 / 404 不存在或无在线客户端
 
 ### 7.4 与 SVG 分离
 
-SVG 走 `runtime.svg`（前端导出 SVG 文本，与界面导出一致）；PNG 走 `runtime.screenshot`。两路径独立，第三方按需取。
+SVG 走 `runtime.svg`（前端本地渲染的 SVG 文本，含未保存的运行时状态；界面「导出 SVG」按钮已改走后端 `/api/v1/schemes/model/svg`，两者渲染器相同但入参不同）；PNG 走 `runtime.screenshot`。两路径独立，第三方按需取。
 
 ## 8. E 文件逻辑统一
 
 ### 8.1 决策
 
-E 文件**单一真源 = 前端 `buildEFileExport`**（`model.ts:2329`，文本格式 `<Section>` 标签 + `@ 列名` + `# 值` + `<PowerBase>` 段）。server 不实现 E 文件生成逻辑。所有第三方 E 文件请求统一经 WS `runtime.e-file` 拉前端 `buildEFileExport` 生成。
+E 文件**单一真源 = `buildEFileExport`**（现位于 `src/model-eexport.ts`；文本格式 `<Section>` 标签 + `@ 列名` + `# 值` + `<PowerBase>` 段）。前端运行时与后端适配层 `server/eFileExport.mjs` 共用同一实现，server 不留第二份 E 文件生成逻辑。运行时态第三方 E 文件请求经 WS `runtime.e-file` 拉前端生成；已保存模型走 `/api/v1/schemes/model/e-file`（后端读盘计算，见 §8.3 的 2026-09-11 更新）。
 
-### 8.2 决策依据（手工移植/抽取均否决）
+### 8.2 决策依据（手工移植/抽取均否决；历史记录，2026-09-11 起后端改直载共享 TS 模块，见 §8.3 更新）
 
 经多轮核查，server 端 E 相关逻辑与前端是**两套独立实现**，差异巨大：
 
@@ -320,17 +326,21 @@ E 文件**单一真源 = 前端 `buildEFileExport`**（`model.ts:2329`，文本�
 | 场景 | E 文件来源 |
 |------|-----------|
 | 运行时态 `/api/v1/runtime/e-file` | server 经 WS `runtime.e-file` 拉前端 currentProject → 前端 `buildEFileExport` 生成 E 格式文本回传 |
-| 已保存模型 `/api/v1/schemes/.../models/{name}/e` | **不提供**（决策 B）。第三方要 E 文件须前端先打开该模型，走运行时态接口 |
+| 已保存模型 `/api/v1/schemes/model/e-file` | server 直接读盘模型 + 库配置在后端计算（默认 GBK，可选预定义模板或自定义模板文本） |
 
 无前端在线 / 当前无打开模型 → 503/404 明确返回。
 
+> **[2026-09-11 更新]** 决策 B 已取代：新增 `/api/v1/schemes/model/e-file`（后端直接计算，见
+> `docs/superpowers/specs/2026-09-11-backend-export-e-svg-cim-design.md`）。
+> `/api/v1/runtime/e-file` 保留，用于「当前打开且可能未保存」的模型。
+
 ### 8.4 server 端 `buildDeviceParameterFile` 处置
 
-server 端 `buildDeviceParameterFile`（image-server.mjs:1277，JSON）**保留不动**：仅用于保存模型时落盘 `.e`（内部缓存，非第三方路径）。既有 JSON 内容 `.e` 不影响第三方（接口不读磁盘 `.e`）。不主动迁移（M3-A）。
+server 端 `buildDeviceParameterFile`（`server.mjs`，JSON）**保留不动**：仅用于保存模型时落盘 `.e`（内部缓存，非第三方路径）。既有 JSON 内容 `.e` 不影响第三方（接口不读磁盘 `.e`）。不主动迁移（M3-A）。
 
 ### 8.5 前端 `buildEFileExport` 复用
 
-前端"导出 E 模型文件"按钮（`exportEFile`）与第三方接口共用同一 `buildEFileExport` 真源，无漂移。运行时态 E 文件由 T9 前端序列化模块响应 `runtime.e-file` fetch 时调用 `buildEFileExport(currentProject)` 生成。
+**[2026-09-11 更新]** 前端"导出 E 模型文件"按钮（`exportEFile`）已改为「先保存再请求后端端点 `GET /api/v1/schemes/model/e-file`」（`server/eFileExport.mjs` 读盘调 `buildEFileExport`），与第三方接口共用后端同一条实现。未保存的当前模型仍由前端序列化模块（`src/runtimeSnapshot.ts` 的 `serializeEFile`）响应 `runtime.e-file` fetch 时调用 `appScope.buildEFileExport` 生成。
 
 ## 9. 测试架构
 
@@ -413,5 +423,4 @@ vitest coverage，接口模块强制 100%（行+分支）：
 - [x] WS 库：新增 `ws` 依赖（项目无现有）
 - [ ] v1 响应函数具体命名（`sendV1Json`/`sendV1JsonCacheable`）与旧错误码映射表
 - [ ] 截图 canvas DOM 定位（@xyflow/react viewport API vs 直接读 canvas 元素）
-
 

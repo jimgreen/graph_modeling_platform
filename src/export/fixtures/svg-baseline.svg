@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,800,600" active-layer-id="layer-default">
+<defs id="svg_defs">
+
+<symbol id="symbol_ACRealBs_ac-bus_default" viewBox="-100 -8 200 16" overflow="visible">
+  <title>ACRealBs</title>
+  <g transform="rotate(0) scale(1 1)">
+  <rect class="bus-glyph" x="-100" y="-4" width="200" height="8" fill="#2563eb" stroke="#2563eb" stroke-width="0"></rect>
+  
+  
+  
+  
+  
+  
+  </g>
+</symbol>
+<symbol id="symbol_ACBreak_ac-breaker_default" viewBox="-16 -16 32 32" overflow="visible">
+  <title>ACBreak</title>
+  <g transform="rotate(90) scale(1 1)">
+  <g fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="-8" y1="0" x2="-20" y2="0"></line><line x1="20" y1="0" x2="8" y2="0"></line><rect x="-20" y="-15" width="40" height="30" rx="5" fill="#eef2ff"></rect><path d="M -10 -8 V 8 M 10 -8 V 8"></path><path d="M -10 0 H 10"></path></g>
+  
+  <g transform="translate(0 20)">
+  <line x1="0" y1="-4" x2="0" y2="0" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round"/>
+</g>
+<g transform="translate(36 16)">
+  <line x1="-28" y1="0" x2="0" y2="0" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round"/>
+</g>
+  
+  
+  
+  
+  </g>
+</symbol>
+<symbol id="symbol_ACLoad_ac-load_default" viewBox="-20 -20 40 40" overflow="visible">
+  <title>ACLoad</title>
+  <g transform="rotate(0) scale(1 1)">
+  <g class="electric-load-glyph" fill="#ffffff" stroke="#2563eb" stroke-width="2.5" stroke-linejoin="round"><path d="M -8.88888888888889 -8.88888888888889 L 8.88888888888889 -8.88888888888889 L 0 8.88888888888889 Z"></path></g>
+  
+  <g transform="translate(24 0)">
+  <line x1="-19.55556" y1="0" x2="0" y2="0" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round"/>
+</g>
+  
+  
+  
+  
+  </g>
+</symbol>
+</defs>
+<g id="root_g">
+<g class="export-layer-definitions" style="display:none">
+<g layer-id="layer-default" name="默认图层" visible="1" active="1"/>
+</g>
+<g class="export-associated-device-definitions" style="display:none">
+
+</g>
+<g id="Background_Layer">
+<rect width="100%" height="100%" fill="#ffffff"/>
+
+
+</g>
+<g id="Segment_Layer">
+<path id="edge-1" source-dev-id="bus1" target-dev-id="brk1" voltage-type="ac" vbase="10" d="M 300 108 L 360 108" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g id="ACRealBs_Layer" device-type="ACRealBs">
+<g transform="translate(0,92)"><use id="bus1" layer-id="layer-default" idx="" name="母线1" dev-id="bus1" dev-kind="ac-bus" node="1" voltage-type="ac" vbase="10" href="#symbol_ACRealBs_ac-bus_default" xlink:href="#symbol_ACRealBs_ac-bus_default" width="200" height="16"/></g>
+</g>
+<g id="ACBreak_Layer" device-type="ACBreak">
+<g transform="translate(344,84)"><use id="brk1" layer-id="layer-default" idx="" name="开关1" dev-id="brk1" dev-kind="ac-breaker" node-1="2" node-2="3" voltage-type="ac" vbase="0" href="#symbol_ACBreak_ac-breaker_default" xlink:href="#symbol_ACBreak_ac-breaker_default" width="32" height="32"/></g>
+</g>
+<g id="ACLoad_Layer" device-type="ACLoad">
+<g transform="translate(440,160)"><use id="load1" layer-id="layer-default" idx="" name="负荷1" dev-id="load1" dev-kind="ac-load" node="4" voltage-type="ac" vbase="10" href="#symbol_ACLoad_ac-load_default" xlink:href="#symbol_ACLoad_ac-load_default" width="40" height="40"/></g>
+</g>
+<g id="Text_Layer">
+<text id="label_bus1" layer-id="layer-default" dev-id="bus1" dominant-baseline="middle" fill="#334155" font-family="Arial" font-size="14" font-weight="500" font-style="normal" text-decoration="none" paint-order="stroke" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-linejoin="round" x="100" y="130" text-anchor="middle" style="writing-mode: horizontal-tb;">母线1</text>
+<text id="label_brk1" layer-id="layer-default" dev-id="brk1" dominant-baseline="middle" fill="#334155" font-family="Arial" font-size="14" font-weight="500" font-style="normal" text-decoration="none" paint-order="stroke" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-linejoin="round" x="360" y="138" text-anchor="middle" style="writing-mode: horizontal-tb;">开关1</text>
+<text id="label_load1" layer-id="layer-default" dev-id="load1" dominant-baseline="middle" fill="#334155" font-family="Arial" font-size="14" font-weight="500" font-style="normal" text-decoration="none" paint-order="stroke" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-linejoin="round" x="460" y="222" text-anchor="middle" style="writing-mode: horizontal-tb;">负荷1</text>
+</g>
+<g id="Measurement_Layer">
+
+</g>
+<g id="Other_Layer">
+</g>
+</g>
+
+</svg>

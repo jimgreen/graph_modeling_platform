@@ -1,5 +1,5 @@
 // 节点操作相关代码（从 model.ts 提取到独立模块）
-import type { DeviceKind, DeviceTemplate, ModelNode, Point } from "./model";
+import type { DeviceKind, DeviceTemplate, ModelNode, Point } from "./model.ts";
 import {
   DEFAULT_MODEL_LAYER_ID,
   DEVICE_LIBRARY_BY_KIND,
@@ -7,11 +7,11 @@ import {
   makeNodeNumber,
   normalizeDefaultDeviceSize,
   buildDefaultParams,
-} from "./model";
+} from "./model.ts";
 import {
   createTemplateTerminals,
   ensureRoutableLineDevicePathParam,
-} from "./model-routing";
+} from "./model-routing.ts";
 
 // 该常量需要在 model.ts 的 STATIC_LINE_LIKE_KINDS 之前导入，
 // 因此从 model-node-ops 定义并 re-export，避免循环依赖中值为 undefined

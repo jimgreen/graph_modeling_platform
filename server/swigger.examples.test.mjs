@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { WebSocket } from "ws";
 import { describe, expect, test, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { SWIGGER_ENDPOINTS } from "./swaggerPage.mjs";
-import { apiPath, apiPrefix } from "./config.mjs";
+import { apiPath } from "./config.mjs";
 
 let dataDir;
 let createImageServer;
@@ -185,12 +185,16 @@ beforeEach(async () => {
   // 补种子：swagger 示例引用的「默认方案」+ 模型，确保只读示例不 404
   const seedDir = join(dataDir, "schemes", "files", "默认方案");
   await mkdir(seedDir, { recursive: true });
-  const seedProject = (name) => writeFile(
+  // 「线路」seed 带 modelType=馈线：e-file 配网实时库模板示例需通过模板类型门控（E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES）
+  const seedProject = (name, extra = {}) => writeFile(
     join(seedDir, `${name}.json`),
-    JSON.stringify({ version: 1, name, nodes: [], edges: [], canvasWidth: 1920, canvasHeight: 1080 })
+    JSON.stringify({ version: 1, name, nodes: [], edges: [], canvasWidth: 1920, canvasHeight: 1080, ...extra })
   );
   await seedProject("图元连接");
-  await seedProject("线路");
+  // 「线路」seed 带一个电力设备：cim-xml 端点对空模型返回 400（无可导出的电力设备），示例需 200
+  await seedProject("线路", { modelType: "馈线", nodes: [
+    { id: "bus1", kind: "ac-bus", name: "母线1", nodeNumber: "1", acTopologyNode: -1, dcTopologyNode: -1, position: { x: 0, y: 0 }, size: { width: 10, height: 10 }, rotation: 0, scale: 1, terminals: [], params: { i_vbase: "110" } }
+  ] });
   const subDir = join(seedDir, "1-1");
   await mkdir(subDir, { recursive: true });
   await writeFile(
@@ -280,6 +284,8 @@ function expectFor(ep, ex) {
   if (p === apiPath("/v1/schemes/export")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
   if (p === apiPath("/v1/schemes/model/json")) return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
   if (p === apiPath("/v1/schemes/model/svg")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/svg") };
+  if (p === apiPath("/v1/schemes/model/e-file")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("text/plain") };
+  if (p === apiPath("/v1/schemes/model/cim-xml")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/xml") };
 
   // v1 图元库域
   if (p === apiPath("/v1/library")) return { status: 200, check: (r) => expect(r.json.data.categories).toBeInstanceOf(Array) };

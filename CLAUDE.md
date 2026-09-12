@@ -73,7 +73,7 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 
 ### 导出与持久化
 
-- 自包含 SVG 导出（buildSvgDocument，内联样式）
+- 自包含 SVG 导出（前后端共用 `src/export/svg.ts` 的 buildSvgDocument，内联样式，被引用图片内联为 data URL；界面导出走 `/api/v1/schemes/model/svg`）
 - 画布截图：SVG → PNG base64
 - E 格式导出：电力系统 E 文件
 - CIM/XML (IEC 61970 CIM16) 导出：单文件整合，AC 设备 + 拓扑端子连接 + 量测；`src/cim/` 独立模块（IR 中间表示 → RDF/XML 序列化），顶栏导出菜单入口
@@ -94,7 +94,7 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 
 - 只读域：schemes / library / runtime
 - 信封响应：{ok:true,data} / {ok:false,error:{code,message}}
-- v1 方案域：方案树、层级树、模型列表、导出 ZIP、模型 JSON/SVG
+- v1 方案域：方案树、层级树、模型列表、导出 ZIP、模型 JSON/SVG/E 文件/CIM XML（界面导出按钮均先保存再走后端）
 - v1 图元库域：分类树、设备、量测、设备定义、模板
 - v1 运行时态：clients/model/devices/selection/tabs/screenshot/svg/e-file
 - 全局线路 API（globalLineApi / globalLineRegistry）
@@ -186,6 +186,13 @@ graph_modeling_platform/
 | `server/swaggerPage.mjs` | /swigger 自包含 HTML 接口文档页 |
 | `server/nativeExportSave.mjs` | 原生导出保存 |
 | `server/config.mjs` | 共享配置（host、端口、前缀） |
+| `src/export/` | 直载纯模块（无 `.tsx`、无 React 组件/JSX）：E 文件（`e-file.ts`）、SVG 渲染（`svg.ts`）、元件定义共享（`device-definition-shared.ts`）、SVG 图片引用（`svg-images.ts`）、静态按钮目标（`static-button-targets.ts`） |
+| `server/eFileExport.mjs` | E 文件端点适配层：读盘模型 + 库配置，用 `src/export/e-file.ts` 装配选项、`src/model-eexport.ts` 的 `buildEFileExport` 生成（GBK/UTF-8） |
+| `server/eFileTemplates.mjs` | 预定义 E 元件模板读取（`PREDEFINED_E_DEVICE_TEMPLATES`） |
+| `server/svgExport.mjs` | SVG 端点适配层：装配库模板（含覆盖）+ 配色 + 内联被引用图片，调 `src/export/svg.ts` |
+| `server/cimExport.mjs` | CIM/XML 端点适配层：调 `src/cim/cim-export.ts` |
+| `server/domShim.mjs` | Node 侧 localStorage 桩（须先于任何 `src/**/*.ts` import 执行） |
+| `scripts/audit-undefined-names.mjs` | 未定义名审计：内存剥离 `@ts-nocheck` 查 ReferenceError 类缺陷（`pnpm audit:names`） |
 | `vite.config.ts` | Vite 配置（含测试配置 + /api、/ws 代理） |
 | `vite.e2e.config.ts` | E2E 测试专用 Vite 配置 |
 
@@ -200,7 +207,8 @@ graph_modeling_platform/
 | 第三方 v1 API | `server/apiV1*.mjs` | 只读信封 API（schemes/library/runtime）+ 控制台写操作（control） |
 | 运行时态桥接 | `server/runtimeWs.mjs` + `src/runtimeWsClient.ts` | WS 桥接前端 |
 | 接口文档页 | `server/swaggerPage.mjs` → `/swigger` | 在线接口文档与测试 |
-| 测试文件 | `src/*.test.ts` / `server/*.test.mjs` | Vitest（与源文件同目录） |
+| 测试文件 | `src/*.test.ts` / `server/*.test.mjs` | Vitest（与源文件同目录）；守卫见 `server/nativeLoad.test.mjs`、`src/appExtracted/appScopeContract.test.ts` |
+| 后端导出适配层 | `server/eFileExport.mjs` / `svgExport.mjs` / `cimExport.mjs` | 均 Node 原生直载 `src` 下 TS 模块（如 `src/export/`、`src/cim/`、`src/model-eexport.ts`），零构建产物 |
 
 ## 代码映射
 
@@ -212,7 +220,7 @@ graph_modeling_platform/
 | createImageServer | 函数 | server/server.mjs | 后端服务创建（含 WS 挂载） |
 | attachRuntimeWebSocket | 函数 | server/runtimeWs.mjs | /ws 升级 + 客户端注册表 |
 | createRuntimeWsClient | 函数 | src/runtimeWsClient.ts | 前端 WS 客户端 |
-| buildSvgDocument | 函数 | src/appExtracted/appPersistenceLibraryExport.tsx | 自包含 SVG 导出 |
+| buildSvgDocument | 函数 | src/export/svg.ts | 自包含 SVG 导出（前端经 appPersistenceLibraryExport 转出；后端适配层 Node 原生直载） |
 | createProgrammaticAddDevice | 函数 | src/appExtracted/appControlFactories.tsx | 控制台写操作工厂（9 方法） |
 | renderSwaggerHtml | 函数 | server/swaggerPage.mjs | /swigger 页面 HTML |
 
@@ -221,6 +229,7 @@ graph_modeling_platform/
 | 项目 | 约定 |
 |------|------|
 | 测试位置 | 与源文件同目录：`*.test.ts` / `*.test.tsx` / `*.test.mjs` |
+| 守卫测试 | `server/nativeLoad.test.mjs`（spawn 真实 node 直载三适配层，防 `.tsx` 或漏 `.ts` 扩展名混入）；`src/appExtracted/appScopeContract.test.ts`（`createMeasurementFieldParameterDefinition` 只能静态 import 或调用，不得从 scope 解构） |
 | 类型定义 | 集中在 `model.ts`，非分散 |
 | 配置管理 | Vite 配置在 `vite.config.ts`（含测试配置 + /api、/ws 代理） |
 | 模块系统 | ES Modules（`"type": "module"`），后端统一 `.mjs` |
@@ -271,6 +280,9 @@ pnpm preview
 
 # 图标库审计
 pnpm audit:icons
+
+# 未定义名审计（穿透 @ts-nocheck，查 ReferenceError 类缺陷）
+pnpm audit:names
 ```
 
 ## 注意事项
@@ -282,13 +294,14 @@ pnpm audit:icons
 | 代理配置 | Vite 代理 `/api`、`/ws` 到后端服务 |
 | 环境变量 | `IMAGE_SERVER_PORT` 可自定义后端端口；`GRAPH_MODEL_DATA_DIR` 覆盖数据根目录 |
 | WS 指示灯 | 前端右上角 RT-WS 指示灯显示运行时态 WS 状态，点击复制 clientId |
+| Node 原生 TS | `server/*.mjs` 可直接 `import` `src` 下 TS 模块（如 `src/export/`、`src/cim/`、`src/model-eexport.ts`）；相对 import 必须带 `.ts` 扩展名（`allowImportingTsExtensions`），且不得 import `.tsx` |
 
 
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **graph_modeling_platform** (5573 symbols, 20914 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **graph_modeling_platform** (5851 symbols, 21571 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

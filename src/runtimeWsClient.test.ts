@@ -35,7 +35,9 @@ function installMockWebSocket() {
     close = vi.fn(() => {
       this.readyState = 3;
     });
-    constructor(public url: string) {
+    url: string;
+    constructor(url: string) {
+      this.url = url;
       const self = this as unknown as MockWs;
       self.triggerOpen = () => {
         self.readyState = OPEN;

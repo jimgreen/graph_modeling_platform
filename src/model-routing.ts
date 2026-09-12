@@ -1,12 +1,11 @@
 // 连线路由相关代码（从 model.ts 提取到独立模块）
-import { clampNumber } from "./canvasViewport";
-import { degreesToRadians } from "./formatUtils";
-import { normalizeProjectMeasurements } from "./measurements";
+import { clampNumber } from "./canvasViewport.ts";
+import { degreesToRadians } from "./formatUtils.ts";
+import { normalizeProjectMeasurements } from "./measurements.ts";
 import type {
   AlignDirection,
   AlignMode,
   CanvasBounds,
-  CanvasResizeDragMetrics,
   ConnectionEndpointRuleIssue,
   ConnectionRouteValidationIssue,
   ConnectionRouteValidationResult,
@@ -38,8 +37,7 @@ import type {
   Topology,
   TopologyValidationError,
   TopologyValidationErrorType,
-  ViewBox
-} from "./model";
+} from "./model.ts";
 import {
   DEFAULT_DEVICE_LABEL_FONT_SIZE,
   DEFAULT_CURRENT_UNIT,
@@ -50,8 +48,6 @@ import {
   DEFAULT_VOLTAGE_UNIT,
   DEVICE_LIBRARY,
   DEVICE_LIBRARY_BY_KIND,
-  ELECTRIC_GENERATION_FAMILY_SPECS,
-  ELECTRIC_GENERATION_TERMINAL_TYPES,
   E_NODE_REFERENCE_COLUMNS,
   ROUTABLE_LINE_POINTS_PARAM,
   ROUTABLE_LINE_SOURCE_LOCAL_POINT_PARAM,
@@ -60,9 +56,6 @@ import {
   ROUTABLE_LINE_TARGET_LOCAL_POINT_PARAM,
   ROUTABLE_LINE_TARGET_NODE_PARAM,
   ROUTABLE_LINE_TARGET_TERMINAL_PARAM,
-  STATIC_DRAWING_MIN_SIZE,
-  STATIC_DRAWING_PADDING,
-  STATIC_DRAW_POINTS_PARAM,
   applyContainerAssociatedDeviceDefaults,
   baseDeviceKind,
   buildContainerDeviceParameterViews,
@@ -74,7 +67,6 @@ import {
   defaultTerminalVbase,
   deviceIndexCounterKey,
   deviceParamValue,
-  electricGenerationDerivedInfoForFamily,
   getDeviceGlyphVariant,
   getDeviceStrokeWidth,
   isContainerParams,
@@ -92,7 +84,6 @@ import {
   mergeCanonicalParameterDefinitions,
   migrateElectricGenerationContainerParams,
   normalizeDcacConverterNodeControlParams,
-  normalizeDcdcEndpointControlTypeForE,
   normalizeElectricGenerationRatedParams,
   normalizeEndpointConverterNodeControlParams,
   normalizeHydrogenCouplingBodyParams,
@@ -102,7 +93,6 @@ import {
   normalizeLegacyGasQuantityDeviceParams,
   normalizeRoutableLineDeviceStrokeWidthParam,
   normalizeSemanticParameterValues,
-  normalizeStaticDrawingPoints,
   normalizeSwitchStatusForE,
   normalizeThreeWindingTransformerParams,
   normalizeTwoWindingTransformerParams,
@@ -111,8 +101,6 @@ import {
   parseDeviceIndex,
   reconcileNodeParamsWithTemplateDefinitions,
   resolveEffectiveTemplateParameterDefinitions,
-  roundStaticDrawingCoordinate,
-  serializeStaticDrawPoints,
   staticNodeParticipatesInRoutingAvoidance,
   templateTerminalTypes,
   terminalLabelForType,
@@ -122,9 +110,8 @@ import {
   validateNodeEnumParameters,
   twoWindingTransformerParameterDefinitions,
   ELEMENT_TREE_COMPONENT_LIBRARY_LABELS,
-  COMPONENT_LIBRARY_REVERSE_MAPPING,
   getRatedCapacityDefaultForKind
-} from "./model";
+} from "./model.ts";
 import {
   E_SECTION_COLUMNS,
   hasVisibleThreeWindingNeutralTerminal,
@@ -133,17 +120,15 @@ import {
   isZeroNumericText,
   shouldAssignVoltageSetpointDefault,
   terminalVoltageDisplay
-} from "./model-eexport";
+} from "./model-eexport.ts";
 import {
-  clampEdgeGeometryToBounds,
   clampPointToBounds,
   getNodeScaleX,
   getNodeScaleY,
   getSafeNodeScaleX,
   getSafeNodeScaleY,
-  normalizeScaleValue,
   type GeometryBounds
-} from "./model-canvas-ops";
+} from "./model-canvas-ops.ts";
 
 function roundRoutableLineCoordinate(value: number) {
   return Math.round(value * 10) / 10;
@@ -1519,7 +1504,7 @@ export function repairUnsafeRoutableLineDeviceRoutes(nodes: ModelNode[], bounds?
 
 
 // 静态绘制与画布操作已提取到 model-canvas-ops.ts
-export * from "./model-canvas-ops";
+export * from "./model-canvas-ops.ts";
 
 export function createTerminals(type: TerminalType, count: number): Terminal[] {
   if (count <= 0) {
@@ -9431,7 +9416,10 @@ const SPATIAL_GRID_CELL = 256;
 
 class RouteBoxGrid<T> {
   private readonly buckets = new Map<string, { item: T; index: number; box: RouteAabb }[]>();
-  constructor(private readonly cell: number) {}
+  private readonly cell: number;
+  constructor(cell: number) {
+    this.cell = cell;
+  }
   insert(item: T, index: number, box: RouteAabb): void {
     const entry = { item, index, box };
     const x0 = Math.floor(box.left / this.cell);

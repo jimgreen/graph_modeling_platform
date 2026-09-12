@@ -2,7 +2,7 @@
 // 编码表由 scripts/gen-gbk-table.mjs 生成（BMP 内 unicode -> GBK 双字节码）。
 // ASCII 单字节直通；GBK 可编码的双字节字符查表；无法编码的字符以 '?' (0x3F) 替代。
 
-import { GBK_UNICODE_B64, GBK_CODE_B64 } from "./gbkTable";
+import { GBK_UNICODE_B64, GBK_CODE_B64 } from "./gbkTable.ts";
 
 let unicodeTable: Uint16Array | null = null;
 let codeTable: Uint16Array | null = null;

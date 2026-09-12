@@ -1,20 +1,17 @@
-import { normalizeProjectMeasurements } from "./measurements";
-import type { ProjectMeasurementConfig } from "./measurements";
+import type { ProjectMeasurementConfig } from "./measurements.ts";
 import {
   cloneDeviceMeasurementDefinitions,
   createMeasurementFieldParameterDefinition,
   normalizeDeviceMeasurementDefinitions
-} from "./measurementDefinitionTypes";
-import type { DeviceMeasurementDefinition } from "./measurementDefinitionTypes";
-import { degreesToRadians } from "./formatUtils";
-import { clampNumber } from "./canvasViewport";
-import { normalizeImageFitMode } from "./imageFit";
-import { isCanonicalDeviceVisualParamName } from "./deviceVisualParams";
+} from "./measurementDefinitionTypes.ts";
+import type { DeviceMeasurementDefinition } from "./measurementDefinitionTypes.ts";
+import { normalizeImageFitMode } from "./imageFit.ts";
+import { isCanonicalDeviceVisualParamName } from "./deviceVisualParams.ts";
 import { randomId } from "../shared/randomId.mjs";
-import { meaningfulDeviceParameterChineseName } from "./deviceParameterChineseNames";
+import { meaningfulDeviceParameterChineseName } from "./deviceParameterChineseNames.ts";
 
 // E 文件导出相关代码（从 model.ts 提取到独立模块）
-export * from "./model-eexport";
+export * from "./model-eexport.ts";
 import {
   inferESection,
   E_SECTION_COLUMNS,
@@ -26,14 +23,11 @@ import {
   firstText,
   terminalVoltageDisplayValue,
   firstNonZeroVoltageBase,
-  terminalVoltageDisplay,
-  shouldAssignVoltageSetpointDefault,
-  hasVisibleThreeWindingNeutralTerminal,
   isDerivedComponentCommonFieldName,
   defaultContainerAssociatedColumnValue,
   firstNumericToken,
   type VoltageDisplayTerminal
-} from "./model-eexport";
+} from "./model-eexport.ts";
 
 export type DeviceKind =
   | "static-text"
@@ -648,7 +642,7 @@ export const ROUTABLE_LINE_DEFAULT_STROKE_WIDTH = 4;
 export const ALLOW_RESIZE_TRANSFORM_PARAM = "allowResizeTransform";
 const ROUTABLE_LINE_LEGACY_DEFAULT_STROKE_WIDTH = 7;
 // INTERACTIVE_STATIC_DRAWING_KINDS 已移至 model-node-ops.ts，通过 export * 重新导出
-import { INTERACTIVE_STATIC_DRAWING_KINDS } from "./model-node-ops";
+import { INTERACTIVE_STATIC_DRAWING_KINDS } from "./model-node-ops.ts";
 
 export const STATIC_LINE_LIKE_KINDS = [
   ...INTERACTIVE_STATIC_DRAWING_KINDS,
@@ -9639,13 +9633,11 @@ export function migrateElectricGenerationContainerParams(node: ModelNode, templa
 }
 
 // 节点操作相关代码已提取到独立模块
-export * from "./model-node-ops";
+export * from "./model-node-ops.ts";
 
 // 连线路由相关代码已提取到独立模块
 import {
   busTerminalTypeByKind,
-  createTemplateTerminals,
-  ensureRoutableLineDevicePathParam,
   virtualBusTerminal
-} from "./model-routing";
-export * from "./model-routing";
+} from "./model-routing.ts";
+export * from "./model-routing.ts";

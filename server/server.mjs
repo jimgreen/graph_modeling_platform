@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzip } from "node:zlib";
 import { promisify } from "node:util";
@@ -11,7 +11,7 @@ import iconv from "iconv-lite";
 import { randomId } from "../shared/randomId.mjs";
 import { isPathInside, sanitizeSegment } from "../shared/pathSafety.mjs";
 import { atomicWriteFile } from "../shared/atomicWrite.mjs";
-import { apiPrefix, apiPath, escapeRegExp, backendPort, host, frontendPrefix, stripFrontendBase } from "./config.mjs";
+import { apiPrefix, apiPath, escapeRegExp, backendPort, host, stripFrontendBase } from "./config.mjs";
 import {
   NativeExportSaveError,
   createNativeExportSaveService,
@@ -668,7 +668,7 @@ function normalizeColorConfig(payload) {
   };
 }
 
-async function readColorConfig() {
+export async function readColorConfig() {
   const parsed = await readOptionalJsonStoreFile(settingsDataDir, colorConfigPath);
   if (parsed) {
     return {
@@ -4300,6 +4300,17 @@ async function imageExportPathByIdFromManifest(manifest) {
     }
   }));
   return result;
+}
+
+// Task 19：只内联模型实际引用的图片（ids 为图片 id 集合）。
+// 未登记的 id 直接跳过、单张读取失败由 imageExportPathByIdFromManifest 的 try/catch 吞掉 → 该图保留原始 href，不阻断导出。
+export async function readReferencedImageExportPathById(ids) {
+  const wanted = new Set((Array.isArray(ids) ? ids : []).map((id) => String(id ?? "").trim()).filter(Boolean));
+  if (wanted.size === 0) {
+    return {};
+  }
+  const manifest = await readManifest();
+  return imageExportPathByIdFromManifest(manifest.filter((item) => wanted.has(String(item?.id ?? "").trim())));
 }
 
 function svgImageHref(value, imagePathById = {}) {

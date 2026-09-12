@@ -71,7 +71,6 @@ import {
   buildElementTree,
   assignMissingDeviceIndexes,
   assignPermanentDeviceIndex,
-  applyDeviceTemplateDefinitionOverride,
   buildEFileExport,
   buildEDeviceParameterFile,
   buildTopology,

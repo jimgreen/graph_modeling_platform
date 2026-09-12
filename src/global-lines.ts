@@ -1,11 +1,11 @@
-import type { DeviceKind, ModelNode, ModelType } from "./model";
+import type { DeviceKind, ModelNode, ModelType } from "./model.ts";
 import {
   ROUTABLE_LINE_SOURCE_NODE_PARAM,
   ROUTABLE_LINE_TARGET_NODE_PARAM,
   baseDeviceKind,
   deriveDeviceIndexCounters,
   modelAssociationModelTypeForKind
-} from "./model";
+} from "./model.ts";
 
 export const GLOBAL_LINE_ID_PARAM = "_globalLineId";
 export const GLOBAL_LINE_MODEL_PAIR_PARAM = "_globalLineModelPair";

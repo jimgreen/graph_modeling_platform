@@ -5,7 +5,7 @@
 
 ## Purpose
 
-一次性分析/修复脚本（`.cjs` / `.js`），用于代码库体检、DOM 分析、CSS 精简、`__appScope` 解构检查等。非运行时依赖，不进打包。多数为历史上 App.tsx 拆分、scope 解构陷阱排查时留下的工具。
+一次性分析/修复脚本（`.cjs` / `.js` / `.mjs`），用于代码库体检、DOM 分析、CSS 精简、`__appScope` 解构检查、未定义名审计等。非运行时依赖，不进打包。多数为历史上 App.tsx 拆分、scope 解构陷阱排查时留下的工具。
 
 ## Key Files
 
@@ -19,6 +19,7 @@
 | `fix-appscope-mounts.js` | 修复 `__appScope` 挂载 |
 | `slim-css-crush.cjs` / `slim-snapshot.cjs` | CSS 精简 / 快照 |
 | `*.json` | 分析报告输出（`appscope-destructure-report.json`、`scope-destructure-issues.json`、`verified-appscope-report.json`） |
+| `audit-undefined-names.mjs` | 未定义名审计（`pnpm audit:names`）：内存剥离 `@ts-nocheck` / `@ts-ignore` / `@ts-expect-error` 后查未定义引用，有命中 exit 1 |
 
 ## For AI Agents
 
@@ -30,7 +31,7 @@
 
 ### Testing Requirements
 
-- 无测试；脚本本身按需手动运行：`node scripts/<name>.cjs`
+- 无测试；脚本本身按需手动运行：`node scripts/<name>.cjs`（未定义名审计走 `pnpm audit:names`）
 
 ## Dependencies
 

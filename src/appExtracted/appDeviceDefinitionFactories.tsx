@@ -5,13 +5,14 @@ export * from "./appDeviceDefinitionEInterface";
 // 内部使用已提取的符号
 import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, deviceDefinitionComplianceKey, stateIconDrawingFrameHasPersistedContent, buildEFileExportOptionsFromLibrary, applyEDeviceDefinitionSectionsToLibraryState } from "./appDeviceDefinitionEInterface";
 
-import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, getTemplateParameterDefinitions, inferESection, isLineOnlyConnectionNode, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, resolveEffectiveTemplateParameterDefinitionGroups, resolveEffectiveTemplateParameterDefinitions, switchingDeviceUsesClosedStatus, templateDerivedComponentLibraryInfo, MODEL_TYPE_META } from "../model";
+import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, getTemplateParameterDefinitions, inferESection, isLineOnlyConnectionNode, parseEDeviceDefinitionFile, resolveEffectiveTemplateParameterDefinitions, switchingDeviceUsesClosedStatus, templateDerivedComponentLibraryInfo, MODEL_TYPE_META } from "../model";
 import { clampNumber } from "../canvasViewport";
-import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
+import { normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
+import { backendErrorMessage } from "./appCoreCanvasUtilities";
 import { decodeGbk } from "../encoding/gbk";
+import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES } from "../eDeviceTemplateTypePolicy";
 import {
-  DEFAULT_STATE_ICON_DRAWING_FRAME,
   createEditableStateIconElementsFromSvgSource as defaultCreateEditableStateIconElementsFromSvgSource,
   customParamId,
   stateIconDrawingFrameRect,
@@ -19,7 +20,6 @@ import {
   stateIconSvgVisibleViewBox,
   svgSourceToDataUrl as defaultSvgSourceToDataUrl
 } from "../stateIconDrawing";
-import { decodeSvgImageSource } from "../svgUtils";
 import { buildMeasurementProfilePositionDefinitions, materializeNewMeasurementDefinitionFields } from "../measurements";
 import { measurementProfileItemsComplianceMessage } from "./appGraphMeasurementFactories";
 import { cloneDeviceMeasurementDefinitions, normalizeDeviceMeasurementDefinitions } from "../measurementDefinitionTypes";
@@ -34,7 +34,6 @@ import {
 import {
   deviceDefinitionSharedKeyForTemplate,
   deviceTemplatesShareParameterDefinitions,
-  migrateSharedDeviceDefinitionOverrideForTemplateChange,
   removeDeviceTemplateDefinitionOverrides,
   normalizeSharedDeviceDefinitionOverrides
 } from "../customDeviceUtils";
@@ -44,7 +43,7 @@ import {
   resolveEditableComponentLibraryDefinition
 } from "../componentLibraryDefinitions";
 import type { TextFileEncoding } from "../fileIO";
-import { buildDeviceTemplateCopyVisualSvg as defaultBuildDeviceTemplateCopyVisualSvg } from "./appPersistenceLibraryExport";
+import { buildDeviceTemplateCopyVisualSvg as defaultBuildDeviceTemplateCopyVisualSvg, schemePathQueryParam } from "./appPersistenceLibraryExport";
 
 
 
@@ -2311,56 +2310,8 @@ export function createEnsureSavedBeforeExport(__appScope: Record<string, any>) {
   };
 }
 
-export function createSvgExportReferencedImageHrefById(__appScope: Record<string, any>) {
-  return () => {
-  const { backendImageIdFromHref, backgroundPageRender, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageUrl, imageAssets, libraryTemplateByKind, nodes, resolveDeviceStateVisual, resolveStateVisualImageHref } = __appScope;
-    const hrefById = new Map<string, string>();
-    const appendAssetId = (assetId?: string) => {
-      const id = String(assetId ?? "").trim();
-      if (id && !hrefById.has(id)) {
-        hrefById.set(id, apiPath(`/images/${encodeURIComponent(id)}`));
-      }
-    };
-    const appendHref = (href?: string) => {
-      const value = String(href ?? "").trim();
-      const id = backendImageIdFromHref(value);
-      if (id && !hrefById.has(id)) {
-        hrefById.set(id, value);
-      }
-      const svgSource = decodeSvgImageSource(value);
-      if (!svgSource) {
-        return;
-      }
-      for (const match of svgSource.matchAll(/\s(?:xlink:)?href\s*=\s*(["'])(.*?)\1/giu)) {
-        const nestedHref = match[2] ?? "";
-        const nestedId = backendImageIdFromHref(nestedHref);
-        if (nestedId && !hrefById.has(nestedId)) {
-          hrefById.set(nestedId, nestedHref);
-        }
-      }
-    };
-    const appendNodeImages = (nodeList?: ModelNode[]) => {
-      for (const node of nodeList ?? []) {
-        appendAssetId(node.params.backgroundImageAssetId);
-        appendAssetId(node.params.foregroundImageAssetId);
-        appendHref(node.params.backgroundImage);
-        appendHref(node.params.foregroundImage);
-        const template = libraryTemplateByKind.get(node.kind);
-        const stateVisual = template ? resolveDeviceStateVisual(template, node) : null;
-        appendHref(resolveStateVisualImageHref(stateVisual, imageAssets));
-      }
-    };
-
-    appendAssetId(canvasBackgroundImageAssetId);
-    appendHref(canvasBackgroundImage);
-    appendHref(canvasBackgroundImageUrl);
-    appendNodeImages(nodes);
-    appendHref(backgroundPageRender?.backgroundImageUrl);
-    appendHref(backgroundPageRender?.project?.canvasBackgroundImage);
-    appendNodeImages(backgroundPageRender?.nodes ?? backgroundPageRender?.project?.nodes);
-    return hrefById;
-  };
-}
+// 纯逻辑单源在 src/export/svg-images.ts（后端 Node 直载同源），此处仅 re-export 保持既有调用方不变
+export { createSvgExportReferencedImageHrefById } from "../export/svg-images.ts";
 
 export function createLoadSvgImageExportPathById(__appScope: Record<string, any>) {
   return async () => {
@@ -2413,37 +2364,10 @@ export function createLoadSvgImageExportPathById(__appScope: Record<string, any>
 export function createExportSvg(__appScope: Record<string, any>) {
   return async (textEncoding: TextFileEncoding = "utf-8") => {
   const {
-    DEFAULT_CANVAS_BACKGROUND,
-    PARAM_LABELS,
-    activeLayerId,
-    activeSchemeKey,
-    backgroundPageRender,
-    buildEFileExport,
-    buildSvgDocument,
-    canvasBackgroundColor,
-    canvasBackgroundImageUrl,
-    canvasBounds,
-    colorPalette,
-    currentProject,
-    eDeviceDefinitionClassExportEnabled,
-    eDeviceDefinitionFieldOrder,
-    eDeviceDefinitionLabels,
-    eDeviceDefinitionTableIds,
-    eDeviceDefinitionTemplateFields,
-    edges,
     ensureSavedBeforeExport,
-    getEExportWarnings,
     isPickerAbort,
-    layers,
-    libraryTemplates,
-    loadSvgImageExportPathById,
-    measurementConfig,
-    nodes,
-    projectMeasurements,
     projectName,
-    resolveTemplateComponentLibrary,
     safeFilePart,
-    schemePathForScheme,
     writeTextFileToDirectory,
     writeOperationLog
   } = __appScope;
@@ -2477,26 +2401,20 @@ export function createExportSvg(__appScope: Record<string, any>) {
     }
 
     try {
-      const project = currentProject();
-      const imageExportPathByIdPromise = Promise.resolve()
-        .then(() => loadSvgImageExportPathById())
+      // 三份产物全部走后端：先并行发起请求
+      const svgTextPromise = Promise.resolve()
+        .then(() => fetchBackendModelSvgText(__appScope, textEncoding, "SVG 生成失败。"))
         .then(
-          (value: any) => ({ ok: true as const, value }),
+          (value: string) => ({ ok: true as const, value }),
           (error: unknown) => ({ ok: false as const, error })
         );
-      const exportOptions = buildEFileExportOptionsFromLibrary({
-        libraryTemplates,
-        labels: PARAM_LABELS,
-        eDeviceDefinitionLabels,
-        eDeviceDefinitionClassExportEnabled,
-        eDeviceDefinitionFieldOrder,
-        eDeviceDefinitionTemplateFields,
-        eDeviceDefinitionTableIds,
-        resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
-      });
-      const schemePath = typeof schemePathForScheme === "function"
-        ? schemePathForScheme(activeSchemeKey)
-        : [];
+      // JSON 与 SVG 同走后端：与单文件导出 createExportJsonFile 同源
+      const jsonTextPromise = Promise.resolve()
+        .then(() => fetchBackendModelJsonText(__appScope, "JSON 生成失败。"))
+        .then(
+          (value: string) => ({ ok: true as const, value }),
+          (error: unknown) => ({ ok: false as const, error })
+        );
       const baseFilename = safeFilePart(projectName);
       type PendingExportFile = {
         label: string;
@@ -2518,46 +2436,50 @@ export function createExportSvg(__appScope: Record<string, any>) {
           ))
         });
       };
-      const eFile = buildEFileExport(
-        project,
-        Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"],
-        exportOptions
-      );
-      const warnings = Array.isArray(eFile?.warnings)
-        ? eFile.warnings
-        : getEExportWarnings(project, exportOptions);
-      startFileWrite({
-        label: "E",
-        filename: `${baseFilename}.e`,
-        mime: eFile.mime,
-        operationLog: `导出模型文件：${baseFilename}.e`
-      }, eFile.text);
-      startFileWrite({
-        label: "JSON",
-        filename: `${baseFilename}.json`,
-        mime: "application/json",
-        operationLog: `导出模型文件：${baseFilename}.json`
-      }, JSON.stringify(project, null, 2));
+      // E 与 JSON/SVG 同走后端（与单文件导出 createExportEFile 同源）：三份产物同口径，
+      // 前端不再本地 buildEFileExport —— 本地生成用的是界面态 + PARAM_LABELS，与后端 ?template= 口径不同。
+      let eGenerationError: unknown;
+      let eFileWarningDetails: string[] = [];
+      const eFileResult = await Promise.resolve()
+        .then(() => fetchBackendModelEFile(__appScope, textEncoding, "E 文件生成失败。"))
+        .then(
+          (value) => ({ ok: true as const, value }),
+          (error: unknown) => ({ ok: false as const, error })
+        );
+      if (eFileResult.ok) {
+        eFileWarningDetails = eFileResult.value.warningDetails;
+        startFileWrite({
+          label: "E",
+          filename: `${baseFilename}.e`,
+          mime: "text/plain",
+          operationLog: `导出模型文件：${baseFilename}.e`
+        }, eFileResult.value.text);
+      } else {
+        eGenerationError = eFileResult.error;
+      }
+      let jsonGenerationError: unknown;
+      const jsonTextResult = await jsonTextPromise;
+      if (jsonTextResult.ok) {
+        startFileWrite({
+          label: "JSON",
+          filename: `${baseFilename}.json`,
+          mime: "application/json",
+          operationLog: `导出模型文件：${baseFilename}.json`
+        }, jsonTextResult.value);
+      } else {
+        jsonGenerationError = jsonTextResult.error;
+      }
       let svgGenerationError: unknown;
-      try {
-        const imageExportPathByIdResult = await imageExportPathByIdPromise;
-        if (!imageExportPathByIdResult.ok) {
-          throw imageExportPathByIdResult.error;
-        }
-        const imageExportPathById = imageExportPathByIdResult.value;
-        const svgText = svgTextWithEncodingDeclaration(buildSvgDocument(nodes, edges, buildSvgExportOptions({
-          canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
-          imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
-          backgroundPageRender, projectMeasurements, measurementConfig
-        })), textEncoding);
+      const svgTextResult = await svgTextPromise;
+      if (svgTextResult.ok) {
         startFileWrite({
           label: "SVG",
           filename: `${baseFilename}.svg`,
           mime: "image/svg+xml",
           operationLog: `导出图形文件：${baseFilename}.svg`
-        }, svgText);
-      } catch (error) {
-        svgGenerationError = error;
+        }, svgTextResult.value);
+      } else {
+        svgGenerationError = svgTextResult.error;
       }
       const results = await Promise.allSettled(
         exportFiles.map((file) => file.promise)
@@ -2579,20 +2501,25 @@ export function createExportSvg(__appScope: Record<string, any>) {
           : String(result.reason ?? "未知错误");
         failures.push(`${file.filename}：${reason}`);
       });
+      if (eGenerationError !== undefined) {
+        const reason = eGenerationError instanceof Error
+          ? eGenerationError.message
+          : String(eGenerationError ?? "未知错误");
+        failures.push(`${baseFilename}.e：${reason}`);
+      }
+      if (jsonGenerationError !== undefined) {
+        const reason = jsonGenerationError instanceof Error
+          ? jsonGenerationError.message
+          : String(jsonGenerationError ?? "未知错误");
+        failures.push(`${baseFilename}.json：${reason}`);
+      }
       if (svgGenerationError !== undefined) {
         const reason = svgGenerationError instanceof Error
           ? svgGenerationError.message
           : String(svgGenerationError ?? "未知错误");
         failures.push(`${baseFilename}.svg：${reason}`);
       }
-      const warningLines = warnings.length > 0
-        ? [
-            "",
-            `有 ${warnings.length} 个图上设备未导出到 E 文件：`,
-            ...warnings.slice(0, 20).map((warning: any) => `- ${warning.nodeName}（${warning.kind}）：${warning.reason}`),
-            warnings.length > 20 ? `... 还有 ${warnings.length - 20} 个设备未列出。` : ""
-          ].filter(Boolean)
-        : [];
+      const warningLines = eFileWarningDetails;
       const directoryName = String(directoryHandle?.name ?? "").trim() || "已选择目录";
       if (failures.length === 0 && successCount === 3) {
         showGlobalMessage([
@@ -2622,6 +2549,32 @@ export function createExportSvg(__appScope: Record<string, any>) {
   };
 }
 
+// 后端 x-e-file-warnings 头带回「未导出设备」清单（百分比编码 JSON，生成器单源产出）。
+// 头缺失/损坏/内容非法一律按无告警处理，不抛出。
+function eFileWarningDetailsFromResponse(response: Response): string[] {
+  const raw = response.headers?.get?.("x-e-file-warnings");
+  if (!raw) {
+    return [];
+  }
+  let payload: any;
+  try {
+    payload = JSON.parse(decodeURIComponent(raw));
+  } catch {
+    return [];
+  }
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const total = Number.isFinite(Number(payload?.total)) ? Number(payload.total) : items.length;
+  // 后端可能因响应头字节封顶只回总数（不带 items）：仍给出首行与「未列出」提示
+  if (total <= 0) {
+    return [];
+  }
+  return [
+    `有 ${total} 个图上设备未导出到 E 文件：`,
+    ...items.map((item: any) => `- ${item?.nodeName ?? ""}（${item?.kind ?? ""}）：${item?.reason ?? ""}`),
+    total > items.length ? `... 还有 ${total - items.length} 个设备未列出。` : ""
+  ].filter(Boolean);
+}
+
 function showStandaloneExportCompletion(
   __appScope: Record<string, any>,
   title: string,
@@ -2640,52 +2593,98 @@ function showStandaloneExportCompletion(
   showGlobalMessage([message, ...details].join("\n"));
 }
 
-// SVG 导出选项构建器，避免 createExportSvg 和 createExportSvgFile 重复
-function buildSvgExportOptions(params: {
-  canvasBounds: any; canvasBackgroundColor: string; DEFAULT_CANVAS_BACKGROUND: string;
-  canvasBackgroundImageUrl: string; imageExportPathById: any; colorPalette: any;
-  libraryTemplates: any[]; layers: any; activeLayerId: any;
-  backgroundPageRender: any; projectMeasurements: any; measurementConfig: any;
-}) {
+// 当前 E 接口处于「预定义模板只读态」时，导出必须带上模板名：
+// 后端 ?template= 与前端「加载预定义模板」共用同一实现（空基线重建），产物逐字节一致。
+// 不带该参数时后端只能读磁盘库，界面态与库态一旦漂移（落盘失败/多端并发/手动还原），
+// 导出会静默产出缺列的 E 文件（实测：界面已加载国网模板，导出却缺 runstat 列）。
+// 文件模板/自定义态（可编辑）不传：此时以后端库态为准，避免丢弃用户改动。
+function eFileTemplateQueryName(__appScope: Record<string, any>): string {
+  const { eDeviceInterfaceLoadedTemplateName, eDeviceInterfaceReadonlyMode } = __appScope;
+  if (!eDeviceInterfaceReadonlyMode) {
+    return "";
+  }
+  const name = String(eDeviceInterfaceLoadedTemplateName ?? "");
+  return Object.prototype.hasOwnProperty.call(E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES, name) ? name : "";
+}
+
+// 三个后端导出请求共用：方案路径为空/缺省时回落 ["默认方案"]（与后端缺省口径一致）
+function backendExportSchemePath(__appScope: Record<string, any>): string[] {
+  const { activeSchemeKey, schemePathForScheme } = __appScope;
+  const schemePath = typeof schemePathForScheme === "function" ? schemePathForScheme(activeSchemeKey) : [];
+  return Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"];
+}
+
+// E 文件生成已移至后端 /v1/schemes/model/e-file（单文件导出与目录导出共用本函数）。
+async function fetchBackendModelEFile(__appScope: Record<string, any>, textEncoding: TextFileEncoding, failureMessage: string) {
+  const { projectName } = __appScope;
+  const path = backendExportSchemePath(__appScope);
+  const templateName = eFileTemplateQueryName(__appScope);
+  const url = apiPath(
+    `/v1/schemes/model/e-file?${schemePathQueryParam("schemePath", path)}`
+    + `&name=${encodeURIComponent(String(projectName ?? ""))}`
+    + `&encoding=${encodeURIComponent(textEncoding)}`
+    + (templateName ? `&template=${encodeURIComponent(templateName)}` : "")
+  );
+  const response = await fetch(url, { method: "GET" });
+  if (!response.ok) {
+    throw new Error(await backendErrorMessage(response, failureMessage));
+  }
+  const warningDetails = eFileWarningDetailsFromResponse(response);
+  // Body.text() 恒按 UTF-8 解码、不认 content-type charset，故按 arraybuffer 收字节后按请求编码解码
+  const bytes = new Uint8Array(await response.arrayBuffer());
   return {
-    ...params.canvasBounds,
-    backgroundColor: params.canvasBackgroundColor || params.DEFAULT_CANVAS_BACKGROUND,
-    backgroundImage: params.canvasBackgroundImageUrl,
-    imageExportPathById: params.imageExportPathById,
-    colorDisplayMode: "voltage" as const,
-    colorPalette: params.colorPalette,
-    deviceTemplates: params.libraryTemplates,
-    layers: params.layers,
-    activeLayerId: params.activeLayerId,
-    backgroundPage: params.backgroundPageRender,
-    measurements: params.projectMeasurements,
-    measurementConfig: params.measurementConfig
+    text: textEncoding === "gbk" ? decodeGbk(bytes) : new TextDecoder("utf-8").decode(bytes),
+    warningDetails
   };
+}
+
+// SVG 生成已移至后端 /v1/schemes/model/svg；colorMode=voltage 保持前端导出原有按电压着色。
+// 已知差异（后端渲染器舍去）：不含背景页图层；配色取自部署的 color-config.json（与前端本地导出同源）。
+// XML 声明由后端产出，前端不再前置，保证响应体与落盘文件逐字节一致。
+async function fetchBackendModelSvgText(__appScope: Record<string, any>, textEncoding: TextFileEncoding, failureMessage: string) {
+  const { projectName } = __appScope;
+  const path = backendExportSchemePath(__appScope);
+  const url = apiPath(
+    `/v1/schemes/model/svg?${schemePathQueryParam("schemePath", path)}`
+    + `&name=${encodeURIComponent(String(projectName ?? ""))}`
+    + `&colorMode=voltage`
+    + `&encoding=${encodeURIComponent(textEncoding)}`
+  );
+  const response = await fetch(url, { method: "GET" });
+  if (!response.ok) {
+    throw new Error(await backendErrorMessage(response, failureMessage));
+  }
+  // Body.text() 恒按 UTF-8 解码、不认 content-type charset，故按 arraybuffer 收字节后按请求编码解码（同 createExportEFile）
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  return textEncoding === "gbk" ? decodeGbk(bytes) : new TextDecoder("utf-8").decode(bytes);
+}
+
+// JSON 生成已移至后端 /v1/schemes/model/json：与 E/SVG/CIM 同口径（先保存再请求），
+// 输出为存档态压缩 JSON（不再本地序列化浏览器实时态）。
+async function fetchBackendModelJsonText(__appScope: Record<string, any>, failureMessage: string) {
+  const { projectName } = __appScope;
+  const path = backendExportSchemePath(__appScope);
+  const url = apiPath(
+    `/v1/schemes/model/json?${schemePathQueryParam("schemePath", path)}`
+    + `&name=${encodeURIComponent(String(projectName ?? ""))}`
+  );
+  const response = await fetch(url, { method: "GET" });
+  if (!response.ok) {
+    throw new Error(await backendErrorMessage(response, failureMessage));
+  }
+  const payload = await response.json();
+  return JSON.stringify(payload?.data?.project ?? {});
 }
 
 export function createExportSvgFile(__appScope: Record<string, any>) {
   return async (textEncoding: TextFileEncoding = "utf-8") => {
     const {
-      DEFAULT_CANVAS_BACKGROUND,
-      activeLayerId,
-      backgroundPageRender,
-      buildSvgDocument,
-      canvasBackgroundColor,
-      canvasBackgroundImageUrl,
-      canvasBounds,
-      colorPalette,
-      edges,
       ensureSavedBeforeExport,
-      layers,
-      libraryTemplates,
-      loadSvgImageExportPathById,
-      measurementConfig,
-      nodes,
-      projectMeasurements,
       projectName,
       safeFilePart,
       saveLazyTextFile,
       saveTextFile,
+      showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
     let exportStartedAt = performance.now();
@@ -2698,39 +2697,38 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
     const baseFilename = safeFilePart(projectName);
     let svgTextPromise: Promise<string> | undefined;
     const loadSvgText = () => {
-      svgTextPromise ??= Promise.resolve().then(async () => {
-        const imageExportPathById = typeof loadSvgImageExportPathById === "function"
-          ? await loadSvgImageExportPathById()
-          : undefined;
-        return svgTextWithEncodingDeclaration(buildSvgDocument(nodes, edges, buildSvgExportOptions({
-          canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
-          imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
-          backgroundPageRender, projectMeasurements, measurementConfig
-        })), textEncoding);
-      });
+      // SVG 生成已移至后端 /v1/schemes/model/svg（见 fetchBackendModelSvgText）
+      svgTextPromise ??= Promise.resolve().then(() => fetchBackendModelSvgText(__appScope, textEncoding, "SVG 导出失败。"));
       return svgTextPromise;
     };
-    const saved = typeof saveLazyTextFile === "function"
-      ? await saveLazyTextFile({
-          filename: `${baseFilename}.svg`,
-          loadText: loadSvgText,
-          mime: "image/svg+xml",
-          description: "SVG 图形文件",
-          extensions: [".svg"],
-          encoding: textEncoding,
-          preferNativeDialog: true,
-          onSaveTargetReady: markSaveTargetReady
-        })
-      : await saveTextFile({
-          filename: `${baseFilename}.svg`,
-          text: await loadSvgText(),
-          mime: "image/svg+xml",
-          description: "SVG 图形文件",
-          extensions: [".svg"],
-          encoding: textEncoding,
-          preferNativeDialog: true,
-          onSaveTargetReady: markSaveTargetReady
-        });
+    // 后端不可达/4xx/5xx 均为常规失败路径：与 createExportEFile 一致，catch 后提示并终止
+    let saved: boolean;
+    try {
+      saved = typeof saveLazyTextFile === "function"
+        ? await saveLazyTextFile({
+            filename: `${baseFilename}.svg`,
+            loadText: loadSvgText,
+            mime: "image/svg+xml",
+            description: "SVG 图形文件",
+            extensions: [".svg"],
+            encoding: textEncoding,
+            preferNativeDialog: true,
+            onSaveTargetReady: markSaveTargetReady
+          })
+        : await saveTextFile({
+            filename: `${baseFilename}.svg`,
+            text: await loadSvgText(),
+            mime: "image/svg+xml",
+            description: "SVG 图形文件",
+            extensions: [".svg"],
+            encoding: textEncoding,
+            preferNativeDialog: true,
+            onSaveTargetReady: markSaveTargetReady
+          });
+    } catch (error) {
+      showGlobalMessage(error instanceof Error ? error.message : String(error));
+      return;
+    }
     if (!saved) {
       return;
     }
@@ -2744,13 +2742,12 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
 export function createExportJsonFile(__appScope: Record<string, any>) {
   return async (textEncoding: TextFileEncoding = "utf-8") => {
     const {
-      currentProject,
       ensureSavedBeforeExport,
       projectName,
       safeFilePart,
       saveLazyTextFile,
       saveTextFile,
-      serializeProject,
+      showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
     let exportStartedAt = performance.now();
@@ -2763,30 +2760,37 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
     const baseFilename = safeFilePart(projectName);
     let jsonTextPromise: Promise<string> | undefined;
     const loadJsonText = () => {
-      jsonTextPromise ??= Promise.resolve().then(() => serializeProject(currentProject()));
+      jsonTextPromise ??= Promise.resolve().then(() => fetchBackendModelJsonText(__appScope, "JSON 导出失败。"));
       return jsonTextPromise;
     };
-    const saved = typeof saveLazyTextFile === "function"
-      ? await saveLazyTextFile({
-          filename: `${baseFilename}.json`,
-          loadText: loadJsonText,
-          mime: "application/json",
-          description: "JSON 模型文件",
-          extensions: [".json"],
-          encoding: textEncoding,
-          preferNativeDialog: true,
-          onSaveTargetReady: markSaveTargetReady
-        })
-      : await saveTextFile({
-          filename: `${baseFilename}.json`,
-          text: await loadJsonText(),
-          mime: "application/json",
-          description: "JSON 模型文件",
-          extensions: [".json"],
-          encoding: textEncoding,
-          preferNativeDialog: true,
-          onSaveTargetReady: markSaveTargetReady
-        });
+    // 后端不可达/4xx/5xx 均为常规失败路径：与 createExportSvgFile 一致，catch 后提示并终止
+    let saved: boolean;
+    try {
+      saved = typeof saveLazyTextFile === "function"
+        ? await saveLazyTextFile({
+            filename: `${baseFilename}.json`,
+            loadText: loadJsonText,
+            mime: "application/json",
+            description: "JSON 模型文件",
+            extensions: [".json"],
+            encoding: textEncoding,
+            preferNativeDialog: true,
+            onSaveTargetReady: markSaveTargetReady
+          })
+        : await saveTextFile({
+            filename: `${baseFilename}.json`,
+            text: await loadJsonText(),
+            mime: "application/json",
+            description: "JSON 模型文件",
+            extensions: [".json"],
+            encoding: textEncoding,
+            preferNativeDialog: true,
+            onSaveTargetReady: markSaveTargetReady
+          });
+    } catch (error) {
+      showGlobalMessage(error instanceof Error ? error.message : String(error));
+      return;
+    }
     if (!saved) {
       return;
     }
@@ -2797,62 +2801,15 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
   };
 }
 
-export function buildEFileExportProjectSnapshot(__appScope: Record<string, any>) {
-  const {
-    currentProject,
-    currentUnit,
-    edges,
-    feeder,
-    modelType,
-    nodes,
-    powerBaseValue,
-    powerUnit,
-    projectName,
-    subcontrolarea,
-    substation,
-    taiqu,
-    voltageUnit
-  } = __appScope;
-  if (!Array.isArray(nodes) || !Array.isArray(edges)) {
-    return currentProject();
-  }
-  return {
-    version: 1,
-    name: String(projectName ?? ""),
-    nodes,
-    edges,
-    powerBaseValue,
-    powerUnit,
-    voltageUnit,
-    currentUnit,
-    subcontrolarea,
-    substation,
-    modelType,
-    feeder,
-    taiqu
-  };
-}
-
 export function createExportEFile(__appScope: Record<string, any>) {
   return async (textEncoding: TextFileEncoding = "gbk") => {
     const {
-      activeSchemeKey,
-      buildEFileExport,
-      eDeviceDefinitionClassExportEnabled,
-      eDeviceDefinitionFieldOrder,
-      eDeviceDefinitionLabels,
-      eDeviceDefinitionTableIds,
-      eDeviceDefinitionTemplateFields,
       ensureSavedBeforeExport,
-      getEExportWarnings,
-      libraryTemplates,
-      PARAM_LABELS,
       projectName,
-      resolveTemplateComponentLibrary,
       safeFilePart,
       saveLazyTextFile,
       saveTextFile,
-      schemePathForScheme,
+      showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
     let exportStartedAt = performance.now();
@@ -2863,74 +2820,54 @@ export function createExportEFile(__appScope: Record<string, any>) {
       return;
     }
 
-    const generatedFilePromise = Promise.resolve().then(() => {
-      const project = buildEFileExportProjectSnapshot(__appScope);
-      const exportOptions = buildEFileExportOptionsFromLibrary({
-        libraryTemplates,
-        labels: PARAM_LABELS,
-        eDeviceDefinitionLabels,
-        eDeviceDefinitionClassExportEnabled,
-        eDeviceDefinitionFieldOrder,
-        eDeviceDefinitionTemplateFields,
-        eDeviceDefinitionTableIds,
-        resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
-      });
-      const schemePath = typeof schemePathForScheme === "function"
-        ? schemePathForScheme(activeSchemeKey)
-        : [];
-      const file = buildEFileExport(
-        project,
-        Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"],
-        exportOptions
-      );
-      return {
-        file,
-        warnings: Array.isArray(file?.warnings)
-          ? file.warnings
-          : getEExportWarnings(project, exportOptions)
-      };
-    });
     const filenameBase = typeof safeFilePart === "function"
       ? safeFilePart(String(projectName ?? ""))
       : String(projectName ?? "").trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
-    const saved = typeof saveLazyTextFile === "function"
-      ? await saveLazyTextFile({
-          filename: `${filenameBase}.e`,
-          loadText: async () => (await generatedFilePromise).file.text,
-          mime: "text/plain",
-          description: "E 模型文件",
-          extensions: [".e"],
-          encoding: textEncoding,
-          preferNativeDialog: true,
-          onSaveTargetReady: markSaveTargetReady
-        })
-      : await (async () => {
-          const { file } = await generatedFilePromise;
-          return saveTextFile({
-            filename: file.filename,
-            text: file.text,
-            mime: file.mime,
+    // 后端经响应头带回落盘用告警（生成器单源）；保存完成后展示
+    let warningDetails: string[] = [];
+    // E 文件生成已移至后端 /v1/schemes/model/e-file（预定义模板只读态随请求带模板名）。
+    const generatedFilePromise = Promise.resolve().then(async () => {
+      const generated = await fetchBackendModelEFile(__appScope, textEncoding, "E 文件导出失败。");
+      warningDetails = generated.warningDetails;
+      return { file: { filename: `${filenameBase}.e`, text: generated.text, mime: "text/plain" } };
+    });
+    let saved: boolean;
+    try {
+      saved = typeof saveLazyTextFile === "function"
+        ? await saveLazyTextFile({
+            filename: `${filenameBase}.e`,
+            loadText: async () => (await generatedFilePromise).file.text,
+            mime: "text/plain",
             description: "E 模型文件",
             extensions: [".e"],
             encoding: textEncoding,
             preferNativeDialog: true,
             onSaveTargetReady: markSaveTargetReady
-          });
-        })();
+          })
+        : await (async () => {
+            const { file } = await generatedFilePromise;
+            return saveTextFile({
+              filename: file.filename,
+              text: file.text,
+              mime: file.mime,
+              description: "E 模型文件",
+              extensions: [".e"],
+              encoding: textEncoding,
+              preferNativeDialog: true,
+              onSaveTargetReady: markSaveTargetReady
+            });
+          })();
+    } catch (error) {
+      showGlobalMessage(error instanceof Error ? error.message : String(error));
+      return;
+    }
     if (!saved) {
       return;
     }
-    const { file, warnings } = await generatedFilePromise;
+    const { file } = await generatedFilePromise;
     writeOperationLog(`导出模型文件：${file.filename}`);
     const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
     const successMessage = `E 文件导出成功：${file.filename}；字符编码：${textFileEncodingLabel(textEncoding)}；总耗时：${elapsedSeconds} 秒`;
-    const warningDetails = warnings.length > 0
-      ? [
-        `有 ${warnings.length} 个图上设备未导出到 E 文件：`,
-        ...warnings.slice(0, 20).map((warning) => `- ${warning.nodeName}（${warning.kind}）：${warning.reason}`),
-        warnings.length > 20 ? `... 还有 ${warnings.length - 20} 个设备未列出。` : ""
-      ].filter(Boolean)
-      : [];
     showStandaloneExportCompletion(__appScope, "E 文件导出完成", successMessage, warningDetails);
   };
 }
@@ -3015,7 +2952,6 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
           eDeviceDefinitionFieldOrder,
           eDeviceDefinitionTemplateFields: {},
           labels: __appScope.PARAM_LABELS,
-          deviceDefinitionKeyForTemplate: __appScope.deviceDefinitionKeyForTemplate,
           deviceDefinitionOverrideForTemplate: __appScope.deviceDefinitionOverrideForTemplate,
           resolveDefinitionComponentLibrary: __appScope.resolveTemplateComponentLibrary ?? ((template: any) => inferESection(template.kind, template.params ?? {}))
         });
@@ -3143,7 +3079,7 @@ export function createIsProjectFilePayload(__appScope: Record<string, any>) {
 
 export function createCreateImportedSchemeRecord(__appScope: Record<string, any>) {
   return (text: string, fileName: string): SavedSchemeRecord => {
-  const { createSavedProject, createSavedScheme, isObjectRecord, isProjectFilePayload } = __appScope;
+  const { createImportedSchemeRecord, createSavedProject, createSavedScheme, isObjectRecord, isProjectFilePayload } = __appScope;
     const payload = JSON.parse(text) as unknown;
     const payloadRecord = isObjectRecord(payload) ? payload : null;
     const rawScheme =
@@ -3290,7 +3226,7 @@ export function createOpenSchemeImportFilePicker(__appScope: Record<string, any>
 
 export function createMergeImportedSchemeIntoExisting(__appScope: Record<string, any>) {
   return (existingScheme: SavedSchemeRecord, importedScheme: SavedSchemeRecord): SavedSchemeRecord => {
-  const { hasSameName, upsertSavedProject } = __appScope;
+  const { hasSameName, mergeImportedSchemeIntoExisting, upsertSavedProject } = __appScope;
     const now = new Date().toISOString();
     const nextProjects = importedScheme.projects.reduce<SavedProjectRecord[]>((current, importedProject) => {
       const duplicateProject = current.find((project) => hasSameName(project.name, [importedProject.name]));
@@ -9133,10 +9069,5 @@ export function createSaveCustomDeviceDefinitionDialog(__appScope: Record<string
 
 function textFileEncodingLabel(encoding: TextFileEncoding) {
   return encoding === "gbk" ? "GBK" : "UTF-8";
-}
-
-export function svgTextWithEncodingDeclaration(svgText: string, encoding: TextFileEncoding) {
-  const content = String(svgText ?? "").replace(/^\uFEFF?\s*<\?xml\b[^?]*\?>\s*/iu, "");
-  return `<?xml version="1.0" encoding="${textFileEncodingLabel(encoding)}"?>\n${content}`;
 }
 

@@ -1,12 +1,11 @@
 import type { ChangeEvent } from "react";
-import { deviceDefinitionOverrideForTemplate } from "../customDeviceUtils";
+import { buildEffectiveLibraryTemplates } from "../customDeviceUtils";
 import {
   createLibraryPackage,
   type LibraryPackagePayload
 } from "./appPersistenceLibraryExport";
 import type { ImageAsset } from "./appCoreCanvasUtilities";
 import {
-  applyDeviceTemplateDefinitionOverride,
   DEVICE_LIBRARY,
   type DeviceTemplate
 } from "../model";
@@ -42,20 +41,12 @@ const confirmUser = async (scope: Record<string, any>, message: string) => {
 
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 
-const effectiveTemplateMap = (snapshot: UserCustomizationSnapshot) => {
-  const templates = [...DEVICE_LIBRARY, ...snapshot.deviceLibrary.customDeviceTemplates];
-  return new Map<string, DeviceTemplate>(templates.map((template) => [
-    template.kind,
-    applyDeviceTemplateDefinitionOverride(
-      template,
-      deviceDefinitionOverrideForTemplate(
-        template,
-        snapshot.deviceLibrary.deviceDefinitionOverrides,
-        templates
-      )
-    )
-  ]));
-};
+// 库模板装配走共享单一入口（内置库 + 自定义库 + 元件定义覆盖），勿在本文件重复拼接
+const effectiveTemplateMap = (snapshot: UserCustomizationSnapshot) =>
+  new Map<string, DeviceTemplate>(buildEffectiveLibraryTemplates(
+    snapshot.deviceLibrary.customDeviceTemplates,
+    snapshot.deviceLibrary.deviceDefinitionOverrides
+  ).map((template): [string, DeviceTemplate] => [template.kind, template]));
 
 export function userCustomizationSnapshotFromLibraryPackage(
   payload: LibraryPackagePayload
