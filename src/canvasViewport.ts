@@ -60,6 +60,33 @@ export function canvasFitAvailableWidth(frameWidth: number, insets: CanvasFitIns
   return Math.max(1, frameWidth - insets.left - insets.right);
 }
 
+/* 画布外围刻度尺（四边）-------------------------------------------------------
+ * 刻度口径与底图网格一致：大网格 25 单位 = 大刻度、细网格 5 单位 = 小刻度，
+ * 只在大刻度处标数值。左上角为 (0,0)，X 向右递增、Y 向下递增。
+ * ------------------------------------------------------------------------- */
+
+// 尺子厚度（屏幕像素，不随缩放变化）
+export const CANVAS_RULER_SIZE = 24;
+export const CANVAS_RULER_MAJOR_UNIT = 25;
+export const CANVAS_RULER_MINOR_UNIT = 5;
+
+// 画布可见区外沿留白：普通边距 + 尺子厚度，保证四边尺子都站得下
+export function canvasOuterInset() {
+  return CANVAS_FRAME_INSET + CANVAS_RULER_SIZE;
+}
+
+// [from, to] 区间内 unit 的整数倍刻度值（含落在区间内的首尾）
+export function canvasRulerTicks(from: number, to: number, unit: number): number[] {
+  if (!(unit > 0) || !(to >= from)) {
+    return [];
+  }
+  const ticks: number[] = [];
+  for (let value = Math.ceil(from / unit) * unit; value <= to; value += unit) {
+    ticks.push(value);
+  }
+  return ticks;
+}
+
 /* 工具函数 */
 
 /** 将数值限制在 [min, max] 范围内 */

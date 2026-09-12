@@ -5,6 +5,7 @@
  * 通过自定义比较器，在 tab 切换时跳过画布 SVG 协调。
  */
 import { memo } from "react";
+import { CanvasRulers } from "./appCanvasRulers";
 
 /** Storage bus 设备类型集合 */
 const STORAGE_BUS_KINDS = new Set([
@@ -510,7 +511,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         event.stopPropagation();
         fitWholeCanvasToFrame();
     }}>
-            <svg ref={svgRef} className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${terminalPress?.moved ? "terminal-dragging" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${libraryPlacement ? "library-place-mode" : ""} ${contextMarqueeSelection ? "context-marquee-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""} ${singleNodeDragging ? "single-node-dragging" : ""}`} style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY }} viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`} onDrop={handleDrop} onDragOver={(event) => event.preventDefault()} onWheel={handleWheel} onDoubleClick={fitWholeCanvasFromBlankDoubleClick} onPointerDownCapture={handleCanvasPointerDownCapture} onPointerMove={handlePointerMove} onPointerEnter={(event) => {
+            <CanvasRulers scope={scope}/>
+            <svg ref={svgRef} className={`diagram-canvas${connectSource ? "connect-mode" : ""} ${terminalPress?.moved ? "terminal-dragging" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${libraryPlacement ? "library-place-mode" : ""} ${contextMarqueeSelection ? "context-marquee-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""} ${singleNodeDragging ? "single-node-dragging" : ""}`} style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY }} viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`} onDrop={handleDrop} onDragOver={(event) => event.preventDefault()} onWheel={handleWheel} onDoubleClick={fitWholeCanvasFromBlankDoubleClick} onPointerDownCapture={handleCanvasPointerDownCapture} onPointerMove={handlePointerMove} onPointerEnter={(event) => {
         canvasInteractionRef.current = true;
         projectListPointerInsideRef.current = false;
         const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);

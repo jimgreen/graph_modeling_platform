@@ -80,6 +80,7 @@ import {
   clampNumber,
   canvasFitAvailableWidth,
   canvasFitPanelInset,
+  canvasOuterInset,
   CANVAS_FRAME_INSET,
   CANVAS_SCROLL_EDGE_VIEWPORT_RATIO,
   CANVAS_FIT_SCROLLBAR_GUARD,
@@ -2441,19 +2442,21 @@ export function estimatedViewportNodeScreenSize(
   return maxSize;
 }
 
+// 画布外沿留白统一走 canvasOuterInset：普通边距 + 尺子厚度，
+// 四边刻度尺就画在这段留白里（不滚动时也必须够宽）
 export function canvasScrollEdgeInset(viewportSize: number) {
-  return Math.max(CANVAS_FRAME_INSET, Math.round(viewportSize * CANVAS_SCROLL_EDGE_VIEWPORT_RATIO));
+  return Math.max(canvasOuterInset(), Math.round(viewportSize * CANVAS_SCROLL_EDGE_VIEWPORT_RATIO));
 }
 
 export function canvasScrollSurfaceSize(displaySize: number, viewportSize: number, scrollActive: boolean) {
-  const edgeInset = scrollActive ? canvasScrollEdgeInset(viewportSize) : CANVAS_FRAME_INSET;
+  const edgeInset = scrollActive ? canvasScrollEdgeInset(viewportSize) : canvasOuterInset();
   return Math.max(displaySize + edgeInset * 2, viewportSize);
 }
 
 export function canvasDisplayOffset(displaySize: number, surfaceSize: number, viewportSize: number, scrollActive: boolean) {
   return scrollActive
     ? canvasScrollEdgeInset(viewportSize)
-    : Math.max(CANVAS_FRAME_INSET, Math.round((surfaceSize - displaySize) / 2));
+    : Math.max(canvasOuterInset(), Math.round((surfaceSize - displaySize) / 2));
 }
 
 export function canvasFramePaddingOffset(frame: HTMLElement, svg?: SVGSVGElement | null) {
