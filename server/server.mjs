@@ -2664,13 +2664,10 @@ function savedRecordTimestamp(value) {
 }
 
 function storageProjectDisplayName(name, fallback = "未命名模型") {
-  const normalized = String(name || "").trim().replace(/电力系统/g, "电力能源系统") || fallback;
-  const suffixMatch = /^(.*?)\s*\((\d+)\)$/u.exec(normalized);
-  if (!suffixMatch) {
-    return normalized;
-  }
-  const base = suffixMatch[1].trim();
-  return base && !base.endsWith("副本") ? base : normalized;
+  // 与前端 src/model-routing.ts 的 savedProjectDisplayName 保持一致：名称即标识。
+  // 若把 “(N)” 折叠掉，重命名/导入产生的 “模型A (2)” 会被认成已有的 “模型A”，
+  // 复用同一个 idx 并覆盖原文件，前端模型列表看不到新模型。
+  return String(name || "").trim().replace(/电力系统/g, "电力能源系统") || fallback;
 }
 
 function storageProjectNameKey(name) {
