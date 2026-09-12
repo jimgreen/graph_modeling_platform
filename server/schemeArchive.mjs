@@ -10,16 +10,14 @@ function isModelJsonFile(fileName) {
   return /\.json$/iu.test(fileName) && fileName.toLocaleLowerCase() !== "scheme.json";
 }
 
-/** 递归列出方案目录下的模型 json（含子方案目录） */
+/**
+ * 递归列出方案目录下的模型 json（含子方案目录）。
+ * 目录读失败即上抛，不静默跳过：否则该子树会凭空消失，而 ZIP 仍成功返回，产出残缺压缩包。
+ */
 export async function listModelJsonFiles(rootDir) {
   const found = [];
   const visit = async (dir, dirParts) => {
-    let entries;
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
+    const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {

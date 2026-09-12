@@ -1,6 +1,6 @@
 // 方案 ZIP 实时生成集成测试：GRAPH_MODEL_DATA_DIR 指向 tmpdir 种子数据 → 起真实 server（端口 0）
 // → 断言 ZIP 内 json/e/svg 三件套齐全，且 e/svg 与对应单模型端点输出逐字节一致。
-import { describe, expect, test, beforeAll, afterAll } from "vitest";
+import { describe, expect, test, beforeAll, afterAll, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,24 @@ import AdmZip from "adm-zip";
 import { installDomShim } from "./domShim.mjs";
 import { apiPath } from "./config.mjs";
 import { encodeSchemePath } from "./schemePath.mjs";
+
+// 「子方案目录读失败」注入：Windows 上 chmod/ACL 不可移植，故只对特定目录名让 readdir 抛 EACCES，
+// 其余路径一律透传真实实现（server.mjs 的 readdir 调用不受影响）。
+const UNREADABLE_DIR = "不可读子方案";
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    readdir: async (dir, options) => {
+      if (String(dir).endsWith(UNREADABLE_DIR)) {
+        const error = new Error(`EACCES: permission denied, scandir '${dir}'`);
+        error.code = "EACCES";
+        throw error;
+      }
+      return actual.readdir(dir, options);
+    }
+  };
+});
 
 installDomShim();
 
@@ -64,6 +82,11 @@ beforeAll(async () => {
   mkdirSync(join(nestedDir, "子方案"), { recursive: true });
   writeFileSync(join(nestedDir, "厂站.json"), modelJson("厂站", 2), "utf-8");
   writeFileSync(join(nestedDir, "子方案", "线路.json"), modelJson("线路", 3), "utf-8");
+  // 不可读方案：方案根目录本身可读（厂站.json 能被枚举），但子方案目录 readdir 抛 EACCES（由上面的 vi.mock 注入）
+  const unreadableDir = join(dataDir, "schemes", "files", "不可读方案");
+  mkdirSync(join(unreadableDir, UNREADABLE_DIR), { recursive: true });
+  writeFileSync(join(unreadableDir, "厂站.json"), modelJson("厂站", 4), "utf-8");
+  writeFileSync(join(unreadableDir, UNREADABLE_DIR, "线路.json"), modelJson("线路", 5), "utf-8");
   process.env.GRAPH_MODEL_DATA_DIR = dataDir;
   const { createImageServer, createSchemeArchiveBuffer: buildArchive } = await import("./server.mjs");
   createSchemeArchiveBuffer = buildArchive;
@@ -138,4 +161,24 @@ test("自定义 filesRoot 显式报错，不静默混用两个数据根", async 
     filesRoot: join(dataDir, "schemes", "files-自定义"),
     schemePath: ["测试方案"]
   })).rejects.toThrow(/自定义 filesRoot/);
+});
+
+// 子方案目录读失败必须上抛，而非静默丢弃整棵子树后仍产出「看似成功」的 ZIP
+test("子方案目录读失败即上抛，不静默丢弃子树", async () => {
+  const { listModelJsonFiles, buildSchemeArchiveBuffer } = await import("./schemeArchive.mjs");
+  const { readdir } = await import("node:fs/promises");
+  const schemeDir = join(dataDir, "schemes", "files", "不可读方案");
+
+  // 先证前提：方案根可读且确实列出了该子目录（失败只可能来自递归读子目录那一次）
+  expect((await readdir(schemeDir)).map(String)).toContain(UNREADABLE_DIR);
+
+  await expect(listModelJsonFiles(schemeDir)).rejects.toThrow(/EACCES/);
+  await expect(buildSchemeArchiveBuffer({
+    schemeDir,
+    schemeName: "不可读方案",
+    // 枚举阶段就该失败；若被调用说明错误仍被吞掉，用不含 EACCES 的消息让断言失败
+    renderArtifacts: async () => {
+      throw new Error("renderArtifacts 不应被调用：枚举阶段就该失败");
+    }
+  })).rejects.toThrow(/EACCES/);
 });
