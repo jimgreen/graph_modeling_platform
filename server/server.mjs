@@ -5501,6 +5501,56 @@ export async function readSchemeProjectRecord(options = {}) {
   return readSchemeProjectFile(projectFile.filePath, projectFile.fileName);
 }
 
+// 按模型稳定序号 idx 定位模型（idx 由 allocateStableProjectIndex 分配，跨方案唯一）。
+// 供以 model_id 指定模型的接口使用（如 /v1/schemes/model/send）：与方案路径解耦，
+// 模型改名或移到别的方案后 model_id 不变。
+// 上限：按 idx 定位会全量遍历一次 files 目录（方案数 × 模型数），仅该路径才走这里。
+export async function findSchemeProjectRecordByIndex(options = {}) {
+  const target = Number(options.index);
+  if (!Number.isSafeInteger(target) || target <= 0) {
+    return null;
+  }
+  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
+  return scanProjectByIndex(filesRoot, [], target);
+}
+
+async function scanProjectByIndex(dir, schemePath, target) {
+  let entries = [];
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || !/\.json$/iu.test(entry.name) || entry.name.toLocaleLowerCase() === "scheme.json") {
+      continue;
+    }
+    const filePath = join(dir, entry.name);
+    let parsed;
+    try {
+      parsed = JSON.parse(await readFile(filePath, "utf-8"));
+    } catch {
+      // 损坏的历史文件不参与 idx 匹配
+      continue;
+    }
+    if (Number(parsed?.idx) !== target) {
+      continue;
+    }
+    const record = await readSchemeProjectFile(filePath, entry.name);
+    return record ? { name: record.name, schemePath, project: record.project, updatedAt: record.updatedAt } : null;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const found = await scanProjectByIndex(join(dir, entry.name), [...schemePath, entry.name], target);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
 export async function saveSchemeProjectRecord(options) {
   const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
   const trashRoot = options.trashRoot ?? schemeTrashDir;

@@ -4,7 +4,7 @@ import { installDomShim } from "./domShim.mjs";
 
 installDomShim();
 
-import { readSchemeProjectRecord } from "./server.mjs";
+import { findSchemeProjectRecordByIndex, readSchemeProjectRecord } from "./server.mjs";
 import { sendV1Error, sendV1JsonNoStore } from "./v1Response.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 import { buildEFileForSavedModel, readJsonBody } from "./eFileExport.mjs";
@@ -85,22 +85,47 @@ async function readTargetErrorDetail(targetResponse) {
   }
 }
 
-// POST /webgrp/v1/schemes/model/send
-// query: schemePath=<encoded>, name=<模型名>
-// body:  { url, files: [{ kind: "e"|"json"|"svg"|"cim", encoding: "utf-8"|"gbk" }] }
-export async function handleV1ModelSend({ request, response, url }) {
+// 定位待发送模型：优先 modelId（模型稳定序号 idx，与方案路径解耦），
+// 兼容 schemePath + name。返回 { parts, name, modelId } 或 { error }。
+async function resolveSendTarget(url) {
+  const rawId = (url.searchParams.get("modelId") ?? "").trim();
+  if (rawId) {
+    const index = Number(rawId);
+    if (!Number.isSafeInteger(index) || index <= 0) {
+      return { error: { code: "bad-request", message: "modelId 必须是正整数。" } };
+    }
+    const located = await findSchemeProjectRecordByIndex({ index });
+    if (!located) {
+      return { error: { code: "not-found", message: `模型 ID ${index} 不存在。` } };
+    }
+    return { parts: located.schemePath, name: located.name, modelId: index };
+  }
   const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
   if (!requireSchemePath(parts)) {
-    sendV1Error(response, "bad-request", "缺少或非法 schemePath。");
-    return;
+    return { error: { code: "bad-request", message: "缺少或非法 schemePath，或改用 modelId 指定模型。" } };
   }
   const name = (url.searchParams.get("name") ?? "").trim();
   if (!name) {
-    sendV1Error(response, "bad-request", "缺少模型名称。");
-    return;
+    return { error: { code: "bad-request", message: "缺少模型名称，或改用 modelId 指定模型。" } };
   }
+  // 兼容路径顺带取一次 idx，让 model_id 表单字段对两种调用口径一致
+  const record = await readSchemeProjectRecord({ schemePath: parts, name });
+  return { parts, name, modelId: Number(record?.project?.idx) || 0 };
+}
 
+// POST /webgrp/v1/schemes/model/send
+// query: modelId=<模型 idx>（推荐）
+//        或 schemePath=<encoded> + name=<模型名>（兼容旧调用）
+// body:  { url, files: [{ kind: "e"|"json"|"svg"|"cim", encoding: "utf-8"|"gbk" }] }
+export async function handleV1ModelSend({ request, response, url }) {
   try {
+    const resolved = await resolveSendTarget(url);
+    if (resolved.error) {
+      sendV1Error(response, resolved.error.code, resolved.error.message);
+      return;
+    }
+    const { parts, name, modelId } = resolved;
+
     const body = await readJsonBody(request);
     const target = normalizeTargetUrl(body?.url);
     if (!target) {
@@ -125,6 +150,9 @@ export async function handleV1ModelSend({ request, response, url }) {
     const startedAt = Date.now();
     const base = sanitizeFileBase(name);
     const form = new FormData();
+    // model_id 是接收方识别模型的主键（与全局线路/全网拓扑的 model_id 同一口径），
+    // 老模型可能尚未分配 idx，此时字段为空串而不是缺失，便于接收方稳定解析
+    form.append("model_id", modelId > 0 ? String(modelId) : "");
     form.append("model_name", name);
     form.append("scheme_path", JSON.stringify(parts));
     form.append("sent_at", new Date(startedAt).toISOString());

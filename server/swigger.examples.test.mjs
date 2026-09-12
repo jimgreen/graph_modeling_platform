@@ -5,7 +5,7 @@
 
 import { mkdtemp, rm, mkdir, writeFile, cp } from "node:fs/promises";
 import { createServer } from "node:http";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { WebSocket } from "ws";
 import { describe, expect, test, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
@@ -23,6 +23,13 @@ let sinkHits = 0;
 
 // 发送端点示例的接收端：swaggerPage 示例里写死 http://127.0.0.1:9099/receive
 const SINK_PORT = 9099;
+
+// 只复制真实方案数据：data/schemes/trash 是历史归档（几十个目录、上百个文件），
+// 逐个用例复制它既拖慢 hook，又让 Windows 下的递归删除容易撞 ENOTEMPTY
+const skipTrash = (source) => !source.split(sep).includes("trash");
+// Windows 上目录可能被上一轮服务收尾写入占用，删除加退避重试
+const removeDataDir = () => rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+const copySchemeFixtures = () => cp(resolve(process.cwd(), "data", "schemes"), join(dataDir, "schemes"), { recursive: true, filter: skipTrash });
 
 // 复刻 swaggerPage.buildUrl 逻辑（示例值原始未编码，这里统一 encodeURIComponent）
 function buildUrl(ep, params) {
@@ -163,9 +170,8 @@ beforeAll(async () => {
   dataDir = await mkdtemp(join(tmpdir(), "swigger-examples-"));
   process.env.GRAPH_MODEL_DATA_DIR = dataDir;
   // 复制 repo schemes 数据到 tmpdir，使方案域示例有真实数据可读（写操作在副本上，不污染 repo）
-  const repoSchemes = resolve(process.cwd(), "data", "schemes");
   try {
-    await cp(repoSchemes, join(dataDir, "schemes"), { recursive: true });
+    await copySchemeFixtures();
   } catch {
     // repo 无 schemes 数据则空（方案域示例可能 404，期望表相应处理）
   }
@@ -188,17 +194,16 @@ afterAll(async () => {
     await new Promise((resolve) => sink.close(resolve));
   }
   if (dataDir) {
-    await rm(dataDir, { recursive: true, force: true });
+    await removeDataDir();
   }
 });
 
 beforeEach(async () => {
   // 每用例重置 dataDir：清空后重新复制 schemes，避免写操作（PUT/DELETE 空方案树等）污染后续只读示例
-  await rm(dataDir, { recursive: true, force: true });
+  await removeDataDir();
   await mkdir(dataDir, { recursive: true });
-  const repoSchemes = resolve(process.cwd(), "data", "schemes");
   try {
-    await cp(repoSchemes, join(dataDir, "schemes"), { recursive: true });
+    await copySchemeFixtures();
   } catch {
     // repo 无 schemes 数据则空
   }
@@ -212,7 +217,8 @@ beforeEach(async () => {
   );
   await seedProject("图元连接");
   // 「线路」seed 带一个电力设备：cim-xml 端点对空模型返回 400（无可导出的电力设备），示例需 200
-  await seedProject("线路", { modelType: "馈线", nodes: [
+  // 另给稳定 idx=1：/v1/schemes/model/send 的 modelId 示例按 idx 定位模型
+  await seedProject("线路", { idx: 1, modelType: "馈线", nodes: [
     { id: "bus1", kind: "ac-bus", name: "母线1", nodeNumber: "1", acTopologyNode: -1, dcTopologyNode: -1, position: { x: 0, y: 0 }, size: { width: 10, height: 10 }, rotation: 0, scale: 1, terminals: [], params: { i_vbase: "110" } }
   ] });
   const subDir = join(seedDir, "1-1");
