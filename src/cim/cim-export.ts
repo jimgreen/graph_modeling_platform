@@ -26,6 +26,8 @@ export type CimExportScope = {
   writeOperationLog?: (message: string) => void;
   /** 空模型提示（真实 scope 传全局 message；测试传 mock） */
   showGlobalMessage?: (message: string) => void;
+  /** 保存成功提示（真实 scope 传导出完成弹框；缺省时由 showGlobalMessage 兜底） */
+  showStandaloneExportCompletion?: (title: string, message: string, details?: string[]) => void;
   /** 未保存拦截（与 E / SVG / JSON 导出同闸门：后端读的是磁盘模型，未保存即导出会拿到旧内容） */
   ensureSavedBeforeExport?: () => boolean;
   /** 缺参数警告对话框（§7.4 非阻断设计；未装配时默认继续导出） */
@@ -51,12 +53,13 @@ export function buildCimXml(
   return serializeCimPackage(pkg);
 }
 
-// 文件名不含时间戳：与 E / SVG 导出一致，便于与接口产物按名对拍。
+// 文件名不含时间戳、也不带 _CIM16 后缀（2026-09-13 去后缀，与 E / SVG / JSON 同风格），
+// 便于与接口产物按名对拍；版本信息仍在文件内容的 CIM 命名空间里。
 // 导出供 server/cimExport.mjs 的 Content-Disposition 复用 —— 前后端必须同规则，单源在此。
 export function cimFilename(projectName: string, safeFilePart?: (name: string) => string): string {
   const safeName = safeFilePart ? safeFilePart(projectName) : projectName;
   const base = safeName.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
-  return `${base}_CIM16.xml`;
+  return `${base}.xml`;
 }
 
 /** 工厂：装配导出动作。菜单项与导出处理均走此函数。 */
@@ -71,6 +74,11 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
       saveLazyTextFile,
       writeOperationLog
     } = scope;
+    // 计时与 SVG/E/JSON 同口径：保存目标就绪（用户选完路径）才起算，不含选择器停留时间
+    let exportStartedAt = performance.now();
+    const markSaveTargetReady = () => {
+      exportStartedAt = performance.now();
+    };
     // 后端按磁盘模型生成：未保存时先拦（与 createExportEFile / SvgFile / JsonFile 同一闸门）
     if (typeof scope.ensureSavedBeforeExport === "function" && !scope.ensureSavedBeforeExport()) {
       return false;
@@ -131,7 +139,8 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
             description: "CIM/XML 模型文件",
             extensions: [".xml"],
             encoding: "utf-8",
-            preferNativeDialog: true
+            preferNativeDialog: true,
+            onSaveTargetReady: markSaveTargetReady
           })
         : false;
     } catch {
@@ -141,6 +150,15 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
     }
     if (saved) {
       writeOperationLog?.(`导出 CIM/XML：${filename}`);
+      // 保存成功提示：与 SVG / E / JSON 同格式同渠道（弹框优先，缺省回落全局 message）。
+      // 编码固定 UTF-8（CIM/XML 不走 GBK 分支，见上面的 saveLazyTextFile 选项）。
+      const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
+      const successMessage = `CIM/XML 文件导出成功：${filename}；字符编码：UTF-8；总耗时：${elapsedSeconds} 秒`;
+      if (typeof scope.showStandaloneExportCompletion === "function") {
+        scope.showStandaloneExportCompletion("CIM/XML 文件导出完成", successMessage);
+      } else {
+        scope.showGlobalMessage?.(successMessage);
+      }
     }
     return saved;
   };

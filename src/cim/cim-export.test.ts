@@ -39,17 +39,18 @@ describe("createCimExport", () => {
   it("有设备时导出 XML 并调用 saveLazyTextFile", async () => {
     const saveLazyTextFile = vi.fn().mockResolvedValue(true);
     const writeOperationLog = vi.fn();
+    const showStandaloneExportCompletion = vi.fn();
     const exportFn = createCimExport({
       nodes: [node("bus1", "ac-bus", { i_vbase: "110" })],
       edges: [], projectName: "示范站", activeModelId: "m1",
       safeFilePart: (s: string) => s || "未命名",
-      saveLazyTextFile, writeOperationLog
+      saveLazyTextFile, writeOperationLog, showStandaloneExportCompletion
     } as never);
     await expect(exportFn()).resolves.toBe(true);
     expect(saveLazyTextFile).toHaveBeenCalledTimes(1);
     const options = saveLazyTextFile.mock.calls[0][0];
-    // 文件名固定不含时间戳：同一模型重复导出得到同名文件
-    expect(options.filename).toBe("示范站_CIM16.xml");
+    // 文件名固定不含时间戳、也不带 _CIM16 后缀：同一模型重复导出得到同名文件
+    expect(options.filename).toBe("示范站.xml");
     expect(options.mime).toBe("application/xml");
     expect(options.extensions).toEqual([".xml"]);
     const text = options.loadText();
@@ -57,6 +58,11 @@ describe("createCimExport", () => {
     expect(text).toContain('rdf:ID="N_bus1"');
     // 操作日志仅在保存成功后记录，且带实际文件名
     expect(writeOperationLog).toHaveBeenCalledWith(`导出 CIM/XML：${options.filename}`);
+    // 保存成功弹框：与 SVG/E/JSON 同格式（编码固定 UTF-8）
+    expect(showStandaloneExportCompletion).toHaveBeenCalledTimes(1);
+    const [title, message] = showStandaloneExportCompletion.mock.calls[0];
+    expect(title).toBe("CIM/XML 文件导出完成");
+    expect(message).toMatch(/^CIM\/XML 文件导出成功：示范站\.xml；字符编码：UTF-8；总耗时：\d+\.\d{2} 秒$/u);
   });
 
   it("未保存时被 ensureSavedBeforeExport 拦截：不请求后端也不落盘", async () => {
@@ -123,7 +129,7 @@ describe("createCimExport", () => {
     } as never);
     await expect(exportFn()).resolves.toBe(true);
     const options = saveLazyTextFile.mock.calls[0][0];
-    expect(options.filename).toBe("sanitized-name_CIM16.xml");
+    expect(options.filename).toBe("sanitized-name.xml");
   });
 
   it("modelId 空串回退并卫生化为 NCName 安全字符", async () => {
