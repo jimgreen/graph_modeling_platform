@@ -71,6 +71,8 @@ import {
   type CanvasSelectionScope,
 } from "../selectionActions";
 import {
+  canvasFitCenterOffsetX,
+  canvasFitPanelInset,
   clampNumber,
 } from "../canvasViewport";
 import {
@@ -3685,7 +3687,12 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const beginReadonlyBackgroundStaticButtonPointerFeedback = createBeginReadonlyBackgroundStaticButtonPointerFeedback(__appScope); Object.assign(__appScope, { beginReadonlyBackgroundStaticButtonPointerFeedback });
   const renderReadonlyBackgroundPage = createRenderReadonlyBackgroundPage(__appScope); Object.assign(__appScope, { renderReadonlyBackgroundPage });
   const viewportOverlayStyle = {
-      "--viewport-overlay-right": `${rightPanelVisible ? rightPanelWidth + 28 : 16}px`,
+      // 悬浮工具条永远水平居中：居中基准是"可用区"（视口去掉两侧面板让位后的中间），
+      // 与适配视图同一口径 —— 面板显隐或拖宽时会跟着重算，视觉上始终居中
+      "--viewport-overlay-center-shift": `${canvasFitCenterOffsetX({
+        left: canvasFitPanelInset(__appScope.leftPanelVisible ? leftPanelWidth : 0),
+        right: canvasFitPanelInset(rightPanelVisible ? rightPanelWidth : 0)
+      })}px`,
       "--viewport-overlay-bottom": `${statusbarHeight + 14}px`
     } as CSSProperties;
   Object.assign(__appScope, { viewportOverlayStyle });
