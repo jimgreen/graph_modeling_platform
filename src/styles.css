@@ -15990,3 +15990,44 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   border-radius: 2px;
   background-color: #f8fafc;
 }
+
+/* 状态栏缩放标签：点击回到 100%，带悬浮/点击反馈 */
+.bottom-statusbar .status-zoom-pill {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  transition:
+    transform 0.12s ease,
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.bottom-statusbar .status-zoom-pill:hover {
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.16);
+  transform: translateY(-1px);
+}
+
+.bottom-statusbar .status-zoom-pill:active {
+  color: #1e40af;
+  background: #dbeafe;
+  border-color: #93c5fd;
+  box-shadow: none;
+  transform: translateY(0) scale(0.96);
+}
+
+.bottom-statusbar .status-zoom-pill:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bottom-statusbar .status-zoom-pill:hover,
+  .bottom-statusbar .status-zoom-pill:active {
+    transform: none;
+  }
+}
