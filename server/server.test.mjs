@@ -833,6 +833,29 @@ describe("global model indexes", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  test("treats a “(N)” suffixed name as a distinct model instead of reusing the base model index", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-suffixed-model-index-"));
+    try {
+      const filesRoot = join(root, "files");
+      const save = (name) => saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot: join(root, "trash"),
+        schemePath: ["方案A"],
+        record: { name, project: { version: 1, name, nodes: [], edges: [] } }
+      });
+
+      const base = await save("模型A");
+      const suffixed = await save("模型A (2)");
+
+      expect(base.project.idx).toBe(1);
+      expect(suffixed.project.idx).toBe(2);
+      expect(JSON.parse(await readFile(join(filesRoot, "方案A", "模型A.json"), "utf-8")).idx).toBe(1);
+      expect(JSON.parse(await readFile(join(filesRoot, "方案A", "模型A (2).json"), "utf-8")).idx).toBe(2);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("legacy gas quantity parameter normalization", () => {
