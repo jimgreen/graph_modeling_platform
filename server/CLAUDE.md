@@ -21,9 +21,10 @@
 | `apiV1Control.mjs` | v1 控制台写操作端点（9 端点：device/scheme/model/select/group/delete/update/save/template），经 WS 下发到前端 __appScope |
 | `apiV1Receive.mjs` | 联调接收端 `/v1/receive`（POST 收「发送模型」转发来的内容并回解析摘要、GET 回看、DELETE 清空）；内存留最近 5 次、不落盘、不鉴权 |
 | `sendModel.mjs` | `/v1/schemes/model/send` 适配层：按 modelId（模型 idx，兼容 schemePath+name）定位已保存模型，按所选格式生成 E/JSON/SVG/CIM，以 multipart/form-data 转发到调用方给定 URL |
-| `eFileExport.mjs` | `/v1/schemes/model/e-file` 适配层（GET 预定义模板 / POST 自定义模板文本）：读盘模型 + 库配置，用 `src/export/e-file.ts` 装配选项（`buildEFileExportOptionsFromLibrary` / `applyPredefinedEDeviceTemplateToLibraryState`）、`src/model-eexport.ts` 的 `buildEFileExport` 生成，默认 GBK |
+| `eFileExport.mjs` | `/v1/schemes/model/e-file` 适配层（GET 预定义模板 / POST 自定义模板文本）：读盘模型 + 库配置，用 `src/export/e-file.ts` 装配选项（`buildEFileExportOptionsFromLibrary` / `applyPredefinedEDeviceTemplateToLibraryState`）、`src/model-eexport.ts` 的 `buildEFileExport` 生成，默认 GBK。**方案 ZIP 复用同一装配**（`buildEFileForSavedModel`） |
 | `eFileTemplates.mjs` | 预定义 E 元件模板读取（`PREDEFINED_E_DEVICE_TEMPLATES` / `readPredefinedTemplateBase64`） |
-| `svgExport.mjs` | `/v1/schemes/model/svg` 适配层：`buildEffectiveLibraryTemplates` 装配库模板（含 `deviceDefinitionOverrides`），配色读 `settings/color-config.json`，被引用图片经 manifest 内联为 data URL；XML 声明与 `encoding=gbk\|utf-8` 由 handler（`apiV1Schemes.mjs`）输出，保证响应体与前端落盘文件逐字节一致 |
+| `svgExport.mjs` | `/v1/schemes/model/svg` 适配层：`buildEffectiveLibraryTemplates` 装配库模板（含 `deviceDefinitionOverrides`），配色读 `settings/color-config.json`，被引用图片经 manifest 内联为 data URL；XML 声明与 `encoding=gbk\|utf-8` 由 handler（`apiV1Schemes.mjs`）输出，保证响应体与前端落盘文件逐字节一致。**方案 ZIP 复用同一装配**（`renderSavedModelSvg`，colorMode=voltage） |
+| `schemeArchive.mjs` | 方案 ZIP 构建（`buildSchemeArchiveBuffer` / `listModelJsonFiles`）：枚举方案目录下模型 `.json`，派生格式**不落盘**、打包时经注入的 `renderArtifacts` 逐模型实时生成 `.e` / `.svg`（复用 `svgExport.mjs` + `eFileExport.mjs` 同一装配）；只做「目录 → ZIP 字节」，不 import 渲染适配层，保持可单测 |
 | `cimExport.mjs` | `/v1/schemes/model/cim-xml` 适配层：调 `src/cim/cim-export.ts`（strict 关键参数校验、modelId 解析），量测配置读 `readMeasurementConfig()` |
 | `domShim.mjs` | Node 侧 localStorage 桩；适配层在 import `src/**/*.ts` 前先调用 `installDomShim()`。模块顶层把 `NODE_ENV` 兜底为 `production`（否则 Node 进程加载 react.development.js，SVG 渲染慢约 45%；产物字节已比对一致，`??=` 不覆盖 vitest 的 `test`） |
 | `nativeLoad.test.mjs` | 守卫：spawn 真实 node 子进程直载三适配层，防 `.tsx` 或漏 `.ts` 扩展名混入 |
@@ -47,6 +48,7 @@
 - WS 透传：`fetchFromClient` 成功 resolve 裸 data（非信封），失败 reject `Error` 带 `.code`。
 - 数据隔离：测试用 `GRAPH_MODEL_DATA_DIR` env 指向 tmpdir，image-server 模块加载时求值一次。
 - schemePath 单次 `encodeURIComponent`，示例值存原始 JSON 字符串，`buildUrl` 统一编码。
+- **`data/schemes/files/**` 只落 `.json`**：保存模型不再产 `.e` / `.svg`（旧简化渲染器 `buildSvgFile` / `buildDeviceParameterFile` 已删除，`writeSchemeFiles` 的 `expectedFiles` 只登记 jsonPath）。E / SVG / CIM 一律按需实时生成——单模型端点、方案 ZIP（`schemeArchive.mjs`）、前端导出按钮共用同一装配；旧 `.e` / `.svg` 不复用、不读取。存量派生文件用 `pnpm purge:derived`（默认 dry-run，`--apply` 才移动）归档进 `data/schemes/trash/<timestamp>/`。
 - 三导出适配层经 Node 原生 TS 直载 `src` 下 TS 模块（如 `src/export/`、`src/cim/`、`src/model-eexport.ts`，零构建产物）：相对 import 必须带 `.ts` 扩展名，不得 import `.tsx`；被直载模块不得是 `.tsx`、不得含 JSX/React 组件（闭包内可间接 import npm 包 `react`，如 `src/svgUtils.ts`，Node 能正常加载）。守卫见 `nativeLoad.test.mjs`。
 
 ### Testing Requirements

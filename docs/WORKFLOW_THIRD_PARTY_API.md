@@ -7,7 +7,7 @@
 
 | 开放项 | 决策 |
 |--------|------|
-| server `.e` 格式 | server 不实现 E 生成；E 文件单一真源前端 `buildEFileExport`，经 WS 拉取（C+B）。server `buildDeviceParameterFile` JSON 保留不动（落盘用） |
+| server `.e` 格式 | E 文件单一真源 `buildEFileExport`（`src/model-eexport.ts`）；运行时态经 WS 拉前端生成（C+B），已保存模型由后端适配层 `server/eFileExport.mjs` 读盘生成。server 端第二份 E 生成器 `buildDeviceParameterFile` 已删除，保存模型也不再落盘 `.e`（[2026-09-13] `schemes/files/**` 只含 `.json`） |
 | 截图 | 全新实现，无现有能力复用（M5） |
 | WS 库 | 项目无 `ws`，新增依赖 `ws`（server）+ `@types/ws`（dev）+ 前端 WS 客户端 |
 | schemePath 编码 | 路径段 `encodeURIComponent(JSON.stringify([...]))` |
@@ -42,7 +42,7 @@
 **验收**：单测 `server/runtimeWs.test.mjs`（连接/register/ping/断线移除）；前端单测 `src/runtimeWsClient.test.ts`（消息收发）。
 
 ### T3：E 文件逻辑统一（设计约束，无独立实现）
-**范围**：server 不实现 E 文件生成。E 文件单一真源 = 前端 `buildEFileExport`（model.ts:2329）。所有第三方 E 文件请求经 WS `runtime.e-file` 拉前端生成（C 决策）。E 文件仅支持当前打开模型，不提供已保存模型 E 文件接口（B 决策）。server 端 `buildDeviceParameterFile`（JSON）保留不动（落盘用，非第三方路径）。WS 桥接（T2）+ 前端 `buildEFileExport`（现状）已就绪，`runtime.e-file` resource 实际由 T11 运行时态 handler + T9 前端序列化实现。
+**范围**：server 不实现独立的 E 文件生成逻辑。E 文件单一真源 = `buildEFileExport`（现位于 `src/model-eexport.ts`）。所有第三方 E 文件请求经 WS `runtime.e-file` 拉前端生成（C 决策）；已保存模型另有后端适配层 `/api/v1/schemes/model/e-file` 读盘生成（2026-09-11 新增，见 `DESIGN_THIRD_PARTY_API.md` §8.3）。server 端 `buildDeviceParameterFile`（JSON 落盘用）**已删除**（[2026-09-13]），保存模型不再落盘 `.e` / `.svg`：`data/schemes/files/**` 只含 `.json`，派生格式按需实时生成。WS 桥接（T2）+ 前端 `buildEFileExport`（现状）已就绪，`runtime.e-file` resource 实际由 T11 运行时态 handler + T9 前端序列化实现。
 **产出**：无独立代码（设计约束归入 T11/T9）
 **依赖**：T2（WS 桥接）
 **验收**：T11/T9 的 `runtime.e-file` 用例覆盖（当前打开模型 E 文件文本 + 无打开模型 404 + 无在线客户端 503）。
@@ -58,7 +58,7 @@
 ## P1 方案域
 
 ### T5：方案域 `/api/v1` handler
-**范围**：新增 `server/apiV1Schemes.mjs`，实现 §5.1 接口（schemes、hierarchy、models、export、model json/svg）。E 文件不在此域（走运行时态 §5.3）。复用现有 `readSchemes`、`createSchemeArchiveBuffer`、`buildSvgFile`。schemePath 路径段编解码工具。用 v1 响应函数（T1）包装信封。挂入 image-server 路由。
+**范围**：新增 `server/apiV1Schemes.mjs`，实现 §5.1 接口（schemes、hierarchy、models、export、model json/svg）。E 文件不在此域（走运行时态 §5.3）。复用现有 `readSchemes`、`server/schemeArchive.mjs` 的 `buildSchemeArchiveBuffer`（ZIP 内 SVG/E 实时渲染，见 `server/svgExport.mjs` / `server/eFileExport.mjs`）。schemePath 路径段编解码工具。用 v1 响应函数（T1）包装信封。挂入 image-server 路由。
 **产出**：`server/apiV1Schemes.mjs`、`server/schemePath.mjs`（编解码工具）
 **依赖**：T1
 **验收**：集成测 `server/apiV1Schemes.test.mjs`，每接口 AC（正常+404+400），IEEE 模型 fixture。

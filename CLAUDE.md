@@ -158,7 +158,7 @@ graph_modeling_platform/
 | `scripts/` | 一次性分析/修复脚本 | 非运行时依赖 |
 | `public/` | Vite 静态资源 | |
 | `docs/` | 第三方 API 设计/需求/工作流文档 | |
-| `data/` | 运行时数据 | 默认忽略；`data/icon-library/` 版本跟踪 |
+| `data/` | 运行时数据 | 默认忽略；`data/icon-library/` 版本跟踪。`data/schemes/files/**` 只含 `.json`，`.e` / `.svg` / CIM 全部按需实时生成（不落盘）；存量派生文件用 `pnpm purge:derived` 归档进 `data/schemes/trash/` |
 
 ### 关键文件
 
@@ -193,6 +193,7 @@ graph_modeling_platform/
 | `server/cimExport.mjs` | CIM/XML 端点适配层：调 `src/cim/cim-export.ts` |
 | `server/domShim.mjs` | Node 侧 localStorage 桩（须先于任何 `src/**/*.ts` import 执行） |
 | `scripts/audit-undefined-names.mjs` | 未定义名审计：内存剥离 `@ts-nocheck` 查 ReferenceError 类缺陷（`pnpm audit:names`） |
+| `scripts/purge-derived-scheme-files.mjs` | 存量派生文件一次性归档：把 `data/schemes/files` 下非 `.json` 移入 `data/schemes/trash/<timestamp>/`（`pnpm purge:derived`，默认 dry-run） |
 | `vite.config.ts` | Vite 配置（含测试配置 + /api、/ws 代理） |
 | `vite.e2e.config.ts` | E2E 测试专用 Vite 配置 |
 
@@ -283,6 +284,10 @@ pnpm audit:icons
 
 # 未定义名审计（穿透 @ts-nocheck，查 ReferenceError 类缺陷）
 pnpm audit:names
+
+# 存量派生文件归档（默认 dry-run；加 --apply 才移动）
+pnpm purge:derived
+pnpm purge:derived --apply
 ```
 
 ## 注意事项
