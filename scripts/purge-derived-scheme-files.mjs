@@ -12,12 +12,18 @@ const filesRoot = resolve(rootArg ?? join(repoRoot, "data", "schemes", "files"))
 const trashRoot = resolve(join(dirname(filesRoot), "trash"));
 const archiveId = new Date().toISOString().replace(/[:.]/gu, "-");
 
-async function collect(dir) {
+async function collect(dir, isRoot = false) {
   const found = [];
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
-  } catch {
+  } catch (error) {
+    if (isRoot) {
+      // 根目录不存在/不可读：不能静默当「无待归档文件」，否则操作员会误判存量已清完
+      throw error;
+    }
+    // 嵌套目录读失败不阻塞整轮，但必须留痕（打印被跳过的路径，便于人工核查）
+    console.error(`跳过不可读目录：${dir}（${error?.message ?? String(error)}）`);
     return found;
   }
   for (const entry of entries) {
@@ -33,18 +39,27 @@ async function collect(dir) {
   return found;
 }
 
-const targets = await collect(filesRoot);
-if (targets.length === 0) {
-  console.log(`无待归档文件：${filesRoot}`);
-  process.exit(0);
+let targets;
+try {
+  targets = await collect(filesRoot, true);
+} catch (error) {
+  console.error(`无法读取待归档根目录：${filesRoot}`);
+  console.error(error?.message ?? String(error));
+  process.exitCode = 1;
 }
 
-for (const filePath of targets) {
-  const target = join(trashRoot, archiveId, relative(filesRoot, filePath));
-  console.log(`${apply ? "归档" : "将归档"} ${relative(filesRoot, filePath)} → ${relative(join(trashRoot, ".."), target)}`);
-  if (apply) {
-    await mkdir(dirname(target), { recursive: true });
-    await rename(filePath, target);
+if (Array.isArray(targets)) {
+  if (targets.length === 0) {
+    console.log(`无待归档文件：${filesRoot}`);
+  } else {
+    for (const filePath of targets) {
+      const target = join(trashRoot, archiveId, relative(filesRoot, filePath));
+      console.log(`${apply ? "归档" : "将归档"} ${relative(filesRoot, filePath)} → ${relative(join(trashRoot, ".."), target)}`);
+      if (apply) {
+        await mkdir(dirname(target), { recursive: true });
+        await rename(filePath, target);
+      }
+    }
+    console.log(`${apply ? "已归档" : "待归档"} ${targets.length} 个文件${apply ? "" : "（加 --apply 执行）"}`);
   }
 }
-console.log(`${apply ? "已归档" : "待归档"} ${targets.length} 个文件${apply ? "" : "（加 --apply 执行）"}`);

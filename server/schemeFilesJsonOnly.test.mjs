@@ -1,6 +1,6 @@
 // files 不变量：保存后目录内只留 .json；同名旧 .e/.svg 被归档进 trash；
 // 旧客户端仍带 svg/eFile 入参时被忽略且正常 200。
-import { describe, expect, test, beforeAll, afterAll } from "vitest";
+import { expect, test, beforeAll, afterAll } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

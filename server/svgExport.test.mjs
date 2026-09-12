@@ -1,7 +1,7 @@
 // /webgrp/v1/schemes/model/svg 适配层测试：
 // 1) 单元：直载 src/export/svg.ts（Node 原生 TS）验证 buildSvgDocument 纯函数；
 // 2) 集成：GRAPH_MODEL_DATA_DIR 指向 tmpdir 种子数据 → 起真实 server（端口 0）→ 400/404/200 全链路。
-import { describe, expect, test, beforeAll, afterAll } from "vitest";
+import { describe, expect, test, beforeAll, afterAll, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -452,9 +452,19 @@ describe(`${svgPath} 背景页重建`, () => {
     expect(text).not.toContain("export-background-page-layer");
   });
 
-  test("backgroundProjectIdx 指向已删除模型时静默跳过且返回 200", async () => {
-    const response = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("悬空背景模型")}`);
-    expect(response.status).toBe(200);
-    expect(await response.text()).not.toContain("export-background-page-layer");
+  test("backgroundProjectIdx 指向已删除模型时静默跳过且返回 200，warning 进程内只记一次", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // 连打两次：行为不变，且同一悬空 idx 只留一条 warning（进程内去重，防第三方轮询刷日志）
+      for (let round = 0; round < 2; round += 1) {
+        const response = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("悬空背景模型")}`);
+        expect(response.status).toBe(200);
+        expect(await response.text()).not.toContain("export-background-page-layer");
+      }
+      const warnings = warnSpy.mock.calls.filter((call) => String(call[0]).includes("999"));
+      expect(warnings).toHaveLength(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

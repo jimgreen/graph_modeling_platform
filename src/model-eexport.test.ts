@@ -877,7 +877,8 @@ test("exports owning class names for dev_type across every built-in E device cla
       expect(row.dev_type).not.toMatch(/^legacy-/u);
     }
   }
-  expect(checkedRows).toBeGreaterThan(50);
+  // 精确条数：两个 kind 之间「对调映射」换成另一个合法类名时 has() 成员断言抓不到，计数能立刻失败
+  expect(checkedRows).toBe(371);
   expect(checkedSections).toEqual(expect.arrayContaining([
     "ACCompensator",
     "ACSeriCompensator",
