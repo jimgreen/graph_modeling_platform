@@ -3403,6 +3403,7 @@ export function createPasteProjectClipboardRecord(__appScope: Record<string, any
     const targetPath = schemePathForRecord(targetScheme);
     setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, pastedProject));
     void saveBackendProjectRecord(targetPath, pastedProject)
+      .then((saved) => setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, saved)))
       .catch((error) => handleBackendSchemeMutationFailure(`粘贴模型同步后台：${pastedProject.name}`, error));
     writeOperationLog(`粘贴模型记录：${sourceProject.name}`);
   };
@@ -3647,6 +3648,7 @@ export function createResolveRecordPasteConflict(__appScope: Record<string, any>
       const targetPath = schemePathForRecord(targetScheme);
       setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, pastedProject));
       void saveBackendProjectRecord(targetPath, pastedProject)
+        .then((saved) => setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, saved)))
         .catch((error) => handleBackendSchemeMutationFailure(`新命名粘贴模型同步后台：${pastedProject.name}`, error));
       writeOperationLog(`新命名粘贴模型记录：${renamed}`);
       return;
@@ -3664,6 +3666,7 @@ export function createResolveRecordPasteConflict(__appScope: Record<string, any>
       return upsertSavedProjectInScheme(current, currentTargetScheme.id, pastedProject);
     });
     void saveBackendProjectRecord(targetPath, pastedProject, duplicateProject?.name ?? "")
+      .then((saved) => setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, saved)))
       .catch((error) => handleBackendSchemeMutationFailure(`覆盖粘贴模型同步后台：${pastedProject.name}`, error));
     writeOperationLog(`覆盖粘贴模型记录：${conflict.duplicateName}`);
   };
@@ -5058,6 +5061,7 @@ export function createDuplicateProjectRecord(__appScope: Record<string, any>) {
       const ownerPath = schemePathForScheme(ownerScheme.id);
       if (ownerPath.length > 0) {
         void saveBackendProjectRecord(ownerPath, clonedProject)
+          .then((saved) => setSchemes((current) => upsertSavedProjectInScheme(current, ownerScheme.id, saved)))
           .catch((error) => handleBackendSchemeMutationFailure(`复制模型同步后台：${clonedProject.name}`, error));
       }
     }
@@ -5078,7 +5082,7 @@ export function createDuplicateSelectedProjectRecords(__appScope: Record<string,
       return;
     }
     const selected = new Set(selectedProjectIds);
-    const backendSaves: Array<{ schemePath: string[]; project: SavedProjectRecord }> = [];
+    const backendSaves: Array<{ schemeId: string; schemePath: string[]; project: SavedProjectRecord }> = [];
     let nextSchemes = schemes;
     for (const scheme of flattenSavedSchemes(schemes)) {
       const selectedProjects = scheme.projects.filter((project) => selected.has(project.id));
@@ -5090,13 +5094,14 @@ export function createDuplicateSelectedProjectRecords(__appScope: Record<string,
       for (const project of selectedProjects) {
         const clonedProject = cloneProjectRecord(project, "副本", nextProjects.map((item) => item.name));
         nextProjects = upsertSavedProject(nextProjects, clonedProject);
-        backendSaves.push({ schemePath, project: clonedProject });
+        backendSaves.push({ schemeId: scheme.id, schemePath, project: clonedProject });
       }
       nextSchemes = nextProjects.reduce((updatedSchemes, project) => upsertSavedProjectInScheme(updatedSchemes, scheme.id, project), nextSchemes);
     }
     setSchemes(nextSchemes);
     for (const item of backendSaves) {
       void saveBackendProjectRecord(item.schemePath, item.project)
+        .then((saved) => setSchemes((current) => upsertSavedProjectInScheme(current, item.schemeId, saved)))
         .catch((error) => handleBackendSchemeMutationFailure(`批量复制模型同步后台：${item.project.name}`, error));
     }
   };

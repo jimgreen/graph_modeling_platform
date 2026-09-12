@@ -3101,7 +3101,11 @@ export function createCreateImportedSchemeRecord(__appScope: Record<string, any>
         projectRecord && typeof projectRecord.name === "string" && projectRecord.name.trim()
           ? projectRecord.name.trim()
           : projectFile.name || `导入模型${index + 1}`;
-      return createSavedProject(importedProjectName, projectFile);
+      // 方案文件导入的是「已存在于后台」的模型，保留其 model_id；createSavedProject 默认不继承 idx。
+      const createdRecord = createSavedProject(importedProjectName, projectFile);
+      return projectFile.idx === undefined
+        ? createdRecord
+        : { ...createdRecord, project: { ...createdRecord.project, idx: projectFile.idx } };
     });
     const importedChildren: SavedSchemeRecord[] = Array.isArray(rawScheme.children)
       ? rawScheme.children.map((childPayload, index): SavedSchemeRecord => {
@@ -3350,6 +3354,8 @@ export function createCommitImportedModelRecord(__appScope: Record<string, any>)
       return upsertSavedProjectInScheme(nextSchemes, targetScheme.id, importedRecord);
     });
     void saveBackendProjectRecord(targetPath, importedRecord)
+      // 后端保存时才分配 model_id（idx），回填本地记录，避免新模型一直显示无 ID。
+      .then((saved) => setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, saved)))
       .catch((error) => handleBackendSchemeMutationFailure(`导入模型同步后台：${importedRecord.name}`, error));
     setExpandedSchemeIds((current) => (current.includes(targetScheme.id) ? current : [...current, targetScheme.id]));
     loadSavedProject(importedRecord, targetScheme.id);
