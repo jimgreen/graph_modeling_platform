@@ -15965,15 +15965,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   color: #64748b;
 }
 
-.canvas-ruler-top .canvas-ruler-label,
-.canvas-ruler-bottom .canvas-ruler-label {
-  transform: translateX(-50%);
-}
-
-.canvas-ruler-left .canvas-ruler-label,
-.canvas-ruler-right .canvas-ruler-label {
-  transform: translateY(-50%);
-}
+/* 居中/贴边对齐由组件按刻度位置内联计算（贴边的数字不能居中，否则会被裁） */
 
 .canvas-ruler-top .canvas-ruler-label {
   top: 1px;
