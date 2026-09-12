@@ -2576,7 +2576,7 @@ function eFileWarningDetailsFromResponse(response: Response): string[] {
   ].filter(Boolean);
 }
 
-function showStandaloneExportCompletion(
+export function showStandaloneExportCompletion(
   __appScope: Record<string, any>,
   title: string,
   message: string,

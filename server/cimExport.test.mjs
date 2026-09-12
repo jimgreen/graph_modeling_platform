@@ -139,13 +139,15 @@ describe(`${cimXmlPath} 参数校验与错误路径`, () => {
 });
 
 describe(`${cimXmlPath} 正路径与 strict 语义`, () => {
-  test("完整模型导出 XML（attachment + _CIM16.xml 文件名）", async () => {
+  test("完整模型导出 XML（attachment + 模型名.xml 文件名）", async () => {
     const res = await fetch(
       `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent("完整模型")}`
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/xml");
-    expect(res.headers.get("content-disposition")).toContain("_CIM16.xml");
+    // 2026-09-13 起去掉 _CIM16 后缀，与前端落盘名同规则（单源 cimFilename）
+    expect(res.headers.get("content-disposition")).toContain(".xml");
+    expect(res.headers.get("content-disposition")).not.toContain("_CIM16");
     const text = await res.text();
     expect(text.startsWith("<?xml")).toBe(true);
     expect(text).toContain("<cim:");
