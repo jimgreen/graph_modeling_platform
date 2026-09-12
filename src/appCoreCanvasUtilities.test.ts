@@ -1,11 +1,37 @@
 import { describe, expect, test } from "vitest";
 import {
   PARAM_LABELS,
+  fitWholeCanvasViewBox,
   isBatchGraphCommonParamKey,
   paramOptionsForSection
 } from "./appExtracted/appCoreCanvasUtilities";
 import { DEVICE_VISUAL_PARAM_KEYS } from "./deviceVisualParams";
 import { BUILTIN_VOLTAGE_LEVELS } from "./model";
+
+// 左右面板是浮动层（styles.css .floating-side-panel），画布区占满工作区，
+// 所以适配视图必须扣掉面板宽度，否则画布会被面板压住。
+describe("适配视图扣掉两侧面板让位", () => {
+  const bounds = { width: 1000, height: 500 };
+  const frame = { clientWidth: 1920, clientHeight: 1080 };
+
+  test("可用宽变小时画布显示变小，且保持画布宽高比", () => {
+    const noPanels = fitWholeCanvasViewBox(bounds, frame, { left: 20, right: 20 });
+    const withPanels = fitWholeCanvasViewBox(bounds, frame, { left: 308, right: 340 });
+
+    // viewBox 覆盖范围更大 → 画布显示更小
+    expect(withPanels.width).toBeGreaterThan(noPanels.width);
+    expect(withPanels.height).toBeGreaterThan(noPanels.height);
+    expect(withPanels.width / withPanels.height).toBeCloseTo(bounds.width / bounds.height, 5);
+  });
+
+  test("viewBox 始终落在画布范围内", () => {
+    const viewBox = fitWholeCanvasViewBox(bounds, frame, { left: 308, right: 340 });
+    expect(viewBox.x).toBeGreaterThanOrEqual(0);
+    expect(viewBox.y).toBeGreaterThanOrEqual(0);
+    expect(viewBox.x + viewBox.width).toBeLessThanOrEqual(bounds.width + 1e-6);
+    expect(viewBox.y + viewBox.height).toBeLessThanOrEqual(bounds.height + 1e-6);
+  });
+});
 
 describe("graph parameter classification", () => {
   test("keeps every canonical visual field out of the business parameter group", () => {
