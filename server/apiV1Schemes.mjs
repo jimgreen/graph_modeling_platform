@@ -135,7 +135,12 @@ export async function handleV1SchemeExport({ url, response }) {
       sendV1Error(response, "bad-request", message);
       return;
     }
-    sendV1Error(response, "not-found", "方案目录不存在。");
+    if (message.includes("方案目录不存在")) {
+      sendV1Error(response, "not-found", message);
+      return;
+    }
+    // 生成失败（如某模型 json 损坏）：明确 500 + 原因，不静默跳过、不产出残缺 ZIP
+    sendV1Error(response, "internal", message);
   }
 }
 

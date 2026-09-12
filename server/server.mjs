@@ -19,6 +19,7 @@ import {
 } from "./nativeExportSave.mjs";
 import { GlobalLineRegistryError, createGlobalLineRegistry } from "./globalLineRegistry.mjs";
 import { meaningfulDeviceParameterChineseName } from "../shared/deviceParameterChineseNames.mjs";
+import { withXmlEncodingDeclaration } from "./xmlEncoding.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -5253,25 +5254,40 @@ async function extractSchemeZipToDirectory(zip, targetDir, rootName) {
   }
 }
 
+// 方案 ZIP：json 落盘原文 + e/svg 实时生成（不再读磁盘派生文件）。
+// 适配层用函数内动态 import：svgExport/eFileExport 均 import 本模块，静态 import 会成环。
 export async function createSchemeArchiveBuffer(options) {
   const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
   const schemePath = Array.isArray(options.schemePath) ? options.schemePath : [];
   if (schemePath.length === 0) {
     throw new Error("缺少方案路径。");
   }
-  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
-  const schemeStat = await stat(schemeDir);
-  if (!schemeStat.isDirectory()) {
-    throw new Error("方案路径不是目录。");
-  }
   const schemeName = safeFilePart(schemePath[schemePath.length - 1], "方案");
-  const zip = new AdmZip();
-  zip.addLocalFolder(schemeDir, schemeName);
-  return {
-    buffer: zip.toBuffer(),
-    filename: `${schemeName}.zip`,
-    schemeName
-  };
+  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
+  const { buildSchemeArchiveBuffer } = await import("./schemeArchive.mjs");
+  return buildSchemeArchiveBuffer({
+    schemeDir,
+    schemeName,
+    renderArtifacts: async ({ dirParts, modelName }) => {
+      const { renderSavedModelSvg } = await import("./svgExport.mjs");
+      const { buildEFileForSavedModel } = await import("./eFileExport.mjs");
+      const parts = [...schemePath, ...dirParts];
+      // colorMode 取 voltage：与前端单模型导出同口径（旧 ZIP 内 svg 即由此产生），energy 仅为端点旧契约缺省
+      const svgResult = await renderSavedModelSvg({ parts, name: modelName, colorMode: "voltage" });
+      if (svgResult.error) {
+        throw new Error(`模型“${modelName}”SVG 生成失败：${svgResult.error.message}`);
+      }
+      const eResult = await buildEFileForSavedModel({ parts, name: modelName });
+      if (eResult.error) {
+        throw new Error(`模型“${modelName}”E 文件生成失败：${eResult.error.message}`);
+      }
+      return {
+        // XML 声明与单模型端点同源：前端已不再前置声明，落盘文件即响应体，ZIP 需逐字节一致
+        svg: withXmlEncodingDeclaration(svgResult.svg, "utf-8"),
+        eFileBytes: iconv.encode(String(eResult.file?.text ?? ""), "gbk")
+      };
+    }
+  });
 }
 
 export async function importSchemeArchiveBuffer(options) {
@@ -6397,7 +6413,11 @@ async function handleExportSchemeArchive(url, response) {
       sendError(response, 400, message);
       return;
     }
-    sendError(response, 404, "方案目录不存在。");
+    if (message.includes("方案目录不存在")) {
+      sendError(response, 404, message);
+      return;
+    }
+    sendError(response, 500, message);
   }
 }
 
