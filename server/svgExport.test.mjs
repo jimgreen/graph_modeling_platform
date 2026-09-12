@@ -174,6 +174,78 @@ beforeAll(async () => {
     nodes: [{ ...imageNode, id: "img2", params: { name: "仅资产ID图元", backgroundImageAssetId: svgExportImageId } }],
     edges: []
   }), "utf-8");
+  // 背景页用例：背景模型 idx=91（含一个母排与两个图层），宿主模型引用它并只显示 default 层
+  writeFileSync(join(dir, "背景模型.json"), JSON.stringify({
+    version: 1,
+    name: "背景模型",
+    idx: 91,
+    canvasWidth: 600,
+    canvasHeight: 300,
+    canvasBackgroundColor: "#eeeeee",
+    layers: [
+      { id: "default", name: "默认图层", visible: true },
+      { id: "hid", name: "隐藏图层", visible: true }
+    ],
+    activeLayerId: "default",
+    nodes: [
+      { ...busNode, layerId: "default" },
+      // 隐藏层节点取可区分的名称：服务端渲染按 params.idx 生成设备 id（bus1 之类原始 id 不落进 SVG），
+      // 只有名称/标签能证明「隐藏层设备未出现」
+      { ...busNode, id: "bus-hidden", name: "隐藏母排", layerId: "hid", params: { ...busNode.params, name: "隐藏母排" } }
+    ],
+    edges: []
+  }), "utf-8");
+  writeFileSync(join(dir, "宿主模型.json"), JSON.stringify({
+    version: 1,
+    name: "宿主模型",
+    idx: 92,
+    canvasWidth: 800,
+    canvasHeight: 400,
+    canvasBackgroundColor: "#ffffff",
+    backgroundProjectIdx: 91,
+    backgroundLayerIds: ["default"],
+    nodes: [breakerNode],
+    edges: []
+  }), "utf-8");
+  writeFileSync(join(dir, "悬空背景模型.json"), JSON.stringify({
+    version: 1,
+    name: "悬空背景模型",
+    idx: 93,
+    canvasWidth: 800,
+    canvasHeight: 400,
+    backgroundProjectIdx: 999,
+    backgroundLayerIds: ["default"],
+    nodes: [breakerNode],
+    edges: []
+  }), "utf-8");
+  // 背景模型自带画布背景图（assetId + 后端 href 双写，与落盘形态一致）：
+  // 宿主导出须把这张图也内联，否则背景页图层不自包含
+  writeFileSync(join(dir, "带图背景模型.json"), JSON.stringify({
+    version: 1,
+    name: "带图背景模型",
+    idx: 94,
+    canvasWidth: 600,
+    canvasHeight: 300,
+    canvasBackgroundColor: "#eeeeee",
+    canvasBackgroundImage: apiPath(`/images/${svgExportImageId}`),
+    canvasBackgroundImageAssetId: svgExportImageId,
+    layers: [{ id: "default", name: "默认图层", visible: true }],
+    activeLayerId: "default",
+    nodes: [busNode],
+    edges: []
+  }), "utf-8");
+  writeFileSync(join(dir, "引用带图背景模型.json"), JSON.stringify({
+    version: 1,
+    name: "引用带图背景模型",
+    idx: 95,
+    canvasWidth: 800,
+    canvasHeight: 400,
+    canvasBackgroundColor: "#ffffff",
+    backgroundProjectIdx: 94,
+    backgroundLayerIds: ["default"],
+    nodes: [breakerNode],
+    edges: []
+  }), "utf-8");
   process.env.GRAPH_MODEL_DATA_DIR = dataDir;
   const { createImageServer } = await import("./server.mjs");
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
@@ -189,6 +261,12 @@ afterAll(async () => {
 });
 
 const schemePath = encodeSchemePath(["测试方案"]);
+
+async function fetchSvg(name) {
+  const response = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent(name)}`);
+  expect(response.status).toBe(200);
+  return response.text();
+}
 
 describe(`${svgPath} 参数校验与错误路径`, () => {
   test("缺 schemePath → 400 bad-request", async () => {
@@ -343,5 +421,40 @@ describe(`${svgPath} 正路径`, () => {
     // 回归保护：color-config.json 不存在时回落内置默认调色板，输出与接线前逐字一致
     expect(await (await fetch(`${url}&colorMode=energy`)).text()).toBe(baselineEnergy);
     expect(await (await fetch(`${url}&colorMode=voltage`)).text()).toBe(baselineVoltage);
+  });
+});
+
+// 背景页重建：宿主模型只落盘 backgroundProjectIdx + backgroundLayerIds，图层由服务端读被引用模型重建
+describe(`${svgPath} 背景页重建`, () => {
+  test("设了 backgroundProjectIdx 时输出背景页图层，且按 backgroundLayerIds 过滤图层", async () => {
+    const text = await fetchSvg("宿主模型");
+    expect(text).toContain('class="export-background-page-layer"');
+    expect(text).toContain("export_bg_");
+    // 转换矩阵非空：背景页按背景模型画布与宿主画布（600×300 → 800×400）缩放
+    expect(text).toContain('class="export-background-page-layer" transform="translate(');
+    // 背景底色取自背景模型的 canvasBackgroundColor，而非宿主的 #ffffff
+    expect(text).toContain("#eeeeee");
+    // 可见图层内的母排出现（正向对照），隐藏图层内的母排不出现（图层过滤生效）
+    expect(text).toContain("母线1");
+    expect(text).not.toContain("隐藏母排");
+  });
+
+  test("背景模型的被引用图片并入 imageExportPathById：宿主 SVG 内联背景页的图", async () => {
+    const text = await fetchSvg("引用带图背景模型");
+    expect(text).toContain('class="export-background-page-layer"');
+    // 背景页的 canvasBackgroundImage 被内联为 data URL，且不残留后端 href
+    expect(text).toContain(PNG_1X1_BASE64);
+    expect(text).not.toContain(`${apiPath("/images")}/${svgExportImageId}`);
+  });
+
+  test("无 backgroundProjectIdx 时不输出背景页图层", async () => {
+    const text = await fetchSvg("开关模型");
+    expect(text).not.toContain("export-background-page-layer");
+  });
+
+  test("backgroundProjectIdx 指向已删除模型时静默跳过且返回 200", async () => {
+    const response = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("悬空背景模型")}`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).not.toContain("export-background-page-layer");
   });
 });

@@ -3,13 +3,78 @@ import { installDomShim } from "./domShim.mjs";
 
 installDomShim();
 
-import { readColorConfig, readDeviceLibraryConfig, readMeasurementConfig, readReferencedImageExportPathById, readSchemeProjectRecord } from "./server.mjs";
+import { readColorConfig, readDeviceLibraryConfig, readMeasurementConfig, readReferencedImageExportPathById, readSchemeProjectRecord, findSchemeProjectRecordByIndex } from "./server.mjs";
 
-const { buildSvgDocument, DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT } = await import("../src/export/svg.ts");
+const { buildSvgDocument, DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, backgroundPageCanvasTransform } = await import("../src/export/svg.ts");
 // 库模板装配单源：内置库 + 自定义模板 + 元件定义覆盖（与前端 libraryTemplates 同一条实现）
 const { buildEffectiveLibraryTemplates } = await import("../src/export/device-definition-shared.ts");
 // 「被引用图片 id」判据单源：与前端导出同一纯函数（Task 19）
 const { collectSvgExportReferencedImageHrefById } = await import("../src/export/svg-images.ts");
+// 背景页图层过滤/归一化单源：与前端 createAppHookCallback142 调的是同两个纯函数
+const { normalizeProjectLayers, filterProjectByVisibleLayers } = await import("../src/model-routing.ts");
+
+// 背景页重建：宿主模型只落盘引用键（backgroundProjectIdx + backgroundLayerIds），
+// 服务端读被引用模型 + 复用 src 侧纯函数复现前端 backgroundPageRender 载荷。
+// 不用前端 id（backgroundProjectId）：磁盘 json 不含 id，服务端无 id→文件映射。
+async function buildBackgroundPageOption({ project, deviceTemplates }) {
+  const backgroundIdx = Number(project?.backgroundProjectIdx);
+  if (!Number.isSafeInteger(backgroundIdx) || backgroundIdx <= 0) {
+    return { backgroundPage: undefined, referencedHrefById: new Map() };
+  }
+  // 自引用与前端 createAppHookCallback141 同口径：跳过
+  if (Number(project?.idx) === backgroundIdx) {
+    return { backgroundPage: undefined, referencedHrefById: new Map() };
+  }
+  const record = await findSchemeProjectRecordByIndex({ index: backgroundIdx });
+  if (!record) {
+    // 被引用模型已删除：不打断导出
+    return { backgroundPage: undefined, referencedHrefById: new Map() };
+  }
+  const backgroundProject = normalizeProjectLayers(record.project);
+  const visibleLayerIds = new Set(
+    Array.isArray(project.backgroundLayerIds) ? project.backgroundLayerIds.map(String) : []
+  );
+  const layers = (backgroundProject.layers ?? []).map((layer) => ({
+    ...layer,
+    visible: visibleLayerIds.has(String(layer.id))
+  }));
+  const { nodes, edges } = filterProjectByVisibleLayers(
+    backgroundProject.nodes ?? [],
+    backgroundProject.edges ?? [],
+    layers
+  );
+  const backgroundBounds = {
+    width: Number(backgroundProject.canvasWidth ?? DEFAULT_CANVAS_WIDTH),
+    height: Number(backgroundProject.canvasHeight ?? DEFAULT_CANVAS_HEIGHT)
+  };
+  const referencedHrefById = collectSvgExportReferencedImageHrefById({
+    nodes,
+    canvasBackgroundImage: backgroundProject.canvasBackgroundImage,
+    canvasBackgroundImageAssetId: backgroundProject.canvasBackgroundImageAssetId,
+    canvasBackgroundImageUrl: backgroundProject.canvasBackgroundImageUrl,
+    libraryTemplateByKind: new Map(deviceTemplates.map((template) => [template.kind, template]))
+  });
+  return {
+    referencedHrefById,
+    backgroundPage: {
+      project: backgroundProject,
+      nodes,
+      edges,
+      backgroundBounds,
+      transform: backgroundPageCanvasTransform(backgroundBounds, {
+        width: Number(project.canvasWidth ?? DEFAULT_CANVAS_WIDTH),
+        height: Number(project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT)
+      }),
+      backgroundColor: backgroundProject.canvasBackgroundColor ?? undefined,
+      // 与前端 resolveProjectImage(project, imageAssets) 同口径：assetId 优先，回落落盘 href
+      backgroundImageUrl:
+        (backgroundProject.canvasBackgroundImageAssetId
+          && referencedHrefById.get(String(backgroundProject.canvasBackgroundImageAssetId)))
+        || backgroundProject.canvasBackgroundImage
+        || ""
+    }
+  };
+}
 
 export async function renderSavedModelSvg({ parts, name, colorMode = "energy" }) {
   const record = await readSchemeProjectRecord({ schemePath: parts, name });
@@ -28,13 +93,21 @@ export async function renderSavedModelSvg({ parts, name, colorMode = "energy" })
   );
   // 自包含导出：被引用的后端图片读盘转 data URL 内联（缺一张不阻断，该图保留原始 href）
   const nodes = Array.isArray(project.nodes) ? project.nodes : [];
-  const referencedHrefById = collectSvgExportReferencedImageHrefById({
-    nodes,
-    canvasBackgroundImage: project.canvasBackgroundImage,
-    canvasBackgroundImageAssetId: project.canvasBackgroundImageAssetId,
-    canvasBackgroundImageUrl: project.canvasBackgroundImageUrl,
-    libraryTemplateByKind: new Map(deviceTemplates.map((template) => [template.kind, template]))
+  // 先重建背景页，其被引用图片并入同一份 imageExportPathById，否则背景页图层里会残留后端 href
+  const { backgroundPage, referencedHrefById: backgroundReferencedHrefById } = await buildBackgroundPageOption({
+    project,
+    deviceTemplates
   });
+  const referencedHrefById = new Map([
+    ...collectSvgExportReferencedImageHrefById({
+      nodes,
+      canvasBackgroundImage: project.canvasBackgroundImage,
+      canvasBackgroundImageAssetId: project.canvasBackgroundImageAssetId,
+      canvasBackgroundImageUrl: project.canvasBackgroundImageUrl,
+      libraryTemplateByKind: new Map(deviceTemplates.map((template) => [template.kind, template]))
+    }),
+    ...backgroundReferencedHrefById
+  ]);
   const imageExportPathById = await readReferencedImageExportPathById(Array.from(referencedHrefById.keys()));
   const svg = buildSvgDocument(
     nodes,
@@ -43,6 +116,7 @@ export async function renderSavedModelSvg({ parts, name, colorMode = "energy" })
       // 缺省宽高同源渲染器常量（不再写第二份默认字面量）
       width: Number(project.canvasWidth ?? DEFAULT_CANVAS_WIDTH),
       height: Number(project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT),
+      backgroundPage,
       // 缺省/空串不传：由渲染器回落自身默认 DEFAULT_CANVAS_BACKGROUND，避免后端再写一份默认字面量
       backgroundColor: project.canvasBackgroundColor || undefined,
       backgroundImage: project.canvasBackgroundImage ?? "",
