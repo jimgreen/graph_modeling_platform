@@ -7,7 +7,20 @@ import { SendModelDialog, buildSendRequest } from "./SendModelDialog";
 const scope = {
   projectName: "模型甲",
   activeSchemeKey: "scheme-1",
-  schemePathForScheme: () => ["方案A", "子方案"]
+  schemePathForScheme: () => ["方案A", "子方案"],
+  activeProjectKey: "project-7",
+  schemes: [
+    { id: "scheme-1", name: "方案A", projects: [{ id: "project-7", name: "模型甲", project: { idx: 7 } }] }
+  ],
+  findSavedProjectRecordInSchemes: (schemes: Array<Record<string, any>>, projectId: string) => {
+    for (const scheme of schemes) {
+      const project = (scheme.projects ?? []).find((item: Record<string, any>) => item.id === projectId);
+      if (project) {
+        return { scheme, project };
+      }
+    }
+    return null;
+  }
 };
 
 function render(props: Record<string, unknown>) {
@@ -48,22 +61,21 @@ describe("SendModelDialog", () => {
 });
 
 describe("buildSendRequest", () => {
-  test("URL 带编码后的 schemePath 与模型名，body 只带目标地址与格式清单", () => {
+  test("优先用 modelId 指定模型（与方案路径解耦），body 只带目标地址与格式清单", () => {
     const files = [{ kind: "e", encoding: "gbk" }, { kind: "svg", encoding: "utf-8" }];
     const { requestUrl, init } = buildSendRequest(scope, "http://10.0.0.9:8080/receive", files);
 
-    expect(requestUrl).toContain("/v1/schemes/model/send?");
-    expect(requestUrl).toContain(`name=${encodeURIComponent("模型甲")}`);
-    expect(requestUrl).toContain(
-      `schemePath=${encodeURIComponent(JSON.stringify(["方案A", "子方案"]))}`
-    );
+    expect(requestUrl).toContain("/v1/schemes/model/send?modelId=7");
+    expect(requestUrl).not.toContain("schemePath=");
     expect(init.method).toBe("POST");
     expect(init.headers["content-type"]).toBe("application/json");
     expect(JSON.parse(init.body)).toEqual({ url: "http://10.0.0.9:8080/receive", files });
   });
 
-  test("方案路径缺失时回落默认方案", () => {
+  test("未分配 idx 的模型回退 schemePath + name，方案路径缺失时回落默认方案", () => {
     const { requestUrl } = buildSendRequest({ projectName: "模型乙" }, "http://x/y", []);
+    expect(requestUrl).not.toContain("modelId=");
     expect(requestUrl).toContain(`schemePath=${encodeURIComponent(JSON.stringify(["默认方案"]))}`);
+    expect(requestUrl).toContain(`name=${encodeURIComponent("模型乙")}`);
   });
 });

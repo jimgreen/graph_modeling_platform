@@ -124,8 +124,9 @@ const ENDPOINTS = [
   { group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/cim-xml", desc: "已保存模型 CIM/XML（IEC 61970 CIM16）", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }, { name: "modelId", desc: "可选，覆盖生成的模型 ID" }, { name: "strict", desc: "可选，1 时关键参数缺失返回 400" }], response: "<application/xml 二进制>", examples: [
     { label: "「线路」CIM/XML", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } }
   ]},
-  { group: "v1 方案域", method: "POST", path: "/webgrp/v1/schemes/model/send", desc: "把已保存模型按所选格式 POST 到目标 URL（后端代理转发，multipart/form-data）", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }], body: { url: "http://127.0.0.1:9099/receive", files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] }, response: "{ok:true,data:{url,status,elapsedMs,files:[{kind,field,filename,encoding,bytes}]}}", examples: [
-    { label: "发送 E + JSON 到接收端（kind: e|json|svg|cim，encoding: gbk|utf-8）", params: { q_schemePath: SP_DEFAULT, q_name: "线路", __body__: { url: "http://127.0.0.1:9099/receive", files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] } } }
+  { group: "v1 方案域", method: "POST", path: "/webgrp/v1/schemes/model/send", desc: "把已保存模型按所选格式 POST 到目标 URL（后端代理转发，multipart/form-data）", query: [{ name: "modelId", desc: "模型稳定序号 idx（推荐，与方案路径解耦）" }, { name: "schemePath", desc: "方案路径（modelId 的兼容替代）" }, { name: "name", desc: "模型名（modelId 的兼容替代）" }], body: { url: "http://127.0.0.1:9099/receive", files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] }, response: "{ok:true,data:{url,status,elapsedMs,files:[{kind,field,filename,encoding,bytes}]}}", examples: [
+    { label: "按 modelId 发送 E + JSON（kind: e|json|svg|cim，encoding: gbk|utf-8）", params: { q_modelId: 1, __body__: { url: "http://127.0.0.1:9099/receive", files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] } } },
+    { label: "按 schemePath + name 发送（兼容旧调用）", params: { q_schemePath: SP_DEFAULT, q_name: "线路", __body__: { url: "http://127.0.0.1:9099/receive", files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] } } }
   ]},
 
   // ---- v1 图元库域（第三方只读）----

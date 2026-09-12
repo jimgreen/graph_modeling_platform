@@ -224,3 +224,41 @@ describe(`${sendPath} 转发`, () => {
     expect((await res.json()).error.message).toContain("无法连接");
   });
 });
+
+describe(`${sendPath} 按 modelId 定位模型`, () => {
+  test("只给 modelId 也能定位并发送（model_id 随表单下发）", async () => {
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] }, "modelId=1");
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.status).toBe(200);
+
+    const { body, headers } = received[0];
+    expect(headers["content-type"]).toContain("multipart/form-data; boundary=");
+    const structure = body.toString("utf-8");
+    // 定位到的模型名与方案路径由后端补全
+    expect(structure).toContain(modelName);
+    expect(structure).toContain('name="scheme_path"');
+    expect(structure).toContain('["发送方案"]');
+    expect(structure).toMatch(/name="model_id"[\s\S]{0,40}\r?\n\r?\n1\r?\n/);
+    expect(structure).toContain(`name="json_file"; filename="${modelName}.json"`);
+  });
+
+  test("modelId 不存在 → 404，且不发出请求", async () => {
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] }, "modelId=987654");
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.message).toContain("987654");
+    expect(received).toHaveLength(0);
+  });
+
+  test("modelId 非正整数 → 400", async () => {
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] }, "modelId=0");
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toContain("正整数");
+  });
+
+  test("兼容路径：schemePath + name 仍可用，并补出 model_id", async () => {
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] });
+    expect(res.status).toBe(200);
+    const structure = received[0].body.toString("utf-8");
+    expect(structure).toMatch(/name="model_id"[\s\S]{0,40}\r?\n\r?\n1\r?\n/);
+  });
+});

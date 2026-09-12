@@ -27,19 +27,34 @@ type Props = {
   scope: Record<string, any>;
 };
 
+// 当前模型的稳定序号 idx（接口里叫 model_id，与全局线路/全网拓扑同一口径）：
+// 后端按 idx 定位模型，与方案路径解耦（改名、移到别的方案后仍能定位）。
+// 已保存模型从方案树记录取 project.idx（摘要与完整记录都带），取不到时返回 0，
+// 调用方回退 schemePath + name —— 不用内存里的 projectIdx，避免切换模型后残留旧 idx 发错模型。
+function currentModelIndex(scope: Record<string, any>): number {
+  const { schemes, activeProjectKey, findSavedProjectRecordInSchemes } = scope;
+  if (typeof findSavedProjectRecordInSchemes !== "function") {
+    return 0;
+  }
+  const owner = findSavedProjectRecordInSchemes(schemes, activeProjectKey);
+  const saved = Number(owner?.project?.project?.idx);
+  return Number.isSafeInteger(saved) && saved > 0 ? saved : 0;
+}
+
 // 发送请求装配（纯函数，便于单测锁定前端契约；后端行为见 server/sendModel.test.mjs）：
-// 与既有导出端点同口径 —— schemePath 走 query，body 只带目标地址与格式清单。
+// 优先 modelId 指定模型；模型尚未分配 idx 时回退 schemePath + name（后端两种都收）。
 export function buildSendRequest(
   scope: Record<string, any>,
   url: string,
   files: Array<{ kind: string; encoding: string }>
 ) {
   const modelName = String(scope.projectName ?? "");
-  const path = backendExportSchemePath(scope);
+  const modelId = currentModelIndex(scope);
+  const target = modelId > 0
+    ? `modelId=${modelId}`
+    : `${schemePathQueryParam("schemePath", backendExportSchemePath(scope))}&name=${encodeURIComponent(modelName)}`;
   return {
-    requestUrl: apiPath(
-      `/v1/schemes/model/send?${schemePathQueryParam("schemePath", path)}&name=${encodeURIComponent(modelName)}`
-    ),
+    requestUrl: apiPath(`/v1/schemes/model/send?${target}`),
     init: {
       method: "POST",
       headers: { "content-type": "application/json" },
