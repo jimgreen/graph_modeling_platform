@@ -75,6 +75,12 @@ describe("SendModelDialog", () => {
 
     // 语法高亮：highlight.js 输出的 span class
     expect(html).toContain("hljs-keyword");
+    // 代码块逐行渲染并带行号
+    expect(html).toContain("send-model-code-line-number");
+    // 左栏格式说明
+    expect(html).toContain("格式说明");
+    expect(html).toContain("send-model-note-kind");
+    expect(html).toContain("IEC 61970 CIM16");
 
     // 契约要点：高亮会把标识符包进 span，逐字断言改看源码
     const source = readFileSync(new URL("./SendModelDialog.tsx", import.meta.url), "utf8");
