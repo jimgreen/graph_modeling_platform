@@ -15990,3 +15990,11 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .canvas-ruler-right .canvas-ruler-label {
   right: 1px;
 }
+
+/* 尺子四角：补上两条尺子端点之间的缺口 */
+.canvas-ruler-corner {
+  position: absolute;
+  border: 1px solid #d8dee8;
+  border-radius: 2px;
+  background-color: #f8fafc;
+}
