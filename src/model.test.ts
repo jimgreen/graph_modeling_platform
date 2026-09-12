@@ -92,6 +92,7 @@ import {
   realignConnectionEdgeBusEndpointPoints,
   realignRoutableLineDeviceBusEndpointPoints,
   upsertSavedProject,
+  uniqueRecordName,
   rerouteEdgesAroundMovedNodes,
   routeIntersectsEndpointNodeBodies,
   routeIntersectsSpecificNodes,
@@ -1646,13 +1647,29 @@ describe("power system model", () => {
 
     const normalized = normalizeSavedProjectRecordNames(records);
 
-    expect(normalized).toHaveLength(1);
-    expect(normalized[0].id).toBe("project-c");
-    expect(normalized[0].name).toBe("模型A");
-    expect(normalized[0].project.name).toBe("模型A");
-    expect(normalized[0].project.canvasWidth).toBe(1600);
+    // 同名记录仍按最新时间合并；“(N)” 是重名模型的合法区分后缀，必须保留为独立模型。
+    expect(normalized.map((project) => project.name)).toEqual(["模型A", "模型A (2)"]);
+    const base = normalized.find((project) => project.name === "模型A");
+    expect(base?.id).toBe("project-c");
+    expect(base?.project.name).toBe("模型A");
+    expect(base?.project.canvasWidth).toBe(1600);
+    const suffixed = normalized.find((project) => project.name === "模型A (2)");
+    expect(suffixed?.id).toBe("project-a2");
+    expect(suffixed?.project.name).toBe("模型A (2)");
   });
 
+
+  test("keeps a model whose renamed name only differs by the “(N)” suffix", () => {
+    const existing = createSavedProject("模型12", { version: 1, name: "模型12", nodes: [], edges: [] });
+    const list = upsertSavedProject([], existing);
+    const renamed = uniqueRecordName("模型12", list.map((project) => project.name), "导入模型");
+
+    const saved = upsertSavedProject(list, createSavedProject(renamed, { version: 1, name: "模型12", nodes: [], edges: [] }));
+
+    expect(saved.map((project) => project.name)).toEqual(["模型12", "模型12 (2)"]);
+    expect(new Set(saved.map((project) => project.id)).size).toBe(2);
+    expect(saved[1].project.name).toBe("模型12 (2)");
+  });
 
   test("manages nested saved schemes as a recursive tree", () => {
     const nestedProject = createSavedProject("子模型", { version: 1, name: "子模型", nodes: [], edges: [] });
