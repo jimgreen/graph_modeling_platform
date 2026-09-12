@@ -4,6 +4,7 @@
 // runtime 域需前端在线：起 WS 客户端注册并响应 fetch。
 
 import { mkdtemp, rm, mkdir, writeFile, cp } from "node:fs/promises";
+import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { WebSocket } from "ws";
@@ -17,6 +18,11 @@ let server;
 let baseUrl;
 let wsUrl;
 let wsClient;
+let sink;
+let sinkHits = 0;
+
+// 发送端点示例的接收端：swaggerPage 示例里写死 http://127.0.0.1:9099/receive
+const SINK_PORT = 9099;
 
 // 复刻 swaggerPage.buildUrl 逻辑（示例值原始未编码，这里统一 encodeURIComponent）
 function buildUrl(ep, params) {
@@ -164,9 +170,23 @@ beforeAll(async () => {
     // repo 无 schemes 数据则空（方案域示例可能 404，期望表相应处理）
   }
   ({ createImageServer } = await import("./server.mjs"));
+  // 接收端：只记命中数并回 200，供 /v1/schemes/model/send 示例做转发闭环
+  sinkHits = 0;
+  sink = createServer((request, response) => {
+    request.on("data", () => {});
+    request.on("end", () => {
+      sinkHits += 1;
+      response.writeHead(200, { "content-type": "text/plain" });
+      response.end("ok");
+    });
+  });
+  await new Promise((resolve) => sink.listen(SINK_PORT, "127.0.0.1", resolve));
 });
 
 afterAll(async () => {
+  if (sink) {
+    await new Promise((resolve) => sink.close(resolve));
+  }
   if (dataDir) {
     await rm(dataDir, { recursive: true, force: true });
   }
@@ -286,6 +306,12 @@ function expectFor(ep, ex) {
   if (p === apiPath("/v1/schemes/model/svg")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/svg") };
   if (p === apiPath("/v1/schemes/model/e-file")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("text/plain") };
   if (p === apiPath("/v1/schemes/model/cim-xml")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/xml") };
+  if (p === apiPath("/v1/schemes/model/send")) return { status: 200, check: (r) => {
+    expect(r.json.ok).toBe(true);
+    expect(r.json.data.status).toBe(200);
+    expect(r.json.data.files.map((file) => file.kind)).toEqual(["e", "json"]);
+    expect(sinkHits).toBeGreaterThan(0);
+  } };
 
   // v1 图元库域
   if (p === apiPath("/v1/library")) return { status: 200, check: (r) => expect(r.json.data.categories).toBeInstanceOf(Array) };

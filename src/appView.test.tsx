@@ -118,6 +118,25 @@ describe("model-association device containment wiring", () => {
   });
 });
 
+describe("发送模型入口", () => {
+  test("在导出按钮右侧放置纸飞机发送按钮并挂载发送弹窗", () => {
+    const topbarSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
+    const exportButton = topbarSource.indexOf('id="topbar-export"');
+    const sendButton = topbarSource.indexOf('id="topbar-send-model"');
+    const templateLabel = topbarSource.indexOf("title={`当前模板：");
+
+    expect(exportButton).toBeGreaterThanOrEqual(0);
+    expect(templateLabel).toBeGreaterThan(exportButton);
+    expect(sendButton).toBeGreaterThan(exportButton);
+    expect(sendButton).toBeLessThan(templateLabel);
+    // 仅图标：纸飞机 + aria-label 发送 + 复用顶栏主按钮样式与 T() tooltip 文案
+    expect(topbarSource).toContain('T("发送",');
+    expect(topbarSource).toContain('id="topbar-send-model" className="topbar-primary-button"');
+    expect(topbarSource).toContain('aria-label="发送"><Send size={16}/></button>');
+    expect(topbarSource).toContain("<SendModelDialog");
+  });
+});
+
 describe("全网拓扑入口", () => {
   test("在顶栏把仅图标的全局线路按钮放到全网拓扑按钮左侧并挂载独立弹窗", () => {
     const topbarSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
@@ -619,7 +638,7 @@ describe("app view device definition parameter rows", () => {
     const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
     const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
     const modeButton = source.match(
-      /<button type="button" className=\{`topbar-primary-button[^`]*`\} onClick=\{toggleInteractionMode\}[\s\S]*?<\/button>/
+      /<button type="button"(?: id="[^"]*")? className=\{`topbar-primary-button[^`]*`\} onClick=\{toggleInteractionMode\}[\s\S]*?<\/button>/
     )?.[0] ?? "";
     const exportActions = source.match(
       /<div className="topbar-center-actions">[\s\S]*?<\/div>\s*(?:<div className="action-cluster"|<button)/
