@@ -610,6 +610,8 @@ export type ProjectFile = {
   canvasBackgroundImageAssetId?: string;
   canvasBackgroundImageFit?: string;
   backgroundProjectId?: string;
+  // 背景页引用键：模型全局 idx（服务端据它定位被引用模型重建背景页；前端 id 服务端无法解析）
+  backgroundProjectIdx?: number;
   backgroundLayerIds?: string[];
   powerUnit?: string;
   voltageUnit?: string;

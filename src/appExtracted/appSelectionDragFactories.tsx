@@ -129,7 +129,9 @@ export function createRouteForCurrentEdgeSave(__appScope: Record<string, any>) {
 
 export function createCurrentProject(__appScope: Record<string, any>) {
   return (): ProjectFile => {
-  const { activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageFit, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edgeWithCurrentRouteGeometryForSave, edges, groups, layers, lockProjectEdgeTerminals, nodes, normalizeModelGroups, normalizeProjectLayers, normalizeProjectMeasurements, powerBaseValue, powerUnit, projectMeasurements, projectName, projectIdx, voltageUnit, substation, feeder, modelType, subcontrolarea, taiqu } = __appScope;
+  const { activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, backgroundProjectRecord, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageFit, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edgeWithCurrentRouteGeometryForSave, edges, groups, layers, lockProjectEdgeTerminals, nodes, normalizeModelGroups, normalizeProjectLayers, normalizeProjectMeasurements, powerBaseValue, powerUnit, projectMeasurements, projectName, projectIdx, voltageUnit, substation, feeder, modelType, subcontrolarea, taiqu } = __appScope;
+    // 背景页引用键取模型全局 idx：SavedProjectRecord 顶层无 idx，模型自身落盘才有（同 nextGlobalProjectIndex 口径）
+    const backgroundProjectIdx = Number(backgroundProjectRecord?.project?.idx);
     const projectEdges = edges.map(edgeWithCurrentRouteGeometryForSave);
     return normalizeProjectLayers(lockProjectEdgeTerminals({
       version: 1,
@@ -145,6 +147,7 @@ export function createCurrentProject(__appScope: Record<string, any>) {
       canvasBackgroundImageAssetId,
       canvasBackgroundImageFit,
       backgroundProjectId,
+      ...(backgroundProjectIdx > 0 ? { backgroundProjectIdx } : {}),
       backgroundLayerIds,
       powerUnit,
       voltageUnit,
