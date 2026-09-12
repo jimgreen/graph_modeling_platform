@@ -15912,3 +15912,81 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   flex: 1 1 auto;
   white-space: pre;
 }
+
+/* ---- 画布外围四边刻度尺（CanvasRulers）---- */
+
+.canvas-rulers {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.canvas-ruler {
+  position: absolute;
+  overflow: hidden;
+  border: 1px solid #d8dee8;
+  border-radius: 2px;
+  background-color: #f8fafc;
+  color: #64748b;
+  font-size: 9px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  background-repeat: repeat-x;
+  /* 刻度线：细刻度 5 单位、大刻度 25 单位，从贴画布的那一侧向内长 */
+  background-image:
+    repeating-linear-gradient(to right, #94a3b8 0 1px, transparent 1px var(--ruler-major-step, 25px)),
+    repeating-linear-gradient(to right, #dbe3ec 0 1px, transparent 1px var(--ruler-minor-step, 5px));
+  background-size: var(--ruler-major-step, 25px) 12px, var(--ruler-minor-step, 5px) 6px;
+  background-position: left bottom, left bottom;
+}
+
+/* 下边尺子贴画布的是上沿，刻度线向下长 */
+.canvas-ruler-bottom {
+  background-position: left top, left top;
+}
+
+.canvas-ruler-left,
+.canvas-ruler-right {
+  background-repeat: repeat-y;
+  background-image:
+    repeating-linear-gradient(to bottom, #94a3b8 0 1px, transparent 1px var(--ruler-major-step, 25px)),
+    repeating-linear-gradient(to bottom, #dbe3ec 0 1px, transparent 1px var(--ruler-minor-step, 5px));
+  background-size: 12px var(--ruler-major-step, 25px), 6px var(--ruler-minor-step, 5px);
+  background-position: right top, right top;
+}
+
+.canvas-ruler-right {
+  background-position: left top, left top;
+}
+
+.canvas-ruler-label {
+  position: absolute;
+  color: #64748b;
+}
+
+.canvas-ruler-top .canvas-ruler-label,
+.canvas-ruler-bottom .canvas-ruler-label {
+  transform: translateX(-50%);
+}
+
+.canvas-ruler-left .canvas-ruler-label,
+.canvas-ruler-right .canvas-ruler-label {
+  transform: translateY(-50%);
+}
+
+.canvas-ruler-top .canvas-ruler-label {
+  top: 1px;
+}
+
+.canvas-ruler-bottom .canvas-ruler-label {
+  bottom: 1px;
+}
+
+.canvas-ruler-left .canvas-ruler-label {
+  left: 1px;
+}
+
+.canvas-ruler-right .canvas-ruler-label {
+  right: 1px;
+}

@@ -8,12 +8,16 @@ import {
   canvasFrameScrollIsUserDriven,
   canvasFrameScrollTargetForViewBox,
   clampCanvasNoScrollOffset,
+  canvasOuterInset,
   canvasRenderViewBoxAfterBoundsDraft,
   canvasResizePreviewRectForDraft,
   canvasResizeScrollTargetForCommitAnchor,
+  canvasRulerTicks,
   canvasScrollSyncShouldRun,
   canvasVisualRectScrollTarget,
   canvasViewBoxFromFrameScrollPosition,
+  CANVAS_FRAME_INSET,
+  CANVAS_RULER_SIZE,
   viewBoxAfterCanvasBoundsChange
 } from "./canvasViewport";
 
@@ -38,6 +42,28 @@ describe("canvas fit available area", () => {
     expect(canvasFitCenterOffsetX({ left: 308, right: 340 })).toBe(-16);
     expect(canvasFitCenterOffsetX({ left: 340, right: 308 })).toBe(16);
     expect(canvasFitCenterOffsetX({ left: 20, right: 20 })).toBe(0);
+  });
+});
+
+// 画布外围刻度尺：大刻度 25 单位（对齐底图大网格）、小刻度 5 单位（细网格）
+describe("canvas ruler ticks", () => {
+  test("取区间内 unit 的整数倍，含落在区间内的首尾", () => {
+    expect(canvasRulerTicks(0, 50, 25)).toEqual([0, 25, 50]);
+    expect(canvasRulerTicks(10, 60, 25)).toEqual([25, 50]);
+    expect(canvasRulerTicks(30, 40, 25)).toEqual([]);
+    expect(canvasRulerTicks(-30, 10, 25)).toEqual([-25, 0]);
+  });
+
+  test("非法参数返回空数组（避免死循环）", () => {
+    expect(canvasRulerTicks(0, 100, 0)).toEqual([]);
+    expect(canvasRulerTicks(0, 100, -5)).toEqual([]);
+    expect(canvasRulerTicks(100, 0, 25)).toEqual([]);
+  });
+
+  test("外沿留白含尺子厚度，保证四边尺子有地方站", () => {
+    expect(CANVAS_RULER_SIZE).toBeGreaterThan(0);
+    expect(canvasOuterInset()).toBe(CANVAS_FRAME_INSET + CANVAS_RULER_SIZE);
+    expect(canvasOuterInset()).toBeGreaterThan(CANVAS_FRAME_INSET);
   });
 });
 
