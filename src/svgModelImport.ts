@@ -8,6 +8,7 @@ import {
   getTerminalPoint,
   isBusNode,
   projectPointToBusCenterlineIfInRange,
+  projectPointToBusCenterlineUninset,
   switchingDeviceUsesClosedStatus,
   type DeviceTemplate,
   type Edge,
@@ -1197,7 +1198,9 @@ function inferLegacyEdgeEndpoint(nodes: readonly ModelNode[], point: Point, excl
           node,
           terminalId: node.terminals[0]?.id ?? "t1",
           endpointPoint: projected,
-          distance: pointDistance(projected, point)
+          // 命中与距离按母线实体范围判定（不扣禁绘区），避免既有连线因端点落在母线两端 10% 内而丢失；
+          // endpointPoint 仍是收敛后的合法连接点。
+          distance: pointDistance(projectPointToBusCenterlineUninset(node, point), point)
         });
       }
       continue;

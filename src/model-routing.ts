@@ -566,11 +566,11 @@ function routableLineBusEndpointSnapPointWithinTolerance(
     return pointDistance(projected, point) <= tolerance ? projected : undefined;
   }
   const local = pointToNodeLocal(bus, point);
-  const halfWidth = (bus.size.width * Math.abs(getNodeScaleX(bus))) / 2;
+  const limit = busConnectableHalfWidth((bus.size.width * Math.abs(getNodeScaleX(bus))) / 2);
   const halfHeight = Math.max(4, (bus.size.height * Math.abs(getNodeScaleY(bus))) / 2);
   if (
-    local.x < -halfWidth - tolerance ||
-    local.x > halfWidth + tolerance ||
+    local.x < -limit - tolerance ||
+    local.x > limit + tolerance ||
     Math.abs(local.y) > halfHeight + tolerance
   ) {
     return undefined;
@@ -1583,6 +1583,22 @@ const BUS_TERMINAL_TYPE_BY_COMPONENT_LIBRARY: Readonly<Record<string, TerminalTy
 };
 
 const BOUNDARY_BUS_COMPONENT_LIBRARIES = new Set(["hydrostorage", "heatstorage"]);
+
+/**
+ * 母线两端禁绘区比例（占母线长度）。默认 0.1，即母线可连接点范围为长度的 10%~90%，
+ * 两端各 10% 不允许作为连接点。绘制连接 / 自动对齐 / 自动散开共用此单一来源。
+ */
+export let BUS_CONNECTABLE_INSET_RATIO = 0.1;
+
+/** 调整母线禁绘区比例（0~0.45），非法值回落默认 0.1。 */
+export function setBusConnectableInsetRatio(ratio: number): void {
+  BUS_CONNECTABLE_INSET_RATIO = Number.isFinite(ratio) ? clampNumber(ratio, 0, 0.45) : 0.1;
+}
+
+/** 线型母线可连接半宽：母线半宽扣除两端禁绘区后，连接点相对母线中心的最大偏移量。 */
+export function busConnectableHalfWidth(halfWidth: number): number {
+  return Math.max(0, halfWidth * (1 - 2 * BUS_CONNECTABLE_INSET_RATIO));
+}
 
 type BusNodeIdentity = Pick<ModelNode, "kind"> & Partial<Pick<ModelNode, "params">>;
 
@@ -2936,6 +2952,15 @@ export function boundaryBusInternalConnectorStrokeWidth(node: ModelNode, segment
 }
 
 export function projectPointToBusCenterline(node: ModelNode, point: Point): Point {
+  return projectPointToBusCenterlineWithInset(node, point, BUS_CONNECTABLE_INSET_RATIO);
+}
+
+/** 母线中心线投影（不扣两端禁绘区），供导入等按母线实体范围判定的场景使用。 */
+export function projectPointToBusCenterlineUninset(node: ModelNode, point: Point): Point {
+  return projectPointToBusCenterlineWithInset(node, point, 0);
+}
+
+function projectPointToBusCenterlineWithInset(node: ModelNode, point: Point, insetRatio: number): Point {
   if (usesBoundaryBusAnchors(node)) {
     return projectPointToNodeBoundary(node, point);
   }
@@ -2947,7 +2972,8 @@ export function projectPointToBusCenterline(node: ModelNode, point: Point): Poin
     y: dx * Math.sin(radians) + dy * Math.cos(radians)
   };
   const halfWidth = (node.size.width * Math.abs(getNodeScaleX(node))) / 2;
-  const clampedX = clampNumber(local.x, -halfWidth, halfWidth);
+  const limit = Math.max(0, halfWidth * (1 - 2 * insetRatio));
+  const clampedX = clampNumber(local.x, -limit, limit);
   const forwardRadians = degreesToRadians(node.rotation);
   return {
     x: Math.round(node.position.x + clampedX * Math.cos(forwardRadians)),
@@ -3022,7 +3048,7 @@ function projectBusEndpointPointToRouteSegmentExtension(
     const rotationRadians = degreesToRadians(busNode.rotation);
     const cos = Math.cos(rotationRadians);
     const sin = Math.sin(rotationRadians);
-    const halfWidth = (busNode.size.width * Math.abs(getNodeScaleX(busNode))) / 2;
+    const limit = busConnectableHalfWidth((busNode.size.width * Math.abs(getNodeScaleX(busNode))) / 2);
     const distance =
       segmentStart.x === segmentEnd.x
         ? Math.abs(cos) > 1e-6
@@ -3032,7 +3058,7 @@ function projectBusEndpointPointToRouteSegmentExtension(
           ? (segmentStart.y - busNode.position.y) / sin
           : null;
     if (distance !== null) {
-      const clampedDistance = clampNumber(distance, -halfWidth, halfWidth);
+      const clampedDistance = clampNumber(distance, -limit, limit);
       return {
         x: Math.round(busNode.position.x + clampedDistance * cos),
         y: Math.round(busNode.position.y + clampedDistance * sin)
@@ -11854,11 +11880,11 @@ function busEndpointCandidatePoints(bus: ModelNode, preferredPoints: Point[]): P
     return uniquePoints(preferredPoints.map((point) => projectPointToNodeBoundary(bus, point)))
       .slice(0, ROUTE_MAX_BUS_ENDPOINT_POINTS_PER_SIDE);
   }
-  const halfWidth = (bus.size.width * Math.abs(getNodeScaleX(bus))) / 2;
+  const limit = busConnectableHalfWidth((bus.size.width * Math.abs(getNodeScaleX(bus))) / 2);
   const localXValues = preferredPoints.map((point) => pointToNodeLocal(bus, point).x);
   return uniquePoints(localXValues.map((localX) =>
     nodeLocalToPoint(bus, {
-      x: clampNumber(localX, -halfWidth, halfWidth),
+      x: clampNumber(localX, -limit, limit),
       y: 0
     })
   )).slice(0, ROUTE_MAX_BUS_ENDPOINT_POINTS_PER_SIDE);
