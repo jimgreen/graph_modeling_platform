@@ -2985,6 +2985,16 @@ async function archiveSchemeStoreEntry(entryPath, filesRoot, trashRoot, archiveI
   if (!relativePath || relativePath.startsWith("..")) {
     return;
   }
+  // 先判存在：不存在时直接返回，避免 rename(ENOENT) 前先 mkdir 留下空时间戳目录。
+  // 只把 ENOENT 当「不存在」，其余异常（如 EACCES）上抛，不静默当作不存在。
+  try {
+    await stat(entryPath);
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
   let targetPath = join(trashRoot, archiveId, relativePath);
   await mkdir(dirname(targetPath), { recursive: true });
   for (let index = 2; ; index += 1) {
@@ -3084,10 +3094,17 @@ function schemeZipRootName(entries, fallbackName) {
 
 async function extractSchemeZipToDirectory(zip, targetDir, rootName) {
   await mkdir(targetDir, { recursive: true });
+  const skippedDerived = [];
   for (const entry of zip.getEntries()) {
     const parts = zipEntryParts(entry.entryName);
     const relativeParts = safeFilePart(parts[0], parts[0]) === rootName ? parts.slice(1) : parts;
     if (relativeParts.length === 0) {
+      continue;
+    }
+    // files 不变量：只落 .json。旧 ZIP 内的派生格式（.e/.svg）不写回磁盘；
+    // 只跳这两种本平台派生后缀，其它条目（如 scheme.json）原样铺开。
+    if (!entry.isDirectory && /\.(e|svg)$/iu.test(relativeParts[relativeParts.length - 1])) {
+      skippedDerived.push(relativeParts.join("/"));
       continue;
     }
     const targetPath = relativeParts.reduce((current, part) => join(current, safeFilePart(part, part)), targetDir);
@@ -3100,6 +3117,9 @@ async function extractSchemeZipToDirectory(zip, targetDir, rootName) {
     }
     await mkdir(dirname(targetPath), { recursive: true });
     await writeFile(targetPath, entry.getData());
+  }
+  if (skippedDerived.length > 0) {
+    console.warn(`[scheme-import] 跳过 ${skippedDerived.length} 个派生文件（.e/.svg 不落盘）：${skippedDerived.join("、")}`);
   }
 }
 
@@ -3373,9 +3393,9 @@ export async function readSchemeProjectRecord(options = {}) {
 }
 
 // 按模型稳定序号 idx 定位模型（idx 由 allocateStableProjectIndex 分配，跨方案唯一）。
-// 供以 model_id 指定模型的接口使用（如 /v1/schemes/model/send）：与方案路径解耦，
-// 模型改名或移到别的方案后 model_id 不变。
-// 上限：按 idx 定位会全量遍历一次 files 目录（方案数 × 模型数），仅该路径才走这里。
+// 供以 model_id 指定模型的接口使用（如 /v1/schemes/model/send），以及 SVG 端点重建背景页
+// （svgExport.mjs → buildBackgroundPageOption）：与方案路径解耦，模型改名或移到别的方案后 model_id 不变。
+// 上限：按 idx 定位会全量遍历一次 files 目录（方案数 × 模型数），send 与背景页两条路径都走这里。
 export async function findSchemeProjectRecordByIndex(options = {}) {
   const target = Number(options.index);
   if (!Number.isSafeInteger(target) || target <= 0) {
@@ -3389,8 +3409,12 @@ async function scanProjectByIndex(dir, schemePath, target) {
   let entries = [];
   try {
     entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return null;
+  } catch (error) {
+    // 只把 ENOENT 当「目录不存在」；其余（如 EACCES）上抛，避免「数据根不可读」与「模型已删除」同形
+    if (error?.code === "ENOENT") {
+      return null;
+    }
+    throw error;
   }
   for (const entry of entries) {
     if (!entry.isFile() || !/\.json$/iu.test(entry.name) || entry.name.toLocaleLowerCase() === "scheme.json") {
@@ -3472,16 +3496,11 @@ export async function saveSchemeProjectRecord(options) {
     await Promise.all(Object.values(previousPaths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, schemeArchiveId())));
   }
   // files 不变量：只留 .json。改造前落盘的 .e/.svg 在本次保存时归档（可回滚，不硬删）
-  // 先判存在：archiveSchemeStoreEntry 在 rename 前会 mkdir，无条件调用会让每次保存都留下一个空时间戳目录
+  // 存在性守卫已下沉进 archiveSchemeStoreEntry（不存在即返回，不 mkdir → 不留空时间戳目录）
   const { jsonPath, ePath, svgPath } = projectFilePathsForName(schemeDir, name);
   const staleArchiveId = schemeArchiveId();
   await Promise.all(
-    [ePath, svgPath].map(async (filePath) => {
-      const exists = await stat(filePath).then(() => true, () => false);
-      if (exists) {
-        await archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, staleArchiveId);
-      }
-    })
+    [ePath, svgPath].map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, staleArchiveId))
   );
   await writeTextIfChanged(jsonPath, stringifyJson({ ...storageProject, name }));
   return storedRecord;

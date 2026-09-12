@@ -13,6 +13,10 @@ const { collectSvgExportReferencedImageHrefById } = await import("../src/export/
 // 背景页图层过滤/归一化单源：与前端 createAppHookCallback142 调的是同两个纯函数
 const { normalizeProjectLayers, filterProjectByVisibleLayers } = await import("../src/model-routing.ts");
 
+// 背景页引用解析失败只在 not-found 分支留痕一次（进程内去重，避免第三方轮询刷日志）。
+// 不打日志时「引用键配错 / 数据根不可读 / 模型确已删除」三者外部同形，排障无法区分。
+const warnedBackgroundIdx = new Set();
+
 // 背景页重建：宿主模型只落盘引用键（backgroundProjectIdx + backgroundLayerIds），
 // 服务端读被引用模型 + 复用 src 侧纯函数复现前端 backgroundPageRender 载荷。
 // 不用前端 id（backgroundProjectId）：磁盘 json 不含 id，服务端无 id→文件映射。
@@ -27,7 +31,12 @@ async function buildBackgroundPageOption({ project, deviceTemplates }) {
   }
   const record = await findSchemeProjectRecordByIndex({ index: backgroundIdx });
   if (!record) {
-    // 被引用模型已删除：不打断导出
+    // 被引用模型已删除：不打断导出。spec §7.4 要求此处记一条 warning，
+    // 否则「引用键配错 / 数据根不可读」与「模型确已删除」在排障时不可区分。
+    if (!warnedBackgroundIdx.has(backgroundIdx)) {
+      warnedBackgroundIdx.add(backgroundIdx);
+      console.warn(`[svg-export] 背景页引用解析失败：backgroundProjectIdx=${backgroundIdx} 未匹配到任何模型，已跳过背景页（引用键配错/数据根不可读/模型已删除）。`);
+    }
     return { backgroundPage: undefined, referencedHrefById: new Map() };
   }
   const backgroundProject = normalizeProjectLayers(record.project);

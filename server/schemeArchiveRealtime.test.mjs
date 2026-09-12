@@ -116,6 +116,20 @@ test("ZIP 内含 json + e + svg 三件套", async () => {
   ]);
 });
 
+test("ZIP 内 .json 条目数等于方案内模型数（防某类文件被静默漏打包）", async () => {
+  const { listModelJsonFiles } = await import("./schemeArchive.mjs");
+  const schemeDir = join(dataDir, "schemes", "files", "嵌套方案");
+  const models = await listModelJsonFiles(schemeDir);
+  // 前提：该方案确有 2 个模型（厂站 + 子方案/线路）
+  expect(models).toHaveLength(2);
+
+  const response = await fetch(`${baseUrl}${apiPath("/v1/schemes/export")}?schemePath=${encodeSchemePath(["嵌套方案"])}`);
+  expect(response.status).toBe(200);
+  const zip = new AdmZip(Buffer.from(await response.arrayBuffer()));
+  const jsonCount = zip.getEntries().filter((entry) => entry.entryName.endsWith(".json")).length;
+  expect(jsonCount).toBe(models.length);
+});
+
 test("ZIP 内 e/svg 与单模型端点输出逐字节一致，json 与磁盘原文一致", async () => {
   const response = await fetch(`${baseUrl}${apiPath("/v1/schemes/export")}?schemePath=${schemePathParam()}`);
   const zip = new AdmZip(Buffer.from(await response.arrayBuffer()));

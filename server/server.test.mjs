@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
@@ -780,7 +780,7 @@ describe("scheme enum validation", () => {
             }],
             edges: []
           }
-        },
+        }
       })).rejects.toThrow(/mode.*BAD.*AUTO、MANUAL/u);
       await expect(readFile(join(filesRoot, "枚举测试", "非法枚举.json"), "utf8")).rejects.toThrow();
     } finally {
@@ -1699,6 +1699,31 @@ describe("scheme file persistence", () => {
 
       await expect(readFile(join(filesRoot, "默认方案", "速度.json"), "utf-8")).resolves.toContain("速度");
       await expect(readFile(join(filesRoot, "默认方案", "线路.json"), "utf-8")).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("导入旧 ZIP 时跳过 .e/.svg 派生文件，只落 .json", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-import-derived-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      const zip = new AdmZip();
+      // 模拟改造前的 ZIP：同一模型同时含 json 与 e/svg 派生格式
+      zip.addFile("模型方案/模型.json", Buffer.from("{\"name\":\"模型\"}", "utf-8"));
+      zip.addFile("模型方案/模型.e", Buffer.from("E", "utf-8"));
+      zip.addFile("模型方案/模型.svg", Buffer.from("<svg/>", "utf-8"));
+
+      await importSchemeArchiveBuffer({
+        filesRoot,
+        trashRoot,
+        buffer: zip.toBuffer(),
+        fileName: "模型方案.zip"
+      });
+
+      // files 不变量：目标目录只留 .json，派生格式不写回磁盘
+      expect((await readdir(join(filesRoot, "模型方案"))).sort()).toEqual(["模型.json"]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
