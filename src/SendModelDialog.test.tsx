@@ -58,6 +58,24 @@ describe("SendModelDialog", () => {
     expect(html).toContain(">GBK<");
     expect(html).toContain(">UTF-8<");
   });
+
+  test("展示 Python 与 Node 两种接收端示例及各自的复制按钮", () => {
+    const html = render({});
+    expect(html).toContain("接收端示例");
+    expect(html).toContain('id="send-model-sample-code-python"');
+    expect(html).toContain('id="send-model-sample-code-node"');
+    expect(html).toContain('id="send-model-sample-copy-python"');
+    expect(html).toContain('id="send-model-sample-copy-node"');
+
+    // 两段代码都在 DOM 中（details 收起也会渲染内容），照抄即可起服务
+    expect(html).toContain("request.files.get(field)");
+    expect(html).toContain("raw.decode(encoding");
+    expect(html).toContain("formData()");
+    expect(html).toContain("value.arrayBuffer()");
+    // 契约要点：字段名与 GBK 处理都要在示例里体现
+    expect(html).toContain("e_file");
+    expect(html).toContain("iconv.decode");
+  });
 });
 
 describe("buildSendRequest", () => {
