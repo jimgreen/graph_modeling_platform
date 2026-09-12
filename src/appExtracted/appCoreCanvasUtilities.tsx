@@ -78,9 +78,12 @@ import {
 } from "../selectionActions";
 import {
   clampNumber,
+  canvasFitAvailableWidth,
+  canvasFitPanelInset,
   CANVAS_FRAME_INSET,
   CANVAS_SCROLL_EDGE_VIEWPORT_RATIO,
   CANVAS_FIT_SCROLLBAR_GUARD,
+  type CanvasFitInsets,
   type CanvasResizeEdge,
   type CanvasResizePreviewRect,
   type CanvasViewBox,
@@ -2510,8 +2513,37 @@ export function initialVisibleCanvasViewBox(canvasBounds: CanvasBounds, frame: P
   };
 }
 
-export function fitWholeCanvasViewBox(canvasBounds: CanvasBounds, frame: Pick<HTMLElement, "clientWidth" | "clientHeight"> | null): CanvasViewBox {
-  const availableWidth = Math.max(1, (frame?.clientWidth ?? DEFAULT_CANVAS_WIDTH) - CANVAS_FRAME_INSET * 2 - CANVAS_FIT_SCROLLBAR_GUARD);
+// 适配视图的两侧让位：读实际可见面板宽度（隐藏时 display:none → 宽度 0）。
+// 用元素实测而非读 CSS 变量，媒体查询改宽度、面板隐藏、以及 padding/border 都能自然跟上。
+export function canvasFitSideInsetsFromDom(): CanvasFitInsets {
+  const widthOf = (selector: string) => {
+    if (typeof document === "undefined") {
+      return 0;
+    }
+    const element = document.querySelector(selector);
+    if (!element) {
+      return 0;
+    }
+    // 浮层面板在 auto 模式下靠 transform 移出视口（display 仍是 flex），
+    // 实测（pinned 模式）显示中的面板必带 visible 类，据此判断是否真的占视野
+    if (element.classList.contains("floating-side-panel") && !element.classList.contains("visible")) {
+      return 0;
+    }
+    return element.getBoundingClientRect().width;
+  };
+  return {
+    left: canvasFitPanelInset(widthOf(".library-panel")),
+    right: canvasFitPanelInset(widthOf(".inspector-panel"))
+  };
+}
+
+export function fitWholeCanvasViewBox(
+  canvasBounds: CanvasBounds,
+  frame: Pick<HTMLElement, "clientWidth" | "clientHeight"> | null,
+  sideInsets: CanvasFitInsets = canvasFitSideInsetsFromDom()
+): CanvasViewBox {
+  // 宽度只扣两侧让位（面板宽 + 20px 边距）：再加 CANVAS_FRAME_INSET 会让画布比可用区小一圈
+  const availableWidth = canvasFitAvailableWidth(frame?.clientWidth ?? DEFAULT_CANVAS_WIDTH, sideInsets);
   const availableHeight = Math.max(1, (frame?.clientHeight ?? DEFAULT_CANVAS_HEIGHT) - CANVAS_FRAME_INSET * 2 - CANVAS_FIT_SCROLLBAR_GUARD);
   const cssScale = Math.max(
     0.0001,

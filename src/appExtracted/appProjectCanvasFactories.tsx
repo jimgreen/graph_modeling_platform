@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { Select, Input, Button, InputNumber } from "antd";
-import { clampNumber } from "../canvasViewport";
+import { canvasFitCenterOffsetX, clampNumber } from "../canvasViewport";
+import { canvasFitSideInsetsFromDom } from "./appCoreCanvasUtilities";
 import { DEFAULT_MEASUREMENT_CONFIG, defaultMeasurementDisplayFormat } from "../measurements";
 import { WindowCloseButton } from "../WindowCloseButton";
 import { buildEFileExportOptionsFromLibrary, setSkipSaveCheck } from "./appDeviceDefinitionFactories";
@@ -5616,10 +5617,13 @@ export function createResetViewportZoom(__appScope: Record<string, any>) {
 export function createFitWholeCanvasToFrame(__appScope: Record<string, any>) {
   return () => {
   const { canvasBounds, canvasFrameRef, canvasFullViewBox, centerCanvasFrameScrollPosition, fitWholeCanvasViewBox, scheduleCanvasVisibleViewBoxUpdate, setCanvasNoScrollOffset, setCanvasVisibleViewBox, setViewBox, skipNextCanvasScrollSyncRef } = __appScope;
-    const nextViewBox = fitWholeCanvasViewBox(canvasBounds, canvasFrameRef.current);
+    // 可用区 = 画布区去掉两侧可见面板的让位（面板宽 + 20px）；左右面板宽度通常不同，
+    // 画布要居中于可用区而非画布区正中，否则宽的一侧仍会压住画布
+    const insets = canvasFitSideInsetsFromDom();
+    const nextViewBox = fitWholeCanvasViewBox(canvasBounds, canvasFrameRef.current, insets);
     skipNextCanvasScrollSyncRef.current = true;
     setViewBox(nextViewBox);
-    setCanvasNoScrollOffset({ x: 0, y: 0 });
+    setCanvasNoScrollOffset({ x: canvasFitCenterOffsetX(insets), y: 0 });
     setCanvasVisibleViewBox(canvasFullViewBox);
     window.requestAnimationFrame(() => {
       const frame = canvasFrameRef.current;

@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { clampNumber } from "../canvasViewport";
+import { canvasFitCenterOffsetX, clampNumber } from "../canvasViewport";
+import { canvasFitSideInsetsFromDom } from "./appCoreCanvasUtilities";
 import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
 import { resolveEffectiveTemplateParameterDefinitions, withNodesParentModelId } from "../model";
 import { buildEffectiveLibraryTemplates } from "../export/device-definition-shared";
@@ -1730,7 +1731,7 @@ export function createAppHookCallback42(__appScope: Record<string, any>) {
 
 export function createAppHookCallback43(__appScope: Record<string, any>) {
   return () => {
-  const { canvasBounds, canvasFrameRef, canvasFrameViewportSize, canvasFullViewBox, fitWholeCanvasViewBox, initialCanvasFitAppliedRef, scheduleCanvasVisibleViewBoxUpdate, setCanvasVisibleViewBox, setViewBox } = __appScope;
+  const { canvasBounds, canvasFrameRef, canvasFrameViewportSize, canvasFullViewBox, fitWholeCanvasViewBox, initialCanvasFitAppliedRef, scheduleCanvasVisibleViewBoxUpdate, setCanvasNoScrollOffset, setCanvasVisibleViewBox, setViewBox } = __appScope;
     if (initialCanvasFitAppliedRef.current) {
       return;
     }
@@ -1738,7 +1739,10 @@ export function createAppHookCallback43(__appScope: Record<string, any>) {
       return;
     }
     initialCanvasFitAppliedRef.current = true;
-    setViewBox(fitWholeCanvasViewBox(canvasBounds, canvasFrameRef.current));
+    // 与【适配视图】同口径：扣掉两侧面板让位，并居中于可用区
+    const insets = canvasFitSideInsetsFromDom();
+    setViewBox(fitWholeCanvasViewBox(canvasBounds, canvasFrameRef.current, insets));
+    setCanvasNoScrollOffset({ x: canvasFitCenterOffsetX(insets), y: 0 });
     setCanvasVisibleViewBox(canvasFullViewBox);
     scheduleCanvasVisibleViewBoxUpdate();
   };

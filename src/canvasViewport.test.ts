@@ -2,6 +2,9 @@ import { describe, expect, test } from "vitest";
 import {
   canvasBoundsChangeIsMeaningful,
   canvasBoundsScrollSyncTarget,
+  canvasFitAvailableWidth,
+  canvasFitCenterOffsetX,
+  canvasFitPanelInset,
   canvasFrameScrollIsUserDriven,
   canvasFrameScrollTargetForViewBox,
   clampCanvasNoScrollOffset,
@@ -13,6 +16,30 @@ import {
   canvasViewBoxFromFrameScrollPosition,
   viewBoxAfterCanvasBoundsChange
 } from "./canvasViewport";
+
+// 适配视图（fit）的可用区域：左右面板是浮动层，画布区占满工作区，
+// 所以可用宽必须扣掉可见面板宽度，每侧另留 20px 边距。
+describe("canvas fit available area", () => {
+  test("每侧让位 = max(面板宽 + 20, 20)", () => {
+    expect(canvasFitPanelInset(288)).toBe(308);
+    expect(canvasFitPanelInset(320)).toBe(340);
+    // 面板隐藏（读不到宽度）时退化为 20px 边距
+    expect(canvasFitPanelInset(0)).toBe(20);
+  });
+
+  test("可用宽 = 画布区宽 - 两侧让位，最小 1", () => {
+    expect(canvasFitAvailableWidth(1920, { left: 308, right: 340 })).toBe(1272);
+    expect(canvasFitAvailableWidth(1920, { left: 20, right: 20 })).toBe(1880);
+    expect(canvasFitAvailableWidth(100, { left: 308, right: 340 })).toBe(1);
+  });
+
+  test("居中偏移把画布拉回可用区（左右面板不等宽时不偏）", () => {
+    // 右面板更宽 32px → 画布相对画布区正中左移 16px
+    expect(canvasFitCenterOffsetX({ left: 308, right: 340 })).toBe(-16);
+    expect(canvasFitCenterOffsetX({ left: 340, right: 308 })).toBe(16);
+    expect(canvasFitCenterOffsetX({ left: 20, right: 20 })).toBe(0);
+  });
+});
 
 describe("canvas viewport bounds changes", () => {
   test("preserves free-drag overflow offsets while canvas scrollbars are active", () => {

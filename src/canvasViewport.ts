@@ -33,6 +33,32 @@ export type CanvasViewBox = {
 export const CANVAS_FRAME_INSET = 16;
 export const CANVAS_SCROLL_EDGE_VIEWPORT_RATIO = 1 / 3;
 export const CANVAS_FIT_SCROLLBAR_GUARD = 4;
+// 适配视图时画布与可见区域之间的最小边距
+export const CANVAS_FIT_PANEL_GAP = 20;
+
+/* 适配视图（fit）的可用区域 ---------------------------------------------------
+ * 左右侧面板是浮动层（styles.css 的 .floating-side-panel），画布区占满整个工作区、
+ * 面板浮在它上面。因此“完整显示整个画布”必须把可见面板的宽度让出来：
+ *   可用宽 = 画布区宽 - max(左面板宽 + 20, 20) - max(右面板宽 + 20, 20)
+ * 面板隐藏（display:none）时读到的宽度是 0，让位即退化为 20px 边距。
+ * ------------------------------------------------------------------------- */
+
+export type CanvasFitInsets = { left: number; right: number };
+
+export function canvasFitPanelInset(panelWidth: number) {
+  return Math.max(panelWidth + CANVAS_FIT_PANEL_GAP, CANVAS_FIT_PANEL_GAP);
+}
+
+// 画布要落在可用区（画布区去掉两侧让位）内，而不是画布区正中：
+// 左右面板宽度常常不等（默认 288 / 320），按画布区居中会被宽的一侧压住，
+// 这里给出相对画布区居中位置的偏移量，叠加到无滚动偏移上即可居中于可用区。
+export function canvasFitCenterOffsetX(insets: CanvasFitInsets) {
+  return (insets.left - insets.right) / 2;
+}
+
+export function canvasFitAvailableWidth(frameWidth: number, insets: CanvasFitInsets) {
+  return Math.max(1, frameWidth - insets.left - insets.right);
+}
 
 /* 工具函数 */
 
