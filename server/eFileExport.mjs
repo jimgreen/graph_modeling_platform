@@ -96,7 +96,8 @@ export async function buildEFileForSavedModel({ parts, name, templateName, templ
 
 const E_FILE_BODY_LIMIT = 2 * 1024 * 1024;
 
-async function readJsonBody(request) {
+// POST 端点通用的 JSON body 读取（含 2MB 上限）：/e-file 与 /send 共用。
+export async function readJsonBody(request) {
   const chunks = [];
   let total = 0;
   for await (const chunk of request) {

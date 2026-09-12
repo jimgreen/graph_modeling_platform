@@ -9,6 +9,7 @@ import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, 
 import { clampNumber } from "../canvasViewport";
 import { normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
+import { backendExportSchemePath } from "../backendExportPath";
 import { backendErrorMessage } from "./appCoreCanvasUtilities";
 import { decodeGbk } from "../encoding/gbk";
 import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES } from "../eDeviceTemplateTypePolicy";
@@ -2605,13 +2606,6 @@ function eFileTemplateQueryName(__appScope: Record<string, any>): string {
   }
   const name = String(eDeviceInterfaceLoadedTemplateName ?? "");
   return Object.prototype.hasOwnProperty.call(E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES, name) ? name : "";
-}
-
-// 三个后端导出请求共用：方案路径为空/缺省时回落 ["默认方案"]（与后端缺省口径一致）
-function backendExportSchemePath(__appScope: Record<string, any>): string[] {
-  const { activeSchemeKey, schemePathForScheme } = __appScope;
-  const schemePath = typeof schemePathForScheme === "function" ? schemePathForScheme(activeSchemeKey) : [];
-  return Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"];
 }
 
 // E 文件生成已移至后端 /v1/schemes/model/e-file（单文件导出与目录导出共用本函数）。

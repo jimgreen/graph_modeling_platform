@@ -8,12 +8,13 @@ import {
   createSchemeArchiveBuffer,
   readSchemeProjectRecord
 } from "./server.mjs";
-import iconv from "iconv-lite";
 import { sendV1Json, sendV1Error } from "./v1Response.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 import { handleV1ModelEFile, handleV1ModelEFilePost } from "./eFileExport.mjs";
 import { handleV1ModelCimXml } from "./cimExport.mjs";
 import { renderSavedModelSvg } from "./svgExport.mjs";
+import { handleV1ModelSend } from "./sendModel.mjs";
+import { encodeTextBytes, withXmlEncodingDeclaration } from "./xmlEncoding.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 // schemeDataDir 和 filesRoot 从 server.mjs 的 schemeDataDir 派生，跟随 GRAPH_MODEL_DATA_DIR
@@ -163,18 +164,10 @@ export async function handleV1ModelJson({ url, request, response }) {
   }
 }
 
-// XML 声明由后端产出：保证响应体与前端落盘文件逐字节一致（前端不再自行前置声明）。
-// 已有声明（含 BOM/前导空白）先剥离，避免出现两个声明。
-function svgWithEncodingDeclaration(svgText, encoding) {
-  const label = encoding === "gbk" ? "GBK" : "UTF-8";
-  const content = String(svgText ?? "").replace(/^﻿?\s*<\?xml\b[^?]*\?>\s*/iu, "");
-  return `<?xml version="1.0" encoding="${label}"?>\n${content}`;
-}
-
 function sendSvg(response, svg, encoding) {
-  const text = svgWithEncodingDeclaration(svg, encoding);
+  const text = withXmlEncodingDeclaration(svg, encoding);
   // 与 /e-file 同口径：gbk 走 iconv 编码，utf-8 走 Buffer
-  const bytes = encoding === "gbk" ? iconv.encode(text, "gbk") : Buffer.from(text, "utf-8");
+  const bytes = encodeTextBytes(text, encoding);
   response.writeHead(200, {
     "content-type": `image/svg+xml; charset=${encoding}`,
     "content-length": String(bytes.length),
@@ -232,5 +225,6 @@ export const v1SchemeRoutes = [
   { method: "GET", pattern: apiPattern("/v1/schemes/model/svg", "/?$"), handle: handleV1ModelSvg },
   { method: "GET", pattern: apiPattern("/v1/schemes/model/e-file", "/?$"), handle: handleV1ModelEFile },
   { method: "POST", pattern: apiPattern("/v1/schemes/model/e-file", "/?$"), handle: handleV1ModelEFilePost },
-  { method: "GET", pattern: apiPattern("/v1/schemes/model/cim-xml", "/?$"), handle: handleV1ModelCimXml }
+  { method: "GET", pattern: apiPattern("/v1/schemes/model/cim-xml", "/?$"), handle: handleV1ModelCimXml },
+  { method: "POST", pattern: apiPattern("/v1/schemes/model/send", "/?$"), handle: handleV1ModelSend }
 ];
