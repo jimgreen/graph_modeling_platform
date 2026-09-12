@@ -19,6 +19,8 @@
 | `apiV1Schemes.mjs` | v1 方案域只读端点（hierarchy/models/export/model json/svg） |
 | `apiV1Library.mjs` | v1 图元库域只读端点（categories/devices/measurements/device-definitions/templates） |
 | `apiV1Control.mjs` | v1 控制台写操作端点（9 端点：device/scheme/model/select/group/delete/update/save/template），经 WS 下发到前端 __appScope |
+| `apiV1Receive.mjs` | 联调接收端 `/v1/receive`（POST 收「发送模型」转发来的内容并回解析摘要、GET 回看、DELETE 清空）；内存留最近 5 次、不落盘、不鉴权 |
+| `sendModel.mjs` | `/v1/schemes/model/send` 适配层：按 modelId（模型 idx，兼容 schemePath+name）定位已保存模型，按所选格式生成 E/JSON/SVG/CIM，以 multipart/form-data 转发到调用方给定 URL |
 | `eFileExport.mjs` | `/v1/schemes/model/e-file` 适配层（GET 预定义模板 / POST 自定义模板文本）：读盘模型 + 库配置，用 `src/export/e-file.ts` 装配选项（`buildEFileExportOptionsFromLibrary` / `applyPredefinedEDeviceTemplateToLibraryState`）、`src/model-eexport.ts` 的 `buildEFileExport` 生成，默认 GBK |
 | `eFileTemplates.mjs` | 预定义 E 元件模板读取（`PREDEFINED_E_DEVICE_TEMPLATES` / `readPredefinedTemplateBase64`） |
 | `svgExport.mjs` | `/v1/schemes/model/svg` 适配层：`buildEffectiveLibraryTemplates` 装配库模板（含 `deviceDefinitionOverrides`），配色读 `settings/color-config.json`，被引用图片经 manifest 内联为 data URL；XML 声明与 `encoding=gbk\|utf-8` 由 handler（`apiV1Schemes.mjs`）输出，保证响应体与前端落盘文件逐字节一致 |

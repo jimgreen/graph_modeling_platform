@@ -1,5 +1,5 @@
 // /swigger 页面：Swagger 风格的接口文档 + 在线测试（接口前缀按 platform.config.json 配置）。
-import { apiPrefix } from "./config.mjs";
+import { apiPath, apiPrefix, backendPort } from "./config.mjs";
 // 自包含 HTML（无外部依赖），内嵌接口元数据，前端 JS 渲染分组卡片 + Try-it。
 
 // 接口元数据。method/path/desc/group/query/body/response 用于文档展示。
@@ -11,6 +11,9 @@ import { apiPrefix } from "./config.mjs";
 const SP_DEFAULT = JSON.stringify(["默认方案"]);
 const SP_SUB = JSON.stringify(["默认方案", "1-1"]);
 const PNG_1X1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+// 联调接收端地址：「发送模型」示例的目标 URL 指向它，即可在 /swigger 里自测整条发送链路。
+// 按后端默认端口拼（改过 platform.config.json 的 backend.port 时按实际填写）。
+const RECEIVE_URL = `http://127.0.0.1:${backendPort}${apiPath("/v1/receive")}`;
 
 const ENDPOINTS = [
   // ---- 图片域 ----
@@ -124,9 +127,19 @@ const ENDPOINTS = [
   { group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/cim-xml", desc: "已保存模型 CIM/XML（IEC 61970 CIM16）", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }, { name: "modelId", desc: "可选，覆盖生成的模型 ID" }, { name: "strict", desc: "可选，1 时关键参数缺失返回 400" }], response: "<application/xml 二进制>", examples: [
     { label: "「线路」CIM/XML", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } }
   ]},
-  { group: "v1 方案域", method: "POST", path: "/webgrp/v1/schemes/model/send", desc: "把已保存模型按所选格式 POST 到目标 URL（后端代理转发，multipart/form-data）", query: [{ name: "modelId", desc: "模型稳定序号 idx（推荐，与方案路径解耦）" }, { name: "schemePath", desc: "方案路径（modelId 的兼容替代）" }, { name: "name", desc: "模型名（modelId 的兼容替代）" }], body: { url: "http://127.0.0.1:9099/receive", files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] }, response: "{ok:true,data:{url,status,elapsedMs,files:[{kind,field,filename,encoding,bytes}]}}", examples: [
-    { label: "按 modelId 发送 E + JSON（kind: e|json|svg|cim，encoding: gbk|utf-8）", params: { q_modelId: 1, __body__: { url: "http://127.0.0.1:9099/receive", files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] } } },
-    { label: "按 schemePath + name 发送（兼容旧调用）", params: { q_schemePath: SP_DEFAULT, q_name: "线路", __body__: { url: "http://127.0.0.1:9099/receive", files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] } } }
+  { group: "v1 方案域", method: "POST", path: "/webgrp/v1/schemes/model/send", desc: "把已保存模型按所选格式 POST 到目标 URL（后端代理转发，multipart/form-data）", query: [{ name: "modelId", desc: "模型稳定序号 idx（推荐，与方案路径解耦）" }, { name: "schemePath", desc: "方案路径（modelId 的兼容替代）" }, { name: "name", desc: "模型名（modelId 的兼容替代）" }], body: { url: RECEIVE_URL, files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] }, response: "{ok:true,data:{url,status,elapsedMs,files:[{kind,field,filename,encoding,bytes}]}}", examples: [
+    { label: "按 modelId 发送 E + JSON 到本服务接收端（kind: e|json|svg|cim，encoding: gbk|utf-8）", params: { q_modelId: 1, __body__: { url: RECEIVE_URL, files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] } } },
+    { label: "按 schemePath + name 发送（兼容旧调用）", params: { q_schemePath: SP_DEFAULT, q_name: "线路", __body__: { url: RECEIVE_URL, files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] } } }
+  ]},
+  // 联调接收端：把「发送模型」的 url 指向这里即可自测发送闭环，再 GET 回看收到的内容
+  { group: "v1 方案域", method: "POST", path: "/webgrp/v1/receive", desc: `联调接收端：把「发送模型」的目标 URL 填 ${RECEIVE_URL}，发送后 GET 本端点即可看到收到的字段/文件名/字节数与内容回显（multipart/form-data 与原始 body 都收，内存留最近 5 次，不落盘）`, body: { model_id: "7", model_name: "厂站模型", note: "任意字段" }, response: "{ok:true,data:{received:{receivedAt,contentType,totalBytes,fields:[{name,kind,filename,contentType,bytes,text|preview}]},kept}}", examples: [
+    { label: "收一次 JSON（multipart/form-data 同理）", params: { __body__: { model_id: "7", model_name: "厂站模型" } } }
+  ]},
+  { group: "v1 方案域", method: "GET", path: "/webgrp/v1/receive", desc: "回看最近一次接收结果（无记录时 latest 为 null）", response: "{ok:true,data:{latest,count,receivedAtList}}", examples: [
+    { label: "最近一次", params: {} }
+  ]},
+  { group: "v1 方案域", method: "DELETE", path: "/webgrp/v1/receive", desc: "清空接收记录（便于重复联调）", response: "{ok:true,data:{cleared}}", examples: [
+    { label: "清空", params: {} }
   ]},
 
   // ---- v1 图元库域（第三方只读）----

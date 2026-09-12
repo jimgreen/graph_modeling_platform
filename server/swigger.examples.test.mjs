@@ -4,7 +4,6 @@
 // runtime 域需前端在线：起 WS 客户端注册并响应 fetch。
 
 import { mkdtemp, rm, mkdir, writeFile, cp } from "node:fs/promises";
-import { createServer } from "node:http";
 import { join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { WebSocket } from "ws";
@@ -18,11 +17,6 @@ let server;
 let baseUrl;
 let wsUrl;
 let wsClient;
-let sink;
-let sinkHits = 0;
-
-// 发送端点示例的接收端：swaggerPage 示例里写死 http://127.0.0.1:9099/receive
-const SINK_PORT = 9099;
 
 // 只复制真实方案数据：data/schemes/trash 是历史归档（几十个目录、上百个文件），
 // 逐个用例复制它既拖慢 hook，又让 Windows 下的递归删除容易撞 ENOTEMPTY
@@ -63,8 +57,20 @@ function buildOpts(ep, params) {
   return opts;
 }
 
+// 发送端点示例的目标 URL 写的是后端默认地址（swaggerPage 的 RECEIVE_URL），
+// 测试里换成当前随机端口的 baseUrl，避免依赖固定端口
+function normalizeExampleParams(ep, params) {
+  if (ep.path !== apiPath("/v1/schemes/model/send") || !params.__body__?.url) {
+    return params;
+  }
+  return {
+    ...params,
+    __body__: { ...params.__body__, url: String(params.__body__.url).replace(/^https?:\/\/[^/]+/u, baseUrl) }
+  };
+}
+
 async function fetchExample(ep, ex) {
-  const params = ex.params || {};
+  const params = normalizeExampleParams(ep, ex.params || {});
   const url = buildUrl(ep, params);
   const opts = buildOpts(ep, params);
   const res = await fetch(`${baseUrl}${url}`, opts);
@@ -176,23 +182,9 @@ beforeAll(async () => {
     // repo 无 schemes 数据则空（方案域示例可能 404，期望表相应处理）
   }
   ({ createImageServer } = await import("./server.mjs"));
-  // 接收端：只记命中数并回 200，供 /v1/schemes/model/send 示例做转发闭环
-  sinkHits = 0;
-  sink = createServer((request, response) => {
-    request.on("data", () => {});
-    request.on("end", () => {
-      sinkHits += 1;
-      response.writeHead(200, { "content-type": "text/plain" });
-      response.end("ok");
-    });
-  });
-  await new Promise((resolve) => sink.listen(SINK_PORT, "127.0.0.1", resolve));
 });
 
 afterAll(async () => {
-  if (sink) {
-    await new Promise((resolve) => sink.close(resolve));
-  }
   if (dataDir) {
     await removeDataDir();
   }
@@ -314,9 +306,19 @@ function expectFor(ep, ex) {
   if (p === apiPath("/v1/schemes/model/cim-xml")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/xml") };
   if (p === apiPath("/v1/schemes/model/send")) return { status: 200, check: (r) => {
     expect(r.json.ok).toBe(true);
+    // 目标即本服务接收端（示例 url 指向 /v1/receive），故转发结果状态为 200
     expect(r.json.data.status).toBe(200);
     expect(r.json.data.files.map((file) => file.kind)).toEqual(["e", "json"]);
-    expect(sinkHits).toBeGreaterThan(0);
+  } };
+  if (p === apiPath("/v1/receive") && ep.method === "POST") return { status: 200, check: (r) => {
+    expect(r.json.data.received.fields).toBeInstanceOf(Array);
+    expect(r.json.data.received.totalBytes).toBeGreaterThan(0);
+  } };
+  if (p === apiPath("/v1/receive") && ep.method === "GET") return { status: 200, check: (r) => {
+    expect(typeof r.json.data.count).toBe("number");
+  } };
+  if (p === apiPath("/v1/receive") && ep.method === "DELETE") return { status: 200, check: (r) => {
+    expect(typeof r.json.data.cleared).toBe("number");
   } };
 
   // v1 图元库域
