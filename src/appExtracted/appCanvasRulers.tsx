@@ -12,17 +12,29 @@ import {
 
 // 相邻细刻度屏幕间距小于该值时不再画细刻度，缩小视图时避免糊成一片
 const MIN_TICK_GAP = 4;
+// 9px 等宽数字的近似字符宽度：用来判断贴边标签该往哪边对齐
+const LABEL_CHAR_WIDTH = 6;
 
-function RulerLabels({ values, scale, axis }: { values: number[]; scale: number; axis: "x" | "y" }) {
-  return values.map((value) => (
-    <span
-      key={value}
-      className="canvas-ruler-label"
-      style={axis === "x" ? { left: value * scale } : { top: value * scale }}
-    >
-      {value}
-    </span>
-  ));
+// 贴边的标签（如左上角的 0）若仍居中，半边会被尺子的 overflow 裁掉，
+// 边界处改成左/上对齐或右/下对齐，保证整段数字都露出来
+function RulerLabels({ values, scale, axis, length }: { values: number[]; scale: number; axis: "x" | "y"; length: number }) {
+  return values.map((value) => {
+    const position = value * scale;
+    const half = (String(value).length * LABEL_CHAR_WIDTH) / 2;
+    const center = axis === "x" ? "translateX(-50%)" : "translateY(-50%)";
+    const alignStart = axis === "x" ? "translateX(0)" : "translateY(0)";
+    const alignEnd = axis === "x" ? "translateX(-100%)" : "translateY(-100%)";
+    const translate = position - half < 0 ? alignStart : position + half > length ? alignEnd : center;
+    return (
+      <span
+        key={value}
+        className="canvas-ruler-label"
+        style={axis === "x" ? { left: position, transform: translate } : { top: position, transform: translate }}
+      >
+        {value}
+      </span>
+    );
+  });
 }
 
 export function CanvasRulers({ scope }: { scope: Record<string, any> }) {
@@ -75,25 +87,25 @@ export function CanvasRulers({ scope }: { scope: Record<string, any> }) {
         className="canvas-ruler canvas-ruler-top"
         style={{ left: canvasDisplayOffsetX, top: canvasDisplayOffsetY - CANVAS_RULER_SIZE, width: canvasDisplayWidth, height: CANVAS_RULER_SIZE, ...rulerStyle(majorStepX, minorStepX) }}
       >
-        <RulerLabels values={xLabels} scale={scaleX} axis="x"/>
+        <RulerLabels values={xLabels} scale={scaleX} axis="x" length={canvasDisplayWidth}/>
       </div>
       <div
         className="canvas-ruler canvas-ruler-bottom"
         style={{ left: canvasDisplayOffsetX, top: canvasDisplayOffsetY + canvasDisplayHeight, width: canvasDisplayWidth, height: CANVAS_RULER_SIZE, ...rulerStyle(majorStepX, minorStepX) }}
       >
-        <RulerLabels values={xLabels} scale={scaleX} axis="x"/>
+        <RulerLabels values={xLabels} scale={scaleX} axis="x" length={canvasDisplayWidth}/>
       </div>
       <div
         className="canvas-ruler canvas-ruler-left"
         style={{ left: canvasDisplayOffsetX - CANVAS_RULER_SIZE, top: canvasDisplayOffsetY, width: CANVAS_RULER_SIZE, height: canvasDisplayHeight, ...rulerStyle(majorStepY, minorStepY) }}
       >
-        <RulerLabels values={yLabels} scale={scaleY} axis="y"/>
+        <RulerLabels values={yLabels} scale={scaleY} axis="y" length={canvasDisplayHeight}/>
       </div>
       <div
         className="canvas-ruler canvas-ruler-right"
         style={{ left: canvasDisplayOffsetX + canvasDisplayWidth, top: canvasDisplayOffsetY, width: CANVAS_RULER_SIZE, height: canvasDisplayHeight, ...rulerStyle(majorStepY, minorStepY) }}
       >
-        <RulerLabels values={yLabels} scale={scaleY} axis="y"/>
+        <RulerLabels values={yLabels} scale={scaleY} axis="y" length={canvasDisplayHeight}/>
       </div>
     </div>
   );
