@@ -399,15 +399,6 @@ async function writeTextIfChanged(filePath, content, encoding = "utf-8") {
   await atomicWriteFile(filePath, bytes);
 }
 
-async function fileExists(filePath) {
-  try {
-    await stat(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function ensureJsonStoreFile(dirPath, filePath, defaultValue) {
   await mkdir(dirPath, { recursive: true });
   try {
@@ -640,9 +631,9 @@ export async function readSchemes(options = {}) {
   return readSchemesFromFiles(options);
 }
 
-async function writeSchemes(schemes, options = {}) {
+async function writeSchemes(schemes) {
   await ensureSchemeStore();
-  await writeSchemeFiles(schemes, options);
+  await writeSchemeFiles(schemes);
   await removeLegacySchemeManifest();
 }
 
@@ -2957,25 +2948,6 @@ const electricGenerationDerivedClassSuffixByKindSuffix = new Map([
   ["storage", "StorageGen"]
 ]);
 
-function inferEDeviceClass(kind, params = {}) {
-  const explicitDerivedClass = String(
-    params.derived_component_type ?? params.derivedComponentLibrary ?? ""
-  ).trim();
-  if (explicitDerivedClass) {
-    return explicitDerivedClass;
-  }
-  const normalizedKind = String(kind ?? "").endsWith("-vertical")
-    ? String(kind).slice(0, -"-vertical".length)
-    : String(kind ?? "");
-  const derivedKindMatch = /^(ac|dc)-(.+)$/u.exec(normalizedKind);
-  const derivedClassSuffix = derivedKindMatch
-    ? electricGenerationDerivedClassSuffixByKindSuffix.get(derivedKindMatch[2])
-    : undefined;
-  if (derivedKindMatch && derivedClassSuffix) {
-    return `${derivedKindMatch[1].toUpperCase()}${derivedClassSuffix}`;
-  }
-  return inferESection(normalizedKind, params);
-}
 
 function parseDeviceIndex(value) {
   const text = String(value ?? "").trim();
@@ -3049,48 +3021,12 @@ function assignMissingDeviceIndexes(nodes, counters) {
   return { nodes: changed ? nextNodes : nodes, counters: nextCounters };
 }
 
-function normalizeRunStatForE(value) {
-  return normalizeRunStatValue(value);
-}
 
-function normalizeControlTypeForE(value) {
-  const text = String(value ?? "").trim();
-  const aliases = {
-    定P: "P",
-    定V: "V",
-    定I: "I",
-    定PQ: "PQ",
-    定PV: "PV",
-    定PH: "PH",
-    不定: "0"
-  };
-  return aliases[text] ?? text;
-}
 
 const dcacAcControlTypes = new Set(["PQ", "PV", "PH", "NONE"]);
 const dcacDcControlTypes = new Set(["P", "V", "I", "NONE"]);
-function normalizeDcacAcControlTypeForE(value, fallback = "PQ") {
-  const text = String(value ?? "").trim();
-  if (!text) return fallback;
-  const normalized = normalizeControlTypeForE(text).toUpperCase();
-  const mapped = normalized === "Q" ? "PQ" : normalized === "V" ? "PV" : normalized === "0" ? "NONE" : normalized;
-  return dcacAcControlTypes.has(mapped) ? mapped : text;
-}
 
-function normalizeDcacDcControlTypeForE(value, fallback = "V") {
-  const text = String(value ?? "").trim();
-  if (!text) return fallback;
-  const normalized = normalizeControlTypeForE(text).toUpperCase();
-  const mapped = { CTRL_P: "P", CTRL_V: "V", CTRL_I: "I", SLACK: "NONE", 0: "NONE" }[normalized] ?? normalized;
-  return dcacDcControlTypes.has(mapped) ? mapped : text;
-}
 
-function dcacConverterControlTypePairForE(params = {}) {
-  return {
-    ac_control_type: normalizeDcacAcControlTypeForE(params.ac_control_type),
-    dc_control_type: normalizeDcacDcControlTypeForE(params.dc_control_type)
-  };
-}
 
 const acacSideControlTypes = new Set(["PQ", "PV", "PH", "NONE"]);
 const acacLegacyControlTypePairs = {
@@ -3101,342 +3037,25 @@ const acacLegacyControlTypePairs = {
 };
 const dcdcEndpointControlTypes = new Set(["P", "V", "I", "NONE"]);
 
-function normalizeAcacEndpointControlTypeForE(value, fallback = "PQ") {
-  const text = String(value ?? "").trim();
-  if (!text) return fallback;
-  const normalized = normalizeControlTypeForE(text).toUpperCase();
-  const mapped = normalized === "Q"
-    ? "PQ"
-    : normalized === "V"
-      ? "PV"
-      : normalized === "0"
-        ? "NONE"
-        : normalized;
-  return acacSideControlTypes.has(mapped) ? mapped : text;
-}
 
-function normalizeDcdcEndpointControlTypeForE(value, fallback = "NONE") {
-  const text = String(value ?? "").trim();
-  if (!text) return fallback;
-  const normalized = normalizeControlTypeForE(text).toUpperCase();
-  const mapped = {
-    CTRL_P: "P",
-    CTRL_V: "V",
-    CTRL_I: "I",
-    SLACK: "NONE",
-    0: "NONE"
-  }[normalized] ?? normalized;
-  return dcdcEndpointControlTypes.has(mapped) ? mapped : text;
-}
 
-function acacConverterControlTypePairForE(params = {}) {
-  const explicitI = params.i_control_type ?? params.iControlType;
-  const explicitJ = params.j_control_type ?? params.jControlType;
-  const legacyControlType = normalizeControlTypeForE(params.control_type ?? params.controlType).toUpperCase();
-  const legacyPair = acacLegacyControlTypePairs[legacyControlType];
-  return {
-    i_control_type: explicitI
-      ? normalizeAcacEndpointControlTypeForE(explicitI)
-      : legacyPair?.i_control_type ?? normalizeAcacEndpointControlTypeForE(params.source_control_type ?? params.sourceControlType),
-    j_control_type: explicitJ
-      ? normalizeAcacEndpointControlTypeForE(explicitJ)
-      : legacyPair?.j_control_type ?? normalizeAcacEndpointControlTypeForE(params.target_control_type ?? params.targetControlType)
-  };
-}
 
-function dcdcConverterControlTypePairForE(params = {}) {
-  const explicitI = params.i_control_type ?? params.iControlType;
-  const explicitJ = params.j_control_type ?? params.jControlType;
-  const legacyControlType = params.control_type ?? params.controlType;
-  const sourceControlType = params.source_control_type ?? params.sourceControlType;
-  return {
-    i_control_type: explicitI
-      ? normalizeDcdcEndpointControlTypeForE(explicitI)
-      : legacyControlType
-        ? normalizeDcdcEndpointControlTypeForE(legacyControlType)
-        : sourceControlType
-          ? normalizeDcdcEndpointControlTypeForE(sourceControlType)
-          : "P",
-    j_control_type: explicitJ
-      ? normalizeDcdcEndpointControlTypeForE(explicitJ)
-      : normalizeDcdcEndpointControlTypeForE(params.target_control_type ?? params.targetControlType)
-  };
-}
 
-function normalizeSwitchStatusForE(value) {
-  if (!value) return "";
-  if (value === "闭合") return "1";
-  if (value === "合闸") return "1";
-  if (value === "打开") return "0";
-  if (value === "分闸") return "0";
-  return value;
-}
 
 const serverBinaryStateDefinitions = [
   { value: "0", name: "打开/开断" },
   { value: "1", name: "闭合" }
 ];
 
-function normalizeServerDeviceStateValue(value) {
-  return String(value ?? "").trim();
-}
 
-function normalizeServerDeviceStateDefinitions(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const seen = new Set();
-  const states = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object") {
-      continue;
-    }
-    const stateValue = normalizeServerDeviceStateValue(item.value);
-    if (!stateValue || seen.has(stateValue)) {
-      continue;
-    }
-    seen.add(stateValue);
-    states.push({
-      ...item,
-      value: stateValue,
-      name: normalizeServerDeviceStateValue(item.name) || stateValue
-    });
-  }
-  return states;
-}
 
-function serverDeviceHasDefaultBinaryStates(kind, params = {}) {
-  const section = inferESection(kind, params);
-  return Boolean(
-    eSectionColumns[section]?.includes("status") ||
-    String(kind ?? "").includes("switch") ||
-    String(kind ?? "").includes("breaker") ||
-    String(kind ?? "").includes("disconnector") ||
-    String(kind ?? "").includes("valve")
-  );
-}
 
-function serverTemplateStateDefinitions(node, template) {
-  if (Array.isArray(template?.stateDefinitions)) {
-    return normalizeServerDeviceStateDefinitions(template.stateDefinitions);
-  }
-  return serverDeviceHasDefaultBinaryStates(node?.kind, node?.params ?? {})
-    ? serverBinaryStateDefinitions
-    : [];
-}
 
-function serverResolvedStateValue(node, states) {
-  if (!states.length) {
-    return "";
-  }
-  const explicitParam = serverSwitchingDeviceUsesClosedStatus(node?.kind, node?.params ?? {})
-    ? node?.params?.closed_status ?? node?.params?.closedStatus ?? node?.params?.status
-    : node?.params?.status;
-  const explicit = normalizeServerDeviceStateValue(explicitParam);
-  if (explicit) {
-    const exact = states.find((state) => state.value === explicit);
-    if (exact) {
-      return exact.value;
-    }
-    const normalized = normalizeSwitchStatusForE(explicit);
-    const mapped = states.find((state) => normalizeSwitchStatusForE(state.value) === normalized);
-    if (mapped) {
-      return mapped.value;
-    }
-    return normalized || explicit;
-  }
-  if (String(node?.kind ?? "").includes("ground-disconnector")) {
-    return states.find((state) => state.value === "0")?.value ?? states[0]?.value ?? "";
-  }
-  return states.find((state) => state.value === "1")?.value ?? states[0]?.value ?? "";
-}
 
-function serverStateSymbolKey(value) {
-  const stateValue = normalizeServerDeviceStateValue(value);
-  return stateValue ? svgSafeId(`state_${stateValue}`, "state_default") : "default";
-}
 
-function terminalNodeNumber(node, index) {
-  return node?.terminals?.[index]?.nodeNumber ?? (index === 0 ? node?.nodeNumber : "") ?? "";
-}
 
-function firstNumericEValue(value) {
-  return String(value ?? "").match(/[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?/u)?.[0] ?? "";
-}
 
-function mappedLegacyEValue(key, params = {}) {
-  if (key === "rated_capacity" || key === "rated_power") {
-    return firstNumericEValue(params.rated_capacity || params.ratedCapacity || params.rated_power || params.ratedPower);
-  }
-  const currentLimitAliases = {
-    i_max: ["i_max", "iMax", "max_current", "maxCurrent"],
-    i_i_max: ["i_i_max", "high_i_max", "highIMax", "high_max_current", "highMaxCurrent"],
-    k_i_max: ["k_i_max", "medium_i_max", "mediumIMax", "medium_max_current", "mediumMaxCurrent"],
-    j_i_max: ["j_i_max", "low_i_max", "lowIMax", "low_max_current", "lowMaxCurrent"]
-  }[key];
-  if (currentLimitAliases) {
-    return firstNumericEValue(currentLimitAliases.map((alias) => params[alias]).find((value) => value !== undefined));
-  }
-  const sideCapacityAliases = {
-    i_rated_capacity: ["i_rated_capacity", "high_rated_capacity", "highRatedCapacity"],
-    k_rated_capacity: ["k_rated_capacity", "medium_rated_capacity", "mediumRatedCapacity"],
-    j_rated_capacity: ["j_rated_capacity", "low_rated_capacity", "lowRatedCapacity"]
-  }[key];
-  if (sideCapacityAliases) {
-    return firstNumericEValue(sideCapacityAliases.map((alias) => params[alias]).find((value) => value !== undefined));
-  }
-  if (key === "rated_voltage") {
-    return firstNumericEValue(params.rated_voltage || params.ratedVoltage);
-  }
-  if (key === "p_max" || key === "p_min" || key === "q_max" || key === "q_min") {
-    return firstNumericEValue(params[key]);
-  }
-  if (key === "gas_quantity" || key === "gasQuantity" || key === "gasquantity") {
-    return params.gas_quantity ?? params.gasQuantity ?? params.gasquantity ?? "";
-  }
-  if (key === "pbase") return params.pbase ?? params.ratedActivePower ?? "";
-  if (key === "qbase") return params.qbase ?? params.ratedReactivePower ?? "";
-  if (key === "r") return params.r ?? params.resistancePu ?? "";
-  if (key === "x") return params.x ?? params.reactancePu ?? "";
-  if (key === "b") return params.b ?? params.halfChargingSusceptancePu ?? "";
-  if (key === "gt") return params.gt ?? params.magnetizingConductancePu ?? "";
-  if (key === "bt") return params.bt ?? params.magnetizingSusceptancePu ?? "";
-  if (key === "tap") return params.tap ?? params.tapRatio ?? "";
-  if (key === "r1") return params.r1 ?? params.sourceEquivalentResistance ?? "";
-  if (key === "r2") return params.r2 ?? params.targetEquivalentResistance ?? "";
-  return params[key] ?? "";
-}
 
-function getRawEParamValue(key, node, options = {}) {
-  const params = node?.params ?? {};
-  const section = inferESection(node?.kind, params);
-  if (key === "name") return node?.name ?? "";
-  if (key === "dev_type") {
-    const kind = String(node?.kind ?? "").trim();
-    return inferEDeviceClass(kind, params) || (kind.endsWith("-vertical") ? kind.slice(0, -"-vertical".length) : kind);
-  }
-  if (section === "HydroStorage" && key === "rated_capacity") {
-    return params.rated_capacity ?? params.capacity ?? "";
-  }
-  if (section === "ACTransformer") {
-    const legacyHighSideField = { i_p: "p", i_q: "q", i_u: "u", i_i: "i" }[key];
-    if (legacyHighSideField) {
-      return params[key] ?? params[legacyHighSideField] ?? "";
-    }
-  }
-  if (key === "run_stat") return normalizeRunStatForE(params.run_stat);
-  if (key === "status") return normalizeSwitchStatusForE(params.status);
-  if (key === "closed_status") return normalizeSwitchStatusForE(params.closed_status ?? params.closedStatus ?? params.status);
-  if (key === "closed_status_set") return normalizeSwitchStatusForE(params.closed_status_set ?? params.status_set);
-  if ((key === "ac_control_type" || key === "dc_control_type") && section === "DCACConverter") {
-    return dcacConverterControlTypePairForE(params)[key];
-  }
-  if ((key === "i_control_type" || key === "j_control_type") && section === "ACACConverter") {
-    return acacConverterControlTypePairForE(params)[key];
-  }
-  if ((key === "i_control_type" || key === "j_control_type") && section === "DCDCConverter") {
-    return dcdcConverterControlTypePairForE(params)[key];
-  }
-  if (key === "control_type") {
-    if (section === "DCACConverter" || section === "ACACConverter" || section === "DCDCConverter") return "";
-    return params.control_type ?? params.controlType ?? params.sourceControlType ?? "";
-  }
-  if (key === "vbase") return params.vbase ?? node?.terminals?.[0]?.vbase ?? "";
-  if (key === "node") return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 0) : params.node ?? terminalNodeNumber(node, 0);
-  if (key === "i_node") {
-    return options.preferTopologyNodeNumbers
-      ? terminalNodeNumber(node, 0)
-      : params.i_node ?? (section === "ACTransfomer3" ? params.t1_node : undefined) ?? terminalNodeNumber(node, 0);
-  }
-  if (key === "j_node") {
-    const terminalIndex = section === "ACTransfomer3" ? 2 : 1;
-    return options.preferTopologyNodeNumbers
-      ? terminalNodeNumber(node, terminalIndex)
-      : params.j_node ?? (section === "ACTransfomer3" ? params.t3_node : undefined) ?? terminalNodeNumber(node, terminalIndex);
-  }
-  if (key === "k_node") {
-    const terminalIndex = section === "ACTransfomer3" ? 1 : 2;
-    return options.preferTopologyNodeNumbers
-      ? terminalNodeNumber(node, terminalIndex)
-      : params.k_node ?? (section === "ACTransfomer3" ? params.t2_node : params.t3_node) ?? terminalNodeNumber(node, terminalIndex);
-  }
-  if (node?.kind === "ac-three-winding-transformer" || node?.kind === "ac-three-winding-transformer-neutral") {
-    const terminalNodeMatch = /^t([123])_node$/.exec(key);
-    if (terminalNodeMatch) {
-      const terminalIndex = Number.parseInt(terminalNodeMatch[1], 10) - 1;
-      return options.preferTopologyNodeNumbers
-        ? terminalNodeNumber(node, terminalIndex)
-        : params[key] ?? terminalNodeNumber(node, terminalIndex);
-    }
-    if (key === "neutral_node") {
-      if (node?.kind !== "ac-three-winding-transformer-neutral") {
-        return "0";
-      }
-      const visibleNeutralNode = terminalNodeNumber(node, 3);
-      return options.preferTopologyNodeNumbers
-        ? visibleNeutralNode || params.neutral_node || ""
-        : params.neutral_node ?? visibleNeutralNode;
-    }
-    const canonicalMatch = /^([ijk])_(r|x|gt|bt|tap|shift)$/.exec(key);
-    const numberedMatch = /^(r|x|gt|bt|tap|shift)([123])$/.exec(key);
-    const namedMatch =
-      /^(high|medium|low)(ResistancePu|ReactancePu|MagnetizingConductancePu|MagnetizingSusceptancePu|TapRatio|Shift)$/.exec(key) ??
-      /^(high|medium|low)_(resistance_pu|reactance_pu|magnetizing_conductance_pu|magnetizing_susceptance_pu|tap_ratio|shift)$/.exec(key);
-    if (canonicalMatch || numberedMatch || namedMatch) {
-      const sideIndex = canonicalMatch
-        ? { i: 0, j: 2, k: 1 }[canonicalMatch[1]]
-        : numberedMatch
-          ? Number.parseInt(numberedMatch[2], 10) - 1
-          : { high: 0, medium: 1, low: 2 }[namedMatch[1]];
-      const parameterKey = canonicalMatch?.[2] ?? numberedMatch?.[1] ?? ({
-        ResistancePu: "r",
-        ReactancePu: "x",
-        MagnetizingConductancePu: "gt",
-        MagnetizingSusceptancePu: "bt",
-        TapRatio: "tap",
-        Shift: "shift",
-        resistance_pu: "r",
-        reactance_pu: "x",
-        magnetizing_conductance_pu: "gt",
-        magnetizing_susceptance_pu: "bt",
-        tap_ratio: "tap",
-        shift: "shift"
-      })[namedMatch?.[2]];
-      const sideCode = ["i", "k", "j"][sideIndex];
-      const sidePrefix = ["high", "medium", "low"][sideIndex];
-      const legacyCamelSuffix = {
-        r: "ResistancePu",
-        x: "ReactancePu",
-        gt: "MagnetizingConductancePu",
-        bt: "MagnetizingSusceptancePu",
-        tap: "TapRatio",
-        shift: "Shift"
-      };
-      const legacySnakeSuffix = {
-        r: "resistance_pu",
-        x: "reactance_pu",
-        gt: "magnetizing_conductance_pu",
-        bt: "magnetizing_susceptance_pu",
-        tap: "tap_ratio",
-        shift: "shift"
-      };
-      return params[`${sideCode}_${parameterKey}`] ??
-        params[`${parameterKey}${sideIndex + 1}`] ??
-        params[`${sidePrefix}_${legacySnakeSuffix[parameterKey]}`] ??
-        params[`${sidePrefix}${legacyCamelSuffix[parameterKey]}`] ??
-        "";
-    }
-  }
-  if (key === "ac_node") {
-    const acNodeNumber = node?.terminals?.find((terminal) => terminal.type === "ac")?.nodeNumber ?? terminalNodeNumber(node, 0);
-    return options.preferTopologyNodeNumbers ? acNodeNumber : params.ac_node ?? acNodeNumber;
-  }
-  if (key === "dc_node") {
-    const dcNodeNumber = node?.terminals?.find((terminal) => terminal.type === "dc")?.nodeNumber ?? terminalNodeNumber(node, 1);
-    return options.preferTopologyNodeNumbers ? dcNodeNumber : params.dc_node ?? dcNodeNumber;
-  }
-  return mappedLegacyEValue(key, params);
-}
 
 const legacyEDefinitionColumnAliases = {
   maxCurrent: "i_max",
@@ -3499,365 +3118,30 @@ function storedEParameterDefinitions(params = {}) {
   }
 }
 
-function isUnsupportedDcacControlField(section, enName) {
-  if (section !== "DCACConverter") {
-    return false;
-  }
-  const rawName = String(enName ?? "").trim();
-  const normalizedName = rawName
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[^A-Za-z0-9_]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .toLowerCase();
-  if (normalizedName === "control_type") {
-    return true;
-  }
-  return (normalizedName === "ac_control_type" || normalizedName === "dc_control_type")
-    && rawName !== normalizedName;
-}
 
-function legacyEColumnForDefinition(section, enName) {
-  const columns = eSectionColumns[section];
-  if (!columns) {
-    return "";
-  }
-  if (isUnsupportedDcacControlField(section, enName)) {
-    return "";
-  }
-  if (columns.includes(enName)) {
-    return enName;
-  }
-  if (section === "ACACConverter" || section === "DCDCConverter") {
-    const normalizedName = String(enName ?? "")
-      .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-      .replace(/[^A-Za-z0-9_]+/g, "_")
-      .replace(/_+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .toLowerCase();
-    if (normalizedName === "control_type") return "";
-    if (normalizedName === "i_control_type" || normalizedName === "source_control_type") return "i_control_type";
-    if (normalizedName === "j_control_type" || normalizedName === "target_control_type") return "j_control_type";
-  }
-  if (enName === "t1_node") {
-    if (columns.includes("i_node")) return "i_node";
-    if (columns.includes("node")) return "node";
-  }
-  if (enName === "t2_node") {
-    if (section === "ACTransfomer3" && columns.includes("k_node")) return "k_node";
-    if (columns.includes("j_node")) return "j_node";
-  }
-  if (enName === "t3_node") {
-    if (section === "ACTransfomer3" && columns.includes("j_node")) return "j_node";
-    if (columns.includes("k_node")) return "k_node";
-  }
-  if (enName === "sourceControlType") {
-    if (columns.includes("i_control_type")) return "i_control_type";
-    if (columns.includes("control_type")) return "control_type";
-  }
-  if (enName === "targetControlType") {
-    if (columns.includes("j_control_type")) return "j_control_type";
-    if (columns.includes("control_type")) return "control_type";
-  }
-  if (section === "ACTransfomer3") {
-    const numberedMatch = /^(r|x|gt|bt|tap|shift)([123])$/.exec(enName);
-    if (numberedMatch) {
-      const sideCode = ["i", "k", "j"][Number.parseInt(numberedMatch[2], 10) - 1];
-      const column = `${sideCode}_${numberedMatch[1]}`;
-      return columns.includes(column) ? column : "";
-    }
-    const sideMatch =
-      /^(high|medium|low)(ResistancePu|ReactancePu|MagnetizingConductancePu|MagnetizingSusceptancePu|TapRatio|Shift)$/.exec(enName) ??
-      /^(high|medium|low)_(resistance_pu|reactance_pu|magnetizing_conductance_pu|magnetizing_susceptance_pu|tap_ratio|shift)$/.exec(enName);
-    if (sideMatch) {
-      const sideCode = { high: "i", medium: "k", low: "j" }[sideMatch[1]];
-      const prefix = {
-        ResistancePu: "r",
-        ReactancePu: "x",
-        MagnetizingConductancePu: "gt",
-        MagnetizingSusceptancePu: "bt",
-        TapRatio: "tap",
-        Shift: "shift",
-        resistance_pu: "r",
-        reactance_pu: "x",
-        magnetizing_conductance_pu: "gt",
-        magnetizing_susceptance_pu: "bt",
-        tap_ratio: "tap",
-        shift: "shift"
-      }[sideMatch[2]];
-      const column = `${sideCode}_${prefix}`;
-      return columns.includes(column) ? column : "";
-    }
-  }
-  const alias = legacyEDefinitionColumnAliases[enName];
-  return alias && columns.includes(alias) ? alias : "";
-}
 
-function parameterDefinitionExportSettings(kind, params, definition) {
-  const section = inferESection(kind, params);
-  const enName = String(definition?.enName ?? "").trim();
-  const legacyColumn = section ? legacyEColumnForDefinition(section, enName) : "";
-  const configuredExportName = typeof definition?.exportName === "string" ? definition.exportName.trim() : "";
-  const exportEnabled = typeof definition?.exportEnabled === "boolean"
-    ? definition.exportEnabled
-    : Boolean(section && (eSectionColumns[section] ? legacyColumn : enName));
-  return {
-    exportEnabled,
-    exportName: configuredExportName || (exportEnabled ? legacyColumn || enName : "")
-  };
-}
 
-function resolveEParameterFields(kind, params = {}) {
-  const section = inferESection(kind, params);
-  if (!section) {
-    return [];
-  }
-  const splitControlSections = new Set(["DCACConverter", "ACACConverter", "DCDCConverter"]);
-  const definitions = storedEParameterDefinitions(params).filter((definition) => {
-    if (section === "DCACConverter") {
-      return !isUnsupportedDcacControlField(section, definition.enName);
-    }
-    const normalizedName = String(definition.enName ?? "")
-      .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-      .replace(/[^A-Za-z0-9_]+/g, "_")
-      .replace(/_+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .toLowerCase();
-    return !splitControlSections.has(section) || normalizedName !== "control_type";
-  });
-  const builtInColumns = eSectionColumns[section];
-  if (!definitions.length) {
-    return (builtInColumns ?? []).map((column) => ({
-      sourceName: section === "DCDCConverter"
-        ? ({ p_set: "i_p_set", i_set: "i_i_set", v_set: "i_v_set" })[column] ?? column
-        : section === "ACACConverter" && column === "p_set"
-          ? "i_p_set"
-          : column,
-      exportName: column
-    }));
-  }
-  const fields = [];
-  const seenExportNames = new Set();
-  const appendField = (field) => {
-    if (!field.exportName || seenExportNames.has(field.exportName)) {
-      return;
-    }
-    seenExportNames.add(field.exportName);
-    fields.push(field);
-  };
-  if (builtInColumns) {
-    const definitionByLegacyColumn = new Map();
-    const definitionsMappedToLegacyColumns = new Set();
-    for (const definition of definitions) {
-      const settings = parameterDefinitionExportSettings(kind, params, definition);
-      const legacyColumn = legacyEColumnForDefinition(section, definition.enName) ||
-        (builtInColumns.includes(settings.exportName) ? settings.exportName : "");
-      if (!legacyColumn) {
-        continue;
-      }
-      definitionsMappedToLegacyColumns.add(definition);
-      const current = definitionByLegacyColumn.get(legacyColumn);
-      if (!current || definition.enName === legacyColumn) {
-        definitionByLegacyColumn.set(legacyColumn, definition);
-      }
-    }
-    for (const column of builtInColumns) {
-      const definition = definitionByLegacyColumn.get(column);
-      if (!definition) {
-        const sourceName = section === "DCDCConverter"
-          ? ({ p_set: "i_p_set", i_set: "i_i_set", v_set: "i_v_set" })[column] ?? column
-          : section === "ACACConverter" && column === "p_set"
-            ? "i_p_set"
-            : column;
-        appendField({ sourceName, exportName: column });
-        continue;
-      }
-      const settings = parameterDefinitionExportSettings(kind, params, definition);
-      if (settings.exportEnabled) {
-        appendField({ sourceName: definition.enName, exportName: settings.exportName, definition });
-      }
-    }
-    for (const definition of definitions) {
-      if (definitionsMappedToLegacyColumns.has(definition)) {
-        continue;
-      }
-      const settings = parameterDefinitionExportSettings(kind, params, definition);
-      if (settings.exportEnabled) {
-        appendField({ sourceName: definition.enName, exportName: settings.exportName, definition });
-      }
-    }
-    return fields;
-  }
-  for (const definition of definitions) {
-    const settings = parameterDefinitionExportSettings(kind, params, definition);
-    if (settings.exportEnabled) {
-      appendField({ sourceName: definition.enName, exportName: settings.exportName, definition });
-    }
-  }
-  return fields;
-}
 
-function getEParameterKeys(kind, params = {}) {
-  return resolveEParameterFields(kind, params).map((field) => field.exportName);
-}
 
-function buildEDeviceValuesFromFields(node, fields, options = {}) {
-  const values = {};
-  for (const field of fields) {
-    const rawValue = getRawEParamValue(field.sourceName, node, options);
-    const value = eFloatColumns.has(field.sourceName) || field.definition?.valueType === "float"
-      ? firstNumericEValue(rawValue)
-      : rawValue;
-    if (value !== "") {
-      values[field.exportName] = value;
-    }
-  }
-  return values;
-}
 
-function buildEDeviceValues(node, options = {}) {
-  return buildEDeviceValuesFromFields(node, resolveEParameterFields(node.kind, node.params), options);
-}
 
 const eFileColumnGap = "    ";
 const eFileWideCharWidth = 5 / 3;
 const eSectionPrimaryOrder = ["ACNode", "DCNode"];
 
-function eFileCellText(value) {
-  return String(value ?? "");
-}
 
-function defaultEFileColumnValue(column, rowIndex) {
-  if (column === "idx") return String(rowIndex + 1);
-  if (column === "name") return `unnamed_${rowIndex + 1}`;
-  if (column === "run_stat" || column === "status") return "1";
-  if (column === "control_type") return "0";
-  if (column === "i_control_type" || column === "j_control_type") return "NONE";
-  if (column === "ac_control_type") return "PQ";
-  if (column === "dc_control_type") return "V";
-  if (column === "tap" || /^tap[123]$/u.test(column) || column === "alpha" || column === "voltage" || column === "vbase") {
-    return "1.0";
-  }
-  return "0";
-}
 
-function eFileRecordCellText(column, value, rowIndex) {
-  const text = eFileCellText(value).trim();
-  return text || defaultEFileColumnValue(column, rowIndex);
-}
 
-function eFileCellDisplayWidth(value) {
-  let width = 0;
-  for (const char of eFileCellText(value)) {
-    width += /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/u.test(char)
-      ? eFileWideCharWidth
-      : 1;
-  }
-  return width;
-}
 
-function eFilePadCell(value, width) {
-  const text = eFileCellText(value);
-  const padding = Math.max(0, Math.round(width - eFileCellDisplayWidth(text)));
-  return `${text}${" ".repeat(padding)}`;
-}
 
-function eColumnsForRecords(section, records) {
-  const columns = [];
-  const seen = new Set();
-  for (const record of records) {
-    const recordColumns = record.columns ?? eSectionColumns[section] ?? Object.keys(record.params ?? {});
-    for (const column of recordColumns) {
-      if (!column || column.startsWith("_") || seen.has(column)) {
-        continue;
-      }
-      seen.add(column);
-      columns.push(column);
-    }
-  }
-  return columns.length ? columns : eSectionColumns[section] ?? [];
-}
 
-function formatESection(section, columns, records) {
-  if (!columns.length || !records.length) {
-    return "";
-  }
-  const rows = records.map((record, rowIndex) =>
-    columns.map((column) => eFileRecordCellText(column, record.params?.[column], rowIndex))
-  );
-  const widths = columns.map((column, columnIndex) =>
-    Math.max(eFileCellDisplayWidth(column), ...rows.map((row) => eFileCellDisplayWidth(row[columnIndex])))
-  );
-  const formatRow = (prefix, cells) =>
-    [prefix, ...cells.map((cell, index) => eFilePadCell(cell, widths[index]))].join(eFileColumnGap).trimEnd();
-  return [
-    `<${section}>`,
-    formatRow("@", columns),
-    ...rows.map((row) => formatRow("#", row)),
-    `</${section}>`
-  ].join("\n");
-}
 
-function orderedESections(recordsBySection) {
-  const seen = new Set();
-  const ordered = [];
-  for (const section of eSectionPrimaryOrder) {
-    if (recordsBySection.has(section)) {
-      ordered.push(section);
-      seen.add(section);
-    }
-  }
-  for (const section of Object.keys(eSectionColumns)) {
-    if (!seen.has(section) && recordsBySection.has(section)) {
-      ordered.push(section);
-      seen.add(section);
-    }
-  }
-  for (const section of recordsBySection.keys()) {
-    if (!seen.has(section)) {
-      ordered.push(section);
-    }
-  }
-  return ordered;
-}
 
-function isBusNode(node) {
-  const componentLibraries = [
-    node?.params?.derived_from_component_type,
-    node?.params?.derivedFromComponentLibrary,
-    node?.params?.component_type,
-    node?.params?.componentLibrary,
-    node?.params?.componentType
-  ].map((value) => String(value ?? "").trim().toLowerCase());
-  if (componentLibraries.some((componentLibrary) => [
-    "acrealbs",
-    "dcrealbs",
-    "hydrobus",
-    "hydrostorage",
-    "heatbus",
-    "heatstorage"
-  ].includes(componentLibrary))) {
-    return true;
-  }
-  return [
-    "ac-bus",
-    "dc-bus",
-    "hydrogen-bus",
-    "hydrogen-tank",
-    "hydrogen-tank-horizontal",
-    "hydrogen-tank-container",
-    "heat-bus",
-    "thermal-storage-tank"
-  ].includes(node?.kind);
-}
 
 function isStaticKind(kind) {
   return String(kind ?? "").startsWith("static-");
 }
 
-function isStaticNode(node) {
-  return isStaticKind(node?.kind);
-}
 
 const routableLineDeviceKinds = new Set([
   "ac-routable-line",
@@ -3868,379 +3152,18 @@ const routableLineDeviceKinds = new Set([
   "heat-routable-line"
 ]);
 
-function isRoutableLineDeviceKind(kind) {
-  return routableLineDeviceKinds.has(String(kind ?? "").replace(/-vertical$/u, ""));
-}
 
-function routableLineEndpointRefs(node) {
-  if (!isRoutableLineDeviceKind(node?.kind)) return {};
-  const endpoint = (side) => {
-    const prefix = side === "source" ? "Source" : "Target";
-    const nodeId = String(node?.params?.[`_routableLine${prefix}NodeId`] ?? "").trim();
-    const terminalId = String(node?.params?.[`_routableLine${prefix}TerminalId`] ?? "").trim();
-    return nodeId && terminalId ? { nodeId, terminalId } : undefined;
-  };
-  return { source: endpoint("source"), target: endpoint("target") };
-}
 
-function routableLineTopologyEdges(nodes) {
-  return nodes.flatMap((node) => {
-    if (!isRoutableLineDeviceKind(node?.kind)) return [];
-    const refs = routableLineEndpointRefs(node);
-    const firstTerminal = node.terminals?.[0];
-    const lastTerminal = node.terminals?.[node.terminals.length - 1];
-    return [
-      refs.source && firstTerminal ? {
-        id: `${node.id}:routable-source`,
-        sourceId: refs.source.nodeId,
-        targetId: node.id,
-        sourceTerminalId: refs.source.terminalId,
-        targetTerminalId: firstTerminal.id
-      } : null,
-      refs.target && lastTerminal ? {
-        id: `${node.id}:routable-target`,
-        sourceId: node.id,
-        targetId: refs.target.nodeId,
-        sourceTerminalId: lastTerminal.id,
-        targetTerminalId: refs.target.terminalId
-      } : null
-    ].filter(Boolean);
-  });
-}
 
-function getTerminal(node, terminalId) {
-  return node?.terminals?.find((terminal) => terminal.id === terminalId) ?? node?.terminals?.[0];
-}
 
-function shouldAssignVoltageSetpointDefault(value) {
-  const normalized = normalizeVoltageBaseInput(value);
-  return value === undefined || String(value).trim() === "" || (normalized !== "" && Number(normalized) === 0);
-}
 
-function calculateElectricalTopology(nodes = [], edges = []) {
-  const topologyEdges = [...edges, ...routableLineTopologyEdges(nodes)];
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const terminalKey = (nodeId, terminalId) => `${nodeId}:${terminalId}`;
-  const parent = new Map();
-  const find = (key) => {
-    const current = parent.get(key);
-    if (!current || current === key) return key;
-    const root = find(current);
-    parent.set(key, root);
-    return root;
-  };
-  const union = (first, second) => {
-    const firstRoot = find(first);
-    const secondRoot = find(second);
-    if (firstRoot !== secondRoot) parent.set(secondRoot, firstRoot);
-  };
 
-  for (const node of nodes) {
-    for (const terminal of node.terminals ?? []) {
-      const key = terminalKey(node.id, terminal.id);
-      parent.set(key, key);
-    }
-    if (isBusNode(node)) {
-      const terminalsByType = new Map();
-      for (const terminal of node.terminals ?? []) {
-        terminalsByType.set(terminal.type, [...(terminalsByType.get(terminal.type) ?? []), terminal]);
-      }
-      for (const terminals of terminalsByType.values()) {
-        const [first, ...rest] = terminals;
-        for (const terminal of rest) {
-          union(terminalKey(node.id, first.id), terminalKey(node.id, terminal.id));
-        }
-      }
-    }
-  }
 
-  for (const edge of topologyEdges) {
-    const source = nodeById.get(edge.sourceId);
-    const target = nodeById.get(edge.targetId);
-    if (!source || !target) continue;
-    const sourceTerminal = getTerminal(source, edge.sourceTerminalId);
-    const targetTerminal = getTerminal(target, edge.targetTerminalId);
-    if (!sourceTerminal || !targetTerminal || sourceTerminal.type !== targetTerminal.type) continue;
-    union(terminalKey(source.id, sourceTerminal.id), terminalKey(target.id, targetTerminal.id));
-  }
 
-  const nextTopologyNumberByType = { ac: 1, dc: 1 };
-  const numberByTypeAndRoot = { ac: new Map(), dc: new Map() };
-  const getTopologyNumber = (key, type) => {
-    if (!numberByTypeAndRoot[type]) {
-      numberByTypeAndRoot[type] = new Map();
-      nextTopologyNumberByType[type] = 1;
-    }
-    const root = find(key);
-    const numberByRoot = numberByTypeAndRoot[type];
-    const existing = numberByRoot.get(root);
-    if (existing) return existing;
-    const next = String(nextTopologyNumberByType[type]++);
-    numberByRoot.set(root, next);
-    return next;
-  };
 
-  const voltageGroups = new Map();
-  for (const node of nodes) {
-    for (const terminal of node.terminals ?? []) {
-      if (terminal.type !== "ac" && terminal.type !== "dc") continue;
-      const voltage = terminalVoltageDisplay(node, terminal);
-      if (!voltage || Number(voltage) === 0) continue;
-      const groupKey = `${terminal.type}:${find(terminalKey(node.id, terminal.id))}`;
-      const voltages = voltageGroups.get(groupKey) ?? new Map();
-      voltages.set(voltage, voltage);
-      voltageGroups.set(groupKey, voltages);
-    }
-  }
-  const voltageForTerminal = (nodeId, terminal) => {
-    if (!terminal || (terminal.type !== "ac" && terminal.type !== "dc")) return "";
-    const groupKey = `${terminal.type}:${find(terminalKey(nodeId, terminal.id))}`;
-    const voltages = voltageGroups.get(groupKey);
-    return voltages?.size === 1 ? Array.from(voltages.values())[0] : "";
-  };
-  const applyVoltageSetpointDefaults = (node, terminals) => {
-    const section = inferESection(node.kind, node.params ?? {});
-    const specs = section === "ACGenerator"
-      ? [["v_set", terminals.find((terminal) => terminal.type === "ac") ?? terminals[0]]]
-      : section === "DCGenerator"
-        ? [["v_set", terminals.find((terminal) => terminal.type === "dc") ?? terminals[0]]]
-        : section === "DCDCConverter" || section === "ACACConverter"
-          ? [["i_v_set", terminals[0]], ["j_v_set", terminals[1]]]
-          : section === "DCACConverter"
-            ? [
-                ["v_ac_set", terminals.find((terminal) => terminal.type === "ac") ?? terminals[0]],
-                ["v_dc_set", terminals.find((terminal) => terminal.type === "dc") ?? terminals[1]]
-              ]
-            : [];
-    let params = node.params ?? {};
-    for (const [paramKey, terminal] of specs) {
-      if (!shouldAssignVoltageSetpointDefault(params[paramKey])) continue;
-      const voltage = voltageForTerminal(node.id, terminal);
-      if (!voltage) continue;
-      if (params === node.params) params = { ...params };
-      params[paramKey] = voltage;
-    }
-    return params;
-  };
 
-  return nodes.map((node) => {
-    const terminals = (node.terminals ?? []).map((terminal) => {
-      const key = terminalKey(node.id, terminal.id);
-      const voltage = voltageForTerminal(node.id, terminal);
-      return { ...terminal, vbase: voltage || terminal.vbase, nodeNumber: getTopologyNumber(key, terminal.type) };
-    });
-    const acTopologyNode = Number(terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ?? 0);
-    const dcTopologyNode = Number(terminals.find((terminal) => terminal.type === "dc")?.nodeNumber ?? 0);
-    return {
-      ...node,
-      acTopologyNode,
-      dcTopologyNode,
-      nodeNumber: terminals.length === 1 ? terminals[0].nodeNumber : node.nodeNumber,
-      params: applyVoltageSetpointDefaults(node, terminals),
-      terminals
-    };
-  });
-}
 
-function firstText(values) {
-  return values.find((value) => value !== undefined && String(value).trim() !== "") ?? "";
-}
 
-function normalizeVoltageBaseInput(value) {
-  let normalized = "";
-  let hasDecimalPoint = false;
-  for (const char of String(value ?? "")) {
-    if (/\d/.test(char)) {
-      normalized += char;
-      continue;
-    }
-    if (char === "." && !hasDecimalPoint) {
-      normalized += char;
-      hasDecimalPoint = true;
-    }
-  }
-  return normalized;
-}
-
-function terminalVoltageDisplay(node, terminal) {
-  const params = node?.params ?? {};
-  const terminals = Array.isArray(node?.terminals) ? node.terminals : [];
-  const terminalIndex = terminals.findIndex((candidate) => candidate === terminal || candidate?.id === terminal?.id);
-  const kind = String(node?.kind ?? "");
-  const transformerSideVoltages = threeWindingTransformerKinds.has(kind)
-    ? [
-        [params.i_vbase, params.high_vbase, params.highVbase],
-        [params.k_vbase, params.medium_vbase, params.mediumVbase],
-        [params.j_vbase, params.low_vbase, params.lowVbase],
-        [params.neutral_vbase, params.neutralVbase]
-      ][terminalIndex] ?? []
-    : twoWindingTransformerKinds.has(kind)
-      ? [
-          [params.i_vbase, params.high_vbase, params.highVbase],
-          [params.j_vbase, params.low_vbase, params.lowVbase]
-        ][terminalIndex] ?? []
-      : [];
-  return normalizeVoltageBaseInput(firstText([
-    terminal?.vbase,
-    ...transformerSideVoltages,
-    params.vbase,
-    params.sourceVbase,
-    params.targetVbase,
-    params.voltageLevel,
-    params.ratedVoltage,
-    params.voltage
-  ]));
-}
-
-function topologyRepresentativeScore(node) {
-  if (isBusNode(node)) return 0;
-  if ((node?.terminals ?? []).length === 1) return 1;
-  if (String(node?.kind ?? "").includes("converter") || String(node?.kind ?? "").includes("transformer")) return 2;
-  return 3;
-}
-
-function buildTopologyNodeDevices(nodes) {
-  const groups = { ac: new Map(), dc: new Map(), h2: new Map(), heat: new Map() };
-  for (const node of nodes) {
-    if (isStaticNode(node)) continue;
-    for (const terminal of node.terminals ?? []) {
-      if (!terminal.nodeNumber) continue;
-      const group = groups[terminal.type];
-      if (!group) continue;
-      const candidates = group.get(terminal.nodeNumber) ?? [];
-      candidates.push({ node, terminal });
-      group.set(terminal.nodeNumber, candidates);
-    }
-  }
-  const topologyNodeKindByType = {
-    ac: "ac-node",
-    dc: "dc-node",
-    h2: "hydrogen-node",
-    heat: "heat-node"
-  };
-  const buildForType = (type, section) =>
-    Array.from(groups[type].entries())
-      .sort(([first], [second]) => Number(first) - Number(second))
-      .map(([idx, candidates]) => {
-        const representative = [...candidates].sort(
-          (first, second) => topologyRepresentativeScore(first.node) - topologyRepresentativeScore(second.node)
-        )[0];
-        const vbase = firstText(candidates.map(({ node, terminal }) => terminalVoltageDisplay(node, terminal)));
-        const voltage = firstText([representative.node?.params?.voltage, vbase]);
-        const runStat = normalizeRunStatForE(representative.node?.params?.run_stat) || "1";
-        const numericCandidateParam = (...keys) => {
-          const values = keys
-            .flatMap((key) => candidates.map(({ node }) => node?.params?.[key]))
-            .map((value) => firstNumericEValue(value))
-            .filter((value) => value !== "");
-          return values.find((value) => Number(value) !== 0) ?? values[0] ?? "";
-        };
-        const commonParams = {
-          idx,
-          name: representative.node?.name || `${section}_${idx}`,
-          vbase,
-          voltage,
-          isl: representative.node?.params?.isl ?? "0",
-          run_stat: runStat
-        };
-        return {
-          id: `${section}-${idx}`,
-          kind: topologyNodeKindByType[type],
-          section,
-          params: section === "ACNode"
-            ? { ...commonParams, angle: representative.node?.params?.angle ?? "0" }
-            : section === "HydroNode"
-              ? { ...commonParams, pressure: numericCandidateParam("pressure") }
-              : section === "HeatNode"
-                ? {
-                    ...commonParams,
-                    pressure: numericCandidateParam("pressure"),
-                    supply_temperature: numericCandidateParam("supply_temperature", "supplyTemperature", "temperature"),
-                    return_temperature: numericCandidateParam("return_temperature", "returnTemperature", "temperature")
-                  }
-                : commonParams,
-          columns: section === "ACNode" || section === "DCNode"
-            ? ["idx", "name", "vbase", "run_stat"]
-            : eSectionColumns[section]
-        };
-      });
-
-  return [
-    ...buildForType("ac", "ACNode"),
-    ...buildForType("dc", "DCNode"),
-    ...buildForType("h2", "HydroNode"),
-    ...buildForType("heat", "HeatNode")
-  ];
-}
-
-function buildDeviceParameterFile(project, schemePath = ["默认方案"]) {
-  const topologyNodes = calculateElectricalTopology(project.nodes ?? [], project.edges ?? []);
-  const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes);
-  const deviceRecords = topologyNodes
-    .map((node) => {
-      const section = inferESection(node.kind, node.params ?? {});
-      if (!section || section === "ACNode" || section === "DCNode") return null;
-      const fields = resolveEParameterFields(node.kind, node.params ?? {});
-      const columns = fields.map((field) => field.exportName);
-      if (!columns.length) return null;
-      return {
-        id: node.id,
-        kind: node.kind,
-        section,
-        params: buildEDeviceValuesFromFields(node, fields, { preferTopologyNodeNumbers: true }),
-        columns
-      };
-    })
-    .filter(Boolean);
-  const recordsBySection = new Map();
-  for (const record of [...topologyNodeDevices, ...deviceRecords]) {
-    const columns = record.columns ?? eSectionColumns[record.section] ?? [];
-    if (!columns.length) {
-      continue;
-    }
-    recordsBySection.set(record.section, [...(recordsBySection.get(record.section) ?? []), record]);
-  }
-  const modelPath = (Array.isArray(schemePath) ? schemePath : [])
-    .map((part) => String(part ?? "").trim().replace(/\s+/g, "_"))
-    .filter(Boolean)
-    .join("/") || "默认方案";
-  const modelName = String(project.name ?? "").trim().replace(/\s+/g, "_") || "未命名";
-  const sections = [
-    formatESection("Model", ["path", "name", "p_base", "u_unit", "p_unit", "i_unit"], [
-      {
-        params: {
-          path: modelPath,
-          name: modelName,
-          p_base: project.powerBaseValue ?? defaultPowerBaseValue,
-          u_unit: project.voltageUnit ?? defaultVoltageUnit,
-          p_unit: project.powerUnit ?? defaultPowerUnit,
-          i_unit: project.currentUnit ?? defaultCurrentUnit
-        }
-      }
-    ]),
-    ...orderedESections(recordsBySection).map((section) =>
-      formatESection(section, eColumnsForRecords(section, recordsBySection.get(section) ?? []), recordsBySection.get(section) ?? [])
-    )
-  ].filter(Boolean);
-  return `${sections.join("\n\n")}\n`;
-}
-
-function endpointPoint(project, edge, side) {
-  const node = (project.nodes ?? []).find((item) => item.id === (side === "source" ? edge.sourceId : edge.targetId));
-  const explicit = side === "source" ? edge.sourcePoint : edge.targetPoint;
-  if (explicit) {
-    return explicit;
-  }
-  if (!node) {
-    return { x: 0, y: 0 };
-  }
-  const terminalId = side === "source" ? edge.sourceTerminalId : edge.targetTerminalId;
-  const terminal = (node.terminals ?? []).find((item) => item.id === terminalId) ?? node.terminals?.[0];
-  return {
-    x: Math.round(node.position.x + (terminal?.anchor?.x ?? 0) * (node.size?.width ?? 0)),
-    y: Math.round(node.position.y + (terminal?.anchor?.y ?? 0) * (node.size?.height ?? 0))
-  };
-}
 
 function escapeSvgAttribute(value) {
   return String(value ?? "")
@@ -4250,24 +3173,7 @@ function escapeSvgAttribute(value) {
     .replace(/>/g, "&gt;");
 }
 
-function escapeSvgText(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
 
-function backendImageIdFromHref(value) {
-  const match = backendImageHrefPattern.exec(String(value ?? "").trim());
-  if (!match) {
-    return "";
-  }
-  try {
-    return decodeURIComponent(match[1]);
-  } catch {
-    return match[1];
-  }
-}
 
 function safeImageExportFilename(value) {
   const normalized = String(value ?? "").trim().replace(/\\/gu, "/");
@@ -4314,236 +3220,20 @@ export async function readReferencedImageExportPathById(ids) {
   return imageExportPathByIdFromManifest(manifest.filter((item) => wanted.has(String(item?.id ?? "").trim())));
 }
 
-function svgImageHref(value, imagePathById = {}) {
-  const originalHref = String(value ?? "");
-  const svgSource = decodeSvgImageSource(originalHref);
-  let href = originalHref;
-  if (svgSource) {
-    let changed = false;
-    const nextSource = svgSource.replace(
-      /(\s(?:xlink:)?href\s*=\s*)(["'])(.*?)\2/giu,
-      (match, prefix, quote, rawHref) => {
-        const nestedId = backendImageIdFromHref(rawHref);
-        const nestedImageHref = nestedId ? imagePathById[nestedId] ?? "" : "";
-        if (!/^data:image\//iu.test(nestedImageHref)) {
-          return match;
-        }
-        changed = true;
-        return `${prefix}${quote}${escapeSvgAttribute(nestedImageHref)}${quote}`;
-      }
-    );
-    if (changed) {
-      href = `data:image/svg+xml;utf8,${encodeURIComponent(nextSource)}`;
-    }
-  }
-  const id = backendImageIdFromHref(href);
-  if (!id) {
-    return href;
-  }
-  return imagePathById[id] || href;
-}
 
-function decodeSvgImageSource(value) {
-  const source = String(value ?? "").trim();
-  if (source.startsWith("<svg")) {
-    return source;
-  }
-  if (!/^data:image\/svg\+xml\b/iu.test(source)) {
-    return "";
-  }
-  const commaIndex = source.indexOf(",");
-  if (commaIndex < 0) {
-    return "";
-  }
-  const metadata = source.slice(0, commaIndex).toLowerCase();
-  const payload = source.slice(commaIndex + 1);
-  if (metadata.includes(";base64")) {
-    try {
-      return Buffer.from(payload.replace(/\s+/g, ""), "base64").toString("utf8").trim();
-    } catch {
-      return "";
-    }
-  }
-  try {
-    return decodeURIComponent(payload).trim();
-  } catch {
-    return payload.trim();
-  }
-}
 
-function svgRootAttributeValue(attributes, name) {
-  const pattern = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "iu");
-  const match = pattern.exec(attributes);
-  return match?.[1] ?? match?.[2] ?? "";
-}
 
-function svgLengthNumber(value) {
-  const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
 
-function stripUnsafeInlineSvgMarkup(value) {
-  return value
-    .replace(/<script\b[\s\S]*?<\/script>/giu, "")
-    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, "")
-    .replace(/\s+(?:href|xlink:href)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*')/giu, "");
-}
 
 const IMAGE_FIT_MODE_SET = new Set(["cover", "fixed", "fill-x", "fill-y", "stretch", "tile"]);
 
-function normalizeImageFitMode(value) {
-  const text = String(value ?? "").trim();
-  return IMAGE_FIT_MODE_SET.has(text) ? text : "cover";
-}
 
-function imageFitPreserveAspectRatio(value) {
-  switch (normalizeImageFitMode(value)) {
-    case "fixed":
-      return "xMidYMid meet";
-    case "fill-x":
-      return "xMidYMin slice";
-    case "fill-y":
-      return "xMinYMid slice";
-    case "stretch":
-      return "none";
-    case "tile":
-      return "xMidYMid meet";
-    case "cover":
-    default:
-      return "xMidYMid slice";
-  }
-}
 
-function inlineSvgRootMarkup(href, { x, y, width, height, className = "", preserveAspectRatio, imageFit }) {
-  const source = stripUnsafeInlineSvgMarkup(
-    decodeSvgImageSource(href)
-      .replace(/^\uFEFF/u, "")
-      .replace(/^\s*<\?xml[\s\S]*?\?>/iu, "")
-      .replace(/^\s*<!doctype[\s\S]*?>/iu, "")
-      .trim()
-  );
-  const match = source.match(/<svg\b([^>]*)>([\s\S]*?)<\/svg\s*>/iu);
-  if (!match) {
-    return "";
-  }
-  const rootAttributes = match[1] ?? "";
-  const body = match[2] ?? "";
-  const filteredRootAttributes = rootAttributes
-    .replace(/\s+(?:x|y|width|height|preserveAspectRatio|class|id)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, "")
-    .trim();
-  const svgWidth = svgLengthNumber(svgRootAttributeValue(rootAttributes, "width"));
-  const svgHeight = svgLengthNumber(svgRootAttributeValue(rootAttributes, "height"));
-  const viewBoxAttribute =
-    /\bviewBox\s*=/iu.test(rootAttributes) || svgWidth <= 0 || svgHeight <= 0
-      ? ""
-      : ` viewBox="0 0 ${formatSvgNumber(svgWidth)} ${formatSvgNumber(svgHeight)}"`;
-  const preservedAttributes = filteredRootAttributes ? ` ${filteredRootAttributes}` : "";
-  const inlineClassName = ["export-inline-svg-image", className].filter(Boolean).join(" ");
-  const resolvedPreserveAspectRatio = preserveAspectRatio ?? imageFitPreserveAspectRatio(imageFit);
-  return `<svg class="${escapeSvgAttribute(inlineClassName)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="${escapeSvgAttribute(resolvedPreserveAspectRatio)}"${viewBoxAttribute}${preservedAttributes}>${body}</svg>`;
-}
 
-function svgImageContentMarkup(href, { x, y, width, height, className = "", preserveAspectRatio, imageFit, patternId, tileWidth, tileHeight }) {
-  if (!href) {
-    return "";
-  }
-  const normalizedImageFit = normalizeImageFitMode(imageFit);
-  const resolvedPreserveAspectRatio = preserveAspectRatio ?? imageFitPreserveAspectRatio(normalizedImageFit);
-  if (normalizedImageFit === "tile") {
-    const resolvedTileWidth = Math.max(1, Number.isFinite(Number(tileWidth)) ? Number(tileWidth) : Math.min(Math.max(1, width), 96));
-    const resolvedTileHeight = Math.max(1, Number.isFinite(Number(tileHeight)) ? Number(tileHeight) : Math.min(Math.max(1, height), 96));
-    const resolvedPatternId = patternId || svgSafeId(`image_tile_${className}_${x}_${y}_${width}_${height}`, "image_tile");
-    const classAttribute = className ? ` class="${escapeSvgAttribute(className)}"` : "";
-    return `<defs><pattern id="${escapeSvgAttribute(resolvedPatternId)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(resolvedTileWidth)}" height="${formatSvgNumber(resolvedTileHeight)}" patternUnits="userSpaceOnUse"><image href="${escapeSvgAttribute(href)}" x="0" y="0" width="${formatSvgNumber(resolvedTileWidth)}" height="${formatSvgNumber(resolvedTileHeight)}" preserveAspectRatio="${escapeSvgAttribute(imageFitPreserveAspectRatio("fixed"))}"/></pattern></defs><rect x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" fill="url(#${escapeSvgAttribute(resolvedPatternId)})"${classAttribute}/>`;
-  }
-  const inlineSvg = inlineSvgRootMarkup(href, { x, y, width, height, className, preserveAspectRatio: resolvedPreserveAspectRatio, imageFit: normalizedImageFit });
-  if (inlineSvg) {
-    return inlineSvg;
-  }
-  const classAttribute = className ? ` class="${escapeSvgAttribute(className)}"` : "";
-  return `<image href="${escapeSvgAttribute(href)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="${escapeSvgAttribute(resolvedPreserveAspectRatio)}"${classAttribute}/>`;
-}
 
-function svgSafeId(value, fallback) {
-  const normalized = String(value ?? "").trim().replace(/[^A-Za-z0-9_.:-]+/g, "_").replace(/^[^A-Za-z_]+/, "");
-  return normalized || fallback;
-}
 
-function svgLayerId(value, fallback) {
-  return `${svgSafeId(value, fallback)}_Layer`;
-}
 
-function uniqueSvgId(rawId, usedIds, fallback) {
-  const baseId = svgSafeId(rawId, fallback);
-  let candidate = baseId;
-  let index = 2;
-  while (usedIds.has(candidate)) {
-    candidate = `${baseId}_${index}`;
-    index += 1;
-  }
-  usedIds.add(candidate);
-  return candidate;
-}
 
-function buildExportDeviceIdMap(nodes, usedIds) {
-  const usedIndexesByType = new Map();
-  const staticNodesByType = new Map();
-  const result = new Map();
-  for (const node of nodes) {
-    const inferredSection = inferESection(node?.kind, node?.params ?? {});
-    if (isStaticNode(node) || String(inferredSection).startsWith("Static")) {
-      const typeId = svgSafeId(String(node?.kind ?? ""), "static");
-      const typeNodes = staticNodesByType.get(typeId) ?? [];
-      typeNodes.push(node);
-      staticNodesByType.set(typeId, typeNodes);
-      continue;
-    }
-    const typeId = svgSafeId(inferredSection || String(node?.kind ?? ""), "device");
-    const usedIndexes = usedIndexesByType.get(typeId) ?? new Set();
-    usedIndexesByType.set(typeId, usedIndexes);
-    const requestedIndexText = String(node?.params?.idx ?? "").trim();
-    const requestedIndex = /^[1-9]\d*$/.test(requestedIndexText) ? Number.parseInt(requestedIndexText, 10) : 0;
-    if (requestedIndex <= 0) {
-      result.set(node.id, uniqueSvgId(node.id, usedIds, "device"));
-      continue;
-    }
-    let exportIndex = requestedIndex;
-    while (usedIndexes.has(exportIndex)) exportIndex += 1;
-    usedIndexes.add(exportIndex);
-    result.set(node.id, uniqueSvgId(`${typeId}-${exportIndex}`, usedIds, "device"));
-  }
-
-  for (const [typeId, typeNodes] of Array.from(staticNodesByType.entries()).sort(([left], [right]) => left.localeCompare(right))) {
-    const usedIndexes = new Set();
-    const indexedNodes = [];
-    const unindexedNodes = [];
-    for (const node of typeNodes) {
-      const requestedIndexText = String(node?.params?.idx ?? "").trim();
-      const requestedIndex = /^[1-9]\d*$/.test(requestedIndexText) ? Number.parseInt(requestedIndexText, 10) : 0;
-      if (requestedIndex > 0) {
-        indexedNodes.push({ node, requestedIndex });
-      } else {
-        unindexedNodes.push(node);
-      }
-    }
-    indexedNodes.sort((left, right) => left.requestedIndex - right.requestedIndex || String(left.node?.id ?? "").localeCompare(String(right.node?.id ?? "")));
-    for (const { node, requestedIndex } of indexedNodes) {
-      let exportIndex = requestedIndex;
-      while (usedIndexes.has(exportIndex)) exportIndex += 1;
-      usedIndexes.add(exportIndex);
-      result.set(node.id, uniqueSvgId(`${typeId}-${exportIndex}`, usedIds, "static"));
-    }
-    unindexedNodes.sort((left, right) => String(left?.id ?? "").localeCompare(String(right?.id ?? "")));
-    let exportIndex = 1;
-    for (const node of unindexedNodes) {
-      while (usedIndexes.has(exportIndex)) exportIndex += 1;
-      usedIndexes.add(exportIndex);
-      result.set(node.id, uniqueSvgId(`${typeId}-${exportIndex}`, usedIds, "static"));
-      exportIndex += 1;
-    }
-  }
-  return result;
-}
 
 function formatSvgNumber(value) {
   const numeric = Number(value);
@@ -4551,557 +3241,29 @@ function formatSvgNumber(value) {
   return String(Object.is(rounded, -0) ? 0 : rounded);
 }
 
-function nodeScaleX(node) {
-  const scale = Number(node?.scaleX ?? node?.scale ?? 1);
-  return Number.isFinite(scale) && scale !== 0 ? scale : 1;
-}
 
-function nodeScaleY(node) {
-  const scale = Number(node?.scaleY ?? node?.scale ?? 1);
-  return Number.isFinite(scale) && scale !== 0 ? scale : 1;
-}
 
-function numericNodeParam(node, key, fallback) {
-  const parsed = Number(node?.params?.[key]);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
 
-function normalizeLabelRotation(value) {
-  const parsed = Number(value ?? 0);
-  const snapped = Math.round((Number.isFinite(parsed) ? parsed : 0) / 90) * 90;
-  return ((snapped % 360) + 360) % 360;
-}
 
-function labelTextAnchor(node) {
-  const anchor = node?.params?._labelTextAnchor;
-  return anchor === "start" || anchor === "middle" || anchor === "end" ? anchor : "middle";
-}
 
-function buildServerSvgNodeLabelMarkup(node, id, attributes = "") {
-  if (isStaticNode(node) || node?.params?._labelVisible === "0") {
-    return "";
-  }
-  const text = String(node?.params?._labelText ?? node?.name ?? "").trim();
-  if (!text) {
-    return "";
-  }
-  const scaleX = Math.abs(nodeScaleX(node)) || 1;
-  const scaleY = Math.abs(nodeScaleY(node)) || 1;
-  const offsetX = numericNodeParam(node, "_labelX", 0) * scaleX;
-  const offsetY = numericNodeParam(node, "_labelY", Math.round((node?.size?.height ?? 48) / 2 + 22)) * scaleY;
-  const centerX = Number(node?.position?.x ?? 0) + offsetX;
-  const centerY = Number(node?.position?.y ?? 0) + offsetY;
-  const fontSize = numericNodeParam(node, "_labelFontSize", 14) * Math.sqrt(scaleX * scaleY);
-  const rotation = normalizeLabelRotation(node?.params?._labelRotation);
-  const vertical = rotation === 90 || rotation === 270;
-  const textStyle = [
-    `dominant-baseline="middle"`,
-    `fill="${escapeSvgAttribute(node?.params?._labelColor || "#334155")}"`,
-    `font-family="${escapeSvgAttribute(node?.params?._labelFontFamily || "Arial")}"`,
-    `font-size="${formatSvgNumber(fontSize)}"`,
-    `font-weight="${escapeSvgAttribute(node?.params?._labelFontWeight || "500")}"`,
-    `font-style="${escapeSvgAttribute(node?.params?._labelFontStyle || "normal")}"`,
-    `text-decoration="${escapeSvgAttribute(node?.params?._labelTextDecoration || "none")}"`,
-    `paint-order="stroke"`,
-    `stroke="rgba(255,255,255,0.85)"`,
-    `stroke-width="3"`,
-    `stroke-linejoin="round"`
-  ].join(" ");
-  const commonAttributes = `${attributes ? `${attributes} ` : ""}${textStyle}`;
-  if (vertical) {
-    const characters = Array.from(text);
-    return characters.map((char, index) => {
-      const tokenId = characters.length === 1 ? id : `${id}_${index + 1}`;
-      const tokenY = centerY + (index - (characters.length - 1) / 2) * fontSize * 1.2;
-      return `<text id="${escapeSvgAttribute(tokenId)}" ${commonAttributes} x="${formatSvgNumber(centerX)}" y="${formatSvgNumber(tokenY)}" text-anchor="middle" style="writing-mode: horizontal-tb; text-orientation: mixed; letter-spacing: 0;">${escapeSvgText(char)}</text>`;
-    }).join("\n");
-  }
-  return `<text id="${escapeSvgAttribute(id)}" ${commonAttributes} x="${formatSvgNumber(centerX)}" y="${formatSvgNumber(centerY)}" text-anchor="${escapeSvgAttribute(labelTextAnchor(node))}" style="writing-mode: horizontal-tb;">${escapeSvgText(text)}</text>`;
-}
 
-function serverTerminalPoint(node, terminalId) {
-  const terminal = (node?.terminals ?? []).find((item) => item.id === terminalId) ?? node?.terminals?.[0];
-  if (!terminal) {
-    return { x: Number(node?.position?.x ?? 0), y: Number(node?.position?.y ?? 0) };
-  }
-  const localX = Number(terminal.anchor?.x ?? 0) * Number(node?.size?.width ?? 0) * nodeScaleX(node);
-  const localY = Number(terminal.anchor?.y ?? 0) * Number(node?.size?.height ?? 0) * nodeScaleY(node);
-  const radians = (Number(node?.rotation ?? 0) * Math.PI) / 180;
-  const cos = Math.cos(radians);
-  const sin = Math.sin(radians);
-  return {
-    x: Math.round(Number(node?.position?.x ?? 0) + localX * cos - localY * sin),
-    y: Math.round(Number(node?.position?.y ?? 0) + localX * sin + localY * cos)
-  };
-}
 
-function measurementFontScaleForServerNode(node) {
-  return Math.sqrt((Math.abs(nodeScaleX(node)) || 1) * (Math.abs(nodeScaleY(node)) || 1));
-}
 
-function measurementOffsetScaleForServerNode(node) {
-  return { x: Math.abs(nodeScaleX(node)) || 1, y: Math.abs(nodeScaleY(node)) || 1 };
-}
 
-function serverMeasurementTypeById(config) {
-  return new Map((config?.measurementTypes ?? []).map((item) => [item.id, item]));
-}
 
-function serverBaseMeasurementDeviceKind(kind) {
-  return kind?.endsWith("-vertical") && kind !== "ac-ground-disconnector-vertical"
-    ? kind.slice(0, -"-vertical".length)
-    : kind;
-}
 
-function serverFallbackMeasurementProfileKinds(kind) {
-  const baseKind = serverBaseMeasurementDeviceKind(kind);
-  const fallbacks = [];
-  const push = (profileKind) => {
-    if (profileKind !== baseKind && !fallbacks.includes(profileKind)) fallbacks.push(profileKind);
-  };
-  if (baseKind.includes("transformer")) push("ac-transformer");
-  if (baseKind.includes("converter")) push("converter");
-  if (baseKind.includes("line") || baseKind.includes("branch")) {
-    if (baseKind.startsWith("ac-")) push("ac-line");
-    if (baseKind.startsWith("dc-")) push("dc-line");
-    if (baseKind.startsWith("heat-")) push("heat-pipeline");
-  }
-  if (baseKind.includes("pipeline")) {
-    if (baseKind.startsWith("hydrogen-")) push("hydrogen-pipeline");
-    if (baseKind.startsWith("heat-")) push("heat-pipeline");
-  }
-  if (baseKind.includes("bus")) {
-    if (baseKind.startsWith("ac-")) push("ac-bus");
-    if (baseKind.startsWith("dc-")) push("dc-bus");
-    if (baseKind.startsWith("heat-")) push("heat-bus");
-    if (baseKind.startsWith("hydrogen-")) push("hydrogen-pipeline");
-  }
-  if (baseKind.includes("switch") || baseKind.includes("disconnector")) {
-    if (baseKind.startsWith("ac-")) push("ac-switch");
-    if (baseKind.startsWith("dc-")) push("dc-switch");
-  }
-  if (baseKind.includes("breaker")) {
-    if (baseKind.startsWith("ac-")) push("ac-breaker");
-    if (baseKind.startsWith("dc-")) push("dc-breaker");
-  }
-  if (baseKind.includes("storage")) {
-    if (baseKind.startsWith("ac-")) push("ac-storage");
-    if (baseKind.startsWith("dc-")) push("dc-storage");
-  }
-  if (baseKind.includes("load")) {
-    if (baseKind.startsWith("ac-")) push("ac-load");
-    if (baseKind.startsWith("dc-")) push("dc-load");
-    if (baseKind.startsWith("heat-") || baseKind.startsWith("single-port-heat-") || baseKind.startsWith("two-port-heat-")) push("heat-load");
-    if (baseKind.startsWith("hydrogen-")) push("hydrogen-load");
-  }
-  if (baseKind.includes("source") || baseKind.includes("generator")) {
-    if (baseKind.startsWith("ac-")) push("ac-source");
-    if (baseKind.startsWith("dc-")) push("dc-source");
-    if (baseKind.startsWith("heat-") || baseKind.startsWith("two-port-heat-")) push("heat-source");
-    if (baseKind.startsWith("hydrogen-")) push("hydrogen-source");
-  }
-  if (baseKind.includes("heater")) {
-    if (baseKind.startsWith("ac-")) push("ac-source");
-    if (baseKind.startsWith("dc-")) push("dc-source");
-  }
-  if (baseKind.startsWith("heat-") || baseKind.startsWith("two-port-heat-") || baseKind.startsWith("three-port-heat-") || baseKind.startsWith("four-port-heat-")) push("heat-source");
-  if (baseKind.startsWith("hydrogen-")) push("hydrogen-source");
-  if (baseKind.startsWith("ac-")) push("ac-source");
-  if (baseKind.startsWith("dc-")) push("dc-source");
-  return fallbacks;
-}
 
-function serverMeasurementProfileForNode(node, config) {
-  const profiles = config?.deviceProfiles ?? [];
-  const kind = String(node?.kind ?? "");
-  const baseKind = serverBaseMeasurementDeviceKind(kind);
-  const directKeys = [...new Set([inferESection(kind, node?.params ?? {}), kind, baseKind].filter(Boolean))];
-  return directKeys.flatMap((profileKind) => profiles.find((profile) => profile.deviceKind === profileKind) ?? [])[0]
-    ?? serverFallbackMeasurementProfileKinds(baseKind).flatMap((profileKind) => profiles.find((profile) => profile.deviceKind === profileKind) ?? [])[0];
-}
 
-function resolveServerMeasurementBindingMetadata(node, group, item, measurementConfig) {
-  const measurementTypeId = String(item?.measurementTypeId ?? "").trim();
-  const sourcePoint = String(item?.sourcePoint ?? "").trim();
-  const profileItems = serverMeasurementProfileForNode(node, measurementConfig)?.items?.filter((candidate) =>
-    candidate.measurementTypeId === measurementTypeId && (candidate.role ?? "") === (item?.role ?? "")
-  ) ?? [];
-  const profileItem = profileItems.find((candidate) => group?.terminalId
-    ? candidate.position === group.terminalId
-    : candidate.position === "device" || !candidate.position
-  ) ?? profileItems[0];
-  const associatedField = String(profileItem?.associatedField ?? "").trim();
-  const bindingField = associatedField || measurementTypeId;
-  if (!associatedField) return { measurementTypeId, bindingField, sourcePoint: sourcePoint || `${node?.id ?? ""}.${bindingField}` };
-  if (!sourcePoint) return { measurementTypeId, bindingField, sourcePoint: `${node?.id ?? ""}.${associatedField}` };
-  const nodePrefix = `${String(node?.id ?? "").trim()}.`;
-  if (!nodePrefix || !sourcePoint.startsWith(nodePrefix)) return { measurementTypeId, bindingField, sourcePoint };
-  const localField = sourcePoint.slice(nodePrefix.length);
-  if (localField === measurementTypeId) return { measurementTypeId, bindingField, sourcePoint: `${nodePrefix}${associatedField}` };
-  const typeSuffix = `.${measurementTypeId}`;
-  if (measurementTypeId && localField.endsWith(typeSuffix)) {
-    return {
-      measurementTypeId,
-      bindingField,
-      sourcePoint: `${nodePrefix}${localField.slice(0, -measurementTypeId.length)}${associatedField}`
-    };
-  }
-  return { measurementTypeId, bindingField, sourcePoint };
-}
 
-function resolveServerMeasurementItemDisplay(node, group, item, measurementConfig) {
-  const type = serverMeasurementTypeById(measurementConfig).get(item?.measurementTypeId);
-  const profileItem = serverMeasurementProfileForNode(node, measurementConfig)
-    ?.items?.find((candidate) => candidate.measurementTypeId === item?.measurementTypeId && (candidate.role ?? "") === (item?.role ?? ""));
-  const style = {
-    ...(profileItem?.styleOverride ?? {}),
-    ...(group?.groupStyleOverride ?? {}),
-    ...(item?.styleOverride ?? {})
-  };
-  return {
-    label: item?.labelOverride || item?.name || profileItem?.labelOverride || type?.shortLabel || item?.measurementTypeId || "",
-    unit: item?.unitOverride ?? profileItem?.unitOverride ?? type?.defaultUnit ?? "",
-    decimals: item?.decimalsOverride ?? profileItem?.decimalsOverride ?? type?.defaultDecimals ?? 3,
-    color: style.color || type?.defaultColor || "#334155",
-    fontFamily: style.fontFamily || type?.defaultFontFamily || "Arial",
-    fontSize: style.fontSize ?? type?.defaultFontSize ?? 12,
-    fontWeight: style.fontWeight || type?.defaultFontWeight || "700",
-    fontStyle: style.fontStyle || "normal",
-    textDecoration: style.textDecoration || "none",
-    visible: item?.visible !== false
-  };
-}
 
-function formatServerMeasurementDisplayValue(unit) {
-  return unit ? `-- ${unit}` : "--";
-}
 
-function serverMeasurementGroupPosition(node, group) {
-  const anchor = group?.terminalId ? serverTerminalPoint(node, group.terminalId) : { x: Number(node?.position?.x ?? 0), y: Number(node?.position?.y ?? 0) };
-  const offsetScale = measurementOffsetScaleForServerNode(node);
-  return {
-    x: anchor.x + Number(group?.offset?.x ?? 0) * offsetScale.x,
-    y: anchor.y + Number(group?.offset?.y ?? 70) * offsetScale.y
-  };
-}
 
-function measurementBorderWidth(group) {
-  return (group?.borderStyle ?? "none") === "none" ? 0 : Math.max(0, Math.min(12, Number(group?.borderWidth ?? 1)));
-}
 
-function measurementBorderDashArray(group) {
-  if (measurementBorderWidth(group) <= 0 || group?.borderStyle === "none" || group?.borderStyle === "solid") {
-    return "";
-  }
-  return group?.borderStyle === "dotted" ? "2 4" : "10 6";
-}
 
-function serverExportMeasurementScopedId(value, nodeId, deviceId) {
-  const rawValue = String(value ?? "").trim();
-  const internalNodeId = String(nodeId ?? "").trim();
-  const stableDeviceId = String(deviceId ?? "").trim();
-  if (!rawValue || !internalNodeId || !stableDeviceId || internalNodeId === stableDeviceId) {
-    return rawValue;
-  }
-  return rawValue.replace(internalNodeId, stableDeviceId);
-}
 
-function serverExportMeasurementSourcePoint(value, nodeId, deviceId) {
-  const rawValue = String(value ?? "").trim();
-  const internalNodeId = String(nodeId ?? "").trim();
-  const stableDeviceId = String(deviceId ?? "").trim();
-  if (!rawValue) {
-    return rawValue;
-  }
-  for (const prefix of [internalNodeId, stableDeviceId]) {
-    if (prefix && rawValue.startsWith(`${prefix}.`)) {
-      return rawValue.slice(prefix.length + 1);
-    }
-  }
-  return rawValue;
-}
 
-function serverExportMeasurementValueElementId(itemId, deviceId) {
-  const rawItemId = String(itemId ?? "").trim();
-  const stableDeviceId = String(deviceId ?? "").trim();
-  const itemKey = rawItemId.startsWith("measurement-")
-    ? rawItemId.slice("measurement-".length)
-    : [stableDeviceId, rawItemId].filter(Boolean).join("-");
-  return `mv-${itemKey || stableDeviceId || "measurement"}`;
-}
 
-function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, usedIds, deviceId = node.id) {
-  if (!group?.visible) {
-    return "";
-  }
-  const fontScale = measurementFontScaleForServerNode(node);
-  const rows = (group.items ?? []).flatMap((item) => {
-    const display = resolveServerMeasurementItemDisplay(node, group, item, measurementConfig);
-    if (!display.visible) {
-      return [];
-    }
-    const label = group.labelVisible === false ? "" : display.label;
-    const unit = group.unitVisible === false ? "" : display.unit;
-    const valueText = "--";
-    const text = [label, valueText, unit].filter(Boolean).join(" ");
-    return [{ item, display, labelText: label, valueText, unitText: unit, text, fontSize: display.fontSize * fontScale }];
-  });
-  if (rows.length === 0) {
-    return "";
-  }
-  const maxFontSize = Math.max(...rows.map((row) => row.fontSize));
-  const lineHeight = Math.max(16, maxFontSize + 6);
-  const estimateWidth = (text, fontSize) => Array.from(String(text)).reduce((total, char) => total + (/^[\u0000-\u00ff]$/.test(char) ? 0.56 : 1), 0) * fontSize;
-  const columnWidth = Math.max(72, Math.max(...rows.map((row) => estimateWidth(row.text, row.fontSize))) + 12);
-  const columns = group.layout === "grid" ? 2 : group.layout === "horizontal" ? rows.length : 1;
-  const width = Math.max(64, columnWidth * columns);
-  const height = Math.max(lineHeight, Math.ceil(rows.length / columns) * lineHeight);
-  const position = serverMeasurementGroupPosition(node, group);
-  const dashArray = measurementBorderDashArray(group);
-  const dashAttribute = dashArray ? ` stroke-dasharray="${escapeSvgAttribute(dashArray)}"` : "";
-  const stableDeviceId = String(deviceId ?? node.id ?? "");
-  const rowsMarkup = rows.map((row, index) => {
-    const col = columns <= 1 ? 0 : index % columns;
-    const rowIndex = columns <= 1 ? index : Math.floor(index / columns);
-    const textX = -width / 2 + col * columnWidth + 7;
-    const textY = -height / 2 + rowIndex * lineHeight + lineHeight / 2;
-    const textGap = Math.max(4, row.fontSize * 0.36);
-    const exportedItemId = serverExportMeasurementScopedId(row.item?.id, node?.id, stableDeviceId);
-    const measurementTypeId = String(row.item?.measurementTypeId ?? "").trim();
-    const binding = resolveServerMeasurementBindingMetadata(node, group, row.item, measurementConfig);
-    const sourceField = serverExportMeasurementSourcePoint(binding.sourcePoint, node?.id, stableDeviceId);
-    const itemMetadata = [
-      `mt="${escapeSvgAttribute(binding.bindingField)}"`,
-      `mti="${escapeSvgAttribute(measurementTypeId)}"`,
-      sourceField && sourceField !== binding.bindingField ? `mf="${escapeSvgAttribute(sourceField)}"` : "",
-      row.item?.role ? `mr="${escapeSvgAttribute(row.item.role)}"` : ""
-    ].filter(Boolean).join(" ");
-    const textStyle = `x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeSvgAttribute(row.display.color)}" font-family="${escapeSvgAttribute(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeSvgAttribute(row.display.fontWeight)}" font-style="${escapeSvgAttribute(row.display.fontStyle)}" text-decoration="${escapeSvgAttribute(row.display.textDecoration)}"`;
-    const labelMarkup = row.labelText
-      ? `<tspan>${escapeSvgText(row.labelText)}</tspan>`
-      : "";
-    const valueId = uniqueSvgId(serverExportMeasurementValueElementId(exportedItemId, stableDeviceId), usedIds, "mv");
-    const valueDxAttribute = row.labelText ? ` dx="${formatSvgNumber(textGap)}"` : "";
-    const valueMarkup = `<tspan id="${escapeSvgAttribute(valueId)}" class="mv" ${itemMetadata}${valueDxAttribute}>${escapeSvgText(row.valueText)}</tspan>`;
-    const unitMarkup = row.unitText
-      ? `<tspan dx="${formatSvgNumber(textGap)}">${escapeSvgText(row.unitText)}</tspan>`
-      : "";
-    return `<text ${textStyle}>${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
-  }).join("");
-  const groupMetadata = [
-    `dev="${escapeSvgAttribute(stableDeviceId)}"`,
-    group.terminalId ? `term="${escapeSvgAttribute(group.terminalId)}"` : ""
-  ].filter(Boolean).join(" ");
-  const projectLayerId = String(node?.layerId ?? "layer-default");
-  return `<g class="mg" layer-id="${escapeSvgAttribute(projectLayerId)}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${groupMetadata}>
-<rect x="${formatSvgNumber(-width / 2)}" y="${formatSvgNumber(-height / 2)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" rx="4" fill="${escapeSvgAttribute(group.backgroundColor ?? "transparent")}" stroke="${escapeSvgAttribute(group.borderColor ?? "#64748b")}" stroke-width="${formatSvgNumber(measurementBorderWidth(group))}"${dashAttribute}/>
-${rowsMarkup}
-</g>`;
-}
 
-export function buildSvgFile(project, measurementConfig = { measurementTypes: [], deviceProfiles: [] }, options = {}) {
-  const width = Number(project.canvasWidth ?? 1920);
-  const height = Number(project.canvasHeight ?? 1024);
-  const nodes = Array.isArray(project.nodes) ? project.nodes : [];
-  const edges = Array.isArray(project.edges) ? project.edges : [];
-  const backgroundColor = project.canvasBackgroundColor ?? "#f8fafc";
-  const imagePathById = options.imagePathById ?? {};
-  const backgroundImage = svgImageHref(project.canvasBackgroundImage ?? "", imagePathById);
-  const deviceTemplates = Array.isArray(options.deviceTemplates)
-    ? options.deviceTemplates
-    : Array.isArray(project.deviceTemplates)
-      ? project.deviceTemplates
-      : [];
-  const templateByKind = new Map(deviceTemplates.map((template) => [template?.kind, template]).filter(([kind]) => kind));
-  const usedIds = new Set(["root_g"]);
-  const backgroundLayerId = uniqueSvgId(svgLayerId("Background", "Background"), usedIds, "Background_Layer");
-  const segmentLayerId = uniqueSvgId(svgLayerId("Segment", "Segment"), usedIds, "Segment_Layer");
-  const textLayerId = uniqueSvgId(svgLayerId("Text", "Text"), usedIds, "Text_Layer");
-  const measurementLayerId = uniqueSvgId(svgLayerId("Measurement", "Measurement"), usedIds, "Measurement_Layer");
-  const otherLayerId = uniqueSvgId(svgLayerId("Other", "Other"), usedIds, "Other_Layer");
-  const nodeLayerKey = (node) => isStaticNode(node) ? "Other" : inferESection(node?.kind, node?.params ?? {}) || node?.kind || "Other";
-  const layerIdsByType = new Map();
-  for (const node of nodes) {
-    const layerKey = nodeLayerKey(node);
-    if (!layerIdsByType.has(layerKey)) {
-      layerIdsByType.set(layerKey, uniqueSvgId(svgLayerId(layerKey, "Device"), usedIds, "Device_Layer"));
-    }
-  }
-  const exportDeviceIdByNodeId = buildExportDeviceIdMap(nodes, usedIds);
-  const nodeMarkupByLayer = new Map(Array.from(layerIdsByType.values()).map((layerId) => [layerId, []]));
-  const symbolMarkup = [];
-  const symbolIdBySignature = new Map();
-  const textLayerMarkup = [];
-  const edgeMarkup = (project.edges ?? [])
-    .map((edge, index) => {
-      const start = endpointPoint(project, edge, "source");
-      const end = endpointPoint(project, edge, "target");
-      const midX = Math.round((start.x + end.x) / 2);
-      const points = [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end]
-        .map((point) => `${point.x},${point.y}`)
-        .join(" ");
-      const edgeId = uniqueSvgId(`edge-${index + 1}`, usedIds, "edge");
-      const sourceExportDeviceId = exportDeviceIdByNodeId.get(edge.sourceId) ?? edge.sourceId ?? "";
-      const targetExportDeviceId = exportDeviceIdByNodeId.get(edge.targetId) ?? edge.targetId ?? "";
-      return `<polyline id="${escapeSvgAttribute(edgeId)}" source-dev-id="${escapeSvgAttribute(sourceExportDeviceId)}" target-dev-id="${escapeSvgAttribute(targetExportDeviceId)}" points="${escapeSvgAttribute(points)}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
-    })
-    .join("\n");
-  for (const node of nodes) {
-    const nodeWidth = node.size?.width ?? 80;
-    const nodeHeight = node.size?.height ?? 48;
-    const rotate = Number(node.rotation ?? 0);
-    const normalizedRotate = Number.isFinite(rotate) ? rotate : 0;
-    const scaleX = nodeScaleX(node);
-    const scaleY = nodeScaleY(node);
-    const exportDeviceId = exportDeviceIdByNodeId.get(node.id) ?? node.id ?? "device";
-    const useId = exportDeviceIdByNodeId.get(node.id) ?? uniqueSvgId(exportDeviceId, usedIds, "device");
-    const layerId = layerIdsByType.get(nodeLayerKey(node)) ?? otherLayerId;
-    const geometryTransform = `rotate(${formatSvgNumber(normalizedRotate)}) scale(${formatSvgNumber(scaleX)} ${formatSvgNumber(scaleY)})`;
-    const labelId = uniqueSvgId(`label_${exportDeviceId}`, usedIds, "node_label");
-    const projectLayerId = String(node.layerId ?? "layer-default");
-    const labelMetadataAttributes = `dev-id="${escapeSvgAttribute(exportDeviceId)}"`;
-    const labelMarkup = buildServerSvgNodeLabelMarkup(node, labelId, `layer-id="${escapeSvgAttribute(projectLayerId)}" ${labelMetadataAttributes}`);
-    if (labelMarkup) {
-      textLayerMarkup.push(labelMarkup);
-    }
-    const viewBox = `${formatSvgNumber(-nodeWidth / 2)} ${formatSvgNumber(-nodeHeight / 2)} ${formatSvgNumber(nodeWidth)} ${formatSvgNumber(nodeHeight)}`;
-    const renderServerNodeSymbolBody = (symbolNode, symbolBaseId) => {
-      const stroke = String(symbolNode.kind ?? "").startsWith("dc") || String(symbolNode.kind ?? "").includes("dcdc") ? "#0f766e" : "#2563eb";
-      const isBus = String(symbolNode.kind ?? "").includes("bus");
-      const baseKind = String(symbolNode.kind ?? "").endsWith("-vertical")
-        ? String(symbolNode.kind).slice(0, -"-vertical".length)
-        : String(symbolNode.kind ?? "");
-      const isShuntCapacitor = baseKind === "ac-capacitor";
-      const isShuntReactor = baseKind === "ac-reactor" || baseKind === "ac-shunt";
-      const isSeriesCapacitor = baseKind === "ac-series-capacitor";
-      const isSeriesReactor = baseKind === "ac-series-reactor";
-      if (isShuntCapacitor || isShuntReactor || isSeriesCapacitor || isSeriesReactor) {
-        const left = -nodeWidth / 2;
-        const right = nodeWidth / 2;
-        let symbolMarkup = "";
-        if (isShuntCapacitor || isShuntReactor) {
-          const anchor = symbolNode.terminals?.[0]?.anchor ?? { x: 0, y: -0.5 };
-          const terminalRotation = Math.abs(Number(anchor.x ?? 0)) > Math.abs(Number(anchor.y ?? 0))
-            ? (Number(anchor.x ?? 0) > 0 ? 90 : -90)
-            : (Number(anchor.y ?? 0) > 0 ? 180 : 0);
-          const extent = Math.min(nodeWidth, nodeHeight);
-          const terminalY = -extent / 2;
-          const groundY = extent / 2 - 5;
-          const body = isShuntCapacitor
-            ? `<path d="M 0 ${formatSvgNumber(terminalY)} V -8 M -14 -8 H 14 M -14 0 H 14 M 0 0 V ${formatSvgNumber(groundY - 8)}"/>`
-            : `<path class="ac-reactor-coil" d="M 0 ${formatSvgNumber(terminalY)} V -7 M 0 -7 H -18 C -18 -17 -10 -25 0 -25 C 10 -25 18 -17 18 -7 C 18 3 10 11 0 11 V ${formatSvgNumber(groundY - 8)}"/>`;
-          symbolMarkup = `<g class="ac-shunt-compensator-glyph ${isShuntCapacitor ? "ac-shunt-capacitor" : "ac-shunt-reactor"}" transform="rotate(${terminalRotation})" fill="none" stroke="${stroke}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">${body}<path d="M -13 ${formatSvgNumber(groundY - 8)} H 13 M -9 ${formatSvgNumber(groundY - 3)} H 9 M -4 ${formatSvgNumber(groundY + 2)} H 4"/></g>`;
-        } else {
-          const body = isSeriesCapacitor
-            ? `<path d="M ${formatSvgNumber(left)} 0 H -7 M -7 -15 V 15 M 7 -15 V 15 M 7 0 H ${formatSvgNumber(right)}"/>`
-            : `<g transform="rotate(-90)"><path class="ac-reactor-coil" d="M 0 ${formatSvgNumber(left)} V -7 M 0 -7 H -18 C -18 -17 -10 -25 0 -25 C 10 -25 18 -17 18 -7 C 18 3 10 11 0 11 V ${formatSvgNumber(right)}"/></g>`;
-          symbolMarkup = `<g class="ac-series-compensator-glyph ${isSeriesCapacitor ? "ac-series-capacitor" : "ac-series-reactor"}" fill="none" stroke="${stroke}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${body}</g>`;
-        }
-        return `<title>${escapeSvgText(nodeLayerKey(symbolNode))}</title>
-<g transform="${escapeSvgAttribute(geometryTransform)}">
-${symbolMarkup}
-</g>`;
-      }
-      const image = svgImageHref(
-        symbolNode.params?.backgroundImageAssetId ? apiPath(`/images/${symbolNode.params.backgroundImageAssetId}`) : symbolNode.params?.backgroundImage ?? "",
-        imagePathById
-      );
-      const nodeBodyMarkup = isBus
-        ? `<rect class="bus-glyph" x="${-nodeWidth / 2}" y="${formatSvgNumber(-Math.max(8, nodeHeight / 3) / 2)}" width="${nodeWidth}" height="${formatSvgNumber(Math.max(8, nodeHeight / 3))}" fill="${stroke}" stroke="none"/>`
-        : `<rect x="${-nodeWidth / 2}" y="${-nodeHeight / 2}" width="${nodeWidth}" height="${nodeHeight}" rx="8" fill="#ffffff" stroke="#94a3b8"/>
-${image ? svgImageContentMarkup(image, {
-          x: -nodeWidth / 2,
-          y: -nodeHeight / 2,
-          width: nodeWidth,
-          height: nodeHeight,
-          imageFit: symbolNode.params?.backgroundImageFit,
-          patternId: svgSafeId(`node_background_image_pattern_${symbolBaseId}`, "node_background_image_pattern"),
-          className: "node-background-image"
-        }) : ""}`;
-      return `<title>${escapeSvgText(nodeLayerKey(symbolNode))}</title>
-<g transform="${escapeSvgAttribute(geometryTransform)}">
-${nodeBodyMarkup}
-</g>`;
-    };
-    const stateDefinitions = serverTemplateStateDefinitions(node, templateByKind.get(node.kind));
-    const stateInputs = stateDefinitions.length > 0
-      ? stateDefinitions.map((state) => {
-          const stateParamKey = serverSwitchingDeviceUsesClosedStatus(node?.kind, node?.params ?? {})
-            ? "closed_status"
-            : "status";
-          return {
-            stateKey: serverStateSymbolKey(state.value),
-            node: { ...node, params: { ...(node.params ?? {}), [stateParamKey]: state.value } }
-          };
-        })
-      : [{ stateKey: "default", node }];
-    const symbolIdByStateKey = new Map();
-    for (const stateInput of stateInputs) {
-      const symbolBaseId = svgSafeId(`symbol_${nodeLayerKey(node)}_${node.kind ?? "node"}_${stateInput.stateKey}`, "device_symbol");
-      const signatureBody = renderServerNodeSymbolBody(stateInput.node, symbolBaseId);
-      const signature = `${symbolBaseId}\n${viewBox}\n${signatureBody}`;
-      let symbolId = symbolIdBySignature.get(signature);
-      if (!symbolId) {
-        symbolId = uniqueSvgId(symbolBaseId, usedIds, "device_symbol");
-        const symbolBody = symbolId === symbolBaseId ? signatureBody : renderServerNodeSymbolBody(stateInput.node, symbolId);
-        symbolMarkup.push(`<symbol id="${escapeSvgAttribute(symbolId)}" viewBox="${viewBox}" overflow="visible">
-${symbolBody}
-</symbol>`);
-        symbolIdBySignature.set(signature, symbolId);
-      }
-      symbolIdByStateKey.set(stateInput.stateKey, symbolId);
-    }
-    const activeStateKey = stateDefinitions.length > 0 ? serverStateSymbolKey(serverResolvedStateValue(node, stateDefinitions)) : "default";
-    const symbolId = symbolIdByStateKey.get(activeStateKey) ?? symbolIdByStateKey.values().next().value ?? "";
-    nodeMarkupByLayer.get(layerId)?.push(`<use id="${escapeSvgAttribute(useId)}" href="#${escapeSvgAttribute(symbolId)}" x="${formatSvgNumber(Number(node.position?.x ?? 0) - nodeWidth / 2)}" y="${formatSvgNumber(Number(node.position?.y ?? 0) - nodeHeight / 2)}" width="${formatSvgNumber(nodeWidth)}" height="${formatSvgNumber(nodeHeight)}"/>`);
-  }
-  const deviceLayersMarkup = Array.from(layerIdsByType.entries())
-    .map(([layerKey, layerId]) => `<g id="${escapeSvgAttribute(layerId)}" device-type="${escapeSvgAttribute(layerKey)}">
-${(nodeMarkupByLayer.get(layerId) ?? []).join("\n")}
-</g>`)
-    .join("\n");
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const measurementMarkup = (project.measurements?.groups ?? [])
-    .map((group) => {
-      const node = nodeById.get(group.nodeId);
-      if (!node || isStaticNode(node)) return "";
-      return buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, usedIds, exportDeviceIdByNodeId.get(node.id) ?? node.id);
-    })
-    .filter(Boolean)
-    .join("\n");
-  const backgroundMarkup = `<rect width="100%" height="100%" fill="${escapeSvgAttribute(backgroundColor)}"/>
-${backgroundImage ? svgImageContentMarkup(backgroundImage, {
-    x: 0,
-    y: 0,
-    width,
-    height,
-    imageFit: project.canvasBackgroundImageFit,
-    patternId: uniqueSvgId("canvas_background_image_pattern", usedIds, "canvas_background_image_pattern"),
-    className: "export-canvas-background-image"
-  }) : ""}`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${width},${height}">
-<defs>
-${symbolMarkup.join("\n")}
-</defs>
-<g id="root_g">
-<g id="${escapeSvgAttribute(backgroundLayerId)}">
-${backgroundMarkup}
-</g>
-<g id="${escapeSvgAttribute(segmentLayerId)}">
-${edgeMarkup}
-</g>
-${deviceLayersMarkup}
-<g id="${escapeSvgAttribute(textLayerId)}">
-${textLayerMarkup.join("\n")}
-</g>
-<g id="${escapeSvgAttribute(measurementLayerId)}">
-${measurementMarkup}
-</g>
-<g id="${escapeSvgAttribute(otherLayerId)}">
-</g>
-</g>
-</svg>`;
-}
 
 async function listSchemeStoreEntries(root) {
   const files = [];
@@ -5622,16 +3784,13 @@ export async function saveSchemeProjectRecord(options) {
     const previousPaths = projectFilePathsForName(schemeDir, options.previousName);
     await Promise.all(Object.values(previousPaths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, schemeArchiveId())));
   }
+  // files 不变量：只留 .json。改造前落盘的 .e/.svg 在本次保存时归档（可回滚，不硬删）
   const { jsonPath, ePath, svgPath } = projectFilePathsForName(schemeDir, name);
-  const measurementConfig = options.measurementConfig ?? { measurementTypes: [], deviceProfiles: [] };
-  const imagePathById = options.imagePathById ?? (await imageExportPathByIdFromManifest(await readManifest()));
-  const svgContent = options.svg ?? buildSvgFile(storedRecord.project, measurementConfig, { imagePathById });
-  const eContent = options.eFile ?? buildDeviceParameterFile(storedRecord.project, schemePath);
-  await Promise.all([
-    writeTextIfChanged(jsonPath, stringifyJson({ ...storageProject, name })),
-    writeTextIfChanged(ePath, eContent, "gbk"),
-    writeTextIfChanged(svgPath, svgContent)
-  ]);
+  const staleArchiveId = schemeArchiveId();
+  await Promise.all(
+    [ePath, svgPath].map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, staleArchiveId))
+  );
+  await writeTextIfChanged(jsonPath, stringifyJson({ ...storageProject, name }));
   return storedRecord;
 }
 
@@ -5647,40 +3806,25 @@ export async function deleteSchemeProjectRecord(options) {
   await Promise.all(Object.values(paths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, archiveId)));
 }
 
-async function writeSchemeFiles(schemes, options = {}) {
+async function writeSchemeFiles(schemes) {
   const filesRoot = join(schemeDataDir, "files");
   await mkdir(filesRoot, { recursive: true });
   const expectedFiles = new Set();
   const expectedDirs = new Set([filesRoot]);
   const writeTasks = [];
-  const measurementConfig = await readMeasurementConfig();
-  const imagePathById = options.imagePathById ?? (await imageExportPathByIdFromManifest(await readManifest()));
 
-  const writeSchemeTree = async (scheme, parentDir, parentPath = []) => {
-    const schemeName = String(scheme.name ?? "").trim() || "方案";
-    const currentSchemePath = [...parentPath, schemeName];
+  const writeSchemeTree = async (scheme, parentDir) => {
     const schemeDir = join(parentDir, safeFilePart(scheme.name, "方案"));
     expectedDirs.add(schemeDir);
     await mkdir(schemeDir, { recursive: true });
     for (const record of scheme.projects ?? []) {
       const baseName = safeFilePart(record.name, "模型");
       const jsonPath = join(schemeDir, `${baseName}.json`);
-      const ePath = join(schemeDir, `${baseName}.e`);
-      const svgPath = join(schemeDir, `${baseName}.svg`);
       expectedFiles.add(jsonPath);
-      expectedFiles.add(ePath);
-      expectedFiles.add(svgPath);
       writeTasks.push(writeTextIfChanged(jsonPath, stringifyJson(record.project)));
-      const [svgExists, eExists] = await Promise.all([fileExists(svgPath), fileExists(ePath)]);
-      if (!svgExists) {
-        writeTasks.push(writeTextIfChanged(svgPath, buildSvgFile(record.project, measurementConfig, { imagePathById })));
-      }
-      if (!eExists) {
-        writeTasks.push(writeTextIfChanged(ePath, buildDeviceParameterFile(record.project, currentSchemePath), "gbk"));
-      }
     }
     for (const childScheme of scheme.children ?? []) {
-      await writeSchemeTree(childScheme, schemeDir, currentSchemePath);
+      await writeSchemeTree(childScheme, schemeDir);
     }
   };
 
@@ -6331,35 +4475,9 @@ async function handleSaveSchemeProject(request, response) {
   const savedRecord = await saveSchemeProjectRecord({
     schemePath: payload.schemePath,
     record,
-    previousName: payload.previousName,
-    measurementConfig: await readMeasurementConfig(),
-    imagePathById: await imageExportPathByIdFromManifest(await readManifest()),
-    svg: typeof payload.svg === "string" ? payload.svg : undefined,
-    eFile: typeof payload.eFile === "string" ? payload.eFile : undefined
+    previousName: payload.previousName
   });
   sendJson(response, 200, { ok: true, project: savedRecord, savedAt: new Date().toISOString() });
-}
-
-async function handleSaveSchemeProjectArtifacts(request, response) {
-  const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型产物数据过大，最大支持 64MB。");
-  const schemePath = Array.isArray(payload.schemePath) && payload.schemePath.length > 0 ? payload.schemePath : null;
-  const name = typeof payload.name === "string" ? payload.name.trim() : "";
-  if (!schemePath || !name) {
-    sendError(response, 400, "缺少方案路径或模型名称。");
-    return;
-  }
-  const filesRoot = join(schemeDataDir, "files");
-  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
-  const { ePath, svgPath } = projectFilePathsForName(schemeDir, storageProjectDisplayName(name));
-  const tasks = [];
-  if (typeof payload.svg === "string") {
-    tasks.push(writeTextIfChanged(svgPath, payload.svg));
-  }
-  if (typeof payload.eFile === "string") {
-    tasks.push(writeTextIfChanged(ePath, payload.eFile, "gbk"));
-  }
-  await Promise.all(tasks);
-  sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
 }
 
 async function handleDeleteSchemeProject(request, response) {
@@ -6661,9 +4779,6 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     }],
     [routeKey("PUT", "/schemes/project"), async ({ request, response }) => {
       await handleSaveSchemeProject(request, response);
-    }],
-    [routeKey("PUT", "/schemes/project/artifacts"), async ({ request, response }) => {
-      await handleSaveSchemeProjectArtifacts(request, response);
     }],
     [routeKey("DELETE", "/schemes/project"), async ({ request, response }) => {
       await handleDeleteSchemeProject(request, response);
