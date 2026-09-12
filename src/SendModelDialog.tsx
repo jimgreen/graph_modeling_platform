@@ -111,12 +111,22 @@ createServer(async (req, res) => {
   }
 ];
 
-// 示例 key → highlight.js 语言名；代码是常量，高亮结果在模块级算一次即可
+// 示例 key → highlight.js 语言名。逐行高亮：代码块要显示行号，若按整段高亮后再拆行
+// 会打断跨行的 span 配对，分行独立高亮最稳（示例里没有跨行字符串或多行注释）。
 const RECEIVER_SAMPLE_LANGUAGES = { python: "python", node: "javascript" };
 const HIGHLIGHTED_SAMPLES = RECEIVER_SAMPLES.map((sample) => {
   const language = RECEIVER_SAMPLE_LANGUAGES[sample.key] ?? "javascript";
-  return { ...sample, language, html: hljs.highlight(sample.code, { language }).value };
+  const htmlLines = sample.code.split("\n").map((line) => hljs.highlight(line, { language }).value);
+  return { ...sample, language, htmlLines };
 });
+
+// 格式说明：与后端 buildFileText 的实际产出对齐，让人一眼看清各格式装的是什么
+const FORMAT_NOTES = [
+  { label: "E 文件", text: "电力系统 E 格式文本，按当前模板导出，下游多为 GBK" },
+  { label: "JSON", text: "模型工程文件：节点 / 连线 / 分组 / 图层 / 量测" },
+  { label: "SVG", text: "自包含矢量图：样式内联、引用图片内联，按电压着色" },
+  { label: "CIM/XML", text: "IEC 61970 CIM16：AC 设备 + 拓扑端子 + 量测" }
+];
 
 type Props = {
   open: boolean;
@@ -317,15 +327,33 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
               ))}
             </tbody>
           </table>
+          <div style={{ fontWeight: 600, color: "#0f172a", marginTop: 8 }}>格式说明</div>
+          <div className="send-model-notes">
+            {FORMAT_NOTES.map((note) => (
+              <div key={note.label} className="send-model-note">
+                <span className="send-model-note-kind">{note.label}</span>
+                <span>{note.text}</span>
+              </div>
+            ))}
+          </div>
+          {/* 状态文案不带 auto 外边距：剩余空间留给按钮区，它自然沉到按钮上方 */}
           {error && (
-            <div id="send-model-error" style={{ color: "#dc2626", marginTop: "auto", paddingTop: 10 }}>{error}</div>
+            <div id="send-model-error" style={{ color: "#dc2626", paddingTop: 10 }}>{error}</div>
           )}
           {!error && success && (
-            <div id="send-model-success" style={{ color: "#16a34a", marginTop: "auto", paddingTop: 10 }}>{success}</div>
+            <div id="send-model-success" style={{ color: "#16a34a", paddingTop: 10 }}>{success}</div>
           )}
+          {/* 操作按钮固定在左栏底部 */}
+          <div className="send-model-actions">
+            <Button id="send-model-cancel" onClick={onClose} disabled={sending}>取消</Button>
+            <Button id="send-model-submit" type="primary" loading={sending} onClick={() => void submit()}>
+              <Send size={12} />
+              <span>发送</span>
+            </Button>
+          </div>
           </div>
 
-          {/* 右栏：接收端示例 + 右下角操作按钮。默认 Python，Segmented 切换；与左栏同一 flex 行故等高 */}
+          {/* 右栏：接收端示例。默认 Python，Segmented 切换；与左栏同一 flex 行故等高 */}
           <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: 6, borderLeft: "1px solid #e2e8f0", paddingLeft: 14 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
               <div style={{ fontWeight: 600, color: "#0f172a" }}>接收端示例</div>
@@ -356,16 +384,13 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
                 id={`send-model-sample-code-${sample.key}`}
                 className="send-model-code"
                 style={{ display: sample.key === activeSample ? "block" : "none" }}
-              ><code className="hljs" dangerouslySetInnerHTML={{ __html: sample.html }}/></pre>
+              ><code className="hljs">{sample.htmlLines.map((lineHtml, index) => (
+                  <span key={index} className="send-model-code-line">
+                    <span className="send-model-code-line-number">{index + 1}</span>
+                    <span className="send-model-code-line-content" dangerouslySetInnerHTML={{ __html: lineHtml || "&nbsp;" }}/>
+                  </span>
+                ))}</code></pre>
             ))}
-            {/* 操作按钮固定在这块区域的右下角：marginTop:auto 把它推到剩余空间之后 */}
-            <div className="send-model-actions">
-              <Button id="send-model-cancel" onClick={onClose} disabled={sending}>取消</Button>
-              <Button id="send-model-submit" type="primary" loading={sending} onClick={() => void submit()}>
-                <Send size={12} />
-                <span>发送</span>
-              </Button>
-            </div>
           </div>
         </div>
       </section>

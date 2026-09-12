@@ -15874,3 +15874,41 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   padding-top: 10px;
   border-top: 1px solid #e2e8f0;
 }
+
+.send-model-notes {
+  display: grid;
+  gap: 3px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.send-model-note {
+  display: flex;
+  gap: 6px;
+}
+
+.send-model-note-kind {
+  flex: 0 0 56px;
+  color: #475569;
+  font-weight: 600;
+}
+
+/* 代码块行号：行号不参与选中，复制示例代码时不会把行号带进去 */
+.send-model-code-line {
+  display: flex;
+}
+
+.send-model-code-line-number {
+  flex: 0 0 auto;
+  width: 2.4em;
+  margin-right: 10px;
+  color: #475569;
+  text-align: right;
+  user-select: none;
+}
+
+.send-model-code-line-content {
+  flex: 1 1 auto;
+  white-space: pre;
+}
