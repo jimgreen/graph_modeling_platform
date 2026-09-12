@@ -1885,11 +1885,14 @@ button:not(.ant-btn):disabled {
 
 .viewport-overlay {
   position: absolute;
-  right: var(--viewport-overlay-right, 16px);
+  /* 永远水平居中：left 取视口中心 + (左让位 - 右让位)/2，再自身左移一半宽度。
+     让位与适配视图同口径（面板宽 + 20px），面板显隐/拖宽时居中基准随之变化 */
+  left: calc(50% + var(--viewport-overlay-center-shift, 0px));
   bottom: var(--viewport-overlay-bottom, 50px);
+  transform: translateX(-50%);
   z-index: 34;
   display: grid;
-  justify-items: end;
+  justify-items: center;
   gap: 8px;
   pointer-events: none;
 }

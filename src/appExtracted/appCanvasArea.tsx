@@ -224,9 +224,12 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
   }
 
   // 比较工具栏和覆盖层状态
+  // 侧面板的显隐与宽度决定悬浮工具条的居中基准（viewportOverlayStyle 随面板变），
+  // 不列入比较会出现"面板已隐藏、工具条位置还停在旧居中点"的问题
   const overlayKeys = [
     'nodeFloatingToolbar', 'edgeFloatingToolbar',
-    'canvasResizePreviewRect', 'minimapVisible'
+    'canvasResizePreviewRect', 'minimapVisible',
+    'leftPanelVisible', 'leftPanelWidth', 'rightPanelVisible', 'rightPanelWidth'
   ];
 
   for (const key of overlayKeys) {
