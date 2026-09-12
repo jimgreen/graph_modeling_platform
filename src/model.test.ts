@@ -1671,6 +1671,19 @@ describe("power system model", () => {
     expect(saved[1].project.name).toBe("模型12 (2)");
   });
 
+  test("does not inherit the source model index when a new model record is created", () => {
+    const source = createSavedProject("模型A", { version: 1, name: "模型A", idx: 12, nodes: [], edges: [] });
+
+    expect(source.project.idx).toBeUndefined();
+
+    const copy = copySavedProjectWithUniqueName(source, ["模型A"]);
+    expect(copy.name).toBe("模型A 副本");
+    expect(copy.project.idx).toBeUndefined();
+
+    const duplicated = duplicateSavedProject([source], source.id);
+    expect(duplicated[1].project.idx).toBeUndefined();
+  });
+
   test("manages nested saved schemes as a recursive tree", () => {
     const nestedProject = createSavedProject("子模型", { version: 1, name: "子模型", nodes: [], edges: [] });
     const root = createSavedScheme("父方案");

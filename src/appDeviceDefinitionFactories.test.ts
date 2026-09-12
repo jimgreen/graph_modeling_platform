@@ -38,6 +38,9 @@ import {
   createExportCustomComponentTemplateSvg,
   createRouteSegmentPointerDistance,
   createResolveDuplicateModelImport,
+  createCommitImportedModelRecord,
+  createCreateImportedSchemeRecord,
+  createIsProjectFilePayload,
   createSaveBuiltinDeviceDefinitionFromCustomDraft,
   createSaveComponentLibraryDefinition,
   createSaveCustomDeviceDefinitionDialog,
@@ -104,6 +107,7 @@ import {
   templateDerivedComponentLibraryInfo,
   BUILTIN_VOLTAGE_LEVELS
 } from "./model";
+import { createSavedProject, createSavedScheme, findSavedSchemeById, upsertSavedProjectInScheme } from "./model-routing";
 import { normalizeDeviceLibraryPersistencePayload } from "./appExtracted/appPersistenceLibraryExport";
 import {
   DEFAULT_STATE_PAGE_ID,
@@ -352,6 +356,64 @@ describe("SVG model import factories", () => {
     expect(commitImportedModelRecord).toHaveBeenCalledWith(targetScheme, expect.objectContaining({ name: "一次图 (2)" }));
     expect(completeImportedModelFeedback).toHaveBeenCalledWith(conflict.completionFeedback);
     expect(setPendingModelImportConflict).toHaveBeenCalledWith(null);
+  });
+});
+
+describe("createCreateImportedSchemeRecord", () => {  test("keeps the stored model index of models read back from a scheme file", () => {
+    const scope: Record<string, any> = {
+      isObjectRecord: (value: unknown) => Boolean(value) && typeof value === "object" && !Array.isArray(value),
+      createSavedProject,
+      createSavedScheme
+    };
+    scope.isProjectFilePayload = createIsProjectFilePayload(scope);
+    scope.createImportedSchemeRecord = createCreateImportedSchemeRecord(scope);
+
+    const text = JSON.stringify({
+      name: "方案A",
+      projects: [{ name: "模型A", project: { version: 1, name: "模型A", idx: 12, nodes: [], edges: [] } }]
+    });
+
+    const scheme = scope.createImportedSchemeRecord(text, "方案A.json");
+
+    expect(scheme.projects[0].name).toBe("模型A");
+    expect(scheme.projects[0].project.idx).toBe(12);
+  });
+});
+
+describe("createCommitImportedModelRecord", () => {
+  test("回填后台分配的 model_id，导入的新模型不会一直无 ID", async () => {
+    const targetScheme = { id: "scheme-1", name: "方案一", projects: [], children: [] };
+    const importedRecord = {
+      id: "project-new",
+      name: "模型A",
+      project: { version: 1, name: "模型A", nodes: [], edges: [] }
+    };
+    let currentSchemes: any[] = [targetScheme];
+    const commitImportedModelRecord = createCommitImportedModelRecord({
+      findSavedSchemeById,
+      handleBackendSchemeMutationFailure: vi.fn(),
+      loadSavedProject: vi.fn(),
+      saveBackendProjectRecord: async () => ({
+        ...importedRecord,
+        project: { ...importedRecord.project, idx: 7 }
+      }),
+      schemePathForRecord: () => ["方案一"],
+      setExpandedSchemeIds: vi.fn(),
+      setSchemes: (updater: any) => {
+        currentSchemes = typeof updater === "function" ? updater(currentSchemes) : updater;
+      },
+      upsertSavedProjectInScheme,
+      writeOperationLog: vi.fn()
+    });
+
+    commitImportedModelRecord(targetScheme, importedRecord);
+    expect(currentSchemes[0].projects[0].project.idx).toBeUndefined();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(currentSchemes[0].projects).toHaveLength(1);
+    expect(currentSchemes[0].projects[0].project.idx).toBe(7);
   });
 });
 

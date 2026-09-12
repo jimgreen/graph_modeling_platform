@@ -7019,7 +7019,11 @@ export function lockProjectEdgeTerminals(project: ProjectFile): ProjectFile {
 
 export function createSavedProject(name: string, project: ProjectFile): SavedProjectRecord {
   const savedName = name.trim() || "未命名模型";
-  const lockedProject = normalizeProjectLayers(lockProjectEdgeTerminals(project));
+  // 新建记录不继承来源模型的 model_id：复制/粘贴、导入 json/svg/dot 都走这里，
+  // 若把源模型的 idx 带过来，新模型会与源模型 model_id 相同，违反「模型 ID 跨方案唯一」。
+  // 真正的 idx 由后端在保存时分配（saveSchemeProjectRecord → allocateStableProjectIndex）。
+  const { idx: _inheritedProjectIndex, ...freshProject } = project;
+  const lockedProject = normalizeProjectLayers(lockProjectEdgeTerminals(freshProject as ProjectFile));
   return {
     id: makeId("project"),
     name: savedName,

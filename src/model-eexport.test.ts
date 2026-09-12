@@ -4007,13 +4007,11 @@ describe("E 文件查看/编辑展示与导出一致性", () => {
 describe("模型类型与全局序号", () => {
   test("支持五种模型类型并跨方案树计算全局下一个模型 idx", () => {
     expect(MODEL_TYPES).toEqual(["厂站", "馈线", "台区", "微网", "其他"]);
-    const project = (name: string, idx?: number) => createSavedProject(name, {
-      version: 1,
-      name,
-      idx,
-      nodes: [],
-      edges: []
-    });
+    // createSavedProject 不再继承来源 idx（新模型由后端分配），这里显式补上以构造固定 model_id 的夹具。
+    const project = (name: string, idx?: number) => {
+      const record = createSavedProject(name, { version: 1, name, nodes: [], edges: [] });
+      return idx === undefined ? record : { ...record, project: { ...record.project, idx } };
+    };
     const rootA = createSavedScheme("方案A", [project("模型1", 1)]);
     rootA.children = [createSavedScheme("子方案", [project("模型9", 9)])];
     const rootB = createSavedScheme("方案B", [project("模型4", 4)]);
