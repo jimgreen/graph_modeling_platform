@@ -8,6 +8,7 @@ import { findSchemeProjectRecordByIndex, readSchemeProjectRecord } from "./serve
 import { sendV1Error, sendV1JsonNoStore } from "./v1Response.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 import { buildEFileForSavedModel, readJsonBody } from "./eFileExport.mjs";
+import { PREDEFINED_E_DEVICE_TEMPLATES } from "./eFileTemplates.mjs";
 import { renderSavedModelSvg } from "./svgExport.mjs";
 import { buildCimForSavedModel } from "./cimExport.mjs";
 import { encodeTextBytes, withXmlEncodingDeclaration } from "./xmlEncoding.mjs";
@@ -46,7 +47,8 @@ function normalizeTargetUrl(raw) {
 }
 
 // 生成单个格式的文本内容。返回 { text } 或 { error }。
-async function buildFileText({ kind, parts, name }) {
+// templateName 仅对 E 文件生效（后端按模板重算元件定义），其余格式忽略。
+async function buildFileText({ kind, parts, name, templateName }) {
   if (kind === "json") {
     const record = await readSchemeProjectRecord({ schemePath: parts, name });
     if (!record) {
@@ -55,7 +57,7 @@ async function buildFileText({ kind, parts, name }) {
     return { text: JSON.stringify(record.project ?? {}) };
   }
   if (kind === "e") {
-    const { file, error } = await buildEFileForSavedModel({ parts, name });
+    const { file, error } = await buildEFileForSavedModel({ parts, name, templateName });
     return error ? { error } : { text: String(file?.text ?? "") };
   }
   if (kind === "svg") {
@@ -116,7 +118,8 @@ async function resolveSendTarget(url) {
 // POST /webgrp/v1/schemes/model/send
 // query: modelId=<模型 idx>（推荐）
 //        或 schemePath=<encoded> + name=<模型名>（兼容旧调用）
-// body:  { url, files: [{ kind: "e"|"json"|"svg"|"cim", encoding: "utf-8"|"gbk" }] }
+// body:  { url, files: [{ kind: "e"|"json"|"svg"|"cim", encoding: "utf-8"|"gbk" }], templateName? }
+//        templateName 可选，取值见 PREDEFINED_E_DEVICE_TEMPLATES，仅作用于 E 文件
 export async function handleV1ModelSend({ request, response, url }) {
   try {
     const resolved = await resolveSendTarget(url);
@@ -147,6 +150,17 @@ export async function handleV1ModelSend({ request, response, url }) {
       return;
     }
 
+    // 可选模板：仅作用于 E 文件；未知模板名直接 400，避免静默按默认导出
+    const templateName = String(body?.templateName ?? "").trim();
+    if (templateName && !PREDEFINED_E_DEVICE_TEMPLATES[templateName]) {
+      sendV1Error(
+        response,
+        "bad-request",
+        `未知模板：${templateName}。可用模板：${Object.keys(PREDEFINED_E_DEVICE_TEMPLATES).join("、")}`
+      );
+      return;
+    }
+
     const startedAt = Date.now();
     const base = sanitizeFileBase(name);
     const form = new FormData();
@@ -154,12 +168,14 @@ export async function handleV1ModelSend({ request, response, url }) {
     // 老模型可能尚未分配 idx，此时字段为空串而不是缺失，便于接收方稳定解析
     form.append("model_id", modelId > 0 ? String(modelId) : "");
     form.append("model_name", name);
+    // 接收方据此知道 E 文件是按哪个模板导出的（未指定时为空串）
+    form.append("template_name", templateName);
     form.append("scheme_path", JSON.stringify(parts));
     form.append("sent_at", new Date(startedAt).toISOString());
 
     const sentFiles = [];
     for (const spec of specs) {
-      const built = await buildFileText({ kind: spec.kind, parts, name });
+      const built = await buildFileText({ kind: spec.kind, parts, name, templateName });
       if (built.error) {
         sendV1Error(response, built.error.code, built.error.message);
         return;
@@ -195,6 +211,7 @@ export async function handleV1ModelSend({ request, response, url }) {
       url: target.href,
       status: targetResponse.status,
       elapsedMs: Date.now() - startedAt,
+      templateName: templateName || null,
       files: sentFiles
     });
   } catch (error) {

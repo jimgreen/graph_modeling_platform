@@ -2,6 +2,7 @@
 import { memo } from "react";
 import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
 import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
+import { PREDEFINED_E_DEVICE_TEMPLATES } from "../predefinedEDeviceTemplates";
 
 export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialogs({ scope }) {
   const __appScope = scope;
@@ -968,22 +969,12 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                 </button>
                 {eDeviceTemplateDropdownOpen && (
                   <div className="e-device-template-dropdown-menu">
-                    <button type="button" onClick={async () => {
-                      setEDeviceTemplateDropdownOpen(false);
-                      await loadPredefinedEDeviceTemplate("sgcc.e");
-                    }}>国网E格式</button>
-                    <button type="button" onClick={async () => {
-                      setEDeviceTemplateDropdownOpen(false);
-                      await loadPredefinedEDeviceTemplate("ems_rtdb.e");
-                    }}>主网实时库</button>
-                    <button type="button" onClick={async () => {
-                      setEDeviceTemplateDropdownOpen(false);
-                      await loadPredefinedEDeviceTemplate("dms_rtdb.e");
-                    }}>配网实时库</button>
-                    <button type="button" onClick={async () => {
-                      setEDeviceTemplateDropdownOpen(false);
-                      await loadPredefinedEDeviceTemplate("taiqu_rtdb.e");
-                    }}>台区实时库</button>
+                    {PREDEFINED_E_DEVICE_TEMPLATES.map((template) => (
+                      <button key={template.file} type="button" onClick={async () => {
+                        setEDeviceTemplateDropdownOpen(false);
+                        await loadPredefinedEDeviceTemplate(template.file);
+                      }}>{template.name}</button>
+                    ))}
                   </div>
                 )}
               </div>

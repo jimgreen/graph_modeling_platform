@@ -262,3 +262,34 @@ describe(`${sendPath} 按 modelId 定位模型`, () => {
     expect(structure).toMatch(/name="model_id"[\s\S]{0,40}\r?\n\r?\n1\r?\n/);
   });
 });
+
+describe(`${sendPath} 模板选择`, () => {
+  test("指定预定义模板：模板名随表单下发，响应回带", async () => {
+    const res = await postSend(
+      { url: sinkUrl, files: [{ kind: "e", encoding: "gbk" }], templateName: "国网E格式" },
+      "modelId=1"
+    );
+    expect(res.status).toBe(200);
+    const payload = await res.json();
+    expect(payload.data.templateName).toBe("国网E格式");
+
+    const structure = received[0].body.toString("utf-8");
+    expect(structure).toMatch(/name="template_name"[\s\S]{0,40}\r?\n\r?\n国网E格式\r?\n/);
+  });
+
+  test("不指定模板时回带 null，表单里为空串", async () => {
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "e" }] }, "modelId=1");
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.templateName).toBeNull();
+  });
+
+  test("未知模板 → 400 且不发出请求", async () => {
+    const res = await postSend(
+      { url: sinkUrl, files: [{ kind: "e" }], templateName: "不存在模板" },
+      "modelId=1"
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toContain("未知模板");
+    expect(received).toHaveLength(0);
+  });
+});

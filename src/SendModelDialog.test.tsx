@@ -91,6 +91,24 @@ describe("SendModelDialog", () => {
     expect(source).toContain("iconv.decode");
   });
 
+  test("可选择 E 文件模板，并随请求下发 templateName", () => {
+    const html = render({});
+    expect(html).toContain('id="send-model-template"');
+    expect(html).toContain("默认（按模型当前配置导出）");
+
+    const files = [{ kind: "e", encoding: "gbk" }];
+    const withTemplate = buildSendRequest(scope, "http://x/y", files, "配网实时库");
+    expect(JSON.parse(withTemplate.init.body)).toEqual({
+      url: "http://x/y",
+      files,
+      templateName: "配网实时库"
+    });
+
+    // 未选模板时不带该字段，body 与旧调用逐字节一致
+    const withoutTemplate = buildSendRequest(scope, "http://x/y", files);
+    expect(JSON.parse(withoutTemplate.init.body)).toEqual({ url: "http://x/y", files });
+  });
+
   test("发送成功后保留弹窗，不再调用 onClose", () => {
     const source = readFileSync(new URL("./SendModelDialog.tsx", import.meta.url), "utf8");
     const successBranch = source.slice(

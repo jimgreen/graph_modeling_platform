@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { useCallback, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { MemoizedCanvasArea } from "./appCanvasArea";
+import { predefinedEDeviceTemplateByFile } from "../predefinedEDeviceTemplates";
 import { AppLeftPanel } from "./appLeftPanel";
 import { AppRightPanel } from "./appRightPanel";
 import { AppStatusbar } from "./appStatusbar";
@@ -869,13 +870,8 @@ export function renderAppView(__appScope: Record<string, any>) {
         localStorage.setItem("eDeviceTemplateImportResult", JSON.stringify({ matched: result.matched, skipped: result.skipped, runtimeGenerated: result.runtimeGenerated ?? [] }));
       } catch { /* ignore */ }
       // 设置模板名称和只读模式
-      const templateNameMap: Record<string, string> = {
-        "sgcc.e": "国网E格式",
-        "ems_rtdb.e": "主网实时库",
-        "dms_rtdb.e": "配网实时库",
-        "taiqu_rtdb.e": "台区实时库"
-      };
-      const templateName = templateNameMap[templateFile] ?? templateFile;
+      // 模板名与文件名对应关系见 predefinedEDeviceTemplates（单源），不在本地再列一份
+      const templateName = predefinedEDeviceTemplateByFile(templateFile)?.name ?? templateFile;
       __appScope.setEDeviceInterfaceLoadedTemplateName?.(templateName);
       __appScope.setEDeviceInterfaceReadonlyMode?.(true);
       try {

@@ -18,6 +18,9 @@ let baseUrl;
 let wsUrl;
 let wsClient;
 
+// 测试环境里 seed 模型的 idx（避开 repo 真实数据已占用的 1）
+const TEST_MODEL_ID = 900001;
+
 // 只复制真实方案数据：data/schemes/trash 是历史归档（几十个目录、上百个文件），
 // 逐个用例复制它既拖慢 hook，又让 Windows 下的递归删除容易撞 ENOTEMPTY
 const skipTrash = (source) => !source.split(sep).includes("trash");
@@ -57,16 +60,24 @@ function buildOpts(ep, params) {
   return opts;
 }
 
-// 发送端点示例的目标 URL 写的是后端默认地址（swaggerPage 的 RECEIVE_URL），
-// 测试里换成当前随机端口的 baseUrl，避免依赖固定端口
+// 发送端点的示例参数按测试环境改写：
+// ① 文档里的 modelId 是占位（示例值 1），换成 seed 模型的 idx，避免撞上 repo 真实数据
+// ② 目标 URL 写的是后端默认地址（swaggerPage 的 RECEIVE_URL），换成当前随机端口的 baseUrl
 function normalizeExampleParams(ep, params) {
-  if (ep.path !== apiPath("/v1/schemes/model/send") || !params.__body__?.url) {
+  if (ep.path !== apiPath("/v1/schemes/model/send")) {
     return params;
   }
-  return {
-    ...params,
-    __body__: { ...params.__body__, url: String(params.__body__.url).replace(/^https?:\/\/[^/]+/u, baseUrl) }
-  };
+  const next = { ...params };
+  if (next.q_modelId !== undefined && next.q_modelId !== "") {
+    next.q_modelId = TEST_MODEL_ID;
+  }
+  if (next.__body__?.url) {
+    next.__body__ = {
+      ...next.__body__,
+      url: String(next.__body__.url).replace(/^https?:\/\/[^/]+/u, baseUrl)
+    };
+  }
+  return next;
 }
 
 async function fetchExample(ep, ex) {
@@ -209,8 +220,9 @@ beforeEach(async () => {
   );
   await seedProject("图元连接");
   // 「线路」seed 带一个电力设备：cim-xml 端点对空模型返回 400（无可导出的电力设备），示例需 200
-  // 另给稳定 idx=1：/v1/schemes/model/send 的 modelId 示例按 idx 定位模型
-  await seedProject("线路", { idx: 1, modelType: "馈线", nodes: [
+  // idx 用 900001：repo 里已有 idx=1 的真实模型（主配微联合/地区1/主网/厂站1），
+  // 用 1 会让 modelId 示例定位到那个厂站模型，模板示例随类型门控变 400
+  await seedProject("线路", { idx: TEST_MODEL_ID, modelType: "馈线", nodes: [
     { id: "bus1", kind: "ac-bus", name: "母线1", nodeNumber: "1", acTopologyNode: -1, dcTopologyNode: -1, position: { x: 0, y: 0 }, size: { width: 10, height: 10 }, rotation: 0, scale: 1, terminals: [], params: { i_vbase: "110" } }
   ] });
   const subDir = join(seedDir, "1-1");
@@ -308,7 +320,13 @@ function expectFor(ep, ex) {
     expect(r.json.ok).toBe(true);
     // 目标即本服务接收端（示例 url 指向 /v1/receive），故转发结果状态为 200
     expect(r.json.data.status).toBe(200);
-    expect(r.json.data.files.map((file) => file.kind)).toEqual(["e", "json"]);
+    expect(r.json.data.files.length).toBeGreaterThan(0);
+    for (const file of r.json.data.files) {
+      expect(["e", "json", "svg", "cim"]).toContain(file.kind);
+    }
+    if (r.json.data.templateName) {
+      expect(["国网E格式", "主网实时库", "配网实时库", "台区实时库"]).toContain(r.json.data.templateName);
+    }
   } };
   if (p === apiPath("/v1/receive") && ep.method === "POST") return { status: 200, check: (r) => {
     expect(r.json.data.received.fields).toBeInstanceOf(Array);
