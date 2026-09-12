@@ -793,86 +793,56 @@ function createLoadScope(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("save current project E export options", () => {
-  test("uses the configured E interface field order when generating saved artifacts", async () => {
+describe("保存模型不再上传 SVG/E 产物", () => {
+  test("保存只发 json：不计算产物，也不给保存请求带第 4 个产物实参", async () => {
     const noop = vi.fn();
     const project = { version: 1, name: "模型一", nodes: [], edges: [] };
     const projectRecord = { id: "project-1", name: "模型一", project };
     const scheme = { id: "scheme-1", name: "方案一", projects: [projectRecord], children: [] };
-    let generatedExportOptions: any;
+    const buildSvgDocument = vi.fn(() => "<svg/>");
+    const buildEFileExport = vi.fn(() => ({ filename: "模型一.e", text: "", mime: "text/plain" }));
+    const saveBackendProjectRecord = vi.fn(async () => projectRecord);
     const saveCurrentProject = createSaveCurrentProject({
       activeProjectKey: "project-1",
       activeSchemeKey: "scheme-1",
-      backgroundPageRender: null,
-      buildEFileExport: vi.fn((_project: any, _path: string[], options: any) => {
-        generatedExportOptions = options;
-        return { filename: "模型一.e", text: "", mime: "text/plain" };
-      }),
-      buildSvgDocument: vi.fn(() => "<svg/>"),
       clearRefreshRecoveryProject: noop,
-      colorPalette: {},
-      createSavedProject: vi.fn(),
       currentGraphDirtyBaseline: () => "baseline",
       currentProject: () => project,
-      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
       deferredMoveOptimizationCancelRef: { current: null },
       deferredRoutableLineRouteRepairCancelRef: { current: null },
-      eDeviceDefinitionClassExportEnabled: { ACGenerator: true },
-      eDeviceDefinitionFieldOrder: { ACGenerator: ["dev_type", "name", "idx"] },
-      eDeviceDefinitionLabels: { ACGenerator: "ACGenerator" },
-      findProjectRecordByNameInScheme: vi.fn(),
-      findSavedSchemeById: vi.fn(),
       findSchemeForProject: () => scheme,
-      getEExportWarnings: vi.fn(() => []),
       graphDirtyBaselineRef: { current: null },
-      libraryTemplates: [{
-        kind: "ac-source",
-        label: "交流电源",
-        categoryLibrary: "交流设备",
-        size: { width: 84, height: 56 },
-        params: {},
-        terminalType: "ac",
-        terminalCount: 1
-      }],
-      loadSvgImageExportPathById: async () => ({}),
-      measurementConfig: undefined,
-      PARAM_LABELS: {},
       projectById: new Map([["project-1", projectRecord]]),
-      projectMeasurements: undefined,
       projectName: "模型一",
       rememberPersistedSchemesPayload: noop,
       requireEditMode: () => true,
-      resolveTemplateComponentLibrary: () => "ACGenerator",
       saveActiveProjectPointer: noop,
-      saveBackendProjectRecord: vi.fn(async () => projectRecord),
+      saveBackendProjectRecord,
       savedSchemePathForId: () => ["方案一"],
       savedUndoStackLengthRef: { current: 0 },
-      undoStack: [],
-      schemePathForScheme: () => ["方案一"],
       schemes: [scheme],
       selectedSchemeId: "scheme-1",
       serializeSchemesForStorage: () => "{}",
       setActiveProjectKey: noop,
-      setActiveSchemeKey: noop,
       setHasUnsavedChanges: noop,
       setProjectName: noop,
       setSchemes: noop,
       suppressNextGraphDirtyRef: { current: 0 },
+      undoStack: [],
       upsertSavedProjectInScheme: () => [scheme],
-      writeOperationLog: noop
+      writeOperationLog: noop,
+      // 仍提供本地渲染依赖：保存若回潮去计算产物，会被下面两条断言拦下
+      buildSvgDocument,
+      buildEFileExport
     });
 
     await expect(saveCurrentProject()).resolves.toBe(true);
 
-    const generatorDefinition = generatedExportOptions.interfaceDefinitions.find(
-      (definition: any) => definition.componentLibrary === "ACGenerator"
-    );
-    expect(generatorDefinition.fields.slice(0, 4).map((field: any) => field.sourceName)).toEqual([
-      "parent",
-      "dev_type",
-      "name",
-      "idx"
-    ]);
+    expect(buildSvgDocument).not.toHaveBeenCalled();
+    expect(buildEFileExport).not.toHaveBeenCalled();
+    expect(saveBackendProjectRecord).toHaveBeenCalledWith(["方案一"], expect.anything(), "模型一");
+    // 保存请求不得再携带第 4 个产物参数（svg/eFile）
+    expect(saveBackendProjectRecord.mock.calls[0]).toHaveLength(3);
   });
 });
 
