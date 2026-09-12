@@ -25,6 +25,7 @@ function AppStatusbarContent({ scope }: { scope: Record<string, any> }) {
     nodes,
     operationLogRef,
     operationLogStatusRef,
+    resetViewportZoom,
     saveRequired,
     selectedCount,
     selectedNodeTransformStatus,
@@ -43,9 +44,15 @@ function AppStatusbarContent({ scope }: { scope: Record<string, any> }) {
       <span className="status-pill">
         坐标 <span ref={mousePositionTextRef}>X:- Y:-</span>
       </span>
-      <span className="status-pill" title={`当前视图缩放比 ${currentZoomPercent}%`}>
+      <button
+        type="button"
+        className="status-pill status-zoom-pill"
+        title={`当前视图缩放比 ${currentZoomPercent}%，点击回到 100%`}
+        aria-label="缩放回到 100%"
+        onClick={resetViewportZoom}
+      >
         缩放 {currentZoomPercent}%
-      </span>
+      </button>
       <span className={`status-pill topology-${topologyStatus.state}`} title={topologyStatus.message}>
         拓扑 {topologyStatus.message}
       </span>
