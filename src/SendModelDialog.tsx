@@ -14,6 +14,7 @@ import { WindowCloseButton } from "./WindowCloseButton";
 import { apiPath } from "./config";
 import { schemePathQueryParam } from "./appExtracted/appPersistenceLibraryExport";
 import { backendExportSchemePath } from "./backendExportPath";
+import { PREDEFINED_E_DEVICE_TEMPLATES } from "./predefinedEDeviceTemplates";
 
 // 上次成功发送的目标 URL（跨会话回填；localStorage 不可用时静默退回空）
 const TARGET_URL_STORAGE_KEY = "sendModelTargetUrl";
@@ -152,7 +153,8 @@ function currentModelIndex(scope: Record<string, any>): number {
 export function buildSendRequest(
   scope: Record<string, any>,
   url: string,
-  files: Array<{ kind: string; encoding: string }>
+  files: Array<{ kind: string; encoding: string }>,
+  templateName = ""
 ) {
   const modelName = String(scope.projectName ?? "");
   const modelId = currentModelIndex(scope);
@@ -164,7 +166,8 @@ export function buildSendRequest(
     init: {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url, files })
+      // 未选模板时不带该字段，body 保持与旧调用一致
+      body: JSON.stringify({ url, files, ...(templateName ? { templateName } : {}) })
     }
   };
 }
@@ -179,6 +182,8 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
   );
   // 复制接收端示例后的反馈：{ key: 哪个示例, ok: 是否复制成功 }
   const [copyState, setCopyState] = useState<{ key: string; ok: boolean } | null>(null);
+  // E 文件模板：空串表示按模型当前的库配置导出（不下发 template）
+  const [templateName, setTemplateName] = useState("");
   // 当前展示的接收端示例（默认 Python）
   const [activeSample, setActiveSample] = useState("python");
   // 发送成功提示：成功后保留弹窗，便于继续发送或核对接收结果
@@ -243,7 +248,7 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
     setError("");
     setSuccess("");
     try {
-      const { requestUrl, init } = buildSendRequest(scope, target, files);
+      const { requestUrl, init } = buildSendRequest(scope, target, files, checked.e ? templateName : "");
       const response = await fetch(requestUrl, init);
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload?.ok) {
@@ -327,6 +332,22 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
               ))}
             </tbody>
           </table>
+          {/* 模板只影响 E 文件，未勾选 E 文件时禁用 */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+            <span style={{ fontWeight: 600, color: "#0f172a", flex: "0 0 auto" }}>E 文件模板</span>
+            <Select
+              id="send-model-template"
+              size="small"
+              // 默认态用 placeholder 表达（antd 对 value="" 不渲染选中项，会显示成空框）
+              placeholder="默认（按模型当前配置导出）"
+              allowClear
+              value={templateName || undefined}
+              disabled={!checked.e || sending}
+              style={{ flex: "1 1 auto", minWidth: 0 }}
+              onChange={(value) => setTemplateName(String(value ?? ""))}
+              options={PREDEFINED_E_DEVICE_TEMPLATES.map((template) => ({ value: template.name, label: template.name }))}
+            />
+          </div>
           <div style={{ fontWeight: 600, color: "#0f172a", marginTop: 8 }}>格式说明</div>
           <div className="send-model-notes">
             {FORMAT_NOTES.map((note) => (
