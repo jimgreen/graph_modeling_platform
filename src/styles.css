@@ -15915,9 +15915,12 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 /* ---- 画布外围四边刻度尺（CanvasRulers）---- */
 
+/* 零尺寸锚点：left/top 落在画布原点，四条尺子与四角相对它定位；
+   拖动时这个容器随画布一起平移（见 applyCanvasPanningVisualOffset） */
 .canvas-rulers {
   position: absolute;
-  inset: 0;
+  width: 0;
+  height: 0;
   z-index: 6;
   pointer-events: none;
 }
@@ -15996,6 +15999,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   appearance: none;
   cursor: pointer;
   font: inherit;
+  font-size: 12px;
   transition:
     transform 0.12s ease,
     color 0.15s ease,

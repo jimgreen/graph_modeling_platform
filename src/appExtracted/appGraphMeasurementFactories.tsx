@@ -2020,7 +2020,7 @@ export function createSynchronizePendingBusTerminalsWithGraphStore(__appScope: R
 
 export function createApplyCanvasPanningVisualOffset(__appScope: Record<string, any>) {
   return (nextOffset: Point) => {
-  const { canvasBaseDisplayOffsetX, canvasBaseDisplayOffsetY, canvasDisplayHeight, canvasDisplayWidth, canvasResizeAnchoredDisplayOffset, canvasResizeDrag, canvasResizeHotzonesRef, svgRef } = __appScope;
+  const { canvasBaseDisplayOffsetX, canvasBaseDisplayOffsetY, canvasDisplayHeight, canvasDisplayWidth, canvasResizeAnchoredDisplayOffset, canvasResizeDrag, canvasResizeHotzonesRef, canvasRulersRef, svgRef } = __appScope;
     const left = canvasResizeAnchoredDisplayOffset(
       Math.round(canvasBaseDisplayOffsetX + nextOffset.x),
       canvasResizeDrag,
@@ -2042,6 +2042,12 @@ export function createApplyCanvasPanningVisualOffset(__appScope: Record<string, 
     if (hotzones) {
       hotzones.style.left = `${left}px`;
       hotzones.style.top = `${top}px`;
+    }
+    // 刻度尺锚点容器与画布原点重合，拖动时用同一组 left/top 一起挪，否则尺子会滞后
+    const rulers = canvasRulersRef?.current;
+    if (rulers) {
+      rulers.style.left = `${left}px`;
+      rulers.style.top = `${top}px`;
     }
   };
 }
