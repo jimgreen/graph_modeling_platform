@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "node server/dev.mjs",
     "dev:frontend": "vite --host 127.0.0.1 --config vite.config.ts",
@@ -10,6 +13,7 @@
     "backend": "node server/server.mjs",
     "build": "tsc -b && vite build --config vite.config.ts",
     "audit:icons": "node scripts/audit-icon-library-quality.mjs",
+    "audit:names": "node scripts/audit-undefined-names.mjs",
     "gen:gbk-table": "node scripts/gen-gbk-table.mjs",
     "test": "vitest run",
     "test:e2e": "vitest run --config vite.e2e.config.ts",

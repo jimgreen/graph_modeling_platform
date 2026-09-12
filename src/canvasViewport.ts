@@ -1,4 +1,4 @@
-import { clampViewBoxDimensionsForZoom, normalizeViewBoxToCanvas, type CanvasBounds, type Point } from "./model";
+import { clampViewBoxDimensionsForZoom, normalizeViewBoxToCanvas, type CanvasBounds, type Point } from "./model.ts";
 
 /* 类型定义 */
 

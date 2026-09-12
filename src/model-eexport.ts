@@ -2,7 +2,7 @@
 
 import {
   type ModelNode, type Terminal, type TerminalType, type ProjectFile, type DeviceTemplate,
-  type DeviceParameterDefinition, type DeviceStateDefinition, type Edge,
+  type DeviceParameterDefinition,
   baseDeviceKind, isContainerParams, staticComponentLibraryFromParams, staticComponentLibraryForNodeLike,
   templateDerivedComponentLibraryInfo, electricGenerationDerivedComponentLibraryInfo,
   normalizeRunStatForE, normalizeSwitchStatusForE, normalizeControlTypeForE,
@@ -23,12 +23,12 @@ import {
   DEVICE_LIBRARY_BY_KIND,
   topologyNodeNumberForEField, normalizeTemplateDefinitionList,
   validateNodeEnumParameters
-} from "./model";
+} from "./model.ts";
 import type {
   GlobalLineEndpoint,
   GlobalLineRecord,
   GlobalLineReference
-} from "./global-lines";
+} from "./global-lines.ts";
 
 export const E_SECTION_COLUMNS: Record<string, string[]> = {
   Station: ["idx", "name"],

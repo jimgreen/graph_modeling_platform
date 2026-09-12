@@ -1,7 +1,6 @@
 // @ts-nocheck
-import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
-import { createPortal, flushSync } from "react-dom";
-import { useTransition } from "react";
+export * from "../export/static-button-targets";
+import { lazy } from "react";
 import { apiPath } from "../config";
 import { BUILTIN_VOLTAGE_LEVELS, ELEMENT_TREE_COMPONENT_LIBRARY_LABELS } from "../model";
 import {
@@ -9,113 +8,11 @@ import {
   DEVICE_VISUAL_PARAM_PREFIXES
 } from "../deviceVisualParams";
 import {
-  AlignCenter,
-  AlignEndHorizontal,
-  AlignEndVertical,
-  AlignHorizontalDistributeCenter,
-  AlignCenterHorizontal,
-  AlignCenterVertical,
-  AlignStartHorizontal,
-  AlignStartVertical,
-  AlignVerticalDistributeCenter,
-  ArrowDown,
-  ArrowUp,
-  Bell,
-  Bold,
-  BoxSelect,
-  Cable,
-  ChevronsDown,
-  ChevronsUp,
-  CircleDot,
-  Download,
-  FileInput,
-  FileJson,
-  FlipHorizontal,
-  FlipVertical,
-  Grid2X2,
-  Copy,
-  ChevronDown,
-  ChevronRight,
-  Group,
-  Italic,
-  Scissors,
-  EyeOff,
-  LocateFixed,
-  Map as MapIcon,
-  Maximize2,
-  FolderOpen,
-  Layers,
-  Layers2,
-  Minus,
-  MousePointer2,
-  PanelLeftOpen,
-  PanelRightOpen,
-  Palette,
-  Paintbrush,
-  Pencil,
-  Pin,
-  Plus,
-  Route,
-  RotateCcw,
-  RotateCw,
-  Save,
-  ScanSearch,
-  Search,
-  Trash2,
-  Type,
-  Underline,
-  Undo2,
-  Ungroup,
-  X,
-  Zap,
-  ZapOff
-} from "lucide-react";
-import {
-  buildContainerDeviceParameterViews,
-  buildDefaultDeviceParameterDefinitions,
-  buildElementTree,
-  assignMissingDeviceIndexes,
-  assignPermanentDeviceIndex,
-  applyDeviceTemplateDefinitionOverride,
-  buildEFileExport,
-  buildEDeviceParameterFile,
-  buildTopology,
-  calculateElectricalTopology,
-  calculateModelContentSize,
-  calculateModelGeometryBounds,
   calculateNodeVisualBounds,
-  canvasResizeBoundsFromPointerDrag,
-  canvasResizeMinimumBoundsForGeometry,
-  clampEdgeGeometryToBounds,
-  clearVoltageBaseValuesForScope,
-  setVoltageBaseTerminalValuesForScope,
-  setVoltageBaseValuesForScope,
-  canConnectTerminals,
-  clampNodePositionToBounds,
-  clampPointToBounds,
-  clampViewBoxDimensionsForZoom,
-  copySavedProjectWithUniqueName,
-  copySavedSchemeWithUniqueName,
-  createSavedScheme,
-  createSavedProject,
   createDefaultNode,
-  createInteractiveStaticDrawingNode,
-  createNodeFromTemplate,
-  createRoutableLineDeviceFromEndpoints,
-  createStaticBoxNodeFromDrawing,
-  containerRelationNameKey,
-  CONVERTER_GLYPH_BORDER_INSET,
   CUSTOM_DEVICE_TEMPLATE_KEY,
   CUSTOM_PARAM_DEFINITIONS_KEY,
   ALLOW_RESIZE_TRANSFORM_PARAM,
-  DEFAULT_COLOR_PALETTE,
-  STATIC_ROUTE_AVOIDANCE_PARAM,
-  describeContainerTerminalAssociations,
-  deleteNodesWithConnectedEdges,
-  deleteSavedProjectsFromSchemes,
-  deleteSavedScheme,
-  deleteSavedProject,
-  DEVICE_LIBRARY,
   ACAC_SIDE_CONTROL_TYPES,
   AC_GENERATOR_CONTROL_TYPES,
   DCAC_AC_CONTROL_TYPES,
@@ -127,145 +24,37 @@ import {
   HYDROGEN_STORAGE_CONTROL_TYPES,
   ELECTRIC_HEAT_COUPLING_CONTROL_TYPES,
   E_SECTION_COLUMNS,
-  getEdgeEndpointPoint as getModelEdgeEndpointPoint,
   getNodeScaleX,
   getNodeScaleY,
-  getDeviceGlyphVariant,
-  getConnectionStrokeColor,
-  getDeviceStrokeColor,
-  getDeviceStrokeWidth,
-  getTerminalDisplayColor,
-  boundaryBusInternalConnectorSegment,
-  boundaryBusInternalConnectorStrokeWidth,
-  getElementFocusPoint,
-  getMovableRouteSegmentIndexes,
   getBusTerminalType,
-  getContainerTerminalAssociationSourceIndex,
-  getSwitchVisualState,
-  isInteractiveStaticDrawingKind,
-  inferMissingRoutableLineDeviceEndpointRefs,
-  isCanvasNodeMovable,
-  isRoutableLineDeviceKind,
-  getEParameterKeys,
-  getEParamValue,
-  getEExportWarnings,
-  formatPowerBaseDisplayValue,
-  getTemplateParameterDefinitions,
   findSavedProjectRecordInSchemes,
-  findSavedSchemeById,
-  findSavedSchemeParentById,
-  flattenSavedProjects,
   flattenSavedSchemes,
-  hydrateSavedSchemeRuntimeIds,
-  nextSavedProjectAfterProjectBatchDeletion,
-  nextSavedProjectAfterProjectDeletion,
-  nextSavedProjectAfterSchemeDeletion,
-  getOverlappingTerminalGroups,
-  getRouteEndpointNormal,
-  getRouteBlockingCandidates,
-  getRouteBlockingCandidateNodesFromBoxes,
-  routeIntersectsSpecificNodes,
-  staticNodeParticipatesInRoutingAvoidance,
-  getTerminalBusContactGroups,
   getTerminalPoint,
-  createModelLayer,
   DEFAULT_MODEL_LAYER_ID,
-  filterProjectByVisibleLayers,
-  normalizeModelLayers,
-  normalizeDeviceIndexCounters,
   normalizeNodeTerminalsByTemplate,
   normalizeProjectLayers,
-  normalizeModelGroups,
-  orderNodesByModelLayer,
-  defaultAllowsResizeTransformForKind,
   normalizeSavedProjectRecordNames,
-  getTemplateStateDefinitions,
-  normalizeDeviceStateDefinitions,
   savedProjectRecordNameKey,
-  normalizeColorPalette,
-  normalizeVoltageBaseInput,
   normalizeScaleValue,
-  parseStaticDrawPoints,
-  serializeProject,
-  stripSavedSchemeRuntimeIds,
-  deserializeProject,
-  edgeWithSavedRouteGeometry,
   isBusNode,
-  isContainerTerminalAssociationDependent,
-  isDoubleContainerTerminalAssociation,
-  isBlockingTopologyValidationError,
-  isGeneratorNode,
-  isRepeatedEdgePointerClick,
-  isStaticButtonCapableKind,
-  isStaticBoxLikeKind,
-  isStaticBoxLikeNode,
   isStaticNode,
-  inferESection,
-  insertOrthogonalRouteBend,
-  insertRoutableLineDeviceBend,
-  insertChildSavedScheme,
-  keyboardMoveStepForViewBox,
-  lockProjectEdgeTerminals,
-  pointsToOrthogonalPath,
-  preserveConnectionEdgeRouteShape,
-  preserveDraggedRouteShape,
-  prepareConnectionEdgeForCommit,
   projectPointToBusCenterline,
-  rebuildConnectionRoutesForNodes,
-  rebuildExternalConnectionRoutesForMovedNodes,
-  rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes,
-  rebuildRoutableLineDeviceRouteUpdates,
-  reconcileNodeParamsWithTemplateDefinitions,
-  rebuildSingleConnectionRoute,
-  redrawConnectionRoutesForEdges,
-  redrawRoutableLineDeviceRoutes,
-  reconcileOverlappingTerminalConnections,
-  refreshCrossingArcPaths,
-  rerouteEdgesAroundMovedNodes,
-  resolveStraightBusSlideEndpoint,
-  resolveStraightBusSlideEndpointToPoint,
-  routeRoutableLineDevice,
-  routableLineDeviceCanvasPoints,
-  routableLineDeviceEndpointRefForNode,
-  routableLineDeviceEndpointRefs,
-  setRoutableLineDeviceEndpoints,
-  setRoutableLineDeviceEndpointsPreservingRoute,
-  setRoutableLineDeviceCanvasPoints,
-  syncRoutableLineDeviceEndpointsToRefs,
-  synchronizeBusTerminalsWithEdges,
-  validateTopology,
-  validateConnectionEndpointRules,
-  validateTwoTerminalVoltageBaseConsistency,
-  voltageBaseSettingModeForNode,
-  validateVoltageSetpointDeviations,
-  resolveDeviceStateVisual,
   normalizeViewBoxToCanvas,
   type DeviceKind,
   type DeviceIndexCounters,
   type DeviceParameterDefinition,
-  type DeviceParameterEnumOption,
-  type DeviceParameterEnumValueType,
   type DeviceParameterValueType,
-  type DeviceStateDefinition,
-  type DeviceStateVisual,
   type DeviceTemplate,
   type DeviceTemplateDefinitionOverride,
-  type ElementTreeGroup,
-  type ElementTreeChildItem,
-  type ElementTreeItem,
-  type AlignMode,
   type Edge,
   type ModelNode,
   type ModelLayer,
   type ModelGroup,
   type Point,
   type ProjectFile,
-  type RoutedEdge,
   type CanvasBounds,
   type ColorPalette,
   type ColorDisplayMode,
-  type ContainerDeviceParameterView,
-  type GeometryBounds,
   type Topology,
   type ContainerTerminalAssociationType,
   type ContainerTerminalAssociationValue,
@@ -274,262 +63,50 @@ import {
   type TopologyValidationError,
   type VoltageBaseClearScope,
   type VoltageBaseSetScope,
-  type VoltageBaseTerminalValuesByNodeId,
-  routeEdgesForCachedStoredRendering,
-  routeEdgesForIncrementalRendering,
-  routeEdgesForSavedPathRendering,
-  routeEdgesForStoredRendering,
-  modelGeometryInsideCanvasBounds,
-  buildManualConnectionPreviewRoute,
-  buildManualConnectionPreviewPath,
-  mirrorNodes,
-  moveSavedSchemeToParent,
-  renameSavedScheme,
-  renameSavedProject,
-  replaceSavedSchemeById,
-  savedChildSchemeNames,
-  savedProjectPathOptions,
-  savedSchemeSiblingNames,
-  moveOrthogonalRouteSegment,
-  moveRoutableLineDeviceSegment,
-  terminalRenderLocalPoint,
-  terminalStubSegment,
-  terminalStubStrokeWidth,
-  STATIC_DRAW_POINTS_PARAM,
-  DEFAULT_DEVICE_LABEL_FONT_SIZE,
   TERMINAL_TYPE_LIBRARY_LABELS,
   terminalVoltageBaseNumber,
   terminalTypeColor,
-  tidyOrthogonalRoute,
-  topologyCalculationMessage,
-  upsertSavedProject,
-  upsertSavedProjectInScheme,
-  uniqueRecordName,
-  validateContainerTerminalAssociations,
-  viewBoxZoomPercent,
-  type PersistedSavedSchemeRecord,
   type SavedSchemeRecord,
   type SavedProjectRecord
 } from "../model";
-import { isGlobalSaveShortcut, resolveKeyboardShortcutScope } from "../keyboardShortcuts";
 import {
-  createGraphStore,
-  graphStoreApplyPatch,
-  graphStorePatchEdges,
-  graphStorePatchGraph,
-  graphStorePatchGraphFromArrays,
-  graphStorePatchNodes,
-  graphStoreSetEdges,
-  graphStoreSetGraph,
-  graphStoreSetNodes,
-  overlayGraphStoreNodes,
-  queryGraphStoreNodeSpatialIndex,
-  type GraphStore
-} from "../graphStore";
-import {
-  createRouteStore,
-  queryRouteSpatialIndex,
-  routeRenderBounds,
-  routeSpatialIndexRenderBounds,
-  routeStorePatchRoutes,
-  routeStorePatchRoutesById,
-  routeStoreSetRoutes,
-  type RouteStore
-} from "../routeStore";
-import {
-  EMPTY_CANVAS_CLIPBOARD,
-  AUTO_ALIGN_DEFAULT_THRESHOLD_PX,
-  AUTO_ALIGN_MAX_THRESHOLD_PX,
-  AUTO_ALIGN_MIN_THRESHOLD_PX,
-  alignNodeLayoutUnits,
-  autoAlignNodeLayoutUnits,
-  autoSpreadNodeLayoutUnits,
-  buildCanvasLayoutUnits,
-  buildCanvasClipboard,
-  canDissolveSingleCanvasGroupSelection,
-  canGroupCanvasSelection,
-  canvasClipboardBounds,
-  canvasGroupMemberNodeIds,
-  cloneCanvasClipboard,
-  createCanvasGroupFromSelection,
-  distributeNodeLayoutUnits,
-  dissolveSelectedCanvasGroups,
-  expandSelectionByGroups,
-  removeGraphicsFromGroups,
-  reorderItemsByDisplayLayer,
-  resolveCanvasDeleteAction,
   resolveCanvasSelection,
-  selectedCanvasGroupIds,
-  selectGraphicsInRect,
   type CanvasClipboard,
   type CanvasLayoutUnit,
   type SelectionRect,
   type CanvasSelectionScope,
-  type DisplayLayerAction
 } from "../selectionActions";
 import {
   clampNumber,
-  canvasResizeEdgeAnchorsStart,
-  canvasResizeOriginShiftForBounds,
-  canvasResizePreviewRectForDraft,
-  canvasResizeScrollTargetForCommitAnchor,
-  canvasVisualRectScrollTarget,
-  canvasFrameScrollTargetForViewBox,
-  canvasViewBoxFromFrameScrollPosition,
-  canvasRenderViewBoxAfterBoundsDraft,
-  viewBoxAfterCanvasBoundsChange,
-  canvasBoundsChangeIsMeaningful,
-  canvasFrameScrollIsUserDriven,
-  canvasScrollSyncShouldRun,
-  canvasBoundsScrollSyncTarget,
-  scrollPositionToViewBoxStart,
-  canvasResizeAnchoredDisplayOffset,
-  canvasResizeKeepsScrollRange,
-  clampCanvasNoScrollOffset,
-  canvasFullViewBoxFromBounds,
   CANVAS_FRAME_INSET,
   CANVAS_SCROLL_EDGE_VIEWPORT_RATIO,
   CANVAS_FIT_SCROLLBAR_GUARD,
   type CanvasResizeEdge,
-  type CanvasResizePreviewMetrics,
   type CanvasResizePreviewRect,
-  type CanvasResizeCommitScrollTarget,
   type CanvasViewBox,
 } from "../canvasViewport";
 import {
-  isSidePanelVisible,
-  nextSidePanelAutoVisible,
-  normalizeSidePanelMode,
-  shouldIgnoreWorkspaceAutoHide,
-  type SidePanelMode,
   type SidePanelSide
 } from "../sidePanelVisibility";
 import {
-  DEFAULT_MEASUREMENT_CONFIG,
-  EMPTY_PROJECT_MEASUREMENTS,
-  createDefaultMeasurementGroupsForNode,
-  formatMeasurementDisplayValue,
-  measurementFontScaleForNode,
-  measurementOffsetScaleForNode,
-  measurementGroupForNode,
-  measurementGroupsForNode,
-  measurementProfileItemsForNodePosition,
-  normalizeMeasurementConfig,
-  normalizeProjectMeasurements,
-  removeMeasurementGroupForNode,
-  resolveMeasurementItemDisplay,
-  upsertMeasurementGroup,
-  upsertMeasurementGroups,
   type DeviceMeasurementProfileItem,
   type MeasurementGroup,
-  type MeasurementItemBinding,
   type MeasurementProfilePositionDefinition,
-  type MeasurementTypeDefinition,
   type PlatformMeasurementConfig,
   type ProjectMeasurementConfig
 } from "../measurements";
 import {
-  StaticButtonLayerMultiSelect,
-  TextStyleToggleButton,
-  type StaticButtonLayerMultiSelectProps,
-  type TextStyleToggleButtonProps,
-} from "../components/StaticButtonComponents";
-import {
   normalizeRotationDegrees,
-  formatStatusNumber,
-  formatInspectorScaleValue,
-  formatStatusScalePercent,
-  formatStatusRotationDegrees,
   degreesToRadians
 } from "../formatUtils";
 import {
-  downloadText,
-  downloadBlob,
-  saveTextFile,
-  saveBlobFile,
-  saveLazyBlobFile,
-  writeTextFileToDirectory,
-  isPickerAbort,
-  type TextSaveOptions,
-  type BlobSaveOptions,
-  type LazyBlobSaveOptions,
-  type WritableDirectoryHandle
-} from "../fileIO";
-import {
-  svgStrokeDashArray,
-  escapeXml,
   formatSvgNumber,
-  backendImageIdFromHref,
-  isImageDataUrl,
-  imageArrayBufferToDataUrl,
-  decodeBase64Text,
-  decodeSvgImageSource,
-  svgRootAttributeValue,
-  svgLengthNumber,
-  stripUnsafeInlineSvgMarkup,
-  inlineSvgRootMarkup,
-  svgImageContentMarkup,
-  styleObjectToSvgAttribute,
-  renderSvgElementMarkup
 } from "../svgUtils";
 import {
-  DeferredColorInput,
-  BufferedTextInput,
-  BufferedTextarea,
-  colorInputValue,
-  type DeferredColorInputProps,
-  type BufferedTextInputProps,
-  type BufferedTextareaProps
-} from "../components/InputComponents";
-import {
-  numericNodeParam,
-  nodeLabelOffset,
-  nodeLabelText,
-  nodeLabelVisible,
-  normalizeNodeLabelDisplayMode,
-  nodeLabelDisplayMode,
-  nodeLabelShouldRender,
-  normalizeNodeLabelRotation,
-  nodeLabelVertical,
-  nodeLabelVerticalSegments,
-  nodeLabelVerticalTokenY,
-  nodeLabelTransform,
-  nodeLabelCanvasCenter,
-  nodeLabelRotationFromPoint,
-  nodeLabelTextAnchor,
-  nodeLabelFontSize,
-  nodeLabelTextStyle,
-  nodeLabelVerticalTokenStyle,
   type NodeLabelDisplayMode
 } from "../nodeLabelUtils";
-import {
-  nodeCounterTransformMatrix,
-  uprightText,
-  staticNumericParam,
-  staticSymbolShadowStyle,
-  staticSymbolTextValue,
-  staticSymbolMiniatureTextValue,
-  staticShapeText,
-  estimateSvgTextWidth,
-  staticConnectorMarker,
-  staticConnectorPath,
-  staticDrawPointsForNode,
-  staticHandleDot,
-  staticFrameHandles,
-  DEVICE_GLYPH_DESIGN_LONGEST_SIDE,
-  renderBusGlyphRect,
-  deviceStateVisualToken,
-  stateVisualText,
-  resolveStateVisualImageHref,
-  routableLineDeviceRenderLocalPoints,
-} from "../staticRenderUtils";
 import { snapSingleTerminalAnchorToNearestSide, projectedProportionalScaleFromHandleDelta, resizeLineSegmentBusGeometryFromHandleDrag } from "../transformUtils";
-import { DeviceGlyph, MemoDeviceGlyph, SvgMarkupChunk } from "../DeviceGlyph";
-import { buildSvgNodeLabelMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "../svgExportUtils";
-import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
-import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "../customDeviceUtils";
-import { useBatchEditors } from "../hooks/useBatchEditors";
-
+import { type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
 export const ENABLE_REACT_FLOW_PREVIEW = import.meta.env.DEV;
 
 export const ReactFlowPreview = ENABLE_REACT_FLOW_PREVIEW ? lazy(() => import("../ReactFlowPreview")) : null;
@@ -1924,6 +1501,10 @@ export const voltageColorKeyForTerminal = (node: ModelNode, terminal: ModelNode[
   return voltage ? `${terminal.type}:${voltage}` : "";
 };
 
+// DEFAULT_CANVAS_*（宽/高/背景色）与 src/export/svg.ts 里的同名常量保持同值：
+// 该文件被 Node 原生直载（server/*.mjs import），不能引入 .tsx，故两处各存一份；
+// 改值必须同时改两处；golden 基线显式传宽高/底色、不覆盖默认分支，
+// 默认底色的漂移由 src/export/svg.test.ts 的默认值断言守护（宽高默认值暂无守护）。
 export const DEFAULT_CANVAS_WIDTH = 1920;
 
 export const DEFAULT_CANVAS_HEIGHT = 1024;
@@ -3581,52 +3162,7 @@ export const PARAM_OPTION_LABELS: Record<string, Record<string, string>> = {
   markerEnd: { none: "无", arrow: "箭头", dot: "圆点" }
 };
 
-export const parseStaticButtonTargetLayerValues = (value?: string) => {
-  const text = value?.trim();
-  if (!text) {
-    return [];
-  }
-  if (text.startsWith("[")) {
-    try {
-      const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) {
-        return Array.from(new Set(parsed.map((item) => String(item).trim()).filter(Boolean)));
-      }
-    } catch {
-      // Fall through to legacy delimiter parsing.
-    }
-  }
-  return Array.from(new Set(text.split(/[,\n;|]/).map((item) => item.trim()).filter(Boolean)));
-};
-
 export const serializeStaticButtonTargetLayerIds = (layerIds: string[]) => JSON.stringify(layerIds);
-
-export const resolveStaticButtonTargetLayers = (node: ModelNode, availableLayers: ModelLayer[]) => {
-  const layerById = new Map(availableLayers.map((layer) => [layer.id, layer]));
-  const layerByName = new Map(availableLayers.map((layer) => [layer.name.trim(), layer]));
-  const targetLayerIds = parseStaticButtonTargetLayerValues(node.params.buttonTargetLayerIds);
-  const targetLayerNames = parseStaticButtonTargetLayerValues(node.params.buttonTargetLayerNames);
-  const legacyTargetLayerId = node.params.buttonTargetLayerId?.trim();
-  const legacyTargetLayerName = node.params.buttonTargetLayerName?.trim();
-  const idCandidates = targetLayerIds.length > 0 ? targetLayerIds : legacyTargetLayerId ? [legacyTargetLayerId] : [];
-  const nameCandidates = targetLayerNames.length > 0 ? targetLayerNames : legacyTargetLayerName ? [legacyTargetLayerName] : [];
-  const selectedLayers: ModelLayer[] = [];
-  const selectedLayerIds = new Set<string>();
-  const addLayer = (layer?: ModelLayer) => {
-    if (!layer || selectedLayerIds.has(layer.id)) {
-      return;
-    }
-    selectedLayerIds.add(layer.id);
-    selectedLayers.push(layer);
-  };
-  for (const layerId of idCandidates) {
-    addLayer(layerById.get(layerId));
-  }
-  for (const layerName of nameCandidates) {
-    addLayer(layerByName.get(layerName));
-  }
-  return selectedLayers;
-};
 
 export const VOLTAGE_BASE_PARAM_KEYS = new Set(["vbase", "i_vbase", "k_vbase", "j_vbase"]);
 
@@ -4117,7 +3653,12 @@ export const backendJsonHeaders = { "content-type": "application/json" };
 
 export async function backendErrorMessage(response: Response, fallbackMessage: string) {
   const payload = await response.json().catch(() => ({}));
-  return typeof payload.error === "string" ? payload.error : fallbackMessage;
+  // 旧式 { error: "消息" } 与 v1 信封 { error: { code, message } } 两种形态
+  if (typeof payload?.error === "string") {
+    return payload.error;
+  }
+  const message = typeof payload?.error?.message === "string" ? payload.error.message.trim() : "";
+  return message || fallbackMessage;
 }
 
 export async function fetchBackendJson<T>(url: string, fallbackMessage: string, init?: RequestInit): Promise<T> {

@@ -36,7 +36,28 @@ describe("SVG export", () => {
   test("writes E, JSON, and SVG files to one selected directory with model-based names", async () => {
     let now = 1000;
     vi.spyOn(performance, "now").mockImplementation(() => now);
-    const buildDocument = vi.fn((_nodes: unknown, _edges: unknown, _options: unknown) => "<svg/>");
+    const backendProject = { version: 1, name: "voltage-export", nodes: [], edges: [] };
+    // XML 声明由后端产出（前端不再前置），SVG 响应体原样落盘
+    const fetchMock = vi.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes("/v1/schemes/model/json")) {
+        return new Response(JSON.stringify({ ok: true, data: { project: backendProject } }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (target.includes("/v1/schemes/model/e-file")) {
+        return new Response("<Model/>", {
+          status: 200,
+          headers: { "content-type": "text/plain; charset=gbk" }
+        });
+      }
+      return new Response('<?xml version="1.0" encoding="GBK"?>\n<svg/>', {
+        status: 200,
+        headers: { "content-type": "image/svg+xml; charset=gbk" }
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
     const buildEFileExport = vi.fn(() => ({ filename: "ignored-name.e", text: "<Model/>", mime: "text/plain", warnings: [] }));
     const currentProject = vi.fn(() => ({ version: 1, name: "voltage-export", nodes: [], edges: [] }));
     const directoryHandle = { name: "exports" };
@@ -55,27 +76,12 @@ describe("SVG export", () => {
     vi.stubGlobal("showGlobalMessage", showGlobalMessage);
     vi.stubGlobal("window", { showDirectoryPicker });
     const exportSvg = createExportSvg({
-      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
       activeSchemeKey: "scheme-1",
-      activeLayerId: "default-layer",
-      backgroundPageRender: null,
       buildEFileExport,
-      buildSvgDocument: buildDocument,
-      canvasBackgroundColor: "#ffffff",
-      canvasBackgroundImageUrl: "",
-      canvasBounds: { width: 320, height: 180 },
-      colorDisplayMode: "energy",
-      colorPalette: DEFAULT_COLOR_PALETTE,
       currentProject,
-      edges: [],
       ensureSavedBeforeExport,
       getEExportWarnings,
-      layers: [],
       libraryTemplates: DEVICE_LIBRARY,
-      loadSvgImageExportPathById: async () => ({}),
-      measurementConfig: undefined,
-      nodes: [],
-      projectMeasurements: { groups: [] },
       projectName: "voltage-export",
       safeFilePart: (value: string) => value,
       schemePathForScheme: () => ["主方案", "子方案"],
@@ -87,21 +93,30 @@ describe("SVG export", () => {
     await exportSvg("gbk");
 
     expect(ensureSavedBeforeExport).toHaveBeenCalledOnce();
-    expect(buildEFileExport).toHaveBeenCalledWith(
-      currentProject.mock.results[0]?.value,
-      ["主方案", "子方案"],
-      expect.objectContaining({ interfaceDefinitions: expect.any(Array) })
-    );
+    // E 与 JSON/SVG 同走后端：本地 buildEFileExport/currentProject/getEExportWarnings 一律不参与
+    expect(buildEFileExport).not.toHaveBeenCalled();
+    expect(currentProject).not.toHaveBeenCalled();
     expect(getEExportWarnings).not.toHaveBeenCalled();
-    expect(buildDocument).toHaveBeenCalledOnce();
-    expect(buildDocument.mock.calls[0]?.[2]).toMatchObject({ colorDisplayMode: "voltage" });
+    // 三份产物全由后端生成：SVG 请求带方案路径与 colorMode=voltage（与本地导出原着色一致）
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const exportUrls = fetchMock.mock.calls.map((call) => String(call[0]));
+    const eUrl = exportUrls.find((url) => url.includes("/v1/schemes/model/e-file")) ?? "";
+    const svgUrl = exportUrls.find((url) => url.includes("/v1/schemes/model/svg")) ?? "";
+    const jsonUrl = exportUrls.find((url) => url.includes("/v1/schemes/model/json")) ?? "";
+    expect(eUrl).toContain(encodeURIComponent(JSON.stringify(["主方案", "子方案"])));
+    expect(eUrl).toContain(encodeURIComponent("voltage-export"));
+    expect(svgUrl).toContain(encodeURIComponent(JSON.stringify(["主方案", "子方案"])));
+    expect(svgUrl).toContain(encodeURIComponent("voltage-export"));
+    expect(svgUrl).toContain("colorMode=voltage");
+    expect(jsonUrl).toContain(encodeURIComponent(JSON.stringify(["主方案", "子方案"])));
+    expect(jsonUrl).toContain(encodeURIComponent("voltage-export"));
     expect(serializeProject).not.toHaveBeenCalled();
     expect(showDirectoryPicker).toHaveBeenCalledOnce();
     expect(showDirectoryPicker).toHaveBeenCalledWith({ id: "model-bundle-export", mode: "readwrite" });
     expect(writeTextFileToDirectory).toHaveBeenCalledTimes(3);
     expect(writeTextFileToDirectory.mock.calls).toEqual([
       [directoryHandle, "voltage-export.e", "<Model/>", "text/plain", "gbk"],
-      [directoryHandle, "voltage-export.json", JSON.stringify(currentProject.mock.results[0]?.value, null, 2), "application/json", "gbk"],
+      [directoryHandle, "voltage-export.json", JSON.stringify(backendProject), "application/json", "gbk"],
       [directoryHandle, "voltage-export.svg", '<?xml version="1.0" encoding="GBK"?>\n<svg/>', "image/svg+xml", "gbk"]
     ]);
     expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：voltage-export.e");
@@ -123,26 +138,12 @@ describe("SVG export", () => {
     vi.stubGlobal("showGlobalMessage", showGlobalMessage);
     vi.stubGlobal("window", { showDirectoryPicker });
     const exportSvg = createExportSvg({
-      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
       activeSchemeKey: "scheme-1",
-      activeLayerId: "default-layer",
-      backgroundPageRender: null,
       buildEFileExport: () => ({ filename: "cancelled-export.e", text: "<Model/>", mime: "text/plain" }),
-      buildSvgDocument: vi.fn(() => "<svg/>"),
-      canvasBackgroundColor: "#ffffff",
-      canvasBackgroundImageUrl: "",
-      canvasBounds: { width: 320, height: 180 },
-      colorPalette: DEFAULT_COLOR_PALETTE,
       currentProject: () => ({ version: 1, name: "cancelled-export", nodes: [], edges: [] }),
-      edges: [],
       ensureSavedBeforeExport: () => true,
       getEExportWarnings: () => [],
-      layers: [],
       libraryTemplates: DEVICE_LIBRARY,
-      loadSvgImageExportPathById: async () => ({}),
-      measurementConfig: undefined,
-      nodes: [],
-      projectMeasurements: { groups: [] },
       projectName: "cancelled-export",
       safeFilePart: (value: string) => value,
       isPickerAbort: (error: unknown) => error instanceof DOMException && error.name === "AbortError",
@@ -169,28 +170,32 @@ describe("SVG export", () => {
     });
     const writeOperationLog = vi.fn();
     vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    // 未导出设备告警改由后端响应头带回（生成器单源），与单文件导出同一通道
+    const warningsHeader = encodeURIComponent(JSON.stringify({
+      total: 1,
+      items: [{ nodeName: "未导出设备", kind: "custom", reason: "未配置接口" }]
+    }));
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes("/v1/schemes/model/json")) {
+        return new Response(JSON.stringify({ ok: true, data: { project: { version: 1, name: "partial-export", nodes: [], edges: [] } } }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (target.includes("/v1/schemes/model/e-file")) {
+        return new Response("<Model/>", {
+          status: 200,
+          headers: { "content-type": "text/plain; charset=utf-8", "x-e-file-warnings": warningsHeader }
+        });
+      }
+      return new Response("<svg/>", { status: 200, headers: { "content-type": "image/svg+xml" } });
+    }));
     vi.stubGlobal("window", { showDirectoryPicker: vi.fn(async () => directoryHandle) });
     const exportSvg = createExportSvg({
-      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
       activeSchemeKey: "scheme-1",
-      activeLayerId: "default-layer",
-      backgroundPageRender: null,
-      buildEFileExport: () => ({ filename: "ignored.e", text: "<Model/>", mime: "text/plain" }),
-      buildSvgDocument: () => "<svg/>",
-      canvasBackgroundColor: "#ffffff",
-      canvasBackgroundImageUrl: "",
-      canvasBounds: { width: 320, height: 180 },
-      colorPalette: DEFAULT_COLOR_PALETTE,
-      currentProject: () => ({ version: 1, name: "partial-export", nodes: [], edges: [] }),
-      edges: [],
       ensureSavedBeforeExport: () => true,
-      getEExportWarnings: () => [{ nodeName: "未导出设备", kind: "custom", reason: "未配置接口" }],
-      layers: [],
       libraryTemplates: DEVICE_LIBRARY,
-      loadSvgImageExportPathById: async () => ({}),
-      measurementConfig: undefined,
-      nodes: [],
-      projectMeasurements: { groups: [] },
       projectName: "partial-export",
       safeFilePart: (value: string) => value,
       schemePathForScheme: () => ["默认方案"],
@@ -219,13 +224,10 @@ describe("SVG export", () => {
     const showGlobalMessage = vi.fn();
     const setExportCompletionDialog = vi.fn();
     const writeOperationLog = vi.fn();
-    const buildDocument = vi.fn(() => {
-      executionOrder.push("build-svg");
-      return "<svg/>";
-    });
-    const loadSvgImageExportPathById = vi.fn(async () => {
-      executionOrder.push("load-images");
-      return {};
+    const fetchMock = vi.fn(async (_url: string) => {
+      executionOrder.push("fetch-svg");
+      // 声明由后端产出：前端原样落盘
+      return new Response('<?xml version="1.0" encoding="GBK"?>\n<svg/>', { status: 200, headers: { "content-type": "image/svg+xml; charset=gbk" } });
     });
     let finishSave!: () => void;
     const saveCompletion = new Promise<void>((resolve) => {
@@ -247,26 +249,14 @@ describe("SVG export", () => {
     });
     vi.spyOn(performance, "now").mockImplementation(() => now);
     vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    vi.stubGlobal("fetch", fetchMock);
     const exportSvgFile = createExportSvgFile({
-      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
-      activeLayerId: "default-layer",
-      backgroundPageRender: null,
-      buildSvgDocument: buildDocument,
-      canvasBackgroundColor: "#ffffff",
-      canvasBackgroundImageUrl: "",
-      canvasBounds: { width: 320, height: 180 },
-      colorPalette: {},
-      edges: [],
+      activeSchemeKey: "scheme-1",
       ensureSavedBeforeExport: () => true,
-      layers: [],
-      libraryTemplates: [],
-      loadSvgImageExportPathById,
-      measurementConfig: {},
-      nodes: [],
-      projectMeasurements: [],
       projectName: "模型",
       safeFilePart: (value: string) => value,
       saveLazyTextFile,
+      schemePathForScheme: () => ["默认方案"],
       setExportCompletionDialog,
       showGlobalMessage,
       writeOperationLog
@@ -274,7 +264,7 @@ describe("SVG export", () => {
 
     const exportPromise = exportSvgFile("gbk");
 
-    await vi.waitFor(() => expect(buildDocument).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(executionOrder[0]).toBe("save-picker");
     expect(setExportCompletionDialog).not.toHaveBeenCalled();
 
@@ -290,7 +280,7 @@ describe("SVG export", () => {
       message: "SVG 文件导出成功：模型.svg；字符编码：GBK；总耗时：1.50 秒"
     });
     expect(showGlobalMessage).not.toHaveBeenCalled();
-    expect(executionOrder).toEqual(["save-picker", "load-images", "build-svg", "save-target-ready", "write-svg", "close-svg"]);
+    expect(executionOrder).toEqual(["save-picker", "fetch-svg", "save-target-ready", "write-svg", "close-svg"]);
   });
 
   test("generates standalone JSON while the save target is being chosen and reports after saving completes", async () => {
@@ -298,13 +288,13 @@ describe("SVG export", () => {
     const showGlobalMessage = vi.fn();
     const setExportCompletionDialog = vi.fn();
     const writeOperationLog = vi.fn();
-    const currentProject = vi.fn(() => {
-      executionOrder.push("snapshot-json");
-      return { version: 1, name: "模型", nodes: [], edges: [] };
-    });
-    const serializeProject = vi.fn((project: unknown) => {
-      executionOrder.push("serialize-json");
-      return JSON.stringify(project);
+    // JSON 由后端生成：选目录期间并行发起请求，落盘用响应体
+    const fetchMock = vi.fn(async (_url: string) => {
+      executionOrder.push("fetch-json");
+      return new Response(JSON.stringify({ ok: true, data: { project: { version: 1, name: "模型", nodes: [], edges: [] } } }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
     });
     let finishSave!: () => void;
     const saveCompletion = new Promise<void>((resolve) => {
@@ -313,7 +303,7 @@ describe("SVG export", () => {
     let now = 2000;
     const saveLazyTextFile = vi.fn(async ({ loadText, onSaveTargetReady, encoding }: { loadText: () => Promise<string> | string; onSaveTargetReady?: () => void; encoding?: string }) => {
       executionOrder.push("save-picker");
-      await loadText();
+      expect(await loadText()).toBe(JSON.stringify({ version: 1, name: "模型", nodes: [], edges: [] }));
       expect(encoding).toBe("gbk");
       now = 4000;
       onSaveTargetReady?.();
@@ -325,13 +315,14 @@ describe("SVG export", () => {
     });
     vi.spyOn(performance, "now").mockImplementation(() => now);
     vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    vi.stubGlobal("fetch", fetchMock);
     const exportJsonFile = createExportJsonFile({
-      currentProject,
+      activeSchemeKey: "scheme-1",
       ensureSavedBeforeExport: () => true,
       projectName: "模型",
       safeFilePart: (value: string) => value,
       saveLazyTextFile,
-      serializeProject,
+      schemePathForScheme: () => ["默认方案"],
       setExportCompletionDialog,
       showGlobalMessage,
       writeOperationLog
@@ -339,7 +330,8 @@ describe("SVG export", () => {
 
     const exportPromise = exportJsonFile("gbk");
 
-    await vi.waitFor(() => expect(serializeProject).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v1/schemes/model/json");
     expect(executionOrder[0]).toBe("save-picker");
     expect(setExportCompletionDialog).not.toHaveBeenCalled();
 
@@ -355,14 +347,17 @@ describe("SVG export", () => {
       message: "JSON 文件导出成功：模型.json；字符编码：GBK；总耗时：1.25 秒"
     });
     expect(showGlobalMessage).not.toHaveBeenCalled();
-    expect(executionOrder).toEqual(["save-picker", "snapshot-json", "serialize-json", "save-target-ready", "write-json", "close-json"]);
+    expect(executionOrder).toEqual(["save-picker", "fetch-json", "save-target-ready", "write-json", "close-json"]);
   });
 
   test("reports successful E file export after saving completes", async () => {
     const showGlobalMessage = vi.fn();
     const writeOperationLog = vi.fn();
     const setExportCompletionDialog = vi.fn();
-    const buildEFileExport = vi.fn(() => ({ filename: "模型.e", text: "<Model/>", mime: "text/plain" }));
+    const fetchMock = vi.fn(async (_url: string) => new Response("<Model/>", {
+      status: 200,
+      headers: { "content-type": "text/plain; charset=utf-8" }
+    }));
     let finishSave!: () => void;
     const saveCompletion = new Promise<void>((resolve) => {
       finishSave = resolve;
@@ -380,15 +375,12 @@ describe("SVG export", () => {
     });
     vi.spyOn(performance, "now").mockImplementation(() => now);
     vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    vi.stubGlobal("fetch", fetchMock);
     const exportEFile = createExportEFile({
       activeSchemeKey: "scheme-1",
-      buildEFileExport,
-      currentProject: () => ({ version: 1, name: "模型", nodes: [], edges: [] }),
-      edges: [],
       ensureSavedBeforeExport: () => true,
-      getEExportWarnings: () => [],
-      nodes: [],
       projectName: "模型",
+      safeFilePart: (name: string) => name,
       saveLazyTextFile,
       schemePathForScheme: () => ["主方案", "子方案"],
       setExportCompletionDialog,
@@ -398,8 +390,11 @@ describe("SVG export", () => {
 
     const exportPromise = exportEFile("utf-8");
 
-    await vi.waitFor(() => expect(buildEFileExport).toHaveBeenCalledOnce());
-    expect(showGlobalMessage).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const fetchedUrl = String(fetchMock.mock.calls[0][0]);
+    expect(fetchedUrl).toContain("/v1/schemes/model/e-file");
+    expect(fetchedUrl).toContain(encodeURIComponent(JSON.stringify(["主方案", "子方案"])));
+    expect(fetchedUrl).toContain("encoding=utf-8");
     expect(showGlobalMessage).not.toHaveBeenCalled();
 
     await vi.waitFor(() => expect(saveTargetReady).toBe(true));
@@ -414,31 +409,30 @@ describe("SVG export", () => {
       message: "E 文件导出成功：模型.e；字符编码：UTF-8；总耗时：1.50 秒"
     });
     expect(showGlobalMessage).not.toHaveBeenCalled();
-    expect(buildEFileExport).toHaveBeenCalledWith(
-      expect.anything(),
-      ["主方案", "子方案"],
-      expect.objectContaining({ interfaceDefinitions: [] })
-    );
+    vi.unstubAllGlobals();
   });
 
   test("does not report E file export success when saving is cancelled", async () => {
     const showGlobalMessage = vi.fn();
     const writeOperationLog = vi.fn();
     const setExportCompletionDialog = vi.fn();
+    const fetchMock = vi.fn(async (_url: string) => new Response("<PowerBase/>", {
+      status: 200,
+      headers: { "content-type": "text/plain; charset=gbk" }
+    }));
     const saveLazyTextFile = vi.fn(async ({ loadText }: { loadText: () => Promise<string> | string }) => {
       await loadText();
       return false;
     });
     vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    vi.stubGlobal("fetch", fetchMock);
     const exportEFile = createExportEFile({
-      buildEFileExport: () => ({ filename: "模型.e", text: "<PowerBase/>", mime: "text/plain" }),
-      currentProject: () => ({ version: 1, name: "模型", nodes: [], edges: [] }),
-      edges: [],
+      activeSchemeKey: "scheme-1",
       ensureSavedBeforeExport: () => true,
-      getEExportWarnings: () => [],
-      nodes: [],
       projectName: "模型",
+      safeFilePart: (name: string) => name,
       saveLazyTextFile,
+      schemePathForScheme: () => ["默认方案"],
       setExportCompletionDialog,
       showGlobalMessage,
       writeOperationLog
@@ -446,10 +440,11 @@ describe("SVG export", () => {
 
     await exportEFile();
 
+    expect(fetchMock).toHaveBeenCalledOnce();
     expect(writeOperationLog).not.toHaveBeenCalled();
     expect(showGlobalMessage).not.toHaveBeenCalled();
     expect(setExportCompletionDialog).not.toHaveBeenCalled();
-    expect(showGlobalMessage).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 
   test("escapes custom canvas background image href", () => {
@@ -781,12 +776,28 @@ describe("SVG export", () => {
     expect(svg).not.toContain('<g id="switch-closed" class="export-device"');
   });
 
-  test("starts E and JSON writes while SVG image preparation is still pending", async () => {
-    let resolveImagePaths: ((value: Record<string, string>) => void) | undefined;
-    const imagePaths = new Promise<Record<string, string>>((resolve) => {
-      resolveImagePaths = resolve;
+  test("starts E and JSON writes while the backend SVG request is still pending", async () => {
+    let resolveSvg: ((response: Response) => void) | undefined;
+    const svgResponse = new Promise<Response>((resolve) => {
+      resolveSvg = resolve;
     });
-    const buildDocument = vi.fn(() => "<svg/>");
+    // 只有 SVG 走挂起的响应；JSON 立即返回，才能验证「SVG 未回时 E/JSON 已落盘」
+    const fetchMock = vi.fn((url: string) => {
+      const target = String(url);
+      if (target.includes("/v1/schemes/model/json")) {
+        return Promise.resolve(new Response(JSON.stringify({
+          ok: true,
+          data: { project: { version: 1, name: "parallel-export", nodes: [], edges: [] } }
+        }), { status: 200, headers: { "content-type": "application/json" } }));
+      }
+      if (target.includes("/v1/schemes/model/e-file")) {
+        return Promise.resolve(new Response("<Model/>", {
+          status: 200,
+          headers: { "content-type": "text/plain; charset=utf-8" }
+        }));
+      }
+      return svgResponse;
+    });
     const directoryHandle = { name: "exports" };
     const writeTextFileToDirectory = vi.fn(async (
       _directory: unknown,
@@ -795,30 +806,17 @@ describe("SVG export", () => {
       _mime: string
     ) => undefined);
     vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("window", {
       showDirectoryPicker: vi.fn(async () => directoryHandle)
     });
     const exportSvg = createExportSvg({
-      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
       activeSchemeKey: "scheme-1",
-      activeLayerId: "default-layer",
-      backgroundPageRender: null,
       buildEFileExport: () => ({ filename: "ignored.e", text: "<Model/>", mime: "text/plain", warnings: [] }),
-      buildSvgDocument: buildDocument,
-      canvasBackgroundColor: "#ffffff",
-      canvasBackgroundImageUrl: "",
-      canvasBounds: { width: 320, height: 180 },
-      colorPalette: DEFAULT_COLOR_PALETTE,
       currentProject: () => ({ version: 1, name: "parallel-export", nodes: [], edges: [] }),
-      edges: [],
       ensureSavedBeforeExport: () => true,
       getEExportWarnings: () => [],
-      layers: [],
       libraryTemplates: DEVICE_LIBRARY,
-      loadSvgImageExportPathById: () => imagePaths,
-      measurementConfig: undefined,
-      nodes: [],
-      projectMeasurements: { groups: [] },
       projectName: "parallel-export",
       safeFilePart: (value: string) => value,
       schemePathForScheme: () => ["默认方案"],
@@ -832,13 +830,13 @@ describe("SVG export", () => {
       "parallel-export.e",
       "parallel-export.json"
     ]);
-    expect(buildDocument).not.toHaveBeenCalled();
+    expect(writeTextFileToDirectory.mock.calls.some((call) => String(call[1]).endsWith(".svg"))).toBe(false);
 
-    resolveImagePaths?.({});
+    resolveSvg?.(new Response("<svg/>", { status: 200, headers: { "content-type": "image/svg+xml" } }));
     await exportPromise;
 
-    expect(buildDocument).toHaveBeenCalledOnce();
     expect(writeTextFileToDirectory).toHaveBeenCalledTimes(3);
+    expect(String(writeTextFileToDirectory.mock.calls[2]?.[1])).toBe("parallel-export.svg");
   });
 
   test("skips the backend image manifest when the SVG has no image references", async () => {

@@ -8,28 +8,9 @@
 //   - FetchTimeoutError   → code "ws-timeout"        → 503
 //   - 前端透传错误        → error.code（如 no-active-model/no-selection/internal）→ 按 v1Response 映射
 
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { sendV1JsonNoStore, sendV1Error } from "./v1Response.mjs";
 import { NoOnlineClientError, FetchTimeoutError } from "./runtimeRegistry.mjs";
-
-// 预定义 E 文件接口模板（public/e-templates/ 下文件）。GET ?template= 与 POST templateName 可用。
-const PREDEFINED_E_DEVICE_TEMPLATES = {
-  "国网E格式": "sgcc.e",
-  "主网实时库": "ems_rtdb.e",
-  "配网实时库": "dms_rtdb.e",
-  "台区实时库": "taiqu_rtdb.e"
-};
-
-// 模板文件目录（server/../public/e-templates/）
-const E_TEMPLATE_DIR = fileURLToPath(new URL("../public/e-templates/", import.meta.url));
-
-// 读预定义模板文件 → base64。模板可能为 UTF-8 或 GBK 编码，base64 透传原始字节，由前端 decodeAuto 兼容解码。
-async function readPredefinedTemplateBase64(templateName) {
-  const file = PREDEFINED_E_DEVICE_TEMPLATES[templateName];
-  const buffer = await readFile(`${E_TEMPLATE_DIR}${file}`);
-  return buffer.toString("base64");
-}
+import { PREDEFINED_E_DEVICE_TEMPLATES, readPredefinedTemplateBase64 } from "./eFileTemplates.mjs";
 
 // 轻量 JSON body 读取（与 apiV1Control 同款），上限 2MB（模板文本体量）
 const E_FILE_MAX_BODY_BYTES = 2 * 1024 * 1024;

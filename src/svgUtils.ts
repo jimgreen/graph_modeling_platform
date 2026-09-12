@@ -1,8 +1,8 @@
 // SVG 工具函数 — 纯 SVG 标记生成、解析与编码
 
 import { Fragment, isValidElement } from "react";
-import { imageFitPreserveAspectRatio, normalizeImageFitMode } from "./imageFit";
-import { API_PREFIX } from "./config";
+import { imageFitPreserveAspectRatio, normalizeImageFitMode } from "./imageFit.ts";
+import { API_PREFIX } from "./config.ts";
 import { escapeXmlFull } from "../shared/xmlEscape.mjs";
 
 /* 常量 */

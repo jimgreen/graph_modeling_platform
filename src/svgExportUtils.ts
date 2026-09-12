@@ -1,5 +1,5 @@
 import type { ModelNode, Point } from "./model";
-import { getTerminalPoint, inferESection, isStaticNode } from "./model";
+import { getTerminalPoint, inferESection, isStaticNode } from "./model.ts";
 import type { MeasurementGroup, MeasurementItemBinding, PlatformMeasurementConfig } from "./measurements";
 import {
   DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
@@ -12,19 +12,16 @@ import {
   formatMeasurementDisplayValue,
   MEASUREMENT_FONT_FAMILY,
   MEASUREMENT_LABEL_VISUAL_WIDTH,
-  MEASUREMENT_VALUE_INTEGER_WIDTH,
-  MEASUREMENT_VALUE_DECIMAL_WIDTH,
   MEASUREMENT_VALUE_TOTAL_WIDTH,
-  MEASUREMENT_VALUE_DECIMALS,
   MEASUREMENT_CHAR_WIDTH_RATIO,
   MEASUREMENT_INTER_COLUMN_GAP,
   measurementVisualWidth,
   measurementPadTextToVisualWidth,
   measurementFormatValueText
-} from "./measurements";
-import { escapeXml, formatSvgNumber, svgStrokeDashArray } from "./svgUtils";
-import { nodeLabelText, nodeLabelFontSize, nodeLabelShouldRender, nodeLabelTextAnchor, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenY, nodeLabelCanvasCenter } from "./nodeLabelUtils";
-import { clampNumber } from "./canvasViewport";
+} from "./measurements.ts";
+import { escapeXml, formatSvgNumber, svgStrokeDashArray } from "./svgUtils.ts";
+import { nodeLabelText, nodeLabelFontSize, nodeLabelShouldRender, nodeLabelTextAnchor, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenY, nodeLabelCanvasCenter } from "./nodeLabelUtils.ts";
+import { clampNumber } from "./canvasViewport.ts";
 
 function svgNodeLabelBaseAttributes(node: ModelNode) {
   return `dominant-baseline="middle" fill="${escapeXml(node.params._labelColor || "#334155")}" font-family="${escapeXml(node.params._labelFontFamily || "Arial")}" font-size="${formatSvgNumber(nodeLabelFontSize(node))}" font-weight="${escapeXml(node.params._labelFontWeight || "500")}" font-style="${escapeXml(node.params._labelFontStyle || "normal")}" text-decoration="${escapeXml(node.params._labelTextDecoration || "none")}" paint-order="stroke" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-linejoin="round"`;

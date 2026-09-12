@@ -1,6 +1,5 @@
 // 静态绘制与画布操作（从 model-routing.ts 提取）
-import { clampNumber } from "./canvasViewport";
-import { degreesToRadians } from "./formatUtils";
+import { clampNumber } from "./canvasViewport.ts";
 // 审查 T15-P0-1：清理未使用导入（normalizeProjectMeasurements 及 model 内 12 个仅出现在 import 行的符号）
 import type {
   CanvasBounds,
@@ -11,7 +10,7 @@ import type {
   Point,
   RoutedEdge,
   ViewBox
-} from "./model";
+} from "./model.ts";
 import {
   DEFAULT_MODEL_LAYER_ID,
   STATIC_DRAWING_MIN_SIZE,
@@ -21,8 +20,8 @@ import {
   roundStaticDrawingCoordinate,
   serializeStaticDrawPoints,
   createNodeFromTemplate
-} from "./model";
-import { calculateNodeVisualBounds } from "./model";
+} from "./model.ts";
+import { calculateNodeVisualBounds } from "./model.ts";
 export function createStaticBoxNodeFromDrawing(
   template: DeviceTemplate,
   canvasPoints: readonly Point[],

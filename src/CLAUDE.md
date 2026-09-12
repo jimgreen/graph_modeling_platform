@@ -31,6 +31,9 @@
 | `appExtracted/` | 从 App.tsx 抽取的大型工厂/视图模块（见 `appExtracted/AGENTS.md`） |
 | `components/` | 受控输入、静态按钮等可复用组件（见 `components/AGENTS.md`） |
 | `hooks/` | 自定义 Hook（见 `hooks/AGENTS.md`） |
+| `export/` | 直载纯模块（无 `.tsx`、无 React 组件/JSX）：E 文件（`e-file.ts`）、SVG 渲染（`svg.ts`）、元件定义共享（`device-definition-shared.ts`）、SVG 图片引用（`svg-images.ts`）、静态按钮目标（`static-button-targets.ts`） |
+
+> `src/export/` 被 `server/*.mjs`（eFileExport/svgExport）以 Node 原生方式直载；`cimExport` 直载 `src/cim/`，`eFileExport` 另直载 `src/model-eexport.ts`、`src/encoding/gbk.ts`。被直载模块必须保持 `.ts`，不得是 `.tsx`、不得含 JSX/React 组件（闭包内可间接 import npm 包 `react`，如 `src/svgUtils.ts`）；相对 import 需带 `.ts` 扩展名。
 
 ## For AI Agents
 

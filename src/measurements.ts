@@ -1,18 +1,16 @@
 import {
   DEFAULT_DEVICE_LABEL_FONT_SIZE,
   describeContainerTerminalAssociations,
-  getSafeNodeScaleX,
-  getSafeNodeScaleY,
   resolveEffectiveTemplateParameterDefinitions,
   inferESection,
   templateDerivedComponentLibraryInfo,
   type DeviceParameterDefinition,
   type DeviceTemplate,
   type ModelNode
-} from "./model";
-import { finiteNumber, degreesToRadians } from "./formatUtils";
-import { clampNumber } from "./canvasViewport";
-import { createMeasurementFieldParameterDefinition } from "./measurementDefinitionTypes";
+} from "./model.ts";
+import { finiteNumber, degreesToRadians } from "./formatUtils.ts";
+import { clampNumber } from "./canvasViewport.ts";
+import { createMeasurementFieldParameterDefinition } from "./measurementDefinitionTypes.ts";
 
 export type MeasurementValueType = "number" | "string" | "boolean";
 export type MeasurementQuality = "good" | "bad" | "stale" | "missing";

@@ -10,11 +10,16 @@ vi.mock("./server.mjs", () => ({
   readSchemes: vi.fn(),
   createSchemeArchiveBuffer: vi.fn(),
   readSchemeProjectRecord: vi.fn(),
-  buildSvgFile: vi.fn(),
+  // 保留桩：cimExport.mjs 顶层从 server.mjs 导入该名字，缺导出会在触发 CIM handler 时抛 vitest 报错
   readMeasurementConfig: vi.fn()
 }));
 
-import { readSchemes, createSchemeArchiveBuffer, readSchemeProjectRecord, buildSvgFile, readMeasurementConfig } from "./server.mjs";
+vi.mock("./svgExport.mjs", () => ({
+  renderSavedModelSvg: vi.fn()
+}));
+
+import { readSchemes, createSchemeArchiveBuffer, readSchemeProjectRecord } from "./server.mjs";
+import { renderSavedModelSvg } from "./svgExport.mjs";
 
 function createMockResponse() {
   const chunks = [];
@@ -148,15 +153,77 @@ describe("handleV1ModelJson 正路径", () => {
 });
 
 describe("handleV1ModelSvg 正路径", () => {
-  test("成功返 SVG 文本", async () => {
-    readSchemeProjectRecord.mockResolvedValue({ name: "m", project: { name: "m", nodes: [], edges: [] } });
-    readMeasurementConfig.mockResolvedValue({ measurementTypes: [], deviceProfiles: [] });
-    buildSvgFile.mockReturnValue("<svg>...</svg>");
+  test("成功返 SVG 文本（no-store）", async () => {
+    renderSavedModelSvg.mockResolvedValue({ svg: "<svg>...</svg>" });
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
     await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m`), response: res });
     expect(res.statusCode).toBe(200);
     expect(res.headers["content-type"]).toBe("image/svg+xml; charset=utf-8");
-    expect(res.body()).toBe("<svg>...</svg>");
+    expect(res.headers["cache-control"]).toBe("no-store");
+    // XML 声明由后端产出（前端不再前置），保证响应体与前端落盘文件逐字节一致
+    expect(res.body()).toBe('<?xml version="1.0" encoding="UTF-8"?>\n<svg>...</svg>');
+  });
+
+  test("已有 XML 声明先剥离，不产生重复声明", async () => {
+    renderSavedModelSvg.mockResolvedValue({ svg: '<?xml version="1.0"?>\n<svg>...</svg>' });
+    const res = createMockResponse();
+    const sp = encodeURIComponent(JSON.stringify(["方案A"]));
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m`), response: res });
+    expect(res.body()).toBe('<?xml version="1.0" encoding="UTF-8"?>\n<svg>...</svg>');
+  });
+
+  test("encoding=gbk → 声明标 GBK 且按 GBK 编码字节", async () => {
+    renderSavedModelSvg.mockResolvedValue({ svg: "<svg>中文</svg>" });
+    const res = createMockResponse();
+    const sp = encodeURIComponent(JSON.stringify(["方案A"]));
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m&encoding=gbk`), response: res });
+    expect(res.headers["content-type"]).toBe("image/svg+xml; charset=gbk");
+    expect(res.body().startsWith('<?xml version="1.0" encoding="GBK"?>\n<svg>')).toBe(true);
+  });
+
+  test("encoding 非法 → 400", async () => {
+    const res = createMockResponse();
+    const sp = encodeURIComponent(JSON.stringify(["方案A"]));
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m&encoding=big5`), response: res });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test("renderSavedModelSvg 返 not-found → 404", async () => {
+    renderSavedModelSvg.mockResolvedValue({ error: { code: "not-found", message: "模型不存在。" } });
+    const res = createMockResponse();
+    const sp = encodeURIComponent(JSON.stringify(["方案A"]));
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m`), response: res });
+    expect(res.statusCode).toBe(404);
+    expect(res.jsonBody().error.code).toBe("not-found");
+  });
+
+  test("renderSavedModelSvg 抛错 → 500 internal", async () => {
+    renderSavedModelSvg.mockRejectedValue(new Error("boom"));
+    const res = createMockResponse();
+    const sp = encodeURIComponent(JSON.stringify(["方案A"]));
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m`), response: res });
+    expect(res.statusCode).toBe(500);
+    expect(res.jsonBody().error.code).toBe("internal");
+  });
+
+  test("colorMode 透传：缺省 energy，voltage 可选", async () => {
+    renderSavedModelSvg.mockClear();
+    renderSavedModelSvg.mockResolvedValue({ svg: "<svg/>" });
+    const sp = encodeURIComponent(JSON.stringify(["方案A"]));
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m`), response: createMockResponse() });
+    expect(renderSavedModelSvg).toHaveBeenLastCalledWith(expect.objectContaining({ colorMode: "energy" }));
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m&colorMode=voltage`), response: createMockResponse() });
+    expect(renderSavedModelSvg).toHaveBeenLastCalledWith(expect.objectContaining({ colorMode: "voltage" }));
+  });
+
+  test("colorMode 非法 → 400 bad-request，不进入渲染", async () => {
+    renderSavedModelSvg.mockClear();
+    const res = createMockResponse();
+    const sp = encodeURIComponent(JSON.stringify(["方案A"]));
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m&colorMode=rainbow`), response: res });
+    expect(res.statusCode).toBe(400);
+    expect(res.jsonBody().error.code).toBe("bad-request");
+    expect(renderSavedModelSvg).not.toHaveBeenCalled();
   });
 });

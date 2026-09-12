@@ -334,7 +334,7 @@ export const RecentGlyphsToolbar = memo(function RecentGlyphsToolbar({ scope }: 
           const tw = template.size?.width ?? 40;
           const th = template.size?.height ?? 40;
           // 模型关联派生设备（ac-station-source 等）在 DeviceGlyph 走 "default" fallback：固定小圆（直径 48，
-          // 见 DeviceGlyph.tsx fallback circle r=24），与模板尺寸无关。viewBox 须按内容实际范围，否则图形只占一角。
+          // 见 DeviceGlyph.ts fallback circle r=24），与模板尺寸无关。viewBox 须按内容实际范围，否则图形只占一角。
           const fallbackGlyphContentSpan = modelAssociationModelTypeForKind(kind) ? 48 : 0;
           const contentW = fallbackGlyphContentSpan || tw;
           const contentH = fallbackGlyphContentSpan || th;

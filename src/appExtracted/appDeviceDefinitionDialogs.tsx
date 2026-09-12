@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { memo } from "react";
 import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
+import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
 
 export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialogs({ scope }) {
   const __appScope = scope;
@@ -10,7 +11,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
     RotateCcw, Save, Search, TERMINAL_TYPE_OPTIONS, WindowCloseButton, X, addCustomDeviceStateDraftRow, addCustomParameterRow,
     addDefinitionDraftRow, categoryLibraryComponentLibraryKey, closeDeviceDefinitionDialog, collapsedCustomComponentTreeLibraries, collapsedCustomComponentTreeTypes, collapsedDefinitionComponentLibraries, collapsedEDeviceInterfaceTreeNodes, componentLibraryDisplayParts,
     confirmCustomLibraryCreateDialog, copiedCustomComponentTemplate, copyCustomComponentTemplate, copySelectedCustomParameterRows, copySelectedDefinitionParameterRows, createBlankProject, createCustomCategoryLibrary, createCustomComponentLibrary,
-    createMeasurementFieldParameterDefinition, createModelDialog, customComponentLibraries, customComponentTreeSearchQuery, customComponentTreeSelection, customDeviceClassDisplay, customDeviceDefinitionIconOnly, customDeviceDefinitionMode, deviceDefinitionRowId,
+    createModelDialog, customComponentLibraries, customComponentTreeSearchQuery, customComponentTreeSelection, customDeviceClassDisplay, customDeviceDefinitionIconOnly, customDeviceDefinitionMode, deviceDefinitionRowId,
     customDeviceDialogOpen, customDeviceDialogRef, customDeviceDraft, customDeviceHasUnsavedChanges, customDeviceIconDirty, customDeviceMeasurementTarget, customDeviceMeasurementsDirty, customDeviceParametersDirty,
     customDevicePreviewSourceTemplate, customDeviceSaveMessage, customDeviceSaveToast, customDeviceStatePageId, customDeviceTerminalAnchors, customDeviceUnsavedPrompt, customLibraryCreateDialog, customLibraryCreateDialogBaseComponentLibraryOptions,
     customLibraryCreateDialogCategoryLibraryName, customLibraryCreateDialogClassOptions, customLibraryCreateDialogSelectedClassName, defaultContainerAssociationForTerminalType, definitionDraftError, definitionDraftRows, definitionDraftRowsForDisplay, definitionDraftSection,

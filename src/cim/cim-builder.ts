@@ -1,10 +1,10 @@
 // model state → CimPackage IR 构建器（纯函数，五阶段）
 
-import { deviceParamValue } from "../model";
+import { deviceParamValue } from "../model.ts";
 import type { DeviceKind, Edge, ModelNode } from "../model";
 import type { MeasurementGroup } from "../measurements";
-import { CIM_NS } from "./cim-namespaces";
-import type { CimBaseVoltage, CimConnectivityNode, CimGeneratingUnit, CimMeasurement, CimPackage, CimSubstation, CimTerminal, CimVoltageLevel } from "./cim-types";
+import { CIM_NS } from "./cim-namespaces.ts";
+import type { CimBaseVoltage, CimConnectivityNode, CimGeneratingUnit, CimPackage, CimSubstation, CimTerminal, CimVoltageLevel } from "./cim-types";
 
 export type CimBuildInput = {
   nodes: readonly ModelNode[];
@@ -34,6 +34,14 @@ function nodeVoltageValues(node: ModelNode): number[] {
     if (raw && Number.isFinite(value) && value > 0) {
       found.push(value);
     }
+  }
+  // 通用电压基值 params.vbase：母线等设备的电压常只写在 params.vbase 上，其端子 vbase 保持默认占位 0。
+  // 与端子 / 分侧键并列收入 —— BaseVoltage 是「声明用到的电压」，三者都收；
+  // 取「主电压」时（voltageBaseMap 取 [0]）才按 端子 → 分侧 → 通用的顺序优先。
+  const genericRaw = String(deviceParamValue(node.params, "vbase") ?? "").trim();
+  const genericValue = Number(genericRaw);
+  if (genericRaw && Number.isFinite(genericValue) && genericValue > 0) {
+    found.push(genericValue);
   }
   return found;
 }

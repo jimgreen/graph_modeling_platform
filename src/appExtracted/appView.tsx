@@ -15,7 +15,7 @@ import {
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
 import { E_SECTION_COLUMNS, inferESection, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, modelAssociationDevicesModelTypeFailureMessage, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
-import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
+import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyPredefinedEDeviceTemplateToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { resolveEditableComponentLibraryDefinition } from "../componentLibraryDefinitions";
 import { TOPOLOGY_WARNING_PAGE_SIZE } from "./appCoreCanvasUtilities";
 import type { CustomComponentLibraryDefinition } from "./appCoreCanvasUtilities";
@@ -25,7 +25,6 @@ import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES as TEMPLATE_ALLOWED_MODEL_TYPES, 
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
 import { EFileEditor } from "../EFileEditor";
 import { buildUserCustomizationInventory, restoreUserCustomizationItems, type UserCustomizationDomain } from "../userCustomizations";
-import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
 import { moveSelectedTableRows, nextTableRowSelection, uniqueCopiedFieldName } from "../definitionTableSelection";
 import { WindowCloseButton } from "../WindowCloseButton";
 import { AllNetworkTopologyDialog } from "../AllNetworkTopologyDialog";
@@ -832,20 +831,13 @@ export function renderAppView(__appScope: Record<string, any>) {
       // 模板应用基于恢复后的基线值（避免本次渲染闭包中的旧自定义覆盖恢复结果）
       const baseline = await restoreTemplateBaselineCustomizationDomains();
       const baselineLibrary = baseline?.deviceLibrary;
-      // 先取消所有设备类的导出状态，再导入模板定义
-      const clearedClassExportEnabled: Record<string, boolean> = {};
-      const clearedLabels: Record<string, string> = {};
-      const result = applyEDeviceDefinitionSectionsToLibraryState({
+      // 先取消所有设备类的导出状态，再导入模板定义（与后端 ?template= 共用同一实现）
+      const result = applyPredefinedEDeviceTemplateToLibraryState({
         sections,
         customDeviceTemplates: baselineLibrary?.customDeviceTemplates ?? customDeviceTemplates,
         libraryTemplates,
         deviceDefinitionOverrides: baselineLibrary?.deviceDefinitionOverrides ?? deviceDefinitionOverrides,
-        eDeviceDefinitionLabels: clearedLabels,
-        eDeviceDefinitionClassExportEnabled: clearedClassExportEnabled,
-        eDeviceDefinitionTemplateFields: baselineLibrary?.eDeviceDefinitionTemplateFields ?? {},
-        eDeviceDefinitionFieldOrder: baselineLibrary?.eDeviceDefinitionFieldOrder ?? {},
         labels: __appScope.PARAM_LABELS,
-        deviceDefinitionKeyForTemplate: __appScope.deviceDefinitionKeyForTemplate,
         deviceDefinitionOverrideForTemplate: __appScope.deviceDefinitionOverrideForTemplate,
         resolveDefinitionComponentLibrary: __appScope.resolveTemplateComponentLibrary ?? ((template: any) => inferESection(template.kind, template.params ?? {}))
       });
@@ -2385,7 +2377,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     confirmVoltageBaseClearDialog, confirmVoltageBaseSetDialog, connectionRedrawDialogOpen, connectionRedrawScope, connectionRedrawTargetsForScope, contextMeasurementGroup, contextMeasurementNode, contextMenu,
     contextMenuClassName, contextMenuForEdge, contextMenuForNode, contextMenuForRoutableLine, contextMenuForSelection, contextMenuFromElementTree, contextMenuRef, contextMenuStyle,
     contextMenuTarget, contextSelectionCount, copiedCustomComponentTemplate, copyCustomComponentTemplate, copyProjectRecord, copySchemeRecord, copySelectedCustomParameterRows, copySelectedDefinitionParameterRows,
-    copySelection, createBlankProject, createCustomCategoryLibrary, createCustomComponentLibrary, createGraphTemplateType, createImageFolder, createMeasurementFieldParameterDefinition, createModelDialog,
+    copySelection, createBlankProject, createCustomCategoryLibrary, createCustomComponentLibrary, createGraphTemplateType, createImageFolder, createModelDialog,
     createSchemeRecord, currentModelVoltageColorKeys, customComponentLibraries, customComponentTreeSearchQuery, customComponentTreeSelection, customDeviceClassDisplay, customDeviceDefinitionIconOnly, customDeviceDefinitionMode,
     customDeviceDialogOpen, customDeviceDialogRef, customDeviceDraft, customDeviceHasUnsavedChanges, customDeviceIconDirty, customDeviceMeasurementTarget, customDeviceMeasurementsDirty, customDeviceParametersDirty,
     customDevicePreviewSourceTemplate, customDeviceSaveMessage, customDeviceSaveToast, customDeviceStatePageId, customDeviceTerminalAnchors, customDeviceUnsavedPrompt, customGraphTemplates, customLibraryCreateDialog,

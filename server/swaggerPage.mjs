@@ -108,9 +108,21 @@ const ENDPOINTS = [
     { label: "「图元连接」JSON", params: { q_schemePath: SP_DEFAULT, q_name: "图元连接" } },
     { label: "「线路」JSON", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } }
   ]},
-  { group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/svg", desc: "模型 SVG", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }], response: "<image/svg+xml>", examples: [
+  { group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/svg", desc: "已保存模型 SVG（复用前端 buildSvgDocument，含图层/测量/状态图标；不含背景页；自带 XML 声明）", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }, { name: "colorMode", desc: "可选，energy（默认）|voltage" }, { name: "encoding", desc: "可选，utf-8（默认）|gbk" }], response: "<image/svg+xml>", examples: [
     { label: "「线路」SVG", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } },
-    { label: "「图元连接」SVG", params: { q_schemePath: SP_DEFAULT, q_name: "图元连接" } }
+    { label: "「图元连接」SVG", params: { q_schemePath: SP_DEFAULT, q_name: "图元连接" } },
+    { label: "「线路」SVG（电压配色）", params: { q_schemePath: SP_DEFAULT, q_name: "线路", q_colorMode: "voltage" } },
+    { label: "「线路」SVG（GBK 编码）", params: { q_schemePath: SP_DEFAULT, q_name: "线路", q_encoding: "gbk" } }
+  ]},
+  { group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/e-file", desc: "已保存模型 E 文件（后端计算，默认 GBK，可选预定义模板）", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }, { name: "template", desc: "可选，预定义模板名（国网E格式|主网实时库|配网实时库|台区实时库）" }, { name: "encoding", desc: "可选，gbk（默认）|utf-8" }], response: "<text/plain GBK 二进制>", examples: [
+    { label: "「线路」E 文件（当前模板）", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } },
+    { label: "「线路」E 文件（配网实时库模板）", params: { q_schemePath: SP_DEFAULT, q_name: "线路", q_template: "配网实时库" } }
+  ]},
+  { group: "v1 方案域", method: "POST", path: "/webgrp/v1/schemes/model/e-file", desc: "已保存模型 E 文件（指定模板文本，后端计算）", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }, { name: "encoding", desc: "可选，gbk（默认）|utf-8" }], body: { templateText: "<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>" }, response: "<text/plain GBK 二进制>", examples: [
+    { label: "按自定义模板文本生成", params: { q_schemePath: SP_DEFAULT, q_name: "线路", __body__: { templateText: "<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>" } } }
+  ]},
+  { group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/cim-xml", desc: "已保存模型 CIM/XML（IEC 61970 CIM16）", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }, { name: "modelId", desc: "可选，覆盖生成的模型 ID" }, { name: "strict", desc: "可选，1 时关键参数缺失返回 400" }], response: "<application/xml 二进制>", examples: [
+    { label: "「线路」CIM/XML", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } }
   ]},
 
   // ---- v1 图元库域（第三方只读）----

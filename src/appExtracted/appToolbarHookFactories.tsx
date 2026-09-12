@@ -2,6 +2,7 @@
 import { clampNumber } from "../canvasViewport";
 import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
 import { resolveEffectiveTemplateParameterDefinitions, withNodesParentModelId } from "../model";
+import { buildEffectiveLibraryTemplates } from "../export/device-definition-shared";
 import { computeMeasurementColumnPositions } from "./appGraphMeasurementFactories";
 
 // 关联图元跳转：解析 node 的 model_id → 目标模型，找到唯一目标即加载该模型。
@@ -1059,20 +1060,17 @@ export function createAppHookCallback11(__appScope: Record<string, any>) {
 
 export function createAppHookCallback12(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_MODEL_LAYER_ID, DEVICE_LIBRARY, PARAM_LABELS, activeSelectedNodeIds, applyDeviceTemplateDefinitionOverride, canBatchEditParam, customDeviceTemplates, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, enumValuesForRow, getEParamValue, nodeById, parseCustomDefinitions, templateDerivedComponentLibraryInfo } = __appScope;
+  const { DEFAULT_MODEL_LAYER_ID, PARAM_LABELS, activeSelectedNodeIds, canBatchEditParam, customDeviceTemplates, deviceDefinitionOverrides, enumValuesForRow, getEParamValue, nodeById, parseCustomDefinitions, templateDerivedComponentLibraryInfo } = __appScope;
     const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
     if (selectedNodes.length < 2) {
       return [];
     }
     const firstNode = selectedNodes[0];
-    const baseLibraryTemplates = [
-      ...(Array.isArray(DEVICE_LIBRARY) ? DEVICE_LIBRARY : []),
-      ...(Array.isArray(customDeviceTemplates) ? customDeviceTemplates : [])
-    ];
-    const libraryTemplates = baseLibraryTemplates.map((template) => applyDeviceTemplateDefinitionOverride(
-      template,
-      deviceDefinitionOverrideForTemplate(template, deviceDefinitionOverrides ?? {}, baseLibraryTemplates)
-    ));
+    // 库模板装配走共享单一入口（内置库 + 自定义库 + 元件定义覆盖），勿在本文件重复拼接
+    const libraryTemplates = buildEffectiveLibraryTemplates(
+      Array.isArray(customDeviceTemplates) ? customDeviceTemplates : [],
+      deviceDefinitionOverrides ?? {}
+    );
     const libraryTemplateByKind = new Map<string, any>();
     libraryTemplates.forEach((template) => {
       if (!libraryTemplateByKind.has(template.kind)) {

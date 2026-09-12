@@ -6,12 +6,14 @@ import { fileURLToPath } from "node:url";
 import {
   readSchemes,
   createSchemeArchiveBuffer,
-  readSchemeProjectRecord,
-  buildSvgFile,
-  readMeasurementConfig
+  readSchemeProjectRecord
 } from "./server.mjs";
+import iconv from "iconv-lite";
 import { sendV1Json, sendV1Error } from "./v1Response.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
+import { handleV1ModelEFile, handleV1ModelEFilePost } from "./eFileExport.mjs";
+import { handleV1ModelCimXml } from "./cimExport.mjs";
+import { renderSavedModelSvg } from "./svgExport.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 // schemeDataDir 和 filesRoot 从 server.mjs 的 schemeDataDir 派生，跟随 GRAPH_MODEL_DATA_DIR
@@ -161,32 +163,61 @@ export async function handleV1ModelJson({ url, request, response }) {
   }
 }
 
-// /webgrp/v1/schemes/model/svg —— 模型 SVG
-// query: schemePath=<encoded>, name=<模型名>
+// XML 声明由后端产出：保证响应体与前端落盘文件逐字节一致（前端不再自行前置声明）。
+// 已有声明（含 BOM/前导空白）先剥离，避免出现两个声明。
+function svgWithEncodingDeclaration(svgText, encoding) {
+  const label = encoding === "gbk" ? "GBK" : "UTF-8";
+  const content = String(svgText ?? "").replace(/^﻿?\s*<\?xml\b[^?]*\?>\s*/iu, "");
+  return `<?xml version="1.0" encoding="${label}"?>\n${content}`;
+}
+
+function sendSvg(response, svg, encoding) {
+  const text = svgWithEncodingDeclaration(svg, encoding);
+  // 与 /e-file 同口径：gbk 走 iconv 编码，utf-8 走 Buffer
+  const bytes = encoding === "gbk" ? iconv.encode(text, "gbk") : Buffer.from(text, "utf-8");
+  response.writeHead(200, {
+    "content-type": `image/svg+xml; charset=${encoding}`,
+    "content-length": String(bytes.length),
+    // 本端点响应不带 ETag/Last-Modified 验证器，不存在 304 协商缓存；no-store 表示不缓存
+    "cache-control": "no-store",
+    "access-control-allow-origin": "*"
+  });
+  response.end(bytes);
+}
+
+// /webgrp/v1/schemes/model/svg —— 模型 SVG（复用前端 buildSvgDocument，见 svgExport.mjs）
+// query: schemePath=<encoded>, name=<模型名>, colorMode=energy（默认）|voltage（可选）, encoding=utf-8（默认）|gbk（可选）
 export async function handleV1ModelSvg({ url, response }) {
   const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
-  const name = (url.searchParams.get("name") ?? "").trim();
   if (!requireSchemePath(parts)) {
     sendV1Error(response, "bad-request", "缺少或非法 schemePath。");
     return;
   }
+  const name = (url.searchParams.get("name") ?? "").trim();
   if (!name) {
     sendV1Error(response, "bad-request", "缺少模型名称。");
     return;
   }
-  const record = await readSchemeProjectRecord({ schemePath: parts, name });
-  if (!record) {
-    sendV1Error(response, "not-found", "模型不存在。");
+  const colorMode = (url.searchParams.get("colorMode") ?? "").trim() || "energy";
+  if (colorMode !== "energy" && colorMode !== "voltage") {
+    sendV1Error(response, "bad-request", "colorMode 仅支持 energy 或 voltage。");
     return;
   }
-  const measurementConfig = await readMeasurementConfig();
-  const svg = buildSvgFile(record.project, measurementConfig, { imagePathById: {} });
-  response.writeHead(200, {
-    "content-type": "image/svg+xml; charset=utf-8",
-    "cache-control": "no-cache",
-    "access-control-allow-origin": "*"
-  });
-  response.end(svg);
+  const encoding = (url.searchParams.get("encoding") ?? "").trim().toLowerCase() || "utf-8";
+  if (encoding !== "gbk" && encoding !== "utf-8") {
+    sendV1Error(response, "bad-request", "encoding 须为 gbk 或 utf-8。");
+    return;
+  }
+  try {
+    const { svg, error } = await renderSavedModelSvg({ parts, name, colorMode });
+    if (error) {
+      sendV1Error(response, error.code, error.message);
+      return;
+    }
+    sendSvg(response, svg, encoding);
+  } catch (error) {
+    sendV1Error(response, "internal", error instanceof Error ? error.message : "后端处理失败。");
+  }
 }
 
 import { apiPattern } from "./config.mjs";
@@ -198,5 +229,8 @@ export const v1SchemeRoutes = [
   { method: "GET", pattern: apiPattern("/v1/schemes/models", "/?$"), handle: handleV1SchemeModels },
   { method: "GET", pattern: apiPattern("/v1/schemes/export", "/?$"), handle: handleV1SchemeExport },
   { method: "GET", pattern: apiPattern("/v1/schemes/model/json", "/?$"), handle: handleV1ModelJson },
-  { method: "GET", pattern: apiPattern("/v1/schemes/model/svg", "/?$"), handle: handleV1ModelSvg }
+  { method: "GET", pattern: apiPattern("/v1/schemes/model/svg", "/?$"), handle: handleV1ModelSvg },
+  { method: "GET", pattern: apiPattern("/v1/schemes/model/e-file", "/?$"), handle: handleV1ModelEFile },
+  { method: "POST", pattern: apiPattern("/v1/schemes/model/e-file", "/?$"), handle: handleV1ModelEFilePost },
+  { method: "GET", pattern: apiPattern("/v1/schemes/model/cim-xml", "/?$"), handle: handleV1ModelCimXml }
 ];
