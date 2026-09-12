@@ -1,7 +1,7 @@
 // files 不变量：保存后目录内只留 .json；同名旧 .e/.svg 被归档进 trash；
 // 旧客户端仍带 svg/eFile 入参时被忽略且正常 200。
 import { describe, expect, test, beforeAll, afterAll } from "vitest";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installDomShim } from "./domShim.mjs";
@@ -43,11 +43,11 @@ const project = {
   edges: []
 };
 
-async function saveModel(body) {
+async function saveModel(body, name = "厂站") {
   return fetch(`${baseUrl}${apiPath("/schemes/project")}`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ schemePath: ["测试方案"], name: "厂站", project: { ...project }, ...body })
+    body: JSON.stringify({ schemePath: ["测试方案"], name, project: { ...project, name }, ...body })
   });
 }
 
@@ -99,4 +99,14 @@ test("旧客户端带 svg/eFile 入参时被忽略且返回 200", async () => {
   const response = await saveModel({ svg: "<svg/>", eFile: "x" });
   expect(response.status).toBe(200);
   expect(readdirSync(schemeDir()).sort()).toEqual(["厂站.json"]);
+});
+
+test("保存没有同名旧派生物的模型时不产生空 trash 目录", async () => {
+  // archiveSchemeStoreEntry 在 rename 前会 mkdir → 不判存在会让每次保存都留下一个空时间戳目录
+  const trash = join(dataDir, "schemes", "trash");
+  const before = existsSync(trash) ? readdirSync(trash).sort() : [];
+  const response = await saveModel({}, "无派生物");
+  expect(response.status).toBe(200);
+  const after = existsSync(trash) ? readdirSync(trash).sort() : [];
+  expect(after).toEqual(before);
 });

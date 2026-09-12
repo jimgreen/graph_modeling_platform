@@ -49,7 +49,6 @@ const maxColorConfigBodyBytes = 1024 * 1024;
 const maxMeasurementConfigBodyBytes = 1024 * 1024;
 const maxDeviceLibraryBodyBytes = 16 * 1024 * 1024;
 const maxFilePartLength = 80;
-const backendImageHrefPattern = new RegExp(`^${escapeRegExp(apiPath("/images"))}/([^/?#]+)`);
 const accessControlHeaders = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
@@ -213,145 +212,6 @@ export const eSectionColumns = {
   HeatPump: ["idx", "name", "i_node", "j_node", "run_stat"]
 };
 
-const eFloatColumns = new Set([
-  "vbase",
-  "voltage",
-  "angle",
-  "pbase",
-  "qbase",
-  "pressure",
-  "capacity",
-  "water_volume",
-  "pressure_max",
-  "pressure_min",
-  "supply_temperature",
-  "supply_temperature_set",
-  "rated_capacity",
-  "rated_voltage",
-  "i_max",
-  "i_vbase",
-  "i_rated_capacity",
-  "k_vbase",
-  "k_rated_capacity",
-  "k_i_max",
-  "j_vbase",
-  "j_rated_capacity",
-  "high_rated_capacity",
-  "high_i_max",
-  "medium_rated_capacity",
-  "medium_i_max",
-  "low_rated_capacity",
-  "low_i_max",
-  "pv0",
-  "pv1",
-  "pv2",
-  "qv0",
-  "qv1",
-  "qv2",
-  "p_set",
-  "p_max",
-  "p_min",
-  "q_set",
-  "q_max",
-  "q_min",
-  "v_max",
-  "v_min",
-  "ac_p_max",
-  "ac_p_min",
-  "ac_i_max",
-  "ac_v_max",
-  "ac_v_min",
-  "dc_p_max",
-  "dc_p_min",
-  "dc_i_max",
-  "dc_v_max",
-  "dc_v_min",
-  "i_p_max",
-  "i_p_min",
-  "i_p",
-  "i_q",
-  "i_u",
-  "i_i",
-  "i_i_max",
-  "i_v_max",
-  "i_v_min",
-  "j_p_max",
-  "j_p_min",
-  "j_p",
-  "j_q",
-  "j_u",
-  "j_i",
-  "j_i_max",
-  "j_v_max",
-  "j_v_min",
-  "i_set",
-  "v_set",
-  "alpha",
-  "g_set",
-  "b_set",
-  "r",
-  "x",
-  "b",
-  "gt",
-  "bt",
-  "tap",
-  "tap_set",
-  "p",
-  "q",
-  "u",
-  "i",
-  "shift",
-  "i_r",
-  "i_x",
-  "i_gt",
-  "i_bt",
-  "i_tap",
-  "i_shift",
-  "j_r",
-  "j_x",
-  "j_gt",
-  "j_bt",
-  "j_tap",
-  "j_shift",
-  "k_r",
-  "k_x",
-  "k_gt",
-  "k_bt",
-  "k_tap",
-  "k_shift",
-  "r1",
-  "x1",
-  "gt1",
-  "bt1",
-  "tap1",
-  "shift1",
-  "r2",
-  "x2",
-  "gt2",
-  "bt2",
-  "tap2",
-  "shift2",
-  "r3",
-  "x3",
-  "gt3",
-  "bt3",
-  "tap3",
-  "shift3",
-  "p_ac_set",
-  "p_dc_set",
-  "q_ac_set",
-  "v_ac_set",
-  "v_dc_set",
-  "i_q_set",
-  "j_q_set",
-  "i_v_set",
-  "j_v_set",
-  "e2h_coeff",
-  "h2e_coeff",
-  "soc",
-  "soc_upper_limit",
-  "soc_lower_limit"
-]);
 
 const mimeExt = {
   "image/png": ".png",
@@ -2938,17 +2798,6 @@ function inferESection(kind, params = {}) {
   return "";
 }
 
-const electricGenerationDerivedClassSuffixByKindSuffix = new Map([
-  ["wind-source", "WindGen"],
-  ["pv-source", "PVGen"],
-  ["thermal-source", "ThermalGen"],
-  ["diesel-source", "DieselGen"],
-  ["hydro-source", "HydroGen"],
-  ["nuclear-source", "NuclearGen"],
-  ["storage", "StorageGen"]
-]);
-
-
 function parseDeviceIndex(value) {
   const text = String(value ?? "").trim();
   if (!/^[1-9]\d*$/.test(text)) {
@@ -3021,84 +2870,6 @@ function assignMissingDeviceIndexes(nodes, counters) {
   return { nodes: changed ? nextNodes : nodes, counters: nextCounters };
 }
 
-
-
-const dcacAcControlTypes = new Set(["PQ", "PV", "PH", "NONE"]);
-const dcacDcControlTypes = new Set(["P", "V", "I", "NONE"]);
-
-
-
-const acacSideControlTypes = new Set(["PQ", "PV", "PH", "NONE"]);
-const acacLegacyControlTypePairs = {
-  PQQ: { i_control_type: "PQ", j_control_type: "PQ" },
-  PVQ: { i_control_type: "PV", j_control_type: "PQ" },
-  PQV: { i_control_type: "PQ", j_control_type: "PV" },
-  PVV: { i_control_type: "PV", j_control_type: "PV" }
-};
-const dcdcEndpointControlTypes = new Set(["P", "V", "I", "NONE"]);
-
-
-
-
-
-
-const serverBinaryStateDefinitions = [
-  { value: "0", name: "打开/开断" },
-  { value: "1", name: "闭合" }
-];
-
-
-
-
-
-
-
-
-
-
-
-const legacyEDefinitionColumnAliases = {
-  maxCurrent: "i_max",
-  max_current: "i_max",
-  iMax: "i_max",
-  highMaxCurrent: "i_i_max",
-  high_max_current: "i_i_max",
-  highIMax: "i_i_max",
-  high_i_max: "i_i_max",
-  mediumMaxCurrent: "k_i_max",
-  medium_max_current: "k_i_max",
-  mediumIMax: "k_i_max",
-  medium_i_max: "k_i_max",
-  lowMaxCurrent: "j_i_max",
-  low_max_current: "j_i_max",
-  lowIMax: "j_i_max",
-  low_i_max: "j_i_max",
-  highRatedCapacity: "i_rated_capacity",
-  high_rated_capacity: "i_rated_capacity",
-  mediumRatedCapacity: "k_rated_capacity",
-  medium_rated_capacity: "k_rated_capacity",
-  lowRatedCapacity: "j_rated_capacity",
-  low_rated_capacity: "j_rated_capacity",
-  ratedCapacity: "rated_capacity",
-  ratedPower: "rated_capacity",
-  rated_power: "rated_capacity",
-  ratedVoltage: "rated_voltage",
-  ratedActivePower: "pbase",
-  ratedReactivePower: "qbase",
-  resistancePu: "r",
-  reactancePu: "x",
-  halfChargingSusceptancePu: "b",
-  magnetizingConductancePu: "gt",
-  magnetizingSusceptancePu: "bt",
-  tapRatio: "tap",
-  sourceEquivalentResistance: "r1",
-  targetEquivalentResistance: "r2",
-  controlType: "control_type",
-  acControlType: "control_type",
-  dcControlType: "control_type",
-  closedStatus: "status"
-};
-
 function storedEParameterDefinitions(params = {}) {
   try {
     const parsed = JSON.parse(params._customParamDefinitions ?? "[]");
@@ -3118,52 +2889,9 @@ function storedEParameterDefinitions(params = {}) {
   }
 }
 
-
-
-
-
-
-
-
-const eFileColumnGap = "    ";
-const eFileWideCharWidth = 5 / 3;
-const eSectionPrimaryOrder = ["ACNode", "DCNode"];
-
-
-
-
-
-
-
-
-
-
 function isStaticKind(kind) {
   return String(kind ?? "").startsWith("static-");
 }
-
-
-const routableLineDeviceKinds = new Set([
-  "ac-routable-line",
-  "ac-zero-routable-branch",
-  "dc-routable-line",
-  "dc-zero-routable-branch",
-  "hydrogen-routable-pipeline",
-  "heat-routable-line"
-]);
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 function escapeSvgAttribute(value) {
   return String(value ?? "")
@@ -3172,8 +2900,6 @@ function escapeSvgAttribute(value) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
-
-
 
 function safeImageExportFilename(value) {
   const normalized = String(value ?? "").trim().replace(/\\/gu, "/");
@@ -3220,50 +2946,11 @@ export async function readReferencedImageExportPathById(ids) {
   return imageExportPathByIdFromManifest(manifest.filter((item) => wanted.has(String(item?.id ?? "").trim())));
 }
 
-
-
-
-
-
-const IMAGE_FIT_MODE_SET = new Set(["cover", "fixed", "fill-x", "fill-y", "stretch", "tile"]);
-
-
-
-
-
-
-
-
-
 function formatSvgNumber(value) {
   const numeric = Number(value);
   const rounded = Math.round((Number.isFinite(numeric) ? numeric : 0) * 100000) / 100000;
   return String(Object.is(rounded, -0) ? 0 : rounded);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 async function listSchemeStoreEntries(root) {
   const files = [];
@@ -3785,10 +3472,16 @@ export async function saveSchemeProjectRecord(options) {
     await Promise.all(Object.values(previousPaths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, schemeArchiveId())));
   }
   // files 不变量：只留 .json。改造前落盘的 .e/.svg 在本次保存时归档（可回滚，不硬删）
+  // 先判存在：archiveSchemeStoreEntry 在 rename 前会 mkdir，无条件调用会让每次保存都留下一个空时间戳目录
   const { jsonPath, ePath, svgPath } = projectFilePathsForName(schemeDir, name);
   const staleArchiveId = schemeArchiveId();
   await Promise.all(
-    [ePath, svgPath].map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, staleArchiveId))
+    [ePath, svgPath].map(async (filePath) => {
+      const exists = await stat(filePath).then(() => true, () => false);
+      if (exists) {
+        await archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, staleArchiveId);
+      }
+    })
   );
   await writeTextIfChanged(jsonPath, stringifyJson({ ...storageProject, name }));
   return storedRecord;
