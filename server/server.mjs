@@ -5257,10 +5257,16 @@ async function extractSchemeZipToDirectory(zip, targetDir, rootName) {
 // 方案 ZIP：json 落盘原文 + e/svg 实时生成（不再读磁盘派生文件）。
 // 适配层用函数内动态 import：svgExport/eFileExport 均 import 本模块，静态 import 会成环。
 export async function createSchemeArchiveBuffer(options) {
-  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
+  const defaultFilesRoot = join(schemeDataDir, "files");
+  const filesRoot = options.filesRoot ?? defaultFilesRoot;
   const schemePath = Array.isArray(options.schemePath) ? options.schemePath : [];
   if (schemePath.length === 0) {
     throw new Error("缺少方案路径。");
+  }
+  // 渲染适配层（renderSavedModelSvg / buildEFileForSavedModel）无 filesRoot 入参，一律读模块级数据根。
+  // 若放行自定义根，会产出「json 来自根 A、e/svg 来自根 B」的混合 ZIP —— 显式拒绝，不静默混用。
+  if (resolve(filesRoot) !== resolve(defaultFilesRoot)) {
+    throw new Error("自定义 filesRoot 下暂不支持实时生成派生格式（渲染适配层只读默认数据根）。");
   }
   const schemeName = safeFilePart(schemePath[schemePath.length - 1], "方案");
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);

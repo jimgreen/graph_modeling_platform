@@ -30,6 +30,7 @@ const busNode = {
 let dataDir;
 let server;
 let baseUrl;
+let createSchemeArchiveBuffer;
 
 // 种子模型 JSON：结构齐备（层/节点/边），保证 E 与 SVG 能真实生成
 function modelJson(name, idx) {
@@ -64,7 +65,8 @@ beforeAll(async () => {
   writeFileSync(join(nestedDir, "厂站.json"), modelJson("厂站", 2), "utf-8");
   writeFileSync(join(nestedDir, "子方案", "线路.json"), modelJson("线路", 3), "utf-8");
   process.env.GRAPH_MODEL_DATA_DIR = dataDir;
-  const { createImageServer } = await import("./server.mjs");
+  const { createImageServer, createSchemeArchiveBuffer: buildArchive } = await import("./server.mjs");
+  createSchemeArchiveBuffer = buildArchive;
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
@@ -111,8 +113,8 @@ test("损坏模型导致整体失败并返回 500，错误信息含模型名", a
   expect(payload.error.message).toContain("坏模型");
 });
 
-// 原 server.test.mjs「preserving child scheme folders」用例的接续：新实现按数据根实时生成，
-// 不再支持任意 filesRoot，故该覆盖点迁到本文件的 tmpdir 隔离路径下
+// 原 server.test.mjs「exports one scheme directory as a zip while preserving child scheme folders」
+// 用例的两个覆盖点在此承接：① 子方案目录层级保留 → 本用例；② 自选 filesRoot 的契约 → 下一条用例
 test("子方案目录层级保留在 ZIP 内，条目路径统一用 / 分隔", async () => {
   const response = await fetch(`${baseUrl}${apiPath("/v1/schemes/export")}?schemePath=${encodeSchemePath(["嵌套方案"])}`);
   expect(response.status).toBe(200);
@@ -127,4 +129,13 @@ test("子方案目录层级保留在 ZIP 内，条目路径统一用 / 分隔", 
     "嵌套方案/子方案/线路.json",
     "嵌套方案/子方案/线路.svg"
   ].sort());
+});
+
+// 自定义 filesRoot 与实时生成不兼容：渲染适配层无 filesRoot 入参、只读模块级数据根，
+// 放行会产出「json 来自根 A、e/svg 来自根 B」的混合 ZIP，故显式报错（不静默混用）
+test("自定义 filesRoot 显式报错，不静默混用两个数据根", async () => {
+  await expect(createSchemeArchiveBuffer({
+    filesRoot: join(dataDir, "schemes", "files-自定义"),
+    schemePath: ["测试方案"]
+  })).rejects.toThrow(/自定义 filesRoot/);
 });
