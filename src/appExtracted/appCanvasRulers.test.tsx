@@ -22,13 +22,20 @@ describe("CanvasRulers", () => {
     expect((html.match(/canvas-ruler-corner/g) ?? [])).toHaveLength(4);
   });
 
-  test("刻度值只标大刻度，只给可见范围内的刻度配数字", () => {
-    const html = renderToStaticMarkup(<CanvasRulers scope={scope}/>);
-    // 0 / 25 / 250 / 500 都在；非 25 倍数的值不该出现为标签
-    for (const value of [">0<", ">25<", ">250<", ">500<"]) {
-      expect(html).toContain(value);
+  test("只标大刻度；相邻标注太挤时抽稀，缩放够大时恢复每个大刻度都标", () => {
+    const dense = renderToStaticMarkup(<CanvasRulers scope={scope}/>);
+    // scale=1 → 大刻度间距 25px，放不下数字，隔一个标一个
+    for (const value of [">0<", ">50<", ">250<", ">500<"]) {
+      expect(dense).toContain(value);
     }
-    expect(html).not.toContain(">30<");
+    expect(dense).not.toContain(">25<");
+    expect(dense).not.toContain(">30<");
+
+    // scale=2 → 间距 50px，够宽，每个大刻度都标
+    const roomy = renderToStaticMarkup(
+      <CanvasRulers scope={{ ...scope, canvasScrollScale: { x: 2, y: 2 }, viewBox: { x: 0, y: 0, width: 500, height: 400 } }}/>
+    );
+    expect(roomy).toContain(">25<");
   });
 
   test("贴边刻度不居中（左上角的 0 才能整段显示），中段仍居中", () => {
