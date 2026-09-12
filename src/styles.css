@@ -15789,3 +15789,88 @@ body.canvas-drawing-mode .image-picker-backdrop * {
     min-height: 0;
   }
 }
+
+/* ---- 发送模型弹窗（SendModelDialog）---- */
+
+.send-model-format-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.send-model-format-table th {
+  padding: 4px 8px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #475569;
+  background: #f8fafc;
+  font-weight: 600;
+  text-align: left;
+}
+
+.send-model-format-table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.send-model-format-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.send-model-hint {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.send-model-code {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  background: #0f172a;
+  font-size: 11px;
+  line-height: 1.55;
+  overflow: auto;
+}
+
+/* 深色代码块里默认滚动条几乎看不见 */
+.send-model-code::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.send-model-code::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.send-model-code::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: #334155;
+}
+
+.send-model-copy-button {
+  padding: 1px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.send-model-copy-button:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+/* 发送 / 取消：贴在这块区域的右下角 */
+.send-model-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}

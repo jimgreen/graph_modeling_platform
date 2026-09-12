@@ -258,7 +258,7 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
   return (
     <div className="image-picker-backdrop" onPointerDown={onClose}>
       <section
-        className="e-device-interface-dialog window-close-host"
+        className="e-device-interface-dialog window-close-host send-model-dialog"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
         style={{ width: 900, maxWidth: "94vw", display: "flex", flexDirection: "column", maxHeight: "80vh", fontSize: 12 }}
@@ -271,40 +271,40 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
         <div style={{ display: "flex", gap: 12, padding: "8px 12px", flex: "1 1 auto", minHeight: 0, overflow: "hidden" }}>
           {/* 左栏：目标 URL + 发送格式 */}
           <div style={{ flex: "0 0 400px", display: "flex", flexDirection: "column", gap: 4, minWidth: 0, overflowY: "auto" }}>
-          <div style={{ fontWeight: 600 }}>目标 URL</div>
-          <Input
-            id="send-model-url"
-            value={url}
-            placeholder={URL_HINT}
-            disabled={sending}
-            onChange={(event) => setUrl(event.target.value)}
-            onPressEnter={() => void submit()}
-            style={{ fontSize: 12 }}
-          />
-          <div style={{ fontWeight: 600, marginTop: 8 }}>发送格式</div>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid #e2e8f0" }}>
-                <th style={{ padding: "4px 8px", textAlign: "left", fontWeight: 600 }}>格式</th>
-                <th style={{ padding: "4px 8px", textAlign: "left", fontWeight: 600, width: 120 }}>字符编码</th>
-              </tr>
-            </thead>
-            <tbody>
-              {SEND_FORMATS.map((format) => (
-                <tr key={format.kind} style={{ borderBottom: "1px solid #f1f5f9", lineHeight: 1.4 }}>
-                  <td style={{ padding: "3px 8px" }}>
-                    <Checkbox
-                      id={`send-model-format-${format.kind}`}
-                      checked={Boolean(checked[format.kind])}
-                      disabled={sending}
-                      onChange={(event) => setChecked((prev) => ({ ...prev, [format.kind]: event.target.checked }))}
-                    >
-                      {format.label}
-                    </Checkbox>
-                  </td>
-                  <td style={{ padding: "3px 8px" }}>
-                    <Select
-                      id={`send-model-encoding-${format.kind}`}
+            <div style={{ fontWeight: 600, color: "#0f172a" }}>目标 URL</div>
+            <Input
+              id="send-model-url"
+              value={url}
+              placeholder={URL_HINT}
+              disabled={sending}
+              onChange={(event) => setUrl(event.target.value)}
+              onPressEnter={() => void submit()}
+              style={{ fontSize: 12 }}
+            />
+            <div style={{ fontWeight: 600, color: "#0f172a", marginTop: 8 }}>发送格式</div>
+            <table className="send-model-format-table">
+              <thead>
+                <tr>
+                  <th>格式</th>
+                  <th style={{ width: 112 }}>字符编码</th>
+                </tr>
+              </thead>
+              <tbody>
+                {SEND_FORMATS.map((format) => (
+                  <tr key={format.kind}>
+                    <td>
+                      <Checkbox
+                        id={`send-model-format-${format.kind}`}
+                        checked={Boolean(checked[format.kind])}
+                        disabled={sending}
+                        onChange={(event) => setChecked((prev) => ({ ...prev, [format.kind]: event.target.checked }))}
+                      >
+                        {format.label}
+                      </Checkbox>
+                    </td>
+                    <td>
+                      <Select
+                        id={`send-model-encoding-${format.kind}`}
                       size="small"
                       value={encoding[format.kind]}
                       disabled={!checked[format.kind] || sending}
@@ -318,17 +318,17 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
             </tbody>
           </table>
           {error && (
-            <div id="send-model-error" style={{ color: "#dc2626", marginTop: 4 }}>{error}</div>
+            <div id="send-model-error" style={{ color: "#dc2626", marginTop: "auto", paddingTop: 10 }}>{error}</div>
           )}
           {!error && success && (
-            <div id="send-model-success" style={{ color: "#16a34a", marginTop: 4 }}>{success}</div>
+            <div id="send-model-success" style={{ color: "#16a34a", marginTop: "auto", paddingTop: 10 }}>{success}</div>
           )}
           </div>
 
-          {/* 右栏：接收端示例。默认 Python，Segmented 切换；与左栏同一 flex 行故等高 */}
-          <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: 4, borderLeft: "1px solid #e2e8f0", paddingLeft: 12 }}>
+          {/* 右栏：接收端示例 + 右下角操作按钮。默认 Python，Segmented 切换；与左栏同一 flex 行故等高 */}
+          <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: 6, borderLeft: "1px solid #e2e8f0", paddingLeft: 14 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <div style={{ fontWeight: 600 }}>接收端示例</div>
+              <div style={{ fontWeight: 600, color: "#0f172a" }}>接收端示例</div>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <Segmented
                   id="send-model-sample-tabs"
@@ -340,42 +340,33 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
                 <button
                   type="button"
                   id="send-model-sample-copy"
+                  className="send-model-copy-button"
                   onClick={() => void copySample(activeSampleDefinition)}
-                  style={{ border: "1px solid #cbd5e1", borderRadius: 4, background: "#ffffff", color: "#334155", cursor: "pointer", fontSize: 12, padding: "1px 8px" }}
                 >
                   {copyState?.key === activeSample ? (copyState.ok ? "已复制" : "复制失败") : "复制"}
                 </button>
               </div>
             </div>
-            <div style={{ color: "#64748b" }}>
+            <div className="send-model-hint">
               把目标 URL 填成示例服务监听的地址（如 http://127.0.0.1:8080/receive）即可收到勾选格式的文件；Python 需 pip install flask，Node 仅 GBK 预览需 iconv-lite。
             </div>
             {HIGHLIGHTED_SAMPLES.map((sample) => (
               <pre
                 key={sample.key}
                 id={`send-model-sample-code-${sample.key}`}
-                style={{
-                  display: sample.key === activeSample ? "block" : "none",
-                  margin: 0,
-                  flex: "1 1 auto",
-                  minHeight: 0,
-                  overflow: "auto",
-                  padding: 8,
-                  borderRadius: 4,
-                  background: "#0d1117",
-                  fontSize: 11,
-                  lineHeight: 1.5
-                }}
+                className="send-model-code"
+                style={{ display: sample.key === activeSample ? "block" : "none" }}
               ><code className="hljs" dangerouslySetInnerHTML={{ __html: sample.html }}/></pre>
             ))}
+            {/* 操作按钮固定在这块区域的右下角：marginTop:auto 把它推到剩余空间之后 */}
+            <div className="send-model-actions">
+              <Button id="send-model-cancel" onClick={onClose} disabled={sending}>取消</Button>
+              <Button id="send-model-submit" type="primary" loading={sending} onClick={() => void submit()}>
+                <Send size={12} />
+                <span>发送</span>
+              </Button>
+            </div>
           </div>
-        </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "8px 12px", borderTop: "1px solid #e2e8f0" }}>
-          <Button id="send-model-cancel" onClick={onClose} disabled={sending}>取消</Button>
-          <Button id="send-model-submit" type="primary" loading={sending} onClick={() => void submit()}>
-            <Send size={12} />
-            <span>发送</span>
-          </Button>
         </div>
       </section>
     </div>
