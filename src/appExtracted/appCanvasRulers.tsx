@@ -58,6 +58,19 @@ export function CanvasRulers({ scope }: { scope: Record<string, any> }) {
 
   return (
     <div className="canvas-rulers" aria-hidden="true">
+      {/* 四角补齐：两条尺子各自的端点之间会漏一块背景，拐角处看起来缺角 */}
+      {[
+        { key: "top-left", left: canvasDisplayOffsetX - CANVAS_RULER_SIZE, top: canvasDisplayOffsetY - CANVAS_RULER_SIZE },
+        { key: "top-right", left: canvasDisplayOffsetX + canvasDisplayWidth, top: canvasDisplayOffsetY - CANVAS_RULER_SIZE },
+        { key: "bottom-left", left: canvasDisplayOffsetX - CANVAS_RULER_SIZE, top: canvasDisplayOffsetY + canvasDisplayHeight },
+        { key: "bottom-right", left: canvasDisplayOffsetX + canvasDisplayWidth, top: canvasDisplayOffsetY + canvasDisplayHeight }
+      ].map((corner) => (
+        <div
+          key={corner.key}
+          className="canvas-ruler-corner"
+          style={{ left: corner.left, top: corner.top, width: CANVAS_RULER_SIZE, height: CANVAS_RULER_SIZE }}
+        />
+      ))}
       <div
         className="canvas-ruler canvas-ruler-top"
         style={{ left: canvasDisplayOffsetX, top: canvasDisplayOffsetY - CANVAS_RULER_SIZE, width: canvasDisplayWidth, height: CANVAS_RULER_SIZE, ...rulerStyle(majorStepX, minorStepX) }}
