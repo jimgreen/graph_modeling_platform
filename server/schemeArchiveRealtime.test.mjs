@@ -1,7 +1,7 @@
 // 方案 ZIP 实时生成集成测试：GRAPH_MODEL_DATA_DIR 指向 tmpdir 种子数据 → 起真实 server（端口 0）
 // → 断言 ZIP 内 json/e/svg 三件套齐全，且 e/svg 与对应单模型端点输出逐字节一致。
 import { describe, expect, test, beforeAll, afterAll, vi } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import AdmZip from "adm-zip";
@@ -140,6 +140,8 @@ test("ZIP 内 e/svg 与单模型端点输出逐字节一致，json 与磁盘原�
 
   expect(read("测试方案/厂站.e").equals(Buffer.from(await (await fetch(eUrl)).arrayBuffer()))).toBe(true);
   expect(read("测试方案/厂站.svg").equals(Buffer.from(await (await fetch(svgUrl)).arrayBuffer()))).toBe(true);
+  // json 不进实时生成管线，直接搬磁盘字节：与磁盘原文逐字节一致
+  expect(read("测试方案/厂站.json").equals(readFileSync(join(dataDir, "schemes", "files", "测试方案", "厂站.json")))).toBe(true);
 });
 
 test("损坏模型导致整体失败并返回 500，错误信息含模型名", async () => {

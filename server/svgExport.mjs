@@ -17,10 +17,16 @@ const { normalizeProjectLayers, filterProjectByVisibleLayers } = await import(".
 // 不打日志时「引用键配错 / 数据根不可读 / 模型确已删除」三者外部同形，排障无法区分。
 const warnedBackgroundIdx = new Set();
 
+// 画布尺寸惯用法：缺省宽高同源渲染器常量（不在本文件再写第二份默认字面量）
+const canvasBoundsOf = (project) => ({
+  width: Number(project?.canvasWidth ?? DEFAULT_CANVAS_WIDTH),
+  height: Number(project?.canvasHeight ?? DEFAULT_CANVAS_HEIGHT)
+});
+
 // 背景页重建：宿主模型只落盘引用键（backgroundProjectIdx + backgroundLayerIds），
 // 服务端读被引用模型 + 复用 src 侧纯函数复现前端 backgroundPageRender 载荷。
 // 不用前端 id（backgroundProjectId）：磁盘 json 不含 id，服务端无 id→文件映射。
-async function buildBackgroundPageOption({ project, deviceTemplates }) {
+async function buildBackgroundPageOption({ project, libraryTemplateByKind }) {
   const backgroundIdx = Number(project?.backgroundProjectIdx);
   if (!Number.isSafeInteger(backgroundIdx) || backgroundIdx <= 0) {
     return { backgroundPage: undefined, referencedHrefById: new Map() };
@@ -52,16 +58,13 @@ async function buildBackgroundPageOption({ project, deviceTemplates }) {
     backgroundProject.edges ?? [],
     layers
   );
-  const backgroundBounds = {
-    width: Number(backgroundProject.canvasWidth ?? DEFAULT_CANVAS_WIDTH),
-    height: Number(backgroundProject.canvasHeight ?? DEFAULT_CANVAS_HEIGHT)
-  };
+  const backgroundBounds = canvasBoundsOf(backgroundProject);
   const referencedHrefById = collectSvgExportReferencedImageHrefById({
     nodes,
     canvasBackgroundImage: backgroundProject.canvasBackgroundImage,
     canvasBackgroundImageAssetId: backgroundProject.canvasBackgroundImageAssetId,
     canvasBackgroundImageUrl: backgroundProject.canvasBackgroundImageUrl,
-    libraryTemplateByKind: new Map(deviceTemplates.map((template) => [template.kind, template]))
+    libraryTemplateByKind
   });
   return {
     referencedHrefById,
@@ -70,10 +73,7 @@ async function buildBackgroundPageOption({ project, deviceTemplates }) {
       nodes,
       edges,
       backgroundBounds,
-      transform: backgroundPageCanvasTransform(backgroundBounds, {
-        width: Number(project.canvasWidth ?? DEFAULT_CANVAS_WIDTH),
-        height: Number(project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT)
-      }),
+      transform: backgroundPageCanvasTransform(backgroundBounds, canvasBoundsOf(project)),
       backgroundColor: backgroundProject.canvasBackgroundColor ?? undefined,
       // 与前端 resolveProjectImage(project, imageAssets) 同口径：assetId 优先，回落落盘 href
       backgroundImageUrl:
@@ -102,10 +102,12 @@ export async function renderSavedModelSvg({ parts, name, colorMode = "energy" })
   );
   // 自包含导出：被引用的后端图片读盘转 data URL 内联（缺一张不阻断，该图保留原始 href）
   const nodes = Array.isArray(project.nodes) ? project.nodes : [];
+  // kind→模板 Map 只建一次，宿主与背景页两处图片收集共用
+  const libraryTemplateByKind = new Map(deviceTemplates.map((template) => [template.kind, template]));
   // 先重建背景页，其被引用图片并入同一份 imageExportPathById，否则背景页图层里会残留后端 href
   const { backgroundPage, referencedHrefById: backgroundReferencedHrefById } = await buildBackgroundPageOption({
     project,
-    deviceTemplates
+    libraryTemplateByKind
   });
   const referencedHrefById = new Map([
     ...collectSvgExportReferencedImageHrefById({
@@ -113,7 +115,7 @@ export async function renderSavedModelSvg({ parts, name, colorMode = "energy" })
       canvasBackgroundImage: project.canvasBackgroundImage,
       canvasBackgroundImageAssetId: project.canvasBackgroundImageAssetId,
       canvasBackgroundImageUrl: project.canvasBackgroundImageUrl,
-      libraryTemplateByKind: new Map(deviceTemplates.map((template) => [template.kind, template]))
+      libraryTemplateByKind
     }),
     ...backgroundReferencedHrefById
   ]);
@@ -123,8 +125,7 @@ export async function renderSavedModelSvg({ parts, name, colorMode = "energy" })
     Array.isArray(project.edges) ? project.edges : [],
     {
       // 缺省宽高同源渲染器常量（不再写第二份默认字面量）
-      width: Number(project.canvasWidth ?? DEFAULT_CANVAS_WIDTH),
-      height: Number(project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT),
+      ...canvasBoundsOf(project),
       backgroundPage,
       // 缺省/空串不传：由渲染器回落自身默认 DEFAULT_CANVAS_BACKGROUND，避免后端再写一份默认字面量
       backgroundColor: project.canvasBackgroundColor || undefined,

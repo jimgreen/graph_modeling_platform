@@ -460,12 +460,13 @@ const handleExportCIM = async () => {
 ### 7.3 文件命名规则
 
 ```
-{模型名}_CIM16.xml
-例: 示范站_CIM16.xml
+{模型名}.xml
+例: 示范站.xml
 ```
 
 > 修订：原规则带 `_{YYYYMMDD_HHmmss}` 时间戳，后按用户要求去掉，与 E / SVG 导出一致，
-> 便于前端落盘文件与 `/v1/schemes/model/cim-xml` 接口产物按名对拍。前后端各一份文件名实现
+> 便于前端落盘文件与 `/v1/schemes/model/cim-xml` 接口产物按名对拍。
+> 再修订 [2026-09-13]：进一步去掉 `_CIM16` 后缀，文件名与 E/JSON 导出同为 `{模型名}.xml`。
 > （`src/cim/cim-export.ts` / `server/cimExport.mjs`）必须保持同规则。
 
 ### 7.4 导出前校验

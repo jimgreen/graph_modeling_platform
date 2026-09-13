@@ -18,6 +18,7 @@ import {
   isAllowedNativeExportOrigin
 } from "./nativeExportSave.mjs";
 import { GlobalLineRegistryError, createGlobalLineRegistry } from "./globalLineRegistry.mjs";
+import { isModelJsonFile } from "./schemeFiles.mjs";
 import { meaningfulDeviceParameterChineseName } from "../shared/deviceParameterChineseNames.mjs";
 import { withXmlEncodingDeclaration } from "./xmlEncoding.mjs";
 
@@ -243,10 +244,10 @@ const maxIconLibraryExtractedAssets = 500;
 
 const stringifyJson = (value) => JSON.stringify(value, null, 2);
 
-// 统一将 E 文件（.e）按 GBK 编码写入；JSON/SVG 等仍用 UTF-8。
-// GBK 内容比较时按字节对比，避免 UTF-8 解码乱码导致误判变更。
-async function writeTextIfChanged(filePath, content, encoding = "utf-8") {
-  const bytes = encoding === "gbk" ? iconv.encode(String(content ?? ""), "gbk") : Buffer.from(String(content ?? ""), "utf-8");
+// 一律以 UTF-8 写盘：落盘只留 .json，E 文件不再落盘（ZIP 内 .e 由 iconv 现场编码为 GBK）。
+// 内容比较按字节对比，避免重建时因无关编码差异产生伪变更。
+async function writeTextIfChanged(filePath, content) {
+  const bytes = Buffer.from(String(content ?? ""), "utf-8");
   try {
     const current = await readFile(filePath);
     if (current.equals(bytes)) {
@@ -443,7 +444,7 @@ async function readSchemeDirectory(dirent, parentDir, options = {}) {
       }
       continue;
     }
-    if (!entry.isFile() || !/\.json$/iu.test(entry.name) || entry.name.toLocaleLowerCase() === "scheme.json") {
+    if (!entry.isFile() || !isModelJsonFile(entry.name)) {
       continue;
     }
     const project = options.includeProjects
@@ -3271,7 +3272,7 @@ async function projectJsonFileForName(schemeDir, name) {
     return null;
   }
   for (const entry of entries) {
-    if (!entry.isFile() || !/\.json$/iu.test(entry.name) || entry.name.toLocaleLowerCase() === "scheme.json") {
+    if (!entry.isFile() || !isModelJsonFile(entry.name)) {
       continue;
     }
     const fileBaseName = entry.name.replace(/\.json$/iu, "");
@@ -3322,7 +3323,7 @@ async function maxStoredProjectIndex(dir) {
       maxIndex = Math.max(maxIndex, await maxStoredProjectIndex(entryPath));
       continue;
     }
-    if (!entry.isFile() || !/\.json$/iu.test(entry.name) || entry.name.toLocaleLowerCase() === "scheme.json") {
+    if (!entry.isFile() || !isModelJsonFile(entry.name)) {
       continue;
     }
     try {
@@ -3414,7 +3415,7 @@ async function scanProjectByIndex(dir, schemePath, target) {
     throw error;
   }
   for (const entry of entries) {
-    if (!entry.isFile() || !/\.json$/iu.test(entry.name) || entry.name.toLocaleLowerCase() === "scheme.json") {
+    if (!entry.isFile() || !isModelJsonFile(entry.name)) {
       continue;
     }
     const filePath = join(dir, entry.name);
