@@ -359,7 +359,8 @@ describe("SVG model import factories", () => {
   });
 });
 
-describe("createCreateImportedSchemeRecord", () => {  test("keeps the stored model index of models read back from a scheme file", () => {
+describe("createCreateImportedSchemeRecord", () => {
+  test("keeps the stored model index of models read back from a scheme file", () => {
     const scope: Record<string, any> = {
       isObjectRecord: (value: unknown) => Boolean(value) && typeof value === "object" && !Array.isArray(value),
       createSavedProject,

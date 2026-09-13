@@ -3727,7 +3727,7 @@ export function createResolveDuplicateModelImport(__appScope: Record<string, any
 
 export function createExportSchemeRecord(__appScope: Record<string, any>) {
   return async (scheme: SavedSchemeRecord) => {
-  const { downloadBackendSchemeArchive, flattenSavedProjects, isPickerAbort, safeFilePart, schemePathForRecord, schemes, writeOperationLog } = __appScope;
+  const { downloadBackendSchemeArchive, flattenSavedProjects, isPickerAbort, safeFilePart, schemePathForRecord, writeOperationLog } = __appScope;
     try {
       const schemePath = schemePathForRecord(scheme);
       const saved = await downloadBackendSchemeArchive(schemePath, `${safeFilePart(scheme.name)}.zip`);

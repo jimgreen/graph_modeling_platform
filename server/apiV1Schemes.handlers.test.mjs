@@ -133,7 +133,7 @@ describe("handleV1SchemeExport 正路径", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  test("createSchemeArchiveBuffer 抛其他错返 404", async () => {
+  test("createSchemeArchiveBuffer 抛「方案目录不存在」返 404", async () => {
     createSchemeArchiveBuffer.mockRejectedValue(new Error("方案目录不存在"));
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["x"]));
