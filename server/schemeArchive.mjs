@@ -4,11 +4,7 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import AdmZip from "adm-zip";
-
-/** 是模型文件判据，与 maxStoredProjectIndex / scanProjectByIndex 的扫描口径一致 */
-function isModelJsonFile(fileName) {
-  return /\.json$/iu.test(fileName) && fileName.toLocaleLowerCase() !== "scheme.json";
-}
+import { isModelJsonFile } from "./schemeFiles.mjs";
 
 /**
  * 递归列出方案目录下的模型 json（含子方案目录）。

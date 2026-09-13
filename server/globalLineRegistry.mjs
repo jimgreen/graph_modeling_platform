@@ -1,6 +1,7 @@
 import { access, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import { isModelJsonFile } from "./schemeFiles.mjs";
 
 export const GLOBAL_LINE_ID_PARAM = "_globalLineId";
 const GLOBAL_LINE_MODEL_PAIR_PARAM = "_globalLineModelPair";
@@ -247,7 +248,7 @@ async function listProjectJsonFiles(rootDir) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) {
         await visit(path);
-      } else if (entry.isFile() && /\.json$/iu.test(entry.name) && entry.name.toLocaleLowerCase() !== "scheme.json") {
+      } else if (entry.isFile() && isModelJsonFile(entry.name)) {
         files.push(path);
       }
     }

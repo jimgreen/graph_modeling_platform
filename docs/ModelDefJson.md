@@ -41,6 +41,7 @@ JSON.stringify(project, null, 2)   // src/appExtracted/appDeviceDefinitionFactor
 | `canvasBackgroundImageAssetId?` | `string` | — | 背景图资产 ID（后端图片库引用） |
 | `canvasBackgroundImageFit?` | `string` | — | 背景图适配方式 |
 | `backgroundProjectId?` | `string` | — | 背景页引用的工程 ID（多页背景） |
+| `backgroundProjectIdx?` | `number` | — | 背景页引用模型的全局 idx（服务端按此重建背景页，与 `backgroundProjectId` 并存） |
 | `backgroundLayerIds?` | `string[]` | — | 背景页引用的图层 ID 列表 |
 | `powerUnit?` / `voltageUnit?` / `currentUnit?` | `string` | — | E 导出单位（默认 MW / kV / A） |
 | `powerBaseValue?` | `number` | — | E 导出功率基准（默认 100） |

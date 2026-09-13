@@ -184,7 +184,7 @@ E 与 CIM 共享同一 `model.ts` 闭包，`.ts` 扩展名改动**一次覆盖�
 |------|------|------|------|
 | GET | `/webgrp/v1/schemes/model/cim-xml` | `schemePath`、`name`、`modelId?`、`strict?` | `modelId` 覆盖默认（`project.idx ?? name` 卫生化）；`strict=1` 时缺关键参数返回 400 |
 
-- 响应：`application/xml; charset=utf-8` + `Content-Disposition: attachment`（文件名 `<模型名>_<yyyyMMdd_HHmmss>_CIM16.xml`）
+- 响应：`application/xml; charset=utf-8` + `Content-Disposition: attachment`（文件名 `<模型名>.xml`；[2026-09-13] 起去掉 `_CIM16` 与时间戳后缀，与 E/JSON 导出一致）
 - 数据来源：`project.nodes/edges/name/idx/measurements.groups` + `measurement-config.json` 的 `measurementTypes`
 - 无电力设备（过滤 `static-*` 后为空）→ 400 `bad-request`（对齐前端「无可导出的电力设备」提示）
 - 缺关键参数 → 默认仍 200 导出；`?strict=1` → 400 + 缺失清单
