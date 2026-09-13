@@ -26,14 +26,14 @@ const canvasBoundsOf = (project) => ({
 // 背景页重建：宿主模型只落盘引用键（backgroundProjectIdx + backgroundLayerIds），
 // 服务端读被引用模型 + 复用 src 侧纯函数复现前端 backgroundPageRender 载荷。
 // 不用前端 id（backgroundProjectId）：磁盘 json 不含 id，服务端无 id→文件映射。
+// 无背景页的统一返回（每次新建 Map，不共享同一实例给调用方）
+const emptyBackgroundPageOption = () => ({ backgroundPage: undefined, referencedHrefById: new Map() });
+
 async function buildBackgroundPageOption({ project, libraryTemplateByKind }) {
   const backgroundIdx = Number(project?.backgroundProjectIdx);
-  if (!Number.isSafeInteger(backgroundIdx) || backgroundIdx <= 0) {
-    return { backgroundPage: undefined, referencedHrefById: new Map() };
-  }
-  // 自引用与前端 createAppHookCallback141 同口径：跳过
-  if (Number(project?.idx) === backgroundIdx) {
-    return { backgroundPage: undefined, referencedHrefById: new Map() };
+  // 「引用键非法」与「自引用」都与前端 createAppHookCallback141 同口径：跳过背景页
+  if (!Number.isSafeInteger(backgroundIdx) || backgroundIdx <= 0 || Number(project?.idx) === backgroundIdx) {
+    return emptyBackgroundPageOption();
   }
   const record = await findSchemeProjectRecordByIndex({ index: backgroundIdx });
   if (!record) {
@@ -43,7 +43,7 @@ async function buildBackgroundPageOption({ project, libraryTemplateByKind }) {
       warnedBackgroundIdx.add(backgroundIdx);
       console.warn(`[svg-export] 背景页引用解析失败：backgroundProjectIdx=${backgroundIdx} 未匹配到任何模型，已跳过背景页（引用键配错/数据根不可读/模型已删除）。`);
     }
-    return { backgroundPage: undefined, referencedHrefById: new Map() };
+    return emptyBackgroundPageOption();
   }
   const backgroundProject = normalizeProjectLayers(record.project);
   const visibleLayerIds = new Set(

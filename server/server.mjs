@@ -2927,7 +2927,7 @@ async function imageExportPathByIdFromManifest(manifest) {
         result[id] = dataUrl;
       }
     } catch {
-      // 单张图片文件丢失不应阻断模型保存；导出时保留原始 href。
+      // 单张图片文件丢失不应阻断导出；保留原始 href。
     }
   }));
   return result;
@@ -3024,19 +3024,11 @@ export async function archiveStaleSchemeFiles(filesRoot, expectedFiles, expected
   }
 }
 
-async function removeStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs) {
-  await archiveStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs);
-}
-
 function schemeDirectoryFromPath(filesRoot, schemePath) {
   const parts = (Array.isArray(schemePath) ? schemePath : [])
     .map((part) => safeFilePart(part, "方案"))
     .filter(Boolean);
   return parts.reduce((dir, part) => join(dir, part), filesRoot);
-}
-
-function isInsideDirectory(parentDir, childPath) {
-  return isPathInside(parentDir, childPath);
 }
 
 // 审查 A1-P0-2：zip bomb 防护——解压前按 entry 未压缩大小累计校验，防 256MB 压缩包解出数 GB 打爆内存
@@ -3106,7 +3098,7 @@ async function extractSchemeZipToDirectory(zip, targetDir, rootName) {
       continue;
     }
     const targetPath = relativeParts.reduce((current, part) => join(current, safeFilePart(part, part)), targetDir);
-    if (!isInsideDirectory(targetDir, targetPath)) {
+    if (!isPathInside(targetDir, targetPath)) {
       throw new Error("zip 文件包含越界路径。");
     }
     if (entry.isDirectory) {
@@ -3178,7 +3170,7 @@ export async function importSchemeArchiveBuffer(options) {
   const importName = requestedName || zipRootName;
   const parentDir = schemeDirectoryFromPath(filesRoot, parentPath);
   const targetDir = join(parentDir, importName);
-  if (!isInsideDirectory(filesRoot, targetDir)) {
+  if (!isPathInside(filesRoot, targetDir)) {
     throw new Error("目标方案路径无效。");
   }
   let targetExists = false;
@@ -3542,7 +3534,7 @@ async function writeSchemeFiles(schemes) {
     await writeSchemeTree(scheme, filesRoot);
   }
   await Promise.all(writeTasks);
-  await removeStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs);
+  await archiveStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs);
   await globalLineRegistry.rebuildFromStorage();
 }
 
