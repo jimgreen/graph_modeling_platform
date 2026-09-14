@@ -600,7 +600,7 @@ ${rules.join("\n")}
     }
     return topologyNode.terminals.map((terminal, index) => ` node-${index + 1}="${escapeXml(terminal.nodeNumber ?? "")}"`).join("");
   };
-  const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string, edgeAttributes: string, voltageLineClass = "") => {
+  const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string, edgeAttributes: string, voltageLineClass = "", suppressStroke = false) => {
     const node = nodeById.get(endpoint === "source" ? edge.sourceId : edge.targetId);
     if (!node) {
       return "";
@@ -616,7 +616,7 @@ ${rules.join("\n")}
     }
     const dashArray = svgStrokeDashArray(node.params.strokeStyle);
     const dashAttribute = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
-    return `<line class="export-boundary-bus-internal-connector${voltageLineClass ? ` ${voltageLineClass}` : ""}"${edgeAttributes} x1="${formatSvgNumber(segment.from.x)}" y1="${formatSvgNumber(segment.from.y)}" x2="${formatSvgNumber(segment.to.x)}" y2="${formatSvgNumber(segment.to.y)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(boundaryBusInternalConnectorStrokeWidth(node, segment))}" stroke-linecap="round"${dashAttribute}/>`;
+    return `<line class="export-boundary-bus-internal-connector${voltageLineClass ? ` ${voltageLineClass}` : ""}"${edgeAttributes} x1="${formatSvgNumber(segment.from.x)}" y1="${formatSvgNumber(segment.from.y)}" x2="${formatSvgNumber(segment.to.x)}" y2="${formatSvgNumber(segment.to.y)}"${suppressStroke ? "" : ` stroke="${escapeXml(stroke)}"`} stroke-width="${formatSvgNumber(boundaryBusInternalConnectorStrokeWidth(node, segment))}" stroke-linecap="round"${dashAttribute}/>`;
   };
   const edgeMarkup = routeEdgesForSavedPathRendering(exportNodes, edges, canvasSize, { refreshCrossingArcs: true })
     .map((route, index) => {
@@ -635,18 +635,20 @@ ${rules.join("\n")}
         : "";
       const edgeElementId = exportSvgUniqueId(`edge-${index + 1}`, usedSvgIds, "edge");
       const edgeClassAttribute = edgeVoltageLineClass ? ` class="${edgeVoltageLineClass}"` : "";
+      // 电压模式下线路删字面 stroke，颜色交给 lkvN/ldcvN 类驱动
+      const edgeVoltageStroke = colorDisplayMode === "voltage" && edgeVoltage ? "" : ` stroke="${escapeXml(stroke)}"`;
       const sourceExportDeviceId = edge ? exportDeviceIdByNodeId.get(edge.sourceId) ?? edge.sourceId : "";
       const targetExportDeviceId = edge ? exportDeviceIdByNodeId.get(edge.targetId) ?? edge.targetId : "";
       const edgeAttributes = `${svgDisplayAttribute(edgeVisible)} source-dev-id="${escapeXml(sourceExportDeviceId)}" target-dev-id="${escapeXml(targetExportDeviceId)}"`;
       const internalConnectors = edge
         ? [
-            buildBoundaryBusInternalConnectorMarkup(edge, "source", stroke, edgeAttributes, edgeVoltageLineClass),
-            buildBoundaryBusInternalConnectorMarkup(edge, "target", stroke, edgeAttributes, edgeVoltageLineClass)
+            buildBoundaryBusInternalConnectorMarkup(edge, "source", stroke, edgeAttributes, edgeVoltageLineClass, colorDisplayMode === "voltage" && Boolean(edgeVoltage)),
+            buildBoundaryBusInternalConnectorMarkup(edge, "target", stroke, edgeAttributes, edgeVoltageLineClass, colorDisplayMode === "voltage" && Boolean(edgeVoltage))
           ]
             .filter(Boolean)
             .join("\n")
         : "";
-      return `<path id="${escapeXml(edgeElementId)}"${edgeClassAttribute}${edgeAttributes}${edgeVoltageAttributes} d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}`;
+      return `<path id="${escapeXml(edgeElementId)}"${edgeClassAttribute}${edgeAttributes}${edgeVoltageAttributes} d="${route.path}" fill="none"${edgeVoltageStroke} stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}`;
     })
     .join("\n");
   const nodeLayerMarkup = new Map<string, string[]>();

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildSvgDocument } from "./svg.ts";
 import { createDefaultNode, type ModelNode } from "../model.ts";
+import { SVG_BASELINE_EDGES, SVG_BASELINE_NODES } from "./fixtures/svg-baseline";
 
 // 默认新建母线：vbase 为 "0"，电压写在 snake_case 的 voltage_level 上
 const busNode = () => ({
@@ -80,5 +81,21 @@ describe("多端子器件的 use 类与槽", () => {
   it("symbol 段内零字面电压色（属性形态）", () => {
     const symbolSection = svg.slice(svg.indexOf("<defs"), svg.indexOf("</defs>"));
     expect(symbolSection).not.toMatch(/stroke="#[0-9a-fA-F]{3,8}"/i);
+  });
+});
+
+describe("线路与边界母线内连删字面色", () => {
+  it("电压模式下线路 path 与边界母线内连都不写字面 stroke", () => {
+    const out = buildSvgDocument(SVG_BASELINE_NODES as never, SVG_BASELINE_EDGES as never, {
+      width: 800,
+      height: 600,
+      colorDisplayMode: "voltage"
+    });
+    const edgeTags = Array.from(out.matchAll(/<path id="edge-[^"]*"[^>]*>/g)).map((m) => m[0]);
+    expect(edgeTags.length).toBeGreaterThan(0);
+    for (const tag of edgeTags) {
+      expect(tag).toMatch(/class="lkv|class="ldcv/);
+      expect(tag).not.toMatch(/stroke="#[0-9a-f]{3,8}"/i);
+    }
   });
 });
