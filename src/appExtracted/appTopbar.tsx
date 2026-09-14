@@ -7,14 +7,16 @@ import { MemoDeviceGlyph } from "../DeviceGlyph";
 import {
   SPACE_NAME_DUPLICATE,
   createSpace,
+  deleteSpace,
   exportSpaceArchive,
   importSpaceArchive,
+  renameSpace,
   sanitizeSpaceFileName,
   type Space,
   type SpaceImportMode
 } from "../spaceClient";
 import { saveLazyBlobFile } from "../fileIO";
-import { Download, Send, Upload } from "lucide-react";
+import { Download, Pencil, Send, Trash2, Upload } from "lucide-react";
 import { SendModelDialog } from "../SendModelDialog";
 
 type AppTopbarProps = {
@@ -235,6 +237,74 @@ export async function importSpaceArchiveFromFile(file: File, scope: Record<strin
   }
 }
 
+// 当前空间（选择器与导出/导入/改名/删除四个按钮的共同作用对象）。列表未加载或 current 落在列表外时返回 null：
+// 那种状态下按钮该禁用，而不是拿空 id 去打后端（后端只会回「未知空间」）。
+export function currentSpaceOf(scope: Record<string, any>): Space | null {
+  const list = Array.isArray(scope?.spaces) ? (scope.spaces as Space[]) : [];
+  return list.find((space) => space.id === scope?.currentSpaceId) ?? null;
+}
+
+// 改名与删除都作用在**当前空间**上 —— 要动别的空间，下拉框切过去即可（切换本就是一次硬重载）。
+// 改名只改显示名，故不重载页面：刷新列表就地更新即可（浏览器侧缓存按 id 记账，与名字无关）。
+export async function renameCurrentSpace(scope: Record<string, any>): Promise<boolean> {
+  const current = currentSpaceOf(scope);
+  if (!current) return false;
+  const dialogs = conflictDialogs();
+  if (!dialogs) return false;
+  const input = await dialogs.prompt("请输入新的空间名称：", current.name);
+  const name = String(input ?? "").trim();
+  // 空 / 没改：直接收工，别拿一次注定 no-op 的 PUT 去撞后端
+  if (!name || name === current.name) return false;
+  try {
+    await renameSpace(current.id, name);
+  } catch (error) {
+    showSpaceActionMessage(`空间改名失败：${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+  await refreshSpacesQuietly(scope);
+  showSpaceActionMessage(`已重命名为「${name}」`);
+  return true;
+}
+
+// 删除是**不可逆**（界面维度）动作：目录进 trash-spaces/ 后只能人工从磁盘找回，文案必须写明代价。
+// 删的是当前空间，故删完必须切走 —— 否则 Cookie 指向一个已删空间，下一个请求就落到回退分支。
+export async function deleteCurrentSpace(scope: Record<string, any>): Promise<boolean> {
+  const current = currentSpaceOf(scope);
+  if (!current || current.pinned) return false;
+  const ask = (globalThis as any).showGlobalConfirm;
+  if (typeof ask !== "function") return false;
+  const confirmed = await ask(
+    `确定删除空间「${current.name}」？\n\n它的全部数据（方案 / 图元库 / 图片 / 配色）会移入回收目录 trash-spaces，界面上不再显示，需要人工从磁盘找回。`
+  );
+  if (!confirmed) return false;
+  try {
+    await deleteSpace(current.id);
+  } catch (error) {
+    showSpaceActionMessage(`删除空间失败：${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+  // 切换是硬重载：列表必须先刷（与导入同一顺序与理由），刷失败也不能挡住切换
+  await refreshSpacesQuietly(scope);
+  const next = currentSpaceOf(scope) ?? (Array.isArray(scope?.spaces) ? scope.spaces[0] : null);
+  // 列表刷失败时 next 可能仍是刚被删的那个（或都没有）：default 恒定存在，是安全落点
+  const target = next && next.id !== current.id ? next.id : "default";
+  try {
+    scope?.requestSwitchSpace?.(target);
+  } catch (error) {
+    console.warn("[空间] 删除后切换空间失败：", error);
+  }
+  return true;
+}
+
+// 列表刷新失败不阻塞后续动作（切换后列表会重新拉），但不吞得一点线索不留
+async function refreshSpacesQuietly(scope: Record<string, any>): Promise<void> {
+  try {
+    await scope?.refreshSpaces?.();
+  } catch (error) {
+    console.warn("[空间] 刷新空间列表失败：", error);
+  }
+}
+
 function showSpaceActionMessage(text: string): void {
   const notify = (globalThis as any).showGlobalMessage;
   if (typeof notify === "function") {
@@ -251,6 +321,7 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
   const spaceArchiveInputRef = useRef<HTMLInputElement>(null);
   const options = buildSpaceSwitcherOptions(scope.spaces);
   const currentSpaceId = scope.currentSpaceId ?? "";
+  const current = currentSpaceOf(scope);
   // 后端回退或列表未加载时 current 可能不在选项里，此时交给 placeholder，避免 Select 显示裸 id
   const value = options.some((option) => option.value === currentSpaceId) ? currentSpaceId : undefined;
 
@@ -309,6 +380,28 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
         onClick={() => spaceArchiveInputRef.current?.click()}
       >
         <Upload size={14} />
+      </button>
+      {/* 改名 / 删除都作用在**当前空间**（要动别的空间，先用左边的下拉框切过去）：pinned 的 default 不给删，
+          列表未加载时 current 为空，两个按钮也一并禁用 */}
+      <button
+        type="button"
+        className="topbar-primary-button"
+        title="重命名当前空间"
+        aria-label="重命名空间"
+        disabled={scope.isBrowseMode || !current || current.pinned}
+        onClick={() => void renameCurrentSpace(scope)}
+      >
+        <Pencil size={14} />
+      </button>
+      <button
+        type="button"
+        className="topbar-primary-button"
+        title="删除当前空间（数据移入回收目录）"
+        aria-label="删除空间"
+        disabled={scope.isBrowseMode || !current || current.pinned}
+        onClick={() => void deleteCurrentSpace(scope)}
+      >
+        <Trash2 size={14} />
       </button>
       <input
         ref={spaceArchiveInputRef}

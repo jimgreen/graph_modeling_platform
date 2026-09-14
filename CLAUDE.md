@@ -110,8 +110,9 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 - 一个部署内多套互相隔离的数据空间：`data/` 是 default 空间根，其余在 `data/workspaces/<id>/`
 - 空间标识解析链：`X-Space` 头 > `?space=` > `Cookie: gmp_space` > 回退 `spaces[0]`
 - 不变量（**改后端前先读 `server/CLAUDE.md` 的 Common Patterns**）：不得新增模块级路径常量（一律 `options.paths ?? defaultPaths` 显式透传）；一切建目录调用均经退休守护（`mkdirInSpace` / `writeTextIfChanged`）
-- 空间导入/导出：顶栏空间下拉右侧两按钮；`GET /webgrp/spaces/export` 把当前空间原样打包成 ZIP（只遍历 `spacePathsFor` 枚举的子目录，default 空间的根是数据根、**不得**按根递归），`POST /webgrp/spaces/import` 一律新建空间、不落在当前空间，失败回滚不落半成品
+- 空间导入/导出：顶栏空间下拉右侧四按钮（导出 / 导入 / 改名 / 删除，均作用于**当前空间**）；`GET /webgrp/spaces/export` 把当前空间原样打包成 ZIP（只遍历 `spacePathsFor` 枚举的子目录，default 空间的根是数据根、**不得**按根递归），`POST /webgrp/spaces/import` 一律新建空间、不落在当前空间，失败回滚不落半成品；改名走 `PUT /webgrp/spaces`（只改显示名、不重载页面），删除走 `DELETE /webgrp/spaces`（确认后目录进 `trash-spaces/`、删完切到剩余空间）
 - 空间**名**唯一：新建 / 改名 / 导入撞上已有名字一律 409 `SPACE_NAME_DUPLICATE`（正文带冲突者 `name` / `conflictId`），**不再**静默加 `-2` 后缀；导入撞车时前端弹询问框（确定=覆盖该空间、取消=改用其他名字导入，改名框再取消=放弃），带 `?mode=overwrite` 或 `?mode=rename&name=` 重发
+- 空间 **id 与 name 会分叉**：目录名恒为 id（`data/workspaces/<id>/`），创建时由名字 slug 而来、此后**永不改**；改名只改 `spaces.json` 里的 name。认目录只能靠 id —— 底部状态栏「空间ID <id>」常驻显示并支持点击复制，顶栏选择器显示的是 name
 - 前端半边**已落地**：`src/spaceClient.ts`（Cookie + `/webgrp/spaces` 封装 + ZIP 导入导出）、`src/spaceCache.ts`（浏览器侧空间缓存单源清单 + 清理 + 启动闸门）、`src/spaceSwitch.ts`（切换时序与 beforeunload 跳过）、顶栏空间选择器与导入/导出按钮
 - 空间标识**只用 Cookie**（前端不设 `X-Space` 头、请求不带 `?space=`）；`current` 取后端解析链的结果，前端不读 Cookie 自算
 

@@ -12095,7 +12095,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   cursor: default;
 }
 
-.param-table .id-copy-cell {
+.param-table .id-copy-cell,
+.bottom-statusbar .id-copy-cell {
   display: inline-block;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
@@ -12113,7 +12114,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   user-select: all;
 }
 
-.param-table .id-copy-cell:hover {
+.param-table .id-copy-cell:hover,
+.bottom-statusbar .id-copy-cell:hover {
   background: #e2e8f0;
   border-color: #cbd5e1;
 }
