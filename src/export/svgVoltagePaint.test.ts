@@ -203,10 +203,12 @@ describe("槽完整性", () => {
 
 describe("I-1 氢/热耦合器件身份色（电压模式下非电压色源不启用 class 驱动机身）", () => {
   // ac-electrolyzer 端子 ["ac","h2"]：ac 是电压端子、h2 是身份端子
+  // 端子号固定：锚点入 symbol 后 node-number 参与去重，同端子号才跨电压共用 symbol
   const electrolyzerNode = (vbase: string): ModelNode => {
     const node = createDefaultNode("ac-electrolyzer", { x: 100, y: 100 });
     node.id = `ely-${vbase}`;
     node.params = { ...node.params, vbase };
+    node.terminals = node.terminals.map((terminal, index) => ({ ...terminal, nodeNumber: `N1${index + 1}` }));
     return node;
   };
 
