@@ -641,7 +641,7 @@ describe("app view device definition parameter rows", () => {
       /<button type="button"(?: id="[^"]*")? className=\{`topbar-primary-button[^`]*`\} onClick=\{toggleInteractionMode\}[\s\S]*?<\/button>/
     )?.[0] ?? "";
     const exportActions = source.match(
-      /<div className="topbar-center-actions">[\s\S]*?<\/div>\s*(?:<div className="action-cluster"|<button)/
+      /<div className="topbar-center-actions">[\s\S]*?<div className="topbar-model"/
     )?.[0] ?? "";
     const toolbarPreviewButton = source.match(
       /\{ENABLE_REACT_FLOW_PREVIEW && \(<button className="topbar-primary-button react-flow-preview-button"[\s\S]*?<\/button>\)\}/
@@ -687,7 +687,7 @@ describe("app view device definition parameter rows", () => {
   test("export dropdown menu includes 导出 CIM/XML item", () => {
     const source = readSourceFiles("./appExtracted/appTopbar.tsx", ...APP_VIEW_SOURCE_FILES);
     const exportActions = source.match(
-      /<div className="topbar-center-actions">[\s\S]*?<\/div>\s*(?:<div className="action-cluster"|<button)/
+      /<div className="topbar-center-actions">[\s\S]*?<div className="topbar-model"/
     )?.[0] ?? "";
 
     expect(exportActions).toContain('label: "导出 CIM/XML"');
@@ -724,6 +724,22 @@ describe("app view device definition parameter rows", () => {
     expect(topbarMenuButtonRule).toMatch(/background:\s*transparent/);
     expect(stateIconMenuButtonRule).toMatch(/border:\s*0/);
     expect(stateIconMenuButtonRule).toMatch(/background:\s*transparent/);
+  });
+
+  test("moves the selection action cluster into the canvas bottom toolbar", () => {
+    const canvasSource = readFileSync(new URL("./appExtracted/appCanvasArea.tsx", import.meta.url), "utf8");
+    const topbarSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
+    const controls = canvasSource.match(
+      /<div className="viewport-controls" role="group"[\s\S]*?<button type="button" title="适配视图"/
+    )?.[0] ?? "";
+    const topbarHeader = topbarSource.match(/<header className="topbar">[\s\S]*?<\/header>/)?.[0] ?? "";
+
+    // 选中操作组挂在视口按钮左侧，紧跟竖线分隔
+    expect(controls).toMatch(/<SelectionActionCluster scope=\{scope\}\/>\s*<span className="viewport-controls-divider"/);
+    // 顶栏不再承载这组按钮
+    expect(topbarHeader).not.toContain('className="action-cluster"');
+    expect(topbarHeader).not.toContain("topbar-group-merge");
+    expect(topbarSource).toContain("export function SelectionActionCluster");
   });
 
   test("keeps export configuration columns only in the E interface definition dialog", () => {
@@ -1101,7 +1117,7 @@ describe("user customization manager entry", () => {
   test("keeps the customization manager in the topbar to the left of the save button", () => {
     const source = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
     const topbarActions = source.match(
-      /<div className="topbar-center-actions">[\s\S]*?<\/div>\s*<div className="action-cluster">/
+      /<div className="topbar-center-actions">[\s\S]*?<div className="topbar-model"/
     )?.[0] ?? "";
 
     expect(topbarActions).toContain("用户自定义修改管理");

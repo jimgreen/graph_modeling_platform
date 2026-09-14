@@ -6,6 +6,7 @@
  */
 import { memo } from "react";
 import { CanvasRulers } from "./appCanvasRulers";
+import { SelectionActionCluster } from "./appTopbar";
 
 /** Storage bus 设备类型集合 */
 const STORAGE_BUS_KINDS = new Set([
@@ -230,6 +231,9 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
   const overlayKeys = [
     'nodeFloatingToolbar', 'edgeFloatingToolbar',
     'canvasResizePreviewRect', 'minimapVisible',
+    // 底部工具栏左侧的「选中操作」组：可用性/选中数变化必须让画布重渲染，否则按钮 disabled 状态停在旧值
+    'canGroupSelectedGraphics', 'canUngroupSelectedGraphics', 'canAdjustSelectedDisplayLayer',
+    'selectedLayoutUnitCount',
     'leftPanelVisible', 'leftPanelWidth', 'rightPanelVisible', 'rightPanelWidth'
   ];
 
@@ -1555,7 +1559,9 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
           </div>
         </section>
         <div className="viewport-overlay" style={viewportOverlayStyle} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
-          <div className="viewport-controls" role="group" aria-label="视口控制">
+          <div className="viewport-controls" role="group" aria-label="画布快捷工具栏">
+            <SelectionActionCluster scope={scope}/>
+            <span className="viewport-controls-divider" aria-hidden="true"/>
             <button type="button" title="适配视图" aria-label="适配视图" onClick={fitWholeCanvasToFrame}>
               <Maximize2 size={16}/>
             </button>

@@ -24,6 +24,13 @@ type AppTopbarProps = {
   inputs: readonly unknown[];
 };
 
+// 即时 tooltip 包装：鼠标进入立刻显示，离开立刻消失（顶栏与画布底部「选中操作」组共用）
+const T = (title: string, child: React.ReactNode, extra?: Record<string, any>) => (
+  <Tooltip title={title} mouseEnterDelay={0} mouseLeaveDelay={0}>
+    {child}
+  </Tooltip>
+);
+
 export function AppTopbar({ scope, inputs }: AppTopbarProps) {
   return (
     <MemoizedViewSection
@@ -441,40 +448,21 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
 function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
   const [sendModelDialogOpen, setSendModelDialogOpen] = useState(false);
   const {
-    AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical,
-    AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
-    AlignVerticalDistributeCenter, ArrowDown, ArrowUp, Bell, Cable, ChevronDown,
-    ChevronRight, ChevronsDown, ChevronsUp, Download, FileJson, FlipHorizontal,
-    FlipVertical, FolderOpen, Grid2X2, Group, Layers, Layers2, Network, Paintbrush,
-    Palette, Pencil, RotateCcw, RotateCw, Save, Settings2, Type, Ungroup, Zap,
-    activeLayer, activeModelPathName, adjustSelectedDisplayLayer, alignSelected,
-    canAdjustSelectedDisplayLayer, canGroupSelectedGraphics, canUngroupSelectedGraphics,
-    chooseCustomDeviceBackground, chooseDefinitionTemplateIcon, chooseImage,
-    chooseStateIconDrawingImport, chooseStateVisualImage, colorDisplayMode,
-    customComponentSvgImportInputRef, customDeviceImageInputRef,
-    definitionTemplateIconInputRef, deviceLabelsVisible, deviceMeasurementsVisible, distributeSelected,
+    Bell, Cable, ChevronDown, ChevronRight, Download, FileJson, FolderOpen,
+    Grid2X2, Layers, Network, Paintbrush, Palette, Pencil, Save, Settings2, Type, Zap,
+    activeLayer, activeModelPathName, colorDisplayMode,
+    deviceLabelsVisible, deviceMeasurementsVisible,
     eDeviceDefinitionInterfaceDialogOpen,
     eDeviceInterfaceTemplateLabel,
-    exportCimFile, exportEFile, exportJsonFile, exportSvg, exportSvgFile, groupSelectedGraphics,
-    imageInputRef, importCustomComponentSvg, importModelFile, importSchemeFile,
-    isBrowseMode, isEditMode, layerManagementDropdownRef, mirrorSelectedNodes,
-    modelImportInputRef, openColorPaletteDialog, openTopologyWarningPanel,
+    exportCimFile, exportEFile, exportJsonFile, exportSvg, exportSvgFile,
+    isBrowseMode, isEditMode, layerManagementDropdownRef,
+    openColorPaletteDialog, openTopologyWarningPanel,
     openUserCustomizationManager, requestEncodedExport, renderLayerManager,
-    rotateSelectedLayoutUnits, runTopologyCalculation, saveCurrentProject,
-    saveRequired, schemeImportInputRef, selectedLayoutUnitCount,
+    runTopologyCalculation, saveCurrentProject, saveRequired,
     setDeviceLabelsVisible, setDeviceMeasurementsVisible, setEDeviceDefinitionInterfaceDialogOpen, setImageTarget,
     setSmartAlignmentEnabled, setVoltageLevelDialogOpen, smartAlignmentEnabled,
-    stateIconDrawingImportInputRef, stateVisualImageInputRef, toggleColorDisplayMode,
-    toggleInteractionMode, topologyErrors, topologyWarningPanelClosed,
-    ungroupSelectedGraphics
+    toggleColorDisplayMode, toggleInteractionMode, topologyErrors, topologyWarningPanelClosed
   } = scope;
-
-  // 即时 tooltip 包装：鼠标进入立刻显示，离开立刻消失
-  const T = (title: string, child: React.ReactNode, extra?: Record<string, any>) => (
-    <Tooltip title={title} mouseEnterDelay={0} mouseLeaveDelay={0}>
-      {child}
-    </Tooltip>
-  );
 
   return (
     <>
@@ -579,59 +567,6 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
           <strong>{eDeviceInterfaceTemplateLabel}</strong>
         </div>
       </div>
-      <div className="action-cluster">
-        <div className="topbar-dropdown group-dropdown">
-          {T("组合操作", <button type="button" id="topbar-group" className="topbar-dropdown-trigger" disabled={isBrowseMode || (!canGroupSelectedGraphics && !canUngroupSelectedGraphics)} aria-label="组合操作"><Group size={16}/><ChevronDown size={13}/></button>)}
-          <div className="topbar-dropdown-menu" role="menu" aria-label="组合操作">
-            <button id="topbar-group-merge" onClick={groupSelectedGraphics} disabled={isBrowseMode || !canGroupSelectedGraphics} title="组合" aria-label="组合"><Group size={16}/><span>组合</span></button>
-            <button id="topbar-group-unmerge" onClick={ungroupSelectedGraphics} disabled={isBrowseMode || !canUngroupSelectedGraphics} title="解除组合" aria-label="解除组合"><Ungroup size={16}/><span>解除组合</span></button>
-          </div>
-        </div>
-        <div className="topbar-dropdown display-layer-dropdown">
-          {T("显示层级", <button type="button" id="topbar-display-layer" className="topbar-dropdown-trigger" disabled={!canAdjustSelectedDisplayLayer} aria-label="显示层级"><Layers2 size={16}/><ChevronDown size={13}/></button>)}
-          <div className="topbar-dropdown-menu" role="menu" aria-label="显示层级">
-            <button id="topbar-display-layer-raise" onClick={() => adjustSelectedDisplayLayer("raise")} disabled={!canAdjustSelectedDisplayLayer} title="提升显示层级" aria-label="提升显示层级"><ArrowUp size={16}/><span>提升显示层级</span></button>
-            <button id="topbar-display-layer-lower" onClick={() => adjustSelectedDisplayLayer("lower")} disabled={!canAdjustSelectedDisplayLayer} title="降低显示层级" aria-label="降低显示层级"><ArrowDown size={16}/><span>降低显示层级</span></button>
-            <button id="topbar-display-layer-front" onClick={() => adjustSelectedDisplayLayer("front")} disabled={!canAdjustSelectedDisplayLayer} title="顶层显示" aria-label="顶层显示"><ChevronsUp size={16}/><span>顶层显示</span></button>
-            <button id="topbar-display-layer-back" onClick={() => adjustSelectedDisplayLayer("back")} disabled={!canAdjustSelectedDisplayLayer} title="底层显示" aria-label="底层显示"><ChevronsDown size={16}/><span>底层显示</span></button>
-          </div>
-        </div>
-        <div className="topbar-dropdown align-dropdown">
-          {T("对齐操作", <button type="button" id="topbar-align" className="topbar-dropdown-trigger" disabled={isBrowseMode} aria-label="对齐操作"><AlignCenterHorizontal size={16}/><ChevronDown size={13}/></button>)}
-          <div className="topbar-dropdown-menu" role="menu" aria-label="对齐操作">
-            <button id="topbar-align-left" onClick={() => alignSelected("left")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="左对齐" aria-label="左对齐"><AlignStartVertical size={16}/><span>左对齐</span></button>
-            <button id="topbar-align-right" onClick={() => alignSelected("right")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="右对齐" aria-label="右对齐"><AlignEndVertical size={16}/><span>右对齐</span></button>
-            <button id="topbar-align-horizontal" onClick={() => alignSelected("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="横向居中" aria-label="横向居中"><AlignCenterHorizontal size={16}/><span>横向居中</span></button>
-            <button id="topbar-align-vertical" onClick={() => alignSelected("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="纵向居中" aria-label="纵向居中"><AlignCenterVertical size={16}/><span>纵向居中</span></button>
-            <button id="topbar-align-top" onClick={() => alignSelected("top")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="上对齐" aria-label="上对齐"><AlignStartHorizontal size={16}/><span>上对齐</span></button>
-            <button id="topbar-align-bottom" onClick={() => alignSelected("bottom")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="下对齐" aria-label="下对齐"><AlignEndHorizontal size={16}/><span>下对齐</span></button>
-            <button id="topbar-align-distribute-horizontal" onClick={() => distributeSelected("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 3} title="横向分布" aria-label="横向分布"><AlignHorizontalDistributeCenter size={16}/><span>横向分布</span></button>
-            <button id="topbar-align-distribute-vertical" onClick={() => distributeSelected("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 3} title="纵向分布" aria-label="纵向分布"><AlignVerticalDistributeCenter size={16}/><span>纵向分布</span></button>
-          </div>
-        </div>
-        <div className="topbar-dropdown rotate-dropdown">
-          {T("旋转操作", <button type="button" id="topbar-rotate" className="topbar-dropdown-trigger" disabled={isBrowseMode} aria-label="旋转操作"><RotateCw size={16}/><ChevronDown size={13}/></button>)}
-          <div className="topbar-dropdown-menu" role="menu" aria-label="旋转操作">
-            <button id="topbar-rotate-left" onClick={() => rotateSelectedLayoutUnits("left")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="向左旋转90度" aria-label="向左旋转90度"><RotateCcw size={16}/><span>左转90度</span></button>
-            <button id="topbar-rotate-right" onClick={() => rotateSelectedLayoutUnits("right")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="向右旋转90度" aria-label="向右旋转90度"><RotateCw size={16}/><span>右转90度</span></button>
-            <button id="topbar-mirror-horizontal" onClick={() => mirrorSelectedNodes("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="水平镜像" aria-label="水平镜像"><FlipHorizontal size={16}/><span>水平镜像</span></button>
-            <button id="topbar-mirror-vertical" onClick={() => mirrorSelectedNodes("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="垂直镜像" aria-label="垂直镜像"><FlipVertical size={16}/><span>垂直镜像</span></button>
-          </div>
-        </div>
-        <input ref={imageInputRef} type="file" accept="image/*,.svg,image/svg+xml" data-image-import-kind="image" hidden multiple onChange={chooseImage}/>
-        <input ref={scope.imageArchiveInputRef} type="file" accept=".docx,.docm,.pptx,.pptm,.ppsx,.ppsm,.xlsx,.xlsm,.vsdx,.wps,.dps,.zip" data-image-import-kind="archive" hidden multiple onChange={chooseImage}/>
-        <input ref={customDeviceImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseCustomDeviceBackground}/>
-        <input ref={customComponentSvgImportInputRef} type="file" accept=".svg,image/svg+xml" hidden onChange={importCustomComponentSvg}/>
-        <input ref={definitionTemplateIconInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseDefinitionTemplateIcon}/>
-        <input ref={stateVisualImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateVisualImage}/>
-        <input ref={stateIconDrawingImportInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateIconDrawingImport}/>
-        <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile}/>
-        <input ref={scope.svgModelImportInputRef} type="file" accept=".svg,image/svg+xml" hidden onChange={scope.importSvgModelFile}/>
-        <input ref={scope.dotModelImportInputRef} type="file" accept=".dot,text/vnd.graphviz" hidden onChange={scope.importDotModelFile}/>
-        <input ref={schemeImportInputRef} type="file" accept=".zip,application/zip,.json,application/json" hidden onChange={importSchemeFile}/>
-        <input ref={scope.libraryPackageImportInputRef} type="file" accept=".json,application/json" hidden onChange={scope.importLibraryPackageFile}/>
-        <input ref={scope.userCustomizationImportInputRef} type="file" accept=".json,application/json" hidden onChange={scope.importUserCustomizationFile}/>
-      </div>
       <SpaceSwitcher scope={scope}/>
       <RuntimeWsIndicator scope={scope}/>
     </header>
@@ -645,6 +580,83 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
 type RecentGlyphsToolbarProps = {
   scope: Record<string, any>;
 };
+
+// 「选中操作」按钮组（组合 / 显示层级 / 对齐 / 旋转）连同隐藏的文件选择锚点。
+// 渲染在画布底部悬浮工具栏的左侧，与视口控制按钮同一条、以竖线分隔（见 styles.css 的 .viewport-controls .action-cluster）。
+export function SelectionActionCluster({ scope }: { scope: Record<string, any> }) {
+  const {
+    AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical,
+    AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
+    AlignVerticalDistributeCenter, ArrowDown, ArrowUp, ChevronDown, ChevronsDown, ChevronsUp,
+    FlipHorizontal, FlipVertical, Group, Layers2, RotateCcw, RotateCw, Ungroup,
+    adjustSelectedDisplayLayer, alignSelected, canAdjustSelectedDisplayLayer,
+    canGroupSelectedGraphics, canUngroupSelectedGraphics,
+    chooseCustomDeviceBackground, chooseDefinitionTemplateIcon, chooseImage,
+    chooseStateIconDrawingImport, chooseStateVisualImage,
+    customComponentSvgImportInputRef, customDeviceImageInputRef, definitionTemplateIconInputRef,
+    distributeSelected, groupSelectedGraphics, imageInputRef,
+    importCustomComponentSvg, importModelFile, importSchemeFile,
+    isBrowseMode, mirrorSelectedNodes, modelImportInputRef,
+    rotateSelectedLayoutUnits, schemeImportInputRef, selectedLayoutUnitCount,
+    stateIconDrawingImportInputRef, stateVisualImageInputRef, ungroupSelectedGraphics
+  } = scope;
+
+  return (
+    <div className="action-cluster">
+      <div className="topbar-dropdown group-dropdown">
+        {T("组合操作", <button type="button" id="topbar-group" className="topbar-dropdown-trigger" disabled={isBrowseMode || (!canGroupSelectedGraphics && !canUngroupSelectedGraphics)} aria-label="组合操作"><Group size={16}/><ChevronDown size={13}/></button>)}
+        <div className="topbar-dropdown-menu" role="menu" aria-label="组合操作">
+          <button id="topbar-group-merge" onClick={groupSelectedGraphics} disabled={isBrowseMode || !canGroupSelectedGraphics} title="组合" aria-label="组合"><Group size={16}/><span>组合</span></button>
+          <button id="topbar-group-unmerge" onClick={ungroupSelectedGraphics} disabled={isBrowseMode || !canUngroupSelectedGraphics} title="解除组合" aria-label="解除组合"><Ungroup size={16}/><span>解除组合</span></button>
+        </div>
+      </div>
+      <div className="topbar-dropdown display-layer-dropdown">
+        {T("显示层级", <button type="button" id="topbar-display-layer" className="topbar-dropdown-trigger" disabled={!canAdjustSelectedDisplayLayer} aria-label="显示层级"><Layers2 size={16}/><ChevronDown size={13}/></button>)}
+        <div className="topbar-dropdown-menu" role="menu" aria-label="显示层级">
+          <button id="topbar-display-layer-raise" onClick={() => adjustSelectedDisplayLayer("raise")} disabled={!canAdjustSelectedDisplayLayer} title="提升显示层级" aria-label="提升显示层级"><ArrowUp size={16}/><span>提升显示层级</span></button>
+          <button id="topbar-display-layer-lower" onClick={() => adjustSelectedDisplayLayer("lower")} disabled={!canAdjustSelectedDisplayLayer} title="降低显示层级" aria-label="降低显示层级"><ArrowDown size={16}/><span>降低显示层级</span></button>
+          <button id="topbar-display-layer-front" onClick={() => adjustSelectedDisplayLayer("front")} disabled={!canAdjustSelectedDisplayLayer} title="顶层显示" aria-label="顶层显示"><ChevronsUp size={16}/><span>顶层显示</span></button>
+          <button id="topbar-display-layer-back" onClick={() => adjustSelectedDisplayLayer("back")} disabled={!canAdjustSelectedDisplayLayer} title="底层显示" aria-label="底层显示"><ChevronsDown size={16}/><span>底层显示</span></button>
+        </div>
+      </div>
+      <div className="topbar-dropdown align-dropdown">
+        {T("对齐操作", <button type="button" id="topbar-align" className="topbar-dropdown-trigger" disabled={isBrowseMode} aria-label="对齐操作"><AlignCenterHorizontal size={16}/><ChevronDown size={13}/></button>)}
+        <div className="topbar-dropdown-menu" role="menu" aria-label="对齐操作">
+          <button id="topbar-align-left" onClick={() => alignSelected("left")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="左对齐" aria-label="左对齐"><AlignStartVertical size={16}/><span>左对齐</span></button>
+          <button id="topbar-align-right" onClick={() => alignSelected("right")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="右对齐" aria-label="右对齐"><AlignEndVertical size={16}/><span>右对齐</span></button>
+          <button id="topbar-align-horizontal" onClick={() => alignSelected("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="横向居中" aria-label="横向居中"><AlignCenterHorizontal size={16}/><span>横向居中</span></button>
+          <button id="topbar-align-vertical" onClick={() => alignSelected("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="纵向居中" aria-label="纵向居中"><AlignCenterVertical size={16}/><span>纵向居中</span></button>
+          <button id="topbar-align-top" onClick={() => alignSelected("top")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="上对齐" aria-label="上对齐"><AlignStartHorizontal size={16}/><span>上对齐</span></button>
+          <button id="topbar-align-bottom" onClick={() => alignSelected("bottom")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="下对齐" aria-label="下对齐"><AlignEndHorizontal size={16}/><span>下对齐</span></button>
+          <button id="topbar-align-distribute-horizontal" onClick={() => distributeSelected("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 3} title="横向分布" aria-label="横向分布"><AlignHorizontalDistributeCenter size={16}/><span>横向分布</span></button>
+          <button id="topbar-align-distribute-vertical" onClick={() => distributeSelected("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 3} title="纵向分布" aria-label="纵向分布"><AlignVerticalDistributeCenter size={16}/><span>纵向分布</span></button>
+        </div>
+      </div>
+      <div className="topbar-dropdown rotate-dropdown">
+        {T("旋转操作", <button type="button" id="topbar-rotate" className="topbar-dropdown-trigger" disabled={isBrowseMode} aria-label="旋转操作"><RotateCw size={16}/><ChevronDown size={13}/></button>)}
+        <div className="topbar-dropdown-menu" role="menu" aria-label="旋转操作">
+          <button id="topbar-rotate-left" onClick={() => rotateSelectedLayoutUnits("left")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="向左旋转90度" aria-label="向左旋转90度"><RotateCcw size={16}/><span>左转90度</span></button>
+          <button id="topbar-rotate-right" onClick={() => rotateSelectedLayoutUnits("right")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="向右旋转90度" aria-label="向右旋转90度"><RotateCw size={16}/><span>右转90度</span></button>
+          <button id="topbar-mirror-horizontal" onClick={() => mirrorSelectedNodes("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="水平镜像" aria-label="水平镜像"><FlipHorizontal size={16}/><span>水平镜像</span></button>
+          <button id="topbar-mirror-vertical" onClick={() => mirrorSelectedNodes("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="垂直镜像" aria-label="垂直镜像"><FlipVertical size={16}/><span>垂直镜像</span></button>
+        </div>
+      </div>
+      <input ref={imageInputRef} type="file" accept="image/*,.svg,image/svg+xml" data-image-import-kind="image" hidden multiple onChange={chooseImage}/>
+      <input ref={scope.imageArchiveInputRef} type="file" accept=".docx,.docm,.pptx,.pptm,.ppsx,.ppsm,.xlsx,.xlsm,.vsdx,.wps,.dps,.zip" data-image-import-kind="archive" hidden multiple onChange={chooseImage}/>
+      <input ref={customDeviceImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseCustomDeviceBackground}/>
+      <input ref={customComponentSvgImportInputRef} type="file" accept=".svg,image/svg+xml" hidden onChange={importCustomComponentSvg}/>
+      <input ref={definitionTemplateIconInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseDefinitionTemplateIcon}/>
+      <input ref={stateVisualImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateVisualImage}/>
+      <input ref={stateIconDrawingImportInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateIconDrawingImport}/>
+      <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile}/>
+      <input ref={scope.svgModelImportInputRef} type="file" accept=".svg,image/svg+xml" hidden onChange={scope.importSvgModelFile}/>
+      <input ref={scope.dotModelImportInputRef} type="file" accept=".dot,text/vnd.graphviz" hidden onChange={scope.importDotModelFile}/>
+      <input ref={schemeImportInputRef} type="file" accept=".zip,application/zip,.json,application/json" hidden onChange={importSchemeFile}/>
+      <input ref={scope.libraryPackageImportInputRef} type="file" accept=".json,application/json" hidden onChange={scope.importLibraryPackageFile}/>
+      <input ref={scope.userCustomizationImportInputRef} type="file" accept=".json,application/json" hidden onChange={scope.importUserCustomizationFile}/>
+    </div>
+  );
+}
 
 export const RecentGlyphsToolbar = memo(function RecentGlyphsToolbar({ scope }: RecentGlyphsToolbarProps) {
   const recentGlyphKinds: string[] = scope.recentGlyphKinds ?? [];
