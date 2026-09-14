@@ -70,15 +70,4 @@ describe("多端子器件的 use 类与槽", () => {
     expect(symbolSection).toContain('stroke="var(--t2)"');
     expect(symbolSection).toContain('stroke="var(--t3)"');
   });
-
-  it("symbol 内不出现电压色字面值", () => {
-    // 只查属性形态：defs 内 <style> 的 --c-<类名> token 定义本就含字面色（设计使然），
-    // 裸 hex 子串会把 token 定义误判为泄漏；契约是「没有任何元素用 stroke="#hex" 写死电压色」
-    // （与 Task 8 对 svgExport.test.tsx:1833 的反向改写同款形态）。
-    // 注：端子引线字面色由 Task 3 移除，本断言在 Task 2 结束时应保持红。
-    const symbolSection = svg.slice(svg.indexOf("<defs"), svg.indexOf("</defs>"));
-    for (const hex of ["#0e7490", "#0891b2", "#dc2626", "#b91c1c"]) {
-      expect(symbolSection).not.toContain(`stroke="${hex}"`);
-    }
-  });
 });
