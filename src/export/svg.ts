@@ -686,7 +686,8 @@ ${rules.join("\n")}
         stub.to.x,
         stub.to.y,
         terminalStubStrokeWidth(symbolNode, terminal),
-        getTerminalDisplayColor(symbolNode, terminal, colorDisplayMode, colorPalette)
+        // 电压模式下剔除端子电压色：跨电压同种图元共用 symbol（颜色由 use 上的类/槽驱动）
+        colorDisplayMode === "voltage" ? "" : getTerminalDisplayColor(symbolNode, terminal, colorDisplayMode, colorPalette)
       ];
     });
     const stateVisualImageHref = resolveStateVisualImageHref(stateVisual, imageAssets);
@@ -696,7 +697,8 @@ ${rules.join("\n")}
       symbolNode.size.width,
       symbolNode.size.height,
       nodeGeometryTransform(symbolNode),
-      getDeviceStrokeColor(symbolNode, colorDisplayMode, colorPalette),
+      // 电压模式下剔除节点电压描边色：跨电压同种图元共用 symbol（颜色由 use 上的类/槽驱动）
+      colorDisplayMode === "voltage" ? "" : getDeviceStrokeColor(symbolNode, colorDisplayMode, colorPalette),
       getDeviceStrokeWidth(symbolNode),
       getSwitchVisualState(symbolNode),
       Boolean(nodeExportVoltageDescriptor(symbolNode)),
