@@ -77,8 +77,10 @@ export function buildSvgNodeLabelTextElementsMarkup(
   return `<text id="${escapeXml(id)}" ${commonAttributes} x="${formatSvgNumber(center.x)}" y="${formatSvgNumber(center.y)}" text-anchor="${escapeXml(nodeLabelTextAnchor(node))}" style="${stylePrefix}writing-mode: horizontal-tb;">${escapeXml(text)}</text>`;
 }
 
-export function svgDisplayAttribute(visible: boolean) {
-  return visible ? "" : ' style="display:none"';
+export function svgDisplayAttribute(visible: boolean, extraDeclarations = "") {
+  // 追加声明必须合并进同一个 style：<use> 上可能已带 display:none，另开一个 style= 会顶掉隐藏属性
+  const declarations = [visible ? "" : "display:none", extraDeclarations].filter(Boolean).join(";");
+  return declarations ? ` style="${declarations}"` : "";
 }
 
 export function exportSvgSafeId(value: string, fallback: string) {
