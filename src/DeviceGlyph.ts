@@ -42,10 +42,15 @@ import { clampNumber } from "./canvasViewport.ts";
 import { staticConnectorDrawingPath } from "./staticConnectorCurves.ts";
 
 export type DeviceGlyphMode = "full" | "geometry" | "text";
+// 变压器族判定（单源）：三绕组/端子变负荷/两绕组等含 "transformer" 的 kind 才用端子槽（var(--tN)）
+// —— 只有变压器需要按端子区分电压色；其余器件内部单色，靠 <use class> 继承即可
+export function usesTransformerTerminalSlotPaint(kind: string) {
+  return kind.includes("transformer");
+}
 export type DeviceGlyphVoltagePaint = {
-  /** 节点级电压色引用；不传时用 "currentColor"。多端子器件传 "var(--t1)" */
+  /** 节点级电压色引用；不传时用 "currentColor"。变压器族多端子传 "var(--t1)" */
   nodeRef?: string;
-  /** 端子级电压色引用；返回 undefined 表示回落到 nodeRef */
+  /** 端子级电压色引用；返回 undefined 表示回落到 nodeRef。仅变压器族使用 */
   terminalRef?: (terminalId: string) => string | undefined;
 };
 export type DeviceGlyphProps = {

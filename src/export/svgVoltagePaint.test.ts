@@ -282,3 +282,38 @@ describe("I-3 energy 模式 vbase metadata 修正", () => {
     expect(useTag).toContain('voltage-type="ac"');
   });
 });
+
+describe("槽机制仅变压器族使用", () => {
+  // 非变压器多端子器件：双端子同电压，内部单色，靠 <use class> 继承即可，不应依赖 CSS 变量
+  const acSwitch = (): ModelNode => ({
+    ...createDefaultNode("ac-switch", { x: 100, y: 300 }),
+    id: "ACSwitch-1",
+    name: "交流开关-1",
+    size: { width: 150, height: 100 },
+    rotation: 0,
+    scaleX: 1,
+    scaleY: 1,
+    layerId: "layer-default",
+    terminals: [
+      { id: "t1", label: "", type: "ac", anchor: { x: -0.5, y: 0 }, nodeNumber: "1", vbase: "1000" },
+      { id: "t2", label: "", type: "ac", anchor: { x: 0.5, y: 0 }, nodeNumber: "2", vbase: "1000" }
+    ],
+    params: {}
+  });
+
+  it("非变压器多端子器件：symbol 正文零 var() 槽引用、use 零槽声明", () => {
+    const svg = buildSvgDocument([acSwitch()], [], { width: 800, height: 600, colorDisplayMode: "voltage" });
+    const symbolSection = svg.slice(svg.indexOf("<defs"), svg.indexOf("</defs>"));
+    expect(symbolSection).not.toContain("var(--t");
+    expect(symbolSection).toContain("currentColor");
+    const useTag = svg.match(/<use [^>]*id="ACSwitch-1"[^>]*>/)![0];
+    expect(useTag).not.toContain("--t1:");
+    expect(useTag).toContain('class="kv1000"');
+  });
+
+  it("变压器族仍走槽机制（对照不回归）", () => {
+    const svg = buildSvgDocument([threeWindingTransformer()], [], { width: 800, height: 600, colorDisplayMode: "voltage" });
+    const symbolSection = svg.slice(svg.indexOf("<defs"), svg.indexOf("</defs>"));
+    expect(symbolSection).toContain('stroke="var(--t1)"');
+  });
+});

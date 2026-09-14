@@ -146,6 +146,8 @@ symbol 去重有两级，**两级都把电压色算进键**：
 
 **不再需要**：nth-child 位置规则、位置类、引线容器改造。
 
+> **适用范围（实施后收窄）**：槽机制（`var(--tN)`）**仅变压器族使用**（`kind.includes("transformer")`，谓词 `usesTransformerTerminalSlotPaint` 单源）。其余器件（开关、负荷、母线等，含双端子器件）内部单色 —— symbol 内走 `currentColor` 继承、`<use>` 不声明槽、引线删属性靠继承。这样非变压器图元的 CSS 变量依赖为零，下游渲染器（如不支持 CSS 变量的旧引擎）只需特殊处理变压器。
+
 ### 3.3 样式表：单一 token 派生
 
 ```css
@@ -287,13 +289,13 @@ symbol 去重有两级，**两级都把电压色算进键**：
 5. **槽号顺序**：槽号必须与 `node.terminals` 原始顺序一致，绕组（`DeviceGlyph.ts:1278`/`:1296`/`:1306`）与引线（`svg.ts:178-183`）**两处同序**，需守卫测试。
 6. **端子数上限**：`ac-three-winding-transformer-neutral` 有 **4 个 ac 端子**（实测），需要 `--t4`；槽生成不得硬编码为 3。
 
-当前需要处理的多端子图元（全仓 `getTerminalDisplayColor` 在导出链路上仅 3 处 + 引线）：
+当前需要处理的多端子图元（全仓 `getTerminalDisplayColor` 在导出链路上仅 3 处 + 引线），**且槽机制（`var(--tN)`）仅变压器族使用**（判定谓词 `usesTransformerTerminalSlotPaint`：`kind.includes("transformer")`，`DeviceGlyph.ts` 导出、`svg.ts` 两处门控引用）——其余器件（开关、负荷、母线等）内部单色，靠 `<use class>` 继承，**不声明槽、不写 `var()`**：
 
 | 图元 | 位置 | 端子数 |
 |---|---|---|
 | `ac-three-winding-transformer` / `-neutral` | `DeviceGlyph.ts:1268-1284` | 3 / **4** |
 | `terminal-transformer-load` | `DeviceGlyph.ts:1286-1300` | 2 |
-| `ac-transformer` 系列（`kind.includes("transformer")`） | `DeviceGlyph.ts:1302-1310` | 2 |
+| `ac-transformer` 系列（`kind.includes("transformer")`） | `DeviceGlyph.ts:1322` | 2 |
 
 ---
 
