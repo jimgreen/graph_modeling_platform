@@ -419,3 +419,38 @@ symbol 去重有两级，**两级都把电压色算进键**：
 | `probe-symbol.mjs` / `probe-multiterm.mjs` | 全图元 symbol 正文扫描；多端子端子数实测 |
 | `probe-coverage.mjs` | `DEVICE_LIBRARY` 169 个 kind 的 fill 继承链全扫（0 例外） |
 | `probe-fill-chain.mjs` | fill 继承链栈式解析 |
+
+---
+
+## 9. 后续追加特性：symbol 内 terminal 锚点（2026-09-14 实施后追加）
+
+**需求**：其他工具用 SVG 时需要确定连接点位置。symbol 内每电端子输出一个锚点元素；默认不显示，CSS 控制显示。
+
+### 9.1 输出形态
+
+```svg
+<circle class="terminal-anchor" cx="-79" cy="-11.57895" r="4" display="none"
+        terminal-id="t1" terminal-index="1" node-number="1176"/>
+```
+
+| 决策 | 内容 |
+|---|---|
+| 范围 | 仅电端子（ac/dc）；h2/heat 端子不生成 |
+| 位置 | `terminalRenderLocalPoint`（= 引线外端 = 连线落点，与引线同函数同坐标系） |
+| 身份属性 | `terminal-id` / `terminal-index`（电端子序，与 `<use>` 的 `vbase-N` 同基数）/ `node-number`（拓扑节点号） |
+| 默认隐藏 | `display="none"` **呈现属性**（SVG 标准：CSS 规则恒胜呈现属性）→ 下游 `.terminal-anchor{display:inline}` 一行显示；**不进 `<style>` 块** |
+| 模式 | energy / voltage 都输出（几何元数据与配色无关） |
+| 着色 | 锚点元素不带 fill/stroke —— 显示时默认黑，下游可用 CSS 自定（如 `.terminal-anchor{fill:#e11d48}`） |
+
+### 9.2 实现与守护
+
+- `svg.ts` `renderNodeSymbolBody`：connectorMarkup 后追加 `terminalAnchorMarkup`（插入几何 g 内，随旋转/缩放）
+- symbol 去重：锚点在 body 内 → 签名自然覆盖；token 已含各端子 renderPoint
+- **golden 基线有意重生成**：energy 输出新增锚点元素属本特性的预期变更，`SVG_BASELINE_HASH` 更新为新哈希（这打破「energy 零漂移」的配色工作约束 —— 该约束只属于电压着色改造本身；锚点是显式追加的输出特性）
+- 测试：`src/export/svgTerminalAnchor.test.ts`（锚点数=电端子数、坐标=引线落点、身份属性、display:none、非电端子排除、energy 也生成、双状态 symbol 各含全套、母线单端子）
+
+### 9.3 下游用法
+
+```css
+.terminal-anchor { display: inline; fill: #e11d48 }  /* 显示并着色 */
+```
