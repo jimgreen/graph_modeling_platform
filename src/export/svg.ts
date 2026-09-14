@@ -20,6 +20,7 @@ import {
   DEFAULT_MODEL_LAYER_ID,
   DEVICE_LIBRARY,
   containerAssociatedDeviceIdentityForTerminal,
+  deviceParamValue,
   getConnectionStrokeColor,
   getDeviceGlyphVariant,
   getDeviceStrokeColor,
@@ -411,7 +412,9 @@ ${scopedBackgroundSvg}
     }
     const voltage = terminal ? terminalExportVoltage(node, terminal) : firstNonZeroExportVoltageValue([
       node.params.vbase,
-      node.params.voltageLevel
+      deviceParamValue(node.params, "voltage_level"),
+      deviceParamValue(node.params, "rated_voltage"),
+      node.params.voltage
     ]) || "0";
     return { type, voltage };
   };
