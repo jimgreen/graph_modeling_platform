@@ -691,7 +691,7 @@ function stateIconSvgPlatformExportFallback(source: string) {
     readSvgMarkupAttribute(useMarkup, "style")
       .split(";")
       .map((declaration) => declaration.trim())
-      .filter((declaration) => declaration.startsWith("--t"))
+      .filter((declaration) => /^--t\d+:/.test(declaration))
       .join(";")
   );
   const useHostAttributeMarkup = [
