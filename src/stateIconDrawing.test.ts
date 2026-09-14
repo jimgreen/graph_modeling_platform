@@ -2886,6 +2886,19 @@ describe("default device state draft rows", () => {
     expect(hostGroup).not.toContain("display:none");
   });
 
+  test("回读手造源时，宿主 <g> 的 style 只留 --t 槽声明、剔除 display:none", () => {
+    // 既有用例输入不含 display:none，负断言恒真；本用例输入真实携带 display:none，验证过滤非恒真
+    const source = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 186 136"><defs><symbol id="symbol-x" viewBox="-75 -50 150 100"><circle cx="0" cy="0" r="24" fill="currentColor"/></symbol></defs><g><use dev-kind="ac-bus" class="kv1000" style="--t1:var(--c-kv1000);display:none" href="#symbol-x" x="18" y="18" width="150" height="100"/></g></svg>';
+    const restored = createEditableStateIconElementsFromSvgSource(source, "display-none.svg");
+    expect(restored).toHaveLength(1);
+    const normalizedSource = restored[0].svgSource ?? "";
+    const hostGroup = /<\/defs>\s*(<g\b[^>]*>)/.exec(normalizedSource)?.[1] ?? "";
+    expect(hostGroup).toContain('class="kv1000"');
+    expect(hostGroup).toContain("--t1:var(--c-kv1000)");
+    // 输入真实携带 display:none，宿主 style 必须真剔除
+    expect(hostGroup).not.toContain("display");
+  });
+
   test("uses the full drawing frame only when platform export metadata declares zero source terminals", () => {
     const source = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 186 136"><defs><symbol id="symbol-plain" viewBox="-75 -50 150 100"><circle cx="0" cy="0" r="24" fill="#2563eb"/></symbol></defs><g><use dev-kind="unknown-device" data-export-source-terminal-count="0" href="#symbol-plain" x="18" y="18" width="150" height="100"/></g></svg>';
     const originalDOMParser = globalThis.DOMParser;
