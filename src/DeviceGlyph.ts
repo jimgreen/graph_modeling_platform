@@ -228,7 +228,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     const lineWidth = Number(node.params.lineWidth || 2);
     const dashArray = svgStrokeDashArray(node.params.strokeStyle);
     const cornerRadius = staticNumericParam(node, "cornerRadius", 8, 0);
-    const accentColor = node.params.accentColor || deviceStroke;
+    const accentColor = node.params.accentColor || staticStroke;
     const explicitAccentColor = node.params.accentColor?.trim();
     const simpleAccentVisible = Boolean(explicitAccentColor && explicitAccentColor !== "transparent" && explicitAccentColor !== "none");
     const hasStaticText = Boolean(node.params.text?.trim());

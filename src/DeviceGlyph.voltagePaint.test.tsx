@@ -41,4 +41,18 @@ describe("DeviceGlyph 导出态电压着色", () => {
     const html = glyphHtml({ nodeRef: "var(--t1)" });
     expect(html).toContain("var(--t1)");
   });
+
+  it("static 图元只设 strokeColor 时 accent 兜底用 strokeColor（不传 voltagePaint）", () => {
+    // static-swimlane 头部矩形 fill 直接消费 accentColor（不受 simpleAccentVisible 门控），
+    // 主矩形 fill 默认 #f8fafc —— 断言 fill="#123456" 唯一对应 accent 兜底到 strokeColor
+    const node = createDefaultNode("static-swimlane", { x: 0, y: 0 });
+    const { accentColor: _omitAccent, ...restParams } = node.params;
+    const html = renderSvgElementMarkup(
+      DeviceGlyph({
+        node: { ...node, params: { ...restParams, strokeColor: "#123456" } },
+        mode: "geometry"
+      })
+    );
+    expect(html).toContain('fill="#123456"');
+  });
 });
