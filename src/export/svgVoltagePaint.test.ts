@@ -99,3 +99,31 @@ describe("线路与边界母线内连删字面色", () => {
     }
   });
 });
+
+describe("同种图元跨电压共用 symbol", () => {
+  it("同种图元跨电压合并为一个 symbol", () => {
+    const two = buildSvgDocument([busNode(), { ...(busNode() as object), id: "ac-bus-2", position: { x: 400, y: 100 }, params: { vbase: "0", voltage_level: "110" } } as never], [], {
+      width: 800, height: 600, colorDisplayMode: "voltage"
+    });
+    // 两个不同电压的母线只应有一个 symbol
+    expect(two.match(/<symbol id="/g)?.length).toBe(1);
+  });
+
+  it("端子引线槽不参与 symbol 去重（同 kind 不同电压仍合并）", () => {
+    const two = buildSvgDocument([
+      threeWindingTransformer(),
+      {
+        ...threeWindingTransformer(),
+        id: "ACTransfomer3-2",
+        position: { x: 700, y: 100 },
+        terminals: [
+          { id: "t1", label: "", type: "ac", anchor: { x: -0.5, y: -0.1 }, nodeNumber: "1", vbase: "500" },
+          { id: "t2", label: "", type: "ac", anchor: { x: 0.5, y: -0.1 }, nodeNumber: "2", vbase: "330" },
+          { id: "t3", label: "", type: "ac", anchor: { x: 0, y: 0.5 }, nodeNumber: "3", vbase: "220" }
+        ],
+        params: { i_vbase: "500", j_vbase: "330", k_vbase: "220" }
+      } as never
+    ], [], { width: 1200, height: 600, colorDisplayMode: "voltage" });
+    expect(two.match(/<symbol id="/g)?.length).toBe(1);
+  });
+});
