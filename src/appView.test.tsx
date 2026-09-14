@@ -1215,6 +1215,16 @@ describe("顶栏空间选择器", () => {
     expect(topbarInputs).toContain("__appScope.currentSpaceId");
   });
 
+  test("源码把空间状态列进状态栏 memo 输入（否则空间 ID 那格永远停在 —）", () => {
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const statusbarInputs = viewSource.match(/<AppStatusbar\s[\s\S]*?inputs=\{\[[\s\S]*?\]\}/)?.[0] ?? "";
+
+    // 状态栏与顶栏同一课：经 MemoizedViewSection 记忆化，currentSpaceId 不进 inputs 时，
+    // 首帧（列表还没拉回来）渲染出的「—」会被永远记住 —— 面板看着正常，就这一格是死的。
+    expect(statusbarInputs).toContain("__appScope.currentSpaceId");
+    expect(statusbarInputs).toContain("__appScope.spaces");
+  });
+
   test("新建空间成功后立即切换到新空间", async () => {
     const requested: string[] = [];
     const calls: { url: string; init?: RequestInit }[] = [];
@@ -1243,9 +1253,13 @@ describe("顶栏空间选择器", () => {
 // 桩掉 spaceClient 的 importSpaceArchive，只留 appTopbar 自己那一层的编排（切空间 / 报错提示）。
 // vi.mock 被提升到文件顶部，故对上面的用例同样生效 —— 那里只用到 createSpace 的透传原样。
 const importSpaceArchiveMock = vi.hoisted(() => vi.fn());
+const renameSpaceMock = vi.hoisted(() => vi.fn());
+const deleteSpaceMock = vi.hoisted(() => vi.fn());
 vi.mock("./spaceClient", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./spaceClient")>()),
-  importSpaceArchive: importSpaceArchiveMock
+  importSpaceArchive: importSpaceArchiveMock,
+  renameSpace: renameSpaceMock,
+  deleteSpace: deleteSpaceMock
 }));
 
 // 导出的落盘分支（showSaveFilePicker / 浏览器下载）依赖真实浏览器 API，node 环境跑不了：
@@ -1262,6 +1276,8 @@ describe("空间导入导出按钮", () => {
 
   beforeEach(() => {
     importSpaceArchiveMock.mockReset();
+    renameSpaceMock.mockReset();
+    deleteSpaceMock.mockReset();
     saveLazyBlobFileMock.mockReset();
   });
 
@@ -1428,6 +1444,154 @@ describe("空间导入导出按钮", () => {
     // 静默返回会表现成「选完文件什么都没发生」——那是最难查的一类
     expect(messages.join("\n")).toContain("已存在");
     expect(requested).toEqual([]);
+  });
+
+  // 改名 / 删除作用在**当前空间**上；两者都借全局弹窗，故这套用例的桩与上面导入那批同款。
+  const spaceScope = (overrides: Record<string, any> = {}) => ({
+    spaces: [
+      { id: "default", name: "默认空间", pinned: true, createdAt: "2026-01-01" },
+      { id: "高鹏", name: "高鹏", createdAt: "2026-01-01" }
+    ],
+    currentSpaceId: "高鹏",
+    ...overrides
+  });
+
+  test("改名：弹输入框（默认值=原名）→ PUT → 就地刷列表，不切空间", async () => {
+    const { renameCurrentSpace } = await loadTopbar();
+    renameSpaceMock.mockResolvedValue(undefined);
+    const prompted: Array<[string, string | undefined]> = [];
+    vi.stubGlobal("showGlobalPrompt", async (text: string, value?: string) => {
+      prompted.push([text, value]);
+      return "高鹏新";
+    });
+    const messages: string[] = [];
+    vi.stubGlobal("showGlobalMessage", (text: string) => messages.push(text));
+    const refreshed: string[] = [];
+    const switched: string[] = [];
+
+    const ok = await renameCurrentSpace(spaceScope({
+      refreshSpaces: async () => {
+        refreshed.push("refresh");
+      },
+      requestSwitchSpace: (id: string) => switched.push(id)
+    }));
+
+    expect(ok).toBe(true);
+    // 默认值是原名：改名最常见的形态是「改几个字」，从空白开始等于每次都要重打
+    expect(prompted[0]?.[1]).toBe("高鹏");
+    expect(renameSpaceMock).toHaveBeenCalledWith("高鹏", "高鹏新");
+    expect(refreshed).toHaveLength(1);
+    // 改名只改显示名、id 不动 ⇒ 不该切空间（切换是硬重载，白白丢一次未保存状态）
+    expect(switched).toEqual([]);
+    expect(messages.join("\n")).toContain("高鹏新");
+  });
+
+  test("改名：输入框取消 / 只改空格 / 原样提交 → 都不打后端", async () => {
+    const { renameCurrentSpace } = await loadTopbar();
+    vi.stubGlobal("showGlobalMessage", () => {});
+
+    vi.stubGlobal("showGlobalPrompt", async () => null);
+    expect(await renameCurrentSpace(spaceScope())).toBe(false);
+
+    vi.stubGlobal("showGlobalPrompt", async () => "   ");
+    expect(await renameCurrentSpace(spaceScope())).toBe(false);
+
+    // trim 后与原名相同 = no-op：打过去后端也会照单全收，白白写一次盘
+    vi.stubGlobal("showGlobalPrompt", async () => "  高鹏  ");
+    expect(await renameCurrentSpace(spaceScope())).toBe(false);
+
+    expect(renameSpaceMock).not.toHaveBeenCalled();
+  });
+
+  test("改名撞上已有空间名：提示后端文案，且不刷列表", async () => {
+    const { renameCurrentSpace } = await loadTopbar();
+    renameSpaceMock.mockRejectedValue(new Error("空间名「张三」已存在。"));
+    vi.stubGlobal("showGlobalPrompt", async () => "张三");
+    const messages: string[] = [];
+    vi.stubGlobal("showGlobalMessage", (text: string) => messages.push(text));
+    const refreshed: string[] = [];
+
+    const ok = await renameCurrentSpace(spaceScope({
+      refreshSpaces: async () => {
+        refreshed.push("refresh");
+      }
+    }));
+
+    expect(ok).toBe(false);
+    expect(messages.join("\n")).toContain("空间名「张三」已存在。");
+    expect(refreshed).toEqual([]);
+  });
+
+  test("删除：确认后 DELETE → 刷列表 → 切到剩余空间（当前空间已没了，不切就会停在不存在的地方）", async () => {
+    const { deleteCurrentSpace } = await loadTopbar();
+    deleteSpaceMock.mockResolvedValue(undefined);
+    const asked: string[] = [];
+    vi.stubGlobal("showGlobalConfirm", async (text: string) => {
+      asked.push(text);
+      return true;
+    });
+    const switched: string[] = [];
+    const order: string[] = [];
+
+    const ok = await deleteCurrentSpace(spaceScope({
+      refreshSpaces: async () => {
+        order.push("refresh");
+      },
+      requestSwitchSpace: (id: string) => {
+        order.push(`switch:${id}`);
+        switched.push(id);
+      }
+    }));
+
+    expect(ok).toBe(true);
+    expect(deleteSpaceMock).toHaveBeenCalledWith("高鹏");
+    // 不可逆动作必须写明代价：目录进 trash-spaces，界面上找不回
+    expect(asked.join("\n")).toContain("trash-spaces");
+    // 刷新在切换之前（与导入同一顺序：切换是硬重载，取消未保存提示时列表也得已经是对的）
+    expect(order).toEqual(["refresh", "switch:default"]);
+    expect(switched).toEqual(["default"]);
+  });
+
+  test("删除：确认框取消 → 不打后端、不切空间", async () => {
+    const { deleteCurrentSpace } = await loadTopbar();
+    vi.stubGlobal("showGlobalConfirm", async () => false);
+    const switched: string[] = [];
+
+    const ok = await deleteCurrentSpace(spaceScope({ requestSwitchSpace: (id: string) => switched.push(id) }));
+
+    expect(ok).toBe(false);
+    expect(deleteSpaceMock).not.toHaveBeenCalled();
+    expect(switched).toEqual([]);
+  });
+
+  test("删除 default（pinned）：连询问都不弹（按钮同步禁用）", async () => {
+    const { deleteCurrentSpace } = await loadTopbar();
+    const asked: string[] = [];
+    vi.stubGlobal("showGlobalConfirm", async (text: string) => {
+      asked.push(text);
+      return true;
+    });
+
+    const ok = await deleteCurrentSpace(spaceScope({ currentSpaceId: "default" }));
+
+    expect(ok).toBe(false);
+    expect(asked).toEqual([]);
+    expect(deleteSpaceMock).not.toHaveBeenCalled();
+  });
+
+  test("删除被后端拒绝：提示原因，且不切空间", async () => {
+    const { deleteCurrentSpace } = await loadTopbar();
+    deleteSpaceMock.mockRejectedValue(new Error("默认空间不可删除。"));
+    vi.stubGlobal("showGlobalConfirm", async () => true);
+    const messages: string[] = [];
+    vi.stubGlobal("showGlobalMessage", (text: string) => messages.push(text));
+    const switched: string[] = [];
+
+    const ok = await deleteCurrentSpace(spaceScope({ requestSwitchSpace: (id: string) => switched.push(id) }));
+
+    expect(ok).toBe(false);
+    expect(messages.join("\n")).toContain("默认空间不可删除。");
+    expect(switched).toEqual([]);
   });
 
   test("suggestSpaceName：跳过已占用的 -2/-3…，无占用时从 -2 起", async () => {

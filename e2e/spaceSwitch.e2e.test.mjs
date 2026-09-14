@@ -300,6 +300,17 @@ describe("切空间 e2e：新空间不被旧空间的浏览器缓存污染", () 
     const itemText = await page.textContent(".topbar-space-switcher .ant-select-content");
     expect(itemText).not.toContain("戊空间");
     expect(itemText).not.toContain("默认空间");
+
+    // 与选择器互补，也顺带把「id 与 name 分叉」钉成活的：选择器显示**名字**（总站），
+    // 状态栏显示**id**（戊空间 = 目录名，改过名的空间目录名不会跟着变）。
+    await page.waitForFunction(
+      (id) => (document.querySelector(".bottom-statusbar")?.textContent || "").includes(id),
+      spaceBId,
+      { timeout: 60000 }
+    );
+    const statusText = await page.textContent(".bottom-statusbar");
+    expect(statusText).not.toContain("总站");
+    expect(statusText).not.toContain("默认空间");
   }, 180000);
 
   // 这条钉的是「清完之后不得再被写回去」：`switchToSpace` 清掉 sessionStorage 的刷新恢复草稿后

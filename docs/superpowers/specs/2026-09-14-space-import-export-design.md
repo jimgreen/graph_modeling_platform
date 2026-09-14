@@ -112,7 +112,12 @@
 
 - `src/spaceClient.ts` 加两个封装（与 `fetchSpaces` 同源）：`exportSpaceArchive(): Promise<Blob>`、`importSpaceArchive(file, { mode?, name? }): Promise<{ space: Space; spaces: Space[] }>`（回执是 `sendJson` 裸对象，非 v1 信封）；另加 `sanitizeSpaceFileName`，供前端文件名与后端包内顶层目录名取同一个净化值。
   - 409 撞车时抛 `SpaceNameConflictError`（`code = SPACE_NAME_DUPLICATE`，带 `spaceName` / `conflictId`；**不**用 `Error.name` —— 那是内置属性）。字段名与后端正文的 `name` / `conflictId` 一一对应，故两侧形状必须同改。
-- `src/appExtracted/appTopbar.tsx`：`SpaceSwitcher` 内、`Select` 之后并列两个 `Button`（lucide 图标，与顶栏既有按钮同形）：**导出不加 `disabled`**（纯读动作，对齐既有导出菜单），**导入**带 `disabled={isBrowseMode}`（会切空间 + 硬重载）；以及一个隐藏的 `<input type="file" accept=".zip">`。
+- `src/appExtracted/appTopbar.tsx`：`SpaceSwitcher` 内、`Select` 之后并列四个 `Button`（lucide 图标，与顶栏既有按钮同形）：**导出**（`Download`，不加 `disabled` —— 纯读动作，对齐既有导出菜单）、**导入**（`Upload`）、**改名**（`Pencil`）、**删除**（`Trash2`）；以及一个隐藏的 `<input type="file" accept=".zip">`。
+  - 后三个都写盘 / 会切空间，带 `disabled={isBrowseMode || !current || current.pinned}`：`pinned` 的 default 不给删改，列表未加载时 `current` 为空也不给（否则拿空 id 打后端只会换回「未知空间」）。
+  - 四个按钮都作用在**当前空间**上（要动别的空间先用左边的下拉框切过去），故不需要新的 memo 输入 —— 依赖的 `spaces` / `currentSpaceId` / `isBrowseMode` 都已在 `appView.tsx` 的 `<AppTopbar inputs={[…]}>` 里。
+- 改名：`showGlobalPrompt("请输入新的空间名称：", 当前名)` → `PUT /webgrp/spaces` → **只刷新列表，不重载**（改名不动 id，浏览器侧缓存按 id 记账）。取消 / 只改空格 / trim 后与原值相同一律不打后端。撞名 → 409，提示后端文案。
+- 删除：`showGlobalConfirm`（文案必须写明「移入回收目录 trash-spaces、界面上找不回、需人工从磁盘恢复」——不可逆动作）→ `DELETE /webgrp/spaces` → **刷新列表 → 切到剩余空间**。删的是当前空间，不切走就会把 Cookie 留在已删 id 上。目标空间取刷新后的 `currentSpaceOf(scope)`，取不到则 `spaces[0]`，再取不到落到常量 `default`（它恒定存在）。取消确认 / `pinned` / 后端拒绝都不得切空间。
+- 底部状态栏（`src/appExtracted/appStatusbar.tsx`）常驻一格「空间ID `<id>`」（标签就叫**空间ID**，与左侧面板 footer 的「模型ID：」同款），点击复制（复用 `id-copy-cell` / `id-copy-toast` 与 CSS，选择器同步扩到 `.bottom-statusbar`）；**名字放 `title`，不占栏宽**。理由：目录名恒为 id 且改名不改目录，认目录只能靠 id，而顶栏选择器显示的是 name —— 两者分叉时用户只能从这一格看出对应关系。`currentSpaceId` 与 `spaces` 必须进 `appView.tsx` 的 `<AppStatusbar inputs={[…]}>`（与顶栏同一课：不进 inputs 则首帧渲染的「—」会被 memo 永远记住）。
 - 导出：拉 blob → 触发下载 `<空间名>.zip`（照 `downloadBackendSchemeArchive` 的写法）。
 - 导入：选文件 → POST → 成功后 `scope.requestSwitchSpace?.(space.id)`（**与「新建空间」按钮现有的收尾一致**）；失败走 `globalMessage` 提示。
 - 导入撞车（409）→ 借 `globalMessage` 的两个全局弹窗（挂 `window`，故本模块在 node 下仍可直测）问一次：`showGlobalConfirm("…确定=覆盖，取消=改用其他名字导入")` → 确定带 `mode=overwrite` 重发；取消 → `showGlobalPrompt("请输入新的空间名称：", 建议名)`，建议名从「原名-2」起跳过已占用者，带 `mode=rename&name=` 重发；改名框再取消 = 放弃（服务端什么都没建，**不**提示「导入失败」）。改名后仍撞车（比如别人刚建了同名空间）就再问一次 —— 循环而不是单次询问。
@@ -156,6 +161,11 @@
 - 两个按钮渲染且导出/导入接线正确（照 T2 既有形态用例）。
 - 导入成功后调用 `requestSwitchSpace(newId)`（变异：只导入不切 → 红）。
 - 撞车四个分支：选覆盖 → 带 `mode=overwrite` 重发；改名 → 带 `mode=rename` + 新名重发（且建议名跳过已占用者：变异：建议值写死 `原名-2` → 红）；放弃 → **不重发、不切换**（变异：放弃后仍切 → 红）；询问框不可用时 → 冲突错误照常提示「已存在」（变异：静默 return → 红）。
+- 空间改名：输入框默认值 = 原名（变异：给空串 → 红）；成功后 `PUT` 一次 + 刷列表 + **不切空间**（变异：跟着切 → 红）；取消 / 只改空格 / 与原值相同 → **不打后端**（变异：无条件 PUT → 红）；撞名 409 → 提示后端文案且**不刷列表**。
+- 空间删除：确认文案含 `trash-spaces`（不可逆代价必须写明，变异：删掉这句 → 红）；确认后 `DELETE` + 刷列表 + **切到剩余空间且刷新在前**；取消确认 / 当前是 `pinned` → 连询问都不弹、不打后端、不切空间（变异：pinned 只靠后端拦 → 红）；后端拒绝 → 提示原因且不切空间。
+- `src/spaceClient.test.ts`：`renameSpace` → `PUT /webgrp/spaces` body `{id,name}`（**id 不是 name**）；`deleteSpace` → `DELETE` body `{id}`；两者的失败都抛后端文案（409 / SPACE_PINNED），不静默当成功。
+- 状态栏空间格：源码断言 `currentSpaceId` / `spaces` 已进 `<AppStatusbar inputs={[…]}>`（变异：删掉这两行 → 红。**不能**只断言「状态栏里有 currentSpaceId 字样」—— 那只证明它读了 scope，不证明 memo 会让它重渲染）。
+- `e2e/spaceSwitch.e2e.test.mjs`：既有那条「选择器显示后端 current」的用例里加一条互补断言 —— 同一个空间**名字是「总站」、id 是「戊空间」**，选择器显示前者、状态栏显示后者（变异：状态栏改显示 name → 红；不区分 name/id 的构造打不红它，故必须用这个改名过的空间）。
 
 **不写**：e2e（本功能没有跨进程时序，后端 handler 测试已覆盖落盘与边界）。
 
@@ -179,5 +189,7 @@
    - 取消覆盖后**改名** → 并存两个空间，新空间用新名（建议值已跳过「原名-2」这类已占用名）；
    - 两个框都取消 → 什么都没发生，不出现「导入失败」提示。
 6. 新建 / 改名填入已存在的空间名 → 明确提示「空间名「X」已存在。」，不建出同名空间。
-7. 篡改包（塞 `../x`）导入 → 明确 400，磁盘数据根外无新文件。
-8. 现有测试全绿；`pnpm tsc --noEmit` 无错；`server/**` 的既有测试（`spaceApi` / `spaceScope` / `spaceDispatch`）不回归。
+7. 顶栏四个按钮都在：点**改名**（铅笔）→ 输入框预填当前空间名 → 改成新名 → 下拉框与左面板就地更新，**页面不重载**；点**删除**（垃圾桶）→ 确认框写明数据进 `trash-spaces` → 确认后当前空间消失、自动切到剩余空间并重载，`data/trash-spaces/<时间戳>/<id>/` 下能找到它的全部文件。选到 `default` 时这两个按钮置灰。
+8. 底部状态栏最右侧常驻「空间ID `<id>`」；改名后**它不变**（显示的还是 id），顶栏选择器跟着变 —— 点一下复制 id，悬浮提示里能看到对应的显示名。
+9. 篡改包（塞 `../x`）导入 → 明确 400，磁盘数据根外无新文件。
+10. 现有测试全绿；`pnpm tsc --noEmit` 无错；`server/**` 的既有测试（`spaceApi` / `spaceScope` / `spaceDispatch`）不回归。

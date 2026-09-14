@@ -8,10 +8,12 @@ import {
   SPACE_NAME_DUPLICATE,
   SpaceNameConflictError,
   createSpace,
+  deleteSpace,
   exportSpaceArchive,
   fetchSpaces,
   importSpaceArchive,
   readSpaceCookie,
+  renameSpace,
   writeSpaceCookie
 } from "./spaceClient";
 
@@ -134,6 +136,51 @@ describe("createSpace", () => {
     expect(init?.method).toBe("POST");
     expect((init?.headers as Record<string, string>)["content-type"]).toBe("application/json");
     expect(String(init?.body)).toBe(JSON.stringify({ name: "张三" }));
+  });
+});
+
+describe("renameSpace / deleteSpace", () => {
+  test("改名：PUT /webgrp/spaces，body 为 {id,name}（id 不是 name）", async () => {
+    const fetchMock = mockFetchJson({ ok: true });
+
+    await renameSpace("高鹏", "高鹏新");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/webgrp/spaces");
+    expect(init?.method).toBe("PUT");
+    expect(String(init?.body)).toBe(JSON.stringify({ id: "高鹏", name: "高鹏新" }));
+  });
+
+  test("改名撞上已有空间名：抛后端 409 的文案", async () => {
+    (globalThis as any).fetch = vi.fn(async () => ({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: { code: SPACE_NAME_DUPLICATE, message: "空间名「高鹏」已存在。" } })
+    }));
+
+    // 文案归后端（与新建同一条规则），前端不自造一句，否则同一件事有两种说法
+    await expect(renameSpace("甲", "高鹏")).rejects.toThrow("空间名「高鹏」已存在。");
+  });
+
+  test("删除：DELETE /webgrp/spaces，body 为 {id}", async () => {
+    const fetchMock = mockFetchJson({ ok: true });
+
+    await deleteSpace("高鹏");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/webgrp/spaces");
+    expect(init?.method).toBe("DELETE");
+    expect(String(init?.body)).toBe(JSON.stringify({ id: "高鹏" }));
+  });
+
+  test("删除 default（pinned）：抛后端文案，不静默当成功", async () => {
+    (globalThis as any).fetch = vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: { code: "SPACE_PINNED", message: "default 空间不可删除。" } })
+    }));
+
+    await expect(deleteSpace("default")).rejects.toThrow("default 空间不可删除。");
   });
 });
 

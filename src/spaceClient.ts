@@ -77,6 +77,18 @@ export async function createSpace(name: string): Promise<Space> {
   return fetchBackendJson<Space>(apiPath("/spaces"), "新建空间失败。", backendJsonRequest("POST", JSON.stringify({ name })));
 }
 
+// 改名只改显示名：后端绝不 rename 目录（id 不动），故调用方**不需要**重载页面。
+// 撞上别的空间名 → 409，与新建同一条唯一性规则（错误文案由后端给）。
+export async function renameSpace(id: string, name: string): Promise<void> {
+  await fetchBackendJson<{ ok: true }>(apiPath("/spaces"), "空间改名失败。", backendJsonRequest("PUT", JSON.stringify({ id, name })));
+}
+
+// 删除空间：后端把目录移入 trash-spaces（**不是**真删，但界面上找不回），并驱逐在线客户端。
+// default 为 pinned，后端必回 400 SPACE_PINNED —— 前端只负责不给他这个机会（按钮禁用）。
+export async function deleteSpace(id: string): Promise<void> {
+  await fetchBackendJson<{ ok: true }>(apiPath("/spaces"), "删除空间失败。", backendJsonRequest("DELETE", JSON.stringify({ id })));
+}
+
 // 导出当前空间为 ZIP（文件名后端走 content-disposition，命名归上层调用方）。
 // **不**走 fetchBackendJson —— 那个封装会 response.json()，二进制体要用 blob()。
 export async function exportSpaceArchive(): Promise<Blob> {

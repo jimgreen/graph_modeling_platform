@@ -42,7 +42,7 @@
 - **`__appScope` 陷阱**：App.tsx 每帧重建 `__appScope`，空依赖 `useEffect` 闭包会冻结在首次渲染。需读最新状态时用 `__appScopeRef.current`（见 App.tsx WS useEffect）。
 - 修改 `model.ts` 前先跑 `gitnexus_impact`（影响面广）。
 - 测试与源文件同目录，命名 `*.test.ts(x)`。
-- **空间隔离（多工作空间）前后端均已落地**：后端按 `X-Space` / `?space=` / `Cookie: gmp_space` 解析空间并隔离数据（详见 `server/CLAUDE.md` 与 `docs/superpowers/specs/2026-09-13-multi-workspace-design.md`）；前端已空间感知 —— `src/spaceClient.ts`（Cookie + `/webgrp/spaces` 封装 + ZIP 导入导出）、`src/spaceCache.ts`（浏览器侧空间缓存单源清单 + 清理 + 启动闸门）、`src/spaceSwitch.ts`（切换时序与 beforeunload 跳过）、顶栏空间选择器与导入/导出按钮。**空间标识只用 Cookie**（前端不设 `X-Space` 头、请求不带 `?space=`）；`current` 取后端解析链的结果，前端不读 Cookie 自算。
+- **空间隔离（多工作空间）前后端均已落地**：后端按 `X-Space` / `?space=` / `Cookie: gmp_space` 解析空间并隔离数据（详见 `server/CLAUDE.md` 与 `docs/superpowers/specs/2026-09-13-multi-workspace-design.md`）；前端已空间感知 —— `src/spaceClient.ts`（Cookie + `/webgrp/spaces` 封装 + ZIP 导入导出）、`src/spaceCache.ts`（浏览器侧空间缓存单源清单 + 清理 + 启动闸门）、`src/spaceSwitch.ts`（切换时序与 beforeunload 跳过）、顶栏空间选择器与导出/导入/改名/删除四按钮（均作用于当前空间；改名不重载，删除确认后切到剩余空间）、底部状态栏的「空间ID」格（点击复制 id，名字放悬浮提示 —— 目录名是 id 而改名不改目录，两者会分叉）。**空间标识只用 Cookie**（前端不设 `X-Space` 头、请求不带 `?space=`）；`current` 取后端解析链的结果，前端不读 Cookie 自算。
 - 新增 runtime resource 需同时改 `runtimeSnapshot.ts`（序列化）+ `runtimeWsClient.ts`（路由）+ server `apiV1Runtime.mjs`（端点）。
 
 ### Testing Requirements

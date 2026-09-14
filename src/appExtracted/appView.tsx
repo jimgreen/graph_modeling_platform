@@ -2570,7 +2570,11 @@ export function renderAppView(__appScope: Record<string, any>) {
             saveRequired,
             mode,
             connectSource,
-            staticDrawing
+            staticDrawing,
+            // 状态栏的空间 ID 与顶栏选择器同源：不进 inputs，列表/current 加载完成后
+            // MemoizedViewSection 会跳过重渲染，这一格永远停在空值。
+            __appScope.currentSpaceId,
+            __appScope.spaces
           ]}
         />
       </main>
