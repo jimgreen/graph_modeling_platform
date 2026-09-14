@@ -29,7 +29,11 @@ describe("SVG export", () => {
   const svgDefsSection = (svg: string) => svg.match(/<defs[^>]*>[\s\S]*?<\/defs>/)?.[0] ?? "";
   const svgUseTags = (svg: string) => Array.from(svg.matchAll(/<use\b[^>]*>/g), (match) => match[0]);
   const svgDeviceUseTag = (svg: string, id: string) =>
-    svg.match(new RegExp(`<g[^>]*><use id="${id}"(?=\\s|/?>)[^>]*/?></g>`))?.[0] ?? svg.match(new RegExp(`<use id="${id}"(?=\\s|/?>)[^>]*>`))?.[0] ?? "";
+    // 优先带 terminal 锚点组的完整设备组形态（v2：锚点挂在 use 旁的子 g 内），回落到紧凑形态
+    svg.match(new RegExp(`<g[^>]*><use id="${id}"(?=\\s|/?>)[^>]*><g[^>]*>(?:(?!</g>)[\\s\\S])*<circle[^>]*/></g></g>`))?.[0]
+      ?? svg.match(new RegExp(`<g[^>]*><use id="${id}"(?=\\s|/?>)[^>]*/?></g>`))?.[0]
+      ?? svg.match(new RegExp(`<use id="${id}"(?=\\s|/?>)[^>]*>`))?.[0]
+      ?? "";
   const svgEdgeGroupTag = (svg: string, id: string) =>
     svg.match(new RegExp(`<path id="${id}"(?=\\s|/?>)[^>]*>`))?.[0] ?? "";
 
@@ -1149,7 +1153,7 @@ describe("SVG export", () => {
     expect(sourceUseTag).toContain('dev-id="source-device"');
     expect(sourceUseTag).toContain('href="#symbol_ACGenerator_ac-source_default"');
     expect(sourceUseTag).toContain('transform="translate(45,90)"');
-    expect(sourceUseTag).not.toContain('class=');
+    expect(sourceUseTag.replace(new RegExp("<g[^>]*>(?:(?!</g>)[\\s\\S])*<\\/g>"), "")).not.toContain('class=');
     expect(svg).not.toContain('<g id="source-device" class="export-device"');
     expect(svg).not.toContain('<g id="breaker-device" class="export-device"');
     expect(svg).not.toContain("export-node-terminal-layer");
