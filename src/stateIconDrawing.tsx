@@ -684,7 +684,21 @@ function stateIconSvgPlatformExportFallback(source: string) {
   const sourceTerminalCountMarkup = sourceTerminalCount === ""
     ? ""
     : ` ${STATE_ICON_PLATFORM_EXPORT_TERMINAL_COUNT_ATTRIBUTE}="${escapeXml(sourceTerminalCount)}"`;
-  const normalizedSource = `<svg xmlns="http://www.w3.org/2000/svg" data-state-icon-platform-device="true" data-state-icon-source-dev-kind="${escapeXml(declaredDeviceKind)}"${sourceTerminalCountMarkup} viewBox="${escapeXml(symbolViewBox)}" preserveAspectRatio="xMidYMid meet">${defs}${symbolBody}</svg>`;
+  // 补回 <use> 这个宿主：symbol 正文用 currentColor / var(--tN) 取色，缺了宿主就会掉色。
+  // 只拷 --tN 槽声明，不拷 display:none —— 回读产物是独立根文档，隐藏不该带过去。
+  const useClassName = escapeXml(readSvgMarkupAttribute(useMarkup, "class"));
+  const useSlotDeclarations = escapeXml(
+    readSvgMarkupAttribute(useMarkup, "style")
+      .split(";")
+      .map((declaration) => declaration.trim())
+      .filter((declaration) => declaration.startsWith("--t"))
+      .join(";")
+  );
+  const useHostAttributeMarkup = [
+    useClassName ? ` class="${useClassName}"` : "",
+    useSlotDeclarations ? ` style="${useSlotDeclarations}"` : ""
+  ].join("");
+  const normalizedSource = `<svg xmlns="http://www.w3.org/2000/svg" data-state-icon-platform-device="true" data-state-icon-source-dev-kind="${escapeXml(declaredDeviceKind)}"${sourceTerminalCountMarkup} viewBox="${escapeXml(symbolViewBox)}" preserveAspectRatio="xMidYMid meet">${defs}<g${useHostAttributeMarkup}>${symbolBody}</g></svg>`;
   return {
     source: normalizedSource,
     width: frame.width,

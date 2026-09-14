@@ -47,6 +47,8 @@ import {
   terminalStubStrokeWidth
 } from "./model";
 import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
+import { buildSvgDocument } from "./export/svg";
+import { SVG_BASELINE_EDGES, SVG_BASELINE_NODES } from "./export/fixtures/svg-baseline";
 import { apiPath } from "./config";
 import {
   createAddCustomDeviceStateDraftRow,
@@ -2835,6 +2837,53 @@ describe("default device state draft rows", () => {
     expect(imported[0].svgSource).toContain('viewBox="-75 -50 150 100"');
     const persistedSource = decodeURIComponent(stateIconDrawingToImage(imported).split(",")[1] ?? "");
     expect(persistedSource).toContain('data-state-icon-layer-width="180" data-state-icon-layer-height="120"');
+  });
+
+  test("回读电压模式导出图时，symbol 正文有宿主提供 class 与槽", () => {
+    // node 环境 DOMParser 未定义 → parseStateIconSvgSource 返回 null → 走 stateIconSvgPlatformExportFallback
+    const exported = buildSvgDocument(SVG_BASELINE_NODES as never, SVG_BASELINE_EDGES as never, {
+      width: 800,
+      height: 600,
+      colorDisplayMode: "voltage"
+    });
+    const restored = createEditableStateIconElementsFromSvgSource(exported, "回读.svg");
+    expect(restored).toHaveLength(1);
+    const normalizedSource = restored[0].svgSource ?? "";
+    // 宿主 <g> 紧跟 </defs> 承载 use 上的 class：symbol 正文 currentColor / var(--tN) 才有取色来源
+    const hostGroup = /<\/defs>\s*(<g\b[^>]*>)/.exec(normalizedSource)?.[1] ?? "";
+    expect(hostGroup).toContain('class="kv');
+    // 只拷 --tN 槽声明，不把 display:none 带进回读根文档
+    expect(normalizedSource).not.toMatch(/<g\b[^>]*style="[^"]*display\s*:\s*none/);
+  });
+
+  test("回读多端子电压导出图时，宿主 <g> 携带全部槽声明", () => {
+    // 三绕组主变：use 上 class="kv1000 kv750 kv500" style="--t1:var(--c-kv1000);--t2:var(--c-kv750);--t3:var(--c-kv500)[;display:none]"
+    const nodes = [
+      {
+        id: "ACTransfomer3", kind: "ac-three-winding-transformer", name: "主变", position: { x: 400, y: 300 },
+        size: { width: 60, height: 60 }, rotation: 0, layerId: "layer-default", nodeNumber: "1",
+        acTopologyNode: 0, dcTopologyNode: 0, scale: 1, params: { i_vbase: "1000", j_vbase: "750", k_vbase: "500" },
+        terminals: [
+          { id: "t1", label: "", type: "ac", anchor: { x: -0.5, y: -0.1 }, nodeNumber: "1", vbase: "1000" },
+          { id: "t2", label: "", type: "ac", anchor: { x: 0.5, y: -0.1 }, nodeNumber: "2", vbase: "750" },
+          { id: "t3", label: "", type: "ac", anchor: { x: 0, y: 0.5 }, nodeNumber: "3", vbase: "500" }
+        ]
+      }
+    ];
+    const exported = buildSvgDocument(nodes as never, [], {
+      width: 800,
+      height: 600,
+      colorDisplayMode: "voltage"
+    });
+    const restored = createEditableStateIconElementsFromSvgSource(exported, "回读.svg");
+    expect(restored).toHaveLength(1);
+    const normalizedSource = restored[0].svgSource ?? "";
+    const hostGroup = /<\/defs>\s*(<g\b[^>]*>)/.exec(normalizedSource)?.[1] ?? "";
+    expect(hostGroup).toContain('class="kv1000 kv750 kv500"');
+    expect(hostGroup).toContain("--t1:var(--c-kv1000)");
+    expect(hostGroup).toContain("--t2:var(--c-kv750)");
+    expect(hostGroup).toContain("--t3:var(--c-kv500)");
+    expect(hostGroup).not.toContain("display:none");
   });
 
   test("uses the full drawing frame only when platform export metadata declares zero source terminals", () => {
