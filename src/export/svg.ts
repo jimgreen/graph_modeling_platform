@@ -168,7 +168,12 @@ export function backgroundPageCanvasTransform(sourceBounds: CanvasBounds, target
   return `translate(${formatSvgNumber(x)} ${formatSvgNumber(y)}) scale(${formatSvgNumber(safeScale)})`;
 }
 
-export function buildSvgDeviceConnectorMarkup(node: ModelNode, colorDisplayMode: ColorDisplayMode = "energy", colorPalette: ColorPalette = DEFAULT_COLOR_PALETTE) {
+export function buildSvgDeviceConnectorMarkup(
+  node: ModelNode,
+  colorDisplayMode: ColorDisplayMode = "energy",
+  colorPalette: ColorPalette = DEFAULT_COLOR_PALETTE,
+  voltagePaint: { terminalRef?: (terminalId: string) => string | undefined } | null = null
+) {
   if (isBusNode(node) || isStaticNode(node) || isRoutableLineDeviceKind(node.kind)) {
     return "";
   }
@@ -182,8 +187,15 @@ export function buildSvgDeviceConnectorMarkup(node: ModelNode, colorDisplayMode:
       const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
       const strokeWidth = terminalStubStrokeWidth(node, terminal);
       const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
+      const paintRef = voltagePaint?.terminalRef?.(String(terminal.id ?? ""));
+      // 导出态电压色走槽/class：有槽链 --tN，无槽删属性靠 <use class> 继承；非导出态用字面色
+      const strokeAttribute = paintRef
+        ? ` stroke="${escapeXml(paintRef)}"`
+        : voltagePaint
+          ? "" // 导出态单电压器件：删属性，靠 <use class> 继承
+          : ` stroke="${escapeXml(terminalColor)}"`;
       return `<g transform="translate(${formatSvgNumber(renderPoint.x)} ${formatSvgNumber(renderPoint.y)})">
-  <line x1="${formatSvgNumber(stub.from.x)}" y1="${formatSvgNumber(stub.from.y)}" x2="${formatSvgNumber(stub.to.x)}" y2="${formatSvgNumber(stub.to.y)}" stroke="${escapeXml(terminalColor)}" stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round"${dashAttribute}/>
+  <line x1="${formatSvgNumber(stub.from.x)}" y1="${formatSvgNumber(stub.from.y)}" x2="${formatSvgNumber(stub.to.x)}" y2="${formatSvgNumber(stub.to.y)}"${strokeAttribute} stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round"${dashAttribute}/>
 </g>`;
     })
     .join("\n");
@@ -748,15 +760,21 @@ ${rules.join("\n")}
               nodeRef: symbolNode.terminals.filter((terminal) => isExportElectricTerminalType(terminal.type)).length > 1
                 ? "var(--t1)"
                 : undefined,
+              // 槽按「电端子序」声明（与 nodeVoltageSlotDeclarations 同基数）：terminalRef 返回电端子子序列序号，
+              // 混合端子器件（电端之间夹非电端）不会指向未声明的槽；单电端子器件无槽，返回 undefined 走回落
               terminalRef: (terminalId: string) => {
-                const index = symbolNode.terminals.findIndex((terminal) => terminal.id === terminalId);
+                const electricTerminals = symbolNode.terminals.filter((terminal) => isExportElectricTerminalType(terminal.type));
+                if (electricTerminals.length <= 1) {
+                  return undefined;
+                }
+                const index = electricTerminals.findIndex((terminal) => terminal.id === terminalId);
                 return index >= 0 ? `var(--t${index + 1})` : undefined;
               }
             }
           : null;
         const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "geometry", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual, voltagePaint: glyphVoltagePaint }));
         const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "text", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual, voltagePaint: glyphVoltagePaint }));
-        const connectorMarkup = buildSvgDeviceConnectorMarkup(voltageColoredNode, colorDisplayMode, colorPalette);
+        const connectorMarkup = buildSvgDeviceConnectorMarkup(voltageColoredNode, colorDisplayMode, colorPalette, glyphVoltagePaint);
         const imageMarkup = imageHref
           ? svgImageContentMarkup(imageHref, {
               x: -symbolNode.size.width / 2,

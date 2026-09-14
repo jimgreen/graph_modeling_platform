@@ -70,4 +70,15 @@ describe("多端子器件的 use 类与槽", () => {
     expect(symbolSection).toContain('stroke="var(--t2)"');
     expect(symbolSection).toContain('stroke="var(--t3)"');
   });
+
+  it("端子引线按端子走槽（多端子）或删字面色（单电压）", () => {
+    const symbolSection = svg.slice(svg.indexOf("<defs"), svg.indexOf("</defs>"));
+    // 三绕组主变的引线共 3 根，依次链到 --t1/--t2/--t3
+    expect(symbolSection.match(/stroke="var\(--t[123]\)"/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("symbol 段内零字面电压色（属性形态）", () => {
+    const symbolSection = svg.slice(svg.indexOf("<defs"), svg.indexOf("</defs>"));
+    expect(symbolSection).not.toMatch(/stroke="#[0-9a-fA-F]{3,8}"/i);
+  });
 });

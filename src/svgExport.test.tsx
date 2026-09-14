@@ -1831,7 +1831,9 @@ describe("SVG export", () => {
     expect(defs).toContain(".lkv10{--c-lkv10:#ff0000;fill:none;stroke:var(--c-lkv10);color:var(--c-lkv10)}");
     expect(defs).toContain(".dcv750{--c-dcv750:#00aa88;stroke:var(--c-dcv750);color:var(--c-dcv750);fill:var(--c-dcv750)}");
     expect(defs).toContain(".ldcv750{--c-ldcv750:#00aa88;fill:none;stroke:var(--c-ldcv750);color:var(--c-ldcv750)}");
-    expect(defs).toContain('stroke="#ff0000"');
+    // 新契约：symbol 内零字面电压色——正文/引线颜色全走 class/槽 var() 引用
+    const symbolSection = svg.slice(svg.indexOf("<defs"), svg.indexOf("</defs>"));
+    expect(symbolSection).not.toMatch(/stroke="#[0-9a-fA-F]{3,8}"/i);
     expect(svg).toContain('id="ac-source-10" class="kv10"');
     expect(svg).toContain('id="ac-bus-10" class="kv10"');
     expect(svg).toContain('id="dc-source-750" class="dcv750"');
