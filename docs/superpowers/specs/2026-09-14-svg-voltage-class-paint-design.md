@@ -90,6 +90,8 @@ symbol 去重有两级，**两级都把电压色算进键**：
 
 **若不先对齐，把文件里任何元素改成 class 驱动都会改变可见颜色**（母线由橙变灰），截图链路（同一个 `buildSvgDocument`）同样。
 
+> **§2.5 对齐的副作用（已测试钉住）**：`nodeVoltageAttributes`（energy 模式同样消费这条对齐后的解析链）对无端子母线 `{vbase:"0", voltage_level:"10"}` 导出的 metadata `vbase` 属性由 `"0"` 修正为 `"10"`。属本设计的既有缺陷修正而非回归，`svgVoltagePaint.test.ts` 已按 energy 模式钉住该行为。
+
 ---
 
 ## 3. 机制设计（全部经 Chromium 实测）
@@ -243,6 +245,7 @@ symbol 去重有两级，**两级都把电压色算进键**：
 | 例外 | 位置 | 说明 |
 |---|---|---|
 | model-hierarchy 图元正文 | `DeviceGlyph.ts:180`、`:212`、`:217` | 正文色取自 `node.params.strokeColor` / `accentColor`，**不是电压色**。实测 `<use class="dcv220">` 的正文是 `<g class="model-hierarchy-icon" stroke="#2563eb">`，该蓝来自 params 默认值。删成继承会把蓝变电压色 → 视觉回归。**同一 symbol 内的引线仍是电压色**，一次二分覆盖不了，必须逐元素判断 |
+| **氢/热耦合器件机身身份色** | `svg.ts` `glyphVoltagePaint` 门控 | `getDeviceStrokeColor` 对非母线氢/热 kind（ac/dc-electrolyzer、ac/dc-fuel-cell、ac/dc-heater 等）返回**终端类型色**（h2 紫 / heat 红）而非电压色。门控比较 `getDeviceStrokeColor(voltageColoredNode)` 与该器件电压类对应色（`voltageLevelColor(电压, type)`）：不一致时该器件**机身保持字面身份色**（`nodeRef` 指向身份色），仅电端子引线仍走 class 驱动、非电端子（h2/heat）引线保留字面终端色 |
 
 **判定原则**：颜色**最终来源**是电压色（`getDeviceStrokeColor` 且未被上述覆盖层拦截）→ 走新机制；否则一律保留原样。
 
@@ -254,6 +257,9 @@ symbol 去重有两级，**两级都把电压色算进键**：
 | 端子白点、开关圆点 | `DeviceGlyph.ts:1318` |
 | 其它字面 hex | `DeviceGlyph.ts:633`(×3)、`:656`(×2)、`:734`、`:1298`、`:1328`(×2)、`:1338`(×2) |
 | 开合状态色 | `stateVisual.strokeColor` / `fillColor`（`DeviceGlyph.ts:106-107`，优先于电压色） |
+
+> **状态色优先级（§5.2 落实）**：导出态 `voltagePaint` 的 `stroke = stateVisual?.strokeColor || stateColor || (voltagePaint ? (voltagePaint.nodeRef ?? "currentColor") : deviceStroke)` —— 状态色（stateVisual.strokeColor / color）永远**优先于**电压 class/槽驱动；状态 symbol 的开合色以字面属性存活，不得被 `currentColor` / `var(--tN)` 顶掉（有守卫测试钉住）。
+
 | 用户自定义色 | `node.params.strokeColor` / `accentColor` / `foregroundColor` |
 | 标签层文字色 | `svgExportUtils.ts:47`、`:60`（取自节点文字色） |
 | 背景页框 / 画布底色 | `svg.ts:256`（`#94a3b8`）、`svg.ts:834` |
