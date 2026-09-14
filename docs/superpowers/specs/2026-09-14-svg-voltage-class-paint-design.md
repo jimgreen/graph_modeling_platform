@@ -1,7 +1,7 @@
 # SVG 导出：电压等级着色改由 class 驱动
 
 **日期**：2026-09-14
-**状态**：设计已确认，经两轮专业审查修订，待实施
+**状态**：已实施（2026-09-14，16+ 提交）
 **影响范围**：`src/export/svg.ts`、`src/DeviceGlyph.ts`、`src/svgExportUtils.ts`、`src/stateIconDrawing.tsx`、`src/svgExport.test.tsx`、`server/svgExport.test.mjs`
 
 ---
@@ -259,13 +259,12 @@ symbol 去重有两级，**两级都把电压色算进键**：
 | 端子白点、开关圆点 | `DeviceGlyph.ts:1318` |
 | 其它字面 hex | `DeviceGlyph.ts:633`(×3)、`:656`(×2)、`:734`、`:1298`、`:1328`(×2)、`:1338`(×2) |
 | 开合状态色 | `stateVisual.strokeColor` / `fillColor`（`DeviceGlyph.ts:106-107`，优先于电压色） |
-
-> **状态色优先级（§5.2 落实）**：导出态 `voltagePaint` 的 `stroke = stateVisual?.strokeColor || stateColor || (voltagePaint ? (voltagePaint.nodeRef ?? "currentColor") : deviceStroke)` —— 状态色（stateVisual.strokeColor / color）永远**优先于**电压 class/槽驱动；状态 symbol 的开合色以字面属性存活，不得被 `currentColor` / `var(--tN)` 顶掉（有守卫测试钉住）。
-
 | 用户自定义色 | `node.params.strokeColor` / `accentColor` / `foregroundColor` |
 | 标签层文字色 | `svgExportUtils.ts:47`、`:60`（取自节点文字色） |
 | 背景页框 / 画布底色 | `svg.ts:256`（`#94a3b8`）、`svg.ts:834` |
 | 量测层 | 色源为 `measurementConfig`，**不受影响** |
+
+> **状态色优先级（§5.2 落实）**：导出态 `voltagePaint` 的 `stroke = stateVisual?.strokeColor || stateColor || (voltagePaint ? (voltagePaint.nodeRef ?? "currentColor") : deviceStroke)` —— 状态色（stateVisual.strokeColor / color）永远**优先于**电压 class/槽驱动；状态 symbol 的开合色以字面属性存活，不得被 `currentColor` / `var(--tN)` 顶掉（有守卫测试钉住）。
 
 > **修订**：原先「文字色不动」的说法不准确。**标签层**文字色不动；但**图元内部的缩写标记文字**（AC/DC/H2/P）在电压模式下就是电压色，属 §5.3 电压填充，必须改。
 

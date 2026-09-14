@@ -43,7 +43,8 @@ import { staticConnectorDrawingPath } from "./staticConnectorCurves.ts";
 
 export type DeviceGlyphMode = "full" | "geometry" | "text";
 // 变压器族判定（单源）：三绕组/端子变负荷/两绕组等含 "transformer" 的 kind 才用端子槽（var(--tN)）
-// —— 只有变压器需要按端子区分电压色；其余器件内部单色，靠 <use class> 继承即可
+// —— 只有变压器需要按端子区分电压色；其余器件内部单色，靠 <use class> 继承即可。
+// 新增消费槽的 kind 时必须同步本文件渲染分支（renderNodeSymbolBody 内的变压器族分支）与 svg.ts 的 slotTerminals。
 export function usesTransformerTerminalSlotPaint(kind: string) {
   return kind.includes("transformer");
 }
@@ -1324,7 +1325,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     );
   }
 
-  if (node.kind.includes("transformer")) {
+  if (usesTransformerTerminalSlotPaint(node.kind)) {
     if (mode === "text") {
       return null;
     }

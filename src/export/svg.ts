@@ -478,7 +478,9 @@ ${scopedBackgroundSvg}
     return electricTerminals
       .map((terminal, index) => {
         const className = exportVoltageDeviceClass(terminal.type, terminalExportVoltage(node, terminal));
-        // 槽链失效时会静默取错色或元素消失，故宁可链到端子 1 也不留空槽
+        // 槽链失效时会静默取错色或元素消失，故宁可链到端子 1 也不留空槽。
+        // 防御分支：正常路径下所有节点电压类已由 exportNodes.forEach(nodeVoltageDescriptor)（<use> 输出前）登记进 registeredVoltageClasses，
+        // 走到这里时几乎必然命中；仅当端子电压源缺失/越界时才回落，保持槽始终有值。
         const source = registeredVoltageClasses.has(className) ? className : primaryClass;
         return `--t${index + 1}:var(${exportVoltageColorVar(source)})`;
       })
@@ -638,14 +640,15 @@ ${rules.join("\n")}
       const edgeElementId = exportSvgUniqueId(`edge-${index + 1}`, usedSvgIds, "edge");
       const edgeClassAttribute = edgeVoltageLineClass ? ` class="${edgeVoltageLineClass}"` : "";
       // 电压模式下线路删字面 stroke，颜色交给 lkvN/ldcvN 类驱动
-      const edgeVoltageStroke = colorDisplayMode === "voltage" && edgeVoltage ? "" : ` stroke="${escapeXml(stroke)}"`;
+      const voltageModeEdgeStroke = colorDisplayMode === "voltage" && Boolean(edgeVoltage);
+      const edgeVoltageStroke = voltageModeEdgeStroke ? "" : ` stroke="${escapeXml(stroke)}"`;
       const sourceExportDeviceId = edge ? exportDeviceIdByNodeId.get(edge.sourceId) ?? edge.sourceId : "";
       const targetExportDeviceId = edge ? exportDeviceIdByNodeId.get(edge.targetId) ?? edge.targetId : "";
       const edgeAttributes = `${svgDisplayAttribute(edgeVisible)} source-dev-id="${escapeXml(sourceExportDeviceId)}" target-dev-id="${escapeXml(targetExportDeviceId)}"`;
       const internalConnectors = edge
         ? [
-            buildBoundaryBusInternalConnectorMarkup(edge, "source", stroke, edgeAttributes, edgeVoltageLineClass, colorDisplayMode === "voltage" && Boolean(edgeVoltage)),
-            buildBoundaryBusInternalConnectorMarkup(edge, "target", stroke, edgeAttributes, edgeVoltageLineClass, colorDisplayMode === "voltage" && Boolean(edgeVoltage))
+            buildBoundaryBusInternalConnectorMarkup(edge, "source", stroke, edgeAttributes, edgeVoltageLineClass, voltageModeEdgeStroke),
+            buildBoundaryBusInternalConnectorMarkup(edge, "target", stroke, edgeAttributes, edgeVoltageLineClass, voltageModeEdgeStroke)
           ]
             .filter(Boolean)
             .join("\n")
@@ -758,6 +761,8 @@ ${rules.join("\n")}
           ? stateVisual?.imageFit ?? stateVisual?.backgroundImageFit ?? symbolNode.params.backgroundImageFit
           : symbolNode.params.backgroundImageFit;
         const voltageDescriptor = nodeExportVoltageDescriptor(symbolNode);
+        // foregroundColor 抹空是「取色来源 = 电压色」的隐形前提：节点身份色禁用后，
+        // getDeviceStrokeColor 结果与电压类色一致，nodeRef 走槽/currentColor 而非字面色。勿顺手清理（spec §6）。
         const voltageColoredNode = colorDisplayMode === "voltage" && voltageDescriptor
           ? { ...symbolNode, params: { ...symbolNode.params, foregroundColor: "" } }
           : symbolNode;
@@ -765,27 +770,26 @@ ${rules.join("\n")}
         // I-1 身份色例外：氢/热耦合器件（电解槽/燃料电池/电热器）在电压模式下的身份色来自终端类型色
         // （h2 紫 / heat 红），不是电压色。getDeviceStrokeColor 的实际结果与该器件电压类对应色不一致时，
         // 机身保持字面身份色（nodeRef 指向身份色）；电端子引线仍按 class 驱动、非电端子（h2/heat）保留字面终端色。
-        const deviceIdentityColor = voltageDescriptor ? getDeviceStrokeColor(voltageColoredNode, colorDisplayMode, colorPalette) : "";
-        const deviceVoltageClassColor = voltageDescriptor ? voltageLevelColor(voltageDescriptor.voltage, voltageDescriptor.type, colorPalette) : "";
+        // 槽只对变压器族有用：非变压器即便多端子也是内部单色，一律不消耗 var(--tN)。
+        // 构造一次 slotTerminals，nodeRef 的多端子判断与 terminalRef 的子序列序号共用同一份电端子表。
+        const slotTerminals = usesTransformerTerminalSlotPaint(symbolNode.kind) ? exportElectricTerminals(symbolNode) : [];
+        // energy 默认路径无需取色：身份/电压类色仅在电压模式且有电压描述符时才计算，避免白算
+        const deviceIdentityColor = colorDisplayMode === "voltage" && voltageDescriptor ? getDeviceStrokeColor(voltageColoredNode, colorDisplayMode, colorPalette) : "";
+        const deviceVoltageClassColor = colorDisplayMode === "voltage" && voltageDescriptor ? voltageLevelColor(voltageDescriptor.voltage, voltageDescriptor.type, colorPalette) : "";
         const glyphVoltagePaint = colorDisplayMode === "voltage" && voltageDescriptor
           ? {
-              nodeRef: deviceIdentityColor === deviceVoltageClassColor
+              nodeRef: deviceIdentityColor.toLowerCase() === deviceVoltageClassColor.toLowerCase()
                 // 变压器族多端子才链 --t1；其余器件（含开关等双端子器件）内部单色，走 currentColor 继承
-                ? (usesTransformerTerminalSlotPaint(symbolNode.kind) &&
-                    symbolNode.terminals.filter((terminal) => isExportElectricTerminalType(terminal.type)).length > 1
+                ? (slotTerminals.length > 1
                     ? "var(--t1)"
                     : undefined)
                 : deviceIdentityColor,
               // 槽按「电端子序」声明（与 nodeVoltageSlotDeclarations 同基数）：terminalRef 返回电端子子序列序号，
               // 混合端子器件（电端之间夹非电端）不会指向未声明的槽；单电端子器件无槽，返回 undefined 走回落。
               // 仅变压器族提供端子槽：其余器件内部不消费 var(--tN)
-              terminalRef: usesTransformerTerminalSlotPaint(symbolNode.kind)
+              terminalRef: slotTerminals.length > 1
                 ? (terminalId: string) => {
-                    const electricTerminals = symbolNode.terminals.filter((terminal) => isExportElectricTerminalType(terminal.type));
-                    if (electricTerminals.length <= 1) {
-                      return undefined;
-                    }
-                    const index = electricTerminals.findIndex((terminal) => terminal.id === terminalId);
+                    const index = slotTerminals.findIndex((terminal) => terminal.id === terminalId);
                     return index >= 0 ? `var(--t${index + 1})` : undefined;
                   }
                 : undefined
