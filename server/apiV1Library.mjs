@@ -63,9 +63,10 @@ function buildDevices(deviceLibrary) {
 }
 
 // /webgrp/v1/library/categories
-export async function handleV1LibraryCategories({ request, response }) {
+// paths：多空间路径集合（spaceStore.spacePathsFor），缺省时被调函数回落 defaultPaths。
+export async function handleV1LibraryCategories({ request, response, paths }) {
   try {
-    const lib = await readDeviceLibraryConfig();
+    const lib = await readDeviceLibraryConfig({ paths });
     await sendV1Json(request, response, buildCategories(lib));
   } catch (error) {
     sendV1Error(response, "internal", error instanceof Error ? error.message : "后端处理失败。");
@@ -73,9 +74,9 @@ export async function handleV1LibraryCategories({ request, response }) {
 }
 
 // /webgrp/v1/library/devices
-export async function handleV1LibraryDevices({ request, response }) {
+export async function handleV1LibraryDevices({ request, response, paths }) {
   try {
-    const lib = await readDeviceLibraryConfig();
+    const lib = await readDeviceLibraryConfig({ paths });
     await sendV1Json(request, response, buildDevices(lib));
   } catch (error) {
     sendV1Error(response, "internal", error instanceof Error ? error.message : "后端处理失败。");
@@ -83,9 +84,9 @@ export async function handleV1LibraryDevices({ request, response }) {
 }
 
 // /webgrp/v1/library/measurements —— 量测定义
-export async function handleV1LibraryMeasurements({ request, response }) {
+export async function handleV1LibraryMeasurements({ request, response, paths }) {
   try {
-    const config = await readMeasurementConfig();
+    const config = await readMeasurementConfig({ paths });
     await sendV1Json(request, response, {
       groupDefaults: config.groupDefaults ?? {},
       measurementTypes: config.measurementTypes ?? [],
@@ -97,9 +98,9 @@ export async function handleV1LibraryMeasurements({ request, response }) {
 }
 
 // /webgrp/v1/library/device-definitions —— 图元定义
-export async function handleV1LibraryDeviceDefinitions({ request, response }) {
+export async function handleV1LibraryDeviceDefinitions({ request, response, paths }) {
   try {
-    const lib = await readDeviceLibraryConfig();
+    const lib = await readDeviceLibraryConfig({ paths });
     await sendV1Json(request, response, {
       deviceDefinitionOverrides: lib.deviceDefinitionOverrides ?? {},
       customComponentLibraries: lib.customComponentLibraries ?? [],
@@ -111,9 +112,9 @@ export async function handleV1LibraryDeviceDefinitions({ request, response }) {
 }
 
 // /webgrp/v1/library/templates —— 模板库
-export async function handleV1LibraryTemplates({ request, response }) {
+export async function handleV1LibraryTemplates({ request, response, paths }) {
   try {
-    const lib = await readDeviceLibraryConfig();
+    const lib = await readDeviceLibraryConfig({ paths });
     await sendV1Json(request, response, {
       customDeviceTemplates: lib.customDeviceTemplates ?? [],
       customGraphTemplates: lib.customGraphTemplates ?? [],
@@ -125,9 +126,12 @@ export async function handleV1LibraryTemplates({ request, response }) {
 }
 
 // /webgrp/v1/library —— 聚合（一次取全）
-export async function handleV1Library({ request, response }) {
+export async function handleV1Library({ request, response, paths }) {
   try {
-    const [deviceLibrary, measurementConfig] = await Promise.all([readDeviceLibraryConfig(), readMeasurementConfig()]);
+    const [deviceLibrary, measurementConfig] = await Promise.all([
+      readDeviceLibraryConfig({ paths }),
+      readMeasurementConfig({ paths })
+    ]);
     await sendV1Json(request, response, {
       categories: buildCategories(deviceLibrary).categories,
       devices: buildDevices(deviceLibrary),
@@ -153,12 +157,14 @@ export async function handleV1Library({ request, response }) {
 }
 
 import { apiPattern } from "./config.mjs";
+import { withSpacePaths } from "./spaceStore.mjs";
 
+// 全表经 withSpacePaths 包装：paths 缺失即抛接线错误，不得静默落回默认空间。
 export const v1LibraryRoutes = [
-  { method: "GET", pattern: apiPattern("/v1/library", "/?$"), handle: handleV1Library },
-  { method: "GET", pattern: apiPattern("/v1/library/categories", "/?$"), handle: handleV1LibraryCategories },
-  { method: "GET", pattern: apiPattern("/v1/library/devices", "/?$"), handle: handleV1LibraryDevices },
-  { method: "GET", pattern: apiPattern("/v1/library/measurements", "/?$"), handle: handleV1LibraryMeasurements },
-  { method: "GET", pattern: apiPattern("/v1/library/device-definitions", "/?$"), handle: handleV1LibraryDeviceDefinitions },
-  { method: "GET", pattern: apiPattern("/v1/library/templates", "/?$"), handle: handleV1LibraryTemplates }
+  { method: "GET", pattern: apiPattern("/v1/library", "/?$"), handle: withSpacePaths(handleV1Library) },
+  { method: "GET", pattern: apiPattern("/v1/library/categories", "/?$"), handle: withSpacePaths(handleV1LibraryCategories) },
+  { method: "GET", pattern: apiPattern("/v1/library/devices", "/?$"), handle: withSpacePaths(handleV1LibraryDevices) },
+  { method: "GET", pattern: apiPattern("/v1/library/measurements", "/?$"), handle: withSpacePaths(handleV1LibraryMeasurements) },
+  { method: "GET", pattern: apiPattern("/v1/library/device-definitions", "/?$"), handle: withSpacePaths(handleV1LibraryDeviceDefinitions) },
+  { method: "GET", pattern: apiPattern("/v1/library/templates", "/?$"), handle: withSpacePaths(handleV1LibraryTemplates) }
 ];

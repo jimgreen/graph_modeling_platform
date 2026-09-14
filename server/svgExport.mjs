@@ -29,13 +29,13 @@ const canvasBoundsOf = (project) => ({
 // 无背景页的统一返回（每次新建 Map，不共享同一实例给调用方）
 const emptyBackgroundPageOption = () => ({ backgroundPage: undefined, referencedHrefById: new Map() });
 
-async function buildBackgroundPageOption({ project, libraryTemplateByKind }) {
+async function buildBackgroundPageOption({ project, libraryTemplateByKind, paths }) {
   const backgroundIdx = Number(project?.backgroundProjectIdx);
   // 「引用键非法」与「自引用」都与前端 createAppHookCallback141 同口径：跳过背景页
   if (!Number.isSafeInteger(backgroundIdx) || backgroundIdx <= 0 || Number(project?.idx) === backgroundIdx) {
     return emptyBackgroundPageOption();
   }
-  const record = await findSchemeProjectRecordByIndex({ index: backgroundIdx });
+  const record = await findSchemeProjectRecordByIndex({ index: backgroundIdx, paths });
   if (!record) {
     // 被引用模型已删除：不打断导出。spec §7.4 要求此处记一条 warning，
     // 否则「引用键配错 / 数据根不可读」与「模型确已删除」在排障时不可区分。
@@ -85,16 +85,18 @@ async function buildBackgroundPageOption({ project, libraryTemplateByKind }) {
   };
 }
 
-export async function renderSavedModelSvg({ parts, name, colorMode = "energy" }) {
-  const record = await readSchemeProjectRecord({ schemePath: parts, name });
+// paths：多空间路径集合（spaceStore.spacePathsFor）。缺省时各被调函数回落 defaultPaths，
+// 保证「方案 ZIP 的 json 与 e/svg 同源」——调用方传了 paths，派生格式就必须读同一个根。
+export async function renderSavedModelSvg({ parts, name, colorMode = "energy", paths }) {
+  const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
   if (!record) {
     return { error: { code: "not-found", message: "模型不存在。" } };
   }
   const project = record.project ?? {};
   const [library, measurementConfig, colorConfig] = await Promise.all([
-    readDeviceLibraryConfig(),
-    readMeasurementConfig(),
-    readColorConfig()
+    readDeviceLibraryConfig({ paths }),
+    readMeasurementConfig({ paths }),
+    readColorConfig({ paths })
   ]);
   const deviceTemplates = buildEffectiveLibraryTemplates(
     library.customDeviceTemplates ?? [],
@@ -107,7 +109,8 @@ export async function renderSavedModelSvg({ parts, name, colorMode = "energy" })
   // 先重建背景页，其被引用图片并入同一份 imageExportPathById，否则背景页图层里会残留后端 href
   const { backgroundPage, referencedHrefById: backgroundReferencedHrefById } = await buildBackgroundPageOption({
     project,
-    libraryTemplateByKind
+    libraryTemplateByKind,
+    paths
   });
   const referencedHrefById = new Map([
     ...collectSvgExportReferencedImageHrefById({
@@ -119,7 +122,7 @@ export async function renderSavedModelSvg({ parts, name, colorMode = "energy" })
     }),
     ...backgroundReferencedHrefById
   ]);
-  const imageExportPathById = await readReferencedImageExportPathById(Array.from(referencedHrefById.keys()));
+  const imageExportPathById = await readReferencedImageExportPathById(Array.from(referencedHrefById.keys()), { paths });
   const svg = buildSvgDocument(
     nodes,
     Array.isArray(project.edges) ? project.edges : [],

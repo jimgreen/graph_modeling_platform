@@ -92,9 +92,12 @@ export function createRuntimeRegistry() {
     return Date.now();
   }
 
-  function register(clientId, send) {
+  function register(clientId, send, workspaceId) {
     const entry = {
       clientId,
+      // 空间归属：注册时由 WS 层从握手 Cookie 解析并归位（缺 Cookie / 空间已删 → 首个空间），
+      // 故线上条目恒有具体空间，空串只出现在未注入 store 的单测里
+      workspaceId: String(workspaceId ?? ""),
       send, // (message) => void，由 WS 层注入
       registeredAt: now(),
       lastActiveAt: now(),
@@ -133,20 +136,26 @@ export function createRuntimeRegistry() {
       .filter((entry) => entry.lastActiveAt >= cutoff)
       .map((entry) => ({
         clientId: entry.clientId,
+        workspaceId: entry.workspaceId,
         registeredAt: entry.registeredAt,
         lastActiveAt: entry.lastActiveAt
       }));
   }
 
-  // 选默认客户端：最近活跃且未超时
-  function pickDefaultClient() {
+  // 选默认客户端：最近活跃且未超时。
+  // 传 workspaceId 时只在该空间的在线客户端中取（严格）。客户端的空间在注册时已归位
+  // （见 runtimeWs：无 Cookie / Cookie 指向已删除空间 → 首个空间），故「无空间的调用方」
+  // 与「无 Cookie 的前端」同属首个空间，不会互相漏掉；反过来也不会跨空间打错人。
+  function pickDefaultClient(workspaceId) {
     const cutoff = now() - HEARTBEAT_TIMEOUT_MS;
     const active = Array.from(clients.values()).filter((entry) => entry.lastActiveAt >= cutoff);
-    if (active.length === 0) {
+    const wanted = String(workspaceId ?? "");
+    const candidates = wanted ? active.filter((entry) => entry.workspaceId === wanted) : active;
+    if (candidates.length === 0) {
       return null;
     }
-    active.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
-    return active[0];
+    candidates.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+    return candidates[0];
   }
 
   function getClient(clientId) {
@@ -158,15 +167,17 @@ export function createRuntimeRegistry() {
   }
 
   // 按 clientId 或默认选取客户端。无在线客户端抛 NoOnlineClientError。
-  function resolveClient(clientId) {
+  // 传 workspaceId 时校验空间：跨空间指名不生效（防调到别的空间的前端）。
+  function resolveClient(clientId, workspaceId) {
+    const wanted = String(workspaceId ?? "");
     if (clientId) {
       const entry = getClient(clientId);
-      if (!entry) {
+      if (!entry || (wanted && entry.workspaceId !== wanted)) {
         throw new NoOnlineClientError();
       }
       return entry;
     }
-    const entry = pickDefaultClient();
+    const entry = pickDefaultClient(wanted);
     if (!entry) {
       throw new NoOnlineClientError();
     }
@@ -176,8 +187,9 @@ export function createRuntimeRegistry() {
   // 向客户端发 fetch 请求并等待 fetch-response。
   // sendFetch：由 WS 层注入，(clientId, message) => void
   // requestId 由调用方生成（WS 层）
-  async function fetchFromClient(clientId, requestId, resource, params, sendFetch) {
-    const entry = resolveClient(clientId);
+  // workspaceId：调用方所在空间，用于筛出目标客户端（见 resolveClient）
+  async function fetchFromClient(clientId, requestId, resource, params, sendFetch, workspaceId) {
+    const entry = resolveClient(clientId, workspaceId);
     const pending = createPendingFetch(requestId, resource);
     entry.pendingFetches.set(requestId, pending);
     sendFetch(entry, { type: "fetch", requestId, resource, params });
@@ -210,8 +222,9 @@ export function createRuntimeRegistry() {
   // 向客户端下发写指令并等待 command-response（与 fetchFromClient 同构）。
   // sendCommand：由 WS 层注入，(entry, message) => void
   // requestId 由调用方（WS 层）生成
-  async function commandFromClient(clientId, requestId, name, params, sendCommand) {
-    const entry = resolveClient(clientId);
+  // workspaceId：调用方所在空间，用于筛出目标客户端（见 resolveClient）
+  async function commandFromClient(clientId, requestId, name, params, sendCommand, workspaceId) {
+    const entry = resolveClient(clientId, workspaceId);
     const pending = createPendingCommand(requestId, name);
     entry.pendingCommands.set(requestId, pending);
     sendCommand(entry, { type: "command", requestId, name, params });

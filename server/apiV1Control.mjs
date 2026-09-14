@@ -1,6 +1,7 @@
 // /webgrp/v1 控制台写操作域 handler：经 WS 双向指令通道下发到前端 __appScope 程序化方法。
 // 依赖 runtimeWs 挂载后注入的 { sendCommandToClient }。
-// 所有接口 POST + JSON body，query 可带 clientId（不指定取默认最近活跃客户端）。
+// 所有接口 POST + JSON body，query 可带 clientId（不指定则按调用方所在空间取该空间最近活跃客户端，
+// 见 createV1ControlRoutes）。
 // 写操作实时执行：no-store 信封。
 //
 // sendCommandToClient 语义：成功 resolve(裸 data)；失败 reject(Error 带 code)。
@@ -323,10 +324,25 @@ export async function handleControlImportEDeviceDefinition({ request, url, respo
 import { apiPattern } from "./config.mjs";
 
 // 构造 v1 控制台路由表。ctx = { sendCommandToClient }
-// handle 签名：({ request, response, url, match }, ctx) => Promise<void>
+// handle 签名：({ request, response, url, match, spaceId }, ctx) => Promise<void>
+// spaceId 由派发层注入（server.mjs 的 ...spaceCtx）：会话类端点不切数据，
+// 但无 clientId 时要按调用方所在空间筛出目标前端，否则多空间下会打到别人的会话。
 export function createV1ControlRoutes(ctx) {
-  const wrap = (handler) => ({ request, response, url, match }) =>
-    handler({ request, response, url }, ctx);
+  // rest 透传：派发层将来给 handler 多传字段（如 match）不会被这里静默吞掉
+  const wrap = (handler) => ({ spaceId, ...route }) => {
+    if (!spaceId) {
+      // 接线 bug：派发层对这两个域的 v1 路由恒注入 spaceId，缺失即说明有人绕过了它。
+      // 缺空间时 runtimeRegistry 的 wanted 为空串、空间校验整段短路（fail-open），
+      // 会静默退回「全局取活跃者」——多空间下打到别人的会话。故在此直接拒绝。
+      throw new Error("缺少 spaceId：v1 会话类 handler 必须由派发层注入空间。");
+    }
+    // 统一在这里注入空间，handler 不必逐个记得传：漏传即静默退回「全局取活跃者」
+    const requestCtx = {
+      ...ctx,
+      sendCommandToClient: (clientId, name, params) => ctx.sendCommandToClient(clientId, name, params, spaceId)
+    };
+    return handler(route, requestCtx);
+  };
   return [
     { method: "POST", pattern: apiPattern("/v1/control/device/add", "/?$"), handle: wrap(handleControlDeviceAdd) },
     { method: "POST", pattern: apiPattern("/v1/control/scheme/create", "/?$"), handle: wrap(handleControlSchemeCreate) },

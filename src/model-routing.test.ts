@@ -18,6 +18,8 @@ import {
   DeviceTemplateDefinitionOverride,
   setVoltageBaseTerminalValuesForScope,
   setVoltageBaseValuesForScope,
+  voltageBaseParamTerminalIndexForNode,
+  reconcileTransformerSideVoltageParamsWithTerminals,
   calculateModelContentSize,
   canConnectTerminals,
   buildDefaultDeviceParameterDefinitions,
@@ -3370,4 +3372,87 @@ test("rejects duplicate scheme names and renames moved projects on conflict", ()
   const target = moved.find((scheme) => scheme.id === secondScheme.id);
   expect(target?.projects.map((project) => project.name)).toEqual(["模型A"]);
 });
+});
+
+// 变压器「侧电压参数 → 端子下标」的分侧表：双绕组 i/j = 高/低；三绕组 i/k/j = 高/中/低。
+// 这张表曾有两份副本，其中一份把 `j_vbase` 一律当成 1 号端子 —— 而三绕组的 1 号端子是**中压**侧，
+// 于是右侧面板改中压侧（k_vbase）的值被写进了低压侧（j_vbase），中压侧自己反而没改。
+// 下面逐条钉住侧位，任何一处换位即红。
+describe("变压器侧电压参数的分侧表", () => {
+  test("三绕组：i/k/j = 高/中/低，neutral 为第 4 个端子", () => {
+    const three = createDefaultNode("ac-three-winding-transformer", { x: 0, y: 0 });
+    expect(voltageBaseParamTerminalIndexForNode(three, "i_vbase")).toBe(0);
+    expect(voltageBaseParamTerminalIndexForNode(three, "k_vbase")).toBe(1);
+    expect(voltageBaseParamTerminalIndexForNode(three, "j_vbase")).toBe(2);
+    expect(voltageBaseParamTerminalIndexForNode(three, "neutral_vbase")).toBe(3);
+  });
+
+  test("双绕组：i/j = 高/低，没有中压侧", () => {
+    // ac-two-winding-transformer 不是可建模板的 kind（只作为 baseDeviceKind 的归一结果出现），
+    // 故这里用两个真实模板
+    for (const kind of ["ac-transformer", "ac-transformer-vertical"] as DeviceKind[]) {
+      const two = createDefaultNode(kind, { x: 0, y: 0 });
+      expect(voltageBaseParamTerminalIndexForNode(two, "i_vbase")).toBe(0);
+      expect(voltageBaseParamTerminalIndexForNode(two, "j_vbase")).toBe(1);
+      expect(voltageBaseParamTerminalIndexForNode(two, "k_vbase")).toBeUndefined();
+    }
+  });
+
+  test("非变压器不认领侧电压参数（母线/线路的 i_vbase/j_vbase 由各自的字面名分支处理）", () => {
+    const bus = createDefaultNode("ac-bus", { x: 0, y: 0 });
+    expect(voltageBaseParamTerminalIndexForNode(bus, "i_vbase")).toBeUndefined();
+    expect(voltageBaseParamTerminalIndexForNode(bus, "vbase")).toBeUndefined();
+  });
+});
+
+// 存量数据修复：分侧电压参数与端子 vbase 分叉时，以**端子为准**对齐（与
+// terminalVoltageDisplayValue 的读取顺序一致：端子非零即返回，分侧参数只是回退）。
+describe("变压器分侧电压参数与端子 vbase 的存量对齐", () => {
+  test("分叉时以端子为准改写分侧参数，端子本身不动", () => {
+    const three = createDefaultNode("ac-three-winding-transformer", { x: 0, y: 0 });
+    // 造出旧缺陷留下的分叉：参数是 220（被误写进来的中压值），端子仍是 110
+    const drifted = {
+      ...three,
+      params: { ...three.params, j_vbase: "220" },
+      terminals: three.terminals.map((terminal, index) =>
+        index === 2 ? { ...terminal, vbase: "110" } : terminal
+      )
+    };
+
+    const [reconciled] = reconcileTransformerSideVoltageParamsWithTerminals([drifted]);
+
+    expect(reconciled.params.j_vbase).toBe("110");
+    expect(reconciled.terminals[2].vbase).toBe("110");
+  });
+
+  test("端子还是默认占位 0 时不动参数（没有实物可对齐，硬写会把填过的数抹成 0）", () => {
+    const three = createDefaultNode("ac-three-winding-transformer", { x: 0, y: 0 });
+    const withParamOnly = { ...three, params: { ...three.params, k_vbase: "110" } };
+
+    const [reconciled] = reconcileTransformerSideVoltageParamsWithTerminals([withParamOnly]);
+
+    expect(reconciled.params.k_vbase).toBe("110");
+  });
+
+  test("非变压器不受影响（母线/线路的 i_vbase 不由这张表管）", () => {
+    const line = createDefaultNode("ac-line", { x: 0, y: 0 });
+    const drifted = {
+      ...line,
+      terminals: line.terminals.map((terminal, index) =>
+        index === 0 ? { ...terminal, vbase: "35" } : terminal
+      )
+    };
+
+    const [reconciled] = reconcileTransformerSideVoltageParamsWithTerminals([drifted]);
+
+    expect(reconciled).toBe(drifted);
+  });
+
+  test("已一致的节点原引用返回（不产生无谓的新对象）", () => {
+    const three = createDefaultNode("ac-three-winding-transformer", { x: 0, y: 0 });
+
+    const [reconciled] = reconcileTransformerSideVoltageParamsWithTerminals([three]);
+
+    expect(reconciled).toBe(three);
+  });
 });

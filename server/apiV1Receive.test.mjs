@@ -112,3 +112,19 @@ describe(`${receivePath} 接收`, () => {
     expect(after.data.latest).toBeNull();
   });
 });
+
+// 本端点数据是进程内全局的（内存留最近 5 次、不落盘、handler 不接 ctx），故派发层把
+// /v1/receive 与 /spaces、/exports/native/* 一并短路：不解析空间、不注入空间上下文。
+describe(`${receivePath} 与空间无关`, () => {
+  test("未知/缺失空间标识都不拦，也不写回空间 Cookie", async () => {
+    // 鉴别力：把本端点从派发层短路名单里去掉 —— 第一条会变成 400 SPACE_UNKNOWN；
+    // 第二条虽仍 200，但会多出 X-Space-Fallback（无来源时回退首空间并写回 Cookie）。
+    const unknown = await fetch(`${baseUrl}${receivePath}?space=${encodeURIComponent("不存在的空间")}`);
+    expect(unknown.status).toBe(200);
+    expect(unknown.headers.get("x-space-fallback")).toBeNull();
+
+    const bare = await fetch(`${baseUrl}${receivePath}`);
+    expect(bare.status).toBe(200);
+    expect(bare.headers.get("x-space-fallback")).toBeNull();
+  });
+});

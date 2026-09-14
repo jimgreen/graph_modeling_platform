@@ -1438,6 +1438,15 @@ button:not(.ant-btn):disabled {
   padding: 0;
 }
 
+/* 空间选择下拉框：与右侧那两个 32px 的导出/导入按钮齐平，并在两者之间留出间距。
+   钉在 antd 控件本体上而不是外层 span —— wrapper 的 height 不会改变控件自身高度。
+   两条类选择器（.topbar-space-switcher .ant-select）的权重高于 antd 自己那一条，故能覆盖。 */
+.topbar-space-switcher .ant-select {
+  height: 32px;
+  line-height: 32px;
+  margin-right: 5px;
+}
+
 /* 顶栏按钮悬浮抬升：只针对顶栏上的悬浮按钮，下拉菜单内的 menu 项不参与 */
 .topbar-primary-button,
 .topbar-dropdown-trigger,

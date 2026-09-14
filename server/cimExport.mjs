@@ -23,8 +23,9 @@ function resolveModelId(project, name, override) {
 
 // 生成已保存模型的 CIM/XML：/cim-xml 响应端点与 /send 发送端点共用。
 // 返回 { xml, filename } 或 { error }。
-export async function buildCimForSavedModel({ parts, name, modelId: modelIdOverride, strict = false }) {
-  const record = await readSchemeProjectRecord({ schemePath: parts, name });
+// paths：多空间路径集合（spaceStore.spacePathsFor）。缺省时被调函数回落 defaultPaths。
+export async function buildCimForSavedModel({ parts, name, modelId: modelIdOverride, strict = false, paths }) {
+  const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
   if (!record) {
     return { error: { code: "not-found", message: "模型不存在。" } };
   }
@@ -48,7 +49,7 @@ export async function buildCimForSavedModel({ parts, name, modelId: modelIdOverr
     }
   }
 
-  const measurementConfig = await readMeasurementConfig();
+  const measurementConfig = await readMeasurementConfig({ paths });
   const modelId = resolveModelId(project, name, modelIdOverride);
   const xml = buildCimXml(
     nodes,
@@ -62,7 +63,7 @@ export async function buildCimForSavedModel({ parts, name, modelId: modelIdOverr
 }
 
 // GET /webgrp/v1/schemes/model/cim-xml
-export async function handleV1ModelCimXml({ url, response }) {
+export async function handleV1ModelCimXml({ url, response, paths }) {
   const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
   if (!requireSchemePath(parts)) {
     sendV1Error(response, "bad-request", "缺少或非法 schemePath。");
@@ -78,7 +79,8 @@ export async function handleV1ModelCimXml({ url, response }) {
       parts,
       name,
       modelId: url.searchParams.get("modelId"),
-      strict: url.searchParams.get("strict") === "1"
+      strict: url.searchParams.get("strict") === "1",
+      paths
     });
     if (error) {
       sendV1Error(response, error.code, error.message);

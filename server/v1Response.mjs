@@ -4,15 +4,10 @@
 import { gzip } from "node:zlib";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
+import { accessControlHeaders } from "./cors.mjs";
 
 const gzipAsync = promisify(gzip);
 const GZIP_MIN_BYTES = 1024;
-
-const accessControlHeaders = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
-  "access-control-allow-headers": "content-type"
-};
 
 // v1 成功响应头：no-cache 允许客户端缓存但须重新校验，命中 304。
 const v1CacheableJsonHeaders = {

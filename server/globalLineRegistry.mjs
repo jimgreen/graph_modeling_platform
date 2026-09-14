@@ -1017,6 +1017,10 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
         initialized = true;
         return state.records.map(publicRecord).sort((a, b) => a.idx - b.idx);
       });
-    }
+    },
+
+    // 排空在飞写操作：删除空间前必须先调用，否则队列里的写会按旧绝对路径
+    // 把已删除的空间目录重建出来。
+    flush: () => locked(() => undefined)
   };
 }

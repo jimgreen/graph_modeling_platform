@@ -5,6 +5,8 @@ import { canvasFitSideInsetsFromDom } from "./appCoreCanvasUtilities";
 import { DEFAULT_MEASUREMENT_CONFIG, defaultMeasurementDisplayFormat } from "../measurements";
 import { WindowCloseButton } from "../WindowCloseButton";
 import { setSkipSaveCheck } from "./appDeviceDefinitionFactories";
+import { switchToSpace } from "../spaceSwitch";
+import { reconcileTransformerSideVoltageParamsWithTerminals } from "../model-routing";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
 import { GLOBAL_LINE_ID_PARAM, applyGlobalLineRecordToNode, deriveLocalDeviceIndexCounters, globalLineEndpointPlacementFailureMessage, globalLineSourcePlacementFailureMessage, shouldManageLineGlobally, shouldUseGlobalLineForEndpoints } from "../global-lines";
 import { isLineOnlyConnectionNode, modelAssociationLineConnectionFailureMessage, modelAssociationProjectIndexesForSchemes } from "../model";
@@ -2806,7 +2808,9 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
       schemeId = findSchemeForProject(project.id)?.id ?? "";
     }
     clearRefreshRecoveryProject();
-    const normalizedNodes = project.project.nodes.map((node) => {
+    // 存量数据修复：分侧电压参数与端子 vbase 曾因侧位表写错而分叉（右侧面板读参数、
+    // 【设置电压基值】与着色读端子），以**端子为准**对齐一次；不修则那对值永不收敛。
+    const normalizedNodes = reconcileTransformerSideVoltageParamsWithTerminals(project.project.nodes.map((node) => {
       const template = libraryTemplateByKind?.get(node.kind);
       if (template) {
         const normalized = normalizeNodeTerminalsWithTemplate(node, template);
@@ -2820,7 +2824,7 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
           : reconciled;
       }
       return libraryTemplateByKind ? node : normalizeNodeTerminalsByTemplate(node);
-    });
+    }));
     const indexed = assignMissingDeviceIndexes(normalizedNodes, project.project.deviceIndexCounters);
     const lockedProject = lockProjectEdgeTerminals({
       ...project.project,
@@ -2985,6 +2989,9 @@ export function createRequestUnsavedChangeAction(__appScope: Record<string, any>
         enterBrowseMode();
       } else if (action.kind === "export") {
         action.onResolved();
+      } else if (action.kind === "switch-space") {
+        // 没有未保存修改：不必过确认框，直接切
+        void switchToSpace(action.spaceId);
       }
       return;
     }
@@ -3059,6 +3066,9 @@ export function createResolveUnsavedChangeAction(__appScope: Record<string, any>
         setHasUnsavedChanges(false);
       }
       enterBrowseMode();
+    } else if (action.kind === "switch-space") {
+      // 走到这里说明保存（若选了保存）已成功；放弃则直接切
+      void switchToSpace(action.spaceId);
     } else if (action.kind === "export" && resolution === "save") {
       // 设置标志跳过保存检查，因为刚刚保存完成
       setSkipSaveCheck(true);

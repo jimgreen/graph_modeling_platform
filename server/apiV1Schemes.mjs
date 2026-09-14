@@ -1,8 +1,6 @@
 // /webgrp/v1 方案域 handler：schemes、hierarchy、models、export、model json/svg。
 // 复用 server.mjs 纯函数。v1 信封包装。
 
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   readSchemes,
   createSchemeArchiveBuffer,
@@ -16,24 +14,8 @@ import { renderSavedModelSvg } from "./svgExport.mjs";
 import { handleV1ModelSend } from "./sendModel.mjs";
 import { encodeTextBytes, withXmlEncodingDeclaration } from "./xmlEncoding.mjs";
 
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
-// schemeDataDir 和 filesRoot 从 server.mjs 的 schemeDataDir 派生，跟随 GRAPH_MODEL_DATA_DIR
-// 通过 server.mjs 导出的函数间接使用，此处仅用于 handleV1SchemeExport 的 filesRoot
-// 注意：运行时由 server.mjs 模块初始化时确定的 dataRoot 决定
-let _schemeDataDir;
-function getSchemeDataDir() {
-  if (!_schemeDataDir) {
-    // 复用 server.mjs 的逻辑：GRAPH_MODEL_DATA_DIR 或默认 data/schemes
-    const root = process.env.GRAPH_MODEL_DATA_DIR
-      ? resolve(process.env.GRAPH_MODEL_DATA_DIR)
-      : resolve(__dirname, "..", "data");
-    _schemeDataDir = join(root, "schemes");
-  }
-  return _schemeDataDir;
-}
-function getFilesRoot() {
-  return join(getSchemeDataDir(), "files");
-}
+// 数据根不再由本模块自建：各 handler 收 ctx.paths（由 server.mjs 分发层按空间解析），
+// 缺省时被调函数回落 defaultPaths。原此处曾自建一份数据根推导，是全仓唯一一处重复 —— 已删除。
 
 // 方案树轻量化：剥离 project 完整数据，仅留摘要（name/updatedAt/children）
 function schemeTreeSummary(schemes) {
@@ -70,10 +52,10 @@ function findSchemeByPath(schemes, parts) {
 
 // /webgrp/v1/schemes —— 方案列表（树形，含模型摘要）
 // query: includeProjects=1 时含完整 project 数据（大）
-export async function handleV1Schemes({ url, request, response }) {
+export async function handleV1Schemes({ url, request, response, paths }) {
   try {
     const includeProjects = url.searchParams.get("includeProjects") === "1";
-    const schemes = await readSchemes({ includeProjects });
+    const schemes = await readSchemes({ includeProjects, paths });
     await sendV1Json(request, response, { schemes: includeProjects ? schemes : schemeTreeSummary(schemes) });
   } catch (error) {
     sendV1Error(response, "internal", error instanceof Error ? error.message : "后端处理失败。");
@@ -81,9 +63,9 @@ export async function handleV1Schemes({ url, request, response }) {
 }
 
 // /webgrp/v1/schemes/hierarchy —— 纯层级树
-export async function handleV1SchemesHierarchy({ request, response }) {
+export async function handleV1SchemesHierarchy({ request, response, paths }) {
   try {
-    const schemes = await readSchemes({ includeProjects: false });
+    const schemes = await readSchemes({ includeProjects: false, paths });
     await sendV1Json(request, response, { nodes: schemeHierarchy(schemes) });
   } catch (error) {
     sendV1Error(response, "internal", error instanceof Error ? error.message : "后端处理失败。");
@@ -92,14 +74,14 @@ export async function handleV1SchemesHierarchy({ request, response }) {
 
 // /webgrp/v1/schemes/models —— 指定方案下模型列表
 // query: schemePath=<encoded>
-export async function handleV1SchemeModels({ url, request, response }) {
+export async function handleV1SchemeModels({ url, request, response, paths }) {
   try {
     const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
     if (!requireSchemePath(parts)) {
       sendV1Error(response, "bad-request", "缺少或非法 schemePath。");
       return;
     }
-    const schemes = await readSchemes({ includeProjects: false });
+    const schemes = await readSchemes({ includeProjects: false, paths });
     const scheme = findSchemeByPath(schemes, parts);
     if (!scheme) {
       sendV1Error(response, "not-found", "方案不存在。");
@@ -113,14 +95,16 @@ export async function handleV1SchemeModels({ url, request, response }) {
 
 // /webgrp/v1/schemes/export —— 方案导出 ZIP
 // query: schemePath=<encoded>
-export async function handleV1SchemeExport({ url, response }) {
+export async function handleV1SchemeExport({ url, response, paths }) {
   const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
   if (!requireSchemePath(parts)) {
     sendV1Error(response, "bad-request", "缺少或非法 schemePath。");
     return;
   }
   try {
-    const { buffer, filename } = await createSchemeArchiveBuffer({ filesRoot: getFilesRoot(), schemePath: parts });
+    // 只传 paths，不传 filesRoot：Task 5 的守卫要求枚举根与渲染根同源，
+    // 传空间根作 filesRoot 会被显式拒绝（且渲染链只跟随 paths）。
+    const { buffer, filename } = await createSchemeArchiveBuffer({ paths, schemePath: parts });
     response.writeHead(200, {
       "content-type": "application/zip",
       "content-length": String(buffer.length),
@@ -146,7 +130,7 @@ export async function handleV1SchemeExport({ url, response }) {
 
 // /webgrp/v1/schemes/model/json —— 模型 project JSON
 // query: schemePath=<encoded>, name=<模型名>
-export async function handleV1ModelJson({ url, request, response }) {
+export async function handleV1ModelJson({ url, request, response, paths }) {
   try {
     const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
     const name = (url.searchParams.get("name") ?? "").trim();
@@ -158,7 +142,7 @@ export async function handleV1ModelJson({ url, request, response }) {
       sendV1Error(response, "bad-request", "缺少模型名称。");
       return;
     }
-    const record = await readSchemeProjectRecord({ schemePath: parts, name });
+    const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
     if (!record) {
       sendV1Error(response, "not-found", "模型不存在。");
       return;
@@ -185,7 +169,7 @@ function sendSvg(response, svg, encoding) {
 
 // /webgrp/v1/schemes/model/svg —— 模型 SVG（复用前端 buildSvgDocument，见 svgExport.mjs）
 // query: schemePath=<encoded>, name=<模型名>, colorMode=energy（默认）|voltage（可选）, encoding=utf-8（默认）|gbk（可选）
-export async function handleV1ModelSvg({ url, response }) {
+export async function handleV1ModelSvg({ url, response, paths }) {
   const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
   if (!requireSchemePath(parts)) {
     sendV1Error(response, "bad-request", "缺少或非法 schemePath。");
@@ -207,7 +191,7 @@ export async function handleV1ModelSvg({ url, response }) {
     return;
   }
   try {
-    const { svg, error } = await renderSavedModelSvg({ parts, name, colorMode });
+    const { svg, error } = await renderSavedModelSvg({ parts, name, colorMode, paths });
     if (error) {
       sendV1Error(response, error.code, error.message);
       return;
@@ -219,17 +203,19 @@ export async function handleV1ModelSvg({ url, response }) {
 }
 
 import { apiPattern } from "./config.mjs";
+import { withSpacePaths } from "./spaceStore.mjs";
 
 // v1 方案域路由表：{ method, pattern, handle }
+// 全表经 withSpacePaths 包装：paths 缺失即抛接线错误，不得静默落回默认空间。
 export const v1SchemeRoutes = [
-  { method: "GET", pattern: apiPattern("/v1/schemes", "/?$"), handle: handleV1Schemes },
-  { method: "GET", pattern: apiPattern("/v1/schemes/hierarchy", "/?$"), handle: handleV1SchemesHierarchy },
-  { method: "GET", pattern: apiPattern("/v1/schemes/models", "/?$"), handle: handleV1SchemeModels },
-  { method: "GET", pattern: apiPattern("/v1/schemes/export", "/?$"), handle: handleV1SchemeExport },
-  { method: "GET", pattern: apiPattern("/v1/schemes/model/json", "/?$"), handle: handleV1ModelJson },
-  { method: "GET", pattern: apiPattern("/v1/schemes/model/svg", "/?$"), handle: handleV1ModelSvg },
-  { method: "GET", pattern: apiPattern("/v1/schemes/model/e-file", "/?$"), handle: handleV1ModelEFile },
-  { method: "POST", pattern: apiPattern("/v1/schemes/model/e-file", "/?$"), handle: handleV1ModelEFilePost },
-  { method: "GET", pattern: apiPattern("/v1/schemes/model/cim-xml", "/?$"), handle: handleV1ModelCimXml },
-  { method: "POST", pattern: apiPattern("/v1/schemes/model/send", "/?$"), handle: handleV1ModelSend }
+  { method: "GET", pattern: apiPattern("/v1/schemes", "/?$"), handle: withSpacePaths(handleV1Schemes) },
+  { method: "GET", pattern: apiPattern("/v1/schemes/hierarchy", "/?$"), handle: withSpacePaths(handleV1SchemesHierarchy) },
+  { method: "GET", pattern: apiPattern("/v1/schemes/models", "/?$"), handle: withSpacePaths(handleV1SchemeModels) },
+  { method: "GET", pattern: apiPattern("/v1/schemes/export", "/?$"), handle: withSpacePaths(handleV1SchemeExport) },
+  { method: "GET", pattern: apiPattern("/v1/schemes/model/json", "/?$"), handle: withSpacePaths(handleV1ModelJson) },
+  { method: "GET", pattern: apiPattern("/v1/schemes/model/svg", "/?$"), handle: withSpacePaths(handleV1ModelSvg) },
+  { method: "GET", pattern: apiPattern("/v1/schemes/model/e-file", "/?$"), handle: withSpacePaths(handleV1ModelEFile) },
+  { method: "POST", pattern: apiPattern("/v1/schemes/model/e-file", "/?$"), handle: withSpacePaths(handleV1ModelEFilePost) },
+  { method: "GET", pattern: apiPattern("/v1/schemes/model/cim-xml", "/?$"), handle: withSpacePaths(handleV1ModelCimXml) },
+  { method: "POST", pattern: apiPattern("/v1/schemes/model/send", "/?$"), handle: withSpacePaths(handleV1ModelSend) }
 ];

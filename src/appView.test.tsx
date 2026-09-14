@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { areCanvasPropsEqual } from "./appExtracted/appCanvasArea";
 import * as appViewModule from "./appExtracted/appView";
 import {
@@ -1128,5 +1128,409 @@ describe("user customization manager entry", () => {
     expect(styles).toMatch(
       /@media \(max-width: 760px\)[\s\S]*?\.user-customization-table\s*\{[\s\S]*?min-width:\s*720px/
     );
+  });
+});
+
+describe("顶栏空间选择器", () => {
+  // appTopbar 经 model-node-ops 间接 import model.ts，存在循环初始化顺序依赖；
+  // 本文件的 model 已由上方静态 import 完成初始化，故这里动态 import 可避开 TDZ。
+  const loadTopbar = () => import("./appExtracted/appTopbar");
+
+  // 本 describe 共 6 条：3 条真行为断言（选项派生 ×2、建完必须切 —— 跑真实函数、桩 fetch、断言调用序列），
+  // 3 条形态断言（带「形态断言，非行为断言」后缀）。后缀含义如下（勿当行为覆盖读）：
+  // ① 本仓库前端测试环境是 node（vite.config.ts 的 test.environment），无 jsdom / testing-library，
+  //    全仓 react-dom/server、createRoot、act( 出现 0 次，故「渲染后选项数」「重渲染后 fetch 次数」
+  //    这类断言在本仓库不可能成立 —— 加 devDeps 会造出第二种前端测试范式，已被否决。
+  // ② 带该后缀的三条读的是源文件文本（字段名、useEffect 依赖数组、memo inputs 数组），
+  //    变异能让它们变红，但它们对「组件实际渲染出什么、副作用实际跑几次」没有判别力，
+  //    只证明源码形态，不构成行为覆盖。
+  // ③ 本 describe 未覆盖 submitCreate → createSpaceThenSwitch 的调用链：把 appTopbar.tsx 里
+  //    Modal 的 onOk={() => void submitCreate()} 改成 onOk={() => setCreateOpen(false)}（即点确定不建空间），
+  //    本 describe 6 条仍全绿（已实测）。该链（点 Modal 确定 → submitCreate → createSpaceThenSwitch）
+  //    应由 T5 的 e2e 经真实点击覆盖。
+  // ④ 顶栏的真实交互行为「计划」由 T5 的 e2e（e2e/spaceSwitch.spec.ts）承载 ——
+  //    该文件当前尚不存在；其确切覆盖范围以计划 Task 5 为准。
+
+  test("选项与后端返回的空间列表一致，并追加新建入口", async () => {
+    const { buildSpaceSwitcherOptions, NEW_SPACE_OPTION_VALUE } = await loadTopbar();
+    const options = buildSpaceSwitcherOptions([
+      { id: "张三", name: "张三的空间", createdAt: "2026-01-01" },
+      { id: "李四", name: "李四的空间", createdAt: "2026-01-02" },
+      { id: "默认空间", name: "默认空间", createdAt: "2026-01-03" }
+    ]);
+
+    // 3 个后端空间 + 1 个「＋ 新建空间…」入口，选项数量与内容均由入参决定
+    expect(options).toHaveLength(4);
+    expect(options.map((option) => option.value)).toEqual([
+      "张三",
+      "李四",
+      "默认空间",
+      NEW_SPACE_OPTION_VALUE
+    ]);
+    expect(options[3].label).toContain("新建空间");
+  });
+
+  test("空间列表为空或未加载时只保留新建入口", async () => {
+    const { buildSpaceSwitcherOptions, NEW_SPACE_OPTION_VALUE } = await loadTopbar();
+
+    expect(buildSpaceSwitcherOptions([]).map((option) => option.value)).toEqual([NEW_SPACE_OPTION_VALUE]);
+    expect(buildSpaceSwitcherOptions(undefined).map((option) => option.value)).toEqual([NEW_SPACE_OPTION_VALUE]);
+  });
+
+  test("源码不读 cookie（形态断言，非行为断言）", () => {
+    const topbarSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+
+    // 后端按「头 > query > cookie > 回退」算 current，cookie 与 current 可合法不一致；
+    // 组件读 cookie 就会自算「我是谁」，与后端解析链分叉。
+    // 注意：这里只证明源码里没出现 readSpaceCookie，不证明渲染时用了 current 的返回值。
+    expect(topbarSource).toContain("scope.currentSpaceId");
+    expect(topbarSource).not.toContain("readSpaceCookie");
+    // App.tsx 把后端响应的 current 写入该状态
+    expect(appSource).toContain("setCurrentSpaceId(data.current");
+    expect(appSource).not.toContain("setCurrentSpaceId(readSpaceCookie()");
+  });
+
+  test("useEffect 依赖数组为空（形态断言，非行为断言）", () => {
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const callIndex = appSource.indexOf("__appScopeRef.current?.refreshSpaces?.();");
+
+    expect(callIndex).toBeGreaterThan(-1);
+    expect(appSource).toContain("Object.assign(__appScope, { spaces, currentSpaceId, refreshSpaces })");
+    // __appScope 每帧重建：该 useEffect 的依赖数组必须为空，否则每次渲染都会重新拉取。
+    // 注意：这里只证明依赖数组是 []，不证明重渲染时 fetch 真的只被调用了一次。
+    const effectTail = appSource.slice(callIndex, appSource.indexOf("\n", callIndex) + 200);
+    expect(effectTail.match(/\}, (\[[^\]]*\])\);/)?.[1]).toBe("[]");
+  });
+
+  test("源码把空间状态列进顶栏 memo 输入（形态断言，非行为断言）", () => {
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const topbarInputs = viewSource.match(/<AppTopbar\s[\s\S]*?inputs=\{\[[\s\S]*?\]\}/)?.[0] ?? "";
+
+    // 顶栏经 MemoizedViewSection 记忆化：spaces/currentSpaceId 不进 inputs，
+    // 拉取完成后 memo 判定输入未变 → 跳过重渲染 → 选择器停在空列表。
+    // 注意：这里只证明两个字段出现在 inputs 数组文本里，
+    // 不证明 memo 比较器实际因此返回 false（真实重渲染行为由 T5 的 e2e 承载）。
+    expect(topbarInputs).toContain("__appScope.spaces");
+    expect(topbarInputs).toContain("__appScope.currentSpaceId");
+  });
+
+  test("新建空间成功后立即切换到新空间", async () => {
+    const requested: string[] = [];
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const fetchStub = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        json: async () => ({ id: "新空间-id", name: "新空间", createdAt: "2026-01-04" })
+      };
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const { createSpaceThenSwitch } = await loadTopbar();
+
+    await createSpaceThenSwitch("新空间", { requestSwitchSpace: (id: string) => requested.push(id) });
+    vi.unstubAllGlobals();
+
+    expect(fetchStub).toHaveBeenCalledTimes(1);
+    expect(calls[0].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ name: "新空间" });
+    // 建完必须切到新建返回的 id，而不是停在原空间
+    expect(requested).toEqual(["新空间-id"]);
+  });
+});
+
+// 导入空间走真实网络请求（fetch + ZIP 二进制体），单元测试里不重放整条链路：
+// 桩掉 spaceClient 的 importSpaceArchive，只留 appTopbar 自己那一层的编排（切空间 / 报错提示）。
+// vi.mock 被提升到文件顶部，故对上面的用例同样生效 —— 那里只用到 createSpace 的透传原样。
+const importSpaceArchiveMock = vi.hoisted(() => vi.fn());
+vi.mock("./spaceClient", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./spaceClient")>()),
+  importSpaceArchive: importSpaceArchiveMock
+}));
+
+// 导出的落盘分支（showSaveFilePicker / 浏览器下载）依赖真实浏览器 API，node 环境跑不了：
+// 只桩掉 saveLazyBlobFile，直测 appTopbar 交给它的那份 options。
+const saveLazyBlobFileMock = vi.hoisted(() => vi.fn());
+vi.mock("./fileIO", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./fileIO")>()),
+  saveLazyBlobFile: saveLazyBlobFileMock
+}));
+
+describe("空间导入导出按钮", () => {
+  // 与上方「顶栏空间选择器」同一 TDZ 规避（appTopbar 经 model-node-ops 间接 import model.ts）
+  const loadTopbar = () => import("./appExtracted/appTopbar");
+
+  beforeEach(() => {
+    importSpaceArchiveMock.mockReset();
+    saveLazyBlobFileMock.mockReset();
+  });
+
+  // 提示桩按用例装、用例后卸：直接赋值会把这个全局改脏，
+  // 后面追加的用例只能对着一个死数组断言（表现为「看不到文本」而非响亮失败）。
+  // 用 unstubAllGlobals 而非 delete —— 后者会拆掉 test-setup.ts 装的桩。
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("导入成功后先刷列表再切到新空间", async () => {
+    const { importSpaceArchiveFromFile } = await loadTopbar();
+    importSpaceArchiveMock.mockResolvedValue({
+      space: { id: "新空间", name: "新空间", createdAt: "2026-01-01T00:00:00.000Z" },
+      spaces: []
+    });
+    // 两步收尾共用一条序列：既钉住「刷新列表被调用」，也钉住「在切换之前」
+    const order: string[] = [];
+
+    await importSpaceArchiveFromFile(new File([new Uint8Array([1])], "甲.zip"), {
+      requestSwitchSpace: (id: string) => order.push(`switch:${id}`),
+      refreshSpaces: async () => {
+        order.push("refresh");
+      }
+    });
+
+    expect(importSpaceArchiveMock).toHaveBeenCalledTimes(1);
+    // 与「新建空间」按钮同一收尾：导入完必须切过去。切换是硬重载，
+    // 用户若在有未保存修改时取消，列表也必须已经含新空间 —— 故刷新在前。
+    expect(order).toEqual(["refresh", "switch:新空间"]);
+  });
+
+  test("导入失败时提示且不切换", async () => {
+    const { importSpaceArchiveFromFile } = await loadTopbar();
+    importSpaceArchiveMock.mockRejectedValue(new Error("zip 文件格式不正确。"));
+    const requested: string[] = [];
+    const messages: string[] = [];
+    vi.stubGlobal("showGlobalMessage", (text: string) => messages.push(text));
+
+    await importSpaceArchiveFromFile(new File([new Uint8Array([1])], "坏.zip"), {
+      requestSwitchSpace: (id: string) => requested.push(id)
+    });
+
+    expect(requested).toEqual([]);
+    expect(messages.join("\n")).toContain("zip 文件格式不正确。");
+  });
+
+  test("刷新列表失败不改归因为「导入失败」，且仍切到新空间", async () => {
+    const { importSpaceArchiveFromFile } = await loadTopbar();
+    importSpaceArchiveMock.mockResolvedValue({
+      space: { id: "新空间", name: "新空间", createdAt: "2026-01-01T00:00:00.000Z" },
+      spaces: []
+    });
+    const requested: string[] = [];
+    const messages: string[] = [];
+    vi.stubGlobal("showGlobalMessage", (text: string) => messages.push(text));
+
+    await importSpaceArchiveFromFile(new File([new Uint8Array([1])], "甲.zip"), {
+      refreshSpaces: async () => {
+        throw new Error("读取空间列表失败。");
+      },
+      requestSwitchSpace: (id: string) => requested.push(id)
+    });
+
+    // 导入本身成功了：空间已在服务端建出来，不能报「导入失败」让用户以为没导入，
+    // 更不能因为列表没刷新成功就把这个已建好的空间晾着不切过去
+    expect(messages.join("\n")).not.toContain("导入空间失败");
+    expect(requested).toEqual(["新空间"]);
+  });
+
+  // 撞车询问的四个分支：覆盖 / 改名 / 放弃 / 问不了。空间名唯一性是后端判的，
+  // 这里只钉前端编排：问谁、带什么重发、放弃时不许有任何副作用。
+  const conflictError = async (spaceName = "甲", conflictId = "甲-id") => {
+    const { SPACE_NAME_DUPLICATE } = await import("./spaceClient");
+    return Object.assign(new Error(`空间名「${spaceName}」已存在。`), {
+      code: SPACE_NAME_DUPLICATE,
+      spaceName,
+      conflictId
+    });
+  };
+
+  test("导入撞车 → 确定覆盖：带 mode=overwrite 重发并切过去", async () => {
+    const { importSpaceArchiveFromFile } = await loadTopbar();
+    importSpaceArchiveMock
+      .mockRejectedValueOnce(await conflictError())
+      .mockResolvedValueOnce({ space: { id: "甲", name: "甲", createdAt: "2026-01-01T00:00:00.000Z" }, spaces: [] });
+    const asked: string[] = [];
+    vi.stubGlobal("showGlobalConfirm", async (text: string) => {
+      asked.push(text);
+      return true;
+    });
+    vi.stubGlobal("showGlobalPrompt", async () => {
+      throw new Error("选了覆盖就不该再弹改名框");
+    });
+    const requested: string[] = [];
+
+    await importSpaceArchiveFromFile(new File([new Uint8Array([1])], "甲.zip"), {
+      requestSwitchSpace: (id: string) => requested.push(id),
+      refreshSpaces: async () => {}
+    });
+
+    // 询问框必须指名道姓：不说清撞的是哪个空间，用户没法判断「覆盖」会毁掉什么
+    expect(asked.join("\n")).toContain("甲");
+    expect(importSpaceArchiveMock.mock.calls[0][1]).toEqual({});
+    expect(importSpaceArchiveMock.mock.calls[1][1]).toEqual({ mode: "overwrite" });
+    expect(requested).toEqual(["甲"]);
+  });
+
+  test("导入撞车 → 取消覆盖后改名：带 mode=rename + 新名重发，建议名跳过已占用", async () => {
+    const { importSpaceArchiveFromFile } = await loadTopbar();
+    importSpaceArchiveMock
+      .mockRejectedValueOnce(await conflictError())
+      .mockResolvedValueOnce({ space: { id: "甲-3", name: "甲-3", createdAt: "2026-01-01T00:00:00.000Z" }, spaces: [] });
+    vi.stubGlobal("showGlobalConfirm", async () => false);
+    const prompted: Array<[string, string | undefined]> = [];
+    vi.stubGlobal("showGlobalPrompt", async (text: string, value?: string) => {
+      prompted.push([text, value]);
+      return value ?? "";
+    });
+    const requested: string[] = [];
+
+    await importSpaceArchiveFromFile(new File([new Uint8Array([1])], "甲.zip"), {
+      spaces: [
+        { id: "甲", name: "甲", createdAt: "2026-01-01" },
+        { id: "甲-2", name: "甲-2", createdAt: "2026-01-01" }
+      ],
+      requestSwitchSpace: (id: string) => requested.push(id),
+      refreshSpaces: async () => {}
+    });
+
+    // 建议值跳过已被占用的「甲-2」，否则用户点确定就得再撞一次（后端仍会判重）
+    expect(prompted[0]?.[1]).toBe("甲-3");
+    expect(importSpaceArchiveMock.mock.calls[1][1]).toEqual({ mode: "rename", name: "甲-3" });
+    expect(requested).toEqual(["甲-3"]);
+  });
+
+  test("导入撞车 → 覆盖被否且改名框取消：不重发、不切换、不提示成功", async () => {
+    const { importSpaceArchiveFromFile } = await loadTopbar();
+    importSpaceArchiveMock.mockRejectedValueOnce(await conflictError());
+    vi.stubGlobal("showGlobalConfirm", async () => false);
+    vi.stubGlobal("showGlobalPrompt", async () => null);
+    const requested: string[] = [];
+
+    await importSpaceArchiveFromFile(new File([new Uint8Array([1])], "甲.zip"), {
+      requestSwitchSpace: (id: string) => requested.push(id),
+      refreshSpaces: async () => {}
+    });
+
+    expect(importSpaceArchiveMock).toHaveBeenCalledTimes(1);
+    expect(requested).toEqual([]);
+  });
+
+  test("导入撞车但没有询问框可用：照常报「已存在」，不静默吞掉", async () => {
+    const { importSpaceArchiveFromFile } = await loadTopbar();
+    importSpaceArchiveMock.mockRejectedValueOnce(await conflictError());
+    const messages: string[] = [];
+    vi.stubGlobal("showGlobalMessage", (text: string) => messages.push(text));
+    const requested: string[] = [];
+
+    await importSpaceArchiveFromFile(new File([new Uint8Array([1])], "甲.zip"), {
+      requestSwitchSpace: (id: string) => requested.push(id)
+    });
+
+    // 静默返回会表现成「选完文件什么都没发生」——那是最难查的一类
+    expect(messages.join("\n")).toContain("已存在");
+    expect(requested).toEqual([]);
+  });
+
+  test("suggestSpaceName：跳过已占用的 -2/-3…，无占用时从 -2 起", async () => {
+    const { suggestSpaceName } = await loadTopbar();
+    const space = (name: string) => ({ id: name, name, createdAt: "2026-01-01" });
+
+    expect(suggestSpaceName("甲", [space("甲"), space("甲-2"), space("甲-3")])).toBe("甲-4");
+    expect(suggestSpaceName("甲", [space("甲")])).toBe("甲-2");
+    expect(suggestSpaceName("甲", undefined)).toBe("甲-2");
+  });
+
+  test("导出把当前空间名当文件名，且不传自造 pickerId", async () => {
+    saveLazyBlobFileMock.mockResolvedValue(true);
+    const { exportCurrentSpace } = await loadTopbar();
+    const { exportSpaceArchive } = await import("./spaceClient");
+
+    const ok = await exportCurrentSpace({
+      spaces: [{ id: "甲", name: "甲的空间", createdAt: "2026-01-01" }],
+      currentSpaceId: "甲"
+    });
+
+    const options = saveLazyBlobFileMock.mock.calls[0]?.[0] as Record<string, any>;
+    expect(ok).toBe(true);
+    expect(options.filename).toBe("甲的空间.zip");
+    // zip 的字节由 spaceClient.exportSpaceArchive 现取，不在点按钮时预取
+    expect(options.loadBlob).toBe(exportSpaceArchive);
+    // 缺省 pickerId 才会共享「上次另存目录」；传自造 id 会另开一个记忆槽
+    expect("pickerId" in options).toBe(false);
+  });
+
+  test("导出文件名在空间名取不到时回退到空间 id 或默认名", async () => {
+    saveLazyBlobFileMock.mockResolvedValue(true);
+    const { exportCurrentSpace } = await loadTopbar();
+
+    // currentSpaceId 不在 spaces（列表未加载 / 后端回退）：退回 id
+    await exportCurrentSpace({ spaces: [], currentSpaceId: "甲" });
+    // 两者都没有：退回「空间」
+    await exportCurrentSpace({});
+
+    expect(saveLazyBlobFileMock.mock.calls.map((call) => (call[0] as Record<string, any>).filename)).toEqual([
+      "甲.zip",
+      "空间.zip"
+    ]);
+  });
+
+  test("导出失败时提示且返回 false", async () => {
+    saveLazyBlobFileMock.mockRejectedValue(new Error("导出空间压缩包失败。"));
+    const { exportCurrentSpace } = await loadTopbar();
+    const messages: string[] = [];
+    vi.stubGlobal("showGlobalMessage", (text: string) => messages.push(text));
+
+    const ok = await exportCurrentSpace({ spaces: [], currentSpaceId: "甲" });
+
+    expect(ok).toBe(false);
+    expect(messages.join("\n")).toContain("导出空间压缩包失败。");
+  });
+
+  test("导出成功时提示（带空间名）；用户取消另存为时不提示", async () => {
+    const { exportCurrentSpace } = await loadTopbar();
+    const messages: string[] = [];
+    vi.stubGlobal("showGlobalMessage", (text: string) => messages.push(text));
+
+    saveLazyBlobFileMock.mockResolvedValue(true);
+    const ok = await exportCurrentSpace({
+      spaces: [{ id: "甲", name: "甲的空间", createdAt: "2026-01-01T00:00:00.000Z" }],
+      currentSpaceId: "甲"
+    });
+    expect(ok).toBe(true);
+    expect(messages.join("\n")).toContain("已导出空间「甲的空间」");
+
+    // 取消另存为：saveLazyBlobFile 返回 false 且不抛 —— 那是用户意图，报「已导出」是假话
+    messages.length = 0;
+    saveLazyBlobFileMock.mockResolvedValue(false);
+    const cancelled = await exportCurrentSpace({ spaces: [], currentSpaceId: "甲" });
+    expect(cancelled).toBe(false);
+    expect(messages).toEqual([]);
+  });
+
+  // 形态断言，非行为断言：只证明两个按钮那一行源码还在 / 没被加回去，
+  // 不证明浏览模式下点击真的被挡住（本仓 node 环境不渲染 React，见上方 describe 的说明）。
+  test("导出按钮不禁用、导入按钮禁用（形态断言，非行为断言）", () => {
+    const topbarSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
+    const buttonBlock = (label: string) =>
+      topbarSource.match(new RegExp(`<button[^>]*aria-label="${label}"[\\s\\S]*?</button>`))?.[0] ?? "";
+
+    // 导出是纯读动作，对齐既有导出菜单（exportSvg/exportEFile/CimFile/JsonFile 整段无 isBrowseMode 门控）；
+    // 钉的是「不能按浏览模式门控」，不是「不能有 disabled」—— 将来加别的合法禁用条件不该被这条打红
+    expect(buttonBlock("导出空间")).toContain('className="topbar-primary-button"');
+    expect(buttonBlock("导出空间")).not.toContain("isBrowseMode");
+    // 导入会切空间 + 硬重载，浏览模式下必须挡住；顺手删掉也红
+    expect(buttonBlock("导入空间")).toContain("disabled={scope.isBrowseMode}");
+  });
+
+  // 形态断言，非行为断言：新建空间失败后的提示埋在未导出的组件闭包里，
+  // 本仓 node 测试环境不渲染 React（见上方 describe 的说明），点击链由 T5 e2e 承载。
+  // 这里只证明那几行源码还在 —— 它挡不住「catch 还在但内容写错」，也不证明运行时真的提示。
+  test("新建空间失败时有提示且不卡 loading（形态断言，非行为断言）", () => {
+    const topbarSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
+    const submitCreate = topbarSource.match(/const submitCreate = async \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? "";
+
+    expect(submitCreate).toContain("catch (error)");
+    expect(submitCreate).toContain("showSpaceActionMessage(`新建空间失败：");
+    // 无论成败都要复位 loading，否则 Modal 卡在确认按钮转圈
+    expect(submitCreate).toContain("setCreating(false)");
   });
 });

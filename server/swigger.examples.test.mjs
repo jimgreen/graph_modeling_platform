@@ -277,9 +277,42 @@ function expectFor(ep, ex) {
     // root 不可删 → 400
     return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
   }
+  if (p === apiPath("/images/{id}") && ep.method === "DELETE") {
+    // 示例 id 不存在 → 404
+    return { status: 404, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
   if (p === apiPath("/images/{id}")) {
     // 示例 id 为空 → 不存在 → 404
     return { status: 404, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  // 两条导入：示例为「空包」→ 400（不污染同空间后续用例的数据）
+  if (p === apiPath("/icon-library/import")) return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+  if (p === apiPath("/image-library/import")) return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+
+  // 空间管理（管理面，与「某一空间的数据」无关）
+  if (p === apiPath("/spaces") && ep.method === "GET") return { status: 200, check: (r) => {
+    expect(r.json.spaces).toBeInstanceOf(Array);
+    expect(typeof r.json.current).toBe("string");
+  } };
+  if (p === apiPath("/spaces") && ep.method === "POST") return { status: 200, check: (r) => {
+    expect(r.json.id).toBeTruthy();
+    expect(r.json.pinned).toBe(false);
+  } };
+  if (p === apiPath("/spaces") && ep.method === "PUT") {
+    // 示例指向本用例内尚未建出的空间 → 400（每个用例重建 dataDir，不依赖前一个用例的副作用）
+    return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  if (p === apiPath("/spaces") && ep.method === "DELETE") {
+    // 示例指向 default（pinned）→ 400，空间不被真删
+    return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  // 导出/导入**不**在派发层短路：示例不带空间标识 → 取 Cookie/回退首个空间（default），照常 200。
+  if (p === apiPath("/spaces/export")) {
+    return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
+  }
+  if (p === apiPath("/spaces/import")) {
+    // 示例 body 是字面量 "<binary zip>"（非 zip）→ 400，**不会**新建空间（与 /schemes/import 同款写法）
+    return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
   }
 
   // 方案域（内部）
