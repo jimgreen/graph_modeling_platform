@@ -1826,10 +1826,11 @@ describe("SVG export", () => {
 
     expect(defs).toContain('<style type="text/css"><![CDATA[');
     expect(defs).toContain("symbol{overflow:visible}");
-    expect(defs).toContain(".kv10{fill:#ff0000;stroke:#ff0000;stroke-width:1;color:#ff0000}");
-    expect(defs).toContain(".lkv10{fill:none;stroke:#ff0000;color:#ff0000}");
-    expect(defs).toContain(".dcv750{fill:#00aa88;stroke:#00aa88;stroke-width:1;color:#00aa88}");
-    expect(defs).toContain(".ldcv750{fill:none;stroke:#00aa88;color:#00aa88}");
+    // 电压类规则改为单一 token 派生：字面色只写给 --c-<类名>，stroke/color/fill 全走 var()
+    expect(defs).toContain(".kv10{--c-kv10:#ff0000;stroke:var(--c-kv10);color:var(--c-kv10);fill:var(--c-kv10)}");
+    expect(defs).toContain(".lkv10{--c-lkv10:#ff0000;fill:none;stroke:var(--c-lkv10);color:var(--c-lkv10)}");
+    expect(defs).toContain(".dcv750{--c-dcv750:#00aa88;stroke:var(--c-dcv750);color:var(--c-dcv750);fill:var(--c-dcv750)}");
+    expect(defs).toContain(".ldcv750{--c-ldcv750:#00aa88;fill:none;stroke:var(--c-ldcv750);color:var(--c-ldcv750)}");
     expect(defs).toContain('stroke="#ff0000"');
     expect(svg).toContain('id="ac-source-10" class="kv10"');
     expect(svg).toContain('id="ac-bus-10" class="kv10"');
@@ -1883,7 +1884,8 @@ describe("SVG export", () => {
     expect(acLoadTag).toContain('vbase="10"');
     expect(acSourceTag).not.toContain("kv35");
     expect(acLoadTag).not.toContain("kv35");
-    expect(svg).toContain(".kv10{fill:#aa0000;stroke:#aa0000;stroke-width:1;color:#aa0000}");
+    // 电压类规则改为单一 token 派生：字面色只写给 --c-kv10，其余走 var()
+    expect(svg).toContain(".kv10{--c-kv10:#aa0000;stroke:var(--c-kv10);color:var(--c-kv10);fill:var(--c-kv10)}");
   });
 
   test("keeps per-terminal voltage metadata only for mixed-voltage devices in voltage color mode", () => {
@@ -1909,7 +1911,8 @@ describe("SVG export", () => {
     expect(uniformTag).toContain('voltage-type="ac"');
     expect(uniformTag).not.toContain("vbase-");
     expect(uniformTag).not.toContain("voltage-type-");
-    expect(mixedTag).toContain('class="dcv750"');
+    // 多端子器件 <use> 现挂全部电端子电压类（去重后空格分隔），不再只挂器件级单类
+    expect(mixedTag).toContain('class="dcv750 dcv1500"');
     expect(mixedTag).toContain('vbase-1="750"');
     expect(mixedTag).toContain('voltage-type-1="dc"');
     expect(mixedTag).toContain('vbase-2="1500"');
