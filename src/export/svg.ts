@@ -824,11 +824,23 @@ ${rules.join("\n")}
           imageHref && allowNodeImage && symbolNode.terminals.length === 0 && !isStaticNode(symbolNode)
             ? `<rect x="${-symbolNode.size.width / 2}" y="${-symbolNode.size.height / 2}" width="${symbolNode.size.width}" height="${symbolNode.size.height}" rx="8" fill="#ffffff" stroke="none"/>`
             : "";
+        // terminal 锚点：每个电端子在引线落点（terminalRenderLocalPoint）画一个隐藏圆点，
+        // 供其他工具定位连接点。默认 display="none" 呈现属性隐藏；CSS 规则恒胜呈现属性，
+        // 下游一行 .terminal-anchor{display:inline} 即可显示。terminal-index 与 <use> 的 vbase-N 元数据同基数（电端子序）。
+        const terminalAnchorMarkup = exportElectricTerminals(symbolNode)
+          .map((terminal, index) => {
+            const nodeScaleX = getNodeScaleX(symbolNode);
+            const nodeScaleY = getNodeScaleY(symbolNode);
+            const renderPoint = terminalRenderLocalPoint(terminal, symbolNode.size, nodeScaleX, nodeScaleY, symbolNode.kind);
+            return `<circle class="terminal-anchor" cx="${formatSvgNumber(renderPoint.x)}" cy="${formatSvgNumber(renderPoint.y)}" r="4" display="none" terminal-id="${escapeXml(terminal.id)}" terminal-index="${index + 1}" node-number="${escapeXml(terminal.nodeNumber ?? "")}"/>`;
+          })
+          .join("\n  ");
         return `<title>${escapeXml(template?.label ?? exportNodeType(symbolNode))}</title>
   <g transform="${geometryTransform}">
   ${glyphMarkup}
   ${glyphTextMarkup}
   ${connectorMarkup}
+  ${terminalAnchorMarkup}
   ${isStaticNode(symbolNode) ? imageMarkup : ""}
   ${imageCoverMarkup}
   ${allowNodeImage && !isStaticNode(symbolNode) ? imageMarkup : ""}

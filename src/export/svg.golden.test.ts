@@ -9,7 +9,7 @@ export function hashSvg(text: string): string {
 }
 
 // 去 JSX 重构前的基线哈希：Task 11-12 重写 DeviceGlyph/staticRenderUtils 后输出必须逐字节一致。
-export const SVG_BASELINE_HASH = "0746af735d3a368e08f1487e9f59566e60ab336cbf7b829b902a84715f5cdae6";
+export const SVG_BASELINE_HASH = "c31821451ee2806caacea2c7878b52333f4ffbfcb7e7761e1f17ee6feb1ddbe7";
 
 describe("SVG 导出基线", () => {
   test("输出哈希与基线一致", () => {
