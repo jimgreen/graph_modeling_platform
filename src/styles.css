@@ -1430,6 +1430,7 @@ button:not(.ant-btn):disabled {
   width: 36px;
   min-width: 36px;
   padding: 0;
+  border: none;
 }
 
 .topbar-primary-button {
