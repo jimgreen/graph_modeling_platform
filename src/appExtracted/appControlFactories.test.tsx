@@ -542,6 +542,30 @@ describe("programmaticUpdateDeviceProperty", () => {
     expect(calls.updatedNode.params).toEqual({ a: 1, b: 2 });
   });
 
+  test("开关类 params 写 status/closed_status 单边时对称联动", () => {
+    const sw = createDefaultNode("ac-switch", { x: 100, y: 100 });
+    sw.params.closed_status = "1";
+    const line = createDefaultNode("dc-routable-line", { x: 240, y: 100 });
+    const calls: { updatedNode: any } = { updatedNode: null };
+    const update = createProgrammaticUpdateDeviceProperty({
+      nodes: [sw, line],
+      pushUndoSnapshot: vi.fn(),
+      updateGraphNodeById: (_id: string, updater: (n: any) => any) => {
+        calls.updatedNode = updater(sw);
+      }
+    });
+
+    // 单边写 status → closed_status 联动
+    update(sw.id, "model", { params: { status: "0" } });
+    expect(calls.updatedNode.params.status).toBe("0");
+    expect(calls.updatedNode.params.closed_status).toBe("0");
+
+    // 单边写 closed_status → status 联动
+    update(sw.id, "model", { params: { closed_status: "1" } });
+    expect(calls.updatedNode.params.closed_status).toBe("1");
+    expect(calls.updatedNode.params.status).toBe("1");
+  });
+
   test("图元不存在抛 not-found", () => {
     const { scope } = createUpdateMockScope(["n1"]);
     const update = createProgrammaticUpdateDeviceProperty(scope);

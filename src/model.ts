@@ -7708,6 +7708,30 @@ export function getSwitchVisualState(node: ModelNode): "open" | "closed" {
   return status === "0" ? "open" : "closed";
 }
 
+// 开关类设备 status ↔ closed_status 对称同写（数据不变量）：
+// 画布/导出/量测渲染只认 closed_status（getSwitchVisualState / resolveDeviceStateVisual），
+// 而 status 行的下拉标签是“闭合/打开”，用户习惯在此切状态；分叉即“切到打开仍显示闭合”。
+// dotImport 的既有约定就是两者同写，此函数把该不变量单源化，供各 UI 写入点（updateParam/
+// 批量/双击草稿/control）复用。patch 显式同时给两个值时尊重调用方（允许数据修复类分叉）。
+export function syncedSwitchStatusPatch(
+  kind: string,
+  params: Record<string, string>,
+  patch: Record<string, string>
+): Record<string, string> {
+  if (!switchingDeviceUsesClosedStatus(kind, params)) {
+    return patch;
+  }
+  const hasStatus = Object.prototype.hasOwnProperty.call(patch, "status");
+  const hasClosed = Object.prototype.hasOwnProperty.call(patch, "closed_status");
+  if (hasStatus && !hasClosed) {
+    return { ...patch, closed_status: patch.status };
+  }
+  if (hasClosed && !hasStatus) {
+    return { ...patch, status: patch.closed_status };
+  }
+  return patch;
+}
+
 export function isStaticKind(kind: DeviceKind): boolean {
   return kind.startsWith("static-");
 }

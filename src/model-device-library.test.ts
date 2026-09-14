@@ -117,6 +117,7 @@ import {
   normalizeDeviceStateDefinitions,
   normalizeDeviceStatusForE,
   resolveDeviceStateVisual,
+  syncedSwitchStatusPatch,
   nodeAllowsResizeTransform,
   ALLOW_RESIZE_TRANSFORM_PARAM,
   isCanvasNodeMovable,
@@ -1491,6 +1492,26 @@ test("creates load, line, and transformer electrical parameter defaults", () => 
   expect(getSwitchVisualState(dcBreaker)).toBe("open");
   delete dcBreaker.params.closed_status;
   expect(getSwitchVisualState(dcBreaker)).toBe("closed");
+});
+
+test("syncedSwitchStatusPatch：开关类 status ↔ closed_status 对称同写（渲染只认 closed_status）", () => {
+  const acSwitch = createDefaultNode("ac-switch", { x: 100, y: 100 });
+  // 单边写 status → 联动 closed_status 同值
+  expect(syncedSwitchStatusPatch(acSwitch.kind, acSwitch.params, { status: "0" }))
+    .toEqual({ status: "0", closed_status: "0" });
+  // 单边写 closed_status → 联动 status 同值
+  expect(syncedSwitchStatusPatch(acSwitch.kind, acSwitch.params, { closed_status: "0" }))
+    .toEqual({ closed_status: "0", status: "0" });
+  // patch 显式同时给两个值时尊重调用方（允许故意分叉，如数据修复）
+  expect(syncedSwitchStatusPatch(acSwitch.kind, acSwitch.params, { status: "1", closed_status: "0" }))
+    .toEqual({ status: "1", closed_status: "0" });
+  // 非开关类（母线）不改写
+  const bus = createDefaultNode("ac-bus", { x: 100, y: 100 });
+  expect(syncedSwitchStatusPatch(bus.kind, bus.params, { status: "0" }))
+    .toEqual({ status: "0" });
+  // patch 不含两者时原样返回
+  expect(syncedSwitchStatusPatch(acSwitch.kind, acSwitch.params, { rated_voltage: "35" }))
+    .toEqual({ "rated_voltage": "35" });
 });
 
 test("migrates saved transformer engineering fields to float definitions and numeric defaults", () => {
