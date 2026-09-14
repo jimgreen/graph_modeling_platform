@@ -1,14 +1,14 @@
 # SVG 导出：电压等级着色改由 class 驱动
 
 **日期**：2026-09-14
-**状态**：设计已确认，待实施
-**影响范围**：`src/export/svg.ts`、`src/DeviceGlyph.ts`、`src/svgExport.test.tsx`、`server/svgExport.test.mjs`
+**状态**：设计已确认，经两轮专业审查修订，待实施
+**影响范围**：`src/export/svg.ts`、`src/DeviceGlyph.ts`、`src/svgExportUtils.ts`、`src/stateIconDrawing.tsx`、`src/svgExport.test.tsx`、`server/svgExport.test.mjs`
 
 ---
 
 ## 1. 背景与目标
 
-前端导出的 SVG 里，电压等级着色**写死在 `<symbol>` 内部的 `fill`/`stroke` 呈现属性**上；挂在 `<use class="kv***">` 上的电压 class 完全不起作用。这导致下游系统无法通过覆盖 CSS class 动态修改电压等级配色 —— 他们只能拿到一份颜色被烤死的图。
+前端导出的 SVG 里，电压等级着色**写死在 `<symbol>` 内部的 `fill`/`stroke` 呈现属性**上；挂在 `<use class="kv***">` 上的电压 class 完全不起作用。下游系统无法通过覆盖 CSS 动态修改电压配色 —— 只能拿到一份颜色被烤死的图。
 
 **目标**：删除 `<symbol>` 内的电压等级着色，让电压配色**全部由 class 决定**，下游改一处 CSS 即可整体换色。
 
@@ -16,41 +16,79 @@
 
 ---
 
-## 2. 现状根因
+## 2. 现状与根因
 
 ### 2.1 颜色来源链路
 
 ```
-DeviceGlyph (src/DeviceGlyph.ts:107)
-  → getDeviceStrokeColor / getTerminalDisplayColor (src/model.ts:7601 / 7542)
-  → voltageLevelColor (src/model.ts:7512)
-  → VOLTAGE_LEVEL_COLORS 硬编码色表 (src/model.ts:7353-7370)
-  → renderSvgElementMarkup 写成 <symbol> 内的字面 fill=/stroke=
+stateVisual?.strokeColor || stateColor                    (DeviceGlyph.ts:106-107，最高优先)
+  ↓ 未命中时
+getDeviceStrokeColor (model.ts:7601)
+  ← params.foreground_color 优先 (model.ts:7610)
+  ← 电压色 voltageLevelColor (model.ts:7512)
+       ← params.vbase → deviceParamValue(params,"voltage_level") → rated_voltage → voltage (model.ts:7604-7608)
+       ← VOLTAGE_LEVEL_COLORS 硬编码色表 (model.ts:7353-7370)
+  ← 氢/热配色 → 端子类型色（兜底）
+  ↓
+renderSvgElementMarkup 写成 <symbol> 内的字面 fill=/stroke=
 ```
+
+部分图元另有覆盖层：`node.params.strokeColor` / `accentColor`（`DeviceGlyph.ts:180`、`:212`、`:217`）。
+
+写入点规模（实测穷举）：
+
+| 类别 | 数量 |
+|---|---|
+| `stroke: stroke`（电压色描边） | 60 行 |
+| `fill: stroke`（电压色当填充） | 23 处 |
+| 条件填充 `fill: closed ? stroke : "#ffffff"` | 1 处（`DeviceGlyph.ts:1362`） |
+| 字面 hex | 8 行 13 处 |
 
 ### 2.2 class 为何失效
 
-`svg.ts:503-517` 确实发出了 `.kv220{fill;stroke;stroke-width:1;color}` 这类规则，也确实把 class 挂到了 `<use>`（`svg.ts:769-771`、`:781`）和线路 `<path>`（`:575-592`）上。但：
+`svg.ts:503-517` 确实发出了 `.kv220{fill;stroke;stroke-width:1;color}` 规则，也确实把 class 挂到了 `<use>`（`:769-771`、`:781`）与线路 `<path>`（`:575-592`）上。但：
 
-- `<use class="kv220">` 上的 CSS 只能**继承**给它内部未声明颜色的元素；
-- `<symbol>` 内每个图形都带自己的 `fill=`/`stroke=` 呈现属性（元素自身值），**继承值永远不参与竞争**。
+- `.kvN` 规则挂在 `<use>` 上，只能作为**继承值**进入对应 symbol 内容；
+- `<symbol>` 内每个图形都带自己的 `fill=`/`stroke=` 呈现属性（元素自身值）→ **继承值永不参与竞争**。
 
 所以 class 完全空转。
 
-### 2.3 连带问题：symbol 按电压重复
+> **注意**：symbol 正文里的 class 只有 `bus-glyph` / `transformer-winding` / `model-hierarchy-icon` / `routable-line-device-glyph` 等，**不含任何 kv/dcv 类**。`.kvN` 规则不会「命中」symbol 内元素，它只作用于 `<use>` 自身。
 
-symbol 去重签名 = `symbolBaseId + viewBox + 渲染正文`（`svg.ts:749-757`）。正文含电压色 → 同种图元的每个电压色各生成一份 symbol。
+### 2.3 两级缓存都含电压色
 
-实测样本：
+symbol 去重有两级，**两级都把电压色算进键**：
+
+| 级别 | 位置 | 键 | 含色来源 |
+|---|---|---|---|
+| 快路径 | `svg.ts:744-746`（map 在 `:601`） | `symbolBaseId + viewBox + visualInputToken` | `svg.ts:630` `getTerminalDisplayColor`、`:640` `getDeviceStrokeColor` |
+| 签名 | `svg.ts:748-750`（map 在 `:600`） | `symbolBaseId + viewBox + 渲染正文` | 正文内的字面颜色 |
+
+实测后果：同种图元每个电压色各生成一份 symbol。
 
 | 样本 | symbol 数 | use 数 | 重复情况 |
 |---|---|---|---|
-| `新建模型.svg` | 8 | 7 | 负荷 ×3、开关 ×2、母线 ×2 |
 | `标准场站.svg` | 12 | 14 | 母线 ×2、负荷 ×2 |
+| `新建模型.svg` | 8 | 7 | 负荷 ×3、开关 ×2、母线 ×2 |
 
-### 2.4 难点：多端子器件
+### 2.4 多端子器件
 
-三绕组/两绕组主变的每个绕组、每根端子引线用的是**各自端子**的电压色（`DeviceGlyph.ts:1278`、`:1296`、`:1306` 的 `getTerminalDisplayColor`；引线见 `svg.ts:183`）。一个 `<use>` 只能提供一个继承色，表达不了同器件三色。
+三绕组/两绕组主变的每个绕组、每根端子引线用**各自端子**的电压色（`DeviceGlyph.ts:1278`、`:1296`、`:1306`；引线 `svg.ts:178-183`）。一个 `<use>` 只能提供一个继承色，表达不了同器件多色。
+
+另有跨文件同序不变量：绕组槽号来自 `DeviceGlyph.ts` 的 `terminals.slice(0,N)`，引线槽号来自 `svg.ts:178-183` 的 `node.terminals.map` —— **今天没有任何守卫**。
+
+### 2.5 既有缺陷：两条电压解析链不一致（本次必须先修）
+
+同一个节点的电压被算了两遍，两条链读的字段不同：
+
+| 链路 | 读取来源 | `ac-bus` 默认节点 `{vbase:"0", voltage_level:"10"}` 结果 |
+|---|---|---|
+| 图元着色 `getDeviceStrokeColor` | `vbase` → **`voltage_level`（snake）** → …（`model.ts:7604-7608`） | `"10"` → **#f97316 橙** |
+| 导出 class `nodeExportVoltageDescriptor` | 只读 `params.vbase` / `params.voltageLevel`（**camel，不认 snake**）（`svg.ts:381`、`:414`） | `"0"` → **`class="kv0"` 灰** |
+
+实测产物：`<use class="kv0">` + 正文 `<rect class="bus-glyph" fill="#f97316">`。
+
+**若不先对齐，把文件里任何元素改成 class 驱动都会改变可见颜色**（母线由橙变灰），截图链路（同一个 `buildSvgDocument`）同样。
 
 ---
 
@@ -60,25 +98,24 @@ symbol 去重签名 = `symbolBaseId + viewBox + 渲染正文`（`svg.ts:749-757`
 
 | 机制 | 结论 |
 |---|---|
-| 文档级 class 选择器命中 `<symbol>` 内部元素 | ✅ 命中 |
-| `circle:nth-of-type(N)` 命中 `<symbol>` 内部元素 | ✅ 命中 |
-| 无属性元素继承 `<use class="kvN">` 的 `stroke`/`fill`/`color` | ✅ 继承 |
+| 文档级 class 选择器命中 `<symbol>` 内部元素 | ✅ |
+| `circle:nth-of-type(N)` 命中 `<symbol>` 内部元素 | ✅ |
+| 无属性元素继承 `<use class="kvN">` 的 `stroke`/`fill`/`color` | ✅ |
 | `.kv1000 circle:nth-of-type(1)`（从 use 的类出发的后代组合器） | ❌ **不命中** |
-| `stroke="var(--t1)"`（呈现属性写 `var()`） | ✅ 生效 |
-| `style="stroke:var(--t1)"`（内联样式写 `var()`） | ✅ 生效 |
-| `<use style="--t1:var(--c1000)">` 间接引用 | ✅ 解析 |
-| `--c1000` 由 `<use>` 上的 `.kv1000` 类提供 | ✅ 解析 |
+| `stroke="var(--t1)"`（呈现属性写 `var()`） | ✅ |
+| `style="stroke:var(--t1)"`（内联样式写 `var()`） | ✅ |
+| `<use style="--t1:var(--c-kv1000)">` 二级间接引用 | ✅ |
 
-关键否定结论：**`<use>` 不是 shadow 内容的祖先**，任何从 use 上的类出发的关系选择器都失配；且 CSS 无法读取「元素 class 列表中的第 N 个」。因此「use 挂多个 kv 类 → 依次作用到第 N 个 nth-child」没有对应的 CSS 语法。
+关键否定结论：**`<use>` 不是 shadow 内容的祖先**，从 use 上的类出发的关系选择器一律失配；且 CSS 无法读取「元素 class 列表中的第 N 个」。因此「use 挂多个 kv 类 → 依次作用到第 N 个 nth-child」没有对应语法。
 
 **唯一可用的跨 `<use>` 传值通道是 CSS 自定义属性**（可继承）。
 
 ### 3.2 采用的机制
 
-**symbol 内按位置写 `var(--tN)`，`<use>` 上挂电压类并用 `style` 把槽接到电压色源。**
+**symbol 内按位置写 `var(--tN)`，`<use>` 挂电压类并用 `style` 给槽赋值。**
 
 ```svg
-<!-- 单电压器件：symbol 内不写任何颜色，靠继承 -->
+<!-- 单电压器件：symbol 内不写任何电压色，靠继承 -->
 <symbol id="symbol_ACRealBs_ac-bus_default" viewBox="-75 -18 150 36" overflow="visible">
   <title>交流母线</title>
   <g transform="rotate(0) scale(1 1)">
@@ -86,7 +123,7 @@ symbol 去重签名 = `symbolBaseId + viewBox + 渲染正文`（`svg.ts:749-757`
           fill="currentColor" stroke-width="0"/>
   </g>
 </symbol>
-<use class="kv1000" href="#symbol_ACRealBs_ac-bus_default" .../>
+<use class="kv10" href="#symbol_ACRealBs_ac-bus_default" .../>
 
 <!-- 多端子器件：symbol 内按位置消费槽变量 -->
 <symbol id="symbol_ACTransfomer3_ac-three-winding-transformer_default" viewBox="-75 -55 150 110" overflow="visible">
@@ -105,28 +142,37 @@ symbol 去重签名 = `symbolBaseId + viewBox + 渲染正文`（`svg.ts:749-757`
      href="#symbol_ACTransfomer3_ac-three-winding-transformer_default" .../>
 ```
 
-**不再需要**：nth-child 位置规则、位置类、CSS 位置规则段、引线容器改造、图元结构守卫测试。
+**不再需要**：nth-child 位置规则、位置类、引线容器改造。
 
-### 3.3 样式表
+### 3.3 样式表：单一 token 派生
 
 ```css
-/* 器件类：去掉 fill 与 stroke-width，新增 --c-<类名> 颜色源 */
-.kv1000  { stroke:#0e7490; color:#0e7490; --c-kv1000:#0e7490 }
-.dcv220  { stroke:#b91c1c; color:#b91c1c; --c-dcv220:#b91c1c }
+/* 器件类：去掉 stroke-width，其余全部由 --c-<类名> 派生 */
+.kv1000  { --c-kv1000:#0e7490; stroke:var(--c-kv1000); color:var(--c-kv1000); fill:var(--c-kv1000) }
+.dcv220  { --c-dcv220:#b91c1c; stroke:var(--c-dcv220); color:var(--c-dcv220); fill:var(--c-dcv220) }
 
-/* 线路类：形状不变，仅新增颜色源（下游按类覆盖时用） */
-.lkv1000 { fill:none; stroke:#0e7490; color:#0e7490 }
+/* 线路类：形状不变，同样加颜色源 */
+.lkv1000 { --c-lkv1000:#0e7490; fill:none; stroke:var(--c-lkv1000); color:var(--c-lkv1000) }
 ```
 
-相对现状的改动：
+改动与理由：
 
-| 改动 | 原因 |
+| 改动 | 理由 |
 |---|---|
-| `.kvN` / `.dcvN` 去掉 `fill` | 该规则会命中 `<symbol>` 内带该类的元素；保留 fill 会把白色本体（负荷三角、开关圆点、绕组内芯）填成电压色 |
-| `.kvN` / `.dcvN` 去掉 `stroke-width:1` | 无意义的副作用属性；无属性元素本来继承的默认值就是 1，去掉不改变现状 |
-| 新增 `--c-<类名>` | 给多端子器件的槽提供颜色源，使下游仍只需覆盖电压类一处 |
+| 去掉 `stroke-width:1` | **真空操作**（像素级实测对照一致）。stroke-width 可继承、就近祖先优先；class 上那个 1 只对完全不声明 stroke-width 的元素起作用，而那些元素的初始值也是 1 |
+| `stroke`/`color`/`fill` 改为引用 `--c-<类名>` | 下游只改 `--c-<类名>` 一处即可让描边、母线填充、绕组槽全部跟随；同时直接覆盖 `stroke:` 也仍然有效 |
+| `fill` 保留 | 实测全扫 `DEVICE_LIBRARY` 169 个 kind（91 个在电压模式带 kv 类）：**每个 path/circle/rect/ellipse/polygon/text 元素自身或祖先链上都有 fill，0 例外**。故保留 `fill` 不会波及白色本体 |
+| 变量名必须带类型前缀 | `--c-kv220` / `--c-dcv220`；否则交流 220 与直流 220 撞名 |
 
-**变量命名必须带类型前缀**（`--c-kv220` / `--c-dcv220`），否则交流 220 与直流 220 会撞到同一个变量名。
+### 3.4 失效模式（实测，无兜底值的后果）
+
+| 情形 | `stroke="var(--tN)"` | `fill="var(--tN)"` |
+|---|---|---|
+| 正常 | 正确电压色 | 正确电压色 |
+| 槽链到不存在的 `--c-kv999` | **静默继承 `<use>` 上的类色**（文档序最后一个匹配类） | 正常 |
+| `<use>` 上无任何 kv 类 | **元素不可见**（stroke 初始值是 `none`，不是黑） | **黑色**（fill 初始值黑） |
+
+**失效不报错、不掉黑，而是静默取错色或元素消失。** 因此 §5.4 的槽完整性是硬要求，不能靠「出错会看得见」。
 
 ---
 
@@ -134,29 +180,46 @@ symbol 去重签名 = `symbolBaseId + viewBox + 渲染正文`（`svg.ts:749-757`
 
 ### 4.1 类名（不变）
 
-| 类名 | 语义 | 挂载位置 |
+| 类名 | 语义 | 挂载元素 |
 |---|---|---|
-| `kv<N>` | 交流器件电压 | `<use>`、多端子器件的节点级部件 |
-| `dcv<N>` | 直流器件电压 | 同上 |
-| `lkv<N>` | 交流线路电压 | 线路 `<path>`、边界母线内连 `<line>` |
+| `kv<N>` | 交流器件电压 | `<use>` |
+| `dcv<N>` | 直流器件电压 | `<use>` |
+| `lkv<N>` | 交流线路电压 | 线路 `<path>`、边界母线内连 `<line>`（该元素同时带 `export-boundary-bus-internal-connector`） |
 | `ldcv<N>` | 直流线路电压 | 同上 |
 
 `<N>` 为电压值经 `exportVoltageClassSuffix` 归一化（非字母数字转 `_`），无电压时为 `0`。见 `svg.ts:384-388`。
 
+> **`<use>` 上的类是该器件全部端子电压类的去重集合**，不只是端子 1。见 §5.4。
+
 ### 4.2 下游覆盖方式
 
 ```css
-/* 一处改，全图该电压等级（含变压器第 N 绕组、母线填充）一起变 */
-.kv750 { stroke:#ff0000; color:#ff0000; --c-kv750:#ff0000 }
+/* 推荐：只改颜色源，全图该电压等级（描边 + 母线填充 + 变压器第 N 绕组槽）一起变 */
+.kv750  { --c-kv750:#ff0000 }
+.lkv750 { --c-lkv750:#ff0000 }   /* 线路单独一条，类名不同 */
+```
+
+或直接覆盖属性（对自带/可继承该属性的元素生效）：
+
+```css
+.kv750  { stroke:#ff0000; color:#ff0000 }
+.lkv750 { stroke:#ff0000 }
 ```
 
 或整体替换导出 SVG 的 `<style>` 块。
 
-### 4.3 槽变量（仅多端子器件）
+### 4.3 下游契约要点
+
+1. **覆盖 CSS 必须位于导出 SVG 内联 `<style>` 之后** —— 同特异性靠源序决胜。
+2. **两条独立通道**：`--c-<类名>` 驱动槽与 `currentColor`；`stroke` / `fill` 只作用于自带或可继承该属性的元素。只改 `stroke:` 会「一半变一半不变」（母线体、变压器绕组/引线不变）。
+3. **器件类与线路类必须分别覆盖**：`.kvN` 不覆盖 `.lkvN`。
+4. **规则形状变更声明**：旧规则的 `fill` / `stroke-width:1` 在实践上是惰性的（从未生效过），故不构成实质破坏；但 `.kvN` 现为 `--c-<类名>` 的定义处，**覆盖须整块替换，不能只覆盖单个属性就指望全部生效**。
+
+### 4.4 槽变量（仅多端子器件）
 
 | 变量 | 含义 | 定义位置 |
 |---|---|---|
-| `--t<N>` | 第 N 个端子的电压色 | `<use>` 的 `style` |
+| `--t<N>` | 第 N 个端子的电压色 | `<use>` 的 `style` 属性 |
 | `--c-<类名>` | 该类名的颜色源，如 `--c-kv750` | 电压类规则 |
 
 槽变量只在多端子器件的 `<use>` 上出现，单电压器件不带。
@@ -169,58 +232,85 @@ symbol 去重签名 = `symbolBaseId + viewBox + 渲染正文`（`svg.ts:749-757`
 
 | 部件角色 | 改法 | 判定依据 |
 |---|---|---|
-| 单电压器件的电压**描边** | 删掉颜色属性，靠 `<use class="kvN">` 继承 | 颜色来自 `getDeviceStrokeColor` |
-| 电压**填充**（母线体等） | `fill="currentColor"` | 代码里把电压色当 fill 用（如 `fill: stroke`） |
-| 多端子器件的**节点级**部件 | `stroke="var(--t1)"` | 颜色来自 `getDeviceStrokeColor` 且器件有多个端子电压 |
-| 多端子器件的**第 N 端子**部件（绕组、引线） | `stroke="var(--t{N})"` | 颜色来自 `getTerminalDisplayColor(node, terminal_i)` |
+| 单电压器件的电压**描边** | 删掉 `stroke` 属性，靠 `<use class="kvN">` 继承 | 颜色来自 `getDeviceStrokeColor` 且未被 `foregroundColor` / `params.strokeColor` / `stateVisual` 覆盖 |
+| 电压**填充**（见 §5.3） | `fill="currentColor"`（多端子器件用 `var(--t1)`） | 代码里把电压色当 fill 用 |
+| 多端子器件的**节点级**部件 | `stroke="var(--t1)"` | 器件有多个端子电压 |
+| 多端子器件的**第 N 端子**部件（绕组、引线） | `stroke="var(--t{N})"` | 颜色来自 `getTerminalDisplayColor(node, terminals[i])` |
+| routable-line 设备（`DeviceGlyph.ts:174`） | 删属性靠继承 | 正文单色，无引线槽（`svg.ts:171` 直接 return） |
 
-### 5.2 固定色一律不动
+**例外行（必须保持字面，不得改为继承）**：
+
+| 例外 | 位置 | 说明 |
+|---|---|---|
+| model-hierarchy 图元正文 | `DeviceGlyph.ts:180`、`:212`、`:217` | 正文色取自 `node.params.strokeColor` / `accentColor`，**不是电压色**。实测 `<use class="dcv220">` 的正文是 `<g class="model-hierarchy-icon" stroke="#2563eb">`，该蓝来自 params 默认值。删成继承会把蓝变电压色 → 视觉回归。**同一 symbol 内的引线仍是电压色**，一次二分覆盖不了，必须逐元素判断 |
+
+**判定原则**：颜色**最终来源**是电压色（`getDeviceStrokeColor` 且未被上述覆盖层拦截）→ 走新机制；否则一律保留原样。
+
+### 5.2 固定色清单（保持字面）
 
 | 类别 | 位置 |
 |---|---|
-| 白色/浅色本体 | `DeviceGlyph.ts:108-133` 的 `baseFill` 系列 |
-| `fill="none"` | 开关、线路类图元的组属性 |
-| 端子白点、开关圆点 | `DeviceGlyph.ts:1318` 等 |
-| 开合状态色 | `stateVisual.strokeColor` / `stateVisual.fillColor` |
+| 白色/浅色本体 | `DeviceGlyph.ts:108-133`（`baseFill` 三元链 + `:133` `fill`) |
+| 端子白点、开关圆点 | `DeviceGlyph.ts:1318` |
+| 其它字面 hex | `DeviceGlyph.ts:633`(×3)、`:656`(×2)、`:734`、`:1298`、`:1328`(×2)、`:1338`(×2) |
+| 开合状态色 | `stateVisual.strokeColor` / `fillColor`（`DeviceGlyph.ts:106-107`，优先于电压色） |
 | 用户自定义色 | `node.params.strokeColor` / `accentColor` / `foregroundColor` |
-| 文字色 | 标签、状态文字 |
+| 标签层文字色 | `svgExportUtils.ts:47`、`:60`（取自节点文字色） |
+| 背景页框 / 画布底色 | `svg.ts:256`（`#94a3b8`）、`svg.ts:834` |
+| 量测层 | 色源为 `measurementConfig`，**不受影响** |
 
-判定原则：**颜色来源是 `getDeviceStrokeColor` / `getTerminalDisplayColor` → 电压色，走新机制；其余一律保留原样。**
+> **修订**：原先「文字色不动」的说法不准确。**标签层**文字色不动；但**图元内部的缩写标记文字**（AC/DC/H2/P）在电压模式下就是电压色，属 §5.3 电压填充，必须改。
 
-### 5.3 多端子器件的强制要求
+### 5.3 电压填充清单（去 fill 后忘改会掉色，共 3 类）
 
-多端子器件的 `<use>` 上挂了多个电压类，它在样式表中同时命中多条规则，自身 `stroke` 取值由规则顺序决定（不可依赖）。因此：
+| 位置 | 形态 |
+|---|---|
+| 母线体（`staticRenderUtils.ts:211`，经 `DeviceGlyph.ts:957` / `:1120` / `:1215` 调 `renderBusGlyphRect(w,h,stroke)`） | `fill: color` = 电压色 |
+| 圆点（`DeviceGlyph.ts:1207`、`:1281`） | `fill: stroke` |
+| **21 处文本填充**（`DeviceGlyph.ts:768`、`775`、`777`、`836`、`842`、`848`、`856`、`866`、`882`、`892`、`908`、`914`、`920`、`926`、`933`、`939`、`949`、`1063`、`1075`、`1441`、`1447`） | `uprightText(..., { fill: stroke })` |
+| 箱式断路器条件填充（`DeviceGlyph.ts:1362`） | `fill: closed ? stroke : "#ffffff"` |
 
-> **多端子器件的每一个电压着色部件都必须显式写 `var(--tN)`，不得依赖继承。**
+全部改为 `fill="currentColor"`；多端子器件用 `fill="var(--t1)"`。
 
-当前需要处理的多端子图元仅 3 个：
+### 5.4 多端子器件的硬要求
+
+1. **`<use>` 必须挂该器件全部电端子的电压类（去重）**，否则 `var(--c-kvN)` 无从解析。
+2. **每个端子电压都必须调用 `addVoltageStyleRule`**，否则 `--c-kvN` 缺失（见 §3.4，会静默取错色）。触发路径：调色板外的历史/非标电压值。
+3. **每个端子电压着色部件都必须显式写 `var(--tN)`，不得依赖继承** —— 多端子 `<use>` 同时命中多条类规则，自身 `stroke` 由规则顺序决定，不可依赖。
+4. **端子缺失时兜底**：缺槽写成 `--tN:var(--t1)`，**不留空槽**（保留原 `windingColors[i] ?? stroke` 语义）。
+5. **槽号顺序**：槽号必须与 `node.terminals` 原始顺序一致，绕组（`DeviceGlyph.ts:1278`/`:1296`/`:1306`）与引线（`svg.ts:178-183`）**两处同序**，需守卫测试。
+6. **端子数上限**：`ac-three-winding-transformer-neutral` 有 **4 个 ac 端子**（实测），需要 `--t4`；槽生成不得硬编码为 3。
+
+当前需要处理的多端子图元（全仓 `getTerminalDisplayColor` 在导出链路上仅 3 处 + 引线）：
 
 | 图元 | 位置 | 端子数 |
 |---|---|---|
-| `ac-three-winding-transformer` / `-neutral` | `DeviceGlyph.ts:1268-1284` | 3 |
+| `ac-three-winding-transformer` / `-neutral` | `DeviceGlyph.ts:1268-1284` | 3 / **4** |
 | `terminal-transformer-load` | `DeviceGlyph.ts:1286-1300` | 2 |
 | `ac-transformer` 系列（`kind.includes("transformer")`） | `DeviceGlyph.ts:1302-1310` | 2 |
-
-外加端子引线 `buildSvgDeviceConnectorMarkup`（`svg.ts:170-190`）。
 
 ---
 
 ## 6. 代码改动点
 
-| 文件 / 位置 | 改动 |
+| 位置 | 改动 |
 |---|---|
-| `src/export/svg.ts:503-517` | 规则形状：`.kvN`/`.dcvN` 去掉 `fill`、`stroke-width`，新增 `--c-<类名>`；`.lkvN`/`.ldcvN` 形状不变，新增 `--c-<类名>` |
-| `src/export/svg.ts:170-190` | `buildSvgDeviceConnectorMarkup`：引线颜色改为「删属性靠继承」（单电压）或 `var(--tN)`（多端子） |
-| `src/export/svg.ts:546` / `:562` | 边界母线内连 `<line>`：删电压色 `stroke` |
-| `src/export/svg.ts:575-592` | 边 `<path>`：删电压色 `stroke`（class 保留） |
-| `src/export/svg.ts:697-701` | 传入导出专用开关（见下） |
-| `src/export/svg.ts:781` | 多端子器件的 `<use>` 追加槽赋值 `style="--tN:var(--c-<类名>)"` |
-| `src/DeviceGlyph.ts:86` | 新增可选 prop（如 `voltagePaint`），携带「是否启用 + 端子→槽名映射」 |
-| `src/DeviceGlyph.ts:106-133` | `stroke` 分流：来源是电压色时，按新机制输出（删属性 / `currentColor` / `var(--tN)`） |
-| `src/DeviceGlyph.ts:1278` / `:1296` / `:1306` | 绕组颜色改为 `var(--t{N})` |
-| `src/DeviceGlyph.ts` 其余 `fill: stroke` 等填充点 | 改为 `currentColor` |
+| **`svg.ts:381`、`:414`（`nodeExportVoltageDescriptor`）** | **对齐电压解析链**：与 `getDeviceStrokeColor` 用同一套解析（含 `deviceParamValue(params,"voltage_level")`）。这是 §2.5 的缺陷修复，**必须先做** |
+| **`svg.ts:405-417`、`:769-771`、`:781`** | **`<use>` 挂该器件全部电端子的电压类（去重）**，并向 `addVoltageStyleRule` 登记每个端子电压 |
+| **`svg.ts:781` + `svgExportUtils.ts:80-82`** | **槽样式必须与 `svgDisplayAttribute` 的 `display:none` 合并进同一个 `style` 属性**；禁止在同一 `<use>` 上输出第二个 `style` |
+| `svg.ts:503-517` | 规则形状改为 §3.3 的单一 token 派生形式 |
+| `svg.ts:170-190` | `buildSvgDeviceConnectorMarkup`：引线颜色改为「删属性靠继承」（单电压）或 `var(--tN)`（多端子），槽号与绕组同序 |
+| `svg.ts:546` / `:562` | 边界母线内连 `<line>`：删字面 `stroke`（class 保留） |
+| `svg.ts:575-592` | 边 `<path>`：删字面 `stroke`（class 保留） |
+| `svg.ts:603-654` | `cacheableStandardSymbolVisualToken` 剔除电压派生的 `getDeviceStrokeColor`（`:640`）与逐端子 `getTerminalDisplayColor`（`:630`），**保留 `deviceStateVisualToken`**（`:651`）；否则 §7.2 断言 4 的 symbol 去重不成立 |
+| `svg.ts:697-701` | 传入导出专用开关（`foregroundColor` 抹空的现有行为保持不变，并在代码注释中点明它是「来源 = 电压色」的隐形前提） |
+| `DeviceGlyph.ts:45-52` + `:86` | 类型定义加可选字段 + 解构赋默认值（**两处同改**）。全仓 `DeviceGlyphProps` 仅同文件引用，无第二处 import |
+| `DeviceGlyph.ts:106-133` | `stroke` 分流：来源是电压色时按新机制输出 |
+| `DeviceGlyph.ts:1278` / `:1296` / `:1306` | 绕组颜色改为 `var(--t{N})` |
+| `DeviceGlyph.ts` 其余 23 处 `fill: stroke` + `:1362` | 改为 `currentColor` / `var(--t1)`（行号见 §5.3） |
+| `src/stateIconDrawing.tsx:644-693` | 导出图回读路径：拷 `<defs>` + symbol body 但**不拷 `<use>`** → 电压模式导出图导入后单电压图元掉色、多端子 `var(--tN)` 失去赋值来源。需评估修法（见 §8.3） |
 
-**安全约束**：新 prop 默认不传 → `DeviceGlyph` 行为完全不变。活画布的全部调用点（`appDeviceDefinitionFactories.tsx:1467`、`appSelectionDragFactories.tsx:936/3899`、`appToolbarHookFactories.tsx:4430`）不受影响。
+**安全约束**：新 prop 默认不传 → `DeviceGlyph` 行为完全不变。已核查：导出链路 `svg.ts:700/701`；JSX 形式 `<MemoDeviceGlyph>` 28 处（`appCanvasArea.tsx` 4、`appCanvasInteractionFactories.tsx` 6、`appGraphMeasurementFactories.tsx` 6、`appDeviceDefinitionRenderers.tsx` 5、`appPersistenceLibraryExport.tsx` 2、`appToolbarHookFactories.tsx` 2、`appView.tsx` 2、`appTopbar.tsx` 1）；`DeviceGlyph.test.tsx` 20 处均为 energy 默认模式。全部不受影响。
 
 ---
 
@@ -230,43 +320,64 @@ symbol 去重签名 = `symbolBaseId + viewBox + 渲染正文`（`svg.ts:749-757`
 
 | 位置 | 现状 | 更新方向 |
 |---|---|---|
-| `src/svgExport.test.tsx:1829` | 断言 `.kv10{fill:...;stroke:...;stroke-width:1;color:...}` 全串 | 改为新规则形状 |
-| `src/svgExport.test.tsx:1830` | 断言 `.lkv10{fill:none;stroke:...;color:...}` | 改为新形状 |
-| `src/svgExport.test.tsx:1886` | 同上（自定义调色板） | 同上 |
-| `src/svgExport.test.tsx:1834/1835/1879/1882/1884/1885/1907` | 断言 `<use>` 上的 kv 类 | **保持不变**（类名契约未变） |
-| `server/svgExport.test.mjs:323-325` | 断言含 `kv10`、energy 模式不含 | **保持不变** |
+| `src/svgExport.test.tsx:1829` | `.kv10{fill:#ff0000;stroke:#ff0000;stroke-width:1;color:#ff0000}` | 改为新规则形状 |
+| `src/svgExport.test.tsx:1830` | `.lkv10{fill:none;stroke:#ff0000;color:#ff0000}` | 改为新形状 |
+| `src/svgExport.test.tsx:1831` | `.dcv750{fill:#00aa88;stroke:#00aa88;stroke-width:1;color:#00aa88}` | 同上 |
+| `src/svgExport.test.tsx:1832` | `.ldcv750{fill:none;stroke:#00aa88;color:#00aa88}` | 同上 |
+| `src/svgExport.test.tsx:1833` | `expect(defs).toContain('stroke="#ff0000"')` —— 断言的正是「symbol 内字面电压色」，**本设计的反面契约** | **反向改写**：断言 symbol 段不含调色板电压色 hex |
+| `src/svgExport.test.tsx:1886` | `.kv10{fill:#aa0000;...}` | 改为新形状 |
+| `src/svgExport.test.tsx:1912` | 多类场景 | 改为 `class="dcv750 dcv1500"`（`<use>` 挂全部端子类） |
+
+保持不变：`:1834`、`:1835`、`:1838`、`:1839`、`:1879`、`:1882`、`:1884`、`:1885`、`:1907`（`<use>` / `<path>` 上的 kv 类断言）；`server/svgExport.test.mjs:323-325`。
 
 ### 7.2 新增断言
 
-1. **symbol 内无电压色**：电压模式下，`<symbol>` 段落内不得出现调色板中的任何电压色 hex。
-2. **slot 传递**：多端子器件的 `<use>` 带 `style="--t1:var(--c…)"`，其 symbol 内对应部件带 `var(--t1)`。
+1. **symbol 内无电压色**：电压模式下 `<symbol>` 段落内不得出现调色板中的任何电压色 hex。
+2. **槽完整性（结构断言，升级版）**：
+   - 槽数 = 该器件电端子数（含 4 端子用例）；
+   - 每个 `var(--tN)` 都能在样式表中找到对应的 `--c-<类名>` 定义；
+   - symbol 内出现的 `N` 集合 ⊆ 该 `<use>` 上定义的 `N` 集合。
 3. **白色本体未被波及**：负荷三角 / 开关圆点 / 绕组内芯仍为 `fill="#ffffff"`。
-4. **symbol 去重**：同一图元在两个不同电压下只生成一个 symbol（`新建模型` 场景：8 → 4）。
+4. **symbol 去重**：同一图元在两个不同电压下只生成一个 symbol（`新建模型` 场景 8 → 4）。
 5. **energy 模式不变**：energy 模式输出的 `<symbol>` 内仍有字面颜色，且无 `kv` 类。
+6. **解析链一致性（回归 §2.5）**：voltage 模式下默认新建母线的 `<use>` 类色与其 symbol 正文色一致。
+7. **槽号同序守卫**：多端子器件的绕组槽号与引线槽号必须同为 `node.terminals` 原始顺序；任一处改用过滤/重排即失败。
+8. **隐藏图层 + 槽**：`<use>` 同时带槽样式与 `display:none` 时，`style` 属性只有一处且 `display:none` 保留。
+9. **symbol 填充不变量**：symbol 内每个可填色元素自身或祖先链上必须有 fill（§3.3 的依据，防未来新增图元破坏）。
 
 ### 7.3 golden 基线
 
-`src/export/fixtures/svg-baseline.svg` 是 **energy 模式**（实测零 `kv` 类）→ **不受本次改动影响**，无需重新生成。
+`src/export/fixtures/svg-baseline.ts` 全文无 `colorDisplayMode` → 走默认 `"energy"`（`svg.ts:218`）；`svg-baseline.svg` 中 `kv/dcv/lkv/ldcv` 实测 0 次。
+
+使用方：`src/export/svg.golden.test.ts`（`sha256` 逐字节哈希断言 + `WRITE_SVG_BASELINE=1` 回写）、`src/export/svg.test.ts`（用同名 fixture 的数据，只断言 `bus-glyph` / `<svg>` / `id="edge-1"` 级）。
+
+**结论：无需重生成，但它是 energy 路径的不变性哨兵 —— energy 路径任何字节漂移都会立刻红，属必须守住的义务，不是「不用管」。**
 
 ### 7.4 回归
 
 - `pnpm vitest run` 全量
 - `pnpm tsc --noEmit`
-- `pnpm audit:names`（本次改动涉及 `src/export/svg.ts` 与 `src/DeviceGlyph.ts`，防 ReferenceError 类缺陷）
-- 截图链路：`runtimeScreenshot` 把 SVG 当图片栅格化，需确认内联 `<style>` + 继承 + `var()` 在 image 模式下仍生效
+- `pnpm audit:names`
+- **截图链路：已实测通过**（Chromium image 模式 8 个采样点全过：内联 `<style>`、`var()` 写呈现属性、二级 `--tN:var(--c-kvN)`、`currentColor`、`<use>` 继承）。与 `runtimeScreenshot.ts:46-69` 同路径、同引擎（`serializeScreenshot` 调 `buildSvgDocument`）→ **导出对则截图对**。保留一次目视回归即可
 
 ---
 
 ## 8. 风险与边界
 
-### 8.1 风险
+### 8.1 风险（按严重度）
 
-| 风险 | 影响 | 缓解 |
+| # | 风险 | 缓解 |
 |---|---|---|
-| `DeviceGlyph` 30+ 处颜色调用点逐处分流，改错一处即视觉回归 | 高 | 每处按「来源是否 `getDeviceStrokeColor`/`getTerminalDisplayColor`」二分；补断言 3（白色本体）与逐图元快照 |
-| 呈现属性写 `var()` 在 Chromium 实测可用，但规范保证较弱 | 中 | 若下游存在 Firefox/Safari，改用 `style="stroke:var(--t1)"`（同样实测通过，一行切换） |
-| 多端子器件漏写 `var(--tN)` 的部件会拿到 use 上不确定的继承色 | 中 | 断言 2 覆盖全部多端子图元；code review 逐图元核对 |
-| 截图/栅格化路径行为差异 | 中 | 归入回归项 7.4 单独验证 |
+| 1 | **class 值 ≠ 可见色**（§2.5 两条解析链不一致）。改 class 驱动即改变导出颜色（母线由橙变灰） | §6 首条：先对齐解析链；§7.2 断言 6 守卫 |
+| 2 | **`--c-<类名>` 缺失 → 静默取错色或元素消失**（§3.4） | §5.4 第 2 点 + §7.2 断言 2 |
+| 3 | **需要分流的电压色写入点约 83 处**（60 描边 + 23 填充 + 1 条件），改错一处即视觉回归 | 逐处按 §5.1 判据二分；断言 3 + 逐图元目视 |
+| 4 | `cacheableStandardSymbolVisualToken` 未剔除电压色 → 去重不成立 | §6 该行 + §7.2 断言 4 |
+| 5 | `<use>` 上第二个 `style` 顶掉 `display:none` → 隐藏图层显形 | §6 该行 + §7.2 断言 8 |
+| 6 | 绕组槽号与引线槽号跨文件不同序 | §7.2 断言 7 |
+| 7 | 下游只改 `stroke:` 会「一半变一半不变」 | §4.3 第 2 点 + §4.2 推荐写法 |
+| 8 | `stateIconDrawing.tsx:644-693` 回读路径掉色/失槽 | §8.3 |
+| 9 | **iOS WKWebView（WebKit）**：use 影子树 + 自定义属性 + 呈现属性写 `var()` 整体未实测 | 若下游含 WKWebView，本次改动落地后先在真机验证；必要时切 `style="stroke:var(--t1)"` 形式 |
+| 10 | 呈现属性写 `var()` 的规范保证较弱（Chromium 实测可用） | 备选同上 |
 
 ### 8.2 明确不做
 
@@ -274,18 +385,30 @@ symbol 去重签名 = `symbolBaseId + viewBox + 渲染正文`（`svg.ts:749-757`
 - 不改 energy 配色模式（保持内联色）
 - 不改活画布渲染（新 prop 默认关闭）
 - 不改 E 文件 / CIM 导出
-- 不引入 nth-child 位置规则、位置类、图元结构守卫
+- 不引入 nth-child 位置规则、位置类、引线容器改造
 - 不支持「用户自定义 strokeColor 也跟着电压走」——用户自定义色优先，保持现状
+- 不支持「一个 `<use>` 表达三个颜色」的类顺序语义（CSS 无此能力，已实测证伪）
+
+### 8.3 附带需评估的既有缺陷
+
+| 缺陷 | 位置 | 说明 |
+|---|---|---|
+| 电压解析链不一致 | `svg.ts:381` / `:414` vs `model.ts:7604-7608` | **本次必须修**，见 §2.5 |
+| 导出图回读丢 `<use>` | `src/stateIconDrawing.tsx:644-693` | 拷 `<defs>` + symbol body 但不拷 `<use>`。改造后：单电压图元整块掉色、多端子 `var(--tN)` 失去赋值来源。修法二选一：回读时一并拷 `<use>` 的 class/style，或回读时剥离电压类并回填字面色 |
+| 静态图元拿到无人消费的 kv 类 | `svg.ts:418` `nodeVoltageDescriptor` 缺 `isStaticNode` 短路，而 `:431` 有 | 无害（无元素消费），可在本次一并清理 |
 
 ---
 
 ## 附录：探针文件
 
-机制验证用的一次性 SVG 探针（Chromium 实测，非仓库产物）：
+机制验证用的一次性 SVG/脚本（Chromium 实测，非仓库产物，位于 job tmp 目录）：
 
 | 文件 | 验证内容 |
 |---|---|
 | `use-shadow-probe.svg` | class 选择器 / nth-of-type / 继承 / currentColor / CSS 变量能否穿过 use 边界 |
 | `descendant-probe.svg` | 从 use 的类出发的后代组合器**不**命中 |
 | `slot-var-probe.svg` | 位置槽 + 变量 + nth-child 链路 |
-| `var-in-symbol-probe.svg` | `var()` 写进呈现属性 / 内联样式、`--t1:var(--c1000)` 间接引用 |
+| `var-in-symbol-probe.svg` | `var()` 写进呈现属性 / 内联样式、`--t1:var(--c-kv1000)` 间接引用 |
+| `probe-symbol.mjs` / `probe-multiterm.mjs` | 全图元 symbol 正文扫描；多端子端子数实测 |
+| `probe-coverage.mjs` | `DEVICE_LIBRARY` 169 个 kind 的 fill 继承链全扫（0 例外） |
+| `probe-fill-chain.mjs` | fill 继承链栈式解析 |
