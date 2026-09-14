@@ -605,6 +605,12 @@ export type UnsavedChangeAction = (
       label: string;
       onResolved: () => void;
     }
+  | {
+      // 切空间：确认后由 src/spaceSwitch.ts 的 switchToSpace 接手（清缓存 → 写 cookie → reload）
+      kind: "switch-space";
+      spaceId: string;
+      label: string;
+    }
 ) & {
   resolving?: boolean;
   resolutionError?: string;

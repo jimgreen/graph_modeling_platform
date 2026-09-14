@@ -2,6 +2,7 @@
 import { canvasFitCenterOffsetX, clampNumber } from "../canvasViewport";
 import { canvasFitSideInsetsFromDom } from "./appCoreCanvasUtilities";
 import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
+import { shouldPromptBeforeUnload } from "../spaceSwitch";
 import { resolveEffectiveTemplateParameterDefinitions, withNodesParentModelId } from "../model";
 import { buildEffectiveLibraryTemplates } from "../export/device-definition-shared";
 import { computeMeasurementColumnPositions } from "./appGraphMeasurementFactories";
@@ -3188,8 +3189,9 @@ export function createAppHookCallback92(__appScope: Record<string, any>) {
     };
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       persistRefreshRecoveryNow();
-      // 开发模式下不提示未保存，避免 HMR/full reload 干扰开发
-      if (!saveRequired || isViteFullReload || import.meta.env.DEV) {
+      // 开发模式下不提示未保存，避免 HMR/full reload 干扰开发；
+      // 切空间时 switchToSpace 已置跳过标志 —— 那是用户主动确认过的离开，不该再拦一次。
+      if (!shouldPromptBeforeUnload({ saveRequired, isViteFullReload, isDev: import.meta.env.DEV })) {
         return;
       }
       event.preventDefault();

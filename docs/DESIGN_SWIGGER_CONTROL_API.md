@@ -90,7 +90,7 @@ UI 方法用 `requireEditMode` 防止误操作。控制台 API 是**显式可信
 ### 2.3 server 端中转：`sendCommandToClient`
 
 复用 `runtimeRegistry` 的 pending 机制，新增 `commandFromClient`（与 `fetchFromClient` 平行）：
-- 入参：`(clientId?, name, params)` → `resolveClient(clientId)` 选客户端（无则抛 `NoOnlineClientError`）
+- 入参：`(clientId?, name, params, spaceId?)` → `resolveClient(clientId, spaceId)` 选客户端（无则抛 `NoOnlineClientError`）。**`spaceId` 为调用方所属空间**：无 `clientId` 时只在该空间的在线客户端中取最近活跃者；指名了属于**别的空间**的 `clientId` 时该指名不生效，同样抛 `NoOnlineClientError`（见 §3）
 - 发 `{type:"command",...}`，等 `command-response`，5s 超时（`CommandTimeoutError`，code `ws-timeout`）
 - WS 层 `runtimeWs.mjs` 消息 switch 新增 `"command-response"` 分支 → `registry.resolveCommand(clientId, requestId, ok, data, error)`
 - 成功 resolve 裸 data，失败 reject `Error` 带 `.code`（与 fetch 通道一致）
@@ -104,17 +104,27 @@ UI 方法用 `requireEditMode` 防止误操作。控制台 API 是**显式可信
 
 所有路由：`POST /api/v1/control/*`，body 为 JSON 参数，query 可带 `clientId`。响应统一 v1 信封。
 
+> **[2026-09-13 更新 · 空间筛选]** 共 **11 个端点**（下表 9 个 + `e-device-definition/export`、`e-device-definition/import`，[2026-09-13] 新增）。
+> `clientId` 的语义已按空间收敛：**不指定**时取**调用方所属空间**内最近活跃的前端（空间由 `X-Space` / `?space=` / `Cookie: gmp_space` 解析，见多工作空间设计 §3）；
+> **指定了别的空间的 `clientId`** 返回 **503 `no-online-client`**（`server/runtimeRegistry.mjs:171-185`），即 `clientId` 不是跨空间的通用句柄。
+> 跨空间指名应改用 `?space=<目标空间>` 让服务端在该空间内挑活跃客户端。
+
 | 路由 | 指令 name | params | data 回执 | 验证用只读 API |
 |------|-----------|--------|-----------|----------------|
 | `POST /api/v1/control/scheme/create` | `control.scheme.create` | `{name, parentSchemeId?}` | `{id, name, path}` | `GET /api/v1/schemes` |
 | `POST /api/v1/control/model/create` | `control.model.create` | `{name, schemeId?}` | `{id, name, schemeId}` | `GET /api/v1/schemes/models` |
 | `POST /api/v1/control/devices/select` | `control.devices.select` | `{ids: string[], mode?:"set"\|"add"\|"toggle"}` | `{selectedIds}` | `GET /api/v1/runtime/selection` |
 | `POST /api/v1/control/devices/group` | `control.devices.group` | `{}` (组合当前选中) | `{groupId, nodeIds}` | `GET /api/v1/runtime/devices` |
-| `POST /api/v1/control/template/save-from-selection` | `control.template.saveFromSelection` | `{name, componentType, attributeLibraryName?}` | `{templateKind}` | `GET /api/v1/library/templates` |
+| `POST /api/v1/control/template/saveFromSelection` | `control.template.saveFromSelection` | `{name, componentLibrary, categoryLibraryName?}`（旧名 `componentType` / `attributeLibraryName` 作兼容别名仍受理） | `{templateKind}` | `GET /api/v1/library/templates` |
 | `POST /api/v1/control/device/property/update` | `control.device.property.update` | `{id, category:"graphic"\|"model"\|"measurement", patch}` | `{id}` | `GET /api/v1/runtime/devices` |
 | `POST /api/v1/control/device/add` | `control.device.add` | `{kind, x, y, attrs?}` | `{id}` | `GET /api/v1/runtime/devices` |
 | `POST /api/v1/control/device/delete` | `control.device.delete` | `{ids?: string[]}` (缺省=当前选中) | `{deletedIds}` | `GET /api/v1/runtime/devices` |
 | `POST /api/v1/control/save` | `control.save` | `{scope:"currentModel"\|"schemeTree"}` | `{saved:true}` | `GET /api/v1/schemes/model/json` |
+| `POST /api/v1/control/e-device-definition/export` | `control.e-device-definition.export` | `{}` | `{filename, text, mime}`（按类分组，含内置+自定义元件） | — |
+| `POST /api/v1/control/e-device-definition/import` | `control.e-device-definition.import` | `{text}`（E 文件文本，必填） | `{matched, skipped, matchedCount, skippedCount}` —— **只回校验匹配结果，不实际写入** | — |
+
+> **端点路径以本节为准**（2026-09-13 用 `server/apiV1Control.mjs:347-357` 路由表逐条核对）：`saveFromSelection` 是 camelCase，早期草稿写作 `save-from-selection` 是错的。
+> 两个 `e-device-definition/*` 端点为 [2026-09-13] 新增，`/swigger` 页（`swaggerPage.mjs:249-256`）与本节现已同步。
 
 ### 3.1 错误码 → HTTP 映射（复用 v1Response）
 
@@ -146,9 +156,9 @@ UI 方法用 `requireEditMode` 防止误操作。控制台 API 是**显式可信
 
 ### 5.1 元数据扩展（`swaggerPage.mjs` ENDPOINTS）
 
-新增 group `"控制台"`，含 §3 全部 9 个端点卡片。每张卡片：
+新增 group `"控制台"`，含 §3 全部 11 个端点卡片。每张卡片：
 - 参数表（按 §3 params）
-- `clientId` 可选下拉（默认"自动选取最近活跃"，调 `GET /api/v1/runtime/clients` 填充）
+- `clientId` 可选下拉（默认"**本空间内**自动选取最近活跃"，调 `GET /api/v1/runtime/clients` 填充；该响应含 `workspaceId`，可据此确认下拉项属于哪个空间，避免选到不生效的跨空间 id）
 - Try-it：`POST` + JSON body → 展示 Request/Response 信封（复用现有 `send()` 与信封渲染）
 - 顶部提示条："控制台操作需在线前端客户端；写操作仅改运行时内存，需调用 save 落盘"
 
@@ -210,7 +220,7 @@ UI 方法用 `requireEditMode` 防止误操作。控制台 API 是**显式可信
 ### 6.4 回归
 
 - 现有 `runtimeWs.test.mjs` / `runtimeRegistry.test.mjs` 需补 command 通道用例
-- `swigger.examples.test.mjs` 需为 9 个新端点加示例期望
+- `swigger.examples.test.mjs` 需为 11 个新端点加示例期望
 - 现有只读 v1 测试不受影响（回归绿）
 
 ## 7. 文件改动清单（实现阶段落点）
@@ -219,18 +229,18 @@ UI 方法用 `requireEditMode` 防止误操作。控制台 API 是**显式可信
 |------|------|
 | `server/runtimeRegistry.mjs` | 新增 `commandFromClient`/`resolveCommand` + `CommandTimeoutError` |
 | `server/runtimeWs.mjs` | 消息 switch 新增 `command-response` 分支；导出 `sendCommandToClient` |
-| `server/apiV1Control.mjs` | **新建**：control 域 9 个 handler + 路由表 |
-| `server/image-server.mjs` | 注册 control 路由 |
+| `server/apiV1Control.mjs` | **新建**：control 域 11 个 handler + 路由表 |
+| `server/server.mjs` | 注册 control 路由（早期草稿写作 `server/image-server.mjs`，该文件不存在，实际入口是 `server.mjs`） |
 | `server/v1Response.mjs` | 复用，可能补 `control-failed` 映射 |
-| `server/swaggerPage.mjs` | ENDPOINTS 新增"控制台"分组 9 端点 + 示例 |
+| `server/swaggerPage.mjs` | ENDPOINTS 新增"控制台"分组 11 端点 + 示例 |
 | `src/runtimeWsClient.ts` | onmessage 新增 `command` 分支 + commandHandler 注入 |
-| `src/appExtracted/appControlFactories.tsx` | **新建**：9 个程序化写方法工厂 |
+| `src/appExtracted/appControlFactories.tsx` | **新建**：9 个程序化写方法工厂（另 2 个 `e-device-definition` 相关方法在其它工厂文件装配，合计 11） |
 | `src/App.tsx` | 装配程序化方法到 `__appScope`；注册 commandHandler |
 | `server/apiV1Control.test.mjs` | **新建**：handler 层测试（mock sendCommandToClient） |
 | `e2e/apiV1Control.e2e.test.mjs` | **新建**：Playwright 真实浏览器端到端 |
 | `e2e/controlHarness.mjs` | **新建**：启后端 + Vite + 浏览器 + 等 WS 在线 |
 | `server/runtimeWs.test.mjs` / `runtimeRegistry.test.mjs` | 补 command 通道用例 |
-| `server/swigger.examples.test.mjs` | 补 9 端点示例期望 |
+| `server/swigger.examples.test.mjs` | 补 11 端点示例期望 |
 
 ## 8. 决策点（已确认）
 
@@ -239,7 +249,7 @@ UI 方法用 `requireEditMode` 防止误操作。控制台 API 是**显式可信
 | C-1 | 测试用桩客户端 vs 真实前端 vs 浏览器端到端 | **浏览器端到端**（Playwright 起真实浏览器跑真实前端，最贴近生产） |
 | C-2 | `control.device.add` 的 `kind` 取值范围与默认 attrs 来源 | **DeviceKind + 默认定义**：kind 限定内置 `DeviceKind` 枚举，attrs 从对应 deviceDefinition 取默认，调用方可 override |
 | C-3 | `control.template.saveFromSelection` 的端子与图标 | **自动推导**：从组合内子节点推导端子位置/类型，图标用 `createGroupDeviceIconSvg` 生成，调用方只传 name + componentType |
-| C-4 | 多客户端在线时是否强制指定 clientId | **默认最近活跃，多选不强制**：API 默认取最近活跃客户端，Try-it 下拉可显式选，不强制 |
+| C-4 | 多客户端在线时是否强制指定 clientId | **不强制，默认在本空间内取最近活跃**：API 默认取**调用方空间**内最近活跃客户端（[2026-09-13] 空间筛选落地，见 §3），Try-it 下拉可显式选；指名他空间的 `clientId` 返 503，不生效 |
 | C-5 | 程序化方法是否压 undo 栈 | **图元级压栈，方案/模型不压**：add/delete/group/property/select 压 `pushUndoSnapshot`，scheme/model create 不压 |
 
 ## 9. 下一步

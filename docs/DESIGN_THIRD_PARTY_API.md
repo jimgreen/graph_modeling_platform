@@ -130,7 +130,13 @@ image-server 作唯一 HTTP 入口，dev/prod 同端口（默认 5174）托管�
 
 ### 3.6 多客户端选择
 
-第三方请求可带 `?clientId=`。不指定时 server 取 `lastActiveAt` 最近者（默认策略，对应 OQ-2.1）。
+第三方请求可带 `?clientId=`。**不指定时 server 在当前调用方所属空间内取 `lastActiveAt` 最近者**（不是全局最近者）——多空间上线后，全局取最近者会随机打到别的空间的前端会话。
+
+> **[2026-09-13 更新 · 空间筛选]** 选择逻辑已按空间收敛（`server/runtimeRegistry.mjs:171-185` `resolveClient`）：
+> 无 `clientId` 时只在调用方空间（`X-Space` / `?space=` / Cookie 解析所得）的在线客户端中挑最近活跃者；
+> **指定了来自另一个空间的 `clientId`** 视为不可用，返回 **503 `no-online-client`**（同理：指定空间的客户端已离线也返 503）。
+> 即 `clientId` 不是跨空间的通用句柄。响应中的客户端列表带 `workspaceId`（见 §5.3），可据此确认目标属于哪个空间。
+
 
 ## 4. 客户端注册表
 
@@ -226,11 +232,11 @@ HTTP 状态：200 成功 / 400 参数非法 / 404 不存在或无在线客户端
 
 ### 5.3 运行时态域（FR-3）
 
-所有接口 query 可带 `clientId`（不指定取默认最近活跃客户端）。
+所有接口 query 可带 `clientId`（不指定则**在调用方所属空间内**取最近活跃客户端；指名他空间的 `clientId` 返 503 `no-online-client`，见 §3.6）。
 
 | 接口 | 方法 | 响应 data | WS resource |
 |------|------|-----------|-------------|
-| `/api/v1/runtime/clients` | GET | 在线客户端列表：`{clients:[{clientId,role,lastActiveAt}]}` | —（server 直返） |
+| `/api/v1/runtime/clients` | GET | 在线客户端列表：`{clients:[{clientId,workspaceId,role,registeredAt,lastActiveAt}]}`（实测形状，`server/apiV1Runtime.mjs:68-76`；`workspaceId` 为客户端所属空间 id，[2026-09-13] 新增，供调用方判断 `clientId` 是否可用于当前空间；`role` 恒为 `"editor"`，与 §4.1 的 `ClientEntry.role` 一致） | —（server 直返） |
 | `/api/v1/runtime/model` | GET | 当前打开模型定位：`{clientId, schemePath, modelName, modelId, updatedAt}` | `runtime.snapshot`（部分） |
 | `/api/v1/runtime/devices` | GET | 当前模型设备清单：`{nodes:[...], edges:[...]}` | `runtime.snapshot`（部分） |
 | `/api/v1/runtime/selection` | GET | 当前选中设备：`{selectedNodeIds:[...], selectedNode:{...}\|null}` | `runtime.selection` |

@@ -607,6 +607,66 @@ describe("single device parameter updates", () => {
     expect(updatedTransformer.params.i_vbase).toBe("750");
     expect(updatedTransformer.terminals[0].vbase).toBe("750");
   });
+
+  // 三绕组的分侧是 i/k/j = 高/中/低，与双绕组的 i/j = 高/低**不是同一张表**。
+  // 曾出现过：改中压侧（k_vbase）的值，结果写进了低压侧（j_vbase）—— 因为
+  // `voltageBaseParamTerminalIds` 把 j_vbase 一律当成 1 号端子（双绕组的低压侧），
+  // 而三绕组的 1 号端子是**中压**侧；k_vbase 那一支当时根本不存在。
+  test("spreads three-winding mid-voltage change to the mid side only, never to the low side", () => {
+    const t = createDefaultNode("ac-three-winding-transformer", { x: 0, y: 0 });
+    const highBus = createDefaultNode("ac-bus", { x: 100, y: 0 });
+    const midBus = createDefaultNode("ac-bus", { x: 200, y: 0 });
+    const lowBus = createDefaultNode("ac-bus", { x: 300, y: 0 });
+    for (const bus of [highBus, midBus, lowBus]) {
+      bus.params.vbase = "0";
+    }
+    const [highId, midId, lowId] = [t.terminals[0].id, t.terminals[1].id, t.terminals[2].id];
+    // 母线端子由 synchronizeBusTerminalsWithEdges 按边合成，故这里按既有用例的写法写字面量 id
+    const edges = [
+      { id: "e1", sourceId: t.id, targetId: highBus.id, sourceTerminalId: highId, targetTerminalId: "t1" },
+      { id: "e2", sourceId: t.id, targetId: midBus.id, sourceTerminalId: midId, targetTerminalId: "t1" },
+      { id: "e3", sourceId: t.id, targetId: lowBus.id, sourceTerminalId: lowId, targetTerminalId: "t1" }
+    ];
+    const nodes = [t, highBus, midBus, lowBus];
+    const patchGraphNodes = vi.fn();
+    const updateParam = createUpdateParam({
+      NODE_LABEL_FOOTPRINT_PARAM_KEYS: new Set<string>(),
+      commitNodeFootprintUpdates: vi.fn(),
+      nodeById: new Map(nodes.map((n) => [n.id, n])),
+      normalizeNodeLabelDisplayMode: (value: string) => value,
+      normalizeRatioParameterInputValue,
+      patchGraphNodes,
+      pushNodeOnlyUndoSnapshot: vi.fn(),
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: vi.fn(() => true),
+      selectedNodeId: t.id,
+      undoScopeForNodeFootprintPatch: vi.fn(() => ({})),
+      nodes,
+      edges,
+      setVoltageBaseTerminalValueForTopologySide,
+      undoScopeForGraphPatch: vi.fn(() => ({}))
+    });
+
+    const lowBefore = t.params.j_vbase;
+    updateParam("k_vbase", "110");
+
+    const updated = patchGraphNodes.mock.calls[0][0] as Array<{
+      id: string;
+      params: Record<string, string>;
+      terminals: Array<{ id: string; vbase: string }>;
+    }>;
+    const updatedTransformer = updated.find((node) => node.id === t.id)!;
+    // 低压侧：参数与端子都严禁被动到（这正是不变量「严禁跨分压侧」）
+    expect(updatedTransformer.params.j_vbase).toBe(lowBefore);
+    expect(updatedTransformer.terminals[2].vbase).not.toBe("110");
+    // 中压侧：参数与端子都要改到
+    expect(updatedTransformer.params.k_vbase).toBe("110");
+    expect(updatedTransformer.terminals[1].vbase).toBe("110");
+    // 岛的范围：中压母线被改，高/低压母线不受影响
+    expect(updated.find((node) => node.id === midBus.id)?.params.vbase).toBe("110");
+    expect(updated.some((node) => node.id === highBus.id)).toBe(false);
+    expect(updated.some((node) => node.id === lowBus.id)).toBe(false);
+  });
 });
 
 describe("smart alignment during drawing", () => {

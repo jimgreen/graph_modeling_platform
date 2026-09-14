@@ -558,6 +558,7 @@ import {
   createMapPointToMinimap
 } from "./appExtracted/appCanvasViewportCalculations";
 import { createRuntimeWsClient } from "./runtimeWsClient";
+import { fetchSpaces, type Space } from "./spaceClient";
 import { createRuntimeSnapshotHandler } from "./runtimeSnapshot";
 import { createRuntimeScreenshotHandler } from "./runtimeScreenshot";
 import {
@@ -1509,6 +1510,41 @@ useCanvasViewportBatch(__appScope);
 useGlobalLines(__appScope);
 // 提取到 useRenderBatch（原第 3053-6217 行）
 useRenderBatch(__appScope);
+
+// 多工作空间：顶栏空间选择器。列表与当前空间都来自后端 /webgrp/spaces
+// （current 由后端「头 > query > cookie > 回退」解析链算出，前端不自算「我是谁」）。
+const [spaces, setSpaces] = useState<Space[]>([]);
+const [currentSpaceId, setCurrentSpaceId] = useState("");
+const refreshSpaces = useCallback(async () => {
+  try {
+    const data = await fetchSpaces();
+    setSpaces(data.spaces ?? []);
+    setCurrentSpaceId(data.current ?? "");
+  } catch {
+    // 空间列表拉取失败只影响选择器显示，不阻断建模主流程
+  }
+}, []);
+Object.assign(__appScope, { spaces, currentSpaceId, refreshSpaces });
+// 切空间入口：有未保存修改就走确认框（保存 / 放弃 / 取消），确认后由 src/spaceSwitch.ts
+// 接手真正的切换编排。__appScope 每帧重建，此处用 __appScopeRef 读最新引用取空间显示名。
+const requestSwitchSpace = useCallback((id: string) => {
+  if (!id) {
+    return;
+  }
+  const scope = __appScopeRef.current as any;
+  const space = (scope?.spaces as Space[] | undefined)?.find((item) => item.id === id);
+  scope?.requestUnsavedChangeAction?.({
+    kind: "switch-space",
+    spaceId: id,
+    label: `切换到空间“${space?.name ?? id}”`
+  });
+}, []);
+Object.assign(__appScope, { requestSwitchSpace });
+// __appScope 每帧重建：空依赖挂载时拉一次，靠 __appScopeRef 读最新引用；
+// 依赖写成每帧新对象会让该请求每次渲染都重发。
+useEffect(() => {
+  void __appScopeRef.current?.refreshSpaces?.();
+}, []);
 
 // 运行时态 WS 客户端：连入 server /ws，注册 clientId，响应 server 的 fetch 拉取。
 // 第三方 /webgrp/v1/runtime/* 经此桥接获取前端运行时态（snapshot/tab/selection/model/devices/e-file/svg/screenshot）。

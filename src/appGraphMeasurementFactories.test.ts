@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { Children, Fragment, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { Button, message } from "antd";
 
 import {
@@ -12,6 +12,7 @@ import {
   createFinishMeasurementDrag,
   createMeasurementGroupRenderMetrics,
   createRenderSelectedNodeMeasurementTable,
+  createPersistRefreshRecoveryNow,
   createRenderMultiNodeDragOverlay,
   createSaveMeasurementConfigDialog,
   createUpdateMeasurementDrag,
@@ -29,6 +30,7 @@ import { createDefinitionDraftRows } from "./customDeviceUtils";
 import * as measurementDefinitions from "./measurements";
 import { DEVICE_LIBRARY, getTemplateParameterDefinitions } from "./model";
 import { exportMeasurementItemMetadataAttributes } from "./svgExportUtils";
+import { setSkipBeforeUnload } from "./spaceSwitch";
 
 /** Detects native <select> and antd <Select> (which passes options prop). */
 const isSelectLike = (element: ReactElement<any>): boolean =>
@@ -1871,5 +1873,50 @@ describe("measurement item sourcePoint uniqueness", () => {
     expect((globalThis as any).showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("量测测点不能重复"));
     expect(updateProjectMeasurementsWithUndo).not.toHaveBeenCalled();
     delete (globalThis as any).showGlobalMessage;
+  });
+});
+
+// 切空间的卸载路径：`switchToSpace` 置跳过标志后 `location.reload()`，浏览器随即触发卸载事件，
+// 而 `createPersistRefreshRecoveryNow` 正是 beforeunload / pagehide / vite:beforeFullReload
+// 三个入口共用的那一步。若不看标志照常落盘，**内存里此刻还是旧空间的模型**会被写进
+// `power-system-refresh-recovery`，新空间启动时读成「刷新恢复草稿」——
+// T4 那次 sessionStorage 清理被当场撤销，用户在新空间一保存就把旧空间模型落进新空间（S2 复活）。
+describe("刷新恢复草稿的持久化受切空间跳过标志约束", () => {
+  const createScope = () => {
+    const clearRefreshRecoveryProject = vi.fn();
+    const writeRefreshRecoveryProject = vi.fn();
+    return {
+      scope: {
+        clearRefreshRecoveryProject,
+        refreshRecoveryProjectRef: { current: { version: 1, name: "A 空间的模型", modelType: "馈线", nodes: [], edges: [] } },
+        saveRequiredRef: { current: true },
+        writeRefreshRecoveryProject
+      },
+      clearRefreshRecoveryProject,
+      writeRefreshRecoveryProject
+    };
+  };
+
+  afterEach(() => {
+    setSkipBeforeUnload(false);
+  });
+
+  test("置了跳过标志 → 只清不写（写了就是旧空间模型进新空间）", () => {
+    setSkipBeforeUnload(true);
+    const { scope, clearRefreshRecoveryProject, writeRefreshRecoveryProject } = createScope();
+
+    createPersistRefreshRecoveryNow(scope)();
+
+    expect(writeRefreshRecoveryProject).not.toHaveBeenCalled();
+    expect(clearRefreshRecoveryProject).toHaveBeenCalledTimes(1);
+  });
+
+  test("没置标志且有未保存修改 → 照常落盘（守卫不得把正常刷新恢复一并关掉）", () => {
+    setSkipBeforeUnload(false);
+    const { scope, writeRefreshRecoveryProject } = createScope();
+
+    createPersistRefreshRecoveryNow(scope)();
+
+    expect(writeRefreshRecoveryProject).toHaveBeenCalledTimes(1);
   });
 });

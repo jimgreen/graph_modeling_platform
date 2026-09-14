@@ -18,7 +18,10 @@
 | `apiV1Runtime.mjs` | v1 运行时态端点（clients/model/devices/selection/tabs/screenshot/svg/e-file），经 WS 透传 |
 | `apiV1Schemes.mjs` | v1 方案域只读端点（hierarchy/models/export/model json/svg） |
 | `apiV1Library.mjs` | v1 图元库域只读端点（categories/devices/measurements/device-definitions/templates） |
-| `apiV1Control.mjs` | v1 控制台写操作端点（9 端点：device/scheme/model/select/group/delete/update/save/template），经 WS 下发到前端 __appScope |
+| `apiV1Control.mjs` | v1 控制台写操作端点（11 端点：device/scheme/model/select/group/delete/update/save/template/e-device-definition），经 WS 下发到前端 __appScope |
+| `spaceId.mjs` | 空间 id 生成与校验（允许中文，排除 Windows 保留名与路径分隔符） |
+| `spaceStore.mjs` | 空间注册表 + `SpacePaths` 工厂 + 请求空间解析链；default 空间直接复用数据根 |
+| `cors.mjs` | 跨源头**唯一一份**（`access-control-*`）；`server.mjs` 与 `v1Response.mjs` 均从此导入 —— **勿在别处再定义一份**（T13 单源化） |
 | `apiV1Receive.mjs` | 联调接收端 `/v1/receive`（POST 收「发送模型」转发来的内容并回解析摘要、GET 回看、DELETE 清空）；内存留最近 5 次、不落盘、不鉴权 |
 | `sendModel.mjs` | `/v1/schemes/model/send` 适配层：按 modelId（模型 idx，兼容 schemePath+name）定位已保存模型，按所选格式生成 E/JSON/SVG/CIM，以 multipart/form-data 转发到调用方给定 URL |
 | `eFileExport.mjs` | `/v1/schemes/model/e-file` 适配层（GET 预定义模板 / POST 自定义模板文本）：读盘模型 + 库配置，用 `src/export/e-file.ts` 装配选项（`buildEFileExportOptionsFromLibrary` / `applyPredefinedEDeviceTemplateToLibraryState`）、`src/model-eexport.ts` 的 `buildEFileExport` 生成，默认 GBK。**方案 ZIP 复用同一装配**（`buildEFileForSavedModel`） |
@@ -54,7 +57,7 @@
 ### Testing Requirements
 
 - `pnpm vitest run server/` 跑后端测试（含三导出适配层：`svgExport.test.mjs` / `apiV1Schemes.e-file.test.mjs` / `cimExport.test.mjs` 与 Node 原生直载守卫 `nativeLoad.test.mjs`）
-- 改动 swigger 后跑 `swigger.examples.test.mjs`（54 示例）
+- 改动 swigger 后跑 `swigger.examples.test.mjs`（96 示例 / 71 端点）
 - 改动 v1 端点跑对应 `apiV1*.test.mjs`
 - 新增/改动 `server/*.mjs` 对 `src/**/*.ts` 的 import 后跑 `pnpm audit:names`（穿透 `@ts-nocheck` 的未定义名审计）
 
@@ -63,6 +66,11 @@
 - v1 错误码→HTTP：bad-request→400，not-found/no-active-model/no-selection→404，no-online-client/ws-timeout→503，internal→500
 - v1 信封：`{ok:true,data}` / `{ok:false,error:{code,message}}`
 - /swigger 内联 JS 用 `\\n`（双反斜杠）输出字面换行，避免模板字面量 SyntaxError
+- 空间隔离：`GRAPH_MODEL_DATA_DIR` 下 `data/` 是 default 空间的根，其余空间在 `data/workspaces/<id>/`。路径经 `options.paths ?? defaultPaths` 显式透传，不用 AsyncLocalStorage。空间标识解析：`X-Space` 头 > `?space=` > `Cookie: gmp_space` > 回退 `spaces[0]`（回退时响应带 `X-Space-Fallback`）。
+- 建目录不变量：**一切建目录调用（`mkdirRaw` 与 `writeTextIfChanged`）均经退休守护**（先 `assertNotRetiredRoot` 再建）—— 否则删除空间后，在飞请求能把已删空间重建出来。判据：`mkdirRaw` 只出现在 `server.mjs:2`（import 别名）与 `mkdirInSpace` 内（约 `:76`）。**别再用 `grep -n "mkdirRaw\|mkdir(" server/server.mjs` 自查**：它同时命中全部 19 处 `mkdirInSpace(` 调用点，给不出「没有第二处裸 mkdir」的判据。别名本身比 grep 更强：模块内只 import 了别名，新写一处裸 `mkdir` 会直接 `ReferenceError`，而不是静默绕过守护。`writeTextIfChanged` 也必须走守护，因为 `shared/atomicWrite.mjs` 的 `atomicWriteFile` 自己会 `mkdir(dirname(filePath))` —— 那是 grep 不到的第二条建目录路径。
+- 空间**名**唯一：判重归 `spaceStore` 在锁内做（`create`/`rename` 的 `onDuplicate`），HTTP 三个入口（POST 新建 / PUT 改名 / POST 导入）经 `sendSpaceNameConflict` 统一回 409 `SPACE_NAME_DUPLICATE`，正文带冲突者的 `name` 与 `conflictId`；导入另收 `?mode=overwrite|rename`（+ `?name=`），供前端问过「覆盖 / 重命名」后重发。`onDuplicate` 只管**显示名**，id 去重（`spaceIdFromName` 加 `-2` 后缀）照旧独立生效 —— 不同名也可能 slug 成同一个 id（`"a/b"` 与 `"a b"`）。
+- 端到端隔离测试见 `spaceScope.test.mjs`；派发注入见 `spaceDispatch.test.mjs`。
+- `/swigger` 的端点元数据集中在 `swaggerPage.mjs` 的 `SWIGGER_ENDPOINTS`；`swigger.examples.test.mjs` 会**逐个真实调用**每条示例，故新增示例必须自带稳定期望、且**不得**收录会触发本机副作用的端点（`/webgrp/exports/native/*` 因会弹 Windows 另存为对话框而刻意排除）。
 
 ## Dependencies
 

@@ -1,6 +1,6 @@
 // /webgrp/v1 运行时态域 handler：clients 直返，其余经 WS 拉前端运行时态。
 // 依赖 runtimeWs 挂载后注入的 { fetchFromClient, listClients }。
-// 所有接口 query 可带 clientId（不指定取默认最近活跃客户端）。
+// 所有接口 query 可带 clientId（不指定则按调用方所在空间取该空间最近活跃客户端，见 createV1RuntimeRoutes）。
 // 运行时态实时数据：cache-control: no-store（sendV1JsonNoStore）。
 //
 // fetchFromClient 语义：成功 resolve(裸 data)；失败 reject(Error 带 code)。
@@ -67,6 +67,9 @@ export function handleV1RuntimeClients({ response }, ctx) {
   try {
     const clients = ctx.listClients().map((c) => ({
       clientId: c.clientId,
+      // 客户端注册时所属空间（WS 握手 Cookie 经 workspaceIdForRequest 归位，见 runtimeWs.mjs）。
+      // 注册表早已输出该字段，此前在这里的白名单重映射中被丢掉，导致对外契约少一个已承诺的键。
+      workspaceId: c.workspaceId,
       role: "editor",
       registeredAt: new Date(c.registeredAt).toISOString(),
       lastActiveAt: new Date(c.lastActiveAt).toISOString()
@@ -237,9 +240,24 @@ import { apiPattern } from "./config.mjs";
 // 构造 v1 运行时态路由表。ctx = { fetchFromClient, listClients }
 // handle 签名：({ request, response, url, match }, ctx) => Promise<void>
 // match 为路由 pattern.exec(pathname) 结果，命名捕获组在 match.groups
+// spaceId 由派发层注入（server.mjs 的 ...spaceCtx）：会话类端点不切数据，
+// 但无 clientId 时要按调用方所在空间筛出目标前端，否则多空间下会打到别人的会话。
 export function createV1RuntimeRoutes(ctx) {
-  const wrap = (handler) => ({ request, response, url, match }) =>
-    handler({ request, response, url }, ctx, match?.groups?.tab);
+  // rest 透传：派发层将来给 handler 多传字段不会被这里静默吞掉（match 仍按老样子只在第三参给 tab）
+  const wrap = (handler) => ({ spaceId, ...route }) => {
+    if (!spaceId) {
+      // 接线 bug：派发层对这两个域的 v1 路由恒注入 spaceId，缺失即说明有人绕过了它。
+      // 缺空间时 runtimeRegistry 的 wanted 为空串、空间校验整段短路（fail-open），
+      // 会静默退回「全局取活跃者」——多空间下打到别人的会话。故在此直接拒绝。
+      throw new Error("缺少 spaceId：v1 会话类 handler 必须由派发层注入空间。");
+    }
+    // 统一在这里注入空间，handler 不必逐个记得传：漏传即静默退回「全局取活跃者」
+    const requestCtx = {
+      ...ctx,
+      fetchFromClient: (clientId, resource, params) => ctx.fetchFromClient(clientId, resource, params, spaceId)
+    };
+    return handler(route, requestCtx, route.match?.groups?.tab);
+  };
   return [
     { method: "GET", pattern: apiPattern("/v1/runtime/clients", "/?$"), handle: wrap(handleV1RuntimeClients) },
     { method: "GET", pattern: apiPattern("/v1/runtime/model", "/?$"), handle: wrap(handleV1RuntimeModel) },

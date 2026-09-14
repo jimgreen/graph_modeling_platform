@@ -1,10 +1,20 @@
 import { memo, useCallback, useMemo, useRef, useState } from "react";
-import { Tooltip } from "antd";
+import { Input, Modal, Select, Tooltip } from "antd";
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 import { createNodeFromTemplate } from "../model-node-ops";
 import { modelAssociationModelTypeForKind } from "../model";
 import { MemoDeviceGlyph } from "../DeviceGlyph";
-import { Send } from "lucide-react";
+import {
+  SPACE_NAME_DUPLICATE,
+  createSpace,
+  exportSpaceArchive,
+  importSpaceArchive,
+  sanitizeSpaceFileName,
+  type Space,
+  type SpaceImportMode
+} from "../spaceClient";
+import { saveLazyBlobFile } from "../fileIO";
+import { Download, Send, Upload } from "lucide-react";
 import { SendModelDialog } from "../SendModelDialog";
 
 type AppTopbarProps = {
@@ -89,6 +99,248 @@ function RuntimeWsIndicator({ scope }: { scope: Record<string, any> }) {
         }}>已复制</span>
       )}
       <style>{`@keyframes runtime-ws-blink { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.8); opacity: 0.5; } 100% { transform: scale(1); opacity: 1; } }`}</style>
+    </span>
+  );
+}
+
+// 空间选择器里的哨兵值：选中它表示「去新建」，不是一次空间切换
+export const NEW_SPACE_OPTION_VALUE = "__new_space__";
+
+// 选项完全由后端返回的列表派生（末位追加新建入口），组件侧不持有任何空间清单
+export function buildSpaceSwitcherOptions(spaces: readonly Space[] | undefined) {
+  const list = Array.isArray(spaces) ? spaces : [];
+  return [
+    ...list.map((space) => ({ value: space.id, label: space.name })),
+    { value: NEW_SPACE_OPTION_VALUE, label: "＋ 新建空间…" }
+  ];
+}
+
+// 顺序不可颠倒：切换要传新建接口返回的 id，不能沿用当前空间
+export async function createSpaceThenSwitch(name: string, scope: Record<string, any>): Promise<void> {
+  const space = await createSpace(name);
+  scope?.requestSwitchSpace?.(space.id);
+}
+
+// 导出当前空间：文件名取当前空间名，走与方案导出同一个 saveLazyBlobFile
+// （支持 File System Access API 时弹原生另存为，不支持则回退浏览器下载）。
+// 文件名要**净化**：后端包内顶层目录名已净化（含 / 的名字在那里被换成 _），文件名不跟着换的话，
+// 另存为窗口会拿到非法文件名 → 落到「打开保存窗口失败，已改为浏览器下载。」的误导提示。
+// pickerId 不传：共享「上次另存目录」是期望行为
+export async function exportCurrentSpace(scope: Record<string, any>): Promise<boolean> {
+  const current = (scope?.spaces as Space[] | undefined)?.find((item) => item.id === scope?.currentSpaceId);
+  const filename = `${sanitizeSpaceFileName(current?.name || scope?.currentSpaceId || "空间")}.zip`;
+  try {
+    const saved = await saveLazyBlobFile({
+      filename,
+      mime: "application/zip",
+      description: "空间压缩包",
+      extensions: [".zip"],
+      loadBlob: exportSpaceArchive
+    });
+    // saveLazyBlobFile 在**用户取消另存为**时返回 false（不抛）—— 那是用户意图，不该提示成功
+    if (saved) {
+      showSpaceActionMessage(`已导出空间「${current?.name || scope?.currentSpaceId || "当前空间"}」`);
+    }
+    return saved;
+  } catch (error) {
+    showSpaceActionMessage(`导出空间失败：${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+}
+
+// 询问框借 globalMessage 的两个全局弹窗（挂在 window 上），故本模块在 node 测试里也能被直接调用
+//（同 spaceSwitch.ts 的 notifySwitchFailure：不 import 那个模块，它在顶层写 window，node 下 import 即炸）。
+function conflictDialogs() {
+  const ask = (globalThis as any).showGlobalConfirm;
+  const prompt = (globalThis as any).showGlobalPrompt;
+  return typeof ask === "function" && typeof prompt === "function"
+    ? { ask: ask as (text: string) => Promise<boolean>, prompt: prompt as (text: string, value?: string) => Promise<string | null> }
+    : null;
+}
+
+// 改名建议值：从「原名-2」往上取第一个没被占用的。只是输入框的默认值，最终判重仍在后端（撞了就再问一次）。
+export function suggestSpaceName(base: string, spaces: readonly Space[] | undefined): string {
+  const taken = new Set((Array.isArray(spaces) ? spaces : []).map((space) => String(space?.name ?? "").trim()));
+  let index = 2;
+  while (taken.has(`${base}-${index}`)) index += 1;
+  return `${base}-${index}`;
+}
+
+/**
+ * 空间名撞车询问：确定 = 覆盖，取消 = 改名，改名框再取消 = 放弃导入（返回 null）。
+ *
+ * 「确定」是**不可逆**的覆盖（原空间目录移入 trash-spaces/，界面上再也看不到），代价必须写进文案。
+ */
+async function askSpaceImportConflict(
+  conflict: { spaceName?: string },
+  scope: Record<string, any>
+): Promise<{ mode: SpaceImportMode; name?: string } | null> {
+  const dialogs = conflictDialogs();
+  if (!dialogs) return null;
+  const label = conflict.spaceName || "导入空间";
+  const overwrite = await dialogs.ask(
+    `空间名「${label}」已存在。\n\n确定：覆盖它（原空间移入回收目录，界面上不再显示，无法从界面找回）\n取消：改用其他名字导入`
+  );
+  if (overwrite) return { mode: "overwrite" };
+  const input = await dialogs.prompt("请输入新的空间名称：", suggestSpaceName(label, scope?.spaces));
+  const name = String(input ?? "").trim();
+  return name ? { mode: "rename", name } : null;
+}
+
+// 带询问的导入：撞车就问一次再带 mode 重发；改名后**仍**撞车（比如别人刚建了同名空间）就再问一次。
+// 返回 null 表示用户放弃 —— 服务端什么都没建，调用方不该报「导入失败」。
+async function importSpaceArchiveWithPrompt(file: File, scope: Record<string, any>): Promise<Space | null> {
+  let options: { mode?: SpaceImportMode; name?: string } = {};
+  for (;;) {
+    try {
+      return (await importSpaceArchive(file, options)).space;
+    } catch (error) {
+      if ((error as { code?: string } | null)?.code !== SPACE_NAME_DUPLICATE) throw error;
+      // 问不了就别装问过了：照常冒错，由外层提示「已存在」，不静默吞掉这次导入
+      if (!conflictDialogs()) throw error;
+      const decision = await askSpaceImportConflict(error as { spaceName?: string }, scope);
+      if (!decision) return null;
+      options = decision;
+    }
+  }
+}
+
+// 导入空间 ZIP：包内名撞车时后端回 409，这里弹询问框（覆盖 / 换名 / 放弃）再重发，
+// 成功后照「新建空间」按钮的收尾切过去。
+// try 只圈住「导入」本身：后面两步失败不是导入失败，空间在服务端已经建出来了 ——
+// 报成「导入失败」会让用户以为没导入，且就此把已建好的空间晾着不切过去。
+export async function importSpaceArchiveFromFile(file: File, scope: Record<string, any>): Promise<void> {
+  let space: Space | null;
+  try {
+    space = await importSpaceArchiveWithPrompt(file, scope);
+  } catch (error) {
+    showSpaceActionMessage(`导入空间失败：${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+  if (!space) return;
+  // 切换是硬重载，用户若在有未保存修改时取消，列表也必须已经含新空间 —— 故刷新在前；
+  // 但刷新失败不能挡住切换（切过去后列表会重新拉），也就不能走上面的「导入失败」分支。
+  try {
+    await scope?.refreshSpaces?.();
+  } catch (error) {
+    // 列表刷新失败不阻塞切换，但别吞得一点线索不留（与 server 侧同一批纪律）
+    console.warn("[空间] 导入后刷新空间列表失败：", error);
+  }
+  try {
+    scope?.requestSwitchSpace?.(space.id);
+  } catch (error) {
+    // 本函数的调用方是 `void importSpaceArchiveFromFile(...)`：这里同步抛错会变成 unhandled rejection
+    //（静默，用户看到的是「导入完了但没切过去」），故兜住并留线索
+    console.warn("[空间] 导入后切换空间失败：", error);
+  }
+}
+
+function showSpaceActionMessage(text: string): void {
+  const notify = (globalThis as any).showGlobalMessage;
+  if (typeof notify === "function") {
+    notify(text);
+  }
+}
+
+// 顶栏空间选择器：当前空间来自后端解析链（scope.currentSpaceId），前端不读 Cookie 自算。
+// requestSwitchSpace 由空间切换编排提供，未装配时用可选链跳过，选择器自身仍可用。
+function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const spaceArchiveInputRef = useRef<HTMLInputElement>(null);
+  const options = buildSpaceSwitcherOptions(scope.spaces);
+  const currentSpaceId = scope.currentSpaceId ?? "";
+  // 后端回退或列表未加载时 current 可能不在选项里，此时交给 placeholder，避免 Select 显示裸 id
+  const value = options.some((option) => option.value === currentSpaceId) ? currentSpaceId : undefined;
+
+  const changeSpace = (next: string) => {
+    if (next === NEW_SPACE_OPTION_VALUE) {
+      setCreateName("");
+      setCreateOpen(true);
+      return;
+    }
+    if (next === currentSpaceId) return;
+    scope.requestSwitchSpace?.(next);
+  };
+
+  const submitCreate = async () => {
+    const name = createName.trim();
+    if (!name || creating) return;
+    setCreating(true);
+    try {
+      await createSpaceThenSwitch(name, scope);
+      setCreateOpen(false);
+    } catch (error) {
+      // 后端会拒掉不合法/超长空间名（400）：不接住就没有任何反馈，用户点了像没反应
+      showSpaceActionMessage(`新建空间失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <span className="topbar-space-switcher" style={{ display: "inline-flex", alignItems: "center", marginLeft: 10 }}>
+      <Select
+        size="small"
+        value={value}
+        placeholder="选择空间"
+        options={options}
+        onChange={changeSpace}
+        style={{ minWidth: 140 }}
+        aria-label="切换空间"
+      />
+      {/* 导出是纯读动作，浏览模式下不禁用；导入会切空间 + 硬重载，故保持禁用 */}
+      <button
+        type="button"
+        className="topbar-primary-button"
+        title="把当前空间导出为压缩包"
+        aria-label="导出空间"
+        onClick={() => void exportCurrentSpace(scope)}
+      >
+        <Download size={14} />
+      </button>
+      <button
+        type="button"
+        className="topbar-primary-button"
+        title="从压缩包导入空间（重名会询问覆盖还是改名）"
+        aria-label="导入空间"
+        disabled={scope.isBrowseMode}
+        onClick={() => spaceArchiveInputRef.current?.click()}
+      >
+        <Upload size={14} />
+      </button>
+      <input
+        ref={spaceArchiveInputRef}
+        type="file"
+        accept=".zip,application/zip"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) {
+            void importSpaceArchiveFromFile(file, scope);
+          }
+        }}
+      />
+      <Modal
+        open={createOpen}
+        title="新建空间"
+        okText="创建并切换"
+        cancelText="取消"
+        confirmLoading={creating}
+        onOk={() => void submitCreate()}
+        onCancel={() => setCreateOpen(false)}
+        destroyOnHidden
+      >
+        <Input
+          value={createName}
+          onChange={(event) => setCreateName(event.target.value)}
+          onPressEnter={() => void submitCreate()}
+          placeholder="空间名称"
+          aria-label="空间名称"
+        />
+      </Modal>
     </span>
   );
 }
@@ -287,6 +539,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
         <input ref={scope.libraryPackageImportInputRef} type="file" accept=".json,application/json" hidden onChange={scope.importLibraryPackageFile}/>
         <input ref={scope.userCustomizationImportInputRef} type="file" accept=".json,application/json" hidden onChange={scope.importUserCustomizationFile}/>
       </div>
+      <SpaceSwitcher scope={scope}/>
       <RuntimeWsIndicator scope={scope}/>
     </header>
       {sendModelDialogOpen && (

@@ -8,6 +8,7 @@ import { clampNumber } from "../canvasViewport";
 import { reconcileNodeWithDefinition } from "../definitionInstanceSync";
 import { degreesToRadians } from "../formatUtils";
 import type { MeasurementProfilePositionDefinition } from "../measurements";
+import { isSkipBeforeUnload } from "../spaceSwitch";
 import {
   DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
   DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
@@ -3697,6 +3698,17 @@ export function createReplaceSchemeTreeInBackend(__appScope: Record<string, any>
 export function createPersistRefreshRecoveryNow(__appScope: Record<string, any>) {
   return () => {
   const { clearRefreshRecoveryProject, refreshRecoveryProjectRef, saveRequiredRef, writeRefreshRecoveryProject } = __appScope;
+    // 切空间的卸载路径：`switchToSpace` 已置跳过标志，而这一切正发生在 `location.reload()`
+    // 的卸载事件里 —— 此刻内存中的模型是**旧**空间的，写进 `power-system-refresh-recovery`
+    // 就会被新空间启动时读成「刷新恢复草稿」，把 T4 那次 sessionStorage 清理当场撤销，
+    // 用户在新空间一保存就落进新空间（S2 复活）。故这里改写为「清掉」。
+    //
+    // 守卫放在这个原语里、而不是三个事件入口（`beforeunload` / `pagehide` /
+    // `vite:beforeFullReload`）：枚举入口加守卫正是本计划栽过的坑 —— 漏一族就复活。
+    if (isSkipBeforeUnload()) {
+      clearRefreshRecoveryProject();
+      return;
+    }
     if (!saveRequiredRef.current) {
       clearRefreshRecoveryProject();
       return;

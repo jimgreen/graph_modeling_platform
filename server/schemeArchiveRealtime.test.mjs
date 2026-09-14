@@ -1,7 +1,7 @@
 // 方案 ZIP 实时生成集成测试：GRAPH_MODEL_DATA_DIR 指向 tmpdir 种子数据 → 起真实 server（端口 0）
 // → 断言 ZIP 内 json/e/svg 三件套齐全，且 e/svg 与对应单模型端点输出逐字节一致。
 import { describe, expect, test, beforeAll, afterAll, vi } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import AdmZip from "adm-zip";
@@ -170,13 +170,66 @@ test("子方案目录层级保留在 ZIP 内，条目路径统一用 / 分隔", 
   ].sort());
 });
 
-// 自定义 filesRoot 与实时生成不兼容：渲染适配层无 filesRoot 入参、只读模块级数据根，
-// 放行会产出「json 来自根 A、e/svg 来自根 B」的混合 ZIP，故显式报错（不静默混用）
-test("自定义 filesRoot 显式报错，不静默混用两个数据根", async () => {
+// 自定义 paths 与实时生成必须同源：json 按路径集合枚举，e/svg 也必须按同一路径集合渲染。
+// 模型名刻意与默认根下同名方案的「厂站」错开——若派生格式读错根，本模型在默认根下必然
+// not-found，生成整段报错；而不是静默产出「json 来自根 A、e/svg 来自根 B」的混合 ZIP。
+test("自定义 paths 下的方案 ZIP 成功生成，json 与派生格式同源", async () => {
+  const { spacePathsFor } = await import("./spaceStore.mjs");
+  const paths = spacePathsFor(dataDir, "张三");
+  const spaceFiles = join(paths.schemeFiles, "测试方案");
+  mkdirSync(spaceFiles, { recursive: true });
+  writeFileSync(join(spaceFiles, "空间厂站.json"), JSON.stringify({
+    version: 1, name: "空间厂站", canvasWidth: 800, canvasHeight: 400,
+    layers: [{ id: "default", name: "默认图层", visible: true }],
+    activeLayerId: "default", nodes: [], edges: []
+  }), "utf-8");
+
+  const { buffer } = await createSchemeArchiveBuffer({ paths, schemePath: ["测试方案"] });
+  const zip = new AdmZip(buffer);
+  const names = zip.getEntries().map((e) => e.entryName).sort();
+  // json 与 e/svg 三件套齐全：e/svg 只能由本路径集合下的模型实时生成
+  expect(names).toEqual([
+    "测试方案/空间厂站.e",
+    "测试方案/空间厂站.json",
+    "测试方案/空间厂站.svg"
+  ]);
+  // json 侧的同源正证：打包进去的就是空间根那份磁盘原文
+  expect(zip.getEntry("测试方案/空间厂站.json").getData()
+    .equals(readFileSync(join(spaceFiles, "空间厂站.json")))).toBe(true);
+  // 默认根下不应出现本空间落的任何文件：枚举与渲染都不该往默认根写。
+  // 这条同时是「读对根」的前提：默认根没有本模型，故派生格式若读错根必定 not-found，
+  // renderArtifacts 直接抛错、上面三件套断言必红 —— 不会静默混入另一个根的产物。
+  expect(existsSync(join(dataDir, "schemes", "files", "测试方案", "空间厂站.json"))).toBe(false);
+
+  // 组合三：显式传一个与 paths 同根的 filesRoot → 不得触发拒绝（防守卫过度触发）
+  await expect(createSchemeArchiveBuffer({
+    paths,
+    filesRoot: paths.schemeFiles,
+    schemePath: ["测试方案"]
+  })).resolves.toBeTruthy();
+});
+
+// filesRoot 与 paths 指向不同根时必须显式拒绝：渲染链只跟随 paths.schemeFiles，
+// 放行会产出「json 来自 filesRoot、e/svg 来自 paths」的静默混根 ZIP ——
+// 症状是「ZIP 里 e/svg 是别处的模型」，极难归因，故宁可报错。
+// 组合一：只传非默认 filesRoot（paths 回落默认根）→ 不一致 → 抛错
+test("只传自定义 filesRoot 时显式拒绝，不静默混根", async () => {
   await expect(createSchemeArchiveBuffer({
     filesRoot: join(dataDir, "schemes", "files-自定义"),
     schemePath: ["测试方案"]
-  })).rejects.toThrow(/自定义 filesRoot/);
+  })).rejects.toThrow(/filesRoot 与解析出的 paths 指向不同根/);
+});
+
+// 组合二：同时传 paths 与一个指向别处的 filesRoot → 同样不一致 → 抛错。
+// 这条是「锚点由 defaultPaths.schemeFiles 改为 paths.schemeFiles」的判别证据：
+// 旧形态（含 !options.paths 合取项）只拦组合一，本组合会静默生成混根 ZIP。
+test("paths 与 filesRoot 指向不同根时显式拒绝", async () => {
+  const { spacePathsFor } = await import("./spaceStore.mjs");
+  await expect(createSchemeArchiveBuffer({
+    paths: spacePathsFor(dataDir, "王五"),
+    filesRoot: join(dataDir, "schemes", "files-另一根"),
+    schemePath: ["测试方案"]
+  })).rejects.toThrow(/filesRoot 与解析出的 paths 指向不同根/);
 });
 
 // 子方案目录读失败必须上抛，而非静默丢弃整棵子树后仍产出「看似成功」的 ZIP

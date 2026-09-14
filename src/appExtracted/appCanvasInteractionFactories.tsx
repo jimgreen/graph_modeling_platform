@@ -3,23 +3,14 @@ import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
 import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind } from "../model";
 import { isThreeWindingTransformer } from "../model-eexport";
-import { setVoltageBaseTerminalValueForTopologySide } from "../model-routing";
+import { setVoltageBaseTerminalValueForTopologySide, voltageBaseParamTerminalIndexForNode } from "../model-routing";
 
-/** 变压器侧电压参数(i_vbase/j_vbase/k_vbase) → 对应端子 id；非变压器或非侧电压参数返回 undefined */
+/** 变压器侧电压参数(i_vbase/j_vbase/k_vbase) → 对应端子 id；非变压器或非侧电压参数返回 undefined。
+ *  分侧表（双绕组 i/j = 高/低、三绕组 i/k/j = 高/中/低）**不在本文件**：见
+ *  `voltageBaseParamTerminalIndexForNode` —— 两处各存一份正是「改中压侧却改了低压侧」的成因。 */
 function transformerSideTerminalIdForVoltageParam(node: ModelNode, key: string): string | undefined {
-  const isThree = isThreeWindingTransformer(node);
-  const baseKind = baseDeviceKind(node.kind);
-  const isTwo = baseKind === "ac-transformer" || baseKind === "ac-two-winding-transformer";
-  if (!isThree && !isTwo) {
-    return undefined;
-  }
-  const terminalIndex = isThree
-    ? ({ i_vbase: 0, k_vbase: 1, j_vbase: 2, neutral_vbase: 3 } as Record<string, number>)[key]
-    : ({ i_vbase: 0, j_vbase: 1 } as Record<string, number>)[key];
-  if (terminalIndex === undefined) {
-    return undefined;
-  }
-  return node.terminals[terminalIndex]?.id;
+  const terminalIndex = voltageBaseParamTerminalIndexForNode(node, key);
+  return terminalIndex === undefined ? undefined : node.terminals[terminalIndex]?.id;
 }
 import { Button, Input } from "antd";
 
@@ -2499,15 +2490,8 @@ export function createUpdateParam(__appScope: Record<string, any>) {
               const paramsNode = { ...currentNode, params: { ...currentNode.params, [key]: storedValue } };
               // 变压器侧电压参数(i_vbase/j_vbase/k_vbase)与对应端子 vbase 需保持一致：
               // 修改侧电压时同步对应端子 vbase，令拓扑着色与【设置电压基值】窗口读取一致。
-              const isThree = isThreeWindingTransformer(currentNode);
-              const baseKind = baseDeviceKind(currentNode.kind);
-              const isTwo = baseKind === "ac-transformer" || baseKind === "ac-two-winding-transformer";
-              if (!isThree && !isTwo) {
-                return paramsNode;
-              }
-              const terminalIndexForVbase = isThree
-                ? ({ i_vbase: 0, k_vbase: 1, j_vbase: 2, neutral_vbase: 3 } as Record<string, number>)[key]
-                : ({ i_vbase: 0, j_vbase: 1 } as Record<string, number>)[key];
+              // 侧位同样取自 `voltageBaseParamTerminalIndexForNode`（唯一分侧表）。
+              const terminalIndexForVbase = voltageBaseParamTerminalIndexForNode(currentNode, key);
               if (terminalIndexForVbase === undefined) {
                 return paramsNode;
               }

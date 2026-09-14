@@ -40,13 +40,15 @@ function templateOverridesFromText(templateText, library) {
   });
 }
 
-export async function buildEFileForSavedModel({ parts, name, templateName, templateText }) {
-  const record = await readSchemeProjectRecord({ schemePath: parts, name });
+// paths：多空间路径集合（spaceStore.spacePathsFor）。缺省时各被调函数回落 defaultPaths，
+// 保证「方案 ZIP 的 json 与 e/svg 同源」——调用方传了 paths，派生格式就必须读同一个根。
+export async function buildEFileForSavedModel({ parts, name, templateName, templateText, paths }) {
+  const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
   if (!record) {
     return { error: { code: "not-found", message: "模型不存在。" } };
   }
   const project = record.project;
-  const library = await readDeviceLibraryConfig();
+  const library = await readDeviceLibraryConfig({ paths });
 
   let overrides = {
     eDeviceDefinitionLabels: library.eDeviceDefinitionLabels ?? {},
@@ -194,7 +196,8 @@ export function parseEFileQuery(url) {
 }
 
 // GET /webgrp/v1/schemes/model/e-file
-export async function handleV1ModelEFile({ url, response }) {
+// paths：多空间路径集合（spaceStore.spacePathsFor），缺省时被调函数回落 defaultPaths。
+export async function handleV1ModelEFile({ url, response, paths }) {
   const parsed = parseEFileQuery(url);
   if (parsed.error) {
     sendV1Error(response, parsed.error.code, parsed.error.message);
@@ -210,7 +213,8 @@ export async function handleV1ModelEFile({ url, response }) {
       parts: parsed.parts,
       name: parsed.name,
       templateName: parsed.templateName,
-      templateText
+      templateText,
+      paths
     });
     if (error) {
       sendV1Error(response, error.code, error.message);
@@ -223,7 +227,7 @@ export async function handleV1ModelEFile({ url, response }) {
 }
 
 // POST /webgrp/v1/schemes/model/e-file —— body { templateText, templateName? }
-export async function handleV1ModelEFilePost({ request, response, url }) {
+export async function handleV1ModelEFilePost({ request, response, url, paths }) {
   const parsed = parseEFileQuery(url);
   if (parsed.error) {
     sendV1Error(response, parsed.error.code, parsed.error.message);
@@ -241,7 +245,8 @@ export async function handleV1ModelEFilePost({ request, response, url }) {
       parts: parsed.parts,
       name: parsed.name,
       templateName: bodyTemplateName || parsed.templateName,
-      templateText
+      templateText,
+      paths
     });
     if (error) {
       sendV1Error(response, error.code, error.message);

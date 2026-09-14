@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir as mkdirRaw, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
-import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzip } from "node:zlib";
 import { promisify } from "node:util";
@@ -12,6 +12,7 @@ import { randomId } from "../shared/randomId.mjs";
 import { isPathInside, sanitizeSegment } from "../shared/pathSafety.mjs";
 import { atomicWriteFile } from "../shared/atomicWrite.mjs";
 import { apiPrefix, apiPath, escapeRegExp, backendPort, host, stripFrontendBase } from "./config.mjs";
+import { accessControlHeaders } from "./cors.mjs";
 import {
   NativeExportSaveError,
   createNativeExportSaveService,
@@ -19,29 +20,88 @@ import {
 } from "./nativeExportSave.mjs";
 import { GlobalLineRegistryError, createGlobalLineRegistry } from "./globalLineRegistry.mjs";
 import { isModelJsonFile } from "./schemeFiles.mjs";
+import { SPACE_NAME_DUPLICATE, spacePathsFor } from "./spaceStore.mjs";
+import { MAX_SPACE_NAME_LENGTH, isAcceptableSpaceName, normalizeSpaceName } from "./spaceId.mjs";
 import { meaningfulDeviceParameterChineseName } from "../shared/deviceParameterChineseNames.mjs";
 import { withXmlEncodingDeclaration } from "./xmlEncoding.mjs";
+import { buildSpaceArchiveBuffer, readSpaceArchiveName, SPACE_ARCHIVE_META_FILENAME } from "./spaceArchive.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 // 数据根目录：默认 repo data/，可用 GRAPH_MODEL_DATA_DIR 覆盖（测试隔离用 tmpdir）
 const dataRoot = process.env.GRAPH_MODEL_DATA_DIR ? resolve(process.env.GRAPH_MODEL_DATA_DIR) : resolve(repoRoot, "data");
-const imageDataDir = join(dataRoot, "images");
-const iconDataDir = join(dataRoot, "icons");
-const manifestPath = join(imageDataDir, "manifest.json");
-const imageFoldersPath = join(imageDataDir, "folders.json");
-const schemeDataDir = join(dataRoot, "schemes");
-const schemeTrashDir = join(schemeDataDir, "trash");
+// 默认（default 空间）路径集合。所有路径已统一由每请求解析出的 paths 提供（options.paths ?? defaultPaths），
+// 模块级路径常量已全部删除 —— 不要再新增，否则空间隔离会被绕过。
+// 必须 export：各空间测试文件从本模块解构它来拼各自的 paths。
+export const defaultPaths = spacePathsFor(dataRoot, "default");
 const modelTypes = new Set(["微网", "厂站", "馈线", "台区", "其他"]);
-const settingsDataDir = join(dataRoot, "settings");
-const colorConfigPath = join(settingsDataDir, "color-config.json");
-const measurementConfigPath = join(settingsDataDir, "measurement-config.json");
-const deviceLibraryDataDir = join(dataRoot, "device-library");
-const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");
-const globalLineRegistry = createGlobalLineRegistry({
-  dataRoot,
-  schemeFilesRoot: join(schemeDataDir, "files")
-});
+// 全局线路注册表按空间缓存：registry 闭包持有 queue + initialized 并绑死绝对路径，
+// 既不能每请求新建，也不能跨空间共用一个实例。键用 paths.root（default 空间即数据根）。
+const registries = new Map();
+// 已删除（或正在删除）的空间根，键与 registries 同域（都是空间根的绝对路径）。
+// 登记表示「这个根上已没有空间」：registryFor 对其短路拒绝构造。
+// 为什么不能在 spaceStore.remove 返回后撤下：registryFor 是惰性的，而请求在派发层的
+// 同步段就把 paths 定死了。一条已入场、卡在 readJsonBody 上的写请求，在 remove 返回时
+// 才恢复，此时登记若已撤下，它就会按旧绝对路径首次构造注册表，把已删空间的骨架写回来。
+// 故登记从删除流程一开始一直保留，只有该空间被重新建出（同名 → 同 id → 同根）
+// 或本次删除失败时才撤下。
+const retiredSpaceRoots = new Set();
+// 对已退休空间路径的任何写盘都必须拒绝：删除空间后，在飞的请求会带着删除前定下的
+// 旧绝对路径回来，一个 mkdir(recursive) 就能把已删空间重新建出来。
+// 用前缀判定而非等值：调用方手里常常只有某个子目录（如 paths.schemeFiles），
+// 拿不到空间根；加 sep 避免 workspaces/张三 误伤 workspaces/张三丰。
+const isUnderRetiredRoot = (target) =>
+  [...retiredSpaceRoots].some((root) => target === root || target.startsWith(root + sep));
+
+// 命中退休空间时统一抛这个：带 statusCode，派发层外层 catch 直接采用（否则会变成 500）
+class RetiredSpaceWriteError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "RetiredSpaceWriteError";
+    this.statusCode = 409;
+  }
+}
+const retiredSpaceMessage = "该空间已删除或正在删除中，已拒绝写入。";
+function assertNotRetiredRoot(target) {
+  if (isUnderRetiredRoot(target)) {
+    throw new RetiredSpaceWriteError(retiredSpaceMessage);
+  }
+}
+
+// 空间内的任何建目录都必须先过退休判定：删除空间后，在飞的请求会带着删除前定下的
+// 旧绝对路径回来，一个 mkdir(recursive) 就把已删空间重建出来了。
+// 故所有 mkdir 一律走这里，且 node:fs 的 mkdir 只在本函数里出现（别名 mkdirRaw）——
+// 判据不依赖「某处是不是入口」这类会随代码演化失效的调用顺序推理。
+// 不变量：全文件再无第二个裸 mkdir 等待调用（本任务报告给出实跑的不变量检查输出）。
+async function mkdirInSpace(target) {
+  assertNotRetiredRoot(target);
+  await mkdirRaw(target, { recursive: true });
+}
+
+function registryFor(paths) {
+  assertNotRetiredRoot(paths.root);
+  let registry = registries.get(paths.root);
+  if (!registry) {
+    registry = createGlobalLineRegistry({
+      dataRoot: paths.root,
+      schemeFilesRoot: paths.schemeFiles
+    });
+    registries.set(paths.root, registry);
+  }
+  return registry;
+}
+
+// 删除空间前必须：排空在飞写队列 → 驱逐缓存 → 才允许调用方把目录改名/删除。
+// 少了排空这一步，队列里的原子写会按旧绝对路径把已删空间在
+// workspaces/<id>/schemes/ 下重新建出骨架。
+export async function evictRegistry(spaceRoot) {
+  const registry = registries.get(spaceRoot);
+  if (!registry) {
+    return;
+  }
+  await registry.flush();
+  registries.delete(spaceRoot);
+}
 const maxImageBodyBytes = 16 * 1024 * 1024;
 const maxIconLibraryImportBodyBytes = 128 * 1024 * 1024;
 const maxSchemeBodyBytes = 64 * 1024 * 1024;
@@ -50,11 +110,6 @@ const maxColorConfigBodyBytes = 1024 * 1024;
 const maxMeasurementConfigBodyBytes = 1024 * 1024;
 const maxDeviceLibraryBodyBytes = 16 * 1024 * 1024;
 const maxFilePartLength = 80;
-const accessControlHeaders = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
-  "access-control-allow-headers": "content-type"
-};
 const noStoreJsonHeaders = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
@@ -246,7 +301,12 @@ const stringifyJson = (value) => JSON.stringify(value, null, 2);
 
 // 一律以 UTF-8 写盘：落盘只留 .json，E 文件不再落盘（ZIP 内 .e 由 iconv 现场编码为 GBK）。
 // 内容比较按字节对比，避免重建时因无关编码差异产生伪变更。
-async function writeTextIfChanged(filePath, content) {
+// export 仅为让测试能直接验证退休判定（见 spaceApi.test.mjs 的 writeTextIfChanged 用例）：
+// 这是 mkdir 之外的第二条建目录路径，无法从 HTTP 侧构造出「未经 mkdirInSpace」的调用。
+export async function writeTextIfChanged(filePath, content) {
+  // atomicWriteFile 自己会 mkdir(dirname) —— 那是一条绕过 mkdirInSpace 的建目录路径
+  // （grep 不到），故这里也要判一次。它不新建原语：assertNotRetiredRoot 本就是任意路径的前缀判定。
+  assertNotRetiredRoot(filePath);
   const bytes = Buffer.from(String(content ?? ""), "utf-8");
   try {
     const current = await readFile(filePath);
@@ -261,7 +321,7 @@ async function writeTextIfChanged(filePath, content) {
 }
 
 async function ensureJsonStoreFile(dirPath, filePath, defaultValue) {
-  await mkdir(dirPath, { recursive: true });
+  await mkdirInSpace(dirPath);
   try {
     await readFile(filePath, "utf-8");
   } catch {
@@ -279,7 +339,7 @@ async function readJsonStoreFile(dirPath, filePath, defaultValue, normalize = (v
 }
 
 async function readOptionalJsonStoreFile(dirPath, filePath) {
-  await mkdir(dirPath, { recursive: true });
+  await mkdirInSpace(dirPath);
   try {
     return JSON.parse(await readFile(filePath, "utf-8"));
   } catch {
@@ -288,24 +348,27 @@ async function readOptionalJsonStoreFile(dirPath, filePath) {
 }
 
 async function writeJsonStoreFile(dirPath, filePath, value) {
-  await mkdir(dirPath, { recursive: true });
+  await mkdirInSpace(dirPath);
   await writeTextIfChanged(filePath, stringifyJson(value));
 }
 
-async function ensureStore() {
-  await ensureJsonStoreFile(imageDataDir, manifestPath, []);
-  await ensureJsonStoreFile(imageDataDir, imageFoldersPath, [rootImageFolder()]);
-  await mkdir(iconDataDir, { recursive: true });
+export async function ensureStore(options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  await ensureJsonStoreFile(paths.images, paths.manifest, []);
+  await ensureJsonStoreFile(paths.images, paths.imageFolders, [rootImageFolder()]);
+  await mkdirInSpace(paths.icons);
 }
 
-async function readManifest() {
-  return readJsonStoreFile(imageDataDir, manifestPath, [], (parsed) =>
+export async function readManifest(options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  return readJsonStoreFile(paths.images, paths.manifest, [], (parsed) =>
     Array.isArray(parsed) ? parsed.map((item) => ({ ...item, folderId: item.folderId || "root" })) : []
   );
 }
 
-async function writeManifest(items) {
-  await writeJsonStoreFile(imageDataDir, manifestPath, items);
+async function writeManifest(items, options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  await writeJsonStoreFile(paths.images, paths.manifest, items);
 }
 
 function rootImageFolder() {
@@ -316,8 +379,9 @@ function rootImageFolder() {
   };
 }
 
-async function readImageFolders() {
-  return readJsonStoreFile(imageDataDir, imageFoldersPath, [rootImageFolder()], (parsed) => {
+async function readImageFolders(options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  return readJsonStoreFile(paths.images, paths.imageFolders, [rootImageFolder()], (parsed) => {
     const folders = Array.isArray(parsed) ? parsed : [];
     const withRoot = folders.some((folder) => folder.id === "root") ? folders : [rootImageFolder(), ...folders];
     return withRoot.map((folder) => ({
@@ -328,9 +392,10 @@ async function readImageFolders() {
   });
 }
 
-async function writeImageFolders(folders) {
+async function writeImageFolders(folders, options = {}) {
+  const paths = options.paths ?? defaultPaths;
   const withRoot = folders.some((folder) => folder.id === "root") ? folders : [rootImageFolder(), ...folders];
-  await writeJsonStoreFile(imageDataDir, imageFoldersPath, withRoot);
+  await writeJsonStoreFile(paths.images, paths.imageFolders, withRoot);
 }
 
 // 审查 A1-P0-1：图片存储（manifest + folders）read-modify-write 串行化。
@@ -343,8 +408,8 @@ function withImageStoreLock(task) {
   return run;
 }
 
-async function resolveFolderId(folderId) {
-  const folders = await readImageFolders();
+async function resolveFolderId(folderId, options = {}) {
+  const folders = await readImageFolders(options);
   return folders.some((folder) => folder.id === folderId) ? folderId : "root";
 }
 
@@ -377,10 +442,10 @@ async function readLegacySchemeDirectoryMeta(schemeDir) {
   }
 }
 
-async function readSchemeProjectFile(filePath, fileName) {
+async function readSchemeProjectFile(filePath, fileName, paths = defaultPaths) {
   try {
     const storedProject = normalizeProjectForStorage(JSON.parse(await readFile(filePath, "utf-8")));
-    const hydrated = await globalLineRegistry.hydrateProject({ project: storedProject });
+    const hydrated = await registryFor(paths).hydrateProject({ project: storedProject });
     const project = hydrated.project;
     const fileBaseName = fileName.replace(/\.json$/iu, "");
     const name = storageProjectDisplayName(project.name || storedProjectFilePartDisplayName(fileBaseName));
@@ -448,7 +513,7 @@ async function readSchemeDirectory(dirent, parentDir, options = {}) {
       continue;
     }
     const project = options.includeProjects
-      ? await readSchemeProjectFile(entryPath, entry.name)
+      ? await readSchemeProjectFile(entryPath, entry.name, options.paths ?? defaultPaths)
       : await readSchemeProjectSummaryFile(entryPath, entry.name);
     if (project) {
       projects.push(project);
@@ -464,8 +529,9 @@ async function readSchemeDirectory(dirent, parentDir, options = {}) {
 }
 
 export async function readSchemesFromFiles(options = {}) {
-  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
-  await mkdir(filesRoot, { recursive: true });
+  const paths = options.paths ?? defaultPaths;
+  const filesRoot = options.filesRoot ?? paths.schemeFiles;
+  await mkdirInSpace(filesRoot);
   const entries = await readdir(filesRoot, { withFileTypes: true });
   const schemes = [];
   for (const entry of entries) {
@@ -480,22 +546,24 @@ export async function readSchemesFromFiles(options = {}) {
   return schemes;
 }
 
-async function removeLegacySchemeManifest() {
-  await rm(join(schemeDataDir, "schemes.json"), { force: true });
+async function removeLegacySchemeManifest(options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  await rm(join(paths.schemes, "schemes.json"), { force: true });
 }
 
-async function ensureSchemeStore() {
-  await mkdir(join(schemeDataDir, "files"), { recursive: true });
+async function ensureSchemeStore(options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  await mkdirInSpace(paths.schemeFiles);
 }
 
 export async function readSchemes(options = {}) {
   return readSchemesFromFiles(options);
 }
 
-async function writeSchemes(schemes) {
-  await ensureSchemeStore();
-  await writeSchemeFiles(schemes);
-  await removeLegacySchemeManifest();
+async function writeSchemes(schemes, options = {}) {
+  await ensureSchemeStore(options);
+  await writeSchemeFiles(schemes, options);
+  await removeLegacySchemeManifest(options);
 }
 
 function normalizeColorRecord(source) {
@@ -521,8 +589,9 @@ function normalizeColorConfig(payload) {
   };
 }
 
-export async function readColorConfig() {
-  const parsed = await readOptionalJsonStoreFile(settingsDataDir, colorConfigPath);
+export async function readColorConfig(options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  const parsed = await readOptionalJsonStoreFile(paths.settings, paths.colorConfig);
   if (parsed) {
     return {
       exists: true,
@@ -539,12 +608,13 @@ export async function readColorConfig() {
   };
 }
 
-async function writeColorConfig(config) {
+async function writeColorConfig(config, options = {}) {
+  const paths = options.paths ?? defaultPaths;
   const normalized = {
     ...normalizeColorConfig(config),
     savedAt: new Date().toISOString()
   };
-  await writeJsonStoreFile(settingsDataDir, colorConfigPath, normalized);
+  await writeJsonStoreFile(paths.settings, paths.colorConfig, normalized);
   return normalized;
 }
 
@@ -864,8 +934,9 @@ export function normalizeMeasurementConfig(payload) {
   return { groupDefaults, measurementTypes, deviceProfiles };
 }
 
-export async function readMeasurementConfig() {
-  const parsed = await readOptionalJsonStoreFile(settingsDataDir, measurementConfigPath);
+export async function readMeasurementConfig(options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  const parsed = await readOptionalJsonStoreFile(paths.settings, paths.measurementConfig);
   if (parsed) {
     return {
       exists: true,
@@ -880,12 +951,13 @@ export async function readMeasurementConfig() {
   };
 }
 
-async function writeMeasurementConfig(config) {
+async function writeMeasurementConfig(config, options = {}) {
+  const paths = options.paths ?? defaultPaths;
   const normalized = {
     ...normalizeMeasurementConfig(config),
     savedAt: new Date().toISOString()
   };
-  await writeJsonStoreFile(settingsDataDir, measurementConfigPath, normalized);
+  await writeJsonStoreFile(paths.settings, paths.measurementConfig, normalized);
   return normalized;
 }
 
@@ -1500,8 +1572,9 @@ export function normalizeDeviceLibraryConfig(payload) {
   };
 }
 
-export async function readDeviceLibraryConfig() {
-  const parsed = await readOptionalJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath);
+export async function readDeviceLibraryConfig(options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  const parsed = await readOptionalJsonStoreFile(paths.deviceLibraryDir, paths.deviceLibrary);
   if (parsed) {
     const normalized = normalizeDeviceLibraryConfig(parsed);
     if (
@@ -1511,7 +1584,7 @@ export async function readDeviceLibraryConfig() {
       JSON.stringify(parsed.deviceDefinitionOverrides ?? {}) !== JSON.stringify(normalized.deviceDefinitionOverrides) ||
       JSON.stringify(parsed.deviceDefinitionSharedKeys ?? {}) !== JSON.stringify(normalized.deviceDefinitionSharedKeys)
     ) {
-      await writeJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath, normalized);
+      await writeJsonStoreFile(paths.deviceLibraryDir, paths.deviceLibrary, normalized);
     }
     return {
       exists: true,
@@ -1524,9 +1597,10 @@ export async function readDeviceLibraryConfig() {
   };
 }
 
-async function writeDeviceLibraryConfig(config) {
+async function writeDeviceLibraryConfig(config, options = {}) {
+  const paths = options.paths ?? defaultPaths;
   const normalized = normalizeDeviceLibraryConfig(config);
-  await writeJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath, normalized);
+  await writeJsonStoreFile(paths.deviceLibraryDir, paths.deviceLibrary, normalized);
   return normalized;
 }
 
@@ -1535,8 +1609,10 @@ function sendJson(response, status, data) {
   response.end(JSON.stringify(data));
 }
 
-function sendError(response, status, message) {
-  sendJson(response, status, { error: message });
+// 带 code 时用 v1 同构的错误对象，否则保持既有字符串形态（不破坏任何现有调用方）。
+// 与 sendV1Error 并存：v1 域走 sendV1Error，/webgrp/* 内部域（含派发层的空间校验）走这里。
+function sendError(response, status, message, code) {
+  sendJson(response, status, code ? { error: { code, message } } : { error: message });
 }
 
 const gzipAsync = promisify(gzip);
@@ -2904,17 +2980,18 @@ function safeImageExportFilename(value) {
   return normalized.split("/").filter(Boolean).pop() ?? "";
 }
 
-async function imageFileToDataUrl(item) {
+async function imageFileToDataUrl(item, options = {}) {
+  const paths = options.paths ?? defaultPaths;
   const filename = safeImageExportFilename(item?.filename ?? "");
   const mimeType = String(item?.mimeType ?? "").trim();
   if (!filename || !mimeType.startsWith("image/")) {
     return "";
   }
-  const bytes = await readFile(join(imageDataDir, filename));
+  const bytes = await readFile(join(paths.images, filename));
   return `data:${mimeType};base64,${bytes.toString("base64")}`;
 }
 
-async function imageExportPathByIdFromManifest(manifest) {
+async function imageExportPathByIdFromManifest(manifest, options = {}) {
   const result = {};
   await Promise.all((Array.isArray(manifest) ? manifest : []).map(async (item) => {
     const id = String(item?.id ?? "").trim();
@@ -2922,7 +2999,7 @@ async function imageExportPathByIdFromManifest(manifest) {
       return;
     }
     try {
-      const dataUrl = await imageFileToDataUrl(item);
+      const dataUrl = await imageFileToDataUrl(item, options);
       if (dataUrl) {
         result[id] = dataUrl;
       }
@@ -2935,13 +3012,13 @@ async function imageExportPathByIdFromManifest(manifest) {
 
 // Task 19：只内联模型实际引用的图片（ids 为图片 id 集合）。
 // 未登记的 id 直接跳过、单张读取失败由 imageExportPathByIdFromManifest 的 try/catch 吞掉 → 该图保留原始 href，不阻断导出。
-export async function readReferencedImageExportPathById(ids) {
+export async function readReferencedImageExportPathById(ids, options = {}) {
   const wanted = new Set((Array.isArray(ids) ? ids : []).map((id) => String(id ?? "").trim()).filter(Boolean));
   if (wanted.size === 0) {
     return {};
   }
-  const manifest = await readManifest();
-  return imageExportPathByIdFromManifest(manifest.filter((item) => wanted.has(String(item?.id ?? "").trim())));
+  const manifest = await readManifest(options);
+  return imageExportPathByIdFromManifest(manifest.filter((item) => wanted.has(String(item?.id ?? "").trim())), options);
 }
 
 function formatSvgNumber(value) {
@@ -2994,7 +3071,7 @@ async function archiveSchemeStoreEntry(entryPath, filesRoot, trashRoot, archiveI
     throw error;
   }
   let targetPath = join(trashRoot, archiveId, relativePath);
-  await mkdir(dirname(targetPath), { recursive: true });
+  await mkdirInSpace(dirname(targetPath));
   for (let index = 2; ; index += 1) {
     try {
       await rename(entryPath, targetPath);
@@ -3013,8 +3090,9 @@ async function archiveSchemeStoreEntry(entryPath, filesRoot, trashRoot, archiveI
 }
 
 export async function archiveStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs, options = {}) {
+  const paths = options.paths ?? defaultPaths;
   const { files, dirs } = await listSchemeStoreEntries(filesRoot);
-  const trashRoot = options.trashRoot ?? schemeTrashDir;
+  const trashRoot = options.trashRoot ?? paths.schemeTrash;
   const archiveId = options.archiveId ?? schemeArchiveId();
   await Promise.all(files.filter((filePath) => !expectedFiles.has(filePath)).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, archiveId)));
   for (const dir of dirs.sort((first, second) => second.length - first.length)) {
@@ -3069,32 +3147,40 @@ function zipEntryParts(entryName) {
   return parts;
 }
 
-function schemeZipRootName(entries, fallbackName) {
+/**
+ * ZIP 顶层目录名：全部文件条目（每个至少两段）同属一个顶层目录才认它，否则回退给定名。
+ * label 只决定报错文案与兜底名（"方案" / "空间"）——守卫逻辑两域共用一份：
+ * 它是安全边界（zipEntryParts 拒 `..` / 绝对路径 / 盘符），各留一份就是留一处将来会漏改的洞。
+ */
+function zipRootNameFor(entries, fallbackName, label = "方案") {
   const fileParts = entries
     .filter((entry) => !entry.isDirectory)
     .map((entry) => zipEntryParts(entry.entryName))
     .filter((parts) => parts.length > 0);
   if (fileParts.length === 0) {
-    throw new Error("zip 文件中没有可导入的方案文件。");
+    throw new Error(`zip 文件中没有可导入的${label}文件。`);
   }
   const firstRoot = fileParts[0][0];
   const hasSingleRoot = firstRoot && fileParts.every((parts) => parts.length > 1 && parts[0] === firstRoot);
-  return safeFilePart(hasSingleRoot ? firstRoot : fallbackName, "导入方案");
+  return safeFilePart(hasSingleRoot ? firstRoot : fallbackName, `导入${label}`);
 }
 
-async function extractSchemeZipToDirectory(zip, targetDir, rootName) {
-  await mkdir(targetDir, { recursive: true });
-  const skippedDerived = [];
+/**
+ * ZIP 解包的共用骨架：唯一一份 zip-slip 守卫（zipEntryParts + 去顶层目录 + isPathInside + mkdirInSpace + writeFile）。
+ * 两域的唯一差异是「跳过什么」，经 skipEntry(relativeParts, entry) 注入；返回被跳过的相对路径，
+ * 由调用方决定是告警还是静默跳过。
+ */
+async function extractZipEntries(zip, targetDir, rootName, skipEntry) {
+  await mkdirInSpace(targetDir);
+  const skipped = [];
   for (const entry of zip.getEntries()) {
     const parts = zipEntryParts(entry.entryName);
     const relativeParts = safeFilePart(parts[0], parts[0]) === rootName ? parts.slice(1) : parts;
     if (relativeParts.length === 0) {
       continue;
     }
-    // files 不变量：只落 .json。旧 ZIP 内的派生格式（.e/.svg）不写回磁盘；
-    // 只跳这两种本平台派生后缀，其它条目（如 scheme.json）原样铺开。
-    if (!entry.isDirectory && /\.(e|svg)$/iu.test(relativeParts[relativeParts.length - 1])) {
-      skippedDerived.push(relativeParts.join("/"));
+    if (skipEntry(relativeParts, entry)) {
+      skipped.push(relativeParts.join("/"));
       continue;
     }
     const targetPath = relativeParts.reduce((current, part) => join(current, safeFilePart(part, part)), targetDir);
@@ -3102,30 +3188,54 @@ async function extractSchemeZipToDirectory(zip, targetDir, rootName) {
       throw new Error("zip 文件包含越界路径。");
     }
     if (entry.isDirectory) {
-      await mkdir(targetPath, { recursive: true });
+      await mkdirInSpace(targetPath);
       continue;
     }
-    await mkdir(dirname(targetPath), { recursive: true });
+    await mkdirInSpace(dirname(targetPath));
     await writeFile(targetPath, entry.getData());
   }
+  return skipped;
+}
+
+// 方案解包：files 不变量「只落 .json」。旧 ZIP 内的派生格式（.e/.svg）不写回磁盘；
+// 只跳这两种本平台派生后缀，其它条目（如 scheme.json）原样铺开。
+async function extractSchemeZipToDirectory(zip, targetDir, rootName) {
+  const skippedDerived = await extractZipEntries(
+    zip,
+    targetDir,
+    rootName,
+    (relativeParts, entry) => !entry.isDirectory && /\.(e|svg)$/iu.test(relativeParts[relativeParts.length - 1])
+  );
   if (skippedDerived.length > 0) {
     console.warn(`[scheme-import] 跳过 ${skippedDerived.length} 个派生文件（.e/.svg 不落盘）：${skippedDerived.join("、")}`);
   }
 }
 
+/**
+ * 空间解包：**跳过规则与方案侧不同** —— 空间里有图片与空间级图标，
+ * 按方案那条「files 只落 .json」的口径会跳过 .e/.svg，跳过就是丢数据。
+ * 安全守卫与方案侧同源（共用 extractZipEntries）。
+ */
+async function extractSpaceZipToDirectory(zip, targetDir, rootName) {
+  await extractZipEntries(zip, targetDir, rootName, (relativeParts) =>
+    relativeParts.length === 1 && relativeParts[0] === SPACE_ARCHIVE_META_FILENAME);
+}
+
 // 方案 ZIP：json 落盘原文 + e/svg 实时生成（不再读磁盘派生文件）。
 // 适配层用函数内动态 import：svgExport/eFileExport 均 import 本模块，静态 import 会成环。
 export async function createSchemeArchiveBuffer(options) {
-  const defaultFilesRoot = join(schemeDataDir, "files");
-  const filesRoot = options.filesRoot ?? defaultFilesRoot;
+  const paths = options.paths ?? defaultPaths;
+  const filesRoot = options.filesRoot ?? paths.schemeFiles;
   const schemePath = Array.isArray(options.schemePath) ? options.schemePath : [];
   if (schemePath.length === 0) {
     throw new Error("缺少方案路径。");
   }
-  // 渲染适配层（renderSavedModelSvg / buildEFileForSavedModel）无 filesRoot 入参，一律读模块级数据根。
-  // 若放行自定义根，会产出「json 来自根 A、e/svg 来自根 B」的混合 ZIP —— 显式拒绝，不静默混用。
-  if (resolve(filesRoot) !== resolve(defaultFilesRoot)) {
-    throw new Error("自定义 filesRoot 下暂不支持实时生成派生格式（渲染适配层只读默认数据根）。");
+  // 锚点 = 渲染链实际读取的根（paths.schemeFiles），故随 paths 而变。
+  // 不要把它改回「与 paths 无关的独立值」—— 那会重新打开混根：枚举走一个根、
+  // 渲染走另一个根，同名模型存在时静默产出错误 ZIP。
+  // ?? defaultPaths.schemeFiles 兜底缺字段的偏对象（如 paths: {}），避免 resolve(undefined) 抛 TypeError 顶掉下面的中文消息。
+  if (resolve(filesRoot) !== resolve(paths.schemeFiles ?? defaultPaths.schemeFiles)) {
+    throw new Error("filesRoot 与解析出的 paths 指向不同根，不支持实时生成派生格式（渲染适配层只跟随 paths）；请只传 paths。");
   }
   const schemeName = safeFilePart(schemePath[schemePath.length - 1], "方案");
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
@@ -3138,11 +3248,12 @@ export async function createSchemeArchiveBuffer(options) {
       const { buildEFileForSavedModel } = await import("./eFileExport.mjs");
       const parts = [...schemePath, ...dirParts];
       // colorMode 取 voltage：与前端单模型导出同口径（旧 ZIP 内 svg 即由此产生），energy 仅为端点旧契约缺省
-      const svgResult = await renderSavedModelSvg({ parts, name: modelName, colorMode: "voltage" });
+      // paths 必须透传：json 按 filesRoot 枚举，e/svg 也必须读同一路径集合，否则产出混合 ZIP
+      const svgResult = await renderSavedModelSvg({ parts, name: modelName, colorMode: "voltage", paths });
       if (svgResult.error) {
         throw new Error(`模型“${modelName}”SVG 生成失败：${svgResult.error.message}`);
       }
-      const eResult = await buildEFileForSavedModel({ parts, name: modelName });
+      const eResult = await buildEFileForSavedModel({ parts, name: modelName, paths });
       if (eResult.error) {
         throw new Error(`模型“${modelName}”E 文件生成失败：${eResult.error.message}`);
       }
@@ -3156,9 +3267,10 @@ export async function createSchemeArchiveBuffer(options) {
 }
 
 export async function importSchemeArchiveBuffer(options) {
-  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
-  const trashRoot = options.trashRoot ?? schemeTrashDir;
-  await mkdir(filesRoot, { recursive: true });
+  const paths = options.paths ?? defaultPaths;
+  const filesRoot = options.filesRoot ?? paths.schemeFiles;
+  const trashRoot = options.trashRoot ?? paths.schemeTrash;
+  await mkdirInSpace(filesRoot);
   const parentPath = Array.isArray(options.parentPath) ? options.parentPath.map((part) => safeFilePart(part, "方案")).filter(Boolean) : [];
   const fileName = safeFilePart(options.fileName || "导入方案.zip", "导入方案.zip").replace(/\.zip$/iu, "");
   const mode = options.mode === "overwrite" ? "overwrite" : "check";
@@ -3166,7 +3278,7 @@ export async function importSchemeArchiveBuffer(options) {
   const zip = options.zip && typeof options.zip.getEntries === "function" ? options.zip : new AdmZip(options.buffer);
   assertZipUncompressedSizeWithinLimit(zip, "方案压缩包");
   const entries = zip.getEntries();
-  const zipRootName = schemeZipRootName(entries, fileName);
+  const zipRootName = zipRootNameFor(entries, fileName, "方案");
   const importName = requestedName || zipRootName;
   const parentDir = schemeDirectoryFromPath(filesRoot, parentPath);
   const targetDir = join(parentDir, importName);
@@ -3187,7 +3299,7 @@ export async function importSchemeArchiveBuffer(options) {
       parentPath
     };
   }
-  await mkdir(parentDir, { recursive: true });
+  await mkdirInSpace(parentDir);
   if (targetExists) {
     await archiveSchemeStoreEntry(targetDir, filesRoot, trashRoot, schemeArchiveId());
   }
@@ -3206,13 +3318,14 @@ function sameSchemePath(first, second) {
 }
 
 export async function saveSchemeRecordDirectory(options) {
-  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
+  const paths = options.paths ?? defaultPaths;
+  const filesRoot = options.filesRoot ?? paths.schemeFiles;
   const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : ["默认方案"];
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
   const previousSchemePath = options.previousSchemePath;
   if (Array.isArray(previousSchemePath) && previousSchemePath.length > 0 && !sameSchemePath(previousSchemePath, schemePath)) {
     const previousDir = schemeDirectoryFromPath(filesRoot, previousSchemePath);
-    await mkdir(dirname(schemeDir), { recursive: true });
+    await mkdirInSpace(dirname(schemeDir));
     try {
       await rename(previousDir, schemeDir);
       return;
@@ -3222,12 +3335,13 @@ export async function saveSchemeRecordDirectory(options) {
       }
     }
   }
-  await mkdir(schemeDir, { recursive: true });
+  await mkdirInSpace(schemeDir);
 }
 
 export async function deleteSchemeRecordDirectory(options) {
-  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
-  const trashRoot = options.trashRoot ?? schemeTrashDir;
+  const paths = options.paths ?? defaultPaths;
+  const filesRoot = options.filesRoot ?? paths.schemeFiles;
+  const trashRoot = options.trashRoot ?? paths.schemeTrash;
   const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : [];
   if (schemePath.length === 0) {
     return;
@@ -3358,20 +3472,21 @@ async function allocateStableProjectIndex({ filesRoot, schemeDir, name, previous
     if (existingIndex > 0) {
       const lastIndex = Math.max(persistedIndex, storedMaxIndex, existingIndex);
       if (lastIndex !== persistedIndex) {
-        await mkdir(dirname(counterPath), { recursive: true });
+        await mkdirInSpace(dirname(counterPath));
         await writeFile(counterPath, `${JSON.stringify({ lastIndex }, null, 2)}\n`, "utf-8");
       }
       return existingIndex;
     }
     const nextIndex = Math.max(persistedIndex, storedMaxIndex) + 1;
-    await mkdir(dirname(counterPath), { recursive: true });
+    await mkdirInSpace(dirname(counterPath));
     await writeFile(counterPath, `${JSON.stringify({ lastIndex: nextIndex }, null, 2)}\n`, "utf-8");
     return nextIndex;
   });
 }
 
 export async function readSchemeProjectRecord(options = {}) {
-  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
+  const paths = options.paths ?? defaultPaths;
+  const filesRoot = options.filesRoot ?? paths.schemeFiles;
   const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : ["默认方案"];
   const name = storageProjectDisplayName(options.name || options.projectName);
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
@@ -3379,7 +3494,7 @@ export async function readSchemeProjectRecord(options = {}) {
   if (!projectFile) {
     return null;
   }
-  return readSchemeProjectFile(projectFile.filePath, projectFile.fileName);
+  return readSchemeProjectFile(projectFile.filePath, projectFile.fileName, paths);
 }
 
 // 按模型稳定序号 idx 定位模型（idx 由 allocateStableProjectIndex 分配，跨方案唯一）。
@@ -3387,15 +3502,16 @@ export async function readSchemeProjectRecord(options = {}) {
 // （svgExport.mjs → buildBackgroundPageOption）：与方案路径解耦，模型改名或移到别的方案后 model_id 不变。
 // 上限：按 idx 定位会全量遍历一次 files 目录（方案数 × 模型数），send 与背景页两条路径都走这里。
 export async function findSchemeProjectRecordByIndex(options = {}) {
+  const paths = options.paths ?? defaultPaths;
   const target = Number(options.index);
   if (!Number.isSafeInteger(target) || target <= 0) {
     return null;
   }
-  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
-  return scanProjectByIndex(filesRoot, [], target);
+  const filesRoot = options.filesRoot ?? paths.schemeFiles;
+  return scanProjectByIndex(filesRoot, [], target, paths);
 }
 
-async function scanProjectByIndex(dir, schemePath, target) {
+async function scanProjectByIndex(dir, schemePath, target, paths = defaultPaths) {
   let entries = [];
   try {
     entries = await readdir(dir, { withFileTypes: true });
@@ -3421,14 +3537,14 @@ async function scanProjectByIndex(dir, schemePath, target) {
     if (Number(parsed?.idx) !== target) {
       continue;
     }
-    const record = await readSchemeProjectFile(filePath, entry.name);
+    const record = await readSchemeProjectFile(filePath, entry.name, paths);
     return record ? { name: record.name, schemePath, project: record.project, updatedAt: record.updatedAt } : null;
   }
   for (const entry of entries) {
     if (!entry.isDirectory()) {
       continue;
     }
-    const found = await scanProjectByIndex(join(dir, entry.name), [...schemePath, entry.name], target);
+    const found = await scanProjectByIndex(join(dir, entry.name), [...schemePath, entry.name], target, paths);
     if (found) {
       return found;
     }
@@ -3437,14 +3553,15 @@ async function scanProjectByIndex(dir, schemePath, target) {
 }
 
 export async function saveSchemeProjectRecord(options) {
-  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
-  const trashRoot = options.trashRoot ?? schemeTrashDir;
+  const paths = options.paths ?? defaultPaths;
+  const filesRoot = options.filesRoot ?? paths.schemeFiles;
+  const trashRoot = options.trashRoot ?? paths.schemeTrash;
   const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : ["默认方案"];
   const record = options.record ?? {};
   const name = storageProjectDisplayName(record.name || record.project?.name);
   const updatedAt = record.updatedAt || new Date().toISOString();
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
-  await mkdir(schemeDir, { recursive: true });
+  await mkdirInSpace(schemeDir);
   const projectIndex = await allocateStableProjectIndex({
     filesRoot,
     schemeDir,
@@ -3464,7 +3581,7 @@ export async function saveSchemeProjectRecord(options) {
     const remaining = invalidEnumParameters.length > details.length ? `；另有 ${invalidEnumParameters.length - details.length} 项未列出` : "";
     throw new Error(`保存失败：模型存在非法枚举参数。${details.join("；")}${remaining}`);
   }
-  const synchronizedGlobalLines = await globalLineRegistry.syncProject({
+  const synchronizedGlobalLines = await registryFor(paths).syncProject({
     project: normalizedProject,
     projectIdx: projectIndex,
     projectName: name,
@@ -3497,20 +3614,22 @@ export async function saveSchemeProjectRecord(options) {
 }
 
 export async function deleteSchemeProjectRecord(options) {
-  const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
-  const trashRoot = options.trashRoot ?? schemeTrashDir;
+  const paths = options.paths ?? defaultPaths;
+  const filesRoot = options.filesRoot ?? paths.schemeFiles;
+  const trashRoot = options.trashRoot ?? paths.schemeTrash;
   const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : ["默认方案"];
   const name = storageProjectDisplayName(options.name || options.projectName);
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
   const archiveId = options.archiveId ?? schemeArchiveId();
-  const paths = projectFilePathsForName(schemeDir, name);
-  await globalLineRegistry.detachProject({ schemePath, projectName: name });
-  await Promise.all(Object.values(paths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, archiveId)));
+  const projectPaths = projectFilePathsForName(schemeDir, name);
+  await registryFor(paths).detachProject({ schemePath, projectName: name });
+  await Promise.all(Object.values(projectPaths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, archiveId)));
 }
 
-async function writeSchemeFiles(schemes) {
-  const filesRoot = join(schemeDataDir, "files");
-  await mkdir(filesRoot, { recursive: true });
+async function writeSchemeFiles(schemes, options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  const filesRoot = paths.schemeFiles;
+  await mkdirInSpace(filesRoot);
   const expectedFiles = new Set();
   const expectedDirs = new Set([filesRoot]);
   const writeTasks = [];
@@ -3518,7 +3637,7 @@ async function writeSchemeFiles(schemes) {
   const writeSchemeTree = async (scheme, parentDir) => {
     const schemeDir = join(parentDir, safeFilePart(scheme.name, "方案"));
     expectedDirs.add(schemeDir);
-    await mkdir(schemeDir, { recursive: true });
+    await mkdirInSpace(schemeDir);
     for (const record of scheme.projects ?? []) {
       const baseName = safeFilePart(record.name, "模型");
       const jsonPath = join(schemeDir, `${baseName}.json`);
@@ -3534,8 +3653,10 @@ async function writeSchemeFiles(schemes) {
     await writeSchemeTree(scheme, filesRoot);
   }
   await Promise.all(writeTasks);
-  await archiveStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs);
-  await globalLineRegistry.rebuildFromStorage();
+  // options 必须透传：archiveStaleSchemeFiles 内部用 options.paths 推导 trashRoot，
+  // 漏传会让本空间的废弃文件被归档进**默认空间**的回收站（跨空间写入）。
+  await archiveStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs, { paths });
+  await registryFor(paths).rebuildFromStorage();
 }
 
 function publicAsset(item) {
@@ -3573,12 +3694,13 @@ function createImageManifestItem({ name, mimeType, bytes, folderId }) {
   };
 }
 
-function getAssetDir(item) {
-  return item.dir === "icons" ? iconDataDir : imageDataDir;
+function getAssetDir(item, options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  return item.dir === "icons" ? paths.icons : paths.images;
 }
 
-async function writeImageAssetFile(item, bytes) {
-  await writeFile(join(getAssetDir(item), item.filename), bytes);
+async function writeImageAssetFile(item, bytes, options = {}) {
+  await writeFile(join(getAssetDir(item, options), item.filename), bytes);
 }
 
 function safeImageLibraryId(value) {
@@ -3628,9 +3750,9 @@ function normalizeImportedImageLibraryAssets(value, folderIds) {
   return assets;
 }
 
-async function handleImportImageLibrary(request, response) {
+async function handleImportImageLibrary(request, response, paths) {
   const payload = await readJsonBody(request, maxIconLibraryImportBodyBytes, "图标库导入文件过大，最大支持 128MB。");
-  await ensureStore();
+  await ensureStore({ paths });
   const importedFolders = normalizeImportedImageLibraryFolders(payload.folders);
   const folderIds = new Set(importedFolders.map((folder) => folder.id));
   const importedAssets = normalizeImportedImageLibraryAssets(payload.assets, folderIds);
@@ -3639,14 +3761,14 @@ async function handleImportImageLibrary(request, response) {
     return;
   }
 
-  const currentFolders = await readImageFolders();
+  const currentFolders = await readImageFolders({ paths });
   const folderById = new Map(currentFolders.map((folder) => [folder.id, folder]));
   for (const folder of importedFolders) {
     folderById.set(folder.id, folder.id === "root" ? { ...rootImageFolder(), ...folder, id: "root" } : folder);
   }
-  await writeImageFolders(Array.from(folderById.values()));
+  await writeImageFolders(Array.from(folderById.values()), { paths });
 
-  const manifest = await readManifest();
+  const manifest = await readManifest({ paths });
   const manifestById = new Map(manifest.map((item) => [item.id, item]));
   const savedItems = [];
   let skippedCount = 0;
@@ -3670,9 +3792,9 @@ async function handleImportImageLibrary(request, response) {
     };
     const previous = manifestById.get(item.id);
     if (previous?.filename && previous.filename !== item.filename) {
-      await rm(join(getAssetDir(previous), previous.filename), { force: true });
+      await rm(join(getAssetDir(previous, { paths }), previous.filename), { force: true });
     }
-    await writeImageAssetFile(item, parsed.bytes);
+    await writeImageAssetFile(item, parsed.bytes, { paths });
     manifestById.set(item.id, item);
     savedItems.push(item);
   }
@@ -3684,7 +3806,7 @@ async function handleImportImageLibrary(request, response) {
   await writeManifest([
     ...savedItems,
     ...Array.from(manifestById.values()).filter((item) => !savedIds.has(item.id))
-  ]);
+  ], { paths });
   sendJson(response, 200, {
     ok: true,
     importedCount: savedItems.length,
@@ -3911,7 +4033,7 @@ export function extractIconLibraryImageEntries(buffer, fileName = "导入文档�
   };
 }
 
-async function handleImportIconLibrary(request, response) {
+async function handleImportIconLibrary(request, response, paths) {
   const payload = await readJsonBody(request, maxIconLibraryImportBodyBytes, "文档图片导入文件过大，最大支持 128MB。");
   const { dataUrl, name } = payload;
   if (typeof dataUrl !== "string") {
@@ -3934,7 +4056,7 @@ async function handleImportIconLibrary(request, response) {
     sendError(response, 400, message.includes("上限") ? message : "文档图片导入文件不是有效的压缩容器。");
     return;
   }
-  const folderId = await resolveFolderId(typeof payload.folderId === "string" ? payload.folderId : "root");
+  const folderId = await resolveFolderId(typeof payload.folderId === "string" ? payload.folderId : "root", { paths });
   const items = [];
   for (const entry of extracted.entries) {
     const item = createImageManifestItem({
@@ -3943,7 +4065,7 @@ async function handleImportIconLibrary(request, response) {
       bytes: entry.bytes,
       folderId
     });
-    await writeImageAssetFile(item, entry.bytes);
+    await writeImageAssetFile(item, entry.bytes, { paths });
     items.push(item);
   }
   if (items.length === 0) {
@@ -3951,9 +4073,9 @@ async function handleImportIconLibrary(request, response) {
     return;
   }
   await withImageStoreLock(async () => {
-    await ensureStore();
-    const manifest = await readManifest();
-    await writeManifest([...items, ...manifest]);
+    await ensureStore({ paths });
+    const manifest = await readManifest({ paths });
+    await writeManifest([...items, ...manifest], { paths });
   });
   sendJson(response, 201, {
     ok: true,
@@ -3962,7 +4084,7 @@ async function handleImportIconLibrary(request, response) {
   });
 }
 
-async function handleUpload(request, response) {
+async function handleUpload(request, response, paths) {
   const payload = await readJsonBody(request, maxImageBodyBytes, "图片过大，最大支持 16MB。");
   const { dataUrl, name } = payload;
   if (typeof dataUrl !== "string") {
@@ -3970,18 +4092,18 @@ async function handleUpload(request, response) {
     return;
   }
   const { mimeType, bytes } = parseDataUrl(dataUrl);
-  const folderId = await resolveFolderId(typeof payload.folderId === "string" ? payload.folderId : "root");
+  const folderId = await resolveFolderId(typeof payload.folderId === "string" ? payload.folderId : "root", { paths });
   const item = createImageManifestItem({ name, mimeType, bytes, folderId });
   await withImageStoreLock(async () => {
-    await ensureStore();
-    await writeImageAssetFile(item, bytes);
-    const manifest = await readManifest();
-    await writeManifest([item, ...manifest]);
+    await ensureStore({ paths });
+    await writeImageAssetFile(item, bytes, { paths });
+    const manifest = await readManifest({ paths });
+    await writeManifest([item, ...manifest], { paths });
   });
   sendJson(response, 201, publicAsset(item));
 }
 
-async function handleCreateImageFolder(request, response) {
+async function handleCreateImageFolder(request, response, paths) {
   const payload = await readJsonBody(request);
   const name = safeName(payload.name || "新建文件夹");
   const folder = {
@@ -3990,17 +4112,17 @@ async function handleCreateImageFolder(request, response) {
     createdAt: new Date().toISOString()
   };
   await withImageStoreLock(async () => {
-    const current = await readImageFolders();
+    const current = await readImageFolders({ paths });
     if (current.some((existing) => existing.name.trim() === name.trim())) {
       sendError(response, 409, "图片文件夹名称重复。");
       return;
     }
-    await writeImageFolders([...current, folder]);
+    await writeImageFolders([...current, folder], { paths });
     sendJson(response, 201, folder);
   });
 }
 
-async function handleRenameImageFolder(folderId, request, response) {
+async function handleRenameImageFolder(folderId, request, response, paths) {
   if (folderId === "root") {
     sendError(response, 400, "默认文件夹不能重命名。");
     return;
@@ -4012,7 +4134,7 @@ async function handleRenameImageFolder(folderId, request, response) {
     return;
   }
   await withImageStoreLock(async () => {
-    const folders = await readImageFolders();
+    const folders = await readImageFolders({ paths });
     if (!folders.some((folder) => folder.id === folderId)) {
       sendError(response, 404, "图片文件夹不存在。");
       return;
@@ -4022,31 +4144,31 @@ async function handleRenameImageFolder(folderId, request, response) {
       return;
     }
     const next = folders.map((folder) => (folder.id === folderId ? { ...folder, name } : folder));
-    await writeImageFolders(next);
+    await writeImageFolders(next, { paths });
     sendJson(response, 200, next.find((folder) => folder.id === folderId));
   });
 }
 
-async function handleDeleteImageFolder(folderId, response) {
+async function handleDeleteImageFolder(folderId, response, paths) {
   if (folderId === "root") {
     sendError(response, 400, "默认文件夹不能删除。");
     return;
   }
   await withImageStoreLock(async () => {
-    const folders = await readImageFolders();
+    const folders = await readImageFolders({ paths });
     if (!folders.some((folder) => folder.id === folderId)) {
       sendError(response, 404, "图片文件夹不存在。");
       return;
     }
-    await writeImageFolders(folders.filter((folder) => folder.id !== folderId));
-    const manifest = await readManifest();
-    await writeManifest(manifest.map((item) => (item.folderId === folderId ? { ...item, folderId: "root" } : item)));
+    await writeImageFolders(folders.filter((folder) => folder.id !== folderId), { paths });
+    const manifest = await readManifest({ paths });
+    await writeManifest(manifest.map((item) => (item.folderId === folderId ? { ...item, folderId: "root" } : item)), { paths });
     sendJson(response, 200, { ok: true });
   });
 }
 
-async function handleDownload(id, response) {
-  const manifest = await readManifest();
+async function handleDownload(id, response, paths) {
+  const manifest = await readManifest({ paths });
   const item = manifest.find((entry) => entry.id === id);
   if (!item) {
     sendError(response, 404, "图片不存在。");
@@ -4054,22 +4176,26 @@ async function handleDownload(id, response) {
   }
   response.writeHead(200, {
     "content-type": item.mimeType,
-    "cache-control": "public, max-age=31536000, immutable",
+    // URL 不带空间维度（前端拼 apiPath('/images/' + id)），内容却按空间 cookie 取：
+    // private 挡掉共享/代理缓存；vary: Cookie 让浏览器缓存按 cookie 分键，
+    // 否则切换空间后同一 URL 会回放上一空间的字节（跨空间导入图片库后 id 相同即可复现）。
+    "cache-control": "private, max-age=31536000, immutable",
+    vary: "Cookie",
     "access-control-allow-origin": "*"
   });
-  createReadStream(join(getAssetDir(item), item.filename)).pipe(response);
+  createReadStream(join(getAssetDir(item, { paths }), item.filename)).pipe(response);
 }
 
-async function handleDeleteImageAsset(id, response) {
+async function handleDeleteImageAsset(id, response, paths) {
   await withImageStoreLock(async () => {
-    const manifest = await readManifest();
+    const manifest = await readManifest({ paths });
     const item = manifest.find((entry) => entry.id === id);
     if (!item) {
       sendError(response, 404, "图片不存在。");
       return;
     }
-    await writeManifest(manifest.filter((entry) => entry.id !== id));
-    await rm(join(getAssetDir(item), item.filename), { force: true });
+    await writeManifest(manifest.filter((entry) => entry.id !== id), { paths });
+    await rm(join(getAssetDir(item, { paths }), item.filename), { force: true });
     sendJson(response, 200, { ok: true });
   });
 }
@@ -4087,54 +4213,54 @@ async function handleGlobalLineRegistryOperation(response, operation, successSta
   }
 }
 
-async function handleListGlobalLines(response) {
+async function handleListGlobalLines(response, paths) {
   await handleGlobalLineRegistryOperation(response, async () => ({
     ok: true,
-    records: await globalLineRegistry.list()
+    records: await registryFor(paths).list()
   }));
 }
 
-async function handleAttachGlobalLine(request, response) {
+async function handleAttachGlobalLine(request, response, paths) {
   const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "全局线路数据过大，最大支持 1MB。");
   await handleGlobalLineRegistryOperation(response, async () => ({
     ok: true,
-    record: await globalLineRegistry.attach(payload)
+    record: await registryFor(paths).attach(payload)
   }), 201);
 }
 
-async function handleDetachGlobalLine(request, response) {
+async function handleDetachGlobalLine(request, response, paths) {
   const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "全局线路数据过大，最大支持 1MB。");
   await handleGlobalLineRegistryOperation(response, async () => ({
     ok: true,
-    record: await globalLineRegistry.detach(payload)
+    record: await registryFor(paths).detach(payload)
   }));
 }
 
-async function handleUpdateGlobalLine(request, response) {
+async function handleUpdateGlobalLine(request, response, paths) {
   const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "全局线路数据过大，最大支持 1MB。");
   await handleGlobalLineRegistryOperation(response, async () => ({
     ok: true,
-    record: await globalLineRegistry.update(payload)
+    record: await registryFor(paths).update(payload)
   }));
 }
 
-async function handleDeleteEmptyGlobalLine(request, response) {
+async function handleDeleteEmptyGlobalLine(request, response, paths) {
   const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "全局线路数据过大，最大支持 1MB。");
   await handleGlobalLineRegistryOperation(response, async () => ({
     ok: true,
-    record: await globalLineRegistry.deleteEmpty(payload)
+    record: await registryFor(paths).deleteEmpty(payload)
   }));
 }
 
-async function handleSyncGlobalLineProject(request, response) {
+async function handleSyncGlobalLineProject(request, response, paths) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型全局线路数据过大，最大支持 64MB。");
   await handleGlobalLineRegistryOperation(response, async () => ({
     ok: true,
-    ...(await globalLineRegistry.syncProject(payload))
+    ...(await registryFor(paths).syncProject(payload))
   }));
 }
 
-async function handleSaveSchemes(request, response) {
+async function handleSaveSchemes(request, response, paths) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案/模型数据过大，最大支持 64MB。");
   const schemes = Array.isArray(payload) ? payload : payload.schemes;
   if (!Array.isArray(schemes)) {
@@ -4142,11 +4268,11 @@ async function handleSaveSchemes(request, response) {
     return;
   }
   const normalized = normalizeSchemesForStorage(schemes);
-  await writeSchemes(normalized);
+  await writeSchemes(normalized, { paths });
   sendJson(response, 200, { ok: true, schemes: normalized, savedAt: new Date().toISOString() });
 }
 
-async function handleReadSchemeProject(url, response) {
+async function handleReadSchemeProject(url, response, paths) {
   const name = url.searchParams.get("name") || url.searchParams.get("projectName") || "";
   if (!name.trim()) {
     sendError(response, 400, "缺少模型名称。");
@@ -4154,7 +4280,8 @@ async function handleReadSchemeProject(url, response) {
   }
   const project = await readSchemeProjectRecord({
     schemePath: parseSchemePathParam(url.searchParams.get("schemePath")),
-    name
+    name,
+    paths
   });
   if (!project) {
     sendError(response, 404, "模型文件不存在。");
@@ -4163,7 +4290,7 @@ async function handleReadSchemeProject(url, response) {
   sendJson(response, 200, { ok: true, project });
 }
 
-async function handleSaveSchemeProject(request, response) {
+async function handleSaveSchemeProject(request, response, paths) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型数据过大，最大支持 64MB。");
   const record = payload.record ?? {
     name: payload.name || payload.project?.name,
@@ -4177,12 +4304,13 @@ async function handleSaveSchemeProject(request, response) {
   const savedRecord = await saveSchemeProjectRecord({
     schemePath: payload.schemePath,
     record,
-    previousName: payload.previousName
+    previousName: payload.previousName,
+    paths
   });
   sendJson(response, 200, { ok: true, project: savedRecord, savedAt: new Date().toISOString() });
 }
 
-async function handleDeleteSchemeProject(request, response) {
+async function handleDeleteSchemeProject(request, response, paths) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型数据过大，最大支持 64MB。");
   if (!payload.name && !payload.projectName) {
     sendError(response, 400, "缺少模型名称。");
@@ -4190,12 +4318,13 @@ async function handleDeleteSchemeProject(request, response) {
   }
   await deleteSchemeProjectRecord({
     schemePath: payload.schemePath,
-    name: payload.name || payload.projectName
+    name: payload.name || payload.projectName,
+    paths
   });
   sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
 }
 
-async function handleSaveSchemeRecord(request, response) {
+async function handleSaveSchemeRecord(request, response, paths) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案数据过大，最大支持 64MB。");
   if (!Array.isArray(payload.schemePath) || payload.schemePath.length === 0) {
     sendError(response, 400, "缺少方案路径。");
@@ -4203,28 +4332,30 @@ async function handleSaveSchemeRecord(request, response) {
   }
   await saveSchemeRecordDirectory({
     schemePath: payload.schemePath,
-    previousSchemePath: payload.previousSchemePath
+    previousSchemePath: payload.previousSchemePath,
+    paths
   });
   sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
 }
 
-async function handleDeleteSchemeRecord(request, response) {
+async function handleDeleteSchemeRecord(request, response, paths) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案数据过大，最大支持 64MB。");
   if (!Array.isArray(payload.schemePath) || payload.schemePath.length === 0) {
     sendError(response, 400, "缺少方案路径。");
     return;
   }
   await deleteSchemeRecordDirectory({
-    schemePath: payload.schemePath
+    schemePath: payload.schemePath,
+    paths
   });
   sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
 }
 
-async function handleExportSchemeArchive(url, response) {
-  const filesRoot = join(schemeDataDir, "files");
+async function handleExportSchemeArchive(url, response, paths) {
   const schemePath = parseSchemePathParam(url.searchParams.get("schemePath"));
   try {
-    const { buffer, filename } = await createSchemeArchiveBuffer({ filesRoot, schemePath });
+    // 只传 paths：Task 5 的守卫要求枚举根与渲染根同源，且渲染适配层只跟随 paths
+    const { buffer, filename } = await createSchemeArchiveBuffer({ paths, schemePath });
     response.writeHead(200, {
       "content-type": "application/zip",
       "content-length": String(buffer.length),
@@ -4247,9 +4378,7 @@ async function handleExportSchemeArchive(url, response) {
   }
 }
 
-async function handleImportSchemeArchive(url, request, response) {
-  const filesRoot = join(schemeDataDir, "files");
-  const trashRoot = schemeTrashDir;
+async function handleImportSchemeArchive(url, request, response, paths) {
   const parentPath = parseSchemePathParam(url.searchParams.get("parentPath"));
   const fileName = url.searchParams.get("fileName") || "导入方案.zip";
   const mode = url.searchParams.get("mode") === "overwrite" ? "overwrite" : "check";
@@ -4267,12 +4396,12 @@ async function handleImportSchemeArchive(url, request, response) {
     return;
   }
   try {
-    const result = await importSchemeArchiveBuffer({ filesRoot, trashRoot, buffer, parentPath, fileName, mode, targetName });
+    const result = await importSchemeArchiveBuffer({ paths, buffer, parentPath, fileName, mode, targetName });
     if (result.conflict) {
       sendJson(response, 409, { error: "方案目录已存在。", ...result });
       return;
     }
-    const schemes = normalizeSchemesForStorage(await readSchemes());
+    const schemes = normalizeSchemesForStorage(await readSchemes({ paths }));
     sendJson(response, 200, {
       ok: true,
       schemes,
@@ -4285,21 +4414,158 @@ async function handleImportSchemeArchive(url, request, response) {
   }
 }
 
-async function handleSaveColorConfig(request, response) {
+async function handleExportSpaceArchive(response, paths, spaceName, archiveRootName) {
+  try {
+    const { buffer, filename } = await buildSpaceArchiveBuffer({ paths, spaceName, archiveRootName });
+    response.writeHead(200, {
+      "content-type": "application/zip",
+      "content-length": String(buffer.length),
+      "content-disposition": `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      "cache-control": "no-store",
+      ...accessControlHeaders
+    });
+    response.end(buffer);
+  } catch (error) {
+    sendError(response, 500, error instanceof Error ? error.message : "导出空间压缩包失败。");
+  }
+}
+
+/** 拒绝原因文案：可接受返回 ""。空名沿用既有文案（有既有用例逐字钉着），其余给一条说清规则的说明。 */
+function spaceNameRejectMessage(normalized) {
+  if (!normalized) {
+    return "空间名不能为空。";
+  }
+  if (!isAcceptableSpaceName(normalized)) {
+    return `空间名不合法：只能含字母/数字/下划线/短横线，且不超过 ${MAX_SPACE_NAME_LENGTH} 个字符。`;
+  }
+  return "";
+}
+
+/**
+ * 空间名冲突的统一出口：`spaceStore` 在锁内判重（见 create/rename 的 onDuplicate），
+ * HTTP 层只把那个错误码翻成 409 —— 三个入口（新建 / 改名 / 导入）共用这一份，
+ * 并在响应里带上**冲突者的 id 与名字**，前端才能弹「覆盖 / 重命名」询问。
+ * 返回 true 表示已应答（调用方直接 return）。
+ */
+function sendSpaceNameConflict(response, error) {
+  if (error?.code !== SPACE_NAME_DUPLICATE) {
+    return false;
+  }
+  sendJson(response, 409, {
+    error: { code: SPACE_NAME_DUPLICATE, message: error.message },
+    name: error.spaceName,
+    conflictId: error.spaceId
+  });
+  return true;
+}
+
+// 导入的三种意图（`?mode=`）：
+// - create（缺省）：包内名撞车 → 409 + 冲突信息，由前端弹询问后再带 mode 重发；
+// - overwrite：先按 DELETE 的次序删掉同名空间（目录归档进 trash-spaces/，可手工找回），再建；
+// - rename：以 `?name=` 给的新名建（新名仍撞车 → 同样是 409，前端可再问一次）。
+// spaceStore 是 createImageServer 的闭包局部量（本函数在闭包外），与 paths 同口径显式透传。
+async function handleImportSpaceArchive(request, response, spaceStore, url) {
+  const mode = String(url?.searchParams?.get("mode") ?? "").trim();
+  const renameName = normalizeSpaceName(url?.searchParams?.get("name") ?? "");
+  if (mode && mode !== "overwrite" && mode !== "rename") {
+    sendError(response, 400, `未知的导入方式：${mode}。`, "SPACE_IMPORT_MODE_INVALID");
+    return;
+  }
+  if (mode === "rename" && !isAcceptableSpaceName(renameName)) {
+    // 明确要求了改名却给不出合格名字：不静默回退成包内名（那等于把用户的意图悄悄换掉）
+    sendError(response, 400, spaceNameRejectMessage(renameName), "SPACE_NAME_INVALID");
+    return;
+  }
+  const buffer = await readRawBody(request, maxSchemeZipBodyBytes, "空间压缩包过大，最大支持 256MB。");
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    sendError(response, 400, "缺少空间压缩包。");
+    return;
+  }
+  let zip;
+  try {
+    zip = new AdmZip(buffer);
+  } catch {
+    sendError(response, 400, "zip 文件格式不正确。");
+    return;
+  }
+  let space = null;
+  let spaceRoot = null;
+  try {
+    assertZipUncompressedSizeWithinLimit(zip, "空间压缩包");
+    const entries = zip.getEntries();
+    const zipRootName = zipRootNameFor(entries, "导入空间", "空间");
+    // 名字取 meta 里的原名：空间名不进任何路径（目录名走 spaceIdFromName 另算的 id），
+    // 在这里做 safeFilePart 只会让「带/斜杠」往返后变成「带_斜杠」。但 meta 来自**不可信压缩包**，
+    // 故候选名与**回退名都**要过与 POST /spaces 同一条规则（单源在 spaceId.mjs），都不合格才落到常量。
+    // 回退名为什么也要过：zipRootName 的净化上限是 80 码元（sanitizeSegment），比空间名上限宽，
+    // 「包内顶层目录名超长 + meta 缺失/超长」否则就能从导入侧造出 POST 侧 400 的名字。
+    // **全程不截断**：截断等于把名字悄悄改掉，也与「能被创建的名字一定无损往返」冲突。
+    const metaName = normalizeSpaceName(readSpaceArchiveName(zip, zipRootName));
+    const fallbackName = normalizeSpaceName(zipRootName);
+    const packedName = isAcceptableSpaceName(metaName)
+      ? metaName
+      : (isAcceptableSpaceName(fallbackName) ? fallbackName : "导入空间");
+    const name = mode === "rename" ? renameName : packedName;
+    if (mode === "overwrite") {
+      // 覆盖 = 先删同名空间再建。三步次序照搬 DELETE 分支，不能换位（那里有完整理由）：
+      // 登记退休 → 排空并驱逐注册表 → remove。少了排空这一步，队列里的原子写会按旧绝对路径落进
+      // 紧接着被复用的同一个根，把刚解包出来的内容盖成旧空间的残影。
+      // 名字唯一 ⇒ 至多一个同名者（大小写折叠不做，故按归一化名精确匹配）。
+      const clash = (await spaceStore.list()).find((item) => normalizeSpaceName(item.name) === name);
+      if (clash) {
+        const clashRoot = spaceStore.resolvePaths(clash.id).root;
+        retiredSpaceRoots.add(clashRoot);
+        await evictRegistry(clashRoot);
+        await spaceStore.remove(clash.id);
+      }
+    }
+    // reject 而非 allow：唯一性归 store 在锁内判，这里撞车（含并发插入）一律走 409，不静默加后缀
+    space = await spaceStore.create(name, { onDuplicate: "reject" });
+    spaceRoot = spaceStore.resolvePaths(space.id).root;
+    // 同名空间会复用刚被删掉的 id（即同一个根）：撤下退休登记，否则它一建出来就被拒写
+    retiredSpaceRoots.delete(spaceRoot);
+    await extractSpaceZipToDirectory(zip, spaceRoot, zipRootName);
+  } catch (error) {
+    // 失败不留半成品空间：撤掉刚建的那个（目录会进 trash-spaces/，可手工清）。
+    // 撤掉后必须把退休登记**加回去**：该 id 若是复用一个刚被删掉的空间，它的根在本次导入前就
+    // 处于「已退休」态；remove 只改名目录 + 摘注册表，够不着本模块级的 retiredSpaceRoots，
+    // 留下「未登记、未注册」的根，那条卡在读体、拿着旧根的在飞写请求就能把骨架重建出来，
+    // 并被 scanWorkspaces 登记成幽灵空间。次序照 DELETE 分支：先 remove，再按「空间是否还在」判。
+    if (space) {
+      await spaceStore.remove(space.id).catch((removeError) => {
+        // 回滚失败（Windows 上目录句柄占用会让 rename EPERM/EBUSY，同 DELETE 分支）时半成品空间会
+        // 留在注册表里 —— 不能吞得一点线索不留
+        console.warn(`[space-import] 回滚空间「${space.id}」失败：${removeError.message}`);
+      });
+      if (spaceRoot && !spaceStore.has(space.id)) {
+        retiredSpaceRoots.add(spaceRoot);
+      }
+    }
+    // 覆盖模式下被顶掉的那个空间在 create 之前就已删除：回滚只能撤掉新空间，
+    // 旧空间留在 trash-spaces/ 里等手工找回 —— 这是「覆盖」的固有代价，询问框里已写明。
+    if (sendSpaceNameConflict(response, error)) return;
+    sendError(response, 400, error instanceof Error ? error.message : "导入空间压缩包失败。");
+    return;
+  }
+  const spaces = await spaceStore.list();
+  sendJson(response, 200, { ok: true, space, spaces, savedAt: new Date().toISOString() });
+}
+
+async function handleSaveColorConfig(request, response, paths) {
   const payload = await readJsonBody(request, maxColorConfigBodyBytes, "配色配置数据过大，最大支持 1MB。");
-  const normalized = await writeColorConfig(payload);
+  const normalized = await writeColorConfig(payload, { paths });
   sendJson(response, 200, { ok: true, ...normalized });
 }
 
-async function handleSaveMeasurementConfig(request, response) {
+async function handleSaveMeasurementConfig(request, response, paths) {
   const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "动态量测配置数据过大，最大支持 1MB。");
-  const normalized = await writeMeasurementConfig(payload);
+  const normalized = await writeMeasurementConfig(payload, { paths });
   sendJson(response, 200, { ok: true, ...normalized });
 }
 
-async function handleSaveDeviceLibrary(request, response) {
+async function handleSaveDeviceLibrary(request, response, paths) {
   const payload = await readJsonBody(request, maxDeviceLibraryBodyBytes, "图元库数据过大，最大支持 16MB。");
-  const normalized = await writeDeviceLibraryConfig(payload);
+  const normalized = await writeDeviceLibraryConfig(payload, { paths });
   sendJson(response, 200, { ok: true, ...normalized });
 }
 
@@ -4411,9 +4677,14 @@ async function serveIconLibraryAsset(request, response, url) {
   return false;
 }
 
-export async function createImageServer({ port = 5174, host = "127.0.0.1", staticRoot } = {}) {
+export async function createImageServer({ port = 5174, host = "127.0.0.1", staticRoot, spaceStore: injectedSpaceStore } = {}) {
   const routeKey = (method, sub) => `${method} ${apiPath(sub)}`;
   const nativeExportSaveService = createNativeExportSaveService();
+  // spaceStore 可注入：测试要复用自己建的那个实例，否则同进程两个写者各持注册表快照，
+  // 后写者会用陈旧快照回滚对方的条目。动态 import 维持与 spaceStore 的循环依赖不静态化。
+  const { createSpaceStore, resolveSpaceFromRequest, SPACE_COOKIE_NAME, SPACE_FALLBACK_HEADER } = await import("./spaceStore.mjs");
+  const spaceStore = injectedSpaceStore ?? createSpaceStore(dataRoot);
+  await spaceStore.ensureInitialized();
   const exactRouteHandlers = new Map([
     ["GET /swigger", async ({ response }) => {
       const { renderSwaggerHtml } = await import("./swaggerPage.mjs");
@@ -4425,20 +4696,113 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       });
       response.end(html);
     }],
-    [routeKey("GET", "/images"), async ({ url, request, response }) => {
-      const manifest = await readManifest();
+    // 空间管理：本系统自身的管理面，返回 /webgrp/* 内部域形态，不进 /v1 信封。
+    // 这四个端点由派发层的 isSpaceAgnostic 短路（不注入 spaceCtx），current 由 handler 自算。
+    [routeKey("GET", "/spaces"), async ({ request, response, url }) => {
+      // current 用与派发层同一个解析函数算出，保证与请求实际生效的空间一致
+      const current = resolveSpaceFromRequest(request, url, spaceStore).id;
+      // 活跃度只在这一次管理调用上刷（不做每请求写盘），且先刷再列，
+      // 使本次响应里的 lastAccessAt 就是刚刷新的那个
+      await spaceStore.touchLastAccess(current);
+      const spaces = await spaceStore.list();
+      sendJson(response, 200, { spaces, current });
+    }],
+    [routeKey("POST", "/spaces"), async ({ request, response }) => {
+      const body = await readJsonBody(request);
+      const name = normalizeSpaceName(body?.name);
+      // 空名/全符号/超长一律拒绝（规则单源在 spaceId.mjs，与 PUT /spaces、ZIP 导入共用）。
+      // spaceIdFromName 对全符号名有 "space" 兜底，那是给非 HTTP 调用方的防御，不改变本端点的拒绝语义。
+      const reject = spaceNameRejectMessage(name);
+      if (reject) {
+        sendError(response, 400, reject, "SPACE_NAME_INVALID");
+        return;
+      }
+      // 存**归一后**的名字：否则「能被创建的名字一定能无损往返」不成立。
+      // 重名 ≠ id 撞车：不再静默加 -2 后缀建第二个同名空间，而是 409（前端提示改名）。
+      let space;
+      try {
+        space = await spaceStore.create(name, { onDuplicate: "reject" });
+      } catch (error) {
+        if (sendSpaceNameConflict(response, error)) return;
+        throw error;
+      }
+      // 同名空间会复用刚被删掉的 id（即同一个根）：撤下退休登记，否则它一建出来就被拒写
+      retiredSpaceRoots.delete(spaceStore.resolvePaths(space.id).root);
+      sendJson(response, 200, space);
+    }],
+    [routeKey("PUT", "/spaces"), async ({ request, response }) => {
+      const body = await readJsonBody(request);
+      // 改名此前没有任何校验（rename 只 trim）：全符号名与超长名都能进注册表，
+      // 于是「POST 建不出的名字」可以经 rename 进来，再被导出→导入按另一套规则改掉。补上同一条规则。
+      const name = normalizeSpaceName(body?.name);
+      const reject = spaceNameRejectMessage(name);
+      if (reject) {
+        sendError(response, 400, reject, "SPACE_RENAME_FAILED");
+        return;
+      }
+      try {
+        await spaceStore.rename(String(body?.id ?? ""), name);
+        sendJson(response, 200, { ok: true });
+      } catch (error) {
+        // 改名撞上已有空间名 → 409（与新建同一条唯一性规则，由 store 在锁内判）
+        if (sendSpaceNameConflict(response, error)) return;
+        sendError(response, 400, error.message, "SPACE_RENAME_FAILED");
+      }
+    }],
+    [routeKey("DELETE", "/spaces"), async ({ request, response }) => {
+      const body = await readJsonBody(request);
+      const id = String(body?.id ?? "");
+      if (id === "default") {
+        sendError(response, 400, "default 空间不可删除。", "SPACE_PINNED");
+        return;
+      }
+      // 顺序：登记退休 → 排空并驱逐注册表 → 删目录。三步都不能换位：
+      // 登记晚于驱逐就漏掉「已入场、卡在读体」的写请求；先删目录则会让队列里的
+      // 原子写按旧绝对路径把目录复活（排空的正是它们）。
+      let root;
+      try {
+        root = spaceStore.resolvePaths(id).root;
+        retiredSpaceRoots.add(root);
+        await evictRegistry(root);
+        await spaceStore.remove(id);
+        sendJson(response, 200, { ok: true });
+      } catch (error) {
+        // 撤下条件按「空间是否还在」判，不按「有没有抛错」：
+        // fs 真失败（Windows 上目录内有占用句柄时 rename 会 EPERM/EBUSY）时空间仍在，必须撤下，
+        // 否则它被永久拒写；而被并发 DELETE 抢先删掉时空间已不在，撤下就等于把登记清空，
+        // 那条卡在读体、拿着旧根的在飞请求立刻能把已删空间写回来。
+        if (root && spaceStore.has(id)) retiredSpaceRoots.delete(root);
+        const code = /pinned|最后一个/.test(error.message) ? "SPACE_PINNED" : "SPACE_DELETE_FAILED";
+        sendError(response, 400, error.message, code);
+      }
+    }],
+    [routeKey("GET", "/spaces/export"), async ({ response, paths, spaceId }) => {
+      // 端点名要的是**空间名**，而 spaceCtx 只注入了 paths 与 spaceId —— 名字要查注册表，
+      // 不要用 paths.root 反推（default 的 root 是数据根，反推会得到数据目录名）
+      const space = (await spaceStore.list()).find((item) => item.id === spaceId);
+      const spaceName = space?.name ?? spaceId;
+      // 空间名是自由文本（PUT /spaces 只 trim），含 / 或 \ 就不能整体当单段目录名/文件名 ——
+      // 建包器不做净化，故这里算出净化版专门给包内目录与文件名，原名仍进 meta 供往返。
+      // 兜底名是**导出侧**的说法（"空间"），不是导入侧的 "导入空间"。
+      await handleExportSpaceArchive(response, paths, spaceName, safeFilePart(spaceName, "空间"));
+    }],
+    [routeKey("POST", "/spaces/import"), async ({ url, request, response }) => {
+      await handleImportSpaceArchive(request, response, spaceStore, url);
+    }],
+    [routeKey("GET", "/images"), async ({ url, request, response, paths }) => {
+      const manifest = await readManifest({ paths });
       const folderId = url.searchParams.get("folderId");
       const filtered = folderId ? manifest.filter((item) => (item.folderId || "root") === folderId) : manifest;
       await sendJsonCacheable(request, response, filtered.map(publicAsset));
     }],
-    [routeKey("POST", "/images"), async ({ request, response }) => {
-      await handleUpload(request, response);
+    [routeKey("POST", "/images"), async ({ request, response, paths }) => {
+      await handleUpload(request, response, paths);
     }],
-    [routeKey("POST", "/icon-library/import"), async ({ request, response }) => {
-      await handleImportImageLibrary(request, response);
+    [routeKey("POST", "/icon-library/import"), async ({ request, response, paths }) => {
+      await handleImportImageLibrary(request, response, paths);
     }],
-    [routeKey("POST", "/image-library/import"), async ({ request, response }) => {
-      await handleImportIconLibrary(request, response);
+    [routeKey("POST", "/image-library/import"), async ({ request, response, paths }) => {
+      await handleImportIconLibrary(request, response, paths);
     }],
     [routeKey("POST", "/exports/native/select-file"), async ({ request, response }) => {
       await handleSelectNativeExportFile(request, response, nativeExportSaveService);
@@ -4446,9 +4810,9 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     [routeKey("POST", "/exports/native/write-text"), async ({ url, request, response }) => {
       await handleWriteNativeExportText(url, request, response, nativeExportSaveService);
     }],
-    [routeKey("GET", "/image-folders"), async ({ request, response }) => {
-      const folders = await readImageFolders();
-      const manifest = await readManifest();
+    [routeKey("GET", "/image-folders"), async ({ request, response, paths }) => {
+      const folders = await readImageFolders({ paths });
+      const manifest = await readManifest({ paths });
       const counts = imageCountsByFolder(manifest);
       await sendJsonCacheable(
         request,
@@ -4459,73 +4823,74 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         }))
       );
     }],
-    [routeKey("POST", "/image-folders"), async ({ request, response }) => {
-      await handleCreateImageFolder(request, response);
+    [routeKey("POST", "/image-folders"), async ({ request, response, paths }) => {
+      await handleCreateImageFolder(request, response, paths);
     }],
-    [routeKey("GET", "/schemes"), async ({ url, request, response }) => {
+    [routeKey("GET", "/schemes"), async ({ url, request, response, paths }) => {
       const includeProjects = url.searchParams.get("includeProjects") === "1";
-      const schemes = normalizeSchemesForStorage(await readSchemes({ includeProjects }));
+      const schemes = normalizeSchemesForStorage(await readSchemes({ includeProjects, paths }));
       await sendJsonCacheable(request, response, { schemes });
     }],
-    [routeKey("GET", "/schemes/export"), async ({ url, response }) => {
-      await handleExportSchemeArchive(url, response);
+    [routeKey("GET", "/schemes/export"), async ({ url, response, paths }) => {
+      await handleExportSchemeArchive(url, response, paths);
     }],
-    [routeKey("POST", "/schemes/import"), async ({ url, request, response }) => {
-      await handleImportSchemeArchive(url, request, response);
+    [routeKey("POST", "/schemes/import"), async ({ url, request, response, paths }) => {
+      await handleImportSchemeArchive(url, request, response, paths);
     }],
-    [routeKey("PUT", "/schemes"), async ({ request, response }) => {
-      await handleSaveSchemes(request, response);
+    [routeKey("PUT", "/schemes"), async ({ request, response, paths }) => {
+      await handleSaveSchemes(request, response, paths);
     }],
-    [routeKey("GET", "/schemes/project"), async ({ url, response }) => {
-      await handleReadSchemeProject(url, response);
+    [routeKey("GET", "/schemes/project"), async ({ url, response, paths }) => {
+      await handleReadSchemeProject(url, response, paths);
     }],
-    [routeKey("PUT", "/schemes/project"), async ({ request, response }) => {
-      await handleSaveSchemeProject(request, response);
+    [routeKey("PUT", "/schemes/project"), async ({ request, response, paths }) => {
+      await handleSaveSchemeProject(request, response, paths);
     }],
-    [routeKey("DELETE", "/schemes/project"), async ({ request, response }) => {
-      await handleDeleteSchemeProject(request, response);
+    [routeKey("DELETE", "/schemes/project"), async ({ request, response, paths }) => {
+      await handleDeleteSchemeProject(request, response, paths);
     }],
-    [routeKey("PUT", "/schemes/scheme"), async ({ request, response }) => {
-      await handleSaveSchemeRecord(request, response);
+    [routeKey("PUT", "/schemes/scheme"), async ({ request, response, paths }) => {
+      await handleSaveSchemeRecord(request, response, paths);
     }],
-    [routeKey("DELETE", "/schemes/scheme"), async ({ request, response }) => {
-      await handleDeleteSchemeRecord(request, response);
+    [routeKey("DELETE", "/schemes/scheme"), async ({ request, response, paths }) => {
+      await handleDeleteSchemeRecord(request, response, paths);
     }],
-    [routeKey("GET", "/global-lines"), async ({ response }) => {
-      await handleListGlobalLines(response);
+    [routeKey("GET", "/global-lines"), async ({ response, paths }) => {
+      await handleListGlobalLines(response, paths);
     }],
-    [routeKey("POST", "/global-lines/attach"), async ({ request, response }) => {
-      await handleAttachGlobalLine(request, response);
+    [routeKey("POST", "/global-lines/attach"), async ({ request, response, paths }) => {
+      await handleAttachGlobalLine(request, response, paths);
     }],
-    [routeKey("POST", "/global-lines/detach"), async ({ request, response }) => {
-      await handleDetachGlobalLine(request, response);
+    [routeKey("POST", "/global-lines/detach"), async ({ request, response, paths }) => {
+      await handleDetachGlobalLine(request, response, paths);
     }],
-    [routeKey("PUT", "/global-lines/record"), async ({ request, response }) => {
-      await handleUpdateGlobalLine(request, response);
+    [routeKey("PUT", "/global-lines/record"), async ({ request, response, paths }) => {
+      await handleUpdateGlobalLine(request, response, paths);
     }],
-    [routeKey("DELETE", "/global-lines/record"), async ({ request, response }) => {
-      await handleDeleteEmptyGlobalLine(request, response);
+    [routeKey("DELETE", "/global-lines/record"), async ({ request, response, paths }) => {
+      await handleDeleteEmptyGlobalLine(request, response, paths);
     }],
-    [routeKey("POST", "/global-lines/sync-project"), async ({ request, response }) => {
-      await handleSyncGlobalLineProject(request, response);
+    [routeKey("POST", "/global-lines/sync-project"), async ({ request, response, paths }) => {
+      await handleSyncGlobalLineProject(request, response, paths);
     }],
-    [routeKey("GET", "/color-config"), async ({ request, response }) => {
-      await sendCachedJsonFile(request, response, colorConfigPath, readColorConfig);
+    [routeKey("GET", "/color-config"), async ({ request, response, paths }) => {
+      // filePath 实参即缓存键：必须传空间解析后的路径，且与 produce 读同一空间（传常量会跨空间回放载荷）
+      await sendCachedJsonFile(request, response, paths.colorConfig, () => readColorConfig({ paths }));
     }],
-    [routeKey("PUT", "/color-config"), async ({ request, response }) => {
-      await handleSaveColorConfig(request, response);
+    [routeKey("PUT", "/color-config"), async ({ request, response, paths }) => {
+      await handleSaveColorConfig(request, response, paths);
     }],
-    [routeKey("GET", "/measurement-config"), async ({ request, response }) => {
-      await sendCachedJsonFile(request, response, measurementConfigPath, readMeasurementConfig);
+    [routeKey("GET", "/measurement-config"), async ({ request, response, paths }) => {
+      await sendCachedJsonFile(request, response, paths.measurementConfig, () => readMeasurementConfig({ paths }));
     }],
-    [routeKey("PUT", "/measurement-config"), async ({ request, response }) => {
-      await handleSaveMeasurementConfig(request, response);
+    [routeKey("PUT", "/measurement-config"), async ({ request, response, paths }) => {
+      await handleSaveMeasurementConfig(request, response, paths);
     }],
-    [routeKey("GET", "/device-library"), async ({ request, response }) => {
-      await sendCachedJsonFile(request, response, deviceLibraryPath, readDeviceLibraryConfig);
+    [routeKey("GET", "/device-library"), async ({ request, response, paths }) => {
+      await sendCachedJsonFile(request, response, paths.deviceLibrary, () => readDeviceLibraryConfig({ paths }));
     }],
-    [routeKey("PUT", "/device-library"), async ({ request, response }) => {
-      await handleSaveDeviceLibrary(request, response);
+    [routeKey("PUT", "/device-library"), async ({ request, response, paths }) => {
+      await handleSaveDeviceLibrary(request, response, paths);
     }]
   ]);
   const dynAssetPattern = (sub) => new RegExp(`^${escapeRegExp(apiPath(sub))}/([^/]+)$`, "u");
@@ -4533,29 +4898,29 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     {
       method: "PUT",
       pattern: dynAssetPattern("/image-folders"),
-      handle: async ({ match, request, response }) => {
-        await handleRenameImageFolder(decodeURIComponent(match[1]), request, response);
+      handle: async ({ match, request, response, paths }) => {
+        await handleRenameImageFolder(decodeURIComponent(match[1]), request, response, paths);
       }
     },
     {
       method: "DELETE",
       pattern: dynAssetPattern("/image-folders"),
-      handle: async ({ match, response }) => {
-        await handleDeleteImageFolder(decodeURIComponent(match[1]), response);
+      handle: async ({ match, response, paths }) => {
+        await handleDeleteImageFolder(decodeURIComponent(match[1]), response, paths);
       }
     },
     {
       method: "GET",
       pattern: dynAssetPattern("/images"),
-      handle: async ({ match, response }) => {
-        await handleDownload(match[1], response);
+      handle: async ({ match, response, paths }) => {
+        await handleDownload(match[1], response, paths);
       }
     },
     {
       method: "DELETE",
       pattern: dynAssetPattern("/images"),
-      handle: async ({ match, response }) => {
-        await handleDeleteImageAsset(match[1], response);
+      handle: async ({ match, response, paths }) => {
+        await handleDeleteImageAsset(match[1], response, paths);
       }
     }
   ];
@@ -4581,9 +4946,34 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         response.end();
         return;
       }
+      // 空间解析：/exports/native/* 是本机端点，/spaces 是空间管理面，都与「某一空间的数据」
+      // 无关，必须在解析前短路。否则一个已删除的空间名会连带打挂一次「另存为」；
+      // 而 POST /webgrp/spaces?space=新空间 会带着正要创建的名字被判 unknown 拦成 400，
+      // 删除空间后的管理调用则会静默落回 default 的身份。
+      // /v1/receive 同理：进程内联调接收端（内存留最近 5 次、不落盘、不读 paths），
+      // 数据本就是全局的，一个 typo 的空间标识不该把联调打挂 —— handler 也不接 ctx。
+      const isSpaceAgnostic = url.pathname === apiPath("/exports/native/select-file")
+        || url.pathname === apiPath("/exports/native/write-text")
+        || url.pathname === apiPath("/spaces")
+        || url.pathname === apiPath("/v1/receive");
+      let spaceCtx = {};
+      if (!isSpaceAgnostic) {
+        const resolution = resolveSpaceFromRequest(request, url, spaceStore);
+        if (resolution.unknown) {
+          sendError(response, 400, `未知空间：${resolution.unknownValue ?? ""}`, "SPACE_UNKNOWN");
+          return;
+        }
+        spaceCtx = { paths: spaceStore.resolvePaths(resolution.id), spaceId: resolution.id };
+        if (resolution.source === "fallback") {
+          // 无来源/来源已失效：回退首个空间并告知客户端，同时把选定空间写回 Cookie
+          response.setHeader(SPACE_FALLBACK_HEADER, "1");
+          response.setHeader("set-cookie",
+            `${SPACE_COOKIE_NAME}=${encodeURIComponent(resolution.id)}; Path=/; Max-Age=31536000; SameSite=Lax`);
+        }
+      }
       const exactRouteHandler = exactRouteHandlers.get(`${request.method} ${url.pathname}`);
       if (exactRouteHandler) {
-        await exactRouteHandler({ request, response, url });
+        await exactRouteHandler({ request, response, url, ...spaceCtx });
         return;
       }
       for (const route of dynamicRouteHandlers) {
@@ -4592,7 +4982,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         }
         const match = route.pattern.exec(url.pathname);
         if (match) {
-          await route.handle({ match, request, response, url });
+          await route.handle({ match, request, response, url, ...spaceCtx });
           return;
         }
       }
@@ -4608,7 +4998,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
           }
           const match = route.pattern.exec(url.pathname);
           if (match) {
-            await route.handle({ request, response, url, match });
+            await route.handle({ request, response, url, match, ...spaceCtx });
             return;
           }
         }
@@ -4627,11 +5017,14 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       }
       sendError(response, 404, "接口不存在。");
     } catch (error) {
-      sendError(response, 500, error instanceof Error ? error.message : "后端处理失败。");
+      // 自带 statusCode 的错误按它报（如退休空间的 409），其余仍是 500
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+      sendError(response, status, error instanceof Error ? error.message : "后端处理失败。");
     }
   });
   // server 创建后挂载运行时态 WS 桥接（需 server.on("upgrade")）
-  runtimeWs = attachRuntimeWebSocket(server, runtimeRegistry);
+  // 传 spaceStore：客户端上线时要按握手 Cookie 把空间归位到注册表（缺 Cookie → 首个空间）
+  runtimeWs = attachRuntimeWebSocket(server, runtimeRegistry, spaceStore);
   v1RuntimeRoutes = createV1RuntimeRoutes(runtimeWs);
   v1ControlRoutes = createV1ControlRoutes(runtimeWs);
 

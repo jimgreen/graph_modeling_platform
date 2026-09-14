@@ -3997,8 +3997,69 @@ function setNodeVoltageLimitValues(
   return params === node.params ? node : { ...node, params };
 }
 
-function containerVoltageBaseParamTerminalIds(node: ModelNode, key: string): Set<string> | null {
-  const normalized = key.trim().toLowerCase();
+/**
+ * 变压器「侧电压参数」→ 端子下标。**全仓唯一一份分侧表**：
+ * 双绕组 `i/j` = 高/低；三绕组 `i/k/j` = 高/中/低（`neutral` 为第 4 个端子）。
+ * 非变压器、或不是侧电压参数时返回 undefined。
+ *
+ * 为什么必须是单源：右侧面板的参数编辑要把「用户改了哪一侧」翻成端子、再据此算该侧分压岛，
+ * 而写回参数时还要把端子值翻回**同一个**参数键。两处各存一份时，只要有一份写错侧位，
+ * 就会出现「改 A 侧、B 侧跟着变」：曾经这里把 `j_vbase` 一律当成 1 号端子，而三绕组的
+ * 1 号端子是**中压**侧 —— 于是改中压侧把值写进了低压侧 `j_vbase`，而 `k_vbase` 无人认领、
+ * 中压侧自己反而没改。
+ */
+export function voltageBaseParamTerminalIndexForNode(node: ModelNode, key: string): number | undefined {
+  const kind = baseDeviceKind(node.kind);
+  const isThree = isThreeWindingTransformer(node);
+  const isTwo = kind === "ac-transformer" || kind === "ac-two-winding-transformer";
+  if (!isThree && !isTwo) {
+    return undefined;
+  }
+  const compact = key.trim().toLowerCase().replace(/[_\-\s]/g, "");
+  const sideTable = isThree
+    ? ({ ivbase: 0, kvbase: 1, jvbase: 2, neutralvbase: 3 } as Record<string, number>)
+    : ({ ivbase: 0, jvbase: 1 } as Record<string, number>);
+  return sideTable[compact];
+}
+
+/**
+ * 存量数据修复：把变压器的**分侧电压参数**对齐到对应端子的 vbase（**以端子为准**）。
+ *
+ * 为什么需要：分侧表曾经错位（见上面 `voltageBaseParamTerminalIndexForNode` 的注释），
+ * 那时的编辑会让 `params.j_vbase` 与 3 号端子各持一值 —— 右侧面板【图元】参数表读参数、
+ * 而【设置电压基值】窗口与电压着色读端子（`terminalVoltageDisplayValue` 先读端子、非零即返回），
+ * 于是同一个「低压侧电压等级」在界面上出现两个数。写路径已修正，但**存量模型里那对值不会自愈**：
+ * 不再去动那一侧，它们就永远并存。
+ *
+ * 方向取「端子为准」不是新发明的优先级，而是照抄既有的读取顺序（端子优先、分侧参数是它的回退）。
+ *
+ * 端子还是默认占位（空 / `0`）时**跳过**：那时没有「实物」可对齐，硬写会把用户填过的数抹成 0。
+ */
+export function reconcileTransformerSideVoltageParamsWithTerminals(nodes: readonly ModelNode[]): ModelNode[] {
+  return nodes.map((node) => {
+    let params = node.params;
+    for (const key of Object.keys(node.params)) {
+      const terminalIndex = voltageBaseParamTerminalIndexForNode(node, key);
+      if (terminalIndex === undefined) {
+        continue;
+      }
+      const terminalVoltage = terminalVoltageBaseNumber(node.terminals[terminalIndex]?.vbase);
+      if (!terminalVoltage || isZeroNumericText(terminalVoltage)) {
+        continue;
+      }
+      if (terminalVoltageBaseNumber(params[key]) === terminalVoltage) {
+        continue;
+      }
+      if (params === node.params) {
+        params = { ...node.params };
+      }
+      params[key] = terminalVoltage;
+    }
+    return params === node.params ? node : { ...node, params };
+  });
+}
+
+function containerVoltageBaseParamTerminalIds(node: ModelNode, key: string): Set<string> | null {  const normalized = key.trim().toLowerCase();
   const prefixes = ["v_set_", "vbase_", "v_base_"];
   for (const prefix of prefixes) {
     if (!normalized.startsWith(prefix)) {
@@ -4020,6 +4081,12 @@ function voltageBaseParamTerminalIds(node: ModelNode, key: string): Set<string> 
   if (containerTerminalIds) {
     return containerTerminalIds;
   }
+  // 变压器分侧（i/k/j）：走上面那份唯一分侧表。双绕组 i/j 与三绕组 i/k/j **不是同一套侧位**，
+  // 故下面那些按字面名硬写的分支（source/target/high/medium/low）都只管非变压器设备。
+  const transformerTerminalIndex = voltageBaseParamTerminalIndexForNode(node, key);
+  if (transformerTerminalIndex !== undefined) {
+    return terminalIdSet(terminalIdAt(node, transformerTerminalIndex));
+  }
   if (compact === "highvbase") {
     return terminalIdSet(terminalIdAt(node, 0));
   }
@@ -4027,6 +4094,9 @@ function voltageBaseParamTerminalIds(node: ModelNode, key: string): Set<string> 
     return terminalIdSet(terminalIdAt(node, 1));
   }
   if (compact === "lowvbase") {
+    // 英文侧名的写法（custom component 定义常用），故不按设备类型早退 —— 非变压器也走这里。
+    // 变压器上它与 `j_vbase` 必须同值：三绕组 2 号端子（低压）、双绕组 1 号端子。改一处要改两处，
+    // 这正是上面 `voltageBaseParamTerminalIndexForNode` 注释里那条教训的来源。
     return terminalIdSet(terminalIdAt(node, isThreeWindingTransformer(node) ? 2 : 1));
   }
   if (compact === "neutralvbase") {

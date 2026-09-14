@@ -246,3 +246,99 @@ describe("runtimeRegistry command 指令通道", () => {
     expect(fetchData).toEqual({ model: "m1" });
   });
 });
+
+// 空间归属：客户端上线时带上所属空间（WS 层按握手 Cookie 解析并归位），
+// 选默认客户端时严格按空间筛，跨空间指名与跨空间回退都不允许。
+describe("runtimeRegistry 空间归属", () => {
+  test("register 记录 workspaceId，未传则为空串", () => {
+    const reg = createRuntimeRegistry();
+    reg.register("a", () => {}, "张三");
+    reg.register("b", () => {});
+    expect(reg.listClients().map((c) => [c.clientId, c.workspaceId])).toEqual([
+      ["a", "张三"],
+      ["b", ""]
+    ]);
+  });
+
+  test("pickDefaultClient 按空间筛选，不被更活跃的其它空间客户端抢走", () => {
+    vi.useFakeTimers();
+    try {
+      const reg = createRuntimeRegistry();
+      vi.setSystemTime(1000);
+      reg.register("a", () => {}, "张三");
+      vi.setSystemTime(2000);
+      reg.register("b", () => {}, "李四");
+      vi.setSystemTime(3000);
+      reg.touch("b"); // b 更活跃：不按空间筛时两个空间都会取到 b
+      expect(reg.pickDefaultClient("张三").clientId).toBe("a");
+      expect(reg.pickDefaultClient("李四").clientId).toBe("b");
+      // 该空间无在线客户端：不得跨空间回落到 a / b
+      expect(reg.pickDefaultClient("王五")).toBeNull();
+      expect(() => reg.resolveClient(null, "王五")).toThrow(NoOnlineClientError);
+      // 不传空间：保持既有行为（活跃者通吃）
+      expect(reg.pickDefaultClient().clientId).toBe("b");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("pickDefaultClient 严格按空间：空间未知的客户端不会被别的空间选中", () => {
+    vi.useFakeTimers();
+    try {
+      const reg = createRuntimeRegistry();
+      vi.setSystemTime(1000);
+      reg.register("known", () => {}, "张三");
+      vi.setSystemTime(2000);
+      reg.register("unknown", () => {}); // 未注入 store 的单测路径：空间未知
+      vi.setSystemTime(3000);
+      reg.touch("unknown"); // 空间未知者更活跃
+      // 张三有客户端 → 取张三的，即使空间未知者更活跃
+      expect(reg.pickDefaultClient("张三").clientId).toBe("known");
+      // 李四空间无人在线 → 不得退到空间未知者（线上不存在空间未知的条目：注册时已归位）
+      expect(reg.pickDefaultClient("李四")).toBeNull();
+      expect(() => reg.resolveClient(null, "李四")).toThrow(NoOnlineClientError);
+      // 无参调用（老行为）仍取最近活跃
+      expect(reg.pickDefaultClient().clientId).toBe("unknown");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("resolveClient 校验客户端所属空间", () => {
+    const reg = createRuntimeRegistry();
+    reg.register("a", () => {}, "张三");
+    expect(reg.resolveClient("a", "张三").clientId).toBe("a");
+    // 不传空间：保持既有行为（按 id 直取）
+    expect(reg.resolveClient("a").clientId).toBe("a");
+    // 跨空间指名：拒绝
+    expect(() => reg.resolveClient("a", "李四")).toThrow(NoOnlineClientError);
+  });
+
+  test("resolveClient 严格校验空间：空间未知的客户端同样不放行", () => {
+    const reg = createRuntimeRegistry();
+    reg.register("a", () => {});
+    expect(() => reg.resolveClient("a", "张三")).toThrow(NoOnlineClientError);
+  });
+
+  test("fetchFromClient 传空间时只在该空间内取默认客户端", async () => {
+    vi.useFakeTimers();
+    try {
+      const reg = createRuntimeRegistry();
+      vi.setSystemTime(1000);
+      reg.register("mine", () => {}, "张三");
+      vi.setSystemTime(2000);
+      reg.register("other", () => {}, "李四"); // 更活跃：不按空间筛必取到它
+      const mockSend = createMockSend();
+      const promise = reg.fetchFromClient(null, "req-space", "runtime.snapshot", {}, mockSend.send, "张三");
+      expect(mockSend.sent[0].clientId).toBe("mine");
+      reg.resolveFetch("mine", "req-space", { ok: 1 }, null);
+      await expect(promise).resolves.toEqual({ ok: 1 });
+      // 空间无匹配客户端、也没有空间未知客户端 → 抛（不得跨空间回落）
+      await expect(
+        reg.fetchFromClient(null, "req-none", "runtime.snapshot", {}, mockSend.send, "王五")
+      ).rejects.toThrow(NoOnlineClientError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -48,24 +48,25 @@ function normalizeTargetUrl(raw) {
 
 // 生成单个格式的文本内容。返回 { text } 或 { error }。
 // templateName 仅对 E 文件生效（后端按模板重算元件定义），其余格式忽略。
-async function buildFileText({ kind, parts, name, templateName }) {
+// paths：多空间路径集合（spaceStore.spacePathsFor），缺省时被调函数回落 defaultPaths。
+async function buildFileText({ kind, parts, name, templateName, paths }) {
   if (kind === "json") {
-    const record = await readSchemeProjectRecord({ schemePath: parts, name });
+    const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
     if (!record) {
       return { error: { code: "not-found", message: "模型不存在。" } };
     }
     return { text: JSON.stringify(record.project ?? {}) };
   }
   if (kind === "e") {
-    const { file, error } = await buildEFileForSavedModel({ parts, name, templateName });
+    const { file, error } = await buildEFileForSavedModel({ parts, name, templateName, paths });
     return error ? { error } : { text: String(file?.text ?? "") };
   }
   if (kind === "svg") {
     // 与前端导出同口径：colorMode=voltage（前端导出原有按电压着色）
-    const { svg, error } = await renderSavedModelSvg({ parts, name, colorMode: "voltage" });
+    const { svg, error } = await renderSavedModelSvg({ parts, name, colorMode: "voltage", paths });
     return error ? { error } : { text: String(svg ?? "") };
   }
-  const { xml, error } = await buildCimForSavedModel({ parts, name });
+  const { xml, error } = await buildCimForSavedModel({ parts, name, paths });
   return error ? { error } : { text: String(xml ?? "") };
 }
 
@@ -89,14 +90,14 @@ async function readTargetErrorDetail(targetResponse) {
 
 // 定位待发送模型：优先 modelId（模型稳定序号 idx，与方案路径解耦），
 // 兼容 schemePath + name。返回 { parts, name, modelId } 或 { error }。
-async function resolveSendTarget(url) {
+async function resolveSendTarget(url, paths) {
   const rawId = (url.searchParams.get("modelId") ?? "").trim();
   if (rawId) {
     const index = Number(rawId);
     if (!Number.isSafeInteger(index) || index <= 0) {
       return { error: { code: "bad-request", message: "modelId 必须是正整数。" } };
     }
-    const located = await findSchemeProjectRecordByIndex({ index });
+    const located = await findSchemeProjectRecordByIndex({ index, paths });
     if (!located) {
       return { error: { code: "not-found", message: `模型 ID ${index} 不存在。` } };
     }
@@ -111,7 +112,7 @@ async function resolveSendTarget(url) {
     return { error: { code: "bad-request", message: "缺少模型名称，或改用 modelId 指定模型。" } };
   }
   // 兼容路径顺带取一次 idx，让 model_id 表单字段对两种调用口径一致
-  const record = await readSchemeProjectRecord({ schemePath: parts, name });
+  const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
   return { parts, name, modelId: Number(record?.project?.idx) || 0 };
 }
 
@@ -120,9 +121,9 @@ async function resolveSendTarget(url) {
 //        或 schemePath=<encoded> + name=<模型名>（兼容旧调用）
 // body:  { url, files: [{ kind: "e"|"json"|"svg"|"cim", encoding: "utf-8"|"gbk" }], templateName? }
 //        templateName 可选，取值见 PREDEFINED_E_DEVICE_TEMPLATES，仅作用于 E 文件
-export async function handleV1ModelSend({ request, response, url }) {
+export async function handleV1ModelSend({ request, response, url, paths }) {
   try {
-    const resolved = await resolveSendTarget(url);
+    const resolved = await resolveSendTarget(url, paths);
     if (resolved.error) {
       sendV1Error(response, resolved.error.code, resolved.error.message);
       return;
@@ -175,7 +176,7 @@ export async function handleV1ModelSend({ request, response, url }) {
 
     const sentFiles = [];
     for (const spec of specs) {
-      const built = await buildFileText({ kind: spec.kind, parts, name, templateName });
+      const built = await buildFileText({ kind: spec.kind, parts, name, templateName, paths });
       if (built.error) {
         sendV1Error(response, built.error.code, built.error.message);
         return;

@@ -24,6 +24,7 @@ import { decodeAuto } from "../encoding/gbk";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES as TEMPLATE_ALLOWED_MODEL_TYPES, eDeviceTemplateNetworkTypeMismatchMessage, eDeviceTemplateSingleTypeMismatchMessage } from "../eDeviceTemplateTypePolicy";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
+import { isSkipBeforeUnload } from "../spaceSwitch";
 import { EFileEditor } from "../EFileEditor";
 import { buildUserCustomizationInventory, restoreUserCustomizationItems, type UserCustomizationDomain } from "../userCustomizations";
 import { moveSelectedTableRows, nextTableRowSelection, uniqueCopiedFieldName } from "../definitionTableSelection";
@@ -2030,6 +2031,9 @@ export function renderAppView(__appScope: Record<string, any>) {
   useEffect(() => {
     if (!customDeviceDialogOpen) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      // 切空间的卸载路径：switchToSpace 已置跳过标志。此刻拦下 reload 会把页面留在旧空间，
+      // 而 Cookie 已写成新空间、浏览器缓存也已清空 —— 之后的落盘会把旧空间数据写进新空间。
+      if (isSkipBeforeUnload()) return;
       if (!customDeviceDraftHasUnsavedChanges()) return;
       event.preventDefault();
       event.returnValue = "";
@@ -2497,6 +2501,10 @@ export function renderAppView(__appScope: Record<string, any>) {
             canUngroupSelectedGraphics,
             canAdjustSelectedDisplayLayer,
             selectedLayoutUnitCount,
+            // 空间选择器与 RT-WS 指示灯同属「当前上下文」控件：这两个值不加进 inputs，
+            // 空间列表加载完成后 MemoizedViewSection 会跳过重渲染，选择器永远停在空列表。
+            __appScope.currentSpaceId,
+            __appScope.spaces,
             __appScope.runtimeWsStatus,
             __appScope.runtimeWsBlinkSeq,
             __appScope.runtimeWsClientId,

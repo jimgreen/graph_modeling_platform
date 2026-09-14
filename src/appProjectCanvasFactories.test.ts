@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
   createAutoSpreadCanvasGraphics,
@@ -19,6 +19,14 @@ import { clampCanvasNoScrollOffset } from "./canvasViewport";
 import { DEVICE_LIBRARY_BY_KIND, canConnectTerminals, createDefaultNode, getNodeScaleX, getNodeScaleY, getTerminalPoint, isBusNode, isLineSegmentBusNode, isRoutableLineDeviceKind } from "./model";
 import { GLOBAL_LINE_ID_PARAM } from "./global-lines";
 import { resizeLineSegmentBusGeometryFromHandleDrag } from "./transformUtils";
+
+// 切空间要落到真模块（清缓存 + 写 cookie + reload），此处只关心它在**何时**被调用，
+// 故整模块替换；其余导出原样透传，避免影响本文件其他用例的依赖树。
+const switchToSpaceMock = vi.hoisted(() => vi.fn());
+vi.mock("./spaceSwitch", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./spaceSwitch")>()),
+  switchToSpace: switchToSpaceMock
+}));
 
 describe("跨模型告警定位的未保存修改衔接", () => {
   test("当前模型无未保存修改时，加载目标模型后执行定位回调", async () => {
@@ -151,6 +159,103 @@ describe("跨模型告警定位的未保存修改衔接", () => {
     expect(undoLastOperation).toHaveBeenCalledTimes(3);
     expect(setHasUnsavedChanges).toHaveBeenCalledWith(false);
     expect(enterBrowseMode).toHaveBeenCalledOnce();
+    expect(setPendingUnsavedAction).toHaveBeenCalledWith(null);
+  });
+});
+
+describe("切空间的未保存修改衔接", () => {
+  const action = { kind: "switch-space" as const, spaceId: "张三", label: "切换到空间“张三”" };
+
+  const createRequest = (saveRequired: boolean) => {
+    const setPendingUnsavedAction = vi.fn();
+    const request = createRequestUnsavedChangeAction({
+      enterBrowseMode: vi.fn(),
+      loadSavedProjectRecord: vi.fn(),
+      saveRequired,
+      setPendingUnsavedAction
+    });
+    return { request, setPendingUnsavedAction };
+  };
+
+  const createResolve = (pendingAction: typeof action, saveCurrentProject = vi.fn()) => {
+    const setPendingUnsavedAction = vi.fn();
+    const resolve = createResolveUnsavedChangeAction({
+      enterBrowseMode: vi.fn(),
+      loadSavedProjectRecord: vi.fn(),
+      pendingUnsavedAction: pendingAction,
+      saveCurrentProject,
+      setPendingUnsavedAction
+    });
+    return { resolve, setPendingUnsavedAction };
+  };
+
+  beforeEach(() => {
+    switchToSpaceMock.mockReset();
+  });
+
+  test("有未保存修改时只登记待确认操作，不直接切换", () => {
+    const { request, setPendingUnsavedAction } = createRequest(true);
+
+    request(action);
+
+    expect(setPendingUnsavedAction).toHaveBeenCalledWith(action);
+    expect(switchToSpaceMock).not.toHaveBeenCalled();
+  });
+
+  test("无未保存修改时直接切换，不进待确认状态", () => {
+    const { request, setPendingUnsavedAction } = createRequest(false);
+
+    request(action);
+
+    expect(switchToSpaceMock).toHaveBeenCalledWith("张三");
+    expect(setPendingUnsavedAction).not.toHaveBeenCalled();
+  });
+
+  test("确认保存后先落盘、成功后才切换", async () => {
+    const order: string[] = [];
+    // 保存桩**先让出一次微任务再记录**：否则「没 await 就切」也会得到相同顺序，
+    // 这条断言就失去判别力（保存是同步 push 时，不 await 也排在切换之前）。
+    const saveCurrentProject = vi.fn(async () => {
+      await Promise.resolve();
+      order.push("save");
+      return true;
+    });
+    switchToSpaceMock.mockImplementation(() => {
+      order.push("switch");
+    });
+    const { resolve } = createResolve(action, saveCurrentProject);
+
+    await resolve("save");
+
+    expect(order).toEqual(["save", "switch"]);
+    expect(switchToSpaceMock).toHaveBeenCalledWith("张三");
+  });
+
+  test("保存失败时不切换", async () => {
+    const saveCurrentProject = vi.fn().mockResolvedValue(false);
+    const { resolve } = createResolve(action, saveCurrentProject);
+
+    await resolve("save");
+
+    expect(switchToSpaceMock).not.toHaveBeenCalled();
+  });
+
+  test("放弃修改时直接切换，不触发保存", async () => {
+    const saveCurrentProject = vi.fn().mockResolvedValue(true);
+    const { resolve } = createResolve(action, saveCurrentProject);
+
+    await resolve("discard");
+
+    expect(switchToSpaceMock).toHaveBeenCalledWith("张三");
+    expect(saveCurrentProject).not.toHaveBeenCalled();
+  });
+
+  test("取消时只清空待确认操作，不发生任何切换", async () => {
+    const { resolve, setPendingUnsavedAction } = createResolve(action);
+
+    await resolve("cancel");
+
+    expect(switchToSpaceMock).not.toHaveBeenCalled();
     expect(setPendingUnsavedAction).toHaveBeenCalledWith(null);
   });
 });
@@ -1767,4 +1872,39 @@ describe("topology calculation operating-limit normalization", () => {
     expect(showGlobalMessage).toHaveBeenCalledWith("拓扑失败 1");
     expect(setNodes).not.toHaveBeenCalled();
   });
+});
+
+test("加载模型时把分叉的分侧电压参数对齐到端子 vbase（存量数据修复）", () => {
+  const three = createDefaultNode("ac-three-winding-transformer", { x: 0, y: 0 });
+  // 旧缺陷留下的分叉：分侧参数被误写成中压值 220，而 3 号端子（低压）仍是 110
+  const drifted = {
+    ...three,
+    params: { ...three.params, j_vbase: "220" },
+    terminals: three.terminals.map((terminal, index) => (index === 2 ? { ...terminal, vbase: "110" } : terminal))
+  };
+  const setGraphArrays = vi.fn();
+  // 空 Map（而非缺省）让模板分支原样放行，专测「加载时做了分侧对齐」这一步
+  const scope = createLoadScope({ libraryTemplateByKind: new Map(), setGraphArrays });
+
+  createLoadSavedProject(scope as any)({
+    id: "project-drifted",
+    name: "分叉模型",
+    project: {
+      nodes: [drifted],
+      edges: [],
+      groups: [],
+      layers: [],
+      activeLayerId: "layer-default",
+      canvasWidth: 1200,
+      canvasHeight: 800
+    }
+  } as any, "scheme-1");
+
+  const loadedNodes = setGraphArrays.mock.calls[0][0] as Array<{
+    params: Record<string, string>;
+    terminals: Array<{ vbase: string }>;
+  }>;
+  // 端子为准：参数跟着端子收敛，此后右侧面板与【设置电压基值】读数一致
+  expect(loadedNodes[0].params.j_vbase).toBe("110");
+  expect(loadedNodes[0].terminals[2].vbase).toBe("110");
 });
