@@ -127,3 +127,55 @@ describe("同种图元跨电压共用 symbol", () => {
     expect(two.match(/<symbol id="/g)?.length).toBe(1);
   });
 });
+
+describe("槽完整性", () => {
+  // 与「多端子器件的 use 类与槽」同一三绕组用例输出，供槽号/颜色源断言共享
+  const svg = buildSvgDocument([threeWindingTransformer()], [], {
+    width: 800,
+    height: 600,
+    colorDisplayMode: "voltage"
+  });
+
+  it("槽数等于电端子数（含 4 端子主变）", () => {
+    // 4 端子主变（含中性点端子）：槽声明必须覆盖到 --t4，不得按 3 端子截断
+    const neutral: ModelNode = {
+      ...threeWindingTransformer(),
+      id: "ACTransfomer3-4",
+      kind: "ac-three-winding-transformer-neutral",
+      terminals: [
+        ...threeWindingTransformer().terminals,
+        { id: "t4", label: "", type: "ac", anchor: { x: 0, y: -0.5 }, nodeNumber: "4", vbase: "500" }
+      ]
+    };
+    const out = buildSvgDocument([neutral], [], { width: 800, height: 600, colorDisplayMode: "voltage" });
+    const styleMatch = out.match(/<use[^>]*style="([^"]*)"/);
+    expect(styleMatch?.[1] ?? "").toContain("--t4:");
+  });
+
+  it("每个 var(--c-*) 都有对应定义", () => {
+    // 槽链失效会静默取错色：var(--c-*) 的每个使用都必须有 --c-<类名>: 声明兜底
+    const declared = new Set(Array.from(svg.matchAll(/--c-([A-Za-z0-9_-]+):/g)).map((m) => m[1]));
+    const used = Array.from(svg.matchAll(/var\(--c-([A-Za-z0-9_-]+)\)/g)).map((m) => m[1]);
+    for (const name of used) {
+      expect(declared.has(name)).toBe(true);
+    }
+  });
+
+  it("symbol 内槽号 ⊆ use 上定义的槽号", () => {
+    // symbol 消费的每个槽都必须由 use 侧声明，否则正文元素解析失败
+    const useSlots = new Set(Array.from(svg.matchAll(/--t(\d+):/g)).map((m) => m[1]));
+    const symbolSection = svg.slice(svg.indexOf("<defs"), svg.indexOf("</defs>"));
+    const symbolSlots = Array.from(symbolSection.matchAll(/var\(--t(\d+)\)/g)).map((m) => m[1]);
+    for (const slot of symbolSlots) {
+      expect(useSlots.has(slot)).toBe(true);
+    }
+  });
+
+  it("槽样式与 display:none 合并在同一个 style 属性", () => {
+    // 多个 style 属性会被解析器丢弃后者，槽赋值必须并入唯一 style
+    const useTags = Array.from(svg.matchAll(/<use\b[^>]*>/g)).map((m) => m[0]);
+    for (const tag of useTags) {
+      expect((tag.match(/ style="/g) ?? []).length).toBeLessThanOrEqual(1);
+    }
+  });
+});
