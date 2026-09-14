@@ -422,35 +422,42 @@ symbol 去重有两级，**两级都把电压色算进键**：
 
 ---
 
-## 9. 后续追加特性：symbol 内 terminal 锚点（2026-09-14 实施后追加）
+## 9. 后续追加特性：terminal 锚点（2026-09-14 实施后追加，v2 实例层方案）
 
-**需求**：其他工具用 SVG 时需要确定连接点位置。symbol 内每电端子输出一个锚点元素；默认不显示，CSS 控制显示。
+**需求**：其他工具使用 SVG 时需要确定连接点位置。每电端子输出一个锚点元素；默认不显示，CSS 控制显示。
 
-### 9.1 输出形态
+### 9.1 输出形态（v2：实例层）
 
 ```svg
-<circle class="terminal-anchor" cx="-79" cy="-11.57895" r="4" display="none"
-        terminal-id="t1" terminal-index="1" node-number="1176"/>
+<g transform="translate(440,8)">
+  <use id="ACTransfomer3-1" ... href="#symbol_..."/>
+  <g transform="translate(75 55) rotate(0) scale(1 1)">
+    <circle class="terminal-anchor" cx="-79" cy="-11" r="4" display="none"
+            dev-id="ACTransfomer3-1" terminal-id="t1" terminal-index="1" node-number="N9691"/>
+    ...
+  </g>
+</g>
 ```
 
 | 决策 | 内容 |
 |---|---|
+| 层级 | **实例层（use 旁）**，不在 symbol 内 —— symbol 被同 kind 实例共享，实例级端子号写进正文会破坏去重；且快路径缓存（token 不含 nodeNumber）会让第二台设备复用第一台的锚点号（串号）。v1 曾放 symbol 内，实测暴露此缺陷后迁移 |
 | 范围 | 仅电端子（ac/dc）；h2/heat 端子不生成 |
-| 位置 | `terminalRenderLocalPoint`（= 引线外端 = 连线落点，与引线同函数同坐标系） |
-| 身份属性 | `terminal-id` / `terminal-index`（电端子序，与 `<use>` 的 `vbase-N` 同基数）/ `node-number`（拓扑节点号） |
-| 默认隐藏 | `display="none"` **呈现属性**（SVG 标准：CSS 规则恒胜呈现属性）→ 下游 `.terminal-anchor{display:inline}` 一行显示；**不进 `<style>` 块** |
-| 模式 | energy / voltage 都输出（几何元数据与配色无关） |
-| 着色 | 锚点元素不带 fill/stroke —— 显示时默认黑，下游可用 CSS 自定（如 `.terminal-anchor{fill:#e11d48}`） |
+| 位置 | `terminalRenderLocalPoint`（= 引线外端 = 连线落点）。包裹 g 先平移半尺寸（对齐 symbol 中心坐标系）再套 `geometryTransform`，与 symbol 内引线同帧 |
+| 身份属性 | `dev-id`（= use 的 id，设备身份）+ `terminal-id` + `terminal-index`（电端子序，与 `vbase-N` 同基数）+ `node-number`（电气连接岛号，`makeNodeNumber` 会话自增） |
+| 默认隐藏 | `display="none"` 呈现属性；CSS 规则恒胜呈现属性 → 下游 `.terminal-anchor{display:inline}` 一行显示 |
+| 隐藏图层 | 锚点组随层隐藏（与 use 同一 `svgDisplayAttribute`） |
+| 模式 | energy / voltage 都输出；着色不带 fill/stroke，显示时默认黑，下游 CSS 自定 |
 
 ### 9.2 实现与守护
 
-- `svg.ts` `renderNodeSymbolBody`：connectorMarkup 后追加 `terminalAnchorMarkup`（插入几何 g 内，随旋转/缩放）
-- symbol 去重：锚点在 body 内 → 签名自然覆盖；token 已含各端子 renderPoint
-- **golden 基线有意重生成**：energy 输出新增锚点元素属本特性的预期变更，`SVG_BASELINE_HASH` 更新为新哈希（这打破「energy 零漂移」的配色工作约束 —— 该约束只属于电压着色改造本身；锚点是显式追加的输出特性）
-- 测试：`src/export/svgTerminalAnchor.test.ts`（锚点数=电端子数、坐标=引线落点、身份属性、display:none、非电端子排除、energy 也生成、双状态 symbol 各含全套、母线单端子）
+- `svg.ts` use 发射行旁构建 `terminalAnchorMarkup` + `terminalAnchorGroup`（translate(w/2 h/2) + geometryTransform 包裹）
+- symbol 正文零锚点 → 去重键纯净；「同 kind 不同端子号两台设备共用同一 symbol 且锚点各归其主」有回归用例（防快路径串号复现）
+- golden 基线两次有意重生成（v1 正文锚点 → v2 实例层），`SVG_BASELINE_HASH` 同步更新
+- 测试：`src/export/svgTerminalAnchor.test.ts` 6 用例（实例层挂载、symbol 纯净、坐标=引线落点、身份属性、双状态、非电端子排除、隐藏图层、去重回归）
 
 ### 9.3 下游用法
 
 ```css
-.terminal-anchor { display: inline; fill: #e11d48 }  /* 显示并着色 */
+.terminal-anchor { display: inline; fill: #e11d48 }
 ```

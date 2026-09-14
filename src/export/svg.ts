@@ -824,23 +824,11 @@ ${rules.join("\n")}
           imageHref && allowNodeImage && symbolNode.terminals.length === 0 && !isStaticNode(symbolNode)
             ? `<rect x="${-symbolNode.size.width / 2}" y="${-symbolNode.size.height / 2}" width="${symbolNode.size.width}" height="${symbolNode.size.height}" rx="8" fill="#ffffff" stroke="none"/>`
             : "";
-        // terminal 锚点：每个电端子在引线落点（terminalRenderLocalPoint）画一个隐藏圆点，
-        // 供其他工具定位连接点。默认 display="none" 呈现属性隐藏；CSS 规则恒胜呈现属性，
-        // 下游一行 .terminal-anchor{display:inline} 即可显示。terminal-index 与 <use> 的 vbase-N 元数据同基数（电端子序）。
-        const terminalAnchorMarkup = exportElectricTerminals(symbolNode)
-          .map((terminal, index) => {
-            const nodeScaleX = getNodeScaleX(symbolNode);
-            const nodeScaleY = getNodeScaleY(symbolNode);
-            const renderPoint = terminalRenderLocalPoint(terminal, symbolNode.size, nodeScaleX, nodeScaleY, symbolNode.kind);
-            return `<circle class="terminal-anchor" cx="${formatSvgNumber(renderPoint.x)}" cy="${formatSvgNumber(renderPoint.y)}" r="4" display="none" terminal-id="${escapeXml(terminal.id)}" terminal-index="${index + 1}" node-number="${escapeXml(terminal.nodeNumber ?? "")}"/>`;
-          })
-          .join("\n  ");
         return `<title>${escapeXml(template?.label ?? exportNodeType(symbolNode))}</title>
   <g transform="${geometryTransform}">
   ${glyphMarkup}
   ${glyphTextMarkup}
   ${connectorMarkup}
-  ${terminalAnchorMarkup}
   ${isStaticNode(symbolNode) ? imageMarkup : ""}
   ${imageCoverMarkup}
   ${allowNodeImage && !isStaticNode(symbolNode) ? imageMarkup : ""}
@@ -888,7 +876,21 @@ ${rules.join("\n")}
       }
       const useX = formatSvgNumber(node.position.x - node.size.width / 2);
       const useY = formatSvgNumber(node.position.y - node.size.height / 2);
-      nodeLayerMarkup.get(typeLayerId)?.push(`<g transform="translate(${useX},${useY})"><use id="${escapeXml(useId)}"${nodeClassAttribute} layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${topologyNodeAttributes}${voltageAttributes} href="#${escapeXml(symbolId)}" xlink:href="#${escapeXml(symbolId)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId), nodeSlotStyle)}/></g>`);
+      // terminal 锚点（实例层）：每电端子在引线落点输出一个隐藏圆点，供其他工具定位连接点。
+      // 置于 use 旁而非 symbol 内 —— symbol 被同 kind 实例共享，实例级端子号写进正文会破坏去重，
+      // 且快路径缓存会让第二台设备复用第一台的锚点号（串号）。默认 display="none" 呈现属性隐藏；
+      // CSS 规则恒胜呈现属性，下游 .terminal-anchor{display:inline} 一行即可显示。
+      // 包裹 g 先平移半尺寸（对齐 symbol 的中心坐标系）再套几何变换，与 symbol 内引线同帧。
+      const terminalAnchorMarkup = exportElectricTerminals(node)
+        .map((terminal, index) => {
+          const renderPoint = terminalRenderLocalPoint(terminal, node.size, getNodeScaleX(node), getNodeScaleY(node), node.kind);
+          return `<circle class="terminal-anchor" cx="${formatSvgNumber(renderPoint.x)}" cy="${formatSvgNumber(renderPoint.y)}" r="4" display="none" dev-id="${escapeXml(useId)}" terminal-id="${escapeXml(terminal.id)}" terminal-index="${index + 1}" node-number="${escapeXml(terminal.nodeNumber ?? "")}"/>`;
+        })
+        .join("");
+      const terminalAnchorGroup = terminalAnchorMarkup
+        ? `<g transform="translate(${formatSvgNumber(node.size.width / 2)} ${formatSvgNumber(node.size.height / 2)}) ${geometryTransform}"${svgDisplayAttribute(layerVisible(layerId))}>${terminalAnchorMarkup}</g>`
+        : "";
+      nodeLayerMarkup.get(typeLayerId)?.push(`<g transform="translate(${useX},${useY})"><use id="${escapeXml(useId)}"${nodeClassAttribute} layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${topologyNodeAttributes}${voltageAttributes} href="#${escapeXml(symbolId)}" xlink:href="#${escapeXml(symbolId)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId), nodeSlotStyle)}/>${terminalAnchorGroup}</g>`);
   });
   const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
