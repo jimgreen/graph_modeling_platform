@@ -1345,7 +1345,7 @@ button:not(.ant-btn):disabled {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
   min-width: 0;
 }
 
