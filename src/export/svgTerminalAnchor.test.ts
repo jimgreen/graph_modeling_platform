@@ -25,17 +25,15 @@ const threeWinding = (id = "T3-1"): ModelNode => makeNode("ac-three-winding-tran
 const symbolSection = (svg: string) => svg.slice(svg.indexOf("<defs"), svg.indexOf("</defs>"));
 const anchorTag = /<circle class="terminal-anchor"[^>]*\/>/g;
 
-describe("导出 SVG 的 terminal 锚点（实例层）", () => {
-  it("锚点在实例层（use 旁），symbol 内零锚点；身份属性齐全、默认 display:none", () => {
+describe("导出 SVG 的 terminal 锚点（symbol 内）", () => {
+  it("锚点在 symbol 内与图元定义同处；实例层零锚点；身份属性齐全、默认 display:none", () => {
     const svg = buildSvgDocument([threeWinding()], [], { width: 800, height: 600, colorDisplayMode: "voltage" });
+    const symbol = symbolSection(svg);
 
-    // symbol 纯净：去重不受实例数据（node-number）污染
-    expect(symbolSection(svg)).not.toContain("terminal-anchor");
-
-    // 实例层：每个 <g transform="translate(...)"> 内 use 之后跟锚点组
-    const anchors = Array.from(svg.matchAll(anchorTag)).map((m) => m[0]);
+    // symbol 内：每个电端子一个锚点，身份属性齐全（无 dev-id —— 实例归属在 use 上）
+    const anchors = Array.from(symbol.matchAll(anchorTag)).map((m) => m[0]);
     expect(anchors).toHaveLength(3);
-    expect(anchors[0]).toContain('dev-id="T3-1"');
+    expect(anchors[0]).not.toContain("dev-id");
     expect(anchors[0]).toContain('terminal-id="t1"');
     expect(anchors[0]).toContain('terminal-index="1"');
     expect(anchors[0]).toContain('node-number="N1176"');
@@ -45,19 +43,18 @@ describe("导出 SVG 的 terminal 锚点（实例层）", () => {
       expect(tag).toContain('display="none"');
     }
 
-    // 锚点组挂在 use 的包裹 g 内，与 use 同级、几何变换与 symbol 内容一致
-    const deviceGroup = svg.match(/<g transform="translate\([^)]*\)"><use [^>]*id="T3-1"[^>]*\/>.*<\/g><\/g>/s);
-    expect(deviceGroup).not.toBeNull();
-    expect(deviceGroup![0]).toContain('class="terminal-anchor"');
+    // 实例层（</defs> 之后的正文）：零锚点；下游经 use(dev-id) → href → symbol 定位锚点
+    const bodyAfterDefs = svg.slice(svg.indexOf("</defs>"));
+    expect(bodyAfterDefs).not.toContain("terminal-anchor");
   });
 
-  it("锚点坐标 = 引线落点（symbol 内引线 translate 原点）", () => {
+  it("锚点坐标 = 引线落点（symbol 内引线 translate 原点，同一坐标系）", () => {
     const svg = buildSvgDocument([threeWinding()], [], { width: 800, height: 600, colorDisplayMode: "voltage" });
     const symbol = symbolSection(svg);
     const leadPoints = Array.from(symbol.matchAll(/<g transform="translate\(([-\d.]+) ([-\d.]+)\)">\s*<line/g))
       .map((m) => `${m[1]},${m[2]}`);
     expect(leadPoints).toHaveLength(3);
-    const anchorPoints = Array.from(svg.matchAll(anchorTag)).map((m) => {
+    const anchorPoints = Array.from(symbol.matchAll(anchorTag)).map((m) => {
       const cx = /cx="([-\d.]+)"/.exec(m[0])![1];
       const cy = /cy="([-\d.]+)"/.exec(m[0])![1];
       return `${cx},${cy}`;
@@ -65,16 +62,18 @@ describe("导出 SVG 的 terminal 锚点（实例层）", () => {
     expect(anchorPoints).toEqual(leadPoints);
   });
 
-  it("同 kind 不同端子号的两台设备共用同一 symbol（去重不受实例数据污染，回归 v1 缺陷）", () => {
+  it("同 kind 不同端子号的两台设备不复用 symbol（锚点各归其主，防串号回归）", () => {
     const a = threeWinding("T3-A");
     const b = { ...threeWinding("T3-B"), position: { x: 600, y: 100 } };
     b.terminals = a.terminals.map((t, i) => ({ ...t, nodeNumber: `N999${i}` }));
     const svg = buildSvgDocument([a, b], [], { width: 1200, height: 600, colorDisplayMode: "voltage" });
-    expect(symbolSection(svg).match(/<symbol /g)?.length).toBe(1);
-    // 各实例锚点携带自己的 node-number（快路径串号回归）
-    const anchors = Array.from(svg.matchAll(anchorTag)).map((m) => m[0]);
-    expect(anchors.filter((tag) => tag.includes('dev-id="T3-A"')).every((tag) => tag.includes("N117"))).toBe(true);
-    expect(anchors.filter((tag) => tag.includes('dev-id="T3-B"')).every((tag) => tag.includes("N999"))).toBe(true);
+    // node-number 参与去重签名：两台设备各 1 个 symbol（共 2）
+    expect(symbolSection(svg).match(/<symbol /g)?.length).toBe(2);
+    // 每个 symbol 内锚点各带各的 node-number
+    const anchors = Array.from(symbolSection(svg).matchAll(anchorTag)).map((m) => m[0]);
+    expect(anchors).toHaveLength(6);
+    expect(anchors.filter((tag) => tag.includes("N117")).length).toBe(3);
+    expect(anchors.filter((tag) => tag.includes("N999")).length).toBe(3);
   });
 
   it("非电端子（h2/heat）不生成锚点", () => {
@@ -83,37 +82,38 @@ describe("导出 SVG 的 terminal 锚点（实例层）", () => {
       { id: "t2", label: "", type: "h2", anchor: { x: 0.5, y: 0 }, nodeNumber: "N2" }
     ]);
     const svg = buildSvgDocument([node], [], { width: 800, height: 600, colorDisplayMode: "voltage" });
-    const anchors = svg.match(anchorTag) ?? [];
+    const anchors = Array.from(symbolSection(svg).matchAll(anchorTag)).map((m) => m[0]);
     expect(anchors).toHaveLength(1);
-    expect(anchors[0]).toContain('dev-id="EL-1"');
+    expect(anchors[0]).toContain('terminal-id="t1"');
   });
 
-  it("energy 模式同样生成（双状态 symbol 的器件各状态实例锚点一套）", () => {
+  it("双状态器件（交流开关）每个状态 symbol 内各一套锚点", () => {
     const node = makeNode("ac-switch", "SW-1", [
       { id: "t1", label: "", type: "ac", anchor: { x: -0.5, y: 0 }, nodeNumber: "N1", vbase: "10" },
       { id: "t2", label: "", type: "ac", anchor: { x: 0.5, y: 0 }, nodeNumber: "N2", vbase: "10" }
     ]);
     const svg = buildSvgDocument([node], [], { width: 800, height: 600, colorDisplayMode: "energy" });
-    const anchors = svg.match(anchorTag) ?? [];
-    expect(anchors).toHaveLength(2);
+    // 两个状态 symbol × 每套 2 电端子锚点 = 4
+    const anchors = Array.from(symbolSection(svg).matchAll(anchorTag)).map((m) => m[0]);
+    expect(anchors).toHaveLength(4);
   });
 
-  it("母线（单电端子）也有锚点；隐藏图层时锚点随层隐藏", () => {
+  it("母线（单电端子）也有锚点；隐藏图层时随 use 的 display:none 整体隐藏", () => {
     const bus = makeNode("ac-bus", "BUS-1", [
       { id: "t1", label: "", type: "ac", anchor: { x: -0.5, y: 0 }, nodeNumber: "N1543", vbase: "10" }
     ], { vbase: "10" });
     const svg = buildSvgDocument([bus], [], { width: 800, height: 600, colorDisplayMode: "voltage" });
-    const anchors = svg.match(anchorTag) ?? [];
+    const anchors = Array.from(symbolSection(svg).matchAll(anchorTag)).map((m) => m[0]);
     expect(anchors).toHaveLength(1);
 
-    // 隐藏图层：use 带 display:none 时锚点组同样隐藏（单 style 属性语义对锚点组同样成立）
+    // 隐藏图层：实例 use 带 display:none，锚点在 symbol 内随之整体不渲染（symbol 定义本身不变）
     const hidden = buildSvgDocument(
       [bus],
       [],
       { width: 800, height: 600, colorDisplayMode: "voltage", layers: [{ id: "layer-default", name: "默认图层", visible: false }] as never }
     );
-    const anchorGroup = hidden.match(/<g transform="[^"]*"[^>]*><circle class="terminal-anchor"/);
-    expect(anchorGroup).not.toBeNull();
-    expect(anchorGroup![0]).toContain("display:none");
+    const useTag = hidden.match(/<use [^>]*id="BUS-1"[^>]*>/);
+    expect(useTag).not.toBeNull();
+    expect(useTag![0]).toContain("display:none");
   });
 });

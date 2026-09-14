@@ -749,6 +749,8 @@ describe("SVG export", () => {
     const closedSwitch = createDefaultNode("ac-switch", { x: 280, y: 120 });
     closedSwitch.id = "switch-closed";
     closedSwitch.params = { ...closedSwitch.params, status: "0", closed_status: "1" };
+    // 锚点入 symbol 后 node-number 参与去重：显式同端子号，两台设备仍共用状态 symbol
+    closedSwitch.terminals = openSwitch.terminals;
 
     const svg = buildSvgDocument([openSwitch, closedSwitch], [], { width: 420, height: 260 });
     const defs = svgDefsSection(svg);
@@ -872,6 +874,11 @@ describe("SVG export", () => {
       };
       return node;
     });
+    // 锚点入 symbol 后 node-number 参与去重：统一端子号，model-only 参数差异仍共用 symbol
+    const sharedTerminals = nodes[0].terminals;
+    for (const node of nodes) {
+      node.terminals = sharedTerminals;
+    }
 
     const svg = buildSvgDocument(nodes, [], { width: 1200, height: 280 });
     const defs = svgDefsSection(svg);
@@ -886,7 +893,9 @@ describe("SVG export", () => {
     const sameVisual = {
       ...createDefaultNode("ac-source", { x: 220, y: 120 }),
       id: "visual-source-same",
-      params: { ...base.params, p_set: "88.8" }
+      params: { ...base.params, p_set: "88.8" },
+      // 锚点入 symbol 后 node-number 参与去重：同端子号才与 base 共用 symbol
+      terminals: base.terminals
     };
     const resized = {
       ...createDefaultNode("ac-source", { x: 360, y: 120 }),
