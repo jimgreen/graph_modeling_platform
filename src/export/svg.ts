@@ -326,6 +326,9 @@ ${scopedBackgroundSvg}
   const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
   type ExportVoltageTerminal = ModelNode["terminals"][number];
   const isExportElectricTerminalType = (type?: TerminalType): type is "ac" | "dc" => type === "ac" || type === "dc";
+  // filter 谓词须带「元素」级守卫（value is S），否则 t.type is "ac"|"dc" 不生效，收窄参数会报 TS2345
+  const exportElectricTerminals = (node: ModelNode) =>
+    node.terminals.filter((terminal): terminal is ExportVoltageTerminal & { type: "ac" | "dc" } => isExportElectricTerminalType(terminal.type));
   const exportVoltageValue = (value?: string) => terminalVoltageBaseNumber(value) || "0";
   const nonZeroExportVoltageValue = (value?: string) => {
     const normalized = terminalVoltageBaseNumber(value);
@@ -387,11 +390,16 @@ ${scopedBackgroundSvg}
     `${type === "dc" ? "dcv" : "kv"}${exportVoltageClassSuffix(voltage)}`;
   const exportVoltageLineClass = (type: "ac" | "dc", voltage: string) =>
     `${type === "dc" ? "ldcv" : "lkv"}${exportVoltageClassSuffix(voltage)}`;
+  // 单一 token 派生：类规则把字面色写入 --c-<类名>，正文/端子/引线全部经 var() 引用
+  const exportVoltageColorVar = (className: string) => `--c-${className}`;
   const exportVoltageCssColor = (color: string) => color.trim().replace(/[<>{};]/g, "") || "#64748b";
   const voltageStyleRules = new Map<string, { type: "ac" | "dc"; voltage: string; color: string }>();
+  // 已登记过的类名集合：nodeVoltageSlotDeclarations 用它决定槽链到自身类还是回落到端子 1
+  const registeredVoltageClasses = new Set<string>();
   const addVoltageStyleRule = (type: "ac" | "dc", voltage: string, color = voltageLevelColor(voltage, type, colorPalette)) => {
     const normalizedVoltage = exportVoltageValue(voltage);
     voltageStyleRules.set(`${type}:${normalizedVoltage}`, { type, voltage: normalizedVoltage, color: exportVoltageCssColor(color) });
+    registeredVoltageClasses.add(exportVoltageDeviceClass(type, normalizedVoltage));
   };
   if (colorDisplayMode === "voltage") {
     Object.entries(colorPalette.voltage).forEach(([key, color]) => {
@@ -422,6 +430,8 @@ ${scopedBackgroundSvg}
     if (colorDisplayMode !== "voltage") {
       return null;
     }
+    // 多端子器件：每个端子电压都要有 --c-<类名> 定义，否则 var(--tN) 会静默解析失败
+    exportElectricTerminals(node).forEach((terminal) => addVoltageStyleRule(terminal.type, terminalExportVoltage(node, terminal)));
     const descriptor = nodeExportVoltageDescriptor(node);
     if (!descriptor) {
       return null;
@@ -429,6 +439,36 @@ ${scopedBackgroundSvg}
     const { type, voltage } = descriptor;
     addVoltageStyleRule(type, voltage);
     return descriptor;
+  };
+  const nodeVoltageClasses = (node: ModelNode) => {
+    if (colorDisplayMode !== "voltage") {
+      return "";
+    }
+    const classes = exportElectricTerminals(node)
+      .map((terminal) => exportVoltageDeviceClass(terminal.type, terminalExportVoltage(node, terminal)));
+    if (classes.length === 0) {
+      const descriptor = nodeExportVoltageDescriptor(node);
+      return descriptor ? exportVoltageDeviceClass(descriptor.type, descriptor.voltage) : "";
+    }
+    return Array.from(new Set(classes)).join(" ");
+  };
+  const nodeVoltageSlotDeclarations = (node: ModelNode) => {
+    if (colorDisplayMode !== "voltage") {
+      return "";
+    }
+    const electricTerminals = exportElectricTerminals(node);
+    if (electricTerminals.length <= 1) {
+      return "";
+    }
+    const primaryClass = exportVoltageDeviceClass(electricTerminals[0].type, terminalExportVoltage(node, electricTerminals[0]));
+    return electricTerminals
+      .map((terminal, index) => {
+        const className = exportVoltageDeviceClass(terminal.type, terminalExportVoltage(node, terminal));
+        // 槽链失效时会静默取错色或元素消失，故宁可链到端子 1 也不留空槽
+        const source = registeredVoltageClasses.has(className) ? className : primaryClass;
+        return `--t${index + 1}:var(${exportVoltageColorVar(source)})`;
+      })
+      .join(";");
   };
   const nodeVoltageAttributes = (node: ModelNode) => {
     if (isStaticNode(node)) {
@@ -511,8 +551,10 @@ ${scopedBackgroundSvg}
     Array.from(voltageStyleRules.values())
       .sort((left, right) => exportVoltageDeviceClass(left.type, left.voltage).localeCompare(exportVoltageDeviceClass(right.type, right.voltage)))
       .forEach(({ type, voltage, color }) => {
-        rules.push(`.${exportVoltageDeviceClass(type, voltage)}{fill:${color};stroke:${color};stroke-width:1;color:${color}}`);
-        rules.push(`.${exportVoltageLineClass(type, voltage)}{fill:none;stroke:${color};color:${color}}`);
+        const deviceClass = exportVoltageDeviceClass(type, voltage);
+        const lineClass = exportVoltageLineClass(type, voltage);
+        rules.push(`.${deviceClass}{${exportVoltageColorVar(deviceClass)}:${color};stroke:var(${exportVoltageColorVar(deviceClass)});color:var(${exportVoltageColorVar(deviceClass)});fill:var(${exportVoltageColorVar(deviceClass)})}`);
+        rules.push(`.${lineClass}{${exportVoltageColorVar(lineClass)}:${color};fill:none;stroke:var(${exportVoltageColorVar(lineClass)});color:var(${exportVoltageColorVar(lineClass)})}`);
       });
     return `<style type="text/css"><![CDATA[
 ${rules.join("\n")}
@@ -700,8 +742,20 @@ ${rules.join("\n")}
         const voltageColoredNode = colorDisplayMode === "voltage" && nodeExportVoltageDescriptor(symbolNode)
           ? { ...symbolNode, params: { ...symbolNode.params, foregroundColor: "" } }
           : symbolNode;
-        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "geometry", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual }));
-        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "text", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual }));
+        // 导出态：正文电压色改 class/槽驱动。多端子器件节点级链 --t1、端子级按顺序链 --tN（槽在 <use> 上声明）
+        const glyphVoltagePaint = colorDisplayMode === "voltage" && nodeExportVoltageDescriptor(symbolNode)
+          ? {
+              nodeRef: symbolNode.terminals.filter((terminal) => isExportElectricTerminalType(terminal.type)).length > 1
+                ? "var(--t1)"
+                : undefined,
+              terminalRef: (terminalId: string) => {
+                const index = symbolNode.terminals.findIndex((terminal) => terminal.id === terminalId);
+                return index >= 0 ? `var(--t${index + 1})` : undefined;
+              }
+            }
+          : null;
+        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "geometry", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual, voltagePaint: glyphVoltagePaint }));
+        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "text", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual, voltagePaint: glyphVoltagePaint }));
         const connectorMarkup = buildSvgDeviceConnectorMarkup(voltageColoredNode, colorDisplayMode, colorPalette);
         const imageMarkup = imageHref
           ? svgImageContentMarkup(imageHref, {
@@ -768,8 +822,8 @@ ${rules.join("\n")}
       const activeStateKey = activeStateVisual ? `state_${activeStateVisual.value || "default"}` : "default";
       const symbolId = symbolIdByStateKey.get(activeStateKey) ?? symbolIdByStateKey.values().next().value ?? "";
       const useId = exportDeviceIdByNodeId.get(node.id) ?? exportSvgUniqueId(node.id, usedSvgIds, "device");
-      const nodeVoltage = nodeVoltageDescriptor(node);
-      const nodeVoltageClass = nodeVoltage ? exportVoltageDeviceClass(nodeVoltage.type, nodeVoltage.voltage) : "";
+      const nodeVoltageClass = nodeVoltageClasses(node);
+      const nodeSlotStyle = nodeVoltageSlotDeclarations(node);
       const nodeClassName = [exportButtonClass, nodeVoltageClass].filter(Boolean).join(" ");
       const nodeClassAttribute = nodeClassName ? ` class="${escapeXml(nodeClassName)}"` : "";
       if (labelMarkup) {
@@ -781,7 +835,7 @@ ${rules.join("\n")}
       }
       const useX = formatSvgNumber(node.position.x - node.size.width / 2);
       const useY = formatSvgNumber(node.position.y - node.size.height / 2);
-      nodeLayerMarkup.get(typeLayerId)?.push(`<g transform="translate(${useX},${useY})"><use id="${escapeXml(useId)}"${nodeClassAttribute} layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${topologyNodeAttributes}${voltageAttributes} href="#${escapeXml(symbolId)}" xlink:href="#${escapeXml(symbolId)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/></g>`);
+      nodeLayerMarkup.get(typeLayerId)?.push(`<g transform="translate(${useX},${useY})"><use id="${escapeXml(useId)}"${nodeClassAttribute} layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${topologyNodeAttributes}${voltageAttributes} href="#${escapeXml(symbolId)}" xlink:href="#${escapeXml(symbolId)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId), nodeSlotStyle)}/></g>`);
   });
   const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
