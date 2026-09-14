@@ -21,6 +21,7 @@ import {
   modelAssociationModelTypeForKind,
   normalizeRatioParameterInputValue,
   switchingDeviceUsesClosedStatus,
+  syncedSwitchStatusPatch,
 } from "../model";
 
 import { normalizeNodeLabelDisplayMode } from "../nodeLabelUtils";
@@ -478,7 +479,9 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
         }
         return { ...node, params: { ...node.params, _labelDisplayMode: mode, _labelVisible: visible } };
       }
-      return { ...node, params: { ...node.params, [key]: storedValue } };
+      // 开关类 status↔closed_status 对称同写（渲染只认 closed_status）
+      const patch = syncedSwitchStatusPatch(node.kind, node.params, { [key]: storedValue });
+      return { ...node, params: { ...node.params, ...patch } };
     });
   };
 

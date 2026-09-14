@@ -329,6 +329,42 @@ describe("batch common parameter updates", () => {
     expect(patchGraphNodes.mock.calls[0][0].every((node: typeof firstWindNode) => node.params.control_type === "PQ")).toBe(true);
   });
 
+  test("批量修改开关 status 时逐节点联动 closed_status", () => {
+    const sw1 = createDefaultNode("ac-switch", { x: 100, y: 100 });
+    const sw2 = createDefaultNode("ac-box-breaker", { x: 240, y: 100 });
+    const patchGraphNodes = vi.fn();
+    const applyBatchCommonParamPatch = createApplyBatchCommonParamPatch({
+      NODE_LABEL_FOOTPRINT_PARAM_KEYS: new Set<string>(),
+      activeSelectedNodeIds: [sw1.id, sw2.id],
+      canBatchEditParam: vi.fn(() => true),
+      commitNodeFootprintUpdates: vi.fn(),
+      edgeListForNodeIds: vi.fn(() => []),
+      nodeById: new Map([
+        [sw1.id, sw1],
+        [sw2.id, sw2]
+      ]),
+      patchGraphNodes,
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: vi.fn(() => true),
+      undoScopeForGraphPatch: vi.fn(() => ({})),
+      writeOperationLog: vi.fn()
+    });
+    const applyBatchCommonParam = createApplyBatchCommonParam({
+      PARAM_LABELS: { status: "运行状态" },
+      applyBatchCommonParamPatch,
+      canBatchEditParam: vi.fn(() => true),
+      normalizeNodeLabelDisplayMode: (value: string) => value,
+      normalizeRatioParameterInputValue
+    });
+
+    applyBatchCommonParam("status", "0");
+
+    expect(patchGraphNodes).toHaveBeenCalledTimes(1);
+    const patchedNodes = patchGraphNodes.mock.calls[0][0];
+    expect(patchedNodes).toHaveLength(2);
+    expect(patchedNodes.every((node: typeof sw1) => node.params.status === "0" && node.params.closed_status === "0")).toBe(true);
+  });
+
   test("stores percentage-form SOC batch input as decimal ratios", () => {
     const firstStorage = createDefaultNode("ac-storage", { x: 100, y: 100 });
     const secondStorage = createDefaultNode("ac-storage", { x: 240, y: 100 });
@@ -499,6 +535,38 @@ describe("single device parameter updates", () => {
     updateParam("soc", "120%");
 
     expect(patchGraphNodes).not.toHaveBeenCalled();
+  });
+
+  test("开关类写 status 时联动写 closed_status（渲染只认 closed_status）", () => {
+    const node = createDefaultNode("ac-switch", { x: 100, y: 100 });
+    const patchGraphNodes = vi.fn();
+    const updateParam = createUpdateParam({
+      NODE_LABEL_FOOTPRINT_PARAM_KEYS: new Set<string>(),
+      commitNodeFootprintUpdates: vi.fn(),
+      nodeById: new Map([[node.id, node]]),
+      normalizeNodeLabelDisplayMode: (value: string) => value,
+      normalizeRatioParameterInputValue,
+      patchGraphNodes,
+      pushNodeOnlyUndoSnapshot: vi.fn(),
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: vi.fn(() => true),
+      selectedNodeId: node.id,
+      undoScopeForNodeFootprintPatch: vi.fn(() => ({}))
+    });
+
+    updateParam("status", "0");
+    expect(patchGraphNodes).toHaveBeenCalledTimes(1);
+    const updated = patchGraphNodes.mock.calls[0][0][0];
+    expect(updated.params.status).toBe("0");
+    expect(updated.params.closed_status).toBe("0");
+
+    patchGraphNodes.mockClear();
+    // 反向联动：写 closed_status 时同写 status
+    updateParam("closed_status", "0");
+    expect(patchGraphNodes).toHaveBeenCalledTimes(1);
+    const updated2 = patchGraphNodes.mock.calls[0][0][0];
+    expect(updated2.params.closed_status).toBe("0");
+    expect(updated2.params.status).toBe("0");
   });
 
   test("syncs transformer side-voltage param changes to the matching terminal vbase", () => {

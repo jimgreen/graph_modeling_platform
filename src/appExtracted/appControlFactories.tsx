@@ -2,7 +2,7 @@
 // swigger 控制台写操作程序化方法工厂。
 // 与 UI 写方法隔离：参数显式传入，复用底层 setter，绕过 prompt/alert/draft/editMode。
 // 经 WS control 指令调用（App.tsx commandHandler 分发）。
-import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdges, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage } from "../model";
+import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdges, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, syncedSwitchStatusPatch } from "../model";
 import { createCanvasGroupFromSelection, removeGraphicsFromGroups } from "../selectionActions";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
 
@@ -310,7 +310,8 @@ export function createProgrammaticUpdateDeviceProperty(__appScope: Record<string
       for (const key of Object.keys(patch)) {
         const value = patch[key];
         if (key === "params" && next.params && typeof value === "object") {
-          next.params = { ...next.params, ...value };
+          // 开关类 status↔closed_status 对称同写（渲染只认 closed_status）
+          next.params = { ...next.params, ...syncedSwitchStatusPatch(next.kind, next.params, value) };
         } else {
           next[key] = value;
         }

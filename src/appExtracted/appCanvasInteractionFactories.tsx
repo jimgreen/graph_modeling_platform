@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
-import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind } from "../model";
+import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind, syncedSwitchStatusPatch } from "../model";
 import { isThreeWindingTransformer } from "../model-eexport";
 import { setVoltageBaseTerminalValueForTopologySide, voltageBaseParamTerminalIndexForNode } from "../model-routing";
 
@@ -2487,7 +2487,10 @@ export function createUpdateParam(__appScope: Record<string, any>) {
               return { ...currentNode, params: newParams };
             })()
           : (() => {
-              const paramsNode = { ...currentNode, params: { ...currentNode.params, [key]: storedValue } };
+              // 开关类 status↔closed_status 对称同写：渲染只认 closed_status，
+              // status 行下拉标签却是“闭合/打开”，分叉即“切到打开仍显示闭合”。
+              const patch = syncedSwitchStatusPatch(currentNode.kind, currentNode.params, { [key]: storedValue });
+              const paramsNode = { ...currentNode, params: { ...currentNode.params, ...patch } };
               // 变压器侧电压参数(i_vbase/j_vbase/k_vbase)与对应端子 vbase 需保持一致：
               // 修改侧电压时同步对应端子 vbase，令拓扑着色与【设置电压基值】窗口读取一致。
               // 侧位同样取自 `voltageBaseParamTerminalIndexForNode`（唯一分侧表）。
@@ -2606,9 +2609,14 @@ export function createApplyBatchCommonParam(__appScope: Record<string, any>) {
     const normalizedLabelVisible = normalizedLabelDisplayMode === "hidden" ? "0" : "1";
     applyBatchCommonParamPatch(
       PARAM_LABELS[key] ?? key,
-      () => normalizedLabelDisplayMode
-        ? { _labelDisplayMode: normalizedLabelDisplayMode, _labelVisible: normalizedLabelVisible }
-        : { [key]: storedValue },
+      (node) => {
+        if (normalizedLabelDisplayMode) {
+          return { _labelDisplayMode: normalizedLabelDisplayMode, _labelVisible: normalizedLabelVisible };
+        }
+        // 开关类 status↔closed_status 对称同写；node 缺省（部分旧调用方无参调用）时退化为原 patch
+        const targetNode = node ?? (nodeById instanceof Map ? nodeById.values().next().value : undefined);
+        return syncedSwitchStatusPatch(targetNode?.kind ?? "", targetNode?.params ?? {}, { [key]: storedValue });
+      },
       normalizedLabelDisplayMode ? ["_labelDisplayMode", "_labelVisible"] : [key]
     );
   };
