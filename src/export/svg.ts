@@ -80,7 +80,7 @@ import {
   exportSvgUniqueId,
   svgDisplayAttribute
 } from "../svgExportUtils.ts";
-import { DeviceGlyph } from "../DeviceGlyph.ts";
+import { DeviceGlyph, usesTransformerTerminalSlotPaint } from "../DeviceGlyph.ts";
 import { deviceStateVisualToken, resolveStateVisualImageHref } from "../staticRenderUtils.ts";
 import { resolveStaticButtonTargetLayers } from "./static-button-targets.ts";
 
@@ -467,7 +467,7 @@ ${scopedBackgroundSvg}
     return Array.from(new Set(classes)).join(" ");
   };
   const nodeVoltageSlotDeclarations = (node: ModelNode) => {
-    if (colorDisplayMode !== "voltage") {
+    if (colorDisplayMode !== "voltage" || !usesTransformerTerminalSlotPaint(node.kind)) {
       return "";
     }
     const electricTerminals = exportElectricTerminals(node);
@@ -770,20 +770,25 @@ ${rules.join("\n")}
         const glyphVoltagePaint = colorDisplayMode === "voltage" && voltageDescriptor
           ? {
               nodeRef: deviceIdentityColor === deviceVoltageClassColor
-                ? (symbolNode.terminals.filter((terminal) => isExportElectricTerminalType(terminal.type)).length > 1
+                // 变压器族多端子才链 --t1；其余器件（含开关等双端子器件）内部单色，走 currentColor 继承
+                ? (usesTransformerTerminalSlotPaint(symbolNode.kind) &&
+                    symbolNode.terminals.filter((terminal) => isExportElectricTerminalType(terminal.type)).length > 1
                     ? "var(--t1)"
                     : undefined)
                 : deviceIdentityColor,
               // 槽按「电端子序」声明（与 nodeVoltageSlotDeclarations 同基数）：terminalRef 返回电端子子序列序号，
-              // 混合端子器件（电端之间夹非电端）不会指向未声明的槽；单电端子器件无槽，返回 undefined 走回落
-              terminalRef: (terminalId: string) => {
-                const electricTerminals = symbolNode.terminals.filter((terminal) => isExportElectricTerminalType(terminal.type));
-                if (electricTerminals.length <= 1) {
-                  return undefined;
-                }
-                const index = electricTerminals.findIndex((terminal) => terminal.id === terminalId);
-                return index >= 0 ? `var(--t${index + 1})` : undefined;
-              }
+              // 混合端子器件（电端之间夹非电端）不会指向未声明的槽；单电端子器件无槽，返回 undefined 走回落。
+              // 仅变压器族提供端子槽：其余器件内部不消费 var(--tN)
+              terminalRef: usesTransformerTerminalSlotPaint(symbolNode.kind)
+                ? (terminalId: string) => {
+                    const electricTerminals = symbolNode.terminals.filter((terminal) => isExportElectricTerminalType(terminal.type));
+                    if (electricTerminals.length <= 1) {
+                      return undefined;
+                    }
+                    const index = electricTerminals.findIndex((terminal) => terminal.id === terminalId);
+                    return index >= 0 ? `var(--t${index + 1})` : undefined;
+                  }
+                : undefined
             }
           : null;
         const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "geometry", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual, voltagePaint: glyphVoltagePaint }));
