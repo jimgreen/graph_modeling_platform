@@ -1831,9 +1831,14 @@ describe("SVG export", () => {
     expect(defs).toContain(".lkv10{--c-lkv10:#ff0000;fill:none;stroke:var(--c-lkv10);color:var(--c-lkv10)}");
     expect(defs).toContain(".dcv750{--c-dcv750:#00aa88;stroke:var(--c-dcv750);color:var(--c-dcv750);fill:var(--c-dcv750)}");
     expect(defs).toContain(".ldcv750{--c-ldcv750:#00aa88;fill:none;stroke:var(--c-ldcv750);color:var(--c-ldcv750)}");
-    // 新契约：symbol 内零字面电压色——正文/引线颜色全走 class/槽 var() 引用
+    // 新契约：symbol 内零字面电压色——正文/引线颜色全走 class/槽 var() 引用。
+    // M-2 补强：按调色板电压 hex 清单断言（fill= 与 stroke= 两种形态都查），白名单固定本体色除外
     const symbolSection = svg.slice(svg.indexOf("<defs"), svg.indexOf("</defs>"));
-    expect(symbolSection).not.toMatch(/stroke="#[0-9a-fA-F]{3,8}"/i);
+    const allowedFixedColors = new Set(["#ffffff", "#eef2ff"].map((value) => value.toLowerCase()));
+    const paletteVoltageHexes = new Set(Object.values(colorPalette.voltage).map((value) => String(value).toLowerCase()));
+    const literalPaints = Array.from(symbolSection.matchAll(/\b(?:fill|stroke)="(#[0-9a-fA-F]{3,8})"/g), (match) => match[1].toLowerCase());
+    const forbiddenVoltageHexes = literalPaints.filter((hex) => paletteVoltageHexes.has(hex) && !allowedFixedColors.has(hex));
+    expect(forbiddenVoltageHexes).toEqual([]);
     expect(svg).toContain('id="ac-source-10" class="kv10"');
     expect(svg).toContain('id="ac-bus-10" class="kv10"');
     expect(svg).toContain('id="dc-source-750" class="dcv750"');

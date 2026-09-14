@@ -188,11 +188,13 @@ export function buildSvgDeviceConnectorMarkup(
       const strokeWidth = terminalStubStrokeWidth(node, terminal);
       const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
       const paintRef = voltagePaint?.terminalRef?.(String(terminal.id ?? ""));
-      // 导出态电压色走槽/class：有槽链 --tN，无槽删属性靠 <use class> 继承；非导出态用字面色
+      // 导出态电压色走槽/class：有槽链 --tN，无槽删属性靠 <use class> 继承；
+      // 仅电端子删属性 —— 非电端子（h2/heat）保留字面 terminalColor（身份色不归电压类管）
+      const isElectric = terminal.type === "ac" || terminal.type === "dc";
       const strokeAttribute = paintRef
         ? ` stroke="${escapeXml(paintRef)}"`
-        : voltagePaint
-          ? "" // 导出态单电压器件：删属性，靠 <use class> 继承
+        : voltagePaint && isElectric
+          ? "" // 导出态电端子单电压：删属性，靠 <use class> 继承
           : ` stroke="${escapeXml(terminalColor)}"`;
       return `<g transform="translate(${formatSvgNumber(renderPoint.x)} ${formatSvgNumber(renderPoint.y)})">
   <line x1="${formatSvgNumber(stub.from.x)}" y1="${formatSvgNumber(stub.from.y)}" x2="${formatSvgNumber(stub.to.x)}" y2="${formatSvgNumber(stub.to.y)}"${strokeAttribute} stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round"${dashAttribute}/>
@@ -755,15 +757,23 @@ ${rules.join("\n")}
         const backgroundImageFit = stateVisualImageHref
           ? stateVisual?.imageFit ?? stateVisual?.backgroundImageFit ?? symbolNode.params.backgroundImageFit
           : symbolNode.params.backgroundImageFit;
-        const voltageColoredNode = colorDisplayMode === "voltage" && nodeExportVoltageDescriptor(symbolNode)
+        const voltageDescriptor = nodeExportVoltageDescriptor(symbolNode);
+        const voltageColoredNode = colorDisplayMode === "voltage" && voltageDescriptor
           ? { ...symbolNode, params: { ...symbolNode.params, foregroundColor: "" } }
           : symbolNode;
         // 导出态：正文电压色改 class/槽驱动。多端子器件节点级链 --t1、端子级按顺序链 --tN（槽在 <use> 上声明）
-        const glyphVoltagePaint = colorDisplayMode === "voltage" && nodeExportVoltageDescriptor(symbolNode)
+        // I-1 身份色例外：氢/热耦合器件（电解槽/燃料电池/电热器）在电压模式下的身份色来自终端类型色
+        // （h2 紫 / heat 红），不是电压色。getDeviceStrokeColor 的实际结果与该器件电压类对应色不一致时，
+        // 机身保持字面身份色（nodeRef 指向身份色）；电端子引线仍按 class 驱动、非电端子（h2/heat）保留字面终端色。
+        const deviceIdentityColor = voltageDescriptor ? getDeviceStrokeColor(voltageColoredNode, colorDisplayMode, colorPalette) : "";
+        const deviceVoltageClassColor = voltageDescriptor ? voltageLevelColor(voltageDescriptor.voltage, voltageDescriptor.type, colorPalette) : "";
+        const glyphVoltagePaint = colorDisplayMode === "voltage" && voltageDescriptor
           ? {
-              nodeRef: symbolNode.terminals.filter((terminal) => isExportElectricTerminalType(terminal.type)).length > 1
-                ? "var(--t1)"
-                : undefined,
+              nodeRef: deviceIdentityColor === deviceVoltageClassColor
+                ? (symbolNode.terminals.filter((terminal) => isExportElectricTerminalType(terminal.type)).length > 1
+                    ? "var(--t1)"
+                    : undefined)
+                : deviceIdentityColor,
               // 槽按「电端子序」声明（与 nodeVoltageSlotDeclarations 同基数）：terminalRef 返回电端子子序列序号，
               // 混合端子器件（电端之间夹非电端）不会指向未声明的槽；单电端子器件无槽，返回 undefined 走回落
               terminalRef: (terminalId: string) => {

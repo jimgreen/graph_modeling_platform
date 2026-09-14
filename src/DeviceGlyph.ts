@@ -115,7 +115,9 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
   const deviceStroke = stateVisual?.strokeColor || stateColor || getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
   // 导出态：电压着色改为 class 驱动。nodeRef 缺省为 currentColor —— 它取元素自身的 color，
   // 由 <use class="kvN"> 上的 .kvN{color:...} 继承而来；多端子器件由调用方传 var(--t1)。
-  const stroke = voltagePaint ? (voltagePaint.nodeRef ?? "currentColor") : deviceStroke;
+  // 状态色（stateVisual.strokeColor / color）优先于电压色（spec §5.2）：状态 symbol 的
+  // 开合色必须字面存活，不能因 class/槽驱动被电压色顶掉。
+  const stroke = stateVisual?.strokeColor || stateColor || (voltagePaint ? (voltagePaint.nodeRef ?? "currentColor") : deviceStroke);
   // 导出态：端子级电压色由调用方按端子 id 返回槽引用（如 "var(--t2)"）
   const terminalPaint = (terminal: { id?: string }, fallback: string) =>
     voltagePaint?.terminalRef?.(String(terminal?.id ?? "")) ?? fallback;
