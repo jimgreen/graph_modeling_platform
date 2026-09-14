@@ -42,6 +42,12 @@ import { clampNumber } from "./canvasViewport.ts";
 import { staticConnectorDrawingPath } from "./staticConnectorCurves.ts";
 
 export type DeviceGlyphMode = "full" | "geometry" | "text";
+export type DeviceGlyphVoltagePaint = {
+  /** 节点级电压色引用；不传时用 "currentColor"。多端子器件传 "var(--t1)" */
+  nodeRef?: string;
+  /** 端子级电压色引用；返回 undefined 表示回落到 nodeRef */
+  terminalRef?: (terminalId: string) => string | undefined;
+};
 export type DeviceGlyphProps = {
   node: ModelNode;
   miniature?: boolean;
@@ -49,6 +55,8 @@ export type DeviceGlyphProps = {
   colorDisplayMode?: ColorDisplayMode;
   colorPalette?: ColorPalette;
   stateVisual?: DeviceStateVisual | null;
+  /** 导出态专用：非空时电压色改为 class 驱动（currentColor / var(--tN)）。活画布不传 */
+  voltagePaint?: DeviceGlyphVoltagePaint | null;
 };
 
 type ModelHierarchyGlyphFamily = "station" | "feeder" | "district";
@@ -83,7 +91,7 @@ function deviceVisualReplacesGlyph(node: ModelNode, stateVisual: DeviceStateVisu
   ].some(isPlatformDeviceVisualReplacementImage);
 }
 
-export function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE, stateVisual = null }: DeviceGlyphProps) {
+export function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE, stateVisual = null, voltagePaint = null }: DeviceGlyphProps) {
   if (deviceVisualReplacesGlyph(node, stateVisual)) {
     return null;
   }
@@ -104,7 +112,13 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
   const renderGeometry = mode !== "text";
   const renderText = mode !== "geometry";
   const stateColor = stateVisual?.color?.trim();
-  const stroke = stateVisual?.strokeColor || stateColor || getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
+  const deviceStroke = stateVisual?.strokeColor || stateColor || getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
+  // 导出态：电压着色改为 class 驱动。nodeRef 缺省为 currentColor —— 它取元素自身的 color，
+  // 由 <use class="kvN"> 上的 .kvN{color:...} 继承而来；多端子器件由调用方传 var(--t1)。
+  const stroke = voltagePaint ? (voltagePaint.nodeRef ?? "currentColor") : deviceStroke;
+  // 导出态：端子级电压色由调用方按端子 id 返回槽引用（如 "var(--t2)"）
+  const terminalPaint = (terminal: { id?: string }, fallback: string) =>
+    voltagePaint?.terminalRef?.(String(terminal?.id ?? "")) ?? fallback;
   const baseFill = glyphVariant.includes("converter")
     ? "#ecfeff"
     : glyphVariant === "ac-generator"
@@ -177,7 +191,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     if (modelHierarchyGlyphFamily) {
       const hierarchyRole = modelHierarchyGlyphRoleForKind(node.kind);
       const hierarchyEnergy = modelHierarchyGlyphEnergyForKind(node.kind);
-      const associationStroke = node.params.strokeColor || stroke;
+      const associationStroke = node.params.strokeColor || deviceStroke;
       const associationAccent = node.params.accentColor || associationStroke;
       const associationLineWidth = clampNumber(Number(node.params.lineWidth || 2), 1, 3.5);
       const iconAvailableHeight = Math.max(30, h - 6);
@@ -209,12 +223,12 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       );
     }
     if (isStaticGlyph) {
-    const staticStroke = node.params.strokeColor || stroke;
+    const staticStroke = node.params.strokeColor || deviceStroke;
     const staticFill = node.params.fillColor || "transparent";
     const lineWidth = Number(node.params.lineWidth || 2);
     const dashArray = svgStrokeDashArray(node.params.strokeStyle);
     const cornerRadius = staticNumericParam(node, "cornerRadius", 8, 0);
-    const accentColor = node.params.accentColor || staticStroke;
+    const accentColor = node.params.accentColor || deviceStroke;
     const explicitAccentColor = node.params.accentColor?.trim();
     const simpleAccentVisible = Boolean(explicitAccentColor && explicitAccentColor !== "transparent" && explicitAccentColor !== "none");
     const hasStaticText = Boolean(node.params.text?.trim());
@@ -1275,7 +1289,9 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     const bottomY = miniature ? 10 : hasNeutralTerminal ? 16 : 14;
     const sideX = miniature ? 10 : hasNeutralTerminal ? 17 : 16;
     const neutralLeadTop = topY - windingRadius - (miniature ? 6 : 20);
-    const windingColors = node.terminals.slice(0, 3).map((t) => getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette));
+    const windingColors = node.terminals.slice(0, 3).map((t) =>
+      terminalPaint(t, getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette))
+    );
     return (
       createElement("g", { className: `three-winding-transformer-glyph${hasNeutralTerminal ? " three-winding-transformer-neutral-glyph" : ""}`, fill, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("circle", { className: "transformer-winding", cx: -sideX, cy: topY, r: windingRadius, stroke: windingColors[0] ?? stroke }), createElement("circle", { className: "transformer-winding", cx: sideX, cy: topY, r: windingRadius, stroke: windingColors[1] ?? stroke }), createElement("circle", { className: "transformer-winding", cx: "0", cy: bottomY, r: windingRadius, stroke: windingColors[2] ?? stroke }), createElement("path", { d: `M ${-sideX - windingRadius - 8} ${topY} H ${-sideX - windingRadius} M ${sideX + windingRadius} ${topY} H ${sideX + windingRadius + 8} M 0 ${bottomY + windingRadius} V ${bottomY + windingRadius + 10}`, stroke }), createElement("path", { d: `M ${-sideX + windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${-windingRadius * 0.28} ${bottomY - windingRadius * 0.72} M ${sideX - windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${windingRadius * 0.28} ${bottomY - windingRadius * 0.72}`, stroke, strokeWidth: "1.6" }), hasNeutralTerminal && (
           createElement(Fragment, null, createElement("path", { d: `M 0 ${neutralLeadTop} V ${topY - windingRadius}`, stroke }), createElement("circle", { cx: "0", cy: topY - windingRadius, r: miniature ? 2.2 : 3.2, fill: stroke, stroke: "none" }))
@@ -1293,7 +1309,9 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     const loadTop = miniature ? 1 : 5;
     const loadWidth = miniature ? 11 : 15;
     const loadHeight = miniature ? 10 : 13;
-    const windingColors = node.terminals.slice(0, 2).map((t) => getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette));
+    const windingColors = node.terminals.slice(0, 2).map((t) =>
+      terminalPaint(t, getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette))
+    );
     return (
       createElement("g", { className: "terminal-transformer-load-glyph", fill, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("circle", { cx: leftCoilX, cy: "0", r: windingRadius, stroke: windingColors[0] ?? stroke }), createElement("circle", { cx: rightCoilX, cy: "0", r: windingRadius, stroke: windingColors[1] ?? stroke }), createElement("path", { d: `M ${-loadWidth / 2} ${loadTop} H ${loadWidth / 2} L 0 ${loadTop + loadHeight} Z`, fill: "#ffffff", stroke }))
     );
@@ -1303,7 +1321,9 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     if (mode === "text") {
       return null;
     }
-    const windingColors = node.terminals.slice(0, 2).map((t) => getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette));
+    const windingColors = node.terminals.slice(0, 2).map((t) =>
+      terminalPaint(t, getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette))
+    );
     return (
       createElement("g", { fill, strokeWidth: "2.5" }, createElement("circle", { cx: "-14", cy: "0", r: miniature ? 11 : 18, stroke: windingColors[0] ?? stroke }), createElement("circle", { cx: "14", cy: "0", r: miniature ? 11 : 18, stroke: windingColors[1] ?? stroke }))
     );
