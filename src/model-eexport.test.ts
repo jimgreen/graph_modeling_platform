@@ -4731,7 +4731,8 @@ function makeGatewayFixture(options: {
   const edges: Edge[] = wires.map((wire, index) => {
     const upstream = upstreams[index];
     const boundTerminalId = member.terminals[wire.boundTerminal ?? 0].id;
-    const upstreamTerminalId = upstream.terminals[0].id;
+    // 母线建出来没有端子(靠拓扑计算内部补),故上游端子可能为空
+    const upstreamTerminalId = upstream.terminals[0]?.id;
     return wire.reverse
       ? { id: `e${prefix}${index + 1}`, sourceId: boundId, sourceTerminalId: boundTerminalId, targetId: upstream.id, targetTerminalId: upstreamTerminalId }
       : { id: `e${prefix}${index + 1}`, sourceId: upstream.id, sourceTerminalId: upstreamTerminalId, targetId: boundId, targetTerminalId: boundTerminalId };
@@ -4744,7 +4745,7 @@ function makeGatewayFixture(options: {
     boundId,
     boundTerminalIds: member.terminals.map((terminal) => terminal.id),
     upstreamIds: upstreams.map((upstream) => upstream.id),
-    upstreamTerminalIds: upstreams.map((upstream) => upstream.terminals[0].id),
+    upstreamTerminalIds: upstreams.map((upstream) => upstream.terminals[0]?.id ?? ""),
     project: { version: 1, name: "关口拓扑模型", nodes, edges }
   };
 }
@@ -4876,6 +4877,51 @@ describe("关口容器拓扑变换(决策 4)", () => {
     expect(warnings[0]).toContain("2 处不同连接点");
     expect(nodes.find((node) => node.id === model.containerId)!.terminals).toEqual([]);
     expect(edges).toEqual(model.edges);
+  });
+
+  test("两关口绑定设备直连 → 双方都告警退化且不改边", () => {
+    // 同一条连线被两个关口认领:只能改一次,后写覆盖先写 → 幻影拓扑节点 + 新增边重号,故双方退化
+    const first = makeGatewayFixture({ prefix: "1", wires: [] });
+    const second = makeGatewayFixture({ prefix: "2", wires: [] });
+    const direct: Edge = {
+      id: "e12",
+      sourceId: first.boundId,
+      sourceTerminalId: first.boundTerminalIds[0],
+      targetId: second.boundId,
+      targetTerminalId: second.boundTerminalIds[0]
+    };
+    const nodes = [...first.nodes, ...second.nodes];
+    const graph = transformGraphForGateways(nodes, [direct]);
+    expect(graph.warnings).toHaveLength(2);
+    expect(graph.warnings.every((warning) => warning.includes("直连另一关口"))).toBe(true);
+    expect(graph.nodes.find((node) => node.id === first.containerId)!.terminals).toEqual([]);
+    expect(graph.nodes.find((node) => node.id === second.containerId)!.terminals).toEqual([]);
+    expect(graph.edges).toEqual([direct]);
+    // 反证:去掉直连、各自接自己的上游后两个关口都能串入(见「多关口容器并存」用例,此处不重复)
+  });
+
+  test("上游为母线:端子已就绪照常串入,端子未同步则退化告警", () => {
+    // 母线端子由 synchronizeBusTerminalsWithEdges 在拓扑计算内部补,而本变换在其之前解析远端端子 → 两种保存态都要钉死
+    const synced = makeGatewayFixture({ wires: [{ kind: "ac-bus" }] });
+    const bus = synced.nodes.find((node) => node.id === synced.upstreamIds[0])!;
+    bus.terminals = [{ id: "t1", label: "交流母线端子1", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "N900" }];
+    synced.edges[0].sourceTerminalId = "t1";
+    const spliced = transformGraphForGateways(synced.nodes, synced.edges);
+    expect(spliced.warnings).toEqual([]);
+    const [syncedPower] = spliced.nodes.find((node) => node.id === synced.containerId)!.terminals;
+    const afterSync = calculateElectricalTopology(spliced.nodes, spliced.edges);
+    // 母线侧端点被同步成 t1,与容器电源侧同岛
+    expect(topologyNumber(afterSync, synced.upstreamIds[0], "t1"))
+      .toBe(topologyNumber(afterSync, synced.containerId, syncedPower.id));
+
+    // 保存态母线端子为空 → 远端端子解析不到 → 退化 + 告警(不猜类型),原连接原样保留
+    const unsynced = makeGatewayFixture({ wires: [{ kind: "ac-bus" }] });
+    expect(unsynced.nodes.find((node) => node.id === unsynced.upstreamIds[0])!.terminals).toEqual([]);
+    const degraded = transformGraphForGateways(unsynced.nodes, unsynced.edges);
+    expect(degraded.warnings).toHaveLength(1);
+    expect(degraded.warnings[0]).toContain("端子类型");
+    expect(degraded.nodes.find((node) => node.id === unsynced.containerId)!.terminals).toEqual([]);
+    expect(degraded.edges).toEqual(unsynced.edges);
   });
 
   test("退化告警汇入导出告警通道(带容器 nodeId)", () => {
