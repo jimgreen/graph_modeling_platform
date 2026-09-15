@@ -4620,9 +4620,11 @@ describe("交流容器 E 导出", () => {
     const file = buildEFileExport(project, ["默认方案"], options);
     expect(parseESections(file.text).ACContainer).toBeUndefined();
     expect(buildEDeviceRecords(project, options).some((record) => record.section === "ACContainer")).toBe(false);
-    // 决策 6:容器段不写入预定义模板,模板未定义该段时容器不逐节点告警
-    expect(file.warnings.filter((warning) => warning.reason.includes("容器"))).toEqual([]);
-    expect(getEExportWarnings(project, options).filter((warning) => warning.reason.includes("容器"))).toEqual([]);
+    // 决策 6:容器段不写入预定义模板,模板未定义该段时容器不逐节点告警(按 nodeId 判,不按告警文案)
+    expect(file.warnings.filter((warning) => warning.nodeId === container.id)).toEqual([]);
+    expect(getEExportWarnings(project, options).filter((warning) => warning.nodeId === container.id)).toEqual([]);
+    // 反证:同模板态下未定义段的设备仍照常告警,上面的空数组不是「告警整体失效」的假绿
+    expect(getEExportWarnings(project, options).some((warning) => warning.nodeId === member.id)).toBe(true);
   });
 
   test("模板定义了容器段时容器照常导出(按模板字段出列)", () => {
