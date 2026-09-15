@@ -247,6 +247,8 @@ git commit -m "feat(container): 容器图元绘制与命中策略(填充穿透/�
 
 ### Task 3: acContainer.ts 布局纯函数
 
+> **执行修正(2026-09-15,Task 3 审查裁决):** 平台 node.position 是**中心**(DeviceGlyph/命中框/bodyVisualBoxForNode 三处实证)。本任务及后续所有算式按中心锚定:`fitContainerToMembers` 的 position = 矩形左上角 + w/2,h/2;`ejectOutsiders` 容器真实矩形 = position±size/2、判定点 = n.position、推出量 = 边界 ± CONTAINER_PADDING。`containerBoundsForMembers` 返回**左上角锚定** Rect,不得直接当 position 用。以 `src/acContainer.ts` 实现为准。
+
 **Files:**
 - Create: `src/acContainer.ts`
 - Test: `src/acContainer.test.ts`
