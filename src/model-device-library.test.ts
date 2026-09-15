@@ -171,6 +171,7 @@ import {
   validateContainerTerminalAssociations,
   validateContainerTerminalRoles,
   isGeneratorNode,
+  isAcContainerKind,
   isElectricGenerationContainerKind,
   isStaticKind,
   isStaticNode,
@@ -850,12 +851,21 @@ test("keeps fixed and adaptive line-like entries available in the device library
 });
 
 test("normalizes non-static device default sizes to a 150px longest side", () => {
-  const nonStaticTemplates = DEVICE_LIBRARY.filter((template) => !isStaticKind(template.kind));
+  // 交流容器与静态图元同待遇:保留模板声明尺寸,不走图元基准归一(容器默认 180×112)
+  const nonStaticTemplates = DEVICE_LIBRARY.filter((template) => !isStaticKind(template.kind) && !isAcContainerKind(template.kind));
 
   expect(nonStaticTemplates.length).toBeGreaterThan(0);
   for (const template of nonStaticTemplates) {
     expect(Math.max(template.size.width, template.size.height)).toBe(150);
     expect(createDefaultNode(template.kind, { x: 100, y: 100 }).size).toEqual(template.size);
+  }
+
+  // 豁免不是漏检:容器模板须各自保持声明尺寸
+  const containerTemplates = DEVICE_LIBRARY.filter((template) => isAcContainerKind(template.kind));
+  expect(containerTemplates.length).toBeGreaterThan(0);
+  for (const template of containerTemplates) {
+    expect(template.size).toEqual({ width: 180, height: 112 });
+    expect(createDefaultNode(template.kind, { x: 100, y: 100 }).size).toEqual({ width: 180, height: 112 });
   }
 
   const baseTemplate = DEVICE_LIBRARY.find((template) => template.kind === "ac-source")!;

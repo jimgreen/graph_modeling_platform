@@ -847,6 +847,19 @@ function explicitStaticComponentLibraryForKind(kind: string): string {
   return STATIC_COMPONENT_LIBRARY_BY_KIND[baseKind] ?? staticComponentLibraryFromCustomKind(baseKind);
 }
 
+// 交流容器 kinds 单源清单(容器渲染/嵌套/装配等后续任务统一从这里取)
+// 声明位置须早于 BASE_DEVICE_LIBRARY 归一化调用(normalizeDefaultDeviceSize 会读它,晚声明会踩 TDZ)
+export const AC_CONTAINER_KINDS = [
+  "ac-vpp-box",
+  "ac-switch-box",
+  "ac-distribution-box",
+] as const satisfies readonly DeviceKind[];
+
+/** kind 是否为交流容器图元 */
+export function isAcContainerKind(kind: string): boolean {
+  return (AC_CONTAINER_KINDS as readonly string[]).includes(kind);
+}
+
 function staticComponentLibraryForKind(kind: string): string {
   return explicitStaticComponentLibraryForKind(kind) || DEFAULT_STATIC_COMPONENT_LIBRARY;
 }
@@ -4944,7 +4957,8 @@ function roundDefaultDeviceSize(value: number): number {
 }
 
 export function normalizeDefaultDeviceSize(kind: string, size: DeviceTemplate["size"]): DeviceTemplate["size"] {
-  if (explicitStaticComponentLibraryForKind(kind)) {
+  // 静态图元与交流容器保留模板声明尺寸(容器默认 180×112,见 spec §模板与绘制)
+  if (explicitStaticComponentLibraryForKind(kind) || isAcContainerKind(kind)) {
     return { ...size };
   }
   const width = Number.isFinite(size.width) && size.width > 0 ? size.width : DEFAULT_DEVICE_LONGEST_SIDE;
@@ -9711,18 +9725,6 @@ export function migrateElectricGenerationContainerParams(node: ModelNode, templa
       is_container: "1"
     }
   };
-}
-
-// 交流容器 kinds 单源清单(容器渲染/嵌套/装配等后续任务统一从这里取)
-export const AC_CONTAINER_KINDS = [
-  "ac-vpp-box",
-  "ac-switch-box",
-  "ac-distribution-box",
-] as const satisfies readonly DeviceKind[];
-
-/** kind 是否为交流容器图元 */
-export function isAcContainerKind(kind: string): boolean {
-  return (AC_CONTAINER_KINDS as readonly string[]).includes(kind);
 }
 
 // 节点操作相关代码已提取到独立模块

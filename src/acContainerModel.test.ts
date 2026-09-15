@@ -11,6 +11,7 @@ import {
   type ModelNode,
 } from "./model";
 import { DeviceGlyph } from "./DeviceGlyph";
+import { nodeLabelShouldRender } from "./nodeLabelUtils";
 
 describe("交流容器数据模型", () => {
   test("3 个容器 kind 已注册且分类为交流容器", () => {
@@ -110,6 +111,19 @@ describe("容器图元绘制", () => {
     });
     expect(html).toContain("虚拟电厂A");
     expect(html).not.toContain("旧死参数文本");
+  });
+
+  test("容器模板与新建节点保持 180×112(spec 默认尺寸不被图元归一化)", () => {
+    for (const kind of AC_CONTAINER_KINDS) {
+      expect(DEVICE_LIBRARY_BY_KIND.get(kind)!.size, `${kind} 模板尺寸被归一化`).toEqual({ width: 180, height: 112 });
+      expect(createDefaultNode(kind, { x: 0, y: 0 }).size, `${kind} 新建节点尺寸被归一化`).toEqual({ width: 180, height: 112 });
+    }
+  });
+
+  test("容器不叠加设备标签(名称只出自容器绘制分支)", () => {
+    expect(nodeLabelShouldRender(makeContainerNode("ac-vpp-box", "虚拟电厂1"), true)).toBe(false);
+    // 排除须是容器专属:普通设备照常渲染标签
+    expect(nodeLabelShouldRender(createDefaultNode("ac-source", { x: 0, y: 0 }), true)).toBe(true);
   });
 
   test("容器按节点真实尺寸绘制(不被图元设计基准缩放)", () => {
