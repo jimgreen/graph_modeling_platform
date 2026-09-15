@@ -265,7 +265,7 @@ describe("删除容器收尾(deleteSelection)", () => {
     expect(state.nodes[0].containerId).toBeUndefined();
   });
 
-  test("取消确认(未执行 onOk)→ 图不变", () => {
+  test("取消确认(未执行 onOk)→ 图不变,且零副作用(不压 undo 栈、不清点击目标)", () => {
     const { scope, state } = mkDeleteScope([container(), member()], ["c1"]);
     const { seen, spy } = confirmStub(false);
     try {
@@ -276,6 +276,8 @@ describe("删除容器收尾(deleteSelection)", () => {
     expect(seen).toHaveLength(1);
     expect(state.nodes.map((n: any) => n.id)).toEqual(["c1", "m1"]);
     expect(state.nodes[1].containerId).toBe("c1");
+    expect(scope.pushUndoSnapshot).not.toHaveBeenCalled();
+    expect(scope.setLastCanvasClickTarget).not.toHaveBeenCalled();
   });
 
   test("空容器:不弹确认,直接删除", () => {
@@ -303,12 +305,56 @@ describe("删除容器收尾(deleteSelection)", () => {
     expect(state.nodes.map((n: any) => n.id)).toEqual(["m1", "late"]);
   });
 
-  test("剪切容器:成员同样清归属(剪切 = 复制 + 删除,与删除入口同源)", () => {
+  test("剪切容器:成员同样清归属(剪切 = 复制 + 删除,与删除入口同源),日志标明散出数", () => {
     const { scope, state } = mkDeleteScope([container(), member()], ["c1"]);
     Object.assign(scope, { buildCanvasClipboard: () => ({ nodes: [], edges: [] }), canvasSelectionScope: "group", activeLayerGroups: [], routedEdges: [], visibleEdges: [], visibleNodes: state.nodes, resolveCanvasDeleteAction: () => ({ kind: "delete" }), setCanvasClipboard: vi.fn(), resetRoutableLinePreviewState: vi.fn(), resetConnectPreviewState: vi.fn(), setConnectSource: vi.fn(), setRewiring: vi.fn(), setRoutableLinePlacement: vi.fn(), setContextMenu: vi.fn() });
     createCutSelection(scope)();
     expect(state.nodes.map((n: any) => n.id)).toEqual(["m1"]);
     expect(state.nodes[0].containerId).toBeUndefined();
+    // 剪切无确认框(剪贴板语义),散出信息只能靠日志留痕 —— 与删除路径同一后缀
+    expect(String(scope.writeOperationLog.mock.calls[0][0])).toContain("1 个成员散出");
+  });
+
+  // 弹窗横跨交互窗口:groups 必须函数式更新,否则确认时写回的是点击瞬间的快照
+  test("groups 走函数式更新:用现取的 current,而非点击快照", () => {
+    const { scope } = mkDeleteScope([container(), member()], ["c1"]);
+    const seen: any[] = [];
+    scope.setGroups = (updater: any) => { seen.push(updater); };
+    const { spy } = confirmStub(true);
+    try {
+      createDeleteSelection(scope)();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(typeof seen[0]).toBe("function"); // 快照口径传的是数组,这里必须是 updater
+    expect(seen[0]("LATEST")).toBe("LATEST"); // 桩:normalize/remove 均透传,故回显入参
+  });
+
+  // spec 边界「成员全移出 → 容器收缩回最小尺寸」在删除路径同样成立:删光成员后容器必须收缩
+  test("删光成员:容器收缩回最小尺寸(半程 enforce:不挤出非成员)", () => {
+    const c1 = container();
+    const m1 = member();
+    const m2 = { ...bareNode("m2", "ac-load", { containerId: "c1", params: { _labelVisible: "0" } }) };
+    const { scope, state } = mkDeleteScope([c1, m1, m2], ["m1", "m2"]);
+    createDeleteSelection(scope)();
+    expect(state.nodes.map((n: any) => n.id)).toEqual(["c1"]);
+    expect(state.nodes[0].size).toEqual({ width: 180, height: 112 });
+  });
+
+  // 半程的意思:只重算容器几何,**不**挤出非成员 —— 否则刚散出的成员会被相邻容器顺手推出框外
+  test("删容器:散出成员位置不变(不因落在相邻容器矩形内被挤出)", () => {
+    const c2 = bareNode("c2", "ac-vpp-box", { name: "邻居", position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, params: { _labelVisible: "0" } });
+    const c1 = container();
+    const m1 = member(); // 中心 (0,0),同时落在 c2 矩形 [-100,100]² 内
+    const { scope, state } = mkDeleteScope([c1, c2, m1], ["c1"]);
+    const { spy } = confirmStub(true);
+    try {
+      createDeleteSelection(scope)();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(state.nodes.map((n: any) => n.id)).toEqual(["c2", "m1"]);
+    expect(state.nodes.find((n: any) => n.id === "m1").position).toEqual(m1.position);
   });
 });
 

@@ -23,8 +23,9 @@ export function isAcContainerNode(node: ModelNode): boolean {
 /**
  * 图中存活容器 id 集合:归属字段 `containerId` 的**有效性判据**。
  * 悬空值(指向已删除的容器)在删除收尾之外仍可能来自存盘老数据/导入文件,
- * 故所有「有没有归属」的判断都必须经此集合,不得只判 `n.containerId` 的真值 ——
- * 只判真值会让悬空节点被当成员豁免(挤出失效、入组被短路)。
+ * 故**判定(judgeContainerMembership)与挤出(ejectOutsiders)两个消费点必须经此集合**,
+ * 不得只判 `n.containerId` 的真值 —— 只判真值会让悬空节点被当成员豁免(挤出失效、入组被短路)。
+ * (其余消费点走 `containerId === <某存活容器 id>` 等值比较,悬空值天然不命中,无需经此。)
  */
 function liveContainerIds(nodes: ModelNode[]): Set<string> {
   return new Set(nodes.filter(isAcContainerNode).map((n) => n.id));
@@ -452,6 +453,16 @@ export function applyRemoveFromAcContainer(nodes: ModelNode[], memberIds: string
     changed.set(upd.id, upd); // 容器重算覆盖(解绑后的 params 已随容器节点带过来)
   }
   return [...changed.values()];
+}
+
+/**
+ * 半程 enforce:只重算容器几何(成员增删后收缩/扩展),**不挤出**非成员。
+ * 删除类路径(删节点/剪切/删图层/control)专用 —— 这些路径上「刚散出的成员」就落在容器矩形附近,
+ * 全量 enforce 会把它们顺手推出框外,而口径是「成员散出后保留原位」。
+ * (拖动/粘贴等路径仍走全量 enforceContainerMembership:那里挤出正是要的效果)
+ */
+export function refitContainersOnly(nodes: ModelNode[]): ModelNode[] {
+  return enforceContainerMembership(nodes).containerUpdates;
 }
 
 // ─── 删除容器收尾:成员归属不悬空 ─────────────────────────────────────────────

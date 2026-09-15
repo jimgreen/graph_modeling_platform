@@ -14,6 +14,7 @@ import {
   containerSelectOptions,
   commitContainerMembership,
   defaultContainerName,
+  refitContainersOnly,
   isAcContainerNode,
   withNodeUpdates,
 } from "../acContainer";
@@ -783,8 +784,11 @@ export function createCutSelection(__appScope: Record<string, any>) {
       ? deleteNodesWithConnectedEdges(nodes, edges, activeSelectedNodeIds)
       : { nodes, edges };
     const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
-    // 剪切 = 复制 + 删除:剪走容器同样要清成员归属(与删除入口同源),否则成员留下悬空 containerId
-    const nextNodes = withNodeUpdates(result.nodes, containerDeletionFinalize(nodes, activeSelectedNodeIds));
+    // 剪切 = 复制 + 删除:剪走容器同样要清成员归属(与删除入口同源),否则成员留下悬空 containerId;
+    // 剪走成员后容器同样要重算收缩(半程 enforce:不挤出,否则会搬动刚散出的成员)
+    const scattered = containerDeletionFinalize(nodes, activeSelectedNodeIds);
+    const surviving = withNodeUpdates(result.nodes, scattered);
+    const nextNodes = withNodeUpdates(surviving, refitContainersOnly(surviving));
     setGraphArrays(nextNodes, nextEdges);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, activeSelectedNodeIds, selectedEdges), nextNodes, nextEdges));
     setProjectMeasurements((current) => normalizeProjectMeasurements(current, nextNodes));
@@ -798,7 +802,8 @@ export function createCutSelection(__appScope: Record<string, any>) {
     resetConnectPreviewState();
     setRewiring(null);
     setContextMenu(null);
-    writeOperationLog(`剪切 ${clipboard.nodes.length} 个图元、${clipboard.edges.length} 条联络线`);
+    // 剪切无确认框(剪贴板语义下确认招烦),散出信息靠日志留痕 —— 后缀与删除路径同一措辞
+    writeOperationLog(`剪切 ${clipboard.nodes.length} 个图元、${clipboard.edges.length} 条联络线${scattered.length > 0 ? `（${scattered.length} 个成员散出）` : ""}`);
   };
 }
 
@@ -1637,13 +1642,13 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
       writeOperationLog(`删除 ${targetNodeIds.size} 个图元的量测`);
       return;
     }
-    setLastCanvasClickTarget(null);
     if (activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0) {
       return;
     }
     const selectedEdges = new Set(activeSelectedEdgeIds);
     if (activeSelectedNodeIds.length === 0) {
       pushUndoSnapshot();
+      setLastCanvasClickTarget(null); // 清点击目标属删除提交的一部分:容器确认框取消时不得留下(见 doDelete)
       const deletedEdges = activeSelectedEdgeIds.flatMap((edgeId) => {
         const edge = edgeById.get(edgeId);
         return edge ? [edge] : [];
@@ -1667,6 +1672,7 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
       const latestNodes = __appScope.nodes ?? nodes;
       const latestEdges = __appScope.edges ?? edges;
       const expandedNodeIds = expandGlobalBoundaryDeletionNodeIds(latestNodes, clickedNodeIds);
+      setLastCanvasClickTarget(null); // 取消确认时不得留下副作用,故挪进提交体(确认前不写)
       pushUndoSnapshot();
       const deletedEdges = edgeListForNodeIds(expandedNodeIds, selectedEdges);
       markRouteEdgesDirty(deletedEdges.map((edge) => edge.id));
@@ -1674,13 +1680,16 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
       markBusTerminalSyncDirtyForEdges(deletedEdges);
       const result = deleteNodesWithConnectedEdges(latestNodes, latestEdges, expandedNodeIds);
       const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
-      // 删除容器收尾(spec「其它交互边界」):被删容器的成员清 containerId,成员保留 —— 否则悬空值随保存持久化。
-      // 与删除同一次提交(单一撤销单元),故 undo 一次即可连归属一起还原。
+      // 删除收尾(spec「其它交互边界」):① 被删容器的成员清 containerId,成员保留 —— 否则悬空值随保存持久化;
+      // ② 成员被删/散出后容器几何重算收缩(半程 enforce:不挤出,否则会搬动刚散出的成员)。
+      // 两者与删除同一次提交(单一撤销单元),故 undo 一次即可连归属与容器几何一起还原。
       const scattered = containerDeletionFinalize(latestNodes, expandedNodeIds);
-      const nextNodes = withNodeUpdates(result.nodes, scattered);
+      const surviving = withNodeUpdates(result.nodes, scattered);
+      const nextNodes = withNodeUpdates(surviving, refitContainersOnly(surviving));
       setGraphArrays(nextNodes, nextEdges);
       void syncGlobalLineProjectNodes?.(nextNodes, false);
-      setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, expandedNodeIds, selectedEdges), nextNodes, nextEdges));
+      // groups 走函数式:确认窗口横跨交互窗口,持点击快照会覆盖期间的并发改动
+      setGroups((current: any) => normalizeModelGroups(removeGraphicsFromGroups(current, expandedNodeIds, selectedEdges), nextNodes, nextEdges));
       setProjectMeasurements((current) => normalizeProjectMeasurements(current, nextNodes));
       setCanvasSelectionScope("group");
       setSelectedNodeIds([]);
