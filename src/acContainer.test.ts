@@ -21,6 +21,13 @@ import {
   containerMembershipCommit,
   containerSelectOptions,
   containerMemberOptions,
+  buildNewContainer,
+  defaultContainerName,
+  CONTAINER_KIND_LABELS,
+  containerMemberIdsFromSelection,
+  containerAssignedIdsFromSelection,
+  applyAddToAcContainer,
+  applyRemoveFromAcContainer,
 } from "./acContainer";
 
 // 测试用最小节点。rotation/scale 必填:calculateNodeVisualBounds 依赖它们算半宽高,
@@ -353,5 +360,139 @@ describe("acContainer 面板", () => {
     const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
     expect(containerMembershipCommit([c, m] as any, "m1", "c1").changed).toBe(false);
     expect(containerMembershipCommit([c, m] as any, "nope", "c1").changed).toBe(false);
+  });
+});
+
+describe("新建容器纯函数", () => {
+  test("buildNewContainer:包围成员 + padding,中心锚定,params.idx=nextIdx", () => {
+    // 大成员(200×100)避开最小尺寸钳制,验证包围算术:视觉盒 [-100,100]×[-50,50] + padding
+    const big = node("big", "ac-load", 0, 0, 200, 100);
+    const c = buildNewContainer("ac-vpp-box", "虚拟电厂1", [big] as any, "30");
+    expect(c.kind).toBe("ac-vpp-box");
+    expect(c.name).toBe("虚拟电厂1");
+    expect(c.params.idx).toBe("30");
+    expect(c.size).toEqual({ width: 200 + CONTAINER_PADDING * 2, height: 100 + CONTAINER_PADDING * 2 });
+    expect(c.position).toEqual({ x: 0, y: 0 });
+    // 端到端不变量:容器真实矩形必须包住成员
+    const r = rectOf(c as any);
+    const b = calculateNodeVisualBounds(big as any);
+    expect(b.left).toBeGreaterThanOrEqual(r.x1);
+    expect(b.right).toBeLessThanOrEqual(r.x2);
+    expect(b.top).toBeGreaterThanOrEqual(r.y1);
+    expect(b.bottom).toBeLessThanOrEqual(r.y2);
+  });
+
+  test("buildNewContainer:成员过小时钳制到最小尺寸,仍包住成员", () => {
+    const m = node("a", "ac-load", 100, 100);
+    const c = buildNewContainer("ac-vpp-box", "虚拟电厂1", [m] as any, "30");
+    expect(c.size).toEqual({ ...CONTAINER_MIN_SIZE });
+    // 钳制后仍以包围矩形左上角取中心(fitContainerToMembers 同一口径)
+    const r = containerBoundsForMembers([m])!;
+    expect(c.position).toEqual({
+      x: r.x + CONTAINER_MIN_SIZE.width / 2,
+      y: r.y + CONTAINER_MIN_SIZE.height / 2,
+    });
+    const rect = rectOf(c as any);
+    const b = calculateNodeVisualBounds(m as any);
+    expect(b.left).toBeGreaterThanOrEqual(rect.x1);
+    expect(b.right).toBeLessThanOrEqual(rect.x2);
+    expect(b.top).toBeGreaterThanOrEqual(rect.y1);
+    expect(b.bottom).toBeLessThanOrEqual(rect.y2);
+  });
+
+  test("defaultContainerName:按类型计数", () => {
+    const ex = [node("c1", "ac-vpp-box", 0, 0), node("c2", "ac-vpp-box", 0, 0)];
+    expect(defaultContainerName("ac-vpp-box", ex)).toBe("虚拟电厂3");
+    expect(defaultContainerName("ac-switch-box", ex)).toBe("开关箱1");
+  });
+
+  test("CONTAINER_KIND_LABELS 与内置库 label 同源", () => {
+    expect(CONTAINER_KIND_LABELS["ac-distribution-box"]).toBe("配变箱");
+  });
+});
+
+// ─── 右键菜单:谓词(选中口径)与提交应用 ─────────────────────────────────
+describe("acContainer 右键菜单", () => {
+  test("选中口径:只看普通图元,容器与未知 id 一律忽略", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0);
+    const a = node("a", "ac-load", 0, 0);
+    expect(containerMemberIdsFromSelection([c, a], ["c1"])).toEqual([]);
+    expect(containerMemberIdsFromSelection([c, a], ["c1", "a"])).toEqual(["a"]);
+    expect(containerMemberIdsFromSelection([c, a], ["nope"])).toEqual([]);
+  });
+
+  test("移出候选:只认已归属成员", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0);
+    const m = { ...node("m1", "ac-load", 0, 0), containerId: "c1" };
+    const free = node("f", "ac-load", 500, 0);
+    expect(containerAssignedIdsFromSelection([c, m, free], ["c1", "f"])).toEqual([]);
+    expect(containerAssignedIdsFromSelection([c, m, free], ["m1", "f"])).toEqual(["m1"]);
+  });
+
+  test("加入容器:新容器插末尾、成员打 containerId、容器包住全部成员", () => {
+    const a = node("a", "ac-load", 0, 0);
+    const b = node("b", "ac-load", 300, 200);
+    const c = node("c1", "ac-vpp-box", 0, 0, 180, 112);
+    const next = applyAddToAcContainer([a, b] as any, c as any, ["a", "b"]);
+    expect(next.map((n) => n.id)).toEqual(["a", "b", "c1"]);
+    const byId = new Map(next.map((n) => [n.id, n]));
+    expect(byId.get("a")!.containerId).toBe("c1");
+    expect(byId.get("b")!.containerId).toBe("c1");
+    const r = rectOf(byId.get("c1")!);
+    for (const m of [a, b]) {
+      const bb = calculateNodeVisualBounds(m as any);
+      expect(bb.left).toBeGreaterThanOrEqual(r.x1);
+      expect(bb.right).toBeLessThanOrEqual(r.x2);
+      expect(bb.top).toBeGreaterThanOrEqual(r.y1);
+      expect(bb.bottom).toBeLessThanOrEqual(r.y2);
+    }
+  });
+
+  test("加入容器:已有容器改归属(不重复插入),原容器收缩", () => {
+    const from = node("c0", "ac-vpp-box", 500, 500, 180, 112);
+    const m = { ...node("m1", "ac-load", 500, 500), containerId: "c0" };
+    const to = node("c1", "ac-vpp-box", 0, 0, 180, 112);
+    const next = applyAddToAcContainer([from, m, to] as any, to as any, ["m1"]);
+    expect(next.map((n) => n.id)).toEqual(["c0", "m1", "c1"]); // 已存在 → 不插入
+    const byId = new Map(next.map((n) => [n.id, n]));
+    expect(byId.get("m1")!.containerId).toBe("c1");
+    expect(byId.get("c0")!.size).toEqual({ ...CONTAINER_MIN_SIZE }); // 成员走光 → 收缩
+    expect(centerIn(m.position, rectOf(byId.get("c1")!))).toBe(true);
+  });
+
+  test("加入容器:容器自身不得被打上 containerId(不允许嵌套)", () => {
+    const inner = node("c2", "ac-switch-box", 0, 0);
+    const outer = node("c1", "ac-vpp-box", 0, 0, 180, 112);
+    const next = applyAddToAcContainer([inner, outer] as any, outer as any, ["c1", "c2"]);
+    expect("containerId" in next.find((n) => n.id === "c2")!).toBe(false);
+    expect("containerId" in next.find((n) => n.id === "c1")!).toBe(false);
+  });
+
+  test("移出容器:清 containerId、容器收缩、无关节点不入更新", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0, 180, 112);
+    const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
+    const other = node("o", "ac-load", 900, 900);
+    const updates = applyRemoveFromAcContainer([c, m, other] as any, ["m1"]);
+    const byId = new Map(updates.map((n) => [n.id, n]));
+    expect("containerId" in byId.get("m1")!).toBe(false);
+    expect(byId.get("c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE });
+    expect(byId.has("o")).toBe(false);
+  });
+
+  test("移出容器:被移出设备是某关口容器的绑定设备 → 解绑 + 关关口", () => {
+    const c = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "1", bound_device_id: "m1" } };
+    const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
+    const updates = applyRemoveFromAcContainer([c, m] as any, ["m1"]);
+    const gw = updates.find((n) => n.id === "c1")!;
+    expect(gw.params.bound_device_id).toBe("");
+    expect(gw.params.is_gateway).toBe("0");
+    expect("containerId" in updates.find((n) => n.id === "m1")!).toBe(false);
+  });
+
+  test("移出容器:绑定的是别的设备则原样保留(不误伤)", () => {
+    const c = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "1", bound_device_id: "keep" } };
+    const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
+    const updates = applyRemoveFromAcContainer([c, m] as any, ["m1"]);
+    expect(updates.find((n) => n.id === "c1")!.params.bound_device_id).toBe("keep");
   });
 });

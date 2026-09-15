@@ -6,7 +6,7 @@
 // 锚定口径(与平台一致):`node.position` 是节点**中心**,容器真实矩形 = position ± size/2。
 // (DeviceGlyph 矩形 x:-w/2、命中框、bodyVisualBoxForNode position±half 三处同源)
 // 相对 import 带 .ts 扩展名:本模块被 src/export/svg.ts(Node 直载)间接引用,裸 "./model" Node ESM 解析不了
-import { type ModelNode, calculateNodeVisualBounds, isAcContainerKind } from "./model.ts";
+import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, createDefaultNode, isAcContainerKind } from "./model.ts";
 
 /** 容器包围成员时的四周留白 */
 export const CONTAINER_PADDING = 24;
@@ -216,4 +216,93 @@ export function containerMembershipCommit(
   }
   const nextNodes = nodes.map((n) => (n.id === nodeId ? moved : n));
   return { changed: true, updates: [moved, ...containerDecisionNodeUpdates(nextNodes, enforceContainerMembership(nextNodes))] };
+}
+
+/** 容器 kind → 中文默认名基(派生自内置库 label,单源;不落库的 kind 兜底为 kind 本身) */
+export const CONTAINER_KIND_LABELS: Record<string, string> = Object.fromEntries(
+  AC_CONTAINER_KINDS.map((kind) => [kind, DEVICE_LIBRARY_BY_KIND.get(kind)?.label ?? kind])
+);
+
+/** 新建容器默认名:「中文名 + 同类型计数 + 1」(如画布已有 2 个虚拟电厂 → 虚拟电厂3) */
+export function defaultContainerName(kind: DeviceKind, existing: ModelNode[]): string {
+  const label = CONTAINER_KIND_LABELS[kind] ?? kind;
+  const count = existing.filter((n) => n.kind === kind).length;
+  return `${label}${count + 1}`;
+}
+
+/**
+ * 新建容器节点(纯函数):位置/尺寸 = 包围成员 + padding(中心锚定),params.idx 由调用方
+ * 以 assignPermanentDeviceIndex 同源分配器给出。复用 fitContainerToMembers 保证
+ * 与拖动后的容器重算同一条几何口径;无成员时收缩到最小尺寸。
+ */
+export function buildNewContainer(kind: DeviceKind, name: string, members: ModelNode[], nextIdx: string): ModelNode {
+  const base = createDefaultNode(kind, { x: 0, y: 0 });
+  const fitted = fitContainerToMembers({ ...base, name }, members);
+  return { ...fitted, params: { ...fitted.params, idx: nextIdx } };
+}
+
+// ─── 右键菜单:选中口径(菜单可见性与工厂提交共用同一来源) ─────────────────
+
+/** 选中里的普通图元 id(容器自动忽略,不支持嵌套);【添加到容器】用之 */
+export function containerMemberIdsFromSelection(nodes: ModelNode[], selectedIds: string[]): string[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  return selectedIds.filter((id) => {
+    const n = byId.get(id);
+    return Boolean(n) && !isAcContainerNode(n!);
+  });
+}
+
+/** 选中里已归属某容器的成员 id;【移出容器】用之 */
+export function containerAssignedIdsFromSelection(nodes: ModelNode[], selectedIds: string[]): string[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  return selectedIds.filter((id) => Boolean(byId.get(id)?.containerId));
+}
+
+/** 把节点更新列表并回节点数组(同 id 覆盖),新增节点则忽略 */
+function withNodeUpdates(nodes: ModelNode[], updates: ModelNode[]): ModelNode[] {
+  const byId = new Map(updates.map((n) => [n.id, n]));
+  return nodes.map((n) => byId.get(n.id) ?? n);
+}
+
+/**
+ * 添加到容器:成员打 containerId,并整体重算容器几何(容器矩形 + 挤出非成员)。
+ * container 不在 nodes 中时插到末尾(新建);返回**完整** nextNodes(含新容器),供 setGraphArrays 提交。
+ * 成员已在别的容器 → 视作改归属,用 enforceContainerMembership 一并收缩原容器。
+ */
+export function applyAddToAcContainer(nodes: ModelNode[], container: ModelNode, memberIds: string[]): ModelNode[] {
+  const members = new Set(memberIds);
+  const base = nodes.some((n) => n.id === container.id)
+    ? nodes.map((n) => (n.id === container.id ? container : n))
+    : [...nodes, container];
+  const tagged = base.map((n) =>
+    members.has(n.id) && !isAcContainerNode(n) ? { ...n, containerId: container.id } : n
+  );
+  return withNodeUpdates(tagged, containerDecisionNodeUpdates(tagged, enforceContainerMembership(tagged)));
+}
+
+/**
+ * 移出容器:清成员 containerId;若某关口容器的绑定设备正是被移出者,一并解绑 + 关关口
+ * (容器量测组同步由 Task 9 在工厂调用点接入)。
+ * 返回**变更节点**(成员 + 解绑的容器 + 重算后的容器矩形与被挤出的非成员),供 patchGraphNodes 单次提交。
+ */
+export function applyRemoveFromAcContainer(nodes: ModelNode[], memberIds: string[]): ModelNode[] {
+  const members = new Set(memberIds);
+  const changed = new Map<string, ModelNode>();
+  const cleared = nodes.map((n) => {
+    if (!members.has(n.id) || !n.containerId) return n;
+    const moved = { ...n };
+    delete moved.containerId;
+    changed.set(n.id, moved);
+    return moved;
+  });
+  const unbound = cleared.map((n) => {
+    if (!isAcContainerNode(n) || !members.has(String(n.params?.bound_device_id ?? ""))) return n;
+    const next = { ...n, params: { ...n.params, bound_device_id: "", is_gateway: "0" } };
+    changed.set(n.id, next);
+    return next;
+  });
+  for (const upd of containerDecisionNodeUpdates(unbound, enforceContainerMembership(unbound))) {
+    changed.set(upd.id, upd); // 容器重算覆盖(解绑后的 params 已随容器节点带过来)
+  }
+  return [...changed.values()];
 }

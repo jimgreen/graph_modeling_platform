@@ -1,6 +1,17 @@
 // @ts-nocheck
+import { Input, Modal, Select } from "antd";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
-import { modelAssociationDevicesModelTypeFailureMessage } from "../model";
+import { AC_CONTAINER_KINDS, modelAssociationDevicesModelTypeFailureMessage } from "../model";
+import {
+  applyAddToAcContainer,
+  applyRemoveFromAcContainer,
+  buildNewContainer,
+  containerAssignedIdsFromSelection,
+  containerMemberIdsFromSelection,
+  containerSelectOptions,
+  defaultContainerName,
+  isAcContainerNode,
+} from "../acContainer";
 
 export function createEnsureDraggingUndoSnapshot(__appScope: Record<string, any>) {
   return () => {
@@ -1718,6 +1729,102 @@ export function createUngroupSelectedGraphics(__appScope: Record<string, any>) {
     pushUndoSnapshot();
     setGroups(normalizeModelGroups(result.groups, nodes, edges));
     writeOperationLog(`解散 ${result.removedGroupIds.length} 个组合`);
+  };
+}
+
+// 【添加到容器】弹窗里「新建…」选项的哨兵值(容器 id 由 cuid/uuid 生成,不会撞上)
+const NEW_CONTAINER_OPTION = "__new-container__";
+
+export function createAddToAcContainer(__appScope: Record<string, any>) {
+  return () => {
+  const { activeSelectedNodeIds, assignPermanentDeviceIndex, deviceIndexCounters, edges, nodeById, nodes, pushUndoSnapshot, requireEditMode, setDeviceIndexCounters, setGraphArrays, showGlobalMessage, writeOperationLog } = __appScope;
+    if (!requireEditMode("添加到容器")) {
+      return;
+    }
+    const memberIds = containerMemberIdsFromSelection(nodes, activeSelectedNodeIds);
+    if (memberIds.length === 0) {
+      showGlobalMessage("请选中至少一个普通图元（容器自身不参与归属）。");
+      return;
+    }
+    const members = memberIds.map((id) => nodeById.get(id)).filter(Boolean);
+    const containers = nodes.filter(isAcContainerNode);
+    // 提交:纯函数算出完整 nextNodes(新容器已插入、成员已打 containerId、几何已重算),单次撤销点 + 单次落图
+    const commitAdd = (container: any) => {
+      pushUndoSnapshot(true, false, undefined, "添加到容器");
+      setGraphArrays(applyAddToAcContainer(nodes, container, memberIds), edges);
+      writeOperationLog(`添加 ${memberIds.length} 个图元到容器 ${container.name ?? ""}`.trim());
+    };
+    // 新建容器:默认 kind 取清单首项(虚拟电厂);其余类型由图元库放置得到
+    const askNewName = () => {
+      const presetName = defaultContainerName(AC_CONTAINER_KINDS[0], nodes);
+      const draft = { name: presetName };
+      Modal.confirm({
+        title: "新建容器",
+        content: <Input defaultValue={presetName} autoFocus onChange={(event) => { draft.name = event.target.value; }} />,
+        okText: "创建",
+        cancelText: "取消",
+        onOk: () => {
+          // idx 走同源分配器(与图元库放置/粘贴同一计数),名称为空时回落到默认名
+          const indexed = assignPermanentDeviceIndex(
+            buildNewContainer(AC_CONTAINER_KINDS[0], draft.name.trim() || presetName, members, ""),
+            deviceIndexCounters
+          );
+          setDeviceIndexCounters(indexed.counters);
+          commitAdd(indexed.node);
+        },
+      });
+    };
+    if (containers.length === 0) {
+      askNewName();
+      return;
+    }
+    const pick = { id: String(containers[0].id) };
+    Modal.confirm({
+      title: "添加到容器",
+      content: (
+        <Select
+          defaultValue={pick.id}
+          style={{ width: "100%" }}
+          onChange={(value) => { pick.id = String(value); }}
+          options={[...containerSelectOptions(nodes).slice(1), { value: NEW_CONTAINER_OPTION, label: "新建容器…" }]}
+        />
+      ),
+      okText: "确定",
+      cancelText: "取消",
+      onOk: () => {
+        if (pick.id === NEW_CONTAINER_OPTION) {
+          askNewName();
+          return;
+        }
+        const target = nodes.find((candidate) => candidate.id === pick.id);
+        if (target) {
+          commitAdd(target);
+        }
+      },
+    });
+  };
+}
+
+export function createRemoveFromAcContainer(__appScope: Record<string, any>) {
+  return () => {
+  const { activeSelectedNodeIds, nodes, patchGraphNodes, pushUndoSnapshot, requireEditMode, showGlobalMessage, writeOperationLog } = __appScope;
+    if (!requireEditMode("移出容器")) {
+      return;
+    }
+    const memberIds = containerAssignedIdsFromSelection(nodes, activeSelectedNodeIds);
+    if (memberIds.length === 0) {
+      showGlobalMessage("选中的图元不在任何容器内。");
+      return;
+    }
+    // 纯函数给出变更节点(成员 + 解绑的关口容器 + 重算的容器矩形/被挤出的非成员),单次撤销点 + 单次 patch
+    // 绑定设备的容器量测组同步由 Task 9 在此接入
+    const updates = applyRemoveFromAcContainer(nodes, memberIds);
+    if (updates.length === 0) {
+      return;
+    }
+    pushUndoSnapshot(true, false, undefined, "移出容器");
+    patchGraphNodes(updates);
+    writeOperationLog(`从容器移出 ${memberIds.length} 个图元`);
   };
 }
 
