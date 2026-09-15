@@ -3693,7 +3693,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "交流容器",
     size: { width: 180, height: 112 },
     params: {
-      text: "虚拟电厂",
+      // 名称渲染源恒为 node.name(见 DeviceGlyph 容器分支),不写 text 死参数
       fillColor: "transparent",
       strokeColor: "#64748b",
       cornerRadius: "8",
@@ -3710,7 +3710,6 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "交流容器",
     size: { width: 180, height: 112 },
     params: {
-      text: "开关箱",
       fillColor: "transparent",
       strokeColor: "#64748b",
       cornerRadius: "8",
@@ -3727,7 +3726,6 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "交流容器",
     size: { width: 180, height: 112 },
     params: {
-      text: "配变箱",
       fillColor: "transparent",
       strokeColor: "#64748b",
       cornerRadius: "8",
