@@ -38,7 +38,8 @@ describe("src/export/svg", () => {
       SVG_BASELINE_EDGES as any,
       { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any
     );
-    const containerAt = withBox.indexOf('device-type="ac-vpp-box"');
+    // 容器层键取自 inferESection(容器)->"ACContainer"(容器段),不再回退到 kind
+    const containerAt = withBox.indexOf('device-type="ACContainer"');
     const segmentAt = withBox.indexOf('<g id="Segment_Layer"');
     expect(containerAt).toBeGreaterThan(-1);
     expect(segmentAt).toBeGreaterThan(-1);

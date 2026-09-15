@@ -878,10 +878,13 @@ test("exports owning class names for dev_type across every built-in E device cla
     }
   }
   // 精确条数：两个 kind 之间「对调映射」换成另一个合法类名时 has() 成员断言抓不到，计数能立刻失败
-  expect(checkedRows).toBe(371);
+  // 375 = 371(既有设备类) + 3(3 个交流容器 kind 入「容器表」段) + 1(容器入列后其后图元网格位置右移，
+  // 氢能端子重叠分组随之多出一组 —— 本用例按 i % 12 布点，条数对布点敏感，属既有耦合)
+  expect(checkedRows).toBe(375);
   expect(checkedSections).toEqual(expect.arrayContaining([
     "ACCompensator",
     "ACSeriCompensator",
+    "ACContainer",
     "HeatSource",
     "HeatSource2"
   ]));
@@ -4530,5 +4533,120 @@ describe("terminalVoltageDisplay 电压继承着色", () => {
       terminals: base.terminals.map((terminal, index) => ({ ...terminal, vbase: index === 0 ? "35" : "0" }))
     };
     expect(terminalVoltageDisplay(node, node.terminals[0])).toBe("35");
+  });
+});
+
+// —— 交流容器 E 导出:容器段 ACContainer(决策 3)+ 模板态静默(决策 6) ——
+
+/** 按序建带永久 idx 的内置图元(容器与普通设备共用计数器池,分段互不干扰) */
+function createIndexedExportNodes(kinds: DeviceKind[]): ModelNode[] {
+  let counters: Record<string, number> = {};
+  return kinds.map((kind, index) => {
+    const assigned = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100 + index * 240, y: 100 }), counters);
+    counters = assigned.counters;
+    return assigned.node;
+  });
+}
+
+describe("交流容器 E 导出", () => {
+  test("三个容器 kind 统一映射到容器段 ACContainer", () => {
+    for (const kind of ["ac-vpp-box", "ac-switch-box", "ac-distribution-box"]) {
+      expect(inferESection(kind), kind).toBe("ACContainer");
+    }
+    expect(E_SECTION_COLUMNS.ACContainer).toEqual(["idx", "name", "type", "is_gateway", "bound_device_idx"]);
+  });
+
+  test("非关口容器仅入 ACContainer 段,不进拓扑节点表", () => {
+    const [container, member] = createIndexedExportNodes(["ac-vpp-box", "ac-source"]);
+    container.name = "虚拟电厂1";
+    member.containerId = container.id;
+    const project: ProjectFile = { version: 1, name: "容器导出模型", nodes: [container, member], edges: [] };
+
+    // 容器只产出一条记录,不混入任何设备/拓扑节点段
+    const records = buildEDeviceRecords(project);
+    expect(records.filter((record) => record.id === container.id).map((record) => record.section)).toEqual(["ACContainer"]);
+    expect(records.find((record) => record.section === "ACContainer")?.params).toMatchObject({
+      idx: container.params.idx,
+      name: "虚拟电厂1",
+      type: "虚拟电厂",
+      is_gateway: "0",
+      bound_device_idx: ""
+    });
+
+    const payload = parseESections(buildEFileExport(project).text);
+    expect(payload.ACContainer?.columns).toEqual(["idx", "name", "type", "is_gateway", "bound_device_idx"]);
+    expect(payload.ACContainer?.rows).toEqual([
+      expect.objectContaining({ idx: container.params.idx, name: "虚拟电厂1", type: "虚拟电厂", is_gateway: "0" })
+    ]);
+    // 拓扑节点表只由带 nodeNumber 的端子驱动:容器无边无端子,不入表
+    expect((payload.ACNode?.rows ?? []).map((row) => row.name)).not.toContain("虚拟电厂1");
+  });
+
+  test("关口容器导出类型中文名、关口标记与绑定设备序号", () => {
+    const [container, member] = createIndexedExportNodes(["ac-switch-box", "ac-source"]);
+    member.containerId = container.id;
+    container.params.is_gateway = "1";
+    container.params.bound_device_id = member.id;
+    const project: ProjectFile = { version: 1, name: "关口容器模型", nodes: [container, member], edges: [] };
+
+    const payload = parseESections(buildEFileExport(project).text);
+    expect(payload.ACContainer?.rows).toEqual([
+      expect.objectContaining({
+        type: "开关箱",
+        is_gateway: "1",
+        bound_device_idx: member.params.idx,
+        name: container.name
+      })
+    ]);
+  });
+
+  test("模板态下容器静默过滤:不产出容器段也不告警", () => {
+    const [container, member] = createIndexedExportNodes(["ac-vpp-box", "ac-source"]);
+    member.containerId = container.id;
+    const project: ProjectFile = { version: 1, name: "容器模板态模型", nodes: [container, member], edges: [] };
+    const options = {
+      eDeviceDefinitionLabels: { ACNode: "交流节点" },
+      interfaceDefinitions: [{
+        componentLibrary: "ACNode",
+        exportEnabled: true,
+        exportName: "ACNode",
+        fields: [
+          { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+          { sourceName: "name", exportEnabled: true, exportName: "name" }
+        ]
+      }]
+    };
+
+    const file = buildEFileExport(project, ["默认方案"], options);
+    expect(parseESections(file.text).ACContainer).toBeUndefined();
+    expect(buildEDeviceRecords(project, options).some((record) => record.section === "ACContainer")).toBe(false);
+    // 决策 6:容器段不写入预定义模板,模板未定义该段时容器不逐节点告警
+    expect(file.warnings.filter((warning) => warning.reason.includes("容器"))).toEqual([]);
+    expect(getEExportWarnings(project, options).filter((warning) => warning.reason.includes("容器"))).toEqual([]);
+  });
+
+  test("模板定义了容器段时容器照常导出(按模板字段出列)", () => {
+    const [container, member] = createIndexedExportNodes(["ac-distribution-box", "ac-source"]);
+    member.containerId = container.id;
+    const project: ProjectFile = { version: 1, name: "容器模板段模型", nodes: [container, member], edges: [] };
+    const options = {
+      eDeviceDefinitionLabels: { ACContainer: "容器表" },
+      interfaceDefinitions: [{
+        componentLibrary: "ACContainer",
+        exportEnabled: true,
+        exportName: "ACContainer",
+        fields: [
+          { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+          { sourceName: "name", exportEnabled: true, exportName: "name" },
+          { sourceName: "type", exportEnabled: true, exportName: "type" }
+        ]
+      }]
+    };
+
+    const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
+    expect(payload.ACContainer?.columns).toEqual(["idx", "name", "type"]);
+    expect(payload.ACContainer?.rows).toEqual([
+      expect.objectContaining({ idx: container.params.idx, name: container.name, type: "配变箱" })
+    ]);
   });
 });

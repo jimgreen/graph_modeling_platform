@@ -14,6 +14,7 @@ import {
   CUSTOM_PARAM_DEFINITIONS_KEY, deviceParamValue, enumExportValueForDefinition,
   toSnakeCaseDeviceParamName, normalizeVoltageBaseInput, terminalVoltageBaseNumber,
   readVoltageLevelSettings, calculateElectricalTopology, isStaticNode, isBusNode,
+  isAcContainerKind,
   routableLineDeviceEndpointRefs,
   modelAssociationModelTypeForKind,
   resolveEffectiveTemplateParameterDefinitionGroups, associatedNodeColumnValue,
@@ -46,6 +47,8 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   DCRealBs: ["idx", "name", "node", "rated_voltage", "v_max", "v_min", "run_stat"],
   ACNode: ["idx", "name", "vbase", "run_stat"],
   DCNode: ["idx", "name", "vbase", "voltage", "isl", "run_stat"],
+  // 交流容器「容器表」(决策 3):容器无边无端子,只有标量列
+  ACContainer: ["idx", "name", "type", "is_gateway", "bound_device_idx"],
   ACBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "r", "x", "b", "run_stat", "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"],
   DCBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "r", "run_stat", "i_p", "i_u", "i_i", "j_p", "j_u", "j_i"],
   ACLoad: [
@@ -333,6 +336,10 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   const sectionKind = baseDeviceKind(kind);
   if (sectionKind === "ac-bus") return "ACRealBs";
   if (sectionKind === "dc-bus") return "DCRealBs";
+  // 交流容器(决策 3):统一落到「容器表」段。容器非 static,不经过下面的 staticComponentLibrary 分支;
+  // 判据走 isAcContainerKind 而非 E_KIND_SECTION_MAP 字面量:本模块在 model.ts 求值期就被 import(model.ts 顶部
+  // `export * from`),顶层读 AC_CONTAINER_KINDS 之类常量必踩 TDZ,故只能运行时判定。
+  if (isAcContainerKind(sectionKind)) return "ACContainer";
   const componentLibrary = staticComponentLibraryFromParams(params);
   const staticComponentLibrary = staticComponentLibraryForNodeLike(sectionKind, params);
   if (staticComponentLibrary) {
@@ -1812,6 +1819,17 @@ function hasTemplateConfig(options: EFileExportOptions): boolean {
   return Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
 }
 
+/**
+ * 决策 6:容器段不写入预定义模板 —— 模板态下未定义该段时容器整体静默:
+ * 主循环不产出容器记录、告警也不逐节点报「被导出逻辑过滤」。产出与告警共用此判据,防两处漂移。
+ */
+function containerSectionSuppressed(
+  isTemplateMode: boolean,
+  interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>
+): boolean {
+  return isTemplateMode && !interfaceDefinitionBySection.has("ACContainer");
+}
+
 function builtInDerivedSpecificParameterNames(kind: string): Set<string> {
   const template = DEVICE_LIBRARY_BY_KIND.get(kind);
   const derivedInfo = template ? templateDerivedComponentLibraryInfo(template) : null;
@@ -1843,6 +1861,7 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
   const sectionRowCounts = new Map<string, number>();
   const derivedSectionRowCounts = new Map<string, number>();
   const windingRowCounts = new Map<string, number>();
+  const nodeById = new Map(topologyNodes.map((node) => [node.id, node] as const));
   for (const node of topologyNodes) {
     const originalSection = inferESection(node.kind, node.params);
     // 模板模式下 ACRealBs 合并到 node 表（ACNode+交流母线），realbs=1 标识母线。
@@ -1852,6 +1871,29 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
       ? "ACNode"
       : originalSection;
     if (!section || originalSection === "ACNode" || originalSection === "DCNode") {
+      continue;
+    }
+    // 容器段(决策 3):容器无边无端子,不进拓扑节点表,只产出「容器表」一条记录
+    if (isAcContainerKind(node.kind)) {
+      // 决策 6:模板态未定义容器段 → 直接跳过(不产出、不告警)
+      if (containerSectionSuppressed(hasTemplateConfigValue, interfaceDefinitionBySection)) {
+        continue;
+      }
+      const boundDeviceId = String(node.params.bound_device_id ?? "");
+      deviceRecords.push(applyEInterfaceDefinitionToRecord({
+        id: node.id,
+        kind: node.kind,
+        section,
+        params: {
+          idx: node.params.idx ?? "",
+          name: node.name,
+          // 类型取图元库中文名:CONTAINER_KIND_LABELS 即本表 label 的派生(同源同值,不跨模块引以免 TDZ)
+          type: DEVICE_LIBRARY_BY_KIND.get(node.kind)?.label ?? node.kind,
+          is_gateway: node.params.is_gateway ?? "0",
+          // 绑定设备存的是成员节点 id(与 containerMemberOptions 同源),此处解析出成员自身 idx
+          bound_device_idx: (boundDeviceId ? nodeById.get(boundDeviceId)?.params.idx : "") ?? ""
+        }
+      }, interfaceDefinitionBySection.get(section)));
       continue;
     }
     const derivedSpecificParameterNames = builtInDerivedSpecificParameterNames(node.kind);
@@ -2042,6 +2084,10 @@ function getEExportWarningsFromRecords(
       return [];
     }
     if (exportedNodeIds.has(node.id)) {
+      return [];
+    }
+    // 决策 6:模板态未定义容器段时容器本就不产出记录,不逐节点报「被导出逻辑过滤」
+    if (isAcContainerKind(node.kind) && containerSectionSuppressed(hasTemplateConfig(options), interfaceDefinitionBySection)) {
       return [];
     }
     const section = inferESection(node.kind, node.params);
