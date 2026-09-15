@@ -1643,6 +1643,7 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
       return;
     }
     if (activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0) {
+      setLastCanvasClickTarget(null); // 该分支不开确认框,无取消顾虑:点击目标不许残留到下一次 Delete
       return;
     }
     const selectedEdges = new Set(activeSelectedEdgeIds);

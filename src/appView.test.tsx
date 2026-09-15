@@ -21,7 +21,8 @@ import {
   CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT,
   READONLY_E_PARAM_KEYS,
   canBatchEditParam,
-  paramOptionsForSection
+  paramOptionsForSection,
+  resolveAcContainerModelPanelParamKeys
 } from "./appExtracted/appCoreCanvasUtilities";
 import {
   componentLibraryDefinitionOverrideKey,
@@ -365,6 +366,46 @@ describe("app view device model parameter keys", () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).not.toContain("turbine_count");
     expect(keys.indexOf("run_stat")).toBeLessThan(keys.indexOf("hydro_unit_model"));
+  });
+});
+
+describe("容器「模型」面板参数键", () => {
+  const containerRawKeys = () => {
+    const node = createDefaultNode("ac-vpp-box", { x: 0, y: 0 });
+    const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === node.kind);
+    const definitionGroups = resolveDeviceModelPanelDefinitionGroups(template, DEVICE_LIBRARY);
+    return resolveDeviceModelPanelParameterKeys(
+      getEParameterKeys(node.kind, node.params),
+      [],
+      Object.keys(node.params),
+      definitionGroups
+    );
+  };
+
+  test("剔除三行无人读取/重复的 E 列（type / is_gateway / bound_device_idx）", () => {
+    // 修前这三行确实在渲染键里:type 写入无人读(导出取库 label)、is_gateway 与「是否作为关口设备」下拉重复、
+    // bound_device_idx 恒空(导出用 bound_device_id 反查)
+    expect(containerRawKeys()).toEqual(expect.arrayContaining(["type", "is_gateway", "bound_device_idx"]));
+
+    const keys = resolveAcContainerModelPanelParamKeys(containerRawKeys(), true);
+
+    expect(keys).not.toContain("type");
+    expect(keys).not.toContain("is_gateway");
+    expect(keys).not.toContain("bound_device_idx");
+    expect(keys).toEqual(expect.arrayContaining(["idx", "name"]));
+  });
+
+  test("非容器设备原样返回（同名键在普通设备上仍有意义）", () => {
+    const keys = ["idx", "name", "dev_type", "type", "is_gateway", "bound_device_idx"];
+
+    expect(resolveAcContainerModelPanelParamKeys(keys, false)).toEqual(keys);
+  });
+
+  // 面板渲染跑不了用例(整棵 __appScope),渲染侧接线只能按源码守卫:剔除必须包在键计算外层
+  test("渲染侧接上剔除口径", () => {
+    const panelSource = readFileSync(new URL("./appExtracted/appRightPanel.tsx", import.meta.url), "utf8");
+
+    expect(panelSource).toContain("resolveAcContainerModelPanelParamKeys(resolveDeviceModelPanelParameterKeys(");
   });
 });
 
