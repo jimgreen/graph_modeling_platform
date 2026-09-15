@@ -77,6 +77,9 @@ describe("容器图元绘制", () => {
     const hit = tagOf(html, "ac-container-stroke-hit");
     expect(hit).toContain('stroke="transparent"');
     expect(hit).toContain('stroke-width="8"');
+    // 名称可命中(spec「点描边或名称 → 选中容器」):text 不得带 pointer-events:none
+    // —— 计划草图给 text 加了 pointerEvents:"none",照抄会让需求静默失效而其余断言全绿
+    expect(html.match(/<text[^>]*>/)?.[0] ?? "").not.toContain("pointer-events");
     // 容器标记与名称
     expect(html).toContain('data-container-box="1"');
   });
