@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
-import { applyDragContainerMembership, containerDragGroup, isAcContainerNode } from "../acContainer";
+import { applyDragContainerMembership, containerDragGroup, isAcContainerNode, withNodeUpdates } from "../acContainer";
 import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind, syncedSwitchStatusPatch } from "../model";
 import { isThreeWindingTransformer } from "../model-eexport";
 import { setVoltageBaseTerminalValueForTopologySide, voltageBaseParamTerminalIndexForNode } from "../model-routing";
@@ -1234,7 +1234,7 @@ export function createFinishDraggingMove(__appScope: Record<string, any>) {
 export function createFinishNodeDrag(__appScope: Record<string, any>) {
   // altKey 由指针抬起事件带入(Alt = 明确移出/不落入容器)
   return (altKey = false) => {
-  const { adjustEdgesAfterNodeMove, applyCanvasBounds, applyNodeTerminalSnap, boundedDeltaForMoveGeometry, buildMovedNodeUpdates, canvasBoundsForMoveDelta, canvasInteractionRef, clearNodeDragMoveSchedule, commitFastMovedGraphPatches, commitSafeDeltaForDraggingState, dragDraggedEdgeIdSet, dragMovedBusNodeIdSet, dragMovedNodeIdSet, dragUndoCapturedRef, draggingRef, ensureDraggingUndoSnapshot, externalMoveCandidateEdges, finalizeMovedNodeEdgesFast, findMultiNodeDragSnapTargetAtDelta, findSingleNodeDragSnapTargetAtDelta, flushPendingNodeDragMove, graphStore, hideImperativeMultiNodeDragOverlay, hideImperativeSingleNodeDragPreview, internalMoveEdgeIdsForMovedNodes, isMultiNodeMoveState, mergeAdjustedCandidateEdges, mergeNodeUpdateLists, nextNodesForMovedGraphCommit, nodeTerminalSnapTargetRef, nodes, projectListPointerInsideRef, resetMultiNodeDragOverlayTransform, restoreCanvasSelectionSnapshotWithInspector, routePreserveEdgeIdsForMovedNodes, setDragging, shouldFinalizeMovedNodeEdgesSynchronously, showGlobalMessage, synchronousEdgeAdjustmentCandidates, translateInternalMoveCandidateEdges, translateWholeMoveCandidateEdges, updateSmartAlignmentGuides, writeOperationLog } = __appScope;
+  const { adjustEdgesAfterNodeMove, applyCanvasBounds, applyNodeTerminalSnap, boundedDeltaForMoveGeometry, buildMovedNodeUpdates, canvasBoundsForMoveDelta, canvasInteractionRef, clearNodeDragMoveSchedule, commitFastMovedGraphPatches, commitSafeDeltaForDraggingState, dragDraggedEdgeIdSet, dragMovedBusNodeIdSet, dragMovedNodeIdSet, dragUndoCapturedRef, draggingRef, ensureDraggingUndoSnapshot, externalMoveCandidateEdges, finalizeMovedNodeEdgesFast, findMultiNodeDragSnapTargetAtDelta, findSingleNodeDragSnapTargetAtDelta, flushPendingNodeDragMove, graphStore, hideImperativeMultiNodeDragOverlay, hideImperativeSingleNodeDragPreview, internalMoveEdgeIdsForMovedNodes, isMultiNodeMoveState, mergeAdjustedCandidateEdges, mergeNodeUpdateLists, nextNodesForMovedGraphCommit, nodeTerminalSnapTargetRef, nodes, normalizeProjectMeasurements, projectListPointerInsideRef, resetMultiNodeDragOverlayTransform, restoreCanvasSelectionSnapshotWithInspector, routePreserveEdgeIdsForMovedNodes, setDragging, setProjectMeasurements, shouldFinalizeMovedNodeEdgesSynchronously, showGlobalMessage, synchronousEdgeAdjustmentCandidates, translateInternalMoveCandidateEdges, translateWholeMoveCandidateEdges, updateSmartAlignmentGuides, writeOperationLog } = __appScope;
     flushPendingNodeDragMove(false);
     const activeDragging = draggingRef.current;
     if (!activeDragging) {
@@ -1369,6 +1369,10 @@ export function createFinishNodeDrag(__appScope: Record<string, any>) {
       finalBounds,
       { wholeLayerMove, moveDelta: finalDelta, internalMovedEdgeIds }
     );
+    // 量测同步:Alt 拖出会解绑原关口容器,容器量测组须随同一归一化出口收敛
+    if (containerUpdates.length > 0) {
+      setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, nextNodes));
+    }
     clearNodeDragMoveSchedule();
     updateSmartAlignmentGuides([]);
     resetMultiNodeDragOverlayTransform();
@@ -2460,7 +2464,7 @@ export function createHandleCanvasSizeKeyDown(__appScope: Record<string, any>) {
 
 export function createUpdateParam(__appScope: Record<string, any>) {
   return (key: string, value: string) => {
-  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, commitNodeFootprintUpdates, inferESection, nodeById, normalizeNodeLabelDisplayMode, normalizeRatioParameterInputValue, patchGraphNodes, pushNodeOnlyUndoSnapshot, pushUndoSnapshot, requireEditMode, selectedNodeId, undoScopeForNodeFootprintPatch, nodes, edges, undoScopeForGraphPatch } = __appScope;
+  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, commitNodeFootprintUpdates, inferESection, nodeById, normalizeNodeLabelDisplayMode, normalizeProjectMeasurements, normalizeRatioParameterInputValue, patchGraphNodes, pushNodeOnlyUndoSnapshot, pushUndoSnapshot, requireEditMode, selectedNodeId, setProjectMeasurements, undoScopeForNodeFootprintPatch, nodes, edges, undoScopeForGraphPatch } = __appScope;
     if (!requireEditMode("修改图元参数")) {
       return;
     }
@@ -2561,6 +2565,11 @@ export function createUpdateParam(__appScope: Record<string, any>) {
     }
     pushNodeOnlyUndoSnapshot(selectedNodeId, undefined, nodeById.get(selectedNodeId)?.name);
     patchGraphNodes([nextNode]);
+    // 量测同步:绑定设备/关口开关决定容器量测组的存在性 → 走同一归一化出口收敛。
+    // typeof 防御是给旧测试桩的既有惯例(见上方 setVoltageBaseTerminalValueForTopologySide 同款判断)
+    if ((key === "bound_device_id" || key === "is_gateway") && typeof normalizeProjectMeasurements === "function" && typeof setProjectMeasurements === "function") {
+      setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, withNodeUpdates(nodes, [nextNode])));
+    }
   };
 }
 

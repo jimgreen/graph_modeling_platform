@@ -1,7 +1,9 @@
 // createCurrentProject 输出 backgroundProjectIdx：服务端靠它定位背景模型（前端 id 服务端无法解析）
 import { describe, expect, test, vi } from "vitest";
-import { createCurrentProject, createEnsureDraggingUndoSnapshot } from "./appSelectionDragFactories";
+import { Modal } from "antd";
+import { createAddToAcContainer, createCurrentProject, createEnsureDraggingUndoSnapshot, createRemoveFromAcContainer } from "./appSelectionDragFactories";
 import { createUndoGraphSnapshotPatchPlan } from "./appGraphMeasurementFactories";
+import { normalizeProjectMeasurements } from "../measurements";
 
 function makeScope(overrides: Record<string, unknown> = {}) {
   return {
@@ -111,5 +113,84 @@ describe("拖动撤销作用域(容器)", () => {
       { ...snapshot, graphPatchScope: { nodeIds: ["m1"], edgeIds: [] } } as any
     );
     expect(scopedPlan.nodeIds).toEqual(["m1"]); // 旧行为:容器残留在拖动后几何
+  });
+});
+
+// ─── 归属入口的量测同步:图改完必须把量测喂给同一归一化出口 ─────────────────────
+// 归一化出口(normalizeProjectMeasurements)内含容器量测组收敛(reconcileContainerMeasurementGroups);
+// 入口只 patch 图不喂量测时,关口解绑后容器量测组会残留到下一次无关的量测变更。
+describe("归属入口的量测同步", () => {
+  const item = (id: string) => ({ id, measurementTypeId: "activePower", sourcePoint: id, name: "有功" });
+  const gatewayContainer = (id: string, bound: string) =>
+    bareNode(id, "ac-vpp-box", { params: { is_gateway: "1", bound_device_id: bound } });
+  const plainContainer = (id: string) => bareNode(id, "ac-vpp-box", { params: {} });
+  // 绑定设备 m1 与其镜像组 c1;解绑/离开后 c1 组应当随归一化消失
+  const measurementsWithMirror = () => ({
+    version: 1,
+    groups: [
+      { id: "measurement-m1", nodeId: "m1", items: [item("p")] },
+      { id: "measurement-c1", nodeId: "c1", items: [item("p")] },
+    ],
+  });
+  const captureMeasurements = () => {
+    let next: any;
+    return {
+      get: () => next,
+      setProjectMeasurements: (updater: any) => { next = updater(measurementsWithMirror()); },
+    };
+  };
+
+  test("右键移出:绑定设备离开原容器 → 容器量测组随归一化删除,绑定设备组保留", () => {
+    const nodes = [gatewayContainer("c1", "m1"), bareNode("m1", "ac-load", { containerId: "c1" })];
+    const capture = captureMeasurements();
+    createRemoveFromAcContainer({
+      activeSelectedNodeIds: ["m1"],
+      nodes,
+      normalizeProjectMeasurements,
+      patchGraphNodes: vi.fn(),
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: () => true,
+      setProjectMeasurements: capture.setProjectMeasurements,
+      showGlobalMessage: vi.fn(),
+      writeOperationLog: vi.fn(),
+    } as any)();
+
+    expect(capture.get().groups.some((g: any) => g.nodeId === "c1")).toBe(false);
+    expect(capture.get().groups.some((g: any) => g.nodeId === "m1")).toBe(true);
+  });
+
+  test("右键改归属:成员离开原关口容器 → 原容器量测组随归一化删除", () => {
+    // containers[0] 即默认目标(Modal 未改动时 pick 取首个容器):目标放前,原容器在后
+    const nodes = [
+      plainContainer("c2"),
+      gatewayContainer("c1", "m1"),
+      bareNode("m1", "ac-load", { containerId: "c1" }),
+    ];
+    const capture = captureMeasurements();
+    // Modal.confirm 桩:立即执行 onOk,等价用户点「确定」(默认目标 = 首个容器 c2)
+    const confirmSpy = vi.spyOn(Modal, "confirm").mockImplementation(((config: any) => {
+      config.onOk?.();
+      return { destroy: vi.fn(), update: vi.fn() };
+    }) as any);
+    try {
+      createAddToAcContainer({
+        activeSelectedNodeIds: ["m1"],
+        nodes,
+        assignPermanentDeviceIndex: vi.fn(),
+        normalizeProjectMeasurements,
+        pushUndoSnapshot: vi.fn(),
+        requireEditMode: () => true,
+        setDeviceIndexCounters: vi.fn(),
+        setGraphArrays: vi.fn(),
+        setProjectMeasurements: capture.setProjectMeasurements,
+        showGlobalMessage: vi.fn(),
+        writeOperationLog: vi.fn(),
+      } as any)();
+    } finally {
+      confirmSpy.mockRestore();
+    }
+
+    expect(capture.get().groups.some((g: any) => g.nodeId === "c1")).toBe(false);
+    expect(capture.get().groups.some((g: any) => g.nodeId === "m1")).toBe(true);
   });
 });
