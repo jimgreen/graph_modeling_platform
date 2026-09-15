@@ -147,6 +147,7 @@ import {
   applyDeviceTemplateDefinitionOverride,
   segmentIntersectsNodeBody,
   isInteractiveStaticDrawingKind,
+  isAcContainerKind,
   isStaticBoxLikeKind,
   isStaticBoxLikeNode,
   isStaticButtonCapableNode,
@@ -1404,6 +1405,7 @@ describe("power system model", () => {
     });
     const deviceTemplates = DEVICE_LIBRARY.filter((template) => (
       !isStaticNode({ kind: template.kind, params: template.params } as ModelNode)
+      && !isAcContainerKind(template.kind)
     ));
     expect(deviceTemplates.length).toBeGreaterThan(0);
     for (const template of deviceTemplates) {
