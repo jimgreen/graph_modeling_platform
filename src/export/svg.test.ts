@@ -26,4 +26,26 @@ describe("src/export/svg", () => {
     const svg = buildSvgDocument([], [], { width: 800, height: 600 });
     expect(svg).toContain(`fill="${DEFAULT_CANVAS_BACKGROUND}"`);
   });
+
+  test("容器沉底：容器层在 segment（线路）层之前输出，且无容器时输出不变", () => {
+    const box = {
+      id: "box1", kind: "ac-vpp-box", name: "虚拟电厂", position: { x: 200, y: 300 },
+      size: { width: 180, height: 112 }, rotation: 0, layerId: "layer-default", nodeNumber: "",
+      acTopologyNode: 0, dcTopologyNode: 0, scale: 1, params: {}, terminals: []
+    };
+    const withBox = buildSvgDocument(
+      [...SVG_BASELINE_NODES, box] as any,
+      SVG_BASELINE_EDGES as any,
+      { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any
+    );
+    const containerAt = withBox.indexOf('device-type="ac-vpp-box"');
+    const segmentAt = withBox.indexOf('<g id="Segment_Layer"');
+    expect(containerAt).toBeGreaterThan(-1);
+    expect(segmentAt).toBeGreaterThan(-1);
+    // 容器是背景性装饰：必须排在 segment 层之前（= 更早绘制 = 被线路/设备覆盖）
+    expect(containerAt).toBeLessThan(segmentAt);
+    // 防空洞：容器层里必须真有该容器图元，不是空组
+    expect(withBox.slice(containerAt, segmentAt)).toContain('dev-kind="ac-vpp-box"');
+    // 无容器时不占位（逐字节一致性由 svg.golden 基线哈希守卫）
+  });
 });
