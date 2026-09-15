@@ -195,7 +195,7 @@
 
 ### 关口拓扑变换(决策 4)
 
-新纯函数 `transformGraphForGateways(nodes, edges, containers)`,导出期图变换,画布连线不动。插入点:`buildEDeviceRecords` 入口(`model-eexport.ts:1830-1834`)在 `calculateElectricalTopology` 之前对 nodes/edges 副本做变换。
+新纯函数 `transformGraphForGateways(nodes, edges)`,导出期图变换,画布连线不动。插入点:`buildEDeviceRecords` 入口(`model-eexport.ts:1830-1834`)在 `calculateElectricalTopology` 之前对 nodes/edges 副本做变换。(签名原写 3 参含 containers,实为 2 参、容器由 nodes 内识别,2026-09-16 按实现修正。)
 
 规格:
 1. 每个关口容器插入一个拓扑节点,**为容器合成端子**:电源侧 + 负荷侧,端子带 `nodeNumber`(拓扑节点表仅由带 nodeNumber 的端子驱动,`model-eexport.ts:1542-1564`;容器非 static,不再被 `:1552` 跳过)
