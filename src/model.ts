@@ -246,6 +246,9 @@ export type DeviceGlyphVariant =
   | "acdc-converter"
   | "dcac-converter"
   | "acac-converter"
+  | "ac-vpp-box"
+  | "ac-switch-box"
+  | "ac-distribution-box"
   | "default";
 
 export type Point = {
@@ -470,6 +473,8 @@ export type ModelNode = {
   kind: DeviceKind;
   name: string;
   layerId?: string;
+  /** 所属交流容器节点 id;空 = 无容器 */
+  containerId?: string;
   nodeNumber: string;
   acTopologyNode: number;
   dcTopologyNode: number;
@@ -3678,6 +3683,58 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "静态图元",
     size: { width: 104, height: 42 },
     params: staticSymbolParams("static-edge-label", "边标签", { fillColor: "#ffffff", strokeColor: "#cbd5e1", accentColor: "#2563eb", cornerRadius: "999", padding: "10", shadowEnabled: "1" }),
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    // 交流容器:框选一组交流设备的容器图元,不进 static 家族(不写 component_type)
+    kind: "ac-vpp-box",
+    label: "虚拟电厂",
+    categoryLibrary: "交流容器",
+    size: { width: 180, height: 112 },
+    params: {
+      text: "虚拟电厂",
+      fillColor: "transparent",
+      strokeColor: "#64748b",
+      cornerRadius: "8",
+      strokeStyle: "dashed",
+      textAlign: "left",
+      verticalAlign: "top"
+    },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "ac-switch-box",
+    label: "开关箱",
+    categoryLibrary: "交流容器",
+    size: { width: 180, height: 112 },
+    params: {
+      text: "开关箱",
+      fillColor: "transparent",
+      strokeColor: "#64748b",
+      cornerRadius: "8",
+      strokeStyle: "dashed",
+      textAlign: "left",
+      verticalAlign: "top"
+    },
+    terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    kind: "ac-distribution-box",
+    label: "配变箱",
+    categoryLibrary: "交流容器",
+    size: { width: 180, height: 112 },
+    params: {
+      text: "配变箱",
+      fillColor: "transparent",
+      strokeColor: "#64748b",
+      cornerRadius: "8",
+      strokeStyle: "dashed",
+      textAlign: "left",
+      verticalAlign: "top"
+    },
     terminalType: "ac",
     terminalCount: 0
   },
@@ -9656,6 +9713,18 @@ export function migrateElectricGenerationContainerParams(node: ModelNode, templa
       is_container: "1"
     }
   };
+}
+
+// 交流容器 kinds 单源清单(容器渲染/嵌套/装配等后续任务统一从这里取)
+export const AC_CONTAINER_KINDS = [
+  "ac-vpp-box",
+  "ac-switch-box",
+  "ac-distribution-box",
+] as const satisfies readonly DeviceKind[];
+
+/** kind 是否为交流容器图元 */
+export function isAcContainerKind(kind: string): boolean {
+  return (AC_CONTAINER_KINDS as readonly string[]).includes(kind);
 }
 
 // 节点操作相关代码已提取到独立模块
