@@ -15,6 +15,7 @@ import {
   makeNodeNumber,
   toSnakeCaseDeviceParamName, normalizeVoltageBaseInput, terminalVoltageBaseNumber,
   readVoltageLevelSettings, calculateElectricalTopology, isStaticNode, isBusNode,
+  resolveTopologyEdgeTerminal,
   isAcContainerKind,
   routableLineDeviceEndpointRefs,
   modelAssociationModelTypeForKind,
@@ -1846,14 +1847,106 @@ function activeGatewayBoundDevice(node: ModelNode, nodeById: ReadonlyMap<string,
   return boundNode && boundNode.containerId === node.id ? boundNode : null;
 }
 
-/** 绑定设备的电源侧上游边:以绑定设备为终点的边(电源由此流入) */
-function boundDeviceUpstreamEdges(boundDeviceId: string, edges: readonly Edge[]): Edge[] {
-  return edges.filter((edge) => edge.targetId === boundDeviceId);
+/**
+ * 绑定设备的连线:**双向判定** —— 边方向只是画法(拖拽起点),不代表电源方向,
+ * 只认终点会把反向画的线判成「无上游」而让关口静默失效。
+ */
+function boundDeviceIncidentEdges(boundDeviceId: string, edges: readonly Edge[]): Edge[] {
+  return edges.filter((edge) => edge.sourceId === boundDeviceId || edge.targetId === boundDeviceId);
 }
 
-/** 无电源侧上游的告警口径(变换与导出告警通道共用同一句,防两处漂移) */
-function gatewayNoUpstreamReason(containerName: string): string {
-  return `容器 ${containerName} 的绑定设备无电源侧连接,退化为仅容器表记录。`;
+/** 边接在绑定设备那一侧的端子 id(即「接线点」);另一端留给容器 */
+function boundSideTerminalId(edge: Edge, boundDeviceId: string): string | undefined {
+  return edge.sourceId === boundDeviceId ? edge.sourceTerminalId : edge.targetTerminalId;
+}
+
+/** 边的另一端(非绑定设备侧)端点 */
+function farEndpoint(edge: Edge, boundDeviceId: string): { nodeId: string; terminalId?: string } {
+  return edge.sourceId === boundDeviceId
+    ? { nodeId: edge.targetId, terminalId: edge.targetTerminalId }
+    : { nodeId: edge.sourceId, terminalId: edge.sourceTerminalId };
+}
+
+/** 关口退化告警口径(变换与导出告警通道共用,防两处漂移);三条按事实分述,不宣称「无电源侧连接」 */
+function gatewayNoLinkReason(containerName: string): string {
+  return `容器 ${containerName} 未找到与绑定设备的连线,退化为仅容器表记录。`;
+}
+
+function gatewayTerminalTypeReason(containerName: string): string {
+  return `容器 ${containerName} 的绑定设备连线端子类型无法判定或两端不一致,无法串入关口,退化为仅容器表记录。`;
+}
+
+function gatewayMultipleLinkPointsReason(containerName: string, linkPointCount: number): string {
+  return `容器 ${containerName} 的绑定设备有 ${linkPointCount} 处不同连接点,无法串入关口,退化为仅容器表记录。`;
+}
+
+/** 一个接线点(绑定设备侧端子)及其全部连线;同点多条边本就等电位,一起并到容器同一侧端子 */
+type GatewayLink = { boundTerminalId: string; edges: Edge[] };
+
+type GatewaySplice = {
+  container: ModelNode;
+  bound: ModelNode;
+  /** 合成端子类型:取绑定设备一侧接线端子的类型(与连线另一端一致才可串入,否则并查集按类型不同不会合并) */
+  terminalType: TerminalType;
+  links: GatewayLink[];
+};
+
+type GatewayPlan = { splice: GatewaySplice } | { container: ModelNode; degradeReason: string };
+
+/**
+ * 关口串入方案(单源):判定关口容器能否串入绑定设备上游,并把「端子类型 + 接线点分组」一次算清。
+ * 变换与导出告警两条消费路径共用本函数 —— 退化条件只在这里判一次,防两处口径漂移。
+ */
+function planGatewaySplices(nodes: ModelNode[], edges: Edge[]): GatewayPlan[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
+  const plans: GatewayPlan[] = [];
+  for (const node of nodes) {
+    const bound = activeGatewayBoundDevice(node, nodeById);
+    if (!bound) {
+      continue;
+    }
+    const incidents = boundDeviceIncidentEdges(bound.id, edges);
+    if (incidents.length === 0) {
+      plans.push({ container: node, degradeReason: gatewayNoLinkReason(node.name) });
+      continue;
+    }
+    const linksByBoundTerminalId = new Map<string, Edge[]>();
+    let terminalType: TerminalType | null = null;
+    let degradeReason = "";
+    for (const edge of incidents) {
+      const boundTerminal = resolveTopologyEdgeTerminal(bound, boundSideTerminalId(edge, bound.id));
+      const far = farEndpoint(edge, bound.id);
+      const farTerminal = resolveTopologyEdgeTerminal(nodeById.get(far.nodeId), far.terminalId);
+      // 类型无法判定(端点解析不到)或两端不一致 → 退化:此时改边会把绑定设备的原连接拆掉却串不进容器
+      if (!boundTerminal || !farTerminal || boundTerminal.type !== farTerminal.type) {
+        degradeReason = gatewayTerminalTypeReason(node.name);
+        break;
+      }
+      if (terminalType && terminalType !== boundTerminal.type) {
+        degradeReason = gatewayTerminalTypeReason(node.name);
+        break;
+      }
+      terminalType = boundTerminal.type;
+      linksByBoundTerminalId.set(boundTerminal.id, [...(linksByBoundTerminalId.get(boundTerminal.id) ?? []), edge]);
+    }
+    if (!degradeReason && linksByBoundTerminalId.size > 1) {
+      // 多接线点(如双绕组变压器两侧各接电源):并到一对端子会把两侧短接(i_node == j_node)
+      degradeReason = gatewayMultipleLinkPointsReason(node.name, linksByBoundTerminalId.size);
+    }
+    if (degradeReason || !terminalType) {
+      plans.push({ container: node, degradeReason: degradeReason || gatewayTerminalTypeReason(node.name) });
+      continue;
+    }
+    plans.push({
+      splice: {
+        container: node,
+        bound,
+        terminalType,
+        links: Array.from(linksByBoundTerminalId, ([boundTerminalId, linkEdges]) => ({ boundTerminalId, edges: linkEdges }))
+      }
+    });
+  }
+  return plans;
 }
 
 /**
@@ -1861,9 +1954,14 @@ function gatewayNoUpstreamReason(containerName: string): string {
  *
  * 关口容器本身无边无端子,而拓扑节点表只由带 nodeNumber 的端子驱动 → 先为容器合成电源侧/负荷侧端子,
  * 再把「上游 —绑定设备」改接成「上游 —容器(电源侧)—容器(负荷侧)— 绑定设备」。
+ * 不变式:**电源侧端子恒朝连线另一端(上游),负荷侧端子恒朝绑定设备** —— 与边的画法方向无关
+ * (边方向只是拖拽起点),每段边保持自己的原方向。
  * 端子号不在此处分配:交给 calculateElectricalTopology 按拓扑岛统一编号(同岛同号口径与既有分配一致),
  * 本函数只保证端子与边的形状正确 —— 故须在本函数之后调用拓扑计算。
- * 绑定设备无电源侧上游 → 该容器退化为仅容器段记录(不加端子、不改边),warning 由调用方汇入导出告警。
+ * 端子 nodeNumber 用 makeNodeNumber 占位(会推进模块级 nodeNumberSeed,与 createTerminals 同惯例),随后被拓扑计算覆盖。
+ * 无法串入(无连线 / 端子类型无法判定或不一致 / 多接线点)→ 退化为仅容器段记录:不加端子、**不改边**。
+ * 返回值 warnings 与导出告警通道同源于 planGatewaySplices:生产告警由 getEExportWarningsFromRecords 重算,
+ * 本数组供直接消费本函数的调用方与测试使用,两处不会漂移。
  *
  * 非幂等:对已变换的图再跑一次会把串入边二次改接(容器两侧被短接),只可在导出入口应用一次。
  */
@@ -1871,37 +1969,46 @@ export function transformGraphForGateways(
   nodes: ModelNode[],
   edges: Edge[]
 ): { nodes: ModelNode[]; edges: Edge[]; warnings: string[] } {
-  const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
   const warnings: string[] = [];
   const rewiredEdgeById = new Map<string, Edge>();
   const addedEdges: Edge[] = [];
   const terminalsByContainerId = new Map<string, Terminal[]>();
-  for (const node of nodes) {
-    const boundNode = activeGatewayBoundDevice(node, nodeById);
-    if (!boundNode) {
+  for (const plan of planGatewaySplices(nodes, edges)) {
+    if ("degradeReason" in plan) {
+      warnings.push(plan.degradeReason);
       continue;
     }
-    const upstreamEdges = boundDeviceUpstreamEdges(boundNode.id, edges);
-    if (upstreamEdges.length === 0) {
-      warnings.push(gatewayNoUpstreamReason(node.name));
-      continue;
-    }
+    const { container, bound, terminalType, links } = plan.splice;
     // 容器自身无电压:vbase 留空(不写默认占位 "0"),否则 ACNode 行的 firstText 会把容器抢在真设备之前
     // 把 0 当成本岛电压
-    const powerTerminal: Terminal = { id: "t1", label: "电源侧", type: "ac", anchor: { x: -0.5, y: 0 }, nodeNumber: makeNodeNumber() };
-    const loadTerminal: Terminal = { id: "t2", label: "负荷侧", type: "ac", anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber() };
-    terminalsByContainerId.set(node.id, [powerTerminal, loadTerminal]);
-    for (const edge of upstreamEdges) {
-      // 上游端保持原样,只把终点从绑定设备挪到容器电源侧端子
-      rewiredEdgeById.set(edge.id, { ...edge, targetId: node.id, targetTerminalId: powerTerminal.id });
-      // 容器负荷侧 → 绑定设备原接线端子(绑定设备侧接线口径不变)
-      addedEdges.push({
-        id: `${edge.id}:gateway`,
-        sourceId: node.id,
-        sourceTerminalId: loadTerminal.id,
-        targetId: boundNode.id,
-        targetTerminalId: edge.targetTerminalId
-      });
+    const powerTerminal: Terminal = { id: "t1", label: "电源侧", type: terminalType, anchor: { x: -0.5, y: 0 }, nodeNumber: makeNodeNumber() };
+    const loadTerminal: Terminal = { id: "t2", label: "负荷侧", type: terminalType, anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber() };
+    terminalsByContainerId.set(container.id, [powerTerminal, loadTerminal]);
+    for (const link of links) {
+      const [template] = link.edges;
+      const boundIsTarget = template.targetId === bound.id;
+      for (const edge of link.edges) {
+        // 绑定设备那一端改到容器:电源侧朝上游、负荷侧朝绑定设备,各自保持原边方向
+        rewiredEdgeById.set(edge.id, edge.targetId === bound.id
+          ? { ...edge, targetId: container.id, targetTerminalId: powerTerminal.id }
+          : { ...edge, sourceId: container.id, sourceTerminalId: powerTerminal.id });
+      }
+      // 每个接线点补一条「容器 ↔ 绑定设备」连线,方向沿用该接线点首条边的画法
+      addedEdges.push(boundIsTarget
+        ? {
+            id: `${template.id}:gateway`,
+            sourceId: container.id,
+            sourceTerminalId: loadTerminal.id,
+            targetId: bound.id,
+            targetTerminalId: link.boundTerminalId
+          }
+        : {
+            id: `${template.id}:gateway`,
+            sourceId: bound.id,
+            sourceTerminalId: link.boundTerminalId,
+            targetId: container.id,
+            targetTerminalId: loadTerminal.id
+          });
     }
   }
   return {
@@ -2214,17 +2321,14 @@ function getEExportWarningsFromRecords(
       reason: `E 文件段 ${section} 被导出逻辑过滤。`
     }];
   });
-  // 决策 4:关口容器的绑定设备无电源侧上游 → 与变换同判据、同文案(容器段静默时不报,防噪音)
-  const containerById = new Map(project.nodes.map((node) => [node.id, node] as const));
+  // 决策 4:关口退化告警与变换同源(planGatewaySplices 判一次,两处消费)——容器段静默时不报,防噪音
   const gatewayWarnings: EExportWarning[] = containerSectionSuppressed(hasTemplateConfig(options), interfaceDefinitionBySection)
     ? []
-    : project.nodes.flatMap((node) => {
-        const boundNode = activeGatewayBoundDevice(node, containerById);
-        if (!boundNode || boundDeviceUpstreamEdges(boundNode.id, project.edges).length > 0) {
-          return [];
-        }
-        return [{ nodeId: node.id, nodeName: node.name, kind: node.kind, reason: gatewayNoUpstreamReason(node.name) }];
-      });
+    : planGatewaySplices(project.nodes, project.edges).flatMap((plan) =>
+        "degradeReason" in plan
+          ? [{ nodeId: plan.container.id, nodeName: plan.container.name, kind: plan.container.kind, reason: plan.degradeReason }]
+          : []
+      );
   return [...enumWarnings, ...recordWarnings, ...gatewayWarnings];
 }
 

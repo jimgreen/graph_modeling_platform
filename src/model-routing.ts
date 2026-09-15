@@ -3623,7 +3623,7 @@ function isElectricalTerminalType(type: TerminalType): type is ElectricalTermina
   return type === "ac" || type === "dc";
 }
 
-function resolveTopologyEdgeTerminal(node: ModelNode | undefined, terminalId?: string): Terminal | undefined {
+export function resolveTopologyEdgeTerminal(node: ModelNode | undefined, terminalId?: string): Terminal | undefined {
   if (!node) {
     return undefined;
   }

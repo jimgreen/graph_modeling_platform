@@ -7093,16 +7093,21 @@ export function associatedNodeColumnValue(
   if (column === "name") {
     return relationKey ? containerAssociatedDeviceName(node, relationKey) : node.name;
   }
+  // 关系行按关系能量类型取端子:该位端子类型不符(关系声明 dc 而该位是 ac 端子)时留空 ——
+  // 关口容器的合成端子只有一种能量,DC 关系行不会误取到 AC 端子的节点号(无匹配端子即留空)
+  const relationEnergy = containerRelationBaseEnergy(parseContainerRelationField(relationKey)?.energy ?? "");
+  const nodeNumberForEnergy = (terminal?: Terminal): string =>
+    terminal && (!relationEnergy || terminal.type === relationEnergy) ? terminal.nodeNumber ?? "" : "";
   if (column === "node") {
-    return terminals[0]?.nodeNumber ?? "";
+    return nodeNumberForEnergy(terminals[0]);
   }
   if (column === "i_node") {
-    return terminals[0]?.nodeNumber ?? "";
+    return nodeNumberForEnergy(terminals[0]);
   }
   if (column === "j_node") {
     return isContainerTransformerRelationKey(relationKey)
       ? node.params.neutral_node ?? ""
-      : terminals[1]?.nodeNumber ?? "";
+      : nodeNumberForEnergy(terminals[1]);
   }
   if (column === "run_stat") {
     return node.params[paramKey] ?? (normalizeRunStatForE(node.params.run_stat) || "1");
