@@ -17,7 +17,7 @@ import {
 } from "../voltageInheritance";
 import { getRatedCapacityDefaultForKind } from "../model";
 import { graphStorePatchNodes } from "../graphStore";
-import { containerDragGroup } from "../acContainer";
+import { applyDragContainerMembership, containerDragGroup, isAcContainerNode, withNodeUpdates } from "../acContainer";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return async (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[], globalLineChoice?: GlobalLineChoice) => {
@@ -1624,13 +1624,23 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
     if (rejectAutoCanvasExpansionForContent(movedNodeUpdates, affectedEdgesForLayout)) {
       return 0;
     }
+    // 归属落地:批量布局(对齐/分布/自动对齐/自动散开)会把节点移进容器矩形;判定与容器重算走拖拽同一出口,
+    // 容器几何 / 成员归属 / 挤出全在布局集之外,故并入本次提交(单一撤销单元)。
+    const { updates: containerUpdates } = applyDragContainerMembership({
+      nodes: arranged,
+      movedIds: movedNodeIds,
+      altKey: false
+    });
+    // 有容器时作用域必须让位:容器几何重算与被挤出的非成员都在布局集之外,走 patch 通道会漏进撤销计划(Task 8 同口径)
     pushUndoSnapshot(
       true,
       false,
-      undoScopeForGraphPatch(
-        busConnectedLineNodeIds.size > 0 ? [...movedNodeIds, ...busConnectedLineNodeIds] : movedNodeIds,
-        affectedEdgesForLayout.map((edge) => edge.id)
-      )
+      nodes.some(isAcContainerNode)
+        ? undefined
+        : undoScopeForGraphPatch(
+            busConnectedLineNodeIds.size > 0 ? [...movedNodeIds, ...busConnectedLineNodeIds] : movedNodeIds,
+            affectedEdgesForLayout.map((edge) => edge.id)
+          )
     );
     const layoutCanvasBounds = options.preserveCanvasBounds
       ? canvasBounds
@@ -1698,8 +1708,8 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
           layoutCanvasBounds
         )
       : finalizedCandidateEdges;
-    let committedNodeUpdates = movedNodeUpdates;
-    let committedArrangedNodes = arranged;
+    let committedNodeUpdates = containerUpdates.length > 0 ? mergeNodeUpdateLists(movedNodeUpdates, containerUpdates) : movedNodeUpdates;
+    let committedArrangedNodes = containerUpdates.length > 0 ? withNodeUpdates(arranged, containerUpdates) : arranged;
     if (options.readjustBusEndpoints && busConnectedLineNodeIds.size > 0) {
       const initiallyRedrawnLineNodes = redrawRoutableLineDeviceRoutes(
         committedArrangedNodes,
@@ -1738,7 +1748,7 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
       );
       if (lineNodeUpdates.length > 0) {
         const lineNodeUpdateById = new Map(lineNodeUpdates.map((node) => [node.id, node]));
-        committedNodeUpdates = mergeNodeUpdateLists(movedNodeUpdates, lineNodeUpdates);
+        committedNodeUpdates = mergeNodeUpdateLists(committedNodeUpdates, lineNodeUpdates);
         committedArrangedNodes = committedArrangedNodes.map((node) =>
           lineNodeUpdateById.get(node.id) ?? node
         );

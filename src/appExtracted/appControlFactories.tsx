@@ -3,7 +3,7 @@
 // 与 UI 写方法隔离：参数显式传入，复用底层 setter，绕过 prompt/alert/draft/editMode。
 // 经 WS control 指令调用（App.tsx commandHandler 分发）。
 import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdges, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, syncedSwitchStatusPatch } from "../model";
-import { withNodeUpdates } from "../acContainer";
+import { commitContainerMembership, withNodeUpdates } from "../acContainer";
 import { createCanvasGroupFromSelection, removeGraphicsFromGroups } from "../selectionActions";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
 
@@ -36,7 +36,11 @@ export function createProgrammaticAddDevice(__appScope: Record<string, any>) {
       }
     }
     pushUndoSnapshot(true, false, undefined, "添加设备", node.name);
-    setNodes((prev: any[]) => [...prev, node]);
+    setNodes((prev: any[]) => {
+      // 归属落地:落点在容器矩形内 → 并入该容器(与拖入/粘贴同一出口),容器随成员重算 + 挤出非成员
+      const tagged = [...(Array.isArray(prev) ? prev : []), node];
+      return commitContainerMembership(tagged, [node.id]);
+    });
     return { id: node.id };
   };
 }

@@ -35,6 +35,7 @@ import {
   containerAddIsNoop,
   containerDragGroup,
   applyDragContainerMembership,
+  commitContainerMembership,
 } from "./acContainer";
 
 // 测试用最小节点。rotation/scale 必填:calculateNodeVisualBounds 依赖它们算半宽高,
@@ -706,5 +707,28 @@ describe("拖动结束归属落地", () => {
     const b = node("b", "ac-load", 80, 0);
     const { updates } = applyDragContainerMembership({ nodes: [a, b], movedIds: ["a"], altKey: false });
     expect(updates).toEqual([]);
+  });
+});
+
+// ─── 新增/移动节点并入图后的归属落地出口(粘贴/模板落点/程序化加图元/SVG 导入共用) ──
+describe("归属落地出口 commitContainerMembership", () => {
+  test("落点在容器内的新节点 → 成为成员,返回完整节点数组且原图不被改写", () => {
+    const c1 = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
+    const pasted = node("p1", "ac-load", 50, 50) as any;
+    const nodes = [c1, pasted];
+    const next = commitContainerMembership(nodes, ["p1"]);
+    expect(next.map((n) => n.id)).toEqual(["c1", "p1"]);
+    expect(next.find((n) => n.id === "p1")!.containerId).toBe("c1");
+    expect(next.find((n) => n.id === "c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE });
+    expect(pasted.containerId).toBeUndefined(); // 入参图保持原样
+  });
+
+  test("落点在容器外的节点不写归属;无容器时返回原引用(短路)", () => {
+    const c1 = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
+    const outside = node("p1", "ac-load", 900, 900) as any;
+    const next = commitContainerMembership([c1, outside], ["p1"]);
+    expect(next.find((n) => n.id === "p1")!.containerId).toBeUndefined();
+    const plain = [node("a", "ac-load", 0, 0) as any];
+    expect(commitContainerMembership(plain, ["a"])).toBe(plain);
   });
 });
