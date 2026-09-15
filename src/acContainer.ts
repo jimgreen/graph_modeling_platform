@@ -265,15 +265,57 @@ function withNodeUpdates(nodes: ModelNode[], updates: ModelNode[]): ModelNode[] 
 }
 
 /**
+ * 成员离开原容器的统一规则:原容器是关口容器且其绑定设备正是该成员 → 解绑 + 关关口。
+ * 移出(去无容器)与改归属(去别的容器)共用,防「改归属后原容器留下悬空 bound_device_id」。
+ * 判定必须用**原** nodes:成员改归属时 containerId 已被改写,拿新数组判会漏。
+ * toContainerId === 原容器 id 表示没离开;绑定的是别的设备、或该设备本就不是本容器成员 → 不误伤。
+ * 容器量测组的删除由 Task 9 在工厂调用点接入(本函数只写 params)。
+ */
+export function clearGatewayBindingForLeavingMembers(
+  nodes: ModelNode[],
+  leavingIds: Iterable<string>,
+  toContainerId: string | undefined
+): ModelNode[] {
+  const leaving = new Set(leavingIds);
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const out: ModelNode[] = [];
+  for (const c of nodes) {
+    if (!isAcContainerNode(c)) continue;
+    const bound = String(c.params?.bound_device_id ?? "");
+    if (!leaving.has(bound) || toContainerId === c.id) continue;
+    if (byId.get(bound)?.containerId !== c.id) continue;
+    out.push({ ...c, params: { ...c.params, bound_device_id: "", is_gateway: "0" } });
+  }
+  return out;
+}
+
+/** 全部成员已在目标容器内(且容器已存在)→ 提交无意义,对齐 containerMembershipCommit 的 changed=false 短路 */
+export function containerAddIsNoop(nodes: ModelNode[], containerId: string, memberIds: string[]): boolean {
+  if (!nodes.some((n) => n.id === containerId)) {
+    return false; // 新容器必然有变化
+  }
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  return memberIds.every((id) => byId.get(id)?.containerId === containerId);
+}
+
+/**
  * 添加到容器:成员打 containerId,并整体重算容器几何(容器矩形 + 挤出非成员)。
  * container 不在 nodes 中时插到末尾(新建);返回**完整** nextNodes(含新容器),供 setGraphArrays 提交。
  * 成员已在别的容器 → 视作改归属,用 enforceContainerMembership 一并收缩原容器。
  */
 export function applyAddToAcContainer(nodes: ModelNode[], container: ModelNode, memberIds: string[]): ModelNode[] {
-  const members = new Set(memberIds);
+  const members = new Set(memberIds.filter((id) => {
+    const n = nodes.find((candidate) => candidate.id === id);
+    return Boolean(n) && !isAcContainerNode(n!);
+  }));
+  // 改归属:离开原容器的成员先按统一规则解绑原关口容器(与移出同一出口)
+  const unboundById = new Map(
+    clearGatewayBindingForLeavingMembers(nodes, members, container.id).map((n) => [n.id, n])
+  );
+  const withBindings = nodes.map((n) => unboundById.get(n.id) ?? n);
   const base = nodes.some((n) => n.id === container.id)
-    ? nodes.map((n) => (n.id === container.id ? container : n))
-    : [...nodes, container];
+    ? withBindings.map((n) => (n.id === container.id ? container : n))
+    : [...withBindings, container];
   const tagged = base.map((n) =>
     members.has(n.id) && !isAcContainerNode(n) ? { ...n, containerId: container.id } : n
   );
@@ -286,18 +328,21 @@ export function applyAddToAcContainer(nodes: ModelNode[], container: ModelNode, 
  * 返回**变更节点**(成员 + 解绑的容器 + 重算后的容器矩形与被挤出的非成员),供 patchGraphNodes 单次提交。
  */
 export function applyRemoveFromAcContainer(nodes: ModelNode[], memberIds: string[]): ModelNode[] {
-  const members = new Set(memberIds);
+  const leaving = new Set(memberIds.filter((id) => nodes.some((n) => n.id === id && n.containerId)));
   const changed = new Map<string, ModelNode>();
   const cleared = nodes.map((n) => {
-    if (!members.has(n.id) || !n.containerId) return n;
+    if (!leaving.has(n.id)) return n;
     const moved = { ...n };
     delete moved.containerId;
     changed.set(n.id, moved);
     return moved;
   });
+  const unboundById = new Map(
+    clearGatewayBindingForLeavingMembers(nodes, leaving, undefined).map((n) => [n.id, n])
+  );
   const unbound = cleared.map((n) => {
-    if (!isAcContainerNode(n) || !members.has(String(n.params?.bound_device_id ?? ""))) return n;
-    const next = { ...n, params: { ...n.params, bound_device_id: "", is_gateway: "0" } };
+    const next = unboundById.get(n.id);
+    if (!next) return n;
     changed.set(n.id, next);
     return next;
   });
