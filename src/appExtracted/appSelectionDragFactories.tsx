@@ -1738,7 +1738,7 @@ const NEW_CONTAINER_OPTION = "__new-container__";
 
 export function createAddToAcContainer(__appScope: Record<string, any>) {
   return () => {
-  const { activeSelectedNodeIds, assignPermanentDeviceIndex, deviceIndexCounters, pushUndoSnapshot, requireEditMode, setDeviceIndexCounters, setGraphArrays, showGlobalMessage, writeOperationLog } = __appScope;
+  const { activeSelectedNodeIds, assignPermanentDeviceIndex, pushUndoSnapshot, requireEditMode, setDeviceIndexCounters, setGraphArrays, showGlobalMessage, writeOperationLog } = __appScope;
     if (!requireEditMode("添加到容器")) {
       return;
     }
@@ -1777,10 +1777,13 @@ export function createAddToAcContainer(__appScope: Record<string, any>) {
         okText: "创建",
         cancelText: "取消",
         onOk: () => {
+          // 计数器现取:弹窗期间若有并发分配(如其它入口占了 ACLoad 4),用点击快照回写会整对象倒退 → 重号。
+          // (audit:names 抓不到这类:名字有定义,只是过期)
+          const { deviceIndexCounters: latestCounters } = __appScope;
           // idx 走同源分配器(容器落 ac_container 分段,与图元库放置/粘贴同一计数);名称为空时回落到默认名
           const indexed = assignPermanentDeviceIndex(
             buildNewContainer(AC_CONTAINER_KINDS[0], draft.name.trim() || presetName, members, ""),
-            deviceIndexCounters
+            latestCounters
           );
           setDeviceIndexCounters(indexed.counters);
           commitAdd(indexed.node);
