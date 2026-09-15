@@ -214,7 +214,11 @@ export function containerMembershipCommit(
   } else {
     delete moved.containerId;
   }
-  const nextNodes = nodes.map((n) => (n.id === nodeId ? moved : n));
+  // 离开原容器的解绑走同一出口(清空归属 = 移出,改归属 = 换目标):面板路径与右键路径不得分叉
+  const unboundById = new Map(
+    clearGatewayBindingForLeavingMembers(nodes, [nodeId], containerId).map((n) => [n.id, n])
+  );
+  const nextNodes = nodes.map((n) => (n.id === nodeId ? moved : (unboundById.get(n.id) ?? n)));
   return { changed: true, updates: [moved, ...containerDecisionNodeUpdates(nextNodes, enforceContainerMembership(nextNodes))] };
 }
 

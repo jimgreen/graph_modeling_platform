@@ -346,7 +346,8 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
   // 所属容器提交:containerId 是节点平级字段(不入 params);
   // 容器矩形重算与被挤出节点由 containerMembershipCommit 一并给出,提交时整体 patch。
   const commitNodeContainerId = (nodeId: string, containerId: string | undefined) => {
-    // 绑定设备被移出容器时的自动解绑与量测组同步由 Task 9 在此接入
+    // 原关口容器的解绑 + 关关口已由 containerMembershipCommit 内部统一处理(与右键移出/改归属同源);
+    // 只剩容器量测组同步留 Task 9 在此接入
     const { changed, updates } = containerMembershipCommit(nodes, nodeId, containerId);
     if (!changed) {
       return;

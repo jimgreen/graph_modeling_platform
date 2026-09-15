@@ -366,6 +366,36 @@ describe("acContainer 面板", () => {
     expect(containerMembershipCommit([c, m] as any, "m1", "c1").changed).toBe(false);
     expect(containerMembershipCommit([c, m] as any, "nope", "c1").changed).toBe(false);
   });
+
+  test("面板改归属到别的容器:原关口容器解绑 + 关关口(与右键同一出口)", () => {
+    const c1 = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "1", bound_device_id: "m1" } };
+    const m1 = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
+    const c2 = node("c2", "ac-vpp-box", 800, 800, 180, 112);
+    const { changed, updates } = containerMembershipCommit([c1, m1, c2] as any, "m1", "c2");
+    expect(changed).toBe(true);
+    const byId = new Map(updates.map((n) => [n.id, n]));
+    expect(byId.get("m1")!.containerId).toBe("c2");
+    expect(byId.get("c1")!.params.bound_device_id).toBe("");
+    expect(byId.get("c1")!.params.is_gateway).toBe("0");
+  });
+
+  test("面板清空归属(等于移出):同样解绑 + 关关口", () => {
+    const c1 = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "1", bound_device_id: "m1" } };
+    const m1 = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
+    const { updates } = containerMembershipCommit([c1, m1] as any, "m1", undefined);
+    const c1u = updates.find((n) => n.id === "c1")!;
+    expect(c1u.params.bound_device_id).toBe("");
+    expect(c1u.params.is_gateway).toBe("0");
+    expect(c1u.size).toEqual({ ...CONTAINER_MIN_SIZE });
+  });
+
+  test("面板改归属:绑定的是别的设备则不误伤", () => {
+    const c1 = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "1", bound_device_id: "other" } };
+    const m1 = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
+    const c2 = node("c2", "ac-vpp-box", 800, 800, 180, 112);
+    const { updates } = containerMembershipCommit([c1, m1, c2] as any, "m1", "c2");
+    expect(updates.find((n) => n.id === "c1")!.params.bound_device_id).toBe("other");
+  });
 });
 
 describe("新建容器纯函数", () => {
