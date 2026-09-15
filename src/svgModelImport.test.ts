@@ -201,7 +201,7 @@ const CONTAINER_PLATFORM_SVG = `
 </svg>`;
 
 describe("parseSvgModel 容器归属落地", () => {
-  test("导入按几何重建归属:框内设备成为成员、框外不写、线路豁免(不吞穿框线路)", async () => {
+  test("导入按几何重建归属:框内设备成为成员、框外不写、导入期几何推断不吞线路", async () => {
     const result = await parse(CONTAINER_PLATFORM_SVG, "容器导入");
     const byId = new Map(result.project.nodes.map((node) => [node.id, node]));
     const container = byId.get("vpp-1")!;
