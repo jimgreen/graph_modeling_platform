@@ -10,6 +10,7 @@ import {
   containerAssignedIdsFromSelection,
   containerMemberIdsFromSelection,
   containerSelectOptions,
+  commitContainerMembership,
   defaultContainerName,
   isAcContainerNode,
   withNodeUpdates,
@@ -886,7 +887,8 @@ export function createPasteSelection(__appScope: Record<string, any>) {
       manualPoints: edge.manualPoints?.map((point) => clampPointToBounds(point, pastedCanvasBounds)),
       routePoints: edge.routePoints?.map((point) => clampPointToBounds(point, pastedCanvasBounds))
     }));
-    const nextNodes = [...pasteSourceNodes, ...pasted];
+    // 归属落地:副本不继承归属(剥离在 buildCanvasClipboard),落点在容器矩形内的副本并入该容器
+    const nextNodes = commitContainerMembership([...pasteSourceNodes, ...pasted], pasted.map((node) => node.id));
     const nextEdges = [...pasteSourceEdges, ...pastedEdges];
     markStoredRouteEdgesDirty(pastedEdges.map((edge) => edge.id));
     setDeviceIndexCounters(nextDeviceIndexCounters);
@@ -1478,7 +1480,8 @@ export function createDropGraphTemplate(__appScope: Record<string, any>) {
       manualPoints: edge.manualPoints?.map((point) => clampPointToBounds(point, dropCanvasBounds)),
       routePoints: edge.routePoints?.map((point) => clampPointToBounds(point, dropCanvasBounds))
     }));
-    const nextNodes = [...dropSourceNodes, ...pasted];
+    // 归属落地:与粘贴同一出口(落点在容器矩形内的模板图元并入该容器,容器随成员重算 + 挤出非成员)
+    const nextNodes = commitContainerMembership([...dropSourceNodes, ...pasted], pasted.map((node) => node.id));
     const nextEdges = [...dropSourceEdges, ...pastedEdges];
     pushUndoSnapshot();
     markStoredRouteEdgesDirty(pastedEdges.map((edge) => edge.id));

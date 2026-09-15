@@ -7,6 +7,8 @@ import {
   getSafeNodeScaleY,
   getTerminalPoint,
   isBusNode,
+  isStaticNode,
+  isWireLikeRouteDeviceKind,
   projectPointToBusCenterlineIfInRange,
   projectPointToBusCenterlineUninset,
   switchingDeviceUsesClosedStatus,
@@ -27,6 +29,7 @@ import {
   type MeasurementItemBinding,
   type MeasurementStyleOverride
 } from "./measurements";
+import { commitContainerMembership, isAcContainerNode } from "./acContainer";
 
 export type SvgModelImportMode = "platform" | "generic";
 
@@ -978,6 +981,13 @@ async function parsePlatformSvg(
   if (defaultedDeviceCount > 0) {
     warnings.push(`${defaultedDeviceCount} 个设备未包含完整静态参数，已使用当前元件模板默认值补齐。`);
   }
+  // 归属落地:SVG 不携带 containerId,导入按平台几何规则重建(中心落入容器矩形 → 成员,与拖入同源)。
+  // 只让真实器件参与判定:线路穿框而过(挤出同样豁免线路),静态辅助图元是整画布尺寸的装饰
+  // (position = 画布中心),两者一旦被吞成成员都会把容器撑到包住整条线 / 整张画布。
+  const memberCandidateIds = normalizedNodes
+    .filter((node) => !isAcContainerNode(node) && !isWireLikeRouteDeviceKind(node.kind) && !isStaticNode(node))
+    .map((node) => node.id);
+  const nodesWithMembership = commitContainerMembership(normalizedNodes, memberCandidateIds);
   const backgroundImage = platformBackgroundImage(root, dom);
   const project: ProjectFile = {
     version: 1,
@@ -990,7 +1000,7 @@ async function parsePlatformSvg(
     canvasBackgroundImage: backgroundImage.image,
     canvasBackgroundImageFit: backgroundImage.fit,
     measurements: { version: 1, groups: measurements },
-    nodes: normalizedNodes,
+    nodes: nodesWithMembership,
     edges
   };
   return {

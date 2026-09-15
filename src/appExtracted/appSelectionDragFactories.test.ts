@@ -1,7 +1,8 @@
 // createCurrentProject 输出 backgroundProjectIdx：服务端靠它定位背景模型（前端 id 服务端无法解析）
 import { describe, expect, test, vi } from "vitest";
 import { Modal } from "antd";
-import { createAddToAcContainer, createCurrentProject, createEnsureDraggingUndoSnapshot, createRemoveFromAcContainer } from "./appSelectionDragFactories";
+import { createAddToAcContainer, createCurrentProject, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createPasteSelection, createRemoveFromAcContainer } from "./appSelectionDragFactories";
+import { canvasClipboardBounds, cloneCanvasClipboard } from "../selectionActions";
 import { createUndoGraphSnapshotPatchPlan } from "./appGraphMeasurementFactories";
 import { normalizeProjectMeasurements } from "../measurements";
 
@@ -192,5 +193,99 @@ describe("归属入口的量测同步", () => {
 
     expect(capture.get().groups.some((g: any) => g.nodeId === "c1")).toBe(false);
     expect(capture.get().groups.some((g: any) => g.nodeId === "m1")).toBe(true);
+  });
+});
+
+// ─── 粘贴 / 模板落点的归属落地:落点在容器矩形内的副本并入该容器 ────────────────
+// 副本已在 buildCanvasClipboard 剥离归属,落点判定必须接上(enforce 不判定:只挤出会让副本被推出容器)。
+describe("粘贴与模板落点的归属落地", () => {
+  const container = () => bareNode("c1", "ac-vpp-box", {
+    position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, params: { _labelVisible: "0" },
+  });
+  // 剪贴板里的源节点:中心 (200,200),40×30 → 包围盒 [180,220]×[185,215];
+  // 指针落在 (60,75) → 副本中心 (80,65),落在容器矩形 [-100,100]² 内
+  const sourceNode = () => bareNode("src", "ac-load", { position: { x: 200, y: 200 }, params: { _labelVisible: "0" } });
+  const makeInsertScope = (nodes: any[], extra: Record<string, unknown> = {}) => {
+    const inserted: any[] = [];
+    return {
+      inserted,
+      scope: {
+        CANVAS_AUTO_EXPAND_PADDING: 40,
+        activeLayerId: "default",
+        activateInspectorFromCanvas: vi.fn(),
+        applyCanvasBounds: vi.fn(),
+        assignPermanentDeviceIndex: (node: any) => ({ node, counters: {} }),
+        canvasBounds: { width: 1000, height: 800 },
+        canvasBoundsForAutoExpandedGraphContent: () => ({ width: 1000, height: 800 }),
+        canvasBoundsWithOriginShift: (bounds: any) => bounds,
+        canvasClipboard: { nodes: [sourceNode()], edges: [], groups: [] },
+        canvasClipboardBounds,
+        canvasHeight: 800,
+        canvasWidth: 1000,
+        clampNodePositionToBounds: (_node: any, _bounds: any, position: any) => position,
+        clampPointToBounds: (point: any) => point,
+        cloneCanvasClipboard,
+        deviceIndexCounters: {},
+        edges: [],
+        hasCanvasOriginShift: () => false,
+        lastCanvasPointerRef: { current: { x: 60, y: 75 } },
+        lastRawCanvasPointerRef: { current: { x: 60, y: 75 } },
+        leftTopCanvasOriginShiftForContent: () => ({ x: 0, y: 0 }),
+        markBusTerminalSyncDirtyForEdges: vi.fn(),
+        markStoredRouteEdgesDirty: vi.fn(),
+        modelType: "ac",
+        nodes,
+        normalizeDeviceIndexCounters: () => ({}),
+        normalizeModelGroups: (groups: any) => groups,
+        pushUndoSnapshot: vi.fn(),
+        rejectAutoCanvasExpansionForContent: () => false,
+        requireEditMode: () => true,
+        resetConnectPreviewState: vi.fn(),
+        setCanvasSelectionScope: vi.fn(),
+        setConnectSource: vi.fn(),
+        setContextMenu: vi.fn(),
+        setDeviceIndexCounters: vi.fn(),
+        setGraphArrays: (nextNodes: any[]) => { inserted.push(...nextNodes); },
+        setGroups: (updater: any) => { updater([]); },
+        setRewiring: vi.fn(),
+        setSelectedEdgeId: vi.fn(),
+        setSelectedEdgeIds: vi.fn(),
+        setSelectedNodeIds: vi.fn(),
+        shiftCachedRoutesForCanvasOrigin: vi.fn(),
+        showGlobalMessage: vi.fn(),
+        translateEdgeBy: (edge: any) => edge,
+        translateNodeBy: (node: any) => node,
+        translatePointBy: (point: any) => point,
+        writeOperationLog: vi.fn(),
+        ...extra,
+      },
+    };
+  };
+
+  test("粘贴:副本落点在容器内 → 写入 containerId,容器随成员重算", () => {
+    const { scope, inserted } = makeInsertScope([container()]);
+    createPasteSelection(scope as any)();
+
+    const pasted = inserted.find((node: any) => node.kind === "ac-load")!;
+    expect(pasted.containerId).toBe("c1");
+    expect(inserted.find((node: any) => node.id === "c1").size).toEqual({ width: 180, height: 112 });
+  });
+
+  test("放置模板:同出口落地(落点在容器内 → 并入)", () => {
+    const { scope, inserted } = makeInsertScope([container()]);
+    createDropGraphTemplate(scope as any)(
+      { typeName: "一次接线", name: "模板A", clipboard: { nodes: [sourceNode()], edges: [], groups: [] }, sourceSize: { width: 40, height: 30 } } as any,
+      { x: 60, y: 75 }
+    );
+
+    const dropped = inserted.find((node: any) => node.kind === "ac-load")!;
+    expect(dropped.containerId).toBe("c1");
+  });
+
+  test("粘贴落点在容器外 → 不写归属(判定非无条件)", () => {
+    const { scope, inserted } = makeInsertScope([bareNode("c1", "ac-vpp-box", { position: { x: 900, y: 900 }, size: { width: 200, height: 200 } })]);
+    createPasteSelection(scope as any)();
+
+    expect(inserted.find((node: any) => node.kind === "ac-load").containerId).toBeUndefined();
   });
 });

@@ -1246,3 +1246,42 @@ describe("canvas selection actions", () => {
     expect(units[0].bounds).toEqual(expectedBounds);
   });
 });
+
+// ─── 剪贴板副本剥离:副本不继承归属,容器副本不携带失效绑定 ─────────────────
+// 整节点 spread 会把 containerId / bound_device_id 一起带走:粘贴后归属指向不存在的容器、
+// 绑定指向副本里已换 id 的设备(跨模型粘贴更是必然悬空)。
+describe("剪贴板副本剥离容器归属", () => {
+  test("副本清空 containerId;容器副本清 bound_device_id 且 is_gateway 置 0;原图不受影响", () => {
+    const member = { ...createDefaultNode("ac-load", { x: 0, y: 0 }), id: "m1", containerId: "c1" };
+    const plainNode = { ...createDefaultNode("ac-breaker", { x: 0, y: 0 }), id: "b1" };
+    const container = {
+      ...createDefaultNode("ac-vpp-box", { x: 0, y: 0 }),
+      id: "c1",
+      params: { is_gateway: "1", bound_device_id: "m1" }
+    };
+    const clip = buildCanvasClipboard([member, plainNode, container], [], [], ["m1", "b1", "c1"], []);
+    const copiedMember = clip.nodes.find((node) => node.id === "m1")!;
+    const copiedPlain = clip.nodes.find((node) => node.id === "b1")!;
+    const copiedContainer = clip.nodes.find((node) => node.id === "c1")!;
+
+    expect(copiedMember.containerId).toBeUndefined();
+    expect(copiedContainer.params.bound_device_id).toBeUndefined();
+    expect(copiedContainer.params.is_gateway).toBe("0");
+    // 非容器副本的参数原样
+    expect(copiedPlain.params).toEqual(plainNode.params);
+    // 剥离只发生在副本上,原图字段不动
+    expect(member.containerId).toBe("c1");
+    expect(container.params.bound_device_id).toBe("m1");
+    expect(container.params.is_gateway).toBe("1");
+  });
+
+  test("非容器节点副本保留自有参数(is_gateway 不被误改写)", () => {
+    const device = {
+      ...createDefaultNode("ac-breaker", { x: 0, y: 0 }),
+      id: "b2",
+      params: { is_gateway: "1", bound_device_id: "m9" }
+    };
+    const clip = buildCanvasClipboard([device], [], [], ["b2"], []);
+    expect(clip.nodes[0].params).toEqual({ is_gateway: "1", bound_device_id: "m9" });
+  });
+});

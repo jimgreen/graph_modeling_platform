@@ -15,6 +15,7 @@ import {
   createSaveCurrentProject,
   createStartRoutableLineFromTerminal
 } from "./appExtracted/appProjectCanvasFactories";
+import { createMergeNodeUpdateLists } from "./appExtracted/appSelectionDragFactories";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
 import { DEVICE_LIBRARY_BY_KIND, canConnectTerminals, createDefaultNode, getNodeScaleX, getNodeScaleY, getTerminalPoint, isBusNode, isLineSegmentBusNode, isRoutableLineDeviceKind } from "./model";
 import { GLOBAL_LINE_ID_PARAM } from "./global-lines";
@@ -1348,6 +1349,56 @@ describe("line-segment bus pointer resizing", () => {
 });
 
 describe("automatic canvas layout", () => {
+  // 布局把设备移进容器矩形 → 必须按拖拽同一出口落地归属(否则容器矩形不跟随,且被挤出的非成员不提交)
+  test("布局移入容器:归属写入 + 容器重算并入本次提交,撤销退化全量", () => {
+    const container = {
+      id: "c1", kind: "ac-vpp-box", name: "c1", position: { x: 0, y: 0 }, size: { width: 200, height: 200 },
+      rotation: 0, scale: 1, params: { _labelVisible: "0" }, terminals: []
+    };
+    const device = {
+      id: "m1", kind: "ac-load", name: "m1", position: { x: 600, y: 600 }, size: { width: 40, height: 30 },
+      rotation: 0, scale: 1, params: { _labelVisible: "0" }, terminals: []
+    };
+    const arranged = [container, { ...device, position: { x: 50, y: 50 } }];
+    const canvasBounds = { width: 1000, height: 800 };
+    const commitFastMovedGraphPatches = vi.fn();
+    const pushUndoSnapshot = vi.fn();
+    const scope = {
+      CANVAS_AUTO_EXPAND_PADDING: 40,
+      adjustEdgesAfterNodeMove: vi.fn(),
+      applyCanvasBounds: vi.fn(),
+      canvasBounds,
+      canvasBoundsForAutoExpandedGraphContent: () => canvasBounds,
+      commitFastMovedGraphPatches,
+      currentStoredRoutePointsForEdge: vi.fn(),
+      edgeListForNodeIds: () => [],
+      edges: [],
+      finalizeMovedNodeEdgesFast: vi.fn(),
+      isRoutableLineDeviceKind: () => false,
+      mergeNodeUpdateLists: createMergeNodeUpdateLists({}),
+      nodeById: new Map([[container.id, container], [device.id, device]]),
+      nodes: [container, device],
+      orderedNodeFromList: (items: Array<{ id: string }>, id: string) => items.find((item) => item.id === id),
+      pushUndoSnapshot,
+      readjustMovedBusConnectionRoutes: vi.fn(),
+      realignRoutableLineDeviceBusEndpointPoints: vi.fn(),
+      redrawRoutableLineDeviceRoutes: vi.fn(),
+      rejectAutoCanvasExpansionForContent: () => false,
+      routableLineIdsConnectedToNodeIds: () => new Set<string>(),
+      snapshotEdgePoints: () => ({}),
+      undoScopeForGraphPatch: () => ({ nodeIds: ["m1"], edgeIds: [] })
+    };
+
+    const movedCount = createCommitLayoutNodePositions(scope as any)(["m1"], arranged as any, { preserveCanvasBounds: true });
+
+    expect(movedCount).toBe(1);
+    const committedUpdates = commitFastMovedGraphPatches.mock.calls[0][0];
+    expect(committedUpdates.find((node: any) => node.id === "m1").containerId).toBe("c1");
+    expect(committedUpdates.find((node: any) => node.id === "c1").size).toEqual({ width: 180, height: 112 });
+    // 容器几何 / 挤出都在布局集之外:作用域必须让位给全量对比(Task 8 拖动同一口径)
+    expect(pushUndoSnapshot).toHaveBeenCalledWith(true, false, undefined);
+  });
+
   test("keeps the current canvas bounds when a layout commit requests preservation", () => {
     const originalNode = {
       id: "node-1",

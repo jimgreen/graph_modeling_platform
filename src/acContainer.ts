@@ -253,6 +253,19 @@ export function applyDragContainerMembership(args: {
 }
 
 /**
+ * 新增/移动节点并入图后的归属落地出口(粘贴、模板落点、程序化加图元、SVG 导入共用):
+ * 判定(中心落入容器 → 移入)→ 解绑 → 容器重算 + 挤出。返回**完整**节点数组;
+ * `movedIds` 为本次新增/移动的节点(判断点 = 节点中心),无变化时返回原引用。
+ */
+export function commitContainerMembership(nodes: ModelNode[], movedIds: string[]): ModelNode[] {
+  if (movedIds.length === 0 || nodes.length === 0) {
+    return nodes;
+  }
+  const { updates } = applyDragContainerMembership({ nodes, movedIds, altKey: false });
+  return updates.length === 0 ? nodes : withNodeUpdates(nodes, updates);
+}
+
+/**
  * 面板改「所属容器」的纯计算:写入/清除 containerId(节点平级字段,不入 params),
  * 并给出需一并提交的节点更新(容器矩形重算 + 被挤出的非成员)。
  * changed=false 时无需提交(目标缺失或归属未变)。

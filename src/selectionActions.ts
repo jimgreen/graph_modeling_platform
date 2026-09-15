@@ -14,6 +14,7 @@ import {
   type RoutedEdge
 } from "./model";
 import { clampNumber } from "./canvasViewport";
+import { isAcContainerNode } from "./acContainer";
 
 export const CANVAS_EMPTY_SELECTION_MESSAGE = "当前没有被选中图元。";
 const GROUP_LAYOUT_BOUNDS_PADDING = 4;
@@ -582,13 +583,23 @@ export function buildCanvasClipboard(
   return {
     nodes: nodes
       .filter((node) => nodeSelection.has(node.id))
-      .map((node) => ({
-        ...node,
-        size: { ...node.size },
-        position: { ...node.position },
-        params: { ...node.params },
-        terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } }))
-      })),
+      .map((node) => {
+        const copy: ModelNode = {
+          ...node,
+          size: { ...node.size },
+          position: { ...node.position },
+          params: { ...node.params },
+          terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } }))
+        };
+        // 副本不继承归属:粘贴后容器与成员的 id 全换,继承来的 containerId 恒悬空(跨模型粘贴更是必然)
+        delete copy.containerId;
+        // 容器副本的绑定同样失效(绑的是原图设备 id):清绑定 + 关口置 0,避免粘贴出「开着口的空绑定」
+        if (isAcContainerNode(node)) {
+          delete copy.params.bound_device_id;
+          copy.params.is_gateway = "0";
+        }
+        return copy;
+      }),
     edges: edges
       .filter((edge) => edgeSelection.has(edge.id))
       .map((edge) => ({

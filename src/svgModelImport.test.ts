@@ -169,6 +169,66 @@ const LEGACY_PLATFORM_SVG = `
   </g>
 </svg>`;
 
+// 归属落地:SVG 不携带 containerId,导入按平台几何规则重建(中心落入容器矩形 → 成员),
+// 否则导入图里的容器恒为空(拖容器不带成员、E 导出容器表无成员),与画布上的同一张图不一致。
+const CONTAINER_PLATFORM_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0,0,900,600" active-layer-id="layer-default">
+  <defs id="svg_defs">
+    <g class="export-layer-definitions" style="display:none">
+      <g layer-id="layer-default" name="默认图层" visible="1" active="1"/>
+    </g>
+  </defs>
+  <g id="root_g">
+    <g id="Background_Layer"/>
+    <g id="Segment_Layer"/>
+    <g id="Container_Layer" device-type="ACVppBox">
+      <use id="vpp-1" layer-id="layer-default" name="虚拟电厂1" dev-id="vpp-1"
+        dev-kind="ac-vpp-box" href="#symbol" x="300" y="120" width="400" height="300"/>
+    </g>
+    <g id="ACLoad_Layer" device-type="ACLoad">
+      <use id="load-in" layer-id="layer-default" name="框内负荷" dev-id="load-in"
+        dev-kind="ac-load" href="#symbol" x="500" y="180" width="40" height="40"/>
+      <use id="load-out" layer-id="layer-default" name="框外负荷" dev-id="load-out"
+        dev-kind="ac-load" href="#symbol" x="80" y="80" width="40" height="40"/>
+      <use id="line-in" layer-id="layer-default" name="穿框线路" dev-id="line-in"
+        dev-kind="ac-line" href="#symbol" x="500" y="200" width="60" height="20"/>
+    </g>
+    <g id="Text_Layer"/><g id="Measurement_Layer"/>
+    <g id="Other_Layer"><rect x="0" y="0" width="900" height="600" fill="none" stroke="#ccc"/></g>
+  </g>
+</svg>`;
+
+describe("parseSvgModel 容器归属落地", () => {
+  test("导入按几何重建归属:框内设备成为成员、框外不写、线路豁免(不吞穿框线路)", async () => {
+    const result = await parse(CONTAINER_PLATFORM_SVG, "容器导入");
+    const byId = new Map(result.project.nodes.map((node) => [node.id, node]));
+    const container = byId.get("vpp-1")!;
+    const inside = byId.get("load-in")!;
+    const outside = byId.get("load-out")!;
+    const line = byId.get("line-in")!;
+
+    expect(inside.containerId).toBe("vpp-1");
+    expect(outside.containerId).toBeUndefined();
+    // 线路穿框是常态(挤出同样豁免线路):吞成成员会把容器撑到包住整条线
+    expect(line.containerId).toBeUndefined();
+    // 静态辅助图元(整画布尺寸、position = 画布中心)同样不参与判定,否则容器会被撑到包住整张画布
+    const staticNode = result.project.nodes.find((node) => node.kind === "static-image")!;
+    expect(staticNode.containerId).toBeUndefined();
+    expect(container.size.width).toBeLessThan(result.project.canvasWidth ?? 0);
+    // 容器随成员重算:矩形必须包住成员中心
+    const rect = {
+      x1: container.position.x - container.size.width / 2,
+      y1: container.position.y - container.size.height / 2,
+      x2: container.position.x + container.size.width / 2,
+      y2: container.position.y + container.size.height / 2,
+    };
+    expect(inside.position.x).toBeGreaterThanOrEqual(rect.x1);
+    expect(inside.position.x).toBeLessThanOrEqual(rect.x2);
+    expect(inside.position.y).toBeGreaterThanOrEqual(rect.y1);
+    expect(inside.position.y).toBeLessThanOrEqual(rect.y2);
+  });
+});
+
 describe("parseSvgModel platform semantics", () => {
   test("restores legacy data-export devices and infers geometry-only edge endpoints", async () => {
     const result = await parse(LEGACY_PLATFORM_SVG, "旧版平台恢复");
