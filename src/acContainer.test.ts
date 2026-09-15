@@ -8,6 +8,8 @@ import {
   ejectOutsiders,
   containerFirstComparator,
   isAcContainerNode,
+  judgeContainerMembership,
+  enforceContainerMembership,
 } from "./acContainer";
 
 // 测试用最小节点。rotation/scale 必填:calculateNodeVisualBounds 依赖它们算半宽高,
@@ -143,5 +145,97 @@ describe("acContainer 布局", () => {
     expect(containerFirstComparator(a as any, node("b", "ac-load", 0, 0) as any)).toBe(0);
     expect(isAcContainerNode(c as any)).toBe(true);
     expect(isAcContainerNode(a as any)).toBe(false);
+  });
+});
+
+describe("归属判定", () => {
+  // c1 中心 (0,0) 尺寸 200×200 → 真实矩形 [-100,100]×[-100,100]
+  const c = { ...node("c1", "ac-vpp-box", 0, 0, 200, 200), containerId: undefined };
+  const inside = { ...node("in", "ac-load", 50, 50), containerId: "c1" };
+  const outside = node("out", "ac-load", 500, 500);
+
+  test("非成员落进容器矩形内 → 移入", () => {
+    const moved = { ...outside, position: { x: 60, y: 60 } };
+    const r = judgeContainerMembership({ nodes: [c, inside, moved] as any, movedIds: ["out"], altKey: false });
+    expect(r.enterContainerId).toBe("c1");
+    expect(r.membershipChanges).toEqual([{ nodeId: "out", containerId: "c1" }]);
+  });
+
+  test("中心锚定口径:落进容器左上半区的非成员同样移入", () => {
+    // (-60,-60) 在真实矩形内、却在「左上角锚定」口径的 [0,0]-[200,200] 之外
+    const moved = { ...outside, position: { x: -60, y: -60 } };
+    const r = judgeContainerMembership({ nodes: [c, moved] as any, movedIds: ["out"], altKey: false });
+    expect(r.enterContainerId).toBe("c1");
+    expect(r.membershipChanges).toEqual([{ nodeId: "out", containerId: "c1" }]);
+  });
+
+  test("中心锚定口径:落在容器右下半区之外的非成员不移入", () => {
+    // (140,60) 在「左上角锚定」口径的 [0,0]-[200,200] 之内、真实矩形之外
+    const moved = { ...outside, position: { x: 140, y: 60 } };
+    const r = judgeContainerMembership({ nodes: [c, moved] as any, movedIds: ["out"], altKey: false });
+    expect(r.enterContainerId).toBeUndefined();
+    expect(r.membershipChanges).toEqual([]);
+  });
+
+  test("成员 Alt 拖动 → 移出", () => {
+    const moved = { ...inside, position: { x: 60, y: 60 } };
+    const r = judgeContainerMembership({ nodes: [c, moved] as any, movedIds: ["in"], altKey: true });
+    expect(r.membershipChanges).toEqual([{ nodeId: "in", containerId: undefined }]);
+  });
+
+  test("成员非 Alt 拖动 → 成员不变", () => {
+    const r = judgeContainerMembership({ nodes: [c, inside] as any, movedIds: ["in"], altKey: false });
+    expect(r.membershipChanges).toEqual([]);
+  });
+
+  test("非成员 Alt 落入容器 → 不移入", () => {
+    const moved = { ...outside, position: { x: 60, y: 60 } };
+    const r = judgeContainerMembership({ nodes: [c, moved] as any, movedIds: ["out"], altKey: true });
+    expect(r.membershipChanges).toEqual([]);
+  });
+
+  test("容器自身被拖动不参与判定(不允许嵌套)", () => {
+    const r = judgeContainerMembership({ nodes: [c, inside] as any, movedIds: ["c1"], altKey: false });
+    expect(r.membershipChanges).toEqual([]);
+    expect(r.enterContainerId).toBeUndefined();
+  });
+
+  test("多容器:按真实矩形命中所属容器", () => {
+    const c2 = node("c2", "ac-switch-box", 1000, 0, 200, 200); // 真实矩形 [900,1100]×[-100,100]
+    const moved = { ...outside, position: { x: 950, y: 20 } };
+    const r = judgeContainerMembership({ nodes: [c, c2, moved] as any, movedIds: ["out"], altKey: false });
+    expect(r.enterContainerId).toBe("c2");
+    expect(r.membershipChanges).toEqual([{ nodeId: "out", containerId: "c2" }]);
+  });
+
+  test("enforceContainerMembership:容器随成员重算 + 挤出非成员", () => {
+    const far = { ...node("far", "ac-load", 400, 60), containerId: "c1" };
+    const stray = node("stray", "ac-load", 400, 100); // 无归属,落在重算后的容器内
+    const dec = enforceContainerMembership([c, far, stray] as any);
+    const upd = dec.containerUpdates.find((u) => u.id === "c1")!;
+    // far 视觉盒 [380,420]×[45,75] + 24 padding → 左上角 (356,21);
+    // 尺寸被钳到最小 180×112 → 中心 = 356 + 180/2
+    expect(upd.size).toEqual({ ...CONTAINER_MIN_SIZE });
+    expect(upd.position.x).toBe(356 + CONTAINER_MIN_SIZE.width / 2);
+    // 成员不被挤出;容器内非成员被挤出
+    expect(dec.patch.map((p) => p.nodeId)).toEqual(["stray"]);
+    expect(centerIn(dec.patch[0].position, rectOf(upd))).toBe(false);
+  });
+
+  test("enforceContainerMembership:端到端不变量——成员视觉包围盒 ⊂ 容器真实矩形", () => {
+    const members = [
+      { ...node("m1", "ac-load", 300, 40), containerId: "c1" },
+      { ...node("m2", "ac-load", -260, -80), params: {}, containerId: "c1" }, // 带标签:包围盒更高
+    ];
+    const dec = enforceContainerMembership([c, ...members] as any);
+    const upd = dec.containerUpdates.find((u) => u.id === "c1")!;
+    const r = rectOf(upd);
+    for (const m of members) {
+      const b = calculateNodeVisualBounds(m as any);
+      expect(b.left).toBeGreaterThanOrEqual(r.x1);
+      expect(b.right).toBeLessThanOrEqual(r.x2);
+      expect(b.top).toBeGreaterThanOrEqual(r.y1);
+      expect(b.bottom).toBeLessThanOrEqual(r.y2);
+    }
   });
 });

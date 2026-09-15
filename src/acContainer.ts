@@ -19,6 +19,12 @@ export function isAcContainerNode(node: ModelNode): boolean {
   return isAcContainerKind(node.kind);
 }
 
+/** 容器真实矩形(中心锚定口径的唯一出口):position 是中心,故四边 = position ± size/2 */
+function containerRect(c: ModelNode) {
+  const x1 = c.position.x - c.size.width / 2, y1 = c.position.y - c.size.height / 2;
+  return { x1, y1, x2: x1 + c.size.width, y2: y1 + c.size.height };
+}
+
 /** 成员视觉包围盒并集 + padding;无成员返回 null */
 export function containerBoundsForMembers(members: ModelNode[]): Rect | null {
   if (members.length === 0) return null;
@@ -57,8 +63,7 @@ export function fitContainerToMembers(container: ModelNode, members: ModelNode[]
  */
 export function ejectOutsiders(container: ModelNode, nodes: ModelNode[]): NodePositionPatch[] {
   const c = container;
-  const x1 = c.position.x - c.size.width / 2, y1 = c.position.y - c.size.height / 2;
-  const x2 = x1 + c.size.width, y2 = y1 + c.size.height;
+  const { x1, y1, x2, y2 } = containerRect(c);
   const out: NodePositionPatch[] = [];
   for (const n of nodes) {
     if (n.id === c.id) continue;
@@ -84,4 +89,65 @@ export function containerFirstComparator(a: ModelNode, b: ModelNode): number {
   const ca = isAcContainerNode(a) ? 0 : 1;
   const cb = isAcContainerNode(b) ? 0 : 1;
   return ca - cb;
+}
+
+export type MembershipDecision = {
+  /** 位置更新(容器重算 + 挤出) */
+  patch: NodePositionPatch[];
+  /** 容器节点更新(position/size) */
+  containerUpdates: ModelNode[];
+  membershipChanges: { nodeId: string; containerId: string | undefined }[];
+};
+
+/**
+ * 拖动结束归属判定(判定点 = 节点中心 n.position,容器矩形按中心锚定):
+ * - 非成员中心落进容器矩形 → 移入(Alt 按下则不移入)
+ * - 成员 Alt 拖动 → 移出
+ * - 成员非 Alt → 归属不变(容器随后重算跟随,见 enforceContainerMembership)
+ * 容器自身不参与判定(不允许嵌套)。enterContainerId 取最后一个移入的目标(单节点拖动即唯一)。
+ */
+export function judgeContainerMembership(args: {
+  nodes: ModelNode[];
+  movedIds: string[];
+  altKey: boolean;
+}): { membershipChanges: MembershipDecision["membershipChanges"]; enterContainerId?: string } {
+  const { nodes, movedIds, altKey } = args;
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const containers = nodes.filter(isAcContainerNode);
+  const membershipChanges: MembershipDecision["membershipChanges"] = [];
+  let enterContainerId: string | undefined;
+  for (const id of movedIds) {
+    const n = byId.get(id);
+    if (!n || isAcContainerNode(n)) continue;
+    if (n.containerId) {
+      if (altKey) membershipChanges.push({ nodeId: id, containerId: undefined });
+      continue;
+    }
+    if (altKey) continue; // Alt + 非成员 = 明确不移入
+    const target = containers.find((c) => {
+      const r = containerRect(c);
+      return n.position.x >= r.x1 && n.position.x <= r.x2 && n.position.y >= r.y1 && n.position.y <= r.y2;
+    });
+    if (!target) continue;
+    membershipChanges.push({ nodeId: id, containerId: target.id });
+    enterContainerId = target.id;
+  }
+  return { membershipChanges, enterContainerId };
+}
+
+/**
+ * 归属变更后的统一出口:按当前 containerId 重算每个容器的 position/size,
+ * 并把它矩形内尚未归属的节点挤出界外(成员位置不变,故 patch 只含被挤出的节点)。
+ * ponytail: 容器互相重叠时各容器独立挤出,同一节点可能被两个容器各推一次(后写覆盖);真出现再说。
+ */
+export function enforceContainerMembership(nodes: ModelNode[]): MembershipDecision {
+  const containerUpdates: ModelNode[] = [];
+  const patch: NodePositionPatch[] = [];
+  for (const c of nodes.filter(isAcContainerNode)) {
+    const members = nodes.filter((n) => n.containerId === c.id && n.id !== c.id);
+    const fitted = fitContainerToMembers(c, members);
+    containerUpdates.push(fitted);
+    patch.push(...ejectOutsiders(fitted, nodes));
+  }
+  return { patch, containerUpdates, membershipChanges: [] };
 }
