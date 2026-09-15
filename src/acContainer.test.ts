@@ -33,6 +33,7 @@ import {
   applyAddToAcContainer,
   applyRemoveFromAcContainer,
   containerAddIsNoop,
+  containerDragGroup,
 } from "./acContainer";
 
 // 测试用最小节点。rotation/scale 必填:calculateNodeVisualBounds 依赖它们算半宽高,
@@ -595,5 +596,34 @@ describe("容器 idx 分配", () => {
     const counters = deriveDeviceIndexCounters([existing as any]);
     const created = assignPermanentDeviceIndex(buildNewContainer("ac-vpp-box", "虚拟电厂1", [m] as any, ""), counters);
     expect(created.node.params.idx).toBe("8");
+  });
+});
+
+// ─── 拖动整组:拖容器 = 容器 + 全部成员一起移动 ─────────────────────────────
+describe("拖容器整组", () => {
+  test("拖容器 → 容器与全部成员一起移动", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0) as any;
+    const m1 = { ...node("m1", "ac-load", 10, 10), containerId: "c1" } as any;
+    const m2 = { ...node("m2", "ac-load", 20, 20), containerId: "c1" } as any;
+    const other = node("o", "ac-load", 90, 90) as any;
+    expect(containerDragGroup([c, m1, m2, other], ["c1"]).sort()).toEqual(["c1", "m1", "m2"]);
+    expect(containerDragGroup([c, m1, m2, other], ["o"])).toEqual(["o"]);
+  });
+
+  test("空容器/无容器:原样返回;跟随成员不重复入列", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0) as any;
+    const m1 = { ...node("m1", "ac-load", 10, 10), containerId: "c1" } as any;
+    const other = node("o", "ac-load", 90, 90) as any;
+    expect(containerDragGroup([c, other], ["c1"])).toEqual(["c1"]);
+    expect(containerDragGroup([c, other], ["c1", "other"])).toEqual(["c1", "other"]);
+    // 多选容器 + 其成员同时拖动:成员已在集合内,不重复
+    expect(containerDragGroup([c, m1], ["c1", "m1"]).sort()).toEqual(["c1", "m1"]);
+  });
+
+  test("别的容器的成员不被卷入", () => {
+    const c1 = node("c1", "ac-vpp-box", 0, 0) as any;
+    const c2 = node("c2", "ac-vpp-box", 500, 0) as any;
+    const m2 = { ...node("m2", "ac-load", 500, 0), containerId: "c2" } as any;
+    expect(containerDragGroup([c1, c2, m2], ["c1"])).toEqual(["c1"]);
   });
 });

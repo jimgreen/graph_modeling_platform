@@ -136,6 +136,17 @@ export function judgeContainerMembership(args: {
   return { membershipChanges, enterContainerId };
 }
 
+/**
+ * 拖动整组:拖动集合含容器时把该容器的成员一并纳入(容器在前,成员按 nodes 顺序),
+ * 使成员随容器一起平移(相对位置不变),其连线也随拖动进入候选集。
+ * 拖动集合里没有容器(或无成员)时**原样返回**(同一引用),调用方无需判空。
+ */
+export function containerDragGroup(nodes: ModelNode[], draggedIds: string[]): string[] {
+  const dragged = new Set(draggedIds);
+  const followers = nodes.filter((n) => !dragged.has(n.id) && n.containerId && dragged.has(n.containerId));
+  return followers.length === 0 ? draggedIds : [...draggedIds, ...followers.map((n) => n.id)];
+}
+
 /** 面板下拉统一标签:`名称 (idx)`;idx 为空时只用名称 */
 function containerOptionLabel(n: ModelNode): string {
   const idx = String(n.params?.idx ?? "").trim();
