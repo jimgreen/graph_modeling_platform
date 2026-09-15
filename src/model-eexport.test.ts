@@ -164,6 +164,7 @@ import {
   getContainerAssociationRelationKey,
   getContainerRelationKey,
   getEExportWarnings,
+  associatedNodeColumnValue,
   getEParamValue,
   getEParameterKeys,
   resolveDeviceParameterDefinitionExportSettings,
@@ -230,7 +231,9 @@ import {
   type DeviceTemplate,
   type ModelNode,
   type Point,
-  type ProjectFile
+  type ProjectFile,
+  type Terminal,
+  type TerminalType
 } from "./model";
 import { terminalVoltageDisplay, transformGraphForGateways } from "./model-eexport";
 
@@ -4683,51 +4686,65 @@ describe("交流容器 E 导出", () => {
 
 // —— 关口拓扑变换(决策 4):合成端子 + 绑定设备上游替换为容器 ——
 
+type GatewayWireSpec = {
+  /** 上游设备 kind */
+  kind: DeviceKind;
+  /** 反向画线:绑定设备作起点(验收边方向只是画法,不代表电源方向) */
+  reverse?: boolean;
+  /** 接在绑定设备的第几个端子(默认 0) */
+  boundTerminal?: number;
+};
+
 type GatewayFixture = {
   nodes: ModelNode[];
   edges: Edge[];
   project: ProjectFile;
   containerId: string;
   boundId: string;
-  upstreamId: string;
-  upstreamTerminalId: string;
-  boundTerminalId: string;
+  boundTerminalIds: string[];
+  upstreamIds: string[];
+  upstreamTerminalIds: string[];
 };
 
 /**
- * 关口装置:容器 + 绑定成员(断路器,双端子)+ 上游(交流电源,单端子,`边 u→m` 馈入绑定设备)。
- * 建好即置关口态;`suffix` 供多套装置并入同一模型;`withUpstream:false` 不建上游边。
+ * 关口装置:容器 + 绑定成员(默认交流断路器,双端子)+ 上游设备若干(默认一条 `上游→绑定设备` 边)。
+ * prefix 供多套装置并入同一模型;wires: [] = 绑定设备无连线;isGateway:false 即非关口容器。
  */
-function makeGatewayFixture(options: { suffix?: string; withUpstream?: boolean } = {}): GatewayFixture {
-  const suffix = options.suffix ?? "1";
-  const [container, member, upstream] = createIndexedExportNodes(["ac-vpp-box", "ac-breaker", "ac-source"]);
-  const containerId = `c${suffix}`;
-  const boundId = `m${suffix}`;
-  const upstreamId = `u${suffix}`;
+function makeGatewayFixture(options: {
+  prefix?: string;
+  boundKind?: DeviceKind;
+  wires?: GatewayWireSpec[];
+  isGateway?: boolean;
+} = {}): GatewayFixture {
+  const prefix = options.prefix ?? "1";
+  const wires = options.wires ?? [{ kind: "ac-source" as DeviceKind }];
+  const [container, member] = createIndexedExportNodes(["ac-vpp-box", options.boundKind ?? "ac-breaker"]);
+  const upstreams = createIndexedExportNodes(wires.map((wire) => wire.kind));
+  const containerId = `c${prefix}`;
+  const boundId = `m${prefix}`;
   container.id = containerId;
   member.id = boundId;
-  upstream.id = upstreamId;
   member.containerId = containerId;
-  container.params.is_gateway = "1";
+  container.params.is_gateway = options.isGateway === false ? "0" : "1";
   container.params.bound_device_id = boundId;
-  const nodes = [container, member, upstream];
-  const edges: Edge[] = options.withUpstream === false
-    ? []
-    : [{
-        id: `e${suffix}`,
-        sourceId: upstreamId,
-        targetId: boundId,
-        sourceTerminalId: upstream.terminals[0].id,
-        targetTerminalId: member.terminals[0].id
-      }];
+  upstreams.forEach((upstream, index) => { upstream.id = `u${prefix}${index + 1}`; });
+  const edges: Edge[] = wires.map((wire, index) => {
+    const upstream = upstreams[index];
+    const boundTerminalId = member.terminals[wire.boundTerminal ?? 0].id;
+    const upstreamTerminalId = upstream.terminals[0].id;
+    return wire.reverse
+      ? { id: `e${prefix}${index + 1}`, sourceId: boundId, sourceTerminalId: boundTerminalId, targetId: upstream.id, targetTerminalId: upstreamTerminalId }
+      : { id: `e${prefix}${index + 1}`, sourceId: upstream.id, sourceTerminalId: upstreamTerminalId, targetId: boundId, targetTerminalId: boundTerminalId };
+  });
+  const nodes = [container, member, ...upstreams];
   return {
     nodes,
     edges,
     containerId,
     boundId,
-    upstreamId,
-    upstreamTerminalId: upstream.terminals[0].id,
-    boundTerminalId: member.terminals[0].id,
+    boundTerminalIds: member.terminals.map((terminal) => terminal.id),
+    upstreamIds: upstreams.map((upstream) => upstream.id),
+    upstreamTerminalIds: upstreams.map((upstream) => upstream.terminals[0].id),
     project: { version: 1, name: "关口拓扑模型", nodes, edges }
   };
 }
@@ -4747,10 +4764,10 @@ describe("关口容器拓扑变换(决策 4)", () => {
     expect(container.terminals).toHaveLength(2);
     expect(container.terminals.every((terminal) => Boolean(terminal.nodeNumber))).toBe(true);
     // 原上游 → 容器;容器 → 绑定设备
-    expect(edges.some((edge) => edge.sourceId === model.upstreamId && edge.targetId === model.containerId)).toBe(true);
+    expect(edges.some((edge) => edge.sourceId === model.upstreamIds[0] && edge.targetId === model.containerId)).toBe(true);
     expect(edges.some((edge) => edge.sourceId === model.containerId && edge.targetId === model.boundId)).toBe(true);
     // 上游与绑定设备的直连已被改接,不并存
-    expect(edges.some((edge) => edge.sourceId === model.upstreamId && edge.targetId === model.boundId)).toBe(false);
+    expect(edges.some((edge) => edge.sourceId === model.upstreamIds[0] && edge.targetId === model.boundId)).toBe(false);
     expect(warnings).toEqual([]);
     // 画布模型(入参)不被污染
     expect(model.nodes.find((node) => node.id === model.containerId)!.terminals).toEqual([]);
@@ -4762,42 +4779,121 @@ describe("关口容器拓扑变换(决策 4)", () => {
     const model = makeGatewayFixture();
     // 变换前:上游边直连 → 上游与绑定设备同号
     const before = calculateElectricalTopology(model.nodes, model.edges);
-    expect(topologyNumber(before, model.upstreamId, model.upstreamTerminalId))
-      .toBe(topologyNumber(before, model.boundId, model.boundTerminalId));
+    expect(topologyNumber(before, model.upstreamIds[0], model.upstreamTerminalIds[0]))
+      .toBe(topologyNumber(before, model.boundId, model.boundTerminalIds[0]));
     // 变换后:容器串入 → 电源侧与上游同号、负荷侧与绑定设备同号,两侧互不同号
     const graph = transformGraphForGateways(model.nodes, model.edges);
     const after = calculateElectricalTopology(graph.nodes, graph.edges);
     const [power, load] = graph.nodes.find((node) => node.id === model.containerId)!.terminals;
     expect(topologyNumber(after, model.containerId, power.id))
-      .toBe(topologyNumber(after, model.upstreamId, model.upstreamTerminalId));
+      .toBe(topologyNumber(after, model.upstreamIds[0], model.upstreamTerminalIds[0]));
     expect(topologyNumber(after, model.containerId, load.id))
-      .toBe(topologyNumber(after, model.boundId, model.boundTerminalId));
-    expect(topologyNumber(after, model.upstreamId, model.upstreamTerminalId))
-      .not.toBe(topologyNumber(after, model.boundId, model.boundTerminalId));
+      .toBe(topologyNumber(after, model.boundId, model.boundTerminalIds[0]));
+    expect(topologyNumber(after, model.upstreamIds[0], model.upstreamTerminalIds[0]))
+      .not.toBe(topologyNumber(after, model.boundId, model.boundTerminalIds[0]));
   });
 
-  test("绑定设备无上游连接 → 告警并退化(不加端子、不改边)", () => {
-    const model = makeGatewayFixture({ withUpstream: false });
+  test("反向画线(绑定设备作起点)同样串入,电源侧端子恒朝上游", () => {
+    const model = makeGatewayFixture({ wires: [{ kind: "ac-source", reverse: true }] });
+    const { nodes, edges, warnings } = transformGraphForGateways(model.nodes, model.edges);
+    expect(warnings).toEqual([]);
+    const [power, load] = nodes.find((node) => node.id === model.containerId)!.terminals;
+    // 原「绑定设备 → 上游」拆成「绑定设备 → 容器负荷侧」+「容器电源侧 → 上游」,两段各保持原方向
+    expect(edges.some((edge) => edge.sourceId === model.boundId && edge.targetId === model.containerId && edge.targetTerminalId === load.id)).toBe(true);
+    expect(edges.some((edge) => edge.sourceId === model.containerId && edge.sourceTerminalId === power.id && edge.targetId === model.upstreamIds[0])).toBe(true);
+    expect(edges.some((edge) => edge.sourceId === model.boundId && edge.targetId === model.upstreamIds[0])).toBe(false);
+    // 拓扑不变式:电源侧与上游同岛、负荷侧与绑定设备同岛(与画法方向无关)
+    const after = calculateElectricalTopology(nodes, edges);
+    expect(topologyNumber(after, model.containerId, power.id))
+      .toBe(topologyNumber(after, model.upstreamIds[0], model.upstreamTerminalIds[0]));
+    expect(topologyNumber(after, model.containerId, load.id))
+      .toBe(topologyNumber(after, model.boundId, model.boundTerminalIds[0]));
+  });
+
+  test("绑定设备无连线 → 告警并退化(不加端子、不改边)", () => {
+    const model = makeGatewayFixture({ wires: [] });
     const { nodes, edges, warnings } = transformGraphForGateways(model.nodes, model.edges);
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("无电源侧");
+    expect(warnings[0]).toContain("未找到与绑定设备的连线");
     expect(nodes.find((node) => node.id === model.containerId)!.terminals).toEqual([]);
     expect(edges).toEqual(model.edges);
   });
 
-  test("无上游告警汇入导出告警通道(带容器 nodeId)", () => {
-    const degraded = makeGatewayFixture({ withUpstream: false });
+  test("连线两端端子类型不一致 → 告警退化,原连接不得被删除", () => {
+    // 交流断路器被直流电源馈入:两端端子类型不同,并查集按类型不会合并,串入必产生悬空节点
+    const model = makeGatewayFixture({ wires: [{ kind: "dc-source" }] });
+    const { nodes, edges, warnings } = transformGraphForGateways(model.nodes, model.edges);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("端子类型");
+    expect(nodes.find((node) => node.id === model.containerId)!.terminals).toEqual([]);
+    // 退化语义 = 不改边:原「上游—绑定设备」连接原样保留,既不删也不加
+    expect(edges).toEqual(model.edges);
+    expect(edges).toHaveLength(1);
+    expect(edges[0].targetId).toBe(model.boundId);
+  });
+
+  test("直流绑定设备 + 直流上游 → 合成直流端子并进入直流节点表", () => {
+    const model = makeGatewayFixture({ boundKind: "dc-breaker", wires: [{ kind: "dc-source" }] });
+    const graph = transformGraphForGateways(model.nodes, model.edges);
+    expect(graph.warnings).toEqual([]);
+    const container = graph.nodes.find((node) => node.id === model.containerId)!;
+    expect(container.terminals.map((terminal) => terminal.type)).toEqual(["dc", "dc"]);
+    // 合成端子号出现在 DCNode 行(容器以自身身份进直流拓扑节点表)
+    const numbers = calculateElectricalTopology(graph.nodes, graph.edges)
+      .find((node) => node.id === model.containerId)!.terminals.map((terminal) => terminal.nodeNumber);
+    const dcRows = parseESections(buildEFileExport(model.project).text).DCNode?.rows ?? [];
+    expect(dcRows.length).toBeGreaterThan(1);
+    for (const number of numbers) {
+      expect(dcRows.map((row) => row.idx)).toContain(number);
+    }
+  });
+
+  test("同一接线点多条连线:全部并到容器电源侧,只补一条容器↔绑定设备连线", () => {
+    const model = makeGatewayFixture({ wires: [{ kind: "ac-source" }, { kind: "ac-source" }] });
+    const { nodes, edges, warnings } = transformGraphForGateways(model.nodes, model.edges);
+    expect(warnings).toEqual([]);
+    const [power] = nodes.find((node) => node.id === model.containerId)!.terminals;
+    const intoContainer = edges.filter((edge) => edge.targetId === model.containerId);
+    expect(intoContainer).toHaveLength(2);
+    expect(intoContainer.every((edge) => edge.targetTerminalId === power.id)).toBe(true);
+    expect(edges.filter((edge) => edge.sourceId === model.containerId && edge.targetId === model.boundId)).toHaveLength(1);
+    // 拓扑:两条上游本就同点(仍同号),串入后与绑定设备分属两岛
+    const after = calculateElectricalTopology(nodes, edges);
+    expect(topologyNumber(after, model.upstreamIds[0], model.upstreamTerminalIds[0]))
+      .toBe(topologyNumber(after, model.upstreamIds[1], model.upstreamTerminalIds[1]));
+    expect(topologyNumber(after, model.upstreamIds[0], model.upstreamTerminalIds[0]))
+      .not.toBe(topologyNumber(after, model.boundId, model.boundTerminalIds[0]));
+  });
+
+  test("绑定设备两处接线点各有连线 → 告警退化且不改边(避免两侧短接)", () => {
+    // 双绕组变压器两侧各接电源:并到一对端子会让 i_node == j_node
+    const model = makeGatewayFixture({
+      boundKind: "ac-transformer",
+      wires: [{ kind: "ac-source", boundTerminal: 0 }, { kind: "ac-source", boundTerminal: 1 }]
+    });
+    const { nodes, edges, warnings } = transformGraphForGateways(model.nodes, model.edges);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("2 处不同连接点");
+    expect(nodes.find((node) => node.id === model.containerId)!.terminals).toEqual([]);
+    expect(edges).toEqual(model.edges);
+  });
+
+  test("退化告警汇入导出告警通道(带容器 nodeId)", () => {
+    const degraded = makeGatewayFixture({ wires: [] });
     const degradedWarnings = getEExportWarnings(degraded.project);
     expect(degradedWarnings.filter((warning) => warning.nodeId === degraded.containerId))
-      .toEqual([expect.objectContaining({ reason: expect.stringContaining("无电源侧") })]);
-    // 反证:有上游的关口不报该告警(上面的命中不是「告警通道恒有该条」)
+      .toEqual([expect.objectContaining({ reason: expect.stringContaining("未找到与绑定设备的连线") })]);
+    // 类型不一致的退化同样进通道
+    const mismatched = makeGatewayFixture({ wires: [{ kind: "dc-source" }] });
+    expect(getEExportWarnings(mismatched.project).filter((warning) => warning.nodeId === mismatched.containerId))
+      .toEqual([expect.objectContaining({ reason: expect.stringContaining("端子类型") })]);
+    // 反证:能串入的关口不报该告警(上面的命中不是「告警通道恒有该条」)
     const wired = makeGatewayFixture();
     expect(getEExportWarnings(wired.project).filter((warning) => warning.nodeId === wired.containerId)).toEqual([]);
   });
 
   test("非关口容器完全不参与变换", () => {
-    const model = makeGatewayFixture();
-    model.nodes.find((node) => node.id === model.containerId)!.params.is_gateway = "0";
+    const model = makeGatewayFixture({ isGateway: false });
     const { nodes, edges, warnings } = transformGraphForGateways(model.nodes, model.edges);
     expect(nodes.find((node) => node.id === model.containerId)!.terminals).toEqual([]);
     expect(edges).toEqual(model.edges);
@@ -4805,14 +4901,14 @@ describe("关口容器拓扑变换(决策 4)", () => {
   });
 
   test("多关口容器并存:各自改接自己绑定设备的上游", () => {
-    const first = makeGatewayFixture({ suffix: "1" });
-    const second = makeGatewayFixture({ suffix: "2" });
+    const first = makeGatewayFixture({ prefix: "1" });
+    const second = makeGatewayFixture({ prefix: "2" });
     const nodes = [...first.nodes, ...second.nodes];
     const edges = [...first.edges, ...second.edges];
     const graph = transformGraphForGateways(nodes, edges);
     for (const model of [first, second]) {
       expect(graph.nodes.find((node) => node.id === model.containerId)!.terminals).toHaveLength(2);
-      expect(graph.edges.some((edge) => edge.sourceId === model.upstreamId && edge.targetId === model.containerId)).toBe(true);
+      expect(graph.edges.some((edge) => edge.sourceId === model.upstreamIds[0] && edge.targetId === model.containerId)).toBe(true);
       expect(graph.edges.some((edge) => edge.sourceId === model.containerId && edge.targetId === model.boundId)).toBe(true);
     }
     expect(graph.warnings).toEqual([]);
@@ -4820,13 +4916,17 @@ describe("关口容器拓扑变换(决策 4)", () => {
 
   test("关口容器合成端子后进入拓扑节点表(ACNode 多出容器串入的那一个岛)", () => {
     const gateway = makeGatewayFixture();
-    const plain = makeGatewayFixture();
-    plain.nodes.find((node) => node.id === plain.containerId)!.params.is_gateway = "0";
+    const plain = makeGatewayFixture({ isGateway: false });
     const gatewayRows = parseESections(buildEFileExport(gateway.project).text).ACNode?.rows ?? [];
     const plainRows = parseESections(buildEFileExport(plain.project).text).ACNode?.rows ?? [];
     expect(gatewayRows.length).toBe(plainRows.length + 1);
-    // 关口容器以自身身份进拓扑节点表(不作为关口时它无端子、进不了表)
-    expect(gatewayRows.map((row) => row.name)).toContain(gateway.nodes.find((node) => node.id === gateway.containerId)!.name);
+    // 合成端子的拓扑号出现在拓扑节点表行 idx —— 容器确实由自己的端子驱动出了节点行(不依赖行名与行序)
+    const graph = transformGraphForGateways(gateway.nodes, gateway.edges);
+    const containerNumbers = calculateElectricalTopology(graph.nodes, graph.edges)
+      .find((node) => node.id === gateway.containerId)!.terminals.map((terminal) => terminal.nodeNumber);
+    for (const number of containerNumbers) {
+      expect(gatewayRows.map((row) => row.idx)).toContain(number);
+    }
   });
 
   test("模板态容器段静默时不做关口拓扑变换(不留无容器记录的断口)", () => {
@@ -4843,11 +4943,32 @@ describe("关口容器拓扑变换(决策 4)", () => {
       }]
     };
     const gateway = makeGatewayFixture();
-    const plain = makeGatewayFixture();
-    plain.nodes.find((node) => node.id === plain.containerId)!.params.is_gateway = "0";
+    const plain = makeGatewayFixture({ isGateway: false });
     const gatewayRows = parseESections(buildEFileExport(gateway.project, ["默认方案"], options).text).ACNode?.rows ?? [];
     const plainRows = parseESections(buildEFileExport(plain.project, ["默认方案"], options).text).ACNode?.rows ?? [];
     expect(gatewayRows.length).toBeGreaterThan(0);
     expect(gatewayRows).toEqual(plainRows);
+  });
+
+  // —— 容器关联行取端子口径(决策 4 附加):关系行能量类型无匹配端子时留空 ——
+
+  test("容器关联行按关系能量类型取端子:类型不符留空", () => {
+    const terminal = (id: string, type: TerminalType, nodeNumber: string): Terminal => ({
+      id, label: id, type, nodeNumber, anchor: { x: 0, y: 0 }
+    });
+    const node = {
+      name: "容器设备",
+      params: {} as Record<string, string>,
+      terminals: [terminal("t1", "ac", "7"), terminal("t2", "dc", "8")]
+    };
+    // 关系声明 dc,而该位是 ac 端子 → 留空(关口容器合成端子只有一种能量,不会误取另一种)
+    expect(associatedNodeColumnValue(node, "idx_dc_unit_t1", "DCLoad", "i_node", [node.terminals[0]])).toBe("");
+    // 同位的 dc 端子照常取号,ac 关系行取 ac 端子不受影响
+    expect(associatedNodeColumnValue(node, "idx_dc_unit_t1", "DCLoad", "i_node", [node.terminals[1]])).toBe("8");
+    expect(associatedNodeColumnValue(node, "idx_ac_unit_t1", "ACLoad", "i_node", [node.terminals[0]])).toBe("7");
+    // 非关系行(relationKey 为空)不套能量过滤,保持按位取号的原行为
+    expect(associatedNodeColumnValue(node, "", "ACLoad", "i_node", [node.terminals[0]])).toBe("7");
+    // j_node 同口径
+    expect(associatedNodeColumnValue(node, "idx_dc_unit_t1", "DCLoad", "j_node", [node.terminals[0], node.terminals[0]])).toBe("");
   });
 });
