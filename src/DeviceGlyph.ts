@@ -9,6 +9,7 @@ import {
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
   getSwitchVisualState,
+  isAcContainerKind,
   isLineSegmentBusNode,
   modelAssociationModelTypeForKind,
   isRoutableLineDeviceKind,
@@ -108,7 +109,9 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
   const isStaticGlyph = isStaticGraphicNode(node);
   const isRoutableLineGlyph = isRoutableLineDeviceKind(node.kind);
   const isLineSegmentBusGlyph = isLineSegmentBusNode(node);
-  const glyphContentScale = miniature || isStaticGlyph || isRoutableLineGlyph || isLineSegmentBusGlyph || modelAssociationModelType
+  const isAcContainerGlyph = isAcContainerKind(node.kind);
+  // 容器按节点真实尺寸绘制(同静态图元/母线):否则 180×112 会走 1.8 倍图元设计基准缩放,描边与字号被等比放大
+  const glyphContentScale = miniature || isStaticGlyph || isRoutableLineGlyph || isLineSegmentBusGlyph || isAcContainerGlyph || modelAssociationModelType
     ? 1
     : Math.max(1, Math.max(rawW, rawH) / DEVICE_GLYPH_DESIGN_LONGEST_SIDE);
   const w = rawW / glyphContentScale;
@@ -178,6 +181,43 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
   const renderDeviceGlyphContent = (): ReactNode => {
     if (stateText && mode === "text") {
       return renderStateTextOverlay();
+    }
+    if (isAcContainerGlyph) {
+      // 交流容器:填充不可命中(点内部空白穿透到下层),仅描边加宽透明命中带与名称可点。
+      // 必须早于 glyphVariant 分派 —— getDeviceGlyphVariant 的 includes("switch") 会把 ac-switch-box 误判成开关符号。
+      const corner = staticNumericParam(node, "cornerRadius", 8, 0);
+      const lineWidth = Number(node.params.lineWidth || 2);
+      const containerStroke = node.params.strokeColor || deviceStroke;
+      const labelFontSize = staticNumericParam(node, "fontSize", 16, 8);
+      const labelPad = Math.min(staticNumericParam(node, "padding", 12, 0), Math.max(0, Math.min(w, h) / 2 - 2));
+      const align = node.params.textAlign || "left";
+      const verticalAlign = node.params.verticalAlign || "top";
+      // 名称取 node.name(容器不落 text 死参数);左上默认,风格同分组框 header
+      const label = uprightText(
+        node,
+        align === "left" ? -w / 2 + labelPad : align === "right" ? w / 2 - labelPad : 0,
+        verticalAlign === "top" ? -h / 2 + labelPad + labelFontSize / 2 : verticalAlign === "bottom" ? h / 2 - labelPad - labelFontSize / 2 : 0,
+        {
+          fill: node.params.textColor || containerStroke,
+          fontSize: labelFontSize,
+          fontFamily: node.params.fontFamily || "Arial",
+          fontWeight: node.params.fontWeight || "500",
+          textAnchor: align === "left" ? "start" : align === "right" ? "end" : "middle",
+          dominantBaseline: "middle",
+          style: { userSelect: "none" }
+        },
+        node.name
+      );
+      if (mode === "text") {
+        return renderText ? label : null;
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      const boxProps = { x: -w / 2, y: -h / 2, width: w, height: h, rx: corner };
+      return (
+        createElement("g", { "data-container-box": "1" }, createElement("rect", { ...boxProps, className: "ac-container-fill", fill: node.params.fillColor || "transparent", style: { pointerEvents: "none" } }), createElement("rect", { ...boxProps, className: "ac-container-stroke-hit", fill: "none", stroke: "transparent", strokeWidth: 8 }), createElement("rect", { ...boxProps, fill: "none", stroke: containerStroke, strokeWidth: lineWidth, strokeDasharray: svgStrokeDashArray(node.params.strokeStyle), style: { pointerEvents: "none" } }), renderText && label)
+      );
     }
     if (isRoutableLineGlyph) {
       if (mode === "text") {

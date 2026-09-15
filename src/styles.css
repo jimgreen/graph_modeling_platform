@@ -3003,6 +3003,11 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   fill: transparent;
 }
 
+/* 交流容器:节点矩形命中框让位,点内部空白穿透到下层,仅描边命中带与名称可点 */
+.diagram-node:has(.ac-container-fill) .node-hitbox {
+  pointer-events: none;
+}
+
 .diagram-node.inactive-layer-graphic:hover .node-hitbox {
   fill: transparent;
   stroke: transparent;
