@@ -680,7 +680,7 @@ export function cloneCanvasClipboard(
   }
   const nodes = clipboard.nodes.map((node) => {
     const nextId = idMap.get(node.id)!;
-    return resetDeviceIndexesForPaste({
+    const copy: ModelNode = resetDeviceIndexesForPaste({
       ...node,
       id: nextId,
       name: `${node.name} 副本`,
@@ -688,6 +688,15 @@ export function cloneCanvasClipboard(
       params: remapRoutableLineEndpointNodeRefs(node.params, idMap),
       terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } }))
     });
+    // 归属/绑定剥离的最后一关:粘贴、模板落点、以及**存量已持久化模板**(剪贴板 JSON 早于本功能落库,
+    // 构建期剥离对它无效)全部经此克隆。与 buildCanvasClipboard 处同款,重复执行是幂等的(删已删的键、
+    // 关口再置一次 "0"),不会双剥出 bug;副本 id 全换,继承来的归属与绑定恒悬空。
+    delete copy.containerId;
+    if (isAcContainerNode(node)) {
+      delete copy.params.bound_device_id;
+      copy.params.is_gateway = "0";
+    }
+    return copy;
   });
   const edgeIdMap = new Map<string, string>();
   const edges = clipboard.edges.flatMap(({ edge, routePoints }) => {

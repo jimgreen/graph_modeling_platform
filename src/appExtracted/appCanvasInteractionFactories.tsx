@@ -3785,7 +3785,7 @@ export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>)
       ? placedNodes.map((candidate) => repairedLineNodeById.get(candidate.id) ?? candidate)
       : placedNodes;
     // 归属落地:落点在容器矩形内的图元并入该容器(与程序化加图元/粘贴同一出口);只判新放置的这一个,
-    // 线路重画结果不参与(线路不归容器,与 ejectOutsiders 豁免同口径)
+    // 线路重画结果不参与本次判定(线路可入组,但入组应由用户操作决定;挤出侧对线路另有豁免,不推出框外)
     const committedNodes = commitContainerMembership(nextNodes, [indexed.node.id]);
     pushUndoSnapshot(true, false, undefined, "放置图元", indexed.node.name);
     setDeviceIndexCounters(indexed.counters);

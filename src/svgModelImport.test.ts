@@ -188,6 +188,8 @@ const CONTAINER_PLATFORM_SVG = `
     <g id="ACLoad_Layer" device-type="ACLoad">
       <use id="load-in" layer-id="layer-default" name="框内负荷" dev-id="load-in"
         dev-kind="ac-load" href="#symbol" x="500" y="180" width="40" height="40"/>
+      <use id="load-center" layer-id="layer-default" name="画布中心负荷" dev-id="load-center"
+        dev-kind="ac-load" href="#symbol" x="430" y="280" width="40" height="40"/>
       <use id="load-out" layer-id="layer-default" name="框外负荷" dev-id="load-out"
         dev-kind="ac-load" href="#symbol" x="80" y="80" width="40" height="40"/>
       <use id="line-in" layer-id="layer-default" name="穿框线路" dev-id="line-in"
@@ -209,12 +211,16 @@ describe("parseSvgModel 容器归属落地", () => {
 
     expect(inside.containerId).toBe("vpp-1");
     expect(outside.containerId).toBeUndefined();
-    // 线路穿框是常态(挤出同样豁免线路):吞成成员会把容器撑到包住整条线
+    // 线路穿框是常态(挤出侧同样豁免):按几何反推会把容器撑到包住整条线
     expect(line.containerId).toBeUndefined();
-    // 静态辅助图元(整画布尺寸、position = 画布中心)同样不参与判定,否则容器会被撑到包住整张画布
+    // 画布中心另有一个真成员(load-center):它的存在保证容器重算后的矩形仍盖住画布中心
+    expect(byId.get("load-center")!.containerId).toBe("vpp-1");
+    // 静态辅助图元(整画布尺寸、position = 画布中心)不参与判定,否则容器会被撑到包住整张画布
     const staticNode = result.project.nodes.find((node) => node.kind === "static-image")!;
     expect(staticNode.containerId).toBeUndefined();
     expect(container.size.width).toBeLessThan(result.project.canvasWidth ?? 0);
+    // 也不被挤出:容器矩形盖住它的中心,装饰节点必须原地不动(否则导入会把装饰图元搬走)
+    expect(staticNode.position).toEqual({ x: 450, y: 300 });
     // 容器随成员重算:矩形必须包住成员中心
     const rect = {
       x1: container.position.x - container.size.width / 2,
