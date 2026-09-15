@@ -2,7 +2,8 @@
 // 该路径从 __appScope 解构了 30+ 个键,任何「解构遮蔽模块 import」都会在这里炸成
 // `nodes.some(undefined)` 这类 TypeError —— 而 @ts-nocheck + audit:names 都拦不住,只能靠真跑一次。
 import { describe, expect, test, vi } from "vitest";
-import { createMoveSelection } from "./appCanvasInteractionFactories";
+import { createMoveSelection, createPlaceLibraryDeviceAtPoint } from "./appCanvasInteractionFactories";
+import { DEVICE_LIBRARY_BY_KIND, createNodeFromTemplate } from "../model";
 
 const bareNode = (id: string, kind: string, x: number, y: number, extra: Record<string, unknown> = {}) => ({
   id, kind, name: id, position: { x, y }, size: { width: 40, height: 30 },
@@ -77,5 +78,81 @@ describe("createMoveSelection 容器接入", () => {
     const scope = makeScope();
     createMoveSelection(scope as any)(10, 0);
     expect(scope.pushUndoSnapshot).toHaveBeenCalledWith(true, false, undefined, "移动设备", expect.any(String));
+  });
+});
+
+// 从图元库放置设备是「新增节点进图」的 UI 主路径(与 control.addDevice 同类):
+// 落点在容器矩形内必须同源落地归属,否则下一次 enforce 会把它当非成员挤出容器。
+describe("createPlaceLibraryDeviceAtPoint 容器接入", () => {
+  const makePlaceScope = (nodes: any[]) => {
+    const capture: { placed?: any[] } = {};
+    return {
+      capture,
+      scope: {
+        CANVAS_AUTO_EXPAND_PADDING: 40,
+        activateInspectorFromCanvas: vi.fn(),
+        activeLayerId: "default",
+        applyCanvasBounds: vi.fn(),
+        assignPermanentDeviceIndex: (node: any) => ({ node, counters: {} }),
+        canvasBounds: { width: 1000, height: 800 },
+        canvasBoundsForAutoExpandedGraphContent: () => ({ width: 1000, height: 800 }),
+        canvasBoundsWithOriginShift: (bounds: any) => bounds,
+        clampNodePositionToBounds: (_node: any, _bounds: any, position: any) => position,
+        clampPointToBounds: (point: any) => point,
+        createNodeFromTemplate,
+        deviceIndexCounters: {},
+        edges: [],
+        hasCanvasOriginShift: () => false,
+        isInteractiveStaticDrawingKind: () => false,
+        isRoutableLineDeviceKind: () => false,
+        isStaticBoxLikeTemplate: () => false,
+        lastCanvasPointerRef: { current: null },
+        lastRawCanvasPointerRef: { current: null },
+        leftTopCanvasOriginShiftForContent: () => ({ x: 0, y: 0 }),
+        markBusTerminalSyncDirtyForEdges: vi.fn(),
+        modelType: "ac",
+        nodes,
+        pushRecentGlyph: (prev: any[]) => prev,
+        pushUndoSnapshot: vi.fn(),
+        rebuildRoutableLineDeviceRouteUpdates: () => [],
+        rejectAutoCanvasExpansionForContent: () => false,
+        requireEditMode: () => true,
+        routeRoutableLineDevice: (node: any) => node,
+        setCanvasSelectionScope: vi.fn(),
+        setDeviceIndexCounters: vi.fn(),
+        setGraphArrays: (nextNodes: any[]) => { capture.placed = nextNodes; },
+        setLibraryPlacement: vi.fn(),
+        setMode: vi.fn(),
+        setRecentGlyphKinds: vi.fn(),
+        setSelectedEdgeId: vi.fn(),
+        setSelectedEdgeIds: vi.fn(),
+        setSelectedNodeIds: vi.fn(),
+        shiftCachedRoutesForCanvasOrigin: vi.fn(),
+        startInteractiveStaticDrawing: vi.fn(),
+        startLibraryDevicePlacement: vi.fn(),
+        translateEdgeBy: (edge: any) => edge,
+        translateNodeBy: (node: any) => node,
+        translatePointBy: (point: any) => point,
+        writeOperationLog: vi.fn()
+      }
+    };
+  };
+
+  test("落点在容器矩形内 → 新图元写入 containerId,容器随成员重算", () => {
+    const container = bareNode("c1", "ac-vpp-box", 0, 0, { size: { width: 200, height: 200 } });
+    const { scope, capture } = makePlaceScope([container]);
+
+    createPlaceLibraryDeviceAtPoint(scope as any)(DEVICE_LIBRARY_BY_KIND.get("ac-load") as any, { x: 30, y: 30 });
+
+    const placed = capture.placed!.find((node: any) => node.id !== "c1")!;
+    expect(placed.containerId).toBe("c1");
+    expect(capture.placed!.find((node: any) => node.id === "c1").size).not.toEqual({ width: 200, height: 200 });
+  });
+
+  test("落点在容器外 → 不写归属;无容器时提交原样", () => {
+    const container = bareNode("c1", "ac-vpp-box", 0, 0, { size: { width: 200, height: 200 } });
+    const outside = makePlaceScope([container]);
+    createPlaceLibraryDeviceAtPoint(outside.scope as any)(DEVICE_LIBRARY_BY_KIND.get("ac-load") as any, { x: 600, y: 600 });
+    expect(outside.capture.placed!.find((node: any) => node.id !== "c1").containerId).toBeUndefined();
   });
 });
