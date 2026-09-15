@@ -136,6 +136,28 @@ export function judgeContainerMembership(args: {
   return { membershipChanges, enterContainerId };
 }
 
+/** 面板下拉统一标签:`名称 (idx)`;idx 为空时只用名称 */
+function containerOptionLabel(n: ModelNode): string {
+  const idx = String(n.params?.idx ?? "").trim();
+  const name = String(n.name ?? "");
+  return idx ? `${name} (${idx})` : name;
+}
+
+/** 「所属容器」下拉:首项 = 无容器,其余为容器节点(label 用 `名称 (idx)`) */
+export function containerSelectOptions(nodes: ModelNode[]): { label: string; value: string }[] {
+  return [
+    { label: "无(当前模板)", value: "" },
+    ...nodes.filter(isAcContainerNode).map((c) => ({ label: containerOptionLabel(c), value: c.id })),
+  ];
+}
+
+/** 「绑定到设备」下拉:候选 = 该容器的成员(容器自身不入候选) */
+export function containerMemberOptions(nodes: ModelNode[], containerId: string): { label: string; value: string }[] {
+  return nodes
+    .filter((n) => n.containerId === containerId && !isAcContainerNode(n))
+    .map((n) => ({ label: containerOptionLabel(n), value: n.id }));
+}
+
 /**
  * 归属变更后的统一出口:按当前 containerId 重算每个容器的 position/size,
  * 并把它矩形内尚未归属的节点挤出界外(成员位置不变,故 patch 只含被挤出的节点)。
@@ -151,4 +173,47 @@ export function enforceContainerMembership(nodes: ModelNode[]): MembershipDecisi
     patch.push(...ejectOutsiders(fitted, nodes));
   }
   return { patch, containerUpdates, membershipChanges: [] };
+}
+
+/**
+ * 决策 → 可直接提交的节点更新列表:`patch`(被挤出的非成员)与 `containerUpdates`(容器重算)
+ * **必须同时应用** —— 只应用 patch 会漏掉容器矩形,只应用 containerUpdates 会留下戳在框里的节点。
+ */
+export function containerDecisionNodeUpdates(nodes: ModelNode[], decision: MembershipDecision): ModelNode[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const updates = new Map<string, ModelNode>();
+  for (const c of decision.containerUpdates) {
+    updates.set(c.id, c);
+  }
+  for (const p of decision.patch) {
+    const base = updates.get(p.nodeId) ?? byId.get(p.nodeId);
+    if (base) {
+      updates.set(p.nodeId, { ...base, position: p.position });
+    }
+  }
+  return [...updates.values()];
+}
+
+/**
+ * 面板改「所属容器」的纯计算:写入/清除 containerId(节点平级字段,不入 params),
+ * 并给出需一并提交的节点更新(容器矩形重算 + 被挤出的非成员)。
+ * changed=false 时无需提交(目标缺失或归属未变)。
+ */
+export function containerMembershipCommit(
+  nodes: ModelNode[],
+  nodeId: string,
+  containerId: string | undefined
+): { changed: boolean; updates: ModelNode[] } {
+  const target = nodes.find((n) => n.id === nodeId);
+  if (!target || (target.containerId ?? "") === (containerId ?? "")) {
+    return { changed: false, updates: [] };
+  }
+  const moved = { ...target };
+  if (containerId) {
+    moved.containerId = containerId;
+  } else {
+    delete moved.containerId;
+  }
+  const nextNodes = nodes.map((n) => (n.id === nodeId ? moved : n));
+  return { changed: true, updates: [moved, ...containerDecisionNodeUpdates(nextNodes, enforceContainerMembership(nextNodes))] };
 }

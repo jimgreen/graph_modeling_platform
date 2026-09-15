@@ -1,6 +1,12 @@
 // @ts-nocheck
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 import { InlineEditableValue } from "../components/InputComponents";
+import {
+  containerMemberOptions,
+  containerMembershipCommit,
+  containerSelectOptions,
+  isAcContainerNode,
+} from "../acContainer";
 import { BUILTIN_VOLTAGE_LEVELS, formatPowerBaseDisplayValue } from "../model";
 import { firstNonZeroVoltageBase } from "../model-eexport";
 import { getTerminalVoltageLevel } from "../model-routing";
@@ -335,6 +341,79 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
         </td>
       </tr>
     );
+  };
+
+  // 所属容器提交:containerId 是节点平级字段(不入 params);
+  // 容器矩形重算与被挤出节点由 containerMembershipCommit 一并给出,提交时整体 patch。
+  const commitNodeContainerId = (nodeId: string, containerId: string | undefined) => {
+    // 绑定设备被移出容器时的自动解绑与量测组同步由 Task 9 在此接入
+    const { changed, updates } = containerMembershipCommit(nodes, nodeId, containerId);
+    if (!changed) {
+      return;
+    }
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch(updates.map((node) => node.id), []), "修改所属容器");
+    patchGraphNodes(updates);
+  };
+
+  // 所属容器行:容器节点自身不显示(容器不允许嵌套);选项 = 画布上的容器节点
+  const renderContainerRow = () => {
+    const node = inspectorSelectedNode;
+    if (!node || isAcContainerNode(node)) {
+      return null;
+    }
+    return (
+      <tr>
+        {batchEditors.renderChineseParamHeader("containerId", "所属容器")}
+        <td>
+          <InlineEditableValue
+            value={node.containerId ?? ""}
+            disabled={isBrowseMode}
+            options={containerSelectOptions(nodes)}
+            onCommit={(nextValue) => commitNodeContainerId(node.id, nextValue || undefined)}
+          />
+        </td>
+      </tr>
+    );
+  };
+
+  // 容器参数行:仅容器节点显示(不走参数定义流;关口/绑定不是图元通用参数)
+  const renderContainerGatewayRows = () => {
+    const node = inspectorSelectedNode;
+    if (!node || !isAcContainerNode(node)) {
+      return null;
+    }
+    const gateway = node.params?.is_gateway === "1" ? "1" : "0";
+    const boundDeviceId = String(node.params?.bound_device_id ?? "");
+    return (<>
+      <tr>
+        {batchEditors.renderChineseParamHeader("is_gateway", "是否作为关口设备")}
+        <td>
+          <InlineEditableValue
+            value={gateway}
+            disabled={isBrowseMode}
+            options={[{ value: "0", label: "否" }, { value: "1", label: "是" }]}
+            onCommit={(nextValue) => updateParam("is_gateway", nextValue === "1" ? "1" : "0")}
+          />
+        </td>
+      </tr>
+      <tr>
+        {batchEditors.renderChineseParamHeader("bound_device_id", "绑定到设备")}
+        <td className="container-bound-device-cell">
+          <InlineEditableValue
+            value={boundDeviceId}
+            disabled={isBrowseMode}
+            options={[{ value: "", label: "未绑定" }, ...containerMemberOptions(nodes, node.id)]}
+            onCommit={(nextValue) => {
+              // 绑定/解绑的设备量测组同步由 Task 9 在此接入
+              updateParam("bound_device_id", nextValue);
+            }}
+          />
+          {gateway === "1" && !boundDeviceId && (
+            <span className="container-gateway-warning" role="alert">开启关口设备后需绑定设备</span>
+          )}
+        </td>
+      </tr>
+    </>);
   };
 
   return (
@@ -1059,6 +1138,8 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         </tbody>
                       </table>) : (<table className="param-table">
                         <tbody>
+                          {renderContainerRow()}
+                          {renderContainerGatewayRows()}
                           {(() => {
                         const eKeys = getEParameterKeys(inspectorSelectedNode.kind, inspectorSelectedNode.params);
                         const customDefinitions = parseCustomDefinitions(inspectorSelectedNode.params);

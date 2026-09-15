@@ -11656,6 +11656,19 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   gap: 10px;
 }
 
+/* 容器「绑定到设备」格:值控件与关口未绑定红提示同行 */
+.container-bound-device-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.container-gateway-warning {
+  color: #dc2626;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .batch-param-panel {
   display: grid;
   gap: 8px;

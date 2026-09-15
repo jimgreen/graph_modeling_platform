@@ -10,6 +10,10 @@ import {
   isAcContainerNode,
   judgeContainerMembership,
   enforceContainerMembership,
+  containerDecisionNodeUpdates,
+  containerMembershipCommit,
+  containerSelectOptions,
+  containerMemberOptions,
 } from "./acContainer";
 
 // 测试用最小节点。rotation/scale 必填:calculateNodeVisualBounds 依赖它们算半宽高,
@@ -250,5 +254,80 @@ describe("归属判定", () => {
       expect(b.top).toBeGreaterThanOrEqual(r.y1);
       expect(b.bottom).toBeLessThanOrEqual(r.y2);
     }
+  });
+});
+
+// ─── 面板下拉选项与决策应用(右侧面板消费) ─────────────────────────────────
+describe("acContainer 面板", () => {
+  test("所属容器下拉:首项无(当前模板),其余 名称 (idx)", () => {
+    const c = { ...node("c1", "ac-vpp-box", 0, 0), name: "开关箱甲", params: { idx: "12" } } as any;
+    const opts = containerSelectOptions([c, node("a", "ac-load", 0, 0)]);
+    expect(opts[0]).toEqual({ label: "无(当前模板)", value: "" });
+    expect(opts[1]).toEqual({ label: "开关箱甲 (12)", value: "c1" });
+    // 非容器节点不入选项
+    expect(opts).toHaveLength(2);
+  });
+
+  test("所属容器下拉:无 idx 时只显示名称", () => {
+    const c = { ...node("c1", "ac-switch-box", 0, 0), name: "开关箱乙" } as any;
+    expect(containerSelectOptions([c])[1]).toEqual({ label: "开关箱乙", value: "c1" });
+  });
+
+  test("绑定设备候选 = 容器成员", () => {
+    const c = { ...node("c1", "ac-vpp-box", 0, 0), params: { idx: "12" } } as any;
+    const m = { ...node("m1", "ac-load", 0, 0), name: "负荷A", params: { idx: "7" }, containerId: "c1" } as any;
+    expect(containerMemberOptions([c, m], "c1")).toEqual([{ label: "负荷A (7)", value: "m1" }]);
+  });
+
+  test("绑定设备候选:排除其它容器成员与容器自身", () => {
+    const c = { ...node("c1", "ac-vpp-box", 0, 0), params: { idx: "1" } } as any;
+    const other = { ...node("m2", "ac-load", 0, 0), containerId: "c2" } as any;
+    const self = { ...c, containerId: "c1" } as any; // 容器自带 containerId 属异常数据,也不得进候选
+    expect(containerMemberOptions([c, other, self], "c1")).toEqual([]);
+  });
+
+  test("决策应用:容器重算与挤出节点一并产出(漏任一侧都会留下错矩形)", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0, 180, 112);
+    const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
+    const stray = node("stray", "ac-load", 280, 60); // 落在重算后的容器矩形内,无归属
+    const dec = enforceContainerMembership([c, m, stray] as any);
+    const updates = containerDecisionNodeUpdates([c, m, stray] as any, dec);
+    const byId = new Map(updates.map((n) => [n.id, n]));
+    const movedContainer = dec.containerUpdates.find((n) => n.id === "c1")!;
+    expect(byId.get("c1")!.position).toEqual(movedContainer.position);
+    expect(byId.get("c1")!.size).toEqual(movedContainer.size);
+    expect(byId.get("stray")!.position).toEqual(dec.patch[0].position);
+    expect(byId.get("m1")).toBeUndefined(); // 成员位置不变,不产出更新
+  });
+
+  test("改所属容器:写入 containerId + 一并产出容器重算", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0, 180, 112);
+    const m = node("m1", "ac-load", 300, 40);
+    const { changed, updates } = containerMembershipCommit([c, m] as any, "m1", "c1");
+    expect(changed).toBe(true);
+    const byId = new Map(updates.map((n) => [n.id, n]));
+    expect(byId.get("m1")!.containerId).toBe("c1");
+    // 容器矩形必须跟着成员重算(只写 containerId 会留下旧框:成员在框外)
+    const fitted = byId.get("c1")!;
+    expect(centerIn(m.position, rectOf(fitted))).toBe(true);
+    expect(fitted.position).not.toEqual(c.position);
+  });
+
+  test("移出容器:清掉 containerId 字段(不留 undefined 键)", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0, 180, 112);
+    const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
+    const { changed, updates } = containerMembershipCommit([c, m] as any, "m1", undefined);
+    expect(changed).toBe(true);
+    const moved = updates.find((n) => n.id === "m1")!;
+    expect("containerId" in moved).toBe(false);
+    // 容器收缩回最小尺寸(成员已移出)
+    expect(updates.find((n) => n.id === "c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE });
+  });
+
+  test("归属未变或目标缺失:不产出任何提交", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0, 180, 112);
+    const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
+    expect(containerMembershipCommit([c, m] as any, "m1", "c1").changed).toBe(false);
+    expect(containerMembershipCommit([c, m] as any, "nope", "c1").changed).toBe(false);
   });
 });
