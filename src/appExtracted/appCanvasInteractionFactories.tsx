@@ -1395,7 +1395,8 @@ export function createFinishNodeDrag(__appScope: Record<string, any>) {
       const target = nodes.find((node) => node.id === enterContainerId);
       showGlobalMessage(`已移入容器 ${target?.name ?? ""}`.trim());
     }
-    // Alt 移出与移入对称提示;多选拖动可能两种同时发生,两条独立弹(不是二选一)
+    // Alt 移出与移入对称提示。两条**互斥**:exit 仅在 altKey=true、enter 仅在 altKey=false
+    // (judge 里 Alt + 非成员直接 continue),写成独立 if 只为可读性,不是「可能同时发生」
     if (exitContainerId) {
       const source = nodes.find((node) => node.id === exitContainerId);
       showGlobalMessage(`已移出容器 ${source?.name ?? ""}`.trim());

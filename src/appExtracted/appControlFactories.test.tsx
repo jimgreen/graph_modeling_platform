@@ -542,6 +542,18 @@ describe("programmaticDeleteDevices", () => {
     expect(calls.nodes.map((n) => n.id)).toEqual(["m1", "o1"]);
     expect(calls.nodes[0].containerId).toBeUndefined();
   });
+
+  // 删成员后容器必须收缩(半程 enforce:只重算几何、不挤出) —— 与界面删除入口同源
+  test("删除成员 → 存留容器几何重算收缩", () => {
+    const nodes = [
+      { id: "c1", kind: "ac-vpp-box", name: "虚拟电厂1", position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, rotation: 0, scale: 1, params: { _labelVisible: "0" }, terminals: [] },
+      { id: "m1", kind: "ac-load", name: "m1", position: { x: 0, y: 0 }, size: { width: 40, height: 30 }, rotation: 0, scale: 1, params: { _labelVisible: "0" }, terminals: [], containerId: "c1" }
+    ];
+    const { scope, calls } = createDeleteMockScope([], [], nodes);
+    createProgrammaticDeleteDevices(scope)(["m1"]);
+    expect(calls.nodes.map((n) => n.id)).toEqual(["c1"]);
+    expect(calls.nodes[0].size).toEqual({ width: 180, height: 112 });
+  });
 });
 
 // mock __appScope for updateDeviceProperty

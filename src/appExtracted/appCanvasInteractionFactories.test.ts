@@ -2,7 +2,7 @@
 // 该路径从 __appScope 解构了 30+ 个键,任何「解构遮蔽模块 import」都会在这里炸成
 // `nodes.some(undefined)` 这类 TypeError —— 而 @ts-nocheck + audit:names 都拦不住,只能靠真跑一次。
 import { describe, expect, test, vi } from "vitest";
-import { createMoveSelection, createPlaceLibraryDeviceAtPoint } from "./appCanvasInteractionFactories";
+import { createFinishNodeDrag, createMoveSelection, createPlaceLibraryDeviceAtPoint } from "./appCanvasInteractionFactories";
 import { DEVICE_LIBRARY_BY_KIND, createNodeFromTemplate } from "../model";
 
 const bareNode = (id: string, kind: string, x: number, y: number, extra: Record<string, unknown> = {}) => ({
@@ -78,6 +78,92 @@ describe("createMoveSelection 容器接入", () => {
     const scope = makeScope();
     createMoveSelection(scope as any)(10, 0);
     expect(scope.pushUndoSnapshot).toHaveBeenCalledWith(true, false, undefined, "移动设备", expect.any(String));
+  });
+});
+
+// ─── 拖动落地的归属 toast 接线(createFinishNodeDrag) ─────────────────────────
+// judge 只回报 enterContainerId / exitContainerId,是否弹、弹什么由本节验证 ——
+// 二者互斥(exit 仅 altKey=true),故各自独立用例。
+describe("拖动落地 toast 接线", () => {
+  const makeDragScope = (nodes: any[], movedId: string, delta: { x: number; y: number }) => {
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+    const grabbed = [movedId];
+    return {
+      scope: {
+        adjustEdgesAfterNodeMove: (edges: unknown[]) => edges,
+        applyCanvasBounds: vi.fn(),
+        applyNodeTerminalSnap: (d: any) => d,
+        boundedDeltaForMoveGeometry: (_a: unknown, _b: unknown, _c: unknown, _d: unknown, _e: unknown, _f: unknown, dx: number, dy: number) => ({ x: dx, y: dy }),
+        buildMovedNodeUpdates: (ids: string[], positions: Record<string, { x: number; y: number }>, d: { x: number; y: number }) =>
+          ids.flatMap((id) => {
+            const node = nodeById.get(id);
+            const origin = positions[id];
+            return node && origin ? [{ ...node, position: { x: origin.x + d.x, y: origin.y + d.y } }] : [];
+          }),
+        canvasBoundsForMoveDelta: () => ({ width: 800, height: 400 }),
+        canvasInteractionRef: { current: false },
+        clearNodeDragMoveSchedule: vi.fn(),
+        commitFastMovedGraphPatches: vi.fn(),
+        commitSafeDeltaForDraggingState: () => delta,
+        dragDraggedEdgeIdSet: () => new Set<string>(),
+        dragMovedBusNodeIdSet: () => new Set<string>(),
+        dragMovedNodeIdSet: (state: any) => new Set<string>(state.nodeIds),
+        dragUndoCapturedRef: { current: true },
+        draggingRef: { current: { nodeIds: grabbed, grabbedNodeIds: grabbed, edgeIds: [], affectedEdges: [], originalPositions: { [movedId]: nodeById.get(movedId)!.position }, originalEdgePoints: {}, originalRoutePoints: {}, selection: null } },
+        ensureDraggingUndoSnapshot: vi.fn(),
+        externalMoveCandidateEdges: () => [],
+        finalizeMovedNodeEdgesFast: (edges: unknown[]) => edges,
+        findMultiNodeDragSnapTargetAtDelta: () => null,
+        findSingleNodeDragSnapTargetAtDelta: () => null,
+        flushPendingNodeDragMove: vi.fn(),
+        graphStore: {},
+        hideImperativeMultiNodeDragOverlay: vi.fn(),
+        hideImperativeSingleNodeDragPreview: vi.fn(),
+        internalMoveEdgeIdsForMovedNodes: () => new Set<string>(),
+        isMultiNodeMoveState: () => false,
+        mergeAdjustedCandidateEdges: (edges: unknown[]) => edges,
+        mergeNodeUpdateLists: (base: any[], extra: any[]) => (extra.length > 0 ? [...base, ...extra] : base),
+        nextNodesForMovedGraphCommit: () => nodes,
+        nodeTerminalSnapTargetRef: { current: null },
+        nodes,
+        normalizeProjectMeasurements: (m: unknown) => m,
+        projectListPointerInsideRef: { current: false },
+        resetMultiNodeDragOverlayTransform: vi.fn(),
+        restoreCanvasSelectionSnapshotWithInspector: vi.fn(),
+        routePreserveEdgeIdsForMovedNodes: () => new Set<string>(),
+        setDragging: vi.fn(),
+        setProjectMeasurements: vi.fn(),
+        shouldFinalizeMovedNodeEdgesSynchronously: () => false,
+        showGlobalMessage: vi.fn(),
+        synchronousEdgeAdjustmentCandidates: () => [],
+        translateInternalMoveCandidateEdges: () => [],
+        translateWholeMoveCandidateEdges: () => [],
+        updateSmartAlignmentGuides: vi.fn(),
+        writeOperationLog: vi.fn()
+      }
+    };
+  };
+  const container = () => bareNode("c1", "ac-vpp-box", 0, 0, { size: { width: 200, height: 200 } });
+
+  test("Alt 拖出成员 → toast「已移出容器 <名称>」", () => {
+    const member = bareNode("m1", "ac-load", 50, 50, { containerId: "c1" });
+    const { scope } = makeDragScope([container(), member], "m1", { x: 300, y: 300 });
+    createFinishNodeDrag(scope as any)(true);
+    expect(scope.showGlobalMessage.mock.calls.map((call) => call[0])).toEqual(["已移出容器 c1"]);
+  });
+
+  test("非 Alt 拖入成员 → toast「已移入容器 <名称>」(移入侧接线断言)", () => {
+    const outsider = bareNode("o1", "ac-load", 300, 300);
+    const { scope } = makeDragScope([container(), outsider], "o1", { x: -250, y: -250 });
+    createFinishNodeDrag(scope as any)(false);
+    expect(scope.showGlobalMessage.mock.calls.map((call) => call[0])).toEqual(["已移入容器 c1"]);
+  });
+
+  test("对照组:普通拖动(不进出容器)不弹 toast", () => {
+    const outsider = bareNode("o1", "ac-load", 900, 900);
+    const { scope } = makeDragScope([container(), outsider], "o1", { x: 10, y: 10 });
+    createFinishNodeDrag(scope as any)(false);
+    expect(scope.showGlobalMessage).not.toHaveBeenCalled();
   });
 });
 

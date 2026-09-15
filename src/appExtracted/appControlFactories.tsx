@@ -3,7 +3,7 @@
 // 与 UI 写方法隔离：参数显式传入，复用底层 setter，绕过 prompt/alert/draft/editMode。
 // 经 WS control 指令调用（App.tsx commandHandler 分发）。
 import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdges, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, syncedSwitchStatusPatch } from "../model";
-import { commitContainerMembership, containerDeletionFinalize, withNodeUpdates } from "../acContainer";
+import { commitContainerMembership, containerDeletionFinalize, refitContainersOnly, withNodeUpdates } from "../acContainer";
 import { createCanvasGroupFromSelection, removeGraphicsFromGroups } from "../selectionActions";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
 
@@ -253,9 +253,11 @@ export function createProgrammaticDeleteDevices(__appScope: Record<string, any>)
     markBusTerminalSyncDirtyForEdges(deletedEdges);
     const result = deleteNodesWithConnectedEdges(nodes, edges, targetNodeIds);
     const nextEdges = result.edges.filter((edge: any) => !selectedEdgeSet.has(edge.id));
-    // 删除容器收尾:被删容器的成员清 containerId(成员保留),与界面删除入口同源。
+    // 删除收尾:① 被删容器的成员清 containerId(成员保留);② 成员被删/散出后容器几何重算收缩
+    // (半程 enforce:不挤出,否则会搬动刚散出的成员)。与界面删除入口同源。
     // 无确认框 —— 控制台端点无人可问,调用方已知自己要删什么。
-    const nextNodes = withNodeUpdates(result.nodes, containerDeletionFinalize(nodes, targetNodeIds));
+    const surviving = withNodeUpdates(result.nodes, containerDeletionFinalize(nodes, targetNodeIds));
+    const nextNodes = withNodeUpdates(surviving, refitContainersOnly(surviving));
     setGraphArrays(nextNodes, nextEdges);
     void syncGlobalLineProjectNodes?.(nextNodes, false);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, targetNodeIds, selectedEdgeSet), nextNodes, nextEdges));
