@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
+import { applyDragContainerMembership, containerDragGroup } from "../acContainer";
 import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind, syncedSwitchStatusPatch } from "../model";
 import { isThreeWindingTransformer } from "../model-eexport";
 import { setVoltageBaseTerminalValueForTopologySide, voltageBaseParamTerminalIndexForNode } from "../model-routing";
@@ -1096,7 +1097,7 @@ export function createFinishDraggingMove(__appScope: Record<string, any>) {
     snapTarget: NodeTerminalSnapTarget | null,
     actionLabel: "拖拽" | "移动"
   ) => {
-  const { adjustEdgesAfterNodeMove, applyCanvasBounds, applyNodeTerminalSnap, boundedDeltaForMoveGeometry, buildMovedNodeUpdates, canvasBoundsForMoveDelta, canvasInteractionRef, clearDraggingMoveState, commitFastMovedGraphPatches, commitSafeDeltaForDraggingState, dragDraggedEdgeIdSet, dragMovedBusNodeIdSet, dragMovedNodeIdSet, ensureDraggingUndoSnapshot, externalMoveCandidateEdges, finalizeMovedNodeEdgesFast, findMultiNodeDragSnapTargetAtDelta, findSingleNodeDragSnapTargetAtDelta, graphStore, internalMoveEdgeIdsForMovedNodes, isMultiNodeMoveState, mergeAdjustedCandidateEdges, nextNodesForMovedGraphCommit, nodes, projectListPointerInsideRef, restoreCanvasSelectionSnapshotWithInspector, routePreserveEdgeIdsForMovedNodes, shouldFinalizeMovedNodeEdgesSynchronously, synchronousEdgeAdjustmentCandidates, translateInternalMoveCandidateEdges, translateWholeMoveCandidateEdges, writeOperationLog } = __appScope;
+  const { adjustEdgesAfterNodeMove, applyCanvasBounds, applyNodeTerminalSnap, boundedDeltaForMoveGeometry, buildMovedNodeUpdates, canvasBoundsForMoveDelta, canvasInteractionRef, clearDraggingMoveState, commitFastMovedGraphPatches, commitSafeDeltaForDraggingState, dragDraggedEdgeIdSet, dragMovedBusNodeIdSet, dragMovedNodeIdSet, ensureDraggingUndoSnapshot, externalMoveCandidateEdges, finalizeMovedNodeEdgesFast, findMultiNodeDragSnapTargetAtDelta, findSingleNodeDragSnapTargetAtDelta, graphStore, internalMoveEdgeIdsForMovedNodes, isMultiNodeMoveState, mergeAdjustedCandidateEdges, mergeNodeUpdateLists, nextNodesForMovedGraphCommit, nodes, projectListPointerInsideRef, restoreCanvasSelectionSnapshotWithInspector, routePreserveEdgeIdsForMovedNodes, shouldFinalizeMovedNodeEdgesSynchronously, synchronousEdgeAdjustmentCandidates, translateInternalMoveCandidateEdges, translateWholeMoveCandidateEdges, writeOperationLog } = __appScope;
     if (!activeDragging) {
       return false;
     }
@@ -1145,7 +1146,15 @@ export function createFinishDraggingMove(__appScope: Record<string, any>) {
     }
     const finalBounds = canvasBoundsForMoveDelta(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta.x, finalDelta.y);
     applyCanvasBounds(finalBounds);
-    const movedNodeUpdates = buildMovedNodeUpdates(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta, finalBounds);
+    const draggedNodeUpdates = buildMovedNodeUpdates(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta, finalBounds);
+    // 归属落地:键盘移动无 Alt 语义(altKey 恒 false),判定与容器重算口径同鼠标拖动
+    const postMoveById = new Map(draggedNodeUpdates.map((node) => [node.id, node]));
+    const { updates: containerUpdates } = applyDragContainerMembership({
+      nodes: nodes.map((node) => postMoveById.get(node.id) ?? node),
+      movedIds: activeDragging.nodeIds,
+      altKey: false
+    });
+    const movedNodeUpdates = mergeNodeUpdateLists(draggedNodeUpdates, containerUpdates);
     const nextNodes = nextNodesForMovedGraphCommit(graphStore, movedNodeUpdates, dragNodeIds);
     const synchronousCandidateEdges = synchronousEdgeAdjustmentCandidates(
       activeDragging.affectedEdges,
@@ -1222,8 +1231,9 @@ export function createFinishDraggingMove(__appScope: Record<string, any>) {
 }
 
 export function createFinishNodeDrag(__appScope: Record<string, any>) {
-  return () => {
-  const { adjustEdgesAfterNodeMove, applyCanvasBounds, applyNodeTerminalSnap, boundedDeltaForMoveGeometry, buildMovedNodeUpdates, canvasBoundsForMoveDelta, canvasInteractionRef, clearNodeDragMoveSchedule, commitFastMovedGraphPatches, commitSafeDeltaForDraggingState, dragDraggedEdgeIdSet, dragMovedBusNodeIdSet, dragMovedNodeIdSet, dragUndoCapturedRef, draggingRef, ensureDraggingUndoSnapshot, externalMoveCandidateEdges, finalizeMovedNodeEdgesFast, findMultiNodeDragSnapTargetAtDelta, findSingleNodeDragSnapTargetAtDelta, flushPendingNodeDragMove, graphStore, hideImperativeMultiNodeDragOverlay, hideImperativeSingleNodeDragPreview, internalMoveEdgeIdsForMovedNodes, isMultiNodeMoveState, mergeAdjustedCandidateEdges, nextNodesForMovedGraphCommit, nodeTerminalSnapTargetRef, nodes, projectListPointerInsideRef, resetMultiNodeDragOverlayTransform, restoreCanvasSelectionSnapshotWithInspector, routePreserveEdgeIdsForMovedNodes, setDragging, shouldFinalizeMovedNodeEdgesSynchronously, synchronousEdgeAdjustmentCandidates, translateInternalMoveCandidateEdges, translateWholeMoveCandidateEdges, updateSmartAlignmentGuides, writeOperationLog } = __appScope;
+  // altKey 由指针抬起事件带入(Alt = 明确移出/不落入容器)
+  return (altKey = false) => {
+  const { adjustEdgesAfterNodeMove, applyCanvasBounds, applyNodeTerminalSnap, boundedDeltaForMoveGeometry, buildMovedNodeUpdates, canvasBoundsForMoveDelta, canvasInteractionRef, clearNodeDragMoveSchedule, commitFastMovedGraphPatches, commitSafeDeltaForDraggingState, dragDraggedEdgeIdSet, dragMovedBusNodeIdSet, dragMovedNodeIdSet, dragUndoCapturedRef, draggingRef, ensureDraggingUndoSnapshot, externalMoveCandidateEdges, finalizeMovedNodeEdgesFast, findMultiNodeDragSnapTargetAtDelta, findSingleNodeDragSnapTargetAtDelta, flushPendingNodeDragMove, graphStore, hideImperativeMultiNodeDragOverlay, hideImperativeSingleNodeDragPreview, internalMoveEdgeIdsForMovedNodes, isMultiNodeMoveState, mergeAdjustedCandidateEdges, mergeNodeUpdateLists, nextNodesForMovedGraphCommit, nodeTerminalSnapTargetRef, nodes, projectListPointerInsideRef, resetMultiNodeDragOverlayTransform, restoreCanvasSelectionSnapshotWithInspector, routePreserveEdgeIdsForMovedNodes, setDragging, shouldFinalizeMovedNodeEdgesSynchronously, showGlobalMessage, synchronousEdgeAdjustmentCandidates, translateInternalMoveCandidateEdges, translateWholeMoveCandidateEdges, updateSmartAlignmentGuides, writeOperationLog } = __appScope;
     flushPendingNodeDragMove(false);
     const activeDragging = draggingRef.current;
     if (!activeDragging) {
@@ -1286,7 +1296,17 @@ export function createFinishNodeDrag(__appScope: Record<string, any>) {
     }
     const finalBounds = canvasBoundsForMoveDelta(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta.x, finalDelta.y);
     applyCanvasBounds(finalBounds);
-    const movedNodeUpdates = buildMovedNodeUpdates(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta, finalBounds);
+    const draggedNodeUpdates = buildMovedNodeUpdates(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta, finalBounds);
+    // 归属落地:判定用**拖动后**节点(容器与成员均取新位置,判定点 = 节点中心)——
+    // 用拖动前的位置会漏判「拖进容器」,并把容器重算回旧位置
+    const postMoveById = new Map(draggedNodeUpdates.map((node) => [node.id, node]));
+    const { updates: containerUpdates, enterContainerId } = applyDragContainerMembership({
+      nodes: nodes.map((node) => postMoveById.get(node.id) ?? node),
+      movedIds: activeDragging.nodeIds,
+      altKey
+    });
+    // 归属/容器几何变更并入同一次提交(单一撤销单元:撤销点见前方 ensureDraggingUndoSnapshot)
+    const movedNodeUpdates = mergeNodeUpdateLists(draggedNodeUpdates, containerUpdates);
     const nextNodes = nextNodesForMovedGraphCommit(graphStore, movedNodeUpdates, dragNodeIds);
     const synchronousCandidateEdges = synchronousEdgeAdjustmentCandidates(
       activeDragging.affectedEdges,
@@ -1365,6 +1385,10 @@ export function createFinishNodeDrag(__appScope: Record<string, any>) {
         ? "，端子已吸附"
         : "";
     writeOperationLog(`拖拽 ${activeDragging.nodeIds.length} 个图元 (${Math.round(finalDelta.x)}, ${Math.round(finalDelta.y)})${snapText}`);
+    if (enterContainerId) {
+      const target = nodes.find((node) => node.id === enterContainerId);
+      showGlobalMessage(`已移入容器 ${target?.name ?? ""}`.trim());
+    }
   };
 }
 
@@ -1747,12 +1771,13 @@ export function createReleaseKeyboardMoveKey(__appScope: Record<string, any>) {
 
 export function createStartKeyboardMoveSession(__appScope: Record<string, any>) {
   return (renderInitial = true) => {
-  const { activeSelectedEdgeIds, activeSelectedNodeIds, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clearNodeDragMoveSchedule, currentCanvasSelectionSnapshot, displaySelectedEdgeIds, displaySelectedNodeIds, dragUndoCapturedRef, dragging, draggingRef, edgeListForNodeIds, isMultiNodeMoveState, isWholeActiveLayerMove, movableCanvasNodeIds, nodeById, requireEditMode, routePointsSnapshotForMove, snapshotRouteBounds, startDraggingState } = __appScope;
+  const { activeSelectedEdgeIds, activeSelectedNodeIds, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clearNodeDragMoveSchedule, currentCanvasSelectionSnapshot, displaySelectedEdgeIds, displaySelectedNodeIds, dragUndoCapturedRef, dragging, draggingRef, edgeListForNodeIds, isMultiNodeMoveState, isWholeActiveLayerMove, movableCanvasNodeIds, nodeById, nodes, requireEditMode, routePointsSnapshotForMove, snapshotRouteBounds, startDraggingState } = __appScope;
     if (!requireEditMode("移动图元")) {
       return null;
     }
     const rawMoveNodeIds = canvasSelectionScope === "direct" ? displaySelectedNodeIds : activeSelectedNodeIds;
-    const moveNodeIds = movableCanvasNodeIds(rawMoveNodeIds);
+    // 拖容器 = 整组(键盘方向键与鼠标拖动同口径)
+    const moveNodeIds = movableCanvasNodeIds(containerDragGroup(nodes, rawMoveNodeIds));
     const moveEdgeIds = canvasSelectionScope === "direct" ? displaySelectedEdgeIds : activeSelectedEdgeIds;
     if (moveNodeIds.length === 0) {
       return null;
@@ -1846,7 +1871,8 @@ export function createMoveSelection(__appScope: Record<string, any>) {
       return;
     }
     const rawMoveNodeIds = canvasSelectionScope === "direct" ? displaySelectedNodeIds : activeSelectedNodeIds;
-    const moveNodeIds = movableCanvasNodeIds(rawMoveNodeIds);
+    // 拖容器 = 整组(与鼠标拖动/键盘按住的方向键同口径)
+    const moveNodeIds = movableCanvasNodeIds(containerDragGroup(nodes, rawMoveNodeIds));
     const moveEdgeIds = canvasSelectionScope === "direct" ? displaySelectedEdgeIds : activeSelectedEdgeIds;
     if (moveNodeIds.length === 0) {
       return;
@@ -4506,7 +4532,7 @@ export function createStartSingleTransformDrag(__appScope: Record<string, any>) 
 
 export function createStartGroupMoveDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGRectElement>, unit: CanvasLayoutUnit) => {
-  const { activateInspectorFromCanvas, activeLayerNodeIdSet, activeSelectedNodeIds, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clampPointToCanvas, clearNodeDragMoveSchedule, connectSource, createCanvasSelectionSnapshot, dragUndoCapturedRef, edgeListForNodeIds, expandActiveGroupSelection, groupExpandedCanvasSelection, hasCanvasSelectionModifier, isMultiNodeMoveState, isWholeActiveLayerMove, mode, movableCanvasNodeIds, nodeById, requireEditMode, routePointsSnapshotForMove, screenToSvgPoint, setCanvasSelectionScope, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, snapshotRouteBounds, startDraggingState, startModifierSelectionPress, svgRef } = __appScope;
+  const { activateInspectorFromCanvas, activeLayerNodeIdSet, activeSelectedNodeIds, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clampPointToCanvas, clearNodeDragMoveSchedule, connectSource, createCanvasSelectionSnapshot, dragUndoCapturedRef, edgeListForNodeIds, expandActiveGroupSelection, groupExpandedCanvasSelection, hasCanvasSelectionModifier, isMultiNodeMoveState, isWholeActiveLayerMove, mode, movableCanvasNodeIds, nodeById, nodes, requireEditMode, routePointsSnapshotForMove, screenToSvgPoint, setCanvasSelectionScope, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, snapshotRouteBounds, startDraggingState, startModifierSelectionPress, svgRef } = __appScope;
     event.preventDefault();
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || mode === "connect" || connectSource) {
@@ -4536,7 +4562,8 @@ export function createStartGroupMoveDrag(__appScope: Record<string, any>) {
     setSelectedEdgeIds(dragSelection.edgeIds);
     setSelectedEdgeId(dragSelection.edgeIds[0] ?? "");
     const point = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-    const dragNodeIds = movableCanvasNodeIds(dragSelection.nodeIds);
+    // 拖容器 = 整组:组合框拖动同样把成员并入拖动集合
+    const dragNodeIds = movableCanvasNodeIds(containerDragGroup(nodes, dragSelection.nodeIds));
     if (dragNodeIds.length === 0) {
       return;
     }

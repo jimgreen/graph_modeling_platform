@@ -17,6 +17,7 @@ import {
 } from "../voltageInheritance";
 import { getRatedCapacityDefaultForKind } from "../model";
 import { graphStorePatchNodes } from "../graphStore";
+import { containerDragGroup } from "../acContainer";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return async (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[], globalLineChoice?: GlobalLineChoice) => {
@@ -670,7 +671,7 @@ export function createHandleRoutableLineNodePointerDown(__appScope: Record<strin
 
 export function createHandleNodePointerDown(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGGElement>, node: ModelNode) => {
-  const { activateInspectorFromCanvas, activeLayerNodeIdSet, activeSelectedEdgeIds, activeSelectedNodeIds, appendStaticDrawingPoint, applyConnectPreviewState, beginStaticButtonPointerFeedback, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clampPointToCanvas, clearNodeDragMoveSchedule, connectSource, connectTargetSnapPoint, createCanvasSelectionSnapshot, dragUndoCapturedRef, edgeListForNodeIds, expandActiveGroupSelection, findConnectTargetAtPoint, finishConnectToTarget, groupExpandedCanvasSelection, handleRoutableLineNodePointerDown, handleTerminalPointerDown, hasCanvasSelectionModifier, isBrowseMode, isBusNode, isMultiNodeMoveState, isRoutableLineDeviceKind, isStaticButtonEnabledForNode, isWholeActiveLayerMove, lastCanvasPointerRef, mode, movableCanvasNodeIds, nodeById, resetConnectPreviewState, resolveConnectPreviewPoint, restoreCanvasSelectionSnapshotWithInspector, routableLinePlacement, routePointsSnapshotForMove, screenToSvgPoint, selectCanvasGraphics, selectedEdgeId, selectedEdgeIds, selectedGroupMemberNodeIdSet, selectedNodeIdSet, selectedNodeIds, setConnectSource, setContextMenu, setLastCanvasClickTarget, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, snapshotRouteBounds, startDraggingState, startModifierSelectionPress, staticDrawing, svgRef, switchInspectorTabForCanvasSelection, updateMouseStatus } = __appScope;
+  const { activateInspectorFromCanvas, activeLayerNodeIdSet, activeSelectedEdgeIds, activeSelectedNodeIds, appendStaticDrawingPoint, applyConnectPreviewState, beginStaticButtonPointerFeedback, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clampPointToCanvas, clearNodeDragMoveSchedule, connectSource, connectTargetSnapPoint, createCanvasSelectionSnapshot, dragUndoCapturedRef, edgeListForNodeIds, expandActiveGroupSelection, findConnectTargetAtPoint, finishConnectToTarget, groupExpandedCanvasSelection, handleRoutableLineNodePointerDown, handleTerminalPointerDown, hasCanvasSelectionModifier, isBrowseMode, isBusNode, isMultiNodeMoveState, isRoutableLineDeviceKind, isStaticButtonEnabledForNode, isWholeActiveLayerMove, lastCanvasPointerRef, mode, movableCanvasNodeIds, nodeById, nodes, resetConnectPreviewState, resolveConnectPreviewPoint, restoreCanvasSelectionSnapshotWithInspector, routableLinePlacement, routePointsSnapshotForMove, screenToSvgPoint, selectCanvasGraphics, selectedEdgeId, selectedEdgeIds, selectedGroupMemberNodeIdSet, selectedNodeIdSet, selectedNodeIds, setConnectSource, setContextMenu, setLastCanvasClickTarget, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, snapshotRouteBounds, startDraggingState, startModifierSelectionPress, staticDrawing, svgRef, switchInspectorTabForCanvasSelection, updateMouseStatus } = __appScope;
     event.stopPropagation();
     if (event.button !== 0) {
       return;
@@ -771,7 +772,8 @@ export function createHandleNodePointerDown(__appScope: Record<string, any>) {
     if (applyPointerDownSelectionImmediately) {
       restoreCanvasSelectionSnapshotWithInspector(dragSelectionSnapshot);
     }
-    const dragNodeIds = movableCanvasNodeIds(dragSelection.nodeIds);
+    // 拖容器 = 整组:把成员并入本次拖动集合(成员随容器平移,其连线也随拖动候选集一并处理)
+    const dragNodeIds = movableCanvasNodeIds(containerDragGroup(nodes, dragSelection.nodeIds));
     if (mode === "connect") {
       if (isBusNode(node)) {
         handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, node.terminals[0]?.id ?? "t1");
