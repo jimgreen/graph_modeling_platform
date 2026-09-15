@@ -206,6 +206,54 @@ export function containerDecisionNodeUpdates(nodes: ModelNode[], decision: Membe
 }
 
 /**
+ * 拖动结束的归属落地(纯函数,供画布拖动提交调用):
+ * 判定 → 写/清 containerId → 离开者解绑原关口容器 → 容器重算 + 挤出非成员。
+ * 返回**需提交的节点更新**(变更集),调用方并入本次拖动提交,保持单一撤销单元。
+ * - `nodes` 必须是**拖动后**的节点(容器与成员均取新位置):判定点 = 节点中心。
+ * - `movedIds` 为本次真正拖动的节点;**跟随容器平移**的成员不参与判定
+ *   (否则「拖容器 + Alt」会被判成整组移出,而 Alt 移出只针对用户抓住的那个成员)。
+ * - 解绑用**原** nodes 判定(containerId 尚未改写),与移出/改归属同一出口。
+ */
+export function applyDragContainerMembership(args: {
+  nodes: ModelNode[];
+  movedIds: string[];
+  altKey: boolean;
+}): { updates: ModelNode[]; enterContainerId?: string } {
+  const { nodes, movedIds, altKey } = args;
+  const movedSet = new Set(movedIds);
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const judgeIds = movedIds.filter((id) => {
+    const owner = byId.get(id)?.containerId;
+    return !owner || !movedSet.has(owner);
+  });
+  const { membershipChanges, enterContainerId } = judgeContainerMembership({ nodes, movedIds: judgeIds, altKey });
+  const changeById = new Map(membershipChanges.map((c) => [c.nodeId, c]));
+  const changed = new Map<string, ModelNode>();
+  const unboundById = new Map(
+    clearGatewayBindingForLeavingMembers(
+      nodes,
+      membershipChanges.filter((c) => !c.containerId).map((c) => c.nodeId),
+      undefined
+    ).map((n) => [n.id, n])
+  );
+  for (const [id, n] of unboundById) changed.set(id, n);
+  const tagged = membershipChanges.length === 0 ? nodes : nodes.map((n) => {
+    const change = changeById.get(n.id);
+    if (!change) return n;
+    const next = { ...n };
+    if (change.containerId) next.containerId = change.containerId;
+    else delete next.containerId;
+    changed.set(n.id, next);
+    return next;
+  });
+  const withUnbind = unboundById.size === 0 ? tagged : tagged.map((n) => unboundById.get(n.id) ?? n);
+  for (const upd of containerDecisionNodeUpdates(withUnbind, enforceContainerMembership(withUnbind))) {
+    changed.set(upd.id, upd);
+  }
+  return { updates: [...changed.values()], enterContainerId };
+}
+
+/**
  * 面板改「所属容器」的纯计算:写入/清除 containerId(节点平级字段,不入 params),
  * 并给出需一并提交的节点更新(容器矩形重算 + 被挤出的非成员)。
  * changed=false 时无需提交(目标缺失或归属未变)。

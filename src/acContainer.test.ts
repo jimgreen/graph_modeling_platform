@@ -34,6 +34,7 @@ import {
   applyRemoveFromAcContainer,
   containerAddIsNoop,
   containerDragGroup,
+  applyDragContainerMembership,
 } from "./acContainer";
 
 // 测试用最小节点。rotation/scale 必填:calculateNodeVisualBounds 依赖它们算半宽高,
@@ -625,5 +626,61 @@ describe("拖容器整组", () => {
     const c2 = node("c2", "ac-vpp-box", 500, 0) as any;
     const m2 = { ...node("m2", "ac-load", 500, 0), containerId: "c2" } as any;
     expect(containerDragGroup([c1, c2, m2], ["c1"])).toEqual(["c1"]);
+  });
+});
+
+// ─── 拖动结束归属落地(判定 → 写/清 containerId → 解绑 → 容器重算 + 挤出) ──────
+describe("拖动结束归属落地", () => {
+  // c1 中心 (0,0) 尺寸 200×200 → 真实矩形 [-100,100]²;m1 中心 (50,50) 在其内
+  const container = () => node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
+  const member = (x = 50, y = 50) => ({ ...node("m1", "ac-load", x, y), containerId: "c1" } as any);
+  const byIdOf = (updates: any[]) => new Map(updates.map((n) => [n.id, n]));
+
+  test("成员非 Alt 拖动 → 容器跟随重算(扩展跟随),归属不变", () => {
+    const nodes = [container(), member(300, 300)]; // 拖动后位置
+    const { updates } = applyDragContainerMembership({ nodes, movedIds: ["m1"], altKey: false });
+    const c1 = byIdOf(updates).get("c1")!;
+    expect(c1.size).toEqual({ ...CONTAINER_MIN_SIZE });
+    expect(centerIn({ x: 300, y: 300 }, rectOf(c1))).toBe(true); // 容器已包住成员
+    expect(updates.some((u) => u.id === "m1" && !u.containerId)).toBe(false);
+  });
+
+  test("成员 Alt 拖动 → 移出 + 容器收缩回最小尺寸", () => {
+    const nodes = [container(), member(300, 300)];
+    const { updates } = applyDragContainerMembership({ nodes, movedIds: ["m1"], altKey: true });
+    const byId = byIdOf(updates);
+    expect(byId.get("m1")!.containerId).toBeUndefined();
+    expect(byId.get("c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE });
+  });
+
+  test("Alt 移出且成员正是关口绑定设备 → 一并解绑 + 关关口(与其它入口同源)", () => {
+    const c1 = { ...container(), params: { is_gateway: "1", bound_device_id: "m1" } };
+    const { updates } = applyDragContainerMembership({ nodes: [c1, member(300, 300)], movedIds: ["m1"], altKey: true });
+    const unbound = byIdOf(updates).get("c1")!;
+    expect(unbound.params.bound_device_id).toBe("");
+    expect(unbound.params.is_gateway).toBe("0");
+  });
+
+  test("非成员落入容器 → 写入归属并回报目标容器(供 toast)", () => {
+    const outsider = node("o", "ac-load", 60, 60);
+    const { updates, enterContainerId } = applyDragContainerMembership({
+      nodes: [container(), outsider], movedIds: ["o"], altKey: false,
+    });
+    expect(enterContainerId).toBe("c1");
+    expect(byIdOf(updates).get("o")!.containerId).toBe("c1");
+  });
+
+  test("拖容器 + Alt:跟随移动的成员不参与判定,整组不被拆散", () => {
+    // 容器与成员同步平移 +300(拖动起点已按 containerDragGroup 扩组)
+    const nodes = [node("c1", "ac-vpp-box", 300, 300, 200, 200) as any, member(350, 350)];
+    const { updates } = applyDragContainerMembership({ nodes, movedIds: ["c1", "m1"], altKey: true });
+    expect(updates.some((u) => u.id === "m1" && !u.containerId)).toBe(false);
+  });
+
+  test("图中无容器 → 无任何更新", () => {
+    const a = node("a", "ac-load", 0, 0);
+    const b = node("b", "ac-load", 80, 0);
+    const { updates } = applyDragContainerMembership({ nodes: [a, b], movedIds: ["a"], altKey: false });
+    expect(updates).toEqual([]);
   });
 });

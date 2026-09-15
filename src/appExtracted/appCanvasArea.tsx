@@ -545,7 +545,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         finishNodeLabelDrag();
         finishNodeLabelRotateDrag();
         finishMarqueeSelection();
-        finishNodeDrag();
+        // Alt 语义(移出/不落入容器)取指针抬起瞬间的修饰键状态
+        finishNodeDrag(event.altKey);
         finishManualPathDrag();
         finishTransformDrag();
         finishCanvasPanning();
