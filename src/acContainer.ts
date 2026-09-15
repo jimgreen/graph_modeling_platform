@@ -5,7 +5,8 @@
 //
 // 锚定口径(与平台一致):`node.position` 是节点**中心**,容器真实矩形 = position ± size/2。
 // (DeviceGlyph 矩形 x:-w/2、命中框、bodyVisualBoxForNode position±half 三处同源)
-import { type ModelNode, calculateNodeVisualBounds, isAcContainerKind } from "./model";
+// 相对 import 带 .ts 扩展名:本模块被 src/export/svg.ts(Node 直载)间接引用,裸 "./model" Node ESM 解析不了
+import { type ModelNode, calculateNodeVisualBounds, isAcContainerKind } from "./model.ts";
 
 /** 容器包围成员时的四周留白 */
 export const CONTAINER_PADDING = 24;

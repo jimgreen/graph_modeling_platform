@@ -5,6 +5,7 @@ import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
 import { shouldPromptBeforeUnload } from "../spaceSwitch";
 import { resolveEffectiveTemplateParameterDefinitions, withNodesParentModelId } from "../model";
 import { buildEffectiveLibraryTemplates } from "../export/device-definition-shared";
+import { containerFirstComparator } from "../acContainer";
 import { computeMeasurementColumnPositions } from "./appGraphMeasurementFactories";
 
 // 关联图元跳转：解析 node 的 model_id → 目标模型，找到唯一目标即加载该模型。
@@ -2057,8 +2058,10 @@ export function createAppHookCallback57(__appScope: Record<string, any>) {
         addVisibleNodeId(edge.targetId);
       }
     }
+    // 绘制序:容器沉底(先行绘制),其余按模型节点序稳序兜底。排序只作用于派生数组,不改 nodes 原序。
     const nodes = Array.from(viewportNodeById.values()).sort(
       (first, second) =>
+        containerFirstComparator(first, second) ||
         (graphStore.nodeIndexById.get(first.id) ?? Number.MAX_SAFE_INTEGER) -
         (graphStore.nodeIndexById.get(second.id) ?? Number.MAX_SAFE_INTEGER)
     );

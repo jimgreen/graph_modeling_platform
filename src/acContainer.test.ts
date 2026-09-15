@@ -146,6 +146,19 @@ describe("acContainer 布局", () => {
     expect(isAcContainerNode(c as any)).toBe(true);
     expect(isAcContainerNode(a as any)).toBe(false);
   });
+
+  test("混合数组排序:容器全部在前,非容器保持相对序", () => {
+    const arr = [
+      node("a", "ac-load", 0, 0),
+      node("c1", "ac-vpp-box", 0, 0),
+      node("b", "ac-load", 0, 0),
+      node("c2", "ac-switch-box", 0, 0),
+    ] as any[];
+    const sorted = [...arr].sort(containerFirstComparator);
+    expect(sorted.map((n) => n.id)).toEqual(["c1", "c2", "a", "b"]);
+    // 排序是派生数组行为:原数组顺序不受影响
+    expect(arr.map((n) => n.id)).toEqual(["a", "c1", "b", "c2"]);
+  });
 });
 
 describe("归属判定", () => {

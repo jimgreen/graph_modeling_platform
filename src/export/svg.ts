@@ -53,6 +53,7 @@ import {
 } from "../model-routing.ts";
 import { getNodeScaleX, getNodeScaleY } from "../model-canvas-ops.ts";
 import { inferESection } from "../model-eexport.ts";
+import { isAcContainerNode } from "../acContainer.ts";
 import {
   DEFAULT_MEASUREMENT_CONFIG,
   EMPTY_PROJECT_MEASUREMENTS,
@@ -322,6 +323,9 @@ ${scopedBackgroundSvg}
       nodeTypeLayerIds.set(layerKey, exportSvgUniqueId(exportSvgLayerId(layerKey, "Device"), usedSvgIds, "Device_Layer"));
     }
   }
+  // 容器沉底:容器节点层在 segment(线路)层之前输出,与画布同口径(acContainer.containerFirstComparator)。
+  // 按「容器节点的层键」判定而非按 kind 猜层名,容器层键派生自节点的真实分层结果。
+  const containerLayerKeys = new Set(exportNodes.filter(isAcContainerNode).map(exportNodeLayerKey));
   const exportDeviceIdByNodeId = buildExportDeviceIdMap(exportNodes, usedSvgIds);
   const resolveExportLayerButtonTargetIds = (node: ModelNode) => {
     if (!isStaticButtonCapableNode(node) || node.params.buttonEnabled !== "1" || node.params.buttonActionType !== "layer") {
@@ -955,10 +959,18 @@ ${backgroundImage ? svgImageContentMarkup(backgroundImage, {
     className: "export-canvas-background-image"
   }) : ""}`;
   const backgroundPageMarkup = buildBackgroundPageExportMarkup();
-  const deviceLayerMarkup = Array.from(nodeTypeLayerIds.entries())
-    .map(([layerKey, layerId]) => `<g id="${escapeXml(layerId)}" device-type="${escapeXml(layerKey)}">
+  const exportDeviceLayerGroup = ([layerKey, layerId]: [string, string]) => `<g id="${escapeXml(layerId)}" device-type="${escapeXml(layerKey)}">
 ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
-</g>`)
+</g>`;
+  const deviceLayerEntries = Array.from(nodeTypeLayerIds.entries());
+  // 尾随换行写进变量:无容器时输出必须逐字节等于旧基线(golden 哈希守卫)
+  const containerLayerEntries = deviceLayerEntries.filter(([layerKey]) => containerLayerKeys.has(layerKey));
+  const containerLayerMarkup = containerLayerEntries.length > 0
+    ? `${containerLayerEntries.map(exportDeviceLayerGroup).join("\n")}\n`
+    : "";
+  const deviceLayerMarkup = deviceLayerEntries
+    .filter(([layerKey]) => !containerLayerKeys.has(layerKey))
+    .map(exportDeviceLayerGroup)
     .join("\n");
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${canvasSize.width},${canvasSize.height}" active-layer-id="${escapeXml(activeExportLayerId)}">
 <defs id="${escapeXml(defsId)}">
@@ -976,7 +988,7 @@ ${associatedDeviceMetadataMarkup}
 ${backgroundMarkup}
 ${backgroundPageMarkup}
 </g>
-<g id="${escapeXml(segmentLayerId)}">
+${containerLayerMarkup}<g id="${escapeXml(segmentLayerId)}">
 ${edgeMarkup}
 </g>
 ${deviceLayerMarkup}
