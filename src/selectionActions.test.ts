@@ -1284,4 +1284,26 @@ describe("剪贴板副本剥离容器归属", () => {
     const clip = buildCanvasClipboard([device], [], [], ["b2"], []);
     expect(clip.nodes[0].params).toEqual({ is_gateway: "1", bound_device_id: "m9" });
   });
+
+  // 存量已持久化模板的剪贴板 JSON 早于本功能落库,构建期剥离对它无效 —— 克隆出口是最后一关
+  test("克隆出口同样剥离:直接构造的剪贴板(存量模板)落到图上也干净", () => {
+    const clipboard = {
+      nodes: [
+        { ...createDefaultNode("ac-load", { x: 0, y: 0 }), id: "m1", containerId: "c1" },
+        { ...createDefaultNode("ac-vpp-box", { x: 0, y: 0 }), id: "c1", params: { is_gateway: "1", bound_device_id: "m1" } }
+      ],
+      edges: [],
+      groups: []
+    } as any;
+    let seq = 0;
+    const cloned = cloneCanvasClipboard(clipboard, { x: 0, y: 0 }, () => `clone-${++seq}`, () => "edge-1");
+
+    const member = cloned.nodes.find((node) => node.kind === "ac-load")!;
+    const container = cloned.nodes.find((node) => node.kind === "ac-vpp-box")!;
+    expect(member.containerId).toBeUndefined();
+    expect(container.params.bound_device_id).toBeUndefined();
+    expect(container.params.is_gateway).toBe("0");
+    // 原剪贴板(存量模板内容)不被改写:模板可反复使用
+    expect(clipboard.nodes[0].containerId).toBe("c1");
+  });
 });

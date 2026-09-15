@@ -711,6 +711,41 @@ describe("拖动结束归属落地", () => {
 });
 
 // ─── 新增/移动节点并入图后的归属落地出口(粘贴/模板落点/程序化加图元/SVG 导入共用) ──
+describe("静态图元与线路的挤出/归属口径", () => {
+  test("挤出豁免:静态图元不被推出容器矩形(位置不变),普通设备仍被挤出", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
+    // 静态辅助图元是整画布尺寸的装饰(position = 画布中心),容器矩形必然盖住它的中心
+    const decoration = node("s1", "static-image", 0, 0, 900, 600) as any;
+    expect(ejectOutsiders(c, [c, decoration])).toEqual([]);
+    // 对照组:同位置的普通设备照常挤出(豁免是静态图元专属,不是整体失效)
+    const device = node("d1", "ac-load", 0, 0) as any;
+    expect(ejectOutsiders(c, [c, device])).toHaveLength(1);
+  });
+
+  test("位置断言:容器矩形盖住画布中心时,静态装饰节点不被 enforce 改写", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
+    const decoration = node("s1", "static-image", 0, 0, 900, 600) as any;
+    const nodes = [c, decoration];
+    const updates = containerDecisionNodeUpdates(nodes, enforceContainerMembership(nodes));
+    expect(updates.some((u) => u.id === "s1")).toBe(false);
+    expect(decoration.position).toEqual({ x: 0, y: 0 });
+  });
+
+  test("线路可入组(口径):判定写入 containerId,容器包围盒随之含线路", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
+    const line = node("l1", "ac-line", 50, 50, 120, 12) as any;
+    const { updates } = applyDragContainerMembership({ nodes: [c, line], movedIds: ["l1"], altKey: false });
+    const byId = new Map(updates.map((n) => [n.id, n]));
+    expect(byId.get("l1")!.containerId).toBe("c1");
+    const bounds = calculateNodeVisualBounds(line);
+    const r = rectOf(byId.get("c1")!);
+    expect(r.x1).toBeLessThanOrEqual(bounds.left);
+    expect(r.y1).toBeLessThanOrEqual(bounds.top);
+    expect(r.x2).toBeGreaterThanOrEqual(bounds.right);
+    expect(r.y2).toBeGreaterThanOrEqual(bounds.bottom);
+  });
+});
+
 describe("归属落地出口 commitContainerMembership", () => {
   test("落点在容器内的新节点 → 成为成员,返回完整节点数组且原图不被改写", () => {
     const c1 = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;

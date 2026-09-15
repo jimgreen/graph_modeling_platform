@@ -6,7 +6,7 @@
 // 锚定口径(与平台一致):`node.position` 是节点**中心**,容器真实矩形 = position ± size/2。
 // (DeviceGlyph 矩形 x:-w/2、命中框、bodyVisualBoxForNode position±half 三处同源)
 // 相对 import 带 .ts 扩展名:本模块被 src/export/svg.ts(Node 直载)间接引用,裸 "./model" Node ESM 解析不了
-import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, createDefaultNode, isAcContainerKind, isWireLikeRouteDeviceKind } from "./model.ts";
+import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, createDefaultNode, isAcContainerKind, isStaticNode, isWireLikeRouteDeviceKind } from "./model.ts";
 
 /** 容器包围成员时的四周留白 */
 export const CONTAINER_PADDING = 24;
@@ -70,6 +70,7 @@ export function ejectOutsiders(container: ModelNode, nodes: ModelNode[]): NodePo
     if (n.id === c.id) continue;
     if (isAcContainerNode(n)) continue;              // 其它容器豁免
     if (isWireLikeRouteDeviceKind(n.kind)) continue; // 线路豁免(全部线路 kind 单一谓词,只豁免 ac-line 会漏推其它 11 种)
+    if (isStaticNode(n)) continue;                   // 静态图元豁免:装饰图元常是整画布尺寸(position = 画布中心),容器矩形必然盖住其中心,推出框外等于搬动装饰
     if (n.containerId) continue;                     // 已归属某容器(含本容器成员)
     const p = n.position;                            // 节点中心
     if (p.x < x1 || p.x > x2 || p.y < y1 || p.y > y2) continue; // 中心在外
@@ -255,7 +256,9 @@ export function applyDragContainerMembership(args: {
 /**
  * 新增/移动节点并入图后的归属落地出口(粘贴、模板落点、程序化加图元、SVG 导入共用):
  * 判定(中心落入容器 → 移入)→ 解绑 → 容器重算 + 挤出。返回**完整**节点数组;
- * `movedIds` 为本次新增/移动的节点(判断点 = 节点中心),无变化时返回原引用。
+ * `movedIds` 为本次新增/移动的节点(判断点 = 节点中心)。
+ * 注意:原引用短路只在「图中无容器」时成立 —— 有容器时 enforce 恒产出容器重算更新(即便几何未变),
+ * 故本函数不是廉价判空,不要拿返回值引用相等当「无变化」用。
  */
 export function commitContainerMembership(nodes: ModelNode[], movedIds: string[]): ModelNode[] {
   if (movedIds.length === 0 || nodes.length === 0) {
