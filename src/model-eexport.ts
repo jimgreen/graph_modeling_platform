@@ -1880,6 +1880,15 @@ function gatewayMultipleLinkPointsReason(containerName: string, linkPointCount: 
   return `容器 ${containerName} 的绑定设备有 ${linkPointCount} 处不同连接点,无法串入关口,退化为仅容器表记录。`;
 }
 
+/**
+ * 两关口的绑定设备直连:同一条连线被两个关口认领,而一条边无法同时改成两条串入边
+ * (后写覆盖先写 → 先处理的容器电源侧端子拿不到连线,产出幻影拓扑节点行;两条新增边还会同 id)。
+ * 故双方都退化(对称判定,不依赖节点处理顺序)。
+ */
+function gatewayAdjacentReason(containerName: string): string {
+  return `容器 ${containerName} 的绑定设备直连另一关口的绑定设备,同一条连线无法被两个关口串入,退化为仅容器表记录。`;
+}
+
 /** 一个接线点(绑定设备侧端子)及其全部连线;同点多条边本就等电位,一起并到容器同一侧端子 */
 type GatewayLink = { boundTerminalId: string; edges: Edge[] };
 
@@ -1899,6 +1908,14 @@ type GatewayPlan = { splice: GatewaySplice } | { container: ModelNode; degradeRe
  */
 function planGatewaySplices(nodes: ModelNode[], edges: Edge[]): GatewayPlan[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
+  // 先收全部关口绑定设备 id:直连到另一个关口绑定设备时双方都退化(对称,不依赖处理顺序)
+  const gatewayBoundIds = new Set<string>();
+  for (const node of nodes) {
+    const bound = activeGatewayBoundDevice(node, nodeById);
+    if (bound) {
+      gatewayBoundIds.add(bound.id);
+    }
+  }
   const plans: GatewayPlan[] = [];
   for (const node of nodes) {
     const bound = activeGatewayBoundDevice(node, nodeById);
@@ -1908,6 +1925,10 @@ function planGatewaySplices(nodes: ModelNode[], edges: Edge[]): GatewayPlan[] {
     const incidents = boundDeviceIncidentEdges(bound.id, edges);
     if (incidents.length === 0) {
       plans.push({ container: node, degradeReason: gatewayNoLinkReason(node.name) });
+      continue;
+    }
+    if (incidents.some((edge) => gatewayBoundIds.has(farEndpoint(edge, bound.id).nodeId))) {
+      plans.push({ container: node, degradeReason: gatewayAdjacentReason(node.name) });
       continue;
     }
     const linksByBoundTerminalId = new Map<string, Edge[]>();
