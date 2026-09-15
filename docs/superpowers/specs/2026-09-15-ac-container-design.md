@@ -180,6 +180,8 @@
 | 是否关口 | `params.is_gateway` |
 | 绑定设备 idx | `params.bound_device_id` 解析出成员 idx |
 
+> **语义注记(2026-09-16,Task 10 审查裁决):** `idx` 为分段计数器(每段独立,跨段可重号),单看 `bound_device_idx` 不能唯一定位成员 —— 绑定设备必为容器成员,消费方应按「容器记录 + 其成员集合(经 `containerId` 归属解析)」匹配;若下游要求唯一标识,再补 `bound_device_section` 列。
+
 ### 非关口
 
 仅容器段一条记录;不进拓扑节点表。容器无边,`calculateElectricalTopology`(`model-routing.ts:4702`)天然不受扰。
