@@ -3,6 +3,7 @@
 // 与 UI 写方法隔离：参数显式传入，复用底层 setter，绕过 prompt/alert/draft/editMode。
 // 经 WS control 指令调用（App.tsx commandHandler 分发）。
 import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdges, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, syncedSwitchStatusPatch } from "../model";
+import { withNodeUpdates } from "../acContainer";
 import { createCanvasGroupFromSelection, removeGraphicsFromGroups } from "../selectionActions";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
 
@@ -266,7 +267,7 @@ export function createProgrammaticDeleteDevices(__appScope: Record<string, any>)
 // 经 WS control.device.property.update 指令调用。
 export function createProgrammaticUpdateDeviceProperty(__appScope: Record<string, any>) {
   return (id: string, category: string, patch: Record<string, any>) => {
-    const { updateGraphNodeById, pushUndoSnapshot, nodes } = __appScope;
+    const { updateGraphNodeById, pushUndoSnapshot, nodes, normalizeProjectMeasurements, setProjectMeasurements } = __appScope;
     if (!id || typeof id !== "string") {
       const e: any = new Error("id 必填。");
       e.code = "bad-request";
@@ -304,8 +305,7 @@ export function createProgrammaticUpdateDeviceProperty(__appScope: Record<string
       e.code = "control-failed";
       throw e;
     }
-    pushUndoSnapshot(true, false, undefined, "修改参数", id);
-    updateGraphNodeById(id, (node: any) => {
+    const applyPatch = (node: any) => {
       const next = { ...node };
       for (const key of Object.keys(patch)) {
         const value = patch[key];
@@ -317,7 +317,12 @@ export function createProgrammaticUpdateDeviceProperty(__appScope: Record<string
         }
       }
       return next;
-    });
+    };
+    pushUndoSnapshot(true, false, undefined, "修改参数", id);
+    updateGraphNodeById(id, applyPatch);
+    // 量测同步:applyPatch 纯函数,再算一次得新节点;本端点可写 params.is_gateway/bound_device_id
+    // (第三方程序化绑定/解绑),容器量测组须随同一归一化出口收敛
+    setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, withNodeUpdates(nodes, [applyPatch(currentNode)])));
     return { id, category, patched: Object.keys(patch) };
   };
 }

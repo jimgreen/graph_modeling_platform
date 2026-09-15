@@ -2579,7 +2579,7 @@ export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>
     patchForNode: (node: ModelNode) => BatchCommonParamPatch,
     allowMissingParamKeys: readonly string[] = []
   ) => {
-  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, activeSelectedNodeIds, canBatchEditParam, commitNodeFootprintUpdates, edgeListForNodeIds, nodeById, patchGraphNodes, pushUndoSnapshot, requireEditMode, undoScopeForGraphPatch, writeOperationLog } = __appScope;
+  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, activeSelectedNodeIds, canBatchEditParam, commitNodeFootprintUpdates, edgeListForNodeIds, nodeById, nodes, normalizeProjectMeasurements, patchGraphNodes, pushUndoSnapshot, requireEditMode, setProjectMeasurements, undoScopeForGraphPatch, writeOperationLog } = __appScope;
     if (!requireEditMode("批量修改图元参数")) {
       return;
     }
@@ -2622,15 +2622,20 @@ export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>
       return;
     }
     const nextNodeIds = nextNodes.map((node) => node.id);
+    // 量测同步:批量键白名单不排除 is_gateway/bound_device_id(多选容器会出现这两个批量行),
+    // 两条提交分支都要喂归一化出口,容器量测组才会随批量绑定/关关口收敛
+    const graphAfterBatchPatch = withNodeUpdates(nodes, nextNodes);
     const hasFootprintParam = Array.from(changedPatchKeys).some((key) => NODE_LABEL_FOOTPRINT_PARAM_KEYS.has(key));
     if (hasFootprintParam) {
       const affectedEdges = edgeListForNodeIds(nextNodeIds);
       pushUndoSnapshot(true, false, undoScopeForGraphPatch(nextNodeIds, affectedEdges.map((edge) => edge.id)));
       commitNodeFootprintUpdates(nextNodes);
+      setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, graphAfterBatchPatch));
       return;
     }
     pushUndoSnapshot(true, false, undoScopeForGraphPatch(nextNodeIds, []));
     patchGraphNodes(nextNodes);
+    setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, graphAfterBatchPatch));
     writeOperationLog(`批量修改共同属性：${operationLabel}`);
   };
 }
