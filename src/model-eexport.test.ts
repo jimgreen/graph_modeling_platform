@@ -71,6 +71,8 @@ import {
   HYDROGEN_STORAGE_CONTROL_TYPES,
   ELECTRIC_HEAT_COUPLING_CONTROL_TYPES,
   E_SECTION_COLUMNS,
+  ELEMENT_TREE_COMPONENT_LIBRARY_LABELS,
+  COMPONENT_LIBRARY_REVERSE_MAPPING,
   tidyOrthogonalRoute,
   renameSavedProject,
   renameSavedScheme,
@@ -4625,6 +4627,32 @@ describe("交流容器 E 导出", () => {
     expect(getEExportWarnings(project, options).filter((warning) => warning.nodeId === container.id)).toEqual([]);
     // 反证:同模板态下未定义段的设备仍照常告警,上面的空数组不是「告警整体失效」的假绿
     expect(getEExportWarnings(project, options).some((warning) => warning.nodeId === member.id)).toBe(true);
+  });
+
+  test("容器段中文显示名「容器表」已注册到类标签表与反查表", () => {
+    // 三处用户可见出口都读这张表:元素树类型标签、app 层 COMPONENT_LIBRARY_LABELS(缺键自动继承)、E 元件定义导出
+    expect(ELEMENT_TREE_COMPONENT_LIBRARY_LABELS.ACContainer).toBe("容器表");
+    // 反查唯一性:若无此键,说明「容器表」被别的类占用,回查会指向错误的类
+    expect(COMPONENT_LIBRARY_REVERSE_MAPPING["容器表"]).toBe("ACContainer");
+  });
+
+  test("模板定义了容器段但字段列表为空时不产占位行", () => {
+    const [container, member] = createIndexedExportNodes(["ac-vpp-box", "ac-source"]);
+    member.containerId = container.id;
+    const project: ProjectFile = { version: 1, name: "容器空字段模型", nodes: [container, member], edges: [] };
+    const options = {
+      eDeviceDefinitionLabels: { ACContainer: "容器表" },
+      interfaceDefinitions: [{
+        componentLibrary: "ACContainer",
+        exportEnabled: true,
+        exportName: "ACContainer",
+        fields: []
+      }]
+    };
+
+    // 与通用路径同款守卫:字段为空 → 记录被过滤,不落 `# 1 unnamed_1 0 0 0` 占位行
+    expect(buildEDeviceRecords(project, options).some((record) => record.section === "ACContainer")).toBe(false);
+    expect(parseESections(buildEFileExport(project, ["默认方案"], options).text).ACContainer).toBeUndefined();
   });
 
   test("模板定义了容器段时容器照常导出(按模板字段出列)", () => {

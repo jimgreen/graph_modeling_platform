@@ -457,7 +457,9 @@ const E_SECTION_OUTPUT_ORDER = [
   "HeatExchanger",
   "HeatExchanger3",
   "HeatExchanger4",
-  "HeatPump"
+  "HeatPump",
+  // 容器段殿后:未列段本也排在所有已列段之后(remainingRank 起点 = 数组长度),此处显式登记,顺序不靠隐式兜底
+  "ACContainer"
 ];
 
 const E_INTEGER_COLUMNS = new Set([
@@ -1874,13 +1876,14 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
       continue;
     }
     // 容器段(决策 3):容器无边无端子,不进拓扑节点表,只产出「容器表」一条记录
-    if (isAcContainerKind(node.kind)) {
+    // 口径与 inferESection 一致:按已算出的段判定,不另按 kind 判(容器 ⇄ ACContainer 的映射只在 inferESection 一处)
+    if (section === "ACContainer") {
       // 决策 6:模板态未定义容器段 → 直接跳过(不产出、不告警)
       if (containerSectionSuppressed(hasTemplateConfigValue, interfaceDefinitionBySection)) {
         continue;
       }
       const boundDeviceId = String(node.params.bound_device_id ?? "");
-      deviceRecords.push(applyEInterfaceDefinitionToRecord({
+      const containerRecord = applyEInterfaceDefinitionToRecord({
         id: node.id,
         kind: node.kind,
         section,
@@ -1893,7 +1896,12 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
           // 绑定设备存的是成员节点 id(与 containerMemberOptions 同源),此处解析出成员自身 idx
           bound_device_idx: (boundDeviceId ? nodeById.get(boundDeviceId)?.params.idx : "") ?? ""
         }
-      }, interfaceDefinitionBySection.get(section)));
+      }, interfaceDefinitionBySection.get(section));
+      // 与通用路径同款守卫(模板定义了容器段但字段列表为空 → 记录被过滤,不落占位行)
+      if ((containerRecord.columns ?? E_SECTION_COLUMNS[section] ?? []).length === 0) {
+        continue;
+      }
+      deviceRecords.push(containerRecord);
       continue;
     }
     const derivedSpecificParameterNames = builtInDerivedSpecificParameterNames(node.kind);
@@ -2086,11 +2094,11 @@ function getEExportWarningsFromRecords(
     if (exportedNodeIds.has(node.id)) {
       return [];
     }
-    // 决策 6:模板态未定义容器段时容器本就不产出记录,不逐节点报「被导出逻辑过滤」
-    if (isAcContainerKind(node.kind) && containerSectionSuppressed(hasTemplateConfig(options), interfaceDefinitionBySection)) {
+    const section = inferESection(node.kind, node.params);
+    // 决策 6:模板态未定义容器段时容器本就不产出记录,不逐节点报「被导出逻辑过滤」(与主循环同判据、同口径)
+    if (section === "ACContainer" && containerSectionSuppressed(hasTemplateConfig(options), interfaceDefinitionBySection)) {
       return [];
     }
-    const section = inferESection(node.kind, node.params);
     if (!section) {
       return [{
         nodeId: node.id,
