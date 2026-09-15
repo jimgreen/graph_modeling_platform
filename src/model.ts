@@ -1183,7 +1183,14 @@ export function resolveDeviceStateVisual(
 
 export type DeviceIndexCounters = Record<string, number>;
 
+/** AC 容器固定分段计数器 key(容器不带 E 段,不特判则计数器恒空转、params.idx 永远为空) */
+export const AC_CONTAINER_COUNTER_KEY = "ac_container";
+
 export function deviceIndexCounterKey(node: Pick<ModelNode, "kind" | "params">): string {
+  // 容器必须排在最前:isStaticKind / inferESection / isContainerParams 对它都返回 "",落到底就是空转
+  if (isAcContainerKind(node.kind)) {
+    return AC_CONTAINER_COUNTER_KEY;
+  }
   if (isStaticKind(node.kind)) {
     return "";
   }

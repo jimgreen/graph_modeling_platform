@@ -6,6 +6,7 @@ import {
   applyAddToAcContainer,
   applyRemoveFromAcContainer,
   buildNewContainer,
+  containerAddIsNoop,
   containerAssignedIdsFromSelection,
   containerMemberIdsFromSelection,
   containerSelectOptions,
@@ -1748,8 +1749,14 @@ export function createAddToAcContainer(__appScope: Record<string, any>) {
     }
     const members = memberIds.map((id) => nodeById.get(id)).filter(Boolean);
     const containers = nodes.filter(isAcContainerNode);
-    // 提交:纯函数算出完整 nextNodes(新容器已插入、成员已打 containerId、几何已重算),单次撤销点 + 单次落图
+    // 提交:纯函数算出完整 nextNodes(新容器已插入、成员已打 containerId、几何已重算),单次撤销点 + 单次落图。
+    // 改归属(成员原属其它容器)时,原关口容器会一并解绑 + 关关口(与移出同一出口)。
+    // 该路径同样要删「原容器的量测组」,由 Task 9 在此接入(与移出路径同批)。
     const commitAdd = (container: any) => {
+      if (containerAddIsNoop(nodes, container.id, memberIds)) {
+        showGlobalMessage("选中的图元已在该容器内。");
+        return;
+      }
       pushUndoSnapshot(true, false, undefined, "添加到容器");
       setGraphArrays(applyAddToAcContainer(nodes, container, memberIds), edges);
       writeOperationLog(`添加 ${memberIds.length} 个图元到容器 ${container.name ?? ""}`.trim());
@@ -1764,7 +1771,7 @@ export function createAddToAcContainer(__appScope: Record<string, any>) {
         okText: "创建",
         cancelText: "取消",
         onOk: () => {
-          // idx 走同源分配器(与图元库放置/粘贴同一计数),名称为空时回落到默认名
+          // idx 走同源分配器(容器落 ac_container 分段,与图元库放置/粘贴同一计数);名称为空时回落到默认名
           const indexed = assignPermanentDeviceIndex(
             buildNewContainer(AC_CONTAINER_KINDS[0], draft.name.trim() || presetName, members, ""),
             deviceIndexCounters
@@ -1817,7 +1824,7 @@ export function createRemoveFromAcContainer(__appScope: Record<string, any>) {
       return;
     }
     // 纯函数给出变更节点(成员 + 解绑的关口容器 + 重算的容器矩形/被挤出的非成员),单次撤销点 + 单次 patch
-    // 绑定设备的容器量测组同步由 Task 9 在此接入
+    // 绑定设备的容器量测组同步由 Task 9 在此接入(改归属路径见 createAddToAcContainer 的 commitAdd)
     const updates = applyRemoveFromAcContainer(nodes, memberIds);
     if (updates.length === 0) {
       return;
