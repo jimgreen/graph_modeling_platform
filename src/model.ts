@@ -172,6 +172,9 @@ export type DeviceKind =
   | "acdc-converter"
   | "dcac-converter"
   | "acac-converter"
+  | "ac-vpp-box"
+  | "ac-switch-box"
+  | "ac-distribution-box"
   | (string & {});
 
 export type DeviceGlyphVariant =
@@ -246,9 +249,6 @@ export type DeviceGlyphVariant =
   | "acdc-converter"
   | "dcac-converter"
   | "acac-converter"
-  | "ac-vpp-box"
-  | "ac-switch-box"
-  | "ac-distribution-box"
   | "default";
 
 export type Point = {
