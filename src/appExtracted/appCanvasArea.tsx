@@ -588,12 +588,12 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         finishTransformDrag();
         setMarquee(null);
         setRewiring(null);
-    }} onPointerCancel={() => {
+    }} onPointerCancel={(event) => {
         finishMeasurementDrag();
         cancelModifierSelectionPress();
         finishNodeLabelDrag();
         finishNodeLabelRotateDrag();
-        finishNodeDrag();
+        finishNodeDrag(event.altKey);
         setTerminalPress(null);
         setRoutableLineEndpointDrag(null);
         finishManualPathDrag();
@@ -602,12 +602,12 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         setContextMarqueeSelection(null);
         setMarquee(null);
         setRewiring(null);
-    }} onLostPointerCapture={() => {
+    }} onLostPointerCapture={(event) => {
         finishMeasurementDrag();
         cancelModifierSelectionPress();
         finishNodeLabelDrag();
         finishNodeLabelRotateDrag();
-        finishNodeDrag();
+        finishNodeDrag(event.altKey);
         setTerminalPress(null);
         setRoutableLineEndpointDrag(null);
         finishManualPathDrag();

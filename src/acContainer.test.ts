@@ -141,6 +141,20 @@ describe("acContainer 布局", () => {
     expect(patches.find((p) => p.nodeId === "top")!.position).toEqual({ x: 100, y: r.y1 - CONTAINER_PADDING });
   });
 
+  test("挤出豁免:全部线路 kind(不只 ac-line)——否则每次拖动都会把穿过容器的线路推出去", () => {
+    const c = node("c1", "ac-vpp-box", 100, 100, 200, 200); // 真实矩形 [0,0]-[200,200]
+    // 平台两类线路谓词的全集:WIRE_LIKE_ROUTE_DEVICE_KINDS + ROUTABLE_LINE_DEVICE_KINDS
+    const lineKinds = [
+      "ac-line", "ac-zero-branch", "dc-line", "dc-zero-branch", "hydrogen-pipeline", "heat-pipeline",
+      "ac-routable-line", "ac-zero-routable-branch", "dc-routable-line", "dc-zero-routable-branch",
+      "hydrogen-routable-pipeline", "heat-routable-line",
+    ];
+    const lines = lineKinds.map((kind, index) => node(`ln${index}`, kind, 60, 60));
+    expect(ejectOutsiders(c as any, [c, ...lines] as any)).toEqual([]);
+    // 对照组:非线路器件仍被挤出(证明豁免只对线路生效,不是整体失效)
+    expect(ejectOutsiders(c as any, [c, node("dev", "ac-load", 60, 60)] as any).map((p) => p.nodeId)).toEqual(["dev"]);
+  });
+
   test("挤出豁免:容器自身、其它容器、中心在容器外的节点", () => {
     const c = node("c1", "ac-vpp-box", 100, 100, 200, 200);
     const inner = node("c2", "ac-switch-box", 100, 100, 60, 40);
@@ -670,11 +684,21 @@ describe("拖动结束归属落地", () => {
     expect(byIdOf(updates).get("o")!.containerId).toBe("c1");
   });
 
-  test("拖容器 + Alt:跟随移动的成员不参与判定,整组不被拆散", () => {
-    // 容器与成员同步平移 +300(拖动起点已按 containerDragGroup 扩组)
+  test("拖容器 + Alt:跟随扩组的成员不参与判定,整组不被拆散", () => {
+    // 容器与成员同步平移 +300(拖动起点已按 containerDragGroup 扩组);实际抓住的只有容器
     const nodes = [node("c1", "ac-vpp-box", 300, 300, 200, 200) as any, member(350, 350)];
-    const { updates } = applyDragContainerMembership({ nodes, movedIds: ["c1", "m1"], altKey: true });
+    const { updates } = applyDragContainerMembership({
+      nodes, movedIds: ["c1", "m1"], grabbedIds: ["c1"], altKey: true,
+    });
     expect(updates.some((u) => u.id === "m1" && !u.containerId)).toBe(false);
+  });
+
+  test("容器与成员同被选中 + Alt 拖成员 → 该成员移出(以抓取集为准,不因容器同动而豁免)", () => {
+    const nodes = [node("c1", "ac-vpp-box", 300, 300, 200, 200) as any, member(350, 350)];
+    const { updates } = applyDragContainerMembership({
+      nodes, movedIds: ["c1", "m1"], grabbedIds: ["c1", "m1"], altKey: true,
+    });
+    expect(byIdOf(updates).get("m1")!.containerId).toBeUndefined();
   });
 
   test("图中无容器 → 无任何更新", () => {

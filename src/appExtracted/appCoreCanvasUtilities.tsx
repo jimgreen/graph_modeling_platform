@@ -857,6 +857,8 @@ export type SingleNodeDragCache = {
 export type DraggingState = {
   source?: "pointer" | "keyboard";
   nodeIds: string[];
+  /** 用户真正抓住的节点(拖容器扩组前);归属判定只看它,见 applyDragContainerMembership */
+  grabbedNodeIds?: string[];
   edgeIds: string[];
   affectedEdges: Edge[];
   wholeLayerMove?: boolean;
