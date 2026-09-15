@@ -6,7 +6,7 @@
 // 锚定口径(与平台一致):`node.position` 是节点**中心**,容器真实矩形 = position ± size/2。
 // (DeviceGlyph 矩形 x:-w/2、命中框、bodyVisualBoxForNode position±half 三处同源)
 // 相对 import 带 .ts 扩展名:本模块被 src/export/svg.ts(Node 直载)间接引用,裸 "./model" Node ESM 解析不了
-import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, createDefaultNode, isAcContainerKind } from "./model.ts";
+import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, createDefaultNode, isAcContainerKind, isWireLikeRouteDeviceKind } from "./model.ts";
 
 /** 容器包围成员时的四周留白 */
 export const CONTAINER_PADDING = 24;
@@ -69,7 +69,7 @@ export function ejectOutsiders(container: ModelNode, nodes: ModelNode[]): NodePo
   for (const n of nodes) {
     if (n.id === c.id) continue;
     if (isAcContainerNode(n)) continue;              // 其它容器豁免
-    if (n.kind === "ac-line") continue;              // 线路豁免
+    if (isWireLikeRouteDeviceKind(n.kind)) continue; // 线路豁免(全部线路 kind 单一谓词,只豁免 ac-line 会漏推其它 11 种)
     if (n.containerId) continue;                     // 已归属某容器(含本容器成员)
     const p = n.position;                            // 节点中心
     if (p.x < x1 || p.x > x2 || p.y < y1 || p.y > y2) continue; // 中心在外
@@ -210,22 +210,21 @@ export function containerDecisionNodeUpdates(nodes: ModelNode[], decision: Membe
  * 判定 → 写/清 containerId → 离开者解绑原关口容器 → 容器重算 + 挤出非成员。
  * 返回**需提交的节点更新**(变更集),调用方并入本次拖动提交,保持单一撤销单元。
  * - `nodes` 必须是**拖动后**的节点(容器与成员均取新位置):判定点 = 节点中心。
- * - `movedIds` 为本次真正拖动的节点;**跟随容器平移**的成员不参与判定
- *   (否则「拖容器 + Alt」会被判成整组移出,而 Alt 移出只针对用户抓住的那个成员)。
+ * - `movedIds` 为本次真正拖动的节点(含跟随容器平移的成员);`grabbedIds` 为**用户抓住**的节点,
+ *   判定只看抓取集:**跟随者不参与**(否则「拖容器 + Alt」会被判成整组移出),
+ *   而「容器与成员同被选中 + Alt 拖成员」时该成员仍要移出(不能因容器同动而豁免)。
  * - 解绑用**原** nodes 判定(containerId 尚未改写),与移出/改归属同一出口。
  */
 export function applyDragContainerMembership(args: {
   nodes: ModelNode[];
   movedIds: string[];
+  /** 用户真正抓住的节点(拖容器扩组前的集合);缺省 = movedIds。仅用于剔除跟随者 */
+  grabbedIds?: string[];
   altKey: boolean;
 }): { updates: ModelNode[]; enterContainerId?: string } {
-  const { nodes, movedIds, altKey } = args;
-  const movedSet = new Set(movedIds);
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const judgeIds = movedIds.filter((id) => {
-    const owner = byId.get(id)?.containerId;
-    return !owner || !movedSet.has(owner);
-  });
+  const { nodes, movedIds, grabbedIds, altKey } = args;
+  const grabbed = grabbedIds ? new Set(grabbedIds) : null;
+  const judgeIds = grabbed ? movedIds.filter((id) => grabbed.has(id)) : movedIds;
   const { membershipChanges, enterContainerId } = judgeContainerMembership({ nodes, movedIds: judgeIds, altKey });
   const changeById = new Map(membershipChanges.map((c) => [c.nodeId, c]));
   const changed = new Map<string, ModelNode>();

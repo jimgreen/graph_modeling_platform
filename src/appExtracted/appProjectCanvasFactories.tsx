@@ -806,6 +806,7 @@ export function createHandleNodePointerDown(__appScope: Record<string, any>) {
     const nextDragging: DraggingState = {
       source: "pointer",
       nodeIds: dragNodeIds,
+      grabbedNodeIds: dragSelection.nodeIds,
       edgeIds: edgeIdsForDrag,
       affectedEdges: affectedEdgesForDrag,
       wholeLayerMove,

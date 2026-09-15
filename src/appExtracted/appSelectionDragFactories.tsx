@@ -16,14 +16,18 @@ import {
 
 export function createEnsureDraggingUndoSnapshot(__appScope: Record<string, any>) {
   return () => {
-  const { dragUndoCapturedRef, draggingRef, nodeById, pushUndoSnapshot, undoScopeForDraggingState } = __appScope;
+  const { dragUndoCapturedRef, draggingRef, nodeById, nodes, pushUndoSnapshot, undoScopeForDraggingState } = __appScope;
     if (dragUndoCapturedRef.current) {
       return;
     }
     const dragState = draggingRef.current;
     const nodeIds = dragState?.nodeIds ?? [];
     const target = nodeIds.length === 1 ? (() => { const n = nodeById?.get?.(nodeIds[0]); return n ? `${n.params?.idx || n.id} ${n.name ?? ""}`.trim() : ""; })() : (nodeIds.length > 1 ? `${nodeIds.length} 个设备` : "");
-    pushUndoSnapshot(true, false, undoScopeForDraggingState(dragState), "移动设备", target);
+    // 有容器时作用域必须让位:容器几何重算 / 成员归属 / 关口解绑 / 挤出都在拖动集之外,
+    // 一旦走 patch 通道这些节点就落在撤销计划外(Ctrl+Z 后残留新几何与新归属)。
+    // undefined = 全量对比分支,正确性无损,只多一趟 O(n) 比较。
+    const scope = nodes?.some(isAcContainerNode) ? undefined : undoScopeForDraggingState(dragState);
+    pushUndoSnapshot(true, false, scope, "移动设备", target);
     dragUndoCapturedRef.current = true;
   };
 }
