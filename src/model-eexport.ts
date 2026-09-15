@@ -2,7 +2,7 @@
 
 import {
   type ModelNode, type Terminal, type TerminalType, type ProjectFile, type DeviceTemplate,
-  type DeviceParameterDefinition,
+  type DeviceParameterDefinition, type Edge,
   baseDeviceKind, isContainerParams, staticComponentLibraryFromParams, staticComponentLibraryForNodeLike,
   templateDerivedComponentLibraryInfo, electricGenerationDerivedComponentLibraryInfo,
   normalizeRunStatForE, normalizeSwitchStatusForE, normalizeControlTypeForE,
@@ -12,6 +12,7 @@ import {
   acacConverterControlTypePairForE, dcdcConverterControlTypePairForE, dcacConverterControlTypePairForE,
   E_NODE_REFERENCE_COLUMNS, numericNodeReference, mappedLegacyEValue,
   CUSTOM_PARAM_DEFINITIONS_KEY, deviceParamValue, enumExportValueForDefinition,
+  makeNodeNumber,
   toSnakeCaseDeviceParamName, normalizeVoltageBaseInput, terminalVoltageBaseNumber,
   readVoltageLevelSettings, calculateElectricalTopology, isStaticNode, isBusNode,
   isAcContainerKind,
@@ -1832,6 +1833,88 @@ function containerSectionSuppressed(
   return isTemplateMode && !interfaceDefinitionBySection.has("ACContainer");
 }
 
+/**
+ * 关口容器(决策 4)判据:容器段 + `is_gateway=1` + 绑定设备存在且仍是其成员(与容器量测同口径)。
+ * 命中返回绑定设备节点,否则 null。段判定走 inferESection —— 与主循环「容器 ⇄ ACContainer 只在 inferESection 一处」同源。
+ */
+function activeGatewayBoundDevice(node: ModelNode, nodeById: ReadonlyMap<string, ModelNode>): ModelNode | null {
+  if (inferESection(node.kind, node.params) !== "ACContainer" || node.params.is_gateway !== "1") {
+    return null;
+  }
+  const boundDeviceId = String(node.params.bound_device_id ?? "");
+  const boundNode = boundDeviceId ? nodeById.get(boundDeviceId) : undefined;
+  return boundNode && boundNode.containerId === node.id ? boundNode : null;
+}
+
+/** 绑定设备的电源侧上游边:以绑定设备为终点的边(电源由此流入) */
+function boundDeviceUpstreamEdges(boundDeviceId: string, edges: readonly Edge[]): Edge[] {
+  return edges.filter((edge) => edge.targetId === boundDeviceId);
+}
+
+/** 无电源侧上游的告警口径(变换与导出告警通道共用同一句,防两处漂移) */
+function gatewayNoUpstreamReason(containerName: string): string {
+  return `容器 ${containerName} 的绑定设备无电源侧连接,退化为仅容器表记录。`;
+}
+
+/**
+ * 关口拓扑变换(决策 4):导出期图变换,画布模型不动(只造新对象,不回写入参)。
+ *
+ * 关口容器本身无边无端子,而拓扑节点表只由带 nodeNumber 的端子驱动 → 先为容器合成电源侧/负荷侧端子,
+ * 再把「上游 —绑定设备」改接成「上游 —容器(电源侧)—容器(负荷侧)— 绑定设备」。
+ * 端子号不在此处分配:交给 calculateElectricalTopology 按拓扑岛统一编号(同岛同号口径与既有分配一致),
+ * 本函数只保证端子与边的形状正确 —— 故须在本函数之后调用拓扑计算。
+ * 绑定设备无电源侧上游 → 该容器退化为仅容器段记录(不加端子、不改边),warning 由调用方汇入导出告警。
+ *
+ * 非幂等:对已变换的图再跑一次会把串入边二次改接(容器两侧被短接),只可在导出入口应用一次。
+ */
+export function transformGraphForGateways(
+  nodes: ModelNode[],
+  edges: Edge[]
+): { nodes: ModelNode[]; edges: Edge[]; warnings: string[] } {
+  const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
+  const warnings: string[] = [];
+  const rewiredEdgeById = new Map<string, Edge>();
+  const addedEdges: Edge[] = [];
+  const terminalsByContainerId = new Map<string, Terminal[]>();
+  for (const node of nodes) {
+    const boundNode = activeGatewayBoundDevice(node, nodeById);
+    if (!boundNode) {
+      continue;
+    }
+    const upstreamEdges = boundDeviceUpstreamEdges(boundNode.id, edges);
+    if (upstreamEdges.length === 0) {
+      warnings.push(gatewayNoUpstreamReason(node.name));
+      continue;
+    }
+    // 容器自身无电压:vbase 留空(不写默认占位 "0"),否则 ACNode 行的 firstText 会把容器抢在真设备之前
+    // 把 0 当成本岛电压
+    const powerTerminal: Terminal = { id: "t1", label: "电源侧", type: "ac", anchor: { x: -0.5, y: 0 }, nodeNumber: makeNodeNumber() };
+    const loadTerminal: Terminal = { id: "t2", label: "负荷侧", type: "ac", anchor: { x: 0.5, y: 0 }, nodeNumber: makeNodeNumber() };
+    terminalsByContainerId.set(node.id, [powerTerminal, loadTerminal]);
+    for (const edge of upstreamEdges) {
+      // 上游端保持原样,只把终点从绑定设备挪到容器电源侧端子
+      rewiredEdgeById.set(edge.id, { ...edge, targetId: node.id, targetTerminalId: powerTerminal.id });
+      // 容器负荷侧 → 绑定设备原接线端子(绑定设备侧接线口径不变)
+      addedEdges.push({
+        id: `${edge.id}:gateway`,
+        sourceId: node.id,
+        sourceTerminalId: loadTerminal.id,
+        targetId: boundNode.id,
+        targetTerminalId: edge.targetTerminalId
+      });
+    }
+  }
+  return {
+    nodes: nodes.map((node) => {
+      const terminals = terminalsByContainerId.get(node.id);
+      return terminals ? { ...node, terminals } : node;
+    }),
+    // 边只保留拓扑与接线关系:导出图不渲染,端点坐标/manualPoints 不参与消费
+    edges: [...edges.map((edge) => rewiredEdgeById.get(edge.id) ?? edge), ...addedEdges],
+    warnings
+  };
+}
+
 function builtInDerivedSpecificParameterNames(kind: string): Set<string> {
   const template = DEVICE_LIBRARY_BY_KIND.get(kind);
   const derivedInfo = template ? templateDerivedComponentLibraryInfo(template) : null;
@@ -1851,7 +1934,12 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
   const hasTemplateConfigValue = hasTemplateConfig(options);
   const isDms = looksLikeDmsRtdbTemplate(options);
   const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
-  const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
+  // 决策 4:关口容器在导出图里串进绑定设备上游(纯变换,画布模型不动)。
+  // 决策 6:容器段静默时连带跳过变换 —— 否则会在没有容器记录的 E 文件里留下无法解释的拓扑断口。
+  const gatewayGraph = containerSectionSuppressed(hasTemplateConfigValue, interfaceDefinitionBySection)
+    ? { nodes: project.nodes, edges: project.edges }
+    : transformGraphForGateways(project.nodes, project.edges);
+  const topologyNodes = calculateElectricalTopology(gatewayGraph.nodes, gatewayGraph.edges);
   const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes).map((record) =>
     applyEInterfaceDefinitionToRecord(record, interfaceDefinitionBySection.get(record.section))
   );
@@ -2126,7 +2214,18 @@ function getEExportWarningsFromRecords(
       reason: `E 文件段 ${section} 被导出逻辑过滤。`
     }];
   });
-  return [...enumWarnings, ...recordWarnings];
+  // 决策 4:关口容器的绑定设备无电源侧上游 → 与变换同判据、同文案(容器段静默时不报,防噪音)
+  const containerById = new Map(project.nodes.map((node) => [node.id, node] as const));
+  const gatewayWarnings: EExportWarning[] = containerSectionSuppressed(hasTemplateConfig(options), interfaceDefinitionBySection)
+    ? []
+    : project.nodes.flatMap((node) => {
+        const boundNode = activeGatewayBoundDevice(node, containerById);
+        if (!boundNode || boundDeviceUpstreamEdges(boundNode.id, project.edges).length > 0) {
+          return [];
+        }
+        return [{ nodeId: node.id, nodeName: node.name, kind: node.kind, reason: gatewayNoUpstreamReason(node.name) }];
+      });
+  return [...enumWarnings, ...recordWarnings, ...gatewayWarnings];
 }
 
 export function getEExportWarnings(project: ProjectFile, options: EFileExportOptions = {}): EExportWarning[] {
