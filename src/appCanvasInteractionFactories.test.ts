@@ -9,12 +9,14 @@ import {
   createFindRewireTargetAtPoint,
   createFindRoutableLineEndpointTargetAtPoint,
   createFinishInteractiveStaticDrawing,
+  createFinishNodeDrag,
   createPlaceLibraryDeviceAtPoint,
   createStartLibraryDevicePlacement,
   createUpdateInteractiveStaticDrawingPreview,
   createUpdateLibraryPlacementPreview,
   createUpdateParam
 } from "./appExtracted/appCanvasInteractionFactories";
+import { normalizeProjectMeasurements } from "./measurements";
 import { setVoltageBaseTerminalValueForTopologySide } from "./model-routing";
 import { bestSmartAlignmentAxisSnap, pointOnBusForSnap } from "./appExtracted/appCoreCanvasUtilities";
 import {
@@ -1246,5 +1248,141 @@ describe("single-use static drawing tools", () => {
 
     expect(startLibraryDevicePlacement).not.toHaveBeenCalled();
     expect(setMode).toHaveBeenCalledWith("select");
+  });
+});
+
+// ─── 归属入口的量测同步:Alt 拖出 / 绑定变更后量测必须走归一化出口 ─────────────
+// 归一化出口(normalizeProjectMeasurements)内含容器量测组收敛;入口只改图不喂量测时,
+// 关口解绑后容器量测组会残留,绑定建立后容器组又迟迟不出现。
+describe("容器归属入口的量测同步", () => {
+  const bare = (id: string, kind: string, extra: Record<string, unknown> = {}) => ({
+    id, kind, name: id, position: { x: 0, y: 0 }, size: { width: 60, height: 40 },
+    rotation: 0, scale: 1, params: {}, terminals: [], ...extra,
+  });
+  const mirrorItem = { id: "p", measurementTypeId: "activePower", sourcePoint: "p", name: "有功" };
+  const measurementsWithMirror = () => ({
+    version: 1,
+    groups: [
+      { id: "measurement-m1", nodeId: "m1", items: [mirrorItem] },
+      { id: "measurement-c1", nodeId: "c1", items: [mirrorItem] },
+    ],
+  });
+  const hasGroup = (config: any, nodeId: string) => config.groups.some((g: any) => g.nodeId === nodeId);
+  const mergeById = (base: any[], extra: any[]) => {
+    const byId = new Map(base.map((node) => [node.id, node]));
+    for (const node of extra) byId.set(node.id, node);
+    return [...byId.values()];
+  };
+
+  test("Alt 拖出绑定设备:关口解绑 → 容器量测组随归一化删除,绑定设备组保留", () => {
+    const container = bare("c1", "ac-vpp-box", {
+      size: { width: 180, height: 112 },
+      params: { is_gateway: "1", bound_device_id: "m1" },
+    });
+    const member = bare("m1", "ac-load", { containerId: "c1" });
+    const nodes = [container, member];
+    let captured: any;
+    createFinishNodeDrag({
+      adjustEdgesAfterNodeMove: () => [],
+      applyCanvasBounds: () => {},
+      applyNodeTerminalSnap: (delta: any) => delta,
+      boundedDeltaForMoveGeometry: () => ({ x: 10, y: 0 }),
+      buildMovedNodeUpdates: () => [{ ...member, position: { x: 10, y: 0 } }],
+      canvasBoundsForMoveDelta: () => ({}),
+      canvasInteractionRef: { current: false },
+      clearNodeDragMoveSchedule: () => {},
+      commitFastMovedGraphPatches: vi.fn(),
+      commitSafeDeltaForDraggingState: () => ({ x: 10, y: 0 }),
+      dragDraggedEdgeIdSet: () => new Set(),
+      dragMovedBusNodeIdSet: () => new Set(),
+      dragMovedNodeIdSet: () => ["m1"],
+      dragUndoCapturedRef: { current: false },
+      draggingRef: { current: { nodeIds: ["m1"], grabbedNodeIds: ["m1"], affectedEdges: [], edgeIds: [], selection: null } },
+      ensureDraggingUndoSnapshot: () => {},
+      externalMoveCandidateEdges: () => [],
+      finalizeMovedNodeEdgesFast: () => [],
+      findMultiNodeDragSnapTargetAtDelta: () => null,
+      findSingleNodeDragSnapTargetAtDelta: () => null,
+      flushPendingNodeDragMove: () => {},
+      graphStore: {},
+      hideImperativeMultiNodeDragOverlay: () => {},
+      hideImperativeSingleNodeDragPreview: () => {},
+      internalMoveEdgeIdsForMovedNodes: () => new Set(),
+      isMultiNodeMoveState: () => false,
+      mergeAdjustedCandidateEdges: (base: any[]) => base,
+      mergeNodeUpdateLists: mergeById,
+      nextNodesForMovedGraphCommit: (_store: any, updates: any[]) => mergeById(nodes, updates),
+      nodeTerminalSnapTargetRef: { current: null },
+      nodes,
+      normalizeProjectMeasurements,
+      projectListPointerInsideRef: { current: false },
+      resetMultiNodeDragOverlayTransform: () => {},
+      restoreCanvasSelectionSnapshotWithInspector: () => {},
+      routePreserveEdgeIdsForMovedNodes: () => new Set(),
+      setDragging: () => {},
+      setProjectMeasurements: (updater: any) => { captured = updater(measurementsWithMirror()); },
+      shouldFinalizeMovedNodeEdgesSynchronously: () => false,
+      showGlobalMessage: vi.fn(),
+      synchronousEdgeAdjustmentCandidates: () => [],
+      translateInternalMoveCandidateEdges: () => [],
+      translateWholeMoveCandidateEdges: () => [],
+      updateSmartAlignmentGuides: () => {},
+      writeOperationLog: vi.fn(),
+    } as any)(true);
+
+    expect(hasGroup(captured, "c1")).toBe(false);
+    expect(hasGroup(captured, "m1")).toBe(true);
+  });
+
+  test("绑定设备变更:容器量测组随归一化建立(nodeId 换容器)", () => {
+    const container = bare("c1", "ac-vpp-box", { params: { is_gateway: "1" } });
+    const member = bare("m1", "ac-load", { containerId: "c1" });
+    const nodes = [container, member];
+    let captured: any;
+    createUpdateParam({
+      NODE_LABEL_FOOTPRINT_PARAM_KEYS: new Set<string>(),
+      commitNodeFootprintUpdates: vi.fn(),
+      nodeById: new Map(nodes.map((node) => [node.id, node])),
+      nodes,
+      normalizeNodeLabelDisplayMode: (value: string) => value,
+      normalizeProjectMeasurements,
+      normalizeRatioParameterInputValue,
+      patchGraphNodes: vi.fn(),
+      pushNodeOnlyUndoSnapshot: vi.fn(),
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: () => true,
+      selectedNodeId: "c1",
+      setProjectMeasurements: (updater: any) => { captured = updater({ version: 1, groups: [{ id: "measurement-m1", nodeId: "m1", items: [mirrorItem] }] }); },
+      undoScopeForNodeFootprintPatch: () => ({})
+    } as any)("bound_device_id", "m1");
+
+    expect(hasGroup(captured, "c1")).toBe(true);
+    expect(captured.groups.find((g: any) => g.nodeId === "c1").items.length).toBe(1);
+  });
+
+  test("关关口:容器量测组随归一化删除", () => {
+    const container = bare("c1", "ac-vpp-box", { params: { is_gateway: "1", bound_device_id: "m1" } });
+    const member = bare("m1", "ac-load", { containerId: "c1" });
+    const nodes = [container, member];
+    let captured: any;
+    createUpdateParam({
+      NODE_LABEL_FOOTPRINT_PARAM_KEYS: new Set<string>(),
+      commitNodeFootprintUpdates: vi.fn(),
+      nodeById: new Map(nodes.map((node) => [node.id, node])),
+      nodes,
+      normalizeNodeLabelDisplayMode: (value: string) => value,
+      normalizeProjectMeasurements,
+      normalizeRatioParameterInputValue,
+      patchGraphNodes: vi.fn(),
+      pushNodeOnlyUndoSnapshot: vi.fn(),
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: () => true,
+      selectedNodeId: "c1",
+      setProjectMeasurements: (updater: any) => { captured = updater(measurementsWithMirror()); },
+      undoScopeForNodeFootprintPatch: () => ({})
+    } as any)("is_gateway", "0");
+
+    expect(hasGroup(captured, "c1")).toBe(false);
+    expect(hasGroup(captured, "m1")).toBe(true);
   });
 });

@@ -3,6 +3,7 @@ import {
   describeContainerTerminalAssociations,
   resolveEffectiveTemplateParameterDefinitions,
   inferESection,
+  isAcContainerKind,
   templateDerivedComponentLibraryInfo,
   type DeviceParameterDefinition,
   type DeviceTemplate,
@@ -1176,10 +1177,13 @@ export function measurementGroupsForExistingNodes(groups: readonly MeasurementGr
   });
 }
 
+// 归一化 = 按现有节点收敛量测组:丢孤儿组 + 历史标签迁移 + 关口容器组收敛。
+// 容器组收敛放在这里而非各调用点:量测变更(updateProjectMeasurementsWithUndo)、删除图元、
+// 加载/导入模型都会走本函数,容器组才不会在任一路径上落后于图。
 export function normalizeProjectMeasurements(input: ProjectMeasurementConfig | undefined, nodes: readonly ModelNode[]): ProjectMeasurementConfig {
   const nodeIds = new Set(nodes.map((node) => node.id));
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  return {
+  const normalized: ProjectMeasurementConfig = {
     version: 1,
     groups: measurementGroupsForExistingNodes(input?.groups ?? [], nodeIds).map((group) => {
       const node = nodeById.get(group.nodeId);
@@ -1199,6 +1203,7 @@ export function normalizeProjectMeasurements(input: ProjectMeasurementConfig | u
       return changed ? { ...group, items } : group;
     })
   };
+  return reconcileContainerMeasurementGroups(normalized, nodes);
 }
 
 export function measurementGroupForNode(measurements: ProjectMeasurementConfig, nodeId: string): MeasurementGroup | undefined {
@@ -1237,6 +1242,85 @@ export function removeMeasurementGroupForNode(measurements: ProjectMeasurementCo
     version: 1,
     groups: measurements.groups.filter((group) => group.nodeId !== nodeId)
   };
+}
+
+// ─── 关口容器量测组(需求 7):容器组恒为绑定设备量测组的副本,单向 绑定设备 → 容器 ───
+//
+// 容器自身没有独立量测:容器组 = 绑定设备全部测点的镜像(nodeId = 容器 id)。
+// 单向同步意味着容器组的编辑/拖动会被下一次同步覆盖,这是设计口径而非缺陷。
+// 「容器组存在 ⟺ 容器是关口 + 绑定设备存在且仍是其成员」由 reconcileContainerMeasurementGroups 保证。
+
+/** 容器量测组 id(与 createMeasurementGroupShellForNode 同构:`measurement-<nodeId>`) */
+export function containerMeasurementGroupId(containerId: string): string {
+  return `measurement-${containerId}`;
+}
+
+/** 测点深拷贝:两个组共享同一 item 引用会让「改容器组」串改绑定设备 */
+function cloneMeasurementItemBinding(item: MeasurementItemBinding): MeasurementItemBinding {
+  return { ...item, styleOverride: item.styleOverride ? { ...item.styleOverride } : undefined };
+}
+
+/**
+ * 同步容器量测组:把绑定设备的量测组(设备级 + 各端子级测点合并)复制为容器组。
+ * - 覆盖式:先删该容器全部旧组再挂新组,故**重复同步不重复建组**(id 恒为 `measurement-<containerId>`)
+ * - 绑定设备没有任何测点 → 删除容器组(空镜像无意义,设备之后加测点会再同步回来)
+ * - 组级呈现字段(anchor/offset/visible 等)以绑定设备的组为模板整体复制
+ */
+export function syncContainerMeasurementGroup(
+  config: ProjectMeasurementConfig,
+  containerId: string,
+  boundDeviceId: string
+): ProjectMeasurementConfig {
+  const sources = config.groups.filter((group) => group.nodeId === boundDeviceId);
+  const items = sources.flatMap((group) => group.items.map(cloneMeasurementItemBinding));
+  if (items.length === 0) {
+    return removeContainerMeasurementGroup(config, containerId);
+  }
+  const mirror: MeasurementGroup = {
+    ...sources[0],
+    id: containerMeasurementGroupId(containerId),
+    nodeId: containerId,
+    terminalId: undefined,
+    items
+  };
+  return {
+    version: 1,
+    groups: [...config.groups.filter((group) => group.nodeId !== containerId), mirror]
+  };
+}
+
+/** 删除容器量测组;本来就没有该容器的组时原样返回(引用不变,调用方可据此短路) */
+export function removeContainerMeasurementGroup(
+  config: ProjectMeasurementConfig,
+  containerId: string
+): ProjectMeasurementConfig {
+  const groups = config.groups.filter((group) => group.nodeId !== containerId);
+  return groups.length === config.groups.length ? config : { version: 1, groups };
+}
+
+/**
+ * 按最新图收敛全部容器量测组(幂等):关口且绑定设备存在且仍是该容器成员 → 同步;否则删除容器组。
+ * 这是容器量测的唯一判定出口 —— 面板绑定/解绑、移出、改归属、Alt 拖出、删除绑定设备、绑定设备改测点
+ * 都汇到这里,避免多处各写一套「该建还是该删」。
+ */
+export function reconcileContainerMeasurementGroups(
+  config: ProjectMeasurementConfig,
+  nodes: readonly ModelNode[]
+): ProjectMeasurementConfig {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  let next = config;
+  for (const node of nodes) {
+    if (!isAcContainerKind(node.kind)) {
+      continue;
+    }
+    const boundDeviceId = String(node.params?.bound_device_id ?? "");
+    const boundNode = boundDeviceId ? byId.get(boundDeviceId) : undefined;
+    const active = node.params?.is_gateway === "1" && boundNode !== undefined && boundNode.containerId === node.id;
+    next = active
+      ? syncContainerMeasurementGroup(next, node.id, boundDeviceId)
+      : removeContainerMeasurementGroup(next, node.id);
+  }
+  return next;
 }
 
 export function createDefaultMeasurementGroupForNode(

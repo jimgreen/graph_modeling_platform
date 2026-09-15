@@ -12,8 +12,11 @@ import {
   measurementProfileItemsForNodePosition,
   normalizeMeasurementConfig,
   normalizeProjectMeasurements,
+  reconcileContainerMeasurementGroups,
   reconcileProjectMeasurementsWithConfig,
-  resolveMeasurementItemDisplay
+  removeContainerMeasurementGroup,
+  resolveMeasurementItemDisplay,
+  syncContainerMeasurementGroup
 } from "./measurements";
 import type { MeasurementRuntimeValue, ProjectMeasurementConfig } from "./measurements";
 import { DEVICE_LIBRARY, assignPermanentDeviceIndex, createDefaultNode, getTemplateParameterDefinitions } from "./model";
@@ -1244,5 +1247,117 @@ describe("measurement domain", () => {
       borderWidth: 0
     });
     expect(measurementGroupsForExistingNodes([group], new Set(["node-2"]))).toEqual([]);
+  });
+});
+
+// 关口容器量测组:容器组恒为绑定设备量测组的副本(nodeId = 容器 id),单向 绑定设备 → 容器
+describe("container measurement groups", () => {
+  const group = (nodeId: string, items: any[]): any => ({
+    id: `measurement-${nodeId}`,
+    nodeId,
+    visible: true,
+    anchor: "bottom",
+    offset: { x: 0, y: 70 },
+    layout: "vertical",
+    items
+  });
+  const item = (id: string, point: string): any => ({ id, measurementTypeId: "activePower", sourcePoint: point, name: "有功" });
+  const cfg = (groups: any[]): ProjectMeasurementConfig => ({ version: 1, groups } as ProjectMeasurementConfig);
+  const container = (id: string, params: Record<string, string>): ModelNode => ({ ...node(id, "ac-vpp-box"), params });
+  const member = (id: string, containerId: string): ModelNode => ({ ...node(id), containerId });
+  const findGroup = (config: ProjectMeasurementConfig, nodeId: string): any => config.groups.find((entry) => entry.nodeId === nodeId);
+
+  test("关口绑定:容器量测组 = 绑定设备量测组副本(nodeId 换容器)", () => {
+    const config = cfg([group("dev1", [item("i1", "dev1.p")])]);
+    const out = syncContainerMeasurementGroup(config, "c1", "dev1");
+    const mirror = findGroup(out, "c1");
+    expect(mirror.items).toEqual([item("i1", "dev1.p")]);
+    expect(mirror.id).toBe("measurement-c1");
+    // 绑定设备组不变
+    expect(findGroup(out, "dev1").items.length).toBe(1);
+  });
+
+  test("副本与源组不共享引用(改副本不影响绑定设备)", () => {
+    const out = syncContainerMeasurementGroup(cfg([group("dev1", [item("i1", "dev1.p")])]), "c1", "dev1");
+    findGroup(out, "c1").items[0].sourcePoint = "容器改过的测点";
+    expect(findGroup(out, "dev1").items[0].sourcePoint).toBe("dev1.p");
+  });
+
+  test("绑定设备无量测组 → 不建空镜像组", () => {
+    const out = syncContainerMeasurementGroup(cfg([group("dev1", [])]), "c1", "dev1");
+    expect(out.groups.some((entry) => entry.nodeId === "c1")).toBe(false);
+  });
+
+  test("重复同步覆盖不重复建组", () => {
+    let config = cfg([group("dev1", [item("i1", "dev1.p")])]);
+    config = syncContainerMeasurementGroup(config, "c1", "dev1");
+    config = {
+      version: 1,
+      groups: config.groups.map((entry) => entry.nodeId === "dev1" ? { ...entry, items: [...entry.items, item("i2", "dev1.q")] } : entry)
+    };
+    config = syncContainerMeasurementGroup(config, "c1", "dev1");
+    expect(config.groups.filter((entry) => entry.nodeId === "c1").length).toBe(1);
+    expect(findGroup(config, "c1").items.map((entry: any) => entry.id)).toEqual(["i1", "i2"]);
+  });
+
+  test("解绑删除容器量测组", () => {
+    const config = syncContainerMeasurementGroup(cfg([group("dev1", [item("i1", "dev1.p")])]), "c1", "dev1");
+    const out = removeContainerMeasurementGroup(config, "c1");
+    expect(out.groups.some((entry) => entry.nodeId === "c1")).toBe(false);
+    // 绑定设备的组不受影响
+    expect(findGroup(out, "dev1").items.length).toBe(1);
+  });
+
+  test("无容器组时删除返回原 config(引用不变,便于调用方短路)", () => {
+    const config = cfg([group("dev1", [item("i1", "dev1.p")])]);
+    expect(removeContainerMeasurementGroup(config, "c1")).toBe(config);
+  });
+
+  test("收敛:关口 + 绑定成员 → 建组;关关口 → 删组", () => {
+    const nodes = [container("c1", { is_gateway: "1", bound_device_id: "dev1" }), member("dev1", "c1")];
+    const synced = reconcileContainerMeasurementGroups(cfg([group("dev1", [item("i1", "dev1.p")])]), nodes);
+    expect(findGroup(synced, "c1").items.length).toBe(1);
+
+    const gatewayOff = nodes.map((entry) => entry.id === "c1" ? { ...entry, params: { ...entry.params, is_gateway: "0" } } : entry);
+    expect(reconcileContainerMeasurementGroups(synced, gatewayOff).groups.some((entry) => entry.nodeId === "c1")).toBe(false);
+  });
+
+  test("非关口容器不做任何量测操作(原 config 引用不变)", () => {
+    const config = cfg([group("dev1", [item("i1", "dev1.p")])]);
+    const nodes = [container("c1", { is_gateway: "0", bound_device_id: "" }), member("dev1", "c1")];
+    expect(reconcileContainerMeasurementGroups(config, nodes)).toBe(config);
+  });
+
+  test("收敛:绑定设备被删除 / 已不在容器内 → 删组", () => {
+    const synced = syncContainerMeasurementGroup(cfg([group("dev1", [item("i1", "dev1.p")])]), "c1", "dev1");
+    const bound = container("c1", { is_gateway: "1", bound_device_id: "dev1" });
+    // 绑定设备已删除(图中只剩容器)
+    expect(reconcileContainerMeasurementGroups(synced, [bound]).groups.some((entry) => entry.nodeId === "c1")).toBe(false);
+    // 绑定设备仍在图里但已不属于该容器(移出/改归属)
+    expect(reconcileContainerMeasurementGroups(synced, [bound, node("dev1")]).groups.some((entry) => entry.nodeId === "c1")).toBe(false);
+  });
+
+  test("收敛幂等:重复调用不重复建组", () => {
+    const nodes = [container("c1", { is_gateway: "1", bound_device_id: "dev1" }), member("dev1", "c1")];
+    const once = reconcileContainerMeasurementGroups(cfg([group("dev1", [item("i1", "dev1.p")])]), nodes);
+    const twice = reconcileContainerMeasurementGroups(once, nodes);
+    expect(twice.groups.filter((entry) => entry.nodeId === "c1").length).toBe(1);
+    expect(findGroup(twice, "c1").items).toEqual(findGroup(once, "c1").items);
+  });
+
+  test("归一化即收敛:删除绑定设备后容器组消失,刷新测点后容器组跟随", () => {
+    const nodes = [container("c1", { is_gateway: "1", bound_device_id: "dev1" }), member("dev1", "c1")];
+    const normalized = normalizeProjectMeasurements(cfg([group("dev1", [item("i1", "dev1.p")])]), nodes);
+    expect(normalized.groups.some((entry) => entry.nodeId === "c1")).toBe(true);
+
+    // 绑定设备增删测点(单向:绑定设备 → 容器)
+    const grown = normalizeProjectMeasurements({
+      version: 1,
+      groups: normalized.groups.map((entry) => entry.nodeId === "dev1" ? { ...entry, items: [...entry.items, item("i2", "dev1.q")] } : entry)
+    }, nodes);
+    expect(findGroup(grown, "c1").items.map((entry: any) => entry.id)).toEqual(["i1", "i2"]);
+
+    // 绑定设备被删除 → 容器组随之消失(不等待下一次绑定操作)
+    expect(normalizeProjectMeasurements(grown, [nodes[0]]).groups.some((entry) => entry.nodeId === "c1")).toBe(false);
   });
 });

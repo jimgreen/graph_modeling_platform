@@ -6,6 +6,7 @@ import {
   containerMembershipCommit,
   containerSelectOptions,
   isAcContainerNode,
+  withNodeUpdates,
 } from "../acContainer";
 import { BUILTIN_VOLTAGE_LEVELS, formatPowerBaseDisplayValue } from "../model";
 import { firstNonZeroVoltageBase } from "../model-eexport";
@@ -192,6 +193,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     normalizeScale,
     normalizeStaticBoxDimension,
     paramOptionsForSection,
+    normalizeProjectMeasurements,
     parseCustomDefinitions,
     powerBaseValue,
     powerUnit,
@@ -225,6 +227,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     setModelType,
     setPowerBaseValue,
     setPowerUnit,
+    setProjectMeasurements,
     setSelectedDeviceInfoView,
     setSubcontrolarea,
     setSubstation,
@@ -346,14 +349,15 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
   // 所属容器提交:containerId 是节点平级字段(不入 params);
   // 容器矩形重算与被挤出节点由 containerMembershipCommit 一并给出,提交时整体 patch。
   const commitNodeContainerId = (nodeId: string, containerId: string | undefined) => {
-    // 原关口容器的解绑 + 关关口已由 containerMembershipCommit 内部统一处理(与右键移出/改归属同源);
-    // 只剩容器量测组同步留 Task 9 在此接入
+    // 原关口容器的解绑 + 关关口已由 containerMembershipCommit 内部统一处理(与右键移出/改归属同源)
     const { changed, updates } = containerMembershipCommit(nodes, nodeId, containerId);
     if (!changed) {
       return;
     }
     pushUndoSnapshot(true, false, undoScopeForGraphPatch(updates.map((node) => node.id), []), "修改所属容器");
     patchGraphNodes(updates);
+    // 量测同步:解绑/关关口已随 updates 落图 → 容器量测组走同一归一化出口收敛
+    setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, withNodeUpdates(nodes, updates)));
   };
 
   // 所属容器行:容器节点自身不显示(容器不允许嵌套);选项 = 画布上的容器节点。
@@ -406,7 +410,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
             disabled={isBrowseMode}
             options={[{ value: "", label: "未绑定" }, ...containerMemberOptions(nodes, node.id)]}
             onCommit={(nextValue) => {
-              // 绑定/解绑的设备量测组同步由 Task 9 在此接入
+              // 绑定/解绑的容器量测组同步在 updateParam 内随归一化出口收敛
               updateParam("bound_device_id", nextValue);
             }}
           />

@@ -12,6 +12,7 @@ import {
   containerSelectOptions,
   defaultContainerName,
   isAcContainerNode,
+  withNodeUpdates,
 } from "../acContainer";
 
 export function createEnsureDraggingUndoSnapshot(__appScope: Record<string, any>) {
@@ -1742,7 +1743,7 @@ const NEW_CONTAINER_OPTION = "__new-container__";
 
 export function createAddToAcContainer(__appScope: Record<string, any>) {
   return () => {
-  const { activeSelectedNodeIds, assignPermanentDeviceIndex, pushUndoSnapshot, requireEditMode, setDeviceIndexCounters, setGraphArrays, showGlobalMessage, writeOperationLog } = __appScope;
+  const { activeSelectedNodeIds, assignPermanentDeviceIndex, normalizeProjectMeasurements, pushUndoSnapshot, requireEditMode, setDeviceIndexCounters, setGraphArrays, setProjectMeasurements, showGlobalMessage, writeOperationLog } = __appScope;
     if (!requireEditMode("添加到容器")) {
       return;
     }
@@ -1756,7 +1757,6 @@ export function createAddToAcContainer(__appScope: Record<string, any>) {
     const containers = clickNodes.filter(isAcContainerNode);
     // 提交:纯函数算出完整 nextNodes(新容器已插入、成员已打 containerId、几何已重算),单次撤销点 + 单次落图。
     // 改归属(成员原属其它容器)时,原关口容器会一并解绑 + 关关口(与移出同一出口)。
-    // 该路径同样要删「原容器的量测组」,由 Task 9 在此接入(与移出路径同批)。
     const commitAdd = (container: any) => {
       // 提交时刻现取最新图:本函数在 Modal 之后执行,期间第三方 WS control 可能已改图
       const { edges, nodes } = __appScope;
@@ -1764,8 +1764,11 @@ export function createAddToAcContainer(__appScope: Record<string, any>) {
         showGlobalMessage("选中的图元已在该容器内。");
         return;
       }
+      const nextNodes = applyAddToAcContainer(nodes, container, memberIds);
       pushUndoSnapshot(true, false, undefined, "添加到容器");
-      setGraphArrays(applyAddToAcContainer(nodes, container, memberIds), edges);
+      setGraphArrays(nextNodes, edges);
+      // 量测同步:改归属解绑原关口容器后,原容器量测组须随归一化删除
+      setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, nextNodes));
       writeOperationLog(`添加 ${memberIds.length} 个图元到容器 ${container.name ?? ""}`.trim());
     };
     // 新建容器:默认 kind 取清单首项(虚拟电厂);其余类型由图元库放置得到
@@ -1827,7 +1830,7 @@ export function createAddToAcContainer(__appScope: Record<string, any>) {
 
 export function createRemoveFromAcContainer(__appScope: Record<string, any>) {
   return () => {
-  const { activeSelectedNodeIds, patchGraphNodes, pushUndoSnapshot, requireEditMode, showGlobalMessage, writeOperationLog } = __appScope;
+  const { activeSelectedNodeIds, normalizeProjectMeasurements, patchGraphNodes, pushUndoSnapshot, requireEditMode, setProjectMeasurements, showGlobalMessage, writeOperationLog } = __appScope;
     if (!requireEditMode("移出容器")) {
       return;
     }
@@ -1839,13 +1842,14 @@ export function createRemoveFromAcContainer(__appScope: Record<string, any>) {
       return;
     }
     // 纯函数给出变更节点(成员 + 解绑的关口容器 + 重算的容器矩形/被挤出的非成员),单次撤销点 + 单次 patch
-    // 绑定设备的容器量测组同步由 Task 9 在此接入(改归属路径见 createAddToAcContainer 的 commitAdd)
     const updates = applyRemoveFromAcContainer(nodes, memberIds);
     if (updates.length === 0) {
       return;
     }
     pushUndoSnapshot(true, false, undefined, "移出容器");
     patchGraphNodes(updates);
+    // 量测同步:绑定设备被移出会解绑原关口容器,容器量测组须随归一化删除(改归属路径见 commitAdd)
+    setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, withNodeUpdates(nodes, updates)));
     writeOperationLog(`从容器移出 ${memberIds.length} 个图元`);
   };
 }

@@ -320,8 +320,8 @@ export function containerAssignedIdsFromSelection(nodes: ModelNode[], selectedId
   return selectedIds.filter((id) => Boolean(byId.get(id)?.containerId));
 }
 
-/** 把节点更新列表并回节点数组(同 id 覆盖),新增节点则忽略 */
-function withNodeUpdates(nodes: ModelNode[], updates: ModelNode[]): ModelNode[] {
+/** 把节点更新列表并回节点数组(同 id 覆盖),新增节点则忽略。归属入口提交后取「新图」喂量测归一化时复用 */
+export function withNodeUpdates(nodes: ModelNode[], updates: ModelNode[]): ModelNode[] {
   const byId = new Map(updates.map((n) => [n.id, n]));
   return nodes.map((n) => byId.get(n.id) ?? n);
 }
@@ -331,7 +331,7 @@ function withNodeUpdates(nodes: ModelNode[], updates: ModelNode[]): ModelNode[] 
  * 移出(去无容器)与改归属(去别的容器)共用,防「改归属后原容器留下悬空 bound_device_id」。
  * 判定必须用**原** nodes:成员改归属时 containerId 已被改写,拿新数组判会漏。
  * toContainerId === 原容器 id 表示没离开;绑定的是别的设备、或该设备本就不是本容器成员 → 不误伤。
- * 容器量测组的删除由 Task 9 在工厂调用点接入(本函数只写 params)。
+ * 本函数只写 params;容器量测组的删除由调用方(移出/改归属/Alt 拖出各工厂)随归一化出口收敛。
  */
 export function clearGatewayBindingForLeavingMembers(
   nodes: ModelNode[],
@@ -386,7 +386,7 @@ export function applyAddToAcContainer(nodes: ModelNode[], container: ModelNode, 
 
 /**
  * 移出容器:清成员 containerId;若某关口容器的绑定设备正是被移出者,一并解绑 + 关关口
- * (容器量测组同步由 Task 9 在工厂调用点接入)。
+ * (容器量测组同步由调用方随归一化出口收敛)。
  * 返回**变更节点**(成员 + 解绑的容器 + 重算后的容器矩形与被挤出的非成员),供 patchGraphNodes 单次提交。
  */
 export function applyRemoveFromAcContainer(nodes: ModelNode[], memberIds: string[]): ModelNode[] {
