@@ -20,6 +20,16 @@ export function isAcContainerNode(node: ModelNode): boolean {
   return isAcContainerKind(node.kind);
 }
 
+/**
+ * 图中存活容器 id 集合:归属字段 `containerId` 的**有效性判据**。
+ * 悬空值(指向已删除的容器)在删除收尾之外仍可能来自存盘老数据/导入文件,
+ * 故所有「有没有归属」的判断都必须经此集合,不得只判 `n.containerId` 的真值 ——
+ * 只判真值会让悬空节点被当成员豁免(挤出失效、入组被短路)。
+ */
+function liveContainerIds(nodes: ModelNode[]): Set<string> {
+  return new Set(nodes.filter(isAcContainerNode).map((n) => n.id));
+}
+
 /** 容器真实矩形(中心锚定口径的唯一出口):position 是中心,故四边 = position ± size/2 */
 function containerRect(c: ModelNode) {
   const x1 = c.position.x - c.size.width / 2, y1 = c.position.y - c.size.height / 2;
@@ -65,13 +75,14 @@ export function fitContainerToMembers(container: ModelNode, members: ModelNode[]
 export function ejectOutsiders(container: ModelNode, nodes: ModelNode[]): NodePositionPatch[] {
   const c = container;
   const { x1, y1, x2, y2 } = containerRect(c);
+  const owners = liveContainerIds(nodes);
   const out: NodePositionPatch[] = [];
   for (const n of nodes) {
     if (n.id === c.id) continue;
     if (isAcContainerNode(n)) continue;              // 其它容器豁免
     if (isWireLikeRouteDeviceKind(n.kind)) continue; // 线路豁免(全部线路 kind 单一谓词,只豁免 ac-line 会漏推其它 11 种)
     if (isStaticNode(n)) continue;                   // 静态图元豁免:装饰图元常是整画布尺寸(position = 画布中心),容器矩形必然盖住其中心,推出框外等于搬动装饰
-    if (n.containerId) continue;                     // 已归属某容器(含本容器成员)
+    if (n.containerId && owners.has(n.containerId)) continue; // 已归属**存活**容器(含本容器成员);悬空值不算归属,照常挤出
     const p = n.position;                            // 节点中心
     if (p.x < x1 || p.x > x2 || p.y < y1 || p.y > y2) continue; // 中心在外
     const dl = p.x - x1, dr = x2 - p.x, dt = p.y - y1, db = y2 - p.y;
@@ -108,23 +119,30 @@ export type MembershipDecision = {
  * - 成员非 Alt → 归属不变(容器随后重算跟随,见 enforceContainerMembership)
  * - 静态图元不自动入组(装饰图元常是整画布尺寸,吞成成员会把容器撑到包住整张画布);
  *   已是成员的静态图元仍可 Alt 移出,面板/右键的显式归属入口也不受影响
- * 容器自身不参与判定(不允许嵌套)。enterContainerId 取最后一个移入的目标(单节点拖动即唯一)。
+ * 容器自身不参与判定(不允许嵌套)。enterContainerId / exitContainerId 取最后一个移入/移出的目标
+ * (单节点拖动即唯一),供调用方弹 toast。
+ * 归属有效性按 liveContainerIds 判:悬空值(指向已删容器)视为**无归属**,照常参与入组判定。
  */
 export function judgeContainerMembership(args: {
   nodes: ModelNode[];
   movedIds: string[];
   altKey: boolean;
-}): { membershipChanges: MembershipDecision["membershipChanges"]; enterContainerId?: string } {
+}): { membershipChanges: MembershipDecision["membershipChanges"]; enterContainerId?: string; exitContainerId?: string } {
   const { nodes, movedIds, altKey } = args;
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const containers = nodes.filter(isAcContainerNode);
+  const owners = liveContainerIds(nodes);
   const membershipChanges: MembershipDecision["membershipChanges"] = [];
   let enterContainerId: string | undefined;
+  let exitContainerId: string | undefined;
   for (const id of movedIds) {
     const n = byId.get(id);
     if (!n || isAcContainerNode(n)) continue;
-    if (n.containerId) {
-      if (altKey) membershipChanges.push({ nodeId: id, containerId: undefined });
+    if (n.containerId && owners.has(n.containerId)) {
+      if (altKey) {
+        membershipChanges.push({ nodeId: id, containerId: undefined });
+        exitContainerId = n.containerId;
+      }
       continue;
     }
     // 静态图元不自动入组(与 ejectOutsiders 的静态豁免同源,单点在此):装饰图元常是整画布尺寸
@@ -140,7 +158,7 @@ export function judgeContainerMembership(args: {
     membershipChanges.push({ nodeId: id, containerId: target.id });
     enterContainerId = target.id;
   }
-  return { membershipChanges, enterContainerId };
+  return { membershipChanges, enterContainerId, exitContainerId };
 }
 
 /**
@@ -228,11 +246,11 @@ export function applyDragContainerMembership(args: {
   /** 用户真正抓住的节点(拖容器扩组前的集合);缺省 = movedIds。仅用于剔除跟随者 */
   grabbedIds?: string[];
   altKey: boolean;
-}): { updates: ModelNode[]; enterContainerId?: string } {
+}): { updates: ModelNode[]; enterContainerId?: string; exitContainerId?: string } {
   const { nodes, movedIds, grabbedIds, altKey } = args;
   const grabbed = grabbedIds ? new Set(grabbedIds) : null;
   const judgeIds = grabbed ? movedIds.filter((id) => grabbed.has(id)) : movedIds;
-  const { membershipChanges, enterContainerId } = judgeContainerMembership({ nodes, movedIds: judgeIds, altKey });
+  const { membershipChanges, enterContainerId, exitContainerId } = judgeContainerMembership({ nodes, movedIds: judgeIds, altKey });
   const changeById = new Map(membershipChanges.map((c) => [c.nodeId, c]));
   const changed = new Map<string, ModelNode>();
   const unboundById = new Map(
@@ -256,7 +274,7 @@ export function applyDragContainerMembership(args: {
   for (const upd of containerDecisionNodeUpdates(withUnbind, enforceContainerMembership(withUnbind))) {
     changed.set(upd.id, upd);
   }
-  return { updates: [...changed.values()], enterContainerId };
+  return { updates: [...changed.values()], enterContainerId, exitContainerId };
 }
 
 /**
@@ -434,4 +452,46 @@ export function applyRemoveFromAcContainer(nodes: ModelNode[], memberIds: string
     changed.set(upd.id, upd); // 容器重算覆盖(解绑后的 params 已随容器节点带过来)
   }
   return [...changed.values()];
+}
+
+// ─── 删除容器收尾:成员归属不悬空 ─────────────────────────────────────────────
+// spec「其它交互边界」:删除容器 → 成员 containerId 全清(成员保留),确认框提示「N 个成员将散出」。
+// 不清会留下悬空值随保存持久化,并被 liveContainerIds 之外的旧真值判断静默豁免。
+
+/**
+ * 删除确认文案:删除集内**有存活成员**的容器逐个列出;无需确认(无成员 / 成员同批删除 / 未删容器)时返回 null。
+ * 成员与容器同批删除 → 成员随容器一起删,不存在「散出」,故不计入。
+ */
+export function containerDeletionWarning(nodes: ModelNode[], deletedIds: Iterable<string>): string | null {
+  const deleting = new Set(deletedIds);
+  const parts: string[] = [];
+  for (const c of nodes) {
+    if (!deleting.has(c.id) || !isAcContainerNode(c)) continue;
+    const scattered = nodes.filter((n) => n.containerId === c.id && n.id !== c.id && !deleting.has(n.id)).length;
+    if (scattered === 0) continue;
+    parts.push(`容器「${String(c.name ?? "")}」内有 ${scattered} 个成员`);
+  }
+  if (parts.length === 0) return null;
+  return `${parts.join("；")}，删除后成员将散出（不随容器删除）。确认删除？`;
+}
+
+/**
+ * 删除收尾:被删容器的成员清空 `containerId`(成员本身保留)。返回**需提交的存活节点更新**,
+ * 供调用方并进本次删除提交(单一撤销单元)。删除集不含容器、或成员归属的是存活容器时返回空数组。
+ * 注意喂进来的是**删除前**的 nodes —— 删除后容器已不在,无从反推谁曾是它的成员。
+ */
+export function containerDeletionFinalize(nodes: ModelNode[], deletedIds: Iterable<string>): ModelNode[] {
+  const deleting = new Set(deletedIds);
+  const deletedContainerIds = new Set(
+    nodes.filter((n) => deleting.has(n.id) && isAcContainerNode(n)).map((n) => n.id)
+  );
+  if (deletedContainerIds.size === 0) return [];
+  const out: ModelNode[] = [];
+  for (const n of nodes) {
+    if (deleting.has(n.id) || !n.containerId || !deletedContainerIds.has(n.containerId)) continue;
+    const next = { ...n };
+    delete next.containerId;
+    out.push(next);
+  }
+  return out;
 }

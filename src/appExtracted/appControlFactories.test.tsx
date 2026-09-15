@@ -458,14 +458,15 @@ describe("programmaticGroupSelected", () => {
 });
 
 // mock __appScope for deleteDevices：模拟 deleteNodesWithConnectedEdges + setters
-function createDeleteMockScope(nodeIds: string[] = [], selectedNodeIds: string[] = []) {
-  const calls: { undo: boolean; graphSet: boolean; groupsSet: any; selectedCleared: boolean } = {
+function createDeleteMockScope(nodeIds: string[] = [], selectedNodeIds: string[] = [], customNodes?: any[]) {
+  const calls: { undo: boolean; graphSet: boolean; groupsSet: any; selectedCleared: boolean; nodes: any[] } = {
     undo: false,
     graphSet: false,
     groupsSet: null,
-    selectedCleared: false
+    selectedCleared: false,
+    nodes: []
   };
-  const nodes = nodeIds.map((id) => ({ id, kind: "static-text" }));
+  const nodes = customNodes ?? nodeIds.map((id) => ({ id, kind: "static-text" }));
   const edges: any[] = [];
   return {
     scope: {
@@ -486,7 +487,7 @@ function createDeleteMockScope(nodeIds: string[] = [], selectedNodeIds: string[]
       normalizeProjectMeasurements: (m: any) => m,
       removeGraphicsFromGroups: (g: any) => g,
       pushUndoSnapshot: () => { calls.undo = true; },
-      setGraphArrays: () => { calls.graphSet = true; },
+      setGraphArrays: (n: any[]) => { calls.graphSet = true; calls.nodes = n; },
       setEdges: () => {},
       setGroups: (g: any) => { calls.groupsSet = g; },
       setProjectMeasurements: () => {},
@@ -525,6 +526,21 @@ describe("programmaticDeleteDevices", () => {
     } catch (e: any) {
       expect(e.code).toBe("control-failed");
     }
+  });
+
+  // spec「其它交互边界」:删除容器 → 成员 containerId 全清(成员保留)。控制台端点无人可问,
+  // 故无确认框,但收尾必须与界面删除入口同源,否则悬空值随保存持久化。
+  test("删除容器 → 成员 containerId 清空(成员保留,无确认框)", () => {
+    const nodes = [
+      { id: "c1", kind: "ac-vpp-box", name: "虚拟电厂1", params: {} },
+      { id: "m1", kind: "ac-load", name: "m1", params: {}, containerId: "c1" },
+      { id: "o1", kind: "ac-load", name: "o1", params: {} }
+    ];
+    const { scope, calls } = createDeleteMockScope([], [], nodes);
+    const result = createProgrammaticDeleteDevices(scope)(["c1"]);
+    expect(result.deletedIds).toEqual(["c1"]);
+    expect(calls.nodes.map((n) => n.id)).toEqual(["m1", "o1"]);
+    expect(calls.nodes[0].containerId).toBeUndefined();
   });
 });
 

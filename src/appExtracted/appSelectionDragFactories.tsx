@@ -8,6 +8,8 @@ import {
   buildNewContainer,
   containerAddIsNoop,
   containerAssignedIdsFromSelection,
+  containerDeletionFinalize,
+  containerDeletionWarning,
   containerMemberIdsFromSelection,
   containerSelectOptions,
   commitContainerMembership,
@@ -781,9 +783,11 @@ export function createCutSelection(__appScope: Record<string, any>) {
       ? deleteNodesWithConnectedEdges(nodes, edges, activeSelectedNodeIds)
       : { nodes, edges };
     const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
-    setGraphArrays(result.nodes, nextEdges);
-    setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, activeSelectedNodeIds, selectedEdges), result.nodes, nextEdges));
-    setProjectMeasurements((current) => normalizeProjectMeasurements(current, result.nodes));
+    // 剪切 = 复制 + 删除:剪走容器同样要清成员归属(与删除入口同源),否则成员留下悬空 containerId
+    const nextNodes = withNodeUpdates(result.nodes, containerDeletionFinalize(nodes, activeSelectedNodeIds));
+    setGraphArrays(nextNodes, nextEdges);
+    setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, activeSelectedNodeIds, selectedEdges), nextNodes, nextEdges));
+    setProjectMeasurements((current) => normalizeProjectMeasurements(current, nextNodes));
     setCanvasSelectionScope("group");
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
@@ -1656,24 +1660,48 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
       writeOperationLog(`删除 ${selectedEdges.size} 条联络线`);
       return;
     }
-    const expandedNodeIds = expandGlobalBoundaryDeletionNodeIds(nodes, activeSelectedNodeIds);
-    pushUndoSnapshot();
-    const deletedEdges = edgeListForNodeIds(expandedNodeIds, selectedEdges);
-    markRouteEdgesDirty(deletedEdges.map((edge) => edge.id));
-    markStoredRouteEdgesDirty(deletedEdges.map((edge) => edge.id));
-    markBusTerminalSyncDirtyForEdges(deletedEdges);
-    const result = deleteNodesWithConnectedEdges(nodes, edges, expandedNodeIds);
-    const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
-    setGraphArrays(result.nodes, nextEdges);
-    void syncGlobalLineProjectNodes?.(result.nodes, false);
-    setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, expandedNodeIds, selectedEdges), result.nodes, nextEdges));
-    setProjectMeasurements((current) => normalizeProjectMeasurements(current, result.nodes));
-    setCanvasSelectionScope("group");
-    setSelectedNodeIds([]);
-    setSelectedEdgeId("");
-    setSelectedEdgeIds([]);
-    const cascadedLineCount = expandedNodeIds.length - activeSelectedNodeIds.length;
-    writeOperationLog(`删除 ${expandedNodeIds.length} 个图元${cascadedLineCount > 0 ? `（含级联线路 ${cascadedLineCount} 条）` : ""}`);
+    // 选中口径在点击瞬间定死;nodes/edges 一律在提交时刻现取(容器确认框横跨交互窗口,
+    // 持点击快照会漏掉其间的并发改动,如第三方 WS control 已改图)
+    const clickedNodeIds = [...activeSelectedNodeIds];
+    const doDelete = () => {
+      const latestNodes = __appScope.nodes ?? nodes;
+      const latestEdges = __appScope.edges ?? edges;
+      const expandedNodeIds = expandGlobalBoundaryDeletionNodeIds(latestNodes, clickedNodeIds);
+      pushUndoSnapshot();
+      const deletedEdges = edgeListForNodeIds(expandedNodeIds, selectedEdges);
+      markRouteEdgesDirty(deletedEdges.map((edge) => edge.id));
+      markStoredRouteEdgesDirty(deletedEdges.map((edge) => edge.id));
+      markBusTerminalSyncDirtyForEdges(deletedEdges);
+      const result = deleteNodesWithConnectedEdges(latestNodes, latestEdges, expandedNodeIds);
+      const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
+      // 删除容器收尾(spec「其它交互边界」):被删容器的成员清 containerId,成员保留 —— 否则悬空值随保存持久化。
+      // 与删除同一次提交(单一撤销单元),故 undo 一次即可连归属一起还原。
+      const scattered = containerDeletionFinalize(latestNodes, expandedNodeIds);
+      const nextNodes = withNodeUpdates(result.nodes, scattered);
+      setGraphArrays(nextNodes, nextEdges);
+      void syncGlobalLineProjectNodes?.(nextNodes, false);
+      setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, expandedNodeIds, selectedEdges), nextNodes, nextEdges));
+      setProjectMeasurements((current) => normalizeProjectMeasurements(current, nextNodes));
+      setCanvasSelectionScope("group");
+      setSelectedNodeIds([]);
+      setSelectedEdgeId("");
+      setSelectedEdgeIds([]);
+      const cascadedLineCount = expandedNodeIds.length - clickedNodeIds.length;
+      writeOperationLog(`删除 ${expandedNodeIds.length} 个图元${cascadedLineCount > 0 ? `（含级联线路 ${cascadedLineCount} 条）` : ""}${scattered.length > 0 ? `（${scattered.length} 个成员散出）` : ""}`);
+    };
+    // 删除集含「有成员的容器」→ 先确认:成员会散出(不随容器删除)
+    const warning = containerDeletionWarning(nodes, expandGlobalBoundaryDeletionNodeIds(nodes, clickedNodeIds));
+    if (warning) {
+      Modal.confirm({
+        title: "删除容器",
+        content: warning,
+        okText: "删除",
+        cancelText: "取消",
+        onOk: () => doDelete(),
+      });
+      return;
+    }
+    doDelete();
   };
 }
 
