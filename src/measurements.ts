@@ -1281,6 +1281,8 @@ export function syncContainerMeasurementGroup(
     id: containerMeasurementGroupId(containerId),
     nodeId: containerId,
     terminalId: undefined,
+    // 组级 offset 与 items 同口径隔离:共享引用会让「拖容器量测组」串改绑定设备组的偏移
+    offset: { ...sources[0].offset },
     items
   };
   return {
@@ -1302,6 +1304,10 @@ export function removeContainerMeasurementGroup(
  * 按最新图收敛全部容器量测组(幂等):关口且绑定设备存在且仍是该容器成员 → 同步;否则删除容器组。
  * 这是容器量测的唯一判定出口 —— 面板绑定/解绑、移出、改归属、Alt 拖出、删除绑定设备、绑定设备改测点
  * 都汇到这里,避免多处各写一套「该建还是该删」。
+ *
+ * 口径:**容器组只能由镜像产生** —— 非关口容器(或关口但绑定失效)名下的一切组都会被清理,
+ * 包括历史/手建/外部写入的组。这是「容器组存在 ⟺ 关口 + 绑定设备存在且仍是成员」不变量的强制执行
+ * (容器自身没有独立量测可保留)。
  */
 export function reconcileContainerMeasurementGroups(
   config: ProjectMeasurementConfig,

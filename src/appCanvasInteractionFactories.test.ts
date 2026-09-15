@@ -279,6 +279,9 @@ describe("batch common parameter updates", () => {
       commitNodeFootprintUpdates: vi.fn(),
       edgeListForNodeIds: vi.fn(() => []),
       nodeById: new Map([[node.id, node], [line.id, line]]),
+      nodes: [node, line],
+      normalizeProjectMeasurements,
+      setProjectMeasurements: vi.fn(),
       patchGraphNodes,
       pushUndoSnapshot: vi.fn(),
       requireEditMode: vi.fn(() => true),
@@ -308,6 +311,9 @@ describe("batch common parameter updates", () => {
         [firstWindNode.id, firstWindNode],
         [secondWindNode.id, secondWindNode]
       ]),
+      nodes: [firstWindNode, secondWindNode],
+      normalizeProjectMeasurements,
+      setProjectMeasurements: vi.fn(),
       patchGraphNodes,
       pushUndoSnapshot: vi.fn(),
       requireEditMode: vi.fn(() => true),
@@ -345,6 +351,9 @@ describe("batch common parameter updates", () => {
         [sw1.id, sw1],
         [sw2.id, sw2]
       ]),
+      nodes: [sw1, sw2],
+      normalizeProjectMeasurements,
+      setProjectMeasurements: vi.fn(),
       patchGraphNodes,
       pushUndoSnapshot: vi.fn(),
       requireEditMode: vi.fn(() => true),
@@ -382,6 +391,9 @@ describe("batch common parameter updates", () => {
         [firstStorage.id, firstStorage],
         [secondStorage.id, secondStorage]
       ]),
+      nodes: [firstStorage, secondStorage],
+      normalizeProjectMeasurements,
+      setProjectMeasurements: vi.fn(),
       patchGraphNodes,
       pushUndoSnapshot: vi.fn(),
       requireEditMode: vi.fn(() => true),
@@ -428,6 +440,73 @@ describe("batch common parameter updates", () => {
     applyBatchCommonParam("e2h_coeff", "0.2");
 
     expect(applyBatchCommonParamPatch).toHaveBeenCalledTimes(1);
+  });
+
+  // 批量键白名单不排除 is_gateway/bound_device_id(多选容器出现这两个批量行),
+  // 两条提交分支(patchGraphNodes / commitNodeFootprintUpdates)都必须喂量测归一化出口
+  test("批量写绑定参数 → 容器量测组随归一化收敛", () => {
+    const container = createDefaultNode("ac-vpp-box", { x: 0, y: 0 });
+    container.params.is_gateway = "1";
+    const member = createDefaultNode("ac-load", { x: 0, y: 0 });
+    member.containerId = container.id;
+    const item = { id: "p", measurementTypeId: "activePower", sourcePoint: "p", name: "有功" };
+    let captured: any;
+    const applyBatchCommonParamPatch = createApplyBatchCommonParamPatch({
+      NODE_LABEL_FOOTPRINT_PARAM_KEYS: new Set<string>(),
+      activeSelectedNodeIds: [container.id],
+      canBatchEditParam: vi.fn(() => true),
+      commitNodeFootprintUpdates: vi.fn(),
+      edgeListForNodeIds: vi.fn(() => []),
+      nodeById: new Map([[container.id, container], [member.id, member]]),
+      nodes: [container, member],
+      normalizeProjectMeasurements,
+      patchGraphNodes: vi.fn(),
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: vi.fn(() => true),
+      setProjectMeasurements: (updater: any) => {
+        captured = updater({ version: 1, groups: [{ id: `measurement-${member.id}`, nodeId: member.id, items: [item] }] });
+      },
+      undoScopeForGraphPatch: vi.fn(() => ({})),
+      writeOperationLog: vi.fn()
+    });
+
+    applyBatchCommonParamPatch("批量绑定", () => ({ bound_device_id: member.id }), ["bound_device_id"]);
+
+    expect(captured.groups.some((g: any) => g.nodeId === container.id)).toBe(true);
+  });
+
+  test("批量走 footprint 分支(标签占位参数)同样收敛量测", () => {
+    const container = createDefaultNode("ac-vpp-box", { x: 0, y: 0 });
+    container.params.is_gateway = "1";
+    const member = createDefaultNode("ac-load", { x: 0, y: 0 });
+    member.containerId = container.id;
+    const item = { id: "p", measurementTypeId: "activePower", sourcePoint: "p", name: "有功" };
+    const commitNodeFootprintUpdates = vi.fn();
+    let captured: any;
+    const applyBatchCommonParamPatch = createApplyBatchCommonParamPatch({
+      // bound_device_id 冒充 footprint 键,只为一箭双雕命中该分支(键集内容非本测试关注点)
+      NODE_LABEL_FOOTPRINT_PARAM_KEYS: new Set<string>(["bound_device_id"]),
+      activeSelectedNodeIds: [container.id],
+      canBatchEditParam: vi.fn(() => true),
+      commitNodeFootprintUpdates,
+      edgeListForNodeIds: vi.fn(() => []),
+      nodeById: new Map([[container.id, container], [member.id, member]]),
+      nodes: [container, member],
+      normalizeProjectMeasurements,
+      patchGraphNodes: vi.fn(),
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: vi.fn(() => true),
+      setProjectMeasurements: (updater: any) => {
+        captured = updater({ version: 1, groups: [{ id: `measurement-${member.id}`, nodeId: member.id, items: [item] }] });
+      },
+      undoScopeForGraphPatch: vi.fn(() => ({})),
+      writeOperationLog: vi.fn()
+    });
+
+    applyBatchCommonParamPatch("批量绑定", () => ({ bound_device_id: member.id }), ["bound_device_id"]);
+
+    expect(commitNodeFootprintUpdates).toHaveBeenCalled();
+    expect(captured.groups.some((g: any) => g.nodeId === container.id)).toBe(true);
   });
 });
 

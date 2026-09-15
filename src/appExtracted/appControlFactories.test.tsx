@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected, createProgrammaticDeleteDevices, createProgrammaticUpdateDeviceProperty, createProgrammaticSave, createProgrammaticSaveSelectionAsTemplate } from "./appControlFactories";
 import { DEVICE_LIBRARY_BY_KIND, createDefaultNode, createSavedScheme, createSavedProject } from "../model";
+import { normalizeProjectMeasurements } from "../measurements";
 
 // mock __appScope：捕获 pushUndoSnapshot 调用与 setNodes 追加的节点
 function createMockScope() {
@@ -492,11 +493,14 @@ describe("programmaticDeleteDevices", () => {
 
 // mock __appScope for updateDeviceProperty
 function createUpdateMockScope(nodeIds: string[] = []) {
-  const calls: { undo: boolean; updatedNode: any } = { undo: false, updatedNode: null };
+  const calls: { undo: boolean; updatedNode: any; measurements: any } = { undo: false, updatedNode: null, measurements: null };
   const nodes = nodeIds.map((id) => ({ id, kind: "static-text", name: "orig", params: { a: 1 } }));
   return {
     scope: {
       nodes,
+      // 该端点可写 is_gateway/bound_device_id → 补丁会喂量测归一化;桩里透传/捕获即可
+      normalizeProjectMeasurements: (measurements: any) => measurements,
+      setProjectMeasurements: (updater: any) => { calls.measurements = updater({ version: 1, groups: [] }); },
       updateGraphNodeById: (id: string, updater: (n: any) => any) => {
         calls.updatedNode = updater(nodes.find((n) => n.id === id));
       },
@@ -515,7 +519,9 @@ describe("programmaticUpdateDeviceProperty", () => {
     const updateGraphNodeById = vi.fn();
     const update = createProgrammaticUpdateDeviceProperty({
       nodes: [node, line],
+      normalizeProjectMeasurements: (measurements: any) => measurements,
       pushUndoSnapshot: vi.fn(),
+      setProjectMeasurements: vi.fn(),
       updateGraphNodeById
     });
 
@@ -549,7 +555,9 @@ describe("programmaticUpdateDeviceProperty", () => {
     const calls: { updatedNode: any } = { updatedNode: null };
     const update = createProgrammaticUpdateDeviceProperty({
       nodes: [sw, line],
+      normalizeProjectMeasurements: (measurements: any) => measurements,
       pushUndoSnapshot: vi.fn(),
+      setProjectMeasurements: vi.fn(),
       updateGraphNodeById: (_id: string, updater: (n: any) => any) => {
         calls.updatedNode = updater(sw);
       }
@@ -597,6 +605,74 @@ describe("programmaticUpdateDeviceProperty", () => {
     } catch (e: any) {
       expect(e.code).toBe("bad-request");
     }
+  });
+
+  // /api/v1/control 是文档化第三方写路径:程序化建立/解除绑定后容器量测组必须跟上
+  test("写 params.bound_device_id → 容器量测组随归一化建立(第三方绑定路径)", () => {
+    const container = createDefaultNode("ac-vpp-box", { x: 0, y: 0 });
+    container.params.is_gateway = "1";
+    const member = createDefaultNode("ac-load", { x: 0, y: 0 });
+    member.containerId = container.id;
+    const nodes = [container, member] as any[];
+    let captured: any;
+    const update = createProgrammaticUpdateDeviceProperty({
+      nodes,
+      normalizeProjectMeasurements,
+      pushUndoSnapshot: vi.fn(),
+      setProjectMeasurements: (updater: any) => {
+        captured = updater({
+          version: 1,
+          groups: [{ id: `measurement-${member.id}`, nodeId: member.id, items: [{ id: "p", measurementTypeId: "activePower", sourcePoint: "p", name: "有功" }] }]
+        });
+      },
+      updateGraphNodeById: (id: string, updater: (n: any) => any) => {
+        const target = nodes.find((n) => n.id === id);
+        if (target) {
+          updater(target);
+        }
+      }
+    });
+
+    update(container.id, "model", { params: { bound_device_id: member.id } });
+
+    expect(captured.groups.some((g: any) => g.nodeId === container.id)).toBe(true);
+  });
+
+  test("写 params.is_gateway=0 关关口 → 容器量测组随归一化删除", () => {
+    const container = createDefaultNode("ac-vpp-box", { x: 0, y: 0 });
+    container.params.is_gateway = "1";
+    container.params.bound_device_id = "m1";
+    const member = createDefaultNode("ac-load", { x: 0, y: 0 });
+    member.id = "m1";
+    member.containerId = container.id;
+    const nodes = [container, member] as any[];
+    const item = { id: "p", measurementTypeId: "activePower", sourcePoint: "p", name: "有功" };
+    let captured: any;
+    const update = createProgrammaticUpdateDeviceProperty({
+      nodes,
+      normalizeProjectMeasurements,
+      pushUndoSnapshot: vi.fn(),
+      setProjectMeasurements: (updater: any) => {
+        captured = updater({
+          version: 1,
+          groups: [
+            { id: "measurement-m1", nodeId: "m1", items: [item] },
+            { id: `measurement-${container.id}`, nodeId: container.id, items: [item] }
+          ]
+        });
+      },
+      updateGraphNodeById: (id: string, updater: (n: any) => any) => {
+        const target = nodes.find((n) => n.id === id);
+        if (target) {
+          updater(target);
+        }
+      }
+    });
+
+    update(container.id, "model", { params: { is_gateway: "0" } });
+
+    expect(captured.groups.some((g: any) => g.nodeId === container.id)).toBe(false);
+    expect(captured.groups.some((g: any) => g.nodeId === "m1")).toBe(true);
   });
 });
 

@@ -1283,6 +1283,12 @@ describe("container measurement groups", () => {
     expect(findGroup(out, "dev1").items[0].sourcePoint).toBe("dev1.p");
   });
 
+  test("副本的组级 offset 与源组隔离(改副本偏移不动绑定设备)", () => {
+    const out = syncContainerMeasurementGroup(cfg([group("dev1", [item("i1", "dev1.p")])]), "c1", "dev1");
+    findGroup(out, "c1").offset.x = 999;
+    expect(findGroup(out, "dev1").offset.x).toBe(0);
+  });
+
   test("绑定设备无量测组 → 不建空镜像组", () => {
     const out = syncContainerMeasurementGroup(cfg([group("dev1", [])]), "c1", "dev1");
     expect(out.groups.some((entry) => entry.nodeId === "c1")).toBe(false);
@@ -1322,10 +1328,19 @@ describe("container measurement groups", () => {
     expect(reconcileContainerMeasurementGroups(synced, gatewayOff).groups.some((entry) => entry.nodeId === "c1")).toBe(false);
   });
 
-  test("非关口容器不做任何量测操作(原 config 引用不变)", () => {
-    const config = cfg([group("dev1", [item("i1", "dev1.p")])]);
+  test("非关口容器不会被建组,自带组被清理(容器组只能由镜像产生)", () => {
+    // 口径:容器自身没有独立量测,任何属于容器的组只能由镜像产生;
+    // 非关口容器携带的(手建/历史)组会被 reconcile 清理 —— 这是「容器组存在 ⟺ 关口+绑定成员」不变量的强制执行
+    const withContainerOwnGroup = cfg([group("c1", [item("i0", "手建测点")]), group("dev1", [item("i1", "dev1.p")])]);
     const nodes = [container("c1", { is_gateway: "0", bound_device_id: "" }), member("dev1", "c1")];
-    expect(reconcileContainerMeasurementGroups(config, nodes)).toBe(config);
+    const out = reconcileContainerMeasurementGroups(withContainerOwnGroup, nodes);
+    expect(out.groups.some((entry) => entry.nodeId === "c1")).toBe(false);
+    // 非容器组不受影响
+    expect(findGroup(out, "dev1").items.length).toBe(1);
+
+    // 无自带组时不产生新对象(短路语义保留)
+    const clean = cfg([group("dev1", [item("i1", "dev1.p")])]);
+    expect(reconcileContainerMeasurementGroups(clean, nodes)).toBe(clean);
   });
 
   test("收敛:绑定设备被删除 / 已不在容器内 → 删组", () => {
