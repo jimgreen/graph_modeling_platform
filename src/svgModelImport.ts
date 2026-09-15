@@ -7,7 +7,6 @@ import {
   getSafeNodeScaleY,
   getTerminalPoint,
   isBusNode,
-  isStaticNode,
   isWireLikeRouteDeviceKind,
   projectPointToBusCenterlineIfInRange,
   projectPointToBusCenterlineUninset,
@@ -982,12 +981,11 @@ async function parsePlatformSvg(
     warnings.push(`${defaultedDeviceCount} 个设备未包含完整静态参数，已使用当前元件模板默认值补齐。`);
   }
   // 归属落地:SVG 不携带 containerId,导入按平台几何规则重建(中心落入容器矩形 → 成员,与拖入同源)。
-  // 只让真实器件参与「导入期的几何推断」:线路可入组(归属判定口径不变),但穿框是线路常态,
-  // 按矩形反推会把容器撑到包住整条线;静态辅助图元是整画布尺寸的装饰(position = 画布中心),
-  // 反推同样会把容器撑到包住整张画布(挤出侧另有豁免:两者都不被推出框外)。
-  // 线路是否入组仍由画布上的归属判定决定(拖入 / 粘贴落点),本处不代它决定。
+  // 只把真实器件喂进「导入期的几何推断」:线路可入组(归属判定口径不变),但穿框是线路常态,
+  // 按矩形反推会把容器撑到包住整条线,是否入组仍由画布上的归属判定决定(拖入 / 粘贴落点)。
+  // 静态辅助图元无需在此排除 —— 判定侧单点豁免(judgeContainerMembership),此处不重复该规则。
   const memberCandidateIds = normalizedNodes
-    .filter((node) => !isAcContainerNode(node) && !isWireLikeRouteDeviceKind(node.kind) && !isStaticNode(node))
+    .filter((node) => !isAcContainerNode(node) && !isWireLikeRouteDeviceKind(node.kind))
     .map((node) => node.id);
   const nodesWithMembership = commitContainerMembership(normalizedNodes, memberCandidateIds);
   const backgroundImage = platformBackgroundImage(root, dom);

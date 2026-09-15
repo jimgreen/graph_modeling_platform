@@ -731,6 +731,27 @@ describe("静态图元与线路的挤出/归属口径", () => {
     expect(decoration.position).toEqual({ x: 0, y: 0 });
   });
 
+  test("判定侧豁免:静态装饰中心落入容器矩形 → 不入组,容器矩形不被撑大", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
+    const decoration = node("s1", "static-image", 0, 0, 900, 600) as any;
+    const { updates, enterContainerId } = applyDragContainerMembership({ nodes: [c, decoration], movedIds: ["s1"], altKey: false });
+    expect(enterContainerId).toBeUndefined();
+    expect(updates.some((u) => u.id === "s1" && u.containerId)).toBe(false);
+    // 容器收缩到最小尺寸(无成员),而不是被撑到包住 900×600 的装饰
+    expect(updates.find((u) => u.id === "c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE });
+    // 对照组:同位置的普通设备仍入组(豁免是静态图元专属)
+    const device = node("d1", "ac-load", 0, 0) as any;
+    const withDevice = applyDragContainerMembership({ nodes: [c, device], movedIds: ["d1"], altKey: false });
+    expect(withDevice.updates.find((u) => u.id === "d1")!.containerId).toBe("c1");
+  });
+
+  test("已是成员的静态图元仍可 Alt 拖出(豁免只管自动入组,不管用户显式移出)", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
+    const decoration = { ...node("s1", "static-image", 50, 50, 120, 80), containerId: "c1" } as any;
+    const { updates } = applyDragContainerMembership({ nodes: [c, decoration], movedIds: ["s1"], altKey: true });
+    expect(updates.find((u) => u.id === "s1")!.containerId).toBeUndefined();
+  });
+
   test("线路可入组(口径):判定写入 containerId,容器包围盒随之含线路", () => {
     const c = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
     const line = node("l1", "ac-line", 50, 50, 120, 12) as any;

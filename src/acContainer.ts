@@ -58,7 +58,7 @@ export function fitContainerToMembers(container: ModelNode, members: ModelNode[]
 }
 
 /**
- * 容器真实矩形内的非成员(线路 kind、其它容器、已归属某容器的节点豁免)
+ * 容器真实矩形内的非成员(线路 kind、静态图元、其它容器、已归属某容器的节点豁免)
  * 沿最近边法向推到界外 + padding。
  * ponytail: 最小位移单轮让位,复杂穿叠时观感可能不佳;出现实际问题再升级避碰算法。
  */
@@ -103,9 +103,11 @@ export type MembershipDecision = {
 
 /**
  * 拖动结束归属判定(判定点 = 节点中心 n.position,容器矩形按中心锚定):
- * - 非成员中心落进容器矩形 → 移入(Alt 按下则不移入)
+ * - 非成员中心落进容器矩形 → 移入(Alt 按下则不移入;静态图元不自动入组,见下)
  * - 成员 Alt 拖动 → 移出
  * - 成员非 Alt → 归属不变(容器随后重算跟随,见 enforceContainerMembership)
+ * - 静态图元不自动入组(装饰图元常是整画布尺寸,吞成成员会把容器撑到包住整张画布);
+ *   已是成员的静态图元仍可 Alt 移出,面板/右键的显式归属入口也不受影响
  * 容器自身不参与判定(不允许嵌套)。enterContainerId 取最后一个移入的目标(单节点拖动即唯一)。
  */
 export function judgeContainerMembership(args: {
@@ -125,6 +127,10 @@ export function judgeContainerMembership(args: {
       if (altKey) membershipChanges.push({ nodeId: id, containerId: undefined });
       continue;
     }
+    // 静态图元不自动入组(与 ejectOutsiders 的静态豁免同源,单点在此):装饰图元常是整画布尺寸
+    // (position = 画布中心),容器矩形必然盖住其中心,一旦被吞成成员,容器会被撑到包住整张画布。
+    // 已是成员的静态图元仍可由上面的 Alt 分支移出 —— 豁免只管「自动入组」,不管用户显式操作。
+    if (isStaticNode(n)) continue;
     if (altKey) continue; // Alt + 非成员 = 明确不移入
     const target = containers.find((c) => {
       const r = containerRect(c);
