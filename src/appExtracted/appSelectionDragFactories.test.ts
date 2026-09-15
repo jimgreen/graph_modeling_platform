@@ -1,8 +1,9 @@
 // createCurrentProject 输出 backgroundProjectIdx：服务端靠它定位背景模型（前端 id 服务端无法解析）
 import { describe, expect, test, vi } from "vitest";
 import { Modal } from "antd";
-import { createAddToAcContainer, createCurrentProject, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createPasteSelection, createRemoveFromAcContainer } from "./appSelectionDragFactories";
+import { createAddToAcContainer, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createPasteSelection, createRemoveFromAcContainer } from "./appSelectionDragFactories";
 import { canvasClipboardBounds, cloneCanvasClipboard } from "../selectionActions";
+import { deleteNodesWithConnectedEdges } from "../model-routing";
 import { createUndoGraphSnapshotPatchPlan } from "./appGraphMeasurementFactories";
 import { normalizeProjectMeasurements } from "../measurements";
 
@@ -193,6 +194,121 @@ describe("归属入口的量测同步", () => {
 
     expect(capture.get().groups.some((g: any) => g.nodeId === "c1")).toBe(false);
     expect(capture.get().groups.some((g: any) => g.nodeId === "m1")).toBe(true);
+  });
+});
+
+// ─── 删除容器收尾:确认框提示散出 + 成员 containerId 清空(成员保留) ──────────
+// spec「其它交互边界」:删除容器 → 成员 containerId 全清(成员保留),确认框提示「N 个成员将散出」。
+describe("删除容器收尾(deleteSelection)", () => {
+  const container = (name = "虚拟电厂1") => bareNode("c1", "ac-vpp-box", {
+    name, position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, params: { _labelVisible: "0" },
+  });
+  const member = () => bareNode("m1", "ac-load", { containerId: "c1", params: { _labelVisible: "0" } });
+
+  const mkDeleteScope = (nodes: any[], selectedNodeIds: string[]) => {
+    const state: any = { nodes: [...nodes], edges: [] };
+    const scope: any = {
+      activeSelectedEdgeIds: [],
+      activeSelectedNodeIds: selectedNodeIds,
+      deleteNodesWithConnectedEdges: (ns: any[], es: any[], ids: string[]) => deleteNodesWithConnectedEdges(ns, es, ids),
+      edgeById: new Map(),
+      edgeListForNodeIds: () => [],
+      edges: [],
+      // 现取最新图:弹窗横跨交互窗口,提交时刻必须读 __appScope 而不是点击快照
+      get nodes() { return state.nodes; },
+      groups: [],
+      lastCanvasClickTarget: null,
+      markBusTerminalSyncDirtyForEdges: vi.fn(),
+      markRouteEdgesDirty: vi.fn(),
+      markStoredRouteEdgesDirty: vi.fn(),
+      normalizeModelGroups: (g: any) => g,
+      normalizeProjectMeasurements: (m: any) => m,
+      pushUndoSnapshot: vi.fn(),
+      removeGraphicsFromGroups: (g: any) => g,
+      requireEditMode: () => true,
+      setCanvasSelectionScope: vi.fn(),
+      setEdges: vi.fn(),
+      setGraphArrays: (n: any[], e: any[]) => { state.nodes = n; state.edges = e; },
+      setGroups: vi.fn(),
+      setLastCanvasClickTarget: vi.fn(),
+      setProjectMeasurements: vi.fn(),
+      setSelectedEdgeId: vi.fn(),
+      setSelectedEdgeIds: vi.fn(),
+      setSelectedNodeIds: vi.fn(),
+      syncGlobalLineProjectNodes: vi.fn(),
+      writeOperationLog: vi.fn(),
+    };
+    return { scope, state };
+  };
+  const confirmStub = (autoOk: boolean) => {
+    const seen: any[] = [];
+    const spy = vi.spyOn(Modal, "confirm").mockImplementation(((config: any) => {
+      seen.push(config);
+      if (autoOk) config.onOk?.();
+      return { destroy: vi.fn(), update: vi.fn() };
+    }) as any);
+    return { seen, spy };
+  };
+
+  test("有成员的容器:弹确认(文案含容器名与成员数),确认后容器删除、成员保留且归属清空", () => {
+    const { scope, state } = mkDeleteScope([container(), member()], ["c1"]);
+    const { seen, spy } = confirmStub(true);
+    try {
+      createDeleteSelection(scope)();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(seen).toHaveLength(1);
+    expect(seen[0].content).toContain("虚拟电厂1");
+    expect(seen[0].content).toContain("1 个成员");
+    expect(state.nodes.map((n: any) => n.id)).toEqual(["m1"]);
+    expect(state.nodes[0].containerId).toBeUndefined();
+  });
+
+  test("取消确认(未执行 onOk)→ 图不变", () => {
+    const { scope, state } = mkDeleteScope([container(), member()], ["c1"]);
+    const { seen, spy } = confirmStub(false);
+    try {
+      createDeleteSelection(scope)();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(seen).toHaveLength(1);
+    expect(state.nodes.map((n: any) => n.id)).toEqual(["c1", "m1"]);
+    expect(state.nodes[1].containerId).toBe("c1");
+  });
+
+  test("空容器:不弹确认,直接删除", () => {
+    const { scope, state } = mkDeleteScope([container(), bareNode("o", "ac-load")], ["c1"]);
+    const { seen, spy } = confirmStub(true);
+    try {
+      createDeleteSelection(scope)();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(seen).toHaveLength(0);
+    expect(state.nodes.map((n: any) => n.id)).toEqual(["o"]);
+  });
+
+  test("确认时刻现取最新图:弹窗期间的并发改动不被点击快照覆盖", () => {
+    const { scope, state } = mkDeleteScope([container(), member()], ["c1"]);
+    const { seen, spy } = confirmStub(false);
+    try {
+      createDeleteSelection(scope)();
+      state.nodes = [...state.nodes, bareNode("late", "ac-load")]; // 弹窗期间第三方 WS control 加图
+      seen[0].onOk();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(state.nodes.map((n: any) => n.id)).toEqual(["m1", "late"]);
+  });
+
+  test("剪切容器:成员同样清归属(剪切 = 复制 + 删除,与删除入口同源)", () => {
+    const { scope, state } = mkDeleteScope([container(), member()], ["c1"]);
+    Object.assign(scope, { buildCanvasClipboard: () => ({ nodes: [], edges: [] }), canvasSelectionScope: "group", activeLayerGroups: [], routedEdges: [], visibleEdges: [], visibleNodes: state.nodes, resolveCanvasDeleteAction: () => ({ kind: "delete" }), setCanvasClipboard: vi.fn(), resetRoutableLinePreviewState: vi.fn(), resetConnectPreviewState: vi.fn(), setConnectSource: vi.fn(), setRewiring: vi.fn(), setRoutableLinePlacement: vi.fn(), setContextMenu: vi.fn() });
+    createCutSelection(scope)();
+    expect(state.nodes.map((n: any) => n.id)).toEqual(["m1"]);
+    expect(state.nodes[0].containerId).toBeUndefined();
   });
 });
 

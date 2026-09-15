@@ -36,6 +36,8 @@ import {
   containerDragGroup,
   applyDragContainerMembership,
   commitContainerMembership,
+  containerDeletionWarning,
+  containerDeletionFinalize,
 } from "./acContainer";
 
 // 测试用最小节点。rotation/scale 必填:calculateNodeVisualBounds 依赖它们算半宽高,
@@ -764,6 +766,105 @@ describe("静态图元与线路的挤出/归属口径", () => {
     expect(r.y1).toBeLessThanOrEqual(bounds.top);
     expect(r.x2).toBeGreaterThanOrEqual(bounds.right);
     expect(r.y2).toBeGreaterThanOrEqual(bounds.bottom);
+  });
+});
+
+// ─── 删除容器收尾:成员归属不悬空(成员保留,containerId 全清) ────────────────
+// spec「其它交互边界」:删除容器 → 成员 containerId 全清(成员保留),确认框提示「N 个成员将散出」。
+// 悬空值(指向已不存在容器)会随保存持久化,并让成员后续入组被静默短路(见下个 describe)。
+describe("删除容器的归属收尾", () => {
+  const container = (name = "虚拟电厂1") => ({ ...node("c1", "ac-vpp-box", 0, 0, 200, 200), name } as any);
+  const member = (id: string, containerId = "c1") => ({ ...node(id, "ac-load", 50, 50), containerId } as any);
+
+  test("删除集内有成员的容器 → 确认文案含容器名与散出成员数", () => {
+    const text = containerDeletionWarning([container(), member("m1"), member("m2")], ["c1"])!;
+    expect(text).toContain("虚拟电厂1");
+    expect(text).toContain("2 个成员");
+  });
+
+  test("空容器 / 成员同批删除 / 未删容器 → 无需确认(返回 null)", () => {
+    const nodes = [container(), member("m1")];
+    expect(containerDeletionWarning([container()], ["c1"])).toBeNull();
+    expect(containerDeletionWarning(nodes, ["c1", "m1"])).toBeNull(); // 成员同批删,不散出
+    expect(containerDeletionWarning(nodes, ["m1"])).toBeNull();
+  });
+
+  test("多个有成员的容器 → 逐一列出", () => {
+    const c2 = { ...node("c2", "ac-vpp-box", 500, 0, 200, 200), name: "虚拟电厂2" } as any;
+    const nodes = [container(), c2, member("m1"), { ...node("m2", "ac-load", 500, 0), containerId: "c2" } as any];
+    const text = containerDeletionWarning(nodes, ["c1", "c2"])!;
+    expect(text).toContain("虚拟电厂1");
+    expect(text).toContain("虚拟电厂2");
+  });
+
+  test("收尾:被删容器的成员清 containerId(只清归属,几何不动);无关节点不产出更新", () => {
+    const member1 = member("m1");
+    const updates = containerDeletionFinalize([container(), member1, node("o", "ac-load", 900, 900)], ["c1"]);
+    expect(updates.map((n) => n.id)).toEqual(["m1"]);
+    expect(updates[0].containerId).toBeUndefined();
+    expect(updates[0].position).toEqual(member1.position);
+  });
+
+  test("收尾:删除集不含容器 / 成员归属的是存活容器 → 无更新", () => {
+    expect(containerDeletionFinalize([container(), member("m1")], ["m1"])).toEqual([]);
+    const c2 = { ...node("c2", "ac-vpp-box", 500, 0, 200, 200), name: "c2" } as any;
+    const alive = { ...node("m1", "ac-load", 500, 0), containerId: "c2" } as any;
+    expect(containerDeletionFinalize([container(), c2, alive], ["c1"])).toEqual([]);
+  });
+});
+
+// ─── 悬空归属:containerId 指向已不存在的容器 → 视为无归属(不再静默失效) ──────
+// 老数据/异常路径残留的悬空值:判定若只判真值,成员再拖进别的容器会被短路 → 归属静默失效。
+describe("悬空归属(容器已删除)", () => {
+  const container = () => node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
+
+  test("判定侧:悬空归属的节点可正常移入存活容器", () => {
+    const orphan = { ...node("o", "ac-load", 60, 60), containerId: "gone" } as any;
+    const { updates, enterContainerId } = applyDragContainerMembership({
+      nodes: [container(), orphan], movedIds: ["o"], altKey: false,
+    });
+    expect(enterContainerId).toBe("c1");
+    expect(updates.find((n) => n.id === "o")!.containerId).toBe("c1");
+  });
+
+  test("判定侧:悬空归属 Alt 拖动不算「移出」(无 exitContainerId),且不改写归属", () => {
+    const orphan = { ...node("o", "ac-load", 900, 900), containerId: "gone" } as any;
+    const { updates, exitContainerId } = applyDragContainerMembership({
+      nodes: [container(), orphan], movedIds: ["o"], altKey: true,
+    });
+    expect(exitContainerId).toBeUndefined();
+    expect(updates.some((n) => n.id === "o")).toBe(false);
+  });
+
+  test("挤出侧:悬空归属不豁免挤出(容器矩形盖住其中心即被推出)", () => {
+    const orphan = { ...node("o", "ac-load", 0, 0), containerId: "gone" } as any;
+    const nodes = [container(), orphan];
+    const updates = containerDecisionNodeUpdates(nodes, enforceContainerMembership(nodes));
+    const moved = updates.find((n) => n.id === "o");
+    expect(moved).toBeTruthy();                        // 旧口径:真值豁免 → 该节点不产出任何更新
+    expect(moved!.position).not.toEqual(orphan.position);
+  });
+});
+
+// ─── Alt 移出回报原容器(供 toast:与「已移入容器」对称) ─────────────────────
+describe("Alt 移出回报原容器", () => {
+  const container = () => node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
+  const member = (x: number, y: number) => ({ ...node("m1", "ac-load", x, y), containerId: "c1" } as any);
+
+  test("Alt 拖出成员 → exitContainerId = 原容器 id", () => {
+    const { exitContainerId } = applyDragContainerMembership({
+      nodes: [container(), member(300, 300)], movedIds: ["m1"], altKey: true,
+    });
+    expect(exitContainerId).toBe("c1");
+  });
+
+  test("非 Alt 拖动成员 / 拖入新成员 → 无 exitContainerId", () => {
+    const kept = applyDragContainerMembership({ nodes: [container(), member(60, 60)], movedIds: ["m1"], altKey: false });
+    expect(kept.exitContainerId).toBeUndefined();
+    const entered = applyDragContainerMembership({
+      nodes: [container(), node("o", "ac-load", 60, 60)], movedIds: ["o"], altKey: false,
+    });
+    expect(entered.exitContainerId).toBeUndefined();
   });
 });
 

@@ -1301,7 +1301,7 @@ export function createFinishNodeDrag(__appScope: Record<string, any>) {
     // 归属落地:判定用**拖动后**节点(容器与成员均取新位置,判定点 = 节点中心)——
     // 用拖动前的位置会漏判「拖进容器」,并把容器重算回旧位置
     const postMoveById = new Map(draggedNodeUpdates.map((node) => [node.id, node]));
-    const { updates: containerUpdates, enterContainerId } = applyDragContainerMembership({
+    const { updates: containerUpdates, enterContainerId, exitContainerId } = applyDragContainerMembership({
       nodes: nodes.map((node) => postMoveById.get(node.id) ?? node),
       movedIds: activeDragging.nodeIds,
       grabbedIds: activeDragging.grabbedNodeIds,
@@ -1394,6 +1394,11 @@ export function createFinishNodeDrag(__appScope: Record<string, any>) {
     if (enterContainerId) {
       const target = nodes.find((node) => node.id === enterContainerId);
       showGlobalMessage(`已移入容器 ${target?.name ?? ""}`.trim());
+    }
+    // Alt 移出与移入对称提示;多选拖动可能两种同时发生,两条独立弹(不是二选一)
+    if (exitContainerId) {
+      const source = nodes.find((node) => node.id === exitContainerId);
+      showGlobalMessage(`已移出容器 ${source?.name ?? ""}`.trim());
     }
   };
 }

@@ -17,7 +17,7 @@ import {
 } from "../voltageInheritance";
 import { getRatedCapacityDefaultForKind } from "../model";
 import { graphStorePatchNodes } from "../graphStore";
-import { applyDragContainerMembership, containerDragGroup, isAcContainerNode, withNodeUpdates } from "../acContainer";
+import { applyDragContainerMembership, containerDeletionFinalize, containerDragGroup, isAcContainerNode, withNodeUpdates } from "../acContainer";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return async (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[], globalLineChoice?: GlobalLineChoice) => {
@@ -3971,9 +3971,11 @@ export function createDeleteModelLayer(__appScope: Record<string, any>) {
     const nextLayers = remainingLayers.map((item) => item.id === nextActiveLayerId ? { ...item, visible: true } : item);
     const remainingEdgeIds = new Set(result.edges.map((edge) => edge.id));
     const removedEdgeIds = edges.filter((edge) => !remainingEdgeIds.has(edge.id)).map((edge) => edge.id);
-    setGraphArrays(result.nodes, result.edges);
-    setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, nodeIdsInLayer, removedEdgeIds), result.nodes, result.edges));
-    setProjectMeasurements((current) => normalizeProjectMeasurements(current, result.nodes));
+    // 删除容器收尾:容器在本图层而成员在别图层时,成员归属会悬空 → 与删除/剪切同源清掉
+    const nextNodes = withNodeUpdates(result.nodes, containerDeletionFinalize(nodes, nodeIdsInLayer));
+    setGraphArrays(nextNodes, result.edges);
+    setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, nodeIdsInLayer, removedEdgeIds), nextNodes, result.edges));
+    setProjectMeasurements((current) => normalizeProjectMeasurements(current, nextNodes));
     setLayers(nextLayers);
     setActiveLayerId(nextActiveLayerId);
     setSelectedNodeIds([]);
