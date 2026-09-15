@@ -1,5 +1,12 @@
 import { describe, test, expect } from "vitest";
-import { calculateNodeVisualBounds } from "./model";
+import {
+  AC_CONTAINER_KINDS,
+  DEVICE_LIBRARY,
+  buildContainerDeviceParameterViews,
+  calculateNodeVisualBounds,
+  createDefaultNode,
+  type DeviceKind,
+} from "./model";
 import {
   CONTAINER_PADDING,
   CONTAINER_MIN_SIZE,
@@ -322,6 +329,23 @@ describe("acContainer 面板", () => {
     expect("containerId" in moved).toBe(false);
     // 容器收缩回最小尺寸(成员已移出)
     expect(updates.find((n) => n.id === "c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE });
+  });
+
+  test("面板可见性:两张属性表互斥且各自「所属容器」行结果确定", () => {
+    // 容器设备(is_container=1,如电解槽):走容器参数表(branch 1)、且不是 AC 容器 → 行可见
+    for (const kind of ["ac-electrolyzer", "dc-fuel-cell"]) {
+      const tpl = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+      const node = createDefaultNode(kind as DeviceKind, { x: 0, y: 0 });
+      expect(buildContainerDeviceParameterViews(node, tpl).length, `${kind} 未走容器参数表`).toBeGreaterThan(0);
+      expect(isAcContainerNode(node), `${kind} 被误判为 AC 容器(行会被隐藏)`).toBe(false);
+    }
+    // AC 容器:两张表都进不去 branch 1,且行必须隐藏(容器不允许嵌套)
+    for (const kind of AC_CONTAINER_KINDS) {
+      const tpl = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+      const node = createDefaultNode(kind, { x: 0, y: 0 });
+      expect(buildContainerDeviceParameterViews(node, tpl).length, `${kind} 进了容器参数表`).toBe(0);
+      expect(isAcContainerNode(node), `${kind} 未被判为 AC 容器`).toBe(true);
+    }
   });
 
   test("归属未变或目标缺失:不产出任何提交", () => {

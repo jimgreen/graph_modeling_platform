@@ -355,7 +355,8 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     patchGraphNodes(updates);
   };
 
-  // 所属容器行:容器节点自身不显示(容器不允许嵌套);选项 = 画布上的容器节点
+  // 所属容器行:容器节点自身不显示(容器不允许嵌套);选项 = 画布上的容器节点。
+  // 两张属性表都要挂(is_container 的容器设备走容器参数表,普通设备走通用参数表),漏一处该设备就看不到/解除不了归属。
   const renderContainerRow = () => {
     const node = inspectorSelectedNode;
     if (!node || isAcContainerNode(node)) {
@@ -1113,6 +1114,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       </div>)}
                     {selectedContainerParameterView ? (<table className="param-table">
                         <tbody>
+                          {renderContainerRow()}
                           {selectedContainerParameterView.rows.map((row) => {
                         const componentLibrary = resolveContainerParameterViewComponentLibrary(
                           inspectorSelectedNode,
