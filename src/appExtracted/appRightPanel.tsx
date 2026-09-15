@@ -11,7 +11,7 @@ import {
 import { BUILTIN_VOLTAGE_LEVELS, formatPowerBaseDisplayValue } from "../model";
 import { firstNonZeroVoltageBase } from "../model-eexport";
 import { getTerminalVoltageLevel } from "../model-routing";
-import { VOLTAGE_BASE_PARAM_KEYS } from "./appCoreCanvasUtilities";
+import { VOLTAGE_BASE_PARAM_KEYS, resolveAcContainerModelPanelParamKeys } from "./appCoreCanvasUtilities";
 
 // 参数字段 → 单位后缀映射
 const PARAM_UNIT_SUFFIX: Record<string, string> = {
@@ -1160,12 +1160,13 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         const panelDefinitions = definitionGroups
                           ? [...definitionGroups.baseDefinitions, ...definitionGroups.derivedDefinitions]
                           : customDefinitions;
-                        const keys = resolveDeviceModelPanelParameterKeys(
+                        // 容器:剔除 type/is_gateway/bound_device_idx 三行(无人读取或与容器专用行重复,见 AC_CONTAINER_EXCLUDED_E_PARAM_KEYS)
+                        const keys = resolveAcContainerModelPanelParamKeys(resolveDeviceModelPanelParameterKeys(
                             eKeys,
                             customDefinitions,
                             Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM),
                             definitionGroups
-                        );
+                        ), isAcContainerNode(inspectorSelectedNode));
                         return keys.map((key) => {
                             const definition = panelDefinitions.find((item) => item.enName === key);
                             const resolvedValue = key === "name"

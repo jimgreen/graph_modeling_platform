@@ -49,4 +49,31 @@ describe("src/export/svg", () => {
     expect(withBox.slice(containerAt, segmentAt)).toContain('dev-kind="ac-vpp-box"');
     // 无容器时不占位（逐字节一致性由 svg.golden 基线哈希守卫）
   });
+
+  test("容器与静态图元共享层键（Other）时不整层沉底：整层皆容器才搬", () => {
+    const containerInStaticLayer = {
+      id: "box2", kind: "ac-vpp-box", name: "虚拟电厂2", position: { x: 200, y: 300 },
+      size: { width: 180, height: 112 }, rotation: 0, layerId: "layer-default", nodeNumber: "",
+      acTopologyNode: 0, dcTopologyNode: 0, scale: 1,
+      // 手工塞入 static 库参数 → exportNodeLayerKey 判静态 → 与静态图元同落 "Other" 层
+      params: { component_type: "StaticTextSymbol" }, terminals: []
+    };
+    const staticText = {
+      id: "st1", kind: "static-text", name: "标题", position: { x: 40, y: 40 },
+      size: { width: 120, height: 24 }, rotation: 0, layerId: "layer-default", nodeNumber: "",
+      acTopologyNode: 0, dcTopologyNode: 0, scale: 1, params: { text: "标题" }, terminals: []
+    };
+    const svg = buildSvgDocument(
+      [...SVG_BASELINE_NODES, staticText, containerInStaticLayer] as any,
+      SVG_BASELINE_EDGES as any,
+      { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any
+    );
+    const otherAt = svg.indexOf('device-type="Other"');
+    const segmentAt = svg.indexOf('<g id="Segment_Layer"');
+
+    expect(otherAt).toBeGreaterThan(-1);
+    expect(segmentAt).toBeGreaterThan(-1);
+    // 该层还住着静态图元:整层搬会把装饰图元一并沉到线路底下,故不动
+    expect(otherAt).toBeGreaterThan(segmentAt);
+  });
 });

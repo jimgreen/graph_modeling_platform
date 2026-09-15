@@ -280,6 +280,15 @@ describe("删除容器收尾(deleteSelection)", () => {
     expect(scope.setLastCanvasClickTarget).not.toHaveBeenCalled();
   });
 
+  // 无选中提前 return 分支不开确认框,不存在「取消留下副作用」顾虑 —— 点击目标必须随手清掉,
+  // 否则上一次画布点击的目标(如 measurement)会残留到下一次 Delete
+  test("无选中时提前返回:仍清掉上一次画布点击目标", () => {
+    const { scope } = mkDeleteScope([bareNode("o", "ac-load")], []);
+    scope.lastCanvasClickTarget = "measurement";
+    createDeleteSelection(scope)();
+    expect(scope.setLastCanvasClickTarget).toHaveBeenCalledWith(null);
+  });
+
   test("空容器:不弹确认,直接删除", () => {
     const { scope, state } = mkDeleteScope([container(), bareNode("o", "ac-load")], ["c1"]);
     const { seen, spy } = confirmStub(true);

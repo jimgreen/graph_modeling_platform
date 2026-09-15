@@ -324,8 +324,14 @@ ${scopedBackgroundSvg}
     }
   }
   // 容器沉底:容器节点层在 segment(线路)层之前输出,与画布同口径(acContainer.containerFirstComparator)。
-  // 按「容器节点的层键」判定而非按 kind 猜层名,容器层键派生自节点的真实分层结果。
-  const containerLayerKeys = new Set(exportNodes.filter(isAcContainerNode).map(exportNodeLayerKey));
+  // 层键按「节点的真实分层结果」派生而非按 kind 猜层名;判定口径 = **整层皆容器**才搬:
+  // 静态图元层键恒为 "Other",容器若被手工塞入 static 库参数也会落进该层,此时整层搬会把装饰图元一并沉底。
+  const containerLayerKeys = new Set(
+    [...nodeTypeLayerIds.keys()].filter((layerKey) => {
+      const owners = exportNodes.filter((node) => exportNodeLayerKey(node) === layerKey);
+      return owners.length > 0 && owners.every(isAcContainerNode);
+    })
+  );
   const exportDeviceIdByNodeId = buildExportDeviceIdMap(exportNodes, usedSvgIds);
   const resolveExportLayerButtonTargetIds = (node: ModelNode) => {
     if (!isStaticButtonCapableNode(node) || node.params.buttonEnabled !== "1" || node.params.buttonActionType !== "layer") {
