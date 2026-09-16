@@ -939,6 +939,8 @@ git commit -m "feat(container): 关口容器量测组单向同步"
 
 ### Task 10: E 导出 — 容器段与模板态静默过滤
 
+> **执行修正(2026-09-16,用户验收反馈):** 容器段的 `type` 列(中文名)已废 —— 改为 **`dev_type` 列,值 = 容器元件英文名 kebab-case kind**(如 `ac-vpp-box`,平台唯一例外:其它段 dev_type 为 E 类名)。下方草图的 `type: CONTAINER_KIND_LABELS[...]` 与列清单均以 `src/model-eexport.ts` 实现为准。
+
 **Files:**
 - Modify: `src/model-eexport.ts:33-50`(E_SECTION_COLUMNS)、`:344`(E_KIND_SECTION_MAP)、`:1830-2018`(buildEDeviceRecords 主循环)、`:2010-2017`(模板态过滤)
 - Test: `src/model-eexport.test.ts`(追加)
