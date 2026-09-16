@@ -214,7 +214,7 @@ describe("归属判定", () => {
   const inside = { ...node("in", "ac-load", 50, 50), containerId: "c1" };
   const outside = node("out", "ac-load", 500, 500);
 
-  test("非成员落进容器矩形内 → 移入(非拖动入口默认口径:粘贴/模板落点/图元库放置/批量布局)", () => {
+  test("非成员落进容器矩形内 → 移入(`repelNonMembers` 缺省 false:函数默认值,非任何生产入口口径)", () => {
     const moved = { ...outside, position: { x: 60, y: 60 } };
     const r = judgeContainerMembership({ nodes: [c, inside, moved] as any, movedIds: ["out"], altKey: false });
     expect(r.enterContainerId).toBe("c1");
@@ -293,6 +293,34 @@ describe("归属判定", () => {
     const r = judgeContainerMembership({ nodes: [c, line] as any, movedIds: ["l1"], altKey: false, repelNonMembers: true });
     expect(r.repelPatches).toEqual([]);
     expect(r.membershipChanges).toEqual([]);
+  });
+
+  // 豁免键只认「本批**新增**的容器」而非「本批被移动的容器」:多选拖动与布局里容器本身也在移动集内,
+  // 按移动集豁免会让设备落进这些**既有**容器时不排斥 —— 与 spec「非 Alt 落入 = 排斥」冲突
+  test("豁免只认新增容器:多选拖动(容器 + 外部设备)时设备落进该容器仍弹回", () => {
+    const moved = { ...outside, position: { x: 60, y: 60 } };
+    const r = judgeContainerMembership({
+      nodes: [c, moved] as any,
+      movedIds: ["c1", "out"],
+      altKey: false,
+      repelNonMembers: true,
+    });
+    expect(r.membershipChanges).toEqual([]);
+    expect(r.repelPatches).toEqual([{ nodeId: "out", position: { x: 100 + CONTAINER_PADDING, y: 60 } }]);
+  });
+
+  test("显式声明新增容器(整组粘贴 / SVG 导入整模型重建)才豁免:落进它按落点入组", () => {
+    const moved = { ...outside, position: { x: 60, y: 60 } };
+    const r = judgeContainerMembership({
+      nodes: [c, moved] as any,
+      movedIds: ["out"],
+      altKey: false,
+      repelNonMembers: true,
+      addedContainerIds: ["c1"],
+    });
+    expect(r.enterContainerId).toBe("c1");
+    expect(r.membershipChanges).toEqual([{ nodeId: "out", containerId: "c1" }]);
+    expect(r.repelPatches).toEqual([]);
   });
 
   test("拖动排斥:按真实矩形命中哪个容器就弹哪个", () => {

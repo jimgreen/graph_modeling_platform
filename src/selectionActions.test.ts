@@ -1396,6 +1396,66 @@ describe("容器整组参与布局", () => {
     expect(byId.get("o1")!.position).toEqual({ x: 900, y: 900 });
   });
 
+  test("mergeContainerLayoutUnits:混装组合里的散装节点补成独立单元,不被静默丢弃", () => {
+    // 「画布组合」单元可同时装容器、容器成员与散装节点:合并时只吐整组单元会把散装节点无声抹掉
+    const nodes = [container("c1", 525, 400), member("m1", "c1", 500, 400), plain("o1", 900, 900)];
+    const rect = (left: number, right: number, top: number, bottom: number) => ({ left, right, top, bottom });
+    const groupUnit: CanvasLayoutUnit = {
+      id: "group:g1",
+      kind: "group",
+      nodeIds: ["c1", "m1", "o1"],
+      edgeIds: [],
+      bounds: rect(400, 1000, 300, 1000),
+      layoutBounds: rect(400, 1000, 300, 1000),
+      collisionRects: [rect(425, 625, 300, 500), rect(480, 520, 385, 415), rect(880, 920, 885, 915)]
+    };
+    const merged = mergeContainerLayoutUnits(nodes, [groupUnit]);
+
+    const group = merged.find((unit) => unit.id === "container:c1")!;
+    expect([...group.nodeIds].sort()).toEqual(["c1", "m1"]);
+    const rest = merged.find((unit) => unit.nodeIds.includes("o1"))!;
+    expect(rest.nodeIds).toEqual(["o1"]);
+    expect(rest.bounds).toEqual(calculateNodeVisualBounds(nodes[2]));
+  });
+
+  test("mergeContainerLayoutUnits:线路设备成员不吸入整组(可移动性谓词与 buildCanvasLayoutUnits 同源)", () => {
+    const line = {
+      ...createDefaultNode("ac-routable-line", { x: 0, y: 0 }),
+      id: "l1",
+      position: { x: 500, y: 400 },
+      containerId: "c1"
+    };
+    expect(isCanvasNodeMovable(line.kind)).toBe(false); // 前提:线路设备不可作布局单元
+    const nodes = [container("c1", 525, 400), member("m1", "c1", 500, 400), line];
+    const units = buildCanvasLayoutUnits([], nodes, ["c1", "m1"], [], [], []);
+    const merged = mergeContainerLayoutUnits(nodes, units);
+
+    expect([...merged.find((unit) => unit.id === "container:c1")!.nodeIds]).toEqual(["c1", "m1"]);
+  });
+
+  test("arrangeContainerInteriors:只处理作用域内的容器(别层容器不被动)", () => {
+    const nodes = [
+      container("c1", 525, 400),
+      member("m1", "c1", 500, 400),
+      member("m2", "c1", 600, 400),
+      container("c2", 1500, 400),
+      member("n1", "c2", 1480, 400),
+      member("n2", "c2", 1560, 400)
+    ];
+    const seen: string[][] = [];
+    arrangeContainerInteriors(
+      nodes,
+      (currentNodes, units) => {
+        seen.push(units.flatMap((unit) => unit.nodeIds));
+        return currentNodes;
+      },
+      ["c1", "m1", "m2"]
+    );
+
+    expect(seen).toHaveLength(1);
+    expect([...seen[0]].sort()).toEqual(["m1", "m2"]);
+  });
+
   test("arrangeContainerInteriors:成员不足 2 个的容器跳过(无可布局内容)", () => {
     const nodes = [container("c1", 0, 0), member("m1", "c1", 40, 40), container("c2", 1000, 0)];
     let calls = 0;
