@@ -333,6 +333,20 @@ export function defaultContainerName(kind: DeviceKind, existing: ModelNode[]): s
   return `${label}${count + 1}`;
 }
 
+/** 新建容器弹窗的类型选项(value/label 与图元库 label 单源,不另拷一份中文名) */
+export function containerKindOptions(): { value: DeviceKind; label: string }[] {
+  return AC_CONTAINER_KINDS.map((kind) => ({ value: kind, label: CONTAINER_KIND_LABELS[kind] ?? kind }));
+}
+
+/**
+ * 新建弹窗「切换类型」的唯一出口:kind 与默认名**一起**换。
+ * 名称框是受控的,显示值必须经此出口取得 —— 只改 kind 不改名(或命令式改 DOM)会让
+ * 显示停在旧默认名、落库却是新默认名,界面与数据分叉。
+ */
+export function containerKindSwitch(kind: DeviceKind, existing: ModelNode[]): { kind: DeviceKind; name: string } {
+  return { kind, name: defaultContainerName(kind, existing) };
+}
+
 /**
  * 新建容器节点(纯函数):位置/尺寸 = 包围成员 + padding(中心锚定),params.idx 由调用方
  * 以 assignPermanentDeviceIndex 同源分配器给出。复用 fitContainerToMembers 保证
