@@ -211,7 +211,7 @@ describe("归属判定", () => {
   const inside = { ...node("in", "ac-load", 50, 50), containerId: "c1" };
   const outside = node("out", "ac-load", 500, 500);
 
-  test("非成员落进容器矩形内 → 移入", () => {
+  test("非成员落进容器矩形内 → 移入(非拖动入口默认口径:粘贴/模板落点/图元库放置/批量布局)", () => {
     const moved = { ...outside, position: { x: 60, y: 60 } };
     const r = judgeContainerMembership({ nodes: [c, inside, moved] as any, movedIds: ["out"], altKey: false });
     expect(r.enterContainerId).toBe("c1");
@@ -245,10 +245,58 @@ describe("归属判定", () => {
     expect(r.membershipChanges).toEqual([]);
   });
 
-  test("非成员 Alt 落入容器 → 不移入", () => {
+  test("非成员 Alt 落入容器 → 移入(Alt = 双向归属变更键)", () => {
     const moved = { ...outside, position: { x: 60, y: 60 } };
     const r = judgeContainerMembership({ nodes: [c, moved] as any, movedIds: ["out"], altKey: true });
+    expect(r.enterContainerId).toBe("c1");
+    expect(r.membershipChanges).toEqual([{ nodeId: "out", containerId: "c1" }]);
+  });
+
+  test("非成员 Alt 落在容器外 → 不移入也不弹出", () => {
+    const moved = { ...outside, position: { x: 500, y: 500 } };
+    const r = judgeContainerMembership({ nodes: [c, moved] as any, movedIds: ["out"], altKey: true });
     expect(r.membershipChanges).toEqual([]);
+    expect(r.enterContainerId).toBeUndefined();
+    expect(r.repelPatches).toEqual([]);
+  });
+
+  // 排斥(拖动路径专属):容器与容器外设备互相排斥 —— 非 Alt 拖进来的非成员被弹回框外,不写归属
+  test("拖动 + 非 Alt + 非成员落入 → 弹出到最近边外 + padding,归属不变", () => {
+    // (60,60) 在 [-100,100]² 内:四边距左 160 / 右 40 / 上 160 / 下 40 → 最近边 = 右(x2=100)
+    const moved = { ...outside, position: { x: 60, y: 60 } };
+    const r = judgeContainerMembership({ nodes: [c, moved] as any, movedIds: ["out"], altKey: false, repelNonMembers: true });
+    expect(r.membershipChanges).toEqual([]);
+    expect(r.enterContainerId).toBeUndefined();
+    expect(r.repelPatches).toEqual([{ nodeId: "out", position: { x: 100 + CONTAINER_PADDING, y: 60 } }]);
+  });
+
+  test("拖动 + 非 Alt + 非成员在框外 → 无弹出(排斥只管框内)", () => {
+    const moved = { ...outside, position: { x: 500, y: 500 } };
+    const r = judgeContainerMembership({ nodes: [c, moved] as any, movedIds: ["out"], altKey: false, repelNonMembers: true });
+    expect(r.repelPatches).toEqual([]);
+    expect(r.membershipChanges).toEqual([]);
+  });
+
+  test("拖动排斥:静态图元落入 → 不弹出也不入组(与 ejectOutsiders 静态豁免同源)", () => {
+    // 装饰图元常是整画布尺寸,弹出等于搬动装饰
+    const decoration = node("s1", "static-image", 60, 60, 900, 600);
+    const r = judgeContainerMembership({ nodes: [c, decoration] as any, movedIds: ["s1"], altKey: false, repelNonMembers: true });
+    expect(r.repelPatches).toEqual([]);
+    expect(r.membershipChanges).toEqual([]);
+  });
+
+  test("拖动排斥:线路落入 → 不弹出(与 ejectOutsiders 同一线路谓词,线路穿容器是常态)", () => {
+    const line = node("l1", "ac-line", 60, 60, 120, 12);
+    const r = judgeContainerMembership({ nodes: [c, line] as any, movedIds: ["l1"], altKey: false, repelNonMembers: true });
+    expect(r.repelPatches).toEqual([]);
+    expect(r.membershipChanges).toEqual([]);
+  });
+
+  test("拖动排斥:按真实矩形命中哪个容器就弹哪个", () => {
+    const c2 = node("c2", "ac-switch-box", 1000, 0, 200, 200); // 真实矩形 [900,1100]×[-100,100]
+    const moved = { ...outside, position: { x: 950, y: 20 } };   // 四边距左 50 最近
+    const r = judgeContainerMembership({ nodes: [c, c2, moved] as any, movedIds: ["out"], altKey: false, repelNonMembers: true });
+    expect(r.repelPatches).toEqual([{ nodeId: "out", position: { x: 900 - CONTAINER_PADDING, y: 20 } }]);
   });
 
   test("容器自身被拖动不参与判定(不允许嵌套)", () => {
@@ -672,7 +720,7 @@ describe("拖动结束归属落地", () => {
 
   test("成员非 Alt 拖动 → 容器跟随重算(扩展跟随),归属不变", () => {
     const nodes = [container(), member(300, 300)]; // 拖动后位置
-    const { updates } = applyDragContainerMembership({ nodes, movedIds: ["m1"], altKey: false });
+    const { updates } = applyDragContainerMembership({ nodes, movedIds: ["m1"], altKey: false, repelNonMembers: true });
     const c1 = byIdOf(updates).get("c1")!;
     expect(c1.size).toEqual({ ...CONTAINER_MIN_SIZE });
     expect(centerIn({ x: 300, y: 300 }, rectOf(c1))).toBe(true); // 容器已包住成员
@@ -681,7 +729,7 @@ describe("拖动结束归属落地", () => {
 
   test("成员 Alt 拖动 → 移出 + 容器收缩回最小尺寸", () => {
     const nodes = [container(), member(300, 300)];
-    const { updates } = applyDragContainerMembership({ nodes, movedIds: ["m1"], altKey: true });
+    const { updates } = applyDragContainerMembership({ nodes, movedIds: ["m1"], altKey: true, repelNonMembers: true });
     const byId = byIdOf(updates);
     expect(byId.get("m1")!.containerId).toBeUndefined();
     expect(byId.get("c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE });
@@ -689,26 +737,38 @@ describe("拖动结束归属落地", () => {
 
   test("Alt 移出且成员正是关口绑定设备 → 一并解绑 + 关关口(与其它入口同源)", () => {
     const c1 = { ...container(), params: { is_gateway: "1", bound_device_id: "m1" } };
-    const { updates } = applyDragContainerMembership({ nodes: [c1, member(300, 300)], movedIds: ["m1"], altKey: true });
+    const { updates } = applyDragContainerMembership({ nodes: [c1, member(300, 300)], movedIds: ["m1"], altKey: true, repelNonMembers: true });
     const unbound = byIdOf(updates).get("c1")!;
     expect(unbound.params.bound_device_id).toBe("");
     expect(unbound.params.is_gateway).toBe("0");
   });
 
-  test("非成员落入容器 → 写入归属并回报目标容器(供 toast)", () => {
+  test("Alt 拖入:非成员落入容器 → 写入归属并回报目标容器(供 toast)", () => {
     const outsider = node("o", "ac-load", 60, 60);
     const { updates, enterContainerId } = applyDragContainerMembership({
-      nodes: [container(), outsider], movedIds: ["o"], altKey: false,
+      nodes: [container(), outsider], movedIds: ["o"], altKey: true, repelNonMembers: true,
     });
     expect(enterContainerId).toBe("c1");
     expect(byIdOf(updates).get("o")!.containerId).toBe("c1");
+  });
+
+  test("非 Alt 拖入:容器与容器外设备互相排斥 —— 弹回框外、不写归属、不回报 enter", () => {
+    const outsider = node("o", "ac-load", 60, 60); // 容器矩形 [-100,100]²,最近边 = 右
+    const { updates, enterContainerId } = applyDragContainerMembership({
+      nodes: [container(), outsider], movedIds: ["o"], altKey: false, repelNonMembers: true,
+    });
+    expect(enterContainerId).toBeUndefined();
+    const byId = byIdOf(updates);
+    expect(byId.get("o")!.containerId).toBeUndefined();
+    expect(byId.get("o")!.position).toEqual({ x: 100 + CONTAINER_PADDING, y: 60 }); // 弹出到最近边外
+    expect(centerIn(byId.get("o")!.position, rectOf(byId.get("c1")!))).toBe(false); // 与重算后的容器不变量一致
   });
 
   test("拖容器 + Alt:跟随扩组的成员不参与判定,整组不被拆散", () => {
     // 容器与成员同步平移 +300(拖动起点已按 containerDragGroup 扩组);实际抓住的只有容器
     const nodes = [node("c1", "ac-vpp-box", 300, 300, 200, 200) as any, member(350, 350)];
     const { updates } = applyDragContainerMembership({
-      nodes, movedIds: ["c1", "m1"], grabbedIds: ["c1"], altKey: true,
+      nodes, movedIds: ["c1", "m1"], grabbedIds: ["c1"], altKey: true, repelNonMembers: true,
     });
     expect(updates.some((u) => u.id === "m1" && !u.containerId)).toBe(false);
   });
@@ -716,7 +776,7 @@ describe("拖动结束归属落地", () => {
   test("容器与成员同被选中 + Alt 拖成员 → 该成员移出(以抓取集为准,不因容器同动而豁免)", () => {
     const nodes = [node("c1", "ac-vpp-box", 300, 300, 200, 200) as any, member(350, 350)];
     const { updates } = applyDragContainerMembership({
-      nodes, movedIds: ["c1", "m1"], grabbedIds: ["c1", "m1"], altKey: true,
+      nodes, movedIds: ["c1", "m1"], grabbedIds: ["c1", "m1"], altKey: true, repelNonMembers: true,
     });
     expect(byIdOf(updates).get("m1")!.containerId).toBeUndefined();
   });
@@ -724,7 +784,7 @@ describe("拖动结束归属落地", () => {
   test("图中无容器 → 无任何更新", () => {
     const a = node("a", "ac-load", 0, 0);
     const b = node("b", "ac-load", 80, 0);
-    const { updates } = applyDragContainerMembership({ nodes: [a, b], movedIds: ["a"], altKey: false });
+    const { updates } = applyDragContainerMembership({ nodes: [a, b], movedIds: ["a"], altKey: false, repelNonMembers: true });
     expect(updates).toEqual([]);
   });
 });
@@ -750,17 +810,17 @@ describe("静态图元与线路的挤出/归属口径", () => {
     expect(decoration.position).toEqual({ x: 0, y: 0 });
   });
 
-  test("判定侧豁免:静态装饰中心落入容器矩形 → 不入组,容器矩形不被撑大", () => {
+  test("判定侧豁免:静态装饰中心落入容器矩形 → 不入组也不弹出,容器矩形不被撑大", () => {
     const c = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
     const decoration = node("s1", "static-image", 0, 0, 900, 600) as any;
-    const { updates, enterContainerId } = applyDragContainerMembership({ nodes: [c, decoration], movedIds: ["s1"], altKey: false });
+    const { updates, enterContainerId } = applyDragContainerMembership({ nodes: [c, decoration], movedIds: ["s1"], altKey: false, repelNonMembers: true });
     expect(enterContainerId).toBeUndefined();
-    expect(updates.some((u) => u.id === "s1" && u.containerId)).toBe(false);
+    expect(updates.some((u) => u.id === "s1")).toBe(false); // 既不写归属也不弹出(位置不变)
     // 容器收缩到最小尺寸(无成员),而不是被撑到包住 900×600 的装饰
     expect(updates.find((u) => u.id === "c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE });
-    // 对照组:同位置的普通设备仍入组(豁免是静态图元专属)
+    // 对照组:同位置的普通设备 Alt 拖动仍入组(豁免是静态图元专属)
     const device = node("d1", "ac-load", 0, 0) as any;
-    const withDevice = applyDragContainerMembership({ nodes: [c, device], movedIds: ["d1"], altKey: false });
+    const withDevice = applyDragContainerMembership({ nodes: [c, device], movedIds: ["d1"], altKey: true, repelNonMembers: true });
     expect(withDevice.updates.find((u) => u.id === "d1")!.containerId).toBe("c1");
   });
 
@@ -771,10 +831,10 @@ describe("静态图元与线路的挤出/归属口径", () => {
     expect(updates.find((u) => u.id === "s1")!.containerId).toBeUndefined();
   });
 
-  test("线路可入组(口径):判定写入 containerId,容器包围盒随之含线路", () => {
+  test("线路可入组(口径):Alt 拖入写入 containerId,容器包围盒随之含线路", () => {
     const c = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
     const line = node("l1", "ac-line", 50, 50, 120, 12) as any;
-    const { updates } = applyDragContainerMembership({ nodes: [c, line], movedIds: ["l1"], altKey: false });
+    const { updates } = applyDragContainerMembership({ nodes: [c, line], movedIds: ["l1"], altKey: true, repelNonMembers: true });
     const byId = new Map(updates.map((n) => [n.id, n]));
     expect(byId.get("l1")!.containerId).toBe("c1");
     const bounds = calculateNodeVisualBounds(line);
@@ -835,19 +895,27 @@ describe("删除容器的归属收尾", () => {
 describe("悬空归属(容器已删除)", () => {
   const container = () => node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
 
-  test("判定侧:悬空归属的节点可正常移入存活容器", () => {
+  test("判定侧:悬空归属的节点可正常移入存活容器(Alt 拖入)", () => {
     const orphan = { ...node("o", "ac-load", 60, 60), containerId: "gone" } as any;
     const { updates, enterContainerId } = applyDragContainerMembership({
-      nodes: [container(), orphan], movedIds: ["o"], altKey: false,
+      nodes: [container(), orphan], movedIds: ["o"], altKey: true, repelNonMembers: true,
     });
     expect(enterContainerId).toBe("c1");
     expect(updates.find((n) => n.id === "o")!.containerId).toBe("c1");
   });
 
+  test("判定侧:悬空归属不豁免排斥 —— 非 Alt 拖入照常弹出(悬空≠成员)", () => {
+    const orphan = { ...node("o", "ac-load", 60, 60), containerId: "gone" } as any;
+    const { updates } = applyDragContainerMembership({
+      nodes: [container(), orphan], movedIds: ["o"], altKey: false, repelNonMembers: true,
+    });
+    expect(updates.find((n) => n.id === "o")!.position).toEqual({ x: 100 + CONTAINER_PADDING, y: 60 });
+  });
+
   test("判定侧:悬空归属 Alt 拖动不算「移出」(无 exitContainerId),且不改写归属", () => {
     const orphan = { ...node("o", "ac-load", 900, 900), containerId: "gone" } as any;
     const { updates, exitContainerId } = applyDragContainerMembership({
-      nodes: [container(), orphan], movedIds: ["o"], altKey: true,
+      nodes: [container(), orphan], movedIds: ["o"], altKey: true, repelNonMembers: true,
     });
     expect(exitContainerId).toBeUndefined();
     expect(updates.some((n) => n.id === "o")).toBe(false);
@@ -875,13 +943,17 @@ describe("Alt 移出回报原容器", () => {
     expect(exitContainerId).toBe("c1");
   });
 
-  test("非 Alt 拖动成员 / 拖入新成员 → 无 exitContainerId", () => {
-    const kept = applyDragContainerMembership({ nodes: [container(), member(60, 60)], movedIds: ["m1"], altKey: false });
+  test("非 Alt 拖动成员 / 拖入新成员(Alt 或非 Alt)→ 无 exitContainerId", () => {
+    const kept = applyDragContainerMembership({ nodes: [container(), member(60, 60)], movedIds: ["m1"], altKey: false, repelNonMembers: true });
     expect(kept.exitContainerId).toBeUndefined();
     const entered = applyDragContainerMembership({
-      nodes: [container(), node("o", "ac-load", 60, 60)], movedIds: ["o"], altKey: false,
+      nodes: [container(), node("o", "ac-load", 60, 60)], movedIds: ["o"], altKey: true, repelNonMembers: true,
     });
     expect(entered.exitContainerId).toBeUndefined();
+    const repelled = applyDragContainerMembership({
+      nodes: [container(), node("o", "ac-load", 60, 60)], movedIds: ["o"], altKey: false, repelNonMembers: true,
+    });
+    expect(repelled.exitContainerId).toBeUndefined();
   });
 });
 

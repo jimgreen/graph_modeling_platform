@@ -69,13 +69,33 @@ export function fitContainerToMembers(container: ModelNode, members: ModelNode[]
 }
 
 /**
+ * 单点推出几何(容器矩形内的点 → 沿最近边法向推到界外 + CONTAINER_PADDING;点在矩形外 → null)。
+ * 四边距离相等时按 左→右→上→下 取首选(与旧实现同序,行为不变)。
+ * **拖动排斥(judgeContainerMembership)与挤出(ejectOutsiders)共用此单源** —— 同一「弹出」必须同一口径。
+ */
+function pushPointOutOfRect(r: { x1: number; y1: number; x2: number; y2: number }, p: { x: number; y: number }): { x: number; y: number } | null {
+  if (p.x < r.x1 || p.x > r.x2 || p.y < r.y1 || p.y > r.y2) return null; // 中心在外
+  const dl = p.x - r.x1, dr = r.x2 - p.x, dt = p.y - r.y1, db = r.y2 - p.y;
+  const m = Math.min(dl, dr, dt, db);
+  if (m === dl) return { x: r.x1 - CONTAINER_PADDING, y: p.y };
+  if (m === dr) return { x: r.x2 + CONTAINER_PADDING, y: p.y };
+  if (m === dt) return { x: p.x, y: r.y1 - CONTAINER_PADDING };
+  return { x: p.x, y: r.y2 + CONTAINER_PADDING };
+}
+
+/** 中心是否落入容器矩形(含边界)—— 归属判定与挤出共用同一「落入」口径 */
+function pointInRect(r: { x1: number; y1: number; x2: number; y2: number }, p: { x: number; y: number }): boolean {
+  return p.x >= r.x1 && p.x <= r.x2 && p.y >= r.y1 && p.y <= r.y2;
+}
+
+/**
  * 容器真实矩形内的非成员(线路 kind、静态图元、其它容器、已归属某容器的节点豁免)
  * 沿最近边法向推到界外 + padding。
  * ponytail: 最小位移单轮让位,复杂穿叠时观感可能不佳;出现实际问题再升级避碰算法。
  */
 export function ejectOutsiders(container: ModelNode, nodes: ModelNode[]): NodePositionPatch[] {
   const c = container;
-  const { x1, y1, x2, y2 } = containerRect(c);
+  const rect = containerRect(c);
   const owners = liveContainerIds(nodes);
   const out: NodePositionPatch[] = [];
   for (const n of nodes) {
@@ -84,16 +104,8 @@ export function ejectOutsiders(container: ModelNode, nodes: ModelNode[]): NodePo
     if (isWireLikeRouteDeviceKind(n.kind)) continue; // 线路豁免(全部线路 kind 单一谓词,只豁免 ac-line 会漏推其它 11 种)
     if (isStaticNode(n)) continue;                   // 静态图元豁免:装饰图元常是整画布尺寸(position = 画布中心),容器矩形必然盖住其中心,推出框外等于搬动装饰
     if (n.containerId && owners.has(n.containerId)) continue; // 已归属**存活**容器(含本容器成员);悬空值不算归属,照常挤出
-    const p = n.position;                            // 节点中心
-    if (p.x < x1 || p.x > x2 || p.y < y1 || p.y > y2) continue; // 中心在外
-    const dl = p.x - x1, dr = x2 - p.x, dt = p.y - y1, db = y2 - p.y;
-    const m = Math.min(dl, dr, dt, db);
-    let px = p.x, py = p.y;
-    if (m === dl) px = x1 - CONTAINER_PADDING;
-    else if (m === dr) px = x2 + CONTAINER_PADDING;
-    else if (m === dt) py = y1 - CONTAINER_PADDING;
-    else py = y2 + CONTAINER_PADDING;
-    out.push({ nodeId: n.id, position: { x: px, y: py } });
+    const pushed = pushPointOutOfRect(rect, n.position);      // 节点中心
+    if (pushed) out.push({ nodeId: n.id, position: pushed });
   }
   return out;
 }
@@ -115,11 +127,12 @@ export type MembershipDecision = {
 
 /**
  * 拖动结束归属判定(判定点 = 节点中心 n.position,容器矩形按中心锚定):
- * - 非成员中心落进容器矩形 → 移入(Alt 按下则不移入;静态图元不自动入组,见下)
- * - 成员 Alt 拖动 → 移出
- * - 成员非 Alt → 归属不变(容器随后重算跟随,见 enforceContainerMembership)
- * - 静态图元不自动入组(装饰图元常是整画布尺寸,吞成成员会把容器撑到包住整张画布);
- *   已是成员的静态图元仍可 Alt 移出,面板/右键的显式归属入口也不受影响
+ * - 成员 Alt 拖动 → 移出;成员非 Alt → 归属不变(容器随后重算跟随,见 enforceContainerMembership)
+ * - 非成员 Alt 拖动 + 中心落进容器矩形 → 移入(Alt = 双向归属变更键:拖入 / 拖出)
+ * - 非成员非 Alt + 中心落进容器矩形:拖动路径(`repelNonMembers`)→ **弹出**(推到容器矩形外,不写归属);
+ *   其余入口(不传该开关:粘贴 / 模板落点 / 图元库放置 / 批量布局)→ 移入(既有口径)
+ * - 静态图元不自动入组、也不被弹出(与 ejectOutsiders 的静态豁免同源):装饰图元常是整画布尺寸,
+ *   吞成成员会把容器撑到包住整张画布,弹出则等于搬动装饰;已是成员的静态图元仍可 Alt 移出。
  * 容器自身不参与判定(不允许嵌套)。enterContainerId / exitContainerId 取最后一个移入/移出的目标
  * (单节点拖动即唯一),供调用方弹 toast。
  * 归属有效性按 liveContainerIds 判:悬空值(指向已删容器)视为**无归属**,照常参与入组判定。
@@ -128,12 +141,25 @@ export function judgeContainerMembership(args: {
   nodes: ModelNode[];
   movedIds: string[];
   altKey: boolean;
-}): { membershipChanges: MembershipDecision["membershipChanges"]; enterContainerId?: string; exitContainerId?: string } {
-  const { nodes, movedIds, altKey } = args;
+  /**
+   * 拖动路径专用开关:非 Alt + 非成员中心落入容器矩形 → 产出「弹出」patch(容器与容器外设备互相排斥),
+   * 而不是移入。拖动三条路径(鼠标松手 / 键盘移动)传 true;
+   * 非拖动入口(commitContainerMembership:粘贴、模板落点、程序化加图元、SVG 导入;批量布局)不传 → 保持落入即移入。
+   */
+  repelNonMembers?: boolean;
+}): {
+  membershipChanges: MembershipDecision["membershipChanges"];
+  enterContainerId?: string;
+  exitContainerId?: string;
+  /** 排斥:被弹到容器矩形外(最近边 + CONTAINER_PADDING)的节点;无排斥时为空数组 */
+  repelPatches: NodePositionPatch[];
+} {
+  const { nodes, movedIds, altKey, repelNonMembers = false } = args;
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const containers = nodes.filter(isAcContainerNode);
   const owners = liveContainerIds(nodes);
   const membershipChanges: MembershipDecision["membershipChanges"] = [];
+  const repelPatches: NodePositionPatch[] = [];
   let enterContainerId: string | undefined;
   let exitContainerId: string | undefined;
   for (const id of movedIds) {
@@ -146,20 +172,29 @@ export function judgeContainerMembership(args: {
       }
       continue;
     }
-    // 静态图元不自动入组(与 ejectOutsiders 的静态豁免同源,单点在此):装饰图元常是整画布尺寸
-    // (position = 画布中心),容器矩形必然盖住其中心,一旦被吞成成员,容器会被撑到包住整张画布。
-    // 已是成员的静态图元仍可由上面的 Alt 分支移出 —— 豁免只管「自动入组」,不管用户显式操作。
+    // 静态图元不自动入组、也不参与排斥(与 ejectOutsiders 的静态豁免同源,单点在此):装饰图元常是整画布尺寸
+    // (position = 画布中心),容器矩形必然盖住其中心,一旦被吞成成员容器会被撑到包住整张画布,弹出则等于搬动装饰。
+    // 已是成员的静态图元仍可由上面的 Alt 分支移出 —— 豁免只管「自动入组/排斥」,不管用户显式操作。
     if (isStaticNode(n)) continue;
-    if (altKey) continue; // Alt + 非成员 = 明确不移入
-    const target = containers.find((c) => {
-      const r = containerRect(c);
-      return n.position.x >= r.x1 && n.position.x <= r.x2 && n.position.y >= r.y1 && n.position.y <= r.y2;
-    });
+    const target = containers.find((c) => pointInRect(containerRect(c), n.position));
+    if (altKey) {
+      if (!target) continue;
+      membershipChanges.push({ nodeId: id, containerId: target.id });
+      enterContainerId = target.id;
+      continue;
+    }
     if (!target) continue;
-    membershipChanges.push({ nodeId: id, containerId: target.id });
-    enterContainerId = target.id;
+    if (!repelNonMembers) {
+      membershipChanges.push({ nodeId: id, containerId: target.id });
+      enterContainerId = target.id;
+      continue;
+    }
+    // 排斥:线路穿容器是常态,与 ejectOutsiders 同一豁免谓词(否则拖动一条线路会被整体弹出框外)
+    if (isWireLikeRouteDeviceKind(n.kind)) continue;
+    const pushed = pushPointOutOfRect(containerRect(target), n.position);
+    if (pushed) repelPatches.push({ nodeId: id, position: pushed });
   }
-  return { membershipChanges, enterContainerId, exitContainerId };
+  return { membershipChanges, enterContainerId, exitContainerId, repelPatches };
 }
 
 /**
@@ -240,6 +275,7 @@ export function containerDecisionNodeUpdates(nodes: ModelNode[], decision: Membe
  *   判定只看抓取集:**跟随者不参与**(否则「拖容器 + Alt」会被判成整组移出),
  *   而「容器与成员同被选中 + Alt 拖成员」时该成员仍要移出(不能因容器同动而豁免)。
  * - 解绑用**原** nodes 判定(containerId 尚未改写),与移出/改归属同一出口。
+ * - `repelNonMembers` 由拖动路径(鼠标 / 键盘)传 true:非 Alt 拖进来的非成员被弹回容器矩形外。
  */
 export function applyDragContainerMembership(args: {
   nodes: ModelNode[];
@@ -247,11 +283,18 @@ export function applyDragContainerMembership(args: {
   /** 用户真正抓住的节点(拖容器扩组前的集合);缺省 = movedIds。仅用于剔除跟随者 */
   grabbedIds?: string[];
   altKey: boolean;
+  /** 见 judgeContainerMembership:拖动路径传 true(非 Alt 落入容器 → 弹出而非移入) */
+  repelNonMembers?: boolean;
 }): { updates: ModelNode[]; enterContainerId?: string; exitContainerId?: string } {
-  const { nodes, movedIds, grabbedIds, altKey } = args;
+  const { nodes, movedIds, grabbedIds, altKey, repelNonMembers } = args;
   const grabbed = grabbedIds ? new Set(grabbedIds) : null;
   const judgeIds = grabbed ? movedIds.filter((id) => grabbed.has(id)) : movedIds;
-  const { membershipChanges, enterContainerId, exitContainerId } = judgeContainerMembership({ nodes, movedIds: judgeIds, altKey });
+  const { membershipChanges, enterContainerId, exitContainerId, repelPatches } = judgeContainerMembership({
+    nodes,
+    movedIds: judgeIds,
+    altKey,
+    repelNonMembers,
+  });
   const changeById = new Map(membershipChanges.map((c) => [c.nodeId, c]));
   const changed = new Map<string, ModelNode>();
   const unboundById = new Map(
@@ -271,7 +314,17 @@ export function applyDragContainerMembership(args: {
     changed.set(n.id, next);
     return next;
   });
-  const withUnbind = unboundById.size === 0 ? tagged : tagged.map((n) => unboundById.get(n.id) ?? n);
+  // 排斥先落位、再跑 enforce:反过来的话容器重算会把「刚弹到框外」的节点当框内非成员二次挤出(位移不可预期);
+  // 且先落位后 enforce 才能保证最终状态满足「容器矩形内无非成员」不变量
+  const repelById = new Map(repelPatches.map((p) => [p.nodeId, p]));
+  const placed = repelById.size === 0 ? tagged : tagged.map((n) => {
+    const p = repelById.get(n.id);
+    if (!p) return n;
+    const next = { ...n, position: p.position };
+    changed.set(n.id, next);
+    return next;
+  });
+  const withUnbind = unboundById.size === 0 ? placed : placed.map((n) => unboundById.get(n.id) ?? n);
   for (const upd of containerDecisionNodeUpdates(withUnbind, enforceContainerMembership(withUnbind))) {
     changed.set(upd.id, upd);
   }
@@ -281,6 +334,7 @@ export function applyDragContainerMembership(args: {
 /**
  * 新增/移动节点并入图后的归属落地出口(粘贴、模板落点、程序化加图元、SVG 导入共用):
  * 判定(中心落入容器 → 移入)→ 解绑 → 容器重算 + 挤出。返回**完整**节点数组;
+ * **不传 repelNonMembers**:本入口不是用户拖动,保持「落入即移入」(只有拖动才与容器互相排斥)。
  * `movedIds` 为本次新增/移动的节点(判断点 = 节点中心)。
  * 注意:原引用短路只在「图中无容器」时成立 —— 有容器时 enforce 恒产出容器重算更新(即便几何未变),
  * 故本函数不是廉价判空,不要拿返回值引用相等当「无变化」用。
