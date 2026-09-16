@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { useState } from "react";
 import { Input, Modal, Select } from "antd";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
 import { AC_CONTAINER_KINDS, modelAssociationDevicesModelTypeFailureMessage } from "../model";
@@ -10,10 +11,11 @@ import {
   containerAssignedIdsFromSelection,
   containerDeletionFinalize,
   containerDeletionWarning,
+  containerKindOptions,
+  containerKindSwitch,
   containerMemberIdsFromSelection,
   containerSelectOptions,
   commitContainerMembership,
-  CONTAINER_KIND_LABELS,
   defaultContainerName,
   refitContainersOnly,
   isAcContainerNode,
@@ -1783,6 +1785,31 @@ export function createUngroupSelectedGraphics(__appScope: Record<string, any>) {
 // 【添加到容器】弹窗里「新建…」选项的哨兵值(容器 id 由 cuid/uuid 生成,不会撞上)
 const NEW_CONTAINER_OPTION = "__new-container__";
 
+/**
+ * 新建容器弹窗表单:类型选择 + 名称,两者都**受控**。
+ * 名称必须走 state 而非命令式改 DOM —— antd 的 Input ref 是包装对象(不是原生 input),
+ * 写 `ref.current.value` 是空操作:切类型后名称框会留在旧默认名,点创建却落库新默认名(显示与数据分叉)。
+ * 每次变更同步回 `draft`,onOk 读闭包 draft(单一提交口径)。
+ */
+function NewContainerForm({ draft, nodes }: { draft: { kind: string; name: string }; nodes: any[] }) {
+  const [form, setForm] = useState({ kind: draft.kind, name: draft.name });
+  const apply = (next: { kind: string; name: string }) => {
+    setForm(next);
+    Object.assign(draft, next);
+  };
+  return (
+    <>
+      <Select
+        value={form.kind}
+        style={{ width: "100%", marginBottom: 8 }}
+        onChange={(value) => apply(containerKindSwitch(String(value), nodes))}
+        options={containerKindOptions()}
+      />
+      <Input value={form.name} autoFocus onChange={(event) => apply({ ...form, name: event.target.value })} />
+    </>
+  );
+}
+
 export function createAddToAcContainer(__appScope: Record<string, any>) {
   return () => {
   const { activeSelectedNodeIds, assignPermanentDeviceIndex, normalizeProjectMeasurements, pushUndoSnapshot, requireEditMode, setDeviceIndexCounters, setGraphArrays, setProjectMeasurements, showGlobalMessage, writeOperationLog } = __appScope;
@@ -1819,28 +1846,9 @@ export function createAddToAcContainer(__appScope: Record<string, any>) {
       const { nodeById, nodes } = __appScope;
       const members = memberIds.map((id) => nodeById.get(id)).filter(Boolean);
       const draft = { kind: AC_CONTAINER_KINDS[0], name: defaultContainerName(AC_CONTAINER_KINDS[0], nodes) };
-      // 换类型要连名称框一起换(antd Input 非受控,改 value 只能走 ref)
-      const nameInputRef: { current: HTMLInputElement | null } = { current: null };
       Modal.confirm({
         title: "新建容器",
-        content: (
-          <>
-            <Select
-              defaultValue={draft.kind}
-              style={{ width: "100%", marginBottom: 8 }}
-              onChange={(value) => {
-                // 默认名与类型计数同源(见 defaultContainerName);用户随后仍可手改名称
-                draft.kind = String(value);
-                draft.name = defaultContainerName(draft.kind, nodes);
-                if (nameInputRef.current) {
-                  nameInputRef.current.value = draft.name;
-                }
-              }}
-              options={AC_CONTAINER_KINDS.map((kind) => ({ value: kind, label: CONTAINER_KIND_LABELS[kind] ?? kind }))}
-            />
-            <Input ref={nameInputRef} defaultValue={draft.name} autoFocus onChange={(event) => { draft.name = event.target.value; }} />
-          </>
-        ),
+        content: <NewContainerForm draft={draft} nodes={nodes} />,
         okText: "创建",
         cancelText: "取消",
         onOk: () => {

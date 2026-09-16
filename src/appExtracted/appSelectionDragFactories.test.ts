@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import { Modal } from "antd";
 import { createAddToAcContainer, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createPasteSelection, createRemoveFromAcContainer } from "./appSelectionDragFactories";
 import { canvasClipboardBounds, cloneCanvasClipboard } from "../selectionActions";
+import { containerKindSwitch } from "../acContainer";
 import { deleteNodesWithConnectedEdges } from "../model-routing";
 import { createUndoGraphSnapshotPatchPlan } from "./appGraphMeasurementFactories";
 import { normalizeProjectMeasurements } from "../measurements";
@@ -496,15 +497,10 @@ describe("新建容器:弹窗内选类型", () => {
     return { spy, config: () => captured };
   };
 
-  /** content = <><Select 类型/><Input 名称/></>:认 options 取类型选择器(名字无关) */
-  const kindSelectOf = (content: any) => {
-    const children = Array.isArray(content?.props?.children) ? content.props.children : [content?.props?.children];
-    return children.find((child: any) => Array.isArray(child?.props?.options));
-  };
   const createdContainer = (graphs: any[]) =>
     graphs[0][0].find((node: any) => node.kind.startsWith("ac-") && node.kind.endsWith("-box"));
 
-  test("弹窗列出 3 种类型(中文名与图元库 label 同源),默认新建虚拟电厂", () => {
+  test("默认新建虚拟电厂(弹窗初值 kind=ac-vpp-box / 虚拟电厂1)", () => {
     const { graphs, scope } = mkNewContainerScope();
     const { spy, config } = captureConfirm();
     try {
@@ -513,11 +509,8 @@ describe("新建容器:弹窗内选类型", () => {
       spy.mockRestore();
     }
 
-    expect(kindSelectOf(config().content).props.options).toEqual([
-      { value: "ac-vpp-box", label: "虚拟电厂" },
-      { value: "ac-switch-box", label: "开关箱" },
-      { value: "ac-distribution-box", label: "配变箱" },
-    ]);
+    // 弹窗表单收 draft(受控组件:内部 state 管显示,初值取自同一 draft)
+    expect(config().content.props.draft).toEqual({ kind: "ac-vpp-box", name: "虚拟电厂1" });
 
     config().onOk();
     const created = createdContainer(graphs);
@@ -534,7 +527,9 @@ describe("新建容器:弹窗内选类型", () => {
       spy.mockRestore();
     }
 
-    kindSelectOf(config().content).props.onChange("ac-switch-box");
+    // 弹窗为受控组件,Modal 桩下渲染不出 antd 下拉(环境是 node,无 jsdom):
+    // 这里按组件 onChange 的唯一出口 containerKindSwitch 驱动 draft,锁「切类型 → kind/默认名一起换」的提交侧
+    Object.assign(config().content.props.draft, containerKindSwitch("ac-switch-box", scope.nodes));
     config().onOk();
 
     const created = createdContainer(graphs);

@@ -28,6 +28,8 @@ import {
   buildNewContainer,
   defaultContainerName,
   CONTAINER_KIND_LABELS,
+  containerKindOptions,
+  containerKindSwitch,
   containerMemberIdsFromSelection,
   containerAssignedIdsFromSelection,
   applyAddToAcContainer,
@@ -462,6 +464,21 @@ describe("新建容器纯函数", () => {
 
   test("CONTAINER_KIND_LABELS 与内置库 label 同源", () => {
     expect(CONTAINER_KIND_LABELS["ac-distribution-box"]).toBe("配变箱");
+  });
+
+  test("containerKindOptions:3 类型选项,label 与图元库同源(弹窗类型下拉单源)", () => {
+    expect(containerKindOptions()).toEqual([
+      { value: "ac-vpp-box", label: "虚拟电厂" },
+      { value: "ac-switch-box", label: "开关箱" },
+      { value: "ac-distribution-box", label: "配变箱" },
+    ]);
+  });
+
+  test("containerKindSwitch:切类型时 kind 与默认名一起换(名称框显示 = 落库默认名)", () => {
+    const ex = [node("c1", "ac-vpp-box", 0, 0), node("c2", "ac-vpp-box", 0, 0)];
+    expect(containerKindSwitch("ac-switch-box", ex)).toEqual({ kind: "ac-switch-box", name: "开关箱1" });
+    // 切回虚拟电厂:名称跟着该类型计数走,不复用切换前的值
+    expect(containerKindSwitch("ac-vpp-box", ex)).toEqual({ kind: "ac-vpp-box", name: "虚拟电厂3" });
   });
 });
 
