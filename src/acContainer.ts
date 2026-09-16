@@ -15,7 +15,7 @@ export const CONTAINER_PADDING = 24;
  * 让位后间隙 = 该值。与 CONTAINER_PADDING 语义不同(一个管「容器贴成员多紧」,一个管「容器的势力范围多大」),
  * 仅因历史原因曾共用一值 —— 改一个不得连带改另一个。
  */
-export const CONTAINER_CLEARANCE = 100;
+export const CONTAINER_CLEARANCE = 50;
 /** 容器最小尺寸(无成员或成员过少时收缩到此) */
 export const CONTAINER_MIN_SIZE = { width: 180, height: 112 };
 

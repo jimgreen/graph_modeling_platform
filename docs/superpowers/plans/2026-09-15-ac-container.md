@@ -253,7 +253,7 @@ git commit -m "feat(container): 容器图元绘制与命中策略(填充穿透/�
 >
 > **再次修正(2026-09-16,用户反馈):** `ejectOutsiders`/repel 的判定与推出已改**包围盒间距口径**(间隙 < 排斥带即挪开,推到间隙恰 = 排斥带;`withinClearance`/`pushBoundsOutOfRect` 单源)——上方「判定点 = n.position、推出量 = 边界 ± CONTAINER_PADDING」已废。Alt 移入仍按中心落进矩形。
 >
-> **三次修正(2026-09-16,用户参数改动「距离从 25 改成 100」):** 内侧留白与外侧排斥带**拆成两个常量** —— `CONTAINER_PADDING = 24`(容器 = 成员包围盒 + 该留白,`containerBoundsForMembers`/`fitContainerToMembers`/`buildNewContainer` 消费,值不变)与 `CONTAINER_CLEARANCE = 100`(`withinClearance`/`pushBoundsOutOfRect`/拖动排斥/挤出消费)。上文所有「间隙恰 24」的排斥语义按 100 重算。
+> **三次修正(2026-09-16,用户参数改动「距离从 25 改成 100」,当日二次调整为 50):** 内侧留白与外侧排斥带**拆成两个常量** —— `CONTAINER_PADDING = 24`(容器 = 成员包围盒 + 该留白,`containerBoundsForMembers`/`fitContainerToMembers`/`buildNewContainer` 消费,值不变)与 `CONTAINER_CLEARANCE = 50`(`withinClearance`/`pushBoundsOutOfRect`/拖动排斥/挤出消费;先定 100,同日用户改口 50)。上文所有「间隙恰 24」的排斥语义按该排斥带值重算。
 
 **Files:**
 - Create: `src/acContainer.ts`
