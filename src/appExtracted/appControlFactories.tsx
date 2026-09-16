@@ -3,7 +3,7 @@
 // 与 UI 写方法隔离：参数显式传入，复用底层 setter，绕过 prompt/alert/draft/editMode。
 // 经 WS control 指令调用（App.tsx commandHandler 分发）。
 import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdges, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, syncedSwitchStatusPatch } from "../model";
-import { commitContainerMembership, containerDeletionFinalize, refitContainersOnly, withNodeUpdates } from "../acContainer";
+import { commitContainerMembership, containerDeletionFinalize, foldContainerScaleIntoSize, isAcContainerNode, refitContainersOnly, withNodeUpdates } from "../acContainer";
 import { createCanvasGroupFromSelection, removeGraphicsFromGroups } from "../selectionActions";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
 
@@ -23,7 +23,7 @@ export function createProgrammaticAddDevice(__appScope: Record<string, any>) {
       throw e;
     }
     const position = { x: Number(x) || 0, y: Number(y) || 0 };
-    const node = createDefaultNode(kind as any, position);
+    let node = createDefaultNode(kind as any, position);
     // attrs override：浅合并到节点顶层字段（如 name/rotation/scale/layerId/params）
     if (attrs && typeof attrs === "object") {
       for (const key of Object.keys(attrs)) {
@@ -34,6 +34,11 @@ export function createProgrammaticAddDevice(__appScope: Record<string, any>) {
           (node as any)[key] = value;
         }
       }
+    }
+    // 交流容器:几何恒在 size —— attrs 里的 scale 在落图前折算进 size(与 UI/拖角同一出口),
+    // 否则第三方传 scale 又会让渲染矩形(size × |scale|)与 eject/入组所用 size 矩形分叉
+    if (isAcContainerNode(node)) {
+      node = foldContainerScaleIntoSize(node);
     }
     pushUndoSnapshot(true, false, undefined, "添加设备", node.name);
     setNodes((prev: any[]) => {
@@ -325,7 +330,9 @@ export function createProgrammaticUpdateDeviceProperty(__appScope: Record<string
           next[key] = value;
         }
       }
-      return next;
+      // 交流容器:几何恒在 size —— 第三方传进来的 scale 在此折算进 size(与 UI 同出口);
+      // applyPatch 同时喂给落图与量测归一化,故折叠收在函数内,两条消费口径一致
+      return isAcContainerNode(next) ? foldContainerScaleIntoSize(next) : next;
     };
     pushUndoSnapshot(true, false, undefined, "修改参数", id);
     updateGraphNodeById(id, applyPatch);

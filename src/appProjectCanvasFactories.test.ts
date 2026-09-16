@@ -1065,7 +1065,8 @@ describe("saved project definition migration", () => {
     const container = JSON.parse(JSON.stringify({
       ...createDefaultNode("ac-vpp-box", { x: 500, y: 400 }),
       id: "legacy-scaled-container",
-      size: { width: 180, height: 112 },
+      // 用户拖角调过的尺寸(≠ 模板 180×112):折算后必须留在 1000×800,既不打回模板也不被 scale 再乘一次
+      size: { width: 500, height: 400 },
       scale: 2, scaleX: 2, scaleY: 2
     }));
     const setGraphArrays = vi.fn();
@@ -1091,7 +1092,8 @@ describe("saved project definition migration", () => {
     } as any, "scheme-1");
 
     const [loadedNodes] = setGraphArrays.mock.calls[0];
-    expect(loadedNodes[0].size).toEqual({ width: 360, height: 224 }); // 渲染矩形不变,不跳变
+    expect(loadedNodes[0].size).toEqual({ width: 1000, height: 800 }); // 渲染矩形不变,不跳变
+    expect(loadedNodes[0].size).not.toEqual({ width: 180, height: 112 }); // 也不被打回模板尺寸
     expect(loadedNodes[0].scale).toBe(1);
     expect(loadedNodes[0].scaleX).toBe(1);
     expect(loadedNodes[0].scaleY).toBe(1);
