@@ -18,6 +18,7 @@ import {
   createStartRoutableLineFromTerminal
 } from "./appExtracted/appProjectCanvasFactories";
 import { createMergeNodeUpdateLists } from "./appExtracted/appSelectionDragFactories";
+import { reconcileNodeWithDefinition as reconcileNodeWithDefinitionReal } from "./definitionInstanceSync";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
 import { DEVICE_LIBRARY, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, canConnectTerminals, createDefaultNode, getNodeScaleX, getNodeScaleY, getTerminalPoint, isBusNode, isCanvasNodeMovable, isLineSegmentBusNode, isRoutableLineDeviceKind, type ModelNode } from "./model";
 import {
@@ -1015,6 +1016,48 @@ describe("saved project definition migration", () => {
       ], [], 17);
     }
   );
+
+  test("preserves a resized ac container across a save-load round trip", () => {
+    // 用户拖角改过尺寸的容器(+ 一个成员)经保存序列化 → 加载路径后,尺寸必须原样保留
+    const container = JSON.parse(JSON.stringify({
+      ...createDefaultNode("ac-vpp-box", { x: 500, y: 400 }),
+      id: "saved-container",
+      size: { width: 400, height: 300 }
+    }));
+    const member = JSON.parse(JSON.stringify({
+      ...createDefaultNode("ac-load", { x: 500, y: 400 }),
+      id: "saved-member",
+      containerId: "saved-container"
+    }));
+    const setGraphArrays = vi.fn();
+    const scope = createLoadScope({
+      libraryTemplateByKind: new Map([
+        ["ac-vpp-box", DEVICE_LIBRARY_BY_KIND.get("ac-vpp-box")!],
+        ["ac-load", DEVICE_LIBRARY_BY_KIND.get("ac-load")!]
+      ]),
+      reconcileNodeWithDefinition: reconcileNodeWithDefinitionReal,
+      setGraphArrays
+    });
+
+    createLoadSavedProject(scope as any)({
+      id: "project-ac-container",
+      name: "含容器的模型",
+      project: {
+        idx: 3,
+        nodes: [container, member],
+        edges: [],
+        groups: [],
+        layers: [],
+        activeLayerId: "layer-default",
+        canvasWidth: 1200,
+        canvasHeight: 800
+      }
+    } as any, "scheme-1");
+
+    const [loadedNodes] = setGraphArrays.mock.calls[0];
+    expect(loadedNodes[0].size).toEqual({ width: 400, height: 300 });
+    expect(loadedNodes[1]).toMatchObject({ id: "saved-member", containerId: "saved-container" });
+  });
 
   test("repairs an unsafe stored adaptive-line path while loading a model", () => {
     const blocker = {
