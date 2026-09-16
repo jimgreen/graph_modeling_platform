@@ -10,14 +10,16 @@ import {
   createFindRoutableLineEndpointTargetAtPoint,
   createFinishInteractiveStaticDrawing,
   createFinishNodeDrag,
+  createFinishTransformDrag,
   createPlaceLibraryDeviceAtPoint,
   createStartLibraryDevicePlacement,
   createUpdateInteractiveStaticDrawingPreview,
   createUpdateLibraryPlacementPreview,
   createUpdateParam
 } from "./appExtracted/appCanvasInteractionFactories";
+import { createGraphStore, graphStoreApplyPatch, graphStorePatchGraphFromArrays, overlayGraphStoreNodes } from "./graphStore";
 import { normalizeProjectMeasurements } from "./measurements";
-import { setVoltageBaseTerminalValueForTopologySide } from "./model-routing";
+import { calculateNodeVisualBounds, setVoltageBaseTerminalValueForTopologySide } from "./model-routing";
 import { bestSmartAlignmentAxisSnap, pointOnBusForSnap } from "./appExtracted/appCoreCanvasUtilities";
 import {
   canConnectTerminals,
@@ -1463,5 +1465,121 @@ describe("容器归属入口的量测同步", () => {
 
     expect(hasGroup(captured, "c1")).toBe(false);
     expect(hasGroup(captured, "m1")).toBe(true);
+  });
+});
+
+// ─── 变换提交的容器跟随(旋转/缩放后容器立即重算,不必等下一次 enforce) ───────
+describe("变换提交的容器跟随", () => {
+  const bare = (id: string, kind: string, extra: Record<string, unknown> = {}) => ({
+    id, kind, name: id, position: { x: 0, y: 0 }, size: { width: 40, height: 30 },
+    rotation: 0, scale: 1, params: { _labelVisible: "0" }, terminals: [], ...extra,
+  }) as any;
+  const mergeById = (base: any[], extra: any[]) => {
+    const byId = new Map(base.map((node) => [node.id, node]));
+    for (const node of extra) byId.set(node.id, node);
+    return [...byId.values()];
+  };
+  /** 断言容器真实矩形(position 为中心)包住成员的视觉包围盒 */
+  const expectContainerCovers = (container: any, member: any) => {
+    const r = {
+      x1: container.position.x - container.size.width / 2,
+      y1: container.position.y - container.size.height / 2,
+      x2: container.position.x + container.size.width / 2,
+      y2: container.position.y + container.size.height / 2
+    };
+    const b = calculateNodeVisualBounds(member);
+    expect(b.left).toBeGreaterThanOrEqual(r.x1);
+    expect(b.right).toBeLessThanOrEqual(r.x2);
+    expect(b.top).toBeGreaterThanOrEqual(r.y1);
+    expect(b.bottom).toBeLessThanOrEqual(r.y2);
+  };
+  const containerBase = (id = "c1") => bare(id, "ac-vpp-box", { size: { width: 180, height: 112 } });
+
+  test("单节点缩放成员:容器重算并入同一次 store 提交", () => {
+    const container = containerBase();
+    const member = bare("m1", "ac-load", { containerId: "c1" });
+    // 缩放拖动期间实时预览已把放大后的成员写进 store;收尾提交只做 clamp + 容器跟随
+    const scaledMember = { ...member, size: { width: 300, height: 200 } };
+    const store = createGraphStore([container, scaledMember], []);
+    let committed = store;
+    createFinishTransformDrag({
+      CANVAS_AUTO_EXPAND_PADDING: 40,
+      applyCanvasBounds: () => {},
+      canvasBounds: { width: 1000, height: 800 },
+      canvasBoundsForAutoExpandedGraphContent: () => ({ width: 1000, height: 800 }),
+      clampNodePositionToBounds: (node: any) => node.position,
+      graphStore: store,
+      graphStoreApplyPatch,
+      graphStorePatchGraphFromArrays,
+      isGroupTransformDrag: () => false,
+      latestGraphStoreRef: { current: store },
+      markRouteEdgesDirty: () => {},
+      markStoredRouteEdgesDirty: () => {},
+      mergeNodeUpdateLists: mergeById,
+      nodeById: new Map([[container.id, container], [member.id, member]]),
+      overlayGraphStoreNodes,
+      rebuildEdgeUpdatesAfterNodeGeometryChange: () => [],
+      rebuildRoutableLineNodeUpdatesForChangedNodes: () => [],
+      rejectAutoCanvasExpansionForContent: () => false,
+      setGraphStore: (updater: any) => { committed = updater(store); },
+      setTransformDrag: () => {},
+      singleTransformNodeUpdate: () => null,
+      transformDrag: { kind: "se", nodeId: "m1", originalNode: { node: member }, startPoint: { x: 0, y: 0 }, previewPoint: { x: 10, y: 10 }, historyCaptured: true },
+      transformDragChangedRef: { current: true },
+      writeOperationLog: () => {}
+    } as any)();
+
+    const nextContainer = committed.nodeMap.get("c1")!;
+    expect(nextContainer).not.toBe(container);
+    expect(nextContainer.size).toEqual({ width: 300 + 48, height: 200 + 48 });
+    expectContainerCovers(nextContainer, scaledMember);
+  });
+
+  test("整组变换:容器重算并列入变更 id(数组提交只应用变更 id)", () => {
+    const container = containerBase();
+    const member = bare("m1", "ac-load", { containerId: "c1" });
+    const rotatedMember = { ...member, rotation: 45 };
+    const store = createGraphStore([container, member], []);
+    let committed = store;
+    createFinishTransformDrag({
+      CANVAS_AUTO_EXPAND_PADDING: 40,
+      applyCanvasBounds: () => {},
+      buildGroupTransformEdgeUpdates: () => [],
+      buildGroupTransformNodeUpdates: () => [rotatedMember],
+      canvasBounds: { width: 1000, height: 800 },
+      canvasBoundsForAutoExpandedGraphContent: () => ({ width: 1000, height: 800 }),
+      clampNodePositionToBounds: (node: any) => node.position,
+      graphStore: store,
+      graphStoreApplyPatch,
+      graphStorePatchGraphFromArrays,
+      isGroupTransformDrag: () => true,
+      latestGraphStoreRef: { current: store },
+      markRouteEdgesDirty: () => {},
+      markStoredRouteEdgesDirty: () => {},
+      mergeNodeUpdateLists: mergeById,
+      nodeById: new Map([[container.id, container], [member.id, member]]),
+      overlayEdgeUpdatesForTransform: (edges: any[]) => edges,
+      overlayGraphStoreNodes,
+      rebuildEdgesAfterNodeGeometryChange: (nodes: any[]) => nodes,
+      rebuildRoutableLineNodeUpdatesForChangedNodes: () => [],
+      rejectAutoCanvasExpansionForContent: () => false,
+      setGraphStore: (updater: any) => { committed = updater(store); },
+      setTransformDrag: () => {},
+      transformDrag: {
+        groupId: "g1",
+        kind: "rotate",
+        nodeIds: ["m1"],
+        originalNodes: { m1: { node: member } },
+        originalEdgeRoutes: [],
+        previewPoint: { x: 10, y: 10 },
+        historyCaptured: true
+      },
+      transformDragChangedRef: { current: true },
+      writeOperationLog: () => {}
+    } as any)();
+
+    const nextContainer = committed.nodeMap.get("c1")!;
+    expect(nextContainer).not.toBe(container);
+    expectContainerCovers(nextContainer, rotatedMember);
   });
 });

@@ -600,6 +600,29 @@ export function refitContainersOnly(nodes: ModelNode[]): ModelNode[] {
   return enforceContainerMembership(nodes).containerUpdates;
 }
 
+/**
+ * 变换(旋转/缩放)提交后的容器跟随:重算容器几何以重新包住成员的**新**包围盒
+ * (旋转/缩放会改视觉包围盒,不重算则容器矩形停在旧几何上,直到下一次任意 enforce 才自愈)。
+ * 与删除类路径同走半程口径(只重算容器、**不挤出**非成员):变换是刚体操作,
+ * 「把谁的邻居推出框外」不是这次变换的意图,挤出仍只属拖动/粘贴等入口。
+ * - `transformedIds` 中的容器自身**跳过** —— 容器矩形来自用户这次变换(缩放容器)的意图,
+ *   用成员包围盒覆盖回去等于把用户的缩放撤销掉。
+ * - 只产出几何确有变化的容器(逐值比较):交互提交路径不并入空补丁。
+ */
+export function refitContainersAfterTransform(nodes: ModelNode[], transformedIds: Iterable<string>): ModelNode[] {
+  const transformed = new Set(transformedIds);
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  return refitContainersOnly(nodes).filter((fitted) => {
+    if (transformed.has(fitted.id)) return false;
+    const current = byId.get(fitted.id);
+    return Boolean(current) &&
+      (current!.position.x !== fitted.position.x ||
+        current!.position.y !== fitted.position.y ||
+        current!.size.width !== fitted.size.width ||
+        current!.size.height !== fitted.size.height);
+  });
+}
+
 // ─── 删除容器收尾:成员归属不悬空 ─────────────────────────────────────────────
 // spec「其它交互边界」:删除容器 → 成员 containerId 全清(成员保留),确认框提示「N 个成员将散出」。
 // 不清会留下悬空值随保存持久化,并被 liveContainerIds 之外的旧真值判断静默豁免。
