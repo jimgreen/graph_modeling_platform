@@ -1773,6 +1773,37 @@ function eOutputSectionName(
     || section;
 }
 
+/**
+ * 容器绑定引用的定稿:把 `bound_device_idx` 换成绑定设备**最终**记录的表名 + idx。
+ * 必须延到合并段重排之后 —— 多个内部段合并到同一张表时(如双绕组 ACTransformer 与三绕组
+ * ACTransfomer3 都写 trfm),`params.idx` 会被重排成 1..N,构建阶段按段内序号算出的引用
+ * 会指向同表的另一台设备。构建阶段仍先写一份初值,供绑定设备无记录(被模板过滤/未产出)时兜底。
+ */
+function finalizeContainerBoundDeviceRefs(
+  records: readonly EDeviceExport[],
+  sectionGroups: readonly { outputSection: string; allRecords: EDeviceExport[] }[]
+): void {
+  const finalRefByNodeId = new Map<string, string>();
+  for (const group of sectionGroups) {
+    for (const record of group.allRecords) {
+      // 同一节点可能有多条记录(绕组/端点等带 ":后缀"),主记录先到先得
+      if (finalRefByNodeId.has(record.id)) {
+        continue;
+      }
+      const idx = String(record.params.idx ?? "").trim();
+      finalRefByNodeId.set(record.id, idx ? `${group.outputSection}_${idx}` : "");
+    }
+  }
+  for (const record of records) {
+    // `_bound_device_id` 是构建阶段注入的内部字段(下划线前缀不成列),只容器记录带
+    const boundDeviceId = String(record.params._bound_device_id ?? "");
+    if (!boundDeviceId || !finalRefByNodeId.has(boundDeviceId)) {
+      continue;
+    }
+    record.params.bound_device_idx = finalRefByNodeId.get(boundDeviceId) ?? "";
+  }
+}
+
 // aclinesegment/dclinesegment 同时生成 aclineend/dclineend（端点表）：
 // 每条线段生成 2 条端点记录（首端/末端），name = 线段name + "_首端/_末端"，
 // aclnseg_id/dcln_id 指向所属线段的 idx，nd 继承线段 ind/jnd 拓扑节点号。
@@ -2159,6 +2190,9 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
           bound_device_idx: boundIdx ? (boundTable ? `${boundTable}_${boundIdx}` : boundIdx) : ""
         }
       }, interfaceDefinitionBySection.get(section));
+      // 内部字段(下划线前缀不成列,与 _vbase 同款):带出绑定设备 id,供序列化前定稿引用 ——
+      // 模板态上一步会重建 params,故在此补注入,不能写进上面的 params 字面量
+      containerRecord.params._bound_device_id = boundDeviceId;
       // 与通用路径同款守卫(模板定义了容器段但字段列表为空 → 记录被过滤,不落占位行)
       if ((containerRecord.columns ?? E_SECTION_COLUMNS[section] ?? []).length === 0) {
         continue;
@@ -3180,7 +3214,9 @@ function buildEDeviceParameterFileFromRecords(
     recordsByOutputSection.set(outputSection, existing);
   }
 
-  const sectionBlocks = Array.from(recordsByOutputSection.entries()).map(([outputSection, groups]) => {
+  // 先定稿行号（合并段重排），再定稿跨表引用，最后才序列化 ——
+  // 引用值(bound_device_idx)取的就是重排后的最终行号，重排与否都不会指向同表的另一台设备
+  const sectionGroups = Array.from(recordsByOutputSection.entries()).map(([outputSection, groups]) => {
     // 合并所有 records
     const allRecords = groups.flatMap((group) => group.records);
     // 只有当有多个 group 合并时（即同名 section），才重排 idx
@@ -3192,8 +3228,11 @@ function buildEDeviceParameterFileFromRecords(
         });
       }
     }
-    return formatESection(groups[0].section, allRecords, outputSection, interfaceDefinitionBySection.get(groups[0].section)?.tableId);
+    return { outputSection, section: groups[0].section, allRecords };
   });
+  finalizeContainerBoundDeviceRefs(records, sectionGroups);
+  const sectionBlocks = sectionGroups.map(({ outputSection, section, allRecords }) =>
+    formatESection(section, allRecords, outputSection, interfaceDefinitionBySection.get(section)?.tableId));
   // 头表（模板模式：basevalue/basevoltage/subcontrolarea/substation；非模板模式：Model/basevoltage），
   // 与「查看/编辑E文件」弹窗展示共用同一份记录，保证展示与导出完全一致
   const headerRecords = buildEDeviceHeaderParameterRecords(project, sectionedRecords, options, schemePath);
