@@ -1743,6 +1743,36 @@ function applyEInterfaceDefinitionToRecord(
   };
 }
 
+/**
+ * 段合并:模板态下 ACRealBs 合并到 ACNode —— 仅当模板确实定义了 node/ACNode 表
+ * (如 sgcc.e 的 <node 类="ACNode+交流母线">);ems_rtdb.e 用独立 busbarsection 表则保持 ACRealBs。
+ * `originalSection` 由调用方传入(已算过 inferESection,不重复调用)。
+ */
+function mergeRealbsSectionForTemplate(
+  originalSection: string,
+  hasTemplateConfigValue: boolean,
+  interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>
+): string {
+  return originalSection === "ACRealBs" && hasTemplateConfigValue && interfaceDefinitionBySection.has("ACNode")
+    ? "ACNode"
+    : originalSection;
+}
+
+/**
+ * 段在 E 文件里的实际表名(段标签)。与格式化阶段的分组同源:
+ * 接口定义 exportName > 标签映射(eDeviceDefinitionLabels) > 内部段名。
+ * 跨段引用列(bound_device_idx 等)按此取名才能对上实际写出的表;两处漂移即指向不存在的段。
+ */
+function eOutputSectionName(
+  section: string,
+  interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>,
+  options: EFileExportOptions
+): string {
+  return String(interfaceDefinitionBySection.get(section)?.exportName ?? "").trim()
+    || String(options.eDeviceDefinitionLabels?.[section] ?? "").trim()
+    || section;
+}
+
 // aclinesegment/dclinesegment 同时生成 aclineend/dclineend（端点表）：
 // 每条线段生成 2 条端点记录（首端/末端），name = 线段name + "_首端/_末端"，
 // aclnseg_id/dcln_id 指向所属线段的 idx，nd 继承线段 ind/jnd 拓扑节点号。
@@ -2093,9 +2123,7 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
     // 模板模式下 ACRealBs 合并到 node 表（ACNode+交流母线），realbs=1 标识母线。
     // 仅当模板确实定义了 node/ACNode 表（如 sgcc.e 的 <node 类="ACNode+交流母线">）时才合并；
     // 否则（如 ems_rtdb.e 使用独立的 <busbarsection> 表）保持 ACRealBs，避免记录被过滤。
-    const section = (originalSection === "ACRealBs" && hasTemplateConfigValue && interfaceDefinitionBySection.has("ACNode"))
-      ? "ACNode"
-      : originalSection;
+    const section = mergeRealbsSectionForTemplate(originalSection, hasTemplateConfigValue, interfaceDefinitionBySection);
     if (!section || originalSection === "ACNode" || originalSection === "DCNode") {
       continue;
     }
@@ -2107,6 +2135,15 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
         continue;
       }
       const boundDeviceId = String(node.params.bound_device_id ?? "");
+      // 绑定设备存的是成员节点 id(与 containerMemberOptions 同源),此处解析出成员自身 idx 与所在表名。
+      // idx 每段独立计数(跨段重号),裸 idx 无法确认属于哪张表,故写成 `表名_idx`(如 ACRealBs_3 / node_3)。
+      // 表名取法与格式化阶段同源:先按模板合并规则定段,再取该段实际写出的段标签。
+      const boundNode = boundDeviceId ? nodeById.get(boundDeviceId) : undefined;
+      const boundIdx = String(boundNode?.params.idx ?? "").trim();
+      const boundSection = boundNode
+        ? mergeRealbsSectionForTemplate(inferESection(boundNode.kind, boundNode.params), hasTemplateConfigValue, interfaceDefinitionBySection)
+        : "";
+      const boundTable = boundSection ? eOutputSectionName(boundSection, interfaceDefinitionBySection, options) : "";
       const containerRecord = applyEInterfaceDefinitionToRecord({
         id: node.id,
         kind: node.kind,
@@ -2117,8 +2154,9 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
           // 容器类型取容器元件英文名(ac-vpp-box 等):容器无 E 设备类,段名只会退化成 ACContainer,故直接取 kind
           dev_type: baseDeviceKind(node.kind),
           is_gateway: node.params.is_gateway ?? "0",
-          // 绑定设备存的是成员节点 id(与 containerMemberOptions 同源),此处解析出成员自身 idx
-          bound_device_idx: (boundDeviceId ? nodeById.get(boundDeviceId)?.params.idx : "") ?? ""
+          // 绑定失效(设备已删/移出)或 idx 缺失 → 整列为空(沿用既有空值语义);段名取不到(绑定设备无 E 段)
+          // → 退化为仅 idx,不丢既有信息
+          bound_device_idx: boundIdx ? (boundTable ? `${boundTable}_${boundIdx}` : boundIdx) : ""
         }
       }, interfaceDefinitionBySection.get(section));
       // 与通用路径同款守卫(模板定义了容器段但字段列表为空 → 记录被过滤,不落占位行)
@@ -3136,9 +3174,7 @@ function buildEDeviceParameterFileFromRecords(
   // 按 outputSection 分组，合并同名的 records（如 ACTransformer 和 ACTransfomer3 都输出到 trfm）
   const recordsByOutputSection = new Map<string, { section: string; records: EDeviceExport[] }[]>();
   for (const section of orderedSections) {
-    const outputSection = String(interfaceDefinitionBySection.get(section)?.exportName ?? "").trim()
-      || String(options.eDeviceDefinitionLabels?.[section] ?? "").trim()
-      || section;
+    const outputSection = eOutputSectionName(section, interfaceDefinitionBySection, options);
     const existing = recordsByOutputSection.get(outputSection) ?? [];
     existing.push({ section, records: recordsBySection.get(section) ?? [] });
     recordsByOutputSection.set(outputSection, existing);

@@ -260,6 +260,24 @@ test("keeps electrical measurement and setpoint columns aligned with the device 
 });
 import { degreesToRadians } from "./formatUtils";
 import type { GlobalLineRecord } from "./global-lines";
+import { readFileSync } from "node:fs";
+import { applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appExtracted/appDeviceDefinitionFactories";
+
+/** 加载真实预定义模板(public/e-templates/*.e)为导出选项:与库状态应用、后端模板导出同一管线 */
+function eExportOptionsForTemplateFile(file: string) {
+  const sections = parseEDeviceDefinitionFile(readFileSync(new URL(`../public/e-templates/${file}`, import.meta.url), "utf8"));
+  const libraryState = applyEDeviceDefinitionSectionsToLibraryState({
+    sections,
+    libraryTemplates: DEVICE_LIBRARY as any
+  });
+  return buildEFileExportOptionsFromLibrary({
+    libraryTemplates: DEVICE_LIBRARY as any,
+    eDeviceDefinitionLabels: libraryState.eDeviceDefinitionLabels,
+    eDeviceDefinitionFieldOrder: libraryState.eDeviceDefinitionFieldOrder,
+    eDeviceDefinitionTemplateFields: libraryState.eDeviceDefinitionTemplateFields,
+    eDeviceDefinitionTableIds: libraryState.eDeviceDefinitionTableIds
+  });
+}
 
 type ParsedESection = {
   columns: string[];
@@ -4620,10 +4638,101 @@ describe("交流容器 E 导出", () => {
       expect.objectContaining({
         dev_type: "ac-switch-box",
         is_gateway: "1",
-        bound_device_idx: member.params.idx,
+        // 绑定引用带表名前缀:裸 idx 跨段重号,无法确认属于哪张表
+        bound_device_idx: `ACGenerator_${member.params.idx}`,
         name: container.name
       })
     ]);
+    // 引用值能对上实际写出的段:表名前缀若与实际段名漂移,这条断言先红
+    expect(payload.ACGenerator?.rows.map((row) => row.idx)).toContain(member.params.idx);
+  });
+
+  test("bound_device_idx 非模板态取绑定设备所在 E 段名(母线→ACRealBs)", () => {
+    const [container, bus] = createIndexedExportNodes(["ac-switch-box", "ac-bus"]);
+    bus.containerId = container.id;
+    container.params.is_gateway = "1";
+    container.params.bound_device_id = bus.id;
+    const project: ProjectFile = { version: 1, name: "容器绑母线模型", nodes: [container, bus], edges: [] };
+
+    const payload = parseESections(buildEFileExport(project).text);
+    expect(payload.ACContainer?.rows[0]?.bound_device_idx).toBe(`ACRealBs_${bus.params.idx}`);
+    // 母线自身记录就在 ACRealBs 段,行内 idx 与引用值同源 —— 消费方按「表名+idx」可直接定位
+    expect(payload.ACRealBs?.rows.map((row) => row.idx)).toContain(bus.params.idx);
+  });
+
+  test("bound_device_idx 模板态取模板表名(ACRealBs 合并到 ACNode 后写模板段名)", () => {
+    const [container, bus] = createIndexedExportNodes(["ac-switch-box", "ac-bus"]);
+    bus.containerId = container.id;
+    container.params.is_gateway = "1";
+    container.params.bound_device_id = bus.id;
+    const project: ProjectFile = { version: 1, name: "容器绑母线模板态模型", nodes: [container, bus], edges: [] };
+    const options = {
+      // 模板表名 node ≠ 内部段名 ACNode:引用值必须跟模板表名,否则指向不存在的段
+      eDeviceDefinitionLabels: { ACNode: "node" },
+      interfaceDefinitions: [
+        {
+          componentLibrary: "ACNode",
+          exportEnabled: true,
+          exportName: "node",
+          fields: [
+            { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+            { sourceName: "name", exportEnabled: true, exportName: "name" }
+          ]
+        },
+        {
+          componentLibrary: "ACContainer",
+          exportEnabled: true,
+          exportName: "ACContainer",
+          fields: [
+            { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+            { sourceName: "name", exportEnabled: true, exportName: "name" },
+            { sourceName: "dev_type", exportEnabled: true, exportName: "dev_type" },
+            { sourceName: "is_gateway", exportEnabled: true, exportName: "is_gateway" },
+            { sourceName: "bound_device_idx", exportEnabled: true, exportName: "bound_device_idx" }
+          ]
+        }
+      ]
+    };
+
+    const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
+    expect(payload.ACContainer?.rows[0]?.bound_device_idx).toBe(`node_${bus.params.idx}`);
+    expect(payload.node?.rows.map((row) => row.idx)).toContain(bus.params.idx);
+  });
+
+  test("bound_device_idx 跟真实 sgcc 模板段名:母线→node 表、电源→unit 表", () => {
+    const options = eExportOptionsForTemplateFile("sgcc.e");
+
+    const [busBox, bus] = createIndexedExportNodes(["ac-switch-box", "ac-bus"]);
+    bus.containerId = busBox.id;
+    busBox.params.is_gateway = "1";
+    busBox.params.bound_device_id = bus.id;
+    const busPayload = parseESections(
+      buildEFileExport({ version: 1, name: "sgcc容器绑母线", nodes: [busBox, bus], edges: [] }, ["默认方案"], options).text
+    );
+    // sgcc 把 ACNode+交流母线 合到 node 表:引用必须写 node_,写内部段名 ACRealBs_ 在文件里找不到该段
+    expect(busPayload.ACContainer?.rows[0]?.bound_device_idx).toBe(`node_${bus.params.idx}`);
+    expect(busPayload.node?.rows.map((row) => row.idx)).toContain(bus.params.idx);
+
+    const [srcBox, src] = createIndexedExportNodes(["ac-switch-box", "ac-source"]);
+    src.containerId = srcBox.id;
+    srcBox.params.is_gateway = "1";
+    srcBox.params.bound_device_id = src.id;
+    const srcPayload = parseESections(
+      buildEFileExport({ version: 1, name: "sgcc容器绑电源", nodes: [srcBox, src], edges: [] }, ["默认方案"], options).text
+    );
+    // 同模板下电源落 unit 表:同模型两类绑定设备各写各的表名,证表名不是写死的段名
+    expect(srcPayload.ACContainer?.rows[0]?.bound_device_idx).toBe(`unit_${src.params.idx}`);
+  });
+
+  test("绑定设备 id 悬空时 bound_device_idx 保持空(不产出半个引用)", () => {
+    const [container] = createIndexedExportNodes(["ac-vpp-box"]);
+    container.params.is_gateway = "1";
+    container.params.bound_device_id = "missing-node-id";
+    const project: ProjectFile = { version: 1, name: "容器悬空绑定模型", nodes: [container], edges: [] };
+
+    expect(
+      buildEDeviceRecords(project).find((record) => record.section === "ACContainer")?.params.bound_device_idx
+    ).toBe("");
   });
 
   test("模板态下容器静默过滤:不产出容器段也不告警", () => {
