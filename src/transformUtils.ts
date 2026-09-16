@@ -76,6 +76,10 @@ export function projectedProportionalScaleFromHandleDelta({
  * Resize a line-segment bus as geometry rather than as a transform.
  * The dragged side follows the pointer while the opposite side remains fixed;
  * existing scale values are preserved so resizing does not become bus scaling.
+ *
+ * 交流容器拖角复用本函数(同为「几何 resize 而非 transform」):下限按轴给,
+ * 见 minSize —— 容器的最小尺寸 = 成员视觉包围盒 + 内侧留白(无成员 = CONTAINER_MIN_SIZE),
+ * 由调用方(src/acContainer.containerResizeMinSize)算出后传入。
  */
 export function resizeLineSegmentBusGeometryFromHandleDrag({
   node,
@@ -85,7 +89,8 @@ export function resizeLineSegmentBusGeometryFromHandleDrag({
   handleYDirection = 0,
   resizeX,
   resizeY,
-  minDimension = 8
+  minDimension = 8,
+  minSize
 }: {
   node: ModelNode;
   startPoint: Point;
@@ -95,6 +100,8 @@ export function resizeLineSegmentBusGeometryFromHandleDrag({
   resizeX: boolean;
   resizeY: boolean;
   minDimension?: number;
+  /** 逐轴下限(取 minDimension 与该值的较大者);缺省只吃 minDimension */
+  minSize?: { width: number; height: number };
 }): ModelNode {
   const inverseRadians = (-normalizeRotationDegrees(node.rotation) * Math.PI) / 180;
   const pointerDelta = {
@@ -109,11 +116,13 @@ export function resizeLineSegmentBusGeometryFromHandleDrag({
   const safeScaleY = Math.abs(getNodeScaleY(node)) || 1;
   const xDirection = handleXDirection || 1;
   const yDirection = handleYDirection || 1;
+  const minWidth = Math.max(minDimension, minSize?.width ?? 0);
+  const minHeight = Math.max(minDimension, minSize?.height ?? 0);
   const nextWidth = resizeX
-    ? Math.max(minDimension, node.size.width + (localDelta.x * xDirection) / safeScaleX)
+    ? Math.max(minWidth, node.size.width + (localDelta.x * xDirection) / safeScaleX)
     : node.size.width;
   const nextHeight = resizeY
-    ? Math.max(minDimension, node.size.height + (localDelta.y * yDirection) / safeScaleY)
+    ? Math.max(minHeight, node.size.height + (localDelta.y * yDirection) / safeScaleY)
     : node.size.height;
   const localCenterShift = {
     x: resizeX ? ((nextWidth - node.size.width) * safeScaleX * xDirection) / 2 : 0,

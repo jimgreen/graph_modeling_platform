@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   createApplyBatchCommonParam,
+  createBuildGroupTransformNodeUpdates,
   createApplyBatchCommonParamPatch,
   createAppendStaticDrawingPoint,
   createCommitLibraryPlacementAtPoint,
@@ -22,7 +23,8 @@ import {
 import { createGraphStore, graphStoreApplyPatch, graphStorePatchGraphFromArrays, overlayGraphStoreNodes } from "./graphStore";
 import { normalizeProjectMeasurements } from "./measurements";
 import { calculateNodeVisualBounds, setVoltageBaseTerminalValueForTopologySide } from "./model-routing";
-import { bestSmartAlignmentAxisSnap, pointOnBusForSnap } from "./appExtracted/appCoreCanvasUtilities";
+import { bestSmartAlignmentAxisSnap, groupTransformGeometry, pointOnBusForSnap, transformGroupPoint } from "./appExtracted/appCoreCanvasUtilities";
+import { normalizeRotationDegrees } from "./formatUtils";
 import {
   canConnectTerminals,
   createDefaultNode,
@@ -1535,6 +1537,43 @@ describe("变换提交的容器跟随", () => {
     expect(nextContainer).not.toBe(container);
     expect(nextContainer.size).toEqual({ width: 300 + 48, height: 200 + 48 });
     expectContainerCovers(nextContainer, scaledMember);
+  });
+
+  test("整组缩放:容器几何写 size 且 scale 归一,普通设备仍走 scale", () => {
+    const container = containerBase();
+    const device = bare("m1", "ac-load");
+    const store = createGraphStore([container, device], []);
+    const buildUpdates = createBuildGroupTransformNodeUpdates({
+      groupTransformGeometry,
+      normalizeRotationDegrees,
+      transformGroupPoint
+    } as any);
+    const snapshot = (node: any) => ({
+      position: { ...node.position }, rotation: node.rotation,
+      scale: node.scale, scaleX: node.scaleX, scaleY: node.scaleY
+    });
+    const updates = buildUpdates({
+      kind: "scale-both",
+      groupId: "g1",
+      nodeIds: ["c1", "m1"],
+      bounds: { left: 0, top: 0, right: 100, bottom: 100 },
+      center: { x: 50, y: 50 },
+      startPoint: { x: 100, y: 100 },
+      originalNodes: { c1: snapshot(container), m1: snapshot(device) },
+      originalEdgeRoutes: [],
+      proportionalScale: true,
+      handleXDirection: 1,
+      handleYDirection: 1
+    } as any, { x: 150, y: 150 }, store);
+
+    const byId = new Map(updates.map((node) => [node.id, node]));
+    // 整组放大 2 倍:容器把 scale 吃进 size(渲染矩形 == size,与 eject 用的矩形同源)
+    expect(byId.get("c1")!.size).toEqual({ width: 360, height: 224 });
+    expect(byId.get("c1")!.scaleX).toBe(1);
+    expect(byId.get("c1")!.scaleY).toBe(1);
+    // 普通设备不受影响:尺寸不动,scale 乘上去
+    expect(byId.get("m1")!.size).toEqual({ width: 40, height: 30 });
+    expect(byId.get("m1")!.scaleX).toBe(2);
   });
 
   test("整组变换:容器重算并列入变更 id(数组提交只应用变更 id)", () => {

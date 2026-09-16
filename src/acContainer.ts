@@ -58,6 +58,40 @@ export function containerBoundsForMembers(members: ModelNode[]): Rect | null {
   };
 }
 
+/**
+ * 容器**手动缩放下限**(拖角 resize 用):成员视觉包围盒 + CONTAINER_PADDING,无成员(或成员过小)= CONTAINER_MIN_SIZE。
+ * 直接取自 `fitContainerToMembers` 的尺寸 —— 与「成员增删后的自动重算」同一口径:
+ * 缩到下限时容器恰好贴住成员,再小成员就会戳出框外。
+ */
+export function containerResizeMinSize(container: ModelNode, members: ModelNode[]): { width: number; height: number } {
+  const { size } = fitContainerToMembers(container, members);
+  return { width: size.width, height: size.height };
+}
+
+/**
+ * 拖角 resize 后的容器中心:矩形整体平移回**完全包住**成员包围盒 + padding(尺寸已由 containerResizeMinSize 保证够大)。
+ * 只夹尺寸不够 —— 拖动的边会越过成员(固定侧的对边一缩,成员就从那一侧戳出),而口径是
+ * 「最小尺寸 = 完全包裹全部成员」。越界时沿该轴平移,不越界则原样返回。
+ */
+export function clampContainerCenterToMembers(
+  position: { x: number; y: number },
+  size: { width: number; height: number },
+  members: ModelNode[]
+): { x: number; y: number } {
+  const bounds = containerBoundsForMembers(members);
+  if (!bounds) return position;
+  const halfWidth = size.width / 2;
+  const halfHeight = size.height / 2;
+  let x = position.x;
+  let y = position.y;
+  // 两轴各自:左边越过成员框左沿 → 右移;右边不足 → 左移(尺寸 ≥ 成员框宽,故两条不会同时成立)
+  if (x - halfWidth > bounds.x) x = bounds.x + halfWidth;
+  if (x + halfWidth < bounds.x + bounds.width) x = bounds.x + bounds.width - halfWidth;
+  if (y - halfHeight > bounds.y) y = bounds.y + halfHeight;
+  if (y + halfHeight < bounds.y + bounds.height) y = bounds.y + bounds.height - halfHeight;
+  return { x, y };
+}
+
 /** 容器重算为包围成员;成员为空时收缩回最小尺寸(中心不变) */
 export function fitContainerToMembers(container: ModelNode, members: ModelNode[]): ModelNode {
   const r = containerBoundsForMembers(members);
@@ -278,16 +312,35 @@ export function containerMemberOptions(nodes: ModelNode[], containerId: string):
 }
 
 /**
+ * 拖动集合里的容器:它的尺寸/位置是用户拖角给的几何,**只扩不缩** ——
+ * 现有尺寸已包住成员(不小于 fit 的尺寸)时原样保留,成员戳出才扩到刚好包住。
+ * 为什么需要:拖动提交走全量 enforce,会把每个容器打回「成员包围盒 + padding」,
+ * 手动放大的容器因此每次拖动后被缩回,并在 CONTAINER_MIN_SIZE 钳制下连带位移(fb10 实况:
+ * 用户拖大的容器在拖动后被改回 180×112)。成员增删引起的重算不受影响(容器不在拖动集里)。
+ */
+function preserveDraggedContainerGeometry(container: ModelNode, members: ModelNode[]): ModelNode {
+  const fitted = fitContainerToMembers(container, members);
+  return fitted.size.width <= container.size.width && fitted.size.height <= container.size.height
+    ? container
+    : fitted;
+}
+
+/**
  * 归属变更后的统一出口:按当前 containerId 重算每个容器的 position/size,
  * 并把它矩形内尚未归属的节点挤出界外(成员位置不变,故 patch 只含被挤出的节点)。
+ * `preserveSizeIds` 中的容器走「只扩不缩」(见 preserveDraggedContainerGeometry)。
  * ponytail: 容器互相重叠时各容器独立挤出,同一节点可能被两个容器各推一次(后写覆盖);真出现再说。
  */
-export function enforceContainerMembership(nodes: ModelNode[]): MembershipDecision {
+export function enforceContainerMembership(
+  nodes: ModelNode[],
+  options: { preserveSizeIds?: Iterable<string> } = {}
+): MembershipDecision {
+  const preserveIds = new Set(options.preserveSizeIds ?? []);
   const containerUpdates: ModelNode[] = [];
   const patch: NodePositionPatch[] = [];
   for (const c of nodes.filter(isAcContainerNode)) {
     const members = nodes.filter((n) => n.containerId === c.id && n.id !== c.id);
-    const fitted = fitContainerToMembers(c, members);
+    const fitted = preserveIds.has(c.id) ? preserveDraggedContainerGeometry(c, members) : fitContainerToMembers(c, members);
     containerUpdates.push(fitted);
     patch.push(...ejectOutsiders(fitted, nodes));
   }
@@ -336,6 +389,7 @@ export function applyDragContainerMembership(args: {
   addedContainerIds?: Iterable<string>;
 }): { updates: ModelNode[]; enterContainerId?: string; exitContainerId?: string } {
   const { nodes, movedIds, grabbedIds, altKey, repelNonMembers, addedContainerIds } = args;
+  const movedIdSet = new Set(movedIds);
   const grabbed = grabbedIds ? new Set(grabbedIds) : null;
   const judgeIds = grabbed ? movedIds.filter((id) => grabbed.has(id)) : movedIds;
   const { membershipChanges, enterContainerId, exitContainerId, repelPatches } = judgeContainerMembership({
@@ -375,7 +429,10 @@ export function applyDragContainerMembership(args: {
     return next;
   });
   const withUnbind = unboundById.size === 0 ? placed : placed.map((n) => unboundById.get(n.id) ?? n);
-  for (const upd of containerDecisionNodeUpdates(withUnbind, enforceContainerMembership(withUnbind))) {
+  // 本次被拖动的容器:**只扩不缩** —— 用户手动尺寸(拖角)不被拖动提交打回成员包围盒
+  const preserveSizeIds = withUnbind.filter((n) => isAcContainerNode(n) && movedIdSet.has(n.id)).map((n) => n.id);
+  const decision = enforceContainerMembership(withUnbind, { preserveSizeIds });
+  for (const upd of containerDecisionNodeUpdates(withUnbind, decision)) {
     changed.set(upd.id, upd);
   }
   return { updates: [...changed.values()], enterContainerId, exitContainerId };

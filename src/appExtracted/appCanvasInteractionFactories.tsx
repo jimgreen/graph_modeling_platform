@@ -4707,6 +4707,22 @@ export function createBuildGroupTransformNodeUpdates(__appScope: Record<string, 
       }
       const nextScaleX = (snapshot.scaleX ?? snapshot.scale ?? 1) * geometry.scaleX;
       const nextScaleY = (snapshot.scaleY ?? snapshot.scale ?? 1) * geometry.scaleY;
+      // 交流容器:几何恒在 size —— 整组缩放同样把 scale 吃进 size(与拖角 resize 同一口径),
+      // 否则容器渲染矩形 = size × |scale| 又和 eject/入组用的 size 矩形分叉(fb10 根因)
+      if (isAcContainerNode(node)) {
+        updates.push({
+          ...node,
+          position: transformGroupPoint(drag, geometry, snapshot.position),
+          size: {
+            width: Math.abs(nextScaleX) * node.size.width,
+            height: Math.abs(nextScaleY) * node.size.height
+          },
+          scale: 1,
+          scaleX: 1,
+          scaleY: 1
+        });
+        continue;
+      }
       updates.push({
         ...node,
         position: transformGroupPoint(drag, geometry, snapshot.position),
