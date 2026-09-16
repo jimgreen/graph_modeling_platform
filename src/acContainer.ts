@@ -126,11 +126,13 @@ export type MembershipDecision = {
 };
 
 /**
- * 拖动结束归属判定(判定点 = 节点中心 n.position,容器矩形按中心锚定):
+ * 归属判定(判定点 = 节点中心 n.position,容器矩形按中心锚定):
  * - 成员 Alt 拖动 → 移出;成员非 Alt → 归属不变(容器随后重算跟随,见 enforceContainerMembership)
- * - 非成员 Alt 拖动 + 中心落进容器矩形 → 移入(Alt = 双向归属变更键:拖入 / 拖出)
- * - 非成员非 Alt + 中心落进容器矩形:拖动路径(`repelNonMembers`)→ **弹出**(推到容器矩形外,不写归属);
- *   其余入口(不传该开关:粘贴 / 模板落点 / 图元库放置 / 批量布局)→ 移入(既有口径)
+ * - 非成员 Alt + 中心落进容器矩形 → 移入(Alt = 双向归属变更键:拖入 / 拖出)
+ * - 非成员非 Alt + 中心落进**已有**容器矩形 → **弹出**(推到容器矩形外,不写归属):拖动三条路径与
+ *   非拖动入口(粘贴 / 模板落点 / 图元库放置 / control addDevice / 批量布局)统一传 `repelNonMembers`。
+ *   唯一例外:目标容器也在本批 movedIds 里(容器与设备同批新增:整组粘贴 / SVG 导入整模型重建)
+ *   → 回退「落点入组」(排斥的语义是「外来设备 vs 已有容器」,同批重建不算外来)
  * - 静态图元不自动入组、也不被弹出(与 ejectOutsiders 的静态豁免同源):装饰图元常是整画布尺寸,
  *   吞成成员会把容器撑到包住整张画布,弹出则等于搬动装饰;已是成员的静态图元仍可 Alt 移出。
  * 容器自身不参与判定(不允许嵌套)。enterContainerId / exitContainerId 取最后一个移入/移出的目标
@@ -142,9 +144,9 @@ export function judgeContainerMembership(args: {
   movedIds: string[];
   altKey: boolean;
   /**
-   * 拖动路径专用开关:非 Alt + 非成员中心落入容器矩形 → 产出「弹出」patch(容器与容器外设备互相排斥),
-   * 而不是移入。拖动三条路径(鼠标松手 / 键盘移动)传 true;
-   * 非拖动入口(commitContainerMembership:粘贴、模板落点、程序化加图元、SVG 导入;批量布局)不传 → 保持落入即移入。
+   * 排斥开关:非 Alt + 非成员中心落入**已有**容器矩形 → 产出「弹出」patch(容器与容器外设备互相排斥),
+   * 而不是移入。拖动三条路径(鼠标松手 / 键盘移动)与非拖动入口(commitContainerMembership:粘贴、
+   * 模板落点、程序化加图元、SVG 导入;批量布局)统一传 true。目标容器同在本批 movedIds 时不排斥(同批重建)。
    */
   repelNonMembers?: boolean;
 }): {
@@ -156,6 +158,7 @@ export function judgeContainerMembership(args: {
 } {
   const { nodes, movedIds, altKey, repelNonMembers = false } = args;
   const byId = new Map(nodes.map((n) => [n.id, n]));
+  const movedIdSet = new Set(movedIds);
   const containers = nodes.filter(isAcContainerNode);
   const owners = liveContainerIds(nodes);
   const membershipChanges: MembershipDecision["membershipChanges"] = [];
@@ -184,7 +187,10 @@ export function judgeContainerMembership(args: {
       continue;
     }
     if (!target) continue;
-    if (!repelNonMembers) {
+    // 排斥只对「本批操作之外的已有容器」生效:目标容器也在本次 movedIds 里 = 容器与设备同批新增
+    // (整组粘贴 / SVG 导入整模型重建),设备落进容器是同批重建而非「外来设备误落」,排斥会破坏导入保真
+    // (容器恒空、成员被弹飞);此时回退到「落点入组」。
+    if (!repelNonMembers || movedIdSet.has(target.id)) {
       membershipChanges.push({ nodeId: id, containerId: target.id });
       enterContainerId = target.id;
       continue;
@@ -332,9 +338,10 @@ export function applyDragContainerMembership(args: {
 }
 
 /**
- * 新增/移动节点并入图后的归属落地出口(粘贴、模板落点、程序化加图元、SVG 导入共用):
- * 判定(中心落入容器 → 移入)→ 解绑 → 容器重算 + 挤出。返回**完整**节点数组;
- * **不传 repelNonMembers**:本入口不是用户拖动,保持「落入即移入」(只有拖动才与容器互相排斥)。
+ * 新增/移动节点并入图后的归属落地出口(粘贴、模板落点、图元库放置、程序化加图元、SVG 导入共用):
+ * 判定 → 解绑 → 容器重算 + 挤出。返回**完整**节点数组。
+ * 与拖动同口径传 `repelNonMembers`(落进**已有**容器 → 弹回框外,不写归属);
+ * 容器与设备同批新增时判定侧自动回退「落点入组」(整组粘贴 / SVG 导入整模型重建,见 judgeContainerMembership)。
  * `movedIds` 为本次新增/移动的节点(判断点 = 节点中心)。
  * 注意:原引用短路只在「图中无容器」时成立 —— 有容器时 enforce 恒产出容器重算更新(即便几何未变),
  * 故本函数不是廉价判空,不要拿返回值引用相等当「无变化」用。
@@ -343,7 +350,7 @@ export function commitContainerMembership(nodes: ModelNode[], movedIds: string[]
   if (movedIds.length === 0 || nodes.length === 0) {
     return nodes;
   }
-  const { updates } = applyDragContainerMembership({ nodes, movedIds, altKey: false });
+  const { updates } = applyDragContainerMembership({ nodes, movedIds, altKey: false, repelNonMembers: true });
   return updates.length === 0 ? nodes : withNodeUpdates(nodes, updates);
 }
 

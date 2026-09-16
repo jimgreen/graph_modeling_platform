@@ -958,15 +958,24 @@ describe("Alt 移出回报原容器", () => {
 });
 
 describe("归属落地出口 commitContainerMembership", () => {
-  test("落点在容器内的新节点 → 成为成员,返回完整节点数组且原图不被改写", () => {
+  test("落点在已有容器内 → 排斥:弹回矩形外、不写归属(与拖动同口径)", () => {
     const c1 = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
     const pasted = node("p1", "ac-load", 50, 50) as any;
     const nodes = [c1, pasted];
     const next = commitContainerMembership(nodes, ["p1"]);
-    expect(next.map((n) => n.id)).toEqual(["c1", "p1"]);
-    expect(next.find((n) => n.id === "p1")!.containerId).toBe("c1");
-    expect(next.find((n) => n.id === "c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE });
+    const placed = next.find((n) => n.id === "p1")!;
+    expect(placed.containerId).toBeUndefined();
+    // 容器无成员 → 收缩回最小尺寸,矩形 [-90,90]×[-56,56];弹回点 = 旧矩形最近边(右,100)+ padding
+    expect(placed.position).toEqual({ x: 100 + CONTAINER_PADDING, y: 50 });
     expect(pasted.containerId).toBeUndefined(); // 入参图保持原样
+    expect(pasted.position).toEqual({ x: 50, y: 50 });
+  });
+
+  test("容器与设备同批新增(整组粘贴 / SVG 导入)→ 照常入组,排斥只对「已有容器」生效", () => {
+    const c1 = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
+    const inner = node("p1", "ac-load", 50, 50) as any;
+    const next = commitContainerMembership([c1, inner], ["c1", "p1"]);
+    expect(next.find((n) => n.id === "p1")!.containerId).toBe("c1");
   });
 
   test("落点在容器外的节点不写归属;无容器时返回原引用(短路)", () => {

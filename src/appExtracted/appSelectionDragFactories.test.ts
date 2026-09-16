@@ -368,8 +368,8 @@ describe("删除容器收尾(deleteSelection)", () => {
   });
 });
 
-// ─── 粘贴 / 模板落点的归属落地:落点在容器矩形内的副本并入该容器 ────────────────
-// 副本已在 buildCanvasClipboard 剥离归属,落点判定必须接上(enforce 不判定:只挤出会让副本被推出容器)。
+// ─── 粘贴 / 模板落点的归属落地:落点在**已有**容器矩形内 → 排斥弹回 ────────────────
+// 与拖动同口径(非 Alt 不做归属变更):副本落到已有容器上被推出矩形外,不写归属。
 describe("粘贴与模板落点的归属落地", () => {
   const container = () => bareNode("c1", "ac-vpp-box", {
     position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, params: { _labelVisible: "0" },
@@ -434,16 +434,27 @@ describe("粘贴与模板落点的归属落地", () => {
     };
   };
 
-  test("粘贴:副本落点在容器内 → 写入 containerId,容器随成员重算", () => {
+  // 副本中心 (80,65) 落在旧矩形 [-100,100]² 内 → 弹回;容器随之收缩回最小尺寸(矩形成 [-90,90]×[-56,56])
+  const outOfContainer = (inserted: any[], nodeId: string) => {
+    const c = inserted.find((node: any) => node.id === "c1")!;
+    const n = inserted.find((node: any) => node.id === nodeId)!;
+    expect(c.size).toEqual({ width: 180, height: 112 });
+    return (
+      Math.abs(n.position.x - c.position.x) > c.size.width / 2 ||
+      Math.abs(n.position.y - c.position.y) > c.size.height / 2
+    );
+  };
+
+  test("粘贴:副本落点在已有容器内 → 排斥:弹回框外、不写归属", () => {
     const { scope, inserted } = makeInsertScope([container()]);
     createPasteSelection(scope as any)();
 
     const pasted = inserted.find((node: any) => node.kind === "ac-load")!;
-    expect(pasted.containerId).toBe("c1");
-    expect(inserted.find((node: any) => node.id === "c1").size).toEqual({ width: 180, height: 112 });
+    expect(pasted.containerId).toBeUndefined();
+    expect(outOfContainer(inserted, pasted.id)).toBe(true);
   });
 
-  test("放置模板:同出口落地(落点在容器内 → 并入)", () => {
+  test("放置模板:同出口落地(落点在已有容器内 → 弹回框外)", () => {
     const { scope, inserted } = makeInsertScope([container()]);
     createDropGraphTemplate(scope as any)(
       { typeName: "一次接线", name: "模板A", clipboard: { nodes: [sourceNode()], edges: [], groups: [] }, sourceSize: { width: 40, height: 30 } } as any,
@@ -451,7 +462,8 @@ describe("粘贴与模板落点的归属落地", () => {
     );
 
     const dropped = inserted.find((node: any) => node.kind === "ac-load")!;
-    expect(dropped.containerId).toBe("c1");
+    expect(dropped.containerId).toBeUndefined();
+    expect(outOfContainer(inserted, dropped.id)).toBe(true);
   });
 
   test("粘贴落点在容器外 → 不写归属(判定非无条件)", () => {

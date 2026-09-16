@@ -1349,8 +1349,9 @@ describe("line-segment bus pointer resizing", () => {
 });
 
 describe("automatic canvas layout", () => {
-  // 布局把设备移进容器矩形 → 必须按拖拽同一出口落地归属(否则容器矩形不跟随,且被挤出的非成员不提交)
-  test("布局移入容器:归属写入 + 容器重算并入本次提交,撤销退化全量", () => {
+  // 布局把设备摆进已有容器矩形 → 与拖动同一出口 = 排斥弹回(容器与容器外设备互相排斥);
+  // 弹出落位与容器重算必须在同一次提交里,否则撤销会漏掉布局集之外的容器几何
+  test("布局移入已有容器:弹回框外 + 容器重算并入本次提交,撤销退化全量", () => {
     const container = {
       id: "c1", kind: "ac-vpp-box", name: "c1", position: { x: 0, y: 0 }, size: { width: 200, height: 200 },
       rotation: 0, scale: 1, params: { _labelVisible: "0" }, terminals: []
@@ -1393,8 +1394,15 @@ describe("automatic canvas layout", () => {
 
     expect(movedCount).toBe(1);
     const committedUpdates = commitFastMovedGraphPatches.mock.calls[0][0];
-    expect(committedUpdates.find((node: any) => node.id === "m1").containerId).toBe("c1");
-    expect(committedUpdates.find((node: any) => node.id === "c1").size).toEqual({ width: 180, height: 112 });
+    const placedDevice = committedUpdates.find((node: any) => node.id === "m1");
+    const nextContainer = committedUpdates.find((node: any) => node.id === "c1");
+    expect(placedDevice.containerId).toBeUndefined();
+    // 容器无成员 → 收缩回最小尺寸;设备被弹到最终矩形之外
+    expect(nextContainer.size).toEqual({ width: 180, height: 112 });
+    const inside =
+      Math.abs(placedDevice.position.x - nextContainer.position.x) <= nextContainer.size.width / 2 &&
+      Math.abs(placedDevice.position.y - nextContainer.position.y) <= nextContainer.size.height / 2;
+    expect(inside).toBe(false);
     // 容器几何 / 挤出都在布局集之外:作用域必须让位给全量对比(Task 8 拖动同一口径)
     expect(pushUndoSnapshot).toHaveBeenCalledWith(true, false, undefined);
   });
