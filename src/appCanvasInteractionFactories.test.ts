@@ -1498,6 +1498,41 @@ const expectContainerCovers = (container: any, member: any) => {
   expect(b.bottom).toBeLessThanOrEqual(r.y2);
 };
 const containerBase = (id = "c1") => bare(id, "ac-vpp-box", { size: { width: 180, height: 112 } });
+/** 面板几何行(倍率 / 尺寸 / 旋转)提交:返回提交后的 store(与生产同一出口 createUpdateSelectedNode) */
+const runPanelGeometryWrite = (nodes: any[], targetId: string, patch: any) => {
+  const store = createGraphStore(nodes, []);
+  let committed = store;
+  const target = store.nodeMap.get(targetId)!;
+  createUpdateSelectedNode({
+    CANVAS_AUTO_EXPAND_PADDING: 40,
+    applyCanvasBounds: () => {},
+    canvasBounds: { width: 2000, height: 2000 },
+    canvasBoundsForAutoExpandedGraphContent: () => ({ width: 2000, height: 2000 }),
+    clampNodePositionToExpandableBounds: (_node: any, _bounds: any, position: any) => position,
+    edgeListForNodeIds: () => [],
+    expandCanvasToFitGraph: () => {},
+    focusedGroupedNodeMovesGroup: false,
+    graphStore: store,
+    graphStoreApplyPatch,
+    mergeNodeUpdateLists: mergeById,
+    nodeById: store.nodeMap,
+    nodes: store.nodes,
+    overlayGraphStoreNodes,
+    patchGraphNodes: vi.fn(),
+    pushNodeOnlyUndoSnapshot: vi.fn(),
+    pushUndoSnapshot: vi.fn(),
+    rebuildEdgeUpdatesAfterNodeGeometryChange: () => [],
+    rebuildRoutableLineNodeUpdatesForChangedNodes: () => [],
+    rejectAutoCanvasExpansionForContent: () => false,
+    requireEditMode: () => true,
+    selectedNode: target,
+    selectedNodeId: targetId,
+    setGraphStore: (updater: any) => { committed = updater(store); },
+    snapshotEdgePoints: () => ({}),
+    undoScopeForGraphPatch: () => ({})
+  } as any)(patch);
+  return committed;
+};
 
 describe("变换提交的容器跟随", () => {
   test("单节点缩放成员:容器重算并入同一次 store 提交", () => {
@@ -1593,49 +1628,48 @@ describe("变换提交的容器跟随", () => {
   });
 
   test("面板倍率写容器:折算进 size(I1),普通设备仍写 scale", () => {
-    const runPanelScaleWrite = (node: any, patch: any) => {
-      const store = createGraphStore([node], []);
-      let committed = store;
-      const scope: any = {
-        CANVAS_AUTO_EXPAND_PADDING: 40,
-        applyCanvasBounds: () => {},
-        canvasBounds: { width: 2000, height: 2000 },
-        canvasBoundsForAutoExpandedGraphContent: () => ({ width: 2000, height: 2000 }),
-        clampNodePositionToExpandableBounds: (_node: any, _bounds: any, position: any) => position,
-        edgeListForNodeIds: () => [],
-        expandCanvasToFitGraph: () => {},
-        focusedGroupedNodeMovesGroup: false,
-        graphStore: store,
-        graphStoreApplyPatch,
-        mergeNodeUpdateLists: (first: any[], second: any[]) => [...first, ...second],
-        nodeById: store.nodeMap,
-        nodes: store.nodes,
-        overlayGraphStoreNodes,
-        patchGraphNodes: vi.fn(),
-        pushNodeOnlyUndoSnapshot: vi.fn(),
-        pushUndoSnapshot: vi.fn(),
-        rebuildEdgeUpdatesAfterNodeGeometryChange: () => [],
-        rebuildRoutableLineNodeUpdatesForChangedNodes: () => [],
-        rejectAutoCanvasExpansionForContent: () => false,
-        requireEditMode: () => true,
-        selectedNode: node,
-        selectedNodeId: node.id,
-        setGraphStore: (updater: any) => { committed = updater(store); },
-        snapshotEdgePoints: () => ({}),
-        undoScopeForGraphPatch: () => ({})
-      };
-      createUpdateSelectedNode(scope)(patch);
-      return committed.nodeMap.get(node.id)!;
-    };
-
-    const container = runPanelScaleWrite(containerBase(), { scale: 2, scaleX: 2, scaleY: 2 });
+    const container = runPanelGeometryWrite([containerBase()], "c1", { scale: 2, scaleX: 2, scaleY: 2 }).nodeMap.get("c1")!;
     expect(container.size).toEqual({ width: 360, height: 224 }); // 容器几何恒在 size
     expect(container.scaleX).toBe(1);
     expect(container.scaleY).toBe(1);
 
-    const device = runPanelScaleWrite(bare("m9", "ac-load"), { scale: 2, scaleX: 2, scaleY: 2 });
+    const device = runPanelGeometryWrite([bare("m9", "ac-load")], "m9", { scale: 2, scaleX: 2, scaleY: 2 }).nodeMap.get("m9")!;
     expect(device.size).toEqual({ width: 40, height: 30 });
     expect(device.scaleX).toBe(2);
+  });
+
+  // 面板倍率行是容器的尺寸入口(无条件渲染):与拖角 resize 同收尾 ——
+  // 放大圈入的未归属设备要排斥,缩小要钳在「完全包裹成员」下限(否则成员被裁出框外)
+  test("面板倍率放大容器圈入未归属设备:非成员被推到间隙 50", () => {
+    const container = containerBase();
+    const member = bare("m1", "ac-load", { containerId: "c1" });
+    const neighbor = bare("n1", "ac-load", { position: { x: 150, y: 0 } }); // 放大后落进矩形、无归属
+    const committed = runPanelGeometryWrite([container, member, neighbor], "c1", { scale: 2, scaleX: 2, scaleY: 2 });
+
+    const nextContainer = committed.nodeMap.get("c1")!;
+    expect(nextContainer.size).toEqual({ width: 360, height: 224 });
+    expectContainerCovers(nextContainer, member);
+    const placed = committed.nodeMap.get("n1")!;
+    expect(placed).not.toBe(neighbor);
+    const r = {
+      x1: nextContainer.position.x - nextContainer.size.width / 2,
+      y1: nextContainer.position.y - nextContainer.size.height / 2,
+      x2: nextContainer.position.x + nextContainer.size.width / 2,
+      y2: nextContainer.position.y + nextContainer.size.height / 2
+    };
+    const b = calculateNodeVisualBounds(placed);
+    expect(Math.max(r.x1 - b.right, b.left - r.x2, r.y1 - b.bottom, b.top - r.y2)).toBe(50);
+  });
+
+  test("面板倍率缩小容器:钳在「完全包裹成员」下限,成员不被裁出", () => {
+    const container = bare("c1", "ac-vpp-box", { size: { width: 360, height: 224 } });
+    const member = bare("m1", "ac-load", { containerId: "c1", size: { width: 300, height: 200 } });
+    const committed = runPanelGeometryWrite([container, member], "c1", { scale: 0.5, scaleX: 0.5, scaleY: 0.5 });
+
+    // 0.5 倍折算得 180×112 < 下限(成员 300×200 + 内侧留白 48) → 钳在下限
+    const next = committed.nodeMap.get("c1")!;
+    expect(next.size).toEqual({ width: 300 + 48, height: 200 + 48 });
+    expectContainerCovers(next, member);
   });
 
   test("整组缩放:容器几何写 size 且 scale 归一,普通设备仍走 scale", () => {
