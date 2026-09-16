@@ -11,7 +11,9 @@ import {
   createFinishInteractiveStaticDrawing,
   createFinishNodeDrag,
   createFinishTransformDrag,
+  createMirrorSelectedNodes,
   createPlaceLibraryDeviceAtPoint,
+  createRotateSelectedLayoutUnits,
   createStartLibraryDevicePlacement,
   createUpdateInteractiveStaticDrawingPreview,
   createUpdateLibraryPlacementPreview,
@@ -1469,32 +1471,32 @@ describe("容器归属入口的量测同步", () => {
 });
 
 // ─── 变换提交的容器跟随(旋转/缩放后容器立即重算,不必等下一次 enforce) ───────
-describe("变换提交的容器跟随", () => {
-  const bare = (id: string, kind: string, extra: Record<string, unknown> = {}) => ({
-    id, kind, name: id, position: { x: 0, y: 0 }, size: { width: 40, height: 30 },
-    rotation: 0, scale: 1, params: { _labelVisible: "0" }, terminals: [], ...extra,
-  }) as any;
-  const mergeById = (base: any[], extra: any[]) => {
-    const byId = new Map(base.map((node) => [node.id, node]));
-    for (const node of extra) byId.set(node.id, node);
-    return [...byId.values()];
+const bare = (id: string, kind: string, extra: Record<string, unknown> = {}) => ({
+  id, kind, name: id, position: { x: 0, y: 0 }, size: { width: 40, height: 30 },
+  rotation: 0, scale: 1, params: { _labelVisible: "0" }, terminals: [], ...extra,
+}) as any;
+const mergeById = (base: any[], extra: any[]) => {
+  const byId = new Map(base.map((node) => [node.id, node]));
+  for (const node of extra) byId.set(node.id, node);
+  return [...byId.values()];
+};
+/** 断言容器真实矩形(position 为中心)包住成员的视觉包围盒 */
+const expectContainerCovers = (container: any, member: any) => {
+  const r = {
+    x1: container.position.x - container.size.width / 2,
+    y1: container.position.y - container.size.height / 2,
+    x2: container.position.x + container.size.width / 2,
+    y2: container.position.y + container.size.height / 2
   };
-  /** 断言容器真实矩形(position 为中心)包住成员的视觉包围盒 */
-  const expectContainerCovers = (container: any, member: any) => {
-    const r = {
-      x1: container.position.x - container.size.width / 2,
-      y1: container.position.y - container.size.height / 2,
-      x2: container.position.x + container.size.width / 2,
-      y2: container.position.y + container.size.height / 2
-    };
-    const b = calculateNodeVisualBounds(member);
-    expect(b.left).toBeGreaterThanOrEqual(r.x1);
-    expect(b.right).toBeLessThanOrEqual(r.x2);
-    expect(b.top).toBeGreaterThanOrEqual(r.y1);
-    expect(b.bottom).toBeLessThanOrEqual(r.y2);
-  };
-  const containerBase = (id = "c1") => bare(id, "ac-vpp-box", { size: { width: 180, height: 112 } });
+  const b = calculateNodeVisualBounds(member);
+  expect(b.left).toBeGreaterThanOrEqual(r.x1);
+  expect(b.right).toBeLessThanOrEqual(r.x2);
+  expect(b.top).toBeGreaterThanOrEqual(r.y1);
+  expect(b.bottom).toBeLessThanOrEqual(r.y2);
+};
+const containerBase = (id = "c1") => bare(id, "ac-vpp-box", { size: { width: 180, height: 112 } });
 
+describe("变换提交的容器跟随", () => {
   test("单节点缩放成员:容器重算并入同一次 store 提交", () => {
     const container = containerBase();
     const member = bare("m1", "ac-load", { containerId: "c1" });
@@ -1581,5 +1583,103 @@ describe("变换提交的容器跟随", () => {
     const nextContainer = committed.nodeMap.get("c1")!;
     expect(nextContainer).not.toBe(container);
     expectContainerCovers(nextContainer, rotatedMember);
+  });
+});
+
+// ─── 工具栏旋转/镜像的容器跟随(与变换句柄同型:几何变了容器就得跟) ───────────
+// 工具栏两条命令改 rotation / position·scaleX 后直接提交;不接容器重算则成员转 90°、
+// 镜像翻面后容器矩形停在旧几何(用户可见),直到下一次任意 enforce 才自愈。
+describe("工具栏旋转/镜像的容器跟随", () => {
+  /** 工具栏两条命令共用的 scope(units / 更新函数由各用例给) */
+  const toolbarScope = (args: {
+    store: any;
+    units: any[];
+    nodeUpdates: any[];
+    onCommit: (store: any) => void;
+  }) => {
+    const { store, units, nodeUpdates, onCommit } = args;
+    return {
+      requireEditMode: () => true,
+      selectedLayoutUnits: units,
+      pushUndoSnapshot: vi.fn(),
+      setSelectedEdgeId: vi.fn(),
+      overlayGraphStoreNodes,
+      graphStore: store,
+      graphStoreApplyPatch,
+      rebuildEdgeUpdatesAfterNodeGeometryChange: () => [],
+      markRouteEdgesDirty: vi.fn(),
+      markStoredRouteEdgesDirty: vi.fn(),
+      expandCanvasToFitGraph: vi.fn(),
+      setGraphStore: (updater: any) => onCommit(updater(store)),
+      writeOperationLog: vi.fn(),
+      rotateLayoutUnitNodeUpdates: () => nodeUpdates,
+      mirrorLayoutUnitNodeUpdates: () => nodeUpdates,
+      buildRotateLayoutUnitEdgeUpdates: () => [],
+      buildMirrorLayoutUnitEdgeUpdates: () => []
+    } as any;
+  };
+  const groupUnit = (nodeIds: string[]) => ({ kind: "group", nodeIds, bounds: { left: 0, right: 0, top: 0, bottom: 0 } });
+
+  test("工具栏旋转 90°:成员几何变了 → 容器同批重算", () => {
+    const container = containerBase();
+    const member = bare("m1", "ac-load", { containerId: "c1" });
+    const rotatedMember = { ...member, rotation: 90 };
+    const store = createGraphStore([container, member], []);
+    let committed = store;
+
+    createRotateSelectedLayoutUnits(toolbarScope({
+      store,
+      units: [groupUnit(["m1"])],
+      nodeUpdates: [rotatedMember],
+      onCommit: (next) => { committed = next; }
+    }))("right");
+
+    const nextContainer = committed.nodeMap.get("c1")!;
+    expect(nextContainer).not.toBe(container);
+    expectContainerCovers(nextContainer, rotatedMember);
+  });
+
+  test("工具栏镜像:成员挪到轴另一侧 → 容器跟着挪", () => {
+    const container = { ...containerBase(), position: { x: 0, y: 0 } };
+    const member = bare("m1", "ac-load", { containerId: "c1" });
+    const mirroredMember = { ...member, position: { x: 400, y: 0 }, scaleX: -1 };
+    const store = createGraphStore([container, member], []);
+    let committed = store;
+
+    createMirrorSelectedNodes(toolbarScope({
+      store,
+      units: [groupUnit(["m1"])],
+      nodeUpdates: [mirroredMember],
+      onCommit: (next) => { committed = next; }
+    }))("horizontal");
+
+    const nextContainer = committed.nodeMap.get("c1")!;
+    expect(nextContainer).not.toBe(container);
+    expectContainerCovers(nextContainer, mirroredMember);
+    // 成员被镜像到 x=400 → 容器中心随包围盒并集右移(不是停在旧位置)
+    expect(nextContainer.position.x).toBeGreaterThan(0);
+  });
+
+  test("容器自身被旋转:跳过 refit(轴对齐矩形语义),成员不跟转", () => {
+    const container = containerBase();
+    const member = bare("m1", "ac-load", { containerId: "c1" });
+    // 整组旋转里容器不再位于自转中心 → 位置随组转走;成员不在本组,原地不动
+    const rotatedContainer = { ...container, position: { x: 300, y: 300 }, rotation: 90 };
+    const store = createGraphStore([container, member], []);
+    let committed = store;
+
+    createRotateSelectedLayoutUnits(toolbarScope({
+      store,
+      units: [groupUnit(["c1"])],
+      nodeUpdates: [rotatedContainer],
+      onCommit: (next) => { committed = next; }
+    }))("right");
+
+    const nextContainer = committed.nodeMap.get("c1")!;
+    // 容器矩形按用户这次旋转走(不被成员包围盒吸附回原位)
+    expect(nextContainer.position).toEqual({ x: 300, y: 300 });
+    expect(nextContainer.rotation).toBe(90);
+    // 成员不跟转(不在变换集里 = 原对象)
+    expect(committed.nodeMap.get("m1")).toBe(member);
   });
 });

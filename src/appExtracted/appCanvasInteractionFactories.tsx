@@ -2353,16 +2353,19 @@ export function createRotateSelectedLayoutUnits(__appScope: Record<string, any>)
     const nodeUpdates = rotateLayoutUnitNodeUpdates(selectedLayoutUnits, degrees);
     const transformedNodeIds = nodeUpdates.map((node) => node.id);
     const nextNodes = overlayGraphStoreNodes(graphStore, nodeUpdates);
+    // 容器跟随:旋转只改被变换节点的几何,容器不重算会停在旧矩形(与变换句柄同口径,见 refitContainersAfterTransform)
+    const containerUpdates = refitContainersAfterTransform(nextNodes, transformedNodeIds);
+    const nodesWithContainers = containerUpdates.length > 0 ? withNodeUpdates(nextNodes, containerUpdates) : nextNodes;
     const rotatedEdgeUpdates = buildRotateLayoutUnitEdgeUpdates(selectedLayoutUnits, edges, degrees);
     const preservedRotateEdgeIds = new Set(rotatedEdgeUpdates.map((edge) => edge.id));
     markRouteEdgesDirty(preservedRotateEdgeIds);
     markStoredRouteEdgesDirty(preservedRotateEdgeIds);
-    const reroutedEdgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, edges, preservedRotateEdgeIds);
+    const reroutedEdgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nodesWithContainers, transformedNodeIds, edges, preservedRotateEdgeIds);
     const edgeUpdates = [...rotatedEdgeUpdates, ...reroutedEdgeUpdates];
-    expandCanvasToFitGraph(nodeUpdates, edgeUpdates);
+    expandCanvasToFitGraph([...nodeUpdates, ...containerUpdates], edgeUpdates);
     setGraphStore((current) =>
       graphStoreApplyPatch(current, {
-        nodeUpdates,
+        nodeUpdates: [...nodeUpdates, ...containerUpdates],
         edgeUpserts: edgeUpdates
       })
     );
@@ -2384,16 +2387,19 @@ export function createMirrorSelectedNodes(__appScope: Record<string, any>) {
     const nodeUpdates = mirrorLayoutUnitNodeUpdates(selectedLayoutUnits, axis);
     const transformedNodeIds = nodeUpdates.map((node) => node.id);
     const nextNodes = overlayGraphStoreNodes(graphStore, nodeUpdates);
+    // 容器跟随:镜像会挪成员位置(翻面),容器不重算会停在旧矩形(与变换句柄同口径,见 refitContainersAfterTransform)
+    const containerUpdates = refitContainersAfterTransform(nextNodes, transformedNodeIds);
+    const nodesWithContainers = containerUpdates.length > 0 ? withNodeUpdates(nextNodes, containerUpdates) : nextNodes;
     const mirroredEdgeUpdates = buildMirrorLayoutUnitEdgeUpdates(selectedLayoutUnits, edges, axis);
     const preservedMirrorEdgeIds = new Set(mirroredEdgeUpdates.map((edge) => edge.id));
     markRouteEdgesDirty(preservedMirrorEdgeIds);
     markStoredRouteEdgesDirty(preservedMirrorEdgeIds);
-    const reroutedEdgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nextNodes, transformedNodeIds, edges, preservedMirrorEdgeIds);
+    const reroutedEdgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nodesWithContainers, transformedNodeIds, edges, preservedMirrorEdgeIds);
     const edgeUpdates = [...mirroredEdgeUpdates, ...reroutedEdgeUpdates];
-    expandCanvasToFitGraph(nodeUpdates, edgeUpdates);
+    expandCanvasToFitGraph([...nodeUpdates, ...containerUpdates], edgeUpdates);
     setGraphStore((current) =>
       graphStoreApplyPatch(current, {
-        nodeUpdates,
+        nodeUpdates: [...nodeUpdates, ...containerUpdates],
         edgeUpserts: edgeUpdates
       })
     );
