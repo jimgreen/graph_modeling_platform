@@ -9,6 +9,7 @@ import {
   AC_CONTAINER_KINDS,
   createDefaultNode,
   getEParameterKeys,
+  getTemplateStateDefinitions,
   isAcContainerKind,
   type DeviceKind,
   type ModelNode,
@@ -200,5 +201,13 @@ describe("容器模板量测定义", () => {
   test("普通开关不受影响:ac-switch 仍产出状态与电流量测", () => {
     expect(paramKeys("ac-switch")).toContain("status");
     expect(paramKeys("ac-switch")).toContain("i");
+  });
+
+  test("容器不默认带二元开关状态:三容器口径一致(ac-switch-box 曾因 kind 含 switch 中招)", () => {
+    for (const kind of AC_CONTAINER_KINDS) {
+      expect(getTemplateStateDefinitions(DEVICE_LIBRARY_BY_KIND.get(kind)!), `${kind} 状态定义`).toEqual([]);
+    }
+    // 回归护栏:普通开关照旧带开/合两个状态
+    expect(getTemplateStateDefinitions(DEVICE_LIBRARY_BY_KIND.get("ac-switch")!).length).toBe(2);
   });
 });

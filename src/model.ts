@@ -1078,6 +1078,11 @@ export function switchingDeviceUsesClosedStatus(kind: string, params: Record<str
 
 function isDefaultBinaryStateDeviceKind(kind: string, params: Record<string, string> = {}) {
   const baseKind = baseDeviceKind(kind);
+  // 交流容器不是开关设备(与 switchingDeviceUsesClosedStatus 同款豁免):kind 子串判据
+  // 会把 ac-switch-box 当开关,默认赋「开/合」二元状态,使三容器口径不齐(另两容器无状态定义)
+  if (isAcContainerKind(baseKind)) {
+    return false;
+  }
   return (
     hasEStatusColumn(baseKind, params) ||
     baseKind.includes("switch") ||
