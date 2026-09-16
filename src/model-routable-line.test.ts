@@ -797,6 +797,34 @@ test("repairs a saved straight line that crosses a right-side model-association 
 });
 
 
+test("keeps a container-exempt routable line path without re-routing it on repair", () => {
+  // 端点连容器内设备的可路由线路:穿容器矩形的路径与 routeRoutableLineDevice 同口径,判安全不重算
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+  const box = createDefaultNode("ac-vpp-box", { x: 300, y: 200 });
+  const inner = { ...createDefaultNode("ac-switch", { x: 300, y: 200 }), containerId: box.id };
+  const outer = createDefaultNode("ac-load", { x: 700, y: 200 });
+  const line = createRoutableLineDeviceFromEndpoints(
+    template!,
+    getTerminalPoint(inner, "t1"),
+    getTerminalPoint(outer, "t1"),
+    "layer-a",
+    {
+      source: routableLineDeviceEndpointRefForNode(inner, "t1"),
+      target: routableLineDeviceEndpointRefForNode(outer, "t1")
+    }
+  );
+  const bounds = { width: 1000, height: 500 };
+  const routedLine = routeRoutableLineDevice(line, [inner, outer, box, line], bounds);
+  const routedNoBox = routeRoutableLineDevice(line, [inner, outer, line], bounds);
+
+  // 豁免 = 容器不在场:两条路径一致(端点在容器内时不被容器改道)
+  expect(routableLineDeviceCanvasPoints(routedLine)).toEqual(routableLineDeviceCanvasPoints(routedNoBox));
+
+  // 判定与布线同口径:穿框路径不再被判 unsafe,repair 不重算(引用保持)
+  const repairedNodes = repairUnsafeRoutableLineDeviceRoutes([inner, outer, box, routedLine], bounds);
+  expect(repairedNodes.find((node) => node.id === line.id)).toBe(routedLine);
+});
+
 test("routes a vertical dogleg to a right-side model-association terminal without crossing its body", () => {
   const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
   const source = { ...createDefaultNode("ac-station-source", { x: 420, y: 80 }), id: "upper-station-source" };

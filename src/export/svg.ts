@@ -46,6 +46,7 @@ import {
   isBusNode,
   normalizeModelLayers,
   orderNodesByModelLayer,
+  rebuildContainerExemptConnectionRoutes,
   routeEdgesForSavedPathRendering,
   terminalRenderLocalPoint,
   terminalStubSegment,
@@ -632,7 +633,13 @@ ${rules.join("\n")}
     const dashAttribute = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
     return `<line class="export-boundary-bus-internal-connector${voltageLineClass ? ` ${voltageLineClass}` : ""}"${edgeAttributes} x1="${formatSvgNumber(segment.from.x)}" y1="${formatSvgNumber(segment.from.y)}" x2="${formatSvgNumber(segment.to.x)}" y2="${formatSvgNumber(segment.to.y)}"${suppressStroke ? "" : ` stroke="${escapeXml(stroke)}"`} stroke-width="${formatSvgNumber(boundaryBusInternalConnectorStrokeWidth(node, segment))}" stroke-linecap="round"${dashAttribute}/>`;
   };
-  const edgeMarkup = routeEdgesForSavedPathRendering(exportNodes, edges, canvasSize, { refreshCrossingArcs: true })
+  // 容器豁免存量回填:端点连容器内设备的连线按豁免口径重算后回放(容器是避让障碍物;服务容器内设备的线路豁免)
+  const edgeMarkup = routeEdgesForSavedPathRendering(
+    exportNodes,
+    rebuildContainerExemptConnectionRoutes(exportNodes, edges, canvasSize),
+    canvasSize,
+    { refreshCrossingArcs: true }
+  )
     .map((route, index) => {
       const edge = edgeById.get(route.edgeId);
       const stroke = edge ? getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) : "#334155";

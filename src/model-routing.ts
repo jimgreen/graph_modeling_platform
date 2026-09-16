@@ -69,6 +69,7 @@ import {
   deviceParamValue,
   getDeviceGlyphVariant,
   getDeviceStrokeWidth,
+  isAcContainerKind,
   isContainerParams,
   isImplicitTerminalVbaseForType,
   isLineOnlyConnectionNode,
@@ -1221,7 +1222,13 @@ export function routeRoutableLineDevice(
   const otherNodes = nodes.filter((candidate) => candidate.id !== node.id);
   const nodeById = new Map(otherNodes.map((candidate) => [candidate.id, candidate]));
   const routeEdge = routableLineDeviceRoutingEdge(node, start, end, nodeById);
-  const blockers = routableLineRoutingBlockers(otherNodes, routeEdge, options.blockerNodeIds);
+  // 容器是线路避让的障碍物;服务容器内设备的线路豁免(端点所连设备在容器内 → 该容器不参与本线路避让)。
+  // blockers 构造处单源豁免,下游(复查/repair/端点法线保持)才不会把穿框路径推回绕行。
+  const blockers = routableLineRoutingBlockers(
+    nodesExcludingEndpointContainers(otherNodes, [nodeById.get(routeEdge.sourceId), nodeById.get(routeEdge.targetId)]),
+    routeEdge,
+    options.blockerNodeIds
+  );
   const localOpposedBusRoute = localOpposedBusRoutableLineRoute(routeEdge, start, end, nodeById, blockers);
   if (localOpposedBusRoute) {
     const nextLocalPoints = normalizeRoutableLineDevicePoints(localOpposedBusRoute.map((point) => canvasPointToNodeLocalPoint(node, point)));
@@ -1410,19 +1417,25 @@ function routableLineStoredPathSafety(
   }
   const nodeById = context.nodeById ?? new Map(nodes.map((candidate) => [candidate.id, candidate]));
   const routeEdge = routableLineDeviceRoutingEdge(node, points[0], points[points.length - 1], nodeById);
+  // 容器是线路避让的障碍物;服务容器内设备的线路豁免(端点所连设备在容器内 → 该容器不参与本线路避让)。
+  // 与 routeRoutableLineDevice 的布线口径对齐:否则重算结果(穿框)永远被判 unsafe,每次修复白跑一轮完整布线。
+  const endpointNodes = [nodeById.get(routeEdge.sourceId), nodeById.get(routeEdge.targetId)];
   let blockers: ModelNode[];
   let blockerNodeIds: Set<string> | undefined;
   if (context.routeBlockingCandidates) {
-    const nearbyBlockers = getRouteBlockingCandidateNodesFromBoxes(points, routeEdge, context.routeBlockingCandidates);
+    const nearbyBlockers = nodesExcludingEndpointContainers(
+      getRouteBlockingCandidateNodesFromBoxes(points, routeEdge, context.routeBlockingCandidates),
+      endpointNodes
+    );
     const endpointBlockers = context.includeEndpointBlockers === false
       ? []
-      : [nodeById.get(routeEdge.sourceId), nodeById.get(routeEdge.targetId)]
+      : endpointNodes
         .filter((candidate): candidate is ModelNode => Boolean(candidate && staticNodeParticipatesInRoutingAvoidance(candidate)));
     blockers = [...endpointBlockers, ...nearbyBlockers];
     blockerNodeIds = new Set(nearbyBlockers.map((candidate) => candidate.id));
   } else {
     const otherNodes = nodes.filter((candidate) => candidate.id !== node.id);
-    blockers = routableLineRoutingBlockers(otherNodes, routeEdge);
+    blockers = routableLineRoutingBlockers(nodesExcludingEndpointContainers(otherNodes, endpointNodes), routeEdge);
   }
   const endpointBodyNodes = [nodeById.get(routeEdge.sourceId), nodeById.get(routeEdge.targetId)]
     .filter((candidate): candidate is ModelNode => Boolean(candidate && !isBusNode(candidate)));
@@ -12158,6 +12171,46 @@ export function prepareConnectionEdgeForCommit(
   }
 
   return { ...validation };
+}
+
+/**
+ * 容器豁免存量路径回填:端点(至少一端)连容器内设备的连线,按豁免口径重跑一次提交设计,
+ * 与存量 routePoints 不一致才回填(commit 语义:routePoints 与 manualPoints 同步,维持二者一致)。
+ * 无此类连线、路径已一致或设计失败时原样返回(零改动)。只改内存,随用户保存落盘。
+ * 用途:打开既有模型与导出 SVG 的存量数据修复 —— 存量绕行路径是避让时代产物,
+ * 不回填则豁免在该连线上永不生效(容器是线路避让的障碍物;服务容器内设备的线路豁免)。
+ */
+export function rebuildContainerExemptConnectionRoutes(
+  nodes: ModelNode[],
+  edges: Edge[],
+  bounds?: CanvasBounds
+): Edge[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const livesInFieldContainer = (containerId: string | undefined) => {
+    if (!containerId) {
+      return false;
+    }
+    const container = nodeById.get(containerId);
+    return Boolean(container && isAcContainerKind(container.kind));
+  };
+  const candidates = edges.filter((edge) =>
+    livesInFieldContainer(nodeById.get(edge.sourceId)?.containerId) ||
+    livesInFieldContainer(nodeById.get(edge.targetId)?.containerId)
+  );
+  if (candidates.length === 0) {
+    return edges;
+  }
+  const updates = new Map<string, Edge>();
+  for (const edge of candidates) {
+    const prepared = prepareConnectionEdgeForCommit(nodes, [edge], edge.id, bounds);
+    const nextEdge = prepared.ok ? prepared.edge : undefined;
+    const nextPoints = nextEdge?.routePoints;
+    if (!nextEdge || !nextPoints || nextPoints.length < 2 || (edge.routePoints && samePointList(edge.routePoints, nextPoints))) {
+      continue;
+    }
+    updates.set(edge.id, nextEdge);
+  }
+  return updates.size === 0 ? edges : edges.map((edge) => updates.get(edge.id) ?? edge);
 }
 
 export function rebuildSingleConnectionRoute(
