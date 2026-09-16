@@ -43,6 +43,7 @@ import {
   commitContainerMembership,
   containerDeletionWarning,
   containerDeletionFinalize,
+  refitContainersAfterTransform,
 } from "./acContainer";
 
 // 测试用最小节点。rotation/scale 必填:calculateNodeVisualBounds 依赖它们算半宽高,
@@ -1039,5 +1040,63 @@ describe("归属落地出口 commitContainerMembership", () => {
     expect(next.find((n) => n.id === "p1")!.containerId).toBeUndefined();
     const plain = [node("a", "ac-load", 0, 0) as any];
     expect(commitContainerMembership(plain, ["a"])).toBe(plain);
+  });
+});
+
+// ─── 变换提交后的容器跟随(旋转/缩放) ───────────────────────────────────────
+// 变换(rotate/scale)只改被变换节点的几何,容器不在变换集里 → 容器矩形会停在旧几何上,
+// 直到下一次任意 enforce(拖动/粘贴/删除)才自愈。本出口把容器重算并入同一笔变换提交。
+describe("变换后的容器跟随", () => {
+  /** 已被成员拟合到位的容器(基线:不进更新) */
+  const fittedContainer = (members: any[]) => fitContainerToMembers(node("c1", "ac-vpp-box", 0, 0, 200, 200) as any, members);
+
+  test("成员旋转 → 容器重算;新矩形包住旋转后的视觉包围盒", () => {
+    const member = { ...node("m1", "ac-load", 0, 0, 40, 30), containerId: "c1" };
+    const base = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
+    const rotated = { ...member, rotation: 45 };
+    const updates = refitContainersAfterTransform([base, rotated] as any, ["m1"]);
+
+    expect(updates.map((n) => n.id)).toEqual(["c1"]);
+    const fitted = fitContainerToMembers(base, [rotated]);
+    expect(updates[0].position).toEqual(fitted.position);
+    expect(updates[0].size).toEqual(fitted.size);
+    const r = rectOf(updates[0]);
+    const b = calculateNodeVisualBounds(rotated as any);
+    expect(b.left).toBeGreaterThanOrEqual(r.x1);
+    expect(b.right).toBeLessThanOrEqual(r.x2);
+    expect(b.top).toBeGreaterThanOrEqual(r.y1);
+    expect(b.bottom).toBeLessThanOrEqual(r.y2);
+  });
+
+  test("成员放大 → 容器扩张;成员缩小 → 容器收缩", () => {
+    const small = { ...node("m1", "ac-load", 0, 0, 40, 30), containerId: "c1" };
+    const base = fittedContainer([small]);
+    const grown = { ...small, size: { width: 300, height: 200 } };
+    const grownUpdates = refitContainersAfterTransform([base, grown] as any, ["m1"]);
+    expect(grownUpdates[0].size.width).toBe(300 + CONTAINER_PADDING * 2);
+    expect(grownUpdates[0].size.height).toBe(200 + CONTAINER_PADDING * 2);
+
+    const big = { ...node("m1", "ac-load", 0, 0, 300, 200), containerId: "c1" };
+    const bigBase = fittedContainer([big]);
+    const shrunkUpdates = refitContainersAfterTransform([bigBase, small] as any, ["m1"]);
+    expect(shrunkUpdates[0].size).toEqual({ ...CONTAINER_MIN_SIZE });
+  });
+
+  test("被变换的容器自身跳过(缩放容器的用户意图不被成员包围盒覆盖回去)", () => {
+    const member = { ...node("m1", "ac-load", 0, 0, 40, 30), containerId: "c1" };
+    const scaled = { ...node("c1", "ac-vpp-box", 0, 0, 400, 300) };
+    expect(refitContainersAfterTransform([scaled, member] as any, ["c1"])).toEqual([]);
+  });
+
+  test("几何无变化 → 空更新(交互路径不提交空补丁);半程不挤出非成员", () => {
+    const member = { ...node("m1", "ac-load", 0, 0, 40, 30), containerId: "c1" };
+    const base = fittedContainer([member]);
+    const stray = node("out", "ac-load", 0, 0); // 容器矩形内的非成员
+    expect(refitContainersAfterTransform([base, member, stray] as any, ["m1"])).toEqual([]);
+
+    // 变换后容器扩张,框内非成员不被本出口推动(挤出只属拖动/粘贴等入口)
+    const rotated = { ...member, rotation: 45 };
+    const updates = refitContainersAfterTransform([base, rotated, stray] as any, ["m1"]);
+    expect(updates.map((n) => n.id)).toEqual(["c1"]);
   });
 });

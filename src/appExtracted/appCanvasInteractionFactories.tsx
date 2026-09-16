@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
-import { applyDragContainerMembership, commitContainerMembership, containerDragGroup, isAcContainerNode, withNodeUpdates } from "../acContainer";
+import { applyDragContainerMembership, commitContainerMembership, containerDragGroup, isAcContainerNode, refitContainersAfterTransform, withNodeUpdates } from "../acContainer";
 import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind, syncedSwitchStatusPatch } from "../model";
 import { isThreeWindingTransformer } from "../model-eexport";
 import { setVoltageBaseTerminalValueForTopologySide, voltageBaseParamTerminalIndexForNode } from "../model-routing";
@@ -1465,6 +1465,12 @@ export function createFinishTransformDrag(__appScope: Record<string, any>) {
             const finalNextNodes = routableLineNodeUpdates.length > 0
               ? overlayGraphStoreNodes(current, finalNodeUpdates)
               : nextNodes;
+            // 容器跟随:旋转/缩放只改被变换节点的几何,容器不重算会停在旧矩形(见 refitContainersAfterTransform)。
+            // 与变换同批提交 = 单一撤销单元;被变换的容器自身跳过(用户缩放意图优先)
+            const containerUpdates = refitContainersAfterTransform(finalNextNodes, transformedNodeIds);
+            const nodesWithContainers = containerUpdates.length > 0
+              ? withNodeUpdates(finalNextNodes, containerUpdates)
+              : finalNextNodes;
             const transformedNodeIdSet = new Set(transformedNodeIds);
             const transformedEdgeIds = Array.from(new Set([
               ...current.edges
@@ -1474,9 +1480,9 @@ export function createFinishTransformDrag(__appScope: Record<string, any>) {
             ]));
             return graphStorePatchGraphFromArrays(
               current,
-              finalNextNodes,
+              nodesWithContainers,
               nextEdges,
-              [...transformedNodeIds, ...routableLineNodeUpdates.map((node) => node.id)],
+              [...transformedNodeIds, ...routableLineNodeUpdates.map((node) => node.id), ...containerUpdates.map((node) => node.id)],
               transformedEdgeIds
             );
           });
@@ -1524,9 +1530,14 @@ export function createFinishTransformDrag(__appScope: Record<string, any>) {
             const finalNextNodes = routableLineNodeUpdates.length > 0
               ? overlayGraphStoreNodes(current, nodeUpdates)
               : nextNodes;
-            const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(finalNextNodes, transformedNodeIds, current.edges);
+            // 容器跟随:成员旋转 → 容器矩形同批重算(见 refitContainersAfterTransform)
+            const containerUpdates = refitContainersAfterTransform(finalNextNodes, transformedNodeIds);
+            const nodesWithContainers = containerUpdates.length > 0
+              ? withNodeUpdates(finalNextNodes, containerUpdates)
+              : finalNextNodes;
+            const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nodesWithContainers, transformedNodeIds, current.edges);
             return graphStoreApplyPatch(current, {
-              nodeUpdates,
+              nodeUpdates: [...nodeUpdates, ...containerUpdates],
               edgeUpserts: edgeUpdates
             });
           });
@@ -1568,9 +1579,14 @@ export function createFinishTransformDrag(__appScope: Record<string, any>) {
             const finalNextNodes = routableLineNodeUpdates.length > 0
               ? overlayGraphStoreNodes(current, finalNodeUpdates)
               : nextNodes;
-            const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(finalNextNodes, transformedNodeIds, current.edges);
+            // 容器跟随:成员缩放 → 容器矩形同批重算(见 refitContainersAfterTransform)
+            const containerUpdates = refitContainersAfterTransform(finalNextNodes, transformedNodeIds);
+            const nodesWithContainers = containerUpdates.length > 0
+              ? withNodeUpdates(finalNextNodes, containerUpdates)
+              : finalNextNodes;
+            const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nodesWithContainers, transformedNodeIds, current.edges);
             return graphStoreApplyPatch(current, {
-              nodeUpdates: finalNodeUpdates,
+              nodeUpdates: [...finalNodeUpdates, ...containerUpdates],
               edgeUpserts: edgeUpdates
             });
           });
