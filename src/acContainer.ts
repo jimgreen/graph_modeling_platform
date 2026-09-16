@@ -718,33 +718,45 @@ export function applyRemoveFromAcContainer(nodes: ModelNode[], memberIds: string
  * 半程 enforce:只重算容器几何(成员增删后收缩/扩展),**不挤出**非成员。
  * 删除类路径(删节点/剪切/删图层/control)专用 —— 这些路径上「刚散出的成员」就落在容器矩形附近,
  * 全量 enforce 会把它们顺手推出框外,而口径是「成员散出后保留原位」。
- * (拖动/粘贴等路径仍走全量 enforceContainerMembership:那里挤出正是要的效果)
+ * 与变换/resize 路径相对(见 refitContainersAfterTransform:那里挤出正是要的效果)。
  */
 export function refitContainersOnly(nodes: ModelNode[]): ModelNode[] {
   return enforceContainerMembership(nodes).containerUpdates;
 }
 
 /**
- * 变换(旋转/缩放)提交后的容器跟随:重算容器几何以重新包住成员的**新**包围盒
- * (旋转/缩放会改视觉包围盒,不重算则容器矩形停在旧几何上,直到下一次任意 enforce 才自愈)。
- * 与删除类路径同走半程口径(只重算容器、**不挤出**非成员):变换是刚体操作,
- * 「把谁的邻居推出框外」不是这次变换的意图,挤出仍只属拖动/粘贴等入口。
- * - `transformedIds` 中的容器自身**跳过** —— 容器矩形来自用户这次变换(缩放容器)的意图,
- *   用成员包围盒覆盖回去等于把用户的缩放撤销掉。
- * - 只产出几何确有变化的容器(逐值比较):交互提交路径不并入空补丁。
+ * 变换(旋转/缩放/resize)提交后的容器收尾(**完整口径**):重算容器几何 + 挤出非成员。
+ * 重算:旋转/缩放会改视觉包围盒,不重算则容器矩形停在旧几何上,直到下一次任意 enforce 才自愈。
+ * 挤出:变换改的就是几何,放大后圈进的非成员必须推开 —— 否则「容器矩形内无非成员」不变量被破坏
+ * (用户手动拖角放大容器圈入邻居设备即此;fb11 前此处走半程,故无排斥)。
+ * 删除类路径不走本出口(那里走半程 refitContainersOnly,散出成员保留原位)。
+ * - `transformedIds` 中的容器自身走「只扩不缩」(preserveSizeIds):手动尺寸(拖角 resize)不被
+ *   成员包围盒打回,成员戳出才扩到刚好包住(与拖动集合同口径,见 preserveDraggedContainerGeometry)。
+ * - 只产出**确有变化**的容器(逐值比较)与被挤出的非成员:交互提交路径不并入空补丁。
  */
 export function refitContainersAfterTransform(nodes: ModelNode[], transformedIds: Iterable<string>): ModelNode[] {
   const transformed = new Set(transformedIds);
+  const preserveSizeIds = nodes.filter((n) => transformed.has(n.id) && isAcContainerNode(n)).map((n) => n.id);
+  const decision = enforceContainerMembership(nodes, { preserveSizeIds });
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  return refitContainersOnly(nodes).filter((fitted) => {
-    if (transformed.has(fitted.id)) return false;
+  const updates = new Map<string, ModelNode>();
+  for (const fitted of decision.containerUpdates) {
     const current = byId.get(fitted.id);
-    return Boolean(current) &&
-      (current!.position.x !== fitted.position.x ||
-        current!.position.y !== fitted.position.y ||
-        current!.size.width !== fitted.size.width ||
-        current!.size.height !== fitted.size.height);
-  });
+    if (current &&
+      (current.position.x !== fitted.position.x ||
+        current.position.y !== fitted.position.y ||
+        current.size.width !== fitted.size.width ||
+        current.size.height !== fitted.size.height)) {
+      updates.set(fitted.id, fitted);
+    }
+  }
+  for (const p of decision.patch) {
+    const base = updates.get(p.nodeId) ?? byId.get(p.nodeId);
+    if (base) {
+      updates.set(p.nodeId, { ...base, position: p.position });
+    }
+  }
+  return [...updates.values()];
 }
 
 // ─── 删除容器收尾:成员归属不悬空 ─────────────────────────────────────────────

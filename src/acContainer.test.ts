@@ -1215,9 +1215,11 @@ describe("归属落地出口 commitContainerMembership", () => {
   });
 });
 
-// ─── 变换提交后的容器跟随(旋转/缩放) ───────────────────────────────────────
-// 变换(rotate/scale)只改被变换节点的几何,容器不在变换集里 → 容器矩形会停在旧几何上,
-// 直到下一次任意 enforce(拖动/粘贴/删除)才自愈。本出口把容器重算并入同一笔变换提交。
+// ─── 变换提交后的容器收尾(旋转/缩放/resize) ─────────────────────────────────
+// 变换(rotate/scale/resize)只改被变换节点的几何,容器不在变换集里 → 容器矩形会停在旧几何上,
+// 直到下一次任意 enforce(拖动/粘贴/删除)才自愈。本出口把容器重算并入同一笔变换提交;
+// 变换改的就是几何,故与拖动/粘贴同走**完整口径**:放大后圈进的非成员一并挤出
+// (删除类路径是唯一例外,走半程 refitContainersOnly:散出成员保留原位)。
 describe("变换后的容器跟随", () => {
   /** 已被成员拟合到位的容器(基线:不进更新) */
   const fittedContainer = (members: any[]) => fitContainerToMembers(node("c1", "ac-vpp-box", 0, 0, 200, 200) as any, members);
@@ -1254,22 +1256,62 @@ describe("变换后的容器跟随", () => {
     expect(shrunkUpdates[0].size).toEqual({ ...CONTAINER_MIN_SIZE });
   });
 
-  test("被变换的容器自身跳过(缩放容器的用户意图不被成员包围盒覆盖回去)", () => {
+  test("被变换的容器自身不被成员包围盒打回(手动尺寸语义保留)", () => {
     const member = { ...node("m1", "ac-load", 0, 0, 40, 30), containerId: "c1" };
     const scaled = { ...node("c1", "ac-vpp-box", 0, 0, 400, 300) };
     expect(refitContainersAfterTransform([scaled, member] as any, ["c1"])).toEqual([]);
   });
 
-  test("几何无变化 → 空更新(交互路径不提交空补丁);半程不挤出非成员", () => {
+  // 核心用例(用户实况):手动拖角放大容器 → 圈进的未归属设备必须被推到框外,
+  // 否则「容器矩形内无非成员」不变量被破坏(变换路径此前走半程,只重算几何不挤出)。
+  test("核心:容器自身被拖角放大圈入未归属设备 → 设备被推到间隙 = 排斥带 50", () => {
+    const member = { ...node("m1", "ac-load", 0, 0), containerId: "c1" };
+    const base = fittedContainer([member]);
+    const enlarged = { ...base, size: { width: 400, height: 300 } }; // 拖角放大后的容器(用户意图)
+    const neighbor = node("n1", "ac-load", 150, 0);                 // 落在放大后的矩形内、非成员
+    const updates = refitContainersAfterTransform([enlarged, member, neighbor] as any, ["c1"]);
+
+    const placed = updates.find((n) => n.id === "n1")!;
+    expect(placed).toBeTruthy();
+    expect(boundsGap(calculateNodeVisualBounds(placed as any), rectOf(enlarged))).toBe(CONTAINER_CLEARANCE);
+    // 容器尺寸 = 用户拖角给的几何(只扩不缩),不被成员包围盒打回
+    expect(updates.some((n) => n.id === "c1")).toBe(false);
+    // 成员不被推
+    expect(updates.some((n) => n.id === "m1")).toBe(false);
+  });
+
+  // 缩小容器:没有「新圈入」,但贴着新边缘(间隙 < 50)的非成员仍按不变量让位到 50;
+  // 远处邻居不得被误推(挤出只看与新矩形的间隙)
+  test("容器缩小:远处邻居不动,贴着新边缘(间隙 40)的邻居让位到 50", () => {
+    const member = { ...node("m1", "ac-load", 0, 0), containerId: "c1" };
+    const base = fittedContainer([member]);
+    const shrunk = node("c1", "ac-vpp-box", 0, 0, 180, 112); // 拖角缩小后的容器(矩形 [-90,90]×[-56,56])
+    const far = node("far", "ac-load", 300, 0);
+    const near = node("near", "ac-load", 120, 0); // 新矩形右边 90,本体左边 100 → 间隙 40
+    const updates = refitContainersAfterTransform([shrunk, member, far, near] as any, ["c1"]);
+
+    expect(updates.some((n) => n.id === "far")).toBe(false);
+    const placed = updates.find((n) => n.id === "near")!;
+    expect(placed).toBeTruthy();
+    expect(boundsGap(calculateNodeVisualBounds(placed as any), rectOf(shrunk))).toBe(CONTAINER_CLEARANCE);
+    expect(updates.some((n) => n.id === "c1")).toBe(false); // 缩小后的用户尺寸保留
+  });
+
+  test("几何无变化 → 空容器更新(交互路径不提交空补丁);框内非成员照常挤出", () => {
     const member = { ...node("m1", "ac-load", 0, 0, 40, 30), containerId: "c1" };
     const base = fittedContainer([member]);
     const stray = node("out", "ac-load", 0, 0); // 容器矩形内的非成员
-    expect(refitContainersAfterTransform([base, member, stray] as any, ["m1"])).toEqual([]);
 
-    // 变换后容器扩张,框内非成员不被本出口推动(挤出只属拖动/粘贴等入口)
+    const updates = refitContainersAfterTransform([base, member, stray] as any, ["m1"]);
+    expect(updates.map((n) => n.id)).toEqual(["out"]); // 容器几何未变 → 只剩被挤出的非成员
+    expect(boundsGap(calculateNodeVisualBounds(updates[0] as any), rectOf(base))).toBe(CONTAINER_CLEARANCE);
+
+    // 成员旋转 → 容器扩张(并入本笔更新),新矩形圈入的非成员一并被推
     const rotated = { ...member, rotation: 45 };
-    const updates = refitContainersAfterTransform([base, rotated, stray] as any, ["m1"]);
-    expect(updates.map((n) => n.id)).toEqual(["c1"]);
+    const grownUpdates = refitContainersAfterTransform([base, rotated, stray] as any, ["m1"]);
+    expect(grownUpdates.map((n) => n.id)).toEqual(["c1", "out"]);
+    const fitted = fitContainerToMembers(base, [rotated]);
+    expect(boundsGap(calculateNodeVisualBounds(grownUpdates[1] as any), rectOf(fitted))).toBe(CONTAINER_CLEARANCE);
   });
 });
 
