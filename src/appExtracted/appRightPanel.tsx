@@ -362,6 +362,8 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
 
   // 所属容器行:容器节点自身不显示(容器不允许嵌套);选项 = 画布上的容器节点。
   // 两张属性表都要挂(is_container 的容器设备走容器参数表,普通设备走通用参数表),漏一处该设备就看不到/解除不了归属。
+  // 位置:紧随「所属模型」行(parent 行)之后 —— 两处都在 rows/keys 遍历里插在 parent 行后;
+  // 仅当行集里没有 parent 行(如定义被清空)才回落渲染到表顶,保证该行不会整行消失。
   const renderContainerRow = () => {
     const node = inspectorSelectedNode;
     if (!node || isAcContainerNode(node)) {
@@ -1119,7 +1121,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       </div>)}
                     {selectedContainerParameterView ? (<table className="param-table">
                         <tbody>
-                          {renderContainerRow()}
+                          {selectedContainerParameterView.rows.some((row) => row.key === "parent") ? null : renderContainerRow()}
                           {selectedContainerParameterView.rows.map((row) => {
                         const componentLibrary = resolveContainerParameterViewComponentLibrary(
                           inspectorSelectedNode,
@@ -1140,12 +1142,15 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         if (row.key === "name" && !hasVoltageParam) {
                           return <Fragment key={row.key}>{rowFragment}{renderVoltageBaseRow()}</Fragment>;
                         }
+                        // 「所属容器」行紧随「所属模型」行(parent 行的标签经 PARAM_LABELS 显示为「所属模型」)
+                        if (row.key === "parent") {
+                          return <Fragment key={row.key}>{rowFragment}{renderContainerRow()}</Fragment>;
+                        }
                         return rowFragment;
                     })}
                         </tbody>
                       </table>) : (<table className="param-table">
                         <tbody>
-                          {renderContainerRow()}
                           {renderContainerGatewayRows()}
                           {(() => {
                         const eKeys = getEParameterKeys(inspectorSelectedNode.kind, inspectorSelectedNode.params);
@@ -1167,7 +1172,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM),
                             definitionGroups
                         ), isAcContainerNode(inspectorSelectedNode));
-                        return keys.map((key) => {
+                        const keyRows = keys.map((key) => {
                             const definition = panelDefinitions.find((item) => item.enName === key);
                             const resolvedValue = key === "name"
                               ? inspectorSelectedNode.name
@@ -1196,8 +1201,17 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             if (key === "name" && !hasVoltageParam) {
                               return <Fragment key={key}>{rowFragment}{renderVoltageBaseRow()}</Fragment>;
                             }
+                            // 「所属容器」行紧随「所属模型」行(同上,通用参数表)
+                            if (key === "parent") {
+                              return <Fragment key={key}>{rowFragment}{renderContainerRow()}</Fragment>;
+                            }
                             return rowFragment;
                         });
+                        // keys 里没有 parent 行(如定义被清空)时,「所属容器」行回落渲染到表顶,避免整行消失
+                        return (<>
+                          {keys.includes("parent") ? null : renderContainerRow()}
+                          {keyRows}
+                        </>);
                     })()}
                         </tbody>
                       </table>)}
