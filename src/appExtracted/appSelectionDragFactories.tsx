@@ -13,6 +13,7 @@ import {
   containerMemberIdsFromSelection,
   containerSelectOptions,
   commitContainerMembership,
+  CONTAINER_KIND_LABELS,
   defaultContainerName,
   refitContainersOnly,
   isAcContainerNode,
@@ -1812,25 +1813,43 @@ export function createAddToAcContainer(__appScope: Record<string, any>) {
       setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, nextNodes));
       writeOperationLog(`添加 ${memberIds.length} 个图元到容器 ${container.name ?? ""}`.trim());
     };
-    // 新建容器:默认 kind 取清单首项(虚拟电厂);其余类型由图元库放置得到
+    // 新建容器:类型在弹窗内选择(默认清单首项 虚拟电厂);其余类型也可由图元库放置得到
     const askNewName = () => {
       // 同样现取:默认名按当前类型计数、包围盒按当前成员几何
       const { nodeById, nodes } = __appScope;
       const members = memberIds.map((id) => nodeById.get(id)).filter(Boolean);
-      const presetName = defaultContainerName(AC_CONTAINER_KINDS[0], nodes);
-      const draft = { name: presetName };
+      const draft = { kind: AC_CONTAINER_KINDS[0], name: defaultContainerName(AC_CONTAINER_KINDS[0], nodes) };
+      // 换类型要连名称框一起换(antd Input 非受控,改 value 只能走 ref)
+      const nameInputRef: { current: HTMLInputElement | null } = { current: null };
       Modal.confirm({
         title: "新建容器",
-        content: <Input defaultValue={presetName} autoFocus onChange={(event) => { draft.name = event.target.value; }} />,
+        content: (
+          <>
+            <Select
+              defaultValue={draft.kind}
+              style={{ width: "100%", marginBottom: 8 }}
+              onChange={(value) => {
+                // 默认名与类型计数同源(见 defaultContainerName);用户随后仍可手改名称
+                draft.kind = String(value);
+                draft.name = defaultContainerName(draft.kind, nodes);
+                if (nameInputRef.current) {
+                  nameInputRef.current.value = draft.name;
+                }
+              }}
+              options={AC_CONTAINER_KINDS.map((kind) => ({ value: kind, label: CONTAINER_KIND_LABELS[kind] ?? kind }))}
+            />
+            <Input ref={nameInputRef} defaultValue={draft.name} autoFocus onChange={(event) => { draft.name = event.target.value; }} />
+          </>
+        ),
         okText: "创建",
         cancelText: "取消",
         onOk: () => {
           // 计数器现取:弹窗期间若有并发分配(如其它入口占了 ACLoad 4),用点击快照回写会整对象倒退 → 重号。
           // (audit:names 抓不到这类:名字有定义,只是过期)
-          const { deviceIndexCounters: latestCounters } = __appScope;
-          // idx 走同源分配器(容器落 ac_container 分段,与图元库放置/粘贴同一计数);名称为空时回落到默认名
+          const { deviceIndexCounters: latestCounters, nodes: latestNodes } = __appScope;
+          // idx 走同源分配器(容器落 ac_container 分段,与图元库放置/粘贴同一计数);名称为空时回落到所选类型的默认名
           const indexed = assignPermanentDeviceIndex(
-            buildNewContainer(AC_CONTAINER_KINDS[0], draft.name.trim() || presetName, members, ""),
+            buildNewContainer(draft.kind, draft.name.trim() || defaultContainerName(draft.kind, latestNodes), members, ""),
             latestCounters
           );
           setDeviceIndexCounters(indexed.counters);

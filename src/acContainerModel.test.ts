@@ -4,17 +4,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, test, expect } from "vitest";
 import {
   DEVICE_LIBRARY_BY_KIND,
+  ELEMENT_TREE_COMPONENT_LIBRARY_LABELS,
   AC_CONTAINER_KINDS,
   createDefaultNode,
   isAcContainerKind,
   type DeviceKind,
   type ModelNode,
 } from "./model";
+import { COMPONENT_LIBRARY_LABELS, DEFAULT_CATEGORY_LIBRARIES } from "./appExtracted/appCoreCanvasUtilities";
 import { DeviceGlyph } from "./DeviceGlyph";
 import { nodeLabelShouldRender } from "./nodeLabelUtils";
 
 describe("交流容器数据模型", () => {
-  test("3 个容器 kind 已注册且分类为交流容器", () => {
+  test("3 个容器 kind 已注册且归类到交流设备类别库", () => {
     expect(AC_CONTAINER_KINDS).toEqual([
       "ac-vpp-box",
       "ac-switch-box",
@@ -23,8 +25,18 @@ describe("交流容器数据模型", () => {
     for (const kind of AC_CONTAINER_KINDS) {
       const tpl = DEVICE_LIBRARY_BY_KIND.get(kind);
       expect(tpl, `${kind} 未注册`).toBeTruthy();
-      expect(tpl!.categoryLibrary).toBe("交流容器");
+      expect(tpl!.categoryLibrary).toBe("交流设备");
     }
+  });
+
+  test("归入默认类别库(无「右键删除类别库」入口)+ 类名显示「交流容器」,E 段名仍「容器表」", () => {
+    const defaults: readonly string[] = DEFAULT_CATEGORY_LIBRARIES;
+    for (const kind of AC_CONTAINER_KINDS) {
+      expect(defaults).toContain(DEVICE_LIBRARY_BY_KIND.get(kind)!.categoryLibrary);
+    }
+    expect(COMPONENT_LIBRARY_LABELS.ACContainer).toBe("交流容器");
+    // 界面显示名与 E 侧段名解耦:E 元件定义/导出仍读「容器表」,本表只管树上类名
+    expect(ELEMENT_TREE_COMPONENT_LIBRARY_LABELS.ACContainer).toBe("容器表");
   });
 
   test("容器不进 static 家族(不写 component_type)", () => {

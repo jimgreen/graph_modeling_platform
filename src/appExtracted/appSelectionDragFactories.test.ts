@@ -460,3 +460,85 @@ describe("粘贴与模板落点的归属落地", () => {
     expect(inserted.find((node: any) => node.kind === "ac-load").containerId).toBeUndefined();
   });
 });
+
+// ─── 新建容器弹窗:类型可选(虚拟电厂/开关箱/配变箱),默认虚拟电厂 ──────────────
+// 无容器时点【添加到容器】直接进新建弹窗:弹窗须列出 3 种类型,所选类型决定新容器 kind 与默认名。
+describe("新建容器:弹窗内选类型", () => {
+  const mkNewContainerScope = () => {
+    const graphs: any[] = [];
+    const nodes = [bareNode("m1", "ac-load", { params: { _labelVisible: "0" } })];
+    const scope: any = {
+      activeSelectedNodeIds: ["m1"],
+      assignPermanentDeviceIndex: (node: any) => ({ node, counters: {} }),
+      deviceIndexCounters: {},
+      edges: [],
+      nodeById: new Map(nodes.map((n: any) => [n.id, n])),
+      nodes,
+      normalizeProjectMeasurements: (measurements: any) => measurements,
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: () => true,
+      setDeviceIndexCounters: vi.fn(),
+      setGraphArrays: (...args: any[]) => graphs.push(args),
+      setProjectMeasurements: vi.fn(),
+      showGlobalMessage: vi.fn(),
+      writeOperationLog: vi.fn(),
+    };
+    return { graphs, scope };
+  };
+
+  /** Modal.confirm 桩:只拦下 config,onOk 由用例决定何时触发(弹窗横跨交互窗口) */
+  const captureConfirm = () => {
+    let captured: any = null;
+    const spy = vi.spyOn(Modal, "confirm").mockImplementation(((config: any) => {
+      captured = config;
+      return { destroy: vi.fn(), update: vi.fn() };
+    }) as any);
+    return { spy, config: () => captured };
+  };
+
+  /** content = <><Select 类型/><Input 名称/></>:认 options 取类型选择器(名字无关) */
+  const kindSelectOf = (content: any) => {
+    const children = Array.isArray(content?.props?.children) ? content.props.children : [content?.props?.children];
+    return children.find((child: any) => Array.isArray(child?.props?.options));
+  };
+  const createdContainer = (graphs: any[]) =>
+    graphs[0][0].find((node: any) => node.kind.startsWith("ac-") && node.kind.endsWith("-box"));
+
+  test("弹窗列出 3 种类型(中文名与图元库 label 同源),默认新建虚拟电厂", () => {
+    const { graphs, scope } = mkNewContainerScope();
+    const { spy, config } = captureConfirm();
+    try {
+      createAddToAcContainer(scope)();
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(kindSelectOf(config().content).props.options).toEqual([
+      { value: "ac-vpp-box", label: "虚拟电厂" },
+      { value: "ac-switch-box", label: "开关箱" },
+      { value: "ac-distribution-box", label: "配变箱" },
+    ]);
+
+    config().onOk();
+    const created = createdContainer(graphs);
+    expect(created.kind).toBe("ac-vpp-box");
+    expect(created.name).toBe("虚拟电厂1");
+  });
+
+  test("选开关箱 → 新容器 kind=ac-switch-box,默认名按该类型计数(开关箱1)", () => {
+    const { graphs, scope } = mkNewContainerScope();
+    const { spy, config } = captureConfirm();
+    try {
+      createAddToAcContainer(scope)();
+    } finally {
+      spy.mockRestore();
+    }
+
+    kindSelectOf(config().content).props.onChange("ac-switch-box");
+    config().onOk();
+
+    const created = createdContainer(graphs);
+    expect(created.kind).toBe("ac-switch-box");
+    expect(created.name).toBe("开关箱1");
+  });
+});

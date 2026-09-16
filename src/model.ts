@@ -3712,7 +3712,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     // 交流容器:框选一组交流设备的容器图元,不进 static 家族(不写 component_type)
     kind: "ac-vpp-box",
     label: "虚拟电厂",
-    categoryLibrary: "交流容器",
+    categoryLibrary: "交流设备",
     size: { width: 180, height: 112 },
     params: {
       // 名称渲染源恒为 node.name(见 DeviceGlyph 容器分支),不写 text 死参数
@@ -3729,7 +3729,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-switch-box",
     label: "开关箱",
-    categoryLibrary: "交流容器",
+    categoryLibrary: "交流设备",
     size: { width: 180, height: 112 },
     params: {
       fillColor: "transparent",
@@ -3745,7 +3745,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-distribution-box",
     label: "配变箱",
-    categoryLibrary: "交流容器",
+    categoryLibrary: "交流设备",
     size: { width: 180, height: 112 },
     params: {
       fillColor: "transparent",
