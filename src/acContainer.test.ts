@@ -815,7 +815,7 @@ describe("acContainer 右键菜单", () => {
     const other = node("o1", "ac-load", 900, 900);
     expect(containerGatewayUnbindNotice([c, m] as any, ["m1"])).toBe("已解绑关口设备 m1，关口已关闭");
     expect(containerGatewayUnbindNotice([c, m] as any, ["o1"])).toBeNull();     // 移出的不是绑定设备
-    // 关口没开(绑定残留)→ 不解绑,也不提示
+    // 绑定残留(关口没开)会被清(解绑照常),但不提示 —— 提示侧另有 is_gateway 门(见下条用例)
     const off = { ...c, params: { is_gateway: "0", bound_device_id: "m1" } };
     expect(containerGatewayUnbindNotice([off, m] as any, ["m1"])).toBeNull();
     // 改归属到别的容器 → 同样解绑并提示(toContainerId = 目标容器 id,≠ 原容器即算离开)

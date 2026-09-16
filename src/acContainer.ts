@@ -6,7 +6,7 @@
 // 锚定口径(与平台一致):`node.position` 是节点**中心**,容器真实矩形 = position ± size/2。
 // (DeviceGlyph 矩形 x:-w/2、命中框、bodyVisualBoxForNode position±half 三处同源)
 // 相对 import 带 .ts 扩展名:本模块被 src/export/svg.ts(Node 直载)间接引用,裸 "./model" Node ESM 解析不了
-import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, createDefaultNode, gatewayBoundMemberId, getNodeScaleX, getNodeScaleY, isAcContainerKind, isStaticNode, isWireLikeRouteDeviceKind, liveContainerIds } from "./model.ts";
+import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, createDefaultNode, getNodeScaleX, getNodeScaleY, isAcContainerKind, isStaticNode, isWireLikeRouteDeviceKind, liveContainerIds } from "./model.ts";
 
 /** 容器包围成员时的**内侧**留白:容器矩形 = 成员包围盒 + 该留白(容器贴成员的紧密度) */
 export const CONTAINER_PADDING = 24;
