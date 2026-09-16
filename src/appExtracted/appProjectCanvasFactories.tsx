@@ -18,6 +18,7 @@ import {
 import { getRatedCapacityDefaultForKind } from "../model";
 import { graphStorePatchNodes } from "../graphStore";
 import { applyDragContainerMembership, containerDeletionFinalize, containerDragGroup, isAcContainerNode, refitContainersOnly, withNodeUpdates } from "../acContainer";
+import { arrangeContainerInteriors, mergeContainerLayoutUnits } from "../selectionActions";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return async (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[], globalLineChoice?: GlobalLineChoice) => {
@@ -1781,11 +1782,14 @@ export function createApplySelectedNodeLayout(__appScope: Record<string, any>) {
     if (selectedLayoutUnits.length < minimumUnitCount) {
       return;
     }
-    const layoutNodeIds = Array.from(new Set(selectedLayoutUnits.flatMap((unit) => unit.nodeIds)));
+    // 选中集含容器 → 容器与其全部成员合并成一个整组单元参与(相对位置不变,成员不被落下);
+    // 仅选中成员(不含其容器)时成员各自成单元,容器随后由 enforce 的 fitContainerToMembers 跟随
+    const layoutUnits = mergeContainerLayoutUnits(nodes, selectedLayoutUnits);
+    const layoutNodeIds = Array.from(new Set(layoutUnits.flatMap((unit) => unit.nodeIds)));
     if (layoutNodeIds.length === 0) {
       return;
     }
-    const arranged = layoutNodes(nodes, selectedLayoutUnits);
+    const arranged = layoutNodes(nodes, layoutUnits);
     commitLayoutNodePositions(layoutNodeIds, arranged);
   };
 }
@@ -1938,9 +1942,15 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
       });
     };
     const avoidRects = routeAvoidRectsFor(routedEdges);
+    // 两阶段(用户裁决):阶段 1 每个容器内成员先自散开;阶段 2 容器作为整体(连同成员)参与全层散开。
+    // 阶段 1 只挪成员,容器几何由后续 enforce 按成员重算;后续测量/视觉包围盒改用阶段 1 后的位置。
+    const stageOneNodes = arrangeContainerInteriors(nodes, (currentNodes, memberUnits) =>
+      autoSpreadNodeLayoutUnits(currentNodes, memberUnits, { padding: 4, bounds: canvasBounds, avoidRects: [] }));
+    const stageOneById = new Map(stageOneNodes.map((node) => [node.id, node]));
+    const stageOneLayerNodes = activeLayerNodes.map((node) => stageOneById.get(node.id) ?? node);
     const baseLayoutUnits = buildCanvasLayoutUnits(
       activeLayerGroups,
-      activeLayerNodes,
+      stageOneLayerNodes,
       activeNodeIds,
       [],
       activeLayerEdges,
@@ -1957,7 +1967,7 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
       typeof setProjectMeasurements === "function" &&
       Array.isArray(projectMeasurements?.groups);
     const nodeVisualEntries = typeof calculateNodeVisualBounds === "function"
-      ? activeLayerNodes.map((node) => ({ node, rect: calculateNodeVisualBounds(node) }))
+      ? stageOneLayerNodes.map((node) => ({ node, rect: calculateNodeVisualBounds(node) }))
       : [];
     const nodeVisualAvoidRects = nodeVisualEntries.length > 0
       ? nodeVisualEntries.map((entry) => entry.rect)
@@ -1968,7 +1978,7 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
     const fixedAnnotationAvoidRects = [...nodeVisualAvoidRects, ...avoidRects];
     const measurementReflow = canAdjustMeasurements
       ? buildAutoSpreadMeasurementReflow({
-          nodes: activeLayerNodes,
+          nodes: stageOneLayerNodes,
           projectMeasurements,
           fixedRects: fixedAnnotationAvoidRects,
           canvasBounds,
@@ -1982,7 +1992,7 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
     const measurementDeltas = measurementReflow?.measurementDeltas ?? new Map<string, { x: number; y: number }>();
     const extraBoundsByNodeId = measurementReflow?.extraBoundsByNodeId ?? new Map<string, Array<{ left: number; right: number; top: number; bottom: number }>>();
     if (!measurementReflow) {
-      for (const node of activeLayerNodes) {
+      for (const node of stageOneLayerNodes) {
         const boxes: Array<{ left: number; right: number; top: number; bottom: number }> = [];
         includeMeasurementGroupBounds?.(node, (box: { left: number; right: number; top: number; bottom: number }) => boxes.push(box));
         if (boxes.length > 0) {
@@ -1990,26 +2000,29 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
         }
       }
     }
-    const layoutUnits = buildCanvasLayoutUnits(
-      activeLayerGroups,
-      activeLayerNodes,
-      activeNodeIds,
-      [],
-      activeLayerEdges,
-      routedEdges,
-      { isTransformableNode: (node) => isCanvasNodeMovable(node.kind), extraBoundsByNodeId }
+    const layoutUnits = mergeContainerLayoutUnits(
+      stageOneNodes,
+      buildCanvasLayoutUnits(
+        activeLayerGroups,
+        stageOneLayerNodes,
+        activeNodeIds,
+        [],
+        activeLayerEdges,
+        routedEdges,
+        { isTransformableNode: (node) => isCanvasNodeMovable(node.kind), extraBoundsByNodeId }
+      )
     );
     if (layoutUnits.length < 2 && measurementDeltas.size === 0) {
       writeOperationLog("自动散开没有发现可调整的图元");
       return;
     }
     const arranged = layoutUnits.length >= 2
-      ? autoSpreadNodeLayoutUnits(nodes, layoutUnits, {
+      ? autoSpreadNodeLayoutUnits(stageOneNodes, layoutUnits, {
           padding: 4,
           bounds: canvasBounds,
           avoidRects: [...avoidRects, ...stationaryNodeAvoidRects]
         })
-      : nodes;
+      : stageOneNodes;
     const movedCount = layoutUnits.length >= 2
       ? commitLayoutNodePositions(
           Array.from(new Set(layoutUnits.flatMap((unit) => unit.nodeIds))),
@@ -2125,20 +2138,28 @@ export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
       return;
     }
     const gridSpacing = clampNumber(Math.round(parsedGridSpacing), AUTO_ALIGN_MIN_THRESHOLD_PX, AUTO_ALIGN_MAX_THRESHOLD_PX);
-    const layoutUnits = buildCanvasLayoutUnits(
-      activeLayerGroups,
-      activeLayerNodes,
-      activeNodeIds,
-      [],
-      activeLayerEdges,
-      routedEdges,
-      { isTransformableNode: (node) => isCanvasNodeMovable(node.kind) }
+    // 两阶段(用户裁决):阶段 1 每个容器内成员先自对齐;阶段 2 容器作为整体(连同成员)参与全层对齐
+    const stageOneNodes = arrangeContainerInteriors(nodes, (currentNodes, memberUnits) =>
+      autoAlignNodeLayoutUnits(currentNodes, memberUnits, gridSpacing));
+    const stageOneById = new Map(stageOneNodes.map((node) => [node.id, node]));
+    const stageOneLayerNodes = activeLayerNodes.map((node) => stageOneById.get(node.id) ?? node);
+    const layoutUnits = mergeContainerLayoutUnits(
+      stageOneNodes,
+      buildCanvasLayoutUnits(
+        activeLayerGroups,
+        stageOneLayerNodes,
+        activeNodeIds,
+        [],
+        activeLayerEdges,
+        routedEdges,
+        { isTransformableNode: (node) => isCanvasNodeMovable(node.kind) }
+      )
     );
     if (layoutUnits.length < 2) {
       writeOperationLog("自动对齐没有发现可调整的图元");
       return;
     }
-    const arranged = autoAlignNodeLayoutUnits(nodes, layoutUnits, gridSpacing);
+    const arranged = autoAlignNodeLayoutUnits(stageOneNodes, layoutUnits, gridSpacing);
     const movedCount = commitLayoutNodePositions(
       Array.from(new Set(layoutUnits.flatMap((unit) => unit.nodeIds))),
       arranged,

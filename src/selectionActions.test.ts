@@ -23,6 +23,7 @@ import {
   type CanvasLayoutUnit,
   alignNodeLayoutUnits,
   autoAlignNodeLayoutUnits,
+  arrangeContainerInteriors,
   autoSpreadMovableRects,
   autoSpreadNodeLayoutUnits,
   buildCanvasLayoutUnits,
@@ -35,6 +36,7 @@ import {
   createCanvasGroupFromSelection,
   dissolveSelectedCanvasGroups,
   expandSelectionByGroups,
+  mergeContainerLayoutUnits,
   reorderItemsByDisplayLayer,
   resolveCanvasSelection,
   resolveCanvasDeleteAction,
@@ -1305,5 +1307,102 @@ describe("剪贴板副本剥离容器归属", () => {
     expect(container.params.is_gateway).toBe("0");
     // 原剪贴板(存量模板内容)不被改写:模板可反复使用
     expect(clipboard.nodes[0].containerId).toBe("c1");
+  });
+});
+
+// ─── 容器整组参与布局(用户裁决) ──────────────────────────────────────────
+// 对齐/分布选中容器 → 容器作为整体参与(容器与成员相对位置不变);
+// 自动对齐/散开的阶段2 同理。容器内自布局(阶段1)对每个容器单独跑一次成员布局。
+describe("容器整组参与布局", () => {
+  const container = (id: string, x: number, y: number) => ({
+    ...createDefaultNode("ac-vpp-box", { x: 0, y: 0 }),
+    id,
+    position: { x, y },
+    size: { width: 200, height: 200 }
+  });
+  const member = (id: string, containerId: string, x: number, y: number) => ({
+    ...createDefaultNode("ac-load", { x: 0, y: 0 }),
+    id,
+    position: { x, y },
+    containerId
+  });
+  const plain = (id: string, x: number, y: number) => ({
+    ...createDefaultNode("ac-load", { x: 0, y: 0 }),
+    id,
+    position: { x, y }
+  });
+
+  test("mergeContainerLayoutUnits:容器与其成员合并成一个整组单元,成员单元不再独立出现", () => {
+    const nodes = [container("c1", 0, 0), member("m1", "c1", 40, 40), member("m2", "c1", -40, 40), plain("o1", 900, 900)];
+    const units = buildCanvasLayoutUnits([], nodes, ["c1", "m1", "m2", "o1"], [], [], []);
+    const merged = mergeContainerLayoutUnits(nodes, units);
+
+    const group = merged.find((unit) => unit.id === "container:c1")!;
+    expect([...group.nodeIds].sort()).toEqual(["c1", "m1", "m2"]);
+    expect(merged.some((unit) => unit.id === "node:m1")).toBe(false);
+    expect(merged.some((unit) => unit.id === "node:c1")).toBe(false);
+    expect(merged.some((unit) => unit.id === "node:o1")).toBe(true);
+    // 整组包围盒覆盖容器与全部成员
+    for (const node of nodes.filter((candidate) => candidate.id !== "o1")) {
+      expect(group.bounds.left).toBeLessThanOrEqual(node.position.x);
+      expect(group.bounds.right).toBeGreaterThanOrEqual(node.position.x);
+      expect(group.bounds.top).toBeLessThanOrEqual(node.position.y);
+      expect(group.bounds.bottom).toBeGreaterThanOrEqual(node.position.y);
+    }
+  });
+
+  test("mergeContainerLayoutUnits:只选中容器时成员照样并入(整组平移,成员不被落下)", () => {
+    const nodes = [container("c1", 0, 0), member("m1", "c1", 40, 40), member("m2", "c1", -40, 40)];
+    const units = buildCanvasLayoutUnits([], nodes, ["c1"], [], [], []);
+    const merged = mergeContainerLayoutUnits(nodes, units);
+
+    expect(merged).toHaveLength(1);
+    expect([...merged[0].nodeIds].sort()).toEqual(["c1", "m1", "m2"]);
+  });
+
+  test("mergeContainerLayoutUnits:无容器参与时原样返回;已归属别处的成员不受影响", () => {
+    const nodes = [container("c1", 0, 0), member("m1", "c1", 40, 40), plain("o1", 900, 900), plain("o2", 960, 900)];
+    const units = buildCanvasLayoutUnits([], nodes, ["o1", "o2"], [], [], []);
+    expect(mergeContainerLayoutUnits(nodes, units)).toEqual(units);
+  });
+
+  test("arrangeContainerInteriors:每个容器单独跑一次成员布局(单元只含该容器成员)", () => {
+    const nodes = [
+      container("c1", 0, 0),
+      member("m1", "c1", 40, 40),
+      member("m2", "c1", 80, 40),
+      container("c2", 1000, 0),
+      member("n1", "c2", 1040, 40),
+      member("n2", "c2", 1080, 40),
+      plain("o1", 900, 900)
+    ];
+    const seen: string[][] = [];
+    const shifted = arrangeContainerInteriors(nodes, (currentNodes, units) => {
+      seen.push(units.flatMap((unit) => unit.nodeIds));
+      const movedIds = new Set(units.flatMap((unit) => unit.nodeIds));
+      return currentNodes.map((node) =>
+        movedIds.has(node.id) ? { ...node, position: { x: node.position.x + 10, y: node.position.y } } : node
+      );
+    });
+
+    expect(seen).toHaveLength(2);
+    expect([...seen[0]].sort()).toEqual(["m1", "m2"]);
+    expect([...seen[1]].sort()).toEqual(["n1", "n2"]);
+    const byId = new Map(shifted.map((node) => [node.id, node]));
+    // 每个成员各被自己的容器推一次(跨容器不串味),容器自身与散装节点不动
+    expect(byId.get("m1")!.position).toEqual({ x: 50, y: 40 });
+    expect(byId.get("n1")!.position).toEqual({ x: 1050, y: 40 });
+    expect(byId.get("c1")!.position).toEqual({ x: 0, y: 0 });
+    expect(byId.get("o1")!.position).toEqual({ x: 900, y: 900 });
+  });
+
+  test("arrangeContainerInteriors:成员不足 2 个的容器跳过(无可布局内容)", () => {
+    const nodes = [container("c1", 0, 0), member("m1", "c1", 40, 40), container("c2", 1000, 0)];
+    let calls = 0;
+    arrangeContainerInteriors(nodes, (currentNodes) => {
+      calls += 1;
+      return currentNodes;
+    });
+    expect(calls).toBe(0);
   });
 });

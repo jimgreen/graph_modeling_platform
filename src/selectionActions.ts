@@ -3,6 +3,7 @@ import {
   type AlignMode,
   calculateNodeBodyBounds,
   calculateNodeVisualBounds,
+  isCanvasNodeMovable,
   ROUTABLE_LINE_SOURCE_NODE_PARAM,
   ROUTABLE_LINE_TARGET_NODE_PARAM,
   resetDeviceIndexesForPaste,
@@ -872,6 +873,107 @@ export function buildCanvasLayoutUnits(
     });
   }
   return units;
+}
+
+/**
+ * 容器整组布局单元(用户裁决:对齐/分布选中容器 → 容器作为整体参与;自动对齐/散开阶段 2 同理):
+ * 把「参与布局的容器」与其**全部成员**(不论成员自身是否在 units 里)合并成一个单元,成员单元从列表移除 ——
+ * 布局只挪这个整组单元,容器与成员相对位置不变。单元包围盒取「容器 ∪ 全部成员」并集:
+ * 阶段 1 刚挪过成员时容器节点本身尚未重算,只取容器矩形会漏掉成员新位置。
+ * 无容器参与时原样返回(元素与顺序不变)。
+ */
+export function mergeContainerLayoutUnits(nodes: ModelNode[], units: readonly CanvasLayoutUnit[]): CanvasLayoutUnit[] {
+  const unitNodeIds = new Set(units.flatMap((unit) => unit.nodeIds));
+  const groupIdByNodeId = new Map<string, string>();
+  const groupNodesById = new Map<string, ModelNode[]>();
+  for (const container of nodes) {
+    if (!isAcContainerNode(container) || !unitNodeIds.has(container.id)) {
+      continue;
+    }
+    const groupId = `container:${container.id}`;
+    const groupNodes = [container, ...nodes.filter((node) => node.containerId === container.id && node.id !== container.id)];
+    groupNodesById.set(groupId, groupNodes);
+    for (const node of groupNodes) {
+      groupIdByNodeId.set(node.id, groupId);
+    }
+  }
+  if (groupIdByNodeId.size === 0) {
+    return [...units];
+  }
+  const firstIndexByGroupId = new Map<string, number>();
+  units.forEach((unit, index) => {
+    for (const nodeId of unit.nodeIds) {
+      const groupId = groupIdByNodeId.get(nodeId);
+      if (groupId && !firstIndexByGroupId.has(groupId)) {
+        firstIndexByGroupId.set(groupId, index);
+      }
+    }
+  });
+  const out: CanvasLayoutUnit[] = [];
+  units.forEach((unit, index) => {
+    const groupIds = [...new Set(unit.nodeIds.flatMap((nodeId) => groupIdByNodeId.get(nodeId) ?? []))];
+    if (groupIds.length === 0) {
+      out.push(unit);
+      return;
+    }
+    // 整组单元落回该组首个单元的位置(保持原有相对次序,避免布局算法的稳定排序被打乱)
+    for (const groupId of groupIds) {
+      if (firstIndexByGroupId.get(groupId) !== index) {
+        continue;
+      }
+      const groupNodes = groupNodesById.get(groupId)!;
+      const selectionRects = groupNodes.map((node) => nodeSelectionBounds(node));
+      const layoutRects = groupNodes.map((node) => nodeLayoutBounds(node));
+      out.push({
+        id: groupId,
+        kind: "node",
+        nodeIds: groupNodes.map((node) => node.id),
+        edgeIds: [],
+        bounds: mergeSelectionRects(selectionRects) ?? selectionRects[0],
+        layoutBounds: mergeSelectionRects(layoutRects) ?? layoutRects[0],
+        collisionRects: selectionRects
+      });
+    }
+  });
+  return out;
+}
+
+/**
+ * 容器内自布局(自动对齐/散开阶段 1):对每个容器**单独**跑一次 unitLayout,
+ * 单元 = 该容器的成员(容器自身不动,几何随后由 enforce 按成员重算)。
+ * 成员不足 2 个的容器跳过(无可布局内容)。返回成员新位置后的完整节点数组。
+ */
+export function arrangeContainerInteriors(
+  nodes: ModelNode[],
+  unitLayout: (currentNodes: ModelNode[], units: CanvasLayoutUnit[]) => ModelNode[]
+): ModelNode[] {
+  let current = nodes;
+  for (const container of nodes) {
+    if (!isAcContainerNode(container)) {
+      continue;
+    }
+    const memberIds = current
+      .filter((node) => node.containerId === container.id && node.id !== container.id && !isAcContainerNode(node))
+      .map((node) => node.id);
+    if (memberIds.length < 2) {
+      continue;
+    }
+    const memberIdSet = new Set(memberIds);
+    const units = buildCanvasLayoutUnits(
+      [],
+      current.filter((node) => memberIdSet.has(node.id)),
+      memberIds,
+      [],
+      [],
+      [],
+      { isTransformableNode: (node) => isCanvasNodeMovable(node.kind) }
+    );
+    if (units.length < 2) {
+      continue;
+    }
+    current = unitLayout(current, units);
+  }
+  return current;
 }
 
 function unitLayoutBounds(unit: CanvasLayoutUnit) {
