@@ -236,6 +236,8 @@ describe("app view device model parameter keys", () => {
     for (const kind of ["ac-vpp-box", "ac-switch-box", "ac-distribution-box"]) {
       expect(resolveDeviceModelPanelDevType(kind, {})).toBe(kind);
     }
+    // 判据先剥 -vertical(与 inferESection 同源):变体 kind 也命中容器且回报基名(今日无此变体,防将来分叉)
+    expect(resolveDeviceModelPanelDevType("ac-vpp-box-vertical", {})).toBe("ac-vpp-box");
     expect(resolveDeviceModelPanelDevType("ac-wind-source", { dev_type: "ac-wind-source" })).toBe("ACWindGen");
     expect(resolveDeviceModelPanelDevType("ac-series-reactor", { dev_type: "REACTOR" })).toBe("ACSeriCompensator");
     expect(resolveDeviceModelPanelDevType("ac-wind-source", {})).toBe("ACWindGen");
