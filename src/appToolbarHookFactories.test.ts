@@ -507,18 +507,28 @@ describe("batch common model parameter hook", () => {
   test("多选两容器:量测行与容器专属行不出现在批量面板", () => {
     const first = createDefaultNode("ac-vpp-box", { x: 100, y: 100 });
     const second = createDefaultNode("ac-switch-box", { x: 320, y: 100 });
-    // 模拟用户开关口后的容器:两个节点都带这两个参数才会进公共键
+    // 只用 batch 路径可达的真实键:开关口写 is_gateway、绑设备写 bound_device_id(均在 params 通道,
+    // 与 batch 的 `params ∪ 定义 enName` 取值同源);bound_device_idx 是 E 列键,batch 不可达,故不自造
     for (const node of [first, second]) {
       node.params.is_gateway = "1";
-      node.params.bound_device_idx = "3";
+      node.params.bound_device_id = "dev-x";
     }
 
     const keys = batchRowsFor([first, second]).map((row) => row.key);
-    for (const key of ["p", "q", "u", "i", "is_gateway", "bound_device_idx"]) {
+    for (const key of ["p", "q", "u", "i", "is_gateway", "bound_device_id", "status"]) {
       expect(keys, `批量面板不应出现容器专属行 ${key}`).not.toContain(key);
     }
     // 对照:「设备类型」等容器仍需要的行保留
     expect(keys).toContain("dev_type");
+  });
+
+  test("多选普通开关不受影响:status/电流行照旧(容器剔除只认全容器选中)", () => {
+    const first = createDefaultNode("ac-switch", { x: 100, y: 100 });
+    const second = createDefaultNode("ac-switch", { x: 240, y: 100 });
+
+    const keys = batchRowsFor([first, second]).map((row) => row.key);
+    expect(keys).toContain("status");
+    expect(keys).toContain("i");
   });
 
   test("多选普通设备不受影响:量测参数行照旧(回归护栏)", () => {
