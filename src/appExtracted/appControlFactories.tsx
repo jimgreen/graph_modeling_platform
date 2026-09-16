@@ -3,7 +3,7 @@
 // 与 UI 写方法隔离：参数显式传入，复用底层 setter，绕过 prompt/alert/draft/editMode。
 // 经 WS control 指令调用（App.tsx commandHandler 分发）。
 import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdges, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, syncedSwitchStatusPatch } from "../model";
-import { commitContainerMembership, containerDeletionFinalize, foldContainerScaleIntoSize, isAcContainerNode, refitContainersOnly, withNodeUpdates } from "../acContainer";
+import { commitContainerMembership, finalizeContainerAfterNodeDeletion, normalizeInboundContainerNode, withNodeUpdates } from "../acContainer";
 import { createCanvasGroupFromSelection, removeGraphicsFromGroups } from "../selectionActions";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
 
@@ -37,9 +37,7 @@ export function createProgrammaticAddDevice(__appScope: Record<string, any>) {
     }
     // 交流容器:几何恒在 size —— attrs 里的 scale 在落图前折算进 size(与 UI/拖角同一出口),
     // 否则第三方传 scale 又会让渲染矩形(size × |scale|)与 eject/入组所用 size 矩形分叉
-    if (isAcContainerNode(node)) {
-      node = foldContainerScaleIntoSize(node);
-    }
+    node = normalizeInboundContainerNode(node);
     pushUndoSnapshot(true, false, undefined, "添加设备", node.name);
     setNodes((prev: any[]) => {
       // 归属落地:落点在容器矩形内 → 并入该容器(与拖入/粘贴同一出口),容器随成员重算 + 挤出非成员
@@ -258,11 +256,10 @@ export function createProgrammaticDeleteDevices(__appScope: Record<string, any>)
     markBusTerminalSyncDirtyForEdges(deletedEdges);
     const result = deleteNodesWithConnectedEdges(nodes, edges, targetNodeIds);
     const nextEdges = result.edges.filter((edge: any) => !selectedEdgeSet.has(edge.id));
-    // 删除收尾:① 被删容器的成员清 containerId(成员保留);② 成员被删/散出后容器几何重算收缩
+    // 删除收尾:被删容器的成员清 containerId(成员保留)+ 绑定设备被删则解绑关关口 + 容器几何重算收缩
     // (半程 enforce:不挤出,否则会搬动刚散出的成员)。与界面删除入口同源。
     // 无确认框 —— 控制台端点无人可问,调用方已知自己要删什么。
-    const surviving = withNodeUpdates(result.nodes, containerDeletionFinalize(nodes, targetNodeIds));
-    const nextNodes = withNodeUpdates(surviving, refitContainersOnly(surviving));
+    const nextNodes = finalizeContainerAfterNodeDeletion(nodes, result.nodes, targetNodeIds);
     setGraphArrays(nextNodes, nextEdges);
     void syncGlobalLineProjectNodes?.(nextNodes, false);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, targetNodeIds, selectedEdgeSet), nextNodes, nextEdges));
@@ -332,7 +329,7 @@ export function createProgrammaticUpdateDeviceProperty(__appScope: Record<string
       }
       // 交流容器:几何恒在 size —— 第三方传进来的 scale 在此折算进 size(与 UI 同出口);
       // applyPatch 同时喂给落图与量测归一化,故折叠收在函数内,两条消费口径一致
-      return isAcContainerNode(next) ? foldContainerScaleIntoSize(next) : next;
+      return normalizeInboundContainerNode(next);
     };
     pushUndoSnapshot(true, false, undefined, "修改参数", id);
     updateGraphNodeById(id, applyPatch);

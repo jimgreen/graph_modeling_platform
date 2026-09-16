@@ -44,6 +44,7 @@ import {
   commitContainerMembership,
   containerDeletionWarning,
   containerDeletionFinalize,
+  finalizeContainerAfterNodeDeletion,
   refitContainersAfterTransform,
   containerResizeMinSize,
 } from "./acContainer";
@@ -1099,6 +1100,16 @@ describe("删除容器的归属收尾", () => {
     const c2 = { ...node("c2", "ac-vpp-box", 500, 0, 200, 200), name: "c2" } as any;
     const alive = { ...node("m1", "ac-load", 500, 0), containerId: "c2" } as any;
     expect(containerDeletionFinalize([container(), c2, alive], ["c1"])).toEqual([]);
+  });
+
+  test("删除收尾单源:成员被删 → 清归属 + 容器收缩 + 只回存活节点", () => {
+    const c = { ...node("c1", "ac-vpp-box", 0, 0, 200, 200) } as any;
+    const m = { ...node("m1", "ac-load", 0, 0), containerId: "c1" } as any;
+    // 删除后的图 = 剔掉被删节点(deletedIds 用**删除前**数组判定)
+    const next = finalizeContainerAfterNodeDeletion([c, m], [c], ["m1"]);
+    const after = new Map(next.map((n) => [n.id, n]));
+    expect(after.get("c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE }); // 成员被删 → 半程 enforce 收缩
+    expect(next.map((n) => n.id)).toEqual(["c1"]);                     // 只存活节点、不新增
   });
 });
 

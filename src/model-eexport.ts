@@ -16,6 +16,7 @@ import {
   toSnakeCaseDeviceParamName, normalizeVoltageBaseInput, terminalVoltageBaseNumber,
   readVoltageLevelSettings, calculateElectricalTopology, isStaticNode, isBusNode,
   resolveTopologyEdgeTerminal,
+  gatewayBoundMemberId,
   isAcContainerKind,
   routableLineDeviceEndpointRefs,
   modelAssociationModelTypeForKind,
@@ -1908,12 +1909,12 @@ function containerSectionSuppressed(
  * 命中返回绑定设备节点,否则 null。段判定走 inferESection —— 与主循环「容器 ⇄ ACContainer 只在 inferESection 一处」同源。
  */
 function activeGatewayBoundDevice(node: ModelNode, nodeById: ReadonlyMap<string, ModelNode>): ModelNode | null {
-  if (inferESection(node.kind, node.params) !== "ACContainer" || node.params.is_gateway !== "1") {
+  if (inferESection(node.kind, node.params) !== "ACContainer") {
     return null;
   }
-  const boundDeviceId = String(node.params.bound_device_id ?? "");
-  const boundNode = boundDeviceId ? nodeById.get(boundDeviceId) : undefined;
-  return boundNode && boundNode.containerId === node.id ? boundNode : null;
+  // 关口判据单源(与容器量测组同步同口径):开着口 + 绑定设备仍是本容器成员
+  const boundDeviceId = gatewayBoundMemberId(node, nodeById);
+  return boundDeviceId ? nodeById.get(boundDeviceId) ?? null : null;
 }
 
 /**
@@ -2050,8 +2051,8 @@ function planGatewaySplices(nodes: ModelNode[], edges: Edge[]): GatewayPlan[] {
  * 本函数只保证端子与边的形状正确 —— 故须在本函数之后调用拓扑计算。
  * 端子 nodeNumber 用 makeNodeNumber 占位(会推进模块级 nodeNumberSeed,与 createTerminals 同惯例),随后被拓扑计算覆盖。
  * 无法串入(无连线 / 端子类型无法判定或不一致 / 多接线点)→ 退化为仅容器段记录:不加端子、**不改边**。
- * 返回值 warnings 与导出告警通道同源于 planGatewaySplices:生产告警由 getEExportWarningsFromRecords 重算,
- * 本数组供直接消费本函数的调用方与测试使用,两处不会漂移。
+ * 返回值 warnings **仅测试消费**(生产导出不读它 —— 导出告警另由 getEExportWarningsFromRecords 重算),
+ * 保留字段是为了让用例能直接断言退化原因,不必经 E 文件文本反解。
  *
  * 非幂等:对已变换的图再跑一次会把串入边二次改接(容器两侧被短接),只可在导出入口应用一次。
  */

@@ -6,7 +6,7 @@
 // 锚定口径(与平台一致):`node.position` 是节点**中心**,容器真实矩形 = position ± size/2。
 // (DeviceGlyph 矩形 x:-w/2、命中框、bodyVisualBoxForNode position±half 三处同源)
 // 相对 import 带 .ts 扩展名:本模块被 src/export/svg.ts(Node 直载)间接引用,裸 "./model" Node ESM 解析不了
-import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, createDefaultNode, getNodeScaleX, getNodeScaleY, isAcContainerKind, isStaticNode, isWireLikeRouteDeviceKind } from "./model.ts";
+import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, createDefaultNode, gatewayBoundMemberId, getNodeScaleX, getNodeScaleY, isAcContainerKind, isStaticNode, isWireLikeRouteDeviceKind, liveContainerIds } from "./model.ts";
 
 /** 容器包围成员时的**内侧**留白:容器矩形 = 成员包围盒 + 该留白(容器贴成员的紧密度) */
 export const CONTAINER_PADDING = 24;
@@ -26,15 +26,40 @@ export function isAcContainerNode(node: ModelNode): boolean {
   return isAcContainerKind(node.kind);
 }
 
+/** 图中是否有容器 —— 撤销让位判据(有容器时作用域让位走全量对比,见各 pushUndoSnapshot 调用点) */
+export function hasAcContainer(nodes: ModelNode[]): boolean {
+  return nodes.some(isAcContainerNode);
+}
+
 /**
- * 图中存活容器 id 集合:归属字段 `containerId` 的**有效性判据**。
- * 悬空值(指向已删除的容器)在删除收尾之外仍可能来自存盘老数据/导入文件,
- * 故**判定(judgeContainerMembership)与挤出(ejectOutsiders)两个消费点必须经此集合**,
- * 不得只判 `n.containerId` 的真值 —— 只判真值会让悬空节点被当成员豁免(挤出失效、入组被短路)。
- * (其余消费点走 `containerId === <某存活容器 id>` 等值比较,悬空值天然不命中,无需经此。)
+ * 归属判定的**公共豁免**:容器自身(不允许嵌套)、线路(穿框是常态)、静态图元(装饰图元常是整画布尺寸)。
+ * 挤出(ejectOutsiders)与拖动排斥(judgeContainerMembership)共用 —— 两处「谁不参与归属」必须同一口径。
+ * 不含「已归属某存活容器」:那是两处**各自**的差异(挤出要豁免、入组要短路),且入组侧静态豁免只挡自动入组、
+ * 不挡「已是成员者 Alt 移出」,故不得折进本谓词。
  */
-function liveContainerIds(nodes: ModelNode[]): Set<string> {
-  return new Set(nodes.filter(isAcContainerNode).map((n) => n.id));
+export function containerMembershipEligible(node: ModelNode): boolean {
+  return !isAcContainerNode(node) && !isWireLikeRouteDeviceKind(node.kind) && !isStaticNode(node);
+}
+
+/** 容器的成员节点(不含容器自身;容器 id 恒不等于成员 id,此处一并挡掉自指脏数据) */
+export function containerMemberNodes(nodes: ModelNode[], containerId: string): ModelNode[] {
+  return nodes.filter((n) => n.containerId === containerId && n.id !== containerId);
+}
+
+/**
+ * 入图即归一:并入图的节点若是容器,把遗留 scale 折算进 size(见 foldContainerScaleIntoSize);
+ * 非容器原样返回。粘贴 / SVG 导入 / 加载 / 控制台改属性等「节点并入图」的路径共用。
+ */
+export function normalizeInboundContainerNode(node: ModelNode): ModelNode {
+  return isAcContainerNode(node) ? foldContainerScaleIntoSize(node) : node;
+}
+
+/**
+ * 剥离容器副本的关口绑定:绑定存的是**原图**设备 id,副本 id 全换后必然悬空,
+ * 故副本一律「绑定清空 + 关口关」。返回新对象(不改入参);粘贴/模板落点两处克隆共用,重复执行幂等。
+ */
+export function stripContainerGatewayBinding(node: ModelNode): ModelNode {
+  return { ...node, params: { ...node.params, bound_device_id: "", is_gateway: "0" } };
 }
 
 /** 容器真实矩形(中心锚定口径的唯一出口;排斥带与内侧留白都以**此**矩形为基准):position 是中心,故四边 = position ± size/2 */
@@ -181,16 +206,15 @@ function pointInRect(r: { x1: number; y1: number; x2: number; y2: number }, p: {
  * 推出后本体仍压框都是旧中心口径的缺陷(见 pushBoundsOutOfRect)。
  * ponytail: 最小位移单轮让位,复杂穿叠时观感可能不佳;出现实际问题再升级避碰算法。
  */
-export function ejectOutsiders(container: ModelNode, nodes: ModelNode[]): NodePositionPatch[] {
+export function ejectOutsiders(container: ModelNode, nodes: ModelNode[], ownerIds?: Set<string>): NodePositionPatch[] {
   const c = container;
   const rect = containerRect(c);
-  const owners = liveContainerIds(nodes);
+  // 多容器循环里 ownerIds 由调用方算一次传入(见 enforceContainerMembership);单次调用时现算
+  const owners = ownerIds ?? liveContainerIds(nodes);
   const out: NodePositionPatch[] = [];
   for (const n of nodes) {
     if (n.id === c.id) continue;
-    if (isAcContainerNode(n)) continue;              // 其它容器豁免
-    if (isWireLikeRouteDeviceKind(n.kind)) continue; // 线路豁免(全部线路 kind 单一谓词,只豁免 ac-line 会漏推其它 11 种)
-    if (isStaticNode(n)) continue;                   // 静态图元豁免:装饰图元常是整画布尺寸(position = 画布中心),容器矩形必然盖住其中心,推出框外等于搬动装饰
+    if (!containerMembershipEligible(n)) continue; // 其它容器 / 线路 / 静态图元豁免(公共谓词,与拖动排斥同源)
     if (n.containerId && owners.has(n.containerId)) continue; // 已归属**存活**容器(含本容器成员);悬空值不算归属,照常挤出
     const pushed = pushBoundsOutOfRect(calculateNodeVisualBounds(n), n.position, rect);
     if (pushed) out.push({ nodeId: n.id, position: pushed });
@@ -254,7 +278,8 @@ export function judgeContainerMembership(args: {
   const { nodes, movedIds, altKey, repelNonMembers = false, addedContainerIds } = args;
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const addedContainerIdSet = new Set(addedContainerIds ?? []);
-  const containers = nodes.filter(isAcContainerNode);
+  // 容器矩形在本批判定里恒不变:循环外算一次(id + rect),免得每个被拖动节点各算一遍
+  const containerRects = nodes.filter(isAcContainerNode).map((c) => ({ id: c.id, rect: containerRect(c) }));
   const owners = liveContainerIds(nodes);
   const membershipChanges: MembershipDecision["membershipChanges"] = [];
   const repelPatches: NodePositionPatch[] = [];
@@ -275,7 +300,7 @@ export function judgeContainerMembership(args: {
     // 已是成员的静态图元仍可由上面的 Alt 分支移出 —— 豁免只管「自动入组/排斥」,不管用户显式操作。
     if (isStaticNode(n)) continue;
     // 入组判定点 = 中心落进矩形(Alt 拖入与同批新增容器的落点入组共用)
-    const target = containers.find((c) => pointInRect(containerRect(c), n.position));
+    const target = containerRects.find((entry) => pointInRect(entry.rect, n.position));
     if (altKey) {
       if (!target) continue;
       membershipChanges.push({ nodeId: id, containerId: target.id });
@@ -293,14 +318,15 @@ export function judgeContainerMembership(args: {
       continue;
     }
     // 图中无容器 → 无排斥可言:先短路再算包围盒(包围盒比中心点贵,且异常节点算不出)
-    if (!repelNonMembers || containers.length === 0) continue;
-    // 排斥:线路穿容器是常态,与 ejectOutsiders 同一豁免谓词(否则拖动一条线路会被整体弹出框外)
-    if (isWireLikeRouteDeviceKind(n.kind)) continue;
+    if (!repelNonMembers || containerRects.length === 0) continue;
+    // 排斥:线路穿容器是常态,与 ejectOutsiders 同一豁免谓词(否则拖动一条线路会被整体弹出框外)。
+    // 容器与静态图元已由上方分支排除,此处复用谓词只是「线路」那一条命中。
+    if (!containerMembershipEligible(n)) continue;
     // 排斥口径 = 包围盒间距(与 ejectOutsiders 同源):中心在框内,或本体与框的间隙 < CONTAINER_CLEARANCE → 都弹
     const bounds = calculateNodeVisualBounds(n);
-    const repelTarget = target ?? containers.find((c) => withinClearance(bounds, containerRect(c)));
+    const repelTarget = target ?? containerRects.find((entry) => withinClearance(bounds, entry.rect));
     if (!repelTarget) continue;
-    const pushed = pushBoundsOutOfRect(bounds, n.position, containerRect(repelTarget));
+    const pushed = pushBoundsOutOfRect(bounds, n.position, repelTarget.rect);
     if (pushed) repelPatches.push({ nodeId: id, position: pushed });
   }
   return { membershipChanges, enterContainerId, exitContainerId, repelPatches };
@@ -366,11 +392,22 @@ export function enforceContainerMembership(
   const preserveIds = new Set(options.preserveSizeIds ?? []);
   const containerUpdates: ModelNode[] = [];
   const patch: NodePositionPatch[] = [];
-  for (const c of nodes.filter(isAcContainerNode)) {
-    const members = nodes.filter((n) => n.containerId === c.id && n.id !== c.id);
+  // 一趟归并成员(逐容器 filter 是 O(容器数 × 节点数))与存活容器 id 集合(挤出共用,不逐容器重算);
+  // 成员桶只按 containerId 归并 —— 悬空值指向的容器不在循环里,永远取不到该桶
+  const owners = liveContainerIds(nodes);
+  const membersByContainerId = new Map<string, ModelNode[]>();
+  for (const n of nodes) {
+    if (!n.containerId || n.containerId === n.id) continue; // 自指脏数据不算成员(与旧 filter 的 n.id !== c.id 同口径)
+    const bucket = membersByContainerId.get(n.containerId);
+    if (bucket) bucket.push(n);
+    else membersByContainerId.set(n.containerId, [n]);
+  }
+  for (const c of nodes) {
+    if (!isAcContainerNode(c)) continue;
+    const members = membersByContainerId.get(c.id) ?? [];
     const fitted = preserveIds.has(c.id) ? preserveDraggedContainerGeometry(c, members) : fitContainerToMembers(c, members);
     containerUpdates.push(fitted);
-    patch.push(...ejectOutsiders(fitted, nodes));
+    patch.push(...ejectOutsiders(fitted, nodes, owners));
   }
   return { patch, containerUpdates, membershipChanges: [] };
 }
@@ -489,7 +526,7 @@ export function commitContainerMembership(nodes: ModelNode[], movedIds: string[]
   // 无并入容器时保持原引用(本出口的「无容器短路」契约:引用相等即无变化)
   const inboundNodes = addedContainerIds.length === 0
     ? nodes
-    : nodes.map((node) => (movedIdSet.has(node.id) && isAcContainerNode(node) ? foldContainerScaleIntoSize(node) : node));
+    : nodes.map((node) => (movedIdSet.has(node.id) ? normalizeInboundContainerNode(node) : node));
   const { updates } = applyDragContainerMembership({
     nodes: inboundNodes,
     movedIds,
@@ -497,7 +534,7 @@ export function commitContainerMembership(nodes: ModelNode[], movedIds: string[]
     repelNonMembers: true,
     addedContainerIds
   });
-  return updates.length === 0 ? inboundNodes : withNodeUpdates(inboundNodes, updates);
+  return withNodeUpdates(inboundNodes, updates);
 }
 
 /**
@@ -620,20 +657,20 @@ export function containerAssignedIdsFromSelection(nodes: ModelNode[], selectedId
   return selectedIds.filter((id) => Boolean(byId.get(id)?.containerId));
 }
 
-/** 把节点更新列表并回节点数组(同 id 覆盖),新增节点则忽略。归属入口提交后取「新图」喂量测归一化时复用 */
+/** 把节点更新列表并回节点数组(同 id 覆盖),新增节点则忽略,空更新返回原数组(零分配)。归属入口提交后取「新图」喂量测归一化时复用 */
 export function withNodeUpdates(nodes: ModelNode[], updates: ModelNode[]): ModelNode[] {
+  if (updates.length === 0) return nodes;
   const byId = new Map(updates.map((n) => [n.id, n]));
   return nodes.map((n) => byId.get(n.id) ?? n);
 }
 
 /**
- * 成员离开原容器的统一规则:原容器是关口容器且其绑定设备正是该成员 → 解绑 + 关关口。
- * 移出(去无容器)与改归属(去别的容器)共用,防「改归属后原容器留下悬空 bound_device_id」。
+ * 本次「成员离开」会解绑 + 关关口的容器(原容器是关口容器且其绑定设备正是离开者)。
+ * 移出(去无容器)、改归属(去别的容器)、删除绑定设备三条路径共用,防「改归属后原容器留下悬空 bound_device_id」。
  * 判定必须用**原** nodes:成员改归属时 containerId 已被改写,拿新数组判会漏。
  * toContainerId === 原容器 id 表示没离开;绑定的是别的设备、或该设备本就不是本容器成员 → 不误伤。
- * 本函数只写 params;容器量测组的删除由调用方(移出/改归属/Alt 拖出各工厂)随归一化出口收敛。
  */
-export function clearGatewayBindingForLeavingMembers(
+function gatewayContainersUnboundByLeaving(
   nodes: ModelNode[],
   leavingIds: Iterable<string>,
   toContainerId: string | undefined
@@ -643,12 +680,40 @@ export function clearGatewayBindingForLeavingMembers(
   const out: ModelNode[] = [];
   for (const c of nodes) {
     if (!isAcContainerNode(c)) continue;
-    const bound = String(c.params?.bound_device_id ?? "");
-    if (!leaving.has(bound) || toContainerId === c.id) continue;
-    if (byId.get(bound)?.containerId !== c.id) continue;
-    out.push({ ...c, params: { ...c.params, bound_device_id: "", is_gateway: "0" } });
+    if (gatewayBoundMemberId(c, byId) === undefined) continue;
+    if (!leaving.has(String(c.params.bound_device_id)) || toContainerId === c.id) continue;
+    out.push(c);
   }
   return out;
+}
+
+/**
+ * 成员离开原容器的统一落笔:命中 gatewayContainersUnboundByLeaving 的容器清空绑定 + 关关口。
+ * 本函数只写 params;容器量测组的删除由调用方(移出/改归属/删除/Alt 拖出各工厂)随归一化出口收敛。
+ */
+function clearGatewayBindingForLeavingMembers(
+  nodes: ModelNode[],
+  leavingIds: Iterable<string>,
+  toContainerId: string | undefined
+): ModelNode[] {
+  return gatewayContainersUnboundByLeaving(nodes, leavingIds, toContainerId).map(stripContainerGatewayBinding);
+}
+
+/**
+ * 「自动解绑 + 关关口」的提示文案(移出容器 / 面板改归属 / 删除绑定设备三条路径共用):
+ * 本次离开或消失的成员里若有某**开着**关口的绑定设备,即返回提示;无解绑返回 null。
+ * 判定与解绑同源(同走 gatewayContainersUnboundByLeaving),名称取**解绑前**图里的设备名。
+ */
+export function containerGatewayUnbindNotice(
+  nodes: ModelNode[],
+  leavingIds: Iterable<string>,
+  toContainerId?: string
+): string | null {
+  const unbound = gatewayContainersUnboundByLeaving(nodes, leavingIds, toContainerId);
+  if (unbound.length === 0) return null;
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const names = unbound.map((c) => byId.get(String(c.params.bound_device_id ?? ""))?.name ?? "");
+  return `已解绑关口设备 ${names.join("、")}，关口已关闭`;
 }
 
 /** 全部成员已在目标容器内(且容器已存在)→ 提交无意义,对齐 containerMembershipCommit 的 changed=false 短路 */
@@ -666,8 +731,9 @@ export function containerAddIsNoop(nodes: ModelNode[], containerId: string, memb
  * 成员已在别的容器 → 视作改归属,用 enforceContainerMembership 一并收缩原容器。
  */
 export function applyAddToAcContainer(nodes: ModelNode[], container: ModelNode, memberIds: string[]): ModelNode[] {
+  const byId = new Map(nodes.map((n) => [n.id, n])); // 一次索引:逐成员 find 是 O(m×N)
   const members = new Set(memberIds.filter((id) => {
-    const n = nodes.find((candidate) => candidate.id === id);
+    const n = byId.get(id);
     return Boolean(n) && !isAcContainerNode(n!);
   }));
   // 改归属:离开原容器的成员先按统一规则解绑原关口容器(与移出同一出口)
@@ -675,7 +741,7 @@ export function applyAddToAcContainer(nodes: ModelNode[], container: ModelNode, 
     clearGatewayBindingForLeavingMembers(nodes, members, container.id).map((n) => [n.id, n])
   );
   const withBindings = nodes.map((n) => unboundById.get(n.id) ?? n);
-  const base = nodes.some((n) => n.id === container.id)
+  const base = byId.has(container.id)
     ? withBindings.map((n) => (n.id === container.id ? container : n))
     : [...withBindings, container];
   const tagged = base.map((n) =>
@@ -738,25 +804,20 @@ export function refitContainersAfterTransform(nodes: ModelNode[], transformedIds
   const transformed = new Set(transformedIds);
   const preserveSizeIds = nodes.filter((n) => transformed.has(n.id) && isAcContainerNode(n)).map((n) => n.id);
   const decision = enforceContainerMembership(nodes, { preserveSizeIds });
+  // 「无变化不产出空补丁」契约先行过滤,再交容器决策出口并回节点(见 containerDecisionNodeUpdates)
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const updates = new Map<string, ModelNode>();
-  for (const fitted of decision.containerUpdates) {
-    const current = byId.get(fitted.id);
-    if (current &&
-      (current.position.x !== fitted.position.x ||
-        current.position.y !== fitted.position.y ||
-        current.size.width !== fitted.size.width ||
-        current.size.height !== fitted.size.height)) {
-      updates.set(fitted.id, fitted);
-    }
-  }
-  for (const p of decision.patch) {
-    const base = updates.get(p.nodeId) ?? byId.get(p.nodeId);
-    if (base) {
-      updates.set(p.nodeId, { ...base, position: p.position });
-    }
-  }
-  return [...updates.values()];
+  return containerDecisionNodeUpdates(nodes, {
+    ...decision,
+    containerUpdates: decision.containerUpdates.filter((fitted) => {
+      const current = byId.get(fitted.id);
+      return Boolean(current) && (
+        current!.position.x !== fitted.position.x ||
+        current!.position.y !== fitted.position.y ||
+        current!.size.width !== fitted.size.width ||
+        current!.size.height !== fitted.size.height
+      );
+    }),
+  });
 }
 
 // ─── 删除容器收尾:成员归属不悬空 ─────────────────────────────────────────────
@@ -769,10 +830,16 @@ export function refitContainersAfterTransform(nodes: ModelNode[], transformedIds
  */
 export function containerDeletionWarning(nodes: ModelNode[], deletedIds: Iterable<string>): string | null {
   const deleting = new Set(deletedIds);
+  // 成员数一趟归并(逐容器 filter 是 O(容器数 × 节点数));同批被删的成员与自指脏数据不计
+  const scatteredByContainerId = new Map<string, number>();
+  for (const n of nodes) {
+    if (!n.containerId || n.id === n.containerId || deleting.has(n.id)) continue;
+    scatteredByContainerId.set(n.containerId, (scatteredByContainerId.get(n.containerId) ?? 0) + 1);
+  }
   const parts: string[] = [];
   for (const c of nodes) {
     if (!deleting.has(c.id) || !isAcContainerNode(c)) continue;
-    const scattered = nodes.filter((n) => n.containerId === c.id && n.id !== c.id && !deleting.has(n.id)).length;
+    const scattered = scatteredByContainerId.get(c.id) ?? 0;
     if (scattered === 0) continue;
     parts.push(`容器「${String(c.name ?? "")}」内有 ${scattered} 个成员`);
   }
@@ -799,4 +866,20 @@ export function containerDeletionFinalize(nodes: ModelNode[], deletedIds: Iterab
     out.push(next);
   }
   return out;
+}
+
+/**
+ * 删除类路径的**收尾单源**(界面删除 / 剪切 / 删图层 / control 删除共用):
+ * ① 被删容器的成员清 `containerId`(成员保留)与「绑定设备被删 → 解绑 + 关关口」(两者都用**删除前**的图判定);
+ * ② 成员被删/散出后容器几何重算收缩(半程 enforce,不挤出 —— 刚散出的成员保留原位)。
+ * `preDeletionNodes` 必须是**删除前**的节点数组,`survivorNodes` 是删除后的图;返回可直接落盘的**完整**节点数组。
+ */
+export function finalizeContainerAfterNodeDeletion(
+  preDeletionNodes: ModelNode[],
+  survivorNodes: ModelNode[],
+  deletedIds: Iterable<string>
+): ModelNode[] {
+  const scattered = containerDeletionFinalize(preDeletionNodes, deletedIds);
+  const surviving = withNodeUpdates(survivorNodes, scattered);
+  return withNodeUpdates(surviving, refitContainersOnly(surviving));
 }

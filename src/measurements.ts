@@ -2,6 +2,7 @@ import {
   DEFAULT_DEVICE_LABEL_FONT_SIZE,
   describeContainerTerminalAssociations,
   resolveEffectiveTemplateParameterDefinitions,
+  gatewayBoundMemberId,
   inferESection,
   isAcContainerKind,
   templateDerivedComponentLibraryInfo,
@@ -546,6 +547,8 @@ export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
   deviceProfiles: [
     // 交流容器:容器无 E 设备类,档键取段名 ACContainer —— measurementProfileForNode 的
     // directKeys[0] = inferESection(容器) = "ACContainer",一条覆盖三 kind(单源,不给每个 kind 各写一条)
+    // (测点集与 model.ts 的 AC_CONTAINER_MEASUREMENT_DEFINITIONS 同集;不在此处派生 —— measurements 处于
+    //  model ⇄ model-routing 的加载环里,模块体读 model 的值导出会踩 TDZ/undefined)
     { deviceKind: "ACContainer", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "ac-load", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "dc-load", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
@@ -1259,8 +1262,8 @@ export function containerMeasurementGroupId(containerId: string): string {
   return `measurement-${containerId}`;
 }
 
-/** 测点深拷贝:两个组共享同一 item 引用会让「改容器组」串改绑定设备 */
-function cloneMeasurementItemBinding(item: MeasurementItemBinding): MeasurementItemBinding {
+/** 测点深拷贝:两个组共享同一 item 引用会让「改容器组」串改绑定设备。弹窗草稿拷贝也走它(见 cloneMeasurementGroupForDraft) */
+export function cloneMeasurementItemBinding(item: MeasurementItemBinding): MeasurementItemBinding {
   return { ...item, styleOverride: item.styleOverride ? { ...item.styleOverride } : undefined };
 }
 
@@ -1325,10 +1328,9 @@ export function reconcileContainerMeasurementGroups(
     if (!isAcContainerKind(node.kind)) {
       continue;
     }
-    const boundDeviceId = String(node.params?.bound_device_id ?? "");
-    const boundNode = boundDeviceId ? byId.get(boundDeviceId) : undefined;
-    const active = node.params?.is_gateway === "1" && boundNode !== undefined && boundNode.containerId === node.id;
-    if (active) {
+    // 关口判据与导出(activeGatewayBoundDevice)同源:开着口 + 绑定设备仍是本容器成员
+    const boundDeviceId = gatewayBoundMemberId(node, byId);
+    if (boundDeviceId) {
       next = syncContainerMeasurementGroup(next, node.id, boundDeviceId);
     }
   }
