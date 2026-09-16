@@ -6,7 +6,7 @@ import { DEFAULT_MEASUREMENT_CONFIG, defaultMeasurementDisplayFormat } from "../
 import { WindowCloseButton } from "../WindowCloseButton";
 import { setSkipSaveCheck } from "./appDeviceDefinitionFactories";
 import { switchToSpace } from "../spaceSwitch";
-import { reconcileTransformerSideVoltageParamsWithTerminals } from "../model-routing";
+import { rebuildContainerExemptConnectionRoutes, reconcileTransformerSideVoltageParamsWithTerminals } from "../model-routing";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
 import { GLOBAL_LINE_ID_PARAM, applyGlobalLineRecordToNode, deriveLocalDeviceIndexCounters, globalLineEndpointPlacementFailureMessage, globalLineSourcePlacementFailureMessage, shouldManageLineGlobally, shouldUseGlobalLineForEndpoints } from "../global-lines";
 import { isLineOnlyConnectionNode, modelAssociationLineConnectionFailureMessage, modelAssociationProjectIndexesForSchemes } from "../model";
@@ -2862,6 +2862,8 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     const routeSafeNodes = repairedLineNodes.length > 0
       ? layeredProject.nodes.map((node) => repairedLineNodeById.get(node.id) ?? node)
       : layeredProject.nodes;
+    // 容器豁免存量回填:端点连容器内设备的连线按豁免口径重算(不写盘,随保存落盘)
+    const containerExemptedEdges = rebuildContainerExemptConnectionRoutes(routeSafeNodes, layeredProject.edges, nextCanvasBounds);
     const normalizedMeasurements = normalizeProjectMeasurements(layeredProject.measurements, routeSafeNodes);
     const runtimeMeasurementConfig = __appScope.runtimeMeasurementConfig ?? measurementConfig;
     const reconciledMeasurements = typeof reconcileProjectMeasurementsWithConfig === "function" && runtimeMeasurementConfig
@@ -2907,7 +2909,7 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     setLayers(layeredProject.layers ?? []);
     setActiveLayerId(layeredProject.activeLayerId ?? DEFAULT_MODEL_LAYER_ID);
     setDeviceIndexCounters(indexed.counters);
-    setGraphArrays(routeSafeNodes, layeredProject.edges, nextProjectIdx);
+    setGraphArrays(routeSafeNodes, containerExemptedEdges, nextProjectIdx);
     setGroups(normalizeModelGroups(layeredProject.groups, routeSafeNodes, layeredProject.edges));
     setProjectMeasurements(reconciledMeasurements);
     setTopology(EMPTY_TOPOLOGY);

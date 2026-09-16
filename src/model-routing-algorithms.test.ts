@@ -76,6 +76,7 @@ import {
   preserveConnectionEdgeRouteShape,
   preserveDraggedRouteShape,
   rebuildConnectionRoutesForNodes,
+  rebuildContainerExemptConnectionRoutes,
   rebuildExternalConnectionRoutesForMovedNodes,
   rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes,
   rebuildSingleConnectionRoute,
@@ -363,6 +364,19 @@ test("exempts the container holding an edge endpoint device from route avoidance
   expect(withBox.points).toEqual(noBox.points);
   expect(validateConnectionEdgeRoute([innerInBox, outer, box], [edge], edge.id, bounds).ok).toBe(true);
   expect(prepareConnectionEdgeForCommit([innerInBox, outer, box], [edge], edge.id, bounds).ok).toBe(true);
+
+  // target 侧同判据(消除 source-only 覆盖不对称):容器内设备作 target 时同样豁免
+  const reversedEdge: Edge = {
+    id: "container-exempt-reversed",
+    sourceId: outer.id,
+    targetId: inner.id,
+    sourceTerminalId: "t1",
+    targetTerminalId: "t1"
+  };
+  const reversed = routeEdgesForRendering([innerInBox, outer, box], [reversedEdge], bounds)[0];
+  const reversedNoBox = routeEdgesForRendering([inner, outer], [reversedEdge], bounds)[0];
+  expect(reversed.points).toEqual(reversedNoBox.points);
+  expect(validateConnectionEdgeRoute([innerInBox, outer, box], [reversedEdge], reversedEdge.id, bounds).ok).toBe(true);
 });
 
 test("still avoids containers that hold neither endpoint device", () => {
@@ -388,6 +402,52 @@ test("still avoids containers that hold neither endpoint device", () => {
   };
 
   expect(routeIntersectsTestBox(route.points, boxRect)).toBe(false);
+});
+
+test("backfills a stored detour route when an edge endpoint sits in a container", () => {
+  // 存量绕行路径(避让时代产物)→ 打开模型/导出前回填为豁免口径路径(与「容器不在场」的提交设计一致)
+  const inner = createDefaultNode("ac-switch", { x: 300, y: 200 });
+  const outer = createDefaultNode("ac-load", { x: 700, y: 200 });
+  const box = createDefaultNode("ac-vpp-box", { x: 300, y: 200 });
+  const innerInBox: ModelNode = { ...inner, containerId: box.id };
+  const detourEdge: Edge = {
+    id: "container-detour",
+    sourceId: inner.id,
+    targetId: outer.id,
+    sourceTerminalId: "t1",
+    targetTerminalId: "t1",
+    // 避让时代产物:绕到容器上方更远处(y=50),比豁免口径的最优路径更长
+    routePoints: [{ x: 221, y: 200 }, { x: 193, y: 200 }, { x: 193, y: 50 }, { x: 700, y: 50 }, { x: 700, y: 145 }]
+  };
+  const bounds = { width: 1000, height: 500 };
+
+  const backfilled = rebuildContainerExemptConnectionRoutes([innerInBox, outer, box], [detourEdge], bounds);
+  const reference = prepareConnectionEdgeForCommit([inner, outer], [detourEdge], detourEdge.id, bounds);
+
+  expect(backfilled[0]).not.toBe(detourEdge);
+  expect(backfilled[0].routePoints).toEqual(reference.edge!.routePoints);
+  expect(backfilled[0].routePoints).not.toEqual(detourEdge.routePoints);
+});
+
+test("keeps container-exempt connection edges untouched when the stored route already matches", () => {
+  const inner = createDefaultNode("ac-switch", { x: 300, y: 200 });
+  const outer = createDefaultNode("ac-load", { x: 700, y: 200 });
+  const box = createDefaultNode("ac-vpp-box", { x: 300, y: 200 });
+  const innerInBox: ModelNode = { ...inner, containerId: box.id };
+  const plainEdge: Edge = {
+    id: "container-settled",
+    sourceId: inner.id,
+    targetId: outer.id,
+    sourceTerminalId: "t1",
+    targetTerminalId: "t1"
+  };
+  const bounds = { width: 1000, height: 500 };
+  const designed = prepareConnectionEdgeForCommit([innerInBox, outer, box], [plainEdge], plainEdge.id, bounds);
+  const settledEdge: Edge = { ...plainEdge, routePoints: designed.edge!.routePoints, manualPoints: designed.edge!.manualPoints };
+
+  const result = rebuildContainerExemptConnectionRoutes([innerInBox, outer, box], [settledEdge], bounds);
+
+  expect(result[0]).toBe(settledEdge);
 });
 
 test("exempts only the container that holds an endpoint device", () => {
