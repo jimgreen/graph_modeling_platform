@@ -404,8 +404,33 @@ test("still avoids containers that hold neither endpoint device", () => {
   expect(routeIntersectsTestBox(route.points, boxRect)).toBe(false);
 });
 
-test("backfills a stored detour route when an edge endpoint sits in a container", () => {
-  // 存量绕行路径(避让时代产物)→ 打开模型/导出前回填为豁免口径路径(与「容器不在场」的提交设计一致)
+test("backfills a stored route that crosses its endpoint container", () => {
+  // 存量路径确实与容器矩形相交(除端点 stub 段)→ 打开模型/导出前回填为豁免口径路径(与「容器不在场」的提交设计一致)
+  const inner = createDefaultNode("ac-switch", { x: 300, y: 200 });
+  const outer = createDefaultNode("ac-load", { x: 700, y: 200 });
+  const box = createDefaultNode("ac-vpp-box", { x: 300, y: 200 });
+  const innerInBox: ModelNode = { ...inner, containerId: box.id };
+  const crossingEdge: Edge = {
+    id: "container-crossing",
+    sourceId: inner.id,
+    targetId: outer.id,
+    sourceTerminalId: "t1",
+    targetTerminalId: "t1",
+    // 第二段 (249,200)→(500,200) 横穿容器矩形 x[210,390] y[144,256]
+    routePoints: [{ x: 221, y: 200 }, { x: 249, y: 200 }, { x: 500, y: 200 }, { x: 700, y: 200 }, { x: 700, y: 145 }]
+  };
+  const bounds = { width: 1000, height: 500 };
+
+  const backfilled = rebuildContainerExemptConnectionRoutes([innerInBox, outer, box], [crossingEdge], bounds);
+  const reference = prepareConnectionEdgeForCommit([inner, outer], [crossingEdge], crossingEdge.id, bounds);
+
+  expect(backfilled[0]).not.toBe(crossingEdge);
+  expect(backfilled[0].routePoints).toEqual(reference.edge!.routePoints);
+  expect(backfilled[0].routePoints).not.toEqual(crossingEdge.routePoints);
+});
+
+test("keeps a stored detour route that does not cross its endpoint container", () => {
+  // 存量绕行路径(避让时代产物,除端点 stub 段外都在容器矩形外)→ 不视为违规,保持不动(最小行为变更面)
   const inner = createDefaultNode("ac-switch", { x: 300, y: 200 });
   const outer = createDefaultNode("ac-load", { x: 700, y: 200 });
   const box = createDefaultNode("ac-vpp-box", { x: 300, y: 200 });
@@ -416,17 +441,13 @@ test("backfills a stored detour route when an edge endpoint sits in a container"
     targetId: outer.id,
     sourceTerminalId: "t1",
     targetTerminalId: "t1",
-    // 避让时代产物:绕到容器上方更远处(y=50),比豁免口径的最优路径更长
     routePoints: [{ x: 221, y: 200 }, { x: 193, y: 200 }, { x: 193, y: 50 }, { x: 700, y: 50 }, { x: 700, y: 145 }]
   };
   const bounds = { width: 1000, height: 500 };
 
-  const backfilled = rebuildContainerExemptConnectionRoutes([innerInBox, outer, box], [detourEdge], bounds);
-  const reference = prepareConnectionEdgeForCommit([inner, outer], [detourEdge], detourEdge.id, bounds);
+  const result = rebuildContainerExemptConnectionRoutes([innerInBox, outer, box], [detourEdge], bounds);
 
-  expect(backfilled[0]).not.toBe(detourEdge);
-  expect(backfilled[0].routePoints).toEqual(reference.edge!.routePoints);
-  expect(backfilled[0].routePoints).not.toEqual(detourEdge.routePoints);
+  expect(result[0]).toBe(detourEdge);
 });
 
 test("keeps container-exempt connection edges untouched when the stored route already matches", () => {
