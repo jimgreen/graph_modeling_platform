@@ -8,8 +8,14 @@
 // 相对 import 带 .ts 扩展名:本模块被 src/export/svg.ts(Node 直载)间接引用,裸 "./model" Node ESM 解析不了
 import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, createDefaultNode, isAcContainerKind, isStaticNode, isWireLikeRouteDeviceKind } from "./model.ts";
 
-/** 容器包围成员时的四周留白 */
+/** 容器包围成员时的**内侧**留白:容器矩形 = 成员包围盒 + 该留白(容器贴成员的紧密度) */
 export const CONTAINER_PADDING = 24;
+/**
+ * 容器**外侧**排斥带宽度:未归属设备/节点与容器矩形的间隙 < 该值即让位(挤出 / 拖动排斥 / 落点弹回),
+ * 让位后间隙 = 该值。与 CONTAINER_PADDING 语义不同(一个管「容器贴成员多紧」,一个管「容器的势力范围多大」),
+ * 仅因历史原因曾共用一值 —— 改一个不得连带改另一个。
+ */
+export const CONTAINER_CLEARANCE = 100;
 /** 容器最小尺寸(无成员或成员过少时收缩到此) */
 export const CONTAINER_MIN_SIZE = { width: 180, height: 112 };
 
@@ -31,7 +37,7 @@ function liveContainerIds(nodes: ModelNode[]): Set<string> {
   return new Set(nodes.filter(isAcContainerNode).map((n) => n.id));
 }
 
-/** 容器真实矩形(中心锚定口径的唯一出口):position 是中心,故四边 = position ± size/2 */
+/** 容器真实矩形(中心锚定口径的唯一出口;排斥带与内侧留白都以**此**矩形为基准):position 是中心,故四边 = position ± size/2 */
 function containerRect(c: ModelNode) {
   const x1 = c.position.x - c.size.width / 2, y1 = c.position.y - c.size.height / 2;
   return { x1, y1, x2: x1 + c.size.width, y2: y1 + c.size.height };
@@ -72,29 +78,29 @@ type Bounds4 = { left: number; right: number; top: number; bottom: number };
 type Rect4 = { x1: number; y1: number; x2: number; y2: number };
 
 /**
- * 是否需要让位:**视觉包围盒 ↔ 容器真实矩形的间隙 < CONTAINER_PADDING**(等价于「矩形外扩 padding 后与包围盒相交」)。
- * 四方向枚举即全部「间隙 ≥ padding」的情形 —— 任一轴任一方向已让开 padding 即无需挪动。
+ * 是否需要让位:**视觉包围盒 ↔ 容器真实矩形的间隙 < CONTAINER_CLEARANCE**(等价于「矩形外扩排斥带后与包围盒相交」)。
+ * 四方向枚举即全部「间隙 ≥ 排斥带」的情形 —— 任一轴任一方向已让开排斥带即无需挪动。
  * 缺 rotation/scale 的异常节点算得 NaN,一律视为无需挪动(不写出 NaN 位置)。
  * **判定(排斥/挤出)与推出共用此谓词**,同一「越界」必须同一口径。
  */
 function withinClearance(b: Bounds4, r: Rect4): boolean {
   if (![b.left, b.right, b.top, b.bottom].every(Number.isFinite)) return false;
-  return !(b.right <= r.x1 - CONTAINER_PADDING || b.left >= r.x2 + CONTAINER_PADDING ||
-    b.bottom <= r.y1 - CONTAINER_PADDING || b.top >= r.y2 + CONTAINER_PADDING);
+  return !(b.right <= r.x1 - CONTAINER_CLEARANCE || b.left >= r.x2 + CONTAINER_CLEARANCE ||
+    b.bottom <= r.y1 - CONTAINER_CLEARANCE || b.top >= r.y2 + CONTAINER_CLEARANCE);
 }
 
 /**
- * 推出几何(包围盒口径):包围盒与容器真实矩形间隙 < CONTAINER_PADDING 时,沿最近边推到**间隙 = CONTAINER_PADDING**;
+ * 推出几何(包围盒口径):包围盒与容器真实矩形间隙 < CONTAINER_CLEARANCE 时,沿最近边推到**间隙 = CONTAINER_CLEARANCE**;
  * 间隙足够 → null(不挪)。候选位移取绝对值最小者,相等时按 左→右→上→下 取首选(与旧中心口径同序)。
  * 按包围盒而非中心:让位后**本体不再压框**且标签一并让开(标签参与包围盒)。
  * 返回**中心**新位置(position 是中心)。**拖动排斥(judgeContainerMembership)与挤出(ejectOutsiders)共用此单源**。
  */
 function pushBoundsOutOfRect(b: Bounds4, center: { x: number; y: number }, r: Rect4): { x: number; y: number } | null {
   if (!withinClearance(b, r)) return null;
-  const dl = b.right - (r.x1 - CONTAINER_PADDING); // 往左推的位移量(正)
-  const dr = r.x2 + CONTAINER_PADDING - b.left;
-  const du = b.bottom - (r.y1 - CONTAINER_PADDING);
-  const dd = r.y2 + CONTAINER_PADDING - b.top;
+  const dl = b.right - (r.x1 - CONTAINER_CLEARANCE); // 往左推的位移量(正)
+  const dr = r.x2 + CONTAINER_CLEARANCE - b.left;
+  const du = b.bottom - (r.y1 - CONTAINER_CLEARANCE);
+  const dd = r.y2 + CONTAINER_CLEARANCE - b.top;
   const m = Math.min(dl, dr, du, dd);
   if (m === dl) return { x: center.x - dl, y: center.y };
   if (m === dr) return { x: center.x + dr, y: center.y };
@@ -108,8 +114,8 @@ function pointInRect(r: { x1: number; y1: number; x2: number; y2: number }, p: {
 }
 
 /**
- * 与容器真实矩形**间隙 < CONTAINER_PADDING** 的非成员(线路 kind、静态图元、其它容器、已归属某容器的节点豁免)
- * 沿最近边推到间隙 = CONTAINER_PADDING。口径是**包围盒间距**而非中心点:设备被覆盖一半才触发、
+ * 与容器真实矩形**间隙 < CONTAINER_CLEARANCE** 的非成员(线路 kind、静态图元、其它容器、已归属某容器的节点豁免)
+ * 沿最近边推到间隙 = CONTAINER_CLEARANCE。口径是**包围盒间距**而非中心点:设备被覆盖一半才触发、
  * 推出后本体仍压框都是旧中心口径的缺陷(见 pushBoundsOutOfRect)。
  * ponytail: 最小位移单轮让位,复杂穿叠时观感可能不佳;出现实际问题再升级避碰算法。
  */
@@ -149,8 +155,8 @@ export type MembershipDecision = {
  * 归属判定(入组判定点 = 节点中心 n.position;容器矩形按中心锚定):
  * - 成员 Alt 拖动 → 移出;成员非 Alt → 归属不变(容器随后重算跟随,见 enforceContainerMembership)
  * - 非成员 Alt + 中心落进容器矩形 → 移入(Alt = 双向归属变更键:拖入 / 拖出;Alt 移入**不受**排斥口径影响)
- * - 非成员非 Alt + 本体与**已有**容器矩形**间隙 < CONTAINER_PADDING**(与 ejectOutsiders 同一包围盒口径,
- *   不再等中心入框)→ **弹出**(推到间隙 = CONTAINER_PADDING,不写归属):拖动三条路径与
+ * - 非成员非 Alt + 本体与**已有**容器矩形**间隙 < CONTAINER_CLEARANCE**(与 ejectOutsiders 同一包围盒口径,
+ *   不再等中心入框)→ **弹出**(推到间隙 = CONTAINER_CLEARANCE,不写归属):拖动三条路径与
  *   非拖动入口(粘贴 / 模板落点 / 图元库放置 / control addDevice / 批量布局)统一传 `repelNonMembers`。
  *   唯一例外:目标容器是本批**新增**的(`addedContainerIds`;整组粘贴 / SVG 导入整模型重建)
  *   → 回退「落点入组」(排斥的语义是「外来设备 vs 已有容器」,同批重建不算外来)
@@ -165,7 +171,7 @@ export function judgeContainerMembership(args: {
   movedIds: string[];
   altKey: boolean;
   /**
-   * 排斥开关:非 Alt + 非成员与**已有**容器矩形间隙 < CONTAINER_PADDING(中心在框内亦然)→ 产出「弹出」patch
+   * 排斥开关:非 Alt + 非成员与**已有**容器矩形间隙 < CONTAINER_CLEARANCE(中心在框内亦然)→ 产出「弹出」patch
    * (容器与容器外设备互相排斥),而不是移入。拖动三条路径(鼠标松手 / 键盘移动)与非拖动入口
    * (commitContainerMembership:粘贴、模板落点、程序化加图元、SVG 导入;批量布局)统一传 true。
    */
@@ -180,7 +186,7 @@ export function judgeContainerMembership(args: {
   membershipChanges: MembershipDecision["membershipChanges"];
   enterContainerId?: string;
   exitContainerId?: string;
-  /** 排斥:被弹到「本体与容器矩形间隙 = CONTAINER_PADDING」(沿最近边)的节点;无排斥时为空数组 */
+  /** 排斥:被弹到「本体与容器矩形间隙 = CONTAINER_CLEARANCE」(沿最近边)的节点;无排斥时为空数组 */
   repelPatches: NodePositionPatch[];
 } {
   const { nodes, movedIds, altKey, repelNonMembers = false, addedContainerIds } = args;
@@ -228,7 +234,7 @@ export function judgeContainerMembership(args: {
     if (!repelNonMembers || containers.length === 0) continue;
     // 排斥:线路穿容器是常态,与 ejectOutsiders 同一豁免谓词(否则拖动一条线路会被整体弹出框外)
     if (isWireLikeRouteDeviceKind(n.kind)) continue;
-    // 排斥口径 = 包围盒间距(与 ejectOutsiders 同源):中心在框内,或本体与框的间隙 < CONTAINER_PADDING → 都弹
+    // 排斥口径 = 包围盒间距(与 ejectOutsiders 同源):中心在框内,或本体与框的间隙 < CONTAINER_CLEARANCE → 都弹
     const bounds = calculateNodeVisualBounds(n);
     const repelTarget = target ?? containers.find((c) => withinClearance(bounds, containerRect(c)));
     if (!repelTarget) continue;
@@ -316,7 +322,7 @@ export function containerDecisionNodeUpdates(nodes: ModelNode[], decision: Membe
  *   判定只看抓取集:**跟随者不参与**(否则「拖容器 + Alt」会被判成整组移出),
  *   而「容器与成员同被选中 + Alt 拖成员」时该成员仍要移出(不能因容器同动而豁免)。
  * - 解绑用**原** nodes 判定(containerId 尚未改写),与移出/改归属同一出口。
- * - `repelNonMembers` 由拖动路径(鼠标 / 键盘)传 true:非 Alt 拖进来的非成员被弹到与容器矩形间隙 = CONTAINER_PADDING。
+ * - `repelNonMembers` 由拖动路径(鼠标 / 键盘)传 true:非 Alt 拖进来的非成员被弹到与容器矩形间隙 = CONTAINER_CLEARANCE。
  */
 export function applyDragContainerMembership(args: {
   nodes: ModelNode[];

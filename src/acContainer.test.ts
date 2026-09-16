@@ -13,6 +13,7 @@ import {
 } from "./model";
 import {
   CONTAINER_PADDING,
+  CONTAINER_CLEARANCE,
   CONTAINER_MIN_SIZE,
   containerBoundsForMembers,
   fitContainerToMembers,
@@ -119,103 +120,120 @@ describe("acContainer 布局", () => {
     expect(out.position).toEqual({ x: 0, y: 0 });
   });
 
-  test("挤出:容器内非成员被推到界外且间隙 = 24,线路豁免", () => {
+  test("挤出:容器内非成员被推到界外且间隙 = 排斥带 100,线路豁免", () => {
     const c = node("c1", "ac-vpp-box", 100, 100, 200, 200); // 真实矩形 [0,0]-[200,200]
     const insider = { ...node("in", "ac-load", 50, 50), containerId: "c1" };
     const outsider = node("out", "ac-load", 60, 60);
     const line = node("ln", "ac-line", 70, 70);
     const patches = ejectOutsiders(c as any, [c, insider, outsider, line] as any);
     expect(patches.map((p) => p.nodeId)).toEqual(["out"]); // 成员/线路不产出更新
-    // 推出后:中心在矩形外,且本体整体在框外、间隙恰为 CONTAINER_PADDING(包围盒口径)
+    // 推出后:中心在矩形外,且本体整体在框外、间隙恰为 CONTAINER_CLEARANCE(包围盒口径)
     const p = patches[0];
     expect(centerIn(p.position, rectOf(c))).toBe(false);
-    expect(p.position).toEqual({ x: 60, y: -39 }); // 上移 99 < 左移 104 → 最近边 = 上
+    expect(p.position).toEqual({ x: 60, y: -115 }); // 上移 175 < 左移 180 → 最近边 = 上
     const b = calculateNodeVisualBounds(shifted(outsider, p) as any);
     expect(b.bottom).toBeLessThanOrEqual(rectOf(c).y1);
-    expect(boundsGap(b, rectOf(c))).toBe(CONTAINER_PADDING);
+    expect(boundsGap(b, rectOf(c))).toBe(CONTAINER_CLEARANCE);
   });
 
-  // ─── 挤出判定口径:包围盒间距 < CONTAINER_PADDING 即挪开(不再按中心点入框) ──────
+  // ─── 挤出判定口径:包围盒间距 < CONTAINER_CLEARANCE 即挪开(不再按中心点入框) ──────
   // 旧口径两个症状:①中心入框才触发(设备被盖一半才挤);②推出量按中心算(本体仍压框)。
-  test("挤出:与容器间隙 20(< 24)→ 推到间隙 = 24,方向 = 最近边", () => {
+  // 排斥带(100)比内侧留白(CONTAINER_PADDING=24)宽:容器拟合出的 24 间距不再自动免疫。
+  test("挤出:与容器间隙 20(< 100)→ 推到间隙 = 100,方向 = 最近边", () => {
     const c = node("c1", "ac-vpp-box", 0, 0, 200, 200); // 真实矩形 [-100,100]²
     const near = node("near", "ac-load", 140, 0);        // 本体 [120,160]:中心在框外,间隙 20
     const patches = ejectOutsiders(c as any, [c, near] as any);
     expect(patches).toHaveLength(1);
-    expect(patches[0].position).toEqual({ x: 144, y: 0 }); // 右边:100 + 24 + 半宽 20
-    expect(boundsGap(calculateNodeVisualBounds(shifted(near, patches[0]) as any), rectOf(c))).toBe(CONTAINER_PADDING);
+    expect(patches[0].position).toEqual({ x: 220, y: 0 }); // 右边:100 + 100 + 半宽 20
+    expect(boundsGap(calculateNodeVisualBounds(shifted(near, patches[0]) as any), rectOf(c))).toBe(CONTAINER_CLEARANCE);
   });
 
-  test("挤出边界:间隙 30(≥ 24)→ 不动", () => {
+  test("挤出边界:间隙 130(≥ 100)→ 不动", () => {
     const c = node("c1", "ac-vpp-box", 0, 0, 200, 200);
-    const far = node("far", "ac-load", 150, 0); // 本体 [130,170]:间隙 30
+    const far = node("far", "ac-load", 250, 0); // 本体 [230,270]:间隙 130
     expect(ejectOutsiders(c as any, [c, far] as any)).toEqual([]);
   });
 
-  test("挤出边界:间隙恰为 24 → 不动(成员拟合后的固有间距,不得把邻居无谓推走)", () => {
+  test("挤出边界:间隙恰为 100 → 不动(排斥带边界,不得把带外邻居无谓推走)", () => {
     const m = { ...node("m1", "ac-load", 0, 0, 200, 100), containerId: "c1" };
     const fitted = fitContainerToMembers(node("c1", "ac-vpp-box", 0, 0, 200, 200) as any, [m] as any);
-    // 拟合矩形下边 = 74;邻居本体上边 = 98 → 间隙恰 24
-    const neighbor = node("nb", "ac-load", 0, 74 + CONTAINER_PADDING + 15);
+    // 拟合矩形下边 = 74(内侧留白 24);邻居本体上边 = 174 → 间隙恰 100
+    const neighbor = node("nb", "ac-load", 0, 74 + CONTAINER_CLEARANCE + 15);
     expect(ejectOutsiders(fitted as any, [fitted, m, neighbor] as any)).toEqual([]);
   });
 
-  test("挤出:相交(覆盖一半)→ 推到间隙 = 24(不再只推中心)", () => {
+  // 本轮语义拆分(用户参数改动):内侧留白(容器贴成员的紧密度)与外侧排斥带(让位半径)本是两个概念,
+  // 曾共用 CONTAINER_PADDING=24。拆开后拟合出的 24 间距不再自动免疫 —— 落在 100 带内照常被推开。
+  test("契约:内侧留白 24 与排斥带 100 是两个值 —— 拟合出的 24 间距不再免疫,带内邻居被推到 100", () => {
+    expect(CONTAINER_CLEARANCE).toBeGreaterThan(CONTAINER_PADDING);
+    const m = { ...node("m1", "ac-load", 0, 0, 200, 100), containerId: "c1" };
+    const fitted = fitContainerToMembers(node("c1", "ac-vpp-box", 0, 0, 200, 200) as any, [m] as any);
+    // 容器矩形到成员本体右边恰 CONTAINER_PADDING(内侧留白不受排斥带影响)
+    expect(rectOf(fitted).x2 - calculateNodeVisualBounds(m).right).toBe(CONTAINER_PADDING);
+    // 邻居贴到成员本体同一 24 间距 → 在排斥带内 → 推到间隙 = CONTAINER_CLEARANCE
+    const neighbor = node("nb", "ac-load", 0, 74 + CONTAINER_PADDING + 15);
+    const patch = ejectOutsiders(fitted as any, [fitted, m, neighbor] as any)[0];
+    expect(patch.position).toEqual({ x: 0, y: 189 });
+    expect(boundsGap(calculateNodeVisualBounds(shifted(neighbor, patch) as any), rectOf(fitted))).toBe(CONTAINER_CLEARANCE);
+  });
+
+  test("挤出:相交(覆盖一半)→ 推到间隙 = 100(不再只推中心)", () => {
     const c = node("c1", "ac-vpp-box", 0, 0, 200, 200);
     const half = node("half", "ac-load", 90, 0); // 本体 [70,110]:压住右边界 10
     const patch = ejectOutsiders(c as any, [c, half] as any)[0];
-    // 旧口径把中心推到 100 + 24 = 124,本体 [104,144] 仍压框 44 → 新口径推到 144
-    expect(patch.position).toEqual({ x: 144, y: 0 });
-    expect(boundsGap(calculateNodeVisualBounds(shifted(half, patch) as any), rectOf(c))).toBe(CONTAINER_PADDING);
+    // 旧口径把中心推到 100 + 24 = 124,本体 [104,144] 仍压框 44 → 新口径推到 220
+    expect(patch.position).toEqual({ x: 220, y: 0 });
+    expect(boundsGap(calculateNodeVisualBounds(shifted(half, patch) as any), rectOf(c))).toBe(CONTAINER_CLEARANCE);
   });
 
   test("回归钉子:宽 > 48 的大设备推出后本体不再压框(旧口径「只挤一半」)", () => {
     const c = node("c1", "ac-vpp-box", 0, 0, 200, 200);
     const wide = node("wide", "ac-load", 130, 0, 100, 30); // 本体 [80,180]:与右边相交 80,中心 (130,0) 在框外
     const patch = ejectOutsiders(c as any, [c, wide] as any)[0];
-    expect(patch.position).toEqual({ x: 174, y: 0 }); // 100 + 24 + 半宽 50
+    expect(patch.position).toEqual({ x: 250, y: 0 }); // 100 + 100 + 半宽 50
     const b = calculateNodeVisualBounds(shifted(wide, patch) as any);
     // 本体整体出框(旧中心口径下本例中心在框外 → 干脆不推,本体 80px 一直压在框上;
     // 「只挤一半」见上一条:中心在框内时旧口径只把中心推到 124,本体 [104,144] 仍压框 44)
     expect(b.left).toBeGreaterThanOrEqual(rectOf(c).x2);
-    expect(boundsGap(b, rectOf(c))).toBe(CONTAINER_PADDING);
+    expect(boundsGap(b, rectOf(c))).toBe(CONTAINER_CLEARANCE);
   });
 
   // 触发距离按**视觉包围盒(含标签)**算,与 containerBoundsForMembers 同源 —— 不是裸 size:
-  // 标签在节点下方展开时,含标签外沿先进入 24 间距带,设备就该被推开。
-  test("挤出按含标签包围盒判定:裸本体间距 ≥ 24 但标签越线 → 推,推出后含标签间隙 = 24", () => {
+  // 标签在节点下方展开时,含标签外沿先进入 100 排斥带,设备就该被推开。
+  test("挤出按含标签包围盒判定:裸本体间距 ≥ 100 但标签越线 → 推,推出后含标签间隙 = 100", () => {
     const c = node("c1", "ac-vpp-box", 0, 0, 200, 200); // 真实矩形 [-100,100]²
-    // 设备在本体上方:裸本体下边 = -125 → 与矩形上边间隙 25(≥ 24,单纯按 size 算不挪)
-    const bare = node("bare", "ac-load", 0, -140);
-    const labeled = { ...node("labeled", "ac-load", 0, -140), params: { _labelVisible: "1" } }; // 非 "0" 即显示
+    // 设备在本体上方:裸本体下边 = -205 → 与矩形上边间隙 105(≥ 100,单纯按 size 算不挪)
+    const bare = node("bare", "ac-load", 0, -220);
+    const labeled = { ...node("labeled", "ac-load", 0, -220), params: { _labelVisible: "1" } }; // 非 "0" 即显示
     const bareBounds = calculateNodeVisualBounds(bare);
     const labeledBounds = calculateNodeVisualBounds(labeled);
     expect(labeledBounds.bottom).toBeGreaterThan(bareBounds.bottom); // 标签在下方展开 → 含标签下沿更低
-    expect(boundsGap(bareBounds, rectOf(c))).toBeGreaterThanOrEqual(CONTAINER_PADDING);
+    expect(boundsGap(bareBounds, rectOf(c))).toBeGreaterThanOrEqual(CONTAINER_CLEARANCE);
+    expect(boundsGap(labeledBounds, rectOf(c))).toBeLessThan(CONTAINER_CLEARANCE); // 含标签才越线
     // 对照:同一几何、仅隐去标签 → 不推(证伪「按裸 size 算」的误读)
     expect(ejectOutsiders(c as any, [c, bare] as any)).toEqual([]);
-    // 含标签 → 推:仍沿最近边(上)让位,推出后**含标签**包围盒间隙 = 24
+    // 含标签 → 推:仍沿最近边(上)让位,推出后**含标签**包围盒间隙 = 100
     const patches = ejectOutsiders(c as any, [c, labeled] as any);
     expect(patches).toHaveLength(1);
     expect(patches[0].position.x).toBe(0);
-    expect(patches[0].position.y).toBeLessThan(-140);
+    expect(patches[0].position.y).toBeLessThan(-220);
     const after = calculateNodeVisualBounds(shifted(labeled, patches[0]) as any);
     expect(after.bottom).toBeLessThan(rectOf(c).y1); // 标签下沿整体让到框外
-    expect(boundsGap(after, rectOf(c))).toBe(CONTAINER_PADDING); // 24 量的是**含标签**包围盒
-    // 而非裸 size 的 24:同一新位置、仅隐去标签 → 裸本体让得更远(多让出一个标签高度),证伪「按裸 size 结算」的误读
+    expect(boundsGap(after, rectOf(c))).toBe(CONTAINER_CLEARANCE); // 100 量的是**含标签**包围盒
+    // 而非裸 size 的 100:同一新位置、仅隐去标签 → 裸本体让得更远(多让出一个标签高度),证伪「按裸 size 结算」的误读
     const bareAfter = calculateNodeVisualBounds(shifted({ ...labeled, params: { _labelVisible: "0" } }, patches[0]) as any);
-    expect(boundsGap(bareAfter, rectOf(c))).toBeGreaterThan(CONTAINER_PADDING);
+    expect(boundsGap(bareAfter, rectOf(c))).toBeGreaterThan(CONTAINER_CLEARANCE);
   });
 
-  test("enforce:存量图里贴着容器的未归属设备,下一次 enforce 被推到间隙 24(新的间距不变量)", () => {
+  test("enforce:存量图里贴着容器的未归属设备,下一次 enforce 被推到间隙 100(新的间距不变量)", () => {
     const m = { ...node("m1", "ac-load", 0, 0, 200, 100), containerId: "c1" };
     const fitted = fitContainerToMembers(node("c1", "ac-vpp-box", 0, 0, 200, 200) as any, [m] as any);
     // 拟合矩形 [-124,124]×[-74,74];邻居本体上边 = 94 → 下边间隙 20(中心在框外,旧口径不挪)
     const near = node("near", "ac-load", 0, 74 + 15 + 20);
     const dec = enforceContainerMembership([fitted, m, near] as any);
     expect(dec.patch.map((p) => p.nodeId)).toEqual(["near"]);
-    expect(dec.patch[0].position).toEqual({ x: 0, y: 113 }); // 下移 4 → 间隙 = 24
-    expect(boundsGap(calculateNodeVisualBounds(shifted(near, dec.patch[0]) as any), rectOf(fitted))).toBe(CONTAINER_PADDING);
+    expect(dec.patch[0].position).toEqual({ x: 0, y: 189 }); // 下移 80 → 间隙 = 100
+    expect(boundsGap(calculateNodeVisualBounds(shifted(near, dec.patch[0]) as any), rectOf(fitted))).toBe(CONTAINER_CLEARANCE);
   });
 
   test("挤出豁免:已归属存活容器的设备不被推(即使与另一容器间隙不足)", () => {
@@ -225,7 +243,7 @@ describe("acContainer 布局", () => {
     expect(ejectOutsiders(c as any, [c, c2, owned] as any)).toEqual([]);
   });
 
-  test("挤出覆盖四个方向:左半/上半区域的非成员同样被挤出,推出后间隙 = 24", () => {
+  test("挤出覆盖四个方向:左半/上半区域的非成员同样被挤出,推出后间隙 = 100", () => {
     const c = node("c1", "ac-vpp-box", 100, 100, 200, 200); // 真实矩形 [0,0]-[200,200]
     const probes = [
       node("lt", "ac-load", 50, 50),    // 左上:按左上角口径会误判为「在外」而逃过
@@ -241,11 +259,11 @@ describe("acContainer 布局", () => {
     for (const p of patches) {
       expect(centerIn(p.position, r)).toBe(false);
       const n = probes.find((x) => x.id === p.nodeId)!;
-      expect(boundsGap(calculateNodeVisualBounds(shifted(n, p) as any), r)).toBe(CONTAINER_PADDING);
+      expect(boundsGap(calculateNodeVisualBounds(shifted(n, p) as any), r)).toBe(CONTAINER_CLEARANCE);
     }
-    // 最近边最小位移(按包围盒):lt 本体 [30,70]×[35,65] → 上移 89 比左移 94 更近
-    expect(patches.find((p) => p.nodeId === "lt")!.position).toEqual({ x: 50, y: -39 });
-    expect(patches.find((p) => p.nodeId === "top")!.position).toEqual({ x: 100, y: -39 });
+    // 最近边最小位移(按包围盒):lt 本体 [30,70]×[35,65] → 上移 165 比左移 170 更近
+    expect(patches.find((p) => p.nodeId === "lt")!.position).toEqual({ x: 50, y: -115 });
+    expect(patches.find((p) => p.nodeId === "top")!.position).toEqual({ x: 100, y: -115 });
   });
 
   test("挤出豁免:全部线路 kind(不只 ac-line)——否则每次拖动都会把穿过容器的线路推出去", () => {
@@ -363,26 +381,26 @@ describe("归属判定", () => {
   });
 
   // 排斥(拖动路径专属):容器与容器外设备互相排斥 —— 非 Alt 拖进来的非成员被弹回框外,不写归属。
-  // 判定与推出同走包围盒口径(与 ejectOutsiders 同一单源):间隙 < CONTAINER_PADDING 即弹,弹到间隙 = CONTAINER_PADDING。
-  test("拖动 + 非 Alt + 非成员落入 → 弹出到间隙 24,归属不变", () => {
-    // 本体 [40,80]×[45,75]:左移 204 / 右移 84 / 上移 199 / 下移 79 → 最近边 = 下
+  // 判定与推出同走包围盒口径(与 ejectOutsiders 同一单源):间隙 < CONTAINER_CLEARANCE 即弹,弹到间隙 = CONTAINER_CLEARANCE。
+  test("拖动 + 非 Alt + 非成员落入 → 弹出到间隙 100,归属不变", () => {
+    // 本体 [40,80]×[45,75]:左移 280 / 右移 160 / 上移 275 / 下移 155 → 最近边 = 下
     const moved = { ...outside, position: { x: 60, y: 60 } };
     const r = judgeContainerMembership({ nodes: [c, moved] as any, movedIds: ["out"], altKey: false, repelNonMembers: true });
     expect(r.membershipChanges).toEqual([]);
     expect(r.enterContainerId).toBeUndefined();
-    expect(r.repelPatches).toEqual([{ nodeId: "out", position: { x: 60, y: 60 + 79 } }]);
-    expect(boundsGap(calculateNodeVisualBounds(shifted(moved, r.repelPatches[0]) as any), rectOf(c))).toBe(CONTAINER_PADDING);
+    expect(r.repelPatches).toEqual([{ nodeId: "out", position: { x: 60, y: 60 + 155 } }]);
+    expect(boundsGap(calculateNodeVisualBounds(shifted(moved, r.repelPatches[0]) as any), rectOf(c))).toBe(CONTAINER_CLEARANCE);
   });
 
-  test("拖动排斥:中心在框外但间隙 20(< 24)→ 照样弹到间隙 24(不再等「中心入框」)", () => {
+  test("拖动排斥:中心在框外但间隙 20(< 100)→ 照样弹到间隙 100(不再等「中心入框」)", () => {
     const near = { ...outside, position: { x: 140, y: 0 } }; // 本体 [120,160]:间隙 20,中心在框外
     const r = judgeContainerMembership({ nodes: [c, near] as any, movedIds: ["out"], altKey: false, repelNonMembers: true });
     expect(r.membershipChanges).toEqual([]);
-    expect(r.repelPatches).toEqual([{ nodeId: "out", position: { x: 144, y: 0 } }]);
+    expect(r.repelPatches).toEqual([{ nodeId: "out", position: { x: 220, y: 0 } }]);
   });
 
-  test("拖动排斥边界:间隙 30(≥ 24)→ 不弹", () => {
-    const far = { ...outside, position: { x: 150, y: 0 } }; // 本体 [130,170]:间隙 30
+  test("拖动排斥边界:间隙 130(≥ 100)→ 不弹", () => {
+    const far = { ...outside, position: { x: 250, y: 0 } }; // 本体 [230,270]:间隙 130
     const r = judgeContainerMembership({ nodes: [c, far] as any, movedIds: ["out"], altKey: false, repelNonMembers: true });
     expect(r.repelPatches).toEqual([]);
   });
@@ -432,7 +450,7 @@ describe("归属判定", () => {
       repelNonMembers: true,
     });
     expect(r.membershipChanges).toEqual([]);
-    expect(r.repelPatches).toEqual([{ nodeId: "out", position: { x: 60, y: 60 + 79 } }]);
+    expect(r.repelPatches).toEqual([{ nodeId: "out", position: { x: 60, y: 60 + 155 } }]);
   });
 
   test("显式声明新增容器(整组粘贴 / SVG 导入整模型重建)才豁免:落进它按落点入组", () => {
@@ -451,9 +469,9 @@ describe("归属判定", () => {
 
   test("拖动排斥:按真实矩形命中哪个容器就弹哪个", () => {
     const c2 = node("c2", "ac-switch-box", 1000, 0, 200, 200); // 真实矩形 [900,1100]×[-100,100]
-    const moved = { ...outside, position: { x: 950, y: 20 } };   // 本体 [930,970]×[5,35]:左移 94 最近
+    const moved = { ...outside, position: { x: 950, y: 20 } };   // 本体 [930,970]×[5,35]:左移 170 最近
     const r = judgeContainerMembership({ nodes: [c, c2, moved] as any, movedIds: ["out"], altKey: false, repelNonMembers: true });
-    expect(r.repelPatches).toEqual([{ nodeId: "out", position: { x: 950 - 94, y: 20 } }]);
+    expect(r.repelPatches).toEqual([{ nodeId: "out", position: { x: 950 - 170, y: 20 } }]);
   });
 
   test("容器自身被拖动不参与判定(不允许嵌套)", () => {
@@ -940,12 +958,12 @@ describe("拖动结束归属落地", () => {
     expect(enterContainerId).toBeUndefined();
     const byId = byIdOf(updates);
     expect(byId.get("o")!.containerId).toBeUndefined();
-    expect(byId.get("o")!.position).toEqual({ x: 60, y: 60 + 79 }); // 弹到间隙 24(旧口径只推中心到 100+24)
+    expect(byId.get("o")!.position).toEqual({ x: 60, y: 60 + 155 }); // 弹到间隙 100(旧口径只推中心到 100+24)
     expect(centerIn(byId.get("o")!.position, rectOf(byId.get("c1")!))).toBe(false); // 与重算后的容器不变量一致
   });
 
-  test("端到端:非 Alt 拖设备贴到容器边(间隙 20)松手 → 弹到间隙 = 24", () => {
-    // 基线:成员 (0,0) 的拟合容器(矩形 [-44,136]×[-39,73],成员本体到四边恰 24)
+  test("端到端:非 Alt 拖设备贴到容器边(间隙 20)松手 → 弹到间隙 = 100", () => {
+    // 基线:成员 (0,0) 的拟合容器(矩形 [-44,136]×[-39,73],成员本体到四边恰 24 = 内侧留白)
     const m = member(0, 0);
     const base = fitContainerToMembers(container(), [m] as any) as any;
     const dev = node("dev", "ac-load", 176, 17) as any; // 本体 [156,196]×[2,32]:与右边间隙 20
@@ -953,8 +971,8 @@ describe("拖动结束归属落地", () => {
       nodes: [base, m, dev], movedIds: ["dev"], altKey: false, repelNonMembers: true,
     });
     const byId = byIdOf(updates);
-    expect(byId.get("dev")!.position).toEqual({ x: 180, y: 17 }); // 右边:136 + 24 + 半宽 20
-    expect(boundsGap(calculateNodeVisualBounds(byId.get("dev")!), rectOf(byId.get("c1")!))).toBe(CONTAINER_PADDING);
+    expect(byId.get("dev")!.position).toEqual({ x: 256, y: 17 }); // 右边:136 + 100 + 半宽 20
+    expect(boundsGap(calculateNodeVisualBounds(byId.get("dev")!), rectOf(byId.get("c1")!))).toBe(CONTAINER_CLEARANCE);
   });
 
   test("拖容器 + Alt:跟随扩组的成员不参与判定,整组不被拆散", () => {
@@ -1102,7 +1120,7 @@ describe("悬空归属(容器已删除)", () => {
     const { updates } = applyDragContainerMembership({
       nodes: [container(), orphan], movedIds: ["o"], altKey: false, repelNonMembers: true,
     });
-    expect(updates.find((n) => n.id === "o")!.position).toEqual({ x: 60, y: 60 + 79 });
+    expect(updates.find((n) => n.id === "o")!.position).toEqual({ x: 60, y: 60 + 155 });
   });
 
   test("判定侧:悬空归属 Alt 拖动不算「移出」(无 exitContainerId),且不改写归属", () => {
@@ -1158,8 +1176,8 @@ describe("归属落地出口 commitContainerMembership", () => {
     const next = commitContainerMembership(nodes, ["p1"]);
     const placed = next.find((n) => n.id === "p1")!;
     expect(placed.containerId).toBeUndefined();
-    // 本体 [30,70]×[35,65]:弹出口径 = 与矩形 [-100,100]² 的间隙推到 24 → 下移 89(下边最近)
-    expect(placed.position).toEqual({ x: 50, y: 50 + 89 });
+    // 本体 [30,70]×[35,65]:弹出口径 = 与矩形 [-100,100]² 的间隙推到 100 → 下移 165(下边最近)
+    expect(placed.position).toEqual({ x: 50, y: 50 + 165 });
     expect(pasted.containerId).toBeUndefined(); // 入参图保持原样
     expect(pasted.position).toEqual({ x: 50, y: 50 });
   });
@@ -1172,18 +1190,18 @@ describe("归属落地出口 commitContainerMembership", () => {
   });
 
   // 契约(审查裁决 I1):「本批新增容器」豁免的只是**落点入组**那条分支,不是间距不变量 ——
-  // 整组粘贴 / SVG 导入 / 批量布局时,贴边(中心在框外、间隙 < 24)的未归属节点照样被推到间隙 24,
+  // 整组粘贴 / SVG 导入 / 批量布局时,贴边(中心在框外、间隙 < 100)的未归属节点照样被推到间隙 100,
   // 与存量图首次 enforce 同一执行(成员与已归属节点豁免不变)。
-  test("契约:同批新增容器不豁免间距 —— 贴边(中心在外、间隙 20)未归属节点被推到间隙 24", () => {
+  test("契约:同批新增容器不豁免间距 —— 贴边(中心在外、间隙 20)未归属节点被推到间隙 100", () => {
     const c1 = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
     const ring = node("ring", "ac-load", 140, 0) as any; // 本体 [120,160]:中心在框外,与右边间隙 20
     const next = commitContainerMembership([c1, ring], ["c1", "ring"]);
     const placed = next.find((n) => n.id === "ring")!;
     expect(placed.containerId).toBeUndefined();        // 中心在外 → 不入组(落点入组豁免只作用于框内落点)
-    expect(placed.position).toEqual({ x: 144, y: 0 }); // 100 + 24 + 半宽 20 → 间隙恰 24
-    // 容器随后重算(无成员 → 最小尺寸 180×112),间隙只增不减(34 ≥ 24),间距不变量仍成立
+    expect(placed.position).toEqual({ x: 220, y: 0 }); // 100 + 100 + 半宽 20 → 间隙恰 100
+    // 容器随后重算(无成员 → 最小尺寸 180×112),间隙只增不减(110 ≥ 100),间距不变量仍成立
     expect(boundsGap(calculateNodeVisualBounds(placed as any), rectOf(next.find((n) => n.id === "c1")!)))
-      .toBeGreaterThanOrEqual(CONTAINER_PADDING);
+      .toBeGreaterThanOrEqual(CONTAINER_CLEARANCE);
   });
 
   test("落点在容器外的节点不写归属;无容器时返回原引用(短路)", () => {
