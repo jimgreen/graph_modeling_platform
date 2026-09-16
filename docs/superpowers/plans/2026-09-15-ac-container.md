@@ -949,6 +949,8 @@ git commit -m "feat(container): 关口容器量测组单向同步"
 - Consumes: Task 1 kind/`isAcContainerKind`
 - Produces: 容器记录 section = `ACContainer`,列:`idx`/`name`/`type`/`is_gateway`/`bound_device_idx`
 
+> **已被取代(2026-09-17 验收反馈):** 本任务列清单的 `type` 列已改 `dev_type`(值=元件英文名);`bound_device_idx` 值已改 `{E表名}_{idx}` 形态。以 `src/model-eexport.ts` 实现与 spec 为准。
+
 - [ ] **Step 1: 读现状**
 
 读 `src/model-eexport.ts:33-50`(段列定义真实结构)、`:336-344`(inferESection)、`:1846-1878`(主循环与 columns.length===0 continue)、`:2010-2017`(模板态过滤)、`:2040-2074`(告警)。
