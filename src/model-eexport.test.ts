@@ -4577,6 +4577,22 @@ function createIndexedExportNodes(kinds: DeviceKind[]): ModelNode[] {
   });
 }
 
+/**
+ * 解析容器记录 bound_device_idx 指向的行:按**最后一个**下划线切「表名 / idx」
+ * (表名可能自带下划线,如 dms_def_load_3),再在对应段里找 idx 匹配的行。
+ * 返回行本身,便于断言行内 name 就是绑定设备 —— 只断言 idx 存在是恒真的(引用错位时命中的是另一台设备)。
+ */
+function containerBoundDeviceRow(
+  payload: Record<string, ParsedESection>,
+  containerName: string
+): { table: string; idx: string; row?: Record<string, string> } {
+  const ref = payload.ACContainer?.rows.find((row) => row.name === containerName)?.bound_device_idx ?? "";
+  const cut = ref.lastIndexOf("_");
+  const table = cut >= 0 ? ref.slice(0, cut) : "";
+  const idx = cut >= 0 ? ref.slice(cut + 1) : "";
+  return { table, idx, row: payload[table]?.rows.find((candidate) => candidate.idx === idx) };
+}
+
 describe("交流容器 E 导出", () => {
   test("三个容器 kind 统一映射到容器段 ACContainer", () => {
     for (const kind of ["ac-vpp-box", "ac-switch-box", "ac-distribution-box"]) {
@@ -4643,8 +4659,10 @@ describe("交流容器 E 导出", () => {
         name: container.name
       })
     ]);
-    // 引用值能对上实际写出的段:表名前缀若与实际段名漂移,这条断言先红
-    expect(payload.ACGenerator?.rows.map((row) => row.idx)).toContain(member.params.idx);
+    // 引用要解析到 ACGenerator 段、且行内 name 就是绑定设备(表名前缀漂移或 idx 错位都会先红)
+    const bound = containerBoundDeviceRow(payload, container.name);
+    expect(bound.table).toBe("ACGenerator");
+    expect(bound.row?.name).toBe(member.name);
   });
 
   test("bound_device_idx 非模板态取绑定设备所在 E 段名(母线→ACRealBs)", () => {
@@ -4656,8 +4674,10 @@ describe("交流容器 E 导出", () => {
 
     const payload = parseESections(buildEFileExport(project).text);
     expect(payload.ACContainer?.rows[0]?.bound_device_idx).toBe(`ACRealBs_${bus.params.idx}`);
-    // 母线自身记录就在 ACRealBs 段,行内 idx 与引用值同源 —— 消费方按「表名+idx」可直接定位
-    expect(payload.ACRealBs?.rows.map((row) => row.idx)).toContain(bus.params.idx);
+    // 母线自身记录就在 ACRealBs 段:引用指到的行 name 必须是绑定母线,不是同段另一台设备
+    const bound = containerBoundDeviceRow(payload, container.name);
+    expect(bound.table).toBe("ACRealBs");
+    expect(bound.row?.name).toBe(bus.name);
   });
 
   test("bound_device_idx 模板态取模板表名(ACRealBs 合并到 ACNode 后写模板段名)", () => {
@@ -4696,7 +4716,11 @@ describe("交流容器 E 导出", () => {
 
     const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
     expect(payload.ACContainer?.rows[0]?.bound_device_idx).toBe(`node_${bus.params.idx}`);
-    expect(payload.node?.rows.map((row) => row.idx)).toContain(bus.params.idx);
+    // node 表由两套 idx 空间喂(拓扑行 idx=端子 nodeNumber / 合并母线行 idx=设备 idx),可能多行同号:
+    // 断言「命中的行 name 是绑定母线」而不是「某 idx 存在」,后者恒真
+    const bound = containerBoundDeviceRow(payload, container.name);
+    expect(bound.table).toBe("node");
+    expect(bound.row?.name).toBe(bus.name);
   });
 
   test("bound_device_idx 跟真实 sgcc 模板段名:母线→node 表、电源→unit 表", () => {
@@ -4711,7 +4735,9 @@ describe("交流容器 E 导出", () => {
     );
     // sgcc 把 ACNode+交流母线 合到 node 表:引用必须写 node_,写内部段名 ACRealBs_ 在文件里找不到该段
     expect(busPayload.ACContainer?.rows[0]?.bound_device_idx).toBe(`node_${bus.params.idx}`);
-    expect(busPayload.node?.rows.map((row) => row.idx)).toContain(bus.params.idx);
+    const bound = containerBoundDeviceRow(busPayload, busBox.name);
+    expect(bound.table).toBe("node");
+    expect(bound.row?.name).toBe(bus.name);
 
     const [srcBox, src] = createIndexedExportNodes(["ac-switch-box", "ac-source"]);
     src.containerId = srcBox.id;
@@ -4722,6 +4748,39 @@ describe("交流容器 E 导出", () => {
     );
     // 同模板下电源落 unit 表:同模型两类绑定设备各写各的表名,证表名不是写死的段名
     expect(srcPayload.ACContainer?.rows[0]?.bound_device_idx).toBe(`unit_${src.params.idx}`);
+    const srcBound = containerBoundDeviceRow(srcPayload, srcBox.name);
+    expect(srcBound.table).toBe("unit");
+    expect(srcBound.row?.name).toBe(src.name);
+  });
+
+  test("绑定设备落在合并段(双/三绕组主变同写 trfm)时引用指向重排后的最终行", () => {
+    const options = eExportOptionsForTemplateFile("sgcc.e");
+    // 双绕组主变(ACTransformer)与三绕组主变(ACTransfomer3)在 sgcc 下同写 trfm 表:
+    // 合并段会把 idx 重排为 1..N,与各设备在自身内部段里的序号不同 —— 引用必须取重排后的最终值
+    const [boxA, t2, boxB, t3] = createIndexedExportNodes([
+      "ac-switch-box", "ac-transformer", "ac-switch-box", "ac-three-winding-transformer"
+    ]);
+    boxA.name = "箱A";
+    boxB.name = "箱B";
+    t2.name = "双绕组主变1";
+    t3.name = "三绕组主变1";
+    t2.containerId = boxA.id;
+    boxA.params.is_gateway = "1";
+    boxA.params.bound_device_id = t2.id;
+    t3.containerId = boxB.id;
+    boxB.params.is_gateway = "1";
+    boxB.params.bound_device_id = t3.id;
+    const project: ProjectFile = { version: 1, name: "容器绑合并段设备模型", nodes: [boxA, t2, boxB, t3], edges: [] };
+
+    const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
+    // 两个容器各自解析引用所指的行,断言行内 name 就是绑定设备 —— 引用错位时指向的是另一台变压器的行
+    const boundAContainer = containerBoundDeviceRow(payload, "箱A");
+    const boundBContainer = containerBoundDeviceRow(payload, "箱B");
+    expect(boundAContainer.table).toBe("trfm");
+    expect(boundBContainer.table).toBe("trfm");
+    // 两台主变各自段内序号都是 1,重排后必有一台变成 2 —— 只用裸 idx(或按段内序号算的引用)时这里至少一条会指向错设备
+    expect(boundAContainer.row?.name).toBe("双绕组主变1");
+    expect(boundBContainer.row?.name).toBe("三绕组主变1");
   });
 
   test("绑定设备 id 悬空时 bound_device_idx 保持空(不产出半个引用)", () => {
