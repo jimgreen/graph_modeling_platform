@@ -231,11 +231,11 @@
 | 名称 | 节点名 |
 | dev_type | 容器元件英文名:`ac-vpp-box` / `ac-switch-box` / `ac-distribution-box`(即节点 `kind`) |
 | 是否关口 | `params.is_gateway` |
-| 绑定设备 idx | `params.bound_device_id` 解析出成员 idx |
+| 绑定设备 idx | `params.bound_device_id` 解析出成员所在表名 + `_` + 成员 idx(如 `ACRealBs_3` / 模板态 `node_3`) |
 
 > **变更(2026-09-16):** 原「类型」列(列名 `type`,值 = 图元库中文名 虚拟电厂 / 开关箱 / 配变箱)**删除**,改为 `dev_type`(值 = 容器元件英文名)。全链路同值:容器段记录、面板「设备类型」行(`resolveDeviceModelPanelDevType`)、双击/批量参数行(`getEParamValue`)。容器是 dev_type 语义的**唯一例外** —— 其它段的 dev_type 仍是 E 设备类名(ACLoad / ACWindGen 等);模板定义了容器段时,`dev_type` 仍取容器元件英文名,不得被改写成段名 `ACContainer`(`applyEInterfaceDefinitionToRecord` 内按段名放行)。旧导出产物含 `type` 列,消费方需切换到 `dev_type`。
 
-> **语义注记(2026-09-16,Task 10 审查裁决):** `idx` 为分段计数器(每段独立,跨段可重号),单看 `bound_device_idx` 不能唯一定位成员 —— 绑定设备必为容器成员,消费方应按「容器记录 + 其成员集合(经 `containerId` 归属解析)」匹配;若下游要求唯一标识,再补 `bound_device_section` 列。
+> **语义变更(2026-09-17,取代 2026-09-16 Task 10 审查裁决):** `bound_device_idx` 值改为 `{表名}_{idx}` —— 表名 = 绑定设备在本次导出中**实际写入的 E 段标签**(与格式化阶段的分组同源:接口定义 `exportName` > `eDeviceDefinitionLabels` 映射 > 内部段名),如 sgcc 模板下母线写 `node_3`、电源写 `unit_3`,非模板态写入 `ACRealBs_3`;idx 为该设备记录的 idx。原注记「裸 idx 跨段重号、消费方须按容器成员集合兜底匹配、必要时补 `bound_device_section` 列」**作废**:带表名前缀后消费方可直接按「表名 + idx」唯一定位,不再需要成员集合兜底或独立段名列。绑定失效(设备已删除/移出成员)或无 idx 时整列为空(沿用既有空值语义)。
 
 ### 非关口
 
