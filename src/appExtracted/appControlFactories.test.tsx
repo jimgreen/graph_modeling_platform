@@ -751,7 +751,7 @@ describe("programmaticUpdateDeviceProperty", () => {
     expect(captured.groups.some((g: any) => g.nodeId === container.id)).toBe(true);
   });
 
-  test("写 params.is_gateway=0 关关口 → 容器量测组随归一化删除", () => {
+  test("写 params.is_gateway=0 关关口 → 容器旧镜像保留(fb13 口径)", () => {
     const container = createDefaultNode("ac-vpp-box", { x: 0, y: 0 });
     container.params.is_gateway = "1";
     container.params.bound_device_id = "m1";
@@ -784,7 +784,8 @@ describe("programmaticUpdateDeviceProperty", () => {
 
     update(container.id, "model", { params: { is_gateway: "0" } });
 
-    expect(captured.groups.some((g: any) => g.nodeId === container.id)).toBe(false);
+    // fb13 口径:关关口后旧镜像保留(不再随归一化删除)
+    expect(captured.groups.some((g: any) => g.nodeId === container.id)).toBe(true);
     expect(captured.groups.some((g: any) => g.nodeId === "m1")).toBe(true);
   });
 });

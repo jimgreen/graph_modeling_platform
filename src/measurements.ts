@@ -544,6 +544,9 @@ export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
     { id: "status", key: "status", name: "状态", shortLabel: "状态", defaultUnit: "", valueType: "string", defaultDecimals: 0, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 12, defaultFontWeight: "700", defaultVisible: false }
   ],
   deviceProfiles: [
+    // 交流容器:容器无 E 设备类,档键取段名 ACContainer —— measurementProfileForNode 的
+    // directKeys[0] = inferESection(容器) = "ACContainer",一条覆盖三 kind(单源,不给每个 kind 各写一条)
+    { deviceKind: "ACContainer", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "ac-load", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "dc-load", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "ac-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "frequency" }] },
@@ -1244,11 +1247,12 @@ export function removeMeasurementGroupForNode(measurements: ProjectMeasurementCo
   };
 }
 
-// ─── 关口容器量测组(需求 7):容器组恒为绑定设备量测组的副本,单向 绑定设备 → 容器 ───
+// ─── 关口容器量测组(需求 7):关口时容器组 = 绑定设备量测组的副本,单向 绑定设备 → 容器 ───
 //
-// 容器自身没有独立量测:容器组 = 绑定设备全部测点的镜像(nodeId = 容器 id)。
-// 单向同步意味着容器组的编辑/拖动会被下一次同步覆盖,这是设计口径而非缺陷。
-// 「容器组存在 ⟺ 容器是关口 + 绑定设备存在且仍是其成员」由 reconcileContainerMeasurementGroups 保证。
+// 关口 + 绑定有效:容器组 = 绑定设备全部测点的镜像(nodeId = 容器 id)。单向同步意味着
+// 容器组的编辑/拖动会被下一次同步覆盖,这是设计口径而非缺陷。
+// 非关口容器(或绑定失效):镜像不再刷新但**保留**;容器自身的组(手建 /【默认】按 ACContainer 档建)
+// 亦由 reconcileContainerMeasurementGroups 保留,不再清理。
 
 /** 容器量测组 id(与 createMeasurementGroupShellForNode 同构:`measurement-<nodeId>`) */
 export function containerMeasurementGroupId(containerId: string): string {
@@ -1301,13 +1305,15 @@ export function removeContainerMeasurementGroup(
 }
 
 /**
- * 按最新图收敛全部容器量测组(幂等):关口且绑定设备存在且仍是该容器成员 → 同步;否则删除容器组。
+ * 按最新图收敛全部容器量测组(幂等):关口且绑定设备存在且仍是该容器成员 → 用绑定设备测点镜像覆盖;
+ * 其余情况(非关口 / 绑定失效)一律**保留**容器名下的组,不再清理。
  * 这是容器量测的唯一判定出口 —— 面板绑定/解绑、移出、改归属、Alt 拖出、删除绑定设备、绑定设备改测点
  * 都汇到这里,避免多处各写一套「该建还是该删」。
  *
- * 口径:**容器组只能由镜像产生** —— 非关口容器(或关口但绑定失效)名下的一切组都会被清理,
- * 包括历史/手建/外部写入的组。这是「容器组存在 ⟺ 关口 + 绑定设备存在且仍是成员」不变量的强制执行
- * (容器自身没有独立量测可保留)。
+ * 口径(fb13 修正):容器组有两个合法来源 —— ① 关口绑定时的镜像(覆盖式同步);
+ * ② 非关口容器自身的组(用户数据:手建 / 【默认】按钮按容器档 ACContainer=P/Q/U/I 建)。
+ * 「关口 → 非关口」或绑定失效时旧镜像**残留**(不再自动清空):它已不再随绑定设备刷新,
+ * 用户可在【量测】页用【默认】按钮重建。
  */
 export function reconcileContainerMeasurementGroups(
   config: ProjectMeasurementConfig,
@@ -1322,9 +1328,9 @@ export function reconcileContainerMeasurementGroups(
     const boundDeviceId = String(node.params?.bound_device_id ?? "");
     const boundNode = boundDeviceId ? byId.get(boundDeviceId) : undefined;
     const active = node.params?.is_gateway === "1" && boundNode !== undefined && boundNode.containerId === node.id;
-    next = active
-      ? syncContainerMeasurementGroup(next, node.id, boundDeviceId)
-      : removeContainerMeasurementGroup(next, node.id);
+    if (active) {
+      next = syncContainerMeasurementGroup(next, node.id, boundDeviceId);
+    }
   }
   return next;
 }

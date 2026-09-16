@@ -1360,7 +1360,7 @@ describe("容器归属入口的量测同步", () => {
     return [...byId.values()];
   };
 
-  test("Alt 拖出绑定设备:关口解绑 → 容器量测组随归一化删除,绑定设备组保留", () => {
+  test("Alt 拖出绑定设备:关口解绑 → 容器旧镜像保留(fb13 口径),绑定设备组保留", () => {
     const container = bare("c1", "ac-vpp-box", {
       size: { width: 180, height: 112 },
       params: { is_gateway: "1", bound_device_id: "m1" },
@@ -1416,7 +1416,8 @@ describe("容器归属入口的量测同步", () => {
       writeOperationLog: vi.fn(),
     } as any)(true);
 
-    expect(hasGroup(captured, "c1")).toBe(false);
+    // fb13 口径:解绑后旧镜像保留(不再清空),绑定设备组不受影响
+    expect(hasGroup(captured, "c1")).toBe(true);
     expect(hasGroup(captured, "m1")).toBe(true);
   });
 
@@ -1446,7 +1447,7 @@ describe("容器归属入口的量测同步", () => {
     expect(captured.groups.find((g: any) => g.nodeId === "c1").items.length).toBe(1);
   });
 
-  test("关关口:容器量测组随归一化删除", () => {
+  test("关关口:容器旧镜像保留(fb13 口径,不再随归一化删除)", () => {
     const container = bare("c1", "ac-vpp-box", { params: { is_gateway: "1", bound_device_id: "m1" } });
     const member = bare("m1", "ac-load", { containerId: "c1" });
     const nodes = [container, member];
@@ -1468,7 +1469,8 @@ describe("容器归属入口的量测同步", () => {
       undoScopeForNodeFootprintPatch: () => ({})
     } as any)("is_gateway", "0");
 
-    expect(hasGroup(captured, "c1")).toBe(false);
+    // fb13 口径:关关口后旧镜像保留(不再随归一化删除)
+    expect(hasGroup(captured, "c1")).toBe(true);
     expect(hasGroup(captured, "m1")).toBe(true);
   });
 });
