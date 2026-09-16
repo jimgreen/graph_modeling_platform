@@ -45,6 +45,7 @@ import {
   containerDeletionWarning,
   containerDeletionFinalize,
   refitContainersAfterTransform,
+  containerResizeMinSize,
 } from "./acContainer";
 
 // 测试用最小节点。rotation/scale 必填:calculateNodeVisualBounds 依赖它们算半宽高,
@@ -1269,5 +1270,44 @@ describe("变换后的容器跟随", () => {
     const rotated = { ...member, rotation: 45 };
     const updates = refitContainersAfterTransform([base, rotated, stray] as any, ["m1"]);
     expect(updates.map((n) => n.id)).toEqual(["c1"]);
+  });
+});
+
+// ─── 手动尺寸:拖角下限 + 拖动提交不改写用户尺寸 ─────────────────────────────
+// 拖角 resize 走**几何**(改 size)而非 transform(scale):渲染矩形 = size × |scale|,
+// 写 scale 会让「看到的容器」与 eject/入组用的 size 矩形分叉(拖大后设备只挤开一半、
+// 拖小后成员戳出框外)。容器几何恒在 size,故手动尺寸的下限也落在 size 上。
+describe("容器手动尺寸", () => {
+  test("containerResizeMinSize = 成员包围盒 + padding;小于最小尺寸/无成员 → CONTAINER_MIN_SIZE", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0, 180, 112) as any;
+    expect(containerResizeMinSize(c, [node("m1", "ac-load", 0, 0, 300, 200) as any]))
+      .toEqual({ width: 300 + CONTAINER_PADDING * 2, height: 200 + CONTAINER_PADDING * 2 });
+    // 成员比最小尺寸还小 → 与 fitContainerToMembers 同口径,回落到 180×112
+    expect(containerResizeMinSize(c, [node("m1", "ac-load", 0, 0) as any])).toEqual({ ...CONTAINER_MIN_SIZE });
+    expect(containerResizeMinSize(c, [])).toEqual({ ...CONTAINER_MIN_SIZE });
+  });
+
+  test("拖动容器:手动尺寸与位置被保留(只扩不缩),不被打回成员包围盒", () => {
+    const manual = node("c1", "ac-vpp-box", 500, 400, 360, 224) as any;
+    const { updates } = applyDragContainerMembership({ nodes: [manual], movedIds: ["c1"], altKey: false, repelNonMembers: true });
+    const after = updates.find((n) => n.id === "c1")!;
+    expect(after.size).toEqual({ width: 360, height: 224 });
+    expect(after.position).toEqual({ x: 500, y: 400 });
+  });
+
+  test("拖动容器:成员戳出时才扩到刚好包住", () => {
+    const manual = node("c1", "ac-vpp-box", 500, 400, 200, 150) as any;
+    const far = { ...node("m1", "ac-load", 700, 400, 300, 200), containerId: "c1" };
+    const { updates } = applyDragContainerMembership({ nodes: [manual, far], movedIds: ["c1"], altKey: false, repelNonMembers: true });
+    const after = updates.find((n) => n.id === "c1")!;
+    expect(after.size).toEqual(fitContainerToMembers(manual, [far]).size);
+  });
+
+  test("容器不在拖动集时照常 refit(成员走光 → 收缩回最小尺寸)", () => {
+    const manual = node("c1", "ac-vpp-box", 500, 400, 360, 224) as any;
+    const { updates } = applyDragContainerMembership({
+      nodes: [manual, node("d1", "ac-load", 900, 400) as any], movedIds: ["d1"], altKey: false, repelNonMembers: true
+    });
+    expect(updates.find((n) => n.id === "c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE });
   });
 });

@@ -17,7 +17,7 @@ import {
 } from "../voltageInheritance";
 import { getRatedCapacityDefaultForKind } from "../model";
 import { graphStorePatchNodes } from "../graphStore";
-import { applyDragContainerMembership, containerDeletionFinalize, containerDragGroup, isAcContainerNode, refitContainersOnly, withNodeUpdates } from "../acContainer";
+import { applyDragContainerMembership, clampContainerCenterToMembers, containerDeletionFinalize, containerDragGroup, containerResizeMinSize, isAcContainerNode, refitContainersOnly, withNodeUpdates } from "../acContainer";
 import { arrangeContainerInteriors, mergeContainerLayoutUnits } from "../selectionActions";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
@@ -1169,10 +1169,14 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
         const currentSignedScaleX = getNodeScaleX(baseNode);
         const currentSignedScaleY = getNodeScaleY(baseNode);
         const lineSegmentBusResize = isLineSegmentBusNode(baseNode);
-        const localScaleKind = !lineSegmentBusResize && (event.shiftKey || transformDrag.kind === "scale-both")
+        // 交流容器拖角也是「几何 resize」(改 size,不改 scale),与分段母线同一条路:
+        // 渲染矩形 = size × |scale|,写 scale 会让所见与 eject/入组用的 size 矩形分叉
+        const containerResize = !lineSegmentBusResize && isAcContainerNode(baseNode);
+        const geometryResize = lineSegmentBusResize || containerResize;
+        const localScaleKind = !geometryResize && (event.shiftKey || transformDrag.kind === "scale-both")
           ? "scale-both"
           : transformDrag.kind;
-        const proportionalScale = !lineSegmentBusResize && localScaleKind === "scale-both";
+        const proportionalScale = !geometryResize && localScaleKind === "scale-both";
         const signedScaleFromHandleDelta = transformDrag.uprightStaticSelection
           ? signedScaleFromUprightHandleDelta
           : signedScaleFromRotatedHandleDelta;
@@ -1183,7 +1187,36 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
               : { ...current, historyCaptured: true, proportionalScale }
             : current
         );
-        if (lineSegmentBusResize) {
+        if (containerResize) {
+          const originalSize = transformDrag.originalSize ?? baseNode.size;
+          // 起始尺寸按**渲染尺寸**折算(×|scale|):历史上的容器缩放(拖角曾写 scale)在此被吃进 size,
+          // 拖完 scale 归一 1 —— 容器的几何恒在 size/position
+          const startSize = {
+            width: originalSize.width * Math.abs(getNodeScaleX(baseNode)),
+            height: originalSize.height * Math.abs(getNodeScaleY(baseNode))
+          };
+          const members = currentStore.nodes.filter((n) => n.containerId === baseNode.id && n.id !== baseNode.id);
+          const resizedNode = resizeLineSegmentBusGeometryFromHandleDrag({
+            node: { ...baseNode, size: startSize, scale: 1, scaleX: 1, scaleY: 1 },
+            startPoint: transformDrag.startPoint,
+            point,
+            handleXDirection: transformDrag.handleXDirection,
+            handleYDirection: transformDrag.handleYDirection,
+            resizeX: localScaleKind === "scale-x" || localScaleKind === "scale-both",
+            resizeY: localScaleKind === "scale-y" || localScaleKind === "scale-both",
+            // 下限 = 成员视觉包围盒 + 内侧留白(无成员 = CONTAINER_MIN_SIZE):缩到刚好包住成员为止
+            minSize: containerResizeMinSize(baseNode, members)
+          });
+          nextNode = {
+            ...node,
+            position: clampContainerCenterToMembers(resizedNode.position, resizedNode.size, members),
+            size: resizedNode.size,
+            rotation: baseNode.rotation,
+            scale: 1,
+            scaleX: 1,
+            scaleY: 1
+          };
+        } else if (lineSegmentBusResize) {
           const originalSize = transformDrag.originalSize ?? baseNode.size;
           const resizedNode = resizeLineSegmentBusGeometryFromHandleDrag({
             node: { ...baseNode, size: { ...originalSize } },

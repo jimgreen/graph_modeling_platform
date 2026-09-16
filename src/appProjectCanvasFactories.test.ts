@@ -1409,6 +1409,149 @@ describe("line-segment bus pointer resizing", () => {
   );
 });
 
+// 容器拖角 = 改几何(size)而不是 transform(scale):渲染矩形 = size × |scale|,
+// 写 scale 会让「看到的容器」与 eject/入组用的 size 矩形分叉(fb10 用户实况:
+// 拖大后设备只挤开一半仍压在框里、拖小后成员戳出)。下限 = 成员包围盒 + padding。
+describe("container pointer resizing", () => {
+  const containerNode = (extra: Record<string, unknown> = {}) => ({
+    ...createDefaultNode("ac-vpp-box", { x: 100, y: 100 }),
+    size: { width: 180, height: 112 },
+    ...extra
+  });
+  const memberNode = (containerId: string, size: { width: number; height: number }) => ({
+    id: "m1", kind: "ac-load", name: "m1", position: { x: 100, y: 100 }, size,
+    rotation: 0, scale: 1, params: { _labelVisible: "0" }, terminals: [], containerId
+  });
+  const runCornerDrag = (
+    container: any,
+    member: any,
+    drag: Record<string, unknown>,
+    pointer: { x: number; y: number },
+    extraScope: Record<string, unknown> = {}
+  ) => {
+    const graphStore = { nodeMap: new Map([[container.id, container]]), nodes: [container, member].filter(Boolean) };
+    const patchGraphNodes = vi.fn();
+    const transformDrag = {
+      kind: "scale-both",
+      nodeId: container.id,
+      originalNode: {
+        position: { ...container.position }, rotation: container.rotation,
+        scale: container.scale, scaleX: container.scaleX, scaleY: container.scaleY
+      },
+      originalSize: { ...container.size },
+      startPoint: { x: 190, y: 156 },
+      handleXDirection: 1,
+      handleYDirection: 1,
+      historyCaptured: false,
+      ...drag
+    };
+    const scope = {
+      buildRoutableLineEndpointPreviewNodeUpdates: () => [],
+      clampPointToCanvas: (point: unknown) => point,
+      connectSource: null,
+      contextMarqueeSelectionRef: { current: null },
+      draggingRef: { current: null },
+      getNodeScaleX,
+      getNodeScaleY,
+      graphStore,
+      isGroupTransformDrag: (candidate: object) => "groupId" in candidate,
+      isLineSegmentBusNode: () => false,
+      lastCanvasClientPointerRef: { current: null },
+      lastCanvasPointerRef: { current: null },
+      lastRawCanvasPointerRef: { current: null },
+      latestGraphStoreRef: { current: graphStore },
+      libraryPlacement: null,
+      manualPathDrag: null,
+      marquee: null,
+      modifierSelectionPressRef: { current: null },
+      nodeLabelDrag: null,
+      nodeLabelRotateDrag: null,
+      panning: null,
+      panningRef: { current: null },
+      patchGraphNodes,
+      pushUndoSnapshot: vi.fn(),
+      resizeLineSegmentBusGeometryFromHandleDrag,
+      rewiring: null,
+      routableLineEndpointDrag: null,
+      routableLinePlacement: null,
+      screenToSvgPoint: (_svg: unknown, x: number, y: number) => ({ x, y }),
+      setTransformDrag: vi.fn(),
+      signedScaleFromRotatedHandleDelta: vi.fn(),
+      signedScaleFromUprightHandleDelta: vi.fn(),
+      singleTransformBaseNode: (activeDrag: any, current: any) => ({
+        ...current,
+        position: { ...activeDrag.originalNode.position },
+        rotation: activeDrag.originalNode.rotation,
+        scale: activeDrag.originalNode.scale,
+        scaleX: activeDrag.originalNode.scaleX,
+        scaleY: activeDrag.originalNode.scaleY
+      }),
+      staticButtonPointerRef: { current: null },
+      staticDrawing: null,
+      svgRef: { current: {} },
+      terminalPress: null,
+      transformDrag,
+      transformDragChangedRef: { current: false },
+      updateMeasurementDrag: () => false,
+      updateMouseStatus: vi.fn(),
+      ...extraScope
+    };
+    createHandlePointerMove(scope as any)({ clientX: pointer.x, clientY: pointer.y, ctrlKey: false, shiftKey: false } as any);
+    return patchGraphNodes.mock.calls[0]?.[0]?.[0];
+  };
+
+  test("缩小:size 被夹在成员包围盒 + padding,且仍完全包住成员", () => {
+    const container = containerNode();
+    const member = memberNode(container.id, { width: 300, height: 200 });
+    const resized = runCornerDrag(container, member, {}, { x: 150, y: 130 });
+
+    expect(resized.size).toEqual({ width: 300 + 48, height: 200 + 48 });
+    // 尺寸夹到下限后矩形整体平移回完全包住成员(成员 300×200 居中于 (100,100) → 容器贴合)
+    expect(resized.position).toEqual({ x: 100, y: 100 });
+    const r = {
+      x1: resized.position.x - resized.size.width / 2, y1: resized.position.y - resized.size.height / 2,
+      x2: resized.position.x + resized.size.width / 2, y2: resized.position.y + resized.size.height / 2
+    };
+    const b = calculateNodeVisualBounds(member as any);
+    expect(b.left).toBeGreaterThanOrEqual(r.x1);
+    expect(b.right).toBeLessThanOrEqual(r.x2);
+    expect(b.top).toBeGreaterThanOrEqual(r.y1);
+    expect(b.bottom).toBeLessThanOrEqual(r.y2);
+  });
+
+  test("放大:不受下限约束,尺寸跟手(容器几何只写 size,scale 恒 1)", () => {
+    const container = containerNode();
+    const member = memberNode(container.id, { width: 40, height: 30 }); // 下限 = CONTAINER_MIN_SIZE
+    const resized = runCornerDrag(container, member, {}, { x: 230, y: 190 });
+
+    expect(resized.size).toEqual({ width: 220, height: 146 });
+    expect(resized.scale).toBe(1);
+    expect(resized.scaleX).toBe(1);
+    expect(resized.scaleY).toBe(1);
+  });
+
+  test("遗留 scale 被吃进 size:起始尺寸按渲染尺寸折算,拖完 scale 归一 1", () => {
+    const container = containerNode({ scale: 2, scaleX: 2, scaleY: 2 });
+    const member = memberNode(container.id, { width: 40, height: 30 });
+    const resized = runCornerDrag(container, member, {}, { x: 230, y: 190 });
+
+    expect(resized.size).toEqual({ width: 360 + 40, height: 224 + 34 });
+    expect(resized.scaleX).toBe(1);
+    expect(resized.scaleY).toBe(1);
+  });
+
+  test("普通设备拖角行为不变:仍走 scale,size 不动", () => {
+    const device = { ...createDefaultNode("ac-load", { x: 100, y: 100 }), size: { width: 180, height: 112 } };
+    const resized = runCornerDrag(device, null as any, {}, { x: 230, y: 190 }, {
+      proportionalSignedScaleFromHandleDelta: () => ({ scale: 1.5, scaleX: 1.5, scaleY: 1.5 })
+    });
+
+    expect(resized.size).toEqual({ width: 180, height: 112 });
+    expect(resized.scaleX).toBe(1.5);
+    expect(resized.scaleY).toBe(1.5);
+  });
+});
+
 describe("automatic canvas layout", () => {
   // 布局把设备摆进已有容器矩形 → 与拖动同一出口 = 排斥弹回(容器与容器外设备互相排斥);
   // 弹出落位与容器重算必须在同一次提交里,否则撤销会漏掉布局集之外的容器几何
