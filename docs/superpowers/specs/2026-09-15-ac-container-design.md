@@ -63,7 +63,8 @@
 - `BASE_DEVICE_LIBRARY` 加 3 条模板:视觉同 `static-group-box`(`model.ts:3450-3458`)——透明填充、`#64748b` 虚线描边、圆角 8、文字左上,默认 180×112,支持拖角改尺寸
 - **容器 `size` 是用户几何,不归定义所有**(2026-09-16 缺陷修复):定义同步(`syncDefinitionSize`)对容器 kind 直接跳过,模板里的 180×112 只作**新建默认值**;
   否则加载路径的 `reconcileNodeWithDefinition` 会把拖角调过的尺寸打回初值(「刷新页面后容器变回初始大小」)。成员变化仍由 `fitContainerToMembers` 重算(收缩回 180×112 只发生在成员走光时),与线路分段母线保留已存几何同一口径
-- **拖角 resize = 几何 resize(改 `size`/`position`,不写 `scale`)**(2026-09-16 缺陷修复,fb10):渲染矩形 = `size × |scale|`,而 eject/入组/refit 全链路只认 `size` —— 写 scale 会让「看到的容器」与「判定用的矩形」分叉(拖大后设备挤一半仍压在框里、拖小后成员戳出)。容器 `scale` 恒 1:拖角与整组缩放都把 scale 吃进 `size`(遗留 scale 亦在此被吃进)。下限 = 成员视觉包围盒 + `CONTAINER_PADDING`(无成员/成员过小 = `CONTAINER_MIN_SIZE`,与 `fitContainerToMembers` 同口径),且矩形整体平移回**完全包住**成员(`containerResizeMinSize` / `clampContainerCenterToMembers`)
+- **拖角 resize = 几何 resize(改 `size`/`position`,不写 `scale`)**(2026-09-16 缺陷修复,fb10):渲染矩形 = `size × |scale|`,而 eject/入组/refit 全链路只认 `size` —— 写 scale 会让「看到的容器」与「判定用的矩形」分叉(拖大后设备挤一半仍压在框里、拖小后成员戳出)。容器 `scale` 恒 1:拖角与整组缩放都把 scale 吃进 `size`(遗留 scale 亦在此被吃进)。下限 = 成员视觉包围盒 + `CONTAINER_PADDING`(无成员/成员过小 = `CONTAINER_MIN_SIZE`,与 `fitContainerToMembers` 同口径),且矩形整体平移回**完全包住**成员(`containerResizeMinSize` / `clampContainerCenterToMembers`);
+  平移目标用**裸包围盒**(不含 24 留白)—— 留白只是「最小尺寸」口径,不是四边常驻余量,否则已贴合的边会被钉死(拖大后再拖对边:边回弹、对边反向缩)
 - **拖动容器不改写手动尺寸**:拖动提交的全量 enforce 只对「本次拖动集合内的容器」做「只扩不缩」(成员戳出才扩),其余容器照常按成员包围盒重算 —— 否则用户拖角放大的容器每次拖动后被打回 180×112
 - **容器不进静态图元家族**:不写入 `STATIC_COMPONENT_LIBRARY_BY_KIND`(`model.ts:790`),模板不写 `component_type: StaticContainerSymbol`
 - `src/DeviceGlyph.ts` 加 3 个**显式 kind 绘制分支**(不复用 static 分支):容器标注自身名称于左上,风格同分组框 header

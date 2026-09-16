@@ -6,7 +6,7 @@
 // 锚定口径(与平台一致):`node.position` 是节点**中心**,容器真实矩形 = position ± size/2。
 // (DeviceGlyph 矩形 x:-w/2、命中框、bodyVisualBoxForNode position±half 三处同源)
 // 相对 import 带 .ts 扩展名:本模块被 src/export/svg.ts(Node 直载)间接引用,裸 "./model" Node ESM 解析不了
-import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, createDefaultNode, isAcContainerKind, isStaticNode, isWireLikeRouteDeviceKind } from "./model.ts";
+import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, createDefaultNode, getNodeScaleX, getNodeScaleY, isAcContainerKind, isStaticNode, isWireLikeRouteDeviceKind } from "./model.ts";
 
 /** 容器包围成员时的**内侧**留白:容器矩形 = 成员包围盒 + 该留白(容器贴成员的紧密度) */
 export const CONTAINER_PADDING = 24;
@@ -43,8 +43,8 @@ function containerRect(c: ModelNode) {
   return { x1, y1, x2: x1 + c.size.width, y2: y1 + c.size.height };
 }
 
-/** 成员视觉包围盒并集 + padding;无成员返回 null */
-export function containerBoundsForMembers(members: ModelNode[]): Rect | null {
+/** 成员视觉包围盒并集(**不含**内侧留白);无成员返回 null */
+function memberBoundsUnion(members: ModelNode[]): Rect | null {
   if (members.length === 0) return null;
   let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
   for (const n of members) {
@@ -52,9 +52,35 @@ export function containerBoundsForMembers(members: ModelNode[]): Rect | null {
     x1 = Math.min(x1, b.left); y1 = Math.min(y1, b.top);
     x2 = Math.max(x2, b.right); y2 = Math.max(y2, b.bottom);
   }
+  return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
+}
+
+/** 成员视觉包围盒并集 + padding;无成员返回 null */
+export function containerBoundsForMembers(members: ModelNode[]): Rect | null {
+  const r = memberBoundsUnion(members);
+  if (!r) return null;
   return {
-    x: x1 - CONTAINER_PADDING, y: y1 - CONTAINER_PADDING,
-    width: x2 - x1 + CONTAINER_PADDING * 2, height: y2 - y1 + CONTAINER_PADDING * 2,
+    x: r.x - CONTAINER_PADDING, y: r.y - CONTAINER_PADDING,
+    width: r.width + CONTAINER_PADDING * 2, height: r.height + CONTAINER_PADDING * 2,
+  };
+}
+
+/**
+ * 容器几何的**唯一归一出口**:把节点上的 scale 折算进 `size`(|scale| 乘到 size,scale/scaleX/scaleY 归 1)。
+ * 容器几何恒在 size/position —— 渲染矩形 = size × |scale|,而 eject/入组/refit 只认 size,
+ * 一旦容器带上 scale(改造前拖角写的就是它;存量存盘/导入数据亦然)两者立刻分叉。
+ * 已归一时原样返回(零分配);矩形不变(位置与渲染尺寸都不跳变),故可直接用在加载/导入等存量数据路径。
+ */
+export function foldContainerScaleIntoSize(node: ModelNode): ModelNode {
+  const scaleX = Math.abs(getNodeScaleX(node));
+  const scaleY = Math.abs(getNodeScaleY(node));
+  if (scaleX === 1 && scaleY === 1) return node;
+  return {
+    ...node,
+    size: { width: node.size.width * scaleX, height: node.size.height * scaleY },
+    scale: 1,
+    scaleX: 1,
+    scaleY: 1,
   };
 }
 
@@ -69,16 +95,18 @@ export function containerResizeMinSize(container: ModelNode, members: ModelNode[
 }
 
 /**
- * 拖角 resize 后的容器中心:矩形整体平移回**完全包住**成员包围盒 + padding(尺寸已由 containerResizeMinSize 保证够大)。
+ * 拖角 resize 后的容器中心:矩形整体平移回**完全包住**成员视觉包围盒.
  * 只夹尺寸不够 —— 拖动的边会越过成员(固定侧的对边一缩,成员就从那一侧戳出),而口径是
  * 「最小尺寸 = 完全包裹全部成员」。越界时沿该轴平移,不越界则原样返回。
+ * 平移目标用**裸包围盒**(不含 CONTAINER_PADDING):留白只是「最小尺寸」的口径(见 containerResizeMinSize),
+ * 不是四边常驻余量 —— 用 padded 目标会把已贴合的边钉死(拖大后再拖对边:边回弹、对边反向缩)。
  */
 export function clampContainerCenterToMembers(
   position: { x: number; y: number },
   size: { width: number; height: number },
   members: ModelNode[]
 ): { x: number; y: number } {
-  const bounds = containerBoundsForMembers(members);
+  const bounds = memberBoundsUnion(members);
   if (!bounds) return position;
   const halfWidth = size.width / 2;
   const halfHeight = size.height / 2;

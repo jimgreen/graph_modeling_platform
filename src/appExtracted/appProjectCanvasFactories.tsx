@@ -17,7 +17,7 @@ import {
 } from "../voltageInheritance";
 import { getRatedCapacityDefaultForKind } from "../model";
 import { graphStorePatchNodes } from "../graphStore";
-import { applyDragContainerMembership, clampContainerCenterToMembers, containerDeletionFinalize, containerDragGroup, containerResizeMinSize, isAcContainerNode, refitContainersOnly, withNodeUpdates } from "../acContainer";
+import { applyDragContainerMembership, clampContainerCenterToMembers, containerDeletionFinalize, containerDragGroup, containerResizeMinSize, foldContainerScaleIntoSize, isAcContainerNode, refitContainersOnly, withNodeUpdates } from "../acContainer";
 import { arrangeContainerInteriors, mergeContainerLayoutUnits } from "../selectionActions";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
@@ -1189,15 +1189,11 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
         );
         if (containerResize) {
           const originalSize = transformDrag.originalSize ?? baseNode.size;
-          // 起始尺寸按**渲染尺寸**折算(×|scale|):历史上的容器缩放(拖角曾写 scale)在此被吃进 size,
-          // 拖完 scale 归一 1 —— 容器的几何恒在 size/position
-          const startSize = {
-            width: originalSize.width * Math.abs(getNodeScaleX(baseNode)),
-            height: originalSize.height * Math.abs(getNodeScaleY(baseNode))
-          };
+          // 起始几何走容器唯一归一出口:遗留 scale 在此被吃进 size(起始尺寸 = 渲染尺寸),拖完 scale 恒 1
+          const baseGeometry = foldContainerScaleIntoSize({ ...baseNode, size: { ...originalSize } });
           const members = currentStore.nodes.filter((n) => n.containerId === baseNode.id && n.id !== baseNode.id);
           const resizedNode = resizeLineSegmentBusGeometryFromHandleDrag({
-            node: { ...baseNode, size: startSize, scale: 1, scaleX: 1, scaleY: 1 },
+            node: baseGeometry,
             startPoint: transformDrag.startPoint,
             point,
             handleXDirection: transformDrag.handleXDirection,
@@ -2890,18 +2886,22 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     // 【设置电压基值】与着色读端子），以**端子为准**对齐一次；不修则那对值永不收敛。
     const normalizedNodes = reconcileTransformerSideVoltageParamsWithTerminals(project.project.nodes.map((node) => {
       const template = libraryTemplateByKind?.get(node.kind);
+      // 交流容器:几何恒在 size —— 存量/导入数据里遗留的 scale(改造前的拖角写的就是它)折算进 size。
+      // 矩形不变(不跳变),但从此「所见矩形 == eject/入组所用矩形」,不必等用户再拖一次
+      const reconcileContainer = (candidate: ModelNode) =>
+        isAcContainerNode(candidate) ? foldContainerScaleIntoSize(candidate) : candidate;
       if (template) {
         const normalized = normalizeNodeTerminalsWithTemplate(node, template);
         const reconciled = reconcileNodeWithDefinition(normalized, template);
         // Line-segment bus dragging changes instance geometry rather than transform scale.
         // Keep that persisted geometry while still applying parameter/terminal definition updates.
-        return isLineSegmentBusNode(node) && (
+        return reconcileContainer(isLineSegmentBusNode(node) && (
           reconciled.size.width !== node.size.width || reconciled.size.height !== node.size.height
         )
           ? { ...reconciled, size: { ...node.size } }
-          : reconciled;
+          : reconciled);
       }
-      return libraryTemplateByKind ? node : normalizeNodeTerminalsByTemplate(node);
+      return reconcileContainer(libraryTemplateByKind ? node : normalizeNodeTerminalsByTemplate(node));
     }));
     const indexed = assignMissingDeviceIndexes(normalizedNodes, project.project.deviceIndexCounters);
     const lockedProject = lockProjectEdgeTerminals({

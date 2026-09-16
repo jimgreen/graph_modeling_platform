@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
-import { applyDragContainerMembership, commitContainerMembership, containerDragGroup, isAcContainerNode, refitContainersAfterTransform, withNodeUpdates } from "../acContainer";
+import { applyDragContainerMembership, commitContainerMembership, containerDragGroup, foldContainerScaleIntoSize, isAcContainerNode, refitContainersAfterTransform, withNodeUpdates } from "../acContainer";
 import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind, syncedSwitchStatusPatch } from "../model";
 import { isThreeWindingTransformer } from "../model-eexport";
 import { setVoltageBaseTerminalValueForTopologySide, voltageBaseParamTerminalIndexForNode } from "../model-routing";
@@ -2103,7 +2103,11 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
     } else {
       pushNodeOnlyUndoSnapshot(selectedNodeId, "移动设备");
     }
-    const nextSelectedNode = { ...currentSelectedNode, ...nextPatch };
+    // 交流容器:面板「横向/纵向倍率」(以及任何经此出口的 scale 写入)在落图前折算进 size ——
+    // 容器几何恒在 size/position(见 foldContainerScaleIntoSize),否则渲染矩形 = size × |scale|
+    // 又和 eject/入组用的 size 矩形分叉
+    const patchedNode = { ...currentSelectedNode, ...nextPatch };
+    const nextSelectedNode = isAcContainerNode(currentSelectedNode) ? foldContainerScaleIntoSize(patchedNode) : patchedNode;
     const nextNodes = overlayGraphStoreNodes(graphStore, [nextSelectedNode]);
     if (patch.position && selectedNode) {
       const delta = {
@@ -4707,19 +4711,17 @@ export function createBuildGroupTransformNodeUpdates(__appScope: Record<string, 
       }
       const nextScaleX = (snapshot.scaleX ?? snapshot.scale ?? 1) * geometry.scaleX;
       const nextScaleY = (snapshot.scaleY ?? snapshot.scale ?? 1) * geometry.scaleY;
-      // 交流容器:几何恒在 size —— 整组缩放同样把 scale 吃进 size(与拖角 resize 同一口径),
+      // 交流容器:几何恒在 size —— 整组缩放同样把 scale 吃进 size(与拖角 resize 同一出口),
       // 否则容器渲染矩形 = size × |scale| 又和 eject/入组用的 size 矩形分叉(fb10 根因)
       if (isAcContainerNode(node)) {
         updates.push({
-          ...node,
-          position: transformGroupPoint(drag, geometry, snapshot.position),
-          size: {
-            width: Math.abs(nextScaleX) * node.size.width,
-            height: Math.abs(nextScaleY) * node.size.height
-          },
-          scale: 1,
-          scaleX: 1,
-          scaleY: 1
+          ...foldContainerScaleIntoSize({
+            ...node,
+            scale: Math.max(Math.abs(nextScaleX), Math.abs(nextScaleY)),
+            scaleX: nextScaleX,
+            scaleY: nextScaleY
+          }),
+          position: transformGroupPoint(drag, geometry, snapshot.position)
         });
         continue;
       }

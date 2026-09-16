@@ -1059,6 +1059,44 @@ describe("saved project definition migration", () => {
     expect(loadedNodes[1]).toMatchObject({ id: "saved-member", containerId: "saved-container" });
   });
 
+  test("存量容器遗留 scale 折算进 size(渲染矩形不变、scale 归 1)", () => {
+    // 改造前拖角写的是 scale:用户自己之前拖大的容器存盘后带 scale=2、size 仍是初始值。
+    // 加载即归一,否则用户重测同一模型还会撞上「所见 ≠ eject 所用矩形」的老毛病。
+    const container = JSON.parse(JSON.stringify({
+      ...createDefaultNode("ac-vpp-box", { x: 500, y: 400 }),
+      id: "legacy-scaled-container",
+      size: { width: 180, height: 112 },
+      scale: 2, scaleX: 2, scaleY: 2
+    }));
+    const setGraphArrays = vi.fn();
+    const scope = createLoadScope({
+      libraryTemplateByKind: new Map([["ac-vpp-box", DEVICE_LIBRARY_BY_KIND.get("ac-vpp-box")!]]),
+      reconcileNodeWithDefinition: reconcileNodeWithDefinitionReal,
+      setGraphArrays
+    });
+
+    createLoadSavedProject(scope as any)({
+      id: "project-legacy-scale-container",
+      name: "遗留缩放容器",
+      project: {
+        idx: 5,
+        nodes: [container],
+        edges: [],
+        groups: [],
+        layers: [],
+        activeLayerId: "layer-default",
+        canvasWidth: 1200,
+        canvasHeight: 800
+      }
+    } as any, "scheme-1");
+
+    const [loadedNodes] = setGraphArrays.mock.calls[0];
+    expect(loadedNodes[0].size).toEqual({ width: 360, height: 224 }); // 渲染矩形不变,不跳变
+    expect(loadedNodes[0].scale).toBe(1);
+    expect(loadedNodes[0].scaleX).toBe(1);
+    expect(loadedNodes[0].scaleY).toBe(1);
+  });
+
   test("repairs an unsafe stored adaptive-line path while loading a model", () => {
     const blocker = {
       ...createDefaultNode("static-rect", { x: 500, y: 240 }),
@@ -1506,8 +1544,8 @@ describe("container pointer resizing", () => {
     const resized = runCornerDrag(container, member, {}, { x: 150, y: 130 });
 
     expect(resized.size).toEqual({ width: 300 + 48, height: 200 + 48 });
-    // 尺寸夹到下限后矩形整体平移回完全包住成员(成员 300×200 居中于 (100,100) → 容器贴合)
-    expect(resized.position).toEqual({ x: 100, y: 100 });
+    // 尺寸夹到下限后矩形整体平移回完全包住成员裸包围盒(成员 300×200 居中于 (100,100) → 左上角贴成员)
+    expect(resized.position).toEqual({ x: 124, y: 124 });
     const r = {
       x1: resized.position.x - resized.size.width / 2, y1: resized.position.y - resized.size.height / 2,
       x2: resized.position.x + resized.size.width / 2, y2: resized.position.y + resized.size.height / 2
@@ -1538,6 +1576,36 @@ describe("container pointer resizing", () => {
     expect(resized.size).toEqual({ width: 360 + 40, height: 224 + 34 });
     expect(resized.scaleX).toBe(1);
     expect(resized.scaleY).toBe(1);
+  });
+
+  test("拖大后再拖对边:边跟手(平移钳制不吃内侧留白,不反向缩对边)", () => {
+    const container0 = containerNode({ size: { width: 248, height: 168 } }); // 已贴合成员(200×120 + 24)
+    const member = memberNode(container0.id, { width: 200, height: 120 });
+    // ① 东边拖大 80
+    const grown = runCornerDrag(container0, member, {
+      kind: "scale-x", startPoint: { x: 224, y: 100 }, handleXDirection: 1, handleYDirection: 0
+    }, { x: 304, y: 100 });
+    expect(grown.size).toEqual({ width: 328, height: 168 });
+    const eastEdge = grown.position.x + grown.size.width / 2;
+
+    // ② 西边向右 20:左边界跟手右移,东边界不动(padding 钳制会让左边界回弹、东边界反向缩 20)
+    const shrunk = runCornerDrag(grown, member, {
+      kind: "scale-x", startPoint: { x: -24, y: 100 }, handleXDirection: -1, handleYDirection: 0
+    }, { x: -4, y: 100 });
+    expect(shrunk.size.width).toBe(308);
+    expect(shrunk.position.x).toBe(150);
+    expect(shrunk.position.x + shrunk.size.width / 2).toBe(eastEdge);
+    expect(shrunk.position.x - shrunk.size.width / 2).toBe(-4);
+
+    // ③ 继续往右拖:左边界停在成员左沿(不裁成员),不再回弹
+    const squeezed = runCornerDrag(grown, member, {
+      kind: "scale-x", startPoint: { x: -24, y: 100 }, handleXDirection: -1, handleYDirection: 0
+    }, { x: 300, y: 100 });
+    expect(squeezed.size.width).toBe(248);
+    expect(squeezed.position.x - squeezed.size.width / 2).toBe(0);
+    const b = calculateNodeVisualBounds(member as any);
+    expect(b.left).toBeGreaterThanOrEqual(squeezed.position.x - squeezed.size.width / 2);
+    expect(b.right).toBeLessThanOrEqual(squeezed.position.x + squeezed.size.width / 2);
   });
 
   test("普通设备拖角行为不变:仍走 scale,size 不动", () => {
