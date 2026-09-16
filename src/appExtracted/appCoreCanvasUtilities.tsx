@@ -93,6 +93,7 @@ import {
   type SidePanelSide
 } from "../sidePanelVisibility";
 import {
+  cloneMeasurementItemBinding,
   type DeviceMeasurementProfileItem,
   type MeasurementGroup,
   type MeasurementProfilePositionDefinition,
@@ -1009,11 +1010,8 @@ export const cloneMeasurementGroupForDraft = (group: MeasurementGroup): Measurem
   ...group,
   offset: { ...group.offset },
   groupStyleOverride: group.groupStyleOverride ? { ...group.groupStyleOverride } : undefined,
-  items: group.items.map((item) => ({
-    ...item,
-    name: item.name,
-    styleOverride: item.styleOverride ? { ...item.styleOverride } : undefined
-  }))
+  // 测点深拷贝与容器量测组镜像同源(共享 item 引用会让改一处串改另一处)
+  items: group.items.map(cloneMeasurementItemBinding)
 });
 
 export type MeasurementEditorDialogValue = Exclude<MeasurementEditorDialogState, null>;
@@ -3261,6 +3259,12 @@ export function paramOptionsForSection(key: string, section?: string) {
 
 export const READONLY_E_PARAM_KEYS = new Set(["idx", "node", "i_node", "j_node", "ac_node", "dc_node"]);
 
+/**
+ * 容器**绑定/关口**两键:写它们会改变容器量测组的存在性(量测归一化出口据此收敛)。
+ * 单一出处 —— 面板剔除集(AC_CONTAINER_EXCLUDED_E_PARAM_KEYS)与「改这两键才重算量测」的门控共用。
+ */
+export const CONTAINER_BINDING_PARAM_KEYS = new Set(["bound_device_id", "is_gateway"]);
+
 // 容器面板(单选【模型】页 + 多选批量面板共用)剔除的键 —— 都是无人读取、与容器专用行重复,或量测类字段行:
 //   is_gateway      :与容器专用的「是否作为关口设备」下拉编辑同一参数(重复行 + 裸英文键表头)
 //   bound_device_idx:E 列(仅单选面板可达;导出用 bound_device_id 反查该列,本列恒空)
@@ -3273,9 +3277,8 @@ export const READONLY_E_PARAM_KEYS = new Set(["idx", "node", "i_node", "j_node",
 //                    改它不影响渲染/导出(容器段无 status 列);仅容器剔除,ac-switch 等普通开关照旧可批量改状态
 // (旧 type 列已从容器段删除,其剔除项随之删除;dev_type 行保留 —— 显示容器元件英文名,与导出同值)
 export const AC_CONTAINER_EXCLUDED_E_PARAM_KEYS = new Set([
-  "is_gateway",
+  ...CONTAINER_BINDING_PARAM_KEYS,
   "bound_device_idx",
-  "bound_device_id",
   "p",
   "q",
   "u",

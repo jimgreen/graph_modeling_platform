@@ -7,6 +7,7 @@ import { containerKindSwitch, containerNamePick, containerNameSearch } from "../
 import { deleteNodesWithConnectedEdges } from "../model-routing";
 import { createUndoGraphSnapshotPatchPlan } from "./appGraphMeasurementFactories";
 import { normalizeProjectMeasurements } from "../measurements";
+import { bareNode as sharedBareNode } from "./testFixtures";
 
 function makeScope(overrides: Record<string, unknown> = {}) {
   return {
@@ -67,10 +68,9 @@ describe("createCurrentProject 背景页引用键", () => {
 // ─── 拖动撤销作用域:图中存在容器时必须退化为全量对比 ─────────────────────────
 // 拖动集只含被抓住的节点,而容器的几何重算 / 成员归属 / 关口解绑 / 挤出全在集合之外;
 // 作用域一开 patch 通道,这些节点就落在撤销计划之外 → Ctrl+Z 后容器残留新几何与新归属。
-const bareNode = (id: string, kind: string, extra: Record<string, unknown> = {}) => ({
-  id, kind, name: id, position: { x: 0, y: 0 }, size: { width: 40, height: 30 },
-  rotation: 0, scale: 1, params: {}, terminals: [], ...extra,
-});
+// 本文件不关心标签,直接用共享构造器(位置恒 0,0;尺寸/params 等经 extra 覆盖)
+const bareNode = (id: string, kind: string, extra: Record<string, unknown> = {}) =>
+  sharedBareNode(id, kind, 0, 0, extra);
 
 describe("拖动撤销作用域(容器)", () => {
   const mkDragScope = (nodes: any[]) => ({
@@ -197,6 +197,7 @@ describe("归属入口的量测同步", () => {
     expect(capture.get().groups.some((g: any) => g.nodeId === "c1")).toBe(true);
     expect(capture.get().groups.some((g: any) => g.nodeId === "m1")).toBe(true);
   });
+
 });
 
 // ─── 删除容器收尾:确认框提示散出 + 成员 containerId 清空(成员保留) ──────────
@@ -367,6 +368,7 @@ describe("删除容器收尾(deleteSelection)", () => {
     expect(state.nodes.map((n: any) => n.id)).toEqual(["c2", "m1"]);
     expect(state.nodes.find((n: any) => n.id === "m1").position).toEqual(m1.position);
   });
+
 });
 
 // ─── 粘贴 / 模板落点的归属落地:落点在**已有**容器矩形内 → 排斥弹回 ────────────────

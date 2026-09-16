@@ -19,6 +19,8 @@ import {
   containerNameSearch,
   commitContainerMembership,
   defaultContainerName,
+  finalizeContainerAfterNodeDeletion,
+  hasAcContainer,
   refitContainersOnly,
   isAcContainerNode,
   withNodeUpdates,
@@ -37,7 +39,7 @@ export function createEnsureDraggingUndoSnapshot(__appScope: Record<string, any>
     // 有容器时作用域必须让位:容器几何重算 / 成员归属 / 关口解绑 / 挤出都在拖动集之外,
     // 一旦走 patch 通道这些节点就落在撤销计划外(Ctrl+Z 后残留新几何与新归属)。
     // undefined = 全量对比分支,正确性无损,只多一趟 O(n) 比较。
-    const scope = nodes?.some(isAcContainerNode) ? undefined : undoScopeForDraggingState(dragState);
+    const scope = nodes && hasAcContainer(nodes) ? undefined : undoScopeForDraggingState(dragState);
     pushUndoSnapshot(true, false, scope, "移动设备", target);
     dragUndoCapturedRef.current = true;
   };
@@ -790,11 +792,10 @@ export function createCutSelection(__appScope: Record<string, any>) {
       ? deleteNodesWithConnectedEdges(nodes, edges, activeSelectedNodeIds)
       : { nodes, edges };
     const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
-    // 剪切 = 复制 + 删除:剪走容器同样要清成员归属(与删除入口同源),否则成员留下悬空 containerId;
-    // 剪走成员后容器同样要重算收缩(半程 enforce:不挤出,否则会搬动刚散出的成员)
+    // 剪切 = 复制 + 删除:剪走容器要清成员归属、剪走成员后容器重算收缩
+    // (半程 enforce:不挤出,否则会搬动刚散出的成员)—— 三步走单源 helper
     const scattered = containerDeletionFinalize(nodes, activeSelectedNodeIds);
-    const surviving = withNodeUpdates(result.nodes, scattered);
-    const nextNodes = withNodeUpdates(surviving, refitContainersOnly(surviving));
+    const nextNodes = finalizeContainerAfterNodeDeletion(nodes, result.nodes, activeSelectedNodeIds);
     setGraphArrays(nextNodes, nextEdges);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, activeSelectedNodeIds, selectedEdges), nextNodes, nextEdges));
     setProjectMeasurements((current) => normalizeProjectMeasurements(current, nextNodes));
@@ -1689,10 +1690,10 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
       const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
       // 删除收尾(spec「其它交互边界」):① 被删容器的成员清 containerId,成员保留 —— 否则悬空值随保存持久化;
       // ② 成员被删/散出后容器几何重算收缩(半程 enforce:不挤出,否则会搬动刚散出的成员)。
-      // 两者与删除同一次提交(单一撤销单元),故 undo 一次即可连归属与容器几何一起还原。
+      // 全部与删除同一次提交(单一撤销单元),故 undo 一次即可连归属与容器几何一起还原。
+      // 散出计数只给日志后缀用(容器收尾三步走单源 helper,内部另算一次同结果)
       const scattered = containerDeletionFinalize(latestNodes, expandedNodeIds);
-      const surviving = withNodeUpdates(result.nodes, scattered);
-      const nextNodes = withNodeUpdates(surviving, refitContainersOnly(surviving));
+      const nextNodes = finalizeContainerAfterNodeDeletion(latestNodes, result.nodes, expandedNodeIds);
       setGraphArrays(nextNodes, nextEdges);
       void syncGlobalLineProjectNodes?.(nextNodes, false);
       // groups 走函数式:确认窗口横跨交互窗口,持点击快照会覆盖期间的并发改动
@@ -1797,15 +1798,13 @@ export function createUngroupSelectedGraphics(__appScope: Record<string, any>) {
  */
 function ContainerPickerForm({ draft, nodes }: { draft: ContainerDraft; nodes: any[] }) {
   const [form, setForm] = useState<ContainerDraft>({ ...draft });
-  const [typed, setTyped] = useState("");
   const apply = (next: ContainerDraft) => {
     setForm(next);
     Object.assign(draft, next);
   };
   const existing = containerNameOptions(form.kind, nodes);
-  // 新建项:当前值(未命中已有容器时)与正在输入的名字,去重后排除掉已有清单
-  const newNames = [form.containerId ? "" : form.name, typed.trim()]
-    .filter((name, index, list) => name && list.indexOf(name) === index)
+  // 新建项:当前值(未命中已有容器时才看名字)排除掉已有清单 —— 输入即写入 form.name(见 containerNameSearch),无需另存一份输入文本
+  const newNames = (form.containerId || !form.name ? [] : [form.name])
     .filter((name) => !existing.some((option) => option.value === name || option.label === name));
   return (
     <>
@@ -1813,7 +1812,6 @@ function ContainerPickerForm({ draft, nodes }: { draft: ContainerDraft; nodes: a
         value={form.kind}
         style={{ width: "100%", marginBottom: 8 }}
         onChange={(value) => {
-          setTyped("");
           apply(containerKindSwitch(value as ContainerDraft["kind"], nodes));
         }}
         options={containerKindOptions()}
@@ -1824,11 +1822,9 @@ function ContainerPickerForm({ draft, nodes }: { draft: ContainerDraft; nodes: a
         style={{ width: "100%" }}
         value={form.containerId || form.name}
         onChange={(value) => {
-          setTyped("");
           apply(containerNamePick(String(value), form.kind, nodes));
         }}
         onSearch={(value) => {
-          setTyped(value);
           // 空输入不落 draft:antd 选中选项后会回送一次 onSearch(""),此时 apply 会用旧闭包 form
           // 覆盖掉 onChange 刚写入的 containerId
           if (value.trim()) {
