@@ -176,6 +176,22 @@
 
 `ponytail:` 挤出采用最小位移+单轮让位,存在复杂穿叠天花板;出现实际观感问题再升级避碰算法。
 
+### 布局里的容器语义(2026-09-16 二次验收)
+
+> 用户裁决:【自动对齐/散开】时先对容器内设备执行,再把容器作为整体参与整个模型的【自动对齐/散开】;
+> 对齐/分布**选中容器 → 容器作为整体参与**;**选中容器内设备 → 仅设备参与,容器随设备而动**。
+
+| 入口 | 容器角色 |
+|------|----------|
+| 对齐 / 分布(选中集语义) | 选中集含容器 → 容器与其**全部成员**(含未被选中的)合并成一个整组单元参与,相对位置不变;仅选中成员 → 成员各自参与,容器随后由 `enforceContainerMembership` 的 `fitContainerToMembers` 跟随 |
+| 自动对齐 / 自动散开(整层语义) | 两阶段:① 每个容器内成员单独跑一次同款布局(容器不动);② 容器作为整体单元参与全层布局 |
+
+实现:`src/selectionActions.ts` 新增 `mergeContainerLayoutUnits`(整组合并;单元包围盒取「容器 ∪ 全部成员」并集 ——
+阶段 1 刚挪过成员时容器节点尚未重算,只取容器矩形会漏掉成员新位置)与 `arrangeContainerInteriors`(阶段 1,逐容器跑 `unitLayout`);
+调用点 `createApplySelectedNodeLayout`、`createAutoAlignCanvasGraphics`、`createAutoSpreadCanvasGraphics` 三处。
+
+与「排斥」不冲突:整组参与保证成员随容器平移(成员走 `containerId` 分支,不触发排斥);非成员设备被布局摆进容器矩形仍按全入口口径弹回。
+
 **沉底不写数据**(需求 4):不修改 nodes 数组顺序,在渲染排序处统一用 `containerFirstComparator`:
 
 - 画布:`appToolbarHookFactories.tsx:2060-2064`(callback57 的 `nodeIndexById` 比较器)接入容器优先

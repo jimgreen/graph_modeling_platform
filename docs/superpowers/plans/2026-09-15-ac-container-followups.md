@@ -9,7 +9,9 @@
    「显式落点=意图」分叉作废;排斥只对**已有**容器生效:目标容器同在本批 movedIds(整组粘贴 / SVG 导入整模型重建)按落点入组,否则导入图容器恒空。
 
 1. **旋转/变换路径接入 enforce** — `appCanvasInteractionFactories.tsx` 变换/旋转提交(约 :2619/:2623)不跑容器 enforce;旋转/缩放成员后容器矩形短暂不贴合,直到下一次任意 enforce(拖动/粘贴/删除)。用户可见。
-2. **布局路径与拖动路径口径统一** — 对齐/分布/自动对齐/自动散开把容器当普通节点:容器先被布局挪走、又被 enforce 按成员包围盒拉回,视觉"没反应"但移动计数与操作日志把它算入。根治:布局集按 `containerDragGroup` 扩组,或把容器从布局目标排除并在日志说明。
+2. ~~**布局路径与拖动路径口径统一**~~ — **已落地(2026-09-16 二次裁决)**:对齐/分布选中容器 = 容器+全部成员整组参与
+   (`mergeContainerLayoutUnits`);自动对齐/散开 = 两阶段(先容器内 `arrangeContainerInteriors`,再容器整体参与)。
+   见 `docs/superpowers/specs/2026-09-15-ac-container-design.md` 的「布局里的容器语义」。
 3. **E 文件容器表成员列 — 与下游确认** — 现表 5 列,非关口容器的成员关系不出现在文件;关口容器只有跨段非唯一的 `bound_device_idx`(spec 已注语义)。若下游要按容器聚合成员,补 `bound_device_section` 或成员列。
 4. **多选批量行排除三键** — 单节点模型面板已剔除 `type`/`is_gateway`/`bound_device_idx`(fd5384dc);多选批量编辑行(appCanvasInteractionFactories.tsx 约 :2631 白名单)未排除,多选容器时仍可出现。
 5. **`audit:names` 扩「解构遮蔽模块 import」扫描** — 本轮该类缺陷(Task 8 Critical)靠新工厂测试兜住;静态作用域分析作为独立工具任务。

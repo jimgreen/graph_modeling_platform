@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
+  createApplySelectedNodeLayout,
+  createAutoAlignCanvasGraphics,
   createAutoSpreadCanvasGraphics,
   createCommitRoutableLineDevice,
   createCommitLayoutNodePositions,
@@ -17,9 +19,18 @@ import {
 } from "./appExtracted/appProjectCanvasFactories";
 import { createMergeNodeUpdateLists } from "./appExtracted/appSelectionDragFactories";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
-import { DEVICE_LIBRARY_BY_KIND, canConnectTerminals, createDefaultNode, getNodeScaleX, getNodeScaleY, getTerminalPoint, isBusNode, isLineSegmentBusNode, isRoutableLineDeviceKind } from "./model";
+import { DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, canConnectTerminals, createDefaultNode, getNodeScaleX, getNodeScaleY, getTerminalPoint, isBusNode, isCanvasNodeMovable, isLineSegmentBusNode, isRoutableLineDeviceKind } from "./model";
 import { GLOBAL_LINE_ID_PARAM } from "./global-lines";
 import { resizeLineSegmentBusGeometryFromHandleDrag } from "./transformUtils";
+import {
+  AUTO_ALIGN_DEFAULT_THRESHOLD_PX,
+  AUTO_ALIGN_MAX_THRESHOLD_PX,
+  AUTO_ALIGN_MIN_THRESHOLD_PX,
+  alignNodeLayoutUnits,
+  autoAlignNodeLayoutUnits,
+  autoSpreadNodeLayoutUnits,
+  buildCanvasLayoutUnits
+} from "./selectionActions";
 
 // 切空间要落到真模块（清缓存 + 写 cookie + reload），此处只关心它在**何时**被调用，
 // 故整模块替换；其余导出原样透传，避免影响本文件其他用例的依赖树。
@@ -1966,4 +1977,155 @@ test("加载模型时把分叉的分侧电压参数对齐到端子 vbase（存�
   // 端子为准：参数跟着端子收敛，此后右侧面板与【设置电压基值】读数一致
   expect(loadedNodes[0].params.j_vbase).toBe("110");
   expect(loadedNodes[0].terminals[2].vbase).toBe("110");
+});
+
+// ─── 容器整体参与布局(用户裁决) ──────────────────────────────────────────
+// 对齐/分布:选中容器 → 容器 + 全部成员按整组参与(相对位置不变);仅选中成员 → 仅成员参与,容器由 enforce 跟随。
+// 自动对齐/散开:两阶段 —— 先对容器内成员自布局,再把容器作为整体参与全层布局。
+describe("容器整体参与布局", () => {
+  const container = (x: number, y: number) => ({
+    id: "c1", kind: "ac-vpp-box", name: "c1", position: { x, y }, size: { width: 200, height: 200 },
+    rotation: 0, scale: 1, params: { _labelVisible: "0" }, terminals: []
+  });
+  const device = (id: string, x: number, y: number, containerId?: string) => ({
+    id, kind: "ac-load", name: id, position: { x, y }, size: { width: 40, height: 30 },
+    rotation: 0, scale: 1, params: { _labelVisible: "0" }, terminals: [],
+    ...(containerId ? { containerId } : {})
+  });
+  const dxOf = (nodes: any[], arranged: any[], id: string) => {
+    const byId = new Map<string, any>(arranged.map((node: any) => [node.id, node]));
+    return byId.get(id)!.position.x - nodes.find((node) => node.id === id)!.position.x;
+  };
+
+  test("对齐选中容器:容器与成员合并成一个整组单元参与(成员不被落下、相对位置不变)", () => {
+    const nodes = [container(525, 400), device("m1", 500, 400, "c1"), device("m2", 600, 400, "c1"), device("o1", 1500, 400)];
+    const selectedLayoutUnits = buildCanvasLayoutUnits([], nodes as any, ["c1", "o1"], [], [], []);
+    const seenUnits: any[][] = [];
+    const commits: any[] = [];
+    const scope = {
+      commitLayoutNodePositions: (ids: string[], arranged: any[]) => {
+        commits.push({ ids, arranged });
+        return ids.length;
+      },
+      nodes,
+      selectedLayoutUnits
+    };
+
+    createApplySelectedNodeLayout(scope as any)(2, (currentNodes: any[], units: any[]) => {
+      seenUnits.push(units);
+      return alignNodeLayoutUnits(currentNodes, units, "right");
+    });
+
+    expect(seenUnits[0].map((unit) => unit.id).sort()).toEqual(["container:c1", "node:o1"]);
+    expect([...seenUnits[0].find((unit) => unit.id === "container:c1").nodeIds].sort()).toEqual(["c1", "m1", "m2"]);
+    expect([...commits[0].ids].sort()).toEqual(["c1", "m1", "m2", "o1"]);
+    // 整组平移:容器与成员位移完全一致
+    expect(dxOf(nodes, commits[0].arranged, "m1")).toBe(dxOf(nodes, commits[0].arranged, "c1"));
+    expect(dxOf(nodes, commits[0].arranged, "m2")).toBe(dxOf(nodes, commits[0].arranged, "c1"));
+    expect(dxOf(nodes, commits[0].arranged, "c1")).not.toBe(0);
+  });
+
+  test("仅选中成员:容器不进布局单元(随后由 enforce 跟随),成员各自参与", () => {
+    const nodes = [container(525, 400), device("m1", 500, 400, "c1"), device("m2", 600, 400, "c1")];
+    const selectedLayoutUnits = buildCanvasLayoutUnits([], nodes as any, ["m1", "m2"], [], [], []);
+    const seenUnits: any[][] = [];
+    const commits: any[] = [];
+    const scope = {
+      commitLayoutNodePositions: (ids: string[], arranged: any[]) => {
+        commits.push({ ids, arranged });
+        return ids.length;
+      },
+      nodes,
+      selectedLayoutUnits
+    };
+
+    createApplySelectedNodeLayout(scope as any)(2, (currentNodes: any[], units: any[]) => {
+      seenUnits.push(units);
+      return alignNodeLayoutUnits(currentNodes, units, "right");
+    });
+
+    expect(seenUnits[0].map((unit) => unit.id).sort()).toEqual(["node:m1", "node:m2"]);
+    expect([...commits[0].ids].sort()).toEqual(["m1", "m2"]);
+  });
+
+  test("自动对齐两阶段:容器内成员先自对齐,容器再作为整体参与(整组平移)", () => {
+    vi.stubGlobal("window", { prompt: () => "50" });
+    try {
+      const nodes = [container(525, 400), device("m1", 500, 400, "c1"), device("m2", 600, 400, "c1"), device("o1", 1500, 400)];
+      const commits: any[] = [];
+      const scope = {
+        AUTO_ALIGN_DEFAULT_THRESHOLD_PX,
+        AUTO_ALIGN_MAX_THRESHOLD_PX,
+        AUTO_ALIGN_MIN_THRESHOLD_PX,
+        activeLayerEdges: [],
+        activeLayerGroups: [],
+        activeLayerNodes: nodes,
+        autoAlignNodeLayoutUnits,
+        buildCanvasLayoutUnits,
+        commitLayoutNodePositions: (ids: string[], arranged: any[]) => {
+          commits.push({ ids, arranged });
+          return ids.length;
+        },
+        isCanvasNodeMovable,
+        nodes,
+        readjustActiveLayerBusEndpointRoutes: () => 0,
+        requireEditMode: () => true,
+        routedEdges: [],
+        writeOperationLog: vi.fn()
+      };
+
+      createAutoAlignCanvasGraphics(scope as any)();
+
+      expect([...commits[0].ids].sort()).toEqual(["c1", "m1", "m2", "o1"]);
+      const byId = new Map<string, any>(commits[0].arranged.map((node: any) => [node.id, node]));
+      // 成员已在网格上(阶段 1 无位移),容器不在网格 → 位移全部来自阶段 2 的整组平移
+      expect(dxOf(nodes, commits[0].arranged, "c1")).not.toBe(0);
+      expect(dxOf(nodes, commits[0].arranged, "m1")).toBe(dxOf(nodes, commits[0].arranged, "c1"));
+      expect(dxOf(nodes, commits[0].arranged, "m2")).toBe(dxOf(nodes, commits[0].arranged, "c1"));
+      expect(byId.get("m1")!.position.x - byId.get("c1")!.position.x).toBe(-25);
+      expect(byId.get("m2")!.position.x - byId.get("c1")!.position.x).toBe(75);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // 容器与上方设备重叠:该设备 bounds.top 更小、先落位不动,容器整组被推开 → 才能观察到整组平移
+  test("自动散开两阶段:容器作为整体参与(成员随容器平移,不在容器外落单)", () => {
+    const nodes = [
+      container(525, 400),
+      device("m1", 500, 400, "c1"),
+      device("m2", 600, 400, "c1"),
+      device("o1", 540, 290),
+      device("o2", 550, 300)
+    ];
+    const commits: any[] = [];
+    const scope = {
+      activeLayerEdges: [],
+      activeLayerGroups: [],
+      activeLayerNodes: nodes,
+      autoSpreadNodeLayoutUnits,
+      buildCanvasLayoutUnits,
+      calculateNodeVisualBounds,
+      canvasBounds: { width: 2000, height: 1200 },
+      commitLayoutNodePositions: (ids: string[], arranged: any[]) => {
+        commits.push({ ids, arranged });
+        return ids.length;
+      },
+      isCanvasNodeMovable,
+      nodes,
+      requireEditMode: () => true,
+      routedEdges: [],
+      writeOperationLog: vi.fn()
+    };
+
+    createAutoSpreadCanvasGraphics(scope as any)();
+
+    const byId = new Map<string, any>(commits[0].arranged.map((node: any) => [node.id, node]));
+    expect([...commits[0].ids].sort()).toEqual(["c1", "m1", "m2", "o1", "o2"]);
+    expect(dxOf(nodes, commits[0].arranged, "m1")).toBe(dxOf(nodes, commits[0].arranged, "c1"));
+    expect(dxOf(nodes, commits[0].arranged, "m2")).toBe(dxOf(nodes, commits[0].arranged, "c1"));
+    // 容器整组平移:成员相对容器的位置不变
+    expect(byId.get("m1")!.position.x - byId.get("c1")!.position.x).toBe(-25);
+    expect(byId.get("m2")!.position.x - byId.get("c1")!.position.x).toBe(75);
+  });
 });
