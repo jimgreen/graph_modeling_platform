@@ -1722,7 +1722,8 @@ function applyEInterfaceDefinitionToRecord(
   const params: Record<string, string> = {};
   for (const field of fields) {
     // 容器例外:容器段 dev_type 是容器元件英文名(记录里已写好),不能按「段名即设备类」改写成 ACContainer
-    const sourceValue = field.sourceName === "dev_type" && record.section !== "ACContainer"
+    // 判据与 inferESection 同源(先 baseDeviceKind 再判,同 getRawEParamValue 的容器分支)
+    const sourceValue = field.sourceName === "dev_type" && !isAcContainerKind(baseDeviceKind(record.kind))
       ? record.section || baseDeviceKind(record.kind.split(":", 1)[0])
       : record.params[field.sourceName] ?? "";
     const value = field.definition ? enumExportValueForDefinition(field.definition, sourceValue) : sourceValue;

@@ -4573,6 +4573,11 @@ describe("交流容器 E 导出", () => {
     for (const kind of ["ac-vpp-box", "ac-switch-box", "ac-distribution-box"] as DeviceKind[]) {
       expect(getEParamValue("dev_type", createDefaultNode(kind, { x: 0, y: 0 })), kind).toBe(kind);
     }
+    // 变体 kind:判据走 baseDeviceKind(与 inferESection 同源),-vertical 变体照样命中容器、值仍取基点 kind
+    expect(getEParamValue("dev_type", {
+      ...createDefaultNode("ac-vpp-box", { x: 0, y: 0 }),
+      kind: "ac-vpp-box-vertical"
+    } as ModelNode)).toBe("ac-vpp-box");
   });
 
   test("非关口容器仅入 ACContainer 段,不进拓扑节点表", () => {
@@ -4694,6 +4699,15 @@ describe("交流容器 E 导出", () => {
 
     const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
     expect(payload.ACContainer?.columns).toEqual(["idx", "name", "dev_type"]);
+
+    // 变体 kind:模板字段出列路径的容器例外同样先剥 -vertical(否则 dev_type 会退化成段名 ACContainer)
+    const variant = { ...container, kind: "ac-vpp-box-vertical" } as ModelNode;
+    const variantPayload = parseESections(
+      buildEFileExport({ ...project, nodes: [variant, member] }, ["默认方案"], options).text
+    );
+    expect(variantPayload.ACContainer?.rows).toEqual([
+      expect.objectContaining({ dev_type: "ac-vpp-box" })
+    ]);
     expect(payload.ACContainer?.rows).toEqual([
       // 模板态下 dev_type 仍取容器元件英文名(模板字段只决定列,不改值 —— 不得退化成段名 ACContainer)
       expect.objectContaining({ idx: container.params.idx, name: container.name, dev_type: "ac-distribution-box" })

@@ -1165,7 +1165,8 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         const panelDefinitions = definitionGroups
                           ? [...definitionGroups.baseDefinitions, ...definitionGroups.derivedDefinitions]
                           : customDefinitions;
-                        // 容器:剔除 type/is_gateway/bound_device_idx 三行(无人读取或与容器专用行重复,见 AC_CONTAINER_EXCLUDED_E_PARAM_KEYS)
+                        // 容器:剔除 is_gateway/bound_device_idx 两行(无人读取或与容器专用行重复,见 AC_CONTAINER_EXCLUDED_E_PARAM_KEYS);
+                        // dev_type 行保留 —— 与容器段导出同值(显示元件英文名 ac-vpp-box 等,非段名 ACContainer)
                         const keys = resolveAcContainerModelPanelParamKeys(resolveDeviceModelPanelParameterKeys(
                             eKeys,
                             customDefinitions,
