@@ -229,9 +229,11 @@
 |----|------|
 | idx | `params.idx`(复用 `assignPermanentDeviceIndex` 分段计数器) |
 | 名称 | 节点名 |
-| 类型 | 虚拟电厂 / 开关箱 / 配变箱 |
+| dev_type | 容器元件英文名:`ac-vpp-box` / `ac-switch-box` / `ac-distribution-box`(即节点 `kind`) |
 | 是否关口 | `params.is_gateway` |
 | 绑定设备 idx | `params.bound_device_id` 解析出成员 idx |
+
+> **变更(2026-09-16):** 原「类型」列(列名 `type`,值 = 图元库中文名 虚拟电厂 / 开关箱 / 配变箱)**删除**,改为 `dev_type`(值 = 容器元件英文名)。全链路同值:容器段记录、面板「设备类型」行(`resolveDeviceModelPanelDevType`)、双击/批量参数行(`getEParamValue`)。容器是 dev_type 语义的**唯一例外** —— 其它段的 dev_type 仍是 E 设备类名(ACLoad / ACWindGen 等);模板定义了容器段时,`dev_type` 仍取容器元件英文名,不得被改写成段名 `ACContainer`(`applyEInterfaceDefinitionToRecord` 内按段名放行)。旧导出产物含 `type` 列,消费方需切换到 `dev_type`。
 
 > **语义注记(2026-09-16,Task 10 审查裁决):** `idx` 为分段计数器(每段独立,跨段可重号),单看 `bound_device_idx` 不能唯一定位成员 —— 绑定设备必为容器成员,消费方应按「容器记录 + 其成员集合(经 `containerId` 归属解析)」匹配;若下游要求唯一标识,再补 `bound_device_section` 列。
 

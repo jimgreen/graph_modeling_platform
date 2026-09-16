@@ -169,6 +169,7 @@ import {
   getEParameterKeys,
   resolveDeviceParameterDefinitionExportSettings,
   inferESection,
+  AC_CONTAINER_KINDS,
   getTemplateParameterDefinitions,
   templateDerivedComponentLibraryInfo,
   getOverlappingTerminalGroups,
@@ -878,7 +879,12 @@ test("exports owning class names for dev_type across every built-in E device cla
     checkedRows += payload.rows.length;
     for (const row of payload.rows) {
       checkedClassNames.add(row.dev_type);
-      expect(knownClassNames.has(row.dev_type), `${section}: ${row.dev_type}`).toBe(true);
+      // 容器例外:容器段的 dev_type 必须是容器元件英文名 —— 段名 ACContainer 也在 knownClassNames 里,
+      // 故容器段单列判据,否则「容器退化成段名」这条错法会被 has() 静默放过
+      const known = section === "ACContainer"
+        ? (AC_CONTAINER_KINDS as readonly string[]).includes(row.dev_type)
+        : knownClassNames.has(row.dev_type);
+      expect(known, `${section}: ${row.dev_type}`).toBe(true);
       expect(row.dev_type).not.toMatch(/^legacy-/u);
     }
   }
@@ -4558,7 +4564,15 @@ describe("交流容器 E 导出", () => {
     for (const kind of ["ac-vpp-box", "ac-switch-box", "ac-distribution-box"]) {
       expect(inferESection(kind), kind).toBe("ACContainer");
     }
-    expect(E_SECTION_COLUMNS.ACContainer).toEqual(["idx", "name", "type", "is_gateway", "bound_device_idx"]);
+    // 容器段列:dev_type 值 = 容器元件英文名(旧 type 列已删除)
+    expect(E_SECTION_COLUMNS.ACContainer).toEqual(["idx", "name", "dev_type", "is_gateway", "bound_device_idx"]);
+  });
+
+  test("容器 dev_type 取值与导出同源:取容器元件英文名,不是段名 ACContainer", () => {
+    // 双击/批量参数行读 getEParamValue —— 与容器段记录同一出口,避免面板显示 ACContainer 而文件写 ac-vpp-box
+    for (const kind of ["ac-vpp-box", "ac-switch-box", "ac-distribution-box"] as DeviceKind[]) {
+      expect(getEParamValue("dev_type", createDefaultNode(kind, { x: 0, y: 0 })), kind).toBe(kind);
+    }
   });
 
   test("非关口容器仅入 ACContainer 段,不进拓扑节点表", () => {
@@ -4573,21 +4587,23 @@ describe("交流容器 E 导出", () => {
     expect(records.find((record) => record.section === "ACContainer")?.params).toMatchObject({
       idx: container.params.idx,
       name: "虚拟电厂1",
-      type: "虚拟电厂",
+      dev_type: "ac-vpp-box",
       is_gateway: "0",
       bound_device_idx: ""
     });
 
     const payload = parseESections(buildEFileExport(project).text);
-    expect(payload.ACContainer?.columns).toEqual(["idx", "name", "type", "is_gateway", "bound_device_idx"]);
+    expect(payload.ACContainer?.columns).toEqual(["idx", "name", "dev_type", "is_gateway", "bound_device_idx"]);
     expect(payload.ACContainer?.rows).toEqual([
-      expect.objectContaining({ idx: container.params.idx, name: "虚拟电厂1", type: "虚拟电厂", is_gateway: "0" })
+      expect.objectContaining({ idx: container.params.idx, name: "虚拟电厂1", dev_type: "ac-vpp-box", is_gateway: "0" })
     ]);
+    // 旧 type 列已删除:消费方不能再从容器段读到中文类型名
+    expect(payload.ACContainer?.rows[0]).not.toHaveProperty("type");
     // 拓扑节点表只由带 nodeNumber 的端子驱动:容器无边无端子,不入表
     expect((payload.ACNode?.rows ?? []).map((row) => row.name)).not.toContain("虚拟电厂1");
   });
 
-  test("关口容器导出类型中文名、关口标记与绑定设备序号", () => {
+  test("关口容器导出容器元件英文名、关口标记与绑定设备序号", () => {
     const [container, member] = createIndexedExportNodes(["ac-switch-box", "ac-source"]);
     member.containerId = container.id;
     container.params.is_gateway = "1";
@@ -4597,7 +4613,7 @@ describe("交流容器 E 导出", () => {
     const payload = parseESections(buildEFileExport(project).text);
     expect(payload.ACContainer?.rows).toEqual([
       expect.objectContaining({
-        type: "开关箱",
+        dev_type: "ac-switch-box",
         is_gateway: "1",
         bound_device_idx: member.params.idx,
         name: container.name
@@ -4671,15 +4687,16 @@ describe("交流容器 E 导出", () => {
         fields: [
           { sourceName: "idx", exportEnabled: true, exportName: "idx" },
           { sourceName: "name", exportEnabled: true, exportName: "name" },
-          { sourceName: "type", exportEnabled: true, exportName: "type" }
+          { sourceName: "dev_type", exportEnabled: true, exportName: "dev_type" }
         ]
       }]
     };
 
     const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
-    expect(payload.ACContainer?.columns).toEqual(["idx", "name", "type"]);
+    expect(payload.ACContainer?.columns).toEqual(["idx", "name", "dev_type"]);
     expect(payload.ACContainer?.rows).toEqual([
-      expect.objectContaining({ idx: container.params.idx, name: container.name, type: "配变箱" })
+      // 模板态下 dev_type 仍取容器元件英文名(模板字段只决定列,不改值 —— 不得退化成段名 ACContainer)
+      expect.objectContaining({ idx: container.params.idx, name: container.name, dev_type: "ac-distribution-box" })
     ]);
   });
 });

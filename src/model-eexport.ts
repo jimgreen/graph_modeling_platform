@@ -50,7 +50,8 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   ACNode: ["idx", "name", "vbase", "run_stat"],
   DCNode: ["idx", "name", "vbase", "voltage", "isl", "run_stat"],
   // 交流容器「容器表」(决策 3):容器无边无端子,只有标量列
-  ACContainer: ["idx", "name", "type", "is_gateway", "bound_device_idx"],
+  // dev_type 值 = 容器元件英文名(ac-vpp-box / ac-switch-box / ac-distribution-box),不是 E 段名 ACContainer
+  ACContainer: ["idx", "name", "dev_type", "is_gateway", "bound_device_idx"],
   ACBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "r", "x", "b", "run_stat", "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"],
   DCBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "r", "run_stat", "i_p", "i_u", "i_i", "j_p", "j_u", "j_i"],
   ACLoad: [
@@ -634,8 +635,13 @@ function getRawEParamValue(
     return node.name;
   }
   if (key === "dev_type") {
+    // 容器例外:容器的 dev_type 是容器元件英文名(与容器段导出同值),段名 ACContainer 不是设备类,不能当默认值
+    const kindName = baseDeviceKind(node.kind);
+    if (isAcContainerKind(kindName)) {
+      return kindName;
+    }
     const derivedInfo = templateDerivedComponentLibraryInfo({ kind: node.kind, params: node.params });
-    return derivedInfo?.derivedComponentLibrary || section || baseDeviceKind(node.kind);
+    return derivedInfo?.derivedComponentLibrary || section || kindName;
   }
   if (section === "HydroStorage" && key === "rated_capacity") {
     return deviceParamValue(node.params, "rated_capacity") ?? deviceParamValue(node.params, "capacity") ?? "";
@@ -1715,7 +1721,8 @@ function applyEInterfaceDefinitionToRecord(
   const fields = eParameterFieldsFromInterfaceDefinition(record.section, interfaceDefinition);
   const params: Record<string, string> = {};
   for (const field of fields) {
-    const sourceValue = field.sourceName === "dev_type"
+    // 容器例外:容器段 dev_type 是容器元件英文名(记录里已写好),不能按「段名即设备类」改写成 ACContainer
+    const sourceValue = field.sourceName === "dev_type" && record.section !== "ACContainer"
       ? record.section || baseDeviceKind(record.kind.split(":", 1)[0])
       : record.params[field.sourceName] ?? "";
     const value = field.definition ? enumExportValueForDefinition(field.definition, sourceValue) : sourceValue;
@@ -2106,8 +2113,8 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
         params: {
           idx: node.params.idx ?? "",
           name: node.name,
-          // 类型取图元库中文名:CONTAINER_KIND_LABELS 即本表 label 的派生(同源同值,不跨模块引以免 TDZ)
-          type: DEVICE_LIBRARY_BY_KIND.get(node.kind)?.label ?? node.kind,
+          // 容器类型取容器元件英文名(ac-vpp-box 等):容器无 E 设备类,段名只会退化成 ACContainer,故直接取 kind
+          dev_type: baseDeviceKind(node.kind),
           is_gateway: node.params.is_gateway ?? "0",
           // 绑定设备存的是成员节点 id(与 containerMemberOptions 同源),此处解析出成员自身 idx
           bound_device_idx: (boundDeviceId ? nodeById.get(boundDeviceId)?.params.idx : "") ?? ""

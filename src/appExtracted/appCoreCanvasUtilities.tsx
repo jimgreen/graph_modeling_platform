@@ -3261,13 +3261,13 @@ export function paramOptionsForSection(key: string, section?: string) {
 
 export const READONLY_E_PARAM_KEYS = new Set(["idx", "node", "i_node", "j_node", "ac_node", "dc_node"]);
 
-// 容器「模型」面板剔除的三行 E 列 —— 都是无人读取或与容器专用行重复的:
-//   type           :容器类型导出取 DEVICE_LIBRARY_BY_KIND.label,写进 params.type 无人读
+// 容器「模型」面板剔除的两行 E 列 —— 都是无人读取或与容器专用行重复的:
 //   is_gateway     :与容器专用的「是否作为关口设备」下拉编辑同一参数(重复行 + 裸英文键表头)
 //   bound_device_idx:导出用 bound_device_id 反查该列,本列恒空
-export const AC_CONTAINER_EXCLUDED_E_PARAM_KEYS = new Set(["type", "is_gateway", "bound_device_idx"]);
+// (旧 type 列已从容器段删除,其剔除项随之删除;dev_type 行保留 —— 显示容器元件英文名,与导出同值)
+export const AC_CONTAINER_EXCLUDED_E_PARAM_KEYS = new Set(["is_gateway", "bound_device_idx"]);
 
-/** 模型面板参数键的容器口径:容器剔除上述三列;普通设备原样返回(同名键在普通设备上仍有意义) */
+/** 模型面板参数键的容器口径:容器剔除上述两列;普通设备原样返回(同名键在普通设备上仍有意义) */
 export function resolveAcContainerModelPanelParamKeys(keys: readonly string[], isContainer: boolean): string[] {
   return isContainer ? keys.filter((key) => !AC_CONTAINER_EXCLUDED_E_PARAM_KEYS.has(key)) : [...keys];
 }
