@@ -12218,6 +12218,41 @@ export function rebuildContainerExemptConnectionRoutes(
   return updates.size === 0 ? edges : edges.map((edge) => updates.get(edge.id) ?? edge);
 }
 
+/**
+ * 容器豁免存量回填(**设备型线路**):端点 refs 指向容器内设备的线路设备节点,
+ * 其存量路径按豁免口径重算(容器不参与该线路避让 —— 与建线时 routeRoutableLineDevice 的口径一致),
+ * 与存量路径不一致才回填(routeRoutableLineDevice 对相同路径返回原引用,幂等短路)。
+ * 存量绕行路径正是「容器当障碍物」时代的产物;运行时的路由修复(rebuildRoutableLineDeviceRouteUpdates)
+ * 判这类路径「安全」(豁免后不再穿障碍)故不会重算,只能在此按设计口径重跑一次。
+ * 返回**需提交的节点更新**(只含变化的线路设备);只改内存,随用户保存落盘。
+ * 与 rebuildContainerExemptConnectionRoutes 同用途、同口径(打开既有模型与导出 SVG 时调用)。
+ */
+export function rebuildContainerExemptRoutableLineDeviceRoutes(
+  nodes: ModelNode[],
+  bounds?: CanvasBounds
+): ModelNode[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  /** 端点 ref 所指设备是否归属某个存活容器(容器 id 悬空不算) */
+  const endpointSitsInContainer = (ref: RoutableLineDeviceEndpointRef | undefined) => {
+    const containerId = ref ? nodeById.get(ref.nodeId)?.containerId : undefined;
+    const container = containerId ? nodeById.get(containerId) : undefined;
+    return Boolean(container && isAcContainerKind(container.kind));
+  };
+  const updates: ModelNode[] = [];
+  for (const node of nodes) {
+    if (!isRoutableLineDeviceKind(node.kind)) continue;
+    // 只回填有存量路径的(与连线回填同口径):无路径 = 默认两点,由渲染兜底,无绕行可回填
+    if (parseRoutableLineDevicePoints(node.params[ROUTABLE_LINE_POINTS_PARAM]).length < 2) continue;
+    const refs = routableLineDeviceEndpointRefs(node);
+    if (!endpointSitsInContainer(refs.source) && !endpointSitsInContainer(refs.target)) continue;
+    const nextNode = routeRoutableLineDevice(node, nodes, bounds);
+    if (nextNode !== node) {
+      updates.push(nextNode);
+    }
+  }
+  return updates;
+}
+
 export function rebuildSingleConnectionRoute(
   nodes: ModelNode[],
   edges: Edge[],
