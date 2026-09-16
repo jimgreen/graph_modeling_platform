@@ -233,7 +233,7 @@
 | 是否关口 | `params.is_gateway` |
 | 绑定设备 idx | `params.bound_device_id` 解析出成员所在表名 + `_` + 成员 idx(如 `ACRealBs_3` / 模板态 `node_3`) |
 
-> **变更(2026-09-16):** 原「类型」列(列名 `type`,值 = 图元库中文名 虚拟电厂 / 开关箱 / 配变箱)**删除**,改为 `dev_type`(值 = 容器元件英文名)。全链路同值:容器段记录、面板「设备类型」行(`resolveDeviceModelPanelDevType`)、双击/批量参数行(`getEParamValue`)。容器是 dev_type 语义的**唯一例外** —— 其它段的 dev_type 仍是 E 设备类名(ACLoad / ACWindGen 等);模板定义了容器段时,`dev_type` 仍取容器元件英文名,不得被改写成段名 `ACContainer`(`applyEInterfaceDefinitionToRecord` 内按段名放行)。旧导出产物含 `type` 列,消费方需切换到 `dev_type`。
+> **变更(2026-09-16):** 原「类型」列(列名 `type`,值 = 图元库中文名 虚拟电厂 / 开关箱 / 配变箱)**删除**,改为 `dev_type`(值 = 容器元件英文名)。全链路同值:容器段记录、面板「设备类型」行(`resolveDeviceModelPanelDevType`)、双击/批量参数行(`getEParamValue`)。容器是 dev_type 语义的**唯一例外** —— 其它段的 dev_type 仍是 E 设备类名(ACLoad / ACWindGen 等);模板定义了容器段时,`dev_type` 仍取容器元件英文名,不得被改写成段名 `ACContainer`(`applyEInterfaceDefinitionToRecord` 内**按 kind**(`isAcContainerKind(baseDeviceKind(record.kind))`)放行,2026-09-17 按实现修正措辞)。旧导出产物含 `type` 列,消费方需切换到 `dev_type`。
 
 > **语义变更(2026-09-17,取代 2026-09-16 Task 10 审查裁决):** `bound_device_idx` 值改为 `{表名}_{idx}` —— 表名 = 绑定设备在本次导出中**实际写入的 E 段标签**(与格式化阶段的分组同源:接口定义 `exportName` > `eDeviceDefinitionLabels` 映射 > 内部段名),如 sgcc 模板下母线写 `node_3`、电源写 `unit_3`,非模板态写入 `ACRealBs_3`;idx 为该设备记录的**最终行号**。原注记「裸 idx 跨段重号、消费方须按容器成员集合兜底匹配、必要时补 `bound_device_section` 列」**作废**:带表名前缀后不再需要成员集合兜底或独立段名列。绑定失效(设备已删除/移出成员)或无 idx 时整列为空(沿用既有空值语义)。
 >
@@ -253,7 +253,8 @@
 - 容器段**不写入**预定义模板(`server/eFileTemplates.mjs` 及模板数据不改)
 - 模板模式下 `hasTemplateConfigValue && !definition` 的过滤(`model-eexport.ts:2010-2017`)照常生效 → 容器记录不输出
 - 该过滤为**静默**:导出前预判模板态,容器不参与容器段生成,也不逐节点告警(`:2068-2073` 噪音规避)
-- 后续若需模板态导出容器,补模板定义即可
+- **连带跳过关口拓扑变换**(`model-eexport.ts:2136-2138`,2026-09-17 补记):模板态下容器段静默时,`transformGraphForGateways` 一并跳过——否则会留下「无容器记录解释的拓扑断口」
+- 后续若需模板态导出容器,补模板定义即可(连带项同步放开)
 
 ### 关口拓扑变换(决策 4)
 
@@ -272,9 +273,14 @@
 
 - 关口开启且绑定设备确定时:复制绑定设备的量测组为容器量测组(nodeId = 容器 id,items 测点内容同绑定设备)
 - **单向同步**:绑定设备量测组变更(增删改)时刷新容器量测组,保持「完全一致」
-- 解绑 / 关闭关口 / 绑定设备移出或删除 → 删除容器量测组
-- 非关口容器无量测组
+- ~~解绑 / 关闭关口 / 绑定设备移出或删除 → 删除容器量测组~~ **已被 2026-09-17 口径取代(见下)**
+- ~~非关口容器无量测组~~ **已被取代(见下)**
 - 量测组存储:`ProjectMeasurementConfig.groups` 按 nodeId 键(`src/measurements.ts:322-343`),容器量测组同构挂容器 nodeId
+
+> **口径更新(2026-09-17,随「容器默认量测」需求修正,fb13):** `reconcileContainerMeasurementGroups`(measurements.ts)改为**按关口分流** ——
+> **关口容器 + 绑定有效** → 覆盖式镜像绑定设备(如上);**非关口容器(或绑定失效)** → **保留容器自身的量测组**(不再清理)。
+> 非关口容器因此可保存默认/编辑的量测(默认档 `deviceProfiles.ACContainer` = 电压/电流/有功/无功)。「关口→非关口」切换后旧镜像**残留**,
+> 可用量测页【默认】恢复默认测点。原「容器组只能由镜像产生」的裁决(Task 9)随之作废。
 
 ### CIM 导出
 
@@ -294,7 +300,14 @@
 | `src/appExtracted/appRightPanel.tsx` | 所属容器特殊行、关口/绑定参数行(仿 renderVoltageBaseRow) |
 | `src/appExtracted/appToolbarHookFactories.tsx` | 排序比较器接入容器优先 |
 | `src/appExtracted/appCanvasArea.tsx` | 渲染序接入(如比较器未覆盖则此处兜底) |
-| `src/hooks/useBatchEditors.tsx` | 动态下拉选项(所属容器/绑定设备)、批量编辑行混合值 |
+| ~~`src/hooks/useBatchEditors.tsx`~~ | 动态下拉选项经其 paramOptionsForDefinition 机制承载,该文件本身**无需改动**(原清单笔误) |
+| `src/appExtracted/appProjectCanvasFactories.tsx` | 加载挂钩(回填)、布局整组/两阶段、拖角几何 resize、撤销让位 |
+| `src/model-routing.ts` | 线路避让豁免消费点、回填函数(rebuildContainerExempt*) |
+| `src/transformUtils.ts` | resize minSize 逐轴支持 |
+| `src/definitionInstanceSync.ts` | 容器 kind 跳过模板尺寸同步 |
+| `src/appExtracted/appCoreCanvasUtilities.tsx` | 面板剔除键集、界面类名标签 |
+| `src/appExtracted/appView.tsx` | 面板 dev_type 取值(容器返回 kind) |
+| `src/styles.css` | 容器命中/穿透样式(`:has()` 规则) |
 | `src/selectionActions.ts` | 剪贴板剥离 containerId/bound_device_id;粘贴后调不变量出口 |
 | `src/svgModelImport.ts` | 导入后调不变量出口 |
 | `src/measurements.ts` | 容器量测组复制/单向同步/删除 |
