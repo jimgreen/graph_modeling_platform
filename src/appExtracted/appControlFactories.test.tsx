@@ -569,6 +569,60 @@ function createUpdateMockScope(nodeIds: string[] = []) {
   };
 }
 
+describe("程序化写口对容器的 scale 折叠", () => {
+  test("addDevice attrs 里的 scale 折算进 size:容器几何恒在 size", () => {
+    const { scope, calls } = createMockScope();
+    const result = createProgrammaticAddDevice(scope)("ac-vpp-box", 100, 200, { scale: 2, scaleX: 2, scaleY: 2 });
+    const node = calls.added.find((item: any) => item.id === result.id);
+    expect(node.size).toEqual({ width: 360, height: 224 }); // 默认 180×112 × 2
+    expect(node.scaleX).toBe(1);
+    expect(node.scaleY).toBe(1);
+  });
+
+  test("control.update 写 scale 折算进 size:与 UI 同一出口", () => {
+    const container = {
+      ...createDefaultNode("ac-vpp-box", { x: 100, y: 100 }),
+      size: { width: 500, height: 400 }
+    };
+    const calls: { updatedNode: any } = { updatedNode: null };
+    const update = createProgrammaticUpdateDeviceProperty({
+      nodes: [container],
+      normalizeProjectMeasurements: (measurements: any) => measurements,
+      pushUndoSnapshot: vi.fn(),
+      setProjectMeasurements: vi.fn(),
+      updateGraphNodeById: (_id: string, updater: (node: any) => any) => {
+        calls.updatedNode = updater(container);
+      }
+    });
+
+    update(container.id, "graphic", { scale: 2, scaleX: 2, scaleY: 2 });
+
+    expect(calls.updatedNode.size).toEqual({ width: 1000, height: 800 });
+    expect(calls.updatedNode.scale).toBe(1);
+    expect(calls.updatedNode.scaleX).toBe(1);
+    expect(calls.updatedNode.scaleY).toBe(1);
+  });
+
+  test("普通设备不受影响:control.update 写 scale 照原样落到 scale", () => {
+    const device = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const calls: { updatedNode: any } = { updatedNode: null };
+    const update = createProgrammaticUpdateDeviceProperty({
+      nodes: [device],
+      normalizeProjectMeasurements: (measurements: any) => measurements,
+      pushUndoSnapshot: vi.fn(),
+      setProjectMeasurements: vi.fn(),
+      updateGraphNodeById: (_id: string, updater: (node: any) => any) => {
+        calls.updatedNode = updater(device);
+      }
+    });
+
+    update(device.id, "graphic", { scale: 2, scaleX: 2, scaleY: 2 });
+
+    expect(calls.updatedNode.size).toEqual(device.size);
+    expect(calls.updatedNode.scaleX).toBe(2);
+  });
+});
+
 describe("programmaticUpdateDeviceProperty", () => {
   test("已有线路连接时拒绝通过控制接口修改 model_id", () => {
     const node = createDefaultNode("dc-district-load", { x: 100, y: 100 });

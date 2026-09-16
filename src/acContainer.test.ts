@@ -1314,6 +1314,16 @@ describe("容器手动尺寸", () => {
     expect(after.size).toEqual({ ...CONTAINER_MIN_SIZE }); // 成员走光 → 收缩(拖动集里没有容器,不走「只扩不缩」)
   });
 
+  test("并入图的容器带遗留 scale(粘贴存量记录)→ 入图即折算进 size", () => {
+    const legacy = node("c1", "ac-vpp-box", 500, 400, 180, 112) as any;
+    legacy.scale = 2; legacy.scaleX = 2; legacy.scaleY = 2;
+    const next = commitContainerMembership([legacy, node("m1", "ac-load", 900, 900) as any], ["c1"]);
+    const container = next.find((n) => n.id === "c1") as any;
+    expect(container.size).toEqual({ width: 360, height: 224 });
+    expect(container.scaleX).toBe(1);
+    expect(container.scaleY).toBe(1);
+  });
+
   test("容器不在拖动集且成员走光(非拖动入口)也照常收缩", () => {
     const manual = node("c1", "ac-vpp-box", 500, 400, 360, 224) as any;
     const { updates } = applyDragContainerMembership({

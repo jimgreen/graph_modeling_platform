@@ -484,14 +484,20 @@ export function commitContainerMembership(nodes: ModelNode[], movedIds: string[]
   // 拖动 / 布局不走本出口,它们的容器是既有容器 → 无豁免、照常排斥。
   const movedIdSet = new Set(movedIds);
   const addedContainerIds = nodes.filter((node) => movedIdSet.has(node.id) && isAcContainerNode(node)).map((node) => node.id);
+  // 入图即归一:并入的容器把遗留 scale 折算进 size —— 粘贴源可能是**存量存盘记录**(未经加载路径归一),
+  // 不折叠则会带着 scale 入图,又回到「渲染矩形 ≠ eject/入组所用矩形」。
+  // 无并入容器时保持原引用(本出口的「无容器短路」契约:引用相等即无变化)
+  const inboundNodes = addedContainerIds.length === 0
+    ? nodes
+    : nodes.map((node) => (movedIdSet.has(node.id) && isAcContainerNode(node) ? foldContainerScaleIntoSize(node) : node));
   const { updates } = applyDragContainerMembership({
-    nodes,
+    nodes: inboundNodes,
     movedIds,
     altKey: false,
     repelNonMembers: true,
     addedContainerIds
   });
-  return updates.length === 0 ? nodes : withNodeUpdates(nodes, updates);
+  return updates.length === 0 ? inboundNodes : withNodeUpdates(inboundNodes, updates);
 }
 
 /**
