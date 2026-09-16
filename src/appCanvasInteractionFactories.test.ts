@@ -1498,19 +1498,28 @@ const expectContainerCovers = (container: any, member: any) => {
   expect(b.bottom).toBeLessThanOrEqual(r.y2);
 };
 const containerBase = (id = "c1") => bare(id, "ac-vpp-box", { size: { width: 180, height: 112 } });
-/** 面板几何行(倍率 / 尺寸 / 旋转)提交:返回提交后的 store(与生产同一出口 createUpdateSelectedNode) */
+/**
+ * 面板几何行(倍率 / 坐标 / 旋转)提交:走生产同一出口 createUpdateSelectedNode。
+ * 同时捕获撤销作用域(第 3 参)与坐标分支交给 commitFastMovedGraphPatches 的节点更新。
+ */
 const runPanelGeometryWrite = (nodes: any[], targetId: string, patch: any) => {
   const store = createGraphStore(nodes, []);
   let committed = store;
+  let undoScope: any;
+  let movedUpdates: any[] = [];
   const target = store.nodeMap.get(targetId)!;
   createUpdateSelectedNode({
     CANVAS_AUTO_EXPAND_PADDING: 40,
+    adjustEdgesAfterNodeMove: (edges: any[]) => edges,
     applyCanvasBounds: () => {},
     canvasBounds: { width: 2000, height: 2000 },
     canvasBoundsForAutoExpandedGraphContent: () => ({ width: 2000, height: 2000 }),
     clampNodePositionToExpandableBounds: (_node: any, _bounds: any, position: any) => position,
+    commitFastMovedGraphPatches: (updates: any[]) => { movedUpdates = updates; },
+    currentStoredRoutePointsForEdge: () => ({}),
     edgeListForNodeIds: () => [],
     expandCanvasToFitGraph: () => {},
+    finalizeMovedNodeEdgesFast: () => [],
     focusedGroupedNodeMovesGroup: false,
     graphStore: store,
     graphStoreApplyPatch,
@@ -1520,7 +1529,7 @@ const runPanelGeometryWrite = (nodes: any[], targetId: string, patch: any) => {
     overlayGraphStoreNodes,
     patchGraphNodes: vi.fn(),
     pushNodeOnlyUndoSnapshot: vi.fn(),
-    pushUndoSnapshot: vi.fn(),
+    pushUndoSnapshot: (_a: any, _b: any, scope: any) => { undoScope = scope; },
     rebuildEdgeUpdatesAfterNodeGeometryChange: () => [],
     rebuildRoutableLineNodeUpdatesForChangedNodes: () => [],
     rejectAutoCanvasExpansionForContent: () => false,
@@ -1529,9 +1538,9 @@ const runPanelGeometryWrite = (nodes: any[], targetId: string, patch: any) => {
     selectedNodeId: targetId,
     setGraphStore: (updater: any) => { committed = updater(store); },
     snapshotEdgePoints: () => ({}),
-    undoScopeForGraphPatch: () => ({})
+    undoScopeForGraphPatch: () => ({ kind: "patch-scope" })
   } as any)(patch);
-  return committed;
+  return { store: committed, undoScope, movedUpdates };
 };
 
 describe("变换提交的容器跟随", () => {
@@ -1628,14 +1637,39 @@ describe("变换提交的容器跟随", () => {
   });
 
   test("面板倍率写容器:折算进 size(I1),普通设备仍写 scale", () => {
-    const container = runPanelGeometryWrite([containerBase()], "c1", { scale: 2, scaleX: 2, scaleY: 2 }).nodeMap.get("c1")!;
+    const container = runPanelGeometryWrite([containerBase()], "c1", { scale: 2, scaleX: 2, scaleY: 2 }).store.nodeMap.get("c1")!;
     expect(container.size).toEqual({ width: 360, height: 224 }); // 容器几何恒在 size
     expect(container.scaleX).toBe(1);
     expect(container.scaleY).toBe(1);
 
-    const device = runPanelGeometryWrite([bare("m9", "ac-load")], "m9", { scale: 2, scaleX: 2, scaleY: 2 }).nodeMap.get("m9")!;
+    const device = runPanelGeometryWrite([bare("m9", "ac-load")], "m9", { scale: 2, scaleX: 2, scaleY: 2 }).store.nodeMap.get("m9")!;
     expect(device.size).toEqual({ width: 40, height: 30 });
     expect(device.scaleX).toBe(2);
+  });
+
+  // 撤销作用域:容器收尾(uniform refit 挤出 / 其它容器重算)落在选中节点之外,
+  // 走 patch 通道这些节点就在撤销计划外(Ctrl+Z 后残留)→ 有容器时让位 undefined(全量对比,三处先例同款)
+  test("面板几何提交:图中有容器 → 撤销作用域让位(undefined);无容器 → 保持 patch 通道", () => {
+    const withContainer = runPanelGeometryWrite(
+      [containerBase(), bare("m1", "ac-load", { containerId: "c1" })],
+      "c1",
+      { scale: 2, scaleX: 2, scaleY: 2 }
+    );
+    expect(withContainer.undoScope).toBeUndefined();
+
+    const withoutContainer = runPanelGeometryWrite([bare("m9", "ac-load")], "m9", { scale: 2, scaleX: 2, scaleY: 2 });
+    expect(withoutContainer.undoScope).toEqual({ kind: "patch-scope" });
+  });
+
+  // 钳制只针对**尺寸类** patch(倍率 / 尺寸):坐标行是「等同拖动容器」待裁决的 followup,
+  // 不得被成员包裹钳制静默改写(容器 180×112 时 X 输 500 曾被拉回 70)
+  test("面板改坐标(容器):不被成员包裹钳制改写,原样写入", () => {
+    const run = runPanelGeometryWrite(
+      [containerBase(), bare("m1", "ac-load", { containerId: "c1" })],
+      "c1",
+      { position: { x: 500, y: 0 } }
+    );
+    expect(run.movedUpdates[0].position.x).toBe(500);
   });
 
   // 面板倍率行是容器的尺寸入口(无条件渲染):与拖角 resize 同收尾 ——
@@ -1644,7 +1678,7 @@ describe("变换提交的容器跟随", () => {
     const container = containerBase();
     const member = bare("m1", "ac-load", { containerId: "c1" });
     const neighbor = bare("n1", "ac-load", { position: { x: 150, y: 0 } }); // 放大后落进矩形、无归属
-    const committed = runPanelGeometryWrite([container, member, neighbor], "c1", { scale: 2, scaleX: 2, scaleY: 2 });
+    const committed = runPanelGeometryWrite([container, member, neighbor], "c1", { scale: 2, scaleX: 2, scaleY: 2 }).store;
 
     const nextContainer = committed.nodeMap.get("c1")!;
     expect(nextContainer.size).toEqual({ width: 360, height: 224 });
@@ -1664,7 +1698,7 @@ describe("变换提交的容器跟随", () => {
   test("面板倍率缩小容器:钳在「完全包裹成员」下限,成员不被裁出", () => {
     const container = bare("c1", "ac-vpp-box", { size: { width: 360, height: 224 } });
     const member = bare("m1", "ac-load", { containerId: "c1", size: { width: 300, height: 200 } });
-    const committed = runPanelGeometryWrite([container, member], "c1", { scale: 0.5, scaleX: 0.5, scaleY: 0.5 });
+    const committed = runPanelGeometryWrite([container, member], "c1", { scale: 0.5, scaleX: 0.5, scaleY: 0.5 }).store;
 
     // 0.5 倍折算得 180×112 < 下限(成员 300×200 + 内侧留白 48) → 钳在下限
     const next = committed.nodeMap.get("c1")!;

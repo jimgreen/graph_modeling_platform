@@ -1287,7 +1287,7 @@ describe("变换后的容器跟随", () => {
     const base = fittedContainer([member]);
     const shrunk = node("c1", "ac-vpp-box", 0, 0, 180, 112); // 拖角缩小后的容器(矩形 [-90,90]×[-56,56])
     const far = node("far", "ac-load", 300, 0);
-    const near = node("near", "ac-load", 120, 0); // 新矩形右边 90,本体左边 100 → 间隙 40
+    const near = node("near", "ac-load", 120, 0); // 新矩形右边 90,本体左边 100 → 推出前间隙 10(需位移 40)
     const updates = refitContainersAfterTransform([shrunk, member, far, near] as any, ["c1"]);
 
     expect(updates.some((n) => n.id === "far")).toBe(false);
