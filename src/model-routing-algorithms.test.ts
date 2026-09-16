@@ -429,8 +429,9 @@ test("backfills a stored route that crosses its endpoint container", () => {
   expect(backfilled[0].routePoints).not.toEqual(crossingEdge.routePoints);
 });
 
-test("keeps a stored detour route that does not cross its endpoint container", () => {
-  // 存量绕行路径(避让时代产物,除端点 stub 段外都在容器矩形外)→ 不视为违规,保持不动(最小行为变更面)
+test("backfills a stored detour route that avoids its endpoint container", () => {
+  // 存量绕行路径(避让时代产物:线绕开容器走框外)→ 打开模型/导出前回填为豁免口径路径
+  // (与「容器不在场」的提交设计一致)——这批边正是用户期望「打开老模型即变直」的对象
   const inner = createDefaultNode("ac-switch", { x: 300, y: 200 });
   const outer = createDefaultNode("ac-load", { x: 700, y: 200 });
   const box = createDefaultNode("ac-vpp-box", { x: 300, y: 200 });
@@ -445,9 +446,12 @@ test("keeps a stored detour route that does not cross its endpoint container", (
   };
   const bounds = { width: 1000, height: 500 };
 
-  const result = rebuildContainerExemptConnectionRoutes([innerInBox, outer, box], [detourEdge], bounds);
+  const backfilled = rebuildContainerExemptConnectionRoutes([innerInBox, outer, box], [detourEdge], bounds);
+  const reference = prepareConnectionEdgeForCommit([inner, outer], [detourEdge], detourEdge.id, bounds);
 
-  expect(result[0]).toBe(detourEdge);
+  expect(backfilled[0]).not.toBe(detourEdge);
+  expect(backfilled[0].routePoints).not.toEqual(detourEdge.routePoints);
+  expect(backfilled[0].routePoints).toEqual(reference.edge!.routePoints);
 });
 
 test("keeps container-exempt connection edges untouched when the stored route already matches", () => {

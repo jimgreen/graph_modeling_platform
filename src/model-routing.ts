@@ -12174,10 +12174,10 @@ export function prepareConnectionEdgeForCommit(
 }
 
 /**
- * 容器豁免存量路径回填:端点(至少一端)连容器内设备、且存量路径确实与所属容器矩形相交
- * (端点 stub 段除外)的连线,按豁免口径重跑一次提交设计,与存量 routePoints 不一致才回填
+ * 容器豁免存量路径回填:端点(至少一端)连容器内设备、且有存量 routePoints 的连线,
+ * 按豁免口径重跑一次提交设计,与存量 routePoints 不一致才回填
  * (commit 语义:routePoints 与 manualPoints 同步,维持二者一致)。
- * 收窄候选:不穿框的既有路径(绕行或手工调整)保持不动,只修复确实违反容器遮挡判定的边。
+ * 回填对象主要是旧避让行为产生的存量绕行路径(线绕开容器走框外,回填后变直/穿框);
  * 无此类连线、路径已一致或设计失败时原样返回(零改动)。只改内存,随用户保存落盘。
  * 用途:打开既有模型与导出 SVG 的存量数据修复(容器是线路避让的障碍物;服务容器内设备的线路豁免)。
  */
@@ -12200,12 +12200,7 @@ export function rebuildContainerExemptConnectionRoutes(
   };
   const candidates = edges.filter((edge) => {
     const routePoints = edge.routePoints;
-    if (!routePoints || routePoints.length < 2) {
-      return false;
-    }
-    return endpointContainers(edge).some((container) =>
-      routeIntersectsBlockers(routePoints, [container], ROUTE_BLOCKER_PADDING, 1)
-    );
+    return Boolean(routePoints && routePoints.length >= 2) && endpointContainers(edge).length > 0;
   });
   if (candidates.length === 0) {
     return edges;
