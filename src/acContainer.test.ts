@@ -171,12 +171,37 @@ describe("acContainer 布局", () => {
 
   test("回归钉子:宽 > 48 的大设备推出后本体不再压框(旧口径「只挤一半」)", () => {
     const c = node("c1", "ac-vpp-box", 0, 0, 200, 200);
-    const wide = node("wide", "ac-load", 130, 0, 100, 30); // 本体 [80,180]:压住右边 80
+    const wide = node("wide", "ac-load", 130, 0, 100, 30); // 本体 [80,180]:与右边相交 80,中心 (130,0) 在框外
     const patch = ejectOutsiders(c as any, [c, wide] as any)[0];
     expect(patch.position).toEqual({ x: 174, y: 0 }); // 100 + 24 + 半宽 50
     const b = calculateNodeVisualBounds(shifted(wide, patch) as any);
-    expect(b.left).toBeGreaterThanOrEqual(rectOf(c).x2); // 本体整体在框外(旧口径 b.left = 74 仍压框)
+    // 本体整体出框(旧中心口径下本例中心在框外 → 干脆不推,本体 80px 一直压在框上;
+    // 「只挤一半」见上一条:中心在框内时旧口径只把中心推到 124,本体 [104,144] 仍压框 44)
+    expect(b.left).toBeGreaterThanOrEqual(rectOf(c).x2);
     expect(boundsGap(b, rectOf(c))).toBe(CONTAINER_PADDING);
+  });
+
+  // 触发距离按**视觉包围盒(含标签)**算,与 containerBoundsForMembers 同源 —— 不是裸 size:
+  // 标签在节点下方展开时,含标签外沿先进入 24 间距带,设备就该被推开。
+  test("挤出按含标签包围盒判定:裸本体间距 ≥ 24 但标签越线 → 推,推出后含标签间隙 = 24", () => {
+    const c = node("c1", "ac-vpp-box", 0, 0, 200, 200); // 真实矩形 [-100,100]²
+    // 设备在本体上方:裸本体下边 = -125 → 与矩形上边间隙 25(≥ 24,单纯按 size 算不挪)
+    const bare = node("bare", "ac-load", 0, -140);
+    const labeled = { ...node("labeled", "ac-load", 0, -140), params: { _labelVisible: "1" } }; // 非 "0" 即显示
+    const bareBounds = calculateNodeVisualBounds(bare);
+    const labeledBounds = calculateNodeVisualBounds(labeled);
+    expect(labeledBounds.bottom).toBeGreaterThan(bareBounds.bottom); // 标签在下方展开 → 含标签下沿更低
+    expect(boundsGap(bareBounds, rectOf(c))).toBeGreaterThanOrEqual(CONTAINER_PADDING);
+    // 对照:同一几何、仅隐去标签 → 不推(证伪「按裸 size 算」的误读)
+    expect(ejectOutsiders(c as any, [c, bare] as any)).toEqual([]);
+    // 含标签 → 推:仍沿最近边(上)让位,推出后**含标签**包围盒间隙 = 24
+    const patches = ejectOutsiders(c as any, [c, labeled] as any);
+    expect(patches).toHaveLength(1);
+    expect(patches[0].position.x).toBe(0);
+    expect(patches[0].position.y).toBeLessThan(-140);
+    const after = calculateNodeVisualBounds(shifted(labeled, patches[0]) as any);
+    expect(after.bottom).toBeLessThan(rectOf(c).y1); // 标签下沿整体让到框外
+    expect(boundsGap(after, rectOf(c))).toBe(CONTAINER_PADDING);
   });
 
   test("enforce:存量图里贴着容器的未归属设备,下一次 enforce 被推到间隙 24(新的间距不变量)", () => {
