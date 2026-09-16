@@ -82,8 +82,8 @@ describe("createMoveSelection 容器接入", () => {
 });
 
 // ─── 拖动落地的归属 toast 接线(createFinishNodeDrag) ─────────────────────────
-// judge 只回报 enterContainerId / exitContainerId,是否弹、弹什么由本节验证 ——
-// 二者互斥(exit 仅 altKey=true),故各自独立用例。
+// judge 只回报 enterContainerId / exitContainerId,是否弹、弹什么由本节验证。
+// 归属变更只在 Alt 拖动下发生(Alt = 双向归属变更键);非 Alt 落入容器 = 排斥弹出,不弹 toast。
 describe("拖动落地 toast 接线", () => {
   const makeDragScope = (nodes: any[], movedId: string, delta: { x: number; y: number }) => {
     const nodeById = new Map(nodes.map((n) => [n.id, n]));
@@ -152,11 +152,23 @@ describe("拖动落地 toast 接线", () => {
     expect(scope.showGlobalMessage.mock.calls.map((call) => call[0])).toEqual(["已移出容器 c1"]);
   });
 
-  test("非 Alt 拖入成员 → toast「已移入容器 <名称>」(移入侧接线断言)", () => {
+  test("Alt 拖入成员 → toast「已移入容器 <名称>」(移入侧接线断言)", () => {
     const outsider = bareNode("o1", "ac-load", 300, 300);
     const { scope } = makeDragScope([container(), outsider], "o1", { x: -250, y: -250 });
-    createFinishNodeDrag(scope as any)(false);
+    createFinishNodeDrag(scope as any)(true);
     expect(scope.showGlobalMessage.mock.calls.map((call) => call[0])).toEqual(["已移入容器 c1"]);
+  });
+
+  test("非 Alt 拖入 → 排斥:不弹 toast,提交里节点被弹回容器矩形外且不写归属", () => {
+    const outsider = bareNode("o1", "ac-load", 300, 300);
+    const { scope } = makeDragScope([container(), outsider], "o1", { x: -250, y: -250 }); // 松手落在 (50,50),容器内
+    createFinishNodeDrag(scope as any)(false);
+    expect(scope.showGlobalMessage).not.toHaveBeenCalled();
+    const updates = scope.commitFastMovedGraphPatches.mock.calls[0][0] as any[];
+    // 拖动更新在前、容器更新在后(同 id 后者胜):取最后一条才是落地位置
+    const placed = [...updates].reverse().find((node: any) => node.id === "o1")!;
+    expect(placed.containerId).toBeUndefined();
+    expect(placed.position).toEqual({ x: 100 + 24, y: 50 }); // 容器矩形 [-100,100]²,最近边 = 右
   });
 
   test("对照组:普通拖动(不进出容器)不弹 toast", () => {

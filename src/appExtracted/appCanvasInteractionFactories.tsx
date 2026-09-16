@@ -1147,13 +1147,15 @@ export function createFinishDraggingMove(__appScope: Record<string, any>) {
     const finalBounds = canvasBoundsForMoveDelta(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta.x, finalDelta.y);
     applyCanvasBounds(finalBounds);
     const draggedNodeUpdates = buildMovedNodeUpdates(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta, finalBounds);
-    // 归属落地:键盘移动无 Alt 语义(altKey 恒 false),判定与容器重算口径同鼠标拖动
+    // 归属落地:本路径无 Alt 语义(altKey 恒 false),判定与容器重算口径同鼠标拖动 ——
+    // 非 Alt 落入容器 = 排斥(弹出框外),与 createFinishNodeDrag 同开 repelNonMembers
     const postMoveById = new Map(draggedNodeUpdates.map((node) => [node.id, node]));
     const { updates: containerUpdates } = applyDragContainerMembership({
       nodes: nodes.map((node) => postMoveById.get(node.id) ?? node),
       movedIds: activeDragging.nodeIds,
       grabbedIds: activeDragging.grabbedNodeIds,
-      altKey: false
+      altKey: false,
+      repelNonMembers: true
     });
     const movedNodeUpdates = mergeNodeUpdateLists(draggedNodeUpdates, containerUpdates);
     const nextNodes = nextNodesForMovedGraphCommit(graphStore, movedNodeUpdates, dragNodeIds);
@@ -1232,7 +1234,7 @@ export function createFinishDraggingMove(__appScope: Record<string, any>) {
 }
 
 export function createFinishNodeDrag(__appScope: Record<string, any>) {
-  // altKey 由指针抬起事件带入(Alt = 明确移出/不落入容器)
+  // altKey 由指针抬起事件带入(Alt = 双向归属变更键:拖出容器 / 拖入容器)
   return (altKey = false) => {
   const { adjustEdgesAfterNodeMove, applyCanvasBounds, applyNodeTerminalSnap, boundedDeltaForMoveGeometry, buildMovedNodeUpdates, canvasBoundsForMoveDelta, canvasInteractionRef, clearNodeDragMoveSchedule, commitFastMovedGraphPatches, commitSafeDeltaForDraggingState, dragDraggedEdgeIdSet, dragMovedBusNodeIdSet, dragMovedNodeIdSet, dragUndoCapturedRef, draggingRef, ensureDraggingUndoSnapshot, externalMoveCandidateEdges, finalizeMovedNodeEdgesFast, findMultiNodeDragSnapTargetAtDelta, findSingleNodeDragSnapTargetAtDelta, flushPendingNodeDragMove, graphStore, hideImperativeMultiNodeDragOverlay, hideImperativeSingleNodeDragPreview, internalMoveEdgeIdsForMovedNodes, isMultiNodeMoveState, mergeAdjustedCandidateEdges, mergeNodeUpdateLists, nextNodesForMovedGraphCommit, nodeTerminalSnapTargetRef, nodes, normalizeProjectMeasurements, projectListPointerInsideRef, resetMultiNodeDragOverlayTransform, restoreCanvasSelectionSnapshotWithInspector, routePreserveEdgeIdsForMovedNodes, setDragging, setProjectMeasurements, shouldFinalizeMovedNodeEdgesSynchronously, showGlobalMessage, synchronousEdgeAdjustmentCandidates, translateInternalMoveCandidateEdges, translateWholeMoveCandidateEdges, updateSmartAlignmentGuides, writeOperationLog } = __appScope;
     flushPendingNodeDragMove(false);
@@ -1305,7 +1307,8 @@ export function createFinishNodeDrag(__appScope: Record<string, any>) {
       nodes: nodes.map((node) => postMoveById.get(node.id) ?? node),
       movedIds: activeDragging.nodeIds,
       grabbedIds: activeDragging.grabbedNodeIds,
-      altKey
+      altKey,
+      repelNonMembers: true // 非 Alt 拖进容器 → 弹回框外(Alt 才是双向归属变更键)
     });
     // 归属/容器几何变更并入同一次提交(单一撤销单元:撤销点见前方 ensureDraggingUndoSnapshot)
     const movedNodeUpdates = mergeNodeUpdateLists(draggedNodeUpdates, containerUpdates);
@@ -1395,8 +1398,9 @@ export function createFinishNodeDrag(__appScope: Record<string, any>) {
       const target = nodes.find((node) => node.id === enterContainerId);
       showGlobalMessage(`已移入容器 ${target?.name ?? ""}`.trim());
     }
-    // Alt 移出与移入对称提示。两条**互斥**:exit 仅在 altKey=true、enter 仅在 altKey=false
-    // (judge 里 Alt + 非成员直接 continue),写成独立 if 只为可读性,不是「可能同时发生」
+    // Alt 移出与移入对称提示:两条都在 altKey=true 下才可能触发(Alt = 双向归属变更键)。
+    // 同一次拖动里仍可各弹一次(Alt 拖「成员 + 落在别的容器里的非成员」的混选),写成独立 if 即为此,
+    // 不是「同一节点进出各一次」
     if (exitContainerId) {
       const source = nodes.find((node) => node.id === exitContainerId);
       showGlobalMessage(`已移出容器 ${source?.name ?? ""}`.trim());
@@ -1936,13 +1940,14 @@ export function createMoveSelection(__appScope: Record<string, any>) {
     const deltasByNode = Object.fromEntries(moveNodeIds.map((id) => [id, boundedDelta]));
     const selected = new Set(moveNodeIds);
     const draggedNodeUpdates = buildMovedNodeUpdates(moveNodeIds, originalPositions, boundedDelta, finalBounds);
-    // 归属落地:单次方向键同源接入(判定只看抓取集,Alt 对该路径无意义)
+    // 归属落地:单次方向键同源接入(判定只看抓取集;本路径无 Alt,故非成员落入容器一律排斥弹出)
     const postMoveById = new Map(draggedNodeUpdates.map((node) => [node.id, node]));
     const { updates: containerUpdates } = applyDragContainerMembership({
       nodes: nodes.map((node) => postMoveById.get(node.id) ?? node),
       movedIds: moveNodeIds,
       grabbedIds: rawMoveNodeIds,
-      altKey: false
+      altKey: false,
+      repelNonMembers: true
     });
     const movedNodeUpdates = mergeNodeUpdateLists(draggedNodeUpdates, containerUpdates);
     const nextNodes = nextNodesForMovedGraphCommit(graphStore, movedNodeUpdates, selected);

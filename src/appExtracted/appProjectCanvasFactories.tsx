@@ -1626,6 +1626,7 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
     }
     // 归属落地:批量布局(对齐/分布/自动对齐/自动散开)会把节点移进容器矩形;判定与容器重算走拖拽同一出口,
     // 容器几何 / 成员归属 / 挤出全在布局集之外,故并入本次提交(单一撤销单元)。
+    // **不传 repelNonMembers**:布局不是用户拖动,保持「落入即移入」(排斥只对拖动生效)。
     const { updates: containerUpdates } = applyDragContainerMembership({
       nodes: arranged,
       movedIds: movedNodeIds,
