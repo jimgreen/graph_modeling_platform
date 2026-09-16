@@ -2,6 +2,22 @@
 
 实现与评审记录见 `.superpowers/sdd/2026-09-15-ac-container/`(本地台账,未入 git)。
 
+## mcheck 遗留(2026-09-17 合并前一站式审查)
+
+**合并前建议处理(1 项):**
+- **antd 静态 `Modal.confirm` 收口**(Standards 轴 Important):容器删除确认(`appSelectionDragFactories.tsx` 约 :1711)与「添加到容器」表单弹窗(约 :1877)用 antd 静态方法,不继承 `main.tsx` ConfigProvider 主题(dev 下有 antd 告警),且与仓库既有 `showGlobalConfirm` 确认体系分裂。改法:删除确认→`showGlobalConfirm`;表单→受控对话框组件或 `App.useApp().modal`;并同步改测试桩。
+
+**性能 followup(mcheck Efficiency 轴):**
+- **H1**:加载路径的容器存量回填(`rebuildContainerExempt*`,appProjectCanvasFactories.tsx 约 :2931/:2936)未走 LOD 门控(>320 节点模型本应延迟),大模型首屏同步跑 K 次布线设计;可并入既有 deferred 修复调度(注意保存/导出前必须已回填)。
+- **H2**:拖角 resize 每 pointermove 全表 filter + 成员包围盒算两遍;成员集合/minSize 可在拖动开始缓存一次。
+- **L1/L5/L7**:模型路由豁免过滤逐候选重复、getEExportWarnings plan 双算、`isAcContainerKind` 用 includes —— 收益小,压测后再动。
+
+**层次 followup(mcheck Altitude 轴):**
+- **switch 子串启发式根因收口**:`baseKind.includes("switch")` 类判据散落(model.ts:1076/:1088 等已加容器豁免),应收成 `isSwitchingLikeKind` 谓词(中风险,逐条比对后再合)。
+- **「几何为用户所有」两套口径**:definitionInstanceSync 容器内判 vs 加载路径母线内联;可收 `isUserOwnedGeometryKind`(动母线前须全面核实副作用)。
+- **staticShapeText 复用**:DeviceGlyph 容器分支手写文本定位,可复用 `staticShapeText`(三处默认值差异需显式注入;视觉风险,跑快照)。
+- **几何复用(可选)**:`containerBoundsForMembers` ≡ `calculateModelGeometryBounds(members, [], padding)`(padding 加性;引入新耦合,须跑几何断言 + golden)。
+
 ## 后续任务建议(按优先级)
 
 0. **冒烟项(优先)**:拖一条**带折点/已布线连线**的设备进容器松手——确认折点随弹出位置走(同步边调整层以 finalDelta 为基准,推测由位置驱动的 route repair 兜住,静态分析未确证)。
