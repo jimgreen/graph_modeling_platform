@@ -165,9 +165,9 @@ export function judgeContainerMembership(args: {
   movedIds: string[];
   altKey: boolean;
   /**
-   * 排斥开关:非 Alt + 非成员中心落入**已有**容器矩形 → 产出「弹出」patch(容器与容器外设备互相排斥),
-   * 而不是移入。拖动三条路径(鼠标松手 / 键盘移动)与非拖动入口(commitContainerMembership:粘贴、
-   * 模板落点、程序化加图元、SVG 导入;批量布局)统一传 true。
+   * 排斥开关:非 Alt + 非成员与**已有**容器矩形间隙 < CONTAINER_PADDING(中心在框内亦然)→ 产出「弹出」patch
+   * (容器与容器外设备互相排斥),而不是移入。拖动三条路径(鼠标松手 / 键盘移动)与非拖动入口
+   * (commitContainerMembership:粘贴、模板落点、程序化加图元、SVG 导入;批量布局)统一传 true。
    */
   repelNonMembers?: boolean;
   /**
@@ -180,7 +180,7 @@ export function judgeContainerMembership(args: {
   membershipChanges: MembershipDecision["membershipChanges"];
   enterContainerId?: string;
   exitContainerId?: string;
-  /** 排斥:被弹到容器矩形外(最近边 + CONTAINER_PADDING)的节点;无排斥时为空数组 */
+  /** 排斥:被弹到「本体与容器矩形间隙 = CONTAINER_PADDING」(沿最近边)的节点;无排斥时为空数组 */
   repelPatches: NodePositionPatch[];
 } {
   const { nodes, movedIds, altKey, repelNonMembers = false, addedContainerIds } = args;
@@ -311,12 +311,12 @@ export function containerDecisionNodeUpdates(nodes: ModelNode[], decision: Membe
  * 拖动结束的归属落地(纯函数,供画布拖动提交调用):
  * 判定 → 写/清 containerId → 离开者解绑原关口容器 → 容器重算 + 挤出非成员。
  * 返回**需提交的节点更新**(变更集),调用方并入本次拖动提交,保持单一撤销单元。
- * - `nodes` 必须是**拖动后**的节点(容器与成员均取新位置):判定点 = 节点中心。
+ * - `nodes` 必须是**拖动后**的节点(容器与成员均取新位置):入组判定点 = 节点中心,排斥/挤出看视觉包围盒。
  * - `movedIds` 为本次真正拖动的节点(含跟随容器平移的成员);`grabbedIds` 为**用户抓住**的节点,
  *   判定只看抓取集:**跟随者不参与**(否则「拖容器 + Alt」会被判成整组移出),
  *   而「容器与成员同被选中 + Alt 拖成员」时该成员仍要移出(不能因容器同动而豁免)。
  * - 解绑用**原** nodes 判定(containerId 尚未改写),与移出/改归属同一出口。
- * - `repelNonMembers` 由拖动路径(鼠标 / 键盘)传 true:非 Alt 拖进来的非成员被弹回容器矩形外。
+ * - `repelNonMembers` 由拖动路径(鼠标 / 键盘)传 true:非 Alt 拖进来的非成员被弹到与容器矩形间隙 = CONTAINER_PADDING。
  */
 export function applyDragContainerMembership(args: {
   nodes: ModelNode[];
@@ -380,7 +380,7 @@ export function applyDragContainerMembership(args: {
  * 判定 → 解绑 → 容器重算 + 挤出。返回**完整**节点数组。
  * 与拖动同口径传 `repelNonMembers`(落进**已有**容器 → 弹回框外,不写归属);
  * 容器与设备同批新增时判定侧自动回退「落点入组」(整组粘贴 / SVG 导入整模型重建,见 judgeContainerMembership)。
- * `movedIds` 为本次新增/移动的节点(判断点 = 节点中心)。
+ * `movedIds` 为本次新增/移动的节点(入组看节点中心,排斥看视觉包围盒)。
  * 注意:原引用短路只在「图中无容器」时成立 —— 有容器时 enforce 恒产出容器重算更新(即便几何未变),
  * 故本函数不是廉价判空,不要拿返回值引用相等当「无变化」用。
  */

@@ -1143,6 +1143,21 @@ describe("归属落地出口 commitContainerMembership", () => {
     expect(next.find((n) => n.id === "p1")!.containerId).toBe("c1");
   });
 
+  // 契约(审查裁决 I1):「本批新增容器」豁免的只是**落点入组**那条分支,不是间距不变量 ——
+  // 整组粘贴 / SVG 导入 / 批量布局时,贴边(中心在框外、间隙 < 24)的未归属节点照样被推到间隙 24,
+  // 与存量图首次 enforce 同一执行(成员与已归属节点豁免不变)。
+  test("契约:同批新增容器不豁免间距 —— 贴边(中心在外、间隙 20)未归属节点被推到间隙 24", () => {
+    const c1 = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
+    const ring = node("ring", "ac-load", 140, 0) as any; // 本体 [120,160]:中心在框外,与右边间隙 20
+    const next = commitContainerMembership([c1, ring], ["c1", "ring"]);
+    const placed = next.find((n) => n.id === "ring")!;
+    expect(placed.containerId).toBeUndefined();        // 中心在外 → 不入组(落点入组豁免只作用于框内落点)
+    expect(placed.position).toEqual({ x: 144, y: 0 }); // 100 + 24 + 半宽 20 → 间隙恰 24
+    // 容器随后重算(无成员 → 最小尺寸 180×112),间隙只增不减(34 ≥ 24),间距不变量仍成立
+    expect(boundsGap(calculateNodeVisualBounds(placed as any), rectOf(next.find((n) => n.id === "c1")!)))
+      .toBeGreaterThanOrEqual(CONTAINER_PADDING);
+  });
+
   test("落点在容器外的节点不写归属;无容器时返回原引用(短路)", () => {
     const c1 = node("c1", "ac-vpp-box", 0, 0, 200, 200) as any;
     const outside = node("p1", "ac-load", 900, 900) as any;
