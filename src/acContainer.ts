@@ -68,29 +68,49 @@ export function fitContainerToMembers(container: ModelNode, members: ModelNode[]
   };
 }
 
+type Bounds4 = { left: number; right: number; top: number; bottom: number };
+type Rect4 = { x1: number; y1: number; x2: number; y2: number };
+
 /**
- * 单点推出几何(容器矩形内的点 → 沿最近边法向推到界外 + CONTAINER_PADDING;点在矩形外 → null)。
- * 四边距离相等时按 左→右→上→下 取首选(与旧实现同序,行为不变)。
- * **拖动排斥(judgeContainerMembership)与挤出(ejectOutsiders)共用此单源** —— 同一「弹出」必须同一口径。
+ * 是否需要让位:**视觉包围盒 ↔ 容器真实矩形的间隙 < CONTAINER_PADDING**(等价于「矩形外扩 padding 后与包围盒相交」)。
+ * 四方向枚举即全部「间隙 ≥ padding」的情形 —— 任一轴任一方向已让开 padding 即无需挪动。
+ * 缺 rotation/scale 的异常节点算得 NaN,一律视为无需挪动(不写出 NaN 位置)。
+ * **判定(排斥/挤出)与推出共用此谓词**,同一「越界」必须同一口径。
  */
-function pushPointOutOfRect(r: { x1: number; y1: number; x2: number; y2: number }, p: { x: number; y: number }): { x: number; y: number } | null {
-  if (p.x < r.x1 || p.x > r.x2 || p.y < r.y1 || p.y > r.y2) return null; // 中心在外
-  const dl = p.x - r.x1, dr = r.x2 - p.x, dt = p.y - r.y1, db = r.y2 - p.y;
-  const m = Math.min(dl, dr, dt, db);
-  if (m === dl) return { x: r.x1 - CONTAINER_PADDING, y: p.y };
-  if (m === dr) return { x: r.x2 + CONTAINER_PADDING, y: p.y };
-  if (m === dt) return { x: p.x, y: r.y1 - CONTAINER_PADDING };
-  return { x: p.x, y: r.y2 + CONTAINER_PADDING };
+function withinClearance(b: Bounds4, r: Rect4): boolean {
+  if (![b.left, b.right, b.top, b.bottom].every(Number.isFinite)) return false;
+  return !(b.right <= r.x1 - CONTAINER_PADDING || b.left >= r.x2 + CONTAINER_PADDING ||
+    b.bottom <= r.y1 - CONTAINER_PADDING || b.top >= r.y2 + CONTAINER_PADDING);
 }
 
-/** 中心是否落入容器矩形(含边界)—— 归属判定与挤出共用同一「落入」口径 */
+/**
+ * 推出几何(包围盒口径):包围盒与容器真实矩形间隙 < CONTAINER_PADDING 时,沿最近边推到**间隙 = CONTAINER_PADDING**;
+ * 间隙足够 → null(不挪)。候选位移取绝对值最小者,相等时按 左→右→上→下 取首选(与旧中心口径同序)。
+ * 按包围盒而非中心:让位后**本体不再压框**且标签一并让开(标签参与包围盒)。
+ * 返回**中心**新位置(position 是中心)。**拖动排斥(judgeContainerMembership)与挤出(ejectOutsiders)共用此单源**。
+ */
+function pushBoundsOutOfRect(b: Bounds4, center: { x: number; y: number }, r: Rect4): { x: number; y: number } | null {
+  if (!withinClearance(b, r)) return null;
+  const dl = b.right - (r.x1 - CONTAINER_PADDING); // 往左推的位移量(正)
+  const dr = r.x2 + CONTAINER_PADDING - b.left;
+  const du = b.bottom - (r.y1 - CONTAINER_PADDING);
+  const dd = r.y2 + CONTAINER_PADDING - b.top;
+  const m = Math.min(dl, dr, du, dd);
+  if (m === dl) return { x: center.x - dl, y: center.y };
+  if (m === dr) return { x: center.x + dr, y: center.y };
+  if (m === du) return { x: center.x, y: center.y - du };
+  return { x: center.x, y: center.y + dd };
+}
+
+/** 中心是否落入容器矩形(含边界)—— **入组**判定(Alt 拖入 / 落点入组)专用;排斥与挤出走包围盒口径(见 withinClearance) */
 function pointInRect(r: { x1: number; y1: number; x2: number; y2: number }, p: { x: number; y: number }): boolean {
   return p.x >= r.x1 && p.x <= r.x2 && p.y >= r.y1 && p.y <= r.y2;
 }
 
 /**
- * 容器真实矩形内的非成员(线路 kind、静态图元、其它容器、已归属某容器的节点豁免)
- * 沿最近边法向推到界外 + padding。
+ * 与容器真实矩形**间隙 < CONTAINER_PADDING** 的非成员(线路 kind、静态图元、其它容器、已归属某容器的节点豁免)
+ * 沿最近边推到间隙 = CONTAINER_PADDING。口径是**包围盒间距**而非中心点:设备被覆盖一半才触发、
+ * 推出后本体仍压框都是旧中心口径的缺陷(见 pushBoundsOutOfRect)。
  * ponytail: 最小位移单轮让位,复杂穿叠时观感可能不佳;出现实际问题再升级避碰算法。
  */
 export function ejectOutsiders(container: ModelNode, nodes: ModelNode[]): NodePositionPatch[] {
@@ -104,7 +124,7 @@ export function ejectOutsiders(container: ModelNode, nodes: ModelNode[]): NodePo
     if (isWireLikeRouteDeviceKind(n.kind)) continue; // 线路豁免(全部线路 kind 单一谓词,只豁免 ac-line 会漏推其它 11 种)
     if (isStaticNode(n)) continue;                   // 静态图元豁免:装饰图元常是整画布尺寸(position = 画布中心),容器矩形必然盖住其中心,推出框外等于搬动装饰
     if (n.containerId && owners.has(n.containerId)) continue; // 已归属**存活**容器(含本容器成员);悬空值不算归属,照常挤出
-    const pushed = pushPointOutOfRect(rect, n.position);      // 节点中心
+    const pushed = pushBoundsOutOfRect(calculateNodeVisualBounds(n), n.position, rect);
     if (pushed) out.push({ nodeId: n.id, position: pushed });
   }
   return out;
@@ -126,10 +146,11 @@ export type MembershipDecision = {
 };
 
 /**
- * 归属判定(判定点 = 节点中心 n.position,容器矩形按中心锚定):
+ * 归属判定(入组判定点 = 节点中心 n.position;容器矩形按中心锚定):
  * - 成员 Alt 拖动 → 移出;成员非 Alt → 归属不变(容器随后重算跟随,见 enforceContainerMembership)
- * - 非成员 Alt + 中心落进容器矩形 → 移入(Alt = 双向归属变更键:拖入 / 拖出)
- * - 非成员非 Alt + 中心落进**已有**容器矩形 → **弹出**(推到容器矩形外,不写归属):拖动三条路径与
+ * - 非成员 Alt + 中心落进容器矩形 → 移入(Alt = 双向归属变更键:拖入 / 拖出;Alt 移入**不受**排斥口径影响)
+ * - 非成员非 Alt + 本体与**已有**容器矩形**间隙 < CONTAINER_PADDING**(与 ejectOutsiders 同一包围盒口径,
+ *   不再等中心入框)→ **弹出**(推到间隙 = CONTAINER_PADDING,不写归属):拖动三条路径与
  *   非拖动入口(粘贴 / 模板落点 / 图元库放置 / control addDevice / 批量布局)统一传 `repelNonMembers`。
  *   唯一例外:目标容器是本批**新增**的(`addedContainerIds`;整组粘贴 / SVG 导入整模型重建)
  *   → 回退「落点入组」(排斥的语义是「外来设备 vs 已有容器」,同批重建不算外来)
@@ -185,6 +206,7 @@ export function judgeContainerMembership(args: {
     // (position = 画布中心),容器矩形必然盖住其中心,一旦被吞成成员容器会被撑到包住整张画布,弹出则等于搬动装饰。
     // 已是成员的静态图元仍可由上面的 Alt 分支移出 —— 豁免只管「自动入组/排斥」,不管用户显式操作。
     if (isStaticNode(n)) continue;
+    // 入组判定点 = 中心落进矩形(Alt 拖入与同批新增容器的落点入组共用)
     const target = containers.find((c) => pointInRect(containerRect(c), n.position));
     if (altKey) {
       if (!target) continue;
@@ -192,20 +214,25 @@ export function judgeContainerMembership(args: {
       enterContainerId = target.id;
       continue;
     }
-    if (!target) continue;
     // 排斥只对「本批操作之外的**已有**容器」生效:目标容器是本批**新增**的(容器与设备同批落地:
     // 整组粘贴 / SVG 导入整模型重建)时,设备落进它是同批重建而非「外来设备误落」,排斥会破坏导入保真
     // (容器恒空、成员被弹飞),此时回退「落点入组」。
     // 判定键是**新增**容器而非 movedIds:多选拖动与批量布局里容器本身也在移动集内,按移动集豁免
     // 会让设备落进这些既有容器时不排斥(spec:非 Alt 落入 = 排斥)。
-    if (!repelNonMembers || addedContainerIdSet.has(target.id)) {
+    if (target && (!repelNonMembers || addedContainerIdSet.has(target.id))) {
       membershipChanges.push({ nodeId: id, containerId: target.id });
       enterContainerId = target.id;
       continue;
     }
+    // 图中无容器 → 无排斥可言:先短路再算包围盒(包围盒比中心点贵,且异常节点算不出)
+    if (!repelNonMembers || containers.length === 0) continue;
     // 排斥:线路穿容器是常态,与 ejectOutsiders 同一豁免谓词(否则拖动一条线路会被整体弹出框外)
     if (isWireLikeRouteDeviceKind(n.kind)) continue;
-    const pushed = pushPointOutOfRect(containerRect(target), n.position);
+    // 排斥口径 = 包围盒间距(与 ejectOutsiders 同源):中心在框内,或本体与框的间隙 < CONTAINER_PADDING → 都弹
+    const bounds = calculateNodeVisualBounds(n);
+    const repelTarget = target ?? containers.find((c) => withinClearance(bounds, containerRect(c)));
+    if (!repelTarget) continue;
+    const pushed = pushBoundsOutOfRect(bounds, n.position, containerRect(repelTarget));
     if (pushed) repelPatches.push({ nodeId: id, position: pushed });
   }
   return { membershipChanges, enterContainerId, exitContainerId, repelPatches };

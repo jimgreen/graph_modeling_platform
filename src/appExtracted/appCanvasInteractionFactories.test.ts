@@ -168,7 +168,8 @@ describe("拖动落地 toast 接线", () => {
     // 拖动更新在前、容器更新在后(同 id 后者胜):取最后一条才是落地位置
     const placed = [...updates].reverse().find((node: any) => node.id === "o1")!;
     expect(placed.containerId).toBeUndefined();
-    expect(placed.position).toEqual({ x: 100 + 24, y: 50 }); // 容器矩形 [-100,100]²,最近边 = 右
+    // 容器矩形 [-100,100]²;口径 = 包围盒间距(不是中心):本体 [30,70]×[35,65] → 下移 89 最近,弹到间隙 24
+    expect(placed.position).toEqual({ x: 50, y: 50 + 89 });
   });
 
   test("对照组:普通拖动(不进出容器)不弹 toast", () => {
