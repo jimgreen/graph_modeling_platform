@@ -232,6 +232,10 @@ describe("app view device model parameter keys", () => {
   });
 
   test("shows the owning class for dev_type even when the node stores a legacy value", () => {
+    // 容器例外:容器无 E 设备类,dev_type 显示容器元件英文名(与容器段导出同值)
+    for (const kind of ["ac-vpp-box", "ac-switch-box", "ac-distribution-box"]) {
+      expect(resolveDeviceModelPanelDevType(kind, {})).toBe(kind);
+    }
     expect(resolveDeviceModelPanelDevType("ac-wind-source", { dev_type: "ac-wind-source" })).toBe("ACWindGen");
     expect(resolveDeviceModelPanelDevType("ac-series-reactor", { dev_type: "REACTOR" })).toBe("ACSeriCompensator");
     expect(resolveDeviceModelPanelDevType("ac-wind-source", {})).toBe("ACWindGen");
@@ -382,17 +386,18 @@ describe("容器「模型」面板参数键", () => {
     );
   };
 
-  test("剔除三行无人读取/重复的 E 列（type / is_gateway / bound_device_idx）", () => {
-    // 修前这三行确实在渲染键里:type 写入无人读(导出取库 label)、is_gateway 与「是否作为关口设备」下拉重复、
-    // bound_device_idx 恒空(导出用 bound_device_id 反查)
-    expect(containerRawKeys()).toEqual(expect.arrayContaining(["type", "is_gateway", "bound_device_idx"]));
+  test("剔除两行无人读取/重复的 E 列（is_gateway / bound_device_idx）", () => {
+    // 修前这两行确实在渲染键里:is_gateway 与「是否作为关口设备」下拉重复、bound_device_idx 恒空(导出用 bound_device_id 反查)
+    expect(containerRawKeys()).toEqual(expect.arrayContaining(["dev_type", "is_gateway", "bound_device_idx"]));
+    // type 列已从容器段删除:它不再出现在渲染键里(剔除清单中的 type 项随之删除)
+    expect(containerRawKeys()).not.toContain("type");
 
     const keys = resolveAcContainerModelPanelParamKeys(containerRawKeys(), true);
 
-    expect(keys).not.toContain("type");
     expect(keys).not.toContain("is_gateway");
     expect(keys).not.toContain("bound_device_idx");
-    expect(keys).toEqual(expect.arrayContaining(["idx", "name"]));
+    // dev_type 行保留且显示容器元件英文名(与 E 文件容器段同值,见 resolveDeviceModelPanelDevType)
+    expect(keys).toEqual(expect.arrayContaining(["idx", "name", "dev_type"]));
   });
 
   test("非容器设备原样返回（同名键在普通设备上仍有意义）", () => {
