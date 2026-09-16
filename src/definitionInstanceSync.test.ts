@@ -367,6 +367,24 @@ describe("definition instance node reconciliation", () => {
     });
   });
 
+  test("交流容器实例的尺寸是用户几何,定义同步不得打回模板默认值", () => {
+    const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === "ac-vpp-box")!;
+    const resized = {
+      ...createDefaultNode("ac-vpp-box", { x: 300, y: 200 }),
+      size: { width: 400, height: 300 }
+    };
+
+    const reconciled = reconcileNodeWithDefinition(resized, template);
+
+    expect(reconciled.size).toEqual({ width: 400, height: 300 });
+
+    // 容器是唯一例外:普通设备的尺寸仍由定义同步
+    const loadTemplate = DEVICE_LIBRARY.find((candidate) => candidate.kind === "ac-load")!;
+    const load = createDefaultNode("ac-load", { x: 0, y: 0 });
+    expect(reconcileNodeWithDefinition(load, { ...loadTemplate, size: { width: 111, height: 77 } }).size)
+      .toEqual({ width: 111, height: 77 });
+  });
+
   test("adds newly defined load and converter limits to historical instances while preserving saved values", () => {
     const loadTemplate = DEVICE_LIBRARY.find((template) => template.kind === "ac-load")!;
     const converterTemplate = DEVICE_LIBRARY.find((template) => template.kind === "acdc-converter")!;

@@ -61,6 +61,8 @@
 ### 模板与绘制
 
 - `BASE_DEVICE_LIBRARY` 加 3 条模板:视觉同 `static-group-box`(`model.ts:3450-3458`)——透明填充、`#64748b` 虚线描边、圆角 8、文字左上,默认 180×112,支持拖角改尺寸
+- **容器 `size` 是用户几何,不归定义所有**(2026-09-16 缺陷修复):定义同步(`syncDefinitionSize`)对容器 kind 直接跳过,模板里的 180×112 只作**新建默认值**;
+  否则加载路径的 `reconcileNodeWithDefinition` 会把拖角调过的尺寸打回初值(「刷新页面后容器变回初始大小」)。成员变化仍由 `fitContainerToMembers` 重算(收缩回 180×112 只发生在成员走光时),与线路分段母线保留已存几何同一口径
 - **容器不进静态图元家族**:不写入 `STATIC_COMPONENT_LIBRARY_BY_KIND`(`model.ts:790`),模板不写 `component_type: StaticContainerSymbol`
 - `src/DeviceGlyph.ts` 加 3 个**显式 kind 绘制分支**(不复用 static 分支):容器标注自身名称于左上,风格同分组框 header
 - 该选择同时避免两个副作用:`inferESection` 的 static 分支(`model-eexport.ts:336-340`)先于 `E_KIND_SECTION_MAP`(`:344`)生效会吞掉容器段;`isStaticNode`(`model.ts:7739-7741`)为真会跳过 E 导出告警(`model-eexport.ts:2041`)
