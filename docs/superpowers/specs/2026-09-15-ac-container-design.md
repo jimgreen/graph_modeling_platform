@@ -167,7 +167,16 @@
 - 导出 SVG:`src/export/svg.ts` 分层输出序(`:958-982`,分层逻辑 `:317-324`)中显式最先输出容器层
 - 两处共用同一比较器,保证画布与导出同序
 
+## 线路避让豁免(2026-09-16 用户验收补充)
+
+- 容器**默认是线路避让(routing avoidance)的障碍物**:与容器无关的线路仍绕开容器矩形
+- **豁免规则:当某线路的端点(至少一端)连接的节点属于该容器(`containerId === 容器节点 id`)时,该线路豁免对该容器的避让**,可穿框连接容器内设备(单源:`nodesExcludingEndpointContainers`,model.ts)
+- **存量回填**:打开既有模型(`createLoadSavedProject`)与 SVG 导出(`buildSvgDocument`)时,对此类连线按新规则重算(`rebuildContainerExemptConnectionRoutes`,幂等短路)——
+  - 已知副作用:曾手工调整过折点的此类连线会被重算覆盖(盘上数据无法区分手工折点与自动快照;只改内存、随保存落盘)
+  - 设备型线路(`ac-routable-line` 等节点)的存量路径不回填(其路径属用户绘制形状,更保守)
+
 ## E 文件导出
+
 
 ### 统一 E 段「容器表」(决策 3)
 
