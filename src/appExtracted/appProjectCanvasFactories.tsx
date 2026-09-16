@@ -1943,9 +1943,14 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
     };
     const avoidRects = routeAvoidRectsFor(routedEdges);
     // 两阶段(用户裁决):阶段 1 每个容器内成员先自散开;阶段 2 容器作为整体(连同成员)参与全层散开。
-    // 阶段 1 只挪成员,容器几何由后续 enforce 按成员重算;后续测量/视觉包围盒改用阶段 1 后的位置。
-    const stageOneNodes = arrangeContainerInteriors(nodes, (currentNodes, memberUnits) =>
-      autoSpreadNodeLayoutUnits(currentNodes, memberUnits, { padding: 4, bounds: canvasBounds, avoidRects: [] }));
+    // 阶段 1 只挪成员,容器几何由后续 enforce 按成员重算;作用域锁当前图层,别层容器不被动;
+    // 后续测量/视觉包围盒改用阶段 1 后的位置。
+    const stageOneNodes = arrangeContainerInteriors(
+      nodes,
+      (currentNodes, memberUnits) =>
+        autoSpreadNodeLayoutUnits(currentNodes, memberUnits, { padding: 4, bounds: canvasBounds, avoidRects: [] }),
+      activeNodeIds
+    );
     const stageOneById = new Map(stageOneNodes.map((node) => [node.id, node]));
     const stageOneLayerNodes = activeLayerNodes.map((node) => stageOneById.get(node.id) ?? node);
     const baseLayoutUnits = buildCanvasLayoutUnits(
@@ -2138,9 +2143,13 @@ export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
       return;
     }
     const gridSpacing = clampNumber(Math.round(parsedGridSpacing), AUTO_ALIGN_MIN_THRESHOLD_PX, AUTO_ALIGN_MAX_THRESHOLD_PX);
-    // 两阶段(用户裁决):阶段 1 每个容器内成员先自对齐;阶段 2 容器作为整体(连同成员)参与全层对齐
-    const stageOneNodes = arrangeContainerInteriors(nodes, (currentNodes, memberUnits) =>
-      autoAlignNodeLayoutUnits(currentNodes, memberUnits, gridSpacing));
+    // 两阶段(用户裁决):阶段 1 每个容器内成员先自对齐;阶段 2 容器作为整体(连同成员)参与全层对齐。
+    // 阶段 1 的作用域锁当前图层(与阶段 2 同),别层容器不被动
+    const stageOneNodes = arrangeContainerInteriors(
+      nodes,
+      (currentNodes, memberUnits) => autoAlignNodeLayoutUnits(currentNodes, memberUnits, gridSpacing),
+      activeNodeIds
+    );
     const stageOneById = new Map(stageOneNodes.map((node) => [node.id, node]));
     const stageOneLayerNodes = activeLayerNodes.map((node) => stageOneById.get(node.id) ?? node);
     const layoutUnits = mergeContainerLayoutUnits(

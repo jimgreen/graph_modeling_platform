@@ -131,7 +131,7 @@ export type MembershipDecision = {
  * - 非成员 Alt + 中心落进容器矩形 → 移入(Alt = 双向归属变更键:拖入 / 拖出)
  * - 非成员非 Alt + 中心落进**已有**容器矩形 → **弹出**(推到容器矩形外,不写归属):拖动三条路径与
  *   非拖动入口(粘贴 / 模板落点 / 图元库放置 / control addDevice / 批量布局)统一传 `repelNonMembers`。
- *   唯一例外:目标容器也在本批 movedIds 里(容器与设备同批新增:整组粘贴 / SVG 导入整模型重建)
+ *   唯一例外:目标容器是本批**新增**的(`addedContainerIds`;整组粘贴 / SVG 导入整模型重建)
  *   → 回退「落点入组」(排斥的语义是「外来设备 vs 已有容器」,同批重建不算外来)
  * - 静态图元不自动入组、也不被弹出(与 ejectOutsiders 的静态豁免同源):装饰图元常是整画布尺寸,
  *   吞成成员会把容器撑到包住整张画布,弹出则等于搬动装饰;已是成员的静态图元仍可 Alt 移出。
@@ -146,9 +146,15 @@ export function judgeContainerMembership(args: {
   /**
    * 排斥开关:非 Alt + 非成员中心落入**已有**容器矩形 → 产出「弹出」patch(容器与容器外设备互相排斥),
    * 而不是移入。拖动三条路径(鼠标松手 / 键盘移动)与非拖动入口(commitContainerMembership:粘贴、
-   * 模板落点、程序化加图元、SVG 导入;批量布局)统一传 true。目标容器同在本批 movedIds 时不排斥(同批重建)。
+   * 模板落点、程序化加图元、SVG 导入;批量布局)统一传 true。
    */
   repelNonMembers?: boolean;
+  /**
+   * 本批**新增**的容器 id(容器与设备同批落地:整组粘贴 / SVG 导入整模型重建):落进它们按「落点入组」,
+   * 不排斥 —— 排斥的语义是「外来设备 vs 已有容器」,同批重建不算外来。缺省空 = 全部容器都是已有容器
+   * (拖动 / 布局 / 放置的常态)。判定**不能**用 movedIds 代替:多选拖动与布局里容器本身也在移动集内。
+   */
+  addedContainerIds?: Iterable<string>;
 }): {
   membershipChanges: MembershipDecision["membershipChanges"];
   enterContainerId?: string;
@@ -156,9 +162,9 @@ export function judgeContainerMembership(args: {
   /** 排斥:被弹到容器矩形外(最近边 + CONTAINER_PADDING)的节点;无排斥时为空数组 */
   repelPatches: NodePositionPatch[];
 } {
-  const { nodes, movedIds, altKey, repelNonMembers = false } = args;
+  const { nodes, movedIds, altKey, repelNonMembers = false, addedContainerIds } = args;
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const movedIdSet = new Set(movedIds);
+  const addedContainerIdSet = new Set(addedContainerIds ?? []);
   const containers = nodes.filter(isAcContainerNode);
   const owners = liveContainerIds(nodes);
   const membershipChanges: MembershipDecision["membershipChanges"] = [];
@@ -187,10 +193,12 @@ export function judgeContainerMembership(args: {
       continue;
     }
     if (!target) continue;
-    // 排斥只对「本批操作之外的已有容器」生效:目标容器也在本次 movedIds 里 = 容器与设备同批新增
-    // (整组粘贴 / SVG 导入整模型重建),设备落进容器是同批重建而非「外来设备误落」,排斥会破坏导入保真
-    // (容器恒空、成员被弹飞);此时回退到「落点入组」。
-    if (!repelNonMembers || movedIdSet.has(target.id)) {
+    // 排斥只对「本批操作之外的**已有**容器」生效:目标容器是本批**新增**的(容器与设备同批落地:
+    // 整组粘贴 / SVG 导入整模型重建)时,设备落进它是同批重建而非「外来设备误落」,排斥会破坏导入保真
+    // (容器恒空、成员被弹飞),此时回退「落点入组」。
+    // 判定键是**新增**容器而非 movedIds:多选拖动与批量布局里容器本身也在移动集内,按移动集豁免
+    // 会让设备落进这些既有容器时不排斥(spec:非 Alt 落入 = 排斥)。
+    if (!repelNonMembers || addedContainerIdSet.has(target.id)) {
       membershipChanges.push({ nodeId: id, containerId: target.id });
       enterContainerId = target.id;
       continue;
@@ -291,8 +299,10 @@ export function applyDragContainerMembership(args: {
   altKey: boolean;
   /** 见 judgeContainerMembership:拖动路径传 true(非 Alt 落入容器 → 弹出而非移入) */
   repelNonMembers?: boolean;
+  /** 见 judgeContainerMembership:本批新增的容器 id(整组粘贴 / SVG 导入整模型重建);拖动 / 布局不传 */
+  addedContainerIds?: Iterable<string>;
 }): { updates: ModelNode[]; enterContainerId?: string; exitContainerId?: string } {
-  const { nodes, movedIds, grabbedIds, altKey, repelNonMembers } = args;
+  const { nodes, movedIds, grabbedIds, altKey, repelNonMembers, addedContainerIds } = args;
   const grabbed = grabbedIds ? new Set(grabbedIds) : null;
   const judgeIds = grabbed ? movedIds.filter((id) => grabbed.has(id)) : movedIds;
   const { membershipChanges, enterContainerId, exitContainerId, repelPatches } = judgeContainerMembership({
@@ -300,6 +310,7 @@ export function applyDragContainerMembership(args: {
     movedIds: judgeIds,
     altKey,
     repelNonMembers,
+    addedContainerIds,
   });
   const changeById = new Map(membershipChanges.map((c) => [c.nodeId, c]));
   const changed = new Map<string, ModelNode>();
@@ -350,7 +361,18 @@ export function commitContainerMembership(nodes: ModelNode[], movedIds: string[]
   if (movedIds.length === 0 || nodes.length === 0) {
     return nodes;
   }
-  const { updates } = applyDragContainerMembership({ nodes, movedIds, altKey: false, repelNonMembers: true });
+  // 本批新增的容器 = 本批并入节点里的容器:该出口的语义就是「新增/移动节点并入图」,
+  // 故 movedIds 中的容器一律是刚落地的(粘贴 / 模板落点 / SVG 导入整模型重建),落进它们算重建而非外来误落。
+  // 拖动 / 布局不走本出口,它们的容器是既有容器 → 无豁免、照常排斥。
+  const movedIdSet = new Set(movedIds);
+  const addedContainerIds = nodes.filter((node) => movedIdSet.has(node.id) && isAcContainerNode(node)).map((node) => node.id);
+  const { updates } = applyDragContainerMembership({
+    nodes,
+    movedIds,
+    altKey: false,
+    repelNonMembers: true,
+    addedContainerIds
+  });
   return updates.length === 0 ? nodes : withNodeUpdates(nodes, updates);
 }
 

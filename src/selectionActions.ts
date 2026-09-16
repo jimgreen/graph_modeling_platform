@@ -883,6 +883,7 @@ export function buildCanvasLayoutUnits(
  * 无容器参与时原样返回(元素与顺序不变)。
  */
 export function mergeContainerLayoutUnits(nodes: ModelNode[], units: readonly CanvasLayoutUnit[]): CanvasLayoutUnit[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const unitNodeIds = new Set(units.flatMap((unit) => unit.nodeIds));
   const groupIdByNodeId = new Map<string, string>();
   const groupNodesById = new Map<string, ModelNode[]>();
@@ -891,7 +892,13 @@ export function mergeContainerLayoutUnits(nodes: ModelNode[], units: readonly Ca
       continue;
     }
     const groupId = `container:${container.id}`;
-    const groupNodes = [container, ...nodes.filter((node) => node.containerId === container.id && node.id !== container.id)];
+    // 成员过滤与 buildCanvasLayoutUnits 同谓词:线路设备不可作布局单元,不吸入整组(否则布局会连带挪动不可移动节点)
+    const groupNodes = [
+      container,
+      ...nodes.filter(
+        (node) => node.containerId === container.id && node.id !== container.id && isCanvasNodeMovable(node.kind)
+      )
+    ];
     groupNodesById.set(groupId, groupNodes);
     for (const node of groupNodes) {
       groupIdByNodeId.set(node.id, groupId);
@@ -909,6 +916,19 @@ export function mergeContainerLayoutUnits(nodes: ModelNode[], units: readonly Ca
       }
     }
   });
+  const buildUnit = (unitId: string, unitNodes: ModelNode[]): CanvasLayoutUnit => {
+    const selectionRects = unitNodes.map((node) => nodeSelectionBounds(node));
+    const layoutRects = unitNodes.map((node) => nodeLayoutBounds(node));
+    return {
+      id: unitId,
+      kind: "node",
+      nodeIds: unitNodes.map((node) => node.id),
+      edgeIds: [],
+      bounds: mergeSelectionRects(selectionRects) ?? selectionRects[0],
+      layoutBounds: mergeSelectionRects(layoutRects) ?? layoutRects[0],
+      collisionRects: selectionRects
+    };
+  };
   const out: CanvasLayoutUnit[] = [];
   units.forEach((unit, index) => {
     const groupIds = [...new Set(unit.nodeIds.flatMap((nodeId) => groupIdByNodeId.get(nodeId) ?? []))];
@@ -918,21 +938,18 @@ export function mergeContainerLayoutUnits(nodes: ModelNode[], units: readonly Ca
     }
     // 整组单元落回该组首个单元的位置(保持原有相对次序,避免布局算法的稳定排序被打乱)
     for (const groupId of groupIds) {
-      if (firstIndexByGroupId.get(groupId) !== index) {
-        continue;
+      if (firstIndexByGroupId.get(groupId) === index) {
+        out.push(buildUnit(groupId, groupNodesById.get(groupId)!));
       }
-      const groupNodes = groupNodesById.get(groupId)!;
-      const selectionRects = groupNodes.map((node) => nodeSelectionBounds(node));
-      const layoutRects = groupNodes.map((node) => nodeLayoutBounds(node));
-      out.push({
-        id: groupId,
-        kind: "node",
-        nodeIds: groupNodes.map((node) => node.id),
-        edgeIds: [],
-        bounds: mergeSelectionRects(selectionRects) ?? selectionRects[0],
-        layoutBounds: mergeSelectionRects(layoutRects) ?? layoutRects[0],
-        collisionRects: selectionRects
-      });
+    }
+    // 同一单元里不属于任何整组的节点(如画布组合内混装容器与散装设备)补成独立单元 ——
+    // 原单元被整组单元替换后,它们否则会从布局集里无声消失(布局不动它们、组合被悄悄拆散且无提示)
+    const restNodes = unit.nodeIds.flatMap((nodeId) => {
+      const node = nodeById.get(nodeId);
+      return node && !groupIdByNodeId.has(nodeId) ? [node] : [];
+    });
+    if (restNodes.length > 0) {
+      out.push(buildUnit(`rest:${unit.id}`, restNodes));
     }
   });
   return out;
@@ -942,14 +959,17 @@ export function mergeContainerLayoutUnits(nodes: ModelNode[], units: readonly Ca
  * 容器内自布局(自动对齐/散开阶段 1):对每个容器**单独**跑一次 unitLayout,
  * 单元 = 该容器的成员(容器自身不动,几何随后由 enforce 按成员重算)。
  * 成员不足 2 个的容器跳过(无可布局内容)。返回成员新位置后的完整节点数组。
+ * `scopeNodeIds` 限定参与容器(与阶段 2 的作用域一致):整层布局传当前图层节点,避免顺手改别层容器的内部。
  */
 export function arrangeContainerInteriors(
   nodes: ModelNode[],
-  unitLayout: (currentNodes: ModelNode[], units: CanvasLayoutUnit[]) => ModelNode[]
+  unitLayout: (currentNodes: ModelNode[], units: CanvasLayoutUnit[]) => ModelNode[],
+  scopeNodeIds?: readonly string[]
 ): ModelNode[] {
+  const scope = scopeNodeIds ? new Set(scopeNodeIds) : null;
   let current = nodes;
   for (const container of nodes) {
-    if (!isAcContainerNode(container)) {
+    if (!isAcContainerNode(container) || (scope && !scope.has(container.id))) {
       continue;
     }
     const memberIds = current

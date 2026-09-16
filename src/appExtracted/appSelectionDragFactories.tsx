@@ -1792,6 +1792,8 @@ export function createUngroupSelectedGraphics(__appScope: Record<string, any>) {
  * 名称必须走 state 而非命令式改 DOM —— antd 的 Select ref 是包装对象(不是原生 input),
  * 写 `ref.current.value` 是空操作:切类型后名称框会留在旧默认名,提交却落库新默认名(显示与数据分叉)。
  * 每次变更同步回 `draft`,onOk 读闭包 draft(单一提交口径)。
+ * 清空输入框**不回落**到上一个选择:antd 受控 Select 下「清空搜索」与「放弃已输入的新名」无法区分,
+ * 统一按「显示即落库」处理 —— 输入框里是什么,确定后就建什么(containerNameSearch 对空白输入原样返回,用例已锁定)。
  */
 function ContainerPickerForm({ draft, nodes }: { draft: ContainerDraft; nodes: any[] }) {
   const [form, setForm] = useState<ContainerDraft>({ ...draft });
