@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import { Modal } from "antd";
 import { createAddToAcContainer, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createPasteSelection, createRemoveFromAcContainer } from "./appSelectionDragFactories";
 import { canvasClipboardBounds, cloneCanvasClipboard } from "../selectionActions";
-import { containerKindSwitch } from "../acContainer";
+import { containerKindSwitch, containerNamePick, containerNameSearch } from "../acContainer";
 import { deleteNodesWithConnectedEdges } from "../model-routing";
 import { createUndoGraphSnapshotPatchPlan } from "./appGraphMeasurementFactories";
 import { normalizeProjectMeasurements } from "../measurements";
@@ -474,12 +474,12 @@ describe("粘贴与模板落点的归属落地", () => {
   });
 });
 
-// ─── 新建容器弹窗:类型可选(虚拟电厂/开关箱/配变箱),默认虚拟电厂 ──────────────
-// 无容器时点【添加到容器】直接进新建弹窗:弹窗须列出 3 种类型,所选类型决定新容器 kind 与默认名。
-describe("新建容器:弹窗内选类型", () => {
-  const mkNewContainerScope = () => {
+// ─── 添加到容器弹窗:类型 + 名称双下拉(选已有容器 = 加入;输入新名 = 新建) ──────
+// 弹窗须列出 3 种类型(默认虚拟电厂),名称下拉候选 = 所选类型的已有容器,输入清单以外的名字则新建。
+describe("添加到容器:类型 + 名称双下拉", () => {
+  const mkNewContainerScope = (extraNodes: any[] = []) => {
     const graphs: any[] = [];
-    const nodes = [bareNode("m1", "ac-load", { params: { _labelVisible: "0" } })];
+    const nodes = [bareNode("m1", "ac-load", { params: { _labelVisible: "0" } }), ...extraNodes];
     const scope: any = {
       activeSelectedNodeIds: ["m1"],
       assignPermanentDeviceIndex: (node: any) => ({ node, counters: {} }),
@@ -512,7 +512,7 @@ describe("新建容器:弹窗内选类型", () => {
   const createdContainer = (graphs: any[]) =>
     graphs[0][0].find((node: any) => node.kind.startsWith("ac-") && node.kind.endsWith("-box"));
 
-  test("默认新建虚拟电厂(弹窗初值 kind=ac-vpp-box / 虚拟电厂1)", () => {
+  test("无该类型容器:默认新建虚拟电厂(弹窗初值 kind=ac-vpp-box / 虚拟电厂1)", () => {
     const { graphs, scope } = mkNewContainerScope();
     const { spy, config } = captureConfirm();
     try {
@@ -522,7 +522,7 @@ describe("新建容器:弹窗内选类型", () => {
     }
 
     // 弹窗表单收 draft(受控组件:内部 state 管显示,初值取自同一 draft)
-    expect(config().content.props.draft).toEqual({ kind: "ac-vpp-box", name: "虚拟电厂1" });
+    expect(config().content.props.draft).toEqual({ kind: "ac-vpp-box", name: "虚拟电厂1", containerId: "" });
 
     config().onOk();
     const created = createdContainer(graphs);
@@ -530,7 +530,7 @@ describe("新建容器:弹窗内选类型", () => {
     expect(created.name).toBe("虚拟电厂1");
   });
 
-  test("选开关箱 → 新容器 kind=ac-switch-box,默认名按该类型计数(开关箱1)", () => {
+  test("切类型 → 新容器 kind=ac-switch-box,默认名按该类型计数(开关箱1)", () => {
     const { graphs, scope } = mkNewContainerScope();
     const { spy, config } = captureConfirm();
     try {
@@ -540,7 +540,7 @@ describe("新建容器:弹窗内选类型", () => {
     }
 
     // 弹窗为受控组件,Modal 桩下渲染不出 antd 下拉(环境是 node,无 jsdom):
-    // 这里按组件 onChange 的唯一出口 containerKindSwitch 驱动 draft,锁「切类型 → kind/默认名一起换」的提交侧
+    // 这里按组件 onChange 的唯一出口 containerKindSwitch 驱动 draft,锁「切类型 → kind/名称下拉值一起换」的提交侧
     Object.assign(config().content.props.draft, containerKindSwitch("ac-switch-box", scope.nodes));
     config().onOk();
 
@@ -548,4 +548,48 @@ describe("新建容器:弹窗内选类型", () => {
     expect(created.kind).toBe("ac-switch-box");
     expect(created.name).toBe("开关箱1");
   });
+
+  test("名称下拉选中已有容器 → 不新建,成员并入该容器", () => {
+    const { graphs, scope } = mkNewContainerScope([
+      bareNode("v1", "ac-vpp-box", { position: { x: 0, y: 0 }, size: { width: 200, height: 200 } }),
+    ]);
+    const { spy, config } = captureConfirm();
+    try {
+      createAddToAcContainer(scope)();
+    } finally {
+      spy.mockRestore();
+    }
+
+    // 该类型已有容器 → 初值即选中它(旧行为:有容器时默认加到第一个);这里显式再选一次同一 id 以锁出口语义
+    expect(config().content.props.draft.containerId).toBe("v1");
+    Object.assign(config().content.props.draft, containerNamePick("v1", "ac-vpp-box", scope.nodes));
+    config().onOk();
+
+    const boxes = graphs[0][0].filter((node: any) => node.kind === "ac-vpp-box");
+    expect(boxes).toHaveLength(1); // 未新建容器
+    expect(graphs[0][0].find((node: any) => node.id === "m1").containerId).toBe("v1");
+  });
+
+  test("名称下拉输入清单以外的名字(未点选项)直接确定 → 新建该类型容器", () => {
+    const { graphs, scope } = mkNewContainerScope([
+      bareNode("v1", "ac-vpp-box", { position: { x: 0, y: 0 }, size: { width: 200, height: 200 } }),
+    ]);
+    const { spy, config } = captureConfirm();
+    try {
+      createAddToAcContainer(scope)();
+    } finally {
+      spy.mockRestore();
+    }
+
+    // 模拟键盘输入(组件 onSearch 的唯一出口):初值本选中已有容器 v1,输入后被改判为新名
+    Object.assign(config().content.props.draft, containerNameSearch("我的虚拟电厂", config().content.props.draft));
+    config().onOk();
+
+    const created = graphs[0][0].find((node: any) => node.name === "我的虚拟电厂");
+    expect(created.kind).toBe("ac-vpp-box");
+    // 新建的容器收编成员,原容器 v1 保留
+    expect(graphs[0][0].filter((node: any) => node.kind === "ac-vpp-box")).toHaveLength(2);
+    expect(graphs[0][0].find((node: any) => node.id === "m1").containerId).toBe(created.id);
+  });
+
 });
