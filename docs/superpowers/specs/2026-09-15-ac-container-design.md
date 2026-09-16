@@ -170,8 +170,8 @@
 |------|------|
 | `containerBoundsForMembers(members)` | 成员包围盒(`calculateNodeVisualBounds`)+ padding 24 |
 | `expandContainer` / `shrinkContainer` | 成员变化重算容器 position/size |
-| `ejectOutsiders(container, allNodes)` | 容器范围内非成员(线路 kind、其它容器除外)沿最近边法向最小位移推到界外,单轮让位迭代 |
-| `judgeContainerMembership(...)` | 拖拽归属判定(Alt 语义、中心点入容器) |
+| `ejectOutsiders(container, allNodes)` | 非成员(线路 kind、其它容器、静态、已归属除外)与容器矩形**间隙 < 24(`CONTAINER_PADDING`)**即沿最近边推出,推出目标 = 间隙恰 24;单轮让位迭代**(2026-09-16 用户反馈改口径:原为中心点入矩形判定 + 中心出界 24,会导致「覆盖一半才挤、本体仍压框」)** |
+| `judgeContainerMembership(...)` | 拖拽归属判定(Alt 语义;**排斥判定同用包围盒间隙 < 24**;Alt 移入仍按中心落进矩形) |
 | `enforceContainerMembership(nodes, edges)` | 统一出口:重算范围 + 挤出,供各提交点调用 |
 | `containerFirstComparator` | 容器优先排序比较器,画布与导出 SVG 共用(单源) |
 
