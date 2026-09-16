@@ -201,7 +201,10 @@ describe("acContainer 布局", () => {
     expect(patches[0].position.y).toBeLessThan(-140);
     const after = calculateNodeVisualBounds(shifted(labeled, patches[0]) as any);
     expect(after.bottom).toBeLessThan(rectOf(c).y1); // 标签下沿整体让到框外
-    expect(boundsGap(after, rectOf(c))).toBe(CONTAINER_PADDING);
+    expect(boundsGap(after, rectOf(c))).toBe(CONTAINER_PADDING); // 24 量的是**含标签**包围盒
+    // 而非裸 size 的 24:同一新位置、仅隐去标签 → 裸本体让得更远(多让出一个标签高度),证伪「按裸 size 结算」的误读
+    const bareAfter = calculateNodeVisualBounds(shifted({ ...labeled, params: { _labelVisible: "0" } }, patches[0]) as any);
+    expect(boundsGap(bareAfter, rectOf(c))).toBeGreaterThan(CONTAINER_PADDING);
   });
 
   test("enforce:存量图里贴着容器的未归属设备,下一次 enforce 被推到间隙 24(新的间距不变量)", () => {
