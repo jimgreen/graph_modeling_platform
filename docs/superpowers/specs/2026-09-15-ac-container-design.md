@@ -48,13 +48,15 @@
 
 ### 新增 DeviceKind(src/model.ts)
 
-| kind | 名称 | 库分类 |
-|------|------|--------|
-| `ac-vpp-box` | 虚拟电厂 | 交流容器(新 categoryLibrary) |
-| `ac-switch-box` | 开关箱 | 交流容器 |
-| `ac-distribution-box` | 配变箱 | 交流容器 |
+| kind | 名称 | 库分类(categoryLibrary) | 类(component library,自动推导) |
+|------|------|--------------------------|--------------------------------|
+| `ac-vpp-box` | 虚拟电厂 | 交流设备 | ACContainer |
+| `ac-switch-box` | 开关箱 | 交流设备 | ACContainer |
+| `ac-distribution-box` | 配变箱 | 交流设备 | ACContainer |
 
-图元库分类树按 `categoryLibrary` 自动分组(`appRenderBatch.tsx:3074/3164`),新增分类无需单独注册树。
+图元库分类树按「categoryLibrary → 类(`inferESection` 推导)→ 元件」分层渲染(`appRenderBatch.tsx`、`appPersistenceLibraryExport.tsx`),归类零注册成本。界面类名经 `COMPONENT_LIBRARY_LABELS` 显示为「交流容器 / ACContainer」,E 段名仍为「容器表」(两表有意分叉,各自有断言锁定)。
+
+> **归类修正(2026-09-16 用户验收反馈):** 原实现建了独立顶层 categoryLibrary「交流容器」,与需求 2 原文「**交流设备**添加新的类【交流容器】」不符;已改归 `categoryLibrary: "交流设备"`,树层次呈「交流设备 > 交流容器 > 虚拟电厂/开关箱/配变箱」,且落入 PROTECTED 类别库(免「删除类别库」风险)。
 
 ### 模板与绘制
 

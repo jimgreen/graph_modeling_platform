@@ -55,6 +55,8 @@
 
 ### Task 1: 数据模型 — 3 个 DeviceKind、模板注册、containerId 字段
 
+> **执行修正(2026-09-16,用户验收反馈):** 下列草图 `categoryLibrary: "交流容器"` 已废 —— 3 条模板实为 `categoryLibrary: "交流设备"`(类由 `inferESection` 推导为 ACContainer,界面类名经 COMPONENT_LIBRARY_LABELS 显示「交流容器」)。以 `src/model.ts` 实现为准。
+
 **Files:**
 - Modify: `src/model.ts`(DeviceKind 联合 `:32-250`;BASE_DEVICE_LIBRARY `:3320` 静态图元段后;ModelNode `:468-487`)
 - Test: `src/acContainerModel.test.ts`(新建,只放本任务断言;后续任务追加)
