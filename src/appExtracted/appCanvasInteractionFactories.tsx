@@ -2099,7 +2099,13 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
     }
     if (changesCanvasFootprint) {
       const footprintEdges = edgeListForNodeIds([selectedNodeId]);
-      pushUndoSnapshot(true, false, undoScopeForGraphPatch([selectedNodeId], footprintEdges.map((edge) => edge.id)), "移动设备", (() => { const n = nodeById.get(selectedNodeId); return n ? `${n.params?.idx || n.id} ${n.name ?? ""}`.trim() : ""; })());
+      // 有容器时作用域必须让位:容器收尾(矩形重算 / 挤出非成员 / 被 re-fit 的其它容器)全在选中节点之外,
+      // 一旦走 patch 通道这些节点就落在撤销计划外(Ctrl+Z 后残留新几何)。undefined = 全量对比分支,
+      // 正确性无损,只多一趟 O(n) 比较(与拖动 / 剪切 / 删除三处先例同款,见 createEnsureDraggingUndoSnapshot)。
+      const undoScope = nodes.some(isAcContainerNode)
+        ? undefined
+        : undoScopeForGraphPatch([selectedNodeId], footprintEdges.map((edge) => edge.id));
+      pushUndoSnapshot(true, false, undoScope, "移动设备", (() => { const n = nodeById.get(selectedNodeId); return n ? `${n.params?.idx || n.id} ${n.name ?? ""}`.trim() : ""; })());
     } else {
       pushNodeOnlyUndoSnapshot(selectedNodeId, "移动设备");
     }
@@ -2108,9 +2114,12 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
     // 又和 eject/入组用的 size 矩形分叉
     const patchedNode = { ...currentSelectedNode, ...nextPatch };
     let nextSelectedNode = isAcContainerNode(currentSelectedNode) ? foldContainerScaleIntoSize(patchedNode) : patchedNode;
-    if (isAcContainerNode(nextSelectedNode)) {
-      // 面板「倍率 / 尺寸」是容器的尺寸入口(不像拖角那样自带下限):与拖角 resize 同口径补两道钳制 ——
-      // ① 下限 = 成员视觉包围盒 + 内侧留白(见 containerResizeMinSize);② 中心平移保完全包裹成员。
+    // 面板「倍率」行是容器的尺寸入口(不像拖角那样自带下限):与拖角 resize 同口径补两道钳制 ——
+    // ① 下限 = 成员视觉包围盒 + 内侧留白(见 containerResizeMinSize);② 中心平移保完全包裹成员。
+    // 只对**尺寸类** patch 生效:坐标行是「面板改坐标是否等同拖动容器」待裁决的 followup,不得被静默改写。
+    const sizePatch =
+      patch.scale !== undefined || patch.scaleX !== undefined || patch.scaleY !== undefined || patch.size !== undefined;
+    if (sizePatch && isAcContainerNode(nextSelectedNode)) {
       // 放大后圈进的非成员由下方 enforce 收尾挤出。
       const members = graphStore.nodes.filter((n: any) => n.containerId === nextSelectedNode.id && n.id !== nextSelectedNode.id);
       const minSize = containerResizeMinSize(currentSelectedNode, members);
