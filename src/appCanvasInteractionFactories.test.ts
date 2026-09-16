@@ -16,6 +16,7 @@ import {
   createPlaceLibraryDeviceAtPoint,
   createRotateSelectedLayoutUnits,
   createStartLibraryDevicePlacement,
+  createUpdateSelectedNode,
   createUpdateInteractiveStaticDrawingPreview,
   createUpdateLibraryPlacementPreview,
   createUpdateParam
@@ -1537,6 +1538,52 @@ describe("变换提交的容器跟随", () => {
     expect(nextContainer).not.toBe(container);
     expect(nextContainer.size).toEqual({ width: 300 + 48, height: 200 + 48 });
     expectContainerCovers(nextContainer, scaledMember);
+  });
+
+  test("面板倍率写容器:折算进 size(I1),普通设备仍写 scale", () => {
+    const runPanelScaleWrite = (node: any, patch: any) => {
+      const store = createGraphStore([node], []);
+      let committed = store;
+      const scope: any = {
+        CANVAS_AUTO_EXPAND_PADDING: 40,
+        applyCanvasBounds: () => {},
+        canvasBounds: { width: 2000, height: 2000 },
+        canvasBoundsForAutoExpandedGraphContent: () => ({ width: 2000, height: 2000 }),
+        clampNodePositionToExpandableBounds: (_node: any, _bounds: any, position: any) => position,
+        edgeListForNodeIds: () => [],
+        expandCanvasToFitGraph: () => {},
+        focusedGroupedNodeMovesGroup: false,
+        graphStore: store,
+        graphStoreApplyPatch,
+        mergeNodeUpdateLists: (first: any[], second: any[]) => [...first, ...second],
+        nodeById: store.nodeMap,
+        nodes: store.nodes,
+        overlayGraphStoreNodes,
+        patchGraphNodes: vi.fn(),
+        pushNodeOnlyUndoSnapshot: vi.fn(),
+        pushUndoSnapshot: vi.fn(),
+        rebuildEdgeUpdatesAfterNodeGeometryChange: () => [],
+        rebuildRoutableLineNodeUpdatesForChangedNodes: () => [],
+        rejectAutoCanvasExpansionForContent: () => false,
+        requireEditMode: () => true,
+        selectedNode: node,
+        selectedNodeId: node.id,
+        setGraphStore: (updater: any) => { committed = updater(store); },
+        snapshotEdgePoints: () => ({}),
+        undoScopeForGraphPatch: () => ({})
+      };
+      createUpdateSelectedNode(scope)(patch);
+      return committed.nodeMap.get(node.id)!;
+    };
+
+    const container = runPanelScaleWrite(containerBase(), { scale: 2, scaleX: 2, scaleY: 2 });
+    expect(container.size).toEqual({ width: 360, height: 224 }); // 容器几何恒在 size
+    expect(container.scaleX).toBe(1);
+    expect(container.scaleY).toBe(1);
+
+    const device = runPanelScaleWrite(bare("m9", "ac-load"), { scale: 2, scaleX: 2, scaleY: 2 });
+    expect(device.size).toEqual({ width: 40, height: 30 });
+    expect(device.scaleX).toBe(2);
   });
 
   test("整组缩放:容器几何写 size 且 scale 归一,普通设备仍走 scale", () => {

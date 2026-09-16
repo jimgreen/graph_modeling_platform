@@ -235,6 +235,49 @@ describe("parseSvgModel 容器归属落地", () => {
   });
 });
 
+// 容器几何恒在 size(见 acContainer.foldContainerScaleIntoSize):导出 SVG 的 symbol transform 里
+// 带的 scale 必须在导入时折算进 size —— 否则回读出来的容器渲染矩形与 eject/入组所用矩形又是两套
+const SCALED_CONTAINER_PLATFORM_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0,0,900,600" active-layer-id="layer-default">
+  <defs id="svg_defs">
+    <symbol id="symbol_ac-vpp-box_scaled" viewBox="-90 -56 180 112">
+      <g class="export-node-geometry" transform="rotate(0) scale(2 2)"><rect x="-90" y="-56" width="180" height="112"/></g>
+    </symbol>
+    <g class="export-layer-definitions" style="display:none">
+      <g layer-id="layer-default" name="默认图层" visible="1" active="1"/>
+    </g>
+  </defs>
+  <g id="root_g">
+    <g id="Background_Layer"/>
+    <g id="Segment_Layer"/>
+    <g id="Container_Layer" device-type="ACVppBox">
+      <use id="vpp-scaled" layer-id="layer-default" name="虚拟电厂1" dev-id="vpp-scaled"
+        dev-kind="ac-vpp-box" href="#symbol_ac-vpp-box_scaled" x="100" y="100" width="180" height="112"/>
+    </g>
+    <g id="ACLoad_Layer" device-type="ACLoad">
+      <use id="load-scaled" layer-id="layer-default" name="普通负荷" dev-id="load-scaled"
+        dev-kind="ac-load" href="#symbol_ac-vpp-box_scaled" x="400" y="100" width="40" height="40"/>
+    </g>
+    <g id="Text_Layer"/><g id="Measurement_Layer"/><g id="Other_Layer"/>
+  </g>
+</svg>`;
+
+describe("parseSvgModel 容器 scale 折算", () => {
+  test("导入的容器把 symbol 里的 scale 吃进 size;普通设备仍保留 scale", async () => {
+    const result = await parse(SCALED_CONTAINER_PLATFORM_SVG, "缩放容器导入");
+    const byId = new Map(result.project.nodes.map((node) => [node.id, node]));
+
+    const container = byId.get("vpp-scaled")!;
+    expect(container.size).toEqual({ width: 360, height: 224 }); // 180×112 × scale 2,渲染矩形不变
+    expect(container.scaleX).toBe(1);
+    expect(container.scaleY).toBe(1);
+
+    const device = byId.get("load-scaled")!;
+    expect(device.size).toEqual({ width: 40, height: 40 });
+    expect(device.scaleX).toBe(2); // 普通设备不受影响
+  });
+});
+
 describe("parseSvgModel platform semantics", () => {
   test("restores legacy data-export devices and infers geometry-only edge endpoints", async () => {
     const result = await parse(LEGACY_PLATFORM_SVG, "旧版平台恢复");

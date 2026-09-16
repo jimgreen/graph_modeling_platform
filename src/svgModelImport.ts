@@ -28,7 +28,7 @@ import {
   type MeasurementItemBinding,
   type MeasurementStyleOverride
 } from "./measurements";
-import { commitContainerMembership } from "./acContainer";
+import { commitContainerMembership, foldContainerScaleIntoSize, isAcContainerNode } from "./acContainer";
 
 export type SvgModelImportMode = "platform" | "generic";
 
@@ -671,6 +671,11 @@ async function parsePlatformSvg(
           ...(status ? { [stateParamKey]: status } : {})
         }
       }, element);
+      // 交流容器:SVG transform 里的 scale 折算进 size(几何恒在 size,见 foldContainerScaleIntoSize),
+      // 否则从导出 SVG 回读的容器会带着 scale,渲染矩形与 eject/入组所用矩形分叉
+      if (node && isAcContainerNode(node)) {
+        node = foldContainerScaleIntoSize(node);
+      }
       deviceCount += 1;
       defaultedDeviceCount += 1;
     } else if (symbol) {

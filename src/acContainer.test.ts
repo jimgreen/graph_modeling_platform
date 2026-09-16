@@ -1303,7 +1303,18 @@ describe("容器手动尺寸", () => {
     expect(after.size).toEqual(fitContainerToMembers(manual, [far]).size);
   });
 
-  test("容器不在拖动集时照常 refit(成员走光 → 收缩回最小尺寸)", () => {
+  test("容器不在拖动集时照常 refit:成员 Alt 拖出 → 收缩回最小尺寸", () => {
+    const bigMember = { ...node("m1", "ac-load", 500, 400, 300, 200), containerId: "c1" };
+    const fitted = fitContainerToMembers(node("c1", "ac-vpp-box", 500, 400, 360, 224) as any, [bigMember]);
+    const { updates } = applyDragContainerMembership({
+      nodes: [fitted, bigMember] as any, movedIds: ["m1"], altKey: true, repelNonMembers: true
+    });
+    const after = updates.find((n) => n.id === "c1")!;
+    expect(updates.find((n) => n.id === "m1")!.containerId).toBeUndefined(); // Alt = 移出
+    expect(after.size).toEqual({ ...CONTAINER_MIN_SIZE }); // 成员走光 → 收缩(拖动集里没有容器,不走「只扩不缩」)
+  });
+
+  test("容器不在拖动集且成员走光(非拖动入口)也照常收缩", () => {
     const manual = node("c1", "ac-vpp-box", 500, 400, 360, 224) as any;
     const { updates } = applyDragContainerMembership({
       nodes: [manual, node("d1", "ac-load", 900, 400) as any], movedIds: ["d1"], altKey: false, repelNonMembers: true
