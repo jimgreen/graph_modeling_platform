@@ -152,6 +152,18 @@ describe("拖动落地 toast 接线", () => {
     expect(scope.showGlobalMessage.mock.calls.map((call) => call[0])).toEqual(["已移出容器 c1"]);
   });
 
+  test("Alt 拖出绑定设备 → 一条 toast 同时报「已移出容器」与解绑(globalMessage 单槽不叠弹)", () => {
+    const gateway = {
+      ...bareNode("c1", "ac-vpp-box", 0, 0, { size: { width: 200, height: 200 } }),
+      params: { _labelVisible: "0", is_gateway: "1", bound_device_id: "m1" },
+    };
+    const bound = bareNode("m1", "ac-load", 50, 50, { containerId: "c1" });
+    const { scope } = makeDragScope([gateway, bound], "m1", { x: 300, y: 300 });
+    createFinishNodeDrag(scope as any)(true);
+    expect(scope.showGlobalMessage.mock.calls.map((call) => call[0]))
+      .toEqual(["已移出容器 c1，已解绑关口设备 m1，关口已关闭"]);
+  });
+
   test("Alt 拖入成员 → toast「已移入容器 <名称>」(移入侧接线断言)", () => {
     const outsider = bareNode("o1", "ac-load", 300, 300);
     const { scope } = makeDragScope([container(), outsider], "o1", { x: -250, y: -250 });

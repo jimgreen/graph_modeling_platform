@@ -237,6 +237,7 @@ import {
   type TerminalType
 } from "./model";
 import { terminalVoltageDisplay, transformGraphForGateways } from "./model-eexport";
+import { applyRemoveFromAcContainer, withNodeUpdates } from "./acContainer";
 
 test("keeps electrical measurement and setpoint columns aligned with the device contracts", () => {
   expect(E_SECTION_COLUMNS.ACBranch).toEqual(expect.arrayContaining([
@@ -4640,6 +4641,29 @@ describe("交流容器 E 导出", () => {
     expect(payload.ACContainer?.rows[0]).not.toHaveProperty("type");
     // 拓扑节点表只由带 nodeNumber 的端子驱动:容器无边无端子,不入表
     expect((payload.ACNode?.rows ?? []).map((row) => row.name)).not.toContain("虚拟电厂1");
+  });
+
+  test("非关口容器的绑定残留:移出绑定设备后被清空 → bound_device_idx 为空(对齐容器段不变量)", () => {
+    // 容器段不变量:绑定失效(设备已删/移出)→ 整列为空。绑定字段残留(关过口又关了 / 老数据带来)
+    // 若不在「成员离开」时清掉,导出会写出指向**容器外**设备的跨段引用
+    const [container, member] = createIndexedExportNodes(["ac-vpp-box", "ac-source"]);
+    member.containerId = container.id;
+    container.params.is_gateway = "0";
+    container.params.bound_device_id = member.id;
+    const staleProject: ProjectFile = { version: 1, name: "绑定残留容器模型", nodes: [container, member], edges: [] };
+    // 反证:残留态直接导出会写出引用(这正是要清它的理由)
+    expect(parseESections(buildEFileExport(staleProject).text).ACContainer?.rows[0]?.bound_device_idx)
+      .toBe(`ACGenerator_${member.params.idx}`);
+
+    // 走真实出口(移出容器)清掉残留 → 引用为空
+    const afterRemove = withNodeUpdates([container, member], applyRemoveFromAcContainer([container, member] as any, [member.id]));
+    expect(afterRemove.find((node) => node.id === container.id)!.params.bound_device_id).toBe("");
+    const cleanedProject: ProjectFile = { ...staleProject, nodes: afterRemove };
+    // 记录层:绑定列整列为空(容器段不变量的口径)
+    expect(buildEDeviceRecords(cleanedProject).find((record) => record.section === "ACContainer")!.params.bound_device_idx).toBe("");
+    // 落到文件:空数值列按 E 文件口径写 0,关键是不再指向容器外的设备
+    expect(parseESections(buildEFileExport(cleanedProject).text).ACContainer?.rows[0]?.bound_device_idx)
+      .not.toBe(`ACGenerator_${member.params.idx}`);
   });
 
   test("关口容器导出容器元件英文名、关口标记与绑定设备序号", () => {

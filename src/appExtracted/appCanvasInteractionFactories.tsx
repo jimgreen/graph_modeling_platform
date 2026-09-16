@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
-import { applyDragContainerMembership, clampContainerCenterToMembers, commitContainerMembership, containerDragGroup, containerMemberNodes, containerResizeMinSize, foldContainerScaleIntoSize, hasAcContainer, isAcContainerNode, refitContainersAfterTransform, withNodeUpdates } from "../acContainer";
+import { applyDragContainerMembership, clampContainerCenterToMembers, commitContainerMembership, containerDragGroup, containerGatewayUnbindNotice, containerMemberNodes, containerResizeMinSize, foldContainerScaleIntoSize, hasAcContainer, isAcContainerNode, refitContainersAfterTransform, withNodeUpdates } from "../acContainer";
 import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind, syncedSwitchStatusPatch } from "../model";
 import { isThreeWindingTransformer } from "../model-eexport";
 import { setVoltageBaseTerminalValueForTopologySide, voltageBaseParamTerminalIndexForNode } from "../model-routing";
@@ -1402,7 +1402,14 @@ export function createFinishNodeDrag(__appScope: Record<string, any>) {
     // 不是「同一节点进出各一次」
     if (exitContainerId) {
       const source = nodes.find((node) => node.id === exitContainerId);
-      showGlobalMessage(`已移出容器 ${source?.name ?? ""}`.trim());
+      // Alt 拖出的正是原容器绑定的设备 → 该容器已自动解绑 + 关关口,一并提示。
+      // globalMessage 单槽(后弹覆盖前弹),故与「已移出容器」合并成一条,不弹两次。
+      // 离开者按**拖动前**的归属现算(判定侧用的就是这份原图,见 applyDragContainerMembership)
+      const containerIdByNodeId = new Map(nodes.map((node) => [node.id, node.containerId]));
+      const leavingIds = activeDragging.nodeIds.filter((id) => containerIdByNodeId.get(id) === exitContainerId);
+      const unbindNotice = containerGatewayUnbindNotice(nodes, leavingIds, undefined);
+      const exitText = `已移出容器 ${source?.name ?? ""}`.trim();
+      showGlobalMessage(unbindNotice ? `${exitText}，${unbindNotice}` : exitText);
     }
   };
 }

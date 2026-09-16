@@ -22,7 +22,6 @@ import {
   defaultContainerName,
   finalizeContainerAfterNodeDeletion,
   hasAcContainer,
-  refitContainersOnly,
   isAcContainerNode,
   withNodeUpdates,
   type ContainerDraft,

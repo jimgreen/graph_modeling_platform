@@ -823,6 +823,17 @@ describe("acContainer 右键菜单", () => {
     expect(containerGatewayUnbindNotice([c, m] as any, ["m1"], "c1")).toBeNull(); // 没离开原容器
   });
 
+  test("绑定残留也清理:非关口容器(is_gateway=0)的 bound_device_id 指向被移出成员 → 值清空", () => {
+    // 绑定字段残留(关过口又关了 / 老数据带来)不清的话,E 导出会写出指向容器外设备的跨段引用
+    const c = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "0", bound_device_id: "m1" } };
+    const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
+    const updates = applyRemoveFromAcContainer([c, m] as any, ["m1"]);
+    expect(updates.find((n) => n.id === "c1")!.params.bound_device_id).toBe("");
+    expect(updates.find((n) => n.id === "c1")!.params.is_gateway).toBe("0");
+    // 但不开着口就不弹「关口已关闭」(提示侧另有 is_gateway 门)
+    expect(containerGatewayUnbindNotice([c, m] as any, ["m1"])).toBeNull();
+  });
+
   test("移出容器:绑定的是别的设备则原样保留(不误伤)", () => {
     const c = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "1", bound_device_id: "keep" } };
     const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
