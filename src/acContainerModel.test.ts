@@ -149,3 +149,25 @@ describe("容器图元绘制", () => {
     expect(html).not.toContain("scale(");
   });
 });
+
+// ─── fb13:容器不再误命中开关量测兜底(「状态」「电流值」两行根除)───────────────
+describe("容器模板量测定义", () => {
+  const paramKeys = (kind: string) =>
+    (DEVICE_LIBRARY_BY_KIND.get(kind)!.parameterDefinitions ?? []).map((item) => String(item.enName));
+
+  test("三容器 kind 参数行一致:不再有 status/i(ac-switch-box 曾因 kind 含 switch 误命中)", () => {
+    for (const kind of AC_CONTAINER_KINDS) {
+      const tpl = DEVICE_LIBRARY_BY_KIND.get(kind)!;
+      expect(tpl.measurementDefinitions ?? [], `${kind} 仍挂内置量测定义`).toEqual([]);
+      expect(paramKeys(kind), `${kind} 仍带 status 参数行`).not.toContain("status");
+      expect(paramKeys(kind), `${kind} 仍带电流参数行`).not.toContain("i");
+    }
+    const keySets = AC_CONTAINER_KINDS.map((kind) => paramKeys(kind).join(","));
+    expect(new Set(keySets).size, "三容器参数行不一致").toBe(1);
+  });
+
+  test("普通开关不受影响:ac-switch 仍产出状态与电流量测", () => {
+    expect(paramKeys("ac-switch")).toContain("status");
+    expect(paramKeys("ac-switch")).toContain("i");
+  });
+});

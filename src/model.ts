@@ -1061,6 +1061,11 @@ export function switchingDeviceUsesClosedStatus(kind: string, params: Record<str
   if (baseKind.includes("ground-disconnector")) {
     return false;
   }
+  // 交流容器不是开关设备:kind 子串判据(ac-switch-box 含 "switch")不得把容器当开关 ——
+  // 否则默认参数注入 closed_status 而非 status,与「容器无 status/current 量测」的口径分叉
+  if (isAcContainerKind(baseKind)) {
+    return false;
+  }
   const componentLibraries = [
     staticComponentLibraryFromParams(params),
     params.derived_from_component_type,
@@ -5851,6 +5856,12 @@ function builtInMeasurementDefinitionsForTemplate(template: DeviceTemplate): Dev
     return undefined;
   }
   const kind = baseDeviceKind(template.kind);
+  // 交流容器无 E 设备类(容器段只有 idx/name/dev_type/is_gateway/bound_device_idx):
+  // 下面按 kind 子串的兜底会把 ac-switch-box 当开关(含 "switch"),误产出「状态」「电流值」两行 ——
+  // 面板参数行与元件定义-量测定义表同源产出,故在此单点根除。容器默认量测另见 measurements.ts 的 ACContainer 档。
+  if (isAcContainerKind(kind)) {
+    return undefined;
+  }
   const copy = (items: readonly DeviceMeasurementDefinition[]) => cloneDeviceMeasurementDefinitions(items);
   if (kind === "ac-electrolyzer" || kind === "dc-electrolyzer" || kind === "ac-fuel-cell" || kind === "dc-fuel-cell") {
     return copy(HYDROGEN_COUPLING_MEASUREMENT_DEFINITIONS);

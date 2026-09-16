@@ -2,6 +2,8 @@
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 import { InlineEditableValue } from "../components/InputComponents";
 import {
+  CONTAINER_KIND_LABELS,
+  containerKindOptions,
   containerMemberOptions,
   containerMembershipCommit,
   containerSelectOptions,
@@ -91,6 +93,38 @@ function voltageBaseSelectOptions(currentValue: string): string[] {
   return BUILTIN_VOLTAGE_LEVELS.includes(currentValue)
     ? BUILTIN_VOLTAGE_LEVELS
     : [currentValue, ...BUILTIN_VOLTAGE_LEVELS];
+}
+
+/**
+ * 容器「设备类型」行:中文下拉选 kind —— 显示中文名(虚拟电厂/开关箱/配变箱),提交写英文 kind。
+ * 容器无 E 设备类,dev_type 值恒 = 容器元件英文名(与容器段导出同源),故选中即切 `node.kind`;
+ * 三 kind 渲染同分支、同尺寸、同段(ACContainer)、idx 计数共池,切换不改几何、不重分 idx。
+ */
+export function ContainerKindSelectValue({
+  kind,
+  disabled,
+  modified,
+  onCommitKind
+}: {
+  kind: string;
+  disabled?: boolean;
+  modified?: boolean;
+  onCommitKind: (nextKind: string) => void;
+}) {
+  return (
+    <InlineEditableValue
+      value={kind}
+      displayValue={CONTAINER_KIND_LABELS[kind] ?? kind}
+      options={containerKindOptions()}
+      modified={modified}
+      disabled={disabled}
+      onCommit={(nextKind) => {
+        if (nextKind && nextKind !== kind) {
+          onCommitKind(nextKind);
+        }
+      }}
+    />
+  );
 }
 
 type AppRightPanelProps = {
@@ -1191,7 +1225,9 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             const displayValue = formatInspectorDisplayValue(key, rawValue);
                             const readonly = READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition);
                             const modified = isInspectorParamModified(key, rawValue, definition);
-                            const inputElement = key === "name" ? (<InlineEditableValue value={inspectorSelectedNode.name} displayValue={inspectorSelectedNode.name} modified={modified} disabled={isBrowseMode} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : readonly ? (<span className={`inline-property-value read-only${modified ? " modified" : ""}`} data-modified={modified ? "true" : undefined}>{displayValue || "\u00a0"}</span>) : batchEditors.renderParamEditor(key, rawValue, false, definition, undefined, modified);
+                            // 容器「设备类型」行:中文下拉选 kind(提交即切 node.kind);普通设备仍走原编辑器
+                            const isContainerDevTypeRow = isAcContainerNode(inspectorSelectedNode) && key === "dev_type";
+                            const inputElement = key === "name" ? (<InlineEditableValue value={inspectorSelectedNode.name} displayValue={inspectorSelectedNode.name} modified={modified} disabled={isBrowseMode} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : isContainerDevTypeRow ? (<ContainerKindSelectValue kind={rawValue} modified={modified} disabled={isBrowseMode} onCommitKind={(nextKind) => updateSelectedNode({ kind: nextKind })}/>) : readonly ? (<span className={`inline-property-value read-only${modified ? " modified" : ""}`} data-modified={modified ? "true" : undefined}>{displayValue || "\u00a0"}</span>) : batchEditors.renderParamEditor(key, rawValue, false, definition, undefined, modified);
                             const hasVoltageParam = keys.some((candidate) => VOLTAGE_BASE_PARAM_KEYS.has(candidate));
                             const rowFragment = (<tr key={key}>
                                   {batchEditors.renderParamHeader(key, key, definition?.cnName === key ? PARAM_LABELS[key] ?? key : (definition?.cnName ?? PARAM_LABELS[key] ?? key))}
