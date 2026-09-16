@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState } from "react";
-import { Input, Modal, Select } from "antd";
+import { Modal, Select } from "antd";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
 import { AC_CONTAINER_KINDS, modelAssociationDevicesModelTypeFailureMessage } from "../model";
 import {
@@ -14,12 +14,15 @@ import {
   containerKindOptions,
   containerKindSwitch,
   containerMemberIdsFromSelection,
-  containerSelectOptions,
+  containerNameOptions,
+  containerNamePick,
+  containerNameSearch,
   commitContainerMembership,
   defaultContainerName,
   refitContainersOnly,
   isAcContainerNode,
   withNodeUpdates,
+  type ContainerDraft,
 } from "../acContainer";
 
 export function createEnsureDraggingUndoSnapshot(__appScope: Record<string, any>) {
@@ -1782,30 +1785,56 @@ export function createUngroupSelectedGraphics(__appScope: Record<string, any>) {
   };
 }
 
-// 【添加到容器】弹窗里「新建…」选项的哨兵值(容器 id 由 cuid/uuid 生成,不会撞上)
-const NEW_CONTAINER_OPTION = "__new-container__";
-
 /**
- * 新建容器弹窗表单:类型选择 + 名称,两者都**受控**。
- * 名称必须走 state 而非命令式改 DOM —— antd 的 Input ref 是包装对象(不是原生 input),
- * 写 `ref.current.value` 是空操作:切类型后名称框会留在旧默认名,点创建却落库新默认名(显示与数据分叉)。
+ * 【添加到容器】弹窗表单:类型 + 名称双下拉,两者都**受控**。
+ * 名称下拉可搜索:候选 = 所选类型的已有容器(选中 = 加入该容器,不新建);
+ * 输入清单以外的名字 = 新建该类型容器(候选末尾出现「新建“X”」项)。
+ * 名称必须走 state 而非命令式改 DOM —— antd 的 Select ref 是包装对象(不是原生 input),
+ * 写 `ref.current.value` 是空操作:切类型后名称框会留在旧默认名,提交却落库新默认名(显示与数据分叉)。
  * 每次变更同步回 `draft`,onOk 读闭包 draft(单一提交口径)。
  */
-function NewContainerForm({ draft, nodes }: { draft: { kind: string; name: string }; nodes: any[] }) {
-  const [form, setForm] = useState({ kind: draft.kind, name: draft.name });
-  const apply = (next: { kind: string; name: string }) => {
+function ContainerPickerForm({ draft, nodes }: { draft: ContainerDraft; nodes: any[] }) {
+  const [form, setForm] = useState<ContainerDraft>({ ...draft });
+  const [typed, setTyped] = useState("");
+  const apply = (next: ContainerDraft) => {
     setForm(next);
     Object.assign(draft, next);
   };
+  const existing = containerNameOptions(form.kind, nodes);
+  // 新建项:当前值(未命中已有容器时)与正在输入的名字,去重后排除掉已有清单
+  const newNames = [form.containerId ? "" : form.name, typed.trim()]
+    .filter((name, index, list) => name && list.indexOf(name) === index)
+    .filter((name) => !existing.some((option) => option.value === name || option.label === name));
   return (
     <>
       <Select
         value={form.kind}
         style={{ width: "100%", marginBottom: 8 }}
-        onChange={(value) => apply(containerKindSwitch(String(value), nodes))}
+        onChange={(value) => {
+          setTyped("");
+          apply(containerKindSwitch(value as ContainerDraft["kind"], nodes));
+        }}
         options={containerKindOptions()}
       />
-      <Input value={form.name} autoFocus onChange={(event) => apply({ ...form, name: event.target.value })} />
+      <Select
+        showSearch
+        autoFocus
+        style={{ width: "100%" }}
+        value={form.containerId || form.name}
+        onChange={(value) => {
+          setTyped("");
+          apply(containerNamePick(String(value), form.kind, nodes));
+        }}
+        onSearch={(value) => {
+          setTyped(value);
+          // 空输入不落 draft:antd 选中选项后会回送一次 onSearch(""),此时 apply 会用旧闭包 form
+          // 覆盖掉 onChange 刚写入的 containerId
+          if (value.trim()) {
+            apply(containerNameSearch(value, form));
+          }
+        }}
+        options={[...existing, ...newNames.map((name) => ({ value: name, label: `新建“${name}”` }))]}
+      />
     </>
   );
 }
@@ -1823,7 +1852,6 @@ export function createAddToAcContainer(__appScope: Record<string, any>) {
       showGlobalMessage("请选中至少一个普通图元（容器自身不参与归属）。");
       return;
     }
-    const containers = clickNodes.filter(isAcContainerNode);
     // 提交:纯函数算出完整 nextNodes(新容器已插入、成员已打 containerId、几何已重算),单次撤销点 + 单次落图。
     // 改归属(成员原属其它容器)时,原关口容器会一并解绑 + 关关口(与移出同一出口)。
     const commitAdd = (container: any) => {
@@ -1840,57 +1868,36 @@ export function createAddToAcContainer(__appScope: Record<string, any>) {
       setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, nextNodes));
       writeOperationLog(`添加 ${memberIds.length} 个图元到容器 ${container.name ?? ""}`.trim());
     };
-    // 新建容器:类型在弹窗内选择(默认清单首项 虚拟电厂);其余类型也可由图元库放置得到
-    const askNewName = () => {
-      // 同样现取:默认名按当前类型计数、包围盒按当前成员几何
-      const { nodeById, nodes } = __appScope;
-      const members = memberIds.map((id) => nodeById.get(id)).filter(Boolean);
-      const draft = { kind: AC_CONTAINER_KINDS[0], name: defaultContainerName(AC_CONTAINER_KINDS[0], nodes) };
-      Modal.confirm({
-        title: "新建容器",
-        content: <NewContainerForm draft={draft} nodes={nodes} />,
-        okText: "创建",
-        cancelText: "取消",
-        onOk: () => {
-          // 计数器现取:弹窗期间若有并发分配(如其它入口占了 ACLoad 4),用点击快照回写会整对象倒退 → 重号。
-          // (audit:names 抓不到这类:名字有定义,只是过期)
-          const { deviceIndexCounters: latestCounters, nodes: latestNodes } = __appScope;
-          // idx 走同源分配器(容器落 ac_container 分段,与图元库放置/粘贴同一计数);名称为空时回落到所选类型的默认名
-          const indexed = assignPermanentDeviceIndex(
-            buildNewContainer(draft.kind, draft.name.trim() || defaultContainerName(draft.kind, latestNodes), members, ""),
-            latestCounters
-          );
-          setDeviceIndexCounters(indexed.counters);
-          commitAdd(indexed.node);
-        },
-      });
-    };
-    if (containers.length === 0) {
-      askNewName();
-      return;
-    }
-    const pick = { id: String(containers[0].id) };
+    // 弹窗:类型 + 名称双下拉(见 ContainerPickerForm)。名称候选 = 所选类型的已有容器 ——
+    // 选中即加入该容器;输入清单以外的名字则新建该类型容器。两种情况同一弹窗,不再串两级 Modal
+    // (无该类型容器时名称框预填默认名,直接点确定即可创建)。
+    const draft: ContainerDraft = containerKindSwitch(AC_CONTAINER_KINDS[0], clickNodes);
     Modal.confirm({
       title: "添加到容器",
-      content: (
-        <Select
-          defaultValue={pick.id}
-          style={{ width: "100%" }}
-          onChange={(value) => { pick.id = String(value); }}
-          options={[...containerSelectOptions(clickNodes).slice(1), { value: NEW_CONTAINER_OPTION, label: "新建容器…" }]}
-        />
-      ),
+      content: <ContainerPickerForm draft={draft} nodes={clickNodes} />,
       okText: "确定",
       cancelText: "取消",
       onOk: () => {
-        if (pick.id === NEW_CONTAINER_OPTION) {
-          askNewName();
+        // 提交时刻现取最新图(同 commitAdd 口径):点击快照会覆盖弹窗期间的并发改动
+        const { deviceIndexCounters: latestCounters, nodeById, nodes: latestNodes } = __appScope;
+        const picked: any = draft.containerId
+          ? latestNodes.find((node: any) => node.id === draft.containerId && isAcContainerNode(node))
+          : undefined;
+        if (picked) {
+          commitAdd(picked);
           return;
         }
-        const target = __appScope.nodes.find((candidate) => candidate.id === pick.id);
-        if (target) {
-          commitAdd(target);
-        }
+        // 新建:名称取名称下拉的输入(空则回落到所选类型的默认名);包围盒按当前成员几何
+        const members = memberIds.map((id) => nodeById.get(id)).filter(Boolean);
+        // 计数器现取:弹窗期间若有并发分配(如其它入口占了 ACLoad 4),用点击快照回写会整对象倒退 → 重号。
+        // (audit:names 抓不到这类:名字有定义,只是过期)
+        // idx 走同源分配器(容器落 ac_container 分段,与图元库放置/粘贴同一计数)
+        const indexed = assignPermanentDeviceIndex(
+          buildNewContainer(draft.kind, draft.name.trim() || defaultContainerName(draft.kind, latestNodes), members, ""),
+          latestCounters
+        );
+        setDeviceIndexCounters(indexed.counters);
+        commitAdd(indexed.node);
       },
     });
   };

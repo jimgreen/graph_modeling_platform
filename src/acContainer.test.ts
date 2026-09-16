@@ -30,6 +30,9 @@ import {
   CONTAINER_KIND_LABELS,
   containerKindOptions,
   containerKindSwitch,
+  containerNameOptions,
+  containerNamePick,
+  containerNameSearch,
   containerMemberIdsFromSelection,
   containerAssignedIdsFromSelection,
   applyAddToAcContainer,
@@ -522,11 +525,34 @@ describe("新建容器纯函数", () => {
     ]);
   });
 
-  test("containerKindSwitch:切类型时 kind 与默认名一起换(名称框显示 = 落库默认名)", () => {
+  test("containerKindSwitch:切类型时 kind + 名称下拉值一起换(已有容器优先,否则默认名)", () => {
     const ex = [node("c1", "ac-vpp-box", 0, 0), node("c2", "ac-vpp-box", 0, 0)];
-    expect(containerKindSwitch("ac-switch-box", ex)).toEqual({ kind: "ac-switch-box", name: "开关箱1" });
-    // 切回虚拟电厂:名称跟着该类型计数走,不复用切换前的值
-    expect(containerKindSwitch("ac-vpp-box", ex)).toEqual({ kind: "ac-vpp-box", name: "虚拟电厂3" });
+    // 该类型无已有容器 → 名称重置为该类型默认名、containerId 清空(切类型后不得还加入旧类型的容器)
+    expect(containerKindSwitch("ac-switch-box", ex)).toEqual({ kind: "ac-switch-box", name: "开关箱1", containerId: "" });
+    // 该类型已有容器 → 优先选中第一个(保留旧弹窗「有容器时默认加到第一个」的行为)
+    expect(containerKindSwitch("ac-vpp-box", ex)).toEqual({ kind: "ac-vpp-box", name: "c1", containerId: "c1" });
+  });
+
+  test("containerNameOptions:只列该类型的已有容器(label 与面板下拉同源)", () => {
+    const nodes = [node("c1", "ac-vpp-box", 0, 0), node("c2", "ac-switch-box", 0, 0), node("a", "ac-load", 0, 0)];
+    expect(containerNameOptions("ac-vpp-box", nodes)).toEqual([{ label: "c1", value: "c1" }]);
+    expect(containerNameOptions("ac-switch-box", nodes)).toEqual([{ label: "c2", value: "c2" }]);
+    expect(containerNameOptions("ac-distribution-box", nodes)).toEqual([]);
+  });
+
+  test("containerNamePick:命中已有容器 → 加入其 id(不新建);未命中 → 视为新名新建", () => {
+    const nodes = [node("c1", "ac-vpp-box", 0, 0), node("a", "ac-load", 0, 0)];
+    expect(containerNamePick("c1", "ac-vpp-box", nodes)).toEqual({ kind: "ac-vpp-box", name: "c1", containerId: "c1" });
+    // 命中普通图元 id 不算容器 → 按新名新建(名称下拉只列容器,防把设备当容器)
+    expect(containerNamePick("a", "ac-vpp-box", nodes)).toEqual({ kind: "ac-vpp-box", name: "a", containerId: "" });
+    expect(containerNamePick("我的虚拟电厂", "ac-vpp-box", nodes)).toEqual({ kind: "ac-vpp-box", name: "我的虚拟电厂", containerId: "" });
+  });
+
+  test("containerNameSearch:非空输入即视为新名并清已选容器(输入后直接确定也按新名建)", () => {
+    const picked: ReturnType<typeof containerKindSwitch> = { kind: "ac-vpp-box", name: "c1", containerId: "c1" };
+    expect(containerNameSearch("我的虚拟电厂", picked)).toEqual({ kind: "ac-vpp-box", name: "我的虚拟电厂", containerId: "" });
+    // 空白输入原样返回:antd 选中选项后回送 onSearch(""),不得覆盖刚选中的容器
+    expect(containerNameSearch("  ", picked)).toBe(picked);
   });
 });
 

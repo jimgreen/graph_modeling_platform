@@ -400,12 +400,50 @@ export function containerKindOptions(): { value: DeviceKind; label: string }[] {
 }
 
 /**
- * 新建弹窗「切换类型」的唯一出口:kind 与默认名**一起**换。
- * 名称框是受控的,显示值必须经此出口取得 —— 只改 kind 不改名(或命令式改 DOM)会让
- * 显示停在旧默认名、落库却是新默认名,界面与数据分叉。
+ * 【添加到容器】名称下拉的候选:该类型的**已有容器**(label 用 `名称 (idx)` 与面板其它下拉同源,
+ * value = 容器 id;选中即加入该容器,不新建)。输入清单以外的名字 = 新建该类型容器。
  */
-export function containerKindSwitch(kind: DeviceKind, existing: ModelNode[]): { kind: DeviceKind; name: string } {
-  return { kind, name: defaultContainerName(kind, existing) };
+export function containerNameOptions(kind: DeviceKind, nodes: ModelNode[]): { label: string; value: string }[] {
+  return nodes
+    .filter((n) => n.kind === kind && isAcContainerNode(n))
+    .map((c) => ({ label: containerOptionLabel(c), value: c.id }));
+}
+
+/** 弹窗草稿:名称下拉的取值决定提交口径 —— `containerId` 非空 = 加入该容器;否则按 `name` 新建 */
+export type ContainerDraft = { kind: DeviceKind; name: string; containerId: string };
+
+/**
+ * 【添加到容器】弹窗「选类型」的唯一出口(也用作弹窗初值):kind + 名称下拉值**一起**换。
+ * 该类型已有容器 → 优先选中第一个(加入它,保留旧弹窗「有容器时默认加到第一个」的行为);
+ * 无 → 名称预填该类型默认名(切类型后显示与落库同名,可直接点确定创建)。
+ * 名称框是受控的,显示值必须经此出口取得 —— 只改 kind 不改名(或命令式改 DOM)会让
+ * 显示停在旧默认名、落库却是新默认名,界面与数据分叉;不清 containerId 则会切类型后仍加入旧类型的容器。
+ */
+export function containerKindSwitch(kind: DeviceKind, existing: ModelNode[]): ContainerDraft {
+  const first = existing.find((n) => n.kind === kind && isAcContainerNode(n));
+  return first
+    ? { kind, name: String(first.name ?? ""), containerId: String(first.id) }
+    : { kind, name: defaultContainerName(kind, existing), containerId: "" };
+}
+
+/**
+ * 名称下拉「选中某项」的唯一出口:value 命中已有容器 id → 加入该容器(name 同步为该容器名,
+ * 便于提交兜底);否则视为用户新输入的名字 → 新建该类型容器。
+ */
+export function containerNamePick(value: string, kind: DeviceKind, nodes: ModelNode[]): ContainerDraft {
+  const hit = nodes.find((n) => n.id === value && isAcContainerNode(n));
+  return hit
+    ? { kind, name: String(hit.name ?? ""), containerId: String(hit.id) }
+    : { kind, name: value, containerId: "" };
+}
+
+/**
+ * 名称下拉「输入」出口:非空输入即视为新名并清空已选容器 —— 直接点确定也按新名新建,
+ * 不必先点下拉里的「新建」项(否则输入会静默丢弃、落库回默认名)。选中已有容器则走 containerNamePick 复位。
+ */
+export function containerNameSearch(value: string, draft: ContainerDraft): ContainerDraft {
+  const name = value.trim();
+  return name ? { ...draft, name, containerId: "" } : draft;
 }
 
 /**
