@@ -1889,3 +1889,69 @@ describe("工具栏旋转/镜像的容器跟随", () => {
     expect(committed.nodeMap.get("m1")).toBe(member);
   });
 });
+
+// ─── fb13:面板「设备类型」行下拉切 kind(容器)────────────────────────────────
+// 提交走生产同一出口 createUpdateSelectedNode(非几何 patch 分支):kind 落地 + 单次撤销快照。
+// 三容器 kind 同渲染分支/同 180×112/同 ACContainer 段/idx 计数共池(AC_CONTAINER_COUNTER_KEY),
+// 故切 kind 不改几何、不重分 idx —— 这里正是把这些不变量钉死。
+describe("面板切容器 kind(dev_type 下拉)", () => {
+  const runPanelParamWrite = (nodes: any[], targetId: string, patch: any) => {
+    const store = createGraphStore(nodes, []);
+    const patched: any[] = [];
+    const undoLabels: string[] = [];
+    const target = store.nodeMap.get(targetId)!;
+    createUpdateSelectedNode({
+      CANVAS_AUTO_EXPAND_PADDING: 40,
+      adjustEdgesAfterNodeMove: (edges: any[]) => edges,
+      applyCanvasBounds: () => {},
+      canvasBounds: { width: 2000, height: 2000 },
+      canvasBoundsForAutoExpandedGraphContent: () => ({ width: 2000, height: 2000 }),
+      clampNodePositionToExpandableBounds: (_node: any, _bounds: any, position: any) => position,
+      commitFastMovedGraphPatches: () => {},
+      currentStoredRoutePointsForEdge: () => ({}),
+      edgeListForNodeIds: () => [],
+      expandCanvasToFitGraph: () => {},
+      finalizeMovedNodeEdgesFast: () => [],
+      focusedGroupedNodeMovesGroup: false,
+      graphStore: store,
+      graphStoreApplyPatch,
+      mergeNodeUpdateLists: mergeById,
+      nodeById: store.nodeMap,
+      nodes: store.nodes,
+      overlayGraphStoreNodes,
+      patchGraphNodes: (updates: any[]) => patched.push(...updates),
+      pushNodeOnlyUndoSnapshot: (_id: string, label: string) => undoLabels.push(label),
+      pushUndoSnapshot: vi.fn(),
+      rebuildEdgeUpdatesAfterNodeGeometryChange: () => [],
+      rebuildRoutableLineNodeUpdatesForChangedNodes: () => [],
+      rejectAutoCanvasExpansionForContent: () => false,
+      requireEditMode: () => true,
+      selectedNode: target,
+      selectedNodeId: targetId,
+      setGraphStore: () => {},
+      snapshotEdgePoints: () => ({}),
+      undoScopeForGraphPatch: () => ({ kind: "patch-scope" })
+    } as any)(patch);
+    return { patched, undoLabels };
+  };
+
+  test("虚拟电厂 → 开关箱:kind 落地、尺寸/位置/成员归属不变、只推一次撤销快照", () => {
+    const container = containerBase("c1");
+    const member = bare("m1", "ac-load", { containerId: "c1" });
+    const { patched, undoLabels } = runPanelParamWrite([container, member], "c1", { kind: "ac-switch-box" });
+
+    expect(patched.length).toBe(1);
+    expect(patched[0].kind).toBe("ac-switch-box");
+    // 几何三 kind 同基准:切 kind 不动尺寸/位置(否则成员会被挤出)
+    expect(patched[0].size).toEqual({ width: 180, height: 112 });
+    expect(patched[0].position).toEqual(container.position);
+    expect(patched[0].containerId).toBeUndefined();
+    expect(undoLabels.length).toBe(1);
+  });
+
+  test("idx 计数共池:切 kind 不重分已有 idx(池键恒为 ac_container)", () => {
+    const container = { ...containerBase("c1"), params: { idx: "7" } };
+    const { patched } = runPanelParamWrite([container], "c1", { kind: "ac-distribution-box" });
+    expect(patched[0].params.idx).toBe("7");
+  });
+});
