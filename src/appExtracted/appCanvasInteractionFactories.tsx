@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
-import { applyDragContainerMembership, commitContainerMembership, containerDragGroup, foldContainerScaleIntoSize, isAcContainerNode, refitContainersAfterTransform, withNodeUpdates } from "../acContainer";
+import { applyDragContainerMembership, clampContainerCenterToMembers, commitContainerMembership, containerDragGroup, containerResizeMinSize, foldContainerScaleIntoSize, isAcContainerNode, refitContainersAfterTransform, withNodeUpdates } from "../acContainer";
 import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind, syncedSwitchStatusPatch } from "../model";
 import { isThreeWindingTransformer } from "../model-eexport";
 import { setVoltageBaseTerminalValueForTopologySide, voltageBaseParamTerminalIndexForNode } from "../model-routing";
@@ -2107,7 +2107,19 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
     // 容器几何恒在 size/position(见 foldContainerScaleIntoSize),否则渲染矩形 = size × |scale|
     // 又和 eject/入组用的 size 矩形分叉
     const patchedNode = { ...currentSelectedNode, ...nextPatch };
-    const nextSelectedNode = isAcContainerNode(currentSelectedNode) ? foldContainerScaleIntoSize(patchedNode) : patchedNode;
+    let nextSelectedNode = isAcContainerNode(currentSelectedNode) ? foldContainerScaleIntoSize(patchedNode) : patchedNode;
+    if (isAcContainerNode(nextSelectedNode)) {
+      // 面板「倍率 / 尺寸」是容器的尺寸入口(不像拖角那样自带下限):与拖角 resize 同口径补两道钳制 ——
+      // ① 下限 = 成员视觉包围盒 + 内侧留白(见 containerResizeMinSize);② 中心平移保完全包裹成员。
+      // 放大后圈进的非成员由下方 enforce 收尾挤出。
+      const members = graphStore.nodes.filter((n: any) => n.containerId === nextSelectedNode.id && n.id !== nextSelectedNode.id);
+      const minSize = containerResizeMinSize(currentSelectedNode, members);
+      const size = {
+        width: Math.max(nextSelectedNode.size.width, minSize.width),
+        height: Math.max(nextSelectedNode.size.height, minSize.height)
+      };
+      nextSelectedNode = { ...nextSelectedNode, size, position: clampContainerCenterToMembers(nextSelectedNode.position, size, members) };
+    }
     const nextNodes = overlayGraphStoreNodes(graphStore, [nextSelectedNode]);
     if (patch.position && selectedNode) {
       const delta = {
@@ -2167,11 +2179,16 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
       const finalNextNodes = routableLineNodeUpdates.length > 0
         ? overlayGraphStoreNodes(graphStore, nodeUpdates)
         : nextNodes;
-      const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(finalNextNodes, [selectedNodeId]);
-      expandCanvasToFitGraph(nodeUpdates, edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, selectedNodeCanvasBounds);
+      // 容器收尾(与变换句柄 / 拖角 resize 同一出口):本次几何变更后重算容器矩形并**挤出**非成员。
+      // 选中的是容器时走 preserveSizeIds「只扩不缩」—— 面板给的尺寸不被成员包围盒打回。
+      const containerUpdates = refitContainersAfterTransform(finalNextNodes, [selectedNodeId]);
+      const nodesWithContainers = containerUpdates.length > 0 ? withNodeUpdates(finalNextNodes, containerUpdates) : finalNextNodes;
+      const finalUpdates = mergeNodeUpdateLists(nodeUpdates, containerUpdates);
+      const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nodesWithContainers, [selectedNodeId]);
+      expandCanvasToFitGraph(finalUpdates, edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, selectedNodeCanvasBounds);
       setGraphStore((current) =>
         graphStoreApplyPatch(current, {
-          nodeUpdates,
+          nodeUpdates: finalUpdates,
           edgeUpserts: edgeUpdates
         })
       );
