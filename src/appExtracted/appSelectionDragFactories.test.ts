@@ -127,7 +127,7 @@ describe("归属入口的量测同步", () => {
   const gatewayContainer = (id: string, bound: string) =>
     bareNode(id, "ac-vpp-box", { params: { is_gateway: "1", bound_device_id: bound } });
   const plainContainer = (id: string) => bareNode(id, "ac-vpp-box", { params: {} });
-  // 绑定设备 m1 与其镜像组 c1;解绑/离开后 c1 组应当随归一化消失
+  // 绑定设备 m1 与其镜像组 c1;解绑/离开后 c1 旧镜像保留(fb13 口径:不再随归一化清空)
   const measurementsWithMirror = () => ({
     version: 1,
     groups: [
@@ -143,7 +143,7 @@ describe("归属入口的量测同步", () => {
     };
   };
 
-  test("右键移出:绑定设备离开原容器 → 容器量测组随归一化删除,绑定设备组保留", () => {
+  test("右键移出:绑定设备离开原容器 → 容器旧镜像保留(fb13 口径),绑定设备组保留", () => {
     const nodes = [gatewayContainer("c1", "m1"), bareNode("m1", "ac-load", { containerId: "c1" })];
     const capture = captureMeasurements();
     createRemoveFromAcContainer({
@@ -158,11 +158,12 @@ describe("归属入口的量测同步", () => {
       writeOperationLog: vi.fn(),
     } as any)();
 
-    expect(capture.get().groups.some((g: any) => g.nodeId === "c1")).toBe(false);
+    // fb13 口径:移出后旧镜像保留(不再清空),绑定设备组不受影响
+    expect(capture.get().groups.some((g: any) => g.nodeId === "c1")).toBe(true);
     expect(capture.get().groups.some((g: any) => g.nodeId === "m1")).toBe(true);
   });
 
-  test("右键改归属:成员离开原关口容器 → 原容器量测组随归一化删除", () => {
+  test("右键改归属:成员离开原关口容器 → 原容器旧镜像保留(fb13 口径)", () => {
     // containers[0] 即默认目标(Modal 未改动时 pick 取首个容器):目标放前,原容器在后
     const nodes = [
       plainContainer("c2"),
@@ -193,7 +194,7 @@ describe("归属入口的量测同步", () => {
       confirmSpy.mockRestore();
     }
 
-    expect(capture.get().groups.some((g: any) => g.nodeId === "c1")).toBe(false);
+    expect(capture.get().groups.some((g: any) => g.nodeId === "c1")).toBe(true);
     expect(capture.get().groups.some((g: any) => g.nodeId === "m1")).toBe(true);
   });
 });

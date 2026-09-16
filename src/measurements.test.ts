@@ -1319,37 +1319,38 @@ describe("container measurement groups", () => {
     expect(removeContainerMeasurementGroup(config, "c1")).toBe(config);
   });
 
-  test("收敛:关口 + 绑定成员 → 建组;关关口 → 删组", () => {
+  test("收敛:关口 + 绑定成员 → 镜像覆盖;关关口 → 镜像保留(不再清理)", () => {
     const nodes = [container("c1", { is_gateway: "1", bound_device_id: "dev1" }), member("dev1", "c1")];
     const synced = reconcileContainerMeasurementGroups(cfg([group("dev1", [item("i1", "dev1.p")])]), nodes);
     expect(findGroup(synced, "c1").items.length).toBe(1);
 
     const gatewayOff = nodes.map((entry) => entry.id === "c1" ? { ...entry, params: { ...entry.params, is_gateway: "0" } } : entry);
-    expect(reconcileContainerMeasurementGroups(synced, gatewayOff).groups.some((entry) => entry.nodeId === "c1")).toBe(false);
+    // fb13 口径修正:关关口后旧镜像保留(不再清空)—— 用户可在【量测】页【默认】恢复成容器档 V/I/P/Q
+    expect(findGroup(reconcileContainerMeasurementGroups(synced, gatewayOff), "c1").items.length).toBe(1);
   });
 
-  test("非关口容器不会被建组,自带组被清理(容器组只能由镜像产生)", () => {
-    // 口径:容器自身没有独立量测,任何属于容器的组只能由镜像产生;
-    // 非关口容器携带的(手建/历史)组会被 reconcile 清理 —— 这是「容器组存在 ⟺ 关口+绑定成员」不变量的强制执行
+  test("非关口容器自带的组保留(用户数据,不再被清理)", () => {
+    // fb13 口径修正:容器组有两个合法来源 —— ① 关口绑定时的镜像(覆盖式);
+    // ② 非关口容器自身的组(用户在【量测】页建/【默认】按钮建)。②不再被 reconcile 清空。
     const withContainerOwnGroup = cfg([group("c1", [item("i0", "手建测点")]), group("dev1", [item("i1", "dev1.p")])]);
     const nodes = [container("c1", { is_gateway: "0", bound_device_id: "" }), member("dev1", "c1")];
     const out = reconcileContainerMeasurementGroups(withContainerOwnGroup, nodes);
-    expect(out.groups.some((entry) => entry.nodeId === "c1")).toBe(false);
+    expect(findGroup(out, "c1").items.map((entry: any) => entry.sourcePoint)).toEqual(["手建测点"]);
     // 非容器组不受影响
     expect(findGroup(out, "dev1").items.length).toBe(1);
 
-    // 无自带组时不产生新对象(短路语义保留)
+    // 无自带组时非关口容器不产生新对象(短路语义保留)
     const clean = cfg([group("dev1", [item("i1", "dev1.p")])]);
     expect(reconcileContainerMeasurementGroups(clean, nodes)).toBe(clean);
   });
 
-  test("收敛:绑定设备被删除 / 已不在容器内 → 删组", () => {
+  test("收敛:绑定设备被删除 / 已不在容器内 → 旧镜像保留(用户可【默认】重建)", () => {
     const synced = syncContainerMeasurementGroup(cfg([group("dev1", [item("i1", "dev1.p")])]), "c1", "dev1");
     const bound = container("c1", { is_gateway: "1", bound_device_id: "dev1" });
     // 绑定设备已删除(图中只剩容器)
-    expect(reconcileContainerMeasurementGroups(synced, [bound]).groups.some((entry) => entry.nodeId === "c1")).toBe(false);
+    expect(findGroup(reconcileContainerMeasurementGroups(synced, [bound]), "c1").items.length).toBe(1);
     // 绑定设备仍在图里但已不属于该容器(移出/改归属)
-    expect(reconcileContainerMeasurementGroups(synced, [bound, node("dev1")]).groups.some((entry) => entry.nodeId === "c1")).toBe(false);
+    expect(findGroup(reconcileContainerMeasurementGroups(synced, [bound, node("dev1")]), "c1").items.length).toBe(1);
   });
 
   test("收敛幂等:重复调用不重复建组", () => {
@@ -1360,7 +1361,7 @@ describe("container measurement groups", () => {
     expect(findGroup(twice, "c1").items).toEqual(findGroup(once, "c1").items);
   });
 
-  test("归一化即收敛:删除绑定设备后容器组消失,刷新测点后容器组跟随", () => {
+  test("归一化即收敛:绑定设备增删测点容器组跟随,绑定设备被删除后旧镜像保留", () => {
     const nodes = [container("c1", { is_gateway: "1", bound_device_id: "dev1" }), member("dev1", "c1")];
     const normalized = normalizeProjectMeasurements(cfg([group("dev1", [item("i1", "dev1.p")])]), nodes);
     expect(normalized.groups.some((entry) => entry.nodeId === "c1")).toBe(true);
@@ -1372,7 +1373,36 @@ describe("container measurement groups", () => {
     }, nodes);
     expect(findGroup(grown, "c1").items.map((entry: any) => entry.id)).toEqual(["i1", "i2"]);
 
-    // 绑定设备被删除 → 容器组随之消失(不等待下一次绑定操作)
-    expect(normalizeProjectMeasurements(grown, [nodes[0]]).groups.some((entry) => entry.nodeId === "c1")).toBe(false);
+    // 绑定设备被删除 → 旧镜像保留(不再自动清空,用户可在【默认】重建)
+    expect(normalizeProjectMeasurements(grown, [nodes[0]]).groups.some((entry) => entry.nodeId === "c1")).toBe(true);
+  });
+});
+
+// ─── fb13:交流容器默认量测(电压/电流/有功/无功)──────────────────────────────
+// 容器无 E 设备类,量测档按段名 ACContainer 单条覆盖三 kind(measurementProfileForNode 的
+// directKeys[0] = inferESection → "ACContainer"),不再回退到开关/电源兜底档。
+describe("AC 容器默认量测档", () => {
+  const containerNode = (kind: string): ModelNode => ({ ...node("c-demo", kind), params: {} });
+  const typeIds = (kind: string) =>
+    measurementProfileItemsForNodePosition(containerNode(kind), DEFAULT_MEASUREMENT_CONFIG)
+      .map((item) => item.measurementTypeId);
+
+  test("三容器 kind 同一条 ACContainer 档:默认测点 = 有功/无功/电压/电流", () => {
+    for (const kind of ["ac-vpp-box", "ac-switch-box", "ac-distribution-box"]) {
+      expect(typeIds(kind), kind).toEqual(["activePower", "reactivePower", "voltage", "current"]);
+    }
+  });
+
+  test("不再回退到开关/电源兜底档(无 status,也无 frequency)", () => {
+    const ids = typeIds("ac-switch-box");
+    expect(ids).not.toContain("status");
+    expect(ids).not.toContain("frequency");
+  });
+
+  test("【默认】按钮建出的容器组与档一致", () => {
+    const group = createDefaultMeasurementGroupForNode(containerNode("ac-vpp-box"), DEFAULT_MEASUREMENT_CONFIG);
+    expect(group?.items.map((item) => item.measurementTypeId)).toEqual([
+      "activePower", "reactivePower", "voltage", "current"
+    ]);
   });
 });
