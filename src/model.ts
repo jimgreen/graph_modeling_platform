@@ -5798,6 +5798,15 @@ const AC_LOAD_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = 
   { measurementTypeId: "voltage", associatedField: "u" },
   { measurementTypeId: "current", associatedField: "i" }
 ];
+// 交流容器类量测定义(与 deviceProfiles 的 ACContainer 档同测点集,两层分工不同):
+// 本常量供「元件定义-量测定义」表(类级声明);deviceProfiles 档供量测页【添加默认量测】建组。
+// 4 个字段行不进面板 —— 面板按 AC_CONTAINER_EXCLUDED_E_PARAM_KEYS 剔除(见 appCoreCanvasUtilities)。
+const AC_CONTAINER_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", associatedField: "p" },
+  { measurementTypeId: "reactivePower", associatedField: "q" },
+  { measurementTypeId: "voltage", associatedField: "u" },
+  { measurementTypeId: "current", associatedField: "i" }
+];
 const DC_LOAD_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
   { measurementTypeId: "activePower", associatedField: "p" },
   { measurementTypeId: "voltage", associatedField: "u" },
@@ -5858,11 +5867,12 @@ function builtInMeasurementDefinitionsForTemplate(template: DeviceTemplate): Dev
   const kind = baseDeviceKind(template.kind);
   // 交流容器无 E 设备类(容器段只有 idx/name/dev_type/is_gateway/bound_device_idx):
   // 下面按 kind 子串的兜底会把 ac-switch-box 当开关(含 "switch"),误产出「状态」「电流值」两行 ——
-  // 面板参数行与元件定义-量测定义表同源产出,故在此单点根除。容器默认量测另见 measurements.ts 的 ACContainer 档。
-  if (isAcContainerKind(kind)) {
-    return undefined;
-  }
+  // 现改走容器自己的类量测定义(V/I/P/Q),供「元件定义-量测定义」表;
+  // 其 4 个字段行不进面板(AC_CONTAINER_EXCLUDED_E_PARAM_KEYS 剔除),量测页默认档见 measurements.ts 的 ACContainer 档
   const copy = (items: readonly DeviceMeasurementDefinition[]) => cloneDeviceMeasurementDefinitions(items);
+  if (isAcContainerKind(kind)) {
+    return copy(AC_CONTAINER_MEASUREMENT_DEFINITIONS);
+  }
   if (kind === "ac-electrolyzer" || kind === "dc-electrolyzer" || kind === "ac-fuel-cell" || kind === "dc-fuel-cell") {
     return copy(HYDROGEN_COUPLING_MEASUREMENT_DEFINITIONS);
   }

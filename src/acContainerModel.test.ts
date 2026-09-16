@@ -3,15 +3,18 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, test, expect } from "vitest";
 import {
+  DEVICE_LIBRARY,
   DEVICE_LIBRARY_BY_KIND,
   ELEMENT_TREE_COMPONENT_LIBRARY_LABELS,
   AC_CONTAINER_KINDS,
   createDefaultNode,
+  getEParameterKeys,
   isAcContainerKind,
   type DeviceKind,
   type ModelNode,
 } from "./model";
-import { COMPONENT_LIBRARY_LABELS, DEFAULT_CATEGORY_LIBRARIES } from "./appExtracted/appCoreCanvasUtilities";
+import { COMPONENT_LIBRARY_LABELS, DEFAULT_CATEGORY_LIBRARIES, resolveAcContainerModelPanelParamKeys } from "./appExtracted/appCoreCanvasUtilities";
+import { resolveDeviceModelPanelDefinitionGroups, resolveDeviceModelPanelParameterKeys } from "./appExtracted/appView";
 import { DeviceGlyph } from "./DeviceGlyph";
 import { nodeLabelShouldRender } from "./nodeLabelUtils";
 
@@ -150,20 +153,48 @@ describe("容器图元绘制", () => {
   });
 });
 
-// ─── fb13:容器不再误命中开关量测兜底(「状态」「电流值」两行根除)───────────────
+// ─── fb13:容器量测两层(类量测定义 = V/I/P/Q;面板剔除量测参数行)───────────────
+// 类量测定义(模板 measurementDefinitions)供「元件定义-量测定义」表;
+// 面板【模型】页经 AC_CONTAINER_EXCLUDED_E_PARAM_KEYS 剔除 4 个量测字段行(用户:「删除电流值属性」)。
 describe("容器模板量测定义", () => {
   const paramKeys = (kind: string) =>
     (DEVICE_LIBRARY_BY_KIND.get(kind)!.parameterDefinitions ?? []).map((item) => String(item.enName));
 
-  test("三容器 kind 参数行一致:不再有 status/i(ac-switch-box 曾因 kind 含 switch 误命中)", () => {
+  test("三容器类的量测定义 = 有功/无功/电压/电流(元件定义-量测定义表数据源)", () => {
     for (const kind of AC_CONTAINER_KINDS) {
-      const tpl = DEVICE_LIBRARY_BY_KIND.get(kind)!;
-      expect(tpl.measurementDefinitions ?? [], `${kind} 仍挂内置量测定义`).toEqual([]);
+      expect(DEVICE_LIBRARY_BY_KIND.get(kind)!.measurementDefinitions, `${kind} 量测定义`).toEqual([
+        { measurementTypeId: "activePower", associatedField: "p" },
+        { measurementTypeId: "reactivePower", associatedField: "q" },
+        { measurementTypeId: "voltage", associatedField: "u" },
+        { measurementTypeId: "current", associatedField: "i" }
+      ]);
+      // 开关兜底误命中(status/current)已根除:status 不该再出现在参数行里
       expect(paramKeys(kind), `${kind} 仍带 status 参数行`).not.toContain("status");
-      expect(paramKeys(kind), `${kind} 仍带电流参数行`).not.toContain("i");
     }
-    const keySets = AC_CONTAINER_KINDS.map((kind) => paramKeys(kind).join(","));
-    expect(new Set(keySets).size, "三容器参数行不一致").toBe(1);
+  });
+
+  test("容器面板参数键逐键剔除 p/q/u/i,普通设备不受影响", () => {
+    // 走生产链:定义组(类定义)→ 通用参数键 → 容器剔除
+    const panelKeys = (kind: string) => {
+      const template = DEVICE_LIBRARY_BY_KIND.get(kind)!;
+      const groups = resolveDeviceModelPanelDefinitionGroups(template, DEVICE_LIBRARY, [], {});
+      const keys = resolveDeviceModelPanelParameterKeys(
+        getEParameterKeys(kind, {}),
+        [],
+        Object.keys(template.params),
+        groups
+      );
+      return resolveAcContainerModelPanelParamKeys(keys, isAcContainerKind(kind));
+    };
+    for (const kind of AC_CONTAINER_KINDS) {
+      for (const measurementKey of ["p", "q", "u", "i"]) {
+        expect(panelKeys(kind), `${kind} 面板不应出现量测参数行 ${measurementKey}`).not.toContain(measurementKey);
+      }
+      // 「设备类型」行必须保留(面板下拉的锚点)
+      expect(panelKeys(kind), `${kind} 缺 dev_type 行`).toContain("dev_type");
+    }
+    // 回归护栏:普通设备的量测参数行照旧显示
+    expect(panelKeys("ac-load")).toContain("i");
   });
 
   test("普通开关不受影响:ac-switch 仍产出状态与电流量测", () => {

@@ -3261,13 +3261,16 @@ export function paramOptionsForSection(key: string, section?: string) {
 
 export const READONLY_E_PARAM_KEYS = new Set(["idx", "node", "i_node", "j_node", "ac_node", "dc_node"]);
 
-// 容器「模型」面板剔除的两行 E 列 —— 都是无人读取或与容器专用行重复的:
+// 容器「模型」面板剔除的 E 列 —— 都是无人读取、与容器专用行重复,或量测类字段行:
 //   is_gateway     :与容器专用的「是否作为关口设备」下拉编辑同一参数(重复行 + 裸英文键表头)
 //   bound_device_idx:导出用 bound_device_id 反查该列,本列恒空
+//   p / q / u / i  :容器的类量测定义(AC_CONTAINER_MEASUREMENT_DEFINITIONS)派生出的参数行 ——
+//                    量测声明只进「元件定义-量测定义」表,不进【模型】面板(用户要求删除「电流值」等行);
+//                    放在这里同时兜住「元件定义保存 override 后再落回面板」的路径
 // (旧 type 列已从容器段删除,其剔除项随之删除;dev_type 行保留 —— 显示容器元件英文名,与导出同值)
-export const AC_CONTAINER_EXCLUDED_E_PARAM_KEYS = new Set(["is_gateway", "bound_device_idx"]);
+export const AC_CONTAINER_EXCLUDED_E_PARAM_KEYS = new Set(["is_gateway", "bound_device_idx", "p", "q", "u", "i"]);
 
-/** 模型面板参数键的容器口径:容器剔除上述两列;普通设备原样返回(同名键在普通设备上仍有意义) */
+/** 模型面板参数键的容器口径:容器剔除上述键;普通设备原样返回(同名键在普通设备上仍有意义) */
 export function resolveAcContainerModelPanelParamKeys(keys: readonly string[], isContainer: boolean): string[] {
   return isContainer ? keys.filter((key) => !AC_CONTAINER_EXCLUDED_E_PARAM_KEYS.has(key)) : [...keys];
 }
