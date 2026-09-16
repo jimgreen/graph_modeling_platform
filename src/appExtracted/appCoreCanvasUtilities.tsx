@@ -1798,7 +1798,10 @@ export const COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   HeatExchanger: "双端换热器",
   HeatExchanger3: "三端换热器",
   HeatExchanger4: "四端换热器",
-  HeatPump: "热泵"
+  HeatPump: "热泵",
+  // 交流容器:类名显示「交流容器」(树里与图元库同组:交流设备 → 交流容器)。
+  // E 侧的中文段名仍是「容器表」(ELEMENT_TREE_COMPONENT_LIBRARY_LABELS + 反查表),本表只管界面显示
+  ACContainer: "交流容器"
 };
 
 // 派生类标签复用 model.ts 动态生成（与内置图元定义一致，不维护两套）
