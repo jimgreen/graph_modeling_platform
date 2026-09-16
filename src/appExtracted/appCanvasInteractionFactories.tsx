@@ -1466,7 +1466,7 @@ export function createFinishTransformDrag(__appScope: Record<string, any>) {
               ? overlayGraphStoreNodes(current, finalNodeUpdates)
               : nextNodes;
             // 容器跟随:旋转/缩放只改被变换节点的几何,容器不重算会停在旧矩形(见 refitContainersAfterTransform)。
-            // 与变换同批提交 = 单一撤销单元;被变换的容器自身跳过(用户缩放意图优先)
+            // 与变换同批提交 = 单一撤销单元;被变换的容器自身走「只扩不缩」(手动尺寸优先)
             const containerUpdates = refitContainersAfterTransform(finalNextNodes, transformedNodeIds);
             const nodesWithContainers = containerUpdates.length > 0
               ? withNodeUpdates(finalNextNodes, containerUpdates)

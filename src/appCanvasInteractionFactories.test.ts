@@ -1540,6 +1540,58 @@ describe("变换提交的容器跟随", () => {
     expectContainerCovers(nextContainer, scaledMember);
   });
 
+  // 用户实况:手动拖角放大交流容器 → 圈进的未归属设备必须被排斥到框外(此前只重算几何不挤出)
+  test("容器拖角放大圈入未归属设备:非成员被推到间隙 50,容器保留手动尺寸", () => {
+    const container = containerBase();
+    const member = bare("m1", "ac-load", { containerId: "c1" });
+    // 拖角 resize 的预览期已把新 size 写进 store(与上一条单节点缩放同型);收尾提交做容器收尾
+    const enlarged = { ...container, size: { width: 400, height: 300 } };
+    const neighbor = bare("n1", "ac-load", { position: { x: 150, y: 0 } }); // 放大后落进矩形、无归属
+    const store = createGraphStore([enlarged, member, neighbor], []);
+    let committed = store;
+    createFinishTransformDrag({
+      CANVAS_AUTO_EXPAND_PADDING: 40,
+      applyCanvasBounds: () => {},
+      canvasBounds: { width: 1000, height: 800 },
+      canvasBoundsForAutoExpandedGraphContent: () => ({ width: 1000, height: 800 }),
+      clampNodePositionToBounds: (node: any) => node.position,
+      graphStore: store,
+      graphStoreApplyPatch,
+      graphStorePatchGraphFromArrays,
+      isGroupTransformDrag: () => false,
+      latestGraphStoreRef: { current: store },
+      markRouteEdgesDirty: () => {},
+      markStoredRouteEdgesDirty: () => {},
+      mergeNodeUpdateLists: mergeById,
+      nodeById: new Map([[enlarged.id, enlarged], [member.id, member], [neighbor.id, neighbor]]),
+      overlayGraphStoreNodes,
+      rebuildEdgeUpdatesAfterNodeGeometryChange: () => [],
+      rebuildRoutableLineNodeUpdatesForChangedNodes: () => [],
+      rejectAutoCanvasExpansionForContent: () => false,
+      setGraphStore: (updater: any) => { committed = updater(store); },
+      setTransformDrag: () => {},
+      singleTransformNodeUpdate: () => null,
+      transformDrag: { kind: "se", nodeId: "c1", startPoint: { x: 90, y: 56 }, previewPoint: { x: 200, y: 150 }, historyCaptured: true },
+      transformDragChangedRef: { current: true },
+      writeOperationLog: () => {}
+    } as any)();
+
+    // 容器:手动尺寸保留(不被成员包围盒打回)
+    const nextContainer = committed.nodeMap.get("c1")!;
+    expect(nextContainer.size).toEqual({ width: 400, height: 300 });
+    // 非成员:推到与容器真实矩形间隙 = 排斥带 50
+    const placed = committed.nodeMap.get("n1")!;
+    expect(placed).not.toBe(neighbor);
+    const r = {
+      x1: nextContainer.position.x - nextContainer.size.width / 2,
+      y1: nextContainer.position.y - nextContainer.size.height / 2,
+      x2: nextContainer.position.x + nextContainer.size.width / 2,
+      y2: nextContainer.position.y + nextContainer.size.height / 2
+    };
+    const b = calculateNodeVisualBounds(placed);
+    expect(Math.max(r.x1 - b.right, b.left - r.x2, r.y1 - b.bottom, b.top - r.y2)).toBe(50);
+  });
+
   test("面板倍率写容器:折算进 size(I1),普通设备仍写 scale", () => {
     const runPanelScaleWrite = (node: any, patch: any) => {
       const store = createGraphStore([node], []);
