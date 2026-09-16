@@ -198,6 +198,31 @@ describe("归属入口的量测同步", () => {
     expect(capture.get().groups.some((g: any) => g.nodeId === "m1")).toBe(true);
   });
 
+  // spec:自动解绑要弹提示 —— 移出的正是某关口容器的绑定设备时提示一次(非绑定设备不提示)
+  test("右键移出绑定设备 → 弹「已解绑关口设备 …」;移出普通成员不弹", () => {
+    const notice = (selectedIds: string[]) => {
+      const nodes = [
+        gatewayContainer("c1", "m1"),
+        bareNode("m1", "ac-load", { containerId: "c1" }),
+        bareNode("m2", "ac-load", { containerId: "c1" }),
+      ];
+      const showGlobalMessage = vi.fn();
+      createRemoveFromAcContainer({
+        activeSelectedNodeIds: selectedIds,
+        nodes,
+        normalizeProjectMeasurements,
+        patchGraphNodes: vi.fn(),
+        pushUndoSnapshot: vi.fn(),
+        requireEditMode: () => true,
+        setProjectMeasurements: vi.fn(),
+        showGlobalMessage,
+        writeOperationLog: vi.fn(),
+      } as any)();
+      return showGlobalMessage.mock.calls.map((call: any[]) => call[0]);
+    };
+    expect(notice(["m1"])).toEqual(["已解绑关口设备 m1，关口已关闭"]);
+    expect(notice(["m2"])).toEqual([]);
+  });
 });
 
 // ─── 删除容器收尾:确认框提示散出 + 成员 containerId 清空(成员保留) ──────────
@@ -238,6 +263,7 @@ describe("删除容器收尾(deleteSelection)", () => {
       setSelectedEdgeId: vi.fn(),
       setSelectedEdgeIds: vi.fn(),
       setSelectedNodeIds: vi.fn(),
+      showGlobalMessage: vi.fn(),
       syncGlobalLineProjectNodes: vi.fn(),
       writeOperationLog: vi.fn(),
     };
@@ -369,6 +395,20 @@ describe("删除容器收尾(deleteSelection)", () => {
     expect(state.nodes.find((n: any) => n.id === "m1").position).toEqual(m1.position);
   });
 
+  // spec:绑定设备被删除 → 自动解绑 + 关关口 + 弹提示(与移出/改归属同一出口)
+  test("删除绑定设备:原关口容器解绑 + 关关口,并弹一次解绑提示", () => {
+    const gateway = {
+      ...bareNode("c1", "ac-vpp-box", { name: "虚拟电厂1", position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, params: { _labelVisible: "0" } }),
+      params: { _labelVisible: "0", is_gateway: "1", bound_device_id: "m1" },
+    };
+    const bound = bareNode("m1", "ac-load", { containerId: "c1", params: { _labelVisible: "0" } });
+    const { scope, state } = mkDeleteScope([gateway, bound], ["m1"]);
+    createDeleteSelection(scope)();
+    expect(state.nodes.map((n: any) => n.id)).toEqual(["c1"]);
+    expect(state.nodes[0].params.bound_device_id).toBe("");
+    expect(state.nodes[0].params.is_gateway).toBe("0");
+    expect(scope.showGlobalMessage.mock.calls.map((call: any[]) => call[0])).toEqual(["已解绑关口设备 m1，关口已关闭"]);
+  });
 });
 
 // ─── 粘贴 / 模板落点的归属落地:落点在**已有**容器矩形内 → 排斥弹回 ────────────────

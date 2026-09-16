@@ -11,6 +11,7 @@ import {
   containerAssignedIdsFromSelection,
   containerDeletionFinalize,
   containerDeletionWarning,
+  containerGatewayUnbindNotice,
   containerKindOptions,
   containerKindSwitch,
   containerMemberIdsFromSelection,
@@ -764,7 +765,7 @@ export function createCopySelection(__appScope: Record<string, any>) {
 
 export function createCutSelection(__appScope: Record<string, any>) {
   return () => {
-  const { activeLayerGroups, activeSelectedEdgeIds, activeSelectedNodeIds, buildCanvasClipboard, canvasSelectionScope, deleteNodesWithConnectedEdges, edges, groups, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, requireEditMode, resetConnectPreviewState, resetRoutableLinePreviewState, resolveCanvasDeleteAction, routedEdges, setCanvasClipboard, setCanvasSelectionScope, setConnectSource, setContextMenu, setGraphArrays, setGroups, setProjectMeasurements, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, visibleEdges, visibleNodes, writeOperationLog } = __appScope;
+  const { activeLayerGroups, activeSelectedEdgeIds, activeSelectedNodeIds, buildCanvasClipboard, canvasSelectionScope, deleteNodesWithConnectedEdges, edges, groups, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, requireEditMode, resetConnectPreviewState, resetRoutableLinePreviewState, resolveCanvasDeleteAction, routedEdges, setCanvasClipboard, setCanvasSelectionScope, setConnectSource, setContextMenu, setGraphArrays, setGroups, setProjectMeasurements, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, showGlobalMessage, visibleEdges, visibleNodes, writeOperationLog } = __appScope;
     if (!requireEditMode("剪切图元")) {
       return;
     }
@@ -792,10 +793,11 @@ export function createCutSelection(__appScope: Record<string, any>) {
       ? deleteNodesWithConnectedEdges(nodes, edges, activeSelectedNodeIds)
       : { nodes, edges };
     const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
-    // 剪切 = 复制 + 删除:剪走容器要清成员归属、剪走成员后容器重算收缩
+    // 剪切 = 复制 + 删除:剪走容器要清成员归属、剪走绑定设备要解绑 + 容器重算收缩
     // (半程 enforce:不挤出,否则会搬动刚散出的成员)—— 三步走单源 helper
     const scattered = containerDeletionFinalize(nodes, activeSelectedNodeIds);
     const nextNodes = finalizeContainerAfterNodeDeletion(nodes, result.nodes, activeSelectedNodeIds);
+    const unbindNotice = containerGatewayUnbindNotice(nodes, activeSelectedNodeIds);
     setGraphArrays(nextNodes, nextEdges);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, activeSelectedNodeIds, selectedEdges), nextNodes, nextEdges));
     setProjectMeasurements((current) => normalizeProjectMeasurements(current, nextNodes));
@@ -811,6 +813,9 @@ export function createCutSelection(__appScope: Record<string, any>) {
     setContextMenu(null);
     // 剪切无确认框(剪贴板语义下确认招烦),散出信息靠日志留痕 —— 后缀与删除路径同一措辞
     writeOperationLog(`剪切 ${clipboard.nodes.length} 个图元、${clipboard.edges.length} 条联络线${scattered.length > 0 ? `（${scattered.length} 个成员散出）` : ""}`);
+    if (unbindNotice) {
+      showGlobalMessage(unbindNotice);
+    }
   };
 }
 
@@ -1629,7 +1634,7 @@ export function createFinishMarqueeSelection(__appScope: Record<string, any>) {
 
 export function createDeleteSelection(__appScope: Record<string, any>) {
   return () => {
-  const { activeSelectedEdgeIds, activeSelectedNodeIds, deleteNodesWithConnectedEdges, edgeById, edgeListForNodeIds, edges, groups, lastCanvasClickTarget, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, requireEditMode, setCanvasSelectionScope, setEdges, setGraphArrays, setGroups, setLastCanvasClickTarget, setProjectMeasurements, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, syncGlobalLineProjectNodes, writeOperationLog } = __appScope;
+  const { activeSelectedEdgeIds, activeSelectedNodeIds, deleteNodesWithConnectedEdges, edgeById, edgeListForNodeIds, edges, groups, lastCanvasClickTarget, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, requireEditMode, setCanvasSelectionScope, setEdges, setGraphArrays, setGroups, setLastCanvasClickTarget, setProjectMeasurements, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, showGlobalMessage, syncGlobalLineProjectNodes, writeOperationLog } = __appScope;
     if (!requireEditMode("删除图元")) {
       return;
     }
@@ -1689,11 +1694,12 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
       const result = deleteNodesWithConnectedEdges(latestNodes, latestEdges, expandedNodeIds);
       const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
       // 删除收尾(spec「其它交互边界」):① 被删容器的成员清 containerId,成员保留 —— 否则悬空值随保存持久化;
-      // ② 成员被删/散出后容器几何重算收缩(半程 enforce:不挤出,否则会搬动刚散出的成员)。
+      // ② 绑定设备被删 → 解绑 + 关关口;③ 成员被删/散出后容器几何重算收缩(半程 enforce:不挤出,否则会搬动刚散出的成员)。
       // 全部与删除同一次提交(单一撤销单元),故 undo 一次即可连归属与容器几何一起还原。
       // 散出计数只给日志后缀用(容器收尾三步走单源 helper,内部另算一次同结果)
       const scattered = containerDeletionFinalize(latestNodes, expandedNodeIds);
       const nextNodes = finalizeContainerAfterNodeDeletion(latestNodes, result.nodes, expandedNodeIds);
+      const unbindNotice = containerGatewayUnbindNotice(latestNodes, expandedNodeIds);
       setGraphArrays(nextNodes, nextEdges);
       void syncGlobalLineProjectNodes?.(nextNodes, false);
       // groups 走函数式:确认窗口横跨交互窗口,持点击快照会覆盖期间的并发改动
@@ -1705,6 +1711,9 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
       setSelectedEdgeIds([]);
       const cascadedLineCount = expandedNodeIds.length - clickedNodeIds.length;
       writeOperationLog(`删除 ${expandedNodeIds.length} 个图元${cascadedLineCount > 0 ? `（含级联线路 ${cascadedLineCount} 条）` : ""}${scattered.length > 0 ? `（${scattered.length} 个成员散出）` : ""}`);
+      if (unbindNotice) {
+        showGlobalMessage(unbindNotice);
+      }
     };
     // 删除集含「有成员的容器」→ 先确认:成员会散出(不随容器删除)
     const warning = containerDeletionWarning(nodes, expandGlobalBoundaryDeletionNodeIds(nodes, clickedNodeIds));
@@ -1924,6 +1933,11 @@ export function createRemoveFromAcContainer(__appScope: Record<string, any>) {
     // 量测同步:绑定设备被移出会解绑原关口容器,容器量测组须随归一化删除(改归属路径见 commitAdd)
     setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, withNodeUpdates(nodes, updates)));
     writeOperationLog(`从容器移出 ${memberIds.length} 个图元`);
+    // 移出的正是某关口容器的绑定设备 → 自动解绑 + 关关口,同源提示(spec:解绑要弹提示)
+    const unbindNotice = containerGatewayUnbindNotice(nodes, memberIds);
+    if (unbindNotice) {
+      showGlobalMessage(unbindNotice);
+    }
   };
 }
 

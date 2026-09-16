@@ -879,7 +879,10 @@ export function finalizeContainerAfterNodeDeletion(
   survivorNodes: ModelNode[],
   deletedIds: Iterable<string>
 ): ModelNode[] {
-  const scattered = containerDeletionFinalize(preDeletionNodes, deletedIds);
-  const surviving = withNodeUpdates(survivorNodes, scattered);
+  const deleted = [...deletedIds];
+  const scattered = containerDeletionFinalize(preDeletionNodes, deleted);
+  // 删除绑定设备 = 成员离开:原关口容器一并解绑 + 关关口(与移出/改归属同一出口)
+  const unbound = clearGatewayBindingForLeavingMembers(preDeletionNodes, deleted, undefined);
+  const surviving = withNodeUpdates(survivorNodes, [...scattered, ...unbound]);
   return withNodeUpdates(surviving, refitContainersOnly(surviving));
 }
