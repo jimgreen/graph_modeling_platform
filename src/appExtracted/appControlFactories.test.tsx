@@ -88,8 +88,8 @@ describe("programmaticAddDevice", () => {
     expect(Array.isArray(calls.added[0].terminals)).toBe(true);
   });
 
-  // 落点在容器矩形内 → 走与拖入/粘贴同一归属出口;不接会被 enforce 挤出容器(画布上「加了又弹出去」)
-  test("落点在容器矩形内 → 并入该容器,容器随成员重算", () => {
+  // 落点在**已有**容器矩形内 → 走与拖动同一归属出口 = 排斥弹回(容器与容器外设备互相排斥)
+  test("落点在已有容器矩形内 → 排斥:弹回框外、不写归属", () => {
     const container = {
       ...createDefaultNode("ac-vpp-box", { x: 0, y: 0 }),
       id: "c1",
@@ -108,21 +108,15 @@ describe("programmaticAddDevice", () => {
     addDevice("ac-load", 30, 30);
 
     const created = added.find((node: any) => node.kind === "ac-load")!;
-    expect(created.containerId).toBe("c1");
+    expect(created.containerId).toBeUndefined();
     const nextContainer = added.find((node: any) => node.id === "c1")!;
     expect(nextContainer.containerId).toBeUndefined(); // 容器自身不写归属(不允许嵌套)
-    // 容器几何随成员重算(不再是入参的 200×200),且新矩形包住成员中心
-    expect(nextContainer.size).not.toEqual({ width: 200, height: 200 });
-    const rect = {
-      x1: nextContainer.position.x - nextContainer.size.width / 2,
-      y1: nextContainer.position.y - nextContainer.size.height / 2,
-      x2: nextContainer.position.x + nextContainer.size.width / 2,
-      y2: nextContainer.position.y + nextContainer.size.height / 2
-    };
-    expect(created.position.x).toBeGreaterThanOrEqual(rect.x1);
-    expect(created.position.x).toBeLessThanOrEqual(rect.x2);
-    expect(created.position.y).toBeGreaterThanOrEqual(rect.y1);
-    expect(created.position.y).toBeLessThanOrEqual(rect.y2);
+    // 容器无成员 → 收缩回最小尺寸(不再是入参的 200×200);新设备被弹到最终矩形之外
+    expect(nextContainer.size).toEqual({ width: 180, height: 112 });
+    const inside =
+      Math.abs(created.position.x - nextContainer.position.x) <= nextContainer.size.width / 2 &&
+      Math.abs(created.position.y - nextContainer.position.y) <= nextContainer.size.height / 2;
+    expect(inside).toBe(false);
   });
 });
 

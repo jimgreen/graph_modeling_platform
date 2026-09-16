@@ -180,7 +180,7 @@ describe("拖动落地 toast 接线", () => {
 });
 
 // 从图元库放置设备是「新增节点进图」的 UI 主路径(与 control.addDevice 同类):
-// 落点在容器矩形内必须同源落地归属,否则下一次 enforce 会把它当非成员挤出容器。
+// 落点在**已有**容器矩形内走与拖动同一出口 = 排斥弹回,不写归属。
 describe("createPlaceLibraryDeviceAtPoint 容器接入", () => {
   const makePlaceScope = (nodes: any[]) => {
     const capture: { placed?: any[] } = {};
@@ -236,15 +236,21 @@ describe("createPlaceLibraryDeviceAtPoint 容器接入", () => {
     };
   };
 
-  test("落点在容器矩形内 → 新图元写入 containerId,容器随成员重算", () => {
+  test("落点在已有容器矩形内 → 排斥:弹回框外、不写归属(与拖动同口径)", () => {
     const container = bareNode("c1", "ac-vpp-box", 0, 0, { size: { width: 200, height: 200 } });
     const { scope, capture } = makePlaceScope([container]);
 
     createPlaceLibraryDeviceAtPoint(scope as any)(DEVICE_LIBRARY_BY_KIND.get("ac-load") as any, { x: 30, y: 30 });
 
     const placed = capture.placed!.find((node: any) => node.id !== "c1")!;
-    expect(placed.containerId).toBe("c1");
-    expect(capture.placed!.find((node: any) => node.id === "c1").size).not.toEqual({ width: 200, height: 200 });
+    expect(placed.containerId).toBeUndefined();
+    // 容器无成员 → 收缩回最小尺寸;新图元被弹到最终矩形之外
+    const nextContainer = capture.placed!.find((node: any) => node.id === "c1")!;
+    expect(nextContainer.size).toEqual({ width: 180, height: 112 });
+    const inside =
+      Math.abs(placed.position.x - nextContainer.position.x) <= nextContainer.size.width / 2 &&
+      Math.abs(placed.position.y - nextContainer.position.y) <= nextContainer.size.height / 2;
+    expect(inside).toBe(false);
   });
 
   test("落点在容器外 → 不写归属;无容器时提交原样", () => {
