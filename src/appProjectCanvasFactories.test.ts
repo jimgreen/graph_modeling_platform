@@ -19,7 +19,14 @@ import {
 } from "./appExtracted/appProjectCanvasFactories";
 import { createMergeNodeUpdateLists } from "./appExtracted/appSelectionDragFactories";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
-import { DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, canConnectTerminals, createDefaultNode, getNodeScaleX, getNodeScaleY, getTerminalPoint, isBusNode, isCanvasNodeMovable, isLineSegmentBusNode, isRoutableLineDeviceKind } from "./model";
+import { DEVICE_LIBRARY, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, canConnectTerminals, createDefaultNode, getNodeScaleX, getNodeScaleY, getTerminalPoint, isBusNode, isCanvasNodeMovable, isLineSegmentBusNode, isRoutableLineDeviceKind, type ModelNode } from "./model";
+import {
+  createRoutableLineDeviceFromEndpoints,
+  routeRoutableLineDevice,
+  routableLineDeviceCanvasPoints,
+  routableLineDeviceEndpointRefForNode,
+  setRoutableLineDeviceCanvasPoints
+} from "./model-routing";
 import { GLOBAL_LINE_ID_PARAM } from "./global-lines";
 import { resizeLineSegmentBusGeometryFromHandleDrag } from "./transformUtils";
 import {
@@ -1977,6 +1984,60 @@ test("加载模型时把分叉的分侧电压参数对齐到端子 vbase（存�
   // 端子为准：参数跟着端子收敛，此后右侧面板与【设置电压基值】读数一致
   expect(loadedNodes[0].params.j_vbase).toBe("110");
   expect(loadedNodes[0].terminals[2].vbase).toBe("110");
+});
+
+test("加载模型时按容器豁免口径回填设备型线路的存量绕行路径", () => {
+  const inner = createDefaultNode("ac-switch", { x: 300, y: 200 });
+  const outer = createDefaultNode("ac-load", { x: 950, y: 200 });
+  const box: ModelNode = { ...createDefaultNode("ac-vpp-box", { x: 300, y: 200 }), size: { width: 500, height: 300 } };
+  const innerInBox: ModelNode = { ...inner, containerId: box.id };
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line")!;
+  const start = getTerminalPoint(innerInBox, "t1");
+  const end = getTerminalPoint(outer, "t1");
+  const line = createRoutableLineDeviceFromEndpoints(template, start, end, "layer-a", {
+    source: routableLineDeviceEndpointRefForNode(innerInBox, "t1"),
+    target: routableLineDeviceEndpointRefForNode(outer, "t1")
+  });
+  // 存量绕行路径(容器当障碍物时代的产物)
+  const detour = setRoutableLineDeviceCanvasPoints(line, [start, { x: start.x, y: 30 }, { x: end.x, y: 30 }, end]);
+  const setGraphArrays = vi.fn();
+  const scope = createLoadScope({ libraryTemplateByKind: new Map(), setGraphArrays });
+
+  createLoadSavedProject(scope as any)({
+    id: "project-container-line",
+    name: "线路回填模型",
+    project: {
+      nodes: [innerInBox, outer, box, detour],
+      edges: [],
+      groups: [],
+      layers: [],
+      activeLayerId: "layer-default",
+      canvasWidth: 1200,
+      canvasHeight: 800
+    }
+  } as any, "scheme-1");
+
+  const loadedNodes = setGraphArrays.mock.calls[0][0] as ModelNode[];
+  const loadedLine = loadedNodes.find((node) => node.id === detour.id)!;
+  const exemptDesign = routableLineDeviceCanvasPoints(routeRoutableLineDevice(detour, [innerInBox, outer, box, detour] as ModelNode[], { width: 1200, height: 800 }));
+
+  expect(routableLineDeviceCanvasPoints(loadedLine)).toEqual(exemptDesign);
+  expect(routableLineDeviceCanvasPoints(loadedLine)).not.toEqual(routableLineDeviceCanvasPoints(detour));
+  // 端点不连容器内设备的线路设备不属回填对象:原对象原样进图(引用不变)
+  const plainLine = setRoutableLineDeviceCanvasPoints(
+    createRoutableLineDeviceFromEndpoints(template, start, end, "layer-a", {
+      source: routableLineDeviceEndpointRefForNode(inner, "t1"),
+      target: routableLineDeviceEndpointRefForNode(outer, "t1")
+    }),
+    [start, { x: start.x, y: 30 }, { x: end.x, y: 30 }, end]
+  );
+  const plainScope = createLoadScope({ libraryTemplateByKind: new Map(), setGraphArrays: vi.fn() });
+  createLoadSavedProject(plainScope as any)({
+    id: "project-plain-line",
+    name: "无容器模型",
+    project: { nodes: [inner, outer, box, plainLine], edges: [], groups: [], layers: [], activeLayerId: "layer-default", canvasWidth: 1200, canvasHeight: 800 }
+  } as any, "scheme-1");
+  expect((plainScope.setGraphArrays as any).mock.calls[0][0].find((node: ModelNode) => node.id === plainLine.id)).toBe(plainLine);
 });
 
 // ─── 容器整体参与布局(用户裁决) ──────────────────────────────────────────

@@ -47,6 +47,7 @@ import {
   normalizeModelLayers,
   orderNodesByModelLayer,
   rebuildContainerExemptConnectionRoutes,
+  rebuildContainerExemptRoutableLineDeviceRoutes,
   routeEdgesForSavedPathRendering,
   terminalRenderLocalPoint,
   terminalStubSegment,
@@ -54,7 +55,7 @@ import {
 } from "../model-routing.ts";
 import { getNodeScaleX, getNodeScaleY } from "../model-canvas-ops.ts";
 import { inferESection } from "../model-eexport.ts";
-import { isAcContainerNode } from "../acContainer.ts";
+import { isAcContainerNode, withNodeUpdates } from "../acContainer.ts";
 import {
   DEFAULT_MEASUREMENT_CONFIG,
   EMPTY_PROJECT_MEASUREMENTS,
@@ -274,7 +275,13 @@ ${scopedBackgroundSvg}
 </g>`;
   };
   const normalizedLayers = normalizeModelLayers(canvasSize.layers, nodes, canvasSize.activeLayerId);
-  const exportNodes = orderNodesByModelLayer(nodes, normalizedLayers);
+  const orderedNodes = orderNodesByModelLayer(nodes, normalizedLayers);
+  // 容器豁免存量回填(设备型线路):端点 refs 连容器内设备的线路设备,存量路径按豁免口径重算
+  // (与下方连线回填同批;同样的口径也用在加载路径 createLoadSavedProject)
+  const containerExemptedLineNodes = rebuildContainerExemptRoutableLineDeviceRoutes(orderedNodes, canvasSize);
+  const exportNodes = containerExemptedLineNodes.length > 0
+    ? withNodeUpdates(orderedNodes, containerExemptedLineNodes)
+    : orderedNodes;
   const existingNumericNodeNumber = (value: unknown) => {
     const normalized = String(value ?? "").trim();
     if (/^\d+$/.test(normalized)) {

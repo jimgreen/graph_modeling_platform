@@ -77,6 +77,7 @@ import {
   preserveDraggedRouteShape,
   rebuildConnectionRoutesForNodes,
   rebuildContainerExemptConnectionRoutes,
+  rebuildContainerExemptRoutableLineDeviceRoutes,
   rebuildExternalConnectionRoutesForMovedNodes,
   rebuildMovedInternalConnectionRoutesBlockedByStationaryNodes,
   rebuildSingleConnectionRoute,
@@ -500,6 +501,62 @@ test("exempts only the container that holds an endpoint device", () => {
   };
 
   expect(routeIntersectsTestBox(route.points, boxBRect)).toBe(false);
+});
+
+// ─── 设备型线路(ac-routable-line 节点)的容器豁免存量回填 ─────────────────────
+// 与连线回填同口径:端点 refs 指向容器内设备的线路设备,存量路径按豁免口径重算;
+// 端点不连容器内设备的、路径已一致的,原样不动。
+const containerLineFixture = () => {
+  const inner = createDefaultNode("ac-switch", { x: 300, y: 200 });
+  const outer = createDefaultNode("ac-load", { x: 950, y: 200 });
+  // 容器比源设备大一圈以上:豁免生效时路径穿框而过,不豁免时绕框(几何上可区分)
+  const box: ModelNode = { ...createDefaultNode("ac-vpp-box", { x: 300, y: 200 }), size: { width: 500, height: 300 } };
+  const innerInBox: ModelNode = { ...inner, containerId: box.id };
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line")!;
+  const start = getTerminalPoint(innerInBox, "t1");
+  const end = getTerminalPoint(outer, "t1");
+  const line = createRoutableLineDeviceFromEndpoints(template, start, end, "layer-a", {
+    source: routableLineDeviceEndpointRefForNode(innerInBox, "t1"),
+    target: routableLineDeviceEndpointRefForNode(outer, "t1")
+  });
+  const detour = setRoutableLineDeviceCanvasPoints(line, [
+    start,
+    { x: start.x, y: 30 },
+    { x: end.x, y: 30 },
+    end
+  ]);
+  const bounds = { width: 1200, height: 600 };
+  return { inner, outer, box, innerInBox, start, end, line, detour, bounds };
+};
+
+test("backfills a stored line-device route that avoids its endpoint container", () => {
+  // 存量绕行路径(容器当障碍物时代的产物:绕到容器上方再水平到目标)→ 回填为豁免口径路径:
+  // 结果 ≡「容器不在场」的设计,且 ≠「容器在场且设备非成员」的绕行设计(证明差异正是豁免带来的)
+  const { inner, outer, box, innerInBox, detour, bounds } = containerLineFixture();
+  const nodes = [innerInBox, outer, box, detour];
+
+  const updates = rebuildContainerExemptRoutableLineDeviceRoutes(nodes, bounds);
+  const exemptDesign = routableLineDeviceCanvasPoints(routeRoutableLineDevice(detour, [inner, outer, detour], bounds));
+  const avoidingDesign = routableLineDeviceCanvasPoints(routeRoutableLineDevice(detour, [inner, outer, box, detour], bounds));
+
+  expect(updates.map((node) => node.id)).toEqual([detour.id]);
+  expect(routableLineDeviceCanvasPoints(updates[0])).toEqual(exemptDesign);
+  expect(routableLineDeviceCanvasPoints(updates[0])).not.toEqual(avoidingDesign);
+  expect(routableLineDeviceCanvasPoints(updates[0])).not.toEqual(routableLineDeviceCanvasPoints(detour));
+});
+
+test("keeps line-device routes untouched when no endpoint device sits in a container", () => {
+  const { inner, outer, box, detour, bounds } = containerLineFixture();
+
+  expect(rebuildContainerExemptRoutableLineDeviceRoutes([inner, outer, box, detour], bounds)).toEqual([]);
+});
+
+test("keeps a settled line-device route untouched (idempotent)", () => {
+  const { outer, box, innerInBox, line, bounds } = containerLineFixture();
+  const nodes = [innerInBox, outer, box, line];
+  const settled = routeRoutableLineDevice(line, nodes, bounds);
+
+  expect(rebuildContainerExemptRoutableLineDeviceRoutes([innerInBox, outer, box, settled], bounds)).toEqual([]);
 });
 
 test("repairs manual connection paths that would be covered by a device", () => {

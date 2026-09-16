@@ -1,6 +1,15 @@
 import { describe, expect, test } from "vitest";
 import * as legacy from "../appExtracted/appPersistenceLibraryExport";
 import { DEFAULT_CANVAS_BACKGROUND } from "../appExtracted/appCoreCanvasUtilities";
+import { createDefaultNode, DEVICE_LIBRARY, getTerminalPoint, type ModelNode } from "../model";
+import {
+  createRoutableLineDeviceFromEndpoints,
+  pointsToOrthogonalPath,
+  routeRoutableLineDevice,
+  routableLineDeviceEndpointRefForNode,
+  routableLineDeviceLocalPoints,
+  setRoutableLineDeviceCanvasPoints
+} from "../model-routing";
 import { buildSvgDocument } from "./svg";
 import { SVG_BASELINE_EDGES, SVG_BASELINE_FIXTURE, SVG_BASELINE_NODES } from "./fixtures/svg-baseline";
 
@@ -75,5 +84,36 @@ describe("src/export/svg", () => {
     expect(segmentAt).toBeGreaterThan(-1);
     // 该层还住着静态图元:整层搬会把装饰图元一并沉到线路底下,故不动
     expect(otherAt).toBeGreaterThan(segmentAt);
+  });
+
+  test("导出时按容器豁免口径回填设备型线路的存量路径", () => {
+    const inner = createDefaultNode("ac-switch", { x: 300, y: 200 });
+    const outer = createDefaultNode("ac-load", { x: 950, y: 200 });
+    const box: ModelNode = { ...createDefaultNode("ac-vpp-box", { x: 300, y: 200 }), size: { width: 500, height: 300 } };
+    const innerInBox: ModelNode = { ...inner, containerId: box.id };
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line")!;
+    const start = getTerminalPoint(innerInBox, "t1");
+    const end = getTerminalPoint(outer, "t1");
+    const line = createRoutableLineDeviceFromEndpoints(template, start, end, "layer-a", {
+      source: routableLineDeviceEndpointRefForNode(innerInBox, "t1"),
+      target: routableLineDeviceEndpointRefForNode(outer, "t1")
+    });
+    // 存量绕行路径(容器当障碍物时代的产物)
+    const detour = setRoutableLineDeviceCanvasPoints(line, [start, { x: start.x, y: 30 }, { x: end.x, y: 30 }, end]);
+    const bounds = { width: 1200, height: 800 };
+    const fixture = { ...SVG_BASELINE_FIXTURE, ...bounds, imageAssets: {} } as any;
+    const withMembership = [innerInBox, outer, box, detour] as any;
+    const settled = routeRoutableLineDevice(detour, withMembership, bounds);
+
+    const linePathData = (node: any) => pointsToOrthogonalPath(routableLineDeviceLocalPoints(node));
+
+    // 端点连容器内设备 → 导出按豁免口径回填:渲染的就是回填后的路径
+    const exported = buildSvgDocument(withMembership, [], fixture);
+    expect(exported).toContain(`d="${linePathData(settled)}"`);
+    expect(exported).not.toContain(`d="${linePathData(detour)}"`);
+    // 同一个「已回填」的模型(盘上数据)应与导出回填后的渲染逐字一致
+    expect(exported).toBe(buildSvgDocument([innerInBox, outer, box, settled] as any, [], fixture));
+    // 端点不连容器内设备 → 不属回填对象,存量绕行路径原样导出
+    expect(buildSvgDocument([inner, outer, box, detour] as any, [], fixture)).toContain(`d="${linePathData(detour)}"`);
   });
 });

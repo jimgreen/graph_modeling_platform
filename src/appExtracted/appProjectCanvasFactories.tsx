@@ -6,7 +6,7 @@ import { DEFAULT_MEASUREMENT_CONFIG, defaultMeasurementDisplayFormat } from "../
 import { WindowCloseButton } from "../WindowCloseButton";
 import { setSkipSaveCheck } from "./appDeviceDefinitionFactories";
 import { switchToSpace } from "../spaceSwitch";
-import { rebuildContainerExemptConnectionRoutes, reconcileTransformerSideVoltageParamsWithTerminals } from "../model-routing";
+import { rebuildContainerExemptConnectionRoutes, rebuildContainerExemptRoutableLineDeviceRoutes, reconcileTransformerSideVoltageParamsWithTerminals } from "../model-routing";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
 import { GLOBAL_LINE_ID_PARAM, applyGlobalLineRecordToNode, deriveLocalDeviceIndexCounters, globalLineEndpointPlacementFailureMessage, globalLineSourcePlacementFailureMessage, shouldManageLineGlobally, shouldUseGlobalLineForEndpoints } from "../global-lines";
 import { isLineOnlyConnectionNode, modelAssociationLineConnectionFailureMessage, modelAssociationProjectIndexesForSchemes } from "../model";
@@ -2894,12 +2894,17 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     const routeSafeNodes = repairedLineNodes.length > 0
       ? layeredProject.nodes.map((node) => repairedLineNodeById.get(node.id) ?? node)
       : layeredProject.nodes;
+    // 容器豁免存量回填(设备型线路):端点 refs 连容器内设备的线路设备,存量路径按豁免口径重算(同不写盘,随保存落盘)
+    const containerExemptedLineNodes = rebuildContainerExemptRoutableLineDeviceRoutes(routeSafeNodes, nextCanvasBounds);
+    const containerSafeNodes = containerExemptedLineNodes.length > 0
+      ? withNodeUpdates(routeSafeNodes, containerExemptedLineNodes)
+      : routeSafeNodes;
     // 容器豁免存量回填:端点连容器内设备的连线按豁免口径重算(不写盘,随保存落盘)
-    const containerExemptedEdges = rebuildContainerExemptConnectionRoutes(routeSafeNodes, layeredProject.edges, nextCanvasBounds);
-    const normalizedMeasurements = normalizeProjectMeasurements(layeredProject.measurements, routeSafeNodes);
+    const containerExemptedEdges = rebuildContainerExemptConnectionRoutes(containerSafeNodes, layeredProject.edges, nextCanvasBounds);
+    const normalizedMeasurements = normalizeProjectMeasurements(layeredProject.measurements, containerSafeNodes);
     const runtimeMeasurementConfig = __appScope.runtimeMeasurementConfig ?? measurementConfig;
     const reconciledMeasurements = typeof reconcileProjectMeasurementsWithConfig === "function" && runtimeMeasurementConfig
-      ? reconcileProjectMeasurementsWithConfig(normalizedMeasurements, routeSafeNodes, runtimeMeasurementConfig)
+      ? reconcileProjectMeasurementsWithConfig(normalizedMeasurements, containerSafeNodes, runtimeMeasurementConfig)
       : normalizedMeasurements;
     const nextViewBox = fitWholeCanvasViewBox(nextCanvasBounds, canvasFrameRef.current);
     clearNodeDragMoveSchedule();
@@ -2941,14 +2946,14 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     setLayers(layeredProject.layers ?? []);
     setActiveLayerId(layeredProject.activeLayerId ?? DEFAULT_MODEL_LAYER_ID);
     setDeviceIndexCounters(indexed.counters);
-    setGraphArrays(routeSafeNodes, containerExemptedEdges, nextProjectIdx);
-    setGroups(normalizeModelGroups(layeredProject.groups, routeSafeNodes, layeredProject.edges));
+    setGraphArrays(containerSafeNodes, containerExemptedEdges, nextProjectIdx);
+    setGroups(normalizeModelGroups(layeredProject.groups, containerSafeNodes, layeredProject.edges));
     setProjectMeasurements(reconciledMeasurements);
     setTopology(EMPTY_TOPOLOGY);
     setTopologyErrors([]);
     setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
     setRouteRenderingReady(false);
-    setInitialCanvasLodActive(routeSafeNodes.length > CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT);
+    setInitialCanvasLodActive(containerSafeNodes.length > CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT);
     setInitialCanvasDetailHydrationLimit(0);
     setActiveProjectKey(project.id);
     setActiveSchemeKey(schemeId);
