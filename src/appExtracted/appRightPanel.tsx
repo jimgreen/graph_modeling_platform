@@ -4,6 +4,7 @@ import { MemoizedViewSection } from "./appViewRenderBoundary";
 import { InlineEditableValue } from "../components/InputComponents";
 import {
   CONTAINER_KIND_LABELS,
+  containerGatewayUnbindNotice,
   containerKindOptions,
   containerMemberOptions,
   containerMembershipCommit,
@@ -393,6 +394,11 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     patchGraphNodes(updates);
     // 量测同步:解绑/关关口已随 updates 落图 → 容器量测组走同一归一化出口收敛
     setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, withNodeUpdates(nodes, updates)));
+    // 改归属/移出若解绑了原关口容器,提示一次(spec:自动解绑要弹提示)
+    const unbindNotice = containerGatewayUnbindNotice(nodes, [nodeId], containerId);
+    if (unbindNotice) {
+      __appScope.showGlobalMessage?.(unbindNotice);
+    }
   };
 
   // 容器下拉选项:nodes 未变则复用(逐渲染重建 = 每次两趟 O(n) 过滤);键含选中容器 id 的候选另算

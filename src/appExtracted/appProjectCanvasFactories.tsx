@@ -17,7 +17,7 @@ import {
 } from "../voltageInheritance";
 import { getRatedCapacityDefaultForKind } from "../model";
 import { graphStorePatchNodes } from "../graphStore";
-import { applyDragContainerMembership, clampContainerCenterToMembers, containerDragGroup, containerMemberNodes, containerResizeMinSize, finalizeContainerAfterNodeDeletion, foldContainerScaleIntoSize, hasAcContainer, isAcContainerNode, normalizeInboundContainerNode, refitContainersOnly, withNodeUpdates } from "../acContainer";
+import { applyDragContainerMembership, clampContainerCenterToMembers, containerDragGroup, containerGatewayUnbindNotice, containerMemberNodes, containerResizeMinSize, finalizeContainerAfterNodeDeletion, foldContainerScaleIntoSize, hasAcContainer, isAcContainerNode, normalizeInboundContainerNode, refitContainersOnly, withNodeUpdates } from "../acContainer";
 import { arrangeContainerInteriors, mergeContainerLayoutUnits } from "../selectionActions";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
@@ -4040,8 +4040,9 @@ export function createDeleteModelLayer(__appScope: Record<string, any>) {
     const nextLayers = remainingLayers.map((item) => item.id === nextActiveLayerId ? { ...item, visible: true } : item);
     const remainingEdgeIds = new Set(result.edges.map((edge) => edge.id));
     const removedEdgeIds = edges.filter((edge) => !remainingEdgeIds.has(edge.id)).map((edge) => edge.id);
-    // 删除收尾:容器在本图层而成员在别图层时归属会悬空 → 与删除/剪切同源(见 helper)
+    // 删除收尾:容器在本图层而成员在别图层时归属会悬空 / 绑定设备被删要解绑 → 与删除/剪切同源(见 helper)
     const nextNodes = finalizeContainerAfterNodeDeletion(nodes, result.nodes, nodeIdsInLayer);
+    const unbindNotice = containerGatewayUnbindNotice(nodes, nodeIdsInLayer);
     setGraphArrays(nextNodes, result.edges);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, nodeIdsInLayer, removedEdgeIds), nextNodes, result.edges));
     setProjectMeasurements((current) => normalizeProjectMeasurements(current, nextNodes));
@@ -4055,6 +4056,9 @@ export function createDeleteModelLayer(__appScope: Record<string, any>) {
     setRewiring(null);
     setContextMenu(null);
     writeOperationLog(`删除图层：${layer.name}，删除 ${nodeIdsInLayer.length} 个图元`);
+    if (unbindNotice) {
+      showGlobalMessage(unbindNotice);
+    }
   };
 }
 

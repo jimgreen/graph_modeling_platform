@@ -44,6 +44,7 @@ import {
   commitContainerMembership,
   containerDeletionWarning,
   containerDeletionFinalize,
+  containerGatewayUnbindNotice,
   finalizeContainerAfterNodeDeletion,
   refitContainersAfterTransform,
   containerResizeMinSize,
@@ -808,6 +809,20 @@ describe("acContainer 右键菜单", () => {
     expect("containerId" in updates.find((n) => n.id === "m1")!).toBe(false);
   });
 
+  test("解绑提示:移出绑定设备 → 文案含设备名;非绑定设备/绑定的是别人 → null", () => {
+    const c = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), name: "虚拟电厂1", params: { is_gateway: "1", bound_device_id: "m1" } };
+    const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
+    const other = node("o1", "ac-load", 900, 900);
+    expect(containerGatewayUnbindNotice([c, m] as any, ["m1"])).toBe("已解绑关口设备 m1，关口已关闭");
+    expect(containerGatewayUnbindNotice([c, m] as any, ["o1"])).toBeNull();     // 移出的不是绑定设备
+    // 关口没开(绑定残留)→ 不解绑,也不提示
+    const off = { ...c, params: { is_gateway: "0", bound_device_id: "m1" } };
+    expect(containerGatewayUnbindNotice([off, m] as any, ["m1"])).toBeNull();
+    // 改归属到别的容器 → 同样解绑并提示(toContainerId = 目标容器 id,≠ 原容器即算离开)
+    expect(containerGatewayUnbindNotice([c, m] as any, ["m1"], "c2")).toBe("已解绑关口设备 m1，关口已关闭");
+    expect(containerGatewayUnbindNotice([c, m] as any, ["m1"], "c1")).toBeNull(); // 没离开原容器
+  });
+
   test("移出容器:绑定的是别的设备则原样保留(不误伤)", () => {
     const c = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "1", bound_device_id: "keep" } };
     const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
@@ -1102,12 +1117,18 @@ describe("删除容器的归属收尾", () => {
     expect(containerDeletionFinalize([container(), c2, alive], ["c1"])).toEqual([]);
   });
 
-  test("删除收尾单源:成员被删 → 清归属 + 容器收缩 + 只回存活节点", () => {
-    const c = { ...node("c1", "ac-vpp-box", 0, 0, 200, 200) } as any;
+  test("删除收尾单源:删绑定设备 → 解绑 + 关关口 + 容器收缩(成员散出仍保留原位)", () => {
+    const c = {
+      ...node("c1", "ac-vpp-box", 0, 0, 200, 200),
+      params: { is_gateway: "1", bound_device_id: "m1" },
+    } as any;
     const m = { ...node("m1", "ac-load", 0, 0), containerId: "c1" } as any;
+    const pre = [c, m];
     // 删除后的图 = 剔掉被删节点(deletedIds 用**删除前**数组判定)
-    const next = finalizeContainerAfterNodeDeletion([c, m], [c], ["m1"]);
+    const next = finalizeContainerAfterNodeDeletion(pre, [c], ["m1"]);
     const after = new Map(next.map((n) => [n.id, n]));
+    expect(after.get("c1")!.params.bound_device_id).toBe("");
+    expect(after.get("c1")!.params.is_gateway).toBe("0");
     expect(after.get("c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE }); // 成员被删 → 半程 enforce 收缩
     expect(next.map((n) => n.id)).toEqual(["c1"]);                     // 只存活节点、不新增
   });
