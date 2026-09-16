@@ -83,6 +83,7 @@ import {
   makeNodeNumber,
   mergeCanonicalParameterDefinitions,
   migrateElectricGenerationContainerParams,
+  nodesExcludingEndpointContainers,
   normalizeDcacConverterNodeControlParams,
   normalizeElectricGenerationRatedParams,
   normalizeEndpointConverterNodeControlParams,
@@ -8430,7 +8431,9 @@ function routeCorridor(a: Point, b: Point, margin: number) {
 
 function relevantBlockersForRoute(source: ModelNode, target: ModelNode, nodes: ModelNode[], startOut: Point, endOut: Point, useCorridor = true) {
   const corridor = routeCorridor(startOut, endOut, 96);
-  return nodes.filter((node) => {
+  // 容器是线路避让的障碍物;服务容器内设备的线路豁免(端点所连设备在容器内 → 该容器不参与本线路避让)
+  const avoidanceNodes = nodesExcludingEndpointContainers(nodes, [source, target]);
+  return avoidanceNodes.filter((node) => {
     if (node.id === source.id || node.id === target.id || node.id.startsWith("floating-")) {
       return false;
     }
@@ -10837,6 +10840,8 @@ export function routeEdgesForStoredRendering(
     const sourceIsFloating = !nodeById.has(edge.sourceId) && Boolean(edge.sourcePoint);
     const targetIsFloating = !nodeById.has(edge.targetId) && Boolean(edge.targetPoint);
     const hasManualRoute = Boolean(edge.manualPoints?.length);
+    // 容器是线路避让的障碍物;服务容器内设备的线路豁免(端点所连设备在容器内 → 该容器不参与本线路避让)
+    const avoidanceNodes = nodesExcludingEndpointContainers(nodes, [source, target]);
     const preservedRoutePoints = options.preserveManualRouteDisplay
       ? preservedStoredRoutePointsForDisplay(edge.routePoints, start, end, bounds)
       : null;
@@ -10849,7 +10854,7 @@ export function routeEdgesForStoredRendering(
     }
     if (!hasManualRoute && (sourceIsFloating || targetIsFloating) && isOrthogonalDirectSegment(start, end)) {
       const directRoute = [start, end];
-      const nonEndpointBlockers = nodes.filter((node) => node.id !== source.id && node.id !== target.id);
+      const nonEndpointBlockers = avoidanceNodes.filter((node) => node.id !== source.id && node.id !== target.id);
       if (!routeIntersectsBlockers(directRoute, nonEndpointBlockers, ROUTE_BLOCKER_PADDING, 0)) {
         return [{
           edgeId: edge.id,
@@ -10862,7 +10867,7 @@ export function routeEdgesForStoredRendering(
     const targetNormal = routeEndpointNormal(target, end, start, routingEdge.targetTerminalId);
     const alignedDirectRoute = buildAlignedOpposedDirectRoute(start, end, sourceNormal, targetNormal, bounds);
     if (!hasManualRoute && alignedDirectRoute) {
-      const nonEndpointBlockers = nodes.filter((node) => node.id !== source.id && node.id !== target.id);
+      const nonEndpointBlockers = avoidanceNodes.filter((node) => node.id !== source.id && node.id !== target.id);
       if (!routeIntersectsBlockers(alignedDirectRoute, nonEndpointBlockers, ROUTE_BLOCKER_PADDING, 0)) {
         return [{
           edgeId: edge.id,
@@ -10922,7 +10927,7 @@ export function routeEdgesForStoredRendering(
       points = simplifyRoutePreservingEndpointStubs(
         routeOrthogonalEdge(source, target, nodes, edgeWithoutManualPoints(routingEdge), [], bounds),
         {
-          blockers: filterBlockersForRoutePoints(points, nodes),
+          blockers: filterBlockersForRoutePoints(points, avoidanceNodes),
           reduceTinyDoglegs: true
         }
       );
@@ -11325,7 +11330,7 @@ export function validateConnectionEdgeRoute(
   }
 
   const lastSegmentIndex = route.points.length - 2;
-  const routeBlockers = filterBlockersForRoutePoints(route.points, nodes);
+  const routeBlockers = filterBlockersForRoutePoints(route.points, nodesExcludingEndpointContainers(nodes, [source, target]));
   for (let index = 1; index < route.points.length; index += 1) {
     const a = route.points[index - 1];
     const b = route.points[index];
@@ -11718,7 +11723,7 @@ function routeHasCommitBlockingIssue(points: Point[], nodes: ModelNode[], source
     return true;
   }
   const lastSegmentIndex = points.length - 2;
-  const routeBlockers = filterBlockersForRoutePoints(points, nodes);
+  const routeBlockers = filterBlockersForRoutePoints(points, nodesExcludingEndpointContainers(nodes, [source, target]));
   for (let index = 1; index < points.length; index += 1) {
     const a = points[index - 1];
     const b = points[index];
@@ -12044,10 +12049,12 @@ function designCommitSafeRoute(
 
   const edgeForDesign = edgeWithoutManualPoints(edge);
   const avoidedSegments: Segment[] = [];
+  // 容器是线路避让的障碍物;服务容器内设备的线路豁免(端点所连设备在容器内 → 该容器不参与本线路避让)
+  const avoidanceNodes = nodesExcludingEndpointContainers(nodes, [source, target]);
   const initialContext = buildEdgeRoutingContext(source, target, nodes, edgeForDesign);
   const candidateEdges = busOptimizedEdgeCandidates(edgeForDesign, source, target, initialContext);
   let best: (DesignedCommitRoute & { bends: number; length: number; score: number }) | null = null;
-  const scoreBlockers = nodes.filter((node) => node.id !== source.id && node.id !== target.id);
+  const scoreBlockers = avoidanceNodes.filter((node) => node.id !== source.id && node.id !== target.id);
 
   for (const candidateEdge of candidateEdges) {
     const context = buildEdgeRoutingContext(source, target, nodes, candidateEdge);
@@ -12060,7 +12067,7 @@ function designCommitSafeRoute(
         fullCandidates.push(route);
         fullCandidates.push(repairRouteAroundBlockers(route, context.blockers, bounds, 1));
       }
-      return selectCommitSafeRoute(fullCandidates, nodes, source, target, candidateEdge, avoidedSegments, bounds);
+      return selectCommitSafeRoute(fullCandidates, avoidanceNodes, source, target, candidateEdge, avoidedSegments, bounds);
     };
     let selected = selectFromMiddleCandidates(buildRouteCandidates(
       context.startOut,

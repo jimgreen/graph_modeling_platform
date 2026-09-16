@@ -342,6 +342,81 @@ test("routes orthogonal connection around interfering devices", () => {
 });
 
 
+test("exempts the container holding an edge endpoint device from route avoidance", () => {
+  // 线路一端连容器内设备 → 该线路豁免对该容器的避让:路径与「容器不在场」一致,且不被判遮挡
+  const inner = createDefaultNode("ac-switch", { x: 300, y: 200 });
+  const outer = createDefaultNode("ac-load", { x: 700, y: 200 });
+  const box = createDefaultNode("ac-vpp-box", { x: 300, y: 200 });
+  const innerInBox: ModelNode = { ...inner, containerId: box.id };
+  const edge: Edge = {
+    id: "container-exempt",
+    sourceId: inner.id,
+    targetId: outer.id,
+    sourceTerminalId: "t1",
+    targetTerminalId: "t1"
+  };
+  const bounds = { width: 1000, height: 500 };
+
+  const withBox = routeEdgesForRendering([innerInBox, outer, box], [edge], bounds)[0];
+  const noBox = routeEdgesForRendering([inner, outer], [edge], bounds)[0];
+
+  expect(withBox.points).toEqual(noBox.points);
+  expect(validateConnectionEdgeRoute([innerInBox, outer, box], [edge], edge.id, bounds).ok).toBe(true);
+  expect(prepareConnectionEdgeForCommit([innerInBox, outer, box], [edge], edge.id, bounds).ok).toBe(true);
+});
+
+test("still avoids containers that hold neither endpoint device", () => {
+  // 两端都不连容器内设备 → 容器仍是障碍物,线路绕行不穿框
+  const source = createDefaultNode("ac-source", { x: 100, y: 200 });
+  const target = createDefaultNode("ac-load", { x: 800, y: 200 });
+  const box: ModelNode = { ...createDefaultNode("ac-vpp-box", { x: 450, y: 200 }), size: { width: 500, height: 260 } };
+  const edge: Edge = {
+    id: "container-avoided",
+    sourceId: source.id,
+    targetId: target.id,
+    sourceTerminalId: "t1",
+    targetTerminalId: "t1"
+  };
+  const bounds = { width: 1200, height: 600 };
+
+  const route = routeEdgesForRendering([source, target, box], [edge], bounds)[0];
+  const boxRect = {
+    left: box.position.x - box.size.width / 2,
+    right: box.position.x + box.size.width / 2,
+    top: box.position.y - box.size.height / 2,
+    bottom: box.position.y + box.size.height / 2
+  };
+
+  expect(routeIntersectsTestBox(route.points, boxRect)).toBe(false);
+});
+
+test("exempts only the container that holds an endpoint device", () => {
+  // 精确豁免:端点连容器 A 内设备 → A 豁免;B 仍是障碍物(线路不得穿 B)
+  const inner = createDefaultNode("ac-switch", { x: 300, y: 200 });
+  const outer = createDefaultNode("ac-load", { x: 1100, y: 200 });
+  const boxA = createDefaultNode("ac-vpp-box", { x: 300, y: 200 });
+  const boxB: ModelNode = { ...createDefaultNode("ac-switch-box", { x: 750, y: 200 }), size: { width: 500, height: 260 } };
+  const innerInA: ModelNode = { ...inner, containerId: boxA.id };
+  const edge: Edge = {
+    id: "container-exempt-precise",
+    sourceId: inner.id,
+    targetId: outer.id,
+    sourceTerminalId: "t1",
+    targetTerminalId: "t1"
+  };
+  const bounds = { width: 1400, height: 600 };
+
+  const route = routeEdgesForRendering([innerInA, outer, boxA, boxB], [edge], bounds)[0];
+  const boxBRect = {
+    left: boxB.position.x - boxB.size.width / 2,
+    right: boxB.position.x + boxB.size.width / 2,
+    top: boxB.position.y - boxB.size.height / 2,
+    bottom: boxB.position.y + boxB.size.height / 2
+  };
+
+  expect(routeIntersectsTestBox(route.points, boxBRect)).toBe(false);
+});
+
 test("repairs manual connection paths that would be covered by a device", () => {
   const source = createDefaultNode("ac-source", { x: 100, y: 100 });
   const target = createDefaultNode("ac-load", { x: 700, y: 100 });

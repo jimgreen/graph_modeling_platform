@@ -860,6 +860,33 @@ export function isAcContainerKind(kind: string): boolean {
   return (AC_CONTAINER_KINDS as readonly string[]).includes(kind);
 }
 
+/**
+ * 线路避让豁免:容器是线路避让(routing avoidance)的障碍物;服务容器内设备的线路豁免 ——
+ * 线路端点(至少一端)所连设备位于某容器内(端点节点 containerId === 容器 id)时,
+ * 该线路无需避让该容器(允许穿过容器矩形)。
+ * 返回剔除豁免容器后的节点列表;无豁免时原样返回(零分配)。
+ */
+export function nodesExcludingEndpointContainers(
+  nodes: ModelNode[],
+  endpoints: readonly (Pick<ModelNode, "containerId"> | undefined)[]
+): ModelNode[] {
+  let containerIds: Set<string> | null = null;
+  for (const endpoint of endpoints) {
+    const containerId = endpoint?.containerId;
+    if (containerId) {
+      if (!containerIds) {
+        containerIds = new Set();
+      }
+      containerIds.add(containerId);
+    }
+  }
+  if (!containerIds) {
+    return nodes;
+  }
+  const exemptIds = containerIds;
+  return nodes.filter((node) => !(exemptIds.has(node.id) && isAcContainerKind(node.kind)));
+}
+
 function staticComponentLibraryForKind(kind: string): string {
   return explicitStaticComponentLibraryForKind(kind) || DEFAULT_STATIC_COMPONENT_LIBRARY;
 }
