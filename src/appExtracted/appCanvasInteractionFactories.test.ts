@@ -3,12 +3,12 @@
 // `nodes.some(undefined)` 这类 TypeError —— 而 @ts-nocheck + audit:names 都拦不住,只能靠真跑一次。
 import { describe, expect, test, vi } from "vitest";
 import { createFinishNodeDrag, createMoveSelection, createPlaceLibraryDeviceAtPoint } from "./appCanvasInteractionFactories";
+import { bareNode as sharedBareNode } from "./testFixtures";
 import { DEVICE_LIBRARY_BY_KIND, createNodeFromTemplate } from "../model";
 
-const bareNode = (id: string, kind: string, x: number, y: number, extra: Record<string, unknown> = {}) => ({
-  id, kind, name: id, position: { x, y }, size: { width: 40, height: 30 },
-  rotation: 0, scale: 1, params: { _labelVisible: "0" }, terminals: [], ...extra,
-});
+// 本文件按「本体包围盒」口径断言容器几何(成员包围盒 + CONTAINER_PADDING),故默认关掉标签
+const bareNode = (id: string, kind: string, x: number, y: number, extra: Record<string, unknown> = {}) =>
+  sharedBareNode(id, kind, x, y, { params: { _labelVisible: "0" }, ...extra });
 
 describe("createMoveSelection 容器接入", () => {
   const container = bareNode("c1", "ac-vpp-box", 0, 0, { size: { width: 180, height: 112 } });

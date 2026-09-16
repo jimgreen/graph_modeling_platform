@@ -1,10 +1,11 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
-import { applyDragContainerMembership, clampContainerCenterToMembers, commitContainerMembership, containerDragGroup, containerResizeMinSize, foldContainerScaleIntoSize, isAcContainerNode, refitContainersAfterTransform, withNodeUpdates } from "../acContainer";
+import { applyDragContainerMembership, clampContainerCenterToMembers, commitContainerMembership, containerDragGroup, containerMemberNodes, containerResizeMinSize, foldContainerScaleIntoSize, hasAcContainer, isAcContainerNode, refitContainersAfterTransform, withNodeUpdates } from "../acContainer";
 import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind, syncedSwitchStatusPatch } from "../model";
 import { isThreeWindingTransformer } from "../model-eexport";
 import { setVoltageBaseTerminalValueForTopologySide, voltageBaseParamTerminalIndexForNode } from "../model-routing";
+import { CONTAINER_BINDING_PARAM_KEYS } from "./appCoreCanvasUtilities";
 
 /** 变压器侧电压参数(i_vbase/j_vbase/k_vbase) → 对应端子 id；非变压器或非侧电压参数返回 undefined。
  *  分侧表（双绕组 i/j = 高/低、三绕组 i/k/j = 高/中/低）**不在本文件**：见
@@ -1149,9 +1150,8 @@ export function createFinishDraggingMove(__appScope: Record<string, any>) {
     const draggedNodeUpdates = buildMovedNodeUpdates(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta, finalBounds);
     // 归属落地:本路径无 Alt 语义(altKey 恒 false),判定与容器重算口径同鼠标拖动 ——
     // 非 Alt 落入容器 = 排斥(弹出框外),与 createFinishNodeDrag 同开 repelNonMembers
-    const postMoveById = new Map(draggedNodeUpdates.map((node) => [node.id, node]));
     const { updates: containerUpdates } = applyDragContainerMembership({
-      nodes: nodes.map((node) => postMoveById.get(node.id) ?? node),
+      nodes: withNodeUpdates(nodes, draggedNodeUpdates),
       movedIds: activeDragging.nodeIds,
       grabbedIds: activeDragging.grabbedNodeIds,
       altKey: false,
@@ -1302,9 +1302,8 @@ export function createFinishNodeDrag(__appScope: Record<string, any>) {
     const draggedNodeUpdates = buildMovedNodeUpdates(activeDragging.nodeIds, activeDragging.originalPositions, finalDelta, finalBounds);
     // 归属落地:判定用**拖动后**节点(容器与成员均取新位置,判定点 = 节点中心)——
     // 用拖动前的位置会漏判「拖进容器」,并把容器重算回旧位置
-    const postMoveById = new Map(draggedNodeUpdates.map((node) => [node.id, node]));
     const { updates: containerUpdates, enterContainerId, exitContainerId } = applyDragContainerMembership({
-      nodes: nodes.map((node) => postMoveById.get(node.id) ?? node),
+      nodes: withNodeUpdates(nodes, draggedNodeUpdates),
       movedIds: activeDragging.nodeIds,
       grabbedIds: activeDragging.grabbedNodeIds,
       altKey,
@@ -1468,9 +1467,7 @@ export function createFinishTransformDrag(__appScope: Record<string, any>) {
             // 容器跟随:旋转/缩放只改被变换节点的几何,容器不重算会停在旧矩形(见 refitContainersAfterTransform)。
             // 与变换同批提交 = 单一撤销单元;被变换的容器自身走「只扩不缩」(手动尺寸优先)
             const containerUpdates = refitContainersAfterTransform(finalNextNodes, transformedNodeIds);
-            const nodesWithContainers = containerUpdates.length > 0
-              ? withNodeUpdates(finalNextNodes, containerUpdates)
-              : finalNextNodes;
+            const nodesWithContainers = withNodeUpdates(finalNextNodes, containerUpdates);
             const transformedNodeIdSet = new Set(transformedNodeIds);
             const transformedEdgeIds = Array.from(new Set([
               ...current.edges
@@ -1532,9 +1529,7 @@ export function createFinishTransformDrag(__appScope: Record<string, any>) {
               : nextNodes;
             // 容器跟随:成员旋转 → 容器矩形同批重算(见 refitContainersAfterTransform)
             const containerUpdates = refitContainersAfterTransform(finalNextNodes, transformedNodeIds);
-            const nodesWithContainers = containerUpdates.length > 0
-              ? withNodeUpdates(finalNextNodes, containerUpdates)
-              : finalNextNodes;
+            const nodesWithContainers = withNodeUpdates(finalNextNodes, containerUpdates);
             const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nodesWithContainers, transformedNodeIds, current.edges);
             return graphStoreApplyPatch(current, {
               nodeUpdates: [...nodeUpdates, ...containerUpdates],
@@ -1581,9 +1576,7 @@ export function createFinishTransformDrag(__appScope: Record<string, any>) {
               : nextNodes;
             // 容器跟随:成员缩放 → 容器矩形同批重算(见 refitContainersAfterTransform)
             const containerUpdates = refitContainersAfterTransform(finalNextNodes, transformedNodeIds);
-            const nodesWithContainers = containerUpdates.length > 0
-              ? withNodeUpdates(finalNextNodes, containerUpdates)
-              : finalNextNodes;
+            const nodesWithContainers = withNodeUpdates(finalNextNodes, containerUpdates);
             const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nodesWithContainers, transformedNodeIds, current.edges);
             return graphStoreApplyPatch(current, {
               nodeUpdates: [...finalNodeUpdates, ...containerUpdates],
@@ -1947,7 +1940,7 @@ export function createMoveSelection(__appScope: Record<string, any>) {
       return;
     }
     // 有容器时撤销作用域让位(容器几何/归属/解绑/挤出在拖动集之外),见 ensureDraggingUndoSnapshot
-    const moveUndoScope = nodes.some(isAcContainerNode)
+    const moveUndoScope = hasAcContainer(nodes)
       ? undefined
       : undoScopeForGraphPatch(moveNodeIds, affectedEdgesForMove.map((edge) => edge.id));
     pushUndoSnapshot(true, false, moveUndoScope, "移动设备", moveNodeIds.length === 1 ? nodeById.get(moveNodeIds[0])?.name || "" : "");
@@ -1957,9 +1950,8 @@ export function createMoveSelection(__appScope: Record<string, any>) {
     const selected = new Set(moveNodeIds);
     const draggedNodeUpdates = buildMovedNodeUpdates(moveNodeIds, originalPositions, boundedDelta, finalBounds);
     // 归属落地:单次方向键同源接入(判定只看抓取集;本路径无 Alt,故非成员落入容器一律排斥弹出)
-    const postMoveById = new Map(draggedNodeUpdates.map((node) => [node.id, node]));
     const { updates: containerUpdates } = applyDragContainerMembership({
-      nodes: nodes.map((node) => postMoveById.get(node.id) ?? node),
+      nodes: withNodeUpdates(nodes, draggedNodeUpdates),
       movedIds: moveNodeIds,
       grabbedIds: rawMoveNodeIds,
       altKey: false,
@@ -2102,7 +2094,7 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
       // 有容器时作用域必须让位:容器收尾(矩形重算 / 挤出非成员 / 被 re-fit 的其它容器)全在选中节点之外,
       // 一旦走 patch 通道这些节点就落在撤销计划外(Ctrl+Z 后残留新几何)。undefined = 全量对比分支,
       // 正确性无损,只多一趟 O(n) 比较(与拖动 / 剪切 / 删除三处先例同款,见 createEnsureDraggingUndoSnapshot)。
-      const undoScope = nodes.some(isAcContainerNode)
+      const undoScope = hasAcContainer(nodes)
         ? undefined
         : undoScopeForGraphPatch([selectedNodeId], footprintEdges.map((edge) => edge.id));
       pushUndoSnapshot(true, false, undoScope, "移动设备", (() => { const n = nodeById.get(selectedNodeId); return n ? `${n.params?.idx || n.id} ${n.name ?? ""}`.trim() : ""; })());
@@ -2121,7 +2113,7 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
       patch.scale !== undefined || patch.scaleX !== undefined || patch.scaleY !== undefined || patch.size !== undefined;
     if (sizePatch && isAcContainerNode(nextSelectedNode)) {
       // 放大后圈进的非成员由下方 enforce 收尾挤出。
-      const members = graphStore.nodes.filter((n: any) => n.containerId === nextSelectedNode.id && n.id !== nextSelectedNode.id);
+      const members = containerMemberNodes(graphStore.nodes, nextSelectedNode.id);
       const minSize = containerResizeMinSize(currentSelectedNode, members);
       const size = {
         width: Math.max(nextSelectedNode.size.width, minSize.width),
@@ -2191,7 +2183,7 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
       // 容器收尾(与变换句柄 / 拖角 resize 同一出口):本次几何变更后重算容器矩形并**挤出**非成员。
       // 选中的是容器时走 preserveSizeIds「只扩不缩」—— 面板给的尺寸不被成员包围盒打回。
       const containerUpdates = refitContainersAfterTransform(finalNextNodes, [selectedNodeId]);
-      const nodesWithContainers = containerUpdates.length > 0 ? withNodeUpdates(finalNextNodes, containerUpdates) : finalNextNodes;
+      const nodesWithContainers = withNodeUpdates(finalNextNodes, containerUpdates);
       const finalUpdates = mergeNodeUpdateLists(nodeUpdates, containerUpdates);
       const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nodesWithContainers, [selectedNodeId]);
       expandCanvasToFitGraph(finalUpdates, edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, selectedNodeCanvasBounds);
@@ -2385,7 +2377,7 @@ export function createRotateSelectedLayoutUnits(__appScope: Record<string, any>)
     const nextNodes = overlayGraphStoreNodes(graphStore, nodeUpdates);
     // 容器跟随:旋转只改被变换节点的几何,容器不重算会停在旧矩形(与变换句柄同口径,见 refitContainersAfterTransform)
     const containerUpdates = refitContainersAfterTransform(nextNodes, transformedNodeIds);
-    const nodesWithContainers = containerUpdates.length > 0 ? withNodeUpdates(nextNodes, containerUpdates) : nextNodes;
+    const nodesWithContainers = withNodeUpdates(nextNodes, containerUpdates);
     const rotatedEdgeUpdates = buildRotateLayoutUnitEdgeUpdates(selectedLayoutUnits, edges, degrees);
     const preservedRotateEdgeIds = new Set(rotatedEdgeUpdates.map((edge) => edge.id));
     markRouteEdgesDirty(preservedRotateEdgeIds);
@@ -2419,7 +2411,7 @@ export function createMirrorSelectedNodes(__appScope: Record<string, any>) {
     const nextNodes = overlayGraphStoreNodes(graphStore, nodeUpdates);
     // 容器跟随:镜像会挪成员位置(翻面),容器不重算会停在旧矩形(与变换句柄同口径,见 refitContainersAfterTransform)
     const containerUpdates = refitContainersAfterTransform(nextNodes, transformedNodeIds);
-    const nodesWithContainers = containerUpdates.length > 0 ? withNodeUpdates(nextNodes, containerUpdates) : nextNodes;
+    const nodesWithContainers = withNodeUpdates(nextNodes, containerUpdates);
     const mirroredEdgeUpdates = buildMirrorLayoutUnitEdgeUpdates(selectedLayoutUnits, edges, axis);
     const preservedMirrorEdgeIds = new Set(mirroredEdgeUpdates.map((edge) => edge.id));
     markRouteEdgesDirty(preservedMirrorEdgeIds);
@@ -2630,7 +2622,7 @@ export function createUpdateParam(__appScope: Record<string, any>) {
     patchGraphNodes([nextNode]);
     // 量测同步:绑定设备/关口开关决定容器量测组的存在性 → 走同一归一化出口收敛。
     // typeof 防御是给旧测试桩的既有惯例(见上方 setVoltageBaseTerminalValueForTopologySide 同款判断)
-    if ((key === "bound_device_id" || key === "is_gateway") && typeof normalizeProjectMeasurements === "function" && typeof setProjectMeasurements === "function") {
+    if (CONTAINER_BINDING_PARAM_KEYS.has(key) && typeof normalizeProjectMeasurements === "function" && typeof setProjectMeasurements === "function") {
       setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, withNodeUpdates(nodes, [nextNode])));
     }
   };
@@ -2686,8 +2678,10 @@ export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>
     }
     const nextNodeIds = nextNodes.map((node) => node.id);
     // 量测同步:批量键白名单不排除 is_gateway/bound_device_id(多选容器会出现这两个批量行),
-    // 两条提交分支都要喂归一化出口,容器量测组才会随批量绑定/关关口收敛
-    const graphAfterBatchPatch = withNodeUpdates(nodes, nextNodes);
+    // 两条提交分支都要喂归一化出口,容器量测组才会随批量绑定/关关口收敛;
+    // 但只有真改了这两键才需要——归一化只按容器 params/归属算组,其余键喂旧图等价,省一趟 O(n) 合并
+    const changedContainerBinding = Array.from(changedPatchKeys).some((key) => CONTAINER_BINDING_PARAM_KEYS.has(key));
+    const graphAfterBatchPatch = changedContainerBinding ? withNodeUpdates(nodes, nextNodes) : nodes;
     const hasFootprintParam = Array.from(changedPatchKeys).some((key) => NODE_LABEL_FOOTPRINT_PARAM_KEYS.has(key));
     if (hasFootprintParam) {
       const affectedEdges = edgeListForNodeIds(nextNodeIds);

@@ -17,7 +17,7 @@ import {
 } from "../voltageInheritance";
 import { getRatedCapacityDefaultForKind } from "../model";
 import { graphStorePatchNodes } from "../graphStore";
-import { applyDragContainerMembership, clampContainerCenterToMembers, containerDeletionFinalize, containerDragGroup, containerResizeMinSize, foldContainerScaleIntoSize, isAcContainerNode, refitContainersOnly, withNodeUpdates } from "../acContainer";
+import { applyDragContainerMembership, clampContainerCenterToMembers, containerDragGroup, containerMemberNodes, containerResizeMinSize, finalizeContainerAfterNodeDeletion, foldContainerScaleIntoSize, hasAcContainer, isAcContainerNode, normalizeInboundContainerNode, refitContainersOnly, withNodeUpdates } from "../acContainer";
 import { arrangeContainerInteriors, mergeContainerLayoutUnits } from "../selectionActions";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
@@ -1191,7 +1191,7 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
           const originalSize = transformDrag.originalSize ?? baseNode.size;
           // 起始几何走容器唯一归一出口:遗留 scale 在此被吃进 size(起始尺寸 = 渲染尺寸),拖完 scale 恒 1
           const baseGeometry = foldContainerScaleIntoSize({ ...baseNode, size: { ...originalSize } });
-          const members = currentStore.nodes.filter((n) => n.containerId === baseNode.id && n.id !== baseNode.id);
+          const members = containerMemberNodes(currentStore.nodes, baseNode.id);
           const resizedNode = resizeLineSegmentBusGeometryFromHandleDrag({
             node: baseGeometry,
             startPoint: transformDrag.startPoint,
@@ -1667,7 +1667,7 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
     pushUndoSnapshot(
       true,
       false,
-      nodes.some(isAcContainerNode)
+      hasAcContainer(nodes)
         ? undefined
         : undoScopeForGraphPatch(
             busConnectedLineNodeIds.size > 0 ? [...movedNodeIds, ...busConnectedLineNodeIds] : movedNodeIds,
@@ -1740,8 +1740,9 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
           layoutCanvasBounds
         )
       : finalizedCandidateEdges;
+    // 无容器变更时不走合并,保持 movedNodeUpdates 原引用(被调方虽也短路,但「空 = 原引用」是调用点契约)
     let committedNodeUpdates = containerUpdates.length > 0 ? mergeNodeUpdateLists(movedNodeUpdates, containerUpdates) : movedNodeUpdates;
-    let committedArrangedNodes = containerUpdates.length > 0 ? withNodeUpdates(arranged, containerUpdates) : arranged;
+    let committedArrangedNodes = withNodeUpdates(arranged, containerUpdates);
     if (options.readjustBusEndpoints && busConnectedLineNodeIds.size > 0) {
       const initiallyRedrawnLineNodes = redrawRoutableLineDeviceRoutes(
         committedArrangedNodes,
@@ -1980,8 +1981,7 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
         autoSpreadNodeLayoutUnits(currentNodes, memberUnits, { padding: 4, bounds: canvasBounds, avoidRects: [] }),
       activeNodeIds
     );
-    const stageOneById = new Map(stageOneNodes.map((node) => [node.id, node]));
-    const stageOneLayerNodes = activeLayerNodes.map((node) => stageOneById.get(node.id) ?? node);
+    const stageOneLayerNodes = withNodeUpdates(activeLayerNodes, stageOneNodes);
     const baseLayoutUnits = buildCanvasLayoutUnits(
       activeLayerGroups,
       stageOneLayerNodes,
@@ -2179,8 +2179,7 @@ export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
       (currentNodes, memberUnits) => autoAlignNodeLayoutUnits(currentNodes, memberUnits, gridSpacing),
       activeNodeIds
     );
-    const stageOneById = new Map(stageOneNodes.map((node) => [node.id, node]));
-    const stageOneLayerNodes = activeLayerNodes.map((node) => stageOneById.get(node.id) ?? node);
+    const stageOneLayerNodes = withNodeUpdates(activeLayerNodes, stageOneNodes);
     const layoutUnits = mergeContainerLayoutUnits(
       stageOneNodes,
       buildCanvasLayoutUnits(
@@ -2888,20 +2887,18 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
       const template = libraryTemplateByKind?.get(node.kind);
       // 交流容器:几何恒在 size —— 存量/导入数据里遗留的 scale(改造前的拖角写的就是它)折算进 size。
       // 矩形不变(不跳变),但从此「所见矩形 == eject/入组所用矩形」,不必等用户再拖一次
-      const reconcileContainer = (candidate: ModelNode) =>
-        isAcContainerNode(candidate) ? foldContainerScaleIntoSize(candidate) : candidate;
       if (template) {
         const normalized = normalizeNodeTerminalsWithTemplate(node, template);
         const reconciled = reconcileNodeWithDefinition(normalized, template);
         // Line-segment bus dragging changes instance geometry rather than transform scale.
         // Keep that persisted geometry while still applying parameter/terminal definition updates.
-        return reconcileContainer(isLineSegmentBusNode(node) && (
+        return normalizeInboundContainerNode(isLineSegmentBusNode(node) && (
           reconciled.size.width !== node.size.width || reconciled.size.height !== node.size.height
         )
           ? { ...reconciled, size: { ...node.size } }
           : reconciled);
       }
-      return reconcileContainer(libraryTemplateByKind ? node : normalizeNodeTerminalsByTemplate(node));
+      return normalizeInboundContainerNode(libraryTemplateByKind ? node : normalizeNodeTerminalsByTemplate(node));
     }));
     const indexed = assignMissingDeviceIndexes(normalizedNodes, project.project.deviceIndexCounters);
     const lockedProject = lockProjectEdgeTerminals({
@@ -4043,10 +4040,8 @@ export function createDeleteModelLayer(__appScope: Record<string, any>) {
     const nextLayers = remainingLayers.map((item) => item.id === nextActiveLayerId ? { ...item, visible: true } : item);
     const remainingEdgeIds = new Set(result.edges.map((edge) => edge.id));
     const removedEdgeIds = edges.filter((edge) => !remainingEdgeIds.has(edge.id)).map((edge) => edge.id);
-    // 删除收尾:① 容器在本图层而成员在别图层时,成员归属会悬空 → 与删除/剪切同源清掉;
-    // ② 成员被删后容器几何重算收缩(半程 enforce:不挤出,否则会搬动刚散出的成员)
-    const surviving = withNodeUpdates(result.nodes, containerDeletionFinalize(nodes, nodeIdsInLayer));
-    const nextNodes = withNodeUpdates(surviving, refitContainersOnly(surviving));
+    // 删除收尾:容器在本图层而成员在别图层时归属会悬空 → 与删除/剪切同源(见 helper)
+    const nextNodes = finalizeContainerAfterNodeDeletion(nodes, result.nodes, nodeIdsInLayer);
     setGraphArrays(nextNodes, result.edges);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, nodeIdsInLayer, removedEdgeIds), nextNodes, result.edges));
     setProjectMeasurements((current) => normalizeProjectMeasurements(current, nextNodes));

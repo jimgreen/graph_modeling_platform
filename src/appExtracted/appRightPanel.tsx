@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { useMemo } from "react";
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 import { InlineEditableValue } from "../components/InputComponents";
 import {
@@ -394,6 +395,13 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, withNodeUpdates(nodes, updates)));
   };
 
+  // 容器下拉选项:nodes 未变则复用(逐渲染重建 = 每次两趟 O(n) 过滤);键含选中容器 id 的候选另算
+  const containerSelectItems = useMemo(() => containerSelectOptions(nodes), [nodes]);
+  const containerMemberSelectItems = useMemo(
+    () => (inspectorSelectedNode && isAcContainerNode(inspectorSelectedNode) ? containerMemberOptions(nodes, inspectorSelectedNode.id) : []),
+    [nodes, inspectorSelectedNode?.id]
+  );
+
   // 所属容器行:容器节点自身不显示(容器不允许嵌套);选项 = 画布上的容器节点。
   // 两张属性表都要挂(is_container 的容器设备走容器参数表,普通设备走通用参数表),漏一处该设备就看不到/解除不了归属。
   // 位置:紧随「所属模型」行(parent 行)之后 —— 两处都在 rows/keys 遍历里插在 parent 行后;
@@ -410,7 +418,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
           <InlineEditableValue
             value={node.containerId ?? ""}
             disabled={isBrowseMode}
-            options={containerSelectOptions(nodes)}
+            options={containerSelectItems}
             onCommit={(nextValue) => commitNodeContainerId(node.id, nextValue || undefined)}
           />
         </td>
@@ -444,7 +452,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
           <InlineEditableValue
             value={boundDeviceId}
             disabled={isBrowseMode}
-            options={[{ value: "", label: "未绑定" }, ...containerMemberOptions(nodes, node.id)]}
+            options={[{ value: "", label: "未绑定" }, ...containerMemberSelectItems]}
             onCommit={(nextValue) => {
               // 绑定/解绑的容器量测组同步在 updateParam 内随归一化出口收敛
               updateParam("bound_device_id", nextValue);
@@ -1155,8 +1163,14 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       </div>)}
                     {selectedContainerParameterView ? (<table className="param-table">
                         <tbody>
-                          {selectedContainerParameterView.rows.some((row) => row.key === "parent") ? null : renderContainerRow()}
-                          {selectedContainerParameterView.rows.map((row) => {
+                          {(() => {
+                        const paramRows = selectedContainerParameterView.rows;
+                        // 「所属容器」行位先定后渲染:有 parent 行(标签经 PARAM_LABELS 显示为「所属模型」)则紧随其后,
+                        // 没有(如定义被清空)才回落表顶 —— 一次定位,不在 JSX 里既扫 some 又在循环里判等
+                        const containerRowIndex = paramRows.findIndex((row) => row.key === "parent");
+                        return <>
+                          {containerRowIndex < 0 ? renderContainerRow() : null}
+                          {paramRows.map((row, rowIndex) => {
                         const componentLibrary = resolveContainerParameterViewComponentLibrary(
                           inspectorSelectedNode,
                           selectedContainerParameterView
@@ -1173,20 +1187,20 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             : false;
                         const rowElement = row.key === "name" && selectedContainerParameterView.kind === "container" ? (<td><InlineEditableValue value={inspectorSelectedNode.name} displayValue={inspectorSelectedNode.name} modified={rowModified} disabled={isBrowseMode} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/></td>) : row.readonly || !row.paramKey ? (<td><span className={`inline-property-value read-only${rowModified ? " modified" : ""}`} data-modified={rowModified ? "true" : undefined}>{displayValue || "\u00a0"}</span></td>) : options ? (<td><InlineEditableValue value={rawValue} displayValue={options.find((option) => option === rawValue) ?? displayValue} options={options.map((option) => ({ value: option, label: option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option, disabled: option === optionConfig.invalidValue }))} modified={rowModified} disabled={isBrowseMode} onCommit={(value) => updateParam(row.paramKey!, value)}/></td>) : (<td><InlineEditableValue value={rawValue} displayValue={displayValue} modified={rowModified} disabled={isBrowseMode} onCommit={(nextValue) => updateParam(row.paramKey!, nextValue)}/></td>);
                         const rowFragment = (<tr key={row.key}>{batchEditors.renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}{rowElement}</tr>);
+                        const containerRowAfter = rowIndex === containerRowIndex ? renderContainerRow() : null;
                         if (row.key === "name" && !hasVoltageParam) {
-                          return <Fragment key={row.key}>{rowFragment}{renderVoltageBaseRow()}</Fragment>;
+                          return <Fragment key={row.key}>{rowFragment}{renderVoltageBaseRow()}{containerRowAfter}</Fragment>;
                         }
-                        // 「所属容器」行紧随「所属模型」行(parent 行的标签经 PARAM_LABELS 显示为「所属模型」)
-                        if (row.key === "parent") {
-                          return <Fragment key={row.key}>{rowFragment}{renderContainerRow()}</Fragment>;
-                        }
-                        return rowFragment;
+                        return <Fragment key={row.key}>{rowFragment}{containerRowAfter}</Fragment>;
                     })}
+                        </>;
+                    })()}
                         </tbody>
                       </table>) : (<table className="param-table">
                         <tbody>
                           {renderContainerGatewayRows()}
                           {(() => {
+                        const isAcContainerNodeSelected = isAcContainerNode(inspectorSelectedNode); // 容器判据取一次,下面两处共用
                         const eKeys = getEParameterKeys(inspectorSelectedNode.kind, inspectorSelectedNode.params);
                         const customDefinitions = parseCustomDefinitions(inspectorSelectedNode.params);
                         const selectedTemplate = libraryTemplates.find((template) => template.kind === inspectorSelectedNode.kind);
@@ -1206,8 +1220,10 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             customDefinitions,
                             Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM),
                             definitionGroups
-                        ), isAcContainerNode(inspectorSelectedNode));
-                        const keyRows = keys.map((key) => {
+                        ), isAcContainerNodeSelected);
+                        // 「所属容器」行位先定后渲染(同上,通用参数表):一次定位,不在 JSX 里既扫 includes 又在循环里判等
+                        const containerRowIndex = keys.findIndex((key) => key === "parent");
+                        const keyRows = keys.map((key, keyIndex) => {
                             const definition = panelDefinitions.find((item) => item.enName === key);
                             const resolvedValue = key === "name"
                               ? inspectorSelectedNode.name
@@ -1226,7 +1242,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             const readonly = READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition);
                             const modified = isInspectorParamModified(key, rawValue, definition);
                             // 容器「设备类型」行:中文下拉选 kind(提交即切 node.kind);普通设备仍走原编辑器
-                            const isContainerDevTypeRow = isAcContainerNode(inspectorSelectedNode) && key === "dev_type";
+                            const isContainerDevTypeRow = isAcContainerNodeSelected && key === "dev_type";
                             const inputElement = key === "name" ? (<InlineEditableValue value={inspectorSelectedNode.name} displayValue={inspectorSelectedNode.name} modified={modified} disabled={isBrowseMode} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : isContainerDevTypeRow ? (<ContainerKindSelectValue kind={rawValue} modified={modified} disabled={isBrowseMode} onCommitKind={(nextKind) => updateSelectedNode({ kind: nextKind })}/>) : readonly ? (<span className={`inline-property-value read-only${modified ? " modified" : ""}`} data-modified={modified ? "true" : undefined}>{displayValue || "\u00a0"}</span>) : batchEditors.renderParamEditor(key, rawValue, false, definition, undefined, modified);
                             const hasVoltageParam = keys.some((candidate) => VOLTAGE_BASE_PARAM_KEYS.has(candidate));
                             const rowFragment = (<tr key={key}>
@@ -1235,18 +1251,15 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                                     {inputElement}
                                   </td>
                                 </tr>);
+                            const containerRowAfter = keyIndex === containerRowIndex ? renderContainerRow() : null;
                             if (key === "name" && !hasVoltageParam) {
-                              return <Fragment key={key}>{rowFragment}{renderVoltageBaseRow()}</Fragment>;
+                              return <Fragment key={key}>{rowFragment}{renderVoltageBaseRow()}{containerRowAfter}</Fragment>;
                             }
-                            // 「所属容器」行紧随「所属模型」行(同上,通用参数表)
-                            if (key === "parent") {
-                              return <Fragment key={key}>{rowFragment}{renderContainerRow()}</Fragment>;
-                            }
-                            return rowFragment;
+                            return <Fragment key={key}>{rowFragment}{containerRowAfter}</Fragment>;
                         });
                         // keys 里没有 parent 行(如定义被清空)时,「所属容器」行回落渲染到表顶,避免整行消失
                         return (<>
-                          {keys.includes("parent") ? null : renderContainerRow()}
+                          {containerRowIndex < 0 ? renderContainerRow() : null}
                           {keyRows}
                         </>);
                     })()}

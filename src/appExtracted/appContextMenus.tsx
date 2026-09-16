@@ -34,9 +34,11 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }: AppConte
     setSubmenuHovered(id);
   };
   // 容器菜单可见性:选中含普通图元才可加入(容器自动忽略),含已归属成员才可移出;口径与工厂提交同源。
-  // 门在 contextMenuForNode 上:非图元菜单(方案/元素树菜单)的 scope 里未必有 nodes,提前算会踩空。
-  const acContainerAddableCount = contextMenuForNode ? containerMemberIdsFromSelection(nodes, activeSelectedNodeIds).length : 0;
-  const acContainerAssignedCount = contextMenuForNode ? containerAssignedIdsFromSelection(nodes, activeSelectedNodeIds).length : 0;
+  // 门在 contextMenuForNode 上:非图元菜单(方案/元素树菜单)的 scope 里未必有 nodes,提前算会踩空;
+  // 两项都只在编辑态渲染(isEditMode),故一并门控,只读态不做这两趟 O(n) 扫描。
+  const acContainerMenuCountsVisible = Boolean(contextMenuForNode && isEditMode);
+  const acContainerAddableCount = acContainerMenuCountsVisible ? containerMemberIdsFromSelection(nodes, activeSelectedNodeIds).length : 0;
+  const acContainerAssignedCount = acContainerMenuCountsVisible ? containerAssignedIdsFromSelection(nodes, activeSelectedNodeIds).length : 0;
   return (<>
 {contextMenu && (<div ref={contextMenuRef} className={contextMenuClassName(contextMenu)} data-canvas-context-menu="true" style={contextMenuStyle(contextMenu)}>
           {isEditMode && contextMenuFromElementTree && contextMenuForSelection && contextSelectionCount > 0 && (<button onClick={() => runContextMenuAction(deleteSelection)}>

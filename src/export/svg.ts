@@ -334,11 +334,15 @@ ${scopedBackgroundSvg}
   // 容器沉底:容器节点层在 segment(线路)层之前输出,与画布同口径(acContainer.containerFirstComparator)。
   // 层键按「节点的真实分层结果」派生而非按 kind 猜层名;判定口径 = **整层皆容器**才搬:
   // 静态图元层键恒为 "Other",容器若被手工塞入 static 库参数也会落进该层,此时整层搬会把装饰图元一并沉底。
+  // 一趟判断「整层皆容器」:遇到非容器即置 false(逐层扫全部节点是 O(层数 × 节点数));
+  // 键集与 nodeTypeLayerIds 同源(同一 exportNodes + 同一层键函数),插入序也一致
+  const layerKeyAllContainer = new Map<string, boolean>();
+  for (const node of exportNodes) {
+    const layerKey = exportNodeLayerKey(node);
+    layerKeyAllContainer.set(layerKey, (layerKeyAllContainer.get(layerKey) ?? true) && isAcContainerNode(node));
+  }
   const containerLayerKeys = new Set(
-    [...nodeTypeLayerIds.keys()].filter((layerKey) => {
-      const owners = exportNodes.filter((node) => exportNodeLayerKey(node) === layerKey);
-      return owners.length > 0 && owners.every(isAcContainerNode);
-    })
+    [...layerKeyAllContainer].filter(([, allContainer]) => allContainer).map(([layerKey]) => layerKey)
   );
   const exportDeviceIdByNodeId = buildExportDeviceIdMap(exportNodes, usedSvgIds);
   const resolveExportLayerButtonTargetIds = (node: ModelNode) => {
