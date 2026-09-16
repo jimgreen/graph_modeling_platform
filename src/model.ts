@@ -861,6 +861,31 @@ export function isAcContainerKind(kind: string): boolean {
 }
 
 /**
+ * 图中存活容器 id 集合:归属字段 `containerId` 的**有效性判据**。
+ * 悬空值(指向已删除的容器)在删除收尾之外仍可能来自存盘老数据/导入文件,
+ * 故**判定(judgeContainerMembership)与挤出(ejectOutsiders)两个消费点必须经此集合**,
+ * 不得只判 `n.containerId` 的真值 —— 只判真值会让悬空节点被当成员豁免(挤出失效、入组被短路)。
+ * (其余消费点走 `containerId === <某存活容器 id>` 等值比较,悬空值天然不命中,无需经此。)
+ * 声明在 model.ts:连线避让(model-routing)与画布容器逻辑(acContainer)都要用,而 model-routing 在 model 的加载链上。
+ */
+export function liveContainerIds(nodes: readonly ModelNode[]): Set<string> {
+  return new Set(nodes.filter((n) => isAcContainerKind(n.kind)).map((n) => n.id));
+}
+
+/**
+ * 某容器绑定的成员设备 id(`is_gateway=1` + 绑定设备仍是本容器成员),否则 undefined。
+ * 关口容器判据的**唯一出处**:容器量测组同步(measurements)与导出关口拓扑变换(model-eexport)共用,
+ * 两边「算不算开着口的关口」必须同一口径。
+ * 声明在 model.ts:两个消费方都要经它,而 model-eexport ⇄ model 本就互为依赖(见文件头),别再引 acContainer。
+ */
+export function gatewayBoundMemberId(container: ModelNode, nodeById: ReadonlyMap<string, ModelNode>): string | undefined {
+  if (container.params?.is_gateway !== "1") return undefined;
+  const boundDeviceId = String(container.params.bound_device_id ?? "");
+  const bound = boundDeviceId ? nodeById.get(boundDeviceId) : undefined;
+  return bound && bound.containerId === container.id ? boundDeviceId : undefined;
+}
+
+/**
  * 线路避让豁免:容器是线路避让(routing avoidance)的障碍物;服务容器内设备的线路豁免 ——
  * 线路端点(至少一端)所连设备位于某容器内(端点节点 containerId === 容器 id)时,
  * 该线路无需避让该容器(允许穿过容器矩形)。
@@ -3381,6 +3406,25 @@ const HYDROGEN_LOAD_DEFAULTS: HydrogenEndpointDefaults = {
 const HYDROGEN_SOURCE_PARAMETER_DEFINITIONS = hydrogenEndpointParameterDefinitions(HYDROGEN_SOURCE_DEFAULTS);
 const HYDROGEN_LOAD_PARAMETER_DEFINITIONS = hydrogenEndpointParameterDefinitions(HYDROGEN_LOAD_DEFAULTS);
 
+/**
+ * 交流容器三种「框」元件的公共几何:同尺寸、同样式参数(三份曾逐字重复)。
+ * 每次返回**新对象**(含 params/size 各一份)—— 模板对象会被下游就地改写,共用引用会三 kind 串改。
+ */
+function containerBoxTemplateGeometry(): Pick<DeviceTemplate, "size" | "params"> {
+  return {
+    size: { width: 180, height: 112 },
+    params: {
+      // 名称渲染源恒为 node.name(见 DeviceGlyph 容器分支),不写 text 死参数
+      fillColor: "transparent",
+      strokeColor: "#64748b",
+      cornerRadius: "8",
+      strokeStyle: "dashed",
+      textAlign: "left",
+      verticalAlign: "top"
+    }
+  };
+}
+
 const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-text",
@@ -3750,16 +3794,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     kind: "ac-vpp-box",
     label: "虚拟电厂",
     categoryLibrary: "交流设备",
-    size: { width: 180, height: 112 },
-    params: {
-      // 名称渲染源恒为 node.name(见 DeviceGlyph 容器分支),不写 text 死参数
-      fillColor: "transparent",
-      strokeColor: "#64748b",
-      cornerRadius: "8",
-      strokeStyle: "dashed",
-      textAlign: "left",
-      verticalAlign: "top"
-    },
+    ...containerBoxTemplateGeometry(),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -3767,15 +3802,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     kind: "ac-switch-box",
     label: "开关箱",
     categoryLibrary: "交流设备",
-    size: { width: 180, height: 112 },
-    params: {
-      fillColor: "transparent",
-      strokeColor: "#64748b",
-      cornerRadius: "8",
-      strokeStyle: "dashed",
-      textAlign: "left",
-      verticalAlign: "top"
-    },
+    ...containerBoxTemplateGeometry(),
     terminalType: "ac",
     terminalCount: 0
   },
@@ -3783,15 +3810,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     kind: "ac-distribution-box",
     label: "配变箱",
     categoryLibrary: "交流设备",
-    size: { width: 180, height: 112 },
-    params: {
-      fillColor: "transparent",
-      strokeColor: "#64748b",
-      cornerRadius: "8",
-      strokeStyle: "dashed",
-      textAlign: "left",
-      verticalAlign: "top"
-    },
+    ...containerBoxTemplateGeometry(),
     terminalType: "ac",
     terminalCount: 0
   },

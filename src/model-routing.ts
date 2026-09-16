@@ -69,7 +69,6 @@ import {
   deviceParamValue,
   getDeviceGlyphVariant,
   getDeviceStrokeWidth,
-  isAcContainerKind,
   isContainerParams,
   isImplicitTerminalVbaseForType,
   isLineOnlyConnectionNode,
@@ -80,6 +79,7 @@ import {
   isStaticNode,
   isTwoWindingTransformerTemplateKind,
   isWireLikeRouteDeviceKind,
+  liveContainerIds,
   makeId,
   makeNodeNumber,
   mergeCanonicalParameterDefinitions,
@@ -12181,26 +12181,32 @@ export function prepareConnectionEdgeForCommit(
  * 无此类连线、路径已一致或设计失败时原样返回(零改动)。只改内存,随用户保存落盘。
  * 用途:打开既有模型与导出 SVG 的存量数据修复(容器是线路避让的障碍物;服务容器内设备的线路豁免)。
  */
+/**
+ * 端点是否落在某**存活**容器内 —— 容器豁免存量回填两处(**连线**至少一端 / **线路设备**端点 ref)共用的唯一判据。
+ * 只看 `containerId` 真值会让悬空值(指向已删容器)被当成员豁免,故必须经存活容器 id 集合(见 liveContainerIds)。
+ */
+function endpointIdsSitInLiveContainer(
+  ids: readonly (string | undefined)[],
+  nodeById: ReadonlyMap<string, ModelNode>,
+  liveContainers: ReadonlySet<string>
+): boolean {
+  return ids.some((id) => {
+    const containerId = id ? nodeById.get(id)?.containerId : undefined;
+    return Boolean(containerId && liveContainers.has(containerId));
+  });
+}
+
 export function rebuildContainerExemptConnectionRoutes(
   nodes: ModelNode[],
   edges: Edge[],
   bounds?: CanvasBounds
 ): Edge[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const endpointContainers = (edge: Edge): ModelNode[] => {
-    const containers = new Map<string, ModelNode>();
-    for (const endpointId of [edge.sourceId, edge.targetId]) {
-      const containerId = nodeById.get(endpointId)?.containerId;
-      const container = containerId ? nodeById.get(containerId) : undefined;
-      if (container && isAcContainerKind(container.kind)) {
-        containers.set(container.id, container);
-      }
-    }
-    return Array.from(containers.values());
-  };
+  const liveContainers = liveContainerIds(nodes);
   const candidates = edges.filter((edge) => {
     const routePoints = edge.routePoints;
-    return Boolean(routePoints && routePoints.length >= 2) && endpointContainers(edge).length > 0;
+    return Boolean(routePoints && routePoints.length >= 2) &&
+      endpointIdsSitInLiveContainer([edge.sourceId, edge.targetId], nodeById, liveContainers);
   });
   if (candidates.length === 0) {
     return edges;
@@ -12232,12 +12238,10 @@ export function rebuildContainerExemptRoutableLineDeviceRoutes(
   bounds?: CanvasBounds
 ): ModelNode[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const liveContainers = liveContainerIds(nodes);
   /** 端点 ref 所指设备是否归属某个存活容器(容器 id 悬空不算) */
-  const endpointSitsInContainer = (ref: RoutableLineDeviceEndpointRef | undefined) => {
-    const containerId = ref ? nodeById.get(ref.nodeId)?.containerId : undefined;
-    const container = containerId ? nodeById.get(containerId) : undefined;
-    return Boolean(container && isAcContainerKind(container.kind));
-  };
+  const endpointSitsInContainer = (ref: RoutableLineDeviceEndpointRef | undefined) =>
+    endpointIdsSitInLiveContainer([ref?.nodeId], nodeById, liveContainers);
   const updates: ModelNode[] = [];
   for (const node of nodes) {
     if (!isRoutableLineDeviceKind(node.kind)) continue;

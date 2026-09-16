@@ -15,7 +15,7 @@ import {
   type RoutedEdge
 } from "./model";
 import { clampNumber } from "./canvasViewport";
-import { isAcContainerNode } from "./acContainer";
+import { containerMemberNodes, isAcContainerNode } from "./acContainer";
 
 export const CANVAS_EMPTY_SELECTION_MESSAGE = "当前没有被选中图元。";
 const GROUP_LAYOUT_BOUNDS_PADDING = 4;
@@ -895,9 +895,7 @@ export function mergeContainerLayoutUnits(nodes: ModelNode[], units: readonly Ca
     // 成员过滤与 buildCanvasLayoutUnits 同谓词:线路设备不可作布局单元,不吸入整组(否则布局会连带挪动不可移动节点)
     const groupNodes = [
       container,
-      ...nodes.filter(
-        (node) => node.containerId === container.id && node.id !== container.id && isCanvasNodeMovable(node.kind)
-      )
+      ...containerMemberNodes(nodes, container.id).filter((node) => isCanvasNodeMovable(node.kind))
     ];
     groupNodesById.set(groupId, groupNodes);
     for (const node of groupNodes) {
@@ -972,8 +970,8 @@ export function arrangeContainerInteriors(
     if (!isAcContainerNode(container) || (scope && !scope.has(container.id))) {
       continue;
     }
-    const memberIds = current
-      .filter((node) => node.containerId === container.id && node.id !== container.id && !isAcContainerNode(node))
+    const memberIds = containerMemberNodes(current, container.id)
+      .filter((node) => !isAcContainerNode(node))
       .map((node) => node.id);
     if (memberIds.length < 2) {
       continue;
