@@ -37,7 +37,7 @@ export function hasAcContainer(nodes: ModelNode[]): boolean {
  * 不含「已归属某存活容器」:那是两处**各自**的差异(挤出要豁免、入组要短路),且入组侧静态豁免只挡自动入组、
  * 不挡「已是成员者 Alt 移出」,故不得折进本谓词。
  */
-export function containerMembershipEligible(node: ModelNode): boolean {
+function containerMembershipEligible(node: ModelNode): boolean {
   return !isAcContainerNode(node) && !isWireLikeRouteDeviceKind(node.kind) && !isStaticNode(node);
 }
 
@@ -58,7 +58,7 @@ export function normalizeInboundContainerNode(node: ModelNode): ModelNode {
  * 剥离容器副本的关口绑定:绑定存的是**原图**设备 id,副本 id 全换后必然悬空,
  * 故副本一律「绑定清空 + 关口关」。返回新对象(不改入参);粘贴/模板落点两处克隆共用,重复执行幂等。
  */
-export function stripContainerGatewayBinding(node: ModelNode): ModelNode {
+function stripContainerGatewayBinding(node: ModelNode): ModelNode {
   return { ...node, params: { ...node.params, bound_device_id: "", is_gateway: "0" } };
 }
 
@@ -665,10 +665,13 @@ export function withNodeUpdates(nodes: ModelNode[], updates: ModelNode[]): Model
 }
 
 /**
- * 本次「成员离开」会解绑 + 关关口的容器(原容器是关口容器且其绑定设备正是离开者)。
+ * 本次「成员离开」会解绑的容器(其绑定设备正是离开者,且该设备仍是本容器成员)。
  * 移出(去无容器)、改归属(去别的容器)、删除绑定设备三条路径共用,防「改归属后原容器留下悬空 bound_device_id」。
  * 判定必须用**原** nodes:成员改归属时 containerId 已被改写,拿新数组判会漏。
  * toContainerId === 原容器 id 表示没离开;绑定的是别的设备、或该设备本就不是本容器成员 → 不误伤。
+ * **不判 `is_gateway`**:绑定字段残留(关过口又关了、或老数据留下的值)同样要清 ——
+ * 留着它 E 导出会把 bound_device_idx 写成指向容器外设备的跨段引用(见 model-eexport 的 ACContainer 段)。
+ * 「开着口」只用来决定弹不弹提示(见 containerGatewayUnbindNotice)。
  */
 function gatewayContainersUnboundByLeaving(
   nodes: ModelNode[],
@@ -680,8 +683,9 @@ function gatewayContainersUnboundByLeaving(
   const out: ModelNode[] = [];
   for (const c of nodes) {
     if (!isAcContainerNode(c)) continue;
-    if (gatewayBoundMemberId(c, byId) === undefined) continue;
-    if (!leaving.has(String(c.params.bound_device_id)) || toContainerId === c.id) continue;
+    const bound = String(c.params?.bound_device_id ?? "");
+    if (!leaving.has(bound) || toContainerId === c.id) continue;
+    if (byId.get(bound)?.containerId !== c.id) continue;
     out.push(c);
   }
   return out;
@@ -700,16 +704,19 @@ function clearGatewayBindingForLeavingMembers(
 }
 
 /**
- * 「自动解绑 + 关关口」的提示文案(移出容器 / 面板改归属 / 删除绑定设备三条路径共用):
- * 本次离开或消失的成员里若有某**开着**关口的绑定设备,即返回提示;无解绑返回 null。
- * 判定与解绑同源(同走 gatewayContainersUnboundByLeaving),名称取**解绑前**图里的设备名。
+ * 「自动解绑 + 关关口」的提示文案(移出容器 / 面板改归属 / 删除绑定设备 / Alt 拖出四条路径共用):
+ * 本次离开或消失的成员里若有某**开着**关口的绑定设备,即返回提示;否则 null。
+ * 判定与解绑同源(同走 gatewayContainersUnboundByLeaving),**再叠一道 `is_gateway === "1"`** ——
+ * 清绑定是数据卫生(见上),但只有真开过口的容器才该弹「关口已关闭」(绑定字段残留的容器弹这句是谎报)。
+ * 名称取**解绑前**图里的设备名。
  */
 export function containerGatewayUnbindNotice(
   nodes: ModelNode[],
   leavingIds: Iterable<string>,
   toContainerId?: string
 ): string | null {
-  const unbound = gatewayContainersUnboundByLeaving(nodes, leavingIds, toContainerId);
+  const unbound = gatewayContainersUnboundByLeaving(nodes, leavingIds, toContainerId)
+    .filter((c) => c.params?.is_gateway === "1");
   if (unbound.length === 0) return null;
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const names = unbound.map((c) => byId.get(String(c.params.bound_device_id ?? ""))?.name ?? "");
@@ -786,7 +793,7 @@ export function applyRemoveFromAcContainer(nodes: ModelNode[], memberIds: string
  * 全量 enforce 会把它们顺手推出框外,而口径是「成员散出后保留原位」。
  * 与变换/resize 路径相对(见 refitContainersAfterTransform:那里挤出正是要的效果)。
  */
-export function refitContainersOnly(nodes: ModelNode[]): ModelNode[] {
+function refitContainersOnly(nodes: ModelNode[]): ModelNode[] {
   return enforceContainerMembership(nodes).containerUpdates;
 }
 
