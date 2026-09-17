@@ -270,7 +270,7 @@
 - ~~容器段**不写入**预定义模板(`server/eFileTemplates.mjs` 及模板数据不改)~~ → 仍不写模板,但输出不再依赖模板定义
 - ~~模板模式下 `hasTemplateConfigValue && !definition` 的过滤照常生效 → 容器记录不输出~~ → **改为恒输出**;模板未定义容器段(或该类被类门控 `exportEnabled=false` 关掉)时:
   - **表名**走兜底名 —— 实时库族(dms_rtdb/taiqu_rtdb)用 `dms_def_container`,其余模板 `container`;非模板态仍 `ACContainer`。分叉收在 `eOutputSectionName` 单源,输出表名与引用名(设备表 `container_id`、成员表 `container_idx`)必然同名
-  - **列**走 `E_SECTION_COLUMNS["ACContainer"]` 兜底(id/name/dev_type/is_gateway/bound_device_idx 五列),不按设备库定义重建字段(否则带出 parent/rdf_id/p/q/u/i 等无关列)
+  - **列**走 `E_SECTION_COLUMNS["ACContainer"]` 兜底(idx/name/dev_type/is_gateway/bound_device_idx 五列),不按设备库定义重建字段(否则带出 parent/rdf_id/p/q/u/i 等无关列)
   - 模板**确实定义且启用**了容器段时,表名/字段照模板(既有无模板态之外的路径保留)
 - ~~该过滤为**静默**:容器不逐节点告警~~ → 容器有记录即不告警(与成员表同口径);仅当模板定义容器段且字段列表为空(记录被列空守卫剔除)时才报「被导出逻辑过滤」
 - ~~**连带跳过关口拓扑变换**:模板态下容器段静默时 `transformGraphForGateways` 一并跳过~~ → **变换在所有态生效**:容器记录已在文件里,「无容器记录解释的拓扑断口」不复存在;关口退化告警同规不再豁免

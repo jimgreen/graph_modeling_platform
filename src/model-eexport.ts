@@ -1845,7 +1845,7 @@ function finalizeContainerCrossRefs(
     }
   }
   for (const record of records) {
-    // `_container_node_id` 是构建阶段注入的内部字段(下划线前缀不成列);容器段未输出时查不到最终值 → 保留构建期兜底值
+    // `_container_node_id` 是构建阶段注入的内部字段(下划线前缀不成列);容器记录被列空守卫剔除时查不到最终值 → 保留构建期兜底值
     const containerFinal = containerFinalById.get(String(record.params._container_node_id ?? ""));
     if (record.section === AC_CONTAINER_DEV_SECTION) {
       if (containerFinal) {
@@ -1855,7 +1855,8 @@ function finalizeContainerCrossRefs(
           ? `${containerFinal.table}_${containerFinal.idx}`
           : containerFinal.idx;
       } else if (isTemplateMode) {
-        // 容器段不输出、或其容器记录被列空守卫剔除(查不到最终落位):容器表在文件里无行,裸 idx 无处可指,
+        // 容器记录被列空守卫剔除(轮 17 后容器表恒输出,「容器段不输出」已不存在;只剩「模板定义容器段但字段列表为空」
+        // 这一条,查不到最终落位):容器表在文件里无行,裸 idx 无处可指,
         // 改用**与设备表 container_id 同源**的引用表名(containerReferenceTable,调用方按同一判据算好传入);
         // 只读构建期存下的裸 idx(`_container_local_idx`),不读 container_idx 现值 —— 定稿二次进入不叠前缀
         const localIdx = String(record.params._container_local_idx ?? "").trim();
