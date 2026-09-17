@@ -227,6 +227,7 @@ import {
   edgeWithSavedRouteGeometry,
   buildEDeviceRecords,
   finalizeEDevicePreviewRecords,
+  eSectionTemplateForkName,
   formatEDeviceRecordColumnValue,
   type Edge,
   type DeviceKind,
@@ -5140,6 +5141,11 @@ describe("交流容器 E 导出", () => {
     expect(plainPayload.ACContainerDev?.rows[0]?.device_id).toBe(`ACGenerator_${member.params.idx}`);
     // 非模板态容器引用仍是容器裸 idx(容器段内唯一),同款不随段名走
     expect(plainPayload.ACContainerDev?.rows[0]?.container_idx).toBe(box.params.idx);
+    // 预览侧(查看/编辑E文件)与导出侧同一分叉判据(单源):模板态 container_dev;非模板态 ""(走既有映射口径);
+    // 其它段恒 ""(分叉只属成员关系段)—— 两处各写一份必漂移
+    expect(eSectionTemplateForkName("ACContainerDev", {})).toBe("");
+    expect(eSectionTemplateForkName("ACContainerDev", options)).toBe("container_dev");
+    expect(eSectionTemplateForkName("ACLoad", options)).toBe("");
   });
 
   test("规格 B:device_id 取合并段重排后的最终行号(与 bound_device_idx 同源定稿)", () => {
