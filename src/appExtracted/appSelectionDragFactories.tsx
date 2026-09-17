@@ -1719,7 +1719,8 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
     // 与既有确认体系分裂);确认框横跨交互窗口,提交体 doDelete 内部一律现取最新图
     const warning = containerDeletionWarning(nodes, expandGlobalBoundaryDeletionNodeIds(nodes, clickedNodeIds));
     if (warning) {
-      if (!await showGlobalConfirm(warning)) {
+      // showGlobalConfirm 只有正文、没有标题 —— 前缀补回「删除容器」语义锚点(原 Modal.confirm 的 title)
+      if (!await showGlobalConfirm(`删除容器：${warning}`)) {
         return;
       }
     }
