@@ -124,7 +124,7 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const resizeRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
   // 表名 tab 统一宽度：全部对齐到**名称最长**的那个 tab（实测渲染宽度取最大值）。
-  // 纯 CSS 做不到：flex 自适应只按各自内容，等分（fr/1fr 网格）得到的是均值而非最大值
+  // 纯 CSS 不覆盖本布局：tab 条要 wrap/多行滚动，没有「所有项等宽 = 最宽项」的纯 CSS 表达
   const tabsRef = useRef<HTMLDivElement | null>(null);
   const [tabMinWidth, setTabMinWidth] = useState(0);
 
@@ -151,20 +151,26 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
     setEditMode(false);
   }, [records]);
 
+  // tab 标签集合指纹：编辑模式每次按键都会换 editedRecords 身份（单元格编辑），
+  // 但标签集合没变 —— 重测的依赖收窄到指纹,免得逐键强制同步布局
+  const tabLabelsKey = useMemo(() => sections.map((section) => section.label).join("|"), [sections]);
+
   // 量出最宽 tab：先清掉本轮 minWidth 再量（否则量到的是被撑大的旧值，标签变短后宽度永远回不去），
-  // 量完原样还原（接下来由 state 统一施加）。useLayoutEffect：绘制前完成，不闪跳
+  // 量完原样还原（接下来由 state 统一施加）。useLayoutEffect：绘制前完成，不闪跳。
+  // 清零必须用 `""`(auto) 而非 `0px`——长度→长度是可插值变更,会被 .e-file-editor-tabs button 的
+  // `transition: all 0.15s` 吃掉:t=0 的动画值仍是旧长度,同步量到的还是被撑大的值(auto 不可插值,即时生效)
   useLayoutEffect(() => {
     if (!open) return;
     const container = tabsRef.current;
     if (!container) return;
-    const buttons = Array.from(container.querySelectorAll<HTMLElement>("button"));
+    const buttons = Array.from(container.querySelectorAll<HTMLElement>(":scope > button"));
     if (buttons.length === 0) return;
     const previousWidths = buttons.map((button) => button.style.minWidth);
-    buttons.forEach((button) => { button.style.minWidth = "0px"; });
+    buttons.forEach((button) => { button.style.minWidth = ""; });
     const widest = Math.max(...buttons.map((button) => button.getBoundingClientRect().width));
     buttons.forEach((button, index) => { button.style.minWidth = previousWidths[index]; });
     setTabMinWidth(widest);
-  }, [open, editedRecords]);
+  }, [open, tabLabelsKey]);
 
   const getColWidth = useCallback((sectionName: string, col: string): number | undefined => {
     const key = `${sectionName}:${col}`;
