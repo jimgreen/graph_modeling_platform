@@ -53,6 +53,7 @@
 - schemePath 单次 `encodeURIComponent`，示例值存原始 JSON 字符串，`buildUrl` 统一编码。
 - **`data/schemes/files/**` 只落 `.json`**：保存模型不再产 `.e` / `.svg`（旧简化渲染器 `buildSvgFile` / `buildDeviceParameterFile` 已删除，`writeSchemeFiles` 的 `expectedFiles` 只登记 jsonPath）。E / SVG / CIM 一律按需实时生成——单模型端点、方案 ZIP（`schemeArchive.mjs`）、前端导出按钮共用同一装配；旧 `.e` / `.svg` 不复用、不读取。存量派生文件用 `pnpm purge:derived`（默认 dry-run，`--apply` 才移动）归档进 `data/schemes/trash/<timestamp>/`。
 - 三导出适配层经 Node 原生 TS 直载 `src` 下 TS 模块（如 `src/export/`、`src/cim/`、`src/model-eexport.ts`，零构建产物）：相对 import 必须带 `.ts` 扩展名，不得 import `.tsx`；被直载模块不得是 `.tsx`、不得含 JSX/React 组件（闭包内可间接 import npm 包 `react`，如 `src/svgUtils.ts`，Node 能正常加载）。守卫见 `nativeLoad.test.mjs`。
+- **改了 `src/**/*.ts` 必须重启后端进程**（`pnpm dev` 重起或 `pnpm server`）：适配层对 `src` 走顶层 `await import`，Node ESM 每进程只求值一次、**无 HMR** —— 不重启时后端仍跑旧代码（前端 Vite 是新代码），会出现「界面新、导出旧」的分裂。真实案例:2026-09-17「E 文件成员关系段恒输出」提交后,未重启的后端仍把该段整段剔除,被误判为功能缺陷(见 `docs/superpowers/plans/2026-09-15-ac-container-followups.md` 所在特性的 fb17 调查)。
 
 ### Testing Requirements
 
