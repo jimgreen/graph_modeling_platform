@@ -1818,7 +1818,11 @@ function finalizeContainerCrossRefs(
     const containerFinal = containerFinalById.get(String(record.params._container_node_id ?? ""));
     if (record.section === "ACContainerDev") {
       if (containerFinal) {
-        record.params.container_idx = containerFinal.idx;
+        // 与设备表 container_id **同形态**(裁决 2026-09-17 统一):模板态写 `表名_idx`(表名 = 容器段实际输出名),
+        // 非模板态写裸 idx(容器段内唯一)。同一份文件里两处引用同一个容器,形态不得分叉
+        record.params.container_idx = isTemplateMode
+          ? `${containerFinal.table}_${containerFinal.idx}`
+          : containerFinal.idx;
       } else if (isTemplateMode) {
         // 容器段被模板关掉(记录不产出 → 查不到最终值):容器表不存在,裸 idx 无处可指,
         // 改用兜底表名口径(与设备表 container_id 同源:container_{idx} / dms_def_container_{idx})

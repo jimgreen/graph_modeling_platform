@@ -251,7 +251,7 @@
 | 列 | 值 |
 |----|----|
 | device_id | 成员设备最终落位 `{表名}_{idx}`(与 `bound_device_idx` 同源:合并段重排后定稿、按**最后一个**下划线切分) |
-| container_idx | 所属容器:容器段输出时 = 容器行最终 idx(裸值,与 `ACContainer.idx` 同空间);容器段被模板关掉时 = 兜底表名口径 `container_{idx}` / `dms_def_container_{idx}`(与设备表 `container_id` 同源,裸 idx 指向不存在的表) |
+| container_idx | 所属容器,**与设备表 `container_id` 同形态**(2026-09-17 裁决统一):非模板态 = 容器行最终裸 idx;模板态 = `表名_idx`(表名 = 容器段实际输出名;容器段被模板关掉时用兜底表名 `container_{idx}` / `dms_def_container_{idx}`) |
 | container_type | 容器表 `dev_type` 值(容器元件英文名) |
 
 - 每行 = 一个「容器成员」关系(遍历全部容器的全部成员,成员判定走 `containerMemberNodes` 单源);空容器无行、非成员不入表、静态图元成员**行保留**而 `device_id` 为空(文件口径写 0)
