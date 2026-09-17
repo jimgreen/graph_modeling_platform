@@ -29,7 +29,7 @@
    (`mergeContainerLayoutUnits`);自动对齐/散开 = 两阶段(先容器内 `arrangeContainerInteriors`,再容器整体参与)。
    见 `docs/superpowers/specs/2026-09-15-ac-container-design.md` 的「布局里的容器语义」。
    **遗留**:线路成员「整组」口径分叉(拖动 `containerDragGroup` 含线路/布局不含;布局后容器被 fit 拉长到原线路处)——触发需显式 Alt 拖线入容器或面板改归属,罕见。
-3. **E 文件容器表成员列 — 与下游确认** — 现表 5 列(2026-09-16 用户裁决「保持现状」:下游靠绑定关系);若将来下游要按容器聚合成员,再补成员列。
+3. ~~**E 文件容器表成员列 — 与下游确认**~~ — **已落地(2026-09-17)**:成员关系统一由独立段 **`ACContainerDev`**(设备引用/容器 idx/容器类型三列;原 `container_dev`,同轮更名)承载,容器表保持 5 列不加成员列;该段为**功能表,不受模板过滤恒输出**(容器段被关掉时 `container_idx` 走兜底表名口径)。
 4. **多选批量行排除键** — 单节点模型面板已剔除 `is_gateway`/`bound_device_idx` 两键(`fd5384dc`;原 `type` 键随 2026-09-16 `type→dev_type` 变更消失,`dev_type` 行保留显示元件英文名);多选批量编辑行(appCanvasInteractionFactories.tsx 约 :2631 白名单)未排除,多选容器时仍可出现。
 5. **`audit:names` 扩「解构遮蔽模块 import」扫描** — 本轮该类缺陷(Task 8 Critical)靠新工厂测试兜住;静态作用域分析作为独立工具任务。
 6. **e2e 容器用例** — 现有 e2e 无容器场景;长期防护可立。

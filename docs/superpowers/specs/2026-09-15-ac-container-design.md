@@ -30,7 +30,7 @@
 | 3 | 非关口容器的 E 形态 | 新增统一 E 段「容器表」(key `ACContainer`),不进拓扑节点表 |
 | 4 | 关口拓扑插入方式 | 替换上游:绑定设备电源侧上游改为容器节点 |
 | 5 | 架构方案 | 方案 A:容器 = 特殊图元节点(否决:扩展 ModelGroup、复用 is_container 机制) |
-| 6 | 容器段与预定义模板 | 暂不关联:四个预定义模板不加容器表定义;模板模式下容器不导出,静默过滤不告警 |
+| 6 | 容器段与预定义模板 | 暂不关联:四个预定义模板不加容器表定义;模板模式下容器不导出,静默过滤不告警(**例外**:容器成员关系表 `ACContainerDev` 是功能表,不受模板过滤恒输出 —— 2026-09-17 裁决) |
 | 7 | 拖容器节点本身 | 容器 + 全部成员整体平移,相对位置不变 |
 | 8 | 「当前模板」语义 | 即「无容器」默认态 |
 
@@ -244,6 +244,21 @@
 > - **M3 幽灵引用:** 有值 ≠ 文件里必有该表 —— 绑定设备段被模板过滤时不产出该段,引用仍写成 `段名_idx`(未做产出存在性判定)。
 > - **多 idx 空间:** `node` 表等由两套空间喂(拓扑行 idx = 端子 `nodeNumber`,合并母线行 idx = 设备 idx),同号可多行;引用命中其一,须按 `name`/`realbs` 复核。
 
+### 容器成员关系表(规格 B,2026-09-17 验收轮 13/14)
+
+- 段 key `ACContainerDev`(与容器表 `ACContainer` 同族 CamelCase;**2026-09-17 由 `container_dev` 更名**),三列、无「类型」列:
+
+| 列 | 值 |
+|----|----|
+| device_id | 成员设备最终落位 `{表名}_{idx}`(与 `bound_device_idx` 同源:合并段重排后定稿、按**最后一个**下划线切分) |
+| container_idx | 所属容器:容器段输出时 = 容器行最终 idx(裸值,与 `ACContainer.idx` 同空间);容器段被模板关掉时 = 兜底表名口径 `container_{idx}` / `dms_def_container_{idx}`(与设备表 `container_id` 同源,裸 idx 指向不存在的表) |
+| container_type | 容器表 `dev_type` 值(容器元件英文名) |
+
+- 每行 = 一个「容器成员」关系(遍历全部容器的全部成员,成员判定走 `containerMemberNodes` 单源);空容器无行、非成员不入表、静态图元成员**行保留**而 `device_id` 为空(文件口径写 0)
+- **功能表恒输出(裁决 2026-09-17)**:不受模板过滤 —— 该段不是设备类,模板(元件定义)本就不会定义它;成员关系是画布事实,不随模板开关消失。列定义在模板未定义该段时取 `E_SECTION_COLUMNS` 兜底
+- 实机反馈修正来源:模板态(含「未选模板文件但磁盘库留有 `eDeviceDefinitionLabels`」——代码口径即模板态)下原按「模板未定义即剔除」**整表消失**;设备表反向列(`container_id`)同源修正
+- 输出序:`E_SECTION_OUTPUT_ORDER` 紧随 `ACContainer` 之后
+
 ### 非关口
 
 仅容器段一条记录;不进拓扑节点表。容器无边,`calculateElectricalTopology`(`model-routing.ts:4702`)天然不受扰。
@@ -254,6 +269,7 @@
 - 模板模式下 `hasTemplateConfigValue && !definition` 的过滤(`model-eexport.ts:2010-2017`)照常生效 → 容器记录不输出
 - 该过滤为**静默**:导出前预判模板态,容器不参与容器段生成,也不逐节点告警(`:2068-2073` 噪音规避)
 - **连带跳过关口拓扑变换**(`model-eexport.ts:2136-2138`,2026-09-17 补记):模板态下容器段静默时,`transformGraphForGateways` 一并跳过——否则会留下「无容器记录解释的拓扑断口」
+- **例外(2026-09-17 裁决):** 容器成员关系表 `ACContainerDev` 不受本门控约束 —— 功能表恒输出(成员关系是画布事实);容器段被关掉时其 `container_idx` 走兜底表名口径,见「容器成员关系表」小节
 - 后续若需模板态导出容器,补模板定义即可(连带项同步放开)
 
 ### 关口拓扑变换(决策 4)
@@ -312,7 +328,7 @@
 | `src/svgModelImport.ts` | 导入后调不变量出口 |
 | `src/measurements.ts` | 容器量测组复制/单向同步/删除 |
 | `src/export/svg.ts` | 分层输出序中容器层最先输出 |
-| `src/model-eexport.ts` | 容器段(ACContainer)、inferESection 映射、transformGraphForGateways、模板态静默过滤 |
+| `src/model-eexport.ts` | 容器段(ACContainer)、成员关系段(ACContainerDev,功能表恒输出)、inferESection 映射、transformGraphForGateways、模板态静默过滤、设备表 container_id 列 |
 | `src/model-eexport.test.ts`、`src/acContainer.test.ts`(新) | 测试 |
 
 不改:`server/eFileExport.mjs`(量测在前端层)、`server/eFileTemplates.mjs`(决策 6)、`src/cim/*`(无端子无电压)。
