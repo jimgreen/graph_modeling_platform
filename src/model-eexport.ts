@@ -1790,9 +1790,13 @@ function eOutputSectionName(
  */
 function finalizeContainerCrossRefs(
   records: readonly EDeviceExport[],
-  sectionGroups: readonly { outputSection: string; allRecords: EDeviceExport[] }[]
+  sectionGroups: readonly { outputSection: string; section: string; allRecords: EDeviceExport[] }[],
+  isTemplateMode: boolean
 ): void {
   const finalRefByNodeId = new Map<string, string>();
+  // 容器节点的最终落位(表名 + 偏移后 idx):设备表 container_id 与 container_dev.container_idx 按它重写 ——
+  // 全网拓扑导出按 modelIndex 偏移 idx 后,构建期算出的局部值会指向不存在(或别模型)的行
+  const containerFinalById = new Map<string, { table: string; idx: string }>();
   for (const group of sectionGroups) {
     for (const record of group.allRecords) {
       // 同一节点可能有多条记录(绕组/端点等带 ":后缀"),主记录先到先得
@@ -1801,14 +1805,28 @@ function finalizeContainerCrossRefs(
       }
       const idx = String(record.params.idx ?? "").trim();
       finalRefByNodeId.set(record.id, idx ? `${group.outputSection}_${idx}` : "");
+      // 容器段只有一个内部段、不参与合并重排,按组判定即可
+      if (group.section === "ACContainer" && idx) {
+        containerFinalById.set(record.id, { table: group.outputSection, idx });
+      }
     }
   }
   for (const record of records) {
+    // `_container_node_id` 是构建阶段注入的内部字段(下划线前缀不成列);容器段未输出时查不到最终值 → 保留构建期兜底值
+    const containerFinal = containerFinalById.get(String(record.params._container_node_id ?? ""));
     if (record.section === "container_dev") {
+      if (containerFinal) {
+        record.params.container_idx = containerFinal.idx;
+      }
       // 成员无 E 段(静态图元)或被模板过滤 → 取不到引用,整列为空;行保留(成员关系仍在)
       const memberId = String(record.params._member_node_id ?? "");
       record.params.device_id = memberId ? (finalRefByNodeId.get(memberId) ?? "") : "";
       continue;
+    }
+    if (containerFinal && (record.columns ?? []).includes("container_id")) {
+      record.params.container_id = isTemplateMode
+        ? `${containerFinal.table}_${containerFinal.idx}`
+        : containerFinal.idx;
     }
     // `_bound_device_id` 是构建阶段注入的内部字段(下划线前缀不成列),只容器记录带
     const boundDeviceId = String(record.params._bound_device_id ?? "");
@@ -1915,7 +1933,24 @@ function containerSectionSuppressed(
   isTemplateMode: boolean,
   interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>
 ): boolean {
-  return isTemplateMode && !interfaceDefinitionBySection.has("ACContainer");
+  return !containerSectionOutputs(isTemplateMode, interfaceDefinitionBySection);
+}
+
+/**
+ * 容器段是否**真的会输出**(单源判据):非模板态恒真;模板态要求定义存在**且**未被类门控关掉
+ * (`exportEnabled !== false`)——设备库对每类无条件建定义,模板未命中该类时只置 `exportEnabled=false`、定义不删,
+ * 故「定义存在」单独不足为凭(判据恒真会让兜底名成死代码、引用指向文件里不存在的表)。
+ * 三处同源:容器记录产出短路(containerSectionSuppressed)、设备表引用表名选择、成员关系表产出。
+ */
+function containerSectionOutputs(
+  isTemplateMode: boolean,
+  interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>
+): boolean {
+  if (!isTemplateMode) {
+    return true;
+  }
+  const definition = interfaceDefinitionBySection.get("ACContainer");
+  return Boolean(definition && definition.exportEnabled !== false);
 }
 
 /**
@@ -1958,6 +1993,8 @@ function buildContainerDevRecords(
         params: { device_id: "", container_idx: containerIdx, container_type: containerType }
       }, interfaceDefinition);
       record.params._member_node_id = member.id;
+      // 容器节点 id:定稿阶段按容器段最终行号重写 container_idx(全网拓扑导出偏移后局部值会悬空)
+      record.params._container_node_id = container.id;
       records.push(record);
     }
   }
@@ -1972,6 +2009,7 @@ function buildContainerDevRecords(
  * (实时库模板 `dms_def_container`,其余 `container`,见 containerFallbackTable)。
  * 列控制:非模板态所有设备记录无条件带该列(无归属写空);模板态只认模板字段(模板定义了才有该列),
  * 不越过模板列控制。附属行(绕组/端点/派生表/关联设备)按 record.id 前缀继承所属设备归属,同一设备各表口径一致。
+ * 模板态表名随模板走:模板改名/去列后值按新模板重算,不做持久化同步 —— 与 bound_device_idx 同款策略。
  */
 function attachContainerIdToDeviceRecords(
   records: EDeviceExport[],
@@ -1990,9 +2028,9 @@ function attachContainerIdToDeviceRecords(
     // 无容器模型:列结构完全不变,存量导出产物零差异
     return;
   }
-  // 模板没有容器段定义时 eOutputSectionName 会退回内部段名(ACContainer),那是「段不存在」而非「表名叫 ACContainer」,
-  // 故先判存在性,再取表名;不存在 → 走 CONTAINER_FALLBACK_TABLE 兜底
-  const containerTable = isTemplateMode && interfaceDefinitionBySection.has("ACContainer")
+  // 容器段不会输出时 eOutputSectionName 会退回内部段名(ACContainer),那是「段不存在」而非「表名叫 ACContainer」,
+  // 故先判是否真会输出,再取表名;不输出 → 走兜底表名(containerFallbackTable)
+  const containerTable = containerSectionOutputs(isTemplateMode, interfaceDefinitionBySection)
     ? eOutputSectionName("ACContainer", interfaceDefinitionBySection, options)
     : "";
   for (const record of records) {
@@ -2004,15 +2042,19 @@ function attachContainerIdToDeviceRecords(
     const node = nodeById.get(record.id) ?? (splitAt > 0 ? nodeById.get(record.id.slice(0, splitAt)) : undefined);
     // 悬空归属(容器已删)不命中:等值比较天然挡掉,不产出半个引用
     const container = node?.containerId ? containerById.get(node.containerId) : undefined;
-    const containerIdx = String(container?.params.idx ?? "").trim();
     const columns = record.columns ?? E_SECTION_COLUMNS[record.section] ?? [];
     if (!isTemplateMode && !columns.includes("container_id")) {
       record.columns = [...columns, "container_id"];
     }
-    if (containerIdx && (record.columns ?? []).includes("container_id")) {
-      record.params.container_id = isTemplateMode
-        ? `${containerTable || containerFallbackTable(options)}_${containerIdx}`
-        : containerIdx;
+    if (container && (record.columns ?? []).includes("container_id")) {
+      // 容器节点 id 供定稿阶段按容器段**最终**行号重写引用(全网拓扑导出按 modelIndex 偏移 idx 后局部值会悬空)
+      record.params._container_node_id = container.id;
+      const containerIdx = String(container.params.idx ?? "").trim();
+      if (containerIdx) {
+        record.params.container_id = isTemplateMode
+          ? `${containerTable || containerFallbackTable(options)}_${containerIdx}`
+          : containerIdx;
+      }
     }
   }
 }
@@ -3350,7 +3392,7 @@ function buildEDeviceParameterFileFromRecords(
     }
     return { outputSection, section: groups[0].section, allRecords };
   });
-  finalizeContainerCrossRefs(records, sectionGroups);
+  finalizeContainerCrossRefs(records, sectionGroups, hasTemplateConfig(options));
   const sectionBlocks = sectionGroups.map(({ outputSection, section, allRecords }) =>
     formatESection(section, allRecords, outputSection, interfaceDefinitionBySection.get(section)?.tableId));
   // 头表（模板模式：basevalue/basevoltage/subcontrolarea/substation；非模板模式：Model/basevoltage），

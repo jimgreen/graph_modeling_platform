@@ -265,7 +265,7 @@ import { readFileSync } from "node:fs";
 import { applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appExtracted/appDeviceDefinitionFactories";
 
 /** 加载真实预定义模板(public/e-templates/*.e)为导出选项:与库状态应用、后端模板导出同一管线 */
-function eExportOptionsForTemplateFile(file: string) {
+function eExportOptionsForTemplateFile(file: string, classExportEnabled?: Record<string, boolean>) {
   const sections = parseEDeviceDefinitionFile(readFileSync(new URL(`../public/e-templates/${file}`, import.meta.url), "utf8"));
   const libraryState = applyEDeviceDefinitionSectionsToLibraryState({
     sections,
@@ -276,7 +276,8 @@ function eExportOptionsForTemplateFile(file: string) {
     eDeviceDefinitionLabels: libraryState.eDeviceDefinitionLabels,
     eDeviceDefinitionFieldOrder: libraryState.eDeviceDefinitionFieldOrder,
     eDeviceDefinitionTemplateFields: libraryState.eDeviceDefinitionTemplateFields,
-    eDeviceDefinitionTableIds: libraryState.eDeviceDefinitionTableIds
+    eDeviceDefinitionTableIds: libraryState.eDeviceDefinitionTableIds,
+    eDeviceDefinitionClassExportEnabled: classExportEnabled
   });
 }
 
@@ -5121,6 +5122,66 @@ describe("交流容器 E 导出", () => {
     expect(payload.container_dev?.rows).toHaveLength(2);
     expect(payload.container_dev?.rows.filter((row) => row.device_id === "0")).toHaveLength(1);
     expect(payload.container_dev?.rows.some((row) => row.device_id === `ACGenerator_${member.params.idx}`)).toBe(true);
+  });
+
+  test("规格 A/B:全网拓扑导出中容器引用跟容器段最终 idx(modelIndex 偏移后不悬空)", () => {
+    // 模型 2(project.idx=2 → 偏移 20000):容器 + 成员
+    const [container, member] = createIndexedExportNodes(["ac-vpp-box", "ac-source"]);
+    container.name = "箱甲";
+    member.name = "电源甲";
+    member.containerId = container.id;
+    const [otherLoad] = createIndexedExportNodes(["ac-load"]);
+
+    const file = buildMultiModelEFileExport([
+      {
+        id: "m1", schemePath: ["主方案"],
+        project: { version: 1, name: "模型一", idx: 1, modelType: "厂站", nodes: [otherLoad], edges: [] }
+      },
+      {
+        id: "m2", schemePath: ["主方案"],
+        project: { version: 1, name: "模型二", idx: 2, modelType: "厂站", nodes: [container, member], edges: [] }
+      }
+    ]);
+    const payload = parseESections(file.text);
+    // 容器段行 idx 已按 modelIndex 偏移:局部 idx 值不再出现在文件里
+    const containerRow = payload.ACContainer.rows.find((row) => row.name === "箱甲");
+    expect(containerRow?.idx).toBe(String(20000 + Number(container.params.idx)));
+
+    // 设备表 container_id 必须指向偏移后的容器行(写局部值即悬空 —— offset = modelIndex*10000)
+    const deviceRow = payload.ACGenerator.rows.find((row) => row.name === "电源甲");
+    expect(deviceRow?.container_id).toBe(containerRow?.idx);
+
+    // container_dev:container_idx 同源偏移,device_id 命中设备最终行
+    expect(payload.container_dev?.rows).toHaveLength(1);
+    expect(payload.container_dev?.rows[0]?.container_idx).toBe(containerRow?.idx);
+    const ref = payload.container_dev?.rows[0]?.device_id ?? "";
+    const cut = ref.lastIndexOf("_");
+    expect((payload[ref.slice(0, cut)]?.rows ?? []).find((row) => row.idx === ref.slice(cut + 1))?.name).toBe("电源甲");
+  });
+
+  test("规格 A/B:模板态容器段被类门控关掉时走兜底名且 container_dev 不产出", () => {
+    const [container, member] = createIndexedExportNodes(["ac-vpp-box", "ac-load"]);
+    member.containerId = container.id;
+    const project: ProjectFile = { version: 1, name: "类门控容器模型", nodes: [container, member], edges: [] };
+    // 真实库 options:不剥离定义,改用 eDeviceDefinitionClassExportEnabled 关掉容器类 —— 与 UI 里模板未命中该类的真实链路同形
+    const base = eExportOptionsForTemplateFile("dms_rtdb.e", { ACContainer: false });
+    // 设备库对每类无条件建定义,未命中只置 exportEnabled=false(定义不删):「定义存在」单独不足以判定会输出
+    expect(base.interfaceDefinitions?.find((definition) => definition.componentLibrary === "ACContainer")?.exportEnabled).toBe(false);
+    const options = {
+      ...base,
+      interfaceDefinitions: (base.interfaceDefinitions ?? []).map((definition) =>
+        definition.componentLibrary === "ACLoad"
+          ? { ...definition, fields: [...(definition.fields ?? []), { sourceName: "container_id", exportEnabled: true, exportName: "container_id" }] }
+          : definition
+      )
+    };
+
+    const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
+    // 容器段不输出 → 不得写指向不存在表的 ACContainer_{idx},改用 dms 族兜底名
+    expect(payload.ACContainer).toBeUndefined();
+    expect(payload.dms_def_load?.rows[0]?.container_id).toBe(`dms_def_container_${container.params.idx}`);
+    // 容器表不存在时成员关系表同链不产出(引用无处可指)
+    expect(payload.container_dev).toBeUndefined();
   });
 });
 
