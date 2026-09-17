@@ -891,7 +891,11 @@ function normalizeEFileInterfaceDefinition(
   };
 }
 
-function eFileInterfaceDefinitionIndex(options: EFileExportOptions = {}) {
+/**
+ * 接口定义索引(段 → 定义):导出与「查看/编辑E文件」预览共用同一个索引构造 ——
+ * 预览侧经 `eOutputSectionName(section, 本索引, options)` 算段标签(与文件同名),不得在前端另造一份。
+ */
+export function eFileInterfaceDefinitionIndex(options: EFileExportOptions = {}) {
   const index = new Map(
     (options.interfaceDefinitions ?? [])
       .map((definition) => [
@@ -1785,19 +1789,9 @@ function mergeRealbsSectionForTemplate(
  * 段在 E 文件里的实际表名(段标签)。与格式化阶段的分组同源:
  * 接口定义 exportName > 标签映射(eDeviceDefinitionLabels) > 内部段名。
  * 跨段引用列(bound_device_idx 等)按此取名才能对上实际写出的表;两处漂移即指向不存在的段。
+ * **导出侧与「查看/编辑E文件」预览共用**(预览的段名 tab / sectionLabel 由此算,前端不得另写一份判据)。
  */
-/**
- * 段输出表名的**模板态分叉**(单源,目前只有成员关系段):命中返该段模板态输出名,否则返 `""`。
- * 导出侧 `eOutputSectionName` 与「查看/编辑E文件」预览(`appView`)共用 —— 该段不是设备类、模板不会为它建定义,
- * 两处各写一份「模板态叫什么」必漂移(模板态固定 snake_case,`ACContainerDev` 只属无模板态)。
- */
-export function eSectionTemplateForkName(section: string, options: EFileExportOptions): string {
-  return section === AC_CONTAINER_DEV_SECTION && hasTemplateConfig(options)
-    ? AC_CONTAINER_DEV_TEMPLATE_SECTION
-    : "";
-}
-
-function eOutputSectionName(
+export function eOutputSectionName(
   section: string,
   interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>,
   options: EFileExportOptions
@@ -1805,9 +1799,8 @@ function eOutputSectionName(
   // 成员关系段(功能表)按态分叉:模板态固定 `container_dev`,非模板态走既有口径(`ACContainerDev`)。
   // **先于** exportName/labels 判定:该段不是设备类,模板不会为它建定义,而模板态表名族是 snake_case ——
   // 若让 CamelCase 映射(如 eDeviceDefinitionLabels 里的旧写法)压过分叉,模板态又退回 ACContainerDev
-  const forkedName = eSectionTemplateForkName(section, options);
-  if (forkedName) {
-    return forkedName;
+  if (section === AC_CONTAINER_DEV_SECTION && hasTemplateConfig(options)) {
+    return AC_CONTAINER_DEV_TEMPLATE_SECTION;
   }
   return String(interfaceDefinitionBySection.get(section)?.exportName ?? "").trim()
     || String(options.eDeviceDefinitionLabels?.[section] ?? "").trim()
