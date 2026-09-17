@@ -11114,8 +11114,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   --element-tree-indent: 14px;
   --element-tree-guide: #d8dee8;
   --element-tree-row-hover: #f5f7fa;
-  --element-tree-selected-bg: #eef2f6;
-  --element-tree-selected-accent: #f59e0b;
+  --element-tree-selected-bg: #eff6ff;
   display: grid;
   align-content: start;
   gap: 5px;
@@ -11573,11 +11572,12 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   outline: none;
 }
 
+/* 选中态 = 浅蓝描边块（与 E 文件窗口 tab 胶囊同一语言）：淡蓝底 + 1px 蓝边 + 蓝字；
+   基础态已有 1px transparent 边框占位，选中/未选中尺寸一致不跳动 */
 .element-tree-item.selected {
-  color: #1e293b;
-  border-color: transparent;
+  color: #2563eb;
+  border-color: #2563eb;
   background: var(--element-tree-selected-bg);
-  box-shadow: inset 3px 0 0 var(--element-tree-selected-accent);
   font-weight: 800;
 }
 
@@ -14321,8 +14321,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .e-file-editor-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px;
-  padding: 8px 16px 0;
+  gap: 4px;
+  padding: 8px 16px 10px;
   border-bottom: 1px solid #e5e7eb;
   background: #f9fafb;
   max-height: 100px;
@@ -14332,8 +14332,9 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .e-file-editor-tabs button {
   padding: 8px 16px;
-  border: none;
-  border-bottom: 2px solid transparent;
+  /* 四边 1px 透明边：选中态描边的占位，选中/未选中尺寸一致不跳动；胶囊形 */
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: transparent;
   color: #6b7280;
   font-size: 13px;
@@ -14342,15 +14343,25 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   transition: all 0.15s;
 }
 
-.e-file-editor-tabs button:hover {
-  color: #374151;
-  background: #f3f4f6;
+/* antd v6 Button 的 hover/active 规则带 :not(:disabled):not(.ant-btn-disabled)(特异性 0,4,0),
+   高于本区块的 (0,2,1):划过 tab 时它会整体接管 border/color/background ——
+   实线边框 + 蓝字白底闪现（表名 tab 划过时边框闪烁的根因,浏览器实测复现）。
+   cssinjs 运行时注入且特异性更高,只能 !important 压制（与文件顶部 antd 迁移说明同一原因）。 */
+.e-file-editor-tabs button:hover,
+.e-file-editor-tabs button:active {
+  color: #374151 !important;
+  background: #f3f4f6 !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
 }
 
+/* 选中态 = 浅蓝描边胶囊（淡蓝底 + 蓝字 + 1px 蓝边）。
+   .active 必须排在 :hover/:active 之后：同为 !important、同特异性 (0,2,1) 时按源顺序取胜，
+   保证选中胶囊在划过/按下时描边与蓝字不被上面的压制规则清掉 */
 .e-file-editor-tabs button.active {
-  color: #2563eb;
-  border-bottom-color: #2563eb;
-  background: #fff;
+  color: #2563eb !important;
+  background: #eff6ff !important;
+  border-color: #2563eb !important;
 }
 
 .e-file-editor-table-container {
