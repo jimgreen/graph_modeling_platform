@@ -12,7 +12,7 @@ import {
   isAcContainerNode,
   withNodeUpdates,
 } from "../acContainer";
-import { BUILTIN_VOLTAGE_LEVELS, formatPowerBaseDisplayValue } from "../model";
+import { BUILTIN_VOLTAGE_LEVELS, MODEL_TYPES, formatPowerBaseDisplayValue } from "../model";
 import { firstNonZeroVoltageBase } from "../model-eexport";
 import { getTerminalVoltageLevel } from "../model-routing";
 import { VOLTAGE_BASE_PARAM_KEYS, resolveAcContainerModelPanelParamKeys } from "./appCoreCanvasUtilities";
@@ -703,9 +703,9 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         disabled={isBrowseMode}
                         options={[
                           { value: "", label: "请选择" },
-                          { value: "厂站", label: "厂站" },
-                          { value: "馈线", label: "馈线" },
-                          { value: "台区", label: "台区" }
+                          // 与「新建模型」弹窗同一清单(model.ts MODEL_TYPES 单源):此前此处硬编码三项,
+                          // 少了「微网/其他」—— 弹窗建的微网模型切回本行时下拉里选不到
+                          ...MODEL_TYPES.map((type) => ({ value: type, label: type }))
                         ]}
                         onCommit={(nextType) => {
                 const modelTypeFailureMessage = modelAssociationDevicesModelTypeFailureMessage(nextType, nodes);
