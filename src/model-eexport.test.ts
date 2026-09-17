@@ -5108,6 +5108,8 @@ describe("交流容器 E 导出", () => {
       return (payload[ref.slice(0, cut)]?.rows ?? []).find((candidate) => candidate.idx === ref.slice(cut + 1))?.name;
     });
     expect(referencedNames).toEqual(["双绕组主变1", "三绕组主变1"]);
+    // container_idx 与设备表 container_id 同形态:容器段输出时也写 `表名_idx`(裁决 2026-09-17 统一口径)
+    expect(payload.ACContainerDev?.rows[0]?.container_idx).toBe(`container_${box.params.idx}`);
   });
 
   test("规格 B:成员无 E 段(静态图元)时行保留、引用为空 —— 成员关系不丢", () => {
@@ -5183,10 +5185,11 @@ describe("交流容器 E 导出", () => {
     };
 
     const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
-    // 列定义取 E_SECTION_COLUMNS 兜底(模板没有该段);容器段输出 → container_idx 用容器最终裸 idx
+    // 列定义取 E_SECTION_COLUMNS 兜底(模板没有该段);模板态 container_idx 与设备表 container_id **同形态**
+    // (裁决 2026-09-17:统一写 `表名_idx`,裸 idx 只属非模板态)
     expect(payload.ACContainerDev?.columns).toEqual(["device_id", "container_idx", "container_type"]);
     expect(payload.ACContainerDev?.rows).toHaveLength(1);
-    expect(payload.ACContainerDev?.rows[0]?.container_idx).toBe(box.params.idx);
+    expect(payload.ACContainerDev?.rows[0]?.container_idx).toBe(`container_${box.params.idx}`);
     expect(payload.ACContainerDev?.rows[0]?.container_type).toBe("ac-vpp-box");
     expect(payload.ACContainerDev?.rows[0]?.device_id).toBe(`unit_${member.params.idx}`);
   });
