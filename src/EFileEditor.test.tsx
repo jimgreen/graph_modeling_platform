@@ -69,11 +69,16 @@ describe("EFileEditor 成员关系段列解析", () => {
     const source = readFileSync(new URL("./EFileEditor.tsx", import.meta.url), "utf8");
     expect(source).toContain('className="e-file-editor-tabs" ref={tabsRef}');
     expect(source).toContain("style={tabMinWidth ? { minWidth: tabMinWidth } : undefined}");
-    // 量前先清零(否则标签变短后量到被撑大的旧值,宽度永远回不去),量完还原,再取 Math.max
-    expect(source).toContain('button.style.minWidth = "0px"');
-    expect(source).toContain("Math.max(...buttons.map((button) => button.getBoundingClientRect().width))");
-    // 单位是 px:minWidth 是数值(React 会加 px);传字符串会漏单位
+    // 量前先清零再取 Math.max,量完还原。清零必须是 `""`(auto,即时生效) ——
+    // 用 `0px` 会被按钮的 transition 插值吃掉,t=0 同步量到的还是被撑大的旧值(rev-fb23 MEDIUM-1)
+    expect(source).toContain('button.style.minWidth = ""');
+    expect(source).not.toContain('button.style.minWidth = "0px"');
+    expect(source).toContain("Math.max(");
+    expect(source).toContain("getBoundingClientRect().width");
+    // 单位是 px:minWidth 是数值(React 会补 px);传字符串会漏单位
     expect(source).toContain("const [tabMinWidth, setTabMinWidth] = useState(0)");
+    // 重测依赖收窄到标签集合指纹,避免编辑模式逐键强制同步布局(rev-fb23 LOW)
+    expect(source).toContain("}, [open, tabLabelsKey]);");
   });
 
   test("模板态容器表以兜底名 container 出现在窗口（轮 17；轮 20 起列集与无模板态一致）", () => {
