@@ -6,7 +6,13 @@ import { describe, expect, test } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EFileEditor, type EDeviceRecord } from "./EFileEditor";
-import { buildEDeviceRecords, buildEFileExport, finalizeEDevicePreviewRecords } from "./model-eexport";
+import {
+  buildEDeviceRecords,
+  buildEFileExport,
+  eFileInterfaceDefinitionIndex,
+  eOutputSectionName,
+  finalizeEDevicePreviewRecords
+} from "./model-eexport";
 import { assignPermanentDeviceIndex, type ModelNode, type ProjectFile } from "./model";
 import { createDefaultNode } from "./model-node-ops";
 
@@ -54,5 +60,48 @@ describe("EFileEditor 成员关系段列解析", () => {
     expect(html).toContain(fileRow![1]);
     expect(html).toContain(`title="${fileRow![2]}"`);
     expect(html).toContain(fileRow![3]);
+  });
+
+  test("模板态容器表以兜底名 container 出现在窗口（轮 17：模板未命中容器类时窗口原本整表缺失）", () => {
+    const project = createContainerProject();
+    // 模板态最小形状：有模板配置、容器类未命中（无 ACContainer 定义）—— 与实机加载模板后的类门控结果同形
+    const options = {
+      eDeviceDefinitionLabels: { ACNode: "交流节点" },
+      interfaceDefinitions: [{
+        componentLibrary: "ACNode",
+        exportEnabled: true,
+        exportName: "ACNode",
+        fields: [
+          { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+          { sourceName: "name", exportEnabled: true, exportName: "name" }
+        ]
+      }]
+    };
+    const records = buildEDeviceRecords(project, options);
+    finalizeEDevicePreviewRecords(project, options, records);
+    // 复刻 appView 的 sectionLabel 链：段标签与导出侧同一单源
+    const defs = eFileInterfaceDefinitionIndex(options);
+    const containerRecords = records
+      .filter((record) => record.section === "ACContainer")
+      .map((record) => ({ ...record, sectionLabel: eOutputSectionName(record.section, defs, options) }) as EDeviceRecord);
+    expect(containerRecords).toHaveLength(1);
+    // 段名分叉：展示标签是兜底名 container（CamelCase ACContainer 是无模板态的展示名）
+    expect(containerRecords[0].sectionLabel).toBe("container");
+    expect(containerRecords[0].columns).toBeUndefined();
+
+    const html = renderToStaticMarkup(
+      createElement(EFileEditor, { open: true, onClose: () => {}, records: containerRecords })
+    );
+    // 表名 tab + 五列表头（列走 E_SECTION_COLUMNS 兜底；修复前该记录压根不产出，窗口无此表）
+    expect(html).toContain(">container<");
+    for (const column of ["idx", "name", "dev_type", "is_gateway", "bound_device_idx"]) {
+      expect(html).toContain(column);
+    }
+    // 与导出文件逐值对拍：同一模型同模板下 <container> 行的取值
+    const containerRow = buildEFileExport(project, ["默认方案"], options).text.match(/<container>[\s\S]*?\n#\s+(\S+)\s+(\S+)\s+(\S+)/);
+    expect(containerRow).toBeTruthy();
+    expect(html).toContain(`title="${containerRow![1]}"`);
+    expect(html).toContain(containerRow![2]);
+    expect(html).toContain(containerRow![3]);
   });
 });

@@ -4821,7 +4821,7 @@ describe("交流容器 E 导出", () => {
     ).toBe("");
   });
 
-  test("模板态下容器静默过滤:不产出容器段也不告警", () => {
+  test("模板态容器表恒输出(轮 17 裁决):模板未定义容器段时以兜底名 container 输出,列走 E_SECTION_COLUMNS", () => {
     const [container, member] = createIndexedExportNodes(["ac-vpp-box", "ac-source"]);
     member.containerId = container.id;
     const project: ProjectFile = { version: 1, name: "容器模板态模型", nodes: [container, member], edges: [] };
@@ -4839,9 +4839,16 @@ describe("交流容器 E 导出", () => {
     };
 
     const file = buildEFileExport(project, ["默认方案"], options);
-    expect(parseESections(file.text).ACContainer).toBeUndefined();
-    expect(buildEDeviceRecords(project, options).some((record) => record.section === "ACContainer")).toBe(false);
-    // 决策 6:容器段不写入预定义模板,模板未定义该段时容器不逐节点告警(按 nodeId 判,不按告警文案)
+    const sections = parseESections(file.text);
+    // 段名分叉:CamelCase ACContainer 是无模板态的名字,模板态一律兜底表名(与成员表 container_dev 的裁决同规)
+    expect(sections.ACContainer).toBeUndefined();
+    expect(sections.container?.columns).toEqual(["idx", "name", "dev_type", "is_gateway", "bound_device_idx"]);
+    expect(sections.container?.rows).toEqual([
+      expect.objectContaining({ idx: container.params.idx, name: container.name, dev_type: "ac-vpp-box" })
+    ]);
+    expect(sections.container_dev?.rows).toHaveLength(1);
+    expect(buildEDeviceRecords(project, options).some((record) => record.section === "ACContainer")).toBe(true);
+    // 容器表也产出记录后,容器节点不再逐节点告警(与成员表同口径:告警只在记录真被过滤时报)
     expect(file.warnings.filter((warning) => warning.nodeId === container.id)).toEqual([]);
     expect(getEExportWarnings(project, options).filter((warning) => warning.nodeId === container.id)).toEqual([]);
     // 反证:同模板态下未定义段的设备仍照常告警,上面的空数组不是「告警整体失效」的假绿
@@ -5014,9 +5021,12 @@ describe("交流容器 E 导出", () => {
     };
 
     const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
-    // 决策 6:模板无容器段定义 → 容器整体静默(容器表不存在)
+    // 容器表恒输出(轮 17):模板无容器段定义 → 以兜底名 container 写出,引用与表名同名
     expect(payload.ACContainer).toBeUndefined();
-    // 归属信息不丢:兜底写成合成表名前缀 container 的引用(与「模板容器表名_idx」同形态)
+    expect(payload.container?.rows).toEqual([
+      expect.objectContaining({ idx: container.params.idx, dev_type: "ac-vpp-box" })
+    ]);
+    // 归属信息:兜底写成合成表名前缀 container 的引用(与「模板容器表名_idx」同形态),指向文件里真实存在的表
     expect(payload.unit?.rows[0]?.container_id).toBe(`container_${container.params.idx}`);
   });
 
@@ -5039,8 +5049,12 @@ describe("交流容器 E 导出", () => {
     };
 
     const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
-    // 无容器表 → 容器静默;实时库模板表名族带 dms_def_ 前缀(labels.ACBranch = dms_def_lnseg)→ 兜底名同族
+    // 容器表恒输出(轮 17):实时库模板表名族带 dms_def_ 前缀(labels.ACBranch = dms_def_lnseg)→ 兜底名同族,
+    // 且该表真实写出(不再是「引用指向不存在的表」)
     expect(payload.ACContainer).toBeUndefined();
+    expect(payload.dms_def_container?.rows).toEqual([
+      expect.objectContaining({ idx: container.params.idx, dev_type: "ac-vpp-box" })
+    ]);
     expect(payload.dms_def_load?.rows[0]?.container_id).toBe(`dms_def_container_${container.params.idx}`);
   });
 
@@ -5299,11 +5313,14 @@ describe("交流容器 E 导出", () => {
     };
 
     const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
-    // 容器段不输出 → 不得写指向不存在表的 ACContainer_{idx},改用 dms 族兜底名
+    // 类门控关掉容器段(真实链路:模板未命中该类)→ 表名/字段随兜底口径,但表本身照常输出(轮 17:功能表恒输出)
     expect(payload.ACContainer).toBeUndefined();
+    expect(payload.dms_def_container?.rows).toEqual([
+      expect.objectContaining({ idx: container.params.idx, dev_type: "ac-vpp-box" })
+    ]);
     expect(payload.dms_def_load?.rows[0]?.container_id).toBe(`dms_def_container_${container.params.idx}`);
     // 裁决 2026-09-17:成员关系表是功能表,容器段被关掉也**仍产出**(成员关系是画布事实);
-    // container_idx 同走兜底名口径(裸 idx 指向不存在的表),device_id 仍按成员最终行定稿
+    // container_idx 与容器表同名(轮 17 后该表真实存在),device_id 仍按成员最终行定稿
     expect(payload.container_dev?.rows).toHaveLength(1);
     expect(payload.container_dev?.rows[0]?.container_idx).toBe(`dms_def_container_${container.params.idx}`);
     expect(payload.container_dev?.rows[0]?.container_type).toBe("ac-vpp-box");
@@ -5314,7 +5331,7 @@ describe("交流容器 E 导出", () => {
     const [container, member] = createIndexedExportNodes(["ac-vpp-box", "ac-load"]);
     member.containerId = container.id;
     const project: ProjectFile = { version: 1, name: "容器段列空模型", nodes: [container, member], edges: [] };
-    // 边界:模板为容器段建了定义(containerSectionOutputs 判「会输出」)但字段列表为空 → 容器记录被列空守卫剔除,
+    // 边界:模板为容器段建了定义(containerSectionDefinedInTemplate 判「随模板」)但字段列表为空 → 容器记录被列空守卫剔除,
     // 定稿阶段查不到容器最终落位。此时两处引用必须走**同一** containerReferenceTable —— 修前设备表写输出表名
     // (`vpp_idx`,判据真)而成员表按「查不到」写兜底名(`container_idx`,判据假),同文件两处形态分叉
     const options = {
@@ -5629,7 +5646,7 @@ describe("关口容器拓扑变换(决策 4)", () => {
     }
   });
 
-  test("模板态容器段静默时不做关口拓扑变换(不留无容器记录的断口)", () => {
+  test("模板态容器表恒输出后关口拓扑变换照做(轮 17:断了「静默即跳过」的连带豁免)", () => {
     const options = {
       eDeviceDefinitionLabels: { ACNode: "交流节点" },
       interfaceDefinitions: [{
@@ -5644,10 +5661,16 @@ describe("关口容器拓扑变换(决策 4)", () => {
     };
     const gateway = makeGatewayFixture();
     const plain = makeGatewayFixture({ isGateway: false });
-    const gatewayRows = parseESections(buildEFileExport(gateway.project, ["默认方案"], options).text).ACNode?.rows ?? [];
+    const gatewayFile = buildEFileExport(gateway.project, ["默认方案"], options);
+    const gatewayRows = parseESections(gatewayFile.text).ACNode?.rows ?? [];
     const plainRows = parseESections(buildEFileExport(plain.project, ["默认方案"], options).text).ACNode?.rows ?? [];
+    // 与无模板态同口径:串入的容器合成端子驱动出多一个拓扑节点行 —— 文件里有容器记录可解释,断口不再是断口
     expect(gatewayRows.length).toBeGreaterThan(0);
-    expect(gatewayRows).toEqual(plainRows);
+    expect(gatewayRows.length).toBe(plainRows.length + 1);
+    // 容器表在模板态确实写出(兜底名),断口的另一半(容器记录)也在文件里
+    const sections = parseESections(gatewayFile.text);
+    expect(sections.ACContainer).toBeUndefined();
+    expect(sections.container?.rows).toHaveLength(1);
   });
 
   // —— 容器关联行取端子口径(决策 4 附加):关系行能量类型无匹配端子时留空 ——
