@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { Edit, Eye, ArrowUpRight } from "lucide-react";
 import { Button, Input } from "antd";
 import { PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
-import { formatEDeviceRecordColumnValue, E_REFERENCE_FIELD_TABLE_IDS, keyToLong } from "./model-eexport";
+import { formatEDeviceRecordColumnValue, E_REFERENCE_FIELD_TABLE_IDS, eSectionColumns, keyToLong } from "./model-eexport";
 import { WindowCloseButton } from "./WindowCloseButton";
 
 export type EDeviceRecord = {
@@ -250,7 +250,9 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
   const currentSection = sections[activeSection];
   const sectionName = currentSection?.label || "";
   const sectionRecords = currentSection?.records || [];
-  const columns = sectionRecords[0]?.columns || [];
+  // 列集与导出侧**同一单源**（eSectionColumns）：记录无 columns 的段按 E_SECTION_COLUMNS 兜底。
+  // 此前只读 record.columns，成员关系表这类无 columns 的段列集为空 → 表头与单元格全不渲染（窗口一片空表）
+  const columns = currentSection ? eSectionColumns(currentSection.key, sectionRecords) : [];
 
   const handleCellEdit = (recordId: string, column: string, value: string) => {
     if (!editMode) return;

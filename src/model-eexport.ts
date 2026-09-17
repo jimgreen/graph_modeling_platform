@@ -2776,7 +2776,12 @@ function sortESectionRecordsByIdx(rows: EDeviceExport[]): EDeviceExport[] {
     .map(({ record }) => record);
 }
 
-function eSectionColumns(section: string, rows: EDeviceExport[]) {
+/**
+ * 段列集(**单源**):记录自带 columns 优先,否则按段兜底(E_SECTION_COLUMNS → 记录 params 键,滤掉 `_` 内部键)。
+ * 导出序列化(formatESection)与「查看/编辑E文件」窗口列头共用 —— 窗口若只读 record.columns,
+ * 无 columns 的段(如成员关系表 ACContainerDev,列定义只在 E_SECTION_COLUMNS 兜底)会渲染成空表。
+ */
+export function eSectionColumns(section: string, rows: EDeviceExport[]) {
   const columns: string[] = [];
   const seen = new Set<string>();
   for (const record of rows) {
