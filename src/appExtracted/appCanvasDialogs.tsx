@@ -4,6 +4,7 @@ import { Tabs } from "antd";
 import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
 import { VOLTAGE_BASE_SET_CATEGORIES } from "./appCoreCanvasUtilities";
 import { buildTopologyConnectivity, isBusNode } from "../model-routing";
+import { AcContainerAddDialog } from "./appSelectionDragFactories";
 
 const formatVoltageLabel = (v: string) => v === "0.22" ? "220V" : `${v}kV`;
 
@@ -638,5 +639,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
           }}
         />
       )}
+      {/* 【添加到容器】受控对话框(审查收口):状态在 __appScope.addToContainerDialog,提交走 confirmAddToAcContainer */}
+      <AcContainerAddDialog scope={scope} />
   </>);
 }, areViewSectionPropsEqual);

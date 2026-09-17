@@ -5,7 +5,7 @@
 ## mcheck 遗留(2026-09-17 合并前一站式审查)
 
 **合并前建议处理(1 项):**
-- **antd 静态 `Modal.confirm` 收口**(Standards 轴 Important):容器删除确认(`appSelectionDragFactories.tsx` 约 :1711)与「添加到容器」表单弹窗(约 :1877)用 antd 静态方法,不继承 `main.tsx` ConfigProvider 主题(dev 下有 antd 告警),且与仓库既有 `showGlobalConfirm` 确认体系分裂。改法:删除确认→`showGlobalConfirm`;表单→受控对话框组件或 `App.useApp().modal`;并同步改测试桩。
+- ~~**antd 静态 `Modal.confirm` 收口**(Standards 轴 Important):容器删除确认与「添加到容器」表单弹窗用 antd 静态方法…~~ —— **已落地(2026-09-17 轮 20,用户裁决「现在做」)**:①删除确认 → 仓库统一 `showGlobalConfirm`(`createDeleteSelection` 改 async,提交体 doDelete 现取最新图不变);②「添加到容器」表单 → 树内受控 `<Modal>`(状态 `__appScope.addToContainerDialog`,打开写点击快照、提交 `confirmAddToAcContainer` 现取最新图,挂在 `AppCanvasDialogs` 宿主、进 canvasDialogLayerActive 门控);测试桩同步(Modal.confirm 桩 → showGlobalConfirm 桩/受控对话框桩)。
 
 **性能 followup(mcheck Efficiency 轴):**
 - **H1**:加载路径的容器存量回填(`rebuildContainerExempt*`,appProjectCanvasFactories.tsx 约 :2931/:2936)未走 LOD 门控(>320 节点模型本应延迟),大模型首屏同步跑 K 次布线设计;可并入既有 deferred 修复调度(注意保存/导出前必须已回填)。

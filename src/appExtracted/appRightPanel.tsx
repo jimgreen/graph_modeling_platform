@@ -702,9 +702,9 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         displayValue={modelType || "请选择"}
                         disabled={isBrowseMode}
                         options={[
-                          { value: "", label: "请选择" },
-                          // 与「新建模型」弹窗同一清单(model.ts MODEL_TYPES 单源):此前此处硬编码三项,
-                          // 少了「微网/其他」—— 弹窗建的微网模型切回本行时下拉里选不到
+                          // 与「新建模型」弹窗逐项一致的清单(model.ts MODEL_TYPES 单源,不含「请选择」空项 ——
+                          // 轮 20 裁决两侧逐项一致):此前此处硬编码三项,少了「微网/其他」,
+                          // 弹窗建的微网模型切回本行时下拉里选不到
                           ...MODEL_TYPES.map((type) => ({ value: type, label: type }))
                         ]}
                         onCommit={(nextType) => {

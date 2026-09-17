@@ -44,16 +44,17 @@ describe("容器「设备类型」行下拉", () => {
 });
 
 describe("模型属性「模型类型」行下拉", () => {
-  test("候选清单与「新建模型」弹窗同源(model.ts MODEL_TYPES 单源),不再硬编码三项", () => {
+  test("候选清单与「新建模型」弹窗逐项一致(model.ts MODEL_TYPES 单源),不再硬编码三项", () => {
     const source = readFileSync(new URL("./appRightPanel.tsx", import.meta.url), "utf8");
     // 从 model.ts 单源导入(与新建模型弹窗的 __appScope.MODEL_TYPES 是同一个常量)
     expect(source).toMatch(/import \{[^}]*MODEL_TYPES[^}]*\} from "\.\.\/model"/);
-    // 候选值由 MODEL_TYPES 展开(「请选择」空项除外)
+    // 候选值由 MODEL_TYPES 全量展开(轮 20 裁决:去掉「请选择」空项,两侧逐项一致)
     expect(source).toContain("...MODEL_TYPES.map((type) => ({ value: type, label: type }))");
-    // 反证:旧硬编码三项不得残留(否则将来 MODEL_TYPES 变更时本行又落后于弹窗)
+    // 反证:旧硬编码三项与空项都不得残留(否则将来 MODEL_TYPES 变更时本行又落后于弹窗)
     for (const type of ["厂站", "馈线", "台区"]) {
       expect(source).not.toContain(`{ value: "${type}", label: "${type}" }`);
     }
+    expect(source).not.toContain('{ value: "", label: "请选择" }');
   });
 
   test("新建模型弹窗与右侧面板读同一常数 —— 两侧守卫", () => {

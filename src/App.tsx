@@ -913,6 +913,14 @@ const [createModelDialog, setCreateModelDialog] = useState<null | {
   error: string;
 }>(null);
 Object.assign(__appScope, { createModelDialog, setCreateModelDialog });
+// 【添加到容器】受控对话框(审查收口:原 antd 静态 Modal.confirm → 树内 <Modal> 组件,继承主题)。
+// 打开时写点击快照(draft/候选清单),提交(confirmAddToAcContainer)现取最新图
+const [addToContainerDialog, setAddToContainerDialog] = useState<null | {
+  memberIds: string[];
+  draft: any;
+  nodes: any[];
+}>(null);
+Object.assign(__appScope, { addToContainerDialog, setAddToContainerDialog });
 const [substation, setSubstation] = useState(() => initialDraft?.substation || "默认厂站");
 Object.assign(__appScope, { substation, setSubstation });
 const [feeder, setFeeder] = useState(() => initialDraft?.feeder || "默认馈线");

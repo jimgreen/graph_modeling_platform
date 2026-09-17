@@ -1968,8 +1968,8 @@ function hasTemplateConfig(options: EFileExportOptions): boolean {
 /**
  * 模板是否为容器段建了可用定义(**仅模板态有意义**,非模板态调用方不判):定义存在**且**未被类门控关掉
  * (`exportEnabled !== false`)—— 设备库对每类无条件建定义,模板未命中该类时只置 `exportEnabled=false`、定义不删。
- * 两处消费同源:eOutputSectionName 的容器段兜底表名分支、主循环容器记录是否按模板定义重建字段。
- * 裁决 2026-09-17 轮 17:容器段与成员关系段同为**功能表**,模板态恒输出 —— 本判据只决定「表名/字段随不随模板」,
+ * 唯一消费:eOutputSectionName 的容器段兜底表名分支(轮 20 起列集不再随此判据 —— 两态一律按定义重建字段)。
+ * 裁决 2026-09-17 轮 17:容器段与成员关系段同为**功能表**,模板态恒输出 —— 本判据只决定「表名随不随模板」,
  * 不再决定「输出不输出」。
  */
 function containerSectionDefinedInTemplate(
@@ -2355,12 +2355,11 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
     // 容器段(决策 3):容器无边无端子,不进拓扑节点表,只产出「容器表」一条记录
     // 口径与 inferESection 一致:按已算出的段判定,不另按 kind 判(容器 ⇄ ACContainer 的映射只在 inferESection 一处)
     if (section === "ACContainer") {
-      // 容器表恒输出(裁决 2026-09-17 轮 17:功能表,与成员关系段同规)。模板态模板未定义容器段时
-      // 不按模板定义重建字段(那会带出 parent/rdf_id/p/q/u/i 等无关列),列走 E_SECTION_COLUMNS 兜底(同成员表),
-      // 表名走 eOutputSectionName 的兜底名分支(container / dms_def_container)——与两处引用同源
-      const containerDefinition = !hasTemplateConfigValue || containerSectionDefinedInTemplate(interfaceDefinitionBySection)
-        ? interfaceDefinitionBySection.get(section)
-        : undefined;
+      // 容器表恒输出(裁决 2026-09-17 轮 17:功能表,与成员关系段同规)。列集两态一致(轮 20 裁决):
+      // 一律按设备库定义重建字段 —— 模板未定义该段时定义仍在(库对每类无条件建定义、只把 exportEnabled 置 false),
+      // 重建结果与无模板态同列(parent/rdf_id/p/q/u/i 等空值列渲染为 0),不另走五列兜底;
+      // 表名走 eOutputSectionName 的兜底名分支(container / dms_def_container)
+      const containerDefinition = interfaceDefinitionBySection.get(section);
       const boundDeviceId = String(node.params.bound_device_id ?? "");
       // 绑定设备存的是成员节点 id(与 containerMemberOptions 同源),此处解析出成员自身 idx 与所在表名。
       // idx 每段独立计数(跨段重号),裸 idx 无法确认属于哪张表,故写成 `表名_idx`(如 ACRealBs_3 / node_3)。
