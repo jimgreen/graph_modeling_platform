@@ -15,6 +15,7 @@ import {
   type Space,
   type SpaceImportMode
 } from "../spaceClient";
+import { currentQiankunUser, filterSpacesForCurrentUser } from "../qiankunUserSpace";
 import { saveLazyBlobFile } from "../fileIO";
 import { Download, Pencil, Send, Trash2, Upload } from "lucide-react";
 import { SendModelDialog } from "../SendModelDialog";
@@ -124,9 +125,10 @@ export function buildSpaceSwitcherOptions(spaces: readonly Space[] | undefined) 
   ];
 }
 
-// 顺序不可颠倒：切换要传新建接口返回的 id，不能沿用当前空间
+// 顺序不可颠倒：切换要传新建接口返回的 id，不能沿用当前空间。
+// 归属只在 qiankun 下带上（独立运行不传 → 无主空间，与加这个参数前一致）。
 export async function createSpaceThenSwitch(name: string, scope: Record<string, any>): Promise<void> {
-  const space = await createSpace(name);
+  const space = await createSpace(name, currentQiankunUser() || undefined);
   scope?.requestSwitchSpace?.(space.id);
 }
 
@@ -326,7 +328,10 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
   const [createName, setCreateName] = useState("");
   const [creating, setCreating] = useState(false);
   const spaceArchiveInputRef = useRef<HTMLInputElement>(null);
-  const options = buildSpaceSwitcherOptions(scope.spaces);
+  // qiankun：只列「自己的空间」（按 owner；无主同名空间也认，见 filterSpacesForCurrentUser）。
+  // 独立运行时该函数原样返回列表，顶栏行为与加此功能前完全一致。
+  const lockedUser = currentQiankunUser();
+  const options = buildSpaceSwitcherOptions(filterSpacesForCurrentUser(scope.spaces));
   const currentSpaceId = scope.currentSpaceId ?? "";
   const current = currentSpaceOf(scope);
   // 后端回退或列表未加载时 current 可能不在选项里，此时交给 placeholder，避免 Select 显示裸 id
@@ -378,12 +383,13 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
       >
         <Download size={14} />
       </button>
+      {/* 导入是**新建**空间：后端导入不带 owner，qiankun 下导入完用户看不见它，故直接禁用 */}
       <button
         type="button"
         className="topbar-primary-button"
-        title="从压缩包导入空间（重名会询问覆盖还是改名）"
+        title={lockedUser ? "导入的空间没有归属，qiankun 下暂不支持" : "从压缩包导入空间（重名会询问覆盖还是改名）"}
         aria-label="导入空间"
-        disabled={scope.isBrowseMode}
+        disabled={scope.isBrowseMode || Boolean(lockedUser)}
         onClick={() => spaceArchiveInputRef.current?.click()}
       >
         <Upload size={14} />

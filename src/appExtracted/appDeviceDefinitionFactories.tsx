@@ -11,6 +11,7 @@ import { normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
 import { backendExportSchemePath } from "../backendExportPath";
 import { backendErrorMessage } from "./appCoreCanvasUtilities";
+import { triggerModeToggleHint } from "./appModeToggleHint";
 import { decodeGbk } from "../encoding/gbk";
 import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES } from "../eDeviceTemplateTypePolicy";
 import {
@@ -4456,7 +4457,7 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
 
 export function createOpenBlankProjectLibraryContextMenu(__appScope: Record<string, any>) {
   return (event: MouseEvent<HTMLElement>) => {
-  const { isEditMode, setProjectMenu } = __appScope;
+  const { isEditMode, setProjectMenu, showGlobalMessage = () => undefined } = __appScope;
     const target = event.target as HTMLElement | null;
     if (target?.closest(".scheme-option, .project-option, .library-search")) {
       return;
@@ -4464,6 +4465,9 @@ export function createOpenBlankProjectLibraryContextMenu(__appScope: Record<stri
     event.preventDefault();
     event.stopPropagation();
     if (!isEditMode) {
+      // 浏览模式下右键方案树：给出全局提示并闪动顶栏"编辑/浏览"按钮引导切换
+      showGlobalMessage("当前为浏览模式，请点击顶栏的\"编辑\"按钮切换后再操作。");
+      triggerModeToggleHint();
       return;
     }
     setProjectMenu({ x: event.clientX, y: event.clientY });

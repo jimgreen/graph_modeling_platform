@@ -285,7 +285,8 @@ describe("本机偏好与浏览器身份不被清", () => {
 
 // 为什么需要这道闸门：`switchToSpace` 的清理只在**经顶栏切换**时发生，而 `gmp_space`
 // 是无签名普通 Cookie —— 手工改成另一个空间再打开应用，`switchToSpace` 从不执行。
-// 闸门必须在**渲染之前**跑（`main.tsx` 的 `createRoot` 之前）：App 的配色/量测/图元库
+// 闸门（`appStartup.ts`，由 `main.tsx` 与 `qiankunLifecycle.mount()` 在渲染前调用）
+// 必须在**渲染之前**跑：App 的配色/量测/图元库
 // 状态是渲染期同步从 localStorage 播种的，effect 跑在播种之后，那时清缓存已是事后动作。
 describe("启动闸门：把浏览器缓存与即将加载的空间对齐", () => {
   test("归属一致 → 什么都不清（否则每次启动都要重取一遍）", async () => {
@@ -341,17 +342,24 @@ describe("启动闸门：把浏览器缓存与即将加载的空间对齐", () =
 
   // **源码级断言**（不是行为断言）：闸门必须早于第一次渲染，而 App 的模型/配色/量测状态是
   // 渲染期同步从 localStorage 播种的 —— node 环境里没有 React 渲染，行为验不了。
-  // 它证明的只有一件事：闸门**排在 createRoot 之前**。
-  // 变异：把 `void bootstrap()` 挪到 createRoot 之后（等价于放进 useEffect）→ 红。
+  // 它证明两件事：闸门本体确实在做缓存归属对齐（`appStartup.ts`），
+  // 且 `main.tsx` **await** 它之后才 `createRoot`。
+  // 变异：把 `await runStartupGate()` 挪到 createRoot 之后、或去掉 await（等价于放进 useEffect）→ 红。
   // （该时序另有一条真浏览器的承重证据：e2e 里把闸门挪到渲染之后，
   //   `e2e/spaceSwitch.e2e.test.mjs` 的「手工改 cookie」用例实测变红。）
-  test("main.tsx 的启动闸门排在 createRoot 之前（源码级）", () => {
-    const source = readFileSync(new URL("./main.tsx", import.meta.url), "utf8");
+  test("启动闸门排在 createRoot 之前（源码级）", () => {
+    const gateSource = readFileSync(new URL("./appStartup.ts", import.meta.url), "utf8");
+    const mainSource = readFileSync(new URL("./main.tsx", import.meta.url), "utf8");
 
-    const createRootIndex = source.indexOf("createRoot(");
-    const reconcileIndex = source.indexOf("reconcileSpaceCacheOwnership(");
-    expect([createRootIndex >= 0, reconcileIndex >= 0]).toEqual([true, true]);
-    expect(reconcileIndex).toBeLessThan(createRootIndex);
+    // 闸门本体（含缓存归属对齐）在 appStartup.ts，独立运行与 qiankun 两条路径共用
+    expect(gateSource.indexOf("reconcileSpaceCacheOwnership(")).toBeGreaterThanOrEqual(0);
+
+    const gateCallIndex = mainSource.indexOf("runStartupGate(");
+    const createRootIndex = mainSource.indexOf("createRoot(");
+    expect([gateCallIndex >= 0, createRootIndex >= 0]).toEqual([true, true]);
+    // 必须 await：不 await 就是「发起即渲染」，与挪到渲染之后等价
+    expect(/await\s+runStartupGate\(/.test(mainSource)).toBe(true);
+    expect(gateCallIndex).toBeLessThan(createRootIndex);
   });
 });
 

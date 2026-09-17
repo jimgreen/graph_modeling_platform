@@ -77,6 +77,7 @@ import {
   stateIconDrawingTerminalPointSnap,
   ungroupStateIconDrawingSelection
 } from "./appExtracted/appDeviceDefinitionFactories";
+import { createOpenBlankProjectLibraryContextMenu } from "./appExtracted/appDeviceDefinitionFactories";
 import { createSetEdgeManualPoints } from "./appExtracted/appProjectCanvasFactories";
 import {
   createDefinitionVisualDraft,
@@ -6330,5 +6331,52 @@ describe("E 文件查看/编辑弹窗头表补全", () => {
     expect(tabSections.indexOf("ACNode")).toBeLessThan(tabSections.indexOf("ACBranch"));
     expect(tabSections.indexOf("ACBranch")).toBeLessThan(tabSections.indexOf("ACLoad"));
     expect(tabSections.indexOf("ACLoad")).toBeLessThan(tabSections.indexOf("ACGenerator"));
+  });
+});
+
+describe("createOpenBlankProjectLibraryContextMenu", () => {
+  // 浏览模式下的右键行为：不再静默返回，而是给出全局提示并闪动顶栏"编辑/浏览"按钮
+  test("in browse mode, shows a global message and triggers the mode-toggle hint instead of silently returning", () => {
+    const showGlobalMessage = vi.fn();
+    // 直接 mock 模块导出，避免 DOM 依赖
+    vi.resetModules();
+    vi.doMock("./appExtracted/appModeToggleHint", () => ({ triggerModeToggleHint: vi.fn() }));
+    // 重新加载被测模块以拿到 mock 后的依赖
+    return import("./appExtracted/appDeviceDefinitionFactories").then((mod) => {
+      const factory = mod.createOpenBlankProjectLibraryContextMenu;
+      const setProjectMenu = vi.fn();
+      const handler = factory({ isEditMode: false, setProjectMenu, showGlobalMessage });
+
+      const event = {
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+        clientX: 42,
+        clientY: 99,
+        target: { closest: () => null }
+      } as any;
+
+      handler(event);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(event.stopPropagation).toHaveBeenCalled();
+      expect(setProjectMenu).not.toHaveBeenCalled();
+      expect(showGlobalMessage).toHaveBeenCalledTimes(1);
+      expect(showGlobalMessage.mock.calls[0][0]).toContain("浏览模式");
+      expect(showGlobalMessage.mock.calls[0][0]).toContain("编辑");
+    }).finally(() => {
+      vi.doUnmock("./appExtracted/appModeToggleHint");
+      vi.resetModules();
+    });
+  });
+
+  test("source form: browse-mode branch no longer returns silently and imports the hint helper", () => {
+    const source = readFileSync(new URL("./appExtracted/appDeviceDefinitionFactories.tsx", import.meta.url), "utf8");
+    // 必须导入闪动提示 helper
+    expect(source).toContain('import { triggerModeToggleHint } from "./appModeToggleHint"');
+    // 浏览模式分支不再是一个空的 if-return：应包含 showGlobalMessage 调用
+    const browseBranch = source.match(/if\s*\(\s*!isEditMode\s*\)\s*\{[\s\S]*?triggerModeToggleHint\(\)/);
+    expect(browseBranch).not.toBeNull();
+    // 提示文案应指向顶栏"编辑"按钮
+    expect(source).toContain("当前为浏览模式，请点击顶栏的\\\"编辑\\\"按钮切换后再操作。");
   });
 });

@@ -224,7 +224,7 @@ export function createRenderProjectPanel(__appScope) {
       >
         {schemes.length === 0 ? (
           <p className="project-empty">
-            {backendSchemesLoadedRef.current ? "暂无方案" : "正在连接模型库，恢复后将自动加载..."}
+            {backendSchemesLoadedRef.current ? "暂无方案，右键此处创建方案" : "正在连接模型库，恢复后将自动加载..."}
           </p>
         ) : filteredProjectSchemes.length === 0 ? (
           <p className="project-empty project-search-empty">未找到匹配方案或模型</p>

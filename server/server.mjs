@@ -20,7 +20,7 @@ import {
 } from "./nativeExportSave.mjs";
 import { GlobalLineRegistryError, createGlobalLineRegistry } from "./globalLineRegistry.mjs";
 import { isModelJsonFile } from "./schemeFiles.mjs";
-import { SPACE_NAME_DUPLICATE, spacePathsFor } from "./spaceStore.mjs";
+import { SPACE_NAME_DUPLICATE, spacePathsFor, normalizeSpaceOwner } from "./spaceStore.mjs";
 import { MAX_SPACE_NAME_LENGTH, isAcceptableSpaceName, normalizeSpaceName } from "./spaceId.mjs";
 import { meaningfulDeviceParameterChineseName } from "../shared/deviceParameterChineseNames.mjs";
 import { withXmlEncodingDeclaration } from "./xmlEncoding.mjs";
@@ -4719,9 +4719,12 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       }
       // 存**归一后**的名字：否则「能被创建的名字一定能无损往返」不成立。
       // 重名 ≠ id 撞车：不再静默加 -2 后缀建第二个同名空间，而是 409（前端提示改名）。
+      // 归属（qiankun 宿主传来的登录用户名）：只 trim + 限长，**不校验合法性** ——
+      // 它不是权限，只用于前端把列表收窄到「自己的空间」；缺省 = 无主空间。
+      const owner = normalizeSpaceOwner(body?.owner);
       let space;
       try {
-        space = await spaceStore.create(name, { onDuplicate: "reject" });
+        space = await spaceStore.create(name, { onDuplicate: "reject", owner });
       } catch (error) {
         if (sendSpaceNameConflict(response, error)) return;
         throw error;

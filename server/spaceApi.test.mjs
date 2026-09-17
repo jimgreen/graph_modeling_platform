@@ -874,3 +874,18 @@ test("非 zip 体 → 400，且不新建空间", async () => {
   expect(response.status).toBe(400);
   expect(await spaceIds()).toEqual(before);
 });
+
+// 归属（owner）：POST 带上就落库；不带就仍是「无主空间」——
+// 独立运行/旧调用方的请求体逐字节不变，行为与加这个字段前一致。
+test("POST /spaces 带 owner 落库，不带则无该字段", async () => {
+  const owned = await fetch(`${baseUrl}/webgrp/spaces`, json({ name: "有主的空间", owner: "张三" }, { method: "POST" })).then((r) => r.json());
+  const plain = await fetch(`${baseUrl}/webgrp/spaces`, json({ name: "无主的空间" }, { method: "POST" })).then((r) => r.json());
+
+  expect(owned.owner).toBe("张三");
+  expect(plain).not.toHaveProperty("owner");
+
+  // 列表里也得带着：前端就是靠它把空间收窄到「自己的那些」
+  const listed = await fetch(`${baseUrl}/webgrp/spaces`).then((r) => r.json());
+  expect(listed.spaces.find((s) => s.id === owned.id)?.owner).toBe("张三");
+  expect(listed.spaces.find((s) => s.id === plain.id)).not.toHaveProperty("owner");
+});
