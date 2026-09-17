@@ -1802,6 +1802,12 @@ export function eOutputSectionName(
   if (section === AC_CONTAINER_DEV_SECTION && hasTemplateConfig(options)) {
     return AC_CONTAINER_DEV_TEMPLATE_SECTION;
   }
+  // 容器表(功能表,裁决 2026-09-17 轮 17):模板态模板未定义容器段(或该类被类门控关掉)时固定用兜底表名
+  // (实时库族 dms_def_container,其余 container)—— 输出表名与引用名(设备表 container_id / 成员表 container_idx)
+  // 共用本函数,两处漂移即让引用指向不存在的表
+  if (section === "ACContainer" && hasTemplateConfig(options) && !containerSectionDefinedInTemplate(interfaceDefinitionBySection)) {
+    return containerFallbackTable(options);
+  }
   return String(interfaceDefinitionBySection.get(section)?.exportName ?? "").trim()
     || String(options.eDeviceDefinitionLabels?.[section] ?? "").trim()
     || section;
@@ -1963,40 +1969,22 @@ function hasTemplateConfig(options: EFileExportOptions): boolean {
 }
 
 /**
- * 决策 6:容器段不写入预定义模板 —— 模板态下未定义该段时容器整体静默:
- * 主循环不产出容器记录、告警也不逐节点报「被导出逻辑过滤」。产出与告警共用此判据,防两处漂移。
- * **例外(裁决 2026-09-17)**:成员关系表 ACContainerDev 不受此判据约束 —— 功能表恒输出,见 buildEDeviceRecords。
+ * 模板是否为容器段建了可用定义(**仅模板态有意义**,非模板态调用方不判):定义存在**且**未被类门控关掉
+ * (`exportEnabled !== false`)—— 设备库对每类无条件建定义,模板未命中该类时只置 `exportEnabled=false`、定义不删。
+ * 两处消费同源:eOutputSectionName 的容器段兜底表名分支、主循环容器记录是否按模板定义重建字段。
+ * 裁决 2026-09-17 轮 17:容器段与成员关系段同为**功能表**,模板态恒输出 —— 本判据只决定「表名/字段随不随模板」,
+ * 不再决定「输出不输出」。
  */
-function containerSectionSuppressed(
-  isTemplateMode: boolean,
+function containerSectionDefinedInTemplate(
   interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>
 ): boolean {
-  return !containerSectionOutputs(isTemplateMode, interfaceDefinitionBySection);
-}
-
-/**
- * 容器段是否**真的会输出**(单源判据):非模板态恒真;模板态要求定义存在**且**未被类门控关掉
- * (`exportEnabled !== false`)——设备库对每类无条件建定义,模板未命中该类时只置 `exportEnabled=false`、定义不删,
- * 故「定义存在」单独不足为凭(判据恒真会让兜底名成死代码、引用指向文件里不存在的表)。
- * 三处同源:容器记录产出短路(containerSectionSuppressed)、设备表引用表名选择、定稿阶段 container_idx 兜底名
- * (finalizeContainerCrossRefs 按「查不到容器最终落位」反推同一事实)。成员关系表产出不经此判据(功能表恒出)。
- */
-function containerSectionOutputs(
-  isTemplateMode: boolean,
-  interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>
-): boolean {
-  if (!isTemplateMode) {
-    return true;
-  }
   const definition = interfaceDefinitionBySection.get("ACContainer");
   return Boolean(definition && definition.exportEnabled !== false);
 }
 
 /**
- * 模板态没有容器表定义时的兜底表名前缀(规格 A 兜底):容器不导出时归属信息仍写出,
- * 形态保持 `表名_idx` —— 消费方无需为「裸 idx」分支解析。
- * 经 containerFallbackTable → containerReferenceTable **供两处消费者共用**(M2 单源收口后不再各自取表名):
- * 设备表 container_id 列(构建期)、ACContainerDev.container_idx(定稿期,容器段被关掉时)。
+ * 模板态模板未定义容器段时的兜底表名(规格 A 兜底;轮 17 起容器表以此名实际输出,不再是「表不存在时的引用名」):
+ * 容器表、设备表 container_id 列、成员表 ACContainerDev.container_idx 三处同名,形态保持 `表名_idx`。
  */
 const CONTAINER_FALLBACK_TABLE = "container";
 
@@ -2010,19 +1998,15 @@ function containerFallbackTable(options: EFileExportOptions): string {
 }
 
 /**
- * 容器引用表名(**单源**,两处跨表引用 consumer:设备表 `container_id` 列、`ACContainerDev.container_idx` 兜底)——
- * 容器段真会输出(`containerSectionOutputs`)时取它的**输出表名**,否则取同族兜底名。
- * 两处若各自内联同一表达式必漂移:容器段定义存在但**字段列表为空**时容器记录被列空守卫剔除(查不到最终落位),
- * 「按查不到反推」会把成员表写兜底名、设备表写输出表名 —— 同文件两处引用同一容器却形态分叉。
+ * 容器引用表名(**单源**):两处跨表引用 consumer(设备表 `container_id` 列、成员表 `ACContainerDev.container_idx`)
+ * 都经 eOutputSectionName 取容器段输出表名 —— 与容器表实际写出的段标签同函数,自然同名(模板态兜底名分叉
+ * 也收在 eOutputSectionName 内),不再单独判「容器段会不会输出」(裁决轮 17 后容器表恒输出)。
  */
 function containerReferenceTable(
-  isTemplateMode: boolean,
   interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>,
   options: EFileExportOptions
 ): string {
-  return containerSectionOutputs(isTemplateMode, interfaceDefinitionBySection)
-    ? eOutputSectionName("ACContainer", interfaceDefinitionBySection, options)
-    : containerFallbackTable(options);
+  return eOutputSectionName("ACContainer", interfaceDefinitionBySection, options);
 }
 
 /**
@@ -2089,9 +2073,9 @@ function attachContainerIdToDeviceRecords(
     // 无容器模型:列结构完全不变,存量导出产物零差异
     return;
   }
-  // 容器段不会输出时 eOutputSectionName 会退回内部段名(ACContainer),那是「段不存在」而非「表名叫 ACContainer」,
-  // 故先判是否真会输出,再取表名 —— 判据与表名取法收在 containerReferenceTable 单源(与成员表 container_idx 兜底同源)
-  const containerTable = containerReferenceTable(isTemplateMode, interfaceDefinitionBySection, options);
+  // 容器表名与「容器表实际写出的段标签」同一函数(containerReferenceTable):模板态模板未定义容器段时
+  // eOutputSectionName 已改走兜底名,引用与表名天然一致(与成员表 container_idx 同源)
+  const containerTable = containerReferenceTable(interfaceDefinitionBySection, options);
   for (const record of records) {
     // 容器自身不属于任何容器(不允许嵌套)
     if (record.section === "ACContainer") {
@@ -2345,11 +2329,9 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
   const hasTemplateConfigValue = hasTemplateConfig(options);
   const isDms = looksLikeDmsRtdbTemplate(options);
   const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
-  // 决策 4:关口容器在导出图里串进绑定设备上游(纯变换,画布模型不动)。
-  // 决策 6:容器段静默时连带跳过变换 —— 否则会在没有容器记录的 E 文件里留下无法解释的拓扑断口。
-  const gatewayGraph = containerSectionSuppressed(hasTemplateConfigValue, interfaceDefinitionBySection)
-    ? { nodes: project.nodes, edges: project.edges }
-    : transformGraphForGateways(project.nodes, project.edges);
+  // 决策 4:关口容器在导出图里串进绑定设备上游(纯变换,画布模型不动)。容器表恒输出(轮 17),
+  // 串入的拓扑断口在文件里有容器记录可解释,故变换在所有态都生效
+  const gatewayGraph = transformGraphForGateways(project.nodes, project.edges);
   const topologyNodes = calculateElectricalTopology(gatewayGraph.nodes, gatewayGraph.edges);
   const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes).map((record) =>
     applyEInterfaceDefinitionToRecord(record, interfaceDefinitionBySection.get(record.section))
@@ -2375,10 +2357,12 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
     // 容器段(决策 3):容器无边无端子,不进拓扑节点表,只产出「容器表」一条记录
     // 口径与 inferESection 一致:按已算出的段判定,不另按 kind 判(容器 ⇄ ACContainer 的映射只在 inferESection 一处)
     if (section === "ACContainer") {
-      // 决策 6:模板态未定义容器段 → 直接跳过(不产出、不告警)
-      if (containerSectionSuppressed(hasTemplateConfigValue, interfaceDefinitionBySection)) {
-        continue;
-      }
+      // 容器表恒输出(裁决 2026-09-17 轮 17:功能表,与成员关系段同规)。模板态模板未定义容器段时
+      // 不按模板定义重建字段(那会带出 parent/rdf_id/p/q/u/i 等无关列),列走 E_SECTION_COLUMNS 兜底(同成员表),
+      // 表名走 eOutputSectionName 的兜底名分支(container / dms_def_container)——与两处引用同源
+      const containerDefinition = !hasTemplateConfigValue || containerSectionDefinedInTemplate(interfaceDefinitionBySection)
+        ? interfaceDefinitionBySection.get(section)
+        : undefined;
       const boundDeviceId = String(node.params.bound_device_id ?? "");
       // 绑定设备存的是成员节点 id(与 containerMemberOptions 同源),此处解析出成员自身 idx 与所在表名。
       // idx 每段独立计数(跨段重号),裸 idx 无法确认属于哪张表,故写成 `表名_idx`(如 ACRealBs_3 / node_3)。
@@ -2403,9 +2387,9 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
           // → 退化为仅 idx,不丢既有信息
           bound_device_idx: boundIdx ? (boundTable ? `${boundTable}_${boundIdx}` : boundIdx) : ""
         }
-      }, interfaceDefinitionBySection.get(section));
+      }, containerDefinition);
       // 内部字段(下划线前缀不成列,与 _vbase 同款):带出绑定设备 id,供序列化前定稿引用 ——
-      // 模板态上一步会重建 params,故在此补注入,不能写进上面的 params 字面量
+      // 模板态按定义重建 params 时该键不被带出,故在此补注入,不能写进上面的 params 字面量
       containerRecord.params._bound_device_id = boundDeviceId;
       // 与通用路径同款守卫(模板定义了容器段但字段列表为空 → 记录被过滤,不落占位行)
       if ((containerRecord.columns ?? E_SECTION_COLUMNS[section] ?? []).length === 0) {
@@ -2563,7 +2547,7 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
   }
 
   // 规格 B:成员关系表。**功能表,恒产出**(裁决):成员关系是画布事实,不随模板开关消失 ——
-  // 容器段被模板关掉时容器表不存在,container_idx 由定稿阶段改用兜底表名口径(见 finalizeContainerCrossRefs)
+  // 容器表同规恒产出(轮 17),模板未定义容器段时 container_idx 与容器表名同走兜底口径(见 finalizeContainerCrossRefs)
   const containerDevRecords = buildContainerDevRecords(topologyNodes, interfaceDefinitionBySection.get(AC_CONTAINER_DEV_SECTION));
   // 规格 A:设备表 container_id 列。拓扑节点表行由多设备/端子合并、归属无单一定义,不参与
   const deviceLikeRecords = [...deviceRecords, ...derivedDeviceRecords, ...containerAssociatedDevices];
@@ -2573,9 +2557,10 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
     ...deviceLikeRecords,
     ...containerDevRecords
   ].filter((record) => {
-    // 成员关系表豁免模板过滤(裁决 2026-09-17):它不是设备类,模板(元件定义)本就不会定义它 ——
-    // 若按「模板未定义即剔除」走,模板态下成员关系整表消失(实机反馈:模板态整表缺失)
-    if (record.section === AC_CONTAINER_DEV_SECTION) {
+    // 容器两张功能表(容器表/成员关系表)豁免模板过滤(裁决 2026-09-17,轮 17 扩至容器表):它们不是设备类,
+    // 模板(元件定义)本就不会定义它们 —— 若按「模板未定义即剔除」走,模板态下整表消失
+    // (实机反馈:成员表整表缺失轮 15;容器表整表缺失轮 17)
+    if (record.section === AC_CONTAINER_DEV_SECTION || record.section === "ACContainer") {
       return true;
     }
     const definition = interfaceDefinitionBySection.get(record.section);
@@ -2615,10 +2600,6 @@ function getEExportWarningsFromRecords(
       return [];
     }
     const section = inferESection(node.kind, node.params);
-    // 决策 6:模板态未定义容器段时容器本就不产出记录,不逐节点报「被导出逻辑过滤」(与主循环同判据、同口径)
-    if (section === "ACContainer" && containerSectionSuppressed(hasTemplateConfig(options), interfaceDefinitionBySection)) {
-      return [];
-    }
     if (!section) {
       return [{
         nodeId: node.id,
@@ -2646,14 +2627,13 @@ function getEExportWarningsFromRecords(
       reason: `E 文件段 ${section} 被导出逻辑过滤。`
     }];
   });
-  // 决策 4:关口退化告警与变换同源(planGatewaySplices 判一次,两处消费)——容器段静默时不报,防噪音
-  const gatewayWarnings: EExportWarning[] = containerSectionSuppressed(hasTemplateConfig(options), interfaceDefinitionBySection)
-    ? []
-    : planGatewaySplices(project.nodes, project.edges).flatMap((plan) =>
-        "degradeReason" in plan
-          ? [{ nodeId: plan.container.id, nodeName: plan.container.name, kind: plan.container.kind, reason: plan.degradeReason }]
-          : []
-      );
+  // 决策 4:关口退化告警与变换同源(planGatewaySplices 判一次,两处消费)。容器表恒输出(轮 17),
+  // 退化不再有「容器段静默」这一豁免,所有态都报
+  const gatewayWarnings: EExportWarning[] = planGatewaySplices(project.nodes, project.edges).flatMap((plan) =>
+    "degradeReason" in plan
+      ? [{ nodeId: plan.container.id, nodeName: plan.container.name, kind: plan.container.kind, reason: plan.degradeReason }]
+      : []
+  );
   return [...enumWarnings, ...recordWarnings, ...gatewayWarnings];
 }
 
@@ -3465,12 +3445,12 @@ function finalizeEDeviceCrossReferences(
     return { outputSection, section: groups[0].section, allRecords };
   });
   const isTemplateMode = hasTemplateConfig(options);
-  // 容器引用表名按同一判据算(与设备表 container_id 列同源,eOutputSectionName 口径一致)——两处引用形态不得分叉
+  // 容器引用表名走容器段输出名同一函数(与设备表 container_id 列同源)——两处引用形态不得分叉
   finalizeContainerCrossRefs(
     records,
     sectionGroups,
     isTemplateMode,
-    containerReferenceTable(isTemplateMode, interfaceDefinitionBySection, options)
+    containerReferenceTable(interfaceDefinitionBySection, options)
   );
   return { interfaceDefinitionBySection, sectionGroups, sectionedRecords };
 }
