@@ -5147,13 +5147,13 @@ describe("交流容器 E 导出", () => {
     expect(templatePayload.container_dev?.rows).toHaveLength(1);
     expect(templatePayload.container_dev?.rows[0]?.container_type).toBe("ac-vpp-box");
     expect(templatePayload.container_dev?.rows[0]?.device_id).toBe(`unit_${member.params.idx}`);
-    // 容器引用**不随成员段改名带偏**(裁决 2026-09-17):container_idx 指向的是**容器表**(容器行),
-    // 模板态写 `容器段输出名_idx`(此处容器段 exportName=container → container_1),不是成员段的 container_dev_1
-    expect(templatePayload.container_dev?.rows[0]?.container_idx).toBe(`container_${box.params.idx}`);
+    // 容器引用**不随成员段改名带偏**(裁决 2026-09-17):container_idx 指向的是**容器行**;
+    // 轮 18 裁决后一律写容器行**裸 idx**(两态同形,不加 `容器段输出名_` 前缀,也不是成员段的 container_dev_1)
+    expect(templatePayload.container_dev?.rows[0]?.container_idx).toBe(box.params.idx);
     const plainPayload = parseESections(plainText);
     expect(plainPayload.ACContainerDev?.rows[0]?.container_type).toBe("ac-vpp-box");
     expect(plainPayload.ACContainerDev?.rows[0]?.device_id).toBe(`ACGenerator_${member.params.idx}`);
-    // 非模板态容器引用仍是容器裸 idx(容器段内唯一),同款不随段名走
+    // 非模板态容器引用同为容器裸 idx(容器段内唯一),两态同形
     expect(plainPayload.ACContainerDev?.rows[0]?.container_idx).toBe(box.params.idx);
     // 预览侧(查看/编辑E文件)的段标签与导出同一单源(eOutputSectionName,前端不复刻判据):
     // 模板态 container_dev;非模板态回落段名 ACContainerDev;其它段不受分叉影响
@@ -5209,8 +5209,8 @@ describe("交流容器 E 导出", () => {
       return (payload[ref.slice(0, cut)]?.rows ?? []).find((candidate) => candidate.idx === ref.slice(cut + 1))?.name;
     });
     expect(referencedNames).toEqual(["双绕组主变1", "三绕组主变1"]);
-    // container_idx 与设备表 container_id 同形态:容器段输出时也写 `表名_idx`(裁决 2026-09-17 统一口径)
-    expect(payload.container_dev?.rows[0]?.container_idx).toBe(`container_${box.params.idx}`);
+    // container_idx 轮 18 起写容器行裸 idx(容器段输出与否同形),不再与设备表 container_id 同带表名前缀
+    expect(payload.container_dev?.rows[0]?.container_idx).toBe(box.params.idx);
   });
 
   test("规格 B:成员无 E 段(静态图元)时行保留、引用为空 —— 成员关系不丢", () => {
@@ -5286,11 +5286,10 @@ describe("交流容器 E 导出", () => {
     };
 
     const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
-    // 列定义取 E_SECTION_COLUMNS 兜底(模板没有该段);模板态 container_idx 与设备表 container_id **同形态**
-    // (裁决 2026-09-17:统一写 `表名_idx`,裸 idx 只属非模板态)
+    // 列定义取 E_SECTION_COLUMNS 兜底(模板没有该段);container_idx 轮 18 起写容器行裸 idx
     expect(payload.container_dev?.columns).toEqual(["device_id", "container_idx", "container_type"]);
     expect(payload.container_dev?.rows).toHaveLength(1);
-    expect(payload.container_dev?.rows[0]?.container_idx).toBe(`container_${box.params.idx}`);
+    expect(payload.container_dev?.rows[0]?.container_idx).toBe(box.params.idx);
     expect(payload.container_dev?.rows[0]?.container_type).toBe("ac-vpp-box");
     expect(payload.container_dev?.rows[0]?.device_id).toBe(`unit_${member.params.idx}`);
   });
@@ -5320,20 +5319,19 @@ describe("交流容器 E 导出", () => {
     ]);
     expect(payload.dms_def_load?.rows[0]?.container_id).toBe(`dms_def_container_${container.params.idx}`);
     // 裁决 2026-09-17:成员关系表是功能表,容器段被关掉也**仍产出**(成员关系是画布事实);
-    // container_idx 与容器表同名(轮 17 后该表真实存在),device_id 仍按成员最终行定稿
+    // container_idx 轮 18 起写容器行裸 idx(不随容器表名走),device_id 仍按成员最终行定稿
     expect(payload.container_dev?.rows).toHaveLength(1);
-    expect(payload.container_dev?.rows[0]?.container_idx).toBe(`dms_def_container_${container.params.idx}`);
+    expect(payload.container_dev?.rows[0]?.container_idx).toBe(container.params.idx);
     expect(payload.container_dev?.rows[0]?.container_type).toBe("ac-vpp-box");
     expect(payload.container_dev?.rows[0]?.device_id).toBe(`dms_def_load_${member.params.idx}`);
   });
 
-  test("规格 A/B:容器段定义存在但字段列表为空 → 两处容器引用同源同形(不分叉)", () => {
+  test("规格 A/B:容器段定义存在但字段列表为空 → 容器记录被列空守卫剔除,两处引用各按自身形态出口", () => {
     const [container, member] = createIndexedExportNodes(["ac-vpp-box", "ac-load"]);
     member.containerId = container.id;
     const project: ProjectFile = { version: 1, name: "容器段列空模型", nodes: [container, member], edges: [] };
     // 边界:模板为容器段建了定义(containerSectionDefinedInTemplate 判「随模板」)但字段列表为空 → 容器记录被列空守卫剔除,
-    // 定稿阶段查不到容器最终落位。此时两处引用必须走**同一** containerReferenceTable —— 修前设备表写输出表名
-    // (`vpp_idx`,判据真)而成员表按「查不到」写兜底名(`container_idx`,判据假),同文件两处形态分叉
+    // 定稿阶段查不到容器最终落位(containerFinal 缺位)
     const options = {
       eDeviceDefinitionLabels: { ACContainer: "vpp", ACLoad: "load" },
       interfaceDefinitions: [
@@ -5350,8 +5348,11 @@ describe("交流容器 E 导出", () => {
 
     const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
     expect(payload.vpp).toBeUndefined();
+    // 设备表 container_id 仍写「容器段输出名_idx」(模板定义该列时随模板口径);此边界下表不存在 → 悬空,
+    // 既有已知边界(rev-fb19 Observation 4,非本轮引入)
     expect(payload.load?.rows[0]?.container_id).toBe(`vpp_${container.params.idx}`);
-    expect(payload.container_dev?.rows[0]?.container_idx).toBe(`vpp_${container.params.idx}`);
+    // 成员表 container_idx 轮 18 起一律裸 idx(不经容器表名):查不到容器最终落位时写构建期裸 idx 兜底
+    expect(payload.container_dev?.rows[0]?.container_idx).toBe(container.params.idx);
   });
 });
 

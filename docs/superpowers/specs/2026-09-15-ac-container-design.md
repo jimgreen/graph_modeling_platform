@@ -251,7 +251,7 @@
 | 列 | 值 |
 |----|----|
 | device_id | 成员设备最终落位 `{表名}_{idx}`(与 `bound_device_idx` 同源:合并段重排后定稿、按**最后一个**下划线切分) |
-| container_idx | 所属容器,**与设备表 `container_id` 同形态**(2026-09-17 裁决统一):非模板态 = 容器行最终裸 idx;模板态 = `表名_idx`(表名 = 容器段实际输出名;容器段被模板关掉时用兜底表名 `container_{idx}` / `dms_def_container_{idx}`) |
+| container_idx | 所属容器,**一律写容器行最终裸 idx**(2026-09-17 轮 18 裁决;两态同形,**不加** `表名_` 前缀 —— 列名已指明指向容器行,容器表在文件里唯一)。原「模板态写 `表名_idx`(与设备表 `container_id` 同形态)」口径作废;容器记录被列空守卫剔除(查不到最终落位)时写构建期裸 idx 兜底 |
 | container_type | 容器表 `dev_type` 值(容器元件英文名) |
 
 - 每行 = 一个「容器成员」关系(遍历全部容器的全部成员,成员判定走 `containerMemberNodes` 单源);空容器无行、非成员不入表、静态图元成员**行保留**而 `device_id` 为空(文件口径写 0)
@@ -269,7 +269,7 @@
 
 - ~~容器段**不写入**预定义模板(`server/eFileTemplates.mjs` 及模板数据不改)~~ → 仍不写模板,但输出不再依赖模板定义
 - ~~模板模式下 `hasTemplateConfigValue && !definition` 的过滤照常生效 → 容器记录不输出~~ → **改为恒输出**;模板未定义容器段(或该类被类门控 `exportEnabled=false` 关掉)时:
-  - **表名**走兜底名 —— 实时库族(dms_rtdb/taiqu_rtdb)用 `dms_def_container`,其余模板 `container`;非模板态仍 `ACContainer`。分叉收在 `eOutputSectionName` 单源,输出表名与引用名(设备表 `container_id`、成员表 `container_idx`)必然同名
+  - **表名**走兜底名 —— 实时库族(dms_rtdb/taiqu_rtdb)用 `dms_def_container`,其余模板 `container`;非模板态仍 `ACContainer`。分叉收在 `eOutputSectionName` 单源:输出表名与设备表 `container_id`(表名_idx 形态)必然同名;**成员表 `container_idx` 不经表名** —— 轮 18 起一律写容器行裸 idx
   - **列**走 `E_SECTION_COLUMNS["ACContainer"]` 兜底(idx/name/dev_type/is_gateway/bound_device_idx 五列),不按设备库定义重建字段(否则带出 parent/rdf_id/p/q/u/i 等无关列)
   - 模板**确实定义且启用**了容器段时,表名/字段照模板(既有无模板态之外的路径保留)
 - ~~该过滤为**静默**:容器不逐节点告警~~ → 容器有记录即不告警(与成员表同口径);仅当模板定义容器段且字段列表为空(记录被列空守卫剔除)时才报「被导出逻辑过滤」
