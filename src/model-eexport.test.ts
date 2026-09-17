@@ -5222,6 +5222,33 @@ describe("交流容器 E 导出", () => {
     expect(payload.ACContainerDev?.rows[0]?.container_type).toBe("ac-vpp-box");
     expect(payload.ACContainerDev?.rows[0]?.device_id).toBe(`dms_def_load_${member.params.idx}`);
   });
+
+  test("规格 A/B:容器段定义存在但字段列表为空 → 两处容器引用同源同形(不分叉)", () => {
+    const [container, member] = createIndexedExportNodes(["ac-vpp-box", "ac-load"]);
+    member.containerId = container.id;
+    const project: ProjectFile = { version: 1, name: "容器段列空模型", nodes: [container, member], edges: [] };
+    // 边界:模板为容器段建了定义(containerSectionOutputs 判「会输出」)但字段列表为空 → 容器记录被列空守卫剔除,
+    // 定稿阶段查不到容器最终落位。此时两处引用必须走**同一** containerReferenceTable —— 修前设备表写输出表名
+    // (`vpp_idx`,判据真)而成员表按「查不到」写兜底名(`container_idx`,判据假),同文件两处形态分叉
+    const options = {
+      eDeviceDefinitionLabels: { ACContainer: "vpp", ACLoad: "load" },
+      interfaceDefinitions: [
+        { componentLibrary: "ACContainer", exportEnabled: true, exportName: "vpp", fields: [] },
+        {
+          componentLibrary: "ACLoad", exportEnabled: true, exportName: "load",
+          fields: [
+            { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+            { sourceName: "container_id", exportEnabled: true, exportName: "container_id" }
+          ]
+        }
+      ]
+    };
+
+    const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
+    expect(payload.vpp).toBeUndefined();
+    expect(payload.load?.rows[0]?.container_id).toBe(`vpp_${container.params.idx}`);
+    expect(payload.ACContainerDev?.rows[0]?.container_idx).toBe(`vpp_${container.params.idx}`);
+  });
 });
 
 // —— 关口拓扑变换(决策 4):合成端子 + 绑定设备上游替换为容器 ——
