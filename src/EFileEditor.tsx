@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import { Edit, Eye, ArrowUpRight } from "lucide-react";
 import { Button, Input } from "antd";
 import { PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
@@ -123,6 +123,10 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const resizeRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
+  // 表名 tab 统一宽度：全部对齐到**名称最长**的那个 tab（实测渲染宽度取最大值）。
+  // 纯 CSS 做不到：flex 自适应只按各自内容，等分（fr/1fr 网格）得到的是均值而非最大值
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  const [tabMinWidth, setTabMinWidth] = useState(0);
 
   // 按 section 分组记录：key=类内部名（供跳转/保存映射），label=模板输出表名（供展示）
   const sections = useMemo(() => {
@@ -146,6 +150,21 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
     setActiveSection(0);
     setEditMode(false);
   }, [records]);
+
+  // 量出最宽 tab：先清掉本轮 minWidth 再量（否则量到的是被撑大的旧值，标签变短后宽度永远回不去），
+  // 量完原样还原（接下来由 state 统一施加）。useLayoutEffect：绘制前完成，不闪跳
+  useLayoutEffect(() => {
+    if (!open) return;
+    const container = tabsRef.current;
+    if (!container) return;
+    const buttons = Array.from(container.querySelectorAll<HTMLElement>("button"));
+    if (buttons.length === 0) return;
+    const previousWidths = buttons.map((button) => button.style.minWidth);
+    buttons.forEach((button) => { button.style.minWidth = "0px"; });
+    const widest = Math.max(...buttons.map((button) => button.getBoundingClientRect().width));
+    buttons.forEach((button, index) => { button.style.minWidth = previousWidths[index]; });
+    setTabMinWidth(widest);
+  }, [open, editedRecords]);
 
   const getColWidth = useCallback((sectionName: string, col: string): number | undefined => {
     const key = `${sectionName}:${col}`;
@@ -349,12 +368,13 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
 
         <div className="e-file-editor-content">
           {/* Tab 导航 */}
-          <div className="e-file-editor-tabs">
+          <div className="e-file-editor-tabs" ref={tabsRef}>
             {sections.map((section, index) => (
               <Button
                 key={section.key}
                 htmlType="button"
                 className={index === activeSection ? "active" : ""}
+                style={tabMinWidth ? { minWidth: tabMinWidth } : undefined}
                 onClick={() => setActiveSection(index)}
               >
                 {section.label}

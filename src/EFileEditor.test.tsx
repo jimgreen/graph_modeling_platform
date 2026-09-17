@@ -5,6 +5,7 @@
 import { describe, expect, test } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
 import { EFileEditor, type EDeviceRecord } from "./EFileEditor";
 import {
   buildEDeviceRecords,
@@ -60,6 +61,19 @@ describe("EFileEditor 成员关系段列解析", () => {
     expect(html).toContain(fileRow![1]);
     expect(html).toContain(`title="${fileRow![2]}"`);
     expect(html).toContain(fileRow![3]);
+  });
+
+  test("表名 tab 统一宽度:容器挂 ref、按钮吃实测 minWidth、按最大宽度取齐（轮 21）", () => {
+    // 实测宽度需真实 DOM（本环境是 node/SSR,渲染不出布局）,守源码接线:
+    // 容器 ref → useLayoutEffect 量 max(getBoundingClientRect().width) → 全按钮 style.minWidth
+    const source = readFileSync(new URL("./EFileEditor.tsx", import.meta.url), "utf8");
+    expect(source).toContain('className="e-file-editor-tabs" ref={tabsRef}');
+    expect(source).toContain("style={tabMinWidth ? { minWidth: tabMinWidth } : undefined}");
+    // 量前先清零(否则标签变短后量到被撑大的旧值,宽度永远回不去),量完还原,再取 Math.max
+    expect(source).toContain('button.style.minWidth = "0px"');
+    expect(source).toContain("Math.max(...buttons.map((button) => button.getBoundingClientRect().width))");
+    // 单位是 px:minWidth 是数值(React 会加 px);传字符串会漏单位
+    expect(source).toContain("const [tabMinWidth, setTabMinWidth] = useState(0)");
   });
 
   test("模板态容器表以兜底名 container 出现在窗口（轮 17；轮 20 起列集与无模板态一致）", () => {
