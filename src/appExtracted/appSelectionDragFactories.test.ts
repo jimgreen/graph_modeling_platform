@@ -1,7 +1,6 @@
 // createCurrentProject 输出 backgroundProjectIdx：服务端靠它定位背景模型（前端 id 服务端无法解析）
 import { describe, expect, test, vi } from "vitest";
-import { Modal } from "antd";
-import { createAddToAcContainer, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createPasteSelection, createRemoveFromAcContainer } from "./appSelectionDragFactories";
+import { createAddToAcContainer, createConfirmAddToAcContainer, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createPasteSelection, createRemoveFromAcContainer } from "./appSelectionDragFactories";
 import { canvasClipboardBounds, cloneCanvasClipboard } from "../selectionActions";
 import { containerKindSwitch, containerNamePick, containerNameSearch } from "../acContainer";
 import { deleteNodesWithConnectedEdges } from "../model-routing";
@@ -164,35 +163,36 @@ describe("归属入口的量测同步", () => {
   });
 
   test("右键改归属:成员离开原关口容器 → 原容器旧镜像保留(fb13 口径)", () => {
-    // containers[0] 即默认目标(Modal 未改动时 pick 取首个容器):目标放前,原容器在后
+    // 默认目标 = 首个已有容器(弹窗初值即选中 c2):目标放前,原容器在后
     const nodes = [
       plainContainer("c2"),
       gatewayContainer("c1", "m1"),
       bareNode("m1", "ac-load", { containerId: "c1" }),
     ];
     const capture = captureMeasurements();
-    // Modal.confirm 桩:立即执行 onOk,等价用户点「确定」(默认目标 = 首个容器 c2)
-    const confirmSpy = vi.spyOn(Modal, "confirm").mockImplementation(((config: any) => {
-      config.onOk?.();
-      return { destroy: vi.fn(), update: vi.fn() };
-    }) as any);
-    try {
-      createAddToAcContainer({
-        activeSelectedNodeIds: ["m1"],
-        nodes,
-        assignPermanentDeviceIndex: vi.fn(),
-        normalizeProjectMeasurements,
-        pushUndoSnapshot: vi.fn(),
-        requireEditMode: () => true,
-        setDeviceIndexCounters: vi.fn(),
-        setGraphArrays: vi.fn(),
-        setProjectMeasurements: capture.setProjectMeasurements,
-        showGlobalMessage: vi.fn(),
-        writeOperationLog: vi.fn(),
-      } as any)();
-    } finally {
-      confirmSpy.mockRestore();
-    }
+    // 受控对话框桩:打开捕获状态 → 立即提交(等价用户点「确定」)
+    const scope: any = {
+      activeSelectedNodeIds: ["m1"],
+      nodes,
+      assignPermanentDeviceIndex: vi.fn(),
+      normalizeProjectMeasurements,
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: () => true,
+      setDeviceIndexCounters: vi.fn(),
+      setGraphArrays: vi.fn(),
+      setProjectMeasurements: capture.setProjectMeasurements,
+      showGlobalMessage: vi.fn(),
+      writeOperationLog: vi.fn(),
+    };
+    const openAddDialog = (target: any) => {
+      let captured: any = null;
+      target.setAddToContainerDialog = (state: any) => { captured = state; };
+      createAddToAcContainer(target)();
+      target.addToContainerDialog = captured;
+      return captured;
+    };
+    openAddDialog(scope);
+    createConfirmAddToAcContainer(scope)();
 
     expect(capture.get().groups.some((g: any) => g.nodeId === "c1")).toBe(true);
     expect(capture.get().groups.some((g: any) => g.nodeId === "m1")).toBe(true);
@@ -269,38 +269,49 @@ describe("删除容器收尾(deleteSelection)", () => {
     };
     return { scope, state };
   };
+  /**
+   * showGlobalConfirm 桩(审查收口:删除确认从 antd 静态 Modal.confirm 改走仓库统一确认):
+   * 记录文案;autoOk 决定点「确定」还是「取消」。弹窗横跨交互窗口 —— 需要「先弹、后改图、再确认」
+   * 的用例用 deferredConfirm 拿手动 resolve。
+   */
   const confirmStub = (autoOk: boolean) => {
-    const seen: any[] = [];
-    const spy = vi.spyOn(Modal, "confirm").mockImplementation(((config: any) => {
-      seen.push(config);
-      if (autoOk) config.onOk?.();
-      return { destroy: vi.fn(), update: vi.fn() };
-    }) as any);
-    return { seen, spy };
+    const seen: string[] = [];
+    const previous = (globalThis as any).showGlobalConfirm;
+    (globalThis as any).showGlobalConfirm = (text: string) => {
+      seen.push(text);
+      return Promise.resolve(autoOk);
+    };
+    return {
+      seen,
+      restore: () => {
+        if (previous === undefined) delete (globalThis as any).showGlobalConfirm;
+        else (globalThis as any).showGlobalConfirm = previous;
+      }
+    };
   };
 
-  test("有成员的容器:弹确认(文案含容器名与成员数),确认后容器删除、成员保留且归属清空", () => {
+  test("有成员的容器:弹确认(文案含容器名与成员数),确认后容器删除、成员保留且归属清空", async () => {
     const { scope, state } = mkDeleteScope([container(), member()], ["c1"]);
-    const { seen, spy } = confirmStub(true);
+    const { seen, restore } = confirmStub(true);
     try {
-      createDeleteSelection(scope)();
+      await createDeleteSelection(scope)();
     } finally {
-      spy.mockRestore();
+      restore();
     }
     expect(seen).toHaveLength(1);
-    expect(seen[0].content).toContain("虚拟电厂1");
-    expect(seen[0].content).toContain("1 个成员");
+    expect(seen[0]).toContain("虚拟电厂1");
+    expect(seen[0]).toContain("1 个成员");
     expect(state.nodes.map((n: any) => n.id)).toEqual(["m1"]);
     expect(state.nodes[0].containerId).toBeUndefined();
   });
 
-  test("取消确认(未执行 onOk)→ 图不变,且零副作用(不压 undo 栈、不清点击目标)", () => {
+  test("取消确认 → 图不变,且零副作用(不压 undo 栈、不清点击目标)", async () => {
     const { scope, state } = mkDeleteScope([container(), member()], ["c1"]);
-    const { seen, spy } = confirmStub(false);
+    const { seen, restore } = confirmStub(false);
     try {
-      createDeleteSelection(scope)();
+      await createDeleteSelection(scope)();
     } finally {
-      spy.mockRestore();
+      restore();
     }
     expect(seen).toHaveLength(1);
     expect(state.nodes.map((n: any) => n.id)).toEqual(["c1", "m1"]);
@@ -314,31 +325,36 @@ describe("删除容器收尾(deleteSelection)", () => {
   test("无选中时提前返回:仍清掉上一次画布点击目标", () => {
     const { scope } = mkDeleteScope([bareNode("o", "ac-load")], []);
     scope.lastCanvasClickTarget = "measurement";
-    createDeleteSelection(scope)();
+    void createDeleteSelection(scope)();
     expect(scope.setLastCanvasClickTarget).toHaveBeenCalledWith(null);
   });
 
-  test("空容器:不弹确认,直接删除", () => {
+  test("空容器:不弹确认,直接删除", async () => {
     const { scope, state } = mkDeleteScope([container(), bareNode("o", "ac-load")], ["c1"]);
-    const { seen, spy } = confirmStub(true);
+    const { seen, restore } = confirmStub(true);
     try {
-      createDeleteSelection(scope)();
+      await createDeleteSelection(scope)();
     } finally {
-      spy.mockRestore();
+      restore();
     }
     expect(seen).toHaveLength(0);
     expect(state.nodes.map((n: any) => n.id)).toEqual(["o"]);
   });
 
-  test("确认时刻现取最新图:弹窗期间的并发改动不被点击快照覆盖", () => {
+  test("确认时刻现取最新图:弹窗期间的并发改动不被点击快照覆盖", async () => {
     const { scope, state } = mkDeleteScope([container(), member()], ["c1"]);
-    const { seen, spy } = confirmStub(false);
+    // 手动 resolve:模拟「确认框挂着时第三方 WS control 改图,之后用户才点确定」
+    let resolveConfirm!: (value: boolean) => void;
+    const previous = (globalThis as any).showGlobalConfirm;
+    (globalThis as any).showGlobalConfirm = () => new Promise<boolean>((resolve) => { resolveConfirm = resolve; });
     try {
-      createDeleteSelection(scope)();
+      const pending = createDeleteSelection(scope)();
       state.nodes = [...state.nodes, bareNode("late", "ac-load")]; // 弹窗期间第三方 WS control 加图
-      seen[0].onOk();
+      resolveConfirm(true);
+      await pending;
     } finally {
-      spy.mockRestore();
+      if (previous === undefined) delete (globalThis as any).showGlobalConfirm;
+      else (globalThis as any).showGlobalConfirm = previous;
     }
     expect(state.nodes.map((n: any) => n.id)).toEqual(["m1", "late"]);
   });
@@ -354,15 +370,15 @@ describe("删除容器收尾(deleteSelection)", () => {
   });
 
   // 弹窗横跨交互窗口:groups 必须函数式更新,否则确认时写回的是点击瞬间的快照
-  test("groups 走函数式更新:用现取的 current,而非点击快照", () => {
+  test("groups 走函数式更新:用现取的 current,而非点击快照", async () => {
     const { scope } = mkDeleteScope([container(), member()], ["c1"]);
     const seen: any[] = [];
     scope.setGroups = (updater: any) => { seen.push(updater); };
-    const { spy } = confirmStub(true);
+    const { restore } = confirmStub(true);
     try {
-      createDeleteSelection(scope)();
+      await createDeleteSelection(scope)();
     } finally {
-      spy.mockRestore();
+      restore();
     }
     expect(typeof seen[0]).toBe("function"); // 快照口径传的是数组,这里必须是 updater
     expect(seen[0]("LATEST")).toBe("LATEST"); // 桩:normalize/remove 均透传,故回显入参
@@ -380,16 +396,16 @@ describe("删除容器收尾(deleteSelection)", () => {
   });
 
   // 半程的意思:只重算容器几何,**不**挤出非成员 —— 否则刚散出的成员会被相邻容器顺手推出框外
-  test("删容器:散出成员位置不变(不因落在相邻容器矩形内被挤出)", () => {
+  test("删容器:散出成员位置不变(不因落在相邻容器矩形内被挤出)", async () => {
     const c2 = bareNode("c2", "ac-vpp-box", { name: "邻居", position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, params: { _labelVisible: "0" } });
     const c1 = container();
     const m1 = member(); // 中心 (0,0),同时落在 c2 矩形 [-100,100]² 内
     const { scope, state } = mkDeleteScope([c1, c2, m1], ["c1"]);
-    const { spy } = confirmStub(true);
+    const { restore } = confirmStub(true);
     try {
-      createDeleteSelection(scope)();
+      await createDeleteSelection(scope)();
     } finally {
-      spy.mockRestore();
+      restore();
     }
     expect(state.nodes.map((n: any) => n.id)).toEqual(["c2", "m1"]);
     expect(state.nodes.find((n: any) => n.id === "m1").position).toEqual(m1.position);
@@ -542,14 +558,23 @@ describe("添加到容器:类型 + 名称双下拉", () => {
     return { graphs, scope };
   };
 
-  /** Modal.confirm 桩:只拦下 config,onOk 由用例决定何时触发(弹窗横跨交互窗口) */
-  const captureConfirm = () => {
+  /**
+   * 受控对话框桩:打开(createAddToAcContainer 写状态)→ 捕获状态并接上提交工厂。
+   * draft 即表单初值(受控组件内部 state 管显示);提交由用例决定何时触发(弹窗横跨交互窗口)。
+   */
+  const openAddDialog = (scope: any) => {
     let captured: any = null;
-    const spy = vi.spyOn(Modal, "confirm").mockImplementation(((config: any) => {
-      captured = config;
-      return { destroy: vi.fn(), update: vi.fn() };
-    }) as any);
-    return { spy, config: () => captured };
+    scope.setAddToContainerDialog = (state: any) => { captured = state; };
+    createAddToAcContainer(scope)();
+    scope.addToContainerDialog = captured;
+    return {
+      draft: () => captured?.draft,
+      /** 当前对话框状态(null = 已关闭):提交/取消都应清空它 */
+      state: () => captured,
+      /** 打开后清状态(null 由 UI 取消路径写入):断言取消不落图 */
+      cancel: () => { scope.setAddToContainerDialog(null); scope.addToContainerDialog = null; },
+      submit: () => createConfirmAddToAcContainer(scope)()
+    };
   };
 
   const createdContainer = (graphs: any[]) =>
@@ -557,35 +582,35 @@ describe("添加到容器:类型 + 名称双下拉", () => {
 
   test("无该类型容器:默认新建虚拟电厂(弹窗初值 kind=ac-vpp-box / 虚拟电厂1)", () => {
     const { graphs, scope } = mkNewContainerScope();
-    const { spy, config } = captureConfirm();
-    try {
-      createAddToAcContainer(scope)();
-    } finally {
-      spy.mockRestore();
-    }
+    const dialog = openAddDialog(scope);
 
     // 弹窗表单收 draft(受控组件:内部 state 管显示,初值取自同一 draft)
-    expect(config().content.props.draft).toEqual({ kind: "ac-vpp-box", name: "虚拟电厂1", containerId: "" });
+    expect(dialog.draft()).toEqual({ kind: "ac-vpp-box", name: "虚拟电厂1", containerId: "" });
 
-    config().onOk();
+    dialog.submit();
     const created = createdContainer(graphs);
     expect(created.kind).toBe("ac-vpp-box");
     expect(created.name).toBe("虚拟电厂1");
+    // 提交即关弹窗(状态清空):对话框组件由 __appScope.addToContainerDialog 驱动
+    expect(dialog.state()).toBe(null);
+  });
+
+  test("取消弹窗(状态清空)后再提交 → 不落图", () => {
+    const { graphs, scope } = mkNewContainerScope();
+    const dialog = openAddDialog(scope);
+    dialog.cancel();
+    dialog.submit();
+    expect(graphs).toHaveLength(0);
   });
 
   test("切类型 → 新容器 kind=ac-switch-box,默认名按该类型计数(开关箱1)", () => {
     const { graphs, scope } = mkNewContainerScope();
-    const { spy, config } = captureConfirm();
-    try {
-      createAddToAcContainer(scope)();
-    } finally {
-      spy.mockRestore();
-    }
+    const dialog = openAddDialog(scope);
 
-    // 弹窗为受控组件,Modal 桩下渲染不出 antd 下拉(环境是 node,无 jsdom):
+    // 表单为受控组件,node 环境渲染不出 antd 下拉:
     // 这里按组件 onChange 的唯一出口 containerKindSwitch 驱动 draft,锁「切类型 → kind/名称下拉值一起换」的提交侧
-    Object.assign(config().content.props.draft, containerKindSwitch("ac-switch-box", scope.nodes));
-    config().onOk();
+    Object.assign(dialog.draft(), containerKindSwitch("ac-switch-box", scope.nodes));
+    dialog.submit();
 
     const created = createdContainer(graphs);
     expect(created.kind).toBe("ac-switch-box");
@@ -596,17 +621,12 @@ describe("添加到容器:类型 + 名称双下拉", () => {
     const { graphs, scope } = mkNewContainerScope([
       bareNode("v1", "ac-vpp-box", { position: { x: 0, y: 0 }, size: { width: 200, height: 200 } }),
     ]);
-    const { spy, config } = captureConfirm();
-    try {
-      createAddToAcContainer(scope)();
-    } finally {
-      spy.mockRestore();
-    }
+    const dialog = openAddDialog(scope);
 
     // 该类型已有容器 → 初值即选中它(旧行为:有容器时默认加到第一个);这里显式再选一次同一 id 以锁出口语义
-    expect(config().content.props.draft.containerId).toBe("v1");
-    Object.assign(config().content.props.draft, containerNamePick("v1", "ac-vpp-box", scope.nodes));
-    config().onOk();
+    expect(dialog.draft().containerId).toBe("v1");
+    Object.assign(dialog.draft(), containerNamePick("v1", "ac-vpp-box", scope.nodes));
+    dialog.submit();
 
     const boxes = graphs[0][0].filter((node: any) => node.kind === "ac-vpp-box");
     expect(boxes).toHaveLength(1); // 未新建容器
@@ -617,16 +637,11 @@ describe("添加到容器:类型 + 名称双下拉", () => {
     const { graphs, scope } = mkNewContainerScope([
       bareNode("v1", "ac-vpp-box", { position: { x: 0, y: 0 }, size: { width: 200, height: 200 } }),
     ]);
-    const { spy, config } = captureConfirm();
-    try {
-      createAddToAcContainer(scope)();
-    } finally {
-      spy.mockRestore();
-    }
+    const dialog = openAddDialog(scope);
 
     // 模拟键盘输入(组件 onSearch 的唯一出口):初值本选中已有容器 v1,输入后被改判为新名
-    Object.assign(config().content.props.draft, containerNameSearch("我的虚拟电厂", config().content.props.draft));
-    config().onOk();
+    Object.assign(dialog.draft(), containerNameSearch("我的虚拟电厂", dialog.draft()));
+    dialog.submit();
 
     const created = graphs[0][0].find((node: any) => node.name === "我的虚拟电厂");
     expect(created.kind).toBe("ac-vpp-box");

@@ -5030,6 +5030,23 @@ describe("交流容器 E 导出", () => {
     expect(payload.unit?.rows[0]?.container_id).toBe(`container_${container.params.idx}`);
   });
 
+  test("规格 A(轮 20 裁决):容器表列集两态一致 —— 模板态与无模板态同列(库定义重建)", () => {
+    const [container, member] = createIndexedExportNodes(["ac-vpp-box", "ac-load"]);
+    member.containerId = container.id;
+    const project: ProjectFile = { version: 1, name: "容器列集两态一致模型", nodes: [container, member], edges: [] };
+    // 模板态走真实链路(类门控关掉容器段);无模板态走库装配(与实机同一 options 构造)
+    const templateOptions = eExportOptionsForTemplateFile("sgcc.e", { ACContainer: false });
+    const plainOptions = buildEFileExportOptionsFromLibrary({ libraryTemplates: DEVICE_LIBRARY as any, labels: {} });
+    const templatePayload = parseESections(buildEFileExport(project, ["默认方案"], templateOptions).text);
+    const plainPayload = parseESections(buildEFileExport(project, ["默认方案"], plainOptions as any).text);
+    // 两态列集逐项一致(含 parent/p/q/u/i 等空值列);表名照旧按态分叉(container vs ACContainer)
+    expect(plainPayload.ACContainer?.columns).toContain("parent");
+    expect(templatePayload.container?.columns).toEqual(plainPayload.ACContainer?.columns);
+    // 行值同样一致(dev_type = 容器元件英文名)
+    expect(templatePayload.container?.rows[0]?.dev_type).toBe("ac-vpp-box");
+    expect(templatePayload.container?.rows[0]?.idx).toBe(plainPayload.ACContainer?.rows[0]?.idx);
+  });
+
   test("规格 A:实时库模板(表名族 dms_def_)兜底名取同族 dms_def_container", () => {
     const [container, member] = createIndexedExportNodes(["ac-vpp-box", "ac-load"]);
     member.containerId = container.id;

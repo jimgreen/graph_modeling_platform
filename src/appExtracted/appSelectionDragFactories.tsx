@@ -1632,7 +1632,7 @@ export function createFinishMarqueeSelection(__appScope: Record<string, any>) {
 }
 
 export function createDeleteSelection(__appScope: Record<string, any>) {
-  return () => {
+  return async () => {
   const { activeSelectedEdgeIds, activeSelectedNodeIds, deleteNodesWithConnectedEdges, edgeById, edgeListForNodeIds, edges, groups, lastCanvasClickTarget, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, requireEditMode, setCanvasSelectionScope, setEdges, setGraphArrays, setGroups, setLastCanvasClickTarget, setProjectMeasurements, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, showGlobalMessage, syncGlobalLineProjectNodes, writeOperationLog } = __appScope;
     if (!requireEditMode("删除图元")) {
       return;
@@ -1714,17 +1714,14 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
         showGlobalMessage(unbindNotice);
       }
     };
-    // 删除集含「有成员的容器」→ 先确认:成员会散出(不随容器删除)
+    // 删除集含「有成员的容器」→ 先确认:成员会散出(不随容器删除)。
+    // 走仓库统一的 showGlobalConfirm(审查收口:antd 静态 Modal.confirm 不继承 ConfigProvider 主题、
+    // 与既有确认体系分裂);确认框横跨交互窗口,提交体 doDelete 内部一律现取最新图
     const warning = containerDeletionWarning(nodes, expandGlobalBoundaryDeletionNodeIds(nodes, clickedNodeIds));
     if (warning) {
-      Modal.confirm({
-        title: "删除容器",
-        content: warning,
-        okText: "删除",
-        cancelText: "取消",
-        onOk: () => doDelete(),
-      });
-      return;
+      if (!await showGlobalConfirm(warning)) {
+        return;
+      }
     }
     doDelete();
   };
@@ -1847,21 +1844,65 @@ function ContainerPickerForm({ draft, nodes }: { draft: ContainerDraft; nodes: a
 
 export function createAddToAcContainer(__appScope: Record<string, any>) {
   return () => {
-  const { activeSelectedNodeIds, assignPermanentDeviceIndex, normalizeProjectMeasurements, pushUndoSnapshot, requireEditMode, setDeviceIndexCounters, setGraphArrays, setProjectMeasurements, showGlobalMessage, writeOperationLog } = __appScope;
+  const { activeSelectedNodeIds, requireEditMode, setAddToContainerDialog, showGlobalMessage } = __appScope;
     if (!requireEditMode("添加到容器")) {
       return;
     }
-    // 点击瞬间只定「选中口径」;nodes/edges 一律在提交时刻现取(见 commitAdd)——弹窗横跨交互窗口,持点击快照会覆盖其间的并发改动
+    // 点击瞬间只定「选中口径」;nodes/edges 一律在提交时刻现取(见 createConfirmAddToAcContainer)
+    // —— 弹窗横跨交互窗口,持点击快照会覆盖其间的并发改动
     const clickNodes = __appScope.nodes;
     const memberIds = containerMemberIdsFromSelection(clickNodes, activeSelectedNodeIds);
     if (memberIds.length === 0) {
       showGlobalMessage("请选中至少一个普通图元（容器自身不参与归属）。");
       return;
     }
-    // 提交:纯函数算出完整 nextNodes(新容器已插入、成员已打 containerId、几何已重算),单次撤销点 + 单次落图。
-    // 改归属(成员原属其它容器)时,原关口容器会一并解绑 + 关关口(与移出同一出口)。
+    // 弹窗:类型 + 名称双下拉(见 ContainerPickerForm)。名称候选 = 所选类型的已有容器 ——
+    // 选中即加入该容器;输入清单以外的名字则新建该类型容器。两种情况同一弹窗,不再串两级 Modal
+    // (无该类型容器时名称框预填默认名,直接点确定即可创建)。
+    // 受控对话框(审查收口:原 antd 静态 Modal.confirm 不继承 ConfigProvider 主题、与既有确认体系分裂):
+    // 打开与提交分家 —— 打开只写状态,提交在「确定」时现取最新图(createConfirmAddToAcContainer)
+    const draft: ContainerDraft = containerKindSwitch(AC_CONTAINER_KINDS[0], clickNodes);
+    setAddToContainerDialog({ memberIds, draft, nodes: clickNodes });
+  };
+}
+
+/**
+ * 【添加到容器】受控对话框:挂在画布对话框宿主(AppCanvasDialogs),状态在 `__appScope.addToContainerDialog`。
+ * 打开时只存点击快照(候选清单用),提交一律现取最新图 —— 与打开路径的注释同口径。
+ */
+export function AcContainerAddDialog({ scope }: { scope: Record<string, any> }) {
+  const dialog = scope.addToContainerDialog as { memberIds: string[]; draft: ContainerDraft; nodes: any[] } | null;
+  return (
+    <Modal
+      open={Boolean(dialog)}
+      title="添加到容器"
+      okText="确定"
+      cancelText="取消"
+      destroyOnHidden
+      onOk={() => scope.confirmAddToAcContainer?.()}
+      onCancel={() => scope.setAddToContainerDialog?.(null)}
+    >
+      {dialog ? <ContainerPickerForm draft={dialog.draft} nodes={dialog.nodes} /> : null}
+    </Modal>
+  );
+}
+
+/**
+ * 【添加到容器】弹窗「确定」的提交:自点击快照只取 memberIds/草稿,图数据一律现取 ——
+ * 弹窗横跨交互窗口,期间第三方 WS control 可能已改图,持快照会覆盖并发改动。
+ * 纯函数算出完整 nextNodes(新容器已插入、成员已打 containerId、几何已重算),单次撤销点 + 单次落图;
+ * 改归属(成员原属其它容器)时,原关口容器会一并解绑 + 关关口(与移出同一出口)。
+ */
+export function createConfirmAddToAcContainer(__appScope: Record<string, any>) {
+  return () => {
+  const dialog = __appScope.addToContainerDialog as { memberIds: string[]; draft: ContainerDraft } | null;
+  __appScope.setAddToContainerDialog?.(null);
+  if (!dialog) {
+    return;
+  }
+  const { memberIds, draft } = dialog;
+  const { assignPermanentDeviceIndex, normalizeProjectMeasurements, pushUndoSnapshot, setDeviceIndexCounters, setGraphArrays, setProjectMeasurements, showGlobalMessage, writeOperationLog } = __appScope;
     const commitAdd = (container: any) => {
-      // 提交时刻现取最新图:本函数在 Modal 之后执行,期间第三方 WS control 可能已改图
       const { edges, nodes } = __appScope;
       if (containerAddIsNoop(nodes, container.id, memberIds)) {
         showGlobalMessage("选中的图元已在该容器内。");
@@ -1874,38 +1915,25 @@ export function createAddToAcContainer(__appScope: Record<string, any>) {
       setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, nextNodes));
       writeOperationLog(`添加 ${memberIds.length} 个图元到容器 ${container.name ?? ""}`.trim());
     };
-    // 弹窗:类型 + 名称双下拉(见 ContainerPickerForm)。名称候选 = 所选类型的已有容器 ——
-    // 选中即加入该容器;输入清单以外的名字则新建该类型容器。两种情况同一弹窗,不再串两级 Modal
-    // (无该类型容器时名称框预填默认名,直接点确定即可创建)。
-    const draft: ContainerDraft = containerKindSwitch(AC_CONTAINER_KINDS[0], clickNodes);
-    Modal.confirm({
-      title: "添加到容器",
-      content: <ContainerPickerForm draft={draft} nodes={clickNodes} />,
-      okText: "确定",
-      cancelText: "取消",
-      onOk: () => {
-        // 提交时刻现取最新图(同 commitAdd 口径):点击快照会覆盖弹窗期间的并发改动
-        const { deviceIndexCounters: latestCounters, nodeById, nodes: latestNodes } = __appScope;
-        const picked: any = draft.containerId
-          ? latestNodes.find((node: any) => node.id === draft.containerId && isAcContainerNode(node))
-          : undefined;
-        if (picked) {
-          commitAdd(picked);
-          return;
-        }
-        // 新建:名称取名称下拉的输入(空则回落到所选类型的默认名);包围盒按当前成员几何
-        const members = memberIds.map((id) => nodeById.get(id)).filter(Boolean);
-        // 计数器现取:弹窗期间若有并发分配(如其它入口占了 ACLoad 4),用点击快照回写会整对象倒退 → 重号。
-        // (audit:names 抓不到这类:名字有定义,只是过期)
-        // idx 走同源分配器(容器落 ac_container 分段,与图元库放置/粘贴同一计数)
-        const indexed = assignPermanentDeviceIndex(
-          buildNewContainer(draft.kind, draft.name.trim() || defaultContainerName(draft.kind, latestNodes), members, ""),
-          latestCounters
-        );
-        setDeviceIndexCounters(indexed.counters);
-        commitAdd(indexed.node);
-      },
-    });
+    const { deviceIndexCounters: latestCounters, nodeById, nodes: latestNodes } = __appScope;
+    const picked: any = draft.containerId
+      ? latestNodes.find((node: any) => node.id === draft.containerId && isAcContainerNode(node))
+      : undefined;
+    if (picked) {
+      commitAdd(picked);
+      return;
+    }
+    // 新建:名称取名称下拉的输入(空则回落到所选类型的默认名);包围盒按当前成员几何
+    const members = memberIds.map((id) => nodeById.get(id)).filter(Boolean);
+    // 计数器现取:弹窗期间若有并发分配(如其它入口占了 ACLoad 4),用点击快照回写会整对象倒退 → 重号。
+    // (audit:names 抓不到这类:名字有定义,只是过期)
+    // idx 走同源分配器(容器落 ac_container 分段,与图元库放置/粘贴同一计数)
+    const indexed = assignPermanentDeviceIndex(
+      buildNewContainer(draft.kind, draft.name.trim() || defaultContainerName(draft.kind, latestNodes), members, ""),
+      latestCounters
+    );
+    setDeviceIndexCounters(indexed.counters);
+    commitAdd(indexed.node);
   };
 }
 

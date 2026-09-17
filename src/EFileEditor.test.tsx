@@ -62,20 +62,30 @@ describe("EFileEditor 成员关系段列解析", () => {
     expect(html).toContain(fileRow![3]);
   });
 
-  test("模板态容器表以兜底名 container 出现在窗口（轮 17：模板未命中容器类时窗口原本整表缺失）", () => {
+  test("模板态容器表以兜底名 container 出现在窗口（轮 17；轮 20 起列集与无模板态一致）", () => {
     const project = createContainerProject();
-    // 模板态最小形状：有模板配置、容器类未命中（无 ACContainer 定义）—— 与实机加载模板后的类门控结果同形
+    // 模板态真实形状：有模板配置、容器类未命中模板（定义仍在、只被类门控置 exportEnabled=false）
+    // —— 与实机加载模板后同一形态，列集也照样按定义重建（轮 20 裁决：两态同列）
     const options = {
       eDeviceDefinitionLabels: { ACNode: "交流节点" },
-      interfaceDefinitions: [{
-        componentLibrary: "ACNode",
-        exportEnabled: true,
-        exportName: "ACNode",
-        fields: [
-          { sourceName: "idx", exportEnabled: true, exportName: "idx" },
-          { sourceName: "name", exportEnabled: true, exportName: "name" }
-        ]
-      }]
+      interfaceDefinitions: [
+        {
+          componentLibrary: "ACNode",
+          exportEnabled: true,
+          exportName: "ACNode",
+          fields: [
+            { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+            { sourceName: "name", exportEnabled: true, exportName: "name" }
+          ]
+        },
+        {
+          componentLibrary: "ACContainer",
+          exportEnabled: false,
+          exportName: "ACContainer",
+          fields: ["idx", "name", "parent", "dev_type", "p", "q", "u", "i", "is_gateway", "bound_device_idx"]
+            .map((column) => ({ sourceName: column, exportEnabled: true, exportName: column }))
+        }
+      ]
     };
     const records = buildEDeviceRecords(project, options);
     finalizeEDevicePreviewRecords(project, options, records);
@@ -87,18 +97,22 @@ describe("EFileEditor 成员关系段列解析", () => {
     expect(containerRecords).toHaveLength(1);
     // 段名分叉：展示标签是兜底名 container（CamelCase ACContainer 是无模板态的展示名）
     expect(containerRecords[0].sectionLabel).toBe("container");
-    expect(containerRecords[0].columns).toBeUndefined();
 
     const html = renderToStaticMarkup(
       createElement(EFileEditor, { open: true, onClose: () => {}, records: containerRecords })
     );
-    // 表名 tab + 五列表头（列走 E_SECTION_COLUMNS 兜底；修复前该记录压根不产出，窗口无此表）
+    // 与导出文件列头逐项对拍（含 parent/p/q/u/i 等空值列；修复前该记录压根不产出，窗口无此表）
     expect(html).toContain(">container<");
-    for (const column of ["idx", "name", "dev_type", "is_gateway", "bound_device_idx"]) {
+    const fileText = buildEFileExport(project, ["默认方案"], options).text;
+    const fileHeader = fileText.match(/<container>\n@\s+([^\n]+)/);
+    expect(fileHeader).toBeTruthy();
+    const fileColumns = fileHeader![1].trim().split(/\s+/);
+    expect(fileColumns).toEqual(expect.arrayContaining(["parent", "p", "dev_type", "is_gateway"]));
+    for (const column of fileColumns) {
       expect(html).toContain(column);
     }
-    // 与导出文件逐值对拍：同一模型同模板下 <container> 行的取值
-    const containerRow = buildEFileExport(project, ["默认方案"], options).text.match(/<container>[\s\S]*?\n#\s+(\S+)\s+(\S+)\s+(\S+)/);
+    // 与导出文件逐值对拍：同一模型同模板下 <container> 行的首三列取值
+    const containerRow = fileText.match(/<container>[\s\S]*?\n#\s+(\S+)\s+(\S+)\s+(\S+)/);
     expect(containerRow).toBeTruthy();
     expect(html).toContain(`title="${containerRow![1]}"`);
     expect(html).toContain(containerRow![2]);

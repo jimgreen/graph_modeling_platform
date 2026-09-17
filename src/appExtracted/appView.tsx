@@ -561,6 +561,8 @@ export function renderAppView(__appScope: Record<string, any>) {
   const { confirmLibraryPackageDialog, closeLibraryPackageDialog, libraryPackageDialogMode, libraryPackageDialogOpen, libraryPackageDialogScope, libraryPackageDialogScopeOptions, openLibraryPackageDialog, requestCloseCustomDeviceDialog, setExpandedDefinitionGroups, setCollapsedDefinitionComponentLibraries, setLibraryPackageDialogMode, setLibraryPackageDialogScope } = __appScope;
   const { subcontrolarea, setSubcontrolarea, modelType, setModelType, substation, setSubstation, feeder, setFeeder, taiqu, setTaiqu } = __appScope;
   const { voltageLevelSettings, setVoltageLevelSettings, voltageLevelDialogOpen, setVoltageLevelDialogOpen } = __appScope;
+  // 【添加到容器】受控对话框状态:画布对话框层门控 + 余下 Object.assign 复发布都要读它(同 voltageLevelDialogOpen 惯例)
+  const { addToContainerDialog } = __appScope;
   const { measurementConfigDialogOpen, closeMeasurementConfigDialog, userCustomizationManagerOpen, setUserCustomizationManagerOpen } = __appScope;
   const { eFileEditorDialogOpen, setEFileEditorDialogOpen } = __appScope;
   const {
@@ -2326,7 +2328,8 @@ export function renderAppView(__appScope: Record<string, any>) {
     filterSelectionDialogOpen ||
     reactFlowPreviewOpen ||
     colorPaletteDialogOpen ||
-    voltageLevelDialogOpen
+    voltageLevelDialogOpen ||
+    addToContainerDialog
   );
   const deviceDialogLayerActive = Boolean(
     deviceDefinitionDialogOpen ||
@@ -2368,7 +2371,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     Zap, ZapOff, activeImageFolderId, activeLayerNodes, activeSelectedNodeIds, activeVoltageBaseTerminalKey, activeVoltageBaseTerminalRow, addCustomDeviceStateDraftRow,
     addCustomParameterRow, addDefaultMeasurementsToNode, addDefinitionDraftRow, addManualBendFromContextMenu, addRoutableLineBendFromContextMenu, adjustSelectedDisplayLayer, applyExistingImage, applyIconLibraryCatalogIcon,
     applyLayerAssignmentDialog, autoAlignCanvasGraphics, autoSpreadCanvasGraphics, canAddTemplateFromSelection, canGroupSelectedGraphics, canUngroupSelectedGraphics, cancelGlobalLinePlacement, cancelGlobalLineTransition,
-    cancelTemplateDialog, canvasClipboard, categoryLibraryComponentLibraryKey, clearSelectedImage, closeDeviceDefinitionDialog, closeLibraryPackageDialog, collapsedCustomComponentTreeLibraries, collapsedCustomComponentTreeTypes,
+    addToContainerDialog, cancelTemplateDialog, canvasClipboard, categoryLibraryComponentLibraryKey, clearSelectedImage, closeDeviceDefinitionDialog, closeLibraryPackageDialog, collapsedCustomComponentTreeLibraries, collapsedCustomComponentTreeTypes,
     collapsedDefinitionComponentLibraries, collapsedEDeviceInterfaceTreeNodes, colorPaletteDialogOpen, colorPaletteDraft, colorPaletteTab, componentLibraryDisplayParts, componentLibraryOptionsByCategoryLibrary, confirmAddGraphTemplate,
     confirmConnectionRedrawDialog, confirmCreateDeviceFromGroup, confirmCustomLibraryCreateDialog, confirmFilterSelectionDialog, confirmGlobalLinePlacement, confirmGlobalLineTransition, confirmLibraryPackageDialog, confirmReplaceDeviceIconFromGroup,
     confirmVoltageBaseClearDialog, confirmVoltageBaseSetDialog, connectionRedrawDialogOpen, connectionRedrawScope, connectionRedrawTargetsForScope, contextMeasurementGroup, contextMeasurementNode, contextMenu,
