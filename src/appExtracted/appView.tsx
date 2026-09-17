@@ -15,7 +15,7 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { E_SECTION_COLUMNS, inferESection, baseDeviceKind, isAcContainerKind, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, finalizeEDevicePreviewRecords, eSectionTemplateForkName, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, modelAssociationDevicesModelTypeFailureMessage, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
+import { E_SECTION_COLUMNS, inferESection, baseDeviceKind, isAcContainerKind, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, finalizeEDevicePreviewRecords, eOutputSectionName, eFileInterfaceDefinitionIndex, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, modelAssociationDevicesModelTypeFailureMessage, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyPredefinedEDeviceTemplateToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { resolveEditableComponentLibraryDefinition } from "../componentLibraryDefinitions";
 import { TOPOLOGY_WARNING_PAGE_SIZE } from "./appCoreCanvasUtilities";
@@ -1878,25 +1878,11 @@ export function renderAppView(__appScope: Record<string, any>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [libraryTemplates, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, eDeviceInterfaceLoadedTemplateName]
   );
-  // 类 -> 模板输出表名（如 ACGenerator -> unit、ACNode -> node），供 E 文件编辑器按模板规格展示
-  const eFileEditorSectionLabels = useMemo(() => {
-    const labelBySection = new Map<string, string>();
-    for (const [componentLibrary, label] of Object.entries(eDeviceDefinitionLabels ?? {})) {
-      if (label && label !== componentLibrary) {
-        labelBySection.set(componentLibrary, label);
-      }
-    }
-    for (const definition of eFileEditorExportOptions.interfaceDefinitions ?? []) {
-      const componentLibrary = String(definition.componentLibrary ?? "").trim();
-      const outputLabel = String(definition.exportName ?? "").trim()
-        || labelBySection.get(componentLibrary)
-        || componentLibrary;
-      if (componentLibrary && outputLabel) {
-        labelBySection.set(componentLibrary, outputLabel);
-      }
-    }
-    return labelBySection;
-  }, [eFileEditorExportOptions, eDeviceDefinitionLabels]);
+  // 段 -> 接口定义索引：E 文件编辑器算段标签用（与导出侧同一个索引构造 + 同一个 eOutputSectionName 判定）
+  const eFileEditorDefinitionIndex = useMemo(
+    () => eFileInterfaceDefinitionIndex(eFileEditorExportOptions),
+    [eFileEditorExportOptions]
+  );
   // E 文件编辑器表头 tooltip 的字段中文名：读取模板文件中的中文注释（cnName）。
   // 来源优先 eDeviceDefinitionTemplateFields（含 aclineend/dclineend 等独立运行时表），
   // 其次 interfaceDefinitions（设备库行字段的 cnName 已被模板注释覆盖）。
@@ -1948,10 +1934,9 @@ export function renderAppView(__appScope: Record<string, any>) {
       // 使 E 文件编辑器中这些字段悬浮出现「跳转」按钮（按大 id 还原行号跳转）
       applyEReferenceIdValues(project, orderedRecords, eFileEditorExportOptions);
       setEFileEditorRecords(orderedRecords.map((record) => {
-        // 模板态分叉的段名(成员关系段 → container_dev)与导出**同源**,优先于标签映射表 ——
-        // 否则模板态预览仍显示内部段名 ACContainerDev,与导出文件不一致
-        const sectionLabel = eSectionTemplateForkName(record.section, eFileEditorExportOptions)
-          || eFileEditorSectionLabels.get(record.section);
+        // 段标签（模板输出表名，如 ACGenerator → unit / 成员关系段模板态 → container_dev）与导出**同一单源**：
+        // 直接调导出侧 eOutputSectionName，前端不复刻判据（复刻必漂移）
+        const sectionLabel = eOutputSectionName(record.section, eFileEditorDefinitionIndex, eFileEditorExportOptions);
         const next: EDeviceExport & { sectionLabel?: string; readonly?: boolean } = { ...record };
         if (sectionLabel && sectionLabel !== record.section) {
           // section 保持类内部名（供跳转/保存反向映射），sectionLabel 为模板输出表名（供展示）
@@ -1966,7 +1951,7 @@ export function renderAppView(__appScope: Record<string, any>) {
       console.error("[EFileEditor] Error generating records:", error);
       setEFileEditorRecords([]);
     }
-  }, [eFileEditorDialogOpen, eFileEditorExportOptions, eFileEditorSectionLabels]);
+  }, [eFileEditorDialogOpen, eFileEditorExportOptions, eFileEditorDefinitionIndex]);
   // ESC 键关闭 E 文件编辑器
   useEffect(() => {
     if (!eFileEditorDialogOpen) return;
