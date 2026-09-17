@@ -1786,6 +1786,17 @@ function mergeRealbsSectionForTemplate(
  * 接口定义 exportName > 标签映射(eDeviceDefinitionLabels) > 内部段名。
  * 跨段引用列(bound_device_idx 等)按此取名才能对上实际写出的表;两处漂移即指向不存在的段。
  */
+/**
+ * 段输出表名的**模板态分叉**(单源,目前只有成员关系段):命中返该段模板态输出名,否则返 `""`。
+ * 导出侧 `eOutputSectionName` 与「查看/编辑E文件」预览(`appView`)共用 —— 该段不是设备类、模板不会为它建定义,
+ * 两处各写一份「模板态叫什么」必漂移(模板态固定 snake_case,`ACContainerDev` 只属无模板态)。
+ */
+export function eSectionTemplateForkName(section: string, options: EFileExportOptions): string {
+  return section === AC_CONTAINER_DEV_SECTION && hasTemplateConfig(options)
+    ? AC_CONTAINER_DEV_TEMPLATE_SECTION
+    : "";
+}
+
 function eOutputSectionName(
   section: string,
   interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>,
@@ -1794,8 +1805,9 @@ function eOutputSectionName(
   // 成员关系段(功能表)按态分叉:模板态固定 `container_dev`,非模板态走既有口径(`ACContainerDev`)。
   // **先于** exportName/labels 判定:该段不是设备类,模板不会为它建定义,而模板态表名族是 snake_case ——
   // 若让 CamelCase 映射(如 eDeviceDefinitionLabels 里的旧写法)压过分叉,模板态又退回 ACContainerDev
-  if (section === AC_CONTAINER_DEV_SECTION && hasTemplateConfig(options)) {
-    return AC_CONTAINER_DEV_TEMPLATE_SECTION;
+  const forkedName = eSectionTemplateForkName(section, options);
+  if (forkedName) {
+    return forkedName;
   }
   return String(interfaceDefinitionBySection.get(section)?.exportName ?? "").trim()
     || String(options.eDeviceDefinitionLabels?.[section] ?? "").trim()

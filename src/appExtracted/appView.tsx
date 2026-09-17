@@ -15,7 +15,7 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { E_SECTION_COLUMNS, inferESection, baseDeviceKind, isAcContainerKind, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, finalizeEDevicePreviewRecords, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, modelAssociationDevicesModelTypeFailureMessage, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
+import { E_SECTION_COLUMNS, inferESection, baseDeviceKind, isAcContainerKind, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, finalizeEDevicePreviewRecords, eSectionTemplateForkName, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, modelAssociationDevicesModelTypeFailureMessage, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyPredefinedEDeviceTemplateToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { resolveEditableComponentLibraryDefinition } from "../componentLibraryDefinitions";
 import { TOPOLOGY_WARNING_PAGE_SIZE } from "./appCoreCanvasUtilities";
@@ -1948,7 +1948,10 @@ export function renderAppView(__appScope: Record<string, any>) {
       // 使 E 文件编辑器中这些字段悬浮出现「跳转」按钮（按大 id 还原行号跳转）
       applyEReferenceIdValues(project, orderedRecords, eFileEditorExportOptions);
       setEFileEditorRecords(orderedRecords.map((record) => {
-        const sectionLabel = eFileEditorSectionLabels.get(record.section);
+        // 模板态分叉的段名(成员关系段 → container_dev)与导出**同源**,优先于标签映射表 ——
+        // 否则模板态预览仍显示内部段名 ACContainerDev,与导出文件不一致
+        const sectionLabel = eSectionTemplateForkName(record.section, eFileEditorExportOptions)
+          || eFileEditorSectionLabels.get(record.section);
         const next: EDeviceExport & { sectionLabel?: string; readonly?: boolean } = { ...record };
         if (sectionLabel && sectionLabel !== record.section) {
           // section 保持类内部名（供跳转/保存反向映射），sectionLabel 为模板输出表名（供展示）
