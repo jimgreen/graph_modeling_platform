@@ -96,7 +96,8 @@ export function createProgrammaticCreateBlankProject(__appScope: Record<string, 
       throw e;
     }
     if (!MODEL_TYPES.includes(modelType)) {
-      const e: any = new Error("modelType 须为微网、厂站、馈线、台区或其他。");
+      // 文案与校验同源(轮 19 审查 M3):手写五项会随 MODEL_TYPES 变更过期
+      const e: any = new Error(`modelType 须为${MODEL_TYPES.join("、")}。`);
       e.code = "bad-request";
       throw e;
     }
