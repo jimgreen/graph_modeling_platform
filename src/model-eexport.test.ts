@@ -5132,9 +5132,14 @@ describe("交流容器 E 导出", () => {
     expect(templatePayload.container_dev?.rows).toHaveLength(1);
     expect(templatePayload.container_dev?.rows[0]?.container_type).toBe("ac-vpp-box");
     expect(templatePayload.container_dev?.rows[0]?.device_id).toBe(`unit_${member.params.idx}`);
+    // 容器引用**不随成员段改名带偏**(裁决 2026-09-17):container_idx 指向的是**容器表**(容器行),
+    // 模板态写 `容器段输出名_idx`(此处容器段 exportName=container → container_1),不是成员段的 container_dev_1
+    expect(templatePayload.container_dev?.rows[0]?.container_idx).toBe(`container_${box.params.idx}`);
     const plainPayload = parseESections(plainText);
     expect(plainPayload.ACContainerDev?.rows[0]?.container_type).toBe("ac-vpp-box");
     expect(plainPayload.ACContainerDev?.rows[0]?.device_id).toBe(`ACGenerator_${member.params.idx}`);
+    // 非模板态容器引用仍是容器裸 idx(容器段内唯一),同款不随段名走
+    expect(plainPayload.ACContainerDev?.rows[0]?.container_idx).toBe(box.params.idx);
   });
 
   test("规格 B:device_id 取合并段重排后的最终行号(与 bound_device_idx 同源定稿)", () => {
