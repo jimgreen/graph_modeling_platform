@@ -5180,7 +5180,9 @@ describe("交流容器 E 导出", () => {
     // 容器段不输出 → 不得写指向不存在表的 ACContainer_{idx},改用 dms 族兜底名
     expect(payload.ACContainer).toBeUndefined();
     expect(payload.dms_def_load?.rows[0]?.container_id).toBe(`dms_def_container_${container.params.idx}`);
-    // 容器表不存在时成员关系表同链不产出(引用无处可指)
+    // 容器表不存在时成员关系表同链不产出(引用无处可指)。
+    // 本断言**非判别式**(判据恒假时也绿:记录即便产出也被统一 filter 剔除,段级看不到差异)——
+    // 本用例真正的判别式是上面的兜底名断言(判据恒假时值会写成指向不存在表的 ACContainer_{idx})
     expect(payload.container_dev).toBeUndefined();
   });
 });

@@ -1805,8 +1805,9 @@ function finalizeContainerCrossRefs(
       }
       const idx = String(record.params.idx ?? "").trim();
       finalRefByNodeId.set(record.id, idx ? `${group.outputSection}_${idx}` : "");
-      // 容器段只有一个内部段、不参与合并重排,按组判定即可
-      if (group.section === "ACContainer" && idx) {
+      // 容器记录按**记录自身**段名判定,不依赖组首段名(sectionGroups 的 section 取 groups[0],
+      // 合并段场景下可能是别的段名 → 容器引用会静默回落构建期局部值);此写法使「容器段不与他人合并」不再是前置条件
+      if (record.section === "ACContainer" && idx) {
         containerFinalById.set(record.id, { table: group.outputSection, idx });
       }
     }
@@ -2029,10 +2030,10 @@ function attachContainerIdToDeviceRecords(
     return;
   }
   // 容器段不会输出时 eOutputSectionName 会退回内部段名(ACContainer),那是「段不存在」而非「表名叫 ACContainer」,
-  // 故先判是否真会输出,再取表名;不输出 → 走兜底表名(containerFallbackTable)
+  // 故先判是否真会输出,再取表名;不输出 → 直接用兜底表名(containerFallbackTable)
   const containerTable = containerSectionOutputs(isTemplateMode, interfaceDefinitionBySection)
     ? eOutputSectionName("ACContainer", interfaceDefinitionBySection, options)
-    : "";
+    : containerFallbackTable(options);
   for (const record of records) {
     // 容器自身不属于任何容器(不允许嵌套)
     if (record.section === "ACContainer") {
@@ -2051,9 +2052,8 @@ function attachContainerIdToDeviceRecords(
       record.params._container_node_id = container.id;
       const containerIdx = String(container.params.idx ?? "").trim();
       if (containerIdx) {
-        record.params.container_id = isTemplateMode
-          ? `${containerTable || containerFallbackTable(options)}_${containerIdx}`
-          : containerIdx;
+        // 模板态表名(或兜底名,见上)已定稿;非模板态裸 idx —— 容器段内唯一,无需表名前缀
+        record.params.container_id = isTemplateMode ? `${containerTable}_${containerIdx}` : containerIdx;
       }
     }
   }
