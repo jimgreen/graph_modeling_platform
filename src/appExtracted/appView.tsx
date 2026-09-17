@@ -15,7 +15,7 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { E_SECTION_COLUMNS, inferESection, baseDeviceKind, isAcContainerKind, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, modelAssociationDevicesModelTypeFailureMessage, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
+import { E_SECTION_COLUMNS, inferESection, baseDeviceKind, isAcContainerKind, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, finalizeEDevicePreviewRecords, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, modelAssociationDevicesModelTypeFailureMessage, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyPredefinedEDeviceTemplateToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { resolveEditableComponentLibraryDefinition } from "../componentLibraryDefinitions";
 import { TOPOLOGY_WARNING_PAGE_SIZE } from "./appCoreCanvasUtilities";
@@ -1936,6 +1936,9 @@ export function renderAppView(__appScope: Record<string, any>) {
         ? __appScope.schemePathForScheme(__appScope.activeSchemeKey)
         : ["默认方案"];
       const records = buildEDeviceRecords(project, eFileEditorExportOptions);
+      // 跨表引用定稿（bound_device_idx / container_id / container_idx）：与导出文件同值 ——
+      // 预览此前停在构建期初值（成员关系表 device_id 整列 0、container_idx 停在局部 idx），与文件不一致
+      finalizeEDevicePreviewRecords(project, eFileEditorExportOptions, records);
       // 头表（basevalue/basevoltage/subcontrolarea/substation 或 Model）为系统表，随项目设置生成，只读展示
       const headerRecords = buildEDeviceHeaderParameterRecords(project, records, eFileEditorExportOptions, schemePath);
       const headerSectionSet = new Set(headerRecords.map((record) => record.section));
