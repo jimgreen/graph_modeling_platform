@@ -603,6 +603,20 @@ describe("添加到容器:类型 + 名称双下拉", () => {
     expect(graphs).toHaveLength(0);
   });
 
+  // 打开/提交分家的显式契约:提交必须现取最新图(第三方 WS control 可能在弹窗挂起期间改图),
+  // 用打开时的点击快照会整图倒退回旧状态 —— 与删除路径同一语义(那边用 deferred resolve 验)
+  test("确认时刻现取最新图:弹窗期间的并发改动不被点击快照覆盖(添加路径)", () => {
+    const { graphs, scope } = mkNewContainerScope();
+    const dialog = openAddDialog(scope);
+    // 弹窗期间第三方 WS control 加图
+    scope.nodes = [...scope.nodes, bareNode("late", "ac-load")];
+    scope.nodeById = new Map(scope.nodes.map((n: any) => [n.id, n]));
+    dialog.submit();
+    // 落图用的是最新图(含 late);若误用打开时快照,late 会整节点丢失
+    expect(graphs[0][0].some((n: any) => n.id === "late")).toBe(true);
+    expect(graphs[0][0].find((n: any) => n.id === "m1").containerId).toBeTruthy();
+  });
+
   test("切类型 → 新容器 kind=ac-switch-box,默认名按该类型计数(开关箱1)", () => {
     const { graphs, scope } = mkNewContainerScope();
     const dialog = openAddDialog(scope);
