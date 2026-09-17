@@ -6,7 +6,9 @@
 // 锚定口径(与平台一致):`node.position` 是节点**中心**,容器真实矩形 = position ± size/2。
 // (DeviceGlyph 矩形 x:-w/2、命中框、bodyVisualBoxForNode position±half 三处同源)
 // 相对 import 带 .ts 扩展名:本模块被 src/export/svg.ts(Node 直载)间接引用,裸 "./model" Node ESM 解析不了
-import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, createDefaultNode, getNodeScaleX, getNodeScaleY, isAcContainerKind, isStaticNode, isWireLikeRouteDeviceKind, liveContainerIds } from "./model.ts";
+import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, containerMemberNodes, createDefaultNode, getNodeScaleX, getNodeScaleY, isAcContainerKind, isStaticNode, isWireLikeRouteDeviceKind, liveContainerIds } from "./model.ts";
+// 成员判定已上收 model.ts(model-eexport 顶层不得引本模块):此处保留转出,既有 import "../acContainer" 调用点不迁移
+export { containerMemberNodes };
 
 /** 容器包围成员时的**内侧**留白:容器矩形 = 成员包围盒 + 该留白(容器贴成员的紧密度) */
 export const CONTAINER_PADDING = 24;
@@ -41,10 +43,6 @@ function containerMembershipEligible(node: ModelNode): boolean {
   return !isAcContainerNode(node) && !isWireLikeRouteDeviceKind(node.kind) && !isStaticNode(node);
 }
 
-/** 容器的成员节点(不含容器自身;容器 id 恒不等于成员 id,此处一并挡掉自指脏数据) */
-export function containerMemberNodes(nodes: ModelNode[], containerId: string): ModelNode[] {
-  return nodes.filter((n) => n.containerId === containerId && n.id !== containerId);
-}
 
 /**
  * 入图即归一:并入图的节点若是容器,把遗留 scale 折算进 size(见 foldContainerScaleIntoSize);

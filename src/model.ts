@@ -873,6 +873,15 @@ export function liveContainerIds(nodes: readonly ModelNode[]): Set<string> {
 }
 
 /**
+ * 容器的成员节点(不含容器自身;容器 id 恒不等于成员 id,此处一并挡掉自指脏数据)。
+ * 成员判定**单源**:画布挤出/拖动排斥(acContainer)与 E 导出成员关系表(model-eexport)共用。
+ * 声明在 model.ts 与 liveContainerIds 同理 —— 两个消费方都要经它,而 model-eexport 顶层不得引 acContainer(加载链 TDZ)。
+ */
+export function containerMemberNodes(nodes: readonly ModelNode[], containerId: string): ModelNode[] {
+  return nodes.filter((n) => n.containerId === containerId && n.id !== containerId);
+}
+
+/**
  * 某容器绑定的成员设备 id(`is_gateway=1` + 绑定设备仍是本容器成员),否则 undefined。
  * 关口容器判据的**唯一出处**:容器量测组同步(measurements)与导出关口拓扑变换(model-eexport)共用,
  * 两边「算不算开着口的关口」必须同一口径。
