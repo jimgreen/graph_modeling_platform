@@ -1977,7 +1977,8 @@ function containerSectionOutputs(
 /**
  * 模板态没有容器表定义时的兜底表名前缀(规格 A 兜底):容器不导出时归属信息仍写出,
  * 形态保持 `表名_idx` —— 消费方无需为「裸 idx」分支解析。
- * 两处消费者:设备表 container_id 列(构建期)、ACContainerDev.container_idx(定稿期,容器段被关掉时)。
+ * 经 containerFallbackTable → containerReferenceTable **供两处消费者共用**(M2 单源收口后不再各自取表名):
+ * 设备表 container_id 列(构建期)、ACContainerDev.container_idx(定稿期,容器段被关掉时)。
  */
 const CONTAINER_FALLBACK_TABLE = "container";
 
