@@ -59,3 +59,15 @@ describe("工厂 scope 契约", () => {
     expect(typeof createMeasurementFieldParameterDefinition).toBe("function");
   });
 });
+
+// 「查看/编辑E文件」预览的段标签必须走导出侧单源 eOutputSectionName（审查 M1）：
+// appView 曾有一份自己的「类 → 模板输出表名」映射表（eFileEditorSectionLabels / labelBySection），
+// 与导出判据重复、会各自漂移（成员关系段模板态 container_dev 即由此漏显）。本守卫钉住接线形态。
+describe("E 文件预览段名接线", () => {
+  test("appView 直接调导出侧 eOutputSectionName，不得再长出本地「类 → 表名」映射", () => {
+    const text = readFileSync(path.join(SRC_ROOT, "appExtracted", "appView.tsx"), "utf-8");
+    expect(text).toContain("eOutputSectionName(");
+    expect(text).not.toContain("eFileEditorSectionLabels");
+    expect(text).not.toContain("labelBySection");
+  });
+});
