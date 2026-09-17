@@ -226,6 +226,7 @@ import {
   deserializeProject,
   edgeWithSavedRouteGeometry,
   buildEDeviceRecords,
+  finalizeEDevicePreviewRecords,
   formatEDeviceRecordColumnValue,
   type Edge,
   type DeviceKind,
@@ -5066,6 +5067,76 @@ describe("交流容器 E 导出", () => {
     expect(text.indexOf("<ACContainerDev>")).toBeGreaterThan(text.indexOf("<ACContainer>"));
   });
 
+  test("预览路径(查看/编辑E文件):finalizeEDevicePreviewRecords 后成员关系表引用与导出同值", () => {
+    const [box, member] = createIndexedExportNodes(["ac-vpp-box", "ac-source"]);
+    member.containerId = box.id;
+    const project: ProjectFile = { version: 1, name: "预览定稿模型", nodes: [box, member], edges: [] };
+
+    const records = buildEDeviceRecords(project);
+    const memberRecord = records.find((record) => record.section === "ACContainerDev");
+    // 构建期只有占位:device_id 空(预览不过定稿时编辑器整列 0)、container_idx 是裸 idx
+    expect(memberRecord?.params.device_id).toBe("");
+    finalizeEDevicePreviewRecords(project, {}, records);
+    // 定稿后与导出文件同值(表名_idx / 容器裸 idx);与文本导出对拍,防预览与文件两套口径
+    const payload = parseESections(buildEFileExport(project).text);
+    expect(memberRecord?.params.device_id).toBe(payload.ACContainerDev?.rows[0]?.device_id);
+    expect(memberRecord?.params.container_idx).toBe(payload.ACContainerDev?.rows[0]?.container_idx);
+  });
+
+  test("规格 B(裁决 2026-09-17 轮 15):段名按态分叉 —— 无模板态 ACContainerDev,模板态固定 container_dev", () => {
+    const [box, member] = createIndexedExportNodes(["ac-vpp-box", "ac-source"]);
+    member.containerId = box.id;
+    const project: ProjectFile = { version: 1, name: "容器段名分态模型", nodes: [box, member], edges: [] };
+
+    // 无模板态:与容器表 ACContainer 同族 CamelCase
+    const plainText = buildEFileExport(project).text;
+    expect(plainText).toContain("<ACContainerDev>");
+    expect(plainText).not.toContain("<container_dev>");
+
+    // 模板态:固定 snake_case(模板/实时库表名族)。**显式映射回 CamelCase 也压不过分叉** ——
+    // 该段不是设备类,模板本就不会为它建定义,故 exportName/labels 不是模板态的正确来源
+    const options = {
+      eDeviceDefinitionLabels: { ACContainer: "container", ACContainerDev: "ACContainerDev" },
+      interfaceDefinitions: [
+        {
+          componentLibrary: "ACContainer", exportEnabled: true, exportName: "container",
+          fields: [
+            { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+            { sourceName: "name", exportEnabled: true, exportName: "name" },
+            { sourceName: "dev_type", exportEnabled: true, exportName: "dev_type" }
+          ]
+        },
+        {
+          componentLibrary: "ACContainerDev", exportEnabled: true, exportName: "ACContainerDev",
+          fields: [
+            { sourceName: "device_id", exportEnabled: true, exportName: "device_id" },
+            { sourceName: "container_idx", exportEnabled: true, exportName: "container_idx" },
+            { sourceName: "container_type", exportEnabled: true, exportName: "container_type" }
+          ]
+        },
+        {
+          componentLibrary: "ACGenerator", exportEnabled: true, exportName: "unit",
+          fields: [
+            { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+            { sourceName: "name", exportEnabled: true, exportName: "name" }
+          ]
+        }
+      ]
+    };
+    const templateText = buildEFileExport(project, ["默认方案"], options).text;
+    expect(templateText).toContain("<container_dev>");
+    expect(templateText).not.toContain("<ACContainerDev>");
+    const templatePayload = parseESections(templateText);
+    // 两态行集同源(只表名不同):模板态列/行与无模板态逐值一致
+    expect(templatePayload.container_dev?.columns).toEqual(["device_id", "container_idx", "container_type"]);
+    expect(templatePayload.container_dev?.rows).toHaveLength(1);
+    expect(templatePayload.container_dev?.rows[0]?.container_type).toBe("ac-vpp-box");
+    expect(templatePayload.container_dev?.rows[0]?.device_id).toBe(`unit_${member.params.idx}`);
+    const plainPayload = parseESections(plainText);
+    expect(plainPayload.ACContainerDev?.rows[0]?.container_type).toBe("ac-vpp-box");
+    expect(plainPayload.ACContainerDev?.rows[0]?.device_id).toBe(`ACGenerator_${member.params.idx}`);
+  });
+
   test("规格 B:device_id 取合并段重排后的最终行号(与 bound_device_idx 同源定稿)", () => {
     const base = eExportOptionsForTemplateFile("sgcc.e");
     // 模板未定义段一律静默:容器段要模板显式定义才输出(成员关系段是功能表,恒出,见下一条用例)
@@ -5101,15 +5172,19 @@ describe("交流容器 E 导出", () => {
     const project: ProjectFile = { version: 1, name: "容器成员合并段模型", nodes: [box, t2, t3], edges: [] };
 
     const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
+    // 模板态段名固定 container_dev —— options 里显式把该段映射成 ACContainerDev(定义 exportName 亦然),
+    // 分叉仍必须赢(旧实现下本段取映射名 → payload.container_dev 为空)
+    expect(payload.container_dev).toBeDefined();
+    expect(payload.ACContainerDev).toBeUndefined();
     // 按最后一个下划线切「表名 / idx」(表名可含下划线),再在对应段找行 —— 引用错位时命中的是另一台变压器
-    const referencedNames = (payload.ACContainerDev?.rows ?? []).map((row) => {
+    const referencedNames = (payload.container_dev?.rows ?? []).map((row) => {
       const ref = row.device_id;
       const cut = ref.lastIndexOf("_");
       return (payload[ref.slice(0, cut)]?.rows ?? []).find((candidate) => candidate.idx === ref.slice(cut + 1))?.name;
     });
     expect(referencedNames).toEqual(["双绕组主变1", "三绕组主变1"]);
     // container_idx 与设备表 container_id 同形态:容器段输出时也写 `表名_idx`(裁决 2026-09-17 统一口径)
-    expect(payload.ACContainerDev?.rows[0]?.container_idx).toBe(`container_${box.params.idx}`);
+    expect(payload.container_dev?.rows[0]?.container_idx).toBe(`container_${box.params.idx}`);
   });
 
   test("规格 B:成员无 E 段(静态图元)时行保留、引用为空 —— 成员关系不丢", () => {
@@ -5187,11 +5262,11 @@ describe("交流容器 E 导出", () => {
     const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
     // 列定义取 E_SECTION_COLUMNS 兜底(模板没有该段);模板态 container_idx 与设备表 container_id **同形态**
     // (裁决 2026-09-17:统一写 `表名_idx`,裸 idx 只属非模板态)
-    expect(payload.ACContainerDev?.columns).toEqual(["device_id", "container_idx", "container_type"]);
-    expect(payload.ACContainerDev?.rows).toHaveLength(1);
-    expect(payload.ACContainerDev?.rows[0]?.container_idx).toBe(`container_${box.params.idx}`);
-    expect(payload.ACContainerDev?.rows[0]?.container_type).toBe("ac-vpp-box");
-    expect(payload.ACContainerDev?.rows[0]?.device_id).toBe(`unit_${member.params.idx}`);
+    expect(payload.container_dev?.columns).toEqual(["device_id", "container_idx", "container_type"]);
+    expect(payload.container_dev?.rows).toHaveLength(1);
+    expect(payload.container_dev?.rows[0]?.container_idx).toBe(`container_${box.params.idx}`);
+    expect(payload.container_dev?.rows[0]?.container_type).toBe("ac-vpp-box");
+    expect(payload.container_dev?.rows[0]?.device_id).toBe(`unit_${member.params.idx}`);
   });
 
   test("规格 A/B:模板态容器段被类门控关掉时走兜底名,成员关系表仍产出", () => {
@@ -5217,10 +5292,10 @@ describe("交流容器 E 导出", () => {
     expect(payload.dms_def_load?.rows[0]?.container_id).toBe(`dms_def_container_${container.params.idx}`);
     // 裁决 2026-09-17:成员关系表是功能表,容器段被关掉也**仍产出**(成员关系是画布事实);
     // container_idx 同走兜底名口径(裸 idx 指向不存在的表),device_id 仍按成员最终行定稿
-    expect(payload.ACContainerDev?.rows).toHaveLength(1);
-    expect(payload.ACContainerDev?.rows[0]?.container_idx).toBe(`dms_def_container_${container.params.idx}`);
-    expect(payload.ACContainerDev?.rows[0]?.container_type).toBe("ac-vpp-box");
-    expect(payload.ACContainerDev?.rows[0]?.device_id).toBe(`dms_def_load_${member.params.idx}`);
+    expect(payload.container_dev?.rows).toHaveLength(1);
+    expect(payload.container_dev?.rows[0]?.container_idx).toBe(`dms_def_container_${container.params.idx}`);
+    expect(payload.container_dev?.rows[0]?.container_type).toBe("ac-vpp-box");
+    expect(payload.container_dev?.rows[0]?.device_id).toBe(`dms_def_load_${member.params.idx}`);
   });
 
   test("规格 A/B:容器段定义存在但字段列表为空 → 两处容器引用同源同形(不分叉)", () => {
@@ -5247,7 +5322,7 @@ describe("交流容器 E 导出", () => {
     const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
     expect(payload.vpp).toBeUndefined();
     expect(payload.load?.rows[0]?.container_id).toBe(`vpp_${container.params.idx}`);
-    expect(payload.ACContainerDev?.rows[0]?.container_idx).toBe(`vpp_${container.params.idx}`);
+    expect(payload.container_dev?.rows[0]?.container_idx).toBe(`vpp_${container.params.idx}`);
   });
 });
 

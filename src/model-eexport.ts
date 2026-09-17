@@ -43,6 +43,13 @@ import type {
  */
 const AC_CONTAINER_DEV_SECTION = "ACContainerDev";
 
+/**
+ * 成员关系段的**模板态输出标签**(裁决 2026-09-17 轮 15):固定 snake_case。
+ * 模板本体(国网/实时库)表名族一律 snake_case,`ACContainerDev` 是**无模板态**的名字(与容器表 ACContainer 同族 CamelCase);
+ * 两态分叉只动输出标签,内部段 key(`AC_CONTAINER_DEV_SECTION`)不动 —— 列定义/输出序/记录 section/filter 豁免仍按 key。
+ */
+const AC_CONTAINER_DEV_TEMPLATE_SECTION = "container_dev";
+
 export const E_SECTION_COLUMNS: Record<string, string[]> = {
   Station: ["idx", "name"],
   Feeder: ["idx", "name", "parent"],
@@ -1784,6 +1791,12 @@ function eOutputSectionName(
   interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>,
   options: EFileExportOptions
 ): string {
+  // 成员关系段(功能表)按态分叉:模板态固定 `container_dev`,非模板态走既有口径(`ACContainerDev`)。
+  // **先于** exportName/labels 判定:该段不是设备类,模板不会为它建定义,而模板态表名族是 snake_case ——
+  // 若让 CamelCase 映射(如 eDeviceDefinitionLabels 里的旧写法)压过分叉,模板态又退回 ACContainerDev
+  if (section === AC_CONTAINER_DEV_SECTION && hasTemplateConfig(options)) {
+    return AC_CONTAINER_DEV_TEMPLATE_SECTION;
+  }
   return String(interfaceDefinitionBySection.get(section)?.exportName ?? "").trim()
     || String(options.eDeviceDefinitionLabels?.[section] ?? "").trim()
     || section;
@@ -3387,9 +3400,14 @@ export function applyEReferenceIdValues(
   }
 }
 
-function buildEDeviceParameterFileFromRecords(
+/**
+ * 跨表引用定稿(导出与「查看/编辑E文件」预览**共用**,单源):按 outputSection 分组(同名合并段) →
+ * 合并段 idx 重排 → 回填引用列(bound_device_idx / container_id / container_idx)。
+ * 顺序不可换:引用值取重排后的**最终**行号(见 finalizeContainerCrossRefs 注释)。
+ * 返回定稿后的分组,导出路径继续据此序列化。
+ */
+function finalizeEDeviceCrossReferences(
   project: ProjectFile,
-  schemePath: string[],
   options: EFileExportOptions,
   records: readonly EDeviceExport[],
   preserveMergedIndexes = false
@@ -3444,6 +3462,31 @@ function buildEDeviceParameterFileFromRecords(
     isTemplateMode,
     containerReferenceTable(isTemplateMode, interfaceDefinitionBySection, options)
   );
+  return { interfaceDefinitionBySection, sectionGroups, sectionedRecords };
+}
+
+/**
+ * 「查看/编辑E文件」预览用:把同一批记录(经 buildEDeviceRecords 产出)定稿到与导出文件一致的引用值。
+ * 预览此前不过定稿步,成员关系表 device_id 恒停在构建期空占位(编辑器整列 0)、container_idx 停在局部值 ——
+ * 与导出文件不一致(实机反馈轮 15「表内容为空」在平台侧的唯一可复现面)。
+ */
+export function finalizeEDevicePreviewRecords(
+  project: ProjectFile,
+  options: EFileExportOptions,
+  records: readonly EDeviceExport[]
+): void {
+  finalizeEDeviceCrossReferences(project, options, records);
+}
+
+function buildEDeviceParameterFileFromRecords(
+  project: ProjectFile,
+  schemePath: string[],
+  options: EFileExportOptions,
+  records: readonly EDeviceExport[],
+  preserveMergedIndexes = false
+) {
+  const { interfaceDefinitionBySection, sectionGroups, sectionedRecords } =
+    finalizeEDeviceCrossReferences(project, options, records, preserveMergedIndexes);
   const sectionBlocks = sectionGroups.map(({ outputSection, section, allRecords }) =>
     formatESection(section, allRecords, outputSection, interfaceDefinitionBySection.get(section)?.tableId));
   // 头表（模板模式：basevalue/basevoltage/subcontrolarea/substation；非模板模式：Model/basevoltage），
