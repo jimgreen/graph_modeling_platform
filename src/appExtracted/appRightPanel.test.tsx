@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { ContainerKindSelectValue } from "./appRightPanel";
+import { MODEL_TYPES } from "../model";
 
 const renderValue = (props: Record<string, unknown>) =>
   renderToStaticMarkup(
@@ -39,5 +40,27 @@ describe("容器「设备类型」行下拉", () => {
     expect(guard).toContain("dev_type");
     // 仅一处调用点,避免「只改一个入口」的分叉
     expect(source.match(/<ContainerKindSelectValue/g)?.length).toBe(1);
+  });
+});
+
+describe("模型属性「模型类型」行下拉", () => {
+  test("候选清单与「新建模型」弹窗同源(model.ts MODEL_TYPES 单源),不再硬编码三项", () => {
+    const source = readFileSync(new URL("./appRightPanel.tsx", import.meta.url), "utf8");
+    // 从 model.ts 单源导入(与新建模型弹窗的 __appScope.MODEL_TYPES 是同一个常量)
+    expect(source).toMatch(/import \{[^}]*MODEL_TYPES[^}]*\} from "\.\.\/model"/);
+    // 候选值由 MODEL_TYPES 展开(「请选择」空项除外)
+    expect(source).toContain("...MODEL_TYPES.map((type) => ({ value: type, label: type }))");
+    // 反证:旧硬编码三项不得残留(否则将来 MODEL_TYPES 变更时本行又落后于弹窗)
+    for (const type of ["厂站", "馈线", "台区"]) {
+      expect(source).not.toContain(`{ value: "${type}", label: "${type}" }`);
+    }
+  });
+
+  test("新建模型弹窗与右侧面板读同一常数 —— 两侧守卫", () => {
+    // 弹窗侧(新建模型):直接展开 __appScope.MODEL_TYPES
+    const dialogSource = readFileSync(new URL("./appDeviceDefinitionDialogs.tsx", import.meta.url), "utf8");
+    expect(dialogSource).toContain("__appScope.MODEL_TYPES.map((modelType) =>");
+    // 常数本身:五项清单(改动此处即同时改两侧)
+    expect([...MODEL_TYPES]).toEqual(["厂站", "馈线", "台区", "微网", "其他"]);
   });
 });
