@@ -68,6 +68,46 @@ test("onDuplicate:reject 时重名建空间抛 SPACE_NAME_DUPLICATE，且带上�
   expect((await store.list()).filter((s) => s.name === "王五")).toHaveLength(1);
 });
 
+// 归属（owner）：只给前端把列表收窄到「自己的空间」用，不是权限；缺省 = 无主空间。
+test("create 带 owner 落进注册表（trim），不带就不留该字段", async () => {
+  const store = createSpaceStore(dataRoot);
+  await store.ensureInitialized();
+  const owned = await store.create("张三", { owner: " 张三 " });
+  const plain = await store.create("公共");
+
+  expect(owned.owner).toBe("张三");
+  expect(plain).not.toHaveProperty("owner");
+  const listed = await store.list();
+  expect(listed.find((s) => s.id === owned.id)?.owner).toBe("张三");
+  expect(listed.find((s) => s.id === plain.id)).not.toHaveProperty("owner");
+});
+
+test("归属会落盘：换一个 store 实例（= 重启）后仍在", async () => {
+  const store = createSpaceStore(dataRoot);
+  await store.ensureInitialized();
+  const owned = await store.create("张三", { owner: "张三" });
+
+  const reloaded = createSpaceStore(dataRoot);
+  await reloaded.ensureInitialized();
+
+  expect((await reloaded.list()).find((s) => s.id === owned.id)?.owner).toBe("张三");
+});
+
+test("老数据没有 owner 字段照样读得进来（= 无主空间，不是坏数据）", async () => {
+  mkdirSync(join(dataRoot, "workspaces", "老空间"), { recursive: true });
+  writeFileSync(
+    spacesFile(),
+    JSON.stringify({ schemaVersion: 1, spaces: [{ id: "老空间", name: "老空间", createdAt: "2026-01-01T00:00:00.000Z" }] })
+  );
+
+  const store = createSpaceStore(dataRoot);
+  await store.ensureInitialized();
+
+  const legacy = (await store.list()).find((s) => s.id === "老空间");
+  expect(legacy).toBeTruthy();
+  expect(legacy).not.toHaveProperty("owner");
+});
+
 test("改名撞上别人抛 SPACE_NAME_DUPLICATE；原样改回自己的名字是合法 no-op", async () => {
   const store = createSpaceStore(dataRoot);
   await store.ensureInitialized();

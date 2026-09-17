@@ -25,6 +25,16 @@ export function duplicateSpaceNameError(name, id) {
   return error;
 }
 
+// 空间**归属**（= qiankun 宿主传进来的登录用户名）。
+// **它不是权限**：后端没有鉴权，归属只用于前端把空间列表收窄到「自己的那些」，
+// 故只做 trim 与长度上限，不做唯一性/合法性校验（用户名不归空间系统管）。
+// 老数据没有这个字段 = 无主空间（历史空间、default），照样可读可写。
+export const MAX_SPACE_OWNER_LENGTH = 64;
+
+export function normalizeSpaceOwner(value) {
+  return String(value ?? "").trim().slice(0, MAX_SPACE_OWNER_LENGTH);
+}
+
 const findByName = (spaces, name) => spaces.find((space) => normalizeSpaceName(space.name) === name) ?? null;
 
 // 越界双保险：必须特判 default —— 它的根是 dataRoot，不在 workspacesRoot 之下。
@@ -93,11 +103,14 @@ export function createSpaceStore(dataRoot) {
 
   function normalizeSpace(raw) {
     const id = String(raw?.id ?? "");
+    const owner = normalizeSpaceOwner(raw?.owner);
     return {
       id,
       name: String(raw?.name ?? id),
       pinned: id === DEFAULT_SPACE_ID,
       createdAt: raw?.createdAt ?? new Date().toISOString(),
+      // 空归属不落字段：否则「无主」会以空串形态散进注册表，判据要写成两个
+      ...(owner ? { owner } : {}),
       ...(raw?.lastAccessAt ? { lastAccessAt: String(raw.lastAccessAt) } : {})
     };
   }
@@ -192,8 +205,9 @@ export function createSpaceStore(dataRoot) {
      * - `"allow"`（默认）：照旧建 —— 非 HTTP 调用方（测试、脚本）沿用旧语义。
      * - `"reject"`：抛 SPACE_NAME_DUPLICATE，由调用方转 409。
      * 检查与建在**同一把锁内**：分两次调用时，两个并发同名创建会双双通过校验，各建一个同名空间。
+     * `owner` 是归属（见 normalizeSpaceOwner），缺省 = 无主空间。
      */
-    async create(name, { onDuplicate = "allow" } = {}) {
+    async create(name, { onDuplicate = "allow", owner } = {}) {
       return locked(async () => {
         const current = await load();
         const trimmed = normalizeSpaceName(name);
@@ -202,7 +216,7 @@ export function createSpaceStore(dataRoot) {
           throw duplicateSpaceNameError(trimmed, clash.id);
         }
         const id = spaceIdFromName(trimmed, current.spaces.map((s) => s.id));
-        const space = normalizeSpace({ id, name: trimmed || id });
+        const space = normalizeSpace({ id, name: trimmed || id, owner });
         const next = { ...current, spaces: [...current.spaces, space] };
         await ensureSkeleton(id);
         await writeState(next);

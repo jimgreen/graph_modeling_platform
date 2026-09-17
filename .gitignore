@@ -27,6 +27,9 @@ output/
 nul
 pnpm-workspace.yaml
 *claudetemp_diff.txt
+platform.config.json
+.omo
+.idea
 
 # 文档 / 排查备份
 docs/commits_*.txt

@@ -9,6 +9,9 @@ export type Space = {
   pinned?: boolean;
   createdAt: string;
   lastAccessAt?: string;
+  // 空间归属（qiankun 宿主传来的登录用户名）。**不是权限**，只用于把列表收窄到「自己的」；
+  // 老空间与 default 没有这个字段 = 无主空间。
+  owner?: string;
 };
 
 export const SPACE_COOKIE_NAME = "gmp_space";
@@ -73,8 +76,11 @@ export async function fetchSpaces(): Promise<{ spaces: Space[]; current: string 
   return fetchBackendJson<{ spaces: Space[]; current: string }>(apiPath("/spaces"), "读取空间列表失败。");
 }
 
-export async function createSpace(name: string): Promise<Space> {
-  return fetchBackendJson<Space>(apiPath("/spaces"), "新建空间失败。", backendJsonRequest("POST", JSON.stringify({ name })));
+// owner 只在 qiankun 下传（宿主登录用户名）；不传就是无主空间 —— 与加这个参数前逐字节一致，
+// 故独立运行与既有测试的请求体不变。
+export async function createSpace(name: string, owner?: string): Promise<Space> {
+  const body = owner ? { name, owner } : { name };
+  return fetchBackendJson<Space>(apiPath("/spaces"), "新建空间失败。", backendJsonRequest("POST", JSON.stringify(body)));
 }
 
 // 改名只改显示名：后端绝不 rename 目录（id 不动），故调用方**不需要**重载页面。

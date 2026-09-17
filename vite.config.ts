@@ -1,6 +1,8 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import qiankun from "vite-plugin-qiankun-lite";
 import { host, backendPort, frontendPort, apiPrefix, frontendPrefix } from "./server/config.mjs";
+import { name } from "./package.json";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -66,14 +68,19 @@ const serverWatchIgnored = [
   "**/.worktrees/**"
 ];
 
+// qiankun 子应用需要使用相对路径加载资源
+const useRelativeBase = process.env.VITE_QIANKUN === 'true';
+const effectiveBase = useRelativeBase ? './' : frontendPrefix;
+
 export default defineConfig({
-  plugins: [react()],
-  base: frontendPrefix,
+  plugins: [react(), qiankun({ name })],
+  base: effectiveBase,
   define: {
     __API_PREFIX__: JSON.stringify(apiPrefix),
     __FRONTEND_BASE__: JSON.stringify(frontendPrefix)
   },
   build: {
+    modulePreload: false, // qiankun 环境禁用 modulepreload，避免资源路径问题
     rollupOptions: {
       output: {
         manualChunks: frontendManualChunks

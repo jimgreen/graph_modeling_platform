@@ -28,11 +28,11 @@ const renderEmptyProjectPanel = (loaded: boolean) => renderToStaticMarkup(create
 describe("model library empty state", () => {
   test("shows automatic recovery while the backend has not loaded", () => {
     expect(renderEmptyProjectPanel(false)).toContain("正在连接模型库，恢复后将自动加载...");
-    expect(renderEmptyProjectPanel(false)).not.toContain(">暂无方案<");
+    expect(renderEmptyProjectPanel(false)).not.toContain(">暂无方案");
   });
 
-  test("shows a genuine empty directory only after a successful backend load", () => {
-    expect(renderEmptyProjectPanel(true)).toContain(">暂无方案<");
+  test("guides the novice to right-click to create a scheme after a successful backend load", () => {
+    expect(renderEmptyProjectPanel(true)).toContain(">暂无方案，右键此处创建方案<");
     expect(renderEmptyProjectPanel(true)).not.toContain("正在连接模型库");
   });
 });

@@ -1736,7 +1736,7 @@ describe("空间导入导出按钮", () => {
 
   // 形态断言，非行为断言：只证明两个按钮那一行源码还在 / 没被加回去，
   // 不证明浏览模式下点击真的被挡住（本仓 node 环境不渲染 React，见上方 describe 的说明）。
-  test("导出按钮不禁用、导入按钮禁用（形态断言，非行为断言）", () => {
+  test("导出按钮不禁用；导入按钮在浏览模式下禁用（形态断言，非行为断言）", () => {
     const topbarSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
     const buttonBlock = (label: string) =>
       topbarSource.match(new RegExp(`<button[^>]*aria-label="${label}"[\\s\\S]*?</button>`))?.[0] ?? "";
@@ -1745,8 +1745,9 @@ describe("空间导入导出按钮", () => {
     // 钉的是「不能按浏览模式门控」，不是「不能有 disabled」—— 将来加别的合法禁用条件不该被这条打红
     expect(buttonBlock("导出空间")).toContain('className="topbar-primary-button"');
     expect(buttonBlock("导出空间")).not.toContain("isBrowseMode");
-    // 导入会切空间 + 硬重载，浏览模式下必须挡住；顺手删掉也红
-    expect(buttonBlock("导入空间")).toContain("disabled={scope.isBrowseMode}");
+    // 导入会切空间 + 硬重载，浏览模式下必须挡住；qiankun 下另有「导入的空间没有归属」的禁用，
+    // 故这里钉「表达式里含 isBrowseMode 门控」（与导出那条同一思路：不锁整串字面量），删掉门控仍红
+    expect(buttonBlock("导入空间")).toContain("scope.isBrowseMode");
   });
 
   // 形态断言，非行为断言：新建空间失败后的提示埋在未导出的组件闭包里，

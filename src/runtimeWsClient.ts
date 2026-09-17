@@ -61,6 +61,20 @@ export function createRuntimeWsClient(fetchHandler: FetchHandler, options: Runti
     if (options.url) {
       return options.url;
     }
+    // qiankun 环境：使用主应用传入的后端地址
+    const inQiankun = (window as any).__POWERED_BY_QIANKUN__;
+    if (inQiankun) {
+      const qiankunProps = (window as any).__QIANKUN_PROPS__;
+      const apiBaseUrl = qiankunProps?.apiBaseUrl;
+      if (apiBaseUrl) {
+        // 将 http(s) 替换为 ws(s)
+        const wsUrl = apiBaseUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
+        return `${wsUrl}${apiPath("/ws")}`;
+      }
+      // 兜底：使用当前 host
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return `${proto}//${window.location.host}${apiPath("/ws")}`;
+    }
     // dev：vite (5173) 的 /ws WS 代理不稳定（升级常 pending），直连 image-server。
     // prod：同源同端口走 /ws。WS 路径带前端 base（如 /app/ws），后端剥前缀匹配 /ws。
     if (import.meta.env && import.meta.env.DEV) {
