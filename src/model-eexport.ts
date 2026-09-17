@@ -1803,8 +1803,8 @@ export function eOutputSectionName(
     return AC_CONTAINER_DEV_TEMPLATE_SECTION;
   }
   // 容器表(功能表,裁决 2026-09-17 轮 17):模板态模板未定义容器段(或该类被类门控关掉)时固定用兜底表名
-  // (实时库族 dms_def_container,其余 container)—— 输出表名与引用名(设备表 container_id / 成员表 container_idx)
-  // 共用本函数,两处漂移即让引用指向不存在的表
+  // (实时库族 dms_def_container,其余 container)—— 输出表名与设备表 `container_id` 引用前缀(表名_idx)
+  // 共用本函数,两处漂移即让引用指向不存在的表(成员表 container_idx 写裸 idx,不经表名)
   if (section === "ACContainer" && hasTemplateConfig(options) && !containerSectionDefinedInTemplate(interfaceDefinitionBySection)) {
     return containerFallbackTable(options);
   }
@@ -1822,12 +1822,11 @@ export function eOutputSectionName(
 function finalizeContainerCrossRefs(
   records: readonly EDeviceExport[],
   sectionGroups: readonly { outputSection: string; section: string; allRecords: EDeviceExport[] }[],
-  isTemplateMode: boolean,
-  containerTable: string
+  isTemplateMode: boolean
 ): void {
   const finalRefByNodeId = new Map<string, string>();
-  // 容器节点的最终落位(表名 + 偏移后 idx):设备表 container_id 与 ACContainerDev.container_idx 按它重写 ——
-  // 全网拓扑导出按 modelIndex 偏移 idx 后,构建期算出的局部值会指向不存在(或别模型)的行
+  // 容器节点的最终落位(表名 + 偏移后 idx):设备表 container_id 用表名+idx,成员表 container_idx 只用偏移后 idx
+  // (轮 18 起裸 idx)—— 全网拓扑导出按 modelIndex 偏移 idx 后,构建期算出的局部值会指向不存在(或别模型)的行
   const containerFinalById = new Map<string, { table: string; idx: string }>();
   for (const group of sectionGroups) {
     for (const record of group.allRecords) {
@@ -1849,18 +1848,15 @@ function finalizeContainerCrossRefs(
     const containerFinal = containerFinalById.get(String(record.params._container_node_id ?? ""));
     if (record.section === AC_CONTAINER_DEV_SECTION) {
       if (containerFinal) {
-        // 与设备表 container_id **同形态**(裁决 2026-09-17 统一):模板态写 `表名_idx`(表名 = 容器段实际输出名),
-        // 非模板态写裸 idx(容器段内唯一)。同一份文件里两处引用同一个容器,形态不得分叉
-        record.params.container_idx = isTemplateMode
-          ? `${containerFinal.table}_${containerFinal.idx}`
-          : containerFinal.idx;
+        // 轮 18 裁决:只写容器行**裸 idx**(偏移后),两态同形 —— 列名 `container_idx` 已指明指向容器行,
+        // 容器表在文件里唯一(ACContainer / container / dms_def_container),不加 `表名_` 前缀(原轮 13 口径作废)
+        record.params.container_idx = containerFinal.idx;
       } else if (isTemplateMode) {
         // 容器记录被列空守卫剔除(轮 17 后容器表恒输出,「容器段不输出」已不存在;只剩「模板定义容器段但字段列表为空」
-        // 这一条,查不到最终落位):容器表在文件里无行,裸 idx 无处可指,
-        // 改用**与设备表 container_id 同源**的引用表名(containerReferenceTable,调用方按同一判据算好传入);
-        // 只读构建期存下的裸 idx(`_container_local_idx`),不读 container_idx 现值 —— 定稿二次进入不叠前缀
+        // 这一条,查不到最终落位):容器表在文件里无行,仍写构建期存下的**裸 idx**(`_container_local_idx`,
+        // 不读 container_idx 现值 —— 定稿二次进入不叠写)
         const localIdx = String(record.params._container_local_idx ?? "").trim();
-        record.params.container_idx = localIdx ? `${containerTable}_${localIdx}` : "";
+        record.params.container_idx = localIdx;
       }
       // 成员无 E 段(静态图元)或被模板过滤 → 取不到引用,整列为空;行保留(成员关系仍在)
       const memberId = String(record.params._member_node_id ?? "");
@@ -1985,7 +1981,8 @@ function containerSectionDefinedInTemplate(
 
 /**
  * 模板态模板未定义容器段时的兜底表名(规格 A 兜底;轮 17 起容器表以此名实际输出,不再是「表不存在时的引用名」):
- * 容器表、设备表 container_id 列、成员表 ACContainerDev.container_idx 三处同名,形态保持 `表名_idx`。
+ * 容器表段标签与设备表 `container_id` 列(模板定义该列时)同名,形态 `表名_idx`。
+ * 成员表 `container_idx` 不经此名 —— 轮 18 起一律写容器行裸 idx。
  */
 const CONTAINER_FALLBACK_TABLE = "container";
 
@@ -1999,9 +1996,9 @@ function containerFallbackTable(options: EFileExportOptions): string {
 }
 
 /**
- * 容器引用表名(**单源**):两处跨表引用 consumer(设备表 `container_id` 列、成员表 `ACContainerDev.container_idx`)
- * 都经 eOutputSectionName 取容器段输出表名 —— 与容器表实际写出的段标签同函数,自然同名(模板态兜底名分叉
- * 也收在 eOutputSectionName 内),不再单独判「容器段会不会输出」(裁决轮 17 后容器表恒输出)。
+ * 容器引用表名(**单源**):设备表 `container_id` 列(模板定义了该列时)经 eOutputSectionName 取容器段输出表名 ——
+ * 与容器表实际写出的段标签同函数,自然同名(模板态兜底名分叉也收在 eOutputSectionName 内),
+ * 不再单独判「容器段会不会输出」(裁决轮 17 后容器表恒输出)。成员表 container_idx 轮 18 起写裸 idx,不经此函数。
  */
 function containerReferenceTable(
   interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>,
@@ -2039,7 +2036,7 @@ function buildContainerDevRecords(
       record.params._member_node_id = member.id;
       // 容器节点 id:定稿阶段按容器段最终行号重写 container_idx(全网拓扑导出偏移后局部值会悬空)
       record.params._container_node_id = container.id;
-      // 容器**裸 idx** 另存内部字段:定稿兜底分支只读它(不读 container_idx 现值再前缀化)——否则定稿二次进入会叠前缀
+      // 容器**裸 idx** 另存内部字段:定稿兜底分支只读它(不读 container_idx 现值)——定稿二次进入不叠写
       record.params._container_local_idx = containerIdx;
       records.push(record);
     }
@@ -2075,7 +2072,7 @@ function attachContainerIdToDeviceRecords(
     return;
   }
   // 容器表名与「容器表实际写出的段标签」同一函数(containerReferenceTable):模板态模板未定义容器段时
-  // eOutputSectionName 已改走兜底名,引用与表名天然一致(与成员表 container_idx 同源)
+  // eOutputSectionName 已改走兜底名,本列(表名_idx)与表名天然一致
   const containerTable = containerReferenceTable(interfaceDefinitionBySection, options);
   for (const record of records) {
     // 容器自身不属于任何容器(不允许嵌套)
@@ -2548,7 +2545,7 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
   }
 
   // 规格 B:成员关系表。**功能表,恒产出**(裁决):成员关系是画布事实,不随模板开关消失 ——
-  // 容器表同规恒产出(轮 17),模板未定义容器段时 container_idx 与容器表名同走兜底口径(见 finalizeContainerCrossRefs)
+  // 容器表同规恒产出(轮 17);container_idx 轮 18 起一律写容器行裸 idx(见 finalizeContainerCrossRefs)
   const containerDevRecords = buildContainerDevRecords(topologyNodes, interfaceDefinitionBySection.get(AC_CONTAINER_DEV_SECTION));
   // 规格 A:设备表 container_id 列。拓扑节点表行由多设备/端子合并、归属无单一定义,不参与
   const deviceLikeRecords = [...deviceRecords, ...derivedDeviceRecords, ...containerAssociatedDevices];
@@ -3446,13 +3443,9 @@ function finalizeEDeviceCrossReferences(
     return { outputSection, section: groups[0].section, allRecords };
   });
   const isTemplateMode = hasTemplateConfig(options);
-  // 容器引用表名走容器段输出名同一函数(与设备表 container_id 列同源)——两处引用形态不得分叉
-  finalizeContainerCrossRefs(
-    records,
-    sectionGroups,
-    isTemplateMode,
-    containerReferenceTable(interfaceDefinitionBySection, options)
-  );
+  // 容器引用定稿(成员表 container_idx 裸 idx / 设备表 container_id 表名_idx / bound_device_idx)——
+  // 设备表容器表名与容器段输出名同源(containerReferenceTable),在 attachContainerIdToDeviceRecords 已按同一函数写入
+  finalizeContainerCrossRefs(records, sectionGroups, isTemplateMode);
   return { interfaceDefinitionBySection, sectionGroups, sectionedRecords };
 }
 
