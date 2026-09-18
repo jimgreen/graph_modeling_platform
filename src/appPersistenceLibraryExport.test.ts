@@ -6,6 +6,7 @@ import { apiPath } from "./config";
 import {
   CustomComponentManagerTree,
   customComponentTreeContextMenuCapabilities,
+  buildComponentCatalog,
   buildCustomComponentClassTree,
   buildDeviceTemplateCopyVisualSvg,
   buildDeviceTemplateIconSvg,
@@ -25,6 +26,7 @@ import {
   normalizeDeviceDefinitionOverrides,
   migrateDeviceLibraryPersistencePayload,
   DEVICE_LIBRARY_SCHEMA_VERSION,
+  LIBRARY_PACKAGE_VERSION,
   selectableCategoryLibraryList,
   normalizeCustomComponentLibraries,
   normalizeCustomDeviceTemplates,
@@ -170,7 +172,7 @@ describe("graph template library filtering", () => {
 
     expect(devicePackage).toMatchObject({
       format: "graph-modeling-platform-library-package",
-      version: 2,
+      version: 3,
       scope: "device-library"
     });
     expect(devicePackage.deviceLibrary?.customDeviceTemplates).toHaveLength(1);
@@ -205,7 +207,7 @@ describe("graph template library filtering", () => {
     expect(() => normalizeLibraryPackage({ format: "graph-modeling-platform-library-package", version: 99, scope: "measurement" })).toThrow("不支持的库文件版本");
   });
 
-  test("creates version-2 all-library packages with color configuration and a manifest", () => {
+  test("creates version-3 all-library packages with color configuration and a manifest", () => {
     const packagePayload = createLibraryPackage({
       scope: "all",
       exportedAt: "2026-07-21T00:00:00.000Z",
@@ -218,7 +220,7 @@ describe("graph template library filtering", () => {
 
     expect(packagePayload).toMatchObject({
       format: "graph-modeling-platform-library-package",
-      version: 2,
+      version: 3,
       scope: "all",
       colorConfig: { colorDisplayMode: "energy" },
       manifest: { total: 0 }
@@ -233,10 +235,119 @@ describe("graph template library filtering", () => {
       deviceLibrary: emptyUserDeviceLibrary()
     });
 
-    expect(normalized.version).toBe(2);
+    expect(normalized.version).toBe(3);
     expect(normalized.deviceLibrary).toBeDefined();
     expect(normalized.colorConfig).toBeUndefined();
     expect(normalized.manifest).toBeUndefined();
+  });
+
+  describe("图元库目录树描述（componentCatalog）", () => {
+    const catalogOf = (scope: "component-library" | "device-library" | "all") =>
+      createLibraryPackage({
+        scope,
+        exportedAt: "2026-09-18T00:00:00.000Z",
+        deviceLibrary: emptyUserDeviceLibrary(),
+        componentCatalog: buildComponentCatalog({ templates: DEVICE_LIBRARY })
+      });
+
+    test("按 类别库 / 类 / 派生类 / 图元 描述层级并带中文名", () => {
+      const catalog = catalogOf("component-library").componentCatalog;
+      const acLibrary = catalog?.categoryLibraries.find((item) => item.name === "交流设备");
+
+      expect(acLibrary).toMatchObject({ builtin: true, energyFlow: ["ac"] });
+      const generator = acLibrary?.classes.find((item) => item.className === "ACGenerator");
+      expect(generator).toMatchObject({ label: "交流电源", builtin: true, energyFlow: ["ac"] });
+      expect(generator?.templates.some((item) => item.kind === "ac-source")).toBe(true);
+
+      const windGen = generator?.derivedClasses.find((item) => item.className === "ACWindGen");
+      expect(windGen?.label).toBe("交流风力发电机");
+      expect(windGen?.templates.map((item) => item.kind)).toContain("ac-wind-source");
+    });
+
+    test("能流落在端子类型上，跨能流设备给数组", () => {
+      const catalog = catalogOf("component-library").componentCatalog;
+      const classes = (catalog?.categoryLibraries ?? []).flatMap((library) => library.classes);
+
+      const electrolyzer = classes.find((item) => item.templates.some((tpl) => tpl.kind === "ac-electrolyzer"));
+      expect(electrolyzer?.templates.find((tpl) => tpl.kind === "ac-electrolyzer")?.terminalTypes).toEqual(["ac", "h2"]);
+      expect(electrolyzer?.energyFlow).toEqual(["ac", "h2"]);
+
+      const load = classes.find((item) => item.templates.some((tpl) => tpl.kind === "ac-load"));
+      expect(load?.templates.find((tpl) => tpl.kind === "ac-load")?.terminalTypes).toEqual(["ac"]);
+    });
+
+    test("静态图元不属任何能流；热母线等零端子设备仍归热能", () => {
+      const catalog = catalogOf("component-library").componentCatalog;
+      const statics = catalog?.categoryLibraries.find((item) => item.name === "静态图元");
+      expect(statics?.energyFlow).toBeNull();
+      expect(statics?.classes.find((item) => item.className === "StaticTextSymbol")?.energyFlow).toBeNull();
+
+      const classes = (catalog?.categoryLibraries ?? []).flatMap((library) => library.classes);
+      const heatBus = classes.find((item) => item.templates.some((tpl) => tpl.kind === "heat-bus"));
+      expect(heatBus?.energyFlow).toEqual(["heat"]);
+    });
+
+    test("只随 元件相关库 / 全部库 两个 scope 导出", () => {
+      expect(catalogOf("component-library").componentCatalog).toBeDefined();
+      expect(catalogOf("all").componentCatalog).toBeDefined();
+      expect(catalogOf("device-library").componentCatalog).toBeUndefined();
+    });
+
+    test("导出按钮路径把生效库的目录树挂进包", () => {
+      const source = readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
+      const handler = source.match(
+        /const exportLibraryPackage = async \(scope: LibraryPackageScope\) => \{[\s\S]*?Object\.assign\(__appScope, \{ exportLibraryPackage \}\);/u
+      )?.[0] ?? "";
+
+      expect(handler).toContain('scope === "component-library" || scope === "all"');
+      expect(handler).toContain("buildComponentCatalog({ templates: libraryTemplates, customComponentLibraries, customCategoryLibraries })");
+    });
+  });
+
+  describe("库文件格式版本 3 与目录树描述的导入", () => {
+    test("导出的包版本号为 3", () => {
+      expect(LIBRARY_PACKAGE_VERSION).toBe(3);
+      expect(createLibraryPackage({ scope: "device-library", deviceLibrary: emptyUserDeviceLibrary() }).version).toBe(3);
+    });
+
+    test("导入带目录树的包成功，但不把外来目录树写回 payload", () => {
+      const exported = createLibraryPackage({
+        scope: "component-library",
+        deviceLibrary: emptyUserDeviceLibrary(),
+        componentCatalog: buildComponentCatalog({ templates: DEVICE_LIBRARY })
+      });
+      const imported = normalizeLibraryPackage(JSON.parse(JSON.stringify(exported)));
+
+      expect(imported.version).toBe(3);
+      expect(imported.componentCatalog).toBeUndefined();
+      expect(imported.deviceLibrary).toBeDefined();
+    });
+
+    test("目录树描述损坏时拒绝导入", () => {
+      const base = { format: "graph-modeling-platform-library-package", version: 3, scope: "component-library" };
+      const broken = [
+        { energyFlows: [], categoryLibraries: [{ name: "", classes: [] }] },
+        { energyFlows: [], categoryLibraries: "交流设备" },
+        { energyFlows: [], categoryLibraries: [{ name: "交流设备", classes: [{ className: "" }] }] },
+        { energyFlows: [], categoryLibraries: [{ name: "交流设备", classes: [{ className: "ACGenerator", derivedClasses: [{ className: 7 }] }] }] }
+      ];
+      for (const componentCatalog of broken) {
+        expect(() => normalizeLibraryPackage({ ...base, componentCatalog })).toThrow("库文件目录树描述已损坏");
+      }
+    });
+
+    test("仍接受不带目录树的 v1 / v2 旧包", () => {
+      for (const version of [1, 2]) {
+        const imported = normalizeLibraryPackage({
+          format: "graph-modeling-platform-library-package",
+          version,
+          scope: "device-library",
+          deviceLibrary: emptyUserDeviceLibrary()
+        });
+        expect(imported.version).toBe(3);
+        expect(imported.componentCatalog).toBeUndefined();
+      }
+    });
   });
 
   test("preserves explicit non-derived built-in definition overrides", () => {

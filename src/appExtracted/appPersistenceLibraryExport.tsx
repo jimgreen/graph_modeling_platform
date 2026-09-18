@@ -128,7 +128,7 @@ import {
 } from "../components/InputComponents";
 import { MemoDeviceGlyph } from "../DeviceGlyph";
 import { resolveTemplateComponentLibrary, isReservedDeviceDefinitionParamName, projectCustomDeviceTerminalAnchorToBoundary, createDefaultCustomDeviceTerminalAnchors, normalizeDeviceDefinitionOwnership, normalizeSharedDeviceDefinitionOverrides, concreteDeviceTemplateForStorage, customDeviceImageWithTerminalConnectors,  } from "../customDeviceUtils";
-import { rotatePointAround, terminalColor, DEFAULT_CANVAS_BACKGROUND, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MARGIN, DEVICE_LIBRARY_DIALOG_CONFIG, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, E_SECTION_OPTIONS, COMPONENT_LIBRARY_LABELS, DEFAULT_CATEGORY_LIBRARIES, PROTECTED_CATEGORY_LIBRARIES, DEVICE_TYPE_NAME_PATTERN, MAX_CUSTOM_DEVICE_TERMINALS, TERMINAL_TYPE_OPTIONS, PARAM_VALUE_TYPE_OPTIONS, CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, LEGACY_CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, LEGACY_CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, MEASUREMENT_CONFIG_STORAGE_KEY, DEFAULT_GRAPH_TEMPLATE_TYPES, mergeRenderViewportBounds, normalizeSavedProjectIndexes, normalizeSavedSchemeIndexes, readImageAssets, backendErrorMessage, fetchBackendJson, backendJsonRequest,  } from "./appCoreCanvasUtilities";
+import { rotatePointAround, terminalColor, DEFAULT_CANVAS_BACKGROUND, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MARGIN, DEVICE_LIBRARY_DIALOG_CONFIG, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, E_SECTION_OPTIONS, COMPONENT_LIBRARY_LABELS, DEFAULT_CATEGORY_LIBRARIES, PROTECTED_CATEGORY_LIBRARIES, ENERGY_COLOR_ROWS, DEVICE_TYPE_NAME_PATTERN, MAX_CUSTOM_DEVICE_TERMINALS, TERMINAL_TYPE_OPTIONS, PARAM_VALUE_TYPE_OPTIONS, CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, LEGACY_CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, LEGACY_CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, MEASUREMENT_CONFIG_STORAGE_KEY, DEFAULT_GRAPH_TEMPLATE_TYPES, mergeRenderViewportBounds, normalizeSavedProjectIndexes, normalizeSavedSchemeIndexes, readImageAssets, backendErrorMessage, fetchBackendJson, backendJsonRequest,  } from "./appCoreCanvasUtilities";
 
 // SVG 图片资产读取器注入：原先夹在 import 语句之间靠 ESM 提升才不炸，移到 import 区之后（readImageAssets 来自上一条 import）
 setSvgImageAssetsReader(readImageAssets);
@@ -474,9 +474,10 @@ export async function saveBackendMeasurementConfigPayload(normalizedMeasurementC
 }
 
 export const LIBRARY_PACKAGE_FORMAT = "graph-modeling-platform-library-package";
-export const LIBRARY_PACKAGE_VERSION = 2;
+export const LIBRARY_PACKAGE_VERSION = 3;
 export const DEVICE_LIBRARY_SCHEMA_VERSION = 6;
-export type SupportedLibraryPackageVersion = 1 | typeof LIBRARY_PACKAGE_VERSION;
+// 3 起新增只读的 componentCatalog（图元库目录树描述）。1/2 仍可导入，导入后统一归一到最新版。
+export type SupportedLibraryPackageVersion = 1 | 2 | typeof LIBRARY_PACKAGE_VERSION;
 export type LibraryPackageScope = "measurement" | "device-library" | "template-library" | "icon-library" | "component-library" | "all";
 export type IconLibraryPackageAsset = ImageAsset & { dataUrl: string };
 export type IconLibraryPersistencePayload = {
@@ -488,6 +489,38 @@ export type LibraryPackageManifest = {
   domainCounts: Partial<Record<UserCustomizationDomain, number>>;
   applicationVersion?: string;
 };
+// 图元库目录树描述：供外部系统理解「类别库 / 类 / 派生类 / 图元」层级与各自能流。
+// 纯只读描述 —— 本平台的目录树恒自算，导入时只校验结构、不回写（见 normalizeLibraryPackage）。
+export type ComponentCatalogTemplateNode = {
+  kind: string;
+  label: string;
+  builtin: boolean;
+  /** 端子能流类型，跨能流设备（如电解槽）是多项 */
+  terminalTypes: TerminalType[];
+};
+
+export type ComponentCatalogClassNode = {
+  className: string;
+  label: string;
+  builtin: boolean;
+  /** 本类（含派生类）全部端子的能流并集；静态类为 null */
+  energyFlow: TerminalType[] | null;
+  templates: ComponentCatalogTemplateNode[];
+  derivedClasses: ComponentCatalogClassNode[];
+};
+
+export type ComponentCatalogCategoryLibrary = {
+  name: string;
+  builtin: boolean;
+  energyFlow: TerminalType[] | null;
+  classes: ComponentCatalogClassNode[];
+};
+
+export type ComponentCatalog = {
+  energyFlows: Array<{ id: TerminalType; label: string }>;
+  categoryLibraries: ComponentCatalogCategoryLibrary[];
+};
+
 export type LibraryPackagePayload = {
   format: typeof LIBRARY_PACKAGE_FORMAT;
   version: typeof LIBRARY_PACKAGE_VERSION;
@@ -496,6 +529,7 @@ export type LibraryPackagePayload = {
   measurementConfig?: PlatformMeasurementConfig;
   deviceLibrary?: DeviceLibraryPersistencePayload;
   iconLibrary?: IconLibraryPersistencePayload;
+  componentCatalog?: ComponentCatalog;
   colorConfig?: {
     colorDisplayMode: ColorDisplayMode;
     colorPalette: ColorPalette;
@@ -645,6 +679,7 @@ export function createLibraryPackage(options: {
   measurementConfig?: PlatformMeasurementConfig;
   deviceLibrary?: Partial<DeviceLibraryPersistencePayload>;
   iconLibrary?: Partial<IconLibraryPersistencePayload>;
+  componentCatalog?: ComponentCatalog;
   colorConfig?: {
     colorDisplayMode?: ColorDisplayMode;
     colorPalette?: Partial<ColorPalette>;
@@ -668,6 +703,10 @@ export function createLibraryPackage(options: {
   }
   if (libraryPackageIncludesScope(scope, "icon-library") && options.iconLibrary) {
     payload.iconLibrary = normalizeIconLibraryPersistencePayload(options.iconLibrary);
+  }
+  // 目录树只描述「图元库」这一个域，故只随 元件相关库 / 全部库 两个 scope 写出
+  if ((scope === "component-library" || scope === "all") && options.componentCatalog) {
+    payload.componentCatalog = options.componentCatalog;
   }
   if (scope === "all" && options.colorConfig) {
     payload.colorConfig = {
@@ -707,6 +746,42 @@ const normalizeLibraryPackageScope = (value: unknown): LibraryPackageScope | nul
   return null;
 };
 
+const COMPONENT_CATALOG_CORRUPT_MESSAGE = "库文件目录树描述已损坏。";
+
+const isNonEmptyText = (value: unknown) => typeof value === "string" && value.trim().length > 0;
+
+function assertComponentCatalogClassNode(value: unknown): void {
+  const node = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  if (!node || !isNonEmptyText(node.className)) {
+    throw new Error(COMPONENT_CATALOG_CORRUPT_MESSAGE);
+  }
+  const derivedClasses = node.derivedClasses ?? [];
+  if (!Array.isArray(derivedClasses)) {
+    throw new Error(COMPONENT_CATALOG_CORRUPT_MESSAGE);
+  }
+  derivedClasses.forEach(assertComponentCatalogClassNode);
+}
+
+/**
+ * 校验外部目录树描述。合法即返回，非法即抛 —— 但调用方（normalizeLibraryPackage）**不回写**：
+ * 本平台目录树恒由 buildComponentCatalog 现算，保留来源方的旧快照会在「导入后再导出」时写出脱节数据。
+ */
+export function normalizeComponentCatalog(value: unknown): ComponentCatalog {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  const categoryLibraries = source?.categoryLibraries;
+  if (!source || !Array.isArray(source.energyFlows) || !Array.isArray(categoryLibraries)) {
+    throw new Error(COMPONENT_CATALOG_CORRUPT_MESSAGE);
+  }
+  for (const entry of categoryLibraries) {
+    const library = entry && typeof entry === "object" && !Array.isArray(entry) ? entry as Record<string, unknown> : null;
+    if (!library || !isNonEmptyText(library.name) || !Array.isArray(library.classes)) {
+      throw new Error(COMPONENT_CATALOG_CORRUPT_MESSAGE);
+    }
+    library.classes.forEach(assertComponentCatalogClassNode);
+  }
+  return source as unknown as ComponentCatalog;
+}
+
 export function normalizeLibraryPackage(value: unknown): LibraryPackagePayload {
   const source = value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -714,12 +789,16 @@ export function normalizeLibraryPackage(value: unknown): LibraryPackagePayload {
   if (source.format !== LIBRARY_PACKAGE_FORMAT) {
     throw new Error("不是有效的库导入文件。");
   }
-  if (source.version !== 1 && source.version !== LIBRARY_PACKAGE_VERSION) {
+  if (source.version !== 1 && source.version !== 2 && source.version !== LIBRARY_PACKAGE_VERSION) {
     throw new Error("不支持的库文件版本。");
   }
   const scope = normalizeLibraryPackageScope(source.scope);
   if (!scope) {
     throw new Error("库导入文件缺少有效的库类型。");
+  }
+  // 校验但不入参：目录树是只读描述，导入不进本平台状态（见 normalizeComponentCatalog 注释）
+  if (source.componentCatalog !== undefined) {
+    normalizeComponentCatalog(source.componentCatalog);
   }
   return createLibraryPackage({
     scope,
@@ -3552,6 +3631,81 @@ export function buildCustomComponentClassTree(
     .filter((node) => !attachedKeys.has(sectionKey(node.section)))
     .map(pruneNode)
     .filter((node): node is CustomComponentClassTreeNode => Boolean(node));
+}
+
+const COMPONENT_CATALOG_STATIC_LIBRARY = "静态图元";
+
+// 能流排序固定按 交流/直流/氢/热，跨端输出可比对
+const ENERGY_FLOW_TYPE_ORDER: TerminalType[] = ENERGY_COLOR_ROWS.map((row) => row.type);
+
+/** 去重 + 固定顺序。端子表可能是 ["ac","ac","ac"]（多端同流），必须去重 */
+const energyFlowUnion = (values: readonly TerminalType[]): TerminalType[] => {
+  const unique = new Set(values);
+  return ENERGY_FLOW_TYPE_ORDER.filter((type) => unique.has(type));
+};
+
+const templateEnergyFlows = (template: DeviceTemplate): TerminalType[] => {
+  // 静态图元的 terminalType 只是渲染占位（terminalCount 恒 0），不参与能流
+  if (normalizeCategoryLibraryName(template.categoryLibrary) === COMPONENT_CATALOG_STATIC_LIBRARY) {
+    return [];
+  }
+  const declared = template.terminalTypes?.length ? template.terminalTypes : [template.terminalType];
+  return energyFlowUnion(declared.filter((type): type is TerminalType => Boolean(type)));
+};
+
+/**
+ * 生成图元库目录树描述：类别库 / 类 / 派生类 / 图元，各自带中文名与能流。
+ * 层级直接复用元件管理树的构建器（buildCustomComponentClassTree），不另造一套。
+ */
+export function buildComponentCatalog(options: {
+  templates: readonly DeviceTemplate[];
+  customComponentLibraries?: readonly CustomComponentLibraryDefinition[];
+  customCategoryLibraries?: readonly CategoryLibrary[];
+}): ComponentCatalog {
+  const customComponentLibraries = options.customComponentLibraries ?? [];
+  const grouped = groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(
+    [...options.templates],
+    customComponentLibraries
+  );
+  const libraryNames = selectableCategoryLibraryList(options.customCategoryLibraries ?? [], Object.keys(grouped));
+
+  const toClassNode = (node: CustomComponentClassTreeNode): ComponentCatalogClassNode => {
+    const templates = node.templates.map((template) => ({
+      kind: template.kind,
+      label: template.label,
+      builtin: !template.custom,
+      terminalTypes: templateEnergyFlows(template)
+    }));
+    const derivedClasses = node.derivedClasses.map(toClassNode);
+    const energyFlow = energyFlowUnion([
+      ...templates.flatMap((item) => item.terminalTypes),
+      ...derivedClasses.flatMap((item) => item.energyFlow ?? [])
+    ]);
+    return {
+      className: node.section,
+      label: componentLibraryDisplayParts(node.section, customComponentLibraries).chinese,
+      builtin: isBuiltInComponentLibrary(node.section),
+      energyFlow: energyFlow.length ? energyFlow : null,
+      templates,
+      derivedClasses
+    };
+  };
+
+  const categoryLibraries = libraryNames.map((name) => {
+    const classes = buildCustomComponentClassTree(name, grouped[name] ?? [], customComponentLibraries).map(toClassNode);
+    const energyFlow = energyFlowUnion(classes.flatMap((item) => item.energyFlow ?? []));
+    return {
+      name,
+      builtin: isBuiltInCategoryLibrary(name),
+      energyFlow: energyFlow.length ? energyFlow : null,
+      classes
+    };
+  });
+
+  return {
+    energyFlows: ENERGY_COLOR_ROWS.map((row) => ({ id: row.type, label: row.label })),
+    categoryLibraries
+  };
 }
 
 export function rootComponentLibraryGroupsForDisplay(

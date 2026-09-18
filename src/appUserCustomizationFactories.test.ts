@@ -8,6 +8,7 @@ import {
   userCustomizationSnapshotFromLibraryPackage
 } from "./appExtracted/appUserCustomizationFactories";
 import { emptyUserDeviceLibrary, normalizeUserCustomizationSnapshot } from "./userCustomizations";
+import type { LibraryPackagePayload } from "./appExtracted/appPersistenceLibraryExport";
 import { apiPath } from "./config";
 
 const snapshot = (assetIds: string[] = []) => normalizeUserCustomizationSnapshot({
@@ -159,7 +160,8 @@ describe("user customization application factories", () => {
   test("maps a legacy partial library package without inventing absent domains", () => {
     const partial = userCustomizationSnapshotFromLibraryPackage({
       format: "graph-modeling-platform-library-package",
-      version: 2,
+      // 模拟旧版文件：实际来源是 JSON.parse 的裸对象，不满足写入端版本契约
+      version: 2 as LibraryPackagePayload["version"],
       scope: "device-library",
       exportedAt: "2026-07-21T00:00:00.000Z",
       deviceLibrary: emptyUserDeviceLibrary()
