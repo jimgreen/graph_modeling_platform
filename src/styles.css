@@ -16143,3 +16143,168 @@ body.canvas-drawing-mode .image-picker-backdrop * {
     transform: none;
   }
 }
+
+/* ---------- 首次引导 tooltip（简约大气） ---------- */
+/* 覆盖 react-joyride 默认气泡：自定义 tooltipComponent（见 src/appTour.tsx 的 TourTooltip）。
+   视觉基调：白底卡片 + 柔和大阴影 + 步骤进度「n / 6」；按钮分三档——
+   跳过（淡色 text link）、上一步（ghost 描边）、下一步/完成（主色填充 #1677ff）。
+   箭头颜色已由 Joyride options.arrowColor 统一为白色，不再赘述。 */
+
+/* 引导期间：遮罩 + 聚光灯 SVG 一律不拦截指针事件，让用户能真正点击/拖拽目标。
+   joyride v3 默认已将外层 `.react-joyride__overlay` 设为 pointer-events: none，
+   但内部 <path> 仍以 inline style 设为 auto（用于 dim 区域的 onClickOverlay）。
+   交互式引导需要用户点击/拖拽高亮的目标（例如拖设备到画布），必须把整条子树锁死为 none。
+   tooltip 是 portal 兄弟节点而非 overlay 子元素，不受此规则影响。 */
+.react-joyride__overlay,
+.react-joyride__overlay * {
+  pointer-events: none !important;
+}
+
+.tour-tooltip {
+  position: relative;
+  /* 与 options.width 同口径：窗口窄时不横向溢出 */
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 20px 24px;
+  border-radius: 12px;
+  background: #ffffff;
+  /* 柔和大阴影，避免贴边感；rgba 黑而非品牌色，保持中性 */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.7;
+  /* 入场：淡入 + 微上浮；每步 key 变化 → 重新挂载 → 重播动画 */
+  animation: tour-tooltip-in 180ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-tooltip {
+    animation: none;
+  }
+}
+
+@keyframes tour-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tour-tooltip__title {
+  margin: 0 0 8px;
+  color: #1f2937;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* 正文保留步骤文案中的 \n 换行（默认 tooltip 用 white-space: normal 会吞掉） */
+.tour-tooltip__content {
+  white-space: pre-line;
+  color: #4b5563;
+}
+
+/* 步骤进度：内容下方一行小灰字 */
+.tour-tooltip__progress {
+  margin-top: 12px;
+  color: #9ca3af;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.tour-tooltip__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* 跳过（左）与主按钮（右）之间的可伸缩空隙 */
+.tour-tooltip__spacer {
+  flex: 1;
+}
+
+/* 三档按钮统一基线：高度、圆角、字号、过渡 */
+.tour-tooltip__skip,
+.tour-tooltip__back,
+.tour-tooltip__primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 6px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+/* 跳过：最淡——无边框、无背景，仅灰色文字 */
+.tour-tooltip__skip {
+  padding: 6px 8px;
+  border: 0;
+  color: #9ca3af;
+  background: transparent;
+}
+
+.tour-tooltip__skip:hover,
+.tour-tooltip__skip:focus-visible {
+  color: #6b7280;
+  outline: none;
+}
+
+/* 上一步：ghost 描边，悬浮略加深 */
+.tour-tooltip__back {
+  border: 1px solid #e5e7eb;
+  color: #4b5563;
+  background: #ffffff;
+}
+
+.tour-tooltip__back:hover,
+.tour-tooltip__back:focus-visible {
+  color: #1f2937;
+  border-color: #d1d5db;
+  background: #f9fafb;
+  outline: none;
+}
+
+/* 下一步 / 完成：主色填充，与 antd primaryColor (#1677ff) 一致 */
+.tour-tooltip__primary {
+  border: 0;
+  color: #ffffff;
+  background: #1677ff;
+}
+
+.tour-tooltip__primary:hover,
+.tour-tooltip__primary:focus-visible {
+  background: #4096ff;
+  outline: none;
+}
+
+.tour-tooltip__primary:active {
+  background: #0958d9;
+}
+
+/* 动作步骤：主按钮禁用（提示文案见 appTour.tsx 的 TourTooltip）。
+   保留主色背景但降低对比度 + 改 cursor；与 antd 的 disabled 风格靠拢。 */
+.tour-tooltip__primary:disabled {
+  background: #bfbfbf;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: not-allowed;
+}
+
+.tour-tooltip__primary:disabled:hover,
+.tour-tooltip__primary:disabled:focus-visible,
+.tour-tooltip__primary:disabled:active {
+  background: #bfbfbf;
+  color: rgba(255, 255, 255, 0.85);
+  outline: none;
+}

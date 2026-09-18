@@ -16,6 +16,7 @@ import {
   type SpaceImportMode
 } from "../spaceClient";
 import { currentQiankunUser, filterSpacesForCurrentUser } from "../qiankunUserSpace";
+import { startAppTour } from "../appTour";
 import { saveLazyBlobFile } from "../fileIO";
 import { Download, Pencil, Send, Trash2, Upload } from "lucide-react";
 import { SendModelDialog } from "../SendModelDialog";
@@ -499,7 +500,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
       <div className="topbar-button-groups">
         {/* 交互模式组 */}
         <div className="topbar-button-group">
-          {T(isEditMode ? "当前为编辑模式，点击切换到浏览模式" : "当前为浏览模式，点击切换到编辑模式", <button type="button" id="topbar-mode-toggle" className={`topbar-primary-button ${isEditMode ? "active" : "browse-mode-toggle"}`} onClick={toggleInteractionMode} aria-label={isEditMode ? "切换到浏览模式" : "切换到编辑模式"}>
+          {T(isEditMode ? "切换到浏览模式" : "切换到编辑模式", <button type="button" id="topbar-mode-toggle" className={`topbar-primary-button ${isEditMode ? "active" : "browse-mode-toggle"}`} onClick={toggleInteractionMode} aria-label={isEditMode ? "切换到浏览模式" : "切换到编辑模式"}>
             {isEditMode ? <Pencil size={16}/> : (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
@@ -507,7 +508,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
               </svg>
             )}
           </button>)}
-          {T(smartAlignmentEnabled ? "对齐到标线已开启，点击关闭" : "对齐到标线已关闭，点击开启", <button type="button" id="topbar-smart-alignment" className={`topbar-primary-button ${smartAlignmentEnabled ? "active" : ""}`} onClick={() => setSmartAlignmentEnabled((current: boolean) => !current)} aria-label={smartAlignmentEnabled ? "关闭对齐到标线" : "开启对齐到标线"}>
+          {T(smartAlignmentEnabled ? "对齐标线：开" : "对齐标线：关", <button type="button" id="topbar-smart-alignment" className={`topbar-primary-button ${smartAlignmentEnabled ? "active" : ""}`} onClick={() => setSmartAlignmentEnabled((current: boolean) => !current)} aria-label={smartAlignmentEnabled ? "关闭对齐到标线" : "开启对齐到标线"}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               <rect x="2" y="5" width="12" height="6" rx="1"/>
               <line x1="8" y1="0" x2="8" y2="16" strokeDasharray="2 2"/>
@@ -531,7 +532,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
         </div>
         {/* 显示与配色组 */}
         <div className="topbar-button-group">
-          {T(colorDisplayMode === "voltage" ? "当前交流/直流按电压等级显示，点击切换为按能源类型显示；氢能、热能始终按能源类型显示" : "当前交流/直流按能源类型显示，点击切换为按电压等级显示；氢能、热能始终按能源类型显示", <button id="topbar-color-mode" className={`topbar-primary-button ${colorDisplayMode === "voltage" ? "active" : ""}`} onClick={() => toggleColorDisplayMode()} aria-label="颜色切换">
+          {T(colorDisplayMode === "voltage" ? "显示方式：电压等级（点击切换）" : "显示方式：能源类型（点击切换）", <button id="topbar-color-mode" className={`topbar-primary-button ${colorDisplayMode === "voltage" ? "active" : ""}`} onClick={() => toggleColorDisplayMode()} aria-label="颜色切换">
             <Paintbrush size={16}/>
           </button>)}
           {T("配色设置", <button id="topbar-color-palette" className="topbar-primary-button" onClick={openColorPaletteDialog} disabled={isBrowseMode} aria-label="配色设置"><Palette size={16}/></button>)}
@@ -574,6 +575,14 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
         </div>
       </div>
       <SpaceSwitcher scope={scope}/>
+      {/* 新手引导入口：点一下重放引导（跳过/完成后也能找回来） */}
+      {T("新手引导", <button type="button" id="topbar-tour" className="topbar-primary-button" onClick={() => startAppTour()} aria-label="新手引导">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M9.6 9.2a2.6 2.6 0 1 1 3.6 2.4c-.8.4-1.2 1-1.2 1.8v.3"/>
+          <line x1="12" y1="17" x2="12" y2="17.01"/>
+        </svg>
+      </button>)}
       <RuntimeWsIndicator scope={scope}/>
     </header>
       {sendModelDialogOpen && (

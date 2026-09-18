@@ -263,6 +263,10 @@ export const KEPT_LOCAL_STORAGE_KEYS: readonly { key: string; reason: string }[]
     reason: "上次发送模型的目标 URL，本机配置"
   },
   {
+    key: "graph-modeling-platform:tour-seen",
+    reason: "首次引导「已看过」标志，非空间数据；清掉会让每次切空间都重放新手引导"
+  },
+  {
     key: "runtimeWsClientId",
     reason: "运行时态 WS 的浏览器身份，非空间数据；换了它会让第三方持有的 clientId 失效"
   },
