@@ -48,11 +48,11 @@ const ENDPOINTS = [
   { scope: "space", group: "图片资源", method: "DELETE", path: "/webgrp/images/{id}", desc: "删除图片（从清单摘除并删磁盘文件）", pathParams: [{ name: "id", desc: "图片 id" }], response: "{ok:true}", examples: [
     { label: "填一个不存在的 id（404）", params: { id: "no-such-image" } }
   ]},
-  { scope: "space", group: "图片资源", method: "POST", path: "/webgrp/icon-library/import", desc: "导入图标库打包文件（folders + assets 两个数组，按 id 覆盖同名项），落到当前空间图片库", body: { folders: [], assets: [] }, response: "{ok:true,importedCount,skippedCount,folders,assets}", examples: [
-    { label: "空包会 400（无可恢复资源）", params: { __body__: { folders: [], assets: [] } } }
-  ]},
-  { scope: "space", group: "图片资源", method: "POST", path: "/webgrp/image-library/import", desc: "从文档文件（DOCX/PPTX/XLSX/VSDX/WPS/DPS/ZIP）中提取图片素材，写入当前空间图片库", body: { dataUrl: "data:application/zip;base64,<文档压缩包>", name: "素材.docx", folderId: "root" }, response: "{ok:true,assets:[...],skippedCount}", examples: [
+  { scope: "space", group: "图片资源", method: "POST", path: "/webgrp/icon-library/import", desc: "从文档文件（DOCX/PPTX/XLSX/VSDX/WPS/DPS/ZIP）中提取图片素材，写入当前空间图片库", body: { dataUrl: "data:application/zip;base64,<文档压缩包>", name: "素材.docx", folderId: "root" }, response: "{ok:true,assets:[...],skippedCount}", examples: [
     { label: "空 body 会 400（缺少文档数据）", params: { __body__: {} } }
+  ]},
+  { scope: "space", group: "图片资源", method: "POST", path: "/webgrp/image-library/import", desc: "导入图标库打包文件（folders + assets 两个数组，按 id 覆盖同名项），落到当前空间图片库", body: { folders: [], assets: [] }, response: "{ok:true,importedCount,skippedCount,folders,assets}", examples: [
+    { label: "空包会 400（无可恢复资源）", params: { __body__: { folders: [], assets: [] } } }
   ]},
 
   // ---- 方案域（内部读写）----

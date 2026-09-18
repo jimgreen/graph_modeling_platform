@@ -591,6 +591,15 @@ const normalizeIconLibraryFolders = (value: unknown): ImageFolder[] => {
   return folders;
 };
 
+/**
+ * 包里的图标库是否真有可导入资源。
+ * 导出时 iconLibrary 恒被写成对象（哪怕用户一个自定义图标都没有 → {folders:[root],assets:[]}），
+ * 故「对象存在」不等于「有事可做」：空包发给后台只会换回 400「导入文件中没有可恢复的图标资源。」，
+ * 把本该成功的「导入类」整条打断。与 appUserCustomizationFactories 的 portableAssets 守卫同一判据。
+ */
+export const iconLibraryHasImportableAssets = (payload?: Partial<IconLibraryPersistencePayload>) =>
+  (payload?.assets ?? []).some((asset) => Boolean(String(asset?.dataUrl ?? "").trim()));
+
 export function normalizeIconLibraryPersistencePayload(value: unknown): IconLibraryPersistencePayload {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value as Partial<IconLibraryPersistencePayload> : {};
   const folders = normalizeIconLibraryFolders(source.folders);

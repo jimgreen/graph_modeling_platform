@@ -73,7 +73,7 @@ importers:
         specifier: ^6.2.5
         version: 6.2.5
       vite-plugin-qiankun-lite:
-        specifier: ^1.3.0
+        specifier: 1.3.0
         version: 1.3.0(vite@7.3.3(@types/node@25.9.3))
       vitest:
         specifier: ^3.0.0

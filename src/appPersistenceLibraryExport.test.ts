@@ -8,6 +8,7 @@ import {
   customComponentTreeContextMenuCapabilities,
   buildComponentCatalog,
   buildCustomComponentClassTree,
+  iconLibraryHasImportableAssets,
   buildDeviceTemplateCopyVisualSvg,
   buildDeviceTemplateIconSvg,
   createLibraryPackage,
@@ -46,6 +47,8 @@ import { deviceDefinitionOverrideForTemplate, deviceDefinitionSharedKeyForTempla
 import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import { svgSourceFromDataUrl } from "./stateIconDrawing";
 import { emptyUserDeviceLibrary } from "./userCustomizations";
+
+const PNG_1X1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
 const sampleGraphTemplate = (id: string, typeName: string, name: string) => ({
   id,
@@ -291,6 +294,29 @@ describe("graph template library filtering", () => {
       expect(catalogOf("component-library").componentCatalog).toBeDefined();
       expect(catalogOf("all").componentCatalog).toBeDefined();
       expect(catalogOf("device-library").componentCatalog).toBeUndefined();
+    });
+
+    test("空图标库不发起导入，非空才发起", () => {
+      expect(iconLibraryHasImportableAssets({ folders: [{ id: "root", name: "默认文件夹" }], assets: [] })).toBe(false);
+      expect(iconLibraryHasImportableAssets(undefined)).toBe(false);
+      expect(iconLibraryHasImportableAssets({ folders: [], assets: [{ id: "a", dataUrl: "   " } as any] })).toBe(false);
+      expect(iconLibraryHasImportableAssets({ folders: [], assets: [{ id: "a", dataUrl: PNG_1X1 } as any] })).toBe(true);
+    });
+
+    test("两个整包导入入口都以「有没有可导入图标」为门控（空图标库不得打断导入）", () => {
+      const source = readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
+      const componentApply = source.match(
+        /const applyImportedComponentLibrary = async \(packagePayload: LibraryPackagePayload\) => \{[\s\S]*?Object\.assign\(__appScope, \{ applyImportedComponentLibrary \}\);/u
+      )?.[0] ?? "";
+      const allApply = source.match(
+        /const applyImportedAllLibraries = async \(packagePayload: LibraryPackagePayload\) => \{[\s\S]*?Object\.assign\(__appScope, \{ applyImportedAllLibraries \}\);/u
+      )?.[0] ?? "";
+
+      for (const handler of [componentApply, allApply]) {
+        expect(handler).toContain("iconLibraryHasImportableAssets(packagePayload.iconLibrary)");
+        // 旧的「对象存在即导入」写法必须消失，否则空包仍会打到后台换 400
+        expect(handler).not.toContain("if (packagePayload.iconLibrary) {");
+      }
     });
 
     test("导出按钮路径把生效库的目录树挂进包", () => {

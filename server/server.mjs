@@ -4801,11 +4801,14 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     [routeKey("POST", "/images"), async ({ request, response, paths }) => {
       await handleUpload(request, response, paths);
     }],
+    // 名实相符：/icon-library/import 收 {name,dataUrl,folderId} 从文档抽图（前端 importBackendIconLibraryFile），
+    // /image-library/import 收 {folders,assets} 恢复图片库（前端 importBackendImageLibraryPayload）。
+    // 32e77ef8 曾把两者对调且未同步前端，导致两条导入通道自 2026-07-24 起恒 400，此处复原。
     [routeKey("POST", "/icon-library/import"), async ({ request, response, paths }) => {
-      await handleImportImageLibrary(request, response, paths);
+      await handleImportIconLibrary(request, response, paths);
     }],
     [routeKey("POST", "/image-library/import"), async ({ request, response, paths }) => {
-      await handleImportIconLibrary(request, response, paths);
+      await handleImportImageLibrary(request, response, paths);
     }],
     [routeKey("POST", "/exports/native/select-file"), async ({ request, response }) => {
       await handleSelectNativeExportFile(request, response, nativeExportSaveService);
