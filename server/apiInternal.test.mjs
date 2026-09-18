@@ -170,8 +170,11 @@ describe("图片资源 /webgrp/images & /webgrp/image-folders", () => {
     expect(delRoot.status).toBe(400);
   });
 
-  test("POST /webgrp/icon-library/import 批量恢复图标库并保留资源 ID", async () => {
-    const imported = await fetchJson(apiPath("/icon-library/import"), {
+  // 路由归属别改动：{folders,assets} 属 /image-library/import（前端 importBackendImageLibraryPayload 发这里）。
+  // 32e77ef8 把两条导入路由的处理器对调后，85bf93d1 曾把本用例的 URL 一并改到 /icon-library/import 让红变绿，
+  // 掩盖了两条导入通道自 2026-07-24 起恒 400 的回归；此处锁回正确路由，反向守卫见下一条。
+  test("POST /webgrp/image-library/import 批量恢复图标库并保留资源 ID", async () => {
+    const imported = await fetchJson(apiPath("/image-library/import"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -207,6 +210,29 @@ describe("图片资源 /webgrp/images & /webgrp/image-folders", () => {
     const downloaded = await fetch(`${baseUrl}${apiPath("/images/img-preserved-id")}`);
     expect(downloaded.status).toBe(200);
     expect(downloaded.headers.get("content-type")).toContain("image/png");
+  });
+
+  // 反向守卫：/icon-library/import 属「从文档抽图」处理器（前端 importBackendIconLibraryFile 发这里）。
+  // 判据用错误文案指纹 —— 两条路由的处理器对这些载荷都会 400，只有文案能区分实际落到哪个。
+  // （swigger.examples.test.mjs 的同类示例都是空载荷，两种绑定下都 400，拦不住路由对调。）
+  test("POST /webgrp/icon-library/import 走文档抽图处理器而非图片库恢复", async () => {
+    const emptyPack = await fetchJson(apiPath("/icon-library/import"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folders: [], assets: [] })
+    });
+    expect(emptyPack).toMatchObject({ status: 400, json: { error: "缺少文档图片导入文件数据。" } });
+
+    const notAnArchive = await fetchJson(apiPath("/icon-library/import"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "素材.docx",
+        dataUrl: "data:application/zip;base64,UEsDBAoAAAAAAAAAIQAAAAAAAAAAAAAAAAMAAAAB",
+        folderId: "root"
+      })
+    });
+    expect(notAnArchive).toMatchObject({ status: 400, json: { error: "文档图片导入文件不是有效的压缩容器。" } });
   });
 });
 
