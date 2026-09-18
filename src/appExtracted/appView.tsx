@@ -25,6 +25,7 @@ import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialo
 import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES as TEMPLATE_ALLOWED_MODEL_TYPES, eDeviceTemplateNetworkTypeMismatchMessage, eDeviceTemplateSingleTypeMismatchMessage } from "../eDeviceTemplateTypePolicy";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
 import { isSkipBeforeUnload } from "../spaceSwitch";
+import { AppTour } from "../appTour";
 import { EFileEditor } from "../EFileEditor";
 import { buildUserCustomizationInventory, restoreUserCustomizationItems, type UserCustomizationDomain } from "../userCustomizations";
 import { moveSelectedTableRows, nextTableRowSelection, uniqueCopiedFieldName } from "../definitionTableSelection";
@@ -2666,5 +2667,6 @@ export function renderAppView(__appScope: Record<string, any>) {
         section="resource-dialogs"
         inputs={resourceDialogLayerInputs}
       />
+      <AppTour scope={__appScope} />
     </div></>);
 }
