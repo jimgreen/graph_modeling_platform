@@ -834,7 +834,9 @@ function topologyErrorsForModel(
     voltageUnit: project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT,
     currentUnit: project.currentUnit ?? DEFAULT_CURRENT_UNIT,
     skipVoltageNodeIds: invalidVoltageBaseNodeIds,
-    sourceNodes: project.nodes
+    sourceNodes: project.nodes,
+    // 全网拓扑按模型隔离「第几次检查」的判定状态，避免同一设备在不同模型间互相顶掉。
+    capacityFixScopeKey: model.projectId
   });
   const errors = [...initialErrors, ...normalizedLimits.warnings];
   if (!errors.some(isBlockingTopologyValidationError)) {

@@ -241,6 +241,59 @@ export function createClearTransientSelectionState(__appScope: Record<string, an
   };
 }
 
+/**
+ * 空白画布按下时只「登记」待清除的选中，真正的清空推迟到指针抬起。
+ * 平移画布（拖空白）是高频操作，若在 pointerdown 就清选，用户每挪一次视图都会丢掉已选设备。
+ */
+export function createQueuePendingBlankCanvasDeselect(__appScope: Record<string, any>) {
+  return (event: { clientX: number; clientY: number }) => {
+  const { pendingBlankCanvasDeselectRef } = __appScope;
+    if (!pendingBlankCanvasDeselectRef) {
+      return;
+    }
+    pendingBlankCanvasDeselectRef.current = { clientX: event.clientX, clientY: event.clientY };
+  };
+}
+
+/** 平移过程中指针一旦越过位移阈值就作废待清除标记，保住已选设备。 */
+export function createCancelPendingBlankCanvasDeselectOnMove(__appScope: Record<string, any>) {
+  return (clientX: number, clientY: number, threshold: number) => {
+  const { pendingBlankCanvasDeselectRef } = __appScope;
+    const pending = pendingBlankCanvasDeselectRef?.current;
+    if (!pending) {
+      return;
+    }
+    if (Math.hypot(clientX - pending.clientX, clientY - pending.clientY) > threshold) {
+      pendingBlankCanvasDeselectRef.current = null;
+    }
+  };
+}
+
+/** 指针抬起且未发生平移时执行：清空选中并回到「空白」检查器。 */
+export function createFlushPendingBlankCanvasDeselect(__appScope: Record<string, any>) {
+  return () => {
+  const { activeProjectKey, activeSchemeKey, pendingBlankCanvasDeselectRef, resetConnectPreviewState, setCanvasSelectionScope, setConnectSource, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSelectedProjectId, setSelectedProjectIds, setSelectedSchemeId, setSelectedSchemeIds, switchInspectorTabForCanvasSelection } = __appScope;
+    if (!pendingBlankCanvasDeselectRef?.current) {
+      return;
+    }
+    pendingBlankCanvasDeselectRef.current = null;
+    setCanvasSelectionScope("group");
+    setSelectedNodeIds([]);
+    setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
+    setConnectSource(null);
+    resetConnectPreviewState();
+    setRewiring(null);
+    switchInspectorTabForCanvasSelection([], [], "blank");
+    if (activeProjectKey) {
+      setSelectedProjectId(activeProjectKey);
+      setSelectedProjectIds([activeProjectKey]);
+      setSelectedSchemeId(activeSchemeKey);
+      setSelectedSchemeIds([]);
+    }
+  };
+}
+
 export function createWriteOperationLog(__appScope: Record<string, any>) {
   return (message: string) => {
   const { setOperationLogText } = __appScope;

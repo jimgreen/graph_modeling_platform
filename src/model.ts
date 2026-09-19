@@ -7626,6 +7626,17 @@ export const LOAD_DEVICE_KINDS = new Set([
   "dc-load", "dc-station-load", "dc-feeder-load", "dc-district-load"
 ]);
 
+/**
+ * 开关类设备（开关/断路器/刀闸）。与线路/负荷不同，这类设备的 rated_capacity 承载的是
+ * 额定电流（A）而不是功率，所以不参与电压等级容量表，默认值也不随电压等级变化。
+ */
+export const SWITCHING_DEVICE_KINDS = new Set([
+  "ac-switch", "dc-switch",
+  "ac-disconnector", "dc-disconnector",
+  "ac-ground-disconnector", "ac-ground-disconnector-vertical",
+  "ac-breaker", "ac-box-breaker", "dc-breaker"
+]);
+
 export function getRatedCapacityDefaultForKind(kind: string, voltage: string): string | null {
   if (LINE_DEVICE_KINDS.has(kind)) {
     return VOLTAGE_LINE_RATED_CAPACITY[voltage] ?? null;
@@ -7634,6 +7645,18 @@ export function getRatedCapacityDefaultForKind(kind: string, voltage: string): s
     return VOLTAGE_LOAD_RATED_CAPACITY[voltage] ?? null;
   }
   return null;
+}
+
+/**
+ * 开关类设备的默认额定容量即其额定电流，取值与 `buildDefaultParams` 保持一致：
+ * 交流端子 1250 A、直流端子 1600 A。传入带 `-vertical` 后缀的变体同样命中。
+ */
+export function getSwitchingRatedCapacityDefault(kind: string): string | null {
+  const base = baseDeviceKind(kind);
+  if (!SWITCHING_DEVICE_KINDS.has(base)) {
+    return null;
+  }
+  return base.startsWith("dc-") ? "1600 A" : "1250 A";
 }
 
 function normalizeColorRecord(source: unknown, fallback: Record<string, string>): Record<string, string> {
@@ -9793,7 +9816,8 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
   ) {
     const isGroundDisconnector = templateKind === "ac-ground-disconnector" || templateKind === "ac-ground-disconnector-vertical";
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
-      ratedCapacity: template.terminalType === "ac" ? "1250 A" : "1600 A",
+      ratedCapacity: getSwitchingRatedCapacityDefault(templateKind)
+        ?? (template.terminalType === "ac" ? "1250 A" : "1600 A"),
       status: isGroundDisconnector ? "0" : "1",
       ...(switchingDeviceUsesClosedStatus(templateKind, template.params) ? { closed_status: "1" } : {})
     })));

@@ -1945,6 +1945,8 @@ describe("topology calculation operating-limit normalization", () => {
 
     createRunTopologyCalculation({
       EMPTY_TOPOLOGY: { connectedComponents: [] },
+      activeProjectKey: "feeder-7",
+      activeSchemeKey: "scheme-1",
       buildTopology: vi.fn(() => nextTopology),
       calculateElectricalTopology,
       currentUnit: "A",
@@ -1996,7 +1998,8 @@ describe("topology calculation operating-limit normalization", () => {
       voltageUnit: "V",
       currentUnit: "A",
       skipVoltageNodeIds: expect.any(Set),
-      sourceNodes
+      sourceNodes,
+      capacityFixScopeKey: "scheme-1:feeder-7"
     });
     expect(normalizeDeviceOperatingLimitsAfterTopology.mock.calls[0][1].skipVoltageNodeIds.size).toBe(0);
     expect(setNodes).toHaveBeenCalledWith(normalizedNodes);
