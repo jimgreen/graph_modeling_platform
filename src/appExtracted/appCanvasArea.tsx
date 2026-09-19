@@ -332,19 +332,18 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     clearStaticButtonFeedback, centerSelectedInView, fitViewToSelection,
     fitWholeCanvasToFrame, zoomViewportAtCenter, tidySelectedEdgeRoute, shrinkCanvasToFitContent,
     cancelLibraryPlacement, cancelModifierSelectionPress,
-    setCanvasSelectionScope, setConnectSource, setContextMarqueeSelection,
+    setConnectSource, setContextMarqueeSelection,
     setContextMenu,
     setMarquee, setMinimapVisible, setMode, setRewiring,
     setRoutableLineEndpointDrag, setRoutableLinePlacement,
-    setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds,
-    setSelectedProjectId, setSelectedProjectIds, setSelectedSchemeId, setSelectedSchemeIds,
+    queuePendingBlankCanvasDeselect, flushPendingBlankCanvasDeselect,
     setStaticButtonFeedback, setTerminalPress,
     resetConnectPreviewState, resetRoutableLinePreviewState, resetViewportZoom,
     applyConnectPreviewState, applyRoutableLinePreviewState,
     updateLibraryPlacementPreview, updateMouseStatus,
     commitLibraryPlacementAtPoint, flushConnectPreviewDom,
     focusCanvasKeyboardShortcutHost, consumeGraphicContextMenuHandled,
-    activateInspectorFromCanvas, switchInspectorTabForCanvasSelection,
+    activateInspectorFromCanvas,
     screenToSvgPoint, clampPointToCanvas, mapPointToMinimap,
     findConnectTargetAtPoint, findConnectionRouteHitAtPoint,
     findRewireTargetAtPoint, findRoutableLineEndpointTargetAtPoint,
@@ -400,7 +399,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     selectedTransformGroupUnit, visibleSelectedGroupLayoutUnits,
     selectedViewportActionDisabled, selectionRectCenter,
     activeLayer, activeLayerId, activeLayerEdgeIdSet, activeLayerNodeIdSet,
-    activeProjectKey, activeSchemeKey, activeSelectedEdgeSet,
+    activeSelectedEdgeSet,
     activeDropHintPoint, activeDropHintStyle,
     lodCanvasNodeChunks, lodCanvasRouteChunks, lodSelectedNodeMarkup,
     minimapVisible, minimapNodes, minimapRoutes,
@@ -699,21 +698,12 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             return;
         }
         lastEdgePointerClickRef.current = null;
-        setCanvasSelectionScope("group");
-        setSelectedNodeIds([]);
-        setSelectedEdgeId("");
-        setSelectedEdgeIds([]);
-        setConnectSource(null);
-        resetConnectPreviewState();
-        setRewiring(null);
-        switchInspectorTabForCanvasSelection([], [], "blank");
-        if (activeProjectKey) {
-            setSelectedProjectId(activeProjectKey);
-            setSelectedProjectIds([activeProjectKey]);
-            setSelectedSchemeId(activeSchemeKey);
-            setSelectedSchemeIds([]);
-        }
+        // 空白处按下只登记「待清除选中」：接下来很可能是拖动平移画布，
+        // 真正的清空推迟到指针抬起且位移未越过阈值时（见 finishCanvasPanning），
+        // 否则每平移一次视图就会丢掉已选设备。
+        queuePendingBlankCanvasDeselect(event);
         if (event.detail >= 2) {
+            flushPendingBlankCanvasDeselect();
             event.preventDefault();
             setMarquee(null);
             fitWholeCanvasToFrame();

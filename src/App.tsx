@@ -1081,6 +1081,8 @@ const [pointerButtonsPressed, setPointerButtonsPressed] = useState(false);
 Object.assign(__appScope, { pointerButtonsPressed, setPointerButtonsPressed });
 const panningRef = useRef<CanvasPanningState>(null); Object.assign(__appScope, { panningRef });
 const pendingCanvasNoScrollOffsetRef = useRef<Point | null>(null); Object.assign(__appScope, { pendingCanvasNoScrollOffsetRef });
+// 空白处按下的「待清除选中」标记：拖动平移画布时不清选，只有原地单击空白才清空（阈值见 CANVAS_SELECTION_DRAG_THRESHOLD）
+const pendingBlankCanvasDeselectRef = useRef<Point | null>(null); Object.assign(__appScope, { pendingBlankCanvasDeselectRef });
 const [marquee, setMarquee] = useState<Marquee>(null);
 Object.assign(__appScope, { marquee, setMarquee });
 const [contextMarqueeSelection, setContextMarqueeSelectionState] = useState<ContextMarqueeSelectionState>(null);

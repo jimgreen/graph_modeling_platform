@@ -1,11 +1,14 @@
 import { describe, expect, test, vi } from "vitest";
 import {
+  createCancelPendingBlankCanvasDeselectOnMove,
   createDeleteGraphTemplate,
   createDeleteGraphTemplateType,
   createDropGraphTemplate,
+  createFlushPendingBlankCanvasDeselect,
   createLightweightMovedEndpointRoute,
   createPasteSelection,
   createPersistDeviceLibraryChange,
+  createQueuePendingBlankCanvasDeselect,
   createRoutableLineRouteCandidateIdsForMovedNodes,
   createRoutePointsForMovedEdgesBlockedByStationaryNodes,
   createShouldRunDeferredMoveOptimization,
@@ -772,5 +775,108 @@ describe("selection drag route cache patches", () => {
     );
 
     expect(blockedRoutePoints[edge.id]).toEqual(crossingRoute);
+  });
+});
+
+describe("blank canvas press vs pan selection", () => {
+  const createScope = () => {
+    const pendingBlankCanvasDeselectRef = { current: null as Point | null };
+    const calls: string[] = [];
+    const scope = {
+      activeProjectKey: "project-1",
+      activeSchemeKey: "scheme-1",
+      pendingBlankCanvasDeselectRef,
+      resetConnectPreviewState: () => calls.push("resetConnectPreview"),
+      setCanvasSelectionScope: (next: string) => calls.push(`scope:${next}`),
+      setConnectSource: () => calls.push("connectSource"),
+      setRewiring: () => calls.push("rewiring"),
+      setSelectedEdgeId: () => calls.push("selectedEdgeId"),
+      setSelectedEdgeIds: () => calls.push("selectedEdgeIds"),
+      setSelectedNodeIds: (ids: string[]) => calls.push(`selectedNodes:${ids.length}`),
+      setSelectedProjectId: (id: string) => calls.push(`project:${id}`),
+      setSelectedProjectIds: () => calls.push("projectIds"),
+      setSelectedSchemeId: (id: string) => calls.push(`scheme:${id}`),
+      setSelectedSchemeIds: () => calls.push("schemeIds"),
+      switchInspectorTabForCanvasSelection: () => calls.push("inspector:blank")
+    };
+    return { scope, calls, pendingBlankCanvasDeselectRef };
+  };
+
+  test("keeps the selection when the blank press turns into a canvas pan", () => {
+    const { scope, calls, pendingBlankCanvasDeselectRef } = createScope();
+    const queuePendingBlankCanvasDeselect = createQueuePendingBlankCanvasDeselect(scope);
+    const cancelPendingBlankCanvasDeselectOnMove = createCancelPendingBlankCanvasDeselectOnMove(scope);
+    const flushPendingBlankCanvasDeselect = createFlushPendingBlankCanvasDeselect(scope);
+
+    queuePendingBlankCanvasDeselect({ clientX: 300, clientY: 200 });
+    expect(pendingBlankCanvasDeselectRef.current).toEqual({ clientX: 300, clientY: 200 });
+
+    cancelPendingBlankCanvasDeselectOnMove(400, 260, 4);
+    expect(pendingBlankCanvasDeselectRef.current).toBeNull();
+
+    flushPendingBlankCanvasDeselect();
+
+    expect(calls).toEqual([]);
+  });
+
+  test("clears the selection on a blank click that never moves", () => {
+    const { scope, calls, pendingBlankCanvasDeselectRef } = createScope();
+    const queuePendingBlankCanvasDeselect = createQueuePendingBlankCanvasDeselect(scope);
+    const flushPendingBlankCanvasDeselect = createFlushPendingBlankCanvasDeselect(scope);
+
+    queuePendingBlankCanvasDeselect({ clientX: 300, clientY: 200 });
+    flushPendingBlankCanvasDeselect();
+
+    expect(pendingBlankCanvasDeselectRef.current).toBeNull();
+    expect(calls).toEqual([
+      "scope:group",
+      "selectedNodes:0",
+      "selectedEdgeId",
+      "selectedEdgeIds",
+      "connectSource",
+      "resetConnectPreview",
+      "rewiring",
+      "inspector:blank",
+      "project:project-1",
+      "projectIds",
+      "scheme:scheme-1",
+      "schemeIds"
+    ]);
+  });
+
+  test("tolerates pointer jitter below the pan threshold", () => {
+    const { scope, calls, pendingBlankCanvasDeselectRef } = createScope();
+    const queuePendingBlankCanvasDeselect = createQueuePendingBlankCanvasDeselect(scope);
+    const cancelPendingBlankCanvasDeselectOnMove = createCancelPendingBlankCanvasDeselectOnMove(scope);
+    const flushPendingBlankCanvasDeselect = createFlushPendingBlankCanvasDeselect(scope);
+
+    queuePendingBlankCanvasDeselect({ clientX: 100, clientY: 100 });
+    cancelPendingBlankCanvasDeselectOnMove(102, 101, 4);
+    expect(pendingBlankCanvasDeselectRef.current).toEqual({ clientX: 100, clientY: 100 });
+
+    flushPendingBlankCanvasDeselect();
+
+    expect(calls).toContain("inspector:blank");
+  });
+
+  test("flushing twice only clears once", () => {
+    const { scope, calls } = createScope();
+    const queuePendingBlankCanvasDeselect = createQueuePendingBlankCanvasDeselect(scope);
+    const flushPendingBlankCanvasDeselect = createFlushPendingBlankCanvasDeselect(scope);
+
+    queuePendingBlankCanvasDeselect({ clientX: 12, clientY: 18 });
+    flushPendingBlankCanvasDeselect();
+    flushPendingBlankCanvasDeselect();
+
+    expect(calls.filter((call) => call === "inspector:blank")).toHaveLength(1);
+  });
+
+  test("moving without a queued blank press is a no-op", () => {
+    const { scope, pendingBlankCanvasDeselectRef } = createScope();
+    const cancelPendingBlankCanvasDeselectOnMove = createCancelPendingBlankCanvasDeselectOnMove(scope);
+
+    cancelPendingBlankCanvasDeselectOnMove(500, 500, 4);
+
+    expect(pendingBlankCanvasDeselectRef.current).toBeNull();
   });
 });

@@ -846,7 +846,7 @@ export function createHandleRoutableLineNodePathPointerDown(__appScope: Record<s
 
 export function createHandlePointerMove(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGSVGElement>) => {
-  const { CANVAS_SELECTION_DRAG_THRESHOLD, MOVE_BOUNDARY_GUARD, applyCanvasPanningVisualOffset, buildGroupTransformNodeUpdates, buildRoutableLineEndpointPreviewNodeUpdates, canvasBounds, canvasFrameRef, canvasFrameUserScrollRef, canvasNoScrollOffsetRef, clampCanvasNoScrollOffsetPoint, clampNumber, clampPointToCanvas, clampViewBoxToCanvas, connectSource, contextMarqueeSelectionRef, draggingRef, getNodeScaleX, getNodeScaleY, graphStore, isBusNode, isGroupTransformDrag, isLineSegmentBusNode, isRoutableLineDeviceKind, lastCanvasClientPointerRef, lastCanvasPointerRef, lastRawCanvasPointerRef, latestGraphStoreRef, libraryPlacement, manualPathDrag, marquee, modelGeometryInsideCanvasBounds, modifierSelectionPressRef, moveOrthogonalRouteSegment, moveRoutableLineDeviceSegment, nodeById, nodeLabelDrag, nodeLabelRotateDrag, nodeLabelRotationFromPoint, normalizeNodeLabelRotation, normalizeRotationDegrees, panning, panningRef, patchGraphNodes, patchSingleTerminalAnchorFromPoint, pendingCanvasNoScrollOffsetRef, proportionalSignedScaleFromHandleDelta, proportionalSignedScaleFromUprightHandleDelta, pushUndoSnapshot, resizeLineSegmentBusGeometryFromHandleDrag, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint, rewiring, rotationDeltaBetweenTransformPoints, routableLineDeviceCanvasPoints, routableLineEndpointDrag, routableLinePlacement, sameOptionalPoint, sameOptionalPointList, scheduleConnectPreviewPoint, scheduleNodeDragMove, scheduleRewirePreviewPoint, scheduleRoutableLinePreviewPoint, screenToSvgPoint, setManualPathDrag, setMarquee, setModifierSelectionPress, setNodeLabelDrag, setNodeLabelRotateDrag, setRoutableLineDeviceCanvasPoints, setTerminalPress, setTransformDrag, setViewBox, signedScaleFromRotatedHandleDelta, signedScaleFromUprightHandleDelta, singleTransformBaseNode, skipNextCanvasScrollSyncRef, staticButtonPointerRef, staticDrawing, svgRef, terminalPress, transformDrag, transformDragChangedRef, updateGraphNodeById, updateInteractiveStaticDrawingPreview, updateLibraryPlacementPreview, updateMeasurementDrag, updateMouseStatus, updateRoutableLineEndpointDrag } = __appScope;
+  const { CANVAS_SELECTION_DRAG_THRESHOLD, MOVE_BOUNDARY_GUARD, applyCanvasPanningVisualOffset, buildGroupTransformNodeUpdates, buildRoutableLineEndpointPreviewNodeUpdates, cancelPendingBlankCanvasDeselectOnMove, canvasBounds, canvasFrameRef, canvasFrameUserScrollRef, canvasNoScrollOffsetRef, clampCanvasNoScrollOffsetPoint, clampNumber, clampPointToCanvas, clampViewBoxToCanvas, connectSource, contextMarqueeSelectionRef, draggingRef, getNodeScaleX, getNodeScaleY, graphStore, isBusNode, isGroupTransformDrag, isLineSegmentBusNode, isRoutableLineDeviceKind, lastCanvasClientPointerRef, lastCanvasPointerRef, lastRawCanvasPointerRef, latestGraphStoreRef, libraryPlacement, manualPathDrag, marquee, modelGeometryInsideCanvasBounds, modifierSelectionPressRef, moveOrthogonalRouteSegment, moveRoutableLineDeviceSegment, nodeById, nodeLabelDrag, nodeLabelRotateDrag, nodeLabelRotationFromPoint, normalizeNodeLabelRotation, normalizeRotationDegrees, panning, panningRef, patchGraphNodes, patchSingleTerminalAnchorFromPoint, pendingCanvasNoScrollOffsetRef, proportionalSignedScaleFromHandleDelta, proportionalSignedScaleFromUprightHandleDelta, pushUndoSnapshot, resizeLineSegmentBusGeometryFromHandleDrag, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint, rewiring, rotationDeltaBetweenTransformPoints, routableLineDeviceCanvasPoints, routableLineEndpointDrag, routableLinePlacement, sameOptionalPoint, sameOptionalPointList, scheduleConnectPreviewPoint, scheduleNodeDragMove, scheduleRewirePreviewPoint, scheduleRoutableLinePreviewPoint, screenToSvgPoint, setManualPathDrag, setMarquee, setModifierSelectionPress, setNodeLabelDrag, setNodeLabelRotateDrag, setRoutableLineDeviceCanvasPoints, setTerminalPress, setTransformDrag, setViewBox, signedScaleFromRotatedHandleDelta, signedScaleFromUprightHandleDelta, singleTransformBaseNode, skipNextCanvasScrollSyncRef, staticButtonPointerRef, staticDrawing, svgRef, terminalPress, transformDrag, transformDragChangedRef, updateGraphNodeById, updateInteractiveStaticDrawingPreview, updateLibraryPlacementPreview, updateMeasurementDrag, updateMouseStatus, updateRoutableLineEndpointDrag } = __appScope;
     const staticButtonPointer = staticButtonPointerRef.current;
     if (
       staticButtonPointer &&
@@ -857,6 +857,8 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
     }
     const activePanning = panningRef.current ?? panning;
     if (activePanning && svgRef.current) {
+      // 平移视图不该丢掉已选设备：指针一旦越过阈值就作废「单击空白清选」
+      cancelPendingBlankCanvasDeselectOnMove?.(event.clientX, event.clientY, CANVAS_SELECTION_DRAG_THRESHOLD);
       const frame = canvasFrameRef.current;
       const useHorizontalScrollPanning = Boolean(frame && activePanning.horizontalScrollMode);
       const useVerticalScrollPanning = Boolean(frame && activePanning.verticalScrollMode);
@@ -1279,8 +1281,9 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
 
 export function createFinishCanvasPanning(__appScope: Record<string, any>) {
   return () => {
-  const { applyCanvasPanningVisualOffset, canvasNoScrollOffsetRef, panningRef, pendingCanvasNoScrollOffsetRef, scheduleCanvasVisibleViewBoxUpdate, setCanvasNoScrollOffset, setCanvasPanning } = __appScope;
+  const { applyCanvasPanningVisualOffset, canvasNoScrollOffsetRef, flushPendingBlankCanvasDeselect, panningRef, pendingCanvasNoScrollOffsetRef, scheduleCanvasVisibleViewBoxUpdate, setCanvasNoScrollOffset, setCanvasPanning } = __appScope;
     if (!panningRef.current && !pendingCanvasNoScrollOffsetRef.current) {
+      flushPendingBlankCanvasDeselect?.();
       return;
     }
     const pendingOffset = pendingCanvasNoScrollOffsetRef.current;
@@ -1294,6 +1297,8 @@ export function createFinishCanvasPanning(__appScope: Record<string, any>) {
     }
     scheduleCanvasVisibleViewBoxUpdate();
     setCanvasPanning(null);
+    // 抬起时位移仍未越过阈值 → 视为「单击空白」，此时才执行清空选中
+    flushPendingBlankCanvasDeselect?.();
   };
 }
 
@@ -5388,7 +5393,7 @@ export function createLocateTopologyError(__appScope: Record<string, any>) {
 
 export function createRunTopologyCalculation(__appScope: Record<string, any>) {
   return () => {
-  const { EMPTY_TOPOLOGY, buildTopology, calculateElectricalTopology, currentUnit, edges, isBlockingTopologyValidationError, locateTopologyError, modelType, nodes, normalizeDeviceOperatingLimitsAfterTopology, powerUnit, pushUndoSnapshot, requireEditMode, schemes, setNodes, setTopology, setTopologyErrors, setTopologyStatus, setTopologyWarningPanelClosed, skipNextTopologyStaleRef, topologyCalculationMessage, validateTopology, validateVoltageSetpointDeviations, voltageUnit, writeOperationLog } = __appScope;
+  const { EMPTY_TOPOLOGY, activeProjectKey, activeSchemeKey, buildTopology, calculateElectricalTopology, currentUnit, edges, isBlockingTopologyValidationError, locateTopologyError, modelType, nodes, normalizeDeviceOperatingLimitsAfterTopology, powerUnit, pushUndoSnapshot, requireEditMode, schemes, setNodes, setTopology, setTopologyErrors, setTopologyStatus, setTopologyWarningPanelClosed, skipNextTopologyStaleRef, topologyCalculationMessage, validateTopology, validateVoltageSetpointDeviations, voltageUnit, writeOperationLog } = __appScope;
     if (!requireEditMode("执行图上拓扑计算")) {
       return;
     }
@@ -5415,7 +5420,9 @@ export function createRunTopologyCalculation(__appScope: Record<string, any>) {
       voltageUnit,
       currentUnit,
       skipVoltageNodeIds: invalidVoltageBaseNodeIds,
-      sourceNodes: nodes
+      sourceNodes: nodes,
+      // 图上拓扑与全网拓扑共用同一套「第几次检查」判定，但按 `方案:模型` 隔离，避免不同模型互相顶掉。
+      capacityFixScopeKey: `${activeSchemeKey ?? ""}:${activeProjectKey ?? ""}`
     });
     const voltageDeviationErrors = validateVoltageSetpointDeviations(normalizedLimits.nodes, edges);
     const ratedVoltageDeviationErrors = voltageDeviationErrors.filter(

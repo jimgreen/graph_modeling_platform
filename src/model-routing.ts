@@ -112,7 +112,8 @@ import {
   validateNodeEnumParameters,
   twoWindingTransformerParameterDefinitions,
   ELEMENT_TREE_COMPONENT_LIBRARY_LABELS,
-  getRatedCapacityDefaultForKind
+  getRatedCapacityDefaultForKind,
+  getSwitchingRatedCapacityDefault
 } from "./model.ts";
 import {
   E_SECTION_COLUMNS,
@@ -123,6 +124,11 @@ import {
   shouldAssignVoltageSetpointDefault,
   terminalVoltageDisplay
 } from "./model-eexport.ts";
+import {
+  decideRatedCapacityFix,
+  ratedCapacityFixKey,
+  type RatedCapacityFixDecision
+} from "./topology-capacity-fix.ts";
 import {
   clampPointToBounds,
   getNodeScaleX,
@@ -5342,6 +5348,13 @@ export type DeviceOperatingLimitNormalizationOptions = {
   currentUnit?: string;
   skipVoltageNodeIds?: ReadonlySet<string>;
   sourceNodes?: readonly ModelNode[];
+  /**
+   * 拓扑检查范围标识（模型唯一键）。传入后，额定容量无效的设备走两段式处理：
+   * 首次检查只报告警、第二次检查才赋合理值并消除告警。
+   * 合理值来源：线路/负荷按电压等级容量表；开关类设备（rated_capacity 即额定电流）取默认额定电流。
+   * 缺省时保持原有「首次即自动填充」行为，供非检查入口使用。
+   */
+  capacityFixScopeKey?: string;
 };
 
 export type DeviceOperatingLimitCorrection = {
@@ -5710,6 +5723,42 @@ function validateDeviceSetpointLimits(
   return warnings;
 }
 
+/**
+ * 单次拓扑检查运行内的额定容量赋值决策缓存。
+ * 一轮检查里容量会被功率上下限、最大电流等多处重复查询；没有这层缓存，
+ * 第二次查询就会把「首查」误判成「二查」，两段式处理直接失效。
+ */
+type RatedCapacityFixTracker = {
+  scopeKey: string;
+  decisions: Map<string, RatedCapacityFixDecision>;
+};
+
+/**
+ * 设备额定容量。`baseValue` 始终是「功率」口径，供功率上下限修正复用；
+ * 开关类设备的额定容量承载的是额定电流，此时 `currentBaseValue` 给出它的电流值，
+ * 最大电流（i_max）换算直接采用，不再按 功率/基准电压/1.732 折算。
+ */
+type DeviceLimitCapacity = {
+  baseValue: number;
+  unit: string;
+  currentBaseValue?: number;
+};
+
+function ratedCapacityFixDecisionFor(
+  tracker: RatedCapacityFixTracker,
+  nodeId: string,
+  capacityKey: string
+): RatedCapacityFixDecision {
+  const fixKey = ratedCapacityFixKey(tracker.scopeKey, nodeId, capacityKey);
+  const memoized = tracker.decisions.get(fixKey);
+  if (memoized) {
+    return memoized;
+  }
+  const decision = decideRatedCapacityFix(tracker.scopeKey, nodeId, capacityKey);
+  tracker.decisions.set(fixKey, decision);
+  return decision;
+}
+
 function validateDeviceLimitPairs(
   node: ModelNode,
   ownerName: string,
@@ -5717,7 +5766,8 @@ function validateDeviceLimitPairs(
   ownerSection: string,
   options: DeviceOperatingLimitNormalizationOptions,
   updateParam: (key: string, value: string) => void,
-  terminalOverride?: Terminal
+  terminalOverride?: Terminal,
+  capacityFix?: RatedCapacityFixTracker
 ): TopologyValidationError[] {
   const warnings: TopologyValidationError[] = [];
   const powerUnit = defaultQuantityUnit("power", options);
@@ -5774,31 +5824,68 @@ function validateDeviceLimitPairs(
       : [{ spec, maxKey, minKey, maxText, minText }];
   });
   const invalidCapacityKeys = new Set<string>();
-  const capacityFor = (capacityKey: string): { baseValue: number; unit: string } | null => {
+  // 开关类设备的 rated_capacity 承载的是额定电流（A）而非功率：默认值取默认额定电流，
+  // 并额外给出它的电流解释，供最大电流（i_max）换算直接使用，避免按功率/电压再折算。
+  const switchingRatedCapacityDefault = getSwitchingRatedCapacityDefault(baseDeviceKind(node.kind));
+  const ratedCapacityParamKey = keyFor("rated_capacity");
+  const switchingRatedCurrentFor = (paramKey: string, value: string | undefined): number | undefined => {
+    if (paramKey !== ratedCapacityParamKey || !switchingRatedCapacityDefault) {
+      return undefined;
+    }
+    const current = quantityValue(value, "current", currentUnit);
+    return current && current.baseValue > 0 ? current.baseValue : undefined;
+  };
+  const capacityFor = (capacityKey: string): DeviceLimitCapacity | null => {
     const capacityText = deviceParamValue(node.params, capacityKey);
     const capacity = quantityValue(capacityText, "power", powerUnit);
+    const switchingCurrent = switchingRatedCurrentFor(capacityKey, capacityText);
     if (capacity && capacity.baseValue > 0) {
-      return capacity;
+      return switchingCurrent === undefined ? capacity : { ...capacity, currentBaseValue: switchingCurrent };
     }
-    // 额定容量无效时，自动根据电压等级填充默认值
+    // 兜底默认值来源：开关类设备取默认额定电流，线路/负荷按电压等级容量表查表。
     const voltageText = deviceParamValue(node.params, keyFor("rated_voltage"))
       ?? node.terminals[0]?.vbase;
-    if (voltageText) {
-      const voltageValue = normalizeVoltageBaseInput(voltageText);
-      const defaultCapacity = getRatedCapacityDefaultForKind(baseDeviceKind(node.kind), voltageValue);
-      if (defaultCapacity) {
-        updateParam(capacityKey, defaultCapacity);
-        const autoCapacity = quantityValue(defaultCapacity, "power", powerUnit);
-        if (autoCapacity && autoCapacity.baseValue > 0) {
-          warnings.push({
-            id: `device-limit-autofill:${node.id}:${encodeURIComponent(capacityKey)}`,
-            type: "device-limit-autofill",
-            nodeId: node.id,
-            relatedNodeIds: [node.id],
-            message: `图上拓扑告警：${ownerName} 的额定容量 ${capacityKey}=${capacityText ?? "未设置"} 无效，已根据电压等级 ${voltageValue} kV 自动填充为 ${defaultCapacity}。`
-          });
-          return autoCapacity;
+    const voltageValue = voltageText ? normalizeVoltageBaseInput(voltageText) : "";
+    const switchingDefault = capacityKey === ratedCapacityParamKey ? switchingRatedCapacityDefault : null;
+    const defaultCapacity = switchingDefault
+      ?? (voltageValue ? getRatedCapacityDefaultForKind(baseDeviceKind(node.kind), voltageValue) : null);
+    const defaultSource = switchingDefault ? "开关类设备默认额定电流" : `电压等级 ${voltageValue} kV`;
+    if (defaultCapacity) {
+      const autoCapacity = quantityValue(defaultCapacity, "power", powerUnit);
+      if (autoCapacity && autoCapacity.baseValue > 0) {
+        const autoCurrent = switchingRatedCurrentFor(capacityKey, defaultCapacity);
+        const resolvedCapacity = autoCurrent === undefined
+          ? autoCapacity
+          : { ...autoCapacity, currentBaseValue: autoCurrent };
+        if (capacityFix) {
+          const fixDecision = ratedCapacityFixDecisionFor(capacityFix, node.id, capacityKey);
+          if (fixDecision === "defer") {
+            // 首次检查：只报告警，暂不赋值。
+            if (!invalidCapacityKeys.has(capacityKey)) {
+              invalidCapacityKeys.add(capacityKey);
+              warnings.push({
+                id: `device-limit-invalid:${node.id}:${encodeURIComponent(capacityKey)}`,
+                type: "device-limit-invalid",
+                nodeId: node.id,
+                relatedNodeIds: [node.id],
+                message: `图上拓扑告警：${ownerName} 的额定容量 ${capacityKey}=${capacityText ?? "未设置"} 无效；本次（首次）检查暂不处理，将在下次拓扑检查时按${defaultSource}自动赋值为 ${defaultCapacity}。`
+              });
+            }
+            return null;
+          }
+          // 第二次检查（及此后的只读模型副本）：赋值并消除该告警。
+          updateParam(capacityKey, defaultCapacity);
+          return resolvedCapacity;
         }
+        updateParam(capacityKey, defaultCapacity);
+        warnings.push({
+          id: `device-limit-autofill:${node.id}:${encodeURIComponent(capacityKey)}`,
+          type: "device-limit-autofill",
+          nodeId: node.id,
+          relatedNodeIds: [node.id],
+          message: `图上拓扑告警：${ownerName} 的额定容量 ${capacityKey}=${capacityText ?? "未设置"} 无效，已根据${defaultSource}自动填充为 ${defaultCapacity}。`
+        });
+        return resolvedCapacity;
       }
     }
     if (!invalidCapacityKeys.has(capacityKey)) {
@@ -5826,7 +5913,8 @@ function validateDeviceLimitPairs(
   for (const { spec, maxKey, minKey, maxText, minText } of relevantSpecs) {
     if (!spec.voltage) {
       const capacity = capacityFor(keyFor("rated_capacity"));
-      if (!capacity) {
+      // 开关类设备的额定容量承载额定电流而非功率，不能据它去反推功率上下限。
+      if (!capacity || capacity.currentBaseValue !== undefined) {
         continue;
       }
       const maxValue = quantityValue(maxText, "power", powerUnit);
@@ -5904,7 +5992,8 @@ function validateDeviceLimitPairs(
       if (!capacity || !baseVoltage || baseVoltage.baseValue <= 0) {
         continue;
       }
-      const expectedCurrent = capacity.baseValue / baseVoltage.baseValue / THREE_PHASE_CURRENT_DIVISOR;
+      const expectedCurrent = capacity.currentBaseValue
+        ?? capacity.baseValue / baseVoltage.baseValue / THREE_PHASE_CURRENT_DIVISOR;
       const currentText = deviceParamValue(node.params, currentKey);
       const current = quantityValue(currentText, "current", currentUnit);
       if (current && current.baseValue > 0) {
@@ -6078,6 +6167,10 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
   const warnings: TopologyValidationError[] = [];
   const corrections: DeviceOperatingLimitCorrection[] = [];
   const sourceNodeById = new Map((options.sourceNodes ?? []).map((node) => [node.id, node]));
+  // 两段式额定容量处理的作用域：仅在拓扑检查入口传入，非检查入口保持原行为。
+  const capacityFix: RatedCapacityFixTracker | undefined = options.capacityFixScopeKey
+    ? { scopeKey: options.capacityFixScopeKey, decisions: new Map() }
+    : undefined;
   const normalizedNodes = nodes.map((node) => {
     if (isStaticNode(node)) {
       return node;
@@ -6182,7 +6275,9 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
       (key) => key,
       inferESection(node.kind, nextParams),
       options,
-      updateParam
+      updateParam,
+      undefined,
+      capacityFix
     ));
     warnings.push(...validateDeviceSetpointLimits(
       currentNode(),
@@ -6212,7 +6307,8 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
         relationSection,
         options,
         updateParam,
-        terminal
+        terminal,
+        capacityFix
       ));
       warnings.push(...validateDeviceSetpointLimits(
         currentNode(),
