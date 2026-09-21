@@ -6,7 +6,7 @@ import { DEFAULT_MEASUREMENT_CONFIG, defaultMeasurementDisplayFormat } from "../
 import { WindowCloseButton } from "../WindowCloseButton";
 import { setSkipSaveCheck } from "./appDeviceDefinitionFactories";
 import { switchToSpace } from "../spaceSwitch";
-import { rebuildContainerExemptConnectionRoutes, rebuildContainerExemptRoutableLineDeviceRoutes, reconcileTransformerSideVoltageParamsWithTerminals } from "../model-routing";
+import { rebuildContainerExemptConnectionRoutes, rebuildContainerExemptRoutableLineDeviceRoutes, reconcileTransformerSideVoltageParamsWithTerminals, routeEdgesForStoredRendering } from "../model-routing";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
 import { GLOBAL_LINE_ID_PARAM, applyGlobalLineRecordToNode, deriveLocalDeviceIndexCounters, globalLineEndpointPlacementFailureMessage, globalLineSourcePlacementFailureMessage, shouldManageLineGlobally, shouldUseGlobalLineForEndpoints } from "../global-lines";
 import { isLineOnlyConnectionNode, modelAssociationLineConnectionFailureMessage, modelAssociationProjectIndexesForSchemes } from "../model";
@@ -18,7 +18,7 @@ import {
 import { getRatedCapacityDefaultForKind } from "../model";
 import { graphStorePatchNodes } from "../graphStore";
 import { applyDragContainerMembership, clampContainerCenterToMembers, containerDragGroup, containerGatewayUnbindNotice, containerMemberNodes, containerResizeMinSize, finalizeContainerAfterNodeDeletion, foldContainerScaleIntoSize, hasAcContainer, isAcContainerNode, normalizeInboundContainerNode, withNodeUpdates } from "../acContainer";
-import { arrangeContainerInteriors, mergeContainerLayoutUnits } from "../selectionActions";
+import { arrangeContainerInteriors, autoAlignEdgeWithoutStoredRoute, autoAlignStoredRouteDrops, createAutoAlignQualityReport, mergeContainerLayoutUnits, type AutoAlignQualityReport } from "../selectionActions";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return async (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[], globalLineChoice?: GlobalLineChoice) => {
@@ -1628,11 +1628,73 @@ export function createReadjustActiveLayerBusEndpointRoutes(__appScope: Record<st
   };
 }
 
+/**
+ * 清理「失效的存档折线」:把「按端口重算严格更简单」的线路换成重算几何(清掉 manualPoints,重写 routePoints)。
+ * 一次撤销单元,只改边、不动图元 —— 用于自动对齐没移动任何图元、但仍有折线可清的情形
+ * (如 `多能流` 里 交流断路器-5 → 交流线路-1 两端共 y 却带一个 9px 凹口,4 个拐点 → 0 个)。
+ *
+ * **有图元移动时必须由调用方在移动提交之后调用**,并传 `skipUndoSnapshot: true`(复用移动提交的快照):
+ * 移动提交内部会 `preserveConnectionEdgeRouteShape` 把存档绕行按新端点重锚,
+ * 先改后移等于白改 —— 直线会重新长成 4 拐点的 U 形凹口。
+ */
+export function createCleanupStaleConnectionRoutes(__appScope: Record<string, any>) {
+  return (
+    drops?: readonly { edgeId: string; points: readonly Point[] }[],
+    options: { skipUndoSnapshot?: boolean } = {}
+  ) => {
+  const { activeLayerEdges, canvasBounds, editModeRouteRenderOptions, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, patchGraphEdges, pushUndoSnapshot, routeEdgesForStoredRendering, undoScopeForGraphPatch } = __appScope;
+    const resolvedDrops = drops ?? autoAlignStoredRouteDrops(
+      nodes,
+      activeLayerEdges,
+      new Set(activeLayerEdges.map((edge: Edge) => edge.id)),
+      (candidateNodes: readonly ModelNode[], candidateEdges: readonly Edge[]) =>
+        routeEdgesForStoredRendering([...candidateNodes], [...candidateEdges], canvasBounds, editModeRouteRenderOptions)
+    );
+    if (resolvedDrops.length === 0) {
+      return 0;
+    }
+    const edgeById = new Map(activeLayerEdges.map((edge: Edge) => [edge.id, edge]));
+    const cleanedEdges: Edge[] = [];
+    for (const drop of resolvedDrops) {
+      const edge = edgeById.get(drop.edgeId);
+      if (!edge) {
+        continue;
+      }
+      cleanedEdges.push({
+        ...autoAlignEdgeWithoutStoredRoute(edge),
+        routePoints: drop.points.map((point) => ({ ...point }))
+      });
+    }
+    if (cleanedEdges.length === 0) {
+      return 0;
+    }
+    const cleanedEdgeIds = cleanedEdges.map((edge) => edge.id);
+    if (!options.skipUndoSnapshot) {
+      pushUndoSnapshot(true, false, undoScopeForGraphPatch([], cleanedEdgeIds));
+    }
+    markRouteEdgesDirty(cleanedEdgeIds);
+    markStoredRouteEdgesDirty(cleanedEdgeIds);
+    patchGraphEdges(cleanedEdges);
+    return cleanedEdges.length;
+  };
+}
+
 export function createCommitLayoutNodePositions(__appScope: Record<string, any>) {
   return (
     layoutNodeIds: string[],
     arranged: ModelNode[],
-    options: { preserveCanvasBounds?: boolean; readjustBusEndpoints?: boolean } = {}
+    options: {
+      preserveCanvasBounds?: boolean;
+      readjustBusEndpoints?: boolean;
+      /**
+       * 本次提交要并入**同一撤销单元**的「失效存档折线」线路 id(见 `autoAlignStoredRouteDrops`)。
+       * 只登记 id、不在本函数里改几何:折线清理由调用方在移动提交**之后**用
+       * `createCleanupStaleConnectionRoutes(drops, { skipUndoSnapshot: true })` 完成 ——
+       * 本函数内部的 `adjustEdgesAfterNodeMove → preserveConnectionEdgeRouteShape` 会「保持连接线形状」,
+       * 把存档绕行按新端点重锚,在这里改掉的几何会被它重新长出来(实测:直线被重锚成 4 拐点的 U 形凹口)。
+       */
+      storedRouteDropIds?: Iterable<string>;
+    } = {}
   ) => {
   const { CANVAS_AUTO_EXPAND_PADDING, adjustEdgesAfterNodeMove, applyCanvasBounds, canvasBounds, canvasBoundsForAutoExpandedGraphContent, commitFastMovedGraphPatches, currentStoredRoutePointsForEdge, edgeListForNodeIds, edges, finalizeMovedNodeEdgesFast, isRoutableLineDeviceKind, mergeNodeUpdateLists, nodeById, nodes, orderedNodeFromList, pushUndoSnapshot, readjustMovedBusConnectionRoutes, realignRoutableLineDeviceBusEndpointPoints, redrawRoutableLineDeviceRoutes, rejectAutoCanvasExpansionForContent, routableLineIdsConnectedToNodeIds, snapshotEdgePoints, undoScopeForGraphPatch } = __appScope;
     const uniqueLayoutNodeIds = Array.from(new Set(layoutNodeIds));
@@ -1652,6 +1714,9 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
     }
     const movedNodeIds = movedNodeUpdates.map((node) => node.id);
     const movedNodeIdSet = new Set(movedNodeIds);
+    // 失效存档折线只登记 id:几何改由调用方在移动提交之后做(见 options.storedRouteDropIds 注释)。
+    // 仍要把它们并进撤销范围,好让「移动 + 清折线」共用同一次快照(调用方据此跳过自己的快照)。
+    const storedRouteDropIds = Array.from(new Set(options.storedRouteDropIds ?? []));
     const affectedEdgesForLayout = edgeListForNodeIds(movedNodeIds);
     const busConnectedLineNodeIds = options.readjustBusEndpoints
       ? routableLineIdsConnectedToNodeIds(movedNodeIds)
@@ -1676,7 +1741,7 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
         ? undefined
         : undoScopeForGraphPatch(
             busConnectedLineNodeIds.size > 0 ? [...movedNodeIds, ...busConnectedLineNodeIds] : movedNodeIds,
-            affectedEdgesForLayout.map((edge) => edge.id)
+            [...affectedEdgesForLayout.map((edge) => edge.id), ...storedRouteDropIds]
           )
     );
     const layoutCanvasBounds = options.preserveCanvasBounds
@@ -2059,7 +2124,11 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
       ? autoSpreadNodeLayoutUnits(stageOneNodes, layoutUnits, {
           padding: 4,
           bounds: canvasBounds,
-          avoidRects: [...avoidRects, ...stationaryNodeAvoidRects]
+          // 不可移动图元(母线等)是硬障碍:移完不能压在它们身上。
+          avoidRects: stationaryNodeAvoidRects,
+          // 路线走廊只能是**软**障碍:线路在设备移动后本来就按新位置重算,
+          // 当硬障碍会让设备为了躲开**自己那根线**被推到画布另一头(实测 +1605px)。
+          softAvoidRects: avoidRects
         })
       : stageOneNodes;
     const movedCount = layoutUnits.length >= 2
@@ -2153,9 +2222,51 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
   };
 }
 
+/**
+ * 自动对齐质量报告的日志后缀(拐点/交叉约束的三种结局 + 无异常)。
+ * 抽出来是为了避免在调用处堆四层嵌套三元。
+ */
+function autoAlignQualitySuffix(report: AutoAlignQualityReport): string {
+  if (report.revertedByVerification) {
+    return "（对齐会使线路拐点/交叉增加，已放弃本次对齐）";
+  }
+  if (report.frozenUnitCount > 0) {
+    return `（为避免线路拐点/交叉增加，${report.frozenUnitCount} 个图元保持原位）`;
+  }
+  if (report.degraded) {
+    return "（线路校验超出耗时预算，剩余图元保持原位）";
+  }
+  return "";
+}
+
+/** 自动对齐的完成日志。优先级:有图元移动 > 只整理了母线落点 > 只整理了折线 > 仅质量后缀 > 本就已就位。 */
+function autoAlignOperationLog(options: {
+  movedCount: number;
+  readjustedRouteCount: number;
+  cleanedRouteCount: number;
+  cleanedSegment: string;
+  qualitySuffix: string;
+  gridSpacing: number;
+}): string {
+  const { movedCount, readjustedRouteCount, cleanedRouteCount, cleanedSegment, qualitySuffix, gridSpacing } = options;
+  if (movedCount > 0) {
+    return `自动对齐 ${movedCount} 个图元${cleanedSegment}，网格间距 ${gridSpacing}px${qualitySuffix}`;
+  }
+  if (readjustedRouteCount > 0) {
+    return `自动对齐未移动图元，已整理 ${readjustedRouteCount} 条母线连接落点${cleanedSegment}，网格间距 ${gridSpacing}px${qualitySuffix}`;
+  }
+  if (cleanedRouteCount > 0) {
+    return `自动对齐未移动图元${cleanedSegment}，网格间距 ${gridSpacing}px${qualitySuffix}`;
+  }
+  if (qualitySuffix) {
+    return `自动对齐未移动图元，网格间距 ${gridSpacing}px${qualitySuffix}`;
+  }
+  return `图元中心已位于 ${gridSpacing}px 网格交叉点`;
+}
+
 export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
   return () => {
-  const { AUTO_ALIGN_DEFAULT_THRESHOLD_PX, AUTO_ALIGN_MAX_THRESHOLD_PX, AUTO_ALIGN_MIN_THRESHOLD_PX, activeLayerEdges, activeLayerGroups, activeLayerNodes, autoAlignNodeLayoutUnits, buildCanvasLayoutUnits, commitLayoutNodePositions, isCanvasNodeMovable, nodes, readjustActiveLayerBusEndpointRoutes, requireEditMode, routedEdges, writeOperationLog } = __appScope;
+  const { AUTO_ALIGN_DEFAULT_THRESHOLD_PX, AUTO_ALIGN_MAX_THRESHOLD_PX, AUTO_ALIGN_MIN_THRESHOLD_PX, activeLayerEdges, activeLayerGroups, activeLayerNodes, autoAlignNodeLayoutUnits, buildCanvasLayoutUnits, canvasBounds, cleanupStaleConnectionRoutes, commitLayoutNodePositions, editModeRouteRenderOptions, edges, isCanvasNodeMovable, nodes, readjustActiveLayerBusEndpointRoutes, requireEditMode, routedEdges, writeOperationLog } = __appScope;
     if (!requireEditMode("自动对齐")) {
       return;
     }
@@ -2177,11 +2288,35 @@ export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
       return;
     }
     const gridSpacing = clampNumber(Math.round(parsedGridSpacing), AUTO_ALIGN_MIN_THRESHOLD_PX, AUTO_ALIGN_MAX_THRESHOLD_PX);
+    // 线路质量约束(用户裁决):线路拐点 / 线路交叉都不能因对齐增加。
+    // 候选判定用内置快速代理,画布路由器(与画布同一套 stored 渲染参数)只在终检时用;两阶段共用一个累计 report 供日志说明。
+    const autoAlignQualityReport = createAutoAlignQualityReport();
+    const routeWithCanvasParams = (candidateNodes: any[], candidateEdges: any[]) =>
+      routeEdgesForStoredRendering(candidateNodes, candidateEdges, canvasBounds, editModeRouteRenderOptions);
+    const runAutoAlignUnits = (currentNodes: any[], unitList: any[]) => {
+      const callReport = createAutoAlignQualityReport();
+      const result = autoAlignNodeLayoutUnits(currentNodes, unitList, gridSpacing, {
+        edges: edges ?? [],
+        routedEdges,
+        // 逐候选判定用 autoAlignNodeLayoutUnits 内置的快速代理:画布路由器一次几十毫秒,放不进候选循环。
+        // 它只出现在这里做一次终检(原布局 / 对齐后布局各一次),用来兜底「代理与真实几何口径不一致」。
+        verifyRouteEdges: routeWithCanvasParams,
+        report: callReport
+      });
+      autoAlignQualityReport.verifiedCandidateCount += callReport.verifiedCandidateCount;
+      autoAlignQualityReport.bendRejectedCount += callReport.bendRejectedCount;
+      autoAlignQualityReport.crossingRejectedCount += callReport.crossingRejectedCount;
+      autoAlignQualityReport.frozenUnitCount += callReport.frozenUnitCount;
+      autoAlignQualityReport.degraded = autoAlignQualityReport.degraded || callReport.degraded;
+      autoAlignQualityReport.revertedByVerification =
+        autoAlignQualityReport.revertedByVerification || callReport.revertedByVerification;
+      return result;
+    };
     // 两阶段(用户裁决):阶段 1 每个容器内成员先自对齐;阶段 2 容器作为整体(连同成员)参与全层对齐。
     // 阶段 1 的作用域锁当前图层(与阶段 2 同),别层容器不被动
     const stageOneNodes = arrangeContainerInteriors(
       nodes,
-      (currentNodes, memberUnits) => autoAlignNodeLayoutUnits(currentNodes, memberUnits, gridSpacing),
+      (currentNodes, memberUnits) => runAutoAlignUnits(currentNodes, memberUnits),
       activeNodeIds
     );
     const stageOneLayerNodes = withNodeUpdates(activeLayerNodes, stageOneNodes);
@@ -2201,18 +2336,39 @@ export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
       writeOperationLog("自动对齐没有发现可调整的图元");
       return;
     }
-    const arranged = autoAlignNodeLayoutUnits(stageOneNodes, layoutUnits, gridSpacing);
+    const arranged = runAutoAlignUnits(stageOneNodes, layoutUnits);
+    // 「失效存档折线」必须与 `autoAlignNodeLayoutUnits` 终检的裁定同口径:同一个 helper + 同一套画布渲染参数。
+    // 否则判定说「端口对齐就直了」、渲染却把存档绕行原样搬走(甚至多拐两个弯),终检就会把本来该消的拐点回退掉。
+    const staleRouteDrops = autoAlignStoredRouteDrops(
+      arranged,
+      edges ?? [],
+      new Set((edges ?? []).map((edge: Edge) => edge.id)),
+      routeWithCanvasParams
+    );
     const movedCount = commitLayoutNodePositions(
       Array.from(new Set(layoutUnits.flatMap((unit) => unit.nodeIds))),
       arranged,
-      { readjustBusEndpoints: true }
+      { readjustBusEndpoints: true, storedRouteDropIds: staleRouteDrops.map((drop) => drop.edgeId) }
     );
+    // 折线清理必须排在**移动提交之后**:移动提交内部 `adjustEdgesAfterNodeMove → preserveConnectionEdgeRouteShape`
+    // 会「保持连接线形状」——把存档绕行按新端点重锚,于是「同一次提交里顺带清掉」会被它重新长出来
+    // (实测:本该是直线,结果变成 4 拐点的 U 形凹口)。放在最后写,才真正生效。
+    // 有移动时复用移动提交的撤销快照(清折线的边已并入其 scope),撤销仍然只按一次。
+    const cleanedRouteCount = staleRouteDrops.length > 0
+      ? cleanupStaleConnectionRoutes?.(staleRouteDrops, { skipUndoSnapshot: movedCount > 0 }) ?? 0
+      : 0;
+    // 没有图元移动时 `commitLayoutNodePositions` 直接返回 0,折线清理自己成一次撤销单元(只改边,不动图元)。
     const readjustedRouteCount = movedCount === 0 ? readjustActiveLayerBusEndpointRoutes() : 0;
-    writeOperationLog(movedCount > 0
-      ? `自动对齐 ${movedCount} 个图元，网格间距 ${gridSpacing}px`
-      : readjustedRouteCount > 0
-        ? `自动对齐未移动图元，已整理 ${readjustedRouteCount} 条母线连接落点，网格间距 ${gridSpacing}px`
-        : `图元中心已位于 ${gridSpacing}px 网格交叉点`);
+    const cleanedSegment = cleanedRouteCount > 0 ? `，已整理 ${cleanedRouteCount} 条线路折线` : "";
+    const qualitySuffix = autoAlignQualitySuffix(autoAlignQualityReport);
+    writeOperationLog(autoAlignOperationLog({
+      movedCount,
+      readjustedRouteCount,
+      cleanedRouteCount,
+      cleanedSegment,
+      qualitySuffix,
+      gridSpacing
+    }));
   };
 }
 

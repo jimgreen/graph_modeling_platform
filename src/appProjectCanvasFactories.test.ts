@@ -1890,7 +1890,13 @@ describe("automatic canvas layout", () => {
     expect(autoSpreadNodeLayoutUnits).toHaveBeenCalledWith(
       nodes,
       finalLayoutUnits,
-      { padding: 4, bounds: scope.canvasBounds, avoidRects: [nodeVisualRects[2]] }
+      {
+        padding: 4,
+        bounds: scope.canvasBounds,
+        // 不可移动图元(母线等)是硬障碍;线路走廊只是软障碍 —— 否则设备会为躲开自己那根线被推到画布另一头。
+        avoidRects: [nodeVisualRects[2]],
+        softAvoidRects: []
+      }
     );
     expect(commitLayoutNodePositions).toHaveBeenCalledWith(
       ["node-1", "node-2"],

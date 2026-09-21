@@ -13,8 +13,8 @@ import {
   withNodeUpdates,
 } from "../acContainer";
 import { BUILTIN_VOLTAGE_LEVELS, MODEL_TYPES, formatPowerBaseDisplayValue } from "../model";
-import { firstNonZeroVoltageBase } from "../model-eexport";
-import { getTerminalVoltageLevel } from "../model-routing";
+import { firstNonZeroVoltageBase, inferESection, isThreeWindingTransformer } from "../model-eexport";
+import { getTerminalVoltageLevel, voltageBaseSettingModeForNode } from "../model-routing";
 import { VOLTAGE_BASE_PARAM_KEYS, resolveAcContainerModelPanelParamKeys } from "./appCoreCanvasUtilities";
 
 // 参数字段 → 单位后缀映射
@@ -95,6 +95,29 @@ function voltageBaseSelectOptions(currentValue: string): string[] {
   return BUILTIN_VOLTAGE_LEVELS.includes(currentValue)
     ? BUILTIN_VOLTAGE_LEVELS
     : [currentValue, ...BUILTIN_VOLTAGE_LEVELS];
+}
+
+/**
+ * 分压多端设备「端子索引 → 侧电压 E 键」，仅用于按端子电压等级行的表头英文提示
+ * （与 model-eexport / model-routing 的侧电压读写口径一致）：
+ *   - 变流器（DCDC/DCAC/ACAC）：端子 0 → source_vbase、端子 1 → target_vbase
+ *   - 三绕组变压器：端子 0/1/2 → i_vbase / k_vbase / j_vbase
+ *   - 其余双端分压设备：端子 0 → i_vbase、端子 1 → j_vbase
+ */
+export function voltageBaseSideKeyForTerminal(
+  node: { kind: string; params: Record<string, string> },
+  terminalIndex: number
+): string {
+  const section = inferESection(node.kind, node.params);
+  let keys: readonly string[];
+  if (section === "DCDCConverter" || section === "DCACConverter" || section === "ACACConverter") {
+    keys = ["source_vbase", "target_vbase"];
+  } else if (isThreeWindingTransformer(node)) {
+    keys = ["i_vbase", "k_vbase", "j_vbase"];
+  } else {
+    keys = ["i_vbase", "j_vbase"];
+  }
+  return keys[terminalIndex] ?? "vbase";
 }
 
 /**
@@ -286,6 +309,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     voltageUnit,
     edges,
     setVoltageBaseValuesForScope,
+    setVoltageBaseTerminalValuesForScope,
     patchGraphNodes
   } = scope;
 
@@ -331,9 +355,56 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     return Boolean(savedNode) && !parameterValuesEqual(currentValue, comparableParamValue(savedNode, key, definition));
   };
 
-  // 电压等级下拉行：仅电气设备（含 ac/dc 端子）显示；写入按设备电压设置模式（uniform→params.vbase，terminal→侧电压）
+  // 电压等级设置行：仅电气设备（含 ac/dc 端子）显示。
+  // - 分压多端设备（变流器 DCDC/DCAC/ACAC、变压器等，voltageBaseSettingModeForNode === "terminal"）：
+  //   两端电压等级本就允许不同（【设置电压基值】弹框按端子分设），这里按端子各给一行「XX端X电压等级」，
+  //   提交只落在该端子所在的电压岛，不再把整设备当成一个电压等级；
+  // - 其余（线路/负荷/开关/母线等 uniform）：保持整设备一行「电压等级」。
   // 是否渲染由调用处决定（若设备已有 vbase/i_vbase/k_vbase/j_vbase 参数则不重复添加）
-  const renderVoltageBaseRow = () => {
+  const renderVoltageBaseTerminalRow = (node: any, terminal: any, index: number) => {
+    const currentValue = terminalVoltageBaseNumber(getTerminalVoltageLevel(node, terminal.id)) || "0";
+    const options = voltageBaseSelectOptions(currentValue);
+    const savedNode = savedNodeById.get(node.id);
+    const savedValue = savedNode
+      ? terminalVoltageBaseNumber(getTerminalVoltageLevel(savedNode, terminal.id)) || "0"
+      : "";
+    return (
+      <tr key={`voltage-${terminal.id}`}>
+        {batchEditors.renderParamHeader(
+          voltageBaseSideKeyForTerminal(node, index),
+          `${terminal.label || `端子${index + 1}`}电压等级`,
+          `${terminal.label || `端子${index + 1}`}电压等级`
+        )}
+        <td>
+          <InlineEditableValue
+            value={currentValue}
+            displayValue={formatAtMostThreeDecimals(currentValue)}
+            modified={Boolean(savedNode) && !parameterValuesEqual(currentValue, savedValue)}
+            disabled={isBrowseMode}
+            options={options.map((level) => ({ value: level, label: level }))}
+            onCommit={(nextValue) => {
+                if (nextValue === currentValue) {
+                  return;
+                }
+                // 按端子写入：只沿该端子的电压岛扩散，对端电压等级不受影响
+                const result = setVoltageBaseTerminalValuesForScope(
+                  nodes,
+                  edges,
+                  { [node.id]: { [terminal.id]: nextValue } },
+                  "island"
+                );
+                if (result.changedNodeIds.length === 0) {
+                  return;
+                }
+                pushUndoSnapshot(true, false, undoScopeForGraphPatch(result.changedNodeIds, []));
+                patchGraphNodes(result.nodeUpdates);
+              }}
+          />
+        </td>
+      </tr>
+    );
+  };
+  const renderVoltageBaseRows = () => {
     const node = inspectorSelectedNode;
     const isElectricNode = node
       ? (node.terminals?.some((terminal) => terminal.type === "ac" || terminal.type === "dc") || isBusNode(node))
@@ -341,7 +412,14 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     if (!node || !isElectricNode) {
       return null;
     }
-    const electricalTerminal = node.terminals.find((terminal) => terminal.type === "ac" || terminal.type === "dc");
+    const nodeTerminals = node.terminals ?? [];
+    const electricalTerminals = nodeTerminals.filter(
+      (terminal) => terminal.type === "ac" || terminal.type === "dc"
+    );
+    if (electricalTerminals.length > 1 && voltageBaseSettingModeForNode(node) === "terminal") {
+      return <>{electricalTerminals.map((terminal, index) => renderVoltageBaseTerminalRow(node, terminal, index))}</>;
+    }
+    const electricalTerminal = nodeTerminals.find((terminal) => terminal.type === "ac" || terminal.type === "dc");
     const electricalTerminalId = electricalTerminal?.id;
     const explicitVbase = terminalVoltageBaseNumber(node.params?.vbase);
     const fallbackVoltage = firstNonZeroVoltageBase([
@@ -1195,7 +1273,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         const rowFragment = (<tr key={row.key}>{batchEditors.renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}{rowElement}</tr>);
                         const containerRowAfter = rowIndex === containerRowIndex ? renderContainerRow() : null;
                         if (row.key === "name" && !hasVoltageParam) {
-                          return <Fragment key={row.key}>{rowFragment}{renderVoltageBaseRow()}{containerRowAfter}</Fragment>;
+                          return <Fragment key={row.key}>{rowFragment}{renderVoltageBaseRows()}{containerRowAfter}</Fragment>;
                         }
                         return <Fragment key={row.key}>{rowFragment}{containerRowAfter}</Fragment>;
                     })}
@@ -1259,7 +1337,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                                 </tr>);
                             const containerRowAfter = keyIndex === containerRowIndex ? renderContainerRow() : null;
                             if (key === "name" && !hasVoltageParam) {
-                              return <Fragment key={key}>{rowFragment}{renderVoltageBaseRow()}{containerRowAfter}</Fragment>;
+                              return <Fragment key={key}>{rowFragment}{renderVoltageBaseRows()}{containerRowAfter}</Fragment>;
                             }
                             return <Fragment key={key}>{rowFragment}{containerRowAfter}</Fragment>;
                         });

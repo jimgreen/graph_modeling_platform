@@ -5,6 +5,7 @@ import {
   createDefaultNode,
   createRoutableLineDeviceFromEndpoints,
   DEVICE_LIBRARY,
+  getEdgeEndpointPoint,
   getTerminalPoint,
   isCanvasNodeMovable,
   normalizeDeviceIndexCounters,
@@ -13,7 +14,8 @@ import {
   routableLineDeviceEndpointRefs,
   type Edge,
   type ModelGroup,
-  type ModelNode
+  type ModelNode,
+  type RoutedEdge
 } from "./model";
 import {
   AUTO_ALIGN_DEFAULT_THRESHOLD_PX,
@@ -33,6 +35,9 @@ import {
   canvasGroupMemberNodeIds,
   canvasClipboardBounds,
   cloneCanvasClipboard,
+  countAutoAlignRouteBends,
+  countAutoAlignRouteCrossings,
+  createAutoAlignQualityReport,
   createCanvasGroupFromSelection,
   dissolveSelectedCanvasGroups,
   expandSelectionByGroups,
@@ -1464,5 +1469,148 @@ describe("容器整组参与布局", () => {
       return currentNodes;
     });
     expect(calls).toBe(0);
+  });
+});
+
+describe("auto-align line quality constraints", () => {
+  const positionOf = (nodes: readonly ModelNode[], nodeId: string) => {
+    const node = nodes.find((item) => item.id === nodeId);
+    if (!node) {
+      throw new Error(`missing node ${nodeId}`);
+    }
+    return node.position;
+  };
+
+  const connect = (source: ModelNode, target: ModelNode, id: string): Edge => ({
+    id,
+    sourceId: source.id,
+    targetId: target.id,
+    sourceTerminalId: source.terminals[0].id,
+    targetTerminalId: target.terminals[0].id
+  });
+
+  /**
+   * 测试用假路由器:端点对齐(共 x / 共 y)时直连(0 拐点),否则走一个拐点的 L 形。
+   * 用它代替真实路由器,把「对齐 → 无拐点」这条因果链固定下来,便于断言约束行为。
+   */
+  const fakeRouteEdges = (stateNodes: readonly ModelNode[], edgeList: readonly Edge[]): RoutedEdge[] => {
+    const byId = new Map(stateNodes.map((node) => [node.id, node]));
+    return edgeList.flatMap((edge) => {
+      const source = byId.get(edge.sourceId);
+      const target = byId.get(edge.targetId);
+      if (!source || !target) {
+        return [];
+      }
+      const start = getEdgeEndpointPoint(source, edge.sourcePoint, edge.sourceTerminalId);
+      const end = getEdgeEndpointPoint(target, edge.targetPoint, edge.targetTerminalId);
+      const points = start.x === end.x || start.y === end.y ? [start, end] : [start, { x: start.x, y: end.y }, end];
+      return [{ edgeId: edge.id, points, path: "" }];
+    });
+  };
+
+  test("counts route bends and only counts strict crossings", () => {
+    expect(countAutoAlignRouteBends([{ x: 0, y: 0 }, { x: 100, y: 0 }])).toBe(0);
+    expect(countAutoAlignRouteBends([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }])).toBe(1);
+    expect(countAutoAlignRouteBends([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }, { x: 200, y: 50 }])).toBe(2);
+    // 共用端点的 T 型相接不是交叉
+    expect(countAutoAlignRouteCrossings([
+      [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+      [{ x: 50, y: 0 }, { x: 50, y: 80 }]
+    ])).toBe(0);
+    // 共线重叠也不是交叉
+    expect(countAutoAlignRouteCrossings([
+      [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+      [{ x: 20, y: 0 }, { x: 80, y: 0 }]
+    ])).toBe(0);
+    expect(countAutoAlignRouteCrossings([
+      [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+      [{ x: 50, y: -20 }, { x: 50, y: 80 }]
+    ])).toBe(1);
+  });
+
+  test("snaps an off-grid pair onto one shared grid line so the straight connection stays straight", () => {
+    const first = createDefaultNode("ac-load", { x: 110, y: 120 });
+    const second = createDefaultNode("ac-load", { x: 300, y: 120 });
+    const nodes = [first, second];
+    const edge = connect(first, second, "edge-straight-pair");
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+    const originalRoutes = fakeRouteEdges(nodes, [edge]);
+    expect(countAutoAlignRouteBends(originalRoutes[0].points)).toBe(0);
+
+    const aligned = autoAlignNodeLayoutUnits(nodes, units, 50, { edges: [edge], routeEdges: fakeRouteEdges });
+    const nextFirst = positionOf(aligned, first.id);
+    const nextSecond = positionOf(aligned, second.id);
+
+    expect(nextFirst.y).toBe(nextSecond.y);
+    expect(nextFirst.y % 50).toBe(0);
+    expect(nextFirst.x % 50).toBe(0);
+    const alignedRoutes = fakeRouteEdges(aligned, [edge]);
+    expect(countAutoAlignRouteBends(alignedRoutes[0].points)).toBe(0);
+  });
+
+  test("freezes a unit when every grid candidate would bend a straight connection to a fixed partner", () => {
+    const moving = createDefaultNode("ac-load", { x: 110, y: 120 });
+    const fixedPartner = createDefaultNode("ac-load", { x: 300, y: 120 });
+    const isolated = createDefaultNode("ac-source", { x: 500, y: 400 });
+    const nodes = [moving, fixedPartner, isolated];
+    const edge = connect(moving, fixedPartner, "edge-frozen-unit");
+    // 只把 moving 与 isolated 纳入对齐范围:fixedPartner 不在范围内,位置不会变
+    const units = buildCanvasLayoutUnits([], nodes, [moving.id, isolated.id], []);
+
+    const aligned = autoAlignNodeLayoutUnits(nodes, units, 50, { edges: [edge], routeEdges: fakeRouteEdges });
+
+    // 任何网格候选都会把原本对齐的连线掰弯 → 该单元原地保留(约束优先于网格)
+    expect(positionOf(aligned, moving.id)).toEqual({ x: 110, y: 120 });
+    expect(positionOf(aligned, fixedPartner.id)).toEqual({ x: 300, y: 120 });
+    // 无线路的孤立图元不受影响,照常吸附到网格
+    expect(positionOf(aligned, isolated.id).x % 50).toBe(0);
+    expect(positionOf(aligned, isolated.id).y % 50).toBe(0);
+    const routes = fakeRouteEdges(aligned, [edge]);
+    expect(countAutoAlignRouteBends(routes[0].points)).toBe(0);
+  });
+
+  test("rejects a grid candidate that would add a line crossing", () => {
+    const moving = createDefaultNode("ac-load", { x: 112, y: 120 });
+    const partner = createDefaultNode("ac-load", { x: 400, y: 200 });
+    const isolated = createDefaultNode("ac-source", { x: 700, y: 400 });
+    const nodes = [moving, partner, isolated];
+    const edge = connect(moving, partner, "edge-crossing-candidate");
+    const units = buildCanvasLayoutUnits([], nodes, [moving.id, isolated.id], []);
+    const sourcePort = getEdgeEndpointPoint(moving, undefined, moving.terminals[0].id);
+    // 已渲染的竖线落在「源端口左移 5px」:向左侧吸附(最近网格点)会把 L 形水平段拉长并穿过它
+    const otherRoute: RoutedEdge = {
+      edgeId: "edge-other",
+      points: [{ x: sourcePort.x - 5, y: -400 }, { x: sourcePort.x - 5, y: 400 }],
+      path: ""
+    };
+
+    const aligned = autoAlignNodeLayoutUnits(nodes, units, 50, {
+      edges: [edge],
+      routedEdges: [otherRoute],
+      routeEdges: fakeRouteEdges
+    });
+
+    const routes = fakeRouteEdges(aligned, [edge]);
+    expect(countAutoAlignRouteCrossings([otherRoute.points, routes[0].points])).toBe(0);
+    // 最近的网格点(x=100)会新增交叉被否决,改选不会新增交叉的候选
+    expect(positionOf(aligned, moving.id).x).toBeGreaterThan(moving.position.x);
+  });
+
+  test("reports frozen units so the caller can explain skipped grid snapping", () => {
+    const moving = createDefaultNode("ac-load", { x: 110, y: 120 });
+    const fixedPartner = createDefaultNode("ac-load", { x: 300, y: 120 });
+    const isolated = createDefaultNode("ac-source", { x: 500, y: 400 });
+    const nodes = [moving, fixedPartner, isolated];
+    const edge = connect(moving, fixedPartner, "edge-report");
+    const units = buildCanvasLayoutUnits([], nodes, [moving.id, isolated.id], []);
+    const report = createAutoAlignQualityReport();
+
+    autoAlignNodeLayoutUnits(nodes, units, 50, { edges: [edge], routeEdges: fakeRouteEdges, report });
+
+    expect(report.frozenUnitCount).toBe(1);
+    // 所有候选都因为「会把原本对齐的连线掰弯」被否决(约束一优先于网格)
+    expect(report.bendRejectedCount).toBeGreaterThan(0);
+    expect(report.degraded).toBe(false);
+    expect(report.revertedByVerification).toBe(false);
   });
 });
