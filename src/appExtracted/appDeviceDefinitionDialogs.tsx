@@ -3,6 +3,7 @@ import { memo } from "react";
 import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
 import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
 import { PREDEFINED_E_DEVICE_TEMPLATES } from "../predefinedEDeviceTemplates";
+import { SymbolExportDialog } from "../SymbolExportDialog";
 
 export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialogs({ scope }) {
   const __appScope = scope;
@@ -35,6 +36,13 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
     showImportResultDialog, startCustomComponentCreate, startDeviceLibraryDialogDrag, startDeviceLibraryDialogResize, stopDeviceLibraryDialogEvent, templateImportResult, templateResizeTransformValue, toggleDefinitionComponentLibrary,
     toggleDefinitionGroup, toggleEDeviceInterfaceTreeNode, toggleImportResultSection, updateCustomDefaultParamRow, updateCustomDeviceStateDraftRow, updateCustomDeviceTerminalAnchor, updateDefinitionComponentLibraryCommonParamExport, updateDefinitionDraftRow,
     visibleCustomDeviceDialogView
+  } = scope;
+  // 【导出图元 Symbol】弹窗所需作用域（单独解构，避免在大列表里插错位置）
+  const {
+    symbolExportDialogOpen, setSymbolExportDialogOpen,
+    symbolExportSchemes, symbolExportSchemesStatus,
+    loadSymbolExportSchemes, saveSymbolExportScheme, deleteSymbolExportScheme, exportComponentSymbols, exportComponentSymbolsStandalone,
+    categoryLibraries, groupedCategoryLibraryByComponentLibrary
   } = scope;
   return (<>
 {deviceDefinitionDialogOpen && (<div className="image-picker-backdrop" onPointerDown={closeDeviceDefinitionDialog}>
@@ -625,7 +633,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                 onSearchChange={setCustomComponentTreeSearchQuery}
                 onCollapseChange={handleTreeCollapseChange}
                 onSelectionChange={setCustomComponentTreeSelection}
-                onOpenEDeviceDefinitionInterface={() => setEDeviceDefinitionInterfaceDialogOpen(true)}
+                onOpenSymbolExport={() => setSymbolExportDialogOpen(true)}
               />
               <div className={`custom-device-editor-panel${showComponentLibraryTerminalTypes ? " has-component-library-terminal-types" : ""}`}>
             <div className={`custom-device-form-grid${customDeviceDefinitionIconOnly ? " component-mode" : customComponentTreeSelection?.kind === "componentLibrary" ? " component-library-mode" : ""}`}>
@@ -1614,5 +1622,21 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
             </div>
           </section>
         </div>)}
+{/* 【导出图元 Symbol】弹窗：与元件定义弹框共用同一份「类别库/类/元件」装配结果，
+    故挂在同一组件上，避免两棵树各拉一份数据后发生漂移。open 为假时组件自身返回 null。 */}
+<SymbolExportDialog
+  open={Boolean(symbolExportDialogOpen)}
+  onClose={() => setSymbolExportDialogOpen(false)}
+  categoryLibraries={categoryLibraries ?? []}
+  groupedByComponentLibrary={groupedCategoryLibraryByComponentLibrary ?? {}}
+  customComponentLibraries={customComponentLibraries ?? []}
+  schemes={symbolExportSchemes ?? []}
+  statusMessage={symbolExportSchemesStatus ?? ""}
+  onReloadSchemes={() => loadSymbolExportSchemes?.()}
+  onSaveScheme={(draft) => saveSymbolExportScheme?.(draft)}
+  onDeleteScheme={(schemeId) => deleteSymbolExportScheme?.(schemeId)}
+  onExport={(templates) => exportComponentSymbols?.(templates)}
+  onExportStandalone={(templates) => exportComponentSymbolsStandalone?.(templates)}
+/>
   </>);
 }, areViewSectionPropsEqual);

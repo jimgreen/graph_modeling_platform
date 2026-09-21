@@ -6141,6 +6141,558 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   outline: none;
 }
 
+/* ---- 【导出图元 Symbol】弹窗（宽高各 50%，双列紧凑布局，内容区全部内滚） ---- */
+.symbol-export-dialog {
+  position: fixed;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 50%;
+  min-width: 720px;
+  height: 50%;
+  /* 侧栏从两块变三块后需要更高的下限，但短屏时仍不得撑破视口。 */
+  min-height: min(520px, calc(100vh - 24px));
+  overflow: hidden;
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.symbol-export-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 34px;
+}
+
+.symbol-export-title h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.symbol-export-title p {
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.symbol-export-summary {
+  flex: none;
+  color: #475569;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.symbol-export-summary strong {
+  color: #1d4ed8;
+}
+
+.symbol-export-layout {
+  display: grid;
+  /* 图元树与右侧清单各占一半宽度。 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+}
+
+.symbol-export-tree-column {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.symbol-export-tree-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.symbol-export-tree-toolbar .dialog-tree-search {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.symbol-export-tool {
+  flex: none;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.symbol-export-tool:hover,
+.symbol-export-tool:focus-visible {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  outline: none;
+}
+
+.symbol-export-tree {
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+}
+
+.symbol-export-library + .symbol-export-library {
+  margin-top: 2px;
+}
+
+.symbol-export-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0 6px;
+  border-radius: 6px;
+  color: #334155;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.symbol-export-row.library,
+.symbol-export-row.type {
+  font-weight: 800;
+}
+
+.symbol-export-row.library {
+  background: #eef2f7;
+}
+
+.symbol-export-row.component {
+  cursor: pointer;
+}
+
+.symbol-export-row.component:hover,
+.symbol-export-row:hover {
+  background: #e8effb;
+}
+
+.symbol-export-row.selected {
+  background: #e0ebff;
+}
+
+.symbol-export-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.symbol-export-row small {
+  flex: none;
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.symbol-export-row > strong {
+  flex: none;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.symbol-export-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  color: #64748b;
+  background: transparent;
+}
+
+.symbol-export-chevron:hover {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.symbol-export-chevron-placeholder {
+  flex: none;
+  width: 16px;
+}
+
+.symbol-export-check {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+.symbol-export-side {
+  display: grid;
+  /* 纵向三块：预设过滤（定高）+ 已选图元（占 2/3 剩余高度）+ 导出方案（占 1/3）。
+     两块清单各自内部滚动，按比例分配可避免弹窗压到最小高度时相互挤压溢出。 */
+  grid-template-rows: auto minmax(0, 2fr) minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+}
+
+.symbol-export-block {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 6px;
+  min-height: 0;
+  /* 三个块按比例分高，块内清单自带滚动；兜住极端尺寸下的溢出。 */
+  overflow: hidden;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.symbol-export-block > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.symbol-export-block-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.symbol-export-block-actions button {
+  padding: 0 6px;
+  min-height: 20px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #475569;
+  background: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.symbol-export-block-actions button:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.symbol-export-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 6px;
+}
+
+.symbol-export-filter {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 22px;
+  padding: 0 4px;
+  border-radius: 6px;
+  color: #334155;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.symbol-export-filter:hover {
+  background: #e8effb;
+}
+
+.symbol-export-filter > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.symbol-export-filter > small {
+  flex: none;
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+/* 过滤语义说明：取消勾选是硬排除，会连带隐藏同时属于其它分类的图元。 */
+.symbol-export-filter-note {
+  margin: 4px 0 0;
+  color: #7c8aa0;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+/* 已选图元清单：正方形缩略图每行 6 个，缩略图右上角一个移除按钮。 */
+.symbol-export-selected {
+  grid-template-rows: auto minmax(0, 1fr);
+  background: #ffffff;
+}
+
+.symbol-export-selected-count {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: #e0ebff;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.symbol-export-selected-list {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px 4px;
+  align-content: start;
+  min-height: 0;
+  padding-right: 2px;
+  overflow: auto;
+}
+
+.symbol-export-selected-item {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 2px;
+  min-width: 0;
+}
+
+.symbol-export-selected-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border: 1px solid #d7e0ec;
+  border-radius: 6px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+/* 缩略图与图元树同源（.custom-component-tree-thumbnail 固定 20×20），
+   仅在该清单内把它撑满正方形单元格；内部坐标空间是 viewBox，放大会等比放大图元。 */
+.symbol-export-selected-thumb .custom-component-tree-thumbnail {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 0;
+}
+
+.symbol-export-selected-thumb .custom-component-tree-thumbnail svg {
+  width: 100%;
+  height: 100%;
+}
+
+.symbol-export-selected-item:hover .symbol-export-selected-thumb {
+  border-color: #93c5fd;
+}
+
+.symbol-export-selected-label {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: #334155;
+  font-size: 10px;
+  line-height: 1.25;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.symbol-export-selected-remove {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  border-radius: 4px;
+  color: #475569;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.symbol-export-selected-remove:hover,
+.symbol-export-selected-remove:focus-visible {
+  border-color: #fca5a5;
+  color: #b91c1c;
+  background: #fee2e2;
+  outline: none;
+}
+
+.symbol-export-schemes {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.symbol-export-scheme-save {
+  display: flex;
+  gap: 6px;
+}
+
+.symbol-export-scheme-save input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #0f172a;
+  background: #ffffff;
+  font-size: 11px;
+}
+
+.symbol-export-scheme-save button {
+  flex: none;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid #2563eb;
+  border-radius: 7px;
+  color: #ffffff;
+  background: #2563eb;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.symbol-export-scheme-save button:disabled {
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.symbol-export-scheme-list {
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+}
+
+.symbol-export-scheme-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 0 4px;
+  border-radius: 6px;
+}
+
+.symbol-export-scheme-row:hover {
+  background: #e8effb;
+}
+
+.symbol-export-scheme-row.active {
+  background: #dbeafe;
+}
+
+.symbol-export-scheme-load {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  color: #334155;
+  background: transparent;
+  font-size: 11px;
+  text-align: left;
+}
+
+.symbol-export-scheme-load > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.symbol-export-scheme-load > small {
+  flex: none;
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.symbol-export-scheme-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  color: #94a3b8;
+  background: transparent;
+}
+
+.symbol-export-scheme-delete:hover {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.symbol-export-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.symbol-export-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.symbol-export-footer > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.symbol-export-footer > button.primary {
+  border-color: #2563eb;
+  color: #ffffff;
+  background: #2563eb;
+}
+
+.symbol-export-footer > button.primary:disabled {
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
 .e-device-interface-dialog {
   width: min(1180px, calc(100vw - 56px));
   height: min(760px, calc(100vh - 56px));

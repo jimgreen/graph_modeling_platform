@@ -13,10 +13,10 @@ import {
 } from "../componentLibraryMetadata";
 import { normalizeDeviceMeasurementDefinitions } from "../measurementDefinitionTypes";
 import { WindowCloseButton } from "../WindowCloseButton";
+import { normalizeSymbolExportSchemes, symbolExportFileName, standaloneSymbolsZipFileName, type SymbolExportScheme, type SymbolExportSchemesPayload } from "../symbolExportSvg";
 import {
   Download,
   FileInput,
-  FileJson,
   Copy,
   ChevronDown,
   ChevronRight,
@@ -451,6 +451,145 @@ export async function saveBackendDeviceLibraryPayload(normalizedDeviceLibraryPay
     "保存图元库到后台失败。",
     backendJsonRequest("PUT", normalizedDeviceLibraryPayload)
   );
+}
+
+// 图元 Symbol 导出方案：独立后端文件（<空间>/settings/symbol-export-schemes.json），
+// 不进 device-library 的归一化链路 —— 方案只是勾选快照，不参与图元库的迁移契约。
+export async function fetchBackendSymbolExportSchemes(): Promise<{
+  schemes: SymbolExportScheme[];
+  exists: boolean;
+}> {
+  const payload = await fetchBackendJson<{ schemes?: unknown; symbolExportSchemes?: unknown; exists?: boolean }>(
+    apiPath("/symbol-export-schemes"),
+    "读取后台导出方案失败。"
+  );
+  return {
+    ...normalizeSymbolExportSchemes(payload),
+    exists: Boolean(payload.exists)
+  };
+}
+
+export async function saveBackendSymbolExportSchemes(payload: SymbolExportSchemesPayload): Promise<void> {
+  await fetchBackendJson<{ ok?: boolean }>(
+    apiPath("/symbol-export-schemes"),
+    "保存导出方案到后台失败。",
+    backendJsonRequest("PUT", JSON.stringify(normalizeSymbolExportSchemes(payload)))
+  );
+}
+
+export type BackendSymbolExportResult = {
+  svg: string;
+  symbolCount: number;
+  exportedKinds: string[];
+  skippedKinds: string[];
+  /** 后端图元库里不存在、因而未导出的 kind（与 skippedKinds 分开，排障方向不同）。 */
+  missingKinds: string[];
+  fileName: string;
+};
+
+function backendStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item ?? "").trim()).filter(Boolean) : [];
+}
+
+/**
+ * 后端合成导出 SVG（POST /symbol-export）。
+ *
+ * 前端不再自行合成：单模板正文与 symbol 归一化都在服务端跑同一份实现，
+ * 前端另起一套会让导出件与画布渲染分叉。前端只负责「选哪些图元」与「把返回内容落盘」。
+ */
+export async function requestBackendSymbolExport(kinds: readonly string[]): Promise<BackendSymbolExportResult> {
+  const payload = await fetchBackendJson<Record<string, unknown>>(
+    apiPath("/symbol-export"),
+    "后端导出图元 Symbol 失败。",
+    backendJsonRequest("POST", JSON.stringify({ kinds: [...kinds] }))
+  );
+  const svg = typeof payload.svg === "string" ? payload.svg : "";
+  if (!svg.trim()) {
+    throw new Error("后端未返回 SVG 内容。");
+  }
+  return {
+    svg,
+    symbolCount: Math.max(0, Math.floor(Number(payload.symbolCount) || 0)),
+    exportedKinds: backendStringList(payload.exportedKinds),
+    skippedKinds: backendStringList(payload.skippedKinds),
+    missingKinds: backendStringList(payload.missingKinds),
+    fileName: String(payload.fileName ?? "").trim() || symbolExportFileName()
+  };
+}
+
+/**
+ * 后端独立导出结果：每个图元一个自包含 SVG。
+ *
+ * 与合成导出不同，这里是**二进制**响应：多图元时是 zip 包、单图元时直接是 svg。
+ * 计数与命中信息塞不进二进制体里，后端改用 `x-symbol-export-*` 响应头回传
+ * （见 server/server.mjs 的 handleStandaloneSymbolExport）。
+ */
+export type BackendStandaloneSymbolExportResult = {
+  /** "zip" = 多图元压缩包；"svg" = 单图元直接给 svg（不套 zip，用户拿到即图元定义） */
+  kind: "zip" | "svg";
+  blob: Blob;
+  /** 包内 / 响应内的 SVG 文件数（多状态图元一状态一文件，故可能多于图元数） */
+  fileCount: number;
+  exportedKinds: string[];
+  skippedKinds: string[];
+  missingKinds: string[];
+  fileName: string;
+};
+
+/** 读响应头里的逗号分隔 kind 列表（空串 → 空数组）。kind 本身不含逗号。 */
+function headerKindList(response: Response, name: string): string[] {
+  const raw = String(response.headers.get(name) ?? "");
+  return raw.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+/** 从 content-disposition 里取回文件名；优先 RFC 5987 的 filename*（后端两端都写了 encodeURIComponent 过的值）。 */
+function fileNameFromDisposition(disposition: string, fallback: string): string {
+  const extended = /filename\*\s*=\s*UTF-8''([^;]+)/iu.exec(disposition);
+  const plain = /filename\s*=\s*"([^"]*)"/iu.exec(disposition);
+  const raw = extended?.[1] ?? plain?.[1] ?? "";
+  if (!raw) {
+    return fallback;
+  }
+  try {
+    return decodeURIComponent(raw.trim()) || fallback;
+  } catch {
+    return raw.trim() || fallback;
+  }
+}
+
+/**
+ * 后端独立导出 SVG（POST /symbol-export-standalone）。
+ *
+ * 不复用 fetchBackendJson：那个函数无条件 `response.json()`，而这里响应体是 zip/svg
+ * 二进制，解析 JSON 必然抛错。故直接 fetch + arrayBuffer，失败时仍按后端既有错误信封取消息。
+ */
+export async function requestBackendStandaloneSymbolExport(
+  kinds: readonly string[]
+): Promise<BackendStandaloneSymbolExportResult> {
+  const response = await fetch(
+    apiPath("/symbol-export-standalone"),
+    backendJsonRequest("POST", JSON.stringify({ kinds: [...kinds] }))
+  );
+  if (!response.ok) {
+    throw new Error(await backendErrorMessage(response, "后端独立导出图元 SVG 失败。"));
+  }
+  const contentType = String(response.headers.get("content-type") ?? "").toLowerCase();
+  const zip = contentType.includes("zip");
+  const buffer = await response.arrayBuffer();
+  const fallbackName = standaloneSymbolsZipFileName();
+  const fileName = fileNameFromDisposition(
+    String(response.headers.get("content-disposition") ?? ""),
+    zip ? fallbackName : fallbackName.replace(/\.zip$/iu, ".svg")
+  );
+  return {
+    kind: zip ? "zip" : "svg",
+    blob: new Blob([buffer], { type: zip ? "application/zip" : "image/svg+xml;charset=utf-8" }),
+    fileCount: Math.max(0, Math.floor(Number(response.headers.get("x-symbol-export-file-count")) || 0)),
+    exportedKinds: headerKindList(response, "x-symbol-export-exported-kinds"),
+    skippedKinds: headerKindList(response, "x-symbol-export-skipped-kinds"),
+    missingKinds: headerKindList(response, "x-symbol-export-missing-kinds"),
+    fileName
+  };
 }
 
 export function serializeMeasurementConfigForStorage(config: PlatformMeasurementConfig) {
@@ -3294,77 +3433,10 @@ export function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorD
     .join("\n");
 }
 
-const CUSTOM_DEVICE_TERMINAL_CONNECTOR_GROUP_PATTERN =
-  /<g\b(?=[^>]*\bdata-custom-device-(?:persisted-terminals|persisted-terminal-connectors|terminal-connectors)\s*=\s*(?:"true"|'true'|true))[^>]*>[\s\S]*?<\/g>/giu;
-
-function componentExportImageWithoutTerminalConnectors(value: unknown) {
-  const href = String(value ?? "").trim();
-  const source = decodeSvgImageSource(href);
-  if (!source) {
-    return href;
-  }
-  const cleanSource = source.replace(CUSTOM_DEVICE_TERMINAL_CONNECTOR_GROUP_PATTERN, "");
-  if (cleanSource === source) {
-    return href;
-  }
-  return href.startsWith("<svg")
-    ? cleanSource
-    : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(cleanSource)}`;
-}
-
-export function buildDeviceTemplateIconSvg(template: DeviceTemplate) {
-  const padding = 36;
-  const templateWidth = Math.max(1, Number(template.size?.width) || 104);
-  const templateHeight = Math.max(1, Number(template.size?.height) || 64);
-  const width = Math.ceil(templateWidth + padding * 2);
-  const height = Math.ceil(templateHeight + padding * 2);
-  const visualParams = { ...template.params };
-  for (const key of ["backgroundImage", "foregroundImage"] as const) {
-    if (typeof visualParams[key] === "string") {
-      visualParams[key] = componentExportImageWithoutTerminalConnectors(visualParams[key]);
-    }
-  }
-  const visualTemplate: DeviceTemplate = {
-    ...template,
-    params: visualParams,
-    stateDefinitions: template.stateDefinitions?.map((state) => ({
-      ...state,
-      ...(typeof state.icon === "string"
-        ? { icon: componentExportImageWithoutTerminalConnectors(state.icon) }
-        : {}),
-      ...(typeof state.image === "string"
-        ? { image: componentExportImageWithoutTerminalConnectors(state.image) }
-        : {}),
-      ...(typeof state.backgroundImage === "string"
-        ? { backgroundImage: componentExportImageWithoutTerminalConnectors(state.backgroundImage) }
-        : {})
-    })),
-    terminalCount: 0,
-    terminalTypes: [],
-    terminalLabels: [],
-    terminalAnchors: [],
-    terminalRoles: [],
-    terminalAssociations: []
-  };
-  const node = createNodeFromTemplate(visualTemplate, { x: width / 2, y: height / 2 });
-  node.id = `component-svg-${String(template.kind || "component").replace(/[^A-Za-z0-9_-]+/g, "_")}`;
-  node.terminals = [];
-  node.params = {
-    ...node.params,
-    _labelVisible: "0"
-  };
-  const svg = buildSvgDocument([node], [], {
-    width,
-    height,
-    backgroundColor: "transparent",
-    deviceTemplates: [visualTemplate]
-  });
-  const sourceTerminalCount = Math.max(0, Math.floor(Number(template.terminalCount) || 0));
-  return svg.replace(
-    /<use\b(?=[^>]*\bdev-kind\s*=)/u,
-    `<use data-export-source-terminal-count="${sourceTerminalCount}"`
-  );
-}
+// buildDeviceTemplateIconSvg 已搬移到 ../export/device-template-icon.ts：
+// 该模块是 Node 原生 TS 可直载的「单模板正文」单一实现，后端 /webgrp/symbol-export
+// 复用同一份实现合成 symbol；此处 re-export 让既有导入点（右键导出图元为 SVG 等）保持不变。
+export { buildDeviceTemplateIconSvg } from "../export/device-template-icon";
 
 export function buildDeviceTemplateCopyVisualSvg(template: DeviceTemplate) {
   const width = Math.ceil(Math.max(1, Number(template.size?.width) || 104));
@@ -3477,7 +3549,8 @@ export type CustomComponentTreeProps = {
   onSearchChange: (query: string) => void;
   onCollapseChange: (libraries: Set<string>, types: Set<string>) => void;
   onSelectionChange: (selection: CustomComponentTreeSelection) => void;
-  onOpenEDeviceDefinitionInterface: () => void;
+  /** 打开【导出图元 Symbol】弹窗（原【E文件接口定义】入口，E 文件接口定义仍可由顶栏进入）。 */
+  onOpenSymbolExport: () => void;
 };
 
 function customComponentTreeSelectionsEqual(first: CustomComponentTreeSelection, second: CustomComponentTreeSelection) {
@@ -3775,7 +3848,9 @@ function customComponentClassTreeTemplateCount(node: CustomComponentClassTreeNod
   );
 }
 
-const CustomComponentTreeTemplateThumbnail = memo(function CustomComponentTreeTemplateThumbnail({
+// 导出供【导出图元 Symbol】弹窗的「已选图元」清单复用：
+// 缩略图必须与图元树同源渲染，否则两处同一图元会长得不一样。
+export const CustomComponentTreeTemplateThumbnail = memo(function CustomComponentTreeTemplateThumbnail({
   template
 }: {
   template: DeviceTemplate;
@@ -3830,7 +3905,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   onSearchChange,
   onCollapseChange,
   onSelectionChange,
-  onOpenEDeviceDefinitionInterface
+  onOpenSymbolExport
 }: CustomComponentTreeProps) {
   // 内部管理 collapsed 状态，展开/收缩不触发父组件重渲染
   const [collapsedLibraries, setCollapsedLibraries] = useState<Set<string>>(initialCollapsedLibraries);
@@ -4139,9 +4214,9 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
       </div>
       <div className="custom-component-manager-efile-and-search">
       <div className="custom-component-manager-efile-actions">
-        <button type="button" onClick={onOpenEDeviceDefinitionInterface} title="打开 E 文件接口定义">
-          <FileJson size={12} aria-hidden="true" />
-          <span>E文件接口定义</span>
+        <button type="button" onClick={onOpenSymbolExport} title="导出图元 Symbol（只含 style 与 defs/symbol）">
+          <Download size={12} aria-hidden="true" />
+          <span>导出图元Symbol</span>
         </button>
       </div>
       <div className="custom-component-tree-search-row">

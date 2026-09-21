@@ -119,6 +119,13 @@ import {
   createProgrammaticExportEDeviceDefinition,
   createProgrammaticImportEDeviceDefinition
 } from "./appDeviceDefinitionFactories";
+import {
+  createDeleteSymbolExportScheme,
+  createExportComponentSymbols,
+  createExportComponentSymbolsStandalone,
+  createLoadSymbolExportSchemes,
+  createSaveSymbolExportScheme
+} from "./appSymbolExportFactories";
 import { customParamId, DEFAULT_STATE_ICON_DRAWING_FRAME, isDefaultStatePageId, defaultStateDraftRow, stateVisualFromDraftRow, activeStateDraftRow, stateIconDrawingDraftSourceImage, stateIconDrawingInlineNeedsDraftReload, stateIconDrawingInlineCanPersistDraft, createStateIconDrawingInitialElements, stateIconDrawingToPersistedImage, type DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
 import { deviceDefinitionKeyForTemplate, isDerivedComponentBaseParamName, normalizeCustomDeviceTerminalAnchorCoordinate, createDefaultCustomDeviceTerminalAnchors, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage,  } from "../customDeviceUtils";
 import { buildComponentLibraryDefaultParameterDefinitions, resolveEditableComponentLibraryDefinition } from "../componentLibraryDefinitions";
@@ -2901,6 +2908,11 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const copyCustomComponentTemplate = createCopyCustomComponentTemplate(__appScope); Object.assign(__appScope, { copyCustomComponentTemplate });
   const pasteCustomComponentTemplate = createPasteCustomComponentTemplate(__appScope); Object.assign(__appScope, { pasteCustomComponentTemplate });
   const exportCustomComponentTemplateSvg = createExportCustomComponentTemplateSvg(__appScope); Object.assign(__appScope, { exportCustomComponentTemplateSvg });
+  const exportComponentSymbols = createExportComponentSymbols(__appScope); Object.assign(__appScope, { exportComponentSymbols });
+  const exportComponentSymbolsStandalone = createExportComponentSymbolsStandalone(__appScope); Object.assign(__appScope, { exportComponentSymbolsStandalone });
+  const loadSymbolExportSchemes = createLoadSymbolExportSchemes(__appScope); Object.assign(__appScope, { loadSymbolExportSchemes });
+  const saveSymbolExportScheme = createSaveSymbolExportScheme(__appScope); Object.assign(__appScope, { saveSymbolExportScheme });
+  const deleteSymbolExportScheme = createDeleteSymbolExportScheme(__appScope); Object.assign(__appScope, { deleteSymbolExportScheme });
   const openCustomComponentSvgImport = createOpenCustomComponentSvgImport(__appScope); Object.assign(__appScope, { openCustomComponentSvgImport });
   const importCustomComponentSvg = createImportCustomComponentSvg(__appScope); Object.assign(__appScope, { importCustomComponentSvg });
   const confirmCustomLibraryCreateDialog = createConfirmCustomLibraryCreateDialog(__appScope); Object.assign(__appScope, { confirmCustomLibraryCreateDialog });
