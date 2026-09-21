@@ -24,6 +24,7 @@ import { SPACE_NAME_DUPLICATE, spacePathsFor, normalizeSpaceOwner } from "./spac
 import { MAX_SPACE_NAME_LENGTH, isAcceptableSpaceName, normalizeSpaceName } from "./spaceId.mjs";
 import { meaningfulDeviceParameterChineseName } from "../shared/deviceParameterChineseNames.mjs";
 import { withXmlEncodingDeclaration } from "./xmlEncoding.mjs";
+import { readSymbolExportSchemes, writeSymbolExportSchemes } from "./symbolExportSchemes.mjs";
 import { buildSpaceArchiveBuffer, readSpaceArchiveName, SPACE_ARCHIVE_META_FILENAME } from "./spaceArchive.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -109,6 +110,9 @@ const maxSchemeZipBodyBytes = 256 * 1024 * 1024;
 const maxColorConfigBodyBytes = 1024 * 1024;
 const maxMeasurementConfigBodyBytes = 1024 * 1024;
 const maxDeviceLibraryBodyBytes = 16 * 1024 * 1024;
+const maxSymbolExportSchemesBodyBytes = 1024 * 1024;
+// 导出请求体只含 kind 清单（单 kind 长度远小于 100 字节），1MB 已是数千倍冗余
+const maxSymbolExportBodyBytes = 1024 * 1024;
 const maxFilePartLength = 80;
 const noStoreJsonHeaders = {
   "content-type": "application/json; charset=utf-8",
@@ -4569,6 +4573,88 @@ async function handleSaveDeviceLibrary(request, response, paths) {
   sendJson(response, 200, { ok: true, ...normalized });
 }
 
+// 图元 Symbol 导出方案：ensureDirectory 传 mkdirInSpace，使「删除空间期间在飞的写请求」
+// 走同一道退休空间判定（否则 atomicWriteFile 内部的裸 mkdir 会把已删空间的 settings/ 建回来）。
+async function handleSaveSymbolExportSchemes(request, response, paths) {
+  const payload = await readJsonBody(request, maxSymbolExportSchemesBodyBytes, "导出方案数据过大，最大支持 1MB。");
+  const normalized = await writeSymbolExportSchemes(payload, { paths, ensureDirectory: mkdirInSpace });
+  sendJson(response, 200, { ok: true, ...normalized });
+}
+
+// 图元 Symbol 导出的错误码 → HTTP 状态：三者都是「换个选择就能成功」的客户端问题，
+// 故不落到 500，前端可以据此给出不同措辞。
+const symbolExportErrorStatus = {
+  "invalid-request": 400,
+  "template-not-found": 404,
+  "empty-symbol": 422
+};
+
+// 图元 Symbol 导出：后端合成「只含 <style> 与 <defs><symbol>」的 SVG。
+// 动态 import 适配层（与 svgExport.mjs 同法）：该模块回读 server.mjs 的 readDeviceLibraryConfig，
+// 静态 import 会形成初始化期循环，动态 import 在 server.mjs 完成初始化后才发生。
+async function handleSymbolExport(request, response, paths) {
+  const payload = await readJsonBody(request, maxSymbolExportBodyBytes, "导出图元请求过大，最大支持 1MB。");
+  const { renderSymbolExportSvg } = await import("./symbolExport.mjs");
+  const result = await renderSymbolExportSvg({ kinds: payload?.kinds, paths });
+  if (result.error) {
+    sendError(response, symbolExportErrorStatus[result.error.code] ?? 400, result.error.message, result.error.code);
+    return;
+  }
+  sendJson(response, 200, {
+    ok: true,
+    svg: result.svg,
+    symbolCount: result.symbolCount,
+    exportedKinds: result.exportedKinds,
+    skippedKinds: result.skippedKinds,
+    missingKinds: result.missingKinds,
+    fileName: result.fileName
+  });
+}
+
+// 独立图元 SVG 导出：每个图元一份自包含 SVG（非 symbol 形式），多图元打包为 ZIP。
+//
+// 单图元直接回单个 .svg —— 用户拿到就是图元定义本身，不必为了一个文件先解压。
+// 多图元回 application/zip 二进制（与 /v1/schemes/export 的方案归档同法：Content-Disposition
+// 同时给 ASCII 名与 RFC 5987 的 UTF-8 名，中文/大小写敏感客户端都能正确落盘）。
+//
+// 两种产物的计数元信息（导出了哪些 kind、跳过了哪些）走响应头回传 —— 二进制响应体里放不下 JSON。
+async function handleStandaloneSymbolExport(request, response, paths) {
+  const payload = await readJsonBody(request, maxSymbolExportBodyBytes, "导出图元请求过大，最大支持 1MB。");
+  const { renderStandaloneSymbolExportZip } = await import("./symbolExport.mjs");
+  const result = await renderStandaloneSymbolExportZip({ kinds: payload?.kinds, paths });
+  if (result.error) {
+    sendError(response, symbolExportErrorStatus[result.error.code] ?? 400, result.error.message, result.error.code);
+    return;
+  }
+  const disposition = `attachment; filename="${encodeURIComponent(result.fileName)}"; filename*=UTF-8''${encodeURIComponent(result.fileName)}`;
+  const metaHeaders = {
+    "content-disposition": disposition,
+    "cache-control": "no-store",
+    "access-control-allow-origin": "*",
+    "x-symbol-export-file-count": String(result.fileCount),
+    // 逗号分隔：kind 本身不含逗号（kind 只用小写字母/数字/连字符）。
+    "x-symbol-export-exported-kinds": result.exportedKinds.join(","),
+    "x-symbol-export-skipped-kinds": result.skippedKinds.join(","),
+    "x-symbol-export-missing-kinds": result.missingKinds.join(",")
+  };
+  if (result.kind === "svg") {
+    const body = Buffer.from(result.svg, "utf-8");
+    response.writeHead(200, {
+      "content-type": "image/svg+xml; charset=utf-8",
+      "content-length": String(body.length),
+      ...metaHeaders
+    });
+    response.end(body);
+    return;
+  }
+  response.writeHead(200, {
+    "content-type": "application/zip",
+    "content-length": String(result.buffer.length),
+    ...metaHeaders
+  });
+  response.end(result.buffer);
+}
+
 const staticAssetMimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
@@ -4897,6 +4983,18 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     }],
     [routeKey("PUT", "/device-library"), async ({ request, response, paths }) => {
       await handleSaveDeviceLibrary(request, response, paths);
+    }],
+    [routeKey("GET", "/symbol-export-schemes"), async ({ request, response, paths }) => {
+      await sendCachedJsonFile(request, response, paths.symbolExportSchemes, () => readSymbolExportSchemes({ paths }));
+    }],
+    [routeKey("PUT", "/symbol-export-schemes"), async ({ request, response, paths }) => {
+      await handleSaveSymbolExportSchemes(request, response, paths);
+    }],
+    [routeKey("POST", "/symbol-export"), async ({ request, response, paths }) => {
+      await handleSymbolExport(request, response, paths);
+    }],
+    [routeKey("POST", "/symbol-export-standalone"), async ({ request, response, paths }) => {
+      await handleStandaloneSymbolExport(request, response, paths);
     }]
   ]);
   const dynAssetPattern = (sub) => new RegExp(`^${escapeRegExp(apiPath(sub))}/([^/]+)$`, "u");

@@ -1871,7 +1871,7 @@ describe("E device interface definition entry", () => {
       onSearchChange: () => undefined,
       onCollapseChange: () => undefined,
       onSelectionChange: () => undefined,
-      onOpenEDeviceDefinitionInterface: () => undefined
+      onOpenSymbolExport: () => undefined
     }));
   };
 
@@ -1901,7 +1901,7 @@ describe("E device interface definition entry", () => {
       onSearchChange: () => undefined,
       onCollapseChange: () => undefined,
       onSelectionChange: () => undefined,
-      onOpenEDeviceDefinitionInterface: () => undefined
+      onOpenSymbolExport: () => undefined
     }));
 
     expect(html).toContain('aria-label="交流设备/ACGenerator直属元件列表"');
@@ -2122,7 +2122,7 @@ describe("E device interface definition entry", () => {
     }
   );
 
-  test("renders the E interface definition shortcut above the component tree search", () => {
+  test("renders the symbol export shortcut above the component tree search", () => {
     const html = renderToStaticMarkup(createElement(CustomComponentManagerTree as any, {
       libraries: [],
       filteredByComponentLibrary: {},
@@ -2141,14 +2141,16 @@ describe("E device interface definition entry", () => {
       onSearchChange: () => undefined,
       onCollapseChange: () => undefined,
       onSelectionChange: () => undefined,
-      onOpenEDeviceDefinitionInterface: () => undefined,
+      onOpenSymbolExport: () => undefined,
       onExportEDeviceDefinition: () => undefined,
       onImportEDeviceDefinition: () => undefined
     }));
 
     expect(html).toContain('class="custom-component-manager-efile-actions"');
-    expect(html).toContain('title="打开 E 文件接口定义"');
-    expect(html).toContain("E文件接口定义");
+    // 该位置原为「E文件接口定义」按钮，现已改为「导出图元Symbol」（点开后弹导出弹窗）
+    expect(html).toContain('title="导出图元 Symbol（只含 style 与 defs/symbol）"');
+    expect(html).toContain("导出图元Symbol");
+    expect(html).not.toContain("E文件接口定义");
     expect(html).toContain("类别库 / 类 / 元件");
     expect(html).not.toContain("custom-component-manager-actions");
     expect(html).toContain('placeholder="搜索类别库/类/元件"');

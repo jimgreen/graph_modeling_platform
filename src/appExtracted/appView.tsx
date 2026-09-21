@@ -566,6 +566,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   const { addToContainerDialog } = __appScope;
   const { measurementConfigDialogOpen, closeMeasurementConfigDialog, userCustomizationManagerOpen, setUserCustomizationManagerOpen } = __appScope;
   const { eFileEditorDialogOpen, setEFileEditorDialogOpen } = __appScope;
+  const { symbolExportDialogOpen } = __appScope;
   const {
     copiedCustomComponentTemplate,
     copyCustomComponentTemplate,
@@ -2342,7 +2343,8 @@ export function renderAppView(__appScope: Record<string, any>) {
     eFileEditorDialogOpen ||
     eDeviceInterfaceExitPromptOpen ||
     eDeviceInterfaceClassSwitchTarget ||
-    showImportResultDialog
+    showImportResultDialog ||
+    symbolExportDialogOpen
   );
   const resourceDialogLayerActive = Boolean(
     __appScope.nodeDoubleClickDialog ||

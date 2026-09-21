@@ -71,6 +71,7 @@ export function spacePathsFor(dataRoot, id) {
     settings,
     colorConfig: join(settings, "color-config.json"),
     measurementConfig: join(settings, "measurement-config.json"),
+    symbolExportSchemes: join(settings, "symbol-export-schemes.json"),
     deviceLibraryDir,
     deviceLibrary: join(deviceLibraryDir, "library.json"),
     manifest: join(images, "manifest.json"),
