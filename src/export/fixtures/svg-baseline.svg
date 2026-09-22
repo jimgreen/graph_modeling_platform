@@ -11,7 +11,7 @@
   
   
   
-  <circle class="terminal-anchor" cx="104" cy="8" r="4" display="none" terminal-id="t1" terminal-index="1" node-number="1"/>
+  <circle class="terminal terminal-anchor" cx="104" cy="8" r="4" display="none" terminal-id="t1" terminal-index="1" node-number="1"/>
   </g>
 </symbol>
 <symbol id="symbol_ACBreak_ac-breaker_default" viewBox="-16 -16 32 32" overflow="visible">
@@ -29,7 +29,7 @@
   
   
   
-  <circle class="terminal-anchor" cx="0" cy="20" r="4" display="none" terminal-id="t1" terminal-index="1" node-number="2"/><circle class="terminal-anchor" cx="36" cy="16" r="4" display="none" terminal-id="t2" terminal-index="2" node-number="3"/>
+  <circle class="terminal terminal-anchor" cx="0" cy="20" r="4" display="none" terminal-id="t1" terminal-index="1" node-number="2"/><circle class="terminal terminal-anchor" cx="36" cy="16" r="4" display="none" terminal-id="t2" terminal-index="2" node-number="3"/>
   </g>
 </symbol>
 <symbol id="symbol_ACLoad_ac-load_default" viewBox="-20 -20 40 40" overflow="visible">
@@ -44,7 +44,7 @@
   
   
   
-  <circle class="terminal-anchor" cx="24" cy="0" r="4" display="none" terminal-id="t1" terminal-index="1" node-number="4"/>
+  <circle class="terminal terminal-anchor" cx="24" cy="0" r="4" display="none" terminal-id="t1" terminal-index="1" node-number="4"/>
   </g>
 </symbol>
 </defs>

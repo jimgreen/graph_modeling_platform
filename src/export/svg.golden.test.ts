@@ -9,7 +9,9 @@ export function hashSvg(text: string): string {
 }
 
 // 去 JSX 重构前的基线哈希：Task 11-12 重写 DeviceGlyph/staticRenderUtils 后输出必须逐字节一致。
-export const SVG_BASELINE_HASH = "5b8e1e5141d3fa022050883c3be161fae872b9d909463762c2cd70a372918347";
+// 2026-09-21 变更：terminal 锚点 class 升级为 "terminal terminal-anchor"（锚点实现抽取为
+// buildSymbolTerminalAnchorMarkup，与图元 Symbol 导出共用；单类 .terminal-anchor 选择器仍命中）。
+export const SVG_BASELINE_HASH = "6b2840e934a0af322c4f0168e987e413596b38376d7425f995608add044f601d";
 
 describe("SVG 导出基线", () => {
   test("输出哈希与基线一致", () => {

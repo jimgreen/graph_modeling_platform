@@ -23,7 +23,7 @@ const threeWinding = (id = "T3-1"): ModelNode => makeNode("ac-three-winding-tran
 ], { i_vbase: "1000", j_vbase: "750", k_vbase: "500" });
 
 const symbolSection = (svg: string) => svg.slice(svg.indexOf("<defs"), svg.indexOf("</defs>"));
-const anchorTag = /<circle class="terminal-anchor"[^>]*\/>/g;
+const anchorTag = /<circle class="terminal terminal-anchor"[^>]*\/>/g;
 
 describe("导出 SVG 的 terminal 锚点（symbol 内）", () => {
   it("锚点在 symbol 内与图元定义同处；实例层零锚点；身份属性齐全、默认 display:none", () => {

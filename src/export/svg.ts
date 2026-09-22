@@ -115,6 +115,17 @@ export type CanvasRenderOptions = CanvasBounds & {
   imageAssets?: Record<string, string>;
   colorDisplayMode?: ColorDisplayMode;
   colorPalette?: ColorPalette;
+  /**
+   * 图元本体导出：多电端子变压器族强制走端子槽 `var(--tN, 字面色)` 取色，
+   * 使导出的 symbol / 独立 SVG 保留「每个绕组单独着色」能力。默认 false（整图导出不用）。
+   */
+  terminalSlotPaint?: boolean;
+  /**
+   * 图元本体导出：默认 true。false 时把端子当**不可见** —— 正文不输出引线/锚点，
+   * 节点图片白底补丁仍按「无端子」口径输出；端子数据保留（供 terminalSlotPaint 取色）。
+   * 端子几何由调用方注入（见 symbolExportSvg.ts 的 terminalAttachmentMarkupForTemplate）。
+   */
+  terminalGeometryVisible?: boolean;
   deviceTemplates?: DeviceTemplate[];
   layers?: ModelLayer[];
   activeLayerId?: string;
@@ -221,6 +232,121 @@ function nestedSvgDocumentRoot(svg: string, width: number, height: number) {
   return svg.replace(/<svg\b[^>]*>/iu, root);
 }
 
+// ---------------------------------------------------------------------------
+// 端子锚点（symbol 内的隐藏连接点）—— 画布导出与图元 Symbol 导出的唯一实现
+// ---------------------------------------------------------------------------
+
+type ExportVoltageTerminal = ModelNode["terminals"][number];
+const isExportElectricTerminalType = (type?: TerminalType): type is "ac" | "dc" => type === "ac" || type === "dc";
+// filter 谓词须带「元素」级守卫（value is S），否则 t.type is "ac"|"dc" 不生效，收窄参数会报 TS2345
+// 导出供 symbolExportSvg.ts 复用：端子槽的口径（槽 = 电端子子序列序号）只有这一份实现。
+export const exportElectricTerminals = (node: ModelNode) =>
+  node.terminals.filter((terminal): terminal is ExportVoltageTerminal & { type: "ac" | "dc" } => isExportElectricTerminalType(terminal.type));
+
+function transformerTerminalSlots(node: ModelNode) {
+  return usesTransformerTerminalSlotPaint(node.kind) ? exportElectricTerminals(node) : [];
+}
+
+function transformerTerminalSlotIndex(
+  slotTerminals: readonly ExportVoltageTerminal[],
+  terminalId: string
+) {
+  return slotTerminals.findIndex((terminal) => terminal.id === terminalId);
+}
+
+/**
+ * 锚点覆盖的端子范围，两条导出链各有自己的契约：
+ * - `electric`（默认）：仅 ac/dc。**画布整图导出**的下游契约 —— 下游把 h2/heat 端子的接线
+ *   交给「接图元盒边」，锚点只报电端子（`svgTerminalAnchor.test.ts` 的「非电端子（h2/heat）
+ *   不生成锚点」钉住该行为，勿轻改）。
+ * - `all`：全部端子（含 h2/heat）。**图元定义本体导出**用 —— 那边引线已覆盖全部端子
+ *   （`buildSvgDeviceConnectorMarkup` 遍历 `node.terminals`），锚点必须与引线 1:1；
+ *   否则非电端子「有引线、无连接点」，而下游以 `.terminal-anchor` 为端子的**唯一来源**，
+ *   于是 ac-electrolyzer / dc-fuel-cell 这类「电 + 氢」图元导出后只剩 1 个端子。
+ */
+export type SymbolTerminalAnchorScope = "electric" | "all";
+
+/**
+ * 节点端子 → 隐藏锚点 `<circle>` 串（symbol 本地坐标系，原点 = 图元中心）。
+ *
+ * 画布导出（buildSvgDocument 的 renderNodeSymbolBody）与图元 Symbol 导出（symbolExportSvg）
+ * 共用本函数，保证两路产物锚点口径永不漂移：
+ * - 覆盖范围由 `options.terminalScope` 决定（默认仅电端子 ac/dc，见 SymbolTerminalAnchorScope）；
+ * - 坐标走 terminalRenderLocalPoint（引线落点，含按 kind 的外伸偏移），缩放取节点 scaleX/scaleY；
+ * - class 固定 `terminal terminal-anchor`（单类 `.terminal-anchor` 选择器仍命中，向后兼容）；
+ * - display="none" 呈现属性隐藏，CSS 规则恒胜呈现属性，下游 `.terminal-anchor{display:inline}`
+ *   一行即可显示。
+ * - `terminal-index` = 在该 scope 的端子子序列里的 1-based 序号。scope=all 时即 `node.terminals`
+ *   的完整序号（与 t1/t2/… 对齐）；scope=electric 时是电端子子序列序号（与端子槽同一基数）。
+ *
+ * options.nodeNumber：是否输出 node-number 属性，默认输出。画布导出必须带 —— node-number 参与
+ * symbol 去重签名，不同端子号的设备不会复用同一 symbol，锚点各归其主（防 v1 串号回归）；
+ * 模板级 Symbol 导出传 false —— 模板定义层没有实例编号，且编号源 makeNodeNumber 是全局自增
+ * 计数器，带编号会让导出产物不可复现。
+ */
+export function buildSymbolTerminalAnchorMarkup(
+  node: ModelNode,
+  options?: { nodeNumber?: boolean; terminalScope?: SymbolTerminalAnchorScope }
+): string {
+  if (isStaticNode(node)) {
+    return "";
+  }
+  const withNodeNumber = options?.nodeNumber !== false;
+  const terminals = options?.terminalScope === "all" ? node.terminals : exportElectricTerminals(node);
+  return terminals
+    .map((terminal, index) => {
+      const renderPoint = terminalRenderLocalPoint(terminal, node.size, getNodeScaleX(node), getNodeScaleY(node), node.kind);
+      const nodeNumberAttribute = withNodeNumber ? ` node-number="${escapeXml(terminal.nodeNumber ?? "")}"` : "";
+      return `<circle class="terminal terminal-anchor" cx="${formatSvgNumber(renderPoint.x)}" cy="${formatSvgNumber(renderPoint.y)}" r="4" display="none" terminal-id="${escapeXml(terminal.id)}" terminal-index="${index + 1}"${nodeNumberAttribute}/>`;
+    })
+    .join("");
+}
+
+// ---------------------------------------------------------------------------
+// 图元本体导出（无实例电压）的端子槽 —— 保留「每个绕组单独着色」能力
+// ---------------------------------------------------------------------------
+
+/**
+ * 图元本体导出专用的端子槽 paint 构造器：把变压器族的绕组描边/引线改成
+ * `var(--tN, <字面色>)` 槽引用，宿主（下游 `<use>`）声明 `--t1/--t2/--t3` 即可按绕组单独着色。
+ *
+ * 与 `renderNodeSymbolBody` 里电压模式的 glyphVoltagePaint **不可互换**：
+ * - 本函数不要求 `colorDisplayMode === "voltage"`、不要求 voltageDescriptor（图元是模板层，没有实例电压）；
+ * - 槽引用**带字面色兜底** —— 宿主不声明 `--tN` 时渲染结果与改前逐字节一致；
+ * - 电压模式的产物必须保持裸 `var(--tN)`（`svgVoltagePaint.test.ts` 钉住 `stroke="var(--t1)"`），
+ *   故兜底形式只在本路径出现。
+ *
+ * 只对 `usesTransformerTerminalSlotPaint` 的 kind 生效：其余器件内部单色，仍走字面色。
+ * 槽序号口径 = 电端子子序列序号（与 `nodeVoltageSlotDeclarations` 同基数），故本函数与
+ * symbolExportSvg.ts 的端子注入点共用同一份 `exportElectricTerminals`，两处槽位永不漂移。
+ *
+ * @param nodeFallback 节点级字面色（= 无 voltagePaint 时 DeviceGlyph 用的 stroke），槽缺失时的兜底
+ * @returns 单电端子 / 非变压器族返回 null（调用方据此回落字面色）
+ */
+export function buildTemplateTerminalSlotPaint(
+  node: ModelNode,
+  colorDisplayMode: ColorDisplayMode,
+  colorPalette: ColorPalette,
+  nodeFallback: string | (() => string)
+): { nodeRef: string; terminalRef: (terminalId: string) => string | undefined } | null {
+  const slotTerminals = transformerTerminalSlots(node);
+  // 只有一个电端子时没有可区分的「绕组」，给槽只会让所有元素同色，不如保持字面色
+  if (slotTerminals.length <= 1) {
+    return null;
+  }
+  const fallback = typeof nodeFallback === "function" ? nodeFallback() : nodeFallback;
+  return {
+    nodeRef: `var(--t1, ${fallback})`,
+    terminalRef: (terminalId: string) => {
+      const index = transformerTerminalSlotIndex(slotTerminals, terminalId);
+      if (index < 0) {
+        return undefined;
+      }
+      return `var(--t${index + 1}, ${getTerminalDisplayColor(node, slotTerminals[index], colorDisplayMode, colorPalette)})`;
+    }
+  };
+}
+
 export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: CanvasRenderOptions = { width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT }) {
   const imageAssets = canvasSize.imageAssets ?? readImageAssets();
   const imageExportPathById = canvasSize.imageExportPathById ?? {};
@@ -235,6 +361,8 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   const escapedBackgroundColor = escapeXml(backgroundColor);
   const colorDisplayMode = canvasSize.colorDisplayMode ?? "energy";
   const colorPalette = normalizeColorPalette(canvasSize.colorPalette ?? DEFAULT_COLOR_PALETTE);
+  const terminalSlotPaint = canvasSize.terminalSlotPaint === true;
+  const terminalGeometryVisible = canvasSize.terminalGeometryVisible !== false;
   const buildBackgroundPageExportMarkup = () => {
     const backgroundPage = canvasSize.backgroundPage;
     if (!backgroundPage) {
@@ -360,11 +488,6 @@ ${scopedBackgroundSvg}
   const includeLayerScript = hasLayerButtons || normalizedLayers.length > 1;
   const nodeById = new Map(exportNodes.map((node) => [node.id, node]));
   const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
-  type ExportVoltageTerminal = ModelNode["terminals"][number];
-  const isExportElectricTerminalType = (type?: TerminalType): type is "ac" | "dc" => type === "ac" || type === "dc";
-  // filter 谓词须带「元素」级守卫（value is S），否则 t.type is "ac"|"dc" 不生效，收窄参数会报 TS2345
-  const exportElectricTerminals = (node: ModelNode) =>
-    node.terminals.filter((terminal): terminal is ExportVoltageTerminal & { type: "ac" | "dc" } => isExportElectricTerminalType(terminal.type));
   const exportVoltageValue = (value?: string) => terminalVoltageBaseNumber(value) || "0";
   const nonZeroExportVoltageValue = (value?: string) => {
     const normalized = terminalVoltageBaseNumber(value);
@@ -492,7 +615,7 @@ ${scopedBackgroundSvg}
     if (colorDisplayMode !== "voltage" || !usesTransformerTerminalSlotPaint(node.kind)) {
       return "";
     }
-    const electricTerminals = exportElectricTerminals(node);
+    const electricTerminals = transformerTerminalSlots(node);
     if (electricTerminals.length <= 1) {
       return "";
     }
@@ -802,7 +925,7 @@ ${rules.join("\n")}
         // 机身保持字面身份色（nodeRef 指向身份色）；电端子引线仍按 class 驱动、非电端子（h2/heat）保留字面终端色。
         // 槽只对变压器族有用：非变压器即便多端子也是内部单色，一律不消耗 var(--tN)。
         // 构造一次 slotTerminals，nodeRef 的多端子判断与 terminalRef 的子序列序号共用同一份电端子表。
-        const slotTerminals = usesTransformerTerminalSlotPaint(symbolNode.kind) ? exportElectricTerminals(symbolNode) : [];
+        const slotTerminals = transformerTerminalSlots(symbolNode);
         // energy 默认路径无需取色：身份/电压类色仅在电压模式且有电压描述符时才计算，避免白算
         const deviceIdentityColor = colorDisplayMode === "voltage" && voltageDescriptor ? getDeviceStrokeColor(voltageColoredNode, colorDisplayMode, colorPalette) : "";
         const deviceVoltageClassColor = colorDisplayMode === "voltage" && voltageDescriptor ? voltageLevelColor(voltageDescriptor.voltage, voltageDescriptor.type, colorPalette) : "";
@@ -819,15 +942,30 @@ ${rules.join("\n")}
               // 仅变压器族提供端子槽：其余器件内部不消费 var(--tN)
               terminalRef: slotTerminals.length > 1
                 ? (terminalId: string) => {
-                    const index = slotTerminals.findIndex((terminal) => terminal.id === terminalId);
+                    const index = transformerTerminalSlotIndex(slotTerminals, terminalId);
                     return index >= 0 ? `var(--t${index + 1})` : undefined;
                   }
                 : undefined
             }
           : null;
-        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "geometry", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual, voltagePaint: glyphVoltagePaint }));
-        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "text", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual, voltagePaint: glyphVoltagePaint }));
-        const connectorMarkup = buildSvgDeviceConnectorMarkup(voltageColoredNode, colorDisplayMode, colorPalette, glyphVoltagePaint);
+        // 图元本体导出（terminalSlotPaint）：无实例电压，改走「带字面色兜底」的端子槽。
+        // 既有电压路径优先，保证电压模式产物逐字节不变。
+        const glyphTerminalPaint = glyphVoltagePaint ?? (terminalSlotPaint
+          ? buildTemplateTerminalSlotPaint(
+              voltageColoredNode,
+              colorDisplayMode,
+              colorPalette,
+              () => stateVisual?.strokeColor
+                || stateVisual?.color?.trim()
+                || getDeviceStrokeColor(voltageColoredNode, colorDisplayMode, colorPalette)
+            )
+          : null);
+        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "geometry", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual, voltagePaint: glyphTerminalPaint }));
+        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "text", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual, voltagePaint: glyphTerminalPaint }));
+        // terminalGeometryVisible=false：端子几何由调用方注入，正文不得重复输出（引线按端子类型着色）
+        const connectorMarkup = terminalGeometryVisible
+          ? buildSvgDeviceConnectorMarkup(voltageColoredNode, colorDisplayMode, colorPalette, glyphTerminalPaint)
+          : "";
         const imageMarkup = imageHref
           ? svgImageContentMarkup(imageHref, {
               x: -symbolNode.size.width / 2,
@@ -851,21 +989,14 @@ ${rules.join("\n")}
             })
           : "";
         const imageCoverMarkup =
-          imageHref && allowNodeImage && symbolNode.terminals.length === 0 && !isStaticNode(symbolNode)
+          imageHref && allowNodeImage && (symbolNode.terminals.length === 0 || !terminalGeometryVisible) && !isStaticNode(symbolNode)
             ? `<rect x="${-symbolNode.size.width / 2}" y="${-symbolNode.size.height / 2}" width="${symbolNode.size.width}" height="${symbolNode.size.height}" rx="8" fill="#ffffff" stroke="none"/>`
             : "";
         // terminal 锚点（symbol 内）：每电端子在引线落点输出一个隐藏圆点，与图元定义同处 symbol，
         // 下游复用 symbol 时经 terminal-id 直接定位连接点。与引线同帧（geometryTransform 内）。
-        // 默认 display="none" 呈现属性隐藏；CSS 规则恒胜呈现属性，下游 .terminal-anchor{display:inline} 一行即可显示。
-        // 去重前提：签名/快路径 token 均涵盖端子签名（node-number 参与），不同端子号的设备
+        // node-number 参与去重签名（见 buildSymbolTerminalAnchorMarkup），不同端子号的设备
         // 不会复用同一 symbol，锚点各归其主（防 v1 串号回归）。
-        const terminalAnchors = isStaticNode(symbolNode) ? [] : exportElectricTerminals(symbolNode);
-        const terminalAnchorMarkup = terminalAnchors
-          .map((terminal, index) => {
-            const renderPoint = terminalRenderLocalPoint(terminal, symbolNode.size, getNodeScaleX(symbolNode), getNodeScaleY(symbolNode), symbolNode.kind);
-            return `<circle class="terminal-anchor" cx="${formatSvgNumber(renderPoint.x)}" cy="${formatSvgNumber(renderPoint.y)}" r="4" display="none" terminal-id="${escapeXml(terminal.id)}" terminal-index="${index + 1}" node-number="${escapeXml(terminal.nodeNumber ?? "")}"/>`;
-          })
-          .join("");
+        const terminalAnchorMarkup = terminalGeometryVisible ? buildSymbolTerminalAnchorMarkup(symbolNode) : "";
         return `<title>${escapeXml(template?.label ?? exportNodeType(symbolNode))}</title>
   <g transform="${geometryTransform}">
   ${glyphMarkup}

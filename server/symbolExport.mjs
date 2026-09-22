@@ -17,7 +17,7 @@ installDomShim();
 
 import { readDeviceLibraryConfig } from "./server.mjs";
 
-const { buildSymbolExportSvg, symbolExportFileName, buildStandaloneSymbolExport, standaloneSymbolsZipFileName } =
+const { buildSymbolExportSvg, symbolExportFileName, buildStandaloneSymbolExport, standaloneSymbolsZipFileName, STANDALONE_SCHEMA_FILE_NAME } =
   await import("../src/symbolExportSvg.ts");
 const { buildDeviceTemplateIconSvg } = await import("../src/export/device-template-icon.ts");
 const { buildEffectiveLibraryTemplates } = await import("../src/export/device-definition-shared.ts");
@@ -132,10 +132,12 @@ export async function renderSymbolExportSvg({ kinds, paths } = {}) {
  *   - 本函数 → 每图元一份把 symbol 正文**内联展开**的独立 SVG，装进 ZIP。
  *
  * 多状态图元（断路器分/合）会产出多份文件 —— 一份 SVG 只能呈现一个状态。
+ * ZIP 内附带 schema.json（E 文件表名 ↔ svg 文件 ↔ 设备类型 ↔ 中文名称 的映射），
+ * 供「根据 E 文件自动成图」按表名反查设备对应的图元。
  *
  * ZIP 由 adm-zip 生成（仓库既有的方案归档导出用的是同一个依赖，不新引包）。
- * 解压时的路径穿越风险不存在：条目名全部来自本函数组装的 `${stem}.svg`，
- * 而 stem 经 safeSymbolFileStem 过滤，不含 `/`、`\`、`..`。
+ * 解压时的路径穿越风险不存在：条目名全部来自本函数组装的 `${stem}.svg` 与
+ * STANDALONE_SCHEMA_FILE_NAME 常量，stem 经 safeSymbolFileStem 过滤，不含 `/`、`\`、`..`。
  */
 export async function renderStandaloneSymbolExportZip({ kinds, paths } = {}) {
   const resolved = await resolveSelectedTemplates({ kinds, paths });
@@ -172,6 +174,9 @@ export async function renderStandaloneSymbolExportZip({ kinds, paths } = {}) {
   for (const file of result.files) {
     zip.addFile(file.fileName, Buffer.from(file.svg, "utf-8"));
   }
+  // schema.json：E 表名 ↔ svg 文件 ↔ 设备类型 ↔ 中文名称 的映射（E 文件自动成图按表名取图）。
+  // fileCount 只统计 svg 文件 —— schema 是随包元数据，不是图元文件。
+  zip.addFile(STANDALONE_SCHEMA_FILE_NAME, Buffer.from(JSON.stringify(result.schema, null, 2), "utf-8"));
   return {
     kind: "zip",
     buffer: zip.toBuffer(),

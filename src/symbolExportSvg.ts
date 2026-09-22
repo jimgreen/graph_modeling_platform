@@ -1,15 +1,32 @@
 // 图元 Symbol 批量导出：从模型图元库（DeviceTemplate）裁剪出「只含 <style> 与 <defs><symbol>」的 SVG。
 //
 // 单一实现来源：单模板正文复用 buildDeviceTemplateIconSvg（与右键「导出图元为 SVG」同源），
-// 本模块只做三件事 —— 摘取 <style>/<symbol>、把 symbol 的 viewBox 归一化为 0,0,width,height、
-// 跨模板合并去重。任何「自己重画图元」的写法都会与画布渲染分叉，禁止。
+// 本模块只做四件事 —— 摘取 <style>/<symbol>、注入端子附着几何（引线 + 锚点，复用画布实现；
+// 变压器族的引线按绕组端子槽 var(--tN) 取色；锚点覆盖**全部**端子，与模板端子数一一对应）、
+// 把 symbol 的 viewBox 归一化为 0,0,width,height、跨模板合并去重。任何「自己重画图元」的写法
+// 都会与画布渲染分叉，禁止。
 //
 // 纯模块（Node 可直载），不依赖 React / DOM，便于单测与后端复用。
 
 // 显式 .ts 后缀：本模块要能被后端 Node ESM 直载（解析器不成对补后缀），
 // 与 src/export/svg.ts 的 import 写法一致。Vite/vitest 侧同样接受显式后缀。
 import type { DeviceTemplate } from "./model.ts";
-import { getTemplateStateDefinitions, isContainerParams, isRoutableLineDeviceKind, isStaticNode } from "./model.ts";
+import {
+  buildDefaultParams,
+  createNodeFromTemplate,
+  DEFAULT_COLOR_PALETTE,
+  getDeviceStrokeColor,
+  getTemplateStateDefinitions,
+  isContainerParams,
+  isRoutableLineDeviceKind,
+  isStaticNode
+} from "./model.ts";
+import { inferESection } from "./model-eexport.ts";
+import {
+  buildSvgDeviceConnectorMarkup,
+  buildSymbolTerminalAnchorMarkup,
+  buildTemplateTerminalSlotPaint
+} from "./export/svg.ts";
 
 /** 预设过滤分类。key 会随方案落盘，改名等于破坏已存方案，勿动。 */
 export type SymbolExportFilterKey =
@@ -359,6 +376,66 @@ export function compactSymbolExportWhitespace(svg: string): string {
     .join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// 端子附着几何（symbol 内的引线 + 隐藏锚点）
+// ---------------------------------------------------------------------------
+
+/**
+ * 模板端子 → symbol 内的端子附着几何串（引线 `<line>` + 隐藏锚点 `<circle>`，
+ * symbol 本地坐标系，原点 = 图元中心）。
+ *
+ * 图元正文经 buildDeviceTemplateIconSvg 导出时端子几何被抑制（terminalGeometryVisible=false，
+ * 导出的是「图元本体」而非某次实例化后的节点），故引线与锚点都必须由本层按模板数据补画 ——
+ * 只补其一就会出现「锚点悬空」（有连接点、没有连接线），与画布观感不一致。
+ *
+ * 先经 createNodeFromTemplate（与「导出图元为 SVG」图标路径同款工厂）把模板落成标准节点
+ * —— 尺寸归一化、默认端子表与 template.terminalAnchors 显式覆盖全部同源 —— 再交给画布的
+ * 两个唯一实现，保证本层永不与画布渲染分叉：
+ * - 引线走 buildSvgDeviceConnectorMarkup（与画布实时渲染、画布 SVG 导出同一几何来源
+ *   terminalStubSegment）；电压 paint 传 buildTemplateTerminalSlotPaint 的结果 ——
+ *   变压器族的每根引线跟随**其所属绕组侧**的槽（`var(--tN, 字面色)`），与正文里的绕组描边
+ *   共用一个槽序号，宿主声明 --tN 即可整侧改色；非变压器族该构造器返回 null → 落字面色。
+ * - 锚点走 buildSymbolTerminalAnchorMarkup，这里传 `terminalScope: "all"` **全部端子** ——
+ *   引线本就覆盖全部端子（buildSvgDeviceConnectorMarkup 遍历 node.terminals），锚点必须与引线
+ *   1:1，否则 h2/heat 端子「有引线、无连接点」；下游以 `.terminal-anchor` 为端子的**唯一来源**，
+ *   漏锚点会让 ac-electrolyzer / dc-fuel-cell 这类「电 + 氢」图元导出后端子数少于图元库。
+ *   （画布整图导出仍走默认 electric，见 SymbolTerminalAnchorScope 的两条契约。）
+ *   node-number 传 false：模板定义层没有实例编号，且编号源 makeNodeNumber 是全局自增计数器，
+ *   带编号会让产物不可复现。
+ *
+ * 必须在 normalizeSymbolViewBox **之前**拼进 symbol 正文（见 injectTerminalMarkup），
+ * 归一化平移会连同这段几何一起搬，无需单独换算坐标。
+ */
+export function terminalAttachmentMarkupForTemplate(template: DeviceTemplate): string {
+  const node = createNodeFromTemplate(template, { x: 0, y: 0 });
+  const leads = buildSvgDeviceConnectorMarkup(
+    node,
+    "energy",
+    DEFAULT_COLOR_PALETTE,
+    buildTemplateTerminalSlotPaint(
+      node,
+      "energy",
+      DEFAULT_COLOR_PALETTE,
+      () => getDeviceStrokeColor(node, "energy", DEFAULT_COLOR_PALETTE)
+    )
+  );
+  // terminalScope: "all" —— 图元定义本体的端子清单必须与模板端子数一一对应（引线已覆盖全部端子）
+  const anchors = buildSymbolTerminalAnchorMarkup(node, { nodeNumber: false, terminalScope: "all" });
+  return leads && anchors ? `${leads}\n${anchors}` : `${leads}${anchors}`;
+}
+
+/** 把端子附着几何串插进 symbol 块正文尾部（</symbol> 之前）。为空或非 symbol 块时原样返回。 */
+function injectTerminalMarkup(symbolMarkup: string, terminalMarkup: string): string {
+  if (!terminalMarkup) {
+    return symbolMarkup;
+  }
+  const closeAt = symbolMarkup.lastIndexOf("</symbol>");
+  if (closeAt < 0) {
+    return symbolMarkup;
+  }
+  return `${symbolMarkup.slice(0, closeAt)}${terminalMarkup}${symbolMarkup.slice(closeAt)}`;
+}
+
 export type SymbolExportBuildResult = {
   svg: string;
   /** 实际写入的 <symbol> 数量（含同一图元的多状态）。 */
@@ -437,13 +514,15 @@ export function buildSymbolExportSvg(
     const parts = extractSymbolExportParts(source);
     // 原始正文里那个 <use> 指向的 symbol id = 该图元的默认状态（与已选清单缩略图同口径）
     const referencedId = symbolIdFromUseTag(stateless(USE_TAG_PATTERN).exec(source)?.[0] ?? "");
+    // 每个状态 symbol 都注入同一份端子附着几何（端子是图元级定义、与状态无关，与画布每状态 symbol 同构）
+    const terminalMarkup = terminalAttachmentMarkupForTemplate(template);
     const accepted: Array<{ id: string; markup: string }> = [];
     for (const symbol of parts.symbols) {
       const id = symbolIdFromSymbolBlock(symbol);
       if (id && seenSymbolIds.has(id)) {
         continue;
       }
-      const normalized = normalizeSymbolViewBox(symbol);
+      const normalized = normalizeSymbolViewBox(injectTerminalMarkup(symbol, terminalMarkup));
       if (!normalized) {
         continue;
       }
@@ -585,6 +664,45 @@ export type StandaloneSymbolFile = {
   svg: string;
 };
 
+// ---------------------------------------------------------------------------
+// schema.json：E 文件表名 ↔ svg 文件 ↔ 设备类型 ↔ 中文名称 的随包映射
+// ---------------------------------------------------------------------------
+
+/**
+ * schema.json 单条映射。供「根据 E 文件自动成图」按表名反查设备对应的图元 SVG：
+ * 用 E 文件行所在表名匹配 eTable → 取 svg 文件名加载对应图元。
+ * 多状态图元一状态一条；首条（svg 名无状态后缀）即模板默认状态。
+ */
+export type SymbolExportSchemaEntry = {
+  /** 压缩包内的 SVG 文件名（多状态图元一状态一条，与 zip 条目同名）。 */
+  svg: string;
+  /** 图元 E 文件表名（= E 导出段名，如 ACBreak；无对应表的图元为空串）。 */
+  eTable: string;
+  /** 设备类型（模板 kind，竖向变体等派生 kind 原样保留）。 */
+  kind: string;
+  /** 图元中文名称（模板 label）。 */
+  label: string;
+};
+
+/** schema.json 顶层结构。version 供下游消费端识别格式演进。 */
+export type SymbolExportSchema = {
+  version: 1;
+  symbols: SymbolExportSchemaEntry[];
+};
+
+/** 独立导出 ZIP 内 schema.json 的固定文件名（与 svg 条目同级）。 */
+export const STANDALONE_SCHEMA_FILE_NAME = "schema.json";
+
+/**
+ * 模板 → E 文件表名。走 inferESection（与模型 E 导出同源，kind → 段名的唯一映射；
+ * 竖向变体经 baseDeviceKind 归并到基础 kind 的表）。params 取模板默认参数
+ * （buildDefaultParams，与 createNodeFromTemplate 同源），使「表名由参数决定的图元」
+ * 与真实节点落表口径一致。无对应表的图元（静态图形、装饰等）返回空串。
+ */
+function templateSymbolETable(template: DeviceTemplate): string {
+  return inferESection(String(template?.kind ?? "").trim(), buildDefaultParams(template));
+}
+
 /** 文件名安全化：保留中英文/数字/`-`/`_`，其余替换为 `-`，并压掉重复分隔符。 */
 export function safeSymbolFileStem(value: string, fallback = "component"): string {
   const stem = String(value ?? "")
@@ -618,11 +736,13 @@ export function buildStandaloneSymbolFiles(
     return [];
   }
 
-  // 收集全部 symbol：id → { markup, index }。
+  // 收集全部 symbol：id → { markup, index }。端子附着几何（引线 + 锚点）在收集时注入正文尾部，
+  // 后续 symbolGraphicBody 取正文、wrapBodyForViewBox 平移都会连同这段几何一起处理。
+  const terminalMarkup = terminalAttachmentMarkupForTemplate(template);
   const symbols = new Map<string, { markup: string; index: number }>();
   let order = 0;
   for (const match of source.matchAll(SYMBOL_BLOCK_PATTERN)) {
-    const markup = match[0];
+    const markup = injectTerminalMarkup(match[0], terminalMarkup);
     const id = symbolIdFromSymbolBlock(markup);
     if (id && !symbols.has(id)) {
       symbols.set(id, { markup, index: order++ });
@@ -684,9 +804,11 @@ export function standaloneSymbolsZipFileName(timestamp = new Date()): string {
   return symbolExportFileName(timestamp).replace(/\.svg$/u, ".zip");
 }
 
-/** 独立导出结果：文件清单 + 各类计数，供后端组装响应与前端提示文案。 */
+/** 独立导出结果：文件清单 + schema 映射 + 各类计数，供后端组装响应与前端提示文案。 */
 export type StandaloneSymbolExportResult = {
   files: StandaloneSymbolFile[];
+  /** schema.json 内容：条目与 files 一一对应（E 文件自动成图的取图索引）。 */
+  schema: SymbolExportSchema;
   /** 成功产出文件的图元 kind，按输入顺序去重。 */
   exportedKinds: string[];
   /** 有模板但产不出独立 SVG 的 kind（定义异常兜底）。 */
@@ -698,6 +820,7 @@ export function buildStandaloneSymbolExport(
   buildTemplateSvg: (template: DeviceTemplate) => string
 ): StandaloneSymbolExportResult {
   const files: StandaloneSymbolFile[] = [];
+  const schemaSymbols: SymbolExportSchemaEntry[] = [];
   const exportedKinds: string[] = [];
   const skippedKinds: string[] = [];
   const seenIds = new Set<string>();
@@ -727,7 +850,13 @@ export function buildStandaloneSymbolExport(
     }
     files.push(...accepted);
     exportedKinds.push(kind);
+    // schema 条目与文件一一对应；eTable/label 是模板级属性，多状态文件共享。
+    const eTable = templateSymbolETable(template);
+    const label = String(template?.label ?? "").trim();
+    for (const file of accepted) {
+      schemaSymbols.push({ svg: file.fileName, eTable, kind, label });
+    }
   }
 
-  return { files, exportedKinds, skippedKinds };
+  return { files, schema: { version: 1, symbols: schemaSymbols }, exportedKinds, skippedKinds };
 }

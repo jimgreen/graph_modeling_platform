@@ -38,8 +38,10 @@ function componentExportImageWithoutTerminalConnectors(value: unknown) {
 /**
  * 单模板 → 自包含 SVG 正文。
  *
- * 端子被清空（terminalCount/terminalTypes/... 归零 + node.terminals = []），
- * 即导出的是「图元本体」而不是「某次实例化后的节点」，故同 kind 的图元正文只随定义变化。
+ * 导出的是「图元本体」而不是「某次实例化后的节点」：端子数据保留（变压器族绕组/引线据此
+ * 走 var(--tN) 端子槽，保留画布上「每个绕组单独着色」的能力），但端子几何（引线 + 锚点）
+ * 不写进正文（terminalGeometryVisible=false）—— 它由调用方按模板数据注入，见
+ * src/symbolExportSvg.ts 的 terminalAttachmentMarkupForTemplate。故同 kind 的图元正文只随定义变化。
  */
 export function buildDeviceTemplateIconSvg(template: DeviceTemplate) {
   const padding = 36;
@@ -68,16 +70,13 @@ export function buildDeviceTemplateIconSvg(template: DeviceTemplate) {
         ? { backgroundImage: componentExportImageWithoutTerminalConnectors(state.backgroundImage) }
         : {})
     })),
-    terminalCount: 0,
-    terminalTypes: [],
-    terminalLabels: [],
-    terminalAnchors: [],
-    terminalRoles: [],
-    terminalAssociations: []
+    // 端子数据**保留**：变压器族的「每个绕组单独着色」靠端子槽 var(--tN) 实现
+    // （见 buildTemplateTerminalSlotPaint），清空端子会让槽机制整套失效、绕组退化成单一字面色。
+    // 端子几何（引线/锚点）由 terminalGeometryVisible=false 抑制，改由调用方注入 —— 见
+    // src/symbolExportSvg.ts 的 terminalAttachmentMarkupForTemplate。
   };
   const node = createNodeFromTemplate(visualTemplate, { x: width / 2, y: height / 2 });
   node.id = `component-svg-${String(template.kind || "component").replace(/[^A-Za-z0-9_-]+/g, "_")}`;
-  node.terminals = [];
   node.params = {
     ...node.params,
     _labelVisible: "0"
@@ -86,7 +85,10 @@ export function buildDeviceTemplateIconSvg(template: DeviceTemplate) {
     width,
     height,
     backgroundColor: "transparent",
-    deviceTemplates: [visualTemplate]
+    deviceTemplates: [visualTemplate],
+    // 图元本体导出：绕组走带字面色兜底的端子槽，端子几何不写进正文（由注入点补画）
+    terminalSlotPaint: true,
+    terminalGeometryVisible: false
   });
   const sourceTerminalCount = Math.max(0, Math.floor(Number(template.terminalCount) || 0));
   return svg.replace(

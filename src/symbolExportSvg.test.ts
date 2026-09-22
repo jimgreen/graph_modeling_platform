@@ -1,9 +1,12 @@
 // 图元 Symbol 导出的纯逻辑契约：分类过滤、viewBox 归一化、SVG 合成与方案快照。
 import { describe, expect, test } from "vitest";
-import { DEVICE_LIBRARY, type DeviceTemplate } from "./model";
+import { DEVICE_LIBRARY, DEFAULT_COLOR_PALETTE, createNodeFromTemplate, type DeviceTemplate } from "./model";
 import { buildDeviceTemplateIconSvg } from "./appExtracted/appPersistenceLibraryExport";
+import { buildTemplateTerminalSlotPaint } from "./export/svg";
 import {
   DEFAULT_SYMBOL_EXPORT_FILTER_KEYS,
+  STANDALONE_SCHEMA_FILE_NAME,
+  buildStandaloneSymbolExport,
   buildStandaloneSymbolFiles,
   buildSymbolExportSvg,
   compactSymbolExportWhitespace,
@@ -14,6 +17,7 @@ import {
   removeSymbolExportScheme,
   symbolExportFileName,
   symbolExportFilterKeysForTemplate,
+  terminalAttachmentMarkupForTemplate,
   upsertSymbolExportScheme
 } from "./symbolExportSvg";
 
@@ -45,6 +49,9 @@ symbol{overflow:visible}
 <use id="ac-breaker-1" dev-kind="ac-breaker" href="#symbol_ACBreaker_ac-breaker_state_1" x="36" y="36" width="80" height="60"/>
 </g></g>
 </svg>`;
+
+/** 单状态桩：剥掉 state_0 symbol 块，只保留 <use> 引用的默认状态（一模板恰好一文件）。 */
+const SINGLE_STATE_SYMBOL_DOC = STATIC_SYMBOL_DOC.replace(/<symbol id="[^"]*_state_0"[\s\S]*?<\/symbol>\n?/u, "");
 
 describe("分类过滤", () => {
   test("按 kind / 标志位判定分类，可同时命中多个", () => {
@@ -302,6 +309,305 @@ describe("SVG 合成", () => {
     // CRLF 与空串兜底
     expect(compactSymbolExportWhitespace("<a>\r\n\r\n<b/></a>")).toBe("<a>\n<b/></a>");
     expect(compactSymbolExportWhitespace("")).toBe("");
+  });
+});
+
+describe("端子附着几何（引线 + 锚点）", () => {
+  // 锚点 circle 与引线 line 的结构化提取：锚点坐标 = 引线所在 translate 组的落点
+  const anchorPoints = (markup: string) =>
+    Array.from(markup.matchAll(/<circle class="terminal terminal-anchor"[^>]*cx="([-\d.]+)" cy="([-\d.]+)"[^>]*\/>/gu))
+      .map((m) => ({ x: m[1], y: m[2] }));
+  const leadRows = (markup: string) =>
+    Array.from(
+      markup.matchAll(/<g transform="translate\(([-\d.]+) ([-\d.]+)\)">\s*<line x1="([-\d.]+)" y1="([-\d.]+)" x2="([-\d.]+)" y2="([-\d.]+)"[^>]*\/>/gu)
+    ).map((m) => ({ groupX: m[1], groupY: m[2], x1: m[3], y1: m[4], x2: m[5], y2: m[6] }));
+
+  test("普通图元：锚点坐标与画布导出同口径，引线外端精确落在锚点上", () => {
+    // 桩 size 80×60 经 normalizeDefaultDeviceSize 归一化到最长边 150（150×112.5）；
+    // 默认双端子 anchor ±0.5 → cx=∓75，再各向外伸 TERMINAL_OUTWARD_OFFSET=4 → cx=∓79（用户示例同款数值）。
+    const markup = terminalAttachmentMarkupForTemplate(templateOf({ kind: "anchor-probe" }));
+    expect(anchorPoints(markup)).toEqual([
+      { x: "-79", y: "0" },
+      { x: "79", y: "0" }
+    ]);
+    // 引线外端（x2,y2）= 锚点所在点，即「锚点 → 本体」这段连接线，两端不允许留空
+    const leads = leadRows(markup);
+    expect(leads).toHaveLength(2);
+    expect(leads.map((lead) => `${lead.groupX},${lead.groupY}`)).toEqual(["-79,0", "79,0"]);
+    for (const lead of leads) {
+      expect(`${lead.x2},${lead.y2}`).toBe("0,0");
+    }
+  });
+
+  test("AC 容器保留声明尺寸；显式 terminalAnchors 覆盖默认端子位置，引线随之联动", () => {
+    // ac-vpp-box 在 AC_CONTAINER_KINDS 内 → size 80×60 原样保留；顶/底端子 y 方向外伸 4。
+    const markup = terminalAttachmentMarkupForTemplate(templateOf({
+      kind: "ac-vpp-box",
+      isContainer: true,
+      terminalAnchors: [{ x: 0, y: -0.5 }, { x: 0, y: 0.5 }]
+    }));
+    expect(anchorPoints(markup)).toEqual([
+      { x: "0", y: "-34" },
+      { x: "0", y: "34" }
+    ]);
+    // 引线与锚点共用同一落点（显式覆盖后两处一起变，不会错位）
+    expect(leadRows(markup).map((lead) => `${lead.groupX},${lead.groupY}`)).toEqual(["0,-34", "0,34"]);
+  });
+
+  test("锚点覆盖全部端子（含 heat/h2），与引线 1:1 —— 端子清单 = 模板端子数", () => {
+    // 反例来源：ac-electrolyzer / dc-fuel-cell 这类「电 + 氢」两端子图元，改前锚点只覆盖电端子，
+    // 而下游以 .terminal-anchor 为端子的**唯一来源**（无锚点 = 该端子不存在）→ 导出只剩 1 个端子。
+    // 同时画布 buildSvgDeviceConnectorMarkup 对全部端子画引线，故锚点必须与引线 1:1。
+    const markup = terminalAttachmentMarkupForTemplate(templateOf({
+      kind: "anchor-probe",
+      terminalTypes: ["heat", "ac"]
+    }));
+    expect(anchorPoints(markup)).toEqual([{ x: "-79", y: "0" }, { x: "79", y: "0" }]);
+    expect(markup).toContain(`terminal-id="t1" terminal-index="1"`);
+    expect(markup).toContain(`terminal-id="t2" terminal-index="2"`);
+    expect(leadRows(markup)).toHaveLength(2);
+    // 画布整图导出仍只给电端子锚点（另一条契约，由 export/svgTerminalAnchor.test.ts 钉住）
+  });
+
+  test("内置图元库全量护栏：锚点数 == 端子数，合并（×状态数）与独立导出同口径", () => {
+    for (const template of DEVICE_LIBRARY) {
+      const total = createNodeFromTemplate(template, { x: 0, y: 0 }).terminals.length;
+      if (total === 0) {
+        continue;
+      }
+      const merged = buildSymbolExportSvg([template], buildDeviceTemplateIconSvg);
+      if (merged.symbolCount === 0) {
+        continue;
+      }
+      const standalone = buildStandaloneSymbolExport([template], buildDeviceTemplateIconSvg);
+      const countAnchors = (svg: string) => (svg.match(/terminal-anchor/gu) ?? []).length;
+      expect(countAnchors(terminalAttachmentMarkupForTemplate(template)), `${template.kind} 注入锚点数`).toBe(total);
+      expect(countAnchors(merged.svg), `${template.kind} 合并导出锚点数`).toBe(total * merged.symbolCount);
+      expect(countAnchors(standalone.files[0]?.svg ?? ""), `${template.kind} 独立导出锚点数`).toBe(total);
+    }
+  });
+
+  test("「电 + 非电」图元：两端子各自成锚点，terminal-id 与端子表一一对应", () => {
+    for (const kind of ["ac-electrolyzer", "dc-fuel-cell", "ac-two-port-heater", "hydrogen-source", "heat-exchanger"]) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+      const node = createNodeFromTemplate(template, { x: 0, y: 0 });
+      const files = buildStandaloneSymbolExport([template], buildDeviceTemplateIconSvg);
+      const ids = Array.from(files.files[0]?.svg.matchAll(/terminal-id="([^"]+)"/gu) ?? []).map((m) => m[1]);
+      expect(ids, `${kind} 端子 id`).toEqual(node.terminals.map((terminal) => terminal.id));
+    }
+  });
+
+  test("静态图元与零端子图元不产生端子附着几何；母线只出锚点不出引线（画布同样的短路）", () => {
+    expect(terminalAttachmentMarkupForTemplate(templateOf({ kind: "static-ring" }))).toBe("");
+    expect(terminalAttachmentMarkupForTemplate(templateOf({ kind: "anchor-probe", terminalCount: 0 }))).toBe("");
+    // 母线：buildSvgDeviceConnectorMarkup 对母线短路（沿条任意取连接点，无固定引线几何），
+    // 但锚点照出 —— 与画布「母线（单电端子）也有锚点」一致。
+    const bus = terminalAttachmentMarkupForTemplate(
+      templateOf({ kind: "ac-bus", terminalCount: 1, terminalAnchors: [{ x: -0.5, y: 0 }] })
+    );
+    expect(anchorPoints(bus)).toEqual([{ x: "-79", y: "0" }]);
+    expect(leadRows(bus)).toHaveLength(0);
+  });
+
+  test("合并导出：引线与锚点一起注入每个状态 symbol，随 viewBox 归一化一起平移", () => {
+    // 桩 symbol viewBox "-40 -30 80 60" → 归一化 translate(40,30)；容器桩保留 80×60，
+    // 默认端子锚点 cx=∓44（原始坐标系属性值），在平移组内渲染位置 = ∓44+40 = -4/84。
+    const container = templateOf({ kind: "ac-vpp-box", isContainer: true });
+    const result = buildSymbolExportSvg([container], () => STATIC_SYMBOL_DOC);
+    const anchor1 = `<circle class="terminal terminal-anchor" cx="-44" cy="0" r="4" display="none" terminal-id="t1" terminal-index="1"/>`;
+    const anchor2 = `<circle class="terminal terminal-anchor" cx="44" cy="0" r="4" display="none" terminal-id="t2" terminal-index="2"/>`;
+    // 两个状态 symbol 各有一份锚点
+    expect(result.svg.split(anchor1)).toHaveLength(3);
+    expect(result.svg.split(anchor2)).toHaveLength(3);
+    // 引线同为每状态一份，且落点与锚点一致（translate(∓44 0) 组内 line 收于原点）
+    const symbolSection = result.svg.slice(result.svg.indexOf("<defs"), result.svg.indexOf("</defs>"));
+    expect(leadRows(symbolSection)).toHaveLength(4);
+    expect(new Set(leadRows(symbolSection).map((lead) => `${lead.groupX},${lead.groupY}`))).toEqual(
+      new Set(["-44,0", "44,0"])
+    );
+    // 锚点在归一化平移组内（图形与锚点同帧）：translate 组由归一化产生，rotate 组是桩正文自带
+    expect(result.svg).toContain(`<g transform="translate(40,30)">\n<g transform="rotate(0) scale(1 1)">`);
+  });
+
+  test("独立导出：引线与锚点随正文内联进每份自包含 SVG", () => {
+    const container = templateOf({ kind: "ac-vpp-box", isContainer: true });
+    const files = buildStandaloneSymbolFiles(STATIC_SYMBOL_DOC, container);
+    expect(files.length).toBe(2);
+    for (const file of files) {
+      expect(file.svg).toContain(`<circle class="terminal terminal-anchor" cx="-44" cy="0" r="4" display="none" terminal-id="t1" terminal-index="1"/>`);
+      expect(file.svg).toContain(`<circle class="terminal terminal-anchor" cx="44" cy="0" r="4" display="none" terminal-id="t2" terminal-index="2"/>`);
+      // 每条锚点都有配套引线（缺一即「锚点悬空」回归）
+      expect(leadRows(file.svg).map((lead) => `${lead.groupX},${lead.groupY}`)).toEqual(["-44,0", "44,0"]);
+      // 锚点与图形同处 viewBox 平移组，渲染位置落在 symbol 坐标系原预期点
+      expect(file.svg).toContain(`<g transform="translate(40,30)">`);
+    }
+  });
+});
+
+describe("绕组端子槽（每个绕组单独着色）", () => {
+  // 图元本体导出的槽是**带字面色兜底**的 `var(--tN, <字面色>)`；画布电压模式是裸 `var(--tN)`。
+  // 兜底保证：宿主（下游 <use>）不声明 --tN 时，渲染结果与改前逐字节一致。
+  const circleSlots = (markup: string) =>
+    Array.from(
+      markup.matchAll(/<circle [^>]*stroke="var\((--t\d+), ([^)]*)\)"[^>]*>/gu),
+      (match) => ({ slot: match[1], fallback: match[2] })
+    );
+  const leadSlots = (markup: string) =>
+    Array.from(
+      markup.matchAll(/<line [^>]*stroke="var\((--t\d+), ([^)]*)\)"/gu),
+      (match) => ({ slot: match[1], fallback: match[2] })
+    );
+  const libraryTemplate = (kind: string) => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
+    expect(template, `${kind} 应存在于内置图元库`).toBeTruthy();
+    return template!;
+  };
+
+  test("三绕组主变正文：三个绕组各带自己的槽，兜底色 = 改前字面色", () => {
+    const body = buildDeviceTemplateIconSvg(libraryTemplate("ac-three-winding-transformer"));
+    expect(circleSlots(body)).toEqual([
+      { slot: "--t1", fallback: "#2563eb" },
+      { slot: "--t2", fallback: "#2563eb" },
+      { slot: "--t3", fallback: "#2563eb" }
+    ]);
+    // 绕组仍用类名标注，下游可据此单独定位（与画布同款 class）
+    expect(body.split('class="transformer-winding"')).toHaveLength(4);
+  });
+
+  test("双绕组主变正文：两个绕组 --t1/--t2；非变压器图元零槽（内部单色，不消耗槽）", () => {
+    const body = buildDeviceTemplateIconSvg(libraryTemplate("ac-transformer"));
+    expect(circleSlots(body).map((item) => item.slot)).toEqual(["--t1", "--t2"]);
+    // 兜底色就是原来的字面色（AC 端子类型色，DEFAULT_COLOR_PALETTE）—— 钉住「默认外观零变化」
+    expect(new Set(circleSlots(body).map((item) => item.fallback))).toEqual(new Set(["#2563eb"]));
+    // 对照组：交流负荷不是变压器族，整份正文不得出现任何 var() 槽
+    expect(buildDeviceTemplateIconSvg(libraryTemplate("ac-load"))).not.toContain("var(--t");
+  });
+
+  test("正文抑制端子几何（引线/锚点在注入点补），但保留 source-terminal-count 钩子与端子槽", () => {
+    const body = buildDeviceTemplateIconSvg(libraryTemplate("ac-three-winding-transformer"));
+    // terminalGeometryVisible=false：正文既不画引线也不画锚点，避免与注入点重复
+    expect(body).not.toContain("terminal-anchor");
+    expect(body).not.toContain('x2="0" y2="0"');
+    // 端子数据仍保留（槽取色依赖它）：钩子仍报原始端子数
+    expect(body).toContain('data-export-source-terminal-count="3"');
+    expect(circleSlots(body)).toHaveLength(3);
+  });
+
+  test("独立导出：绕组与每根引线共用同一套槽序（左引线 --t1、右引线 --t2…）", () => {
+    const template = libraryTemplate("ac-three-winding-transformer");
+    const result = buildStandaloneSymbolExport([template], buildDeviceTemplateIconSvg);
+    expect(result.files.map((file) => file.fileName)).toEqual(["ac-three-winding-transformer.svg"]);
+    const svg = result.files[0].svg;
+    expect(circleSlots(svg).map((item) => item.slot)).toEqual(["--t1", "--t2", "--t3"]);
+    // 引线由注入点补画，且逐根跟随其所属绕组侧 —— 与正文绕组同槽序，宿主声明 --tN 即可整侧改色
+    expect(leadSlots(svg).map((item) => item.slot)).toEqual(["--t1", "--t2", "--t3"]);
+    // 锚点仍在（注入点只改了引线取色，几何未动）
+    expect(svg).toContain('terminal-id="t3" terminal-index="3"');
+  });
+
+  test("合并导出：symbol 定义里保留绕组槽，正文 use 网格不声明槽（回落字面色）", () => {
+    const result = buildSymbolExportSvg([libraryTemplate("ac-three-winding-transformer")], buildDeviceTemplateIconSvg);
+    const symbolSection = result.svg.slice(result.svg.indexOf("<defs"), result.svg.indexOf("</defs>"));
+    expect(circleSlots(symbolSection).map((item) => item.slot)).toEqual(["--t1", "--t2", "--t3"]);
+    const overview = result.svg.slice(result.svg.indexOf('<g id="Symbol_Overview_Layer">'));
+    expect(overview).not.toContain("--t1:");
+  });
+
+  test("单电端子的变压器族拿不到槽（能力依赖端子数据，非导出缺陷）", () => {
+    // ac-terminal-transformer-load 内置模板只有 1 个端子，画布电压模式下同样不产槽 —— 与导出口径一致。
+    const body = buildDeviceTemplateIconSvg(libraryTemplate("ac-terminal-transformer-load"));
+    expect(body).not.toContain("var(--t");
+    expect(body).toContain('data-export-source-terminal-count="1"');
+  });
+});
+
+describe("buildTemplateTerminalSlotPaint（槽构造器口径）", () => {
+  const paintOf = (template: DeviceTemplate, nodeFallback = "#2563eb") =>
+    buildTemplateTerminalSlotPaint(
+      createNodeFromTemplate(template, { x: 0, y: 0 }),
+      "energy",
+      DEFAULT_COLOR_PALETTE,
+      nodeFallback
+    );
+
+  test("非变压器族返回 null（内部单色，不消耗槽）", () => {
+    expect(paintOf(templateOf({ kind: "anchor-probe" }))).toBeNull();
+  });
+
+  test("变压器族但电端子不足 2 个时返回 null（没有可区分的绕组）", () => {
+    expect(paintOf(templateOf({ kind: "ac-transformer", terminalCount: 1 }))).toBeNull();
+    // 双端子但都是非电端子（heat）→ 电端子表为空
+    expect(paintOf(templateOf({ kind: "ac-transformer", terminalTypes: ["heat", "heat"] }))).toBeNull();
+  });
+
+  test("多电端子变压器族：nodeRef 取 --t1，terminalRef 按电端子子序列序号给槽并带字面色兜底", () => {
+    const paint = paintOf(templateOf({ kind: "ac-transformer" }))!;
+    expect(paint.nodeRef).toBe("var(--t1, #2563eb)");
+    expect(paint.terminalRef("t1")).toBe("var(--t1, #2563eb)");
+    expect(paint.terminalRef("t2")).toBe("var(--t2, #2563eb)");
+    // 未知端子 id 不产槽（调用方据此回落字面色）
+    expect(paint.terminalRef("t9")).toBeUndefined();
+  });
+
+  test("槽序号 = 电端子子序列序号：夹在中间的非电端子不占槽位，也不指向未声明的槽", () => {
+    // 与画布 nodeVoltageSlotDeclarations 同基数（svg.ts 的 slotTerminals 口径）。
+    const paint = paintOf(
+      templateOf({ kind: "ac-transformer", terminalCount: 3, terminalTypes: ["heat", "ac", "ac"] })
+    )!;
+    expect(paint.terminalRef("t1")).toBeUndefined();
+    expect(paint.terminalRef("t2")).toBe("var(--t1, #2563eb)");
+    expect(paint.terminalRef("t3")).toBe("var(--t2, #2563eb)");
+  });
+});
+
+describe("schema.json（E 文件表名 ↔ svg 映射）", () => {
+  test("条目与文件一一对应；kind → E 表名走 inferESection 同源映射（竖向变体归并基础 kind）", () => {
+    const templates = [
+      templateOf({ kind: "ac-breaker", label: "交流断路器" }),
+      templateOf({ kind: "ac-bus-vertical", label: "母线（竖向）" })
+    ];
+    const result = buildStandaloneSymbolExport(templates, (template) =>
+      SINGLE_STATE_SYMBOL_DOC.replaceAll("ac-breaker", template.kind).replaceAll("ACBreaker", template.kind.toUpperCase())
+    );
+    expect(result.files).toHaveLength(2);
+    expect(result.schema.version).toBe(1);
+    // svg 文件名与产物文件一一对应；kind/label 取模板字段
+    expect(result.schema.symbols.map((entry) => entry.svg)).toEqual(result.files.map((file) => file.fileName));
+    expect(result.schema.symbols.map((entry) => entry.kind)).toEqual(["ac-breaker", "ac-bus-vertical"]);
+    expect(result.schema.symbols[0].label).toBe("交流断路器");
+    expect(result.schema.symbols[1].label).toBe("母线（竖向）");
+    // E 表名与模型 E 导出同源：断路器 → ACBreak；竖向母线经 baseDeviceKind 归并 → ACRealBs
+    expect(result.schema.symbols.map((entry) => entry.eTable)).toEqual(["ACBreak", "ACRealBs"]);
+    // 固定文件名是 zip 消费端（自动成图）的取用契约
+    expect(STANDALONE_SCHEMA_FILE_NAME).toBe("schema.json");
+  });
+
+  test("多状态图元：每状态一条映射，eTable/kind/label 相同而 svg 名各异", () => {
+    const breaker = templateOf({
+      kind: "ac-breaker",
+      label: "交流断路器",
+      stateDefinitions: [{ value: "0", name: "分" }, { value: "1", name: "合" }]
+    });
+    const result = buildStandaloneSymbolExport([breaker], () => STATIC_SYMBOL_DOC);
+    expect(result.files).toHaveLength(2);
+    expect(result.schema.symbols).toHaveLength(2);
+    for (const entry of result.schema.symbols) {
+      expect(entry.kind).toBe("ac-breaker");
+      expect(entry.eTable).toBe("ACBreak");
+      expect(entry.label).toBe("交流断路器");
+    }
+    expect(result.schema.symbols.map((entry) => entry.svg)).toEqual(result.files.map((file) => file.fileName));
+  });
+
+  test("无对应 E 表的图元 eTable 为空串（字段保留，消费端按空值跳过）", () => {
+    const probe = templateOf({ kind: "schema-probe-kind", label: "探测图元" });
+    const result = buildStandaloneSymbolExport([probe], () =>
+      SINGLE_STATE_SYMBOL_DOC.replaceAll("ac-breaker", "schema-probe-kind").replaceAll("ACBreaker", "SCHEMAPROBE")
+    );
+    expect(result.files).toHaveLength(1);
+    expect(result.schema.symbols).toEqual([
+      { svg: result.files[0].fileName, eTable: "", kind: "schema-probe-kind", label: "探测图元" }
+    ]);
   });
 });
 

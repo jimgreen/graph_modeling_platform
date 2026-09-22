@@ -42,7 +42,7 @@ import {
   fetchBackendSchemes,
   renderEnumValuesEditor
 } from "./appExtracted/appPersistenceLibraryExport";
-import { applyDeviceTemplateDefinitionOverride, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY } from "./model";
+import { applyDeviceTemplateDefinitionOverride, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, type DeviceTemplate } from "./model";
 import { deviceDefinitionOverrideForTemplate, deviceDefinitionSharedKeyForTemplate } from "./customDeviceUtils";
 import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import { svgSourceFromDataUrl } from "./stateIconDrawing";
@@ -1088,6 +1088,37 @@ describe("graph template library filtering", () => {
     } as any;
 
     expect(libraryTemplateMatchesSearch(template, "交流设备", "ACLoad", "user-ac-load")).toBe(true);
+  });
+
+  test("图元库搜索框（rootComponentLibraryGroupsForDisplay）支持按 kind 检索内置图元", () => {
+    const grouped = groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(DEVICE_LIBRARY, []);
+    // 图元库面板「类别库行」可见性判定，与 appStateBatch.tsx 的 displayedCategoryLibraries 同式
+    const visibleCategoryLibraries = (needle: string) =>
+      Object.keys(grouped).filter((group) =>
+        rootComponentLibraryGroupsForDisplay(group, grouped[group] ?? [], [], needle).length > 0
+      );
+    // 行内图元清单，与 appRenderBatch.tsx:3195 渲染前调用的同一个函数
+    const kindsFor = (group: string, needle: string) =>
+      rootComponentLibraryGroupsForDisplay(group, grouped[group] ?? [], [], needle)
+        .flatMap((typeGroup) => typeGroup.templates.map((template: DeviceTemplate) => template.kind));
+
+    // 用户口径的 kind 形式：ac-electrolyzer 命中「氢能设备」，并连带其竖向变体
+    expect(visibleCategoryLibraries("ac-electrolyzer")).toEqual(["氢能设备"]);
+    expect(kindsFor("氢能设备", "ac-electrolyzer")).toEqual([
+      "ac-electrolyzer",
+      "ac-electrolyzer-vertical"
+    ]);
+    // 中文名（类显示名）与 E 段名（类英文名，即 AcE2Hydro）同样可搜，三种形式等价
+    expect(visibleCategoryLibraries("交流电制氢")).toEqual(visibleCategoryLibraries("ac-electrolyzer"));
+    expect(visibleCategoryLibraries("AcE2Hydro")).toEqual(visibleCategoryLibraries("ac-electrolyzer"));
+    // 模板级匹配器与【元件定义】弹框共用（filterCategoryLibraryComponentLibraryGroups 内部同源），
+    // 故 kind 在两处口径一致 —— 图元库侧无需另写一套搜索。
+    const electrolyzer = DEVICE_LIBRARY.find((template) => template.kind === "ac-electrolyzer")!;
+    expect(libraryTemplateMatchesSearch(electrolyzer, "氢能设备", "AcE2Hydro", "ac-electrolyzer")).toBe(true);
+    // 注意：该匹配器的 needle 必须是「已归一化」的小写串（只有候选值会被归一化），
+    // 面板侧由 rootComponentLibraryGroupsForDisplay 内部完成归一化。
+    expect(libraryTemplateMatchesSearch(electrolyzer, "氢能设备", "AcE2Hydro", "ace2hydro")).toBe(true);
+    expect(libraryTemplateMatchesSearch(electrolyzer, "氢能设备", "AcE2Hydro", "AcE2Hydro")).toBe(false);
   });
 
   test("migrates legacy derived templates without an explicit derived flag into the base component library", () => {
