@@ -201,9 +201,10 @@ describe("renderStandaloneSymbolExportZip（独立图元 SVG）", () => {
 
     const zip = new AdmZip(result.buffer);
     const entries = zip.getEntries();
-    expect(entries.length).toBe(result.fileCount);
+    const svgEntries = entries.filter((entry) => entry.entryName.endsWith(".svg"));
+    expect(svgEntries.length).toBe(result.fileCount);
     // 条目名必须是安全 basename：不含路径分隔符，也不可能穿越出解压根目录
-    for (const entry of entries) {
+    for (const entry of svgEntries) {
       expect(entry.entryName).not.toContain("/");
       expect(entry.entryName).not.toContain("\\");
       expect(entry.entryName).not.toContain("..");
@@ -214,8 +215,30 @@ describe("renderStandaloneSymbolExportZip（独立图元 SVG）", () => {
       expect(text).not.toMatch(/<defs\b/u);
       expect(text).not.toMatch(/<use\b/u);
     }
+    // schema.json：E 表名 ↔ svg ↔ 设备类型 ↔ 中文名 的映射，条目与 svg 一一对应
+    const schemaEntry = entries.find((entry) => entry.entryName === "schema.json");
+    expect(schemaEntry).toBeDefined();
+    const schema = JSON.parse(schemaEntry.getData().toString("utf-8"));
+    expect(schema.version).toBe(1);
+    expect(schema.symbols).toHaveLength(svgEntries.length);
+    for (const symbol of schema.symbols) {
+      expect(svgEntries.some((entry) => entry.entryName === symbol.svg)).toBe(true);
+      expect(typeof symbol.kind).toBe("string");
+      expect(typeof symbol.label).toBe("string");
+    }
+    // E 表名走 inferESection 同源映射：母线 → ACRealBs，负荷 → ACLoad
+    const eTableByKind = Object.fromEntries(schema.symbols.map((symbol) => [symbol.kind, symbol.eTable]));
+    expect(eTableByKind["ac-bus"]).toBe("ACRealBs");
+    expect(eTableByKind["ac-load"]).toBe("ACLoad");
+    // 端子附着几何随独立件一同导出：ac-load 有端子 → 既要有锚点，也要有「锚点 → 本体」引线
+    // （图元正文导出时端子被清空，两者都由 symbol 导出层补画；只补锚点即「锚点悬空」回归）
+    const loadEntry = svgEntries.find((entry) => entry.entryName === "ac-load.svg");
+    expect(loadEntry).toBeDefined();
+    const loadText = loadEntry.getData().toString("utf-8");
+    expect(loadText).toContain('class="terminal terminal-anchor"');
+    expect(loadText).toMatch(/<line x1="[-\d.]+" y1="[-\d.]+" x2="0" y2="0"/u);
     // ZIP 必须真的能被 adm-zip 读回（顺带验证 CRC/中央目录没写坏）
-    expect(zip.getEntries().length).toBeGreaterThan(0);
+    expect(entries.length).toBeGreaterThan(0);
   });
 
   test("多状态图元每状态各一份文件，两态正文不同（开/合不能同形）", async () => {
@@ -225,8 +248,15 @@ describe("renderStandaloneSymbolExportZip（独立图元 SVG）", () => {
     expect(result.fileCount).toBeGreaterThanOrEqual(2);
 
     const zip = new AdmZip(result.buffer);
-    const texts = zip.getEntries().map((entry) => entry.getData().toString("utf-8"));
+    const svgEntries = zip.getEntries().filter((entry) => entry.entryName.endsWith(".svg"));
+    const texts = svgEntries.map((entry) => entry.getData().toString("utf-8"));
     expect(new Set(texts).size).toBe(texts.length);
+    // schema.json 覆盖全部状态文件，且每个 svg 名只出现一次
+    const schemaEntry = zip.getEntries().find((entry) => entry.entryName === "schema.json");
+    expect(schemaEntry).toBeDefined();
+    const schema = JSON.parse(schemaEntry.getData().toString("utf-8"));
+    expect(schema.symbols).toHaveLength(svgEntries.length);
+    expect(new Set(schema.symbols.map((symbol) => symbol.svg)).size).toBe(schema.symbols.length);
   });
 
   test("与合并导出各自独立：同一次选择不会把 symbol 集合件的包装带进独立文件", async () => {
@@ -276,7 +306,10 @@ describe(`HTTP POST ${apiPath("/symbol-export-standalone")}`, () => {
     // ZIP 魔数 PK\x03\x04
     expect(buffer.subarray(0, 4).toString("binary")).toBe("PK\u0003\u0004");
     const zip = new AdmZip(buffer);
-    expect(zip.getEntries().length).toBe(Number(response.headers.get("x-symbol-export-file-count")));
+    // fileCount 只统计 svg 图元文件；schema.json 是随包元数据，不计入
+    const svgEntries = zip.getEntries().filter((entry) => entry.entryName.endsWith(".svg"));
+    expect(svgEntries.length).toBe(Number(response.headers.get("x-symbol-export-file-count")));
+    expect(zip.getEntries().some((entry) => entry.entryName === "schema.json")).toBe(true);
   });
 
   test("单图元返回 200 + svg，而不是 ZIP", async () => {
