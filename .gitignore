@@ -21,7 +21,7 @@ Thumbs.db
 .sisyphus
 claudedocs
 
-# 本地噪声 / 生成产物（勿提交）
+# 本地噪声  /  生成产物（勿提交）
 .workbuddy/
 output/
 nul
