@@ -1,8 +1,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createAutoAlignCanvasGraphics } from "./appExtracted/appProjectCanvasFactories";
+import { runAutoAlignPlanInWorker } from "./autoAlign/autoAlignClient";
 import { autoAlignEdgeWithoutStoredRoute, autoAlignStoredRouteDrops } from "./selectionActions";
 import { routeEdgesForStoredRendering, type Edge, type ModelNode } from "./model";
+
+vi.mock("./autoAlign/autoAlignClient", () => ({
+  runAutoAlignPlanInWorker: vi.fn()
+}));
+
+const runPlan = vi.mocked(runAutoAlignPlanInWorker);
 
 const PROJECT_FILE = "data/schemes/files/标准案例/子方案/多能流.json";
 const projectAvailable = existsSync(PROJECT_FILE);
@@ -18,37 +25,45 @@ describe("canvas automatic grid alignment", () => {
     }
   });
 
-  test("uses the configured value as grid spacing and reports the grid alignment", () => {
+  test("uses the configured value as grid spacing and reports the grid alignment", async () => {
     const prompt = vi.fn(() => "50");
     (globalThis as { window?: unknown }).window = { prompt };
     const nodes = [
       { id: "node-1", kind: "device", position: { x: 112, y: 113 } },
       { id: "node-2", kind: "device", position: { x: 118, y: 119 } }
     ];
-    const layoutUnits = nodes.map((node) => ({ id: `node:${node.id}`, nodeIds: [node.id] }));
     const arranged = nodes.map((node, index) => ({
       ...node,
       position: { x: 100 + index * 50, y: 100 }
     }));
-    const autoAlignNodeLayoutUnits = vi.fn(() => arranged);
+    runPlan.mockResolvedValue({
+      arranged,
+      nodeIds: ["node-1", "node-2"],
+      layoutUnitCount: 2,
+      storedRouteDrops: [],
+      qualityReport: {
+        verifiedCandidateCount: 0,
+        bendRejectedCount: 0,
+        crossingRejectedCount: 0,
+        frozenUnitCount: 0,
+        degraded: false,
+        revertedByVerification: false
+      }
+    } as any);
     const commitLayoutNodePositions = vi.fn(() => 2);
     const writeOperationLog = vi.fn();
 
-    createAutoAlignCanvasGraphics({
+    await createAutoAlignCanvasGraphics({
       AUTO_ALIGN_DEFAULT_THRESHOLD_PX: 50,
       AUTO_ALIGN_MAX_THRESHOLD_PX: 200,
       AUTO_ALIGN_MIN_THRESHOLD_PX: 5,
       activeLayerEdges: [],
       activeLayerGroups: [],
       activeLayerNodes: nodes,
-      autoAlignNodeLayoutUnits,
-      buildCanvasLayoutUnits: vi.fn(() => layoutUnits),
       canvasBounds: { width: 800, height: 600 },
-      clampNumber: (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value)),
       commitLayoutNodePositions,
       edges: [],
       editModeRouteRenderOptions: { preserveManualRouteDisplay: true },
-      isCanvasNodeMovable: () => true,
       nodes,
       readjustActiveLayerBusEndpointRoutes: vi.fn(() => 0),
       requireEditMode: () => true,
@@ -57,15 +72,13 @@ describe("canvas automatic grid alignment", () => {
     } as any)();
 
     expect(prompt).toHaveBeenCalledWith("请输入自动对齐网格间距（5-200px）", "50");
-    // 第三参数为网格间距,第四参数为「线路拐点/交叉不增加」约束上下文:
-    // 候选判定用内置快速代理,画布路由器只作为终检(verifyRouteEdges)传进去。
-    expect(autoAlignNodeLayoutUnits).toHaveBeenCalledWith(nodes, layoutUnits, 50, expect.objectContaining({
+    expect(runPlan).toHaveBeenCalledWith(expect.objectContaining({
+      nodes,
+      activeLayerNodes: nodes,
+      gridSpacing: 50,
       edges: [],
-      routedEdges: [],
-      verifyRouteEdges: expect.any(Function),
-      report: expect.objectContaining({ frozenUnitCount: 0, degraded: false, revertedByVerification: false })
+      routedEdges: []
     }));
-    // 第三参数除「母线落点重算」外还带 `storedRouteDrops`(失效存档折线,与终检同口径),此处只钉关键项
     expect(commitLayoutNodePositions).toHaveBeenCalledWith(["node-1", "node-2"], arranged, expect.objectContaining({ readjustBusEndpoints: true }));
     expect(writeOperationLog).toHaveBeenCalledWith("自动对齐 2 个图元，网格间距 50px");
   });
@@ -80,7 +93,7 @@ describe("canvas automatic grid alignment", () => {
    * 「端点有效、中间绕路」的存档折线,让编排层真的走到清理分支 —— 否则本用例会退化成空跑。
    */
   describe.skipIf(!projectAvailable)("stale stored polyline cleanup ordering", () => {
-    test("commits the move first and cleans stale polylines after, in one undo unit", () => {
+    test("commits the move first and cleans stale polylines after, in one undo unit", async () => {
       const raw = JSON.parse(readFileSync(PROJECT_FILE, "utf8"));
       const project = raw.project ?? raw;
       const projectNodes = project.nodes as ModelNode[];
@@ -141,15 +154,28 @@ describe("canvas automatic grid alignment", () => {
       // 设备不动,只清理这条失效存档折线:走的是 `movedCount === 0` 的清理分支,
       // 几何与构造时完全一致,判定稳定可复现。
       const arranged = nodes;
-      const expectedDropIds = autoAlignStoredRouteDrops(
+      const expectedDrops = autoAlignStoredRouteDrops(
         arranged,
         edges,
         new Set(edges.map((edge) => edge.id)),
         routeEdges
-      )
-        .map((drop) => drop.edgeId)
-        .sort();
+      );
+      const expectedDropIds = expectedDrops.map((drop) => drop.edgeId).sort();
       expect(expectedDropIds).toEqual([staleEdge.id]);
+      runPlan.mockResolvedValue({
+        arranged,
+        nodeIds: nodes.map((node) => node.id),
+        layoutUnitCount: 2,
+        storedRouteDrops: expectedDrops,
+        qualityReport: {
+          verifiedCandidateCount: 0,
+          bendRejectedCount: 0,
+          crossingRejectedCount: 0,
+          frozenUnitCount: 0,
+          degraded: false,
+          revertedByVerification: false
+        }
+      } as any);
 
       const order: string[] = [];
       const commitLayoutNodePositions = vi.fn((_ids: string[], _arranged: unknown, _options?: unknown) => {
@@ -162,7 +188,7 @@ describe("canvas automatic grid alignment", () => {
       });
       const writeOperationLog = vi.fn();
 
-      createAutoAlignCanvasGraphics({
+      await createAutoAlignCanvasGraphics({
         AUTO_ALIGN_DEFAULT_THRESHOLD_PX: 50,
         AUTO_ALIGN_MAX_THRESHOLD_PX: 200,
         AUTO_ALIGN_MIN_THRESHOLD_PX: 5,

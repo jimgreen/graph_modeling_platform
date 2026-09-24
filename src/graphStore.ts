@@ -58,13 +58,17 @@ export type GraphStorePatch = {
 };
 
 const GRAPH_NODE_SPATIAL_BUCKET_SIZE = 256;
+// seenById 是跨查询复用的去重标记表，只增不减（原实现仅 Number.isSafeInteger 溢出才清空，
+// 实际不可达）；被删除的节点不会清除残留 entry，画布长期编辑（图元反复建删）会无限累积。
+// 超过上限时清空重建：mark 归零后从 1 递增，旧 entry 已随 clear 消失，不存在 mark 撞号。
+const GRAPH_NODE_SPATIAL_SEEN_LIMIT = 16384;
 
 const nextSpatialQueryMark = (state: GraphSpatialQueryState) => {
-  state.mark += 1;
-  if (!Number.isSafeInteger(state.mark)) {
-    state.mark = 1;
+  if (state.seenById.size > GRAPH_NODE_SPATIAL_SEEN_LIMIT) {
     state.seenById.clear();
+    state.mark = 0;
   }
+  state.mark += 1;
   return state.mark;
 };
 

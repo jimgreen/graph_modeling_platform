@@ -29,15 +29,19 @@ export type RouteStore = {
 };
 
 const ROUTE_SPATIAL_BUCKET_SIZE = 320;
+// seenById 是跨查询复用的去重标记表，只增不减（原实现仅 Number.isSafeInteger 溢出才清空，
+// 实际不可达）；被删除的边不会清除残留 entry，画布长期编辑（临时边反复建删）会无限累积。
+// 超过上限时清空重建：mark 归零后从 1 递增，旧 entry 已随 clear 消失，不存在 mark 撞号。
+const ROUTE_SPATIAL_SEEN_LIMIT = 16384;
 
 const routeSpatialBucketKey = (x: number, y: number) => `${x}:${y}`;
 
 const nextRouteSpatialQueryMark = (state: RouteSpatialQueryState) => {
-  state.mark += 1;
-  if (!Number.isSafeInteger(state.mark)) {
-    state.mark = 1;
+  if (state.seenById.size > ROUTE_SPATIAL_SEEN_LIMIT) {
     state.seenById.clear();
+    state.mark = 0;
   }
+  state.mark += 1;
   return state.mark;
 };
 

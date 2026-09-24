@@ -196,9 +196,17 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
       resizeRef.current = null;
       document.removeEventListener("pointermove", handleMove);
       document.removeEventListener("pointerup", handleUp);
+      document.removeEventListener("pointercancel", handleUp);
     };
+    // 指针捕获：拖拽中指针移出窗口/失焦时 pointerup 仍必达（否则监听器与 resizeRef 残留泄漏）
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // 目标元素不支持捕获时退化为原始行为
+    }
     document.addEventListener("pointermove", handleMove);
     document.addEventListener("pointerup", handleUp);
+    document.addEventListener("pointercancel", handleUp);
   }, [colWidths]);
 
   const handleDoubleClickCell = useCallback((value: string) => {

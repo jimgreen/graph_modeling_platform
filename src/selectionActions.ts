@@ -1163,6 +1163,8 @@ export type AutoAlignQualityContext = {
   timeBudgetMs?: number;
   /** 出参:约束执行情况(供调用方写日志) */
   report?: AutoAlignQualityReport;
+  storedRouteDrops?: AutoAlignStoredRouteDrop[];
+  storedRouteDropsReady?: boolean;
 };
 
 type AutoAlignGridCandidate = {
@@ -1250,29 +1252,33 @@ export type AutoAlignStoredRouteDrop = {
  * 只比 `candidateEdgeIds` 里的边(调用方通常传「本次移动真会影响到的边」+ 基线集合),免得每次都全量比两遍。
  * 两遍都用 `routeEdges`(画布同一套参数的解析器)跑**完整边表**,保证与画布渲染同源。
  */
-export function autoAlignStoredRouteDrops(
+export type AutoAlignStoredRoutePlan = {
+  drops: AutoAlignStoredRouteDrop[];
+  preservedRoutes: readonly RoutedEdge[];
+  reroutedRoutes: readonly RoutedEdge[];
+};
+
+export function autoAlignStoredRoutePlan(
   nodes: readonly ModelNode[],
   edges: readonly Edge[],
   candidateEdgeIds: ReadonlySet<string>,
   routeEdges: (nodes: readonly ModelNode[], edges: readonly Edge[]) => readonly RoutedEdge[]
-): AutoAlignStoredRouteDrop[] {
+): AutoAlignStoredRoutePlan {
   if (candidateEdgeIds.size === 0 || edges.length === 0) {
-    return [];
+    return { drops: [], preservedRoutes: [], reroutedRoutes: [] };
   }
   const candidates = edges.filter((edge) => candidateEdgeIds.has(edge.id));
   if (candidates.length === 0) {
-    return [];
+    return { drops: [], preservedRoutes: [], reroutedRoutes: [] };
   }
   const candidateIds = new Set(candidates.map((edge) => edge.id));
   const reroutedEdges = edges.map((edge) =>
     candidateIds.has(edge.id) ? autoAlignEdgeWithoutStoredRoute(edge) : edge
   );
-  const preservedPoints = new Map(
-    routeEdges(nodes, edges).map((route) => [route.edgeId, route.points])
-  );
-  const reroutedPoints = new Map(
-    routeEdges(nodes, reroutedEdges).map((route) => [route.edgeId, route.points])
-  );
+  const preservedRoutes = routeEdges(nodes, edges);
+  const reroutedRoutes = routeEdges(nodes, reroutedEdges);
+  const preservedPoints = new Map(preservedRoutes.map((route) => [route.edgeId, route.points]));
+  const reroutedPoints = new Map(reroutedRoutes.map((route) => [route.edgeId, route.points]));
   const drops: AutoAlignStoredRouteDrop[] = [];
   for (const edge of candidates) {
     const preserved = preservedPoints.get(edge.id);
@@ -1284,7 +1290,16 @@ export function autoAlignStoredRouteDrops(
       drops.push({ edgeId: edge.id, points: rerouted });
     }
   }
-  return drops;
+  return { drops, preservedRoutes, reroutedRoutes };
+}
+
+export function autoAlignStoredRouteDrops(
+  nodes: readonly ModelNode[],
+  edges: readonly Edge[],
+  candidateEdgeIds: ReadonlySet<string>,
+  routeEdges: (nodes: readonly ModelNode[], edges: readonly Edge[]) => readonly RoutedEdge[]
+): AutoAlignStoredRouteDrop[] {
+  return autoAlignStoredRoutePlan(nodes, edges, candidateEdgeIds, routeEdges).drops;
 }
 
 /**
@@ -1329,6 +1344,81 @@ export function countAutoAlignRouteCrossings(routes: readonly (readonly Point[])
     }
   }
   return crossings;
+}
+
+export type AutoAlignRouteQualityIndex = {
+  quality(): AutoAlignRouteQuality;
+  routes(): RoutedEdge[];
+  replace(route: RoutedEdge): void;
+  remove(edgeId: string): void;
+};
+
+export function createAutoAlignRouteQualityIndex(routes: readonly RoutedEdge[]): AutoAlignRouteQualityIndex {
+  const routeById = new Map<string, RoutedEdge>();
+  const bendById = new Map<string, number>();
+  const pairById = new Map<string, Map<string, number>>();
+  let bendTotal = 0;
+  let crossingTotal = 0;
+
+  const pairKey = (first: string, second: string) => first < second ? [first, second] as const : [second, first] as const;
+  const pairCount = (first: string, second: string) => {
+    if (first === second) return 0;
+    const [left, right] = pairKey(first, second);
+    return pairById.get(left)?.get(right) ?? 0;
+  };
+  const setPairCount = (first: string, second: string, value: number) => {
+    if (first === second) return;
+    const [left, right] = pairKey(first, second);
+    let pairs = pairById.get(left);
+    if (!pairs) {
+      pairs = new Map<string, number>();
+      pairById.set(left, pairs);
+    }
+    pairs.set(right, value);
+  };
+  const addRoute = (route: RoutedEdge) => {
+    routeById.set(route.edgeId, route);
+    if (route.points.length < 2) return;
+    const bends = countAutoAlignRouteBends(route.points);
+    bendById.set(route.edgeId, bends);
+    bendTotal += bends;
+    for (const [edgeId, other] of routeById) {
+      if (edgeId === route.edgeId || other.points.length < 2) continue;
+      const crossings = countAutoAlignRoutePairCrossings(route.points, other.points);
+      if (crossings === 0) continue;
+      setPairCount(route.edgeId, edgeId, crossings);
+      crossingTotal += crossings;
+    }
+  };
+  const removeRoute = (edgeId: string) => {
+    const previous = routeById.get(edgeId);
+    if (!previous) return;
+    for (const otherId of routeById.keys()) {
+      if (otherId === edgeId) continue;
+      const crossings = pairCount(edgeId, otherId);
+      if (crossings === 0) continue;
+      crossingTotal -= crossings;
+      setPairCount(edgeId, otherId, 0);
+    }
+    bendTotal -= bendById.get(edgeId) ?? 0;
+    bendById.delete(edgeId);
+    routeById.delete(edgeId);
+  };
+
+  for (const route of routes) {
+    if (routeById.has(route.edgeId)) removeRoute(route.edgeId);
+    addRoute(route);
+  }
+
+  return {
+    quality: () => ({ bends: bendTotal, crossings: crossingTotal }),
+    routes: () => [...routeById.values()],
+    replace: (route) => {
+      removeRoute(route.edgeId);
+      addRoute(route);
+    },
+    remove: removeRoute
+  };
 }
 
 function autoAlignEdgesByNodeId(edges: readonly Edge[]): Map<string, Edge[]> {
@@ -1633,6 +1723,12 @@ export function autoAlignNodeLayoutUnits(
   if (report) {
     Object.assign(report, createAutoAlignQualityReport());
   }
+  const clearStoredRouteDrops = () => {
+    if (quality.storedRouteDrops) {
+      quality.storedRouteDrops.splice(0, quality.storedRouteDrops.length);
+    }
+    quality.storedRouteDropsReady = false;
+  };
   const qualityEdges = quality.edges ?? [];
   const qualityEdgesByNodeId = autoAlignEdgesByNodeId(qualityEdges);
   const candidateCheckLimit = Math.max(1, Math.round(quality.maxCandidateChecksPerUnit ?? AUTO_ALIGN_DEFAULT_CANDIDATE_CHECKS));
@@ -1641,7 +1737,6 @@ export function autoAlignNodeLayoutUnits(
   // 候选判定一律走快速代理(缺省内置);真路由器只留给终检
   const previewRouteEdges = quality.routeEdges ?? autoAlignPreviewRoutes;
 
-  /** 一组线路几何的质量:拐点数 + 严格交叉数。 */
   const routeQualityOf = (routes: Iterable<readonly Point[]>): AutoAlignRouteQuality => {
     const list = [...routes].filter((points) => points.length >= 2);
     return {
@@ -1649,7 +1744,6 @@ export function autoAlignNodeLayoutUnits(
       crossings: countAutoAlignRouteCrossings(list)
     };
   };
-  /** 判定几何重算:累计耗时(供预算降级)与「已试算候选数」(供日志说明)。 */
   const previewRoutesOf = (state: ModelNode[], edges: readonly Edge[]): readonly RoutedEdge[] => {
     const startedAt = Date.now();
     const routes = previewRouteEdges(state, edges);
@@ -1659,27 +1753,48 @@ export function autoAlignNodeLayoutUnits(
     }
     return routes;
   };
-  const writeRoutes = (target: Map<string, readonly Point[]>, routes: readonly RoutedEdge[]) => {
-    for (const route of routes) {
-      if (route.points.length >= 2) {
-        target.set(route.edgeId, route.points);
-      } else {
-        target.delete(route.edgeId);
-      }
-    }
-  };
-
-  // 判定几何统一走「代理」:先把 edges 之外还画着的线路(如 inherited 连线)放进来,再用代理重算全部参与判定的边,
-  // 保证基线与候选是同一把尺子量出来的。
   const routePointsByEdgeId = new Map<string, readonly Point[]>();
   for (const route of quality.routedEdges ?? []) {
     if (route.points.length >= 2) {
       routePointsByEdgeId.set(route.edgeId, route.points);
     }
   }
-  writeRoutes(routePointsByEdgeId, previewRouteEdges(nodes, qualityEdges));
-  /** 约束上限:对齐后的全图拐点 / 交叉都不得超过初始布局 */
-  const baselineQuality = routeQualityOf(routePointsByEdgeId.values());
+  for (const route of previewRouteEdges(nodes, qualityEdges)) {
+    if (route.points.length >= 2) {
+      routePointsByEdgeId.set(route.edgeId, route.points);
+    } else {
+      routePointsByEdgeId.delete(route.edgeId);
+    }
+  }
+  const routeQualityIndex = createAutoAlignRouteQualityIndex(
+    [...routePointsByEdgeId].map(([edgeId, points]) => ({ edgeId, points: [...points], path: "" }))
+  );
+  const applyPreviewRoutes = (routes: readonly RoutedEdge[]) => {
+    const previous = new Map<string, readonly Point[] | undefined>();
+    for (const route of routes) {
+      previous.set(route.edgeId, routePointsByEdgeId.get(route.edgeId));
+      if (route.points.length >= 2) {
+        routePointsByEdgeId.set(route.edgeId, route.points);
+        routeQualityIndex.replace(route);
+      } else {
+        routePointsByEdgeId.delete(route.edgeId);
+        routeQualityIndex.remove(route.edgeId);
+      }
+    }
+    return () => {
+      for (const route of routes) {
+        const points = previous.get(route.edgeId);
+        if (points) {
+          routePointsByEdgeId.set(route.edgeId, points);
+          routeQualityIndex.replace({ edgeId: route.edgeId, points: [...points], path: "" });
+        } else {
+          routePointsByEdgeId.delete(route.edgeId);
+          routeQualityIndex.remove(route.edgeId);
+        }
+      }
+    };
+  };
+  const baselineQuality = routeQualityIndex.quality();
 
   const originalPositionByNodeId = new Map(nodes.map((node) => [node.id, node.position]));
   const unitIdByNodeId = new Map<string, string>();
@@ -1768,7 +1883,7 @@ export function autoAlignNodeLayoutUnits(
       }
       if (metricEdges.length > 0) {
         // 邻居此刻并没有真的跟着预演位置移动,所以回写线路几何必须按「真实落点」重算
-        writeRoutes(routePointsByEdgeId, previewRoutesOf(working, metricEdges));
+        applyPreviewRoutes(previewRoutesOf(working, metricEdges));
       }
     };
 
@@ -1839,9 +1954,10 @@ export function autoAlignNodeLayoutUnits(
         continue;
       }
       // 约束二:重算本单元与邻居的线路,与其余线路合成「全图几何」,拐点 / 交叉任一超过初始布局即否决
-      const trialRoutes = new Map(routePointsByEdgeId);
-      writeRoutes(trialRoutes, previewRoutesOf(state, metricEdges));
-      const candidateQuality = routeQualityOf(trialRoutes.values());
+      const trialRoutes = previewRoutesOf(state, metricEdges);
+      const undoTrial = applyPreviewRoutes(trialRoutes);
+      const candidateQuality = routeQualityIndex.quality();
+      undoTrial();
       if (candidateQuality.bends > baselineQuality.bends) {
         if (report) {
           report.bendRejectedCount += 1;
@@ -1879,21 +1995,17 @@ export function autoAlignNodeLayoutUnits(
         }
         const metricEdges = autoAlignUnitEdges(unit, qualityEdgesByNodeId).filter((edge) => autoAlignEdgeHasEndpoints(edge, nodeById));
         const state = applyAutoAlignUnitDelta(working, unit, { x: -delta.x, y: -delta.y });
-        const trialRoutes = new Map(routePointsByEdgeId);
-        if (metricEdges.length > 0) {
-          writeRoutes(trialRoutes, previewRoutesOf(state, metricEdges));
-        }
-        const before = routeQualityOf(routePointsByEdgeId.values());
-        const after = routeQualityOf(trialRoutes.values());
+        const before = routeQualityIndex.quality();
+        const trialRoutes = metricEdges.length > 0 ? previewRoutesOf(state, metricEdges) : [];
+        const undoTrial = applyPreviewRoutes(trialRoutes);
+        const after = routeQualityIndex.quality();
+        undoTrial();
         if (!autoAlignScoreIsBetter([after.bends, after.crossings], [before.bends, before.crossings])) {
           continue;
         }
         working = state;
         deltas.delete(unit.id);
-        routePointsByEdgeId.clear();
-        for (const [edgeId, points] of trialRoutes) {
-          routePointsByEdgeId.set(edgeId, points);
-        }
+        applyPreviewRoutes(trialRoutes);
         revertedAny = true;
       }
       if (!revertedAny) {
@@ -1928,16 +2040,16 @@ export function autoAlignNodeLayoutUnits(
      * 都要跑两遍全量路由,候选集只决定事后比较哪些边。
      */
     const measureAuthoritative = (state: ModelNode[]) => {
-      const dropIds = new Set(
-        autoAlignStoredRouteDrops(state, qualityEdges, qualityEdgeIds, authoritativeRouteEdges)
-          .map((drop) => drop.edgeId)
-      );
-      const routeEdgesToMeasure = dropIds.size === 0
-        ? qualityEdges
-        : qualityEdges.map((edge) => (dropIds.has(edge.id) ? autoAlignEdgeWithoutStoredRoute(edge) : edge));
-      const startedAt = Date.now();
-      const routes = authoritativeRouteEdges(state, routeEdgesToMeasure);
-      qualityElapsedMs += Date.now() - startedAt;
+      const routePlan = autoAlignStoredRoutePlan(state, qualityEdges, qualityEdgeIds, authoritativeRouteEdges);
+      if (quality.storedRouteDrops) {
+        quality.storedRouteDrops.splice(0, quality.storedRouteDrops.length, ...routePlan.drops);
+        quality.storedRouteDropsReady = true;
+      }
+      const dropIds = new Set(routePlan.drops.map((drop) => drop.edgeId));
+      const reroutedById = new Map(routePlan.reroutedRoutes.map((route) => [route.edgeId, route]));
+      const routes = dropIds.size === 0
+        ? routePlan.preservedRoutes
+        : routePlan.preservedRoutes.map((route) => dropIds.has(route.edgeId) ? reroutedById.get(route.edgeId) ?? route : route);
       return routeQualityOf(routes.map((route) => route.points));
     };
     const beforeQuality = measureAuthoritative(nodes);
@@ -1977,9 +2089,11 @@ export function autoAlignNodeLayoutUnits(
         report.frozenUnitCount += revertedCount;
       }
       if (deltas.size === 0) {
+        clearStoredRouteDrops();
         return nodes;
       }
       if (isWorseThanOriginal(afterQuality)) {
+        clearStoredRouteDrops();
         if (report) {
           report.revertedByVerification = true;
         }

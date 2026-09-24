@@ -65,6 +65,7 @@ import {
 import {
   type GraphStore
 } from "../graphStore";
+import { createMemoryWatchCallback } from "../memoryWatch";
 import {
   expandSelectionByGroups,
   type CanvasLayoutUnit,
@@ -728,6 +729,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   useEffect(createAppHookCallback89(__appScope), []);
   useEffect(createAppHookCallback90(__appScope), [contextMenu]);
   useEffect(createAppHookCallback91(__appScope), []);
+  // 内存守望：堆逼近 2GB 时逐级释放撤销历史 / 自动刷新兜底（见 src/memoryWatch.ts 头注）
+  useEffect(createMemoryWatchCallback(__appScope), []);
   const persistRefreshRecoveryNow = createPersistRefreshRecoveryNow(__appScope); Object.assign(__appScope, { persistRefreshRecoveryNow });
   useEffect(createAppHookCallback92(__appScope), [saveRequired]);
   useEffect(createAppHookCallback93(__appScope), [hasUnsavedChanges]);
