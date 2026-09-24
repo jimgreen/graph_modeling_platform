@@ -48,6 +48,24 @@ vi.mock("./spaceSwitch", async (importOriginal) => ({
   switchToSpace: switchToSpaceMock
 }));
 
+// 自动对齐的 Worker 计划:真跑会牵动整条线路重算链,难以稳定构造「各类质量结局」。
+// 只包一层可编程 spy(默认行为=真实现),既不改变其余用例的依赖树,又能按需注入质量报告。
+const runAutoAlignPlanInWorkerMock = vi.hoisted(() => {
+  const real = { fn: null as null | ((...args: unknown[]) => unknown) };
+  const spy = vi.fn((...args: unknown[]) => {
+    if (!real.fn) {
+      throw new Error("autoAlignPlan real implementation not loaded");
+    }
+    return real.fn(...args);
+  });
+  return { spy, real };
+});
+vi.mock("./autoAlign/autoAlignClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./autoAlign/autoAlignClient")>();
+  runAutoAlignPlanInWorkerMock.real.fn = actual.runAutoAlignPlanInWorker as (...args: unknown[]) => unknown;
+  return { ...actual, runAutoAlignPlanInWorker: runAutoAlignPlanInWorkerMock.spy };
+});
+
 describe("跨模型告警定位的未保存修改衔接", () => {
   test("当前模型无未保存修改时，加载目标模型后执行定位回调", async () => {
     const onLoaded = vi.fn();
@@ -2374,7 +2392,7 @@ describe("容器整体参与布局", () => {
     expect([...commits[0].ids].sort()).toEqual(["m1", "m2"]);
   });
 
-  test("自动对齐两阶段:容器内成员先自对齐,容器再作为整体参与(整组平移)", () => {
+  test("自动对齐两阶段:容器内成员先自对齐,容器再作为整体参与(整组平移)", async () => {
     vi.stubGlobal("window", { prompt: () => "50" });
     try {
       const nodes = [container(525, 400), device("m1", 500, 400, "c1"), device("m2", 600, 400, "c1"), device("o1", 1500, 400)];
@@ -2385,9 +2403,12 @@ describe("容器整体参与布局", () => {
         AUTO_ALIGN_MIN_THRESHOLD_PX,
         activeLayerEdges: [],
         activeLayerGroups: [],
-        activeLayerNodes: nodes,
-        autoAlignNodeLayoutUnits,
-        buildCanvasLayoutUnits,
+         activeLayerNodes: nodes,
+         autoAlignNodeLayoutUnits,
+         buildCanvasLayoutUnits,
+         canvasBounds: { width: 2000, height: 1200 },
+         edges: [],
+         editModeRouteRenderOptions: { preserveManualRouteDisplay: true },
         commitLayoutNodePositions: (ids: string[], arranged: any[]) => {
           commits.push({ ids, arranged });
           return ids.length;
@@ -2400,7 +2421,7 @@ describe("容器整体参与布局", () => {
         writeOperationLog: vi.fn()
       };
 
-      createAutoAlignCanvasGraphics(scope as any)();
+       await createAutoAlignCanvasGraphics(scope as any)();
 
       expect([...commits[0].ids].sort()).toEqual(["c1", "m1", "m2", "o1"]);
       const byId = new Map<string, any>(commits[0].arranged.map((node: any) => [node.id, node]));
@@ -2453,5 +2474,237 @@ describe("容器整体参与布局", () => {
     // 容器整组平移:成员相对容器的位置不变
     expect(byId.get("m1")!.position.x - byId.get("c1")!.position.x).toBe(-25);
     expect(byId.get("m2")!.position.x - byId.get("c1")!.position.x).toBe(75);
+  });
+});
+
+// 自动对齐/自动散开结束后的浮动提示:状态栏日志与浮窗文案必须**同源**(同一字符串),
+// 且提示入口优先取 scope 上的 showGlobalMessage(带类型),不可用时回落 globalThis。
+// 历史坑:这两条路径只写状态栏,用户看不到浮动反馈。
+describe("自动对齐/自动散开的浮动提示", () => {
+  const nodesForToast = () => [
+    { id: "node-1", kind: "device", position: { x: 100, y: 100 } },
+    { id: "node-2", kind: "device", position: { x: 100, y: 100 } }
+  ];
+
+  test("自动散开结束时弹出浮动提示,文案与状态栏日志逐字一致", () => {
+    const nodes = nodesForToast();
+    const arranged = [nodes[0], { ...nodes[1], position: { x: 160, y: 100 } }];
+    const layoutUnits = nodes.map((node) => ({ nodeIds: [node.id] }));
+    const writeOperationLog = vi.fn();
+    const showGlobalMessage = vi.fn();
+    const scope = {
+      activeLayerEdges: [],
+      activeLayerGroups: [],
+      activeLayerNodes: nodes,
+      autoSpreadNodeLayoutUnits: vi.fn(() => arranged),
+      buildCanvasLayoutUnits: vi.fn(() => layoutUnits),
+      canvasBounds: { width: 1000, height: 800 },
+      commitLayoutNodePositions: vi.fn(() => 1),
+      includeMeasurementGroupBounds: vi.fn(),
+      isCanvasNodeMovable: () => true,
+      nodes,
+      requireEditMode: () => true,
+      routedEdges: [],
+      showGlobalMessage,
+      writeOperationLog
+    };
+
+    createAutoSpreadCanvasGraphics(scope as any)();
+
+    const logMessage = writeOperationLog.mock.calls[0][0];
+    const toastMessage = showGlobalMessage.mock.calls[0][0];
+    expect(logMessage).toBe("自动散开 1 个图元");
+    // 同源:浮窗文案不允许是状态栏文案的另一份手写副本
+    expect(toastMessage).toBe(logMessage);
+    expect(showGlobalMessage.mock.calls[0][1]).toBe("info");
+  });
+
+  test("自动散开无可调整图元时提示否定结局(error),与成功路径区分", () => {
+    const nodes = nodesForToast();
+    const writeOperationLog = vi.fn();
+    const showGlobalMessage = vi.fn();
+    const scope = {
+      activeLayerEdges: [],
+      activeLayerGroups: [],
+      activeLayerNodes: nodes,
+      // 布局单元为空且无量测增量 → 走「没有发现可调整的图元」中止分支
+      buildCanvasLayoutUnits: vi.fn(() => []),
+      canvasBounds: { width: 1000, height: 800 },
+      commitLayoutNodePositions: vi.fn(() => 0),
+      includeMeasurementGroupBounds: vi.fn(),
+      isCanvasNodeMovable: () => true,
+      nodes,
+      requireEditMode: () => true,
+      routedEdges: [],
+      showGlobalMessage,
+      writeOperationLog
+    };
+
+    createAutoSpreadCanvasGraphics(scope as any)();
+
+    expect(writeOperationLog).toHaveBeenCalledWith("自动散开没有发现可调整的图元");
+    expect(showGlobalMessage).toHaveBeenCalledWith("自动散开没有发现可调整的图元", "error", 4000);
+  });
+
+  test("自动对齐结束时弹出浮动提示,与状态栏日志同源", async () => {
+    vi.stubGlobal("window", { prompt: () => "50" });
+    try {
+      const nodes = [
+        { id: "m1", kind: "device", position: { x: 100, y: 100 } },
+        { id: "m2", kind: "device", position: { x: 400, y: 200 } }
+      ];
+      const writeOperationLog = vi.fn();
+      const showGlobalMessage = vi.fn();
+      const scope = {
+        AUTO_ALIGN_DEFAULT_THRESHOLD_PX,
+        AUTO_ALIGN_MAX_THRESHOLD_PX,
+        AUTO_ALIGN_MIN_THRESHOLD_PX,
+        activeLayerEdges: [],
+        activeLayerGroups: [],
+        activeLayerNodes: nodes,
+        canvasBounds: { width: 2000, height: 1200 },
+        commitLayoutNodePositions: vi.fn(() => 2),
+        edges: [],
+        editModeRouteRenderOptions: {},
+        isCanvasNodeMovable,
+        nodes,
+        readjustActiveLayerBusEndpointRoutes: () => 0,
+        requireEditMode: () => true,
+        routedEdges: [],
+        showGlobalMessage,
+        writeOperationLog
+      };
+
+      await createAutoAlignCanvasGraphics(scope as any)();
+
+      const logMessage = writeOperationLog.mock.calls[0][0];
+      expect(logMessage).toContain("自动对齐");
+      // 同源:浮窗文案必须与状态栏日志逐字一致(不是另一份手写副本)
+      expect(showGlobalMessage).toHaveBeenCalledTimes(1);
+      expect(showGlobalMessage.mock.calls[0][0]).toBe(logMessage);
+      // 严重程度取自结构化质量报告,只会是这两种值之一
+      expect(["info", "error"]).toContain(showGlobalMessage.mock.calls[0][1]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("自动对齐缺少可操作图元时提示 error", async () => {
+    const writeOperationLog = vi.fn();
+    const showGlobalMessage = vi.fn();
+    const scope = {
+      AUTO_ALIGN_DEFAULT_THRESHOLD_PX,
+      AUTO_ALIGN_MAX_THRESHOLD_PX,
+      AUTO_ALIGN_MIN_THRESHOLD_PX,
+      activeLayerEdges: [],
+      activeLayerGroups: [],
+      activeLayerNodes: [{ id: "only", kind: "device", position: { x: 0, y: 0 } }],
+      canvasBounds: { width: 2000, height: 1200 },
+      edges: [],
+      nodes: [{ id: "only", kind: "device", position: { x: 0, y: 0 } }],
+      requireEditMode: () => true,
+      routedEdges: [],
+      showGlobalMessage,
+      writeOperationLog
+    };
+
+    await createAutoAlignCanvasGraphics(scope as any)();
+
+    expect(writeOperationLog).toHaveBeenCalledWith("自动对齐需要至少 2 个可操作图元");
+    expect(showGlobalMessage).toHaveBeenCalledWith("自动对齐需要至少 2 个可操作图元", "error", 4000);
+  });
+
+  test("提示入口缺失时回落 globalThis,仍只写一条状态栏日志", () => {
+    const nodes = nodesForToast();
+    const arranged = [nodes[0], { ...nodes[1], position: { x: 160, y: 100 } }];
+    const layoutUnits = nodes.map((node) => ({ nodeIds: [node.id] }));
+    const writeOperationLog = vi.fn();
+    const globalShowGlobalMessage = vi.fn();
+    (globalThis as any).showGlobalMessage = globalShowGlobalMessage;
+    try {
+      const scope = {
+        activeLayerEdges: [],
+        activeLayerGroups: [],
+        activeLayerNodes: nodes,
+        autoSpreadNodeLayoutUnits: vi.fn(() => arranged),
+        buildCanvasLayoutUnits: vi.fn(() => layoutUnits),
+        canvasBounds: { width: 1000, height: 800 },
+        commitLayoutNodePositions: vi.fn(() => 1),
+        includeMeasurementGroupBounds: vi.fn(),
+        isCanvasNodeMovable: () => true,
+        nodes,
+        requireEditMode: () => true,
+        routedEdges: [],
+        // 刻意不提供 scope.showGlobalMessage → 应回落 globalThis
+        writeOperationLog
+      };
+
+      createAutoSpreadCanvasGraphics(scope as any)();
+
+      expect(writeOperationLog).toHaveBeenCalledTimes(1);
+      expect(globalShowGlobalMessage).toHaveBeenCalledWith("自动散开 1 个图元");
+    } finally {
+      delete (globalThis as any).showGlobalMessage;
+    }
+  });
+
+  // 严重程度必须取自**结构化** AutoAlignQualityReport,而不是对渲染文案做子串匹配
+  // (文案改字会让子串匹配静默失效)。这里用可编程计划桩逐种结局钉住映射。
+  test.each([
+    ["正常完成(无任何质量异常)", {}, "info"],
+    ["终检回退:整次对齐被否决", { revertedByVerification: true }, "error"],
+    ["部分图元被冻结原位", { frozenUnitCount: 2 }, "error"],
+    ["线路校验超耗时预算", { degraded: true }, "error"]
+  ])("自动对齐浮动提示严重程度:%s → %s", async (_label, qualityOverride, expectedType) => {
+    vi.stubGlobal("window", { prompt: () => "50" });
+    try {
+      const nodes = [
+        { id: "m1", kind: "device", position: { x: 100, y: 100 } },
+        { id: "m2", kind: "device", position: { x: 400, y: 200 } }
+      ];
+      runAutoAlignPlanInWorkerMock.spy.mockResolvedValue({
+        arranged: nodes,
+        nodeIds: ["m1", "m2"],
+        layoutUnitCount: 2,
+        storedRouteDrops: [],
+        qualityReport: {
+          verifiedCandidateCount: 0,
+          bendRejectedCount: 0,
+          crossingRejectedCount: 0,
+          frozenUnitCount: 0,
+          degraded: false,
+          revertedByVerification: false,
+          ...(qualityOverride as Record<string, unknown>)
+        }
+      });
+      const showGlobalMessage = vi.fn();
+      const scope = {
+        AUTO_ALIGN_DEFAULT_THRESHOLD_PX,
+        AUTO_ALIGN_MAX_THRESHOLD_PX,
+        AUTO_ALIGN_MIN_THRESHOLD_PX,
+        activeLayerEdges: [],
+        activeLayerGroups: [],
+        activeLayerNodes: nodes,
+        canvasBounds: { width: 2000, height: 1200 },
+        commitLayoutNodePositions: vi.fn(() => 2),
+        edges: [],
+        editModeRouteRenderOptions: {},
+        isCanvasNodeMovable,
+        nodes,
+        readjustActiveLayerBusEndpointRoutes: () => 0,
+        requireEditMode: () => true,
+        routedEdges: [],
+        showGlobalMessage,
+        writeOperationLog: vi.fn()
+      };
+
+      await createAutoAlignCanvasGraphics(scope as any)();
+
+      expect(showGlobalMessage).toHaveBeenCalledTimes(1);
+      expect(showGlobalMessage.mock.calls[0][1]).toBe(expectedType);
+    } finally {
+      runAutoAlignPlanInWorkerMock.spy.mockReset();
+      vi.unstubAllGlobals();
+    }
   });
 });

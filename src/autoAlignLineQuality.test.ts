@@ -7,7 +7,8 @@ import {
   buildCanvasLayoutUnits,
   countAutoAlignRouteBends,
   countAutoAlignRouteCrossings,
-  createAutoAlignQualityReport
+  createAutoAlignQualityReport,
+  createAutoAlignRouteQualityIndex
 } from "./selectionActions";
 import {
   isCanvasNodeMovable,
@@ -279,6 +280,62 @@ describe.skipIf(!projectAvailable)("auto-align line quality on a real project", 
       expect(fresh).toHaveLength(2);
       expect(routeAll(probeNodes, [autoAlignEdgeWithoutStoredRoute(probeEdges[0])])[0].points).toEqual(fresh);
       expect(countAutoAlignRouteBends(fresh)).toBe(0);
+    });
+  });
+
+  test("keeps the constrained real-project pass under the interactive budget", () => {
+    const { nodes, edges, bounds } = readProject();
+    const shifted = nodes.map((node) => ({
+      ...node,
+      position: { x: node.position.x + 7, y: node.position.y - 5 }
+    }));
+    const { routeAll, units } = buildScenario(shifted, edges, bounds);
+    let routeElapsed = 0;
+    let routeCalls = 0;
+    const timedRoute = (state: readonly ModelNode[], edgeList: readonly Edge[]) => {
+      routeCalls += 1;
+      const startedRoute = performance.now();
+      const result = routeAll(state, edgeList);
+      routeElapsed += performance.now() - startedRoute;
+      return result;
+    };
+    const started = performance.now();
+    autoAlignNodeLayoutUnits(shifted, units, 50, {
+      edges,
+      routedEdges: routeAll(shifted),
+      verifyRouteEdges: timedRoute
+    });
+    const elapsed = performance.now() - started;
+    console.log("PERF " + JSON.stringify({ elapsed, routeElapsed, routeCalls }));
+    expect(routeCalls).toBeLessThanOrEqual(4);
+    expect(elapsed).toBeLessThan(500);
+  }, 180000);
+
+  test("incremental route quality stays equivalent after edge geometry changes", () => {
+    const routes = [
+      { edgeId: "a", points: [{ x: 0, y: 0 }, { x: 100, y: 0 }], path: "" },
+      { edgeId: "b", points: [{ x: 50, y: -50 }, { x: 50, y: 50 }], path: "" },
+      { edgeId: "c", points: [{ x: 0, y: 100 }, { x: 100, y: 100 }], path: "" }
+    ];
+    const index = createAutoAlignRouteQualityIndex(routes);
+    const current = () => index.routes().map((route) => route.points);
+    expect(index.quality()).toEqual({
+      bends: routes.reduce((sum, route) => sum + countAutoAlignRouteBends(route.points), 0),
+      crossings: countAutoAlignRouteCrossings(current())
+    });
+
+    index.replace({ edgeId: "b", points: [{ x: 150, y: -50 }, { x: 150, y: 50 }], path: "" });
+    const replaced = current();
+    expect(index.quality()).toEqual({
+      bends: replaced.reduce((sum, points) => sum + countAutoAlignRouteBends(points), 0),
+      crossings: countAutoAlignRouteCrossings(replaced)
+    });
+
+    index.remove("a");
+    const removed = current();
+    expect(index.quality()).toEqual({
+      bends: removed.reduce((sum, points) => sum + countAutoAlignRouteBends(points), 0),
+      crossings: countAutoAlignRouteCrossings(removed)
     });
   });
 });
