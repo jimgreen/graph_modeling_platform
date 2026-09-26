@@ -2477,7 +2477,11 @@ export function renderAppView(__appScope: Record<string, any>) {
           leftPanelContent,
           isEditMode,
           activeSchemeKey,
-          activeProjectKey
+          activeProjectKey,
+          // 引导锁定会切换模式按钮的禁用态；MemorizedViewSection 只在 inputs 变化时重渲染，
+          // 漏了它会导致引导期间按钮「看着可点、点了没反应」。
+          // 必须走 __appScope 前缀：该名字未在本函数顶层解构，裸标识符会抛 ReferenceError。
+          __appScope.tourBlockedSidePanelMode
         ]}
       />
 
@@ -2633,7 +2637,10 @@ export function renderAppView(__appScope: Record<string, any>) {
           nodeById,
           singleSelectedDeviceForInspector,
           colorPalette,
-          __appScope.selectedMeasurementGroups
+          __appScope.selectedMeasurementGroups,
+          // 同 AppLeftPanel：引导锁定会切换模式按钮禁用态，必须参与 memo 比较。
+          // 同样必须走 __appScope 前缀（未解构）。
+          __appScope.tourBlockedSidePanelMode
         ]}
       />
       {contextMenuLayerActive && (<Suspense fallback={null}>

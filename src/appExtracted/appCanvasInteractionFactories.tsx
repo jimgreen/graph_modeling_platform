@@ -3290,7 +3290,12 @@ export function createStopSidePanelEventPropagation(__appScope: Record<string, a
 
 export function createSetSidePanelMode(__appScope: Record<string, any>) {
   return (side: SidePanelSide, mode: SidePanelMode) => {
-  const { setLeftPanelAutoVisible, setLeftPanelMode, setRightPanelAutoVisible, setRightPanelMode } = __appScope;
+  const { setLeftPanelAutoVisible, setLeftPanelMode, setRightPanelAutoVisible, setRightPanelMode, tourBlockedSidePanelMode } = __appScope;
+    // 新手引导锚定该侧边栏时禁止最小化 / 隐藏：由工厂统一收口，
+    // 这样模式按钮、边缘触发器、快捷键等所有入口都被同一道闸挡住。
+    if (mode !== "pinned" && typeof tourBlockedSidePanelMode === "function" && tourBlockedSidePanelMode(side)) {
+      return;
+    }
     if (side === "left") {
       setLeftPanelMode(mode);
       setLeftPanelAutoVisible(mode === "auto");
@@ -3325,8 +3330,12 @@ export function createPointerInsideElementRect(__appScope: Record<string, any>) 
 
 export function createUpdateAutoPanelVisibility(__appScope: Record<string, any>) {
   return (side: SidePanelSide, event: Parameters<typeof nextSidePanelAutoVisible>[3]) => {
-  const { leftPanelMode, nextSidePanelAutoVisible, projectMenu, projectRecordDragActiveRef, rightPanelMode, schemeRecordDragActiveRef, setLeftPanelAutoVisible, setRightPanelAutoVisible, sidePanelResize, templateMenu, topologyWarningPanelDrag, topologyWarningPanelResize } = __appScope;
+  const { leftPanelMode, nextSidePanelAutoVisible, projectMenu, projectRecordDragActiveRef, rightPanelMode, schemeRecordDragActiveRef, setLeftPanelAutoVisible, setRightPanelAutoVisible, sidePanelResize, templateMenu, topologyWarningPanelDrag, topologyWarningPanelResize, tourBlockedSidePanelMode } = __appScope;
     if (sidePanelResize || topologyWarningPanelDrag || topologyWarningPanelResize) {
+      return;
+    }
+    // 引导锚定该侧边栏时，鼠标移开 / 画布激活不得把它收起（「禁止最小化」的另一半）。
+    if (typeof tourBlockedSidePanelMode === "function" && tourBlockedSidePanelMode(side)) {
       return;
     }
     if (side === "left" && event === "panel-leave" && projectMenu) {
@@ -3403,7 +3412,7 @@ export function createHandleSidePanelPointerLeave(__appScope: Record<string, any
 
 export function createHideAutoPanelsFromWorkspace(__appScope: Record<string, any>) {
   return (event: PointerEvent<HTMLElement>) => {
-  const { leftPanelMode, pointerClientTargetInside, pointerInsideFloatingPanelBounds, pointerRelatedTargetInside, projectMenu, projectRecordDragActiveRef, rightPanelMode, schemeRecordDragActiveRef, setLeftPanelAutoVisible, setRightPanelAutoVisible, shouldIgnoreWorkspaceAutoHide, sidePanelResize, templateMenu, topologyWarningPanelDrag, topologyWarningPanelResize } = __appScope;
+  const { leftPanelMode, pointerClientTargetInside, pointerInsideFloatingPanelBounds, pointerRelatedTargetInside, projectMenu, projectRecordDragActiveRef, rightPanelMode, schemeRecordDragActiveRef, setLeftPanelAutoVisible, setRightPanelAutoVisible, shouldIgnoreWorkspaceAutoHide, sidePanelResize, templateMenu, topologyWarningPanelDrag, topologyWarningPanelResize, tourBlockedSidePanelMode } = __appScope;
     if (sidePanelResize || topologyWarningPanelDrag || topologyWarningPanelResize) {
       return;
     }
@@ -3425,6 +3434,23 @@ export function createHideAutoPanelsFromWorkspace(__appScope: Record<string, any
     }
     if (templateMenu) {
       return;
+    }
+    if (typeof tourBlockedSidePanelMode === "function") {
+      if (tourBlockedSidePanelMode("left") && tourBlockedSidePanelMode("right")) {
+        return;
+      }
+      if (tourBlockedSidePanelMode("left")) {
+        if (rightPanelMode === "auto") {
+          setRightPanelAutoVisible(false);
+        }
+        return;
+      }
+      if (tourBlockedSidePanelMode("right")) {
+        if (leftPanelMode === "auto") {
+          setLeftPanelAutoVisible(false);
+        }
+        return;
+      }
     }
     if (leftPanelMode === "auto") {
       setLeftPanelAutoVisible(false);
@@ -4183,16 +4209,23 @@ export function createStartTopologyWarningPanelResize(__appScope: Record<string,
 
 export function createRenderSidePanelModeControls(__appScope: Record<string, any>) {
   return (side: SidePanelSide) => {
-  const { EyeOff, MousePointer2, Pin, button, div, leftPanelMode, rightPanelMode, setSidePanelMode } = __appScope;
+  const { EyeOff, MousePointer2, Pin, button, div, leftPanelMode, rightPanelMode, setSidePanelMode, tourBlockedSidePanelMode } = __appScope;
     const mode = side === "left" ? leftPanelMode : rightPanelMode;
     const label = side === "left" ? "左侧栏" : "右侧栏";
+    // 引导期间该侧边栏被锁定为展开：三个模式按钮一并禁用，避免点了没反应。
+    const tourLocked = typeof tourBlockedSidePanelMode === "function" && Boolean(tourBlockedSidePanelMode(side));
     const options: Array<{ mode: SidePanelMode; title: string; icon: typeof Pin }> = [
       { mode: "pinned", title: `${label}永久显示`, icon: Pin },
       { mode: "auto", title: `${label}自动显示/隐藏`, icon: MousePointer2 },
       { mode: "hidden", title: `${label}永久隐藏`, icon: EyeOff }
     ];
     return (
-      <div className="side-panel-mode-controls" role="group" aria-label={`${label}显示模式`}>
+      <div
+        className="side-panel-mode-controls"
+        role="group"
+        aria-label={`${label}显示模式`}
+        data-tour-locked={tourLocked ? "true" : undefined}
+      >
         {options.map((option) => {
           const Icon = option.icon;
           return (
@@ -4200,8 +4233,9 @@ export function createRenderSidePanelModeControls(__appScope: Record<string, any
               htmlType="button"
               key={option.mode}
               className={mode === option.mode ? "active" : ""}
-              title={option.title}
+              title={tourLocked ? `新手引导进行中，${label}暂时保持展开` : option.title}
               aria-label={option.title}
+              disabled={tourLocked}
               onClick={() => setSidePanelMode(side, option.mode)}
             >
               <Icon size={15} />
@@ -4215,10 +4249,15 @@ export function createRenderSidePanelModeControls(__appScope: Record<string, any
 
 export function createRenderSidePanelEdgeTrigger(__appScope: Record<string, any>) {
   return (side: SidePanelSide) => {
-  const { PanelLeftOpen, PanelRightOpen, button, div, leftPanelMode, leftPanelVisible, rightPanelMode, rightPanelVisible, setSidePanelMode, startCanvasResizeFromLeftOverlay, startCanvasResizeFromRightOverlay, updateAutoPanelVisibility } = __appScope;
+  const { PanelLeftOpen, PanelRightOpen, button, div, leftPanelMode, leftPanelVisible, rightPanelMode, rightPanelVisible, setSidePanelMode, startCanvasResizeFromLeftOverlay, startCanvasResizeFromRightOverlay, tourBlockedSidePanelMode, updateAutoPanelVisibility } = __appScope;
     const mode = side === "left" ? leftPanelMode : rightPanelMode;
     const visible = side === "left" ? leftPanelVisible : rightPanelVisible;
     if (visible) {
+      return null;
+    }
+    // 引导强制展开该侧边栏时，边缘触发器本就该消失（visible 为 true）；
+    // 这里再加一道保险：万一渲染时序错位，也别让触发器去改 mode。
+    if (typeof tourBlockedSidePanelMode === "function" && tourBlockedSidePanelMode(side)) {
       return null;
     }
     const Icon = side === "left" ? PanelLeftOpen : PanelRightOpen;
