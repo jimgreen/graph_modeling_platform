@@ -20,6 +20,18 @@ import {
   type Step,
   type TooltipRenderProps
 } from "react-joyride";
+import { useTourTooltipViewportClamp } from "./tourViewportClamp";
+import {
+  readPersistedSidePanelMode,
+  resolveSidePanelModeAfterTour,
+  shouldForceSidePanelVisibleForTour,
+  tourSidePanelStepSide,
+  type SidePanelMode
+} from "./sidePanelVisibility";
+import {
+  LEFT_PANEL_MODE_STORAGE_KEY,
+  RIGHT_PANEL_MODE_STORAGE_KEY
+} from "./appExtracted/appCoreCanvasUtilities";
 
 // ---------- 持久化 ----------
 
@@ -157,6 +169,55 @@ export function tourGateSatisfied(stepIndex: number, state: TourGateState): bool
   return state.isEditMode;
 }
 
+// ---------- 侧边栏步骤的强制展开 / 锁定 ----------
+//
+// 问题：引导里有两步分别锚定 `.library-panel`（第 2 步）与 `.inspector-panel`（第 5 步）。
+// 用户若把侧边栏设为「永久隐藏」（或 auto 且当前收起），面板会被 `display:none` 摘出布局，
+// react-joyride 拿不到目标尺寸 → tooltip 不渲染，屏幕上只剩深色遮罩，用户被卡死
+// （点「上一步」回到该步骤时最容易复现）。
+//
+// 方案：锚定侧边栏的步骤渲染前把该侧边栏切到 `pinned`（永久展开）并锁定，
+// 引导结束（完成 / 跳过 / 手动结束）后再还原成进入引导前的模式。
+
+/**
+ * `SidePanelMode` 的 localStorage key，与 `App.tsx` 使用的常量同源（直接 import，不复制字面量）。
+ */
+const TOUR_SIDE_PANEL_MODE_STORAGE_KEYS: Record<"left" | "right", string> = {
+  left: LEFT_PANEL_MODE_STORAGE_KEY,
+  right: RIGHT_PANEL_MODE_STORAGE_KEY
+};
+
+/**
+ * 引导期间的锁定状态，随 scope 传给侧边栏相关的各个工厂（`createSetSidePanelMode` /
+ * `createUpdateAutoPanelVisibility` / `createHideAutoPanelsFromWorkspace` /
+ * `createRenderSidePanelModeControls` / `createRenderSidePanelEdgeTrigger`）。
+ *
+ * 索引访问而非解构：scope 通过 `Object.assign` 原地更新，解构会拿到陈旧引用。
+ */
+export interface TourSidePanelBodyContext {
+  tourActive: boolean;
+  tourBody: boolean;
+  tourSidePanel: "left" | "right" | null;
+}
+
+/**
+ * 侧边栏是否处于「引导锁定」状态。
+ *
+ * 锁定窗口刻意比「锚定该侧边栏的那一步」更长：
+ * - `tourBody`（第 1 步之后、引导未结束）覆盖「下一步」离开侧边栏步骤的那一帧 ——
+ *   否则用户刚点「下一步」，自动隐藏就会把还没定位完的 tooltip 连同面板一起收掉；
+ * - 进入侧边栏步骤前（第 0 步）也一并锁定，避免第 0 步期间面板被收起造成第 1 步骤现。
+ */
+export function isSidePanelLockedByTour(
+  side: "left" | "right",
+  context: TourSidePanelBodyContext
+): boolean {
+  if (!context.tourActive) {
+    return false;
+  }
+  return context.tourBody || context.tourSidePanel === side;
+}
+
 // ---------- 中文 locale（按钮文案） ----------
 
 const zhLocale: Locale = {
@@ -224,43 +285,56 @@ function TourTooltip(props: TooltipRenderProps) {
     ? "完成上面的操作后自动继续"
     : primaryProps.title;
 
+  // 兜底夹取：react-joyride 的 shift 边距可能比真实可视区域更大（tooltip 通过
+  // portalElement 渲染进 .app-shell 这个 overflow:hidden 容器），导致某些步骤的
+  // tooltip 被算到屏幕外、按钮点不到。这里在气泡外面包一层，只有越界时才用 transform
+  // 把它推回视口内。**必须包在 .tour-tooltip 外面**：内联 transform 的优先级高于
+  // keyframes，写在自己身上会压掉入场动画。详见 src/tourViewportClamp.ts。
+  const clamp = useTourTooltipViewportClamp(index);
+
   return (
-    <div className="tour-tooltip" key={index} {...tooltipProps}>
-      {step.title && (
-        <h4 className="tour-tooltip__title" id="joyride-tooltip-title">
-          {step.title}
-        </h4>
-      )}
-
-      <div className="tour-tooltip__content" id="joyride-tooltip-content">
-        {step.content}
-      </div>
-
-      <div className="tour-tooltip__progress">
-        {index + 1} / {size}
-      </div>
-
-      <div className="tour-tooltip__footer">
-        {!isLastStep && (
-          <button className="tour-tooltip__skip" type="button" {...skipProps}>
-            {skipProps.title}
-          </button>
+    <div
+      className="tour-tooltip-floater"
+      ref={clamp.clampRef}
+      style={clamp.shiftStyle ?? undefined}
+    >
+      <div className="tour-tooltip" key={index} {...tooltipProps}>
+        {step.title && (
+          <h4 className="tour-tooltip__title" id="joyride-tooltip-title">
+            {step.title}
+          </h4>
         )}
-        <div className="tour-tooltip__spacer" />
-        {showBack && (
-          <button className="tour-tooltip__back" type="button" {...backProps}>
-            {backProps.title}
+
+        <div className="tour-tooltip__content" id="joyride-tooltip-content">
+          {step.content}
+        </div>
+
+        <div className="tour-tooltip__progress">
+          {index + 1} / {size}
+        </div>
+
+        <div className="tour-tooltip__footer">
+          {!isLastStep && (
+            <button className="tour-tooltip__skip" type="button" {...skipProps}>
+              {skipProps.title}
+            </button>
+          )}
+          <div className="tour-tooltip__spacer" />
+          {showBack && (
+            <button className="tour-tooltip__back" type="button" {...backProps}>
+              {backProps.title}
+            </button>
+          )}
+          <button
+            className="tour-tooltip__primary"
+            type="button"
+            {...primaryProps}
+            disabled={actionDisabled}
+            title={primaryTitle}
+          >
+            {primaryTitle}
           </button>
-        )}
-        <button
-          className="tour-tooltip__primary"
-          type="button"
-          {...primaryProps}
-          disabled={actionDisabled}
-          title={primaryTitle}
-        >
-          {primaryTitle}
-        </button>
+        </div>
       </div>
     </div>
   );
@@ -274,6 +348,44 @@ interface AppTourProps {
 }
 
 /**
+ * 把 scope 上可能不存在的字段安全读出来（单测用精简 scope 装配时不会炸）。
+ */
+function readScopeField<T>(scope: Record<string, any>, key: string): T | undefined {
+  return scope ? (scope[key] as T | undefined) : undefined;
+}
+
+/** 读取某侧边栏「进入引导前」的模式；只在引导首次进入侧边栏步骤时记一次。 */
+function snapshotSidePanelMode(
+  scope: Record<string, any>,
+  side: "left" | "right"
+): SidePanelMode {
+  // 优先用 scope 现值（权威、无延迟）；缺字段时回落到 localStorage（兼容精简 scope）。
+  const fromScope =
+    side === "left"
+      ? readScopeField<SidePanelMode>(scope, "leftPanelMode")
+      : readScopeField<SidePanelMode>(scope, "rightPanelMode");
+  if (fromScope === "pinned" || fromScope === "hidden" || fromScope === "auto") {
+    return fromScope;
+  }
+  return readPersistedSidePanelMode(TOUR_SIDE_PANEL_MODE_STORAGE_KEYS[side]) ?? "pinned";
+}
+
+/** 把某侧边栏切到指定模式（直接调 scope 的 setter，绕过工厂里的引导闸门）。 */
+function applySidePanelMode(
+  scope: Record<string, any>,
+  side: "left" | "right",
+  mode: SidePanelMode
+): void {
+  if (side === "left") {
+    readScopeField<(mode: SidePanelMode) => void>(scope, "setLeftPanelMode")?.(mode);
+    readScopeField<(visible: boolean) => void>(scope, "setLeftPanelAutoVisible")?.(mode === "auto");
+    return;
+  }
+  readScopeField<(mode: SidePanelMode) => void>(scope, "setRightPanelMode")?.(mode);
+  readScopeField<(visible: boolean) => void>(scope, "setRightPanelAutoVisible")?.(mode === "auto");
+}
+
+/**
  * AppTour —— 首次运行「交互式」引导。
  *
  * 行为：
@@ -282,6 +394,8 @@ interface AppTourProps {
  *   选中设备 / 保存）后自动推进；主按钮始终禁用；
  * - 步骤 6 为终页展示，由用户手动点「完成」结束；
  * - 启动时记录 nodes/edges 基准值，确保用户即使已有设备，也得"再"拖一个；
+ * - **锚定侧边栏的步骤会把对应侧边栏强制展开并锁定**（禁止最小化 / 隐藏），
+ *   引导结束后还原成进入引导前的模式；
  * - 用户跳过或完成后写入标志，下次不再自动启动；
  * - portalElement 指向 .app-shell —— 应用作为 qiankun 微前端运行时，
  *   渲染到 document.body 会泄漏到宿主页面容器之外；
@@ -291,9 +405,15 @@ export function AppTour({ scope }: AppTourProps) {
   const [run, setRun] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const didInitRef = useRef(false);
+  // 进入引导前的侧边栏模式快照（只在首次用到某侧边栏时记一次）。
+  const panelModeBeforeTourRef = useRef<{ left: SidePanelMode | null; right: SidePanelMode | null }>({
+    left: null,
+    right: null
+  });
 
   // 启动 / 重放：回到第 1 步并开启 tour。
   const startTour = useCallback(() => {
+    panelModeBeforeTourRef.current = { left: null, right: null };
     setStepIndex(0);
     setRun(true);
   }, []);
@@ -321,6 +441,75 @@ export function AppTour({ scope }: AppTourProps) {
       startTour();
     });
   }, []);
+
+  // 把引导期间的侧边栏锁定状态挂到 scope 上，供各交互工厂读取。
+  // 每帧重算：scope 原地更新，必须用最新字段（见 src/CLAUDE.md）。
+  const tourBody = run && stepIndex >= 1;
+  // 锁定目标：锚定侧边栏的步骤锁对应侧边栏；引导其余时间至少锁左侧栏
+  // （第 0 步切到编辑模式后左侧栏会多出「图元库 / 模板库」tab，第 1 步要锚定它）。
+  const tourLockedSide: "left" | "right" = run
+    ? tourSidePanelStepSide(stepIndex) ?? "left"
+    : "left";
+  Object.assign(scope ?? {}, {
+    tourActive: run,
+    tourBody,
+    tourSidePanel: run ? tourLockedSide : null,
+    tourBlockedSidePanelMode: (side: "left" | "right") =>
+      isSidePanelLockedByTour(side, {
+        tourActive: run,
+        tourBody,
+        tourSidePanel: run ? tourLockedSide : null
+      })
+  });
+
+  // 强制展开：锚定某侧边栏的步骤渲染前，把该侧边栏切到 `pinned`。
+  // 不写 dep 数组：应用每帧重渲染，这里只做幂等赋值，成本极低。
+  useEffect(() => {
+    if (!run) return;
+    const side = tourSidePanelStepSide(stepIndex) ?? "left";
+    const mode =
+      side === "left"
+        ? readScopeField<SidePanelMode>(scope, "leftPanelMode") ?? "pinned"
+        : readScopeField<SidePanelMode>(scope, "rightPanelMode") ?? "pinned";
+    if (!shouldForceSidePanelVisibleForTour(mode)) {
+      return;
+    }
+    if (panelModeBeforeTourRef.current[side] === null) {
+      panelModeBeforeTourRef.current[side] = snapshotSidePanelMode(scope, side);
+    }
+    applySidePanelMode(scope, side, "pinned");
+  });
+
+  // 还原：引导结束后把改过的模式恢复原样。
+  // 只在「模式仍是引导写入的 pinned」时还原，避免覆盖用户在引导结束瞬间的手动选择。
+  useEffect(() => {
+    if (run) return;
+    const sides: Array<"left" | "right"> = ["left", "right"];
+    for (const side of sides) {
+      const before = panelModeBeforeTourRef.current[side];
+      if (before === null) {
+        continue;
+      }
+      const currentMode =
+        side === "left"
+          ? readScopeField<SidePanelMode>(scope, "leftPanelMode") ?? "pinned"
+          : readScopeField<SidePanelMode>(scope, "rightPanelMode") ?? "pinned";
+      const autoVisible =
+        side === "left"
+          ? Boolean(readScopeField<boolean>(scope, "leftPanelAutoVisible"))
+          : Boolean(readScopeField<boolean>(scope, "rightPanelAutoVisible"));
+      const desired = resolveSidePanelModeAfterTour(
+        before,
+        currentMode,
+        readPersistedSidePanelMode(TOUR_SIDE_PANEL_MODE_STORAGE_KEYS[side]),
+        autoVisible
+      );
+      if (desired !== null) {
+        applySidePanelMode(scope, side, desired);
+      }
+      panelModeBeforeTourRef.current[side] = null;
+    }
+  });
 
   // 每帧检查闸门：满足则自动前进。
   // 不写 dep 数组：应用每帧都会重渲染（见 src/CLAUDE.md），这里只做布尔比较，成本极低。
