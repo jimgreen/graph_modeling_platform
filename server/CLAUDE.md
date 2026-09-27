@@ -58,7 +58,7 @@
 ### Testing Requirements
 
 - `pnpm vitest run server/` 跑后端测试（含三导出适配层：`svgExport.test.mjs` / `apiV1Schemes.e-file.test.mjs` / `cimExport.test.mjs` 与 Node 原生直载守卫 `nativeLoad.test.mjs`）
-- 改动 swigger 后跑 `swigger.examples.test.mjs`（96 示例 / 71 端点）
+- 改动 swigger 后跑 `swigger.examples.test.mjs`（106 示例 / 81 端点）。**新增端点必须同步 `swaggerPage.mjs` 的 `ENDPOINTS`**，否则 `routeCoverage.test.mjs` 会红 —— 它比对「server 实际注册的路由」与「已文档化端点」，覆盖三张路由表（`server.mjs` 的 `routeKey`、`apiV1*.mjs` 的 `{method, pattern: apiPattern(...)}`、`server.mjs` 的 `dynamicRouteHandlers` 的 `dynAssetPattern(...)`）。`/webgrp/exports/native/*` 在该测试的 `INTENTIONALLY_UNDOCUMENTED` 名单里（会弹本机对话框）。
 - 改动 v1 端点跑对应 `apiV1*.test.mjs`
 - 新增/改动 `server/*.mjs` 对 `src/**/*.ts` 的 import 后跑 `pnpm audit:names`（穿透 `@ts-nocheck` 的未定义名审计）
 

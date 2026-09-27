@@ -315,6 +315,46 @@ function expectFor(ep, ex) {
     return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
   }
 
+  // 全局线路域：错误形状是 {error:"中文串"}（不是 v1 的 {error:{code,message}}）
+  if (p === apiPath("/global-lines") && ep.method === "GET") {
+    return { status: 200, check: (r) => expect(r.json.records).toBeInstanceOf(Array) };
+  }
+  if (p === apiPath("/global-lines/attach")) {
+    // 空 body → 400（仅交流/直流线路可入表）
+    return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  if (p === apiPath("/global-lines/detach")) {
+    // 不存在的 lineId → 404
+    return { status: 404, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  if (p === apiPath("/global-lines/record")) {
+    // PUT / DELETE 同路径，均为「不存在的 lineId → 404」
+    return { status: 404, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  if (p === apiPath("/global-lines/sync-project")) {
+    // 空模型 → 200，登记表清空并回显
+    return { status: 200, check: (r) => {
+      expect(r.json.ok).toBe(true);
+      expect(r.json.records).toBeInstanceOf(Array);
+    } };
+  }
+
+  // 图元导出域：错误形状 {error:{code,message}}
+  if (p === apiPath("/symbol-export-schemes") && ep.method === "GET") {
+    return { status: 200, check: (r) => expect(typeof r.json.exists).toBe("boolean") };
+  }
+  if (p === apiPath("/symbol-export-schemes") && ep.method === "PUT") {
+    return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  }
+  if (p === apiPath("/symbol-export")) {
+    // 空 kinds → 400 invalid-request
+    return { status: 400, check: (r) => expect(r.json.error?.code).toBe("invalid-request") };
+  }
+  if (p === apiPath("/symbol-export-standalone")) {
+    // 空 kinds → 400 invalid-request
+    return { status: 400, check: (r) => expect(r.json.error?.code).toBe("invalid-request") };
+  }
+
   // 方案域（内部）
   if (p === apiPath("/schemes") && ep.method === "GET") return { status: 200, check: (r) => expect(r.json.schemes).toBeInstanceOf(Array) };
   if (p === apiPath("/schemes") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
