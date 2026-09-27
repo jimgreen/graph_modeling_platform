@@ -76,8 +76,13 @@ const OPEN_DB_CALL = /\b(?:openDB|indexedDB\s*\.\s*open)\s*(?:<[^>]*>)?\s*\(\s*(
 // storage 调用的**首个实参原文**（截到逗号或右括号为止）。
 // 第三层只看其中的模板字符串 / `+` 拼接形态；字面量与常量由前两层负责。
 const STORAGE_FIRST_ARG = /\b(?:window\s*\.\s*)?(?:localStorage|sessionStorage)\s*\.\s*(?:getItem|setItem|removeItem)\s*\(\s*([^,)]*)/g;
-// IndexedDB store 的声明点
+// IndexedDB store 的声明点。两种形态都要认：
+//   1) 直接建库：`createObjectStore("templates", …)`
+//   2) 单源声明 + 循环建库：`STORE_SPECS = { templates: {…}, … }`（deviceLibraryDB 的现形态）
+//      —— 这里的 key 就是 store 名，与 (1) 等价，不该因为写法变了就漏扫。
 const IDB_STORE_DECL = /createObjectStore\(\s*"([^"]+)"/g;
+// 单源 store 声明：对象字面量的一级键。限定「紧跟 keyPath」以免误抓普通对象。
+const STORE_SPEC_KEY = /^\s{2}([A-Za-z_$][\w$]*):\s*\{\s*\n\s*keyPath:/gm;
 // 同文件内的字符串常量表，用于把 `openDB(DB_NAME, …)` 的标识符还原成库名字面量
 const STRING_CONST_DECL = /^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*"([^"]*)"\s*;?\s*$/;
 
@@ -155,7 +160,10 @@ export function scanIdbDatabaseNames(source: string): string[] {
 
 /** 从一段源码里抽出 IndexedDB store 名。 */
 function scanIdbStoreNames(source: string): string[] {
-  return Array.from(source.matchAll(IDB_STORE_DECL), (matched) => matched[1]);
+  return [
+    ...Array.from(source.matchAll(IDB_STORE_DECL), (matched) => matched[1]),
+    ...Array.from(source.matchAll(STORE_SPEC_KEY), (matched) => matched[1])
+  ];
 }
 
 function listSourceFiles(dir: string): string[] {
