@@ -1,4 +1,4 @@
-# swigger 控制台写操作 API 需求规格（/api/v1/control + WS 双向）
+# swigger 控制台写操作 API 需求规格（/webgrp/v1/control + WS 双向）
 
 > 阶段：需求发现（brainstorm）。本文档仅描述**需求**，不含架构决策、API 契约或实现代码。
 > 后续：`/sc:design` 出架构与接口契约，`/sc:workflow` 出实现计划。
@@ -109,12 +109,12 @@
 |----|------|
 | FR-6.1 | vitest 端到端测试，**先新增方案、再新增模型**，在新模型上下文中测试其余写 API |
 | FR-6.2 | 每个写 API 执行后，**用现有只读查询 API 验证结果**： |
-| | - 新增方案 → `GET /api/v1/schemes` 断言方案树含新方案 |
-| | - 新增模型 → `GET /api/v1/schemes/models` 断言含新模型 |
-| | - 选中/组合/增删图元 → `GET /api/v1/runtime/devices` 断言设备清单变化 |
-| | - 修改属性 → `GET /api/v1/runtime/devices`（或 model/json）断言属性值 |
-| | - 保存模板 → `GET /api/v1/library/templates` 断言含新模板 |
-| | - save → `GET /api/v1/schemes/model/json` 断言已落盘 |
+| | - 新增方案 → `GET /webgrp/v1/schemes` 断言方案树含新方案 |
+| | - 新增模型 → `GET /webgrp/v1/schemes/models` 断言含新模型 |
+| | - 选中/组合/增删图元 → `GET /webgrp/v1/runtime/devices` 断言设备清单变化 |
+| | - 修改属性 → `GET /webgrp/v1/runtime/devices`（或 model/json）断言属性值 |
+| | - 保存模板 → `GET /webgrp/v1/library/templates` 断言含新模板 |
+| | - save → `GET /webgrp/v1/schemes/model/json` 断言已落盘 |
 | FR-6.3 | 测试用 `GRAPH_MODEL_DATA_DIR` 指向 tmpdir 隔离 |
 | FR-6.4 | 测试需模拟在线前端客户端（或启动真实前端 WS 连接）以承接 WS 指令 |
 

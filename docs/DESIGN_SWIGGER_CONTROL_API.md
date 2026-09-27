@@ -1,4 +1,8 @@
-# swigger 控制台写操作 API 设计（/api/v1/control + WS 双向指令通道）
+# swigger 控制台写操作 API 设计（/webgrp/v1/control + WS 双向指令通道）
+
+> **关于前缀**：v1 层挂在 `apiPrefix` 之下，默认 `/webgrp`（`server/config.mjs`，
+> 可用 `GRAPH_MODEL_API_PREFIX` 改写）。本文原先写作 `/api/v1`，该前缀在实现中
+> 从未存在，已统一更正为 `/webgrp/v1`。
 
 > 阶段：设计（design）。本文档产出架构与接口契约，不含实现代码。
 > 前置：`REQUIREMENTS_SWIGGER_CONTROL_API.md`（需求）。
@@ -102,7 +106,7 @@ UI 方法用 `requireEditMode` 防止误操作。控制台 API 是**显式可信
 
 ## 3. control 域 HTTP 路由契约
 
-所有路由：`POST /api/v1/control/*`，body 为 JSON 参数，query 可带 `clientId`。响应统一 v1 信封。
+所有路由：`POST /webgrp/v1/control/*`，body 为 JSON 参数，query 可带 `clientId`。响应统一 v1 信封。
 
 > **[2026-09-13 更新 · 空间筛选]** 共 **11 个端点**（下表 9 个 + `e-device-definition/export`、`e-device-definition/import`，[2026-09-13] 新增）。
 > `clientId` 的语义已按空间收敛：**不指定**时取**调用方所属空间**内最近活跃的前端（空间由 `X-Space` / `?space=` / `Cookie: gmp_space` 解析，见多工作空间设计 §3）；
@@ -111,17 +115,17 @@ UI 方法用 `requireEditMode` 防止误操作。控制台 API 是**显式可信
 
 | 路由 | 指令 name | params | data 回执 | 验证用只读 API |
 |------|-----------|--------|-----------|----------------|
-| `POST /api/v1/control/scheme/create` | `control.scheme.create` | `{name, parentSchemeId?}` | `{id, name, path}` | `GET /api/v1/schemes` |
-| `POST /api/v1/control/model/create` | `control.model.create` | `{name, schemeId?}` | `{id, name, schemeId}` | `GET /api/v1/schemes/models` |
-| `POST /api/v1/control/devices/select` | `control.devices.select` | `{ids: string[], mode?:"set"\|"add"\|"toggle"}` | `{selectedIds}` | `GET /api/v1/runtime/selection` |
-| `POST /api/v1/control/devices/group` | `control.devices.group` | `{}` (组合当前选中) | `{groupId, nodeIds}` | `GET /api/v1/runtime/devices` |
-| `POST /api/v1/control/template/saveFromSelection` | `control.template.saveFromSelection` | `{name, componentLibrary, categoryLibraryName?}`（旧名 `componentType` / `attributeLibraryName` 作兼容别名仍受理） | `{templateKind}` | `GET /api/v1/library/templates` |
-| `POST /api/v1/control/device/property/update` | `control.device.property.update` | `{id, category:"graphic"\|"model"\|"measurement", patch}` | `{id}` | `GET /api/v1/runtime/devices` |
-| `POST /api/v1/control/device/add` | `control.device.add` | `{kind, x, y, attrs?}` | `{id}` | `GET /api/v1/runtime/devices` |
-| `POST /api/v1/control/device/delete` | `control.device.delete` | `{ids?: string[]}` (缺省=当前选中) | `{deletedIds}` | `GET /api/v1/runtime/devices` |
-| `POST /api/v1/control/save` | `control.save` | `{scope:"currentModel"\|"schemeTree"}` | `{saved:true}` | `GET /api/v1/schemes/model/json` |
-| `POST /api/v1/control/e-device-definition/export` | `control.e-device-definition.export` | `{}` | `{filename, text, mime}`（按类分组，含内置+自定义元件） | — |
-| `POST /api/v1/control/e-device-definition/import` | `control.e-device-definition.import` | `{text}`（E 文件文本，必填） | `{matched, skipped, matchedCount, skippedCount}` —— **只回校验匹配结果，不实际写入** | — |
+| `POST /webgrp/v1/control/scheme/create` | `control.scheme.create` | `{name, parentSchemeId?}` | `{id, name, path}` | `GET /webgrp/v1/schemes` |
+| `POST /webgrp/v1/control/model/create` | `control.model.create` | `{name, schemeId?}` | `{id, name, schemeId}` | `GET /webgrp/v1/schemes/models` |
+| `POST /webgrp/v1/control/devices/select` | `control.devices.select` | `{ids: string[], mode?:"set"\|"add"\|"toggle"}` | `{selectedIds}` | `GET /webgrp/v1/runtime/selection` |
+| `POST /webgrp/v1/control/devices/group` | `control.devices.group` | `{}` (组合当前选中) | `{groupId, nodeIds}` | `GET /webgrp/v1/runtime/devices` |
+| `POST /webgrp/v1/control/template/saveFromSelection` | `control.template.saveFromSelection` | `{name, componentLibrary, categoryLibraryName?}`（旧名 `componentType` / `attributeLibraryName` 作兼容别名仍受理） | `{templateKind}` | `GET /webgrp/v1/library/templates` |
+| `POST /webgrp/v1/control/device/property/update` | `control.device.property.update` | `{id, category:"graphic"\|"model"\|"measurement", patch}` | `{id}` | `GET /webgrp/v1/runtime/devices` |
+| `POST /webgrp/v1/control/device/add` | `control.device.add` | `{kind, x, y, attrs?}` | `{id}` | `GET /webgrp/v1/runtime/devices` |
+| `POST /webgrp/v1/control/device/delete` | `control.device.delete` | `{ids?: string[]}` (缺省=当前选中) | `{deletedIds}` | `GET /webgrp/v1/runtime/devices` |
+| `POST /webgrp/v1/control/save` | `control.save` | `{scope:"currentModel"\|"schemeTree"}` | `{saved:true}` | `GET /webgrp/v1/schemes/model/json` |
+| `POST /webgrp/v1/control/e-device-definition/export` | `control.e-device-definition.export` | `{}` | `{filename, text, mime}`（按类分组，含内置+自定义元件） | — |
+| `POST /webgrp/v1/control/e-device-definition/import` | `control.e-device-definition.import` | `{text}`（E 文件文本，必填） | `{matched, skipped, matchedCount, skippedCount}` —— **只回校验匹配结果，不实际写入** | — |
 
 > **端点路径以本节为准**（2026-09-13 用 `server/apiV1Control.mjs:347-357` 路由表逐条核对）：`saveFromSelection` 是 camelCase，早期草稿写作 `save-from-selection` 是错的。
 > 两个 `e-device-definition/*` 端点为 [2026-09-13] 新增，`/swigger` 页（`swaggerPage.mjs:249-256`）与本节现已同步。
@@ -158,7 +162,7 @@ UI 方法用 `requireEditMode` 防止误操作。控制台 API 是**显式可信
 
 新增 group `"控制台"`，含 §3 全部 11 个端点卡片。每张卡片：
 - 参数表（按 §3 params）
-- `clientId` 可选下拉（默认"**本空间内**自动选取最近活跃"，调 `GET /api/v1/runtime/clients` 填充；该响应含 `workspaceId`，可据此确认下拉项属于哪个空间，避免选到不生效的跨空间 id）
+- `clientId` 可选下拉（默认"**本空间内**自动选取最近活跃"，调 `GET /webgrp/v1/runtime/clients` 填充；该响应含 `workspaceId`，可据此确认下拉项属于哪个空间，避免选到不生效的跨空间 id）
 - Try-it：`POST` + JSON body → 展示 Request/Response 信封（复用现有 `send()` 与信封渲染）
 - 顶部提示条："控制台操作需在线前端客户端；写操作仅改运行时内存，需调用 save 落盘"
 
@@ -176,7 +180,7 @@ UI 方法用 `requireEditMode` 防止误操作。控制台 API 是**显式可信
 1. 测试启动后端 image-server（`GRAPH_MODEL_DATA_DIR` 指向 tmpdir）
 2. 测试启动 Vite dev server（或 `pnpm preview` 构建产物）
 3. Playwright `browser.newPage()` → 导航前端 URL → 等待 RT-WS 指示灯显示在线（前端 WS 已 register）
-4. 测试通过 HTTP 调 `/api/v1/control/*`，指令经 WS 下发到**真实前端**执行
+4. 测试通过 HTTP 调 `/webgrp/v1/control/*`，指令经 WS 下发到**真实前端**执行
 5. 用只读 v1 API + Playwright `page.evaluate` 断言结果
 
 **权衡**：
@@ -191,24 +195,24 @@ UI 方法用 `requireEditMode` 防止误操作。控制台 API 是**显式可信
 
 ```
 1. POST /control/scheme/create {name:"测试方案"}
-   → GET /api/v1/schemes 断言含"测试方案"
+   → GET /webgrp/v1/schemes 断言含"测试方案"
 2. POST /control/model/create {name:"测试模型", schemeId:<上步>}
-   → GET /api/v1/schemes/models 断言含"测试模型"
+   → GET /webgrp/v1/schemes/models 断言含"测试模型"
 3. POST /control/device/add {kind:"busbar", x:100, y:100}
-   → GET /api/v1/runtime/devices 断言设备数 +1
+   → GET /webgrp/v1/runtime/devices 断言设备数 +1
 4. POST /control/device/add (第二个图元)
 5. POST /control/devices/select {ids:[<两个>]}
-   → GET /api/v1/runtime/selection 断言选中数=2
+   → GET /webgrp/v1/runtime/selection 断言选中数=2
 6. POST /control/devices/group
-   → GET /api/v1/runtime/devices 断言出现 group
+   → GET /webgrp/v1/runtime/devices 断言出现 group
 7. POST /control/template/save-from-selection {name:"测试模板", componentType:"TestTpl"}
-   → GET /api/v1/library/templates 断言含"测试模板"
+   → GET /webgrp/v1/library/templates 断言含"测试模板"
 8. POST /control/device/property/update {id, category:"graphic", patch:{x:200}}
-   → GET /api/v1/runtime/devices 断言属性已改
+   → GET /webgrp/v1/runtime/devices 断言属性已改
 9. POST /control/device/delete {ids:[<某id>]}
-   → GET /api/v1/runtime/devices 断言设备数 -1
+   → GET /webgrp/v1/runtime/devices 断言设备数 -1
 10. POST /control/save {scope:"currentModel"}
-    → GET /api/v1/schemes/model/json 断言已落盘
+    → GET /webgrp/v1/schemes/model/json 断言已落盘
 ```
 
 ### 6.3 测试位置与隔离

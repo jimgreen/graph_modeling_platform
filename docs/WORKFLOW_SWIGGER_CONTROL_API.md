@@ -1,4 +1,4 @@
-# swigger 控制台写操作 API 实现任务分解（/api/v1/control）
+# swigger 控制台写操作 API 实现任务分解（/webgrp/v1/control）
 
 > 阶段：实现规划（workflow）。承接 `REQUIREMENTS_SWIGGER_CONTROL_API.md` + `DESIGN_SWIGGER_CONTROL_API.md`。
 > 本文档为任务清单，按依赖序排列。每任务含：范围、产出文件、依赖、验收（测试）。
@@ -69,7 +69,7 @@
 **验收**：`server/apiV1Control.test.mjs`（mock sendCommandToClient）：参数缺失→400 `bad-request`；无在线客户端→503 `no-online-client`；成功→`{ok:true,data:{id}}`。
 
 ### T6：Playwright 端到端骨架
-**范围**：新建 `e2e/` 目录。`e2e/controlHarness.mjs`：启 image-server（`GRAPH_MODEL_DATA_DIR`=tmpdir）+ Vite preview/dev + Playwright page → 导航前端 → 等待 RT-WS 在线（轮询 `GET /api/v1/runtime/clients` 非空或 page 内指示灯）。`e2e/apiV1Control.e2e.test.mjs`：用 T5 端点 add 一个 busbar → `GET /api/v1/runtime/devices` 断言设备数 +1。需装 `@playwright/test`（dev）+ 浏览器。
+**范围**：新建 `e2e/` 目录。`e2e/controlHarness.mjs`：启 image-server（`GRAPH_MODEL_DATA_DIR`=tmpdir）+ Vite preview/dev + Playwright page → 导航前端 → 等待 RT-WS 在线（轮询 `GET /webgrp/v1/runtime/clients` 非空或 page 内指示灯）。`e2e/apiV1Control.e2e.test.mjs`：用 T5 端点 add 一个 busbar → `GET /webgrp/v1/runtime/devices` 断言设备数 +1。需装 `@playwright/test`（dev）+ 浏览器。
 **产出**：`e2e/controlHarness.mjs`、`e2e/apiV1Control.e2e.test.mjs`、`package.json`（+`@playwright/test`）
 **依赖**：T5
 **验收**：`pnpm vitest run e2e/`（或独立 script）绿：真实前端经 WS 收到 add 指令 → 画布出现新图元 → 只读 API 可见。**这是骨架打通的关键验收点**。
@@ -82,7 +82,7 @@
 **范围**：`appControlFactories.tsx` 增 `createProgrammaticCreateScheme`（复用 `createSavedScheme`+`setSchemes`+`insertChildSavedScheme`，不 prompt/editMode/落盘，返回 `{id,name,path}`）、`createProgrammaticCreateBlankProject`（复用 `createSavedProject`+`upsertSavedProjectInScheme`+`requestLoadSavedProject`，名称重复抛错，返回 `{id,name,schemeId}`）。`apiV1Control.mjs` 增 `control.scheme.create`/`control.model.create` 路由。commandHandler 分发。
 **产出**：`src/appExtracted/appControlFactories.tsx`、`server/apiV1Control.mjs`、`src/App.tsx`
 **依赖**：T6
-**验收**：扩 `apiV1Control.test.mjs`；扩 e2e：add scheme→`GET /api/v1/schemes` 含新方案；add model→`GET /api/v1/schemes/models` 含新模型。
+**验收**：扩 `apiV1Control.test.mjs`；扩 e2e：add scheme→`GET /webgrp/v1/schemes` 含新方案；add model→`GET /webgrp/v1/schemes/models` 含新模型。
 
 ---
 
@@ -92,19 +92,19 @@
 **范围**：`programmaticSelectDevices(ids, mode)`（复用 `setSelectedNodeIds`，mode set/add/toggle 合并）、`programmaticGroupSelected()`（复用 `createCanvasGroupFromSelection`+`setGroups`+`pushUndoSnapshot`，无选中抛 `control-failed`）。两个端点 + 分发。
 **产出**：同 T7 三文件
 **依赖**：T7
-**验收**：e2e：add 两图元→select 两 id→`GET /api/v1/runtime/selection` 断言选中数=2；group→`GET /api/v1/runtime/devices` 断言出现 group。
+**验收**：e2e：add 两图元→select 两 id→`GET /webgrp/v1/runtime/selection` 断言选中数=2；group→`GET /webgrp/v1/runtime/devices` 断言出现 group。
 
 ### T9：device.delete（压栈）
 **范围**：`programmaticDeleteDevices(ids?)`（ids 缺省用当前选中；复用按 id 删节点+关联边 + `pushUndoSnapshot`）。端点 + 分发。
 **产出**：同上
 **依赖**：T8
-**验收**：e2e：delete 某 id→`GET /api/v1/runtime/devices` 断言设备数 -1。
+**验收**：e2e：delete 某 id→`GET /webgrp/v1/runtime/devices` 断言设备数 -1。
 
 ### T10：device.property.update（压栈，category 分流）
 **范围**：`programmaticUpdateDeviceProperty(id, category, patch)`：category="graphic"|"model" → `patchGraphNodes`/`updateGraphNodeById`；category="measurement" → 量测 CRUD（`addMeasurementItemToNode`/`removeMeasurementsFromNode`）。`pushUndoSnapshot`。端点 + 分发。
 **产出**：同上
 **依赖**：T9
-**验收**：e2e：update graphic patch{x:200}→`GET /api/v1/runtime/devices` 断言属性已改；update measurement→断言量测项变化。
+**验收**：e2e：update graphic patch{x:200}→`GET /webgrp/v1/runtime/devices` 断言属性已改；update measurement→断言量测项变化。
 
 ### T11：device.add 补齐 attrs override 测试（收口 T4）
 **范围**：补 T4 未覆盖的 attrs override 边界、自定义 componentType kind（若 C-2 扩展）。合并入 T4 测试或独立补测。
@@ -120,13 +120,13 @@
 **范围**：`programmaticSaveSelectionAsTemplate({name, componentType, attributeLibraryName?})`：从当前选中组合节点推导端子（子节点位置/类型）→ `createGroupDeviceIconSvg` 生成图标 → 构造模板数据 → `persistDeviceLibraryChange`（不经 customDeviceDraft）。返回 `{templateKind}`。端点 + 分发。
 **产出**：同 T7 三文件
 **依赖**：T11
-**验收**：e2e：group 后 saveFromSelection→`GET /api/v1/library/templates` 断言含新模板。
+**验收**：e2e：group 后 saveFromSelection→`GET /webgrp/v1/library/templates` 断言含新模板。
 
 ### T13：save（显式落盘，C-5 不压栈）
 **范围**：`programmaticSave(scope)`：scope="currentModel"→`saveCurrentProject`；scope="schemeTree"→`saveSchemeTreeToBackend`。返回 `{saved:true}`。端点 + 分发。
 **产出**：同上
 **依赖**：T12
-**验收**：e2e：前序操作后 save→`GET /api/v1/schemes/model/json` 断言已落盘（含新增图元）；未 save 前落盘文件不含改动。
+**验收**：e2e：前序操作后 save→`GET /webgrp/v1/schemes/model/json` 断言已落盘（含新增图元）；未 save 前落盘文件不含改动。
 
 ---
 

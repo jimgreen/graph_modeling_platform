@@ -1,4 +1,9 @@
-# 第三方查询接口设计（/api/v1）
+# 第三方查询接口设计（/webgrp/v1）
+
+> **关于前缀**：本文原先通篇写作 `/api/v1`，但实现里从未存在该前缀 —— 第三方 v1 层
+> 挂在 `apiPrefix` 之下，默认值 `/webgrp`（见 `server/config.mjs` 的 `apiPrefix`，
+> 可用 `GRAPH_MODEL_API_PREFIX` 或 `platform.config.json` 的 `backend.prefix` 改写）。
+> 故实际路径是 `/webgrp/v1/*`。本文已统一更正；若部署时改了前缀，以实际配置为准。
 
 > 阶段：设计（design）。本文档承接 `REQUIREMENTS_THIRD_PARTY_API.md`，给出架构、WS 桥接协议、接口契约、测试架构。
 > 实现交给 `/sc:workflow`。本文不含实现代码，但含接口契约与关键数据结构。
@@ -9,7 +14,7 @@
 
 image-server 作唯一 HTTP 入口，dev/prod 同端口（默认 5174）托管：
 - 静态资源：prod 托管 `dist/`；dev 内嵌 Vite middleware 保 HMR
-- `/api/v1/*`：第三方只读查询层（本期新增）
+- `/webgrp/v1/*`：第三方只读查询层（本期新增）
 - `/api/*`（旧）：前端内部使用的读写层（现状，逐步迁移边界见 §2）
 - `/ws`：WebSocket，前端客户端连入与注册（本期新增）
 
@@ -19,7 +24,7 @@ image-server 作唯一 HTTP 入口，dev/prod 同端口（默认 5174）托管�
 
 ```
 第三方/浏览器 → image-server (单端口)
-                 ├─ /api/v1/*  → 第三方只读 handler（方案/库/运行时态）
+                 ├─ /webgrp/v1/*  → 第三方只读 handler（方案/库/运行时态）
                  ├─ /api/*     → 旧内部 handler（前端自身用，读写）
                  ├─ /ws        → WS 升级 → 客户端注册表
                  └─ /*         → 静态资源（prod: dist/；dev: Vite middleware）
@@ -28,7 +33,7 @@ image-server 作唯一 HTTP 入口，dev/prod 同端口（默认 5174）托管�
 ### 1.3 运行时态数据流（FR-3 核心）
 
 ```
-第三方 GET /api/v1/runtime/...
+第三方 GET /webgrp/v1/runtime/...
   → server 查客户端注册表（按 clientId 或默认最近活跃）
   → 无在线客户端 → 404/503 "无在线客户端"
   → 有 → server 经 WS 向该客户端发拉取请求
@@ -44,19 +49,19 @@ image-server 作唯一 HTTP 入口，dev/prod 同端口（默认 5174）托管�
 
 | 层 | 前缀 | 用途 | 本期 |
 |----|------|------|------|
-| 第三方只读 | `/api/v1/*` | 外部系统查询 | 新增 |
+| 第三方只读 | `/webgrp/v1/*` | 外部系统查询 | 新增 |
 | 内部读写 | `/api/*` | 前端自身（现状 images/schemes/config/library） | 保留 |
 | 静态 | `/*` | 前端资源 | 新增托管 |
 
 ### 2.2 复用与扩展
 
-现有 `exactRouteHandlers`（Map）+ `dynamicRouteHandlers`（数组）结构保留。新增 `/api/v1/*` handler 集合，复用底层纯函数（`readSchemes`、`readDeviceLibraryConfig`、`readMeasurementConfig`、`createSchemeArchiveBuffer`、E 文件逻辑）与前端共享模块（`src/export/svg.ts` 的 `buildSvgDocument`）。
+现有 `exactRouteHandlers`（Map）+ `dynamicRouteHandlers`（数组）结构保留。新增 `/webgrp/v1/*` handler 集合，复用底层纯函数（`readSchemes`、`readDeviceLibraryConfig`、`readMeasurementConfig`、`createSchemeArchiveBuffer`、E 文件逻辑）与前端共享模块（`src/export/svg.ts` 的 `buildSvgDocument`）。
 
-旧 `/api/*` 内部 handler 不改动（避免前端回归）；改的是 dev 启动方式（spawn 独立 Vite 进程 → Vite middleware 挂入 image-server，见 T1）。后续旧 `/api` 可逐步迁入 `/api/v1`。两者并存期间，第三方只用 `/api/v1`，前端只用 `/api`。
+旧 `/api/*` 内部 handler 不改动（避免前端回归）；改的是 dev 启动方式（spawn 独立 Vite 进程 → Vite middleware 挂入 image-server，见 T1）。后续旧 `/api` 可逐步迁入 `/webgrp/v1`。两者并存期间，第三方只用 `/webgrp/v1`，前端只用 `/api`。
 
 ### 2.3 写入预留
 
-资源命名用名词复数 + 资源 id 风格（`/api/v1/schemes`、`/api/v1/schemes/{id}/models/{id}`），读写分离路径预留。本期仅实现 GET，POST/PUT/DELETE 路径占位不实现。
+资源命名用名词复数 + 资源 id 风格（`/webgrp/v1/schemes`、`/webgrp/v1/schemes/{id}/models/{id}`），读写分离路径预留。本期仅实现 GET，POST/PUT/DELETE 路径占位不实现。
 
 ## 3. WS 桥接协议
 
@@ -176,7 +181,7 @@ function pickDefaultClient(): ClientEntry | null {
 }
 ```
 
-## 5. /api/v1 接口契约
+## 5. /webgrp/v1 接口契约
 
 通用响应包络（v1 专用，新建 `sendV1Json`/`sendV1JsonCacheable` 响应函数，不碰旧 `/api` 的 `sendJson`）：
 
@@ -195,38 +200,38 @@ HTTP 状态：200 成功 / 400 参数非法 / 404 不存在或无在线客户端
 
 | 接口 | 方法 | query | 响应 data |
 |------|------|-------|-----------|
-| `/api/v1/schemes` | GET | `includeProjects=1` | 方案树：`{schemes:[{name,updatedAt,projects:[{name,updatedAt}],children:[...]}]}` |
-| `/api/v1/schemes/hierarchy` | GET | — | 纯层级树（不含 projects 详情）：`{nodes:[{name,children:[...]}]}` |
-| `/api/v1/schemes/{schemePath}/models` | GET | — | 模型列表：`{models:[{name,updatedAt}]}`（schemePath 为 URL 编码 JSON 数组） |
-| `/api/v1/schemes/{schemePath}/export` | GET | — | ZIP 二进制（`createSchemeArchiveBuffer`），`application/zip` + attachment |
-| `/api/v1/schemes/{schemePath}/models/{name}/export` | GET | — | 单模型导出包（JSON+SVG+E 聚合 ZIP 或分别取，见下） |
-| `/api/v1/schemes/{schemePath}/models/{name}/json` | GET | — | 模型 project JSON |
-| `/api/v1/schemes/{schemePath}/models/{name}/svg` | GET | `colorMode=energy\|voltage`（默认 energy）、`encoding=utf-8\|gbk`（默认 utf-8） | SVG 文本（复用前端 `buildSvgDocument`，含图层/测量/状态图标；配色取自部署配色配置；自带 XML 声明） |
+| `/webgrp/v1/schemes` | GET | `includeProjects=1` | 方案树：`{schemes:[{name,updatedAt,projects:[{name,updatedAt}],children:[...]}]}` |
+| `/webgrp/v1/schemes/hierarchy` | GET | — | 纯层级树（不含 projects 详情）：`{nodes:[{name,children:[...]}]}` |
+| `/webgrp/v1/schemes/{schemePath}/models` | GET | — | 模型列表：`{models:[{name,updatedAt}]}`（schemePath 为 URL 编码 JSON 数组） |
+| `/webgrp/v1/schemes/{schemePath}/export` | GET | — | ZIP 二进制（`createSchemeArchiveBuffer`），`application/zip` + attachment |
+| `/webgrp/v1/schemes/{schemePath}/models/{name}/export` | GET | — | 单模型导出包（JSON+SVG+E 聚合 ZIP 或分别取，见下） |
+| `/webgrp/v1/schemes/{schemePath}/models/{name}/json` | GET | — | 模型 project JSON |
+| `/webgrp/v1/schemes/{schemePath}/models/{name}/svg` | GET | `colorMode=energy\|voltage`（默认 energy）、`encoding=utf-8\|gbk`（默认 utf-8） | SVG 文本（复用前端 `buildSvgDocument`，含图层/测量/状态图标；配色取自部署配色配置；自带 XML 声明） |
 
 > **[2026-09-11 更新]** `schemes/model/svg` 已改为复用前端 `buildSvgDocument`（`src/export/svg.ts`），不再使用 server 简化实现 `buildSvgFile`（该函数已在 [2026-09-13] 删除，见下方更新）。渲染器与前端导出为同一实现；入参为磁盘模型 + 库配置，输出含图层、测量、状态图标、画布背景图。配色取自部署的配色配置（`settings/color-config.json`，文件缺失或为空时回落内置默认调色板），`colorMode` 选择 `energy`（默认，端子类型配色）/ `voltage`（电压等级配色）两套，非法值返回 400 `bad-request`。已知限制：服务端按 `backgroundProjectIdx` + `backgroundLayerIds` 读被引用模型重建背景页，与前端 `backgroundPageRender` 同口径，故**含**背景页图层（元件定义覆盖 `deviceDefinitionOverrides` 已套用）；该能力自 [2026-09-13] 起取代原先「服务端无 `backgroundPageRender` 运行时产物」的限制。响应头由 `no-cache` 改为 `no-store`（与 v1 运行时态一致）；旧 `no-cache` 未配 ETag（响应由 handler 自行 `writeHead`，v1 动态路由分发无 ETag 包装，ETag/304 仅在 JSON 信封路径），第三方不再获得条件缓存。
 
-> **[2026-09-13 更新 · 落盘只留 json]** server 简化渲染器 `buildSvgFile` 与 `buildDeviceParameterFile` **已删除**，保存模型时也不再落盘 `.e` / `.svg`：`data/schemes/files/**` 只含 `.json`。SVG / E / CIM 三种派生格式全部改为**按需实时生成**——`/api/v1/schemes/model/svg`、`/api/v1/schemes/model/e-file`、`/api/v1/schemes/model/cim-xml` 与方案 ZIP 导出（`server/schemeArchive.mjs`）都在请求时读盘模型实时装配，前端导出按钮亦复用之，不再依赖磁盘上的派生文件。存量派生文件用 `pnpm purge:derived`（默认 dry-run，`--apply` 才归档）移入 `data/schemes/trash/<timestamp>/`。
+> **[2026-09-13 更新 · 落盘只留 json]** server 简化渲染器 `buildSvgFile` 与 `buildDeviceParameterFile` **已删除**，保存模型时也不再落盘 `.e` / `.svg`：`data/schemes/files/**` 只含 `.json`。SVG / E / CIM 三种派生格式全部改为**按需实时生成**——`/webgrp/v1/schemes/model/svg`、`/webgrp/v1/schemes/model/e-file`、`/webgrp/v1/schemes/model/cim-xml` 与方案 ZIP 导出（`server/schemeArchive.mjs`）都在请求时读盘模型实时装配，前端导出按钮亦复用之，不再依赖磁盘上的派生文件。存量派生文件用 `pnpm purge:derived`（默认 dry-run，`--apply` 才归档）移入 `data/schemes/trash/<timestamp>/`。
 
 > **[2026-09-11 更新 · 图片内联]** 该端点已把模型实际引用的后端图片（画布背景、图元背景/前景、状态图元图片，含内嵌 SVG 里的嵌套引用）读盘转 base64 `data:` URL 内联进 SVG，与前端导出的「自包含 SVG」语义一致——离线或拷贝到别处打开仍能显示图片。「哪些图片被引用」与前端导出共用同一纯函数 `collectSvgExportReferencedImageHrefById`（`src/export/svg-images.ts`），未被引用的图片不读不内联。代价：响应体随所引用图片的原始体积线性膨胀（base64 编码约 4/3 倍），大图/多图模型请留出传输体积与超时余量（响应用于导出文件时该体积正是自包含所需）。单张图片文件缺失或读取失败不阻断导出：该图保留原始 `/webgrp/images/{id}` href（离线不显示），其余图片照常内联。
 
-> **[2026-09-11 更新 · 已保存模型 E 文件]** 决策 B 已取代：新增 `/api/v1/schemes/model/e-file`（后端读盘生成，见 §8.3）；未保存的当前模型仍走运行时态 `/api/v1/runtime/e-file`（§8、§5.3）。
+> **[2026-09-11 更新 · 已保存模型 E 文件]** 决策 B 已取代：新增 `/webgrp/v1/schemes/model/e-file`（后端读盘生成，见 §8.3）；未保存的当前模型仍走运行时态 `/webgrp/v1/runtime/e-file`（§8、§5.3）。
 
-> **[2026-09-13 更新]** 上一段提到的落盘兜底路径已不存在：`server.mjs` 的 `buildDeviceParameterFile` 已删除，保存模型时也不再落盘 `.e`。E 生成现在**单一真源、无双实现**——`src/model-eexport.ts` 的 `buildEFileExport` 同时服务运行时态 `runtime.e-file`（前端生成）与已保存模型 `/api/v1/schemes/model/e-file`（后端适配层 `server/eFileExport.mjs`）。
+> **[2026-09-13 更新]** 上一段提到的落盘兜底路径已不存在：`server.mjs` 的 `buildDeviceParameterFile` 已删除，保存模型时也不再落盘 `.e`。E 生成现在**单一真源、无双实现**——`src/model-eexport.ts` 的 `buildEFileExport` 同时服务运行时态 `runtime.e-file`（前端生成）与已保存模型 `/webgrp/v1/schemes/model/e-file`（后端适配层 `server/eFileExport.mjs`）。
 
-> **[2026-09-11 更新 · CIM/XML]** 新增 `/api/v1/schemes/model/cim-xml`（`server/cimExport.mjs` 读盘模型后调 `src/cim/cim-export.ts` 生成 IEC 61970 CIM16 RDF/XML；`modelId` 可覆盖模型 ID，`strict=1` 时关键参数缺失返回 400 `bad-request`）。本设计文档正文未展开该端点，参数与示例见 `/swigger`。
+> **[2026-09-11 更新 · CIM/XML]** 新增 `/webgrp/v1/schemes/model/cim-xml`（`server/cimExport.mjs` 读盘模型后调 `src/cim/cim-export.ts` 生成 IEC 61970 CIM16 RDF/XML；`modelId` 可覆盖模型 ID，`strict=1` 时关键参数缺失返回 400 `bad-request`）。本设计文档正文未展开该端点，参数与示例见 `/swigger`。
 
-`schemePath` 编码：`/api/v1/schemes/<encodeURIComponent(JSON.stringify(["方案A","子方案"]))>/...`。或 query `?schemePath=<encoded>`。design 实现时择一（倾向路径段，RESTful）。
+`schemePath` 编码：`/webgrp/v1/schemes/<encodeURIComponent(JSON.stringify(["方案A","子方案"]))>/...`。或 query `?schemePath=<encoded>`。design 实现时择一（倾向路径段，RESTful）。
 
 ### 5.2 图元库域（FR-2）
 
 | 接口 | 方法 | 响应 data |
 |------|------|-----------|
-| `/api/v1/library/categories` | GET | 图元分类树：`{categories:[{id,name,bases:[...]}]}`（聚合 device-library + 静态图元分类） |
-| `/api/v1/library/devices` | GET | 各类图元信息：`{devices:[{kind,section,columns:[...],...}]}` |
-| `/api/v1/library/measurements` | GET | 量测定义：`{measurementTypes:[...], deviceProfiles:[...]}`（`readMeasurementConfig`） |
-| `/api/v1/library/device-definitions` | GET | 图元定义：`{deviceDefinitionOverrides, customComponentTypes, customAttributeLibraries}` |
-| `/api/v1/library/templates` | GET | 模板库：`{customDeviceTemplates, customGraphTemplates, customGraphTemplateTypes}` |
-| `/api/v1/library` | GET | 上述聚合（一次取全） |
+| `/webgrp/v1/library/categories` | GET | 图元分类树：`{categories:[{id,name,bases:[...]}]}`（聚合 device-library + 静态图元分类） |
+| `/webgrp/v1/library/devices` | GET | 各类图元信息：`{devices:[{kind,section,columns:[...],...}]}` |
+| `/webgrp/v1/library/measurements` | GET | 量测定义：`{measurementTypes:[...], deviceProfiles:[...]}`（`readMeasurementConfig`） |
+| `/webgrp/v1/library/device-definitions` | GET | 图元定义：`{deviceDefinitionOverrides, customComponentTypes, customAttributeLibraries}` |
+| `/webgrp/v1/library/templates` | GET | 模板库：`{customDeviceTemplates, customGraphTemplates, customGraphTemplateTypes}` |
+| `/webgrp/v1/library` | GET | 上述聚合（一次取全） |
 
 底层复用 `readDeviceLibraryConfig` + `readMeasurementConfig` + 静态 `DeviceKind`/`eSectionColumns` 元数据。
 
@@ -236,15 +241,15 @@ HTTP 状态：200 成功 / 400 参数非法 / 404 不存在或无在线客户端
 
 | 接口 | 方法 | 响应 data | WS resource |
 |------|------|-----------|-------------|
-| `/api/v1/runtime/clients` | GET | 在线客户端列表：`{clients:[{clientId,workspaceId,role,registeredAt,lastActiveAt}]}`（实测形状，`server/apiV1Runtime.mjs:68-76`；`workspaceId` 为客户端所属空间 id，[2026-09-13] 新增，供调用方判断 `clientId` 是否可用于当前空间；`role` 恒为 `"editor"`，与 §4.1 的 `ClientEntry.role` 一致） | —（server 直返） |
-| `/api/v1/runtime/model` | GET | 当前打开模型定位：`{clientId, schemePath, modelName, modelId, updatedAt}` | `runtime.snapshot`（部分） |
-| `/api/v1/runtime/devices` | GET | 当前模型设备清单：`{nodes:[...], edges:[...]}` | `runtime.snapshot`（部分） |
-| `/api/v1/runtime/selection` | GET | 当前选中设备：`{selectedNodeIds:[...], selectedNode:{...}\|null}` | `runtime.selection` |
-| `/api/v1/runtime/tabs/{tab}` | GET | 单 tab 内容（tab∈model\|tree\|graph） | `runtime.tab` |
-| `/api/v1/runtime/tabs` | GET | 三 tab 聚合 | `runtime.snapshot` |
-| `/api/v1/runtime/screenshot` | GET | PNG 二进制 `image/png` | `runtime.screenshot` |
-| `/api/v1/runtime/svg` | GET | SVG 文本 | `runtime.svg` |
-| `/api/v1/runtime/e-file` | GET | E 文件文本 | `runtime.e-file` |
+| `/webgrp/v1/runtime/clients` | GET | 在线客户端列表：`{clients:[{clientId,workspaceId,role,registeredAt,lastActiveAt}]}`（实测形状，`server/apiV1Runtime.mjs:68-76`；`workspaceId` 为客户端所属空间 id，[2026-09-13] 新增，供调用方判断 `clientId` 是否可用于当前空间；`role` 恒为 `"editor"`，与 §4.1 的 `ClientEntry.role` 一致） | —（server 直返） |
+| `/webgrp/v1/runtime/model` | GET | 当前打开模型定位：`{clientId, schemePath, modelName, modelId, updatedAt}` | `runtime.snapshot`（部分） |
+| `/webgrp/v1/runtime/devices` | GET | 当前模型设备清单：`{nodes:[...], edges:[...]}` | `runtime.snapshot`（部分） |
+| `/webgrp/v1/runtime/selection` | GET | 当前选中设备：`{selectedNodeIds:[...], selectedNode:{...}\|null}` | `runtime.selection` |
+| `/webgrp/v1/runtime/tabs/{tab}` | GET | 单 tab 内容（tab∈model\|tree\|graph） | `runtime.tab` |
+| `/webgrp/v1/runtime/tabs` | GET | 三 tab 聚合 | `runtime.snapshot` |
+| `/webgrp/v1/runtime/screenshot` | GET | PNG 二进制 `image/png` | `runtime.screenshot` |
+| `/webgrp/v1/runtime/svg` | GET | SVG 文本 | `runtime.svg` |
+| `/webgrp/v1/runtime/e-file` | GET | E 文件文本 | `runtime.e-file` |
 
 无在线客户端 / 超时 → 503 `{code:"no-online-client"}`。前端 ok=false → 透传（如 `no-active-model`→404, `no-selection`→404）。
 
@@ -306,17 +311,17 @@ HTTP 状态：200 成功 / 400 参数非法 / 404 不存在或无在线客户端
 
 ### 7.3 server 返第三方
 
-`/api/v1/runtime/screenshot` → 解 base64 → `image/png` 二进制流回。`cache-control: no-store`。
+`/webgrp/v1/runtime/screenshot` → 解 base64 → `image/png` 二进制流回。`cache-control: no-store`。
 
 ### 7.4 与 SVG 分离
 
-SVG 走 `runtime.svg`（前端本地渲染的 SVG 文本，含未保存的运行时状态；界面「导出 SVG」按钮已改走后端 `/api/v1/schemes/model/svg`，两者渲染器相同但入参不同）；PNG 走 `runtime.screenshot`。两路径独立，第三方按需取。
+SVG 走 `runtime.svg`（前端本地渲染的 SVG 文本，含未保存的运行时状态；界面「导出 SVG」按钮已改走后端 `/webgrp/v1/schemes/model/svg`，两者渲染器相同但入参不同）；PNG 走 `runtime.screenshot`。两路径独立，第三方按需取。
 
 ## 8. E 文件逻辑统一
 
 ### 8.1 决策
 
-E 文件**单一真源 = `buildEFileExport`**（现位于 `src/model-eexport.ts`；文本格式 `<Section>` 标签 + `@ 列名` + `# 值` + `<PowerBase>` 段）。前端运行时与后端适配层 `server/eFileExport.mjs` 共用同一实现，server 不留第二份 E 文件生成逻辑。运行时态第三方 E 文件请求经 WS `runtime.e-file` 拉前端生成；已保存模型走 `/api/v1/schemes/model/e-file`（后端读盘计算，见 §8.3 的 2026-09-11 更新）。
+E 文件**单一真源 = `buildEFileExport`**（现位于 `src/model-eexport.ts`；文本格式 `<Section>` 标签 + `@ 列名` + `# 值` + `<PowerBase>` 段）。前端运行时与后端适配层 `server/eFileExport.mjs` 共用同一实现，server 不留第二份 E 文件生成逻辑。运行时态第三方 E 文件请求经 WS `runtime.e-file` 拉前端生成；已保存模型走 `/webgrp/v1/schemes/model/e-file`（后端读盘计算，见 §8.3 的 2026-09-11 更新）。
 
 ### 8.2 决策依据（手工移植/抽取均否决；历史记录，2026-09-11 起后端改直载共享 TS 模块，见 §8.3 更新）
 
@@ -335,14 +340,14 @@ E 文件**单一真源 = `buildEFileExport`**（现位于 `src/model-eexport.ts`
 
 | 场景 | E 文件来源 |
 |------|-----------|
-| 运行时态 `/api/v1/runtime/e-file` | server 经 WS `runtime.e-file` 拉前端 currentProject → 前端 `buildEFileExport` 生成 E 格式文本回传 |
-| 已保存模型 `/api/v1/schemes/model/e-file` | server 直接读盘模型 + 库配置在后端计算（默认 GBK，可选预定义模板或自定义模板文本） |
+| 运行时态 `/webgrp/v1/runtime/e-file` | server 经 WS `runtime.e-file` 拉前端 currentProject → 前端 `buildEFileExport` 生成 E 格式文本回传 |
+| 已保存模型 `/webgrp/v1/schemes/model/e-file` | server 直接读盘模型 + 库配置在后端计算（默认 GBK，可选预定义模板或自定义模板文本） |
 
 无前端在线 / 当前无打开模型 → 503/404 明确返回。
 
-> **[2026-09-11 更新]** 决策 B 已取代：新增 `/api/v1/schemes/model/e-file`（后端直接计算，见
+> **[2026-09-11 更新]** 决策 B 已取代：新增 `/webgrp/v1/schemes/model/e-file`（后端直接计算，见
 > `docs/superpowers/specs/2026-09-11-backend-export-e-svg-cim-design.md`）。
-> `/api/v1/runtime/e-file` 保留，用于「当前打开且可能未保存」的模型。
+> `/webgrp/v1/runtime/e-file` 保留，用于「当前打开且可能未保存」的模型。
 
 ### 8.4 server 端第二份 E 生成器处置
 
@@ -350,7 +355,7 @@ E 文件**单一真源 = `buildEFileExport`**（现位于 `src/model-eexport.ts`
 
 ### 8.5 前端 `buildEFileExport` 复用
 
-**[2026-09-11 更新]** 前端"导出 E 模型文件"按钮（`exportEFile`）已改为「先保存再请求后端端点 `GET /api/v1/schemes/model/e-file`」（`server/eFileExport.mjs` 读盘调 `buildEFileExport`），与第三方接口共用后端同一条实现。未保存的当前模型仍由前端序列化模块（`src/runtimeSnapshot.ts` 的 `serializeEFile`）响应 `runtime.e-file` fetch 时调用 `appScope.buildEFileExport` 生成。
+**[2026-09-11 更新]** 前端"导出 E 模型文件"按钮（`exportEFile`）已改为「先保存再请求后端端点 `GET /webgrp/v1/schemes/model/e-file`」（`server/eFileExport.mjs` 读盘调 `buildEFileExport`），与第三方接口共用后端同一条实现。未保存的当前模型仍由前端序列化模块（`src/runtimeSnapshot.ts` 的 `serializeEFile`）响应 `runtime.e-file` fetch 时调用 `appScope.buildEFileExport` 生成。
 
 ## 9. 测试架构
 
@@ -404,7 +409,7 @@ vitest coverage，接口模块强制 100%（行+分支）：
 3. Playwright launch chromium → 加载前端页面（同端口）
 4. 前端自动连 WS 注册
 5. 模拟操作：打开模型、选中设备、切 tab（Playwright 驱动 UI）
-6. fetch `/api/v1/runtime/*` → 断言响应
+6. fetch `/webgrp/v1/runtime/*` → 断言响应
 7. 测完清理 tmpdir、关浏览器、关 server
 
 ### 9.6 成功标准

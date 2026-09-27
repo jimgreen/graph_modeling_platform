@@ -5,7 +5,7 @@
 
 ## Purpose
 
-项目文档。第三方 `/api/v1` API 的设计、需求、工作流文档，以及 superpowers 计划/规格。
+项目文档。第三方 `/webgrp/v1` API 的设计、需求、工作流文档，以及 superpowers 计划/规格。
 
 ## Key Files
 
@@ -28,7 +28,7 @@
 
 ### Working In This Directory
 
-- 文档为 Markdown，描述 `/api/v1` 只读 API 的设计意图与约束。
+- 文档为 Markdown，描述 `/webgrp/v1` 只读 API 的设计意图与约束。
 - 改动 v1 API 行为后同步更新对应文档。
 
 ## Dependencies
