@@ -1686,20 +1686,44 @@ async function sendCachedJsonFile(request, response, filePath, produce) {
   await sendPreparedJson(request, response, prepared);
 }
 
+// 请求体超限：带 statusCode 413，派发层外层 catch 直接采用（否则会变成 500）。
+// 单独成类而不是复用 RetiredSpaceWriteError —— 语义无关，但都走「自带 statusCode」这条通路。
+class PayloadTooLargeError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "PayloadTooLargeError";
+    this.statusCode = 413;
+  }
+}
+
+// 读请求体；超限时**继续读完整个流但不再累积 chunk**。
+//
+// 原实现超限时 `request.destroy()`，那会立刻切断 socket，响应再也发不出去 ——
+// 客户端只看到 ECONNRESET（实测 `fetch` 抛 "fetch failed"），拿不到任何状态码，
+// 于是派发层那套「error.statusCode → 413」的通路形同虚设。
+// 试过 `request.pause()`：只能撑到约 3MB（缓冲高水位），再大照样 ECONNRESET。
+// 读满是唯一可靠解 —— 上限的意义是「不把超大内容留在内存」，靠的是不再 push chunk，
+// 而不是提前中断读取。
 function readBody(request, maxBodyBytes = maxImageBodyBytes, oversizeMessage = "请求体过大。") {
   return new Promise((resolveBody, reject) => {
     const chunks = [];
     let size = 0;
+    let oversize = false;
     request.on("data", (chunk) => {
       size += chunk.length;
       if (size > maxBodyBytes) {
-        request.destroy();
-        reject(new Error(oversizeMessage));
+        oversize = true;
         return;
       }
       chunks.push(chunk);
     });
-    request.on("end", () => resolveBody(Buffer.concat(chunks).toString("utf-8")));
+    request.on("end", () => {
+      if (oversize) {
+        reject(new PayloadTooLargeError(oversizeMessage));
+        return;
+      }
+      resolveBody(Buffer.concat(chunks).toString("utf-8"));
+    });
     request.on("error", reject);
   });
 }
@@ -1708,16 +1732,22 @@ function readRawBody(request, maxBodyBytes = maxImageBodyBytes, oversizeMessage 
   return new Promise((resolveBody, reject) => {
     const chunks = [];
     let size = 0;
+    let oversize = false;
     request.on("data", (chunk) => {
       size += chunk.length;
       if (size > maxBodyBytes) {
-        request.destroy();
-        reject(new Error(oversizeMessage));
+        oversize = true;
         return;
       }
       chunks.push(chunk);
     });
-    request.on("end", () => resolveBody(Buffer.concat(chunks)));
+    request.on("end", () => {
+      if (oversize) {
+        reject(new PayloadTooLargeError(oversizeMessage));
+        return;
+      }
+      resolveBody(Buffer.concat(chunks));
+    });
     request.on("error", reject);
   });
 }
