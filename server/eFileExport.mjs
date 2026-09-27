@@ -100,17 +100,26 @@ export async function buildEFileForSavedModel({ parts, name, templateName, templ
 const E_FILE_BODY_LIMIT = 2 * 1024 * 1024;
 
 // POST 端点通用的 JSON body 读取（含 2MB 上限）：/e-file 与 /send 共用。
+//
+// 超限时**读完整个流但不再累积 chunk**：提前中断会让 Node 认为 body 未读完，
+// 在响应写出前重置连接，客户端只见 ECONNRESET 而非 413（详见 server.mjs 的
+// PayloadTooLargeError 注释）。上限的意义是「不把超大内容留在内存」。
 export async function readJsonBody(request) {
   const chunks = [];
   let total = 0;
+  let oversize = false;
   for await (const chunk of request) {
     total += chunk.length;
     if (total > E_FILE_BODY_LIMIT) {
-      const error = new Error("请求体超过 2MB 上限。");
-      error.code = "payload-too-large";
-      throw error;
+      oversize = true;
+      continue;
     }
     chunks.push(chunk);
+  }
+  if (oversize) {
+    const error = new Error("请求体超过 2MB 上限。");
+    error.code = "payload-too-large";
+    throw error;
   }
   const body = Buffer.concat(chunks).toString("utf-8");
   return body ? JSON.parse(body) : {};

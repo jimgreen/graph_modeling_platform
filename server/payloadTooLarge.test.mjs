@@ -70,7 +70,7 @@ describe("请求体超限", () => {
     expect(json.error.code).toBe("payload-too-large");
   });
 
-  test("三个 readJsonBody/readBody 实现都不再提前中断流（静态断言实现形状）", () => {
+  test("所有 body 读取实现都不再提前中断流（静态断言实现形状）", () => {
     // 二进制路径的上限高达 64MB/256MB，实际构造这么大的 body 不适合放进单测；
     // 这里改为静态断言「读完整个流、不再累积 chunk」这个修法没有回退。
     // 曾经的两种坏写法：request.destroy()（连接被掐，客户端只见 ECONNRESET）
@@ -79,7 +79,9 @@ describe("请求体超限", () => {
       { file: "./server.mjs", fn: "function readBody(" },
       { file: "./server.mjs", fn: "function readRawBody(" },
       { file: "./apiV1Runtime.mjs", fn: "async function readJsonBody(" },
-      { file: "./apiV1Control.mjs", fn: "async function readJsonBody(" }
+      { file: "./apiV1Control.mjs", fn: "async function readJsonBody(" },
+      { file: "./eFileExport.mjs", fn: "export async function readJsonBody(" },
+      { file: "./apiV1Receive.mjs", fn: "async function readRawBody(" }
     ];
     for (const { file, fn } of cases) {
       const source = readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8");
