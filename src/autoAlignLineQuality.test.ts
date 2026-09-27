@@ -299,6 +299,15 @@ describe.skipIf(!projectAvailable)("auto-align line quality on a real project", 
       routeElapsed += performance.now() - startedRoute;
       return result;
     };
+    /**
+     * 标定用的单次全图重算：与被测耗时在**同一进程、同一台机器、相隔几百毫秒**内测得。
+     * 绝对毫秒随机器与并发剧烈波动（本机实测 409~2755ms，全量并发下必红），除掉它之后
+     * 「总耗时 / 单次重算耗时」才是与硬件无关的量（实测稳定在 2.8 附近）。
+     */
+    const calibrationStarted = performance.now();
+    routeAll(shifted);
+    const singleRouteMs = performance.now() - calibrationStarted;
+
     const started = performance.now();
     autoAlignNodeLayoutUnits(shifted, units, 50, {
       edges,
@@ -306,9 +315,13 @@ describe.skipIf(!projectAvailable)("auto-align line quality on a real project", 
       verifyRouteEdges: timedRoute
     });
     const elapsed = performance.now() - started;
-    console.log("PERF " + JSON.stringify({ elapsed, routeElapsed, routeCalls }));
+    const routeMultiples = elapsed / Math.max(singleRouteMs, 1e-6);
+    console.log("PERF " + JSON.stringify({ elapsed, routeElapsed, routeCalls, singleRouteMs, routeMultiples }));
+    // 算法性护栏：权威全图重算的次数只由「终检两次 + 回退重试」决定，与机器无关。
     expect(routeCalls).toBeLessThanOrEqual(4);
-    expect(elapsed).toBeLessThan(500);
+    // 性能护栏改为「相当于几次单次全图重算」：4 次是硬上限，留出候选循环的零头后取 8。
+    // 若有人放开 AUTO_ALIGN_CANDIDATE_RING_LIMIT 之类导致重算次数膨胀，这里会先红。
+    expect(routeMultiples).toBeLessThan(8);
   }, 180000);
 
   test("incremental route quality stays equivalent after edge geometry changes", () => {
