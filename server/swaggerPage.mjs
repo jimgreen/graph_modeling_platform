@@ -107,6 +107,40 @@ const ENDPOINTS = [
   { scope: "space", group: "配置", method: "PUT", path: "/webgrp/device-library", desc: "保存图元库配置", body: { customComponentLibraries: [], customCategoryLibraries: [] }, response: "{ok:true,...deviceLibrary}", examples: [
     { label: "清空自定义图元", params: { __body__: { customComponentLibraries: [], customCategoryLibraries: [], customDeviceTemplates: [], customGraphTemplates: [], customGraphTemplateTypes: [], deviceDefinitionOverrides: {} } } }
   ]},
+  // ---- 全局线路域 ----
+  // 错误形状与其余端点不同：这里是 {error: "中文串"}，不是 v1 的 {error:{code,message}}。
+  { scope: "space", group: "全局线路", method: "GET", path: "/webgrp/global-lines", desc: "全局线路登记表（跨模型共享的线路身份与落点）", response: "{ok:true,records:[...]}", examples: [
+    { label: "当前空间的全局线路列表", params: {} }
+  ]},
+  { scope: "space", group: "全局线路", method: "POST", path: "/webgrp/global-lines/attach", desc: "把一条线路登记为全局线路（仅交流/直流线路设备）", body: { lineId: "", nodeId: "", modelType: "厂站" }, response: "{ok:true,record:{...}}", examples: [
+    { label: "空 body → 400（仅支持交流或直流线路进入全局线路表）", params: { __body__: {} } }
+  ]},
+  { scope: "space", group: "全局线路", method: "POST", path: "/webgrp/global-lines/detach", desc: "解除一条线路的全局登记", body: { lineId: "" }, response: "{ok:true,record:{...}}", examples: [
+    { label: "不存在的 lineId → 404", params: { __body__: { lineId: "no-such-line" } } }
+  ]},
+  { scope: "space", group: "全局线路", method: "PUT", path: "/webgrp/global-lines/record", desc: "更新全局线路登记（如落点变化）", body: { lineId: "" }, response: "{ok:true,record:{...}}", examples: [
+    { label: "不存在的 lineId → 404", params: { __body__: { lineId: "no-such-line" } } }
+  ]},
+  { scope: "space", group: "全局线路", method: "DELETE", path: "/webgrp/global-lines/record", desc: "删除已无端点引用的全局线路登记", body: { lineId: "" }, response: "{ok:true,record:{...}}", examples: [
+    { label: "不存在的 lineId → 404", params: { __body__: { lineId: "no-such-line" } } }
+  ]},
+  { scope: "space", group: "全局线路", method: "POST", path: "/webgrp/global-lines/sync-project", desc: "按模型全量重建该空间的全局线路登记表（以模型拓扑为准）", body: { project: { nodes: [], edges: [] } }, response: "{ok:true,project,storageProject,nodes,assignments,records}", examples: [
+    { label: "空模型 → 登记表清空并回显", params: { __body__: { project: { nodes: [], edges: [] } } } }
+  ]},
+  // ---- 图元 Symbol 导出域 ----
+  // 错误形状：{error:{code,message}}，code ∈ invalid-request / template-not-found / empty-symbol。
+  { scope: "space", group: "图元导出", method: "GET", path: "/webgrp/symbol-export-schemes", desc: "读取图元导出方案（分组/编号/视图框等预设）", response: "{exists,schemaVersion,schemes:[...]}", examples: [
+    { label: "未配置过时 exists=false", params: {} }
+  ]},
+  { scope: "space", group: "图元导出", method: "PUT", path: "/webgrp/symbol-export-schemes", desc: "保存图元导出方案", body: { schemaVersion: 1, schemes: [] }, response: "{ok:true,schemaVersion,schemes}", examples: [
+    { label: "写成空方案列表", params: { __body__: { schemaVersion: 1, schemes: [] } } }
+  ]},
+  { scope: "space", group: "图元导出", method: "POST", path: "/webgrp/symbol-export", desc: "导出选中图元为「合并集合件」SVG（只含 style 与 defs/symbol）", body: { kinds: [] }, response: "{ok:true,svg,symbolCount,exportedKinds,skippedKinds,missingKinds,fileName}", examples: [
+    { label: "空 kinds → 400 invalid-request（至少选一个）", params: { __body__: { kinds: [] } } }
+  ]},
+  { scope: "space", group: "图元导出", method: "POST", path: "/webgrp/symbol-export-standalone", desc: "导出选中图元为「每图元一个自包含 SVG」的 ZIP", body: { kinds: [] }, response: "<application/zip>，响应头 x-symbol-export-file-count 为文件数", examples: [
+    { label: "空 kinds → 400 invalid-request（至少选一个）", params: { __body__: { kinds: [] } } }
+  ]},
 
   // ---- v1 方案域（第三方只读）----
   { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes", desc: "方案树（信封 {ok,data}）", query: [{ name: "includeProjects", desc: "1 时含完整 project" }], response: "{ok:true,data:{schemes:[...]}}", examples: [

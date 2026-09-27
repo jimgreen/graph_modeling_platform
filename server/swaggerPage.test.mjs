@@ -33,13 +33,16 @@ test("页面是完整 HTML 文档且自带 highlight.js", () => {
   expect(html).toContain("highlight");
 });
 
-test("端点数与示例总数符合文档记载（71 端点 / 96 示例）", () => {
-  expect(SWIGGER_ENDPOINTS).toHaveLength(71);
+// 端点/示例数会随功能增长；这里钉住的是「文档与实际同步」这一事实，具体数字见
+// swaggerPage.mjs 的 ENDPOINTS。真正的漂移防护在 routeCoverage.test.mjs
+// （已注册路由 vs 已文档化端点），本条只防手滑漏改。
+test("端点数与示例总数符合文档记载（81 端点 / 106 示例）", () => {
+  expect(SWIGGER_ENDPOINTS).toHaveLength(81);
   const exampleTotal = SWIGGER_ENDPOINTS.reduce(
     (sum, endpoint) => sum + (endpoint.examples?.length ?? 0),
     0
   );
-  expect(exampleTotal).toBe(96);
+  expect(exampleTotal).toBe(106);
   // 每个端点都必须有示例：swigger.examples.test.mjs 靠它逐条真实调用
   for (const endpoint of SWIGGER_ENDPOINTS) {
     expect(endpoint.examples?.length ?? 0, `${endpoint.method} ${endpoint.path} 没有示例`).toBeGreaterThan(0);
