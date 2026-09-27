@@ -114,6 +114,14 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./src/test-setup.ts"],
     // e2e 起真实 Vite+浏览器，慢且依赖环境，不进默认 pnpm test；用 pnpm test:e2e 单独跑
-    exclude: ["**/node_modules/**", "**/dist/**", "e2e/**"]
+    exclude: ["**/node_modules/**", "**/dist/**", "e2e/**"],
+    // 默认 5s 对这个套件太紧：全量 3500+ 用例、32 路并发抢 CPU，而其中确有一批
+    // 本身就慢的集成型用例（起 TS 编译器、遍历全图、真跑 HTTP/WS），空载 1~2s、
+    // 并发下轻易过 5s —— 表现为「机器慢」被报成「用例坏了」，且逐个加预算会没完没了
+    // （实测同一轮全量里 swigger.examples / customDeviceUtils / symbolExportSvg 轮着红）。
+    // 放到 30s：真正的死循环/挂起仍会被抓到（只是晚一点），而慢用例不再假红。
+    // 需要更严的守卫时，在具体用例上显式传更小的 timeout 即可覆盖本值。
+    testTimeout: 30_000,
+    hookTimeout: 30_000
   }
 });
