@@ -78,9 +78,12 @@ const effectiveBase = useRelativeBase ? './' : frontendPrefix;
 // vitest 的 node 环境没有该全局，于是 runtimeWsClient.test.ts 一 connect() 就
 // ReferenceError（12 条用例红）。测试要验的是**源码**语义，故按 VITEST 标记摘掉该插件。
 const isVitest = process.env.VITEST === "true";
+// qiankun() 返回的是插件**数组**，而 plugins 接受嵌套数组，故这里整体塞进一个元素即可，
+// 不能展开（展开后 TS 判成 PluginOption 非数组，见 TS2461）。
+const appPlugins = isVitest ? [react()] : [react(), qiankun({ name })];
 
 export default defineConfig({
-  plugins: [react(), ...(isVitest ? [] : qiankun({ name }))],
+  plugins: appPlugins,
   base: effectiveBase,
   define: {
     __API_PREFIX__: JSON.stringify(apiPrefix),

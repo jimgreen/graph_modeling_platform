@@ -7,9 +7,13 @@ import { DEVICE_LIBRARY, type ProjectFile } from "../model";
 /**
  * 验证 createExportEFile 完整导出路径（含 eDeviceDefinitionTableIds）：
  * id 字段必须按 key_to_long 转换（用户反馈桌面导出文件 id 未转换）
+ *
+ * 用例要读真实工程样本，而 data/ 整目录在 .gitignore 里（运行时数据），
+ * 干净检出的仓库上不存在 —— 缺样本时跳过本条，别让 ENOENT 报成「导出逻辑坏了」。
  */
+const TIANFU_PROJECT = "data/schemes/files/四川/成都/厂站/天府新区站.json";
 describe("导出 E 文件 id 转换（完整路径）", () => {
-  it("模拟 createExportEFile 导出，id 字段应为计算值", () => {
+  it.skipIf(!fs.existsSync(TIANFU_PROJECT))("模拟 createExportEFile 导出，id 字段应为计算值", () => {
     const template = fs.readFileSync("public/e-templates/ems_rtdb.e", "utf-8");
     const sections = parseEDeviceDefinitionFile(template);
     const result = applyEDeviceDefinitionSectionsToLibraryState({
@@ -27,7 +31,7 @@ describe("导出 E 文件 id 转换（完整路径）", () => {
       eDeviceDefinitionTableIds: result.eDeviceDefinitionTableIds,
       resolveDefinitionComponentLibrary: ((template: any) => template.kind) as any
     });
-    const project = JSON.parse(fs.readFileSync("data/schemes/files/四川/成都/厂站/天府新区站.json", "utf-8")) as ProjectFile;
+    const project = JSON.parse(fs.readFileSync(TIANFU_PROJECT, "utf-8")) as ProjectFile;
     const file = buildEFileExport(project, ["默认方案"], exportOptions);
     const text = file.text;
     fs.writeFileSync("output/ems_rtdb_桌面路径验证.e", text, "utf-8");

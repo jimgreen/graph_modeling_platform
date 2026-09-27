@@ -520,7 +520,10 @@ describe("generated icon library integrity", () => {
     }
 
     expect(duplicateCategories).toEqual([]);
-  });
+    // 要逐个读盘上千个 SVG 再归一化比对：空载 ~1.5s，全量并发抢 IO 时会偶发撞上
+    // vitest 的 5s 默认 testTimeout（MCHECK 报告里记的「时好时坏」就是它）。
+    // 显式给预算，别让机器慢被报成「图标库有重复结构」。
+  }, 60_000);
 
   it("does not keep duplicate SVG structures across the whole icon library", () => {
     const catalog = readJson<IconCatalog>(path.join(iconLibraryDir, "catalog.json"));
@@ -542,5 +545,6 @@ describe("generated icon library integrity", () => {
 
     const duplicates = [...structures.values()].filter((ids) => ids.length > 1);
     expect(duplicates).toEqual([]);
-  });
+    // 覆盖面比上一条更大（遍历 catalog 里的全部库），读盘量也更大，同理给足预算。
+  }, 60_000);
 });

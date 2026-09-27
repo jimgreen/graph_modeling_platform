@@ -10,8 +10,12 @@ import { DEVICE_LIBRARY, type ProjectFile } from "../model";
  * 2. 模板表号属性解析并传递到导出选项
  * 3. 导出时 id 字段按 key_to_long(表号, 0, 行号) 计算（行号从 1 开始）
  * 4. 引用字段（st_id/bv_id/subarea_id/tr_id 等）同步为目标表记录的计算后 id
+ *
+ * 整组都基于真实工程样本（describe 体里就把它读出来），而 data/ 整目录在 .gitignore 里，
+ * 干净检出的仓库上不存在 —— 故整组按样本是否就位跳过。
  */
-describe("XX实时库模板导出规则", () => {
+const TIANFU_PROJECT = "data/schemes/files/四川/成都/厂站/天府新区站.json";
+describe.skipIf(!fs.existsSync(TIANFU_PROJECT))("XX实时库模板导出规则", () => {
   const template = fs.readFileSync("public/e-templates/ems_rtdb.e", "utf-8");
   const sections = parseEDeviceDefinitionFile(template);
   const result = applyEDeviceDefinitionSectionsToLibraryState({
@@ -25,10 +29,16 @@ describe("XX实时库模板导出规则", () => {
     eDeviceDefinitionTemplateFields: result.eDeviceDefinitionTemplateFields,
     eDeviceDefinitionTableIds: result.eDeviceDefinitionTableIds
   });
-  const project = JSON.parse(fs.readFileSync("data/schemes/files/四川/成都/厂站/天府新区站.json", "utf-8")) as ProjectFile;
+  // 惰性读取：`describe.skipIf` 只是跳过执行，**仍会求值 describe 体**，
+  // 所以这里不能直接 readFileSync —— 样本缺失时照样在收集阶段抛 ENOENT，整文件挂掉。
+  let cachedProject: ProjectFile | undefined;
+  const project = (): ProjectFile => {
+    cachedProject ??= JSON.parse(fs.readFileSync(TIANFU_PROJECT, "utf-8")) as ProjectFile;
+    return cachedProject;
+  };
 
   function sectionData(name: string) {
-    const text = buildEDeviceParameterFile(project, ["默认方案"], exportOptions);
+    const text = buildEDeviceParameterFile(project(), ["默认方案"], exportOptions);
     const m = text.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`));
     if (!m) return null;
     const body = m[1];
