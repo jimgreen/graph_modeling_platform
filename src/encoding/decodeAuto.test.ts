@@ -24,6 +24,10 @@ describe("decodeAuto 编码自动识别", () => {
     const text = "天府新区站";
     const withBom = Uint8Array.from([0xef, 0xbb, 0xbf, ...utf8(text)]);
     expect(decodeAuto(withBom)).toBe(text);
+    // 说明：实现里 decodeAuto 的 BOM 分支其实是**冗余**的 —— TextDecoder 默认
+    // ignoreBOM:false 会自己剥离 BOM，fatal 严格解码即可得到同样结果（已实测）。
+    // 保留它无害，但别以为它在起作用；真正不可省的是 looksLikeGbk 的 BOM 分支。
+    expect(new TextDecoder("utf-8", { fatal: true }).decode(withBom)).toBe(text);
   });
 
   it("纯 ASCII：GBK 与 UTF-8 解出同一结果，无需区分", () => {
@@ -117,9 +121,16 @@ describe("looksLikeGbk", () => {
     expect(looksLikeGbk(utf8("天府新区站"))).toBe(false);
   });
 
-  it("带 UTF-8 BOM 的一律 false，哪怕后续字节本可按 GBK 解", () => {
-    const withBom = bytesOf([0xef, 0xbb, 0xbf, ...encodeGbk("天府新区站")]);
-    expect(looksLikeGbk(withBom)).toBe(false);
+  it("带 UTF-8 BOM 的一律 false，即便后续字节恰好能凑成合法 GBK 对（分支必要性）", () => {
+    // BOM(3 字节) + 1 个 ASCII = 4 字节，解成 GBK 恰好是 (EF,BB)(BF,41) 两个合法对、
+    // 不含替换字符 —— 所以「只看去不出替换字符」的判据会误判成 true。
+    // 这条 BOM 前置检查是唯一拦住它的东西，删掉本用例即红。
+    const bomPlusAscii = Uint8Array.from([0xef, 0xbb, 0xbf, 0x41]);
+    expect(new TextDecoder("gbk").decode(bomPlusAscii)).not.toContain("�");
+    expect(looksLikeGbk(bomPlusAscii)).toBe(false);
+
+    const bomPlusGbk = bytesOf([0xef, 0xbb, 0xbf, ...encodeGbk("天府新区站")]);
+    expect(looksLikeGbk(bomPlusGbk)).toBe(false);
   });
 
   it("空输入不抛错（true：无可判定的替换字符）", () => {
