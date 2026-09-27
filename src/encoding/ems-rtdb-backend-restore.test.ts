@@ -8,15 +8,17 @@ import { DEVICE_LIBRARY, type ProjectFile } from "../model";
  * 模拟「后端 device-library（含 eDeviceDefinitionTableIds）→ 启动加载 → 导出」链路，
  * 验证修复后 id 转换在完整运行时路径生效。
  */
+// 工程样本与后端库都属运行时数据（data/ 整目录在 .gitignore 里），干净检出的仓库上不存在。
+// 两个都要在：只判库存在、样本缺失时，下面的 readFileSync 照样抛 ENOENT。
+const BACKEND_LIBRARY = "data/device-library/library.json";
+const TIANFU_PROJECT = "data/schemes/files/四川/成都/厂站/天府新区站.json";
+
 describe("后端持久化表号恢复链路", () => {
-  it("从后端 library.json 读取 tableIds 并导出，id 应转换", () => {
+  it.skipIf(!fs.existsSync(BACKEND_LIBRARY) || !fs.existsSync(TIANFU_PROJECT))(
+    "从后端 library.json 读取 tableIds 并导出，id 应转换",
+    () => {
     // 1. 读取后端持久化的设备库（可能含 eDeviceDefinitionTableIds）
-    const backendPath = "data/device-library/library.json";
-    if (!fs.existsSync(backendPath)) {
-      console.log("跳过：后端设备库文件不存在");
-      return;
-    }
-    const backend = JSON.parse(fs.readFileSync(backendPath, "utf-8"));
+    const backend = JSON.parse(fs.readFileSync(BACKEND_LIBRARY, "utf-8"));
     const tableIds = backend.eDeviceDefinitionTableIds ?? {};
     // 验证 tableIds 存在（可能为空）
     expect(typeof tableIds).toBe("object");
@@ -38,7 +40,7 @@ describe("后端持久化表号恢复链路", () => {
     });
 
     // 4. 导出
-    const project = JSON.parse(fs.readFileSync("data/schemes/files/四川/成都/厂站/天府新区站.json", "utf-8")) as ProjectFile;
+    const project = JSON.parse(fs.readFileSync(TIANFU_PROJECT, "utf-8")) as ProjectFile;
     const file = buildEFileExport(project, ["默认方案"], exportOptions);
     const text = file.text;
     fs.writeFileSync("output/ems_rtdb_后端恢复验证.e", text, "utf-8");
