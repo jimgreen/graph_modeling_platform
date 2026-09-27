@@ -5,6 +5,7 @@ import { WebSocketServer } from "ws";
 import { apiPath } from "./config.mjs";
 import { parseSpaceCookie } from "./spaceStore.mjs";
 import { randomId } from "../shared/randomId.mjs";
+import { isAllowedNativeExportOrigin } from "./nativeExportSave.mjs";
 
 const HEARTBEAT_CHECK_INTERVAL_MS = 15_000;
 const HEARTBEAT_TIMEOUT_MS = 60_000;
@@ -50,6 +51,18 @@ export function attachRuntimeWebSocket(server, registry, spaceStore = null) {
     // WS 在 apiPrefix 下：/webgrp/ws
     if (url.pathname !== apiPath("/ws")) {
       // 非 /webgrp/ws 升级，交还（实际无其他 WS，直接销毁）
+      socket.destroy();
+      return;
+    }
+    // **Origin 校验**：WebSocket 不受 CORS 约束，浏览器的同源策略对它无效 ——
+    // 任意网页里的脚本都能对 ws://127.0.0.1:<port>/webgrp/ws 发起升级。
+    // 服务默认只听 127.0.0.1，但「本机可达」不等于「只有本机页面能连」：
+    // 诱导用户打开一个恶意网页，其中的脚本就能注册成客户端、读到运行时态
+    // （模型 / 图元 / 量测 / 截图 / E 文件），并把伪造的 fetch-response 回给
+    // v1 接口的调用方（WS 桥接信任「已注册客户端」的应答）。
+    // 故与「快速另存为」端点复用同一份 origin 策略（isAllowedNativeExportOrigin）：
+    // 无 Origin 头放行（非浏览器客户端，如 Node 的 ws / 集成脚本），有 Origin 则必须是本机。
+    if (!isAllowedNativeExportOrigin(request)) {
       socket.destroy();
       return;
     }
