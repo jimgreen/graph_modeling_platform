@@ -2,6 +2,9 @@
 //
 // 这里刻意不 mock 具体实现模块，只桩掉 fetch —— 要验的正是「前端到底发了什么请求、
 // 拿到响应后有没有如实落盘」，mock 掉 requestBackendSymbolExport 就什么都验不到了。
+//
+// 成功提示走「导出完成弹框」（showStandaloneExportCompletion）而非 toast：弹框才有【查看】按钮。
+// 落盘桩因此要回调 options.onSaved，弹框才拿得到查看凭据 —— 与真实本机另存为链路同形。
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   createDeleteSymbolExportScheme,
@@ -69,6 +72,29 @@ afterEach(() => {
 
 const templateOf = (kind: string) => ({ kind }) as never;
 
+/** 本机另存为成功后后端签发的查看凭据（真值只需 token/filename/path 三样）。 */
+const VIEW_FILE = { token: "view-token", filename: "x.svg", path: "C:\\exports\\x.svg" };
+
+/**
+ * 落盘桩：记录 options，并像真链路那样回调 onSaved。
+ * 成功提示改走导出完成弹框后，「弹框里有没有【查看】」就等于 onSaved 有没有被接住。
+ */
+function savingTextFileStub(saved: Array<Record<string, unknown>>, viewFile: unknown = VIEW_FILE) {
+  return async (payload: Record<string, unknown>) => {
+    saved.push(payload);
+    (payload.onSaved as ((file: unknown) => void) | undefined)?.(viewFile);
+    return true;
+  };
+}
+
+function savingBlobFileStub(saved: Array<Record<string, unknown>>, viewFile: unknown = VIEW_FILE) {
+  return async (payload: Record<string, unknown>) => {
+    saved.push(payload);
+    (payload.onSaved as ((file: unknown) => void) | undefined)?.(viewFile);
+    return true;
+  };
+}
+
 describe("createExportComponentSymbols", () => {
   test("把去重后的 kind 交给后端，并用后端返回的文件名与正文落盘", async () => {
     const calls = stubFetch(() => ({
@@ -84,13 +110,12 @@ describe("createExportComponentSymbols", () => {
     }));
     const saved: Array<Record<string, unknown>> = [];
     const messages: unknown[][] = [];
+    const completions: unknown[][] = [];
     const exportSymbols = createExportComponentSymbols({
-      saveTextFile: async (payload: Record<string, unknown>) => {
-        saved.push(payload);
-        return true;
-      },
+      saveTextFile: savingTextFileStub(saved),
       setSymbolExportSchemesStatus: () => undefined,
       showGlobalMessage: (...args: unknown[]) => messages.push(args),
+      showStandaloneExportCompletion: (...args: unknown[]) => completions.push(args),
       writeOperationLog: () => undefined
     });
 
@@ -113,7 +138,14 @@ describe("createExportComponentSymbols", () => {
     expect(saved[0].filename).toBe("component-symbols-20260101-000000.svg");
     expect(String(saved[0].text)).toContain("<symbol");
     expect(saved[0].mime).toBe("image/svg+xml");
-    expect(messages[0][1]).toBe("success");
+    // 走本机另存为才有磁盘路径可看
+    expect(saved[0].preferNativeDialog).toBe(true);
+    // 成功提示走导出完成弹框，并带上 onSaved 交回来的查看凭据
+    expect(messages).toHaveLength(0);
+    expect(completions).toHaveLength(1);
+    expect(completions[0][0]).toBe("图元 Symbol 导出完成");
+    expect(String(completions[0][1])).toContain("component-symbols-20260101-000000.svg");
+    expect(completions[0][3]).toEqual(VIEW_FILE);
   });
 
   test("后端报错时如实上抛消息，不落盘、不本地兜底合成", async () => {
@@ -169,16 +201,18 @@ describe("createExportComponentSymbols", () => {
       }
     }));
     const messages: unknown[][] = [];
+    const completions: unknown[][] = [];
     const exportSymbols = createExportComponentSymbols({
       saveTextFile: async () => true,
       setSymbolExportSchemesStatus: () => undefined,
       showGlobalMessage: (...args: unknown[]) => messages.push(args),
+      showStandaloneExportCompletion: (...args: unknown[]) => completions.push(args),
       writeOperationLog: () => undefined
     });
 
     expect(await exportSymbols([templateOf("ac-breaker"), templateOf("ac-ghost")])).toBe(true);
-    expect(messages[0][1]).toBe("warning");
-    expect(String(messages[0][0])).toContain("保存图元库");
+    expect(completions).toHaveLength(1);
+    expect(String(completions[0][1])).toContain("保存图元库");
   });
 });
 
@@ -201,13 +235,12 @@ describe("createExportComponentSymbolsStandalone（独立图元 SVG 导出）", 
     }));
     const saved: Array<Record<string, unknown>> = [];
     const messages: unknown[][] = [];
+    const completions: unknown[][] = [];
     const exportStandalone = createExportComponentSymbolsStandalone({
-      saveBlobFile: async (payload: Record<string, unknown>) => {
-        saved.push(payload);
-        return true;
-      },
+      saveBlobFile: savingBlobFileStub(saved),
       setSymbolExportSchemesStatus: () => undefined,
       showGlobalMessage: (...args: unknown[]) => messages.push(args),
+      showStandaloneExportCompletion: (...args: unknown[]) => completions.push(args),
       writeOperationLog: () => undefined
     });
 
@@ -231,11 +264,15 @@ describe("createExportComponentSymbolsStandalone（独立图元 SVG 导出）", 
     expect(saved[0].blob).toBeInstanceOf(Blob);
     const blobBytes = new Uint8Array(await (saved[0].blob as Blob).arrayBuffer());
     expect([...blobBytes.slice(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04]);
-    expect(messages[0][1]).toBe("success");
+    expect(saved[0].preferNativeDialog).toBe(true);
+    expect(messages).toHaveLength(0);
+    expect(completions).toHaveLength(1);
+    expect(completions[0][0]).toBe("独立图元 SVG 导出完成");
+    expect(completions[0][3]).toEqual(VIEW_FILE);
     // 文件数（3）可能多于图元数（2，多状态一状态一文件），提示里两个数都要有
-    expect(String(messages[0][0])).toContain("2 个图元");
-    expect(String(messages[0][0])).toContain("3 个 SVG 文件");
-    expect(String(messages[0][0])).toContain("component-symbols-20260101-000000.zip");
+    expect(String(completions[0][1])).toContain("2 个图元");
+    expect(String(completions[0][1])).toContain("3 个 SVG 文件");
+    expect(String(completions[0][1])).toContain("component-symbols-20260101-000000.zip");
   });
 
   test("单图元：后端直接回 svg（不套 zip），按 image/svg+xml 落盘", async () => {
@@ -249,14 +286,12 @@ describe("createExportComponentSymbolsStandalone（独立图元 SVG 导出）", 
       bytes: new TextEncoder().encode("<svg><rect/></svg>")
     }));
     const saved: Array<Record<string, unknown>> = [];
-    const messages: unknown[][] = [];
+    const completions: unknown[][] = [];
     const exportStandalone = createExportComponentSymbolsStandalone({
-      saveBlobFile: async (payload: Record<string, unknown>) => {
-        saved.push(payload);
-        return true;
-      },
+      saveBlobFile: savingBlobFileStub(saved),
       setSymbolExportSchemesStatus: () => undefined,
-      showGlobalMessage: (...args: unknown[]) => messages.push(args),
+      showGlobalMessage: () => undefined,
+      showStandaloneExportCompletion: (...args: unknown[]) => completions.push(args),
       writeOperationLog: () => undefined
     });
 
@@ -264,7 +299,10 @@ describe("createExportComponentSymbolsStandalone（独立图元 SVG 导出）", 
     expect(saved[0].filename).toBe("ac-breaker.svg");
     expect(saved[0].mime).toBe("image/svg+xml");
     expect(saved[0].extensions).toEqual([".svg"]);
-    expect(String(messages[0][0])).toContain("已独立导出图元 SVG");
+    // 单文件（非 zip）也走导出完成弹框
+    expect(completions).toHaveLength(1);
+    expect(completions[0][0]).toBe("图元 SVG 导出完成");
+    expect(String(completions[0][1])).toContain("已独立导出图元 SVG");
   });
 
   test("content-disposition 里被 encodeURIComponent 的中文名要解回来", async () => {
@@ -328,23 +366,26 @@ describe("createExportComponentSymbolsStandalone（独立图元 SVG 导出）", 
       bytes: new Uint8Array([0x50, 0x4b])
     }));
     const messages: unknown[][] = [];
+    const completions: unknown[][] = [];
     const exportStandalone = createExportComponentSymbolsStandalone({
       saveBlobFile: async () => true,
       setSymbolExportSchemesStatus: () => undefined,
       showGlobalMessage: (...args: unknown[]) => messages.push(args),
+      showStandaloneExportCompletion: (...args: unknown[]) => completions.push(args),
       writeOperationLog: () => undefined
     });
 
     expect(await exportStandalone([])).toBe(false);
     expect(await exportStandalone(null)).toBe(false);
     expect(calls).toHaveLength(0);
-    // 两次空选各提示一次「请至少选择一个」，之后成功消息排在第 3 条
+    // 两次空选各提示一次「请至少选择一个」，空选不弹完成框
     expect(String(messages[0][0])).toContain("请至少选择一个");
     expect(String(messages[1][0])).toContain("请至少选择一个");
+    expect(completions).toHaveLength(0);
 
     expect(await exportStandalone([templateOf("ac-breaker"), templateOf("ac-ghost")])).toBe(true);
-    expect(messages[2][1]).toBe("warning");
-    expect(String(messages[2][0])).toContain("保存图元库");
+    expect(completions).toHaveLength(1);
+    expect(String(completions[0][1])).toContain("保存图元库");
   });
 });
 

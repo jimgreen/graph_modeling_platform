@@ -25,7 +25,7 @@ import {
 import { buildMultiModelEFileExport } from "./model";
 import { buildEFileExportOptionsFromLibrary } from "./appExtracted/appDeviceDefinitionFactories";
 import { apiPath } from "./config";
-import { saveLazyTextFile } from "./fileIO";
+import { saveLazyTextFile, type SavedExportFile } from "./fileIO";
 import { WindowCloseButton } from "./WindowCloseButton";
 
 type AllNetworkTopologyDialogProps = {
@@ -1091,6 +1091,8 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
         resolveDefinitionComponentLibrary: scope.resolveTemplateComponentLibrary
       });
       const globalLineRecords = await loadGlobalLineRecordsForTopology();
+      // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
+      let savedFile: SavedExportFile | null = null;
       const saved = await saveLazyTextFile({
         filename: "全网拓扑.e",
         loadText: () => buildMultiModelEFileExport(
@@ -1108,10 +1110,18 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
         encoding,
         pickerId: "all-network-topology-e-export",
         startIn: "downloads",
-        preferNativeDialog: true
+        preferNativeDialog: true,
+        onSaved: (file) => {
+          savedFile = file;
+        }
       });
       if (saved) {
-        scope.showGlobalMessage?.("全网拓扑 E 文件导出成功。", "success");
+        scope.showStandaloneExportCompletion?.(
+          "全网拓扑 E 文件导出完成",
+          "全网拓扑 E 文件导出成功。",
+          [`模型数：${run.models.length}`],
+          savedFile
+        );
         scope.writeOperationLog?.(`已导出全网拓扑 E 文件：${run.models.length} 个模型`);
       }
     } catch (error) {

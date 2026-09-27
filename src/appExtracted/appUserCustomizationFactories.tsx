@@ -1,4 +1,5 @@
 import type { ChangeEvent } from "react";
+import type { SavedExportFile } from "../fileIO";
 import { buildEffectiveLibraryTemplates } from "../customDeviceUtils";
 import {
   createLibraryPackage,
@@ -240,7 +241,13 @@ export function createRefreshUserCustomizationManager(scope: Record<string, any>
 }
 
 export function createSaveUserCustomizationSnapshotFile(scope: Record<string, any>) {
-  return async (snapshotValue: UserCustomizationSnapshot, label: string) => {
+  // onSaved 只在用户显式「导出全部」时传：操作前备份（createApplyUserCustomizationSnapshot）
+  // 是内部安全步骤，不该弹完成框打断操作。
+  return async (
+    snapshotValue: UserCustomizationSnapshot,
+    label: string,
+    onSaved?: (file: SavedExportFile) => void
+  ) => {
     const snapshot = normalizeUserCustomizationSnapshot(snapshotValue);
     const protectedAssetIds = scope.referencedUserAssetIds ?? new Set<string>();
     const inventory = buildUserCustomizationInventory(snapshot, DEVICE_LIBRARY, protectedAssetIds);
@@ -256,12 +263,15 @@ export function createSaveUserCustomizationSnapshotFile(scope: Record<string, an
         applicationVersion: scope.applicationVersion
       }
     });
+    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
     return scope.saveTextFile({
       filename: `${label}-${scope.timestampForLibraryPackageFilename()}.json`,
       text: JSON.stringify(packagePayload, null, 2),
       mime: "application/json",
       description: "图形建模平台用户自定义文件",
-      extensions: [".json"]
+      extensions: [".json"],
+      preferNativeDialog: true,
+      ...(onSaved ? { onSaved } : {})
     });
   };
 }
@@ -316,11 +326,20 @@ export function createExportAllUserCustomizations(scope: Record<string, any>) {
     scope.setUserCustomizationStatus?.("正在导出用户自定义...");
     try {
       const snapshot = await scope.captureUserCustomizationSnapshot(true);
-      const saved = await scope.saveUserCustomizationSnapshotFile(snapshot, "用户自定义");
+      // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
+      let savedFile: SavedExportFile | null = null;
+      const saved = await scope.saveUserCustomizationSnapshotFile(snapshot, "用户自定义", (file: SavedExportFile) => {
+        savedFile = file;
+      });
       if (saved) {
         const count = buildUserCustomizationInventory(snapshot, DEVICE_LIBRARY, scope.referencedUserAssetIds).summary.total;
+        const message = `用户自定义导出成功，共 ${count} 项。`;
         scope.setUserCustomizationStatus?.(`已导出 ${count} 项用户自定义`);
-        alertUser(scope, `用户自定义导出成功，共 ${count} 项。`);
+        if (typeof scope.showStandaloneExportCompletion === "function") {
+          scope.showStandaloneExportCompletion("用户自定义导出完成", message, [], savedFile);
+        } else {
+          alertUser(scope, message);
+        }
       }
       return saved;
     } catch (error) {

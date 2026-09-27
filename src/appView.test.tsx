@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { areCanvasPropsEqual } from "./appExtracted/appCanvasArea";
 import * as appViewModule from "./appExtracted/appView";
+import { ExportCompletionViewButton } from "./appExtracted/appView";
 import {
   inspectorTabShowsDevicePanel,
   customDeviceDefinitionUsesIconOnly,
@@ -1192,6 +1195,26 @@ describe("user customization manager entry", () => {
     expect(styles).toMatch(
       /@media \(max-width: 760px\)[\s\S]*?\.user-customization-table\s*\{[\s\S]*?min-width:\s*720px/
     );
+  });
+});
+
+describe("导出完成弹框的【查看】按钮", () => {
+  const viewFile = { token: "view-token", filename: "变电站1.e", path: "D:\\exports\\变电站1.e" };
+
+  test("渲染出【查看】并把完整路径放进 title（用户据此知道打开的是哪个文件）", () => {
+    const html = renderToStaticMarkup(createElement(ExportCompletionViewButton, { file: viewFile }));
+
+    expect(html).toContain(">查看</button>");
+    expect(html).toContain("用系统默认程序打开：D:\\exports\\变电站1.e");
+    // 首次渲染是空闲态：不显示「正在打开…」，也不该凭空有错误说明
+    expect(html).not.toContain("正在打开");
+    expect(html).not.toContain("export-completion-view-error");
+  });
+
+  test("没有查看凭据时弹框不渲染该按钮（形态断言，非行为断言）", () => {
+    const source = readAppViewSources();
+    expect(source).toContain("{exportCompletionDialog.file && (");
+    expect(source).toContain("<ExportCompletionViewButton file={exportCompletionDialog.file} />");
   });
 });
 

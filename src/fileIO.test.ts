@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { saveBlobFile, saveLazyTextFile, saveTextFile, writeTextFileToDirectory } from "./fileIO";
+import { openExportedFile, saveBlobFile, saveLazyTextFile, saveTextFile, writeTextFileToDirectory } from "./fileIO";
 import { encodeGbk } from "./encoding/gbk";
 
 describe("text file output", () => {
@@ -280,5 +280,156 @@ describe("text file output", () => {
     expect(write).toHaveBeenCalledWith(encodeGbk("<svg>中文</svg>"));
     expect(write.mock.calls[0]?.[0]).not.toBeInstanceOf(Blob);
     expect(close).toHaveBeenCalledOnce();
+  });
+});
+
+describe("导出文件查看凭据（viewToken）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** 本机另存为全链路桩：先回选择结果，再回写盘结果（带 viewToken）。 */
+  function stubNativeExport(writeBody: unknown) {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        supported: true,
+        cancelled: false,
+        token: "target-token",
+        filename: "model.e"
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(writeBody), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      }));
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("window", { location: { hostname: "127.0.0.1" } });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  test("本机另存为写盘成功后把 viewToken 交给 onSaved（弹框据此给【查看】）", async () => {
+    stubNativeExport({ ok: true, viewToken: "view-token", filename: "model.e", path: "C:\\导出\\model.e" });
+    const onSaved = vi.fn();
+
+    await expect(saveLazyTextFile({
+      filename: "model.e",
+      loadText: () => "<Model/>",
+      mime: "text/plain",
+      description: "E model",
+      extensions: [".e"],
+      preferNativeDialog: true,
+      onSaved
+    })).resolves.toBe(true);
+
+    expect(onSaved).toHaveBeenCalledWith({
+      token: "view-token",
+      filename: "model.e",
+      path: "C:\\导出\\model.e"
+    });
+  });
+
+  test("onSaved 必须在 saveXxx 返回**之前**触发，否则调用方读到的还是 null", async () => {
+    // 导出工厂的写法是 `saved = await saveLazyTextFile(...); showCompletion(..., savedFile)`：
+    // 同步读 savedFile。若 fileIO 漏了 await notifySavedExportFile，onSaved 会落到后面的
+    // 微任务里，弹框就永远拿不到 file、【查看】按钮不渲染（浏览器实测踩过）。
+    stubNativeExport({ ok: true, viewToken: "view-token", filename: "model.e", path: "C:\\导出\\model.e" });
+    const order: string[] = [];
+
+    await saveLazyTextFile({
+      filename: "model.e",
+      loadText: () => "<Model/>",
+      mime: "text/plain",
+      description: "E model",
+      extensions: [".e"],
+      preferNativeDialog: true,
+      onSaved: () => order.push("on-saved")
+    }).then(() => order.push("returned"));
+
+    expect(order).toEqual(["on-saved", "returned"]);
+  });
+
+  test("二进制导出（ZIP）也走本机另存为并回 viewToken", async () => {
+    stubNativeExport({ ok: true, viewToken: "view-zip", filename: "space.zip", path: "C:\\导出\\space.zip" });
+    const onSaved = vi.fn();
+
+    await expect(saveBlobFile({
+      filename: "space.zip",
+      blob: new Blob([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], { type: "application/zip" }),
+      mime: "application/zip",
+      description: "空间压缩包",
+      extensions: [".zip"],
+      preferNativeDialog: true,
+      onSaved
+    })).resolves.toBe(true);
+
+    expect(onSaved).toHaveBeenCalledWith({
+      token: "view-zip",
+      filename: "space.zip",
+      path: "C:\\导出\\space.zip"
+    });
+  });
+
+  test("响应里没有 viewToken（如旧后端）时不谎报可查看", async () => {
+    stubNativeExport({ ok: true, filename: "model.e" });
+    const onSaved = vi.fn();
+
+    await expect(saveLazyTextFile({
+      filename: "model.e",
+      loadText: () => "<Model/>",
+      mime: "text/plain",
+      description: "E model",
+      extensions: [".e"],
+      preferNativeDialog: true,
+      onSaved
+    })).resolves.toBe(true);
+
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  test("改用浏览器下载兜底时同样不给查看凭据（不知道文件落在哪）", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("nope", { status: 500 }));
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("window", { location: { hostname: "127.0.0.1" } });
+    vi.stubGlobal("fetch", fetchMock);
+    // 浏览器下载兜底会真的建 <a> 点一下，node 环境补最小 DOM 桩
+    vi.stubGlobal("document", { createElement: () => ({ click: () => undefined }) });
+    vi.stubGlobal("URL", { createObjectURL: () => "blob:stub", revokeObjectURL: () => undefined });
+    const onSaved = vi.fn();
+
+    await expect(saveLazyTextFile({
+      filename: "model.e",
+      loadText: () => "<Model/>",
+      mime: "text/plain",
+      description: "E model",
+      extensions: [".e"],
+      preferNativeDialog: true,
+      onSaved
+    })).resolves.toBe(true);
+
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  test("openExportedFile 把令牌 POST 给本机查看接口", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await openExportedFile({ token: "view token/x", filename: "model.e", path: "C:\\model.e" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/webgrp/exports/native/open-file?token=view%20token%2Fx",
+      { method: "POST" }
+    );
+  });
+
+  test("openExportedFile 把后端的中文错误如实抛出", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ error: "文件已不存在：C:\\导出\\model.e" }),
+      { status: 500, headers: { "content-type": "application/json" } }
+    )));
+
+    await expect(openExportedFile({ token: "t", filename: "model.e", path: "C:\\model.e" }))
+      .rejects.toThrow("文件已不存在：C:\\导出\\model.e");
+    await expect(openExportedFile({ token: "", filename: "model.e", path: "" }))
+      .rejects.toThrow("缺少导出文件令牌。");
   });
 });

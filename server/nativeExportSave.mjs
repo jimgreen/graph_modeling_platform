@@ -1,9 +1,13 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { atomicWriteFile } from "../shared/atomicWrite.mjs";
 
 const TARGET_TTL_MS = 10 * 60 * 1000;
+// 「查看」令牌比另存为目标活得久：用户导出完可能过一会儿才点开（对拍、贴到文档里）。
+// 仍设上界，避免 Map 无限增长 —— 只在用户点过查看/导出时才各增一条。
+const VIEW_TARGET_TTL_MS = 60 * 60 * 1000;
 const MAX_SUGGESTED_NAME_LENGTH = 240;
 const LOCAL_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
@@ -180,6 +184,116 @@ export function normalizeNativeExportDialogOptions(value = {}) {
   };
 }
 
+/**
+ * PowerShell 单引号字符串字面量：内部的 `'` 必须成对转义。
+ * 路径来自另存为对话框（用户自己选的），但仍按「外来输入」处理 —— 提前闭合字面量会让
+ * 剩余路径片段被当命令解析。
+ */
+function powershellSingleQuoted(value) {
+  return `'${String(value ?? "").replace(/'/gu, "''")}'`;
+}
+
+// 「用系统默认绑定的程序打开」= 让 shell 按文件关联（HKCR）挑程序，
+// 与资源管理器里双击同一个文件完全同路。
+//
+// 走 ProcessStartInfo + UseShellExecute=true，**不**手写 ShellExecuteEx 的 P/Invoke：
+// 手写那版在本机实测对每种文件（含 notepad.exe 本身）一律返回 ERROR_ACCESS_DENIED(5)，
+// 而 .NET 自己的同一条路径（内部同样是 ShellExecute 语义）正常拉起 —— 也就是说
+// 失败来自手写 struct/互操作细节，不是环境不允许。把受支持的 API 放在最前面，
+// 少一份结构体布局风险、少一整段 C#。
+//
+// 为什么不直接 child_process.exec(path)：CreateProcess 只认可执行文件，
+// .e / .xml / .zip 一律 ENOENT，拿不到文件关联。
+// 为什么不直接 Start-Process -FilePath：它在无关联文件上照样退出 0，把失败吞掉，
+// 用户只会看到「点了查看但什么都没发生」，比报错更难排查。
+const WINDOWS_OPEN_FILE_SCRIPT_PREFIX = String.raw`
+$ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+`;
+
+/**
+ * 组装「用系统默认绑定的工具打开文件」的命令。
+ *
+ * 脚本经 -EncodedCommand 传递且不经过 shell，路径里的空格 / & / 中文都不会被二次解释。
+ * 失败时脚本把自己的话写在 `GRAPH_MODEL_OPEN_ERROR:` 之后 —— PowerShell 自身会往 stderr
+ * 吐 CLIXML 噪音，直接取整段 stderr 只会把 XML 甩给用户看。
+ */
+export function buildSystemDefaultOpenCommand(filePath, platform = process.platform) {
+  const target = String(filePath ?? "").trim();
+  if (!target) {
+    throw new NativeExportSaveError("invalid-path", "没有可打开的文件路径。");
+  }
+  if (platform === "win32") {
+    const script = `${WINDOWS_OPEN_FILE_SCRIPT_PREFIX}
+try {
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = ${powershellSingleQuoted(target)}
+  # UseShellExecute=true 即 ShellExecute 语义：文件关联交由系统决定
+  $startInfo.UseShellExecute = $true
+  if ($null -eq [System.Diagnostics.Process]::Start($startInfo)) {
+    throw "系统未能打开该文件。"
+  }
+} catch {
+  $reason = $_.Exception
+  if ($null -ne $_.Exception.InnerException) { $reason = $_.Exception.InnerException }
+  [Console]::Error.Write("GRAPH_MODEL_OPEN_ERROR:" + $reason.Message)
+  exit 1
+}
+[Console]::Out.Write("GRAPH_MODEL_OPEN_OK")
+`;
+    return {
+      command: "powershell.exe",
+      // -Sta：与另存为对话框同一口径（ShellExecute 从 STA 线程发起最稳）
+      args: ["-NoProfile", "-Sta", "-WindowStyle", "Hidden", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")],
+      options: { encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 15000, windowsHide: true }
+    };
+  }
+  if (platform === "darwin") {
+    return {
+      command: "open",
+      args: [target],
+      options: { encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 15000 }
+    };
+  }
+  return {
+    command: "xdg-open",
+    args: [target],
+    options: { encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 15000 }
+  };
+}
+
+/**
+ * 打开失败时只取脚本自己写的那一行。
+ * PowerShell 会把非成功流序列化成 CLIXML 跟在同一行后面（`<Objs ...>`），
+ * 整段端给用户就是一屏 XML —— 截到第一个 `<` 为止（Win32 消息里不会出现尖括号）。
+ */
+function openFailureDetail(stderr) {
+  const line = String(stderr ?? "").split(/\r?\n/u).find((item) => item.startsWith("GRAPH_MODEL_OPEN_ERROR:"));
+  if (!line) {
+    return "";
+  }
+  // Win32 消息自带句末标点（如「系统找不到指定的文件。」），这里先去掉再由外面统一补，
+  // 否则拼出来是「…文件。。请确认…」
+  return line.slice("GRAPH_MODEL_OPEN_ERROR:".length).split("<")[0].trim().replace(/[.。]+$/u, "");
+}
+
+/** 用系统默认绑定的工具打开文件（关联程序由操作系统决定，这里不选程序）。 */
+export async function openFileWithSystemDefault(filePath, dependencies = {}) {
+  const platform = dependencies.platform ?? process.platform;
+  const { command, args, options } = buildSystemDefaultOpenCommand(filePath, platform);
+  try {
+    await execFilePromise(command, args, options, dependencies.execFileImpl ?? execFile);
+  } catch (error) {
+    const detail = openFailureDetail(error?.stderr);
+    throw new NativeExportSaveError(
+      "open-failed",
+      detail
+        ? `未能用默认程序打开文件：${detail}。请确认该文件类型已绑定打开程序。`
+        : "未能用默认程序打开文件，请确认该文件类型已绑定打开程序。"
+    );
+  }
+}
+
 function execFilePromise(command, args, options, execFileImpl = execFile) {
   return new Promise((resolvePromise, reject) => {
     execFileImpl(command, args, options, (error, stdout, stderr) => {
@@ -264,15 +378,24 @@ export function createNativeExportSaveService(dependencies = {}) {
   const chooseFile = dependencies.chooseFile ?? ((options) => showWindowsSaveFileDialog(options, { platform }));
   // 默认走原子写（审查 D-P1-2）：导出中断不留半写损坏文件；测试仍可注入 writeFileImpl
   const writeFileImpl = dependencies.writeFileImpl ?? atomicWriteFile;
+  const openFileImpl = dependencies.openFileImpl
+    ?? ((filePath) => openFileWithSystemDefault(filePath, { platform, execFileImpl: dependencies.execFileImpl }));
   const now = dependencies.now ?? Date.now;
   const createToken = dependencies.createToken ?? randomUUID;
   const targets = new Map();
+  const viewTargets = new Map();
 
   const cleanupExpiredTargets = () => {
     const cutoff = now() - TARGET_TTL_MS;
     for (const [token, target] of targets.entries()) {
       if (target.createdAt < cutoff) {
         targets.delete(token);
+      }
+    }
+    const viewCutoff = now() - VIEW_TARGET_TTL_MS;
+    for (const [token, target] of viewTargets.entries()) {
+      if (target.createdAt < viewCutoff) {
+        viewTargets.delete(token);
       }
     }
   };
@@ -309,11 +432,36 @@ export function createNativeExportSaveService(dependencies = {}) {
       targets.delete(normalizedToken);
       const startedAt = performance.now();
       await writeFileImpl(target.path, data);
+      // 写完即发一枚「查看」令牌：落盘目标是本进程发出去的，后端只需记住写过的路径，
+      // 前端不必（也不能）回传任意路径来让本机打开文件。
+      const viewToken = createToken();
+      viewTargets.set(viewToken, { path: target.path, createdAt: now() });
       return {
         filename: basename(target.path),
+        path: target.path,
         bytes: Buffer.isBuffer(data) ? data.length : Buffer.byteLength(String(data ?? ""), "utf8"),
+        viewToken,
         writeDurationMs: performance.now() - startedAt
       };
+    },
+
+    /**
+     * 用系统默认绑定的程序打开此前写出的导出文件。
+     * 令牌在 TTL 内可重复使用（用户要来回对拍），过期/从未签发一律 404。
+     */
+    async openWrittenFile(token) {
+      cleanupExpiredTargets();
+      const normalizedToken = String(token ?? "").trim();
+      const view = viewTargets.get(normalizedToken);
+      if (!view) {
+        throw new NativeExportSaveError("invalid-token", "导出文件记录已失效，请重新导出后再查看。");
+      }
+      // 令牌只证明「本进程写过这个路径」，不证明文件此刻还在（用户可能挪走/删了）。
+      if (!existsSync(view.path)) {
+        throw new NativeExportSaveError("open-failed", `文件已不存在：${view.path}`);
+      }
+      await openFileImpl(view.path);
+      return { filename: basename(view.path), path: view.path };
     }
   };
 }

@@ -214,4 +214,24 @@ test("/exports/native/* 不受空间校验影响（本机端点）", async () =>
   expect(body?.error?.code).not.toBe("SPACE_UNKNOWN");
   // 且确实进了 handler（本机来源校验的 403），而不是路由没命中
   expect(res.status).toBe(403);
+
+  // 查看端点同样：本机端点、不受空间校验
+  const openRes = await fetch(`${baseUrl}/webgrp/exports/native/open-file?token=nope`, {
+    method: "POST",
+    headers: { "x-space": "nope", origin: "http://evil.example" }
+  });
+  const openBody = await openRes.json().catch(() => ({}));
+  expect(openBody?.error?.code).not.toBe("SPACE_UNKNOWN");
+  expect(openRes.status).toBe(403);
+});
+
+test("查看端点：缺令牌 400、未知令牌 404（都发生在 handler 内、且是本机来源）", async () => {
+  // 不带 Origin 头才会通过 isAllowedNativeExportOrigin（无 Origin 判为本机）；
+  // 带上则先吃 403，测不到令牌校验。
+  const missing = await fetch(`${baseUrl}/webgrp/exports/native/open-file`, { method: "POST" });
+  expect(missing.status).toBe(400);
+  expect((await missing.json()).error).toContain("令牌");
+
+  const unknown = await fetch(`${baseUrl}/webgrp/exports/native/open-file?token=never-issued`, { method: "POST" });
+  expect(unknown.status).toBe(404);
 });

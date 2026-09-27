@@ -44,7 +44,7 @@ import {
   componentLibraryDefinitionOverrideKey,
   resolveEditableComponentLibraryDefinition
 } from "../componentLibraryDefinitions";
-import type { TextFileEncoding } from "../fileIO";
+import type { SavedExportFile, TextFileEncoding } from "../fileIO";
 import { buildDeviceTemplateCopyVisualSvg as defaultBuildDeviceTemplateCopyVisualSvg, schemePathQueryParam } from "./appPersistenceLibraryExport";
 
 
@@ -2581,14 +2581,17 @@ export function showStandaloneExportCompletion(
   __appScope: Record<string, any>,
   title: string,
   message: string,
-  details: string[] = []
+  details: string[] = [],
+  file: SavedExportFile | null = null
 ) {
   const { setExportCompletionDialog } = __appScope;
   if (typeof setExportCompletionDialog === "function") {
     setExportCompletionDialog({
       title,
       message,
-      ...(details.length > 0 ? { details } : {})
+      ...(details.length > 0 ? { details } : {}),
+      // 无 file（浏览器下载兜底 / 非本机部署）时弹框里不出现「查看」，不假装能给
+      ...(file ? { file } : {})
     });
     return;
   }
@@ -2696,6 +2699,11 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
       svgTextPromise ??= Promise.resolve().then(() => fetchBackendModelSvgText(__appScope, textEncoding, "SVG 导出失败。"));
       return svgTextPromise;
     };
+    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
+    let savedFile: SavedExportFile | null = null;
+    const captureSavedFile = (file: SavedExportFile) => {
+      savedFile = file;
+    };
     // 后端不可达/4xx/5xx 均为常规失败路径：与 createExportEFile 一致，catch 后提示并终止
     let saved: boolean;
     try {
@@ -2708,7 +2716,8 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
             extensions: [".svg"],
             encoding: textEncoding,
             preferNativeDialog: true,
-            onSaveTargetReady: markSaveTargetReady
+            onSaveTargetReady: markSaveTargetReady,
+            onSaved: captureSavedFile
           })
         : await saveTextFile({
             filename: `${baseFilename}.svg`,
@@ -2718,7 +2727,8 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
             extensions: [".svg"],
             encoding: textEncoding,
             preferNativeDialog: true,
-            onSaveTargetReady: markSaveTargetReady
+            onSaveTargetReady: markSaveTargetReady,
+            onSaved: captureSavedFile
           });
     } catch (error) {
       showGlobalMessage(error instanceof Error ? error.message : String(error));
@@ -2730,7 +2740,7 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
     writeOperationLog(`导出图形文件：${baseFilename}.svg`);
     const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
     const successMessage = `SVG 文件导出成功：${baseFilename}.svg；字符编码：${textFileEncodingLabel(textEncoding)}；总耗时：${elapsedSeconds} 秒`;
-    showStandaloneExportCompletion(__appScope, "SVG 文件导出完成", successMessage);
+    showStandaloneExportCompletion(__appScope, "SVG 文件导出完成", successMessage, [], savedFile);
   };
 }
 
@@ -2758,6 +2768,11 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
       jsonTextPromise ??= Promise.resolve().then(() => fetchBackendModelJsonText(__appScope, "JSON 导出失败。"));
       return jsonTextPromise;
     };
+    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
+    let savedFile: SavedExportFile | null = null;
+    const captureSavedFile = (file: SavedExportFile) => {
+      savedFile = file;
+    };
     // 后端不可达/4xx/5xx 均为常规失败路径：与 createExportSvgFile 一致，catch 后提示并终止
     let saved: boolean;
     try {
@@ -2770,7 +2785,8 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
             extensions: [".json"],
             encoding: textEncoding,
             preferNativeDialog: true,
-            onSaveTargetReady: markSaveTargetReady
+            onSaveTargetReady: markSaveTargetReady,
+            onSaved: captureSavedFile
           })
         : await saveTextFile({
             filename: `${baseFilename}.json`,
@@ -2780,7 +2796,8 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
             extensions: [".json"],
             encoding: textEncoding,
             preferNativeDialog: true,
-            onSaveTargetReady: markSaveTargetReady
+            onSaveTargetReady: markSaveTargetReady,
+            onSaved: captureSavedFile
           });
     } catch (error) {
       showGlobalMessage(error instanceof Error ? error.message : String(error));
@@ -2792,7 +2809,7 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
     writeOperationLog(`导出模型文件：${baseFilename}.json`);
     const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
     const successMessage = `JSON 文件导出成功：${baseFilename}.json；字符编码：${textFileEncodingLabel(textEncoding)}；总耗时：${elapsedSeconds} 秒`;
-    showStandaloneExportCompletion(__appScope, "JSON 文件导出完成", successMessage);
+    showStandaloneExportCompletion(__appScope, "JSON 文件导出完成", successMessage, [], savedFile);
   };
 }
 
@@ -2826,6 +2843,11 @@ export function createExportEFile(__appScope: Record<string, any>) {
       warningDetails = generated.warningDetails;
       return { file: { filename: `${filenameBase}.e`, text: generated.text, mime: "text/plain" } };
     });
+    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
+    let savedFile: SavedExportFile | null = null;
+    const captureSavedFile = (file: SavedExportFile) => {
+      savedFile = file;
+    };
     let saved: boolean;
     try {
       saved = typeof saveLazyTextFile === "function"
@@ -2837,7 +2859,8 @@ export function createExportEFile(__appScope: Record<string, any>) {
             extensions: [".e"],
             encoding: textEncoding,
             preferNativeDialog: true,
-            onSaveTargetReady: markSaveTargetReady
+            onSaveTargetReady: markSaveTargetReady,
+            onSaved: captureSavedFile
           })
         : await (async () => {
             const { file } = await generatedFilePromise;
@@ -2849,7 +2872,8 @@ export function createExportEFile(__appScope: Record<string, any>) {
               extensions: [".e"],
               encoding: textEncoding,
               preferNativeDialog: true,
-              onSaveTargetReady: markSaveTargetReady
+              onSaveTargetReady: markSaveTargetReady,
+              onSaved: captureSavedFile
             });
           })();
     } catch (error) {
@@ -2863,7 +2887,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
     writeOperationLog(`导出模型文件：${file.filename}`);
     const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
     const successMessage = `E 文件导出成功：${file.filename}；字符编码：${textFileEncodingLabel(textEncoding)}；总耗时：${elapsedSeconds} 秒`;
-    showStandaloneExportCompletion(__appScope, "E 文件导出完成", successMessage, warningDetails);
+    showStandaloneExportCompletion(__appScope, "E 文件导出完成", successMessage, warningDetails, savedFile);
   };
 }
 
@@ -2886,19 +2910,25 @@ export function createExportEDeviceDefinitionFile(__appScope: Record<string, any
       showGlobalMessage("没有可导出的元件定义：所有元件均未勾选导出字段。");
       return;
     }
+    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
+    let savedFile: SavedExportFile | null = null;
     const saved = await saveTextFile({
       filename: file.filename,
       text: file.text,
       mime: file.mime,
       description: "E 元件定义文件",
       extensions: [".e"],
-      encoding: "gbk"
+      encoding: "gbk",
+      preferNativeDialog: true,
+      onSaved: (saved) => {
+        savedFile = saved;
+      }
     });
     if (!saved) {
       return;
     }
     writeOperationLog(`导出元件定义文件：${file.filename}`);
-    showGlobalMessage(`元件定义文件导出成功：${file.filename}`);
+    showStandaloneExportCompletion(__appScope, "E 元件定义文件导出完成", `元件定义文件导出成功：${file.filename}`, [], savedFile);
   };
 }
 
@@ -3126,28 +3156,48 @@ export function createExportProjectRecordFile(__appScope: Record<string, any>) {
   const { activeProjectKey, currentProject, projectName, safeFilePart, saveTextFile, serializeProject, writeOperationLog } = __appScope;
     const projectFile = project.id === activeProjectKey ? currentProject() : project.project;
     const exportName = project.id === activeProjectKey ? projectName : project.name;
-    await saveTextFile({
+    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
+    let savedFile: SavedExportFile | null = null;
+    const saved = await saveTextFile({
       filename: `${safeFilePart(exportName)}.json`,
       text: serializeProject(projectFile),
       mime: "application/json",
       description: "平台模型文件",
-      extensions: [".json"]
+      extensions: [".json"],
+      preferNativeDialog: true,
+      onSaved: (saved) => {
+        savedFile = saved;
+      }
     });
+    if (!saved) {
+      return;
+    }
     writeOperationLog(`导出模型文件：${exportName}.json`);
+    showStandaloneExportCompletion(__appScope, "模型文件导出完成", `模型文件导出成功：${safeFilePart(exportName)}.json`, [], savedFile);
   };
 }
 
 export function createExportCurrentModelFile(__appScope: Record<string, any>) {
   return async () => {
   const { currentProject, projectName, safeFilePart, saveTextFile, serializeProject, writeOperationLog } = __appScope;
-    await saveTextFile({
+    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
+    let savedFile: SavedExportFile | null = null;
+    const saved = await saveTextFile({
       filename: `${safeFilePart(projectName)}.json`,
       text: serializeProject(currentProject()),
       mime: "application/json",
       description: "平台模型文件",
-      extensions: [".json"]
+      extensions: [".json"],
+      preferNativeDialog: true,
+      onSaved: (saved) => {
+        savedFile = saved;
+      }
     });
+    if (!saved) {
+      return;
+    }
     writeOperationLog(`导出当前模型文件：${projectName}.json`);
+    showStandaloneExportCompletion(__appScope, "当前模型文件导出完成", `当前模型文件导出成功：${safeFilePart(projectName)}.json`, [], savedFile);
   };
 }
 
@@ -3731,12 +3781,22 @@ export function createExportSchemeRecord(__appScope: Record<string, any>) {
   const { downloadBackendSchemeArchive, flattenSavedProjects, isPickerAbort, safeFilePart, schemePathForRecord, writeOperationLog } = __appScope;
     try {
       const schemePath = schemePathForRecord(scheme);
-      const saved = await downloadBackendSchemeArchive(schemePath, `${safeFilePart(scheme.name)}.zip`);
+      // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】（ZIP 用系统默认解压器打开）
+      let savedFile: SavedExportFile | null = null;
+      const saved = await downloadBackendSchemeArchive(schemePath, `${safeFilePart(scheme.name)}.zip`, (file) => {
+        savedFile = file;
+      });
       if (!saved) {
         return;
       }
       writeOperationLog(`导出方案：${scheme.name}`);
-      showGlobalMessage(`已导出方案“${scheme.name}”，共 ${flattenSavedProjects([scheme]).length} 个模型。`);
+      showStandaloneExportCompletion(
+        __appScope,
+        "方案导出完成",
+        `已导出方案“${scheme.name}”，共 ${flattenSavedProjects([scheme]).length} 个模型。`,
+        [`文件：${safeFilePart(scheme.name)}.zip`],
+        savedFile
+      );
     } catch (error) {
       if (isPickerAbort(error)) {
         return;
@@ -7154,6 +7214,11 @@ export function createExportCustomComponentTemplateSvg(__appScope: Record<string
     const rawFileName = String(template.englishName ?? template.kind ?? template.label ?? "component").trim();
     const safeFileName = rawFileName.replace(/[^A-Za-z0-9_-]+/g, "_") || "component";
     const filename = `${safeFileName}.svg`;
+    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
+    let savedFile: SavedExportFile | null = null;
+    const captureSavedFile = (saved: SavedExportFile) => {
+      savedFile = saved;
+    };
     const saved = typeof saveTextFile === "function"
       ? await saveTextFile({
           filename,
@@ -7163,7 +7228,8 @@ export function createExportCustomComponentTemplateSvg(__appScope: Record<string
           extensions: [".svg"],
           pickerId: "custom-component-svg-export",
           startIn: "downloads",
-          preferNativeDialog: true
+          preferNativeDialog: true,
+          onSaved: captureSavedFile
         })
       : (() => {
           downloadBlob(filename, new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
@@ -7174,7 +7240,7 @@ export function createExportCustomComponentTemplateSvg(__appScope: Record<string
     }
     const message = `已导出元件 SVG：${filename}`;
     setCustomDeviceSaveMessage(message);
-    showGlobalMessage(message, "success");
+    showStandaloneExportCompletion(__appScope, "元件 SVG 导出完成", message, [], savedFile);
     return true;
   };
 }

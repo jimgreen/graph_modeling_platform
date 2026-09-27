@@ -2,6 +2,8 @@
 
 import type { Edge, ModelNode } from "../model";
 import type { MeasurementGroup } from "../measurements";
+// 仅类型引入：编译期即被擦除，server/cimExport.mjs 直载本模块时不会拖入 fileIO 运行时。
+import type { SavedExportFile } from "../fileIO";
 import { buildCimPackage, collectMissingCriticalParams } from "./cim-builder.ts";
 import { serializeCimPackage } from "./cim-serializer.ts";
 
@@ -22,12 +24,13 @@ export type CimExportScope = {
     encoding?: "utf-8" | "gbk";
     preferNativeDialog?: boolean;
     onSaveTargetReady?: () => void;
+    onSaved?: (file: SavedExportFile) => void;
   }) => Promise<boolean>;
   writeOperationLog?: (message: string) => void;
   /** 空模型提示（真实 scope 传全局 message；测试传 mock） */
   showGlobalMessage?: (message: string) => void;
   /** 保存成功提示（真实 scope 传导出完成弹框；缺省时由 showGlobalMessage 兜底） */
-  showStandaloneExportCompletion?: (title: string, message: string, details?: string[]) => void;
+  showStandaloneExportCompletion?: (title: string, message: string, details?: string[], file?: SavedExportFile | null) => void;
   /** 未保存拦截（与 E / SVG / JSON 导出同闸门：后端读的是磁盘模型，未保存即导出会拿到旧内容） */
   ensureSavedBeforeExport?: () => boolean;
   /** 缺参数警告对话框（§7.4 非阻断设计；未装配时默认继续导出） */
@@ -129,6 +132,8 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
       return false;
     }
     const filename = cimFilename(projectName, safeFilePart);
+    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
+    let savedFile: SavedExportFile | null = null;
     let saved = false;
     try {
       saved = typeof saveLazyTextFile === "function"
@@ -140,7 +145,10 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
             extensions: [".xml"],
             encoding: "utf-8",
             preferNativeDialog: true,
-            onSaveTargetReady: markSaveTargetReady
+            onSaveTargetReady: markSaveTargetReady,
+            onSaved: (file) => {
+              savedFile = file;
+            }
           })
         : false;
     } catch {
@@ -155,7 +163,7 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
       const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
       const successMessage = `CIM/XML 文件导出成功：${filename}；字符编码：UTF-8；总耗时：${elapsedSeconds} 秒`;
       if (typeof scope.showStandaloneExportCompletion === "function") {
-        scope.showStandaloneExportCompletion("CIM/XML 文件导出完成", successMessage);
+        scope.showStandaloneExportCompletion("CIM/XML 文件导出完成", successMessage, [], savedFile);
       } else {
         scope.showGlobalMessage?.(successMessage);
       }
