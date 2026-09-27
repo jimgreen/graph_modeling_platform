@@ -55,7 +55,7 @@ import {
 } from "../model-routing.ts";
 import { getNodeScaleX, getNodeScaleY } from "../model-canvas-ops.ts";
 import { inferESection } from "../model-eexport.ts";
-import { isAcContainerNode, withNodeUpdates } from "../acContainer.ts";
+import { isContainerNode, withNodeUpdates } from "../acContainer.ts";
 import {
   DEFAULT_MEASUREMENT_CONFIG,
   EMPTY_PROJECT_MEASUREMENTS,
@@ -467,7 +467,7 @@ ${scopedBackgroundSvg}
   const layerKeyAllContainer = new Map<string, boolean>();
   for (const node of exportNodes) {
     const layerKey = exportNodeLayerKey(node);
-    layerKeyAllContainer.set(layerKey, (layerKeyAllContainer.get(layerKey) ?? true) && isAcContainerNode(node));
+    layerKeyAllContainer.set(layerKey, (layerKeyAllContainer.get(layerKey) ?? true) && isContainerNode(node));
   }
   const containerLayerKeys = new Set(
     [...layerKeyAllContainer].filter(([, allContainer]) => allContainer).map(([layerKey]) => layerKey)

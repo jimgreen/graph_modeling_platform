@@ -340,7 +340,7 @@ describe("端子附着几何（引线 + 锚点）", () => {
   });
 
   test("AC 容器保留声明尺寸；显式 terminalAnchors 覆盖默认端子位置，引线随之联动", () => {
-    // ac-vpp-box 在 AC_CONTAINER_KINDS 内 → size 80×60 原样保留；顶/底端子 y 方向外伸 4。
+    // ac-vpp-box 在 CONTAINER_KINDS 内 → size 80×60 原样保留；顶/底端子 y 方向外伸 4。
     const markup = terminalAttachmentMarkupForTemplate(templateOf({
       kind: "ac-vpp-box",
       isContainer: true,

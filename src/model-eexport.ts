@@ -17,7 +17,7 @@ import {
   readVoltageLevelSettings, calculateElectricalTopology, isStaticNode, isBusNode,
   resolveTopologyEdgeTerminal,
   gatewayBoundMemberId,
-  isAcContainerKind,
+  isContainerKind,
   // 成员判定单源(规格 B):成员 = containerId 指向存活容器者。声明在 model.ts —— 顶层不得引 acContainer(加载链 TDZ)
   containerMemberNodes,
   routableLineDeviceEndpointRefs,
@@ -36,19 +36,65 @@ import type {
   GlobalLineReference
 } from "./global-lines.ts";
 
-/**
- * 容器成员关系表段名(**单源**):与容器表 `ACContainer` 同族 CamelCase。
- * 登记进 `E_SECTION_COLUMNS` 后自动进 `E_SECTION_OPTIONS`(自定义元件段下拉);五处消费同源:
- * 列定义键、`E_SECTION_OUTPUT_ORDER` 输出序、构建期记录 section、统一 filter 豁免、定稿阶段判定。
- */
-const AC_CONTAINER_DEV_SECTION = "ACContainerDev";
+type ContainerSections = {
+  /** 容器表段名(CamelCase,与容器表同族) */
+  table: string;
+  /** 成员关系表段名(CamelCase,与容器表同族) */
+  dev: string;
+  /** 成员关系段的模板态输出标签(snake_case) */
+  devTemplateSection: string;
+};
 
 /**
- * 成员关系段的**模板态输出标签**(裁决 2026-09-17 轮 15):固定 snake_case。
- * 模板本体(国网/实时库)表名族一律 snake_case,`ACContainerDev` 是**无模板态**的名字(与容器表 ACContainer 同族 CamelCase);
- * 两态分叉只动输出标签,内部段 key(`AC_CONTAINER_DEV_SECTION`)不动 —— 列定义/输出序/记录 section/filter 豁免仍按 key。
+ * 容器段注册表(**单源**):kind 前缀(=能流)→ 该流的容器表段 / 成员关系段 / 成员段模板态标签。
+ * **两态各按各的口径落表,两处不得分叉**:
+ * - 模板态(有 E 模板定义):四类容器**合并进同一张表** `container`(实时库族 `dms_def_container`)、
+ *   成员关系表同为一张 `container_dev`,靠 `dev_type` / `container_type` 区分容器种类
+ *   —— 见 eOutputSectionName 的兜底表名分支。合并后 idx 被重排 1..N,
+ *   `container_id` / `container_idx` 引用由 finalizeContainerCrossRefs 按最终行号定稿(既有机制,本就支持合并段)。
+ * - 非模板态(原始定义生成):无 exportName/labels 可依,直接落**内部段名**当表名
+ *   —— `ACContainer` / `DCContainer` / `HydroContainer` / `HeatContainer` 四张互不相干的表。
+ * 登记进 `E_SECTION_COLUMNS` 的同名 key 自动进 `E_SECTION_OPTIONS`(自定义元件段下拉)。
  */
-const AC_CONTAINER_DEV_TEMPLATE_SECTION = "container_dev";
+const CONTAINER_SECTIONS_BY_PREFIX: Record<string, ContainerSections> = {
+  "ac-": { table: "ACContainer", dev: "ACContainerDev", devTemplateSection: "container_dev" },
+  "dc-": { table: "DCContainer", dev: "DCContainerDev", devTemplateSection: "container_dev" },
+  "hydrogen-": { table: "HydroContainer", dev: "HydroContainerDev", devTemplateSection: "container_dev" },
+  "heat-": { table: "HeatContainer", dev: "HeatContainerDev", devTemplateSection: "container_dev" }
+};
+
+/**
+ * kind 前缀 → 容器段注册项。**前缀不等于容器**:`ac-` 也覆盖 `ac-source` 等普通设备,
+ * 故调用方必须先过 `isContainerKind`,否则普通设备会被误判成容器。
+ */
+function containerSectionsForKind(kind: string): ContainerSections | undefined {
+  for (const [prefix, sections] of Object.entries(CONTAINER_SECTIONS_BY_PREFIX)) {
+    if (kind.startsWith(prefix)) {
+      return sections;
+    }
+  }
+  return undefined;
+}
+
+const CONTAINER_SECTIONS_BY_TABLE = new Map(Object.values(CONTAINER_SECTIONS_BY_PREFIX).map((s) => [s.table, s]));
+/** 容器表段名集合:「这段是不是容器表」的判据单源(取代散落的 `section === "ACContainer"` 字面量) */
+const CONTAINER_TABLE_SECTIONS = new Set(CONTAINER_SECTIONS_BY_TABLE.keys());
+/** 成员关系段名集合:定稿 / filter 豁免的判据单源 */
+const CONTAINER_DEV_SECTIONS = new Set(Object.values(CONTAINER_SECTIONS_BY_PREFIX).map((s) => s.dev));
+/** 成员关系段 → 模板态输出标签(裁决 2026-09-17 轮 15:模板态固定 snake_case) */
+const CONTAINER_DEV_TEMPLATE_SECTIONS = new Map(Object.values(CONTAINER_SECTIONS_BY_PREFIX).map((s) => [s.dev, s.devTemplateSection]));
+
+/**
+ * 容器表 / 成员关系表的列集:四个能流同形,故共用常量。
+ * 各段用**展开**取值而非直接引用 —— E_SECTION_COLUMNS 是导出对象,四段共用一份数组时
+ * 任一消费方就地 push(改列)会连带改掉其余三段;展开各得一份,串改无从发生。
+ */
+const CONTAINER_TABLE_COLUMNS: readonly string[] = [
+  "idx", "name", "dev_type", "is_gateway", "bound_device_idx"
+];
+const CONTAINER_DEV_COLUMNS: readonly string[] = [
+  "device_id", "container_idx", "container_type"
+];
 
 export const E_SECTION_COLUMNS: Record<string, string[]> = {
   Station: ["idx", "name"],
@@ -66,13 +112,19 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   DCRealBs: ["idx", "name", "node", "rated_voltage", "v_max", "v_min", "run_stat"],
   ACNode: ["idx", "name", "vbase", "run_stat"],
   DCNode: ["idx", "name", "vbase", "voltage", "isl", "run_stat"],
-  // 交流容器「容器表」(决策 3):容器无边无端子,只有标量列
-  // dev_type 值 = 容器元件英文名(ac-vpp-box / ac-switch-box / ac-distribution-box),不是 E 段名 ACContainer
-  ACContainer: ["idx", "name", "dev_type", "is_gateway", "bound_device_idx"],
+  // 容器「容器表」(决策 3):容器无边无端子,只有标量列。四个能流列集同形,共用一份常量。
+  // dev_type 值 = 容器元件英文名(ac-vpp-box / dc-vpp-box / …),不是 E 段名(ACContainer 等)
+  ACContainer: [...CONTAINER_TABLE_COLUMNS],
+  DCContainer: [...CONTAINER_TABLE_COLUMNS],
+  HydroContainer: [...CONTAINER_TABLE_COLUMNS],
+  HeatContainer: [...CONTAINER_TABLE_COLUMNS],
   // 容器成员关系表(规格 B):每行 = 一个「容器成员」关系(遍历全部容器的全部成员),三列无「类型」列。
   // device_id 取 `表名_idx`(与 bound_device_idx 同源机制,延到合并段重排后定稿);
-  // container_type 值 = 容器表 dev_type 字段内容(容器元件英文名),不是 E 段名 ACContainer
-  [AC_CONTAINER_DEV_SECTION]: ["device_id", "container_idx", "container_type"],
+  // container_type 值 = 容器表 dev_type 字段内容(容器元件英文名),不是 E 段名
+  ACContainerDev: [...CONTAINER_DEV_COLUMNS],
+  DCContainerDev: [...CONTAINER_DEV_COLUMNS],
+  HydroContainerDev: [...CONTAINER_DEV_COLUMNS],
+  HeatContainerDev: [...CONTAINER_DEV_COLUMNS],
   ACBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "r", "x", "b", "run_stat", "i_p", "i_q", "i_u", "i_i", "j_p", "j_q", "j_u", "j_i"],
   DCBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "rated_voltage", "i_max", "r", "run_stat", "i_p", "i_u", "i_i", "j_p", "j_u", "j_i"],
   ACLoad: [
@@ -360,10 +412,17 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   const sectionKind = baseDeviceKind(kind);
   if (sectionKind === "ac-bus") return "ACRealBs";
   if (sectionKind === "dc-bus") return "DCRealBs";
-  // 交流容器(决策 3):统一落到「容器表」段。容器非 static,不经过下面的 staticComponentLibrary 分支;
-  // 判据走 isAcContainerKind 而非 E_KIND_SECTION_MAP 字面量:本模块在 model.ts 求值期就被 import(model.ts 顶部
-  // `export * from`),顶层读 AC_CONTAINER_KINDS 之类常量必踩 TDZ,故只能运行时判定。
-  if (isAcContainerKind(sectionKind)) return "ACContainer";
+  // 容器(决策 3):按 kind 前缀(=能流)落到该流的「容器表」段(ACContainer / DCContainer / HydroContainer /
+  // HeatContainer)。容器非 static,不经过下面的 staticComponentLibrary 分支;
+  // 判据走 isContainerKind 而非 E_KIND_SECTION_MAP 字面量:本模块在 model.ts 求值期就被 import(model.ts 顶部
+  // `export * from`),顶层读 CONTAINER_KINDS 之类常量必踩 TDZ,故只能运行时判定。
+  // 前缀不足以判容器(`ac-` 也覆盖 ac-source 等设备),故两道判据都要:先 isContainerKind 再取注册项。
+  if (isContainerKind(sectionKind)) {
+    const containerSections = containerSectionsForKind(sectionKind);
+    if (containerSections) {
+      return containerSections.table;
+    }
+  }
   const componentLibrary = staticComponentLibraryFromParams(params);
   const staticComponentLibrary = staticComponentLibraryForNodeLike(sectionKind, params);
   if (staticComponentLibrary) {
@@ -484,8 +543,14 @@ const E_SECTION_OUTPUT_ORDER = [
   "HeatPump",
   // 容器段殿后:未列段本也排在所有已列段之后(remainingRank 起点 = 数组长度),此处显式登记,顺序不靠隐式兜底
   "ACContainer",
-  // 成员关系表紧随容器表之后
-  AC_CONTAINER_DEV_SECTION
+  "DCContainer",
+  "HydroContainer",
+  "HeatContainer",
+  // 成员关系表紧随各自容器表之后
+  "ACContainerDev",
+  "DCContainerDev",
+  "HydroContainerDev",
+  "HeatContainerDev"
 ];
 
 const E_INTEGER_COLUMNS = new Set([
@@ -660,7 +725,7 @@ function getRawEParamValue(
   if (key === "dev_type") {
     // 容器例外:容器的 dev_type 是容器元件英文名(与容器段导出同值),段名 ACContainer 不是设备类,不能当默认值
     const kindName = baseDeviceKind(node.kind);
-    if (isAcContainerKind(kindName)) {
+    if (isContainerKind(kindName)) {
       return kindName;
     }
     const derivedInfo = templateDerivedComponentLibraryInfo({ kind: node.kind, params: node.params });
@@ -1750,7 +1815,7 @@ function applyEInterfaceDefinitionToRecord(
   for (const field of fields) {
     // 容器例外:容器段 dev_type 是容器元件英文名(记录里已写好),不能按「段名即设备类」改写成 ACContainer
     // 判据与 inferESection 同源(先 baseDeviceKind 再判,同 getRawEParamValue 的容器分支)
-    const sourceValue = field.sourceName === "dev_type" && !isAcContainerKind(baseDeviceKind(record.kind))
+    const sourceValue = field.sourceName === "dev_type" && !isContainerKind(baseDeviceKind(record.kind))
       ? record.section || baseDeviceKind(record.kind.split(":", 1)[0])
       : record.params[field.sourceName] ?? "";
     const value = field.definition ? enumExportValueForDefinition(field.definition, sourceValue) : sourceValue;
@@ -1796,16 +1861,19 @@ export function eOutputSectionName(
   interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>,
   options: EFileExportOptions
 ): string {
-  // 成员关系段(功能表)按态分叉:模板态固定 `container_dev`,非模板态走既有口径(`ACContainerDev`)。
+  // 成员关系段(功能表)按态分叉:模板态固定 snake_case(`container_dev` / `container_dev_dc` …),非模板态走 CamelCase 段名。
   // **先于** exportName/labels 判定:该段不是设备类,模板不会为它建定义,而模板态表名族是 snake_case ——
   // 若让 CamelCase 映射(如 eDeviceDefinitionLabels 里的旧写法)压过分叉,模板态又退回 ACContainerDev
-  if (section === AC_CONTAINER_DEV_SECTION && hasTemplateConfig(options)) {
-    return AC_CONTAINER_DEV_TEMPLATE_SECTION;
+  const devTemplateSection = CONTAINER_DEV_TEMPLATE_SECTIONS.get(section);
+  if (devTemplateSection && hasTemplateConfig(options)) {
+    return devTemplateSection;
   }
   // 容器表(功能表,裁决 2026-09-17 轮 17):模板态模板未定义容器段(或该类被类门控关掉)时固定用兜底表名
-  // (实时库族 dms_def_container,其余 container)—— 输出表名与设备表 `container_id` 引用前缀(表名_idx)
+  // (实时库族 dms_def_container,其余 container;四类容器共用一张表,容器种类靠 dev_type 区分
+  //  —— 见 containerFallbackTable)
+  // —— 输出表名与设备表 `container_id` 引用前缀(表名_idx)
   // 共用本函数,两处漂移即让引用指向不存在的表(成员表 container_idx 写裸 idx,不经表名)
-  if (section === "ACContainer" && hasTemplateConfig(options) && !containerSectionDefinedInTemplate(interfaceDefinitionBySection)) {
+  if (CONTAINER_TABLE_SECTIONS.has(section) && hasTemplateConfig(options) && !containerSectionDefinedInTemplate(section, interfaceDefinitionBySection)) {
     return containerFallbackTable(options);
   }
   return String(interfaceDefinitionBySection.get(section)?.exportName ?? "").trim()
@@ -1838,7 +1906,7 @@ function finalizeContainerCrossRefs(
       finalRefByNodeId.set(record.id, idx ? `${group.outputSection}_${idx}` : "");
       // 容器记录按**记录自身**段名判定,不依赖组首段名(sectionGroups 的 section 取 groups[0],
       // 合并段场景下可能是别的段名 → 容器引用会静默回落构建期局部值);此写法使「容器段不与他人合并」不再是前置条件
-      if (record.section === "ACContainer" && idx) {
+      if (CONTAINER_TABLE_SECTIONS.has(record.section) && idx) {
         containerFinalById.set(record.id, { table: group.outputSection, idx });
       }
     }
@@ -1846,7 +1914,7 @@ function finalizeContainerCrossRefs(
   for (const record of records) {
     // `_container_node_id` 是构建阶段注入的内部字段(下划线前缀不成列);容器记录被列空守卫剔除时查不到最终值 → 保留构建期兜底值
     const containerFinal = containerFinalById.get(String(record.params._container_node_id ?? ""));
-    if (record.section === AC_CONTAINER_DEV_SECTION) {
+    if (CONTAINER_DEV_SECTIONS.has(record.section)) {
       if (containerFinal) {
         // 轮 18 裁决:只写容器行**裸 idx**(偏移后),两态同形 —— 列名 `container_idx` 已指明指向容器行,
         // 容器表在文件里唯一(ACContainer / container / dms_def_container),不加 `表名_` 前缀(原轮 13 口径作废)
@@ -1966,16 +2034,17 @@ function hasTemplateConfig(options: EFileExportOptions): boolean {
 }
 
 /**
- * 模板是否为容器段建了可用定义(**仅模板态有意义**,非模板态调用方不判):定义存在**且**未被类门控关掉
+ * 模板是否为**该段**容器表建了可用定义(**仅模板态有意义**,非模板态调用方不判):定义存在**且**未被类门控关掉
  * (`exportEnabled !== false`)—— 设备库对每类无条件建定义,模板未命中该类时只置 `exportEnabled=false`、定义不删。
  * 唯一消费:eOutputSectionName 的容器段兜底表名分支(轮 20 起列集不再随此判据 —— 两态一律按定义重建字段)。
  * 裁决 2026-09-17 轮 17:容器段与成员关系段同为**功能表**,模板态恒输出 —— 本判据只决定「表名随不随模板」,
  * 不再决定「输出不输出」。
  */
 function containerSectionDefinedInTemplate(
+  section: string,
   interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>
 ): boolean {
-  const definition = interfaceDefinitionBySection.get("ACContainer");
+  const definition = interfaceDefinitionBySection.get(section);
   return Boolean(definition && definition.exportEnabled !== false);
 }
 
@@ -1990,21 +2059,26 @@ const CONTAINER_FALLBACK_TABLE = "container";
  * 兜底表名按模板表名族取:实时库模板(dms_rtdb / taiqu_rtdb,段名惯例带 `dms_def_` 前缀)用同族名
  * `dms_def_container`,其余模板(ems_rtdb / sgcc 等)用 `container`。判据复用 looksLikeDmsRtdbTemplate,
  * 不另写一套「像不像 dms 模板」的判断(两处硬编码同一概念必漂移)。
+ * **四类容器共用这一个表名**(不分能流加后缀):模板态要的就是一张容器表,容器种类由 `dev_type` 区分;
+ * 合并后 idx 重排 1..N 的引用问题由 finalizeContainerCrossRefs 按最终行号定稿,不是这里该管的。
+ * 非模板态不走本函数(无模板即无兜底概念,直接落内部段名当表名,四类自然分开 —— 见 CONTAINER_SECTIONS_BY_PREFIX)。
  */
 function containerFallbackTable(options: EFileExportOptions): string {
   return looksLikeDmsRtdbTemplate(options) ? "dms_def_container" : CONTAINER_FALLBACK_TABLE;
 }
 
 /**
- * 容器引用表名(**单源**):设备表 `container_id` 列(模板定义了该列时)经 eOutputSectionName 取容器段输出表名 ——
+ * 容器引用表名(**单源**):设备表 `container_id` 列(模板定义了该列时)经 eOutputSectionName 取该容器段输出表名 ——
  * 与容器表实际写出的段标签同函数,自然同名(模板态兜底名分叉也收在 eOutputSectionName 内),
  * 不再单独判「容器段会不会输出」(裁决轮 17 后容器表恒输出)。成员表 container_idx 轮 18 起写裸 idx,不经此函数。
+ * 入参 section 必为**该容器自身**的段(各能流不同段 → 表名不同),不得再传全局固定段。
  */
 function containerReferenceTable(
+  section: string,
   interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>,
   options: EFileExportOptions
 ): string {
-  return eOutputSectionName("ACContainer", interfaceDefinitionBySection, options);
+  return eOutputSectionName(section, interfaceDefinitionBySection, options);
 }
 
 /**
@@ -2017,20 +2091,24 @@ function containerReferenceTable(
  */
 function buildContainerDevRecords(
   nodes: ModelNode[],
-  interfaceDefinition?: EFileInterfaceSectionDefinition
+  interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>
 ): EDeviceExport[] {
   const records: EDeviceExport[] = [];
   for (const container of nodes) {
-    if (!isAcContainerKind(baseDeviceKind(container.kind))) {
+    const baseKind = baseDeviceKind(container.kind);
+    // 成员关系表段名按容器自身能流取(ACContainerDev / DCContainerDev / …)—— 一个图里四类容器各进各的段
+    const containerSections = isContainerKind(baseKind) ? containerSectionsForKind(baseKind) : undefined;
+    if (!containerSections) {
       continue;
     }
+    const interfaceDefinition = interfaceDefinitionBySection.get(containerSections.dev);
     const containerIdx = String(container.params.idx ?? "").trim();
-    const containerType = baseDeviceKind(container.kind);
+    const containerType = baseKind;
     for (const member of containerMemberNodes(nodes, container.id)) {
       const record = applyEInterfaceDefinitionToRecord({
         id: `${container.id}:member:${member.id}`,
         kind: container.kind,
-        section: AC_CONTAINER_DEV_SECTION,
+        section: containerSections.dev,
         params: { device_id: "", container_idx: containerIdx, container_type: containerType }
       }, interfaceDefinition);
       record.params._member_node_id = member.id;
@@ -2061,50 +2139,56 @@ function attachContainerIdToDeviceRecords(
   interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>,
   options: EFileExportOptions
 ): void {
-  const containerById = new Map<string, ModelNode>();
+  // 容器表名与「容器表实际写出的段标签」同一函数(containerReferenceTable):模板态模板未定义容器段时
+  // eOutputSectionName 已改走兜底名,本列(表名_idx)与表名天然一致。
+  // **逐容器算**(不能全图一个表名):各能流容器落各自段/各自表,表名随容器自身段走。
+  const containerRefById = new Map<string, { nodeId: string; table: string }>();
   for (const node of nodeById.values()) {
-    if (isAcContainerKind(baseDeviceKind(node.kind))) {
-      containerById.set(node.id, node);
+    if (!isContainerKind(baseDeviceKind(node.kind))) {
+      continue;
     }
+    const containerSection = inferESection(node.kind, node.params);
+    containerRefById.set(node.id, {
+      nodeId: node.id,
+      table: containerReferenceTable(containerSection, interfaceDefinitionBySection, options)
+    });
   }
-  if (containerById.size === 0) {
+  if (containerRefById.size === 0) {
     // 无容器模型:列结构完全不变,存量导出产物零差异
     return;
   }
-  // 容器表名与「容器表实际写出的段标签」同一函数(containerReferenceTable):模板态模板未定义容器段时
-  // eOutputSectionName 已改走兜底名,本列(表名_idx)与表名天然一致
-  const containerTable = containerReferenceTable(interfaceDefinitionBySection, options);
   for (const record of records) {
     // 容器自身不属于任何容器(不允许嵌套)
-    if (record.section === "ACContainer") {
+    if (CONTAINER_TABLE_SECTIONS.has(record.section)) {
       continue;
     }
     const splitAt = record.id.indexOf(":");
     const node = nodeById.get(record.id) ?? (splitAt > 0 ? nodeById.get(record.id.slice(0, splitAt)) : undefined);
     // 悬空归属(容器已删)不命中:等值比较天然挡掉,不产出半个引用
-    const container = node?.containerId ? containerById.get(node.containerId) : undefined;
+    const containerRef = node?.containerId ? containerRefById.get(node.containerId) : undefined;
     const columns = record.columns ?? E_SECTION_COLUMNS[record.section] ?? [];
     if (!isTemplateMode && !columns.includes("container_id")) {
       record.columns = [...columns, "container_id"];
     }
-    if (container && (record.columns ?? []).includes("container_id")) {
+    if (containerRef && (record.columns ?? []).includes("container_id")) {
       // 容器节点 id 供定稿阶段按容器段**最终**行号重写引用(全网拓扑导出按 modelIndex 偏移 idx 后局部值会悬空)
-      record.params._container_node_id = container.id;
-      const containerIdx = String(container.params.idx ?? "").trim();
+      record.params._container_node_id = containerRef.nodeId;
+      const containerIdx = String(nodeById.get(containerRef.nodeId)?.params.idx ?? "").trim();
       if (containerIdx) {
         // 模板态表名(或兜底名,见上)已定稿;非模板态裸 idx —— 容器段内唯一,无需表名前缀
-        record.params.container_id = isTemplateMode ? `${containerTable}_${containerIdx}` : containerIdx;
+        record.params.container_id = isTemplateMode ? `${containerRef.table}_${containerIdx}` : containerIdx;
       }
     }
   }
 }
 
 /**
- * 关口容器(决策 4)判据:容器段 + `is_gateway=1` + 绑定设备存在且仍是其成员(与容器量测同口径)。
- * 命中返回绑定设备节点,否则 null。段判定走 inferESection —— 与主循环「容器 ⇄ ACContainer 只在 inferESection 一处」同源。
+ * 关口容器(决策 4)判据:容器段(任一能流)+ `is_gateway=1` + 绑定设备存在且仍是其成员(与容器量测同口径)。
+ * 命中返回绑定设备节点,否则 null。段判定走 inferESection + CONTAINER_TABLE_SECTIONS ——
+ * 与主循环「容器 ⇄ 容器段只在 inferESection 一处」同源。
  */
 function activeGatewayBoundDevice(node: ModelNode, nodeById: ReadonlyMap<string, ModelNode>): ModelNode | null {
-  if (inferESection(node.kind, node.params) !== "ACContainer") {
+  if (!CONTAINER_TABLE_SECTIONS.has(inferESection(node.kind, node.params))) {
     return null;
   }
   // 关口判据单源(与容器量测组同步同口径):开着口 + 绑定设备仍是本容器成员
@@ -2353,8 +2437,8 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
       continue;
     }
     // 容器段(决策 3):容器无边无端子,不进拓扑节点表,只产出「容器表」一条记录
-    // 口径与 inferESection 一致:按已算出的段判定,不另按 kind 判(容器 ⇄ ACContainer 的映射只在 inferESection 一处)
-    if (section === "ACContainer") {
+    // 口径与 inferESection 一致:按已算出的段判定,不另按 kind 判(容器 ⇄ 容器段的映射只在 inferESection 一处)
+    if (CONTAINER_TABLE_SECTIONS.has(section)) {
       // 容器表恒输出(裁决 2026-09-17 轮 17:功能表,与成员关系段同规)。列集两态一致(轮 20 裁决):
       // 一律按设备库定义重建字段 —— 模板未定义该段时定义仍在(库对每类无条件建定义、只把 exportEnabled 置 false),
       // 重建结果与无模板态同列(parent/rdf_id/p/q/u/i 等空值列渲染为 0),不另走五列兜底;
@@ -2377,7 +2461,7 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
         params: {
           idx: node.params.idx ?? "",
           name: node.name,
-          // 容器类型取容器元件英文名(ac-vpp-box 等):容器无 E 设备类,段名只会退化成 ACContainer,故直接取 kind
+          // 容器类型取容器元件英文名(ac-vpp-box 等):容器无 E 设备类,段名只会退化成 ACContainer 之类的容器段,故直接取 kind
           dev_type: baseDeviceKind(node.kind),
           is_gateway: node.params.is_gateway ?? "0",
           // 绑定失效(设备已删/移出)或 idx 缺失 → 整列为空(沿用既有空值语义);段名取不到(绑定设备无 E 段)
@@ -2545,7 +2629,7 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
 
   // 规格 B:成员关系表。**功能表,恒产出**(裁决):成员关系是画布事实,不随模板开关消失 ——
   // 容器表同规恒产出(轮 17);container_idx 轮 18 起一律写容器行裸 idx(见 finalizeContainerCrossRefs)
-  const containerDevRecords = buildContainerDevRecords(topologyNodes, interfaceDefinitionBySection.get(AC_CONTAINER_DEV_SECTION));
+  const containerDevRecords = buildContainerDevRecords(topologyNodes, interfaceDefinitionBySection);
   // 规格 A:设备表 container_id 列。拓扑节点表行由多设备/端子合并、归属无单一定义,不参与
   const deviceLikeRecords = [...deviceRecords, ...derivedDeviceRecords, ...containerAssociatedDevices];
   attachContainerIdToDeviceRecords(deviceLikeRecords, nodeById, hasTemplateConfigValue, interfaceDefinitionBySection, options);
@@ -2557,7 +2641,7 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
     // 容器两张功能表(容器表/成员关系表)豁免模板过滤(裁决 2026-09-17,轮 17 扩至容器表):它们不是设备类,
     // 模板(元件定义)本就不会定义它们 —— 若按「模板未定义即剔除」走,模板态下整表消失
     // (实机反馈:成员表整表缺失轮 15;容器表整表缺失轮 17)
-    if (record.section === AC_CONTAINER_DEV_SECTION || record.section === "ACContainer") {
+    if (CONTAINER_DEV_SECTIONS.has(record.section) || CONTAINER_TABLE_SECTIONS.has(record.section)) {
       return true;
     }
     const definition = interfaceDefinitionBySection.get(record.section);

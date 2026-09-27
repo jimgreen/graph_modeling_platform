@@ -171,7 +171,7 @@ import {
   validateContainerTerminalAssociations,
   validateContainerTerminalRoles,
   isGeneratorNode,
-  isAcContainerKind,
+  isContainerKind,
   isElectricGenerationContainerKind,
   isStaticKind,
   isStaticNode,
@@ -852,7 +852,7 @@ test("keeps fixed and adaptive line-like entries available in the device library
 
 test("normalizes non-static device default sizes to a 150px longest side", () => {
   // 交流容器与静态图元同待遇:保留模板声明尺寸,不走图元基准归一(容器默认 180×112)
-  const nonStaticTemplates = DEVICE_LIBRARY.filter((template) => !isStaticKind(template.kind) && !isAcContainerKind(template.kind));
+  const nonStaticTemplates = DEVICE_LIBRARY.filter((template) => !isStaticKind(template.kind) && !isContainerKind(template.kind));
 
   expect(nonStaticTemplates.length).toBeGreaterThan(0);
   for (const template of nonStaticTemplates) {
@@ -861,7 +861,7 @@ test("normalizes non-static device default sizes to a 150px longest side", () =>
   }
 
   // 豁免不是漏检:容器模板须各自保持声明尺寸
-  const containerTemplates = DEVICE_LIBRARY.filter((template) => isAcContainerKind(template.kind));
+  const containerTemplates = DEVICE_LIBRARY.filter((template) => isContainerKind(template.kind));
   expect(containerTemplates.length).toBeGreaterThan(0);
   for (const template of containerTemplates) {
     expect(template.size).toEqual({ width: 180, height: 112 });

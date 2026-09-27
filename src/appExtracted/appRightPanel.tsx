@@ -9,13 +9,13 @@ import {
   containerMemberOptions,
   containerMembershipCommit,
   containerSelectOptions,
-  isAcContainerNode,
+  isContainerNode,
   withNodeUpdates,
 } from "../acContainer";
 import { BUILTIN_VOLTAGE_LEVELS, MODEL_TYPES, formatPowerBaseDisplayValue } from "../model";
 import { firstNonZeroVoltageBase, inferESection, isThreeWindingTransformer } from "../model-eexport";
 import { getTerminalVoltageLevel, voltageBaseSettingModeForNode } from "../model-routing";
-import { VOLTAGE_BASE_PARAM_KEYS, resolveAcContainerModelPanelParamKeys } from "./appCoreCanvasUtilities";
+import { VOLTAGE_BASE_PARAM_KEYS, resolveContainerModelPanelParamKeys } from "./appCoreCanvasUtilities";
 
 // 参数字段 → 单位后缀映射
 const PARAM_UNIT_SUFFIX: Record<string, string> = {
@@ -482,7 +482,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
   // 容器下拉选项:nodes 未变则复用(逐渲染重建 = 每次两趟 O(n) 过滤);键含选中容器 id 的候选另算
   const containerSelectItems = useMemo(() => containerSelectOptions(nodes), [nodes]);
   const containerMemberSelectItems = useMemo(
-    () => (inspectorSelectedNode && isAcContainerNode(inspectorSelectedNode) ? containerMemberOptions(nodes, inspectorSelectedNode.id) : []),
+    () => (inspectorSelectedNode && isContainerNode(inspectorSelectedNode) ? containerMemberOptions(nodes, inspectorSelectedNode.id) : []),
     [nodes, inspectorSelectedNode?.id]
   );
 
@@ -492,7 +492,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
   // 仅当行集里没有 parent 行(如定义被清空)才回落渲染到表顶,保证该行不会整行消失。
   const renderContainerRow = () => {
     const node = inspectorSelectedNode;
-    if (!node || isAcContainerNode(node)) {
+    if (!node || isContainerNode(node)) {
       return null;
     }
     return (
@@ -513,7 +513,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
   // 容器参数行:仅容器节点显示(不走参数定义流;关口/绑定不是图元通用参数)
   const renderContainerGatewayRows = () => {
     const node = inspectorSelectedNode;
-    if (!node || !isAcContainerNode(node)) {
+    if (!node || !isContainerNode(node)) {
       return null;
     }
     const gateway = node.params?.is_gateway === "1" ? "1" : "0";
@@ -1284,7 +1284,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         <tbody>
                           {renderContainerGatewayRows()}
                           {(() => {
-                        const isAcContainerNodeSelected = isAcContainerNode(inspectorSelectedNode); // 容器判据取一次,下面两处共用
+                        const isContainerNodeSelected = isContainerNode(inspectorSelectedNode); // 容器判据取一次,下面两处共用
                         const eKeys = getEParameterKeys(inspectorSelectedNode.kind, inspectorSelectedNode.params);
                         const customDefinitions = parseCustomDefinitions(inspectorSelectedNode.params);
                         const selectedTemplate = libraryTemplates.find((template) => template.kind === inspectorSelectedNode.kind);
@@ -1297,14 +1297,14 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         const panelDefinitions = definitionGroups
                           ? [...definitionGroups.baseDefinitions, ...definitionGroups.derivedDefinitions]
                           : customDefinitions;
-                        // 容器:剔除 is_gateway/bound_device_idx 两行(无人读取或与容器专用行重复,见 AC_CONTAINER_EXCLUDED_E_PARAM_KEYS);
+                        // 容器:剔除 is_gateway/bound_device_idx 两行(无人读取或与容器专用行重复,见 CONTAINER_EXCLUDED_E_PARAM_KEYS);
                         // dev_type 行保留 —— 与容器段导出同值(显示元件英文名 ac-vpp-box 等,非段名 ACContainer)
-                        const keys = resolveAcContainerModelPanelParamKeys(resolveDeviceModelPanelParameterKeys(
+                        const keys = resolveContainerModelPanelParamKeys(resolveDeviceModelPanelParameterKeys(
                             eKeys,
                             customDefinitions,
                             Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM),
                             definitionGroups
-                        ), isAcContainerNodeSelected);
+                        ), isContainerNodeSelected);
                         // 「所属容器」行位先定后渲染(同上,通用参数表):一次定位,不在 JSX 里既扫 includes 又在循环里判等
                         const containerRowIndex = keys.findIndex((key) => key === "parent");
                         const keyRows = keys.map((key, keyIndex) => {
@@ -1326,7 +1326,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             const readonly = READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition);
                             const modified = isInspectorParamModified(key, rawValue, definition);
                             // 容器「设备类型」行:中文下拉选 kind(提交即切 node.kind);普通设备仍走原编辑器
-                            const isContainerDevTypeRow = isAcContainerNodeSelected && key === "dev_type";
+                            const isContainerDevTypeRow = isContainerNodeSelected && key === "dev_type";
                             const inputElement = key === "name" ? (<InlineEditableValue value={inspectorSelectedNode.name} displayValue={inspectorSelectedNode.name} modified={modified} disabled={isBrowseMode} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : isContainerDevTypeRow ? (<ContainerKindSelectValue kind={rawValue} modified={modified} disabled={isBrowseMode} onCommitKind={(nextKind) => updateSelectedNode({ kind: nextKind })}/>) : readonly ? (<span className={`inline-property-value read-only${modified ? " modified" : ""}`} data-modified={modified ? "true" : undefined}>{displayValue || "\u00a0"}</span>) : batchEditors.renderParamEditor(key, rawValue, false, definition, undefined, modified);
                             const hasVoltageParam = keys.some((candidate) => VOLTAGE_BASE_PARAM_KEYS.has(candidate));
                             const rowFragment = (<tr key={key}>

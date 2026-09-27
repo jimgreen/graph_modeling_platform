@@ -63,6 +63,66 @@ describe("EFileEditor 成员关系段列解析", () => {
     expect(html).toContain(fileRow![3]);
   });
 
+  test("多能流容器合表:4 个内部段只长 1 个 container tab + 1 个 container_dev tab(用户实况:曾出现 2+2 个重复表名)", () => {
+    // 模板态四类容器全落 container / container_dev(靠 dev_type 区分),预览必须与导出的 E 文件一致:
+    // 一个表名一个 tab。按类内部名分组会让同名表重复长 tab。
+    const pairs = [
+      ["ac-vpp-box", "ac-source"],
+      ["dc-vpp-box", "dc-source"],
+      ["hydrogen-vpp-box", "hydrogen-source"],
+      ["heat-vpp-box", "heat-source"]
+    ] as const;
+    let counters: Record<string, number> = {};
+    const containers: ModelNode[] = [];
+    const members: ModelNode[] = [];
+    for (const [containerKind, memberKind] of pairs) {
+      for (const [bucket, kind] of [[containers, containerKind], [members, memberKind]] as const) {
+        const assigned = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100, y: 100 }), counters);
+        counters = assigned.counters;
+        bucket.push(assigned.node);
+      }
+    }
+    members.forEach((member, index) => { member.containerId = containers[index].id; });
+    const project: ProjectFile = {
+      version: 1,
+      name: "四能流容器预览模型",
+      nodes: [...containers, ...members],
+      edges: []
+    };
+
+    // 模板未定义任何容器段 → 四类全走兜底名
+    const options = { eDeviceDefinitionLabels: { ACNode: "node" } };
+    const records = buildEDeviceRecords(project, options);
+    finalizeEDevicePreviewRecords(project, options, records);
+    const defs = eFileInterfaceDefinitionIndex(options);
+    const labeled = records
+      .filter((record) => /Container(Dev)?$/.test(record.section))
+      .map((record) => ({ ...record, sectionLabel: eOutputSectionName(record.section, defs, options) }) as EDeviceRecord);
+    // 前置:4 个内部容器段 + 4 个成员段,且标签确实都塌成同名(合表前提成立)
+    expect(new Set(labeled.filter((r) => r.sectionLabel === "container").map((r) => r.section)).size).toBe(4);
+    expect(new Set(labeled.filter((r) => r.sectionLabel === "container_dev").map((r) => r.section)).size).toBe(4);
+
+    const html = renderToStaticMarkup(
+      createElement(EFileEditor, { open: true, onClose: () => {}, records: labeled })
+    );
+    // 每个表名只出现一次 tab。tab 条在 e-file-editor-content **内**(content 先出现,再是 tabs),
+    // 截取范围取 tabs → table-container;按钮文本被 antd Button 包在 <span> 里。
+    const tabsHtml = html.slice(
+      html.indexOf('class="e-file-editor-tabs"'),
+      html.indexOf('class="e-file-editor-table-container"')
+    );
+    const tabNames = [...tabsHtml.matchAll(/<button[^>]*><span>([^<]*)<\/span><\/button>/g)].map((m) => m[1].trim());
+    expect(tabNames.filter((name) => name === "container")).toHaveLength(1);
+    expect(tabNames.filter((name) => name === "container_dev")).toHaveLength(1);
+    // 4 个容器行 + 4 个成员行都在这一张表里(合表不是丢行)
+    expect(labeled.filter((r) => r.sectionLabel === "container")).toHaveLength(4);
+    expect(labeled.filter((r) => r.sectionLabel === "container_dev")).toHaveLength(4);
+    // 与导出文件对拍:文件里 container / container_dev 各只出现一次
+    const fileText = buildEFileExport(project, ["默认方案"], options).text;
+    expect(fileText.match(/<container>/g)).toHaveLength(1);
+    expect(fileText.match(/<container_dev>/g)).toHaveLength(1);
+  });
+
   test("表名 tab 统一宽度:容器挂 ref、按钮吃实测 minWidth、按最大宽度取齐（轮 21）", () => {
     // 实测宽度需真实 DOM（本环境是 node/SSR,渲染不出布局）,守源码接线:
     // 容器 ref → useLayoutEffect 量 max(getBoundingClientRect().width) → 全按钮 style.minWidth

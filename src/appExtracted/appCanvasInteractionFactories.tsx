@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
-import { applyDragContainerMembership, clampContainerCenterToMembers, commitContainerMembership, containerDragGroup, containerGatewayUnbindNotice, containerMemberNodes, containerResizeMinSize, foldContainerScaleIntoSize, hasAcContainer, isAcContainerNode, refitContainersAfterTransform, withNodeUpdates } from "../acContainer";
+import { applyDragContainerMembership, clampContainerCenterToMembers, commitContainerMembership, containerDragGroup, containerGatewayUnbindNotice, containerMemberNodes, containerResizeMinSize, foldContainerScaleIntoSize, hasContainer, isContainerNode, refitContainersAfterTransform, withNodeUpdates } from "../acContainer";
 import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind, syncedSwitchStatusPatch } from "../model";
 import { isThreeWindingTransformer } from "../model-eexport";
 import { setVoltageBaseTerminalValueForTopologySide, voltageBaseParamTerminalIndexForNode } from "../model-routing";
@@ -1947,7 +1947,7 @@ export function createMoveSelection(__appScope: Record<string, any>) {
       return;
     }
     // 有容器时撤销作用域让位(容器几何/归属/解绑/挤出在拖动集之外),见 ensureDraggingUndoSnapshot
-    const moveUndoScope = hasAcContainer(nodes)
+    const moveUndoScope = hasContainer(nodes)
       ? undefined
       : undoScopeForGraphPatch(moveNodeIds, affectedEdgesForMove.map((edge) => edge.id));
     pushUndoSnapshot(true, false, moveUndoScope, "移动设备", moveNodeIds.length === 1 ? nodeById.get(moveNodeIds[0])?.name || "" : "");
@@ -2101,7 +2101,7 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
       // 有容器时作用域必须让位:容器收尾(矩形重算 / 挤出非成员 / 被 re-fit 的其它容器)全在选中节点之外,
       // 一旦走 patch 通道这些节点就落在撤销计划外(Ctrl+Z 后残留新几何)。undefined = 全量对比分支,
       // 正确性无损,只多一趟 O(n) 比较(与拖动 / 剪切 / 删除三处先例同款,见 createEnsureDraggingUndoSnapshot)。
-      const undoScope = hasAcContainer(nodes)
+      const undoScope = hasContainer(nodes)
         ? undefined
         : undoScopeForGraphPatch([selectedNodeId], footprintEdges.map((edge) => edge.id));
       pushUndoSnapshot(true, false, undoScope, "移动设备", (() => { const n = nodeById.get(selectedNodeId); return n ? `${n.params?.idx || n.id} ${n.name ?? ""}`.trim() : ""; })());
@@ -2112,13 +2112,13 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
     // 容器几何恒在 size/position(见 foldContainerScaleIntoSize),否则渲染矩形 = size × |scale|
     // 又和 eject/入组用的 size 矩形分叉
     const patchedNode = { ...currentSelectedNode, ...nextPatch };
-    let nextSelectedNode = isAcContainerNode(currentSelectedNode) ? foldContainerScaleIntoSize(patchedNode) : patchedNode;
+    let nextSelectedNode = isContainerNode(currentSelectedNode) ? foldContainerScaleIntoSize(patchedNode) : patchedNode;
     // 面板「倍率」行是容器的尺寸入口(不像拖角那样自带下限):与拖角 resize 同口径补两道钳制 ——
     // ① 下限 = 成员视觉包围盒 + 内侧留白(见 containerResizeMinSize);② 中心平移保完全包裹成员。
     // 只对**尺寸类** patch 生效:坐标行是「面板改坐标是否等同拖动容器」待裁决的 followup,不得被静默改写。
     const sizePatch =
       patch.scale !== undefined || patch.scaleX !== undefined || patch.scaleY !== undefined || patch.size !== undefined;
-    if (sizePatch && isAcContainerNode(nextSelectedNode)) {
+    if (sizePatch && isContainerNode(nextSelectedNode)) {
       // 放大后圈进的非成员由下方 enforce 收尾挤出。
       const members = containerMemberNodes(graphStore.nodes, nextSelectedNode.id);
       const minSize = containerResizeMinSize(currentSelectedNode, members);
@@ -4779,7 +4779,7 @@ export function createBuildGroupTransformNodeUpdates(__appScope: Record<string, 
       const nextScaleY = (snapshot.scaleY ?? snapshot.scale ?? 1) * geometry.scaleY;
       // 交流容器:几何恒在 size —— 整组缩放同样把 scale 吃进 size(与拖角 resize 同一出口),
       // 否则容器渲染矩形 = size × |scale| 又和 eject/入组用的 size 矩形分叉(fb10 根因)
-      if (isAcContainerNode(node)) {
+      if (isContainerNode(node)) {
         updates.push({
           ...foldContainerScaleIntoSize({
             ...node,

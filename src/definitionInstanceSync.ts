@@ -4,7 +4,7 @@ import {
   TERMINAL_TYPE_LIBRARY_LABELS,
   createTerminals,
   DEVICE_LIBRARY,
-  isAcContainerKind,
+  isContainerKind,
   reconcileNodeParamsWithTemplateDefinitions,
   resolveEffectiveTemplateParameterDefinitions,
   resolveNodeParameterDefinitions,
@@ -121,7 +121,7 @@ function syncDefinitionSize(node: ModelNode, template: DefinitionSyncTemplate): 
   // fitContainerToMembers 重算(见 src/acContainer.ts)。模板里的 180×112 只是新建默认值,
   // 若在此按模板覆盖,加载路径(reconcileNodeWithDefinition)会把用户调过的尺寸打回初值 —— 即
   // 「刷新页面后容器大小变回初始大小」缺陷。这与线路分段母线保留已存几何同一口径。
-  if (isAcContainerKind(node.kind)) {
+  if (isContainerKind(node.kind)) {
     return node;
   }
   const width = Number(template.size?.width);

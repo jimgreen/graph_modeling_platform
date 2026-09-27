@@ -175,6 +175,9 @@ export type DeviceKind =
   | "ac-vpp-box"
   | "ac-switch-box"
   | "ac-distribution-box"
+  | "dc-vpp-box"
+  | "hydrogen-vpp-box"
+  | "heat-vpp-box"
   | (string & {});
 
 export type DeviceGlyphVariant =
@@ -847,17 +850,22 @@ function explicitStaticComponentLibraryForKind(kind: string): string {
   return STATIC_COMPONENT_LIBRARY_BY_KIND[baseKind] ?? staticComponentLibraryFromCustomKind(baseKind);
 }
 
-// 交流容器 kinds 单源清单(容器渲染/嵌套/装配等后续任务统一从这里取)
+// 容器 kinds 单源清单(容器渲染/嵌套/装配等后续任务统一从这里取)
+// 覆盖全部能流:ac- 前缀=交流(3 图元),dc-/hydrogen-/heat- 前缀各 1 图元(虚拟电厂),与所属类别库同前缀。
+// 原名 AC_CONTAINER_KINDS 已随「多能流共用」改名 —— 判据一律走 isContainerKind,勿再按名字分叉逻辑。
 // 声明位置须早于 BASE_DEVICE_LIBRARY 归一化调用(normalizeDefaultDeviceSize 会读它,晚声明会踩 TDZ)
-export const AC_CONTAINER_KINDS = [
+export const CONTAINER_KINDS = [
   "ac-vpp-box",
   "ac-switch-box",
   "ac-distribution-box",
+  "dc-vpp-box",
+  "hydrogen-vpp-box",
+  "heat-vpp-box",
 ] as const satisfies readonly DeviceKind[];
 
-/** kind 是否为交流容器图元 */
-export function isAcContainerKind(kind: string): boolean {
-  return (AC_CONTAINER_KINDS as readonly string[]).includes(kind);
+/** kind 是否为容器图元(任一能流;按清单判定,新增 kind 只需改 CONTAINER_KINDS) */
+export function isContainerKind(kind: string): boolean {
+  return (CONTAINER_KINDS as readonly string[]).includes(kind);
 }
 
 /**
@@ -869,7 +877,7 @@ export function isAcContainerKind(kind: string): boolean {
  * 声明在 model.ts:连线避让(model-routing)与画布容器逻辑(acContainer)都要用,而 model-routing 在 model 的加载链上。
  */
 export function liveContainerIds(nodes: readonly ModelNode[]): Set<string> {
-  return new Set(nodes.filter((n) => isAcContainerKind(n.kind)).map((n) => n.id));
+  return new Set(nodes.filter((n) => isContainerKind(n.kind)).map((n) => n.id));
 }
 
 /**
@@ -918,7 +926,7 @@ export function nodesExcludingEndpointContainers(
     return nodes;
   }
   const exemptIds = containerIds;
-  return nodes.filter((node) => !(exemptIds.has(node.id) && isAcContainerKind(node.kind)));
+  return nodes.filter((node) => !(exemptIds.has(node.id) && isContainerKind(node.kind)));
 }
 
 function staticComponentLibraryForKind(kind: string): string {
@@ -1097,7 +1105,7 @@ export function switchingDeviceUsesClosedStatus(kind: string, params: Record<str
   }
   // 交流容器不是开关设备:kind 子串判据(ac-switch-box 含 "switch")不得把容器当开关 ——
   // 否则默认参数注入 closed_status 而非 status,与「容器无 status/current 量测」的口径分叉
-  if (isAcContainerKind(baseKind)) {
+  if (isContainerKind(baseKind)) {
     return false;
   }
   const componentLibraries = [
@@ -1114,7 +1122,7 @@ function isDefaultBinaryStateDeviceKind(kind: string, params: Record<string, str
   const baseKind = baseDeviceKind(kind);
   // 交流容器不是开关设备(与 switchingDeviceUsesClosedStatus 同款豁免):kind 子串判据
   // 会把 ac-switch-box 当开关,默认赋「开/合」二元状态,使三容器口径不齐(另两容器无状态定义)
-  if (isAcContainerKind(baseKind)) {
+  if (isContainerKind(baseKind)) {
     return false;
   }
   return (
@@ -1254,14 +1262,36 @@ export function resolveDeviceStateVisual(
 
 export type DeviceIndexCounters = Record<string, number>;
 
-/** AC 容器固定分段计数器 key(3 个 kind 共用一池,不按 kind 各自分段) */
-export const AC_CONTAINER_COUNTER_KEY = "ac_container";
+/** 交流容器固定分段计数器 key(交流 3 个 kind 共用一池,不按 kind 各自分段);存量键名/值不变,历史 idx 不漂 */
+export const AC_CONTAINER_POOL_KEY = "ac_container";
+
+/**
+ * 非交流能流的容器池键,按 **kind 前缀**(前缀即能流)分池。
+ * 分池理由:各能流容器落各自 E 段(ACContainer / DCContainer / HydroContainer / HeatContainer),
+ * idx 在段内独立编号 —— 共用一池会让直流容器吃掉交流容器的 idx 段,同段内重号。
+ * 未登记前缀(交流 3 kind)回落 AC_CONTAINER_POOL_KEY,故新增能流时在此加一行即可。
+ */
+const CONTAINER_COUNTER_KEY_BY_PREFIX: Record<string, string> = {
+  "dc-": "dc_container",
+  "hydrogen-": "hydrogen_container",
+  "heat-": "heat_container"
+};
+
+/** 容器 kind → 计数器池键(前缀即能流;调用方须先过 isContainerKind,非容器 kind 不走本函数) */
+export function containerCounterKey(kind: string): string {
+  for (const [prefix, key] of Object.entries(CONTAINER_COUNTER_KEY_BY_PREFIX)) {
+    if (kind.startsWith(prefix)) {
+      return key;
+    }
+  }
+  return AC_CONTAINER_POOL_KEY;
+}
 
 export function deviceIndexCounterKey(node: Pick<ModelNode, "kind" | "params">): string {
   // 容器必须排在最前:计数器池键与 E 段名解耦 —— 落到下面会按 section("ACContainer")或 kind 分池,
   // 池键一变,历史容器的 idx 与新容器就不同池(重号/漂移),故容器恒用固定键
-  if (isAcContainerKind(node.kind)) {
-    return AC_CONTAINER_COUNTER_KEY;
+  if (isContainerKind(node.kind)) {
+    return containerCounterKey(node.kind);
   }
   if (isStaticKind(node.kind)) {
     return "";
@@ -3416,8 +3446,8 @@ const HYDROGEN_SOURCE_PARAMETER_DEFINITIONS = hydrogenEndpointParameterDefinitio
 const HYDROGEN_LOAD_PARAMETER_DEFINITIONS = hydrogenEndpointParameterDefinitions(HYDROGEN_LOAD_DEFAULTS);
 
 /**
- * 交流容器三种「框」元件的公共几何:同尺寸、同样式参数(三份曾逐字重复)。
- * 每次返回**新对象**(含 params/size 各一份)—— 模板对象会被下游就地改写,共用引用会三 kind 串改。
+ * 容器「框」元件的公共几何(交流 3 + 直流/氢能/热能各 1):同尺寸、同样式参数。
+ * 每次返回**新对象**(含 params/size 各一份)—— 模板对象会被下游就地改写,共用引用会多 kind 串改。
  */
 function containerBoxTemplateGeometry(): Pick<DeviceTemplate, "size" | "params"> {
   return {
@@ -3821,6 +3851,31 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "交流设备",
     ...containerBoxTemplateGeometry(),
     terminalType: "ac",
+    terminalCount: 0
+  },
+  {
+    // 直流容器:同「框」几何,归直流设备类别库;E 段名与 terminalType 随直流流(见 model-eexport 的 inferESection)
+    kind: "dc-vpp-box",
+    label: "虚拟电厂",
+    categoryLibrary: "直流设备",
+    ...containerBoxTemplateGeometry(),
+    terminalType: "dc",
+    terminalCount: 0
+  },
+  {
+    kind: "hydrogen-vpp-box",
+    label: "虚拟电厂",
+    categoryLibrary: "氢能设备",
+    ...containerBoxTemplateGeometry(),
+    terminalType: "h2",
+    terminalCount: 0
+  },
+  {
+    kind: "heat-vpp-box",
+    label: "虚拟电厂",
+    categoryLibrary: "热能设备",
+    ...containerBoxTemplateGeometry(),
+    terminalType: "heat",
     terminalCount: 0
   },
   {
@@ -5032,7 +5087,7 @@ function roundDefaultDeviceSize(value: number): number {
 
 export function normalizeDefaultDeviceSize(kind: string, size: DeviceTemplate["size"]): DeviceTemplate["size"] {
   // 静态图元与交流容器保留模板声明尺寸(容器默认 180×112,见 spec §模板与绘制)
-  if (explicitStaticComponentLibraryForKind(kind) || isAcContainerKind(kind)) {
+  if (explicitStaticComponentLibraryForKind(kind) || isContainerKind(kind)) {
     return { ...size };
   }
   const width = Number.isFinite(size.width) && size.width > 0 ? size.width : DEFAULT_DEVICE_LONGEST_SIDE;
@@ -5833,8 +5888,8 @@ const AC_LOAD_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = 
 ];
 // 交流容器类量测定义(与 deviceProfiles 的 ACContainer 档同测点集,两层分工不同):
 // 本常量供「元件定义-量测定义」表(类级声明);deviceProfiles 档供量测页【添加默认量测】建组。
-// 4 个字段行不进面板 —— 面板按 AC_CONTAINER_EXCLUDED_E_PARAM_KEYS 剔除(见 appCoreCanvasUtilities)。
-const AC_CONTAINER_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+// 4 个字段行不进面板 —— 面板按 CONTAINER_EXCLUDED_E_PARAM_KEYS 剔除(见 appCoreCanvasUtilities)。
+const CONTAINER_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
   { measurementTypeId: "activePower", associatedField: "p" },
   { measurementTypeId: "reactivePower", associatedField: "q" },
   { measurementTypeId: "voltage", associatedField: "u" },
@@ -5901,10 +5956,10 @@ function builtInMeasurementDefinitionsForTemplate(template: DeviceTemplate): Dev
   // 交流容器无 E 设备类(容器段只有 idx/name/dev_type/is_gateway/bound_device_idx):
   // 下面按 kind 子串的兜底会把 ac-switch-box 当开关(含 "switch"),误产出「状态」「电流值」两行 ——
   // 现改走容器自己的类量测定义(V/I/P/Q),供「元件定义-量测定义」表;
-  // 其 4 个字段行不进面板(AC_CONTAINER_EXCLUDED_E_PARAM_KEYS 剔除),量测页默认档见 measurements.ts 的 ACContainer 档
+  // 其 4 个字段行不进面板(CONTAINER_EXCLUDED_E_PARAM_KEYS 剔除),量测页默认档见 measurements.ts 的 ACContainer 档
   const copy = (items: readonly DeviceMeasurementDefinition[]) => cloneDeviceMeasurementDefinitions(items);
-  if (isAcContainerKind(kind)) {
-    return copy(AC_CONTAINER_MEASUREMENT_DEFINITIONS);
+  if (isContainerKind(kind)) {
+    return copy(CONTAINER_MEASUREMENT_DEFINITIONS);
   }
   if (kind === "ac-electrolyzer" || kind === "dc-electrolyzer" || kind === "ac-fuel-cell" || kind === "dc-fuel-cell") {
     return copy(HYDROGEN_COUPLING_MEASUREMENT_DEFINITIONS);

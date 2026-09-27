@@ -2,10 +2,10 @@
 import { useState } from "react";
 import { Modal, Select } from "antd";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
-import { AC_CONTAINER_KINDS, modelAssociationDevicesModelTypeFailureMessage } from "../model";
+import { CONTAINER_KINDS, modelAssociationDevicesModelTypeFailureMessage } from "../model";
 import {
-  applyAddToAcContainer,
-  applyRemoveFromAcContainer,
+  applyAddToContainer,
+  applyRemoveFromContainer,
   buildNewContainer,
   containerAddIsNoop,
   containerAssignedIdsFromSelection,
@@ -21,8 +21,8 @@ import {
   commitContainerMembership,
   defaultContainerName,
   finalizeContainerAfterNodeDeletion,
-  hasAcContainer,
-  isAcContainerNode,
+  hasContainer,
+  isContainerNode,
   withNodeUpdates,
   type ContainerDraft,
 } from "../acContainer";
@@ -39,7 +39,7 @@ export function createEnsureDraggingUndoSnapshot(__appScope: Record<string, any>
     // 有容器时作用域必须让位:容器几何重算 / 成员归属 / 关口解绑 / 挤出都在拖动集之外,
     // 一旦走 patch 通道这些节点就落在撤销计划外(Ctrl+Z 后残留新几何与新归属)。
     // undefined = 全量对比分支,正确性无损,只多一趟 O(n) 比较。
-    const scope = nodes && hasAcContainer(nodes) ? undefined : undoScopeForDraggingState(dragState);
+    const scope = nodes && hasContainer(nodes) ? undefined : undoScopeForDraggingState(dragState);
     pushUndoSnapshot(true, false, scope, "移动设备", target);
     dragUndoCapturedRef.current = true;
   };
@@ -1896,13 +1896,13 @@ function ContainerPickerForm({ draft, nodes }: { draft: ContainerDraft; nodes: a
   );
 }
 
-export function createAddToAcContainer(__appScope: Record<string, any>) {
+export function createAddToContainer(__appScope: Record<string, any>) {
   return () => {
   const { activeSelectedNodeIds, requireEditMode, setAddToContainerDialog, showGlobalMessage } = __appScope;
     if (!requireEditMode("添加到容器")) {
       return;
     }
-    // 点击瞬间只定「选中口径」;nodes/edges 一律在提交时刻现取(见 createConfirmAddToAcContainer)
+    // 点击瞬间只定「选中口径」;nodes/edges 一律在提交时刻现取(见 createConfirmAddToContainer)
     // —— 弹窗横跨交互窗口,持点击快照会覆盖其间的并发改动
     const clickNodes = __appScope.nodes;
     const memberIds = containerMemberIdsFromSelection(clickNodes, activeSelectedNodeIds);
@@ -1914,8 +1914,8 @@ export function createAddToAcContainer(__appScope: Record<string, any>) {
     // 选中即加入该容器;输入清单以外的名字则新建该类型容器。两种情况同一弹窗,不再串两级 Modal
     // (无该类型容器时名称框预填默认名,直接点确定即可创建)。
     // 受控对话框(审查收口:原 antd 静态 Modal.confirm 不继承 ConfigProvider 主题、与既有确认体系分裂):
-    // 打开与提交分家 —— 打开只写状态,提交在「确定」时现取最新图(createConfirmAddToAcContainer)
-    const draft: ContainerDraft = containerKindSwitch(AC_CONTAINER_KINDS[0], clickNodes);
+    // 打开与提交分家 —— 打开只写状态,提交在「确定」时现取最新图(createConfirmAddToContainer)
+    const draft: ContainerDraft = containerKindSwitch(CONTAINER_KINDS[0], clickNodes);
     setAddToContainerDialog({ memberIds, draft, nodes: clickNodes });
   };
 }
@@ -1924,7 +1924,7 @@ export function createAddToAcContainer(__appScope: Record<string, any>) {
  * 【添加到容器】受控对话框:挂在画布对话框宿主(AppCanvasDialogs),状态在 `__appScope.addToContainerDialog`。
  * 打开时只存点击快照(候选清单用),提交一律现取最新图 —— 与打开路径的注释同口径。
  */
-export function AcContainerAddDialog({ scope }: { scope: Record<string, any> }) {
+export function ContainerAddDialog({ scope }: { scope: Record<string, any> }) {
   const dialog = scope.addToContainerDialog as { memberIds: string[]; draft: ContainerDraft; nodes: any[] } | null;
   return (
     <Modal
@@ -1933,7 +1933,7 @@ export function AcContainerAddDialog({ scope }: { scope: Record<string, any> }) 
       okText="确定"
       cancelText="取消"
       destroyOnHidden
-      onOk={() => scope.confirmAddToAcContainer?.()}
+      onOk={() => scope.confirmAddToContainer?.()}
       onCancel={() => scope.setAddToContainerDialog?.(null)}
     >
       {dialog ? <ContainerPickerForm draft={dialog.draft} nodes={dialog.nodes} /> : null}
@@ -1947,7 +1947,7 @@ export function AcContainerAddDialog({ scope }: { scope: Record<string, any> }) 
  * 纯函数算出完整 nextNodes(新容器已插入、成员已打 containerId、几何已重算),单次撤销点 + 单次落图;
  * 改归属(成员原属其它容器)时,原关口容器会一并解绑 + 关关口(与移出同一出口)。
  */
-export function createConfirmAddToAcContainer(__appScope: Record<string, any>) {
+export function createConfirmAddToContainer(__appScope: Record<string, any>) {
   return () => {
   const dialog = __appScope.addToContainerDialog as { memberIds: string[]; draft: ContainerDraft } | null;
   __appScope.setAddToContainerDialog?.(null);
@@ -1962,7 +1962,7 @@ export function createConfirmAddToAcContainer(__appScope: Record<string, any>) {
         showGlobalMessage("选中的图元已在该容器内。");
         return;
       }
-      const nextNodes = applyAddToAcContainer(nodes, container, memberIds);
+      const nextNodes = applyAddToContainer(nodes, container, memberIds);
       pushUndoSnapshot(true, false, undefined, "添加到容器");
       setGraphArrays(nextNodes, edges);
       // 量测同步:改归属解绑原关口容器后,原容器量测组须随归一化删除
@@ -1971,7 +1971,7 @@ export function createConfirmAddToAcContainer(__appScope: Record<string, any>) {
     };
     const { deviceIndexCounters: latestCounters, nodeById, nodes: latestNodes } = __appScope;
     const picked: any = draft.containerId
-      ? latestNodes.find((node: any) => node.id === draft.containerId && isAcContainerNode(node))
+      ? latestNodes.find((node: any) => node.id === draft.containerId && isContainerNode(node))
       : undefined;
     if (picked) {
       commitAdd(picked);
@@ -1991,7 +1991,7 @@ export function createConfirmAddToAcContainer(__appScope: Record<string, any>) {
   };
 }
 
-export function createRemoveFromAcContainer(__appScope: Record<string, any>) {
+export function createRemoveFromContainer(__appScope: Record<string, any>) {
   return () => {
   const { activeSelectedNodeIds, normalizeProjectMeasurements, patchGraphNodes, pushUndoSnapshot, requireEditMode, setProjectMeasurements, showGlobalMessage, writeOperationLog } = __appScope;
     if (!requireEditMode("移出容器")) {
@@ -2005,7 +2005,7 @@ export function createRemoveFromAcContainer(__appScope: Record<string, any>) {
       return;
     }
     // 纯函数给出变更节点(成员 + 解绑的关口容器 + 重算的容器矩形/被挤出的非成员),单次撤销点 + 单次 patch
-    const updates = applyRemoveFromAcContainer(nodes, memberIds);
+    const updates = applyRemoveFromContainer(nodes, memberIds);
     if (updates.length === 0) {
       return;
     }

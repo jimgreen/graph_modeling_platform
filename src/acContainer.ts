@@ -6,7 +6,7 @@
 // 锚定口径(与平台一致):`node.position` 是节点**中心**,容器真实矩形 = position ± size/2。
 // (DeviceGlyph 矩形 x:-w/2、命中框、bodyVisualBoxForNode position±half 三处同源)
 // 相对 import 带 .ts 扩展名:本模块被 src/export/svg.ts(Node 直载)间接引用,裸 "./model" Node ESM 解析不了
-import { type DeviceKind, type ModelNode, AC_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, containerMemberNodes, createDefaultNode, getNodeScaleX, getNodeScaleY, isAcContainerKind, isStaticNode, isWireLikeRouteDeviceKind, liveContainerIds } from "./model.ts";
+import { type DeviceKind, type ModelNode, CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, containerMemberNodes, createDefaultNode, getNodeScaleX, getNodeScaleY, isContainerKind, isStaticNode, isWireLikeRouteDeviceKind, liveContainerIds } from "./model.ts";
 // 成员判定已上收 model.ts(model-eexport 顶层不得引本模块):此处保留转出,既有 import "../acContainer" 调用点不迁移
 export { containerMemberNodes };
 
@@ -24,13 +24,13 @@ export const CONTAINER_MIN_SIZE = { width: 180, height: 112 };
 export type Rect = { x: number; y: number; width: number; height: number };
 export type NodePositionPatch = { nodeId: string; position: { x: number; y: number } };
 
-export function isAcContainerNode(node: ModelNode): boolean {
-  return isAcContainerKind(node.kind);
+export function isContainerNode(node: ModelNode): boolean {
+  return isContainerKind(node.kind);
 }
 
 /** 图中是否有容器 —— 撤销让位判据(有容器时作用域让位走全量对比,见各 pushUndoSnapshot 调用点) */
-export function hasAcContainer(nodes: ModelNode[]): boolean {
-  return nodes.some(isAcContainerNode);
+export function hasContainer(nodes: ModelNode[]): boolean {
+  return nodes.some(isContainerNode);
 }
 
 /**
@@ -40,7 +40,7 @@ export function hasAcContainer(nodes: ModelNode[]): boolean {
  * 不挡「已是成员者 Alt 移出」,故不得折进本谓词。
  */
 function containerMembershipEligible(node: ModelNode): boolean {
-  return !isAcContainerNode(node) && !isWireLikeRouteDeviceKind(node.kind) && !isStaticNode(node);
+  return !isContainerNode(node) && !isWireLikeRouteDeviceKind(node.kind) && !isStaticNode(node);
 }
 
 
@@ -49,7 +49,7 @@ function containerMembershipEligible(node: ModelNode): boolean {
  * 非容器原样返回。粘贴 / SVG 导入 / 加载 / 控制台改属性等「节点并入图」的路径共用。
  */
 export function normalizeInboundContainerNode(node: ModelNode): ModelNode {
-  return isAcContainerNode(node) ? foldContainerScaleIntoSize(node) : node;
+  return isContainerNode(node) ? foldContainerScaleIntoSize(node) : node;
 }
 
 /**
@@ -222,8 +222,8 @@ export function ejectOutsiders(container: ModelNode, nodes: ModelNode[], ownerId
 
 /** 排序:容器恒前(=先绘制=底层);其余返回 0 保持原序(V8 sort 稳定) */
 export function containerFirstComparator(a: ModelNode, b: ModelNode): number {
-  const ca = isAcContainerNode(a) ? 0 : 1;
-  const cb = isAcContainerNode(b) ? 0 : 1;
+  const ca = isContainerNode(a) ? 0 : 1;
+  const cb = isContainerNode(b) ? 0 : 1;
   return ca - cb;
 }
 
@@ -277,7 +277,7 @@ export function judgeContainerMembership(args: {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const addedContainerIdSet = new Set(addedContainerIds ?? []);
   // 容器矩形在本批判定里恒不变:循环外算一次(id + rect),免得每个被拖动节点各算一遍
-  const containerRects = nodes.filter(isAcContainerNode).map((c) => ({ id: c.id, rect: containerRect(c) }));
+  const containerRects = nodes.filter(isContainerNode).map((c) => ({ id: c.id, rect: containerRect(c) }));
   const owners = liveContainerIds(nodes);
   const membershipChanges: MembershipDecision["membershipChanges"] = [];
   const repelPatches: NodePositionPatch[] = [];
@@ -285,7 +285,7 @@ export function judgeContainerMembership(args: {
   let exitContainerId: string | undefined;
   for (const id of movedIds) {
     const n = byId.get(id);
-    if (!n || isAcContainerNode(n)) continue;
+    if (!n || isContainerNode(n)) continue;
     if (n.containerId && owners.has(n.containerId)) {
       if (altKey) {
         membershipChanges.push({ nodeId: id, containerId: undefined });
@@ -352,14 +352,14 @@ function containerOptionLabel(n: ModelNode): string {
 export function containerSelectOptions(nodes: ModelNode[]): { label: string; value: string }[] {
   return [
     { label: "无(当前模板)", value: "" },
-    ...nodes.filter(isAcContainerNode).map((c) => ({ label: containerOptionLabel(c), value: c.id })),
+    ...nodes.filter(isContainerNode).map((c) => ({ label: containerOptionLabel(c), value: c.id })),
   ];
 }
 
 /** 「绑定到设备」下拉:候选 = 该容器的成员(容器自身不入候选) */
 export function containerMemberOptions(nodes: ModelNode[], containerId: string): { label: string; value: string }[] {
   return nodes
-    .filter((n) => n.containerId === containerId && !isAcContainerNode(n))
+    .filter((n) => n.containerId === containerId && !isContainerNode(n))
     .map((n) => ({ label: containerOptionLabel(n), value: n.id }));
 }
 
@@ -401,7 +401,7 @@ export function enforceContainerMembership(
     else membersByContainerId.set(n.containerId, [n]);
   }
   for (const c of nodes) {
-    if (!isAcContainerNode(c)) continue;
+    if (!isContainerNode(c)) continue;
     const members = membersByContainerId.get(c.id) ?? [];
     const fitted = preserveIds.has(c.id) ? preserveDraggedContainerGeometry(c, members) : fitContainerToMembers(c, members);
     containerUpdates.push(fitted);
@@ -493,7 +493,7 @@ export function applyDragContainerMembership(args: {
   });
   const withUnbind = unboundById.size === 0 ? placed : placed.map((n) => unboundById.get(n.id) ?? n);
   // 本次被拖动的容器:**只扩不缩** —— 用户手动尺寸(拖角)不被拖动提交打回成员包围盒
-  const preserveSizeIds = withUnbind.filter((n) => isAcContainerNode(n) && movedIdSet.has(n.id)).map((n) => n.id);
+  const preserveSizeIds = withUnbind.filter((n) => isContainerNode(n) && movedIdSet.has(n.id)).map((n) => n.id);
   const decision = enforceContainerMembership(withUnbind, { preserveSizeIds });
   for (const upd of containerDecisionNodeUpdates(withUnbind, decision)) {
     changed.set(upd.id, upd);
@@ -518,7 +518,7 @@ export function commitContainerMembership(nodes: ModelNode[], movedIds: string[]
   // 故 movedIds 中的容器一律是刚落地的(粘贴 / 模板落点 / SVG 导入整模型重建),落进它们算重建而非外来误落。
   // 拖动 / 布局不走本出口,它们的容器是既有容器 → 无豁免、照常排斥。
   const movedIdSet = new Set(movedIds);
-  const addedContainerIds = nodes.filter((node) => movedIdSet.has(node.id) && isAcContainerNode(node)).map((node) => node.id);
+  const addedContainerIds = nodes.filter((node) => movedIdSet.has(node.id) && isContainerNode(node)).map((node) => node.id);
   // 入图即归一:并入的容器把遗留 scale 折算进 size —— 粘贴源可能是**存量存盘记录**(未经加载路径归一),
   // 不折叠则会带着 scale 入图,又回到「渲染矩形 ≠ eject/入组所用矩形」。
   // 无并入容器时保持原引用(本出口的「无容器短路」契约:引用相等即无变化)
@@ -565,7 +565,7 @@ export function containerMembershipCommit(
 
 /** 容器 kind → 中文默认名基(派生自内置库 label,单源;不落库的 kind 兜底为 kind 本身) */
 export const CONTAINER_KIND_LABELS: Record<string, string> = Object.fromEntries(
-  AC_CONTAINER_KINDS.map((kind) => [kind, DEVICE_LIBRARY_BY_KIND.get(kind)?.label ?? kind])
+  CONTAINER_KINDS.map((kind) => [kind, DEVICE_LIBRARY_BY_KIND.get(kind)?.label ?? kind])
 );
 
 /** 新建容器默认名:「中文名 + 同类型计数 + 1」(如画布已有 2 个虚拟电厂 → 虚拟电厂3) */
@@ -577,7 +577,7 @@ export function defaultContainerName(kind: DeviceKind, existing: ModelNode[]): s
 
 /** 新建容器弹窗的类型选项(value/label 与图元库 label 单源,不另拷一份中文名) */
 export function containerKindOptions(): { value: DeviceKind; label: string }[] {
-  return AC_CONTAINER_KINDS.map((kind) => ({ value: kind, label: CONTAINER_KIND_LABELS[kind] ?? kind }));
+  return CONTAINER_KINDS.map((kind) => ({ value: kind, label: CONTAINER_KIND_LABELS[kind] ?? kind }));
 }
 
 /**
@@ -586,7 +586,7 @@ export function containerKindOptions(): { value: DeviceKind; label: string }[] {
  */
 export function containerNameOptions(kind: DeviceKind, nodes: ModelNode[]): { label: string; value: string }[] {
   return nodes
-    .filter((n) => n.kind === kind && isAcContainerNode(n))
+    .filter((n) => n.kind === kind && isContainerNode(n))
     .map((c) => ({ label: containerOptionLabel(c), value: c.id }));
 }
 
@@ -601,7 +601,7 @@ export type ContainerDraft = { kind: DeviceKind; name: string; containerId: stri
  * 显示停在旧默认名、落库却是新默认名,界面与数据分叉;不清 containerId 则会切类型后仍加入旧类型的容器。
  */
 export function containerKindSwitch(kind: DeviceKind, existing: ModelNode[]): ContainerDraft {
-  const first = existing.find((n) => n.kind === kind && isAcContainerNode(n));
+  const first = existing.find((n) => n.kind === kind && isContainerNode(n));
   return first
     ? { kind, name: String(first.name ?? ""), containerId: String(first.id) }
     : { kind, name: defaultContainerName(kind, existing), containerId: "" };
@@ -612,7 +612,7 @@ export function containerKindSwitch(kind: DeviceKind, existing: ModelNode[]): Co
  * 便于提交兜底);否则视为用户新输入的名字 → 新建该类型容器。
  */
 export function containerNamePick(value: string, kind: DeviceKind, nodes: ModelNode[]): ContainerDraft {
-  const hit = nodes.find((n) => n.id === value && isAcContainerNode(n));
+  const hit = nodes.find((n) => n.id === value && isContainerNode(n));
   return hit
     ? { kind, name: String(hit.name ?? ""), containerId: String(hit.id) }
     : { kind, name: value, containerId: "" };
@@ -645,7 +645,7 @@ export function containerMemberIdsFromSelection(nodes: ModelNode[], selectedIds:
   const byId = new Map(nodes.map((n) => [n.id, n]));
   return selectedIds.filter((id) => {
     const n = byId.get(id);
-    return Boolean(n) && !isAcContainerNode(n!);
+    return Boolean(n) && !isContainerNode(n!);
   });
 }
 
@@ -680,7 +680,7 @@ function gatewayContainersUnboundByLeaving(
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const out: ModelNode[] = [];
   for (const c of nodes) {
-    if (!isAcContainerNode(c)) continue;
+    if (!isContainerNode(c)) continue;
     const bound = String(c.params?.bound_device_id ?? "");
     if (!leaving.has(bound) || toContainerId === c.id) continue;
     if (byId.get(bound)?.containerId !== c.id) continue;
@@ -735,11 +735,11 @@ export function containerAddIsNoop(nodes: ModelNode[], containerId: string, memb
  * container 不在 nodes 中时插到末尾(新建);返回**完整** nextNodes(含新容器),供 setGraphArrays 提交。
  * 成员已在别的容器 → 视作改归属,用 enforceContainerMembership 一并收缩原容器。
  */
-export function applyAddToAcContainer(nodes: ModelNode[], container: ModelNode, memberIds: string[]): ModelNode[] {
+export function applyAddToContainer(nodes: ModelNode[], container: ModelNode, memberIds: string[]): ModelNode[] {
   const byId = new Map(nodes.map((n) => [n.id, n])); // 一次索引:逐成员 find 是 O(m×N)
   const members = new Set(memberIds.filter((id) => {
     const n = byId.get(id);
-    return Boolean(n) && !isAcContainerNode(n!);
+    return Boolean(n) && !isContainerNode(n!);
   }));
   // 改归属:离开原容器的成员先按统一规则解绑原关口容器(与移出同一出口)
   const unboundById = new Map(
@@ -750,7 +750,7 @@ export function applyAddToAcContainer(nodes: ModelNode[], container: ModelNode, 
     ? withBindings.map((n) => (n.id === container.id ? container : n))
     : [...withBindings, container];
   const tagged = base.map((n) =>
-    members.has(n.id) && !isAcContainerNode(n) ? { ...n, containerId: container.id } : n
+    members.has(n.id) && !isContainerNode(n) ? { ...n, containerId: container.id } : n
   );
   return withNodeUpdates(tagged, containerDecisionNodeUpdates(tagged, enforceContainerMembership(tagged)));
 }
@@ -760,7 +760,7 @@ export function applyAddToAcContainer(nodes: ModelNode[], container: ModelNode, 
  * (容器量测组同步由调用方随归一化出口收敛)。
  * 返回**变更节点**(成员 + 解绑的容器 + 重算后的容器矩形与被挤出的非成员),供 patchGraphNodes 单次提交。
  */
-export function applyRemoveFromAcContainer(nodes: ModelNode[], memberIds: string[]): ModelNode[] {
+export function applyRemoveFromContainer(nodes: ModelNode[], memberIds: string[]): ModelNode[] {
   const leaving = new Set(memberIds.filter((id) => nodes.some((n) => n.id === id && n.containerId)));
   const changed = new Map<string, ModelNode>();
   const cleared = nodes.map((n) => {
@@ -807,7 +807,7 @@ function refitContainersOnly(nodes: ModelNode[]): ModelNode[] {
  */
 export function refitContainersAfterTransform(nodes: ModelNode[], transformedIds: Iterable<string>): ModelNode[] {
   const transformed = new Set(transformedIds);
-  const preserveSizeIds = nodes.filter((n) => transformed.has(n.id) && isAcContainerNode(n)).map((n) => n.id);
+  const preserveSizeIds = nodes.filter((n) => transformed.has(n.id) && isContainerNode(n)).map((n) => n.id);
   const decision = enforceContainerMembership(nodes, { preserveSizeIds });
   // 「无变化不产出空补丁」契约先行过滤,再交容器决策出口并回节点(见 containerDecisionNodeUpdates)
   const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -843,7 +843,7 @@ export function containerDeletionWarning(nodes: ModelNode[], deletedIds: Iterabl
   }
   const parts: string[] = [];
   for (const c of nodes) {
-    if (!deleting.has(c.id) || !isAcContainerNode(c)) continue;
+    if (!deleting.has(c.id) || !isContainerNode(c)) continue;
     const scattered = scatteredByContainerId.get(c.id) ?? 0;
     if (scattered === 0) continue;
     parts.push(`容器「${String(c.name ?? "")}」内有 ${scattered} 个成员`);
@@ -860,7 +860,7 @@ export function containerDeletionWarning(nodes: ModelNode[], deletedIds: Iterabl
 export function containerDeletionFinalize(nodes: ModelNode[], deletedIds: Iterable<string>): ModelNode[] {
   const deleting = new Set(deletedIds);
   const deletedContainerIds = new Set(
-    nodes.filter((n) => deleting.has(n.id) && isAcContainerNode(n)).map((n) => n.id)
+    nodes.filter((n) => deleting.has(n.id) && isContainerNode(n)).map((n) => n.id)
   );
   if (deletedContainerIds.size === 0) return [];
   const out: ModelNode[] = [];

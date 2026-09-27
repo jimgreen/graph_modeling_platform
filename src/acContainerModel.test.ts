@@ -6,52 +6,61 @@ import {
   DEVICE_LIBRARY,
   DEVICE_LIBRARY_BY_KIND,
   ELEMENT_TREE_COMPONENT_LIBRARY_LABELS,
-  AC_CONTAINER_KINDS,
+  CONTAINER_KINDS,
   createDefaultNode,
   getEParameterKeys,
   getTemplateStateDefinitions,
-  isAcContainerKind,
+  isContainerKind,
   type DeviceKind,
   type ModelNode,
 } from "./model";
-import { COMPONENT_LIBRARY_LABELS, DEFAULT_CATEGORY_LIBRARIES, resolveAcContainerModelPanelParamKeys } from "./appExtracted/appCoreCanvasUtilities";
+import { COMPONENT_LIBRARY_LABELS, DEFAULT_CATEGORY_LIBRARIES, resolveContainerModelPanelParamKeys } from "./appExtracted/appCoreCanvasUtilities";
 import { resolveDeviceModelPanelDefinitionGroups, resolveDeviceModelPanelParameterKeys } from "./appExtracted/appView";
 import { DeviceGlyph } from "./DeviceGlyph";
 import { nodeLabelShouldRender } from "./nodeLabelUtils";
 
-describe("交流容器数据模型", () => {
-  test("3 个容器 kind 已注册且归类到交流设备类别库", () => {
-    expect(AC_CONTAINER_KINDS).toEqual([
-      "ac-vpp-box",
-      "ac-switch-box",
-      "ac-distribution-box",
-    ]);
-    for (const kind of AC_CONTAINER_KINDS) {
+describe("容器数据模型(四个能流)", () => {
+  // 容器 kind → 所属类别库 + 界面类名 + E 段名。E 段名(容器表)与界面类名(XX容器)有意分叉,各断言锁定。
+  const CONTAINER_MATRIX = [
+    { kind: "ac-vpp-box", categoryLibrary: "交流设备", label: "交流容器" },
+    { kind: "ac-switch-box", categoryLibrary: "交流设备", label: "交流容器" },
+    { kind: "ac-distribution-box", categoryLibrary: "交流设备", label: "交流容器" },
+    { kind: "dc-vpp-box", categoryLibrary: "直流设备", label: "直流容器" },
+    { kind: "hydrogen-vpp-box", categoryLibrary: "氢能设备", label: "氢能容器" },
+    { kind: "heat-vpp-box", categoryLibrary: "热能设备", label: "热能容器" }
+  ] as const;
+
+  test("6 个容器 kind 已注册且各自归入本流类别库", () => {
+    expect(CONTAINER_KINDS).toEqual(CONTAINER_MATRIX.map((entry) => entry.kind));
+    for (const { kind, categoryLibrary } of CONTAINER_MATRIX) {
       const tpl = DEVICE_LIBRARY_BY_KIND.get(kind);
       expect(tpl, `${kind} 未注册`).toBeTruthy();
-      expect(tpl!.categoryLibrary).toBe("交流设备");
+      expect(tpl!.categoryLibrary, `${kind} 类别库`).toBe(categoryLibrary);
     }
   });
 
-  test("归入默认类别库(无「右键删除类别库」入口)+ 类名显示「交流容器」,E 段名仍「容器表」", () => {
+  test("归入默认类别库(无「右键删除类别库」入口)+ 类名显示「XX容器」,E 段名仍「容器表」", () => {
     const defaults: readonly string[] = DEFAULT_CATEGORY_LIBRARIES;
-    for (const kind of AC_CONTAINER_KINDS) {
+    for (const kind of CONTAINER_KINDS) {
       expect(defaults).toContain(DEVICE_LIBRARY_BY_KIND.get(kind)!.categoryLibrary);
     }
-    expect(COMPONENT_LIBRARY_LABELS.ACContainer).toBe("交流容器");
     // 界面显示名与 E 侧段名解耦:E 元件定义/导出仍读「容器表」,本表只管树上类名
     expect(ELEMENT_TREE_COMPONENT_LIBRARY_LABELS.ACContainer).toBe("容器表");
+    expect(COMPONENT_LIBRARY_LABELS.ACContainer).toBe("交流容器");
+    expect(COMPONENT_LIBRARY_LABELS.DCContainer).toBe("直流容器");
+    expect(COMPONENT_LIBRARY_LABELS.HydroContainer).toBe("氢能容器");
+    expect(COMPONENT_LIBRARY_LABELS.HeatContainer).toBe("热能容器");
   });
 
   test("容器不进 static 家族(不写 component_type)", () => {
-    for (const kind of AC_CONTAINER_KINDS) {
+    for (const kind of CONTAINER_KINDS) {
       const tpl = DEVICE_LIBRARY_BY_KIND.get(kind)!;
       // 字段名照抄真实模板结构:style 参数扁平在 params 上(非 defaults.params)
       const params = tpl.params;
       expect(params.component_type).toBeUndefined();
-      expect(isAcContainerKind(kind)).toBe(true);
+      expect(isContainerKind(kind)).toBe(true);
     }
-    expect(isAcContainerKind("static-group-box")).toBe(false);
+    expect(isContainerKind("static-group-box")).toBe(false);
   });
 });
 
@@ -101,7 +110,7 @@ describe("容器图元绘制", () => {
   });
 
   test("三个容器 kind 均走容器分支(ac-switch-box 不被 switch 变体启发式劫持)", () => {
-    for (const kind of AC_CONTAINER_KINDS) {
+    for (const kind of CONTAINER_KINDS) {
       const html = renderGlyph(makeContainerNode(kind, `${kind}-名称`));
       expect(html, `${kind} 未走容器分支`).toContain('data-container-box="1"');
       expect(html).toContain("ac-container-fill");
@@ -133,7 +142,7 @@ describe("容器图元绘制", () => {
   });
 
   test("容器模板与新建节点保持 180×112(spec 默认尺寸不被图元归一化)", () => {
-    for (const kind of AC_CONTAINER_KINDS) {
+    for (const kind of CONTAINER_KINDS) {
       expect(DEVICE_LIBRARY_BY_KIND.get(kind)!.size, `${kind} 模板尺寸被归一化`).toEqual({ width: 180, height: 112 });
       expect(createDefaultNode(kind, { x: 0, y: 0 }).size, `${kind} 新建节点尺寸被归一化`).toEqual({ width: 180, height: 112 });
     }
@@ -156,13 +165,13 @@ describe("容器图元绘制", () => {
 
 // ─── fb13:容器量测两层(类量测定义 = V/I/P/Q;面板剔除量测参数行)───────────────
 // 类量测定义(模板 measurementDefinitions)供「元件定义-量测定义」表;
-// 面板【模型】页经 AC_CONTAINER_EXCLUDED_E_PARAM_KEYS 剔除 4 个量测字段行(用户:「删除电流值属性」)。
+// 面板【模型】页经 CONTAINER_EXCLUDED_E_PARAM_KEYS 剔除 4 个量测字段行(用户:「删除电流值属性」)。
 describe("容器模板量测定义", () => {
   const paramKeys = (kind: string) =>
     (DEVICE_LIBRARY_BY_KIND.get(kind)!.parameterDefinitions ?? []).map((item) => String(item.enName));
 
   test("三容器类的量测定义 = 有功/无功/电压/电流(元件定义-量测定义表数据源)", () => {
-    for (const kind of AC_CONTAINER_KINDS) {
+    for (const kind of CONTAINER_KINDS) {
       expect(DEVICE_LIBRARY_BY_KIND.get(kind)!.measurementDefinitions, `${kind} 量测定义`).toEqual([
         { measurementTypeId: "activePower", associatedField: "p" },
         { measurementTypeId: "reactivePower", associatedField: "q" },
@@ -185,9 +194,9 @@ describe("容器模板量测定义", () => {
         Object.keys(template.params),
         groups
       );
-      return resolveAcContainerModelPanelParamKeys(keys, isAcContainerKind(kind));
+      return resolveContainerModelPanelParamKeys(keys, isContainerKind(kind));
     };
-    for (const kind of AC_CONTAINER_KINDS) {
+    for (const kind of CONTAINER_KINDS) {
       for (const measurementKey of ["p", "q", "u", "i"]) {
         expect(panelKeys(kind), `${kind} 面板不应出现量测参数行 ${measurementKey}`).not.toContain(measurementKey);
       }
@@ -204,7 +213,7 @@ describe("容器模板量测定义", () => {
   });
 
   test("容器不默认带二元开关状态:三容器口径一致(ac-switch-box 曾因 kind 含 switch 中招)", () => {
-    for (const kind of AC_CONTAINER_KINDS) {
+    for (const kind of CONTAINER_KINDS) {
       expect(getTemplateStateDefinitions(DEVICE_LIBRARY_BY_KIND.get(kind)!), `${kind} 状态定义`).toEqual([]);
     }
     // 回归护栏:普通开关照旧带开/合两个状态

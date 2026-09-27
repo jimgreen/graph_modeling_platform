@@ -12,15 +12,20 @@ const renderValue = (props: Record<string, unknown>) =>
   );
 
 describe("容器「设备类型」行下拉", () => {
-  test("显示当前 kind 的中文名,候选值 = 三容器英文 kind(实际值仍是英文)", () => {
+  test("显示当前 kind 的中文名,候选值 = 全部容器英文 kind(实际值仍是英文)", () => {
     const html = renderValue({ kind: "ac-switch-box" });
     expect(html).toContain("开关箱");
-    expect(html).toContain('data-inline-option-values="ac-vpp-box|ac-switch-box|ac-distribution-box"');
+    expect(html).toContain(
+      'data-inline-option-values="ac-vpp-box|ac-switch-box|ac-distribution-box|dc-vpp-box|hydrogen-vpp-box|heat-vpp-box"'
+    );
   });
 
-  test("三 kind 中文名与图元库单源一致", () => {
+  test("kind 中文名与图元库单源一致(含非交流能流的虚拟电厂)", () => {
     expect(renderValue({ kind: "ac-vpp-box" })).toContain("虚拟电厂");
     expect(renderValue({ kind: "ac-distribution-box" })).toContain("配变箱");
+    for (const kind of ["dc-vpp-box", "hydrogen-vpp-box", "heat-vpp-box"]) {
+      expect(renderValue({ kind }), kind).toContain("虚拟电厂");
+    }
   });
 
   test("浏览态显示中文名文本,不可点开下拉", () => {
@@ -37,7 +42,7 @@ describe("容器「设备类型」行下拉", () => {
     const guardIndex = source.indexOf("const isContainerDevTypeRow");
     expect(guardIndex).toBeGreaterThan(-1);
     const guard = source.slice(guardIndex, index);
-    expect(guard).toContain("isAcContainerNode");
+    expect(guard).toContain("isContainerNode");
     expect(guard).toContain("dev_type");
     // 仅一处调用点,避免「只改一个入口」的分叉
     expect(source.match(/<ContainerKindSelectValue/g)?.length).toBe(1);

@@ -169,7 +169,7 @@ import {
   getEParameterKeys,
   resolveDeviceParameterDefinitionExportSettings,
   inferESection,
-  AC_CONTAINER_KINDS,
+  CONTAINER_KINDS,
   getTemplateParameterDefinitions,
   templateDerivedComponentLibraryInfo,
   getOverlappingTerminalGroups,
@@ -239,7 +239,7 @@ import {
   type TerminalType
 } from "./model";
 import { terminalVoltageDisplay, transformGraphForGateways } from "./model-eexport";
-import { applyRemoveFromAcContainer, withNodeUpdates } from "./acContainer";
+import { applyRemoveFromContainer, withNodeUpdates } from "./acContainer";
 
 test("keeps electrical measurement and setpoint columns aligned with the device contracts", () => {
   expect(E_SECTION_COLUMNS.ACBranch).toEqual(expect.arrayContaining([
@@ -893,6 +893,8 @@ test("exports owning class names for dev_type across every built-in E device cla
   let checkedRows = 0;
   const checkedSections: string[] = [];
   const checkedClassNames = new Set<string>();
+  // 容器段集合经 inferESection 自「容器 kind 单源」推导(四个能流各一段),不硬编码段名 —— 硬编码会在新增能流时静默漏判
+  const containerSections = new Set(CONTAINER_KINDS.map((kind) => inferESection(kind, {})));
   for (const [section, payload] of Object.entries(exported)) {
     if (!payload.columns.includes("dev_type")) {
       continue;
@@ -903,21 +905,23 @@ test("exports owning class names for dev_type across every built-in E device cla
       checkedClassNames.add(row.dev_type);
       // 容器例外:容器段的 dev_type 必须是容器元件英文名 —— 段名 ACContainer 也在 knownClassNames 里,
       // 故容器段单列判据,否则「容器退化成段名」这条错法会被 has() 静默放过
-      const known = section === "ACContainer"
-        ? (AC_CONTAINER_KINDS as readonly string[]).includes(row.dev_type)
+      const known = containerSections.has(section)
+        ? (CONTAINER_KINDS as readonly string[]).includes(row.dev_type)
         : knownClassNames.has(row.dev_type);
       expect(known, `${section}: ${row.dev_type}`).toBe(true);
       expect(row.dev_type).not.toMatch(/^legacy-/u);
     }
   }
   // 精确条数：两个 kind 之间「对调映射」换成另一个合法类名时 has() 成员断言抓不到，计数能立刻失败
-  // 375 = 371(既有设备类) + 3(3 个交流容器 kind 入「容器表」段) + 1(容器入列后其后图元网格位置右移，
+  // 378 = 371(既有设备类) + 6(6 个容器 kind 各入本流「容器表」段) + 1(容器入列后其后图元网格位置右移，
   // 氢能端子重叠分组随之多出一组 —— 本用例按 i % 12 布点，条数对布点敏感，属既有耦合)
-  expect(checkedRows).toBe(375);
+  expect(checkedRows).toBe(378);
   expect(checkedSections).toEqual(expect.arrayContaining([
     "ACCompensator",
     "ACSeriCompensator",
     "ACContainer",
+    // 其余能流的容器各落本流段(段名经 inferESection 自容器 kind 推导,非硬编码)
+    ...[...containerSections],
     "HeatSource",
     "HeatSource2"
   ]));
@@ -4659,7 +4663,7 @@ describe("交流容器 E 导出", () => {
       .toBe(`ACGenerator_${member.params.idx}`);
 
     // 走真实出口(移出容器)清掉残留 → 引用为空
-    const afterRemove = withNodeUpdates([container, member], applyRemoveFromAcContainer([container, member] as any, [member.id]));
+    const afterRemove = withNodeUpdates([container, member], applyRemoveFromContainer([container, member] as any, [member.id]));
     expect(afterRemove.find((node) => node.id === container.id)!.params.bound_device_id).toBe("");
     const cleanedProject: ProjectFile = { ...staleProject, nodes: afterRemove };
     // 记录层:绑定列整列为空(容器段不变量的口径)
@@ -4690,6 +4694,80 @@ describe("交流容器 E 导出", () => {
     const bound = containerBoundDeviceRow(payload, container.name);
     expect(bound.table).toBe("ACGenerator");
     expect(bound.row?.name).toBe(member.name);
+  });
+
+  /**
+   * 四个能流的「容器 + 一个成员」配对。成员关系表按 (容器,成员) 逐行产出 ——
+   * 只给容器不给成员,成员段根本不会有行(建不出表),故两态用例都必须带成员。
+   */
+  function createFourFlowContainerModel(name: string): ProjectFile {
+    const pairs = [
+      ["ac-vpp-box", "ac-source"],
+      ["dc-vpp-box", "dc-source"],
+      ["hydrogen-vpp-box", "hydrogen-source"],
+      ["heat-vpp-box", "heat-source"]
+    ] as const;
+    // 容器组与成员组**分两次**建(createIndexedExportNodes 逐个建单节点,不接受分组参数)
+    const containers = createIndexedExportNodes(pairs.map(([containerKind]) => containerKind));
+    const members = createIndexedExportNodes(pairs.map(([, memberKind]) => memberKind));
+    const nodes: ModelNode[] = [];
+    pairs.forEach((_, index) => {
+      const container = containers[index];
+      const member = members[index];
+      member.containerId = container.id;
+      nodes.push(container, member);
+    });
+    return { version: 1, name, nodes, edges: [] };
+  }
+
+  // 四个能流的容器落表口径(用户 2026-09-27 裁决):模板态合并进同一张 container 表,非模板态各落各表
+  test("非模板态(原始定义生成):四类容器各落本流的容器表,互不合并", () => {
+    const project = createFourFlowContainerModel("四能流容器模型");
+
+    const payload = parseESections(buildEFileExport(project).text);
+    // 无模板 = 无 exportName/labels 可依,直接落内部段名当表名 → 四张互不相干的表
+    expect(Object.keys(payload).filter((table) => /Container$/.test(table)).sort())
+      .toEqual(["ACContainer", "DCContainer", "HeatContainer", "HydroContainer"]);
+    for (const [table, kind] of [
+      ["ACContainer", "ac-vpp-box"],
+      ["DCContainer", "dc-vpp-box"],
+      ["HydroContainer", "hydrogen-vpp-box"],
+      ["HeatContainer", "heat-vpp-box"]
+    ] as const) {
+      expect(payload[table]?.rows.map((row) => row.dev_type), table).toEqual([kind]);
+    }
+    // 成员关系段同样四张分开
+    expect(Object.keys(payload).filter((table) => /ContainerDev$/.test(table)).sort())
+      .toEqual(["ACContainerDev", "DCContainerDev", "HeatContainerDev", "HydroContainerDev"]);
+    for (const [table, kind] of [
+      ["ACContainerDev", "ac-vpp-box"],
+      ["DCContainerDev", "dc-vpp-box"],
+      ["HydroContainerDev", "hydrogen-vpp-box"],
+      ["HeatContainerDev", "heat-vpp-box"]
+    ] as const) {
+      expect(payload[table]?.rows.map((row) => row.container_type), table).toEqual([kind]);
+    }
+  });
+
+  test("模板态:四类容器合并进同一张 container 表,靠 dev_type 区分种类", () => {
+    const project = createFourFlowContainerModel("四能流容器模板态模型");
+    // 模板**未定义**任何容器段(实况)→ 四类全走 containerFallbackTable,同表
+    const options = { eDeviceDefinitionLabels: { ACNode: "node" } };
+
+    const payload = parseESections(buildEFileExport(project, ["默认方案"], options).text);
+    const containerTables = Object.keys(payload).filter((table) => table === "container" || /Container$/.test(table));
+    expect(containerTables).toEqual(["container"]);
+    // 一张表里四行,dev_type 逐行区分容器种类(这是「合表后仍可分辨」的唯一依据)
+    expect(payload.container?.rows.map((row) => row.dev_type).sort())
+      .toEqual(["ac-vpp-box", "dc-vpp-box", "heat-vpp-box", "hydrogen-vpp-box"]);
+    // idx 在合并后被重排为 1..N(重排本身无害,引用由 finalizeContainerCrossRefs 按最终行号定稿)
+    expect(payload.container?.rows.map((row) => row.idx).sort((a, b) => Number(a) - Number(b)))
+      .toEqual(["1", "2", "3", "4"]);
+    // 成员关系表同样合并成一张 container_dev,container_type 逐行区分容器种类
+    const devTables = Object.keys(payload).filter((table) => table === "container_dev" || /ContainerDev$/.test(table));
+    expect(devTables).toEqual(["container_dev"]);
+    expect(payload.container_dev?.rows.map((row) => row.container_type).sort())
+      .toEqual(["ac-vpp-box", "dc-vpp-box", "heat-vpp-box", "hydrogen-vpp-box"]);
   });
 
   test("bound_device_idx 非模板态取绑定设备所在 E 段名(母线→ACRealBs)", () => {
