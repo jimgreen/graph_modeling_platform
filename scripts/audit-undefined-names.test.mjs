@@ -12,6 +12,9 @@ export function factory(__appScope: Record<string, any>) {
 `;
 
 describe("audit-undefined-names", () => {
+  // 两条用例都要 ts.createProgram 起一次完整语义检查（编译器冷启动 + lib.d.ts 加载），
+  // 单条空载 ~0.5s；全量并发时 CPU 被抢，5s 默认值偶发不够。显式给足预算，
+  // 免得把「机器慢」误报成「审计逻辑坏了」。
   test("报出 @ts-nocheck 文件里的未定义名", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "audit-names-"));
     try {
@@ -24,7 +27,7 @@ describe("audit-undefined-names", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("合法绑定不误报（解构名、import、局部声明、全局、类型位置）", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "audit-names-"));
@@ -45,5 +48,5 @@ export function factory(__appScope: Record<string, any>) {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

@@ -6389,7 +6389,9 @@ describe("createOpenBlankProjectLibraryContextMenu", () => {
       vi.doUnmock("./appExtracted/appModeToggleHint");
       vi.resetModules();
     });
-  });
+    // 本用例要 resetModules 后整棵模块图重新求值（含 appDeviceDefinitionFactories 的全部
+    // 传递依赖），空载已 ~1.5s；并发抢 CPU 时 5s 默认值偶发不够。显式给预算。
+  }, 30_000);
 
   test("source form: browse-mode branch no longer returns silently and imports the hint helper", () => {
     const source = readFileSync(new URL("./appExtracted/appDeviceDefinitionFactories.tsx", import.meta.url), "utf8");
