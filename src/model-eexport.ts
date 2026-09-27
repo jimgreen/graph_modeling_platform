@@ -841,20 +841,8 @@ function getRawEParamValue(
         : numberedMatch
           ? Number.parseInt(numberedMatch[2], 10) - 1
           : { high: 0, medium: 1, low: 2 }[namedMatch![1] as "high" | "medium" | "low"];
-      const parameterKey = canonicalMatch?.[2] ?? numberedMatch?.[1] ?? ({
-        ResistancePu: "r",
-        ReactancePu: "x",
-        MagnetizingConductancePu: "gt",
-        MagnetizingSusceptancePu: "bt",
-        TapRatio: "tap",
-        Shift: "shift",
-        resistance_pu: "r",
-        reactance_pu: "x",
-        magnetizing_conductance_pu: "gt",
-        magnetizing_susceptance_pu: "bt",
-        tap_ratio: "tap",
-        shift: "shift"
-      } as Record<string, string>)[namedMatch![2]];
+      const parameterKey = canonicalMatch?.[2] ?? numberedMatch?.[1]
+        ?? TRANSFORMER_PARAMETER_PREFIX_BY_FIELD[namedMatch![2]];
       const sideCode = ["i", "k", "j"][sideIndex];
       const sidePrefix = ["high", "medium", "low"][sideIndex];
       const parameterSuffix: Record<string, string> = {
@@ -996,6 +984,28 @@ export function eFileInterfaceDefinitionIndex(options: EFileExportOptions = {}) 
   return index;
 }
 
+/**
+ * 三绕组变压器「参数字段名 → E 列前缀」映射。
+ *
+ * 抽成常量是因为它此前在两个函数里**各写了一份完全相同的 12 键字面量**
+ * （拼写表 `ResistancePu`/`resistance_pu` 两套写法都覆盖）—— 两份都要手工同步，
+ * 漏改一处就只会让某个拼写变体导出错列，且没有任何测试能发现。单一来源消除这个面。
+ */
+const TRANSFORMER_PARAMETER_PREFIX_BY_FIELD: Record<string, string> = {
+  ResistancePu: "r",
+  ReactancePu: "x",
+  MagnetizingConductancePu: "gt",
+  MagnetizingSusceptancePu: "bt",
+  TapRatio: "tap",
+  Shift: "shift",
+  resistance_pu: "r",
+  reactance_pu: "x",
+  magnetizing_conductance_pu: "gt",
+  magnetizing_susceptance_pu: "bt",
+  tap_ratio: "tap",
+  shift: "shift"
+};
+
 const LEGACY_E_DEFINITION_COLUMN_ALIASES: Record<string, string> = {
   maxCurrent: "i_max",
   max_current: "i_max",
@@ -1110,20 +1120,7 @@ export function legacyEColumnForDefinition(section: string, enName: string): str
       /^(high|medium|low)_(resistance_pu|reactance_pu|magnetizing_conductance_pu|magnetizing_susceptance_pu|tap_ratio|shift)$/.exec(enName);
     if (sideMatch) {
       const sideCode = { high: "i", medium: "k", low: "j" }[sideMatch[1] as "high" | "medium" | "low"];
-      const prefix = {
-        ResistancePu: "r",
-        ReactancePu: "x",
-        MagnetizingConductancePu: "gt",
-        MagnetizingSusceptancePu: "bt",
-        TapRatio: "tap",
-        Shift: "shift",
-        resistance_pu: "r",
-        reactance_pu: "x",
-        magnetizing_conductance_pu: "gt",
-        magnetizing_susceptance_pu: "bt",
-        tap_ratio: "tap",
-        shift: "shift"
-      }[sideMatch[2] as "ResistancePu" | "ReactancePu" | "MagnetizingConductancePu" | "MagnetizingSusceptancePu" | "TapRatio" | "Shift" | "resistance_pu" | "reactance_pu" | "magnetizing_conductance_pu" | "magnetizing_susceptance_pu" | "tap_ratio" | "shift"];
+      const prefix = TRANSFORMER_PARAMETER_PREFIX_BY_FIELD[sideMatch[2]];
       const column = `${sideCode}_${prefix}`;
       return columns.includes(column) ? column : "";
     }
