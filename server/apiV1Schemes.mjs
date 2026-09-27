@@ -7,6 +7,7 @@ import {
   readSchemeProjectRecord
 } from "./server.mjs";
 import { sendV1Json, sendV1Error } from "./v1Response.mjs";
+import { accessControlOriginOnly } from "./cors.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 import { handleV1ModelEFile, handleV1ModelEFilePost } from "./eFileExport.mjs";
 import { handleV1ModelCimXml } from "./cimExport.mjs";
@@ -110,7 +111,7 @@ export async function handleV1SchemeExport({ url, response, paths }) {
       "content-length": String(buffer.length),
       "content-disposition": `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       "cache-control": "no-store",
-      "access-control-allow-origin": "*"
+      ...accessControlOriginOnly
     });
     response.end(buffer);
   } catch (error) {
@@ -162,7 +163,7 @@ function sendSvg(response, svg, encoding) {
     "content-length": String(bytes.length),
     // 本端点响应不带 ETag/Last-Modified 验证器，不存在 304 协商缓存；no-store 表示不缓存
     "cache-control": "no-store",
-    "access-control-allow-origin": "*"
+    ...accessControlOriginOnly
   });
   response.end(bytes);
 }

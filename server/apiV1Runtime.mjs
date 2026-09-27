@@ -9,6 +9,7 @@
 //   - 前端透传错误        → error.code（如 no-active-model/no-selection/internal）→ 按 v1Response 映射
 
 import { sendV1JsonNoStore, sendV1Error } from "./v1Response.mjs";
+import { accessControlOriginOnly } from "./cors.mjs";
 import { NoOnlineClientError, FetchTimeoutError } from "./runtimeRegistry.mjs";
 import { PREDEFINED_E_DEVICE_TEMPLATES, readPredefinedTemplateBase64 } from "./eFileTemplates.mjs";
 
@@ -140,7 +141,7 @@ export async function handleV1RuntimeScreenshot({ url, response }, ctx) {
     response.writeHead(200, {
       "content-type": "image/png",
       "cache-control": "no-store",
-      "access-control-allow-origin": "*"
+      ...accessControlOriginOnly
     });
     response.end(buffer);
   } catch (error) {
@@ -156,7 +157,7 @@ export async function handleV1RuntimeSvg({ url, response }, ctx) {
     response.writeHead(200, {
       "content-type": "image/svg+xml; charset=utf-8",
       "cache-control": "no-store",
-      "access-control-allow-origin": "*"
+      ...accessControlOriginOnly
     });
     response.end(svg);
   } catch (error) {
@@ -189,7 +190,7 @@ export async function handleV1RuntimeEFile({ url, response }, ctx) {
       "content-type": "text/plain; charset=utf-8",
       "content-disposition": `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       "cache-control": "no-store",
-      "access-control-allow-origin": "*"
+      ...accessControlOriginOnly
     });
     response.end(text);
   } catch (error) {
@@ -219,7 +220,7 @@ export async function handleV1RuntimeEFilePost({ request, response, url }, ctx) 
       "content-type": "text/plain; charset=utf-8",
       "content-disposition": `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       "cache-control": "no-store",
-      "access-control-allow-origin": "*"
+      ...accessControlOriginOnly
     });
     response.end(text);
   } catch (error) {
