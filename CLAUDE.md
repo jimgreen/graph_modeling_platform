@@ -169,7 +169,7 @@ graph_modeling_platform/
 | `scripts/` | 一次性分析/修复脚本 | 非运行时依赖 |
 | `public/` | Vite 静态资源 | |
 | `docs/` | 第三方 API 设计/需求/工作流文档 | |
-| `data/` | 运行时数据 | 默认忽略；`data/icon-library/` 版本跟踪。`data/schemes/files/**` 只含 `.json`，`.e` / `.svg` / CIM 全部按需实时生成（不落盘）；存量派生文件用 `pnpm purge:derived` 归档进 `data/schemes/trash/` |
+| `data/` | 运行时数据 | **整目录被 `.gitignore` 第 3 行忽略，不含任何版本跟踪文件**（`git ls-files data` 为空）。因此依赖 `data/` 样本的测试/脚本在干净检出上必然缺数据 —— 写这类用例必须加 `existsSync` 守卫（见 `src/autoAlignLineQuality.test.ts`）。`data/icon-library/` 在 `public/icon-library/`（**那一个**才是版本跟踪的，见 `iconLibraryIntegrity.test.ts`）。`data/schemes/files/**` 只含 `.json`，`.e` / `.svg` / CIM 全部按需实时生成（不落盘）；存量派生文件用 `pnpm purge:derived` 归档进 `data/schemes/trash/` |
 
 ### 关键文件
 
@@ -290,11 +290,15 @@ pnpm tsc --noEmit
 # 预览构建
 pnpm preview
 
-# 图标库审计
+# 图标库审计（读 public/icon-library/，7862 图标 / 118 分类）
 pnpm audit:icons
 
 # 未定义名审计（穿透 @ts-nocheck，查 ReferenceError 类缺陷）
 pnpm audit:names
+# 同上，但只查「属性不存在」这类运行时 TypeError
+node scripts/audit-undefined-names.mjs --crash-only
+# 连已核过安全的存量命中一起列出
+node scripts/audit-undefined-names.mjs --crash-only --all-known-safe
 
 # 存量派生文件归档（默认 dry-run；加 --apply 才移动）
 pnpm purge:derived
@@ -306,7 +310,7 @@ pnpm purge:derived --apply
 | 事项 | 说明 |
 |------|------|
 | 端口冲突 | 默认前端 5173，后端 5174，确保端口可用 |
-| 数据目录 | `data/` 主要为运行时数据并默认忽略；`data/icon-library/` 是版本跟踪的图标库 |
+| 数据目录 | `data/` **整目录忽略、无版本跟踪文件**。图标库在 `public/icon-library/`（跟踪），不在 `data/icon-library/`。任何读 `data/` 样本的测试都要加 `existsSync` 守卫，否则干净检出会 ENOENT 假红 |
 | 代理配置 | Vite 代理 `/api`、`/ws` 到后端服务 |
 | 环境变量 | `IMAGE_SERVER_PORT` 可自定义后端端口；`GRAPH_MODEL_DATA_DIR` 覆盖数据根目录 |
 | WS 指示灯 | 前端右上角 RT-WS 指示灯显示运行时态 WS 状态，点击复制 clientId |
