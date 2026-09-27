@@ -236,11 +236,10 @@ describe("native export save service", () => {
     const target = join(directory, "smoke's & 模型.json");
     writeFileSync(target, JSON.stringify({ ok: true }), "utf8");
 
-    try {
-      await expect(openFileWithSystemDefault(target, { platform: "win32" })).resolves.toBeUndefined();
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
-    }
+    // 有意不删这个目录：Process.Start 一返回就删，删得比 Notepad3 读档早，
+    // Notepad3 找不到档便弹「文件未找到。是否创建一个新的文件?」—— 反复跑测试
+    // 就反复弹。几十字节的残留交给 %TEMP% 自身回收即可。
+    await expect(openFileWithSystemDefault(target, { platform: "win32" })).resolves.toBeUndefined();
   });
 
   test.runIf(process.platform === "win32")("目标不存在时给出可读原因，而不是 ACCESS_DENIED 这种误导", async () => {
