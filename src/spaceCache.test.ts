@@ -467,4 +467,22 @@ describe("空间缓存清单全覆盖守卫", () => {
     // 库级：全仓只应存在这一个库；新增第二个库必须红
     expect(databases.filter((name) => !SPACE_SCOPED_IDB_DATABASES.includes(name))).toEqual([]);
   });
+
+  test("单源 store 声明这条证据路径本身有效（防它被悄悄淘汰而无人察觉）", () => {
+    // 上一条用例的 `stores` 是两条证据路径的并集：字面量 createObjectStore("x")
+    // 与 STORE_SPECS 对象键。若将来 deviceLibraryDB 又换一种写法、并集仍凑够 5 个，
+    // 上面那条会继续绿 —— 但真正在扫的东西可能已经不是它了。故单独钉住：
+    // 当前生产代码里 `createObjectStore("字面量")` 已不存在（建库统一走 STORE_SPECS 循环），
+    // STORE_SPEC_KEY 才是有效的那条。哪条退化，这里就红。
+    const sources = sourceFiles.map((file) => readFileSync(file, "utf8"));
+    const literalHits = sources.flatMap((s) => [...s.matchAll(IDB_STORE_DECL)]).length;
+    const specKeyHits = sources.flatMap((s) => [...s.matchAll(STORE_SPEC_KEY)]).length;
+
+    // 至少有一条路径必须在扫到东西（否则整个 store 覆盖守卫是假绿）
+    expect(literalHits + specKeyHits).toBeGreaterThanOrEqual(5);
+    // 记录当前形态：字面量路径在生产代码里已归零，全靠单源声明那条
+    // （若将来恢复字面量建库，这条要改成两条都 > 0）
+    expect(specKeyHits).toBeGreaterThanOrEqual(5);
+    expect(literalHits).toBe(0);
+  });
 });
