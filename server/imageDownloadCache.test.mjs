@@ -31,8 +31,11 @@ beforeAll(async () => {
   // 必须注入自建 store：否则服务端另建一个实例，两个写者各自持有陈旧注册表快照
   server = await createImageServer({ port: 0, host: "127.0.0.1", spaceStore: store });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  // 落字节走 /image-library/import（恢复图片库，收 {folders,assets}）——
+  // /icon-library/import 是「从文档抽图」通道（收 {name,dataUrl} 的 docx/zip），
+  // 自 32e77ef8 起两者已分开，往错端点发必然 400（见 server.mjs 两条路由的注释）。
   for (const [space, text] of [["alpha", ALPHA_BODY], ["beta", BETA_BODY]]) {
-    const res = await fetch(`${baseUrl}/webgrp/icon-library/import?space=${space}`, {
+    const res = await fetch(`${baseUrl}/webgrp/image-library/import?space=${space}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
