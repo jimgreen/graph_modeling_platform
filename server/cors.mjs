@@ -8,3 +8,11 @@ export const accessControlHeaders = {
   // 故 Cookie 仅限同源；跨源第三方只能走 ?space= 或 X-Space。
   "access-control-allow-headers": "content-type,x-space"
 };
+
+// 二进制 / 附件下载类端点（PNG 截图、SVG、E 文件、CIM、ZIP、方案 ZIP）只带
+// allow-origin 单头：它们不是 JSON 信封响应，全量 methods/headers 对 GET 下载
+// 没有意义（预检只在非简单请求时发生，而 GET 下载是简单请求）。
+// 同样从本模块取，避免 allow-origin 的取值在别处再硬编码一份。
+export const accessControlOriginOnly = {
+  "access-control-allow-origin": accessControlHeaders["access-control-allow-origin"]
+};

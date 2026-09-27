@@ -12,7 +12,7 @@ import { randomId } from "../shared/randomId.mjs";
 import { isPathInside, sanitizeSegment } from "../shared/pathSafety.mjs";
 import { atomicWriteFile } from "../shared/atomicWrite.mjs";
 import { apiPrefix, apiPath, escapeRegExp, backendPort, host, stripFrontendBase } from "./config.mjs";
-import { accessControlHeaders } from "./cors.mjs";
+import { accessControlHeaders, accessControlOriginOnly } from "./cors.mjs";
 import {
   NativeExportSaveError,
   createNativeExportSaveService,
@@ -4211,7 +4211,7 @@ async function handleDownload(id, response, paths) {
     // 否则切换空间后同一 URL 会回放上一空间的字节（跨空间导入图片库后 id 相同即可复现）。
     "cache-control": "private, max-age=31536000, immutable",
     vary: "Cookie",
-    "access-control-allow-origin": "*"
+    ...accessControlOriginOnly
   });
   createReadStream(join(getAssetDir(item, { paths }), item.filename)).pipe(response);
 }
@@ -4656,7 +4656,7 @@ async function handleStandaloneSymbolExport(request, response, paths) {
   const metaHeaders = {
     "content-disposition": disposition,
     "cache-control": "no-store",
-    "access-control-allow-origin": "*",
+    ...accessControlOriginOnly,
     "x-symbol-export-file-count": String(result.fileCount),
     // 逗号分隔：kind 本身不含逗号（kind 只用小写字母/数字/连字符）。
     "x-symbol-export-exported-kinds": result.exportedKinds.join(","),

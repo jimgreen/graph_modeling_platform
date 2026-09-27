@@ -7,6 +7,7 @@ import iconv from "iconv-lite";
 import { readDeviceLibraryConfig, readSchemeProjectRecord } from "./server.mjs";
 import { readPredefinedTemplateBase64, PREDEFINED_E_DEVICE_TEMPLATES } from "./eFileTemplates.mjs";
 import { sendV1Error } from "./v1Response.mjs";
+import { accessControlOriginOnly } from "./cors.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 
 const { buildEFileExport } = await import("../src/model-eexport.ts");
@@ -162,7 +163,7 @@ function sendEFile(response, { file, encoding }) {
     "content-length": String(bytes.length),
     "content-disposition": `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
     "cache-control": "no-store",
-    "access-control-allow-origin": "*",
+    ...accessControlOriginOnly,
     // 自定义响应头跨域读取需显式放行（同源/代理场景无影响）
     ...(warningsHeader ? { "access-control-expose-headers": "x-e-file-warnings", "x-e-file-warnings": warningsHeader } : {})
   });
