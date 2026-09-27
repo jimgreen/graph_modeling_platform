@@ -8,8 +8,11 @@ import { applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFr
 import { DEVICE_LIBRARY } from "../model";
 import { encodeGbk } from "./gbk";
 
+// 端到端要用真实工程样本，而 data/ 整目录在 .gitignore 里（运行时数据），
+// 干净检出的仓库上不存在 —— 缺样本时跳过，别让 ENOENT 报成「导出坏了」。
+const TIANFU_PROJECT = join(process.cwd(), "data/schemes/files/四川/成都/厂站/天府新区站.json");
 describe("E 文件导出端到端 GBK 验证", () => {
-  it("导出文本经 encodeGbk 后为合法 GBK，且可被 iconv-lite 无损解码", () => {
+  it.skipIf(!fs.existsSync(TIANFU_PROJECT))("导出文本经 encodeGbk 后为合法 GBK，且可被 iconv-lite 无损解码", () => {
     const text = fs.readFileSync(join(process.cwd(), "public/e-templates/ems_rtdb.e"), "utf-8");
     const sections = parseEDeviceDefinitionFile(text);
     const result = applyEDeviceDefinitionSectionsToLibraryState({
@@ -31,7 +34,7 @@ describe("E 文件导出端到端 GBK 验证", () => {
       eDeviceDefinitionTemplateFields: result.eDeviceDefinitionTemplateFields,
       resolveDefinitionComponentLibrary: undefined
     });
-    const project = JSON.parse(fs.readFileSync(join(process.cwd(), "data/schemes/files/四川/成都/厂站/天府新区站.json"), "utf-8"));
+    const project = JSON.parse(fs.readFileSync(TIANFU_PROJECT, "utf-8"));
     const file = buildEFileExport(project, ["四川", "成都", "厂站"], options);
     // 导出文本 -> GBK 字节
     const gbkBytes = encodeGbk(file.text);

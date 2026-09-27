@@ -4,10 +4,18 @@ import { parseEDeviceDefinitionFile, buildEDeviceParameterFile } from "../model-
 import { applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "../appExtracted/appDeviceDefinitionFactories";
 import { DEVICE_LIBRARY, type ProjectFile } from "../model";
 
+// 这两条用例要读真实工程样本，而 data/ 整目录在 .gitignore 里（运行时数据），
+// 干净检出的仓库上并不存在。缺样本时跳过，别让 ENOENT 报成「导出逻辑坏了」。
+const TIANFU_PROJECT = "data/schemes/files/四川/成都/厂站/天府新区站.json";
+const SHUANGMU_PROJECT = "data/schemes/files/主配微联合/地区1/主网/双母线.json";
+
 /**
  * basevoltage 段去重回归测试：
  * 导出 basevoltage 只输出模型实际使用的电压等级（按配置顺序、vltp 数值去重），
  * 不输出 ac/dc 全量配置等级（每个等级重复两份）；模型无有效电压等级时回退全量。
+ *
+ * 前两条用例是自造数据的纯逻辑回归，任何检出都能跑；
+ * 后两条依赖真实工程样本，样本缺失时整组跳过。
  */
 describe("basevoltage 去重", () => {
   const template = fs.readFileSync("public/e-templates/ems_rtdb.e", "utf-8");
@@ -61,8 +69,8 @@ describe("basevoltage 去重", () => {
     expect([...nomvols].sort()).toEqual(["10", "110"]);
   });
 
-  it("模型无有效电压等级时回退全量配置（仅 1 个 basevoltage 段，按数值去重）", () => {
-    const project = JSON.parse(fs.readFileSync("data/schemes/files/四川/成都/厂站/天府新区站.json", "utf-8")) as ProjectFile;
+  it.skipIf(!fs.existsSync(TIANFU_PROJECT))("模型无有效电压等级时回退全量配置（仅 1 个 basevoltage 段，按数值去重）", () => {
+    const project = JSON.parse(fs.readFileSync(TIANFU_PROJECT, "utf-8")) as ProjectFile;
     const text = buildEDeviceParameterFile(project, ["默认方案"], exportOptions);
     const counts = countSectionRows(text, "basevoltage");
     expect(counts.length).toBe(1);
@@ -71,8 +79,8 @@ describe("basevoltage 去重", () => {
     expect(counts[0]).toBeLessThan(26);
   });
 
-  it("vbase 全 0 但节点带 voltage_level：只输出模型实际等级，不重复", () => {
-    const project = JSON.parse(fs.readFileSync("data/schemes/files/主配微联合/地区1/主网/双母线.json", "utf-8")) as ProjectFile;
+  it.skipIf(!fs.existsSync(SHUANGMU_PROJECT))("vbase 全 0 但节点带 voltage_level：只输出模型实际等级，不重复", () => {
+    const project = JSON.parse(fs.readFileSync(SHUANGMU_PROJECT, "utf-8")) as ProjectFile;
     const text = buildEDeviceParameterFile(project, ["默认方案"], exportOptions);
     const counts = countSectionRows(text, "basevoltage");
     expect(counts.length).toBe(1);

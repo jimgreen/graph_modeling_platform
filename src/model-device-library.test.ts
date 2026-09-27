@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DeviceGlyph } from "./DeviceGlyph";
@@ -3962,8 +3962,13 @@ test("migrates legacy ACAC and DCDC converter controls to endpoint fields", () =
   }
 });
 
-test("removes generic ACAC and DCDC setpoints without migrating their values", () => {
-  const persistedLibrary = JSON.parse(readFileSync(new URL("../data/device-library/library.json", import.meta.url), "utf8")) as {
+// 下面两条用例要读**已落盘的**图元库覆盖配置，而 data/ 整目录在 .gitignore 里
+// （运行时数据），干净检出的仓库上不存在 —— 缺文件时跳过，别让 ENOENT 报成「库逻辑坏了」。
+const PERSISTED_LIBRARY_URL = new URL("../data/device-library/library.json", import.meta.url);
+const persistedLibraryAvailable = existsSync(PERSISTED_LIBRARY_URL);
+
+test.skipIf(!persistedLibraryAvailable)("removes generic ACAC and DCDC setpoints without migrating their values", () => {
+  const persistedLibrary = JSON.parse(readFileSync(PERSISTED_LIBRARY_URL, "utf8")) as {
     deviceDefinitionOverrides?: Record<string, DeviceTemplateDefinitionOverride>;
   };
   for (const kind of ["dcdc-converter", "acac-converter"] as const) {
@@ -4026,8 +4031,8 @@ test("removes generic ACAC and DCDC setpoints without migrating their values", (
   }
 });
 
-test("restores fixed E fields omitted from persisted complete overrides for every base device", () => {
-  const persistedLibrary = JSON.parse(readFileSync(new URL("../data/device-library/library.json", import.meta.url), "utf8")) as {
+test.skipIf(!persistedLibraryAvailable)("restores fixed E fields omitted from persisted complete overrides for every base device", () => {
+  const persistedLibrary = JSON.parse(readFileSync(PERSISTED_LIBRARY_URL, "utf8")) as {
     customDeviceTemplates?: DeviceTemplate[];
     deviceDefinitionOverrides?: Record<string, DeviceTemplateDefinitionOverride>;
     deviceDefinitionSharedKeys?: Record<string, string>;
