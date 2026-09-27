@@ -1416,6 +1416,8 @@ describe("upsertMeasurementGroups", () => {
     nodeId,
     anchor: "top" as const,
     offset: { x: 0, y: 0 },
+    visible: true,
+    layout: "vertical" as const,
     items: []
   });
   const config = (groups: ReturnType<typeof group>[]) => ({ version: 1, groups }) as never;
