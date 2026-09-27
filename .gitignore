@@ -45,10 +45,7 @@ midscene_run/
 
 # 临时排查测试文件
 *.temp.test.ts
-src/test-cnnames-inspect.test.ts
-src/test-efile-render.test.tsx
-src/encoding/dms-rtdb-export-rules.test.ts
-src/encoding/dms-rtdb-template.test.ts
-src/encoding/e-file-editor-reference.test.ts
-src/encoding/rdf-id-export.test.ts
-src/encoding/rdf-id-param.test.ts
+# 注：此前这里还逐个列了 7 个有真实断言的回归测试（cnnames-inspect / e-file-editor-reference /
+# rdf-id-export / rdf-id-param / dms-rtdb-* 等），把它们排除在版本控制之外。后果是
+# 干净检出与贡献者会静默丢失 31 条断言（其中 E 文件引用 id 计算、容器模型一致性
+# 都是曾真实出过缺陷的地方）。这 7 个已入库并补齐 data/ 样本守卫，故移除该清单。
