@@ -450,6 +450,7 @@ import {
   saveLazyBlobFile,
   writeTextFileToDirectory,
   isPickerAbort,
+  type SavedExportFile,
   type TextSaveOptions,
   type BlobSaveOptions,
   type LazyBlobSaveOptions,
@@ -1262,6 +1263,8 @@ const [exportCompletionDialog, setExportCompletionDialog] = useState<{
   title: string;
   message: string;
   details?: string[];
+  /** 本机另存为成功后回传的查看凭据；缺省即「无路可看」，弹框不渲染【查看】 */
+  file?: SavedExportFile;
 } | null>(null);
 Object.assign(__appScope, {
   exportCompletionDialog,

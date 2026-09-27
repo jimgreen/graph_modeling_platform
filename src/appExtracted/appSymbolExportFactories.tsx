@@ -5,6 +5,7 @@
 // 与其它工厂同约定：入参是 __appScope（Object.assign 注册的共享作用域），返回可直接注册的闭包。
 
 import type { DeviceTemplate } from "../model";
+import type { SavedExportFile } from "../fileIO";
 import {
   normalizeSymbolExportSchemes,
   removeSymbolExportScheme,
@@ -86,6 +87,8 @@ export function createExportComponentSymbols(__appScope: Record<string, any>) {
       showGlobalMessage(message, "error");
       return false;
     }
+    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
+    let savedFile: SavedExportFile | null = null;
     const saved = typeof saveTextFile === "function"
       ? await saveTextFile({
           filename: result.fileName,
@@ -95,7 +98,10 @@ export function createExportComponentSymbols(__appScope: Record<string, any>) {
           extensions: [".svg"],
           pickerId: "component-symbol-export",
           startIn: "downloads",
-          preferNativeDialog: true
+          preferNativeDialog: true,
+          onSaved: (file: SavedExportFile) => {
+            savedFile = file;
+          }
         })
       : (() => {
           downloadBlob?.(result.fileName, new Blob([result.svg], { type: "image/svg+xml;charset=utf-8" }));
@@ -110,7 +116,7 @@ export function createExportComponentSymbols(__appScope: Record<string, any>) {
     const message = `已导出 ${result.exportedKinds.length} 个图元 / ${result.symbolCount} 个 symbol：${result.fileName}${noteText}`;
     setSymbolExportSchemesStatus(message);
     writeOperationLog(`导出图元 Symbol：${result.fileName}（${result.symbolCount} 个 symbol）${noteText}`);
-    showGlobalMessage(message, noteText ? "warning" : "success");
+    __appScope.showStandaloneExportCompletion?.("图元 Symbol 导出完成", message, [], savedFile);
     return true;
   };
 }
@@ -150,6 +156,8 @@ export function createExportComponentSymbolsStandalone(__appScope: Record<string
       return false;
     }
     const isZip = result.kind === "zip";
+    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】（ZIP 用系统默认解压器打开）
+    let savedFile: SavedExportFile | null = null;
     const saved = typeof saveBlobFile === "function"
       ? await saveBlobFile({
           filename: result.fileName,
@@ -158,7 +166,11 @@ export function createExportComponentSymbolsStandalone(__appScope: Record<string
           description: isZip ? "ZIP 压缩包（独立图元 SVG）" : "SVG 图元文件",
           extensions: isZip ? [".zip"] : [".svg"],
           pickerId: "component-symbol-export-standalone",
-          startIn: "downloads"
+          startIn: "downloads",
+          preferNativeDialog: true,
+          onSaved: (file: SavedExportFile) => {
+            savedFile = file;
+          }
         })
       : (() => {
           downloadBlob?.(result.fileName, result.blob);
@@ -174,7 +186,7 @@ export function createExportComponentSymbolsStandalone(__appScope: Record<string
       : `已独立导出图元 SVG：${result.fileName}${noteText}`;
     setSymbolExportSchemesStatus(message);
     writeOperationLog(`独立导出图元 SVG：${result.fileName}（${result.fileCount} 个文件）${noteText}`);
-    showGlobalMessage(message, noteText ? "warning" : "success");
+    __appScope.showStandaloneExportCompletion?.(isZip ? "独立图元 SVG 导出完成" : "图元 SVG 导出完成", message, [], savedFile);
     return true;
   };
 }

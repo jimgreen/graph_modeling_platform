@@ -3543,14 +3543,19 @@ describe("manual bend interaction helpers", () => {
       englishName: "ac-source",
       label: "交流电源"
     };
-    const saveTextFile = vi.fn(async () => true);
+    const saveTextFile = vi.fn(async (_options: any) => true);
     const setCustomDeviceSaveMessage = vi.fn();
-    const showGlobalMessage = vi.fn();
+    const setExportCompletionDialog = vi.fn();
+    const viewFile = { token: "view-token", filename: "ac-source.svg", path: "C:\\exports\\ac-source.svg" };
     const exported = await createExportCustomComponentTemplateSvg({
       buildDeviceTemplateIconSvg: (source: any) => `<svg data-kind="${source.kind}"></svg>`,
-      saveTextFile,
+      saveTextFile: async (options: any) => {
+        const done = await saveTextFile(options);
+        options.onSaved?.(viewFile);
+        return done;
+      },
       setCustomDeviceSaveMessage,
-      showGlobalMessage
+      setExportCompletionDialog
     })(template);
 
     expect(exported).toBe(true);
@@ -3565,22 +3570,27 @@ describe("manual bend interaction helpers", () => {
       preferNativeDialog: true
     }));
     expect(setCustomDeviceSaveMessage).toHaveBeenCalledWith("已导出元件 SVG：ac-source.svg");
-    expect(showGlobalMessage).toHaveBeenCalledWith("已导出元件 SVG：ac-source.svg", "success");
+    // 成功提示走导出完成弹框，并带上查看凭据（弹框据此渲染【查看】）
+    expect(setExportCompletionDialog).toHaveBeenCalledWith({
+      title: "元件 SVG 导出完成",
+      message: "已导出元件 SVG：ac-source.svg",
+      file: viewFile
+    });
   });
 
   test("does not report a component SVG export when the save dialog is cancelled", async () => {
     const setCustomDeviceSaveMessage = vi.fn();
-    const showGlobalMessage = vi.fn();
+    const setExportCompletionDialog = vi.fn();
     const exported = await createExportCustomComponentTemplateSvg({
       buildDeviceTemplateIconSvg: () => "<svg></svg>",
       saveTextFile: vi.fn(async () => false),
       setCustomDeviceSaveMessage,
-      showGlobalMessage
+      setExportCompletionDialog
     })({ kind: "ac-source", englishName: "ac-source" } as any);
 
     expect(exported).toBe(false);
     expect(setCustomDeviceSaveMessage).not.toHaveBeenCalled();
-    expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(setExportCompletionDialog).not.toHaveBeenCalled();
   });
 
   test("imports an SVG as the selected component visual draft without saving class definitions", async () => {
@@ -6037,6 +6047,7 @@ describe("createExportEFile", () => {
     const buildEFileExport = vi.fn(() => ({ filename: "方案模型.e", text: "", mime: "text/plain" }));
     const saveBackendProjectArtifacts = vi.fn(async () => undefined);
     const downloadBackendSchemeArchive = vi.fn(async () => false);
+    const setExportCompletionDialog = vi.fn();
     const exportScheme = createExportSchemeRecord({
       DEFAULT_CANVAS_BACKGROUND: "#ffffff",
       PARAM_LABELS: {},
@@ -6068,6 +6079,7 @@ describe("createExportEFile", () => {
       schemePathForRecord: () => ["方案一"],
       schemePathForScheme: () => ["方案一"],
       schemes: [scheme],
+      setExportCompletionDialog,
       writeOperationLog: vi.fn()
     });
 
@@ -6076,7 +6088,10 @@ describe("createExportEFile", () => {
     expect(buildSvgDocument).not.toHaveBeenCalled();
     expect(buildEFileExport).not.toHaveBeenCalled();
     expect(saveBackendProjectArtifacts).not.toHaveBeenCalled();
-    expect(downloadBackendSchemeArchive).toHaveBeenCalledWith(["方案一"], "方案一.zip");
+    // 第三个参数是 onSaved 回调（拿查看凭据用），不是又一个位置参数
+    expect(downloadBackendSchemeArchive).toHaveBeenCalledWith(["方案一"], "方案一.zip", expect.any(Function));
+    // 取消另存为（返回 false）时不弹完成框
+    expect(setExportCompletionDialog).not.toHaveBeenCalled();
   });
 });
 
@@ -6093,6 +6108,7 @@ describe("createExportEDeviceDefinitionFile", () => {
     const showGlobalMessage = vi.fn();
     vi.stubGlobal("showGlobalMessage", showGlobalMessage);
     const saveTextFile = vi.fn().mockResolvedValue(true);
+    const setExportCompletionDialog = vi.fn();
     // libraryTemplates 已合并内置 + 自定义元件并应用 deviceDefinitionOverrides
     const libraryTemplates = [
       buildTemplate("custom_load", "custom_load", [
@@ -6106,6 +6122,7 @@ describe("createExportEDeviceDefinitionFile", () => {
     const exportFn = createExportEDeviceDefinitionFile({
       libraryTemplates,
       saveTextFile,
+      setExportCompletionDialog,
       writeOperationLog: vi.fn()
     });
     await exportFn();
@@ -6115,7 +6132,12 @@ describe("createExportEDeviceDefinitionFile", () => {
     expect(payload.text).toContain("p_load");
     expect(payload.text).toContain("r");
     expect(payload.filename).toBe("图元E文件定义.e");
-    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("导出成功"));
+    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
+    expect(payload.preferNativeDialog).toBe(true);
+    expect(setExportCompletionDialog).toHaveBeenCalledWith({
+      title: "E 元件定义文件导出完成",
+      message: "元件定义文件导出成功：图元E文件定义.e"
+    });
   });
 
   test("exports params whose export flag is inferred from E section when exportEnabled is undefined", async () => {

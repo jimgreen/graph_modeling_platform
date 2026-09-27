@@ -17,7 +17,7 @@ import {
 } from "../spaceClient";
 import { currentQiankunUser, filterSpacesForCurrentUser } from "../qiankunUserSpace";
 import { startAppTour } from "../appTour";
-import { saveLazyBlobFile } from "../fileIO";
+import { saveLazyBlobFile, type SavedExportFile } from "../fileIO";
 import { Download, Pencil, Send, Trash2, Upload } from "lucide-react";
 import { SendModelDialog } from "../SendModelDialog";
 
@@ -134,7 +134,7 @@ export async function createSpaceThenSwitch(name: string, scope: Record<string, 
 }
 
 // 导出当前空间：文件名取当前空间名，走与方案导出同一个 saveLazyBlobFile
-// （支持 File System Access API 时弹原生另存为，不支持则回退浏览器下载）。
+// （本机部署弹系统另存为，否则回退浏览器下载 / File System Access）。
 // 文件名要**净化**：后端包内顶层目录名已净化（含 / 的名字在那里被换成 _），文件名不跟着换的话，
 // 另存为窗口会拿到非法文件名 → 落到「打开保存窗口失败，已改为浏览器下载。」的误导提示。
 // pickerId 不传：共享「上次另存目录」是期望行为
@@ -142,16 +142,27 @@ export async function exportCurrentSpace(scope: Record<string, any>): Promise<bo
   const current = (scope?.spaces as Space[] | undefined)?.find((item) => item.id === scope?.currentSpaceId);
   const filename = `${sanitizeSpaceFileName(current?.name || scope?.currentSpaceId || "空间")}.zip`;
   try {
+    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】（ZIP 用系统默认解压器打开）
+    let savedFile: SavedExportFile | null = null;
     const saved = await saveLazyBlobFile({
       filename,
       mime: "application/zip",
       description: "空间压缩包",
       extensions: [".zip"],
+      preferNativeDialog: true,
+      onSaved: (file) => {
+        savedFile = file;
+      },
       loadBlob: exportSpaceArchive
     });
     // saveLazyBlobFile 在**用户取消另存为**时返回 false（不抛）—— 那是用户意图，不该提示成功
     if (saved) {
-      showSpaceActionMessage(`已导出空间「${current?.name || scope?.currentSpaceId || "当前空间"}」`);
+      const message = `已导出空间「${current?.name || scope?.currentSpaceId || "当前空间"}」`;
+      if (typeof scope.showStandaloneExportCompletion === "function") {
+        scope.showStandaloneExportCompletion("空间导出完成", message, [`文件：${filename}`], savedFile);
+      } else {
+        showSpaceActionMessage(message);
+      }
     }
     return saved;
   } catch (error) {

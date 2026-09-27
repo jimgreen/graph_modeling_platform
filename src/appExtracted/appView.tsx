@@ -21,6 +21,7 @@ import { resolveEditableComponentLibraryDefinition } from "../componentLibraryDe
 import { TOPOLOGY_WARNING_PAGE_SIZE } from "./appCoreCanvasUtilities";
 import type { CustomComponentLibraryDefinition } from "./appCoreCanvasUtilities";
 import { decodeAuto } from "../encoding/gbk";
+import { openExportedFile, type SavedExportFile } from "../fileIO";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES as TEMPLATE_ALLOWED_MODEL_TYPES, eDeviceTemplateNetworkTypeMismatchMessage, eDeviceTemplateSingleTypeMismatchMessage } from "../eDeviceTemplateTypePolicy";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
@@ -554,6 +555,44 @@ function TopologyWarningPanelContent(props: {
         </div>
       </div>
     </div>
+  </>);
+}
+
+/**
+ * 导出完成弹框里的【查看】按钮：用系统默认绑定的工具打开刚导出的文件。
+ *
+ * 单独成组件是为了自己持有「正在打开 / 打开失败」两份态 —— renderAppView 是 App 渲染
+ * 期被调用的普通函数（不是组件），在里面加 hook 会把 hook 挂到 App 身上、顺序一改就炸。
+ *
+ * 失败不关弹框：用户多半是文件被挪走了/被别的程序占用，留在原地才好换个程序重试或改看路径。
+ */
+export function ExportCompletionViewButton({ file }: { file: SavedExportFile }) {
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState("");
+  const view = async () => {
+    if (opening) {
+      return;
+    }
+    setOpening(true);
+    setError("");
+    try {
+      await openExportedFile(file);
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : String(openError));
+    } finally {
+      setOpening(false);
+    }
+  };
+  return (<>
+    <button
+      type="button"
+      onClick={view}
+      disabled={opening}
+      title={file.path ? `用系统默认程序打开：${file.path}` : "用系统默认程序打开导出文件"}
+    >
+      {opening ? "正在打开…" : "查看"}
+    </button>
+    {error && <p className="export-completion-view-error" role="alert">{error}</p>}
   </>);
 }
 
@@ -2458,6 +2497,9 @@ export function renderAppView(__appScope: Record<string, any>) {
           </div>
         )}
         <div className="image-picker-actions export-completion-actions">
+          {exportCompletionDialog.file && (
+            <ExportCompletionViewButton file={exportCompletionDialog.file} />
+          )}
           <button type="button" autoFocus onClick={() => setExportCompletionDialog(null)}>
             确定
           </button>

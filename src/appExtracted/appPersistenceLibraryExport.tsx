@@ -114,6 +114,7 @@ import {
 } from "../formatUtils";
 import {
   saveLazyBlobFile,
+  type SavedExportFile
 } from "../fileIO";
 import {
   svgStrokeDashArray,
@@ -304,13 +305,20 @@ export async function fetchBackendProjectRecord(schemePath: string[], name: stri
   return normalizeSavedProjectIndexes(payload.project);
 }
 
-export async function downloadBackendSchemeArchive(schemePath: string[], filename: string): Promise<boolean> {
+export async function downloadBackendSchemeArchive(
+  schemePath: string[],
+  filename: string,
+  onSaved?: (file: SavedExportFile) => void
+): Promise<boolean> {
   return saveLazyBlobFile({
     filename,
     mime: "application/zip",
     description: "方案压缩包",
     extensions: [".zip"],
     pickerId: SCHEME_EXPORT_DIRECTORY_PICKER_ID,
+    // 本机另存为：后端写盘后回传查看凭据，导出完成弹框据此给【查看】
+    preferNativeDialog: true,
+    ...(onSaved ? { onSaved } : {}),
     loadBlob: async () => {
       const response = await fetch(`${apiPath("/schemes/export")}?${schemePathQueryParam("schemePath", schemePath)}`);
       if (!response.ok) {

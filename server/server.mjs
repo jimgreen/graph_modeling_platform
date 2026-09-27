@@ -1770,6 +1770,32 @@ async function handleWriteNativeExportText(url, request, response, nativeExportS
   }
 }
 
+// 「查看」导出文件：令牌是 write-text 刚落盘时发的，服务端只认自己写过的路径，
+// 不接受前端回传任意路径 —— 否则这台本地服务就成了一台「让网页打开任意本地文件」的机器。
+// 用 POST 而非 GET：它有副作用（拉起本机程序），不该被预取/收藏触发。
+async function handleOpenNativeExportFile(url, request, response, nativeExportSaveService) {
+  if (!isAllowedNativeExportOrigin(request)) {
+    sendError(response, 403, "仅允许本机页面调用导出文件查看接口。");
+    return;
+  }
+  const token = String(url.searchParams.get("token") ?? "").trim();
+  if (!token) {
+    sendError(response, 400, "缺少导出文件令牌。");
+    return;
+  }
+  try {
+    const result = await nativeExportSaveService.openWrittenFile(token);
+    sendJson(response, 200, { ok: true, ...result });
+  } catch (error) {
+    if (error instanceof NativeExportSaveError && error.code === "invalid-token") {
+      sendError(response, 404, error.message);
+      return;
+    }
+    const message = error instanceof Error ? error.message : "打开导出文件失败。";
+    sendError(response, 500, message);
+  }
+}
+
 function parseDataUrl(dataUrl) {
   const match = /^data:([^;,]+);base64,(.+)$/u.exec(dataUrl);
   if (!match) {
@@ -4902,6 +4928,9 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     [routeKey("POST", "/exports/native/write-text"), async ({ url, request, response }) => {
       await handleWriteNativeExportText(url, request, response, nativeExportSaveService);
     }],
+    [routeKey("POST", "/exports/native/open-file"), async ({ url, request, response }) => {
+      await handleOpenNativeExportFile(url, request, response, nativeExportSaveService);
+    }],
     [routeKey("GET", "/image-folders"), async ({ request, response, paths }) => {
       const folders = await readImageFolders({ paths });
       const manifest = await readManifest({ paths });
@@ -5058,6 +5087,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       // 数据本就是全局的，一个 typo 的空间标识不该把联调打挂 —— handler 也不接 ctx。
       const isSpaceAgnostic = url.pathname === apiPath("/exports/native/select-file")
         || url.pathname === apiPath("/exports/native/write-text")
+        || url.pathname === apiPath("/exports/native/open-file")
         || url.pathname === apiPath("/spaces")
         || url.pathname === apiPath("/v1/receive");
       let spaceCtx = {};

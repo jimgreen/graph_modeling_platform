@@ -4434,6 +4434,16 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   min-width: 88px;
 }
 
+/* 打开失败说明独占一行：父级 .image-picker-actions 是 wrap 的 flex，100% 基准即换行 */
+.export-completion-view-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.55;
+  text-align: right;
+}
+
 .unsaved-change-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

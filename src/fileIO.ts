@@ -29,6 +29,11 @@ export function downloadBlob(filename: string, blob: Blob) {
   URL.revokeObjectURL(url);
 }
 
+/** 字节流的浏览器下载兜底（本机另存为不可用时的退路，与 downloadBlob 同形）。 */
+export function downloadBytes(filename: string, bytes: Uint8Array, mime: string) {
+  downloadBlob(filename, new Blob([bytes as BlobPart], { type: mime }));
+}
+
 type SaveFilePickerWindow = Window & {
   showSaveFilePicker?: (options?: {
     id?: string;
@@ -69,6 +74,7 @@ export type TextSaveOptions = {
   preferNativeDialog?: boolean;
   pickerId?: string;
   startIn?: SaveFilePickerStartIn;
+  onSaved?: (file: SavedExportFile) => void;
 };
 export type LazyTextSaveOptions = Omit<TextSaveOptions, "text"> & {
   loadText: () => Promise<string> | string;
@@ -81,6 +87,8 @@ export type BlobSaveOptions = {
   extensions: string[];
   pickerId?: string;
   startIn?: SaveFilePickerStartIn;
+  preferNativeDialog?: boolean;
+  onSaved?: (file: SavedExportFile) => void;
 };
 export type LazyBlobSaveOptions = Omit<BlobSaveOptions, "blob"> & {
   loadBlob: () => Promise<Blob>;
@@ -91,6 +99,20 @@ const NATIVE_EXPORT_DIRECTORY_STORAGE_KEY = "graph-modeling-platform.native-expo
 const LOCAL_NATIVE_EXPORT_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 const NATIVE_EXPORT_SELECT_PATH = "/exports/native/select-file";
 const NATIVE_EXPORT_WRITE_PATH = "/exports/native/write-text";
+const NATIVE_EXPORT_OPEN_PATH = "/exports/native/open-file";
+
+/**
+ * 本机另存为成功后拿到的「可再次打开」凭据。
+ *
+ * 只有走本机另存为（后端写盘）才会有：浏览器 `showSaveFilePicker` 只给 FileSystemFileHandle，
+ * 不给绝对路径，无从交给操作系统去「按文件关联打开」。
+ * token 由后端在写盘成功时签发，后端只认自己写过的路径 —— 前端回传任意路径是不接受的。
+ */
+export type SavedExportFile = {
+  token: string;
+  filename: string;
+  path: string;
+};
 
 export function isPickerAbort(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
@@ -102,6 +124,20 @@ function canUseNativeExportDialog(options: Pick<TextSaveOptions, "preferNativeDi
   }
   const hostname = String(window.location?.hostname ?? "").trim().toLowerCase();
   return LOCAL_NATIVE_EXPORT_HOSTNAMES.has(hostname);
+}
+
+/** 用系统默认绑定的工具打开此前导出的文件（由后端按文件关联拉起）。 */
+export async function openExportedFile(file: SavedExportFile): Promise<void> {
+  const token = String(file?.token ?? "").trim();
+  if (!token) {
+    throw new Error("缺少导出文件令牌。");
+  }
+  const response = await fetch(`${apiPath(NATIVE_EXPORT_OPEN_PATH)}?token=${encodeURIComponent(token)}`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response, "打开导出文件失败。"));
+  }
 }
 
 function readRememberedNativeExportDirectory() {
@@ -134,9 +170,30 @@ async function responseErrorMessage(response: Response, fallback: string) {
   }
 }
 
-async function saveLazyTextFileWithNativeDialog(
-  options: LazyTextSaveOptions,
-  notifySaveTargetReady: () => void
+type NativeExportDialogOptions = {
+  filename: string;
+  mime: string;
+  description: string;
+  extensions: string[];
+  startIn?: SaveFilePickerStartIn;
+  onSaved?: (file: SavedExportFile) => void;
+  onSaveTargetReady?: () => void;
+};
+
+/**
+ * 本机另存为：弹系统「另存为」→ 后端原子写盘 → 换回一枚可「查看」的令牌。
+ *
+ * 文本与二进制共用这一条通道（后端按原始字节落盘，不解析 content-type），
+ * 差异只在「字节怎么来」与「兜底下载怎么发」，由调用方注入。
+ *
+ * `loadBytes()` 在弹窗前就被调起并与 select 并行：E/SVG 生成动辄几百毫秒，
+ * 串行的话用户选路径的时间全是白等。生成失败在写盘前冒出来，所以 textPromise 上
+ * 预挂一个空 catch，避免等待用户期间变成未处理拒绝。
+ */
+async function saveFileWithNativeDialog(
+  options: NativeExportDialogOptions,
+  loadBytes: () => Promise<Uint8Array> | Uint8Array,
+  downloadFallback: (bytes: Uint8Array) => void
 ): Promise<boolean> {
   const rememberedDirectory = readRememberedNativeExportDirectory();
   const selectPromise = fetch(apiPath(NATIVE_EXPORT_SELECT_PATH), {
@@ -151,16 +208,16 @@ async function saveLazyTextFileWithNativeDialog(
       title: "另存为"
     })
   });
-  const textPromise = Promise.resolve().then(options.loadText);
-  void textPromise.catch(() => undefined);
+  const bytesPromise = Promise.resolve().then(loadBytes);
+  void bytesPromise.catch(() => undefined);
 
   const fallbackToBrowserDownload = async (message: string) => {
-    const text = await textPromise;
-    notifySaveTargetReady();
+    const bytes = await bytesPromise;
+    options.onSaveTargetReady?.();
     if (message) {
       showGlobalMessage(message);
     }
-    downloadText(options.filename, text, options.mime, options.encoding);
+    downloadFallback(bytes);
     return true;
   };
 
@@ -188,27 +245,57 @@ async function saveLazyTextFileWithNativeDialog(
   }
   rememberNativeExportDirectory(selection.directory);
 
-  notifySaveTargetReady();
-  const text = await textPromise;
-  const charset = options.encoding === "gbk" ? "gbk" : "utf-8";
+  // 计时起点：用户选完路径这一刻（不把选择器停留时间算进「总耗时」）
+  options.onSaveTargetReady?.();
+  const bytes = await bytesPromise;
   let writeResponse: Response;
   try {
     writeResponse = await fetch(`${apiPath(NATIVE_EXPORT_WRITE_PATH)}?token=${encodeURIComponent(token)}`, {
       method: "POST",
-      headers: { "content-type": `${options.mime}; charset=${charset}` },
-      body: encodeTextAsBytes(text, options.encoding) as unknown as BodyInit
+      headers: { "content-type": options.mime },
+      body: bytes as unknown as BodyInit
     });
   } catch {
     showGlobalMessage("写入导出文件失败，已改为浏览器下载。");
-    downloadText(options.filename, text, options.mime, options.encoding);
+    downloadFallback(bytes);
     return true;
   }
   if (!writeResponse.ok) {
     const message = await responseErrorMessage(writeResponse, "写入导出文件失败。");
     showGlobalMessage(`${message}\n已改为浏览器下载。`);
-    downloadText(options.filename, text, options.mime, options.encoding);
+    downloadFallback(bytes);
+    return true;
   }
+  // 必须 await：调用方（导出工厂）在 saveXxx 返回后**同步**读它自己那个 savedFile 变量，
+  // 据此决定弹框里给不给【查看】。不 await 的话 onSaved 落在后面的微任务里，读到的还是 null。
+  await notifySavedExportFile(options.onSaved, writeResponse, options.filename);
   return true;
+}
+
+/** 写盘响应里的 viewToken 是「查看」的唯一凭据；缺/旧字段一律不提示可查看。 */
+async function notifySavedExportFile(
+  onSaved: ((file: SavedExportFile) => void) | undefined,
+  writeResponse: Response,
+  fallbackFilename: string
+) {
+  if (!onSaved) {
+    return;
+  }
+  let payload: { viewToken?: unknown; filename?: unknown; path?: unknown } | null = null;
+  try {
+    payload = await writeResponse.json() as { viewToken?: unknown; filename?: unknown; path?: unknown } | null;
+  } catch {
+    payload = null;
+  }
+  const token = String(payload?.viewToken ?? "").trim();
+  if (!token) {
+    return;
+  }
+  onSaved({
+    token,
+    filename: String(payload?.filename ?? fallbackFilename),
+    path: String(payload?.path ?? "")
+  });
 }
 
 export async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
@@ -273,7 +360,11 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
     options.onSaveTargetReady?.();
   };
   if (canUseNativeExportDialog(options)) {
-    return saveLazyTextFileWithNativeDialog(options, notifySaveTargetReady);
+    return saveFileWithNativeDialog(
+      { ...options, onSaveTargetReady: notifySaveTargetReady },
+      async () => encodeTextAsBytes(await options.loadText(), options.encoding),
+      (bytes) => downloadBytes(options.filename, bytes, options.mime)
+    );
   }
   const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
   if (typeof picker !== "function") {
@@ -353,11 +444,22 @@ export async function saveBlobFile(options: BlobSaveOptions): Promise<boolean> {
     extensions: options.extensions,
     pickerId: options.pickerId,
     startIn: options.startIn,
+    preferNativeDialog: options.preferNativeDialog,
+    onSaved: options.onSaved,
     loadBlob: async () => options.blob
   });
 }
 
 export async function saveLazyBlobFile(options: LazyBlobSaveOptions): Promise<boolean> {
+  if (canUseNativeExportDialog(options)) {
+    // 二进制同样走本机另存为：后端按原始字节落盘（不解析 content-type），
+    // 换来与文本导出同源的「查看」能力（ZIP 用系统默认解压器打开）。
+    return saveFileWithNativeDialog(
+      options,
+      async () => new Uint8Array(await (await options.loadBlob()).arrayBuffer()),
+      (bytes) => downloadBytes(options.filename, bytes, options.mime)
+    );
+  }
   const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
   if (typeof picker !== "function") {
     downloadBlob(options.filename, await options.loadBlob());

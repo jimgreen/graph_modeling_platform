@@ -19,7 +19,8 @@ const PNG_1X1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1H
 const RECEIVE_URL = `http://127.0.0.1:${backendPort}${apiPath("/v1/receive")}`;
 
 // /webgrp/exports/native/*（本机端点，scope: "host"）刻意不收进本列表：
-// swigger.examples.test.mjs 会遍历本列表逐个真实调用，那两条会弹 Windows「另存为」对话框并挂住测试。
+// swigger.examples.test.mjs 会遍历本列表逐个真实调用，那三条会弹 Windows「另存为」对话框、
+// 或真的拉起本机默认程序打开文件，都会挂住/污染测试。
 // 它们与空间无关（派发层 isSpaceAgnostic 短路），只在页首说明里提及。
 const ENDPOINTS = [
   // ---- 图片域 ----
