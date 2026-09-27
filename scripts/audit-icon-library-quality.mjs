@@ -3,7 +3,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const iconLibraryDir = path.join(rootDir, "data", "icon-library");
+// 图标库在 **public/**（版本跟踪，10851 个文件），不在 data/ ——
+// CLAUDE.md 曾写成 data/icon-library/ 是版本跟踪的，那是错的：data/ 整目录被忽略。
+// 指向 data/ 时本脚本永远读不到任何东西（上一版「缺库就跳过」正好把它掩盖成
+// 「干净通过」）。这里改为 public/，与 iconLibraryIntegrity.test.ts 同源。
+const iconLibraryDir = path.join(rootDir, "public", "icon-library");
 const libraryIds = ["open-source-svg"];
 
 const wrongDomainRules = new Map([
