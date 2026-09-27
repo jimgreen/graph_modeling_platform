@@ -16,7 +16,8 @@ import {
   reconcileProjectMeasurementsWithConfig,
   removeContainerMeasurementGroup,
   resolveMeasurementItemDisplay,
-  syncContainerMeasurementGroup
+  syncContainerMeasurementGroup,
+  upsertMeasurementGroups
 } from "./measurements";
 import type { MeasurementRuntimeValue, ProjectMeasurementConfig } from "./measurements";
 import { DEVICE_LIBRARY, assignPermanentDeviceIndex, createDefaultNode, getTemplateParameterDefinitions } from "./model";
@@ -1404,5 +1405,48 @@ describe("AC 容器默认量测档", () => {
     expect(group?.items.map((item) => item.measurementTypeId)).toEqual([
       "activePower", "reactivePower", "voltage", "current"
     ]);
+  });
+});
+
+describe("upsertMeasurementGroups", () => {
+  // 该函数此前在别处只以 `vi.fn()` 形式出现（调用方把它打桩），真实实现从未被执行。
+  // 它有三处值得钉住的语义：同 id 覆盖、原顺序保持、新 id 追加到末尾。
+  const group = (id: string, nodeId: string, label = "g") => ({
+    id,
+    nodeId,
+    anchor: "top" as const,
+    offset: { x: 0, y: 0 },
+    items: []
+  });
+  const config = (groups: ReturnType<typeof group>[]) => ({ version: 1, groups }) as never;
+
+  test("空 incoming 时原样返回（不新建等价副本的语义差异）", () => {
+    const input = config([group("a", "n1")]);
+    expect(upsertMeasurementGroups(input, [])).toEqual({ version: 1, groups: [group("a", "n1")] });
+  });
+
+  test("同 id 覆盖：内容更新但位置保持原顺序", () => {
+    const input = config([group("a", "n1", "旧"), group("b", "n2")]);
+    const result = upsertMeasurementGroups(input, [group("a", "n1", "新")]);
+    expect(result.groups.map((g) => g.id)).toEqual(["a", "b"]);
+    expect(result.groups[0].nodeId).toBe("n1");
+  });
+
+  test("新 id 追加到末尾，不打乱既有顺序", () => {
+    const input = config([group("a", "n1"), group("b", "n2")]);
+    const result = upsertMeasurementGroups(input, [group("c", "n3")]);
+    expect(result.groups.map((g) => g.id)).toEqual(["a", "b", "c"]);
+  });
+
+  test("同一批 incoming 内出现重复 id 时以最后一个为准", () => {
+    const input = config([]);
+    const result = upsertMeasurementGroups(input, [group("x", "n1", "先"), group("x", "n2", "后")]);
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0].nodeId).toBe("n2");
+  });
+
+  test("结果 version 恒为 1", () => {
+    const result = upsertMeasurementGroups(config([]), [group("a", "n1")]);
+    expect(result.version).toBe(1);
   });
 });
