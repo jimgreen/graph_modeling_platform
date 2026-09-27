@@ -32,15 +32,25 @@ function decodePreview(bytes, contentTypeText) {
 }
 
 // 收原始字节并限长（Content-Length 不参与判断，直接按实际读取量截断）
+//
+// 超限时读完整个流但不再累积 —— 提前中断会让 Node 在响应写出前重置连接，
+// 客户端只见 ECONNRESET 而非 413（详见 server.mjs 的 PayloadTooLargeError 注释）。
 async function readRawBody(request) {
   const chunks = [];
   let total = 0;
+  let oversize = false;
   for await (const chunk of request) {
     total += chunk.length;
     if (total > MAX_RECEIVE_BYTES) {
-      throw Object.assign(new Error(`请求体超过接收上限 ${MAX_RECEIVE_BYTES} 字节。`), { code: "payload-too-large" });
+      oversize = true;
+      continue;
     }
     chunks.push(chunk);
+  }
+  if (oversize) {
+    throw Object.assign(new Error(`请求体超过接收上限 ${MAX_RECEIVE_BYTES} 字节。`), {
+      code: "payload-too-large"
+    });
   }
   return Buffer.concat(chunks);
 }
