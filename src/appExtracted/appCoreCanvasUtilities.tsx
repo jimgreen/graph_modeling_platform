@@ -1797,9 +1797,12 @@ export const COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   HeatExchanger3: "三端换热器",
   HeatExchanger4: "四端换热器",
   HeatPump: "热泵",
-  // 交流容器:类名显示「交流容器」(树里与图元库同组:交流设备 → 交流容器)。
+  // 容器:类名显示「XX容器」(树里与图元库同组:交流设备 → 交流容器,直流设备 → 直流容器,余同)。
   // E 侧的中文段名仍是「容器表」(ELEMENT_TREE_COMPONENT_LIBRARY_LABELS + 反查表),本表只管界面显示
-  ACContainer: "交流容器"
+  ACContainer: "交流容器",
+  DCContainer: "直流容器",
+  HydroContainer: "氢能容器",
+  HeatContainer: "热能容器"
 };
 
 // 派生类标签复用 model.ts 动态生成（与内置图元定义一致，不维护两套）
@@ -3261,7 +3264,7 @@ export const READONLY_E_PARAM_KEYS = new Set(["idx", "node", "i_node", "j_node",
 
 /**
  * 容器**绑定/关口**两键:写它们会改变容器量测组的存在性(量测归一化出口据此收敛)。
- * 单一出处 —— 面板剔除集(AC_CONTAINER_EXCLUDED_E_PARAM_KEYS)与「改这两键才重算量测」的门控共用。
+ * 单一出处 —— 面板剔除集(CONTAINER_EXCLUDED_E_PARAM_KEYS)与「改这两键才重算量测」的门控共用。
  */
 export const CONTAINER_BINDING_PARAM_KEYS = new Set(["bound_device_id", "is_gateway"]);
 
@@ -3270,13 +3273,13 @@ export const CONTAINER_BINDING_PARAM_KEYS = new Set(["bound_device_id", "is_gate
 //   bound_device_idx:E 列(仅单选面板可达;导出用 bound_device_id 反查该列,本列恒空)
 //   bound_device_id :绑定设备时写入 params 的裸英文键(批量面板经 `params ∪ 定义 enName` 可达),
 //                    与容器专用「绑定设备」行重复
-//   p / q / u / i   :容器的类量测定义(AC_CONTAINER_MEASUREMENT_DEFINITIONS)派生出的参数行 ——
+//   p / q / u / i   :容器的类量测定义(CONTAINER_MEASUREMENT_DEFINITIONS)派生出的参数行 ——
 //                    量测声明只进「元件定义-量测定义」表,不进【模型】面板(用户要求删除「电流值」等行);
 //                    放在这里同时兜住「元件定义保存 override 后再落回面板」的路径
 //   status          :容器无状态定义(三容器 getTemplateStateDefinitions 为空),「运行状态」是死行 ——
 //                    改它不影响渲染/导出(容器段无 status 列);仅容器剔除,ac-switch 等普通开关照旧可批量改状态
 // (旧 type 列已从容器段删除,其剔除项随之删除;dev_type 行保留 —— 显示容器元件英文名,与导出同值)
-export const AC_CONTAINER_EXCLUDED_E_PARAM_KEYS = new Set([
+export const CONTAINER_EXCLUDED_E_PARAM_KEYS = new Set([
   ...CONTAINER_BINDING_PARAM_KEYS,
   "bound_device_idx",
   "p",
@@ -3287,8 +3290,8 @@ export const AC_CONTAINER_EXCLUDED_E_PARAM_KEYS = new Set([
 ]);
 
 /** 模型面板参数键的容器口径:容器剔除上述键;普通设备原样返回(同名键在普通设备上仍有意义) */
-export function resolveAcContainerModelPanelParamKeys(keys: readonly string[], isContainer: boolean): string[] {
-  return isContainer ? keys.filter((key) => !AC_CONTAINER_EXCLUDED_E_PARAM_KEYS.has(key)) : [...keys];
+export function resolveContainerModelPanelParamKeys(keys: readonly string[], isContainer: boolean): string[] {
+  return isContainer ? keys.filter((key) => !CONTAINER_EXCLUDED_E_PARAM_KEYS.has(key)) : [...keys];
 }
 
 export const BATCH_PARAM_EXCLUDED_KEYS = new Set([

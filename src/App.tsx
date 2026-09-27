@@ -916,7 +916,7 @@ const [createModelDialog, setCreateModelDialog] = useState<null | {
 }>(null);
 Object.assign(__appScope, { createModelDialog, setCreateModelDialog });
 // 【添加到容器】受控对话框(审查收口:原 antd 静态 Modal.confirm → 树内 <Modal> 组件,继承主题)。
-// 打开时写点击快照(draft/候选清单),提交(confirmAddToAcContainer)现取最新图
+// 打开时写点击快照(draft/候选清单),提交(confirmAddToContainer)现取最新图
 const [addToContainerDialog, setAddToContainerDialog] = useState<null | {
   memberIds: string[];
   draft: any;

@@ -1,11 +1,11 @@
 // @ts-nocheck
 import { canvasFitCenterOffsetX, clampNumber } from "../canvasViewport";
-import { canvasFitSideInsetsFromDom, resolveAcContainerModelPanelParamKeys } from "./appCoreCanvasUtilities";
+import { canvasFitSideInsetsFromDom, resolveContainerModelPanelParamKeys } from "./appCoreCanvasUtilities";
 import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
 import { shouldPromptBeforeUnload } from "../spaceSwitch";
 import { resolveEffectiveTemplateParameterDefinitions, withNodesParentModelId } from "../model";
 import { buildEffectiveLibraryTemplates } from "../export/device-definition-shared";
-import { containerFirstComparator, isAcContainerNode } from "../acContainer";
+import { containerFirstComparator, isContainerNode } from "../acContainer";
 import { computeMeasurementColumnPositions } from "./appGraphMeasurementFactories";
 
 // 关联图元跳转：解析 node 的 model_id → 目标模型，找到唯一目标即加载该模型。
@@ -1107,10 +1107,10 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
       ...Object.keys(node.params),
       ...effectiveDefinitionsByNode[index].map((definition) => definition.enName)
     ]));
-    // 容器批量口径:选中节点**全为容器**时与单选面板同口径(复用 resolveAcContainerModelPanelParamKeys),
+    // 容器批量口径:选中节点**全为容器**时与单选面板同口径(复用 resolveContainerModelPanelParamKeys),
     // 剔除量测字段行 p/q/u/i 与 is_gateway/bound_device_idx;混选含普通设备则按普通口径,不误伤设备批量编辑
-    const selectedNodesAreAllContainers = selectedNodes.every((node) => isAcContainerNode(node));
-    const commonKeys = resolveAcContainerModelPanelParamKeys(
+    const selectedNodesAreAllContainers = selectedNodes.every((node) => isContainerNode(node));
+    const commonKeys = resolveContainerModelPanelParamKeys(
       Array.from(new Set([
         ...effectiveDefinitionsByNode[0].map((definition) => definition.enName),
         ...Object.keys(firstNode.params)

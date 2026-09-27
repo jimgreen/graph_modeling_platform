@@ -128,17 +128,28 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
   const tabsRef = useRef<HTMLDivElement | null>(null);
   const [tabMinWidth, setTabMinWidth] = useState(0);
 
-  // 按 section 分组记录：key=类内部名（供跳转/保存映射），label=模板输出表名（供展示）
+  // 按**输出表名**分组记录（label = eOutputSectionName 的模板输出表名，appView 已算好）
+  // key = 该组第一个记录的类内部名，供列集/中文字段名/实时库表号反查（与导出侧 sectionGroups 取 groups[0] 同口径）
+  // sectionKeys = 组内全部类内部名，供跳转按任一内部名命中本组
+  //
+  // **必须按 label 分组,不能按 record.section**:多个内部段可落同一张表 —— 模板态四类容器
+  // (ACContainer/DCContainer/HydroContainer/HeatContainer)全落 `container`、成员段全落 `container_dev`。
+  // 按 section 分组会让同一个表名长出多个 tab(用户实况:2 个 container + 2 个 container_dev),
+  // 而导出的 E 文件里它们是**一张**表。预览必须与文件一致。
+  // 合并组取首段作代表是安全的:合表要求各段列集同形(容器 4 段共用 E_SECTION_COLUMNS 的同一份列集),
+  // 故代表段的列集/字段名对全组都对得上。
   const sections = useMemo(() => {
-    const sectionMap = new Map<string, { key: string; label: string; records: EDeviceRecord[] }>();
+    const sectionMap = new Map<string, { key: string; sectionKeys: string[]; label: string; records: EDeviceRecord[] }>();
     for (const record of editedRecords) {
-      const key = record.section;
       const label = record.sectionLabel ?? record.section;
-      const existing = sectionMap.get(key);
+      const existing = sectionMap.get(label);
       if (existing) {
         existing.records.push(record);
+        if (!existing.sectionKeys.includes(record.section)) {
+          existing.sectionKeys.push(record.section);
+        }
       } else {
-        sectionMap.set(key, { key, label, records: [record] });
+        sectionMap.set(label, { key: record.section, sectionKeys: [record.section], label, records: [record] });
       }
     }
     return Array.from(sectionMap.values());
@@ -245,8 +256,8 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
     const targetSection = REFERENCE_FIELD_MAP[fieldName];
     if (!targetSection) return;
 
-    // 找到目标 section（类内部名）的索引
-    const targetSectionIndex = sections.findIndex((section) => section.key === targetSection);
+    // 找到目标 section（类内部名）的索引 —— 命中**任一**内部名即可（多内部段合表时代表段只是首段）
+    const targetSectionIndex = sections.findIndex((section) => section.sectionKeys.includes(targetSection));
     if (targetSectionIndex === -1) return;
 
     // 切换到目标 section

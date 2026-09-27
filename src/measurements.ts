@@ -4,7 +4,7 @@ import {
   resolveEffectiveTemplateParameterDefinitions,
   gatewayBoundMemberId,
   inferESection,
-  isAcContainerKind,
+  isContainerKind,
   templateDerivedComponentLibraryInfo,
   type DeviceParameterDefinition,
   type DeviceTemplate,
@@ -545,11 +545,15 @@ export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
     { id: "status", key: "status", name: "状态", shortLabel: "状态", defaultUnit: "", valueType: "string", defaultDecimals: 0, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 12, defaultFontWeight: "700", defaultVisible: false }
   ],
   deviceProfiles: [
-    // 交流容器:容器无 E 设备类,档键取段名 ACContainer —— measurementProfileForNode 的
-    // directKeys[0] = inferESection(容器) = "ACContainer",一条覆盖三 kind(单源,不给每个 kind 各写一条)
-    // (测点集与 model.ts 的 AC_CONTAINER_MEASUREMENT_DEFINITIONS 同集;不在此处派生 —— measurements 处于
+    // 容器:容器无 E 设备类,档键取段名 —— measurementProfileForNode 的
+    // directKeys[0] = inferESection(容器) = "ACContainer"/"DCContainer"/"HydroContainer"/"HeatContainer",
+    // 一段一条即覆盖该流全部容器 kind(单源,不给每个 kind 各写一条)
+    // (测点集与 model.ts 的 CONTAINER_MEASUREMENT_DEFINITIONS 同集;不在此处派生 —— measurements 处于
     //  model ⇄ model-routing 的加载环里,模块体读 model 的值导出会踩 TDZ/undefined)
     { deviceKind: "ACContainer", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
+    { deviceKind: "DCContainer", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
+    { deviceKind: "HydroContainer", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
+    { deviceKind: "HeatContainer", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "ac-load", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "dc-load", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "ac-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "frequency" }] },
@@ -1325,7 +1329,7 @@ export function reconcileContainerMeasurementGroups(
   const byId = new Map(nodes.map((node) => [node.id, node]));
   let next = config;
   for (const node of nodes) {
-    if (!isAcContainerKind(node.kind)) {
+    if (!isContainerKind(node.kind)) {
       continue;
     }
     // 关口判据与导出(activeGatewayBoundDevice)同源:开着口 + 绑定设备仍是本容器成员

@@ -5,7 +5,7 @@ import {
   DEFAULT_DEVICE_LABEL_FONT_SIZE,
   getSafeNodeScaleX,
   getSafeNodeScaleY,
-  isAcContainerKind,
+  isContainerKind,
   isStaticNode,
   type ModelNode,
   type Point
@@ -34,7 +34,7 @@ export const nodeLabelText = (node: ModelNode) => node.params._labelText ?? node
 
 // 静态图元与交流容器自带名称绘制(容器名出自 DeviceGlyph 容器分支左上),不再叠加设备标签
 export const nodeLabelVisible = (node: ModelNode) =>
-  !isStaticNode(node) && !isAcContainerKind(node.kind) && node.params._labelVisible !== "0";
+  !isStaticNode(node) && !isContainerKind(node.kind) && node.params._labelVisible !== "0";
 
 export function normalizeNodeLabelDisplayMode(value: string | undefined): NodeLabelDisplayMode {
   return value === "always" || value === "hidden" || value === "follow" ? value : "follow";

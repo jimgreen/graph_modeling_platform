@@ -17,7 +17,7 @@ import {
   type RoutedEdge
 } from "./model";
 import { clampNumber } from "./canvasViewport";
-import { containerMemberNodes, isAcContainerNode } from "./acContainer";
+import { containerMemberNodes, isContainerNode } from "./acContainer";
 
 export const CANVAS_EMPTY_SELECTION_MESSAGE = "当前没有被选中图元。";
 const GROUP_LAYOUT_BOUNDS_PADDING = 4;
@@ -597,7 +597,7 @@ export function buildCanvasClipboard(
         // 副本不继承归属:粘贴后容器与成员的 id 全换,继承来的 containerId 恒悬空(跨模型粘贴更是必然)
         delete copy.containerId;
         // 容器副本的绑定同样失效(绑的是原图设备 id):清绑定 + 关口置 0,避免粘贴出「开着口的空绑定」
-        if (isAcContainerNode(node)) {
+        if (isContainerNode(node)) {
           delete copy.params.bound_device_id;
           copy.params.is_gateway = "0";
         }
@@ -695,7 +695,7 @@ export function cloneCanvasClipboard(
     // 构建期剥离对它无效)全部经此克隆。与 buildCanvasClipboard 处同款,重复执行是幂等的(删已删的键、
     // 关口再置一次 "0"),不会双剥出 bug;副本 id 全换,继承来的归属与绑定恒悬空。
     delete copy.containerId;
-    if (isAcContainerNode(node)) {
+    if (isContainerNode(node)) {
       delete copy.params.bound_device_id;
       copy.params.is_gateway = "0";
     }
@@ -890,7 +890,7 @@ export function mergeContainerLayoutUnits(nodes: ModelNode[], units: readonly Ca
   const groupIdByNodeId = new Map<string, string>();
   const groupNodesById = new Map<string, ModelNode[]>();
   for (const container of nodes) {
-    if (!isAcContainerNode(container) || !unitNodeIds.has(container.id)) {
+    if (!isContainerNode(container) || !unitNodeIds.has(container.id)) {
       continue;
     }
     const groupId = `container:${container.id}`;
@@ -969,11 +969,11 @@ export function arrangeContainerInteriors(
   const scope = scopeNodeIds ? new Set(scopeNodeIds) : null;
   let current = nodes;
   for (const container of nodes) {
-    if (!isAcContainerNode(container) || (scope && !scope.has(container.id))) {
+    if (!isContainerNode(container) || (scope && !scope.has(container.id))) {
       continue;
     }
     const memberIds = containerMemberNodes(current, container.id)
-      .filter((node) => !isAcContainerNode(node))
+      .filter((node) => !isContainerNode(node))
       .map((node) => node.id);
     if (memberIds.length < 2) {
       continue;

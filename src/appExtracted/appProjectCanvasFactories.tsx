@@ -17,7 +17,7 @@ import {
 } from "../voltageInheritance";
 import { getRatedCapacityDefaultForKind } from "../model";
 import { graphStorePatchNodes } from "../graphStore";
-import { applyDragContainerMembership, clampContainerCenterToMembers, containerDragGroup, containerGatewayUnbindNotice, containerMemberNodes, containerResizeMinSize, finalizeContainerAfterNodeDeletion, foldContainerScaleIntoSize, hasAcContainer, isAcContainerNode, normalizeInboundContainerNode, withNodeUpdates } from "../acContainer";
+import { applyDragContainerMembership, clampContainerCenterToMembers, containerDragGroup, containerGatewayUnbindNotice, containerMemberNodes, containerResizeMinSize, finalizeContainerAfterNodeDeletion, foldContainerScaleIntoSize, hasContainer, isContainerNode, normalizeInboundContainerNode, withNodeUpdates } from "../acContainer";
 import { arrangeContainerInteriors, autoAlignEdgeWithoutStoredRoute, autoAlignStoredRouteDrops, createAutoAlignQualityReport, mergeContainerLayoutUnits, type AutoAlignQualityReport } from "../selectionActions";
 import { runAutoAlignPlanInWorker } from "../autoAlign/autoAlignClient";
 
@@ -1174,7 +1174,7 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
         const lineSegmentBusResize = isLineSegmentBusNode(baseNode);
         // 交流容器拖角也是「几何 resize」(改 size,不改 scale),与分段母线同一条路:
         // 渲染矩形 = size × |scale|,写 scale 会让所见与 eject/入组用的 size 矩形分叉
-        const containerResize = !lineSegmentBusResize && isAcContainerNode(baseNode);
+        const containerResize = !lineSegmentBusResize && isContainerNode(baseNode);
         const geometryResize = lineSegmentBusResize || containerResize;
         const localScaleKind = !geometryResize && (event.shiftKey || transformDrag.kind === "scale-both")
           ? "scale-both"
@@ -1738,7 +1738,7 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
     pushUndoSnapshot(
       true,
       false,
-      hasAcContainer(nodes)
+      hasContainer(nodes)
         ? undefined
         : undoScopeForGraphPatch(
             busConnectedLineNodeIds.size > 0 ? [...movedNodeIds, ...busConnectedLineNodeIds] : movedNodeIds,

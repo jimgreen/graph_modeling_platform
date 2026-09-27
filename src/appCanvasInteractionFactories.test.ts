@@ -1894,7 +1894,7 @@ describe("工具栏旋转/镜像的容器跟随", () => {
 
 // ─── fb13:面板「设备类型」行下拉切 kind(容器)────────────────────────────────
 // 提交走生产同一出口 createUpdateSelectedNode(非几何 patch 分支):kind 落地 + 单次撤销快照。
-// 三容器 kind 同渲染分支/同 180×112/同 ACContainer 段/idx 计数共池(AC_CONTAINER_COUNTER_KEY),
+// 三容器 kind 同渲染分支/同 180×112/同 ACContainer 段/idx 计数共池(AC_CONTAINER_POOL_KEY),
 // 故切 kind 不改几何、不重分 idx —— 这里正是把这些不变量钉死。
 describe("面板切容器 kind(dev_type 下拉)", () => {
   const runPanelParamWrite = (nodes: any[], targetId: string, patch: any) => {

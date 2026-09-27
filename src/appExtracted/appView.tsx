@@ -15,7 +15,7 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { E_SECTION_COLUMNS, inferESection, baseDeviceKind, isAcContainerKind, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, finalizeEDevicePreviewRecords, eOutputSectionName, eFileInterfaceDefinitionIndex, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, modelAssociationDevicesModelTypeFailureMessage, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
+import { E_SECTION_COLUMNS, inferESection, baseDeviceKind, isContainerKind, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, finalizeEDevicePreviewRecords, eOutputSectionName, eFileInterfaceDefinitionIndex, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, modelAssociationDevicesModelTypeFailureMessage, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyPredefinedEDeviceTemplateToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { resolveEditableComponentLibraryDefinition } from "../componentLibraryDefinitions";
 import { TOPOLOGY_WARNING_PAGE_SIZE } from "./appCoreCanvasUtilities";
@@ -171,7 +171,7 @@ export function resolveDeviceModelPanelDevType(kind: string, params: Record<stri
   // 容器例外:容器无 E 设备类,面板「设备类型」行显示容器元件英文名(与容器段导出同值),不显示段名 ACContainer
   // 判据与 inferESection 同源(先 baseDeviceKind 再判):将来若出 -vertical 容器变体也照样命中
   const kindName = baseDeviceKind(kind);
-  if (isAcContainerKind(kindName)) {
+  if (isContainerKind(kindName)) {
     return kindName;
   }
   const derivedInfo = templateDerivedComponentLibraryInfo({ kind, params: params as Record<string, string> });

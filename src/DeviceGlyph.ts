@@ -9,7 +9,7 @@ import {
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
   getSwitchVisualState,
-  isAcContainerKind,
+  isContainerKind,
   isLineSegmentBusNode,
   modelAssociationModelTypeForKind,
   isRoutableLineDeviceKind,
@@ -109,9 +109,9 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
   const isStaticGlyph = isStaticGraphicNode(node);
   const isRoutableLineGlyph = isRoutableLineDeviceKind(node.kind);
   const isLineSegmentBusGlyph = isLineSegmentBusNode(node);
-  const isAcContainerGlyph = isAcContainerKind(node.kind);
+  const isContainerGlyph = isContainerKind(node.kind);
   // 容器按节点真实尺寸绘制(同静态图元/母线):否则 180×112 会走 1.8 倍图元设计基准缩放,描边与字号被等比放大
-  const glyphContentScale = miniature || isStaticGlyph || isRoutableLineGlyph || isLineSegmentBusGlyph || isAcContainerGlyph || modelAssociationModelType
+  const glyphContentScale = miniature || isStaticGlyph || isRoutableLineGlyph || isLineSegmentBusGlyph || isContainerGlyph || modelAssociationModelType
     ? 1
     : Math.max(1, Math.max(rawW, rawH) / DEVICE_GLYPH_DESIGN_LONGEST_SIDE);
   const w = rawW / glyphContentScale;
@@ -182,7 +182,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     if (stateText && mode === "text") {
       return renderStateTextOverlay();
     }
-    if (isAcContainerGlyph) {
+    if (isContainerGlyph) {
       // 交流容器:填充不可命中(点内部空白穿透到下层),仅描边加宽透明命中带与名称可点。
       // 必须早于 glyphVariant 分派 —— getDeviceGlyphVariant 的 includes("switch") 会把 ac-switch-box 误判成开关符号。
       const corner = staticNumericParam(node, "cornerRadius", 8, 0);

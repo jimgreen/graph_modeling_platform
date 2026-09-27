@@ -1,6 +1,6 @@
 // createCurrentProject 输出 backgroundProjectIdx：服务端靠它定位背景模型（前端 id 服务端无法解析）
 import { describe, expect, test, vi } from "vitest";
-import { createAddToAcContainer, createConfirmAddToAcContainer, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createPasteSelection, createRemoveFromAcContainer } from "./appSelectionDragFactories";
+import { createAddToContainer, createConfirmAddToContainer, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createPasteSelection, createRemoveFromContainer } from "./appSelectionDragFactories";
 import { canvasClipboardBounds, cloneCanvasClipboard } from "../selectionActions";
 import { containerKindSwitch, containerNamePick, containerNameSearch } from "../acContainer";
 import { deleteNodesWithConnectedEdges } from "../model-routing";
@@ -145,7 +145,7 @@ describe("归属入口的量测同步", () => {
   test("右键移出:绑定设备离开原容器 → 容器旧镜像保留(fb13 口径),绑定设备组保留", () => {
     const nodes = [gatewayContainer("c1", "m1"), bareNode("m1", "ac-load", { containerId: "c1" })];
     const capture = captureMeasurements();
-    createRemoveFromAcContainer({
+    createRemoveFromContainer({
       activeSelectedNodeIds: ["m1"],
       nodes,
       normalizeProjectMeasurements,
@@ -187,12 +187,12 @@ describe("归属入口的量测同步", () => {
     const openAddDialog = (target: any) => {
       let captured: any = null;
       target.setAddToContainerDialog = (state: any) => { captured = state; };
-      createAddToAcContainer(target)();
+      createAddToContainer(target)();
       target.addToContainerDialog = captured;
       return captured;
     };
     openAddDialog(scope);
-    createConfirmAddToAcContainer(scope)();
+    createConfirmAddToContainer(scope)();
 
     expect(capture.get().groups.some((g: any) => g.nodeId === "c1")).toBe(true);
     expect(capture.get().groups.some((g: any) => g.nodeId === "m1")).toBe(true);
@@ -207,7 +207,7 @@ describe("归属入口的量测同步", () => {
         bareNode("m2", "ac-load", { containerId: "c1" }),
       ];
       const showGlobalMessage = vi.fn();
-      createRemoveFromAcContainer({
+      createRemoveFromContainer({
         activeSelectedNodeIds: selectedIds,
         nodes,
         normalizeProjectMeasurements,
@@ -559,13 +559,13 @@ describe("添加到容器:类型 + 名称双下拉", () => {
   };
 
   /**
-   * 受控对话框桩:打开(createAddToAcContainer 写状态)→ 捕获状态并接上提交工厂。
+   * 受控对话框桩:打开(createAddToContainer 写状态)→ 捕获状态并接上提交工厂。
    * draft 即表单初值(受控组件内部 state 管显示);提交由用例决定何时触发(弹窗横跨交互窗口)。
    */
   const openAddDialog = (scope: any) => {
     let captured: any = null;
     scope.setAddToContainerDialog = (state: any) => { captured = state; };
-    createAddToAcContainer(scope)();
+    createAddToContainer(scope)();
     scope.addToContainerDialog = captured;
     return {
       draft: () => captured?.draft,
@@ -573,7 +573,7 @@ describe("添加到容器:类型 + 名称双下拉", () => {
       state: () => captured,
       /** 打开后清状态(null 由 UI 取消路径写入):断言取消不落图 */
       cancel: () => { scope.setAddToContainerDialog(null); scope.addToContainerDialog = null; },
-      submit: () => createConfirmAddToAcContainer(scope)()
+      submit: () => createConfirmAddToContainer(scope)()
     };
   };
 

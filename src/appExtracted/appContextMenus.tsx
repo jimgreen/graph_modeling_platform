@@ -11,7 +11,7 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }: AppConte
     AlignCenterHorizontal, ArrowDown, ArrowUp, ArrowUpRight, BoxSelect, ChevronRight, ChevronsDown, ChevronsUp, CircleDot,
     Copy, Download, FileInput, FolderOpen, Grid2X2, Group, Layers, Layers2,
     Minus, Pencil, Plus, Route, Save, ScanSearch, Scissors, Trash2, Type,
-    Undo2, Ungroup, Zap, ZapOff, activeLayerNodes, activeSelectedNodeIds, addDefaultMeasurementsToNode, addManualBendFromContextMenu, addToAcContainer,
+    Undo2, Ungroup, Zap, ZapOff, activeLayerNodes, activeSelectedNodeIds, addDefaultMeasurementsToNode, addManualBendFromContextMenu, addToContainer,
     addRoutableLineBendFromContextMenu, adjustSelectedDisplayLayer, autoAlignCanvasGraphics, autoSpreadCanvasGraphics, canAddTemplateFromSelection, canGroupSelectedGraphics, canUngroupSelectedGraphics, canvasClipboard,
     contextMeasurementGroup, contextMeasurementNode, contextMenu, contextMenuClassName, contextMenuForEdge, contextMenuForNode, contextMenuForRoutableLine, contextMenuForSelection,
     contextMenuFromElementTree, contextMenuJumpToModel, contextMenuRef, contextMenuStyle, contextMenuTarget, contextSelectionCount, copyProjectRecord, copySchemeRecord, copySelection,
@@ -20,7 +20,7 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }: AppConte
     deleteSelection, exportProjectRecordFile, exportSchemeRecord, findSavedSchemeById, groupSelectedGraphics, isEditMode, keepTemplateContextMenuFlyoutOpen, nodes,
     openAddTemplateDialog, openConnectionRedrawDialog, openFilterSelectionDialog, openGroupDeviceDefinitionDialog, openLayerAssignmentDialog, openMeasurementEditorForNode, openModelImportFilePicker, openSchemeImportFilePicker,
     openVoltageBaseClearDialog, openVoltageBaseSetDialog, pasteProjectClipboardRecord, pasteSchemeClipboardRecord, pasteSelection, projectById, projectMenu, recordClipboard,
-    removeMeasurementsFromNode, removeFromAcContainer, renameProjectRecord, renameSchemeRecord, runContextMenuAction, saveCurrentProject, saveRequired, scheduleGraphTemplateFlyoutClose, schemes,
+    removeMeasurementsFromNode, removeFromContainer, renameProjectRecord, renameSchemeRecord, runContextMenuAction, saveCurrentProject, saveRequired, scheduleGraphTemplateFlyoutClose, schemes,
     selectedEdge, setSelectedNodeLabelDisplayMode, startContextMarqueeSelection, templateMenu, tidyRoutableLineRoute, tidySelectedEdgeRoute, undoLastOperation, undoStack,
     ungroupSelectedGraphics
   } = scope;
@@ -36,9 +36,9 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }: AppConte
   // 容器菜单可见性:选中含普通图元才可加入(容器自动忽略),含已归属成员才可移出;口径与工厂提交同源。
   // 门在 contextMenuForNode 上:非图元菜单(方案/元素树菜单)的 scope 里未必有 nodes,提前算会踩空;
   // 两项都只在编辑态渲染(isEditMode),故一并门控,只读态不做这两趟 O(n) 扫描。
-  const acContainerMenuCountsVisible = Boolean(contextMenuForNode && isEditMode);
-  const acContainerAddableCount = acContainerMenuCountsVisible ? containerMemberIdsFromSelection(nodes, activeSelectedNodeIds).length : 0;
-  const acContainerAssignedCount = acContainerMenuCountsVisible ? containerAssignedIdsFromSelection(nodes, activeSelectedNodeIds).length : 0;
+  const containerMenuCountsVisible = Boolean(contextMenuForNode && isEditMode);
+  const containerAddableCount = containerMenuCountsVisible ? containerMemberIdsFromSelection(nodes, activeSelectedNodeIds).length : 0;
+  const containerAssignedCount = containerMenuCountsVisible ? containerAssignedIdsFromSelection(nodes, activeSelectedNodeIds).length : 0;
   return (<>
 {contextMenu && (<div ref={contextMenuRef} className={contextMenuClassName(contextMenu)} data-canvas-context-menu="true" style={contextMenuStyle(contextMenu)}>
           {isEditMode && contextMenuFromElementTree && contextMenuForSelection && contextSelectionCount > 0 && (<button onClick={() => runContextMenuAction(deleteSelection)}>
@@ -133,11 +133,11 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }: AppConte
                   <Ungroup size={14}/>
                   解散
                 </button>) : null)}
-              {contextMenuForNode && acContainerAddableCount > 0 && (isEditMode ? (<button onClick={() => runContextMenuAction(addToAcContainer)}>
+              {contextMenuForNode && containerAddableCount > 0 && (isEditMode ? (<button onClick={() => runContextMenuAction(addToContainer)}>
                   <BoxSelect size={14}/>
                   添加到容器
                 </button>) : null)}
-              {contextMenuForNode && acContainerAssignedCount > 0 && (isEditMode ? (<button onClick={() => runContextMenuAction(removeFromAcContainer)}>
+              {contextMenuForNode && containerAssignedCount > 0 && (isEditMode ? (<button onClick={() => runContextMenuAction(removeFromContainer)}>
                   <Minus size={14}/>
                   移出容器
                 </button>) : null)}

@@ -1,7 +1,7 @@
 import { describe, test, expect } from "vitest";
 import {
-  AC_CONTAINER_COUNTER_KEY,
-  AC_CONTAINER_KINDS,
+  AC_CONTAINER_POOL_KEY,
+  CONTAINER_KINDS,
   DEVICE_LIBRARY,
   assignPermanentDeviceIndex,
   buildContainerDeviceParameterViews,
@@ -19,7 +19,7 @@ import {
   fitContainerToMembers,
   ejectOutsiders,
   containerFirstComparator,
-  isAcContainerNode,
+  isContainerNode,
   judgeContainerMembership,
   enforceContainerMembership,
   containerDecisionNodeUpdates,
@@ -36,8 +36,8 @@ import {
   containerNameSearch,
   containerMemberIdsFromSelection,
   containerAssignedIdsFromSelection,
-  applyAddToAcContainer,
-  applyRemoveFromAcContainer,
+  applyAddToContainer,
+  applyRemoveFromContainer,
   containerAddIsNoop,
   containerDragGroup,
   applyDragContainerMembership,
@@ -310,8 +310,8 @@ describe("acContainer 布局", () => {
     expect(containerFirstComparator(c as any, a as any)).toBeLessThan(0);
     expect(containerFirstComparator(a as any, c as any)).toBeGreaterThan(0);
     expect(containerFirstComparator(a as any, node("b", "ac-load", 0, 0) as any)).toBe(0);
-    expect(isAcContainerNode(c as any)).toBe(true);
-    expect(isAcContainerNode(a as any)).toBe(false);
+    expect(isContainerNode(c as any)).toBe(true);
+    expect(isContainerNode(a as any)).toBe(false);
   });
 
   test("混合数组排序:容器全部在前,非容器保持相对序", () => {
@@ -596,14 +596,14 @@ describe("acContainer 面板", () => {
       const tpl = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
       const node = createDefaultNode(kind as DeviceKind, { x: 0, y: 0 });
       expect(buildContainerDeviceParameterViews(node, tpl).length, `${kind} 未走容器参数表`).toBeGreaterThan(0);
-      expect(isAcContainerNode(node), `${kind} 被误判为 AC 容器(行会被隐藏)`).toBe(false);
+      expect(isContainerNode(node), `${kind} 被误判为 AC 容器(行会被隐藏)`).toBe(false);
     }
     // AC 容器:两张表都进不去 branch 1,且行必须隐藏(容器不允许嵌套)
-    for (const kind of AC_CONTAINER_KINDS) {
+    for (const kind of CONTAINER_KINDS) {
       const tpl = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
       const node = createDefaultNode(kind, { x: 0, y: 0 });
       expect(buildContainerDeviceParameterViews(node, tpl).length, `${kind} 进了容器参数表`).toBe(0);
-      expect(isAcContainerNode(node), `${kind} 未被判为 AC 容器`).toBe(true);
+      expect(isContainerNode(node), `${kind} 未被判为 AC 容器`).toBe(true);
     }
   });
 
@@ -692,11 +692,14 @@ describe("新建容器纯函数", () => {
     expect(CONTAINER_KIND_LABELS["ac-distribution-box"]).toBe("配变箱");
   });
 
-  test("containerKindOptions:3 类型选项,label 与图元库同源(弹窗类型下拉单源)", () => {
+  test("containerKindOptions:6 类型选项,label 与图元库同源(弹窗类型下拉单源)", () => {
     expect(containerKindOptions()).toEqual([
       { value: "ac-vpp-box", label: "虚拟电厂" },
       { value: "ac-switch-box", label: "开关箱" },
       { value: "ac-distribution-box", label: "配变箱" },
+      { value: "dc-vpp-box", label: "虚拟电厂" },
+      { value: "hydrogen-vpp-box", label: "虚拟电厂" },
+      { value: "heat-vpp-box", label: "虚拟电厂" },
     ]);
   });
 
@@ -753,7 +756,7 @@ describe("acContainer 右键菜单", () => {
     const a = node("a", "ac-load", 0, 0);
     const b = node("b", "ac-load", 300, 200);
     const c = node("c1", "ac-vpp-box", 0, 0, 180, 112);
-    const next = applyAddToAcContainer([a, b] as any, c as any, ["a", "b"]);
+    const next = applyAddToContainer([a, b] as any, c as any, ["a", "b"]);
     expect(next.map((n) => n.id)).toEqual(["a", "b", "c1"]);
     const byId = new Map(next.map((n) => [n.id, n]));
     expect(byId.get("a")!.containerId).toBe("c1");
@@ -772,7 +775,7 @@ describe("acContainer 右键菜单", () => {
     const from = node("c0", "ac-vpp-box", 500, 500, 180, 112);
     const m = { ...node("m1", "ac-load", 500, 500), containerId: "c0" };
     const to = node("c1", "ac-vpp-box", 0, 0, 180, 112);
-    const next = applyAddToAcContainer([from, m, to] as any, to as any, ["m1"]);
+    const next = applyAddToContainer([from, m, to] as any, to as any, ["m1"]);
     expect(next.map((n) => n.id)).toEqual(["c0", "m1", "c1"]); // 已存在 → 不插入
     const byId = new Map(next.map((n) => [n.id, n]));
     expect(byId.get("m1")!.containerId).toBe("c1");
@@ -783,7 +786,7 @@ describe("acContainer 右键菜单", () => {
   test("加入容器:容器自身不得被打上 containerId(不允许嵌套)", () => {
     const inner = node("c2", "ac-switch-box", 0, 0);
     const outer = node("c1", "ac-vpp-box", 0, 0, 180, 112);
-    const next = applyAddToAcContainer([inner, outer] as any, outer as any, ["c1", "c2"]);
+    const next = applyAddToContainer([inner, outer] as any, outer as any, ["c1", "c2"]);
     expect("containerId" in next.find((n) => n.id === "c2")!).toBe(false);
     expect("containerId" in next.find((n) => n.id === "c1")!).toBe(false);
   });
@@ -792,7 +795,7 @@ describe("acContainer 右键菜单", () => {
     const c = node("c1", "ac-vpp-box", 0, 0, 180, 112);
     const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
     const other = node("o", "ac-load", 900, 900);
-    const updates = applyRemoveFromAcContainer([c, m, other] as any, ["m1"]);
+    const updates = applyRemoveFromContainer([c, m, other] as any, ["m1"]);
     const byId = new Map(updates.map((n) => [n.id, n]));
     expect("containerId" in byId.get("m1")!).toBe(false);
     expect(byId.get("c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE });
@@ -802,7 +805,7 @@ describe("acContainer 右键菜单", () => {
   test("移出容器:被移出设备是某关口容器的绑定设备 → 解绑 + 关关口", () => {
     const c = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "1", bound_device_id: "m1" } };
     const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
-    const updates = applyRemoveFromAcContainer([c, m] as any, ["m1"]);
+    const updates = applyRemoveFromContainer([c, m] as any, ["m1"]);
     const gw = updates.find((n) => n.id === "c1")!;
     expect(gw.params.bound_device_id).toBe("");
     expect(gw.params.is_gateway).toBe("0");
@@ -827,7 +830,7 @@ describe("acContainer 右键菜单", () => {
     // 绑定字段残留(关过口又关了 / 老数据带来)不清的话,E 导出会写出指向容器外设备的跨段引用
     const c = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "0", bound_device_id: "m1" } };
     const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
-    const updates = applyRemoveFromAcContainer([c, m] as any, ["m1"]);
+    const updates = applyRemoveFromContainer([c, m] as any, ["m1"]);
     expect(updates.find((n) => n.id === "c1")!.params.bound_device_id).toBe("");
     expect(updates.find((n) => n.id === "c1")!.params.is_gateway).toBe("0");
     // 但不开着口就不弹「关口已关闭」(提示侧另有 is_gateway 门)
@@ -837,7 +840,7 @@ describe("acContainer 右键菜单", () => {
   test("移出容器:绑定的是别的设备则原样保留(不误伤)", () => {
     const c = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "1", bound_device_id: "keep" } };
     const m = { ...node("m1", "ac-load", 300, 40), containerId: "c1" };
-    const updates = applyRemoveFromAcContainer([c, m] as any, ["m1"]);
+    const updates = applyRemoveFromContainer([c, m] as any, ["m1"]);
     expect(updates.find((n) => n.id === "c1")!.params.bound_device_id).toBe("keep");
   });
 
@@ -845,7 +848,7 @@ describe("acContainer 右键菜单", () => {
     const c1 = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "1", bound_device_id: "m1" } };
     const m1 = { ...node("m1", "ac-load", 0, 0), containerId: "c1" };
     const c2 = node("c2", "ac-vpp-box", 400, 400, 180, 112);
-    const next = applyAddToAcContainer([c1, m1, c2] as any, c2 as any, ["m1"]);
+    const next = applyAddToContainer([c1, m1, c2] as any, c2 as any, ["m1"]);
     const byId = new Map(next.map((n) => [n.id, n]));
     expect(byId.get("m1")!.containerId).toBe("c2");
     expect(byId.get("c1")!.params.bound_device_id).toBe("");
@@ -857,7 +860,7 @@ describe("acContainer 右键菜单", () => {
     const c1 = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "1", bound_device_id: "other" } };
     const m1 = { ...node("m1", "ac-load", 0, 0), containerId: "c1" };
     const c2 = node("c2", "ac-vpp-box", 400, 400, 180, 112);
-    const next = applyAddToAcContainer([c1, m1, c2] as any, c2 as any, ["m1"]);
+    const next = applyAddToContainer([c1, m1, c2] as any, c2 as any, ["m1"]);
     expect(new Map(next.map((n) => [n.id, n])).get("c1")!.params.bound_device_id).toBe("other");
   });
 
@@ -866,7 +869,7 @@ describe("acContainer 右键菜单", () => {
     const m1 = { ...node("m1", "ac-load", 0, 0), containerId: "c1" };
     const m2 = { ...node("m2", "ac-load", 60, 0), containerId: "c1" };
     const c2 = { ...node("c2", "ac-vpp-box", 400, 400, 180, 112), params: { is_gateway: "1", bound_device_id: "m1" } };
-    const next = applyAddToAcContainer([c1, m1, m2, c2] as any, c2 as any, ["m1"]);
+    const next = applyAddToContainer([c1, m1, m2, c2] as any, c2 as any, ["m1"]);
     const byId = new Map(next.map((n) => [n.id, n]));
     expect(byId.get("c2")!.params.bound_device_id).toBe("m1"); // 目标容器未失去其绑定设备
     expect(byId.get("c1")!.params.bound_device_id).toBe("m2"); // c1 丢的是 m1,c1 绑的是 m2 → 不解绑
@@ -884,17 +887,37 @@ describe("acContainer 右键菜单", () => {
 
 // ─── 容器 idx 分配:走固定分段计数器(plan Task 10 的 E 导出 idx 列依赖它) ──────
 describe("容器 idx 分配", () => {
-  test("deviceIndexCounterKey:容器归入 ac_container 段(否则前面各分支都返回空串)", () => {
-    for (const kind of AC_CONTAINER_KINDS) {
-      expect(deviceIndexCounterKey(createDefaultNode(kind, { x: 0, y: 0 }))).toBe(AC_CONTAINER_COUNTER_KEY);
+  test("deviceIndexCounterKey:容器按能流分池(交流共用 ac_container,其余各一池,否则前面各分支都返回空串)", () => {
+    // 分池理由:各能流容器落各自 E 段,idx 在段内独立编号 —— 共用一池会让直流容器吃掉交流容器的 idx 段
+    const expectedPoolByKind: Record<string, string> = {
+      "ac-vpp-box": AC_CONTAINER_POOL_KEY,
+      "ac-switch-box": AC_CONTAINER_POOL_KEY,
+      "ac-distribution-box": AC_CONTAINER_POOL_KEY,
+      "dc-vpp-box": "dc_container",
+      "hydrogen-vpp-box": "hydrogen_container",
+      "heat-vpp-box": "heat_container"
+    };
+    for (const kind of CONTAINER_KINDS) {
+      expect(deviceIndexCounterKey(createDefaultNode(kind, { x: 0, y: 0 })), kind).toBe(expectedPoolByKind[kind]);
     }
+  });
+
+  test("分池生效:交流池与直流池互不干扰(各自从 1 起编)", () => {
+    const m = node("m1", "ac-load", 0, 0);
+    const acFirst = assignPermanentDeviceIndex(buildNewContainer("ac-vpp-box", "虚拟电厂1", [m] as any, ""), {});
+    expect(acFirst.node.params.idx).toBe("1");
+    // 同一份计数器里加直流容器 → 走 dc_container 池,不吃交流已用掉的 1
+    const dcFirst = assignPermanentDeviceIndex(buildNewContainer("dc-vpp-box", "虚拟电厂1", [m] as any, ""), acFirst.counters);
+    expect(dcFirst.node.params.idx).toBe("1");
+    expect(dcFirst.counters[AC_CONTAINER_POOL_KEY]).toBe(1);
+    expect(dcFirst.counters.dc_container).toBe(1);
   });
 
   test("新建容器经 assignPermanentDeviceIndex 拿到真实 idx,且同段递增", () => {
     const m = node("m1", "ac-load", 0, 0);
     const first = assignPermanentDeviceIndex(buildNewContainer("ac-vpp-box", "虚拟电厂1", [m] as any, ""), {});
     expect(first.node.params.idx).toBe("1");
-    expect(first.counters[AC_CONTAINER_COUNTER_KEY]).toBe(1);
+    expect(first.counters[AC_CONTAINER_POOL_KEY]).toBe(1);
     const second = assignPermanentDeviceIndex(buildNewContainer("ac-switch-box", "开关箱1", [m] as any, ""), first.counters);
     expect(second.node.params.idx).toBe("2");
   });
