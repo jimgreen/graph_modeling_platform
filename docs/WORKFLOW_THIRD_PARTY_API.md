@@ -1,4 +1,4 @@
-# 第三方查询接口实现任务分解（/api/v1）
+# 第三方查询接口实现任务分解（/webgrp/v1）
 
 > 阶段：实现规划（workflow）。承接 `REQUIREMENTS_THIRD_PARTY_API.md` + `DESIGN_THIRD_PARTY_API.md`。
 > 本文档为任务清单，按依赖序排列。每任务含：范围、产出文件、依赖、验收（测试）。
@@ -30,10 +30,10 @@
 ## P0 基础设施
 
 ### T1：image-server 单入口同端口 + v1 响应函数
-**范围**：重构 `server/dev.mjs`，image-server 作唯一入口。dev 用 Vite `createServer({server:{middlewareMode}, appType:'custom'})` middleware 挂入（替代 spawn 独立 Vite 进程），prod 托管 `dist/` 静态资源。`/api`、`/api/v1`、`/ws`、`/*` 分流。新增 v1 专用响应函数 `sendV1Json`/`sendV1JsonCacheable`（信封格式 `{ok,data}`/`{ok:false,error:{code,message}}`，不碰旧 `sendJson`）。保留 `dev.mjs` spawn 旧路径作 fallback（环境变量切换）。
+**范围**：重构 `server/dev.mjs`，image-server 作唯一入口。dev 用 Vite `createServer({server:{middlewareMode}, appType:'custom'})` middleware 挂入（替代 spawn 独立 Vite 进程），prod 托管 `dist/` 静态资源。`/api`、`/webgrp/v1`、`/ws`、`/*` 分流。新增 v1 专用响应函数 `sendV1Json`/`sendV1JsonCacheable`（信封格式 `{ok,data}`/`{ok:false,error:{code,message}}`，不碰旧 `sendJson`）。保留 `dev.mjs` spawn 旧路径作 fallback（环境变量切换）。
 **产出**：`server/dev.mjs`、`server/image-server.mjs`（静态托管 + v1 响应函数）、`server/v1Response.mjs`（信封函数）、`vite.config.ts`（middleware 配置如需）
 **依赖**：无
-**验收**：新建 HTTP 集成测试 `server/routes.test.mjs`（测静态资源分流：`/*` 返回静态文件、`/api` 与 `/api/v1` 不被静态资源拦截、OPTIONS 预检）；`server/v1Response.test.mjs`（信封格式 + 错误码映射）；手动起 `pnpm dev` 验证 HMR 正常 + 同端口访问前端 + `/api`。HMR 回归是关键验收点。
+**验收**：新建 HTTP 集成测试 `server/routes.test.mjs`（测静态资源分流：`/*` 返回静态文件、`/api` 与 `/webgrp/v1` 不被静态资源拦截、OPTIONS 预检）；`server/v1Response.test.mjs`（信封格式 + 错误码映射）；手动起 `pnpm dev` 验证 HMR 正常 + 同端口访问前端 + `/api`。HMR 回归是关键验收点。
 
 ### T2：WebSocket server + 前端 WS 客户端
 **范围**：server 加 `ws` 依赖，`/ws` 升级处理；前端新增 `src/runtimeWsClient.ts`（连入、register、ping、fetch-response 收发、clientId 持久化）。
@@ -42,7 +42,7 @@
 **验收**：单测 `server/runtimeWs.test.mjs`（连接/register/ping/断线移除）；前端单测 `src/runtimeWsClient.test.ts`（消息收发）。
 
 ### T3：E 文件逻辑统一（设计约束，无独立实现）
-**范围**：server 不实现独立的 E 文件生成逻辑。E 文件单一真源 = `buildEFileExport`（现位于 `src/model-eexport.ts`）。所有第三方 E 文件请求经 WS `runtime.e-file` 拉前端生成（C 决策）；已保存模型另有后端适配层 `/api/v1/schemes/model/e-file` 读盘生成（2026-09-11 新增，见 `DESIGN_THIRD_PARTY_API.md` §8.3）。server 端 `buildDeviceParameterFile`（JSON 落盘用）**已删除**（[2026-09-13]），保存模型不再落盘 `.e` / `.svg`：`data/schemes/files/**` 只含 `.json`，派生格式按需实时生成。WS 桥接（T2）+ 前端 `buildEFileExport`（现状）已就绪，`runtime.e-file` resource 实际由 T11 运行时态 handler + T9 前端序列化实现。
+**范围**：server 不实现独立的 E 文件生成逻辑。E 文件单一真源 = `buildEFileExport`（现位于 `src/model-eexport.ts`）。所有第三方 E 文件请求经 WS `runtime.e-file` 拉前端生成（C 决策）；已保存模型另有后端适配层 `/webgrp/v1/schemes/model/e-file` 读盘生成（2026-09-11 新增，见 `DESIGN_THIRD_PARTY_API.md` §8.3）。server 端 `buildDeviceParameterFile`（JSON 落盘用）**已删除**（[2026-09-13]），保存模型不再落盘 `.e` / `.svg`：`data/schemes/files/**` 只含 `.json`，派生格式按需实时生成。WS 桥接（T2）+ 前端 `buildEFileExport`（现状）已就绪，`runtime.e-file` resource 实际由 T11 运行时态 handler + T9 前端序列化实现。
 **产出**：无独立代码（设计约束归入 T11/T9）
 **依赖**：T2（WS 桥接）
 **验收**：T11/T9 的 `runtime.e-file` 用例覆盖（当前打开模型 E 文件文本 + 无打开模型 404 + 无在线客户端 503）。
@@ -57,7 +57,7 @@
 
 ## P1 方案域
 
-### T5：方案域 `/api/v1` handler
+### T5：方案域 `/webgrp/v1` handler
 **范围**：新增 `server/apiV1Schemes.mjs`，实现 §5.1 接口（schemes、hierarchy、models、export、model json/svg）。E 文件不在此域（走运行时态 §5.3）。复用现有 `readSchemes`、`server/schemeArchive.mjs` 的 `buildSchemeArchiveBuffer`（ZIP 内 SVG/E 实时渲染，见 `server/svgExport.mjs` / `server/eFileExport.mjs`）。schemePath 路径段编解码工具。用 v1 响应函数（T1）包装信封。挂入 image-server 路由。
 **产出**：`server/apiV1Schemes.mjs`、`server/schemePath.mjs`（编解码工具）
 **依赖**：T1
@@ -73,7 +73,7 @@
 
 ## P2 图元库域
 
-### T7：图元库域 `/api/v1` handler
+### T7：图元库域 `/webgrp/v1` handler
 **范围**：新增 `server/apiV1Library.mjs`，实现 §5.2 六接口（categories、devices、measurements、device-definitions、templates、聚合 library）。复用 `readDeviceLibraryConfig`、`readMeasurementConfig` + 静态 `DeviceKind`/`E_SECTION_COLUMNS` 元数据（server 端 `eSectionColumns`）。用 v1 响应函数包装信封。
 **产出**：`server/apiV1Library.mjs`
 **依赖**：T1（T3 非强依赖，图元库域不涉 E 文件）
@@ -108,7 +108,7 @@
 **验收**：集成测 `server/apiV1Runtime.test.mjs`（mock WS 客户端测协议：无客户端 503、超时 503、正常透传、错误码透传）。
 
 ### T12：运行时态 E2E 测试
-**范围**：`e2e/runtime.test.mjs`，Playwright 编排：起 server（tmpdir+IEEE 模型）→ launch chromium 加载前端 → WS 注册 → 模拟打开模型/选中/切 tab → fetch `/api/v1/runtime/*` 断言。每接口 AC（正常+无客户端+无选中）。
+**范围**：`e2e/runtime.test.mjs`，Playwright 编排：起 server（tmpdir+IEEE 模型）→ launch chromium 加载前端 → WS 注册 → 模拟打开模型/选中/切 tab → fetch `/webgrp/v1/runtime/*` 断言。每接口 AC（正常+无客户端+无选中）。
 **产出**：`e2e/runtime.test.mjs`、`e2e.vitest.config.mjs`
 **依赖**：T11、T9、T10
 **验收**：`pnpm test:e2e` 绿；真实 WS 联动验证。

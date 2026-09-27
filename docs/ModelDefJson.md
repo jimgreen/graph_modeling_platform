@@ -22,7 +22,7 @@ JSON.stringify(project, null, 2)   // src/appExtracted/appDeviceDefinitionFactor
 | 内置设备 | `src/model.ts` `DEVICE_LIBRARY`（模板编译进前端代码）→ `DeviceGlyph.tsx` 按 kind 绘制 | ✓ 前端代码在手即可 |
 | 自定义元件 | 后端图元库（componentLibrary）；JSON 内仅 `kind` 字符串 | ✗ 需同源图元库数据，否则退化渲染 |
 
-需要自包含外观时：用同次导出的 `.svg`（形状/样式/量测已内联）或截图 PNG。第三方程序化还原走 `/api/v1`：library 域建 kind→模板映射 + model JSON 几何，或直接取 runtime SVG。
+需要自包含外观时：用同次导出的 `.svg`（形状/样式/量测已内联）或截图 PNG。第三方程序化还原走 `/webgrp/v1`：library 域建 kind→模板映射 + model JSON 几何，或直接取 runtime SVG。
 
 ## 2. 顶层结构 `ProjectFile`（`src/model.ts:605`）
 

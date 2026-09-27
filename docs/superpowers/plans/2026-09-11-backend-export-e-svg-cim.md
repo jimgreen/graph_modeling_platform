@@ -945,9 +945,9 @@ Expected: PASS（新增示例同样被遍历验证；若该测试对二进制响
 修改 `docs/DESIGN_THIRD_PARTY_API.md` §8.3，把「已保存模型不提供 E 文件接口」改为指向新端点，并注明决策 B 已被本方案取代：
 
 ```markdown
-> **[2026-09-11 更新]** 决策 B 已取代：新增 `/api/v1/schemes/model/e-file`（后端直接计算，见
+> **[2026-09-11 更新]** 决策 B 已取代：新增 `/webgrp/v1/schemes/model/e-file`（后端直接计算，见
 > `docs/superpowers/specs/2026-09-11-backend-export-e-svg-cim-design.md`）。
-> `/api/v1/runtime/e-file` 保留，用于「当前打开且可能未保存」的模型。
+> `/webgrp/v1/runtime/e-file` 保留，用于「当前打开且可能未保存」的模型。
 ```
 
 - [ ] **Step 4: Commit**
