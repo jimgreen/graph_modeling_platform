@@ -24,18 +24,29 @@ function loadDmsOptions() {
 }
 
 // 样本依赖：data/ 整目录被 .gitignore 忽略（见 CLAUDE.md），干净检出上必然缺失。
-// 按仓库既有约定用 describe.skipIf —— 见 ems-rtdb-export-path.test.ts。
+// 用 describe.skipIf 守卫（仓库既有约定，见 ems-rtdb-export-path.test.ts）。
+//
+// **注意**：describe.skipIf 只阻止 it 执行，describe 的回调体仍会跑。所以下面
+// 绝不能有任何 readFileSync / 写盘 —— 必须全部包在惰性函数里，由 it 首次调用时求值。
+// （纯净检出实测：把 readFileSync 放在 describe 体顶层时，样本缺失仍会 ENOENT 套件级失败。）
 const TITAN_PROJECT_SAMPLE = "data/schemes/files/四川/成都/厂站/天府新区站.json";
 const HAS_PROJECT_SAMPLE = fs.existsSync(TITAN_PROJECT_SAMPLE);
 
 describe.skipIf(!HAS_PROJECT_SAMPLE)("配网实时库导出规则", () => {
-  const options = loadDmsOptions();
-  const project = JSON.parse(fs.readFileSync("data/schemes/files/四川/成都/厂站/天府新区站.json", "utf-8")) as ProjectFile;
-  const file = buildEFileExport(project, ["默认方案"], options);
-  const text = file.text;
-  fs.writeFileSync("output/dms_rtdb_导出验证.e", text, "utf-8");
+  // 惰性单例：首次调用时读样本 + 跑导出，之后复用。
+  let cached: { options: any; project: ProjectFile; text: string } | null = null;
+  const fixture = () => {
+    if (!cached) {
+      const options = loadDmsOptions();
+      const project = JSON.parse(fs.readFileSync(TITAN_PROJECT_SAMPLE, "utf-8")) as ProjectFile;
+      const file = buildEFileExport(project, ["默认方案"], options);
+      cached = { options, project, text: file.text };
+    }
+    return cached;
+  };
 
-  const sectionText = (name: string) => text.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`, "s"))?.[1] ?? "";
+  const sectionText = (name: string) =>
+    fixture().text.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`, "s"))?.[1] ?? "";
   const sectionRows = (name: string) => {
     const body = sectionText(name);
     if (!body) return { cols: [] as string[], rows: [] as string[][] };
@@ -48,6 +59,7 @@ describe.skipIf(!HAS_PROJECT_SAMPLE)("配网实时库导出规则", () => {
     const ci = cols.indexOf(column);
     return ci >= 0 ? (rows[rowIndex]?.[ci] ?? "") : "";
   };
+  const projectNodes = () => fixture().project.nodes;
 
   it("单行表 dms_def_bulk：一行，内容与 substation 一致，st_id 指向 substation id", () => {
     const { rows } = sectionRows("dms_def_bulk");
@@ -78,7 +90,7 @@ describe.skipIf(!HAS_PROJECT_SAMPLE)("配网实时库导出规则", () => {
   it("dms_def_trwd 从 dms_def_trfm 派生：绕组数 = 双绕组变压器数 × 2，trfm_id 指向变压器行 id", () => {
     const trfmRows = sectionRows("dms_def_trfm").rows;
     const trwdRows = sectionRows("dms_def_trwd").rows;
-    const twoWinding = project.nodes.filter((n) => ["ac-transformer", "ac-transformer-vertical", "ac-two-winding-transformer"].includes(n.kind)).length;
+    const twoWinding = projectNodes().filter((n) => ["ac-transformer", "ac-transformer-vertical", "ac-two-winding-transformer"].includes(n.kind)).length;
     expect(trfmRows.length).toBe(twoWinding);
     expect(trwdRows.length).toBe(twoWinding * 2);
     // 每条绕组 trfm_id = 对应变压器行 id
