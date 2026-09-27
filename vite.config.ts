@@ -72,8 +72,15 @@ const serverWatchIgnored = [
 const useRelativeBase = process.env.VITE_QIANKUN === 'true';
 const effectiveBase = useRelativeBase ? './' : frontendPrefix;
 
+// qiankun 插件只服务浏览器运行时：它的 `support-sandbox` post-transform 会把源码里的
+// `window.__POWERED_BY_QIANKUN__` 改写成 `__QIANKUN_WINDOW__["<name>"]....`，而那个全局
+// 由插件在 `transformIndexHtml` 里注入的内联 <script> 建立 —— 只存在于真实浏览器。
+// vitest 的 node 环境没有该全局，于是 runtimeWsClient.test.ts 一 connect() 就
+// ReferenceError（12 条用例红）。测试要验的是**源码**语义，故按 VITEST 标记摘掉该插件。
+const isVitest = process.env.VITEST === "true";
+
 export default defineConfig({
-  plugins: [react(), qiankun({ name })],
+  plugins: [react(), ...(isVitest ? [] : qiankun({ name }))],
   base: effectiveBase,
   define: {
     __API_PREFIX__: JSON.stringify(apiPrefix),
