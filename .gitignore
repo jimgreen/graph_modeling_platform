@@ -36,6 +36,13 @@ docs/commits_*.txt
 docs/review_diff.txt
 docs/*.docx
 
+# 工具产出的临时目录（与 .workbuddy/ 同类，均无代码引用）
+.superpowers/
+midscene_run/
+
+# 手工导出的 patch（对比/迁移用，勿入库）
+*.patch
+
 # 临时排查测试文件
 *.temp.test.ts
 src/test-cnnames-inspect.test.ts
