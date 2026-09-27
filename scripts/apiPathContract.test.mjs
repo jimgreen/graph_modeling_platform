@@ -77,6 +77,21 @@ function staticSegments(pathValue) {
 const registeredShapes = new Set([...registered].map(staticSegments).map((s) => s.join("/")));
 
 describe("前后端路径契约", () => {
+  test("扫描面本身有效：前后端两侧都扫到了足量路径（防零命中假绿）", () => {
+    // 下面那条用例是「前端引用的路径 ⊆ 后端注册表」。若任一侧的采集正则因重构失效
+    // （例如后端改了 apiPattern 的书写形式），`missing` 会恒为空，守卫变成永真、
+    // 完全不检查东西。故单独钉住扫描面。实测当前值：registered=62、used=38；
+    // 下限取 ~80%，既能抓住大规模失效，又不会因端点正常增删而误报。
+    expect(
+      registered.size,
+      "后端路由表采集为零 —— apiPattern / dynAssetPattern / routeKey 的扫描正则已失效"
+    ).toBeGreaterThanOrEqual(50);
+    expect(
+      used.size,
+      "前端 apiPath() 采集为零 —— apiPath 调用点扫描正则已失效"
+    ).toBeGreaterThanOrEqual(30);
+  });
+
   test("前端 apiPath() 引用的路径都存在于后端路由表", () => {
     const missing = [...used.keys()]
       .filter((p) => !registered.has(p))
