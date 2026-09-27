@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -211,7 +211,11 @@ function normalizedSvgStructure(svg) {
     .trim();
 }
 
+/** 本次没审到的库（运行时数据缺失，通常是干净检出）——为空才说明审计真的跑过了 */
+const missingLibraries = [];
+
 const summary = {
+  skippedLibraries: missingLibraries,
   libraries: {},
   wrongDomainViolations: [],
   duplicateStructures: [],
@@ -220,7 +224,15 @@ const summary = {
 const globalStructures = new Map();
 
 for (const libraryId of libraryIds) {
-  const manifest = readJson(path.join(iconLibraryDir, libraryId, "manifest.json"));
+  // 图标库是运行时数据（data/ 在 .gitignore 里），干净检出的仓库里并不存在。
+  // 缺库时跳过并记一笔，而不是让 readFileSync 抛裸 ENOENT 栈 —— 后者会被误读成
+  // 审计脚本本身坏了，而它只是没有可审的东西。
+  const manifestPath = path.join(iconLibraryDir, libraryId, "manifest.json");
+  if (!existsSync(manifestPath)) {
+    missingLibraries.push(libraryId);
+    continue;
+  }
+  const manifest = readJson(manifestPath);
   const librarySummary = {
     totalIcons: 0,
     categories: manifest.categories?.length || 0,
@@ -248,7 +260,9 @@ for (const libraryId of libraryIds) {
         }
       }
 
-      const svg = readFileSync(path.join(iconLibraryDir, libraryId, icon.file), "utf8");
+      const svgPath = path.join(iconLibraryDir, libraryId, icon.file);
+      if (!existsSync(svgPath)) continue;
+      const svg = readFileSync(svgPath, "utf8");
       const structure = normalizedSvgStructure(svg);
       const categoryItems = categoryStructures.get(structure) || [];
       categoryItems.push(icon.id);
@@ -284,6 +298,15 @@ for (const duplicates of globalStructures.values()) {
 }
 
 console.log(JSON.stringify(summary, null, 2));
+
+if (missingLibraries.length > 0) {
+  // 没审到任何东西就不该按「通过」收场：CI 里静默 exit 0 会把缺数据伪装成审计通过。
+  console.error(
+    `跳过 ${missingLibraries.length} 个缺失的图标库（${missingLibraries.join(", ")}）：` +
+    `期望路径 ${path.join(iconLibraryDir, "<id>", "manifest.json")}。`
+  );
+  process.exitCode = 1;
+}
 
 if (summary.wrongDomainViolations.length > 0 || summary.duplicateStructures.length > 0) {
   process.exitCode = 1;
