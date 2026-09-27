@@ -1,0 +1,50 @@
+# 行尾与 diff 策略显式化。
+#
+# 背景：本仓库此前没有 .gitattributes，只靠 `core.autocrlf`（Windows 上为 true）。
+# 后果是每次跑 `npm run gen:gbk-table` 之后 `git status` 都显示
+# `M src/encoding/gbkTable.ts`，但 `git diff` 为空、归一化后的 blob hash 与 HEAD 一致 ——
+# 纯 stat-cache 的行尾抖动，内容零差异。这类假报警会让人以为生成器改坏了产物，
+# 白白排查很久（本次即如此）。
+#
+# 这里按文件类型把策略写死，不依赖各人的本地 autocrlf 设置：
+#   - 源码/配置统一用 LF 入库，检出时按平台转换（text=auto）
+#   - Windows 批处理必须是 CRLF，否则在 cmd 下无法执行（*.bat/*.cmd）
+#   - 二进制/生成物禁行尾转换，否则文件损坏
+
+# 默认：入库 LF，检出时由 Git 决定是否转 CRLF
+* text=auto
+
+# 明确用 LF 的文本（CI 里跑在 Linux 上，显式声明避免依赖平台推断）
+*.ts text eol=lf
+*.tsx text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.cjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.svg text eol=lf
+
+# Windows 批处理必须 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制：禁行尾转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.zip binary
+*.xlsx binary
+*.docx binary
+*.pptx binary
