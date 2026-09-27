@@ -47,33 +47,76 @@ const testFiles = listTestFiles(path.join(repoRoot, "src"));
  * 的实参里出现 `data/`，或 path.join/resolve 拼出 data/ 路径。
  */
 function dependsOnDataDir(source) {
-  const reads = source.matchAll(
-    /\b(?:readFileSync|existsSync|readdirSync|createReadStream|access|statSync)\s*\(\s*(?:[^,()]*,\s*)?[`'"][^`'"]*\bdata\//gu
+  // 只在**有 fs 调用**的文件里才谈样本依赖：svgExport.test.tsx 里的
+  // 'data/images/bg?id=1&name=a"b' 是测 SVG 属性转义的构造数据、从不落盘，
+  // 该文件零 fs 调用，据此可与真读盘区分。
+  const hasFsCall = /\b(?:readFileSync|readdirSync|createReadStream|access|statSync|existsSync|opendirSync)\s*\(/u.test(
+    source
   );
-  if (reads.length > 0) return true;
-  // 拼装形式：path.join("data", …) / join(ROOT, "data/…") / resolve("data", …)
-  return /\b(?:join|resolve)\s*\(\s*(?:[^,()]*,\s*)?[`'"]data(?:\/|['"])/u.test(source);
+  if (!hasFsCall) return false;
+  // 提到 data/ 路径即认为依赖（覆盖字面量、path.join 拼接、以及
+  // `const SAMPLE = "data/…"` 后 `readFileSync(SAMPLE)` 的间接引用形式）
+  return /[`'"]data\//u.test(source) || /\b(?:join|resolve)\s*\(\s*[`'"]data(?:\/|['"])/u.test(source);
 }
 
 /**
- * 找出「describe 回调体顶层」里直接读 data/ 的行。
+ * 找出「describe 回调体顶层」里做磁盘读取的行。
  *
- * 难点：缩进 2 空格既可能是 describe 体顶层语句，也可能是**顶层函数**（如
- * `function buildEditorRecords() {`）的函数体 —— 后者不是 describe 体求值，不算违规。
- * 所以用括号/花括号深度跟踪：只有当尚未进入任何未闭合的 `{` 时，2 空格缩进行
- * 才算 describe 体顶层。
+ * 难点一：**必须限定在 describe 上下文内**。缩进 2 空格 + 深度 1 这两个条件
+ * 单用都会误判：
+ *   - `function buildEditorRecords() {`（模块级 helper）的函数体也是 2 空格、深度 1
+ *   - 反过来，只看缩进会漏掉 describe 体内嵌在更小结构里的情况
+ * 所以先定位 `describe` / `describe.skipIf(` 开头的行，从**那一行之后**才开始算深度。
+ * 模块级 helper 定义在 describe 之前，自然被排除。
+ *
+ * 难点二：**参数无关**。只匹配 `readFileSync("…data/…")` 字面量会漏掉
+ * `readFileSync(TITAN_PROJECT_SAMPLE)` 这种变量形式 —— 实测变异正是走的变量形式，
+ * 守卫当时没抓到。故凡 describe 体顶层出现读取动作即标记。
+ * `existsSync` 排除：那正是样本守卫本身，放 describe 体顶层是正确的。
  */
+const DESCRIBE_TOP_LEVEL_READ =
+  /\b(?:readFileSync|readdirSync|createReadStream|access|statSync|opendirSync)\s*\(/u;
+const DESCRIBE_OPEN = /^\s*describe(?:\.\w+)*\s*\(/u;
+
+/**
+ * 收集「绑定到 data/ 路径字面量」的标识符。
+ *
+ * 必须解析这一层间接引用，否则守不住这种写法（实测变异正是它）：
+ *   const TITAN_PROJECT_SAMPLE = "data/schemes/files/…json";
+ *   describe.skipIf(…, () => {
+ *     fs.readFileSync(TITAN_PROJECT_SAMPLE, "utf-8");   // ← 行内没有 data/ 字面量
+ *   });
+ */
+function dataPathIdentifiers(source) {
+  const ids = new Set();
+  for (const m of source.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*[`'"][^`'"\n]*\bdata\/[^`'"\n]*[`'"]/gu)) {
+    ids.add(m[1]);
+  }
+  return ids;
+}
+
 function describeBodyDataReads(source) {
+  const lines = source.split(/\r?\n/u);
+  // 只在第一个 describe 之后才判定：此前的模块级 helper 不算
+  const firstDescribe = lines.findIndex((line) => DESCRIBE_OPEN.test(line));
+  if (firstDescribe < 0) return [];
+
+  const dataIds = dataPathIdentifiers(source);
   const hits = [];
   let depth = 0;
-  source.split(/\r?\n/u).forEach((line, index) => {
-    const isDescribeTopLevel = /^ {2}\S/u.test(line) && depth === 1;
-    if (
-      isDescribeTopLevel &&
-      /\b(?:readFileSync|existsSync|readdirSync|access|statSync)\s*\(\s*(?:[^,()]*,\s*)?[`'"][^`'"]*\bdata\//u.test(line)
-    ) {
-      hits.push({ line, index });
+  lines.forEach((line, index) => {
+    if (index === firstDescribe) {
+      // describe( 本身开启一层，之后其体内的顶层语句处于深度 1
+      depth = 1;
+      return;
     }
+    if (index < firstDescribe) return;
+    const isDescribeTopLevel = /^ {2}\S/u.test(line) && depth === 1;
+    if (!isDescribeTopLevel || !DESCRIBE_TOP_LEVEL_READ.test(line)) return;
+    // 是 data/ 专属读取吗？行内字面量，或引用了绑定 data/ 路径的标识符
+    const referencesDataId = [...dataIds].some((id) => new RegExp(`\\b${id}\\b`, "u").test(line));
+    if (!/data\//u.test(line) && !referencesDataId) return;
+    hits.push({ line, index });
     // 去掉字符串与注释后再数深度，避免 URL/正则里的括号干扰
     const code = line
       .replace(/`(?:\\.|[^`\\])*`/gu, '""')
@@ -118,7 +161,9 @@ describe("data/ 样本依赖的 skipIf 守卫", () => {
       const source = readFileSync(file, "utf8");
       if (!dependsOnDataDir(source)) continue;
       if (!/skipIf\s*\(/u.test(source)) continue;
-      // describe 体顶层的 readFileSync：跳过函数体内的同名调用
+      // describe 体顶层的读取：只有当该行涉及 **data/ 专属路径** 时才算违规。
+      // 读 public/e-templates/*.e 这类受版本跟踪、始终存在的文件放在 describe 体顶层
+      // 是合法的（basevoltage-dedup / ems-rtdb-export-rules 都这么写）。
       for (const { line, index } of describeBodyDataReads(source)) {
         offenders.push(
           `${path.relative(repoRoot, file).split(path.sep).join("/")}:${index + 1}  ${line.trim().slice(0, 70)}`
