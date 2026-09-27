@@ -230,17 +230,26 @@ describe("native export save service", () => {
   // 真跑一次默认打开：上一版手写 ShellExecuteEx 的 P/Invoke 在本机对**每种**文件
   // （连 notepad.exe 本身）都返回 ERROR_ACCESS_DENIED，纯脚本断言看不出这个问题 ——
   // 必须真调一次 API 才能守住。
-  test.runIf(process.platform === "win32")("真的能把文件交给系统默认程序打开（回归：曾恒为 ACCESS_DENIED）", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "gmp-open-real-"));
-    // 名字带 ' & 和中文：顺带证明不触发命令解释
-    const target = join(directory, "smoke's & 模型.json");
-    writeFileSync(target, JSON.stringify({ ok: true }), "utf8");
+  //
+  // **默认不跑**（需 GRAPH_MODEL_RUN_OPEN_FILE_TEST=1 才跑）：它会在开发者机器上真的
+  // 弹出系统默认程序（Notepad3 等），反复跑测试就反复弹，还会在 %TEMP% 留一个删不掉
+  // 的 `smoke's & 模型.json`（见下方注释）。这条护栏本身有效、不能删，但有真实副作用
+  // 的用例不该混在默认全量里。
+  //   GRAPH_MODEL_RUN_OPEN_FILE_TEST=1 pnpm vitest run server/nativeExportSave.test.mjs
+  test.runIf(process.platform === "win32" && process.env.GRAPH_MODEL_RUN_OPEN_FILE_TEST === "1")(
+    "真的能把文件交给系统默认程序打开（回归：曾恒为 ACCESS_DENIED）",
+    async () => {
+      const directory = mkdtempSync(join(tmpdir(), "gmp-open-real-"));
+      // 名字带 ' & 和中文：顺带证明不触发命令解释
+      const target = join(directory, "smoke's & 模型.json");
+      writeFileSync(target, JSON.stringify({ ok: true }), "utf8");
 
-    // 有意不删这个目录：Process.Start 一返回就删，删得比 Notepad3 读档早，
-    // Notepad3 找不到档便弹「文件未找到。是否创建一个新的文件?」—— 反复跑测试
-    // 就反复弹。几十字节的残留交给 %TEMP% 自身回收即可。
-    await expect(openFileWithSystemDefault(target, { platform: "win32" })).resolves.toBeUndefined();
-  });
+      // 有意不删这个目录：Process.Start 一返回就删，删得比 Notepad3 读档早，
+      // Notepad3 找不到档便弹「文件未找到。是否创建一个新的文件?」—— 反复跑测试
+      // 就反复弹。几十字节的残留交给 %TEMP% 自身回收即可。
+      await expect(openFileWithSystemDefault(target, { platform: "win32" })).resolves.toBeUndefined();
+    }
+  );
 
   test.runIf(process.platform === "win32")("目标不存在时给出可读原因，而不是 ACCESS_DENIED 这种误导", async () => {
     const directory = mkdtempSync(join(tmpdir(), "gmp-open-miss-"));
