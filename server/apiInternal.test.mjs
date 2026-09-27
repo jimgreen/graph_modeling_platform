@@ -18,7 +18,6 @@ let createImageServer;
 beforeAll(async () => {
   dataDir = await mkdtemp(join(tmpdir(), "api-internal-"));
   process.env.GRAPH_MODEL_DATA_DIR = dataDir;
-  process.env.GRAPH_MODEL_ICON_LIBRARY_DIR = join(dataDir, "icon-library");
   // 动态 import：env 已设，模块求值时 dataRoot 取 tmpdir
   ({ createImageServer } = await import("./server.mjs"));
 });

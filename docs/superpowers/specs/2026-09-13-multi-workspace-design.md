@@ -86,10 +86,13 @@ const spaceRoot = (id) => id === "default" ? dataRoot : join(dataRoot, "workspac
 
 v1 把「图标库按空间隔离」写进决策 4 是误判 —— 主体是 git 跟踪的公共素材，纳入空间意味着 10851 文件 × N 空间且无法版本同步。
 
-顺带修正两处既有文档失真（**本次不改，仅记录**）：
+顺带修正两处既有文档失真（**已于 2026-09-28 修完**，见 f29be13f / 紧随其后的提交）：
 
 - `CLAUDE.md` 称「`data/icon-library/` 是版本跟踪的图标库」—— 该目录不存在
+  → 已改：图标库在 `public/icon-library/`（版本跟踪），`data/` 整目录被忽略。
+  同一失真还导致 `scripts/audit-icon-library-quality.mjs` 读错目录、审计的其实是空目录。
 - `server/apiInternal.test.mjs:21` 设置的 `GRAPH_MODEL_ICON_LIBRARY_DIR` 全仓无任何读取方
+  → 已删。
 
 ## 2. 空间注册表
 
@@ -751,7 +754,7 @@ Try-it 的实现是 `await fetch(url, opts)`（`server/swaggerPage.mjs:553`）�
 | 存量数据目录搬迁 | §1.1，得不偿失 |
 | 本地缓存加空间前缀 | 用户已选「切换时清空」（§6.2） |
 | 图标库主体按空间隔离 | 主体是 git 跟踪的公共素材（§1.2） |
-| 修 `CLAUDE.md` 的 `data/icon-library/` 描述与无用的 `GRAPH_MODEL_ICON_LIBRARY_DIR` | 与本次目标无关，另开 |
+| 修 `CLAUDE.md` 的 `data/icon-library/` 描述与无用的 `GRAPH_MODEL_ICON_LIBRARY_DIR` | 与本次目标无关，另开 → **2026-09-28 已修**（含连带修掉 `audit-icon-library-quality.mjs` 读错目录） |
 
 ## 14. 已知风险
 
