@@ -4,6 +4,41 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spaceIdFromName, isValidSpaceId, isReservedSpaceId } from "./spaceId.mjs";
 
+/**
+ * 去重后缀的静态守卫 —— 放在**模块加载期**（收集阶段）执行，不放进 test 里。
+ *
+ * 去重是 `for (let n = 2; ; n += 1)`。若后缀被写成常量（如 `"-2"`），候选永不变化，
+ * 这个 for(;;) 会**同步死循环**：阻塞事件循环，连 vitest 自己的超时定时器都触发不了。
+ *
+ * 为什么必须是模块级 throw 而非 test 断言（实测踩了两次坑）：
+ *   1. testTimeout 救不了 —— 同步循环阻塞事件循环，定时器根本没机会触发；
+ *   2. **断言失败也不会中止后续用例** —— 守卫排在文件中间或末尾时，它转红后 vitest
+ *      继续执行下一条带冲突的用例（如「冲突时追加 -2 -3」），当场死循环，
+ *      整轮挂到外部超时，反而看不出是守卫抓到了问题。
+ * 在收集阶段直接抛出，文件根本来不及执行任何用例，失败信息也最直接。
+ */
+{
+  const src = readFileSync(fileURLToPath(new URL("./spaceId.mjs", import.meta.url)), "utf8");
+  if (/const suffix = "-\d+";/.test(src)) {
+    throw new Error(
+      "spaceId.mjs 的去重后缀被写成了常量：候选永不变化，`for (let n = 2; ; n += 1)` 会同步死循环。" +
+        "后缀必须插值自 n。"
+    );
+  }
+  if (!/const suffix = `-\$\{n\}`;/.test(src)) {
+    throw new Error(
+      "spaceId.mjs 的去重后缀未由循环变量 n 派生：候选可能永不变化，`for (;;)` 会同步死循环。"
+    );
+  }
+}
+
+test("去重后缀由循环变量派生（模块加载期已校验，此处只钉住正向路径）", () => {
+  const taken = [];
+  for (let i = 0; i < 5; i += 1) taken.push(spaceIdFromName("守卫", taken));
+  expect(new Set(taken).size).toBe(5);
+  expect(taken[1]).toBe("守卫-2");
+});
+
 test("中文名直接用作 id", () => {
   expect(spaceIdFromName("张三")).toBe("张三");
 });
@@ -162,22 +197,6 @@ test("重复创建同名空间：每次都拿到不同 id（去重循环不退�
   for (let i = 0; i < 60; i += 1) taken.push(spaceIdFromName("同名空间", taken));
   expect(new Set(taken).size, "60 次创建出现 id 碰撞").toBe(60);
 }, 10_000);
-
-test("去重后缀由循环变量派生（静态断言：死循环无法用行为测试兜住）", () => {
-  // 去重是 `for (let n = 2; ; n += 1)`。若后缀被写成常量（如 `"-2"`），候选永不变化，
-  // 这个 for(;;) 会**同步死循环**——阻塞事件循环，连 vitest 自己的超时定时器都触发不了，
-  // 实测整轮测试直接挂到外部超时（行为测试 + testTimeout 都救不回来）。
-  // 所以这条不执行、只静态检查：后缀必须插值自 n。
-  const src = readFileSync(fileURLToPath(new URL("./spaceId.mjs", import.meta.url)), "utf8");
-  expect(
-    /const suffix = `-\$\{n\}`;/.test(src),
-    "去重后缀必须由循环变量 n 派生，否则 for(;;) 会同步死循环"
-  ).toBe(true);
-  expect(
-    /const suffix = "-\d+";/.test(src),
-    "去重后缀不能是常量：那会让候选永不变化、for(;;) 死循环"
-  ).toBe(false);
-});
 
 test("去重对大小写不敏感（NTFS 语义），且截断后仍不超长", () => {
   const taken = [];
