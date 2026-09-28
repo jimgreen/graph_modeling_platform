@@ -25,6 +25,7 @@
 // ③ **`ac` 是默认值而非命中项**：不含任何关键词的分类库名（`"未知分类"`、
 //    `""`、`"AC"`、`"heat"`）一律落到 `ac`。
 import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   defaultTerminalAssociationForClassTerminal,
   defaultTerminalTypeForCategoryLibrary
@@ -132,16 +133,31 @@ describe("默认值：无关键词一律 ac", () => {
 });
 
 describe("normalizeName 的 trim 生效：带空白的关键词仍命中", () => {
-  test("首尾空白被 trim", () => {
+  // ★ 变异验证时发现：把 `normalizeName` 的 `.trim()` 去掉，这组测试**依然全绿** ——
+  // 因为 `"  直流  ".includes("直流")` 本来就为真，trim 对本判定**不可观测**。
+  // 也就是说：这条契约在**这个函数**上无法用行为断言钉住。
+  //
+  // 契约成立的条件是「某处不做某事」（这里：不做 trim），按本会话既定做法
+  // 改用**静态断言**钉住 —— 否则日后有人删掉 trim 不会有任何测试转红。
+  test("首尾空白不影响判定（`includes` 本身就容忍前后缀）", () => {
     expect(defaultTerminalTypeForCategoryLibrary("  直流  ")).toBe("dc");
     expect(defaultTerminalTypeForCategoryLibrary("\t氢\n")).toBe("h2");
     expect(defaultTerminalTypeForCategoryLibrary(" 热 ")).toBe("heat");
     expect(defaultTerminalTypeForCategoryLibrary("  交流  ")).toBe("ac");
   });
 
-  test("**内部空白不参与判定**（「直 流」不含「直流」）", () => {
-    // 实测：只 trim 首尾，中间插空格就匹配不上了。
+  test("**内部空白不参与判定**（「直 流」不含「直流」；「储氢 罐」仍含「氢」）", () => {
+    // 这条钉住「不做内部空白归一」：关键词被空格**拆开**时不命中。
     expect(defaultTerminalTypeForCategoryLibrary("直 流")).toBe("ac");
+    // 但若关键词本身完整、只是别处有空格，仍命中 —— 说明判据是"包含完整关键词"
+    expect(defaultTerminalTypeForCategoryLibrary("储氢 罐")).toBe("h2");
+    expect(defaultTerminalTypeForCategoryLibrary("储 氢罐")).toBe("h2");
+  });
+
+  test("静态断言：`normalizeName` 仍带 `.trim()`", () => {
+    // 行为断言证明不了"没有做 trim"（因为 includes 天然容忍），只能静态钉。
+    const source = readFileSync("src/componentLibraryMetadata.ts", "utf8");
+    expect(source).toMatch(/const normalizeName = \(value: unknown\) => String\(value \?\? ""\)\.trim\(\);/);
   });
 });
 
