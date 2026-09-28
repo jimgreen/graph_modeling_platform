@@ -1031,13 +1031,41 @@ export function baseDeviceKind(kind: string): string {
  * 所以 `ac-three-winding-transformer-vertical` **永远不会被创建**。
  * 剥后缀只会给不存在的 kind 开后门，反而掩盖问题。
  */
-export const THREE_WINDING_TRANSFORMER_KINDS: ReadonlySet<string> = new Set([
-  "ac-three-winding-transformer",
-  "ac-three-winding-transformer-neutral"
+/**
+ * 两绕组变压器的 kind 全集（与 `THREE_WINDING_TRANSFORMER_KINDS` 同一族的**唯一定义处**）。
+ *
+ * 此前这个判定同样被手抄了 6 遍（`model.ts` 3 处、`model-routing.ts` 3 处、
+ * `model-eexport.ts` 1 处）。与三绕组不同的是，两绕组没有"中性点"子变体，
+ * 判定就是简单的二选一 —— 但**同样必须单源**：漏改一处会让量测定义表、
+ * 端子电压索引、绕组半径/边距、路由包围盒算出不同的值。
+ *
+ * **注意**：`ac-transformer` 是历史别名，与 `ac-two-winding-transformer` 等价，
+ * 两个都列在这里。
+ */
+export const TWO_WINDING_TRANSFORMER_KINDS: ReadonlySet<string> = new Set([
+  "ac-transformer",
+  "ac-two-winding-transformer"
 ]);
+
+/**
+ * kind 级判定：是否两绕组变压器。
+ *
+ * **不剥 `-vertical`**：与三绕组同理，`shouldCreateVerticalDeviceTemplate` 只为
+ * 母线或 `terminalCount === 2` 的模板生成竖向变体 —— 而两绕组变压器**恰好是
+ * 2 端子**，所以它**确实可能有** `-vertical` 变体。**需要处理竖向变体的调用点
+ * 必须自己先 `baseDeviceKind()`**（如 `isTwoWindingTransformerTemplateKind`），
+ * 本判定只做纯粹的 kind 匹配，不隐藏后缀语义。
+ */
+export const isTwoWindingTransformerKind = (kind: string | undefined): boolean =>
+  TWO_WINDING_TRANSFORMER_KINDS.has(kind as string);
 
 /** 带中性点的三绕组变压器（E 文件据此多导出一段中性点，CIM 亦有别）。 */
 export const THREE_WINDING_NEUTRAL_TRANSFORMER_KIND = "ac-three-winding-transformer-neutral";
+
+export const THREE_WINDING_TRANSFORMER_KINDS: ReadonlySet<string> = new Set([
+  "ac-three-winding-transformer",
+  THREE_WINDING_NEUTRAL_TRANSFORMER_KIND
+]);
 
 /**
  * kind 级判定：是否三绕组变压器。
@@ -1052,6 +1080,18 @@ export const isThreeWindingTransformerKind = (kind: string | undefined): boolean
 /** kind 级判定：是否**带中性点**的三绕组变压器。 */
 export const isThreeWindingNeutralTransformerKind = (kind: string | undefined): boolean =>
   kind === THREE_WINDING_NEUTRAL_TRANSFORMER_KIND;
+
+/**
+ * 变压器 kind 全集（两绕组 + 三绕组），供「是不是变压器」这类判定复用。
+ *
+ * 放在两个子集**之后**声明：它由两者展开而来，顺序不能颠倒（TDZ）。
+ */
+export const TRANSFORMER_KINDS: ReadonlySet<string> = new Set([
+  ...TWO_WINDING_TRANSFORMER_KINDS,
+  ...THREE_WINDING_TRANSFORMER_KINDS
+]);
+
+export const isTransformerKind = (kind: string | undefined): boolean => TRANSFORMER_KINDS.has(kind as string);
 
 export const ELECTRIC_GENERATION_TERMINAL_TYPES = ["ac", "dc"] as const;
 const ELECTRIC_GENERATION_FAMILY_KIND_SUFFIXES = [
@@ -6110,7 +6150,7 @@ function builtInMeasurementDefinitionsForTemplate(template: DeviceTemplate): Dev
       { measurementTypeId: "current", associatedField: "i" }
     ]);
   }
-  if (kind === "ac-transformer" || kind === "ac-two-winding-transformer") {
+  if (isTwoWindingTransformerKind(kind)) {
     return copy(TWO_WINDING_TRANSFORMER_MEASUREMENT_DEFINITIONS);
   }
   if (isThreeWindingTransformerKind(kind)) {
@@ -8667,8 +8707,7 @@ export function normalizeThreeWindingTransformerParams(params: Record<string, st
 }
 
 export function isTwoWindingTransformerTemplateKind(kind: string): boolean {
-  const templateKind = baseDeviceKind(kind);
-  return templateKind === "ac-transformer" || templateKind === "ac-two-winding-transformer";
+  return isTwoWindingTransformerKind(baseDeviceKind(kind));
 }
 
 export function normalizeTwoWindingTransformerParams(params: Record<string, string>): Record<string, string> {
@@ -9842,7 +9881,7 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
       b: "0.0"
     })));
   }
-  if (templateKind === "ac-two-winding-transformer" || templateKind === "ac-transformer") {
+  if (isTwoWindingTransformerKind(templateKind)) {
     return withTemplateDefinitions(withRunStat({
       i_vbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       j_vbase: DEFAULT_INITIAL_TERMINAL_VBASE,

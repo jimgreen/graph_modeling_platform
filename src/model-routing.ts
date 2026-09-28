@@ -1,5 +1,9 @@
 // 连线路由相关代码（从 model.ts 提取到独立模块）
-import { isThreeWindingNeutralTransformerKind, isThreeWindingTransformerKind } from "./model.ts";
+import {
+  isThreeWindingNeutralTransformerKind,
+  isThreeWindingTransformerKind,
+  isTwoWindingTransformerKind
+} from "./model.ts";
 import { clampNumber } from "./canvasViewport.ts";
 import { degreesToRadians } from "./formatUtils.ts";
 import { normalizeProjectMeasurements } from "./measurements.ts";
@@ -3666,7 +3670,7 @@ function shouldContractTopologyIslandNode(node: ModelNode): boolean {
 }
 
 function isTwoWindingTransformerNode(node: Pick<ModelNode, "kind">): boolean {
-  return node.kind === "ac-transformer" || node.kind === "ac-two-winding-transformer";
+  return isTwoWindingTransformerKind(node.kind);
 }
 
 function isTwoTerminalTopologyDevice(node: ModelNode): boolean {
@@ -4032,7 +4036,7 @@ function setNodeVoltageLimitValues(
 export function voltageBaseParamTerminalIndexForNode(node: ModelNode, key: string): number | undefined {
   const kind = baseDeviceKind(node.kind);
   const isThree = isThreeWindingTransformer(node);
-  const isTwo = kind === "ac-transformer" || kind === "ac-two-winding-transformer";
+  const isTwo = isTwoWindingTransformerKind(kind);
   if (!isThree && !isTwo) {
     return undefined;
   }
@@ -4545,8 +4549,7 @@ function isTransformerNodeForTopology(node: ModelNode | undefined): boolean {
   if (isThreeWindingTransformer(node)) {
     return true;
   }
-  const baseKind = baseDeviceKind(node.kind);
-  return baseKind === "ac-transformer" || baseKind === "ac-two-winding-transformer";
+  return isTwoWindingTransformerKind(baseDeviceKind(node.kind));
 }
 
 export function collectVoltageBaseIslandForTerminal(

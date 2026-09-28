@@ -20,8 +20,13 @@ import { readFileSync } from "node:fs";
 import {
   THREE_WINDING_NEUTRAL_TRANSFORMER_KIND,
   THREE_WINDING_TRANSFORMER_KINDS,
+  TRANSFORMER_KINDS,
+  TWO_WINDING_TRANSFORMER_KINDS,
   isThreeWindingNeutralTransformerKind,
-  isThreeWindingTransformerKind
+  isThreeWindingTransformerKind,
+  isTransformerKind,
+  isTwoWindingTransformerKind,
+  isTwoWindingTransformerTemplateKind
 } from "./model";
 import { hasVisibleThreeWindingNeutralTerminal, isThreeWindingTransformer } from "./model-eexport";
 import type { ModelNode } from "./model";
@@ -141,19 +146,6 @@ describe("★ 静态扫描：生产代码里不得再有内联的三绕组 kind 
   // 扫描范围刻意**排除** model.ts 里集合自身的定义与注释，
   // 也排除 cim-builder 的 CIM 类名 switch（那是「所有变压器都映射 PowerTransformer」
   // 的类名映射，三绕组与两绕组同归一类，语义不同，不是本判定的副本）。
-  const FILES = [
-    "src/model.ts",
-    "src/model-eexport.ts",
-    "src/model-routing.ts",
-    "src/export/svg.ts",
-    "src/cim/cim-builder.ts",
-    "src/appExtracted/appCoreCanvasUtilities.tsx",
-    "src/DeviceGlyph.ts"
-  ];
-
-  const stripComments = (source: string) =>
-    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
-
   test("没有 `=== \"ac-three-winding-transformer\"` 形式的内联判定", () => {
     const offenders: string[] = [];
     for (const file of FILES) {
@@ -186,6 +178,85 @@ describe("★ 静态扫描：生产代码里不得再有内联的三绕组 kind 
       const code = stripComments(readFileSync(file, "utf8"));
       expect(code, `${file} 不应重新定义 THREE_WINDING_TRANSFORMER_KINDS`).not.toContain("THREE_WINDING_TRANSFORMER_KINDS");
     }
+  });
+});
+
+/** 参与静态扫描的生产文件（与三绕组那组同一份清单）。 */
+const FILES = [
+  "src/model.ts",
+  "src/model-eexport.ts",
+  "src/model-routing.ts",
+  "src/export/svg.ts",
+  "src/cim/cim-builder.ts",
+  "src/appExtracted/appCoreCanvasUtilities.tsx",
+  "src/DeviceGlyph.ts"
+];
+
+const stripComments = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+
+describe("★ 两绕组判定同样单源化（此前手抄 6 遍）", () => {
+  // 判定内容很简单（二选一），但漏改一处会让量测定义表、端子电压索引、
+  // 绕组半径/边距、路由包围盒算出不同的值 —— 后果与三绕组同类。
+  test("集合内容正确（`ac-transformer` 是历史别名，与 two-winding 等价）", () => {
+    expect([...TWO_WINDING_TRANSFORMER_KINDS].sort()).toEqual(["ac-transformer", "ac-two-winding-transformer"]);
+    expect(TWO_WINDING_TRANSFORMER_KINDS.size).toBe(2);
+  });
+
+  test("kind 级判定", () => {
+    expect(isTwoWindingTransformerKind("ac-transformer")).toBe(true);
+    expect(isTwoWindingTransformerKind("ac-two-winding-transformer")).toBe(true);
+    for (const kind of ["ac-three-winding-transformer", "ac-three-winding-transformer-neutral", "ac-load", "", "zzz"]) {
+      expect(isTwoWindingTransformerKind(kind), kind).toBe(false);
+    }
+  });
+
+  test("nullish 安全", () => {
+    expect(isTwoWindingTransformerKind(undefined)).toBe(false);
+    expect(isTwoWindingTransformerKind(null as unknown as undefined)).toBe(false);
+  });
+
+  test("**两绕组与三绕组互斥**，且并集就是变压器全集", () => {
+    for (const kind of [...TWO_WINDING_TRANSFORMER_KINDS, ...THREE_WINDING_TRANSFORMER_KINDS]) {
+      const isTwo = isTwoWindingTransformerKind(kind);
+      const isThree = isThreeWindingTransformerKind(kind);
+      expect(isTwo && isThree, `${kind} 不该同时是两绕组与三绕组`).toBe(false);
+      expect(isTwo || isThree, `${kind} 应至少命中一类`).toBe(true);
+      expect(isTransformerKind(kind), kind).toBe(true);
+    }
+    expect(TRANSFORMER_KINDS.size).toBe(4);
+  });
+
+  test("非变压器 → isTransformerKind false", () => {
+    for (const kind of ["ac-load", "ac-bus", "dcdc-converter", "ac-three-winding-transformer-vertical", ""]) {
+      expect(isTransformerKind(kind), kind).toBe(false);
+    }
+    expect(isTransformerKind(undefined)).toBe(false);
+  });
+
+  test("★ **不剥 `-vertical`**：两绕组恰好 2 端子，竖向变体**确实存在**", () => {
+    // 这是与三绕组的关键差别：两绕组是 2 端子，而
+    // shouldCreateVerticalDeviceTemplate 恰好为 terminalCount === 2 生成竖向变体。
+    // 所以需要处理竖向变体的调用点必须自己先 baseDeviceKind()。
+    expect(isTwoWindingTransformerKind("ac-two-winding-transformer-vertical")).toBe(false);
+    // 而 isTwoWindingTransformerTemplateKind 内部已 baseDeviceKind，故命中
+    expect(isTwoWindingTransformerTemplateKind("ac-two-winding-transformer-vertical")).toBe(true);
+    expect(isTwoWindingTransformerTemplateKind("ac-two-winding-transformer")).toBe(true);
+    expect(isTwoWindingTransformerTemplateKind("ac-transformer-vertical")).toBe(true);
+    expect(isTwoWindingTransformerTemplateKind("ac-three-winding-transformer")).toBe(false);
+  });
+
+  test("静态扫描：不得再有内联的两绕组 kind 判定副本", () => {
+    const offenders: string[] = [];
+    for (const file of FILES) {
+      const code = stripComments(readFileSync(file, "utf8"));
+      code.split(/\r?\n/).forEach((line, index) => {
+        if (/[!=]==?\s*"ac-(two-winding-)?transformer"(?!"-vertical")/.test(line)) {
+          offenders.push(`${file}:${index + 1}  ${line.trim()}`);
+        }
+      });
+    }
+    expect(offenders, `发现内联副本（请改用 isTwoWindingTransformerKind）:\n${offenders.join("\n")}`).toEqual([]);
   });
 });
 
