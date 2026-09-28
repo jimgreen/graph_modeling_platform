@@ -7,6 +7,9 @@ import { GBK_UNICODE_B64, GBK_CODE_B64 } from "./gbkTable.ts";
 let unicodeTable: Uint16Array | null = null;
 let codeTable: Uint16Array | null = null;
 
+/** U+20AC EURO SIGN —— GBK/CP936 唯一保留的单字节字符（0x80），编码表未收录 */
+const GBK_EURO_CODE_POINT = 0x20ac;
+
 function decodeB64ToUint16(value: string): Uint16Array {
   const raw = atob(value);
   const bytes = new Uint8Array(raw.length);
@@ -57,6 +60,19 @@ export function encodeGbk(text: string): Uint8Array {
     if (cp > 0xffff) {
       // 超出 BMP（如 emoji），GBK 无法表示
       bytes.push(0x3f);
+      continue;
+    }
+    if (cp === GBK_EURO_CODE_POINT) {
+      // GBK/CP936 唯一保留的单字节字符：euro = 0x80。
+      // 编码表的生成条件是 `iconv.encode(ch,"gbk").length === 2`（只收双字节，见
+      // scripts/gen-gbk-table.mjs），故该项落在表外；查表必然失败并退化成 '?'。
+      // 不加此特判时，含 € 的项目名/设备名在导出 E 文件时会静默变 '?' ——
+      // CIM 侧读到错的名字，而导出过程不报任何错。
+      //
+      // 安全性已探针核实：0x81-0xA0 解码为 U+FFFD（无效单字节），与 0x80 明确区分；
+      // `[0x80, 0x40]` 解码为 "€@" 说明 0x80 单独出现即 euro、与后跟字节无关；
+      // TextDecoder("gbk") 与 iconv-lite 对 0x80 的解码结果一致（都是 €）。
+      bytes.push(0x80);
       continue;
     }
     const code = findGbkCode(cp);
