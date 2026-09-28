@@ -1,6 +1,6 @@
 // model state → CimPackage IR 构建器（纯函数，五阶段）
 
-import { deviceParamValue } from "../model.ts";
+import { deviceParamValue, isThreeWindingTransformerKind } from "../model.ts";
 import type { DeviceKind, Edge, ModelNode } from "../model";
 import type { MeasurementGroup } from "../measurements";
 import { CIM_NS } from "./cim-namespaces.ts";
@@ -285,7 +285,7 @@ function numericParam(params: Record<string, string>, keys: string[]): number | 
 
 /** 变压器绕组侧电压参数 key（三绕组 i/k/j、双绕组 i/j；映射与导出前校验共用，防两处硬编码漂移） */
 function transformerSideVoltageKeys(kind: DeviceKind): string[] {
-  const isThree = kind === "ac-three-winding-transformer" || kind === "ac-three-winding-transformer-neutral";
+  const isThree = isThreeWindingTransformerKind(kind);
   return isThree ? ["i_vbase", "k_vbase", "j_vbase"] : ["i_vbase", "j_vbase"];
 }
 

@@ -28,7 +28,9 @@ import {
   ELEMENT_TREE_COMPONENT_LIBRARY_LABELS, COMPONENT_LIBRARY_REVERSE_MAPPING,
   DEVICE_LIBRARY_BY_KIND,
   topologyNodeNumberForEField, normalizeTemplateDefinitionList,
-  validateNodeEnumParameters
+  validateNodeEnumParameters,
+  // 三绕组判定单源（全仓库唯一定义在 model.ts 的 THREE_WINDING_TRANSFORMER_KINDS）
+  isThreeWindingTransformerKind, isThreeWindingNeutralTransformerKind
 } from "./model.ts";
 import type {
   GlobalLineEndpoint,
@@ -462,7 +464,7 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   if (sectionKind === "ac-breaker" || sectionKind === "ac-box-breaker") return "ACBreak";
   if (sectionKind === "dc-breaker") return "DCBreak";
   if (sectionKind === "ac-transformer" || sectionKind === "ac-two-winding-transformer") return "ACTransformer";
-  if (sectionKind === "ac-three-winding-transformer" || sectionKind === "ac-three-winding-transformer-neutral") return "ACTransfomer3";
+  if (isThreeWindingTransformerKind(sectionKind)) return "ACTransfomer3";
   if (sectionKind === "dcdc-converter") return "DCDCConverter";
   if (sectionKind === "acdc-converter" || sectionKind === "dcac-converter") return "DCACConverter";
   if (sectionKind === "acac-converter") return "ACACConverter";
@@ -820,7 +822,7 @@ function getRawEParamValue(
     return "";
   }
   if (E_NODE_REFERENCE_COLUMNS.has(key)) {
-    if (key === "neutral_node" && isThreeWindingTransformer(node) && node.kind !== "ac-three-winding-transformer-neutral") {
+    if (key === "neutral_node" && isThreeWindingTransformer(node) && !isThreeWindingNeutralTransformerKind(node.kind)) {
       return "0";
     }
     const topologyNodeNumber = topologyNodeNumberForEField(node, key);
@@ -1638,11 +1640,11 @@ function topologyRepresentativeScore(node: ModelNode): number {
 }
 
 export function isThreeWindingTransformer(node: Pick<ModelNode, "kind">): boolean {
-  return node.kind === "ac-three-winding-transformer" || node.kind === "ac-three-winding-transformer-neutral";
+  return isThreeWindingTransformerKind(node.kind);
 }
 
 export function hasVisibleThreeWindingNeutralTerminal(node: Pick<ModelNode, "kind" | "terminals">): boolean {
-  return node.kind === "ac-three-winding-transformer-neutral" && node.terminals.length >= 4;
+  return isThreeWindingNeutralTransformerKind(node.kind) && node.terminals.length >= 4;
 }
 
 function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {

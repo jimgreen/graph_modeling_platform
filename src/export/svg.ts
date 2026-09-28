@@ -26,6 +26,7 @@ import {
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
   getSwitchVisualState,
+  isThreeWindingTransformerKind,
   getTemplateStateDefinitions,
   getTerminalDisplayColor,
   isRoutableLineDeviceKind,
@@ -508,9 +509,7 @@ ${scopedBackgroundSvg}
     if (terminalIndex < 0) {
       return "";
     }
-    const isThreeWindingTransformer = node.kind === "ac-three-winding-transformer" ||
-      node.kind === "ac-three-winding-transformer-neutral";
-    if (isThreeWindingTransformer) {
+    if (isThreeWindingTransformerKind(node.kind)) {
       return firstNonZeroExportVoltageValue(([
         [node.params.i_vbase, node.params.high_vbase, node.params.highVbase],
         [node.params.k_vbase, node.params.medium_vbase, node.params.mediumVbase],

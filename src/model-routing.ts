@@ -1,4 +1,5 @@
 // 连线路由相关代码（从 model.ts 提取到独立模块）
+import { isThreeWindingNeutralTransformerKind, isThreeWindingTransformerKind } from "./model.ts";
 import { clampNumber } from "./canvasViewport.ts";
 import { degreesToRadians } from "./formatUtils.ts";
 import { normalizeProjectMeasurements } from "./measurements.ts";
@@ -1936,8 +1937,8 @@ function terminalStubVisibleBoundaryDistance(
       const bodyWidth = Math.min(w * 0.66, 58);
       return scaled(bodyWidth / 2);
     }
-    if (nodeKind === "ac-three-winding-transformer" || nodeKind === "ac-three-winding-transformer-neutral") {
-      const hasNeutralTerminal = nodeKind === "ac-three-winding-transformer-neutral";
+    if (isThreeWindingTransformerKind(nodeKind)) {
+      const hasNeutralTerminal = isThreeWindingNeutralTransformerKind(nodeKind);
       const windingRadius = hasNeutralTerminal ? 14 : 15;
       const sideX = hasNeutralTerminal ? 17 : 16;
       return scaled(sideX + windingRadius + 8);
@@ -2011,8 +2012,8 @@ function terminalStubVisibleBoundaryDistance(
     return fullRectDistance;
   }
 
-  if (nodeKind === "ac-three-winding-transformer" || nodeKind === "ac-three-winding-transformer-neutral") {
-    const hasNeutralTerminal = nodeKind === "ac-three-winding-transformer-neutral";
+  if (isThreeWindingTransformerKind(nodeKind)) {
+    const hasNeutralTerminal = isThreeWindingNeutralTransformerKind(nodeKind);
     const windingRadius = hasNeutralTerminal ? 14 : 15;
     const topY = -8;
     const bottomY = hasNeutralTerminal ? 16 : 14;
