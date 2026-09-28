@@ -13,7 +13,7 @@ import { describe, expect, test } from "vitest";
 import { stripUnsafeInlineSvgMarkup } from "./svgUtils";
 
 /** 净化后仍视为危险的残留特征 */
-const DANGEROUS = /<\s*script|<\s*style|\son[a-z]+\s*=|javascript\s*:|vbscript\s*:|livescript\s*:|mocha\s*:|data\s*:\s*text\/html/iu;
+const DANGEROUS = /<\s*script|<\s*style|\son[a-z]+\s*=|srcdoc\s*=|javascript\s*:|vbscript\s*:|livescript\s*:|mocha\s*:|data\s*:\s*text\/html/iu;
 
 const VECTORS: Array<[string, string]> = [
   // —— 回归本体：未闭合 script ——
@@ -55,7 +55,20 @@ const VECTORS: Array<[string, string]> = [
   // —— 双重编码 / 结构性 ——
   ["双重编码", `<a href="&amp;#106;avascript:alert(1)">x</a>`],
   ["嵌套 script 断裂", `<scr<script>ipt>alert(1)</script>`],
-  ["属性注入（引号逃逸）", `<a href="x" title="a&quot; onclick=&quot;alert(1)">x</a>`]
+  ["属性注入（引号逃逸）", `<a href="x" title="a&quot; onclick=&quot;alert(1)">x</a>`],
+  // —— style 未闭合：与 script 同源的 `$` 分支失效 ——
+  ["style 未闭合（内容含 url）", "<style>*{background:url(javascript:alert(1))}"],
+  ["style 未闭合 + 后续标签", "<style>a{}<rect/>"],
+  ["style 未闭合（大写）", "<STYLE>a{}"],
+  // —— srcdoc：值是整段 HTML 字符串，所有标记规则都碰不到 ——
+  // <foreignObject> 是 SVG 里唯一的 HTML 集成点，其中的 iframe[srcdoc] 会真执行脚本。
+  // 不能整个剥掉 foreignObject：项目自己的 stateIconDrawing.tsx 会生成它，
+  // 真实图标库里也有（carbon-workflow-automation.svg），故只剥 srcdoc 属性。
+  ["foreignObject + iframe srcdoc", `<foreignObject><iframe xmlns="http://www.w3.org/1999/xhtml" srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"></iframe></foreignObject>`],
+  ["裸 srcdoc 属性", `<a srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;">x</a>`],
+  ["foreignObject + img onerror", `<foreignObject><body xmlns="http://www.w3.org/1999/xhtml"><img src=x onerror=alert(1)></body></foreignObject>`],
+  ["foreignObject + svg onload", `<foreignObject><svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg></foreignObject>`],
+  ["foreignObject + a href javascript", `<foreignObject><body xmlns="http://www.w3.org/1999/xhtml"><a href="javascript:alert(1)">x</a></body></foreignObject>`]
 ];
 
 describe("stripUnsafeInlineSvgMarkup（SVG 内联净化）", () => {
@@ -74,6 +87,13 @@ describe("stripUnsafeInlineSvgMarkup（SVG 内联净化）", () => {
     expect(stripUnsafeInlineSvgMarkup("<script>alert(1)")).not.toContain("script");
     expect(stripUnsafeInlineSvgMarkup("<script>alert(1)")).not.toContain("alert(1)");
     expect(stripUnsafeInlineSvgMarkup("<script>alert(1)")).toBe("");
+  });
+
+  test("foreignObject 元素本身保留（不能整个剥掉：项目自己与真实图标都在用）", () => {
+    // 剥离整个 foreignObject 会打断两处真实功能：stateIconDrawing.tsx 自己生成它，
+    // 图标库里 carbon-workflow-automation.svg 也含它。故只剥其中的 srcdoc。
+    const withForeignObject = `<foreignObject><body xmlns="http://www.w3.org/1999/xhtml">ok</body></foreignObject>`;
+    expect(stripUnsafeInlineSvgMarkup(withForeignObject)).toBe(withForeignObject);
   });
 
   test("无害内容原样保留（回归：别把正常图形也洗掉）", () => {

@@ -202,7 +202,16 @@ export function stripUnsafeInlineSvgMarkup(value: string) {
     // 并执行。这是实测出来的绕过（28 个 XSS 向量里唯一一个漏的）。
     .replace(/<script\b[^>]*(?:\/>|>[\s\S]*?(?:<\/script\s*>|$))/giu, "")
     .replace(/<\/script\s*>/giu, "")
-    .replace(/<style\b[\s\S]*?<\/style>/giu, "")
+    // 与 script 同理：<style> 未闭合时必须整段去掉，否则未终止的 style 会把后续
+    // 整篇内容当成 CSS 吞掉（实测 `<style>*{background:url(javascript:alert(1))}` 原样漏出）。
+    // CSS 里的 url(javascript:) 现代浏览器已不执行，故这不是 XSS，但属同一处
+    // `$` 分支失效的写法，且会破坏标记结构，一并修掉。
+    .replace(/<style\b[^>]*(?:\/>|>[\s\S]*?(?:<\/style\s*>|$))/giu, "")
+    // srcdoc 的值是一整段 HTML 字符串，解析器不把它当标记处理，上面所有规则都碰不到它。
+    // <foreignObject> 是 SVG 里唯一的 HTML 集成点，其中的 iframe[srcdoc] 会真的执行脚本
+    // （实测绕过：srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;" 原样通过）。
+    // srcdoc 对图标 SVG 无任何合法用途，故整个属性连值一起删。
+    .replace(/\s+srcdoc\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, "")
     .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, "")
     .replace(/(\s+(?:href|xlink:href)\s*=\s*)("[^"]*"|'[^']*'|[^\s>]+)/giu, (_match: string, prefix: string, url: string) => {
       const rawUrl = url.replace(/^["']|["']$/g, "");
