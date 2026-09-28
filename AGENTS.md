@@ -102,10 +102,23 @@ input first. Two escapes, in order of preference:
 2. **Fall back to a static assertion** that reads the source file and matches the
    line. Slower to write, but it makes "the guard is still there" executable.
 
+### Check that you assert on the object the mutation changes
+
+A near-miss that survived one round of mutation testing: a guard asserted
+`expect(previousStore.edgeMap.has("GHOST")).toBe(false)` while the mutation
+inserted `GHOST` into the **newly returned** store. The old store is immutable
+and untouched, so the assertion passed forever — while the real behaviour was
+broken.
+
+Ask this of every assertion: **"if this line of production code changed behaviour,
+would the object I am inspecting actually change?"** If not, the assertion cannot
+fail and is worthless.
+
 Real examples in this repo, all caught by mutation testing rather than by reading:
 `shared/xmlEscape.mjs` (chained `replace` vs single-lookup), `normalizeName`'s
-`.trim()` (invisible because `includes` tolerates padding), and
-`meaningfulDeviceParameterChineseName`'s `cn !== en` clause.
+`.trim()` (invisible because `includes` tolerates padding),
+`meaningfulDeviceParameterChineseName`'s `cn !== en` clause, and
+`graphStorePatchEdges`'s skip-unknown-id branch.
 
 ## Keeping the Index Fresh
 
