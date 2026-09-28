@@ -165,6 +165,32 @@ describe("与既有 href 防线的一致性（两组规则同构）", () => {
     expect(cleaned).toContain("url(javascript:");
   });
 
+  test("CSS `@import` / `expression()` 在 style 属性里仍保留 —— 已核实的非 XSS 边界", () => {
+    // 探针实测二者都残留。判定为**不可利用**，故不改（改动会波及真实图标库的样式）：
+    // ① `@import` 只在 `<style>` **块**内有效，而 `<style>` 元素已被整段清除；
+    //    style **属性**里的 @import 不生效。
+    // ② `expression()` 是 IE 专有 CSS 语法，IE 已退役，现代浏览器不解析。
+    const importStyle = stripUnsafeInlineSvgMarkup(
+      `<svg xmlns="http://www.w3.org/2000/svg"><rect width="5" height="5" style="@import url('http://evil.test/x.css')"/></svg>`
+    );
+    expect(importStyle).toContain("evil.test");
+    const expressionStyle = stripUnsafeInlineSvgMarkup(
+      `<svg xmlns="http://www.w3.org/2000/svg"><rect width="5" height="5" style="width:expression(alert(1))"/></svg>`
+    );
+    expect(expressionStyle).toContain("expression(");
+  });
+
+  test("`xml:base` 未被处理 —— 已核实的非 XSS 边界（如实记录）", () => {
+    // 探针实测 `xml:base="javascript:"` 会残留。判定为**不可利用**：
+    // `xml:base` 是 SVG 1.1 的遗留特性，Chrome / Firefox / Safari 均**已移除支持**，
+    // 故不会用它把相对 href 重写成 javascript:。
+    // 此处钉住当前行为，避免后人重复调研；同时它也说明「未处理」≠「有漏洞」。
+    const cleaned = stripUnsafeInlineSvgMarkup(
+      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xml="http://www.w3.org/XML/1998/namespace"><image xml:base="javascript:" href="x"/></svg>`
+    );
+    expect(cleaned).toContain("xml:base");
+  });
+
   test("script / style / on* 等既有防线不受影响", () => {
     const cleaned = stripUnsafeInlineSvgMarkup(
       `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><style>*{fill:red}</style><rect width="5" height="5" onclick="alert(2)"/></svg>`
