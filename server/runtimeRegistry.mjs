@@ -104,20 +104,49 @@ export function createRuntimeRegistry() {
       pendingFetches: new Map(), // requestId -> pending fetch
       pendingCommands: new Map() // requestId -> pending command
     };
+    // 同 clientId 重复注册（多标签页共用 localStorage 里的 clientId）时，
+    // 旧条目的挂起请求必须**立即**拒绝：否则它们被静默丢弃，只能等
+    // FETCH_TIMEOUT_MS 超时才结算，白等一个超时周期。
+    const previous = clients.get(clientId);
+    if (previous) {
+      for (const pending of previous.pendingFetches.values()) {
+        pending.reject(new NoOnlineClientError());
+      }
+      for (const pending of previous.pendingCommands.values()) {
+        pending.reject(new NoOnlineClientError());
+      }
+    }
     clients.set(clientId, entry);
     return entry;
   }
 
-  function unregister(clientId) {
-    const entry = clients.get(clientId);
-    if (!entry) {
+  /**
+   * 注销。**传 entry 时按身份注销**（只删自己那条），避免误杀同 id 的新连接。
+   *
+   * 背景（实测缺陷）：clientId 持久化在 localStorage（见 runtimeWsClient 的
+   * getOrCreateClientId），所以同一浏览器开两个标签页会拿到**同一个 clientId**。
+   * 两个连接都注册后，第二次 register 会顶掉第一条；此后任一标签页关闭时
+   * ws.on("close") 调 unregister(clientId) 只按 id 查 —— 取到的是**另一条**，
+   * 于是把它也注销了。实测：关掉一个标签页后，另一个仍在正常渲染，
+   * 但 /v1/runtime/model 立刻返回 503 no-online-client。
+   *
+   * 身份比对（clients.get(clientId) === entry）让旧连接的 close 变成空操作，
+   * 只清理它自己那条。仍支持只传 id 的旧调用（无身份信息时按 id 删）。
+   */
+  function unregister(clientId, entry) {
+    const current = clients.get(clientId);
+    if (!current) {
+      return;
+    }
+    if (entry && current !== entry) {
+      // 已被同 id 的新连接顶替：这条 close 属于旧连接，不该动新连接
       return;
     }
     // 拒绝所有等待中的 fetch 与 command
-    for (const pending of entry.pendingFetches.values()) {
+    for (const pending of current.pendingFetches.values()) {
       pending.reject(new NoOnlineClientError());
     }
-    for (const pending of entry.pendingCommands.values()) {
+    for (const pending of current.pendingCommands.values()) {
       pending.reject(new NoOnlineClientError());
     }
     clients.delete(clientId);
