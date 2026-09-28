@@ -4,6 +4,7 @@ import { Fragment, isValidElement } from "react";
 import { imageFitPreserveAspectRatio, normalizeImageFitMode } from "./imageFit.ts";
 import { API_PREFIX } from "./config.ts";
 import { escapeXmlFull } from "../shared/xmlEscape.mjs";
+import { escapeRegExp } from "../shared/regexEscape.mjs";
 
 /* 常量 */
 
@@ -258,9 +259,9 @@ export function stripUnsafeInlineSvgMarkup(value: string) {
     });
 }
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-}
+// escapeRegExp 已移入 shared/regexEscape.mjs（全仓库单源，此前本文件、
+// src/model.ts、server/config.mjs 各有一份相同实现）。本处原实现带 `u` 标志，
+// 对纯 ASCII 元字符与不带 `u` 的版本行为相同。
 
 function inlineSvgScopedIdPrefix(
   href: string,

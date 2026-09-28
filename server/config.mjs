@@ -49,8 +49,12 @@ export const stripFrontendBase = (pathname) => {
     : pathname;
 };
 
-// 转义正则元字符，用于把 apiPrefix 拼进路由正则
-export const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// 转义正则元字符，用于把 apiPrefix 拼进路由正则。
+// 实现已单源化到 shared/regexEscape.mjs（此前本文件、src/model.ts、src/svgUtils.ts
+// 各有一份相同实现）。此处同时 re-export 与本地 import：config.mjs 自身在用，
+// server/server.mjs 也从本模块 import 它 —— 对外 API 不变。
+export { escapeRegExp } from "../shared/regexEscape.mjs";
+import { escapeRegExp } from "../shared/regexEscape.mjs";
 
 // 拼接前缀 + 子路径，如 apiPath("/images") -> "/webgrp/images"
 export const apiPath = (subPath) => `${apiPrefix}${subPath}`;
