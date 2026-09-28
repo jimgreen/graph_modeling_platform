@@ -1,5 +1,7 @@
 // 空间 id 生成与校验：允许中文（目录可读性），排除路径分隔符与 Windows 保留名。
 import { expect, test } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { spaceIdFromName, isValidSpaceId, isReservedSpaceId } from "./spaceId.mjs";
 
 test("中文名直接用作 id", () => {
@@ -156,10 +158,25 @@ test("生成的 id 长度不超 40 码点（中文按码点计，不按 UTF-16 �
 });
 
 test("重复创建同名空间：每次都拿到不同 id（去重循环不退化）", () => {
-  // 去重逻辑是 `for (let n = 2; ; n += 1)`，若上限处理写坏会在这里撞车。
   const taken = [];
   for (let i = 0; i < 60; i += 1) taken.push(spaceIdFromName("同名空间", taken));
   expect(new Set(taken).size, "60 次创建出现 id 碰撞").toBe(60);
+}, 10_000);
+
+test("去重后缀由循环变量派生（静态断言：死循环无法用行为测试兜住）", () => {
+  // 去重是 `for (let n = 2; ; n += 1)`。若后缀被写成常量（如 `"-2"`），候选永不变化，
+  // 这个 for(;;) 会**同步死循环**——阻塞事件循环，连 vitest 自己的超时定时器都触发不了，
+  // 实测整轮测试直接挂到外部超时（行为测试 + testTimeout 都救不回来）。
+  // 所以这条不执行、只静态检查：后缀必须插值自 n。
+  const src = readFileSync(fileURLToPath(new URL("./spaceId.mjs", import.meta.url)), "utf8");
+  expect(
+    /const suffix = `-\$\{n\}`;/.test(src),
+    "去重后缀必须由循环变量 n 派生，否则 for(;;) 会同步死循环"
+  ).toBe(true);
+  expect(
+    /const suffix = "-\d+";/.test(src),
+    "去重后缀不能是常量：那会让候选永不变化、for(;;) 死循环"
+  ).toBe(false);
 });
 
 test("去重对大小写不敏感（NTFS 语义），且截断后仍不超长", () => {
