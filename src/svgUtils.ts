@@ -195,7 +195,12 @@ export function stripUnsafeInlineSvgMarkup(value: string) {
     output = decoded;
   }
   return output
-    .replace(/<script\b[^>]*(?:\/>|>[\s\S]*?<\/script\s*>|$)/giu, "")
+    // 未闭合的 <script>xxx 必须整段去掉。`[\s\S]*?` 要放在前、让 `</script>` 与 `$`
+    // 成为它的**终止条件之一**：原写法的 `[\s\S]*?<\/script\s*>|$` 里，`$` 分支只在
+    // `>` 之后**一个字符都没有**时才成立，于是 `<script>alert(1)` 这类「未闭合但有内容」
+    // 整条匹配失败、原样漏出 —— 而浏览器会把未终止的 script 标签照常解析成 script 元素
+    // 并执行。这是实测出来的绕过（28 个 XSS 向量里唯一一个漏的）。
+    .replace(/<script\b[^>]*(?:\/>|>[\s\S]*?(?:<\/script\s*>|$))/giu, "")
     .replace(/<\/script\s*>/giu, "")
     .replace(/<style\b[\s\S]*?<\/style>/giu, "")
     .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, "")
