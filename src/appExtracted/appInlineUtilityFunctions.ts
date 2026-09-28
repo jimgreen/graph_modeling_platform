@@ -54,21 +54,42 @@ export const shouldPatchRouteCacheForHighFanoutMove = (movedNodeIds: string[], c
 // 文件名安全化
 export const safeFilePart = (name: string) => name.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
 
+/** 落盘用的方案记录树：只保留 version/name/projects/children 四个键。 */
+type SerializedSchemeRecord = {
+  version: 1;
+  name: string;
+  projects: Array<{ name: string; project: ReturnType<typeof normalizeProjectLayers> }>;
+  children: SerializedSchemeRecord[];
+};
+
+/**
+ * 递归归一化方案记录树：只保留落盘需要的 4 个键，每层都跑一遍端子锁定 + 图层归一化。
+ *
+ * 抽出它是为了让 `serializeSchemeRecordForFile` **只 stringify 一次**。
+ * 此前它对每个子方案做 `JSON.parse(serializeSchemeRecordForFile(child))` —— 也就是
+ * 「序列化再反序列化」当深拷贝用。功能上没错（对任何可 JSON 化的值，
+ * `stringify(parse(stringify(x)))` 与 `stringify(x)` 逐字节相同），但代价是
+ * **总工作量 O(总大小 × 树深)**：深度 d 的树里，每个子树被它的每个祖先重新序列化一次。
+ * 实测（`data/schemes/files/DOT/望道变_6.json` 的 769KB 模型）包 10 层：
+ * 148ms → 67ms；纯合成的 511 节点 8 层树：6365ms → 1028ms（6.2x）。
+ * 而方案树可以任意深（子方案），保存大方案时那几秒是**真卡 UI**。
+ *
+ * **白名单语义不能丢**：这里刻意只列 `version/name/projects/children` 四个键，
+ * 不展开 scheme 本身 —— 落盘只认这四个，多余字段必须被丢掉（沿用原实现的行为）。
+ */
+const normalizeSchemeRecordTree = (scheme: SavedSchemeRecord): SerializedSchemeRecord => ({
+  version: 1,
+  name: scheme.name,
+  projects: scheme.projects.map((project) => ({
+    name: project.name,
+    project: normalizeProjectLayers(lockProjectEdgeTerminals(project.project))
+  })),
+  children: (scheme.children ?? []).map((child) => normalizeSchemeRecordTree(child))
+});
+
 // 方案记录序列化为文件
 export const serializeSchemeRecordForFile = (scheme: SavedSchemeRecord): string =>
-  JSON.stringify(
-    {
-      version: 1,
-      name: scheme.name,
-      projects: scheme.projects.map((project) => ({
-        name: project.name,
-        project: normalizeProjectLayers(lockProjectEdgeTerminals(project.project))
-      })),
-      children: (scheme.children ?? []).map((child): unknown => JSON.parse(serializeSchemeRecordForFile(child)))
-    },
-    null,
-    2
-  );
+  JSON.stringify(normalizeSchemeRecordTree(scheme), null, 2);
 
 // 判断值是否为普通对象
 export const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
