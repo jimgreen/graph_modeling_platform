@@ -69,6 +69,44 @@ Before completing any code modification task, verify:
 3. `gitnexus_detect_changes()` confirms changes match expected scope
 4. All d=1 (WILL BREAK) dependents were updated
 
+## Test Guards: Verify They Actually Bite
+
+A new test file is **not** a guard until you have watched it fail. Before committing
+any new `*.test.*`, run at least one **mutation** against the production code and
+confirm the new tests turn red. Then restore with `git checkout -- <file>`.
+
+```bash
+node tmp/mut-<name>.mjs 1     # inject a deliberately wrong version
+npx vitest run src/<file>.test.ts   # MUST show Failed Tests > 0
+git checkout -- <the mutated production file>   # never the test file
+```
+
+Two rules learned the hard way here:
+
+- **Restore only the production file.** `git checkout -- <test file>` throws away
+  work you have not committed yet.
+- **A run reporting `Tests: no tests` is not a passing mutation.** It means the
+  injected edit broke the file syntactically, so the suite failed to even load.
+  Rewrite the mutation so the result still parses (replace whole lines, not
+  fragments; do not paste `String.replace` group references like `${1}` into source).
+
+### When a behaviour assertion cannot see the contract
+
+If a contract is "**this code must not do X**", an output assertion often cannot
+detect X being removed — usually because some *other* guard already rejects the
+input first. Two escapes, in order of preference:
+
+1. **Construct an input where the guard actually fires.** A redundant-looking
+   condition (e.g. `cn !== en` behind a CJK check) only matters for rare inputs;
+   find one (`en` that itself contains CJK) and assert on it.
+2. **Fall back to a static assertion** that reads the source file and matches the
+   line. Slower to write, but it makes "the guard is still there" executable.
+
+Real examples in this repo, all caught by mutation testing rather than by reading:
+`shared/xmlEscape.mjs` (chained `replace` vs single-lookup), `normalizeName`'s
+`.trim()` (invisible because `includes` tolerates padding), and
+`meaningfulDeviceParameterChineseName`'s `cn !== en` clause.
+
 ## Keeping the Index Fresh
 
 After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
