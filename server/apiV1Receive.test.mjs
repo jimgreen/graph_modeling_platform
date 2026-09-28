@@ -112,11 +112,13 @@ describe(`${receivePath} 接收`, () => {
     expect(after.data.latest).toBeNull();
   });
 
-  test("内存只留最近 5 次（文档承诺的 MAX_RECORDS，此前无覆盖）", async () => {
+  test("内存只留最近 5 次：淘汰的是最旧的（文档承诺的 MAX_RECORDS，此前无覆盖）", async () => {
     // apiV1Receive.mjs 的模块注释与 server/CLAUDE.md 都写明「内存留最近 5 次」。
-    // 越界的淘汰靠 `records.splice(0, records.length - MAX_RECORDS)` 手工维护 ——
-    // 写错成 splice(1) 或漏掉，越界后进程内存会随联调次数无限增长（无鉴权端点，
-    // 任何跨源请求都能灌），而现象只是 count 悄悄变大，别的断言都发现不了。
+    // 越界淘汰靠 `records.splice(0, records.length - MAX_RECORDS)` 手工维护：
+    //   - 漏掉 → 内存随联调次数无限增长（无鉴权端点，任何跨源请求都能灌）
+    //   - 起点写成 1 → 长度仍可能是 5（实测如此），但留下的是**最旧**那条、
+    //     砍掉最新 —— `count` 断言区分不出来，必须按内容判。
+    // 用可区分的 payload（raw 字段会回显前 200 字符）来断言留下的正是最新 5 次。
     await fetch(`${baseUrl}${receivePath}`, { method: "DELETE" });
     for (let i = 0; i < 8; i += 1) {
       await fetch(`${baseUrl}${receivePath}`, { method: "POST", body: `payload-${i}` });
@@ -125,9 +127,12 @@ describe(`${receivePath} 接收`, () => {
     expect(view.data.count, "超过上限后应淘汰到只剩 5 条").toBe(5);
     expect(view.data.receivedAtList).toHaveLength(5);
 
-    // 最新一条确实是最新的（淘汰的是最旧的，不是乱丢）
-    expect(view.data.latest.totalBytes).toBeGreaterThan(0);
-    expect(view.data.latest.path).toContain(receivePath);
+    // latest 必须是最后一次投递（payload-7），不能是残留的最旧那条
+    expect(view.data.latest.fields[0]?.text).toBe("payload-7");
+
+    // 接收时间戳也应保留 5 条且互不相同（每次 new Date()，毫秒内可能相同，
+    // 故只断言条数，内容判别交给上面的 latest）
+    expect(new Set(view.data.receivedAtList).size).toBeLessThanOrEqual(5);
 
     // 清空后计数归零，且不残留
     await fetch(`${baseUrl}${receivePath}`, { method: "DELETE" });
