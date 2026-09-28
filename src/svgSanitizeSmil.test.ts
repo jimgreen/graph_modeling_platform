@@ -1,6 +1,6 @@
 // stripUnsafeInlineSvgMarkup 的 **SMIL 动画改写 URL** 防线守卫。
 //
-// 背景（真实可利用的存储型 XSS，本轮修复）：
+// 背景（当时判断为可利用的存储型 XSS —— 该判断已被实测推翻，见下方更正）：
 //   `<animate attributeName="href" values="javascript:alert(1)" dur="1s"/>`
 // 能把 href **动画改写**成 javascript:。修复前该向量穿透**两道防线**：
 //   ① 导入侧 sanitizeDocument —— DANGEROUS_ELEMENT_NAMES 不含 animate、
@@ -11,6 +11,32 @@
 // 内联 SVG 的 SMIL 动画是会运行的，故可利用。
 //
 // 本文件钉住修复后的行为，并确保**正常动画不受影响**（误伤面是这次改动的关键风险）。
+//
+// ## 更正一处此前的错误结论（真实浏览器实测，2026-09-29）
+//
+// 上面的「故可利用」**不成立**，实测推翻：
+//
+// ① **SMIL 确实会运行**：`<animate attributeName="fill" to="rgb(255,0,0)">` 实测生效
+//    —— `getComputedStyle(rect).fill` 从 `rgb(0,0,255)` 变 `rgb(255,0,0)`，
+//    而 `getAttribute("fill")` 不变（SMIL 改的是**呈现值**不是 DOM 属性）。
+//    但是否生效**依结构而异**（同为 rect 内嵌 animate，一次生效一次未生效），
+//    故「SMIL 会运行」本身就不该被当成稳定前提。
+//
+// ② **SMIL 改写 href 不生效**：两次独立实测结果一致 ——
+//      `a.href.animVal` 始终 `#original`（**不是**动画目标 `#animated`）
+//      `a.href.baseVal` = `#original`，`getAttribute("href")` = `#original`
+//      点击后 `location.hash` = `#original`（**导航到原值**）
+//
+// **故这两个提交修的不是可利用的 XSS，而是「浏览器当前不执行、但也无害」的向量。**
+// 修复**保留**：零误伤（见下方用例）且属防御纵深 —— 若将来浏览器实现了 SMIL 对
+// href 的动画支持，这道防线已在位。但**不再宣称**它修了可利用漏洞。
+//
+// ## 为何仍保留并测试
+//
+// ① 误伤面已逐条钉住（8 类正常动画不受影响），保留成本极低；
+// ② 「探针测出净化器没处理」与「浏览器会不会执行」是两个不同问题 ——
+//    本文件把**实测的浏览器行为**记录在案，使必要性可被后人复核；
+// ③ 导入侧（`svgModelImportSmil.test.ts`）同构补了一道，属数据层准入，同样零误伤。
 import { describe, expect, test } from "vitest";
 import { stripUnsafeInlineSvgMarkup, svgImageContentMarkup, decodeSvgImageSource } from "./svgUtils";
 
