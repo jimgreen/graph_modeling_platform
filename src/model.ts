@@ -1011,6 +1011,48 @@ export function baseDeviceKind(kind: string): string {
   return kind.slice(0, -GENERATED_VERTICAL_KIND_SUFFIX.length);
 }
 
+/**
+ * 三绕组变压器的 kind 全集（**全仓库唯一出处**）。
+ *
+ * 此前这个判定被**手抄了 8 遍**：`cim-builder.ts`（2 处）、`export/svg.ts`、
+ * `model-routing.ts`（2 处）、`model.ts` 自身、`model-eexport.ts`（2 处），
+ * 外加 `dotImport.ts` / `model-routing.ts` 里的两个字面量数组。
+ *
+ * 单源化的理由不是"洁癖"而是**后果**：三绕组与两绕组在**四条链路上语义完全不同** ——
+ * CIM 类名（`ACTransfomer3`）、E 文件段、SVG 渲染、端子电压继承/路由。
+ * 一旦将来新增第三种三绕组 kind 而漏改其中一处，那条链路就会把它当两绕组处理，
+ * 产出**结构上看似正常、实则错误**的 CIM / E 文件，且不报任何错。
+ *
+ * ## 刻意用**精确匹配**而非 `baseDeviceKind`
+ *
+ * 直觉上该像 `isRoutableLineDeviceKind` 那样先剥 `-vertical` 后缀，但**不能**：
+ * `shouldCreateVerticalDeviceTemplate`（`model.ts` 内）只为「母线」或
+ * `terminalCount === 2` 的模板生成竖向变体，而三绕组变压器是 3 / 4 端子，
+ * 所以 `ac-three-winding-transformer-vertical` **永远不会被创建**。
+ * 剥后缀只会给不存在的 kind 开后门，反而掩盖问题。
+ */
+export const THREE_WINDING_TRANSFORMER_KINDS: ReadonlySet<string> = new Set([
+  "ac-three-winding-transformer",
+  "ac-three-winding-transformer-neutral"
+]);
+
+/** 带中性点的三绕组变压器（E 文件据此多导出一段中性点，CIM 亦有别）。 */
+export const THREE_WINDING_NEUTRAL_TRANSFORMER_KIND = "ac-three-winding-transformer-neutral";
+
+/**
+ * kind 级判定：是否三绕组变压器。
+ *
+ * 形参放宽到 `string | undefined`：`ModelNode["kind"]` 在部分位置是可选的，
+ * 而原来的 `node.kind === "ac-three-winding-transformer"` 对 `undefined` 也是安全的
+ * （恒为 false）。`Set.has(undefined)` 同样恒为 false，语义不变。
+ */
+export const isThreeWindingTransformerKind = (kind: string | undefined): boolean =>
+  THREE_WINDING_TRANSFORMER_KINDS.has(kind as string);
+
+/** kind 级判定：是否**带中性点**的三绕组变压器。 */
+export const isThreeWindingNeutralTransformerKind = (kind: string | undefined): boolean =>
+  kind === THREE_WINDING_NEUTRAL_TRANSFORMER_KIND;
+
 export const ELECTRIC_GENERATION_TERMINAL_TYPES = ["ac", "dc"] as const;
 const ELECTRIC_GENERATION_FAMILY_KIND_SUFFIXES = [
   "wind-source",
@@ -2059,8 +2101,7 @@ export function topologyNodeNumberForEField(
   }
   const numberedNodeMatch = /^node([1-4])$/.exec(key);
   const transformerNodeMatch = /^t([123])_node$/.exec(key);
-  const isThreeWinding = node.kind === "ac-three-winding-transformer" ||
-    node.kind === "ac-three-winding-transformer-neutral";
+  const isThreeWinding = isThreeWindingTransformerKind(node.kind);
   const terminalIndex = key === "node" || key === "i_node" || key === "ind" || key === "nd"
     ? 0
     : key === "j_node" || key === "znd"
@@ -6072,7 +6113,7 @@ function builtInMeasurementDefinitionsForTemplate(template: DeviceTemplate): Dev
   if (kind === "ac-transformer" || kind === "ac-two-winding-transformer") {
     return copy(TWO_WINDING_TRANSFORMER_MEASUREMENT_DEFINITIONS);
   }
-  if (kind === "ac-three-winding-transformer" || kind === "ac-three-winding-transformer-neutral") {
+  if (isThreeWindingTransformerKind(kind)) {
     return copy(THREE_WINDING_TRANSFORMER_MEASUREMENT_DEFINITIONS);
   }
   if (kind.includes("transformer")) {
@@ -9814,8 +9855,8 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
       shift: "0"
     }));
   }
-  if (templateKind === "ac-three-winding-transformer" || templateKind === "ac-three-winding-transformer-neutral") {
-    const visibleNeutral = templateKind === "ac-three-winding-transformer-neutral";
+  if (isThreeWindingTransformerKind(templateKind)) {
+    const visibleNeutral = isThreeWindingNeutralTransformerKind(templateKind);
     return withTemplateDefinitions(withRunStat({
       neutral_node: "",
       neutral_vbase: visibleNeutral ? DEFAULT_INITIAL_TERMINAL_VBASE : "1.0",

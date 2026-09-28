@@ -14,6 +14,8 @@ import {
   modelAssociationModelTypeForKind,
   isRoutableLineDeviceKind,
   isStaticGraphicNode,
+  isThreeWindingNeutralTransformerKind,
+  isThreeWindingTransformerKind,
   staticRenderKindForNode,
   pointsToOrthogonalPath,
   getTerminalDisplayColor
@@ -1327,11 +1329,11 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     );
   }
 
-  if (node.kind === "ac-three-winding-transformer" || node.kind === "ac-three-winding-transformer-neutral") {
+  if (isThreeWindingTransformerKind(node.kind)) {
     if (mode === "text") {
       return null;
     }
-    const hasNeutralTerminal = node.kind === "ac-three-winding-transformer-neutral";
+    const hasNeutralTerminal = isThreeWindingNeutralTransformerKind(node.kind);
     const windingRadius = miniature ? 9 : hasNeutralTerminal ? 14 : 15;
     const topY = miniature ? -5 : -8;
     const bottomY = miniature ? 10 : hasNeutralTerminal ? 16 : 14;

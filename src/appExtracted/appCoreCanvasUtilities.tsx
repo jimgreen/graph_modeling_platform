@@ -1491,7 +1491,7 @@ export const ELECTRIC_COLOR_TYPE_LABELS: Record<"ac" | "dc", string> = {
 export const isElectricPaletteType = (type?: TerminalType): type is "ac" | "dc" => type === "ac" || type === "dc";
 
 export const terminalVbaseFallbackValue = (node: ModelNode, terminalIndex: number) => {
-  if (node.kind === "ac-three-winding-transformer" || node.kind === "ac-three-winding-transformer-neutral") {
+  if (isThreeWindingTransformerKind(node.kind)) {
     return [
       node.params.i_vbase ?? node.params.high_vbase,
       node.params.k_vbase ?? node.params.medium_vbase,
