@@ -9,9 +9,10 @@
 // 规范化成 `x.json` —— 服务端根本见不到恶意名字，那样的测试恒绿、完全无效。
 // 所以这里手写最小 ZIP（STORE 不压缩 + CRC32），entryName 原样写入，才能真正触达防线。
 import { describe, expect, test, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import AdmZip from "adm-zip";
 import { installDomShim } from "./domShim.mjs";
 import { apiPath } from "./config.mjs";
@@ -191,5 +192,32 @@ describe("ZIP 解包 zip-slip 防护", () => {
     expect(status, `合法 ZIP 被拒：${JSON.stringify(json)}`).toBe(200);
     expect(json.ok).toBe(true);
     expect(listFiles(dataDir).some((f) => f.includes("正常方案"))).toBe(true);
+  });
+
+  /**
+   * 第二层（isPathInside 复核）用**行为样本区分不出来** —— 如实说明而不是假装覆盖了。
+   *
+   * 实测：删掉 extractZipEntries 里的 `if (!isPathInside(targetDir, targetPath)) throw`，
+   * 上面 10 条全绿。原因是第一层 zipEntryParts 已经把绝对路径、盘符、`.`/`..` 段全拒了，
+   * 剩下的条目经 safeFilePart 净化后不可能再逃出 targetDir —— 两层不是独立的判据，
+   * 第二层是**纵深防御**。
+   *
+   * 也试过构造「能过第一层但过不了第二层」的样本（`...` 段、超长段触发截断、
+   * `..%2f` 之类），逐一推演后都不成立：sanitizeSegment 对 `^\.+$` 用 fallback 兜底，
+   * 截断只会变短不会新增分隔符，全链路也不做 URL 解码。
+   *
+   * 所以这里用静态断言守住这一层：删掉它会被发现，同时留下「它当前不可被行为验证」
+   * 这个事实，免得日后有人反复尝试造样本、或误以为已有行为覆盖。
+   */
+  test("纵深防御：第二层 isPathInside 复核仍在（行为样本不可区分，故静态钉住）", () => {
+    const src = readFileSync(fileURLToPath(new URL("./server.mjs", import.meta.url)), "utf8");
+    expect(
+      /if \(!isPathInside\(targetDir, targetPath\)\)/.test(src),
+      "extractZipEntries 的 isPathInside 复核被删了 —— 它是 zipEntryParts 之后的第二道防线"
+    ).toBe(true);
+    expect(
+      /zip 文件包含越界路径。/.test(src),
+      "越界路径的报错文案消失了（说明该分支被改写或移除）"
+    ).toBe(true);
   });
 });
