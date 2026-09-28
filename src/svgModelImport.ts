@@ -63,6 +63,8 @@ const DEFAULT_CANVAS_WIDTH = 1200;
 const DEFAULT_CANVAS_HEIGHT = 800;
 const DANGEROUS_ELEMENT_NAMES = new Set(["script", "foreignobject", "iframe", "object", "embed"]);
 const URL_ATTRIBUTE_NAMES = new Set(["href", "xlink:href", "src", "action", "formaction", "poster"]);
+/** SMIL 动画的值属性：能把目标属性（可能是 href）改写成任意值，故按 URL 同等审查 */
+const SMIL_VALUE_ATTRIBUTE_NAMES = new Set(["values", "to", "from", "by"]);
 const EXECUTABLE_STYLE_PATTERN = /javascript:|vbscript:|expression\s*\(|@import/iu;
 
 function browserDomAdapter(): SvgDomAdapter {
@@ -241,6 +243,25 @@ function sanitizeDocument(document: Document, dom: SvgDomAdapter, warnings: stri
         continue;
       }
       if (!URL_ATTRIBUTE_NAMES.has(attributeName)) {
+        // SMIL 动画的值属性：<animate attributeName="href" values="javascript:alert(1)"/>
+        // 能把 href **动画改写**成 javascript:。URL_ATTRIBUTE_NAMES 只含 href/xlink:href/
+        // src/action/formaction/poster，不含这些值属性名，故原逻辑漏过该向量。
+        //
+        // 与渲染侧 stripUnsafeInlineSvgMarkup 的同名规则**保持同构**：无条件对
+        // values/to/from/by 套用 safeUrl。误伤面极小 —— 正常动画的值
+        // （`0;1;2`、`#fff`、色值、`url(#id)`）都不带 scheme，会被 safeUrl 放行；
+        // 任何写着 javascript:/vbscript:/data:text/html 的 SMIL 值本就无意义。
+        //
+        // 渲染侧已独立拦住该向量，此处是**防御纵深**：避免恶意 SVG 连同
+        // `values="javascript:..."` 一起落进项目文件，被导出链路或其它消费方读到。
+        if (!SMIL_VALUE_ATTRIBUTE_NAMES.has(attributeName)) {
+          continue;
+        }
+        if (!safeUrl(attributeValue)) {
+          element.removeAttribute(attribute.name);
+          removedCount += 1;
+          continue;
+        }
         continue;
       }
       if (!safeUrl(attributeValue)) {
