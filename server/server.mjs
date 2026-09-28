@@ -1752,9 +1752,35 @@ function readRawBody(request, maxBodyBytes = maxImageBodyBytes, oversizeMessage 
   });
 }
 
+/**
+ * 请求体不是合法 JSON 时抛的错误。
+ *
+ * **必须显式带 statusCode 400**：JSON.parse 的 SyntaxError 没有 statusCode，
+ * 派发层外层 catch 会按「其余仍是 500」处理，于是客户端一个拼写错误被报成
+ * 服务端故障 —— 实测 PUT /color-config、/measurement-config、/device-library、
+ * POST /image-folders 四个内部域端点全部返回 500，且错误体直接透出 Node 的
+ * 原始 SyntaxError 文本（"Expected property name or '}' in JSON at position 1 …"）。
+ * 后果有两个：监控上客户端错误混进 5xx 告警；调用方无法据此判断是自己的问题。
+ * v1 域一直是正确的 400 bad-request（"请求体须为合法 JSON。"），内部域此前是漏的。
+ */
+class MalformedJsonError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "MalformedJsonError";
+    this.statusCode = 400;
+  }
+}
+
 async function readJsonBody(request, maxBodyBytes = maxImageBodyBytes, oversizeMessage = "请求体过大。") {
   const body = await readBody(request, maxBodyBytes, oversizeMessage);
-  return JSON.parse(body || "{}");
+  const text = body || "{}";
+  try {
+    return JSON.parse(text);
+  } catch {
+    // 不透出 JSON.parse 的原始英文 SyntaxError：对调用方没有可操作性，
+    // 且会泄露解析器内部措辞。用固定中文文案，与 v1 域的措辞保持一致。
+    throw new MalformedJsonError("请求体须为合法 JSON。");
+  }
 }
 
 async function handleSelectNativeExportFile(request, response, nativeExportSaveService) {
