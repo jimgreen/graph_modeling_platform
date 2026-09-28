@@ -67,3 +67,110 @@ test("含保留名但不相等的名字不算保留名（钉死 $ 锚点）", ()
     expect(isReservedSpaceId(name)).toBe(false);
   }
 });
+
+// ===== 属性化不变量 =====
+//
+// 上面那些是逐个例子。真正的风险在**跨函数不变量**上：
+// `spaceIdFromName` 产出的 id 会被当成目录名拼进 data/workspaces/<id>/，
+// 并由 `isValidSpaceId`（准入）与 `isReservedSpaceId`（Windows 保留名）把关。
+// 任何一条不成立，症状都是「空间建出来了但访问不到」，或更糟 —— 目录名逃出
+// workspaces/ 造成跨空间读写。单个例子很难覆盖到字符类组合，这里用确定性伪随机
+// （固定种子，无 Math.random）大批量扫。
+
+/** 确定性伪随机（LCG），保证用例可复现。 */
+function makeRng(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+}
+
+/** 覆盖各种字符类：ASCII、中文、全角、emoji、零宽、路径分隔符、百分号。 */
+const FUZZ_ALPHABET = [..."abcXYZ019-_ ./\\中文字符éＡ😀%2e"];
+
+function fuzzNames(count = 1500) {
+  const rng = makeRng(20260928);
+  const names = [
+    // 手工边界（比随机更容易命中极端组合）
+    "张三", "a/b", "a\\b", "..", "../..", ".", "  ", "___", "con", "CON", "com1", "LPT9",
+    "nul.txt", "con.txt", "a".repeat(100), "中文".repeat(50), "-lead", "trail-", "--mid--",
+    "123", "_under", "a-1-2", "  空格  ", "　全角空格　", "é", "ＡＢＣ", "ｱｲｳ", "①②",
+    "emoji😀name", "𝕏math", "a.b.c", "...", "-", "----", "%2e%2e", "a%2Fb",
+    "x".repeat(39), "x".repeat(40), "x".repeat(41)
+  ];
+  for (let i = 0; i < count; i += 1) {
+    const len = 1 + Math.floor(rng() * 12);
+    let text = "";
+    for (let k = 0; k < len; k += 1) {
+      text += FUZZ_ALPHABET[Math.floor(rng() * FUZZ_ALPHABET.length)];
+    }
+    names.push(text);
+  }
+  return names;
+}
+
+const FUZZ_NAMES = fuzzNames();
+const TAKEN_SETS = [[], ["空间"], ["a", "A", "a-2"]];
+
+test("生成的 id 必通过 isValidSpaceId（跨函数不变量）", () => {
+  const bad = [];
+  for (const name of FUZZ_NAMES) {
+    for (const taken of TAKEN_SETS) {
+      const id = spaceIdFromName(name, taken);
+      if (!isValidSpaceId(id)) bad.push({ name, id });
+    }
+  }
+  expect(bad.slice(0, 5), `共 ${bad.length} 个生成的 id 未通过校验`).toEqual([]);
+});
+
+test("生成的 id 绝不含路径分隔符或 ..（防逃出 workspaces/<id>/）", () => {
+  const bad = [];
+  for (const name of FUZZ_NAMES) {
+    for (const taken of TAKEN_SETS) {
+      const id = spaceIdFromName(name, taken);
+      if (id.includes("/") || id.includes("\\") || id.includes("..")) bad.push({ name, id });
+    }
+  }
+  expect(bad.slice(0, 5), `共 ${bad.length} 个 id 含路径成分`).toEqual([]);
+});
+
+test("生成的 id 不会是 Windows 保留名", () => {
+  const bad = [];
+  for (const name of FUZZ_NAMES) {
+    const id = spaceIdFromName(name, []);
+    if (isReservedSpaceId(id)) bad.push({ name, id });
+  }
+  expect(bad.slice(0, 5), `共 ${bad.length} 个 id 命中保留名`).toEqual([]);
+});
+
+test("生成的 id 长度不超 40 码点（中文按码点计，不按 UTF-16 单元）", () => {
+  const bad = [];
+  for (const name of FUZZ_NAMES) {
+    for (const taken of TAKEN_SETS) {
+      const id = spaceIdFromName(name, taken);
+      if ([...id].length > 40) bad.push({ name, id, len: [...id].length });
+    }
+  }
+  expect(bad.slice(0, 5), `共 ${bad.length} 个 id 超长`).toEqual([]);
+});
+
+test("重复创建同名空间：每次都拿到不同 id（去重循环不退化）", () => {
+  // 去重逻辑是 `for (let n = 2; ; n += 1)`，若上限处理写坏会在这里撞车。
+  const taken = [];
+  for (let i = 0; i < 60; i += 1) taken.push(spaceIdFromName("同名空间", taken));
+  expect(new Set(taken).size, "60 次创建出现 id 碰撞").toBe(60);
+});
+
+test("去重对大小写不敏感（NTFS 语义），且截断后仍不超长", () => {
+  const taken = [];
+  // 每轮都用已被占用的大小写变体，逼出 -2/-3 后缀
+  for (const name of ["Abc", "abc", "ABC", "aBc", "abc"]) {
+    taken.push(spaceIdFromName(name, taken));
+  }
+  expect(new Set(taken.map((id) => id.toLowerCase())).size).toBe(5);
+  for (const id of taken) expect([...id].length).toBeLessThanOrEqual(40);
+  // 后缀版不得撞上原始版
+  expect(taken[0]).toBe("Abc");
+  expect(taken[1]).toBe("abc-2");
+});
