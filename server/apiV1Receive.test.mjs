@@ -111,6 +111,29 @@ describe(`${receivePath} 接收`, () => {
     expect(after.data.count).toBe(0);
     expect(after.data.latest).toBeNull();
   });
+
+  test("内存只留最近 5 次（文档承诺的 MAX_RECORDS，此前无覆盖）", async () => {
+    // apiV1Receive.mjs 的模块注释与 server/CLAUDE.md 都写明「内存留最近 5 次」。
+    // 越界的淘汰靠 `records.splice(0, records.length - MAX_RECORDS)` 手工维护 ——
+    // 写错成 splice(1) 或漏掉，越界后进程内存会随联调次数无限增长（无鉴权端点，
+    // 任何跨源请求都能灌），而现象只是 count 悄悄变大，别的断言都发现不了。
+    await fetch(`${baseUrl}${receivePath}`, { method: "DELETE" });
+    for (let i = 0; i < 8; i += 1) {
+      await fetch(`${baseUrl}${receivePath}`, { method: "POST", body: `payload-${i}` });
+    }
+    const view = await (await fetch(`${baseUrl}${receivePath}`)).json();
+    expect(view.data.count, "超过上限后应淘汰到只剩 5 条").toBe(5);
+    expect(view.data.receivedAtList).toHaveLength(5);
+
+    // 最新一条确实是最新的（淘汰的是最旧的，不是乱丢）
+    expect(view.data.latest.totalBytes).toBeGreaterThan(0);
+    expect(view.data.latest.path).toContain(receivePath);
+
+    // 清空后计数归零，且不残留
+    await fetch(`${baseUrl}${receivePath}`, { method: "DELETE" });
+    const after = await (await fetch(`${baseUrl}${receivePath}`)).json();
+    expect(after.data.count).toBe(0);
+  });
 });
 
 // 本端点数据是进程内全局的（内存留最近 5 次、不落盘、handler 不接 ctx），故派发层把
