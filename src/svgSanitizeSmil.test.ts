@@ -165,11 +165,15 @@ describe("与既有 href 防线的一致性（两组规则同构）", () => {
     expect(cleaned).toContain("url(javascript:");
   });
 
-  test("CSS `@import` / `expression()` 在 style 属性里仍保留 —— 已核实的非 XSS 边界", () => {
-    // 探针实测二者都残留。判定为**不可利用**，故不改（改动会波及真实图标库的样式）：
-    // ① `@import` 只在 `<style>` **块**内有效，而 `<style>` 元素已被整段清除；
-    //    style **属性**里的 @import 不生效。
-    // ② `expression()` 是 IE 专有 CSS 语法，IE 已退役，现代浏览器不解析。
+  test("CSS `@import` / `expression()` 在 style 属性里仍保留 —— **已实测不可利用**", () => {
+    // 探针实测二者都残留。**浏览器实测**（browser.evaluate + innerHTML）确认不可执行：
+    // ① `style="background:url(javascript:alert(1))"` → el.style.backgroundImage 返回空串
+    //    （浏览器拒绝解析该值，不会发起也不会执行）
+    // ② `style="width:expression(alert(1))"`        → el.style.width 返回空串
+    //    （expression() 是 IE 专有语法，现代浏览器不解析）
+    // ③ `@import` 只在 `<style>` **块**内有效，而 `<style>` 元素已被整段清除，
+    //    style **属性**里的不生效。
+    // 故不改（改动会波及真实图标库的样式），只把实测结论记录在案。
     const importStyle = stripUnsafeInlineSvgMarkup(
       `<svg xmlns="http://www.w3.org/2000/svg"><rect width="5" height="5" style="@import url('http://evil.test/x.css')"/></svg>`
     );
@@ -180,11 +184,10 @@ describe("与既有 href 防线的一致性（两组规则同构）", () => {
     expect(expressionStyle).toContain("expression(");
   });
 
-  test("`xml:base` 未被处理 —— 已核实的非 XSS 边界（如实记录）", () => {
-    // 探针实测 `xml:base="javascript:"` 会残留。判定为**不可利用**：
-    // `xml:base` 是 SVG 1.1 的遗留特性，Chrome / Firefox / Safari 均**已移除支持**，
-    // 故不会用它把相对 href 重写成 javascript:。
-    // 此处钉住当前行为，避免后人重复调研；同时它也说明「未处理」≠「有漏洞」。
+  test("`xml:base` 未被处理 —— **已实测不可利用**", () => {
+    // **浏览器实测**：属性被保留（hasAttribute/getAttribute 都拿到 "javascript:"），
+    // 但 **svg.baseURI 仍是页面地址**（实测 about:blank）—— `xml:base` 完全未生效，
+    // 故不会把相对 href 重写成 javascript:。这是 SVG 1.1 遗留特性、现代浏览器已移除支持。
     const cleaned = stripUnsafeInlineSvgMarkup(
       `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xml="http://www.w3.org/XML/1998/namespace"><image xml:base="javascript:" href="x"/></svg>`
     );
