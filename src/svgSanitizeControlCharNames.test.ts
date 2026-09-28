@@ -97,14 +97,40 @@ describe("已实测判定：控制字符插在属性名 / 标签名里不可利�
 
   test("NUL 插在 **href 值**里：当前归一不覆盖 C0（与 SMIL 值属性那条不一致）", () => {
     // 对比：SMIL 的 values/to/from/by 规则已把归一扩到 C0+空白+NBSP，
-    // 而 href/xlink:href 规则仍只去 [\s ]（它有 36 条既有向量守卫依赖当前语义）。
+    // 而 href/xlink:href 规则仍只去 [\s ]（它有 36 条既有向量守卫依赖当前语义）。
     // 两者不一致是**已知**的，此处钉住以便日后统一时不会漏掉。
-    // 浏览器实测：`java<NUL>script:` 的属性值变成 `java<U+FFFD>script:`（码点 65533），
-    // 拼不出有效 scheme，故不构成漏洞。
+    //
+    // **浏览器实测**：`java<NUL>script:` 的属性值变成 `java<U+FFFD>script:`
+    // （getAttribute 返回码点 …,65533,…），拼不出有效 scheme，故不构成漏洞。
+    // 对照实测另三条变体，确认净化器已覆盖或浏览器不可执行：
+    //   &#106;avascript:  → 浏览器解成 javascript:（净化器的数字实体解码会拦）
+    //   &#x6a;avascript:  → 同上
+    //   javascript&#58;   → 浏览器解成 javascript:（净化器的 SVG_ENTITY_ENCODED_COLON 会拦）
+    //   java&#x7c;script: → 浏览器解成 java|script:（管道符，非有效 scheme）
+    //   &amp;#106;…       → 只解一次，得 &#106;…（不可执行，见上一 describe）
     const NUL = "\u0000";
     const cleaned = stripUnsafeInlineSvgMarkup(
       `<svg xmlns="http://www.w3.org/2000/svg"><a href="java${NUL}script:alert(1)">x</a></svg>`
     );
     expect(cleaned).toContain(`java${NUL}script:`);
+  });
+
+  test("净化器已覆盖的 href 变体（浏览器实测其可执行形态，逐一确认被拦）", () => {
+    // 浏览器实测表明这些形态**会被解成可执行的 javascript:**，故净化器必须拦；
+    // 下面逐一钉住「被拦」这一事实。
+    for (const href of [
+      "&#106;avascript:alert(1)",       // 数字实体
+      "&#x6a;avascript:alert(1)",      // 十六进制数字实体
+      "javascript&#58;alert(1)",        // 实体编码的冒号
+      "java\tscript:alert(1)",          // tab 夹带（浏览器属性值里 tab 会被保留）
+      "JaVaScRiPt:alert(1)",            // 大小写混写
+      "  javascript:alert(1)"           // 前导空白
+    ]) {
+      const cleaned = stripUnsafeInlineSvgMarkup(
+        `<svg xmlns="http://www.w3.org/2000/svg"><a href="${href}">x</a></svg>`
+      );
+      expect(cleaned, href).not.toMatch(/(?:java|vb)script:/i);
+      expect(cleaned, href).not.toContain("alert(1)");
+    }
   });
 });
