@@ -220,6 +220,28 @@ export function stripUnsafeInlineSvgMarkup(value: string) {
         return "";
       }
       return `${prefix}${url}`;
+    })
+    // SMIL 动画能把 href **改写**成 javascript:，例如
+    //   <animate attributeName="href" values="javascript:alert(1)" dur="1s"/>
+    //   <set     attributeName="xlink:href" to="javascript:alert(1)"/>
+    // 上面那条 href/xlink:href 规则只查「属性本身就是 URL」的情况，漏掉这一类
+    // 「动画目标是指向 URL 的属性」的情形。实测该向量可穿透两道防线：导入侧
+    // sanitizeDocument（DANGEROUS_ELEMENT_NAMES 不含 animate、URL_ATTRIBUTE_NAMES
+    // 不含 values）与此处的 href 规则都漏过它；而图元节点在画布上走
+    // svgImageContentMarkup(..., { className }) → inlineSvgRootMarkup 把 SVG
+    // **内联进 DOM**（见 appCanvasArea.tsx 的 node-background-image 渲染）——
+    // 内联 SVG 的 SMIL 动画是会运行的，属可利用的存储型 XSS。
+    //
+    // 这里对 SMIL 的值属性（values/to/from/by）套用与 href **完全相同**的 scheme 判定。
+    // 误伤面极小：正常动画的值（`0;1;2`、`#fff`、色值、`url(#id)`）都不带危险 scheme，
+    // 会被原样放行；任何写着 javascript:/vbscript:/data:text/html 的 SMIL 值本就无意义。
+    .replace(/(\s+(?:values|to|from|by)\s*=\s*)("[^"]*"|'[^']*'|[^\s>]+)/giu, (_match: string, prefix: string, url: string) => {
+      const rawValue = url.replace(/^["']|["']$/g, "");
+      const normalized = decodeSvgNumericEntities(rawValue).replace(SVG_ENTITY_ENCODED_COLON, ":").replace(/[\s\u00A0]+/gu, "").toLowerCase();
+      if (/^(?:javascript|vbscript|livescript|mocha):/.test(normalized) || /^data:text\/html/i.test(normalized)) {
+        return "";
+      }
+      return `${prefix}${url}`;
     });
 }
 
