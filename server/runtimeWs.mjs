@@ -132,15 +132,18 @@ export function attachRuntimeWebSocket(server, registry, spaceStore = null) {
       // 未知消息类型忽略
     });
 
+    // 注销必须带上 registeredEntry 做身份比对：clientId 持久化在 localStorage，
+    // 多标签页共用同一个 id，只按 id 注销会误杀另一条仍在线的连接（详见
+    // runtimeRegistry.unregister 的注释与实测复现）。
     ws.on("close", () => {
       if (clientId) {
-        registry.unregister(clientId);
+        registry.unregister(clientId, registeredEntry);
       }
     });
 
     ws.on("error", () => {
       if (clientId) {
-        registry.unregister(clientId);
+        registry.unregister(clientId, registeredEntry);
       }
     });
   });
@@ -150,7 +153,8 @@ export function attachRuntimeWebSocket(server, registry, spaceStore = null) {
     const cutoff = Date.now() - HEARTBEAT_TIMEOUT_MS;
     for (const entry of registry._clients.values()) {
       if (entry.lastActiveAt < cutoff) {
-        registry.unregister(entry.clientId);
+        // 同样带上 entry：条目若已被同 id 的新连接顶替，不能删掉新连接那条
+        registry.unregister(entry.clientId, entry);
       }
     }
   }, HEARTBEAT_CHECK_INTERVAL_MS);
