@@ -8,6 +8,7 @@ import type { DeviceMeasurementDefinition } from "./measurementDefinitionTypes.t
 import { normalizeImageFitMode } from "./imageFit.ts";
 import { isCanonicalDeviceVisualParamName } from "./deviceVisualParams.ts";
 import { randomId } from "../shared/randomId.mjs";
+import { escapeRegExp } from "../shared/regexEscape.mjs";
 import { meaningfulDeviceParameterChineseName } from "./deviceParameterChineseNames.ts";
 
 // E 文件导出相关代码（从 model.ts 提取到独立模块）
@@ -1317,9 +1318,8 @@ export function parseDeviceIndex(value?: string): number {
   return Number.parseInt(text, 10);
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+// escapeRegExp 已移入 shared/regexEscape.mjs（全仓库单源，此前本文件、
+// src/svgUtils.ts、server/config.mjs 各有一份相同实现）。
 
 function stripGeneratedDeviceName(name?: string): string {
   return String(name ?? "")
