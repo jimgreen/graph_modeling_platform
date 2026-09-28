@@ -30,7 +30,7 @@
 // 本文件把「四组各自覆盖哪些 kind」显式写下来，改动时会被迫同步。
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
-import type { DeviceKind } from "./model";
+import { isThreeWindingTransformerKind, isTwoWindingTransformerKind, type DeviceKind } from "./model";
 
 /** 全部「换路器类」kind（开关 / 断路器 / 隔离开关，含接地刀闸与竖向变体）。 */
 const SWITCHING_KINDS = [
@@ -99,11 +99,14 @@ describe("各链路的分组覆盖集合（改动任一分组必须同步这里�
     expect(covered(groups.eSectionDcBreak)).toEqual(["dc-breaker"]);
   });
 
+  /** E 段那 5 组的判据（与 model-eexport.ts 的类名分支一一对应）。 */
+  const eSectionJudges = () => [
+    groups.eSectionAcSwitch, groups.eSectionAcBreak, groups.eSectionGroundDisconnector,
+    groups.eSectionDcSwitch, groups.eSectionDcBreak
+  ] as const;
+
   test("★ E 段五组**互斥**（它们是 kind → 类名的一对一映射，不能重叠）", () => {
-    const eSections = [
-      groups.eSectionAcSwitch, groups.eSectionAcBreak, groups.eSectionGroundDisconnector,
-      groups.eSectionDcSwitch, groups.eSectionDcBreak
-    ];
+    const eSections = eSectionJudges();
     const overlaps: string[] = [];
     for (const kind of SWITCHING_KINDS) {
       const hits = eSections.map((judge, index) => (judge(kind) ? `组${index + 1}` : "")).filter(Boolean);
@@ -113,10 +116,7 @@ describe("各链路的分组覆盖集合（改动任一分组必须同步这里�
   });
 
   test("★ E 段五组**并集恰好覆盖全部 9 个开关类 kind**（无遗漏）", () => {
-    const eSections = [
-      groups.eSectionAcSwitch, groups.eSectionAcBreak, groups.eSectionGroundDisconnector,
-      groups.eSectionDcSwitch, groups.eSectionDcBreak
-    ];
+    const eSections = eSectionJudges();
     const hit = SWITCHING_KINDS.filter((k) => eSections.some((judge) => judge(k)));
     expect(hit).toEqual([...SWITCHING_KINDS]);
   });
@@ -158,18 +158,79 @@ describe("各链路的分组覆盖集合（改动任一分组必须同步这里�
 });
 
 describe("与生产代码的一致性：这些分组必须与源码里的判据一致", () => {
-  test("model-eexport 的 E 段类名分支与本文件一致", () => {
+  /**
+   * ★ 用**解析源码**的方式核对 E 段分组，而不是"模式存在即可"。
+   *
+   * 上一版守卫有个真实漏洞：它只检查 `if (条件...) return "类名";` 这条语句**存在**，
+   * 于是往条件里**多加**一个 kind（如让 `ACSwitch` 顺带收下 `ac-breaker`）时，
+   * 模式照样匹配，测试全绿 —— 而 E 段恰恰要求这 5 组**互斥**，多加即错。
+   * 我用变异验证抓到了这个假绿（16/16 全过），故改为逐 kind 核对。
+   */
+  test("★ model-eexport 的 E 段类名分支与本文件逐 kind 一致", () => {
     const code = stripComments(read("src/model-eexport.ts"));
-    const expectPairs: Array<[string, string]> = [
-      ['sectionKind === "ac-switch" || sectionKind === "ac-disconnector"', '"ACSwitch"'],
-      ['sectionKind === "ac-breaker" || sectionKind === "ac-box-breaker"', '"ACBreak"'],
-      ['sectionKind === "ac-ground-disconnector" || sectionKind === "ac-ground-disconnector-vertical"', '"GroundDisconnector"'],
-      ['sectionKind === "dc-switch" || sectionKind === "dc-disconnector"', '"DCSwitch"'],
-      ['sectionKind === "dc-breaker"', '"DCBreak"']
-    ];
-    for (const [condition, className] of expectPairs) {
-      const pattern = new RegExp(`${condition.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^\\n]*${className.replace(/"/g, '"')}`);
-      expect(code, `E 段应存在：${condition} → ${className}`).toMatch(pattern);
+    // 抽出「每个 kind → 第一个命中的类名」，复刻该函数的短路求值顺序。
+    // 顺序与 model-eexport.ts 里的 if 链一致（先命中者胜）。
+    const kindToClass = (kind: string): string => {
+      const chain: Array<[string, (k: string) => boolean]> = [
+        ["ACLoad", (k) => k === "ac-load" || k === "ac-terminal-transformer-load"],
+        ["DCLoad", (k) => k === "dc-load"],
+        ["ACGenerator", (k) => k === "ac-storage" || (k.startsWith("ac-") && k.includes("source"))],
+        ["DCGenerator", (k) => k === "dc-storage" || (k.startsWith("dc-") && k.includes("source"))],
+        ["ACSwitch", groups.eSectionAcSwitch],
+        ["GroundDisconnector", groups.eSectionGroundDisconnector],
+        ["DCSwitch", groups.eSectionDcSwitch],
+        ["ACBreak", groups.eSectionAcBreak],
+        ["DCBreak", groups.eSectionDcBreak],
+        ["ACTransformer", isTwoWindingTransformerKind],
+        ["ACTransfomer3", isThreeWindingTransformerKind]
+      ];
+      for (const [label, judge] of chain) {
+        if (judge(kind)) return label;
+      }
+      return "";
+    };
+
+    // 1) 每个开关类 kind 在源码里必须真的落到我们预期的那个类名
+    const expectedClass: Record<string, string> = {
+      "ac-switch": "ACSwitch",
+      "ac-disconnector": "ACSwitch",
+      "ac-breaker": "ACBreak",
+      "ac-box-breaker": "ACBreak",
+      "ac-ground-disconnector": "GroundDisconnector",
+      "ac-ground-disconnector-vertical": "GroundDisconnector",
+      "dc-switch": "DCSwitch",
+      "dc-disconnector": "DCSwitch",
+      "dc-breaker": "DCBreak"
+    };
+    for (const [kind, className] of Object.entries(expectedClass)) {
+      // 源码里该 kind 只能作为**字面量**出现一次（在同一行里）
+      const pattern = new RegExp(`sectionKind === "${kind.replace(/-/g, "\\-")}"[^\\n]*return "([A-Za-z0-9]+)"`);
+      const match = pattern.exec(code);
+      expect(match, `E 段应存在含 "${kind}" 的分支`).not.toBeNull();
+      expect(match?.[1], `kind ${kind} 在源码里落到哪个类名`).toBe(className);
+    }
+
+    // 2) 真实短路面：ACSwitch 的分支里**不能**出现 ac-breaker（互斥性在源码层）
+    const acSwitchBranch = /if \(sectionKind === "ac-switch"[^\n]*return "ACSwitch";/.exec(code);
+    expect(acSwitchBranch, "ACSwitch 分支应存在").not.toBeNull();
+    expect(acSwitchBranch?.[0]).not.toContain("ac-breaker");
+    expect(acSwitchBranch?.[0]).not.toContain("ac-box-breaker");
+
+    // 3) ACBreak 分支里**不能**出现 ac-switch / ac-disconnector
+    const acBreakBranch = /if \(sectionKind === "ac-breaker"[^\n]*return "ACBreak";/.exec(code);
+    expect(acBreakBranch, "ACBreak 分支应存在").not.toBeNull();
+    expect(acBreakBranch?.[0]).not.toContain("ac-switch");
+    expect(acBreakBranch?.[0]).not.toContain("ac-disconnector");
+
+    // 4) 每个 kind 在整段 E 段映射里只出现一次（避免同一 kind 有两个落点）
+    for (const kind of SWITCHING_KINDS) {
+      const occurrences = (code.match(new RegExp(`sectionKind === "${kind.replace(/-/g, "\\-")}"`, "g")) ?? []).length;
+      expect(occurrences, `kind ${kind} 在 E 段映射里应恰好出现一次`).toBe(1);
+    }
+
+    // 5) 反向核对：本文件写的分组与 kindToClass 的短路结果一致
+    for (const kind of SWITCHING_KINDS) {
+      expect(kindToClass(kind), `${kind} 短路求值结果`).toBe(expectedClass[kind]);
     }
   });
 
