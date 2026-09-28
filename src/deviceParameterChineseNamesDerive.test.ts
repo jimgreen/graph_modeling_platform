@@ -23,6 +23,7 @@
 // `src/deviceParameterChineseNames.ts`（6 行）只是 re-export —— 已是单源。
 // 本文件从 `src/` 侧测，因为那是前端与 server 的共同入口。
 import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   inferDeviceParameterChineseName,
   isGenericCustomParameterChineseName,
@@ -38,9 +39,28 @@ describe("meaningfulDeviceParameterChineseName：三级降级", () => {
   });
 
   test("② cn 与 en 相同 → 不算有意义（走推导）", () => {
-    // 逐条比较：两者相同时应落到推导或兜底，而不是把英文名当中文名返回。
     const out = meaningfulDeviceParameterChineseName("rated_voltage", "rated_voltage");
     expect(out).not.toBe("rated_voltage");
+    // 推导成功后应得到词典里的中文名
+    expect(out).toBe(inferDeviceParameterChineseName("rated_voltage"));
+  });
+
+  test("★ 静态断言：`cn !== en` 判据仍在（第 ② 级）", () => {
+    // 这条**行为断言钉不住**：删掉 `cn !== en &&` 后，只要 en 能推导出中文名，
+    // 结果与保留时**完全相同**（cn===en 时 cn 无 CJK 字符，第①级已经拦下了）。
+    // 即第 ② 级是**冗余防线**，只在"en 本身含 CJK 字符"这个罕见情形下才有区别。
+    // 契约成立条件是「某处不做某事」，故用静态断言钉。
+    const source = readFileSync("shared/deviceParameterChineseNames.mjs", "utf8");
+    expect(source).toMatch(/const hasMeaningfulChineseName = \/\[\\u3400-\\u9fff\]\/u\.test\(cnName\) &&\s*\r?\n\s*cnName !== enName &&/);
+  });
+
+  test("★ 第②级的实际可观测情形：en 本身含 CJK 字符且 cn === en", () => {
+    // 这是 `cn !== en` 唯一能起作用的场景：en 里带中文，
+    // 于是 cn(=en) 会通过第①级的 CJK 检查，必须靠第②级拦下。
+    const en = "rated_额定电压";
+    const out = meaningfulDeviceParameterChineseName(en, en);
+    expect(out, "不应原样返回同一个中英混合串").not.toBe(en);
+    expect(meaningfulDeviceParameterChineseName(en, `${en}电压`)).toBe(`${en}电压`);
   });
 
   test("③ cn 含「自定义参数」→ 不算有意义（走推导）", () => {
