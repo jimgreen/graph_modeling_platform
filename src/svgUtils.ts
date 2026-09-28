@@ -5,6 +5,13 @@ import { imageFitPreserveAspectRatio, normalizeImageFitMode } from "./imageFit.t
 import { API_PREFIX } from "./config.ts";
 import { escapeXmlFull } from "../shared/xmlEscape.mjs";
 import { escapeRegExp } from "../shared/regexEscape.mjs";
+import { formatSvgNumber } from "../shared/formatSvgNumber.mjs";
+
+// formatSvgNumber 已单源化到 shared/formatSvgNumber.mjs（原在本文件、server/server.mjs、
+// scripts/generate-docer-compatible-icons.mjs 各有一份，且语义已漂移：非有限值处理与
+// 小数位数各不相同）。对外仍从本模块导出，既有 import 方无需改动。
+
+export { formatSvgNumber };
 
 /* 常量 */
 
@@ -47,11 +54,6 @@ export function svgStrokeDashArray(style?: string) {
 /** XML 转义：委托 shared/xmlEscape.mjs 的完整实现（含单引号），保持原导出名兼容下游 */
 export function escapeXml(value: string) {
   return escapeXmlFull(value);
-}
-
-export function formatSvgNumber(value: number) {
-  const rounded = Math.round(value * 100000) / 100000;
-  return String(Object.is(rounded, -0) ? 0 : rounded);
 }
 
 /* 图片 href / data URL */

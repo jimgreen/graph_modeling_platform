@@ -2614,6 +2614,11 @@ function parseSvgViewBox(svgAttrs) {
   };
 }
 
+// **刻意不并入 shared/formatSvgNumber.mjs**：本脚本是离线一次性工具，与运行时无关，
+// 单源化对它零收益；而它用 4 位小数（共享版是 5 位），改精度会改变
+// `data/icon-library/docer-free-compatible/` 下上千个图标文件的字节 —— 属有副作用的
+// 修改。4 位与 5 位的差异是 1e-4 像素级，对图标视觉无影响，不是缺陷。
+// 两者的语义差异与取舍理由见 shared/formatSvgNumber.mjs 的文件头。
 function formatSvgNumber(value) {
   return Number(value.toFixed(4)).toString();
 }

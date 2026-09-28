@@ -11,6 +11,7 @@ import iconv from "iconv-lite";
 import { randomId } from "../shared/randomId.mjs";
 import { isPathInside, sanitizeSegment } from "../shared/pathSafety.mjs";
 import { atomicWriteFile } from "../shared/atomicWrite.mjs";
+import { formatSvgNumber } from "../shared/formatSvgNumber.mjs";
 import { apiPrefix, apiPath, escapeRegExp, backendPort, host, stripFrontendBase } from "./config.mjs";
 import { accessControlHeaders, accessControlOriginOnly } from "./cors.mjs";
 import {
@@ -3107,11 +3108,8 @@ export async function readReferencedImageExportPathById(ids, options = {}) {
   return imageExportPathByIdFromManifest(manifest.filter((item) => wanted.has(String(item?.id ?? "").trim())), options);
 }
 
-function formatSvgNumber(value) {
-  const numeric = Number(value);
-  const rounded = Math.round((Number.isFinite(numeric) ? numeric : 0) * 100000) / 100000;
-  return String(Object.is(rounded, -0) ? 0 : rounded);
-}
+// formatSvgNumber 已单源化到 shared/formatSvgNumber.mjs —— 本文件这一版就是共享版
+// 的原型（先做了非有限值归 0 的防御），语义逐字节保留。
 
 async function listSchemeStoreEntries(root) {
   const files = [];
