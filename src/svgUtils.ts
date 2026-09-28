@@ -235,10 +235,23 @@ export function stripUnsafeInlineSvgMarkup(value: string) {
     // 这里对 SMIL 的值属性（values/to/from/by）套用与 href **完全相同**的 scheme 判定。
     // 误伤面极小：正常动画的值（`0;1;2`、`#fff`、色值、`url(#id)`）都不带危险 scheme，
     // 会被原样放行；任何写着 javascript:/vbscript:/data:text/html 的 SMIL 值本就无意义。
+    //
+    // 与 href 那条规则的两处**必要差异**（都源自 SMIL values 的语法本身，不是宽严取舍）：
+    // ① `values` 本来就是**分号分隔的多值列表**（`values="#a;javascript:x"`），而 href
+    //    只有单个值。故对每个 `;` 分段**独立**判定 —— 否则危险 scheme 放在第二个值里
+    //    就能绕过（探针实测确认为真实绕过，非理论风险）。
+    // ② 归一时额外去掉 **C0/DEL 控制字符**：SMIL 的 values 允许值里夹带换行/制表符甚至
+    //    NUL，而浏览器解析属性值时会丢弃它们 —— `java<NUL>script:x` 归一后不以
+    //    `javascript:` 开头、anchored 判定会放行，但浏览器照常执行。
+    // href 规则不动：它有 36 条既有向量守卫依赖当前语义。
     .replace(/(\s+(?:values|to|from|by)\s*=\s*)("[^"]*"|'[^']*'|[^\s>]+)/giu, (_match: string, prefix: string, url: string) => {
       const rawValue = url.replace(/^["']|["']$/g, "");
-      const normalized = decodeSvgNumericEntities(rawValue).replace(SVG_ENTITY_ENCODED_COLON, ":").replace(/[\s\u00A0]+/gu, "").toLowerCase();
-      if (/^(?:javascript|vbscript|livescript|mocha):/.test(normalized) || /^data:text\/html/i.test(normalized)) {
+      const decoded = decodeSvgNumericEntities(rawValue).replace(SVG_ENTITY_ENCODED_COLON, ":");
+      const normalized = decoded.replace(/[\u0000-\u001f\u007f\s\u00A0]+/gu, "").toLowerCase();
+      const isDangerous = (candidate: string) =>
+        /^(?:javascript|vbscript|livescript|mocha):/.test(candidate) || /^data:text\/html/i.test(candidate);
+      // ① 分号分段：任一段危险即整条拒绝
+      if (isDangerous(normalized) || normalized.split(";").some(isDangerous)) {
         return "";
       }
       return `${prefix}${url}`;

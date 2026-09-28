@@ -68,6 +68,52 @@ describe("SMIL 改写 href → 危险 scheme 被清除（本次修复）", () =>
     expect(cleaned).toContain('dur="1s"');
     expect(cleaned).not.toContain("values=");
   });
+
+  test("**分号分隔多值**：危险 scheme 放在第二个值里也必须被拒", () => {
+    // SMIL 的 values 本就是 `;` 分隔的多值列表，而 href 只有单个值。
+    // 只做 anchored 判定时 `#a;javascript:...` 开头是 `#a;` → 放行（真实绕过）。
+    // 探针实测确认为绕过，故本条钉住「逐 `;` 分段独立判定」。
+    const cleaned = stripUnsafeInlineSvgMarkup(
+      `<svg xmlns="http://www.w3.org/2000/svg">${anchor}<animate attributeName="href" values="#a;javascript:alert(1)" dur="1s"/></svg>`
+    );
+    expect(cleaned).not.toContain("javascript:");
+    expect(cleaned).not.toContain("alert(1)");
+  });
+
+  test("**值里夹带控制字符**（换行 / 制表符 / NUL）→ 归一后仍判定为危险", () => {
+    // 浏览器解析属性值时会丢弃这些字符，`java<NUL>script:` 实际会执行。
+    // 归一时必须连 C0/DEL 一起去掉，否则不以 `javascript:` 开头、anchored 判定会放行。
+    for (const raw of ["java\nscript:alert(1)", "java\tscript:alert(1)", "java\u0000script:alert(1)"]) {
+      const cleaned = stripUnsafeInlineSvgMarkup(
+        `<svg xmlns="http://www.w3.org/2000/svg">${anchor}<animate attributeName="href" values="${raw}" dur="1s"/></svg>`
+      );
+      expect(cleaned, JSON.stringify(raw)).not.toMatch(/(?:java|vb)script:/i);
+      expect(cleaned, JSON.stringify(raw)).not.toContain("alert(1)");
+    }
+  });
+
+  test("SMIL 同族元素一律同样受管（animateMotion / animateColor / animateTransform）", () => {
+    for (const frag of [
+      `<animateMotion attributeName="href" path="M0 0" values="javascript:alert(1)"/>`,
+      `<animateColor attributeName="href" values="javascript:alert(1)" dur="1s"/>`,
+      `<animateTransform attributeName="href" type="rotate" values="javascript:alert(1)"/>`
+    ]) {
+      const cleaned = stripUnsafeInlineSvgMarkup(
+        `<svg xmlns="http://www.w3.org/2000/svg">${anchor}${frag}</svg>`
+      );
+      expect(cleaned, frag).not.toContain("javascript:");
+    }
+  });
+
+  test("嵌套位置同样受管：foreignObject 内 / 嵌套 svg 内", () => {
+    for (const frag of [
+      `<foreignObject><svg xmlns="http://www.w3.org/2000/svg">${anchor}<animate attributeName="href" values="javascript:alert(1)" dur="1s"/></svg></foreignObject>`,
+      `<g><svg xmlns="http://www.w3.org/2000/svg">${anchor}<animate attributeName="href" values="javascript:alert(1)" dur="1s"/></svg></g>`
+    ]) {
+      const cleaned = stripUnsafeInlineSvgMarkup(`<svg xmlns="http://www.w3.org/2000/svg">${frag}</svg>`);
+      expect(cleaned).not.toContain("javascript:");
+    }
+  });
 });
 
 describe("正常 SMIL 动画不受影响（误伤面守卫）", () => {
