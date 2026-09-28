@@ -178,6 +178,36 @@ describe("graphStorePatchEdges：按 id 就地更新", () => {
     expect(s1.edgeMap.has("ZZZ"), "更不应被插入").toBe(false);
   });
 
+  test("★ 未知 id **即使与已有边同形**也必须跳过", () => {
+    // 这条是被变异验证逼出来的：第一版只断言 `edgeMap.has("ZZZ")`，
+    // 而把 `graphStorePatchEdges` 的 `continue` 改成 upsert 后测试**依然全绿** ——
+    // 因为 upsert 分支里 `previousEdge` 也是 undefined，会被下一道
+    // `if (!previousEdge) continue` 拦下，压根走不到插入逻辑。
+    // 只有断言「结果 store 与输入 store 是同一引用」才真正覆盖这道 continue。
+    //
+    // 也就是说：我的第一版断言只覆盖了"不会**被记进** edgeMap"，
+    // 而没有覆盖"不会**触发重建**"。后者才是 upsert 变异的实际影响面。
+    const store = baseStore();
+    const s1 = graphStoreSetEdges(store, [edge("e1"), edge("e2")]);
+    // 未知 id + 与 e1 端点完全相同（若无 continue，会被当成 e1 的更新）
+    const ghost = { ...s1.edgeMap.get("e1")!, id: "GHOST" };
+    const s2 = graphStorePatchEdges(s1, [ghost as Edge]);
+    expect(s2, "未知 id 必须原样返回（不触发任何重建）").toBe(s1);
+    expect(s2.edgeOrder, "edgeOrder 不应变化").toEqual(s1.edgeOrder);
+    expect(s2.edges, "边数组长度不应变化").toHaveLength(s1.edgeOrder.length);
+    expect(s1.edgeMap.has("GHOST")).toBe(false);
+  });
+
+  test("未知 id 混在已知 id 里：已知的照常更新，未知的跳过", () => {
+    const store = baseStore();
+    const s1 = graphStoreSetEdges(store, [edge("e1"), edge("e2")]);
+    const updated = { ...s1.edgeMap.get("e1")! };
+    const s2 = graphStorePatchEdges(s1, [edge("GHOST"), updated as Edge]);
+    expect(s2, "有真实更新，应重建").not.toBe(s1);
+    expect(s2.edgeMap.has("GHOST"), "未知 id 不应被插入").toBe(false);
+    expect(s2.edgeMap.get("e1"), "已知 id 应已更新").toEqual(updated);
+  });
+
   test("空更新 → 免重建", () => {
     const store = baseStore();
     expect(graphStorePatchEdges(store, [])).toBe(store);
