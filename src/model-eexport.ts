@@ -30,7 +30,7 @@ import {
   topologyNodeNumberForEField, normalizeTemplateDefinitionList,
   validateNodeEnumParameters,
   // 三绕组判定单源（全仓库唯一定义在 model.ts 的 THREE_WINDING_TRANSFORMER_KINDS）
-  isThreeWindingTransformerKind, isThreeWindingNeutralTransformerKind
+  isThreeWindingTransformerKind, isThreeWindingNeutralTransformerKind, isTwoWindingTransformerKind
 } from "./model.ts";
 import type {
   GlobalLineEndpoint,
@@ -463,7 +463,7 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   if (sectionKind === "dc-switch" || sectionKind === "dc-disconnector") return "DCSwitch";
   if (sectionKind === "ac-breaker" || sectionKind === "ac-box-breaker") return "ACBreak";
   if (sectionKind === "dc-breaker") return "DCBreak";
-  if (sectionKind === "ac-transformer" || sectionKind === "ac-two-winding-transformer") return "ACTransformer";
+  if (isTwoWindingTransformerKind(sectionKind)) return "ACTransformer";
   if (isThreeWindingTransformerKind(sectionKind)) return "ACTransfomer3";
   if (sectionKind === "dcdc-converter") return "DCDCConverter";
   if (sectionKind === "acdc-converter" || sectionKind === "dcac-converter") return "DCACConverter";
