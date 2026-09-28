@@ -116,23 +116,34 @@ describe(`${receivePath} 接收`, () => {
     // apiV1Receive.mjs 的模块注释与 server/CLAUDE.md 都写明「内存留最近 5 次」。
     // 越界淘汰靠 `records.splice(0, records.length - MAX_RECORDS)` 手工维护：
     //   - 漏掉 → 内存随联调次数无限增长（无鉴权端点，任何跨源请求都能灌）
-    //   - 起点写成 1 → 长度仍可能是 5（实测如此），但留下的是**最旧**那条、
-    //     砍掉最新 —— `count` 断言区分不出来，必须按内容判。
-    // 用可区分的 payload（raw 字段会回显前 200 字符）来断言留下的正是最新 5 次。
+    //   - 起点写成 1 → 8 条里 splice(1,3) 后**长度仍恰好是 5**，而且最新那条
+    //     恰好还在，只有最旧那条被错留下。`count` 与 `latest` 都区分不出来，
+    //     必须靠 receivedAtList 里有没有「第一次投递之前」的时间戳来判。
+    //
+    // receivedAt 是毫秒精度，故每次投递之间留 gap，避免同毫秒导致时间戳不可比。
+    const gap = () => new Promise((r) => setTimeout(r, 5));
     await fetch(`${baseUrl}${receivePath}`, { method: "DELETE" });
+
+    let beforeFourth = 0;
     for (let i = 0; i < 8; i += 1) {
+      if (i === 3) {
+        // 第 4 次投递（index 3）之前的时间戳：留下的 5 条应当都晚于它
+        beforeFourth = Date.now();
+      }
       await fetch(`${baseUrl}${receivePath}`, { method: "POST", body: `payload-${i}` });
+      await gap();
     }
+
     const view = await (await fetch(`${baseUrl}${receivePath}`)).json();
     expect(view.data.count, "超过上限后应淘汰到只剩 5 条").toBe(5);
     expect(view.data.receivedAtList).toHaveLength(5);
 
-    // latest 必须是最后一次投递（payload-7），不能是残留的最旧那条
+    // latest 是最后一次投递
     expect(view.data.latest.fields[0]?.text).toBe("payload-7");
 
-    // 接收时间戳也应保留 5 条且互不相同（每次 new Date()，毫秒内可能相同，
-    // 故只断言条数，内容判别交给上面的 latest）
-    expect(new Set(view.data.receivedAtList).size).toBeLessThanOrEqual(5);
+    // 关键判据：不该残留任何早于第 4 次投递的记录（起点写成 1 时会留下第 1 次）
+    const stale = view.data.receivedAtList.filter((t) => new Date(t).getTime() < beforeFourth);
+    expect(stale, "残留了早于第 4 次投递的记录 —— 淘汰起点写错").toEqual([]);
 
     // 清空后计数归零，且不残留
     await fetch(`${baseUrl}${receivePath}`, { method: "DELETE" });
