@@ -8,7 +8,7 @@
 //   - FetchTimeoutError   → code "ws-timeout"        → 503
 //   - 前端透传错误        → error.code（如 no-active-model/no-selection/internal）→ 按 v1Response 映射
 
-import { sendV1JsonNoStore, sendV1Error } from "./v1Response.mjs";
+import { sendV1JsonNoStore, sendV1Error, sendV1PayloadTooLarge } from "./v1Response.mjs";
 import { accessControlOriginOnly } from "./cors.mjs";
 import { NoOnlineClientError, FetchTimeoutError } from "./runtimeRegistry.mjs";
 import { PREDEFINED_E_DEVICE_TEMPLATES, readPredefinedTemplateBase64 } from "./eFileTemplates.mjs";
@@ -235,10 +235,7 @@ export async function handleV1RuntimeEFilePost({ request, response, url }, ctx) 
     });
     response.end(text);
   } catch (error) {
-    if (error?.code === "payload-too-large") {
-      sendV1Error(response, "payload-too-large", error.message);
-      return;
-    }
+    if (sendV1PayloadTooLarge(response, error)) return;
     if (error instanceof SyntaxError) {
       sendV1Error(response, "bad-request", "请求体不是合法 JSON。");
       return;

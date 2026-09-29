@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { sendV1Json, sendV1JsonNoStore, sendV1Error, sendV1Wrapped } from "./v1Response.mjs";
+import { sendV1Json, sendV1JsonNoStore, sendV1Error, sendV1PayloadTooLarge, sendV1Wrapped } from "./v1Response.mjs";
 
 // 构造 mock response：捕获 writeHead/end，提供 if-none-match 头注入
 function createMockResponse() {
@@ -131,5 +131,68 @@ describe("v1Response sendV1Wrapped", () => {
     await sendV1Wrapped(req, res, async () => ({ clientId: "c1" }), { noStore: true });
     expect(res.headers["cache-control"]).toBe("no-store");
     expect(res.headers.etag).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sendV1PayloadTooLarge：全仓唯一的「读请求体体积超限」分支（此前 13 处手抄）
+// ---------------------------------------------------------------------------
+describe("sendV1PayloadTooLarge", () => {
+  test("code 是 payload-too-large → 回 413 + v1 信封 + 原 message，且返回 true", () => {
+    const res = createMockResponse();
+    const error = Object.assign(new Error("请求体超过 1MB 上限"), { code: "payload-too-large" });
+    expect(sendV1PayloadTooLarge(res, error)).toBe(true);
+    expect(res.statusCode).toBe(413);
+    expect(res.jsonBody()).toEqual({
+      ok: false,
+      error: { code: "payload-too-large", message: "请求体超过 1MB 上限" }
+    });
+  });
+
+  test("★ 其它 code → **不**应答任何东西，返回 false", () => {
+    for (const code of ["ENOENT", "ETIMEDOUT", "bad-request", "internal"]) {
+      const res = createMockResponse();
+      const handled = sendV1PayloadTooLarge(res, Object.assign(new Error("别的错"), { code }));
+      expect(handled, code).toBe(false);
+      // 关键：不能已经写了响应头 —— 否则调用点自己的 bad-request 分支会撞上
+      // "Cannot set headers after they are sent"
+      expect(res.statusCode, `${code} 不该写响应`).toBe(0);
+      expect(res.body(), `${code} 不该写响应体`).toBe("");
+    }
+  });
+
+  test("没有 code / code 不是字符串 / error 为 null / undefined → 返回 false", () => {
+    for (const error of [
+      new Error("裸错误"),
+      { code: 123 },
+      { code: null },
+      { code: undefined },
+      null,
+      undefined,
+      {}
+    ]) {
+      const res = createMockResponse();
+      expect(sendV1PayloadTooLarge(res, error), String(error)).toBe(false);
+      expect(res.statusCode).toBe(0);
+    }
+  });
+
+  test("★ 严格相等（大小写敏感）：PAYLOAD-TOO-LARGE 不算", () => {
+    // 与原实现 `error?.code === "payload-too-large"` 逐字一致 —— 抽函数时
+    // 若误改成 toLowerCase() 比较，13 个端点的 413 判定会一起变松。
+    const res = createMockResponse();
+    expect(sendV1PayloadTooLarge(res, { code: "PAYLOAD-TOO-LARGE" })).toBe(false);
+    expect(sendV1PayloadTooLarge(res, { code: "Payload-Too-Large" })).toBe(false);
+    expect(res.statusCode).toBe(0);
+  });
+
+  test("headersSent 时不写响应（与 sendV1Error 同一保护），仍返回 true", () => {
+    // 语义：分支**已被识别**，返回 true 让调用点 return；
+    // 是否真能写出去交给 sendV1Error 自己的 headersSent 守卫决定。
+    const res = createMockResponse();
+    res.headersSent = true;
+    const error = Object.assign(new Error("超限"), { code: "payload-too-large" });
+    expect(sendV1PayloadTooLarge(res, error)).toBe(true);
+    expect(res.statusCode, "headersSent 后不该再写").toBe(0);
   });
 });

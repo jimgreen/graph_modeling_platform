@@ -9,7 +9,7 @@
 //   - CommandTimeoutError   → code "ws-timeout"        → 503
 //   - 前端透传错误          → error.code（如 bad-request/control-failed/internal）→ 按 v1Response 映射
 
-import { sendV1JsonNoStore, sendV1Error } from "./v1Response.mjs";
+import { sendV1JsonNoStore, sendV1Error, sendV1PayloadTooLarge } from "./v1Response.mjs";
 import { NoOnlineClientError, CommandTimeoutError } from "./runtimeRegistry.mjs";
 
 // 取 query clientId（trim），空串视为未指定
@@ -80,10 +80,7 @@ export async function handleControlDeviceAdd({ request, url, response }, ctx) {
   try {
     payload = await readJsonBody(request);
   } catch (error) {
-    if (error?.code === "payload-too-large") {
-      sendV1Error(response, "payload-too-large", error.message);
-      return;
-    }
+    if (sendV1PayloadTooLarge(response, error)) return;
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
 }
@@ -112,10 +109,7 @@ export async function handleControlSchemeCreate({ request, url, response }, ctx)
   try {
     payload = await readJsonBody(request);
   } catch (error) {
-    if (error?.code === "payload-too-large") {
-      sendV1Error(response, "payload-too-large", error.message);
-      return;
-    }
+    if (sendV1PayloadTooLarge(response, error)) return;
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
 }
@@ -138,10 +132,7 @@ export async function handleControlModelCreate({ request, url, response }, ctx) 
   try {
     payload = await readJsonBody(request);
   } catch (error) {
-    if (error?.code === "payload-too-large") {
-      sendV1Error(response, "payload-too-large", error.message);
-      return;
-    }
+    if (sendV1PayloadTooLarge(response, error)) return;
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
 }
@@ -168,10 +159,7 @@ export async function handleControlDevicesSelect({ request, url, response }, ctx
   try {
     payload = await readJsonBody(request);
   } catch (error) {
-    if (error?.code === "payload-too-large") {
-      sendV1Error(response, "payload-too-large", error.message);
-      return;
-    }
+    if (sendV1PayloadTooLarge(response, error)) return;
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
 }
@@ -200,10 +188,7 @@ export async function handleControlDeviceDelete({ request, url, response }, ctx)
   try {
     payload = await readJsonBody(request);
   } catch (error) {
-    if (error?.code === "payload-too-large") {
-      sendV1Error(response, "payload-too-large", error.message);
-      return;
-    }
+    if (sendV1PayloadTooLarge(response, error)) return;
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
 }
@@ -226,10 +211,7 @@ export async function handleControlDevicePropertyUpdate({ request, url, response
   try {
     payload = await readJsonBody(request);
   } catch (error) {
-    if (error?.code === "payload-too-large") {
-      sendV1Error(response, "payload-too-large", error.message);
-      return;
-    }
+    if (sendV1PayloadTooLarge(response, error)) return;
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
 }
@@ -256,10 +238,7 @@ export async function handleControlSave({ request, url, response }, ctx) {
   try {
     payload = await readJsonBody(request);
   } catch (error) {
-    if (error?.code === "payload-too-large") {
-      sendV1Error(response, "payload-too-large", error.message);
-      return;
-    }
+    if (sendV1PayloadTooLarge(response, error)) return;
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
 }
@@ -278,10 +257,7 @@ export async function handleControlTemplateSaveFromSelection({ request, url, res
   try {
     payload = await readJsonBody(request);
   } catch (error) {
-    if (error?.code === "payload-too-large") {
-      sendV1Error(response, "payload-too-large", error.message);
-      return;
-    }
+    if (sendV1PayloadTooLarge(response, error)) return;
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
 }
@@ -316,10 +292,7 @@ export async function handleControlImportEDeviceDefinition({ request, url, respo
   try {
     payload = await readJsonBody(request);
   } catch (error) {
-    if (error?.code === "payload-too-large") {
-      sendV1Error(response, "payload-too-large", error.message);
-      return;
-    }
+    if (sendV1PayloadTooLarge(response, error)) return;
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
 }

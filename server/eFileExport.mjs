@@ -6,7 +6,7 @@ installDomShim();
 import iconv from "iconv-lite";
 import { readDeviceLibraryConfig, readSchemeProjectRecord } from "./server.mjs";
 import { readPredefinedTemplateBase64, PREDEFINED_E_DEVICE_TEMPLATES } from "./eFileTemplates.mjs";
-import { sendV1Error } from "./v1Response.mjs";
+import { sendV1Error, sendV1PayloadTooLarge } from "./v1Response.mjs";
 import { accessControlOriginOnly } from "./cors.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 
@@ -264,10 +264,7 @@ export async function handleV1ModelEFilePost({ request, response, url, paths }) 
     }
     sendEFile(response, { file, encoding: parsed.encoding });
   } catch (error) {
-    if (error?.code === "payload-too-large") {
-      sendV1Error(response, "payload-too-large", error.message);
-      return;
-    }
+    if (sendV1PayloadTooLarge(response, error)) return;
     if (error instanceof SyntaxError) {
       sendV1Error(response, "bad-request", "请求体不是合法 JSON。");
       return;

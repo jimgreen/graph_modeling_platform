@@ -5,7 +5,7 @@ import { installDomShim } from "./domShim.mjs";
 installDomShim();
 
 import { findSchemeProjectRecordByIndex, readSchemeProjectRecord } from "./server.mjs";
-import { sendV1Error, sendV1JsonNoStore } from "./v1Response.mjs";
+import { sendV1Error, sendV1JsonNoStore, sendV1PayloadTooLarge } from "./v1Response.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 import { buildEFileForSavedModel, readJsonBody } from "./eFileExport.mjs";
 import { PREDEFINED_E_DEVICE_TEMPLATES } from "./eFileTemplates.mjs";
@@ -216,10 +216,7 @@ export async function handleV1ModelSend({ request, response, url, paths }) {
       files: sentFiles
     });
   } catch (error) {
-    if (error?.code === "payload-too-large") {
-      sendV1Error(response, "payload-too-large", error.message);
-      return;
-    }
+    if (sendV1PayloadTooLarge(response, error)) return;
     if (error instanceof SyntaxError) {
       sendV1Error(response, "bad-request", "请求体不是合法 JSON。");
       return;

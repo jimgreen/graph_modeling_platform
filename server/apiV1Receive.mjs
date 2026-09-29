@@ -3,7 +3,7 @@
 // 用途：在 /swigger 里把「发送模型」的目标 URL 指向本端点，即可自测整条发送链路。
 // 只读内存、不落盘、不鉴权：仅用于本地联调，记录随进程重启清空。
 import iconv from "iconv-lite";
-import { sendV1Json, sendV1JsonNoStore, sendV1Error } from "./v1Response.mjs";
+import { sendV1Json, sendV1JsonNoStore, sendV1Error, sendV1PayloadTooLarge } from "./v1Response.mjs";
 import { apiPattern } from "./config.mjs";
 
 // 内存保留最近 N 次接收（最新在末尾）
@@ -102,10 +102,7 @@ export async function handleV1ReceivePost({ request, response, url }) {
     // 接收摘要随接收即返回，调用方可直接看到解析结果
     sendV1JsonNoStore(response, { received: record, kept: records.length });
   } catch (error) {
-    if (error?.code === "payload-too-large") {
-      sendV1Error(response, "payload-too-large", error.message);
-      return;
-    }
+    if (sendV1PayloadTooLarge(response, error)) return;
     sendV1Error(response, "bad-request", error instanceof Error ? error.message : "请求体解析失败。");
   }
 }
