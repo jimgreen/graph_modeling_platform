@@ -232,6 +232,41 @@ Two companion rules:
 - After a green mutation, **confirm the edit landed where you intended** by grepping
   the mutated file. A zero-second grep is cheaper than a wrong conclusion.
 
+### One array element per anchor line, or the CRLF joiner defeats you
+
+The injector's `old`/`neu` are arrays of lines joined with the file's detected
+line ending. Writing them as a single element containing `\n` escapes bypasses the
+joiner entirely:
+
+```json
+// WRONG — one element, embedded \n. join() never inserts the separator,
+//         so the anchor can only match an LF file, and a CRLF file reports
+//         "锚点未找到" no matter how correct the text is.
+"old": ["  return {\n    ...element,\n    x: center.x,"]
+
+// RIGHT — one element per line
+"old": ["  return {", "    ...element,", "    x: center.x,"]
+```
+
+Four mutations in one round reported a missing anchor for this reason. The error
+message is indistinguishable from a typo, which is why it is worth stating
+explicitly: **if several anchors miss at once, suspect the encoding, not your
+transcription.**
+
+### Reject an empty mutation, not just a missing anchor
+
+A pair with identical `old` and `neu` injects cleanly, prints `OK`, changes
+nothing, and yields a green run. That is the same failure mode as the duplicate
+anchor, one level cheaper to hit — it happens when you draft a table entry and
+forget to change the replacement.
+
+```js
+if (o === n) { console.error(`X 空变异（old 与 neu 相同）: ${key}`); process.exit(1); }
+```
+
+Together these make the injector refuse three distinct ways of doing nothing:
+anchor absent, anchor ambiguous, and replacement empty.
+
 ### Check that you assert on the object the mutation changes
 
 A near-miss that survived one round of mutation testing: a guard asserted
