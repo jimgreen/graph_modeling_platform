@@ -232,6 +232,32 @@ Two companion rules:
 - After a green mutation, **confirm the edit landed where you intended** by grepping
   the mutated file. A zero-second grep is cheaper than a wrong conclusion.
 
+### A green mutation you attributed to the wrong table row
+
+Deleting or reordering entries in `tmp/mut-*.json` **renumbers every later index**.
+A loop written as `for i in 0..n-1` then injects a *different* mutation than the one
+you are reading the result for — and you conclude the wrong guard is broken.
+
+This happened twice in one session on `routeStore`:
+
+- Row 6 (`seenById` 上限清理被删) read GREEN. Row 6 was not the `seenById` row any
+  more — an earlier edit had removed a row and the table was shorter. The real
+  `seenById` row was untouched, so the green meant nothing.
+- Row 11 (`Math.trunc` instead of `Math.floor`) also read GREEN, and separately, the
+  same index printed `RED` in one run and `GREEN` in three. The variance was the
+  giveaway: the source had been left mutated by a previous loop iteration whose
+  `cp` restore had not run, so runs were not comparable at all.
+
+Two habits that would have caught both:
+
+1. **Print the row's `name` next to its verdict**, from the JSON — not from your
+   memory of what you wrote. `node tmp/mut-x.mjs $i` already prints it; the loop
+   must not swallow that output (`>/dev/null` is what hid it).
+2. **Never leave a mutation un-restored between runs.** If a run is interrupted, the
+   next run's "GREEN" is measuring the previous mutation, not its own. Restore from
+   the backup *before* injecting, not only after.
+
+
 ### One array element per anchor line, or the CRLF joiner defeats you
 
 The injector's `old`/`neu` are arrays of lines joined with the file's detected
