@@ -905,3 +905,203 @@ describe("全局线路表是名称和参数的唯一来源", () => {
     expect(JSON.parse(await readFile(pathA, "utf-8")).nodes.find((item) => item.id === "line-a")).not.toHaveProperty("name");
   });
 });
+
+// ─── 归一化守卫（变异验证补）────────────────────────────────
+//
+// 这两条曾被变异验证判为「GREEN」，说明既有用例一个都没碰到它们：
+//
+// ① `positiveInteger` 用 `Number.isSafeInteger`。若换成 `Number.isFinite`，
+//    1.5 会被当成合法模型 idx —— 两条不同的模型会算出同一个 key，
+//    跨模型的全局线路注册就串了。既有 16 条用例全是整数 idx。
+// ② `normalizedStringArray` 的 `.filter(Boolean)`。若去掉，schemePath 里的
+//    空串会留进 key（"a//b"），同样的路径会因空串个数不同而算出不同 key。
+//    既有用例的 schemePath 都不含空元素。
+import { globalLineModelKey as modelKeyForTest } from "./globalLineRegistry.mjs";
+
+describe("globalLineModelKey 的 idx 归一化", () => {
+  test("只接受正安全整数：小数被拒（否则两条模型算出同一个 key）", () => {
+    expect(modelKeyForTest(1)).toBe("model:1");
+    expect(modelKeyForTest(1.5)).toBe("path:");
+    expect(modelKeyForTest(2.0000001)).toBe("path:");
+  });
+
+  test("非正数、NaN、Infinity、字符串数字都退回 path 键", () => {
+    for (const bad of [0, -1, NaN, Infinity, -Infinity, "", "  ", null, undefined, {}, []]) {
+      expect(modelKeyForTest(bad), JSON.stringify(bad)).toBe("path:");
+    }
+  });
+
+  test("数字字符串按其数值参与判定", () => {
+    expect(modelKeyForTest("3")).toBe("model:3");
+    expect(modelKeyForTest("3.5")).toBe("path:");
+  });
+
+  test("超���安全整数范围被拒（isSafeInteger 而非 isFinite）", () => {
+    expect(modelKeyForTest(Number.MAX_SAFE_INTEGER)).toBe(`model:${Number.MAX_SAFE_INTEGER}`);
+    expect(modelKeyForTest(Number.MAX_SAFE_INTEGER + 2)).toBe("path:");
+  });
+
+  test("idx 无效时退回 path 键，schemePath 的空元素被丢弃", () => {
+    // 空串若被保留，"a//b" 与 "a/b" 会算出不同 key —— 同一个方案却认不出自己
+    expect(modelKeyForTest(0, ["a", "", "b"])).toBe("path:a/b");
+    expect(modelKeyForTest(0, ["a", "  ", "b"])).toBe("path:a/b");
+    expect(modelKeyForTest(0, ["a", "b"])).toBe("path:a/b");
+  });
+
+  test("schemePath 元素两侧空白被裁掉", () => {
+    expect(modelKeyForTest(0, ["  a  ", "\tb\n"])).toBe("path:a/b");
+  });
+
+  test("非数组 schemePath 当空处理，不抛", () => {
+    expect(modelKeyForTest(0, "不是数组")).toBe("path:");
+    expect(modelKeyForTest(0, null)).toBe("path:");
+  });
+
+  test("projectName 单独也能构成 path 键", () => {
+    expect(modelKeyForTest(0, [], "  方案甲  ")).toBe("path:方案甲");
+  });
+});
+
+// normalizedStringArray 的 `.filter(Boolean)` 在 `globalLineModelKey` 里**观察不到**
+// —— 那函数自己又带一份 filter（第二条路）。能观察到的是走 `normalizeReference`
+// 的引用去重：referenceKey 由 modelKey + nodeId 拼成，modelKey 走
+// globalLineModelKey，于是 schemePath 里多一个空串的引用会算出不同 modelKey。
+describe("schemePath 归一化对引用去重的影响", () => {
+  const seedLine = () => line("seed-line", "ac-routable-line", "src", "dst");
+
+  test("attach 时带空串的 schemePath 与不带空串的算出同一个 modelKey", async () => {
+    const record = await registry.attach({
+      energyType: "ac",
+      name: "空串归一线路",
+      node: seedLine(),
+      reference: { projectIdx: 0, schemePath: ["方案", "", "子方案"], projectName: "模型甲", nodeId: "seed-line", boundaryEndpoint: "source" }
+    });
+    expect(record.references).toHaveLength(1);
+    expect(record.references[0].modelKey).toBe("path:方案/子方案/模型甲");
+  });
+
+  test("detach 用带空串的 schemePath 能摘掉用干净 schemePath 挂上的引用", async () => {
+    const clean = { projectIdx: 0, schemePath: ["方案", "子方案"], projectName: "模型甲", nodeId: "seed-line", boundaryEndpoint: "source" };
+    const record = await registry.attach({ energyType: "ac", name: "去重线路", node: seedLine(), reference: clean });
+    expect(record.references).toHaveLength(1);
+
+    // 归一化后两者 modelKey 相同 ⇒ 引用被摘掉
+    const detached = await registry.detach({
+      globalLineId: record.id,
+      reference: { projectIdx: 0, schemePath: ["方案", "  ", "子方案"], projectName: "模型甲", nodeId: "seed-line", boundaryEndpoint: "source" }
+    });
+    expect(detached.references).toEqual([]);
+  });
+
+  test("空白字符与空串等价（同为「没有这一段」）", async () => {
+    const record = await registry.attach({
+      energyType: "ac",
+      name: "空白归一线路",
+      node: seedLine(),
+      reference: { projectIdx: 0, schemePath: ["\t方案\n", "　"], projectName: "模型甲", nodeId: "seed-line", boundaryEndpoint: "source" }
+    });
+    expect(record.references[0].modelKey).toBe("path:方案/模型甲");
+  });
+
+  test("重复引用不会累积（modelKey+nodeId 相同即视为同一条）", async () => {
+    const reference = { projectIdx: 0, schemePath: ["方案"], projectName: "模型甲", nodeId: "seed-line", boundaryEndpoint: "source" };
+    await registry.attach({ energyType: "ac", name: "重复引用线路", node: seedLine(), reference });
+    const again = await registry.attach({
+      energyType: "ac",
+      globalLineId: (await registry.list())[0].id,
+      node: seedLine(),
+      reference
+    });
+    expect(again.references).toHaveLength(1);
+  });
+
+  // 上面几条仍咬不住 `.filter(Boolean)`，而下面这组 deleteEmpty 用例**也**咬不住。
+  // 查清了原因，记在这里免得下一个人再走一遍：
+  //
+  //   normalizedStringArray 的 8 个调用点里，7 个的输出最终都进 globalLineModelKey
+  //   或 schemePathForProjectFile —— **这两处各自都带 filter(Boolean)**（第二条路）。
+  //   剩下 line 623 的 storedProjectMatchesReference 走
+  //   `JSON.stringify(normalizedStringArray(...)) === JSON.stringify(storedProject.schemePath)`，
+  //   看着没有第二条路，但 storedProject.schemePath 来自 schemePathForProjectFile，
+  //   而它是从**目录层级**推出来的 —— mkdir 不允许空目录名，探针实测
+  //   `writeProject("主方案//")` 与 `writeProject("主方案")` 推出的 schemePath 完全一样。
+  //   引用侧的 `["主方案",""]` 又被 modelKey 那条带 filter 挡掉。
+  //
+  // 结论：这个 `.filter(Boolean)` 是**冗余防御**而非承重逻辑，变异下绿是正确结果
+  // （AGENTS.md「A green mutation is not always a broken test」）。
+  //
+  // 下面这组 deleteEmpty 用例的实测覆盖范围，如实记下：
+  //   ✓ 咬得住「otherStoredEndpointRetainsGlobalLine 整个不跑」（变异 ④ 转红，
+  //     不过真正抓住它的是既有的「另一端模型存在且保存有同一全局线路时…」那条）
+  //   ✗ 咬不住「storedProjectMatchesReference 里删掉 schemePath 比对」（变异 ③ 绿）：
+  //     因为既有的那条用例里 projectName 已经不同，删掉 schemePath 比对不影响结论。
+  //     要咬住它需要「projectName 相同、schemePath 不同」且期望判为不同项目 ——
+  //     但那要求引用与已存项目 modelKey 不同、而它们 name 相同，这个组合在真实调用里
+  //     不出现（modelKey 正是 name 与 schemePath 拼出来的）。故判定为不可构造，
+  //     不硬凑断言。
+  const seedCrossProjectRecord = async ({ keepSecond }) => {
+    const first = {
+      projectIdx: 0,
+      schemePath: ["主方案"],
+      projectName: "厂站一",
+      nodeId: "line-a",
+      boundaryEndpoint: "source",
+      boundaryNodeId: "station-one",
+      boundaryTerminalId: "t1"
+    };
+    const record = await registry.attach({
+      energyType: "ac",
+      name: "跨项目占位线路",
+      node: line("line-a", "ac-routable-line", "station-one", "bus-one"),
+      reference: first
+    });
+    // 摘掉本项目这一端，references 清空（deleteEmpty 的第一个前提）
+    await registry.detach({ globalLineId: record.id, reference: first });
+    // 再挂另一端的引用：projectName 不同 ⇒ modelKey 不同（第二个前提）
+    const second = {
+      projectIdx: 0,
+      schemePath: ["主方案"],
+      projectName: "厂站二",
+      nodeId: "line-b",
+      boundaryEndpoint: "target",
+      boundaryNodeId: "bus-one",
+      boundaryTerminalId: "t2"
+    };
+    await registry.attach({
+      energyType: "ac",
+      globalLineId: record.id,
+      node: line("line-b", "ac-routable-line", "bus-one", "station-two"),
+      reference: second
+    });
+    // keepSecond=false 时摘掉它 —— 但那样 otherStoredEndpointRetainsGlobalLine 没有
+    // 迭代对象，所以「允许删除」那条只能靠 references 为空 + 落盘项目不匹配。
+    if (!keepSecond) {
+      await registry.detach({ globalLineId: record.id, reference: second });
+    }
+    return { record, second };
+  };
+
+  test("已存项目的 schemePath 与引用归一后相等 ⇒ 判定仍被占用，拒绝删除", async () => {
+    const { record, second } = await seedCrossProjectRecord({ keepSecond: true });
+    // schemePath 由目录层级推出：filesRoot/主方案/ ⇒ ["主方案"]，与引用一致
+    await writeProject("主方案", "模型B.json", {
+      idx: 0,
+      name: second.projectName,
+      modelType: "厂站",
+      nodes: [line("line-b", "ac-routable-line", "bus-one", "station-two", { _globalLineId: record.id })]
+    });
+    await expect(registry.deleteEmpty({ id: record.id })).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  test("references 已清空且已存项目 schemePath 不等 ⇒ 允许删除", async () => {
+    const { record, second } = await seedCrossProjectRecord({ keepSecond: false });
+    // 落在 另一方案/ 下 ⇒ schemePath ["另一方案"]，与引用 ["主方案"] 不等
+    await writeProject("另一方案", "真无关.json", {
+      idx: 0,
+      name: second.projectName,
+      modelType: "厂站",
+      nodes: [line("line-b", "ac-routable-line", "bus-one", "station-two", { _globalLineId: record.id })]
+    });
+    await expect(registry.deleteEmpty({ id: record.id })).resolves.toMatchObject({ id: record.id });
+  });
+});
