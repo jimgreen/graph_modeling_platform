@@ -213,6 +213,66 @@ Real examples in this repo, all caught by mutation testing rather than by readin
 `meaningfulDeviceParameterChineseName`'s `cn !== en` clause, and
 `graphStorePatchEdges`'s skip-unknown-id branch.
 
+### Assert the same value on both sides of a fallback
+
+Two guards in one round came back green under mutations that deleted the branch
+under test. Both had the same shape, and both were invisible for the same reason:
+**the default value equalled the value being asserted.**
+
+`staticNodeParticipatesInRoutingAvoidance` returns a flag whose fallback depends
+on the node kind: container kinds default to "does not participate", every other
+static kind defaults to "participates".
+
+```ts
+// WRONG — only covers the side where the fallback already agrees
+expect(participates("static-point", { routeAvoidance: "参与" })).toBe(true);
+```
+
+Deleting the `"参与"` alias from the source makes the value fall through to the
+default, which for `static-point` is *also* `true`. Green forever, behaviour broken.
+
+```ts
+// RIGHT — assert each alias on a kind whose default is the OPPOSITE value
+const NON_CONTAINER = "static-point";   // default = participate
+const CONTAINER = "static-group-box";    // default = do not participate
+expect(participates(NON_CONTAINER, { routeAvoidance: "参与" })).toBe(true);
+expect(participates(CONTAINER,    { routeAvoidance: "参与" })).toBe(true); // ← this one bites
+```
+
+Generalised rule: **before asserting "the value is X", confirm the default is not
+also X.** For any function with a fallback, enumerate the fallback classes and
+assert the interesting value on at least one class where it flips the outcome.
+Add a companion assertion that the two defaults actually differ
+(`expect(default(CONTAINER)).not.toBe(default(NON_CONTAINER))`) — otherwise the
+double-sided assertions have no discriminating power at all.
+
+This is the same trap as "assert on the object the mutation changes", one level up:
+there the object was inert, here the *expected value* was inert.
+
+### A helper with a default silently swallows the null case
+
+Same round, a different guard went green under a mutation that removed an optional
+chain. The assertion was:
+
+```ts
+const avoid = (kind, params) => participates({ kind, params: params ?? {} });
+expect(avoid("static-point", null)).toBe(true);   // ← vacuous
+```
+
+`params ?? {}` turns `null` into `{}` before the value ever reaches the function, so
+the assertion never exercised the optional chain. Deleting `node.params?.[...]` from
+production code left the suite green. It reads like a real test and passes like one.
+
+```ts
+// RIGHT — bypass every wrapper that has a default
+expect(() => participates({ kind: "static-point", params: null })).not.toThrow();
+```
+
+Generalised rule: **when asserting on a null / undefined / empty-string input, read
+your own helper first and confirm nothing normalises it away.** Grep the helper for
+`??`, `||`, and default parameters. A helper that "makes tests convenient" is
+exactly what will hide the edge case you wrote the test for.
+
 ## Keeping the Index Fresh
 
 After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
