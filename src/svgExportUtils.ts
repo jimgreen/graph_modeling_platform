@@ -334,10 +334,14 @@ export function exportMeasurementItemMetadataAttributes(
 
 export const exportMeasurementGroupBackgroundColor = (group: MeasurementGroup) => group.backgroundColor ?? DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR;
 export const exportMeasurementGroupBorderColor = (group: MeasurementGroup) => group.borderColor ?? DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR;
-export const exportMeasurementGroupBorderWidth = (group: MeasurementGroup) =>
-  (group.borderStyle ?? DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE) === "none"
-    ? 0
-    : clampNumber(Number(group.borderWidth ?? 1), 0, 12);
+export const exportMeasurementGroupBorderWidth = (group: MeasurementGroup) => {
+  if ((group.borderStyle ?? DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE) === "none") {
+    return 0;
+  }
+  // `Number("abc")` 是 NaN 而非 nullish，`?? 1` 拦不住；不兜底会写出 stroke-width="NaN" 的非法 SVG。
+  const parsed = Number(group.borderWidth ?? 1);
+  return Number.isFinite(parsed) ? clampNumber(parsed, 0, 12) : 1;
+};
 export const exportMeasurementGroupBorderDashArray = (group: MeasurementGroup) =>
   exportMeasurementGroupBorderWidth(group) <= 0 || group.borderStyle === "none"
     ? undefined
