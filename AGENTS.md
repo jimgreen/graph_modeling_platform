@@ -412,6 +412,28 @@ and confirm each one is covered by at least one assertion:
   percentage it is `0`; for a length it is `0`. Those are the values that make two
   different fallbacks indistinguishable, and they are rarely the ones you try first.
 
+### An assertion input that equals the value a mutation hardcodes
+
+This is **not** the same failure as an uncovered dimension — the dimension is
+covered, the value is just uninformative.
+
+`downloadBytes(filename, bytes, mime)` was mutated to hardcode
+`type: "application/octet-stream"`. The guard was green, not because `mime` was
+never exercised but because the test passed `"application/octet-stream"` — the most
+obvious value for a binary blob, and therefore the most likely one to be hardcoded.
+Replacing it with `image/png` / `text/csv` / `application/zip` turned it red.
+
+The general form:
+
+> When asserting that a parameter is **passed through**, use at least one value
+> that a hardcoding mutation would *not* pick. The canonical value for the
+> parameter's category is the worst choice, because it is also the most likely
+> literal to appear in a refactor.
+
+This applies to encodings (`"utf-8"`), content types (`"text/plain"`), separators
+(`","`), empty arrays (`[]`), and `null`. If the only input you tried is the
+category's default, you have tested nothing about pass-through.
+
 If a dimension cannot be covered, say so in the commit message rather than
 claiming equivalence. If it can, add the input and re-run.
 
