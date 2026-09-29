@@ -3733,11 +3733,21 @@ export const backendJsonHeaders = { "content-type": "application/json" };
 
 export async function backendErrorMessage(response: Response, fallbackMessage: string) {
   const payload = await response.json().catch(() => ({}));
-  // 旧式 { error: "消息" } 与 v1 信封 { error: { code, message } } 两种形态
-  if (typeof payload?.error === "string") {
-    return payload.error;
-  }
-  const message = typeof payload?.error?.message === "string" ? payload.error.message.trim() : "";
+  // 旧式 { error: "消息" } 与 v1 信封 { error: { code, message } } 两种形态。
+  //
+  // **两个分支都必须 trim 并在结果为空时落 fallback。**（旧式分支原先直接 return，
+  // 漏了 trim —— 探针实测两处不一致：
+  //   { error: "  出错了  " }  →  旧式分支原样返回带空白的串，v1 分支返回 "出错了"
+  //   { error: "   " }        →  旧式分支原样返回 "   "，v1 分支落 fallback
+  //   { error: "" }           →  两边都返回 "" → fetchBackendJson 抛 new Error("")，
+  //                             上层拿到**空消息**，界面什么都不显示。
+  // ）
+  //
+  // 落 fallback 永远更好：38 个调用点的 fallbackMessage 全是形如「…失败。」的
+  // 非空字面量（已逐个核对），不存在「故意传空串」的情况。
+  const message = typeof payload?.error === "string"
+    ? payload.error.trim()
+    : typeof payload?.error?.message === "string" ? payload.error.message.trim() : "";
   return message || fallbackMessage;
 }
 
