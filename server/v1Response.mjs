@@ -104,6 +104,37 @@ export function sendV1Error(response, code, message, statusOverride) {
   response.end(JSON.stringify(body));
 }
 
+/**
+ * 读请求体时的「体积超限」分支 —— **全仓唯一一份**。
+ *
+ * 此前 13 个调用点各抄一份**逐字节相同**的三行：
+ *
+ *   if (error?.code === "payload-too-large") {
+ *     sendV1Error(response, "payload-too-large", error.message);
+ *     return;
+ *   }
+ *
+ * 抽出来的理由：这一分支**必须**在所有端点一致（413 + 上游给的原始 message），
+ * 漏改一处就会出现「同一个超限错误在不同端点返回不同状态码」。
+ *
+ * **为什么只抽这一段、不抽 bad-request 分支**：那半段各文件文案**故意不同** ——
+ * apiV1Control 用「请求体须为合法 JSON。」、apiV1Receive 用
+ * `error.message : "请求体解析失败。"`、sendModel / eFileExport / apiV1Runtime
+ * 用「请求体不是合法 JSON。」并额外区分 `SyntaxError`。合并它们属行为变更。
+ *
+ * 返回 true 表示「已应答，调用点应立即 return」：
+ *
+ *   } catch (error) {
+ *     if (sendV1PayloadTooLarge(response, error)) return;
+ *     …各文件自己的 bad-request 分支…
+ *   }
+ */
+export function sendV1PayloadTooLarge(response, error) {
+  if (error?.code !== "payload-too-large") return false;
+  sendV1Error(response, "payload-too-large", error.message);
+  return true;
+}
+
 // 旧 /api 结果包装入 v1 信封（复用旧 handler 产出时用）
 export async function sendV1Wrapped(request, response, produce, { noStore = false } = {}) {
   try {
