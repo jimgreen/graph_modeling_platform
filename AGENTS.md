@@ -302,6 +302,31 @@ state *why* the two forms agree on the whole domain:
 A green run tells you "the mutation did not change any output I produce". It does not
 tell you the mutation was harmless. The difference is your input coverage.
 
+This has now bitten three times in one session, in three different shapes:
+
+| Mutation | What my inputs were missing |
+|---|---|
+| `split(";")` → `split(/[;\n]/)` | no input containing a newline |
+| `at(-1)` → `at(0)` in a dedup loop | no **non-first** point with `x === 0` (the loop starts at index 1) |
+| drop `source_control_type` from a normalisation branch | only tested lower-snake; the branch's guard required `snake(x) === x`, so **upper**-case was the discriminating input |
+
+So the check has to be an action, not an intention. Before writing off a green
+mutation as equivalent, enumerate the **input dimensions** the mutation touches
+and confirm each one is covered by at least one assertion:
+
+- delimiters / separators — is every relevant one present in some input?
+- position — does the code look at index 0, the last element, or a middle one?
+  Does the loop start at 1?
+- case — if the guard compares `normalise(x) === x`, only inputs where
+  `normalise(x) !== x` exercise the other branch.
+- falsy vs nullish — `""` and `"   "` often take different paths (see
+  `normalizeModelLayers`, where `""` takes the fallback id but `"   "` is dropped).
+- container presence — is the "missing" case (`undefined`, empty array, no key)
+  distinguishable from the "present" case?
+
+If a dimension cannot be covered, say so in the commit message rather than
+claiming equivalence. If it can, add the input and re-run.
+
 ### A filter on your own console output is another source of distortion
 
 Reading probe output through a grep that only keeps indented lines dropped a whole
