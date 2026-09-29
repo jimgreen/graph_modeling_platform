@@ -483,6 +483,42 @@ intermediate geometry (`routableLineDeviceCanvasPoints(node)`) rather than the
 function's return value, and by grepping the constants for the real parameter names
 before writing the fixture.
 
+### Upstream already normalises, so your own normaliser is invisible
+
+`templateDefinitionIsReadonly` starts with `const normalizedName = enName.trim()`.
+Mutating that to `enName` left the whole suite green — and it was **not** an
+equivalent mutation. The test only ever reached the function through
+`normalizeTemplateDefinitionList`, whose own line above is
+`String(definition.enName ?? "").trim()`. So on that path the callee
+**can never observe** the whitespace its own `.trim()` would remove. The
+normalisation is redundant for that caller and load-bearing for every other one.
+
+```ts
+// ❌ green forever — the aggregate entry point pre-trims
+expect(typed({ enName: " name ", valueType: "string" }).readonly).toBe(true);
+
+// ✅ the only path that can see the callee's own trim
+expect(templateDefinitionIsReadonly(" name ", false)).toBe(true);
+```
+
+The decision procedure, and it is one grep:
+
+1. Is the function `export`ed? If yes, someone can hand it whatever they like.
+2. Trace each production caller. Does **any** of them pass the argument raw?
+3. If every caller normalises first, the guard must call the function directly.
+
+> Generalised rule: **reaching a function only through an aggregate entry point
+> makes every normalisation layer below it unobservable.** Those layers are exactly
+> the ones whose removal you would want a test to catch. Any `export`ed helper needs
+> at least one test that calls it with the raw shape its own code claims to handle.
+
+The same shape bit a probe in the same round: to exercise the `valueType` fallback
+I used `enName: "x"`, and `"x"` happens to be `x: "float"` in
+`TEMPLATE_DEFINITION_VALUE_TYPES`. Twelve different `valueType` inputs all returned
+`float` — the fallback branch was never reached. When a probe's *valid-input* cases
+all return the same value, check whether your probe parameter is itself a special
+name in a lookup table before concluding the parameter has no effect.
+
 ### Never nest a double quote inside a test title
 
 ```ts
