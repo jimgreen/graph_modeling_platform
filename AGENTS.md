@@ -616,6 +616,26 @@ positives on every multi-line `test(` and every template-literal title, so it tr
 you to ignore it. Rewrite such titles in prose, or use backticks / single quotes
 for the code fragment inside them.
 
+### A test whose setup neutralises the very thing it claims to check
+
+断言「定时器被清掉了」时，最自然的写法是：跑一会儿 → `stop()` → 还原测试替身 →
+断言回调次数没涨。但还原替身通常等于**删掉被探测的输入**，代码随后走的是
+「输入缺失」那条早退分支，于是定时器其实还在跑，断言照样绿。
+
+`src/memoryWatch` 那条 `stop` 用例连踩两个坑，两条都写进了测试注释：
+
+```ts
+// ① stop 后若先还原 performance.memory，tick 会走 `if (used === null) return`
+//    —— 定时器没停，但断言恒绿。
+// ② 还必须换档：停在同一 level 时 `level === lastLevel` 短路，
+//    即便定时器还在跑也不会有第二次回调，照样测不出 clearInterval 生效没有。
+// 正确做法：先停在 soft 以下 → stop → 再把堆推到 soft 以上 → trimmed 仍应为空。
+```
+
+通用判据：**写完断言后，逐条问「如果被测的那行被删掉，这条断言会变吗？」**
+如果答案是否，说明断言依赖的输入已经被 setup 里的还原动作消掉了。修法不是
+加断言，而是把还原挪到断言之后、并且让被测对象在被测窗口内**始终有有效输入**。
+
 ### A filter on your own console output is another source of distortion
 
 Reading probe output through a grep that only keeps indented lines dropped a whole
