@@ -81,10 +81,24 @@ npx vitest run src/<file>.test.ts   # MUST show Failed Tests > 0
 git checkout -- <the mutated production file>   # never the test file
 ```
 
-Two rules learned the hard way here:
+Three rules learned the hard way here:
 
 - **Restore only the production file.** `git checkout -- <test file>` throws away
   work you have not committed yet.
+- **`git checkout --` on a production file throws away YOUR uncommitted work too.**
+  This is the trap: you edit `src/model.ts` (say, adding a doc comment recording
+  why the code looks odd), then run a mutation loop that ends in
+  `git checkout -- src/model.ts`. The mutation is undone — and so is the doc
+  comment, silently. It cost me a confusing "why did my static doc guard just
+  start failing" debugging round.
+  **Before any mutation loop, check `git diff --stat <file>`.** If it is
+  non-empty, either commit the production change first, or back the file up and
+  restore from the copy:
+  ```powershell
+  Copy-Item src/model.ts tmp/model.ts.bak -Force
+  # ... run mutations, then instead of git checkout:
+  Copy-Item tmp/model.ts.bak src/model.ts -Force
+  ```
 - **A run reporting `Tests: no tests` is not a passing mutation.** It means the
   injected edit broke the file syntactically, so the suite failed to even load.
   Rewrite the mutation so the result still parses (replace whole lines, not
