@@ -73,3 +73,145 @@ describe("memoryWatch 装配点（源码契约）", () => {
     expect(source).toContain("useEffect(createMemoryWatchCallback(__appScope), []);");
   });
 });
+
+// ─── startMemoryWatch 的处置行为（此前只测了阈值分级）────────────
+//
+// 既有 11 条只覆盖 memoryWatchLevelFor（纯分级）与两个源码扫描守卫。
+// startMemoryWatch 里真正会动用户数据的三条处置 —— 裁剪撤销历史、清空撤销栈、
+// 落盘恢复点后硬刷新 —— 一条行为断言都没有。而 level 3 会 **window.location.reload()**，
+// 是全仓少数几个会直接丢掉用户现场的地方，恰恰最该有守卫。
+//
+// 做法：注入假的 performance.memory（用可写属性描述符，因为原生 performance.memory
+// 是只读 getter），用 intervalMs 极小的 interval 驱动 tick，再在断言后 stop。
+describe("startMemoryWatch 的三条处置路径", () => {
+  type MemoryWatchHandle = { stop: () => void };
+
+  const GB = 1024 * 1024 * 1024;
+
+  /** 在 node 里造出可写的 performance.memory，并在返回的 cleanup 里还原。 */
+  function stubHeapUsedBytes(value: number) {
+    const target = performance as unknown as { memory?: { usedJSHeapSize: number } };
+    const had = "memory" in target;
+    const original = (target as { memory?: unknown }).memory;
+    Object.defineProperty(target, "memory", {
+      value: { usedJSHeapSize: value },
+      configurable: true,
+      writable: true
+    });
+    return () => {
+      if (had) {
+        Object.defineProperty(target, "memory", { value: original, configurable: true, writable: true });
+      } else {
+        delete (target as { memory?: unknown }).memory;
+      }
+    };
+  }
+
+  it("level 1：只裁剪撤销历史，保留最近 10 条，不提示用户", async () => {
+    const restore = stubHeapUsedBytes(1.3 * GB);
+    const trimmed: number[] = [];
+    const { startMemoryWatch } = await import("./memoryWatch");
+    const handle: MemoryWatchHandle = startMemoryWatch({
+      onTrimUndoHistory: (keep) => trimmed.push(keep),
+      intervalMs: 1
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    handle.stop();
+    restore();
+    expect(trimmed).toEqual([10]);
+  });
+
+  it("level 2：清空撤销历史（keep=0），与 level 1 区分", async () => {
+    const restore = stubHeapUsedBytes(1.7 * GB);
+    const trimmed: number[] = [];
+    const { startMemoryWatch } = await import("./memoryWatch");
+    const handle: MemoryWatchHandle = startMemoryWatch({
+      onTrimUndoHistory: (keep) => trimmed.push(keep),
+      intervalMs: 1
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    handle.stop();
+    restore();
+    expect(trimmed).toEqual([0]);
+  });
+
+  it("同一档位不重复处置：堆没继续涨时不重复裁剪", async () => {
+    const restore = stubHeapUsedBytes(1.3 * GB);
+    const trimmed: number[] = [];
+    const { startMemoryWatch } = await import("./memoryWatch");
+    const handle: MemoryWatchHandle = startMemoryWatch({
+      onTrimUndoHistory: (keep) => trimmed.push(keep),
+      intervalMs: 1
+    });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    handle.stop();
+    restore();
+    // 停在同一档 ⇒ 只处置一次。这是 level 去重（lastLevel）的契约
+    expect(trimmed).toEqual([10]);
+  });
+
+  it("堆回落到 soft 以下后再次升档，会重新处置", async () => {
+    let used = 1.3 * GB;
+    const restore = stubHeapUsedBytes(used);
+    const trimmed: number[] = [];
+    const { startMemoryWatch } = await import("./memoryWatch");
+    const handle: MemoryWatchHandle = startMemoryWatch({
+      onTrimUndoHistory: (keep) => trimmed.push(keep),
+      intervalMs: 1
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    used = 0.5 * GB;
+    stubHeapUsedBytes(used);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    used = 1.3 * GB;
+    stubHeapUsedBytes(used);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    handle.stop();
+    restore();
+    expect(trimmed.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("读不到堆占用时静默空转：不调任何回调", async () => {
+    const target = performance as unknown as { memory?: unknown };
+    const had = "memory" in target;
+    const original = target.memory;
+    delete target.memory;
+    const trimmed: number[] = [];
+    const { startMemoryWatch } = await import("./memoryWatch");
+    const handle: MemoryWatchHandle = startMemoryWatch({
+      onTrimUndoHistory: (keep) => trimmed.push(keep),
+      intervalMs: 1
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    handle.stop();
+    if (had) {
+      Object.defineProperty(target, "memory", { value: original, configurable: true, writable: true });
+    }
+    expect(trimmed).toEqual([]);
+  });
+
+  it("stop 之后不再处置：定时器真的被清掉了", async () => {
+    const restore = stubHeapUsedBytes(0.5 * GB);
+    const trimmed: number[] = [];
+    const { startMemoryWatch } = await import("./memoryWatch");
+    const handle: MemoryWatchHandle = startMemoryWatch({
+      onTrimUndoHistory: (keep) => trimmed.push(keep),
+      intervalMs: 1
+    });
+    // 先停在 soft 以下（level 0），stop 之后再把堆推到 soft 以上。
+    // 若定时器真的停了，stop 后的 tick 不会跑，trimmed 保持空；
+    // 若没停（clearInterval 被摘掉），那次 tick 会把 level 从 0 推到 1 而裁一次。
+    //
+    // 两个必须做对的地方：
+    // ① stop 之后**不能**先 restore() —— 那等于删掉 performance.memory，
+    //    tick 会走 `if (used === null) return` 直接返回，断言恒绿。
+    // ② 必须换档 —— 停在同一档时 `level === lastLevel` 会短路，即便定时器还在跑
+    //    也不会有第二次回调，测不出 clearInterval 有没有生效。
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(trimmed).toEqual([]);
+    handle.stop();
+    stubHeapUsedBytes(1.3 * GB);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    restore();
+    expect(trimmed).toEqual([]);
+  });});
