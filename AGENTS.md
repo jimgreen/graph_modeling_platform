@@ -460,6 +460,41 @@ The test for a mutated condition:
 If you cannot exclude the other routes, say so in the commit message rather than
 writing off the green run.
 
+#### The sharpest form: a branch that is *totally* shadowed by its sibling
+
+`isStaticButtonCapableKind` is `A || B`:
+
+```ts
+if (explicitStaticComponentLibraryForKind(baseKind) === "StaticButton") return true;
+return isStaticKind(baseKind) && !isStaticLineLikeKind(baseKind);
+```
+
+Deleting branch `A` entirely — and flipping it to `return false` — both stayed green.
+Not because the test set was thin, but because **every kind in the lookup table
+satisfies both branches**: the only entry mapping to `StaticButton` is
+`"static-button"`, and `"static-button".startsWith("static-")` is also true.
+So no table entry can reach `A` alone.
+
+The discriminator came from a **different naming space entirely** — a `custom-` kind:
+
+```ts
+isStaticKind("custom-staticbutton")   // "custom-staticbutton".startsWith("static-") === false
+//   ⇒ B is false
+staticComponentLibraryFromCustomKind("custom-staticbutton")
+//   custom- prefix + suffix "staticbutton" matches a library name → "StaticButton"
+//   ⇒ A is true
+```
+
+> When an `A || B` mutation stays green, do not conclude the inputs are thin. First
+> check whether `A`'s discriminator set is a **subset of** `B`'s. If it is, the
+> missing input is not a *value* you failed to try — it is a **kind that lives in
+> another namespace** (a custom/aliased/derived kind, a legacy id, an override row)
+> where the sibling predicate happens to be false.
+
+The giveaway is that the obvious test input is the one the sibling also accepts.
+Writing `expect(capable("static-button")).toBe(true)` feels like it covers branch
+`A`; it covers `B`.
+
 ### A probe that returns empty everywhere is a broken fixture, not a finding
 
 Before concluding "this function does nothing", check the fixture's **shape** against
