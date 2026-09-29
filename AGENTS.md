@@ -273,6 +273,44 @@ your own helper first and confirm nothing normalises it away.** Grep the helper 
 `??`, `||`, and default parameters. A helper that "makes tests convenient" is
 exactly what will hide the edge case you wrote the test for.
 
+### A green mutation may be equivalent — or may just be outside your inputs
+
+`parseSvgStyleAttribute` splits on `";"`. Injecting `split(/[;\n]/)` left the suite
+green. That looked like a classic equivalent mutation, so the instinct was to record
+it and move on. Recording it would have been wrong.
+
+The mutation is only equivalent **on inputs that contain no newline**. The test set
+had none, so the behaviour difference was real but unobservable — not absent. Green
+from a mutation you cannot see is an *invalid signal*, not evidence of equivalence.
+
+```js
+// added after the green run, which makes the mutation red:
+expect(parseSvgStyleAttribute("fill:red\nstroke:blue")).toEqual({ fill: "red\nstroke:blue" });
+```
+
+Before writing off any green mutation as equivalent, ask: **does my input set cover
+the dimension the mutation touches?** If you cannot cover it, add an input that does
+and re-run. Only one class of equivalence is worth recording — one where you can
+state *why* the two forms agree on the whole domain:
+
+- `Set.has(x)` → `[...set].includes(x)` — both use SameValueZero, so they agree for
+  every possible argument.
+- `rotation === 90 || rotation === 270` → `rotation !== 0 && rotation !== 180` —
+  valid only because the callee provably returns one of `{0, 90, 180, 270}`. Record
+  the invariant too, so the equivalence is *provable* rather than asserted.
+
+A green run tells you "the mutation did not change any output I produce". It does not
+tell you the mutation was harmless. The difference is your input coverage.
+
+### A filter on your own console output is another source of distortion
+
+Reading probe output through a grep that only keeps indented lines dropped a whole
+section of plain-JSON logs; I briefly concluded the probe had not printed them.
+
+If a section of expected output is missing, re-read the raw file before concluding
+anything about the probe. Silent absence and "the code didn't run" look identical
+once you have filtered the evidence away.
+
 ## Keeping the Index Fresh
 
 After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
