@@ -507,6 +507,42 @@ export type Edge = {
   routePoints?: Point[];
 };
 
+/**
+ * 边「用户可编辑点位」的深拷贝 —— 8 个调用点此前**逐字节手抄**这三行。
+ *
+ * 涵盖 `Edge` 里**用户能拖出来**的三个字段（`sourcePoint` / `targetPoint` /
+ * `manualPoints`），各自建新对象 / 新数组。
+ *
+ * ## 刻意**不含** `routePoints`
+ *
+ * `routePoints` 是路由器算出来的**派生**点位，不是用户编辑的。8 个调用点里
+ * 有一半刻意不克隆它（`appCanvasInteractionFactories` 的
+ * `originalEdgePoints`、`appRenderBatch` 的 `snapshotEdgePoints`），
+ * 另一半克隆（`appProjectCanvasFactories` 的 `originalEdgePoints`）——
+ * 两种做法各自有理由，所以 **`routePoints` 的处理留在各调用点**，
+ * 本助手只统一「这三个字段算可编辑点位」这一条定义。
+ *
+ * 另注：`cloneEdgesForUndo`（appPersistenceLibraryExport）克隆的是
+ * **四个**字段（含 `routePoints`），那是另一条语义、另一个用途（撤销栈快照），
+ * 与本助手**不可互换**。
+ *
+ * ## 用法：展开的键序必须保持不变
+ *
+ * 调用点写成 `{ ...edge, ...cloneEdgeEditablePoints(edge) }`。
+ * JS 的对象展开**不会移动已存在的键**，所以
+ * `sourcePoint` 若已是 `edge` 的自有键，它会留在原位、只换值；
+ * 若不是，则被追加到末尾。两种情况下 `JSON.stringify` 的输出键序都与
+ * 原来的手写形式逐字节相同 —— 这一点由 src/edgeEditablePoints.test.ts 核对
+ * （E 文件 / SVG 都对键序敏感）。
+ */
+export function cloneEdgeEditablePoints(edge: Edge): Pick<Edge, "sourcePoint" | "targetPoint" | "manualPoints"> {
+  return {
+    sourcePoint: edge.sourcePoint ? { x: edge.sourcePoint.x, y: edge.sourcePoint.y } : undefined,
+    targetPoint: edge.targetPoint ? { x: edge.targetPoint.x, y: edge.targetPoint.y } : undefined,
+    manualPoints: edge.manualPoints?.map((point) => ({ x: point.x, y: point.y }))
+  };
+}
+
 export type ModelGroup = {
   id: string;
   name: string;

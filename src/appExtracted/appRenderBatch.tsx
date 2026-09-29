@@ -23,8 +23,7 @@ import {
   Underline,
   X,
 } from "lucide-react";
-import {
-  calculateModelGeometryBounds,
+import { cloneEdgeEditablePoints, calculateModelGeometryBounds,
   calculateNodeVisualBounds,
   clampEdgeGeometryToBounds,
   clearVoltageBaseValuesForScope,
@@ -60,8 +59,7 @@ import {
   type VoltageBaseSetScope,
   type VoltageBaseTerminalValuesByNodeId,
   viewBoxZoomPercent,
-  type SavedProjectRecord
-} from "../model";
+  type SavedProjectRecord } from "../model";
 import {
   type GraphStore
 } from "../graphStore";
@@ -1445,9 +1443,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         sourceEdges.map((edge) => [
           edge.id,
           {
-            sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
-            targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
-            manualPoints: edge.manualPoints?.map((point) => ({ ...point })),
+            ...cloneEdgeEditablePoints(edge),
             routePoints: edge.routePoints?.map((point) => ({ ...point }))
           }
         ])

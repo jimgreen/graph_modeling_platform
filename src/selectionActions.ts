@@ -1,5 +1,4 @@
-import {
-  type AlignDirection,
+import { cloneEdgeEditablePoints, type AlignDirection,
   type AlignMode,
   calculateNodeBodyBounds,
   calculateNodeVisualBounds,
@@ -14,8 +13,7 @@ import {
   type ModelGroup,
   type ModelNode,
   type Point,
-  type RoutedEdge
-} from "./model";
+  type RoutedEdge } from "./model";
 import { clampNumber } from "./canvasViewport";
 import { containerMemberNodes, isContainerNode } from "./acContainer";
 
@@ -608,9 +606,7 @@ export function buildCanvasClipboard(
       .map((edge) => ({
         edge: {
           ...edge,
-          sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
-          targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
-          manualPoints: edge.manualPoints?.map((point) => ({ ...point }))
+          ...cloneEdgeEditablePoints(edge),
         },
         routePoints: (routeByEdgeId.get(edge.id)?.points ?? [
           edge.sourcePoint,
