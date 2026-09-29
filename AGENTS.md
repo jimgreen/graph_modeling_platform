@@ -460,6 +460,29 @@ The test for a mutated condition:
 If you cannot exclude the other routes, say so in the commit message rather than
 writing off the green run.
 
+### A probe that returns empty everywhere is a broken fixture, not a finding
+
+Before concluding "this function does nothing", check the fixture's **shape** against
+the real data. A probe whose every case returns the same empty result has almost
+always been fed geometry that collapses to a single point or a field name that does
+not exist.
+
+Two instances in one session, both in `routableLineEndpointRefs`:
+
+- Terminals built with `anchor: { x: 0, y: 0 }` made the line's two endpoints
+  **coincide** at its centre, so all fourteen probe cases returned `{}`. The real
+  anchors are `±0.5`, and `terminalRenderLocalPoint` insets them further.
+- Endpoint references were written as `params: { t1_node: "A" }`, but the real
+  parameter names are `_routableLineSourceNodeId` / `_routableLineTargetNodeId` plus
+  four companions. The "both endpoints already set" path therefore never ran, and the
+  assertion that appeared to cover it was actually covering a different branch.
+
+The distinguishing signal: **a constant result across varied inputs**. Either the
+function is trivial, or your input is degenerate. Resolve it by printing the
+intermediate geometry (`routableLineDeviceCanvasPoints(node)`) rather than the
+function's return value, and by grepping the constants for the real parameter names
+before writing the fixture.
+
 ### A filter on your own console output is another source of distortion
 
 Reading probe output through a grep that only keeps indented lines dropped a whole
