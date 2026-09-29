@@ -483,6 +483,42 @@ intermediate geometry (`routableLineDeviceCanvasPoints(node)`) rather than the
 function's return value, and by grepping the constants for the real parameter names
 before writing the fixture.
 
+### Never nest a double quote inside a test title
+
+```ts
+// WRONG — the inner quote closes the title early; the file fails to parse
+test("未知 valueType（`=== "string"` 之外都算数值）", () => { … })
+```
+
+This bites three times per session, and the failure is **silent by design**:
+
+```
+Test Files  1 failed (1)
+     Tests  no tests
+```
+
+`no tests` is never a pass, but it is also easy to dismiss as "environment
+problem". It is always a parse error in the file you just wrote.
+
+The fix is ordering, not a linter. `vitest` reports only `no tests`; **`tsc` reports
+the exact line and column**:
+
+```
+src/formatUtils.test.ts(318,34): error TS1005: ',', expected.
+```
+
+So always run the type-check **before** the test command, never after:
+
+```powershell
+npx tsc -b --force          # ← reports TS1005 with line:col
+npx vitest run <file>       # ← only says "no tests"
+```
+
+A regex heuristic for unbalanced quotes is not worth having — it produces false
+positives on every multi-line `test(` and every template-literal title, so it trains
+you to ignore it. Rewrite such titles in prose, or use backticks / single quotes
+for the code fragment inside them.
+
 ### A filter on your own console output is another source of distortion
 
 Reading probe output through a grep that only keeps indented lines dropped a whole
