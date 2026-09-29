@@ -881,14 +881,17 @@ function replaceEdgeInTerminalRef(map: Map<string, Edge[]>, edge: Edge) {
   }
 }
 
-export function graphStorePatchNodesFromArray(
+/**
+ * 节点侧增量更新的唯一实现。
+ *
+ * `graphStorePatchNodesFromArray`（按 id 从整表取 next）与 `graphStorePatchNodes`
+ * （next 由调用方给）曾各存一份 60 行逐行相同的拷贝 —— 改判定要改两处，漏一处
+ * 就出现两条路径行为分叉。这里让两者只负责「怎么拿 next」，共用同一段内核。
+ */
+function applyNodePatch(
   store: GraphStore,
-  nodes: readonly ModelNode[],
-  nodeIds: Iterable<string>
+  updates: Iterable<{ index: number; nextNode: ModelNode }>
 ): GraphStore {
-  if (!sameOrderFromItems(nodes, store.nodeOrder)) {
-    return graphStoreSetNodes(store, nodes);
-  }
   let changed = false;
   let nodeMap = store.nodeMap;
   let nodeList = store.nodes;
@@ -899,67 +902,7 @@ export function graphStorePatchNodesFromArray(
   let topologyChanged = false;
   let nodeSpatialIndex = store.nodeSpatialIndex;
   const spatialUpdates: Array<{ previousNode: ModelNode; nextNode: ModelNode }> = [];
-  for (const nodeId of nodeIds) {
-    const index = store.nodeIndexById.get(nodeId);
-    if (index === undefined) {
-      continue;
-    }
-    const nextNode = nodes[index];
-    const previousNode = store.nodeMap.get(nodeId);
-    if (!previousNode || previousNode === nextNode) {
-      continue;
-    }
-    if (!changed) {
-      nodeMap = new Map(store.nodeMap);
-      nodeList = store.nodes.slice();
-      changed = true;
-    }
-    nodeMap.set(nodeId, nextNode);
-    nodeList[index] = nextNode;
-    nodesByLayerId = patchNodeLayerIndex(nodesByLayerId, previousNode, nextNode);
-    busNodeIdSet = patchBusNodeIdSet(busNodeIdSet, previousNode, nextNode);
-    const routeSpatialBoundsChanged = nodeAffectsRouteSpatialBounds(previousNode, nextNode);
-    elementTreeChanged ||= nodeAffectsElementTree(previousNode, nextNode);
-    routeGeometryChanged ||= nodeAffectsRouteGeometry(previousNode, nextNode, routeSpatialBoundsChanged);
-    topologyChanged ||= nodeAffectsTopology(previousNode, nextNode);
-    if (nodeAffectsNodeSpatialIndex(previousNode, nextNode)) {
-      spatialUpdates.push({ previousNode, nextNode });
-    }
-  }
-  if (spatialUpdates.length > 0) {
-    nodeSpatialIndex = patchNodeSpatialIndexMany(store.nodeSpatialIndex, spatialUpdates);
-  }
-  return changed
-    ? {
-        ...store,
-        nodeMap,
-        nodesByLayerId,
-        busNodeIdSet,
-        elementTreeRevision: elementTreeChanged ? store.elementTreeRevision + 1 : store.elementTreeRevision,
-        routeGeometryRevision: routeGeometryChanged ? store.routeGeometryRevision + 1 : store.routeGeometryRevision,
-        topologyRevision: topologyChanged ? store.topologyRevision + 1 : store.topologyRevision,
-        nodeSpatialIndex,
-        nodes: nodeList
-      }
-    : store;
-}
-
-export function graphStorePatchNodes(store: GraphStore, nodeUpdates: Iterable<ModelNode>): GraphStore {
-  let changed = false;
-  let nodeMap = store.nodeMap;
-  let nodeList = store.nodes;
-  let nodesByLayerId = store.nodesByLayerId;
-  let busNodeIdSet = store.busNodeIdSet;
-  let elementTreeChanged = false;
-  let routeGeometryChanged = false;
-  let topologyChanged = false;
-  let nodeSpatialIndex = store.nodeSpatialIndex;
-  const spatialUpdates: Array<{ previousNode: ModelNode; nextNode: ModelNode }> = [];
-  for (const nextNode of nodeUpdates) {
-    const index = store.nodeIndexById.get(nextNode.id);
-    if (index === undefined) {
-      continue;
-    }
+  for (const { index, nextNode } of updates) {
     const previousNode = store.nodeMap.get(nextNode.id);
     if (!previousNode || previousNode === nextNode) {
       continue;
@@ -999,76 +942,53 @@ export function graphStorePatchNodes(store: GraphStore, nodeUpdates: Iterable<Mo
     : store;
 }
 
-export function graphStorePatchEdgesFromArray(
+export function graphStorePatchNodesFromArray(
   store: GraphStore,
-  edges: readonly Edge[],
-  edgeIds: Iterable<string>
+  nodes: readonly ModelNode[],
+  nodeIds: Iterable<string>
 ): GraphStore {
-  if (!sameOrderFromItems(edges, store.edgeOrder)) {
-    return graphStoreSetEdges(store, edges);
+  if (!sameOrderFromItems(nodes, store.nodeOrder)) {
+    return graphStoreSetNodes(store, nodes);
   }
-  let changed = false;
-  let edgeMap = store.edgeMap;
-  let edgeList = store.edges;
-  let edgesByNodeId = store.edgesByNodeId;
-  let edgesByTerminalRef = store.edgesByTerminalRef;
-  let elementTreeChanged = false;
-  let edgeEndpointChangedInPatch = false;
-  let routeGeometryChanged = false;
-  let topologyChanged = false;
-  for (const edgeId of edgeIds) {
-    const index = store.edgeIndexById.get(edgeId);
-    if (index === undefined) {
-      continue;
-    }
-    const nextEdge = edges[index];
-    const previousEdge = store.edgeMap.get(edgeId);
-    if (!previousEdge || previousEdge === nextEdge) {
-      continue;
-    }
-    if (!changed) {
-      edgeMap = new Map(store.edgeMap);
-      edgeList = store.edges.slice();
-      edgesByNodeId = new Map(store.edgesByNodeId);
-      edgesByTerminalRef = new Map(store.edgesByTerminalRef);
-      changed = true;
-    }
-    const endpointChanged = edgeEndpointChanged(previousEdge, nextEdge);
-    edgeMap.set(edgeId, nextEdge);
-    edgeList[index] = nextEdge;
-    if (endpointChanged) {
-      removeEdgeFromAdjacency(edgesByNodeId, previousEdge.sourceId, edgeId);
-      removeEdgeFromAdjacency(edgesByNodeId, previousEdge.targetId, edgeId);
-      addEdgeToAdjacency(edgesByNodeId, nextEdge.sourceId, nextEdge);
-      addEdgeToAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
-      removeEdgeFromTerminalRef(edgesByTerminalRef, previousEdge);
-      addEdgeToTerminalRef(edgesByTerminalRef, nextEdge);
-    } else {
-      replaceEdgeInAdjacency(edgesByNodeId, nextEdge.sourceId, nextEdge);
-      replaceEdgeInAdjacency(edgesByNodeId, nextEdge.targetId, nextEdge);
-      replaceEdgeInTerminalRef(edgesByTerminalRef, nextEdge);
-    }
-    elementTreeChanged ||= endpointChanged;
-    edgeEndpointChangedInPatch ||= endpointChanged;
-    routeGeometryChanged ||= edgeAffectsRouteGeometry(previousEdge, nextEdge, endpointChanged);
-    topologyChanged ||= endpointChanged;
-  }
-  return changed
-    ? {
-        ...store,
-        edgeMap,
-        edgesByNodeId,
-        edgesByTerminalRef,
-        elementTreeRevision: elementTreeChanged ? store.elementTreeRevision + 1 : store.elementTreeRevision,
-        edgeEndpointRevision: edgeEndpointChangedInPatch ? store.edgeEndpointRevision + 1 : store.edgeEndpointRevision,
-        routeGeometryRevision: routeGeometryChanged ? store.routeGeometryRevision + 1 : store.routeGeometryRevision,
-        topologyRevision: topologyChanged ? store.topologyRevision + 1 : store.topologyRevision,
-        edges: edgeList
+  return applyNodePatch(
+    store,
+    (function* resolveFromArray() {
+      for (const nodeId of nodeIds) {
+        const index = store.nodeIndexById.get(nodeId);
+        if (index === undefined) {
+          continue;
+        }
+        const nextNode = nodes[index];
+        if (nextNode) {
+          yield { index, nextNode };
+        }
       }
-    : store;
+    })()
+  );
 }
 
-export function graphStorePatchEdges(store: GraphStore, edgeUpdates: Iterable<Edge>): GraphStore {
+export function graphStorePatchNodes(store: GraphStore, nodeUpdates: Iterable<ModelNode>): GraphStore {
+  return applyNodePatch(
+    store,
+    (function* resolveFromIterable() {
+      for (const nextNode of nodeUpdates) {
+        const index = store.nodeIndexById.get(nextNode.id);
+        if (index !== undefined) {
+          yield { index, nextNode };
+        }
+      }
+    })()
+  );
+}
+
+/**
+ * 边侧增量更新的唯一实现，理由同 applyNodePatch：FromArray 与 iterable 两个入口
+ * 曾各存一份逐行相同的拷贝，改判定要改两处。
+ */
+function applyEdgePatch(
+  store: GraphStore,
+  updates: Iterable<{ index: number; nextEdge: Edge }>
+): GraphStore {
   let changed = false;
   let edgeMap = store.edgeMap;
   let edgeList = store.edges;
@@ -1078,11 +998,7 @@ export function graphStorePatchEdges(store: GraphStore, edgeUpdates: Iterable<Ed
   let edgeEndpointChangedInPatch = false;
   let routeGeometryChanged = false;
   let topologyChanged = false;
-  for (const nextEdge of edgeUpdates) {
-    const index = store.edgeIndexById.get(nextEdge.id);
-    if (index === undefined) {
-      continue;
-    }
+  for (const { index, nextEdge } of updates) {
     const previousEdge = store.edgeMap.get(nextEdge.id);
     if (!previousEdge || previousEdge === nextEdge) {
       continue;
@@ -1127,6 +1043,45 @@ export function graphStorePatchEdges(store: GraphStore, edgeUpdates: Iterable<Ed
         edges: edgeList
       }
     : store;
+}
+
+export function graphStorePatchEdgesFromArray(
+  store: GraphStore,
+  edges: readonly Edge[],
+  edgeIds: Iterable<string>
+): GraphStore {
+  if (!sameOrderFromItems(edges, store.edgeOrder)) {
+    return graphStoreSetEdges(store, edges);
+  }
+  return applyEdgePatch(
+    store,
+    (function* resolveFromArray() {
+      for (const edgeId of edgeIds) {
+        const index = store.edgeIndexById.get(edgeId);
+        if (index === undefined) {
+          continue;
+        }
+        const nextEdge = edges[index];
+        if (nextEdge) {
+          yield { index, nextEdge };
+        }
+      }
+    })()
+  );
+}
+
+export function graphStorePatchEdges(store: GraphStore, edgeUpdates: Iterable<Edge>): GraphStore {
+  return applyEdgePatch(
+    store,
+    (function* resolveFromIterable() {
+      for (const nextEdge of edgeUpdates) {
+        const index = store.edgeIndexById.get(nextEdge.id);
+        if (index !== undefined) {
+          yield { index, nextEdge };
+        }
+      }
+    })()
+  );
 }
 
 export function graphStoreApplyPatch(store: GraphStore, patch: GraphStorePatch): GraphStore {

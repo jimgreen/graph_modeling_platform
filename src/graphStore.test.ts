@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createGraphStore,
+  graphStorePatchEdges,
   graphStorePatchEdgesFromArray,
   graphStorePatchNodes,
   graphStorePatchNodesFromArray,
@@ -328,6 +329,91 @@ describe("graphStore / graphStorePatchNodes", () => {
     expect(patched.nodeIndexById.get("b")).toBe(1);
     expect(patched.nodes[1]!.name).toBe("B2");
     expect(patched.nodes[0]!.name).toBe("a");
+  });
+});
+
+// ─── 两入口共用同一内核后的等价性 ─────────────────────────
+
+describe("graphStore / FromArray 与 iterable 两入口逐字段等价", () => {
+  // 这是把两份拷贝合成一份内核之后最该被钉住的不变式：两条路径必须给出
+  // **完全相同**的 store。逐字段比而不是 toEqual，是为了 Map/Set 的引用不同
+  // 也能比出内容差异（toEqual 对 Map 比的是内容，够用；但数组身份要单独断）。
+  const compareStores = (left: GraphStore, right: GraphStore) => {
+    expect(right.nodeOrder).toEqual(left.nodeOrder);
+    expect(right.edgeOrder).toEqual(left.edgeOrder);
+    expect([...right.nodeMap.keys()]).toEqual([...left.nodeMap.keys()]);
+    expect([...right.edgeMap.keys()]).toEqual([...left.edgeMap.keys()]);
+    expect([...right.nodeIndexById]).toEqual([...left.nodeIndexById]);
+    expect([...right.edgeIndexById]).toEqual([...left.edgeIndexById]);
+    expect([...right.nodeIdSet]).toEqual([...left.nodeIdSet]);
+    expect([...right.edgeIdSet]).toEqual([...left.edgeIdSet]);
+    expect(right.nodes).toEqual(left.nodes);
+    expect(right.edges).toEqual(left.edges);
+    expect([...right.nodesByLayerId]).toEqual([...left.nodesByLayerId]);
+    expect([...right.busNodeIdSet]).toEqual([...left.busNodeIdSet]);
+    expect([...right.edgesByNodeId]).toEqual([...left.edgesByNodeId]);
+    expect([...right.edgesByTerminalRef]).toEqual([...left.edgesByTerminalRef]);
+    expect(right.elementTreeRevision).toBe(left.elementTreeRevision);
+    expect(right.edgeEndpointRevision).toBe(left.edgeEndpointRevision);
+    expect(right.routeGeometryRevision).toBe(left.routeGeometryRevision);
+    expect(right.topologyRevision).toBe(left.topologyRevision);
+    expect([...right.nodeSpatialIndex.nodeBoundsById]).toEqual([...left.nodeSpatialIndex.nodeBoundsById]);
+    expect([...right.nodeSpatialIndex.nodeBucketKeysById]).toEqual([...left.nodeSpatialIndex.nodeBucketKeysById]);
+  };
+
+  const nodeCases: Array<[string, Partial<ModelNode>, Partial<ModelNode>]> = [
+    ["位置", { position: { x: 0, y: 0 } }, { position: { x: 120, y: 80 } }],
+    ["名称", { name: "A" }, { name: "B" }],
+    ["图层", { layerId: "L1" }, { layerId: "L2" }],
+    ["旋转", { rotation: 0 }, { rotation: 90 }],
+    ["kind", { kind: "breaker" as ModelNode["kind"] }, { kind: "ac-bus" as ModelNode["kind"] }],
+    ["idx", { params: {} }, { params: { idx: "4" } }],
+    ["无关参数", { params: {} }, { params: { 随便: "x" } }],
+    ["端子锚点", { terminals: [makeTerminal("t1", -0.5, 0)] }, { terminals: [makeTerminal("t1", 0.5, 0)] }]
+  ];
+
+  for (const [label, from, to] of nodeCases) {
+    it(`节点侧：只改${label}时两入口结果一致`, () => {
+      const store = storeOf([makeNode("a", from), makeNode("b")]);
+      const next = makeNode("a", to);
+      const viaArray = graphStorePatchNodesFromArray(store, [next, store.nodes[1]!], ["a"]);
+      const viaIterable = graphStorePatchNodes(store, [next]);
+      compareStores(viaArray, viaIterable);
+    });
+  }
+
+  it("节点侧：一次改多个节点时两入口结果一致", () => {
+    const store = storeOf([makeNode("a"), makeNode("b"), makeNode("c")]);
+    const next = [makeNode("a", { position: { x: 1, y: 1 } }), makeNode("b", { name: "B2" }), makeNode("c", { kind: "ac-bus" as ModelNode["kind"] })];
+    const viaArray = graphStorePatchNodesFromArray(store, next, ["a", "b", "c"]);
+    const viaIterable = graphStorePatchNodes(store, next);
+    compareStores(viaArray, viaIterable);
+  });
+
+  const edgeCases: Array<[string, Partial<Edge>, Partial<Edge>]> = [
+    ["换端点", { sourceId: "a", targetId: "b" }, { sourceId: "a", targetId: "c" }],
+    ["换端子", { sourceTerminalId: "t1" }, { sourceTerminalId: "t2" }],
+    ["只改拐点", { manualPoints: [] }, { manualPoints: [{ x: 1, y: 2 }] }],
+    ["同端点同端子", {}, {}]
+  ];
+
+  for (const [label, from, to] of edgeCases) {
+    it(`边侧：${label}时两入口结果一致`, () => {
+      const base: Partial<Edge> = { sourceId: "a", targetId: "b", ...from };
+      const store = storeOf([makeNode("a"), makeNode("b"), makeNode("c")], [makeEdge("e1", "a", "b", base)]);
+      const next = makeEdge("e1", "a", "b", { ...base, ...to, id: "e1" });
+      const viaArray = graphStorePatchEdgesFromArray(store, [next], ["e1"]);
+      const viaIterable = graphStorePatchEdges(store, [next]);
+      compareStores(viaArray, viaIterable);
+    });
+  }
+
+  it("两入口都不命中时也都返回原 store 引用", () => {
+    const store = storeOf([makeNode("a")], [makeEdge("e1", "a", "a")]);
+    expect(graphStorePatchNodesFromArray(store, store.nodes, ["幽灵"])).toBe(store);
+    expect(graphStorePatchNodes(store, [makeNode("幽灵")])).toBe(store);
+    expect(graphStorePatchEdgesFromArray(store, store.edges, ["幽灵"])).toBe(store);
+    expect(graphStorePatchEdges(store, [makeEdge("幽灵", "a", "a")])).toBe(store);
   });
 });
 
