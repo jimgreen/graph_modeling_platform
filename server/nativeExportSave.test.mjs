@@ -102,6 +102,77 @@ describe("native export save service", () => {
     expect(isAllowedNativeExportOrigin({ headers: { origin: "https://example.com" } })).toBe(false);
   });
 
+  // 上一条只钉了 4 个输入，而这 4 个里 3 个是「通过」、1 个是明显的远程域名。
+  // 真正要挡住的是**长得像**本机的那些 —— 一个 `startsWith("127.0.0.1")` 式的
+  // 放行实现能通过那 4 条，却会把 `127.0.0.1.evil.com` 放过去。
+  describe("本机来源校验的负例（表驱动）", () => {
+    const rejected = [
+      // 后缀挂载：前缀匹配式实现的经典漏网
+      ["http://127.0.0.1.evil.com", "127.0.0.1 后缀挂域名"],
+      ["http://localhost.evil.com", "localhost 后缀挂域名"],
+      ["http://127.0.0.1@evil.com", "userinfo 伪装"],
+      ["http://evil.com#127.0.0.1", "fragment 伪装"],
+      // 环回段之外：0.0.0.0 是 unspecified，127.0.0.2 不是 LOCAL_HOSTNAMES 里的字面量
+      ["http://0.0.0.0:5173", "unspecified 地址"],
+      ["http://127.0.0.2:5173", "环回段内但非字面量 127.0.0.1"],
+      ["http://[::2]:5173", "IPv6 环回但非 ::1"],
+      ["http://192.168.1.10:5173", "内网地址"],
+      // 非 http(s) 协议
+      ["file:///C:/Windows/System32", "file 协议"],
+      ["ftp://localhost", "ftp 协议"],
+      ["javascript:alert(1)", "javascript 伪协议"],
+      // 非法 origin 字面量
+      ["null", "opaque origin"],
+      ["not a url", "非 URL 串"],
+      ["http://", "只有协议"],
+      ["http://127.0.0.1:99999", "越界端口 ⇒ URL 解析抛错即拒"]
+    ];
+
+    for (const [origin, why] of rejected) {
+      test(`拒绝：${why} — ${origin}`, () => {
+        expect(isAllowedNativeExportOrigin({ headers: { origin } })).toBe(false);
+      });
+    }
+
+    const accepted = [
+      ["http://127.0.0.1:5173", "IPv4 环回"],
+      ["https://127.0.0.1:5174", "IPv4 环回 + https"],
+      ["http://localhost:5173", "localhost"],
+      ["http://LOCALHOST:5173", "大写（hostname 已小写化）"],
+      ["http://[::1]:5173", "IPv6 环回"],
+      ["http://127.0.0.1", "无端口"],
+      ["  http://127.0.0.1:5173  ", "首尾空白先被 trim"]
+    ];
+
+    for (const [origin, why] of accepted) {
+      test(`放行：${why} — ${origin}`, () => {
+        expect(isAllowedNativeExportOrigin({ headers: { origin } })).toBe(true);
+      });
+    }
+
+    test("origin 头缺失（undefined / null / 空串 / 纯空白）一律判本机", () => {
+      for (const headers of [{}, { origin: undefined }, { origin: null }, { origin: "" }, { origin: "   " }]) {
+        expect(isAllowedNativeExportOrigin({ headers }), JSON.stringify(headers)).toBe(true);
+      }
+    });
+
+    test("request 或 headers 整体缺失不抛", () => {
+      expect(isAllowedNativeExportOrigin(undefined)).toBe(true);
+      expect(isAllowedNativeExportOrigin({})).toBe(true);
+    });
+
+    // 变异验证记实情：删掉 `url.hostname.toLowerCase()` 这层，38 条一条不红。
+    // 原因是 WHATWG URL 在解析时已把 hostname 小写化（探针：new URL("http://LOCALHOST:5173")
+    // 的 hostname 就是 "localhost"），所以 toLowerCase 是冗余防御而非承重逻辑，
+    // 绿是正确结果（AGENTS.md「A green mutation is not always a broken test」）。
+    // 这条断言留在这儿是为了**记录**该等价性，不是为了咬住变异 ——
+    // 真要防住，得改成断言 URL 规范本身，那属于标准库行为、不该由本仓的测试锁。
+    test("大写主机名放行靠的是 URL 规范本身的小写化，而非本函数的 toLowerCase", () => {
+      expect(new URL("http://LOCALHOST:5173").hostname).toBe("localhost");
+      expect(isAllowedNativeExportOrigin({ headers: { origin: "http://LOCALHOST:5173" } })).toBe(true);
+    });
+  });
+
   test("promotes the Windows save dialog above the browser window", async () => {
     let encodedCommand = "";
     let commandOptions;
