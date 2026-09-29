@@ -314,3 +314,54 @@ describe(apiPath("/v1/runtime") + " 超时降级", () => {
     ws.close();
   }, 10000);
 });
+
+// ─── screenshot 尺寸参数（变异验证补）──────────────────────────
+//
+// 既有守卫只测了 width 的两个值（abc / -5）。变异验证下：
+//   ① 删掉 width 校验 → 转红（有覆盖）
+//   ② 删掉 height 校验 → **不红** —— height 与 width 两段代码逐字同构，
+//      但一条断言都没落在它上面
+//   ③ 把 <= 0 放宽成 < 0 → 不红 —— 0 这个边界没人测
+//
+// 0 尤其该测：截图宽高为 0 会一路透传到前端 canvas 绘制，产出空白 PNG，
+// 而服务端不报任何错。
+describe("/v1/runtime/screenshot 的 width/height 校验", () => {
+  const reject = async (query) => {
+    const { status, json } = await fetchV1(`${apiPath("/v1/runtime/screenshot")}?${query}`);
+    expect(status).toBe(400);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("bad-request");
+  };
+
+  test("height 非数字 → 400", async () => {
+    await reject("height=abc");
+  });
+
+  test("height 负数 → 400", async () => {
+    await reject("height=-5");
+  });
+
+  test("width 为 0 → 400（0 不是合法尺寸）", async () => {
+    await reject("width=0");
+  });
+
+  test("height 为 0 → 400", async () => {
+    await reject("height=0");
+  });
+
+  test("width / height 为 Infinity 字面量 → 400", async () => {
+    await reject("width=Infinity");
+    await reject("height=Infinity");
+  });
+
+  test("width / height 为空串 → 400（不是未指定）", async () => {
+    await reject("width=");
+    await reject("height=");
+  });
+
+  test("两个参数都非法时，先报的那个参数决定错误信息", async () => {
+    const { status, json } = await fetchV1(`${apiPath("/v1/runtime/screenshot")}?width=abc&height=xyz`);
+    expect(status).toBe(400);
+    expect(json.error.message).toContain("width");
+  });
+});
