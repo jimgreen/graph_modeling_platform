@@ -128,6 +128,56 @@ export function DeferredColorInput({
 
 /* 缓冲文本输入 */
 
+/* 缓冲提交的共享内核 */
+
+/**
+ * 「缓冲提交」的状态机：编辑期间只改本地草稿，失焦/提交键才回调 onCommit。
+ *
+ * BufferedTextInput 与 BufferedTextarea 曾各存一份 ~30 行的逐行相同实现
+ * （唯一差别是提交键：单行 Enter、多行 Ctrl/Cmd+Enter）。改一处判定漏另一处，
+ * 两者的行为就会分叉 —— 而它们本该完全一致。
+ *
+ * `shouldCommit` 由调用方给，把「按哪个键算提交」这一条差异留在薄壳里。
+ */
+function useBufferedCommit<T extends HTMLElement>(
+  value: string | number,
+  disabled: boolean | undefined,
+  onCommit: (value: string) => void,
+  shouldCommit: (event: ReactKeyboardEvent<T>) => boolean
+) {
+  const normalizedValue = String(value ?? "");
+  const [draftValue, setDraftValue] = useState(normalizedValue);
+  const committedValueRef = useRef(normalizedValue);
+  const onCommitRef = useRef(onCommit);
+
+  const commitValue = (nextValue: string) => {
+    if (disabled) {
+      return;
+    }
+    if (nextValue !== committedValueRef.current) {
+      committedValueRef.current = nextValue;
+      onCommitRef.current(nextValue);
+    }
+  };
+
+  useEffect(() => {
+    onCommitRef.current = onCommit;
+  }, [onCommit]);
+
+  useEffect(() => {
+    committedValueRef.current = normalizedValue;
+    setDraftValue(normalizedValue);
+  }, [normalizedValue]);
+
+  return {
+    draftValue,
+    setDraftValue,
+    commitValue,
+    commitDraft: () => commitValue(draftValue),
+    revertDraft: () => setDraftValue(committedValueRef.current)
+  };
+}
+
 export type BufferedTextInputProps = {
   value: string | number;
   disabled?: boolean;
@@ -159,31 +209,12 @@ export function BufferedTextInput({
   onCommit,
   ...inputProps
 }: BufferedTextInputProps) {
-  const normalizedValue = String(value ?? "");
-  const [draftValue, setDraftValue] = useState(normalizedValue);
-  const committedValueRef = useRef(normalizedValue);
-  const onCommitRef = useRef(onCommit);
-
-  const commitValue = (nextValue: string) => {
-    if (disabled) {
-      return;
-    }
-    if (nextValue !== committedValueRef.current) {
-      committedValueRef.current = nextValue;
-      onCommitRef.current(nextValue);
-    }
-  };
-
-  const commitDraft = () => commitValue(draftValue);
-
-  useEffect(() => {
-    onCommitRef.current = onCommit;
-  }, [onCommit]);
-
-  useEffect(() => {
-    committedValueRef.current = normalizedValue;
-    setDraftValue(normalizedValue);
-  }, [normalizedValue]);
+  const { draftValue, setDraftValue, commitValue, commitDraft, revertDraft } = useBufferedCommit<HTMLInputElement>(
+    value,
+    disabled,
+    onCommit,
+    (event) => event.key === "Enter"
+  );
 
   return (
     <Input
@@ -201,7 +232,7 @@ export function BufferedTextInput({
           commitValue((event.target as HTMLInputElement).value);
           (event.target as HTMLInputElement).blur();
         } else if (event.key === "Escape") {
-          setDraftValue(committedValueRef.current);
+          revertDraft();
           (event.target as HTMLInputElement).blur();
         }
       }}
@@ -401,31 +432,12 @@ export function BufferedTextarea({
   onCommit,
   ...textareaProps
 }: BufferedTextareaProps) {
-  const normalizedValue = String(value ?? "");
-  const [draftValue, setDraftValue] = useState(normalizedValue);
-  const committedValueRef = useRef(normalizedValue);
-  const onCommitRef = useRef(onCommit);
-
-  const commitValue = (nextValue: string) => {
-    if (disabled) {
-      return;
-    }
-    if (nextValue !== committedValueRef.current) {
-      committedValueRef.current = nextValue;
-      onCommitRef.current(nextValue);
-    }
-  };
-
-  const commitDraft = () => commitValue(draftValue);
-
-  useEffect(() => {
-    onCommitRef.current = onCommit;
-  }, [onCommit]);
-
-  useEffect(() => {
-    committedValueRef.current = normalizedValue;
-    setDraftValue(normalizedValue);
-  }, [normalizedValue]);
+  const { draftValue, setDraftValue, commitValue, commitDraft, revertDraft } = useBufferedCommit<HTMLTextAreaElement>(
+    value,
+    disabled,
+    onCommit,
+    (event) => (event.ctrlKey || event.metaKey) && event.key === "Enter"
+  );
 
   return (
     <TextArea
@@ -443,7 +455,7 @@ export function BufferedTextarea({
           commitValue((event.target as HTMLTextAreaElement).value);
           (event.target as HTMLTextAreaElement).blur();
         } else if (event.key === "Escape") {
-          setDraftValue(committedValueRef.current);
+          revertDraft();
           (event.target as HTMLTextAreaElement).blur();
         }
       }}
