@@ -434,8 +434,31 @@ This applies to encodings (`"utf-8"`), content types (`"text/plain"`), separator
 (`","`), empty arrays (`[]`), and `null`. If the only input you tried is the
 category's default, you have tested nothing about pass-through.
 
-If a dimension cannot be covered, say so in the commit message rather than
-claiming equivalence. If it can, add the input and re-run.
+### A second path reaching the same output
+
+This one is neither a missing dimension nor a bad input value. The condition you
+mutated away genuinely runs, but a **different route** produces the same result
+for every input you tried.
+
+Two occurrences in one session, both in `appPersistenceLibraryExport.tsx`:
+
+- `normalizeEnumOptionsForRow` appends `typicalValue` twice — once in the final
+  `typicalExists` check, once inside a second `rawEnumValuesForRow` pass. Mutating
+  `typicalExists` to drop `option.label === typicalValue` stayed green, because
+  the second pass re-added the item. The fix was an input with **no
+  `enumOptions`**, which skips the second pass.
+- `normalizeGraphTemplateTypes` has three independent routes to
+  `"i_control_type"` (a snake-case branch, a camel-case branch, and a direct
+  column hit). Deleting the snake-case sub-clause stayed green until an
+  **upper-case** input was added — that one only took the first route.
+
+The test for a mutated condition:
+
+> Find every other place the same value could be produced, then construct an input
+> that **excludes all of them**. Only then does the mutation have a chance.
+
+If you cannot exclude the other routes, say so in the commit message rather than
+writing off the green run.
 
 ### A filter on your own console output is another source of distortion
 
