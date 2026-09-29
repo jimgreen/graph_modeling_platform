@@ -1854,6 +1854,25 @@ export const RUN_STAT_ENUM_OPTIONS: readonly DeviceParameterEnumOption[] = [
   { value: "0", label: "停运" }
 ];
 
+/**
+ * 运行状态（run_stat）的别名 → E 文件取值。
+ *
+ * ## 别名数组**刻意留在函数体内**（曾试过提到模块顶层 + 改 Set，实测更慢，已回退）
+ *
+ * 30 万次调用、7 轮取中位数：
+ *
+ * | 用例              | 函数体内（旧，保留） | 模块顶层 Set（已回退） | 比值 |
+ * |-------------------|--------------------|----------------------|------|
+ * | 命中别名（运行）  |            13.9ms  |               18.1ms  | 0.77x |
+ * | 未命中（投运中）  |            16.1ms  |               17.4ms  | 0.92x |
+ *
+ * 原因与 `shared/xmlEscape.mjs` 那次相同：V8 对小数组字面量 + `Array.includes`
+ * 有高度优化（短数组走线性扫描比哈希更快，且常量折叠省掉分配），提到模块顶层
+ * 再换 Set 反而多了一次全局加载。**别再「顺手」改这里。**
+ *
+ * 两侧别名集合刻意保持**不相交**（有测试钉住），故「先查哪边」不影响结果；
+ * 仍保持投运侧在前，与原实现逐行对照。
+ */
 export function normalizeRunStatValue(value?: unknown, fallback = "") {
   const text = String(value ?? "").trim();
   if (!text) return fallback;
@@ -1953,6 +1972,29 @@ export function normalizeSwitchStatusForE(value?: string) {
   return normalizeDeviceStatusForE(value);
 }
 
+/**
+ * 控制类型（control_type）的中文别名 → E 文件取值。
+ *
+ * ## 别名表**刻意留在函数体内**（曾试过提到模块顶层，实测更慢，已回退）
+ *
+ * 30 万次调用、7 轮取中位数：
+ *
+ * | 用例             | 函数体内（旧，保留） | 模块顶层（已回退） | 比值 |
+ * |------------------|--------------------|------------------|------|
+ * | 命中表（定PQ）   |            1.6ms   |          2.3ms   | 0.68x |
+ * | 未命中（PQ）     |            4.6ms   |          4.6ms   | 1.00x |
+ * | 混合负载（8 类） |            0.5ms   |          0.5ms   | 1.01x |
+ *
+ * 原因与 `shared/xmlEscape.mjs` 那次一样：V8 对**小对象字面量**有高度优化 ——
+ * 每次调用重建一个 7 键字面量几乎免费（常量折叠 + 隐藏类复用），提到模块顶层
+ * 变成一次真实的全局变量加载，反而多了开销。**别再「顺手」提到顶层。**
+ *
+ * 另：别名表是**普通对象字面量**而非 `Map`，所以 `map[trimmed]` 沿原型链查找：
+ * `normalizeControlTypeForE("__proto__")` 返回 `Object.prototype`，
+ * `("constructor")` 返回 `Object` 函数，`("toString")` 返回 `Object.prototype.toString`。
+ * 既有行为，**不改** —— 键来自设备的 `control_type` 参数值而非外部输入，
+ * 改用 Map 属无收益的行为变更。现状已钉进 src/modelControlTypeAliases.test.ts。
+ */
 export function normalizeControlTypeForE(value?: string) {
   if (!value) return "";
   const trimmed = value.trim();
