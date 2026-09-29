@@ -625,6 +625,39 @@ If a section of expected output is missing, re-read the raw file before concludi
 anything about the probe. Silent absence and "the code didn't run" look identical
 once you have filtered the evidence away.
 
+### `instanceof` 早退分支常常是冗余的，因为兜底走的是 `.code`
+
+`server/apiV1Control.mjs` 的 `handleCommandError` 里有两段：
+
+```js
+if (error instanceof NoOnlineClientError) { sendV1Error(response, "no-online-client", ...); return; }
+if (error instanceof CommandTimeoutError) { sendV1Error(response, "ws-timeout", ...); return; }
+const code = error?.code ?? "control-failed";
+```
+
+变异验证把前两段整段删掉，41 条用例**一条不红**。原因不是没覆盖，是**覆盖不到**：
+两个错误类都在构造时设了 `this.code`（`no-online-client` / `ws-timeout`），
+所以 `error?.code` 这条兜底产出完全相同的 code 与 HTTP 状态。`instanceof`
+是给人看的早退写法，不承重。
+
+判定方法：把 `instanceof` 换成 `false`（或整段删）跑一遍。绿就说明兜底能独立
+产出同一结果 —— 此时**绿是正确结果**，别去补断言硬凑（见上面
+"A green mutation is not always a broken test"）。把「哪两段是冗余的」写进
+测试文件注释，比留一条恒绿的断言有用。
+
+同一形态在本仓出现过多次，值得当成默认怀疑对象：
+
+| 冗余写法 | 承重的那条 |
+|---|---|
+| `instanceof SomeError` 早退 | `error?.code` 兜底 |
+| `url.hostname.toLowerCase()` | WHATWG `URL` 已小写化 hostname |
+| 归一化函数的 `.filter(Boolean)` | 调用方自己的 `.filter(Boolean)` |
+| `!entry` 判空后立刻再判一次 `!entry` | 上游已判过 |
+
+反过来，若删掉某条判定后**转红**，那就说明它确实只有一条路，是真守卫 ——
+这种才值得写进测试标题里当作契约。
+
+
 ## Keeping the Index Fresh
 
 After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
