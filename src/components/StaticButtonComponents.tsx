@@ -32,7 +32,12 @@ export type StaticButtonLayerMultiSelectProps = {
 
 /* 辅助函数 */
 
-function staticButtonLayerDropdownPlacementForTrigger(trigger: HTMLElement): StaticButtonLayerDropdownPlacement {
+/**
+ * 下拉浮层的定位计算。导出是为了能直接单测这段夹取/翻转逻辑 ——
+ * 它决定菜单在视口边缘会不会被裁掉、要不要翻到触发器上方，而这两点都要
+ * 真布局才看得到（jsdom 的 getBoundingClientRect 恒返回 0）。
+ */
+export function staticButtonLayerDropdownPlacementForTrigger(trigger: HTMLElement): StaticButtonLayerDropdownPlacement {
   const rect = trigger.getBoundingClientRect();
   const viewportMargin = STATIC_BUTTON_LAYER_DROPDOWN_VIEWPORT_MARGIN;
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || rect.right;
