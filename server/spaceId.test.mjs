@@ -210,3 +210,37 @@ test("去重对大小写不敏感（NTFS 语义），且截断后仍不超长", 
   expect(taken[0]).toBe("Abc");
   expect(taken[1]).toBe("abc-2");
 });
+
+// ─── NFKC 归一（变异验证补）────────────────────────────────
+//
+// 删掉 spaceIdFromName 里的 `.normalize("NFKC")` 后，既有 205 行守卫一条不红。
+// 因为 id 字符集本来就允许 CJK 与全角字母，不归一时 `ＡＢＣ` 会原样落成目录名 ——
+// 能建、能用，只是与「ＡＢＣ / ABC 视为同一个空间」的设计意图不符，且在
+// NTFS（本身做 NFKC 归一）与 Linux（不做）之间行为分叉。
+test("全角字母折叠成半角", () => {
+  expect(spaceIdFromName("ＡＢＣ")).toBe("ABC");
+  expect(spaceIdFromName("１２３")).toBe("123");
+});
+
+test("全角名与半角名算出同一个 id（去重时撞上 → 走 -2 后缀）", () => {
+  const halfWidth = spaceIdFromName("ABC");
+  expect(spaceIdFromName("ＡＢＣ", [halfWidth])).toBe("ABC-2");
+});
+
+test("兼容分解字符折叠成预组合形式（NFC 归一）", () => {
+  // 显式转义：编辑器/输入法会把 U+0065 U+0301 自动折成 U+00E9，写字面量就分不出两者了。
+  const decomposed = "école";   // e + 组合锐音符（两码点）
+  const precomposed = "école";   // é 预组合（一码点）
+  expect(decomposed).not.toBe(precomposed);
+  // NFKC 后两者必须算出同一个 id，否则视觉相同的名字会开出两个目录
+  expect(spaceIdFromName(decomposed)).toBe(spaceIdFromName(precomposed));
+  expect(spaceIdFromName(decomposed)).toBe("école");
+});
+
+test("圈数字母折叠（① → 1）", () => {
+  expect(spaceIdFromName("①区")).toBe("1区");
+});
+
+test("全角空格折叠成半角空格后再被替换规则吃掉", () => {
+  expect(spaceIdFromName("Ａ　Ｂ")).toBe("A-B");
+});
