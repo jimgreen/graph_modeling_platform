@@ -401,6 +401,16 @@ and confirm each one is covered by at least one assertion:
   its `id` argument is unvalidated. So ask: *what values can a key, id, or index
   actually hold here?* If nothing constrains it, an empty string or a numeric-looking
   key is a discriminating input, not a hypothetical.
+- **numeric boundaries of a fallback** — the fifth occurrence, and it took three
+  rounds. Changing a guard's fallback from `0` to `-1` stayed green through
+  "one valid and one invalid input" and through "two invalid inputs", because in both
+  cases *both* operands were the same value, so the comparison could not tell the
+  fallbacks apart. The discriminating input was `new Date`-style data whose parsed
+  value is **exactly the fallback** — `Date.parse("1970-01-01T00:00:00.000Z") === 0`.
+  Generalise: when you change a fallback, ask **what legitimate input produces the
+  same number**. For a timestamp that is the epoch; for a count it is `0`; for a
+  percentage it is `0`; for a length it is `0`. Those are the values that make two
+  different fallbacks indistinguishable, and they are rarely the ones you try first.
 
 If a dimension cannot be covered, say so in the commit message rather than
 claiming equivalence. If it can, add the input and re-run.
