@@ -360,6 +360,12 @@ and confirm each one is covered by at least one assertion:
   `normalizeModelLayers`, where `""` takes the fallback id but `"   "` is dropped).
 - container presence — is the "missing" case (`undefined`, empty array, no key)
   distinguishable from the "present" case?
+- **the key/field value space** — the fourth occurrence: dropping
+  `(assetId && assets[assetId])` in favour of `assets[assetId]` was green until the
+  map contained an **empty-string key**, which `saveImageAsset` can write because
+  its `id` argument is unvalidated. So ask: *what values can a key, id, or index
+  actually hold here?* If nothing constrains it, an empty string or a numeric-looking
+  key is a discriminating input, not a hypothetical.
 
 If a dimension cannot be covered, say so in the commit message rather than
 claiming equivalence. If it can, add the input and re-run.
