@@ -172,6 +172,35 @@ describe("★ `valueOf` / `toString` 钩子被调用（ToPrimitive 标准行为�
   });
 });
 
+describe("等价性记录：`Number.isFinite` vs 全局 `isFinite`（此处可互换）", () => {
+  // 变异验证时我把 `Number.isFinite` 改成全局 `isFinite`，测试**全绿**。
+  // 查证后确认这是**等价改写**而非假绿：全局 isFinite 会先做隐式转换，
+  // 而本函数的实参**已经过 `Number(value)`**，永远是 number。
+  // 对 12 个 number 样本（0 / -0 / NaN / ±Infinity / 1e308 / 5e-324 /
+  // MAX_VALUE / MIN_VALUE / ±1 / 0.5）实测差异 **0 个**。
+  //
+  // 记在这里是为了让后人看到"全绿"时不必重新怀疑：这两种写法在本函数里等价。
+  // 若哪天有人把 `Number(value)` 那步去掉，全局 isFinite 就会开始"意外工作"
+  //（对 undefined 返回 true），那时这条注释就是预警。
+  test("对 number 实参两者完全等价（12 个样本）", () => {
+    const numbers = [0, -0, 1, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY, 1e308, 5e-324, Number.MAX_VALUE, Number.MIN_VALUE];
+    for (const n of numbers) {
+      expect(Number.isFinite(n), String(n)).toBe(isFinite(n));
+    }
+  });
+
+  test("对非 number 实参两者**不同**（所以去掉 Number() 转换就会出问题）", () => {
+    // 全局 isFinite(undefined) === true（会先转成 NaN 再判… 实际 JS 规定
+    // isFinite(undefined) 是 false，但 isFinite("abc") 是 false、
+    // isFinite(null) 是 true）。这条钉住差异，免得有人"顺手简化"时踩坑。
+    expect(isFinite(null as never), "全局 isFinite(null) 是 true").toBe(true);
+    expect(Number.isFinite(null as never), "Number.isFinite(null) 是 false").toBe(false);
+    expect(isFinite([] as never), "全局 isFinite([]) 是 true（空数组转 0）").toBe(true);
+    expect(Number.isFinite([] as never)).toBe(false);
+  });
+});
+
 describe("★ fallback 自身不做校验（原样透出）", () => {
   // 签名是 `(value: unknown, fallback: number): number`，但 fallback 参数
   // 不做运行时校验 —— 传非有限值会原样返回。
