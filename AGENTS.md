@@ -136,6 +136,65 @@ The four failure modes above are all "**the test should have gone red and did
 not**". This is the opposite: "**it went red-by-luck, or green for the right
 reason**" — confirm which before changing anything.
 
+### Put the mutation table in JSON, not in the injector
+
+The recurrence of the "injector script is broken" failure mode is nested quotes:
+a mutation pair like `return typeof (x as { size?: unknown })?.size === "number" ? …`
+inside a double-quoted `.mjs` string is a parse error waiting to happen.
+
+The failure is **silent from the outside**: the injector crashes, never touches
+the source, and vitest cheerfully reports "32 passed". You cannot tell a real
+green run from a no-op run by looking at the vitest summary — I nearly recorded
+a whole round of mutation results that way.
+
+Keep the pairs in a sibling `.json` and let the injector do nothing but
+`JSON.parse` + string replace. A malformed pair then fails at parse time,
+before it can masquerade as a passing run:
+
+```js
+const TABLE = JSON.parse(readFileSync("tmp/mut.json", "utf8"));
+```
+
+**And check the injector's own output**: it should print something like
+`OK 注入 ① -> src/foo.ts`, and the loop should treat anything else as
+"restore and skip" rather than running vitest on an unmodified file.
+
+### A guard that skips a whole file to exclude one line is a hole
+
+Static source guards usually start as "ignore the declaration itself, scan the
+rest". It is very easy to write that as a **file** filter:
+
+```ts
+// WRONG — excludes the entire file, which is where the definition lives
+if (file === definition) continue;
+```
+
+Mutation ⑦ injected `reuseSetOrCreate(s).add("X")` into the same file as the
+function's definition. The guard skipped the whole file, found nothing, passed.
+The real code has 21 call sites spread across *other* files, so the guard was
+also only ever exercising a fraction of the repo.
+
+Two fixes, and do both:
+
+1. **Filter at the granularity you mean** — a line predicate
+   (`/export function reuseSetOrCreate/`), not a file predicate.
+2. **Give the detection logic its own self-test.** Assert against synthetic
+   input — including the exact text of the mutation that fooled you — that the
+   scanner reports it, *and* that legal forms do not:
+
+   ```ts
+   test("守卫的检测逻辑自测", () => {
+     expect(findInlineMutate(['const p = (s) => reuseSetOrCreate(s).add("X");'])).toHaveLength(1);
+     expect(findInlineMutate(["const ok = reuseSetOrCreate(ids).size;"])).toEqual([]);
+   });
+   ```
+
+   This is strictly stronger than "we scanned N call sites": it proves the
+   detector can go red, regardless of what the source currently contains.
+
+Related: exclude `*.test.*` from any whole-`src/` scan, or the guard will flag
+the guard's own test file, which legitimately calls the function it inspects.
+
 ### Check that you assert on the object the mutation changes
 
 A near-miss that survived one round of mutation testing: a guard asserted
