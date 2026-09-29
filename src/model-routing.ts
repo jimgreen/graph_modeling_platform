@@ -7252,10 +7252,27 @@ function savedRecordTimestamp(value: string | undefined): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+/**
+ * 已存记录（模型 / 方案）的显示名归一。**唯一的业务规则出处**。
+ *
+ * 规则：`电力系统` → `电力能源系统`（平台改名后的兼容归一），trim，空则落 fallback。
+ *
+ * 原先模型与方案各有一份**逐字节相同**的实现（只差默认 fallback），
+ * 共 8 个调用点依赖这条规则 —— 改一处漏一处的风险实在，现已单源化。
+ * 输出逐字节不变（无参数调用时两边的默认 fallback 各自保留）。
+ *
+ * 跨端**刻意不合并**：`server/server.mjs` 的 `storageProjectDisplayName` 用的是
+ * `String(name || "")`（容忍非字符串、且把 `0` 当空），与这里的 `name.trim()` 语义不同。
+ * 合并会改变服务端对脏数据的处理，属行为变更。
+ */
+function savedRecordDisplayName(name: string, fallback: string): string {
+  return name.trim().replace(/电力系统/g, "电力能源系统") || fallback;
+}
+
 function savedProjectDisplayName(name: string, fallback = "未命名模型"): string {
   // 名称即标识：`uniqueRecordName` 会用 “(N)” 区分重名模型，此处若把 “(N)” 归一化掉，
   // 新建/重命名/导入的同名模型会被静默合并进已有模型，模型列表看不到新条目。
-  return name.trim().replace(/电力系统/g, "电力能源系统") || fallback;
+  return savedRecordDisplayName(name, fallback);
 }
 
 export function savedProjectRecordNameKey(name: string): string {
@@ -7263,7 +7280,7 @@ export function savedProjectRecordNameKey(name: string): string {
 }
 
 function savedSchemeDisplayName(name: string, fallback = "未命名方案"): string {
-  return name.trim().replace(/电力系统/g, "电力能源系统") || fallback;
+  return savedRecordDisplayName(name, fallback);
 }
 
 function savedRuntimePathKey(kind: "scheme" | "project", path: string[]): string {
