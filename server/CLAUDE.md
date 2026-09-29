@@ -56,6 +56,12 @@
 - **改了 `src/**/*.ts` 必须重启后端进程**（`pnpm dev` 重起或 `pnpm server`）：适配层对 `src` 走顶层 `await import`，Node ESM 每进程只求值一次、**无 HMR** —— 不重启时后端仍跑旧代码（前端 Vite 是新代码），会出现「界面新、导出旧」的分裂。真实案例:2026-09-17「E 文件成员关系段恒输出」提交后,未重启的后端仍把该段整段剔除,被误判为功能缺陷(见 `docs/superpowers/plans/2026-09-15-ac-container-followups.md` 所在特性的 fb17 调查)。
 
 ### Testing Requirements
+- **`.test.mjs` 必须是纯 JS**：不要写 `as never` / 类型标注 / 非空断言 `!`。
+  这些在 `.ts` 测试里没问题，在 `.mjs` 里会触发 `RollupError: Parse failure`，
+  表现为 **`Tests: no tests`** —— 而 `no tests` 看起来像「没跑到用例」，
+  **绝不能当成通过**。清掉 TS 语法的批量替换还会留下 `[]` 之类的碎片引发第二轮
+  parse 失败；从一开始就用纯 JS 写，比事后清理便宜得多。
+  新增 server 测试时先看一眼同目录既有 `.test.mjs` 的写法。
 
 - `pnpm vitest run server/` 跑后端测试（含三导出适配层：`svgExport.test.mjs` / `apiV1Schemes.e-file.test.mjs` / `cimExport.test.mjs` 与 Node 原生直载守卫 `nativeLoad.test.mjs`）
 - 改动 swigger 后跑 `swigger.examples.test.mjs`（106 示例 / 81 端点）。**新增端点必须同步 `swaggerPage.mjs` 的 `ENDPOINTS`**，否则 `routeCoverage.test.mjs` 会红 —— 它比对「server 实际注册的路由」与「已文档化端点」，覆盖三张路由表（`server.mjs` 的 `routeKey`、`apiV1*.mjs` 的 `{method, pattern: apiPattern(...)}`、`server.mjs` 的 `dynamicRouteHandlers` 的 `dynAssetPattern(...)`）。`/webgrp/exports/native/*` 在该测试的 `INTENTIONALLY_UNDOCUMENTED` 名单里（会弹本机对话框）。
