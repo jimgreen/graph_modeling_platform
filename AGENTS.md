@@ -195,6 +195,43 @@ Two fixes, and do both:
 Related: exclude `*.test.*` from any whole-`src/` scan, or the guard will flag
 the guard's own test file, which legitimately calls the function it inspects.
 
+### A mutation anchor that appears twice edits the wrong function
+
+`String.prototype.replace(string, string)` replaces only the **first** occurrence. If
+your anchor line appears more than once in the file, you have not mutated the
+function you meant to — you have mutated whichever one came first, and the
+targeted function is untouched, so the suite stays green.
+
+This is not hypothetical. In `appPersistenceLibraryExport.tsx` the line
+
+```ts
+terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } }))
+```
+
+occurs twice — once in a graph-export helper, once in `cloneGraphTemplateClipboard`.
+The "don't copy the anchor" mutation landed on the first, the guard went green, and
+the reason was invisible from the vitest summary.
+
+Make the injector **refuse** a non-unique anchor rather than silently patching the
+first hit:
+
+```js
+const hits = src.split(anchor).length - 1;
+if (hits === 0) { console.error(`X 锚点未找到: ${key}`); process.exit(1); }
+if (hits > 1 && !spec.allowMulti) {
+  console.error(`X 锚点出现 ${hits} 次，拒绝注入（会改到错误的函数）: ${key}`);
+  process.exit(1);
+}
+```
+
+Two companion rules:
+
+- An anchor must carry enough context to be unique **inside the target function** —
+  include the opening `nodes: clipboard.nodes.map((node) => ({` lines, not just the
+  one line being changed. A short anchor drifts to a similar-looking sibling.
+- After a green mutation, **confirm the edit landed where you intended** by grepping
+  the mutated file. A zero-second grep is cheaper than a wrong conclusion.
+
 ### Check that you assert on the object the mutation changes
 
 A near-miss that survived one round of mutation testing: a guard asserted
