@@ -485,3 +485,85 @@ describe(apiPath("/v1/control/template/saveFromSelection"), () => {
     expect(json.error.code).toBe("no-online-client");
   });
 });
+
+// ─── 请求体上限与 clientId 归一（变异验证补）──────────────────
+//
+// 变异验证发现三个部分**全无覆盖**，删掉后 41 条守卫一条不红：
+//   ① CONTROL_MAX_BODY_BYTES = 1MB 被放开
+//   ② 超限后仍累积 chunk（上限形同虚设）
+//   ③ 超限不再抛 413
+// 以及 clientId 的 trim —— query 给 " c1 " 时应等价于 "c1"。
+//
+// 另两条变异（NoOnlineClient / CommandTimeout 的 instanceof 分支）绿是**正确**的：
+// 两个错误类都自带 .code（no-online-client / ws-timeout），error?.code 兜底能产出
+// 同样结果，instanceof 分支是冗余的早退写法。
+describe("control 请求体上限与 clientId 归一", () => {
+  test("超过 1MB 的 body → 413 payload-too-large", async () => {
+    const ws = await connectCommandResponder("c1", () => ({ ok: true, data: { id: "n1" } }));
+    // 造一个 >1MB 的 JSON：kind 合法，超长部分塞进一个无关字段
+    const res = await fetch(`${baseUrl}${apiPath("/v1/control/device/add")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "busbar", attrs: { blob: "x".repeat(1024 * 1024 + 64) } })
+    });
+    expect(res.status).toBe(413);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("payload-too-large");
+    ws.close();
+  }, 20000);
+
+  test("恰好在 1MB 以内的 body 正常处理（上限不是一刀切）", async () => {
+    const ws = await connectCommandResponder("c1", () => ({ ok: true, data: { id: "n1" } }));
+    const res = await fetch(`${baseUrl}${apiPath("/v1/control/device/add")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      // 64KB，远低于上限
+      body: JSON.stringify({ kind: "busbar", attrs: { blob: "x".repeat(64 * 1024) } })
+    });
+    expect(res.status).toBe(200);
+    ws.close();
+  }, 20000);
+
+  test("超限时整个流仍被读完（连接不被重置，客户端拿到 413 而非 ECONNRESET）", async () => {
+    // 这个用例守的是 readJsonBody 里「continue 而不是 break」的写法：
+    // 提前 break 会让 Node 认为 body 未读完，连接在响应写出前被重置。
+    const res = await fetch(`${baseUrl}${apiPath("/v1/control/device/add")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "busbar", attrs: { blob: "x".repeat(1024 * 1024 + 64) } })
+    });
+    // 能拿到状态码（而不是 fetch 自身 reject）就说明连接正常关闭
+    expect(res.status).toBe(413);
+  }, 20000);
+
+  test("clientId 两侧空白被 trim（' c1 ' 与 'c1' 等价）", async () => {
+    const ws = await connectCommandResponder("c1", () => ({ ok: true, data: { id: "n1" } }));
+    const res = await fetch(
+      `${baseUrl}${apiPath("/v1/control/device/add")}?clientId=%20c1%20`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "busbar" })
+      }
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    ws.close();
+  });
+
+  test("clientId 纯空白视为未指定（回落到空间内最近活跃客户端）", async () => {
+    const ws = await connectCommandResponder("c1", () => ({ ok: true, data: { id: "n1" } }));
+    const res = await fetch(
+      `${baseUrl}${apiPath("/v1/control/device/add")}?clientId=%20%20`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "busbar" })
+      }
+    );
+    expect(res.status).toBe(200);
+    ws.close();
+  });
+});
