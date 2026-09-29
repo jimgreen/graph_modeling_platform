@@ -102,6 +102,26 @@ input first. Two escapes, in order of preference:
 2. **Fall back to a static assertion** that reads the source file and matches the
    line. Slower to write, but it makes "the guard is still there" executable.
 
+### A green mutation is not always a broken test
+
+Before "fixing" a test that stayed green under mutation, check whether the
+mutation was **semantically different at all**:
+
+- Global `isFinite(x)` vs `Number.isFinite(x)` — identical once `x` is already
+  a number, because the global form coerces first.
+- Reordering two lookups whose results are provably equal.
+- Swapping a value for a deep-equal copy.
+
+If the rewrite is provably equivalent, **green is the correct outcome** and the
+test needs nothing. Record the equivalence in the test file so the next person
+does not re-investigate it — and leave a warning about what would break it
+(e.g. dropping the `Number(value)` step would make global `isFinite` start
+silently coercing `null` and `[]` to `0`).
+
+The four failure modes above are all "**the test should have gone red and did
+not**". This is the opposite: "**it went red-by-luck, or green for the right
+reason**" — confirm which before changing anything.
+
 ### Check that you assert on the object the mutation changes
 
 A near-miss that survived one round of mutation testing: a guard asserted
