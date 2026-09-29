@@ -9,7 +9,7 @@ import { switchToSpace } from "../spaceSwitch";
 import { rebuildContainerExemptConnectionRoutes, rebuildContainerExemptRoutableLineDeviceRoutes, reconcileTransformerSideVoltageParamsWithTerminals, routeEdgesForStoredRendering } from "../model-routing";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
 import { GLOBAL_LINE_ID_PARAM, applyGlobalLineRecordToNode, deriveLocalDeviceIndexCounters, globalLineEndpointPlacementFailureMessage, globalLineSourcePlacementFailureMessage, shouldManageLineGlobally, shouldUseGlobalLineForEndpoints } from "../global-lines";
-import { isLineOnlyConnectionNode, modelAssociationLineConnectionFailureMessage, modelAssociationProjectIndexesForSchemes } from "../model";
+import { cloneEdgeEditablePoints, isLineOnlyConnectionNode, modelAssociationLineConnectionFailureMessage, modelAssociationProjectIndexesForSchemes } from "../model";
 import {
   resolveNodeVoltageAtTerminal,
   isNodeVoltageDefault,
@@ -818,9 +818,7 @@ export function createHandleNodePointerDown(__appScope: Record<string, any>) {
         affectedEdgesForDrag.map((edge) => [
           edge.id,
           {
-            sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
-            targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
-            manualPoints: edge.manualPoints?.map((point) => ({ ...point })),
+            ...cloneEdgeEditablePoints(edge),
             routePoints: edge.routePoints?.map((point) => ({ ...point }))
           }
         ])

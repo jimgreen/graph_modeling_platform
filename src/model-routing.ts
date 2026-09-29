@@ -1,9 +1,7 @@
 // 连线路由相关代码（从 model.ts 提取到独立模块）
-import {
-  isThreeWindingNeutralTransformerKind,
+import { cloneEdgeEditablePoints, isThreeWindingNeutralTransformerKind,
   isThreeWindingTransformerKind,
-  isTwoWindingTransformerKind
-} from "./model.ts";
+  isTwoWindingTransformerKind } from "./model.ts";
 import { clampNumber } from "./canvasViewport.ts";
 import { degreesToRadians } from "./formatUtils.ts";
 import { normalizeProjectMeasurements } from "./measurements.ts";
@@ -7218,9 +7216,7 @@ export function createSavedProject(name: string, project: ProjectFile): SavedPro
       nodes: lockedProject.nodes.map((node) => ({ ...node, params: { ...node.params }, terminals: node.terminals.map((terminal) => ({ ...terminal, anchor: { ...terminal.anchor } })) })),
       edges: lockedProject.edges.map((edge) => ({
         ...edge,
-        sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
-        targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
-        manualPoints: edge.manualPoints?.map((point) => ({ ...point })),
+        ...cloneEdgeEditablePoints(edge),
         routePoints: edge.routePoints?.map((point) => ({ ...point }))
       })),
       groups: normalizeModelGroups(lockedProject.groups, lockedProject.nodes, lockedProject.edges)

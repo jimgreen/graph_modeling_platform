@@ -11,7 +11,7 @@ import {
   type CanvasLayoutUnit
 } from "../selectionActions";
 import { routeEdgesForStoredRendering } from "../model-routing";
-import { isCanvasNodeMovable, type CanvasBounds, type Edge, type ModelGroup, type ModelNode, type RoutedEdge } from "../model";
+import { cloneEdgeEditablePoints, isCanvasNodeMovable, type CanvasBounds, type Edge, type ModelGroup, type ModelNode, type RoutedEdge } from "../model";
 
 type RouteRenderOptions = {
   preserveManualRouteDisplay?: boolean;
@@ -50,9 +50,7 @@ const cloneNode = (node: ModelNode): ModelNode => ({
 
 const cloneEdge = (edge: Edge): Edge => ({
   ...edge,
-  sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
-  targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
-  manualPoints: edge.manualPoints?.map((point) => ({ ...point })),
+  ...cloneEdgeEditablePoints(edge),
   routePoints: edge.routePoints?.map((point) => ({ ...point }))
 });
 

@@ -28,8 +28,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import {
-  calculateNodeVisualBounds,
+import { cloneEdgeEditablePoints, calculateNodeVisualBounds,
   templateDerivedComponentLibraryInfo,
   createSavedScheme,
   createNodeFromTemplate,
@@ -90,8 +89,7 @@ import {
   type SavedSchemeRecord,
   type SavedProjectRecord,
   getSafeNodeScaleX,
-  getSafeNodeScaleY
-} from "../model";
+  getSafeNodeScaleY } from "../model";
 import {
   canvasClipboardBounds,
   type CanvasClipboard,
@@ -173,9 +171,7 @@ export function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
     }),
     edges: project.edges.map((edge) => ({
       ...edge,
-      sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
-      targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
-      manualPoints: edge.manualPoints?.map((point) => ({ ...point })),
+      ...cloneEdgeEditablePoints(edge),
       routePoints: edge.routePoints?.map((point) => ({ ...point }))
     })),
     groups: normalizeModelGroups(project.groups, project.nodes, project.edges)

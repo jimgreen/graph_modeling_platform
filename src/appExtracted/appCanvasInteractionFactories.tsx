@@ -2,7 +2,7 @@
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
 import { applyDragContainerMembership, clampContainerCenterToMembers, commitContainerMembership, containerDragGroup, containerGatewayUnbindNotice, containerMemberNodes, containerResizeMinSize, foldContainerScaleIntoSize, hasContainer, isContainerNode, refitContainersAfterTransform, withNodeUpdates } from "../acContainer";
-import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind, syncedSwitchStatusPatch } from "../model";
+import { cloneEdgeEditablePoints, isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, baseDeviceKind, getRatedCapacityDefaultForKind, syncedSwitchStatusPatch } from "../model";
 import { isThreeWindingTransformer } from "../model-eexport";
 import { setVoltageBaseTerminalValueForTopologySide, voltageBaseParamTerminalIndexForNode } from "../model-routing";
 import { CONTAINER_BINDING_PARAM_KEYS } from "./appCoreCanvasUtilities";
@@ -1843,9 +1843,7 @@ export function createStartKeyboardMoveSession(__appScope: Record<string, any>) 
         affectedEdgesForMove.map((edge) => [
           edge.id,
           {
-            sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
-            targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
-            manualPoints: edge.manualPoints?.map((point) => ({ ...point })),
+            ...cloneEdgeEditablePoints(edge),
             routePoints: edge.routePoints?.map((point) => ({ ...point }))
           }
         ])
@@ -4728,9 +4726,7 @@ export function createStartGroupMoveDrag(__appScope: Record<string, any>) {
         affectedEdgesForDrag.map((edge) => [
           edge.id,
           {
-            sourcePoint: edge.sourcePoint ? { ...edge.sourcePoint } : undefined,
-            targetPoint: edge.targetPoint ? { ...edge.targetPoint } : undefined,
-            manualPoints: edge.manualPoints?.map((point) => ({ ...point })),
+            ...cloneEdgeEditablePoints(edge),
             routePoints: edge.routePoints?.map((point) => ({ ...point }))
           }
         ])
