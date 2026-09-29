@@ -63,6 +63,27 @@ beforeAll(async () => {
     ],
     edges: []
   }), "utf-8");
+  // 第二个模型：idx 故意取 0。兼容路径（schemePath + name）下
+  // `modelId: Number(idx) || 0` 会把它归成 0 —— 那个 0 是「没有稳定序号」的哨兵值，
+  // 不是「模型 0」。既有守卫里所有模型 idx 都是 1，这条分支从没被走到过。
+  writeFileSync(join(dir, "零号模型.json"), JSON.stringify({
+    name: "零号模型",
+    modelType: "厂站",
+    idx: 0,
+    canvasWidth: 800,
+    canvasHeight: 400,
+    nodes: [device("bus0", "ac-bus", "零号母线", { vbase: "10" }, [])],
+    edges: []
+  }), "utf-8");
+  // 第三个模型：完全没有 idx 字段（手写 JSON 的常见情形）
+  writeFileSync(join(dir, "无序号模型.json"), JSON.stringify({
+    name: "无序号模型",
+    modelType: "厂站",
+    canvasWidth: 800,
+    canvasHeight: 400,
+    nodes: [device("busX", "ac-bus", "无序号母线", { vbase: "10" }, [])],
+    edges: []
+  }), "utf-8");
   const libDir = join(dataDir, "device-library");
   mkdirSync(libDir, { recursive: true });
   writeFileSync(join(libDir, "library.json"), JSON.stringify({
@@ -291,5 +312,76 @@ describe(`${sendPath} 模板选择`, () => {
     expect(res.status).toBe(400);
     expect((await res.json()).error.message).toContain("未知模板");
     expect(received).toHaveLength(0);
+  });
+});
+
+// ─── 兼容路径下 modelId 的哨兵值（变异验证补）──────────────────
+//
+// `resolveSendTarget` 的兼容路径结尾是 `modelId: Number(record?.project?.idx) || 0`。
+// 变异验证把 `|| 0` 去掉后，既有 17 条守卫一条不红 —— 因为种子数据里所有模型的
+// idx 都是 1，`Number(1) || 0` 与 `Number(1)` 结果相同。
+//
+// 而 idx 为 0 或缺失的模型真实存在（手写 JSON、从别处导入的图）。那个 0 是
+// 「没有稳定序号」的哨兵，不是「模型 0」；去掉 `|| 0` 会让 NaN 或 0 原样传出
+// —— 而表单那行是 `modelId > 0 ? String(modelId) : ""`：哨兵值 0 与 idx 缺失
+// （Number(undefined) 即 NaN）都落进空串分支，正是注释里说的「老模型可能尚未
+// 分配 idx，此时字段为空串而不是缺失，便于接收方稳定解析」。
+//
+// 注意：响应 data 里**没有** modelId 字段（只有 url/status/elapsedMs/
+// templateName/files），该值只出现在 multipart 表单里 —— 所以断言都落在表单上。
+// multipart 里 model_id 字段的两种形态：空串（哨兵 0 / idx 缺失）、真实序号。
+// `{0,120}` 要能跨过整条 boundary 行 —— 边界串里有随机后缀，宽度不够就匹配不到。
+const MODEL_ID_EMPTY = new RegExp('name="model_id"[\\s\\S]{0,120}\\r?\\n\\r?\\n\\r?\\n');
+const MODEL_ID_ONE = new RegExp('name="model_id"[\\s\\S]{0,120}\\r?\\n\\r?\\n1\\r?\\n');
+
+// 变异验证补记：把 `modelId: Number(idx) || 0` 的 `|| 0` 去掉，这 21 条**一条不红**。
+// 原因是下游 `form.append("model_id", modelId > 0 ? String(modelId) : "")` 把两种
+// 情况都归成空串：`Number(0) || 0 === 0` 与 `Number(0) === 0` 同值，
+// `Number(undefined) === NaN` 与 `Number(undefined) || 0 === 0` 也都满足
+// `> 0` 为假。`|| 0` 是给读代码的人一个「这里是哨兵」的信号，不承重 ——
+// 绿是正确结果（AGENTS.md「A green mutation is not always a broken test」）。
+// 下面四条用例守的是**下游契约**：哨兵值与缺失 idx 都必须落成空串，而不是 "0"
+// 或字面量 "NaN"。
+describe(`${sendPath} 兼容路径下的 modelId 哨兵值`, () => {
+  test("idx 为 0 的模型：仍能按 schemePath + name 发送成功", async () => {
+    const res = await postSend(
+      { url: sinkUrl, files: [{ kind: "json" }] },
+      `schemePath=${schemePath}&name=${encodeURIComponent("零号模型")}`
+    );
+    expect(res.status).toBe(200);
+    expect(received).toHaveLength(1);
+    const structure = received[0].body.toString("utf-8");
+    expect(structure).toMatch(MODEL_ID_EMPTY);
+  });
+
+  test("缺 idx 字段的模型：同样归成 0，且发送成功", async () => {
+    const res = await postSend(
+      { url: sinkUrl, files: [{ kind: "json" }] },
+      `schemePath=${schemePath}&name=${encodeURIComponent("无序号模型")}`
+    );
+    expect(res.status).toBe(200);
+    expect(received).toHaveLength(1);
+    const structure = received[0].body.toString("utf-8");
+    expect(structure).toMatch(MODEL_ID_EMPTY);
+  });
+
+  test("idx 为 0 时响应体不含 modelId 字段（该值只走表单，不在 data 里）", async () => {
+    const res = await postSend(
+      { url: sinkUrl, files: [{ kind: "json" }] },
+      `schemePath=${schemePath}&name=${encodeURIComponent("零号模型")}`
+    );
+    expect(res.status).toBe(200);
+    const payload = await res.json();
+    expect(payload.data).not.toHaveProperty("modelId");
+  });
+
+  test("idx 为 0 时表单里的 model_id 是 0，不串到别的模型", async () => {
+    await postSend(
+      { url: sinkUrl, files: [{ kind: "json" }] },
+      `schemePath=${schemePath}&name=${encodeURIComponent("零号模型")}`
+    );
+    const structure = received[0].body.toString("utf-8");
+    expect(structure).toMatch(MODEL_ID_EMPTY);
+    expect(structure).not.toMatch(MODEL_ID_ONE);
   });
 });
