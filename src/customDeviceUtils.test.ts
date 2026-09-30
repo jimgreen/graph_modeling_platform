@@ -522,6 +522,11 @@ describe("electric generation device library classification", () => {
     });
   });
 
+// 已知现状（记录于此，免得误以为它已在产品链路里）：migrateSharedDeviceDefinitionOverrideForTemplateChange
+// **目前没有生产调用方**，全仓只有本测试文件引用它。模板换共享键时，界面链路走的是
+// normalizeSharedDeviceDefinitionOverrides（它按「同一共享身份」合并 / 修剪，不会把旧键的覆盖搬到新键）。
+// 因此「模板改组件库后把用户改过的参数定义搬过去」这件事在产品里并没有发生 —— 旧键的覆盖被留在原处，
+// 模板回到原组件库时会重新生效。是否有产品需求、该接在哪一处，属于行为变更决策，不在测试补强的范围内。
   test("moves a custom class definition when its component library is renamed", () => {
     const previous = {
       kind: "custom-demo",
