@@ -238,7 +238,7 @@ import {
   type Terminal,
   type TerminalType
 } from "./model";
-import { terminalVoltageDisplay, transformGraphForGateways } from "./model-eexport";
+import { terminalVoltageDisplay, transformGraphForGateways, multiModelRecordWithParent } from "./model-eexport";
 import { applyRemoveFromContainer, withNodeUpdates } from "./acContainer";
 
 test("keeps electrical measurement and setpoint columns aligned with the device contracts", () => {
@@ -5789,5 +5789,108 @@ describe("关口容器拓扑变换(决策 4)", () => {
     expect(associatedNodeColumnValue(node, "", "ACLoad", "i_node", [node.terminals[0]])).toBe("7");
     // j_node 同口径
     expect(associatedNodeColumnValue(node, "idx_dc_unit_t1", "DCLoad", "j_node", [node.terminals[0], node.terminals[0]])).toBe("");
+  });
+});
+
+// 多厂站 E 导出里给单条设备记录补 parent 归属。列序错了不会抛异常，
+// 只会让对方的 E 文件解析器把 parent 读成别的字段 —— 所以列序必须逐条钉住。
+describe("multiModelRecordWithParent", () => {
+  const record = (extra: Partial<{ id: string; kind: string; section: string; columns: string[]; params: Record<string, string> }> = {}) => ({
+    id: "n1",
+    kind: "ac-load",
+    section: "ACLoad",
+    params: { name: "负荷1", idx: "1", voltage: "10.5" },
+    ...extra
+  });
+
+  test("原列序里已有 parent：插到 name 之后", () => {
+    const result = multiModelRecordWithParent(record({ columns: ["idx", "name", "parent", "voltage"] }), 3);
+
+    expect(result.columns).toEqual(["idx", "name", "parent", "voltage"]);
+    expect(result.params.parent).toBe("3");
+  });
+
+  test("原列序里没有 parent：不注入新列，parent 只留在 params", () => {
+    // 模板（国网 E 格式 / 实时库）接口字段不含 parent；强行加列会破坏模板契约
+    const result = multiModelRecordWithParent(record({ columns: ["idx", "name", "voltage"] }), 7);
+
+    expect(result.columns).toEqual(["idx", "name", "voltage"]);
+    expect(result.params.parent).toBe("7");
+  });
+
+  test("没有 name 列时 parent 插到 idx 之后", () => {
+    const result = multiModelRecordWithParent(record({ columns: ["idx", "dev_type", "parent", "voltage"] }), 2);
+
+    // dev_type 先摘掉，再把 parent 插到 idx 之后、dev_type 之后补回
+    expect(result.columns).toEqual(["idx", "parent", "dev_type", "voltage"]);
+  });
+
+  test("name 与 idx 都没有时 parent 落到列首", () => {
+    const result = multiModelRecordWithParent(record({ columns: ["parent", "voltage", "current"] }), 0);
+
+    expect(result.columns).toEqual(["parent", "voltage", "current"]);
+  });
+
+  test("dev_type 被移到 parent 之后（保持在 name/idx 邻位）", () => {
+    const result = multiModelRecordWithParent(record({ columns: ["idx", "dev_type", "name", "parent", "voltage"] }), 5);
+
+    // 先摘掉原位置的 dev_type，再在 parent 之后放回
+    expect(result.columns).toEqual(["idx", "name", "parent", "dev_type", "voltage"]);
+  });
+
+  test("重复的 parent 列只保留一个，且落在 name 之后", () => {
+    const result = multiModelRecordWithParent(record({ columns: ["parent", "name", "parent", "voltage"] }), 4);
+
+    expect(result.columns).toEqual(["name", "parent", "voltage"]);
+  });
+
+  test("派生记录（id 与 kind 都带 :derived:）被剔除 parent 与 dev_type", () => {
+    const result = multiModelRecordWithParent(
+      record({
+        id: "host:derived:0",
+        kind: "ac-load:derived:wind",
+        columns: ["idx", "name", "dev_type", "voltage"],
+        params: { name: "风机", idx: "1", dev_type: "wind", parent: "999", voltage: "10.5" }
+      }),
+      6
+    );
+
+    expect(result.columns).toEqual(["idx", "name", "voltage"]);
+    expect(result.params.parent).toBeUndefined();
+    expect(result.params.dev_type).toBeUndefined();
+    expect(result.params.name).toBe("风机");
+  });
+
+  test("只有一侧带 :derived: 不算派生记录，仍按普通记录补 parent", () => {
+    const idOnly = multiModelRecordWithParent(
+      record({ id: "host:derived:0", columns: ["idx", "name", "parent"], params: { name: "a", idx: "1" } }),
+      2
+    );
+    const kindOnly = multiModelRecordWithParent(
+      record({ kind: "ac-load:derived:wind", columns: ["idx", "name", "parent"], params: { name: "a", idx: "1" } }),
+      2
+    );
+
+    expect(idOnly.params.parent).toBe("2");
+    expect(idOnly.columns).toEqual(["idx", "name", "parent"]);
+    expect(kindOnly.params.parent).toBe("2");
+    expect(kindOnly.columns).toEqual(["idx", "name", "parent"]);
+  });
+
+  test("原记录不被改写（返回值是新对象）", () => {
+    const original = record({ columns: ["idx", "name", "voltage"] });
+    const result = multiModelRecordWithParent(original, 8);
+
+    expect(original.columns).toEqual(["idx", "name", "voltage"]);
+    expect(original.params.parent).toBeUndefined();
+    expect(result).not.toBe(original);
+    expect(result.params).not.toBe(original.params);
+  });
+
+  test("record.columns 为空数组时按「无 parent 列」处理", () => {
+    const result = multiModelRecordWithParent(record({ columns: [] }), 1);
+
+    expect(result.columns).toEqual([]);
+    expect(result.params.parent).toBe("1");
   });
 });
