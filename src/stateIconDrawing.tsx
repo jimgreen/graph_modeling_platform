@@ -1439,7 +1439,10 @@ export function stateIconSvgReactAttributes(element: Element, override?: StateIc
   const props: Record<string, string | CSSProperties> = {};
   for (const attribute of Array.from(element.attributes)) {
     const name = attribute.name;
-    if (name.startsWith("on")) {
+    // 事件属性一律丢掉。**判前缀必须忽略大小写**：SVG 以 XML 解析，属性名保留原样，
+    // `onClick` / `ONCLICK` 都会原样进 React 并被当成真的事件处理器挂上 ——
+    // 只挡小写 `on` 等于没挡。SVG 规范里也没有以 on 开头的非事件属性，误伤不到。
+    if (name.toLowerCase().startsWith("on")) {
       continue;
     }
     if (name === "style") {
