@@ -6,7 +6,9 @@ import {
   paramOptionsForSection,
   pointOnBusForSnap,
   findNodeBusSnapTarget,
-  findNodeTerminalSnapTarget
+  findNodeTerminalSnapTarget,
+  connectTargetSearchBounds,
+  applyNodeTerminalSnap
 } from "./appExtracted/appCoreCanvasUtilities";
 import { DEVICE_VISUAL_PARAM_KEYS } from "./deviceVisualParams";
 import { BUILTIN_VOLTAGE_LEVELS, type ModelNode, type Point } from "./model";
@@ -473,5 +475,69 @@ describe("findNodeTerminalSnapTarget：端子吸附（含空间桶邻域）", ()
     const offset = deviceAt("m2", "ac-source", { x: 105, y: 100 });
     expect(findNodeTerminalSnapTarget([fixed, same], new Set(["m1"]), 0)).not.toBeNull();
     expect(findNodeTerminalSnapTarget([fixed, offset], new Set(["m2"]), 0)).toBeNull();
+  });
+});
+
+// connectTargetSearchBounds：连线拖拽时给空间索引划的查询框。
+// 框小了 → 附近的连接目标查不到（吸不上）；框大了 → 每次拖拽都捞一堆无关节点（卡）。
+// 框由「最大吸附容差 + 固定余量」决定，两条容差谁大取谁 —— 纯几何，此前零断言。
+// 8 个用例、13 处变异逐条跑过、13 处全红：padding 取两条容差较大者再加余量、余量本身、只取某一条容差、
+// 四边各自的正负号与对称性、不夹到 0（负坐标也要成立）、小数不取整；施加位移则是叠加 vs 覆盖、
+// 方向、x / y 不串、无目标时返回原引用不造副本。
+
+describe("connectTargetSearchBounds：连线吸附的空间查询框", () => {
+  test("★ 以给定点为中心、四边等距", () => {
+    expect(connectTargetSearchBounds({ x: 100, y: 200 })).toEqual({
+      left: 100 - 92,
+      right: 100 + 92,
+      top: 200 - 92,
+      bottom: 200 + 92
+    });
+  });
+
+  test("★ padding 取两条容差的较大者再加余量（端子 28 > 母线 18 → 28 + 64）", () => {
+    const bounds = connectTargetSearchBounds({ x: 0, y: 0 });
+    expect(bounds.right).toBe(92);
+    expect(bounds.left).toBe(-92);
+  });
+
+  test("负坐标点同样成立（不夹到 0）", () => {
+    expect(connectTargetSearchBounds({ x: -50, y: -50 })).toEqual({
+      left: -142,
+      right: 42,
+      top: -142,
+      bottom: 42
+    });
+  });
+
+  test("小数点坐标不做取整", () => {
+    const bounds = connectTargetSearchBounds({ x: 10.5, y: -0.25 });
+    expect(bounds.left).toBeCloseTo(10.5 - 92, 6);
+    expect(bounds.bottom).toBeCloseTo(-0.25 + 92, 6);
+  });
+});
+
+// applyNodeTerminalSnap：把吸附目标算出的位移加到当前拖拽位移上。
+// 写错的后果是「吸上了但又跳回去」或「没吸附却动了」，不报错。
+describe("applyNodeTerminalSnap：施加吸附位移", () => {
+  const delta = { x: 10, y: 20 };
+
+  test("★ 没有吸附目标时原样返回同一个对象（不多造副本）", () => {
+    expect(applyNodeTerminalSnap(delta, null)).toBe(delta);
+  });
+
+  test("★ 有吸附目标时把吸附位移逐轴相加", () => {
+    expect(applyNodeTerminalSnap(delta, { delta: { x: -5, y: 3 } } as never)).toEqual({ x: 5, y: 23 });
+  });
+
+  test("入参位移对象不被就地改", () => {
+    applyNodeTerminalSnap(delta, { delta: { x: -5, y: 3 } } as never);
+    expect(delta).toEqual({ x: 10, y: 20 });
+  });
+
+  test("吸附位移为零时也返回新对象（结果相同但引用不同）", () => {
+    const result = applyNodeTerminalSnap(delta, { delta: { x: 0, y: 0 } } as never);
+    expect(result).toEqual(delta);
+    expect(result).not.toBe(delta);
   });
 });
