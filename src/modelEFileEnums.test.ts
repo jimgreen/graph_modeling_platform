@@ -2,6 +2,13 @@
 //   normalizeControlTypeForE                  控制类型中文别名 → E 值（7 个别名）
 //   normalizeDcdcEndpointControlTypeForE      DCDC 变流器端点控制类型
 //   normalizeAcacEndpointControlTypeForE      ACAC 变流器端点控制类型
+//   normalizeAcGeneratorControlTypeForE       交流发电控制类型
+//   normalizeDcGeneratorControlTypeForE       直流发电控制类型
+//   normalizeDcacAcControlTypeForE            DCAC 变流器交流侧控制类型
+//   normalizeDcacDcControlTypeForE            DCAC 变流器直流侧控制类型
+//   acacConverterControlTypePairForE          ACAC 变流器 i/j 两侧控制方式
+//   dcdcConverterControlTypePairForE          DCDC 变流器 i/j 两侧控制方式
+//   dcacConverterControlTypePairForE          DCAC 变流器交/直流两侧控制方式
 //   normalizeDeviceStatusForE / normalizeSwitchStatusForE   开关状态（14 个别名）
 //   normalizeRunStatValue                     运行状态（10 个别名）
 //   normalizeRunStatParameterDefinition       运行状态参数定义的**强制归一**
@@ -10,14 +17,26 @@
 // 写着错值 —— 下游 CIM/E 文件解析器读出来是另一个设备类型，且**不报错**。
 import { describe, expect, test } from "vitest";
 import {
+  ACAC_CONVERTER_CONTROL_TYPES,
   ACAC_SIDE_CONTROL_TYPES,
+  AC_GENERATOR_CONTROL_TYPES,
+  DCAC_AC_CONTROL_TYPES,
+  DCAC_CONVERTER_CONTROL_TYPES,
+  DCAC_DC_CONTROL_TYPES,
   DC_GENERATOR_CONTROL_TYPES,
   DCDC_CONVERTER_CONTROL_TYPES,
   RUN_STAT_ENUM_OPTIONS,
   RUN_STAT_ENUM_VALUES,
+  acacConverterControlTypePairForE,
+  dcdcConverterControlTypePairForE,
+  dcacConverterControlTypePairForE,
+  normalizeAcGeneratorControlTypeForE,
   normalizeAcacEndpointControlTypeForE,
   normalizeControlTypeForE,
+  normalizeDcacAcControlTypeForE,
+  normalizeDcacDcControlTypeForE,
   normalizeDcdcEndpointControlTypeForE,
+  normalizeDcGeneratorControlTypeForE,
   normalizeDeviceStatusForE,
   normalizeRunStatParameterDefinition,
   normalizeRunStatValue,
@@ -439,5 +458,284 @@ describe("normalizeRunStatParameterDefinition：只对 run_stat / runStat 生效
     const out = normalizeRunStatParameterDefinition(input) as unknown as Record<string, unknown>;
     expect(out.description).toBe("说明");
     expect(out.section).toBe("交流设备");
+  });
+});
+
+describe("常量：其余四份控制类型清单", () => {
+  test("ACAC legacy 三字表 / 交流发电 / DCAC 两侧 / DCAC 模式", () => {
+    expect([...ACAC_CONVERTER_CONTROL_TYPES]).toEqual(["PQQ", "PVQ", "PQV", "PVV"]);
+    expect([...AC_GENERATOR_CONTROL_TYPES]).toEqual(["PV", "PQ", "PH"]);
+    expect([...DCAC_AC_CONTROL_TYPES]).toEqual(["PQ", "PV", "PH", "NONE"]);
+    expect([...DCAC_DC_CONTROL_TYPES]).toEqual(["P", "V", "I", "NONE"]);
+    expect([...DCAC_CONVERTER_CONTROL_TYPES]).toEqual(["DCV", "ACV", "ACP"]);
+  });
+
+  test("ACAC_SIDE / DCDC 清单是 DCAC 两侧清单的**别名引用**（同值同引用）", () => {
+    // 这两条是 `export const X = DCAC_Y`（重新赋值，不是再写一份字面量），
+    // 所以引用相等；若哪天改成各写一份，此处转红。
+    expect(ACAC_SIDE_CONTROL_TYPES).toBe(DCAC_AC_CONTROL_TYPES);
+    expect(DCDC_CONVERTER_CONTROL_TYPES).toBe(DCAC_DC_CONTROL_TYPES);
+  });
+});
+
+describe("normalizeAcGeneratorControlTypeForE", () => {
+  test("空值 / undefined 回落默认 PV", () => {
+    expect(normalizeAcGeneratorControlTypeForE()).toBe("PV");
+    expect(normalizeAcGeneratorControlTypeForE("")).toBe("PV");
+  });
+
+  test("表内值与中文别名归一，表外值**原样返回 trim 后的文本**", () => {
+    for (const value of ["PV", "PQ", "PH"]) {
+      expect(normalizeAcGeneratorControlTypeForE(value), value).toBe(value);
+    }
+    expect(normalizeAcGeneratorControlTypeForE("定PV")).toBe("PV");
+    expect(normalizeAcGeneratorControlTypeForE("定PQ")).toBe("PQ");
+    expect(normalizeAcGeneratorControlTypeForE("定PH")).toBe("PH");
+    // 表外：归一后仍不在清单里 —— 返回 trim 后的**原文本**，不返回归一值
+    expect(normalizeAcGeneratorControlTypeForE("NOPE")).toBe("NOPE");
+    expect(normalizeAcGeneratorControlTypeForE("  pq  ")).toBe("pq");
+    // 定V 归一成 V，V 不在交流发电清单里 —— 回落原文本「定V」
+    expect(normalizeAcGeneratorControlTypeForE("定V")).toBe("定V");
+    // 不定 归一成 "0"，同样表外 —— 回落原文本
+    expect(normalizeAcGeneratorControlTypeForE("不定")).toBe("不定");
+    expect(normalizeAcGeneratorControlTypeForE("0")).toBe("0");
+    // ★ 纯空白不是「空值」：`!value` 判的是空串而非 trim 后为空，
+    //   于是这里返回 trim 后的空串 ""，而不是默认值 "PV"
+    expect(normalizeAcGeneratorControlTypeForE("   ")).toBe("");
+  });
+
+  test("大小写敏感：小写 pq 不被认作 PQ", () => {
+    expect(normalizeAcGeneratorControlTypeForE("pq")).toBe("pq");
+    expect(normalizeAcGeneratorControlTypeForE("pv")).toBe("pv");
+  });
+});
+
+describe("normalizeDcGeneratorControlTypeForE", () => {
+  test("空值 / undefined 回落默认 P（与交流侧的 PV 不同）", () => {
+    expect(normalizeDcGeneratorControlTypeForE()).toBe("P");
+    expect(normalizeDcGeneratorControlTypeForE("")).toBe("P");
+  });
+
+  test("表内四值 P/V/I/NONE 与中文别名归一，表外原样返回", () => {
+    for (const value of ["P", "V", "I", "NONE"]) {
+      expect(normalizeDcGeneratorControlTypeForE(value), value).toBe(value);
+    }
+    expect(normalizeDcGeneratorControlTypeForE("定P")).toBe("P");
+    expect(normalizeDcGeneratorControlTypeForE("定I")).toBe("I");
+    // 交流侧的值在直流清单里没有 —— 回落原文本
+    expect(normalizeDcGeneratorControlTypeForE("PV")).toBe("PV");
+    expect(normalizeDcGeneratorControlTypeForE("定PV")).toBe("定PV");
+    expect(normalizeDcGeneratorControlTypeForE("zzz")).toBe("zzz");
+    // ★ 表外值走的是 **trim 后的文本**：去掉 trim 会把两侧空白一起带出来
+    expect(normalizeDcGeneratorControlTypeForE("  zzz  ")).toBe("zzz");
+    // 表内值看不出 trim（归一器自己先 trim 过），所以只有表外这条能钉住
+    expect(normalizeDcGeneratorControlTypeForE("  P  ")).toBe("P");
+    // ★ 「不定」归一成 "0"，但直流清单收的是 NONE 字面量、没有 "0" —— 仍属表外
+    expect(normalizeDcGeneratorControlTypeForE("0")).toBe("0");
+    expect(normalizeDcGeneratorControlTypeForE("不定")).toBe("不定");
+    // 大小写敏感
+    expect(normalizeDcGeneratorControlTypeForE("p")).toBe("p");
+  });
+});
+
+describe("normalizeDcacAcControlTypeForE", () => {
+  test("空值回落默认 PQ，fallback 参数原样透出", () => {
+    expect(normalizeDcacAcControlTypeForE()).toBe("PQ");
+    expect(normalizeDcacAcControlTypeForE("")).toBe("PQ");
+    expect(normalizeDcacAcControlTypeForE("   ")).toBe("PQ");
+    // ★ fallback 不校验：传什么就返回什么（不查清单）
+    expect(normalizeDcacAcControlTypeForE(undefined, "PH")).toBe("PH");
+    expect(normalizeDcacAcControlTypeForE("  ", "P")).toBe("P");
+  });
+
+  test("Q→PQ、V→PV、0→NONE 三条缩写归一", () => {
+    expect(normalizeDcacAcControlTypeForE("Q")).toBe("PQ");
+    expect(normalizeDcacAcControlTypeForE("V")).toBe("PV");
+    expect(normalizeDcacAcControlTypeForE("0")).toBe("NONE");
+    expect(normalizeDcacAcControlTypeForE("不定")).toBe("NONE");
+  });
+
+  test("表内四值透传，输入统一**大写化**（pq→PQ、none→NONE）", () => {
+    expect(normalizeDcacAcControlTypeForE("pq")).toBe("PQ");
+    expect(normalizeDcacAcControlTypeForE("ph")).toBe("PH");
+    expect(normalizeDcacAcControlTypeForE("none")).toBe("NONE");
+    expect(normalizeDcacAcControlTypeForE("定PQ")).toBe("PQ");
+  });
+
+  test("表外值原样返回（trim 后），且**没有** CTRL_ 前缀映射", () => {
+    expect(normalizeDcacAcControlTypeForE("zzz")).toBe("zzz");
+    expect(normalizeDcacAcControlTypeForE("  zzz  ")).toBe("zzz");
+    // CTRL_P 是直流侧的别名，交流侧不认 —— 原样透出
+    expect(normalizeDcacAcControlTypeForE("CTRL_P")).toBe("CTRL_P");
+  });
+});
+
+describe("normalizeDcacDcControlTypeForE", () => {
+  test("空值回落默认 V，fallback 参数原样透出", () => {
+    expect(normalizeDcacDcControlTypeForE()).toBe("V");
+    expect(normalizeDcacDcControlTypeForE("   ")).toBe("V");
+    expect(normalizeDcacDcControlTypeForE(undefined, "I")).toBe("I");
+    expect(normalizeDcacDcControlTypeForE("", "NONE")).toBe("NONE");
+  });
+
+  test("CTRL_P / CTRL_V / CTRL_I / SLACK / 0 五条映射", () => {
+    expect(normalizeDcacDcControlTypeForE("CTRL_P")).toBe("P");
+    expect(normalizeDcacDcControlTypeForE("CTRL_V")).toBe("V");
+    expect(normalizeDcacDcControlTypeForE("CTRL_I")).toBe("I");
+    expect(normalizeDcacDcControlTypeForE("SLACK")).toBe("NONE");
+    expect(normalizeDcacDcControlTypeForE("0")).toBe("NONE");
+    expect(normalizeDcacDcControlTypeForE("不定")).toBe("NONE");
+    // 前缀映射对大小写不敏感（查表前先 toUpperCase）
+    expect(normalizeDcacDcControlTypeForE("ctrl_p")).toBe("P");
+  });
+
+  test("表内四值透传并大写化；交流侧的值表外原样返回", () => {
+    expect(normalizeDcacDcControlTypeForE("p")).toBe("P");
+    expect(normalizeDcacDcControlTypeForE("none")).toBe("NONE");
+    expect(normalizeDcacDcControlTypeForE("定V")).toBe("V");
+    // PQ 是交流侧的值，直流清单里没有 —— 回落原文本（不映射成 P/V/I）
+    expect(normalizeDcacDcControlTypeForE("PQ")).toBe("PQ");
+    expect(normalizeDcacDcControlTypeForE("zzz")).toBe("zzz");
+  });
+});
+
+describe("acacConverterControlTypePairForE", () => {
+  const pair = (params: Record<string, string>) => acacConverterControlTypePairForE(params);
+
+  test("★ 无任何参数时两侧都回落 PQ", () => {
+    expect(pair({})).toEqual({ i_control_type: "PQ", j_control_type: "PQ" });
+  });
+
+  test("★ legacy 三字表：四个键各自映射到 i/j 两侧", () => {
+    expect(pair({ control_type: "PQQ" })).toEqual({ i_control_type: "PQ", j_control_type: "PQ" });
+    expect(pair({ control_type: "PVQ" })).toEqual({ i_control_type: "PV", j_control_type: "PQ" });
+    expect(pair({ control_type: "PQV" })).toEqual({ i_control_type: "PQ", j_control_type: "PV" });
+    expect(pair({ control_type: "PVV" })).toEqual({ i_control_type: "PV", j_control_type: "PV" });
+  });
+
+  test("★ legacy 查表前**先 toUpperCase**：小写键也命中（dcdc 侧靠归一器内部实现，见下）", () => {
+    // 去掉 toUpperCase 后 pvq 查不到表 → 两侧回落 PQ/PQ，与此断言不符
+    expect(pair({ control_type: "pvq" })).toEqual({ i_control_type: "PV", j_control_type: "PQ" });
+    expect(pair({ control_type: "pqq" })).toEqual({ i_control_type: "PQ", j_control_type: "PQ" });
+    // 前后空白由 normalizeControlTypeForE 的 trim 吃掉
+    expect(pair({ control_type: "  PQV  " })).toEqual({ i_control_type: "PQ", j_control_type: "PV" });
+    // 中文别名「不定」先归一成 "0"，再大写，仍不在 legacy 表里
+    expect(pair({ control_type: "不定" })).toEqual({ i_control_type: "PQ", j_control_type: "PQ" });
+  });
+
+  test("★ 显式 i/j 各自覆盖 legacy（两侧独立，互不影响）", () => {
+    expect(pair({ control_type: "PQQ", i_control_type: "PH" })).toEqual({ i_control_type: "PH", j_control_type: "PQ" });
+    expect(pair({ control_type: "PQQ", j_control_type: "NONE" })).toEqual({ i_control_type: "PQ", j_control_type: "NONE" });
+    expect(pair({ control_type: "PQQ", i_control_type: "PH", j_control_type: "0" }))
+      .toEqual({ i_control_type: "PH", j_control_type: "NONE" });
+  });
+
+  test("★ 纯空白的显式值**不回落到 legacy**（判据是字符串非空，不是 trim 后非空）", () => {
+    // "  " 为真值 → 走显式分支 → 归一器内 trim 后为空 → 返回其 fallback "PQ"，
+    // 因此 i 侧是 PQ 而不是 legacy 的 PV
+    expect(pair({ control_type: "PVV", i_control_type: "  " })).toEqual({ i_control_type: "PQ", j_control_type: "PV" });
+    expect(pair({ control_type: "PVV", j_control_type: "  " })).toEqual({ i_control_type: "PV", j_control_type: "PQ" });
+  });
+
+  test("★ legacy 优先于 source/target_control_type", () => {
+    expect(pair({ control_type: "PQQ", source_control_type: "PH" })).toEqual({ i_control_type: "PQ", j_control_type: "PQ" });
+    expect(pair({ control_type: "PVV", target_control_type: "PH" })).toEqual({ i_control_type: "PV", j_control_type: "PV" });
+  });
+
+  test("没有 legacy 时才用 source/target，且值经端点归一器处理", () => {
+    expect(pair({ source_control_type: "PH", target_control_type: "V" })).toEqual({ i_control_type: "PH", j_control_type: "PV" });
+    expect(pair({ source_control_type: "Q" })).toEqual({ i_control_type: "PQ", j_control_type: "PQ" });
+    // 表外的值原样透出
+    expect(pair({ source_control_type: "zzz" })).toEqual({ i_control_type: "zzz", j_control_type: "PQ" });
+    // 纯空白 → 归一器 fallback PQ
+    expect(pair({ source_control_type: "  ", target_control_type: "  " })).toEqual({ i_control_type: "PQ", j_control_type: "PQ" });
+    // legacy 键查不到时同样落到 source/target
+    expect(pair({ control_type: "zzz", source_control_type: "PH" })).toEqual({ i_control_type: "PH", j_control_type: "PQ" });
+  });
+
+  test("参数名兼容 camelCase（经 deviceParamValue），值仍走端点归一", () => {
+    expect(pair({ iControlType: "PH" })).toEqual({ i_control_type: "PH", j_control_type: "PQ" });
+    expect(pair({ iControlType: "Q", jControlType: "V" })).toEqual({ i_control_type: "PQ", j_control_type: "PV" });
+    expect(pair({ sourceControlType: "PH", targetControlType: "PH" }))
+      .toEqual({ i_control_type: "PH", j_control_type: "PH" });
+  });
+});
+
+describe("dcdcConverterControlTypePairForE", () => {
+  const pair = (params: Record<string, string>) => dcdcConverterControlTypePairForE(params);
+
+  test("★ 无任何参数时 i 侧 P、j 侧 NONE —— **两侧默认不同**", () => {
+    expect(pair({})).toEqual({ i_control_type: "P", j_control_type: "NONE" });
+  });
+
+  test("★ i 侧四级回落：i_control_type → control_type → source_control_type → P", () => {
+    expect(pair({ i_control_type: "CTRL_V" })).toEqual({ i_control_type: "V", j_control_type: "NONE" });
+    expect(pair({ control_type: "CTRL_I" })).toEqual({ i_control_type: "I", j_control_type: "NONE" });
+    expect(pair({ source_control_type: "I" })).toEqual({ i_control_type: "I", j_control_type: "NONE" });
+    expect(pair({})).toEqual({ i_control_type: "P", j_control_type: "NONE" });
+  });
+
+  test("★ i 侧逐级优先：control_type 压过 source_control_type", () => {
+    // control_type 归一成 NONE，且不再看 source_control_type
+    expect(pair({ control_type: "0", source_control_type: "I" })).toEqual({ i_control_type: "NONE", j_control_type: "NONE" });
+    expect(pair({ i_control_type: "V", control_type: "CTRL_I", source_control_type: "I" }))
+      .toEqual({ i_control_type: "V", j_control_type: "NONE" });
+  });
+
+  test("★ j 侧只两级：j_control_type → target_control_type → NONE，**不读 control_type / source**", () => {
+    expect(pair({ j_control_type: "CTRL_I" })).toEqual({ i_control_type: "P", j_control_type: "I" });
+    expect(pair({ target_control_type: "V" })).toEqual({ i_control_type: "P", j_control_type: "V" });
+    // control_type 里的三字 legacy（PQQ/PVQ…）对 j 侧毫无影响
+    expect(pair({ control_type: "PVQ" })).toEqual({ i_control_type: "PVQ", j_control_type: "NONE" });
+    expect(pair({ source_control_type: "I" })).toEqual({ i_control_type: "I", j_control_type: "NONE" });
+  });
+
+  test("legacy 值经端点归一器处理：小写 CTRL_P 也命中、SLACK→NONE", () => {
+    expect(pair({ control_type: "ctrl_p" })).toEqual({ i_control_type: "P", j_control_type: "NONE" });
+    expect(pair({ control_type: "SLACK" })).toEqual({ i_control_type: "NONE", j_control_type: "NONE" });
+    expect(pair({ j_control_type: "slack" })).toEqual({ i_control_type: "P", j_control_type: "NONE" });
+    // 前后空白由归一器 trim
+    expect(pair({ control_type: "  V  " })).toEqual({ i_control_type: "V", j_control_type: "NONE" });
+  });
+
+  test("表外值原样透出（不报错、不改写）", () => {
+    expect(pair({ control_type: "zzz" })).toEqual({ i_control_type: "zzz", j_control_type: "NONE" });
+    expect(pair({ i_control_type: "PVQ" })).toEqual({ i_control_type: "PVQ", j_control_type: "NONE" });
+  });
+
+  test("★ 纯空白值不触发下一级回落：i/j 各自落到归一器 fallback", () => {
+    // "  " 为真值 → 显式分支 → 归一器内 trim 为空 → fallback "NONE"（不是 i 侧的 P）
+    expect(pair({ control_type: "CTRL_V", i_control_type: "  " })).toEqual({ i_control_type: "NONE", j_control_type: "NONE" });
+    expect(pair({ target_control_type: "V", j_control_type: "  " })).toEqual({ i_control_type: "P", j_control_type: "NONE" });
+    // control_type 为空串是**假值**，与上面不同 —— i 侧继续往下一级找 source
+    expect(pair({ control_type: "", source_control_type: "I" })).toEqual({ i_control_type: "I", j_control_type: "NONE" });
+    // source 为纯空白时归一器给 NONE（不是 i 侧兜底的 P）
+    expect(pair({ source_control_type: "  " })).toEqual({ i_control_type: "NONE", j_control_type: "NONE" });
+  });
+
+  test("参数名兼容 camelCase（经 deviceParamValue）", () => {
+    expect(pair({ iControlType: "I", jControlType: "V" })).toEqual({ i_control_type: "I", j_control_type: "V" });
+  });
+});
+
+describe("dcacConverterControlTypePairForE", () => {
+  test("缺省时交流侧 PQ、直流侧 V", () => {
+    expect(dcacConverterControlTypePairForE({})).toEqual({ ac_control_type: "PQ", dc_control_type: "V" });
+  });
+
+  test("两侧各自过自己的归一器", () => {
+    expect(dcacConverterControlTypePairForE({ ac_control_type: "Q", dc_control_type: "CTRL_P" }))
+      .toEqual({ ac_control_type: "PQ", dc_control_type: "P" });
+    // 纯空白 / 空串同样回落两侧默认
+    expect(dcacConverterControlTypePairForE({ ac_control_type: "  ", dc_control_type: "" }))
+      .toEqual({ ac_control_type: "PQ", dc_control_type: "V" });
+    // 表外值原样透出
+    expect(dcacConverterControlTypePairForE({ ac_control_type: "zzz", dc_control_type: "SLACK" }))
+      .toEqual({ ac_control_type: "zzz", dc_control_type: "NONE" });
+  });
+
+  test("★ 与另两个 pair 函数不同：这里**直接读 params.x**，不走 deviceParamValue，camelCase 不认", () => {
+    expect(dcacConverterControlTypePairForE({ acControlType: "PH", dcControlType: "I" }))
+      .toEqual({ ac_control_type: "PQ", dc_control_type: "V" });
   });
 });
