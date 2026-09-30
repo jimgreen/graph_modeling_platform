@@ -15,11 +15,15 @@ import {
   createResolveUnsavedChangeAction,
   createRunTopologyCalculation,
   createSaveCurrentProject,
+  createSchemePathForProject,
+  createSchemePathForScheme,
   createStartRoutableLineFromTerminal
 } from "./appExtracted/appProjectCanvasFactories";
 import { createMergeNodeUpdateLists } from "./appExtracted/appSelectionDragFactories";
 import { reconcileNodeWithDefinition as reconcileNodeWithDefinitionReal } from "./definitionInstanceSync";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
+import { savedSchemePathForId } from "./appExtracted/appCoreCanvasUtilities";
+import { findSavedProjectRecordInSchemes, findSavedSchemeById } from "./model-routing";
 import { DEVICE_LIBRARY, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, canConnectTerminals, createDefaultNode, getNodeScaleX, getNodeScaleY, getTerminalPoint, isBusNode, isCanvasNodeMovable, isLineSegmentBusNode, isRoutableLineDeviceKind, type ModelNode } from "./model";
 import {
   createRoutableLineDeviceFromEndpoints,
@@ -2706,5 +2710,78 @@ describe("自动对齐/自动散开的浮动提示", () => {
       runAutoAlignPlanInWorkerMock.spy.mockReset();
       vi.unstubAllGlobals();
     }
+  });
+});
+
+// createSchemePathForScheme / createSchemePathForProject：从根到目标的名字路径。
+// 这条路径是侧栏定位、URL 里的 schemePath、以及「所属方案」写入的共同依据（编码规则见
+// memory: id-format-and-decoding）。算错的后果是点一个方案跳到另一个、或存进去的所属方案
+// 对不上 —— 都不报错。
+//
+// 8 个用例、11 处变异逐条跑过全部转红。过程中补了一处真缺口：原先「显式 sourceSchemes 优先」那条
+// 用的两棵树 **id 相同**，于是「拿 scope.schemes 去查」这个变异照样通过 —— 改成两边 id 不同才看得出来。
+describe("方案路径（scope 注入的纯函数）", () => {
+  const schemes = [
+    {
+      id: "s1",
+      name: "根方案",
+      projects: [],
+      children: [
+        { id: "s1a", name: "子方案", projects: [{ id: "p1", name: "模型甲", project: { name: "模型甲", idx: 1 } }], children: [] },
+        { id: "s1b", name: "另一子", projects: [], children: [{ id: "s1b1", name: "孙方案", projects: [], children: [] }] }
+      ]
+    },
+    { id: "s2", name: "另一个根", projects: [], children: [] }
+  ] as unknown as Parameters<typeof findSavedSchemeById>[0];
+
+  const createScope = (over: Record<string, unknown> = {}) => ({
+    findSavedSchemeById,
+    findSavedProjectRecordInSchemes,
+    savedSchemePathForId,
+    schemes,
+    ...over
+  });
+
+  const pathFor = (schemeId: string, source?: unknown) =>
+    createSchemePathForScheme(createScope() as never)(schemeId, source as never);
+  const projectPathFor = (projectId: string, source?: unknown) =>
+    createSchemePathForProject(createScope() as never)(projectId, source as never);
+
+  test("★ 顶层方案 → 单元素路径", () => {
+    expect(pathFor("s2")).toEqual(["另一个根"]);
+  });
+
+  test("★ 嵌套方案 → 从根到自己的完整名字路径", () => {
+    expect(pathFor("s1a")).toEqual(["根方案", "子方案"]);
+    expect(pathFor("s1b1")).toEqual(["根方案", "另一子", "孙方案"]);
+  });
+
+  test("★ 找不到时给空数组（不是 [undefined]、也不是整条路径）", () => {
+    expect(pathFor("nope")).toEqual([]);
+    expect(pathFor("")).toEqual([]);
+  });
+
+  test("★ 显式传入的 sourceSchemes 优先于 scope 里的 schemes（两边 id 不同才看得出来）", () => {
+    const other = [{ id: "s9", name: "别处的根", projects: [], children: [] }] as unknown as typeof schemes;
+    // s9 只存在于 other 里：查别的树就找不到 → []
+    expect(pathFor("s9", other)).toEqual(["别处的根"]);
+    // 不传就用 scope 里的（那里没有 s9）
+    expect(pathFor("s9")).toEqual([]);
+    expect(pathFor("s1")).toEqual(["根方案"]);
+  });
+
+  test("★ 项目 → 所属方案的路径（项目本身不出现在路径里）", () => {
+    expect(projectPathFor("p1")).toEqual(["根方案", "子方案"]);
+  });
+
+  test("项目找不到 / id 为空时给空数组", () => {
+    expect(projectPathFor("nope")).toEqual([]);
+    expect(projectPathFor("")).toEqual([]);
+  });
+
+  test("★ 拿不到路径（savedSchemePathForId 给 undefined）时回落到方案自身名字", () => {
+    const scope = createScope({ savedSchemePathForId: () => undefined });
+    expect(createSchemePathForScheme(scope as never)("s1a")).toEqual(["子方案"]);
+    expect(createSchemePathForProject(scope as never)("p1")).toEqual(["子方案"]);
   });
 });
