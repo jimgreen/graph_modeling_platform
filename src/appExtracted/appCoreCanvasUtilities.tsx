@@ -66,6 +66,7 @@ import {
   TERMINAL_TYPE_LIBRARY_LABELS,
   terminalVoltageBaseNumber,
   terminalTypeColor,
+  isThreeWindingTransformerKind,
   type SavedSchemeRecord,
   type SavedProjectRecord
 } from "../model";
@@ -1508,8 +1509,14 @@ export const voltageColorKeyForTerminal = (node: ModelNode, terminal: ModelNode[
   if (!isElectricPaletteType(terminal.type)) {
     return "";
   }
-  const voltage = terminalVoltageBaseNumber(terminal.vbase ?? terminalVbaseFallbackValue(node, terminalIndex));
-  return voltage ? `${terminal.type}:${voltage}` : "";
+  // 端子 vbase 未填时是空串而非 undefined（初始模板与电压继承都这么存），
+  // 所以这里必须按「归一后非空且非 0」判定，照电压继承 resolveNodeVoltageAtTerminal 的口径；
+  // 用 `??` 判空会让下面的 params 兜底成为永不触发的死代码，电压配色键恒为空。
+  const terminalVbase = terminalVoltageBaseNumber(terminal.vbase);
+  const voltage = terminalVbase && terminalVbase !== "0"
+    ? terminalVbase
+    : terminalVoltageBaseNumber(terminalVbaseFallbackValue(node, terminalIndex));
+  return voltage && voltage !== "0" ? `${terminal.type}:${voltage}` : "";
 };
 
 // DEFAULT_CANVAS_*（宽/高/背景色）与 src/export/svg.ts 里的同名常量保持同值：
