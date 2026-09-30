@@ -26,6 +26,7 @@ import {
   generateStateVisualShapeImage,
   isDefaultStatePageId,
   stateDraftImageValue,
+  stateIconSvgVisibleViewBox,
   stateIconDrawingElementMarkup,
   parseSvgStyleAttribute,
   stateDraftRowId,
@@ -622,5 +623,67 @@ describe("stateDraftImageValue：图元图优先于背景图", () => {
 
   test("都没有时是空串（不是 undefined）", () => {
     expect(stateDraftImageValue(row(""))).toBe("");
+  });
+});
+
+// stateIconSvgVisibleViewBox：导入的 SVG 图标在画布上取哪一段（viewBox）。
+// 本测试跑在 node 环境（仓库默认 environment = node，没有 DOMParser），因此走的是
+// **纯正则兜底**那条分支：直接从 <svg …> 开标签里读 viewBox / width / height。
+// 读错的后果是图标被裁掉一半或整张缩放失真，只在预览里看得出来，不报任何错。
+//
+// 11 个用例、9 处变异逐条跑过全部转红（viewBox 与 width/height 的优先级、默认画布、开标签
+// 大小写、trim、px 单位、收尾标签、非 svg 输入、入口兜底值）。
+//
+// 另一条分支（用 DOMParser 量真实可见范围、算 union bbox）**本文件覆盖不到**：
+// 它需要 document / DOMParser，装 jsdom 属新增依赖。要覆盖它得先决定是否引入该依赖。
+describe("stateIconSvgVisibleViewBox：无 DOM 时的正则兜底", () => {
+  const viewBoxOf = (source: string) => stateIconSvgVisibleViewBox(source);
+
+  test("★ 有 viewBox 就用它", () => {
+    expect(viewBoxOf('<svg viewBox="0 0 10 20"><path d="M0 0"/></svg>')).toBe("0 0 10 20");
+  });
+
+  test("★ 没有 viewBox 时按 width / height 拼一个 0 0 w h", () => {
+    expect(viewBoxOf('<svg width="120" height="60"><path d="M0 0"/></svg>')).toBe("0 0 120 60");
+  });
+
+  test("★ 两者都没有时回落到默认画布 240 × 160", () => {
+    expect(viewBoxOf("<svg><path d=\"M0 0\"/></svg>")).toBe("0 0 240 160");
+  });
+
+  test("viewBox 与 width/height 同时给时以 viewBox 为准", () => {
+    expect(viewBoxOf('<svg viewBox="1 2 3 4" width="120" height="60"></svg>')).toBe("1 2 3 4");
+  });
+
+  test("小数与负值原样带出（不取整）", () => {
+    expect(viewBoxOf('<svg viewBox="-1.5 -2.5 10.25 20.75"></svg>')).toBe("-1.5 -2.5 10.25 20.75");
+    expect(viewBoxOf('<svg width="10.5" height="20.5"></svg>')).toBe("0 0 10.5 20.5");
+  });
+
+  test("★ 属性名大小写不敏感、属性顺序无所谓", () => {
+    expect(viewBoxOf('<svg height="60" width="120"></svg>')).toBe("0 0 120 60");
+    expect(viewBoxOf('<svg VIEWBOX="0 0 8 9"></svg>')).toBe("0 0 8 9");
+  });
+
+  test("前后空白与换行容忍（先 trim 再匹配）", () => {
+    expect(viewBoxOf('\n  <svg viewBox="0 0 5 6">\n  </svg>\n')).toBe("0 0 5 6");
+  });
+
+  test("★ 不是 svg / 没有收尾标签时给空串（调用方据此回退到别处）", () => {
+    for (const source of ["", "   ", "不是 svg", '<svg viewBox="0 0 1 1">', '<div viewBox="0 0 1 1"></div>']) {
+      expect(viewBoxOf(source), JSON.stringify(source)).toBe("");
+    }
+  });
+
+  test("★ width 带单位（px）时剥掉单位再拼", () => {
+    expect(viewBoxOf('<svg width="120px" height="60px"></svg>')).toBe("0 0 120 60");
+  });
+
+  test("★ 开标签大小写不敏感（<SVG> 也认）", () => {
+    expect(viewBoxOf('<SVG viewBox="0 0 7 8"><path d="M0 0"/></SVG>')).toBe("0 0 7 8");
+  });
+
+  test("viewBox 为空串时按 width / height 兜（空值不当作有效 viewBox）", () => {
+    expect(viewBoxOf('<svg viewBox="" width="120" height="60"></svg>')).toBe("0 0 120 60");
   });
 });
