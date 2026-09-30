@@ -19,6 +19,7 @@ import {
   createUpdateSelectedNode,
   createUpdateInteractiveStaticDrawingPreview,
   createUpdateLibraryPlacementPreview,
+  createAppendPendingKeyboardMoveDelta,
   createUpdateParam
 } from "./appExtracted/appCanvasInteractionFactories";
 import { createGraphStore, graphStoreApplyPatch, graphStorePatchGraphFromArrays, overlayGraphStoreNodes } from "./graphStore";
@@ -1955,5 +1956,58 @@ describe("面板切容器 kind(dev_type 下拉)", () => {
     const container = { ...containerBase("c1"), params: { idx: "7" } };
     const { patched } = runPanelParamWrite([container], "c1", { kind: "ac-distribution-box" });
     expect(patched[0].params.idx).toBe("7");
+  });
+});
+
+// createAppendPendingKeyboardMoveDelta：方向键微调时的位移累加。
+// 累加口径决定「按住方向键连续移动」与「当前拖拽位移」的合成方式：算错的表现是
+// 连按方向键越按越快 / 按一下不动 / 与鼠标拖拽叠加出跳动位移，不报错。
+// 8 处变异逐条跑过、8 处全红：零位移短路、pending 与拖拽基准的兜底次序、累加而非覆盖、两轴独立、
+// 写回目标、缺省基准原点。过程中补了一处真缺口：原先「零位移被忽略」只比了值，
+// 去掉短路后新建的同值对象照样通过 —— 改成断言引用不变（换新会让下游每帧重算）。
+describe("createAppendPendingKeyboardMoveDelta：方向键位移累加", () => {
+  const createScope = (pending?: { x: number; y: number } | null, dragDelta?: { x: number; y: number } | null) => ({
+    draggingRef: { current: dragDelta ? { currentDelta: dragDelta } : null },
+    pendingKeyboardMoveDeltaRef: { current: pending }
+  });
+
+  test("★ 零位移直接忽略（连 pending 引用都不换新）", () => {
+    const scope = createScope({ x: 3, y: 3 });
+    const before = scope.pendingKeyboardMoveDeltaRef.current;
+    createAppendPendingKeyboardMoveDelta(scope as never)({ x: 0, y: 0 });
+    // 连对象都不换新：换新会让下游每帧都重算一次
+    expect(scope.pendingKeyboardMoveDeltaRef.current).toBe(before);
+  });
+
+  test("★ 没有 pending 时以当前拖拽位移为基准（方向键与鼠标拖拽叠加）", () => {
+    const scope = createScope(null, { x: 10, y: -4 });
+    createAppendPendingKeyboardMoveDelta(scope as never)({ x: 1, y: 2 });
+    expect(scope.pendingKeyboardMoveDeltaRef.current).toEqual({ x: 11, y: -2 });
+  });
+
+  test("★ 已有 pending 时在它之上继续累加（不是每次从拖拽基准重来）", () => {
+    const scope = createScope({ x: 5, y: 5 }, { x: 100, y: 100 });
+    createAppendPendingKeyboardMoveDelta(scope as never)({ x: 1, y: 0 });
+    expect(scope.pendingKeyboardMoveDeltaRef.current).toEqual({ x: 6, y: 5 });
+  });
+
+  test("★ 两轴独立：只动一轴时另一轴不变", () => {
+    const scope = createScope(null, null);
+    createAppendPendingKeyboardMoveDelta(scope as never)({ x: 0, y: 7 });
+    expect(scope.pendingKeyboardMoveDeltaRef.current).toEqual({ x: 0, y: 7 });
+  });
+
+  test("既没有 pending 也没有拖拽 → 从零起算（不抛错）", () => {
+    const scope = createScope(null, null);
+    createAppendPendingKeyboardMoveDelta(scope as never)({ x: 2, y: 3 });
+    expect(scope.pendingKeyboardMoveDeltaRef.current).toEqual({ x: 2, y: 3 });
+  });
+
+  test("★ 负位移会累积（向左 / 向上移动不会被吃掉）", () => {
+    const scope = createScope(null, null);
+    const append = createAppendPendingKeyboardMoveDelta(scope as never);
+    append({ x: -4, y: -1 });
+    append({ x: -4, y: 0 });
+    expect(scope.pendingKeyboardMoveDeltaRef.current).toEqual({ x: -8, y: -1 });
   });
 });
