@@ -2,17 +2,21 @@ import { describe, expect, test } from "vitest";
 
 import { applyDeviceTemplateDefinitionOverride, buildContainerDeviceParameterViews, DEVICE_LIBRARY, resolveEffectiveTemplateParameterDefinitions } from "./model";
 import {
+  constrainPointToOrthogonalAxis,
   createDefinitionDraftRows,
   createCustomDeviceDraftFromTemplate,
   customDefaultDefinitions,
+  customDeviceTerminalAnchorKey,
   deviceDefinitionOverrideForTemplate,
   deviceDefinitionKeyForTemplate,
   deviceDefinitionSharedKeyForTemplate,
   deviceTemplatesShareParameterDefinitions,
   isConcreteDeviceDefinitionParamName,
   migrateSharedDeviceDefinitionOverrideForTemplateChange,
+  normalizeCustomDeviceTerminalAnchorCoordinate,
   normalizeDeviceDefinitionOwnership,
   normalizeSharedDeviceDefinitionOverrides,
+  primaryOrthogonalAxis,
   removeDeviceTemplateDefinitionOverrides,
   resolveTemplateComponentLibrary,
   templateDerivedComponentLibraryInfo
@@ -1070,5 +1074,140 @@ describe("electric generation device library classification", () => {
       label: "用户风电",
       baseComponentLibrary: "ACGenerator"
     });
+  });
+});
+
+// 端子锚点是「归一化到 [-0.5, 0.5] 的元件局部坐标」。归一与取键两件事的判据都是浮点，
+// 没有它们兜底的话，用户在编辑器里拖出的 0.1234000000001 与 0.1234 会算成两个端子，
+// 表现为「端子重叠校验不生效 / 端子被存成两份」。故精度与取整规则都要钉住。
+describe("normalizeCustomDeviceTerminalAnchorCoordinate", () => {
+  test("保留三位小数（精度常量是 1000）", () => {
+    expect(normalizeCustomDeviceTerminalAnchorCoordinate(0.1234)).toBe(0.123);
+    expect(normalizeCustomDeviceTerminalAnchorCoordinate(-0.1234)).toBe(-0.123);
+    // 第四位被舍掉，不进位
+    expect(normalizeCustomDeviceTerminalAnchorCoordinate(0.12349)).toBe(0.123);
+  });
+
+  test("第五位按 Math.round 取整，半值向 +∞（负数侧不对称）", () => {
+    expect(normalizeCustomDeviceTerminalAnchorCoordinate(0.1235)).toBe(0.124);
+    // Math.round 是「半值向 +∞」而非「远离零」：-123.5 → -123，即 -0.1235 落在 -0.123。
+    // 钉住这条不对称是有原因的：customDeviceTerminalAnchorKey 用的是同一个归一化，
+    // 改取整方式会把已存的两枚不同锚点算成同一个键，端子重叠校验随之误报。
+    expect(normalizeCustomDeviceTerminalAnchorCoordinate(-0.1235)).toBe(-0.123);
+    expect(normalizeCustomDeviceTerminalAnchorCoordinate(-0.1236)).toBe(-0.124);
+  });
+
+  test("夹到 [-0.5, 0.5]：锚点必须落在元件边界上", () => {
+    // 越界锚点会让端子引线从元件内部穿出去
+    expect(normalizeCustomDeviceTerminalAnchorCoordinate(0.6)).toBe(0.5);
+    expect(normalizeCustomDeviceTerminalAnchorCoordinate(-0.6)).toBe(-0.5);
+    expect(normalizeCustomDeviceTerminalAnchorCoordinate(99)).toBe(0.5);
+    expect(normalizeCustomDeviceTerminalAnchorCoordinate(0.5)).toBe(0.5);
+    expect(normalizeCustomDeviceTerminalAnchorCoordinate(-0.5)).toBe(-0.5);
+  });
+
+  test("非有限数与非数值一律当 0（元件正中）", () => {
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(normalizeCustomDeviceTerminalAnchorCoordinate(value)).toBe(0);
+    }
+    // 字符串不是有限数（Number.isFinite 不做转换）→ 0
+    expect(normalizeCustomDeviceTerminalAnchorCoordinate("0.3" as unknown as number)).toBe(0);
+    expect(normalizeCustomDeviceTerminalAnchorCoordinate(0)).toBe(0);
+  });
+});
+
+describe("customDeviceTerminalAnchorKey", () => {
+  test("按归一后的坐标拼键", () => {
+    expect(customDeviceTerminalAnchorKey({ x: 0.5, y: 0 })).toBe("0.5:0");
+    expect(customDeviceTerminalAnchorKey({ x: -0.5, y: 0.25 })).toBe("-0.5:0.25");
+  });
+
+  test("浮点尾差被归一吃掉：这两个键相同", () => {
+    // 这正是取键存在的理由 —— 相等性判在浮点上不成立
+    expect(customDeviceTerminalAnchorKey({ x: 0.1234000000001, y: 0 })).toBe(
+      customDeviceTerminalAnchorKey({ x: 0.1234, y: 0 })
+    );
+    expect(customDeviceTerminalAnchorKey({ x: 0.1 + 0.2, y: 0 })).toBe(
+      customDeviceTerminalAnchorKey({ x: 0.3, y: 0 })
+    );
+  });
+
+  test("越界坐标先夹再拼键", () => {
+    expect(customDeviceTerminalAnchorKey({ x: 0.9, y: -0.9 })).toBe("0.5:-0.5");
+  });
+
+  test("不同位置给出不同键", () => {
+    expect(customDeviceTerminalAnchorKey({ x: 0.5, y: 0 })).not.toBe(
+      customDeviceTerminalAnchorKey({ x: 0, y: 0.5 })
+    );
+  });
+});
+
+// 正交轴判定是 Shift 约束连线的核心：判错的表现是「按了 Shift 反而拐弯」。
+// 平手（|dx| === |dy|）判给 x 是刻意的 —— 斜 45° 时保持水平更符合「先定一个主方向」的直觉。
+describe("primaryOrthogonalAxis", () => {
+  const start = { x: 0, y: 0 };
+
+  test("横向位移为主 → x", () => {
+    expect(primaryOrthogonalAxis(start, { x: 10, y: 0 })).toBe("x");
+    expect(primaryOrthogonalAxis(start, { x: 10, y: 3 })).toBe("x");
+  });
+
+  test("纵向位移为主 → y", () => {
+    expect(primaryOrthogonalAxis(start, { x: 0, y: 10 })).toBe("y");
+    expect(primaryOrthogonalAxis(start, { x: 3, y: 10 })).toBe("y");
+  });
+
+  test("平手判给 x（|dx| === |dy|）", () => {
+    expect(primaryOrthogonalAxis(start, { x: 10, y: 10 })).toBe("x");
+    expect(primaryOrthogonalAxis(start, { x: -10, y: 10 })).toBe("x");
+    // 零位移也是平手
+    expect(primaryOrthogonalAxis(start, start)).toBe("x");
+  });
+
+  test("按位移差的绝对值算，与方向无关", () => {
+    const from = { x: 100, y: 100 };
+    expect(primaryOrthogonalAxis(from, { x: 90, y: 100 })).toBe("x");
+    expect(primaryOrthogonalAxis(from, { x: 100, y: 90 })).toBe("y");
+  });
+});
+
+describe("constrainPointToOrthogonalAxis", () => {
+  const start = { x: 4, y: 7 };
+
+  test("约束到 x 轴：保留目标 x，纵坐标回到起点", () => {
+    expect(constrainPointToOrthogonalAxis(start, { x: 20, y: 30 }, "x")).toEqual({ x: 20, y: 7 });
+  });
+
+  test("约束到 y 轴：保留目标 y，横坐标回到起点", () => {
+    expect(constrainPointToOrthogonalAxis(start, { x: 20, y: 30 }, "y")).toEqual({ x: 4, y: 30 });
+  });
+
+  test("不传轴时按 primaryOrthogonalAxis 的判定", () => {
+    // 起点 (4,7)：dx 大于 dy → 约束到 x
+    expect(constrainPointToOrthogonalAxis(start, { x: 30, y: 20 })).toEqual({ x: 30, y: 7 });
+    // dy 大于 dx → 约束到 y
+    expect(constrainPointToOrthogonalAxis(start, { x: 20, y: 30 })).toEqual({ x: 4, y: 30 });
+    // 纯水平位移 → x（结果与不约束相同）
+    expect(constrainPointToOrthogonalAxis(start, { x: 30, y: 7 })).toEqual({ x: 30, y: 7 });
+  });
+
+  test("显式传的轴优先于自动判定", () => {
+    // 自动判定会选 y；调用方（轴锁定）显式给 x 时必须听 x 的
+    expect(constrainPointToOrthogonalAxis(start, { x: 20, y: 30 }, "x")).toEqual({ x: 20, y: 7 });
+    expect(constrainPointToOrthogonalAxis(start, { x: 30, y: 20 }, "y")).toEqual({ x: 4, y: 20 });
+  });
+
+  test("起点坐标原样搬过去，不做任何取整或归一", () => {
+    // 归一是端子锚点的事；这里动的是画布像素坐标，取整会把线端吸到整数格上
+    expect(constrainPointToOrthogonalAxis({ x: 4.37, y: 7.62 }, { x: 20.11, y: 30.29 }, "x")).toEqual({
+      x: 20.11,
+      y: 7.62
+    });
+  });
+
+  test("已经在轴上时是恒等映射", () => {
+    const point = { x: 20, y: 7 };
+    expect(constrainPointToOrthogonalAxis(start, point, "x")).toEqual(point);
   });
 });
