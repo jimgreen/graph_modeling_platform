@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import type { CanvasResizeEdge } from "./canvasViewport";
 import {
   canvasBoundsChangeIsMeaningful,
   canvasBoundsScrollSyncTarget,
@@ -10,6 +11,9 @@ import {
   clampCanvasNoScrollOffset,
   canvasOuterInset,
   canvasRenderViewBoxAfterBoundsDraft,
+  canvasResizeAnchoredDisplayOffset,
+  canvasResizeEdgeAnchorsStart,
+  canvasResizeKeepsScrollRange,
   canvasResizePreviewRectForDraft,
   canvasResizeScrollTargetForCommitAnchor,
   canvasRulerTicks,
@@ -434,5 +438,94 @@ describe("canvas viewport bounds changes", () => {
       verticalScrollbarsActive: true
     });
     expect(viewBoxWhenScrollRangeDisappearedFirst).toEqual({ x: 400, y: 300, width: 1000, height: 800 });
+  });
+});
+
+// 拖画布边缘改尺寸时的「起始边锚定」：改的是哪条边、哪个轴，决定视口偏移要不要反向补偿。
+// 这一簇三个函数此前零断言（clampCanvasNoScrollOffset 另有一个用例）。
+// 判错的后果：改画布大小时画面跳一下 / 跳到别处 —— 纯手感问题，不报错。
+//
+// 注意两个名字极像的判定不是一回事：
+//   canvasResizeEdgeAnchorsStart（导出）= 这条边在**起始侧**，偏移要补偿；
+//   canvasResizeEdgeAnchorsAxis（内部）= 这条边**影响**这个轴。
+describe("canvasResizeEdgeAnchorsStart：哪些边锚定在起始侧", () => {
+  test("★ x 轴：left / top-left / bottom-left 锚定，其余不锚定", () => {
+    for (const edge of ["left", "top-left", "bottom-left"] as CanvasResizeEdge[]) {
+      expect(canvasResizeEdgeAnchorsStart(edge, "x"), edge).toBe(true);
+    }
+    for (const edge of ["right", "bottom", "corner", "top-right"] as CanvasResizeEdge[]) {
+      expect(canvasResizeEdgeAnchorsStart(edge, "x"), edge).toBe(false);
+    }
+  });
+
+  test("★ y 轴：top / top-left / top-right 锚定，其余不锚定", () => {
+    for (const edge of ["top", "top-left", "top-right"] as CanvasResizeEdge[]) {
+      expect(canvasResizeEdgeAnchorsStart(edge, "y"), edge).toBe(true);
+    }
+    for (const edge of ["bottom", "left", "right", "corner", "bottom-left"] as CanvasResizeEdge[]) {
+      expect(canvasResizeEdgeAnchorsStart(edge, "y"), edge).toBe(false);
+    }
+  });
+
+  test("corner 两个轴都不锚定（它是右下角，起点不动）", () => {
+    expect(canvasResizeEdgeAnchorsStart("corner", "x")).toBe(false);
+    expect(canvasResizeEdgeAnchorsStart("corner", "y")).toBe(false);
+  });
+});
+
+describe("canvasResizeAnchoredDisplayOffset：锚定边要反向补偿", () => {
+  const drag = {
+    edge: "left" as CanvasResizeEdge,
+    startDisplayWidth: 800,
+    startDisplayHeight: 600,
+    startDisplayOffsetX: 40,
+    startDisplayOffsetY: 25
+  };
+
+  test("★ 没有拖动就只取整原值", () => {
+    expect(canvasResizeAnchoredDisplayOffset(12.4, null, "x", 800)).toBe(12);
+    expect(canvasResizeAnchoredDisplayOffset(12.5, null, "x", 800)).toBe(13);
+    expect(canvasResizeAnchoredDisplayOffset(-7.6, null, "y", 600)).toBe(-8);
+  });
+
+  test("★ x 轴锚定：尺寸变大多少，偏移就往回退多少", () => {
+    // 起始显示宽 800、偏移 40；现在宽 1000（大了 200）→ 起点要左移 200 → 偏移 -160
+    expect(canvasResizeAnchoredDisplayOffset(0, drag, "x", 1000)).toBe(-160);
+    expect(canvasResizeAnchoredDisplayOffset(0, drag, "x", 600)).toBe(240);
+    expect(canvasResizeAnchoredDisplayOffset(0, { ...drag, edge: "bottom-left" }, "x", 1000)).toBe(-160);
+  });
+
+  test("★ y 轴锚定走的是高度与 y 偏移（不是宽度与 x 偏移）", () => {
+    expect(canvasResizeAnchoredDisplayOffset(0, { ...drag, edge: "top" }, "y", 900)).toBe(25 - (900 - 600));
+    expect(canvasResizeAnchoredDisplayOffset(0, { ...drag, edge: "top-right" }, "y", 900)).toBe(25 - (900 - 600));
+  });
+
+  test("不锚定的边：偏移保持拖动开始时的值（与当前尺寸无关）", () => {
+    for (const size of [600, 800, 1200]) {
+      expect(canvasResizeAnchoredDisplayOffset(0, { ...drag, edge: "right" }, "x", size), `right@${size}`).toBe(40);
+      expect(canvasResizeAnchoredDisplayOffset(0, { ...drag, edge: "corner" }, "x", size), `corner x@${size}`).toBe(40);
+      expect(canvasResizeAnchoredDisplayOffset(0, { ...drag, edge: "corner" }, "y", size), `corner y@${size}`).toBe(25);
+      expect(canvasResizeAnchoredDisplayOffset(0, { ...drag, edge: "bottom" }, "y", size), `bottom@${size}`).toBe(25);
+    }
+  });
+
+  test("结果一律取整", () => {
+    expect(canvasResizeAnchoredDisplayOffset(0, { ...drag, startDisplayWidth: 800, startDisplayOffsetX: 40.5 }, "x", 1000.4)).toBe(-160);
+  });
+});
+
+describe("canvasResizeKeepsScrollRange：改尺寸后是否保留滚动范围", () => {
+  test("没有拖动 → false", () => {
+    expect(canvasResizeKeepsScrollRange(null, "x")).toBe(false);
+    expect(canvasResizeKeepsScrollRange(null, "y")).toBe(false);
+  });
+
+  test("按轴各取各的标志（不串）", () => {
+    const horizontal = { startHorizontalScrollbarsActive: true, startVerticalScrollbarsActive: false };
+    expect(canvasResizeKeepsScrollRange(horizontal, "x")).toBe(true);
+    expect(canvasResizeKeepsScrollRange(horizontal, "y")).toBe(false);
+    const vertical = { startHorizontalScrollbarsActive: false, startVerticalScrollbarsActive: true };
+    expect(canvasResizeKeepsScrollRange(vertical, "x")).toBe(false);
+    expect(canvasResizeKeepsScrollRange(vertical, "y")).toBe(true);
   });
 });
