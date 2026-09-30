@@ -159,6 +159,7 @@ import {
   getEExportWarnings,
   getEParamValue,
   getEParameterKeys,
+  getTerminalVoltageLevel,
   resolveDeviceParameterDefinitionExportSettings,
   inferESection,
   getTemplateParameterDefinitions,
@@ -3454,5 +3455,88 @@ describe("变压器分侧电压参数与端子 vbase 的存量对齐", () => {
     const [reconciled] = reconcileTransformerSideVoltageParamsWithTerminals([three]);
 
     expect(reconciled).toBe(three);
+  });
+});
+
+// getTerminalVoltageLevel：按端子取电压等级（校验、渲染电压色、右面板改值都用它）。
+// 取值链 = getTerminal 定位端子 → terminalVoltageDisplay 的五级回退 → normalizeVoltage 抽数字。
+// 此前这一层零断言（下面 terminalVoltageDisplayValue 的各级回退另有测试覆盖）。
+// 判错的后果：拓扑校验按错的电压分组、电压色按错的级别上色 —— 都不报错。
+//
+// 本组 14 处变异跑过，12 处转红。两处**源码等价**（改不动可观测行为，不算覆盖）：
+// ① 本层的 normalizeVoltage(...) 换成 String(...) —— terminalVoltageDisplay 的返回值
+//    本来就是归一过的数字串；② normalizeVoltage 里去掉 .trim() —— 紧跟着的
+//    .replace(/\s+/g, "") 已经把空白全去掉，trim 是冗余的。两处都保留原样。
+describe("getTerminalVoltageLevel：按端子取电压等级", () => {
+  const T = (id: string, vbase: string) => ({ id, type: "ac", vbase, nodeNumber: "", direction: "out", label: id });
+  const N = (terminals: unknown[], params: Record<string, string> = {}, kind = "ac-load") =>
+    ({
+      id: "n1",
+      kind,
+      name: "n1",
+      nodeNumber: "n1",
+      position: { x: 0, y: 0 },
+      size: { width: 100, height: 100 },
+      rotation: 0,
+      scale: 1,
+      terminals,
+      params
+    }) as unknown as ModelNode;
+
+  test("★ 端子 vbase 非零时取它（带单位写法抽数字）", () => {
+    const node = N([T("i", "110 kV"), T("j", "35 kV")]);
+    expect(getTerminalVoltageLevel(node, "i")).toBe("110");
+    expect(getTerminalVoltageLevel(node, "j")).toBe("35");
+  });
+
+  test("不给 terminalId / id 找不到时都落到第一个端子", () => {
+    const node = N([T("i", "110"), T("j", "35")]);
+    expect(getTerminalVoltageLevel(node)).toBe("110");
+    expect(getTerminalVoltageLevel(node, "nope")).toBe("110");
+  });
+
+  test("★ 端子只有默认占位 0 时原样返回 '0'（调用方自己过滤，本层不编值也不吞零）", () => {
+    expect(getTerminalVoltageLevel(N([T("i", "0")]))).toBe("0");
+    expect(getTerminalVoltageLevel(N([T("i", "0")], {}))).toBe("0");
+  });
+
+  test("★ 端子是占位 0 时继承节点 params.vbase（母线继承来的电压）", () => {
+    const node = N([T("i", "0")], { vbase: "10 kV" });
+    expect(getTerminalVoltageLevel(node, "i")).toBe("10");
+  });
+
+  test("★ 节点一个端子都没有时走节点级取值（这条回退分支不是死代码）", () => {
+    expect(getTerminalVoltageLevel(N([], { vbase: "35 kV" }))).toBe("35");
+  });
+
+  test("★ 两头都没有电压来源时返回空串，不拿 0 顶替", () => {
+    expect(getTerminalVoltageLevel(N([]))).toBe("");
+    expect(getTerminalVoltageLevel(N([], {}))).toBe("");
+  });
+
+  test("节点级取值按 vbase → voltageLevel → ratedVoltage → voltage → acVoltage → dcVoltage 依次回退", () => {
+    expect(getTerminalVoltageLevel(N([], { vbase: "1", voltageLevel: "2", ratedVoltage: "3" }))).toBe("1");
+    expect(getTerminalVoltageLevel(N([], { voltageLevel: "2", ratedVoltage: "3" }))).toBe("2");
+    expect(getTerminalVoltageLevel(N([], { ratedVoltage: "3" }))).toBe("3");
+    expect(getTerminalVoltageLevel(N([], { voltage: "4" }))).toBe("4");
+    expect(getTerminalVoltageLevel(N([], { acVoltage: "5" }))).toBe("5");
+    expect(getTerminalVoltageLevel(N([], { dcVoltage: "6" }))).toBe("6");
+  });
+
+  test("★ 节点级回退用 ?? 而不是 ||：vbase 为空串就**挡在这里**，不再往后找", () => {
+    expect(getTerminalVoltageLevel(N([], { vbase: "", voltageLevel: "7" }))).toBe("");
+    expect(getTerminalVoltageLevel(N([], { vbase: "8", voltageLevel: "7" }))).toBe("8");
+  });
+
+  test("★ 抽不出数字时保留原文本（去空白、转小写）", () => {
+    expect(getTerminalVoltageLevel(N([], { vbase: " 10 KV " }))).toBe("10");
+    expect(getTerminalVoltageLevel(N([], { vbase: " Low Voltage " }))).toBe("lowvoltage");
+  });
+
+  test("入参节点不被改", () => {
+    const node = N([T("i", "110")], { vbase: "10" });
+    const before = JSON.stringify(node);
+    getTerminalVoltageLevel(node, "i");
+    expect(JSON.stringify(node)).toBe(before);
   });
 });
