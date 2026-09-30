@@ -46,9 +46,30 @@ function testFiles(dir) {
 /** 本文件自身要豁免：它的判定正则里就写着那些字面量，否则会自己告自己。 */
 const SELF = "scripts/testHygieneGuard.test.mjs";
 
+/**
+ * 零断言文件的**既有**豁免名单：这些是一次性排查留下的探针（正文只有 console.log，
+ * 没有 expect），它们不是守卫，删不删由人决定，但规则不该让它们把全量测试拉红。
+ * 新写零断言文件一律被拦 —— 名单里出现已删除的文件会在下面那条「名单不得腐烂」转红。
+ */
+const ZERO_ASSERTION_EXEMPT = new Set([
+  "src/encoding/energy-debug.temp.test.ts",
+  "src/encoding/energy-full-debug.temp.test.ts",
+  "src/encoding/fb18-probe.temp.test.ts",
+  "src/encoding/infer-debug.temp.test.ts",
+  "src/encoding/param-struct.temp.test.ts",
+  "src/encoding/text-debug.temp.test.ts"
+]);
+
 const files = SCAN_DIRS.flatMap(testFiles);
 const scanned = files.filter((file) => file !== SELF);
 const codeOf = (file) => stripComments(readFileSync(path.join(repoRoot, file), "utf8"));
+
+/** 有 test/it 却没有任何断言的测试文件：跑了也验证不了任何东西，只制造「已验证」的错觉。 */
+const hasExpectation = (code) => {
+  // 注释里提到 expect 不算（否则写个注释就能绕过规则）
+  const stripped = stripComments(code);
+  return /\bexpect(?:\.|\()/.test(stripped) || /\bassert(?:ions)?\b/.test(stripped);
+};
 
 describe("测试卫生守卫", () => {
   test("扫到了测试文件（守卫本身没跑空）", () => {
@@ -68,5 +89,24 @@ describe("测试卫生守卫", () => {
   test("★ 每个测试文件至少有一个用例（防「no tests 被当成通过」）", () => {
     const empty = scanned.filter((file) => !/^\s*(?:test|it)(?:\.\w+)*\(/m.test(codeOf(file)));
     expect(empty, `这些测试文件里没有 test(/it(：${empty.join(", ")}`).toEqual([]);
+  });
+
+  test("★ 没有零断言的测试文件（有 test 却没有任何 expect/assert）", () => {
+    const zeroAssertion = scanned.filter((file) => !hasExpectation(codeOf(file)));
+    const unexpected = zeroAssertion.filter((file) => !ZERO_ASSERTION_EXEMPT.has(file));
+    expect(unexpected, `这些测试文件只有用例没有断言：${unexpected.join(", ")}`).toEqual([]);
+  });
+
+  test("零断言豁免名单不得腐烂（指向的文件必须还在）", () => {
+    const stale = [...ZERO_ASSERTION_EXEMPT].filter((file) => !files.includes(file));
+    expect(stale, `豁免名单里这些文件已不存在，请从名单移除：${stale.join(", ")}`).toEqual([]);
+  });
+
+  test("hasExpectation 判定本身可证伪（对零断言代码判假、对有断言代码判真）", () => {
+    expect(hasExpectation('test("x", () => { console.log(1); });')).toBe(false);
+    expect(hasExpectation('test("x", () => { expect(1).toBe(1); });')).toBe(true);
+    // 注释里的 expect 不算数（否则写个注释就能绕过规则）
+    expect(hasExpectation('// 期望这里有 expect(...)\ntest("x", () => {});')).toBe(false);
+    expect(hasExpectation('import assert from "node:assert";')).toBe(true);
   });
 });
