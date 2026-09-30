@@ -10,7 +10,12 @@
 // 或者本该透出的颜色被当成透明而露出兜底色 —— 都**零报错**。
 import { describe, expect, test } from "vitest";
 import { DEFAULT_SHAPE_STROKE_COLOR } from "./svgUtils";
-import type { DeviceDefinitionStateDraftRow, StateVisualShapeKind } from "./stateIconDrawing";
+import type {
+  DeviceDefinitionStateDraftRow,
+  StateIconDrawingElement,
+  StateIconDrawingToImageOptions,
+  StateVisualShapeKind
+} from "./stateIconDrawing";
 import {
   DEFAULT_STATE_ICON_DRAWING_FRAME,
   DEFAULT_STATE_NAME,
@@ -20,6 +25,7 @@ import {
   deviceDefinitionRowId,
   generateStateVisualShapeImage,
   isDefaultStatePageId,
+  stateIconDrawingElementMarkup,
   parseSvgStyleAttribute,
   stateDraftRowId,
   stateIconDrawingElementId,
@@ -446,5 +452,155 @@ describe("generateStateVisualShapeImage：预置形状图", () => {
 
   test("颜色值里的引号也被转义（防属性截断）", () => {
     expect(svgOf("circle", row({ strokeColor: '" onload="x' }))).toContain('&quot;');
+  });
+});
+
+// stateIconDrawingElementMarkup：用户在状态图标编辑器里画的每一个图元 → 一段 <g> 标记。
+// 纯字符串拼装（不碰 canvas / DOM），此前零断言。
+// 判错的后果：画布上看到的形状和导出的不一致（图元跑位、线型丢失、组选不中）—— 都不抛错。
+//
+// 20 处变异跑过，19 处转红。一处**源码等价**：`stateIconStrokeDashArray(style, element.strokeWidth)`
+// 传未夹的线宽 —— 那个函数内部自己 `Math.max(1, strokeWidth)`，两种写法结果一样。
+// 过程中补的真缺口：文字色回落描边色、虚线按至少 1 的线宽算、polyline/text 那两组 data 属性看的是
+// kind 而不是「有没有 points / 有没有文字」、以及 rectangle 与 square 在非正方尺寸上才是同一条。
+const DRAWING_KINDS: StateVisualShapeKind[] = ["switch-open", "switch-closed", "valve-open", "valve-closed",
+  "line", "polyline", "point", "triangle", "rectangle", "square", "hexagon", "polygon", "circle", "semicircle",
+  "ellipse", "arc", "text", "imported-svg", "image"];
+
+describe("stateIconDrawingElementMarkup：画出来的图元标记", () => {
+  const element = (over: Partial<StateIconDrawingElement> = {}) =>
+    ({
+      id: "e1",
+      kind: "circle",
+      x: 0,
+      y: 0,
+      width: 40,
+      height: 40,
+      rotation: 0,
+      strokeWidth: 2,
+      strokeColor: "#123456",
+      fillColor: "#abcdef",
+      textColor: "",
+      text: "",
+      ...over
+    }) as unknown as StateIconDrawingElement;
+
+  const markupOf = (over: Partial<StateIconDrawingElement> = {}, options?: StateIconDrawingToImageOptions) =>
+    stateIconDrawingElementMarkup(element(over), options);
+
+  test("★ 外壳：<g> + translate/rotate，几何以原点为中心", () => {
+    expect(markupOf({ x: 10, y: 20, rotation: 30 })).toContain('transform="translate(10 20) rotate(30)"');
+    expect(markupOf({})).toMatch(/^<g transform="translate\(0 0\) rotate\(0\)">/);
+  });
+
+  const filled = (kind: StateVisualShapeKind) =>
+    markupOf({
+      kind,
+      points: [{ x: -10, y: 0 }, { x: 0, y: -10 }, { x: 10, y: 0 }],
+      svgSource: '<path d="M 0 0 L 10 10"/>',
+      imageHref: "img.png"
+    });
+
+  test("★ 每种 kind 都产出非空 body（不会画出空图元）", () => {
+    const empty = '<g transform="translate(0 0) rotate(0)"></g>';
+    for (const kind of DRAWING_KINDS) {
+      expect(filled(kind), kind).not.toBe(empty);
+      expect(filled(kind).length, kind).toBeGreaterThan(empty.length);
+    }
+  });
+
+  test("★ rectangle 与 square 在标记层是同一个图元（正方只是数据层的尺寸约束）", () => {
+    // 用非正方尺寸看：两者都按元素自己的 w / h 画，不做 min(w,h)
+    const wide = { width: 40, height: 24 };
+    expect(markupOf({ kind: "square", ...wide })).toBe(markupOf({ kind: "rectangle", ...wide }));
+  });
+
+  test("★ image 走 resolveImageHref：给了解析函数就用它给的地址", () => {
+    const resolved = markupOf({ kind: "image", imageHref: "asset-1" }, { resolveImageHref: () => "data:image/png;base64,AAA" });
+    expect(resolved).toContain("data:image/png;base64,AAA");
+    expect(resolved).toContain("<clipPath");
+    // 没有解析函数时用原始 href
+    expect(markupOf({ kind: "image", imageHref: "asset-1" })).toContain("asset-1");
+  });
+
+  test("未知 kind 落到默认圆（不抛错、不出空图）", () => {
+    expect(markupOf({ kind: "nope" as StateVisualShapeKind })).toContain("<circle");
+  });
+
+  test("★ 描边色 / 填充色 / 线宽都从元素上取，并被转义", () => {
+    const markup = markupOf({ strokeColor: '" onload="x', fillColor: "#fff", strokeWidth: 3 });
+    expect(markup).toContain("&quot;");
+    expect(markup).not.toContain('onload="x"');
+    expect(markup).toContain('stroke-width="3"');
+    expect(markup).toContain('fill="#fff"');
+  });
+
+  test("描边色为空时用默认蓝、填充为空时 transparent", () => {
+    const markup = markupOf({ strokeColor: "", fillColor: "" });
+    expect(markup).toContain(`stroke="${DEFAULT_SHAPE_STROKE_COLOR}"`);
+    expect(markup).toContain('fill="transparent"');
+  });
+
+  test("负线宽夹到 0，宽高至少按 1 算", () => {
+    expect(markupOf({ strokeWidth: -5, kind: "rectangle" })).toContain('stroke-width="0"');
+    expect(markupOf({ width: 0, height: 0, kind: "rectangle" })).toContain('width="1"');
+  });
+
+  test("★ 线型写进 stroke-dasharray，solid 不写该属性", () => {
+    expect(markupOf({ kind: "line", strokeStyle: "dashed", strokeWidth: 4 })).toContain("stroke-dasharray=");
+    expect(markupOf({ kind: "line", strokeStyle: "solid" })).not.toContain("stroke-dasharray=");
+  });
+
+  test("★ groupId 有值才写 data-state-icon-group-id（组选中的依据）", () => {
+    expect(markupOf({ groupId: "g1" })).toContain('data-state-icon-group-id="g1"');
+    expect(markupOf({ groupId: "  " })).not.toContain("data-state-icon-group-id");
+    expect(markupOf({})).not.toContain("data-state-icon-group-id");
+  });
+
+  test("★ terminalIndex 是非负整数才写端子属性", () => {
+    expect(markupOf({ terminalIndex: 0 })).toContain('data-terminal-index="0"');
+    expect(markupOf({ terminalIndex: 2 })).toContain('data-terminal-index="2"');
+    expect(markupOf({ terminalIndex: -1 })).not.toContain("data-terminal-index");
+    expect(markupOf({ terminalIndex: 1.5 })).not.toContain("data-terminal-index");
+    expect(markupOf({})).not.toContain("data-terminal-index");
+  });
+
+  test("★ polyline 才有 data-polyline-* 那组属性（看的是 kind，不是有没有 points）", () => {
+    const points = [{ x: -10, y: 0 }, { x: 0, y: -10 }, { x: 10, y: 0 }];
+    const polyline = markupOf({ kind: "polyline", points });
+    expect(polyline).toContain("data-polyline-points=");
+    expect(polyline).toContain('data-start-cap="');
+    // 非 polyline 即便带 points 也不写那组属性
+    expect(markupOf({ kind: "line", points })).not.toContain("data-polyline-points");
+  });
+
+  test("★ text 才有 data-state-icon-* 那组属性，且文字被转义", () => {
+    const text = markupOf({ kind: "text", text: '<b>&"' });
+    expect(text).toContain('data-state-icon-kind="text"');
+    expect(text).toContain("&lt;b&gt;&amp;&quot;");
+    expect(text).not.toContain("<b>");
+    // 非 text 即便有文字内容也不写那组属性
+    expect(markupOf({ kind: "circle", text: "不是文字图元" })).not.toContain("data-state-icon-kind");
+  });
+
+  test("★ 文字色：textColor 优先，没有就沿用描边色", () => {
+    expect(markupOf({ kind: "text", textColor: "#654321", strokeColor: "#123456" })).toContain('fill="#654321"');
+    expect(markupOf({ kind: "text", textColor: "", strokeColor: "#123456" })).toContain('fill="#123456"');
+  });
+
+  test("★ 线型按**至少 1** 的线宽算（负线宽不会算出负的虚线）", () => {
+    expect(markupOf({ kind: "line", strokeStyle: "dashed", strokeWidth: -5 })).toContain('stroke-dasharray="3 1.8"');
+    expect(markupOf({ kind: "line", strokeStyle: "dashed", strokeWidth: 0 })).toContain('stroke-dasharray="3 1.8"');
+    expect(markupOf({ kind: "line", strokeStyle: "dotted", strokeWidth: -5 })).toContain('stroke-dasharray="0.2 1.8"');
+  });
+
+  test("文字为空时用占位「文字」，字号有下限 8", () => {
+    expect(markupOf({ kind: "text", text: "" })).toContain(">文字</text>");
+    expect(markupOf({ kind: "text", fontSize: 2 })).toContain('font-size="8"');
+  });
+
+  test("★ text 的底框：填充透明时不画框，填了色才画", () => {
+    expect(markupOf({ kind: "text", fillColor: "transparent" })).not.toContain("<rect");
+    expect(markupOf({ kind: "text", fillColor: "#eeeeee" })).toContain("<rect");
   });
 });
