@@ -8,6 +8,15 @@ import {
   measurementFormatValueText,
   measurementFontScaleForNode,
   measurementOffsetScaleForNode,
+  measurementPadTextToVisualWidth,
+  measurementVisualWidth,
+  materializeNewMeasurementDefinitionFields,
+  MEASUREMENT_INTER_COLUMN_GAP,
+  MEASUREMENT_VALUE_DECIMAL_WIDTH,
+  MEASUREMENT_VALUE_DECIMALS,
+  MEASUREMENT_VALUE_INTEGER_WIDTH,
+  MEASUREMENT_VALUE_TOTAL_WIDTH,
+  resolveMeasurementItemBindingMetadata,
   measurementGroupsForExistingNodes,
   measurementProfileItemsForNodePosition,
   normalizeMeasurementConfig,
@@ -1450,5 +1459,313 @@ describe("upsertMeasurementGroups", () => {
   test("结果 version 恒为 1", () => {
     const result = upsertMeasurementGroups(config([]), [group("a", "n1")]);
     expect(result.version).toBe(1);
+  });
+});
+
+// 量测文字宽度的口径。此前这两个函数一次都没被直接测过，而量测组的画布排版
+// （列宽、占位、导出 SVG 里的 x 坐标）全按它们算。判错不抛异常，只是文字
+// 溢出容器或列与列叠在一起。
+describe("量测文字视觉宽度", () => {
+  test("半角按 1、CJK 按 2 累加", () => {
+    expect(measurementVisualWidth("")).toBe(0);
+    expect(measurementVisualWidth("abc")).toBe(3);
+    expect(measurementVisualWidth("有功")).toBe(4);
+    expect(measurementVisualWidth("P有功")).toBe(5);
+  });
+
+  test("五个宽字符区间都算 2 格（改任一区间的边界都会被这条抓住）", () => {
+    // 基本汉字 / 扩展A / 兼容汉字 / 全角与半角标点 / CJK 标点
+    expect(measurementVisualWidth("一")).toBe(2);
+    expect(measurementVisualWidth("㐀")).toBe(2);
+    expect(measurementVisualWidth("豈")).toBe(2);
+    expect(measurementVisualWidth("Ａ")).toBe(2);
+    expect(measurementVisualWidth("、")).toBe(2);
+  });
+
+  test("区间外相邻码位按半角算（区间端点是闭区间，不要多算一格）", () => {
+    const ch = (code: number) => String.fromCodePoint(code);
+    expect(measurementVisualWidth(ch(0x33ff))).toBe(1); // 扩展A 下界前一格
+    expect(measurementVisualWidth(ch(0x3400))).toBe(2); // 扩展A 下界
+    expect(measurementVisualWidth(ch(0x4dbf))).toBe(2); // 扩展A 上界
+    expect(measurementVisualWidth(ch(0x4e00))).toBe(2); // 基本汉字 下界
+    expect(measurementVisualWidth(ch(0x9fff))).toBe(2); // 基本汉字 上界
+    expect(measurementVisualWidth(ch(0xa000))).toBe(1); // 基本汉字 上界后一格
+    expect(measurementVisualWidth(ch(0x2fff))).toBe(1); // CJK 标点 下界前一格
+    expect(measurementVisualWidth(ch(0x3000))).toBe(2); // CJK 标点 下界
+    expect(measurementVisualWidth(ch(0x303f))).toBe(2); // CJK 标点 上界
+    expect(measurementVisualWidth(ch(0x3040))).toBe(1); // CJK 标点 上界后一格
+  });
+
+  test("列宽常量自洽：总值 = 整数位 + 小数点 + 小数位，且小数位数与常量一致", () => {
+    expect(MEASUREMENT_VALUE_TOTAL_WIDTH)
+      .toBe(MEASUREMENT_VALUE_INTEGER_WIDTH + 1 + MEASUREMENT_VALUE_DECIMAL_WIDTH);
+    // 小数位常量多给一位是留给进位的余量，所以只断言它 >= 小数位数
+    expect(MEASUREMENT_VALUE_DECIMAL_WIDTH).toBeGreaterThanOrEqual(MEASUREMENT_VALUE_DECIMALS);
+    expect(MEASUREMENT_INTER_COLUMN_GAP).toBeGreaterThan(0);
+  });
+
+  test("补空格按视觉宽度而不是字符数（中文串补得比等长英文少）", () => {
+    expect(measurementPadTextToVisualWidth("abc", 6)).toBe("   abc");
+    expect(measurementPadTextToVisualWidth("有功", 6)).toBe("  有功");
+    expect(measurementVisualWidth(measurementPadTextToVisualWidth("有功", 6))).toBe(6);
+  });
+
+  test("已经够宽或刚好等宽时原样返回（不补也不截）", () => {
+    expect(measurementPadTextToVisualWidth("abcdef", 4)).toBe("abcdef");
+    expect(measurementPadTextToVisualWidth("abc", 3)).toBe("abc");
+  });
+
+  test("目标宽度小于当前宽度时返回超长文本而不是负数长度的空格串", () => {
+    expect(measurementPadTextToVisualWidth("有功有功", 2)).toBe("有功有功");
+  });
+
+  // 变异验证补记：把 `currentWidth >= targetWidth` 改成 `>` 仍然全绿 ——
+  // 两者在「刚好等宽」时结果相同（repeat(0) + text 还是 text），属等价变异，
+  // 不是这条测试没守住。所以别把它当成「>= 那一半被覆盖了」的证据。
+  // measurementPadTextToVisualWidth / measurementVisualWidth 的其余分支均已被抓。
+});
+
+describe("materializeNewMeasurementDefinitionFields", () => {
+  const profileItem = (over: Record<string, unknown> = {}) =>
+    ({ measurementTypeId: "activePower", name: "有功功率", associatedField: "p", position: "device", ...over }) as never;
+
+  const positionDefinitions = (fields: string[]) =>
+    [{ value: "device", label: "设备本体", parameterDefinitions: fields.map((enName) => ({ cnName: enName, enName, valueType: "float" as const, typicalValue: "0" })) }];
+
+  test("新出现的测点字段被物化成参数定义并登记在 additions 里", () => {
+    const result = materializeNewMeasurementDefinitionFields({
+      previousItems: [profileItem({ associatedField: "p" })],
+      nextItems: [profileItem({ associatedField: "p" }), profileItem({ measurementTypeId: "q", name: "无功功率", associatedField: "q" })],
+      parameterDefinitions: [{ cnName: "p", enName: "p", valueType: "float", typicalValue: "0" }],
+      positionDefinitions: positionDefinitions(["p"]) as never
+    });
+    expect(result.additions.map((addition) => addition.field)).toEqual(["q"]);
+    expect(result.parameterDefinitions.map((definition) => definition.enName)).toEqual(["p", "q"]);
+  });
+
+  test("重复测点（含本轮内重复）不会物化两次", () => {
+    const result = materializeNewMeasurementDefinitionFields({
+      nextItems: [profileItem({ associatedField: "r" }), profileItem({ measurementTypeId: "r2", name: "电阻", associatedField: "r" })],
+      parameterDefinitions: [],
+      positionDefinitions: positionDefinitions([]) as never
+    });
+    expect(result.additions.map((addition) => addition.field)).toEqual(["r"]);
+    expect(result.parameterDefinitions.filter((definition) => definition.enName === "r")).toHaveLength(1);
+  });
+
+  test("字段比较忽略大小写（列表里写 P、参数表里写 p 视为已存在）", () => {
+    const result = materializeNewMeasurementDefinitionFields({
+      nextItems: [profileItem({ associatedField: "P" })],
+      parameterDefinitions: [],
+      positionDefinitions: positionDefinitions(["p"]) as never
+    });
+    expect(result.additions).toEqual([]);
+    expect(result.parameterDefinitions.map((definition) => definition.enName)).toEqual(["p"]);
+  });
+
+  test("没有 associatedField 的测点被跳过（物化不出参数）", () => {
+    const result = materializeNewMeasurementDefinitionFields({
+      nextItems: [profileItem({ associatedField: "   " })],
+      parameterDefinitions: [],
+      positionDefinitions: positionDefinitions([]) as never
+    });
+    expect(result.additions).toEqual([]);
+  });
+
+  test("materializeDeviceFields=false 时设备本体的测点不物化，端子位的不受影响", () => {
+    const result = materializeNewMeasurementDefinitionFields({
+      nextItems: [profileItem({ associatedField: "p" }), profileItem({ measurementTypeId: "t1", name: "1号端子", associatedField: "u", position: "t1" })],
+      parameterDefinitions: [],
+      positionDefinitions: [
+        { value: "device", label: "设备本体", parameterDefinitions: [] },
+        { value: "t1", label: "1号端子", parameterDefinitions: [] }
+      ] as never,
+      materializeDeviceFields: false
+    });
+    expect(result.additions.map((addition) => addition.field)).toEqual(["u"]);
+    expect(result.additions[0].position).toBe("t1");
+    expect(result.parameterDefinitions).toEqual([]);
+  });
+
+  test("没有 positionDefinitions 时按单一「设备本体」位处理", () => {
+    const result = materializeNewMeasurementDefinitionFields({
+      nextItems: [profileItem({ associatedField: "p" })],
+      parameterDefinitions: [{ cnName: "额定值", enName: "rated", valueType: "float", typicalValue: "0" }]
+    });
+    expect(result.additions.map((addition) => addition.field)).toEqual(["p"]);
+    expect(result.parameterDefinitions.map((definition) => definition.enName)).toEqual(["rated", "p"]);
+    expect(result.positionDefinitions).toHaveLength(1);
+  });
+
+  test("没有传 positionDefinitions 时不回写调用方的数组（入参不被就地改）", () => {
+    const parameterDefinitions = [{ cnName: "额定值", enName: "rated", valueType: "float" as const, typicalValue: "0" }];
+    materializeNewMeasurementDefinitionFields({
+      nextItems: [profileItem({ associatedField: "p" })],
+      parameterDefinitions
+    });
+    expect(parameterDefinitions.map((definition) => definition.enName)).toEqual(["rated"]);
+  });
+
+  // 变异验证补记：addedReferences 去重集合、`if (!field) continue` 这两处守卫
+  // 删掉后仍然全绿 —— 前者被「字段已进 parameterDefinitions 就跳过」这条挡住，
+  // 后者被 createMeasurementFieldParameterDefinition("") 返回 null 挡住。属等价变异，
+  // 不是这两条测试没守住。
+});
+
+describe("resolveMeasurementItemBindingMetadata", () => {
+  const load = node("n1", "ac-load");
+  const measurementTypeId = "activePower";
+
+  // 默认配置里档项只有 measurementTypeId，associatedField 要用户在量测配置里
+  // 自己填；下面用一个填了字段的合成配置把「有字段」那条分支也跑起来。
+  const associatedConfig = {
+    ...DEFAULT_MEASUREMENT_CONFIG,
+    deviceProfiles: DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.map((profile) => (
+      profile.deviceKind === "ac-load"
+        ? { ...profile, items: profile.items.map((item) => ({ ...item, associatedField: "p" })) }
+        : profile
+    ))
+  };
+
+  test("档项没填 associatedField 时绑定字段退回测量类型 id，源点按「节点ID.类型id」补齐", () => {
+    expect(resolveMeasurementItemBindingMetadata({
+      config: DEFAULT_MEASUREMENT_CONFIG,
+      node: load,
+      item: { measurementTypeId, sourcePoint: "" } as never
+    })).toEqual({ measurementTypeId, bindingField: measurementTypeId, sourcePoint: `n1.${measurementTypeId}` });
+  });
+
+  test("档里没有的类型同样退回测量类型 id", () => {
+    expect(resolveMeasurementItemBindingMetadata({
+      config: DEFAULT_MEASUREMENT_CONFIG,
+      node: load,
+      item: { measurementTypeId: "不存在的类型", sourcePoint: "" } as never
+    })).toEqual({ measurementTypeId: "不存在的类型", bindingField: "不存在的类型", sourcePoint: "n1.不存在的类型" });
+  });
+
+  test("档项填了 associatedField 时绑定字段取它，源点空则按「节点ID.字段」补齐", () => {
+    expect(resolveMeasurementItemBindingMetadata({
+      config: associatedConfig,
+      node: load,
+      item: { measurementTypeId, sourcePoint: "" } as never
+    })).toEqual({ measurementTypeId, bindingField: "p", sourcePoint: "n1.p" });
+  });
+
+  test("测量类型 id 与源点两端都 trim", () => {
+    const resolved = resolveMeasurementItemBindingMetadata({
+      config: associatedConfig,
+      node: load,
+      item: { measurementTypeId: `  ${measurementTypeId}  `, sourcePoint: "  " } as never
+    });
+    expect(resolved.measurementTypeId).toBe(measurementTypeId);
+    expect(resolved.sourcePoint).toBe("n1.p");
+  });
+
+  test("源点本地段正好等于测量类型 id 时被换成 associatedField", () => {
+    expect(resolveMeasurementItemBindingMetadata({
+      config: associatedConfig,
+      node: load,
+      item: { measurementTypeId, sourcePoint: `n1.${measurementTypeId}` } as never
+    }).sourcePoint).toBe("n1.p");
+  });
+
+  test("源点本地段以「.测量类型 id」结尾时只替换那一段尾巴", () => {
+    // 判据是「以点分隔的类型 id 收尾」，所以 n1.t1.activePower 会改成 n1.t1.p，
+    // 而 n1.t1_activePower（下划线分隔）不满足，保持原样。
+    expect(resolveMeasurementItemBindingMetadata({
+      config: associatedConfig,
+      node: load,
+      item: { measurementTypeId, sourcePoint: `n1.t1.${measurementTypeId}` } as never
+    }).sourcePoint).toBe("n1.t1.p");
+    expect(resolveMeasurementItemBindingMetadata({
+      config: associatedConfig,
+      node: load,
+      item: { measurementTypeId, sourcePoint: `n1.t1_${measurementTypeId}` } as never
+    }).sourcePoint).toBe(`n1.t1_${measurementTypeId}`);
+  });
+
+  test("源点不是本节点前缀时原样保留（跨设备引用不该被就地改写）", () => {
+    expect(resolveMeasurementItemBindingMetadata({
+      config: associatedConfig,
+      node: load,
+      item: { measurementTypeId, sourcePoint: "other.p" } as never
+    }).sourcePoint).toBe("other.p");
+    // 特意挑一个本地段也以类型 id 收尾的跨节点引用：只看「结尾」不先看前缀的话，
+    // 会被切成 n1.<截断段>.p 这种既不像原样也不像本节点的第三种结果。
+    expect(resolveMeasurementItemBindingMetadata({
+      config: associatedConfig,
+      node: load,
+      item: { measurementTypeId, sourcePoint: `other.${measurementTypeId}` } as never
+    }).sourcePoint).toBe(`other.${measurementTypeId}`);
+  });
+
+  test("本地段既不等于类型 id 也不以它结尾时原样保留", () => {
+    expect(resolveMeasurementItemBindingMetadata({
+      config: associatedConfig,
+      node: load,
+      item: { measurementTypeId, sourcePoint: "n1.别的字段" } as never
+    }).sourcePoint).toBe("n1.别的字段");
+  });
+
+  test("档里没有的类型不会被别的类型顶包（绑定字段仍退回类型 id）", () => {
+    expect(resolveMeasurementItemBindingMetadata({
+      config: associatedConfig,
+      node: load,
+      item: { measurementTypeId: "不存在的类型", sourcePoint: "" } as never
+    })).toEqual({ measurementTypeId: "不存在的类型", bindingField: "不存在的类型", sourcePoint: "n1.不存在的类型" });
+  });
+
+  test("同类型不同 role 的档项按 role 区分（多端子电流/电压各绑各的）", () => {
+    const config = {
+      ...DEFAULT_MEASUREMENT_CONFIG,
+      deviceProfiles: DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.map((profile) => (
+        profile.deviceKind === "ac-load"
+          ? {
+            ...profile,
+            items: [
+              { measurementTypeId: "current", role: "i", associatedField: "i" },
+              { measurementTypeId: "current", role: "j", associatedField: "j" }
+            ]
+          }
+          : profile
+      ))
+    };
+    expect(resolveMeasurementItemBindingMetadata({
+      config, node: load, item: { measurementTypeId: "current", role: "i", sourcePoint: "" } as never
+    }).bindingField).toBe("i");
+    expect(resolveMeasurementItemBindingMetadata({
+      config, node: load, item: { measurementTypeId: "current", role: "j", sourcePoint: "" } as never
+    }).bindingField).toBe("j");
+    // role 对不上时退回该类型的第一条，而不是硬套 role 为空的项
+    expect(resolveMeasurementItemBindingMetadata({
+      config, node: load, item: { measurementTypeId: "current", role: "k", sourcePoint: "" } as never
+    }).bindingField).toBe("current");
+  });
+
+  test("带端子组时按组内端子定位档项，不带组时定位设备本体那一条", () => {
+    const config = {
+      ...DEFAULT_MEASUREMENT_CONFIG,
+      deviceProfiles: DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.map((profile) => (
+        profile.deviceKind === "ac-load"
+          ? {
+            ...profile,
+            items: [
+              { measurementTypeId: "voltage", position: "device", associatedField: "u" },
+              { measurementTypeId: "voltage", position: "t1", associatedField: "u_t1" }
+            ]
+          }
+          : profile
+      ))
+    };
+    expect(resolveMeasurementItemBindingMetadata({
+      config, node: load, item: { measurementTypeId: "voltage", sourcePoint: "" } as never
+    }).bindingField).toBe("u");
+    expect(resolveMeasurementItemBindingMetadata({
+      config, node: load, group: { terminalId: "t1" }, item: { measurementTypeId: "voltage", sourcePoint: "" } as never
+    }).bindingField).toBe("u_t1");
+    // 组内端子在档里没有对应项时退回该类型的第一条
+    expect(resolveMeasurementItemBindingMetadata({
+      config, node: load, group: { terminalId: "t9" }, item: { measurementTypeId: "voltage", sourcePoint: "" } as never
+    }).bindingField).toBe("u");
   });
 });
