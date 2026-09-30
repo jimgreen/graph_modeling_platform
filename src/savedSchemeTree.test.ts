@@ -12,6 +12,7 @@ import {
   mapSavedSchemeTree,
   normalizeSavedProjectRecordNames,
   normalizeSavedSchemeRecordNames,
+  savedChildSchemeNames,
   savedProjectRecordNameKey,
   uniqueRecordName
 } from "./model-routing";
@@ -574,5 +575,60 @@ describe("★ normalizeSavedProjectRecordNames：同名模型**合并**（不加
     for (let i = 0; i < 20; i += 1) {
       expect(normalizeSavedProjectRecordNames(input as never)).toEqual(once);
     }
+  });
+});
+
+// savedChildSchemeNames：新建子方案时的重名校验集合（只取**直接**子级）。
+// 判错的后果与本文件其它函数同源：侧栏里冒出两个同名子方案，用户改不动、分不清，不报错。
+describe("savedChildSchemeNames：新建子方案的重名校验集合", () => {
+  const schemes = [
+    { id: "s1", name: "根一", children: [{ id: "s1a", name: "子A" }, { id: "s1b", name: "子B", children: [{ id: "s1b1", name: "孙B1" }] }] },
+    { id: "s2", name: "根二", children: [] },
+    { id: "s3", name: "根三" }
+  ] as unknown as Parameters<typeof savedChildSchemeNames>[0];
+
+  test("★ 不给父 id（或空串）时取**全部顶层**方案名", () => {
+    expect(savedChildSchemeNames(schemes)).toEqual(["根一", "根二", "根三"]);
+    expect(savedChildSchemeNames(schemes, "")).toEqual(["根一", "根二", "根三"]);
+  });
+
+  test("★ 顶层分支不展开子级（否则新建顶层方案会被子方案名误伤）", () => {
+    expect(savedChildSchemeNames(schemes)).not.toContain("子A");
+    expect(savedChildSchemeNames(schemes)).not.toContain("孙B1");
+  });
+
+  test("给父 id 时只取**直接**子级，孙级不算、自身不算", () => {
+    expect(savedChildSchemeNames(schemes, "s1")).toEqual(["子A", "子B"]);
+    expect(savedChildSchemeNames(schemes, "s1")).not.toContain("孙B1");
+    expect(savedChildSchemeNames(schemes, "s1")).not.toContain("根一");
+  });
+
+  test("叶子节点（children 为空数组）返回空数组", () => {
+    expect(savedChildSchemeNames(schemes, "s2")).toEqual([]);
+    expect(savedChildSchemeNames(schemes, "s1a")).toEqual([]);
+  });
+
+  test("父节点 children 字段缺失 / 非数组时返回空数组（不抛错）", () => {
+    const odd = [
+      { id: "x", name: "无 children" },
+      { id: "y", name: "children 不是数组", children: "nope" }
+    ] as unknown as Parameters<typeof savedChildSchemeNames>[0];
+    expect(savedChildSchemeNames(odd, "x")).toEqual([]);
+    expect(savedChildSchemeNames(odd, "y")).toEqual([]);
+  });
+
+  test("父 id 指向深层节点也能定位（深度优先）", () => {
+    expect(savedChildSchemeNames(schemes, "s1b")).toEqual(["孙B1"]);
+  });
+
+  test("★ 父 id 找不到时返回空数组（不退回顶层集合 —— 那会误判成重名）", () => {
+    expect(savedChildSchemeNames(schemes, "nope")).toEqual([]);
+    expect(savedChildSchemeNames(schemes, "s1b1")).toEqual([]);
+  });
+
+  test("入参树不被改（只读遍历）", () => {
+    const before = JSON.stringify(schemes);
+    savedChildSchemeNames(schemes, "s1");
+    expect(JSON.stringify(schemes)).toBe(before);
   });
 });
