@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 // 后端 .mjs 无类型声明（tsconfig allowJs:false 且 tsconfig include 只含 src），此处只借它做往返验证。
 // @ts-expect-error TS7016 无声明文件
 import { parseSpaceCookie } from "../server/spaceStore.mjs";
+// 前后端 sanitize 的镜像源。shared/ 备了 .d.mts 声明（shared/pathSafety.d.mts），
+// 所以这里不需要 @ts-expect-error —— 不同于上面那个无声明的 server/spaceStore.mjs。
+import { sanitizeSegment } from "../shared/pathSafety.mjs";
 import {
   SPACE_COOKIE_NAME,
   SPACE_NAME_DUPLICATE,
@@ -14,6 +17,7 @@ import {
   importSpaceArchive,
   readSpaceCookie,
   renameSpace,
+  sanitizeSpaceFileName,
   writeSpaceCookie
 } from "./spaceClient";
 
@@ -278,5 +282,101 @@ describe("exportSpaceArchive / importSpaceArchive", () => {
     expect(error.spaceName).toBe("甲");
     expect(error.conflictId).toBe("甲-id");
     expect(error.message).toBe("空间名「甲」已存在。");
+  });
+});
+
+// 前后端各有一份 sanitize，是刻意的跨边界镜像：前端无法 import 依赖 node:path 的
+// shared/pathSafety.mjs（同本文件 readSpaceCookie 对后端 parseSpaceCookie 的先例）。
+// 用途是导出的 ZIP **包内顶层目录名**（后端算）与「另存为」建议的**文件名**（前端算）
+// 取同一个值。两侧各改一处不会有任何报错，只会让目录名与文件名悄悄对不上 ——
+// 除本组断言外，没有任何机制会发现这种漂移。
+describe("sanitizeSpaceFileName 与后端 sanitizeSegment 同规则", () => {
+  const FALLBACK = "空间";
+  const MAX = 80;
+
+  const cases: Array<[string, unknown]> = [
+    ["正常名", "工作空间一"],
+    ["前后空白", "  前后空白  "],
+    ["非法字符", 'a/b\\c:d*e?f"g<h>i|j'],
+    ["单个斜杠", "a/b"],
+    ["连续分隔符（+ 而非 *：整段折成一个 _）", "a//b"],
+    ["分隔符与非法字符混排", 'a//b\\c'],
+    ["空串", ""],
+    ["纯空白", "   "],
+    ["null", null],
+    ["undefined", undefined],
+    ["数字 0（?? 不吃 0）", 0],
+    ["数字 1", 1],
+    ["false（?? 不吃 false）", false],
+    ["点", "."],
+    ["双点", ".."],
+    ["三点", "..."],
+    ["四点", "...."],
+    ["点后跟斜杠", "./"],
+    ["双点后跟斜杠", "../"],
+    ["点段夹在中间", "a/../b"],
+    ["斜杠包着的点段", "/.."],
+    ["正好 80 字", "x".repeat(MAX)],
+    ["81 字（截断）", "x".repeat(MAX + 1)],
+    ["100 字（截断）", "x".repeat(100)],
+    ["末字是分隔符", `${"y".repeat(MAX - 1)}/`],
+    ["Windows 保留名", "CON"],
+    ["数组", ["a", "b"]],
+    ["普通对象", { a: 1 }]
+  ];
+
+  test("逐个输入两侧结果一致", () => {
+    for (const [label, value] of cases) {
+      // label 放进断言消息：某一格漂移时能立刻看出是哪个输入，不用逐条二分
+      expect(sanitizeSpaceFileName(value as string), label).toBe(sanitizeSegment(value, FALLBACK, MAX));
+    }
+  });
+
+  test("关键取值钉死：防止两侧一起漂移却仍互相一致", () => {
+    // 只比两侧相等不够 —— 两边同时改成同一个错值，这组断言照样绿
+    expect(sanitizeSpaceFileName("a/b")).toBe("a_b");
+    expect(sanitizeSpaceFileName("  工作空间一  ")).toBe("工作空间一");
+    expect(sanitizeSpaceFileName('a*b?c"d<e>f|g')).toBe("a_b_c_d_e_f_g");
+    // 点段与空输入都落到兜底名，不能变成空串：空文件名在「另存为」窗口里是另一个失败分支
+    expect(sanitizeSpaceFileName("..")).toBe(FALLBACK);
+    expect(sanitizeSpaceFileName(".")).toBe(FALLBACK);
+    expect(sanitizeSpaceFileName("")).toBe(FALLBACK);
+    expect(sanitizeSpaceFileName("   ")).toBe(FALLBACK);
+    expect(sanitizeSpaceFileName(null as unknown as string)).toBe(FALLBACK);
+  });
+
+  test("限长在替换之后：先替换非法字符再按替换后的长度截断", () => {
+    // 顺序反了（先截断再替换）的话，第 81 位残留的 "/" 会原样留在结果里，
+    // 导出的 ZIP 目录名就带上了一个分隔符。
+    const separatorAt81 = sanitizeSpaceFileName(`${"z".repeat(MAX)}/${"w".repeat(20)}`);
+    expect(separatorAt81).toBe("z".repeat(MAX));
+    expect(separatorAt81).not.toContain("/");
+
+    // 分隔符落在截断线以内：它先变成 "_"，再和后面的字符一起被数进 80 的额度里
+    const separatorAt71 = sanitizeSpaceFileName(`${"z".repeat(70)}/${"w".repeat(20)}`);
+    expect(separatorAt71).toBe(`${"z".repeat(70)}_${"w".repeat(9)}`);
+    expect(separatorAt71).toHaveLength(MAX);
+    expect(sanitizeSpaceFileName("x".repeat(MAX + 1))).toHaveLength(MAX);
+  });
+
+  test("结果里不含任何路径分隔符或 Windows 非法字符", () => {
+    // 这个串会被当文件名用；残留一个 / 就足以让另存为落到别的目录
+    for (const [, value] of cases) {
+      const out = sanitizeSpaceFileName(value as string);
+      expect(out, JSON.stringify(value)).not.toMatch(/[\\/:*?"<>|]/u);
+      expect(out.length, JSON.stringify(value)).toBeGreaterThan(0);
+    }
+  });
+
+  test("兜底名本身也走同一套规则（防止有人给 fallback 塞了带斜杠的字面量）", () => {
+    // 两侧都用同一个 FALLBACK 常量：前端是 "空间" 字面量、后端是本组的入参，
+    // 兜底名若被改成含 "/" 的值，上面那条「不含分隔符」会立刻抓住。
+    //
+    // 变异验证实测：把后端 `.replace(/^\.+$/, fallback)` 改成 `""` 后本组**一样绿** ——
+    // sanitizeSegment 末尾的 `cleaned || fallback` 会把空串再兜回来。它是等价分支，
+    // 这里只钉住可观测结果（点段/空/null 都得到 FALLBACK），不计入对该表达式的覆盖。
+    expect(sanitizeSegment("", FALLBACK, MAX)).toBe(FALLBACK);
+    expect(sanitizeSegment("..", FALLBACK, MAX)).toBe(FALLBACK);
+    expect(sanitizeSegment(null, FALLBACK, MAX)).toBe(FALLBACK);
   });
 });
