@@ -5,15 +5,21 @@ import {
   GLOBAL_LINE_ID_PARAM,
   GLOBAL_LINE_MODEL_PAIR_PARAM,
   applyGlobalLineRecordToNode,
+  applyGlobalLineRecordsToNodes,
   candidateGlobalLines,
   deriveLocalDeviceIndexCounters,
   expandGlobalBoundaryDeletionNodeIds,
   globalLineBoundaryAdjustmentConflictMessage,
   globalLineEndpointPlacementFailureMessage,
+  globalLineKindForEnergy,
+  globalLineModelAssociationPlacementForEndpoints,
+  globalLineSourcePlacementFailureMessage,
+  globalLineTargetPlacementFailureMessage,
   globalLineExistingPlacementConflictMessage,
   globalLineReferencesForPlacement,
   globalLineSharedParamsFromNode,
   isGlobalLineBoundaryNode,
+  lineTouchesGlobalBoundary,
   previewGlobalLineRecordsForProject,
   shouldManageLineGlobally,
   shouldUseGlobalLineForEndpoints,
@@ -598,5 +604,180 @@ describe("边界设备删除级联", () => {
     ));
 
     expect(deleted).toEqual(new Set([stationSource.id, connectedAc.id, connectedDc.id]));
+  });
+});
+
+// 下面几组此前零直接覆盖：它们是「跨模型线路能否落地」那条链上的判据，
+// 判错不抛异常，只是线路被静默判成普通本地线（或反过来污染别的模型）。
+describe("端点放置失败文案（按端点角色分流）", () => {
+  const withModelId = (kind: Parameters<typeof createDefaultNode>[0], modelId?: string) => {
+    const node = createDefaultNode(kind, { x: 0, y: 0 });
+    node.name = "边界设备";
+    if (modelId !== undefined) node.params.model_id = modelId;
+    return node;
+  };
+
+  test("负荷只能作末端：放首端时报错，作末端时放行", () => {
+    expect(globalLineSourcePlacementFailureMessage(withModelId("ac-station-load"))).toBe(
+      "“边界设备”属于厂站/馈线/台区负荷，只能位于线路末端。"
+    );
+    expect(globalLineSourcePlacementFailureMessage(withModelId("ac-station-source"))).toBe("");
+  });
+
+  test("电源只能作首端：放末端时报错，作首端时放行", () => {
+    expect(globalLineTargetPlacementFailureMessage(withModelId("ac-station-source"))).toBe(
+      "“边界设备”属于厂站/馈线/台区电源，只能位于线路首端。"
+    );
+    expect(globalLineTargetPlacementFailureMessage(withModelId("ac-station-load"))).toBe("");
+  });
+
+  test("名字缺失 / 全空格时用兜底称谓（不产生空引号）", () => {
+    const anonymous = withModelId("ac-station-load");
+    anonymous.name = "   ";
+    expect(globalLineSourcePlacementFailureMessage(anonymous)).toBe("“该模型关联负荷”属于厂站/馈线/台区负荷，只能位于线路末端。");
+    const unnamed = withModelId("ac-station-source");
+    delete (unnamed as { name?: string }).name;
+    expect(globalLineTargetPlacementFailureMessage(unnamed)).toBe("“该模型关联电源”属于厂站/馈线/台区电源，只能位于线路首端。");
+  });
+
+  test("非模型关联设备两道判据都放行", () => {
+    expect(globalLineSourcePlacementFailureMessage(createDefaultNode("ac-transformer", { x: 0, y: 0 }))).toBe("");
+    expect(globalLineTargetPlacementFailureMessage(createDefaultNode("ac-transformer", { x: 0, y: 0 }))).toBe("");
+  });
+});
+
+describe("globalLineModelAssociationPlacementForEndpoints", () => {
+  const local = () => createDefaultNode("ac-load", { x: 0, y: 0 });
+  const associated = (kind: Parameters<typeof createDefaultNode>[0], modelId: string) => {
+    const node = createDefaultNode(kind, { x: 0, y: 0 });
+    node.params.model_id = modelId;
+    return node;
+  };
+
+  test("首端是关联电源时返回 source 端与 modelKey", () => {
+    expect(globalLineModelAssociationPlacementForEndpoints(associated("ac-station-source", "3"), local())).toEqual({
+      endpoint: "source",
+      projectIdx: 3,
+      modelKey: "model:3"
+    });
+  });
+
+  test("末端是关联负荷时返回 target 端（端点取自关联端本身，不取线路另一侧）", () => {
+    expect(globalLineModelAssociationPlacementForEndpoints(local(), associated("ac-station-load", "2"))).toEqual({
+      endpoint: "target",
+      projectIdx: 2,
+      modelKey: "model:2"
+    });
+  });
+
+  test("两端都是关联设备时判为非法（返回 null，由上层给「不能同时」文案）", () => {
+    expect(globalLineModelAssociationPlacementForEndpoints(
+      associated("ac-station-source", "1"),
+      associated("ac-station-load", "2")
+    )).toBeNull();
+  });
+
+  test("无关联端点时返回 null", () => {
+    expect(globalLineModelAssociationPlacementForEndpoints(local(), local())).toBeNull();
+  });
+
+  test("是关联设备但 model_id 缺失 / 非正整数时同样返回 null", () => {
+    // 0 是「后端还没分配编号」，不是「模型 0」
+    expect(globalLineModelAssociationPlacementForEndpoints(associated("ac-station-source", "0"), local())).toBeNull();
+    expect(globalLineModelAssociationPlacementForEndpoints(createDefaultNode("ac-station-source", { x: 0, y: 0 }), local())).toBeNull();
+    expect(globalLineModelAssociationPlacementForEndpoints(associated("ac-station-source", "abc"), local())).toBeNull();
+  });
+});
+
+describe("lineTouchesGlobalBoundary", () => {
+  const nodeById = (...nodes: ReturnType<typeof createDefaultNode>[]) =>
+    new Map(nodes.map((node) => [node.id, node]));
+
+  test("任一端点接到模型关联设备即为跨边界", () => {
+    const stationSource = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+    const load = createDefaultNode("ac-load", { x: 500, y: 0 });
+    const line = connectLine("ac-routable-line", stationSource.id, load.id);
+    expect(lineTouchesGlobalBoundary(line, nodeById(stationSource, load, line))).toBe(true);
+
+    const reversed = connectLine("ac-routable-line", load.id, stationSource.id);
+    expect(lineTouchesGlobalBoundary(reversed, nodeById(stationSource, load, reversed))).toBe(true);
+  });
+
+  test("两端都是本地设备时不算跨边界", () => {
+    const a = createDefaultNode("ac-source", { x: 0, y: 0 });
+    const b = createDefaultNode("ac-load", { x: 500, y: 0 });
+    const line = connectLine("ac-routable-line", a.id, b.id);
+    expect(lineTouchesGlobalBoundary(line, nodeById(a, b, line))).toBe(false);
+  });
+
+  test("线路自身不是交直流线路时直接判否（哪怕端点是边界设备）", () => {
+    const stationSource = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+    const transformer = createDefaultNode("ac-transformer", { x: 0, y: 0 });
+    transformer.params = {
+      ...transformer.params,
+      _routableLineSourceNodeId: stationSource.id,
+      _routableLineTargetNodeId: stationSource.id
+    };
+    expect(lineTouchesGlobalBoundary(transformer, nodeById(stationSource, transformer))).toBe(false);
+  });
+
+  test("端点 id 在图里查不到时判否（悬空引用不误判成跨边界）", () => {
+    const load = createDefaultNode("ac-load", { x: 500, y: 0 });
+    const line = connectLine("ac-routable-line", "missing-node", load.id);
+    expect(lineTouchesGlobalBoundary(line, nodeById(load, line))).toBe(false);
+  });
+});
+
+describe("applyGlobalLineRecordsToNodes", () => {
+  const lineNode = (extraParams: Record<string, string> = {}) => {
+    const line = createDefaultNode("ac-routable-line", { x: 0, y: 0 });
+    line.params = { ...line.params, ...extraParams };
+    return line;
+  };
+
+  test("按 _globalLineId 命中：合入记录参数、覆盖 idx、落记录名", () => {
+    const line = lineNode({ [GLOBAL_LINE_ID_PARAM]: "global-line-1", _custom: "keep", stray: "drop" });
+    const [next] = applyGlobalLineRecordsToNodes([line], [record()]);
+    expect(next.name).toBe("中心厂站-一号线");
+    expect(next.params.rated_capacity).toBe("220");
+    expect(next.params.idx).toBe("7");
+    expect(next.params[GLOBAL_LINE_ID_PARAM]).toBe("global-line-1");
+  });
+
+  test("本地键（下划线前缀与 idx）留下，其余本地键被记录参数挤掉", () => {
+    const line = lineNode({ [GLOBAL_LINE_ID_PARAM]: "global-line-1", _custom: "keep", stray: "drop" });
+    const [next] = applyGlobalLineRecordsToNodes([line], [record()]);
+    expect(next.params._custom).toBe("keep");
+    expect(next.params.stray).toBeUndefined();
+  });
+
+  test("未传 modelKey 时不按引用回填 —— 只有命中 id 的节点才被改", () => {
+    const line = lineNode();
+    const referenced = record({ references: [{ ...record().references[0], modelKey: "model:9", nodeId: line.id }] });
+    const nodes = [line];
+    expect(applyGlobalLineRecordsToNodes(nodes, [referenced])).toBe(nodes);
+    const [next] = applyGlobalLineRecordsToNodes(nodes, [referenced], "model:9");
+    expect(next.params.rated_capacity).toBe("220");
+  });
+
+  test("没有任何节点被改时返回同一个数组引用（省一次无谓重渲染）", () => {
+    const line = lineNode();
+    const nodes = [line];
+    expect(applyGlobalLineRecordsToNodes(nodes, [])).toBe(nodes);
+    expect(applyGlobalLineRecordsToNodes(nodes, [record()])).toBe(nodes);
+  });
+
+  test("能量类型与记录不符的节点不动（交流记录不会覆盖直流线路）", () => {
+    const dcLine = createDefaultNode("dc-routable-line", { x: 0, y: 0 });
+    dcLine.params = { ...dcLine.params, [GLOBAL_LINE_ID_PARAM]: "global-line-1" };
+    const nodes = [dcLine];
+    expect(applyGlobalLineRecordsToNodes(nodes, [record({ energyType: "ac" })])).toBe(nodes);
+  });
+});
+
+describe("globalLineKindForEnergy", () => {
+  test("能量类型映射回可路由线路 kind", () => {
+    expect(globalLineKindForEnergy("ac")).toBe("ac-routable-line");
+    expect(globalLineKindForEnergy("dc")).toBe("dc-routable-line");
   });
 });
