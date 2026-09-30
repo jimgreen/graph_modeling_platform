@@ -8,6 +8,7 @@ import {
   buildSvgNodeLabelMarkup,
   buildSvgNodeLabelTextElementsMarkup,
   exportDeviceMetadataAttributes,
+  exportSvgLayerScriptMarkup,
   svgDisplayAttribute
 } from "./svgExportUtils";
 import type { ModelNode, Terminal } from "./model";
@@ -340,5 +341,63 @@ describe("svgExportUtils / buildSvgNodeLabelTextElementsMarkup", () => {
       'a"b&c'
     );
     expect(markup).toContain('id="a&quot;b&amp;c"');
+  });
+});
+
+// 导出 SVG 里的「静态按钮可点」交互脚本：includeLayerScript 决定导出文件带不带这段。
+// 带的时候脚本里的 CSS 类名必须与渲染侧写进 SVG 的 class 对得上，否则导出的按钮点了没反应 ——
+// 这类失真只表现为「浏览器里点不动」，不报任何错。
+describe("svgExportUtils / exportSvgLayerScriptMarkup", () => {
+  const ON = exportSvgLayerScriptMarkup(true);
+  const OFF = exportSvgLayerScriptMarkup(false);
+
+  it("★ 不给交互脚本时返回空串（导出文件里一点脚本都不留）", () => {
+    expect(OFF).toBe("");
+    expect(OFF).not.toContain("<script");
+    expect(OFF).not.toContain("<style");
+  });
+
+  it("★ 给交互脚本时：<style> + <script> 都用 CDATA 包住", () => {
+    expect(ON).toContain("<style><![CDATA[");
+    expect(ON).toContain("<script><![CDATA[");
+    expect(ON).toContain("]]></style>");
+    expect(ON).toContain("]]></script>");
+  });
+
+  it("★ 脚本类名与渲染侧的 class 对得上（.export-static-button）", () => {
+    expect(ON).toContain(".export-static-button { cursor: pointer; }");
+    expect(ON).toContain(".export-static-button.export-active-layer-button");
+  });
+
+  it("★ 脚本以 document.currentScript 定位根节点，取不到就安静退出", () => {
+    expect(ON).toContain("document.currentScript");
+    expect(ON).toContain("ownerSVGElement");
+    expect(ON).toMatch(/if \(!root\) \{\s*return;/);
+  });
+
+  it("★ 脚本查询的正是渲染侧写进 SVG 的那几个标记（查询口径写错 = 点了没反应）", () => {
+    // 层定义容器 + 设备的 layer-id
+    expect(ON).toContain('root.querySelectorAll(".export-layer-definitions > [layer-id]")');
+    expect(ON).toContain('root.querySelectorAll("use[id][layer-id]")');
+    // 连线靠 source/target 两端设备反查所属层
+    expect(ON).toContain('root.querySelectorAll("[source-dev-id][target-dev-id]")');
+    // 静态按钮靠 action="layer" 认出来
+    expect(ON).toContain(`root.querySelectorAll("[action='layer']")`);
+  });
+
+  it("★ 隐藏层判定：没 layer-id 视为可见，写成 0 才算隐藏", () => {
+    expect(ON).toContain("return !layerId || layerState[layerId] !== false;");
+    expect(ON).toContain('layer.getAttribute("visible") !== "0"');
+  });
+
+  it("★ 高亮类名与 CSS 选择器里那个是同一个", () => {
+    const cssClass = /\.export-static-button\.(export-[a-z-]+)/.exec(ON)?.[1];
+    expect(cssClass).toBe("export-active-layer-button");
+    expect(ON).toContain('button.classList.toggle("export-active-layer-button", targetLayerIds.includes(activeLayerId));');
+  });
+
+  it("真值与假值各调一次结果稳定（纯函数，无隐藏状态）", () => {
+    expect(exportSvgLayerScriptMarkup(true)).toBe(ON);
+    expect(exportSvgLayerScriptMarkup(false)).toBe(OFF);
   });
 });
