@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createCancelPendingBlankCanvasDeselectOnMove,
   createDeleteGraphTemplate,
+  createGroupDeviceTerminalAssociationFor,
   createGroupDeviceTerminalSortKey,
   createDeleteGraphTemplateType,
   createDropGraphTemplate,
@@ -16,6 +17,7 @@ import {
   createSwitchInspectorTabForCanvasSelection
 } from "./appExtracted/appSelectionDragFactories";
 import { formatSvgNumber } from "./svgUtils";
+import { defaultContainerAssociationForTerminalType, normalizeContainerTerminalAssociations } from "./customDeviceUtils";
 import {
   calculateNodeBodyBounds,
   clampPointToBounds,
@@ -933,5 +935,116 @@ describe("createGroupDeviceTerminalSortKey：组内端子排序键", () => {
     expect(a < b).toBe(true);
     expect(b < c).toBe(true);
     expect(a.endsWith("n1:t1")).toBe(true);
+  });
+});
+
+// createGroupDeviceTerminalAssociationFor：给「组」里某个设备的某个端子定容器端子关联类型。
+// 关联类型决定容器表里那一行算电源还是负荷（E 文件容器关联段就靠它），判错的后果是
+// 生成的组里电源 / 负荷身份颠倒，而生成过程不报错。
+// 9 个用例、9 处变异跑过、8 处转红。一处**源码等价**：「模板查不到时补一个空容器模板」那个 `??` ——
+// 只在模板缺失时生效，而模板缺失与「非容器」两条路都返回同一个默认关联，观察不到差别。
+// 补过的真缺口：terminalIndex = 1 取的是自己那一项、端子类型参与补齐、查模板用的是节点自己的 kind。
+describe("createGroupDeviceTerminalAssociationFor：组内端子的容器关联类型", () => {
+  const associationOf = (over: {
+    kind?: string;
+    templateKind?: string;
+    index?: number;
+    terminalType?: string;
+    terminals?: Array<{ type: string }>;
+    template?: { isContainer?: boolean; terminalAssociations?: string[] } | null;
+  } = {}) => {
+    const kind = over.kind ?? "ac-breaker";
+    return createGroupDeviceTerminalAssociationFor(
+      {
+        defaultContainerAssociationForTerminalType,
+        // 模板默认注册在节点的 kind 上；给 templateKind 可以把它注册到别处
+        libraryTemplateByKind: new Map([[over.templateKind ?? kind, over.template ?? null]]),
+        normalizeContainerTerminalAssociations
+      } as never
+    )({ kind, terminals: over.terminals ?? [] } as never, over.index ?? 0, over.terminalType ?? "ac");
+  };
+
+  test("★ 非容器模板 → 走端子类型的默认关联（交流端子默认是交流**电源**）", () => {
+    // CONTAINER_TERMINAL_ASSOCIATION_OPTIONS.ac 的第一项是 ac-generator，默认取它
+    expect(associationOf({ template: null })).toBe("ac-generator");
+    expect(associationOf({ template: { isContainer: false } })).toBe("ac-generator");
+  });
+
+  test("★ 模板查不到时也按默认关联（不是抛错、也不是空串）", () => {
+    expect(associationOf({ kind: "完全没注册的 kind", template: null })).toBe("ac-generator");
+  });
+
+  test("★ 容器模板 → 取该端子在模板里声明的关联", () => {
+    const association = associationOf({
+      template: { isContainer: true, terminalAssociations: ["ac-generator"] },
+      terminals: [{ type: "ac" }]
+    });
+    expect(association).toBe("ac-generator");
+  });
+
+  test("★ 模板没给满关联时按端子类型补齐（normalize 那一步兜住）", () => {
+    const association = associationOf({
+      template: { isContainer: true, terminalAssociations: [] },
+      terminals: [{ type: "ac" }, { type: "dc" }]
+    });
+    expect(association).toBe("ac-generator");
+  });
+
+  test("模板给了多于端子数的关联时只取到端子数（不会越界）", () => {
+    expect(
+      associationOf({
+        template: { isContainer: true, terminalAssociations: ["ac-generator", "dc-generator", "h2-source"] },
+        terminals: [{ type: "ac" }]
+      })
+    ).toBe("ac-generator");
+  });
+
+  test("★ 非容器模板即使声明了关联也不采纳（仍走默认）", () => {
+    expect(associationOf({ template: { isContainer: false, terminalAssociations: ["ac-load"] } })).toBe("ac-generator");
+  });
+
+  test("★ 查模板用的是**节点自己的** kind（不是写死的某个 kind）", () => {
+    // 模板注册在 ac-breaker 名下，节点却是 dc-breaker → 按「查不到」处理
+    expect(
+      associationOf({
+        kind: "dc-breaker",
+        templateKind: "ac-breaker",
+        terminals: [{ type: "ac" }],
+        template: { isContainer: true, terminalAssociations: ["ac-load"] }
+      })
+    ).toBe("ac-generator");
+  });
+
+  test("★ 模板注册在别的 kind 上时按「查不到」处理（拿节点 kind 查模板的变异要能被抓到）", () => {
+    expect(
+      associationOf({
+        kind: "ac-breaker",
+        templateKind: "ac-source",
+        template: { isContainer: true, terminalAssociations: ["ac-load"] }
+      })
+    ).toBe("ac-generator");
+  });
+
+  test("★ 取的是该端子自己的那一项（terminalIndex = 1 不是第 0 项）", () => {
+    expect(
+      associationOf({
+        index: 1,
+        terminals: [{ type: "ac" }, { type: "h2" }],
+        template: { isContainer: true, terminalAssociations: ["ac-load", "h2-load"] }
+      })
+    ).toBe("h2-load");
+  });
+
+  test("★ 端子类型参与补齐：氢端子补出的是氢源，不是交流电源", () => {
+    expect(
+      associationOf({
+        terminals: [{ type: "h2" }, { type: "ac" }],
+        template: { isContainer: true, terminalAssociations: [] }
+      })
+    ).toBe("h2-source");
+  });
+
+  test("空数组 terminals 时不越界（拿默认关联）", () => {
+    expect(associationOf({ index: 3, terminals: [], template: { isContainer: true, terminalAssociations: ["ac-load"] } })).toBe("ac-generator");
   });
 });
