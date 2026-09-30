@@ -4,10 +4,12 @@ import {
   fitWholeCanvasViewBox,
   isBatchGraphCommonParamKey,
   paramOptionsForSection,
-  pointOnBusForSnap
+  pointOnBusForSnap,
+  findNodeBusSnapTarget
 } from "./appExtracted/appCoreCanvasUtilities";
 import { DEVICE_VISUAL_PARAM_KEYS } from "./deviceVisualParams";
 import { BUILTIN_VOLTAGE_LEVELS, type ModelNode } from "./model";
+import { getTerminalPoint } from "./model-routing";
 
 // 左右面板是浮动层（styles.css .floating-side-panel），画布区占满工作区，
 // 所以适配视图必须扣掉面板宽度，否则画布会被面板压住。
@@ -204,5 +206,139 @@ describe("pointOnBusForSnap：母线吸附命中判定", () => {
     const negative = bus({ scale: -2 });
     expect(pointOnBusForSnap(negative, { x: 100 + 170, y: 100 })).not.toBeNull();
     expect(pointOnBusForSnap(negative, { x: 100 + 190, y: 100 })).toBeNull();
+  });
+});
+
+// findNodeBusSnapTarget：在候选节点里找出「移动中的节点该吸到哪条母线 / 哪个端子上」。
+// 判错的后果是连线吸附到错的母线、或移动时不吸附 —— 纯交互观感，不报错。
+// 与 pointOnBusForSnap 的区别：这里还要决定「谁动、谁不动」「多个候选取哪个」。
+// 14 处变异跑过、13 处转红。一处**源码等价**：去掉「movedNodeIds 为空直接返回 null」那道短路 ——
+// 移动集合为空时两个设备组也匹配不到任何东西，结果同样是 null。写不出能证伪它的用例，代码不动。
+//
+// 过程中补了三处真缺口：① 设备端子 id 与母线端子 id 相同 → 「目标端子取哪一侧」测不出来；
+// ② 只测了框判定没测位移上限（点在母线框内但离中轴线超容差）；③ 多候选只测了「取最近」，没测「相等取靠前」。
+
+describe("findNodeBusSnapTarget：母线吸附目标选取", () => {
+  const terminal = (id: string, type: "ac" | "dc", x: number, y = 0) =>
+    ({ id, type, label: id, anchor: { x, y }, nodeNumber: "", direction: "out" }) as never;
+
+  const busNode = (id: string, x: number, y: number, type: "ac" | "dc" = "ac") =>
+    ({
+      id,
+      kind: type === "ac" ? "ac-bus" : "dc-bus",
+      name: id,
+      position: { x, y },
+      size: { width: 200, height: 20 },
+      rotation: 0,
+      scale: 1,
+      params: {},
+      terminals: [terminal("t1", type, -1), terminal("t2", type, 1)]
+    }) as unknown as ModelNode;
+
+  const deviceNode = (id: string, kind: string, x: number, y: number, terminalType: "ac" | "dc" = "ac") =>
+    ({
+      id,
+      kind,
+      name: id,
+      position: { x, y },
+      size: { width: 60, height: 40 },
+      rotation: 0,
+      scale: 1,
+      params: {},
+      terminals: [terminal("d-t1", terminalType, 1)]
+    }) as unknown as ModelNode;
+
+  test("★ 没有移动节点时不做吸附（返回 null）", () => {
+    const bus = busNode("b1", 300, 200);
+    const device = deviceNode("d1", "ac-source", 100, 200);
+    expect(findNodeBusSnapTarget([bus, device], new Set())).toBeNull();
+  });
+
+  test("★ 移动设备吸到固定母线：moving 是设备、target 是母线", () => {
+    const bus = busNode("b1", 200, 200);
+    const device = deviceNode("d1", "ac-source", 100, 200);
+    const target = findNodeBusSnapTarget([bus, device], new Set(["d1"]));
+    expect(target).toMatchObject({ kind: "bus", movingNodeId: "d1", targetNodeId: "b1", movingTerminalId: "d-t1" });
+  });
+
+  test("★ 移动母线被固定设备吸附：moving 是母线、target 是设备", () => {
+    const bus = busNode("b1", 200, 200);
+    const device = deviceNode("d1", "ac-source", 100, 200);
+    const target = findNodeBusSnapTarget([bus, device], new Set(["b1"]));
+    expect(target).toMatchObject({ kind: "bus", movingNodeId: "b1", targetNodeId: "d1" });
+  });
+
+  test("★ delta 方向随「谁在动」翻转（用竖向母线才有横向位移）", () => {
+    // 横向母线的中心线是水平线，投影只改 y → delta.x 恒为 0；竖向母线才有 x 位移可比。
+    // 端子点由真实函数算出（里面含端子外延），母线按它摆，偏移固定 5px。
+    const device = deviceNode("d1", "ac-source", 300, 300);
+    const anchorPoint = getTerminalPoint(device, "t1");
+    const vertical = { ...busNode("b1", anchorPoint.x + 5, anchorPoint.y), rotation: 90 } as unknown as ModelNode;
+    const deviceMoved = findNodeBusSnapTarget([vertical, device], new Set(["d1"]));
+    const busMoved = findNodeBusSnapTarget([vertical, device], new Set(["b1"]));
+    expect(deviceMoved?.distance ?? 0).toBeCloseTo(5, 5);
+    // 同一段几何：谁动，delta 就是对方的相反数
+    expect(busMoved?.delta.x).toBeCloseTo(-(deviceMoved?.delta.x ?? 0), 5);
+    expect(busMoved?.delta.y).toBeCloseTo(-(deviceMoved?.delta.y ?? 0), 5);
+  });
+
+  test("★ 端子类型不匹配不吸附（交流设备不吸到直流母线）", () => {
+    const dcBus = busNode("b1", 200, 200, "dc");
+    const acDevice = deviceNode("d1", "ac-source", 100, 200, "ac");
+    expect(findNodeBusSnapTarget([dcBus, acDevice], new Set(["d1"]))).toBeNull();
+  });
+
+  test("★ 相距太远不吸附（超出容差）", () => {
+    const bus = busNode("b1", 900, 200);
+    const device = deviceNode("d1", "ac-source", 100, 200);
+    expect(findNodeBusSnapTarget([bus, device], new Set(["d1"]))).toBeNull();
+  });
+
+  test("★ 多条母线时取最近的（不是第一条）", () => {
+    const near = busNode("b-near", 200, 200);
+    const far = busNode("b-far", 260, 200);
+    const device = deviceNode("d1", "ac-source", 100, 200);
+    const target = findNodeBusSnapTarget([near, far, device], new Set(["d1"]));
+    expect(target?.targetNodeId).toBe("b-near");
+  });
+
+  test("静态图元不参与吸附（既不当设备也不当母线）", () => {
+    const bus = busNode("b1", 200, 200);
+    const staticNode = {
+      ...deviceNode("s1", "static-rect", 100, 200),
+      kind: "static-rect"
+    } as unknown as ModelNode;
+    expect(findNodeBusSnapTarget([bus, staticNode], new Set(["s1"]))).toBeNull();
+  });
+
+  test("★ 移动集合与固定集合之间才配对（都移动 / 都固定都不算）", () => {
+    const bus = busNode("b1", 200, 200);
+    const device = deviceNode("d1", "ac-source", 100, 200);
+    // 两个都在移动集合里 → 没有固定母线可吸
+    expect(findNodeBusSnapTarget([bus, device], new Set(["b1", "d1"]))).toBeNull();
+  });
+
+  test("★ 母线侧的目标端子是母线自己的第一个端子，与设备端子 id 无关", () => {
+    const bus = busNode("b1", 200, 200);
+    const device = deviceNode("d1", "ac-source", 100, 200);
+    // 设备端子 id 是 d-t1、母线端子是 t1：两个方向给出的目标端子必须来自各自那一侧
+    expect(findNodeBusSnapTarget([bus, device], new Set(["d1"]))?.targetTerminalId).toBe("t1");
+    expect(findNodeBusSnapTarget([bus, device], new Set(["b1"]))?.targetTerminalId).toBe("d-t1");
+  });
+
+  test("★ 距离超容差不吸附（点在母线框内但离中轴线太远）", () => {
+    // 框判定按「半高 + 容差」放宽，但位移本身还有一道容差上限：半高 30 的母线里偏 40 就不该吸
+    const thick = { ...busNode("b1", 200, 200), size: { width: 200, height: 60 } } as unknown as ModelNode;
+    const device = deviceNode("d1", "ac-source", 100, 240);
+    expect(findNodeBusSnapTarget([thick, device], new Set(["d1"]))).toBeNull();
+  });
+
+  test("★ 距离相等时取候选顺序里靠前的那条（>= 比较）", () => {
+    const upper = busNode("b-upper", 200, 190);
+    const lower = busNode("b-lower", 200, 210);
+    const device = deviceNode("d1", "ac-source", 100, 200);
+    // 两条母线与端子的距离都是 10
+    expect(findNodeBusSnapTarget([upper, lower, device], new Set(["d1"]))?.targetNodeId).toBe("b-upper");
+    expect(findNodeBusSnapTarget([lower, upper, device], new Set(["d1"]))?.targetNodeId).toBe("b-lower");
   });
 });
