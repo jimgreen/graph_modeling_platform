@@ -5,11 +5,44 @@ import {
   isBatchGraphCommonParamKey,
   paramOptionsForSection,
   pointOnBusForSnap,
-  findNodeBusSnapTarget
+  findNodeBusSnapTarget,
+  findNodeTerminalSnapTarget
 } from "./appExtracted/appCoreCanvasUtilities";
 import { DEVICE_VISUAL_PARAM_KEYS } from "./deviceVisualParams";
-import { BUILTIN_VOLTAGE_LEVELS, type ModelNode } from "./model";
+import { BUILTIN_VOLTAGE_LEVELS, type ModelNode, type Point } from "./model";
 import { getTerminalPoint } from "./model-routing";
+
+// findNodeBusSnapTarget / findNodeTerminalSnapTarget / pointOnBusForSnap 共用的节点夹具
+  const terminal = (id: string, type: "ac" | "dc", x: number, y = 0) =>
+    ({ id, type, label: id, anchor: { x, y }, nodeNumber: "", direction: "out" }) as never;
+
+  const busNode = (id: string, x: number, y: number, type: "ac" | "dc" = "ac") =>
+    ({
+      id,
+      kind: type === "ac" ? "ac-bus" : "dc-bus",
+      name: id,
+      position: { x, y },
+      size: { width: 200, height: 20 },
+      rotation: 0,
+      scale: 1,
+      params: {},
+      terminals: [terminal("t1", type, -1), terminal("t2", type, 1)]
+    }) as unknown as ModelNode;
+
+  const deviceNode = (id: string, kind: string, x: number, y: number, terminalType: "ac" | "dc" = "ac", terminalId = "d-t1"): ModelNode =>
+    ({
+      id,
+      kind,
+      name: id,
+      position: { x, y },
+      size: { width: 60, height: 40 },
+      rotation: 0,
+      scale: 1,
+
+      params: {},
+      terminals: [terminal(terminalId, terminalType, 1)]
+    }) as unknown as ModelNode;
+
 
 // 左右面板是浮动层（styles.css .floating-side-panel），画布区占满工作区，
 // 所以适配视图必须扣掉面板宽度，否则画布会被面板压住。
@@ -218,35 +251,11 @@ describe("pointOnBusForSnap：母线吸附命中判定", () => {
 // 过程中补了三处真缺口：① 设备端子 id 与母线端子 id 相同 → 「目标端子取哪一侧」测不出来；
 // ② 只测了框判定没测位移上限（点在母线框内但离中轴线超容差）；③ 多候选只测了「取最近」，没测「相等取靠前」。
 
+// findNodeBusSnapTarget 与 findNodeTerminalSnapTarget 共用的节点夹具
+
+
 describe("findNodeBusSnapTarget：母线吸附目标选取", () => {
-  const terminal = (id: string, type: "ac" | "dc", x: number, y = 0) =>
-    ({ id, type, label: id, anchor: { x, y }, nodeNumber: "", direction: "out" }) as never;
 
-  const busNode = (id: string, x: number, y: number, type: "ac" | "dc" = "ac") =>
-    ({
-      id,
-      kind: type === "ac" ? "ac-bus" : "dc-bus",
-      name: id,
-      position: { x, y },
-      size: { width: 200, height: 20 },
-      rotation: 0,
-      scale: 1,
-      params: {},
-      terminals: [terminal("t1", type, -1), terminal("t2", type, 1)]
-    }) as unknown as ModelNode;
-
-  const deviceNode = (id: string, kind: string, x: number, y: number, terminalType: "ac" | "dc" = "ac") =>
-    ({
-      id,
-      kind,
-      name: id,
-      position: { x, y },
-      size: { width: 60, height: 40 },
-      rotation: 0,
-      scale: 1,
-      params: {},
-      terminals: [terminal("d-t1", terminalType, 1)]
-    }) as unknown as ModelNode;
 
   test("★ 没有移动节点时不做吸附（返回 null）", () => {
     const bus = busNode("b1", 300, 200);
@@ -340,5 +349,129 @@ describe("findNodeBusSnapTarget：母线吸附目标选取", () => {
     // 两条母线与端子的距离都是 10
     expect(findNodeBusSnapTarget([upper, lower, device], new Set(["d1"]))?.targetNodeId).toBe("b-upper");
     expect(findNodeBusSnapTarget([lower, upper, device], new Set(["d1"]))?.targetNodeId).toBe("b-lower");
+  });
+
+
+// findNodeTerminalSnapTarget：移动中的节点该吸到哪个**固定端子**上（母线吸附走
+// findNodeBusSnapTarget）。内部按 tolerance 大小的空间桶建索引，只查 3×3 邻域 ——
+// 桶算错会让「明明很近却吸不上」，且只在点落在桶边界附近时发作，最难查。
+// 判错的后果是连线吸不到端子或吸到错的端子，不报错。
+});
+
+// 15 处变异跑过、14 处转红。一处**源码等价**：去掉「movedNodeIds 为空直接返回 null」的短路 ——
+// 移动集合为空时另一侧循环也匹配不到任何节点，结果同样是 null。写不出能证伪它的用例，代码不动。
+//
+// 过程中补的真缺口：两侧端子 id 相同 → 「movingTerminalId 取哪一侧的」测不出来（改成设备端子 m-t1、
+// 固定端子 f-t1）；另外把「距离相等」的真实口径查清了 —— 同桶看插入顺序、跨桶看桶键顺序，
+// 并不是「候选顺序里靠前的那条」。
+
+describe("findNodeTerminalSnapTarget：端子吸附（含空间桶邻域）", () => {
+  const deviceAt = (id: string, kind: string, want: Point, terminalType: "ac" | "dc" = "ac", terminalId = "d-t1"): ModelNode => {
+    const probe = deviceNode(id, kind, 0, 0, terminalType, terminalId);
+    const origin = getTerminalPoint(probe, terminalId);
+    return { ...probe, position: { x: want.x - origin.x, y: want.y - origin.y } } as unknown as ModelNode;
+  };
+
+  test("★ 没有移动节点时不吸附", () => {
+    expect(findNodeTerminalSnapTarget([deviceAt("f1", "ac-breaker", { x: 100, y: 100 })], new Set())).toBeNull();
+  });
+
+  test("★ 命中时给出完整的吸附信息（moving / target / delta / kind）", () => {
+    // 两侧端子 id 刻意不同：moving 取移动端子自己的、target 取固定端子那一侧的
+    const fixed = deviceAt("f1", "ac-breaker", { x: 100, y: 100 }, "ac", "f-t1");
+    const moving = deviceAt("m1", "ac-source", { x: 120, y: 100 }, "ac", "m-t1");
+    const target = findNodeTerminalSnapTarget([fixed, moving], new Set(["m1"]));
+    expect(target).toMatchObject({
+      kind: "terminal",
+      movingNodeId: "m1",
+      movingTerminalId: "m-t1",
+      targetNodeId: "f1",
+      targetTerminalId: "f-t1",
+      point: { x: 100, y: 100 }
+    });
+    // delta 指向目标端子（往左 20）
+    expect(target?.delta).toEqual({ x: -20, y: 0 });
+    expect(target?.distance).toBe(20);
+  });
+
+  test("★ 端子类型不匹配不吸附（交流端子不吸直流端子）", () => {
+    const fixed = deviceAt("f1", "ac-breaker", { x: 100, y: 100 }, "dc");
+    const moving = deviceAt("m1", "ac-source", { x: 110, y: 100 }, "ac");
+    expect(findNodeTerminalSnapTarget([fixed, moving], new Set(["m1"]))).toBeNull();
+  });
+
+  test("★ 超出容差不吸附（容差默认 28）", () => {
+    const fixed = deviceAt("f1", "ac-breaker", { x: 100, y: 100 });
+    const near = deviceAt("m1", "ac-source", { x: 127, y: 100 });
+    const far = deviceAt("m2", "ac-source", { x: 129, y: 100 });
+    expect(findNodeTerminalSnapTarget([fixed, near], new Set(["m1"]))).not.toBeNull();
+    expect(findNodeTerminalSnapTarget([fixed, far], new Set(["m2"]))).toBeNull();
+  });
+
+  test("★ 空间桶邻域覆盖：移动端子在整个容差范围内滑动，每次都要吸得上", () => {
+    // 桶大小 = 容差 = 28；点落在桶边界两侧时仍要靠 3×3 邻域找到固定端子
+    const fixed = deviceAt("f1", "ac-breaker", { x: 0, y: 0 });
+    for (let offset = -28; offset <= 28; offset += 4) {
+      const moving = deviceAt(`m${offset}`, "ac-source", { x: offset, y: 0 });
+      expect(findNodeTerminalSnapTarget([fixed, moving], new Set([moving.id])), `offset=${offset}`).not.toBeNull();
+    }
+  });
+
+  test("★ 跨桶要靠 3×3 邻域找得到（点落在相邻桶的各个方向）", () => {
+    // 桶大小 28：固定端子在桶 (1,1)，移动端子分别落在 (0,0) / (0,1) / (1,0) —— 都只能靠邻域命中
+    const fixed = deviceAt("f1", "ac-breaker", { x: 28, y: 28 });
+    for (const [x, y] of [[20, 20], [24, 35], [35, 24]]) {
+      const moving = deviceAt(`m${x}_${y}`, "ac-source", { x, y });
+      expect(findNodeTerminalSnapTarget([fixed, moving], new Set([moving.id])), `(${x},${y})`).not.toBeNull();
+    }
+    // 对照：真的超出容差（45 度方向 32px）就不该命中
+    const tooFar = deviceAt("m-far", "ac-source", { x: 5, y: 5 });
+    expect(findNodeTerminalSnapTarget([fixed, tooFar], new Set(["m-far"]))).toBeNull();
+  });
+
+  test("多个候选取最近的", () => {
+    const near = deviceAt("f-near", "ac-breaker", { x: 100, y: 100 });
+    const far = deviceAt("f-far", "ac-breaker", { x: 60, y: 100 });
+    const moving = deviceAt("m1", "ac-source", { x: 120, y: 100 });
+    expect(findNodeTerminalSnapTarget([near, far, moving], new Set(["m1"]))?.targetNodeId).toBe("f-near");
+  });
+
+  test("★ 距离相等时同桶看插入顺序", () => {
+    const moving = deviceAt("m1", "ac-source", { x: 120, y: 100 });
+    // 桶大小 = 容差 = 28；两条固定端子距离都是 6，且 x/28 同为 4 → 同一桶
+    const nearLeft = deviceAt("f-a", "ac-breaker", { x: 114, y: 100 });
+    const nearRight = deviceAt("f-b", "ac-breaker", { x: 126, y: 100 });
+    expect(findNodeTerminalSnapTarget([nearLeft, nearRight, moving], new Set(["m1"]))?.targetNodeId).toBe("f-a");
+    expect(findNodeTerminalSnapTarget([nearRight, nearLeft, moving], new Set(["m1"]))?.targetNodeId).toBe("f-b");
+  });
+
+  test("★ 跨桶平局时按桶键顺序，与候选顺序无关", () => {
+    const left = deviceAt("f-left", "ac-breaker", { x: 100, y: 100 });
+    const right = deviceAt("f-right", "ac-breaker", { x: 140, y: 100 });
+    const moving = deviceAt("m1", "ac-source", { x: 120, y: 100 });
+    // 桶键 (3,3) 先于 (5,3) 被遍历，所以无论候选怎么排都是 f-left 先遇到
+    expect(findNodeTerminalSnapTarget([left, right, moving], new Set(["m1"]))?.targetNodeId).toBe("f-left");
+    expect(findNodeTerminalSnapTarget([right, left, moving], new Set(["m1"]))?.targetNodeId).toBe("f-left");
+  });
+
+  test("★ 母线与静态节点不作为固定端子来源（母线归 findNodeBusSnapTarget）", () => {
+    const bus = busNode("b1", 100, 100);
+    const staticNode = { ...deviceNode("s1", "static-rect", 100, 100), kind: "static-rect" } as unknown as ModelNode;
+    const moving = deviceAt("m1", "ac-source", { x: 110, y: 100 });
+    expect(findNodeTerminalSnapTarget([bus, staticNode, moving], new Set(["m1"]))).toBeNull();
+  });
+
+  test("★ 移动集合内部的端子之间不互吸", () => {
+    const a = deviceAt("m1", "ac-source", { x: 100, y: 100 });
+    const b = deviceAt("m2", "ac-source", { x: 110, y: 100 });
+    expect(findNodeTerminalSnapTarget([a, b], new Set(["m1", "m2"]))).toBeNull();
+  });
+
+  test("容差可以传 0（只有完全重合才算）", () => {
+    const fixed = deviceAt("f1", "ac-breaker", { x: 100, y: 100 });
+    const same = deviceAt("m1", "ac-source", { x: 100, y: 100 });
+    const offset = deviceAt("m2", "ac-source", { x: 105, y: 100 });
+    expect(findNodeTerminalSnapTarget([fixed, same], new Set(["m1"]), 0)).not.toBeNull();
+    expect(findNodeTerminalSnapTarget([fixed, offset], new Set(["m2"]), 0)).toBeNull();
   });
 });
