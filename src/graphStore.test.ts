@@ -6,10 +6,13 @@
 import { describe, expect, it } from "vitest";
 import {
   createGraphStore,
+  graphStoreEdges,
+  graphStoreNodes,
   graphStorePatchEdges,
   graphStorePatchEdgesFromArray,
   graphStorePatchNodes,
   graphStorePatchNodesFromArray,
+  graphStoreSetNodes,
   overlayGraphStoreNodes
 } from "./graphStore";
 import type { GraphStore } from "./graphStore";
@@ -467,5 +470,38 @@ describe("graphStore / graphStorePatchEdgesFromArray", () => {
     );
     expect(patched.edgeOrder).toEqual(["e2", "e1"]);
     expect(patched.edgeIndexById.get("e1")).toBe(1);
+  });
+});
+
+
+// graphStoreNodes / graphStoreEdges：读当前节点与边列表的两个访问器。
+// 此前零直呼。它们的价值全在「原样返回同一个数组」上 —— 渲染层拿它跟 store 里的引用比，
+// 一旦改成复制或过滤，节点更新后画布仍显示旧数据，且没有任何报错。
+describe("graphStore / 访问器返回同一引用", () => {
+  it("nodes / edges 都是 store 里那个数组本身，不是副本", () => {
+    const nodes = [makeNode("n1"), makeNode("n2")];
+    const edges = [makeEdge("e1", "n1", "n2")];
+    const store = createGraphStore(nodes, edges);
+
+    expect(graphStoreNodes(store)).toBe(store.nodes);
+    expect(graphStoreEdges(store)).toBe(store.edges);
+    // 两次读拿到的是同一个引用（不是两次各复制一份）
+    expect(graphStoreNodes(store)).toBe(graphStoreNodes(store));
+  });
+
+  it("空画布返回空数组（不是 undefined）", () => {
+    const store = createGraphStore([], []);
+    expect(graphStoreNodes(store)).toEqual([]);
+    expect(graphStoreEdges(store)).toEqual([]);
+  });
+
+  it("★ 更新节点后访问器跟着 store 走（旧引用不更新，符合「store 不可变」语义）", () => {
+    const store = createGraphStore([makeNode("n1")], []);
+    const before = graphStoreNodes(store);
+    const after = graphStoreNodes(graphStoreSetNodes(store, [makeNode("n1"), makeNode("n2")]));
+
+    expect(before).toHaveLength(1);
+    expect(after).toHaveLength(2);
+    expect(after).not.toBe(before);
   });
 });

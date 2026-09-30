@@ -25,6 +25,7 @@ import {
   deviceDefinitionRowId,
   generateStateVisualShapeImage,
   isDefaultStatePageId,
+  stateDraftImageValue,
   stateIconDrawingElementMarkup,
   parseSvgStyleAttribute,
   stateDraftRowId,
@@ -602,5 +603,24 @@ describe("stateIconDrawingElementMarkup：画出来的图元标记", () => {
   test("★ text 的底框：填充透明时不画框，填了色才画", () => {
     expect(markupOf({ kind: "text", fillColor: "transparent" })).not.toContain("<rect");
     expect(markupOf({ kind: "text", fillColor: "#eeeeee" })).toContain("<rect");
+  });
+});
+
+
+// stateDraftImageValue：状态草稿这一行「用哪张图」的唯一口径（图元图优先于背景图）。
+// 此前零直呼。判错不抛异常：状态图标显示成另一张图 / 空白。
+describe("stateDraftImageValue：图元图优先于背景图", () => {
+  const row = (image: string, backgroundImage = "") => ({ image, backgroundImage }) as DeviceDefinitionStateDraftRow;
+
+  test("★ 两个都有时取图元图", () => {
+    expect(stateDraftImageValue(row("a.png", "b.png"))).toBe("a.png");
+  });
+
+  test("只有背景图时用它", () => {
+    expect(stateDraftImageValue(row("", "b.png"))).toBe("b.png");
+  });
+
+  test("都没有时是空串（不是 undefined）", () => {
+    expect(stateDraftImageValue(row(""))).toBe("");
   });
 });

@@ -30,7 +30,7 @@
 // 本文件把「四组各自覆盖哪些 kind」显式写下来，改动时会被迫同步。
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
-import { isThreeWindingTransformerKind, isTwoWindingTransformerKind, type DeviceKind } from "./model";
+import { isGeneratorKind, isThreeWindingTransformerKind, isTwoWindingTransformerKind, type DeviceKind } from "./model";
 
 /** 全部「换路器类」kind（开关 / 断路器 / 隔离开关，含接地刀闸与竖向变体）。 */
 const SWITCHING_KINDS = [
@@ -268,5 +268,60 @@ describe("附带的既有事实：DC 类在 CIM 导出里整体退化跳过", ()
     const code = stripComments(read("src/cim/cim-builder.ts"));
     expect(code).toMatch(/case "dc-switch"/);
     expect(code).toMatch(/case "dc-breaker"/);
+  });
+});
+
+// isGeneratorKind：kind 是不是「电源类」。它是字面子串判定（baseDeviceKind(kind).includes("source")），
+// 15 处变异跑过、14 处转红；一处**源码等价**已如实记录在下面第 3 条：baseDeviceKind 剥的是**末尾**
+// 的 -vertical，而 source 出现在名字中段，去不剥它都命中 —— 写不出能证伪它的变异，代码不动。
+// 电源与变流器两族的默认参数、E 段列、电压色都按它分流；判错的症状是发电设备拿到负荷/线路的
+// 默认值，或者反过来 —— 都不抛错。
+describe("isGeneratorKind：电源族判定", () => {
+  test("★ 所有 *-source kind 都算电源（含 -vertical 变体）", () => {
+    for (const kind of [
+      "ac-source",
+      "ac-wind-source",
+      "dc-wind-source",
+      "ac-pv-source",
+      "dc-pv-source",
+      "ac-thermal-source",
+      "diesel-source",
+      "ac-hydro-source",
+      "ac-nuclear-source",
+      "ac-wind-source-vertical",
+      "diesel-source-vertical"
+    ]) {
+      expect(isGeneratorKind(kind as never), kind).toBe(true);
+    }
+  });
+
+  test("非电源族一律不算（线路 / 负荷 / 母线 / 变流器 / 储氢 / 静态图元）", () => {
+    for (const kind of [
+      "ac-line",
+      "dc-line",
+      "ac-load",
+      "ac-bus",
+      "ac-storage",
+      "dc-storage",
+      "acac-converter",
+      "dcdc-converter",
+      "dcac-converter",
+      "hydrogen-storage",
+      "static-rect",
+      ""
+    ]) {
+      expect(isGeneratorKind(kind as never), kind).toBe(false);
+    }
+  });
+
+  test("★ 判据就是「含 source 子串」：别的 kind 只要名字带 source 也会算（既有性质，如实钉住）", () => {
+    // 连 resource 这种含 source 的英文词都会命中 —— 这是字面判定的既有代价，不是不变量
+    expect(isGeneratorKind("my-source-thing" as never)).toBe(true);
+    expect(isGeneratorKind("resource" as never)).toBe(true);
+    expect(isGeneratorKind("sourceless" as never)).toBe(true);
+  });
+
+  test("★ 判定先剥 -vertical 再找子串（vertical 变体不能因为后缀漏判）", () => {
+    expect(isGeneratorKind("ac-thermal-source-vertical" as never)).toBe(true);
   });
 });
