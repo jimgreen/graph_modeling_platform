@@ -24,7 +24,10 @@ import {
   CANVAS_EMPTY_SELECTION_MESSAGE,
   type CanvasLayoutUnit,
   alignNodeLayoutUnits,
+  autoAlignEdgeWithoutStoredRoute,
   autoAlignNodeLayoutUnits,
+  autoAlignPreviewRoutes,
+  autoAlignStoredRoutePlan,
   arrangeContainerInteriors,
   autoSpreadMovableRects,
   autoSpreadNodeLayoutUnits,
@@ -39,6 +42,7 @@ import {
   countAutoAlignRouteCrossings,
   createAutoAlignQualityReport,
   createCanvasGroupFromSelection,
+  distributeNodeLayoutUnits,
   dissolveSelectedCanvasGroups,
   expandSelectionByGroups,
   mergeContainerLayoutUnits,
@@ -1612,5 +1616,366 @@ describe("auto-align line quality constraints", () => {
     expect(report.bendRejectedCount).toBeGreaterThan(0);
     expect(report.degraded).toBe(false);
     expect(report.revertedByVerification).toBe(false);
+  });
+});
+
+// distributeNodeLayoutUnits 把首尾单元钉住、其余等距铺开。
+// 它是「等分」而不是「对齐」的对偶面：两端不动，中间按 (end-start)/(n-1) 补齐。
+describe("distributeNodeLayoutUnits", () => {
+  const centerOf = (nodes: readonly ModelNode[], nodeId: string, axis: "x" | "y") => {
+    const unit = buildCanvasLayoutUnits([], nodes, [nodeId], [])[0];
+    const bounds = unit.layoutBounds ?? unit.bounds;
+    return axis === "x" ? (bounds.left + bounds.right) / 2 : (bounds.top + bounds.bottom) / 2;
+  };
+  const centersOf = (nodes: readonly ModelNode[], axis: "x" | "y") =>
+    nodes.map((node) => centerOf(nodes, node.id, axis));
+
+  const threeAt = (points: readonly { x: number; y: number }[]) =>
+    points.map((position) => createDefaultNode("ac-load", position));
+
+  test("横向分布：首尾不动，中间补到等距", () => {
+    const nodes = threeAt([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 500, y: 0 }]);
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+
+    const spread = distributeNodeLayoutUnits(nodes, units, "horizontal");
+
+    expect(centersOf(spread, "x")).toEqual([0, 250, 500]);
+    // 只动 x：y 一个都不许动
+    expect(centersOf(spread, "y")).toEqual([0, 0, 0]);
+  });
+
+  test("纵向分布：动 y 不动 x（方向名与 alignNodeLayoutUnits 相反，勿混）", () => {
+    // alignNodeLayoutUnits 的 "horizontal" 指「横向对齐」= 统一 y；这里 "horizontal" 是「沿 x 铺开」。
+    // 名字相同语义不同，钉住以免调用侧按对齐的直觉传错方向。
+    const nodes = threeAt([{ x: 0, y: 0 }, { x: 0, y: 100 }, { x: 0, y: 500 }]);
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+
+    const spread = distributeNodeLayoutUnits(nodes, units, "vertical");
+
+    expect(centersOf(spread, "y")).toEqual([0, 250, 500]);
+    expect(centersOf(spread, "x")).toEqual([0, 0, 0]);
+  });
+
+  test("目标位落在整数网格上，半值向 +∞", () => {
+    // 0 → 101 分三份，步长 50.5；中间落点取整成 51（不是 50，也不是浮点 50.5）
+    // 变异实测：把 distribute 里的 Math.round 去掉，这一条**一样绿** ——
+    // moveNodesByUnitDeltas 落地时又对 position 做了一次 Math.round，两次取整在这里等价。
+    // 所以这条钉的是「落点必为整数、半值向 +∞」这个对外契约，而不是某一行的实现细节。
+    const nodes = threeAt([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 101, y: 0 }]);
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+
+    expect(centersOf(distributeNodeLayoutUnits(nodes, units, "horizontal"), "x")).toEqual([0, 51, 101]);
+  });
+
+  test("不足三个单元原样返回同一个数组", () => {
+    const nodes = threeAt([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 500, y: 0 }]);
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+
+    expect(distributeNodeLayoutUnits(nodes, units.slice(0, 2), "horizontal")).toBe(nodes);
+    expect(distributeNodeLayoutUnits(nodes, units.slice(0, 0), "horizontal")).toBe(nodes);
+  });
+
+  test("首尾中心重合时原样返回（等距无从谈起）", () => {
+    const nodes = threeAt([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }]);
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+
+    expect(distributeNodeLayoutUnits(nodes, units, "horizontal")).toBe(nodes);
+  });
+
+  test("只搬 units 里的节点，其余节点原地不动", () => {
+    const nodes = threeAt([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 500, y: 0 }]);
+    const bystander = createDefaultNode("ac-source", { x: 900, y: 900 });
+    const all = [...nodes, bystander];
+    const units = buildCanvasLayoutUnits([], all, nodes.map((node) => node.id), []);
+
+    const spread = distributeNodeLayoutUnits(all, units, "horizontal");
+
+    expect(centersOf(spread, "x")).toEqual([0, 250, 500, 900]);
+  });
+
+  // 两处变异实测与本文件无关、源码自身不可观测（不是「没测到」，是「测不到」）：
+  // 1. 把 `units.length < 3` 放宽成 `< 2`：两个单元时步长 = end - start，两端位移恰好都为 0，
+  //    moveNodesByUnitDeltas 提前原样返回 —— 结果完全一致。
+  // 2. 把排序比较器反号：start/end 随之对调，目标是 start + step*index 这一族，
+  //    反序算出来的落点集合与正序相同（每个单元都落在首尾连线上等距的那个点）。
+});
+
+// autoAlignPreviewRoutes 是候选判定用的纯几何代理：一个端口对齐就直连，否则先横后竖一个拐点。
+// 它的拐点方向与 renderToStaticMarkup 那套测试假路由（先竖后横）相反，
+// 但两者拐点数相同，所以只影响「相对好坏」的判定口径，不影响拐点计数。
+describe("autoAlignPreviewRoutes", () => {
+  const connect = (source: ModelNode, target: ModelNode, id: string): Edge => ({
+    id,
+    sourceId: source.id,
+    targetId: target.id,
+    sourceTerminalId: source.terminals[0].id,
+    targetTerminalId: target.terminals[0].id
+  });
+
+  test("两端端口共 y 时直连（两点，无拐点）", () => {
+    const source = createDefaultNode("ac-load", { x: 0, y: 0 });
+    const target = createDefaultNode("ac-load", { x: 200, y: 0 });
+    const routes = autoAlignPreviewRoutes([source, target], [connect(source, target, "e-straight")]);
+
+    expect(routes).toHaveLength(1);
+    expect(routes[0].points).toHaveLength(2);
+    expect(routes[0].points[0].y).toBe(routes[0].points[1].y);
+    expect(routes[0].edgeId).toBe("e-straight");
+  });
+
+  test("共 x 时同样直连", () => {
+    const source = createDefaultNode("ac-load", { x: 0, y: 0 });
+    const target = createDefaultNode("ac-load", { x: 0, y: 300 });
+    const routes = autoAlignPreviewRoutes([source, target], [connect(source, target, "e-vertical")]);
+
+    expect(routes[0].points).toHaveLength(2);
+    expect(routes[0].points[0].x).toBe(routes[0].points[1].x);
+  });
+
+  test("两个方向都不对齐时走先横后竖的 L 形（拐点取目标的 x、源的 y）", () => {
+    const source = createDefaultNode("ac-load", { x: 0, y: 0 });
+    const target = createDefaultNode("ac-load", { x: 200, y: 150 });
+    const [route] = autoAlignPreviewRoutes([source, target], [connect(source, target, "e-lshape")]);
+
+    const start = getEdgeEndpointPoint(source, undefined, source.terminals[0].id);
+    const end = getEdgeEndpointPoint(target, undefined, target.terminals[0].id);
+    expect(start).toEqual({ x: 0, y: -55 });
+    expect(end).toEqual({ x: 200, y: 95 });
+    // 拐点 = (end.x, start.y)：第一段横、第二段竖
+    expect(route.points).toEqual([start, { x: end.x, y: start.y }, end]);
+    expect(countAutoAlignRouteBends(route.points)).toBe(1);
+  });
+
+  test("path 恒为空串：代理只给几何，不给渲染路径", () => {
+    const source = createDefaultNode("ac-load", { x: 0, y: 0 });
+    const target = createDefaultNode("ac-load", { x: 200, y: 150 });
+
+    expect(autoAlignPreviewRoutes([source, target], [connect(source, target, "e-path")])[0].path).toBe("");
+  });
+
+  test("端点设备不在节点表里的悬空边被跳过", () => {
+    // 变异实测：把 `!source || !target` 改成 `&&`，本条会以 TypeError 转红
+    //（getEdgeEndpointPoint 拿到 undefined）。守卫不是多余的 —— 半条边进代理会直接崩。
+    const source = createDefaultNode("ac-load", { x: 0, y: 0 });
+    const target = createDefaultNode("ac-load", { x: 200, y: 150 });
+
+    expect(autoAlignPreviewRoutes([source], [connect(source, target, "e-dangling")])).toEqual([]);
+    expect(autoAlignPreviewRoutes([], [connect(source, target, "e-dangling")])).toEqual([]);
+  });
+
+  test("无边时返回空数组", () => {
+    const source = createDefaultNode("ac-load", { x: 0, y: 0 });
+
+    expect(autoAlignPreviewRoutes([source], [])).toEqual([]);
+  });
+});
+
+// autoAlignStoredRoutePlan 找出「存档折线已经失效」的线路：按端口重算的拐点**严格更少**才算失效。
+// 判据的严格性是用户裁决的结果 —— 放宽成「不差于」会把「拐点打平但腿位不同」的线也换掉，凭空改形状。
+describe("autoAlignStoredRoutePlan", () => {
+  const emptyPlan = { drops: [], preservedRoutes: [], reroutedRoutes: [] };
+
+  /**
+   * 假路由器：边还带存档折线时按 stored 给几何（=「保留存档折线」那一遍），
+   * 存档已被剥掉时按 fresh 给几何（=「按当前端口重算」那一遍）。
+   * 真实路由器看的是边表而不是调用次序，所以必须这样区分 —— 用一张按 id 查的固定表会让两遍完全相同，测不出差异。
+   */
+  const routeTable = (
+    stored: Record<string, { x: number; y: number }[]>,
+    fresh: Record<string, { x: number; y: number }[]>
+  ) => {
+    const calls: { edgeIds: string[]; strippedIds: string[] }[] = [];
+    const routeEdges = (stateNodes: readonly ModelNode[], edges: readonly Edge[]) => {
+      calls.push({
+        edgeIds: edges.map((edge) => edge.id),
+        strippedIds: edges.filter((edge) => !edge.manualPoints?.length && !edge.routePoints?.length).map((edge) => edge.id)
+      });
+      return edges.map((edge) => ({
+        edgeId: edge.id,
+        points: edge.manualPoints?.length || edge.routePoints?.length ? stored[edge.id] ?? [] : fresh[edge.id] ?? [],
+        path: ""
+      }));
+    };
+    return { routeEdges, calls };
+  };
+
+  const edgeOf = (id: string, stored?: Partial<Edge>): Edge => ({
+    id,
+    sourceId: "n1",
+    targetId: "n2",
+    ...stored
+  });
+
+  test("候选集为空：三个字段全空，且一次都不跑路由器", () => {
+    const { routeEdges, calls } = routeTable({}, {});
+    const nodes = [createDefaultNode("ac-load", { x: 0, y: 0 })];
+
+    const plan = autoAlignStoredRoutePlan(nodes, [edgeOf("e1")], new Set(), routeEdges);
+
+    expect(plan).toEqual(emptyPlan);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("边表为空：同样早退", () => {
+    const { routeEdges, calls } = routeTable({}, {});
+    const nodes = [createDefaultNode("ac-load", { x: 0, y: 0 })];
+
+    const plan = autoAlignStoredRoutePlan(nodes, [], new Set(["e1"]), routeEdges);
+
+    expect(plan).toEqual(emptyPlan);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("候选 id 在边表里一条都匹配不上：早退，不跑路由器", () => {
+    const { routeEdges, calls } = routeTable({}, {});
+    const nodes = [createDefaultNode("ac-load", { x: 0, y: 0 })];
+
+    const plan = autoAlignStoredRoutePlan(nodes, [edgeOf("e1")], new Set(["别的边"]), routeEdges);
+
+    expect(plan).toEqual(emptyPlan);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("拐点严格更少才算失效：打平的线不动", () => {
+    // e1 存档 2 拐点 → 重算 1 拐点：丢弃
+    // e2 存档 1 拐点 → 重算 1 拐点：打平，保留（放宽成「不差于」会连它一起换掉）
+    const stored = {
+      e1: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 10 }],
+      e2: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }]
+    };
+    const fresh = {
+      e1: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }],
+      e2: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }]
+    };
+    const { routeEdges } = routeTable(stored, fresh);
+    const nodes = [createDefaultNode("ac-load", { x: 0, y: 0 })];
+    const edges = [edgeOf("e1", { routePoints: stored.e1 }), edgeOf("e2", { routePoints: stored.e2 })];
+
+    const plan = autoAlignStoredRoutePlan(nodes, edges, new Set(["e1", "e2"]), routeEdges);
+
+    expect(plan.drops.map((drop) => drop.edgeId)).toEqual(["e1"]);
+    // drops 装的是重算几何，不是存档几何
+    expect(plan.drops[0].points).toEqual(fresh.e1);
+  });
+
+  test("重算后拐点更多或相等都不丢", () => {
+    // e1 存档 2 拐点 → 重算 3 拐点（更差）；e2 存档直连（0 拐点）→ 重算 2 拐点（更差）
+    const stored = {
+      e1: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 10 }],
+      e2: [{ x: 0, y: 0 }, { x: 10, y: 0 }]
+    };
+    const fresh = {
+      e1: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 10 }, { x: 20, y: 20 }],
+      e2: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 10 }]
+    };
+    const { routeEdges } = routeTable(stored, fresh);
+    const nodes = [createDefaultNode("ac-load", { x: 0, y: 0 })];
+    const edges = [edgeOf("e1", { routePoints: stored.e1 }), edgeOf("e2", { routePoints: stored.e2 })];
+
+    expect(autoAlignStoredRoutePlan(nodes, edges, new Set(["e1", "e2"]), routeEdges).drops).toEqual([]);
+  });
+
+  test("任一侧几何点数不足 2 时跳过：单点几何不参与拐点比较", () => {
+    // e1 存档 4 点（2 拐点）但重算只剩 1 点 → 丢掉守卫就会拿 0 拐点去比 2 拐点，凭空丢弃一条线
+    // e2 反过来：存档 1 点、重算 4 点 → 同理
+    const { routeEdges } = routeTable(
+      {
+        e1: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 10 }],
+        e2: [{ x: 0, y: 0 }]
+      },
+      {
+        e1: [{ x: 0, y: 0 }],
+        e2: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 10 }]
+      }
+    );
+    const nodes = [createDefaultNode("ac-load", { x: 0, y: 0 })];
+    const edges = [
+      edgeOf("e1", { routePoints: [{ x: 0, y: 0 }, { x: 9, y: 0 }] }),
+      edgeOf("e2", { routePoints: [{ x: 0, y: 0 }, { x: 9, y: 0 }] })
+    ];
+
+    expect(autoAlignStoredRoutePlan(nodes, edges, new Set(["e1", "e2"]), routeEdges).drops).toEqual([]);
+  });
+
+  test("重算几何为空数组（边在重算里查不到）时跳过", () => {
+    const { routeEdges } = routeTable({ e1: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 10 }] }, {});
+    const nodes = [createDefaultNode("ac-load", { x: 0, y: 0 })];
+    const edges = [edgeOf("e1", { routePoints: [{ x: 0, y: 0 }, { x: 9, y: 0 }] })];
+
+    expect(autoAlignStoredRoutePlan(nodes, edges, new Set(["e1"]), routeEdges).drops).toEqual([]);
+  });
+
+  test("只有候选边被剥掉存档折线，非候选边保持带存档折线", () => {
+    const { routeEdges, calls } = routeTable({ e1: [{ x: 0, y: 0 }] }, { e1: [{ x: 0, y: 0 }] });
+    const nodes = [createDefaultNode("ac-load", { x: 0, y: 0 })];
+    const candidate = edgeOf("e1", { manualPoints: [{ x: 0, y: 0 }, { x: 5, y: 5 }], routePoints: [{ x: 0, y: 0 }] });
+    const bystander = edgeOf("e2", { manualPoints: [{ x: 1, y: 1 }] });
+
+    const plan = autoAlignStoredRoutePlan(nodes, [candidate, bystander], new Set(["e1"]), routeEdges);
+
+    // 两次都是全量边表：第一遍没有任何边被剥掉（原始表），第二遍只有候选 e1 被剥掉
+    expect(calls).toEqual([
+      { edgeIds: ["e1", "e2"], strippedIds: [] },
+      { edgeIds: ["e1", "e2"], strippedIds: ["e1"] }
+    ]);
+    // 非候选边在两遍里都走存档几何：bystander 只出现在 preservedRoutes 的对应位置
+    expect(plan.preservedRoutes.map((route) => route.edgeId)).toEqual(["e1", "e2"]);
+    expect(plan.reroutedRoutes.map((route) => route.edgeId)).toEqual(["e1", "e2"]);
+    // 原始边对象没被就地改写
+    expect(candidate.manualPoints).toHaveLength(2);
+    expect(bystander.manualPoints).toHaveLength(1);
+  });
+
+  test("preservedRoutes 与 reroutedRoutes 都按全量边表返回", () => {
+    const { routeEdges } = routeTable({}, { e1: [{ x: 0, y: 0 }], e2: [{ x: 1, y: 1 }] });
+    const nodes = [createDefaultNode("ac-load", { x: 0, y: 0 })];
+    const edges = [edgeOf("e1"), edgeOf("e2")];
+
+    const plan = autoAlignStoredRoutePlan(nodes, edges, new Set(["e1"]), routeEdges);
+
+    expect(plan.preservedRoutes.map((route) => route.edgeId)).toEqual(["e1", "e2"]);
+    expect(plan.reroutedRoutes.map((route) => route.edgeId)).toEqual(["e1", "e2"]);
+  });
+
+  // 变异实测：`candidateEdgeIds.size === 0 || edges.length === 0` 改成 `&&` 一样绿 ——
+  // 候选集为空时 filter 结果必然为空，下一道 `candidates.length === 0` 会照样早退。
+  // 第一道守卫在行为上是冗余的，这里钉的是「候选集为空就不跑路由器」这个对外契约。
+});
+
+describe("autoAlignEdgeWithoutStoredRoute", () => {
+  test("没有存档折线时返回同一个对象（不复制）", () => {
+    const edge: Edge = { id: "e1", sourceId: "n1", targetId: "n2" };
+    const emptyManual: Edge = { ...edge, manualPoints: [] };
+
+    expect(autoAlignEdgeWithoutStoredRoute(edge)).toBe(edge);
+    // 空数组也算「没有存档折线」→ 早退，连同空字段一起原样返回
+    expect(autoAlignEdgeWithoutStoredRoute(emptyManual)).toBe(emptyManual);
+  });
+
+  test("有存档折线时返回去掉两者的副本，原对象保持不变", () => {
+    const edge: Edge = {
+      id: "e1",
+      sourceId: "n1",
+      targetId: "n2",
+      manualPoints: [{ x: 0, y: 0 }],
+      routePoints: [{ x: 1, y: 1 }]
+    };
+
+    const stripped = autoAlignEdgeWithoutStoredRoute(edge);
+
+    expect(stripped).not.toBe(edge);
+    expect(stripped.manualPoints).toBeUndefined();
+    expect(stripped.routePoints).toBeUndefined();
+    expect(stripped.id).toBe("e1");
+    expect(edge.manualPoints).toHaveLength(1);
+  });
+
+  test("只删非空的那一个，另一侧字段原样保留", () => {
+    const edge: Edge = { id: "e1", sourceId: "n1", targetId: "n2", manualPoints: [{ x: 0, y: 0 }] };
+
+    const stripped = autoAlignEdgeWithoutStoredRoute(edge);
+
+    expect(stripped.manualPoints).toBeUndefined();
+    expect("routePoints" in stripped).toBe(false);
   });
 });
