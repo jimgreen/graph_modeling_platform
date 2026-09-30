@@ -1,5 +1,13 @@
 import { describe, expect, test } from "vitest";
-import { getRatedCapacityDefaultForKind, LINE_DEVICE_KINDS, LOAD_DEVICE_KINDS, VOLTAGE_LINE_RATED_CAPACITY, VOLTAGE_LOAD_RATED_CAPACITY } from "./model";
+import {
+  getRatedCapacityDefaultForKind,
+  getSwitchingRatedCapacityDefault,
+  LINE_DEVICE_KINDS,
+  LOAD_DEVICE_KINDS,
+  SWITCHING_DEVICE_KINDS,
+  VOLTAGE_LINE_RATED_CAPACITY,
+  VOLTAGE_LOAD_RATED_CAPACITY
+} from "./model";
 import { setVoltageBaseValuesForScope } from "./model-routing";
 import type { DeviceKind, ModelNode } from "./model";
 
@@ -34,6 +42,49 @@ describe("电压等级 → 额定容量默认值映射", () => {
     expect(getRatedCapacityDefaultForKind("ac-load", "10")).toBe("5 MW");
     expect(getRatedCapacityDefaultForKind("ac-source", "10")).toBeNull();
     expect(getRatedCapacityDefaultForKind("ac-line", "999")).toBeNull();
+  });
+});
+
+describe("开关类设备默认额定容量（= 额定电流）", () => {
+  test("★ 集合里是九种开关类 kind", () => {
+    expect([...SWITCHING_DEVICE_KINDS].sort()).toEqual([
+      "ac-box-breaker",
+      "ac-breaker",
+      "ac-disconnector",
+      "ac-ground-disconnector",
+      "ac-ground-disconnector-vertical",
+      "ac-switch",
+      "dc-breaker",
+      "dc-disconnector",
+      "dc-switch"
+    ]);
+  });
+
+  test("★ 交流侧 1250 A、直流侧 1600 A", () => {
+    expect(getSwitchingRatedCapacityDefault("ac-switch")).toBe("1250 A");
+    expect(getSwitchingRatedCapacityDefault("ac-breaker")).toBe("1250 A");
+    expect(getSwitchingRatedCapacityDefault("ac-ground-disconnector")).toBe("1250 A");
+    expect(getSwitchingRatedCapacityDefault("ac-box-breaker")).toBe("1250 A");
+    expect(getSwitchingRatedCapacityDefault("dc-switch")).toBe("1600 A");
+    expect(getSwitchingRatedCapacityDefault("dc-disconnector")).toBe("1600 A");
+    expect(getSwitchingRatedCapacityDefault("dc-breaker")).toBe("1600 A");
+  });
+
+  test("-vertical 后缀变体同样命中（按 baseDeviceKind 归一后查集合）", () => {
+    expect(getSwitchingRatedCapacityDefault("ac-ground-disconnector-vertical")).toBe("1250 A");
+    expect(getSwitchingRatedCapacityDefault("ac-switch-vertical")).toBe("1250 A");
+  });
+
+  test("非开关类 kind 返回 null（不是默认值，也不抛异常）", () => {
+    for (const kind of ["ac-line", "ac-source", "ac-load", "dcac-converter", "acac-converter", "static-rect", ""]) {
+      expect(getSwitchingRatedCapacityDefault(kind), kind).toBeNull();
+    }
+  });
+
+  test("集合里带 -vertical 的那条与归一后的名字同值，不重复计入", () => {
+    expect(getSwitchingRatedCapacityDefault("ac-ground-disconnector-vertical")).toBe(
+      getSwitchingRatedCapacityDefault("ac-ground-disconnector")
+    );
   });
 });
 
