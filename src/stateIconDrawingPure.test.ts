@@ -9,6 +9,8 @@
 // 这些函数此前测试零直呼。解析与取色判错的后果：导入的 SVG 样式丢一半、
 // 或者本该透出的颜色被当成透明而露出兜底色 —— 都**零报错**。
 import { describe, expect, test } from "vitest";
+import { DEFAULT_SHAPE_STROKE_COLOR } from "./svgUtils";
+import type { DeviceDefinitionStateDraftRow, StateVisualShapeKind } from "./stateIconDrawing";
 import {
   DEFAULT_STATE_ICON_DRAWING_FRAME,
   DEFAULT_STATE_NAME,
@@ -16,6 +18,7 @@ import {
   DEFAULT_STATE_VALUE,
   customParamId,
   deviceDefinitionRowId,
+  generateStateVisualShapeImage,
   isDefaultStatePageId,
   parseSvgStyleAttribute,
   stateDraftRowId,
@@ -301,5 +304,147 @@ describe("四种 id 生成器：前缀固定 + 互不碰撞", () => {
   test("不同生成器的 id 不会互相误认", () => {
     expect(deviceDefinitionRowId().startsWith("param-")).toBe(false);
     expect(customParamId().startsWith("def-")).toBe(false);
+  });
+});
+
+// generateStateVisualShapeImage：状态视觉的 16 种预置形状 → data:image/svg+xml URL。
+// 纯字符串拼装（不碰 canvas / DOM），此前零断言，是 stateIconDrawing 里最大的一块未覆盖面。
+// 判错的后果：状态预览图形状不对、颜色串到别的图形上，或者行里的文字没转义就把 SVG 撑坏 ——
+// 都不抛错，只在设备库里那个小图上看得出来。
+//
+// 34 处变异逐条跑过，31 处转红。剩下 3 处：两处 data URL 前缀 / encodeURIComponent 的锚点在文件里
+// 出现两次写不唯一，改用「URL 里不能有裸 < 与 #」这条断言覆盖（# 不编码会被浏览器当片段截断）；
+// circle 分支与 default 分支的 r="48" 同一段文本，改一处另一个也变，两条用例各自盯着。
+// 过程中补的真缺口：strokeColor 与 color 同时给时的优先级、arc 不能是实心圆、关键几何数值、
+// 文字颜色的三级回退。
+const SHAPE_KINDS: StateVisualShapeKind[] = ["switch-open", "switch-closed", "valve-open", "valve-closed",
+  "line", "polyline", "point", "triangle", "rectangle", "square", "hexagon", "polygon", "circle", "semicircle", "ellipse", "arc", "text"];
+
+describe("generateStateVisualShapeImage：预置形状图", () => {
+  const row = (extra: Partial<DeviceDefinitionStateDraftRow> = {}) =>
+    ({
+      id: "r1",
+      value: "0",
+      name: "分",
+      icon: "",
+      image: "",
+      imageAssetId: "",
+      imageFit: "",
+      text: "",
+      color: "",
+      fillColor: "",
+      strokeColor: "",
+      textColor: "",
+      ...extra
+    }) as unknown as DeviceDefinitionStateDraftRow;
+
+  /** 把 data URL 解回 SVG 源码。 */
+  const svgOf = (kind: StateVisualShapeKind, draft = row()): string => {
+    const url = generateStateVisualShapeImage(kind, draft);
+    expect(url.startsWith("data:image/svg+xml;utf8,"), kind).toBe(true);
+    return decodeURIComponent(url.slice("data:image/svg+xml;utf8,".length));
+  };
+
+  test("★ 统一外壳：240 × 160、viewBox 一致、以 </svg> 收尾", () => {
+    for (const kind of SHAPE_KINDS) {
+      const svg = svgOf(kind);
+      expect(svg, kind).toContain('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">');
+      expect(svg, kind).toContain('<rect width="240" height="160" fill="none"/>');
+      expect(svg.endsWith("</svg>"), kind).toBe(true);
+    }
+  });
+
+  test("★ 十六种形状两两不同（每个 case 分支都真产出自己的 body）", () => {
+    const bodies = SHAPE_KINDS.map((kind) => svgOf(kind));
+    expect(new Set(bodies).size, "有形状撞了").toBe(SHAPE_KINDS.length);
+  });
+
+  test("开关两态的差别落在那条斜线 / 横线上", () => {
+    expect(svgOf("switch-open")).toContain("M 84 72 L 154 38");
+    expect(svgOf("switch-closed")).toContain("M 84 80 H 156");
+  });
+
+  test("阀门两态：开是竖线加横杠，闭是交叉", () => {
+    expect(svgOf("valve-open")).toContain("M 120 34 V 126");
+    expect(svgOf("valve-closed")).toContain("M 76 36 L 164 124");
+  });
+
+  test("★ text 形状只出文字，坐标与字号固定", () => {
+    const svg = svgOf("text", row({ text: "合" }));
+    expect(svg).toContain('<text x="120" y="94" text-anchor="middle" dominant-baseline="middle"');
+    expect(svg).toContain('font-size="54"');
+    expect(svg).toContain(">合</text>");
+  });
+
+  test("★ 描边色与 color 同时给时 strokeColor 赢", () => {
+    expect(svgOf("circle", row({ strokeColor: "#123456", color: "#654321" }))).toContain('stroke="#123456"');
+    expect(svgOf("circle", row({ strokeColor: "#123456", color: "#654321" }))).not.toContain("#654321");
+  });
+
+  test("★ 几个形状的关键几何就是图标本身的一部分", () => {
+    expect(svgOf("point")).toContain('<circle cx="120" cy="80" r="18"');
+    expect(svgOf("circle")).toContain('<circle cx="120" cy="80" r="48"');
+    expect(svgOf("arc")).toContain("M 58 112 A 72 72 0 0 1 182 112");
+    expect(svgOf("triangle")).toContain("M 120 34 L 190 122 H 50 Z");
+    expect(svgOf("line")).toContain("M 42 80 H 198");
+  });
+
+  test("★ data URL 是百分号编码过的：里面不能出现裸的 < 与 #", () => {
+    // 颜色里的 # 若不编码，浏览器会当成片段分隔符，颜色直接被截断
+    const url = generateStateVisualShapeImage("circle", row({ strokeColor: "#123456" }));
+    expect(url).not.toContain("<");
+    expect(url).not.toContain("#");
+    expect(url).toContain("%23");
+  });
+
+  test("★ 文字颜色：textColor 优先，没有就跟描边色", () => {
+    expect(svgOf("text", row({ strokeColor: "#123456" }))).toContain('font-weight="800" fill="#123456"');
+    expect(svgOf("text", row({ strokeColor: "#123456", textColor: "#654321" }))).toContain('fill="#654321"');
+    // 描边色透明时文字跟 color
+    expect(svgOf("text", row({ strokeColor: "transparent", color: "#654321" }))).toContain('fill="#654321"');
+    // textColor 与 color 同时给时 textColor 赢（两者都可见，顺序才有意义）
+    expect(svgOf("text", row({ color: "#aaaaaa", textColor: "#654321" }))).toContain('fill="#654321"');
+    expect(svgOf("text", row({ color: "#aaaaaa", textColor: "#654321" }))).not.toContain("#aaaaaa");
+  });
+
+  test("★ arc 是开口弧，不是实心圆", () => {
+    expect(svgOf("arc")).not.toContain("<circle");
+  });
+
+  test("★ 未知 kind 落到默认圆（不抛异常、不出空图）", () => {
+    const svg = svgOf("nope" as StateVisualShapeKind);
+    expect(svg).toContain('<circle cx="120" cy="80" r="48"');
+  });
+
+  test("★ 描边色：strokeColor 优先，其次 color，都没有用默认蓝", () => {
+    expect(svgOf("circle", row({ strokeColor: "#123456" }))).toContain('stroke="#123456"');
+    expect(svgOf("circle", row({ color: "#654321" }))).toContain('stroke="#654321"');
+    expect(svgOf("circle", row())).toContain(`stroke="${DEFAULT_SHAPE_STROKE_COLOR}"`);
+    // 透明色不算数：透明时继续往后找，再没有才落默认
+    expect(svgOf("circle", row({ strokeColor: "transparent", color: "#654321" }))).toContain('stroke="#654321"');
+  });
+
+  test("★ 填充色：空 / 只有空白 → transparent，别的按原样转义写入", () => {
+    expect(svgOf("rectangle", row())).toContain('fill="transparent"');
+    expect(svgOf("rectangle", row({ fillColor: "   " }))).toContain('fill="transparent"');
+    expect(svgOf("rectangle", row({ fillColor: " #abcdef " }))).toContain('fill="#abcdef"');
+  });
+
+  test("★ 文字回退链：text → icon → name → value → 状态", () => {
+    expect(svgOf("text", row({ text: "T", icon: "I", name: "N", value: "V" }))).toContain(">T</text>");
+    expect(svgOf("text", row({ text: "", icon: "I", name: "N", value: "V" }))).toContain(">I</text>");
+    expect(svgOf("text", row({ text: "", icon: "", name: "N", value: "V" }))).toContain(">N</text>");
+    expect(svgOf("text", row({ text: "", icon: "", name: "", value: "V" }))).toContain(">V</text>");
+    expect(svgOf("text", row({ text: "", icon: "", name: "", value: "" }))).toContain(">状态</text>");
+  });
+
+  test("★ 文字里的 XML 特殊字符被转义（否则 SVG 结构被撑坏）", () => {
+    const svg = svgOf("text", row({ text: '<script>&"' }));
+    expect(svg).toContain("&lt;script&gt;&amp;&quot;");
+    expect(svg).not.toContain("<script>");
+  });
+
+  test("颜色值里的引号也被转义（防属性截断）", () => {
+    expect(svgOf("circle", row({ strokeColor: '" onload="x' }))).toContain('&quot;');
   });
 });
