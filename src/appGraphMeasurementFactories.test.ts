@@ -10,7 +10,9 @@ import {
   createBuildMeasurementGroupMarkup,
   createConfirmMeasurementEditorDialog,
   createFinishMeasurementDrag,
+  createMeasurementGroupLocalOffset,
   createMeasurementGroupRenderMetrics,
+  createMeasurementSourcePointForNodeItem,
   createRenderSelectedNodeMeasurementTable,
   createPersistRefreshRecoveryNow,
   createRenderMultiNodeDragOverlay,
@@ -1918,5 +1920,81 @@ describe("刷新恢复草稿的持久化受切空间跳过标志约束", () => {
     createPersistRefreshRecoveryNow(scope)();
 
     expect(writeRefreshRecoveryProject).toHaveBeenCalledTimes(1);
+  });
+});
+
+// createMeasurementSourcePointForNodeItem：量测项的「来源键」。
+// 它是量测项与来源字段（p / q / 某端子 vbase…）之间的匹配契约 —— 键一变，量测项静默匹配不上，
+// 表现为「量测表里全是空值 / 复制粘贴后量测丢失」，不报错。
+// 12 处变异逐条跑过、12 处全红：role 段、associatedField 优先（含空串不算指定）、nodeId 参与、
+// 端子段的位置与顺序、偏移逐轴相乘与两轴不串、取反 scale、不取设备 scale。
+describe("createMeasurementSourcePointForNodeItem：量测项来源键", () => {
+  const sourceKeyOf = (
+    item: { measurementTypeId: string; role?: string; associatedField?: string },
+    terminalId?: string,
+    nodeId = "n1"
+  ) =>
+    createMeasurementSourcePointForNodeItem({} as never)(
+      { id: nodeId } as never,
+      item as never,
+      terminalId
+    );
+
+  test("★ 无 role、无端子：nodeId.measurementTypeId", () => {
+    expect(sourceKeyOf({ measurementTypeId: "activePower" })).toBe("n1.activePower");
+  });
+
+  test("★ 有 role 时 role 段在前（role.measurementTypeId）", () => {
+    expect(sourceKeyOf({ measurementTypeId: "activePower", role: "threePhase" })).toBe("n1.threePhase.activePower");
+  });
+
+  test("★ 给了端子时插一段 nodeId.terminalId（双口量测用）", () => {
+    expect(sourceKeyOf({ measurementTypeId: "voltage" }, "t2")).toBe("n1.t2.voltage");
+    expect(sourceKeyOf({ measurementTypeId: "voltage", role: "positive" }, "t1")).toBe("n1.t1.positive.voltage");
+  });
+
+  test("★ associatedField 优先于 role + measurementTypeId（指定字段就是它）", () => {
+    expect(sourceKeyOf({ measurementTypeId: "activePower", role: "threePhase", associatedField: "p" })).toBe("n1.p");
+    expect(sourceKeyOf({ measurementTypeId: "voltage", associatedField: "u" }, "t1")).toBe("n1.t1.u");
+  });
+
+  test("★ associatedField 为空串时不算「指定」（回落到 role + 类型）", () => {
+    expect(sourceKeyOf({ measurementTypeId: "activePower", role: "r", associatedField: "" })).toBe("n1.r.activePower");
+  });
+
+  test("★ 空 role 不产生多余的分段与点（falsy 判断，不是字符串拼接）", () => {
+    expect(sourceKeyOf({ measurementTypeId: "activePower", role: "" })).toBe("n1.activePower");
+    expect(sourceKeyOf({ measurementTypeId: "activePower", role: undefined })).toBe("n1.activePower");
+  });
+
+  test("节点 id 参与键：两个节点的同名量测项键不同", () => {
+    expect(sourceKeyOf({ measurementTypeId: "activePower" }, undefined, "n1")).not.toBe(
+      sourceKeyOf({ measurementTypeId: "activePower" }, undefined, "n2")
+    );
+  });
+});
+
+// createMeasurementGroupLocalOffset：量测组偏移按设备的偏移缩放系数换算。
+// 缩放系数来自设备自身（不同尺寸设备同一份量测组摆位不同），算错只是量测标签压在图元上。
+describe("createMeasurementGroupLocalOffset：量测组偏移换算", () => {
+  const offsetOf = (groupOffset: { x: number; y: number }, scale: { x: number; y: number }) =>
+    createMeasurementGroupLocalOffset({
+      measurementOffsetScaleForNode: () => scale
+    } as never)({} as never, { offset: groupOffset } as never);
+
+  test("★ 偏移按 scale 逐轴相乘", () => {
+    expect(offsetOf({ x: 10, y: -6 }, { x: 2, y: 0.5 })).toEqual({ x: 20, y: -3 });
+  });
+
+  test("scale 为 1 时原样返回", () => {
+    expect(offsetOf({ x: 10, y: 20 }, { x: 1, y: 1 })).toEqual({ x: 10, y: 20 });
+  });
+
+  test("scale 为 0 时该轴归零（不保留原偏移）", () => {
+    expect(offsetOf({ x: 10, y: 20 }, { x: 0, y: 0 })).toEqual({ x: 0, y: 0 });
+  });
+
+  test("两轴 scale 不同时不串轴", () => {
+    expect(offsetOf({ x: 10, y: 20 }, { x: 0.5, y: 2 })).toEqual({ x: 5, y: 40 });
   });
 });
