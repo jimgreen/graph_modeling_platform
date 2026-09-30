@@ -20,6 +20,7 @@ import {
   createUpdateMeasurementDrag,
   createUpdateMeasurementItem,
   measurementProfileItemsComplianceMessage,
+  createCenterCanvasFrameScrollPosition,
   measurementTypeComplianceMessage
 } from "./appExtracted/appGraphMeasurementFactories";
 import { createRenderDeviceDefinitionMeasurementPanel } from "./appExtracted/appProjectCanvasFactories";
@@ -1996,5 +1997,38 @@ describe("createMeasurementGroupLocalOffset：量测组偏移换算", () => {
 
   test("两轴 scale 不同时不串轴", () => {
     expect(offsetOf({ x: 10, y: 20 }, { x: 0.5, y: 2 })).toEqual({ x: 5, y: 40 });
+  });
+});
+
+// createCenterCanvasFrameScrollPosition：把画布容器滚到正中（内容比视口大时才有滚动量）。
+// 算错的表现是「回到中心」后画布偏一边，且在内容小于视口时莫名出现滚动 —— 不报错。
+// 6 处变异逐条跑过、6 处全红：不夹 0 会出负滚动、/2 写成不除、clientWidth 用成 scrollWidth、
+// x / y 写反、取整、不调 scope 的写入函数。
+describe("createCenterCanvasFrameScrollPosition：画布回到中心", () => {
+  const centerOf = (frame: { scrollWidth: number; clientWidth: number; scrollHeight: number; clientHeight: number }) => {
+    const calls: Array<[number, number]> = [];
+    const setCanvasFrameScrollPosition = (_frame: unknown, x: number, y: number) => calls.push([x, y]);
+    createCenterCanvasFrameScrollPosition({ setCanvasFrameScrollPosition } as never)(frame as never);
+    return calls;
+  };
+
+  test("★ 内容大于视口时滚到正中（差值的一半）", () => {
+    expect(centerOf({ scrollWidth: 1200, clientWidth: 800, scrollHeight: 1000, clientHeight: 600 })).toEqual([[200, 200]]);
+  });
+
+  test("★ 内容小于视口时给 0（不出现负滚动）", () => {
+    expect(centerOf({ scrollWidth: 400, clientWidth: 800, scrollHeight: 300, clientHeight: 600 })).toEqual([[0, 0]]);
+  });
+
+  test("恰好相等时也是 0", () => {
+    expect(centerOf({ scrollWidth: 800, clientWidth: 800, scrollHeight: 600, clientHeight: 600 })).toEqual([[0, 0]]);
+  });
+
+  test("★ 两轴各自算：只有横向能滚时纵向给 0", () => {
+    expect(centerOf({ scrollWidth: 1000, clientWidth: 600, scrollHeight: 400, clientHeight: 600 })).toEqual([[200, 0]]);
+  });
+
+  test("奇数差值时给到中间偏右（不取整，交给浏览器）", () => {
+    expect(centerOf({ scrollWidth: 801, clientWidth: 600, scrollHeight: 600, clientHeight: 600 })).toEqual([[100.5, 0]]);
   });
 });
