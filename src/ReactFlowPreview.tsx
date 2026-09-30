@@ -33,7 +33,9 @@ type ReactFlowPreviewProps = {
   edges: Edge[];
 };
 
-function pathMidpoint(points: readonly { x: number; y: number }[]) {
+// 导出供单测：这是本文件里唯一有真正算法的部分（按弧长取折线中点），
+// 其余全是 ReactFlow 组件的拼装，测它需要整个 @xyflow 渲染环境。
+export function pathMidpoint(points: readonly { x: number; y: number }[]) {
   if (points.length === 0) {
     return { x: 0, y: 0 };
   }
