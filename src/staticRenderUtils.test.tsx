@@ -4,19 +4,25 @@ import type { ReactNode } from "react";
 import type { ModelNode, Point } from "./model";
 
 import {
+  DEVICE_GLYPH_DESIGN_LONGEST_SIDE,
   deviceStateVisualToken,
   estimateSvgTextWidth,
   nodeCounterTransformMatrix,
   renderBusGlyphRect,
   resolveStateVisualImageHref,
+  routableLineDeviceRenderLocalPoints,
   staticConnectorMarker,
+  staticConnectorPath,
   staticDrawPointsForNode,
+  staticFrameHandles,
   staticHandleDot,
   staticNumericParam,
+  staticShapeText,
   staticSymbolMiniatureTextValue,
   staticSymbolShadowStyle,
   staticSymbolTextValue,
-  stateVisualText
+  stateVisualText,
+  uprightText
 } from "./staticRenderUtils";
 import { decodeSvgImageSource } from "./svgUtils";
 import { apiPath } from "./config";
@@ -276,5 +282,283 @@ describe("renderBusGlyphRect", () => {
     expect(markup(renderBusGlyphRect(60, 30, "#111"))).toContain('height="10"');
     expect(markup(renderBusGlyphRect(60, 12, "#111"))).toContain('height="8"');
     expect(markup(renderBusGlyphRect(60, 12, "#111"))).toContain('y="-4"');
+  });
+});
+
+// ─── 以下是还没被上面几组覆盖到的那一半 ───────────────────────────────────────
+// staticShapeText / staticConnectorPath / staticFrameHandles / uprightText /
+// routableLineDeviceRenderLocalPoints 这几个此前零直接测试，它们出的问题都不抛异常：
+// 文字跑出图元框、连线两端箭头朝向反了、控制点少一个，统统只在画布上看得出来。
+
+/** 抽出 <g> 上的 transform 里的 translate 部分。 */
+const translateOf = (html: string) => /transform="translate\(([^ )]+) ([^)]+)\)/.exec(html)?.[0] ?? "";
+
+/** 抽出所有 tspan 的 dy 与文本。 */
+const tspans = (html: string) =>
+  [...html.matchAll(/<tspan x="0" dy="([^"]+)">([^<]*)<\/tspan>/g)].map((m) => ({ dy: m[1], text: m[2] }));
+
+describe("staticShapeText", () => {
+  test("默认居中：translate 落在原点，anchor=middle", () => {
+    const html = markup(staticShapeText(node(), 100, 40));
+    expect(translateOf(html)).toBe('transform="translate(0 0)');
+    expect(html).toContain('text-anchor="middle"');
+  });
+
+  test("左对齐贴左边距、右对齐贴右边距，anchor 同步切换", () => {
+    // w=100 padding=12 → 左 -50+12=-38，右 50-12=38
+    const left = markup(staticShapeText(node({ textAlign: "left" }), 100, 40));
+    expect(translateOf(left)).toBe('transform="translate(-38 0)');
+    expect(left).toContain('text-anchor="start"');
+
+    const right = markup(staticShapeText(node({ textAlign: "right" }), 100, 40));
+    expect(translateOf(right)).toBe('transform="translate(38 0)');
+    expect(right).toContain('text-anchor="end"');
+  });
+
+  test("认不出的 textAlign 落回居中，而不是变成没锚点的 start", () => {
+    const html = markup(staticShapeText(node({ textAlign: "justify" }), 100, 40));
+    expect(html).toContain('text-anchor="middle"');
+    expect(translateOf(html)).toBe('transform="translate(0 0)');
+  });
+
+  test("上/下对齐把文字推到框内边缘", () => {
+    // h=100 padding=12 fontSize=16 → 上 -50+12+8=-30，下 50-12-8=30
+    expect(translateOf(markup(staticShapeText(node({ verticalAlign: "top" }), 100, 100)))).toBe(
+      'transform="translate(0 -30)'
+    );
+    expect(translateOf(markup(staticShapeText(node({ verticalAlign: "bottom" }), 100, 100)))).toBe(
+      'transform="translate(0 30)'
+    );
+  });
+
+  test("padding 被夹到 min(w,h)/2 - 2，字不会顶出图元框", () => {
+    // 20x20 的框 padding 填 999：真按 999 算 x 会跑到 -1009，文字整个飞出去
+    const html = markup(staticShapeText(node({ textAlign: "left", padding: "999" }), 20, 20));
+    expect(translateOf(html)).toBe('transform="translate(-2 0)');
+  });
+
+  test("多行：每行一个 tspan，整体按行数上移半高", () => {
+    // 3 行 → 上移 (3-1) * 16 * 0.6 = 19.2
+    const html = markup(staticShapeText(node({ text: "A\nB\nC" }), 100, 40));
+    expect(translateOf(html)).toBe('transform="translate(0 -19.2)');
+    expect(tspans(html)).toEqual([
+      { dy: "0", text: "A" },
+      { dy: "19.2", text: "B" },
+      { dy: "19.2", text: "C" }
+    ]);
+  });
+
+  test("CRLF 也算换行", () => {
+    const html = markup(staticShapeText(node({ text: "A\r\nB" }), 100, 40));
+    expect(tspans(html).map((row) => row.text)).toEqual(["A", "B"]);
+  });
+
+  test("空行渲染成一个空格，不塌成零高行", () => {
+    // 直接给空串的话，SVG 里这一行没有内容、上下行会贴在一起
+    expect(tspans(markup(staticShapeText(node({ text: "A\n\nB" }), 100, 40))).map((r) => r.text)).toEqual([
+      "A",
+      " ",
+      "B"
+    ]);
+  });
+
+  test("缩略图：字号锁 12、只显前两个字", () => {
+    const html = markup(staticShapeText(node({ text: "开关柜", fontSize: "40" }), 100, 40, true));
+    expect(html).toContain('font-size="12"');
+    expect(tspans(html).map((r) => r.text)).toEqual(["开关"]);
+  });
+
+  test("文字样式逐项可覆盖，未覆盖的走默认值", () => {
+    const html = markup(
+      staticShapeText(
+        node({ textColor: "#f00", fontFamily: "SimSun", fontWeight: "700", fontStyle: "italic", textDecoration: "underline" }),
+        100,
+        40
+      )
+    );
+    expect(html).toContain('fill="#f00"');
+    expect(html).toContain('font-family="SimSun"');
+    expect(html).toContain('font-weight="700"');
+    expect(html).toContain('font-style="italic"');
+    expect(html).toContain('text-decoration="underline"');
+
+    const fallback = markup(staticShapeText(node(), 100, 40));
+    expect(fallback).toContain('fill="#111827"');
+    expect(fallback).toContain('font-family="Arial"');
+    expect(fallback).toContain('font-weight="500"');
+  });
+
+  test("文字挂逆变换矩阵：节点转了字仍水平", () => {
+    // 少了这个矩阵，旋转 90° 的节点上的字会跟着侧躺
+    expect(markup(staticShapeText(node({}, { rotation: 90 }), 100, 40))).toContain("matrix(0 -1 1 0 0 0)");
+  });
+
+  test("文字不可选中也不吃指针事件，且按字高中线对齐", () => {
+    const html = markup(staticShapeText(node(), 100, 40));
+    expect(html).toContain("user-select:none");
+    expect(html).toContain("pointer-events:none");
+    // 没有 dominant-baseline 时 y=0 指的是基线，整块文字会整体下沉半行
+    expect(html).toContain('dominant-baseline="middle"');
+  });
+});
+
+describe("uprightText", () => {
+  test("translate 之后紧跟逆变换矩阵", () => {
+    const html = markup(uprightText(node({}, { rotation: 90 }), 3, 4, {}, "x"));
+    expect(html).toContain('transform="translate(3 4) matrix(0 -1 1 0 0 0)"');
+  });
+
+  test("style 落在 text 上，其余 props 原样透传", () => {
+    const html = markup(uprightText(node(), 0, 0, { fill: "#111", title: "提示", style: { pointerEvents: "none" } }, "hi"));
+    expect(html).toContain('fill="#111"');
+    expect(html).toContain('title="提示"');
+    expect(html).toContain("pointer-events:none");
+  });
+});
+
+describe("staticConnectorPath", () => {
+  const path = (points: Point[], params: Record<string, string> = {}, dashArray?: string) =>
+    markup(staticConnectorPath(node(params), points, "#111", 2, dashArray));
+
+  test("点列拼成 M/L 折线，线帽与拐角都是圆角", () => {
+    const html = path([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 20 }]);
+    expect(html).toContain('d="M 0 0 L 10 0 L 10 20"');
+    expect(html).toContain('stroke-linecap="round"');
+    expect(html).toContain('stroke-linejoin="round"');
+  });
+
+  test("两端标记：尖端分别落在首末点上", () => {
+    const html = path([{ x: 0, y: 0 }, { x: 10, y: 0 }], { markerStart: "arrow", markerEnd: "arrow" });
+    const tips = [...html.matchAll(/<polygon points="([^"]+)"/g)].map((m) => m[1].split(" ")[0]);
+    expect(tips).toEqual(["0,0", "10,0"]);
+  });
+
+  test("起点箭头背离连线、终点箭头顺着连线（各取相邻点，不跨到折线另一头）", () => {
+    // 起点方向 = first - second，终点方向 = last - previous。刻意用三个点：
+    // 两点时 second 与 last 是同一个点，写错邻居也看不出来。
+    // 底边 = 端点 - 单位方向 * size，size 默认 10。
+    const start = /<polygon points="([^"]+)"/.exec(
+      path([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 20 }], { markerStart: "arrow" })
+    )![1];
+    // 起点方向是 (-10,0) → 单位 (-1,0)，底边退到 x=+10
+    expect(Number(start.split(" ")[1].split(",")[0])).toBeCloseTo(10, 10);
+
+    const end = /<polygon points="([^"]+)"/.exec(
+      path([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 20 }], { markerEnd: "arrow" })
+    )![1];
+    // 终点方向是 (0,20) → 单位 (0,1)，底边退到 y=+10
+    expect(Number(end.split(" ")[1].split(",")[1])).toBeCloseTo(10, 10);
+  });
+
+  test("arrowSize 被 min=4 夹住", () => {
+    // 填 1 会被夹到 4，底边落在 x=10-4=6
+    const end = /<polygon points="([^"]+)"/.exec(
+      path([{ x: 0, y: 0 }, { x: 10, y: 0 }], { markerEnd: "arrow", arrowSize: "1" })
+    )![1];
+    expect(Number(end.split(" ")[1].split(",")[0])).toBeCloseTo(6, 10);
+  });
+
+  test("点列不足两个时标记退化成一点，但不产出 NaN", () => {
+    const html = path([{ x: 3, y: 4 }], { markerStart: "arrow", markerEnd: "arrow" });
+    expect(html).not.toContain("NaN");
+    expect((html.match(/<polygon/g) ?? []).length).toBe(2);
+  });
+
+  test("虚线参数透传；未给时不输出该属性", () => {
+    expect(path([{ x: 0, y: 0 }, { x: 1, y: 0 }], {}, "4 2")).toContain('stroke-dasharray="4 2"');
+    expect(path([{ x: 0, y: 0 }, { x: 1, y: 0 }])).not.toContain("stroke-dasharray");
+  });
+
+  test("markerStart/markerEnd 缺省都是 none，此时只画线", () => {
+    const html = path([{ x: 0, y: 0 }, { x: 1, y: 0 }]);
+    expect(html).not.toContain("<polygon");
+    expect(html).not.toContain("<circle");
+  });
+
+  test("空点集会抛错 —— 现状记录，不是契约", () => {
+    // DeviceGlyph 的调用点都先过 staticDrawPointsForNode(..., 至少两个点的兜底)，
+    // 所以这条路走不到。记下来是为了：哪天有人给它加兜底，这条会红并逼人想清楚
+    // 「没有点该画什么」；而不是让崩溃在别处以别的形式冒出来。
+    expect(() => staticConnectorPath(node(), [], "#111", 2, undefined)).toThrow();
+  });
+});
+
+describe("staticFrameHandles", () => {
+  test("八个控制点分布在框边与四角", () => {
+    const html = markup(staticFrameHandles(node(), 100, 40));
+    expect((html.match(/<circle/g) ?? []).length).toBe(8);
+    const centers = [...html.matchAll(/cx="(-?\d+(?:\.\d+)?)" cy="(-?\d+(?:\.\d+)?)"/g)].map((m) => [m[1], m[2]]);
+    expect(centers).toEqual([
+      ["-50", "-20"], ["0", "-20"], ["50", "-20"], ["50", "0"],
+      ["50", "20"], ["0", "20"], ["-50", "20"], ["-50", "0"]
+    ]);
+  });
+
+  test("描边色取 accentColor，半径随 handleSize 变化", () => {
+    const html = markup(staticFrameHandles(node({ accentColor: "#abc", handleSize: "20" }), 100, 40));
+    expect(html).toContain('stroke="#abc"');
+    expect(html).toContain('r="10"');
+  });
+});
+
+describe("routableLineDeviceRenderLocalPoints", () => {
+  // 这几个函数要 size / position，上面的 node() 故意只带纯计算用字段，
+  // 所以这里单独给一个带几何的夹具。
+  const routable = (params: Record<string, string> = {}, over: Partial<ModelNode> = {}): ModelNode =>
+    node(params, { kind: "ac-routable-line", size: { width: 100, height: 40 }, position: { x: 100, y: 50 }, ...over });
+
+  test("非可路由 kind 返回空数组", () => {
+    expect(routableLineDeviceRenderLocalPoints(node())).toEqual([]);
+  });
+
+  test("没存折线时按 size.width 的两端取默认点（height 不参与）", () => {
+    expect(routableLineDeviceRenderLocalPoints(routable())).toEqual([
+      { x: -50, y: 0 },
+      { x: 50, y: 0 }
+    ]);
+  });
+
+  test("旋转跟着搬：外层几何变换对可路由线路是恒等的（rotate(0) scale(1 1)），旋转只在这里发生一次", () => {
+    // 少了 nodeGeometryTransform 里那个恒等分支，或者这里不转，都会变成转两次 / 一次不转
+    expect(routableLineDeviceRenderLocalPoints(routable({}, { rotation: 90 }))).toEqual([
+      { x: 0, y: -50 },
+      { x: 0, y: 50 }
+    ]);
+  });
+
+  test("存了折线就用存的（_routableLinePoints）", () => {
+    expect(
+      routableLineDeviceRenderLocalPoints(
+        routable({ _routableLinePoints: '[{"x":0,"y":0},{"x":20,"y":0}]' })
+      )
+    ).toEqual([
+      { x: 0, y: 0 },
+      { x: 20, y: 0 }
+    ]);
+  });
+
+  test("结果是相对节点原点的，节点挪到哪儿都不影响", () => {
+    const moved = routable({}, { position: { x: -800, y: 1200 } });
+    expect(routableLineDeviceRenderLocalPoints(moved)).toEqual(
+      routableLineDeviceRenderLocalPoints(routable())
+    );
+  });
+
+  test("坐标经 formatSvgNumber 收敛，不带浮点尾巴", () => {
+    const points = routableLineDeviceRenderLocalPoints(
+      routable({}, { rotation: 30, scaleX: 1.5, scaleY: 1.5 })
+    );
+    for (const point of points) {
+      expect(String(point.x), JSON.stringify(point)).not.toMatch(/\.\d{7,}/);
+      expect(String(point.y), JSON.stringify(point)).not.toMatch(/\.\d{7,}/);
+    }
+  });
+});
+
+describe("DEVICE_GLYPH_DESIGN_LONGEST_SIDE", () => {
+  test("图元设计基准恒为 100", () => {
+    // DeviceGlyph 用它算非静态图元的等比缩放：改这个数等于把画布上所有
+    // 非静态图元一起缩放，描边粗细与字号全变 —— 属于需要被看见的变更。
+    expect(DEVICE_GLYPH_DESIGN_LONGEST_SIDE).toBe(100);
   });
 });
