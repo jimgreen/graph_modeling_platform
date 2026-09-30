@@ -15,6 +15,7 @@ import {
   normalizeSymbolExportSchemes,
   normalizeSymbolViewBox,
   removeSymbolExportScheme,
+  standaloneSymbolsZipFileName,
   symbolExportFileName,
   symbolExportFilterKeysForTemplate,
   terminalAttachmentMarkupForTemplate,
@@ -616,6 +617,30 @@ describe("导出文件名与方案快照", () => {
     const name = symbolExportFileName(new Date(2026, 8, 21, 9, 5, 7));
     expect(name).toBe("component-symbols-20260921-090507.svg");
     expect(name).toMatch(/^[A-Za-z0-9._-]+$/u);
+  });
+
+  test("★ ZIP 落盘名与 .svg 同前缀、只换扩展名（便于成对识别）", () => {
+    const timestamp = new Date(2026, 8, 21, 9, 5, 7);
+    const zip = standaloneSymbolsZipFileName(timestamp);
+    expect(zip).toBe("component-symbols-20260921-090507.zip");
+    expect(zip.replace(/\.zip$/u, ".svg")).toBe(symbolExportFileName(timestamp));
+    expect(zip.endsWith(".zip")).toBe(true);
+    expect(zip).toMatch(/^[A-Za-z0-9._-]+$/u);
+  });
+
+  test("不给时间戳时取**当前**时间（比对解析出的时刻，不钉死具体秒）", () => {
+    const match = /^component-symbols-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\.zip$/u.exec(standaloneSymbolsZipFileName());
+    expect(match).not.toBeNull();
+    const [, year, month, day, hour, minute, second] = match as RegExpExecArray;
+    const stamp = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second)
+    ).getTime();
+    expect(Math.abs(Date.now() - stamp)).toBeLessThan(60_000);
   });
 
   test("归一化方案：丢弃无名项、同名覆盖、缺 id 按名称派生、过滤键去重", () => {
