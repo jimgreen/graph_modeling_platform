@@ -2,9 +2,15 @@ import { readFileSync } from "node:fs";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { canBatchEditParam, PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
+import { boxesIntersect, canBatchEditParam, PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
+import { clampNumber } from "./canvasViewport";
 import { enumValuesForRow } from "./appExtracted/appPersistenceLibraryExport";
-import { createAppHookCallback12, createAppHookCallback77, createAppHookCallback82, createAppHookCallback100, createAppHookCallback109, createAppHookCallback120, createJumpToAssociatedModel, createOpenNodeDoubleClickEditor } from "./appExtracted/appToolbarHookFactories";
+import {
+  createCanvasRectToSurfaceCssRect,
+  createClampFloatingToolbarPosition,
+  createRotateControlAvoidRectFromCanvasPoints,
+  createToolbarOverlapArea,
+  createAppHookCallback12, createAppHookCallback77, createAppHookCallback82, createAppHookCallback100, createAppHookCallback109, createAppHookCallback120, createJumpToAssociatedModel, createOpenNodeDoubleClickEditor } from "./appExtracted/appToolbarHookFactories";
 import {
   applyDeviceTemplateDefinitionOverride,
   createDefaultNode,
@@ -702,5 +708,137 @@ describe("toolbar hook scope ordering", () => {
     expect(registration).toBeGreaterThanOrEqual(0);
     expect(consumption).toBeGreaterThanOrEqual(0);
     expect(registration).toBeLessThan(consumption);
+  });
+});
+
+// 浮动工具栏的几何助手：位置夹取、重叠面积、画布矩形 → CSS 矩形、旋转控件避让矩形。
+// 四个都是 `create*(scope)` 工厂 —— 注入 scope 后是纯几何函数，因此可以在 node 环境直测。
+// 32 处变异跑过、29 处转红。三处**源码等价**（写不出能证伪它们的用例，代码不动）：
+// ① 位置夹取里「max 再与 min 取大」那道保险 —— clampNumber 本身是 Math.max(min, Math.min(max, v))，
+//    min > max 时它已经返回 min；②③ 重叠面积里的 boxesIntersect 提前返回与两个 Math.max(0, …) ——
+//    不相交时交集宽高必为负、被 Math.max 夹成 0，与提前返回 0 逐例相同。
+// 判错的表现：工具栏被夹到视口外、避让框算小导致
+// 旋转控件压在设备上、翻转坐标（缩放为负）时矩形上下颠倒 —— 都是纯观感问题，不报错。
+describe("浮动工具栏几何助手（scope 注入的纯函数）", () => {
+  const VIEWPORT = { left: 0, top: 0, right: 1000, bottom: 800 };
+
+  const createGeometryScope = (over: Record<string, unknown> = {}) => ({
+    clampNumber,
+    boxesIntersect,
+    floatingToolbarPadding: 8,
+    floatingToolbarViewport: VIEWPORT,
+    // 画布 → CSS 的映射这里就用「放大 2 倍并整体平移 100」代表，足以验证映射被用对
+    canvasPointToSurfaceCss: ({ x, y }: { x: number; y: number }) => ({ x: x * 2 + 100, y: y * 2 + 100 }),
+    floatingToolbarScreenScale: 1,
+    ...over
+  });
+
+  describe("createClampFloatingToolbarPosition", () => {
+    const clampOf = (over: Record<string, unknown> = {}) => createClampFloatingToolbarPosition(createGeometryScope(over) as never);
+
+    test("★ 视口内不动，贴边的按 padding 收进来", () => {
+      const clamp = clampOf();
+      expect(clamp(400, 300, 200, 60)).toEqual({ x: 400, y: 300 });
+      // padding 8：左边贴 0 → 收到 8；右边超出 → 收到 1000 - 200 - 8 = 792
+      expect(clamp(0, 0, 200, 60)).toEqual({ x: 8, y: 8 });
+      expect(clamp(990, 790, 200, 60)).toEqual({ x: 792, y: 732 });
+    });
+
+    test("★ 视口比工具栏还小时不会夹出负区间（max 被抬到 min）", () => {
+      const clamp = createClampFloatingToolbarPosition(createGeometryScope({
+        floatingToolbarViewport: { left: 0, top: 0, right: 50, bottom: 40 }
+      }) as never);
+      // 工具栏 200×60 放不下：结果应等于 padding 后的左上角，而不是负数
+      expect(clamp(0, 0, 200, 60)).toEqual({ x: 8, y: 8 });
+    });
+
+    test("视口本身有偏移时按视口算，不是按 0", () => {
+      const clamp = createClampFloatingToolbarPosition(createGeometryScope({
+        floatingToolbarViewport: { left: 100, top: 200, right: 500, bottom: 400 }
+      }) as never);
+      expect(clamp(0, 0, 100, 50)).toEqual({ x: 108, y: 208 });
+    });
+  });
+
+  describe("createToolbarOverlapArea", () => {
+    const overlapOf = () => createToolbarOverlapArea(createGeometryScope() as never);
+    const box = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom });
+
+    test("★ 不相交时是 0", () => {
+      expect(overlapOf()(box(0, 0, 10, 10), box(20, 20, 30, 30))).toBe(0);
+      expect(overlapOf()(box(0, 0, 10, 10), box(10, 0, 20, 10))).toBe(0);
+    });
+
+    test("★ 相交时是交集面积", () => {
+      expect(overlapOf()(box(0, 0, 10, 10), box(5, 5, 20, 20))).toBe(25);
+      expect(overlapOf()(box(0, 0, 100, 100), box(10, 10, 20, 20))).toBe(100);
+    });
+
+    test("包含关系按交集算（不是被包含者的面积 × 2）", () => {
+      expect(overlapOf()(box(0, 0, 100, 100), box(20, 20, 30, 30))).toBe(100);
+    });
+  });
+
+  describe("createCanvasRectToSurfaceCssRect", () => {
+    const toCssRect = (over: Record<string, unknown> = {}) =>
+      createCanvasRectToSurfaceCssRect(createGeometryScope(over) as never);
+
+    test("★ 走 scope 的画布 → CSS 映射（放大 2 倍 + 平移 100）", () => {
+      expect(toCssRect()({ left: 0, top: 0, right: 10, bottom: 20 })).toEqual({
+        left: 100,
+        right: 120,
+        top: 100,
+        bottom: 140
+      });
+    });
+
+    test("★ padding 向四面各扩一次", () => {
+      expect(toCssRect()({ left: 0, top: 0, right: 10, bottom: 20 }, 5)).toEqual({
+        left: 95,
+        right: 125,
+        top: 95,
+        bottom: 145
+      });
+    });
+
+    test("★ 映射把轴翻过来时也能纠正（min / max 各取一次）", () => {
+      const flipped = createCanvasRectToSurfaceCssRect(createGeometryScope({
+        canvasPointToSurfaceCss: ({ x, y }: { x: number; y: number }) => ({ x: -x, y: -y })
+      }) as never);
+      expect(flipped({ left: 0, top: 0, right: 10, bottom: 20 })).toEqual({ left: -10, right: 0, top: -20, bottom: 0 });
+    });
+  });
+
+  describe("createRotateControlAvoidRectFromCanvasPoints", () => {
+    const avoidOf = (over: Record<string, unknown> = {}) => {
+      const scope = createGeometryScope(over);
+      return createRotateControlAvoidRectFromCanvasPoints({
+        ...scope,
+        canvasRectToSurfaceCssRect: createCanvasRectToSurfaceCssRect(scope as never)
+      } as never);
+    };
+
+    test("★ 先取点位包围盒（各向留 12），再按缩放补 padding", () => {
+      // 画布包围盒 ±12 → (-12,-12)~(22,32)；映射 ×2 + 100 → (76,76)~(144,164)；再向四面各扩 6
+      expect(avoidOf()([{ x: 0, y: 0 }, { x: 10, y: 20 }])).toEqual({
+        left: 70,
+        right: 150,
+        top: 70,
+        bottom: 170
+      });
+    });
+
+    test("padding 随屏幕缩放放大，但有 4 的下限", () => {
+      const wide = avoidOf({ floatingToolbarScreenScale: 2 })([{ x: 0, y: 0 }]);
+      const narrow = avoidOf({ floatingToolbarScreenScale: 0.1 })([{ x: 0, y: 0 }]);
+      const width = (rect: { left: number; right: number }) => rect.right - rect.left;
+      expect(width(wide)).toBeGreaterThan(width(narrow));
+      // 缩放 0.1 → 6*0.1 = 0.6 → 被下限 4 兜住，所以两者仍不等但 narrow 已是 4
+      expect(width(narrow) / 2 - 24).toBe(4);
+    });
+
+    test("单点也成一个矩形（min / max 同值）", () => {
+      expect(avoidOf()([{ x: 0, y: 0 }])).toEqual({ left: 70, right: 130, top: 70, bottom: 130 });
+    });
   });
 });
