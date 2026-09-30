@@ -3,10 +3,11 @@ import {
   PARAM_LABELS,
   fitWholeCanvasViewBox,
   isBatchGraphCommonParamKey,
-  paramOptionsForSection
+  paramOptionsForSection,
+  pointOnBusForSnap
 } from "./appExtracted/appCoreCanvasUtilities";
 import { DEVICE_VISUAL_PARAM_KEYS } from "./deviceVisualParams";
-import { BUILTIN_VOLTAGE_LEVELS } from "./model";
+import { BUILTIN_VOLTAGE_LEVELS, type ModelNode } from "./model";
 
 // 左右面板是浮动层（styles.css .floating-side-panel），画布区占满工作区，
 // 所以适配视图必须扣掉面板宽度，否则画布会被面板压住。
@@ -127,5 +128,81 @@ describe("voltage base parameter options", () => {
   test("non-voltage params are unaffected by voltage base handling", () => {
     expect(paramOptionsForSection("control_type")).toEqual(["PV", "PQ", "PH", "P", "V", "I", "Q", "Z", "DCV", "ACV", "ACP", "PQQ"]);
     expect(paramOptionsForSection("i_control_type", "ACACConverter")).toEqual(["PQ", "PV", "PH", "NONE"]);
+  });
+});
+
+// pointOnBusForSnap：连线时判定「这个点是否吸在母线上」，并给出吸附点。
+// 判错的后果是连线吸不到母线、或吸到母线之外 —— 纯交互观感，不报错。
+// 之前只有交互层的间接引用，这个函数本身零断言。
+// 9 个用例、12 处变异跑过、10 处转红。两处**源码等价**（旋转角取正负、局部 y 取反）：判定用的是
+// 「以母线中心为原点的对称矩形」，旋转角换个符号只会把局部坐标取反，|x| / |y| 的量级不变 ——
+// 命中与否观察不到差别。旋转方向真正起作用的是后面的 projectPointToBusCenterline，那条另算。
+describe("pointOnBusForSnap：母线吸附命中判定", () => {
+  const bus = (over: Partial<ModelNode> = {}) =>
+    ({
+      id: "bus1",
+      kind: "ac-bus",
+      name: "母线",
+      position: { x: 100, y: 100 },
+      size: { width: 200, height: 20 },
+      rotation: 0,
+      scale: 1,
+      params: {},
+      terminals: [],
+      ...over
+    }) as unknown as ModelNode;
+
+  test("★ 非母线一律不命中（返回 null）", () => {
+    expect(pointOnBusForSnap(bus({ kind: "ac-line" }), { x: 100, y: 100 })).toBeNull();
+    expect(pointOnBusForSnap(bus({ kind: "ac-breaker" }), { x: 100, y: 100 })).toBeNull();
+  });
+
+  test("★ 母线中心附近命中，并投影到中轴线上", () => {
+    const hit = pointOnBusForSnap(bus(), { x: 160, y: 106 });
+    expect(hit).not.toBeNull();
+    // 投影后 y 回到母线中轴（100）
+    expect(hit?.y).toBe(100);
+    expect(hit?.x).toBe(160);
+  });
+
+  test("★ 容差内算命中、容差外不命中（横向）", () => {
+    const node = bus();
+    // 母线半宽 100，容差默认 18 → |局部 x| <= 118 命中
+    // 可连接半宽 = 半宽 × (1 − 2 × 0.1 禁绘内缩) = 100 × 0.8 = 80；再加容差 18 → 98
+    expect(pointOnBusForSnap(node, { x: 100 + 97, y: 100 })).not.toBeNull();
+    expect(pointOnBusForSnap(node, { x: 100 + 99, y: 100 })).toBeNull();
+  });
+
+  test("★ 纵向用「半高 + 容差」，且半高有 4 的下限", () => {
+    const node = bus({ size: { width: 200, height: 2 } });
+    // 高 2 → 半高取下限 4，再加容差 18 → |y - 100| <= 22 命中
+    expect(pointOnBusForSnap(node, { x: 100, y: 100 + 21 })).not.toBeNull();
+    expect(pointOnBusForSnap(node, { x: 100, y: 100 + 23 })).toBeNull();
+  });
+
+  test("★ 容差可以传 0（严格落在母线框内才算）", () => {
+    const node = bus();
+    expect(pointOnBusForSnap(node, { x: 100 + 117, y: 100 }, 0)).toBeNull();
+    expect(pointOnBusForSnap(node, { x: 100 + 50, y: 100 }, 0)).not.toBeNull();
+  });
+
+  test("★ 母线带旋转时按局部坐标判定（未旋转的点会落到框外）", () => {
+    const rotated = bus({ rotation: 90 });
+    // 旋转 90° 后，母线的「长边」变成竖直：横向超出即不命中
+    expect(pointOnBusForSnap(rotated, { x: 100 + 119, y: 100 }, 0)).toBeNull();
+    expect(pointOnBusForSnap(rotated, { x: 100, y: 100 + 50 }, 0)).not.toBeNull();
+  });
+
+  test("缩放过的母线按缩放后的尺寸判定", () => {
+    const scaled = bus({ scale: 2 });
+    // 半宽 100 → 200，容差 18 → 218 内命中
+    expect(pointOnBusForSnap(scaled, { x: 100 + 170, y: 100 })).not.toBeNull();
+    expect(pointOnBusForSnap(scaled, { x: 100 + 190, y: 100 })).toBeNull();
+  });
+
+  test("负缩放按绝对值算（方向不该影响能否吸附）", () => {
+    const negative = bus({ scale: -2 });
+    expect(pointOnBusForSnap(negative, { x: 100 + 170, y: 100 })).not.toBeNull();
+    expect(pointOnBusForSnap(negative, { x: 100 + 190, y: 100 })).toBeNull();
   });
 });
