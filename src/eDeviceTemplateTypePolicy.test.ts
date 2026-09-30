@@ -1,10 +1,35 @@
 import { describe, expect, test } from "vitest";
 import {
+  E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES,
   eDeviceTemplateNetworkTypeMismatchMessage,
   eDeviceTemplateSingleTypeMismatchMessage
 } from "./eDeviceTemplateTypePolicy";
+import { PREDEFINED_E_DEVICE_TEMPLATES } from "./predefinedEDeviceTemplates";
 
 describe("E 文件接口模板类型限制策略", () => {
+  test("限制表里的每个模板名都真实存在（防打错字留下永不生效的死配置）", () => {
+    // 方向只能是「策略表 ⊆ 预定义模板表」：反过来不成立 —— 预定义模板新增一个
+    // 而策略表没补是合法的（表里没有该 key 视为不限制类型），但策略表里写了个
+    // 不存在的模板名则永远匹配不上，是死配置。
+    // Set<string> 显式加宽：清单是 const 元组，不加宽时 name 是字面量联合，
+    // 与字符串比较会报 TS2345。
+    const known = new Set<string>(PREDEFINED_E_DEVICE_TEMPLATES.map((template) => template.name));
+    for (const name of Object.keys(E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES)) {
+      expect(known.has(name), `策略表里的「${name}」不在预定义 E 模板清单里`).toBe(true);
+    }
+  });
+
+  test("限制的类型名都在模型类型集合内（防写出永不匹配的类型）", () => {
+    // 模型类型全集在 model.ts 定义；这里用本仓其余地方用到的三类做下限校验。
+    const knownTypes = new Set(["厂站", "馈线", "台区"]);
+    for (const [template, types] of Object.entries(E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES)) {
+      expect(types.length, `「${template}」没有写任何允许类型`).toBeGreaterThan(0);
+      for (const type of types) {
+        expect(knownTypes.has(type), `「${template}」写了未知模型类型「${type}」`).toBe(true);
+      }
+    }
+  });
+
   describe("eDeviceTemplateSingleTypeMismatchMessage（主流程单模型）", () => {
     test("匹配类型返回 null", () => {
       expect(eDeviceTemplateSingleTypeMismatchMessage("国网E格式", "厂站")).toBeNull();
