@@ -84,6 +84,45 @@ describe("terminalVbaseFallbackValue", () => {
   test("非变压器设备不受两绕组分支影响", () => {
     expect(terminalVbaseFallbackValue(node("ac-load", { vbase: "10" }), 0)).toBe("10");
   });
+
+  // params 是字符串字典，「未填」有两种存法：空串（用户清空输入框，createUpdateParam
+  // 存的是提交上去的原串）与 "0"（模板 typicalValue 的默认值）。`??` 只挡 undefined，
+  // 遇到这两种都会提前短路，把后面的别名键 / 通用键变成永不触发的死代码。
+  test("i_vbase 被清空成空串时继续往别名键找（不被空串短路）", () => {
+    const n = node("ac-transformer", { i_vbase: "", high_vbase: "110", j_vbase: "35" });
+    expect(terminalVbaseFallbackValue(n, 0)).toBe("110");
+    expect(terminalVbaseFallbackValue(n, 1)).toBe("35");
+  });
+
+  test("i_vbase 为 '0' 时同样继续往别名键找", () => {
+    const n = node("ac-transformer", { i_vbase: "0", source_vbase: "220", j_vbase: "0", target_vbase: "10" });
+    expect(terminalVbaseFallbackValue(n, 0)).toBe("220");
+    expect(terminalVbaseFallbackValue(n, 1)).toBe("10");
+  });
+
+  test("两侧都空时兜到通用键 vbase（空串不再吃掉 vbase）", () => {
+    expect(terminalVbaseFallbackValue(node("ac-transformer", { i_vbase: "", j_vbase: "", vbase: "110" }), 0)).toBe("110");
+    expect(terminalVbaseFallbackValue(node("ac-transformer", { i_vbase: "", j_vbase: "", voltage_level: "35" }), 0)).toBe("35");
+    expect(terminalVbaseFallbackValue(node("ac-transformer", { i_vbase: "", j_vbase: "", rated_voltage: "10" }), 0)).toBe("10");
+  });
+
+  test("三绕组分侧键被清空时回退到 legacy 侧键", () => {
+    const n = node("ac-three-winding-transformer", { i_vbase: "", k_vbase: "0", j_vbase: "", high_vbase: "110", medium_vbase: "35", low_vbase: "10" }, 3);
+    expect([0, 1, 2].map((i) => terminalVbaseFallbackValue(n, i))).toEqual(["110", "35", "10"]);
+  });
+
+  test("三绕组中性别名缺失时回退到通用 vbase", () => {
+    const n = node("ac-three-winding-transformer", { i_vbase: "110", neutral_vbase: "", vbase: "35" }, 4);
+    expect(terminalVbaseFallbackValue(n, 3)).toBe("35");
+  });
+
+  test("带单位的写在这一层就归一成纯数字（下游不用再洗一遍）", () => {
+    expect(terminalVbaseFallbackValue(node("ac-transformer", { high_vbase: "35 kV" }), 0)).toBe("35");
+  });
+
+  test("值非数字（'abc'）时跳过它继续找下一个键", () => {
+    expect(terminalVbaseFallbackValue(node("ac-transformer", { i_vbase: "abc", source_vbase: "220" }), 0)).toBe("220");
+  });
 });
 
 describe("voltageColorKeyForTerminal", () => {
@@ -123,5 +162,17 @@ describe("voltageColorKeyForTerminal", () => {
     const key = (vbase: string) => voltageColorKeyForTerminal(n, terminal("ac", vbase, 0), 0);
     expect(key("35 kV")).toBe("ac:35");
     expect(key("35")).toBe("ac:35");
+  });
+
+  // 端到端口径：params 里主键被清空后，设备仍要能按别名键拿到电压上色，
+  // 否则用户「清空再填回别名」这类操作会让电压配色整片消失。
+  test("params 主键被清空成空串时仍按别名键上色", () => {
+    const n = node("ac-transformer", { i_vbase: "", high_vbase: "35" });
+    expect(voltageColorKeyForTerminal(n, terminal("ac", "", 0), 0)).toBe("ac:35");
+  });
+
+  test("params 主键为 '0' 时仍按别名键上色", () => {
+    const n = node("ac-transformer", { i_vbase: "0", high_vbase: "35" });
+    expect(voltageColorKeyForTerminal(n, terminal("ac", "", 0), 0)).toBe("ac:35");
   });
 });

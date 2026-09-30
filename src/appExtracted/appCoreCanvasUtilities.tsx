@@ -24,6 +24,7 @@ import {
   HYDROGEN_STORAGE_CONTROL_TYPES,
   ELECTRIC_HEAT_COUPLING_CONTROL_TYPES,
   E_SECTION_COLUMNS,
+  firstNonZeroVoltageBase,
   getNodeScaleX,
   getNodeScaleY,
   getBusTerminalType,
@@ -1492,17 +1493,28 @@ export const ELECTRIC_COLOR_TYPE_LABELS: Record<"ac" | "dc", string> = {
 export const isElectricPaletteType = (type?: TerminalType): type is "ac" | "dc" => type === "ac" || type === "dc";
 
 export const terminalVbaseFallbackValue = (node: ModelNode, terminalIndex: number) => {
+  // params 是字符串字典，「未填」有两种存法：空串（用户清空输入框，createUpdateParam
+  // 存的是提交上去的原串）与 "0"（模板 typicalValue 的默认值）。`??` 只挡 undefined，
+  // 遇到这两种都会提前短路，把后面的别名键 / 通用键变成永不触发的死代码。
+  // 口径对齐 model-eexport 的 firstNonZeroVoltageBase：归一后非空且非 0 才算数，
+  // 返回值也就顺带归一成纯数字，下游不用再洗一遍。
   if (isThreeWindingTransformerKind(node.kind)) {
-    return [
-      node.params.i_vbase ?? node.params.high_vbase,
-      node.params.k_vbase ?? node.params.medium_vbase,
-      node.params.j_vbase ?? node.params.low_vbase,
-      node.params.neutral_vbase
-    ][terminalIndex] ?? node.params.vbase ?? "";
+    const sideValues = [
+      [node.params.i_vbase, node.params.high_vbase],
+      [node.params.k_vbase, node.params.medium_vbase],
+      [node.params.j_vbase, node.params.low_vbase],
+      [node.params.neutral_vbase]
+    ][terminalIndex];
+    return firstNonZeroVoltageBase([...(sideValues ?? []), node.params.vbase]);
   }
-  const sourceSide = node.params.i_vbase ?? node.params.source_vbase ?? node.params.high_vbase;
-  const targetSide = node.params.j_vbase ?? node.params.target_vbase ?? node.params.low_vbase;
-  return (terminalIndex === 0 ? sourceSide : targetSide) ?? node.params.vbase ?? node.params.voltage_level ?? node.params.rated_voltage ?? "";
+  return firstNonZeroVoltageBase([
+    ...(terminalIndex === 0
+      ? [node.params.i_vbase, node.params.source_vbase, node.params.high_vbase]
+      : [node.params.j_vbase, node.params.target_vbase, node.params.low_vbase]),
+    node.params.vbase,
+    node.params.voltage_level,
+    node.params.rated_voltage
+  ]);
 };
 
 export const voltageColorKeyForTerminal = (node: ModelNode, terminal: ModelNode["terminals"][number], terminalIndex: number) => {
