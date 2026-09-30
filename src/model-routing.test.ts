@@ -5,6 +5,8 @@ import { DeviceGlyph } from "./DeviceGlyph";
 import { createRenderStaticBoxDrawingPreview } from "./appExtracted/appCanvasInteractionFactories";
 import {
   alignNodes,
+  buildManualConnectionPreviewPath,
+  buildManualConnectionPreviewRoute,
   buildTopology,
   buildElementTree,
   buildEFileExport,
@@ -94,7 +96,6 @@ import {
   rerouteEdgesAroundMovedNodes,
   routeIntersectsEndpointNodeBodies,
   routeIntersectsSpecificNodes,
-  buildManualConnectionPreviewRoute,
   validateConnectionEdgeRoute,
   validateConnectionEndpointRules,
   voltageBaseSettingModeForNode,
@@ -3538,5 +3539,134 @@ describe("getTerminalVoltageLevel：按端子取电压等级", () => {
     const before = JSON.stringify(node);
     getTerminalVoltageLevel(node, "i");
     expect(JSON.stringify(node)).toBe(before);
+  });
+});
+
+// buildManualConnectionPreviewPath：手工连线（用户点几个折点再连到目标端子）拖动时
+// 画在画布上的那条预览线的 d 属性。此前它与 buildManualConnectionPreviewRoute 都零断言。
+// 判错的后果：预览线与真正落库的路由不一致 —— 用户看着是折线、放下手变成另一条线，不报错。
+//
+// 26 处变异逐条跑过，20 处转红。剩下 4 处 NOT-CAUGHT 逐个查清了，不算本文件覆盖：
+// ① 源码等价两处 —— 把外层的 orthogonalizeRouteKeepingCollinear 去掉、或与 simplify 颠倒顺序，
+//    都观察不到差别，因为 simplifyRoutePreservingEndpointStubs 内部第一件事就是再正交化一次；
+// ② compactRoutePreservingEndpointStubs 里两处 samePoint 去重 —— 经正交化后重复点已被并掉，
+//    从这个入口喂重复折点也观察不到差异，写不出能证伪它们的用例。
+// 补过的真缺口：bounds 透传（原先只测 route 那一层）、夹取写成 || 链会漏掉 0 坐标那点、
+// 四点以上的共线 / 重复中间折点是否被压、pointsToOrthogonalPath 的空数组分支。
+describe("buildManualConnectionPreviewPath：手工连线预览路径", () => {
+  const P = (x: number, y: number) => ({ x, y });
+  const segCount = (d: string) => (d.match(/ L /g) ?? []).length;
+  /** 从 d 属性里把点读回来（"M x y L x y …"）。 */
+  const pointsFromPath = (d: string): Point[] =>
+    d.split(/(?: M |  L )/).slice(1).map((pair) => {
+      const [x, y] = pair.trim().split(" ").map(Number);
+      return { x, y };
+    });
+
+  test("★ 路径就是把 route 正交串接起来（两层接线口径）", () => {
+    const source = P(0, 0);
+    const manual = [P(60, 80)];
+    const target = P(160, 40);
+    expect(buildManualConnectionPreviewPath(source, manual, target)).toBe(
+      pointsToOrthogonalPath(buildManualConnectionPreviewRoute(source, manual, target))
+    );
+  });
+
+  test("水平连线只有一段（M + 一个 L）", () => {
+    expect(buildManualConnectionPreviewPath(P(0, 0), [], P(120, 0))).toBe("M 0 0 L 120 0");
+  });
+
+  test("★ L 段数恒等于 route 点数减一", () => {
+    const cases: Array<[Point, Point[], Point]> = [
+      [P(0, 0), [], P(120, 0)],
+      [P(0, 0), [], P(120, 90)],
+      [P(10, 10), [P(70, 10), P(70, 90)], P(130, 90)],
+      [P(0, 0), [P(0, 50), P(100, 50), P(100, 0)], P(50, 0)]
+    ];
+    for (const [source, manual, target] of cases) {
+      const route = buildManualConnectionPreviewRoute(source, manual, target);
+      expect(route.length, `${JSON.stringify([source, manual, target])}`).toBeGreaterThanOrEqual(2);
+      expect(segCount(buildManualConnectionPreviewPath(source, manual, target)), JSON.stringify([source, manual, target])).toBe(route.length - 1);
+    }
+  });
+
+  test("★ 每一段都是水平或垂直（正交路线的硬要求）", () => {
+    for (const [source, manual, target] of [
+      [P(0, 0), [], P(120, 90)],
+      [P(10, 10), [P(70, 10), P(70, 90)], P(130, 90)],
+      [P(5, 5), [P(95, 33), P(12, 88)], P(140, 70)]
+    ] as Array<[Point, Point[], Point]>) {
+      const route = buildManualConnectionPreviewRoute(source, manual, target);
+      for (let index = 1; index < route.length; index += 1) {
+        const previous = route[index - 1];
+        const current = route[index];
+        expect(current.x === previous.x || current.y === previous.y, `${index}: ${JSON.stringify([previous, current])}`).toBe(true);
+      }
+    }
+  });
+
+  test("首尾就是给定的起点与终点（简化不许把端点吃掉）", () => {
+    const source = P(10, 10);
+    const target = P(130, 90);
+    const route = buildManualConnectionPreviewRoute(source, [P(70, 10), P(70, 90)], target);
+    expect(route[0]).toEqual(source);
+    expect(route[route.length - 1]).toEqual(target);
+  });
+
+  test("★ 给了 bounds 就把整条线夹进画布并取整（不给则不夹）", () => {
+    const bounds = { width: 200, height: 100 };
+    const clamped = buildManualConnectionPreviewRoute(P(-40, 300), [P(500, -20)], P(120, 80), bounds);
+    for (const point of clamped) {
+      expect(point.x, JSON.stringify(point)).toBeGreaterThanOrEqual(0);
+      expect(point.x, JSON.stringify(point)).toBeLessThanOrEqual(bounds.width);
+      expect(point.y, JSON.stringify(point)).toBeGreaterThanOrEqual(0);
+      expect(point.y, JSON.stringify(point)).toBeLessThanOrEqual(bounds.height);
+      expect(Number.isInteger(point.x) && Number.isInteger(point.y), JSON.stringify(point)).toBe(true);
+    }
+    const free = buildManualConnectionPreviewRoute(P(-40, 300), [], P(120, 80));
+    expect(free.some((point) => point.x < 0 || point.y > 100)).toBe(true);
+  });
+
+  test("折线的手工点参与路径（点数不少于手工点 + 2）", () => {
+    const manual = [P(50, 50), P(90, 50)];
+    const route = buildManualConnectionPreviewRoute(P(0, 0), manual, P(120, 120));
+    expect(route.length).toBeGreaterThanOrEqual(manual.length + 2 - 1);
+  });
+
+  test("三点以内的手工折点原样保留（不压缩）", () => {
+    expect(buildManualConnectionPreviewPath(P(0, 0), [P(50, 0)], P(100, 0))).toBe("M 0 0 L 50 0 L 100 0");
+  });
+
+  test("★ 超过四个点时，共线的中间折点被压掉（首尾两点仍受保护）", () => {
+    // 五个点，(50,50) 与前后两点同在一条竖线上 —— 压掉它，不动受保护的首尾
+    const route = buildManualConnectionPreviewRoute(P(0, 0), [P(50, 0), P(50, 50), P(50, 100)], P(100, 100));
+    expect(route).toEqual([P(0, 0), P(50, 0), P(50, 100), P(100, 100)]);
+    expect(buildManualConnectionPreviewPath(P(0, 0), [P(50, 0), P(50, 50), P(50, 100)], P(100, 100))).toBe(
+      "M 0 0 L 50 0 L 50 100 L 100 100"
+    );
+  });
+
+  test("★ 重复的中间折点被压成一个", () => {
+    const route = buildManualConnectionPreviewRoute(P(0, 0), [P(50, 0), P(50, 0), P(50, 100)], P(100, 100));
+    expect(route).toEqual([P(0, 0), P(50, 0), P(50, 100), P(100, 100)]);
+  });
+
+  test("★ 走 path 这一层也一样按 bounds 夹（不是只有 route 夹）", () => {
+    const bounds = { width: 100, height: 100 };
+    const points = pointsFromPath(buildManualConnectionPreviewPath(P(500, 0), [], P(0, 500), bounds));
+    for (const point of points) {
+      expect(point.x, JSON.stringify(point)).toBeLessThanOrEqual(bounds.width);
+      expect(point.y, JSON.stringify(point)).toBeLessThanOrEqual(bounds.height);
+      expect(point.x, JSON.stringify(point)).toBeGreaterThanOrEqual(0);
+      expect(point.y, JSON.stringify(point)).toBeGreaterThanOrEqual(0);
+    }
+    // 不给 bounds 时同一个输入保留原始坐标
+    expect(buildManualConnectionPreviewPath(P(500, 0), [], P(0, 500))).not.toBe(
+      buildManualConnectionPreviewPath(P(500, 0), [], P(0, 500), bounds)
+    );
+  });
+
+  test("pointsToOrthogonalPath：空数组返回空串", () => {
+    expect(pointsToOrthogonalPath([])).toBe("");
   });
 });
