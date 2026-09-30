@@ -6,8 +6,10 @@ import { createRenderStaticBoxDrawingPreview } from "./appExtracted/appCanvasInt
 import { apiPath } from "./config";
 import {
   alignNodes,
+  buildModelAssociationProjectIndexes,
   buildTopology,
   buildElementTree,
+  modelAssociationProjectIndexesForSchemes,
   buildEFileExport,
   buildEDeviceParameterFile,
   buildEDeviceDefinitionFile,
@@ -4129,4 +4131,129 @@ test("skips zero or blank voltage bases when checking model range", () => {
   const errors = validateTopology([blank, zero], [], { modelType: "厂站" });
   expect(errors.filter((error) => error.type === "voltage-level-out-of-model-range")).toHaveLength(0);
 });
+});
+
+// 模型关联项目索引（buildModelAssociationProjectIndexes / ...ForSchemes）：
+// 把「有哪些模型、按 modelType 分组、idx 是几」编成三张表，交给 validateTopology 判断
+// 「这条连线/这个量测引用的模型是不是真存在」。消费侧（validateTopology 带索引校验）
+// 已有覆盖，这里补的是**编表**本身：哪些条目收、哪些丢弃、怎么排序。
+// 判错的后果：模型关联校验放行了不存在的模型，或把存在的误报成不存在 —— 都不抛错。
+//
+// 17 处变异逐条跑过、全部转红。其中「去重」那条要同时改三处（Set 声明 + add + 展开）才造得出来，
+// 单独改任何一处都只是让代码崩掉、证明不了断言 —— 这一点记下来，免得日后以为它没被验证。
+describe("模型关联项目索引：编表口径", () => {
+  const idx = (modelType: unknown, value: unknown) => buildModelAssociationProjectIndexes([{ modelType, idx: value }]);
+  const P = (id: string, modelType: string, index: number) => ({ id, name: id, project: { name: id, modelType, idx: index } });
+
+  test("空输入 → 三类都是空数组（键集固定）", () => {
+    expect(buildModelAssociationProjectIndexes([])).toEqual({ "厂站": [], "馈线": [], "台区": [] });
+  });
+
+  test("★ 三类各自收自己的 idx，互不串", () => {
+    const result = buildModelAssociationProjectIndexes([
+      { modelType: "厂站", idx: 1 },
+      { modelType: "馈线", idx: 2 },
+      { modelType: "台区", idx: 3 }
+    ]);
+    expect(result).toEqual({ "厂站": ["1"], "馈线": ["2"], "台区": ["3"] });
+  });
+
+  test("★ modelType 带前后空白照样命中（先 trim）", () => {
+    expect(idx("  馈线  ", 5)["馈线"]).toEqual(["5"]);
+  });
+
+  test("★ 未知 modelType 一律丢弃（不新建分类）", () => {
+    const result = buildModelAssociationProjectIndexes([
+      { modelType: "变电站", idx: 1 },
+      { modelType: "", idx: 2 },
+      { modelType: undefined, idx: 3 },
+      { modelType: "FEEDER", idx: 4 },
+      { modelType: 5, idx: 5 }
+    ]);
+    expect(result).toEqual({ "厂站": [], "馈线": [], "台区": [] });
+  });
+
+  test("★ 原型链上的名字（toString / constructor）不算分类（用 hasOwnProperty 而不是 in）", () => {
+    const result = buildModelAssociationProjectIndexes([
+      { modelType: "toString", idx: 1 },
+      { modelType: "constructor", idx: 2 }
+    ]);
+    expect(result).toEqual({ "厂站": [], "馈线": [], "台区": [] });
+  });
+
+  test("★ idx 必须是正整数：0 / 负数 / 小数 / 非数字 / 缺失全丢", () => {
+    const result = buildModelAssociationProjectIndexes([
+      { modelType: "厂站", idx: 0 },
+      { modelType: "厂站", idx: -1 },
+      { modelType: "厂站", idx: 1.5 },
+      { modelType: "厂站", idx: "abc" },
+      { modelType: "厂站", idx: "" },
+      { modelType: "厂站" },
+      { modelType: "厂站", idx: 7 }
+    ]);
+    expect(result["厂站"]).toEqual(["7"]);
+  });
+
+  test("★ 数字串归一成整数（007 → 7，字符串 12 与数字 12 同一条）", () => {
+    expect(idx("台区", "007")["台区"]).toEqual(["7"]);
+    const both = buildModelAssociationProjectIndexes([
+      { modelType: "台区", idx: "12" },
+      { modelType: "台区", idx: 12 }
+    ]);
+    expect(both["台区"]).toEqual(["12"]);
+  });
+
+  test("重复条目按 idx 去重", () => {
+    const result = buildModelAssociationProjectIndexes([
+      { modelType: "馈线", idx: 1 },
+      { modelType: "馈线", idx: 1 },
+      { modelType: "厂站", idx: 1 }
+    ]);
+    expect(result).toEqual({ "厂站": ["1"], "馈线": ["1"], "台区": [] });
+  });
+
+  test("★ 按数值升序排，不是字典序（10 排在 9 之后）", () => {
+    const result = buildModelAssociationProjectIndexes([
+      { modelType: "厂站", idx: 10 },
+      { modelType: "厂站", idx: 9 },
+      { modelType: "厂站", idx: 2 }
+    ]);
+    expect(result["厂站"]).toEqual(["2", "9", "10"]);
+  });
+
+  test("从方案树取：跨所有层级汇总 projects", () => {
+    const schemes = [
+      {
+        id: "s1",
+        name: "根一",
+        projects: [P("p1", "厂站", 1), P("p2", "馈线", 3)],
+        children: [
+          { id: "s1a", name: "子A", projects: [P("p3", "台区", 2)] },
+          { id: "s1b", name: "子B", projects: [], children: [{ id: "s1b1", name: "孙B1", projects: [P("p4", "厂站", 2)] }] }
+        ]
+      },
+      { id: "s2", name: "根二", projects: [P("p5", "馈线", 1)] }
+    ];
+    expect(modelAssociationProjectIndexesForSchemes(schemes as never)).toEqual({
+      "厂站": ["1", "2"],
+      "馈线": ["1", "3"],
+      "台区": ["2"]
+    });
+  });
+
+  test("方案树里没有项目时是空表（不是 undefined）", () => {
+    expect(modelAssociationProjectIndexesForSchemes([{ id: "s1", name: "根", projects: [], children: [] }] as never)).toEqual({
+      "厂站": [],
+      "馈线": [],
+      "台区": []
+    });
+    expect(modelAssociationProjectIndexesForSchemes([])).toEqual({ "厂站": [], "馈线": [], "台区": [] });
+  });
+
+  test("★ 方案侧同样吃 idx 口径（project.idx 为 0 / 字符串时怎么算）", () => {
+    const schemes = [
+      { id: "s1", name: "根", projects: [P("p1", "厂站", 0), P("p2", "厂站", "3" as never)] }
+    ];
+    expect(modelAssociationProjectIndexesForSchemes(schemes as never)["厂站"]).toEqual(["3"]);
+  });
 });
