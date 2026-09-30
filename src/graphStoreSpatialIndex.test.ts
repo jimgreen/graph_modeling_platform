@@ -34,9 +34,14 @@
 // ③ **NaN 坐标的节点被整体跳过**（桶键为空数组）—— 不是抛异常，是静默丢弃。
 //    这意味着 NaN 节点在任何视口查询里都**查不到**（等于永远不渲染）。
 import { describe, expect, test } from "vitest";
-import { buildGraphNodeSpatialIndex } from "./graphStore";
-import type { GraphNodeSpatialIndex } from "./graphStore";
-import type { ModelNode } from "./model";
+import {
+  buildGraphNodeSpatialIndex,
+  createGraphStore,
+  graphStorePatchNodes,
+  queryGraphStoreNodeSpatialIndex
+} from "./graphStore";
+import type { GraphNodeSpatialIndex, GraphRenderBounds } from "./graphStore";
+import { calculateNodeVisualBounds, getNodeScaleX, getNodeScaleY, type ModelNode } from "./model";
 
 const node = (id: string, x: number, y: number, width = 10, height = 10, scale = 1): ModelNode =>
   ({
@@ -258,3 +263,189 @@ describe("默认 bucketSize", () => {
     expect(keysOf(explicitSmall, "a").length).not.toBe(keysOf(withDefault, "a").length);
   });
 });
+
+// queryGraphStoreNodeSpatialIndex 是视口裁剪的入口（App.tsx / appCanvasViewportBatch /
+// appGraphMeasurementFactories / appStateBatch 共 5 处生产调用，此前零测试）。
+// 判错的后果都不抛异常：漏查 → 视口内的节点凭空消失（画面缺图元）；多查 → 白渲染一批。
+// 所以下面全部用「独立重算的包围盒 + 暴力相交过滤」当 oracle，而不是拿索引自己的 nodeBoundsById 当答案。
+describe("queryGraphStoreNodeSpatialIndex", () => {
+  /** 独立复算 graphNodeRenderBounds：标签包围盒与「半对角 + 24」的方形取并集。 */
+  const renderBoundsOf = (target: ModelNode): GraphRenderBounds => {
+    const labelAware = calculateNodeVisualBounds(target, 24);
+    const halfDiagonal = Math.hypot(target.size.width * getNodeScaleX(target), target.size.height * getNodeScaleY(target)) / 2 + 24;
+    return {
+      left: Math.min(labelAware.left, target.position.x - halfDiagonal),
+      right: Math.max(labelAware.right, target.position.x + halfDiagonal),
+      top: Math.min(labelAware.top, target.position.y - halfDiagonal),
+      bottom: Math.max(labelAware.bottom, target.position.y + halfDiagonal)
+    };
+  };
+
+  const intersects = (first: GraphRenderBounds, second: GraphRenderBounds) =>
+    first.left <= second.right && first.right >= second.left && first.top <= second.bottom && first.bottom >= second.top;
+
+  const bruteForceIds = (nodes: readonly ModelNode[], bounds: GraphRenderBounds) =>
+    nodes.filter((target) => intersects(renderBoundsOf(target), bounds)).map((target) => target.id).sort();
+
+  const queriedIds = (index: GraphNodeSpatialIndex, bounds: GraphRenderBounds) =>
+    queryGraphStoreNodeSpatialIndex(index, bounds).map((target) => target.id).sort();
+
+  /** 确定性伪随机节点集：不用 Math.random，失败要能原样重跑。 */
+  const pseudoRandomNodes = (count: number): ModelNode[] => {
+    let seed = 20260930;
+    const next = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    return Array.from({ length: count }, (_, position) =>
+      node(`n-${position}`, Math.round((next() - 0.5) * 4000), Math.round((next() - 0.5) * 4000), 20 + Math.round(next() * 80), 20 + Math.round(next() * 80))
+    );
+  };
+
+  test("★ 查询结果与暴力相交过滤逐个视口一致", () => {
+    const nodes = pseudoRandomNodes(60);
+    const index = buildGraphNodeSpatialIndex(nodes, 128);
+    const views: GraphRenderBounds[] = [
+      { left: -500, right: 500, top: -500, bottom: 500 },
+      { left: 1200, right: 2400, top: -800, bottom: 200 },
+      { left: -2000, right: -1000, top: 1500, bottom: 2000 },
+      { left: 0, right: 0, top: 0, bottom: 0 },
+      { left: -5000, right: 5000, top: -5000, bottom: 5000 }
+    ];
+
+    for (const view of views) {
+      expect(queriedIds(index, view), JSON.stringify(view)).toEqual(bruteForceIds(nodes, view));
+    }
+    // 护栏：确认上面不是「两边都返回空」这种恒真比较
+    expect(bruteForceIds(nodes, views[4])).toHaveLength(nodes.length);
+    expect(bruteForceIds(nodes, views[0]).length).toBeGreaterThan(0);
+    expect(bruteForceIds(nodes, views[2]).length).toBeGreaterThan(0);
+  });
+
+  test("跨多个桶的大节点只返回一次（去重标记生效）", () => {
+    // 400px 节点在桶边长 50 时占 ~9×9 = 81 个桶；不带去重就会返回 81 个副本
+    const big = node("big", 0, 0, 400, 400);
+    const index = buildGraphNodeSpatialIndex([big], 50);
+
+    expect(keysOf(index, "big").length).toBeGreaterThan(4);
+    expect(queriedIds(index, { left: -1000, right: 1000, top: -1000, bottom: 1000 })).toEqual(["big"]);
+  });
+
+  test("空索引返回空数组", () => {
+    const index = buildGraphNodeSpatialIndex([], 100);
+
+    expect(queryGraphStoreNodeSpatialIndex(index, { left: 0, right: 1000, top: 0, bottom: 1000 })).toEqual([]);
+  });
+
+  test("包围盒相接（不重叠）也算相交：四个方向都是闭区间", () => {
+    const target = node("a", 500, 500, 100, 100);
+    const index = buildGraphNodeSpatialIndex([target], 100);
+    const bounds = renderBoundsOf(target);
+    const strip: Pick<GraphRenderBounds, "top" | "bottom"> = { top: bounds.top, bottom: bounds.bottom };
+    // 视口正好从节点包围盒右边界开始：节点在视口里（只是贴着边）
+    expect(queriedIds(index, { ...strip, left: bounds.right, right: bounds.right + 10 })).toEqual(["a"]);
+    // 视口正好在节点包围盒左边界结束
+    expect(queriedIds(index, { ...strip, left: bounds.left - 10, right: bounds.left })).toEqual(["a"]);
+    // 纵向同理
+    expect(queriedIds(index, { left: bounds.left, right: bounds.right, top: bounds.bottom, bottom: bounds.bottom + 10 })).toEqual(["a"]);
+    // 只差 0.5px 就查不到
+    expect(queriedIds(index, { ...strip, left: bounds.right + 0.5, right: bounds.right + 100 })).toEqual([]);
+  });
+
+  test("入参既可以是 GraphStore 也可以是裸索引（生产两种都传）", () => {
+    const nodes = pseudoRandomNodes(20);
+    const store = createGraphStore(nodes, []);
+    const view: GraphRenderBounds = { left: -100, right: 100, top: -100, bottom: 100 };
+    const fromStore = queryGraphStoreNodeSpatialIndex(store, view).map((target) => target.id).sort();
+    const fromIndex = queryGraphStoreNodeSpatialIndex(store.nodeSpatialIndex, view).map((target) => target.id).sort();
+
+    expect(fromStore).toEqual(fromIndex);
+    expect(fromStore).toEqual(bruteForceIds(nodes, view));
+  });
+
+  test("★ patch 移动节点后：新位置查到、旧位置查不到，且仍与暴力一致", () => {
+    const nodes = [node("a", 0, 0), node("b", 900, 900)];
+    const store = createGraphStore(nodes, []);
+    const oldKeys = keysOf(store.nodeSpatialIndex, "a");
+    const moved = { ...node("a", 2000, 2000), position: { x: 2000, y: 2000 } } as ModelNode;
+
+    const next = graphStorePatchNodes(store, [moved]);
+    const near = renderBoundsOf(node("a", 2000, 2000));
+    const view: GraphRenderBounds = { left: near.left, right: near.right, top: near.top, bottom: near.bottom };
+
+    expect(queryGraphStoreNodeSpatialIndex(next, view).map((target) => target.id)).toEqual(["a"]);
+    expect(queryGraphStoreNodeSpatialIndex(next, { left: -200, right: 200, top: -200, bottom: 200 })).toEqual([]);
+    expect(queriedIds(next.nodeSpatialIndex, view)).toEqual(bruteForceIds([moved, nodes[1]], view));
+    // 旧桶里不能还留着这个节点的引用 —— 查询层的精确判定靠 nodeBoundsById 兜底，
+    // 桶里若留着陈旧节点，将来包围盒缺失时就会命中错误对象（nodeBoundsById.get ?? graphNodeRenderBounds 兜底路径）。
+    for (const key of oldKeys) {
+      const bucket = next.nodeSpatialIndex.buckets.get(key) ?? [];
+      expect(bucket.filter((item) => item.id === "a"), `旧桶 ${key}`).toEqual([]);
+    }
+    expect(keysOf(next.nodeSpatialIndex, "a")).not.toEqual(oldKeys);
+    expect(next.nodeSpatialIndex.nodeBoundsById.get("a")).toEqual(near);
+  });
+
+  test("★ patch 是 copy-on-write：搬进别人已占的桶时也不就地改写旧 store", () => {
+    // 画布每帧拿上一帧的 store 做增量更新，旧 store 必须仍是那一帧的事实。
+    // 就地改写会让「已经算好、准备提交的」那一帧突然变样，且这类 bug 只在拖拽中出现。
+    //
+    // 关键是把 a 搬**进 b 已经占的桶**：那些桶在移除阶段没被碰过（里面没有 a），
+    // 于是走到 `!copiedBucketKeys.has(key)` 分支 —— 那里必须 slice 出新数组再 push。
+    // 若搬到空桶，该分支根本不会执行，copy-on-write 就测不到。
+    const nodes = [node("a", 0, 0), node("b", 500, 500)];
+    const store = createGraphStore(nodes, []);
+    const sharedKey = keysOf(store.nodeSpatialIndex, "b")[0];
+    const bucketBefore = store.nodeSpatialIndex.buckets.get(sharedKey);
+    const bucketSnapshot = [...(bucketBefore ?? [])];
+
+    const moved = { ...nodes[0], position: { x: 505, y: 505 } } as ModelNode;
+    const next = graphStorePatchNodes(store, [moved]);
+
+    expect(keysOf(next.nodeSpatialIndex, "a")).toContain(sharedKey);
+    // 新索引：共享桶里有 a 和 b
+    expect((next.nodeSpatialIndex.buckets.get(sharedKey) ?? []).map((item) => item.id).sort()).toEqual(["a", "b"]);
+    // 旧索引：还是原来那一个数组，内容原封不动
+    expect(store.nodeSpatialIndex.buckets.get(sharedKey)).toBe(bucketBefore);
+    expect([...(store.nodeSpatialIndex.buckets.get(sharedKey) ?? [])]).toEqual(bucketSnapshot);
+  });
+
+  test("patch 后跨桶大节点仍只出现一次", () => {
+    const nodes = [node("big", 0, 0, 400, 400)];
+    const store = createGraphStore(nodes, []);
+    const grown = { ...nodes[0], size: { width: 900, height: 900 } } as ModelNode;
+    const next = graphStorePatchNodes(store, [grown]);
+
+    expect(queryGraphStoreNodeSpatialIndex(next, { left: -5000, right: 5000, top: -5000, bottom: 5000 })).toHaveLength(1);
+  });
+
+  test("patch 不存在的 id 被忽略，索引不变", () => {
+    const nodes = [node("a", 0, 0)];
+    const store = createGraphStore(nodes, []);
+
+    const next = graphStorePatchNodes(store, [node("幽灵", 500, 500)]);
+
+    expect(queryGraphStoreNodeSpatialIndex(next, { left: -500, right: 500, top: -500, bottom: 500 }).map((n) => n.id)).toEqual(["a"]);
+    expect(next.nodeSpatialIndex.nodeBoundsById.has("幽灵")).toBe(false);
+  });
+
+  test("seenById 去重表超过上限会清空重建，清完查询依然正确", () => {
+    // seenById 只增不减，长期编辑（图元反复建删）会无限累积；超过 16384 清空重建。
+    // 变异实测：把 > 改成 >= 或把 clear 去掉都不会让本条变红，所以这里钉的是
+    // 「清空前后查询结果一致」这个对外可观测的性质，而不是清空的精确阈值。
+    const nodes = pseudoRandomNodes(30);
+    const index = buildGraphNodeSpatialIndex(nodes, 64);
+    const view: GraphRenderBounds = { left: -600, right: 600, top: -600, bottom: 600 };
+    const expected = bruteForceIds(nodes, view);
+
+    for (let round = 0; round < 16400; round += 1) {
+      expect(queriedIds(index, view), `第 ${round} 轮`).toEqual(expected);
+    }
+    expect(index.queryState.seenById.size).toBeLessThanOrEqual(16385);
+  });
+
+  // 变异实测：`nextBoundsById.delete(previousNode.id)` 去掉不会让任何一条变红 ——
+  // 同一个 id 在本函数尾部必然被 set 覆盖（update 的 id 来自 store.nodeIndexById 查表），
+  // 所以那句 delete 行为上等价，不是「漏测」。查询侧也察觉不到：nodeBoundsById 总是新值。
+});
+
