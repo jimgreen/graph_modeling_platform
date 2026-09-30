@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DeviceGlyph, type DeviceGlyphVoltagePaint } from "./DeviceGlyph.ts";
-import { createDefaultNode, type DeviceStateVisual, type ModelNode } from "./model.ts";
+import { DeviceGlyph, usesTransformerTerminalSlotPaint, type DeviceGlyphVoltagePaint } from "./DeviceGlyph.ts";
+import { createDefaultNode, TRANSFORMER_KINDS, type DeviceStateVisual, type ModelNode } from "./model.ts";
 import { renderSvgElementMarkup } from "./svgUtils.ts";
 
 // 按 ModelNode 实际类型构造母线节点（220 电压）
@@ -71,5 +71,56 @@ describe("DeviceGlyph 导出态电压着色", () => {
       })
     );
     expect(html).toContain('fill="#123456"');
+  });
+});
+
+// usesTransformerTerminalSlotPaint：变压器族（以及端子变负荷）才按端子分色（var(--tN)），
+// 其余器件内部单色。这是「kind 名单」与「渲染分支」之间的单源约定：
+// 新增消费端子槽的 kind 时必须同步 DeviceGlyph 的变压器族分支与 svg.ts 的 slotTerminals。
+// 判错的后果：该分色的变压器整只单色，或不该分色的器件冒出一个取不到值的 var(--tN)。
+describe("usesTransformerTerminalSlotPaint：哪些 kind 走端子槽着色", () => {
+  it("★ TRANSFORMER_KINDS 里的每个 kind 都命中", () => {
+    for (const kind of TRANSFORMER_KINDS) {
+      expect(usesTransformerTerminalSlotPaint(kind), kind).toBe(true);
+    }
+  });
+
+  it("★ 两绕组 / 三绕组 / 带中性点的三绕组 / -vertical 变体逐个点名", () => {
+    for (const kind of [
+      "ac-transformer",
+      "ac-transformer-vertical",
+      "ac-two-winding-transformer",
+      "ac-three-winding-transformer",
+      "ac-three-winding-transformer-neutral",
+      "ac-terminal-transformer-load"
+    ]) {
+      expect(usesTransformerTerminalSlotPaint(kind), kind).toBe(true);
+    }
+  });
+
+  it("★ 非变压器族一律不命中（母线 / 线路 / 电源 / 变流器 / 静态图元 / 储氢）", () => {
+    for (const kind of [
+      "ac-bus",
+      "ac-line",
+      "ac-source",
+      "ac-load",
+      "ac-switch",
+      "acac-converter",
+      "dcdc-converter",
+      "ac-storage",
+      "hydrogen-storage",
+      "static-rect",
+      "static-transform-arrow",
+      "heat-source",
+      ""
+    ]) {
+      expect(usesTransformerTerminalSlotPaint(kind), kind).toBe(false);
+    }
+  });
+
+  it("★ 就是字面 includes：大小写敏感，两侧空格不影响", () => {
+    expect(usesTransformerTerminalSlotPaint("AC-Transformer")).toBe(false);
+    expect(usesTransformerTerminalSlotPaint(" transformer ")).toBe(true);
+    expect(usesTransformerTerminalSlotPaint("x-transformer-load")).toBe(true);
   });
 });
