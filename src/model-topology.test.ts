@@ -152,6 +152,7 @@ import {
   isStaticGraphicNode,
   staticRenderKindForNode,
   isStaticLineLikeKind,
+  categorizeTopologyErrorType,
   isBlockingTopologyValidationError,
   isRepeatedEdgePointerClick,
   parseStaticDrawPoints,
@@ -2993,6 +2994,58 @@ test("treats duplicate identity and voltage setpoint deviations as non-blocking 
   expect(isBlockingTopologyValidationError({ type: "duplicate-device-idx" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "duplicate-device-name" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "voltage-setpoint-deviation" })).toBe(false);
+});
+
+test("categorizeTopologyErrorType 把 23 种告警逐条分到四类（电压 / 容量 / 拓扑 / 其他）", () => {
+  // 分组表与 `TopologyValidationErrorType` 联合类型一一对应，23 条不多不少。
+  // 新增告警类型时这条会提醒补充分组（新增类型默认落 "other"，此处即期望）。
+  const grouped: Record<"voltage" | "capacity" | "topology" | "other", string[]> = {
+    voltage: [
+      "voltage-mismatch",
+      "missing-island-voltage",
+      "island-voltage-mismatch",
+      "voltage-setpoint-zero",
+      "voltage-limit-out-of-range",
+      "voltage-setpoint-deviation",
+      "voltage-level-out-of-model-range"
+    ],
+    capacity: [
+      "device-limit-invalid",
+      "device-limit-autofill",
+      "device-setpoint-out-of-range",
+      "device-setpoint-auto-corrected",
+      "storage-soc-parameter-invalid",
+      "hydrogen-storage-parameter-invalid",
+      "hydrogen-coupling-parameter-invalid"
+    ],
+    topology: [
+      "floating-terminal",
+      "terminal-type-mismatch",
+      "same-bus-endpoints",
+      "same-topology-node-endpoints",
+      "transformer-island-short"
+    ],
+    other: [
+      "device-enum-invalid",
+      "rated-voltage-deviation",
+      "duplicate-device-idx",
+      "duplicate-device-name"
+    ]
+  };
+  const all = Object.values(grouped).flat();
+  expect(all).toHaveLength(23);
+  // 分组之间不得重名（否则同一个 type 会被两条断言同时覆盖）
+  expect(new Set(all).size).toBe(23);
+
+  for (const [category, types] of Object.entries(grouped)) {
+    for (const type of types) {
+      expect(categorizeTopologyErrorType(type as never), type).toBe(category);
+    }
+  }
+
+  // ★ 未列入分组表的 type 一律落 "other"（兜底分支）
+  expect(categorizeTopologyErrorType("不存在的类型" as never)).toBe("other");
+  expect(categorizeTopologyErrorType("" as never)).toBe("other");
 });
 
 test("blocks topology when hydrogen tank capacity, volume, or pressure limits are invalid", () => {

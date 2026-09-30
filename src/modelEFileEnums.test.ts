@@ -9,6 +9,7 @@
 //   acacConverterControlTypePairForE          ACAC 变流器 i/j 两侧控制方式
 //   dcdcConverterControlTypePairForE          DCDC 变流器 i/j 两侧控制方式
 //   dcacConverterControlTypePairForE          DCAC 变流器交/直流两侧控制方式
+//   mappedLegacyEValue                        E 列取值的**旧字段回退链**
 //   normalizeDeviceStatusForE / normalizeSwitchStatusForE   开关状态（14 个别名）
 //   normalizeRunStatValue                     运行状态（10 个别名）
 //   normalizeRunStatParameterDefinition       运行状态参数定义的**强制归一**
@@ -30,6 +31,7 @@ import {
   acacConverterControlTypePairForE,
   dcdcConverterControlTypePairForE,
   dcacConverterControlTypePairForE,
+  mappedLegacyEValue,
   normalizeAcGeneratorControlTypeForE,
   normalizeAcacEndpointControlTypeForE,
   normalizeControlTypeForE,
@@ -737,5 +739,90 @@ describe("dcacConverterControlTypePairForE", () => {
   test("★ 与另两个 pair 函数不同：这里**直接读 params.x**，不走 deviceParamValue，camelCase 不认", () => {
     expect(dcacConverterControlTypePairForE({ acControlType: "PH", dcControlType: "I" }))
       .toEqual({ ac_control_type: "PQ", dc_control_type: "V" });
+  });
+});
+
+describe("mappedLegacyEValue：E 列取值的旧字段回退链", () => {
+  test("★ 容量列：rated_capacity 与 rated_power 互相回退，rated_capacity 优先", () => {
+    expect(mappedLegacyEValue("rated_capacity", { rated_capacity: "1", rated_power: "2" })).toBe("1");
+    // 两个 key 走同一段逻辑 —— 查 rated_power 时同样先看 rated_capacity
+    expect(mappedLegacyEValue("rated_power", { rated_capacity: "1", rated_power: "2" })).toBe("1");
+    expect(mappedLegacyEValue("rated_capacity", { rated_power: "2" })).toBe("2");
+    expect(mappedLegacyEValue("rated_power", { ratedPower: "3" })).toBe("3");
+    expect(mappedLegacyEValue("rated_capacity", {})).toBe("");
+  });
+
+  test("★ 空串**不被当作缺失**：本名为空时不再看旧名（`??` 只挡 null/undefined）", () => {
+    expect(mappedLegacyEValue("rated_capacity", { rated_capacity: "", rated_power: "2" })).toBe("");
+    expect(mappedLegacyEValue("pbase", { pbase: "", rated_active_power: "2" })).toBe("");
+    expect(mappedLegacyEValue("i_max", { i_max: "", max_current: "5" })).toBe("");
+  });
+
+  test("★ 电流列：四个 key 的旧名**各不通用**", () => {
+    // i 侧的旧名是 max_current（不带 high 前缀）
+    expect(mappedLegacyEValue("i_max", { max_current: "5" })).toBe("5");
+    // 三个分侧的旧名是 high/medium/low 两组键，按列取、不串用
+    expect(mappedLegacyEValue("i_i_max", { high_i_max: "1" })).toBe("1");
+    expect(mappedLegacyEValue("i_i_max", { high_max_current: "2" })).toBe("2");
+    expect(mappedLegacyEValue("k_i_max", { medium_i_max: "3" })).toBe("3");
+    expect(mappedLegacyEValue("k_i_max", { medium_max_current: "4" })).toBe("4");
+    expect(mappedLegacyEValue("j_i_max", { low_i_max: "5" })).toBe("5");
+    expect(mappedLegacyEValue("j_i_max", { low_max_current: "6" })).toBe("6");
+    // ★ 别人的旧名取不到：i_max 不认 high_*，i_i_max 不认 medium_*
+    expect(mappedLegacyEValue("i_max", { high_i_max: "7", high_max_current: "7" })).toBe("");
+    expect(mappedLegacyEValue("i_max", { medium_i_max: "8" })).toBe("");
+    expect(mappedLegacyEValue("i_i_max", { medium_max_current: "9" })).toBe("");
+    // 本名优先于旧名，且两个旧名按数组顺序取第一个非 undefined
+    expect(mappedLegacyEValue("i_i_max", { i_i_max: "本名", high_i_max: "1", high_max_current: "2" })).toBe("本名");
+    expect(mappedLegacyEValue("i_i_max", { high_max_current: "2", high_i_max: "1" })).toBe("1");
+    // ★ 判据是「非 undefined」而非「非空」：第一个旧名给了空串就不再往后找
+    expect(mappedLegacyEValue("i_i_max", { high_i_max: "", high_max_current: "2" })).toBe("");
+    // 本名也认 camelCase
+    expect(mappedLegacyEValue("i_max", { iMax: "10" })).toBe("10");
+    expect(mappedLegacyEValue("j_i_max", {})).toBe("");
+  });
+
+  test("分侧容量列：i/k/j 各自回退到 high/medium/low_rated_capacity", () => {
+    expect(mappedLegacyEValue("i_rated_capacity", { high_rated_capacity: "1" })).toBe("1");
+    expect(mappedLegacyEValue("k_rated_capacity", { medium_rated_capacity: "2" })).toBe("2");
+    expect(mappedLegacyEValue("j_rated_capacity", { low_rated_capacity: "3" })).toBe("3");
+    // 旧名也认 camelCase
+    expect(mappedLegacyEValue("i_rated_capacity", { highRatedCapacity: "4" })).toBe("4");
+    // 本名优先，且不与容量列那对键互通
+    expect(mappedLegacyEValue("i_rated_capacity", { i_rated_capacity: "本名", high_rated_capacity: "1" })).toBe("本名");
+    expect(mappedLegacyEValue("i_rated_capacity", { rated_capacity: "5" })).toBe("");
+    expect(mappedLegacyEValue("k_rated_capacity", { high_rated_capacity: "1" })).toBe("");
+  });
+
+  test("★ 电气量列：本名 → 旧名，两级回退逐条钉住", () => {
+    // [E 列名, 旧名（snake）, 旧名（camel）]
+    const rows: Array<[string, string, string]> = [
+      ["pbase", "rated_active_power", "ratedActivePower"],
+      ["qbase", "rated_reactive_power", "ratedReactivePower"],
+      ["r", "resistance_pu", "resistancePu"],
+      ["x", "reactance_pu", "reactancePu"],
+      ["b", "half_charging_susceptance_pu", "halfChargingSusceptancePu"],
+      ["gt", "magnetizing_conductance_pu", "magnetizingConductancePu"],
+      ["bt", "magnetizing_susceptance_pu", "magnetizingSusceptancePu"],
+      ["tap", "tap_ratio", "tapRatio"],
+      ["r1", "source_equivalent_resistance", "sourceEquivalentResistance"],
+      ["r2", "target_equivalent_resistance", "targetEquivalentResistance"]
+    ];
+    for (const [key, legacySnake, legacyCamel] of rows) {
+      expect(mappedLegacyEValue(key, {}), `${key} 无值`).toBe("");
+      expect(mappedLegacyEValue(key, { [key]: "本名" }), `${key} 本名`).toBe("本名");
+      expect(mappedLegacyEValue(key, { [legacySnake]: "旧" }), `${key} ← ${legacySnake}`).toBe("旧");
+      expect(mappedLegacyEValue(key, { [legacyCamel]: "驼" }), `${key} ← ${legacyCamel}`).toBe("驼");
+      expect(mappedLegacyEValue(key, { [key]: "本名", [legacySnake]: "旧" }), `${key} 本名优先`).toBe("本名");
+      expect(mappedLegacyEValue(key, { [key]: "", [legacySnake]: "旧" }), `${key} 空串不回落`).toBe("");
+    }
+  });
+
+  test("未列入回退表的 key：直接按 key 取（认 camelCase），取不到给空串", () => {
+    expect(mappedLegacyEValue("i_node", { i_node: "1" })).toBe("1");
+    expect(mappedLegacyEValue("i_node", { iNode: "2" })).toBe("2");
+    expect(mappedLegacyEValue("zzz", { zzz: "3" })).toBe("3");
+    expect(mappedLegacyEValue("zzz", { zzzZ: "3" })).toBe("");
+    expect(mappedLegacyEValue("zzz", {})).toBe("");
   });
 });
