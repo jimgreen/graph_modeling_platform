@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createCancelPendingBlankCanvasDeselectOnMove,
   createDeleteGraphTemplate,
+  createGroupDeviceTerminalSortKey,
   createDeleteGraphTemplateType,
   createDropGraphTemplate,
   createFlushPendingBlankCanvasDeselect,
@@ -14,6 +15,7 @@ import {
   createShouldRunDeferredMoveOptimization,
   createSwitchInspectorTabForCanvasSelection
 } from "./appExtracted/appSelectionDragFactories";
+import { formatSvgNumber } from "./svgUtils";
 import {
   calculateNodeBodyBounds,
   clampPointToBounds,
@@ -878,5 +880,58 @@ describe("blank canvas press vs pan selection", () => {
     cancelPendingBlankCanvasDeselectOnMove(500, 500, 4);
 
     expect(pendingBlankCanvasDeselectRef.current).toBeNull();
+  });
+});
+
+// createGroupDeviceTerminalSortKey：把「组」里各设备的端子排成稳定顺序的排序键。
+// 顺序决定生成组时端子在容器里的编号 / 命名 —— 排错一次，用户看到的就是端子编号整体错位，
+// 而生成过程不报错。此前列出这些 factory 的接线有断言，这个纯函数没有。
+describe("createGroupDeviceTerminalSortKey：组内端子排序键", () => {
+  const keyOf = (over: Partial<{ anchor: { x: number; y: number }; sourceNodeId: string; sourceTerminalId: string }> = {}) =>
+    createGroupDeviceTerminalSortKey({ formatSvgNumber } as never)({
+      anchor: { x: -1, y: 0 },
+      sourceNodeId: "n1",
+      sourceTerminalId: "t1",
+      ...over
+    } as never);
+
+  test("★ 四条边各有自己的 side 段：左 0 / 右 1 / 上 2 / 下 3", () => {
+    expect(keyOf({ anchor: { x: -1, y: 0 } }).split(":")[0]).toBe("0");
+    expect(keyOf({ anchor: { x: 1, y: 0 } }).split(":")[0]).toBe("1");
+    expect(keyOf({ anchor: { x: 0, y: -1 } }).split(":")[0]).toBe("2");
+    expect(keyOf({ anchor: { x: 0, y: 1 } }).split(":")[0]).toBe("3");
+  });
+
+  test("★ 归哪条边看哪一轴绝对值大（相等算水平）", () => {
+    expect(keyOf({ anchor: { x: -1, y: 0.9 } }).split(":")[0]).toBe("0");
+    expect(keyOf({ anchor: { x: 0.9, y: 1 } }).split(":")[0]).toBe("3");
+    // |x| == |y| 归水平，而 anchor.x > 0 → 落在右侧（side 1）
+    expect(keyOf({ anchor: { x: 1, y: -1 } }).split(":")[0], "|x| >= |y| 归水平").toBe("1");
+  });
+
+  test("★ 同一条边上按位置排序（上/下边用 x，左右边用 y）", () => {
+    const leftKeys = [keyOf({ anchor: { x: -1, y: -0.8 } }), keyOf({ anchor: { x: -1, y: 0.8 } })];
+    expect(leftKeys[0] < leftKeys[1]).toBe(true);
+    const topKeys = [keyOf({ anchor: { x: -0.8, y: -1 } }), keyOf({ anchor: { x: 0.8, y: -1 } })];
+    expect(topKeys[0] < topKeys[1]).toBe(true);
+  });
+
+  test("★ 位置段补零到 8 位（字符串比较才等于数值比较）", () => {
+    // 左边界（y = -0.5）→ 位置 -0.5 + 0.5 = 0 → formatSvgNumber 得 "0"，补零成 8 位
+    expect(keyOf({ anchor: { x: -1, y: -0.5 } }).split(":")[1]).toBe("00000000");
+    const near = keyOf({ anchor: { x: -1, y: -0.4 } }).split(":")[1];
+    expect(near).toBe("000000.1");
+    expect(near.length).toBe(8);
+    // 字符串比较必须等价于数值比较：0.1 排在 0.2 之前（不补零的话 "0.1" > "0.2"）
+    expect(keyOf({ anchor: { x: -1, y: -0.4 } }) < keyOf({ anchor: { x: -1, y: -0.3 } })).toBe(true);
+  });
+
+  test("★ 位置相同时按来源节点 / 端子 id 兜底（保证全序、可复现）", () => {
+    const a = keyOf({ anchor: { x: -1, y: 0 }, sourceNodeId: "n1", sourceTerminalId: "t1" });
+    const b = keyOf({ anchor: { x: -1, y: 0 }, sourceNodeId: "n1", sourceTerminalId: "t2" });
+    const c = keyOf({ anchor: { x: -1, y: 0 }, sourceNodeId: "n2", sourceTerminalId: "t1" });
+    expect(a < b).toBe(true);
+    expect(b < c).toBe(true);
+    expect(a.endsWith("n1:t1")).toBe(true);
   });
 });
