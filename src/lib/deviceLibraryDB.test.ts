@@ -20,7 +20,12 @@ import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import type { IDBPDatabase } from "idb";
 import { beforeEach, describe, expect, test } from "vitest";
-import { initDeviceLibraryDB, DEVICE_LIBRARY_STORE_SPECS } from "./deviceLibraryDB";
+import {
+  initDeviceLibraryDB,
+  isDBInitialized,
+  clearDeviceLibraryDB,
+  DEVICE_LIBRARY_STORE_SPECS
+} from "./deviceLibraryDB";
 
 // 每个用例一个干净工厂，避免跨用例的库版本/数据互相污染
 let factory: IDBFactory;
@@ -184,6 +189,84 @@ describe("图元库 schema：新装与老库升级必须一致", () => {
       req.onerror = () => reject(req.error);
     });
 
+    const db = await initDeviceLibraryDB();
+    expect(await readSchemaShapes(db)).toEqual(expectedShapes());
+    db.close();
+  });
+});
+
+/**
+ * isDBInitialized / clearDeviceLibraryDB 的行为契约。
+ *
+ * isDBInitialized 目前**没有任何生产调用方**（全仓只在此测试里出现），属于对外留的
+ * 探针接口；这里把它的判据钉死：只看 migration store 里 key="deviceLibrary" 那条的
+ * `completed === true`，严格相等，别的 key、别的值一律 false，库打不开也返回 false
+ * 而不是往上抛。将来有人接上它时，语义不用再猜。
+ *
+ * 本组 12 处变异逐条跑过、全部转红。其中「去掉 try/catch」与「transaction 不含 migration」
+ * 两处是靠**抛错**转红（Error: boom / NotFoundError）而不是靠断言失败。
+ */
+describe("isDBInitialized：只看 migration 标记", () => {
+  const writeMarker = async (key: string, value: Record<string, unknown>) => {
+    const db = await initDeviceLibraryDB();
+    await db.put("migration", { key, ...value });
+    db.close();
+  };
+
+  test("全新库没有标记 → false", async () => {
+    expect(await isDBInitialized()).toBe(false);
+  });
+
+  test("★ 标记 completed:true → true", async () => {
+    await writeMarker("deviceLibrary", { completed: true });
+    expect(await isDBInitialized()).toBe(true);
+  });
+
+  test("★ completed 必须是严格 true：false / 缺失 / 字符串 'true' 都算未初始化", async () => {
+    for (const value of [{ completed: false }, {}, { completed: "true" }, { completed: 1 }]) {
+      await writeMarker("deviceLibrary", value);
+      expect(await isDBInitialized(), JSON.stringify(value)).toBe(false);
+    }
+  });
+
+  test("别的 key 的标记不算数", async () => {
+    await writeMarker("someOtherMigration", { completed: true });
+    expect(await isDBInitialized()).toBe(false);
+  });
+
+  test("库打不开时返回 false，不往上抛", async () => {
+    globalThis.indexedDB = {
+      open() {
+        throw new Error("boom");
+      }
+    } as unknown as IDBFactory;
+    expect(await isDBInitialized()).toBe(false);
+  });
+});
+
+describe("clearDeviceLibraryDB：清空全部 store", () => {
+  test("★ 五个 store（含 migration 标记）全清", async () => {
+    const db = await initDeviceLibraryDB();
+    await db.put("templates", { kind: "ac_load" });
+    await db.put("templateImages", { id: "img1" });
+    await db.put("graphTemplates", { id: "g1" });
+    await db.put("overrides", { kind: "ac_load" });
+    await db.put("migration", { key: "deviceLibrary", completed: true });
+    db.close();
+    expect(await isDBInitialized()).toBe(true);
+
+    await clearDeviceLibraryDB();
+
+    const after = await initDeviceLibraryDB();
+    for (const name of ["templates", "templateImages", "graphTemplates", "overrides", "migration"]) {
+      expect(await after.count(name), name).toBe(0);
+    }
+    after.close();
+    expect(await isDBInitialized()).toBe(false);
+  });
+
+  test("清空后 schema 仍然完整（清的是数据不是结构）", async () => {
+    await clearDeviceLibraryDB();
     const db = await initDeviceLibraryDB();
     expect(await readSchemaShapes(db)).toEqual(expectedShapes());
     db.close();
