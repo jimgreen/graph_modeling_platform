@@ -3836,7 +3836,6 @@ function normalizeImportedImageLibraryAssets(value, folderIds) {
 
 async function handleImportImageLibrary(request, response, paths) {
   const payload = await readJsonBody(request, maxIconLibraryImportBodyBytes, "图标库导入文件过大，最大支持 128MB。");
-  await ensureStore({ paths });
   const importedFolders = normalizeImportedImageLibraryFolders(payload.folders);
   const folderIds = new Set(importedFolders.map((folder) => folder.id));
   const importedAssets = normalizeImportedImageLibraryAssets(payload.assets, folderIds);
@@ -3845,58 +3844,66 @@ async function handleImportImageLibrary(request, response, paths) {
     return;
   }
 
-  const currentFolders = await readImageFolders({ paths });
-  const folderById = new Map(currentFolders.map((folder) => [folder.id, folder]));
-  for (const folder of importedFolders) {
-    folderById.set(folder.id, folder.id === "root" ? { ...rootImageFolder(), ...folder, id: "root" } : folder);
-  }
-  await writeImageFolders(Array.from(folderById.values()), { paths });
+  // folders 与 manifest 都是 read-modify-write，必须走 withImageStoreLock：
+  // 此前本 handler 是同文件里唯一没进锁的写路径（handleUpload / 各 folder handler /
+  // handleImportIconLibrary 都在锁内），并发导入与上传交错时后者写入的条目会被
+  // 本 handler 用旧快照整批覆盖 —— 表现为 HTTP 200 + 计数正常，但条目凭空消失、
+  // 磁盘上的文件成了不可达孤儿。
+  await withImageStoreLock(async () => {
+    await ensureStore({ paths });
+    const currentFolders = await readImageFolders({ paths });
+    const folderById = new Map(currentFolders.map((folder) => [folder.id, folder]));
+    for (const folder of importedFolders) {
+      folderById.set(folder.id, folder.id === "root" ? { ...rootImageFolder(), ...folder, id: "root" } : folder);
+    }
+    await writeImageFolders(Array.from(folderById.values()), { paths });
 
-  const manifest = await readManifest({ paths });
-  const manifestById = new Map(manifest.map((item) => [item.id, item]));
-  const savedItems = [];
-  let skippedCount = 0;
-  for (const asset of importedAssets) {
-    let parsed;
-    try {
-      parsed = parseDataUrl(asset.dataUrl);
-    } catch {
-      skippedCount += 1;
-      continue;
+    const manifest = await readManifest({ paths });
+    const manifestById = new Map(manifest.map((item) => [item.id, item]));
+    const savedItems = [];
+    let skippedCount = 0;
+    for (const asset of importedAssets) {
+      let parsed;
+      try {
+        parsed = parseDataUrl(asset.dataUrl);
+      } catch {
+        skippedCount += 1;
+        continue;
+      }
+      const item = {
+        id: asset.id,
+        name: asset.name,
+        folderId: asset.folderId,
+        mimeType: parsed.mimeType,
+        size: parsed.bytes.length,
+        filename: `${asset.id}${mimeExt[parsed.mimeType]}`,
+        createdAt: asset.createdAt,
+        dir: "icons"
+      };
+      const previous = manifestById.get(item.id);
+      if (previous?.filename && previous.filename !== item.filename) {
+        await rm(join(getAssetDir(previous, { paths }), previous.filename), { force: true });
+      }
+      await writeImageAssetFile(item, parsed.bytes, { paths });
+      manifestById.set(item.id, item);
+      savedItems.push(item);
     }
-    const item = {
-      id: asset.id,
-      name: asset.name,
-      folderId: asset.folderId,
-      mimeType: parsed.mimeType,
-      size: parsed.bytes.length,
-      filename: `${asset.id}${mimeExt[parsed.mimeType]}`,
-      createdAt: asset.createdAt,
-      dir: "icons"
-    };
-    const previous = manifestById.get(item.id);
-    if (previous?.filename && previous.filename !== item.filename) {
-      await rm(join(getAssetDir(previous, { paths }), previous.filename), { force: true });
+    if (savedItems.length === 0) {
+      sendError(response, 400, "导入文件中的图标数据格式无效。");
+      return;
     }
-    await writeImageAssetFile(item, parsed.bytes, { paths });
-    manifestById.set(item.id, item);
-    savedItems.push(item);
-  }
-  if (savedItems.length === 0) {
-    sendError(response, 400, "导入文件中的图标数据格式无效。");
-    return;
-  }
-  const savedIds = new Set(savedItems.map((item) => item.id));
-  await writeManifest([
-    ...savedItems,
-    ...Array.from(manifestById.values()).filter((item) => !savedIds.has(item.id))
-  ], { paths });
-  sendJson(response, 200, {
-    ok: true,
-    importedCount: savedItems.length,
-    skippedCount,
-    folders: Array.from(folderById.values()),
-    assets: savedItems.map(publicAsset)
+    const savedIds = new Set(savedItems.map((item) => item.id));
+    await writeManifest([
+      ...savedItems,
+      ...Array.from(manifestById.values()).filter((item) => !savedIds.has(item.id))
+    ], { paths });
+    sendJson(response, 200, {
+      ok: true,
+      importedCount: savedItems.length,
+      skippedCount,
+      folders: Array.from(folderById.values()),
+      assets: savedItems.map(publicAsset)
+    });
   });
 }
 
