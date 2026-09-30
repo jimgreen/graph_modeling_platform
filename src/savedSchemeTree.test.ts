@@ -12,6 +12,8 @@ import {
   mapSavedSchemeTree,
   normalizeSavedProjectRecordNames,
   normalizeSavedSchemeRecordNames,
+  deleteSavedProjectsFromSchemes,
+  replaceSavedSchemeById,
   savedChildSchemeNames,
   savedProjectRecordNameKey,
   uniqueRecordName
@@ -630,5 +632,132 @@ describe("savedChildSchemeNames：新建子方案的重名校验集合", () => {
     const before = JSON.stringify(schemes);
     savedChildSchemeNames(schemes, "s1");
     expect(JSON.stringify(schemes)).toBe(before);
+  });
+});
+
+// 方案树的两处整体改写：replaceSavedSchemeById（方案导入冲突合并时整节点换掉）与
+// deleteSavedProjectsFromSchemes（批量删模型时按项目 id 过滤）。
+// 两者都走 mapSavedSchemeTree，因此共享它那条「没改就返回原引用」的契约。
+// 判错的后果：侧栏树整体错位（方案内容张冠李戴）、删掉的模型又冒出来 —— 都不报错。
+//
+// 16 处变异跑过、15 处转红。一处**源码等价**：把 mapSavedSchemeTree 里
+// `children.length > 0 ? mapSavedSchemeTree(children, mapper) : children` 的三元去掉
+// （空数组直接递归）—— 空数组进去时函数原样返回**传进去的那个引用**，
+// nextChildren 与 children 仍是同一对象，什么都不变。保留原样。
+describe("replaceSavedSchemeById：整节点替换", () => {
+  const tree = () => [
+    { id: "s1", name: "根一", projects: [], children: [{ id: "s1a", name: "子A", projects: [], children: [{ id: "s1a1", name: "孙A1", projects: [] }] }] },
+    { id: "s2", name: "根二", projects: [], children: [] }
+  ] as unknown as Parameters<typeof replaceSavedSchemeById>[0];
+
+  test("★ 顶层命中：换成 replacement 整体，未命中的顶层保持同一引用", () => {
+    const schemes = tree();
+    const replacement = { id: "s2", name: "替换后的根二", children: [{ id: "s2x", name: "新子" }] } as never;
+    const result = replaceSavedSchemeById(schemes, "s2", replacement);
+    expect(result).not.toBe(schemes);
+    expect(result[1]).toBe(replacement);
+    expect(result[0]).toBe(schemes[0]);
+  });
+
+  test("★ 深层命中：逐层复制到根，没命中的分支保持同一引用", () => {
+    const schemes = tree();
+    const result = replaceSavedSchemeById(schemes, "s1a", { id: "s1a", name: "子A-新" } as never);
+    expect(result[0]).not.toBe(schemes[0]);
+    expect((result[0] as { children: Array<{ name: string }> }).children[0].name).toBe("子A-新");
+    // 未命中的兄弟分支整棵共用原引用
+    expect(result[1]).toBe(schemes[1]);
+  });
+
+  test("找不到 id 时原数组同一引用（不产生无谓的新对象）", () => {
+    const schemes = tree();
+    expect(replaceSavedSchemeById(schemes, "nope", { id: "x" } as never)).toBe(schemes);
+  });
+
+  test("★ 按 id 匹配，不是按 name", () => {
+    const schemes = tree();
+    const result = replaceSavedSchemeById(schemes, "根二", { id: "s2", name: "换了" } as never);
+    expect(result).toBe(schemes);
+  });
+
+  test("★ 同一个 id 在树上出现多次时全部被替换（mapper 逐节点跑）", () => {
+    const dup = [
+      { id: "s1", name: "甲" },
+      { id: "s1", name: "乙" }
+    ] as unknown as Parameters<typeof replaceSavedSchemeById>[0];
+    const result = replaceSavedSchemeById(dup, "s1", { id: "s1", name: "新" } as never);
+    expect(result.map((scheme) => scheme.name)).toEqual(["新", "新"]);
+  });
+
+  test("replacement 自带的子节点原样进入结果（不与旧子节点合并）", () => {
+    const schemes = tree();
+    const result = replaceSavedSchemeById(schemes, "s1a", {
+      id: "s1a",
+      name: "子A-新",
+      children: [{ id: "only", name: "唯一子" }]
+    } as never);
+    expect((result[0] as { children: Array<{ children?: unknown[] }> }).children[0].children).toEqual([{ id: "only", name: "唯一子" }]);
+  });
+});
+
+describe("deleteSavedProjectsFromSchemes：按项目 id 批量删除", () => {
+  const P = (id: string, name: string) => ({ id: `p-${id}`, name, project: { name } });
+  const tree = () => [
+    { id: "s1", name: "根一", projects: [P("a", "模型甲"), P("b", "模型乙")] },
+    { id: "s2", name: "根二", projects: [], children: [{ id: "s2a", name: "子A", projects: [P("c", "模型丙")] }] }
+  ] as unknown as Parameters<typeof deleteSavedProjectsFromSchemes>[0];
+
+  const namesOf = (scheme: { projects: Array<{ name: string }> }) => scheme.projects.map((project) => project.name);
+
+  test("★ 命中时只删该项目，同 scheme 的其它项目留下", () => {
+    const schemes = tree();
+    const result = deleteSavedProjectsFromSchemes(schemes, new Set(["p-a"]));
+    expect(namesOf(result[0])).toEqual(["模型乙"]);
+  });
+
+  test("★ 按 record.id 删，不是按 name（同名不同 id 不会被误删）", () => {
+    const schemes = [
+      { id: "s1", name: "根一", projects: [P("a", "同名"), P("b", "同名")] }
+    ] as unknown as Parameters<typeof deleteSavedProjectsFromSchemes>[0];
+    const result = deleteSavedProjectsFromSchemes(schemes, new Set(["p-b"]));
+    expect(namesOf(result[0])).toEqual(["同名"]);
+  });
+
+  test("没命中的 scheme 保持同一引用，命中的才复制", () => {
+    const schemes = tree();
+    const result = deleteSavedProjectsFromSchemes(schemes, new Set(["p-c"]));
+    expect(result[0]).toBe(schemes[0]);
+    expect(result[1]).not.toBe(schemes[1]);
+    expect(namesOf((result[1] as { children: Array<{ projects: Array<{ name: string }> }> }).children[0])).toEqual([]);
+  });
+
+  test("深层命中也会把外层数组复制一份（不是就地改）", () => {
+    const schemes = tree();
+    const before = JSON.stringify(schemes);
+    deleteSavedProjectsFromSchemes(schemes, new Set(["p-c"]));
+    expect(JSON.stringify(schemes)).toBe(before);
+  });
+
+  test("空集合 / 全不命中 → 原数组同一引用", () => {
+    const schemes = tree();
+    expect(deleteSavedProjectsFromSchemes(schemes, new Set())).toBe(schemes);
+    expect(deleteSavedProjectsFromSchemes(schemes, new Set(["p-zzz"]))).toBe(schemes);
+  });
+
+  test("★ 命中时刷新 updatedAt（ISO 串且不早于调用前）", () => {
+    const schemes = tree();
+    const before = Date.now();
+    const result = deleteSavedProjectsFromSchemes(schemes, new Set(["p-a"]));
+    const stamp = (result[0] as { updatedAt: string }).updatedAt;
+    expect(stamp).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/u);
+    expect(new Date(stamp).getTime()).toBeGreaterThanOrEqual(before - 1000);
+  });
+
+  test("删掉 scheme 的最后一个项目时保留空数组（不删 scheme 本身）", () => {
+    const schemes = [
+      { id: "s1", name: "根一", projects: [P("a", "唯一")] }
+    ] as unknown as Parameters<typeof deleteSavedProjectsFromSchemes>[0];
+    const result = deleteSavedProjectsFromSchemes(schemes, new Set(["p-a"]));
+    expect(result).toHaveLength(1);
+    expect(result[0].projects).toEqual([]);
   });
 });
