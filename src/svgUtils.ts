@@ -182,9 +182,16 @@ export function svgLengthNumber(value: string) {
 // 3) <script> 匹配自闭合与无闭合变体，不再遗漏 `<script src=...>`。
 const SVG_ENTITY_ENCODED_COLON = /&#x?0*3a;?|&#58;/giu;
 
+// 越界码位（> 0x10FFFF，如 `&#x110000;`）会让 String.fromCodePoint 抛 RangeError，
+// 而这些实体的来源是用户上传的图元图片。非法码位保留原文本不解码 —— 本函数只服务
+// 危险 scheme 匹配，保留原样不影响判定。
+function decodeSvgNumericEntity(match: string, codePoint: number): string {
+  return codePoint >= 0 && codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : match;
+}
+
 function decodeSvgNumericEntities(value: string) {
-  return value.replace(/&#x([0-9a-f]+);?/giu, (_match, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&#(\d+);?/gu, (_match, dec: string) => String.fromCodePoint(Number.parseInt(dec, 10)));
+  return value.replace(/&#x([0-9a-f]+);?/giu, (match, hex: string) => decodeSvgNumericEntity(match, Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);?/gu, (match, dec: string) => decodeSvgNumericEntity(match, Number.parseInt(dec, 10)));
 }
 
 export function stripUnsafeInlineSvgMarkup(value: string) {
