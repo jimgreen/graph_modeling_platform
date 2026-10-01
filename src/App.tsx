@@ -676,6 +676,9 @@ const initialDeviceLibrary = useMemo(() => readLocalDeviceLibraryPersistencePayl
 // 不该再由遮罩挡着 —— 挡着只会让「已经能用了」看起来像「还没加载完」。
 useEffect(() => {
   finishBoot();
+  // 思源黑体两个字重各约 4.5MB，与首屏 JS 抢带宽没有意义 —— 放到可交互之后再拉，
+  // 到达前由 styles.css 的系统字体栈兜底（font-display: swap，不产生 FOIT 阻塞）。
+  void import("./assets/fonts/source-han-sans-cn.css");
 }, []);
 
 // IndexedDB 迁移：应用启动时自动执行 localStorage → IndexedDB 迁移

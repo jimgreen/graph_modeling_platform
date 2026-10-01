@@ -3,7 +3,11 @@ import { Select, Tooltip, InputNumber, Button, message } from "antd";
 
 // 告警消息下移到画布区域顶部，避免与顶部工具栏重叠
 message.config({ top: 50 });
-import { EyeTwoTone, EyeInvisibleTwoTone } from "@ant-design/icons";
+// 深路径导入：整包 `@ant-design/icons` 在 dev 下会被预打成 1.8MB 的单文件，
+// 而本文件只用到这两个图标。生产构建本来就 tree-shake，这里只是把 dev 的
+// 首屏字节数也降下来。
+import EyeTwoTone from "@ant-design/icons/es/icons/EyeTwoTone";
+import EyeInvisibleTwoTone from "@ant-design/icons/es/icons/EyeInvisibleTwoTone";
 import { clampNumber } from "../canvasViewport";
 import { reconcileNodeWithDefinition } from "../definitionInstanceSync";
 import { degreesToRadians } from "../formatUtils";

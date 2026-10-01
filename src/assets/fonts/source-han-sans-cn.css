@@ -1,0 +1,17 @@
+/* 思源黑体按需加载：400/500 两个字重各约 4.5MB，声明在主 styles.css 里会让它
+   与首屏 JS 抢带宽（实测首屏 JS 约 2.6MB）。这里单独成文件，由 App 挂载后
+   import() 触发，字体到达前一律回落到 styles.css 里的系统字体栈。
+   引用它的两处：.left-panel-footer-label / .topbar-model。 */
+@font-face {
+  font-family: "思源黑体";
+  src: url("./source-han-sans-cn-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "思源黑体";
+  src: url("./source-han-sans-cn-500.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}

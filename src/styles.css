@@ -1,16 +1,5 @@
-@font-face {
-  font-family: "思源黑体";
-  src: url("./assets/fonts/source-han-sans-cn-400.woff2") format("woff2");
-  font-weight: 400;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "思源黑体";
-  src: url("./assets/fonts/source-han-sans-cn-500.woff2") format("woff2");
-  font-weight: 500;
-  font-display: swap;
-}
+/* 思源黑体的 @font-face 已移到 ./assets/fonts/source-han-sans-cn.css，
+   由 App 挂载后动态 import —— 两个 4.5MB 字重不再与首屏 JS 抢带宽。 */
 
 :root {
   --control-height-sm: 24px;
