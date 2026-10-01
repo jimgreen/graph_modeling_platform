@@ -231,6 +231,18 @@ describe("voltageInheritance", () => {
   // ─── applyVoltageInheritance ──────────────────────────
 
   describe("applyVoltageInheritance", () => {
+    it("rated_voltage 是 '0.0' 这类零值写法时照样被继承电压覆盖", () => {
+      // 旧口径用 `normalized === "0"` 字符串相等，而 normalizeVoltageBaseInput 只剥非数字
+      // 字符，"0.0" 原样留下 → 被当成「用户自定义过」而不覆盖。
+      const node = makeNode(
+        "ac-ground",
+        [makeTerminal("t0")],
+        { rated_voltage: "0.0" }
+      );
+      const result = applyVoltageInheritance(node, "110");
+      expect(result.rated_voltage).toBe("110");
+    });
+
     it("无端子指定时设置通用 vbase", () => {
       const node = makeNode("ac-ground", [makeTerminal("t0")], {});
       const result = applyVoltageInheritance(node, "110");
