@@ -146,7 +146,15 @@ export function createSpaceStore(dataRoot) {
     let parsed = null;
     try {
       parsed = JSON.parse(await readFile(spacesFile, "utf-8"));
-    } catch {
+    } catch (error) {
+      // 降级（读失败当空表）是既有契约：ensureInitialized 会把这个残缺状态写回，
+      // 于是读失败会把各空间的用户自定义显示名与归属永久覆盖掉，且全程静默。
+      // 这里不改行为，只在非 ENOENT 时留痕 —— 至少能看出「这次启动是降级来的」。
+      if (error?.code !== "ENOENT") {
+        console.warn(
+          `[空间] 读取 ${spacesFile} 失败（${error?.code ?? error?.name ?? "unknown"}），已按空注册表重建：${error?.message ?? error}`
+        );
+      }
       parsed = null;
     }
     const rawSpaces = Array.isArray(parsed?.spaces) ? parsed.spaces : [];

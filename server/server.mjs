@@ -334,11 +334,27 @@ async function ensureJsonStoreFile(dirPath, filePath, defaultValue) {
   }
 }
 
+/**
+ * 读 JSON 存储失败时的告警：把「IO 失败」与「文件不存在」区分开说。
+ *
+ * 这里的降级（失败即按空值处理）是既有契约，动它会改变 API 行为，故保留；只加上
+ * 告警——此前读失败是**完全静默**的：配置读坏 → 前端拿到「没有配置」的合法响应
+ * → 用户一保存就把真实配置覆盖掉，而日志里一个字都没有。ENOENT 是「还没有这个
+ * 文件」的正常路径，不告警（否则每次首启都刷一串）。
+ */
+function warnStoreReadFallback(error, filePath, fallback) {
+  if (error?.code === "ENOENT") {
+    return;
+  }
+  console.warn(`[存储] 读取 ${filePath} 失败（${error?.code ?? error?.name ?? "unknown"}），已${fallback}：${error?.message ?? error}`);
+}
+
 async function readJsonStoreFile(dirPath, filePath, defaultValue, normalize = (value) => value) {
   await ensureJsonStoreFile(dirPath, filePath, defaultValue);
   try {
     return normalize(JSON.parse(await readFile(filePath, "utf-8")));
-  } catch {
+  } catch (error) {
+    warnStoreReadFallback(error, filePath, "按空值处理");
     return normalize(defaultValue);
   }
 }
@@ -347,7 +363,8 @@ async function readOptionalJsonStoreFile(dirPath, filePath) {
   await mkdirInSpace(dirPath);
   try {
     return JSON.parse(await readFile(filePath, "utf-8"));
-  } catch {
+  } catch (error) {
+    warnStoreReadFallback(error, filePath, "按「无配置」处理");
     return null;
   }
 }
@@ -462,7 +479,11 @@ async function readSchemeProjectFile(filePath, fileName, paths = defaultPaths) {
         name
       }
     };
-  } catch {
+  } catch (error) {
+    // 这里把「文件不存在」「JSON 损坏」「注册表写失败」折叠成同一个 null，调用方一律
+    // 当「模型不存在」——于是磁盘写失败会被报成 404，用户得到「模型被删了」的错误
+    // 结论。降级本身是既有契约（改了会变 API 语义），此处只把静默变成可观测。
+    warnStoreReadFallback(error, filePath, "按「模型不存在」处理");
     return null;
   }
 }
@@ -500,7 +521,11 @@ async function readSchemeDirectory(dirent, parentDir, options = {}) {
   let entries = [];
   try {
     entries = await readdir(schemeDir, { withFileTypes: true });
-  } catch {
+  } catch (error) {
+    // 与 schemeArchive.listModelJsonFiles 的约定相反：ZIP 导出路径读目录失败会上抛，
+    // 列表 API 却静默返回 null → 整个方案连同子方案与模型在响应里凭空消失，无日志。
+    // 降级保留（改动会让单目录不可读从 200 变 500），但必须留痕。
+    warnStoreReadFallback(error, schemeDir, "按「方案不存在」处理（该方案及其子方案不会出现在列表里）");
     return null;
   }
   const projects = [];
