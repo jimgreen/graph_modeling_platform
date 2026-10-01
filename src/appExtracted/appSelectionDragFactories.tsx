@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { Modal, Select } from "antd";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
@@ -26,6 +25,20 @@ import {
   withNodeUpdates,
   type ContainerDraft,
 } from "../acContainer";
+// 线路端点引用：设备端子 → 该端所属的线路端（source / target）。
+type RoutableLineDeviceEndpointRefs = { source?: { nodeId: string; terminalId: string }; target?: { nodeId: string; terminalId: string } };
+// 拖拽预览连线的两端落点。
+type DragPreviewEndpointPoints = { start: Point; end: Point; source: ModelNode; target: ModelNode };
+
+// 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 遮住）：按真实出处补齐，均为 type-only import。
+import type { CanvasBounds, ContainerTerminalAssociationValue, DeviceTemplate, DeviceParameterDefinition, Edge, ModelGroup, ModelLayer, ModelNode, Point, ProjectFile, RoutedEdge, Terminal, TerminalType } from "../model";
+import type { GraphStore } from "../graphStore";
+import type { BulkMovePlan, CustomDeviceDraft, FilterSelectionTypeOption, UndoSnapshot, CanvasSelectionSnapshot, DeviceLibraryPersistencePayload, DraggingState, FastMovedGraphCommitOptions, GraphTemplate, GroupDeviceTerminalDraft, ModifierSelectionPressState, ModifierSelectionPressTarget, NodeDragPreviewRoute, NodeTerminalSnapTarget, RenderViewportBounds, SingleNodeDeferredRepairOptions, SingleNodeDragCache } from "./appCoreCanvasUtilities";
+import type { CanvasClipboard, CanvasSelectionScope, DisplayLayerAction, SelectionRect } from "../selectionActions";
+import type { MeasurementGroup, ProjectMeasurementConfig } from "../measurements";
+import type { NodeLabelDisplayMode } from "../nodeLabelUtils";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+
 
 export function createEnsureDraggingUndoSnapshot(__appScope: Record<string, any>) {
   return () => {
@@ -48,7 +61,7 @@ export function createEnsureDraggingUndoSnapshot(__appScope: Record<string, any>
 export function createRequestCanvasFrameCenter(__appScope: Record<string, any>) {
   return () => {
   const { setCanvasCenterRequest } = __appScope;
-    setCanvasCenterRequest((current) => current + 1);
+    setCanvasCenterRequest((current: number) => current + 1);
   };
 }
 
@@ -61,13 +74,13 @@ export function createUndoLastOperation(__appScope: Record<string, any>) {
     deferredRoutableLineRouteRepairCancelRef.current = null;
     pendingStoredRouteEdgeIdsRef.current = new Set();
     pendingBusTerminalSyncNodeIdsRef.current = new Set();
-    setUndoStack((current) => {
+    setUndoStack((current: UndoSnapshot[]) => {
       const snapshot = current.at(-1);
       if (!snapshot) {
         return current;
       }
       setProjectName(snapshot.projectName);
-      setLayers(snapshot.layers.map((layer) => ({ ...layer })));
+      setLayers(snapshot.layers.map((layer: ModelLayer) => ({ ...layer })));
       setActiveLayerId(snapshot.activeLayerId);
       setCanvasWidth(snapshot.canvasWidth);
       setCanvasHeight(snapshot.canvasHeight);
@@ -342,7 +355,7 @@ export function createPersistDeviceLibraryChange(__appScope: Record<string, any>
     if (normalizedDeviceLibraryPayload === lastPersistedDeviceLibraryPayloadRef.current) {
       const pendingPersistence = pendingDeviceLibraryPersistenceByRef.get(lastPersistedDeviceLibraryPayloadRef);
       return pendingPersistence?.payload === normalizedDeviceLibraryPayload
-        ? pendingPersistence.promise
+        ? pendingPersistence!.promise
         : Promise.resolve(true);
     }
     lastPersistedDeviceLibraryPayloadRef.current = normalizedDeviceLibraryPayload;
@@ -471,7 +484,7 @@ export function createToggleNodeSelectionFromModifierClick(__appScope: Record<st
   const { activeSelectedEdgeIds, activeSelectedNodeIds, resetConnectPreviewState, selectedEdgeId, setCanvasSelectionScope, setConnectSource, setContextMenu, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
     const nodeAlreadySelected = activeSelectedNodeIds.includes(node.id);
     const nextNodeIds = nodeAlreadySelected
-      ? activeSelectedNodeIds.filter((nodeId) => nodeId !== node.id)
+      ? activeSelectedNodeIds.filter((nodeId: string) => nodeId !== node.id)
       : [...activeSelectedNodeIds, node.id];
     const nextEdgeIds = [...activeSelectedEdgeIds];
     setCanvasSelectionScope("direct");
@@ -490,7 +503,7 @@ export function createToggleEdgeSelectionFromModifierClick(__appScope: Record<st
   const { activeSelectedEdgeIds, activeSelectedNodeIds, resetConnectPreviewState, selectedEdgeId, setCanvasSelectionScope, setConnectSource, setContextMenu, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
     const edgeAlreadySelected = activeSelectedEdgeIds.includes(edge.id);
     const nextEdgeIds = edgeAlreadySelected
-      ? activeSelectedEdgeIds.filter((edgeId) => edgeId !== edge.id)
+      ? activeSelectedEdgeIds.filter((edgeId: string) => edgeId !== edge.id)
       : [...activeSelectedEdgeIds, edge.id];
     const nextNodeIds = [...activeSelectedNodeIds];
     setCanvasSelectionScope("direct");
@@ -518,10 +531,10 @@ export function createToggleSelectionFromModifierClick(__appScope: Record<string
     const targetNodeIdSet = new Set(targetNodeIds);
     const targetEdgeIdSet = new Set(targetEdgeIds);
     const nextNodeIds = allTargetsSelected
-      ? activeSelectedNodeIds.filter((nodeId) => !targetNodeIdSet.has(nodeId))
+      ? activeSelectedNodeIds.filter((nodeId: string) => !targetNodeIdSet.has(nodeId))
       : [...activeSelectedNodeIds, ...targetNodeIds.filter((nodeId) => !activeSelectedNodeIds.includes(nodeId))];
     const nextEdgeIds = allTargetsSelected
-      ? activeSelectedEdgeIds.filter((edgeId) => !targetEdgeIdSet.has(edgeId))
+      ? activeSelectedEdgeIds.filter((edgeId: string) => !targetEdgeIdSet.has(edgeId))
       : [...activeSelectedEdgeIds, ...targetEdgeIds.filter((edgeId) => !activeSelectedEdgeIds.includes(edgeId))];
     setCanvasSelectionScope("direct");
     setSelectedNodeIds(nextNodeIds);
@@ -563,7 +576,7 @@ export function createRestoreCanvasSelectionSnapshotWithInspector(__appScope: Re
 
 export function createStartModifierSelectionPress(__appScope: Record<string, any>) {
   return (
-    event: PointerEvent<Element>,
+    event: ReactPointerEvent<Element>,
     target: ModifierSelectionPressTarget = { kind: "blank" }
   ) => {
   const { clampPointToCanvas, lastCanvasPointerRef, lastEdgePointerClickRef, lastRawCanvasPointerRef, resetConnectPreviewState, screenToSvgPoint, setConnectSource, setContextMenu, setMarquee, setModifierSelectionPress, setProjectMenu, setRewiring, staticButtonPointerRef, svgRef, updateMouseStatus } = __appScope;
@@ -646,7 +659,7 @@ export function createFinishModifierSelectionPress(__appScope: Record<string, an
 }
 
 export function createStartNodeLabelDrag(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGGElement>, node: ModelNode) => {
+  return (event: ReactPointerEvent<SVGGElement>, node: ModelNode) => {
   const { activateInspectorFromCanvas, activeLayerNodeIdSet, clampPointToCanvas, getNodeScaleX, getNodeScaleY, getSafeNodeScaleX, getSafeNodeScaleY, hasCanvasSelectionModifier, isBrowseMode, nodeLabelOffset, screenToSvgPoint, selectCanvasGraphics, setInspectorTab, setNodeLabelDrag, startModifierSelectionPress, svgRef } = __appScope;
     if (!event.nativeEvent.defaultPrevented) {
       event.preventDefault();
@@ -681,7 +694,7 @@ export function createStartNodeLabelDrag(__appScope: Record<string, any>) {
 }
 
 export function createStartNodeLabelRotateDrag(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGCircleElement>, node: ModelNode) => {
+  return (event: ReactPointerEvent<SVGCircleElement>, node: ModelNode) => {
   const { activateInspectorFromCanvas, activeLayerNodeIdSet, hasCanvasSelectionModifier, isBrowseMode, nodeLabelCanvasCenter, normalizeNodeLabelRotation, selectCanvasGraphics, setInspectorTab, setNodeLabelRotateDrag, startModifierSelectionPress, svgRef } = __appScope;
     event.preventDefault();
     event.stopPropagation();
@@ -764,7 +777,7 @@ export function createSetSelectedNodeLabelDisplayMode(__appScope: Record<string,
     if (activeSelectedNodeIds.length === 0) {
       return;
     }
-    const updates = activeSelectedNodeIds.flatMap((nodeId) => {
+    const updates = activeSelectedNodeIds.flatMap((nodeId: string) => {
       const node = nodeById.get(nodeId);
       if (!node || isStaticNode(node)) {
         return [];
@@ -777,7 +790,7 @@ export function createSetSelectedNodeLabelDisplayMode(__appScope: Record<string,
     if (updates.length === 0) {
       return;
     }
-    const label = NODE_LABEL_DISPLAY_MODES.find((item) => item.value === mode)?.label ?? mode;
+    const label = NODE_LABEL_DISPLAY_MODES.find((item: { value: string; label: string }) => item.value === mode)?.label ?? mode;
     pushUndoSnapshot();
     commitNodeFootprintUpdates(updates);
     writeOperationLog(`设置 ${updates.length} 个图元标识显示方式：${label}`);
@@ -790,7 +803,7 @@ export function createToggleSelectedNodeLabelDisplay(__appScope: Record<string, 
     if (activeSelectedNodeIds.length === 0) {
       return;
     }
-    const hasVisibleLabel = activeSelectedNodeIds.some((nodeId) => {
+    const hasVisibleLabel = activeSelectedNodeIds.some((nodeId: string) => {
       const node = nodeById.get(nodeId);
       return node && !isStaticNode(node) && nodeLabelDisplayMode(node) !== "hidden";
     });
@@ -844,7 +857,7 @@ export function createCutSelection(__appScope: Record<string, any>) {
     const result = activeSelectedNodeIds.length > 0
       ? deleteNodesWithConnectedEdges(nodes, edges, activeSelectedNodeIds)
       : { nodes, edges };
-    const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
+    const nextEdges = result.edges.filter((edge: Edge) => !selectedEdges.has(edge.id));
     // 剪切 = 复制 + 删除:剪走容器要清成员归属、剪走绑定设备要解绑 + 容器重算收缩
     // (半程 enforce:不挤出,否则会搬动刚散出的成员)—— 三步走单源 helper
     const scattered = containerDeletionFinalize(nodes, activeSelectedNodeIds);
@@ -852,7 +865,7 @@ export function createCutSelection(__appScope: Record<string, any>) {
     const unbindNotice = containerGatewayUnbindNotice(nodes, activeSelectedNodeIds);
     setGraphArrays(nextNodes, nextEdges);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, activeSelectedNodeIds, selectedEdges), nextNodes, nextEdges));
-    setProjectMeasurements((current) => normalizeProjectMeasurements(current, nextNodes));
+    setProjectMeasurements((current: ProjectMeasurementConfig) => normalizeProjectMeasurements(current, nextNodes));
     setCanvasSelectionScope("group");
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
@@ -923,16 +936,16 @@ export function createPasteSelection(__appScope: Record<string, any>) {
       [...edges, ...cloned.edges]
     );
     const pasteSourceNodes = hasCanvasOriginShift(pasteOriginShift)
-      ? nodes.map((node) => translateNodeBy(node, pasteOriginShift))
+      ? nodes.map((node: ModelNode) => translateNodeBy(node, pasteOriginShift))
       : nodes;
     const pasteSourceEdges = hasCanvasOriginShift(pasteOriginShift)
-      ? edges.map((edge) => translateEdgeBy(edge, pasteOriginShift))
+      ? edges.map((edge: Edge) => translateEdgeBy(edge, pasteOriginShift))
       : edges;
     const shiftedClonedNodes = hasCanvasOriginShift(pasteOriginShift)
-      ? cloned.nodes.map((node) => translateNodeBy(node, pasteOriginShift))
+      ? cloned.nodes.map((node: ModelNode) => translateNodeBy(node, pasteOriginShift))
       : cloned.nodes;
     const shiftedClonedEdges = hasCanvasOriginShift(pasteOriginShift)
-      ? cloned.edges.map((edge) => translateEdgeBy(edge, pasteOriginShift))
+      ? cloned.edges.map((edge: Edge) => translateEdgeBy(edge, pasteOriginShift))
       : cloned.edges;
     const pastedCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
       canvasBoundsWithOriginShift(canvasBounds, pasteOriginShift),
@@ -947,32 +960,32 @@ export function createPasteSelection(__appScope: Record<string, any>) {
       markBusTerminalSyncDirtyForEdges(pasteSourceEdges, shiftedClonedEdges);
     }
     let nextDeviceIndexCounters = normalizeDeviceIndexCounters(deviceIndexCounters, pasteSourceNodes);
-    const pasted = shiftedClonedNodes.map((node) => {
+    const pasted = shiftedClonedNodes.map((node: ModelNode) => {
       const draftNode = { ...node, layerId: activeLayerId, position: clampNodePositionToBounds(node, pastedCanvasBounds, node.position) };
       const result = assignPermanentDeviceIndex(draftNode, nextDeviceIndexCounters);
       nextDeviceIndexCounters = result.counters;
       return result.node;
     });
-    const pastedEdges = shiftedClonedEdges.map((edge) => ({
+    const pastedEdges = shiftedClonedEdges.map((edge: Edge) => ({
       ...edge,
       sourcePoint: edge.sourcePoint ? clampPointToBounds(edge.sourcePoint, pastedCanvasBounds) : undefined,
       targetPoint: edge.targetPoint ? clampPointToBounds(edge.targetPoint, pastedCanvasBounds) : undefined,
-      manualPoints: edge.manualPoints?.map((point) => clampPointToBounds(point, pastedCanvasBounds)),
-      routePoints: edge.routePoints?.map((point) => clampPointToBounds(point, pastedCanvasBounds))
+      manualPoints: edge.manualPoints?.map((point: Point) => clampPointToBounds(point, pastedCanvasBounds)),
+      routePoints: edge.routePoints?.map((point: Point) => clampPointToBounds(point, pastedCanvasBounds))
     }));
     // 归属落地:副本不继承归属(剥离在 buildCanvasClipboard),落点在容器矩形内的副本并入该容器
-    const nextNodes = commitContainerMembership([...pasteSourceNodes, ...pasted], pasted.map((node) => node.id));
+    const nextNodes = commitContainerMembership([...pasteSourceNodes, ...pasted], pasted.map((node: ModelNode) => node.id));
     const nextEdges = [...pasteSourceEdges, ...pastedEdges];
-    markStoredRouteEdgesDirty(pastedEdges.map((edge) => edge.id));
+    markStoredRouteEdgesDirty(pastedEdges.map((edge: Edge) => edge.id));
     setDeviceIndexCounters(nextDeviceIndexCounters);
     setGraphArrays(nextNodes, nextEdges);
     const shiftedPasteTargetPoint = translatePointBy(targetPoint, pasteOriginShift);
     lastRawCanvasPointerRef.current = shiftedPasteTargetPoint;
     lastCanvasPointerRef.current = clampPointToBounds(shiftedPasteTargetPoint, pastedCanvasBounds);
-    setGroups((current) => normalizeModelGroups([...current, ...cloned.groups], nextNodes, nextEdges));
+    setGroups((current: ModelGroup[]) => normalizeModelGroups([...current, ...cloned.groups], nextNodes, nextEdges));
     setCanvasSelectionScope("group");
-    setSelectedNodeIds(pasted.map((node) => node.id));
-    setSelectedEdgeIds(pastedEdges.map((edge) => edge.id));
+    setSelectedNodeIds(pasted.map((node: ModelNode) => node.id));
+    setSelectedEdgeIds(pastedEdges.map((edge: Edge) => edge.id));
     setSelectedEdgeId(pastedEdges[0]?.id ?? "");
     setConnectSource(null);
     resetConnectPreviewState();
@@ -993,14 +1006,14 @@ export function createCreateGraphTemplateType(__appScope: Record<string, any>) {
     if (!typeName) {
       return;
     }
-    const duplicate = graphTemplateTypes.some((item) => item.toLowerCase() === typeName.toLowerCase());
+    const duplicate = graphTemplateTypes.some((item: string) => item.toLowerCase() === typeName.toLowerCase());
     if (duplicate) {
       showGlobalMessage("模板类型名称重复，请换一个名称。");
       return;
     }
     const nextTypes = [...customGraphTemplateTypes, typeName];
     setCustomGraphTemplateTypes(nextTypes);
-    setExpandedGraphTemplateTypes((current) => current.includes(typeName) ? current : [...current, typeName]);
+    setExpandedGraphTemplateTypes((current: string[]) => current.includes(typeName) ? current : [...current, typeName]);
     setTemplateDraftType(typeName);
     persistTemplateLibraryChange({ customGraphTemplateTypes: nextTypes });
     writeOperationLog(`新增模板类型：${typeName}`);
@@ -1082,7 +1095,7 @@ export function createGroupDeviceTerminalAssociationFor(__appScope: Record<strin
     if (!template?.isContainer) {
       return defaultContainerAssociationForTerminalType(type);
     }
-    const terminalTypes = node.terminals.map((terminal) => terminal.type);
+    const terminalTypes = node.terminals.map((terminal: { type: TerminalType }) => terminal.type);
     return normalizeContainerTerminalAssociations(terminalTypes, template.terminalAssociations ?? [], node.terminals.length)[terminalIndex] ||
       defaultContainerAssociationForTerminalType(type);
   };
@@ -1158,7 +1171,7 @@ export function createValidateGroupDeviceIconReplacement(__appScope: Record<stri
   return (target: DeviceTemplate, terminals: readonly GroupDeviceTerminalDraft[]) => {
   const { groupDeviceTerminalSignature } = __appScope;
     const targetTerminalTypes = (target.terminalTypes ?? Array.from({ length: target.terminalCount }, () => target.terminalType)).slice(0, target.terminalCount) as TerminalType[];
-    const sourceTerminalTypes = terminals.map((terminal) => terminal.type);
+    const sourceTerminalTypes = terminals.map((terminal: { type: TerminalType }) => terminal.type);
     if (targetTerminalTypes.length !== sourceTerminalTypes.length || groupDeviceTerminalSignature(targetTerminalTypes) !== groupDeviceTerminalSignature(sourceTerminalTypes)) {
       return {
         valid: false,
@@ -1172,7 +1185,7 @@ export function createValidateGroupDeviceIconReplacement(__appScope: Record<stri
 export function createReplaceBuiltinDeviceIconOverride(__appScope: Record<string, any>) {
   return (targetTemplate: DeviceTemplate, groupIcon: string) => {
   const { deviceDefinitionOverrideForTemplate, libraryTemplates, setDeviceDefinitionOverrides } = __appScope;
-    setDeviceDefinitionOverrides((current) => {
+    setDeviceDefinitionOverrides((current: Record<string, DeviceTemplate>) => {
       const existingOverride = deviceDefinitionOverrideForTemplate(targetTemplate, current, libraryTemplates);
       return {
         ...current,
@@ -1255,10 +1268,10 @@ export function createConfirmCreateDeviceFromGroup(__appScope: Record<string, an
       showGlobalMessage("类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
       return;
     }
-    const terminalTypes = groupDeviceDefinitionDialog.terminals.map((terminal) => terminal.type);
+    const terminalTypes = groupDeviceDefinitionDialog.terminals.map((terminal: { type: TerminalType }) => terminal.type);
     const terminalAssociations = normalizeContainerTerminalAssociations(
       terminalTypes,
-      groupDeviceDefinitionDialog.terminals.map((terminal) => terminal.association),
+      groupDeviceDefinitionDialog.terminals.map((terminal: Terminal) => (terminal as { association?: string }).association),
       terminalTypes.length
     );
     const sourceGroup = activeGroupById.get(groupDeviceDefinitionDialog.sourceGroupId);
@@ -1281,7 +1294,7 @@ export function createConfirmCreateDeviceFromGroup(__appScope: Record<string, an
       terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => groupDeviceDefinitionDialog.terminals[index]?.label ?? ""),
       terminalAnchors: createDefaultCustomDeviceTerminalAnchors(
         groupDeviceDefinitionDialog.terminals.length,
-        groupDeviceDefinitionDialog.terminals.map((terminal) => terminal.anchor)
+        groupDeviceDefinitionDialog.terminals.map((terminal: Terminal) => terminal.anchor)
       ),
       terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalAssociations[index] ?? "ac-load") as ContainerTerminalAssociationValue[],
       isContainer: groupDeviceDefinitionDialog.terminals.length > 0,
@@ -1306,7 +1319,7 @@ export function createConfirmReplaceDeviceIconFromGroup(__appScope: Record<strin
     if (!groupDeviceDefinitionDialog) {
       return;
     }
-    const targetTemplate = groupDeviceReplacementTemplates.find((template) => template.kind === groupDeviceDefinitionDialog.targetKind);
+    const targetTemplate = groupDeviceReplacementTemplates.find((template: DeviceTemplate) => template.kind === groupDeviceDefinitionDialog.targetKind);
     if (!targetTemplate) {
       showGlobalMessage("请选择要修改图标的已有元件。");
       return;
@@ -1318,8 +1331,8 @@ export function createConfirmReplaceDeviceIconFromGroup(__appScope: Record<strin
     }
     const groupIcon = groupDeviceDefinitionDialog.iconImage;
     if (targetTemplate.custom) {
-      setCustomDeviceTemplates((current) =>
-        current.map((template) =>
+      setCustomDeviceTemplates((current: DeviceTemplate[]) =>
+        current.map((template: DeviceTemplate) =>
           template.kind === targetTemplate.kind
             ? { ...template, params: { ...template.params, backgroundImage: groupIcon, backgroundImageAssetId: "" } }
             : template
@@ -1329,7 +1342,7 @@ export function createConfirmReplaceDeviceIconFromGroup(__appScope: Record<strin
       replaceBuiltinDeviceIconOverride(targetTemplate, groupIcon);
     }
     if (editingCustomDeviceKind === targetTemplate.kind) {
-      setCustomDeviceDraft((current) => ({
+      setCustomDeviceDraft((current: CustomDeviceDraft) => ({
         ...current,
         backgroundImage: groupIcon,
         backgroundImageAssetId: "",
@@ -1400,7 +1413,7 @@ export function createConfirmAddGraphTemplate(__appScope: Record<string, any>) {
       showGlobalMessage("请输入模板名字。");
       return;
     }
-    if (customGraphTemplates.some((template) => template.typeName.toLowerCase() === typeName.toLowerCase() && template.name.toLowerCase() === name.toLowerCase())) {
+    if (customGraphTemplates.some((template: GraphTemplate) => template.typeName.toLowerCase() === typeName.toLowerCase() && template.name.toLowerCase() === name.toLowerCase())) {
       showGlobalMessage("模板名称重复，请换一个名称。");
       return;
     }
@@ -1414,8 +1427,8 @@ export function createConfirmAddGraphTemplate(__appScope: Record<string, any>) {
       createdAt: now,
       updatedAt: now
     };
-    const nextTypes = DEFAULT_GRAPH_TEMPLATE_TYPES.some((item) => item.toLowerCase() === typeName.toLowerCase()) ||
-      customGraphTemplateTypes.some((item) => item.toLowerCase() === typeName.toLowerCase())
+    const nextTypes = DEFAULT_GRAPH_TEMPLATE_TYPES.some((item: string) => item.toLowerCase() === typeName.toLowerCase()) ||
+      customGraphTemplateTypes.some((item: string) => item.toLowerCase() === typeName.toLowerCase())
       ? customGraphTemplateTypes
       : [...customGraphTemplateTypes, typeName];
     const nextTemplates = [...customGraphTemplates, template];
@@ -1423,7 +1436,7 @@ export function createConfirmAddGraphTemplate(__appScope: Record<string, any>) {
       setCustomGraphTemplateTypes(nextTypes);
     }
     setCustomGraphTemplates(nextTemplates);
-    setExpandedGraphTemplateTypes((current) => current.includes(typeName) ? current : [...current, typeName]);
+    setExpandedGraphTemplateTypes((current: string[]) => current.includes(typeName) ? current : [...current, typeName]);
     setLeftPanelTab("templates");
     setTemplateDialog(null);
     setTemplateDraftName("");
@@ -1513,16 +1526,16 @@ export function createDropGraphTemplate(__appScope: Record<string, any>) {
       [...edges, ...cloned.edges]
     );
     const dropSourceNodes = hasCanvasOriginShift(dropOriginShift)
-      ? nodes.map((node) => translateNodeBy(node, dropOriginShift))
+      ? nodes.map((node: ModelNode) => translateNodeBy(node, dropOriginShift))
       : nodes;
     const dropSourceEdges = hasCanvasOriginShift(dropOriginShift)
-      ? edges.map((edge) => translateEdgeBy(edge, dropOriginShift))
+      ? edges.map((edge: Edge) => translateEdgeBy(edge, dropOriginShift))
       : edges;
     const shiftedClonedNodes = hasCanvasOriginShift(dropOriginShift)
-      ? cloned.nodes.map((node) => translateNodeBy(node, dropOriginShift))
+      ? cloned.nodes.map((node: ModelNode) => translateNodeBy(node, dropOriginShift))
       : cloned.nodes;
     const shiftedClonedEdges = hasCanvasOriginShift(dropOriginShift)
-      ? cloned.edges.map((edge) => translateEdgeBy(edge, dropOriginShift))
+      ? cloned.edges.map((edge: Edge) => translateEdgeBy(edge, dropOriginShift))
       : cloned.edges;
     const shiftedPointerPosition = translatePointBy(pointerPosition, dropOriginShift);
     const dropCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
@@ -1540,32 +1553,32 @@ export function createDropGraphTemplate(__appScope: Record<string, any>) {
       markBusTerminalSyncDirtyForEdges(shiftedClonedEdges);
     }
     let nextDeviceIndexCounters = normalizeDeviceIndexCounters(deviceIndexCounters, dropSourceNodes);
-    const pasted = shiftedClonedNodes.map((node) => {
+    const pasted = shiftedClonedNodes.map((node: ModelNode) => {
       const draftNode = { ...node, layerId: activeLayerId, position: clampNodePositionToBounds(node, dropCanvasBounds, node.position) };
       const result = assignPermanentDeviceIndex(draftNode, nextDeviceIndexCounters);
       nextDeviceIndexCounters = result.counters;
       return result.node;
     });
-    const pastedEdges = shiftedClonedEdges.map((edge) => ({
+    const pastedEdges = shiftedClonedEdges.map((edge: Edge) => ({
       ...edge,
       sourcePoint: edge.sourcePoint ? clampPointToBounds(edge.sourcePoint, dropCanvasBounds) : undefined,
       targetPoint: edge.targetPoint ? clampPointToBounds(edge.targetPoint, dropCanvasBounds) : undefined,
-      manualPoints: edge.manualPoints?.map((point) => clampPointToBounds(point, dropCanvasBounds)),
-      routePoints: edge.routePoints?.map((point) => clampPointToBounds(point, dropCanvasBounds))
+      manualPoints: edge.manualPoints?.map((point: Point) => clampPointToBounds(point, dropCanvasBounds)),
+      routePoints: edge.routePoints?.map((point: Point) => clampPointToBounds(point, dropCanvasBounds))
     }));
     // 归属落地:与粘贴同一出口(落点在容器矩形内的模板图元并入该容器,容器随成员重算 + 挤出非成员)
-    const nextNodes = commitContainerMembership([...dropSourceNodes, ...pasted], pasted.map((node) => node.id));
+    const nextNodes = commitContainerMembership([...dropSourceNodes, ...pasted], pasted.map((node: ModelNode) => node.id));
     const nextEdges = [...dropSourceEdges, ...pastedEdges];
     pushUndoSnapshot();
-    markStoredRouteEdgesDirty(pastedEdges.map((edge) => edge.id));
+    markStoredRouteEdgesDirty(pastedEdges.map((edge: Edge) => edge.id));
     setDeviceIndexCounters(nextDeviceIndexCounters);
     setGraphArrays(nextNodes, nextEdges);
-    setGroups((current) => normalizeModelGroups([...current, ...cloned.groups], nextNodes, nextEdges));
+    setGroups((current: ModelGroup[]) => normalizeModelGroups([...current, ...cloned.groups], nextNodes, nextEdges));
     lastRawCanvasPointerRef.current = shiftedPointerPosition;
     lastCanvasPointerRef.current = clampPointToBounds(shiftedPointerPosition, dropCanvasBounds);
     setCanvasSelectionScope("group");
-    setSelectedNodeIds(pasted.map((node) => node.id));
-    setSelectedEdgeIds(pastedEdges.map((edge) => edge.id));
+    setSelectedNodeIds(pasted.map((node: ModelNode) => node.id));
+    setSelectedEdgeIds(pastedEdges.map((edge: Edge) => edge.id));
     setSelectedEdgeId(pastedEdges[0]?.id ?? "");
     setConnectSource(null);
     resetConnectPreviewState();
@@ -1618,7 +1631,7 @@ export function createOpenFilterSelectionDialog(__appScope: Record<string, any>)
   const { activeLayerNodeIdSet, activeSelectedNodeIds, filterSelectionItemKey, nodeById, setFilterSelectionDialogOpen, setFilterSelectionTypeKeys } = __appScope;
     const activeSelectedTypeKeys = Array.from(new Set(
       activeSelectedNodeIds
-        .flatMap((nodeId) => {
+        .flatMap((nodeId: string) => {
           const node = nodeById.get(nodeId);
           return node && activeLayerNodeIdSet.has(node.id) ? [filterSelectionItemKey(node)] : [];
         })
@@ -1631,17 +1644,17 @@ export function createOpenFilterSelectionDialog(__appScope: Record<string, any>)
 export function createToggleFilterSelectionType(__appScope: Record<string, any>) {
   return (typeKey: string) => {
   const { filterSelectionTypeOptions, setFilterSelectionTypeKeys } = __appScope;
-    const option = filterSelectionTypeOptions.find((item) => item.typeKey === typeKey);
+    const option = filterSelectionTypeOptions.find((item: FilterSelectionTypeOption) => item.typeKey === typeKey);
     if (!option) {
       return;
     }
-    const itemKeys = option.items.map((item) => item.itemKey);
+    const itemKeys = (option.items ?? []).map((item: { itemKey: string }) => item.itemKey);
     const itemKeySet = new Set(itemKeys);
-    setFilterSelectionTypeKeys((current) => {
-      const allSelected = itemKeys.every((itemKey) => current.includes(itemKey));
+    setFilterSelectionTypeKeys((current: string[]) => {
+      const allSelected = itemKeys.every((itemKey: string) => current.includes(itemKey));
       return allSelected
-        ? current.filter((item) => !itemKeySet.has(item))
-        : [...current, ...itemKeys.filter((itemKey) => !current.includes(itemKey))];
+        ? current.filter((item: string) => !itemKeySet.has(item))
+        : [...current, ...itemKeys.filter((itemKey: string) => !current.includes(itemKey))];
     });
   };
 }
@@ -1649,9 +1662,9 @@ export function createToggleFilterSelectionType(__appScope: Record<string, any>)
 export function createToggleFilterSelectionItem(__appScope: Record<string, any>) {
   return (itemKey: string) => {
   const { setFilterSelectionTypeKeys } = __appScope;
-    setFilterSelectionTypeKeys((current) =>
+    setFilterSelectionTypeKeys((current: string[]) =>
       current.includes(itemKey)
-        ? current.filter((item) => item !== itemKey)
+        ? current.filter((item: string) => item !== itemKey)
         : [...current, itemKey]
     );
   };
@@ -1662,10 +1675,10 @@ export function createConfirmFilterSelectionDialog(__appScope: Record<string, an
   const { activeLayerNodes, filterSelectionItemKey, filterSelectionTypeKeys, resetConnectPreviewState, selectCanvasGraphics, setConnectSource, setFilterSelectionDialogOpen, setRewiring, switchInspectorTabForCanvasSelection, writeOperationLog } = __appScope;
     const selectedItemKeys = new Set(filterSelectionTypeKeys);
     const nextSelectedNodes = selectedItemKeys.size > 0
-      ? activeLayerNodes.filter((node) => selectedItemKeys.has(filterSelectionItemKey(node)))
+      ? activeLayerNodes.filter((node: ModelNode) => selectedItemKeys.has(filterSelectionItemKey(node)))
       : [];
-    selectCanvasGraphics(nextSelectedNodes.map((node) => node.id), [], { scope: "direct" });
-    switchInspectorTabForCanvasSelection(nextSelectedNodes.map((node) => node.id), [], "marquee");
+    selectCanvasGraphics(nextSelectedNodes.map((node: ModelNode) => node.id), [], { scope: "direct" });
+    switchInspectorTabForCanvasSelection(nextSelectedNodes.map((node: ModelNode) => node.id), [], "marquee");
     setConnectSource(null);
     resetConnectPreviewState();
     setRewiring(null);
@@ -1694,9 +1707,9 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
     if (lastCanvasClickTarget === "measurement" && activeSelectedNodeIds.length > 0) {
       const targetNodeIds = new Set(activeSelectedNodeIds);
       pushUndoSnapshot();
-      setProjectMeasurements((current) => ({
+      setProjectMeasurements((current: ProjectMeasurementConfig) => ({
         version: 1,
-        groups: (current?.groups ?? []).filter((g) => !targetNodeIds.has(g.nodeId))
+        groups: (current?.groups ?? []).filter((g: MeasurementGroup) => !targetNodeIds.has(g.nodeId))
       }));
       setCanvasSelectionScope("group");
       setSelectedNodeIds([]);
@@ -1714,14 +1727,14 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
     if (activeSelectedNodeIds.length === 0) {
       pushUndoSnapshot();
       setLastCanvasClickTarget(null); // 清点击目标属删除提交的一部分:容器确认框取消时不得留下(见 doDelete)
-      const deletedEdges = activeSelectedEdgeIds.flatMap((edgeId) => {
+      const deletedEdges = activeSelectedEdgeIds.flatMap((edgeId: string) => {
         const edge = edgeById.get(edgeId);
         return edge ? [edge] : [];
       });
       markRouteEdgesDirty(selectedEdges);
       markStoredRouteEdgesDirty(selectedEdges);
       markBusTerminalSyncDirtyForEdges(deletedEdges);
-      const nextEdges = edges.filter((edge) => !selectedEdges.has(edge.id));
+      const nextEdges = edges.filter((edge: Edge) => !selectedEdges.has(edge.id));
       setEdges(nextEdges);
       setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, [], selectedEdges), nodes, nextEdges));
       setCanvasSelectionScope("group");
@@ -1740,11 +1753,11 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
       setLastCanvasClickTarget(null); // 取消确认时不得留下副作用,故挪进提交体(确认前不写)
       pushUndoSnapshot();
       const deletedEdges = edgeListForNodeIds(expandedNodeIds, selectedEdges);
-      markRouteEdgesDirty(deletedEdges.map((edge) => edge.id));
-      markStoredRouteEdgesDirty(deletedEdges.map((edge) => edge.id));
+      markRouteEdgesDirty(deletedEdges.map((edge: Edge) => edge.id));
+      markStoredRouteEdgesDirty(deletedEdges.map((edge: Edge) => edge.id));
       markBusTerminalSyncDirtyForEdges(deletedEdges);
       const result = deleteNodesWithConnectedEdges(latestNodes, latestEdges, expandedNodeIds);
-      const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
+      const nextEdges = result.edges.filter((edge: Edge) => !selectedEdges.has(edge.id));
       // 删除收尾(spec「其它交互边界」):① 被删容器的成员清 containerId,成员保留 —— 否则悬空值随保存持久化;
       // ② 绑定设备被删 → 解绑 + 关关口;③ 成员被删/散出后容器几何重算收缩(半程 enforce:不挤出,否则会搬动刚散出的成员)。
       // 全部与删除同一次提交(单一撤销单元),故 undo 一次即可连归属与容器几何一起还原。
@@ -1756,7 +1769,7 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
       void syncGlobalLineProjectNodes?.(nextNodes, false);
       // groups 走函数式:确认窗口横跨交互窗口,持点击快照会覆盖期间的并发改动
       setGroups((current: any) => normalizeModelGroups(removeGraphicsFromGroups(current, expandedNodeIds, selectedEdges), nextNodes, nextEdges));
-      setProjectMeasurements((current) => normalizeProjectMeasurements(current, nextNodes));
+      setProjectMeasurements((current: ProjectMeasurementConfig) => normalizeProjectMeasurements(current, nextNodes));
       setCanvasSelectionScope("group");
       setSelectedNodeIds([]);
       setSelectedEdgeId("");
@@ -2373,11 +2386,11 @@ export function createRoutableLineRouteCandidateIdsForMovedNodes(__appScope: Rec
     }
     const routeBlockerBoxesForMovedNodes = (sourceNodes: ModelNode[], positions?: Record<string, Point>) =>
       getRouteBlockingCandidates(
-        orderedNodesForIds(sourceNodes, movedIds).map((node) => {
+        orderedNodesForIds(sourceNodes, movedIds).map((node: ModelNode) => {
           const position = positions?.[node.id];
           return position ? { ...node, position } : node;
         })
-      ).map((candidate) => expandRouteBox(candidate.box, MOVE_ROUTE_LOCAL_SEARCH_PADDING));
+      ).map((candidate: { box: SelectionRect }) => expandRouteBox(candidate.box, MOVE_ROUTE_LOCAL_SEARCH_PADDING));
     const movedRouteBlockerBoxes = [
       ...routeBlockerBoxesForMovedNodes(previousNodes, originalPositions),
       ...routeBlockerBoxesForMovedNodes(nextNodes)
@@ -2482,7 +2495,7 @@ export function createScheduleDeferredRoutableLineRouteRepair(__appScope: Record
       }
       expandCanvasToFitGraph(nodeUpdates, [], [], CANVAS_AUTO_EXPAND_PADDING, effectiveCanvasBounds);
       markGraphDirtyForInteractiveCommit();
-      setGraphStore((current) =>
+      setGraphStore((current: GraphStore) =>
         graphStorePatchStillCurrent(current, expectedNodeUpdates, [], [])
           ? graphStorePatchNodes(current, nodeUpdates)
           : current
@@ -2583,8 +2596,8 @@ export function createRoutePointsForMovedNodeBlockers(__appScope: Record<string,
       return baseRoutePoints;
     }
     const movedCandidates = getRouteBlockingCandidates(movedNodes);
-    const movedCandidateBounds = movedCandidates.reduce<{ left: number; right: number; top: number; bottom: number } | null>(
-      (bounds, candidate) => {
+    const movedCandidateBounds = movedCandidates.reduce(
+      (bounds: SelectionRect, candidate: { box: SelectionRect }) => {
         if (!bounds) {
           return { ...candidate.box };
         }
@@ -2643,18 +2656,18 @@ export function createRoutePointsForMovedEdgesBlockedByStationaryNodes(__appScop
       return baseRoutePoints;
     }
     const routingNodes = routingNodesForConnectionEdges(movedCandidateEdges, nextNodes, movedIds);
-    const stationaryNodes = routingNodes.filter((node) => !movedIds.has(node.id));
-    const endpointNodeById = new Map(routingNodes.map((node) => [node.id, node]));
+    const stationaryNodes = routingNodes.filter((node: ModelNode) => !movedIds.has(node.id));
+    const endpointNodeById = new Map(routingNodes.map((node: ModelNode) => [node.id, node]));
     if (stationaryNodes.length === 0 && endpointNodeById.size === 0) {
       return baseRoutePoints;
     }
     const stationaryCandidates = getRouteBlockingCandidates(stationaryNodes);
-    const routeByEdgeId = new Map(routeEdgesForStoredRendering(
+    const routeByEdgeId = new Map<string, RoutedEdge>(routeEdgesForStoredRendering(
       routingNodes,
       movedCandidateEdges,
       bounds,
       { preserveManualRouteDisplay: true }
-    ).map((route) => [route.edgeId, route]));
+    ).map((route: RoutedEdge) => [route.edgeId, route] as [string, RoutedEdge]));
     let nextRoutePoints = baseRoutePoints;
     for (const edge of movedCandidateEdges) {
       if (baseRoutePoints[edge.id]) {
@@ -2704,16 +2717,16 @@ export function createRoutePointsNearOriginalMovedNodes(__appScope: Record<strin
       return baseRoutePoints;
     }
     const originalMovedNodes = orderedNodesForIds(previousNodes, movedIds)
-      .filter((node) => originalPositions[node.id])
-      .map((node) => ({ ...node, position: originalPositions[node.id] }));
+      .filter((node: ModelNode) => originalPositions[node.id])
+      .map((node: ModelNode) => ({ ...node, position: originalPositions[node.id] }));
     if (originalMovedNodes.length === 0) {
       return baseRoutePoints;
     }
-    const originalBoxes = getRouteBlockingCandidates(originalMovedNodes).map((candidate) =>
+    const originalBoxes = getRouteBlockingCandidates(originalMovedNodes).map((candidate: { box: SelectionRect }) =>
       expandRouteBox(candidate.box, ORIGINAL_POSITION_REROUTE_PADDING)
     );
-    const originalBounds = originalBoxes.reduce<{ left: number; right: number; top: number; bottom: number } | null>(
-      (bounds, box) => {
+    const originalBounds = originalBoxes.reduce(
+      (bounds: SelectionRect, box: SelectionRect) => {
         if (!bounds) {
           return { ...box };
         }
@@ -2991,19 +3004,19 @@ export function createFinalizeMovedNodeEdgesFast(__appScope: Record<string, any>
       reconcileNodes.previous,
       reconcileNodes.next,
       candidateEdges,
-      (_first, _second, index) => `edge-overlap-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+      (_first: unknown, _second: unknown, index: number) => `edge-overlap-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
       movedNodeIdSet,
       localCandidateEdges
     );
     let nextEdges = reconciled.edges;
     for (const edgeId of reconciled.addedEdgeIds) {
-      const edge = nextEdges.find((item) => item.id === edgeId);
+      const edge = nextEdges.find((item: Edge) => item.id === edgeId);
       if (!edge) {
         continue;
       }
       const prepared = prepareConnectionEdgeForCommit(routingNodesForConnectionEdge(edge, nextNodes), [edge], edgeId, canvasBounds, routedEdges);
       if (prepared.ok && prepared.edge) {
-        nextEdges = nextEdges.map((edge) => edge.id === edgeId ? prepared.edge! : edge);
+        nextEdges = nextEdges.map((edge: Edge) => edge.id === edgeId ? prepared.edge! : edge);
       }
     }
     return nextEdges;
@@ -3134,7 +3147,7 @@ export function createScheduleMovedEdgeOptimization(__appScope: Record<string, a
       deferredMoveOptimizationCancelRef.current = null;
       return;
     }
-    const optimizationEdgeIds = optimizationEdges.map((edge) => edge.id);
+    const optimizationEdgeIds = optimizationEdges.map((edge: Edge) => edge.id);
     deferredMoveOptimizationCancelRef.current = scheduleIdleWork(() => {
       deferredMoveOptimizationCancelRef.current = null;
       const latestStore = latestGraphStoreRef.current;
@@ -3149,7 +3162,7 @@ export function createScheduleMovedEdgeOptimization(__appScope: Record<string, a
         return;
       }
       const expectedNodes = latestStore.nodes;
-      const latestOptimizationEdges = optimizationEdgeIds.flatMap((edgeId) => {
+      const latestOptimizationEdges = optimizationEdgeIds.flatMap((edgeId: string) => {
         const edge = latestStore.edgeMap.get(edgeId);
         return edge ? [edge] : [];
       });
@@ -3190,8 +3203,8 @@ export function createScheduleMovedEdgeOptimization(__appScope: Record<string, a
       for (const edgeId of Object.keys(optimized.routePoints)) {
         dirtyOptimizedEdgeIds.add(edgeId);
       }
-      const previousOptimizedEdgeById = new Map(latestOptimizationEdges.map((edge) => [edge.id, edge]));
-      const optimizedEdgeById = new Map(optimized.edges.map((edge) => [edge.id, edge]));
+      const previousOptimizedEdgeById = new Map<string, Edge>(latestOptimizationEdges.map((edge: Edge) => [edge.id, edge] as [string, Edge]));
+      const optimizedEdgeById = new Map<string, Edge>(optimized.edges.map((edge: Edge) => [edge.id, edge] as [string, Edge]));
       const optimizedEdgeUpdates: Edge[] = [];
       for (const edgeId of dirtyOptimizedEdgeIds) {
         const optimizedEdge = optimizedEdgeById.get(edgeId);
@@ -3204,7 +3217,7 @@ export function createScheduleMovedEdgeOptimization(__appScope: Record<string, a
       }
       markRouteEdgesDirty(dirtyOptimizedEdgeIds);
       markStoredRouteEdgesDirty(dirtyOptimizedEdgeIds);
-      setGraphStore((current) => graphStorePatchEdges(current, optimizedEdgeUpdates));
+      setGraphStore((current: GraphStore) => graphStorePatchEdges(current, optimizedEdgeUpdates));
     }, 180, 1500);
   };
 }
@@ -3245,7 +3258,7 @@ export function createScheduleDeferredMovedConnectionRepair(__appScope: Record<s
         return;
       }
       const latestNodes = latestStore.nodes;
-      const latestCandidateEdges = candidateEdgeIds.flatMap((edgeId) => {
+      const latestCandidateEdges = candidateEdgeIds.flatMap((edgeId: string) => {
         const edge = latestStore.edgeMap.get(edgeId);
         return edge ? [edge] : [];
       });
@@ -3338,7 +3351,7 @@ export function createScheduleDeferredMovedConnectionRepair(__appScope: Record<s
         )
       );
       markGraphDirtyForInteractiveCommit();
-      setGraphStore((current) =>
+      setGraphStore((current: GraphStore) =>
         graphStoreApplyPatch(current, {
           edgeUpserts: deferredEdgePatch.edgeUpserts,
           edgeDeleteIds: deferredEdgePatch.edgeDeleteIds
@@ -3416,7 +3429,7 @@ export function createLightweightMovedEndpointRoute(__appScope: Record<string, a
       targetDelta: targetMoved ? { x: nextEnd.x - originalEnd.x, y: nextEnd.y - originalEnd.y } : { x: 0, y: 0 },
       sourceNormal,
       targetNormal
-    }).map((point) => clampPointToBounds(point, bounds));
+    }).map((point: Point) => clampPointToBounds(point, bounds));
     const routeEdge = {
       ...edge,
       sourcePoint: isBusNode(source) ? sourceEndpointPoint ?? nextStart : edge.sourcePoint,
@@ -3425,7 +3438,7 @@ export function createLightweightMovedEndpointRoute(__appScope: Record<string, a
       manualPoints: preservedPoints.length > 2 ? preservedPoints.slice(1, -1) : undefined
     };
     const repairedRoute = routeEdgesForStoredRendering([source, target], [routeEdge], bounds)[0];
-    const points = (repairedRoute?.points ?? preservedPoints).map((point) => clampPointToBounds(point, bounds));
+    const points = (repairedRoute?.points ?? preservedPoints).map((point: Point) => clampPointToBounds(point, bounds));
     const endpointBlockers = [source, target];
     if (routeIntersectsEndpointNodeBodies(points, routeEdge, endpointBlockers)) {
       return null;
@@ -3505,7 +3518,7 @@ export function createPatchCachedRoutesForBulkTranslation(__appScope: Record<str
     if (shouldRebuildRouteStore) {
       const patchedEdgeIds = new Set<string>();
       const routeUpdates: RoutedEdge[] = [];
-      const nextRoutes = routeStore.routes.map((route) => {
+      const nextRoutes = routeStore.routes.map((route: RoutedEdge) => {
         if (!ids.has(route.edgeId)) {
           return route;
         }
@@ -3525,7 +3538,7 @@ export function createPatchCachedRoutesForBulkTranslation(__appScope: Record<str
     const { store: patchedRouteStore, patchedEdgeIds } = routeStorePatchRoutesById(
       routeStore,
       ids,
-      (route) => translateRouteBy(route, delta)
+      (route: RoutedEdge) => translateRouteBy(route, delta)
     );
     if (patchedEdgeIds.size === 0) {
       return { patchedEdgeIds, durationMs: performance.now() - start };
@@ -3728,7 +3741,7 @@ export function createCommitFastMovedGraphPatches(__appScope: Record<string, any
           : movedNodeUpdates;
     const committedNextNodes =
       committedNodeUpdates !== movedNodeUpdates
-        ? nextNodesForMovedGraphCommit(graphStore, committedNodeUpdates, committedNodeUpdates.map((node) => node.id))
+        ? nextNodesForMovedGraphCommit(graphStore, committedNodeUpdates, committedNodeUpdates.map((node: ModelNode) => node.id))
         : nextNodes;
     const bulkPlanStart = performance.now();
     const bulkPlan = buildBulkMovePlan(
@@ -3792,12 +3805,12 @@ export function createCommitFastMovedGraphPatches(__appScope: Record<string, any
     canvasBoundsMs += performance.now() - originShiftStart;
     if (hasCanvasOriginShift(originShift)) {
       const candidateEdgeById = new Map(committedCandidateEdges.map((edge) => [edge.id, edge]));
-      const rawNextEdges = edges.map((edge) => candidateEdgeById.get(edge.id) ?? edge);
+      const rawNextEdges = edges.map((edge: Edge) => candidateEdgeById.get(edge.id) ?? edge);
       const rawNextNodes = overlayGraphStoreNodes(graphStore, committedNodeUpdates);
-      const shiftedNextNodes = rawNextNodes.map((node) => translateNodeBy(node, originShift));
-      const shiftedNextEdges = rawNextEdges.map((edge) => translateEdgeBy(edge, originShift));
-      const committedNodeIdSet = new Set(committedNodeUpdates.map((node) => node.id));
-      const shiftedExpectedNodeUpdates = shiftedNextNodes.filter((node) => committedNodeIdSet.has(node.id));
+      const shiftedNextNodes = rawNextNodes.map((node: ModelNode) => translateNodeBy(node, originShift));
+      const shiftedNextEdges = rawNextEdges.map((edge: Edge) => translateEdgeBy(edge, originShift));
+      const committedNodeIdSet = new Set(committedNodeUpdates.map((node: ModelNode) => node.id));
+      const shiftedExpectedNodeUpdates = shiftedNextNodes.filter((node: ModelNode) => committedNodeIdSet.has(node.id));
       const shiftedCanvasBoundsStart = performance.now();
       const shiftedCanvasBounds = canvasBoundsForGraphContent(
         canvasBoundsWithOriginShift(effectiveCanvasBounds, originShift),
@@ -3818,7 +3831,7 @@ export function createCommitFastMovedGraphPatches(__appScope: Record<string, any
       markGraphDirtyForInteractiveCommit();
       markDirtyMs += performance.now() - markDirtyStart;
       const graphPatchStart = performance.now();
-      setGraphStore((current) => graphStoreSetGraph(current, shiftedNextNodes, shiftedNextEdges));
+      setGraphStore((current: GraphStore) => graphStoreSetGraph(current, shiftedNextNodes, shiftedNextEdges));
       graphPatchMs += performance.now() - graphPatchStart;
       logBulkMoveCommitStats({
         kind: bulkCommitKind,
@@ -3854,7 +3867,7 @@ export function createCommitFastMovedGraphPatches(__appScope: Record<string, any
       const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);
       const expectedPatch = { nodeUpdates: committedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
       const edgePatchDirtyIds = [
-        ...edgePatch.edgeUpserts.map((edge) => edge.id),
+        ...edgePatch.edgeUpserts.map((edge: Edge) => edge.id),
         ...edgePatch.edgeDeleteIds
       ];
       edgePatchMs += performance.now() - edgePatchStart;
@@ -3892,7 +3905,7 @@ export function createCommitFastMovedGraphPatches(__appScope: Record<string, any
       markGraphDirtyForInteractiveCommit();
       markDirtyMs += performance.now() - markDirtyStart;
       const graphPatchStart = performance.now();
-      setGraphStore((current) =>
+      setGraphStore((current: GraphStore) =>
         graphStoreApplyPatch(current, {
           nodeUpdates: expectedPatch.nodeUpdates,
           edgeUpserts: expectedPatch.edgeUpserts,
@@ -4005,7 +4018,7 @@ export function createCommitFastMovedGraphPatches(__appScope: Record<string, any
     const edgePatch = edgePatchFromCandidateEdges(previousCandidateEdges, committedCandidateEdges);
     const nextEdgesForBounds = edgePatch.edgeUpserts;
     const edgePatchDirtyIds = [
-      ...edgePatch.edgeUpserts.map((edge) => edge.id),
+      ...edgePatch.edgeUpserts.map((edge: Edge) => edge.id),
       ...edgePatch.edgeDeleteIds
     ];
     const expectedPatch = { nodeUpdates: committedNodeUpdates, edgeUpserts: edgePatch.edgeUpserts, edgeDeleteIds: edgePatch.edgeDeleteIds };
@@ -4055,7 +4068,7 @@ export function createCommitFastMovedGraphPatches(__appScope: Record<string, any
     markGraphDirtyForInteractiveCommit();
     markDirtyMs += performance.now() - markDirtyStart;
     const graphPatchStart = performance.now();
-    setGraphStore((current) =>
+    setGraphStore((current: GraphStore) =>
       graphStoreApplyPatch(current, {
         nodeUpdates: expectedPatch.nodeUpdates,
         edgeUpserts: expectedPatch.edgeUpserts,
@@ -4267,12 +4280,12 @@ export function createClearImperativeSingleNodeDragOriginLines(__appScope: Recor
     const svg = svgRef.current;
     if (svg) {
       for (const edgeId of imperativeSingleNodeDragOriginEdgeIdsRef.current) {
-        svg.querySelectorAll<SVGElement>(`[data-edge-id="${cssSelectorEscape(edgeId)}"]`).forEach((element) => {
+        svg.querySelectorAll(`[data-edge-id="${cssSelectorEscape(edgeId)}"]`).forEach((element: Element) => {
           element.classList.remove("single-drag-origin-line");
         });
       }
       for (const nodeId of imperativeSingleNodeDragOriginRoutableLineNodeIdsRef.current) {
-        svg.querySelectorAll<SVGElement>(`[data-node-id="${cssSelectorEscape(nodeId)}"]`).forEach((element) => {
+        svg.querySelectorAll(`[data-node-id="${cssSelectorEscape(nodeId)}"]`).forEach((element: Element) => {
           element.classList.remove("single-drag-origin-line");
         });
       }
@@ -4314,12 +4327,12 @@ export function createSetImperativeSingleNodeDragOriginLines(__appScope: Record<
       }
     }
     for (const edgeId of edgeIds) {
-      svg.querySelectorAll<SVGElement>(`[data-edge-id="${cssSelectorEscape(edgeId)}"]`).forEach((element) => {
+      svg.querySelectorAll(`[data-edge-id="${cssSelectorEscape(edgeId)}"]`).forEach((element: Element) => {
         element.classList.add("single-drag-origin-line");
       });
     }
     for (const nodeId of routableLineNodeIds) {
-      svg.querySelectorAll<SVGElement>(`[data-node-id="${cssSelectorEscape(nodeId)}"]`).forEach((element) => {
+      svg.querySelectorAll(`[data-node-id="${cssSelectorEscape(nodeId)}"]`).forEach((element: Element) => {
         element.classList.add("single-drag-origin-line");
       });
     }
@@ -4336,7 +4349,7 @@ export function createSetImperativeSingleNodeDragOrigin(__appScope: Record<strin
       if (!svg) {
         return;
       }
-      svg.querySelectorAll<SVGElement>(`.measurement-group[data-export-device-id="${cssSelectorEscape(originNodeId)}"]`).forEach((element) => {
+      svg.querySelectorAll(`.measurement-group[data-export-device-id="${cssSelectorEscape(originNodeId)}"]`).forEach((element: Element) => {
         if (enabled) {
           element.classList.add("drag-origin");
         } else {
@@ -4532,7 +4545,7 @@ export function createRoutableLineIdsConnectedToNodeIds(__appScope: Record<strin
 
 export function createRoutableLineEndpointPreviewRoutePoints(__appScope: Record<string, any>) {
   return function routableLineEndpointPreviewRoutePoints(
-    refs: ReturnType<typeof routableLineDeviceEndpointRefs>,
+    refs: RoutableLineDeviceEndpointRefs,
     start: Point,
     end: Point,
     previewNodeById: Map<string, ModelNode>,
@@ -4676,7 +4689,7 @@ export function createBuildTranslatedInternalRoutableLineDragPreviewRoutes(__app
       if (!refs.source?.nodeId || !refs.target?.nodeId || !movedIds.has(refs.source.nodeId) || !movedIds.has(refs.target.nodeId)) {
         continue;
       }
-      const points = routableLineDeviceCanvasPoints(lineNode).map((point) => translatePointBy(point, delta));
+      const points = routableLineDeviceCanvasPoints(lineNode).map((point: Point) => translatePointBy(point, delta));
       routes.push({
         edgeId: `routable-line:${lineNode.id}`,
         routableLineNodeId: lineNode.id,
@@ -4699,17 +4712,17 @@ export function createBuildRoutableLineDragPreviewRoutes(__appScope: Record<stri
     if (dragState.wholeLayerMove) {
       return translatedInternalRoutableLinePreviewRoutes;
     }
-    const previewNodeUpdates = movedNodeIds.flatMap((nodeId) => {
+    const previewNodeUpdates = (movedNodeIds as string[]).flatMap((nodeId: string): ModelNode[] => {
       const node = singleNodeDragPreviewNodeFor(dragState, nodeId, delta);
       return node ? [node] : [];
     });
     const translatedInternalRoutableLineNodeIds = new Set(
-      translatedInternalRoutableLinePreviewRoutes.flatMap((route) =>
+      translatedInternalRoutableLinePreviewRoutes.flatMap((route: NodeDragPreviewRoute) =>
         route.routableLineNodeId ? [route.routableLineNodeId] : []
       )
     );
     const endpointPreviewRoutes = buildRoutableLinePreviewRoutesForNodeUpdates(nodeById, movedNodeIds, previewNodeUpdates)
-      .filter((route) => !route.routableLineNodeId || !translatedInternalRoutableLineNodeIds.has(route.routableLineNodeId));
+      .filter((route: NodeDragPreviewRoute) => !route.routableLineNodeId || !translatedInternalRoutableLineNodeIds.has(route.routableLineNodeId));
     return [...endpointPreviewRoutes, ...translatedInternalRoutableLinePreviewRoutes];
   };
 }
@@ -4803,7 +4816,7 @@ export function createBuildDragPreviewEndpointPoints(__appScope: Record<string, 
 export function createConnectionEndpointPreviewRoutePoints(__appScope: Record<string, any>) {
   return (
     edge: Edge,
-    endpoints: NonNullable<ReturnType<typeof buildDragPreviewEndpointPoints>>
+    endpoints: DragPreviewEndpointPoints
   ) => {
   const { canvasBounds, compactPreviewNodes, isBusNode, routeEdgesForStoredRendering, simpleOrthogonalDragPreviewPoints } = __appScope;
     const previewEdge = {
@@ -4846,7 +4859,7 @@ export function createBuildLightweightNodeDragPreviewRoutes(__appScope: Record<s
         return node && isBusNode(node);
       })
     );
-    const edgePreviewRoutes = previewEdges.flatMap((edge) => {
+    const edgePreviewRoutes = previewEdges.flatMap((edge: Edge) => {
       if (!visibleEdgeIdSet.has(edge.id)) {
         return [];
       }
@@ -4895,7 +4908,7 @@ export function createBuildLightweightNodeDragPreviewRouteMarkup(__appScope: Rec
       isMultiNodeMoveState(dragState) ? dragState.overlayPreview?.dynamicEdgePreviewEdges ?? [] : singleNodeDragPreviewEdges(dragState, delta)
     );
     return buildLightweightNodeDragPreviewRoutes(dragState, delta, previewEdges)
-      .map((route) => `<path class="connection-line drag-preview" data-drag-preview-edge-id="${escapeXml(route.edgeId)}" d="${escapeXml(route.path)}" style="--connection-color:${escapeXml(route.color)}"/>`)
+      .map((route: NodeDragPreviewRoute) => `<path class="connection-line drag-preview" data-drag-preview-edge-id="${escapeXml(route.edgeId)}" d="${escapeXml(route.path)}" style="--connection-color:${escapeXml(route.color)}"/>`)
       .join("");
   };
 }
@@ -5159,7 +5172,7 @@ export function createUpdateImperativeNodeDragDropHint(__appScope: Record<string
     const targetNode = nodeById.get(snapTarget.targetNodeId);
     const terminalType = targetNode && isBusNode(targetNode)
       ? getBusTerminalType(targetNode)
-      : targetNode?.terminals.find((terminal) => terminal.id === snapTarget.targetTerminalId)?.type;
+      : targetNode?.terminals.find((terminal: Terminal) => terminal.id === snapTarget.targetTerminalId)?.type;
     if (terminalType) {
       dropHint.style.setProperty("--connection-color", terminalColor(terminalType, colorPalette));
     }

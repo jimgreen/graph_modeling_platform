@@ -17,6 +17,7 @@ import {
   createSwitchInspectorTabForCanvasSelection
 } from "./appExtracted/appSelectionDragFactories";
 import { formatSvgNumber } from "./svgUtils";
+import type { TerminalType } from "./model";
 import { defaultContainerAssociationForTerminalType, normalizeContainerTerminalAssociations } from "./customDeviceUtils";
 import {
   calculateNodeBodyBounds,
@@ -961,7 +962,7 @@ describe("createGroupDeviceTerminalAssociationFor：组内端子的容器关联�
         libraryTemplateByKind: new Map([[over.templateKind ?? kind, over.template ?? null]]),
         normalizeContainerTerminalAssociations
       } as never
-    )({ kind, terminals: over.terminals ?? [] } as never, over.index ?? 0, over.terminalType ?? "ac");
+    )({ kind, terminals: over.terminals ?? [] } as never, over.index ?? 0, (over.terminalType ?? "ac") as TerminalType);
   };
 
   test("★ 非容器模板 → 走端子类型的默认关联（交流端子默认是交流**电源**）", () => {
