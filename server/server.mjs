@@ -383,8 +383,23 @@ export async function ensureStore(options = {}) {
 
 export async function readManifest(options = {}) {
   const paths = options.paths ?? defaultPaths;
+  // **filename 必须压成单段**（只取最后一段，丢掉任何目录成分）。manifest.json 会随
+  // 空间 ZIP 一起进来，内容完全由提供方控制，而下游有四处把它直接 join 到图片目录
+  // 再读或再删：
+  //   handleDownload          → 跨空间读走别人的图片（实测：HTTP 200 读出受害空间的文件内容）
+  //   handleDeleteImageAsset  → 删掉图片目录之外的任意文件
+  //   图标库导入的旧文件清理  → 同上
+  //   writeImageAssetFile     → 写入路径由它决定
+  // manifest 的出口只有这一个，所以在这里压平，四个消费点一次受益，也不会漏改。
+  // 上传的 filename 本来就是 `${id}${ext}` 的平铺名字，压平对正常数据是恒等变换。
   return readJsonStoreFile(paths.images, paths.manifest, [], (parsed) =>
-    Array.isArray(parsed) ? parsed.map((item) => ({ ...item, folderId: item.folderId || "root" })) : []
+    Array.isArray(parsed)
+      ? parsed.map((item) => ({
+        ...item,
+        folderId: item?.folderId || "root",
+        filename: safeImageExportFilename(item?.filename ?? "")
+      }))
+      : []
   );
 }
 
@@ -4489,6 +4504,16 @@ async function handleDownload(id, response, paths) {
     sendError(response, 404, "图片不存在。");
     return;
   }
+  const filePath = join(getAssetDir(item, { paths }), item.filename);
+  // manifest 里的条目与磁盘上的文件可以不同步：备份包只带 manifest 不带图、
+  // 图片被外部删掉、filename 被压成单段后指向另一个不存在的名字，都是真会遇到的。
+  // 先 stat 一次把这种情况回成干净的 404，而不是先 writeHead 再让流在后面炸。
+  try {
+    await stat(filePath);
+  } catch (error) {
+    sendError(response, error?.code === "ENOENT" ? 404 : 500, error?.code === "ENOENT" ? "图片文件缺失。" : "图片文件读取失败。");
+    return;
+  }
   response.writeHead(200, {
     "content-type": item.mimeType,
     // URL 不带空间维度（前端拼 apiPath('/images/' + id)），内容却按空间 cookie 取：
@@ -4498,7 +4523,13 @@ async function handleDownload(id, response, paths) {
     vary: "Cookie",
     ...accessControlOriginOnly
   });
-  createReadStream(join(getAssetDir(item, { paths }), item.filename)).pipe(response);
+  const stream = createReadStream(filePath);
+  // stat 与 read 之间仍可能出岔子（文件被并发删掉）：createReadStream 的失败只发
+  // 'error' 事件，不抛。不挂处理器的话响应永远不会结束，连接挂到超时。
+  stream.on("error", () => {
+    response.destroy();
+  });
+  stream.pipe(response);
 }
 
 async function handleDeleteImageAsset(id, response, paths) {
