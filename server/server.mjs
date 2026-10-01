@@ -3577,15 +3577,30 @@ async function projectJsonFileForName(schemeDir, name) {
       filePath: exactPath,
       fileName: `${safeFilePart(name, "模型")}.json`
     };
-  } catch {
+  } catch (error) {
+    // ENOENT 是正常路径：落到下面按文件名扫历史后缀。非 ENOENT（权限丢失 / 目录被占用）
+    // 此前与 ENOENT 共用一个 catch，静默继续往下走，等于把「读不到」说成「不存在」。
+    if (error?.code !== "ENOENT") {
+      throw new Error(`模型文件读取失败：${exactPath}（${error?.code ?? error?.name ?? "unknown"}）`, { cause: error });
+    }
     // Fall through to filename-based lookup for legacy files with storage suffixes.
   }
   const targetKey = storageProjectNameKey(name);
   let entries = [];
   try {
     entries = await readdir(schemeDir, { withFileTypes: true });
-  } catch {
-    return null;
+  } catch (error) {
+    // 同 readSchemeDirectory / archiveSchemeStoreEntry / listSpaceFiles 的口径：
+    // 只有 ENOENT（方案目录真的不在）才算「找不到模型」，其余 IO 失败上抛。
+    //
+    // 静默 return null 的代价不是「多一次扫盘」：existingStoredProjectIndex 会据此认为
+    // 「该模型还没有 idx」，于是重新分配一个**新 idx** —— 旧 idx 上挂着的全局线路引用
+    // （projectIdx）就此对不上，导出的 model_id 也跟着变。readSchemeProjectRecord 则会
+    // 回「模型不存在」404，而模型其实好好地在磁盘上。
+    if (error?.code === "ENOENT") {
+      return null;
+    }
+    throw new Error(`方案目录读取失败：${schemeDir}（${error?.code ?? error?.name ?? "unknown"}）`, { cause: error });
   }
   for (const entry of entries) {
     if (!entry.isFile() || !isModelJsonFile(entry.name)) {
