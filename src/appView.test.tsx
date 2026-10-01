@@ -851,7 +851,8 @@ describe("app view device definition parameter rows", () => {
   test("renders the parameter table from display-filtered rows", () => {
     const source = readAppViewSources();
 
-    expect(source).toMatch(/definitionDraftRowsForDisplay\.map\(\(row, rowIndex\)/);
+    // 允许回调形参带上 CustomParamDraft / number 注解，仍必须是 definitionDraftRowsForDisplay
+expect(source).toMatch(/definitionDraftRowsForDisplay\.map\(\(row(?::\s*CustomParamDraft)?,\s*rowIndex(?::\s*number)?\)/);
     expect(source).not.toMatch(/definitionDraftRows\.map\(\(row\)\s*=>\s*\(<tr key=\{row\.id\}/);
   });
 
