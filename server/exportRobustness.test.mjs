@@ -80,7 +80,22 @@ const CASES = [
   ["measurements 为字符串", { nodes: [busNode], edges: [], measurements: "x" }],
   ["measurements.groups 含 null", { nodes: [busNode], edges: [], measurements: { groups: [null] } }],
   ["measurements.groups 非数组", { nodes: [busNode], edges: [], measurements: { groups: 5 } }],
-  ["顶层非对象字段", { nodes: [busNode], edges: [], layers: null, measurements: null }]
+  ["顶层非对象字段", { nodes: [busNode], edges: [], layers: null, measurements: null }],
+  // ── 第二波：元素本身是对象、但字段类型不对（形状检查挡不住，得靠下游容忍）──
+  ["端子缺 type/anchor", { nodes: [{ ...busNode, terminals: [{ id: "t1" }] }], edges: [] }],
+  ["端子 vbase 为对象", { nodes: [{ ...busNode, terminals: [{ ...busNode.terminals[0], vbase: {} }] }], edges: [] }],
+  ["params 值类型错乱", { nodes: [{ ...busNode, params: { vbase: 10, name: {}, i_p: [], idx: true } }], edges: [] }],
+  ["kind 是未知值", { nodes: [{ ...busNode, kind: "根本不存在的外星设备" }], edges: [] }],
+  ["kind 为空串", { nodes: [{ ...busNode, kind: "" }], edges: [] }],
+  ["size 为字符串", { nodes: [{ ...busNode, size: "100x40" }], edges: [] }],
+  ["position 为字符串", { nodes: [{ ...busNode, position: "0,0" }], edges: [] }],
+  ["activeLayerId 指向不存在的图层", { nodes: [busNode], edges: [], layers: [{ id: "L1", name: "图层" }], activeLayerId: "L9" }],
+  ["canvasWidth 为字符串", { nodes: [busNode], edges: [], canvasWidth: "800", canvasHeight: "600" }],
+  ["量测组指向不存在的节点", {
+    nodes: [busNode],
+    edges: [],
+    measurements: { groups: [{ id: "g1", nodeId: "不存在", items: [null] }] }
+  }]
 ];
 
 beforeAll(async () => {

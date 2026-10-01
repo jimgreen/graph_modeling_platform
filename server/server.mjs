@@ -2912,6 +2912,16 @@ function normalizeProjectForStorage(project) {
           params,
           terminals: (Array.isArray(node.terminals) ? node.terminals : [])
             .filter((terminal) => terminal && typeof terminal === "object")
+            // 端子锚点同理：缺 anchor 的端子在 SVG 导出里撞 `anchor.x`。
+            // 全仓没有任何地方靠「anchor 缺席」分支（grep 过），补默认值是安全的。
+            // 缺锚点按节点原点算 —— 端子没声明位置时，这是诚实的取值。
+            .map((terminal) => ({
+              ...terminal,
+              anchor: {
+                x: Number(terminal.anchor?.x) || 0,
+                y: Number(terminal.anchor?.y) || 0
+              }
+            }))
         };
       }),
     edges: (Array.isArray(project?.edges) ? project.edges : [])
