@@ -141,6 +141,12 @@ describe("EFileEditor 成员关系段列解析", () => {
     expect(source).toContain("}, [open, tabLabelsKey]);");
   });
 
+  test("复制到剪贴板只有一份实现（textarea 回退曾一字不差写两遍）", () => {
+    const source = readFileSync(new URL("./EFileEditor.tsx", import.meta.url), "utf8");
+    expect(source.match(/document\.execCommand\("copy"\)/g)).toHaveLength(1);
+    expect(source).toContain("copyTextToClipboard(text).then(");
+  });
+
   test("模板态容器表以兜底名 container 出现在窗口（轮 17；轮 20 起列集与无模板态一致）", () => {
     const project = createContainerProject();
     // 模板态真实形状：有模板配置、容器类未命中模板（定义仍在、只被类门控置 exportEnabled=false）
