@@ -3720,7 +3720,14 @@ async function readPersistedModelIndex(counterPath) {
     const parsed = JSON.parse(await readFile(counterPath, "utf-8"));
     const value = Number(parsed?.lastIndex);
     return Number.isSafeInteger(value) && value > 0 ? value : 0;
-  } catch {
+  } catch (error) {
+    // 归 0 是**既有降级**（计数器本来就是缓存，真值在 maxStoredProjectIndex 的全量扫盘
+    // 里），但静默归 0 与「确实没有 idx」完全同形：计数器每次保存都被重置成 0，
+    // idx 分配退化成「全靠扫盘」，而日志里一个字都没有。
+    // ENOENT 是正常路径（新建工作区还没建过计数器），不刷屏。
+    if (error?.code !== "ENOENT") {
+      console.warn(`[模型序号] 读取计数器失败（${error?.code ?? error?.name ?? "unknown"}），已按 0 处理，本次 idx 分配改由全量扫盘决定：${counterPath}`);
+    }
     return 0;
   }
 }
@@ -3729,7 +3736,12 @@ async function maxStoredProjectIndex(dir) {
   let entries = [];
   try {
     entries = await readdir(dir, { withFileTypes: true });
-  } catch {
+  } catch (error) {
+    // 同上：归 0 是既有降级，但非 ENOENT 意味着这棵子树里的模型 idx 全部不可见，
+    // 于是计数器一旦也偏低就会分配出**重复 idx**。留一句，排查者才知道该去看哪儿。
+    if (error?.code !== "ENOENT") {
+      console.warn(`[模型序号] 扫描目录失败（${error?.code ?? error?.name ?? "unknown"}），已按 0 处理，该目录下模型的 idx 本次不参与计算：${dir}`);
+    }
     return 0;
   }
   let maxIndex = 0;
