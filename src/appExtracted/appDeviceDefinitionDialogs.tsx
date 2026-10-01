@@ -1,9 +1,62 @@
-// @ts-nocheck
 import { memo } from "react";
 import { areViewSectionPropsEqual, type ViewSectionInputs } from "./appViewRenderBoundary";
 import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
 import { PREDEFINED_E_DEVICE_TEMPLATES } from "../predefinedEDeviceTemplates";
 import { SymbolExportDialog } from "../SymbolExportDialog";
+import type { CSSProperties } from "react";
+import type {
+  CategoryLibraryComponentLibraryGroup,
+  CustomDeviceDraft,
+  CustomParamDraft
+} from "./appCoreCanvasUtilities";
+import type { DeviceParameterValueType, DeviceTemplate, ModelType, TerminalType } from "../model";
+
+// E 接口定义树节点：分组与字段共用同一递归形状。
+type EDeviceInterfaceCategoryNode = {
+  key: string;
+  items: EDeviceInterfaceCategoryNode[];
+  children: EDeviceInterfaceCategoryNode[];
+  // 其余字段（classCount / row / fields / exportEnabled / readonly …）仓库里没有任何
+  // 地方声明过这个节点的形状，索引签名如实表达「未声明」而不是臆造。
+  [key: string]: any;
+};
+
+// App.tsx 里 `useState(null)` 的两个对话框状态没有声明形状，此处只标注到实际用到的字段。
+type EDeviceInterfaceField = {
+  sourceName: string;
+  exportName: string;
+  cnName: string;
+  exportEnabled?: boolean;
+  readonly?: boolean;
+};
+
+// 图元库导入包逐字段比对的结果：matched 里每一项带 section / device / fields，
+// fields 的每一格带 template / device。
+type TemplateImportField = { template: string; device: string };
+type TemplateImportMatchedItem = {
+  id: string;
+  label: string;
+  section: string;
+  device: string;
+  fields: TemplateImportField[];
+  componentLibrary?: string;
+};
+
+// 元件定义弹窗里的「端子关联」行：来自 __appScope，本文件按用到的字段声明。
+type DefinitionTerminalAssociation = {
+  terminalIndex: number;
+  terminalType: string;
+  deviceModel: string;
+  roleLabel: string;
+  relationKey: string;
+  relationName: string;
+  dependent: boolean;
+  sourceTerminalIndex: number;
+  terminalLabel: string;
+};
+
+type CreateModelDialogState = { name: string; error: string };
+type CustomLibraryCreateDialogState = Record<string, any>;
 
 // 分段对话框：section / inputs 供比较器判定「数据不变就不重渲」（appView.tsx 三个都传），
 // scope 才是本段解构的数据来源。
@@ -85,17 +138,17 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                   </button>);
                 })()}
                 <div className="device-definition-tree-scroll dialog-compact-tree" role="tree">
-                  {displayedDeviceDefinitionLibraries.length > 0 ? displayedDeviceDefinitionLibraries.map((group) => {
+                  {displayedDeviceDefinitionLibraries.length > 0 ? displayedDeviceDefinitionLibraries.map((group: string) => {
             const typeGroups = filteredDeviceDefinitionByComponentLibrary[group] ?? [];
             const expanded = deviceDefinitionSearchNeedle ? true : expandedDefinitionGroups.includes(group);
             return (<section className="device-definition-group" key={group}>
                         <button type="button" className="device-definition-group-toggle" role="treeitem" aria-expanded={expanded} onClick={() => toggleDefinitionGroup(group)}>
                           {expanded ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
                           <span>{group}</span>
-                          <strong>{typeGroups.reduce((sum, typeGroup) => sum + typeGroup.templates.length, 0)}</strong>
+                          <strong>{typeGroups.reduce((sum: number, typeGroup: CategoryLibraryComponentLibraryGroup) => sum + typeGroup.templates.length, 0)}</strong>
                         </button>
                         {expanded && (<div className="component-definition-type-list" role="group" aria-label={`${group}类列表`}>
-                            {typeGroups.map((typeGroup) => {
+                            {typeGroups.map((typeGroup: CategoryLibraryComponentLibraryGroup) => {
                         const typeKey = categoryLibraryComponentLibraryKey(group, typeGroup.section);
                         const typeCollapsed = deviceDefinitionSearchNeedle ? false : collapsedDefinitionComponentLibraries.includes(typeKey);
                         const typeDisplay = componentLibraryDisplayParts(typeGroup.section, customComponentLibraries);
@@ -109,7 +162,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                                     <strong>{typeGroup.templates.length}</strong>
                                   </button>
                                   {!typeCollapsed && <div className="device-definition-items" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
-                                    {typeGroup.templates.map((template) => (<button type="button" key={template.kind} className={`device-definition-item ${selectedDefinitionTemplate?.kind === template.kind ? "active" : ""}`} role="treeitem" aria-selected={selectedDefinitionTemplate?.kind === template.kind} onClick={() => loadDefinitionTemplateDraft(template)}>
+                                    {typeGroup.templates.map((template: DeviceTemplate) => (<button type="button" key={template.kind} className={`device-definition-item ${selectedDefinitionTemplate?.kind === template.kind ? "active" : ""}`} role="treeitem" aria-selected={selectedDefinitionTemplate?.kind === template.kind} onClick={() => loadDefinitionTemplateDraft(template)}>
                                         <span className="dialog-tree-bilingual dialog-tree-component-label" title={`${template.label} / ${template.kind}`}>
                                           <span>{template.label}</span>
                                           <small>{template.kind}</small>
@@ -168,7 +221,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                         <span>能源属性</span>
                         <strong>
                           {(selectedDefinitionTemplate.terminalTypes ?? Array.from({ length: selectedDefinitionTemplate.terminalCount }, () => selectedDefinitionTemplate.terminalType))
-                .map((type) => TERMINAL_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type)
+                .map((type: string) => TERMINAL_TYPE_OPTIONS.find((option: { value: string; label: string }) => option.value === type)?.label ?? type)
                 .join(" / ") || "无端子"}
                         </strong>
                       </div>
@@ -202,9 +255,9 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {selectedDefinitionTerminalAssociations.map((association) => (<tr key={`${selectedDefinitionTemplate.kind}-terminal-${association.terminalIndex}`}>
+                                  {selectedDefinitionTerminalAssociations.map((association: DefinitionTerminalAssociation) => (<tr key={`${selectedDefinitionTemplate.kind}-terminal-${association.terminalIndex}`}>
                                       <td>{association.terminalLabel}</td>
-                                      <td>{TERMINAL_TYPE_OPTIONS.find((option) => option.value === association.terminalType)?.label ?? association.terminalType}</td>
+                                      <td>{TERMINAL_TYPE_OPTIONS.find((option: { value: string; label: string }) => option.value === association.terminalType)?.label ?? association.terminalType}</td>
                                       <td>{association.deviceModel ? `${association.roleLabel} / ${association.deviceModel}` : association.roleLabel}</td>
                                       <td><code>{association.relationKey || "-"}</code></td>
                                       <td>
@@ -270,7 +323,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                               </tr>
                             </thead>
                             <tbody>
-                              {definitionDraftRowsForDisplay.map((row, rowIndex) => (<tr
+                              {definitionDraftRowsForDisplay.map((row: CustomParamDraft, rowIndex: number) => (<tr
                                   key={row.id}
                                   className={`definition-table-row${selectedDefinitionParameterRowIdSet.has(row.id) ? " selected" : ""}${row.readonly ? " readonly-row" : ""}`}
                                   aria-selected={selectedDefinitionParameterRowIdSet.has(row.id)}
@@ -278,10 +331,10 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                                 >
                                   <td className="definition-table-sequence">{rowIndex + 1}</td>
                                   <td>
-                                    <BufferedTextInput value={row.cnName} disabled={row.readonly} onCommit={(value) => updateDefinitionDraftRow(row.id, { cnName: value })}/>
+                                    <BufferedTextInput value={row.cnName} disabled={row.readonly} onCommit={(value: string) => updateDefinitionDraftRow(row.id, { cnName: value })}/>
                                   </td>
                                   <td>
-                                    <BufferedTextInput value={row.enName} disabled={row.readonly} onCommit={(value) => updateDefinitionDraftRow(row.id, { enName: value })}/>
+                                    <BufferedTextInput value={row.enName} disabled={row.readonly} onCommit={(value: string) => updateDefinitionDraftRow(row.id, { enName: value })}/>
                                   </td>
                                   <td>
                                     <select value={row.valueType} disabled={row.readonly} onChange={(event) => {
@@ -296,7 +349,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                             enumValues: nextRow.enumValues
                         });
                     }}>
-                                      {PARAM_VALUE_TYPE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>
+                                      {PARAM_VALUE_TYPE_OPTIONS.map((option: { value: string; label: string }) => (<option key={option.value} value={option.value}>
                                           {option.label}
                                         </option>))}
                                     </select>
@@ -331,19 +384,19 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                 selectedRowIndexes: __appScope.selectedDefinitionMeasurementRowIndexes,
                 setSelectedRowIndexes: __appScope.setSelectedDefinitionMeasurementRowIndexes,
                 selectionAnchorIndex: __appScope.definitionMeasurementSelectionAnchorRef.current,
-                setSelectionAnchorIndex: (index) => {
+                setSelectionAnchorIndex: (index: number) => {
                   __appScope.definitionMeasurementSelectionAnchorRef.current = index;
                 },
-                ensureAssociatedField: (position, associatedField, measurementTypeId) => {
+                ensureAssociatedField: (position: string, associatedField: string, measurementTypeId: string) => {
                   if (position !== "device") return;
                   const measurementType = (measurementConfigDraft ?? measurementConfig).measurementTypes
-                    .find((type) => type.id === measurementTypeId);
+                    .find((type: { id: string }) => type.id === measurementTypeId);
                   const definition = createMeasurementFieldParameterDefinition(associatedField, {
                     cnName: measurementType?.name,
                     valueType: measurementType?.valueType === "string" || measurementType?.valueType === "boolean" ? "string" : "float"
                   });
                   if (!definition) return;
-                  setDefinitionDraftRows((current) => current.some((row) => row.enName.trim().toLowerCase() === definition.enName.toLowerCase())
+                  setDefinitionDraftRows((current: CustomParamDraft[]) => current.some((row: CustomParamDraft) => row.enName.trim().toLowerCase() === definition.enName.toLowerCase())
                     ? current
                     : [...current, { ...definition, id: deviceDefinitionRowId() }]);
                 }
@@ -393,7 +446,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                   aria-label="模型名称"
                   disabled={createModelDialog.saving}
                   value={createModelDialog.name}
-                  onChange={(event) => setCreateModelDialog((current) => current ? {
+                  onChange={(event) => setCreateModelDialog((current: CreateModelDialogState) => current ? {
                     ...current,
                     name: event.target.value,
                     error: ""
@@ -406,13 +459,13 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                   aria-label="模型类型"
                   disabled={createModelDialog.saving}
                   value={createModelDialog.modelType}
-                  onChange={(event) => setCreateModelDialog((current) => current ? {
+                  onChange={(event) => setCreateModelDialog((current: CreateModelDialogState) => current ? {
                     ...current,
                     modelType: event.target.value,
                     error: ""
                   } : current)}
                 >
-                  {__appScope.MODEL_TYPES.map((modelType) => (<option key={modelType} value={modelType}>{modelType}</option>))}
+                  {__appScope.MODEL_TYPES.map((modelType: ModelType) => (<option key={modelType} value={modelType}>{modelType}</option>))}
                 </select>
               </label>
               <p className="model-create-index-note">模型序号 idx 将在确认后由后台全局自动分配，并永久保持不变。</p>
@@ -446,7 +499,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                 <input
                   autoFocus
                   value={customLibraryCreateDialog.cnName}
-                  onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, cnName: event.target.value, error: "" } : current)}
+                  onChange={(event) => setCustomLibraryCreateDialog((current: CustomLibraryCreateDialogState) => current ? { ...current, cnName: event.target.value, error: "" } : current)}
                 />
               </label>
               <label>
@@ -457,7 +510,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                     : customLibraryCreateDialog.kind === "componentLibrary" ? "类英文名称" : "元件英文名称"}</span>
                 <input
                   value={customLibraryCreateDialog.enName}
-                  onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, enName: event.target.value, error: "" } : current)}
+                  onChange={(event) => setCustomLibraryCreateDialog((current: CustomLibraryCreateDialogState) => current ? { ...current, enName: event.target.value, error: "" } : current)}
                 />
               </label>
               {customLibraryCreateDialog.kind === "componentLibrary" && (<>
@@ -466,7 +519,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                   <select disabled={Boolean(customLibraryCreateDialog.classCreationMode)} value={customLibraryCreateDialog.isDerivedComponentLibrary ? "1" : "0"} onChange={(event) => {
                     const enabled = event.target.value === "1";
                     const fallbackBase = customLibraryCreateDialogBaseComponentLibraryOptions[0] ?? "";
-                    setCustomLibraryCreateDialog((current) => current ? {
+                    setCustomLibraryCreateDialog((current: CustomLibraryCreateDialogState) => current ? {
                       ...current,
                       isDerivedComponentLibrary: enabled,
                       derivedFromComponentLibrary: enabled
@@ -481,13 +534,13 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                 </label>
                 {customLibraryCreateDialog.isDerivedComponentLibrary && (<label className="custom-library-create-base-class-field">
                   <span>派生基类</span>
-                  <select disabled={Boolean(customLibraryCreateDialog.classCreationMode)} value={customLibraryCreateDialog.derivedFromComponentLibrary ?? ""} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
+                  <select disabled={Boolean(customLibraryCreateDialog.classCreationMode)} value={customLibraryCreateDialog.derivedFromComponentLibrary ?? ""} onChange={(event) => setCustomLibraryCreateDialog((current: CustomLibraryCreateDialogState) => current ? {
                     ...current,
                     derivedFromComponentLibrary: event.target.value,
                     error: ""
                   } : current)} aria-label="派生基类选择">
                     <option value="">请选择基类</option>
-                    {customLibraryCreateDialogBaseComponentLibraryOptions.map((section) => (<option key={section} value={section}>
+                    {customLibraryCreateDialogBaseComponentLibraryOptions.map((section: string) => (<option key={section} value={section}>
                       {componentLibraryDisplayParts(section, customComponentLibraries).title}
                     </option>))}
                   </select>
@@ -495,7 +548,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                 {!customLibraryCreateDialog.isDerivedComponentLibrary && (<>
                   <label>
                     <span>是否容器</span>
-                    <select value={customLibraryCreateDialog.isContainer ? "1" : "0"} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
+                    <select value={customLibraryCreateDialog.isContainer ? "1" : "0"} onChange={(event) => setCustomLibraryCreateDialog((current: CustomLibraryCreateDialogState) => current ? {
                       ...current,
                       isContainer: event.target.value === "1",
                       error: ""
@@ -506,7 +559,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                   </label>
                   <label>
                     <span>端子数量</span>
-                    <input type="number" min="0" max={MAX_CUSTOM_DEVICE_TERMINALS} step="1" value={customLibraryCreateDialog.terminalCount ?? 0} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
+                    <input type="number" min="0" max={MAX_CUSTOM_DEVICE_TERMINALS} step="1" value={customLibraryCreateDialog.terminalCount ?? 0} onChange={(event) => setCustomLibraryCreateDialog((current: CustomLibraryCreateDialogState) => current ? {
                       ...current,
                       terminalCount: Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(Number(event.target.value) || 0))),
                       error: ""
@@ -519,7 +572,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                       <strong>{`端子 ${index + 1}`}</strong>
                       <label>
                         <span>能源属性</span>
-                        <select value={terminalType} onChange={(event) => setCustomLibraryCreateDialog((current) => {
+                        <select value={terminalType} onChange={(event) => setCustomLibraryCreateDialog((current: CustomLibraryCreateDialogState) => {
                           if (!current) return current;
                           const terminalTypes = [...(current.terminalTypes ?? [])];
                           const terminalAssociations = [...(current.terminalAssociations ?? [])];
@@ -527,12 +580,12 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                           terminalAssociations[index] = defaultContainerAssociationForTerminalType(event.target.value);
                           return { ...current, terminalTypes, terminalAssociations, error: "" };
                         })}>
-                          {TERMINAL_TYPE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
+                          {TERMINAL_TYPE_OPTIONS.map((option: { value: string; label: string }) => (<option key={option.value} value={option.value}>{option.label}</option>))}
                         </select>
                       </label>
                       <label>
                         <span>端子名称</span>
-                        <input value={customLibraryCreateDialog.terminalLabels?.[index] ?? ""} onChange={(event) => setCustomLibraryCreateDialog((current) => {
+                        <input value={customLibraryCreateDialog.terminalLabels?.[index] ?? ""} onChange={(event) => setCustomLibraryCreateDialog((current: CustomLibraryCreateDialogState) => {
                           if (!current) return current;
                           const terminalLabels = [...(current.terminalLabels ?? [])];
                           terminalLabels[index] = event.target.value;
@@ -541,13 +594,13 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                       </label>
                       {customLibraryCreateDialog.isContainer && (<label>
                         <span>关联设备</span>
-                        <select value={customLibraryCreateDialog.terminalAssociations?.[index] ?? defaultContainerAssociationForTerminalType(terminalType)} onChange={(event) => setCustomLibraryCreateDialog((current) => {
+                        <select value={customLibraryCreateDialog.terminalAssociations?.[index] ?? defaultContainerAssociationForTerminalType(terminalType)} onChange={(event) => setCustomLibraryCreateDialog((current: CustomLibraryCreateDialogState) => {
                           if (!current) return current;
                           const terminalAssociations = [...(current.terminalAssociations ?? [])];
                           terminalAssociations[index] = event.target.value;
                           return { ...current, terminalAssociations, error: "" };
                         })}>
-                          {CONTAINER_TERMINAL_ASSOCIATION_OPTIONS[terminalType].map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
+                          {CONTAINER_TERMINAL_ASSOCIATION_OPTIONS[terminalType].map((option: { value: string; label: string }) => (<option key={option.value} value={option.value}>{option.label}</option>))}
                         </select>
                       </label>)}
                     </div>);
@@ -566,7 +619,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                       libraryTemplates
                     );
                     if (!metadata) return;
-                    setCustomLibraryCreateDialog((current) => current ? {
+                    setCustomLibraryCreateDialog((current: CustomLibraryCreateDialogState) => current ? {
                       ...current,
                       componentClassName: metadata.className,
                       componentLibrary: metadata.baseComponentLibrary,
@@ -577,12 +630,12 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                       error: ""
                     } : current);
                   }}>
-                    {customLibraryCreateDialogClassOptions.map((option) => (<option key={option.className} value={option.className}>{option.label}</option>))}
+                    {customLibraryCreateDialogClassOptions.map((option: { className: string; label: string }) => (<option key={option.className} value={option.className}>{option.label}</option>))}
                   </select>
                 </label>
                 <label>
                   <span>是否允许变形</span>
-                  <select value={customLibraryCreateDialog.allowResizeTransform ?? "0"} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
+                  <select value={customLibraryCreateDialog.allowResizeTransform ?? "0"} onChange={(event) => setCustomLibraryCreateDialog((current: CustomLibraryCreateDialogState) => current ? {
                     ...current,
                     allowResizeTransform: event.target.value,
                     error: ""
@@ -654,15 +707,15 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
               {customDeviceDefinitionIconOnly && (<>
                 <label className="custom-device-name-field">
                   元件中文名称
-                  <BufferedTextInput value={customDeviceDraft.componentName} placeholder="例如 水电、核电、风电、光伏" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, componentName: value, error: "" }))}/>
+                  <BufferedTextInput value={customDeviceDraft.componentName} placeholder="例如 水电、核电、风电、光伏" onCommit={(value: string) => setCustomDeviceDraft((current: CustomDeviceDraft) => ({ ...current, componentName: value, error: "" }))}/>
                 </label>
                 <label className="custom-device-english-name-field">
                   元件英文名称
-                  <BufferedTextInput value={customDeviceDraft.componentKind ?? ""} placeholder="例如 two-port-heat-source" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, componentKind: value, error: "" }))}/>
+                  <BufferedTextInput value={customDeviceDraft.componentKind ?? ""} placeholder="例如 two-port-heat-source" onCommit={(value: string) => setCustomDeviceDraft((current: CustomDeviceDraft) => ({ ...current, componentKind: value, error: "" }))}/>
                 </label>
                 <label className="custom-device-resize-field">
                   是否允许变形
-                  <select value={customDeviceDraft.allowResizeTransform} onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, allowResizeTransform: event.target.value, error: "" }))}>
+                  <select value={customDeviceDraft.allowResizeTransform} onChange={(event) => setCustomDeviceDraft((current: CustomDeviceDraft) => ({ ...current, allowResizeTransform: event.target.value, error: "" }))}>
                     <option value="0">否</option>
                     <option value="1">是</option>
                   </select>
@@ -697,9 +750,9 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                             value={terminalType}
                             onChange={(event) => {
                               const nextTerminalType = event.target.value;
-                              setCustomDeviceDraft((current) => {
+                              setCustomDeviceDraft((current: CustomDeviceDraft) => {
                                 const terminalTypes = [...current.terminalTypes];
-                                terminalTypes[index] = nextTerminalType;
+                                terminalTypes[index] = nextTerminalType as TerminalType;
                                 return {
                                   ...current,
                                   terminalTypes,
@@ -713,7 +766,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                               });
                             }}
                           >
-                            {TERMINAL_TYPE_OPTIONS.map((option) => (
+                            {TERMINAL_TYPE_OPTIONS.map((option: { value: string; label: string }) => (
                               <option key={option.value} value={option.value}>{option.label}</option>
                             ))}
                           </select>
@@ -766,15 +819,15 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                     <span>端子位置</span>
                     <div className="custom-terminal-anchor-inputs">
                       <span>X</span>
-                      <BufferedTextInput type="number" min="-0.5" max="0.5" step="0.01" value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.x)} onCommit={(value) => updateCustomDeviceTerminalAnchor(index, { x: Number(value) })} aria-label={`端子${index + 1} X位置`}/>
+                      <BufferedTextInput type="number" min="-0.5" max="0.5" step="0.01" value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.x)} onCommit={(value: string) => updateCustomDeviceTerminalAnchor(index, { x: Number(value) })} aria-label={`端子${index + 1} X位置`}/>
                       <span>Y</span>
-                      <BufferedTextInput type="number" min="-0.5" max="0.5" step="0.01" value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.y)} onCommit={(value) => updateCustomDeviceTerminalAnchor(index, { y: Number(value) })} aria-label={`端子${index + 1} Y位置`}/>
+                      <BufferedTextInput type="number" min="-0.5" max="0.5" step="0.01" value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.y)} onCommit={(value: string) => updateCustomDeviceTerminalAnchor(index, { y: Number(value) })} aria-label={`端子${index + 1} Y位置`}/>
                     </div>
                     {customDeviceDraft.isContainer && (<>
                         <span>关联设备</span>
                         <select value={associationDependent ? "" : terminalAssociations[index] || defaultContainerAssociationForTerminalType(terminalType)} disabled title="关联设备由所属类定义">
                           {associationDependent && <option value="">随上一个端子关联同一个双端元件</option>}
-                          {associationOptions.map((option) => (<option key={option.value} value={option.value}>
+                          {associationOptions.map((option: { value: string; label: string }) => (<option key={option.value} value={option.value}>
                               {option.label}
                             </option>))}
                         </select>
@@ -812,7 +865,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                   </tr>
                 </thead>
                 <tbody>
-                    {displayedMergedCustomDefaultParams.map((row, rowIndex) => {
+                    {displayedMergedCustomDefaultParams.map((row: CustomParamDraft, rowIndex: number) => {
                         const defaultRow: CustomParamDraft = { ...row, id: `default-${row.enName}` };
                         const defaultRowDisabled = Boolean(row.readonly);
                         return (<tr
@@ -829,7 +882,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                              <td>{renderEnumValuesEditor(defaultRow, updateCustomDefaultParamRow, defaultRowDisabled)}</td>
                            </tr>);
                     })}
-                    {displayedVisibleCustomParams.map((row, index) => (<tr
+                    {displayedVisibleCustomParams.map((row: CustomParamDraft, index: number) => (<tr
                       key={row.id}
                       className={`definition-table-row${selectedCustomParameterRowIdSet.has(row.id) ? " selected" : ""}`}
                       aria-selected={selectedCustomParameterRowIdSet.has(row.id)}
@@ -837,28 +890,28 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                     >
                       <td className="definition-table-sequence">{displayedMergedCustomDefaultParams.length + index + 1}</td>
                       <td>
-                        <BufferedTextInput value={row.cnName} onCommit={(value) => setCustomDeviceDraft((current) => ({
+                        <BufferedTextInput value={row.cnName} onCommit={(value: string) => setCustomDeviceDraft((current: CustomDeviceDraft) => ({
                     ...current,
-                    params: current.params.map((item) => (item.id === row.id ? { ...item, cnName: value } : item)),
+                    params: current.params.map((item: CustomParamDraft) => (item.id === row.id ? { ...item, cnName: value } : item)),
                     error: ""
                 }))}/>
                       </td>
                       <td>
-                        <BufferedTextInput value={row.enName} onCommit={(value) => setCustomDeviceDraft((current) => ({
+                        <BufferedTextInput value={row.enName} onCommit={(value: string) => setCustomDeviceDraft((current: CustomDeviceDraft) => ({
                     ...current,
-                    params: current.params.map((item) => (item.id === row.id ? { ...item, enName: value } : item)),
+                    params: current.params.map((item: CustomParamDraft) => (item.id === row.id ? { ...item, enName: value } : item)),
                     error: ""
                 }))}/>
                       </td>
                       <td>
-                        <select value={row.valueType} onChange={(event) => setCustomDeviceDraft((current) => ({
+                        <select value={row.valueType} onChange={(event) => setCustomDeviceDraft((current: CustomDeviceDraft) => ({
                     ...current,
-                    params: current.params.map((item) => item.id === row.id
+                    params: current.params.map((item: CustomParamDraft) => item.id === row.id
                         ? normalizeDefinitionRowEnumFields({ ...item, valueType: event.target.value as DeviceParameterValueType })
                         : item),
                     error: ""
                 }))}>
-                          {PARAM_VALUE_TYPE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>
+                          {PARAM_VALUE_TYPE_OPTIONS.map((option: { value: string; label: string }) => (<option key={option.value} value={option.value}>
                               {option.label}
                             </option>))}
                         </select>
@@ -866,9 +919,9 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                       <td>
                         {renderTypicalValueEditor(
                           row,
-                          (rowId, patch) => setCustomDeviceDraft((current) => ({
+                          (rowId: string, patch: Partial<CustomParamDraft>) => setCustomDeviceDraft((current: CustomDeviceDraft) => ({
                             ...current,
-                            params: current.params.map((item) => (item.id === rowId ? { ...item, ...patch } : item)),
+                            params: current.params.map((item: CustomParamDraft) => (item.id === rowId ? { ...item, ...patch } : item)),
                             error: ""
                           })),
                           false,
@@ -876,9 +929,9 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                         )}
                       </td>
                       <td>
-                        {renderEnumValuesEditor(row, (rowId, patch) => setCustomDeviceDraft((current) => ({
+                        {renderEnumValuesEditor(row, (rowId: string, patch: Partial<CustomParamDraft>) => setCustomDeviceDraft((current: CustomDeviceDraft) => ({
                           ...current,
-                          params: current.params.map((item) => (item.id === rowId ? { ...item, ...patch } : item)),
+                          params: current.params.map((item: CustomParamDraft) => (item.id === rowId ? { ...item, ...patch } : item)),
                           error: ""
                         })))}
                       </td>
@@ -997,7 +1050,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
             </div>
             <div className="e-device-interface-layout">
               <aside className="e-device-interface-class-list" aria-label="设备类树" role="tree">
-                {eDeviceInterfaceDefinitionTree.map((category) => {
+                {eDeviceInterfaceDefinitionTree.map((category: EDeviceInterfaceCategoryNode) => {
                   const categoryCollapsed = Boolean(collapsedEDeviceInterfaceTreeNodes[category.key]);
                   return (
                     <div className="e-device-interface-tree-category" key={category.key}>
@@ -1019,7 +1072,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                       </button>
                       {!categoryCollapsed ? (
                         <div className="e-device-interface-tree-category-children" role="group">
-                          {category.items.map((item) => {
+                          {category.items.map((item: EDeviceInterfaceCategoryNode) => {
                             const classRow = item.row;
                             const branchKey = `class:${classRow.componentLibrary}`;
                             const branchCollapsed = Boolean(collapsedEDeviceInterfaceTreeNodes[branchKey]);
@@ -1065,7 +1118,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                                 </div>
                                 {item.children.length > 0 && !branchCollapsed ? (
                                   <div className="e-device-interface-tree-children" role="group">
-                                    {item.children.map((child) => {
+                                    {item.children.map((child: EDeviceInterfaceCategoryNode) => {
                                       const childRow = child.row;
                                       const childActive = eDeviceInterfaceSelectedGroupKey !== branchKey && eDeviceInterfaceSelectedGroupKey !== category.key && childRow.componentLibrary === selectedEDeviceInterfaceRow?.componentLibrary;
                                       return (
@@ -1134,7 +1187,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                               aria-label="全部选中或取消"
                               onChange={(event) => {
                                 const checked = event.target.checked;
-                                setEDeviceDefinitionClassExportEnabled((current) => {
+                                setEDeviceDefinitionClassExportEnabled((current: Record<string, boolean>) => {
                                   const next = { ...current };
                                   for (const r of groupRows) {
                                     const lib = String(r.componentLibrary ?? "").trim();
@@ -1164,7 +1217,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                                   checked={rowExportEnabled}
                                   disabled={eDeviceInterfaceReadonlyMode}
                                   aria-label={`${lib}是否导出`}
-                                  onChange={(event) => setEDeviceDefinitionClassExportEnabled((current) => ({
+                                  onChange={(event) => setEDeviceDefinitionClassExportEnabled((current: Record<string, boolean>) => ({
                                     ...current,
                                     [lib]: event.target.checked
                                   }))}
@@ -1174,9 +1227,9 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                                 <BufferedTextInput
                                   value={rowExportName}
                                   disabled={eDeviceInterfaceReadonlyMode}
-                                  onCommit={(value) => {
+                                  onCommit={(value: string) => {
                                     const trimmed = value.trim();
-                                    setEDeviceDefinitionLabels((prev) => {
+                                    setEDeviceDefinitionLabels((prev: Record<string, string>) => {
                                       const next = { ...prev };
                                       if (!trimmed || trimmed === lib) {
                                         delete next[lib];
@@ -1212,7 +1265,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                         checked={selectedEDeviceInterfaceRow.exportEnabled}
                         disabled={eDeviceInterfaceReadonlyMode}
                         aria-label={`${selectedEDeviceInterfaceRow.componentLibrary}是否导出`}
-                        onChange={(event) => setEDeviceDefinitionClassExportEnabled((current) => ({
+                        onChange={(event) => setEDeviceDefinitionClassExportEnabled((current: Record<string, boolean>) => ({
                           ...current,
                           [selectedEDeviceInterfaceRow.componentLibrary]: event.target.checked
                         }))}
@@ -1224,9 +1277,9 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                       <BufferedTextInput
                         value={selectedEDeviceInterfaceRow.exportName ?? selectedEDeviceInterfaceRow.componentLibrary}
                         disabled={eDeviceInterfaceReadonlyMode}
-                        onCommit={(value) => {
+                        onCommit={(value: string) => {
                           const trimmed = value.trim();
-                          setEDeviceDefinitionLabels((prev) => {
+                          setEDeviceDefinitionLabels((prev: Record<string, string>) => {
                             const next = { ...prev };
                             if (!trimmed || trimmed === selectedEDeviceInterfaceRow.componentLibrary) {
                               delete next[selectedEDeviceInterfaceRow.componentLibrary];
@@ -1251,7 +1304,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedEDeviceInterfaceFields.map((field, fieldIndex) => (<tr key={`${selectedEDeviceInterfaceRow.componentLibrary}:${field.sourceName}`} className={selectedEDeviceInterfaceRow.exportEnabled ? "" : "disabled"}>
+                        {selectedEDeviceInterfaceFields.map((field: EDeviceInterfaceField, fieldIndex: number) => (<tr key={`${selectedEDeviceInterfaceRow.componentLibrary}:${field.sourceName}`} className={selectedEDeviceInterfaceRow.exportEnabled ? "" : "disabled"}>
                           <td className="e-device-interface-order-cell">
                             <span className="e-device-interface-order-index" aria-label={`当前顺序${fieldIndex + 1}`}>{fieldIndex + 1}</span>
                             <span className="e-device-interface-order-actions">
@@ -1293,7 +1346,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                             <BufferedTextInput
                               value={field.exportName ?? ""}
                               disabled={eDeviceInterfaceReadonlyMode || !selectedEDeviceInterfaceRow.exportEnabled || !field.exportEnabled || field.readonly}
-                              onCommit={(value) => updateDefinitionComponentLibraryCommonParamExport(selectedEDeviceInterfaceRow.componentLibrary, field.sourceName, { exportName: value })}
+                              onCommit={(value: string) => updateDefinitionComponentLibraryCommonParamExport(selectedEDeviceInterfaceRow.componentLibrary, field.sourceName, { exportName: value })}
                             />
                           </td>
                         </tr>))}
@@ -1334,7 +1387,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
           fieldCnNames={eFileEditorFieldCnNames}
           tableIds={eDeviceDefinitionTableIds}
           isRealtimeDbTemplate={/实时库$|_rtdb\.e$/i.test(eDeviceInterfaceLoadedTemplateName ?? "")}
-          onSave={(editedRecords) => {
+          onSave={(editedRecords: { id: string; section: string; params: Record<string, unknown> }[]) => {
             const currentNodes = __appScope.nodes ?? [];
             const setNodes = __appScope.setNodes;
             const pushUndoSnapshot = __appScope.pushUndoSnapshot;
@@ -1373,11 +1426,11 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
               const params: Record<string, string> = {};
               for (const [exportName, value] of Object.entries(record.params)) {
                 if (exportName === "name") {
-                  params.name = value;
+                  params.name = String(value);
                   continue;
                 }
                 const sourceName = sourceNameByExport.get(`${section}\0${exportName}`) ?? exportName;
-                params[sourceName] = value;
+                params[sourceName] = String(value);
               }
               editedMap.set(record.id, params);
             }
@@ -1469,7 +1522,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                       </tr>
                     </thead>
                     <tbody>
-                      {templateImportResult.matched.map((item, idx) => {
+                      {templateImportResult.matched.map((item: TemplateImportMatchedItem, idx: number) => {
                         const fields = item.fields && item.fields.length > 0 ? item.fields : [{ template: "", device: "" }];
                         const sectionKey = `matched:${item.section}`;
                         const expanded = expandedImportResultSections.has(sectionKey);
@@ -1506,7 +1559,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                                 <span className="template-import-result-stat template-import-result-stat-topology">{topologyGeneratedFieldCount}个拓扑生成</span>
                               </td>
                             </tr>
-                            {expanded && fields.map((f, fi) => {
+                            {expanded && fields.map((f: TemplateImportField, fi: number) => {
                               const deviceValue = f.device ?? "";
                               const isNewlyAdded = deviceValue.endsWith("（新增）");
                               return (
@@ -1542,7 +1595,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                       </tr>
                     </thead>
                     <tbody>
-                      {templateImportResult.skipped.map((item, idx) => {
+                      {templateImportResult.skipped.map((item: Record<string, any>, idx: number) => {
                         const fields = item.fields && item.fields.length > 0 ? item.fields : [""];
                         const sectionKey = `skipped:${item.section}`;
                         const expanded = expandedImportResultSections.has(sectionKey);
@@ -1559,7 +1612,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                                 <span className="template-import-result-cell-empty">{fields.length} 个未匹配字段，点击展开</span>
                               </td>
                             </tr>
-                            {expanded && fields.map((f, fi) => (
+                            {expanded && fields.map((f: string, fi: number) => (
                               <tr key={`${idx}-${fi}`} className="template-import-result-row-skipped">
                                 <td className="template-import-result-cell-section"/>
                                 <td className="template-import-result-cell-fields">
@@ -1586,7 +1639,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                       </tr>
                     </thead>
                     <tbody>
-                      {(templateImportResult.runtimeGenerated ?? []).map((item, idx) => {
+                      {(templateImportResult.runtimeGenerated ?? []).map((item: Record<string, any>, idx: number) => {
                         const fields = item.fields && item.fields.length > 0 ? item.fields : [""];
                         const sectionKey = `runtimeGenerated:${item.section}`;
                         const expanded = expandedImportResultSections.has(sectionKey);
@@ -1603,7 +1656,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
                                 <span className="template-import-result-cell-empty">{fields.length} 个字段，点击展开</span>
                               </td>
                             </tr>
-                            {expanded && fields.map((f, fi) => (
+                            {expanded && fields.map((f: string, fi: number) => (
                               <tr key={`${idx}-${fi}`} className="template-import-result-row-runtime">
                                 <td className="template-import-result-cell-section"/>
                                 <td className="template-import-result-cell-fields">
