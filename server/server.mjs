@@ -3232,16 +3232,57 @@ function assertZipUncompressedSizeWithinLimit(zip, label = "压缩包") {
   }
 }
 
+/**
+ * schemePath 畸形：直接 400，不再静默落到「默认方案」。
+ *
+ * 此前这份解析对任何畸形输入都返回空数组，调用点再用
+ * `Array.isArray && length > 0 ? … : ["默认方案"]` 兜底，于是写错类型的 schemePath
+ * 会 200 ok 地把模型存进默认方案；删除时同样错传则把**默认方案下的同名模型**
+ * archive 进回收站 —— 不可逆，且用户与排查者都以为操作的是方案 A。
+ * /v1 那套（schemePath.mjs）对同样畸形本来就 400，两边行为本该一致。
+ *
+ * 注意「空数组 / 不传」不是畸形：src/global-lines.ts 主动传 `[]` 表示默认方案，
+ * 那是既有约定，仍走默认方案。判据是「有值但不是数组」与「JSON 解析失败」。
+ */
+function badSchemePathError(detail) {
+  const error = new Error(`schemePath 格式错误：${detail}`);
+  error.statusCode = 400;
+  return error;
+}
+
 function parseSchemePathParam(value) {
   if (!value) {
     return [];
   }
+  let parsed;
   try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.map((part) => safeFilePart(part, "方案")).filter(Boolean) : [];
+    parsed = JSON.parse(value);
   } catch {
-    return [];
+    throw badSchemePathError("不是合法的 JSON 数组。");
   }
+  if (!Array.isArray(parsed)) {
+    throw badSchemePathError("必须是方案路径数组，如 [\"方案A\"]。");
+  }
+  return parsed.map((part) => safeFilePart(part, "方案")).filter(Boolean);
+}
+
+/** 显式要求 schemePath 是数组（ZIP 导出 / 删除整个方案目录这类没有默认方案的入口）。 */
+function requireSchemePathArray(value) {
+  if (!Array.isArray(value)) {
+    throw badSchemePathError("必须是方案路径数组，如 [\"方案A\"]。");
+  }
+  return value;
+}
+
+/** 请求体里的 schemePath：缺省 / 空数组 → 默认方案；有值但不是数组 → 400。 */
+function schemePathOrDefault(value) {
+  if (value === undefined || value === null) {
+    return ["默认方案"];
+  }
+  if (!Array.isArray(value)) {
+    throw badSchemePathError("必须是方案路径数组，如 [\"方案A\"]。");
+  }
+  return value.length > 0 ? value : ["默认方案"];
 }
 
 function zipEntryParts(entryName) {
@@ -3335,9 +3376,9 @@ async function extractSpaceZipToDirectory(zip, targetDir, rootName) {
 export async function createSchemeArchiveBuffer(options) {
   const paths = options.paths ?? defaultPaths;
   const filesRoot = options.filesRoot ?? paths.schemeFiles;
-  const schemePath = Array.isArray(options.schemePath) ? options.schemePath : [];
+  const schemePath = requireSchemePathArray(options.schemePath);
   if (schemePath.length === 0) {
-    throw new Error("缺少方案路径。");
+    throw badSchemePathError("缺少方案路径。");
   }
   // 锚点 = 渲染链实际读取的根（paths.schemeFiles），故随 paths 而变。
   // 不要把它改回「与 paths 无关的独立值」—— 那会重新打开混根：枚举走一个根、
@@ -3429,7 +3470,7 @@ function sameSchemePath(first, second) {
 export async function saveSchemeRecordDirectory(options) {
   const paths = options.paths ?? defaultPaths;
   const filesRoot = options.filesRoot ?? paths.schemeFiles;
-  const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : ["默认方案"];
+  const schemePath = schemePathOrDefault(options.schemePath);
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
   const previousSchemePath = options.previousSchemePath;
   if (Array.isArray(previousSchemePath) && previousSchemePath.length > 0 && !sameSchemePath(previousSchemePath, schemePath)) {
@@ -3451,7 +3492,7 @@ export async function deleteSchemeRecordDirectory(options) {
   const paths = options.paths ?? defaultPaths;
   const filesRoot = options.filesRoot ?? paths.schemeFiles;
   const trashRoot = options.trashRoot ?? paths.schemeTrash;
-  const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : [];
+  const schemePath = requireSchemePathArray(options.schemePath);
   if (schemePath.length === 0) {
     return;
   }
@@ -3596,7 +3637,7 @@ async function allocateStableProjectIndex({ filesRoot, schemeDir, name, previous
 export async function readSchemeProjectRecord(options = {}) {
   const paths = options.paths ?? defaultPaths;
   const filesRoot = options.filesRoot ?? paths.schemeFiles;
-  const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : ["默认方案"];
+  const schemePath = schemePathOrDefault(options.schemePath);
   const name = storageProjectDisplayName(options.name || options.projectName);
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
   const projectFile = await projectJsonFileForName(schemeDir, name);
@@ -3665,7 +3706,7 @@ export async function saveSchemeProjectRecord(options) {
   const paths = options.paths ?? defaultPaths;
   const filesRoot = options.filesRoot ?? paths.schemeFiles;
   const trashRoot = options.trashRoot ?? paths.schemeTrash;
-  const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : ["默认方案"];
+  const schemePath = schemePathOrDefault(options.schemePath);
   const record = options.record ?? {};
   const name = storageProjectDisplayName(record.name || record.project?.name);
   const updatedAt = record.updatedAt || new Date().toISOString();
@@ -3726,7 +3767,7 @@ export async function deleteSchemeProjectRecord(options) {
   const paths = options.paths ?? defaultPaths;
   const filesRoot = options.filesRoot ?? paths.schemeFiles;
   const trashRoot = options.trashRoot ?? paths.schemeTrash;
-  const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : ["默认方案"];
+  const schemePath = schemePathOrDefault(options.schemePath);
   const name = storageProjectDisplayName(options.name || options.projectName);
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
   const archiveId = options.archiveId ?? schemeArchiveId();
