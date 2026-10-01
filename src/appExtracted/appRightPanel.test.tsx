@@ -66,7 +66,8 @@ describe("模型属性「模型类型」行下拉", () => {
   test("新建模型弹窗与右侧面板读同一常数 —— 两侧守卫", () => {
     // 弹窗侧(新建模型):直接展开 __appScope.MODEL_TYPES
     const dialogSource = readFileSync(new URL("./appDeviceDefinitionDialogs.tsx", import.meta.url), "utf8");
-    expect(dialogSource).toContain("__appScope.MODEL_TYPES.map((modelType) =>");
+    // 允许回调形参带上 ModelType 注解，仍必须读 __appScope.MODEL_TYPES
+    expect(dialogSource).toMatch(/__appScope\.MODEL_TYPES\.map\(\(modelType(?::\s*ModelType)?\)\s*=>/);
     // 常数本身:五项清单(改动此处即同时改两侧)
     expect([...MODEL_TYPES]).toEqual(["厂站", "馈线", "台区", "微网", "其他"]);
   });
