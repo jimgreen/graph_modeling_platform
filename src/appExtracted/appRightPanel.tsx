@@ -1,6 +1,6 @@
-// @ts-nocheck
 import { useMemo } from "react";
 import { MemoizedViewSection } from "./appViewRenderBoundary";
+import type { ContainerDeviceParameterView, ContainerDeviceParameterViewRow, DeviceParameterDefinition, DeviceTemplate, ModelLayer, ModelNode, Terminal } from "../model";
 import { InlineEditableValue } from "../components/InputComponents";
 import {
   CONTAINER_KIND_LABELS,
@@ -318,7 +318,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
   // used here; the saved record remains stable until the next save.
   const savedNodeById = new Map(
     (Array.isArray(currentModelRecord?.project?.nodes) ? currentModelRecord.project.nodes : [])
-      .map((node) => [node.id, node])
+      .map((node: ModelNode) => [node.id, node])
   );
   const comparableParamValue = (node: any, key: string, definition?: any): string => {
     if (!node) {
@@ -364,7 +364,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
   const renderVoltageBaseTerminalRow = (node: any, terminal: any, index: number) => {
     const currentValue = terminalVoltageBaseNumber(getTerminalVoltageLevel(node, terminal.id)) || "0";
     const options = voltageBaseSelectOptions(currentValue);
-    const savedNode = savedNodeById.get(node.id);
+    const savedNode = savedNodeById.get(node.id) as ModelNode | undefined;
     const savedValue = savedNode
       ? terminalVoltageBaseNumber(getTerminalVoltageLevel(savedNode, terminal.id)) || "0"
       : "";
@@ -407,19 +407,17 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
   const renderVoltageBaseRows = () => {
     const node = inspectorSelectedNode;
     const isElectricNode = node
-      ? (node.terminals?.some((terminal) => terminal.type === "ac" || terminal.type === "dc") || isBusNode(node))
+      ? (node.terminals?.some((terminal: Terminal) => terminal.type === "ac" || terminal.type === "dc") || isBusNode(node))
       : false;
     if (!node || !isElectricNode) {
       return null;
     }
     const nodeTerminals = node.terminals ?? [];
-    const electricalTerminals = nodeTerminals.filter(
-      (terminal) => terminal.type === "ac" || terminal.type === "dc"
-    );
+    const electricalTerminals = nodeTerminals.filter((terminal: Terminal) => terminal.type === "ac" || terminal.type === "dc");
     if (electricalTerminals.length > 1 && voltageBaseSettingModeForNode(node) === "terminal") {
-      return <>{electricalTerminals.map((terminal, index) => renderVoltageBaseTerminalRow(node, terminal, index))}</>;
+      return <>{electricalTerminals.map((terminal: Terminal, index: number) => renderVoltageBaseTerminalRow(node, terminal, index))}</>;
     }
-    const electricalTerminal = nodeTerminals.find((terminal) => terminal.type === "ac" || terminal.type === "dc");
+    const electricalTerminal = nodeTerminals.find((terminal: Terminal) => terminal.type === "ac" || terminal.type === "dc");
     const electricalTerminalId = electricalTerminal?.id;
     const explicitVbase = terminalVoltageBaseNumber(node.params?.vbase);
     const fallbackVoltage = firstNonZeroVoltageBase([
@@ -604,7 +602,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         displayValue={allowAutoExpandCanvas ? "允许" : "不允许"}
                         disabled={isBrowseMode}
                         options={[{ value: "allow", label: "允许" }, { value: "deny", label: "不允许" }]}
-                        onCommit={(value) => {
+                        onCommit={(value: string) => {
                 pushUndoSnapshot();
                 setAllowAutoExpandCanvas(value === "allow");
             }}
@@ -615,7 +613,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                     {batchEditors.renderChineseParamHeader("canvasBackgroundColor")}
                     <td>
                       <div className="color-field with-clear">
-                        <DeferredColorInput value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND} fallback={DEFAULT_CANVAS_BACKGROUND} disabled={isBrowseMode} onCommit={(value) => {
+                        <DeferredColorInput value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND} fallback={DEFAULT_CANVAS_BACKGROUND} disabled={isBrowseMode} onCommit={(value: string) => {
                 pushUndoSnapshot();
                 setCanvasBackgroundColor(value);
             }}/>
@@ -644,10 +642,10 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                     <td>
                       <InlineEditableValue
                         value={normalizeImageFitMode(__appScope.canvasBackgroundImageFit)}
-                        displayValue={IMAGE_FIT_MODE_OPTIONS.find((option) => option.value === normalizeImageFitMode(__appScope.canvasBackgroundImageFit))?.label ?? normalizeImageFitMode(__appScope.canvasBackgroundImageFit)}
+                        displayValue={IMAGE_FIT_MODE_OPTIONS.find((option: { value: string; label: string }) => option.value === normalizeImageFitMode(__appScope.canvasBackgroundImageFit))?.label ?? normalizeImageFitMode(__appScope.canvasBackgroundImageFit)}
                         disabled={isBrowseMode}
-                        options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
-                        onCommit={(value) => {
+                        options={IMAGE_FIT_MODE_OPTIONS.map((option: { value: string; label: string }) => ({ value: option.value, label: option.label }))}
+                        onCommit={(value: string) => {
                 pushUndoSnapshot();
                 __appScope.setCanvasBackgroundImageFit?.(value);
             }}
@@ -660,11 +658,11 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       <div className="background-page-field">
                         <InlineEditableValue
                           value={backgroundProjectId}
-                          displayValue={backgroundProjectOptions.find(({ project }) => project.id === backgroundProjectId)?.label ?? "不使用背景页面"}
+                          displayValue={backgroundProjectOptions.find(({ project }: { project: ModelNode; label: string }) => project.id === backgroundProjectId)?.label ?? "不使用背景页面"}
                           disabled={isBrowseMode}
                           options={[
                             { value: "", label: "不使用背景页面" },
-                            ...backgroundProjectOptions.map(({ project, label }) => ({ value: project.id, label }))
+                            ...backgroundProjectOptions.map(({ project, label }: { project: ModelNode; label: string }) => ({ value: project.id, label }))
                           ]}
                         onCommit={(nextProjectId) => {
                 pushUndoSnapshot();
@@ -692,7 +690,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                     {batchEditors.renderChineseParamHeader("backgroundLayerIds")}
                     <td>
                       {backgroundProjectRecord ? (<div className="background-layer-checklist">
-                          {backgroundLayerOptions.map((layer) => (<label key={layer.id} className="background-layer-option">
+                          {backgroundLayerOptions.map((layer: ModelLayer) => (<label key={layer.id} className="background-layer-option">
                               <input type="checkbox" checked={backgroundLayerIds.includes(layer.id)} disabled={isBrowseMode} onChange={() => toggleBackgroundLayer(layer.id)}/>
                               <span>{layer.name}</span>
                             </label>))}
@@ -707,8 +705,8 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         value={powerUnit}
                         displayValue={powerUnit}
                         disabled={isBrowseMode}
-                        options={POWER_UNIT_OPTIONS.map((unit) => ({ value: unit, label: unit }))}
-                        onCommit={(value) => {
+                        options={POWER_UNIT_OPTIONS.map((unit: string) => ({ value: unit, label: unit }))}
+                        onCommit={(value: string) => {
                 pushUndoSnapshot();
                 setPowerUnit(value);
             }}
@@ -722,8 +720,8 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         value={voltageUnit}
                         displayValue={voltageUnit}
                         disabled={isBrowseMode}
-                        options={VOLTAGE_UNIT_OPTIONS.map((unit) => ({ value: unit, label: unit }))}
-                        onCommit={(value) => {
+                        options={VOLTAGE_UNIT_OPTIONS.map((unit: string) => ({ value: unit, label: unit }))}
+                        onCommit={(value: string) => {
                 pushUndoSnapshot();
                 setVoltageUnit(value);
             }}
@@ -737,8 +735,8 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         value={currentUnit}
                         displayValue={currentUnit}
                         disabled={isBrowseMode}
-                        options={CURRENT_UNIT_OPTIONS.map((unit) => ({ value: unit, label: unit }))}
-                        onCommit={(value) => {
+                        options={CURRENT_UNIT_OPTIONS.map((unit: string) => ({ value: unit, label: unit }))}
+                        onCommit={(value: string) => {
                 pushUndoSnapshot();
                 setCurrentUnit(value);
             }}
@@ -947,9 +945,9 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         <InlineEditableValue
                           value={inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID}
                           disabled={isBrowseMode}
-                          options={layers.map((layer) => ({ value: layer.id, label: layer.name }))}
-                          displayValue={layers.find((layer) => layer.id === (inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID))?.name ?? inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID}
-                          onCommit={(value) => updateSelectedNode({ layerId: value })}
+                          options={layers.map((layer: ModelLayer) => ({ value: layer.id, label: layer.name }))}
+                          displayValue={layers.find((layer: ModelLayer) => layer.id === (inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID))?.name ?? inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID}
+                          onCommit={(value: string) => updateSelectedNode({ layerId: value })}
                         />
                       </td>
                     </tr>
@@ -960,13 +958,13 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             <InlineEditableValue
                               value={nodeLabelDisplayMode(inspectorSelectedNode)}
                               disabled={isBrowseMode}
-                              displayValue={{ always: "始终显示", hidden: "始终隐藏", follow: "跟随显示" }[nodeLabelDisplayMode(inspectorSelectedNode)] ?? nodeLabelDisplayMode(inspectorSelectedNode)}
+                              displayValue={{ always: "始终显示", hidden: "始终隐藏", follow: "跟随显示" }[nodeLabelDisplayMode(inspectorSelectedNode) as "always" | "hidden" | "follow"] ?? nodeLabelDisplayMode(inspectorSelectedNode)}
                               options={[
                                 { value: "always", label: "始终显示" },
                                 { value: "hidden", label: "始终隐藏" },
                                 { value: "follow", label: "跟随显示" }
                               ]}
-                              onCommit={(value) => updateParam("_labelDisplayMode", value)}
+                              onCommit={(value: string) => updateParam("_labelDisplayMode", value)}
                             />
                           </td>
                         </tr>
@@ -1003,7 +1001,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                                 { value: "180", label: "180° 横排" },
                                 { value: "270", label: "270° 纵排" }
                               ]}
-                              onCommit={(value) => updateParam("_labelRotation", String(normalizeNodeLabelRotation(value)))}
+                              onCommit={(value: string) => updateParam("_labelRotation", String(normalizeNodeLabelRotation(value)))}
                             />
                           </td>
                         </tr>
@@ -1029,13 +1027,13 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             <InlineEditableValue
                               value={nodeLabelTextAnchor(inspectorSelectedNode)}
                               disabled={isBrowseMode}
-                              displayValue={{ start: "左对齐", middle: "居中", end: "右对齐" }[nodeLabelTextAnchor(inspectorSelectedNode)] ?? nodeLabelTextAnchor(inspectorSelectedNode)}
+                              displayValue={{ start: "左对齐", middle: "居中", end: "右对齐" }[nodeLabelTextAnchor(inspectorSelectedNode) as "start" | "middle" | "end"] ?? nodeLabelTextAnchor(inspectorSelectedNode)}
                               options={[
                                 { value: "start", label: "左对齐" },
                                 { value: "middle", label: "居中" },
                                 { value: "end", label: "右对齐" }
                               ]}
-                              onCommit={(value) => updateParam("_labelTextAnchor", value)}
+                              onCommit={(value: string) => updateParam("_labelTextAnchor", value)}
                             />
                           </td>
                         </tr>
@@ -1072,7 +1070,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                                 { value: "1", label: "参与" },
                                 { value: "0", label: "不参与" }
                               ]}
-                              onCommit={(value) => updateParam(STATIC_ROUTE_AVOIDANCE_PARAM, value)}
+                              onCommit={(value: string) => updateParam(STATIC_ROUTE_AVOIDANCE_PARAM, value)}
                             />
                           </td>
                         </tr>
@@ -1185,9 +1183,9 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             <InlineEditableValue
                               value={normalizeImageFitMode(inspectorSelectedNode.params.backgroundImageFit)}
                               disabled={isBrowseMode}
-                              displayValue={IMAGE_FIT_MODE_OPTIONS.find((option) => option.value === normalizeImageFitMode(inspectorSelectedNode.params.backgroundImageFit))?.label ?? normalizeImageFitMode(inspectorSelectedNode.params.backgroundImageFit)}
-                              options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
-                              onCommit={(value) => updateParam("backgroundImageFit", value)}
+                              displayValue={IMAGE_FIT_MODE_OPTIONS.find((option: { value: string; label: string }) => option.value === normalizeImageFitMode(inspectorSelectedNode.params.backgroundImageFit))?.label ?? normalizeImageFitMode(inspectorSelectedNode.params.backgroundImageFit)}
+                              options={IMAGE_FIT_MODE_OPTIONS.map((option: { value: string; label: string }) => ({ value: option.value, label: option.label }))}
+                              onCommit={(value: string) => updateParam("backgroundImageFit", value)}
                             />
                           </td>
                         </tr>
@@ -1213,9 +1211,9 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             <InlineEditableValue
                               value={normalizeImageFitMode(inspectorSelectedNode.params.foregroundImageFit)}
                               disabled={isBrowseMode}
-                              displayValue={IMAGE_FIT_MODE_OPTIONS.find((option) => option.value === normalizeImageFitMode(inspectorSelectedNode.params.foregroundImageFit))?.label ?? normalizeImageFitMode(inspectorSelectedNode.params.foregroundImageFit)}
-                              options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
-                              onCommit={(value) => updateParam("foregroundImageFit", value)}
+                              displayValue={IMAGE_FIT_MODE_OPTIONS.find((option: { value: string; label: string }) => option.value === normalizeImageFitMode(inspectorSelectedNode.params.foregroundImageFit))?.label ?? normalizeImageFitMode(inspectorSelectedNode.params.foregroundImageFit)}
+                              options={IMAGE_FIT_MODE_OPTIONS.map((option: { value: string; label: string }) => ({ value: option.value, label: option.label }))}
+                              onCommit={(value: string) => updateParam("foregroundImageFit", value)}
                             />
                           </td>
                         </tr>
@@ -1241,7 +1239,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                   </div>)}
                 {selectedDeviceInfoView === "measurement" && !__appScope.isStaticGraphicNode(inspectorSelectedNode) ? (renderSelectedNodeMeasurementTable(inspectorSelectedNode)) : (<>
                     {selectedContainerParameterViews.length > 0 && (<div className="container-param-tabs" role="tablist" aria-label="容器设备参数切换">
-                        {selectedContainerParameterViews.map((view) => (<button key={view.id} type="button" className={selectedContainerParameterView?.id === view.id ? "active" : ""} onClick={() => setContainerParamViewId(view.id)}>
+                        {selectedContainerParameterViews.map((view: ContainerDeviceParameterView) => (<button key={view.id} type="button" className={selectedContainerParameterView?.id === view.id ? "active" : ""} onClick={() => setContainerParamViewId(view.id)}>
                             {view.label}
                           </button>))}
                       </div>)}
@@ -1251,10 +1249,10 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         const paramRows = selectedContainerParameterView.rows;
                         // 「所属容器」行位先定后渲染:有 parent 行(标签经 PARAM_LABELS 显示为「所属模型」)则紧随其后,
                         // 没有(如定义被清空)才回落表顶 —— 一次定位,不在 JSX 里既扫 some 又在循环里判等
-                        const containerRowIndex = paramRows.findIndex((row) => row.key === "parent");
+                        const containerRowIndex = paramRows.findIndex((row: ContainerDeviceParameterViewRow) => row.key === "parent");
                         return <>
                           {containerRowIndex < 0 ? renderContainerRow() : null}
-                          {paramRows.map((row, rowIndex) => {
+                          {paramRows.map((row: ContainerDeviceParameterViewRow, rowIndex: number) => {
                         const componentLibrary = resolveContainerParameterViewComponentLibrary(
                           inspectorSelectedNode,
                           selectedContainerParameterView
@@ -1263,13 +1261,17 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         const displayValue = formatInspectorDisplayValue(row.key, rawValue);
                         const optionConfig = enumSelectOptionsWithCurrentValue(paramOptionsForSection(row.key, componentLibrary), rawValue);
                         const options = optionConfig.options;
-                        const hasVoltageParam = selectedContainerParameterView.rows.some((candidate) => VOLTAGE_BASE_PARAM_KEYS.has(candidate.key));
+                        const hasVoltageParam = selectedContainerParameterView.rows.some((candidate: ContainerDeviceParameterViewRow) => VOLTAGE_BASE_PARAM_KEYS.has(candidate.key));
                         const rowModified = row.key === "name"
                           ? isInspectorParamModified("name", inspectorSelectedNode.name)
                           : row.paramKey
-                            ? isInspectorParamModified(row.paramKey, rawValue, row.definition)
+                            // definition 实参留空：viewRow()（model.ts:7377）构造行时**不**写入
+                            // definition 字段，row.definition 恒为 undefined，故与原来的
+                            // isInspectorParamModified(row.paramKey, rawValue, row.definition)
+                            // 逐字等价。让 viewRow 带上定义会改变「已修改」标记的判定，属行为变更，未做。
+                            ? isInspectorParamModified(row.paramKey, rawValue)
                             : false;
-                        const rowElement = row.key === "name" && selectedContainerParameterView.kind === "container" ? (<td><InlineEditableValue value={inspectorSelectedNode.name} displayValue={inspectorSelectedNode.name} modified={rowModified} disabled={isBrowseMode} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/></td>) : row.readonly || !row.paramKey ? (<td><span className={`inline-property-value read-only${rowModified ? " modified" : ""}`} data-modified={rowModified ? "true" : undefined}>{displayValue || "\u00a0"}</span></td>) : options ? (<td><InlineEditableValue value={rawValue} displayValue={options.find((option) => option === rawValue) ?? displayValue} options={options.map((option) => ({ value: option, label: option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option, disabled: option === optionConfig.invalidValue }))} modified={rowModified} disabled={isBrowseMode} onCommit={(value) => updateParam(row.paramKey!, value)}/></td>) : (<td><InlineEditableValue value={rawValue} displayValue={displayValue} modified={rowModified} disabled={isBrowseMode} onCommit={(nextValue) => updateParam(row.paramKey!, nextValue)}/></td>);
+                        const rowElement = row.key === "name" && selectedContainerParameterView.kind === "container" ? (<td><InlineEditableValue value={inspectorSelectedNode.name} displayValue={inspectorSelectedNode.name} modified={rowModified} disabled={isBrowseMode} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/></td>) : row.readonly || !row.paramKey ? (<td><span className={`inline-property-value read-only${rowModified ? " modified" : ""}`} data-modified={rowModified ? "true" : undefined}>{displayValue || "\u00a0"}</span></td>) : options ? (<td><InlineEditableValue value={rawValue} displayValue={options.find((option: string) => option === rawValue) ?? displayValue} options={options.map((option: string) => ({ value: option, label: option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option, disabled: option === optionConfig.invalidValue }))} modified={rowModified} disabled={isBrowseMode} onCommit={(value: string) => updateParam(row.paramKey!, value)}/></td>) : (<td><InlineEditableValue value={rawValue} displayValue={displayValue} modified={rowModified} disabled={isBrowseMode} onCommit={(nextValue) => updateParam(row.paramKey!, nextValue)}/></td>);
                         const rowFragment = (<tr key={row.key}>{batchEditors.renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}{rowElement}</tr>);
                         const containerRowAfter = rowIndex === containerRowIndex ? renderContainerRow() : null;
                         if (row.key === "name" && !hasVoltageParam) {
@@ -1287,7 +1289,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         const isContainerNodeSelected = isContainerNode(inspectorSelectedNode); // 容器判据取一次,下面两处共用
                         const eKeys = getEParameterKeys(inspectorSelectedNode.kind, inspectorSelectedNode.params);
                         const customDefinitions = parseCustomDefinitions(inspectorSelectedNode.params);
-                        const selectedTemplate = libraryTemplates.find((template) => template.kind === inspectorSelectedNode.kind);
+                        const selectedTemplate = libraryTemplates.find((template: DeviceTemplate) => template.kind === inspectorSelectedNode.kind);
                         const definitionGroups = resolveDeviceModelPanelDefinitionGroups(
                           selectedTemplate,
                           libraryTemplates,
@@ -1308,7 +1310,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         // 「所属容器」行位先定后渲染(同上,通用参数表):一次定位,不在 JSX 里既扫 includes 又在循环里判等
                         const containerRowIndex = keys.findIndex((key) => key === "parent");
                         const keyRows = keys.map((key, keyIndex) => {
-                            const definition = panelDefinitions.find((item) => item.enName === key);
+                            const definition = panelDefinitions.find((item: DeviceParameterDefinition) => item.enName === key);
                             const resolvedValue = key === "name"
                               ? inspectorSelectedNode.name
                               : key === "dev_type"
@@ -1359,7 +1361,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                 <strong>{inspectorTopologyEntry?.degree ?? 0}</strong>
                 <small>
                   {(inspectorTopologyEntry?.neighbors ?? [])
-                .map((id) => nodeById.get(id)?.name)
+                .map((id: string) => nodeById.get(id)?.name)
                 .filter(Boolean)
                 .join("、") || "暂无相邻元件"}
                 </small>
