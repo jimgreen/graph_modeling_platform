@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React from "react";
 import { formatStateIconDrawingNumber, normalizeStateIconDrawingFontSize, normalizeStateIconDrawingStrokeWidth } from "./appDeviceDefinitionFactories";
 import { STATE_ICON_DRAWING_MIN_FONT_SIZE, appendDistinctStateIconDrawingPoint, clampStateIconDrawingPoint, clearGeneratedDefinitionVisualDraftImage, cloneStateIconDrawingElements, createDefinitionStateDraftRowsWithDefaultImages, createStateIconDrawingElementFromStaticTemplate, cutStateIconDrawingSelection, expandStateIconDrawingElementIds, finishStateIconDrawingDraft, groupStateIconDrawingSelection, pushStateIconDrawingHistorySnapshot, stateIconDrawingElementBounds, stateIconDrawingElementFromPoints, stateIconDrawingElementIdsInRect, stateIconDrawingFrameDashArray, stateIconDrawingImportedSvgSelectionFrame, stateIconDrawingPolylineElementFromPoints, stateIconDrawingRectFromPoints, stateIconDrawingSelectedIds, stateIconDrawingSelectionBounds, stateIconDrawingTerminalPointSnap, stateIconStaticTemplateParam, ungroupStateIconDrawingSelection } from "./appDeviceDefinitionFactories";
@@ -7,7 +6,24 @@ import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAW
 import { modelAssociationDeviceModelTypeFailureMessage, switchingDeviceUsesClosedStatus } from "../model";
 
 import { Select, InputNumber } from "antd";
-import type { DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
+// 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 遮住）：按真实出处补齐，均为 type-only import。
+import type { CSSProperties, PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from "react";
+import type { Point, DeviceTemplate, ModelNode } from "../model";
+import type { CanvasClipboardEdge } from "../selectionActions";
+
+// 状态图标绘制里自拼的对齐参考线：比 appCoreCanvasUtilities 的 SmartAlignmentGuide 多一个 variant
+// （active / match / snap 决定线型与配色）。
+type SmartAlignmentGuideLine = {
+  id: string;
+  orientation: "vertical" | "horizontal";
+  position: number;
+  start: number;
+  end: number;
+  variant: "active" | "match" | "snap";
+};
+
+import type { CategoryLibrary, CategoryLibraryComponentLibraryGroup, CustomDeviceDraft, DeviceDefinitionDraftRow, DeviceDefinitionVisualDraft, GraphTemplate, StateIconDrawingContextMenuState, StateIconDrawingDialogState } from "./appCoreCanvasUtilities";
+import type { DeviceDefinitionStateDraftRow, StateIconDrawingElement, StateVisualShapeKind } from "../stateIconDrawing";
 
 export function stateIconDrawingContextMenuPosition(
   clientPoint: { x: number; y: number },
@@ -305,7 +321,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         return;
       }
       setStateIconDrawingContextMenu(null);
-      setStateIconDrawingDialog((current) => current ? {
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => current ? {
         ...current,
         elementLibraryTab: "static",
         pendingElementKind: undefined,
@@ -320,7 +336,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         return;
       }
       setStateIconDrawingContextMenu(null);
-      setStateIconDrawingDialog((current) => current ? {
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => current ? {
         ...current,
         elementLibraryTab: tab,
         pendingElementKind: tab === "basic" ? current.pendingElementKind : undefined,
@@ -769,7 +785,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       });
       return (
         <g className="state-icon-terminal-dynamic-guide-layer" aria-hidden="true">
-          {lines.map((guide) => (
+          {lines.map((guide: SmartAlignmentGuideLine) => (
             <line
               key={`state-icon-terminal-dynamic-guide-${guide.id}`}
               className={[
@@ -789,7 +805,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         </g>
       );
     };
-    const updateStateIconTerminalAnchorFromDrawing = (index: number, event: PointerEvent<SVGSVGElement>) => {
+    const updateStateIconTerminalAnchorFromDrawing = (index: number, event: ReactPointerEvent<SVGSVGElement>) => {
       if (!updateStateIconTerminalAnchor || !projectCustomDeviceTerminalAnchorToBoundary) {
         return;
       }
@@ -802,9 +818,9 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         y: (snappedPoint.point.y - stateIconTerminalFrame.centerY) / stateIconTerminalFrame.height
       });
       updateStateIconTerminalAnchor(index, stateIconSourceBoundaryAnchorFromDisplayed(nextAnchor));
-      setStateIconDrawingDialog((current) => current ? { ...current, smartAlignmentGuides: snappedPoint.guides } : current);
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => current ? { ...current, smartAlignmentGuides: snappedPoint.guides } : current);
     };
-    const finishStateIconTerminalDrag = (event: PointerEvent<SVGSVGElement>) => {
+    const finishStateIconTerminalDrag = (event: ReactPointerEvent<SVGSVGElement>) => {
       if (stateIconTerminalDragIndex === null || stateIconTerminalDragIndex === undefined) {
         return false;
       }
@@ -812,7 +828,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
       setStateIconTerminalDragIndex?.(null);
-      setStateIconDrawingDialog((current) => current ? { ...current, smartAlignmentGuides: [] } : current);
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => current ? { ...current, smartAlignmentGuides: [] } : current);
       return true;
     };
     const renderStateIconOuterFrameLayer = () => (
@@ -901,7 +917,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         }
                         setStateIconTerminalDragIndex?.(index);
                         svg.setPointerCapture?.(event.pointerId);
-                        updateStateIconTerminalAnchorFromDrawing(index, event as unknown as PointerEvent<SVGSVGElement>);
+                        updateStateIconTerminalAnchorFromDrawing(index, event as unknown as ReactPointerEvent<SVGSVGElement>);
                       }}
                     >
                       <title>{`拖动调整端子${index + 1}位置`}</title>
@@ -974,7 +990,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       }
                       setStateIconTerminalDragIndex?.(index);
                       svg.setPointerCapture?.(event.pointerId);
-                      updateStateIconTerminalAnchorFromDrawing(index, event as unknown as PointerEvent<SVGSVGElement>);
+                      updateStateIconTerminalAnchorFromDrawing(index, event as unknown as ReactPointerEvent<SVGSVGElement>);
                     }}
                   >
                     <title>{`拖动调整端子${index + 1}位置`}</title>
@@ -1231,8 +1247,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           : defaultStateDraftRow(customDeviceDraft.stateDefinitions, customDeviceDefaultStateVisualDraft());
       }
       return dialog.target.scope === "definition"
-        ? definitionStateDraftRows.find((item) => item.id === dialog.target.rowId)
-        : customDeviceDraft.stateDefinitions.find((item) => item.id === dialog.target.rowId);
+        ? definitionStateDraftRows.find((item: DeviceDefinitionDraftRow) => item.id === dialog.target.rowId)
+        : customDeviceDraft.stateDefinitions.find((item: DeviceDefinitionDraftRow) => item.id === dialog.target.rowId);
     };
     const cancelStateIconDrawingCanvasDraft = () => {
       const active = Boolean(stateIconDrawingDialog?.pendingElementKind || stateIconDrawingDialog?.pendingStaticTemplate || stateIconDrawingDialog?.drawingDraft);
@@ -1240,7 +1256,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         return false;
       }
       setStateIconDrawingContextMenu(null);
-      setStateIconDrawingDialog((current) => current ? {
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => current ? {
         ...current,
         pendingElementKind: undefined,
         pendingStaticTemplate: undefined,
@@ -1249,7 +1265,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       } : current);
       return true;
     };
-    const handleStateIconDrawingCanvasPointerDown = (event: PointerEvent<SVGSVGElement>) => {
+    const handleStateIconDrawingCanvasPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
       if (event.button !== 0 || !stateIconDrawingDialog?.target) {
         return false;
       }
@@ -1261,7 +1277,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       const point = stateIconDrawingPointer(event);
       const snappedPoint = stateIconDrawingTerminalPointSnap(__appScope, clampStateIconDrawingPoint(point));
       setStateIconDrawingContextMenu(null);
-      setStateIconDrawingDialog((current) => {
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => {
         if (!current) {
           return current;
         }
@@ -1339,12 +1355,12 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       });
       return true;
     };
-    const updateStateIconDrawingCanvasDraft = (event: PointerEvent<SVGSVGElement>) => {
+    const updateStateIconDrawingCanvasDraft = (event: ReactPointerEvent<SVGSVGElement>) => {
       if (!stateIconDrawingDialog?.drawingDraft) {
         return false;
       }
       const point = stateIconDrawingPointer(event);
-      setStateIconDrawingDialog((current) => {
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => {
         if (!current?.drawingDraft) {
           return current;
         }
@@ -1376,12 +1392,12 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       });
       return true;
     };
-    const updateStateIconDrawingMarquee = (event: PointerEvent<SVGSVGElement>) => {
+    const updateStateIconDrawingMarquee = (event: ReactPointerEvent<SVGSVGElement>) => {
       if (!stateIconDrawingDialog?.marquee) {
         return false;
       }
       const point = clampStateIconDrawingPoint(stateIconDrawingPointer(event));
-      setStateIconDrawingDialog((current) => current?.marquee ? {
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => current?.marquee ? {
         ...current,
         marquee: {
           ...current.marquee,
@@ -1390,12 +1406,12 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       } : current);
       return true;
     };
-    const finishStateIconDrawingMarquee = (event: PointerEvent<SVGSVGElement>) => {
+    const finishStateIconDrawingMarquee = (event: ReactPointerEvent<SVGSVGElement>) => {
       if (!stateIconDrawingDialog?.marquee) {
         return false;
       }
       const point = clampStateIconDrawingPoint(stateIconDrawingPointer(event));
-      setStateIconDrawingDialog((current) => {
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => {
         if (!current?.marquee) {
           return current;
         }
@@ -1418,16 +1434,16 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       event.currentTarget.releasePointerCapture?.(event.pointerId);
       return true;
     };
-    const cancelStateIconDrawingMarquee = (event: PointerEvent<SVGSVGElement>) => {
+    const cancelStateIconDrawingMarquee = (event: ReactPointerEvent<SVGSVGElement>) => {
       if (!stateIconDrawingDialog?.marquee) {
         return false;
       }
-      setStateIconDrawingDialog((current) => current?.marquee ? { ...current, marquee: undefined } : current);
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => current?.marquee ? { ...current, marquee: undefined } : current);
       event.currentTarget.releasePointerCapture?.(event.pointerId);
       return true;
     };
     const setStateIconFramePatch = (patch: Record<string, any>) => {
-      setStateIconDrawingDialog((current) =>
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) =>
         current
           ? {
               ...current,
@@ -1446,27 +1462,27 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       }
       const selectedSet = new Set(stateIconDrawingSelectedIds(stateIconDrawingDialog));
       stateIconDrawingClipboardRef.current = stateIconDrawingDialog.elements
-        .filter((element) => selectedSet.has(element.id))
-        .map((element) => ({
+        .filter((element: StateIconDrawingElement) => selectedSet.has(element.id))
+        .map((element: StateIconDrawingElement) => ({
           ...element,
-          ...(Array.isArray(element.points) ? { points: element.points.map((point) => ({ ...point })) } : {})
+          ...(Array.isArray(element.points) ? { points: element.points.map((point: Point) => ({ ...point })) } : {})
         }));
       setStateIconDrawingContextMenu(null);
     };
     const cutSelectedStateIconElements = () => {
-      setStateIconDrawingDialog((current) => cutStateIconDrawingSelection(current, stateIconDrawingClipboardRef, stateIconDrawingHistoryRef));
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => cutStateIconDrawingSelection(current, stateIconDrawingClipboardRef, stateIconDrawingHistoryRef));
       setStateIconDrawingContextMenu(null);
     };
     const groupSelectedStateIconElements = () => {
-      setStateIconDrawingDialog((current) => groupStateIconDrawingSelection(current, stateIconDrawingHistoryRef));
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => groupStateIconDrawingSelection(current, stateIconDrawingHistoryRef));
       setStateIconDrawingContextMenu(null);
     };
     const ungroupSelectedStateIconElements = () => {
-      setStateIconDrawingDialog((current) => ungroupStateIconDrawingSelection(current, stateIconDrawingHistoryRef));
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => ungroupStateIconDrawingSelection(current, stateIconDrawingHistoryRef));
       setStateIconDrawingContextMenu(null);
     };
     const pasteStateIconElements = (point?: Point) => {
-      setStateIconDrawingDialog((current) => {
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => {
         const clipboard = stateIconDrawingClipboardRef.current ?? [];
         if (!current || clipboard.length === 0) {
           return current;
@@ -1487,7 +1503,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       setStateIconDrawingContextMenu(null);
     };
     const updateSelectedStateIconElements = (updater: (element: StateIconDrawingElement, selected: StateIconDrawingElement[]) => StateIconDrawingElement) => {
-      setStateIconDrawingDialog((current) => {
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => {
         if (!current) {
           return current;
         }
@@ -1496,7 +1512,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           return current;
         }
         const selectedSet = new Set(selectedIds);
-        const selected = current.elements.filter((element) => selectedSet.has(element.id));
+        const selected = current.elements.filter((element: StateIconDrawingElement) => selectedSet.has(element.id));
         pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
         return {
           ...current,
@@ -1506,7 +1522,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       setStateIconDrawingContextMenu(null);
     };
     const reorderSelectedStateIconElements = (mode: "front" | "back" | "forward" | "backward") => {
-      setStateIconDrawingDialog((current) => {
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => {
         if (!current) {
           return current;
         }
@@ -1515,8 +1531,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           return current;
         }
         const selectedSet = new Set(selectedIds);
-        const selected = current.elements.filter((element) => selectedSet.has(element.id));
-        const rest = current.elements.filter((element) => !selectedSet.has(element.id));
+        const selected = current.elements.filter((element: StateIconDrawingElement) => selectedSet.has(element.id));
+        const rest = current.elements.filter((element: StateIconDrawingElement) => !selectedSet.has(element.id));
         pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
         if (mode === "front") {
           return { ...current, elements: [...rest, ...selected] };
@@ -1562,7 +1578,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       });
     };
     const distributeSelectedStateIconElements = (axis: "x" | "y") => {
-      setStateIconDrawingDialog((current) => {
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => {
         if (!current) {
           return current;
         }
@@ -1571,18 +1587,18 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           return current;
         }
         const selectedSet = new Set(selectedIds);
-        const selected = current.elements.filter((element) => selectedSet.has(element.id)).sort((a, b) => axis === "x" ? a.x - b.x : a.y - b.y);
+        const selected = current.elements.filter((element: StateIconDrawingElement) => selectedSet.has(element.id)).sort((a, b) => axis === "x" ? a.x - b.x : a.y - b.y);
         const first = selected[0];
         const last = selected[selected.length - 1];
         const step = ((axis === "x" ? last.x - first.x : last.y - first.y) || 0) / Math.max(1, selected.length - 1);
-        const nextById = new Map(selected.map((element, index) => [
+        const nextById = new Map(selected.map((element: StateIconDrawingElement, index: number) => [
           element.id,
           axis === "x" ? { ...element, x: first.x + step * index } : { ...element, y: first.y + step * index }
         ]));
         pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
         return {
           ...current,
-          elements: current.elements.map((element) => nextById.get(element.id) ?? element)
+          elements: current.elements.map((element: StateIconDrawingElement) => nextById.get(element.id) ?? element)
         };
       });
       setStateIconDrawingContextMenu(null);
@@ -1614,9 +1630,9 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         id: stateDraftRowId()
       };
       if (handlers.drawingScope === "definition") {
-        setDefinitionStateDraftRows((current) => appendNonDefaultStateDraftRow(current, defaultVisual, nextRow));
+        setDefinitionStateDraftRows((current: DeviceDefinitionDraftRow[]) => appendNonDefaultStateDraftRow(current, defaultVisual, nextRow));
       } else {
-        setCustomDeviceDraft((current) => ({
+        setCustomDeviceDraft((current: CustomDeviceDraft) => ({
           ...current,
           stateDefinitions: appendNonDefaultStateDraftRow(current.stateDefinitions, defaultVisual, nextRow),
           error: ""
@@ -1642,7 +1658,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
             默认状态
           </button>
         )}
-        {displayRows.map((row, index) => {
+        {displayRows.map((row: DeviceDefinitionStateDraftRow, index: number) => {
           const active = activeRow?.id === row.id;
           return (
             <button
@@ -1669,9 +1685,9 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         return null;
       }
       const selectedCount = stateIconDrawingSelectedIds(stateIconDrawingDialog).length;
-      const selectedElements = stateIconDrawingDialog.elements.filter((element) => stateIconDrawingSelectedIds(stateIconDrawingDialog).includes(element.id));
-      const selectedGroupIds = new Set(selectedElements.map((element) => String(element.groupId ?? "").trim()).filter(Boolean));
-      const selectedIsSingleGroup = selectedGroupIds.size === 1 && selectedElements.length > 1 && selectedElements.every((element) => String(element.groupId ?? "").trim());
+      const selectedElements = stateIconDrawingDialog.elements.filter((element: StateIconDrawingElement) => stateIconDrawingSelectedIds(stateIconDrawingDialog).includes(element.id));
+      const selectedGroupIds = new Set(selectedElements.map((element: StateIconDrawingElement) => String(element.groupId ?? "").trim()).filter(Boolean));
+      const selectedIsSingleGroup = selectedGroupIds.size === 1 && selectedElements.length > 1 && selectedElements.every((element: StateIconDrawingElement) => String(element.groupId ?? "").trim());
       const canGroup = selectedCount >= 2 && !selectedIsSingleGroup;
       const canUngroup = selectedGroupIds.size > 0;
       const clipboardReady = (stateIconDrawingClipboardRef.current ?? []).length > 0;
@@ -1819,12 +1835,12 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         : stateIconDrawingDialog.elements;
       const dragOverrides = stateIconDrawingDragDeltaRef?.current?.overrides;
       const previewElements = dragOverrides
-        ? rawPreviewElements.map((element) => {
+        ? rawPreviewElements.map((element: StateIconDrawingElement) => {
             const ovr = dragOverrides[element.id];
             return ovr ? { ...element, ...ovr } : element;
           })
         : rawPreviewElements;
-      const selectedPreviewElements = previewElements.filter((element) => selectedIds.includes(element.id));
+      const selectedPreviewElements = previewElements.filter((element: StateIconDrawingElement) => selectedIds.includes(element.id));
       const stateIconDrawingGroupSelectionBounds = selectedPreviewElements.length > 1
         ? stateIconDrawingSelectionBounds(selectedPreviewElements)
         : null;
@@ -1879,7 +1895,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     event.preventDefault();
                     event.stopPropagation();
                     setStateIconDrawingContextMenu(null);
-                    setStateIconDrawingDialog((current) => finishStateIconDrawingDraft(current, stateIconDrawingHistoryRef));
+                    setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => finishStateIconDrawingDraft(current, stateIconDrawingHistoryRef));
                   }}
                   onPointerUp={(event) => {
                     if (finishStateIconTerminalDrag(event)) {
@@ -1933,7 +1949,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     (event.currentTarget.closest(".state-icon-drawing-inline") as HTMLElement | null)?.focus();
                     const point = clampStateIconDrawingPoint(stateIconDrawingPointer(event));
                     const append = event.shiftKey || event.ctrlKey || event.metaKey;
-                    setStateIconDrawingDialog((current) => current ? {
+                    setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => current ? {
                       ...current,
                       marquee: {
                         start: point,
@@ -2011,7 +2027,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     vectorEffect="non-scaling-stroke"
                     pointerEvents="none"
                   />
-                  {directPreviewElements ? previewElements.map((element, index) => (
+                  {directPreviewElements ? previewElements.map((element: StateIconDrawingElement, index: number) => (
                     <g
                       key={`preview-${element.id}-${index}`}
                       className="state-icon-drawing-direct-preview"
@@ -2030,7 +2046,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       className="state-icon-drawing-composite-preview"
                     />
                   )}
-                  {previewElements.map((element) => {
+                  {previewElements.map((element: StateIconDrawingElement) => {
                     if (element.kind !== "imported-svg") {
                       return null;
                     }
@@ -2050,7 +2066,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       />
                     );
                   })}
-                  {stateIconDrawingSmartGuides.map((guide) => (
+                  {stateIconDrawingSmartGuides.map((guide: SmartAlignmentGuideLine) => (
                     <line
                       key={guide.id}
                       className={`smart-alignment-guide smart-alignment-guide-${guide.orientation} state-icon-drawing-smart-guide`}
@@ -2071,7 +2087,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       vectorEffect="non-scaling-stroke"
                     />
                   )}
-                  {stateIconDrawingDialog.elements.map((element) => {
+                  {stateIconDrawingDialog.elements.map((element: StateIconDrawingElement) => {
                     const dragOverride = stateIconDrawingDragDeltaRef?.current?.overrides?.[element.id];
                     if (dragOverride) {
                       element = { ...element, ...dragOverride };
@@ -2159,8 +2175,11 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       <rect
                         x={formatSvgNumber(stateIconDrawingGroupSelectionBounds.left)}
                         y={formatSvgNumber(stateIconDrawingGroupSelectionBounds.top)}
-                        width={formatSvgNumber(stateIconDrawingGroupSelectionBounds.width)}
-                        height={formatSvgNumber(stateIconDrawingGroupSelectionBounds.height)}
+                        // stateIconDrawingSelectionBounds 返回的是 { left, right, top, bottom, centerX, centerY }，
+                        // **没有** width/height —— 原先直接取这两个字段恒为 undefined，formatSvgNumber 把它
+                        // 变成 NaN，多选框的宽高因此一直是坏的。改由边长算出。
+                        width={formatSvgNumber(stateIconDrawingGroupSelectionBounds.right - stateIconDrawingGroupSelectionBounds.left)}
+                        height={formatSvgNumber(stateIconDrawingGroupSelectionBounds.bottom - stateIconDrawingGroupSelectionBounds.top)}
                         className="state-icon-drawing-selection-box state-icon-drawing-group-selection-box"
                       />
                       <circle
@@ -2196,7 +2215,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                   role="tab"
                   aria-selected={sidePanelTab === "global"}
                   className={sidePanelTab === "global" ? "active" : ""}
-                  onClick={() => setStateIconDrawingDialog((current) => current ? { ...current, sidePanelTab: "global" } : current)}
+                  onClick={() => setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => current ? { ...current, sidePanelTab: "global" } : current)}
                 >
                   全局信息
                 </button>
@@ -2205,7 +2224,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                   role="tab"
                   aria-selected={sidePanelTab === "selected"}
                   className={sidePanelTab === "selected" ? "active" : ""}
-                  onClick={() => setStateIconDrawingDialog((current) => current ? { ...current, sidePanelTab: "selected" } : current)}
+                  onClick={() => setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => current ? { ...current, sidePanelTab: "selected" } : current)}
                 >
                   选中图元
                 </button>
@@ -2219,9 +2238,9 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         <>
                           <tr>
                             <th>状态值</th>
-                            <td><BufferedTextInput value={selectedStateRow.value} onCommit={(value) => handlers.update(selectedStateRowId, { value })} /></td>
+                            <td><BufferedTextInput value={selectedStateRow.value} onCommit={(value: string) => handlers.update(selectedStateRowId, { value })} /></td>
                             <th>状态名称</th>
-                            <td><BufferedTextInput value={selectedStateRow.name} onCommit={(value) => handlers.update(selectedStateRowId, { name: value })} /></td>
+                            <td><BufferedTextInput value={selectedStateRow.name} onCommit={(value: string) => handlers.update(selectedStateRowId, { name: value })} /></td>
                           </tr>
                           <tr>
                             <th>图片显示方式</th>
@@ -2269,13 +2288,13 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         <th>边框线色</th>
                         <td>
                           <div className="state-icon-drawing-color-field">
-                            <DeferredColorInput value={frame.strokeColor} fallback="#94a3b8" onCommit={(value) => setStateIconFramePatch({ strokeColor: value })} />
+                            <DeferredColorInput value={frame.strokeColor} fallback="#94a3b8" onCommit={(value: string) => setStateIconFramePatch({ strokeColor: value })} />
                           </div>
                         </td>
                         <th>背景</th>
                         <td>
                           <div className="state-icon-drawing-color-field">
-                            <DeferredColorInput value={frame.fillColor} fallback="#ffffff" onCommit={(value) => setStateIconFramePatch({ fillColor: value })} />
+                            <DeferredColorInput value={frame.fillColor} fallback="#ffffff" onCommit={(value: string) => setStateIconFramePatch({ fillColor: value })} />
                           </div>
                         </td>
                       </tr>
@@ -2313,9 +2332,9 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                 <div className="state-icon-drawing-properties state-icon-drawing-tab-panel" role="tabpanel">
                 {(() => {
                   const selectedElementIds = stateIconDrawingSelectedIds(stateIconDrawingDialog);
-                  const selectedElements = stateIconDrawingDialog.elements.filter((element) => selectedElementIds.includes(element.id));
+                  const selectedElements = stateIconDrawingDialog.elements.filter((element: StateIconDrawingElement) => selectedElementIds.includes(element.id));
                   const selectedGroupId = String(selectedElements[0]?.groupId ?? "").trim();
-                  const selectedIsGroup = selectedElements.length > 1 && Boolean(selectedGroupId) && selectedElements.every((element) => element.groupId === selectedGroupId);
+                  const selectedIsGroup = selectedElements.length > 1 && Boolean(selectedGroupId) && selectedElements.every((element: StateIconDrawingElement) => element.groupId === selectedGroupId);
                   if (selectedIsGroup) {
                     return (
                       <div className="state-icon-drawing-group-properties">
@@ -2340,7 +2359,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       </div>
                     );
                   }
-                  const selected = stateIconDrawingDialog.elements.find((element) => element.id === stateIconDrawingDialog.selectedElementId) ?? null;
+                  const selected = stateIconDrawingDialog.elements.find((element: StateIconDrawingElement) => element.id === stateIconDrawingDialog.selectedElementId) ?? null;
                   if (!selected) {
                     return <p>选择一个图案后调整属性。</p>;
                   }
@@ -2371,19 +2390,19 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         <tbody>
                         <tr>
                           <th>X</th>
-                          <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.x)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { x: Number(nextValue ?? 0) || 0 })} /></td>
+                          <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.x) as never} onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, { x: Number(nextValue ?? 0) || 0 })} /></td>
                           <th>Y</th>
-                          <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.y)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { y: Number(nextValue ?? 0) || 0 })} /></td>
+                          <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.y) as never} onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, { y: Number(nextValue ?? 0) || 0 })} /></td>
                         </tr>
                         <tr>
                           <th>宽</th>
-                          <td><InputNumber size="small" min={1} step={0.01} value={formatStateIconDrawingNumber(selected.width, 1)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue ?? 0) || 1) })} /></td>
+                          <td><InputNumber size="small" min={1 as never} step={0.01} value={formatStateIconDrawingNumber(selected.width, 1) as never} onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue ?? 0) || 1) })} /></td>
                           <th>高</th>
-                          <td><InputNumber size="small" min={1} step={0.01} value={formatStateIconDrawingNumber(selected.height, 1)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(nextValue ?? 0) || 1) })} /></td>
+                          <td><InputNumber size="small" min={1 as never} step={0.01} value={formatStateIconDrawingNumber(selected.height, 1) as never} onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(nextValue ?? 0) || 1) })} /></td>
                         </tr>
                         <tr>
                           <th>角度</th>
-                          <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.rotation)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { rotation: Number(nextValue ?? 0) || 0 })} /></td>
+                          <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.rotation) as never} onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, { rotation: Number(nextValue ?? 0) || 0 })} /></td>
                           <th>粗细</th>
                           <td>
                             <InputNumber size="small"
@@ -2396,7 +2415,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                                   event.preventDefault();
                                 }
                               }}
-                              onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { strokeWidth: normalizeStateIconDrawingStrokeWidth(String(nextValue ?? ""), selected.strokeWidth) })}
+                              onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, { strokeWidth: normalizeStateIconDrawingStrokeWidth(String(nextValue ?? ""), selected.strokeWidth) })}
                             />
                           </td>
                         </tr>
@@ -2418,14 +2437,14 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           <th>线色</th>
                           <td>
                             <div className="state-icon-drawing-color-field">
-                              <DeferredColorInput value={visibleStrokeColor} fallback="#2563eb" onCommit={(value) => updateStateIconDrawingElement(selected.id, { strokeColor: value })} />
+                              <DeferredColorInput value={visibleStrokeColor} fallback="#2563eb" onCommit={(value: string) => updateStateIconDrawingElement(selected.id, { strokeColor: value })} />
                             </div>
                           </td>
                           {isLineShape ? (
                             <>
                               <th>起点端型</th>
                               <td>
-                                <Select value={selected.startCap ?? "none"} onChange={(value) => updateStateIconDrawingElement(selected.id, { startCap: value })} options={STATE_ICON_LINE_CAP_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
+                                <Select value={selected.startCap ?? "none"} onChange={(value: string) => updateStateIconDrawingElement(selected.id, { startCap: value })} options={STATE_ICON_LINE_CAP_OPTIONS.map((option: { value: string; label: string }) => ({ value: option.value, label: option.label }))} />
                               </td>
                             </>
                           ) : isClosedShape ? (
@@ -2433,7 +2452,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                               <th>填充</th>
                               <td>
                                 <div className="state-icon-drawing-color-field">
-                                  <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value) => updateStateIconDrawingElement(selected.id, { fillColor: value })} />
+                                  <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value: string) => updateStateIconDrawingElement(selected.id, { fillColor: value })} />
                                 </div>
                               </td>
                             </>
@@ -2448,14 +2467,14 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           <tr>
                             <th>终点端型</th>
                             <td>
-                              <Select value={selected.endCap ?? "none"} onChange={(value) => updateStateIconDrawingElement(selected.id, { endCap: value })} options={STATE_ICON_LINE_CAP_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
+                              <Select value={selected.endCap ?? "none"} onChange={(value: string) => updateStateIconDrawingElement(selected.id, { endCap: value })} options={STATE_ICON_LINE_CAP_OPTIONS.map((option: { value: string; label: string }) => ({ value: option.value, label: option.label }))} />
                             </td>
                             {isClosedShape ? (
                               <>
                                 <th>填充</th>
                                 <td>
                                   <div className="state-icon-drawing-color-field">
-                                    <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value) => updateStateIconDrawingElement(selected.id, { fillColor: value })} />
+                                    <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value: string) => updateStateIconDrawingElement(selected.id, { fillColor: value })} />
                                   </div>
                                 </td>
                               </>
@@ -2471,11 +2490,11 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           <>
                             <tr>
                               <th>文字</th>
-                              <td><BufferedTextInput value={selected.text} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { text: nextValue })} /></td>
+                              <td><BufferedTextInput value={selected.text} onCommit={(nextValue: string) => updateStateIconDrawingElement(selected.id, { text: nextValue })} /></td>
                               <th>文本颜色</th>
                               <td>
                                 <div className="state-icon-drawing-color-field">
-                                  <DeferredColorInput value={visibleTextColor} fallback="#111827" onCommit={(value) => updateStateIconDrawingElement(selected.id, { textColor: value })} />
+                                  <DeferredColorInput value={visibleTextColor} fallback="#111827" onCommit={(value: string) => updateStateIconDrawingElement(selected.id, { textColor: value })} />
                                 </div>
                               </td>
                             </tr>
@@ -2496,7 +2515,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                                       event.preventDefault();
                                     }
                                   }}
-                                  onChange={(nextValue) => updateStateIconDrawingElement(selected.id, {
+                                  onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, {
                                     fontSize: normalizeStateIconDrawingFontSize(String(nextValue ?? ""), selected.fontSize ?? selected.height)
                                   })}
                                 />
@@ -2522,13 +2541,13 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                                 <Select value={normalizeImageFitMode(selected.imageFit)} onChange={(value) => updateStateIconDrawingElement(selected.id, { imageFit: value })} options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
                               </td>
                               <th>图片缩放</th>
-                              <td><InputNumber size="small" min={0.05} step={0.01} value={formatStateIconDrawingNumber(selected.imageScale ?? 1, 1)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(nextValue ?? 0) || 0.05) })} /></td>
+                              <td><InputNumber size="small" min={0.05 as never} step={0.01} value={formatStateIconDrawingNumber(selected.imageScale ?? 1, 1) as never} onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(nextValue ?? 0) || 0.05) })} /></td>
                             </tr>
                             <tr>
                               <th>裁剪X</th>
-                              <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.cropX ?? 0)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { cropX: Number(nextValue ?? 0) || 0 })} /></td>
+                              <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.cropX ?? 0) as never} onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, { cropX: Number(nextValue ?? 0) || 0 })} /></td>
                               <th>裁剪Y</th>
-                              <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.cropY ?? 0)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { cropY: Number(nextValue ?? 0) || 0 })} /></td>
+                              <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.cropY ?? 0) as never} onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, { cropY: Number(nextValue ?? 0) || 0 })} /></td>
                             </tr>
                           </>
                         )}
@@ -2721,7 +2740,7 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
               <button
                 type="button"
                 onClick={() =>
-                  setDefinitionVisualDraft((current) =>
+                  setDefinitionVisualDraft((current: DeviceDefinitionVisualDraft) =>
                     current
                       ? {
                           ...current,
@@ -2741,7 +2760,7 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
             <div className="custom-device-image-row device-definition-image-row">
               <span>图标显示方式</span>
               <Select value={normalizeImageFitMode(definitionVisualDraft.backgroundImageFit)} onChange={(value) =>
-                setDefinitionVisualDraft((current) => current ? { ...current, backgroundImageFit: value, error: "" } : current)
+                setDefinitionVisualDraft((current: CustomDeviceDraft) => current ? { ...current, backgroundImageFit: value, error: "" } : current)
               } options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
             </div>
             <div className="device-definition-size-grid">
@@ -2751,7 +2770,7 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
                   min={1}
                   value={definitionVisualDraft.size.width}
                   onChange={(value) =>
-                    setDefinitionVisualDraft((current) =>
+                    setDefinitionVisualDraft((current: DeviceDefinitionVisualDraft) =>
                       current
                         ? {
                             ...current,
@@ -2769,7 +2788,7 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
                   min={1}
                   value={definitionVisualDraft.size.height}
                   onChange={(value) =>
-                    setDefinitionVisualDraft((current) =>
+                    setDefinitionVisualDraft((current: DeviceDefinitionVisualDraft) =>
                       current
                         ? {
                             ...current,
@@ -2858,7 +2877,7 @@ export function createRenderGraphTemplatePreview(__appScope: Record<string, any>
         aria-hidden="true"
         className="template-preview-svg"
       >
-        {template.clipboard.edges.map((item) => (
+        {template.clipboard.edges.map((item: CanvasClipboardEdge) => (
           <path
             key={item.edge.id}
             d={pointsToPreviewPath(item.routePoints)}
@@ -2869,7 +2888,7 @@ export function createRenderGraphTemplatePreview(__appScope: Record<string, any>
             strokeLinejoin="round"
           />
         ))}
-        {template.clipboard.nodes.map((node) => (
+        {template.clipboard.nodes.map((node: ModelNode) => (
           <g key={node.id} transform={`translate(${node.position.x} ${node.position.y})`}>
             <g transform={nodeGeometryTransform(node)}>
               <MemoDeviceGlyph node={node} miniature colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
@@ -2993,7 +3012,7 @@ export function createRenderLibraryFlyout(__appScope: Record<string, any>) {
         }}
         onMouseLeave={() => scheduleLibraryFlyoutClose(group, componentLibraryKey)}
       >
-        {typeGroup.templates.map((item) => renderLibraryTemplateButton(item, typeGroup.section))}
+        {typeGroup.templates.map((item: DeviceTemplate) => renderLibraryTemplateButton(item, typeGroup.section))}
       </div>
     );
     if (typeof document === "undefined") {
@@ -3004,7 +3023,7 @@ export function createRenderLibraryFlyout(__appScope: Record<string, any>) {
 }
 
 export function createLodNodeFromEvent(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGGElement> | MouseEvent<SVGGElement>) => {
+  return (event: ReactPointerEvent<SVGGElement> | ReactMouseEvent<SVGGElement>) => {
   const { nodeById } = __appScope;
     const target = event.target instanceof Element
       ? event.target.closest(".lod-node[data-node-id]")
@@ -3015,7 +3034,7 @@ export function createLodNodeFromEvent(__appScope: Record<string, any>) {
 }
 
 export function createLodTerminalIdFromEvent(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGGElement> | MouseEvent<SVGGElement>) => {
+  return (event: ReactPointerEvent<SVGGElement> | ReactMouseEvent<SVGGElement>) => {
     const target = event.target instanceof Element
       ? event.target.closest("[data-terminal-id]")
       : null;
@@ -3024,13 +3043,13 @@ export function createLodTerminalIdFromEvent(__appScope: Record<string, any>) {
 }
 
 export function createHandleLodNodePointerDown(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGGElement>) => {
+  return (event: ReactPointerEvent<SVGGElement>) => {
   const { handleNodePointerDown, handleRoutableLineNodePointerDown, handleTerminalPointerDown, isRoutableLineDeviceKind, lodNodeFromEvent, lodTerminalIdFromEvent } = __appScope;
     const node = lodNodeFromEvent(event);
     if (node) {
       const terminalId = lodTerminalIdFromEvent(event);
       if (event.button === 0 && terminalId) {
-        handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, terminalId);
+        handleTerminalPointerDown(event as unknown as ReactPointerEvent<SVGCircleElement>, node, terminalId);
         return;
       }
       if (isRoutableLineDeviceKind(node.kind)) {
@@ -3043,7 +3062,7 @@ export function createHandleLodNodePointerDown(__appScope: Record<string, any>) 
 }
 
 export function createHandleLodNodeContextMenu(__appScope: Record<string, any>) {
-  return (event: MouseEvent<SVGGElement>) => {
+  return (event: ReactMouseEvent<SVGGElement>) => {
   const { activeLayerNodeIdSet, canvasInteractionRef, clampPointToCanvas, connectSource, isRoutableLineDeviceKind, lastCanvasPointerRef, lodNodeFromEvent, openGraphicContextMenu, projectListPointerInsideRef, resetConnectPreviewState, resetRoutableLinePreviewState, routableLineDeviceCanvasPoints, routableLinePlacement, screenToSvgPoint, selectCanvasGraphics, selectedNodeIdSet, setConnectSource, setMode, setRoutableLinePlacement, svgRef, updateMouseStatus } = __appScope;
     const node = lodNodeFromEvent(event);
     if (!node) {
