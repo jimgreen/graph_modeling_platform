@@ -1,4 +1,3 @@
-// @ts-nocheck
 // 画布外围四边刻度尺：左上角 (0,0)，X 向右递增、Y 向下递增。
 // 刻度口径与底图网格一致（大网格 25 单位 = 大刻度、细网格 5 单位 = 小刻度），只在大刻度标数值。
 //
@@ -26,7 +25,15 @@ const MIN_LABEL_GAP = 34;
 // 贴边的标签（如左上角的 0）若仍居中，半边会被尺子的 overflow 裁掉，
 // 边界处改成左/上对齐或右/下对齐，保证整段数字都露出来。
 // stride > 1 时只有每隔 stride 个刻度才标数字。
-function RulerLabels({ values, scale, axis, length, stride = 1 }) {
+type RulerLabelsProps = {
+  values: number[];
+  scale: number;
+  axis: "x" | "y";
+  length: number;
+  stride?: number;
+};
+
+function RulerLabels({ values, scale, axis, length, stride = 1 }: RulerLabelsProps) {
   return values.map((value, index) => {
     if (stride > 1 && index % stride !== 0) {
       return null;
