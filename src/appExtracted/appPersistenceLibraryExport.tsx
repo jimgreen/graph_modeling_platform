@@ -1026,6 +1026,8 @@ export function groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(
 }
 
 export function normalizeLibrarySearchText(value: string) {
+  // **刻意不兜底**：22 个调用点、搜索热路径，每次取值多一个分支不划算，形参标注即契约。
+  // savedNameKeyAndRouteBounds.test.ts 有守卫钉住这一条（连同理由），改前先看它。
   return value.trim().toLowerCase();
 }
 
@@ -1060,8 +1062,8 @@ export function componentLibraryDisplayName(
 }
 
 export function filterSelectionTreeLabel(label: string, typeKey: string) {
-  const normalizedLabel = label.trim();
-  const normalizedTypeKey = typeKey.trim();
+  const normalizedLabel = (typeof label === "string" ? label : "").trim();
+  const normalizedTypeKey = (typeof typeKey === "string" ? typeKey : "").trim();
   if (!normalizedLabel) {
     return normalizedTypeKey;
   }
@@ -2235,7 +2237,7 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
 }
 
 export function normalizeGraphTemplateTypeName(name: string): string {
-  return name.trim();
+  return (typeof name === "string" ? name : "").trim();
 }
 
 export function normalizeGraphTemplateTypes(value: unknown, reservedTypes: readonly string[] = DEFAULT_GRAPH_TEMPLATE_TYPES): string[] {
@@ -2401,11 +2403,12 @@ export function filterGraphTemplatesByType(grouped: Record<string, GraphTemplate
 }
 
 export function uniqueGraphTemplateName(baseName: string, typeName: string, templates: readonly GraphTemplate[]) {
-  const normalizedBase = baseName.trim() || "自定义模板";
+  const normalizedBase = (typeof baseName === "string" ? baseName : "").trim() || "自定义模板";
+  const normalizedTypeName = (typeof typeName === "string" ? typeName : "").toLowerCase();
   const existing = new Set(
     templates
-      .filter((template) => template.typeName.toLowerCase() === typeName.toLowerCase())
-      .map((template) => template.name.toLowerCase())
+      .filter((template) => (typeof template.typeName === "string" ? template.typeName : "").toLowerCase() === normalizedTypeName)
+      .map((template) => (typeof template.name === "string" ? template.name : "").toLowerCase())
   );
   if (!existing.has(normalizedBase.toLowerCase())) {
     return normalizedBase;
