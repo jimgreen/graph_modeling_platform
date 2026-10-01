@@ -106,6 +106,15 @@ describe("stripUnsafeInlineSvgMarkup（SVG 内联净化）", () => {
     expect(stripUnsafeInlineSvgMarkup(`<a onclick="alert(1)">x</a>`)).toBe("<a>x</a>");
   });
 
+  test("越界数字实体不得抛 RangeError（原文本保留）", () => {
+    // 实体来自用户上传的图元图片；`&#x110000;` 超出 Unicode 码位上限，
+    // 直接 String.fromCodePoint 会中断整个导入流程。
+    expect(stripUnsafeInlineSvgMarkup('<a href="&#x110000;">x</a>')).toContain("&#x110000;");
+    expect(stripUnsafeInlineSvgMarkup('<a href="&#1114112;">x</a>')).toContain("&#1114112;");
+    // 合法码位照旧解码
+    expect(stripUnsafeInlineSvgMarkup('<a href="&#x6a;avascript:alert(1)">x</a>')).toBe("<a>x</a>");
+  });
+
   test("幂等：净化两次结果相同（不因重复处理而变形）", () => {
     for (const [, input] of VECTORS) {
       const once = stripUnsafeInlineSvgMarkup(input);
