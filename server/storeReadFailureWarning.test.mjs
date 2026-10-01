@@ -13,7 +13,7 @@
 // 每处都只在**非 ENOENT** 时告警：ENOENT 是「还没有这个文件」的正常首启路径，
 // 否则每次首启都刷一串噪音，真正出事时反而看不见。
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readColorConfig, readManifest } from "./server.mjs";
@@ -98,6 +98,38 @@ describe("spaceStore：spaces.json 读失败要留痕", () => {
     const store = createSpaceStore(dataRoot);
     await store.ensureInitialized();
     expect(warningsMatching("spaces.json")).toHaveLength(0);
+  });
+});
+
+describe("spaceStore：重建前备份坏掉的 spaces.json", () => {
+  test("★ 坏文件被原样备份成 .bak，内容一字不差", async () => {
+    const broken = '{ "spaces": [ { "id": "张三", "name": "张三的空间" } ';
+    writeFileSync(join(dataRoot, "spaces.json"), broken, "utf-8");
+    const store = createSpaceStore(dataRoot);
+    await store.ensureInitialized();
+
+    const backups = readdirSync(dataRoot).filter((name) => name.startsWith("spaces.json.") && name.endsWith(".bak"));
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(dataRoot, backups[0]), "utf-8")).toBe(broken);
+    // 备份不等于放弃重建：注册表仍按既有契约归位到 default
+    expect((await store.list()).map((s) => s.id)).toEqual(["default"]);
+    // 告警里点名备份路径，事后知道去哪捞
+    expect(String(warn.mock.calls.at(-1)[0])).toContain(backups[0]);
+  });
+
+  test("★ 备份文件不被当作注册表本身（下次启动仍会重建，但多一份可捞的副本）", async () => {
+    writeFileSync(join(dataRoot, "spaces.json"), "{ 坏了", "utf-8");
+    await createSpaceStore(dataRoot).ensureInitialized();
+    writeFileSync(join(dataRoot, "spaces.json"), "{ 又坏了", "utf-8");
+    const store = createSpaceStore(dataRoot);
+    await store.ensureInitialized();
+    expect((await store.list()).map((s) => s.id)).toEqual(["default"]);
+    expect(readdirSync(dataRoot).filter((name) => name.endsWith(".bak"))).toHaveLength(2);
+  });
+
+  test("首启无注册表 → 不产生备份（正常路径不留垃圾文件）", async () => {
+    await createSpaceStore(dataRoot).ensureInitialized();
+    expect(readdirSync(dataRoot).filter((name) => name.endsWith(".bak"))).toEqual([]);
   });
 });
 
