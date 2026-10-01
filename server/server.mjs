@@ -2881,10 +2881,11 @@ function normalizeProjectForStorage(project) {
     measurements: normalizeStoredMeasurements(project.measurements),
     // 下面是**边界归一化**，把「存储里的模型 JSON」补成渲染层可以无条件解引用的形状。
     // 保存接口对 record.project 不做结构校验（手写 JSON、ZIP 导入、外部工具产出都可能缺字段），
-    // 而 SVG / E 文件 / CIM / 全网拓扑四条导出链各自按结构假设解引用，结果是一个缺 size 的
-    // 节点就能让三个导出端点一起 500 —— 用户视角是「存得好好的，怎么导不出来」。
+    // 而 SVG / E 文件 / CIM 三条服务端导出链（以及复用同一批渲染器的方案 ZIP 导出）各自按
+    // 结构假设解引用，结果是一个缺 size 的节点就能让多个导出端点一起 500 —— 用户视角是
+    // 「存得好好的，怎么导不出来」。
     //
-    // 选在这里而不是各渲染点补 `?.`：入口只有一处，四条链一次受益，且这里本来就是
+    // 选在这里而不是各渲染点补 `?.`：入口只有一处，所有消费方一次受益，且这里本来就是
     // 「读到的模型一律先过 normalizeProjectForStorage」的唯一位置。
     // 真实模型本来就带齐这些字段，下面的补全对正常数据是恒等变换。
     nodes: indexed.nodes

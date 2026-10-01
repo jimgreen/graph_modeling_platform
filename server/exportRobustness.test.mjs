@@ -13,9 +13,10 @@
 //
 // 用户视角是「存得好好的，怎么导不出来」，且四个端点给出的是四种不同的内部错误，
 // 排查者看不出它们其实是同一个病：存储边界没有把模型归一成「渲染层可无条件解引用」的形状。
+// 方案 ZIP 导出更狠：它一次性渲染该方案下每个模型，一个畸形模型就能把整包打挂。
 //
 // 修法在 normalizeProjectForStorage（读到的模型一律先过它）把形状补齐，
-// 而不是给每个渲染点各补一次 `?.`：入口只有一处，三条链一次受益。
+// 而不是给每个渲染点各补一次 `?.`：入口只有一处，所有消费方一次受益。
 //
 // **注意**：这里的期望是「不 5xx」。畸形模型被归一（丢掉非对象项、缺的字段取默认值）
 // 之后导出得出来就已达成目的——正常模型的导出字节必须逐字不变，由既有守卫盯着。
@@ -38,7 +39,10 @@ const EXPORTS = [
   ["json", (name) => apiPath(`/v1/schemes/model/json?schemePath=${schemePath}&name=${encodeURIComponent(name)}`)],
   ["e-file", (name) => apiPath(`/v1/schemes/model/e-file?schemePath=${schemePath}&name=${encodeURIComponent(name)}`)],
   ["svg", (name) => apiPath(`/v1/schemes/model/svg?schemePath=${schemePath}&name=${encodeURIComponent(name)}`)],
-  ["cim-xml", (name) => apiPath(`/v1/schemes/model/cim-xml?schemePath=${schemePath}&name=${encodeURIComponent(name)}`)]
+  ["cim-xml", (name) => apiPath(`/v1/schemes/model/cim-xml?schemePath=${schemePath}&name=${encodeURIComponent(name)}`)],
+  // 方案 ZIP：一次性渲染该方案下**每个**模型，一个畸形模型就能把整包导出打挂，
+  // 影响面比单模型端点大得多，故一并钉住。
+  ["方案 ZIP", () => apiPath(`/schemes/export?schemePath=${schemePath}`)]
 ];
 
 // 保存接口的 schemePath 收**原始数组**（读接口才收 encodeSchemePath 后的编码串）
