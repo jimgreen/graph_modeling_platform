@@ -3469,7 +3469,8 @@ export const measurementGroupWithCommonSetting = (
 
 export function normalizeLegacyPowerSystemLabel(value: string) {
   // 旧模型/手改 JSON 的 name 可能缺席；此前直接 .replace 会抛「undefined.replace」。
-  // 缺席时原样返回 undefined，让调用方各自的兜底（storageProjectDisplayName 等）接手。
+  // 缺席一律归成空串——它随后会流进各处的兜底（storageProjectDisplayName 给「未命名模型」、
+  // 后端 safeFilePart 给 fallback 文件名），空串是那条链上唯一处处合法的取值。
   return String(value ?? "").replace(/电力系统/g, "电力能源系统");
 }
 
