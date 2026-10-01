@@ -109,6 +109,26 @@ export const isTopologyField = (col: string): boolean => {
   );
 };
 
+/** 复制到剪贴板：优先 Clipboard API，被拒（非安全上下文 / 无权限）时回退隐藏 textarea + execCommand。 */
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // 落到下面的 textarea 回退
+    }
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch {}
+  document.body.removeChild(ta);
+}
+
 export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tableIds, isRealtimeDbTemplate }: EFileEditorProps) {
   const [editMode, setEditMode] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
@@ -224,31 +244,10 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
     if (editMode) return;
     const text = value || "";
     if (!text) return;
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).then(() => {
-        setCopiedCell(text);
-        window.setTimeout(() => setCopiedCell(null), 1000);
-      }).catch(() => {
-        // 回退方案：用临时 textarea
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.select();
-        try { document.execCommand("copy"); setCopiedCell(text); window.setTimeout(() => setCopiedCell(null), 1000); } catch {}
-        document.body.removeChild(ta);
-      });
-    } else {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand("copy"); setCopiedCell(text); window.setTimeout(() => setCopiedCell(null), 1000); } catch {}
-      document.body.removeChild(ta);
-    }
+    copyTextToClipboard(text).then(() => {
+      setCopiedCell(text);
+      window.setTimeout(() => setCopiedCell(null), 1000);
+    });
   }, [editMode]);
 
   // 跳转到引用行
