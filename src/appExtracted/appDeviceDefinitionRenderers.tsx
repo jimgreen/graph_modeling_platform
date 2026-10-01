@@ -1133,7 +1133,16 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       }
       const key = stateIconSvgVisibleFrameKey(element);
       const sourceImage = new Image();
+      // 清理引用避免内存泄漏：与上面 imageHref 那处扫描对称（那边有 onerror，这里原先没有，
+      // 加载失败时 onload/onerror 会一直挂在 Image 上并持有 href）
+      sourceImage.onerror = () => {
+        sourceImage.onload = null;
+        sourceImage.onerror = null;
+        sourceImage.src = "";
+      };
       sourceImage.onload = () => {
+        sourceImage.onload = null;
+        sourceImage.onerror = null;
         const sourceWidth = sourceImage.naturalWidth || sourceImage.width;
         const sourceHeight = sourceImage.naturalHeight || sourceImage.height;
         if (!sourceWidth || !sourceHeight) {
