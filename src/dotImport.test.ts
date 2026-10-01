@@ -269,6 +269,21 @@ describe("collapseDotGraph", () => {
 // ===== A4 模型装配（mapDotGraphToModel / importDotFile）测试 =====
 
 describe("mapDotGraphToModel", () => {
+  it("坏坐标只废掉自己那一维：y=NaN 不再把全图 y 变成 NaN", () => {
+    // 旧写法只判 minX 是否有限，minY 被 NaN 污染后 oy=NaN，正常设备的 y 全废。
+    // 坐标本身坏掉的那个设备仍会带着 NaN（源头在 DOT 解析，不在本守卫范围内）。
+    const g = mg(
+      [
+        { ...nd("n0", "BBS_1", "rect", "yellow"), x: 0, y: 0 },
+        { ...nd("n1", "SW_1", "invtriangle", "orange"), x: 150, y: Number.NaN }
+      ],
+      [["n0", "n1"]]
+    );
+    const { project } = mapDotGraphToModel(g);
+    const byName = new Map(project.nodes.map((node) => [node.name, node]));
+    expect(byName.get("BBS_1")!.position).toEqual({ x: 100, y: 100 });
+  });
+
   it("A4 MINI_DOT：收缩后 3 设备（母线+隔离开关+断路器）、2 边，坐标平移 (100,100)", () => {
     const { project, report } = mapDotGraphToModel(parseDot(MINI_DOT));
     expect(report.deviceCount).toBe(3);
