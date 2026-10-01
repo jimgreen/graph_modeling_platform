@@ -400,17 +400,20 @@ export const customDeviceTerminalAnchorKey = (anchor: Point) =>
 export const hasOverlappingCustomDeviceTerminalAnchors = (anchors: readonly Point[]) =>
   new Set(anchors.map(customDeviceTerminalAnchorKey)).size !== anchors.length;
 
+/** 8 点默认端子锚点的单源（此前在 customDeviceUtils 内两份、definitionInstanceSync 一份）。 */
+export const DEFAULT_CUSTOM_DEVICE_TERMINAL_ANCHORS: readonly Point[] = [
+  { x: -0.5, y: 0 },
+  { x: 0.5, y: 0 },
+  { x: 0, y: -0.5 },
+  { x: 0, y: 0.5 },
+  { x: -0.5, y: -0.25 },
+  { x: 0.5, y: -0.25 },
+  { x: -0.5, y: 0.25 },
+  { x: 0.5, y: 0.25 }
+];
+
 export function createDefaultCustomDeviceTerminalAnchors(count: number, sourceAnchors: readonly Point[] = []): Point[] {
-  const fallbackAnchors: Point[] = [
-    { x: -0.5, y: 0 },
-    { x: 0.5, y: 0 },
-    { x: 0, y: -0.5 },
-    { x: 0, y: 0.5 },
-    { x: -0.5, y: -0.25 },
-    { x: 0.5, y: -0.25 },
-    { x: -0.5, y: 0.25 },
-    { x: 0.5, y: 0.25 }
-  ];
+  const fallbackAnchors = DEFAULT_CUSTOM_DEVICE_TERMINAL_ANCHORS;
   const safeCount = clampNumber(Math.round(count || 0), 0, MAX_CUSTOM_DEVICE_TERMINALS);
   return Array.from({ length: safeCount }, (_, index) => {
     const source = sourceAnchors[index] ?? fallbackAnchors[index] ?? { x: 0, y: 0 };
@@ -422,18 +425,9 @@ function defaultTemplateTerminalAnchors(count: number, sourceAnchors: readonly P
   if (sourceAnchors?.length) {
     return createDefaultCustomDeviceTerminalAnchors(count, sourceAnchors);
   }
-  const fallbackAnchors: Point[] = count === 1
+  const fallbackAnchors: readonly Point[] = count === 1
     ? [{ x: 0.5, y: 0 }]
-    : [
-        { x: -0.5, y: 0 },
-        { x: 0.5, y: 0 },
-        { x: 0, y: -0.5 },
-        { x: 0, y: 0.5 },
-        { x: -0.5, y: -0.25 },
-        { x: 0.5, y: -0.25 },
-        { x: -0.5, y: 0.25 },
-        { x: 0.5, y: 0.25 }
-      ];
+    : DEFAULT_CUSTOM_DEVICE_TERMINAL_ANCHORS;
   return createDefaultCustomDeviceTerminalAnchors(count, fallbackAnchors);
 }
 

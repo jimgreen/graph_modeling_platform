@@ -18,6 +18,7 @@ import {
 import {
   DEVICE_DEFINITION_VISUAL_PARAM_KEYS
 } from "./deviceVisualParams";
+import { DEFAULT_CUSTOM_DEVICE_TERMINAL_ANCHORS } from "./customDeviceUtils";
 
 export type DefinitionSyncTemplate = Pick<DeviceTemplate, "parameterDefinitions" | "parameterDefinitionsIntent"> &
   Partial<Pick<
@@ -138,17 +139,6 @@ function syncDefinitionSize(node: ModelNode, template: DefinitionSyncTemplate): 
     : { ...node, size };
 }
 
-const DEFAULT_TERMINAL_ANCHORS: Point[] = [
-  { x: -0.5, y: 0 },
-  { x: 0.5, y: 0 },
-  { x: 0, y: -0.5 },
-  { x: 0, y: 0.5 },
-  { x: -0.5, y: -0.25 },
-  { x: 0.5, y: -0.25 },
-  { x: -0.5, y: 0.25 },
-  { x: 0.5, y: 0.25 }
-];
-
 function defaultTerminalAnchor(count: number, index: number): Point {
   if (count === 1) {
     return { x: 0.5, y: 0 };
@@ -156,7 +146,7 @@ function defaultTerminalAnchor(count: number, index: number): Point {
   if (count === 2) {
     return index === 0 ? { x: -0.5, y: 0 } : { x: 0.5, y: 0 };
   }
-  return DEFAULT_TERMINAL_ANCHORS[index] ?? { x: 0, y: 0 };
+  return DEFAULT_CUSTOM_DEVICE_TERMINAL_ANCHORS[index] ?? { x: 0, y: 0 };
 }
 
 function terminalLabel(type: TerminalType, index: number) {
