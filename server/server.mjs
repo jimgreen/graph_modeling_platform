@@ -3675,14 +3675,27 @@ async function existingStoredProjectIndex(schemeDir, names) {
     if (!candidateName) continue;
     const projectFile = await projectJsonFileForName(schemeDir, candidateName);
     if (!projectFile) continue;
+    // 读盘与解析分开：**读盘失败绝不能当成「这个模型还没有 idx」**。一旦落到分配分支，
+    // 模型会在改名/重存后拿到一个全新 idx，旧 idx 上挂着的全局线路引用（projectIdx）
+    // 全部对不上，导出的 model_id 也跟着变 —— 而且没有一行日志，是静默的数据损坏。
+    // 只有 ENOENT（模型刚被删）继续试下一个候选名；JSON 非法（真读不出 idx）沿用既有语义。
+    let raw;
     try {
-      const parsed = JSON.parse(await readFile(projectFile.filePath, "utf-8"));
+      raw = await readFile(projectFile.filePath, "utf-8");
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        continue;
+      }
+      throw new Error(`模型文件读取失败：${projectFile.filePath}（${error?.code ?? error?.name ?? "unknown"}）`, { cause: error });
+    }
+    try {
+      const parsed = JSON.parse(raw);
       const idx = Number(parsed?.idx);
       if (Number.isSafeInteger(idx) && idx > 0) {
         return idx;
       }
     } catch {
-      // Treat a missing or invalid legacy index as requiring a one-time allocation.
+      // Treat an invalid legacy index as requiring a one-time allocation.
     }
   }
   return 0;
