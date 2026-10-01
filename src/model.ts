@@ -5625,18 +5625,23 @@ export function deviceParamValue(params: Record<string, string>, key: string): s
 }
 
 export function normalizeLegacyGasQuantityDeviceParams(params: Record<string, string>): Record<string, string> {
-  const hasCamel = Object.prototype.hasOwnProperty.call(params, "gasQuantity");
-  const hasLower = Object.prototype.hasOwnProperty.call(params, "gasquantity");
-  const hasLegacySoc = Object.prototype.hasOwnProperty.call(params, "state_of_charge") ||
-    Object.prototype.hasOwnProperty.call(params, "stateOfCharge");
-  const storedDefinitions = params[CUSTOM_PARAM_DEFINITIONS_KEY];
+  // 存储里的模型 JSON 可能整个没有 params（手写 / 外部导入的节点）。此前直接对
+  // undefined/null 调 hasOwnProperty 会抛「Cannot convert undefined or null to object」——
+  // 而 normalizeNodeTerminalsByTemplate 是保存方案进入应用前的必经一环，一条畸形节点
+  // 就能让整个归一化抛掉。缺 params 按空对象处理，与其余 params 归一函数一致。
+  const source = params && typeof params === "object" && !Array.isArray(params) ? params : {};
+  const hasCamel = Object.prototype.hasOwnProperty.call(source, "gasQuantity");
+  const hasLower = Object.prototype.hasOwnProperty.call(source, "gasquantity");
+  const hasLegacySoc = Object.prototype.hasOwnProperty.call(source, "state_of_charge") ||
+    Object.prototype.hasOwnProperty.call(source, "stateOfCharge");
+  const storedDefinitions = source[CUSTOM_PARAM_DEFINITIONS_KEY];
   const normalizedDefinitions = storedDefinitions === undefined
     ? storedDefinitions
     : normalizeStoredDeviceParameterDefinitionNames(storedDefinitions, true);
   if (!hasCamel && !hasLower && !hasLegacySoc && normalizedDefinitions === storedDefinitions) {
-    return params;
+    return source;
   }
-  const next = { ...params };
+  const next = { ...source };
   if (!Object.prototype.hasOwnProperty.call(next, "gas_quantity")) {
     next.gas_quantity = hasCamel ? next.gasQuantity : next.gasquantity;
   }
