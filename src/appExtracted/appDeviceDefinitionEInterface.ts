@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { DEFAULT_STATE_ICON_DRAWING_FRAME } from "../stateIconDrawing";
 
 export * from "../export/e-file";
