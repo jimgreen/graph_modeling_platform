@@ -1,12 +1,21 @@
-// @ts-nocheck
 // 从 App.tsx 提取的面板渲染工厂函数。
-// 模式：export function createXxx(__appScope) { ...; return () => <JSX />; }
+// 模式：export function createXxx(__appScope: Record<string, any>) { ...; return () => <JSX />; }
 
 import { createPortal } from "react-dom";
 import { Input, Button } from "antd";
+import type React from "react";
+import type { GraphTemplate } from "./appCoreCanvasUtilities";
+import type {
+  ElementTreeChildItem,
+  ElementTreeDeviceGroup,
+  ElementTreeGroup,
+  ElementTreeItem,
+  ModelLayer,
+  SavedSchemeRecord
+} from "../model";
 
 // 图层管理面板
-export function createRenderLayerManager(__appScope) {
+export function createRenderLayerManager(__appScope: Record<string, any>) {
   const {
     layers, activeLayerId, setActiveLayer, isBrowseMode,
     addModelLayer, setAllModelLayersVisibility, toggleModelLayerVisibility,
@@ -21,7 +30,7 @@ export function createRenderLayerManager(__appScope) {
         <Button onClick={() => setAllModelLayersVisibility(false)}>全部隐藏</Button>
       </div>
       <div className="layer-list">
-        {layers.map((layer, index) => (
+        {layers.map((layer: ModelLayer, index: number) => (
           <div key={layer.id} className={`layer-row ${layer.id === activeLayerId ? "active" : ""}`}>
             <label className="layer-row-control" title={layer.id === activeLayerId ? "激活图层必须显示" : "显示/隐藏图层"}>
               <input
@@ -46,8 +55,8 @@ export function createRenderLayerManager(__appScope) {
               aria-label={`图层名称：${layer.name}`}
               value={layer.name}
               disabled={isBrowseMode}
-              onCommit={(nextValue) => commitModelLayerName(layer.id, nextValue)}
-              onKeyDown={(event) => event.stopPropagation()}
+              onCommit={(nextValue: string) => commitModelLayerName(layer.id, nextValue)}
+              onKeyDown={(event: React.KeyboardEvent) => event.stopPropagation()}
             />
             <Button onClick={() => moveModelLayer(layer.id, -1)} disabled={index === 0} title="图层上移">上移</Button>
             <Button onClick={() => moveModelLayer(layer.id, 1)} disabled={index === layers.length - 1} title="图层下移">下移</Button>
@@ -60,7 +69,7 @@ export function createRenderLayerManager(__appScope) {
 }
 
 // 类定义操作按钮
-export function createRenderLibraryDefinitionActions(__appScope) {
+export function createRenderLibraryDefinitionActions(__appScope: Record<string, any>) {
   const { isBrowseMode, openMeasurementConfigDialog, openDeviceDefinitionDialog } = __appScope;
   return () => (
     <div className="library-definition-actions">
@@ -80,7 +89,7 @@ export function createRenderLibraryDefinitionActions(__appScope) {
 }
 
 // 图模板按钮
-export function createRenderGraphTemplateButton(__appScope) {
+export function createRenderGraphTemplateButton(__appScope: Record<string, any>) {
   const {
     isEditMode, isBrowseMode, templateLibraryDisplayMode,
     startLibraryGraphTemplatePlacement, cancelLibraryPlacement,
@@ -88,7 +97,7 @@ export function createRenderGraphTemplateButton(__appScope) {
     clearLibraryFlyoutCloseTimer, setHoveredGraphTemplateType,
     hideLibraryFlyout, renderGraphTemplatePreview
   } = __appScope;
-  return (template) => (
+  return (template: GraphTemplate) => (
     <button
       key={template.id}
       type="button"
@@ -136,13 +145,13 @@ export function createRenderGraphTemplateButton(__appScope) {
 }
 
 // 图模板浮动面板
-export function createRenderGraphTemplateFlyout(__appScope) {
+export function createRenderGraphTemplateFlyout(__appScope: Record<string, any>) {
   const {
     setLibraryComponentListRef, libraryFlyoutStyle,
     clearLibraryFlyoutCloseTimer, setHoveredGraphTemplateType,
     scheduleGraphTemplateFlyoutClose, renderGraphTemplateButton
   } = __appScope;
-  return (flyoutListKey, typeName, templates) => {
+  return (flyoutListKey: string, typeName: string, templates: GraphTemplate[]) => {
     const flyout = (
       <div
         className="library-group flyout-library-group template-library-flyout"
@@ -165,7 +174,7 @@ export function createRenderGraphTemplateFlyout(__appScope) {
 }
 
 // 项目面板
-export function createRenderProjectPanel(__appScope) {
+export function createRenderProjectPanel(__appScope: Record<string, any>) {
   const {
     Search, X,
     MODEL_TYPES,
@@ -198,7 +207,7 @@ export function createRenderProjectPanel(__appScope) {
         )}
       </div>
       <div className="project-model-type-filter">
-        {MODEL_TYPES.map((type) => (
+        {MODEL_TYPES.map((type: string) => (
           <button
             key={type}
             type="button"
@@ -229,7 +238,7 @@ export function createRenderProjectPanel(__appScope) {
         ) : filteredProjectSchemes.length === 0 ? (
           <p className="project-empty project-search-empty">未找到匹配方案或模型</p>
         ) : (
-          filteredProjectSchemes.map((scheme) => renderProjectSchemeNode(scheme))
+          filteredProjectSchemes.map((scheme: SavedSchemeRecord) => renderProjectSchemeNode(scheme))
         )}
       </div>
     </section>
@@ -237,7 +246,7 @@ export function createRenderProjectPanel(__appScope) {
 }
 
 // 图元树面板
-export function createRenderElementTreePanel(__appScope) {
+export function createRenderElementTreePanel(__appScope: Record<string, any>) {
   const {
     Search, X, Grid2X2, ChevronDown, ChevronRight, LocateFixed,
     BufferedTextInput, clampNumber,
@@ -285,7 +294,7 @@ export function createRenderElementTreePanel(__appScope) {
           <p>未找到匹配图元。</p>
         </div>
       ) : (
-        filteredElementTree.map((group) => {
+        filteredElementTree.map((group: ElementTreeGroup) => {
           const expanded = Boolean(elementTreeSearchNeedle) || !collapsedElementTreeGroups.includes(group.typeKey);
           const deviceGroups = group.deviceGroups ?? [];
           return (
@@ -308,7 +317,7 @@ export function createRenderElementTreePanel(__appScope) {
               </button>
               {expanded && (
                 <div className="element-tree-items" role="group">
-                  {deviceGroups.map((deviceGroup) => {
+                  {deviceGroups.map((deviceGroup: ElementTreeDeviceGroup) => {
                     const deviceExpanded = Boolean(elementTreeSearchNeedle) || !collapsedElementTreeDeviceGroups.includes(deviceGroup.deviceKey);
                     const visibleLimit = elementTreeItemLimits[deviceGroup.deviceKey] ?? ELEMENT_TREE_INITIAL_ITEM_LIMIT;
                     const windowState = elementTreeItemWindows[deviceGroup.deviceKey];
@@ -356,7 +365,7 @@ export function createRenderElementTreePanel(__appScope) {
                             {spacerBeforeHeight > 0 && (
                               <div className="element-tree-virtual-spacer" aria-hidden="true" style={{ height: spacerBeforeHeight }} />
                             )}
-                            {visibleItems.map((item) => {
+                            {visibleItems.map((item: ElementTreeItem) => {
                               const editable = item.kind === "node" ? activeLayerNodeIdSet.has(item.id) : activeLayerEdgeIdSet.has(item.id);
                               const selected = editable && (item.kind === "node" ? selectedNodeIdSet.has(item.id) : activeSelectedEdgeSet.has(item.id));
                               const itemChildren = elementTreeItemChildren(item);
@@ -403,22 +412,22 @@ export function createRenderElementTreePanel(__appScope) {
                                           <BufferedTextInput
                                             value={item.idx ?? ""}
                                             inputMode="numeric"
-                                            onClick={(event) => event.stopPropagation()}
-                                            onDoubleClick={(event) => event.stopPropagation()}
-                                            onKeyDown={(event) => event.stopPropagation()}
+                                            onClick={(event: React.MouseEvent) => event.stopPropagation()}
+                                            onDoubleClick={(event: React.MouseEvent) => event.stopPropagation()}
+                                            onKeyDown={(event: React.KeyboardEvent) => event.stopPropagation()}
                                             disabled={!editable || isBrowseMode}
-                                            onCommit={(nextValue) => commitElementTreeNodeIdentity(item.id, "idx", nextValue)}
+                                            onCommit={(nextValue: string) => commitElementTreeNodeIdentity(item.id, "idx", nextValue)}
                                           />
                                         </label>
                                         <label>
                                           <span>name</span>
                                           <BufferedTextInput
                                             value={item.name}
-                                            onClick={(event) => event.stopPropagation()}
-                                            onDoubleClick={(event) => event.stopPropagation()}
-                                            onKeyDown={(event) => event.stopPropagation()}
+                                            onClick={(event: React.MouseEvent) => event.stopPropagation()}
+                                            onDoubleClick={(event: React.MouseEvent) => event.stopPropagation()}
+                                            onKeyDown={(event: React.KeyboardEvent) => event.stopPropagation()}
                                             disabled={!editable || isBrowseMode}
-                                            onCommit={(nextValue) => commitElementTreeNodeIdentity(item.id, "name", nextValue)}
+                                            onCommit={(nextValue: string) => commitElementTreeNodeIdentity(item.id, "name", nextValue)}
                                           />
                                         </label>
                                       </div>
@@ -430,7 +439,7 @@ export function createRenderElementTreePanel(__appScope) {
                                   </div>
                                   {itemChildren.length ? (
                                     <div className="element-tree-child-list" role="group" aria-label={`${item.name}关联子设备`}>
-                                      {itemChildren.map((child) => {
+                                      {itemChildren.map((child: ElementTreeChildItem) => {
                                         const childIdxKey = child.relationKeys[0] ?? "";
                                         return (
                                           <div className="element-tree-child-item" key={child.id}>
@@ -443,22 +452,22 @@ export function createRenderElementTreePanel(__appScope) {
                                               <BufferedTextInput
                                                 value={child.idx}
                                                 inputMode="numeric"
-                                                onClick={(event) => event.stopPropagation()}
-                                                onDoubleClick={(event) => event.stopPropagation()}
-                                                onKeyDown={(event) => event.stopPropagation()}
+                                                onClick={(event: React.MouseEvent) => event.stopPropagation()}
+                                                onDoubleClick={(event: React.MouseEvent) => event.stopPropagation()}
+                                                onKeyDown={(event: React.KeyboardEvent) => event.stopPropagation()}
                                                 disabled={!editable || isBrowseMode}
-                                                onCommit={(nextValue) => commitElementTreeContainerChildParam(item.id, childIdxKey, nextValue)}
+                                                onCommit={(nextValue: string) => commitElementTreeContainerChildParam(item.id, childIdxKey, nextValue)}
                                               />
                                             </label>
                                             <label className="element-tree-child-name-field">
                                               <span>name</span>
                                               <BufferedTextInput
                                                 value={child.name}
-                                                onClick={(event) => event.stopPropagation()}
-                                                onDoubleClick={(event) => event.stopPropagation()}
-                                                onKeyDown={(event) => event.stopPropagation()}
+                                                onClick={(event: React.MouseEvent) => event.stopPropagation()}
+                                                onDoubleClick={(event: React.MouseEvent) => event.stopPropagation()}
+                                                onKeyDown={(event: React.KeyboardEvent) => event.stopPropagation()}
                                                 disabled={!editable || isBrowseMode}
-                                                onCommit={(nextValue) => commitElementTreeContainerChildParam(item.id, child.nameKey, nextValue)}
+                                                onCommit={(nextValue: string) => commitElementTreeContainerChildParam(item.id, child.nameKey, nextValue)}
                                               />
                                             </label>
                                           </div>
@@ -477,7 +486,7 @@ export function createRenderElementTreePanel(__appScope) {
                                         event.stopPropagation();
                                         jumpToElementTreeItem(item);
                                       }}
-                                      onDoubleClick={(event) => event.stopPropagation()}
+                                      onDoubleClick={(event: React.MouseEvent) => event.stopPropagation()}
                                     >
                                       <LocateFixed size={13} />
                                       <span>跳转</span>
@@ -494,7 +503,7 @@ export function createRenderElementTreePanel(__appScope) {
                                 type="button"
                                 className="element-tree-more"
                                 onClick={() =>
-                                  setElementTreeItemLimits((current) => ({
+                                  setElementTreeItemLimits((current: Record<string, number>) => ({
                                     ...current,
                                     [deviceGroup.deviceKey]: visibleLimit + ELEMENT_TREE_ITEM_LIMIT_STEP
                                   }))
