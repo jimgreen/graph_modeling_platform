@@ -252,7 +252,18 @@ async function listProjectJsonFiles(rootDir) {
     let entries;
     try {
       entries = await readdir(dir, { withFileTypes: true });
-    } catch {
+    } catch (error) {
+      // 降级（跳过这棵子树）是**刻意**的：两个调用方都是 best-effort 的迁移扫描，
+      // 可重跑。为一个读不到的目录让整个迁移抛出去，等于「某处权限变了」就把
+      // 每一次模型保存都打挂 —— 那是拿一个无关故障换一次全局故障。
+      //
+      // 但静默跳过有代价：那棵子树里的模型这次既不会被迁移、也不会被清理，全局线路
+      // 表就此与磁盘不同步，而日志里一个字都没有。故 ENOENT（目录本就不在）之外留一句。
+      if (error?.code !== "ENOENT") {
+        console.warn(
+          `[全局线路] 扫描目录失败（${error?.code ?? error?.name ?? "unknown"}），已跳过该子树，其模型本次不参与迁移：${dir}`
+        );
+      }
       return;
     }
     for (const entry of entries) {
