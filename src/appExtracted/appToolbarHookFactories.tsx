@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { canvasFitCenterOffsetX, clampNumber } from "../canvasViewport";
 import { canvasFitSideInsetsFromDom, resolveContainerModelPanelParamKeys } from "./appCoreCanvasUtilities";
 import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
@@ -7,6 +6,36 @@ import { resolveEffectiveTemplateParameterDefinitions, withNodesParentModelId } 
 import { buildEffectiveLibraryTemplates } from "../export/device-definition-shared";
 import { containerFirstComparator, isContainerNode } from "../acContainer";
 import { computeMeasurementColumnPositions } from "./appGraphMeasurementFactories";
+// LOD 分块里的一条路由元素：route 存几何，edge 存身份，另带渲染态标记。
+type LodRouteChunkItem = {
+  route: DragGhostRoute;
+  edge: Edge;
+  hidden: boolean;
+  selected: boolean;
+  color?: string;
+  inactiveLayerGraphic: boolean;
+};
+
+// 量测组渲染行：由 measurementGroupRenderMetrics 产出，item 是原始行，display /
+// fontSize / labelText / unitText / valueText 是渲染层算出的展示值。
+type MeasurementGroupRenderRow = {
+  item: { id: string; measurementTypeId: string; sourcePoint: string; role?: string; name?: string };
+  display: { color: string; fontWeight: string; fontStyle: string; textDecoration: string; label?: string; unit?: string };
+  fontSize: number;
+  labelText?: string;
+  unitText?: string;
+  valueText?: string;
+};
+
+// 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 遮住）：按真实出处补齐，均为 type-only import。
+import type { CanvasBounds, DeviceParameterDefinition, Edge, ElementTreeChildItem, ElementTreeDeviceGroup, ElementTreeGroup, ElementTreeItem, ModelLayer, ModelNode, OverlappingTerminalGroup, Point, RoutedEdge, SavedProjectRecord, SavedSchemeRecord, Terminal, TerminalBusContactGroup } from "../model";
+import type { BatchCommonParamRow, CanvasResizeCommitAnchor, DeviceLibraryDialogLayouts, DragGhostRoute, FilterSelectionTypeOption, FloatingToolbarPlacement, GroupTransformEdgeRouteSnapshot, ImageAsset, RenderViewportBounds, StaticButtonVisualState, TopologyRunStatus } from "./appCoreCanvasUtilities";
+import type { VoltageBaseClearScope, VoltageBaseSetScope } from "../model-routing";
+import type { MeasurementGroup } from "../measurements";
+import type { RouteStore } from "../routeStore";
+import type { SelectionRect } from "../selectionActions";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from "react";
+
 
 // 关联图元跳转：解析 node 的 model_id → 目标模型，找到唯一目标即加载该模型。
 // 与双击（browse 模式）共用，供右键菜单/浮动工具栏【跳转】复用。
@@ -100,7 +129,7 @@ export function createOpenNodeDoubleClickEditor(__appScope: Record<string, any>)
 }
 
 export function createHandleLodNodeDoubleClick(__appScope: Record<string, any>) {
-  return (event: MouseEvent<SVGGElement>) => {
+  return (event: ReactMouseEvent<SVGGElement>) => {
   const { lodNodeFromEvent, openNodeDoubleClickEditor } = __appScope;
     const node = lodNodeFromEvent(event);
     if (!node) {
@@ -243,7 +272,7 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
           strokeWidth={measurementGroupBorderWidth(group)}
           strokeDasharray={measurementGroupBorderDashArray(group)}
         />
-        {metrics.rows.map((row, index) => {
+        {metrics.rows.map((row: MeasurementGroupRenderRow, index: number) => {
           const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
           const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
           const { labelEndX } = computeMeasurementColumnPositions(metrics, col);
@@ -263,10 +292,18 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
               fontWeight={row.display.fontWeight}
               fontStyle={row.display.fontStyle}
               textDecoration={row.display.textDecoration}
-              mid={row.item.id}
-              mt={row.item.measurementTypeId}
-              mf={row.item.sourcePoint}
-              mr={row.item.role ?? ""}
+              // mid / mt / mf / mr 是 E 文件导出与预览共用的标记属性：SVG 规范里没有这四个名字，
+              // 用展开写法规避 JSX 的「未知属性」检查，运行期照旧原样写出。
+              // mid 由 appGraphMeasurementFactories.test.ts:2931 钉住必须存在；
+              // mt/mf/mr 由 svgExport.test.tsx:1489 钉住。
+              // 注意别与 svgExport.test.tsx:1487（导出路径**不含** mid=）混淆 —— 那是
+              // src/export/svg.ts 的生成物，与本组件的 React 侧标记是两回事。
+              {...{
+                mid: row.item.id,
+                mt: row.item.measurementTypeId,
+                mf: row.item.sourcePoint,
+                mr: row.item.role ?? ""
+              }}
               data-export-measurement-item-id={row.item.id}
               data-export-measurement-name={(row.item.name ?? row.display.label ?? row.item.measurementTypeId).trim()}
               data-export-measurement-type-id={row.item.measurementTypeId}
@@ -315,7 +352,7 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
 }
 
 export function createHandleMinimapNavigate(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGSVGElement>) => {
+  return (event: ReactPointerEvent<SVGSVGElement>) => {
   const { canvasHeight, canvasWidth, centerViewBoxOnPoint, clampNumber, minimapOffsetX, minimapOffsetY, minimapScale } = __appScope;
     event.preventDefault();
     event.stopPropagation();
@@ -367,12 +404,12 @@ export function createClearStaticButtonFeedback(__appScope: Record<string, any>)
   return (nodeId?: string) => {
   const { clearStaticButtonFeedbackTimer, setStaticButtonVisual } = __appScope;
     clearStaticButtonFeedbackTimer();
-    setStaticButtonVisual((current) => (!current || (nodeId && current.nodeId !== nodeId) ? current : null));
+    setStaticButtonVisual((current: StaticButtonVisualState | null) => (!current || (nodeId && current !== nodeId) ? current : null));
   };
 }
 
 export function createBeginStaticButtonPointerFeedback(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGGElement>, node: ModelNode) => {
+  return (event: ReactPointerEvent<SVGGElement>, node: ModelNode) => {
   const { connectSource, isBrowseMode, isStaticButtonEnabledForNode, mode, setStaticButtonFeedback, staticButtonPointerRef, staticDrawing } = __appScope;
     if (!isBrowseMode || !isStaticButtonEnabledForNode(node) || staticDrawing || connectSource || mode === "connect") {
       return;
@@ -393,7 +430,7 @@ export function createResolveStaticButtonTargetProject(__appScope: Record<string
     const targetProjectId = node.params.buttonTargetProjectId?.trim();
     if (targetProjectId) {
       for (const scheme of flattenSavedSchemes(schemes)) {
-        const project = scheme.projects.find((item) => item.id === targetProjectId);
+        const project = scheme.projects.find((item: SavedProjectRecord) => item.id === targetProjectId);
         if (project) {
           return { scheme, project };
         }
@@ -402,7 +439,7 @@ export function createResolveStaticButtonTargetProject(__appScope: Record<string
     const targetName = node.params.buttonTargetProjectName?.trim();
     if (targetName) {
       for (const scheme of flattenSavedSchemes(schemes)) {
-        const project = scheme.projects.find((item) => item.name.trim() === targetName);
+        const project = scheme.projects.find((item: SavedProjectRecord) => item.name.trim() === targetName);
         if (project) {
           return { scheme, project };
         }
@@ -482,10 +519,10 @@ export function createExecuteStaticButtonAction(__appScope: Record<string, any>)
         showGlobalMessage("按钮动作未找到目标图层，请在右侧图元参数中重新选择。");
         return;
       }
-      const targetLayerIdSet = new Set(targetLayers.map((layer) => layer.id));
+      const targetLayerIdSet = new Set(targetLayers.map((layer: ModelLayer) => layer.id));
       setActiveLayerId(targetLayers[0].id);
-      setLayers((current) => current.map((item) => ({ ...item, visible: targetLayerIdSet.has(item.id) })));
-      writeOperationLog(`按钮切换图层：${targetLayers.map((layer) => layer.name).join("、")}`);
+      setLayers((current: ModelLayer[]) => current.map((item: ModelLayer) => ({ ...item, visible: targetLayerIdSet.has(item.id) })));
+      writeOperationLog(`按钮切换图层：${targetLayers.map((layer: ModelLayer) => layer.name).join("、")}`);
       return;
     }
     if (actionType === "command") {
@@ -500,7 +537,7 @@ export function createExecuteStaticButtonAction(__appScope: Record<string, any>)
 }
 
 export function createHandleStaticButtonClick(__appScope: Record<string, any>) {
-  return (event: MouseEvent<SVGGElement>, node: ModelNode) => {
+  return (event: ReactMouseEvent<SVGGElement>, node: ModelNode) => {
   const { clearStaticButtonFeedback, executeStaticButtonAction, isBrowseMode, isStaticButtonEnabledForNode, setStaticButtonFeedback, setStaticButtonVisual, staticButtonFeedbackTimeoutRef, staticButtonPointerRef } = __appScope;
     if (!isBrowseMode || !isStaticButtonEnabledForNode(node)) {
       return;
@@ -521,14 +558,14 @@ export function createHandleStaticButtonClick(__appScope: Record<string, any>) {
     setStaticButtonFeedback(node.id, "clicked");
     staticButtonFeedbackTimeoutRef.current = window.setTimeout(() => {
       staticButtonFeedbackTimeoutRef.current = null;
-      setStaticButtonVisual((current) => (current?.nodeId === node.id && current.state === "clicked" ? null : current));
+      setStaticButtonVisual((current: StaticButtonVisualState | null) => (current === "clicked" ? null : current));
     }, 160);
     executeStaticButtonAction(node);
   };
 }
 
 export function createBeginReadonlyBackgroundStaticButtonPointerFeedback(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGGElement>, node: ModelNode) => {
+  return (event: ReactPointerEvent<SVGGElement>, node: ModelNode) => {
   const { beginStaticButtonPointerFeedback } = __appScope;
     event.preventDefault();
     event.stopPropagation();
@@ -574,7 +611,7 @@ export function createRenderReadonlyBackgroundPage(__appScope: Record<string, an
           height={backgroundPageRender.backgroundBounds.height}
         />
         <g className="background-page-edges">
-          {backgroundPageRender.routes.map((route) => {
+          {backgroundPageRender.routes.map((route: DragGhostRoute) => {
             const edge = backgroundPageRender.edgeById.get(route.edgeId);
             return edge ? (
               <path
@@ -587,7 +624,7 @@ export function createRenderReadonlyBackgroundPage(__appScope: Record<string, an
           })}
         </g>
         <g className="background-page-nodes">
-          {backgroundPageRender.nodes.map((node) => {
+          {backgroundPageRender.nodes.map((node: ModelNode) => {
             const nodeIsBus = isBusNode(node);
             const isStorageBus =
               node.kind === "hydrogen-tank" ||
@@ -726,7 +763,7 @@ export function createRenderReadonlyBackgroundPage(__appScope: Record<string, an
                     transform={nodeLabelTransform(node)}
                   >
                     {nodeLabelVertical(node) ? (
-                      nodeLabelVerticalSegments(nodeLabelText(node)).map((segment, index) => (
+                      nodeLabelVerticalSegments(nodeLabelText(node)).map((segment: { text: string; numeric: boolean }, index: number) => (
                         <text
                           key={`${segment.text}-${index}`}
                           className={`node-label-vertical-token ${segment.numeric ? "numeric" : ""}`}
@@ -753,7 +790,7 @@ export function createRenderReadonlyBackgroundPage(__appScope: Record<string, an
                   </g>
                 )}
                 <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
-                  {node.terminals.map((terminal) => {
+                  {node.terminals.map((terminal: Terminal) => {
                     const hideFixedTerminal = nodeIsBus || isStaticNode(node) || isRoutableLineDeviceKind(node.kind);
                     const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
                     const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
@@ -847,7 +884,7 @@ export function createAppHookCallback4(__appScope: Record<string, any>) {
       width: Math.ceil(rect.width),
       height: Math.ceil(rect.height)
     };
-    setContextMenuSize((current) =>
+    setContextMenuSize((current: { width: number; height: number } | null) =>
       current?.width === nextSize.width && current.height === nextSize.height ? current : nextSize
     );
   };
@@ -973,7 +1010,7 @@ export function createAppHookCallback8(__appScope: Record<string, any>) {
       return [];
     }
     const layerNodes = graphStore.nodesByLayerId.get(activeLayerId) ?? [];
-    return visibleNodes === nodes && layerNodes.length === nodes.length ? visibleNodes : visibleNodes === nodes ? layerNodes : layerNodes.filter((node) => visibleNodeIdSet.has(node.id));
+    return visibleNodes === nodes && layerNodes.length === nodes.length ? visibleNodes : visibleNodes === nodes ? layerNodes : layerNodes.filter((node: ModelNode) => visibleNodeIdSet.has(node.id));
   };
 }
 
@@ -1064,7 +1101,7 @@ export function createAppHookCallback11(__appScope: Record<string, any>) {
 export function createAppHookCallback12(__appScope: Record<string, any>) {
   return () => {
   const { DEFAULT_MODEL_LAYER_ID, PARAM_LABELS, activeSelectedNodeIds, canBatchEditParam, customDeviceTemplates, deviceDefinitionOverrides, enumValuesForRow, getEParamValue, nodeById, parseCustomDefinitions, templateDerivedComponentLibraryInfo } = __appScope;
-    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId: string) => nodeById.get(nodeId) ?? []);
     if (selectedNodes.length < 2) {
       return [];
     }
@@ -1083,7 +1120,7 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
         return;
       }
     });
-    const effectiveDefinitionsByNode = selectedNodes.map((node) => {
+    const effectiveDefinitionsByNode = selectedNodes.map((node: ModelNode) => {
       const storedDefinitions = parseCustomDefinitions(node.params);
       const selectedTemplate = libraryTemplateByKind.get(node.kind);
       if (!selectedTemplate) {
@@ -1100,29 +1137,29 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
         return true;
       });
     });
-    const effectiveDefinitionMaps = effectiveDefinitionsByNode.map((definitions) =>
-      new Map(definitions.map((definition) => [definition.enName, definition]))
+    const effectiveDefinitionMaps = effectiveDefinitionsByNode.map((definitions: DeviceParameterDefinition[]) =>
+      new Map(definitions.map((definition: DeviceParameterDefinition) => [definition.enName, definition]))
     );
-    const effectiveKeySets = selectedNodes.map((node, index) => new Set([
+    const effectiveKeySets = selectedNodes.map((node: ModelNode, index: number) => new Set([
       ...Object.keys(node.params),
-      ...effectiveDefinitionsByNode[index].map((definition) => definition.enName)
+      ...effectiveDefinitionsByNode[index].map((definition: DeviceParameterDefinition) => definition.enName)
     ]));
     // 容器批量口径:选中节点**全为容器**时与单选面板同口径(复用 resolveContainerModelPanelParamKeys),
     // 剔除量测字段行 p/q/u/i 与 is_gateway/bound_device_idx;混选含普通设备则按普通口径,不误伤设备批量编辑
-    const selectedNodesAreAllContainers = selectedNodes.every((node) => isContainerNode(node));
+    const selectedNodesAreAllContainers = selectedNodes.every((node: ModelNode) => isContainerNode(node));
     const commonKeys = resolveContainerModelPanelParamKeys(
       Array.from(new Set([
-        ...effectiveDefinitionsByNode[0].map((definition) => definition.enName),
+        ...effectiveDefinitionsByNode[0].map((definition: DeviceParameterDefinition) => definition.enName),
         ...Object.keys(firstNode.params)
       ]))
         .filter((key) => canBatchEditParam(key))
-        .filter((key) => effectiveKeySets.every((keys) => keys.has(key))),
+        .filter((key) => effectiveKeySets.every((keys: Set<string>) => keys.has(key))),
       selectedNodesAreAllContainers
     );
-    const layerValues = selectedNodes.map((node) => node.layerId ?? DEFAULT_MODEL_LAYER_ID);
+    const layerValues = selectedNodes.map((node: ModelNode) => node.layerId ?? DEFAULT_MODEL_LAYER_ID);
     const paramRows = commonKeys
-      .map<BatchCommonParamRow>((key) => {
-        const values = selectedNodes.map((node, index) => {
+      .map((key: string) => {
+        const values = selectedNodes.map((node: ModelNode, index: number) => {
           if (Object.prototype.hasOwnProperty.call(node.params, key)) {
             return node.params[key] ?? "";
           }
@@ -1133,7 +1170,7 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
           return effectiveDefinitionMaps[index].get(key)?.typicalValue ?? "";
         });
         const definition = effectiveDefinitionMaps[0].get(key);
-        const compatibleDefinition = definition && effectiveDefinitionMaps.every((definitions) => {
+        const compatibleDefinition = definition && effectiveDefinitionMaps.every((definitions: Map<string, DeviceParameterDefinition>) => {
           const candidate = definitions.get(key);
           return Boolean(
             candidate &&
@@ -1147,9 +1184,9 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
           key,
           label: definition?.cnName === key ? PARAM_LABELS[key] ?? key : (definition?.cnName ?? PARAM_LABELS[key] ?? key),
           value: values[0] ?? "",
-          mixed: values.some((value) => value !== values[0]),
+          mixed: values.some((value: string) => value !== values[0]),
           definition: compatibleDefinition,
-          definitions: effectiveDefinitionMaps.map((definitions) => definitions.get(key))
+          definitions: effectiveDefinitionMaps.map((definitions: Map<string, DeviceParameterDefinition>) => definitions.get(key))
         };
       });
     return [
@@ -1157,7 +1194,7 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
         key: "layerId",
         label: PARAM_LABELS.layerId ?? "所属图层",
         value: layerValues[0] ?? DEFAULT_MODEL_LAYER_ID,
-        mixed: layerValues.some((value) => value !== layerValues[0])
+        mixed: layerValues.some((value: string) => value !== layerValues[0])
       },
       ...paramRows
     ];
@@ -1167,21 +1204,21 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
 export function createAppHookCallback13(__appScope: Record<string, any>) {
   return () => {
   const { BATCH_MEASUREMENT_GROUP_KEYS, BATCH_MEASUREMENT_GROUP_LABELS, activeSelectedNodeIds, isStaticGraphicNode, measurementGroupCommonValue, measurementGroupsForNode, nodeById, projectMeasurements } = __appScope;
-    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []).filter((node) => !isStaticGraphicNode(node));
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId: string) => nodeById.get(nodeId) ?? []).filter((node: ModelNode) => !isStaticGraphicNode(node));
     if (selectedNodes.length < 2) {
       return [];
     }
-    const measurementGroups = selectedNodes.flatMap((node) => measurementGroupsForNode(projectMeasurements, node.id));
+    const measurementGroups = selectedNodes.flatMap((node: ModelNode) => measurementGroupsForNode(projectMeasurements, node.id));
     if (measurementGroups.length === 0) {
       return [];
     }
-    return BATCH_MEASUREMENT_GROUP_KEYS.map((key) => {
-      const values = measurementGroups.map((group) => measurementGroupCommonValue(group, key));
+    return BATCH_MEASUREMENT_GROUP_KEYS.map((key: string) => {
+      const values = measurementGroups.map((group: MeasurementGroup) => measurementGroupCommonValue(group, key));
       return {
         key,
         label: BATCH_MEASUREMENT_GROUP_LABELS[key],
         value: values[0] ?? "",
-        mixed: values.some((value) => value !== values[0])
+        mixed: values.some((value: string) => value !== values[0])
       };
     });
   };
@@ -1207,7 +1244,7 @@ export function createAppHookCallback14(__appScope: Record<string, any>) {
         ? { ...scheme, projects: filteredProjects, children: filteredChildren }
         : null;
     };
-    return schemes.map(filterScheme).filter((scheme): scheme is SavedSchemeRecord => Boolean(scheme));
+    return schemes.map(filterScheme).filter((scheme: SavedSchemeRecord): scheme is SavedSchemeRecord => Boolean(scheme));
   };
 }
 
@@ -1319,7 +1356,7 @@ export function createAppHookCallback21(__appScope: Record<string, any>) {
     for (const template of libraryTemplates) {
       addOption(template.categoryLibrary, resolveTemplateComponentLibrary(template));
     }
-    return Object.fromEntries(categoryLibraries.map((group) => [group, groupedOptions.get(group) ?? []]));
+    return Object.fromEntries(categoryLibraries.map((group: string) => [group, groupedOptions.get(group) ?? []]));
   };
 }
 
@@ -1329,7 +1366,7 @@ export function createAppHookCallback22(__appScope: Record<string, any>) {
     const group = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName);
     const options = componentLibraryOptionsByCategoryLibrary[group] ?? [];
     const currentSection = normalizeComponentLibraryName(customDeviceDraft.componentLibrary);
-    return currentSection && !options.some((item) => item.toLowerCase() === currentSection.toLowerCase()) ? [currentSection, ...options] : options;
+    return currentSection && !options.some((item: string) => item.toLowerCase() === currentSection.toLowerCase()) ? [currentSection, ...options] : options;
   };
 }
 
@@ -1339,20 +1376,20 @@ export function createAppHookCallback23(__appScope: Record<string, any>) {
     const group = normalizeCategoryLibraryName(selectedDefinitionTemplate?.categoryLibrary ?? customDeviceDraft.categoryLibraryName);
     const options = componentLibraryOptionsByCategoryLibrary[group] ?? [];
     const currentSection = normalizeComponentLibraryName(definitionDraftSection);
-    return currentSection && !options.some((item) => item.toLowerCase() === currentSection.toLowerCase()) ? [currentSection, ...options] : options;
+    return currentSection && !options.some((item: string) => item.toLowerCase() === currentSection.toLowerCase()) ? [currentSection, ...options] : options;
   };
 }
 
 export function createAppHookCallback24(__appScope: Record<string, any>) {
   return () => {
   const { DEFAULT_MODEL_LAYER_ID, activeLayerId, layers, setActiveLayerId, setLayers } = __appScope;
-    if (!layers.some((layer) => layer.id === activeLayerId)) {
+    if (!layers.some((layer: ModelLayer) => layer.id === activeLayerId)) {
       const fallbackId = layers[0]?.id ?? DEFAULT_MODEL_LAYER_ID;
       setActiveLayerId(fallbackId);
       return;
     }
-    if (layers.some((layer) => layer.id === activeLayerId && !layer.visible)) {
-      setLayers((current) => current.map((layer) => layer.id === activeLayerId ? { ...layer, visible: true } : layer));
+    if (layers.some((layer: ModelLayer) => layer.id === activeLayerId && !layer.visible)) {
+      setLayers((current: ModelLayer[]) => current.map((layer: ModelLayer) => layer.id === activeLayerId ? { ...layer, visible: true } : layer));
     }
   };
 }
@@ -1360,12 +1397,12 @@ export function createAppHookCallback24(__appScope: Record<string, any>) {
 export function createAppHookCallback25(__appScope: Record<string, any>) {
   return () => {
   const { activeLayerEdgeIdSet, activeLayerNodeIdSet, setConnectSource, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setTerminalPress } = __appScope;
-    setSelectedNodeIds((current) => current.filter((nodeId) => activeLayerNodeIdSet.has(nodeId)));
-    setSelectedEdgeIds((current) => current.filter((edgeId) => activeLayerEdgeIdSet.has(edgeId)));
-    setSelectedEdgeId((current) => current && activeLayerEdgeIdSet.has(current) ? current : "");
-    setConnectSource((current) => current && activeLayerNodeIdSet.has(current.nodeId) ? current : null);
-    setRewiring((current) => current && activeLayerEdgeIdSet.has(current.edgeId) ? current : null);
-    setTerminalPress((current) => current && activeLayerNodeIdSet.has(current.nodeId) ? current : null);
+    setSelectedNodeIds((current: string[]) => current.filter((nodeId: string) => activeLayerNodeIdSet.has(nodeId)));
+    setSelectedEdgeIds((current: string[]) => current.filter((edgeId: string) => activeLayerEdgeIdSet.has(edgeId)));
+    setSelectedEdgeId((current: string | undefined) => current && activeLayerEdgeIdSet.has(current) ? current : "");
+    setConnectSource((current: { nodeId: string } | null) => current && activeLayerNodeIdSet.has(current.nodeId) ? current : null);
+    setRewiring((current: { edgeId: string } | null) => current && activeLayerEdgeIdSet.has(current.edgeId) ? current : null);
+    setTerminalPress((current: { nodeId: string } | null) => current && activeLayerNodeIdSet.has(current.nodeId) ? current : null);
   };
 }
 
@@ -1385,7 +1422,7 @@ export function createAppHookCallback26(__appScope: Record<string, any>) {
 export function createAppHookCallback27(__appScope: Record<string, any>) {
   return () => {
   const { activeSelectedNodeIds, formatStatusRotationDegrees, formatStatusScalePercent, getNodeScaleX, getNodeScaleY, normalizeRotationDegrees, visibleNodeById } = __appScope;
-    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => visibleNodeById.get(nodeId) ?? []);
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId: string) => visibleNodeById.get(nodeId) ?? []);
     if (selectedNodes.length === 0) {
       return null;
     }
@@ -1393,11 +1430,11 @@ export function createAppHookCallback27(__appScope: Record<string, any>) {
     const firstScaleX = getNodeScaleX(firstNode);
     const firstScaleY = getNodeScaleY(firstNode);
     const firstRotation = normalizeRotationDegrees(firstNode.rotation);
-    const sameScale = selectedNodes.every((node) =>
+    const sameScale = selectedNodes.every((node: ModelNode) =>
       Math.abs(getNodeScaleX(node) - firstScaleX) < 0.0005 &&
       Math.abs(getNodeScaleY(node) - firstScaleY) < 0.0005
     );
-    const sameRotation = selectedNodes.every((node) => normalizeRotationDegrees(node.rotation) === firstRotation);
+    const sameRotation = selectedNodes.every((node: ModelNode) => normalizeRotationDegrees(node.rotation) === firstRotation);
     const scaleText = sameScale
       ? `X ${formatStatusScalePercent(firstScaleX)} / Y ${formatStatusScalePercent(firstScaleY)}`
       : "多值";
@@ -1456,11 +1493,11 @@ export function createAppHookCallback30(__appScope: Record<string, any>) {
     if (!graphTreePanelActive) {
       return "";
     }
-    const selectedNode = activeSelectedNodeIds.find((nodeId) => activeLayerNodeIdSet.has(nodeId));
+    const selectedNode = activeSelectedNodeIds.find((nodeId: string) => activeLayerNodeIdSet.has(nodeId));
     if (selectedNode) {
       return `node:${selectedNode}`;
     }
-    const selectedEdge = activeSelectedEdgeIds.find((edgeId) => activeLayerEdgeIdSet.has(edgeId));
+    const selectedEdge = activeSelectedEdgeIds.find((edgeId: string) => activeLayerEdgeIdSet.has(edgeId));
     return selectedEdge ? `edge:${selectedEdge}` : "";
   };
 }
@@ -1471,8 +1508,8 @@ export function createAppHookCallback31(__appScope: Record<string, any>) {
     if (!elementTreeSearchNeedle) {
       return elementTree;
     }
-    return elementTree.flatMap((group) => {
-      const nextDeviceGroups = (group.deviceGroups ?? []).flatMap((deviceGroup) => {
+    return elementTree.flatMap((group: ElementTreeGroup) => {
+      const nextDeviceGroups = (group.deviceGroups ?? []).flatMap((deviceGroup: ElementTreeDeviceGroup) => {
         const groupText = [
           group.typeKey,
           group.typeLabel,
@@ -1481,14 +1518,14 @@ export function createAppHookCallback31(__appScope: Record<string, any>) {
           deviceGroup.deviceLabel,
           deviceGroup.deviceEnglishLabel
         ].join(" ").toLocaleLowerCase();
-        const nextItems = deviceGroup.items.filter((item) => {
+        const nextItems = deviceGroup.items.filter((item: ElementTreeItem) => {
           const itemChildren = elementTreeItemChildren(item);
           const itemText = [
             groupText,
             item.id,
             item.name,
             item.idx,
-            ...itemChildren.flatMap((child) => [
+            ...itemChildren.flatMap((child: ElementTreeChildItem) => [
               child.id,
               child.label,
               child.componentLibrary,
@@ -1508,7 +1545,7 @@ export function createAppHookCallback31(__appScope: Record<string, any>) {
       return [{
         ...group,
         deviceGroups: nextDeviceGroups,
-        items: nextDeviceGroups.flatMap((deviceGroup) => deviceGroup.items)
+        items: nextDeviceGroups.flatMap((deviceGroup: ElementTreeDeviceGroup) => deviceGroup.items)
       }];
     });
   };
@@ -1520,7 +1557,7 @@ export function createAppHookCallback32(__appScope: Record<string, any>) {
     if (Object.keys(elementTreeEditDrafts).length === 0) {
       return;
     }
-    setElementTreeEditDrafts((current) => {
+    setElementTreeEditDrafts((current: Record<string, unknown>) => {
       let changed = false;
       const next: Record<string, string> = {};
       for (const [key, value] of Object.entries(current)) {
@@ -1528,7 +1565,7 @@ export function createAppHookCallback32(__appScope: Record<string, any>) {
           changed = true;
           continue;
         }
-        next[key] = value;
+        next[key] = String(value);
       }
       return changed ? next : current;
     });
@@ -1538,7 +1575,7 @@ export function createAppHookCallback32(__appScope: Record<string, any>) {
 export function createAppHookCallback33(__appScope: Record<string, any>) {
   return () => {
   const { selectedEdgeId, setSelectedEdgeIds } = __appScope;
-    setSelectedEdgeIds((current) => {
+    setSelectedEdgeIds((current: string[]) => {
       if (!selectedEdgeId) {
         return current.length === 0 ? current : [];
       }
@@ -1584,11 +1621,11 @@ export function createAppHookCallback34(__appScope: Record<string, any>) {
         markRouteEdgesDirty(dirtyEdgeIdsAfterMove(
           synchronized.scopedEdges,
           synchronized.synchronized.edges,
-          synchronized.nodeUpdates.map((node) => node.id)
+          synchronized.nodeUpdates.map((node: ModelNode) => node.id)
         ));
-        markStoredRouteEdgesDirty(synchronized.edgeUpserts.map((edge) => edge.id));
+        markStoredRouteEdgesDirty(synchronized.edgeUpserts.map((edge: Edge) => edge.id));
         suppressNextGraphDirtyRef.current += 1;
-        setGraphStore((current) => {
+        setGraphStore((current: unknown) => {
           const next = graphStoreApplyPatch(current, {
             nodeUpdates: synchronized.nodeUpdates,
             edgeUpserts: synchronized.edgeUpserts
@@ -1620,11 +1657,11 @@ export function createAppHookCallback35(__appScope: Record<string, any>) {
     if (!graphTreePanelActive) {
       return;
     }
-    const existingKeys = new Set(elementTree.map((group) => group.typeKey));
-    const existingDeviceKeys = new Set(elementTree.flatMap((group) => (group.deviceGroups ?? []).map((deviceGroup) => deviceGroup.deviceKey)));
-    setCollapsedElementTreeGroups((current) => current.filter((key) => existingKeys.has(key)));
-    setCollapsedElementTreeDeviceGroups((current) => current.filter((key) => existingDeviceKeys.has(key)));
-    setElementTreeItemLimits((current) => {
+    const existingKeys = new Set(elementTree.map((group: ElementTreeGroup) => group.typeKey));
+    const existingDeviceKeys = new Set(elementTree.flatMap((group: ElementTreeGroup) => (group.deviceGroups ?? []).map((deviceGroup: ElementTreeDeviceGroup) => deviceGroup.deviceKey)));
+    setCollapsedElementTreeGroups((current: string[]) => current.filter((key: string) => existingKeys.has(key)));
+    setCollapsedElementTreeDeviceGroups((current: string[]) => current.filter((key: string) => existingDeviceKeys.has(key)));
+    setElementTreeItemLimits((current: Record<string, number>) => {
       const next: Record<string, number> = {};
       for (const group of elementTree) {
         for (const deviceGroup of group.deviceGroups ?? []) {
@@ -1647,17 +1684,17 @@ export function createAppHookCallback36(__appScope: Record<string, any>) {
     }
     for (const group of elementTree) {
       for (const deviceGroup of group.deviceGroups ?? []) {
-        const selectedIndex = deviceGroup.items.findIndex((item) => `${item.kind}:${item.id}` === selectedElementTreeItemKey);
+        const selectedIndex = deviceGroup.items.findIndex((item: ElementTreeItem) => `${item.kind}:${item.id}` === selectedElementTreeItemKey);
         if (selectedIndex < 0) {
           continue;
         }
-        setCollapsedElementTreeGroups((current) =>
-          current.includes(group.typeKey) ? current.filter((key) => key !== group.typeKey) : current
+        setCollapsedElementTreeGroups((current: string[]) =>
+          current.includes(group.typeKey) ? current.filter((key: string) => key !== group.typeKey) : current
         );
-        setCollapsedElementTreeDeviceGroups((current) =>
-          current.includes(deviceGroup.deviceKey) ? current.filter((key) => key !== deviceGroup.deviceKey) : current
+        setCollapsedElementTreeDeviceGroups((current: string[]) =>
+          current.includes(deviceGroup.deviceKey) ? current.filter((key: string) => key !== deviceGroup.deviceKey) : current
         );
-        setElementTreeItemLimits((current) => {
+        setElementTreeItemLimits((current: Record<string, number>) => {
           const currentLimit = current[deviceGroup.deviceKey] ?? ELEMENT_TREE_INITIAL_ITEM_LIMIT;
           if (selectedIndex < currentLimit) {
             return current;
@@ -1714,7 +1751,7 @@ export function createAppHookCallback39(__appScope: Record<string, any>) {
 export function createAppHookCallback40(__appScope: Record<string, any>) {
   return () => {
   const { clampCanvasNoScrollOffsetPoint, setCanvasNoScrollOffset } = __appScope;
-    setCanvasNoScrollOffset((current) => {
+    setCanvasNoScrollOffset((current: Point) => {
       const next = clampCanvasNoScrollOffsetPoint(current);
       return next.x === current.x && next.y === current.y ? current : next;
     });
@@ -1835,7 +1872,7 @@ export function createAppHookCallback47(__appScope: Record<string, any>) {
     }
     const sourceNode = visibleNodeById.get(connectSource.nodeId);
     const terminal =
-      sourceNode?.terminals.find((item) => item.id === connectSource.terminalId) ??
+      sourceNode?.terminals.find((item: Terminal) => item.id === connectSource.terminalId) ??
       sourceNode?.terminals[0];
     const terminalType = terminal?.type ?? (sourceNode ? getBusTerminalType(sourceNode) : undefined);
     return sourceNode && terminal
@@ -2097,7 +2134,7 @@ export function createAppHookCallback58(__appScope: Record<string, any>) {
         activeSelectedEdgeIds,
         activeLayerEdges,
         routedEdges,
-        { isTransformableNode: (node) => isCanvasNodeMovable(node.kind) }
+        { isTransformableNode: (node: ModelNode) => isCanvasNodeMovable(node.kind) }
       );
       selectedLayoutUnitsCacheRef.current = units;
       return units;
@@ -2110,7 +2147,7 @@ export function createAppHookCallback59(__appScope: Record<string, any>) {
     if (!isEditMode) {
       return [];
     }
-    return activeSelectedNodeIds.flatMap((nodeId) => {
+    return activeSelectedNodeIds.flatMap((nodeId: string) => {
       const node = visibleNodeById.get(nodeId);
       if (!node || !activeLayerNodeIdSet.has(node.id) || !isRoutableLineDeviceKind(node.kind)) {
         return [];
@@ -2216,7 +2253,7 @@ export function createAppHookCallback60(__appScope: Record<string, any>) {
       rewiring.endpoint === "target" ? movingTarget?.node : targetNode
     );
     const previewStoredPoints = currentPreviewRoutePoints.length >= 2
-      ? currentPreviewRoutePoints.map((point) => ({ ...point }))
+      ? currentPreviewRoutePoints.map((point: Point) => ({ ...point }))
       : previewStoredRoutePointsForEdge(edge, currentSourcePoint, currentTargetPoint);
     const preservedPreviewEdge = preserveConnectionEdgeRouteShape(previewNodes, previewRouteEdge, previewStoredPoints, canvasBounds);
     const route = preservedPreviewEdge.routePoints?.length
@@ -2258,7 +2295,7 @@ export function createAppHookCallback61(__appScope: Record<string, any>) {
       source: routableLineEndpointDrag.endpoint === "source" ? movingRef : refs.source,
       target: routableLineEndpointDrag.endpoint === "target" ? movingRef : refs.target
     };
-    const previewNodeById = new Map(nodes.map((node) => [node.id, node]));
+    const previewNodeById = new Map(nodes.map((node: ModelNode) => [node.id, node]));
     if (movingTarget) {
       previewNodeById.set(movingTarget.node.id, movingTarget.node);
     }
@@ -2323,7 +2360,7 @@ export function createAppHookCallback64(__appScope: Record<string, any>) {
       return [];
     }
     const connectedEdges = visibleEdgesByTerminalRef.get(`${terminalPress.nodeId}:${terminalPress.terminalId}`) ?? [];
-    return connectedEdges.flatMap((edge) => {
+    return connectedEdges.flatMap((edge: Edge) => {
       const sourceAffected = edge.sourceId === terminalPress.nodeId && edge.sourceTerminalId === terminalPress.terminalId;
       const targetAffected = edge.targetId === terminalPress.nodeId && edge.targetTerminalId === terminalPress.terminalId;
       if (!sourceAffected && !targetAffected) {
@@ -2510,7 +2547,7 @@ export function createAppHookCallback68(__appScope: Record<string, any>) {
       setStaticTerminalOverlapReadyKey("");
       return;
     }
-    setStaticTerminalOverlapReadyKey((current) => (current === staticTerminalOverlapSourceKey ? current : ""));
+    setStaticTerminalOverlapReadyKey((current: string) => (current === staticTerminalOverlapSourceKey ? current : ""));
     return scheduleIdleWork(() => setStaticTerminalOverlapReadyKey(staticTerminalOverlapSourceKey), 120, 1500);
   };
 }
@@ -2529,10 +2566,10 @@ export function createAppHookCallback69(__appScope: Record<string, any>) {
       }
       return new Set(
         [
-          ...getOverlappingTerminalGroups(terminalOverlapNodes, terminalOverlapAffectedNodeIds).flatMap((group) =>
+          ...getOverlappingTerminalGroups(terminalOverlapNodes, terminalOverlapAffectedNodeIds).flatMap((group: OverlappingTerminalGroup) =>
             group.terminals.map((terminal) => `${terminal.nodeId}:${terminal.terminalId}`)
           ),
-          ...getTerminalBusContactGroups(terminalOverlapNodes, 0, terminalOverlapAffectedNodeIds).flatMap((group) =>
+          ...getTerminalBusContactGroups(terminalOverlapNodes, 0, terminalOverlapAffectedNodeIds).flatMap((group: TerminalBusContactGroup) =>
             group.contacts.map((contact) => `${contact.nodeId}:${contact.terminalId}`)
           )
         ]
@@ -2549,7 +2586,7 @@ export function createAppHookCallback70(__appScope: Record<string, any>) {
     const targetNode = dragPreviewNodeFor(nodeTerminalSnapTarget.targetNodeId);
     const terminalType = targetNode && isBusNode(targetNode)
       ? getBusTerminalType(targetNode)
-      : targetNode?.terminals.find((terminal) => terminal.id === nodeTerminalSnapTarget.targetTerminalId)?.type;
+      : targetNode?.terminals.find((terminal: Terminal) => terminal.id === nodeTerminalSnapTarget.targetTerminalId)?.type;
     return terminalType ? ({ "--connection-color": terminalColor(terminalType, colorPalette) } as CSSProperties) : undefined;
   };
 }
@@ -2573,11 +2610,11 @@ export function createAppHookCallback72(__appScope: Record<string, any>) {
       return [];
     }
     const geometry = groupTransformGeometry(transformDrag, transformDrag.previewPoint);
-    return transformDrag.originalEdgeRoutes.flatMap((route) => {
+    return transformDrag.originalEdgeRoutes.flatMap((route: GroupTransformEdgeRouteSnapshot) => {
       if (!visibleEdgeIdSet.has(route.edgeId)) {
         return [];
       }
-      const points = route.points.map((routePoint) => transformGroupPoint(transformDrag, geometry, routePoint));
+      const points = route.points.map((routePoint: Point) => transformGroupPoint(transformDrag, geometry, routePoint));
       return [{
         edgeId: route.edgeId,
         path: pointsToPreviewPath(points)
@@ -2625,7 +2662,7 @@ export function createAppHookCallback75(__appScope: Record<string, any>) {
       return dragging.overlayPreview?.ghostRoutes ?? [];
     }
     const draggedEdgeIds = new Set(dragging.edgeIds);
-    const connectionGhostRoutes = dragging.affectedEdges.flatMap((edge): DragGhostRoute[] => {
+    const connectionGhostRoutes = dragging.affectedEdges.flatMap((edge: Edge): DragGhostRoute[] => {
       if (!visibleEdgeIdSet.has(edge.id)) {
         return [];
       }
@@ -2662,7 +2699,7 @@ export function createAppHookCallback76(__appScope: Record<string, any>) {
       }
       return;
     }
-    if (!selectedContainerParameterViews.some((view) => view.id === containerParamViewId)) {
+    if (!selectedContainerParameterViews.some((view: { id: string }) => view.id === containerParamViewId)) {
       setContainerParamViewId(selectedContainerParameterViews[0].id);
     }
   };
@@ -2699,7 +2736,7 @@ export function createAppHookCallback77(__appScope: Record<string, any>) {
       }
       const loadToken = ++backendSchemesLoadTokenRef.current;
       void fetchBackendSchemes()
-      .then((backendSchemes) => {
+      .then((backendSchemes: SavedSchemeRecord[]) => {
         if (disposed || loadToken !== backendSchemesLoadTokenRef.current) {
           return;
         }
@@ -2718,8 +2755,8 @@ export function createAppHookCallback77(__appScope: Record<string, any>) {
               void loadSavedProjectRecord(backendActiveProject.project, backendActiveProject.scheme.id, backendSchemes);
             }
           }
-          setExpandedSchemeIds((current) => {
-            const backendSchemeIds = new Set(flattenSavedSchemes(backendSchemes).map((scheme) => scheme.id));
+          setExpandedSchemeIds((current: string[]) => {
+            const backendSchemeIds = new Set(flattenSavedSchemes(backendSchemes).map((scheme: SavedSchemeRecord) => scheme.id));
             const retained = current.filter((schemeId) => backendSchemeIds.has(schemeId));
             if (retained.length > 0) {
               return retained;
@@ -2746,7 +2783,7 @@ export function createAppHookCallback77(__appScope: Record<string, any>) {
           return;
         }
         backendSchemesLoadedRef.current = false;
-        setSchemesState((current) => current.length === 0 ? [] : current);
+        setSchemesState((current: SavedSchemeRecord[]) => current.length === 0 ? [] : current);
         // 保留当前模型树，后台恢复后自动重新加载。
         scheduleRetry();
       });
@@ -2774,7 +2811,7 @@ export function createAppHookCallback78(__appScope: Record<string, any>) {
   return () => {
   const { backendColorConfigLoadedRef, colorDisplayMode, colorPalette, fetchBackendColorConfig, lastPersistedColorConfigPayloadRef, saveBackendColorConfigPayload, serializeColorConfigForStorage, setColorDisplayMode, setColorPalette, setColorPaletteDraft, setColorPaletteTab, suppressNextBackendColorSyncRef } = __appScope;
     fetchBackendColorConfig()
-      .then((backendColorConfig) => {
+      .then((backendColorConfig: Record<string, unknown>) => {
         backendColorConfigLoadedRef.current = true;
         if (backendColorConfig.exists) {
           const backendPayload = serializeColorConfigForStorage(backendColorConfig.colorDisplayMode, backendColorConfig.colorPalette);
@@ -2805,7 +2842,7 @@ export function createAppHookCallback79(__appScope: Record<string, any>) {
   return () => {
   const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, fetchBackendDeviceLibrary, lastPersistedDeviceLibraryPayloadRef, saveBackendDeviceLibraryPayload, serializeDeviceLibraryForStorage, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomDeviceTemplates, setCustomGraphTemplateTypes, setCustomGraphTemplates, setDeviceDefinitionOverrides, setEDeviceDefinitionLabels, setEDeviceDefinitionClassExportEnabled, setEDeviceDefinitionFieldOrder, setEDeviceDefinitionTableIds, setEDeviceDefinitionTemplateFields, suppressNextBackendDeviceLibrarySyncRef } = __appScope;
     fetchBackendDeviceLibrary()
-      .then((backendDeviceLibrary) => {
+      .then((backendDeviceLibrary: Record<string, unknown>) => {
         backendDeviceLibraryLoadedRef.current = true;
         if (backendDeviceLibrary.exists) {
           const backendPayload = serializeDeviceLibraryForStorage(backendDeviceLibrary);
@@ -2860,7 +2897,7 @@ export function createAppHookCallback80(__appScope: Record<string, any>) {
   return () => {
   const { backendMeasurementConfigLoadedRef, fetchBackendMeasurementConfig, lastPersistedMeasurementConfigPayloadRef, measurementConfig, saveBackendMeasurementConfigPayload, serializeMeasurementConfigForStorage, setMeasurementConfig, writeMeasurementConfig } = __appScope;
     fetchBackendMeasurementConfig()
-      .then((backendMeasurementConfig) => {
+      .then((backendMeasurementConfig: Record<string, unknown>) => {
         backendMeasurementConfigLoadedRef.current = true;
         if (backendMeasurementConfig.exists) {
           const backendPayload = serializeMeasurementConfigForStorage(backendMeasurementConfig);
@@ -2992,7 +3029,7 @@ export function createAppHookCallback84(__appScope: Record<string, any>) {
       imageLibraryInitializedRef.current = true;
       const localAssets = mergeBuiltinSharedIconAssets(localImageAssetsFromStorage());
       setImageAssetList(localAssets);
-      setImageAssets((current) => ({ ...imageAssetsToMap(localAssets), ...current }));
+      setImageAssets((current: ImageAsset[]) => ({ ...imageAssetsToMap(localAssets), ...current }));
       void refreshImageFolders();
     }
     void refreshImagesForFolder(activeImageFolderId);
@@ -3018,10 +3055,10 @@ export function createAppHookCallback85(__appScope: Record<string, any>) {
 export function createAppHookCallback86(__appScope: Record<string, any>) {
   return () => {
   const { activeSchemeKey, flattenSavedSchemes, schemes, selectedSchemeId, setExpandedSchemeIds } = __appScope;
-    setExpandedSchemeIds((current) => {
+    setExpandedSchemeIds((current: string[]) => {
       const flatSchemes = flattenSavedSchemes(schemes);
-      const schemeIds = new Set(flatSchemes.map((scheme) => scheme.id));
-      const retained = current.filter((id) => schemeIds.has(id));
+      const schemeIds = new Set(flatSchemes.map((scheme: SavedSchemeRecord) => scheme.id));
+      const retained = current.filter((id: string) => schemeIds.has(id));
       if (retained.length > 0) {
         return retained;
       }
@@ -3269,7 +3306,7 @@ export function createAppHookCallback96(__appScope: Record<string, any>) {
 export function createAppHookCallback97(__appScope: Record<string, any>) {
   return () => {
   const { canvasBounds, normalizeViewBoxToCanvas, setViewBox } = __appScope;
-    setViewBox((current) => normalizeViewBoxToCanvas(current, canvasBounds));
+    setViewBox((current: CanvasBounds) => normalizeViewBoxToCanvas(current, canvasBounds));
   };
 }
 
@@ -3360,8 +3397,8 @@ export function createAppHookCallback101(__appScope: Record<string, any>) {
       }
       if (shifted) {
         setGraphArrays(
-          nodes.map((node) => translateNodeBy(node, originShift)),
-          edges.map((edge) => translateEdgeBy(edge, originShift))
+          nodes.map((node: ModelNode) => translateNodeBy(node, originShift)),
+          edges.map((edge: Edge) => translateEdgeBy(edge, originShift))
         );
         shiftCachedRoutesForCanvasOrigin(originShift);
       }
@@ -3399,7 +3436,7 @@ export function createAppHookCallback101(__appScope: Record<string, any>) {
           draftBounds
         );
         flushSync(() => {
-          setCanvasNoScrollOffset((current) =>
+          setCanvasNoScrollOffset((current: Point) =>
             Math.round(current.x) === Math.round(nextCanvasNoScrollOffset.x) &&
             Math.round(current.y) === Math.round(nextCanvasNoScrollOffset.y)
               ? current
@@ -3635,7 +3672,7 @@ export function createAppHookCallback107(__appScope: Record<string, any>) {
         width: deviceLibraryDialogDrag.startWidth,
         height: deviceLibraryDialogDrag.startHeight
       });
-      setDeviceLibraryDialogLayouts((current) => ({
+      setDeviceLibraryDialogLayouts((current: DeviceLibraryDialogLayouts) => ({
         ...current,
         [deviceLibraryDialogDrag.kind]: nextLayout
       }));
@@ -3691,7 +3728,7 @@ export function createAppHookCallback108(__appScope: Record<string, any>) {
           maxHeight
         )
       });
-      setDeviceLibraryDialogLayouts((current) => ({
+      setDeviceLibraryDialogLayouts((current: DeviceLibraryDialogLayouts) => ({
         ...current,
         [deviceLibraryDialogResize.kind]: nextLayout
       }));
@@ -3881,16 +3918,16 @@ export function createAppHookCallback110(__appScope: Record<string, any>) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
         if (isCanvasShortcutTarget) {
           event.preventDefault();
-          const selectableEdgeIds = activeLayerEdges.map((edge) => edge.id);
+          const selectableEdgeIds = activeLayerEdges.map((edge: Edge) => edge.id);
           setCanvasSelectionScope("group");
-          setSelectedNodeIds(activeLayerNodes.map((node) => node.id));
+          setSelectedNodeIds(activeLayerNodes.map((node: ModelNode) => node.id));
           setSelectedEdgeIds(selectableEdgeIds);
           setSelectedEdgeId(selectableEdgeIds[0] ?? "");
           setConnectSource(null);
           resetConnectPreviewState();
           setRewiring(null);
           clearRecordSelection();
-          switchInspectorTabForCanvasSelection(activeLayerNodes.map((node) => node.id), selectableEdgeIds, "marquee");
+          switchInspectorTabForCanvasSelection(activeLayerNodes.map((node: ModelNode) => node.id), selectableEdgeIds, "marquee");
         }
       } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
         if (isRecordShortcutTarget && (selectedProjectId || selectedSchemeId || selectedProjectIds.length > 0 || selectedSchemeIds.length > 0)) {
@@ -3992,7 +4029,7 @@ export function createAppHookCallback113(__appScope: Record<string, any>) {
       return;
     }
     return scheduleIdleWork(() => {
-      setTopologyStatus((current) =>
+      setTopologyStatus((current: TopologyRunStatus) =>
         current.state === "idle" ? current : { state: "idle", message: "拓扑结果已过期" }
       );
     }, 200, 500);
@@ -4114,7 +4151,7 @@ export function createAppHookCallback122(__appScope: Record<string, any>) {
       return nodes;
     }
     const selected = new Set(activeSelectedNodeIds);
-    return nodes.filter((node) => selected.has(node.id));
+    return nodes.filter((node: ModelNode) => selected.has(node.id));
   };
 }
 
@@ -4122,8 +4159,8 @@ export function createAppHookCallback123(__appScope: Record<string, any>) {
   return () => {
   const { voltageBaseSetCandidateNodes, voltageBaseSettingModeForNode, voltageBaseTerminalValues } = __appScope;
     return voltageBaseSetCandidateNodes
-      .filter((node) => voltageBaseSettingModeForNode(node) === "terminal" && node.terminals.length > 1)
-      .flatMap((node) => node.terminals.map((terminal, index) => ({
+      .filter((node: ModelNode) => voltageBaseSettingModeForNode(node) === "terminal" && node.terminals.length > 1)
+      .flatMap((node: ModelNode) => node.terminals.map((terminal: Terminal, index: number) => ({
         nodeId: node.id,
         nodeName: node.name,
         terminalId: terminal.id,
@@ -4145,7 +4182,7 @@ export function createAppHookCallback124(__appScope: Record<string, any>) {
         return {};
       }
       return Object.fromEntries(
-        VOLTAGE_BASE_SET_SCOPES.map((scope) => {
+        VOLTAGE_BASE_SET_SCOPES.map((scope: VoltageBaseClearScope) => {
           const uniformResult = voltageBaseSetValue.trim().length > 0
             ? setVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope, voltageBaseSetValue.trim())
             : emptyVoltageBaseSetResult();
@@ -4162,7 +4199,7 @@ export function createAppHookCallback124(__appScope: Record<string, any>) {
         return {};
       }
       return Object.fromEntries(
-        VOLTAGE_BASE_SET_SCOPES.map((scope) => [
+        VOLTAGE_BASE_SET_SCOPES.map((scope: VoltageBaseClearScope) => [
           scope,
           setVoltageBaseTerminalValuesForScope(nodes, edges, activeVoltageBaseTerminalValues(), scope)
         ])
@@ -4172,7 +4209,7 @@ export function createAppHookCallback124(__appScope: Record<string, any>) {
       return {};
     }
     return Object.fromEntries(
-      VOLTAGE_BASE_SET_SCOPES.map((scope) => [
+      VOLTAGE_BASE_SET_SCOPES.map((scope: VoltageBaseClearScope) => [
         scope,
         setVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope, voltageBaseSetValue.trim())
       ])
@@ -4192,7 +4229,7 @@ export function createAppHookCallback125(__appScope: Record<string, any>) {
       }
       return;
     }
-    if (!voltageBaseSetTerminalRows.some((row) => voltageBaseTerminalRowKey(row) === activeVoltageBaseTerminalKey)) {
+    if (!voltageBaseSetTerminalRows.some((row: { nodeId: string; terminalId: string }) => voltageBaseTerminalRowKey(row) === activeVoltageBaseTerminalKey)) {
       setActiveVoltageBaseTerminalKey(voltageBaseTerminalRowKey(voltageBaseSetTerminalRows[0]));
     }
   };
@@ -4205,7 +4242,7 @@ export function createAppHookCallback126(__appScope: Record<string, any>) {
       return {};
     }
     return Object.fromEntries(
-      VOLTAGE_BASE_CLEAR_SCOPES.map((scope) => [
+      VOLTAGE_BASE_CLEAR_SCOPES.map((scope: VoltageBaseClearScope) => [
         scope,
         clearVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope)
       ])
@@ -4243,7 +4280,7 @@ export function createAppHookCallback128(__appScope: Record<string, any>) {
       }, CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS, 1500);
     }
     return scheduleIdleWork(() => {
-      setInitialCanvasDetailHydrationLimit((limit) => {
+      setInitialCanvasDetailHydrationLimit((limit: number) => {
         const nextLimit = Math.min(
           limit + CANVAS_INITIAL_LOD_DETAIL_CHUNK_SIZE,
           initialCanvasDetailHydrationTarget
@@ -4280,7 +4317,7 @@ export function createAppHookCallback130(__appScope: Record<string, any>) {
     if (!useSimplifiedCanvasNodes || transformDrag || nodeLabelDrag || nodeLabelRotateDrag) {
       return viewportNodes;
     }
-    return viewportNodes.filter((node) => {
+    return viewportNodes.filter((node: ModelNode) => {
       if (groupTransformPreviewNodeIdSet.has(node.id)) {
         return false;
       }
@@ -4338,7 +4375,7 @@ export function createAppHookCallback133(__appScope: Record<string, any>) {
       lodCanvasRouteChunkCacheRef.current.chunks = [];
       return [];
     }
-    const items = viewportRoutedEdges.flatMap((route) => {
+    const items = viewportRoutedEdges.flatMap((route: DragGhostRoute) => {
       const edge = edgeById.get(route.edgeId);
       if (!edge) {
         return [];
@@ -4360,9 +4397,9 @@ export function createAppHookCallback133(__appScope: Record<string, any>) {
     return stableSvgMarkupChunks(items, lodCanvasRouteChunkCacheRef.current, {
       chunkSize: CANVAS_LOD_MARKUP_CHUNK_SIZE,
       keyPrefix: "lod-route",
-      itemKey: (item) => item.edge.id,
-      itemTokens: (item) => item.hidden ? [false] : [true, item.route, item.edge, item.selected, item.color, item.inactiveLayerGraphic],
-      itemMarkup: (item) =>
+      itemKey: (item: LodRouteChunkItem) => item.edge.id,
+      itemTokens: (item: LodRouteChunkItem) => item.hidden ? [false] : [true, item.route, item.edge, item.selected, item.color, item.inactiveLayerGraphic],
+      itemMarkup: (item: LodRouteChunkItem) =>
         item.hidden
           ? ""
           : `<path class="connection-line lod-edge${item.selected ? " lod-selected-edge" : ""}${item.inactiveLayerGraphic ? " inactive-layer-graphic" : ""}" data-edge-id="${escapeXml(item.edge.id)}" d="${escapeXml(item.route.path)}" style="--connection-color:${escapeXml(item.color)}"/>`
@@ -4377,7 +4414,7 @@ export function createAppHookCallback134(__appScope: Record<string, any>) {
       lodCanvasNodeChunkCacheRef.current.chunks = [];
       return [];
     }
-    const items = viewportNodes.filter((node) =>
+    const items = viewportNodes.filter((node: ModelNode) =>
       !groupTransformPreviewNodeIdSet.has(node.id) &&
       !(isRoutableLineDeviceKind(node.kind) && dragGhostRoutableLineNodeIdSet.has(node.id)) &&
       !(isRoutableLineDeviceKind(node.kind) && routableLineEndpointDrag?.nodeId === node.id) &&
@@ -4387,8 +4424,8 @@ export function createAppHookCallback134(__appScope: Record<string, any>) {
     return stableSvgMarkupChunks(items, lodCanvasNodeChunkCacheRef.current, {
       chunkSize: CANVAS_LOD_MARKUP_CHUNK_SIZE,
       keyPrefix: "lod-node",
-      itemKey: (node) => node.id,
-      itemTokens: (node) => [
+      itemKey: (node: ModelNode) => node.id,
+      itemTokens: (node: ModelNode) => [
         node,
         colorDisplayMode,
         colorPalette,
@@ -4397,7 +4434,7 @@ export function createAppHookCallback134(__appScope: Record<string, any>) {
         deviceStateVisualToken(resolveNodeStateVisual(node)),
         resolveStateVisualImageHref(resolveNodeStateVisual(node), imageAssets)
       ],
-      itemMarkup: (node) => {
+      itemMarkup: (node: ModelNode) => {
       const nodeIsBus = isBusNode(node);
       const nodeIsRoutableLineDevice = isRoutableLineDeviceKind(node.kind);
       const inactiveLayerGraphic = isEditMode && !activeLayerNodeIdSet.has(node.id);
@@ -4450,7 +4487,7 @@ export function createAppHookCallback135(__appScope: Record<string, any>) {
     if (!useSimplifiedSelectedCanvasNodes) {
       return "";
     }
-    return displaySelectedNodeIds.flatMap((nodeId) => {
+    return displaySelectedNodeIds.flatMap((nodeId: string) => {
       if (nodeId === selectedNodeId || groupTransformPreviewNodeIdSet.has(nodeId)) {
         return [];
       }
@@ -4529,7 +4566,7 @@ export function createAppHookCallback138(__appScope: Record<string, any>) {
     if (cache.nodeSource === visibleNodes && cache.nodeStep === minimapNodeStep) {
       return cache.nodes;
     }
-    const nodes = visibleNodes.filter((_, index) => index % minimapNodeStep === 0);
+    const nodes = visibleNodes.filter((_: ModelNode, index: number) => index % minimapNodeStep === 0);
     cache.nodeSource = visibleNodes;
     cache.nodeStep = minimapNodeStep;
     cache.nodes = nodes;
@@ -4550,7 +4587,7 @@ export function createAppHookCallback139(__appScope: Record<string, any>) {
     if (cache.routeSource === routedEdges && cache.routeStep === minimapRouteStep) {
       return cache.routes;
     }
-    const routes = routedEdges.filter((_, index) => index % minimapRouteStep === 0);
+    const routes = routedEdges.filter((_: RoutedEdge, index: number) => index % minimapRouteStep === 0);
     cache.routeSource = routedEdges;
     cache.routeStep = minimapRouteStep;
     cache.routes = routes;
@@ -4588,7 +4625,7 @@ export function createAppHookCallback140(__appScope: Record<string, any>) {
       }
       let cancelled = false;
       void fetchBackendProjectRecord(schemePath, backgroundProjectRecord.name)
-        .then((loadedProject) => {
+        .then((loadedProject: SavedProjectRecord) => {
           if (cancelled) {
             return;
           }
@@ -4598,10 +4635,10 @@ export function createAppHookCallback140(__appScope: Record<string, any>) {
             name: loadedProject.name || backgroundProjectRecord.name
           };
           suppressNextBackendSchemeSyncRef.current = true;
-          setSchemes((current) => upsertSavedProjectInScheme(current, ownerScheme.id, fullRecord));
+          setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, ownerScheme.id, fullRecord));
           writeOperationLog(`加载背景页面：${fullRecord.name}`);
         })
-        .catch((error) => {
+        .catch((error: unknown) => {
           if (cancelled) {
             return;
           }
@@ -4655,7 +4692,7 @@ export function createAppHookCallback142(__appScope: Record<string, any>) {
     }
     const backgroundProject = normalizeProjectLayers(backgroundPageFrameRender.project);
     const visibleBackgroundLayerIds = new Set(backgroundLayerIds);
-    const backgroundLayers = (backgroundProject.layers ?? []).map((layer) => ({
+    const backgroundLayers = (backgroundProject.layers ?? []).map((layer: ModelLayer) => ({
       ...layer,
       visible: visibleBackgroundLayerIds.has(layer.id)
     }));
@@ -4667,8 +4704,8 @@ export function createAppHookCallback142(__appScope: Record<string, any>) {
       nodes: backgroundNodes,
       edges: backgroundEdges,
       routes,
-      nodeById: new Map(backgroundNodes.map((node) => [node.id, node])),
-      edgeById: new Map(backgroundEdges.map((edge) => [edge.id, edge]))
+      nodeById: new Map(backgroundNodes.map((node: ModelNode) => [node.id, node])),
+      edgeById: new Map(backgroundEdges.map((edge: Edge) => [edge.id, edge]))
     };
   };
 }

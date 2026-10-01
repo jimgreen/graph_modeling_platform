@@ -615,7 +615,9 @@ describe("batch common model parameter hook", () => {
     })();
 
     const row = rows.find((item) => item.key === "dispatch_mode");
-    expect(row?.definitions?.map((definition: DeviceParameterDefinition | undefined) => definition && enumValuesForRow(definition))).toEqual([
+    // rows 是两种形状的联合：带 definitions 的（多值/枚举定义）与不带的。
+    const definitions = row && "definitions" in row ? row.definitions : undefined;
+    expect(definitions?.map((definition: DeviceParameterDefinition | undefined) => definition && enumValuesForRow(definition))).toEqual([
       ["AUTO", "MANUAL"],
       ["REMOTE", "LOCAL"]
     ]);
