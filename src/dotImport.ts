@@ -610,8 +610,12 @@ export function mapDotGraphToModel(graph: DotGraph): DotImportResult {
     minX = Math.min(minX, d.x);
     minY = Math.min(minY, d.y);
   }
+  // 两个方向各自判：一个设备带 NaN 坐标时，minY 会污染 oy 让全图 y 变 NaN，
+  // 而 minX 仍是有效值，不该被一起清零。
   if (!Number.isFinite(minX)) {
     minX = 0;
+  }
+  if (!Number.isFinite(minY)) {
     minY = 0;
   }
   const ox = 100 - minX;
