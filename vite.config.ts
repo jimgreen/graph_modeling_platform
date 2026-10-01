@@ -100,6 +100,12 @@ export default defineConfig({
   server: {
     port: frontendPort,
     host,
+    // 首屏那条「打开即等」的路径：浏览器请求一个模块，Vite 才现转译一个模块，
+    // 146 个模块串成 ~19s。warmup 让 Vite 在**启动时后台**先把入口的整张静态依赖图
+    // 转完，等用户真的点开时图已经是热的。代价只是把耗时挪到 dev server 启动阶段。
+    warmup: {
+      clientFiles: ["src/main.tsx"]
+    },
     watch: {
       ignored: serverWatchIgnored
     },

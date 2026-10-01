@@ -27,7 +27,11 @@ import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES as TEMPLATE_ALLOWED_MODEL_TYPES, 
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
 import { isSkipBeforeUnload } from "../spaceSwitch";
 import { AppTour } from "../appTour";
-import { EFileEditor } from "../EFileEditor";
+// E 文件编辑器是「点开才用」的大弹窗，按需加载：与本文件已有的
+// LazyAppContextMenus / LazyAppProjectDialogs 等同一套写法。scope 上的键名保持
+// `EFileEditor` 不变，消费方（appDeviceDefinitionDialogs）无感知。
+const LazyEFileEditor = lazy(() => import("../EFileEditor")
+  .then((module) => ({ default: module.EFileEditor })));
 import { buildUserCustomizationInventory, restoreUserCustomizationItems, type UserCustomizationDomain } from "../userCustomizations";
 import { moveSelectedTableRows, nextTableRowSelection, uniqueCopiedFieldName } from "../definitionTableSelection";
 import { WindowCloseButton } from "../WindowCloseButton";
@@ -2404,7 +2408,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   Object.assign(__appScope, {
     AlignCenterHorizontal, AllNetworkTopologyDialog, ArrowDown, ArrowUp, BoxSelect, BufferedTextInput, CONNECTION_REDRAW_SCOPE_LABELS, CONTAINER_TERMINAL_ASSOCIATION_OPTIONS,
     ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, CircleDot, Copy, CustomComponentManagerTree, DEFAULT_COLOR_PALETTE,
-    DeferredColorInput, Download, EFileEditor, ENABLE_REACT_FLOW_PREVIEW, ENERGY_COLOR_ROWS, Eye, FileInput, FolderOpen,
+    DeferredColorInput, Download, EFileEditor: LazyEFileEditor, ENABLE_REACT_FLOW_PREVIEW, ENERGY_COLOR_ROWS, Eye, FileInput, FolderOpen,
     Fragment, Grid2X2, Group, ICON_LIBRARY_PAGE_SIZE, Layers, Layers2, MAX_CUSTOM_DEVICE_TERMINALS, PARAM_VALUE_TYPE_OPTIONS,
     Pencil, Plus, ReactFlowPreview, RotateCcw, Route, Save, ScanSearch, Scissors,
     Search, Suspense, TERMINAL_TYPE_LIBRARY_LABELS, TERMINAL_TYPE_OPTIONS, Trash2, Type, Undo2, Ungroup,

@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, Suspense } from "react";
 import { areViewSectionPropsEqual, type ViewSectionInputs } from "./appViewRenderBoundary";
 import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
 import { PREDEFINED_E_DEVICE_TEMPLATES } from "../predefinedEDeviceTemplates";
@@ -1379,7 +1379,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
             </footer>
           </section>
         </div>)}
-      {eFileEditorDialogOpen && (
+      {eFileEditorDialogOpen && (<Suspense fallback={null}>
         <EFileEditor
           open={eFileEditorDialogOpen}
           onClose={() => setEFileEditorDialogOpen(false)}
@@ -1453,7 +1453,7 @@ export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialo
             setNodes(nextNodes);
           }}
         />
-      )}
+      </Suspense>)}
       {eDeviceInterfaceExitPromptOpen && (<div className="image-picker-backdrop" onPointerDown={() => setEDeviceInterfaceExitPromptOpen(false)}>
           <section className="unsaved-change-dialog e-device-interface-unsaved-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="e-device-interface-unsaved-title">
             <WindowCloseButton label="关闭E文件接口未保存提示" onClick={() => setEDeviceInterfaceExitPromptOpen(false)} />
