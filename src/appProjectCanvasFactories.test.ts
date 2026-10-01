@@ -84,7 +84,7 @@ describe("跨模型告警定位的未保存修改衔接", () => {
       id: "station-1",
       name: "中心厂站",
       updatedAt: "2026-08-17T00:00:00.000Z",
-      project: { version: 1, name: "中心厂站", nodes: [], edges: [] }
+      project: { version: 1 as const, name: "中心厂站", nodes: [], edges: [] }
     };
 
     request({

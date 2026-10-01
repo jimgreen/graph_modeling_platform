@@ -473,13 +473,13 @@ describe("measurement canvas interactions", () => {
         derivedComponentLibrary: "NewACGen",
         derivedComponentLibraryLabel: "新交流发电机2",
         parameterDefinitions: [
-          { cnName: "派生字段A", enName: "a", valueType: "string", typicalValue: "" },
-          { cnName: "派生字段B", enName: "bbbb", valueType: "string", typicalValue: "" }
+          { cnName: "派生字段A", enName: "a", valueType: "string" as const, typicalValue: "" },
+          { cnName: "派生字段B", enName: "bbbb", valueType: "string" as const, typicalValue: "" }
         ]
       },
       parameterDefinitions: [
-        { cnName: "派生字段A", enName: "a", valueType: "string", typicalValue: "" },
-        { cnName: "派生字段B", enName: "bbbb", valueType: "string", typicalValue: "" }
+        { cnName: "派生字段A", enName: "a", valueType: "string" as const, typicalValue: "" },
+        { cnName: "派生字段B", enName: "bbbb", valueType: "string" as const, typicalValue: "" }
       ],
       libraryTemplates: DEVICE_LIBRARY
     });
@@ -673,8 +673,8 @@ describe("measurement canvas interactions", () => {
       label: "自定义元件",
       terminalCount: 0,
       parameterDefinitions: [
-        { cnName: "有功功率", enName: "activePower", valueType: "float", typicalValue: "0" },
-        { cnName: "额定功率", enName: "ratedPower", valueType: "float", typicalValue: "0" }
+        { cnName: "有功功率", enName: "activePower", valueType: "float" as const, typicalValue: "0" },
+        { cnName: "额定功率", enName: "ratedPower", valueType: "float" as const, typicalValue: "0" }
       ],
       items,
       setItems,
@@ -794,11 +794,11 @@ describe("measurement canvas interactions", () => {
     ];
     const setItems = vi.fn();
     const parentDefinitions = [
-      { cnName: "容器字段", enName: "parentOnly", valueType: "float", typicalValue: "0" }
+      { cnName: "容器字段", enName: "parentOnly", valueType: "float" as const, typicalValue: "0" }
     ];
     const terminalDefinitions = [
-      { cnName: "电阻", enName: "r", valueType: "float", typicalValue: "0" },
-      { cnName: "电抗", enName: "x", valueType: "float", typicalValue: "0" }
+      { cnName: "电阻", enName: "r", valueType: "float" as const, typicalValue: "0" },
+      { cnName: "电抗", enName: "x", valueType: "float" as const, typicalValue: "0" }
     ];
     const panel = createRenderDeviceDefinitionMeasurementPanel({
       BufferedTextInput: (props: any) => createElement("input", props),
