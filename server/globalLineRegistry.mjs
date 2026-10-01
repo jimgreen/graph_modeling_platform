@@ -213,7 +213,15 @@ function normalizeState(raw) {
 async function readState(filePath) {
   try {
     return normalizeState(JSON.parse(await readFile(filePath, "utf-8")));
-  } catch {
+  } catch (error) {
+    // 降级（读失败当空注册表）是既有契约，但它会被 ensureInitialized / rebuildFromStorage
+    // 当真值写回：读失败那一刻，全局线路的首末端关联被清空并持久化，且无任何记录。
+    // 行为不改，只在非 ENOENT 时留痕，避免这类损坏再次「悄无声息」。
+    if (error?.code !== "ENOENT") {
+      console.warn(
+        `[全局线路] 读取 ${filePath} 失败（${error?.code ?? error?.name ?? "unknown"}），已按空注册表处理：${error?.message ?? error}`
+      );
+    }
     return normalizeState({});
   }
 }
