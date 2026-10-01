@@ -4497,6 +4497,22 @@ async function handleDeleteImageFolder(folderId, response, paths) {
   });
 }
 
+// 把文件流向响应。
+//
+// stat 通过到流真正打开之间仍有窗口（文件被换掉 / 改权限 / 磁盘 IO 错）：这类失败
+// createReadStream 只发 'error' 事件、不抛，而此刻响应头早已写出——不挂处理器的话
+// 响应永远不会结束，连接一直挂到客户端超时。实测（图片下载端点）：manifest 指向一个
+// 不存在的文件时稳定复现，整请求卡满 30s。
+//
+// 四处静态/动态文件服务共用这一份，不要各写各的。
+function pipeFileToResponse(filePath, response) {
+  const stream = createReadStream(filePath);
+  stream.on("error", () => {
+    response.destroy();
+  });
+  stream.pipe(response);
+}
+
 async function handleDownload(id, response, paths) {
   const manifest = await readManifest({ paths });
   const item = manifest.find((entry) => entry.id === id);
@@ -4523,13 +4539,7 @@ async function handleDownload(id, response, paths) {
     vary: "Cookie",
     ...accessControlOriginOnly
   });
-  const stream = createReadStream(filePath);
-  // stat 与 read 之间仍可能出岔子（文件被并发删掉）：createReadStream 的失败只发
-  // 'error' 事件，不抛。不挂处理器的话响应永远不会结束，连接挂到超时。
-  stream.on("error", () => {
-    response.destroy();
-  });
-  stream.pipe(response);
+  pipeFileToResponse(filePath, response);
 }
 
 async function handleDeleteImageAsset(id, response, paths) {
@@ -5047,7 +5057,7 @@ async function serveStaticAsset(request, response, url, staticRoot) {
         "cache-control": "public, max-age=0, must-revalidate",
         ...accessControlHeaders
       });
-      createReadStream(filePath).pipe(response);
+      pipeFileToResponse(filePath, response);
       return true;
     }
   } catch {
@@ -5063,7 +5073,7 @@ async function serveStaticAsset(request, response, url, staticRoot) {
         "cache-control": "no-cache",
         ...accessControlHeaders
       });
-      createReadStream(indexPath).pipe(response);
+      pipeFileToResponse(indexPath, response);
       return true;
     }
   } catch {
@@ -5096,7 +5106,7 @@ async function serveIconLibraryAsset(request, response, url) {
         "cache-control": "public, max-age=3600",
         ...accessControlHeaders
       });
-      createReadStream(filePath).pipe(response);
+      pipeFileToResponse(filePath, response);
       return true;
     }
   } catch {
