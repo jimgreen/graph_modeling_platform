@@ -1,8 +1,14 @@
-// @ts-nocheck
 import { memo } from "react";
-import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
+import { areViewSectionPropsEqual, type ViewSectionProps } from "./appViewRenderBoundary";
+import type { UndoSnapshot } from "./appCoreCanvasUtilities";
+import type { GlobalLinePlacementDialogState } from "../hooks/useGlobalLines";
+import type { GlobalLineRecord } from "../global-lines";
 
-export const AppProjectDialogs = memo(function AppProjectDialogs({ scope }) {
+// 视图分段的 props 是 ViewSectionProps 的**超集**：section / inputs 供比较器判定
+// 「数据不变就不重渲」（appView.tsx 的调用点三个都传），scope 才是本段解构的数据来源。
+type AppProjectDialogsProps = ViewSectionProps & { scope: Record<string, any> };
+
+export const AppProjectDialogs = memo(function AppProjectDialogs({ scope }: AppProjectDialogsProps) {
   const __appScope = scope;
   const {
     Download, FileInput, UserCustomizationManagerDialog, WindowCloseButton, cancelGlobalLinePlacement, cancelGlobalLineTransition, closeLibraryPackageDialog, confirmGlobalLinePlacement,
@@ -97,7 +103,7 @@ export const AppProjectDialogs = memo(function AppProjectDialogs({ scope }) {
                     name="global-line-placement-mode"
                     checked={globalLinePlacementDialog.mode === "existing"}
                     disabled={globalLinePlacementDialog.loading || globalLinePlacementCandidates.length === 0}
-                    onChange={() => setGlobalLinePlacementDialog((current) => current ? {
+                    onChange={() => setGlobalLinePlacementDialog((current: GlobalLinePlacementDialogState | null) => current ? {
                       ...current,
                       mode: "existing",
                       error: globalLinePlacementConflictMessageForId?.(current.selectedGlobalLineId) ?? ""
@@ -108,13 +114,13 @@ export const AppProjectDialogs = memo(function AppProjectDialogs({ scope }) {
                 <select
                   value={globalLinePlacementDialog.selectedGlobalLineId}
                   disabled={globalLinePlacementDialog.loading || globalLinePlacementDialog.mode !== "existing" || globalLinePlacementCandidates.length === 0}
-                  onChange={(event) => setGlobalLinePlacementDialog((current) => current ? {
+                  onChange={(event) => setGlobalLinePlacementDialog((current: GlobalLinePlacementDialogState | null) => current ? {
                     ...current,
                     selectedGlobalLineId: event.target.value,
                     error: globalLinePlacementConflictMessageForId?.(event.target.value) ?? ""
                   } : current)}
                 >
-                  {globalLinePlacementCandidates.map((record) => (
+                  {globalLinePlacementCandidates.map((record: GlobalLineRecord) => (
                     <option key={record.id} value={record.id}>
                       {record.idx} · {record.name} · 出线度 {record.degree}{globalLinePlacementConflictMessageForId?.(record.id) ? " · ⚠ 端点不一致" : ""}
                     </option>
@@ -133,7 +139,7 @@ export const AppProjectDialogs = memo(function AppProjectDialogs({ scope }) {
                     name="global-line-placement-mode"
                     checked={globalLinePlacementDialog.mode === "new"}
                     disabled={globalLinePlacementDialog.loading}
-                    onChange={() => setGlobalLinePlacementDialog((current) => current ? { ...current, mode: "new", error: "" } : current)}
+                    onChange={() => setGlobalLinePlacementDialog((current: GlobalLinePlacementDialogState | null) => current ? { ...current, mode: "new", error: "" } : current)}
                   />
                   新建全局线路
                 </span>
@@ -142,7 +148,7 @@ export const AppProjectDialogs = memo(function AppProjectDialogs({ scope }) {
                   value={globalLinePlacementDialog.name}
                   disabled={globalLinePlacementDialog.loading || globalLinePlacementDialog.mode !== "new"}
                   placeholder="请输入全局唯一的线路名称"
-                  onChange={(event) => setGlobalLinePlacementDialog((current) => current ? { ...current, name: event.target.value, error: "" } : current)}
+                  onChange={(event) => setGlobalLinePlacementDialog((current: GlobalLinePlacementDialogState | null) => current ? { ...current, name: event.target.value, error: "" } : current)}
                 />
               </label>
             </div>
@@ -348,7 +354,7 @@ export const AppProjectDialogs = memo(function AppProjectDialogs({ scope }) {
                   </div>
                   <div className="unsaved-changes-operations">
                     <h3>操作明细（共 {totalOps} 项）</h3>
-                    {unsavedOps.map((op, index) => {
+                    {unsavedOps.map((op: UndoSnapshot, index: number) => {
                       const label = op.label || "编辑操作";
                       const target = op.target || "";
                       const undoOne = () => {
