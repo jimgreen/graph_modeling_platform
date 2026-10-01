@@ -55,6 +55,7 @@ import {
   terminalStubStrokeWidth
 } from "../model-routing.ts";
 import { getNodeScaleX, getNodeScaleY } from "../model-canvas-ops.ts";
+import { atLeastOneNumber } from "../canvasViewport.ts";
 import { inferESection } from "../model-eexport.ts";
 import { isContainerNode, withNodeUpdates } from "../acContainer.ts";
 import {
@@ -374,8 +375,8 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
       width: backgroundProject?.canvasWidth ?? canvasSize.width,
       height: backgroundProject?.canvasHeight ?? canvasSize.height
     };
-    const backgroundWidth = Math.max(1, Number(backgroundBounds.width) || canvasSize.width);
-    const backgroundHeight = Math.max(1, Number(backgroundBounds.height) || canvasSize.height);
+    const backgroundWidth = atLeastOneNumber(backgroundBounds.width, canvasSize.width);
+    const backgroundHeight = atLeastOneNumber(backgroundBounds.height, canvasSize.height);
     const backgroundNodes = backgroundPage.nodes ?? backgroundProject?.nodes ?? [];
     const backgroundEdges = backgroundPage.edges ?? backgroundProject?.edges ?? [];
     const backgroundSvg = buildSvgDocument(backgroundNodes, backgroundEdges, {

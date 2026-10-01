@@ -9,12 +9,14 @@
 //
 // 约束：本文件不得 import 任何 .tsx 模块，也不得 import React。
 // 依赖仅 ./svg.ts（buildSvgDocument）、../model.ts（createNodeFromTemplate）、
-// ../svgUtils.ts（decodeSvgImageSource）——三者均为 Node 原生 TS 可直载模块。
+// ../svgUtils.ts（decodeSvgImageSource）、../canvasViewport.ts（atLeastOneNumber）
+// ——四者均为 Node 原生 TS 可直载模块。
 
 import type { DeviceTemplate } from "../model.ts";
 import { createNodeFromTemplate } from "../model.ts";
 import { buildSvgDocument } from "./svg.ts";
 import { decodeSvgImageSource } from "../svgUtils.ts";
+import { atLeastOneNumber } from "../canvasViewport.ts";
 
 // 自定义图元正文里「端子引线」分组的剥离：导出图元是静态正文，不应带交互期才需要的端子连接线。
 const CUSTOM_DEVICE_TERMINAL_CONNECTOR_GROUP_PATTERN =
@@ -45,8 +47,8 @@ function componentExportImageWithoutTerminalConnectors(value: unknown) {
  */
 export function buildDeviceTemplateIconSvg(template: DeviceTemplate) {
   const padding = 36;
-  const templateWidth = Math.max(1, Number(template.size?.width) || 104);
-  const templateHeight = Math.max(1, Number(template.size?.height) || 64);
+  const templateWidth = atLeastOneNumber(template.size?.width, 104);
+  const templateHeight = atLeastOneNumber(template.size?.height, 64);
   const width = Math.ceil(templateWidth + padding * 2);
   const height = Math.ceil(templateHeight + padding * 2);
   const visualParams = { ...template.params };

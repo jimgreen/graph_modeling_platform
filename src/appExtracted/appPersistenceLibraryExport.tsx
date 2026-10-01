@@ -131,6 +131,7 @@ import {
   type CanvasClipboard,
 } from "../selectionActions";
 import {
+  atLeastOneNumber,
   clampNumber,
 } from "../canvasViewport";
 import {
@@ -3492,8 +3493,8 @@ export function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorD
 export { buildDeviceTemplateIconSvg } from "../export/device-template-icon";
 
 export function buildDeviceTemplateCopyVisualSvg(template: DeviceTemplate) {
-  const width = Math.ceil(Math.max(1, Number(template.size?.width) || 104));
-  const height = Math.ceil(Math.max(1, Number(template.size?.height) || 64));
+  const width = Math.ceil(atLeastOneNumber(template.size?.width, 104));
+  const height = Math.ceil(atLeastOneNumber(template.size?.height, 64));
   const visualTemplate: DeviceTemplate = {
     ...template,
     params: { ...template.params },
@@ -3911,8 +3912,8 @@ export const CustomComponentTreeTemplateThumbnail = memo(function CustomComponen
   template: DeviceTemplate;
 }) {
   const previewNode = useMemo(() => createNodeFromTemplate(template, { x: 0, y: 0 }), [template]);
-  const width = Math.max(1, Number(previewNode.size.width) || 1);
-  const height = Math.max(1, Number(previewNode.size.height) || 1);
+  const width = atLeastOneNumber(previewNode.size.width, 1);
+  const height = atLeastOneNumber(previewNode.size.height, 1);
   const previewScale = 18 / Math.max(width, height);
   const backgroundImage = String(template.params?.backgroundImage ?? "").trim();
   return (

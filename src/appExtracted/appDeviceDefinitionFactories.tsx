@@ -6,7 +6,7 @@ export * from "./appDeviceDefinitionEInterface";
 import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, deviceDefinitionComplianceKey, stateIconDrawingFrameHasPersistedContent, buildEFileExportOptionsFromLibrary, applyEDeviceDefinitionSectionsToLibraryState } from "./appDeviceDefinitionEInterface";
 
 import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, getTemplateParameterDefinitions, inferESection, isLineOnlyConnectionNode, parseEDeviceDefinitionFile, resolveEffectiveTemplateParameterDefinitions, switchingDeviceUsesClosedStatus, templateDerivedComponentLibraryInfo, MODEL_TYPE_META } from "../model";
-import { clampNumber } from "../canvasViewport";
+import { atLeastOneNumber, clampNumber } from "../canvasViewport";
 import { normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
 import { backendExportSchemePath } from "../backendExportPath";
@@ -590,8 +590,8 @@ export function createStateIconDrawingElementFromStaticTemplate(__appScope: Reco
   const baseKind = stateIconBaseStaticTemplateKind(template?.kind);
   const editableKind = STATE_ICON_EDITABLE_STATIC_KIND_BY_TEMPLATE_KIND[baseKind];
   const size = template?.size ?? {};
-  const templateWidth = Math.max(1, Number(size.width) || 96);
-  const templateHeight = Math.max(1, Number(size.height) || 64);
+  const templateWidth = atLeastOneNumber(size.width, 96);
+  const templateHeight = atLeastOneNumber(size.height, 64);
   if (editableKind) {
     const base = createStateIconDrawingElement(editableKind, row);
     const text = stateIconStaticTemplateParam(template, "text", template?.label ?? base.text);
@@ -820,8 +820,8 @@ export function cutStateIconDrawingSelection(current: any, clipboardRef: any, hi
 }
 
 export function stateIconDrawingElementBounds(element: any) {
-  const width = Math.max(1, Number(element.width) || 1);
-  const height = Math.max(1, Number(element.height) || 1);
+  const width = atLeastOneNumber(element.width, 1);
+  const height = atLeastOneNumber(element.height, 1);
   return {
     left: element.x - width / 2,
     right: element.x + width / 2,
@@ -854,8 +854,8 @@ export function stateIconDrawingSelectionBounds(elements: any[]) {
 }
 
 function stateIconDrawingMovementVisibleFrame(element: any, visibleFrames: any) {
-  const width = Math.max(1, Number(element.width) || 1);
-  const height = Math.max(1, Number(element.height) || 1);
+  const width = atLeastOneNumber(element.width, 1);
+  const height = atLeastOneNumber(element.height, 1);
   let frame: any = null;
   if (element?.kind === "image") {
     const key = `${element.id}:${element.imageHref ?? ""}:${element.imageFit ?? "cover"}:${element.imageScale ?? 1}:${element.cropX ?? 0}:${element.cropY ?? 0}`;
@@ -867,8 +867,8 @@ function stateIconDrawingMovementVisibleFrame(element: any, visibleFrames: any) 
   if (!frame || !(Number(frame.width) > 0) || !(Number(frame.height) > 0)) {
     return { x: -width / 2, y: -height / 2, width, height };
   }
-  const basisWidth = Math.max(1, Number(frame.basisWidth) || width);
-  const basisHeight = Math.max(1, Number(frame.basisHeight) || height);
+  const basisWidth = atLeastOneNumber(frame.basisWidth, width);
+  const basisHeight = atLeastOneNumber(frame.basisHeight, height);
   const scaleX = width / basisWidth;
   const scaleY = height / basisHeight;
   return {
@@ -1262,7 +1262,7 @@ export function createComputeStateIconDrawingSmartAlignmentSnap(__appScope: Reco
 }
 
 export function stateIconDrawingFrameDashArray(frame: any) {
-  const width = Math.max(1, Number(frame?.strokeWidth) || 1);
+  const width = atLeastOneNumber(frame?.strokeWidth, 1);
   if (frame?.strokeStyle === "dotted") {
     return `${width * 0.2} ${width * 2}`;
   }
@@ -4015,8 +4015,8 @@ export function stateIconDrawingImportedSvgSelectionFrame(element: any) {
   if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
     return null;
   }
-  const elementWidth = Math.max(1, Number(element.width) || 1);
-  const elementHeight = Math.max(1, Number(element.height) || 1);
+  const elementWidth = atLeastOneNumber(element.width, 1);
+  const elementHeight = atLeastOneNumber(element.height, 1);
   const scale = Math.min(elementWidth / width, elementHeight / height);
   const fittedWidth = width * scale;
   const fittedHeight = height * scale;
