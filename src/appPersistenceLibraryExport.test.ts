@@ -42,6 +42,7 @@ import {
   fetchBackendSchemes,
   renderEnumValuesEditor
 } from "./appExtracted/appPersistenceLibraryExport";
+import type { GraphTemplate } from "./appExtracted/appCoreCanvasUtilities";
 import { applyDeviceTemplateDefinitionOverride, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, type DeviceTemplate } from "./model";
 import { deviceDefinitionOverrideForTemplate, deviceDefinitionSharedKeyForTemplate } from "./customDeviceUtils";
 import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
@@ -50,7 +51,7 @@ import { emptyUserDeviceLibrary } from "./userCustomizations";
 
 const PNG_1X1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
-const sampleGraphTemplate = (id: string, typeName: string, name: string) => ({
+const sampleGraphTemplate = (id: string, typeName: string, name: string): GraphTemplate => ({
   id,
   typeName,
   name,
@@ -61,8 +62,13 @@ const sampleGraphTemplate = (id: string, typeName: string, name: string) => ({
         id: `${id}-node`,
         kind: "static-rect",
         name: "矩形",
+        nodeNumber: "",
+        acTopologyNode: 0,
+        dcTopologyNode: 0,
         position: { x: 0, y: 0 },
         size: { width: 40, height: 24 },
+        rotation: 0,
+        scale: 1,
         params: {},
         terminals: []
       }

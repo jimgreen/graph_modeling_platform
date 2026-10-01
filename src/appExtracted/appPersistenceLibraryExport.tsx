@@ -1,4 +1,3 @@
-// @ts-nocheck
 export * from "../export/svg";
 import { buildSvgDocument, nodeGeometryTransform, setSvgImageAssetsReader } from "../export/svg";
 // 分类库名归一化单源在 Node 直载的纯模块（原此处另有一份实现）
@@ -6,7 +5,7 @@ import { normalizeCategoryLibraryName } from "../export/device-definition-shared
 import { memo, MouseEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { apiPath } from "../config";
-import { Select, Input, Button } from "antd";
+import { Select, Input, Button, type InputRef } from "antd";
 import {
   componentLibraryDefinitionFromMetadata,
   resolveComponentLibraryClassMetadata
@@ -14,6 +13,43 @@ import {
 import { normalizeDeviceMeasurementDefinitions } from "../measurementDefinitionTypes";
 import { WindowCloseButton } from "../WindowCloseButton";
 import { normalizeSymbolExportSchemes, symbolExportFileName, standaloneSymbolsZipFileName, type SymbolExportScheme, type SymbolExportSchemesPayload } from "../symbolExportSvg";
+// 读取自定义元件库清单的**入参**形状：本体 CustomComponentLibraryDefinition 把
+// categoryLibraryName 声明为必填，而 SymbolExportDialog 侧的
+// CustomComponentLibraryDefinitionLike 是可选。取两者交集（只留 name 必填），
+// 这样两类调用方都能直接传，无需各自转换。
+type CustomComponentLibraryRef = {
+  name: string;
+  label?: string;
+  categoryLibraryName?: string;
+  derivedFromComponentLibrary?: string;
+  isDerivedComponentLibrary?: boolean;
+};
+
+import type {
+  BackendColorConfigResponse,
+  BackendDeviceLibraryResponse,
+  BackendMeasurementConfigResponse,
+  BackendProjectLoadResponse,
+  BackendProjectSaveResponse,
+  BackendSchemeArchiveImportResponse,
+  BackendSchemesResponse,
+  CategoryLibrary,
+  CategoryLibraryComponentLibraryGroup,
+  CustomComponentLibraryDefinition,
+  CustomComponentTreeSelection,
+  DeviceLibraryDialogKind,
+  DeviceLibraryPersistencePayload,
+  FloatingDialogLayout,
+  GraphTemplate,
+  ImageAsset,
+  ImageFolder,
+  NodeDoubleClickDialogKind,
+  NodeDoubleClickDialogLayout,
+  RenderViewportBounds,
+  ScaleHandleConfig,
+  SmartAlignmentAnchorMap
+} from "./appCoreCanvasUtilities";
+
 import {
   Download,
   FileInput,
@@ -149,7 +185,9 @@ export function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
         ? project.powerBaseValue
         : DEFAULT_POWER_BASE_VALUE,
     subcontrolarea: project.subcontrolarea ?? "默认区域",
-    modelType: project.modelType ?? "",
+    // 类型写的是 ModelType（不含空串），运行期缺省确实是空串：全部 55 处读取都按假值
+    // 判断「未设类型」，行为与 undefined 一致。放宽 ModelType 会波及所有读取点，不划算。
+    modelType: (project.modelType ?? "") as ProjectFile["modelType"],
     substation: project.substation ?? "",
     feeder: project.feeder ?? "",
     taiqu: project.taiqu ?? "",
@@ -714,7 +752,7 @@ const normalizeIconLibraryFolderId = (value: unknown, fallback = "root") => {
 const normalizeIconLibraryFolders = (value: unknown): ImageFolder[] => {
   const source = Array.isArray(value) ? value : [];
   const seen = new Set<string>();
-  const folders = source.flatMap((item) => {
+  const folders = source.flatMap((item): ImageFolder[] => {
     const raw = item && typeof item === "object" ? item as Partial<ImageFolder> : {};
     const id = normalizeIconLibraryFolderId(raw.id);
     if (!id || id === "builtin-shared-icons" || seen.has(id)) {
@@ -981,7 +1019,7 @@ export function groupDeviceTemplatesByCategoryLibrary(templates: DeviceTemplate[
 
 export function groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(
   templates: DeviceTemplate[],
-  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = []
+  customComponentLibraries: readonly CustomComponentLibraryRef[] = []
 ): Record<string, CategoryLibraryComponentLibraryGroup[]> {
   const grouped = new Map<string, Map<string, DeviceTemplate[]>>();
   const ensureSection = (categoryLibraryName: string, sectionName: string) => {
@@ -1014,7 +1052,9 @@ export function groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(
   }
   for (const componentLibrary of customComponentLibraries) {
     if (!componentLibrary.isDerivedComponentLibrary) {
-      ensureSection(componentLibrary.categoryLibraryName, componentLibrary.name);
+      // categoryLibraryName 在 SymbolExportDialog 侧的形状里是可选的；缺省按空串处理，
+      // 与必填形状下实际持有的值一致（ensureSection 会把空串归到默认分类）。
+      ensureSection(componentLibrary.categoryLibraryName ?? "", componentLibrary.name);
     }
   }
   return Object.fromEntries(
@@ -1034,14 +1074,14 @@ export function normalizeLibrarySearchText(value: string) {
 export const categoryLibraryComponentLibraryKey = (categoryLibraryName: string, sectionName: string) =>
   `${normalizeCategoryLibraryName(categoryLibraryName)}::${sectionName}`;
 
-function customComponentLibraryLabel(sectionName: string, customComponentLibraries: readonly CustomComponentLibraryDefinition[] = []) {
+function customComponentLibraryLabel(sectionName: string, customComponentLibraries: readonly CustomComponentLibraryRef[] = []) {
   const sectionKey = normalizeComponentLibraryName(sectionName).toLowerCase();
   return customComponentLibraries.find((item) => item.name.toLowerCase() === sectionKey)?.label?.trim() ?? "";
 }
 
 export function componentLibraryDisplayParts(
   sectionName: string,
-  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = []
+  customComponentLibraries: readonly CustomComponentLibraryRef[] = []
 ) {
   const english = normalizeComponentLibraryName(sectionName);
   const customChinese = customComponentLibraryLabel(english, customComponentLibraries);
@@ -1055,7 +1095,7 @@ export function componentLibraryDisplayParts(
 
 export function componentLibraryDisplayName(
   sectionName: string,
-  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = []
+  customComponentLibraries: readonly CustomComponentLibraryRef[] = []
 ) {
   const display = componentLibraryDisplayParts(sectionName, customComponentLibraries);
   return display.english ? display.title : display.chinese;
@@ -1088,7 +1128,7 @@ export function libraryTemplateMatchesSearch(
   group: string,
   section: string,
   needle: string,
-  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = []
+  customComponentLibraries: readonly CustomComponentLibraryRef[] = []
 ) {
   if (!needle) {
     return true;
@@ -1112,7 +1152,7 @@ export function libraryTemplateMatchesSearch(
 export function filterCategoryLibraryComponentLibraryGroups(
   grouped: Record<string, CategoryLibraryComponentLibraryGroup[]>,
   needle: string,
-  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = []
+  customComponentLibraries: readonly CustomComponentLibraryRef[] = []
 ) {
   if (!needle) {
     return grouped;
@@ -1819,7 +1859,7 @@ function EnumValuesEditor<T extends DeviceParameterDefinition & { id: string }>(
   const [draftOptions, setDraftOptions] = useState<DeviceParameterEnumOption[]>([]);
   const [draftTypicalValue, setDraftTypicalValue] = useState("");
   const [validationMessage, setValidationMessage] = useState("");
-  const firstInputRef = useRef<HTMLInputElement | null>(null);
+  const firstInputRef = useRef<InputRef | null>(null);
 
   const openDialog = () => {
     const options = enumEditorOptionsForRow(row);
@@ -3576,9 +3616,11 @@ function customComponentTreeSelectionsEqual(first: CustomComponentTreeSelection,
   if (first.section !== second.section) {
     return false;
   }
-  if (first.kind === "component" || second.kind === "component") {
-    return first.kind === second.kind && first.templateKind === second.templateKind;
+  if (first.kind === "component" && second.kind === "component") {
+    return first.templateKind === second.templateKind;
   }
+  // 走到这里 kind 必相同（开头已挡掉不等），且都不是 categoryLibrary —— 只剩
+  // componentLibrary，而它没有 templateKind，比较结果恒为相等。
   return true;
 }
 
@@ -3591,7 +3633,7 @@ export type CustomComponentClassTreeNode = {
 export function buildCustomComponentClassTree(
   categoryLibraryName: string,
   typeGroups: readonly CategoryLibraryComponentLibraryGroup[],
-  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = [],
+  customComponentLibraries: readonly CustomComponentLibraryRef[] = [],
   searchQuery = ""
 ): CustomComponentClassTreeNode[] {
   const categoryLibrary = normalizeCategoryLibraryName(categoryLibraryName);
@@ -3685,7 +3727,7 @@ export function buildCustomComponentClassTree(
     }
   }
   for (const definition of customComponentLibraries) {
-    if (normalizeCategoryLibraryName(definition.categoryLibraryName) !== categoryLibrary) {
+    if (normalizeCategoryLibraryName(definition.categoryLibraryName ?? "") !== categoryLibrary) {
       continue;
     }
     ensureNode(definition.name);
@@ -3806,7 +3848,7 @@ export function buildComponentCatalog(options: {
 export function rootComponentLibraryGroupsForDisplay(
   categoryLibraryName: string,
   typeGroups: readonly CategoryLibraryComponentLibraryGroup[],
-  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = [],
+  customComponentLibraries: readonly CustomComponentLibraryRef[] = [],
   searchQuery = ""
 ): CategoryLibraryComponentLibraryGroup[] {
   const roots = buildCustomComponentClassTree(

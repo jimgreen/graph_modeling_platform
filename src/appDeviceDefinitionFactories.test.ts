@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -2197,7 +2197,7 @@ describe("manual bend interaction helpers", () => {
     });
     const refreshedOverrides = normalizeDeviceLibraryPersistencePayload(
       JSON.parse(JSON.stringify(frontendPayload))
-    ).deviceDefinitionOverrides;
+    ).deviceDefinitionOverrides!;
     const reopen = (template: any) => createCustomDeviceDraftFromTemplate(
       applyDeviceTemplateDefinitionOverride(
         template,
@@ -2208,7 +2208,8 @@ describe("manual bend interaction helpers", () => {
     const verticalDraft = reopen(vertical);
 
     expect(savedNames.indexOf(reorderedDefinitions[4].enName)).toBeLessThan(savedNames.indexOf(reorderedDefinitions[5].enName));
-    expect(refreshedOverrides[sharedKey].parameterDefinitions.map((definition: { enName: string }) => definition.enName)).toEqual(savedNames);
+    const refreshedSharedOverride = refreshedOverrides[sharedKey!];
+    expect(refreshedSharedOverride?.parameterDefinitions?.map((definition: { enName: string }) => definition.enName)).toEqual(savedNames);
     expect(horizontalDraft.params.map((definition) => definition.enName)).toEqual(savedNames);
     expect(verticalDraft.params.map((definition) => definition.enName)).toEqual(savedNames);
     expect(horizontalDraft.measurementDefinitions).toEqual(measurementDefinitions);
