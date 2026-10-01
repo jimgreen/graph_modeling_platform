@@ -505,12 +505,30 @@ async function readSchemeProjectFile(filePath, fileName, paths = defaultPaths) {
 
 async function readSchemeProjectSummaryFile(filePath, fileName) {
   const fileBaseName = fileName.replace(/\.json$/iu, "");
-  let storedProject = {};
+  // 与 readSchemeProjectFile 同一个洞的另一半：此前「读盘 + 解析」共用一个 catch，
+  // 任何失败都退化成「只有文件名」的摘要。于是磁盘写权限没了 / 磁盘满 / 文件被占用，
+  // 模型照样混进方案树，字面上与正常条目无异、日志里一个字都没有 —— 排查者只会得出
+  // 「模型被改名或删了」的错误结论（完整路径那份已在 01f6010a 修掉）。
+  // 拆分后：真读不动（非 ENOENT）上抛，由各调用方既有 catch 映成 500；
+  // ENOENT（readdir 列举与读盘之间模型被删掉的竞态）与 JSON 损坏都沿用既有降级语义，
+  // 只是后者补上告警，不让「内容坏了」也静默。
+  let raw = null;
   try {
-    const parsed = JSON.parse(await readFile(filePath, "utf-8"));
-    storedProject = parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    storedProject = {};
+    raw = await readFile(filePath, "utf-8");
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw new Error(`模型文件读取失败：${filePath}（${error?.code ?? error?.name ?? "unknown"}）`, { cause: error });
+    }
+  }
+  let storedProject = {};
+  if (raw !== null) {
+    try {
+      const parsed = JSON.parse(raw);
+      storedProject = parsed && typeof parsed === "object" ? parsed : {};
+    } catch (error) {
+      // 内容坏了仍按「仅文件名」摘要返回（既有契约：摘要路径不因单个文件损坏而少一项）
+      warnStoreReadFallback(error, filePath, "按「仅文件名」摘要处理");
+    }
   }
   const name = storageProjectDisplayName(storedProject.name || storedProjectFilePartDisplayName(fileBaseName));
   const idx = Number(storedProject.idx);
