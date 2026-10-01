@@ -1,4 +1,4 @@
-import { access, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, readFile, readdir, rm } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { isModelJsonFile } from "./schemeFiles.mjs";
@@ -588,10 +588,14 @@ function referenceOwner(record, reference) {
   return reference;
 }
 
+// 同样走原子写：这里改的是**用户的模型文件本身**（rebuildFromStorage 会就地重写
+// schemes/files/**.json）。此前是裸 writeFile —— 进程在写到一半时崩溃/断电，模型文件
+// 就停在半截 JSON 上，该模型直接报废且无从恢复。shared/atomicWrite.mjs 的文件头把
+// 「manifest 非原子写」列为 A1-P0-1，正是这类问题；模型文件的分量比 manifest 更重。
 async function writeProjectIfChanged(filePath, originalText, project) {
   const nextText = `${JSON.stringify(project, null, 2)}\n`;
   if (originalText.trim() !== nextText.trim()) {
-    await writeFile(filePath, nextText, "utf-8");
+    await atomicWriteFile(filePath, nextText, "utf-8");
     return true;
   }
   return false;
