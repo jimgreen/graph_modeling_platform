@@ -94,6 +94,15 @@ export function clampNumber(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * 至少为 1 的正数：0 / NaN / 缺值退回 fallback。
+ * 逐字等价于 `Math.max(1, Number(value) || fallback)`（Infinity 原样保留，不当缺值处理）。
+ */
+export function atLeastOneNumber(value: unknown, fallback = 1): number {
+  const parsed = Number(value);
+  return Math.max(1, parsed === 0 || Number.isNaN(parsed) ? fallback : parsed);
+}
+
 /* 内部辅助 */
 
 function canvasResizeEdgeAnchorsAxis(edge: CanvasResizeEdge, axis: "x" | "y") {

@@ -216,7 +216,7 @@ describe("★ expandStateIconDrawingElementIds：选一个 → 带上整组", ()
   });
 });
 
-describe("stateIconDrawingElementBounds：`Math.max(1, Number(w) || 1)`", () => {
+describe("stateIconDrawingElementBounds：`atLeastOneNumber`（原先内联的 `Math.max(1, Number(w) || 1)`）", () => {
   test("正常值：中心 ± 半宽", () => {
     expect(stateIconDrawingElementBounds({ x: 100, y: 50, width: 20, height: 10 })).toEqual({
       left: 90, right: 110, top: 45, bottom: 55,

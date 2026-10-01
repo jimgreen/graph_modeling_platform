@@ -4,6 +4,7 @@ import { STATE_ICON_DRAWING_MIN_FONT_SIZE, appendDistinctStateIconDrawingPoint, 
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, STATE_ICON_CLOSED_SHAPE_KINDS, STATE_ICON_LINE_SHAPE_KINDS, STATE_ICON_STATIC_TEMPLATE_SECTIONS_COVERED_BY_BASIC_TOOLS, STATE_ICON_STATIC_TEMPLATE_SECTION_ORDER } from "./appDeviceDefinitionEInterface";
 import { modelAssociationDeviceModelTypeFailureMessage, switchingDeviceUsesClosedStatus } from "../model";
+import { atLeastOneNumber } from "../canvasViewport";
 
 import { Select, InputNumber } from "antd";
 // 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 遮住）：按真实出处补齐，均为 type-only import。
@@ -636,10 +637,10 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       };
       const visualElement = stateIconCanvasTerminalVisualElement;
       if (visualElement) {
-        const elementWidth = Math.max(1, Number(visualElement.width) || 1);
-        const elementHeight = Math.max(1, Number(visualElement.height) || 1);
-        const nodeWidth = Math.max(1, Number(node.size?.width) || 1);
-        const nodeHeight = Math.max(1, Number(node.size?.height) || 1);
+        const elementWidth = atLeastOneNumber(visualElement.width, 1);
+        const elementHeight = atLeastOneNumber(visualElement.height, 1);
+        const nodeWidth = atLeastOneNumber(node.size?.width, 1);
+        const nodeHeight = atLeastOneNumber(node.size?.height, 1);
         const elementScale = Math.min(elementWidth / nodeWidth, elementHeight / nodeHeight);
         const elementRadians = ((Number(visualElement.rotation) || 0) * Math.PI) / 180;
         const elementCos = Math.cos(elementRadians);
@@ -772,7 +773,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       const guideValues = Array.isArray(CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES)
         ? CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES
         : [];
-      const guideTolerance = 1 / Math.max(1, Number(CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION) || 1);
+      const guideTolerance = 1 / atLeastOneNumber(CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, 1);
       const activeGuideX = customDeviceTerminalAnchorValue(activeDisplayedAnchor.x);
       const activeGuideY = customDeviceTerminalAnchorValue(activeDisplayedAnchor.y);
       guideValues.forEach((guideValue) => {
@@ -1059,8 +1060,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         if (right < left || bottom < top) {
           return;
         }
-        const elementWidth = Math.max(1, Number(element.width) || 1);
-        const elementHeight = Math.max(1, Number(element.height) || 1);
+        const elementWidth = atLeastOneNumber(element.width, 1);
+        const elementHeight = atLeastOneNumber(element.height, 1);
         const renderWidth = elementWidth * Math.max(0.05, Number(element.imageScale) || 1);
         const renderHeight = elementHeight * Math.max(0.05, Number(element.imageScale) || 1);
         const imageScale = Math.max(renderWidth / sourceWidth, renderHeight / sourceHeight);
@@ -1107,8 +1108,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       }
       const basisWidth = Math.max(1, Number(frame.basisWidth) || Number(element.width) || 1);
       const basisHeight = Math.max(1, Number(frame.basisHeight) || Number(element.height) || 1);
-      const scaleX = Math.max(1, Number(element.width) || 1) / basisWidth;
-      const scaleY = Math.max(1, Number(element.height) || 1) / basisHeight;
+      const scaleX = atLeastOneNumber(element.width, 1) / basisWidth;
+      const scaleY = atLeastOneNumber(element.height, 1) / basisHeight;
       const scaledFrame = {
         x: frame.x * scaleX,
         y: frame.y * scaleY,
@@ -1176,8 +1177,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         if (right < left || bottom < top) {
           return;
         }
-        const elementWidth = Math.max(1, Number(element.width) || 1);
-        const elementHeight = Math.max(1, Number(element.height) || 1);
+        const elementWidth = atLeastOneNumber(element.width, 1);
+        const elementHeight = atLeastOneNumber(element.height, 1);
         const paddingX = (-measurement.x) - elementWidth / 2;
         const paddingY = (-measurement.y) - elementHeight / 2;
         const scaleX = measurement.width / sourceWidth;
@@ -1221,8 +1222,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       }
       const basisWidth = Math.max(1, Number(frame.basisWidth) || Number(element.width) || 1);
       const basisHeight = Math.max(1, Number(frame.basisHeight) || Number(element.height) || 1);
-      const scaleX = Math.max(1, Number(element.width) || 1) / basisWidth;
-      const scaleY = Math.max(1, Number(element.height) || 1) / basisHeight;
+      const scaleX = atLeastOneNumber(element.width, 1) / basisWidth;
+      const scaleY = atLeastOneNumber(element.height, 1) / basisHeight;
       const scaledFrame = {
         x: frame.x * scaleX,
         y: frame.y * scaleY,
@@ -2405,9 +2406,9 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         </tr>
                         <tr>
                           <th>宽</th>
-                          <td><InputNumber size="small" min={1 as never} step={0.01} value={formatStateIconDrawingNumber(selected.width, 1) as never} onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue ?? 0) || 1) })} /></td>
+                          <td><InputNumber size="small" min={1 as never} step={0.01} value={formatStateIconDrawingNumber(selected.width, 1) as never} onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, { width: atLeastOneNumber(nextValue ?? 0, 1) })} /></td>
                           <th>高</th>
-                          <td><InputNumber size="small" min={1 as never} step={0.01} value={formatStateIconDrawingNumber(selected.height, 1) as never} onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(nextValue ?? 0) || 1) })} /></td>
+                          <td><InputNumber size="small" min={1 as never} step={0.01} value={formatStateIconDrawingNumber(selected.height, 1) as never} onChange={(nextValue: number | null) => updateStateIconDrawingElement(selected.id, { height: atLeastOneNumber(nextValue ?? 0, 1) })} /></td>
                         </tr>
                         <tr>
                           <th>角度</th>
