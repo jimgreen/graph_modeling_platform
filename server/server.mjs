@@ -3472,10 +3472,13 @@ export async function importSchemeArchiveBuffer(options) {
     throw new Error("目标方案路径无效。");
   }
   let targetExists = false;
+  // stat 失败是否属于「状态未知」：只有 ENOENT 能断言目录不存在，EACCES 等只说明读不到，
+  // 拿它当「不存在」会让下面的回滚有权去删一个其实早已存在的用户目录。
+  let targetStateUnknown = false;
   try {
     targetExists = (await stat(targetDir)).isDirectory();
-  } catch {
-    targetExists = false;
+  } catch (error) {
+    targetStateUnknown = error?.code !== "ENOENT";
   }
   if (targetExists && mode !== "overwrite") {
     return {
@@ -3489,7 +3492,28 @@ export async function importSchemeArchiveBuffer(options) {
   if (targetExists) {
     await archiveSchemeStoreEntry(targetDir, filesRoot, trashRoot, schemeArchiveId());
   }
-  await extractSchemeZipToDirectory(zip, targetDir, zipRootName);
+  try {
+    await extractSchemeZipToDirectory(zip, targetDir, zipRootName);
+  } catch (error) {
+    // 失败不留半成品方案：照 handleImportSpaceArchive 的同一口径（那边的理由写得更全）。
+    // 此前这里直接冒泡，解包到一半失败会在方案树里留下一个看着正常、实则缺文件的方案目录，
+    // 用户无从分辨「导入失败」与「导入成功但模型丢了」；覆盖模式下更糟 —— 旧方案已被移进
+    // 回收站、新方案又是半份，等于两头落空。
+    //
+    // 删除前提：此刻 targetDir 里只可能有本次解包的产物 —— 新建模式它本就不存在，
+    // 覆盖模式旧方案已被上面的 archiveSchemeStoreEntry **rename 走**了。
+    // stat 失败但非 ENOENT 时目录状态未知，此时宁可不删（留半成品）也不能赌用户数据。
+    if (!targetStateUnknown) {
+      await rm(targetDir, { recursive: true, force: true }).catch((rollbackError) => {
+        // 回滚失败（Windows 上目录句柄占用会让删除 EPERM/EBUSY）时半成品会留在原地，
+        // 不能一点线索都不留
+        console.warn(`[scheme-import] 回滚半成品方案「${importName}」失败：${rollbackError.message}`);
+      });
+    } else {
+      console.warn(`[scheme-import] 目标目录状态未知（stat 非 ENOENT 失败），跳过回滚：${targetDir}`);
+    }
+    throw error;
+  }
   return {
     conflict: false,
     importedName: importName,
