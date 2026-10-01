@@ -634,7 +634,9 @@ describe("dot model import factories", () => {
   });
 });
 
-describe("manual bend interaction helpers", () => {
+// 这个分组曾叫 "manual bend interaction helpers"，但里面 88 条用例里只有 2 条与手动折线有关，
+// 其余全是元件定义持久化 / 元件库 / 复制粘贴 / SVG 导出。按实际内容改名，手动折线那两条单列一组。
+describe("device definition persistence, library and export factories", () => {
   test("collects referenced images from the rendered background page for svg export", () => {
     const backendImageIdFromHref = (href: string) => {
       const match = new RegExp(apiPath("/images/([^/?#]+)")).exec(href);
@@ -5503,6 +5505,9 @@ describe("manual bend interaction helpers", () => {
     expect(normalizeStateIconDrawingStrokeWidth("-3")).toBe(0);
   });
 
+  });
+
+describe("manual bend interaction helpers", () => {
   test("finds endpoint-adjacent route segments when adding a manual bend", () => {
     const findEditableRouteSegmentIndex = createFindEditableRouteSegmentIndex({
       routeSegmentPointerDistance: createRouteSegmentPointerDistance({}),
