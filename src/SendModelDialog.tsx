@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useState } from "react";
 import { Send } from "lucide-react";
 import { Input, Button, Checkbox, Select, Segmented } from "antd";
@@ -114,7 +113,7 @@ createServer(async (req, res) => {
 
 // 示例 key → highlight.js 语言名。逐行高亮：代码块要显示行号，若按整段高亮后再拆行
 // 会打断跨行的 span 配对，分行独立高亮最稳（示例里没有跨行字符串或多行注释）。
-const RECEIVER_SAMPLE_LANGUAGES = { python: "python", node: "javascript" };
+const RECEIVER_SAMPLE_LANGUAGES: Record<string, string> = { python: "python", node: "javascript" };
 const HIGHLIGHTED_SAMPLES = RECEIVER_SAMPLES.map((sample) => {
   const language = RECEIVER_SAMPLE_LANGUAGES[sample.key] ?? "javascript";
   const htmlLines = sample.code.split("\n").map((line) => hljs.highlight(line, { language }).value);
