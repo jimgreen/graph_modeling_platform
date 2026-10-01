@@ -1,11 +1,11 @@
 // 空间注册表 + 路径工厂 + 越界断言。
 // default 空间直接复用数据根：既有 data/ 原地不动（9 个后端测试与 3 处测试
 // 直读仓库 data/ 的扁平布局，搬迁会让它们静默失效）。
-import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { spaceIdFromName, isValidSpaceId, isReservedSpaceId, normalizeSpaceName } from "./spaceId.mjs";
+import { atomicWriteFile } from "../shared/atomicWrite.mjs";
 
 const SCHEMA_VERSION = 1;
 const DEFAULT_SPACE_ID = "default";
@@ -93,12 +93,11 @@ export function createSpaceStore(dataRoot) {
     return run;
   };
 
+  // 原子写经 shared/atomicWrite.mjs：tmp 文件名带 pid + randomUUID（同进程可能有第二个
+  // store 实例，只用 pid 会撞车），且**写失败会清理 tmp**。此前手搓的 tmp+rename 在失败时
+  // 把半截 spaces.json.<pid>.<uuid>.tmp 永久留在数据根，没有任何清理会扫到它。
   async function writeState(next) {
-    await mkdir(resolvedRoot, { recursive: true });
-    // 同进程可能存在第二个 store 实例（服务端注入场景），只用 pid 会撞 tmp 文件
-    const tmp = `${spacesFile}.${process.pid}.${randomUUID()}.tmp`;
-    await writeFile(tmp, JSON.stringify(next, null, 2), "utf-8");
-    await rename(tmp, spacesFile);
+    await atomicWriteFile(spacesFile, JSON.stringify(next, null, 2), "utf-8");
     state = next;
   }
 

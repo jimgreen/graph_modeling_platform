@@ -1,7 +1,8 @@
-import { access, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { access, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { isModelJsonFile } from "./schemeFiles.mjs";
+import { atomicWriteFile } from "../shared/atomicWrite.mjs";
 
 export const GLOBAL_LINE_ID_PARAM = "_globalLineId";
 const GLOBAL_LINE_MODEL_PAIR_PARAM = "_globalLineModelPair";
@@ -235,12 +236,14 @@ async function fileExists(filePath) {
   }
 }
 
+// 原子写经 shared/atomicWrite.mjs（tmp+rename+**失败清理**）。
+// 此前这里是手搓的 tmp+rename：写失败（磁盘满 / 权限丢失 / Windows 上文件被占用）
+// 会把 `<registry>.json.<pid>.<uuid>.tmp` 永久留在 schemes/ 下，且不会被任何清理扫到。
+// 后果不止是垃圾文件——空间导出 ZIP 遍历整个 schemes/（只排除 schemes/trash），
+// 这些半截 JSON 会被打进用户的备份包里，再导入时一起回到空间里。
 async function writeState(filePath, state) {
-  await mkdir(dirname(filePath), { recursive: true });
-  const tmpPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
   const content = `${JSON.stringify({ ...state, schemaVersion: SCHEMA_VERSION }, null, 2)}\n`;
-  await writeFile(tmpPath, content, "utf-8");
-  await rename(tmpPath, filePath);
+  await atomicWriteFile(filePath, content, "utf-8");
 }
 
 async function listProjectJsonFiles(rootDir) {
