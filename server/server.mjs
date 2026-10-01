@@ -2834,6 +2834,8 @@ function invalidProjectEnumParameters(project) {
   }));
 }
 
+const isPlainObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
 // 量测配置同样按「渲染层可无条件解引用」的形状归一：svg.ts 的 measurementMarkup 直接
 // `measurements.groups.map(...)`，而 measurements 不是对象时（手写 JSON 里写成字符串、
 // 数组，或整个缺失）就会抛 `reading 'map'`，SVG 导出 500。
@@ -2901,28 +2903,21 @@ function normalizeProjectForStorage(project) {
         return {
           ...node,
           kind: String(node.kind ?? ""),
-          // 缺位置按画布原点算；缺尺寸按 0（节点没声明尺寸时，这是诚实的取值）
-          position: {
-            x: Number(node.position?.x) || 0,
-            y: Number(node.position?.y) || 0
-          },
-          size: {
-            width: Number(node.size?.width) || 0,
-            height: Number(node.size?.height) || 0
-          },
+          // 已经是对象就**原样复用**，不另造一份：本函数在每次模型读取时都跑（方案树
+          // 带 includeProjects=1 时是每个模型一次），按节点新造 position/size/anchor
+          // 会给正常数据平白加三份分配。只有畸形输入才落到默认值分支。
+          // 缺位置按画布原点算；缺尺寸按 0 —— 节点没声明时，这是诚实的取值。
+          position: isPlainObject(node.position) ? node.position : { x: 0, y: 0 },
+          size: isPlainObject(node.size) ? node.size : { width: 0, height: 0 },
           params,
           terminals: (Array.isArray(node.terminals) ? node.terminals : [])
             .filter((terminal) => terminal && typeof terminal === "object")
             // 端子锚点同理：缺 anchor 的端子在 SVG 导出里撞 `anchor.x`。
             // 全仓没有任何地方靠「anchor 缺席」分支（grep 过），补默认值是安全的。
             // 缺锚点按节点原点算 —— 端子没声明位置时，这是诚实的取值。
-            .map((terminal) => ({
-              ...terminal,
-              anchor: {
-                x: Number(terminal.anchor?.x) || 0,
-                y: Number(terminal.anchor?.y) || 0
-              }
-            }))
+            .map((terminal) => (isPlainObject(terminal.anchor)
+              ? terminal
+              : { ...terminal, anchor: { x: 0, y: 0 } }))
         };
       }),
     edges: (Array.isArray(project?.edges) ? project.edges : [])
