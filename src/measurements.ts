@@ -155,6 +155,14 @@ export type MeasurementProfilePositionSource = Pick<DeviceTemplate, "kind" | "te
     | "terminalAssociations"
     | "isContainer"
     | "parameterDefinitions"
+    // 函数内部会把 source 断言成 DeviceTemplate 再交给 resolveEffectiveTemplateParameterDefinitions，
+    // 而后者要读 template.isDerivedComponentLibrary 决定是否走派生元件的继承规则。
+    // 调用方（appRenderBatch / appView 的自定义元件草稿）确实会传这个字段，此前类型里没列，
+    // 被 @ts-nocheck 一起遮住了。
+    | "isDerivedComponentLibrary"
+    | "derivedFromComponentLibrary"
+    | "derivedComponentLibrary"
+    | "derivedComponentLibraryLabel"
   >>;
 
 function measurementParameterDefinitionKey(definition: Pick<DeviceParameterDefinition, "enName">) {

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // 从 App.tsx 第 3053-6217 行提取
 import { useMemo, useEffect, useCallback, useLayoutEffect } from "react";
 import type { LibraryPackageScope } from "./appPersistenceLibraryExport";
@@ -191,6 +190,29 @@ import {
 import { imagePickerUsesLibraryTabs } from "./appView";
 import { createCimExport } from "../cim/cim-export";
 import { apiPath } from "../config";
+// 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 遮住）：按真实出处补齐，均为 type-only import。
+import type { ChangeEvent, CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type {
+  CanvasSelectionSnapshot,
+  ConnectTarget,
+  DeviceDefinitionMeasurementPanelTarget,
+  DeviceLibraryDialogKind,
+  DraggingState,
+  FilterSelectionTypeOption,
+  GraphDirtyBaseline,
+  GroupTransformEdgeRouteSnapshot,
+  GroupTransformNodeSnapshot,
+  RenderViewportBounds,
+  SingleTransformDrag,
+  StateIconDrawingTarget,
+  StaticDrawingState,
+  UndoGraphPatchScope,
+  UndoSnapshot
+} from "./appCoreCanvasUtilities";
+import type { LibraryPackagePayload } from "./appPersistenceLibraryExport";
+import type { CustomDeviceDraft, CustomParamDraft, DeviceDefinitionDraftRow, DeviceDefinitionVisualDraft, ImageAsset, StateIconDrawingDialogState } from "./appCoreCanvasUtilities";
+import type { IconLibraryCatalogLibrary } from "../iconLibraryCatalog";
+
 
 export function useRenderBatch(__appScope: Record<string, any>) {
   const {
@@ -539,7 +561,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         .then((assets) => {
           const mergedAssets = mergeBuiltinSharedIconAssets(assets);
           setImageAssetList(mergedAssets);
-          setImageAssets((current) => ({ ...current, ...imageAssetsToMap(mergedAssets) }));
+          setImageAssets((current: string[]) => ({ ...current, ...imageAssetsToMap(mergedAssets) }));
         })
         .catch(() => {
           // 后端不可用时保留浏览器本地图片，避免影响画布编辑。
@@ -550,7 +572,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       if (!menu) {
         return;
       }
-      const asset = imageAssetList.find((item) => item.id === menu.assetId);
+      const asset = imageAssetList.find((item: ImageAsset) => item.id === menu.assetId);
       const assetName = asset?.name || asset?.filename || menu.assetId;
       if (!await showGlobalConfirm(`确定删除”${assetName}”吗？如果该图片已被图元引用，删除后对应图元可能无法继续显示该图片。`)) {
         setImageAssetContextMenu(null);
@@ -559,8 +581,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       void (async () => {
         try {
           await deleteBackendImageAsset(menu.assetId);
-          setImageAssetList((current) => current.filter((item) => item.id !== menu.assetId));
-          setImageAssets((current) => {
+          setImageAssetList((current: ImageAsset[]) => current.filter((item: ImageAsset) => item.id !== menu.assetId));
+          setImageAssets((current: ImageAsset[]) => {
             if (!(menu.assetId in current)) {
               return current;
             }
@@ -598,9 +620,9 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     if (!iconLibraryPickerOpen) {
       return;
     }
-    setIconLibraryPicker((current) => ({
+    setIconLibraryPicker((current: Record<string, any>) => ({
       ...current,
-      selectedLibraryId: current.catalog?.libraries?.some((library) => library.id === current.selectedLibraryId)
+      selectedLibraryId: current.catalog?.libraries?.some((library: { id: string }) => library.id === current.selectedLibraryId)
         ? current.selectedLibraryId
         : current.catalog?.libraries?.[0]?.id ?? current.selectedLibraryId,
       selectedCategoryKey: "",
@@ -613,7 +635,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       return;
     }
     let cancelled = false;
-    setIconLibraryPicker((current) => ({
+    setIconLibraryPicker((current: Record<string, any>) => ({
       ...current,
       status: "loading",
       error: ""
@@ -626,7 +648,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         const selectedLibraryId = catalog.libraries.some((library) => library.id === iconLibraryPicker.selectedLibraryId)
           ? iconLibraryPicker.selectedLibraryId
           : catalog.libraries[0]?.id ?? "";
-        setIconLibraryPicker((current) => ({
+        setIconLibraryPicker((current: Record<string, any>) => ({
           ...current,
           status: "ready",
           error: "",
@@ -640,7 +662,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         if (cancelled) {
           return;
         }
-        setIconLibraryPicker((current) => ({
+        setIconLibraryPicker((current: Record<string, any>) => ({
           ...current,
           status: "error",
           error: error instanceof Error ? error.message : "读取分类图标库失败。"
@@ -657,31 +679,31 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     }
     const requestedLibraryIds = iconLibraryPicker.selectedLibraryId
       ? [iconLibraryPicker.selectedLibraryId]
-      : catalog.libraries.map((library) => library.id);
+      : catalog.libraries.map((library: { id: string }) => library.id);
     const loadedIds = new Set(iconLibraryPicker.loadedLibraryIds);
     const loadingIds = new Set(iconLibraryPicker.loadingLibraryIds);
     const missingLibraries = requestedLibraryIds
-      .map((libraryId) => catalog.libraries.find((library) => library.id === libraryId))
-      .filter((library): library is NonNullable<typeof library> => Boolean(library && !loadedIds.has(library.id) && !loadingIds.has(library.id)));
+      .map((libraryId: string) => catalog.libraries.find((library: { id: string }) => library.id === libraryId))
+      .filter((library: { id: string }): library is NonNullable<typeof library> => Boolean(library && !loadedIds.has(library.id) && !loadingIds.has(library.id)));
     if (missingLibraries.length === 0) {
       return;
     }
-    const missingIds = missingLibraries.map((library) => library.id);
-    setIconLibraryPicker((current) => ({
+    const missingIds = missingLibraries.map((library: { id: string }) => library.id);
+    setIconLibraryPicker((current: Record<string, any>) => ({
       ...current,
       status: "loading",
       error: "",
       loadingLibraryIds: Array.from(new Set([...current.loadingLibraryIds, ...missingIds]))
     }));
     void Promise.all(
-      missingLibraries.map(async (library) => ({
+      missingLibraries.map(async (library: IconLibraryCatalogLibrary) => ({
         library,
         icons: flattenIconLibraryManifest(await fetchIconLibraryManifest(library), library)
       }))
     )
       .then((loadedGroups) => {
-        setIconLibraryPicker((current) => {
-          const nextEntriesById = new Map(current.entries.map((entry) => [entry.id, entry] as const));
+        setIconLibraryPicker((current: Record<string, any>) => {
+          const nextEntriesById = new Map(current.entries.map((entry: { id: string }) => [entry.id, entry] as const));
           for (const group of loadedGroups) {
             for (const icon of group.icons) {
               nextEntriesById.set(icon.id, icon);
@@ -706,11 +728,11 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         });
       })
       .catch((error) => {
-        setIconLibraryPicker((current) => ({
+        setIconLibraryPicker((current: Record<string, any>) => ({
           ...current,
           status: "error",
           error: error instanceof Error ? error.message : "读取分类图标清单失败。",
-          loadingLibraryIds: current.loadingLibraryIds.filter((id) => !missingIds.includes(id))
+          loadingLibraryIds: current.loadingLibraryIds.filter((id: string) => !missingIds.includes(id))
         }));
       });
   }, [
@@ -752,7 +774,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       graphSnapshotMode: deepModelSnapshot ? "deep" : "reference",
       graphPatchScope: deepModelSnapshot ? undefined : graphPatchScope,
       projectName,
-      layers: layers.map((layer) => ({ ...layer })),
+      layers: layers.map((layer: { id: string; name: string; visible?: boolean }) => ({ ...layer })),
       activeLayerId,
       canvasWidth,
       canvasHeight,
@@ -1204,7 +1226,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { applyImportedMeasurementLibrary });
   const applyImportedDeviceOrTemplateLibrary = (packagePayload: LibraryPackagePayload, targetScope: LibraryPackageScope) => {
     if (!packagePayload.deviceLibrary) {
-      throw new Error(`导入文件中没有${libraryPackageScopeLabels[targetScope] ?? "库"}数据。`);
+      throw new Error(`导入文件中没有${libraryPackageScopeLabels[targetScope as keyof typeof libraryPackageScopeLabels] ?? "库"}数据。`);
     }
     const next = deviceLibraryPayloadForPackageScope(
       currentDeviceLibraryPersistencePayload(),
@@ -1223,8 +1245,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     setCustomGraphTemplateTypes(next.customGraphTemplateTypes);
     setCustomGraphTemplates(next.customGraphTemplates);
     persistDeviceLibraryChange(next, {
-      success: `${libraryPackageScopeLabels[targetScope]}已导入并保存到后台`,
-      failure: `${libraryPackageScopeLabels[targetScope]}已导入到本地，但保存到后台失败`
+      success: `${libraryPackageScopeLabels[targetScope as keyof typeof libraryPackageScopeLabels]}已导入并保存到后台`,
+      failure: `${libraryPackageScopeLabels[targetScope as keyof typeof libraryPackageScopeLabels]}已导入到本地，但保存到后台失败`
     });
   };
   Object.assign(__appScope, { applyImportedDeviceOrTemplateLibrary });
@@ -1235,7 +1257,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     const result = await importBackendImageLibraryPayload(packagePayload.iconLibrary);
     const importedAssets = Array.isArray(result.assets) ? result.assets : [];
     const nextFolderId = importedAssets[0]?.folderId ?? activeImageFolderId ?? "root";
-    setImageAssets((current) => ({ ...current, ...imageAssetsToMap(importedAssets) }));
+    setImageAssets((current: ImageAsset[]) => ({ ...current, ...imageAssetsToMap(importedAssets) }));
     setActiveImageFolderId(nextFolderId);
     await refreshImageFolders();
     await refreshImagesForFolder(nextFolderId);
@@ -1304,9 +1326,9 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         try {
           const packagePayload = normalizeLibraryPackage(JSON.parse(String(reader.result ?? "{}")));
           if (!libraryPackageScopeMatches(packagePayload.scope, targetScope)) {
-            throw new Error(`当前选择导入${libraryPackageScopeLabels[targetScope]}，但文件类型是${libraryPackageScopeLabels[packagePayload.scope] ?? packagePayload.scope}。`);
+            throw new Error(`当前选择导入${libraryPackageScopeLabels[targetScope as keyof typeof libraryPackageScopeLabels]}，但文件类型是${libraryPackageScopeLabels[packagePayload.scope as keyof typeof libraryPackageScopeLabels] ?? packagePayload.scope}。`);
           }
-          const label = libraryPackageScopeLabels[targetScope] ?? "库";
+          const label = libraryPackageScopeLabels[targetScope as keyof typeof libraryPackageScopeLabels] ?? "库";
           const confirmMessage = targetScope === "all"
             ? "确定导入全部库吗？当前量测定义、类、模板库会被导入文件中的对应配置覆盖，同 ID 图标会被覆盖。"
             : targetScope === "component-library"
@@ -1440,11 +1462,11 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { routePointsSnapshotForMove });
   const snapshotEdgePoints = (sourceEdges = edges) =>
       Object.fromEntries(
-        sourceEdges.map((edge) => [
+        sourceEdges.map((edge: Edge) => [
           edge.id,
           {
             ...cloneEdgeEditablePoints(edge),
-            routePoints: edge.routePoints?.map((point) => ({ ...point }))
+            routePoints: edge.routePoints?.map((point: Point) => ({ ...point }))
           }
         ])
       );
@@ -1452,7 +1474,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const routePointSnapshotToRoutes = (routePoints: Record<string, Point[]>): { edgeId: string; points: Point[]; path: string }[] =>
       Object.entries(routePoints).map(([edgeId, points]) => ({
         edgeId,
-        points: points.map((point) => ({ ...point })),
+        points: points.map((point: Point) => ({ ...point })),
         path: ""
       }));
   Object.assign(__appScope, { routePointSnapshotToRoutes });
@@ -1723,11 +1745,11 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     }
     pushUndoSnapshot();
     const nextBounds = { width, height };
-    const nextNodes = nodes.map((node) => {
+    const nextNodes = nodes.map((node: ModelNode) => {
       const moved = shifted ? translateNodeBy(node, shift) : node;
       return { ...moved, position: clampNodePositionToBounds(moved, nextBounds) };
     });
-    const nextEdges = edges.map((edge) => clampEdgeGeometryToBounds(shifted ? translateEdgeBy(edge, shift) : edge, nextBounds));
+    const nextEdges = edges.map((edge: Edge) => clampEdgeGeometryToBounds(shifted ? translateEdgeBy(edge, shift) : edge, nextBounds));
     if (shifted) {
       shiftCachedRoutesForCanvasOrigin(shift);
     }
@@ -1819,7 +1841,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           </tr>
           <tr>
             {batchEditors.renderChineseParamHeader("fontSize")}
-            <td><InputNumber size="small" min={8} max={160} value={dialogNode.params.fontSize || "24"} onChange={(nextValue) => batchEditors.updateNodeDoubleClickDraftParam(dialogNode.id, "fontSize", String(nextValue ?? ""))} /></td>
+            <td><InputNumber size="small" min={8 as never} max={160 as never} value={dialogNode.params.fontSize || "24"} onChange={(nextValue) => batchEditors.updateNodeDoubleClickDraftParam(dialogNode.id, "fontSize", String(nextValue ?? ""))} /></td>
           </tr>
           <tr>
             {batchEditors.renderChineseParamHeader("textColor")}
@@ -1880,12 +1902,12 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const contextMenuClassName = createContextMenuClassName(__appScope); Object.assign(__appScope, { contextMenuClassName });
   const stopSidePanelEventPropagation = createStopSidePanelEventPropagation(__appScope); Object.assign(__appScope, { stopSidePanelEventPropagation });
   const setSidePanelMode = createSetSidePanelMode(__appScope); Object.assign(__appScope, { setSidePanelMode });
-  const pointerRelatedTargetInside = (event: PointerEvent<HTMLElement>, selector: string) =>
+  const pointerRelatedTargetInside = (event: ReactPointerEvent<HTMLElement>, selector: string) =>
       event.relatedTarget instanceof Element && Boolean(event.relatedTarget.closest(selector));
   Object.assign(__appScope, { pointerRelatedTargetInside });
   const pointerClientTargetInside = createPointerClientTargetInside(__appScope); Object.assign(__appScope, { pointerClientTargetInside });
   const pointerInsideElementRect = createPointerInsideElementRect(__appScope); Object.assign(__appScope, { pointerInsideElementRect });
-  const pointerInsideFloatingPanelBounds = (event: PointerEvent<HTMLElement>) => {
+  const pointerInsideFloatingPanelBounds = (event: ReactPointerEvent<HTMLElement>) => {
     const { leftPanelVisible, rightPanelVisible } = __appScope;
     return (leftPanelVisible && (
         pointerInsideElementRect(event, leftPanelRef.current, 1) ||
@@ -2000,19 +2022,19 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       edge
         ? [
             edge.sourcePoint ? { ...edge.sourcePoint } : null,
-            ...(edge.manualPoints?.map((point) => ({ ...point })) ?? []),
+            ...(edge.manualPoints?.map((point: Point) => ({ ...point })) ?? []),
             edge.targetPoint ? { ...edge.targetPoint } : null
           ].filter((point): point is Point => Boolean(point))
         : [];
   Object.assign(__appScope, { edgeSnapshotFallbackPoints });
   const currentStoredRoutePointsForEdge = createCurrentStoredRoutePointsForEdge(__appScope); Object.assign(__appScope, { currentStoredRoutePointsForEdge });
   const snapshotGroupTransformEdgeRoutes = (unit: CanvasLayoutUnit): GroupTransformEdgeRouteSnapshot[] =>
-      unit.edgeIds.flatMap((edgeId) => {
+      unit.edgeIds.flatMap((edgeId: string) => {
         const routePoints = currentStoredRoutePointsForEdge(edgeById.get(edgeId));
         return routePoints.length >= 2
           ? [{
               edgeId,
-              points: routePoints.map((point) => ({ ...point }))
+              points: routePoints.map((point: Point) => ({ ...point }))
             }]
           : [];
       });
@@ -2075,8 +2097,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const defaultVoltageBaseSetValue = createDefaultVoltageBaseSetValue(__appScope); Object.assign(__appScope, { defaultVoltageBaseSetValue });
   const voltageBaseSetCandidateNodes = useMemo(createAppHookCallback122(__appScope), [activeSelectedNodeIds, nodes]);
   Object.assign(__appScope, { voltageBaseSetCandidateNodes });
-  const voltageBaseSetHasUniformTargets = voltageBaseSetCandidateNodes.some((node) => voltageBaseSettingModeForNode(node) === "uniform"); Object.assign(__appScope, { voltageBaseSetHasUniformTargets });
-  const voltageBaseSetHasTerminalTargets = voltageBaseSetCandidateNodes.some((node) => voltageBaseSettingModeForNode(node) === "terminal"); Object.assign(__appScope, { voltageBaseSetHasTerminalTargets });
+  const voltageBaseSetHasUniformTargets = voltageBaseSetCandidateNodes.some((node: ModelNode) => voltageBaseSettingModeForNode(node) === "uniform"); Object.assign(__appScope, { voltageBaseSetHasUniformTargets });
+  const voltageBaseSetHasTerminalTargets = voltageBaseSetCandidateNodes.some((node: ModelNode) => voltageBaseSettingModeForNode(node) === "terminal"); Object.assign(__appScope, { voltageBaseSetHasTerminalTargets });
   const recommendedVoltageBaseSetMode = createRecommendedVoltageBaseSetMode(__appScope); Object.assign(__appScope, { recommendedVoltageBaseSetMode });
   const voltageBaseSetModeLabel =
       voltageBaseSetMode === "byDevice"
@@ -2090,7 +2112,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const voltageBaseTerminalRowKey = (row: { nodeId: string; terminalId: string }) => `${row.nodeId}:${row.terminalId}`;
   Object.assign(__appScope, { voltageBaseTerminalRowKey });
   const activeVoltageBaseTerminalRow =
-      voltageBaseSetTerminalRows.find((row) => voltageBaseTerminalRowKey(row) === activeVoltageBaseTerminalKey)
+      voltageBaseSetTerminalRows.find((row: { nodeId: string; terminalId: string }) => voltageBaseTerminalRowKey(row) === activeVoltageBaseTerminalKey)
       ?? voltageBaseSetTerminalRows[0]
       ?? null;
   Object.assign(__appScope, { activeVoltageBaseTerminalRow });
@@ -2366,7 +2388,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       })
     : customDefaultDefinitions(customDraftTerminalTypes, {
       isContainer: customDeviceDraft.isContainer,
-      isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary,
+      isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary as never,
       terminalAssociations: customDraftTerminalAssociations,
       existingDefinitions: customDeviceDraft.params
     })).map((definition) => ({
@@ -2379,10 +2401,10 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     }));
   Object.assign(__appScope, { customDraftDefaultParams });
   const customDraftDefaultParamKeySet = new Set(customDraftDefaultParams.map((row) => row.enName.trim().toLowerCase()));
-  const customDraftDefaultParamOverrideMap = new Map(
+  const customDraftDefaultParamOverrideMap = new Map<string, CustomParamDraft>(
     customDeviceDraft.params
-      .filter((row) => customDraftDefaultParamKeySet.has(row.enName.trim().toLowerCase()))
-      .map((row) => [row.enName.trim().toLowerCase(), row])
+      .filter((row: CustomParamDraft) => customDraftDefaultParamKeySet.has(row.enName.trim().toLowerCase()))
+      .map((row: CustomParamDraft) => [row.enName.trim().toLowerCase(), row] as [string, CustomParamDraft])
   );
   const customDraftMergedDefaultParams = customDraftDefaultParams.map((row) => {
     const override = customDraftDefaultParamOverrideMap.get(row.enName.trim().toLowerCase());
@@ -2405,7 +2427,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     !customDraftIsComponentLibraryDefinition &&
     customDeviceDraft.isDerivedComponentLibrary &&
     isDerivedComponentBaseParamName(row.enName, customDraftDerivedBaseComponentLibrary);
-  const customDraftVisibleParams = customDeviceDraft.params.filter((row) =>
+  const customDraftVisibleParams = customDeviceDraft.params.filter((row: CustomParamDraft) =>
     !customDraftDefaultParamKeySet.has(row.enName.trim().toLowerCase()) &&
     !customDraftParamIsHiddenDerivedBaseRow(row)
   );
@@ -2433,7 +2455,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
             is_derived_component_library: "1"
           } : {})
         },
-        isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary,
+        isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary as never,
         derivedFromComponentLibrary: customDeviceDraft.isDerivedComponentLibrary
           ? customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary
           : "",
@@ -2461,7 +2483,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       parameterDefinitions: customDeviceMeasurementParameterDefinitions,
       positionDefinitions: customDeviceMeasurementPositionDefinitions,
       items: customDeviceDraft.measurementDefinitions,
-      setItems: (items) => setCustomDeviceDraft((current) => ({ ...current, measurementDefinitions: items, error: "" })),
+      setItems: (items) => setCustomDeviceDraft((current: CustomDeviceDraft) => ({ ...current, measurementDefinitions: items, error: "" })),
       selectedRowIndexes: selectedCustomMeasurementRowIndexes,
       setSelectedRowIndexes: setSelectedCustomMeasurementRowIndexes,
       selectionAnchorIndex: customMeasurementSelectionAnchorRef.current,
@@ -2471,13 +2493,13 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       ensureAssociatedField: (position, associatedField, measurementTypeId) => {
         if (position !== "device") return;
         const measurementType = (measurementConfigDraft ?? measurementConfig).measurementTypes
-          .find((type) => type.id === measurementTypeId);
+          .find((type: { id: string }) => type.id === measurementTypeId);
         const definition = createMeasurementFieldParameterDefinition(associatedField, {
           cnName: measurementType?.name,
           valueType: measurementType?.valueType === "string" || measurementType?.valueType === "boolean" ? "string" : "float"
         });
         if (!definition) return;
-        setCustomDeviceDraft((current) => current.params.some((row) => row.enName.trim().toLowerCase() === definition.enName.toLowerCase())
+        setCustomDeviceDraft((current: CustomDeviceDraft) => current.params.some((row: CustomParamDraft) => row.enName.trim().toLowerCase() === definition.enName.toLowerCase())
           ? current
           : { ...current, params: [...current.params, { ...definition, id: customParamId() }], error: "" });
       }
@@ -2659,8 +2681,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         return stateIconDrawingDefaultDraftRow(target.scope);
       }
       return target.scope === "definition"
-        ? definitionStateDraftRows.find((item) => item.id === target.rowId) ?? null
-        : customDeviceDraft.stateDefinitions.find((item) => item.id === target.rowId) ?? null;
+        ? definitionStateDraftRows.find((item: DeviceDefinitionStateDraftRow) => item.id === target.rowId) ?? null
+        : customDeviceDraft.stateDefinitions.find((item: DeviceDefinitionStateDraftRow) => item.id === target.rowId) ?? null;
     };
   Object.assign(__appScope, { stateIconDrawingDraftRowForTarget });
   const stateIconDrawingInlineTarget =
@@ -2728,11 +2750,11 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         stateIconDrawingInitialImageRef.current = null;
         stateIconDrawingHistoryRef.current = [];
         setStateIconDrawingContextMenu(null);
-        setStateIconDrawingDialog((current) => (current ? null : current));
+        setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => (current ? null : current));
         return;
       }
       const targetKey = stateIconDrawingInlineTargetKey;
-      setStateIconDrawingDialog((current) => {
+      setStateIconDrawingDialog((current: StateIconDrawingDialogState | null) => {
         const row = stateIconDrawingDraftRowForTarget(stateIconDrawingInlineTarget);
         const draftSourceImage = stateIconDrawingDraftSourceImage(row, imageAssets);
         const initialSnapshot = stateIconDrawingInitialImageRef.current;
@@ -2835,7 +2857,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           if (imageFieldsAlreadySynced) {
             return;
           }
-          setDefinitionVisualDraft((current) =>
+          setDefinitionVisualDraft((current: DeviceDefinitionVisualDraft) =>
             current
               ? {
                   ...current,
@@ -2856,7 +2878,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           if (imageFieldsAlreadySynced) {
             return;
           }
-          setCustomDeviceDraft((current) => ({
+          setCustomDeviceDraft((current: CustomDeviceDraft) => ({
             ...current,
             backgroundImage: stateIconDrawingInlineImage,
             backgroundImageAssetId: "",
@@ -2869,8 +2891,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       }
       const row =
         stateIconDrawingDialog.target.scope === "definition"
-          ? definitionStateDraftRows.find((item) => item.id === stateIconDrawingDialog.target.rowId)
-          : customDeviceDraft.stateDefinitions.find((item) => item.id === stateIconDrawingDialog.target.rowId);
+          ? definitionStateDraftRows.find((item: DeviceDefinitionStateDraftRow) => item.id === stateIconDrawingDialog.target.rowId)
+          : customDeviceDraft.stateDefinitions.find((item: DeviceDefinitionStateDraftRow) => item.id === stateIconDrawingDialog.target.rowId);
       if (!row) {
         return;
       }
@@ -2999,7 +3021,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
                 onClick={() => {
                   // 已选中时重复点击：切换折叠层全部展开/全部收缩
                   if (templateLibraryDisplayMode !== mode) return;
-                  setExpandedGraphTemplateTypes((current) =>
+                  setExpandedGraphTemplateTypes((current: string[]) =>
                     current.length === 0 ? [...displayedGraphTemplateTypes] : []
                   );
                 }}
@@ -3027,7 +3049,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
             }
           }}
         >
-          {displayedGraphTemplateTypes.length > 0 ? displayedGraphTemplateTypes.map((typeName) => {
+          {displayedGraphTemplateTypes.length > 0 ? displayedGraphTemplateTypes.map((typeName: string) => {
             const templates = filteredGroupedGraphTemplates[typeName] ?? [];
             const templateExpanded = templateLibrarySearchNeedle
               ? true
@@ -3078,7 +3100,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
                       setHoveredGraphTemplateType(typeName);
                       return;
                     }
-                    setExpandedGraphTemplateTypes((current) =>
+                    setExpandedGraphTemplateTypes((current: string[]) =>
                       current.includes(typeName) ? current.filter((item) => item !== typeName) : [...current, typeName]
                     );
                   }}
@@ -3161,11 +3183,11 @@ export function useRenderBatch(__appScope: Record<string, any>) {
                   // 已选中时重复点击：切换折叠层全部展开/全部收缩
                   if (componentLibraryDisplayMode !== mode) return;
                   if (mode === "expanded") {
-                    setCollapsedExpandedModeCategoryLibraries((current) =>
+                    setCollapsedExpandedModeCategoryLibraries((current: string[]) =>
                       current.length === 0 ? [...displayedCategoryLibraries] : []
                     );
                   } else {
-                    setExpandedCategoryLibraries((current) =>
+                    setExpandedCategoryLibraries((current: string[]) =>
                       current.length === 0 ? [...displayedCategoryLibraries] : []
                     );
                   }
@@ -3198,7 +3220,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
             }
           }}
         >
-          {displayedCategoryLibraries.length > 0 ? displayedCategoryLibraries.map((group) => {
+          {displayedCategoryLibraries.length > 0 ? displayedCategoryLibraries.map((group: string) => {
             const libraryExpanded = componentLibraryDisplayMode === "expanded";
             const libraryFlyout = componentLibraryDisplayMode === "right";
             const expanded = librarySearchNeedle ? true : libraryExpanded
@@ -3224,7 +3246,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
                     if (libraryFlyout) {
                       scheduleLibraryFlyoutClose(group);
                     } else {
-                      setHoveredCategoryLibrary((current) => current === group ? "" : current);
+                      setHoveredCategoryLibrary((current: string) => current === group ? "" : current);
                       setHoveredCategoryLibraryComponentLibrary("");
                     }
                   }
@@ -3265,7 +3287,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
                               if (libraryFlyout) {
                                 scheduleLibraryFlyoutClose(group, componentLibraryKey);
                               } else {
-                                setHoveredCategoryLibraryComponentLibrary((current) => current === componentLibraryKey ? "" : current);
+                                setHoveredCategoryLibraryComponentLibrary((current: string[]) => (current: string) => current === componentLibraryKey ? "" : current);
                               }
                             }
                           }}
@@ -3314,7 +3336,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       : "告警 无";
   Object.assign(__appScope, { warningStatusText });
   const warningStatusTitle = topologyErrors.length > 0
-      ? topologyErrors.slice(0, 5).map((error, index) => `${index + 1}. ${topologyWarningDisplayMessage(error.message)}`).join("\n")
+      ? topologyErrors.slice(0, 5).map((error: { message?: string }, index: number) => `${index + 1}. ${topologyWarningDisplayMessage(error.message)}`).join("\n")
       : "当前没有拓扑告警。";
   Object.assign(__appScope, { warningStatusTitle });
   const currentZoomPercent = viewBoxZoomPercent(viewBox, canvasBounds); Object.assign(__appScope, { currentZoomPercent });
@@ -3449,15 +3471,15 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const handleLodNodeDoubleClick = createHandleLodNodeDoubleClick(__appScope); Object.assign(__appScope, { handleLodNodeDoubleClick });
   const connectPreviewDom = connectPreviewDomRef.current; Object.assign(__appScope, { connectPreviewDom });
   const layerAssignmentUnchanged = activeSelectedNodeIds.length > 0 && activeSelectedNodeIds.every(
-      (nodeId) => (nodeById.get(nodeId)?.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerAssignmentTargetId
+      (nodeId: string) => (nodeById.get(nodeId)?.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerAssignmentTargetId
     );
   Object.assign(__appScope, { layerAssignmentUnchanged });
   const browseSelectedCanvasBounds = useMemo(createAppHookCallback136(__appScope), [activeSelectedEdgeIds, activeSelectedNodeIds, isEditMode, routedEdgeById, visibleNodeById]);
   const selectedCanvasBounds = isEditMode
-      ? combineSelectionRects(selectedLayoutUnits.map((unit) => unit.bounds)) ??
+      ? combineSelectionRects(selectedLayoutUnits.map((unit: CanvasLayoutUnit) => unit.bounds)) ??
         calculateModelGeometryBounds(
           [],
-          activeSelectedEdgeIds.flatMap((edgeId) => {
+          activeSelectedEdgeIds.flatMap((edgeId: string) => {
             const route = routedEdgeById.get(edgeId);
             return route ? [{ points: route.points }] : [];
           }),
