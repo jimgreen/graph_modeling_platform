@@ -8,6 +8,7 @@ import type { DeviceMeasurementDefinition } from "./measurementDefinitionTypes.t
 import { normalizeImageFitMode } from "./imageFit.ts";
 import { isCanonicalDeviceVisualParamName } from "./deviceVisualParams.ts";
 import { randomId } from "../shared/randomId.mjs";
+import { normalizeDeviceParameterEnglishName } from "../shared/deviceParameterChineseNames.mjs";
 import { escapeRegExp } from "../shared/regexEscape.mjs";
 import { meaningfulDeviceParameterChineseName } from "./deviceParameterChineseNames.ts";
 
@@ -5267,14 +5268,12 @@ function normalizeDeviceTemplateDefaultSize(template: DeviceTemplate): DeviceTem
 }
 
 export function toSnakeCaseDeviceParamName(name: string): string {
-  const normalized = name
-    .trim()
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/([A-Z]+)([A-Z][a-z0-9])/g, "$1_$2")
-    .replace(/[^A-Za-z0-9_]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .toLowerCase();
+  // 连续大写缩写规则（model.ts 特有，如 highIMax → high_I_Max）先做，
+  // 余下 5 步与 shared/deviceParameterChineseNames.mjs 的
+  // normalizeDeviceParameterEnglishName 逐字相同，直接走单源。
+  const normalized = normalizeDeviceParameterEnglishName(
+    name.replace(/([A-Z]+)([A-Z][a-z0-9])/g, "$1_$2")
+  );
   if (normalized === "gasquantity") return "gas_quantity";
   if (normalized === "state_of_charge") return "soc";
   return normalized;
