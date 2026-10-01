@@ -1,10 +1,22 @@
-// @ts-nocheck
 /**
  * MemoizedCanvasArea - 画布区域 React.memo 组件
  *
  * 通过自定义比较器，在 tab 切换时跳过画布 SVG 协调。
  */
 import { memo } from "react";
+import type React from "react";
+import type { CSSProperties } from "react";
+import type { ModelNode, Point, RoutedEdge, Terminal } from "../model";
+import type { CanvasLayoutUnit } from "../selectionActions";
+import type { ScaleHandleConfig, SmartAlignmentGuide } from "./appCoreCanvasUtilities";
+
+// 以下形状全部来自 __appScope（Record<string, any>），在此按**实际用到的字段**声明局部别名，
+// 免得把每个回调都标成 any。字段集与生产端一致，改动生产端形状时这里会立刻报错。
+type SvgMarkupChunkItem = { key: string; markup: string };
+type RoutableLineEndpointHandle = { node: ModelNode; endpoint: "source" | "target"; point: Point };
+type ScaleHandleForNode = ScaleHandleConfig & { node: ModelNode };
+type EdgePreviewRoute = { edgeId: string; path: string; color?: string };
+type MinimapRoute = { edgeId: string; points: Point[] };
 import { CanvasRulers } from "./appCanvasRulers";
 import { SelectionActionCluster } from "./appTopbar";
 
@@ -426,7 +438,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } = scope;
 
-  const routableLineRouteEventPoint = (event) => {
+  const routableLineRouteEventPoint = (event: React.MouseEvent) => {
     if (!svgRef.current) {
       return undefined;
     }
@@ -436,7 +448,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     return pointer;
   };
 
-  const openSelectedRoutableLineRouteContextMenu = (event, node, routePoints) => {
+  const openSelectedRoutableLineRouteContextMenu = (event: React.MouseEvent, node: ModelNode, routePoints: Point[]) => {
     event.preventDefault();
     event.stopPropagation();
     if (!isEditMode || !activeLayerNodeIdSet.has(node.id)) {
@@ -452,7 +464,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
       target: "node",
       canvasPoint: pointer,
       nodeId: node.id,
-      routePoints: routePoints.map((point) => ({ ...point }))
+      routePoints: routePoints.map((point: Point) => ({ ...point }))
     });
   };
 
@@ -495,7 +507,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         startCanvasPanning(event);
     }} onPointerMove={(event) => {
         if (panningRef.current || modifierSelectionPressRef.current) {
-            handlePointerMove(event as unknown as PointerEvent<SVGSVGElement>);
+            handlePointerMove(event as unknown as React.PointerEvent<SVGSVGElement>);
         }
     }} onPointerUp={(event) => {
         finishModifierSelectionPress(event.pointerId);
@@ -770,7 +782,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                 target: "edge",
                 canvasPoint: pointer,
                 edgeId: routeHit.edgeId,
-                routePoints: routeHit.routePoints.map((point) => ({ ...point }))
+                routePoints: routeHit.routePoints.map((point: Point) => ({ ...point }))
             });
             return;
         }
@@ -794,12 +806,12 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             {marquee && (<rect className="marquee-box" x={Math.min(marquee.start.x, marquee.current.x)} y={Math.min(marquee.start.y, marquee.current.y)} width={Math.abs(marquee.current.x - marquee.start.x)} height={Math.abs(marquee.current.y - marquee.start.y)}/>)}
             {renderLibraryPlacementPreview()}
             {renderInteractiveStaticDrawingPreview()}
-            {smartAlignmentGuides.map((guide) => (<line key={guide.id} className={`smart-alignment-guide smart-alignment-guide-${guide.orientation}`} x1={guide.orientation === "vertical" ? guide.position : guide.start} y1={guide.orientation === "vertical" ? guide.start : guide.position} x2={guide.orientation === "vertical" ? guide.position : guide.end} y2={guide.orientation === "vertical" ? guide.end : guide.position} vectorEffect="non-scaling-stroke"/>))}
-            {dragGhostEdgeRoutes.map((route) => (<path key={`drag-ghost-edge-${route.edgeId}`} d={route.path} className="connection-line drag-ghost" style={route.color ? ({ "--connection-color": route.color } as CSSProperties) : connectionLineStyle(route.edgeId)}/>))}
+            {smartAlignmentGuides.map((guide: SmartAlignmentGuide) => (<line key={guide.id} className={`smart-alignment-guide smart-alignment-guide-${guide.orientation}`} x1={guide.orientation === "vertical" ? guide.position : guide.start} y1={guide.orientation === "vertical" ? guide.start : guide.position} x2={guide.orientation === "vertical" ? guide.position : guide.end} y2={guide.orientation === "vertical" ? guide.end : guide.position} vectorEffect="non-scaling-stroke"/>))}
+            {dragGhostEdgeRoutes.map((route: EdgePreviewRoute) => (<path key={`drag-ghost-edge-${route.edgeId}`} d={route.path} className="connection-line drag-ghost" style={route.color ? ({ "--connection-color": route.color } as CSSProperties) : connectionLineStyle(route.edgeId)}/>))}
             {lodCanvasRouteChunks.length > 0 && (<g className="lod-route-layer">
-                {lodCanvasRouteChunks.map((chunk) => (<SvgMarkupChunk key={chunk.key} className="lod-route-layer-chunk" markup={chunk.markup}/>))}
+                {lodCanvasRouteChunks.map((chunk: SvgMarkupChunkItem) => (<SvgMarkupChunk key={chunk.key} className="lod-route-layer-chunk" markup={chunk.markup}/>))}
               </g>)}
-            {dragging?.historyCaptured && !multiNodeDragging && dragging.nodeIds.map((nodeId) => {
+            {dragging?.historyCaptured && !multiNodeDragging && dragging.nodeIds.map((nodeId: string) => {
         const node = nodeById.get(nodeId);
         const originalPosition = dragging.originalPositions[nodeId];
         if (!node || !originalPosition) {
@@ -816,7 +828,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                   {renderNodePreviewImageContent(ghostNode, `drag-ghost-preview-clip-${ghostNode.id}`)}
                 </g>);
     })}
-            {renderViewportRoutedEdges.map((route) => {
+            {renderViewportRoutedEdges.map((route: RoutedEdge) => {
         const edge = edgeById.get(route.edgeId);
         if (!edge)
             return null;
@@ -934,7 +946,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                 }}/>)}
                 </g>);
     })}
-            {visibleSelectedGroupLayoutUnits.map((unit) => {
+            {visibleSelectedGroupLayoutUnits.map((unit: CanvasLayoutUnit) => {
         const transforming = groupTransformPreviewGroupId === unit.id;
         const focused = selectedTransformGroupUnit?.id === unit.id;
         const bounds = unit.bounds;
@@ -981,7 +993,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                       <g transform={`translate(${center.x} ${bounds.top - rotateHandleGap})`}>
                         <circle className="rotate-handle" cx="0" cy="0" r="8" onPointerDown={(event) => startGroupTransformDrag(event, unit, "rotate")}/>
                       </g>
-                      {GROUP_SCALE_HANDLE_CONFIGS.map((handle) => {
+                      {GROUP_SCALE_HANDLE_CONFIGS.map((handle: ScaleHandleConfig) => {
                     const handleCursorClass = scaleHandleCursorClass(handle, 0);
                     const x = handle.xDirection === 0
                         ? center.x
@@ -1001,10 +1013,10 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                 </g>);
     })}
             {lodCanvasNodeChunks.length > 0 && (<g className="lod-node-layer" onPointerDown={handleLodNodePointerDown} onContextMenu={handleLodNodeContextMenu} onDoubleClick={handleLodNodeDoubleClick}>
-                {lodCanvasNodeChunks.map((chunk) => (<SvgMarkupChunk key={chunk.key} className="lod-node-layer-chunk" markup={chunk.markup}/>))}
+                {lodCanvasNodeChunks.map((chunk: SvgMarkupChunkItem) => (<SvgMarkupChunk key={chunk.key} className="lod-node-layer-chunk" markup={chunk.markup}/>))}
               </g>)}
             {lodSelectedNodeMarkup && (<g className="lod-node-selection-layer" dangerouslySetInnerHTML={{ __html: lodSelectedNodeMarkup }}/>)}
-            {detailedViewportNodes.map((node) => {
+            {detailedViewportNodes.map((node: ModelNode) => {
         if (groupTransformPreviewNodeIdSet.has(node.id)) {
             return null;
         }
@@ -1077,7 +1089,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             : nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap, staticSelectionOutlinePadding);
         const scaleHandleConfigsForNode = isLineSegmentBusNode(node) || nodeKindAllowsResizeTransform(node.kind)
             ? SCALE_HANDLE_CONFIGS
-            : SCALE_HANDLE_CONFIGS.filter((handle) => handle.kind === "scale-both");
+            : SCALE_HANDLE_CONFIGS.filter((handle: ScaleHandleConfig) => handle.kind === "scale-both");
         const staticButtonEnabled = isBrowseMode && isStaticButtonEnabledForNode(node);
         const staticButtonState = staticButtonVisual?.nodeId === node.id ? staticButtonVisual.state : "";
         const staticButtonCornerRadius = Math.max(0, Number(node.params.cornerRadius || 8));
@@ -1107,7 +1119,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             !nodeIsStatic &&
             !nodeIsRoutableLineDevice &&
             node.terminals.length === 1
-            ? node.terminals.find((terminal) => terminal.id === terminalPress.terminalId)
+            ? node.terminals.find((terminal: Terminal) => terminal.id === terminalPress.terminalId)
             : undefined;
         const terminalDragPreview = terminalDragTerminal ? (() => {
             const previewAnchor = snapSingleTerminalAnchorToNearestSide(node, terminalPress.currentPoint);
@@ -1215,7 +1227,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                     </g>)}
                   {uprightSelectionOutlineRect && (<rect className="node-upright-selection-outline" x={uprightSelectionOutlineRect.x} y={uprightSelectionOutlineRect.y} width={uprightSelectionOutlineRect.width} height={uprightSelectionOutlineRect.height} rx="4"/>)}
                   {nodeLabelVisible && (<g className={`node-device-label ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${nodeLabelIsVertical ? "vertical" : "horizontal"}`} data-node-id={node.id} data-label-owner="device" transform={nodeLabelTransform(node)} onPointerDown={isEditMode ? (event) => startNodeLabelDrag(event, node) : undefined}>
-                      {nodeLabelIsVertical ? (nodeLabelVerticalTokens.map((segment, index) => (<text key={`${segment.text}-${index}`} className={`node-label-vertical-token ${segment.numeric ? "numeric" : ""}`} x="0" y={nodeLabelVerticalTokenY(index, nodeLabelVerticalTokens.length, node)} dominantBaseline="middle" textAnchor="middle" style={nodeLabelVerticalTokenStyle(node)}>
+                      {nodeLabelIsVertical ? (nodeLabelVerticalTokens.map((segment: { text: string; numeric: boolean }, index: number) => (<text key={`${segment.text}-${index}`} className={`node-label-vertical-token ${segment.numeric ? "numeric" : ""}`} x="0" y={nodeLabelVerticalTokenY(index, nodeLabelVerticalTokens.length, node)} dominantBaseline="middle" textAnchor="middle" style={nodeLabelVerticalTokenStyle(node)}>
                             {segment.text}
                           </text>))) : (<text x="0" y="0" dominantBaseline="middle" textAnchor={nodeLabelTextAnchor(node)} style={nodeLabelTextStyle(node)}>
                           {nodeLabelContent}
@@ -1234,7 +1246,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                           <circle className={`terminal-dot ${terminalDragPreview.type} terminal-drag-preview-dot`} style={{ "--terminal-color": terminalDragPreview.color } as CSSProperties} cx="0" cy="0" r="7"/>
                         </g>
                       </g>)}
-                    {node.terminals.map((terminal) => {
+                    {node.terminals.map((terminal: Terminal) => {
                 const hideFixedTerminal = nodeIsBus ||
                   nodeIsStatic ||
                   isRoutableLineDeviceKind(node.kind);
@@ -1273,7 +1285,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                       <g transform={handleTransform(rotateHandlePoints.handle.x, rotateHandlePoints.handle.y)}>
                         <circle className="rotate-handle" cx="0" cy="0" r="8" onPointerDown={(event) => startSingleTransformDrag(event, node, "rotate")}/>
                       </g>
-                      {scaleHandleConfigsForNode.map((handle) => {
+                      {scaleHandleConfigsForNode.map((handle: ScaleHandleForNode) => {
                     const handlePoint = nodeScaleHandleControlPoint(node, handle, handleGapX, handleGapY, uprightStaticSelectionOutline, staticSelectionOutlinePadding);
                     const handleCursorClass = scaleHandleCursorClass(handle, uprightStaticSelectionOutline ? 0 : node.rotation);
                     return (<g key={handle.id} transform={handleTransform(handlePoint.x, handlePoint.y)}>
@@ -1284,7 +1296,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                 </g>);
     })}
             {dragging?.historyCaptured && dragging.nodeIds.length > 0 && (<g className="drag-origin-measurement-layer" pointerEvents="none">
-                {dragging.nodeIds.map((nodeId) => {
+                {dragging.nodeIds.map((nodeId: string) => {
             const node = nodeById.get(nodeId);
             const originalPosition = dragging.originalPositions[nodeId];
             if (!node || !originalPosition) {
@@ -1306,8 +1318,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             {renderMultiNodeDragOverlay()}
             <g ref={imperativeSingleNodeDragEdgePreviewRef} className="single-node-drag-overlay imperative-single-node-drag-edge-preview" style={{ display: "none" }} aria-hidden="true"/>
             <g ref={imperativeSingleNodeDragNodeOverlayRef} className="single-node-drag-overlay imperative-single-node-drag-node-overlay" style={{ display: "none" }} aria-hidden="true"/>
-            {dragPreviewEdgeRoutes.map((route) => (<path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={{ "--connection-color": route.color } as CSSProperties}/>))}
-            {terminalPressPreviewEdgeRoutes.map((route) => (<path key={`terminal-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)}/>))}
+            {dragPreviewEdgeRoutes.map((route: EdgePreviewRoute) => (<path key={`drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={{ "--connection-color": route.color } as CSSProperties}/>))}
+            {terminalPressPreviewEdgeRoutes.map((route: EdgePreviewRoute) => (<path key={`terminal-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)}/>))}
             {rewiringPreviewRoute && (<path key={`rewiring-preview-edge-${rewiringPreviewRoute.edgeId}`} d={rewiringPreviewRoute.path} className="connection-line drag-preview" style={connectionLineStyle(rewiringPreviewRoute.edgeId)}/>)}
             {rewiring && (<circle className="edge-endpoint-handle active-drag-handle" cx={rewiring.previewPoint.x} cy={rewiring.previewPoint.y} r={8}>
                 <title>{rewiring.endpoint === "source" ? "拖拽线路起点" : "拖拽线路终点"}</title>
@@ -1330,11 +1342,11 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                 <title>拖拽连接线终点</title>
               </circle>)}
             {connectSource && (<>
-                {connectSource.manualPoints?.map((point, index) => (<circle key={`connect-preview-bend-${index}`} className="connection-preview-bend-point" cx={point.x} cy={point.y} r={5} style={connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : undefined}/>))}
+                {connectSource.manualPoints?.map((point: Point, index: number) => (<circle key={`connect-preview-bend-${index}`} className="connection-preview-bend-point" cx={point.x} cy={point.y} r={5} style={connectPreviewColor ? ({ "--connection-color": connectPreviewColor } as CSSProperties) : undefined}/>))}
               </>)}
             {routableLinePlacement && routableLinePreview.path && (<path d={routableLinePreview.path} className="routable-line-drawing-preview" style={routableLinePlacementColor ? ({ "--connection-color": routableLinePlacementColor } as CSSProperties) : undefined}/>)}
             {routableLinePlacement && (<>
-                {routableLinePlacement.manualPoints?.map((point, index) => (<circle key={`routable-line-preview-bend-${index}`} className="connection-preview-bend-point routable-line-preview-bend-point" cx={point.x} cy={point.y} r={5} style={routableLinePlacementColor ? ({ "--connection-color": routableLinePlacementColor } as CSSProperties) : undefined}/>))}
+                {routableLinePlacement.manualPoints?.map((point: Point, index: number) => (<circle key={`routable-line-preview-bend-${index}`} className="connection-preview-bend-point routable-line-preview-bend-point" cx={point.x} cy={point.y} r={5} style={routableLinePlacementColor ? ({ "--connection-color": routableLinePlacementColor } as CSSProperties) : undefined}/>))}
               </>)}
             {routableLineEndpointDragPreviewRoute && (<path d={routableLineEndpointDragPreviewRoute.path} className="routable-line-drawing-preview endpoint-retarget-preview" style={routableLineEndpointDragColor ? ({ "--connection-color": routableLineEndpointDragColor } as CSSProperties) : undefined}/>)}
             {routableLineEndpointDrag && (<circle className={`routable-line-endpoint-handle active-drag-handle ${routableLineEndpointDrag.endpoint}`} cx={routableLineEndpointDrag.previewPoint.x} cy={routableLineEndpointDrag.previewPoint.y} r="7" style={routableLineEndpointDragColor ? ({ "--connection-color": routableLineEndpointDragColor } as CSSProperties) : undefined}>
@@ -1370,7 +1382,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         !dragGhostRoutableLineNodeIdSet.has(selectedRoutableLineManualPathRoute.node.id) &&
         (<g className="routable-line-manual-path-layer" data-node-id={selectedRoutableLineManualPathRoute.node.id}>
                 <path d={selectedRoutableLineManualPathRoute.path} className="routable-line-manual-path-preview" onPointerDown={(event) => handleRoutableLineNodePathPointerDown(event, selectedRoutableLineManualPathRoute.node)} onContextMenu={(event) => openSelectedRoutableLineRouteContextMenu(event, selectedRoutableLineManualPathRoute.node, selectedRoutableLineManualPathRoute.points)}/>
-                {selectedRoutableLineManualPathRoute.points.slice(1).map((point, index) => {
+                {selectedRoutableLineManualPathRoute.points.slice(1).map((point: Point, index: number) => {
                 const from = selectedRoutableLineManualPathRoute.points[index];
                 const segmentIndex = index;
                 if (!from || sameOptionalPoint(from, point) || (from.x !== point.x && from.y !== point.y)) {
@@ -1379,7 +1391,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                 const orientation = from.y === point.y ? "horizontal" : "vertical";
                 return (<path key={`routable-line-segment-${segmentIndex}`} d={`M ${from.x} ${from.y} L ${point.x} ${point.y}`} className={`manual-segment-handle ${orientation}`} onPointerDown={(event) => startRoutableLineSegmentDrag(event, selectedRoutableLineManualPathRoute.node, segmentIndex, orientation, selectedRoutableLineManualPathRoute.points)} onContextMenu={(event) => openSelectedRoutableLineRouteContextMenu(event, selectedRoutableLineManualPathRoute.node, selectedRoutableLineManualPathRoute.points)}/>);
             })}
-                {selectedRoutableLineManualPathRoute.points.slice(1, -1).map((point, index) => {
+                {selectedRoutableLineManualPathRoute.points.slice(1, -1).map((point: Point, index: number) => {
                 const routePointIndex = index + 1;
                 return (<circle key={`routable-line-bend-${routePointIndex}`} className="manual-bend-handle user-manual-bend" cx={point.x} cy={point.y} r={5.5} onPointerDown={(event) => startRoutableLinePointDrag(event, selectedRoutableLineManualPathRoute.node, routePointIndex, selectedRoutableLineManualPathRoute.points)} onContextMenu={(event) => {
                         event.preventDefault();
@@ -1390,8 +1402,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
               </g>)}
             {!routableLineEndpointDrag && routableLineEndpointHandles.length > 0 && (<g className="routable-line-endpoint-handle-layer">
                 {routableLineEndpointHandles
-            .filter((handle) => !dragGhostRoutableLineNodeIdSet.has(handle.node.id))
-            .map((handle) => (<circle key={`${handle.node.id}-${handle.endpoint}`} className={`routable-line-endpoint-handle ${handle.endpoint}`} data-node-id={handle.node.id} cx={handle.point.x} cy={handle.point.y} r="7" onPointerDown={(event) => startRoutableLineEndpointDrag(event, handle.node, handle.endpoint)}>
+            .filter((handle: RoutableLineEndpointHandle) => !dragGhostRoutableLineNodeIdSet.has(handle.node.id))
+            .map((handle: RoutableLineEndpointHandle) => (<circle key={`${handle.node.id}-${handle.endpoint}`} className={`routable-line-endpoint-handle ${handle.endpoint}`} data-node-id={handle.node.id} cx={handle.point.x} cy={handle.point.y} r="7" onPointerDown={(event) => startRoutableLineEndpointDrag(event, handle.node, handle.endpoint)}>
                     <title>{handle.endpoint === "source" ? "调整线路起点" : "调整线路终点"}</title>
                   </circle>))}
               </g>)}
@@ -1425,7 +1437,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                     onDoubleClick={isEditMode ? (event) => insertManualBendFromEdgePath(event, edge.id, routePoints) : undefined}
                     onPointerDown={isEditMode ? (event) => handleEdgePathPointerDown(event, edge.id, routePoints) : undefined}
                   />
-                  {isEditMode && !isRewiringSelectedEdge && routePoints.slice(1).map((point, index) => {
+                  {isEditMode && !isRewiringSelectedEdge && routePoints.slice(1).map((point: Point, index: number) => {
                     const from = routePoints[index];
                     const segmentIndex = index;
                     if (!movableSegmentIndexes.has(segmentIndex)) {
@@ -1434,7 +1446,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                     const orientation = from.y === point.y ? "horizontal" : "vertical";
                     return (<path key={`segment-${segmentIndex}`} d={`M ${from.x} ${from.y} L ${point.x} ${point.y}`} className={`manual-segment-handle ${orientation}`} onPointerDown={(event) => startManualSegmentDrag(event, edge.id, segmentIndex, orientation, routePoints)} onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)} onContextMenu={(event) => openEdgeContextMenu(event, edge.id, routePoints)}/>);
                 })}
-                  {isEditMode && !isRewiringSelectedEdge && routePoints.slice(2, -2).map((point, index) => {
+                  {isEditMode && !isRewiringSelectedEdge && routePoints.slice(2, -2).map((point: Point, index: number) => {
                     const routePointIndex = index + 2;
                     const isUserManualBend = manualRoutePointKeys.has(manualRoutePointKey(point));
                     return (<circle key={`bend-${routePointIndex}`} className={isUserManualBend ? "manual-bend-handle user-manual-bend" : "manual-bend-handle"} cx={point.x} cy={point.y} r={5.5} onPointerDown={(event) => startManualPointDrag(event, edge.id, routePointIndex, routePoints)} onDoubleClick={(event) => insertManualBendFromEdgePath(event, edge.id, routePoints)} onContextMenu={(event) => {
@@ -1571,7 +1583,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             <button type="button" title="重置缩放" aria-label="重置缩放" onClick={resetViewportZoom}>
               <RotateCcw size={16}/>
             </button>
-            <button type="button" className={minimapVisible ? "active" : ""} title={minimapVisible ? "隐藏小地图" : "显示小地图"} aria-label={minimapVisible ? "隐藏小地图" : "显示小地图"} onClick={() => setMinimapVisible((current) => !current)}>
+            <button type="button" className={minimapVisible ? "active" : ""} title={minimapVisible ? "隐藏小地图" : "显示小地图"} aria-label={minimapVisible ? "隐藏小地图" : "显示小地图"} onClick={() => setMinimapVisible((current: boolean) => !current)}>
               <MapIcon size={16}/>
             </button>
             <button type="button" title="收紧画布" aria-label="收紧画布" onClick={shrinkCanvasToFitContent}>
@@ -1588,8 +1600,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             }
         }}>
                 <rect className="minimap-canvas" x={minimapOffsetX} y={minimapOffsetY} width={minimapContentWidth} height={minimapContentHeight}/>
-                {minimapRoutes.map((route) => (<polyline key={`minimap-route-${route.edgeId}`} className="minimap-route" points={route.points.map(mapPointToMinimap).map((point) => `${formatSvgNumber(point.x)},${formatSvgNumber(point.y)}`).join(" ")}/>))}
-                {minimapNodes.map((node) => {
+                {minimapRoutes.map((route: MinimapRoute) => (<polyline key={`minimap-route-${route.edgeId}`} className="minimap-route" points={route.points.map((point: Point) => mapPointToMinimap(point)).map((point: Point) => `${formatSvgNumber(point.x)},${formatSvgNumber(point.y)}`).join(" ")}/>))}
+                {minimapNodes.map((node: ModelNode) => {
             const center = mapPointToMinimap(node.position);
             const width = Math.max(1.8, Math.abs(getNodeScaleX(node)) * node.size.width * minimapScale);
             const height = Math.max(1.8, Math.abs(getNodeScaleY(node)) * node.size.height * minimapScale);
