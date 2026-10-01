@@ -3886,7 +3886,12 @@ function getAssetDir(item, options = {}) {
 }
 
 async function writeImageAssetFile(item, bytes, options = {}) {
-  await writeFile(join(getAssetDir(item, options), item.filename), bytes);
+  const filePath = join(getAssetDir(item, options), item.filename);
+  // 原子写，且必须先过退休判定：atomicWriteFile 自己会 mkdir(dirname)，
+  // 那是一条绕过 mkdirInSpace 的建目录路径（与 writeTextIfChanged 同一处理，勿简化）。
+  // 裸 writeFile 会把文件截断在半个图元上；图标被 SVG 导出内联成 data URL，坏图即坏导出。
+  assertNotRetiredRoot(filePath);
+  await atomicWriteFile(filePath, bytes);
 }
 
 function safeImageLibraryId(value) {
@@ -3983,10 +3988,13 @@ async function handleImportImageLibrary(request, response, paths) {
         dir: "icons"
       };
       const previous = manifestById.get(item.id);
+      // **先写新的、成功后再删旧的**。反过来（先 rm 旧文件）时，中途失败会留下悬空条目：
+      // writeManifest 要等整个循环跑完才落盘，于是那一刻 manifest 仍指向旧文件名，
+      // 而旧文件已经被删了 —— 图标库里躺着一条指向不存在文件的记录，SVG 导出引用到它就炸。
+      await writeImageAssetFile(item, parsed.bytes, { paths });
       if (previous?.filename && previous.filename !== item.filename) {
         await rm(join(getAssetDir(previous, { paths }), previous.filename), { force: true });
       }
-      await writeImageAssetFile(item, parsed.bytes, { paths });
       manifestById.set(item.id, item);
       savedItems.push(item);
     }
