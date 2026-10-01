@@ -1,6 +1,24 @@
-// @ts-nocheck
 // 从 App.tsx 第 2265-3048 行提取
-import { useMemo, useEffect, useRef, useLayoutEffect, useDeferredValue } from "react";
+import { useMemo, useEffect, useRef, useLayoutEffect, useDeferredValue, type CSSProperties } from "react";
+// 本文件用到的形状类型全部由 appCoreCanvasUtilities 定义并导出（此前 @ts-nocheck 让
+// 「引用了却没 import」一直静默）。type-only import，编译期擦除，不新增运行时依赖。
+import type {
+  CanvasBoundsScrollAnchor,
+  CanvasResizeCommitAnchor,
+  ConnectTarget,
+  PendingWheelZoomRequest,
+  RenderViewportBounds,
+  WheelZoomAnchor
+} from "./appCoreCanvasUtilities";
+
+// 拖拽幽灵连线不是 RoutedEdge，而是预览形状（edgeId + 可选 routableLineNodeId + path + color，
+// 见 appSelectionDragFactories 里 routes.push 的构造）。
+type DragGhostEdgeRoute = {
+  edgeId: string;
+  routableLineNodeId?: string;
+  path?: string;
+  color?: string;
+};
 import {
   AlignCenter,
   AlignEndHorizontal,
@@ -792,7 +810,7 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
         if (deviceKey) groupHeights[deviceKey] = measureGroupItemHeight(groupEl);
       });
       if (Object.keys(groupHeights).length > 0) {
-        setElementTreeItemHeights((current) => {
+        setElementTreeItemHeights((current: Record<string, number>) => {
           let changed = false;
           const next = { ...current };
           for (const [key, h] of Object.entries(groupHeights)) {
@@ -804,7 +822,7 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
           return changed ? next : current;
         });
       }
-      setElementTreeItemWindows((current) => {
+      setElementTreeItemWindows((current: Record<string, { start: number; end: number }>) => {
         let changed = false;
         const next: Record<string, { start: number; end: number }> = { ...current };
         const groups = container.querySelectorAll<HTMLElement>(".element-tree-device-items");
@@ -812,7 +830,9 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
           const deviceKey = groupEl.dataset.deviceKey;
           const total = Number(groupEl.dataset.totalItems ?? 0);
           if (!deviceKey || total <= WINDOW) {
-            if (next[deviceKey]) {
+            // deviceKey 为空时不会走到这里（无 data-device-key 的分组不进窗口表），
+            // 故把 deviceKey 一起判上：原写法会用 undefined 当索引键去查 next。
+            if (deviceKey && next[deviceKey]) {
               delete next[deviceKey];
               changed = true;
             }
@@ -1210,7 +1230,7 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { routableLineEndpointDragColor });
   useEffect(createAppHookCallback50(__appScope), [connectSource, dragging, hasUnsavedChanges, manualPathDrag, rewiring, routableLineEndpointDrag, routableLinePlacement, routeRenderingReady, terminalPress?.moved]);
   const routeInputLayerSignature = useMemo(
-      () => layers.map((layer) => `${layer.id}:${layer.visible !== false ? "1" : "0"}`).join("|"),
+      () => layers.map((layer: ModelLayer) => `${layer.id}:${layer.visible !== false ? "1" : "0"}`).join("|"),
       [layers]
     );
   Object.assign(__appScope, { routeInputLayerSignature });
@@ -1254,7 +1274,7 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
   const activeLayerRoutedEdges = useMemo(
       () => activeLayerEdges === visibleEdges ? routedEdges : (() => {
         const routes: RoutedEdge[] = [];
-        activeLayerEdgeIdSet.forEach((edgeId) => {
+        activeLayerEdgeIdSet.forEach((edgeId: string) => {
           const route = routedEdgeById.get(edgeId);
           if (route) {
             routes.push(route);
@@ -1266,7 +1286,7 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
     );
   Object.assign(__appScope, { activeLayerRoutedEdges });
   const transformableActiveSelectedNodeIds = useMemo(
-      () => activeSelectedNodeIds.filter((nodeId) => {
+      () => activeSelectedNodeIds.filter((nodeId: string) => {
         const node = nodeById.get(nodeId);
         return node && isCanvasNodeMovable(node.kind);
       }),
@@ -1279,7 +1299,7 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
     );
   Object.assign(__appScope, { selectedLayoutUnits });
   const selectedGroupLayoutUnits = useMemo(
-      () => selectedLayoutUnits.length === 0 ? EMPTY_CANVAS_LAYOUT_UNITS : selectedLayoutUnits.filter((unit) => unit.kind === "group"),
+      () => selectedLayoutUnits.length === 0 ? EMPTY_CANVAS_LAYOUT_UNITS : selectedLayoutUnits.filter((unit: CanvasLayoutUnit) => unit.kind === "group"),
       [selectedLayoutUnits]
     );
   Object.assign(__appScope, { selectedGroupLayoutUnits });
@@ -1332,7 +1352,7 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
   const terminalPressPreviewEdgeRoutes = useMemo(createAppHookCallback64(__appScope), [canvasBounds, nodeById, previewStoredRoutePointsForEdge, terminalPress, visibleEdgesByTerminalRef, visibleNodes]);
   Object.assign(__appScope, { terminalPressPreviewEdgeRoutes });
   const terminalPressPreviewEdgeIdSet = useMemo(
-      () => new Set(terminalPressPreviewEdgeRoutes.map((route) => route.edgeId)),
+      () => new Set(terminalPressPreviewEdgeRoutes.map((route: RoutedEdge) => route.edgeId)),
       [terminalPressPreviewEdgeRoutes]
     );
   Object.assign(__appScope, { terminalPressPreviewEdgeIdSet });
@@ -1341,12 +1361,12 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
   const multiNodeDragging = Boolean(dragging && isMultiNodeMoveState(dragging)); Object.assign(__appScope, { multiNodeDragging });
   const singleNodeDragging = Boolean(dragging && !isMultiNodeMoveState(dragging)); Object.assign(__appScope, { singleNodeDragging });
   const dragAffectedEdgeIdSet = useMemo(
-      () => new Set((dragging?.affectedEdges ?? []).map((edge) => edge.id)),
+      () => new Set((dragging?.affectedEdges ?? []).map((edge: Edge) => edge.id)),
       [dragging?.affectedEdges]
     );
   Object.assign(__appScope, { dragAffectedEdgeIdSet });
   const dragOverlayEdgeIdSet = useMemo(
-      () => new Set((dragging?.overlayPreview?.edgeRoutes ?? []).map((route) => route.edgeId)),
+      () => new Set((dragging?.overlayPreview?.edgeRoutes ?? []).map((route: RoutedEdge) => route.edgeId)),
       [dragging?.overlayPreview]
     );
   Object.assign(__appScope, { dragOverlayEdgeIdSet });
@@ -1456,7 +1476,7 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
   const groupTransformPreviewEdgeRoutes = useMemo(createAppHookCallback72(__appScope), [transformDrag, visibleEdgeIdSet]);
   Object.assign(__appScope, { groupTransformPreviewEdgeRoutes });
   const groupTransformPreviewEdgeIdSet = useMemo(
-      () => new Set(groupTransformPreviewEdgeRoutes.map((route) => route.edgeId)),
+      () => new Set(groupTransformPreviewEdgeRoutes.map((route: RoutedEdge) => route.edgeId)),
       [groupTransformPreviewEdgeRoutes]
     );
   Object.assign(__appScope, { groupTransformPreviewEdgeIdSet });
@@ -1465,19 +1485,19 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
   const dragPreviewEdgeRoutes = useMemo(createAppHookCallback74(__appScope), [canvasBounds, colorDisplayMode, colorPalette, dragging, draggingDelta, nodeById, routableLineNodeIdsByEndpointNodeId, visibleEdgeIdSet, visibleNodeIdSet]);
   Object.assign(__appScope, { dragPreviewEdgeRoutes });
   const dragPreviewEdgeIdSet = useMemo(
-      () => new Set(dragPreviewEdgeRoutes.map((route) => route.edgeId)),
+      () => new Set(dragPreviewEdgeRoutes.map((route: RoutedEdge) => route.edgeId)),
       [dragPreviewEdgeRoutes]
     );
   Object.assign(__appScope, { dragPreviewEdgeIdSet });
   const dragGhostEdgeRoutes = useMemo(createAppHookCallback75(__appScope), [dragging, draggingDelta, draggingNodeIdSet, nodeById, visibleEdgeIdSet]);
   Object.assign(__appScope, { dragGhostEdgeRoutes });
   const dragGhostEdgeIdSet = useMemo(
-      () => new Set(dragGhostEdgeRoutes.map((route) => route.edgeId)),
+      () => new Set(dragGhostEdgeRoutes.map((route: DragGhostEdgeRoute) => route.edgeId)),
       [dragGhostEdgeRoutes]
     );
   Object.assign(__appScope, { dragGhostEdgeIdSet });
   const dragGhostRoutableLineNodeIdSet = useMemo(
-      () => new Set(dragGhostEdgeRoutes.flatMap((route) => route.routableLineNodeId ? [route.routableLineNodeId] : [])),
+      () => new Set(dragGhostEdgeRoutes.flatMap((route: DragGhostEdgeRoute) => route.routableLineNodeId ? [route.routableLineNodeId] : [])),
       [dragGhostEdgeRoutes]
     );
   Object.assign(__appScope, { dragGhostRoutableLineNodeIdSet });
