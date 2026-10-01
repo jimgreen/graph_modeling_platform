@@ -88,33 +88,6 @@ async function readTargetErrorDetail(targetResponse) {
   }
 }
 
-// 转发到目标服务器，并把「网络层失败」与「业务层失败」分开。
-//
-// 网络诊断（502 无法连接 / 504 超时）必须只覆盖**这一次 fetch**：此前它挂在整个
-// handler 的 catch 上，于是请求发出前 resolveSendTarget 定位模型、buildFileText 跑
-// buildCimXml / buildSvgDocument / buildEFileExport 抛出的任何 TypeError 也被说成
-// 「无法连接目标服务器，请检查地址与网络」—— 把排查方向指到调用方网络上，而真实
-// 原因在后端导出链。同一份坏模型在 /cim-xml 端点如实回 internal 500，到 /send
-// 却回 502，正是这个洞的表现。
-// fetch 自己抛的 TypeError（DNS/连接被拒）与其他错误原样上抛，由外层按名判。
-async function postToTarget(target, form) {
-  try {
-    return await fetch(target, {
-      method: "POST",
-      body: form,
-      signal: AbortSignal.timeout(SEND_TIMEOUT_MS)
-    });
-  } catch (error) {
-    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
-      throw Object.assign(new Error(`目标服务器 ${SEND_TIMEOUT_MS / 1000} 秒内未响应。`), { sendStatus: 504 });
-    }
-    if (error instanceof TypeError) {
-      throw Object.assign(new Error("无法连接目标服务器，请检查地址与网络。"), { sendStatus: 502 });
-    }
-    throw error;
-  }
-}
-
 // 定位待发送模型：优先 modelId（模型稳定序号 idx，与方案路径解耦），
 // 兼容 schemePath + name。返回 { parts, name, modelId } 或 { error }。
 async function resolveSendTarget(url, paths) {
@@ -219,7 +192,11 @@ export async function handleV1ModelSend({ request, response, url, paths }) {
       sentFiles.push({ kind: spec.kind, field, filename, encoding: spec.encoding, bytes: bytes.length });
     }
 
-    const targetResponse = await postToTarget(target, form);
+    const targetResponse = await fetch(target, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(SEND_TIMEOUT_MS)
+    });
     if (!targetResponse.ok) {
       const detail = await readTargetErrorDetail(targetResponse);
       sendV1Error(
@@ -244,10 +221,12 @@ export async function handleV1ModelSend({ request, response, url, paths }) {
       sendV1Error(response, "bad-request", "请求体不是合法 JSON。");
       return;
     }
-    // postToTarget 已经把网络层失败翻译成带 sendStatus 的错误；其余（含导出链内部的
-    // TypeError）一律按 internal 500 如实上报，不再冒充网络故障。
-    if (Number.isInteger(error?.sendStatus)) {
-      sendV1Error(response, "internal", error.message, error.sendStatus);
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+      sendV1Error(response, "internal", `目标服务器 ${SEND_TIMEOUT_MS / 1000} 秒内未响应。`, 504);
+      return;
+    }
+    if (error instanceof TypeError) {
+      sendV1Error(response, "internal", "无法连接目标服务器，请检查地址与网络。", 502);
       return;
     }
     sendV1Error(response, "internal", error instanceof Error ? error.message : "后端处理失败。");

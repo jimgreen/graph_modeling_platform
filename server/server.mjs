@@ -2834,10 +2834,40 @@ function invalidProjectEnumParameters(project) {
   }));
 }
 
+// 量测配置同样按「渲染层可无条件解引用」的形状归一：svg.ts 的 measurementMarkup 直接
+// `measurements.groups.map(...)`，而 measurements 不是对象时（手写 JSON 里写成字符串、
+// 数组，或整个缺失）就会抛 `reading 'map'`，SVG 导出 500。
+// 缺 measurements 时返回 undefined，JSON.stringify 会直接省掉这个键 —— 不凭空给每个模型
+// 造一个空量测配置。
+function normalizeStoredMeasurements(value) {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const source = typeof value === "object" && !Array.isArray(value) ? value : {};
+  return {
+    ...source,
+    groups: (Array.isArray(source.groups) ? source.groups : [])
+      .filter((group) => group && typeof group === "object")
+  };
+}
+
 function normalizeProjectForStorage(project) {
+  // 非对象节点必须**在本函数第一行**滤掉，不能等到分配 idx 之前，更不能等到下面两个归一化
+  // 之后：它们对每个元素做 `{ ...node, params: {...} }`，null / 字符串 / 数字元素在那里被
+  // 就地摊成「看起来合法、却没有 id/kind/size」的节点（探针实测：filter 放在分配 idx 之前
+  // 仍漏，落盘里就是一个 `{"params":{}}`），SVG 导出随即在 exportSvgSafeId(node.id) 上崩。
+  project = {
+    ...project,
+    nodes: Array.isArray(project?.nodes)
+      ? project.nodes.filter((node) => node && typeof node === "object")
+      : []
+  };
   project = normalizeProjectDeviceParameterNamesForStorage(project);
   project = normalizeProjectEnumValuesForStorage(project);
-  const indexed = assignMissingDeviceIndexes(Array.isArray(project?.nodes) ? project.nodes : [], project?.deviceIndexCounters);
+  const indexed = assignMissingDeviceIndexes(
+    Array.isArray(project?.nodes) ? project.nodes : [],
+    project?.deviceIndexCounters
+  );
   return {
     ...project,
     powerUnit: project.powerUnit ?? defaultPowerUnit,
@@ -2848,18 +2878,44 @@ function normalizeProjectForStorage(project) {
         ? project.powerBaseValue
         : defaultPowerBaseValue,
     deviceIndexCounters: indexed.counters,
-    nodes: indexed.nodes.map((node) => {
-      const assetId = node?.params?.backgroundImageAssetId;
-      const backgroundImage = node?.params?.backgroundImage;
-      const params = {
-        ...(node?.params ?? {}),
-        ...(assetId && typeof backgroundImage === "string" && backgroundImage.startsWith("data:")
-          ? { backgroundImage: apiPath(`/images/${assetId}`) }
-          : {})
-      };
-      return { ...node, params };
-    }),
-    edges: Array.isArray(project?.edges) ? project.edges : []
+    measurements: normalizeStoredMeasurements(project.measurements),
+    // 下面是**边界归一化**，把「存储里的模型 JSON」补成渲染层可以无条件解引用的形状。
+    // 保存接口对 record.project 不做结构校验（手写 JSON、ZIP 导入、外部工具产出都可能缺字段），
+    // 而 SVG / E 文件 / CIM / 全网拓扑四条导出链各自按结构假设解引用，结果是一个缺 size 的
+    // 节点就能让三个导出端点一起 500 —— 用户视角是「存得好好的，怎么导不出来」。
+    //
+    // 选在这里而不是各渲染点补 `?.`：入口只有一处，四条链一次受益，且这里本来就是
+    // 「读到的模型一律先过 normalizeProjectForStorage」的唯一位置。
+    // 真实模型本来就带齐这些字段，下面的补全对正常数据是恒等变换。
+    nodes: indexed.nodes
+      .map((node) => {
+        const assetId = node?.params?.backgroundImageAssetId;
+        const backgroundImage = node?.params?.backgroundImage;
+        const params = {
+          ...(node?.params ?? {}),
+          ...(assetId && typeof backgroundImage === "string" && backgroundImage.startsWith("data:")
+            ? { backgroundImage: apiPath(`/images/${assetId}`) }
+            : {})
+        };
+        return {
+          ...node,
+          kind: String(node.kind ?? ""),
+          // 缺位置按画布原点算；缺尺寸按 0（节点没声明尺寸时，这是诚实的取值）
+          position: {
+            x: Number(node.position?.x) || 0,
+            y: Number(node.position?.y) || 0
+          },
+          size: {
+            width: Number(node.size?.width) || 0,
+            height: Number(node.size?.height) || 0
+          },
+          params,
+          terminals: (Array.isArray(node.terminals) ? node.terminals : [])
+            .filter((terminal) => terminal && typeof terminal === "object")
+        };
+      }),
+    edges: (Array.isArray(project?.edges) ? project.edges : [])
+      .filter((edge) => edge && typeof edge === "object")
   };
 }
 

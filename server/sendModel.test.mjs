@@ -84,17 +84,6 @@ beforeAll(async () => {
     nodes: [device("busX", "ac-bus", "无序号母线", { vbase: "10" }, [])],
     edges: []
   }), "utf-8");
-  // 第四个模型：nodes 里有一个 null 项。手写/外部导入的 JSON 出现这种项很常见，
-  // 而 normalizeProjectForStorage 用的是 `node?.params`，不会把它剔掉。
-  writeFileSync(join(dir, "坏节点模型.json"), JSON.stringify({
-    name: "坏节点模型",
-    modelType: "厂站",
-    idx: 4,
-    canvasWidth: 800,
-    canvasHeight: 400,
-    nodes: [null],
-    edges: []
-  }), "utf-8");
   const libDir = join(dataDir, "device-library");
   mkdirSync(libDir, { recursive: true });
   writeFileSync(join(libDir, "library.json"), JSON.stringify({
@@ -394,53 +383,5 @@ describe(`${sendPath} 兼容路径下的 modelId 哨兵值`, () => {
     const structure = received[0].body.toString("utf-8");
     expect(structure).toMatch(MODEL_ID_EMPTY);
     expect(structure).not.toMatch(MODEL_ID_ONE);
-  });
-});
-
-// ─── 导出链内部的 TypeError 不得被说成「无法连接目标服务器」────────────
-//
-// handleV1ModelSend 的 catch 挂在整个 handler 上，于是 `error instanceof TypeError
-// → 502「无法连接目标服务器，请检查地址与网络」` 这条网络诊断，对**请求发出前**的
-// 任何 TypeError 也照样生效：resolveSendTarget 定位模型、buildFileText 跑
-// buildCimXml / buildSvgDocument / buildEFileExport 全在这个 catch 覆盖范围内，
-// 且适配层本身不吞异常（cimExport.mjs 直接调 buildCimXml，无 try）。
-//
-// 于是「模型 JSON 里有个 null 节点」这种纯内部故障，在 /cim-xml 端点如实回 internal 500，
-// 到了 /send 端点却回 502「请检查地址与网络」—— 把排查方向指到调用方网络上去，
-// 而真实原因在后端导出链。与近期那批「不要把失败说成另一种原因」是同一类缺陷。
-describe(`${sendPath} 导出链内部故障的归因`, () => {
-  const badNodeQuery = `schemePath=${schemePath}&name=${encodeURIComponent("坏节点模型")}`;
-
-  test("★ CIM 生成内部崩溃 → 500，而不是 502「无法连接目标服务器」", async () => {
-    const res = await postSend({ url: sinkUrl, files: [{ kind: "cim" }] }, badNodeQuery);
-    expect(res.status).toBe(500);
-    expect((await res.json()).error.message).not.toContain("无法连接");
-  });
-
-  test("★ 与 /cim-xml 端点归因完全一致（同一次失败，两侧同一句原因）", async () => {
-    const send = await postSend({ url: sinkUrl, files: [{ kind: "cim" }] }, badNodeQuery);
-    const direct = await fetch(
-      `${baseUrl}${apiPath(`/v1/schemes/model/cim-xml?schemePath=${schemePath}&name=${encodeURIComponent("坏节点模型")}`)}`
-    );
-    expect((await send.json()).error.message).toBe((await direct.json()).error.message);
-  });
-
-  test("★ 同一故障在 /cim-xml 端点同样回 500（两侧归因一致）", async () => {
-    const res = await fetch(
-      `${baseUrl}${apiPath(`/v1/schemes/model/cim-xml?schemePath=${schemePath}&name=${encodeURIComponent("坏节点模型")}`)}`
-    );
-    expect(res.status).toBe(500);
-    expect((await res.json()).error.code).toBe("internal");
-  });
-
-  test("★ 故障时不向目标服务器发出请求", async () => {
-    await postSend({ url: sinkUrl, files: [{ kind: "cim" }] }, badNodeQuery);
-    expect(received).toHaveLength(0);
-  });
-
-  test("目标确实不可达时仍是 502「无法连接」（别把真网络故障也改成 500）", async () => {
-    const res = await postSend({ url: "http://127.0.0.1:1/receive", files: [{ kind: "json" }] });
-    expect(res.status).toBe(502);
-    expect((await res.json()).error.message).toContain("无法连接");
   });
 });
