@@ -1,6 +1,5 @@
-// @ts-nocheck
 // 从 App.tsx 第 901-2261 行提取
-import { useMemo, useEffect, useLayoutEffect, useRef, useTransition, useDeferredValue, useState } from "react";
+import { useMemo, useEffect, useLayoutEffect, useRef, useTransition, useDeferredValue, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   AlignCenter,
   AlignEndHorizontal,
@@ -420,6 +419,7 @@ import {
   upsertMeasurementGroup,
   upsertMeasurementGroups,
   type DeviceMeasurementProfileItem,
+  type DeviceMeasurementProfile,
   type MeasurementGroup,
   type MeasurementItemBinding,
   type MeasurementTypeDefinition,
@@ -595,7 +595,7 @@ import { createUpdateSingleNodeDragImperativePreview, createStartDraggingState, 
 import { createCommitRoutableLineDevice, createStartRoutableLineFromTerminal, createFinishRoutableLineToTarget, createUpdateRoutableLineEndpointDrag, createStartRoutableLineEndpointDrag, createFinishRoutableLineEndpointDrag, createCommitNewConnectionEdge, createFinishConnectToTarget, createFinishRewiring, createHandleDrop, createHandleRoutableLineNodePointerDown, createHandleNodePointerDown, createHandleRoutableLineNodePathPointerDown, createHandlePointerMove, createFinishCanvasPanning, createStartCanvasPanning, createHandleCanvasPointerDownCapture, createClientPointInsideRenderedCanvas, createFocusCanvasKeyboardShortcutHost, createWheelZoomAnchorFromClient, createFlushPendingWheelZoom, createScheduleWheelZoom, createZoomCanvasFromWheelEvent, createHandleWheel, createDeleteSelected, createRunContextMenuAction, createReadjustMovedBusConnectionRoutes, createReadjustActiveLayerBusEndpointRoutes, createCleanupStaleConnectionRoutes, createCommitLayoutNodePositions, createApplySelectedNodeLayout, createAutoSpreadCanvasGraphics, createAutoAlignCanvasGraphics, createDefaultVoltageBaseSetValue, createRecommendedVoltageBaseSetMode, createDefaultVoltageBaseTerminalValues, createDefaultVoltageBaseTerminalKey, createActiveVoltageBaseTerminalValues, createSetVoltageBaseTerminalValue, createMergeVoltageBaseSetResults, createVoltageBaseSetReady, createVoltageBaseSetResultForScope, createOpenVoltageBaseSetDialog, createConfirmVoltageBaseSetDialog, createOpenVoltageBaseClearDialog, createConfirmVoltageBaseClearDialog, createConnectionRedrawViewportBounds, createConnectionRedrawEdgeIdsForScope, createConnectionRedrawLineNodeIdsForScope, createConnectionRedrawTargetsForScope, createRedrawConnectionRoutes, createOpenConnectionRedrawDialog, createConfirmConnectionRedrawDialog, createAlignSelected, createDistributeSelected, createToggleSchemeExpanded, createPromptUniqueRecordName, createCloneProjectRecordForPaste, createSchemePathForScheme, createSchemePathForProject, createSchemePathForRecord, createCloneSchemeRecord, createCloneSchemeRecordWithName, createCloneSchemeRecordForPaste, createClearActiveProjectDisplay, createLoadSavedProject, createLoadSavedProjectRecord, createRequestUnsavedChangeAction, createRequestLoadSavedProject, createResolveUnsavedChangeAction, createCreateSchemeRecord, createRenameSchemeRecord, createDuplicateSchemeRecord, createDeleteSchemeRecord, createCopySelectedRecord, createDeleteSelectedRecords, createCopyProjectRecord, createCopySchemeRecord, createPasteSchemeClipboardRecord, createPasteProjectClipboardRecord, createPasteSelectedRecord, createCommitProjectRecordMove, createResolveRecordPasteConflict, createMoveProjectRecordToScheme, createMoveSchemeRecordToScheme, createSaveActiveProjectPointer, createSetActiveLayer, createNextDefaultModelLayerName, createAddModelLayer, createClearLayerNameDraft, createCommitModelLayerName, createHandleLayerNameInputKeyDown, createToggleModelLayerVisibility, createSetAllModelLayersVisibility, createMoveModelLayer, createDeleteModelLayer, createRenderDeviceDefinitionMeasurementPanel, createRenderMeasurementConfigDialog, createRenderMeasurementEditorDialog, createSaveCurrentProject, createRenameProjectRecord, createDuplicateProjectRecord, createDuplicateSelectedProjectRecords, createDuplicateSelectedSchemeRecords, createDeleteProjectRecord, createCreateBlankProject, createLocateTopologyError, createRunTopologyCalculation, createGetEdgeEndpointPoint, createCenterViewOnPoint, createViewportCenterAnchorForPoint, createSetViewBoxAtViewportCenter, createCenterViewBoxOnPoint, createCenterViewOnPointAtZoom, createZoomViewportAtCenter, createResetViewportZoom, createFitWholeCanvasToFrame, createFitWholeCanvasFromBlankDoubleClick, createFitViewToBounds, createFitViewToContent, createFocusElementTreeItem, createJumpToElementTreeItem, createOpenElementTreeItemContextMenu, createSetEdgeManualPoints, createRouteManualPoints, createFinishManualPathDrag, createTidySelectedEdgeRoute, createTidyRoutableLineRoute } from "./appProjectCanvasFactories";
 import { createOpenEdgeContextMenu, createCaptureCanvasPointer, createStartManualSegmentDrag, createStartManualPointDrag, createRouteSegmentPointerDistance, createFindEditableRouteSegmentIndex, createConnectionHitTolerance, createFindConnectionRouteHitAtPoint, createInsertManualBendAtPoint, createInsertManualBendFromPointer, createAddManualBendFromContextMenu, createAddRoutableLineBendFromContextMenu, createInsertManualBendFromEdgePath, createHandleEdgePathPointerDown, createDeleteManualBendPoint, createSetRoutableLineManualPathPoints, createInsertRoutableLineBendAtPoint, createInsertRoutableLineBendFromPointer, createStartRoutableLineSegmentDrag, createStartRoutableLinePointDrag, createDeleteRoutableLineBendPoint, createStartConnectFromTerminal, createFinishTerminalPress, createHandleTerminalPointerDown, createEnsureSavedBeforeExport, createSvgExportReferencedImageHrefById, createLoadSvgImageExportPathById, createExportSvg, createExportEFile, createExportSvgFile, createExportJsonFile, createExportEDeviceDefinitionFile, createImportEDeviceDefinitionFile, createIsProjectFilePayload, createCreateImportedSchemeRecord, createExportProjectRecordFile, createExportCurrentModelFile, createOpenModelImportFilePicker, createOpenSchemeImportFilePicker, createMergeImportedSchemeIntoExisting, createCommitImportedSchemeRecord, createApplyBackendSchemeArchiveImport, createImportSchemeFile, createCommitImportedModelRecord, createImportModelFile, createResolveDuplicateSchemeImport, createResolveDuplicateModelImport, createExportSchemeRecord, createChooseImage, createApplyExistingImage, createApplyIconLibraryCatalogIcon, createClearSelectedImage, createClearSelectedImageForNode, createCreateImageFolder, createRenameImageFolder, createDeleteImageFolder, createStartProjectRecordDrag, createFinishProjectRecordDrag, createStartSchemeRecordDrag, createFinishSchemeRecordDrag, createRenderProjectSchemeNode, createOpenBlankProjectLibraryContextMenu, createCustomDeviceDefaultStateVisualDraft, createSnapCustomDeviceTerminalAnchor, createCustomDeviceTerminalConnectorSegment, createUpdateCustomDeviceTerminalAnchor, createUpdateCustomDeviceStateDraftRow, createAddCustomDeviceStateDraftRow, createDeleteCustomDeviceStateDraftRow, createUpdateCustomDeviceTerminalAnchorFromPreview, createDefinitionDefaultStateVisualDraft, createSnapDefinitionTerminalAnchor, createDefinitionTerminalConnectorSegment, createUpdateDefinitionTerminalAnchor, createUpdateDefinitionTerminalAnchorFromPreview, createLoadDefinitionTemplateDraft, createFinishDeviceLibraryDialogPointerOperation, createCurrentDeviceLibraryDialogRect, createDeviceLibraryDialogStyle, createStartDeviceLibraryDialogDrag, createStartDeviceLibraryDialogResize, createStopDeviceLibraryDialogEvent, createOpenDeviceDefinitionDialog, createCloseDeviceDefinitionDialog, createCloseCustomDeviceDialog, createRequestCloseCustomDeviceDialog, createSetCustomDeviceDraftCleanBaseline, createCustomDeviceDraftHasUnsavedChanges, createRevertCustomDeviceDraftCurrentTab, createRevertCustomDeviceDraftAll, createToggleDefinitionGroup, createToggleDefinitionComponentLibrary, createToggleElementTreeGroup, createToggleElementTreeDeviceGroup, createUpdateDefinitionDraftRow, createAddDefinitionDraftRow, createDeleteDefinitionDraftRow, createUpdateDefinitionStateDraftRow, createAddDefinitionStateDraftRow, createDeleteDefinitionStateDraftRow, createUpdateSelectedDefinitionResizePermission, createSaveDeviceDefinitionStateVisualDraft, createSaveDeviceDefinitionVisualDraft, createSaveDeviceDefinitionDraft, createResetDeviceDefinitionDraft, createUpdateDefinitionComponentLibraryCommonParamExport, createUpdateCustomDraftTerminalCount, createChooseCustomDeviceBackground, createChooseDefinitionTemplateIcon, createChooseStateVisualImage, createChooseStateIconDrawingImport, createUpdateStateIconDrawingElement, createUpdateStateIconDrawingElements, createStateIconDrawingPointer, createStateIconDrawingSelection, createComputeStateIconDrawingSmartAlignmentSnap, createStartStateIconDrawingDrag, createDragStateIconDrawingSelection, createStopStateIconDrawingDrag, createDeleteSelectedStateIconDrawingElements, createStateIconDrawingKeyDown, createAddStateIconDrawingElement, createDeleteStateIconDrawingElement, createOpenStateIconDrawingDialog, createApplyStateIconDrawingDialog, createEnsureCustomComponentTreeExpanded, createCancelPendingCustomComponentTemplateLoad, createSelectCustomCategoryLibrary, createSelectCustomComponentLibrary, createSelectCustomComponentTemplate, createStartCustomComponentCreate, createConfirmCustomLibraryCreateDialog, createNextCustomCategoryLibraryName, createCreateCustomCategoryLibrary, createDeleteCustomCategoryLibrary, createNextCustomComponentLibraryName, createCreateCustomComponentLibrary, createDeleteCustomComponentLibrary, createRenameSelectedCustomDeviceTreeItem, createDeleteSelectedCustomDeviceTreeItem, createNextCustomTemplateKind, createSaveCustomDeviceTemplate, createSaveBuiltinDeviceDefinitionFromCustomDraft, createSaveCustomDeviceDefinitionDialog } from "./appDeviceDefinitionFactories";
 import { createRenderStateVisualPager, createRenderDeviceDefinitionVisualPanel, createRenderGraphTemplatePreview, createRenderLibraryTemplateButton, createRenderLibraryFlyout, createLodNodeFromEvent, createLodTerminalIdFromEvent, createHandleLodNodePointerDown, createHandleLodNodeContextMenu } from "./appDeviceDefinitionRenderers";
-import { createOpenNodeDoubleClickEditor, createHandleLodNodeDoubleClick, createClampFloatingToolbarPosition, createToolbarOverlapArea, createCanvasRectToSurfaceCssRect, createRotateControlAvoidRectFromCanvasPoints, createPlaceFloatingToolbar, createRenderMeasurementGroup, createHandleMinimapNavigate, createCenterSelectedInView, createFitViewToSelection, createClearStaticButtonFeedbackTimer, createSetStaticButtonFeedback, createClearStaticButtonFeedback, createBeginStaticButtonPointerFeedback, createResolveStaticButtonTargetProject, createExecuteStaticButtonCommand, createExecuteStaticButtonAction, createHandleStaticButtonClick, createBeginReadonlyBackgroundStaticButtonPointerFeedback, createRenderReadonlyBackgroundPage, createOpenTopologyWarningPanel, createAppHookCallback1, createAppHookCallback2, createAppHookCallback3, createAppHookCallback4, createAppHookCallback5, createAppHookCallback6, createAppHookCallback7, createAppHookCallback8, createAppHookCallback9, createAppHookCallback10, createAppHookCallback11, createAppHookCallback12, createAppHookCallback13, createAppHookCallback14, createAppHookCallback15, createAppHookCallback16, createAppHookCallback17, createAppHookCallback18, createAppHookCallback19, createAppHookCallback20, createAppHookCallback21, createAppHookCallback22, createAppHookCallback23, createAppHookCallback24, createAppHookCallback25, createAppHookCallback26, createAppHookCallback27, createAppHookCallback28, createAppHookCallback29, createAppHookCallback30, createAppHookCallback31, createAppHookCallback32, createAppHookCallback33, createAppHookCallback34, createAppHookCallback35, createAppHookCallback36, createAppHookCallback37, createAppHookCallback38, createAppHookCallback39, createAppHookCallback40, createAppHookCallback41, createAppHookCallback42, createAppHookCallback43, createAppHookCallback44, createAppHookCallback45, createAppHookCallback46, createAppHookCallback47, createAppHookCallback48, createAppHookCallback49, createAppHookCallback50, createAppHookCallback51, createAppHookCallback52, createAppHookCallback53, createAppHookCallback54, createAppHookCallback55, createAppHookCallback56, createAppHookCallback57, createAppHookCallback58, createAppHookCallback59, createAppHookCallback60, createAppHookCallback61, createAppHookCallback62, createAppHookCallback63, createAppHookCallback64, createAppHookCallback65, createAppHookCallback66, createAppHookCallback67, createAppHookCallback68, createAppHookCallback69, createAppHookCallback70, createAppHookCallback71, createAppHookCallback72, createAppHookCallback73, createAppHookCallback74, createAppHookCallback75, createAppHookCallback76, createAppHookCallback77, createAppHookCallback78, createAppHookCallback79, createAppHookCallback80, createAppHookCallback81, createAppHookCallback82, createAppHookCallback83, createAppHookCallback84, createAppHookCallback85, createAppHookCallback86, createAppHookCallback87, createAppHookCallback88, createAppHookCallback89, createAppHookCallback90, createAppHookCallback91, createAppHookCallback92, createAppHookCallback93, createAppHookCallback94, createAppHookCallback95, createAppHookCallback96, createAppHookCallback97, createAppHookCallback98, createAppHookCallback99, createAppHookCallback100, createAppHookCallback101, createAppHookCallback102, createAppHookCallback103, createAppHookCallback104, createAppHookCallback105, createAppHookCallback106, createAppHookCallback107, createAppHookCallback108, createAppHookCallback109, createAppHookCallback110, createAppHookCallback111, createAppHookCallback112, createAppHookCallback113, createAppHookCallback114, createAppHookCallback115, createAppHookCallback116, createAppHookCallback117, createAppHookCallback118, createAppHookCallback119, createAppHookCallback120, createAppHookCallback121, createAppHookCallback122, createAppHookCallback123, createAppHookCallback124, createAppHookCallback125, createAppHookCallback126, createAppHookCallback127, createAppHookCallback128, createAppHookCallback129, createAppHookCallback130, createAppHookCallback131, createAppHookCallback132, createAppHookCallback133, createAppHookCallback134, createAppHookCallback135, createAppHookCallback136, createAppHookCallback137, createAppHookCallback138, createAppHookCallback139, createAppHookCallback140, createAppHookCallback141, createAppHookCallback142 } from "./appToolbarHookFactories";
+import { createOpenNodeDoubleClickEditor, createHandleLodNodeDoubleClick, createClampFloatingToolbarPosition, createToolbarOverlapArea, createCanvasRectToSurfaceCssRect, createRotateControlAvoidRectFromCanvasPoints, createPlaceFloatingToolbar, createRenderMeasurementGroup, createHandleMinimapNavigate, createCenterSelectedInView, createFitViewToSelection, createClearStaticButtonFeedbackTimer, createSetStaticButtonFeedback, createClearStaticButtonFeedback, createBeginStaticButtonPointerFeedback, createResolveStaticButtonTargetProject, createExecuteStaticButtonCommand, createExecuteStaticButtonAction, createHandleStaticButtonClick, createBeginReadonlyBackgroundStaticButtonPointerFeedback, createRenderReadonlyBackgroundPage, createOpenTopologyWarningPanel, createAppHookCallback1, createAppHookCallback2, createAppHookCallback3, createAppHookCallback4, createAppHookCallback5, createAppHookCallback6, createAppHookCallback7, createAppHookCallback8, createAppHookCallback9, createAppHookCallback10, createAppHookCallback11, createAppHookCallback12, createAppHookCallback13, createAppHookCallback14, createAppHookCallback15, createAppHookCallback16, createAppHookCallback17, createAppHookCallback18, createAppHookCallback19, createAppHookCallback20, createAppHookCallback21, createAppHookCallback22, createAppHookCallback23, createAppHookCallback24, createAppHookCallback25, createAppHookCallback26, createAppHookCallback27, createAppHookCallback28, createAppHookCallback29, createAppHookCallback30, createAppHookCallback31, createAppHookCallback32, createAppHookCallback33, createAppHookCallback34, createAppHookCallback35, createAppHookCallback36, createAppHookCallback37, createAppHookCallback39, createAppHookCallback40, createAppHookCallback41, createAppHookCallback42, createAppHookCallback43, createAppHookCallback44, createAppHookCallback45, createAppHookCallback46, createAppHookCallback47, createAppHookCallback48, createAppHookCallback49, createAppHookCallback50, createAppHookCallback51, createAppHookCallback52, createAppHookCallback53, createAppHookCallback54, createAppHookCallback55, createAppHookCallback56, createAppHookCallback57, createAppHookCallback58, createAppHookCallback59, createAppHookCallback60, createAppHookCallback61, createAppHookCallback62, createAppHookCallback63, createAppHookCallback64, createAppHookCallback65, createAppHookCallback66, createAppHookCallback67, createAppHookCallback68, createAppHookCallback69, createAppHookCallback70, createAppHookCallback71, createAppHookCallback72, createAppHookCallback73, createAppHookCallback74, createAppHookCallback75, createAppHookCallback76, createAppHookCallback77, createAppHookCallback78, createAppHookCallback79, createAppHookCallback80, createAppHookCallback81, createAppHookCallback82, createAppHookCallback83, createAppHookCallback84, createAppHookCallback85, createAppHookCallback86, createAppHookCallback87, createAppHookCallback88, createAppHookCallback89, createAppHookCallback90, createAppHookCallback91, createAppHookCallback92, createAppHookCallback93, createAppHookCallback94, createAppHookCallback95, createAppHookCallback96, createAppHookCallback97, createAppHookCallback98, createAppHookCallback99, createAppHookCallback100, createAppHookCallback101, createAppHookCallback102, createAppHookCallback103, createAppHookCallback104, createAppHookCallback105, createAppHookCallback106, createAppHookCallback107, createAppHookCallback108, createAppHookCallback109, createAppHookCallback110, createAppHookCallback111, createAppHookCallback112, createAppHookCallback113, createAppHookCallback114, createAppHookCallback115, createAppHookCallback116, createAppHookCallback117, createAppHookCallback118, createAppHookCallback119, createAppHookCallback120, createAppHookCallback121, createAppHookCallback122, createAppHookCallback123, createAppHookCallback124, createAppHookCallback125, createAppHookCallback126, createAppHookCallback127, createAppHookCallback128, createAppHookCallback129, createAppHookCallback130, createAppHookCallback131, createAppHookCallback132, createAppHookCallback133, createAppHookCallback134, createAppHookCallback135, createAppHookCallback136, createAppHookCallback137, createAppHookCallback138, createAppHookCallback139, createAppHookCallback140, createAppHookCallback141, createAppHookCallback142 } from "./appToolbarHookFactories";
 import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
 import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected, createProgrammaticDeleteDevices, createProgrammaticUpdateDeviceProperty, createProgrammaticSave, createProgrammaticSaveSelectionAsTemplate } from "./appControlFactories";
@@ -609,14 +609,21 @@ import {
 } from "../iconLibraryCatalog";
 import { imagePickerUsesLibraryTabs, renderAppView } from "./appView";
 import { MemoizedCanvasArea } from "./appCanvasArea";
+// 下面这几个名字此前只出现在 __appScope 的解构列表里，然后在类型位置上被使用 ——
+// 那几个「值」永远是 any（类型不存在于运行期）。改为真正的 type-only import，
+// 并从解构列表里去掉同名项（它们不是运行期依赖）。
+import type {
+  BatchCommonMeasurementGroupRow,
+  BatchCommonParamRow,
+  CategoryLibrary,
+  DraggingState,
+  RefreshRecoveryProjectState,
+  RenderViewportBounds,
+  SmartAlignmentGuide
+} from "./appCoreCanvasUtilities";
 
 export function useAppStateBatch(__appScope: Record<string, any>) {
   const {
-    BatchCommonMeasurementGroupRow,
-    BatchCommonParamRow,
-    DraggingState,
-    RefreshRecoveryProjectState,
-    RenderViewportBounds,
     StaticButtonComponents,
     activeLayerId,
     activeProjectKey,
@@ -773,7 +780,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { globalMessage, showGlobalMessage });
   const [, startCustomComponentSelectionTransition] = useTransition();
   Object.assign(__appScope, { startCustomComponentSelectionTransition });
-  const startMeasurementEditorTableColumnResize = (columnKey: string, defaultWidth: number, event: PointerEvent<HTMLElement>) => {
+  const startMeasurementEditorTableColumnResize = (columnKey: string, defaultWidth: number, event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0) {
       return;
     }
@@ -812,7 +819,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
       }
       moveEvent.preventDefault();
       const nextWidth = clampNumber(Math.round(startWidth + moveEvent.clientX - startX), 56, 520);
-      setMeasurementEditorColumnWidths((current) => ({ ...current, [columnKey]: nextWidth }));
+      setMeasurementEditorColumnWidths((current: Record<string, number>) => ({ ...current, [columnKey]: nextWidth }));
     };
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", finishColumnResize, { once: true });
@@ -849,11 +856,11 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   const orderedNodeFromList = createOrderedNodeFromList(__appScope); Object.assign(__appScope, { orderedNodeFromList });
   const orderedNodesForIds = createOrderedNodesForIds(__appScope); Object.assign(__appScope, { orderedNodesForIds });
   const activeLayer = useMemo(
-      () => layers.find((layer) => layer.id === activeLayerId) ?? layers[0],
+      () => layers.find((layer: ModelLayer) => layer.id === activeLayerId) ?? layers[0],
       [activeLayerId, layers]
     );
   Object.assign(__appScope, { activeLayer });
-  const allModelLayersVisible = layers.length === 0 || layers.every((layer) => layer.visible !== false); Object.assign(__appScope, { allModelLayersVisible });
+  const allModelLayersVisible = layers.length === 0 || layers.every((layer: ModelLayer) => layer.visible !== false); Object.assign(__appScope, { allModelLayersVisible });
   const visibleProject = useMemo(createAppHookCallback6(__appScope), [allModelLayersVisible, edges, graphStore.edgeIdSet, graphStore.edgeIndexById, graphStore.edgesByNodeId, graphStore.nodeIdSet, graphStore.nodeMap, graphStore.nodeSpatialIndex, graphStore.nodesByLayerId, layers, nodes]);
   const visibleNodes = visibleProject.nodes; Object.assign(__appScope, { visibleNodes });
   const visibleEdges = visibleProject.edges; Object.assign(__appScope, { visibleEdges });
@@ -896,7 +903,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   const filterSelectionTypeOptions = useMemo(createAppHookCallback9(__appScope), [activeLayerNodes, filterSelectionTemplateComponentLibraryByKind, filterSelectionTemplateLabelByKind]);
   Object.assign(__appScope, { filterSelectionTypeOptions });
   const activeLayerNodeIdSet = useMemo(
-      () => (activeLayerNodes === visibleNodes ? visibleNodeIdSet : new Set(activeLayerNodes.map((node) => node.id))),
+      () => (activeLayerNodes === visibleNodes ? visibleNodeIdSet : new Set(activeLayerNodes.map((node: ModelNode) => node.id))),
       [activeLayerNodes, visibleNodeIdSet, visibleNodes]
     );
   Object.assign(__appScope, { activeLayerNodeIdSet });
@@ -920,7 +927,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     );
   Object.assign(__appScope, { activeLayerEdges });
   const activeLayerEdgeIdSet = useMemo(
-      () => (activeLayerEdges === visibleEdges ? visibleEdgeIdSet : new Set(activeLayerEdges.map((edge) => edge.id))),
+      () => (activeLayerEdges === visibleEdges ? visibleEdgeIdSet : new Set(activeLayerEdges.map((edge: Edge) => edge.id))),
       [activeLayerEdges, visibleEdgeIdSet, visibleEdges]
     );
   Object.assign(__appScope, { activeLayerEdgeIdSet });
@@ -931,12 +938,12 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { activeLayerGroups });
   const rawActiveSelectedEdgeIds = useMemo(
       () => (selectedEdgeIds.length > 0 ? selectedEdgeIds : selectedEdgeId ? [selectedEdgeId] : [])
-        .filter((edgeId) => activeLayerEdgeIdSet.has(edgeId)),
+        .filter((edgeId: string) => activeLayerEdgeIdSet.has(edgeId)),
       [activeLayerEdgeIdSet, selectedEdgeId, selectedEdgeIds]
     );
   Object.assign(__appScope, { rawActiveSelectedEdgeIds });
   const rawActiveSelectedNodeIds = useMemo(
-      () => selectedNodeIds.filter((nodeId) => activeLayerNodeIdSet.has(nodeId)),
+      () => selectedNodeIds.filter((nodeId: string) => activeLayerNodeIdSet.has(nodeId)),
       [activeLayerNodeIdSet, selectedNodeIds]
     );
   Object.assign(__appScope, { rawActiveSelectedNodeIds });
@@ -987,7 +994,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     );
   Object.assign(__appScope, { batchCommonModelParamRows });
   const selectedNodeIdsWithMeasurementGroups = useMemo(() => new Set(
-      activeSelectedNodeIds.filter((nodeId) => {
+      activeSelectedNodeIds.filter((nodeId: string) => {
         const node = nodeById.get(nodeId);
         return node && !isStaticGraphicNode(node) && measurementGroupsForNode(projectMeasurements, nodeId).length > 0;
       })
@@ -1026,28 +1033,28 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     );
   Object.assign(__appScope, { selectedMeasurementGroupIdSet });
   const visibleMeasurementGroups = useMemo(
-      () => projectMeasurements.groups.filter((group) => group.visible && visibleNodeById.has(group.nodeId)),
+      () => projectMeasurements.groups.filter((group: MeasurementGroup) => group.visible && visibleNodeById.has(group.nodeId)),
       [projectMeasurements.groups, visibleNodeById]
     );
   Object.assign(__appScope, { visibleMeasurementGroups });
   const measurementTypeById = useMemo(
-      () => new Map(measurementConfig.measurementTypes.map((item) => [item.id, item])),
+      () => new Map(measurementConfig.measurementTypes.map((item: MeasurementTypeDefinition) => [item.id, item])),
       [measurementConfig.measurementTypes]
     );
   Object.assign(__appScope, { measurementTypeById });
   const measurementProfileByKind = useMemo(
-      () => new Map(measurementConfig.deviceProfiles.map((profile) => [profile.deviceKind, profile])),
+      () => new Map(measurementConfig.deviceProfiles.map((profile: DeviceMeasurementProfile) => [profile.deviceKind, profile])),
       [measurementConfig.deviceProfiles]
     );
   Object.assign(__appScope, { measurementProfileByKind });
   const editableMeasurementConfig = measurementConfigDraft ?? measurementConfig; Object.assign(__appScope, { editableMeasurementConfig });
   const editableMeasurementTypeById = useMemo(
-      () => new Map(editableMeasurementConfig.measurementTypes.map((item) => [item.id, item])),
+      () => new Map(editableMeasurementConfig.measurementTypes.map((item: MeasurementTypeDefinition) => [item.id, item])),
       [editableMeasurementConfig.measurementTypes]
     );
   Object.assign(__appScope, { editableMeasurementTypeById });
   const editableMeasurementProfileByKind = useMemo(
-      () => new Map(editableMeasurementConfig.deviceProfiles.map((profile) => [profile.deviceKind, profile])),
+      () => new Map(editableMeasurementConfig.deviceProfiles.map((profile: DeviceMeasurementProfile) => [profile.deviceKind, profile])),
       [editableMeasurementConfig.deviceProfiles]
     );
   Object.assign(__appScope, { editableMeasurementProfileByKind });
@@ -1214,7 +1221,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
         return;
       }
       let changed = false;
-      const normalizedNodes = nodes.map((node) => {
+      const normalizedNodes = nodes.map((node: ModelNode) => {
         const normalized = normalizeNodeTerminalsWithTemplate(node, libraryTemplateByKind.get(node.kind));
         if (normalized !== node) {
           changed = true;
@@ -1232,10 +1239,10 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   useEffect(createAppHookCallback16(__appScope), [definitionStateDraftRows, definitionStatePageId]);
   const statusStatesForNode = createStatusStatesForNode(__appScope); Object.assign(__appScope, { statusStatesForNode });
   const statusOptionsForNode = (node: ModelNode | undefined) =>
-      statusStatesForNode(node).map((state) => state.value);
+      statusStatesForNode(node).map((state: DeviceStateDefinition) => state.value);
   Object.assign(__appScope, { statusOptionsForNode });
   const statusOptionLabelsForNode = (node: ModelNode | undefined) =>
-      Object.fromEntries(statusStatesForNode(node).map((state) => [state.value, state.name || state.value]));
+      Object.fromEntries(statusStatesForNode(node).map((state: DeviceStateDefinition) => [state.value, state.name || state.value]));
   Object.assign(__appScope, { statusOptionLabelsForNode });
   const nodeKindAllowsResizeTransform = createNodeKindAllowsResizeTransform(__appScope); Object.assign(__appScope, { nodeKindAllowsResizeTransform });
   const groupDeviceReplacementTemplates = useMemo(
@@ -1347,8 +1354,8 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   const scheduleGraphTemplateFlyoutClose = (typeName: string) => {
       clearLibraryFlyoutCloseTimer();
       libraryFlyoutCloseTimerRef.current = window.setTimeout(() => {
-        setHoveredGraphTemplateType((current) => current === typeName ? "" : current);
-        setLibraryFlyoutPositions((current) => {
+        setHoveredGraphTemplateType((current: string) => current === typeName ? "" : current);
+        setLibraryFlyoutPositions((current: Record<string, { top: number; left: number }>) => {
           const key = libraryComponentListRefKey("flyout", `template:${typeName}`);
           if (!(key in current)) {
             return current;
@@ -1392,7 +1399,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   const componentLibraryOptions = useMemo(
       () => Array.from(new Set([
         ...E_SECTION_OPTIONS,
-        ...customComponentLibraries.map((item) => item.name),
+        ...customComponentLibraries.map((item: { name: string }) => item.name),
         ...libraryTemplates.filter((template) => template.custom).map(resolveTemplateComponentLibrary).filter(Boolean)
       ])),
       [customComponentLibraries, libraryTemplates]
@@ -1646,7 +1653,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { editHotInteractionActive });
   const graphTreePanelActive = inspectorTab === "tree"; Object.assign(__appScope, { graphTreePanelActive });
   const elementTreeLayerSignature = useMemo(
-      () => layers.map((layer) => `${layer.id}:${layer.visible !== false ? "1" : "0"}`).join("|"),
+      () => layers.map((layer: ModelLayer) => `${layer.id}:${layer.visible !== false ? "1" : "0"}`).join("|"),
       [layers]
     );
   Object.assign(__appScope, { elementTreeLayerSignature });
