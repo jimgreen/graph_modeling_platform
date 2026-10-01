@@ -1,4 +1,3 @@
-// @ts-nocheck
 export * from "../export/static-button-targets";
 import { lazy } from "react";
 import { apiPath } from "../config";
@@ -1398,7 +1397,6 @@ export type CustomDeviceDraft = {
   params: CustomParamDraft[];
   measurementDefinitions: DeviceMeasurementProfileItem[];
   stateDefinitions: DeviceDefinitionStateDraftRow[];
-  measurementDefinitions?: DeviceMeasurementProfileItem[];
   error: string;
 };
 
@@ -2151,8 +2149,11 @@ export const EMPTY_MODEL_GROUP_BY_ID = new Map<string, ModelGroup>();
 export const EMPTY_CANVAS_LAYOUT_UNITS: readonly CanvasLayoutUnit[] = Object.freeze([]);
 
 export const EMPTY_CANVAS_SELECTION: ReturnType<typeof resolveCanvasSelection> = {
-  nodeIds: EMPTY_ID_LIST,
-  edgeIds: EMPTY_EDGE_ID_LIST
+  // 运行期是 Object.freeze 的只读空数组（共享常量，引用相等有意义）。类型上仍按
+  // resolveCanvasSelection 的返回形状声明 —— 改成 [...EMPTY_ID_LIST] 每次都会分配新数组，
+  // 「同一个空选择」就变成不同引用。断言只放宽 readonly，不影响运行时。
+  nodeIds: EMPTY_ID_LIST as string[],
+  edgeIds: EMPTY_EDGE_ID_LIST as string[]
 };
 
 export const IMAGE_STORAGE_KEY = "power-system-image-assets";
@@ -3476,7 +3477,7 @@ export function normalizeLegacyPowerSystemLabel(value: string) {
 
 export function normalizeSavedProjectIndexes(project: SavedProjectRecord): SavedProjectRecord {
   const normalizedName = normalizeLegacyPowerSystemLabel(project?.name);
-  const source = project?.project && typeof project.project === "object" && !Array.isArray(project.project)
+  const source: Partial<ProjectFile> = project?.project && typeof project.project === "object" && !Array.isArray(project.project)
     ? project.project
     : {};
   const normalizedProject = normalizeProjectLayers({
@@ -3493,7 +3494,7 @@ export function normalizeSavedProjectIndexes(project: SavedProjectRecord): Saved
     // （见 globalLinesKeys.test.ts 记录的理由：静默兜底会掩盖「取不到线路」），
     // 所以形状必须在进它之前就补齐，而不是指望它兜。
     nodes: (Array.isArray(source.nodes) ? source.nodes : [])
-      .filter((node) => node && typeof node === "object")
+      .filter((node: unknown) => node && typeof node === "object")
       .map((node) => ({
         ...node,
         kind: String(node.kind ?? ""),
@@ -3502,9 +3503,13 @@ export function normalizeSavedProjectIndexes(project: SavedProjectRecord): Saved
       }))
       .map(normalizeNodeTerminalsByTemplate),
     edges: Array.isArray(source.edges)
-      ? source.edges.filter((edge) => edge && typeof edge === "object")
+      ? source.edges.filter((edge: unknown) => edge && typeof edge === "object")
       : []
-  });
+    // 入参是刚归一过的**部分形状**：source 来自不可信来源（后端 payload / 浏览器缓存 /
+    // 图元库导入包），version 等字段未必存在。normalizeProjectLayers 只读 layers / nodes /
+    // activeLayerId 并把其余键原样透传，故在此收口成 ProjectFile —— 与后端
+    // normalizeProjectForStorage 是同一条边界规则，见 server/CLAUDE.md「模型存储边界」。
+  } as ProjectFile);
   return {
     ...project,
     name: normalizedName,
