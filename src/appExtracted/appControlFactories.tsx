@@ -1,4 +1,3 @@
-// @ts-nocheck
 // swigger 控制台写操作程序化方法工厂。
 // 与 UI 写方法隔离：参数显式传入，复用底层 setter，绕过 prompt/alert/draft/editMode。
 // 经 WS control 指令调用（App.tsx commandHandler 分发）。
