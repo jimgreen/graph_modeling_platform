@@ -209,7 +209,8 @@ describe("VoltageLevelDialog 标签页数据源（源码守卫）", () => {
     // 这处等价变异在渲染期不可观测，改用源码守卫钉住，免得被悄悄写死某一侧。
     const { readFileSync } = await import("node:fs");
     const source = readFileSync(new URL("./VoltageLevelDialog.tsx", import.meta.url), "utf8");
-    expect(source).toContain("const currentList = draft[tab];");
+    // 允许 currentList 带上行类型标注（VoltageLevelRow[]），仍必须取 draft[tab]
+    expect(source).toMatch(/const currentList(?:\s*:\s*[^=]+?)?\s*=\s*draft\[tab\];/);
   });
 });
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useRef, useState } from "react";
 import { Save, RotateCcw, Plus, Trash2 } from "lucide-react";
 import { BUILTIN_VOLTAGE_LEVELS, VoltageLevelConfig, VoltageLevelSettings, writeVoltageLevelSettings } from "./model";
@@ -11,6 +10,11 @@ type Props = {
   settings: VoltageLevelSettings;
   onSave: (settings: VoltageLevelSettings) => void;
 };
+
+// `isNew` 是 addRow 写上去的运行期字段（「这行是用户自建的，别当内置」），持久化类型
+// VoltageLevelConfig 上没有它。此处按行局部扩展，**不改 model.ts 的持久化类型** ——
+// 见 VoltageLevelDialog.test.tsx 里同名的 `Row` 约定。
+type VoltageLevelRow = VoltageLevelConfig & { isNew?: boolean };
 
 export function VoltageLevelDialog({ open, onClose, settings, onSave }: Props) {
   const [tab, setTab] = useState<"ac" | "dc">("ac");
@@ -30,7 +34,7 @@ export function VoltageLevelDialog({ open, onClose, settings, onSave }: Props) {
 
   if (!open) return null;
 
-  const currentList = draft[tab];
+  const currentList: VoltageLevelRow[] = draft[tab];
   const builtinSet = new Set(BUILTIN_VOLTAGE_LEVELS);
 
   const checkNameDuplicate = (name: string, excludeIndex: number): boolean => {
