@@ -465,27 +465,42 @@ async function readLegacySchemeDirectoryMeta(schemeDir) {
 }
 
 async function readSchemeProjectFile(filePath, fileName, paths = defaultPaths) {
+  // 三段分开：读盘、JSON 解析、注册表 hydrate（会写盘）。
+  // 此前三段共用一个 catch，任何失败都 return null，调用方一律报「模型文件不存在」——
+  // 磁盘写权限没了 / 磁盘满 / 注册表写失败，也被说成「模型被删了」，排查方向直接跑偏。
+  let raw;
   try {
-    const storedProject = normalizeProjectForStorage(JSON.parse(await readFile(filePath, "utf-8")));
-    const hydrated = await registryFor(paths).hydrateProject({ project: storedProject });
-    const project = hydrated.project;
-    const fileBaseName = fileName.replace(/\.json$/iu, "");
-    const name = storageProjectDisplayName(project.name || storedProjectFilePartDisplayName(fileBaseName));
-    return {
-      name,
-      updatedAt: await fileUpdatedAt(filePath),
-      project: {
-        ...project,
-        name
-      }
-    };
+    raw = await readFile(filePath, "utf-8");
   } catch (error) {
-    // 这里把「文件不存在」「JSON 损坏」「注册表写失败」折叠成同一个 null，调用方一律
-    // 当「模型不存在」——于是磁盘写失败会被报成 404，用户得到「模型被删了」的错误
-    // 结论。降级本身是既有契约（改了会变 API 语义），此处只把静默变成可观测。
-    warnStoreReadFallback(error, filePath, "按「模型不存在」处理");
+    if (error?.code === "ENOENT") {
+      return null;
+    }
+    throw new Error(`模型文件读取失败：${filePath}（${error?.code ?? error?.name ?? "unknown"}）`, { cause: error });
+  }
+  let storedProject;
+  try {
+    storedProject = normalizeProjectForStorage(JSON.parse(raw));
+  } catch {
+    // 文件损坏：这里「读不出这个模型」是事实，沿用既有的 null 语义
     return null;
   }
+  let hydrated;
+  try {
+    hydrated = await registryFor(paths).hydrateProject({ project: storedProject });
+  } catch (error) {
+    throw new Error(`读取模型时写全局线路注册表失败：${error?.message ?? error}`, { cause: error });
+  }
+  const project = hydrated.project;
+  const fileBaseName = fileName.replace(/\.json$/iu, "");
+  const name = storageProjectDisplayName(project.name || storedProjectFilePartDisplayName(fileBaseName));
+  return {
+    name,
+    updatedAt: await fileUpdatedAt(filePath),
+    project: {
+      ...project,
+      name
+    }
+  };
 }
 
 async function readSchemeProjectSummaryFile(filePath, fileName) {
