@@ -5,9 +5,120 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>电力能源系统图上建模平台</title>
+    <!-- 首屏启动遮罩的样式内联在这里：这段等待大头是 bundle 下载与解析，
+         多一个 <link> 就多一次往返，动画必须先于任何 JS 求值出现在页面上。 -->
+    <style>
+      #app-boot {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        background: radial-gradient(120% 90% at 50% 0%, #f8fafc 0%, #e5e7eb 60%, #dfe3ea 100%);
+        font-family: Inter, "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, sans-serif;
+        transition: opacity 0.32s ease;
+      }
+      #app-boot.is-done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #app-boot .boot-mark {
+        width: 132px;
+        height: 66px;
+      }
+      /* 波形描边循环推进 + 两端节点呼吸，和 favicon.svg 同一套配色 */
+      #app-boot .boot-mark path {
+        stroke-dasharray: 92;
+        stroke-dashoffset: 92;
+        animation: boot-draw 2.1s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+      }
+      #app-boot .boot-mark circle {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: boot-pulse 1.6s ease-in-out infinite;
+      }
+      #app-boot .boot-mark circle:last-child {
+        animation-delay: 0.45s;
+      }
+      @keyframes boot-draw {
+        0% { stroke-dashoffset: 92; }
+        45%, 55% { stroke-dashoffset: 0; }
+        100% { stroke-dashoffset: -92; }
+      }
+      @keyframes boot-pulse {
+        0%, 100% { opacity: 0.35; transform: scale(0.82); }
+        50% { opacity: 1; transform: scale(1.12); }
+      }
+      #app-boot .boot-phase {
+        min-height: 22px;
+        font-size: 14px;
+        color: #334155;
+        letter-spacing: 0.02em;
+      }
+      /* 换文案时淡入，避免文字硬切 */
+      #app-boot .boot-phase span {
+        display: inline-block;
+        animation: boot-fade 0.32s ease;
+      }
+      @keyframes boot-fade {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: none; }
+      }
+      #app-boot .boot-bar {
+        width: 168px;
+        height: 3px;
+        border-radius: 2px;
+        background: #cbd5e1;
+        overflow: hidden;
+      }
+      #app-boot .boot-bar i {
+        display: block;
+        width: 42%;
+        height: 100%;
+        border-radius: 2px;
+        background: linear-gradient(90deg, #38bdf8, #2563eb);
+        animation: boot-slide 1.25s ease-in-out infinite;
+      }
+      @keyframes boot-slide {
+        0% { transform: translateX(-110%); }
+        100% { transform: translateX(340%); }
+      }
+      #app-boot .boot-hint {
+        font-size: 12px;
+        color: #b45309;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #app-boot * { animation: none !important; }
+        #app-boot .boot-mark path { stroke-dashoffset: 0; }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="app-boot" role="status" aria-live="polite">
+      <svg class="boot-mark" viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M14 34h12l6-16 6 28 6-12h6" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+        <circle cx="14" cy="34" r="4" fill="#facc15" />
+        <circle cx="50" cy="34" r="4" fill="#22c55e" />
+      </svg>
+      <div class="boot-phase"><span>正在启动…</span></div>
+      <div class="boot-bar"><i></i></div>
+    </div>
+    <script>
+      // 后端未起是最常见的「卡住」原因，遮罩自己提示，别让人对着空白页猜。
+      setTimeout(function () {
+        var hint = document.querySelector("#app-boot .boot-hint");
+        if (!hint) {
+          hint = document.createElement("div");
+          hint.className = "boot-hint";
+          hint.textContent = "加载耗时较长，请确认后端服务（5174 端口）已启动。";
+          document.getElementById("app-boot").appendChild(hint);
+        }
+      }, 15000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

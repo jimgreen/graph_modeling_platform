@@ -559,6 +559,7 @@ import {
 } from "./appExtracted/appCanvasViewportCalculations";
 import { createRuntimeWsClient } from "./runtimeWsClient";
 import { fetchSpaces, type Space } from "./spaceClient";
+import { finishBoot } from "./startupProgress";
 import { createRuntimeSnapshotHandler } from "./runtimeSnapshot";
 import { createRuntimeScreenshotHandler } from "./runtimeScreenshot";
 import {
@@ -668,6 +669,14 @@ const initialLayeredProject = useMemo(() => normalizeProjectLayers({
 Object.assign(__appScope, { initialLayeredProject });
 const initialIndexedNodes = useMemo(createAppHookCallback2(__appScope), [initialCanvasBounds, initialDraft?.deviceIndexCounters, initialLayeredProject.nodes]);
 const initialDeviceLibrary = useMemo(() => readLocalDeviceLibraryPersistencePayload(), []); Object.assign(__appScope, { initialDeviceLibrary });
+
+// 首屏启动遮罩到此为止：注册在所有其它挂载 effect 之前，跑得最早 —— 首屏等的就是
+// 「bundle 下载解析 + 启动闸门」这两段，闸门在 createRoot 之前已经 await 完了。
+// 此后的一切（模型库 / 图元库 / 全局线路）都是后台刷新，各自带自己的加载态，
+// 不该再由遮罩挡着 —— 挡着只会让「已经能用了」看起来像「还没加载完」。
+useEffect(() => {
+  finishBoot();
+}, []);
 
 // IndexedDB 迁移：应用启动时自动执行 localStorage → IndexedDB 迁移
 useEffect(() => {
