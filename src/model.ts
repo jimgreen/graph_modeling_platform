@@ -8798,7 +8798,11 @@ export function normalizeTwoWindingTransformerParams(params: Record<string, stri
   let changed = next !== params;
   for (const [canonicalKey, legacyKeys] of TWO_WINDING_TRANSFORMER_PARAMETER_ALIASES) {
     const canonicalValue = String(next[canonicalKey] ?? "").trim();
-    const legacyValue = legacyKeys.map((legacyKey) => next[legacyKey]).find((value) => value !== undefined);
+    // 与三绕组（8770 行）同口径：先取第一个非空别名，全为空才退回第一个「已定义」的那个，
+    // 否则 {i_vbase:"", high_vbase:"", highVbase:"110"} 会写回空串并把 110 一起删掉。
+    const legacyValues = legacyKeys.map((legacyKey) => next[legacyKey]);
+    const legacyValue = legacyValues.find((value) => String(value ?? "").trim()) ??
+      legacyValues.find((value) => value !== undefined);
     if (!canonicalValue && legacyValue !== undefined) {
       if (!changed) {
         next = { ...next };
