@@ -3468,15 +3468,28 @@ export const measurementGroupWithCommonSetting = (
 };
 
 export function normalizeLegacyPowerSystemLabel(value: string) {
-  return value.replace(/电力系统/g, "电力能源系统");
+  // 旧模型/手改 JSON 的 name 可能缺席；此前直接 .replace 会抛「undefined.replace」。
+  // 缺席时原样返回 undefined，让调用方各自的兜底（storageProjectDisplayName 等）接手。
+  return String(value ?? "").replace(/电力系统/g, "电力能源系统");
 }
 
 export function normalizeSavedProjectIndexes(project: SavedProjectRecord): SavedProjectRecord {
-  const normalizedName = normalizeLegacyPowerSystemLabel(project.name);
+  const normalizedName = normalizeLegacyPowerSystemLabel(project?.name);
+  const source = project?.project && typeof project.project === "object" && !Array.isArray(project.project)
+    ? project.project
+    : {};
   const normalizedProject = normalizeProjectLayers({
-    ...project.project,
-    name: normalizeLegacyPowerSystemLabel(project.project.name ?? normalizedName),
-    nodes: project.project.nodes.map(normalizeNodeTerminalsByTemplate)
+    ...source,
+    name: normalizeLegacyPowerSystemLabel(source.name ?? normalizedName),
+    // 同 normalizeStoredDraftProject 的写法：先判数组再 map，滤掉非对象项。
+    // 这一层是保存方案进入应用前的必经之路（后端 payload、浏览器缓存、图元库导入包
+    // 都会走它），少一道判就是「导入一个畸形包整个应用起不来」。
+    nodes: (Array.isArray(source.nodes) ? source.nodes : [])
+      .filter((node) => node && typeof node === "object")
+      .map(normalizeNodeTerminalsByTemplate),
+    edges: Array.isArray(source.edges)
+      ? source.edges.filter((edge) => edge && typeof edge === "object")
+      : []
   });
   return {
     ...project,
@@ -3488,11 +3501,11 @@ export function normalizeSavedProjectIndexes(project: SavedProjectRecord): Saved
 export function normalizeSavedSchemeIndexes(scheme: SavedSchemeRecord): SavedSchemeRecord {
   return {
     ...scheme,
-    name: normalizeLegacyPowerSystemLabel(scheme.name),
-    projects: Array.isArray(scheme.projects)
+    name: normalizeLegacyPowerSystemLabel(scheme?.name),
+    projects: Array.isArray(scheme?.projects)
       ? normalizeSavedProjectRecordNames(scheme.projects.map(normalizeSavedProjectIndexes))
       : [],
-    children: Array.isArray(scheme.children)
+    children: Array.isArray(scheme?.children)
       ? scheme.children.map(normalizeSavedSchemeIndexes)
       : []
   };
