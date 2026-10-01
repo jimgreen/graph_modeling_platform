@@ -12,6 +12,7 @@ import {
   groupPeerKindsBySharedKey,
   normalizeSharedDeviceDefinitionOverrides
 } from "./device-definition-shared.ts";
+import { normalizeDeviceParameterEnglishName } from "../../shared/deviceParameterChineseNames.mjs";
 
 export const deviceDefinitionComplianceKey = (value: unknown) => String(value ?? "").trim().toLowerCase().replace(/_/g, "");
 
@@ -50,13 +51,7 @@ const E_DEVICE_INTERFACE_CURRENT_FIELD_ALIASES: Record<string, string> = {
 
 function eDeviceInterfaceOrderFieldName(value: unknown) {
   const rawName = String(value ?? "").trim();
-  const snakeName = rawName
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[^A-Za-z0-9_]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .toLowerCase();
-  return E_DEVICE_INTERFACE_CURRENT_FIELD_ALIASES[snakeName] ?? rawName;
+  return E_DEVICE_INTERFACE_CURRENT_FIELD_ALIASES[normalizeDeviceParameterEnglishName(rawName)] ?? rawName;
 }
 
 function ensureEDeviceInterfaceParentBeforeDevType(fieldOrder: readonly string[]) {
