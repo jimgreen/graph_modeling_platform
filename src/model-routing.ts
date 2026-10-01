@@ -140,6 +140,7 @@ import {
   getSafeNodeScaleY,
   type GeometryBounds
 } from "./model-canvas-ops.ts";
+import { normalizeDeviceParameterEnglishName } from "../shared/deviceParameterChineseNames.mjs";
 
 function roundRoutableLineCoordinate(value: number) {
   return Math.round(value * 10) / 10;
@@ -3808,12 +3809,7 @@ function isSupportedVoltageBaseValueParamKey(node: ModelNode, key: string): bool
     return false;
   }
   const section = inferESection(node.kind, node.params);
-  const normalized = key.trim()
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[^A-Za-z0-9_]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .toLowerCase();
+  const normalized = normalizeDeviceParameterEnglishName(key);
   if ((section === "DCDCConverter" || section === "ACACConverter") && normalized === "v_set") {
     return false;
   }
