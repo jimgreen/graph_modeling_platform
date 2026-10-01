@@ -16,6 +16,7 @@ import {
 import {
   firstNonZeroVoltageBase,
   isThreeWindingTransformer,
+  isZeroNumericText,
   THREE_WINDING_TRANSFORMER_SIDES
 } from "./model-eexport";
 
@@ -33,10 +34,12 @@ function hasElectricalTerminal(node: Pick<ModelNode, "terminals">): boolean {
   return node.terminals.some((t) => isElectricalTerminalType(t.type));
 }
 
-/** 判断电压值是否为零（"0" 或空字符串） */
+/** 判断电压值是否为零（"0" / "0.0" 或空字符串） */
 function isZeroVoltage(value: string | undefined): boolean {
   const normalized = terminalVoltageBaseNumber(value);
-  return !normalized || normalized === "0";
+  // 用数值比较而非字符串相等：normalizeVoltageBaseInput 只剥非数字字符，
+  // "0.0" 会原样留下，与 model-eexport 的 isZeroNumericText 保持同一口径。
+  return !normalized || isZeroNumericText(normalized);
 }
 
 /**
