@@ -3177,6 +3177,11 @@ function assignMissingDeviceIndexes(nodes, counters) {
   return { nodes: changed ? nextNodes : nodes, counters: nextCounters };
 }
 
+// 同一份坏载荷只告警一次：storedEParameterDefinitions 是**逐节点**调用的，
+// 一个模型带了坏定义就会在导出时刷出成百上千条同样的告警，把真正有用的日志淹掉。
+// 以原始载荷为键去重，坏数据通常只有一两种，Set 的增长可以忽略。
+const warnedCustomParamDefinitions = new Set();
+
 function storedEParameterDefinitions(params = {}) {
   try {
     const parsed = JSON.parse(params._customParamDefinitions ?? "[]");
@@ -3191,7 +3196,19 @@ function storedEParameterDefinitions(params = {}) {
         exportName: typeof definition.exportName === "string" ? definition.exportName.trim() : definition.exportName
       }))
       .filter((definition) => definition.enName && !definition.enName.startsWith("_") && definition.enName !== "component_type");
-  } catch {
+  } catch (error) {
+    // 归 [] 是既有降级，但代价很具体：E 导出会**静默丢掉**这个元件的全部自定义参数定义，
+    // 生成的 .e 文件参数变少，而界面与导出都不报错，事后只有拿到文件比对才发现。
+    // 触发面也不只是「JSON 写坏了」—— _customParamDefinitions 存成对象/数组时
+    // JSON.parse 同样抛，两种都归到这里。
+    const raw = typeof params?._customParamDefinitions === "string" ? params._customParamDefinitions : "";
+    if (!warnedCustomParamDefinitions.has(raw)) {
+      warnedCustomParamDefinitions.add(raw);
+      console.warn(
+        `[E导出] 自定义参数定义解析失败（${error?.message ?? error}），已按「无自定义参数」导出，` +
+        "该元件的参数会在 .e 文件里缺失"
+      );
+    }
     return [];
   }
 }
