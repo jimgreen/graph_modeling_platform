@@ -4,7 +4,7 @@
 // /v1/schemes/model/e-file、/svg、/cim-xml、/send 四处共用。字节不一致的后果
 // 是第三方拿到的文件与用户本地保存的文件不同（编码声明错、BOM 多余、声明重复），
 // 而现有端到端测试比的是**内容**不是**字节**，抓不到声明层面的差异。
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import iconv from "iconv-lite";
 import { encodeTextBytes, withXmlEncodingDeclaration } from "./xmlEncoding.mjs";
 
@@ -36,6 +36,60 @@ describe("encodeTextBytes", () => {
     expect(encodeTextBytes(null, "utf-8").length).toBe(0);
     expect(encodeTextBytes(undefined, "utf-8").length).toBe(0);
     expect(encodeTextBytes(123, "utf-8").toString("utf-8")).toBe("123");
+  });
+});
+
+describe("encodeTextBytes：GBK 不可映射字符告警", () => {
+  test("★ 字节输出不变（与 iconv.encode 逐字节相同，告警不参与编码）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const text = "设备😀";
+    expect(encodeTextBytes(text, "gbk").equals(iconv.encode(text, "gbk"))).toBe(true);
+    warn.mockRestore();
+  });
+
+  test("★ emoji / 生僻字被写成 ? 时告警，并点名具体字符与码位", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    encodeTextBytes("设备😀", "gbk");
+    expect(warn).toHaveBeenCalledTimes(1);
+    const message = String(warn.mock.calls[0][0]);
+    expect(message).toContain("GBK");
+    expect(message).toContain("U+1F600");
+    expect(message).toContain("共 1 个");
+    warn.mockRestore();
+  });
+
+  test("多个不可映射字符计数正确（超过 10 个时省略号收尾）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    encodeTextBytes("设备𠮷𬜨😀🙈🎉🕐🌍🔥💡⭐🚀", "gbk");
+    const message = String(warn.mock.calls[0][0]);
+    expect(message).toContain("共 11 个");
+    expect(message).toContain("…");
+    warn.mockRestore();
+  });
+
+  test("★ 正常中文不告警（别把每次导出都刷成噪音）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    encodeTextBytes("第1端关联交流单元序号 母线 负荷 断路器", "gbk");
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  test("★ 原文本来就含 '?' 不算丢失（'?' 的 GBK 编码能原样往返）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    encodeTextBytes("状态?正常", "gbk");
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  test("utf-8 路径不告警（GBK 无损，不需要检测）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    encodeTextBytes("设备😀", "utf-8");
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  test("★ 损坏确实发生（不是理论告警）：emoji 解码回来是问号", () => {
+    expect(iconv.decode(iconv.encode("😀", "gbk"), "gbk")).toBe("?");
   });
 });
 
