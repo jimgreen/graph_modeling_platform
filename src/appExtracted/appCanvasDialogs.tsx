@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Tabs } from "antd";
-import { areViewSectionPropsEqual, type ViewSectionProps } from "./appViewRenderBoundary";
+import { areViewSectionPropsEqual, type ViewSectionInputs } from "./appViewRenderBoundary";
 import type { DeviceTemplate, ModelLayer, ModelNode, VoltageLevelConfig } from "../model";
 import { VOLTAGE_BASE_SET_CATEGORIES, type GroupDeviceDefinitionDialogState } from "./appCoreCanvasUtilities";
 import { buildTopologyConnectivity, isBusNode } from "../model-routing";
@@ -34,9 +34,9 @@ function VoltageBaseSetTable({ activeValue, onSelect }: VoltageBaseSetTableProps
   </div>);
 }
 
-// 视图分段的 props 是 ViewSectionProps 的**超集**：section / inputs 供比较器判定
+// 视图分段的 props 是 ViewSectionInputs 的**超集**：section / inputs 供比较器判定
 // 「数据不变就不重渲」（appView.tsx 的调用点三个都传），scope 才是本段解构的数据来源。
-type AppCanvasDialogsProps = ViewSectionProps & { scope: Record<string, any> };
+type AppCanvasDialogsProps = ViewSectionInputs & { scope: Record<string, any> };
 
 // 电压基值「按端子分行」的每一行：设备 id + 端子 id + 该端电压。
 type VoltageBaseTerminalRow = { nodeId: string; terminalId: string; terminalLabel: string; voltage: string };

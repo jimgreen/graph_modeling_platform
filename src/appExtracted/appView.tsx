@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useCallback, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { MemoizedCanvasArea } from "./appCanvasArea";
 import { predefinedEDeviceTemplateByFile } from "../predefinedEDeviceTemplates";
@@ -15,11 +14,12 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { E_SECTION_COLUMNS, inferESection, baseDeviceKind, isContainerKind, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, finalizeEDevicePreviewRecords, eOutputSectionName, eFileInterfaceDefinitionIndex, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, modelAssociationDevicesModelTypeFailureMessage, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
+import { E_SECTION_COLUMNS, inferESection, baseDeviceKind, isContainerKind, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, finalizeEDevicePreviewRecords, eOutputSectionName, eFileInterfaceDefinitionIndex, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, modelAssociationDevicesModelTypeFailureMessage, DEVICE_LIBRARY, type DeviceParameterDefinition, type DeviceParameterEnumOption, type DeviceParameterValueType, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyPredefinedEDeviceTemplateToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { resolveEditableComponentLibraryDefinition } from "../componentLibraryDefinitions";
 import { TOPOLOGY_WARNING_PAGE_SIZE } from "./appCoreCanvasUtilities";
-import type { CustomComponentLibraryDefinition } from "./appCoreCanvasUtilities";
+import type { CustomComponentLibraryDefinition, CustomDeviceDraft, CustomParamDraft, ImageAsset, ImageFolder } from "./appCoreCanvasUtilities";
+import type { MeasurementGroup } from "../measurements";
 import { decodeAuto } from "../encoding/gbk";
 import { openExportedFile, type SavedExportFile } from "../fileIO";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
@@ -939,7 +939,7 @@ export function renderAppView(__appScope: Record<string, any>) {
       // 检查已匹配 section 中的量测字段，为缺少量测配置的设备类型添加量测定义，并为画布上的节点添加量测组
       const currentConfig = __appScope.measurementConfig;
       if (currentConfig) {
-        const existingProfiles = new Set((currentConfig.deviceProfiles ?? []).map((p) => p.deviceKind));
+        const existingProfiles = new Set((currentConfig.deviceProfiles ?? []).map((p: { deviceKind: string }) => p.deviceKind));
         const newProfiles: any[] = [];
         const deviceKindsNeedingMeasurements: string[] = [];
         for (const item of result.matched) {
@@ -950,7 +950,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             continue;
           }
           // 查找该类对应的设备 kind
-          const template = (libraryTemplates ?? []).find((t) => {
+          const template = (libraryTemplates ?? []).find((t: DeviceTemplate) => {
             const derivedInfo = templateDerivedComponentLibraryInfo(t);
             const cl = derivedInfo?.componentLibrary ?? (resolveTemplateComponentLibrary ? resolveTemplateComponentLibrary(t) : inferESection(t.kind, t.params ?? {}));
             return cl === item.device;
@@ -994,7 +994,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             );
             if (allNewGroups.length > 0) {
               updateProjectMeasurementsWithUndo(
-                (current) => upsertMeasurementGroups(current, allNewGroups),
+                (current: MeasurementGroup[]) => upsertMeasurementGroups(current, allNewGroups),
                 `模板导入：为 ${nodesNeedingMeasurements.length} 个元件添加量测`
               );
             }
@@ -1228,7 +1228,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     }
     const componentLibrary = baseline.row.componentLibrary;
     const currentRow = eDeviceInterfaceDefinitionRows.find((row) => row.componentLibrary === componentLibrary);
-    setEDeviceDefinitionLabels((current) => {
+    setEDeviceDefinitionLabels((current: Record<string, string>) => {
       const next = { ...current };
       if (baseline.labelOverride === undefined) {
         delete next[componentLibrary];
@@ -1237,7 +1237,7 @@ export function renderAppView(__appScope: Record<string, any>) {
       }
       return next;
     });
-    setEDeviceDefinitionClassExportEnabled((current) => {
+    setEDeviceDefinitionClassExportEnabled((current: Record<string, boolean>) => {
       const next = { ...current };
       if (baseline.classExportOverride === undefined) {
         delete next[componentLibrary];
@@ -1246,7 +1246,7 @@ export function renderAppView(__appScope: Record<string, any>) {
       }
       return next;
     });
-    setEDeviceDefinitionFieldOrder((current) => {
+    setEDeviceDefinitionFieldOrder((current: Record<string, string[]>) => {
       const next = { ...current };
       if (baseline.fieldOrderOverride === undefined) {
         delete next[componentLibrary];
@@ -1307,7 +1307,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     if (nextOrder.every((fieldName, index) => fieldName === currentOrder[index])) {
       return;
     }
-    setEDeviceDefinitionFieldOrder((current) => ({
+    setEDeviceDefinitionFieldOrder((current: Record<string, string[]>) => ({
       ...current,
       [selectedEDeviceInterfaceRow.componentLibrary]: nextOrder
     }));
@@ -1416,14 +1416,14 @@ export function renderAppView(__appScope: Record<string, any>) {
       .flatMap((typeGroup: any) => typeGroup.templates ?? [])
       .find((template: any) => resolveTemplateComponentLibrary(template) === selectedDefinitionDerivedInfo.baseComponentLibrary)
     : null;
-  const definitionDraftRowsForDisplay = selectedDefinitionTemplate && selectedDefinitionDerivedInfo && typeof __appScope.createDefinitionDraftRows === "function"
-    ? resolveDeviceDefinitionParameterRowsForDisplay(definitionDraftRows, __appScope.createDefinitionDraftRows(selectedDefinitionTemplate), {
+  const definitionDraftRowsForDisplay: CustomParamDraft[] = selectedDefinitionTemplate && selectedDefinitionDerivedInfo && typeof __appScope.createDefinitionDraftRows === "function"
+    ? resolveDeviceDefinitionParameterRowsForDisplay<CustomParamDraft>(definitionDraftRows, __appScope.createDefinitionDraftRows(selectedDefinitionTemplate), {
         baseComponentLibrary: selectedDefinitionDerivedInfo.baseComponentLibrary,
         isDerivedComponentBaseParamName: __appScope.isDerivedComponentBaseParamName
       })
     : definitionDraftRows;
   const selectedDefinitionParameterRowIds: string[] = __appScope.selectedDefinitionParameterRowIds ?? [];
-  const selectedDefinitionParameterRowIdSet = new Set(selectedDefinitionParameterRowIds);
+  const selectedDefinitionParameterRowIdSet = new Set<string>(selectedDefinitionParameterRowIds);
   const definitionParameterRowIds = definitionDraftRowsForDisplay.map((row) => row.id);
   const selectDefinitionParameterRow = (rowId: string, event: any) => {
     const result = nextTableRowSelection(
@@ -1438,10 +1438,10 @@ export function renderAppView(__appScope: Record<string, any>) {
   };
   const copySelectedDefinitionParameterRows = () => {
     if (!__appScope.requireEditMode("修改元件定义")) return;
-    const selectedRows = definitionDraftRowsForDisplay.filter((row) => selectedDefinitionParameterRowIdSet.has(row.id));
+    const selectedRows = definitionDraftRowsForDisplay.filter((row: CustomParamDraft) => selectedDefinitionParameterRowIdSet.has(row.id));
     if (selectedRows.length === 0) return;
-    const existingNames = new Set(definitionDraftRows.map((row) => String(row.enName ?? "").trim().toLowerCase()).filter(Boolean));
-    const copies = selectedRows.map((row) => {
+    const existingNames = new Set<string>(definitionDraftRows.map((row: CustomParamDraft) => String(row.enName ?? "").trim().toLowerCase()).filter(Boolean));
+    const copies = selectedRows.map((row: CustomParamDraft) => {
       const enName = uniqueCopiedFieldName(row.enName, existingNames);
       return {
         ...row,
@@ -1449,13 +1449,13 @@ export function renderAppView(__appScope: Record<string, any>) {
         enName,
         readonly: false,
         exportName: enName,
-        enumOptions: row.enumOptions?.map((option) => ({ ...option })),
+        enumOptions: row.enumOptions?.map((option: DeviceParameterEnumOption) => ({ ...option })),
         enumValues: row.enumValues ? [...row.enumValues] : undefined
       };
     });
-    const selectedSourceIds = new Set(selectedRows.map((row) => row.id));
+    const selectedSourceIds = new Set(selectedRows.map((row: CustomParamDraft) => row.id));
     const lastSourceIndex = definitionDraftRows.reduce(
-      (lastIndex, row, index) => selectedSourceIds.has(row.id) ? index : lastIndex,
+      (lastIndex: number, row: CustomParamDraft, index: number) => selectedSourceIds.has(row.id) ? index : lastIndex,
       -1
     );
     const insertIndex = lastSourceIndex >= 0 ? lastSourceIndex + 1 : definitionDraftRows.length;
@@ -1464,7 +1464,7 @@ export function renderAppView(__appScope: Record<string, any>) {
       ...copies,
       ...definitionDraftRows.slice(insertIndex)
     ]);
-    const copiedIds = copies.map((row) => row.id);
+    const copiedIds = copies.map((row: CustomParamDraft) => row.id);
     __appScope.setSelectedDefinitionParameterRowIds(copiedIds);
     __appScope.definitionParameterSelectionAnchorRef.current = copiedIds[0] ?? null;
     __appScope.setDefinitionDraftError("");
@@ -1474,13 +1474,13 @@ export function renderAppView(__appScope: Record<string, any>) {
     const movedVisibleRows = moveSelectedTableRows(
       definitionDraftRowsForDisplay,
       selectedDefinitionParameterRowIdSet,
-      (row) => row.id,
+      (row: CustomParamDraft) => row.id,
       direction,
-      (row) => !row.readonly
+      (row: CustomParamDraft) => !row.readonly
     );
-    const visibleIds = new Set(definitionDraftRowsForDisplay.map((row) => row.id));
+    const visibleIds = new Set(definitionDraftRowsForDisplay.map((row: CustomParamDraft) => row.id));
     const movedQueue = [...movedVisibleRows];
-    __appScope.setDefinitionDraftRows(definitionDraftRows.map((row) => visibleIds.has(row.id) ? movedQueue.shift()! : row));
+    __appScope.setDefinitionDraftRows(definitionDraftRows.map((row: CustomParamDraft) => visibleIds.has(row.id) ? movedQueue.shift()! : row));
     __appScope.setDefinitionDraftError("");
   };
   const deleteSelectedDefinitionParameterRows = () => {
@@ -1494,7 +1494,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         .map((row) => row.id)
     );
     if (editableSelectedIds.size === 0) return;
-    __appScope.setDefinitionDraftRows(definitionDraftRows.filter((row) => !editableSelectedIds.has(row.id)));
+    __appScope.setDefinitionDraftRows(definitionDraftRows.filter((row: CustomParamDraft) => !editableSelectedIds.has(row.id)));
     const remainingSelection = selectedDefinitionParameterRowIds.filter((id) => !editableSelectedIds.has(id));
     __appScope.setSelectedDefinitionParameterRowIds(remainingSelection);
     if (!remainingSelection.includes(__appScope.definitionParameterSelectionAnchorRef.current)) {
@@ -1513,13 +1513,13 @@ export function renderAppView(__appScope: Record<string, any>) {
     __appScope.setDefinitionDraftError("已标记删除全部参数，点击保存后生效。");
   };
   const selectedDefinitionEditableParameterCount = definitionDraftRowsForDisplay.filter(
-    (row) => !row.readonly && selectedDefinitionParameterRowIdSet.has(row.id)
+    (row: CustomParamDraft) => !row.readonly && selectedDefinitionParameterRowIdSet.has(row.id)
   ).length;
-  const customDefaultParamKeySet = new Set(customDraftDefaultParams.map((item) => item.enName.trim().toLowerCase()));
-  const customDefaultParamOverrideMap = new Map(customDeviceDraft.params
-    .filter((item) => customDefaultParamKeySet.has(item.enName.trim().toLowerCase()))
-    .map((item) => [item.enName.trim().toLowerCase(), item]));
-  const mergedCustomDefaultParams = customDraftDefaultParams.map((item) => {
+  const customDefaultParamKeySet = new Set<string>(customDraftDefaultParams.map((item: CustomParamDraft) => item.enName.trim().toLowerCase()));
+  const customDefaultParamOverrideMap = new Map<string, DeviceParameterDefinition>(customDeviceDraft.params
+    .filter((item: DeviceParameterDefinition) => customDefaultParamKeySet.has(item.enName.trim().toLowerCase()))
+    .map((item: DeviceParameterDefinition): [string, DeviceParameterDefinition] => [item.enName.trim().toLowerCase(), item]));
+  const mergedCustomDefaultParams = customDraftDefaultParams.map((item: CustomParamDraft) => {
     const override = customDefaultParamOverrideMap.get(item.enName.trim().toLowerCase());
     return override
       ? normalizeDefinitionRowEnumFields({
@@ -1535,9 +1535,9 @@ export function renderAppView(__appScope: Record<string, any>) {
       : item;
   });
   const visibleCustomParams = customDeviceDraft.params.filter(
-    (item) => !customDefaultParamKeySet.has(item.enName.trim().toLowerCase())
+    (item: CustomParamDraft) => !customDefaultParamKeySet.has(item.enName.trim().toLowerCase())
   );
-  const displayedCustomParameterRows = resolveCustomDeviceParameterRowsForDisplay(mergedCustomDefaultParams, visibleCustomParams, {
+  const displayedCustomParameterRows = resolveCustomDeviceParameterRowsForDisplay<CustomParamDraft>(mergedCustomDefaultParams, visibleCustomParams, {
     isDerivedComponentLibrary:
       customComponentTreeSelection?.kind !== "componentLibrary" && customDeviceDraft.isDerivedComponentLibrary,
     baseComponentLibrary: customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary,
@@ -1547,11 +1547,11 @@ export function renderAppView(__appScope: Record<string, any>) {
   const displayedVisibleCustomParams = displayedCustomParameterRows.customRows;
   const displayedCustomParameterRowIds = [
     ...displayedMergedCustomDefaultParams.map((row) => `default-${row.enName}`),
-    ...displayedVisibleCustomParams.map((row) => row.id)
+    ...displayedVisibleCustomParams.map((row: CustomParamDraft) => row.id)
   ];
   const selectedCustomParameterRowIds: string[] = (__appScope.selectedCustomParameterRowIds ?? [])
     .filter((id: string) => displayedCustomParameterRowIds.includes(id));
-  const selectedCustomParameterRowIdSet = new Set(selectedCustomParameterRowIds);
+  const selectedCustomParameterRowIdSet = new Set<string>(selectedCustomParameterRowIds);
   const selectCustomParameterRow = (rowId: string, event: any) => {
     const result = nextTableRowSelection(
       selectedCustomParameterRowIds,
@@ -1565,13 +1565,13 @@ export function renderAppView(__appScope: Record<string, any>) {
   };
   const updateCustomDefaultParamRow = (rowId: string, patch: Partial<CustomParamDraft>) => {
     const enName = rowId.replace(/^default-/, "");
-    const sourceRow = mergedCustomDefaultParams.find((item) => item.enName === enName)
-      ?? customDraftDefaultParams.find((item) => item.enName === enName);
+    const sourceRow = mergedCustomDefaultParams.find((item: CustomParamDraft) => item.enName === enName)
+      ?? customDraftDefaultParams.find((item: CustomParamDraft) => item.enName === enName);
     const exportOnlyPatch = Object.keys(patch).every((key) => key === "exportEnabled" || key === "exportName");
     if (!sourceRow || (sourceRow.readonly && !exportOnlyPatch)) return;
-    setCustomDeviceDraft((current) => {
+    setCustomDeviceDraft((current: CustomDeviceDraft) => {
       const key = sourceRow.enName.trim().toLowerCase();
-      const existing = current.params.find((item) => item.enName.trim().toLowerCase() === key);
+      const existing = current.params.find((item: DeviceParameterDefinition) => item.enName.trim().toLowerCase() === key);
       const nextRow = normalizeDefinitionRowEnumFields({
         ...sourceRow,
         ...(existing ?? {}),
@@ -1584,7 +1584,7 @@ export function renderAppView(__appScope: Record<string, any>) {
       return {
         ...current,
         params: existing
-          ? current.params.map((item) => item.id === existing.id ? nextRow : item)
+          ? current.params.map((item: CustomParamDraft) => item.id === existing.id ? nextRow : item)
           : [...current.params, nextRow],
         error: ""
       };
@@ -1600,19 +1600,19 @@ export function renderAppView(__appScope: Record<string, any>) {
       exportEnabled: false,
       exportName: ""
     };
-    setCustomDeviceDraft((current) => ({ ...current, params: [...current.params, row], error: "" }));
+    setCustomDeviceDraft((current: CustomDeviceDraft) => ({ ...current, params: [...current.params, row], error: "" }));
     __appScope.setSelectedCustomParameterRowIds([row.id]);
     __appScope.customParameterSelectionAnchorRef.current = row.id;
   };
   const copySelectedCustomParameterRows = () => {
     const defaultRows = displayedMergedCustomDefaultParams
       .filter((row) => selectedCustomParameterRowIdSet.has(`default-${row.enName}`));
-    const customRows = displayedVisibleCustomParams.filter((row) => selectedCustomParameterRowIdSet.has(row.id));
+    const customRows = displayedVisibleCustomParams.filter((row: CustomParamDraft) => selectedCustomParameterRowIdSet.has(row.id));
     const sourceRows = [...defaultRows, ...customRows];
     if (sourceRows.length === 0) return;
     const existingNames = new Set([
-      ...customDraftDefaultParams.map((row) => row.enName),
-      ...customDeviceDraft.params.map((row) => row.enName)
+      ...customDraftDefaultParams.map((row: CustomParamDraft) => row.enName),
+      ...customDeviceDraft.params.map((row: DeviceParameterDefinition) => row.enName)
     ].map((name) => String(name ?? "").trim().toLowerCase()).filter(Boolean));
     const copies = sourceRows.map((row) => {
       const enName = uniqueCopiedFieldName(row.enName, existingNames);
@@ -1622,22 +1622,22 @@ export function renderAppView(__appScope: Record<string, any>) {
         enName,
         readonly: false,
         exportName: enName,
-        enumOptions: row.enumOptions?.map((option) => ({ ...option })),
+        enumOptions: row.enumOptions?.map((option: DeviceParameterEnumOption) => ({ ...option })),
         enumValues: row.enumValues ? [...row.enumValues] : undefined
       };
     });
     const selectedCustomIds = new Set(customRows.map((row) => row.id));
     const lastSourceIndex = customDeviceDraft.params.reduce(
-      (lastIndex, row, index) => selectedCustomIds.has(row.id) ? index : lastIndex,
+      (lastIndex: number, row: CustomParamDraft, index: number) => selectedCustomIds.has(row.id) ? index : lastIndex,
       -1
     );
     const insertIndex = lastSourceIndex >= 0 ? lastSourceIndex + 1 : customDeviceDraft.params.length;
-    setCustomDeviceDraft((current) => ({
+    setCustomDeviceDraft((current: CustomDeviceDraft) => ({
       ...current,
       params: [...current.params.slice(0, insertIndex), ...copies, ...current.params.slice(insertIndex)],
       error: ""
     }));
-    const copiedIds = copies.map((row) => row.id);
+    const copiedIds = copies.map((row: CustomParamDraft) => row.id);
     __appScope.setSelectedCustomParameterRowIds(copiedIds);
     __appScope.customParameterSelectionAnchorRef.current = copiedIds[0] ?? null;
   };
@@ -1645,12 +1645,12 @@ export function renderAppView(__appScope: Record<string, any>) {
     const movedVisibleRows = moveSelectedTableRows(
       displayedVisibleCustomParams,
       selectedCustomParameterRowIdSet,
-      (row) => row.id,
+      (row: CustomParamDraft) => row.id,
       direction
     );
     const visibleIds = new Set(displayedVisibleCustomParams.map((row) => row.id));
     const movedQueue = [...movedVisibleRows];
-    setCustomDeviceDraft((current) => ({
+    setCustomDeviceDraft((current: CustomDeviceDraft) => ({
       ...current,
       params: current.params.map((row) => visibleIds.has(row.id) ? movedQueue.shift()! : row),
       error: ""
@@ -1661,7 +1661,7 @@ export function renderAppView(__appScope: Record<string, any>) {
       .filter((row) => selectedCustomParameterRowIdSet.has(row.id))
       .map((row) => row.id));
     if (selectedEditableIds.size === 0) return;
-    setCustomDeviceDraft((current) => ({
+    setCustomDeviceDraft((current: CustomDeviceDraft) => ({
       ...current,
       params: current.params.filter((row) => !selectedEditableIds.has(row.id)),
       error: ""
@@ -1673,7 +1673,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     }
   };
   const selectedCustomEditableParameterCount = displayedVisibleCustomParams.filter(
-    (row) => selectedCustomParameterRowIdSet.has(row.id)
+    (row: CustomParamDraft) => selectedCustomParameterRowIdSet.has(row.id)
   ).length;
   // 当前分类下所有派生元件库名称集合（小写），用于从主类选项中排除已派生的库
   const currentCategoryDerivedComponentLibraryNameSet = new Set<string>();
@@ -1693,7 +1693,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     currentCategoryDerivedComponentLibraryNameSet.add(normalizeComponentLibraryName(info.derivedComponentLibrary).toLowerCase());
   }
   const customDeviceBaseComponentLibraryOptions = customDeviceDraft.isDerivedComponentLibrary
-    ? currentCategoryLibraryComponentLibraryOptions.filter((section) => !currentCategoryDerivedComponentLibraryNameSet.has(normalizeComponentLibraryName(section).toLowerCase()))
+    ? currentCategoryLibraryComponentLibraryOptions.filter((section: string) => !currentCategoryDerivedComponentLibraryNameSet.has(normalizeComponentLibraryName(section).toLowerCase()))
     : currentCategoryLibraryComponentLibraryOptions;
   const customLibraryCreateDialogCategoryLibraryName = normalizeCategoryLibraryName(
     customLibraryCreateDialog?.categoryLibraryName || customDeviceDraft.categoryLibraryName || ""
@@ -1915,7 +1915,6 @@ export function renderAppView(__appScope: Record<string, any>) {
       eDeviceDefinitionFieldOrder,
       eDeviceDefinitionTableIds,
       eDeviceDefinitionTemplateFields,
-      templateName: eDeviceInterfaceLoadedTemplateName,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2140,12 +2139,12 @@ export function renderAppView(__appScope: Record<string, any>) {
   const sourceFilteredImageAssetList = imagePickerUsesIconSources
     ? imagePickerActiveSourceFilter === "catalog"
       ? []
-      : (imageAssetList ?? []).filter((asset) => imagePickerActiveSourceFilter === "builtin" ? imagePickerAssetIsBuiltinIcon(asset) : !imagePickerAssetIsBuiltinIcon(asset))
+      : (imageAssetList ?? []).filter((asset: ImageAsset) => imagePickerActiveSourceFilter === "builtin" ? imagePickerAssetIsBuiltinIcon(asset) : !imagePickerAssetIsBuiltinIcon(asset))
     : imagePickerUsesSeparateLibraryTabs
       ? imagePickerAssetsForLibraryTab(imageAssetList ?? [], imagePickerActiveLibraryTab)
       : (imageAssetList ?? []);
   const imagePickerAssetNoun = imagePickerUsesSeparateLibraryTabs && imagePickerActiveLibraryTab === "image" ? "图片" : "图标";
-  const imagePickerFolderNameById = new Map((imageFolders ?? []).map((folder) => [folder.id, folder.name]));
+  const imagePickerFolderNameById = new Map((imageFolders ?? []).map((folder: ImageFolder) => [folder.id, folder.name]));
   const imagePickerAssetCategory = (asset: any) => {
     const assetName = String(asset?.name ?? "").trim();
     const separatedParts = assetName.split(/\s+\/\s+/u).map((part) => part.trim()).filter(Boolean);
@@ -2160,12 +2159,12 @@ export function renderAppView(__appScope: Record<string, any>) {
       ? "SVG图标"
       : "图片素材";
   };
-  const imagePickerCategoryOptions = Array.from(new Set(sourceFilteredImageAssetList.map((asset) => imagePickerAssetCategory(asset)))).sort((left, right) =>
+  const imagePickerCategoryOptions = Array.from(new Set<string>(sourceFilteredImageAssetList.map((asset: ImageAsset) => imagePickerAssetCategory(asset)))).sort((left, right) =>
     left.localeCompare(right, "zh-Hans-CN")
   );
   const imagePickerActiveCategoryFilter = imagePickerCategoryOptions.includes(imagePickerCategoryFilter) ? imagePickerCategoryFilter : "";
   const normalizedImagePickerSearchQuery = String(imagePickerSearchQuery ?? "").trim().toLowerCase();
-  const filteredImageAssetList = sourceFilteredImageAssetList.filter((asset) => {
+  const filteredImageAssetList = sourceFilteredImageAssetList.filter((asset: ImageAsset) => {
     const category = imagePickerAssetCategory(asset);
     if (imagePickerActiveCategoryFilter && category !== imagePickerActiveCategoryFilter) {
       return false;
@@ -2210,7 +2209,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   );
   const iconLibraryRequestedTotal =
     iconLibrarySelectedLibraryId
-      ? iconLibraryLibraries.find((library) => library.id === iconLibrarySelectedLibraryId)?.totalIcons
+      ? iconLibraryLibraries.find((library: { id: string; totalIcons?: number }) => library.id === iconLibrarySelectedLibraryId)?.totalIcons
       : iconLibraryCatalog?.totalIcons;
   const iconLibraryLoadedText = `${iconLibraryVisibleResult.total} / ${iconLibraryPicker?.entries?.length ?? 0}${typeof iconLibraryRequestedTotal === "number" ? ` / ${iconLibraryRequestedTotal}` : ""}`;
   const inspectorTopologyEntry = inspectorSelectedNode

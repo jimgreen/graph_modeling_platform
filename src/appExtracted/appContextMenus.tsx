@@ -1,7 +1,10 @@
 import { memo, useState, useRef } from "react";
 import { containerAssignedIdsFromSelection, containerMemberIdsFromSelection } from "../acContainer";
+import type { ViewSectionInputs } from "./appViewRenderBoundary";
 
-type AppContextMenusProps = {
+// 本段**不**用 areViewSectionPropsEqual（没有比较器），section / inputs 只是 appView.tsx
+// 为与其他分段保持一致而一并传入，故声明为可选；scope 才是本段解构的数据来源。
+type AppContextMenusProps = Partial<ViewSectionInputs> & {
   scope: Record<string, any>;
 };
 
