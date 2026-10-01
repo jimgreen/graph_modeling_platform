@@ -93,6 +93,15 @@ const CASES = [
   ["kind 为空串", { nodes: [{ ...busNode, kind: "" }], edges: [] }],
   ["size 为字符串", { nodes: [{ ...busNode, size: "100x40" }], edges: [] }],
   ["position 为字符串", { nodes: [{ ...busNode, position: "0,0" }], edges: [] }],
+  // 对象本身合法、但里面的数值是字符串 —— 归一化按「已是对象就原样复用」处理，
+  // 这类值会一路带着字符串进算术，专门盯它。
+  ["size 成员为字符串", { nodes: [{ ...busNode, size: { width: "100", height: "40" } }], edges: [] }],
+  ["position 成员为字符串", { nodes: [{ ...busNode, position: { x: "0", y: "0" } }], edges: [] }],
+  ["锚点成员为字符串", {
+    nodes: [{ ...busNode, terminals: [{ ...busNode.terminals[0], anchor: { x: "0.5", y: "0.5" } }] }],
+    edges: []
+  }],
+  ["size 成员为 null", { nodes: [{ ...busNode, size: { width: null, height: null } }], edges: [] }],
   ["activeLayerId 指向不存在的图层", { nodes: [busNode], edges: [], layers: [{ id: "L1", name: "图层" }], activeLayerId: "L9" }],
   ["canvasWidth 为字符串", { nodes: [busNode], edges: [], canvasWidth: "800", canvasHeight: "600" }],
   ["量测组指向不存在的节点", {
