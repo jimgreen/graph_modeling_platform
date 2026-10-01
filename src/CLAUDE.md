@@ -56,6 +56,8 @@
 - `__appScope` 装配：`const [x, setX] = useState(...); Object.assign(__appScope, { x, setX });`
 - v1 信封：`{ok:true,data}` / `{ok:false,error:{code,message}}`
 - 截图/SVG 输出统一用 `buildSvgDocument`（自包含、内联样式），避免实时 DOM class 样式丢失
+- **保存方案进入应用前的边界归一 = `normalizeSavedProjectIndexes`**（`appCoreCanvasUtilities.tsx`）：它把后端 `GET /schemes` 的 payload、浏览器缓存恢复出来的记录、图元库导入包里的 `schemes` 一律整成「渲染层可无条件解引用」的形状——滤掉非对象节点/边，`kind` 归字符串、`params` 归对象、`terminals` 归数组。**这条规则与后端 `normalizeProjectForStorage` 必须一致**（两侧各有一份实现，见 `server/CLAUDE.md`「模型存储边界」）：同一个畸形文件在两边都要能过，否则就成了「后端能存、前端就炸」。守卫见 `savedSchemeNormalize.test.ts` 与 `projectNormalizeSeam.test.ts`（后者还验了归一化结果能再过 `normalizeProjectForBackend` 这道接缝）。
+  ⚠️ 别指望 `baseDeviceKind` 兜底：它对非字符串 `kind` 是**故意抛 TypeError** 的（`globalLinesKeys.test.ts` 记录了理由——静默兜成空串会掩盖「取不到线路」这个真问题）。形状必须在进它之前补齐。
 
 ## Dependencies
 
