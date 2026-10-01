@@ -1,14 +1,19 @@
-// @ts-nocheck
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Tabs } from "antd";
-import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
-import { VOLTAGE_BASE_SET_CATEGORIES } from "./appCoreCanvasUtilities";
+import { areViewSectionPropsEqual, type ViewSectionProps } from "./appViewRenderBoundary";
+import type { DeviceTemplate, ModelLayer, ModelNode, VoltageLevelConfig } from "../model";
+import { VOLTAGE_BASE_SET_CATEGORIES, type GroupDeviceDefinitionDialogState } from "./appCoreCanvasUtilities";
 import { buildTopologyConnectivity, isBusNode } from "../model-routing";
 import { ContainerAddDialog } from "./appSelectionDragFactories";
 
 const formatVoltageLabel = (v: string) => v === "0.22" ? "220V" : `${v}kV`;
 
-function VoltageBaseSetTable({ activeValue, onSelect }) {
+type VoltageBaseSetTableProps = {
+  activeValue: string;
+  onSelect: (value: string) => void;
+};
+
+function VoltageBaseSetTable({ activeValue, onSelect }: VoltageBaseSetTableProps) {
   return (<div className="voltage-base-set-table">
     <div className="voltage-base-set-table-head">
       <span>分类</span><span>电压等级</span><span>说明</span>
@@ -29,7 +34,27 @@ function VoltageBaseSetTable({ activeValue, onSelect }) {
   </div>);
 }
 
-export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
+// 视图分段的 props 是 ViewSectionProps 的**超集**：section / inputs 供比较器判定
+// 「数据不变就不重渲」（appView.tsx 的调用点三个都传），scope 才是本段解构的数据来源。
+type AppCanvasDialogsProps = ViewSectionProps & { scope: Record<string, any> };
+
+// 电压基值「按端子分行」的每一行：设备 id + 端子 id + 该端电压。
+type VoltageBaseTerminalRow = { nodeId: string; terminalId: string; terminalLabel: string; voltage: string };
+
+// 电压配色表的一行（按电压等级分组后仍带 type 供分栏）。
+type VoltageColorRow = { key: string; type: string; voltage: string; color: string };
+type EnergyColorRow = { type: string; label: string };
+
+// 过滤选择树的两层节点共用同一形状（分组与叶子都带 label / typeKey / count / items）。
+type FilterSelectionTypeOption = {
+  itemKey: string;
+  typeKey: string;
+  label: string;
+  count: number;
+  items?: FilterSelectionTypeOption[];
+};
+
+export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }: AppCanvasDialogsProps) {
   const __appScope = scope;
   const {
     BufferedTextInput, CONNECTION_REDRAW_SCOPE_LABELS, DEFAULT_COLOR_PALETTE, DeferredColorInput, ENABLE_REACT_FLOW_PREVIEW, ENERGY_COLOR_ROWS, ReactFlowPreview, Suspense,
@@ -49,7 +74,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
     pushUndoSnapshot, writeOperationLog, undoScopeForGraphPatch
   } = scope;
   const [activeVoltageBaseDeviceTab, setActiveVoltageBaseDeviceTab] = useState("");
-  const [perDeviceScope, setPerDeviceScope] = useState({});
+  const [perDeviceScope, setPerDeviceScope] = useState<Record<string, string>>({});
   const voltageBaseDeviceInitRef = useRef(false);
   useEffect(() => {
     if (!voltageBaseSetDialogOpen) {
@@ -60,10 +85,10 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
       voltageBaseDeviceInitRef.current = true;
       const first = voltageBaseSetCandidateNodes[0];
       setActiveVoltageBaseDeviceTab(first.id);
-      const firstTermRow = voltageBaseSetTerminalRows.find((r) => r.nodeId === first.id);
+      const firstTermRow = voltageBaseSetTerminalRows.find((r: VoltageBaseTerminalRow) => r.nodeId === first.id);
       if (firstTermRow) setActiveVoltageBaseTerminalKey(voltageBaseTerminalRowKey(firstTermRow));
-      const initScopes = {};
-      voltageBaseSetCandidateNodes.forEach((n) => { initScopes[n.id] = "island"; });
+      const initScopes: Record<string, string> = {};
+      voltageBaseSetCandidateNodes.forEach((n: ModelNode) => { initScopes[n.id] = "island"; });
       setPerDeviceScope(initScopes);
     }
   }, [voltageBaseSetDialogOpen, voltageBaseSetCandidateNodes, voltageBaseSetTerminalRows]);
@@ -71,35 +96,35 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
 {voltageBaseSetDialogOpen && (() => {
             const showDeviceTabs = voltageBaseSetCandidateNodes.length > 1;
             const activeDeviceId = showDeviceTabs
-              ? (voltageBaseSetCandidateNodes.some((n) => n.id === activeVoltageBaseDeviceTab) ? activeVoltageBaseDeviceTab : voltageBaseSetCandidateNodes[0]?.id ?? "")
+              ? (voltageBaseSetCandidateNodes.some((n: ModelNode) => n.id === activeVoltageBaseDeviceTab) ? activeVoltageBaseDeviceTab : voltageBaseSetCandidateNodes[0]?.id ?? "")
               : (voltageBaseSetCandidateNodes[0]?.id ?? "");
-            const activeDevice = voltageBaseSetCandidateNodes.find((n) => n.id === activeDeviceId) ?? voltageBaseSetCandidateNodes[0];
+            const activeDevice = voltageBaseSetCandidateNodes.find((n: ModelNode) => n.id === activeDeviceId) ?? voltageBaseSetCandidateNodes[0];
             const deviceTerminals = activeDevice?.terminals ?? [];
             const showTerminalSubTabs = deviceTerminals.length > 1 && (voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice");
             const activeTerminalRow = showTerminalSubTabs
-              ? voltageBaseSetTerminalRows.find((r) => r.nodeId === activeDeviceId && r.terminalId === activeVoltageBaseTerminalKey.split(":")[1]) ?? voltageBaseSetTerminalRows.find((r) => r.nodeId === activeDeviceId) ?? null
+              ? voltageBaseSetTerminalRows.find((r: VoltageBaseTerminalRow) => r.nodeId === activeDeviceId && r.terminalId === activeVoltageBaseTerminalKey.split(":")[1]) ?? voltageBaseSetTerminalRows.find((r: VoltageBaseTerminalRow) => r.nodeId === activeDeviceId) ?? null
               : activeVoltageBaseTerminalRow;
-            const handleDeviceTabChange = (nodeId) => {
+            const handleDeviceTabChange = (nodeId: string) => {
               setActiveVoltageBaseDeviceTab(nodeId);
-              const firstTermRow = voltageBaseSetTerminalRows.find((r) => r.nodeId === nodeId);
+              const firstTermRow = voltageBaseSetTerminalRows.find((r: VoltageBaseTerminalRow) => r.nodeId === nodeId);
               if (firstTermRow) setActiveVoltageBaseTerminalKey(voltageBaseTerminalRowKey(firstTermRow));
             };
-            const handleTerminalSubTabChange = (terminalId) => {
+            const handleTerminalSubTabChange = (terminalId: string) => {
               const key = `${activeDeviceId}:${terminalId}`;
               setActiveVoltageBaseTerminalKey(key);
             };
-            const resultCache = {};
-            const getDeviceResult = (nodeId) => {
+            const resultCache: Record<string, any> = {};
+            const getDeviceResult = (nodeId: string) => {
               const deviceScope = perDeviceScope[nodeId] ?? "island";
               if (resultCache[deviceScope]) return resultCache[deviceScope];
               const result = voltageBaseSetResultForScope(deviceScope);
               resultCache[deviceScope] = result;
               return result;
             };
-            const getTerminalIslandDeviceCount = (nodeId, terminalId) => {
+            const getTerminalIslandDeviceCount = (nodeId: string, terminalId?: string) => {
               const cacheKey = `${nodeId}:${terminalId || "default"}:islandCount`;
               if (resultCache[cacheKey] !== undefined) return resultCache[cacheKey];
-              const selectedDevice = voltageBaseSetCandidateNodes.find((n) => n.id === nodeId);
+              const selectedDevice = voltageBaseSetCandidateNodes.find((n: ModelNode) => n.id === nodeId);
               if (!selectedDevice) { resultCache[cacheKey] = 0; return 0; }
               let effectiveTerminalId = terminalId || (selectedDevice.terminals?.[0]?.id ?? "");
               if (!effectiveTerminalId && isBusNode(selectedDevice)) {
@@ -121,11 +146,11 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               resultCache[cacheKey] = islandNodeIds.size;
               return islandNodeIds.size;
             };
-            const getDeviceFilteredResult = (nodeId) => {
+            const getDeviceFilteredResult = (nodeId: string) => {
               const fullResult = getDeviceResult(nodeId);
               return {
                 changedNodeIds: fullResult.changedNodeIds.includes(nodeId) ? [nodeId] : [],
-                nodeUpdates: fullResult.nodeUpdates.filter((n) => n.id === nodeId),
+                nodeUpdates: fullResult.nodeUpdates.filter((n: ModelNode) => n.id === nodeId),
                 targetNodeIds: fullResult.targetNodeIds
               };
             };
@@ -155,14 +180,14 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               writeOperationLog(`设置电压基值：${changedNodeIds.length} 个设备`);
               setVoltageBaseSetDialogOpen(false);
             };
-            const anyDeviceHasChanges = voltageBaseSetCandidateNodes.some((d) => getDeviceFilteredResult(d.id).changedNodeIds.length > 0);
-            const renderTerminalContent = (device, terminalId, terminalLabel) => {
+            const anyDeviceHasChanges = voltageBaseSetCandidateNodes.some((d: ModelNode) => getDeviceFilteredResult(d.id).changedNodeIds.length > 0);
+            const renderTerminalContent = (device: ModelNode, terminalId: string, terminalLabel: string) => {
               const deviceScope = perDeviceScope[device.id] ?? "island";
               const fullResult = getDeviceResult(device.id);
               const islandDeviceCount = getTerminalIslandDeviceCount(device.id, terminalId);
-              const deviceTerminalRows = voltageBaseSetTerminalRows.filter((r) => r.nodeId === device.id);
+              const deviceTerminalRows = voltageBaseSetTerminalRows.filter((r: VoltageBaseTerminalRow) => r.nodeId === device.id);
               const hasMultiTerminal = deviceTerminalRows.length > 1 && (voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice");
-              const row = voltageBaseSetTerminalRows.find((r) => r.nodeId === device.id && r.terminalId === terminalId);
+              const row = voltageBaseSetTerminalRows.find((r: VoltageBaseTerminalRow) => r.nodeId === device.id && r.terminalId === terminalId);
               return (<div className="voltage-base-device-tab-content">
                 {!hasMultiTerminal && (voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (
                   <VoltageBaseSetTable activeValue={voltageBaseSetValue} onSelect={setVoltageBaseSetValue} />
@@ -170,7 +195,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                 {!hasMultiTerminal && (voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice") && deviceTerminalRows.length === 1 && deviceTerminalRows[0] && (
                   <VoltageBaseSetTable
                     activeValue={deviceTerminalRows[0].value}
-                    onSelect={(v) => setVoltageBaseTerminalValue(device.id, deviceTerminalRows[0].terminalId, v)}
+                    onSelect={(v: string) => setVoltageBaseTerminalValue(device.id, deviceTerminalRows[0].terminalId, v)}
                   />
                 )}
                 {hasMultiTerminal && row && (
@@ -191,20 +216,20 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                 </div>
               </div>);
             };
-            const deviceTabItems = voltageBaseSetCandidateNodes.map((device) => {
+            const deviceTabItems = voltageBaseSetCandidateNodes.map((device: ModelNode) => {
               const deviceScope = perDeviceScope[device.id] ?? "island";
               const fullResult = getDeviceResult(device.id);
-              const deviceTerminalRows = voltageBaseSetTerminalRows.filter((r) => r.nodeId === device.id);
+              const deviceTerminalRows = voltageBaseSetTerminalRows.filter((r: VoltageBaseTerminalRow) => r.nodeId === device.id);
               const hasMultiTerminal = deviceTerminalRows.length > 1 && (voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice");
               const deviceActiveTerminalKey = hasMultiTerminal
-                ? (activeVoltageBaseTerminalKey.split(":")[1] && deviceTerminalRows.some((r) => r.terminalId === activeVoltageBaseTerminalKey.split(":")[1])
+                ? (activeVoltageBaseTerminalKey.split(":")[1] && deviceTerminalRows.some((r: VoltageBaseTerminalRow) => r.terminalId === activeVoltageBaseTerminalKey.split(":")[1])
                   ? activeVoltageBaseTerminalKey.split(":")[1]
                   : deviceTerminalRows[0]?.terminalId ?? "")
                 : "";
               const deviceActiveTerminalRow = deviceActiveTerminalKey
-                ? deviceTerminalRows.find((r) => r.terminalId === deviceActiveTerminalKey) ?? deviceTerminalRows[0] ?? null
+                ? deviceTerminalRows.find((r: VoltageBaseTerminalRow) => r.terminalId === deviceActiveTerminalKey) ?? deviceTerminalRows[0] ?? null
                 : deviceTerminalRows[0] ?? null;
-              const handleDeviceTerminalChange = (terminalId) => {
+              const handleDeviceTerminalChange = (terminalId: string) => {
                 setActiveVoltageBaseTerminalKey(`${device.id}:${terminalId}`);
               };
               return {
@@ -215,7 +240,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                     className="voltage-base-device-terminal-tabs"
                     activeKey={deviceActiveTerminalKey}
                     onChange={handleDeviceTerminalChange}
-                    items={deviceTerminalRows.map((r, i) => ({
+                    items={deviceTerminalRows.map((r: VoltageBaseTerminalRow, i: number) => ({
                       key: r.terminalId,
                       label: r.terminalLabel || `端子${i + 1}`,
                       children: renderTerminalContent(device, r.terminalId, r.terminalLabel || `端子${i + 1}`)
@@ -255,7 +280,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                   />
                 ) : (() => {
                   const singleDevice = voltageBaseSetCandidateNodes[0];
-                  const singleDeviceTerminalRows = voltageBaseSetTerminalRows.filter((r) => r.nodeId === singleDevice.id);
+                  const singleDeviceTerminalRows = voltageBaseSetTerminalRows.filter((r: VoltageBaseTerminalRow) => r.nodeId === singleDevice.id);
                   const hasMultiTerminal = singleDeviceTerminalRows.length > 1 && (voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice");
                   if (!hasMultiTerminal) {
                     return renderTerminalContent(singleDevice, singleDeviceTerminalRows[0]?.terminalId ?? "", singleDeviceTerminalRows[0]?.terminalLabel ?? "");
@@ -264,7 +289,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                     className="voltage-base-device-terminal-tabs"
                     activeKey={activeVoltageBaseTerminalKey.split(":")[1] ?? singleDeviceTerminalRows[0]?.terminalId ?? ""}
                     onChange={(terminalId) => setActiveVoltageBaseTerminalKey(`${singleDevice.id}:${terminalId}`)}
-                    items={singleDeviceTerminalRows.map((r, i) => ({
+                    items={singleDeviceTerminalRows.map((r: VoltageBaseTerminalRow, i: number) => ({
                       key: r.terminalId,
                       label: r.terminalLabel || `端子${i + 1}`,
                       children: renderTerminalContent(singleDevice, r.terminalId, r.terminalLabel || `端子${i + 1}`)
@@ -292,7 +317,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               </div>
             </div>
             <div className="connection-redraw-options voltage-base-clear-options" role="radiogroup" aria-label="清空电压基值范围">
-              {VOLTAGE_BASE_CLEAR_SCOPES.map((scope) => {
+              {VOLTAGE_BASE_CLEAR_SCOPES.map((scope: string) => {
             const result = voltageBaseClearResultForScope(scope);
             const count = result.changedNodeIds.length;
             const disabled = count === 0;
@@ -356,7 +381,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                   {([
             ["new", "新建元件"],
             ["replace", "修改已有元件图标"]
-        ] as const).map(([modeValue, label]) => (<button key={modeValue} type="button" className={groupDeviceDefinitionDialog.mode === modeValue ? "active" : ""} role="radio" aria-checked={groupDeviceDefinitionDialog.mode === modeValue} onClick={() => setGroupDeviceDefinitionDialog((current) => current ? { ...current, mode: modeValue } : current)}>
+        ] as const).map(([modeValue, label]: readonly [string, string]) => (<button key={modeValue} type="button" className={groupDeviceDefinitionDialog.mode === modeValue ? "active" : ""} role="radio" aria-checked={groupDeviceDefinitionDialog.mode === modeValue} onClick={() => setGroupDeviceDefinitionDialog((current: GroupDeviceDefinitionDialogState) => current ? { ...current, mode: modeValue } : current)}>
                       {label}
                     </button>))}
                 </div>
@@ -365,18 +390,18 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                       <span>类别库</span>
                       <select value={groupDeviceDefinitionDialog.categoryLibraryName} onChange={(event) => {
                 const categoryLibraryName = normalizeCategoryLibraryName(event.target.value);
-                setGroupDeviceDefinitionDialog((current) => current ? {
+                setGroupDeviceDefinitionDialog((current: GroupDeviceDefinitionDialogState) => current ? {
                     ...current,
                     categoryLibraryName,
                     componentLibrary: defaultComponentLibraryForCategoryLibrary(categoryLibraryName)
                 } : current);
             }}>
-                        {selectableCategoryLibraries.map((group) => (<option key={group} value={group}>{group}</option>))}
+                        {selectableCategoryLibraries.map((group: string) => (<option key={group} value={group}>{group}</option>))}
                       </select>
                     </label>
                     <label>
                       <span>选择类</span>
-                      <select value={groupDeviceDefinitionDialog.componentLibrary} onChange={(event) => setGroupDeviceDefinitionDialog((current) => current ? { ...current, componentLibrary: event.target.value } : current)}>
+                      <select value={groupDeviceDefinitionDialog.componentLibrary} onChange={(event) => setGroupDeviceDefinitionDialog((current: GroupDeviceDefinitionDialogState) => current ? { ...current, componentLibrary: event.target.value } : current)}>
                         {Array.from(new Set([
                 groupDeviceDefinitionDialog.componentLibrary,
                 ...(componentLibraryOptionsByCategoryLibrary[groupDeviceDefinitionDialog.categoryLibraryName] ?? [])
@@ -385,8 +410,8 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                     </label>
                   </>) : (<label>
                     <span>已有元件</span>
-                    <select value={groupDeviceDefinitionDialog.targetKind} disabled={groupDeviceReplacementTemplates.length === 0} onChange={(event) => setGroupDeviceDefinitionDialog((current) => current ? { ...current, targetKind: event.target.value } : current)}>
-                      {groupDeviceReplacementTemplates.length === 0 ? (<option value="">暂无元件</option>) : groupDeviceReplacementTemplates.map((template) => (<option key={template.kind} value={template.kind}>
+                    <select value={groupDeviceDefinitionDialog.targetKind} disabled={groupDeviceReplacementTemplates.length === 0} onChange={(event) => setGroupDeviceDefinitionDialog((current: GroupDeviceDefinitionDialogState) => current ? { ...current, targetKind: event.target.value } : current)}>
+                      {groupDeviceReplacementTemplates.length === 0 ? (<option value="">暂无元件</option>) : groupDeviceReplacementTemplates.map((template: DeviceTemplate) => (<option key={template.kind} value={template.kind}>
                           {template.label} / {resolveTemplateComponentLibrary(template)}
                         </option>))}
                     </select>
@@ -396,7 +421,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                   <span>{groupDeviceDefinitionDialog.terminals.length} 个</span>
                 </div>
                 <div className="group-device-terminal-list">
-                  {groupDeviceDefinitionDialog.terminals.length > 0 ? groupDeviceDefinitionDialog.terminals.map((terminal, index) => (<div key={terminal.id} className="group-device-terminal-row">
+                  {groupDeviceDefinitionDialog.terminals.length > 0 ? groupDeviceDefinitionDialog.terminals.map((terminal: { id: string; label: string; type: string }, index: number) => (<div key={terminal.id} className="group-device-terminal-row">
                       <span>{index + 1}</span>
                       <strong>{terminal.label}</strong>
                       <em>{TERMINAL_TYPE_LIBRARY_LABELS[terminal.type] ?? terminal.type}</em>
@@ -439,7 +464,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                   <span>模板类型</span>
                   <div className="template-type-row">
                     <select value={templateDraftType} onChange={(event) => setTemplateDraftType(event.target.value)}>
-                      {graphTemplateTypes.map((typeName) => (<option key={typeName} value={typeName}>{typeName}</option>))}
+                      {graphTemplateTypes.map((typeName: string) => (<option key={typeName} value={typeName}>{typeName}</option>))}
                     </select>
                     <button type="button" onClick={createGraphTemplateType}>新增模板类型</button>
                   </div>
@@ -468,7 +493,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
             <label className="layer-assignment-field">
               <span>目标图层</span>
               <select value={layerAssignmentTargetId} onChange={(event) => setLayerAssignmentTargetId(event.target.value)}>
-                {layers.map((layer) => (<option key={layer.id} value={layer.id}>
+                {layers.map((layer: ModelLayer) => (<option key={layer.id} value={layer.id}>
                     {layer.visible ? layer.name : `${layer.name}（隐藏）`}
                   </option>))}
               </select>
@@ -476,7 +501,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
             <p className="layer-assignment-note">如果目标图层处于隐藏状态，应用后这些图元会按图层显示规则从画布上隐藏。</p>
             <div className="image-picker-actions layer-assignment-actions">
               <button type="button" onClick={() => setLayerAssignmentDialogOpen(false)}>取消</button>
-              <button type="button" onClick={applyLayerAssignmentDialog} disabled={activeSelectedNodeIds.length === 0 || !layers.some((layer) => layer.id === layerAssignmentTargetId) || layerAssignmentUnchanged}>
+              <button type="button" onClick={applyLayerAssignmentDialog} disabled={activeSelectedNodeIds.length === 0 || !layers.some((layer: ModelLayer) => layer.id === layerAssignmentTargetId) || layerAssignmentUnchanged}>
                 应用
               </button>
             </div>
@@ -492,11 +517,11 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               </div>
             </div>
             <div className="filter-selection-toolbar">
-              <button type="button" onClick={() => setFilterSelectionTypeKeys(filterSelectionTypeOptions.flatMap((option) => option.items.map((item) => item.itemKey)))}>全选</button>
+              <button type="button" onClick={() => setFilterSelectionTypeKeys(filterSelectionTypeOptions.flatMap((option: FilterSelectionTypeOption) => (option.items ?? []).map((item: FilterSelectionTypeOption) => item.itemKey)))}>全选</button>
               <button type="button" onClick={() => setFilterSelectionTypeKeys([])}>清空</button>
             </div>
             <div className="filter-selection-list" role="group" aria-label="类列表">
-              {filterSelectionTypeOptions.map((option) => (<div key={option.typeKey} className="filter-selection-option">
+              {filterSelectionTypeOptions.map((option: FilterSelectionTypeOption) => (<div key={option.typeKey} className="filter-selection-option">
                   <label className="filter-selection-type-row">
                     <input type="checkbox" ref={(input) => {
                 if (input) {
@@ -510,7 +535,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                   </label>
                   <div className="filter-selection-tree" aria-label={`${option.label}类树`}>
                     <div className="filter-selection-tree-children">
-                      {option.items.map((item) => (<div key={item.itemKey} className="filter-selection-tree-child" title={filterSelectionTreeLabel(item.label, item.typeKey)}>
+                      {(option.items ?? []).map((item: FilterSelectionTypeOption) => (<div key={item.itemKey} className="filter-selection-tree-child" title={filterSelectionTreeLabel(item.label, item.typeKey)}>
                           <label className="filter-selection-kind-row">
                             <input type="checkbox" checked={filterSelectionTypeKeys.includes(item.itemKey)} onChange={() => toggleFilterSelectionItem(item.itemKey)}/>
                             <span>
@@ -569,12 +594,12 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
               </button>
             </div>
             {colorPaletteTab === "energy" ? (<div className="color-palette-table" aria-label="能流类型配色">
-                {ENERGY_COLOR_ROWS.map((row) => {
+                {ENERGY_COLOR_ROWS.map((row: EnergyColorRow) => {
                 const color = colorPaletteDraft.energy[row.type] ?? DEFAULT_COLOR_PALETTE.energy[row.type];
                 return (<label className="color-palette-row" key={row.type}>
                       <span>{row.label}</span>
-                      <DeferredColorInput value={color} fallback={DEFAULT_COLOR_PALETTE.energy[row.type]} onCommit={(value) => updateEnergyColor(row.type, value)} aria-label={`${row.label}颜色`}/>
-                      <BufferedTextInput value={color} onCommit={(nextValue) => updateEnergyColor(row.type, nextValue)} aria-label={`${row.label}颜色值`}/>
+                      <DeferredColorInput value={color} fallback={DEFAULT_COLOR_PALETTE.energy[row.type]} onCommit={(value: string) => updateEnergyColor(row.type, value)} aria-label={`${row.label}颜色`}/>
+                      <BufferedTextInput value={color} onCommit={(nextValue: string) => updateEnergyColor(row.type, nextValue)} aria-label={`${row.label}颜色值`}/>
                     </label>);
             })}
               </div>) : (<div className="voltage-color-panel">
@@ -588,7 +613,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                   <span>{`当前模型 ${currentModelVoltageColorKeys.size} 项`}</span>
                 </div>
                 {(() => {
-                  const filteredRows = visibleVoltageColorRows.filter((row) => row.type === voltageTab);
+                  const filteredRows = visibleVoltageColorRows.filter((row: VoltageColorRow) => row.type === voltageTab);
                   return (
                     <>
                       <div className="voltage-color-tabs" role="tablist" aria-label="电压类型" style={{ display: "flex", gap: 0, marginBottom: 12, borderBottom: "1px solid #e2e8f0" }}>
@@ -602,10 +627,10 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
                           <span>操作</span>
                         </div>
                         <div className="voltage-color-list" style={{ flex: 1, overflowY: "auto" }}>
-                        {filteredRows.length > 0 ? (filteredRows.map((row) => (<div className="voltage-color-row" key={row.key} style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 12, padding: "2px 12px", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
-                              <BufferedTextInput value={row.voltage} onCommit={(nextValue) => updateVoltageColorRow(row.key, { voltage: nextValue })} aria-label="电压基值"/>
+                        {filteredRows.length > 0 ? (filteredRows.map((row: VoltageColorRow) => (<div className="voltage-color-row" key={row.key} style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 12, padding: "2px 12px", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
+                              <BufferedTextInput value={row.voltage} onCommit={(nextValue: string) => updateVoltageColorRow(row.key, { voltage: nextValue })} aria-label="电压基值"/>
                               <div className="color-field" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                <DeferredColorInput value={row.color} fallback="#64748b" onCommit={(value) => updateVoltageColorRow(row.key, { color: value })} aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色`}/>
+                                <DeferredColorInput value={row.color} fallback="#64748b" onCommit={(value: string) => updateVoltageColorRow(row.key, { color: value })} aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色`}/>
                               </div>
                               <button type="button" onClick={() => deleteVoltageColorRow(row.key)} style={{ padding: "4px 8px" }}>删除</button>
                             </div>))) : (<div className="voltage-color-empty" style={{ padding: 12, textAlign: "center", color: "#94a3b8" }}>当前模型暂无{voltageTab === "ac" ? "交流" : "直流"}电压等级。</div>)}
@@ -629,12 +654,12 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }) {
           open={voltageLevelDialogOpen}
           onClose={() => setVoltageLevelDialogOpen(false)}
           settings={voltageLevelSettings}
-          onSave={(next) => {
+          onSave={(next: { ac: VoltageLevelConfig[]; dc: VoltageLevelConfig[] }) => {
             setVoltageLevelSettings(next);
             // 更新颜色配置中的电压等级
             const updatedVoltage: Record<string, string> = {};
-            next.ac.forEach((row) => { updatedVoltage[`ac:${row.name}`] = colorPaletteDraft.voltage[`ac:${row.name}`] ?? "#64748b"; });
-            next.dc.forEach((row) => { updatedVoltage[`dc:${row.name}`] = colorPaletteDraft.voltage[`dc:${row.name}`] ?? "#64748b"; });
+            next.ac.forEach((row: VoltageLevelConfig) => { updatedVoltage[`ac:${row.name}`] = colorPaletteDraft.voltage[`ac:${row.name}`] ?? "#64748b"; });
+            next.dc.forEach((row: VoltageLevelConfig) => { updatedVoltage[`dc:${row.name}`] = colorPaletteDraft.voltage[`dc:${row.name}`] ?? "#64748b"; });
             setColorPaletteDraft({ ...colorPaletteDraft, voltage: updatedVoltage });
           }}
         />
