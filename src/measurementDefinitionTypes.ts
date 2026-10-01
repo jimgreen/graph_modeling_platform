@@ -172,7 +172,13 @@ export function normalizeDeviceMeasurementDefinitions(
             : {})
         }
       : undefined;
-    const decimals = Number(source.decimalsOverride);
+    // 空串＝「未设置」，不能被 Number("") = 0 + isFinite(0) 固化成 0 —— 那会压过
+    // 下游 measurements.ts:1709 的 profileItem?.decimalsOverride ?? defaultDecimals ?? 3。
+    // 显式给 0 仍照旧生效（0 不是空串）。
+    const rawDecimals: unknown = source.decimalsOverride;
+    const decimals = typeof rawDecimals === "string" && rawDecimals.trim() === ""
+      ? Number.NaN
+      : Number(rawDecimals);
     return [{
       measurementTypeId,
       ...(source.name !== undefined ? { name: String(source.name) } : {}),

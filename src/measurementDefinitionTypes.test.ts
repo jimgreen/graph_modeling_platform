@@ -46,6 +46,18 @@ describe("measurement field parameter definitions", () => {
     }]);
   });
 
+  test("treats an empty decimalsOverride as unset but keeps an explicit zero", () => {
+    // 空串曾被 Number("") = 0 固化成 0，压过下游 profileItem?.decimalsOverride ?? 3
+    expect(normalizeDeviceMeasurementDefinitions([{
+      measurementTypeId: "activePower",
+      decimalsOverride: "" as unknown as number
+    }])).toEqual([{ measurementTypeId: "activePower" }]);
+    expect(normalizeDeviceMeasurementDefinitions([{
+      measurementTypeId: "activePower",
+      decimalsOverride: 0
+    }])).toEqual([{ measurementTypeId: "activePower", decimalsOverride: 0 }]);
+  });
+
   test("preserves explicitly empty measurement names and units", () => {
     expect(normalizeDeviceMeasurementDefinitions([{
       measurementTypeId: "activePower",
