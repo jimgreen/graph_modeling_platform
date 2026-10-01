@@ -231,7 +231,16 @@ async function fileExists(filePath) {
   try {
     await access(filePath);
     return true;
-  } catch {
+  } catch (error) {
+    // 这个判断的唯一用途是「要不要从旧版注册表迁移」（见 ensureInitialized）。
+    // 静默 false 会让迁移被跳过：旧文件还躺在磁盘上，新注册表却按空表写回去，
+    // 全局线路的首末端关联就此丢失，且此后 initialized=true 再也不会回头看它。
+    // ENOENT 是这里的常态（没有旧版文件），不刷屏。
+    if (error?.code !== "ENOENT") {
+      console.warn(
+        `[全局线路] 检查文件是否存在失败（${error?.code ?? error?.name ?? "unknown"}），按「不存在」处理，可能跳过旧版注册表迁移：${filePath}`
+      );
+    }
     return false;
   }
 }
