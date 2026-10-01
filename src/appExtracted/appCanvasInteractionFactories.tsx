@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
 import { applyDragContainerMembership, clampContainerCenterToMembers, commitContainerMembership, containerDragGroup, containerGatewayUnbindNotice, containerMemberNodes, containerResizeMinSize, foldContainerScaleIntoSize, hasContainer, isContainerNode, refitContainersAfterTransform, withNodeUpdates } from "../acContainer";
@@ -15,6 +14,23 @@ function transformerSideTerminalIdForVoltageParam(node: ModelNode, key: string):
   return terminalIndex === undefined ? undefined : node.terminals[terminalIndex]?.id;
 }
 import { Button, Input } from "antd";
+// 线路接线预览：路径 + 落点。清空时写成 { path: "", targetPoint: null }。
+type RoutableLinePreviewState = { path: string; targetPoint: Point | null };
+
+// 画布尺寸草稿：宽高都是字符串（提交时才 Number() 转换，空串表示「沿用当前值」。
+type CanvasSizeDraft = { width: string; height: string };
+
+// 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 遮住）：按真实出处补齐，均为 type-only import。
+import type { CanvasBounds, DeviceTemplate, Edge, ModelNode, Point, RoutedEdge, TerminalType } from "../model";
+import type { BatchCommonMeasurementGroupKey, BatchCommonParamPatch, ConnectSourceState, ConnectTarget, ContextMenuState, DraggingState, GraphTemplate, GroupTransformDrag, LibraryPlacementState, MeasurementDragState, NodeDoubleClickDialogState, NodeTerminalSnapTarget, ProjectMenuState, RenderViewportBounds, RewiringState, RoutableLinePlacementState, ScaleHandleConfig, ScaleHandleKind, SingleTransformDrag, SmartAlignmentAnchorMap, SmartAlignmentAxisCandidate, SmartAlignmentGuide, UndoGraphPatchScope } from "./appCoreCanvasUtilities";
+import type { SidePanelAutoEvent, SidePanelMode, SidePanelSide } from "../sidePanelVisibility";
+import type { CanvasClipboardEdge, CanvasLayoutUnit } from "../selectionActions";
+import type { GraphStore } from "../graphStore";
+import type { CanvasResizeEdge } from "../canvasViewport";
+import type { MeasurementGroup, ProjectMeasurementConfig } from "../measurements";
+import type { DeviceParameterDefinition, ModelLayer, Terminal } from "../model";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from "react";
+
 
 // 判断额定容量是否在合理范围内（非空、非零、非占位值）
 function isRatedCapacityInReasonableRange(value: string | undefined): boolean {
@@ -206,8 +222,8 @@ export function createApplyRoutableLinePreviewState(__appScope: Record<string, a
       routableLineDropTargetRef.current = target;
     }
     const path = buildRoutableLinePreviewPath(placementOverride, point, targetPoint, target);
-    setRoutableLinePreview((current) =>
-      current.path === path && sameOptionalPoint(current.targetPoint ?? undefined, targetPoint ?? undefined)
+    setRoutableLinePreview((current: RoutableLinePreviewState | null) =>
+      current && current.path === path && sameOptionalPoint(current.targetPoint ?? undefined, targetPoint ?? undefined)
         ? current
         : { path, targetPoint }
     );
@@ -329,7 +345,7 @@ export function createResetRoutableLinePreviewState(__appScope: Record<string, a
     routableLinePreviewPointRef.current = null;
     routableLineDropTargetPointRef.current = null;
     routableLineDropTargetRef.current = null;
-    setRoutableLinePreview((current) => current.path || current.targetPoint ? { path: "", targetPoint: null } : current);
+    setRoutableLinePreview((current: RoutableLinePreviewState | null) => current && (current.path || current.targetPoint) ? { path: "", targetPoint: null } : current);
   };
 }
 
@@ -362,7 +378,7 @@ export function createScheduleRewirePreviewPoint(__appScope: Record<string, any>
       const effectiveTarget = target && alignedPoint ? { ...target, point: alignedPoint } : target;
       const snappedPreviewPoint = effectiveTarget ? connectTargetSnapPoint(effectiveTarget) : next.point;
       const dropTargetPoint = effectiveTarget ? connectTargetSnapPoint(effectiveTarget) : undefined;
-      setRewiring((current) =>
+      setRewiring((current: RewiringState | null) =>
         current && current.edgeId === next.rewiring.edgeId && current.endpoint === next.rewiring.endpoint
           ? sameOptionalPoint(current.previewPoint, snappedPreviewPoint) &&
             sameOptionalPoint(current.dropTargetPoint, dropTargetPoint) &&
@@ -549,13 +565,13 @@ export function createNodeMoveGeometryInsideCanvas(__appScope: Record<string, an
       relevantNodeIds.add(edge.sourceId);
       relevantNodeIds.add(edge.targetId);
     }
-    const nextNodes = orderedNodesForIds(nodes, relevantNodeIds).map((node) => {
+    const nextNodes = orderedNodesForIds(nodes, relevantNodeIds).map((node: ModelNode) => {
       const originalPosition = originalPositions[node.id];
       return movedNodeIds.has(node.id) && originalPosition
         ? { ...node, position: clampNodePositionToExpandableBounds(node, bounds, { x: originalPosition.x + delta.x, y: originalPosition.y + delta.y }) }
         : node;
     });
-    const movedNodes = nextNodes.filter((node) => movedNodeIds.has(node.id));
+    const movedNodes = nextNodes.filter((node: ModelNode) => movedNodeIds.has(node.id));
     const deltasByNode = Object.fromEntries(nodeIds.map((id) => [id, delta]));
     const affectedEdges = affectedEdgesForMove.filter(
       (edge) => movedNodeIds.has(edge.sourceId) || movedNodeIds.has(edge.targetId) || selectedEdgeIds.has(edge.id)
@@ -581,10 +597,10 @@ export function createNodeMoveGeometryInsideCanvas(__appScope: Record<string, an
       : { x: 0, y: 0 };
     const shiftedBounds = canvasBoundsWithOriginShift(bounds, originShift);
     const shiftedMovedNodes = hasCanvasOriginShift(originShift)
-      ? movedNodes.map((node) => translateNodeBy(node, originShift))
+      ? movedNodes.map((node: ModelNode) => translateNodeBy(node, originShift))
       : movedNodes;
     const shiftedAffectedRoutes = hasCanvasOriginShift(originShift)
-      ? affectedRoutes.map((route) => translateRouteBy(route, originShift))
+      ? affectedRoutes.map((route: RoutedEdge) => translateRouteBy(route, originShift))
       : affectedRoutes;
     return modelGeometryInsideCanvasBounds(shiftedMovedNodes, shiftedAffectedRoutes, shiftedBounds, MOVE_BOUNDARY_GUARD);
   };
@@ -640,7 +656,7 @@ export function createBoundedDeltaForMoveGeometry(__appScope: Record<string, any
     const nodeBoundedDelta = boundedDeltaForNodes(nodeIds, originalPositions, dx, dy, bounds);
     return nearestBoundarySafeDelta(
       nodeBoundedDelta,
-      (delta) => nodeMoveGeometryInsideCanvas(nodeIds, edgeIds, affectedEdgesForMove, originalPositions, originalEdgePoints, originalRoutePoints, delta, bounds),
+      (delta: Point) => nodeMoveGeometryInsideCanvas(nodeIds, edgeIds, affectedEdgesForMove, originalPositions, originalEdgePoints, originalRoutePoints, delta, bounds),
       fallbackDelta
     );
   };
@@ -1182,7 +1198,7 @@ export function createFinishDraggingMove(__appScope: Record<string, any>) {
                   nextNodes,
                   dragNodeIds,
                   activeDragging.originalEdgePoints,
-                  Object.fromEntries(activeDragging.nodeIds.map((id) => [id, finalDelta])),
+                  Object.fromEntries(activeDragging.nodeIds.map((id: string) => [id, finalDelta])),
                   activeDragging.originalRoutePoints,
                   preserveRouteEdgeIds,
                   finalBounds
@@ -1335,7 +1351,7 @@ export function createFinishNodeDrag(__appScope: Record<string, any>) {
                   nextNodes,
                   dragNodeIds,
                   activeDragging.originalEdgePoints,
-                  Object.fromEntries(activeDragging.nodeIds.map((id) => [id, finalDelta])),
+                  Object.fromEntries(activeDragging.nodeIds.map((id: string) => [id, finalDelta])),
                   activeDragging.originalRoutePoints,
                   preserveRouteEdgeIds,
                   finalBounds
@@ -1394,19 +1410,19 @@ export function createFinishNodeDrag(__appScope: Record<string, any>) {
         : "";
     writeOperationLog(`拖拽 ${activeDragging.nodeIds.length} 个图元 (${Math.round(finalDelta.x)}, ${Math.round(finalDelta.y)})${snapText}`);
     if (enterContainerId) {
-      const target = nodes.find((node) => node.id === enterContainerId);
+      const target = nodes.find((node: ModelNode) => node.id === enterContainerId);
       showGlobalMessage(`已移入容器 ${target?.name ?? ""}`.trim());
     }
     // Alt 移出与移入对称提示:两条都在 altKey=true 下才可能触发(Alt = 双向归属变更键)。
     // 同一次拖动里仍可各弹一次(Alt 拖「成员 + 落在别的容器里的非成员」的混选),写成独立 if 即为此,
     // 不是「同一节点进出各一次」
     if (exitContainerId) {
-      const source = nodes.find((node) => node.id === exitContainerId);
+      const source = nodes.find((node: ModelNode) => node.id === exitContainerId);
       // Alt 拖出的正是原容器绑定的设备 → 该容器已自动解绑 + 关关口,一并提示。
       // globalMessage 单槽(后弹覆盖前弹),故与「已移出容器」合并成一条,不弹两次。
       // 离开者按**拖动前**的归属现算(判定侧用的就是这份原图,见 applyDragContainerMembership)
-      const containerIdByNodeId = new Map(nodes.map((node) => [node.id, node.containerId]));
-      const leavingIds = activeDragging.nodeIds.filter((id) => containerIdByNodeId.get(id) === exitContainerId);
+      const containerIdByNodeId = new Map(nodes.map((node: ModelNode) => [node.id, node.containerId]));
+      const leavingIds = activeDragging.nodeIds.filter((id: string) => containerIdByNodeId.get(id) === exitContainerId);
       const unbindNotice = containerGatewayUnbindNotice(nodes, leavingIds, undefined);
       const exitText = `已移出容器 ${source?.name ?? ""}`.trim();
       showGlobalMessage(unbindNotice ? `${exitText}，${unbindNotice}` : exitText);
@@ -1444,16 +1460,16 @@ export function createFinishTransformDrag(__appScope: Record<string, any>) {
             CANVAS_AUTO_EXPAND_PADDING
           );
           applyCanvasBounds(transformBounds);
-          transformedNodeUpdates = transformedNodeUpdates.map((node) => ({
+          transformedNodeUpdates = transformedNodeUpdates.map((node: ModelNode) => ({
             ...node,
             position: clampNodePositionToBounds(node, transformBounds, node.position)
           }));
-          setGraphStore((current) => {
+          setGraphStore((current: GraphStore) => {
             let currentTransformedNodeUpdates = buildGroupTransformNodeUpdates(activeTransform, finalPreviewPoint, current, { snapRotation: activeTransform.kind === "rotate" });
             const transformedEdgeUpdates = buildGroupTransformEdgeUpdates(activeTransform, finalPreviewPoint, current, { snapRotation: activeTransform.kind === "rotate" });
-            const transformedRouteEdgeIds = new Set(transformedEdgeUpdates.map((edge) => edge.id));
+            const transformedRouteEdgeIds = new Set(transformedEdgeUpdates.map((edge: Edge) => edge.id));
             const transformedEdges = overlayEdgeUpdatesForTransform(current.edges, transformedEdgeUpdates);
-            currentTransformedNodeUpdates = currentTransformedNodeUpdates.map((node) => ({
+            currentTransformedNodeUpdates = currentTransformedNodeUpdates.map((node: ModelNode) => ({
               ...node,
               position: clampNodePositionToBounds(node, transformBounds, node.position)
             }));
@@ -1478,15 +1494,15 @@ export function createFinishTransformDrag(__appScope: Record<string, any>) {
             const transformedNodeIdSet = new Set(transformedNodeIds);
             const transformedEdgeIds = Array.from(new Set([
               ...current.edges
-              .filter((edge) => transformedNodeIdSet.has(edge.sourceId) || transformedNodeIdSet.has(edge.targetId))
-                .map((edge) => edge.id),
+              .filter((edge: Edge) => transformedNodeIdSet.has(edge.sourceId) || transformedNodeIdSet.has(edge.targetId))
+                .map((edge: Edge) => edge.id),
               ...transformedRouteEdgeIds
             ]));
             return graphStorePatchGraphFromArrays(
               current,
               nodesWithContainers,
               nextEdges,
-              [...transformedNodeIds, ...routableLineNodeUpdates.map((node) => node.id), ...containerUpdates.map((node) => node.id)],
+              [...transformedNodeIds, ...routableLineNodeUpdates.map((node: ModelNode) => node.id), ...containerUpdates.map((node: ModelNode) => node.id)],
               transformedEdgeIds
             );
           });
@@ -1511,7 +1527,7 @@ export function createFinishTransformDrag(__appScope: Record<string, any>) {
             ...singleNodeUpdate,
             position: clampNodePositionToBounds(singleNodeUpdate, transformBounds, singleNodeUpdate.position)
           };
-          setGraphStore((current) => {
+          setGraphStore((current: GraphStore) => {
             if (!activeTransform.previewPoint) {
               return current;
             }
@@ -1560,7 +1576,7 @@ export function createFinishTransformDrag(__appScope: Record<string, any>) {
             CANVAS_AUTO_EXPAND_PADDING
           );
           applyCanvasBounds(transformBounds);
-          setGraphStore((current) => {
+          setGraphStore((current: GraphStore) => {
             const currentNode = current.nodeMap.get(activeTransform.nodeId);
             if (!currentNode) {
               return current;
@@ -1824,7 +1840,7 @@ export function createStartKeyboardMoveSession(__appScope: Record<string, any>) 
     const affectedEdgesForMove = edgeListForNodeIds(moveNodeIds, moveEdgeIds);
     const wholeLayerMove = isWholeActiveLayerMove(moveNodeIds);
     const originalPositionsForMove = Object.fromEntries(
-      moveNodeIds.flatMap((id) => {
+      moveNodeIds.flatMap((id: string) => {
         const item = nodeById.get(id);
         return item ? [[item.id, { ...item.position }]] : [];
       })
@@ -1840,11 +1856,11 @@ export function createStartKeyboardMoveSession(__appScope: Record<string, any>) 
       startPoint: { x: 0, y: 0 },
       originalPositions: originalPositionsForMove,
       originalEdgePoints: Object.fromEntries(
-        affectedEdgesForMove.map((edge) => [
+        affectedEdgesForMove.map((edge: Edge) => [
           edge.id,
           {
             ...cloneEdgeEditablePoints(edge),
-            routePoints: edge.routePoints?.map((point) => ({ ...point }))
+            routePoints: edge.routePoints?.map((point: Point) => ({ ...point }))
           }
         ])
       ),
@@ -1909,7 +1925,7 @@ export function createMoveSelection(__appScope: Record<string, any>) {
       return;
     }
     const originalPositions = Object.fromEntries(
-      moveNodeIds.flatMap((id) => {
+      moveNodeIds.flatMap((id: string) => {
         const node = nodeById.get(id);
         return node ? [[id, node.position]] : [];
       })
@@ -1947,11 +1963,11 @@ export function createMoveSelection(__appScope: Record<string, any>) {
     // 有容器时撤销作用域让位(容器几何/归属/解绑/挤出在拖动集之外),见 ensureDraggingUndoSnapshot
     const moveUndoScope = hasContainer(nodes)
       ? undefined
-      : undoScopeForGraphPatch(moveNodeIds, affectedEdgesForMove.map((edge) => edge.id));
+      : undoScopeForGraphPatch(moveNodeIds, affectedEdgesForMove.map((edge: Edge) => edge.id));
     pushUndoSnapshot(true, false, moveUndoScope, "移动设备", moveNodeIds.length === 1 ? nodeById.get(moveNodeIds[0])?.name || "" : "");
     const finalBounds = canvasBoundsForMoveDelta(moveNodeIds, originalPositions, boundedDelta.x, boundedDelta.y);
     applyCanvasBounds(finalBounds);
-    const deltasByNode = Object.fromEntries(moveNodeIds.map((id) => [id, boundedDelta]));
+    const deltasByNode = Object.fromEntries(moveNodeIds.map((id: string) => [id, boundedDelta]));
     const selected = new Set(moveNodeIds);
     const draggedNodeUpdates = buildMovedNodeUpdates(moveNodeIds, originalPositions, boundedDelta, finalBounds);
     // 归属落地:单次方向键同源接入(判定只看抓取集;本路径无 Alt,故非成员落入容器一律排斥弹出)
@@ -1966,7 +1982,7 @@ export function createMoveSelection(__appScope: Record<string, any>) {
     const nextNodes = nextNodesForMovedGraphCommit(graphStore, movedNodeUpdates, selected);
     const multiNodeMove = moveNodeIds.length > 1;
     const selectedMoveEdgeIds = new Set(moveEdgeIds);
-    const movedBusNodeIds = new Set(moveNodeIds.filter((nodeId) => busNodeIdSet.has(nodeId)));
+    const movedBusNodeIds = new Set(moveNodeIds.filter((nodeId: string) => busNodeIdSet.has(nodeId)));
     const synchronousCandidateEdges = synchronousEdgeAdjustmentCandidates(
       affectedEdgesForMove,
       selected,
@@ -2034,7 +2050,7 @@ export function createUndoScopeForNodeFootprintPatch(__appScope: Record<string, 
   const { edgeListForNodeIds, graphStore, localRouteOptimizationCandidateEdges, nodes, overlayGraphStoreNodes, undoScopeForGraphPatch } = __appScope;
     const directCandidateEdges = edgeListForNodeIds([nodeId]);
     if (!nextNode) {
-      return undoScopeForGraphPatch([nodeId], directCandidateEdges.map((edge) => edge.id));
+      return undoScopeForGraphPatch([nodeId], directCandidateEdges.map((edge: Edge) => edge.id));
     }
     const nextNodesForScope = overlayGraphStoreNodes(graphStore, [nextNode]);
     const candidateEdges = localRouteOptimizationCandidateEdges(
@@ -2045,7 +2061,7 @@ export function createUndoScopeForNodeFootprintPatch(__appScope: Record<string, 
       undefined,
       directCandidateEdges
     );
-    return undoScopeForGraphPatch([nodeId], candidateEdges.map((edge) => edge.id));
+    return undoScopeForGraphPatch([nodeId], candidateEdges.map((edge: Edge) => edge.id));
   };
 }
 
@@ -2101,7 +2117,7 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
       // 正确性无损,只多一趟 O(n) 比较(与拖动 / 剪切 / 删除三处先例同款,见 createEnsureDraggingUndoSnapshot)。
       const undoScope = hasContainer(nodes)
         ? undefined
-        : undoScopeForGraphPatch([selectedNodeId], footprintEdges.map((edge) => edge.id));
+        : undoScopeForGraphPatch([selectedNodeId], footprintEdges.map((edge: Edge) => edge.id));
       pushUndoSnapshot(true, false, undoScope, "移动设备", (() => { const n = nodeById.get(selectedNodeId); return n ? `${n.params?.idx || n.id} ${n.name ?? ""}`.trim() : ""; })());
     } else {
       pushNodeOnlyUndoSnapshot(selectedNodeId, "移动设备");
@@ -2136,7 +2152,7 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
       const originalPositions = { [selectedNodeId]: selectedNode.position };
       const originalEdgePoints = snapshotEdgePoints(affectedEdgesForMove);
       const originalRoutePoints = Object.fromEntries(
-        affectedEdgesForMove.map((edge) => [
+        affectedEdgesForMove.map((edge: Edge) => [
           edge.id,
           currentStoredRoutePointsForEdge(edge)
         ])
@@ -2192,7 +2208,7 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
       const finalUpdates = mergeNodeUpdateLists(nodeUpdates, containerUpdates);
       const edgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nodesWithContainers, [selectedNodeId]);
       expandCanvasToFitGraph(finalUpdates, edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, selectedNodeCanvasBounds);
-      setGraphStore((current) =>
+      setGraphStore((current: GraphStore) =>
         graphStoreApplyPatch(current, {
           nodeUpdates: finalUpdates,
           edgeUpserts: edgeUpdates
@@ -2226,8 +2242,8 @@ export function createCommitNodeFootprintUpdates(__appScope: Record<string, any>
     }
     const originShift = allowAutoExpandCanvas ? leftTopCanvasOriginShiftForContent(existingUpdates, directCandidateEdges) : { x: 0, y: 0 };
     if (hasCanvasOriginShift(originShift)) {
-      const shiftedNodes = nextNodes.map((node) => translateNodeBy(node, originShift));
-      const shiftedEdges = edges.map((edge) => translateEdgeBy(edge, originShift));
+      const shiftedNodes = nextNodes.map((node: ModelNode) => translateNodeBy(node, originShift));
+      const shiftedEdges = edges.map((edge: Edge) => translateEdgeBy(edge, originShift));
       const shiftedBounds = canvasBoundsForGraphContent(
         canvasBoundsWithOriginShift(canvasBounds, originShift),
         shiftedNodes,
@@ -2237,11 +2253,11 @@ export function createCommitNodeFootprintUpdates(__appScope: Record<string, any>
       );
       applyCanvasBounds(shiftedBounds, originShift);
       shiftCachedRoutesForCanvasOrigin(originShift);
-      const shiftedEdgeIds = shiftedEdges.map((edge) => edge.id);
+      const shiftedEdgeIds = shiftedEdges.map((edge: Edge) => edge.id);
       markRouteEdgesDirty(shiftedEdgeIds);
       markStoredRouteEdgesDirty(shiftedEdgeIds);
       markBusTerminalSyncDirtyForEdges(shiftedEdges);
-      setGraphStore((current) => graphStoreSetGraph(current, shiftedNodes, shiftedEdges));
+      setGraphStore((current: GraphStore) => graphStoreSetGraph(current, shiftedNodes, shiftedEdges));
       return;
     }
     const footprintCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
@@ -2292,13 +2308,13 @@ export function createCommitNodeFootprintUpdates(__appScope: Record<string, any>
     );
     const finalNodeUpdates = mergeNodeUpdateLists(existingUpdates, routableLineNodeUpdates);
     if (edgeUpdates.length > 0) {
-      const dirtyEdgeIds = edgeUpdates.map((edge) => edge.id);
+      const dirtyEdgeIds = edgeUpdates.map((edge: Edge) => edge.id);
       markRouteEdgesDirty(dirtyEdgeIds);
       markStoredRouteEdgesDirty(dirtyEdgeIds);
       markBusTerminalSyncDirtyForEdges(edgeUpdates);
     }
     expandCanvasToFitGraph(finalNodeUpdates, edgeUpdates, [], CANVAS_AUTO_EXPAND_PADDING, footprintCanvasBounds);
-    setGraphStore((current) =>
+    setGraphStore((current: GraphStore) =>
       graphStoreApplyPatch(current, {
         nodeUpdates: finalNodeUpdates,
         edgeUpserts: edgeUpdates
@@ -2316,18 +2332,18 @@ export function createAssignSelectedNodesToModelLayer(__appScope: Record<string,
     if (activeSelectedNodeIds.length === 0) {
       return;
     }
-    const layer = layers.find((item) => item.id === layerId);
+    const layer = layers.find((item: ModelLayer) => item.id === layerId);
     if (!layer) {
       return;
     }
     const selected = new Set(activeSelectedNodeIds);
-    const changedCount = nodes.filter((node) => selected.has(node.id) && (node.layerId ?? DEFAULT_MODEL_LAYER_ID) !== layerId).length;
+    const changedCount = nodes.filter((node: ModelNode) => selected.has(node.id) && (node.layerId ?? DEFAULT_MODEL_LAYER_ID) !== layerId).length;
     if (changedCount === 0) {
       return;
     }
     pushUndoSnapshot(true, false, undefined, "修改图层");
     patchGraphNodes(
-      activeSelectedNodeIds.flatMap((nodeId) => {
+      activeSelectedNodeIds.flatMap((nodeId: string) => {
         const node = nodeById.get(nodeId);
         return node && selected.has(node.id) ? [{ ...node, layerId }] : [];
       })
@@ -2346,10 +2362,10 @@ export function createOpenLayerAssignmentDialog(__appScope: Record<string, any>)
       return;
     }
     const selectedLayerIds = activeSelectedNodeIds
-      .map((nodeId) => nodeById.get(nodeId)?.layerId ?? DEFAULT_MODEL_LAYER_ID)
-      .filter((layerId) => layers.some((layer) => layer.id === layerId));
+      .map((nodeId: string) => nodeById.get(nodeId)?.layerId ?? DEFAULT_MODEL_LAYER_ID)
+      .filter((layerId: string) => layers.some((layer: ModelLayer) => layer.id === layerId));
     const commonLayerId =
-      selectedLayerIds.length > 0 && selectedLayerIds.every((layerId) => layerId === selectedLayerIds[0])
+      selectedLayerIds.length > 0 && selectedLayerIds.every((layerId: string) => layerId === selectedLayerIds[0])
         ? selectedLayerIds[0]
         : "";
     setLayerAssignmentTargetId(commonLayerId || activeLayerId || layers[0]?.id || DEFAULT_MODEL_LAYER_ID);
@@ -2378,19 +2394,19 @@ export function createRotateSelectedLayoutUnits(__appScope: Record<string, any>)
     pushUndoSnapshot(true, false, undefined, "旋转图元");
     setSelectedEdgeId("");
     const nodeUpdates = rotateLayoutUnitNodeUpdates(selectedLayoutUnits, degrees);
-    const transformedNodeIds = nodeUpdates.map((node) => node.id);
+    const transformedNodeIds = nodeUpdates.map((node: ModelNode) => node.id);
     const nextNodes = overlayGraphStoreNodes(graphStore, nodeUpdates);
     // 容器跟随:旋转只改被变换节点的几何,容器不重算会停在旧矩形(与变换句柄同口径,见 refitContainersAfterTransform)
     const containerUpdates = refitContainersAfterTransform(nextNodes, transformedNodeIds);
     const nodesWithContainers = withNodeUpdates(nextNodes, containerUpdates);
     const rotatedEdgeUpdates = buildRotateLayoutUnitEdgeUpdates(selectedLayoutUnits, edges, degrees);
-    const preservedRotateEdgeIds = new Set(rotatedEdgeUpdates.map((edge) => edge.id));
+    const preservedRotateEdgeIds = new Set(rotatedEdgeUpdates.map((edge: Edge) => edge.id));
     markRouteEdgesDirty(preservedRotateEdgeIds);
     markStoredRouteEdgesDirty(preservedRotateEdgeIds);
     const reroutedEdgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nodesWithContainers, transformedNodeIds, edges, preservedRotateEdgeIds);
     const edgeUpdates = [...rotatedEdgeUpdates, ...reroutedEdgeUpdates];
     expandCanvasToFitGraph([...nodeUpdates, ...containerUpdates], edgeUpdates);
-    setGraphStore((current) =>
+    setGraphStore((current: GraphStore) =>
       graphStoreApplyPatch(current, {
         nodeUpdates: [...nodeUpdates, ...containerUpdates],
         edgeUpserts: edgeUpdates
@@ -2412,19 +2428,19 @@ export function createMirrorSelectedNodes(__appScope: Record<string, any>) {
     pushUndoSnapshot(true, false, undefined, "镜像图元");
     setSelectedEdgeId("");
     const nodeUpdates = mirrorLayoutUnitNodeUpdates(selectedLayoutUnits, axis);
-    const transformedNodeIds = nodeUpdates.map((node) => node.id);
+    const transformedNodeIds = nodeUpdates.map((node: ModelNode) => node.id);
     const nextNodes = overlayGraphStoreNodes(graphStore, nodeUpdates);
     // 容器跟随:镜像会挪成员位置(翻面),容器不重算会停在旧矩形(与变换句柄同口径,见 refitContainersAfterTransform)
     const containerUpdates = refitContainersAfterTransform(nextNodes, transformedNodeIds);
     const nodesWithContainers = withNodeUpdates(nextNodes, containerUpdates);
     const mirroredEdgeUpdates = buildMirrorLayoutUnitEdgeUpdates(selectedLayoutUnits, edges, axis);
-    const preservedMirrorEdgeIds = new Set(mirroredEdgeUpdates.map((edge) => edge.id));
+    const preservedMirrorEdgeIds = new Set(mirroredEdgeUpdates.map((edge: Edge) => edge.id));
     markRouteEdgesDirty(preservedMirrorEdgeIds);
     markStoredRouteEdgesDirty(preservedMirrorEdgeIds);
     const reroutedEdgeUpdates = rebuildEdgeUpdatesAfterNodeGeometryChange(nodesWithContainers, transformedNodeIds, edges, preservedMirrorEdgeIds);
     const edgeUpdates = [...mirroredEdgeUpdates, ...reroutedEdgeUpdates];
     expandCanvasToFitGraph([...nodeUpdates, ...containerUpdates], edgeUpdates);
-    setGraphStore((current) =>
+    setGraphStore((current: GraphStore) =>
       graphStoreApplyPatch(current, {
         nodeUpdates: [...nodeUpdates, ...containerUpdates],
         edgeUpserts: edgeUpdates
@@ -2450,17 +2466,17 @@ export function createUpdateCanvasSize(__appScope: Record<string, any>) {
     pushUndoSnapshot(true, false, undefined, "修改画布尺寸");
     applyCanvasBounds(nextBounds);
     setGraphArrays(
-      nodes.map((node) => ({ ...node, position: clampNodePositionToBounds(node, nextBounds) })),
-      edges.map((edge) => clampEdgeGeometryToBounds(edge, nextBounds))
+      nodes.map((node: ModelNode) => ({ ...node, position: clampNodePositionToBounds(node, nextBounds) })),
+      edges.map((edge: Edge) => clampEdgeGeometryToBounds(edge, nextBounds))
     );
   };
 }
 
 export function createCommitCanvasSizeDraft(__appScope: Record<string, any>) {
-  return (draft?: typeof canvasSizeDraft) => {
+  return (draft?: CanvasSizeDraft) => {
   const { MAX_CANVAS_HEIGHT, MAX_CANVAS_WIDTH, MIN_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, calculateModelContentSize, canvasHeight, canvasSizeDraft, canvasWidth, clampCanvasDimension, edges, nodes, routeEdgesForStoredRendering, routedEdges, setCanvasSizeDraft, updateCanvasSize, writeOperationLog } = __appScope;
     if (draft === undefined) {
-      draft = canvasSizeDraft;
+      draft = canvasSizeDraft as CanvasSizeDraft;
     }
     const nextWidth = draft.width.trim() === "" ? canvasWidth : Number(draft.width);
     const nextHeight = draft.height.trim() === "" ? canvasHeight : Number(draft.height);
@@ -2610,7 +2626,7 @@ export function createUpdateParam(__appScope: Record<string, any>) {
               }
               return {
                 ...paramsNode,
-                terminals: currentNode.terminals.map((terminal, index) =>
+                terminals: currentNode.terminals.map((terminal: Terminal, index: number) =>
                   index === terminalIndexForVbase ? { ...terminal, vbase: storedValue } : terminal
                 )
               };
@@ -2644,11 +2660,11 @@ export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>
       return;
     }
     const allowedMissingParamKeySet = new Set(allowMissingParamKeys);
-    const targetNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
+    const targetNodes = activeSelectedNodeIds.flatMap((nodeId: string) => nodeById.get(nodeId) ?? []);
     const changedPatchKeys = new Set<string>();
     let lockedModelAssociationNode: ModelNode | undefined;
     const nextNodes = targetNodes
-      .map((node) => {
+      .map((node: ModelNode) => {
         const patch = Object.fromEntries(
           Object.entries(patchForNode(node))
             .filter(([patchKey]) => canBatchEditParam(patchKey))
@@ -2674,14 +2690,14 @@ export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>
         Object.keys(patch).forEach((patchKey) => changedPatchKeys.add(patchKey));
         return { ...node, params: { ...node.params, ...patch } };
       })
-      .filter((node, index) => node !== targetNodes[index]);
+      .filter((node: ModelNode, index: number) => node !== targetNodes[index]);
     if (lockedModelAssociationNode) {
       showGlobalMessage(modelAssociationModelIdLockMessage(lockedModelAssociationNode));
     }
     if (nextNodes.length === 0) {
       return;
     }
-    const nextNodeIds = nextNodes.map((node) => node.id);
+    const nextNodeIds = nextNodes.map((node: ModelNode) => node.id);
     // 量测同步:批量键白名单不排除 is_gateway/bound_device_id(多选容器会出现这两个批量行),
     // 两条提交分支都要喂归一化出口,容器量测组才会随批量绑定/关关口收敛;
     // 但只有真改了这两键才需要——归一化只按容器 params/归属算组,其余键喂旧图等价,省一趟 O(n) 合并
@@ -2690,7 +2706,7 @@ export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>
     const hasFootprintParam = Array.from(changedPatchKeys).some((key) => NODE_LABEL_FOOTPRINT_PARAM_KEYS.has(key));
     if (hasFootprintParam) {
       const affectedEdges = edgeListForNodeIds(nextNodeIds);
-      pushUndoSnapshot(true, false, undoScopeForGraphPatch(nextNodeIds, affectedEdges.map((edge) => edge.id)));
+      pushUndoSnapshot(true, false, undoScopeForGraphPatch(nextNodeIds, affectedEdges.map((edge: Edge) => edge.id)));
       commitNodeFootprintUpdates(nextNodes);
       setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, graphAfterBatchPatch));
       return;
@@ -2727,7 +2743,7 @@ export function createApplyBatchCommonParam(__appScope: Record<string, any>) {
     const normalizedLabelVisible = normalizedLabelDisplayMode === "hidden" ? "0" : "1";
     applyBatchCommonParamPatch(
       PARAM_LABELS[key] ?? key,
-      (node) => {
+      (node: ModelNode) => {
         if (normalizedLabelDisplayMode) {
           return { _labelDisplayMode: normalizedLabelDisplayMode, _labelVisible: normalizedLabelVisible };
         }
@@ -2751,17 +2767,17 @@ export function createApplyBatchCommonMeasurementGroupSetting(__appScope: Record
     }
     const changedGroupIds = new Set(
       projectMeasurements.groups
-        .filter((group) => selectedNodeIdsWithMeasurementGroups.has(group.nodeId))
-        .filter((group) => measurementGroupCommonValue(group, key) !== value)
-        .map((group) => group.id)
+        .filter((group: MeasurementGroup) => selectedNodeIdsWithMeasurementGroups.has(group.nodeId))
+        .filter((group: MeasurementGroup) => measurementGroupCommonValue(group, key) !== value)
+        .map((group: MeasurementGroup) => group.id)
     );
     if (changedGroupIds.size === 0) {
       return;
     }
     updateProjectMeasurementsWithUndo(
-      (current) => ({
+      (current: ProjectMeasurementConfig) => ({
         version: 1,
-        groups: current.groups.map((group) => changedGroupIds.has(group.id)
+        groups: current.groups.map((group: MeasurementGroup) => changedGroupIds.has(group.id)
           ? measurementGroupWithCommonSetting(group, key, value)
           : group
         )
@@ -2798,7 +2814,7 @@ export function createCommitElementTreeNodeIdentity(__appScope: Record<string, a
       updateElementTreeDraft(draftKey, value);
     }
     pushNodeOnlyUndoSnapshot(nodeId, undefined, nodeById.get(nodeId)?.name);
-    updateGraphNodeById(nodeId, (node) =>
+    updateGraphNodeById(nodeId, (node: ModelNode) =>
       field === "name" ? { ...node, name: value } : { ...node, params: { ...node.params, idx: value } }
     );
   };
@@ -2836,7 +2852,7 @@ export function createCommitElementTreeContainerChildParam(__appScope: Record<st
       updateElementTreeDraft(draftKey, value);
     }
     pushNodeOnlyUndoSnapshot(nodeId, undefined, nodeById.get(nodeId)?.name);
-    updateGraphNodeById(nodeId, (node) => ({ ...node, params: { ...node.params, [key]: value } }));
+    updateGraphNodeById(nodeId, (node: ModelNode) => ({ ...node, params: { ...node.params, [key]: value } }));
   };
 }
 
@@ -2858,9 +2874,9 @@ export function createUpdateTerminalVbase(__appScope: Record<string, any>) {
     }
     const numericValue = normalizeVoltageBaseInput(value);
     pushNodeOnlyUndoSnapshot(selectedNodeId);
-    updateGraphNodeById(selectedNodeId, (node) => ({
+    updateGraphNodeById(selectedNodeId, (node: ModelNode) => ({
       ...node,
-      terminals: node.terminals.map((terminal) =>
+      terminals: node.terminals.map((terminal: Terminal) =>
         terminal.id === terminalId ? { ...terminal, vbase: numericValue } : terminal
       )
     }));
@@ -2891,24 +2907,24 @@ export function createRenderNodeDoubleClickDeviceParamRows(__appScope: Record<st
   const { ALLOW_RESIZE_TRANSFORM_PARAM, BufferedTextInput, PARAM_LABELS, READONLY_E_PARAM_KEYS, batchEditors, formatDeviceModelParamDisplayValue, getEParamValue, getEParameterKeys, input, parseCustomDefinitions, td, tr } = __appScope;
     const eKeys = getEParameterKeys(node.kind, node.params);
     const customDefinitions = parseCustomDefinitions(node.params);
-    const customKeys = customDefinitions.map((definition) => definition.enName);
-    const customExtraKeys = customKeys.filter((key) => !eKeys.includes(key));
+    const customKeys = customDefinitions.map((definition: DeviceParameterDefinition) => definition.enName);
+    const customExtraKeys = customKeys.filter((key: string) => !eKeys.includes(key));
     const keys =
       eKeys.length > 0
         ? [...eKeys, ...customExtraKeys]
         : customKeys.length > 0
-          ? ["name", ...customKeys.filter((key) => key !== "name")]
+          ? ["name", ...customKeys.filter((key: string) => key !== "name")]
           : ["name", ...Object.keys(node.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM)];
     return keys.map((key) => {
       const value = eKeys.length > 0 ? getEParamValue(key, node) : key === "name" ? node.name : node.params[key] ?? "";
       const displayValue = formatDeviceModelParamDisplayValue(key, value);
-      const definition = customDefinitions.find((item) => item.enName === key);
+      const definition = customDefinitions.find((item: DeviceParameterDefinition) => item.enName === key);
       return (
         <tr key={key}>
           {batchEditors.renderParamHeader(key, key, definition?.cnName === key ? PARAM_LABELS[key] ?? key : (definition?.cnName ?? PARAM_LABELS[key] ?? key))}
           <td>
             {key === "name" ? (
-              <BufferedTextInput value={node.name} onCommit={(nextValue) => batchEditors.updateNodeDoubleClickDraftPatch(node.id, { name: nextValue })} />
+              <BufferedTextInput value={node.name} onCommit={(nextValue: unknown) => batchEditors.updateNodeDoubleClickDraftPatch(node.id, { name: nextValue })} />
             ) : READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition) ? (
               <Input value={displayValue} readOnly />
             ) : (
@@ -2931,7 +2947,7 @@ export function createRememberNodeDoubleClickDialogGuard(__appScope: Record<stri
 }
 
 export function createSuppressNodeDoubleClickDialogEvent(__appScope: Record<string, any>) {
-  return (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>) => {
+  return (event: ReactPointerEvent<HTMLElement> | ReactMouseEvent<HTMLElement>) => {
   const { nodeDoubleClickDialog, rememberNodeDoubleClickDialogGuard } = __appScope;
     event.stopPropagation();
     if (nodeDoubleClickDialog) {
@@ -2949,7 +2965,7 @@ export function createFinishNodeDoubleClickDialogPointerOperation(__appScope: Re
 }
 
 export function createStopNodeDoubleClickDialogEvent(__appScope: Record<string, any>) {
-  return (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>) => {
+  return (event: ReactPointerEvent<HTMLElement> | ReactMouseEvent<HTMLElement>) => {
   const { finishNodeDoubleClickDialogPointerOperation } = __appScope;
     event.stopPropagation();
     if (
@@ -2986,7 +3002,7 @@ export function createCurrentNodeDoubleClickDialogRect(__appScope: Record<string
 }
 
 export function createStartNodeDoubleClickDialogDrag(__appScope: Record<string, any>) {
-  return (event: PointerEvent<HTMLElement>) => {
+  return (event: ReactPointerEvent<HTMLElement>) => {
   const { currentNodeDoubleClickDialogRect, setNodeDoubleClickDialogDrag, setNodeDoubleClickDialogLayout } = __appScope;
     if (event.button !== 0) {
       return;
@@ -3008,7 +3024,7 @@ export function createStartNodeDoubleClickDialogDrag(__appScope: Record<string, 
 }
 
 export function createStartNodeDoubleClickDialogResize(__appScope: Record<string, any>) {
-  return (event: PointerEvent<HTMLDivElement>) => {
+  return (event: ReactPointerEvent<HTMLDivElement>) => {
   const { currentNodeDoubleClickDialogRect, setNodeDoubleClickDialogLayout, setNodeDoubleClickDialogResize } = __appScope;
     if (event.button !== 0) {
       return;
@@ -3097,7 +3113,7 @@ export function createRenderNodeDoubleClickDialog(__appScope: Record<string, any
         ? buildContainerDeviceParameterViews(dialogNode, libraryTemplateByKind.get(dialogNode.kind))
         : [];
     const activeContainerView =
-      containerViews.find((view) => view.id === nodeDoubleClickDialog.containerViewId) ?? containerViews[0];
+      containerViews.find((view: { id: string; label: string }) => view.id === nodeDoubleClickDialog.containerViewId) ?? containerViews[0];
     const title =
       nodeDoubleClickDialog.kind === "interaction"
         ? "修改交互操作"
@@ -3144,8 +3160,8 @@ export function createRenderNodeDoubleClickDialog(__appScope: Record<string, any
                   <table className="param-table node-double-click-param-table">
                     <tbody>
                       {batchEditors.renderStaticButtonActionEditor(dialogNode, {
-                        updateParam: (key, value) => batchEditors.updateNodeDoubleClickDraftParam(dialogNode.id, key, value),
-                        updateNode: (patch) => batchEditors.updateNodeDoubleClickDraftPatch(dialogNode.id, patch)
+                        updateParam: (key: string, value: string) => batchEditors.updateNodeDoubleClickDraftParam(dialogNode.id, key, value),
+                        updateNode: (patch: BatchCommonParamPatch) => batchEditors.updateNodeDoubleClickDraftPatch(dialogNode.id, patch)
                       })}
                     </tbody>
                   </table>
@@ -3162,13 +3178,13 @@ export function createRenderNodeDoubleClickDialog(__appScope: Record<string, any
             ) : activeContainerView ? (
               <>
                 <div className="container-param-tabs node-double-click-container-tabs" role="tablist" aria-label="容器设备参数切换">
-                  {containerViews.map((view) => (
+                  {containerViews.map((view: { id: string; label: string }) => (
                     <Button
                       key={view.id}
                       htmlType="button"
                       className={activeContainerView.id === view.id ? "active" : ""}
                       onClick={() => {
-                        setNodeDoubleClickDialog((current) =>
+                        setNodeDoubleClickDialog((current: NodeDoubleClickDialogState | null) =>
                           current && current.kind === "device" && current.nodeId === dialogNode.id
                             ? { ...current, containerViewId: view.id }
                             : current
@@ -3281,7 +3297,7 @@ export function createContextMenuClassName(__appScope: Record<string, any>) {
 }
 
 export function createStopSidePanelEventPropagation(__appScope: Record<string, any>) {
-  return (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>) => {
+  return (event: ReactPointerEvent<HTMLElement> | ReactMouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>) => {
     event.stopPropagation();
   };
 }
@@ -3305,14 +3321,14 @@ export function createSetSidePanelMode(__appScope: Record<string, any>) {
 }
 
 export function createPointerClientTargetInside(__appScope: Record<string, any>) {
-  return (event: PointerEvent<HTMLElement>, selector: string) => {
+  return (event: ReactPointerEvent<HTMLElement>, selector: string) => {
     const target = document.elementFromPoint(event.clientX, event.clientY);
     return target instanceof Element && Boolean(target.closest(selector));
   };
 }
 
 export function createPointerInsideElementRect(__appScope: Record<string, any>) {
-  return (event: PointerEvent<HTMLElement>, element: HTMLElement | null, padding = 0) => {
+  return (event: ReactPointerEvent<HTMLElement>, element: HTMLElement | null, padding = 0) => {
     if (!element) {
       return false;
     }
@@ -3327,7 +3343,7 @@ export function createPointerInsideElementRect(__appScope: Record<string, any>) 
 }
 
 export function createUpdateAutoPanelVisibility(__appScope: Record<string, any>) {
-  return (side: SidePanelSide, event: Parameters<typeof nextSidePanelAutoVisible>[3]) => {
+  return (side: SidePanelSide, event: SidePanelAutoEvent) => {
   const { leftPanelMode, nextSidePanelAutoVisible, projectMenu, projectRecordDragActiveRef, rightPanelMode, schemeRecordDragActiveRef, setLeftPanelAutoVisible, setRightPanelAutoVisible, sidePanelResize, templateMenu, topologyWarningPanelDrag, topologyWarningPanelResize, tourBlockedSidePanelMode } = __appScope;
     if (sidePanelResize || topologyWarningPanelDrag || topologyWarningPanelResize) {
       return;
@@ -3349,9 +3365,9 @@ export function createUpdateAutoPanelVisibility(__appScope: Record<string, any>)
       return;
     }
     if (side === "left") {
-      setLeftPanelAutoVisible((current) => nextSidePanelAutoVisible("left", leftPanelMode, current, event));
+      setLeftPanelAutoVisible((current: boolean) => nextSidePanelAutoVisible("left", leftPanelMode, current, event));
     } else {
-      setRightPanelAutoVisible((current) => nextSidePanelAutoVisible("right", rightPanelMode, current, event));
+      setRightPanelAutoVisible((current: boolean) => nextSidePanelAutoVisible("right", rightPanelMode, current, event));
     }
   };
 }
@@ -3377,7 +3393,7 @@ export function createOpenMeasurementEditorForNode(__appScope: Record<string, an
       showGlobalMessage("当前设备还没有添加显示量测。");
       return;
     }
-    const drafts = groups.map((group) => cloneMeasurementGroupForDraft(group));
+    const drafts = groups.map((group: MeasurementGroup) => cloneMeasurementGroupForDraft(group));
     selectCanvasGraphics([node.id], [], { scope: "direct" });
     setMeasurementEditorDialog({
       nodeId: node.id,
@@ -3387,7 +3403,7 @@ export function createOpenMeasurementEditorForNode(__appScope: Record<string, an
 }
 
 export function createHandleSidePanelPointerLeave(__appScope: Record<string, any>) {
-  return (side: SidePanelSide, event: PointerEvent<HTMLElement>) => {
+  return (side: SidePanelSide, event: ReactPointerEvent<HTMLElement>) => {
   const { isPointerInsideSidePanelViewportEdgeBridge, pointerInsideElementRect, updateAutoPanelVisibility } = __appScope;
     if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
       return;
@@ -3409,7 +3425,7 @@ export function createHandleSidePanelPointerLeave(__appScope: Record<string, any
 }
 
 export function createHideAutoPanelsFromWorkspace(__appScope: Record<string, any>) {
-  return (event: PointerEvent<HTMLElement>) => {
+  return (event: ReactPointerEvent<HTMLElement>) => {
   const { leftPanelMode, pointerClientTargetInside, pointerInsideFloatingPanelBounds, pointerRelatedTargetInside, projectMenu, projectRecordDragActiveRef, rightPanelMode, schemeRecordDragActiveRef, setLeftPanelAutoVisible, setRightPanelAutoVisible, shouldIgnoreWorkspaceAutoHide, sidePanelResize, templateMenu, topologyWarningPanelDrag, topologyWarningPanelResize, tourBlockedSidePanelMode } = __appScope;
     if (sidePanelResize || topologyWarningPanelDrag || topologyWarningPanelResize) {
       return;
@@ -3477,7 +3493,7 @@ export function createRenderStaticBoxDrawingPreview(__appScope: Record<string, a
     if (points.length < 2) {
       return (
         <g className="static-drawing-preview">
-          {staticDrawing.points.map((point, index) => (
+          {staticDrawing.points.map((point: Point, index: number) => (
             <circle key={index} className="static-drawing-preview-point" cx={point.x} cy={point.y} r="4.5" />
           ))}
         </g>
@@ -3500,7 +3516,7 @@ export function createRenderStaticBoxDrawingPreview(__appScope: Record<string, a
           </g>
           {renderNodePreviewImageContent(previewNode, `static-drawing-preview-clip-${staticDrawing.kind.replace(/[^A-Za-z0-9_-]/g, "-")}`)}
         </g>
-        {staticDrawing.points.map((point, index) => (
+        {staticDrawing.points.map((point: Point, index: number) => (
           <circle key={index} className="static-drawing-preview-point" cx={point.x} cy={point.y} r="4.5" />
         ))}
       </g>
@@ -3577,7 +3593,7 @@ export function createFinishInteractiveStaticDrawing(__appScope: Record<string, 
     updateSmartAlignmentGuides([]);
     activateInspectorFromCanvas();
     writeOperationLog(`新增图元：${node.name}`);
-    setRecentGlyphKinds?.((prev) => pushRecentGlyph(prev, staticDrawing.template.kind));
+    setRecentGlyphKinds?.((prev: string[]) => pushRecentGlyph(prev, staticDrawing.template.kind));
     setMode("select");
   };
 }
@@ -3629,8 +3645,8 @@ export function createUpdateInteractiveStaticDrawingPreview(__appScope: Record<s
   return (point: Point) => {
   const { sameOptionalPoint, setStaticDrawing } = __appScope;
     const previewPoint = resolveStaticDrawingSmartAlignmentPoint(point);
-    setStaticDrawing((current) => {
-      if (!current || sameOptionalPoint(current.previewPoint, previewPoint)) {
+    setStaticDrawing((current: unknown) => {
+      if (!current || sameOptionalPoint((current as { previewPoint?: Point }).previewPoint, previewPoint)) {
         return current;
       }
       return { ...current, previewPoint };
@@ -3651,7 +3667,7 @@ export function createRenderInteractiveStaticDrawingPreview(__appScope: Record<s
     return (
       <g className="static-drawing-preview">
         {points.length >= 2 && <path d={staticDrawingPathData(staticDrawing.kind, points)} className="static-drawing-preview-line" />}
-        {staticDrawing.points.map((point, index) => (
+        {staticDrawing.points.map((point: Point, index: number) => (
           <circle key={index} className="static-drawing-preview-point" cx={point.x} cy={point.y} r="4.5" />
         ))}
       </g>
@@ -3782,7 +3798,7 @@ export function createUpdateLibraryPlacementPreview(__appScope: Record<string, a
       return;
     }
     const previewPoint = resolveLibraryPlacementSmartAlignmentPoint(libraryPlacement, point);
-    setLibraryPlacement((current) => {
+    setLibraryPlacement((current: LibraryPlacementState | null) => {
       if (!current || (current.previewPoint && sameOptionalPoint(current.previewPoint, previewPoint))) {
         return current;
       }
@@ -3795,7 +3811,7 @@ export function createClearLibraryPlacementPreview(__appScope: Record<string, an
   return () => {
   const { setLibraryPlacement, updateSmartAlignmentGuides } = __appScope;
     updateSmartAlignmentGuides([]);
-    setLibraryPlacement((current) => current?.previewPoint ? { ...current, previewPoint: null } : current);
+    setLibraryPlacement((current: LibraryPlacementState | null) => current?.previewPoint ? { ...current, previewPoint: null } : current);
   };
 }
 
@@ -3832,10 +3848,10 @@ export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>)
     }
     const dropOriginShift = leftTopCanvasOriginShiftForContent([...nodes, rawNode], edges);
     const dropSourceNodes = hasCanvasOriginShift(dropOriginShift)
-      ? nodes.map((node) => translateNodeBy(node, dropOriginShift))
+      ? nodes.map((node: ModelNode) => translateNodeBy(node, dropOriginShift))
       : nodes;
     const dropSourceEdges = hasCanvasOriginShift(dropOriginShift)
-      ? edges.map((edge) => translateEdgeBy(edge, dropOriginShift))
+      ? edges.map((edge: Edge) => translateEdgeBy(edge, dropOriginShift))
       : edges;
     const node = translateNodeBy(rawNode, dropOriginShift);
     const shiftedPointerPosition = translatePointBy(pointerPosition, dropOriginShift);
@@ -3857,8 +3873,8 @@ export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>)
     const indexed = assignPermanentDeviceIndex(placedNode, deviceIndexCounters);
     const placedNodes = [...dropSourceNodes, indexed.node];
     const existingRoutableLineNodeIds = dropSourceNodes
-      .filter((candidate) => isRoutableLineDeviceKind(candidate.kind))
-      .map((candidate) => candidate.id);
+      .filter((candidate: ModelNode) => isRoutableLineDeviceKind(candidate.kind))
+      .map((candidate: ModelNode) => candidate.id);
     const repairedLineNodes = existingRoutableLineNodeIds.length > 0
       ? rebuildRoutableLineDeviceRouteUpdates(
           placedNodes,
@@ -3868,7 +3884,7 @@ export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>)
           { movedNodeIds: [indexed.node.id] }
         )
       : [];
-    const repairedLineNodeById = new Map(repairedLineNodes.map((candidate) => [candidate.id, candidate]));
+    const repairedLineNodeById = new Map(repairedLineNodes.map((candidate: ModelNode) => [candidate.id, candidate]));
     const nextNodes = repairedLineNodes.length > 0
       ? placedNodes.map((candidate) => repairedLineNodeById.get(candidate.id) ?? candidate)
       : placedNodes;
@@ -3884,7 +3900,7 @@ export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>)
     setSelectedEdgeIds([]);
     activateInspectorFromCanvas();
     writeOperationLog(`新增图元：${indexed.node.name}`);
-    setRecentGlyphKinds?.((prev) => pushRecentGlyph(prev, kind));
+    setRecentGlyphKinds?.((prev: string[]) => pushRecentGlyph(prev, kind));
     __appScope.lastPlacedNodeIdRef && (__appScope.lastPlacedNodeIdRef.current = indexed.node.id);
   };
 }
@@ -3943,14 +3959,14 @@ export function createRenderLibraryPlacementPreview(__appScope: Record<string, a
     const offset = { x: targetTopLeft.x - bounds.left, y: targetTopLeft.y - bounds.top };
     return (
       <g className="library-placement-preview library-placement-preview-template" transform={`translate(${formatSvgNumber(offset.x)} ${formatSvgNumber(offset.y)})`}>
-        {libraryPlacement.template.clipboard.edges.map((item) => (
+        {libraryPlacement.template.clipboard.edges.map((item: CanvasClipboardEdge) => (
           <path
             key={item.edge.id}
             d={pointsToPreviewPath(item.routePoints)}
             className="library-placement-preview-line"
           />
         ))}
-        {libraryPlacement.template.clipboard.nodes.map((node) => (
+        {libraryPlacement.template.clipboard.nodes.map((node: ModelNode) => (
           <g key={node.id} transform={`translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})`}>
             <g transform={nodeGeometryTransform(node)}>
               <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
@@ -3965,7 +3981,7 @@ export function createRenderLibraryPlacementPreview(__appScope: Record<string, a
 }
 
 export function createStartSidePanelResize(__appScope: Record<string, any>) {
-  return (event: PointerEvent<HTMLDivElement>, side: SidePanelSide) => {
+  return (event: ReactPointerEvent<HTMLDivElement>, side: SidePanelSide) => {
   const { leftPanelWidth, rightPanelWidth, setSidePanelResize } = __appScope;
     event.preventDefault();
     event.stopPropagation();
@@ -3979,7 +3995,7 @@ export function createStartSidePanelResize(__appScope: Record<string, any>) {
 }
 
 export function createStartCanvasResize(__appScope: Record<string, any>) {
-  return (event: PointerEvent<Element>, edge: CanvasResizeEdge) => {
+  return (event: ReactPointerEvent<Element>, edge: CanvasResizeEdge) => {
   const { canvasBoundsRef, canvasDisplayHeight, canvasDisplayOffsetX, canvasDisplayOffsetY, canvasDisplayWidth, canvasFrameRef, canvasHorizontalScrollbarsActive, canvasResizeUndoCapturedRef, canvasScrollSurfaceHeight, canvasScrollSurfaceWidth, canvasVerticalScrollbarsActive, clearCanvasBoundsScrollSyncPending, minimumCanvasBoundsForResizeEdge, pendingCanvasResizeCommitAnchorRef, requireEditMode, setCanvasResizeDrag, svgRef } = __appScope;
     event.preventDefault();
     event.stopPropagation();
@@ -4019,7 +4035,7 @@ export function createStartCanvasResize(__appScope: Record<string, any>) {
 }
 
 export function createStartCanvasResizeFromRightOverlay(__appScope: Record<string, any>) {
-  return (event: PointerEvent<Element>) => {
+  return (event: ReactPointerEvent<Element>) => {
   const { CANVAS_RESIZE_HANDLE_SIZE, canvasBounds, startCanvasResize, svgRef } = __appScope;
     if (!svgRef.current) {
       return false;
@@ -4046,7 +4062,7 @@ export function createStartCanvasResizeFromRightOverlay(__appScope: Record<strin
 }
 
 export function createStartCanvasResizeFromLeftOverlay(__appScope: Record<string, any>) {
-  return (event: PointerEvent<Element>) => {
+  return (event: ReactPointerEvent<Element>) => {
   const { CANVAS_RESIZE_HANDLE_SIZE, canvasBounds, startCanvasResize, svgRef } = __appScope;
     if (!svgRef.current) {
       return false;
@@ -4073,7 +4089,7 @@ export function createStartCanvasResizeFromLeftOverlay(__appScope: Record<string
 }
 
 export function createStartCanvasResizeFromBottomOverlay(__appScope: Record<string, any>) {
-  return (event: PointerEvent<Element>) => {
+  return (event: ReactPointerEvent<Element>) => {
   const { CANVAS_RESIZE_HANDLE_SIZE, canvasBounds, startCanvasResize, svgRef } = __appScope;
     if (!svgRef.current) {
       return false;
@@ -4100,7 +4116,7 @@ export function createStartCanvasResizeFromBottomOverlay(__appScope: Record<stri
 }
 
 export function createStartCanvasResizeFromTopOverlay(__appScope: Record<string, any>) {
-  return (event: PointerEvent<Element>) => {
+  return (event: ReactPointerEvent<Element>) => {
   const { CANVAS_RESIZE_HANDLE_SIZE, canvasBounds, startCanvasResize, svgRef } = __appScope;
     if (!svgRef.current) {
       return false;
@@ -4127,7 +4143,7 @@ export function createStartCanvasResizeFromTopOverlay(__appScope: Record<string,
 }
 
 export function createStartStatusbarResize(__appScope: Record<string, any>) {
-  return (event: PointerEvent<HTMLDivElement>) => {
+  return (event: ReactPointerEvent<HTMLDivElement>) => {
   const { setStatusbarResize, statusbarHeight } = __appScope;
     event.preventDefault();
     event.stopPropagation();
@@ -4170,7 +4186,7 @@ export function createCurrentTopologyWarningPanelRect(__appScope: Record<string,
 }
 
 export function createStartTopologyWarningPanelDrag(__appScope: Record<string, any>) {
-  return (event: PointerEvent<HTMLElement>) => {
+  return (event: ReactPointerEvent<HTMLElement>) => {
   const { currentTopologyWarningPanelRect, setTopologyWarningPanelDrag, setTopologyWarningPanelPosition } = __appScope;
     event.preventDefault();
     event.stopPropagation();
@@ -4187,7 +4203,7 @@ export function createStartTopologyWarningPanelDrag(__appScope: Record<string, a
 }
 
 export function createStartTopologyWarningPanelResize(__appScope: Record<string, any>) {
-  return (event: PointerEvent<HTMLDivElement>) => {
+  return (event: ReactPointerEvent<HTMLDivElement>) => {
   const { currentTopologyWarningPanelRect, setTopologyWarningPanelPosition, setTopologyWarningPanelResize } = __appScope;
     event.preventDefault();
     event.stopPropagation();
@@ -4456,10 +4472,10 @@ export function createCurrentStoredRoutePointsForEdge(__appScope: Record<string,
     if (source && target) {
       const route = routeEdgesForStoredRendering(compactPreviewNodes(source, target), [edge], bounds)[0];
       if (route?.points.length) {
-        return route.points.map((point) => ({ ...point }));
+        return route.points.map((point: Point) => ({ ...point }));
       }
     }
-    return (routedEdgeById.get(edge.id)?.points ?? edgeSnapshotFallbackPoints(edge)).map((point) => ({ ...point }));
+    return (routedEdgeById.get(edge.id)?.points ?? edgeSnapshotFallbackPoints(edge)).map((point: Point) => ({ ...point }));
   };
 }
 
@@ -4487,12 +4503,12 @@ export function createBuildMirrorLayoutUnitEdgeUpdates(__appScope: Record<string
         if (routePoints.length < 2) {
           continue;
         }
-        const points = routePoints.map((point) => mirrorPointAcrossAxis(point, center, axis));
+        const points = routePoints.map((point: Point) => mirrorPointAcrossAxis(point, center, axis));
         updates.set(edge.id, {
           ...edge,
           sourcePoint: { ...points[0] },
           targetPoint: { ...points[points.length - 1] },
-          manualPoints: points.slice(1, -1).map((point) => ({ ...point }))
+          manualPoints: points.slice(1, -1).map((point: Point) => ({ ...point }))
         });
       }
     }
@@ -4524,12 +4540,12 @@ export function createBuildRotateLayoutUnitEdgeUpdates(__appScope: Record<string
         if (routePoints.length < 2) {
           continue;
         }
-        const points = routePoints.map((point) => rotatePointAround(point, center, degrees));
+        const points = routePoints.map((point: Point) => rotatePointAround(point, center, degrees));
         updates.set(edge.id, {
           ...edge,
           sourcePoint: { ...points[0] },
           targetPoint: { ...points[points.length - 1] },
-          manualPoints: points.slice(1, -1).map((point) => ({ ...point }))
+          manualPoints: points.slice(1, -1).map((point: Point) => ({ ...point }))
         });
       }
     }
@@ -4581,7 +4597,7 @@ export function createOverlayEdgeUpdatesForTransform(__appScope: Record<string, 
 }
 
 export function createStartGroupTransformDrag(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGElement>, unit: CanvasLayoutUnit, kind: "rotate" | ScaleHandleKind) => {
+  return (event: ReactPointerEvent<SVGElement>, unit: CanvasLayoutUnit, kind: "rotate" | ScaleHandleKind) => {
   const { TRANSFORM_ROTATE_HANDLE_GAP, clampPointToCanvas, hasCanvasSelectionModifier, requireEditMode, screenToSvgPoint, selectionRectCenter, setTransformDrag, snapshotGroupTransformEdgeRoutes, snapshotGroupTransformNodes, startModifierSelectionPress, svgRef, transformDragChangedRef } = __appScope;
     event.stopPropagation();
     if (hasCanvasSelectionModifier(event)) {
@@ -4619,7 +4635,7 @@ export function createStartGroupTransformDrag(__appScope: Record<string, any>) {
 
 export function createStartSingleTransformDrag(__appScope: Record<string, any>) {
   return (
-    event: PointerEvent<SVGElement>,
+    event: ReactPointerEvent<SVGElement>,
     node: ModelNode,
     kind: "rotate" | ScaleHandleKind,
     handle?: ScaleHandleConfig
@@ -4665,7 +4681,7 @@ export function createStartSingleTransformDrag(__appScope: Record<string, any>) 
 }
 
 export function createStartGroupMoveDrag(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGRectElement>, unit: CanvasLayoutUnit) => {
+  return (event: ReactPointerEvent<SVGRectElement>, unit: CanvasLayoutUnit) => {
   const { activateInspectorFromCanvas, activeLayerNodeIdSet, activeSelectedNodeIds, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clampPointToCanvas, clearNodeDragMoveSchedule, connectSource, createCanvasSelectionSnapshot, dragUndoCapturedRef, edgeListForNodeIds, expandActiveGroupSelection, groupExpandedCanvasSelection, hasCanvasSelectionModifier, isMultiNodeMoveState, isWholeActiveLayerMove, mode, movableCanvasNodeIds, nodeById, nodes, requireEditMode, routePointsSnapshotForMove, screenToSvgPoint, setCanvasSelectionScope, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, snapshotRouteBounds, startDraggingState, startModifierSelectionPress, svgRef } = __appScope;
     event.preventDefault();
     event.stopPropagation();
@@ -4707,7 +4723,7 @@ export function createStartGroupMoveDrag(__appScope: Record<string, any>) {
     clearNodeDragMoveSchedule();
     dragUndoCapturedRef.current = false;
     const originalPositionsForDrag = Object.fromEntries(
-      dragNodeIds.flatMap((id) => {
+      dragNodeIds.flatMap((id: string) => {
         const item = nodeById.get(id);
         return item ? [[item.id, { ...item.position }]] : [];
       })
@@ -4723,11 +4739,11 @@ export function createStartGroupMoveDrag(__appScope: Record<string, any>) {
       startPoint: point,
       originalPositions: originalPositionsForDrag,
       originalEdgePoints: Object.fromEntries(
-        affectedEdgesForDrag.map((edge) => [
+        affectedEdgesForDrag.map((edge: Edge) => [
           edge.id,
           {
             ...cloneEdgeEditablePoints(edge),
-            routePoints: edge.routePoints?.map((point) => ({ ...point }))
+            routePoints: edge.routePoints?.map((point: Point) => ({ ...point }))
           }
         ])
       ),
@@ -4752,7 +4768,7 @@ export function createBuildGroupTransformNodeUpdates(__appScope: Record<string, 
     if (geometry.kind === "rotate") {
       for (const nodeId of drag.nodeIds) {
         const snapshot = drag.originalNodes[nodeId];
-        const node = store.nodeMap.get(nodeId);
+        const node = store!.nodeMap.get(nodeId);
         if (!node || !snapshot) {
           continue;
         }
@@ -4767,7 +4783,7 @@ export function createBuildGroupTransformNodeUpdates(__appScope: Record<string, 
 
     for (const nodeId of drag.nodeIds) {
       const snapshot = drag.originalNodes[nodeId];
-      const node = store.nodeMap.get(nodeId);
+      const node = store!.nodeMap.get(nodeId);
       if (!node || !snapshot) {
         continue;
       }
@@ -4816,7 +4832,7 @@ export function createRotateLayoutUnitNodeUpdates(__appScope: Record<string, any
         if (updates.has(nodeId)) {
           continue;
         }
-        const node = store.nodeMap.get(nodeId);
+        const node = store!.nodeMap.get(nodeId);
         if (!node) {
           continue;
         }
@@ -4848,7 +4864,7 @@ export function createMirrorLayoutUnitNodeUpdates(__appScope: Record<string, any
         if (updates.has(nodeId)) {
           continue;
         }
-        const node = store.nodeMap.get(nodeId);
+        const node = store!.nodeMap.get(nodeId);
         if (!node) {
           continue;
         }
@@ -4870,7 +4886,7 @@ export function createMirrorLayoutUnitNodeUpdates(__appScope: Record<string, any
 }
 
 export function createBusAnchorFromEvent(__appScope: Record<string, any>) {
-  return (node: ModelNode, event: PointerEvent<SVGGElement | SVGCircleElement>): Point | undefined => {
+  return (node: ModelNode, event: ReactPointerEvent<SVGGElement | SVGCircleElement>): Point | undefined => {
   const { busAnchorFromPoint, clampPointToCanvas, isBusNode, screenToSvgPoint, svgRef } = __appScope;
     if (!isBusNode(node) || !svgRef.current) {
       return undefined;
