@@ -120,7 +120,16 @@ export function createSpaceStore(dataRoot) {
     let entries = [];
     try {
       entries = await readdir(workspacesRoot, { withFileTypes: true });
-    } catch {
+    } catch (error) {
+      // 只回注册表里已知的空间是可以接受的降级（workspaces/ 本来就常不存在），
+      // 但非 ENOENT 时「目录读不动」与「目录不存在」不该同形：那意味着**磁盘上有、
+      // 注册表里没有**的空间这次全看不见，用户在选择器里根本找不到它们，却无迹可寻。
+      // 下面处理非法目录名时是会告警的，这一处不告警属于同一函数内的不一致。
+      if (error?.code !== "ENOENT") {
+        console.warn(
+          `[空间] 扫描工作区目录失败（${error?.code ?? error?.name ?? "unknown"}），本次只返回注册表内已登记的空间：${workspacesRoot}`
+        );
+      }
       return known;
     }
     const result = [...known];
