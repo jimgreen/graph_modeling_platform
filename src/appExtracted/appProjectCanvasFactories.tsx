@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Select, Input, Button, InputNumber } from "antd";
 import { canvasFitCenterOffsetX, clampNumber } from "../canvasViewport";
 import { canvasFitSideInsetsFromDom } from "./appCoreCanvasUtilities";
@@ -20,6 +19,18 @@ import { graphStorePatchNodes } from "../graphStore";
 import { applyDragContainerMembership, clampContainerCenterToMembers, containerDragGroup, containerGatewayUnbindNotice, containerMemberNodes, containerResizeMinSize, finalizeContainerAfterNodeDeletion, foldContainerScaleIntoSize, hasContainer, isContainerNode, normalizeInboundContainerNode, withNodeUpdates } from "../acContainer";
 import { arrangeContainerInteriors, autoAlignEdgeWithoutStoredRoute, autoAlignStoredRouteDrops, createAutoAlignQualityReport, mergeContainerLayoutUnits, type AutoAlignQualityReport } from "../selectionActions";
 import { runAutoAlignPlanInWorker } from "../autoAlign/autoAlignClient";
+
+// 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 遮住）：按真实出处补齐，均为 type-only import。
+import type { AlignMode, CanvasBounds, DeviceKind, DeviceTemplate, Edge, ElementTreeItem, ModelLayer, ModelNode, Point, SavedProjectRecord, SavedSchemeRecord, TopologyValidationError } from "../model";
+import type { DeviceMeasurementProfileItem, MeasurementGroup, ProjectMeasurementConfig } from "../measurements";
+import type { CanvasWheelZoomEvent, ConnectTarget, ConnectionRedrawScope, ContextMenuState, DeviceDefinitionMeasurementPanelTarget, DraggingState, EdgeEndpoint, RoutableLinePlacementState, UnsavedChangeAction, VoltageBaseSetMode, WheelZoomAnchor } from "./appCoreCanvasUtilities";
+import type { VoltageBaseSetResult, VoltageBaseSetScope, VoltageBaseTerminalValuesByNodeId } from "../model-routing";
+import type { CanvasViewBox } from "../canvasViewport";
+import type { CanvasLayoutUnit, SelectionRect } from "../selectionActions";
+import type { GeometryBounds } from "../model-canvas-ops";
+import type { GlobalLineChoice, GlobalLineRecord } from "../global-lines";
+import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from "react";
+
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return async (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[], globalLineChoice?: GlobalLineChoice) => {
@@ -71,10 +82,10 @@ export function createCommitRoutableLineDevice(__appScope: Record<string, any>) 
     }
     const dropOriginShift = leftTopCanvasOriginShiftForContent([...nodes, routedLine], edges);
     const dropSourceNodes = hasCanvasOriginShift(dropOriginShift)
-      ? nodes.map((node) => translateNodeBy(node, dropOriginShift))
+      ? nodes.map((node: ModelNode) => translateNodeBy(node, dropOriginShift))
       : nodes;
     const dropSourceEdges = hasCanvasOriginShift(dropOriginShift)
-      ? edges.map((edge) => translateEdgeBy(edge, dropOriginShift))
+      ? edges.map((edge: Edge) => translateEdgeBy(edge, dropOriginShift))
       : edges;
     const shiftedLine = translateNodeBy(routedLine, dropOriginShift);
     const dropCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
@@ -109,7 +120,7 @@ export function createCommitRoutableLineDevice(__appScope: Record<string, any>) 
     setMode("select");
     activateInspectorFromCanvas();
     writeOperationLog(`新增线路：${indexed.node.name}`);
-    setRecentGlyphKinds?.((prev) => pushRecentGlyph(prev, template.kind));
+    setRecentGlyphKinds?.((prev: string[]) => pushRecentGlyph(prev, template.kind));
     return true;
   };
 }
@@ -219,7 +230,7 @@ export function createUpdateRoutableLineEndpointDrag(__appScope: Record<string, 
         : null;
     const effectiveTarget = target && alignedPoint ? { ...target, point: alignedPoint } : target;
     const snappedPoint = effectiveTarget ? connectTargetPoint(effectiveTarget) : point;
-    setRoutableLineEndpointDrag((current) =>
+    setRoutableLineEndpointDrag((current: any) =>
       current && current.nodeId === routableLineEndpointDrag.nodeId && current.endpoint === routableLineEndpointDrag.endpoint
         ? sameOptionalPoint(current.previewPoint, snappedPoint) &&
           sameOptionalPoint(current.dropTargetPoint, effectiveTarget ? snappedPoint : undefined) &&
@@ -238,7 +249,7 @@ export function createUpdateRoutableLineEndpointDrag(__appScope: Record<string, 
 
 export function createStartRoutableLineEndpointDrag(__appScope: Record<string, any>) {
   return (
-    event: PointerEvent<SVGCircleElement>,
+    event: ReactPointerEvent<SVGCircleElement>,
     node: ModelNode,
     endpoint: EdgeEndpoint
   ) => {
@@ -302,7 +313,7 @@ export function createFinishRoutableLineEndpointDrag(__appScope: Record<string, 
                 source: refs.source,
                 target: routableLineDeviceEndpointRefForNode(target.node, target.terminalId, target.point)
               };
-        const commitNodeById = new Map(nodes.map((node) => [node.id, node]));
+        const commitNodeById = new Map<string, ModelNode>(nodes.map((node: ModelNode) => [node.id, node] as [string, ModelNode]));
         commitNodeById.set(target.node.id, target.node);
         const nextSourceNode = nextRefs.source ? commitNodeById.get(nextRefs.source.nodeId) : undefined;
         const nextTargetNode = nextRefs.target ? commitNodeById.get(nextRefs.target.nodeId) : undefined;
@@ -323,7 +334,7 @@ export function createFinishRoutableLineEndpointDrag(__appScope: Record<string, 
           commitNodeById,
           canvasBounds
         );
-        const nextNodes = nodes.map((node) => node.id === routedLine.id ? routedLine : node);
+        const nextNodes = nodes.map((node: ModelNode) => node.id === routedLine.id ? routedLine : node);
         const wasGlobal = Boolean(String(lineNode.params[GLOBAL_LINE_ID_PARAM] ?? "").trim()) || shouldManageLineGlobally(lineNode, nodes, modelType);
         const willBeGlobal = shouldManageLineGlobally(routedLine, nextNodes, modelType);
         if (wasGlobal !== willBeGlobal) {
@@ -375,7 +386,7 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
   }
 
     const routeNodes = routingNodesForConnectionEdge(newEdge);
-    const routeNodeById = new Map(routeNodes.map((node) => [node.id, node]));
+    const routeNodeById = new Map(routeNodes.map((node: ModelNode) => [node.id, node]));
     const sourceNode = routeNodeById.get(newEdge.sourceId);
     const targetNode = routeNodeById.get(newEdge.targetId);
 
@@ -389,10 +400,10 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
       edgeForCommit = newEdge;
     } else {
       // Voltage inheritance: 任意一端电压为0时，从对端继承
-      const sourceVoltage = resolveNodeVoltageAtTerminal(actualSourceNode, newEdge.sourceTerminalId);
-      const targetVoltage = resolveNodeVoltageAtTerminal(actualTargetNode, newEdge.targetTerminalId);
-      const sourceIsDefault = isNodeVoltageDefault(actualSourceNode, newEdge.sourceTerminalId);
-      const targetIsDefault = isNodeVoltageDefault(actualTargetNode, newEdge.targetTerminalId);
+      const sourceVoltage = resolveNodeVoltageAtTerminal(actualSourceNode, newEdge.sourceTerminalId ?? "");
+      const targetVoltage = resolveNodeVoltageAtTerminal(actualTargetNode, newEdge.targetTerminalId ?? "");
+      const sourceIsDefault = isNodeVoltageDefault(actualSourceNode, newEdge.sourceTerminalId ?? "");
+      const targetIsDefault = isNodeVoltageDefault(actualTargetNode, newEdge.targetTerminalId ?? "");
 
       if (sourceIsDefault && targetVoltage) {
         // source 电压为0，从 target 继承
@@ -447,7 +458,7 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
     markStoredRouteEdgesDirty([preparedEdge.id]);
     markBusTerminalSyncDirtyForEdges([preparedEdge]);
     // 将电压继承的节点更新与边更新合并到一次 setGraphStore 调用中
-    setGraphStore((current) => {
+    setGraphStore((current: any) => {
       let next = current;
       if (nodesToUpdate.length > 0) {
         next = graphStorePatchNodes(next, nodesToUpdate);
@@ -468,7 +479,7 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
 }
 
 export function createFinishConnectToTarget(__appScope: Record<string, any>) {
-  return (target: NonNullable<ReturnType<typeof findConnectTargetAtPoint>>, endpointPoint?: Point | null) => {
+  return (target: ConnectTarget, endpointPoint?: Point | null) => {
   const { busAnchorFromPoint, canConnectTerminals, commitNewConnectionEdge, connectPreviewPointRef, connectSource, getTerminalPoint, isBusNode, visibleNodeById } = __appScope;
     if (endpointPoint === undefined) {
       endpointPoint = connectPreviewPointRef.current;
@@ -501,7 +512,7 @@ export function createFinishConnectToTarget(__appScope: Record<string, any>) {
 }
 
 export function createFinishRewiring(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGSVGElement>) => {
+  return (event: ReactPointerEvent<SVGSVGElement>) => {
   const { canvasBounds, clampPointToCanvas, connectionCommitFailureMessage, connectionEndpointRuleFailureMessage, edgeById, endpointMatchedRoutePointsForEdge, findRewireTargetAtPoint, getModelEdgeEndpointPoint, getTerminalPoint, isBusNode, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodeById, nodes, patchGraphEdges, prepareConnectionEdgeForCommit, preserveConnectionEdgeRouteShape, previewStoredRoutePointsForEdge, pushUndoSnapshot, resolveStraightBusSlideEndpointToPoint, rewiring, routedEdgeById, routedEdges, routingNodesForConnectionEdge, screenToSvgPoint, selectCanvasGraphics, setRewiring, svgRef, writeOperationLog } = __appScope;
     if (!rewiring || !svgRef.current) {
       return;
@@ -565,7 +576,7 @@ export function createFinishRewiring(__appScope: Record<string, any>) {
       const candidateEdge = rewiredEdge ? (slidePatch ? { ...rewiredEdge, ...slidePatch } : rewiredEdge) : null;
       const routingNodes = candidateEdge ? routingNodesForConnectionEdge(candidateEdge, nodes) : [];
       const rewireStoredPoints = currentRewireRoutePoints.length >= 2
-        ? currentRewireRoutePoints.map((routePoint) => ({ ...routePoint }))
+        ? currentRewireRoutePoints.map((routePoint: Point) => ({ ...routePoint }))
         : edge && currentSourcePoint && currentTargetPoint
           ? previewStoredRoutePointsForEdge(edge, currentSourcePoint, currentTargetPoint)
           : edge
@@ -612,7 +623,7 @@ export function createFinishRewiring(__appScope: Record<string, any>) {
 }
 
 export function createHandleDrop(__appScope: Record<string, any>) {
-  return (event: DragEvent<SVGSVGElement>) => {
+  return (event: ReactDragEvent<SVGSVGElement>) => {
   const { customGraphTemplates, dropGraphTemplate, libraryTemplates, placeLibraryDeviceAtPoint, requireEditMode, screenToSvgPoint, svgRef } = __appScope;
     event.preventDefault();
     if (!requireEditMode("拖入图元")) {
@@ -620,7 +631,7 @@ export function createHandleDrop(__appScope: Record<string, any>) {
     }
     const graphTemplateId = event.dataTransfer.getData("application/graph-template-id");
     if (graphTemplateId && svgRef.current) {
-      const template = customGraphTemplates.find((item) => item.id === graphTemplateId);
+      const template = customGraphTemplates.find((item: any) => item.id === graphTemplateId);
       if (!template) {
         return;
       }
@@ -634,7 +645,7 @@ export function createHandleDrop(__appScope: Record<string, any>) {
     }
     const pointerPosition = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
     const position = { x: pointerPosition.x, y: pointerPosition.y };
-    const template = libraryTemplates.find((item) => item.kind === kind);
+    const template = libraryTemplates.find((item: DeviceTemplate) => item.kind === kind);
     if (!template) {
       return;
     }
@@ -643,7 +654,7 @@ export function createHandleDrop(__appScope: Record<string, any>) {
 }
 
 export function createHandleRoutableLineNodePointerDown(__appScope: Record<string, any>) {
-  return (event: PointerEvent<Element>, node: ModelNode) => {
+  return (event: ReactPointerEvent<Element>, node: ModelNode) => {
   const { activateInspectorFromCanvas, activeLayerNodeIdSet, clampPointToCanvas, hasCanvasSelectionModifier, insertRoutableLineBendFromPointer, isEditMode, resetConnectPreviewState, routableLineDeviceCanvasPoints, screenToSvgPoint, selectCanvasGraphics, selectedNodeIdSet, setConnectSource, setContextMenu, setRewiring, startModifierSelectionPress, svgRef, switchInspectorTabForCanvasSelection } = __appScope;
     event.preventDefault();
     event.stopPropagation();
@@ -672,7 +683,7 @@ export function createHandleRoutableLineNodePointerDown(__appScope: Record<strin
 }
 
 export function createHandleNodePointerDown(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGGElement>, node: ModelNode) => {
+  return (event: ReactPointerEvent<SVGGElement>, node: ModelNode) => {
   const { activateInspectorFromCanvas, activeLayerNodeIdSet, activeSelectedEdgeIds, activeSelectedNodeIds, appendStaticDrawingPoint, applyConnectPreviewState, beginStaticButtonPointerFeedback, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clampPointToCanvas, clearNodeDragMoveSchedule, connectSource, connectTargetSnapPoint, createCanvasSelectionSnapshot, dragUndoCapturedRef, edgeListForNodeIds, expandActiveGroupSelection, findConnectTargetAtPoint, finishConnectToTarget, groupExpandedCanvasSelection, handleRoutableLineNodePointerDown, handleTerminalPointerDown, hasCanvasSelectionModifier, isBrowseMode, isBusNode, isMultiNodeMoveState, isRoutableLineDeviceKind, isStaticButtonEnabledForNode, isWholeActiveLayerMove, lastCanvasPointerRef, mode, movableCanvasNodeIds, nodeById, nodes, resetConnectPreviewState, resolveConnectPreviewPoint, restoreCanvasSelectionSnapshotWithInspector, routableLinePlacement, routePointsSnapshotForMove, screenToSvgPoint, selectCanvasGraphics, selectedEdgeId, selectedEdgeIds, selectedGroupMemberNodeIdSet, selectedNodeIdSet, selectedNodeIds, setConnectSource, setContextMenu, setLastCanvasClickTarget, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, snapshotRouteBounds, startDraggingState, startModifierSelectionPress, staticDrawing, svgRef, switchInspectorTabForCanvasSelection, updateMouseStatus } = __appScope;
     event.stopPropagation();
     if (event.button !== 0) {
@@ -704,7 +715,7 @@ export function createHandleNodePointerDown(__appScope: Record<string, any>) {
     if (routableLinePlacement && isBusNode(node)) {
       event.preventDefault();
       event.stopPropagation();
-      handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, node.terminals[0]?.id ?? "t1");
+      handleTerminalPointerDown(event as unknown as ReactPointerEvent<SVGCircleElement>, node, node.terminals[0]?.id ?? "t1");
       return;
     }
     if (connectSource && svgRef.current) {
@@ -778,12 +789,12 @@ export function createHandleNodePointerDown(__appScope: Record<string, any>) {
     const dragNodeIds = movableCanvasNodeIds(containerDragGroup(nodes, dragSelection.nodeIds));
     if (mode === "connect") {
       if (isBusNode(node)) {
-        handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, node.terminals[0]?.id ?? "t1");
+        handleTerminalPointerDown(event as unknown as ReactPointerEvent<SVGCircleElement>, node, node.terminals[0]?.id ?? "t1");
       }
       return;
     }
     if (connectSource && isBusNode(node)) {
-      handleTerminalPointerDown(event as unknown as PointerEvent<SVGCircleElement>, node, node.terminals[0]?.id ?? "t1");
+      handleTerminalPointerDown(event as unknown as ReactPointerEvent<SVGCircleElement>, node, node.terminals[0]?.id ?? "t1");
       return;
     }
     if (!svgRef.current) {
@@ -799,7 +810,7 @@ export function createHandleNodePointerDown(__appScope: Record<string, any>) {
     clearNodeDragMoveSchedule();
     dragUndoCapturedRef.current = false;
     const originalPositionsForDrag = Object.fromEntries(
-      dragNodeIds.flatMap((id) => {
+      dragNodeIds.flatMap((id: string) => {
         const item = nodeById.get(id);
         return item ? [[item.id, { ...item.position }]] : [];
       })
@@ -815,11 +826,11 @@ export function createHandleNodePointerDown(__appScope: Record<string, any>) {
       startPoint: point,
       originalPositions: originalPositionsForDrag,
       originalEdgePoints: Object.fromEntries(
-        affectedEdgesForDrag.map((edge) => [
+        affectedEdgesForDrag.map((edge: Edge) => [
           edge.id,
           {
             ...cloneEdgeEditablePoints(edge),
-            routePoints: edge.routePoints?.map((point) => ({ ...point }))
+            routePoints: edge.routePoints?.map((point: Point) => ({ ...point }))
           }
         ])
       ),
@@ -837,14 +848,14 @@ export function createHandleNodePointerDown(__appScope: Record<string, any>) {
 }
 
 export function createHandleRoutableLineNodePathPointerDown(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGPathElement>, node: ModelNode) => {
+  return (event: ReactPointerEvent<SVGPathElement>, node: ModelNode) => {
   const { handleRoutableLineNodePointerDown } = __appScope;
     handleRoutableLineNodePointerDown(event, node);
   };
 }
 
 export function createHandlePointerMove(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGSVGElement>) => {
+  return (event: ReactPointerEvent<SVGSVGElement>) => {
   const { CANVAS_SELECTION_DRAG_THRESHOLD, MOVE_BOUNDARY_GUARD, applyCanvasPanningVisualOffset, buildGroupTransformNodeUpdates, buildRoutableLineEndpointPreviewNodeUpdates, cancelPendingBlankCanvasDeselectOnMove, canvasBounds, canvasFrameRef, canvasFrameUserScrollRef, canvasNoScrollOffsetRef, clampCanvasNoScrollOffsetPoint, clampNumber, clampPointToCanvas, clampViewBoxToCanvas, connectSource, contextMarqueeSelectionRef, draggingRef, getNodeScaleX, getNodeScaleY, graphStore, isBusNode, isGroupTransformDrag, isLineSegmentBusNode, isRoutableLineDeviceKind, lastCanvasClientPointerRef, lastCanvasPointerRef, lastRawCanvasPointerRef, latestGraphStoreRef, libraryPlacement, manualPathDrag, marquee, modelGeometryInsideCanvasBounds, modifierSelectionPressRef, moveOrthogonalRouteSegment, moveRoutableLineDeviceSegment, nodeById, nodeLabelDrag, nodeLabelRotateDrag, nodeLabelRotationFromPoint, normalizeNodeLabelRotation, normalizeRotationDegrees, panning, panningRef, patchGraphNodes, patchSingleTerminalAnchorFromPoint, pendingCanvasNoScrollOffsetRef, proportionalSignedScaleFromHandleDelta, proportionalSignedScaleFromUprightHandleDelta, pushUndoSnapshot, resizeLineSegmentBusGeometryFromHandleDrag, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint, rewiring, rotationDeltaBetweenTransformPoints, routableLineDeviceCanvasPoints, routableLineEndpointDrag, routableLinePlacement, sameOptionalPoint, sameOptionalPointList, scheduleConnectPreviewPoint, scheduleNodeDragMove, scheduleRewirePreviewPoint, scheduleRoutableLinePreviewPoint, screenToSvgPoint, setManualPathDrag, setMarquee, setModifierSelectionPress, setNodeLabelDrag, setNodeLabelRotateDrag, setRoutableLineDeviceCanvasPoints, setTerminalPress, setTransformDrag, setViewBox, signedScaleFromRotatedHandleDelta, signedScaleFromUprightHandleDelta, singleTransformBaseNode, skipNextCanvasScrollSyncRef, staticButtonPointerRef, staticDrawing, svgRef, terminalPress, transformDrag, transformDragChangedRef, updateGraphNodeById, updateInteractiveStaticDrawingPreview, updateLibraryPlacementPreview, updateMeasurementDrag, updateMouseStatus, updateRoutableLineEndpointDrag } = __appScope;
     const staticButtonPointer = staticButtonPointerRef.current;
     if (
@@ -905,7 +916,7 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
       const dx = rect.width > 0 ? ((event.clientX - activePanning.clientX) / rect.width) * canvasBounds.width : 0;
       const dy = rect.height > 0 ? ((event.clientY - activePanning.clientY) / rect.height) * canvasBounds.height : 0;
       const nextViewBox = clampViewBoxToCanvas({ ...activePanning.viewBox, x: activePanning.viewBox.x - dx, y: activePanning.viewBox.y - dy });
-      setViewBox((current) =>
+      setViewBox((current: CanvasViewBox) =>
         current.x === nextViewBox.x &&
         current.y === nextViewBox.y &&
         current.width === nextViewBox.width &&
@@ -981,11 +992,11 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
       if (!nodeLabelRotateDrag.historyCaptured) {
         pushUndoSnapshot();
       }
-      updateGraphNodeById(nodeLabelRotateDrag.nodeId, (node) => ({
+      updateGraphNodeById(nodeLabelRotateDrag.nodeId, (node: ModelNode) => ({
         ...node,
         params: { ...node.params, _labelRotation: nextRotation }
       }));
-      setNodeLabelRotateDrag((current) =>
+      setNodeLabelRotateDrag((current: any) =>
         current && current.nodeId === nodeLabelRotateDrag.nodeId
           ? { ...current, historyCaptured: true }
           : current
@@ -1004,7 +1015,7 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
       if (!nodeLabelDrag.historyCaptured) {
         pushUndoSnapshot();
       }
-      updateGraphNodeById(nodeLabelDrag.nodeId, (node) => {
+      updateGraphNodeById(nodeLabelDrag.nodeId, (node: ModelNode) => {
         const currentX = node.params._labelX ?? "";
         const currentY = node.params._labelY ?? "";
         const nextX = String(nextOffset.x);
@@ -1014,7 +1025,7 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
         }
         return { ...node, params: { ...node.params, _labelX: nextX, _labelY: nextY } };
       });
-      setNodeLabelDrag((current) =>
+      setNodeLabelDrag((current: any) =>
         current && current.nodeId === nodeLabelDrag.nodeId
           ? { ...current, historyCaptured: current.historyCaptured || nodeLabelDrag.historyCaptured || !sameOptionalPoint(nextOffset, nodeLabelDrag.startOffset) }
           : current
@@ -1059,7 +1070,7 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
       if (originalRoutePoints.length < 2) {
         return;
       }
-      const nextPoints = originalRoutePoints.map((item) => ({ ...item }));
+      const nextPoints = originalRoutePoints.map((item: Point) => ({ ...item }));
       const routableLineNode = nextDrag.nodeId ? nodeById.get(nextDrag.nodeId) : undefined;
       if ("pointIndex" in nextDrag) {
         if (nextDrag.pointIndex > 0 && nextDrag.pointIndex < originalRoutePoints.length - 1) {
@@ -1088,7 +1099,7 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
                   canvasBounds
                 )
           )
-        : nextPoints.map((item) => ({ ...item }));
+        : nextPoints.map((item: Point) => ({ ...item }));
       if (!modelGeometryInsideCanvasBounds([], [{ points: previewRoutePoints }], canvasBounds, MOVE_BOUNDARY_GUARD)) {
         return;
       }
@@ -1108,7 +1119,7 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
     }
     if (marquee && svgRef.current) {
       const currentPoint = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-      setMarquee((current) =>
+      setMarquee((current: { start: Point; current: Point } | null) =>
         current && !sameOptionalPoint(current.current, currentPoint)
           ? { ...current, current: currentPoint }
           : current
@@ -1134,7 +1145,7 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
         if (nextNodeUpdates.length === 0) {
           return;
         }
-        setTransformDrag((current) =>
+        setTransformDrag((current: any) =>
           current && isGroupTransformDrag(current) && current.groupId === transformDrag.groupId
             ? current.historyCaptured && current.proportionalScale === transformForMove.proportionalScale && sameOptionalPoint(current.previewPoint, point)
               ? current
@@ -1159,7 +1170,7 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
           scaleX: baseNode.scaleX,
           scaleY: baseNode.scaleY
         };
-        setTransformDrag((current) =>
+        setTransformDrag((current: any) =>
           current && !isGroupTransformDrag(current) && current.nodeId === transformDrag.nodeId
             ? current.historyCaptured && sameOptionalPoint(current.previewPoint, point)
               ? current
@@ -1181,7 +1192,7 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
         const signedScaleFromHandleDelta = transformDrag.uprightStaticSelection
           ? signedScaleFromUprightHandleDelta
           : signedScaleFromRotatedHandleDelta;
-        setTransformDrag((current) =>
+        setTransformDrag((current: any) =>
           current && !isGroupTransformDrag(current) && current.nodeId === transformDrag.nodeId
             ? current.historyCaptured && current.proportionalScale === proportionalScale
               ? current
@@ -1290,7 +1301,7 @@ export function createFinishCanvasPanning(__appScope: Record<string, any>) {
     if (pendingOffset) {
       canvasNoScrollOffsetRef.current = pendingOffset;
       applyCanvasPanningVisualOffset(pendingOffset);
-      setCanvasNoScrollOffset((current) =>
+      setCanvasNoScrollOffset((current: Point) =>
         current.x === pendingOffset.x && current.y === pendingOffset.y ? current : pendingOffset
       );
     }
@@ -1302,7 +1313,7 @@ export function createFinishCanvasPanning(__appScope: Record<string, any>) {
 }
 
 export function createStartCanvasPanning(__appScope: Record<string, any>) {
-  return (event: PointerEvent<Element>) => {
+  return (event: ReactPointerEvent<Element>) => {
   const { activateInspectorFromCanvas, canvasFrameHasHorizontalScrollableRange, canvasFrameHasVerticalScrollableRange, canvasFrameRef, canvasHorizontalScrollbarsActiveRef, canvasInteractionRef, canvasNoScrollOffsetRef, canvasVerticalScrollbarsActiveRef, clampPointToCanvas, currentViewBoxFromCanvasFrameScroll, lastCanvasPointerRef, lastRawCanvasPointerRef, pendingCanvasNoScrollOffsetRef, projectListPointerInsideRef, resetConnectPreviewState, screenToSvgPoint, setCanvasPanning, setConnectSource, setContextMenu, setProjectMenu, setRewiring, svgRef, updateMouseStatus } = __appScope;
     const svg = svgRef.current;
     if (event.button !== 0 || !svg) {
@@ -1342,7 +1353,7 @@ export function createStartCanvasPanning(__appScope: Record<string, any>) {
 }
 
 export function createHandleCanvasPointerDownCapture(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGSVGElement>) => {
+  return (event: ReactPointerEvent<SVGSVGElement>) => {
   const { connectSource, hasCanvasSelectionModifier, lastCanvasClientPointerRef, staticDrawing } = __appScope;
     lastCanvasClientPointerRef.current = { x: event.clientX, y: event.clientY };
     if (!hasCanvasSelectionModifier(event) || staticDrawing || connectSource) {
@@ -1375,7 +1386,7 @@ export function createClientPointInsideRenderedCanvas(__appScope: Record<string,
 }
 
 export function createFocusCanvasKeyboardShortcutHost(__appScope: Record<string, any>) {
-  return (event: PointerEvent<HTMLElement>) => {
+  return (event: ReactPointerEvent<HTMLElement>) => {
   const { canvasFrameRef, canvasInteractionRef, clampPointToCanvas, clientPointInsideRenderedCanvas, isCanvasKeyboardBlockingTarget, lastCanvasClientPointerRef, lastCanvasPointerRef, lastKeyboardShortcutClientPointerRef, lastRawCanvasPointerRef, projectListPointerInsideRef, screenToSvgPoint, svgRef, updateMouseStatus } = __appScope;
     lastKeyboardShortcutClientPointerRef.current = { x: event.clientX, y: event.clientY };
     if (isCanvasKeyboardBlockingTarget(event.target)) {
@@ -1447,7 +1458,7 @@ export function createFlushPendingWheelZoom(__appScope: Record<string, any>) {
     }
     pendingWheelZoomRequestRef.current = null;
     pendingWheelZoomAnchorRef.current = request.anchor;
-    setViewBox((current) => {
+    setViewBox((current: CanvasViewBox) => {
       const bounds = canvasBoundsRef.current;
       const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
         { width: current.width * request.zoomFactor, height: current.height * request.zoomFactor },
@@ -1563,7 +1574,7 @@ export function createReadjustMovedBusConnectionRoutes(__appScope: Record<string
     }
     const redrawnCandidateEdges = redrawConnectionRoutesForEdges(nextNodes, candidateEdges, busConnectedEdgeIds, bounds);
     const busConnectedEdgeIdSet = new Set(busConnectedEdgeIds);
-    const realignedCandidateEdges = redrawnCandidateEdges.map((edge) =>
+    const realignedCandidateEdges = redrawnCandidateEdges.map((edge: Edge) =>
       busConnectedEdgeIdSet.has(edge.id) ? realignConnectionEdgeBusEndpointPoints(nextNodes, edge) : edge
     );
     return redrawConnectionRoutesForEdges(nextNodes, realignedCandidateEdges, busConnectedEdgeIds, bounds);
@@ -1612,8 +1623,8 @@ export function createReadjustActiveLayerBusEndpointRoutes(__appScope: Record<st
       return 0;
     }
 
-    const changedEdgeIds = changedEdges.map((edge) => edge.id);
-    const changedNodeIds = changedLineNodes.map((node) => node.id);
+    const changedEdgeIds = changedEdges.map((edge: Edge) => edge.id);
+    const changedNodeIds = changedLineNodes.map((node: ModelNode) => node.id);
     pushUndoSnapshot(true, false, undoScopeForGraphPatch(changedNodeIds, changedEdgeIds));
     if (changedEdges.length > 0) {
       markRouteEdgesDirty(changedEdgeIds);
@@ -1652,7 +1663,7 @@ export function createCleanupStaleConnectionRoutes(__appScope: Record<string, an
     if (resolvedDrops.length === 0) {
       return 0;
     }
-    const edgeById = new Map(activeLayerEdges.map((edge: Edge) => [edge.id, edge]));
+    const edgeById = new Map<string, Edge>(activeLayerEdges.map((edge: Edge) => [edge.id, edge] as [string, Edge]));
     const cleanedEdges: Edge[] = [];
     for (const drop of resolvedDrops) {
       const edge = edgeById.get(drop.edgeId);
@@ -1740,7 +1751,7 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
         ? undefined
         : undoScopeForGraphPatch(
             busConnectedLineNodeIds.size > 0 ? [...movedNodeIds, ...busConnectedLineNodeIds] : movedNodeIds,
-            [...affectedEdgesForLayout.map((edge) => edge.id), ...storedRouteDropIds]
+            [...affectedEdgesForLayout.map((edge: Edge) => edge.id), ...storedRouteDropIds]
           )
     );
     const layoutCanvasBounds = options.preserveCanvasBounds
@@ -1775,7 +1786,7 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
     );
     const originalEdgePoints = snapshotEdgePoints(affectedEdgesForLayout);
     const originalRoutePoints = Object.fromEntries(
-      affectedEdgesForLayout.map((edge) => [
+      affectedEdgesForLayout.map((edge: Edge) => [
         edge.id,
         currentStoredRoutePointsForEdge(edge)
       ])
@@ -1811,16 +1822,16 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
       : finalizedCandidateEdges;
     // 无容器变更时不走合并,保持 movedNodeUpdates 原引用(被调方虽也短路,但「空 = 原引用」是调用点契约)
     let committedNodeUpdates = containerUpdates.length > 0 ? mergeNodeUpdateLists(movedNodeUpdates, containerUpdates) : movedNodeUpdates;
-    let committedArrangedNodes = withNodeUpdates(arranged, containerUpdates);
+    let committedArrangedNodes: ModelNode[] = withNodeUpdates(arranged, containerUpdates);
     if (options.readjustBusEndpoints && busConnectedLineNodeIds.size > 0) {
       const initiallyRedrawnLineNodes = redrawRoutableLineDeviceRoutes(
         committedArrangedNodes,
         busConnectedLineNodeIds,
         layoutCanvasBounds
       );
-      const initiallyRedrawnLineById = new Map(initiallyRedrawnLineNodes.map((node) => [node.id, node]));
-      const arrangedWithInitialRedrawnLines = initiallyRedrawnLineNodes.length > 0
-        ? committedArrangedNodes.map((node) => initiallyRedrawnLineById.get(node.id) ?? node)
+      const initiallyRedrawnLineById = new Map<string, ModelNode>(initiallyRedrawnLineNodes.map((node: ModelNode) => [node.id, node] as [string, ModelNode]));
+      const arrangedWithInitialRedrawnLines: ModelNode[] = initiallyRedrawnLineNodes.length > 0
+        ? committedArrangedNodes.map((node: ModelNode) => initiallyRedrawnLineById.get(node.id) ?? node)
         : committedArrangedNodes;
       const realignedLineNodes: ModelNode[] = [];
       for (const lineNodeId of busConnectedLineNodeIds) {
@@ -1833,9 +1844,9 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
           realignedLineNodes.push(realignedLineNode);
         }
       }
-      const realignedLineNodeById = new Map(realignedLineNodes.map((node) => [node.id, node]));
+      const realignedLineNodeById = new Map<string, ModelNode>(realignedLineNodes.map((node: ModelNode) => [node.id, node] as [string, ModelNode]));
       const arrangedWithRealignedLines = realignedLineNodes.length > 0
-        ? arrangedWithInitialRedrawnLines.map((node) => realignedLineNodeById.get(node.id) ?? node)
+        ? arrangedWithInitialRedrawnLines.map((node: ModelNode) => (realignedLineNodeById.get(node.id) ?? node) as ModelNode)
         : arrangedWithInitialRedrawnLines;
       const redrawnLineNodes = realignedLineNodes.length > 0
         ? redrawRoutableLineDeviceRoutes(
@@ -1849,9 +1860,9 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
         mergeNodeUpdateLists(realignedLineNodes, redrawnLineNodes)
       );
       if (lineNodeUpdates.length > 0) {
-        const lineNodeUpdateById = new Map(lineNodeUpdates.map((node) => [node.id, node]));
+        const lineNodeUpdateById = new Map<string, ModelNode>(lineNodeUpdates.map((node: ModelNode) => [node.id, node] as [string, ModelNode]));
         committedNodeUpdates = mergeNodeUpdateLists(committedNodeUpdates, lineNodeUpdates);
-        committedArrangedNodes = committedArrangedNodes.map((node) =>
+        committedArrangedNodes = committedArrangedNodes.map((node: ModelNode) =>
           lineNodeUpdateById.get(node.id) ?? node
         );
       }
@@ -1875,7 +1886,7 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
 export function createApplySelectedNodeLayout(__appScope: Record<string, any>) {
   return (
     minimumUnitCount: number,
-    layoutNodes: (currentNodes: ModelNode[], currentLayoutUnits: typeof selectedLayoutUnits) => ModelNode[]
+    layoutNodes: (currentNodes: ModelNode[], currentLayoutUnits: CanvasLayoutUnit[]) => ModelNode[]
   ) => {
   const { commitLayoutNodePositions, nodes, selectedLayoutUnits } = __appScope;
     if (selectedLayoutUnits.length < minimumUnitCount) {
@@ -2001,7 +2012,7 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
     if (!requireEditMode("自动散开")) {
       return;
     }
-    const activeNodeIds = activeLayerNodes.map((node) => node.id);
+    const activeNodeIds = activeLayerNodes.map((node: ModelNode) => node.id);
     if (activeNodeIds.length < 2) {
       emitLayoutOperationFeedback(__appScope, "自动散开需要至少 2 个可操作图元", "error");
       return;
@@ -2058,7 +2069,7 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
       [],
       activeLayerEdges,
       routedEdges,
-      { isTransformableNode: (node) => isCanvasNodeMovable(node.kind) }
+      { isTransformableNode: (node: ModelNode) => isCanvasNodeMovable(node.kind) }
     );
     const canAdjustMeasurements =
       typeof autoSpreadMovableRects === "function" &&
@@ -2112,7 +2123,7 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
         [],
         activeLayerEdges,
         routedEdges,
-        { isTransformableNode: (node) => isCanvasNodeMovable(node.kind), extraBoundsByNodeId }
+        { isTransformableNode: (node: ModelNode) => isCanvasNodeMovable(node.kind), extraBoundsByNodeId }
       )
     );
     if (layoutUnits.length < 2 && measurementDeltas.size === 0) {
@@ -2147,7 +2158,7 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
     const shouldSchedulePostRouteMeasurementReflow =
       movedCount > 0 &&
       canAdjustMeasurements &&
-      measurementReflow?.measurementLayoutItems.length > 0 &&
+      (measurementReflow?.measurementLayoutItems?.length ?? 0) > 0 &&
       typeof scheduleIdleWork === "function" &&
       latestGraphStoreRef &&
       typeof latestGraphStoreRef === "object";
@@ -2166,7 +2177,7 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
             return;
           }
           const latestNodeById = new Map(latestStore.nodes.map((node: ModelNode) => [node.id, node]));
-          const latestActiveNodes = activeNodeIds.flatMap((nodeId) => {
+          const latestActiveNodes = activeNodeIds.flatMap((nodeId: string) => {
             const node = latestNodeById.get(nodeId);
             return node ? [node] : [];
           });
@@ -2177,7 +2188,7 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
             ? cachedRoutedEdgesRef.current
             : routedEdges;
           const latestNodeVisualRects = typeof calculateNodeVisualBounds === "function"
-            ? latestActiveNodes.map((node) => calculateNodeVisualBounds(node))
+            ? latestActiveNodes.map((node: ModelNode) => calculateNodeVisualBounds(node))
             : [];
           const latestFixedRects = [
             ...latestNodeVisualRects,
@@ -2443,7 +2454,7 @@ export function createDefaultVoltageBaseTerminalValues(__appScope: Record<string
         continue;
       }
       values[node.id] = Object.fromEntries(
-        node.terminals.map((terminal, index) => {
+        node.terminals.map((terminal: ModelNode["terminals"][number], index: number) => {
           // 优先读取端子自身 vbase（排除 "0"）
           const terminalVbase = normalizeVoltageBaseInput(terminal.vbase);
           if (terminalVbase && terminalVbase !== "0") return [terminal.id, terminalVbase];
@@ -2504,7 +2515,7 @@ export function createActiveVoltageBaseTerminalValues(__appScope: Record<string,
 export function createSetVoltageBaseTerminalValue(__appScope: Record<string, any>) {
   return (nodeId: string, terminalId: string, value: string) => {
   const { setVoltageBaseTerminalValues } = __appScope;
-    setVoltageBaseTerminalValues((current) => ({
+    setVoltageBaseTerminalValues((current: VoltageBaseTerminalValuesByNodeId) => ({
       ...current,
       [nodeId]: {
         ...(current[nodeId] ?? {}),
@@ -2516,9 +2527,9 @@ export function createSetVoltageBaseTerminalValue(__appScope: Record<string, any
 
 export function createMergeVoltageBaseSetResults(__appScope: Record<string, any>) {
   return (
-    first: ReturnType<typeof setVoltageBaseValuesForScope>,
-    second: ReturnType<typeof setVoltageBaseValuesForScope>
-  ): ReturnType<typeof setVoltageBaseValuesForScope> => {
+    first: VoltageBaseSetResult,
+    second: VoltageBaseSetResult
+  ): VoltageBaseSetResult => {
     const updatesById = new Map<string, ModelNode>();
     for (const node of first.nodeUpdates) {
       updatesById.set(node.id, node);
@@ -2621,7 +2632,7 @@ export function createConfirmVoltageBaseSetDialog(__appScope: Record<string, any
     }
     const voltageBaseMismatches = validateTwoTerminalVoltageBaseConsistency(result.nodes);
     if (voltageBaseMismatches.length > 0) {
-      const examples = voltageBaseMismatches.slice(0, 8).map((item) =>
+      const examples = voltageBaseMismatches.slice(0, 8).map((item: any) =>
         `${item.nodeName}：${item.sourceTerminalLabel} ${item.sourceVoltageBase} / ${item.targetTerminalLabel} ${item.targetVoltageBase}`
       );
       const suffix = voltageBaseMismatches.length > examples.length ? `\n等 ${voltageBaseMismatches.length} 个两端设备。` : "";
@@ -2686,12 +2697,12 @@ export function createConnectionRedrawEdgeIdsForScope(__appScope: Record<string,
   return (scope: ConnectionRedrawScope) => {
   const { activeLayerEdgeIdSet, activeLayerEdges, activeSelectedEdgeIds, connectionRedrawViewportBounds, queryRouteSpatialIndex, routedEdgeSpatialIndex } = __appScope;
     if (scope === "selected") {
-      return activeSelectedEdgeIds.filter((edgeId, index, list) =>
+      return activeSelectedEdgeIds.filter((edgeId: string, index: number, list: string[]) =>
         activeLayerEdgeIdSet.has(edgeId) && list.indexOf(edgeId) === index
       );
     }
     if (scope === "all") {
-      return activeLayerEdges.map((edge) => edge.id);
+      return activeLayerEdges.map((edge: Edge) => edge.id);
     }
 
     const viewportBounds = connectionRedrawViewportBounds();
@@ -2728,7 +2739,7 @@ export function createConnectionRedrawLineNodeIdsForScope(__appScope: Record<str
       return lineNodeIds;
     }
     if (scope === "all") {
-      return activeLayerNodes.filter((node) => isRoutableLineDeviceKind(node.kind)).map((node) => node.id);
+      return activeLayerNodes.filter((node: ModelNode) => isRoutableLineDeviceKind(node.kind)).map((node: ModelNode) => node.id);
     }
 
     const viewportBounds = connectionRedrawViewportBounds();
@@ -2785,7 +2796,7 @@ export function createRedrawConnectionRoutes(__appScope: Record<string, any>) {
     }
 
     const changedEdgeIds = changedEdges.map((edge) => edge.id);
-    const changedNodeIds = changedLineNodes.map((node) => node.id);
+    const changedNodeIds = changedLineNodes.map((node: ModelNode) => node.id);
     pushUndoSnapshot(true, false, undoScopeForGraphPatch(changedNodeIds, changedEdgeIds));
     if (changedEdgeIds.length > 0) {
       markRouteEdgesDirty(changedEdgeIds);
@@ -2828,7 +2839,7 @@ export function createAlignSelected(__appScope: Record<string, any>) {
     if (!requireEditMode("对齐图元")) {
       return;
     }
-    applySelectedNodeLayout(2, (currentNodes, currentLayoutUnits) => alignNodeLayoutUnits(currentNodes, currentLayoutUnits, direction));
+    applySelectedNodeLayout(2, (currentNodes: ModelNode[], currentLayoutUnits: CanvasLayoutUnit[]) => alignNodeLayoutUnits(currentNodes, currentLayoutUnits, direction));
     if (selectedLayoutUnitCount >= 2) {
       const labelByDirection: Record<AlignMode, string> = {
         horizontal: "横向",
@@ -2849,7 +2860,7 @@ export function createDistributeSelected(__appScope: Record<string, any>) {
     if (!requireEditMode("分布图元")) {
       return;
     }
-    applySelectedNodeLayout(3, (currentNodes, currentLayoutUnits) => distributeNodeLayoutUnits(currentNodes, currentLayoutUnits, direction));
+    applySelectedNodeLayout(3, (currentNodes: ModelNode[], currentLayoutUnits: CanvasLayoutUnit[]) => distributeNodeLayoutUnits(currentNodes, currentLayoutUnits, direction));
     if (selectedLayoutUnitCount >= 3) {
       writeOperationLog(`${direction === "horizontal" ? "横向" : "纵向"}平均 ${selectedLayoutUnitCount} 个单元`);
     }
@@ -2859,8 +2870,8 @@ export function createDistributeSelected(__appScope: Record<string, any>) {
 export function createToggleSchemeExpanded(__appScope: Record<string, any>) {
   return (schemeId: string) => {
   const { setExpandedSchemeIds } = __appScope;
-    setExpandedSchemeIds((current) =>
-      current.includes(schemeId) ? current.filter((id) => id !== schemeId) : [...current, schemeId]
+    setExpandedSchemeIds((current: string[]) =>
+      current.includes(schemeId) ? current.filter((id: string) => id !== schemeId) : [...current, schemeId]
     );
   };
 }
@@ -3090,17 +3101,17 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     };
     const nextProjectIdx = Number(project.project.idx) || 0;
     const routableLineNodeIds = layeredProject.nodes
-      .filter((node) => isRoutableLineDeviceKind(node.kind))
-      .map((node) => node.id);
+      .filter((node: ModelNode) => isRoutableLineDeviceKind(node.kind))
+      .map((node: ModelNode) => node.id);
     const shouldRepairStoredRoutesSynchronously =
       routableLineNodeIds.length > 0 &&
       layeredProject.nodes.length <= CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT;
     const repairedLineNodes = shouldRepairStoredRoutesSynchronously
       ? rebuildRoutableLineDeviceRouteUpdates(layeredProject.nodes, routableLineNodeIds, nextCanvasBounds)
       : [];
-    const repairedLineNodeById = new Map(repairedLineNodes.map((node) => [node.id, node]));
+    const repairedLineNodeById = new Map(repairedLineNodes.map((node: ModelNode) => [node.id, node]));
     const routeSafeNodes = repairedLineNodes.length > 0
-      ? layeredProject.nodes.map((node) => repairedLineNodeById.get(node.id) ?? node)
+      ? layeredProject.nodes.map((node: ModelNode) => repairedLineNodeById.get(node.id) ?? node)
       : layeredProject.nodes;
     // 容器豁免存量回填(设备型线路):端点 refs 连容器内设备的线路设备,存量路径按豁免口径重算(同不写盘,随保存落盘)
     const containerExemptedLineNodes = rebuildContainerExemptRoutableLineDeviceRoutes(routeSafeNodes, nextCanvasBounds);
@@ -3220,7 +3231,7 @@ export function createLoadSavedProjectRecord(__appScope: Record<string, any>) {
         };
         if (resolvedSchemeId) {
           suppressNextBackendSchemeSyncRef.current = true;
-          setSchemes((current) => upsertSavedProjectInScheme(current, resolvedSchemeId, projectToLoad));
+          setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, resolvedSchemeId, projectToLoad));
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : `读取模型失败：${project.name}`;
@@ -3364,11 +3375,11 @@ export function createCreateSchemeRecord(__appScope: Record<string, any>) {
     const record = createSavedScheme(name);
     const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
     const recordPath = [...parentPath, record.name];
-    setSchemes((current) => insertChildSavedScheme(current, parentSchemeId, record));
+    setSchemes((current: SavedSchemeRecord[]) => insertChildSavedScheme(current, parentSchemeId, record));
     void saveBackendSchemeRecord(recordPath)
-      .catch((error) => handleBackendSchemeMutationFailure(`新建方案同步后台：${record.name}`, error));
+      .catch((error: unknown) => handleBackendSchemeMutationFailure(`新建方案同步后台：${record.name}`, error));
     if (parentSchemeId) {
-      setExpandedSchemeIds((current) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
+      setExpandedSchemeIds((current: string[]) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
     }
     selectSingleScheme(record.id);
     writeOperationLog(`新建方案：${record.name}`);
@@ -3396,9 +3407,9 @@ export function createRenameSchemeRecord(__appScope: Record<string, any>) {
     }
     const previousPath = schemePathForScheme(scheme.id);
     const nextPath = previousPath.length > 0 ? [...previousPath.slice(0, -1), name] : [name];
-    setSchemes((current) => renameSavedScheme(current, scheme.id, nextName));
+    setSchemes((current: SavedSchemeRecord[]) => renameSavedScheme(current, scheme.id, nextName));
     void saveBackendSchemeRecord(nextPath, previousPath)
-      .catch((error) => handleBackendSchemeMutationFailure(`重命名方案同步后台：${name}`, error));
+      .catch((error: unknown) => handleBackendSchemeMutationFailure(`重命名方案同步后台：${name}`, error));
   };
 }
 
@@ -3426,10 +3437,10 @@ export function createDuplicateSchemeRecord(__appScope: Record<string, any>) {
     const parentSchemeId = findSavedSchemeParentById(schemes, scheme.id)?.id ?? "";
     const record = cloneSchemeRecordWithName(scheme, name);
     const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
-    setSchemes((current) => insertChildSavedScheme(current, parentSchemeId, record));
+    setSchemes((current: SavedSchemeRecord[]) => insertChildSavedScheme(current, parentSchemeId, record));
     persistSchemeTreeToBackend(record, parentPath, `复制方案：${record.name}`);
     if (parentSchemeId) {
-      setExpandedSchemeIds((current) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
+      setExpandedSchemeIds((current: string[]) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
     }
   };
 }
@@ -3440,8 +3451,8 @@ export function createDeleteSchemeRecord(__appScope: Record<string, any>) {
     if (!requireEditMode("删除方案")) {
       return;
     }
-    const deletingSchemeIds = new Set(flattenSavedSchemes([scheme]).map((item) => item.id));
-    const emptyDisplayMessage = flattenSavedSchemes(schemes).some((item) => !deletingSchemeIds.has(item.id))
+    const deletingSchemeIds = new Set(flattenSavedSchemes([scheme]).map((item: SavedSchemeRecord) => item.id));
+    const emptyDisplayMessage = flattenSavedSchemes(schemes).some((item: SavedSchemeRecord) => !deletingSchemeIds.has(item.id))
       ? "剩余方案没有可显示模型，画布已清空。"
       : "所有方案已删除，画布已清空。";
     const deletingActiveScheme = Boolean(activeSchemeKey && deletingSchemeIds.has(activeSchemeKey));
@@ -3460,7 +3471,7 @@ export function createDeleteSchemeRecord(__appScope: Record<string, any>) {
     setSchemes(nextSchemes);
     if (schemePath.length > 0) {
       void deleteBackendSchemeRecord(schemePath)
-        .catch((error) => handleBackendSchemeMutationFailure(`删除后台方案：${scheme.name}`, error));
+        .catch((error: unknown) => handleBackendSchemeMutationFailure(`删除后台方案：${scheme.name}`, error));
     }
     if (noSchemesAfterDeletion) {
       showGlobalMessage("所有方案已删除，画布已清空。");
@@ -3510,7 +3521,7 @@ export function createDeleteSelectedRecords(__appScope: Record<string, any>) {
       return;
     }
     if (selectedProjectIds.length > 0) {
-      const names = projects.filter((project) => selectedProjectIds.includes(project.id)).map((project) => project.name);
+      const names = projects.filter((project: SavedProjectRecord) => selectedProjectIds.includes(project.id)).map((project: SavedProjectRecord) => project.name);
       const selected = new Set(selectedProjectIds);
       const deletingActiveProject = Boolean(activeProjectKey && selected.has(activeProjectKey));
       const confirmationMessage = deletingActiveProject
@@ -3523,13 +3534,13 @@ export function createDeleteSelectedRecords(__appScope: Record<string, any>) {
         ? nextSavedProjectAfterProjectBatchDeletion(schemes, activeProjectKey, selected)
         : null;
       const backendDeletes = projects
-        .filter((project) => selected.has(project.id))
-        .map((project) => ({ project, schemePath: schemePathForProject(project.id) }))
-        .filter((item) => item.schemePath.length > 0);
-      setSchemes((current) => deleteSavedProjectsFromSchemes(current, selected));
+        .filter((project: SavedProjectRecord) => selected.has(project.id))
+        .map((project: SavedProjectRecord) => ({ project, schemePath: schemePathForProject(project.id) }))
+        .filter((item: { project: SavedProjectRecord; schemePath: string[] }) => item.schemePath.length > 0);
+      setSchemes((current: SavedSchemeRecord[]) => deleteSavedProjectsFromSchemes(current, selected));
       for (const item of backendDeletes) {
         void deleteBackendProjectRecord(item.schemePath, item.project.name)
-          .catch((error) => handleBackendSchemeMutationFailure(`删除后台模型：${item.project.name}`, error));
+          .catch((error: unknown) => handleBackendSchemeMutationFailure(`删除后台模型：${item.project.name}`, error));
       }
       if (deletingActiveProject) {
         if (fallbackSelection) {
@@ -3545,12 +3556,12 @@ export function createDeleteSelectedRecords(__appScope: Record<string, any>) {
     }
     if (selectedSchemeIds.length > 0) {
       const deletingSchemeIds = new Set(
-        selectedSchemeIds.flatMap((schemeId) => {
+        selectedSchemeIds.flatMap((schemeId: string) => {
           const scheme = findSavedSchemeById(schemes, schemeId);
-          return scheme ? flattenSavedSchemes([scheme]).map((item) => item.id) : [schemeId];
+          return scheme ? flattenSavedSchemes([scheme]).map((item: SavedSchemeRecord) => item.id) : [schemeId];
         })
       );
-      const emptyDisplayMessage = flattenSavedSchemes(schemes).some((item) => !deletingSchemeIds.has(item.id))
+      const emptyDisplayMessage = flattenSavedSchemes(schemes).some((item: SavedSchemeRecord) => !deletingSchemeIds.has(item.id))
         ? "剩余方案没有可显示模型，画布已清空。"
         : "所有方案已删除，画布已清空。";
       const deletingActiveScheme = Boolean(activeSchemeKey && deletingSchemeIds.has(activeSchemeKey));
@@ -3564,14 +3575,14 @@ export function createDeleteSelectedRecords(__appScope: Record<string, any>) {
         ? nextSavedProjectAfterSchemeDeletion(schemes, activeSchemeKey, deletingSchemeIds)
         : null;
       const backendSchemeDeletes = selectedSchemeIds
-        .map((schemeId) => ({ schemeId, schemePath: schemePathForScheme(schemeId), scheme: findSavedSchemeById(schemes, schemeId) }))
-        .filter((item) => item.schemePath.length > 0 && item.scheme);
-      const nextSchemes = selectedSchemeIds.reduce((updatedSchemes, schemeId) => deleteSavedScheme(updatedSchemes, schemeId), schemes);
+        .map((schemeId: string) => ({ schemeId, schemePath: schemePathForScheme(schemeId), scheme: findSavedSchemeById(schemes, schemeId) }))
+        .filter((item: { schemeId: string; schemePath: string[]; scheme?: SavedSchemeRecord }) => item.schemePath.length > 0 && item.scheme);
+      const nextSchemes = selectedSchemeIds.reduce((updatedSchemes: SavedSchemeRecord[], schemeId: string) => deleteSavedScheme(updatedSchemes, schemeId), schemes);
       const noSchemesAfterDeletion = nextSchemes.length === 0;
       setSchemes(nextSchemes);
       for (const item of backendSchemeDeletes) {
         void deleteBackendSchemeRecord(item.schemePath)
-          .catch((error) => handleBackendSchemeMutationFailure(`删除后台方案：${item.scheme?.name ?? item.schemeId}`, error));
+          .catch((error: unknown) => handleBackendSchemeMutationFailure(`删除后台方案：${item.scheme?.name ?? item.schemeId}`, error));
       }
       if (noSchemesAfterDeletion) {
         showGlobalMessage("所有方案已删除，画布已清空。");
@@ -3619,7 +3630,7 @@ export function createPasteSchemeClipboardRecord(__appScope: Record<string, any>
     }
     const sourceScheme = recordClipboard.scheme;
     const targetSchemes = parentSchemeId ? findSavedSchemeById(schemes, parentSchemeId)?.children ?? [] : schemes;
-    const duplicateScheme = targetSchemes.find((scheme) => hasSameName(scheme.name, [sourceScheme.name]));
+    const duplicateScheme = targetSchemes.find((scheme: SavedSchemeRecord) => hasSameName(scheme.name, [sourceScheme.name]));
     if (duplicateScheme) {
       setPendingRecordPasteConflict({
         kind: "scheme",
@@ -3632,10 +3643,10 @@ export function createPasteSchemeClipboardRecord(__appScope: Record<string, any>
     }
     const record = cloneSchemeRecordForPaste(sourceScheme, sourceScheme.name);
     const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
-    setSchemes((current) => insertChildSavedScheme(current, parentSchemeId, record));
+    setSchemes((current: SavedSchemeRecord[]) => insertChildSavedScheme(current, parentSchemeId, record));
     persistSchemeTreeToBackend(record, parentPath, `粘贴方案：${record.name}`);
     if (parentSchemeId) {
-      setExpandedSchemeIds((current) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
+      setExpandedSchemeIds((current: string[]) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
     }
     writeOperationLog(`粘贴方案记录：${sourceScheme.name}`);
   };
@@ -3658,7 +3669,7 @@ export function createPasteProjectClipboardRecord(__appScope: Record<string, any
     if (!targetScheme) {
       return;
     }
-    const duplicateProject = targetScheme.projects.find((project) => hasSameName(project.name, [sourceProject.name]));
+    const duplicateProject = targetScheme.projects.find((project: SavedProjectRecord) => hasSameName(project.name, [sourceProject.name]));
     if (duplicateProject) {
       setPendingRecordPasteConflict({
         kind: "project",
@@ -3671,10 +3682,10 @@ export function createPasteProjectClipboardRecord(__appScope: Record<string, any
     }
     const pastedProject = cloneProjectRecordForPaste(sourceProject, sourceProject.name);
     const targetPath = schemePathForRecord(targetScheme);
-    setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, pastedProject));
+    setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, targetScheme.id, pastedProject));
     void saveBackendProjectRecord(targetPath, pastedProject)
-      .then((saved) => setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, saved)))
-      .catch((error) => handleBackendSchemeMutationFailure(`粘贴模型同步后台：${pastedProject.name}`, error));
+      .then((saved: SavedProjectRecord) => setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, targetScheme.id, saved)))
+      .catch((error: unknown) => handleBackendSchemeMutationFailure(`粘贴模型同步后台：${pastedProject.name}`, error));
     writeOperationLog(`粘贴模型记录：${sourceProject.name}`);
   };
 }
@@ -3727,16 +3738,16 @@ export function createCommitProjectRecordMove(__appScope: Record<string, any>) {
     const sourcePath = schemePathForRecord(sourceScheme);
     const targetPath = schemePathForRecord(targetScheme);
     const overwrittenProject = options.overwriteProjectId
-      ? targetScheme.projects.find((item) => item.id === options.overwriteProjectId)
+      ? targetScheme.projects.find((item: SavedProjectRecord) => item.id === options.overwriteProjectId)
       : undefined;
-    setSchemes((current) => {
+    setSchemes((current: SavedSchemeRecord[]) => {
       const withoutSourceProject = deleteSavedProjectsFromSchemes(current, new Set([projectId]));
       return upsertSavedProjectInScheme(withoutSourceProject, targetScheme.id, movedProject);
     });
     void saveBackendProjectRecord(targetPath, movedProject, overwrittenProject?.name ?? "")
       .then(() => deleteBackendProjectRecord(sourcePath, project.name))
-      .catch((error) => handleBackendSchemeMutationFailure(`移动模型同步后台：${movedProject.name}`, error));
-    setExpandedSchemeIds((current) => (current.includes(targetSchemeId) ? current : [...current, targetSchemeId]));
+      .catch((error: unknown) => handleBackendSchemeMutationFailure(`移动模型同步后台：${movedProject.name}`, error));
+    setExpandedSchemeIds((current: string[]) => (current.includes(targetSchemeId) ? current : [...current, targetSchemeId]));
     if (
       selectedProjectId === projectId ||
       selectedProjectIds.includes(projectId) ||
@@ -3785,10 +3796,10 @@ export function createResolveRecordPasteConflict(__appScope: Record<string, any>
         setPendingRecordPasteConflict(null);
         const record = cloneSchemeRecordForPaste(conflict.sourceScheme, renamed);
         const parentPath = targetParentSchemeId ? schemePathForScheme(targetParentSchemeId) : [];
-        setSchemes((current) => insertChildSavedScheme(current, targetParentSchemeId, record));
+        setSchemes((current: SavedSchemeRecord[]) => insertChildSavedScheme(current, targetParentSchemeId, record));
         persistSchemeTreeToBackend(record, parentPath, `新命名粘贴方案：${record.name}`);
         if (targetParentSchemeId) {
-          setExpandedSchemeIds((current) => (current.includes(targetParentSchemeId) ? current : [...current, targetParentSchemeId]));
+          setExpandedSchemeIds((current: string[]) => (current.includes(targetParentSchemeId) ? current : [...current, targetParentSchemeId]));
         }
         writeOperationLog(`新命名粘贴方案记录：${renamed}`);
         return;
@@ -3799,7 +3810,7 @@ export function createResolveRecordPasteConflict(__appScope: Record<string, any>
       const replacement = duplicateScheme
         ? cloneSchemeRecordForPaste(conflict.sourceScheme, duplicateScheme.name, duplicateScheme)
         : cloneSchemeRecordForPaste(conflict.sourceScheme, conflict.duplicateName);
-      setSchemes((current) => {
+      setSchemes((current: SavedSchemeRecord[]) => {
         if (!findSavedSchemeById(current, conflict.duplicateSchemeId)) {
           return insertChildSavedScheme(current, targetParentSchemeId, replacement);
         }
@@ -3821,7 +3832,7 @@ export function createResolveRecordPasteConflict(__appScope: Record<string, any>
         setPendingRecordPasteConflict(null);
         return;
       }
-      const targetChildNames = (targetScheme.children ?? []).map((scheme) => scheme.name);
+      const targetChildNames = (targetScheme.children ?? []).map((scheme: SavedSchemeRecord) => scheme.name);
       if (action === "rename") {
         const renamed = promptUniqueRecordName(
           "请输入拖拽后的方案名称",
@@ -3837,10 +3848,10 @@ export function createResolveRecordPasteConflict(__appScope: Record<string, any>
         const sourcePath = schemePathForRecord(sourceScheme);
         const targetParentPath = schemePathForRecord(targetScheme);
         const nextPath = [...targetParentPath, renamed];
-        setSchemes((current) => moveSavedSchemeToParent(current, conflict.schemeId, conflict.targetSchemeId, { targetName: renamed }));
+        setSchemes((current: SavedSchemeRecord[]) => moveSavedSchemeToParent(current, conflict.schemeId, conflict.targetSchemeId, { targetName: renamed }));
         void saveBackendSchemeRecord(nextPath, sourcePath)
-          .catch((error) => handleBackendSchemeMutationFailure(`拖拽方案同步后台：${renamed}`, error));
-        setExpandedSchemeIds((current) => (current.includes(conflict.targetSchemeId) ? current : [...current, conflict.targetSchemeId]));
+          .catch((error: unknown) => handleBackendSchemeMutationFailure(`拖拽方案同步后台：${renamed}`, error));
+        setExpandedSchemeIds((current: string[]) => (current.includes(conflict.targetSchemeId) ? current : [...current, conflict.targetSchemeId]));
         writeOperationLog(`新命名拖拽方案记录：${renamed}`);
         return;
       }
@@ -3849,21 +3860,21 @@ export function createResolveRecordPasteConflict(__appScope: Record<string, any>
       const targetParentPath = schemePathForRecord(targetScheme);
       const nextPath = [...targetParentPath, conflict.duplicateName];
       const duplicateScheme = findSavedSchemeById(schemes, conflict.duplicateSchemeId);
-      setSchemes((current) => moveSavedSchemeToParent(current, conflict.schemeId, conflict.targetSchemeId, {
+      setSchemes((current: SavedSchemeRecord[]) => moveSavedSchemeToParent(current, conflict.schemeId, conflict.targetSchemeId, {
         targetName: conflict.duplicateName,
         overwriteSchemeId: conflict.duplicateSchemeId
       }));
       const backendMove = duplicateScheme
         ? deleteBackendSchemeRecord(schemePathForRecord(duplicateScheme)).then(() => saveBackendSchemeRecord(nextPath, sourcePath))
         : saveBackendSchemeRecord(nextPath, sourcePath);
-      void backendMove.catch((error) => handleBackendSchemeMutationFailure(`覆盖拖拽方案同步后台：${conflict.duplicateName}`, error));
-      setExpandedSchemeIds((current) => (current.includes(conflict.targetSchemeId) ? current : [...current, conflict.targetSchemeId]));
+      void backendMove.catch((error: unknown) => handleBackendSchemeMutationFailure(`覆盖拖拽方案同步后台：${conflict.duplicateName}`, error));
+      setExpandedSchemeIds((current: string[]) => (current.includes(conflict.targetSchemeId) ? current : [...current, conflict.targetSchemeId]));
       writeOperationLog(`覆盖拖拽方案记录：${conflict.duplicateName}`);
       return;
     }
     if (conflict.kind === "project-drag") {
       const sourceScheme = findSavedSchemeById(schemes, conflict.sourceSchemeId);
-      const sourceProject = sourceScheme?.projects.find((project) => project.id === conflict.projectId);
+      const sourceProject = sourceScheme?.projects.find((project: SavedProjectRecord) => project.id === conflict.projectId);
       const targetScheme = findSavedSchemeById(schemes, conflict.targetSchemeId);
       if (!sourceProject || !targetScheme) {
         setPendingRecordPasteConflict(null);
@@ -3872,8 +3883,8 @@ export function createResolveRecordPasteConflict(__appScope: Record<string, any>
       if (action === "rename") {
         const renamed = promptUniqueRecordName(
           "请输入拖拽后的模型名称",
-          uniqueRecordName(sourceProject.name, targetScheme.projects.map((project) => project.name), "未命名模型"),
-          targetScheme.projects.map((project) => project.name),
+          uniqueRecordName(sourceProject.name, targetScheme.projects.map((project: SavedProjectRecord) => project.name), "未命名模型"),
+          targetScheme.projects.map((project: SavedProjectRecord) => project.name),
           "模型名称不能为空。",
           "模型名称重复，无法拖拽。"
         );
@@ -3905,8 +3916,8 @@ export function createResolveRecordPasteConflict(__appScope: Record<string, any>
     if (action === "rename") {
       const renamed = promptUniqueRecordName(
         "请输入粘贴后的模型名称",
-        uniqueRecordName(conflict.sourceProject.name, targetScheme.projects.map((project) => project.name), "未命名模型"),
-        targetScheme.projects.map((project) => project.name),
+        uniqueRecordName(conflict.sourceProject.name, targetScheme.projects.map((project: SavedProjectRecord) => project.name), "未命名模型"),
+        targetScheme.projects.map((project: SavedProjectRecord) => project.name),
         "模型名称不能为空。",
         "模型名称重复，无法粘贴。"
       );
@@ -3916,19 +3927,19 @@ export function createResolveRecordPasteConflict(__appScope: Record<string, any>
       setPendingRecordPasteConflict(null);
       const pastedProject = cloneProjectRecordForPaste(conflict.sourceProject, renamed);
       const targetPath = schemePathForRecord(targetScheme);
-      setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, pastedProject));
+      setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, targetScheme.id, pastedProject));
       void saveBackendProjectRecord(targetPath, pastedProject)
-        .then((saved) => setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, saved)))
-        .catch((error) => handleBackendSchemeMutationFailure(`新命名粘贴模型同步后台：${pastedProject.name}`, error));
+        .then((saved: SavedProjectRecord) => setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, targetScheme.id, saved)))
+        .catch((error: unknown) => handleBackendSchemeMutationFailure(`新命名粘贴模型同步后台：${pastedProject.name}`, error));
       writeOperationLog(`新命名粘贴模型记录：${renamed}`);
       return;
     }
     setPendingRecordPasteConflict(null);
-    const duplicateProject = targetScheme.projects.find((project) => project.id === conflict.duplicateProjectId);
+    const duplicateProject = targetScheme.projects.find((project: SavedProjectRecord) => project.id === conflict.duplicateProjectId);
     const targetName = duplicateProject?.name ?? conflict.duplicateName;
     const pastedProject = cloneProjectRecordForPaste(conflict.sourceProject, targetName, conflict.duplicateProjectId);
     const targetPath = schemePathForRecord(targetScheme);
-    setSchemes((current) => {
+    setSchemes((current: SavedSchemeRecord[]) => {
       const currentTargetScheme = findSavedSchemeById(current, targetScheme.id);
       if (!currentTargetScheme) {
         return current;
@@ -3936,8 +3947,8 @@ export function createResolveRecordPasteConflict(__appScope: Record<string, any>
       return upsertSavedProjectInScheme(current, currentTargetScheme.id, pastedProject);
     });
     void saveBackendProjectRecord(targetPath, pastedProject, duplicateProject?.name ?? "")
-      .then((saved) => setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, saved)))
-      .catch((error) => handleBackendSchemeMutationFailure(`覆盖粘贴模型同步后台：${pastedProject.name}`, error));
+      .then((saved: SavedProjectRecord) => setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, targetScheme.id, saved)))
+      .catch((error: unknown) => handleBackendSchemeMutationFailure(`覆盖粘贴模型同步后台：${pastedProject.name}`, error));
     writeOperationLog(`覆盖粘贴模型记录：${conflict.duplicateName}`);
   };
 }
@@ -3949,13 +3960,13 @@ export function createMoveProjectRecordToScheme(__appScope: Record<string, any>)
       return;
     }
     const sourceScheme = findSchemeForProject(projectId);
-    const sourceProject = sourceScheme?.projects.find((project) => project.id === projectId);
+    const sourceProject = sourceScheme?.projects.find((project: SavedProjectRecord) => project.id === projectId);
     const targetScheme = findSavedSchemeById(schemes, schemeId);
     if (!sourceScheme || !sourceProject || !targetScheme || sourceScheme.id === targetScheme.id) {
       return;
     }
     const duplicateProject = targetScheme.projects.find(
-      (project) => project.id !== sourceProject.id && hasSameName(project.name, [sourceProject.name])
+      (project: SavedProjectRecord) => project.id !== sourceProject.id && hasSameName(project.name, [sourceProject.name])
     );
     if (duplicateProject) {
       setPendingRecordPasteConflict({
@@ -3983,12 +3994,12 @@ export function createMoveSchemeRecordToScheme(__appScope: Record<string, any>) 
     if (!sourceScheme || !targetScheme || sourceScheme.id === targetScheme.id) {
       return;
     }
-    const movedSchemeIds = new Set(flattenSavedSchemes([sourceScheme]).map((scheme) => scheme.id));
+    const movedSchemeIds = new Set(flattenSavedSchemes([sourceScheme]).map((scheme: SavedSchemeRecord) => scheme.id));
     if (movedSchemeIds.has(targetScheme.id)) {
       return;
     }
     const duplicateScheme = (targetScheme.children ?? []).find(
-      (scheme) => scheme.id !== sourceScheme.id && hasSameName(scheme.name, [sourceScheme.name])
+      (scheme: SavedSchemeRecord) => scheme.id !== sourceScheme.id && hasSameName(scheme.name, [sourceScheme.name])
     );
     if (duplicateScheme) {
       setPendingRecordPasteConflict({
@@ -4003,10 +4014,10 @@ export function createMoveSchemeRecordToScheme(__appScope: Record<string, any>) 
     const sourcePath = schemePathForRecord(sourceScheme);
     const targetParentPath = schemePathForRecord(targetScheme);
     const nextPath = [...targetParentPath, sourceScheme.name];
-    setSchemes((current) => moveSavedSchemeToParent(current, schemeId, targetScheme.id));
+    setSchemes((current: SavedSchemeRecord[]) => moveSavedSchemeToParent(current, schemeId, targetScheme.id));
     void saveBackendSchemeRecord(nextPath, sourcePath)
-      .catch((error) => handleBackendSchemeMutationFailure(`移动方案同步后台：${sourceScheme.name}`, error));
-    setExpandedSchemeIds((current) => (current.includes(targetScheme.id) ? current : [...current, targetScheme.id]));
+      .catch((error: unknown) => handleBackendSchemeMutationFailure(`移动方案同步后台：${sourceScheme.name}`, error));
+    setExpandedSchemeIds((current: string[]) => (current.includes(targetScheme.id) ? current : [...current, targetScheme.id]));
     if (selectedSchemeId === schemeId || selectedSchemeIds.includes(schemeId)) {
       setSelectedSchemeId(schemeId);
       setSelectedSchemeIds([]);
@@ -4039,17 +4050,17 @@ export function createSetActiveLayer(__appScope: Record<string, any>) {
     if (!requireEditMode("激活图层")) {
       return;
     }
-    pushUndoSnapshot(true, false, undefined, "切换图层", layers.find((layer) => layer.id === layerId)?.name ?? layerId);
+    pushUndoSnapshot(true, false, undefined, "切换图层", layers.find((layer: ModelLayer) => layer.id === layerId)?.name ?? layerId);
     setActiveLayerId(layerId);
-    setLayers((current) => current.map((layer) => layer.id === layerId ? { ...layer, visible: true } : layer));
-    writeOperationLog(`激活图层：${layers.find((layer) => layer.id === layerId)?.name ?? layerId}`);
+    setLayers((current: ModelLayer[]) => current.map((layer: ModelLayer) => layer.id === layerId ? { ...layer, visible: true } : layer));
+    writeOperationLog(`激活图层：${layers.find((layer: ModelLayer) => layer.id === layerId)?.name ?? layerId}`);
   };
 }
 
 export function createNextDefaultModelLayerName(__appScope: Record<string, any>) {
   return () => {
   const { layers } = __appScope;
-    const usedNames = new Set(layers.map((layer) => layer.name.trim()));
+    const usedNames = new Set(layers.map((layer: ModelLayer) => layer.name.trim()));
     let index = 1;
     while (usedNames.has(`图层${index}`)) {
       index += 1;
@@ -4066,7 +4077,7 @@ export function createAddModelLayer(__appScope: Record<string, any>) {
     }
     pushUndoSnapshot(true, false, undefined, "添加图层");
     const layer = createModelLayer(nextDefaultModelLayerName(), layers);
-    setLayers((current) => [...current, layer]);
+    setLayers((current: ModelLayer[]) => [...current, layer]);
     setActiveLayerId(layer.id);
     writeOperationLog(`新增图层：${layer.name}`);
   };
@@ -4075,7 +4086,7 @@ export function createAddModelLayer(__appScope: Record<string, any>) {
 export function createClearLayerNameDraft(__appScope: Record<string, any>) {
   return (layerId: string) => {
   const { setLayerNameDrafts } = __appScope;
-    setLayerNameDrafts((current) => {
+    setLayerNameDrafts((current: Record<string, string>) => {
       if (!(layerId in current)) {
         return current;
       }
@@ -4089,14 +4100,14 @@ export function createClearLayerNameDraft(__appScope: Record<string, any>) {
 export function createCommitModelLayerName(__appScope: Record<string, any>) {
   return (layerId: string, draftName: string) => {
   const { clearLayerNameDraft, layers, pushUndoSnapshot, requireEditMode, setLayers, uniqueRecordName, writeOperationLog } = __appScope;
-    const layer = layers.find((item) => item.id === layerId);
+    const layer = layers.find((item: ModelLayer) => item.id === layerId);
     if (!layer) {
       clearLayerNameDraft(layerId);
       return;
     }
     const nextName = uniqueRecordName(
       draftName.trim() || "未命名图层",
-      layers.filter((item) => item.id !== layerId).map((item) => item.name),
+      layers.filter((item: ModelLayer) => item.id !== layerId).map((item: ModelLayer) => item.name),
       "未命名图层"
     );
     clearLayerNameDraft(layerId);
@@ -4107,7 +4118,7 @@ export function createCommitModelLayerName(__appScope: Record<string, any>) {
       return;
     }
     pushUndoSnapshot(true, false, undefined, "重命名图层");
-    setLayers((current) => current.map((item) => item.id === layerId ? { ...item, name: nextName } : item));
+    setLayers((current: ModelLayer[]) => current.map((item: ModelLayer) => item.id === layerId ? { ...item, name: nextName } : item));
     writeOperationLog(`重命名图层：${layer.name} -> ${nextName}`);
   };
 }
@@ -4136,7 +4147,7 @@ export function createToggleModelLayerVisibility(__appScope: Record<string, any>
     if (!requireEditMode("修改图层显示状态")) {
       return;
     }
-    const layer = layers.find((item) => item.id === layerId);
+    const layer = layers.find((item: ModelLayer) => item.id === layerId);
     if (!layer) {
       return;
     }
@@ -4145,7 +4156,7 @@ export function createToggleModelLayerVisibility(__appScope: Record<string, any>
       return;
     }
     pushUndoSnapshot();
-    setLayers((current) => current.map((item) => item.id === layerId ? { ...item, visible: !item.visible } : item));
+    setLayers((current: ModelLayer[]) => current.map((item: ModelLayer) => item.id === layerId ? { ...item, visible: !item.visible } : item));
   };
 }
 
@@ -4155,11 +4166,11 @@ export function createSetAllModelLayersVisibility(__appScope: Record<string, any
     if (!requireEditMode(visible ? "显示全部图层" : "隐藏全部图层")) {
       return;
     }
-    const nextLayers = layers.map((item) => ({
+    const nextLayers = layers.map((item: ModelLayer) => ({
       ...item,
       visible: visible || item.id === activeLayerId
     }));
-    if (nextLayers.every((item, index) => item.visible === layers[index]?.visible)) {
+    if (nextLayers.every((item: ModelLayer, index: number) => item.visible === layers[index]?.visible)) {
       return;
     }
     pushUndoSnapshot();
@@ -4174,13 +4185,13 @@ export function createMoveModelLayer(__appScope: Record<string, any>) {
     if (!requireEditMode("调整图层顺序")) {
       return;
     }
-    const index = layers.findIndex((layer) => layer.id === layerId);
+    const index = layers.findIndex((layer: ModelLayer) => layer.id === layerId);
     const targetIndex = index + direction;
     if (index < 0 || targetIndex < 0 || targetIndex >= layers.length) {
       return;
     }
     pushUndoSnapshot();
-    setLayers((current) => {
+    setLayers((current: ModelLayer[]) => {
       const next = [...current];
       const [layer] = next.splice(index, 1);
       next.splice(targetIndex, 0, layer);
@@ -4199,31 +4210,31 @@ export function createDeleteModelLayer(__appScope: Record<string, any>) {
       showGlobalMessage("至少需要保留一个图层。");
       return;
     }
-    const layer = layers.find((item) => item.id === layerId);
+    const layer = layers.find((item: ModelLayer) => item.id === layerId);
     if (!layer) {
       return;
     }
     const nodeIdsInLayer = nodes
-      .filter((node) => (node.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerId)
-      .map((node) => node.id);
+      .filter((node: ModelNode) => (node.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerId)
+      .map((node: ModelNode) => node.id);
     if (nodeIdsInLayer.length > 0 && !await showGlobalConfirm(`删除图层“${layer.name}”？该图层内共有 ${nodeIdsInLayer.length} 个图元，继续删除将同时删除这些图元及相关联络线。是否继续？`)) {
       return;
     }
     pushUndoSnapshot();
     const result = deleteNodesWithConnectedEdges(nodes, edges, nodeIdsInLayer);
-    const remainingLayers = layers.filter((item) => item.id !== layerId);
+    const remainingLayers = layers.filter((item: ModelLayer) => item.id !== layerId);
     const nextActiveLayerId = activeLayerId === layerId
-      ? remainingLayers.find((item) => item.visible)?.id ?? remainingLayers[0]?.id ?? DEFAULT_MODEL_LAYER_ID
+      ? remainingLayers.find((item: ModelLayer) => item.visible)?.id ?? remainingLayers[0]?.id ?? DEFAULT_MODEL_LAYER_ID
       : activeLayerId;
-    const nextLayers = remainingLayers.map((item) => item.id === nextActiveLayerId ? { ...item, visible: true } : item);
-    const remainingEdgeIds = new Set(result.edges.map((edge) => edge.id));
-    const removedEdgeIds = edges.filter((edge) => !remainingEdgeIds.has(edge.id)).map((edge) => edge.id);
+    const nextLayers = remainingLayers.map((item: ModelLayer) => item.id === nextActiveLayerId ? { ...item, visible: true } : item);
+    const remainingEdgeIds = new Set(result.edges.map((edge: Edge) => edge.id));
+    const removedEdgeIds = edges.filter((edge: Edge) => !remainingEdgeIds.has(edge.id)).map((edge: Edge) => edge.id);
     // 删除收尾:容器在本图层而成员在别图层时归属会悬空 / 绑定设备被删要解绑 → 与删除/剪切同源(见 helper)
     const nextNodes = finalizeContainerAfterNodeDeletion(nodes, result.nodes, nodeIdsInLayer);
     const unbindNotice = containerGatewayUnbindNotice(nodes, nodeIdsInLayer);
     setGraphArrays(nextNodes, result.edges);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, nodeIdsInLayer, removedEdgeIds), nextNodes, result.edges));
-    setProjectMeasurements((current) => normalizeProjectMeasurements(current, nextNodes));
+    setProjectMeasurements((current: ProjectMeasurementConfig) => normalizeProjectMeasurements(current, nextNodes));
     setLayers(nextLayers);
     setActiveLayerId(nextActiveLayerId);
     setSelectedNodeIds([]);
@@ -4361,7 +4372,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
       <section className="device-definition-measurement-panel measurement-config-panel measurement-profile-panel">
         <div className="measurement-profile-toolbar">
           <Button
-            type="button"
+            htmlType="button"
             disabled={isBrowseMode || draftConfig.measurementTypes.length === 0 || !selectedKind}
             onClick={() => {
               const type = draftConfig.measurementTypes[0];
@@ -4421,7 +4432,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                         value={item.name ?? item.labelOverride ?? ""}
                         disabled={isBrowseMode}
                         placeholder={currentType?.name ?? "量测名称"}
-                        onCommit={(nextValue) => updateItem(itemIndex, {
+                        onCommit={(nextValue: string) => updateItem(itemIndex, {
                           name: nextValue,
                           labelOverride: undefined
                         })}
@@ -4432,7 +4443,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                         value={item.formatOverride ?? ""}
                         disabled={isBrowseMode}
                         placeholder={defaultMeasurementDisplayFormat(currentType?.valueType, currentType?.defaultDecimals)}
-                        onCommit={(nextValue) => updateItem(itemIndex, {
+                        onCommit={(nextValue: string) => updateItem(itemIndex, {
                           formatOverride: nextValue.trim() || undefined
                         })}
                       />
@@ -4460,7 +4471,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                         }}
                         options={[
                           ...(!editableMeasurementTypeById.has(item.measurementTypeId) ? [{ value: item.measurementTypeId, label: item.measurementTypeId }] : []),
-                          ...draftConfig.measurementTypes.map((type) => ({ value: type.id, label: type.name }))
+                          ...draftConfig.measurementTypes.map((type: any) => ({ value: type.id, label: type.name }))
                         ]}
                       />
                     </td>
@@ -4546,7 +4557,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
     }
     const draftConfig = measurementConfigDraft ?? measurementConfig;
     const groupDefaults = draftConfig.groupDefaults ?? DEFAULT_MEASUREMENT_CONFIG.groupDefaults;
-    const updateGroupDefaults = (patch: Record<string, unknown>) => updateMeasurementConfig((current) => ({
+    const updateGroupDefaults = (patch: Record<string, unknown>) => updateMeasurementConfig((current: any) => ({
       ...current,
       groupDefaults: {
         ...(current.groupDefaults ?? DEFAULT_MEASUREMENT_CONFIG.groupDefaults),
@@ -4594,7 +4605,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
                     <DeferredColorInput
                       value={groupDefaults.backgroundColor}
                       fallback="transparent"
-                      onCommit={(value) => updateGroupDefaults({ backgroundColor: value })}
+                      onCommit={(value: string) => updateGroupDefaults({ backgroundColor: value })}
                     />
                   </label>
                   <label>
@@ -4602,7 +4613,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
                     <DeferredColorInput
                       value={groupDefaults.borderColor}
                       fallback="#64748b"
-                      onCommit={(value) => updateGroupDefaults({ borderColor: value })}
+                      onCommit={(value: string) => updateGroupDefaults({ borderColor: value })}
                     />
                   </label>
                   <label>
@@ -4645,12 +4656,12 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
                   </tr>
                 </thead>
                 <tbody>
-                  {draftConfig.measurementTypes.map((type) => (
+                  {draftConfig.measurementTypes.map((type: any) => (
                     <tr key={type.id}>
                       <td><Input value={type.id} readOnly title="量测类型ID用于保存绑定关系，不能直接修改" /></td>
-                      <td><BufferedTextInput value={type.name} onCommit={(nextValue) => updateMeasurementType(type.id, { name: nextValue })} /></td>
-                      <td><BufferedTextInput value={type.shortLabel} onCommit={(nextValue) => updateMeasurementType(type.id, { shortLabel: nextValue })} /></td>
-                      <td><BufferedTextInput value={type.defaultUnit} onCommit={(nextValue) => updateMeasurementType(type.id, { defaultUnit: nextValue })} /></td>
+                      <td><BufferedTextInput value={type.name} onCommit={(nextValue: string) => updateMeasurementType(type.id, { name: nextValue })} /></td>
+                      <td><BufferedTextInput value={type.shortLabel} onCommit={(nextValue: string) => updateMeasurementType(type.id, { shortLabel: nextValue })} /></td>
+                      <td><BufferedTextInput value={type.defaultUnit} onCommit={(nextValue: string) => updateMeasurementType(type.id, { defaultUnit: nextValue })} /></td>
                       <td>
                         <InputNumber size="small"
                           min={0}
@@ -4676,7 +4687,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
                         />
                       </td>
                       <td>
-                        <DeferredColorInput value={type.defaultColor} fallback="#334155" onCommit={(value) => updateMeasurementType(type.id, { defaultColor: value })} />
+                        <DeferredColorInput value={type.defaultColor} fallback="#334155" onCommit={(value: string) => updateMeasurementType(type.id, { defaultColor: value })} />
                       </td>
                       <td>
                         <Select
@@ -4698,7 +4709,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
             </span>
             <Button onClick={closeMeasurementConfigDialog}>取消</Button>
             <Button
-              type="button"
+              htmlType="button"
               className="primary"
               disabled={isBrowseMode || measurementConfigSaveStatus === "saving"}
               onPointerDown={flushMeasurementConfigDialogDraftInputs}
@@ -4737,11 +4748,11 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
       return null;
     }
     const measurementEditorPositionLabel = (group: MeasurementGroup) => {
-      const terminal = group.terminalId ? node.terminals.find((item) => item.id === group.terminalId) : undefined;
+      const terminal = group.terminalId ? node.terminals.find((item: ModelNode["terminals"][number]) => item.id === group.terminalId) : undefined;
       return terminal?.label || (group.terminalId ? group.terminalId : "设备层");
     };
-    const measurementEditorRows = measurementEditorDialog.drafts.flatMap((group) =>
-      group.items.map((item, itemIndex) => ({ group, groupId: group.id, item, itemIndex }))
+    const measurementEditorRows = measurementEditorDialog.drafts.flatMap((group: MeasurementGroup) =>
+      group.items.map((item: MeasurementGroup["items"][number], itemIndex: number) => ({ group, groupId: group.id, item, itemIndex }))
     );
     const measurementEditorColumns = [
       { key: "index", label: "序号", width: 72 },
@@ -4795,7 +4806,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
               <Select
                 value={draft.visible ? "1" : "0"}
                 disabled={isBrowseMode}
-                onChange={(value) => updateMeasurementEditorGroupSettings((group) => ({ ...group, visible: value === "1" }))}
+                onChange={(value) => updateMeasurementEditorGroupSettings((group: any) => ({ ...group, visible: value === "1" }))}
                 options={[{ value: "1", label: "显示" }, { value: "0", label: "隐藏" }]}
               />
             </label>
@@ -4804,7 +4815,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
               <Select
                 value={draft.layout}
                 disabled={isBrowseMode}
-                onChange={(value) => updateMeasurementEditorGroupSettings((group) => ({ ...group, layout: value as MeasurementGroup["layout"] }))}
+                onChange={(value) => updateMeasurementEditorGroupSettings((group: any) => ({ ...group, layout: value as MeasurementGroup["layout"] }))}
                 options={[{ value: "vertical", label: "竖向" }, { value: "horizontal", label: "横向" }, { value: "grid", label: "两列" }]}
               />
             </label>
@@ -4814,7 +4825,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                 aria-label="量测标签显示"
                 value={draft.labelVisible === false ? "0" : "1"}
                 disabled={isBrowseMode}
-                onChange={(value) => updateMeasurementEditorGroupSettings((group) => ({ ...group, labelVisible: value === "1" }))}
+                onChange={(value) => updateMeasurementEditorGroupSettings((group: any) => ({ ...group, labelVisible: value === "1" }))}
                 options={[{ value: "1", label: "显示" }, { value: "0", label: "隐藏" }]}
               />
             </label>
@@ -4824,7 +4835,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                 aria-label="量测单位显示"
                 value={draft.unitVisible === false ? "0" : "1"}
                 disabled={isBrowseMode}
-                onChange={(value) => updateMeasurementEditorGroupSettings((group) => ({ ...group, unitVisible: value === "1" }))}
+                onChange={(value) => updateMeasurementEditorGroupSettings((group: any) => ({ ...group, unitVisible: value === "1" }))}
                 options={[{ value: "1", label: "显示" }, { value: "0", label: "隐藏" }]}
               />
             </label>
@@ -4835,7 +4846,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                 fallback="#334155"
                 disabled={isBrowseMode}
                 aria-label="量测组字体颜色"
-                onCommit={(value) => updateMeasurementEditorGroupSettings((group) => ({
+                onCommit={(value: string) => updateMeasurementEditorGroupSettings((group: any) => ({
                   ...group,
                   groupStyleOverride: { ...(group.groupStyleOverride ?? {}), color: value }
                 }))}
@@ -4849,7 +4860,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                 value={draft.groupStyleOverride?.fontSize ?? 14}
                 disabled={isBrowseMode}
                 aria-label="量测组字体大小"
-                onChange={(nextValue) => updateMeasurementEditorGroupSettings((group) => ({
+                onChange={(nextValue) => updateMeasurementEditorGroupSettings((group: any) => ({
                   ...group,
                   groupStyleOverride: {
                     ...(group.groupStyleOverride ?? {}),
@@ -4863,7 +4874,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
               <Select
                 value={draftBackgroundHidden ? "0" : "1"}
                 disabled={isBrowseMode}
-                onChange={(value) => updateMeasurementEditorGroupSettings((group) => ({
+                onChange={(value) => updateMeasurementEditorGroupSettings((group: any) => ({
                   ...group,
                   backgroundColor: value === "1"
                     ? group.backgroundColor === "transparent" ? "#ffffff" : group.backgroundColor ?? "#ffffff"
@@ -4878,7 +4889,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                 value={draft.backgroundColor ?? ""}
                 fallback="#ffffff"
                 disabled={isBrowseMode || draftBackgroundHidden}
-                onCommit={(value) => updateMeasurementEditorGroupSettings((group) => ({ ...group, backgroundColor: value }))}
+                onCommit={(value: string) => updateMeasurementEditorGroupSettings((group: any) => ({ ...group, backgroundColor: value }))}
               />
             </label>
             <label>
@@ -4888,7 +4899,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                 disabled={isBrowseMode}
                 onChange={(borderStyle) => {
                   const bs = borderStyle as MeasurementGroup["borderStyle"];
-                  updateMeasurementEditorGroupSettings((group) => ({
+                  updateMeasurementEditorGroupSettings((group: any) => ({
                     ...group,
                     borderStyle: bs,
                     borderWidth: bs === "none" ? 0 : Math.max(1, group.borderWidth ?? 0)
@@ -4903,7 +4914,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                 value={draft.borderColor ?? ""}
                 fallback="#64748b"
                 disabled={isBrowseMode || draftBorderHidden}
-                onCommit={(value) => updateMeasurementEditorGroupSettings((group) => ({ ...group, borderColor: value }))}
+                onCommit={(value: string) => updateMeasurementEditorGroupSettings((group: any) => ({ ...group, borderColor: value }))}
               />
             </label>
             <label>
@@ -4914,7 +4925,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                 step={0.5}
                 value={draft.borderWidth ?? 0}
                 disabled={isBrowseMode || draftBorderHidden}
-                onChange={(nextValue) => updateMeasurementEditorGroupSettings((group) => ({
+                onChange={(nextValue) => updateMeasurementEditorGroupSettings((group: any) => ({
                   ...group,
                   borderWidth: clampNumber(Number(nextValue), 0, 12)
                 }))}
@@ -4923,7 +4934,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
           </div>
           <div className="measurement-editor-toolbar">
             <Button
-              type="button"
+              htmlType="button"
               disabled={isBrowseMode || measurementConfig.measurementTypes.length === 0}
               onClick={() => addMeasurementEditorDraftItem(node)}
             >
@@ -4955,7 +4966,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                 </tr>
               </thead>
               <tbody>
-                {measurementEditorRows.length > 0 ? measurementEditorRows.map((row, rowIndex) => {
+                {measurementEditorRows.length > 0 ? measurementEditorRows.map((row: { group: MeasurementGroup; groupId: string; item: MeasurementGroup["items"][number]; itemIndex: number }, rowIndex: number) => {
                   const { group, item, itemIndex } = row;
                   const type = measurementTypeById.get(item.measurementTypeId) ?? measurementConfig.measurementTypes[0];
                   const measurementTypeOptions = measurementTypeOptionsForMeasurementGroup(node, group);
@@ -4967,21 +4978,21 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                       <td>
                         <div className="measurement-editor-row-actions">
                           <Button
-                            type="button"
+                            htmlType="button"
                             disabled={isBrowseMode || itemIndex === 0}
                             onClick={() => moveMeasurementEditorDraftItem(row.groupId, item.id, -1)}
                           >
                             上移
                           </Button>
                           <Button
-                            type="button"
+                            htmlType="button"
                             disabled={isBrowseMode || itemIndex === group.items.length - 1}
                             onClick={() => moveMeasurementEditorDraftItem(row.groupId, item.id, 1)}
                           >
                             下移
                           </Button>
                           <Button
-                            type="button"
+                            htmlType="button"
                             disabled={isBrowseMode}
                             onClick={() => removeMeasurementEditorDraftItem(row.groupId, item.id)}
                           >
@@ -4994,7 +5005,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                           value={measurementEditorItemName(item)}
                           disabled={isBrowseMode}
                           aria-label="量测名称"
-                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onCommit={(nextValue: string) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             name: nextValue
                           }))}
@@ -5009,7 +5020,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                           onChange={(value) => updateMeasurementEditorDraftItemPosition(node, row.groupId, item.id, value)}
                           options={[
                             { value: "", label: "设备层" },
-                            ...node.terminals.map((terminal, terminalIndex) => ({ value: terminal.id, label: terminal.label || `端子${terminalIndex + 1}` }))
+                            ...node.terminals.map((terminal: ModelNode["terminals"][number], terminalIndex: number) => ({ value: terminal.id, label: terminal.label || `端子${terminalIndex + 1}` }))
                           ]}
                         />
                       </td>
@@ -5018,15 +5029,15 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                           value={item.measurementTypeId}
                           disabled={isBrowseMode}
                           onChange={(nextTypeId) => {
-                            updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                            updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                               ...current,
                               measurementTypeId: nextTypeId,
                               sourcePoint: current.sourcePoint || `${node.id}.${nextTypeId}`
                             }));
                           }}
                           options={[
-                            ...(!measurementTypeOptions.some((candidate) => candidate.id === item.measurementTypeId) ? [{ value: item.measurementTypeId, label: item.measurementTypeId }] : []),
-                            ...measurementTypeOptions.map((candidate) => ({ value: candidate.id, label: candidate.name }))
+                            ...(!measurementTypeOptions.some((candidate: any) => candidate.id === item.measurementTypeId) ? [{ value: item.measurementTypeId, label: item.measurementTypeId }] : []),
+                            ...measurementTypeOptions.map((candidate: any) => ({ value: candidate.id, label: candidate.name }))
                           ]}
                         />
                       </td>
@@ -5034,7 +5045,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                         <Select
                           value={item.visible === false ? "0" : "1"}
                           disabled={isBrowseMode}
-                          onChange={(value) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onChange={(value) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             visible: value === "1"
                           }))}
@@ -5045,7 +5056,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                         <BufferedTextInput
                           value={item.sourcePoint}
                           disabled={isBrowseMode}
-                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onCommit={(nextValue: string) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             sourcePoint: nextValue
                           }))}
@@ -5056,7 +5067,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                           value={item.labelOverride ?? ""}
                           disabled={isBrowseMode}
                           placeholder={type?.shortLabel ?? "标签"}
-                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onCommit={(nextValue: string) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             labelOverride: nextValue
                           }))}
@@ -5067,7 +5078,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                           value={item.formatOverride ?? ""}
                           disabled={isBrowseMode}
                           placeholder={defaultMeasurementDisplayFormat(type?.valueType, type?.defaultDecimals)}
-                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onCommit={(nextValue: string) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             formatOverride: nextValue.trim() || undefined
                           }))}
@@ -5078,7 +5089,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                           value={item.unitOverride ?? ""}
                           disabled={isBrowseMode}
                           placeholder={type?.defaultUnit ?? "单位"}
-                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onCommit={(nextValue: string) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             unitOverride: nextValue
                           }))}
@@ -5091,7 +5102,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                           value={item.decimalsOverride ?? ""}
                           disabled={isBrowseMode}
                           placeholder={String(type?.defaultDecimals ?? 3)}
-                          onChange={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onChange={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             decimalsOverride: nextValue === null ? undefined : Number(nextValue)
                           }))}
@@ -5103,7 +5114,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                           value={item.defaultValue ?? 0}
                           disabled={isBrowseMode}
                           placeholder="0"
-                          onChange={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onChange={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             defaultValue: nextValue === null ? 0 : Number(nextValue)
                           }))}
@@ -5113,7 +5124,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                         <DeferredColorInput
                           value={itemColor}
                           disabled={isBrowseMode}
-                          onCommit={(value) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onCommit={(value: string) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             styleOverride: { ...(current.styleOverride ?? {}), color: value }
                           }))}
@@ -5125,7 +5136,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                           max={96}
                           value={itemFontSize}
                           disabled={isBrowseMode}
-                          onChange={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onChange={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(nextValue) }
                           }))}
@@ -5143,8 +5154,8 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
           </div>
           <div className="template-dialog-actions">
             <Button
-              type="button"
-              disabled={isBrowseMode || measurementEditorDialog.drafts.every((group) => group.items.length === 0)}
+              htmlType="button"
+              disabled={isBrowseMode || measurementEditorDialog.drafts.every((group: MeasurementGroup) => group.items.length === 0)}
               onClick={confirmMeasurementEditorDialog}
             >
               保存
@@ -5290,19 +5301,19 @@ export function createRenameProjectRecord(__appScope: Record<string, any>) {
       showGlobalMessage("模型名称不能为空。");
       return;
     }
-    if (ownerScheme && hasSameName(name, ownerScheme.projects.filter((item) => item.id !== project.id).map((item) => item.name))) {
+    if (ownerScheme && hasSameName(name, ownerScheme.projects.filter((item: SavedProjectRecord) => item.id !== project.id).map((item: SavedProjectRecord) => item.name))) {
       showGlobalMessage("模型名称重复，无法修改。");
       return;
     }
     if (ownerScheme) {
       const renamedProjects = renameSavedProject(ownerScheme.projects, project.id, nextName);
-      const renamedProject = renamedProjects.find((item) => item.id === project.id);
+      const renamedProject = renamedProjects.find((item: SavedProjectRecord) => item.id === project.id);
       if (renamedProject) {
-        setSchemes((current) => upsertSavedProjectInScheme(current, ownerScheme.id, renamedProject));
+        setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, ownerScheme.id, renamedProject));
         const ownerPath = schemePathForScheme(ownerScheme.id);
         if (ownerPath.length > 0) {
           void saveBackendProjectRecord(ownerPath, renamedProject, project.name)
-            .catch((error) => handleBackendSchemeMutationFailure(`重命名模型同步后台：${renamedProject.name}`, error));
+            .catch((error: unknown) => handleBackendSchemeMutationFailure(`重命名模型同步后台：${renamedProject.name}`, error));
         }
       }
     }
@@ -5319,7 +5330,7 @@ export function createDuplicateProjectRecord(__appScope: Record<string, any>) {
       return;
     }
     const ownerScheme = findSchemeForProject(project.id);
-    const existingNames = ownerScheme?.projects.map((item) => item.name) ?? [];
+    const existingNames = ownerScheme?.projects.map((item: SavedProjectRecord) => item.name) ?? [];
     const defaultName = uniqueRecordName(`${project.name} 副本`, existingNames, "未命名模型");
     const name = promptUniqueRecordName(
       "请输入新模型名称",
@@ -5333,12 +5344,12 @@ export function createDuplicateProjectRecord(__appScope: Record<string, any>) {
     }
     if (ownerScheme) {
       const clonedProject = cloneProjectRecordWithName(project, name);
-      setSchemes((current) => upsertSavedProjectInScheme(current, ownerScheme.id, clonedProject));
+      setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, ownerScheme.id, clonedProject));
       const ownerPath = schemePathForScheme(ownerScheme.id);
       if (ownerPath.length > 0) {
         void saveBackendProjectRecord(ownerPath, clonedProject)
-          .then((saved) => setSchemes((current) => upsertSavedProjectInScheme(current, ownerScheme.id, saved)))
-          .catch((error) => handleBackendSchemeMutationFailure(`复制模型同步后台：${clonedProject.name}`, error));
+          .then((saved: SavedProjectRecord) => setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, ownerScheme.id, saved)))
+          .catch((error: unknown) => handleBackendSchemeMutationFailure(`复制模型同步后台：${clonedProject.name}`, error));
       }
     }
   };
@@ -5361,24 +5372,24 @@ export function createDuplicateSelectedProjectRecords(__appScope: Record<string,
     const backendSaves: Array<{ schemeId: string; schemePath: string[]; project: SavedProjectRecord }> = [];
     let nextSchemes = schemes;
     for (const scheme of flattenSavedSchemes(schemes)) {
-      const selectedProjects = scheme.projects.filter((project) => selected.has(project.id));
+      const selectedProjects = scheme.projects.filter((project: SavedProjectRecord) => selected.has(project.id));
       if (selectedProjects.length === 0) {
         continue;
       }
       let nextProjects = scheme.projects;
       const schemePath = schemePathForRecord(scheme);
       for (const project of selectedProjects) {
-        const clonedProject = cloneProjectRecord(project, "副本", nextProjects.map((item) => item.name));
+        const clonedProject = cloneProjectRecord(project, "副本", nextProjects.map((item: SavedProjectRecord) => item.name));
         nextProjects = upsertSavedProject(nextProjects, clonedProject);
         backendSaves.push({ schemeId: scheme.id, schemePath, project: clonedProject });
       }
-      nextSchemes = nextProjects.reduce((updatedSchemes, project) => upsertSavedProjectInScheme(updatedSchemes, scheme.id, project), nextSchemes);
+      nextSchemes = nextProjects.reduce((updatedSchemes: SavedSchemeRecord[], project: SavedProjectRecord) => upsertSavedProjectInScheme(updatedSchemes, scheme.id, project), nextSchemes);
     }
     setSchemes(nextSchemes);
     for (const item of backendSaves) {
       void saveBackendProjectRecord(item.schemePath, item.project)
-        .then((saved) => setSchemes((current) => upsertSavedProjectInScheme(current, item.schemeId, saved)))
-        .catch((error) => handleBackendSchemeMutationFailure(`批量复制模型同步后台：${item.project.name}`, error));
+        .then((saved: SavedProjectRecord) => setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, item.schemeId, saved)))
+        .catch((error: unknown) => handleBackendSchemeMutationFailure(`批量复制模型同步后台：${item.project.name}`, error));
     }
   };
 }
@@ -5434,10 +5445,10 @@ export function createDeleteProjectRecord(__appScope: Record<string, any>) {
       ? nextSavedProjectAfterProjectDeletion(schemes, project.id)
       : null;
     const ownerPath = schemePathForProject(project.id);
-    setSchemes((current) => deleteSavedProjectsFromSchemes(current, new Set([project.id])));
+    setSchemes((current: SavedSchemeRecord[]) => deleteSavedProjectsFromSchemes(current, new Set([project.id])));
     if (ownerPath.length > 0) {
       void deleteBackendProjectRecord(ownerPath, project.name)
-        .catch((error) => handleBackendSchemeMutationFailure(`删除后台模型：${project.name}`, error));
+        .catch((error: unknown) => handleBackendSchemeMutationFailure(`删除后台模型：${project.name}`, error));
     }
     if (deletingActiveProject) {
       if (fallbackSelection) {
@@ -5482,20 +5493,20 @@ export function createCreateBlankProject(__appScope: Record<string, any>) {
     const name = String(draft.name ?? "").trim();
     const modelType = String(draft.modelType ?? "").trim();
     if (!name) {
-      setCreateModelDialog((current) => current ? { ...current, error: "模型名称不能为空。" } : current);
+      setCreateModelDialog((current: { schemeId: string; name: string; modelType: string; saving: boolean; error: string } | null) => current ? { ...current, error: "模型名称不能为空。" } : current);
       return;
     }
     if (!MODEL_TYPES.includes(modelType)) {
-      setCreateModelDialog((current) => current ? { ...current, error: "请选择有效的模型类型。" } : current);
+      setCreateModelDialog((current: { schemeId: string; name: string; modelType: string; saving: boolean; error: string } | null) => current ? { ...current, error: "请选择有效的模型类型。" } : current);
       return;
     }
-    if (targetScheme && hasSameName(name, targetScheme.projects.map((project) => project.name))) {
-      setCreateModelDialog((current) => current ? { ...current, error: "模型名称重复，无法新建模型。" } : current);
+    if (targetScheme && hasSameName(name, targetScheme.projects.map((project: SavedProjectRecord) => project.name))) {
+      setCreateModelDialog((current: { schemeId: string; name: string; modelType: string; saving: boolean; error: string } | null) => current ? { ...current, error: "模型名称重复，无法新建模型。" } : current);
       return;
     }
     const targetSchemePath = schemePathForScheme(targetSchemeId || schemes[0]?.id || "");
     if (!targetScheme || targetSchemePath.length === 0) {
-      setCreateModelDialog((current) => current ? { ...current, error: "无法确定模型所属方案路径。" } : current);
+      setCreateModelDialog((current: { schemeId: string; name: string; modelType: string; saving: boolean; error: string } | null) => current ? { ...current, error: "无法确定模型所属方案路径。" } : current);
       return;
     }
     const record = createSavedProject(name, {
@@ -5515,10 +5526,10 @@ export function createCreateBlankProject(__appScope: Record<string, any>) {
       nodes: [],
       edges: []
     });
-    setCreateModelDialog((current) => current ? { ...current, saving: true, error: "" } : current);
+    setCreateModelDialog((current: { schemeId: string; name: string; modelType: string; saving: boolean; error: string } | null) => current ? { ...current, saving: true, error: "" } : current);
     try {
       const savedRecord = await saveBackendProjectRecord(targetSchemePath, record);
-      setSchemes((current) => upsertSavedProjectInScheme(current, targetSchemeId, savedRecord));
+      setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, targetSchemeId, savedRecord));
       selectSingleProject(targetSchemeId, savedRecord.id);
       requestLoadSavedProject(savedRecord, targetSchemeId);
       setCreateModelDialog(null);
@@ -5526,7 +5537,7 @@ export function createCreateBlankProject(__appScope: Record<string, any>) {
       return savedRecord;
     } catch (error) {
       const message = error instanceof Error ? error.message : "新建模型保存失败。";
-      setCreateModelDialog((current) => current ? { ...current, saving: false, error: message } : current);
+      setCreateModelDialog((current: { schemeId: string; name: string; modelType: string; saving: boolean; error: string } | null) => current ? { ...current, saving: false, error: message } : current);
       return;
     }
   };
@@ -5580,13 +5591,13 @@ export function createRunTopologyCalculation(__appScope: Record<string, any>) {
     });
     const invalidVoltageBaseNodeIds = new Set(
       topologyErrors
-        .filter((error) => [
+        .filter((error: TopologyValidationError) => [
           "voltage-mismatch",
           "missing-island-voltage",
           "island-voltage-mismatch",
           "transformer-island-short"
         ].includes(error.type))
-        .flatMap((error) => error.relatedNodeIds)
+        .flatMap((error: TopologyValidationError) => error.relatedNodeIds)
     );
     const normalizedLimits = normalizeDeviceOperatingLimitsAfterTopology(calculatedNodes, {
       powerUnit,
@@ -5599,7 +5610,7 @@ export function createRunTopologyCalculation(__appScope: Record<string, any>) {
     });
     const voltageDeviationErrors = validateVoltageSetpointDeviations(normalizedLimits.nodes, edges);
     const ratedVoltageDeviationErrors = voltageDeviationErrors.filter(
-      (error) => error.type === "rated-voltage-deviation"
+      (error: TopologyValidationError) => error.type === "rated-voltage-deviation"
     );
     const errors = [...topologyErrors, ...normalizedLimits.warnings, ...ratedVoltageDeviationErrors];
     const blockingErrors = errors.filter(isBlockingTopologyValidationError);
@@ -5609,7 +5620,7 @@ export function createRunTopologyCalculation(__appScope: Record<string, any>) {
       pushUndoSnapshot(true, false, undefined, "拓扑计算");
       const nextTopology = buildTopology(normalizedLimits.nodes, edges);
       const voltageSetpointWarnings = voltageDeviationErrors.filter(
-        (error) => error.type !== "rated-voltage-deviation"
+        (error: TopologyValidationError) => error.type !== "rated-voltage-deviation"
       );
       const nextWarnings = [...nonBlockingWarnings, ...voltageSetpointWarnings];
       skipNextTopologyStaleRef.current = true;
@@ -5636,7 +5647,7 @@ export function createRunTopologyCalculation(__appScope: Record<string, any>) {
         }
         pushUndoSnapshot(true, false, undefined, "自动修正设备限值");
         skipNextTopologyStaleRef.current = true;
-        setNodes(nodes.map((node) => {
+        setNodes(nodes.map((node: ModelNode) => {
           const nodeCorrections = correctionsByNodeId.get(node.id);
           return nodeCorrections ? { ...node, params: { ...node.params, ...nodeCorrections } } : node;
         }));
@@ -5752,7 +5763,7 @@ export function createZoomViewportAtCenter(__appScope: Record<string, any>) {
   const { canvasBoundsRef, canvasFrameRef, clampViewBoxDimensionsForZoom, height, normalizeViewBoxToCanvas, pendingWheelZoomAnchorRef, setViewBox, wheelZoomAnchorFromClient, width } = __appScope;
     const frame = canvasFrameRef.current;
     if (!frame) {
-      setViewBox((current) => {
+      setViewBox((current: CanvasViewBox) => {
         const bounds = canvasBoundsRef.current;
         const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
           { width: current.width * zoomFactor, height: current.height * zoomFactor },
@@ -5780,7 +5791,7 @@ export function createZoomViewportAtCenter(__appScope: Record<string, any>) {
       return;
     }
     pendingWheelZoomAnchorRef.current = anchor;
-    setViewBox((current) => {
+    setViewBox((current: CanvasViewBox) => {
       const bounds = canvasBoundsRef.current;
       const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
         { width: current.width * zoomFactor, height: current.height * zoomFactor },
@@ -5803,7 +5814,7 @@ export function createResetViewportZoom(__appScope: Record<string, any>) {
   const { canvasBoundsRef, canvasFrameRef, clampViewBoxDimensionsForZoom, height, normalizeViewBoxToCanvas, pendingWheelZoomAnchorRef, setViewBox, wheelZoomAnchorFromClient, width } = __appScope;
     const frame = canvasFrameRef.current;
     if (!frame) {
-      setViewBox((current) => {
+      setViewBox((current: CanvasViewBox) => {
         const bounds = canvasBoundsRef.current;
         const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
           { width: bounds.width, height: bounds.height },
@@ -5876,7 +5887,7 @@ export function createFitWholeCanvasToFrame(__appScope: Record<string, any>) {
 }
 
 export function createFitWholeCanvasFromBlankDoubleClick(__appScope: Record<string, any>) {
-  return (event: MouseEvent<SVGSVGElement>) => {
+  return (event: ReactMouseEvent<SVGSVGElement>) => {
   const { clampPointToCanvas, connectSource, findConnectionRouteHitAtPoint, fitWholeCanvasToFrame, routableLinePlacement, screenToSvgPoint, setMarquee, staticDrawing, svgRef } = __appScope;
     if (event.button !== 0 || staticDrawing || connectSource || routableLinePlacement) {
       return;
@@ -5971,7 +5982,7 @@ export function createJumpToElementTreeItem(__appScope: Record<string, any>) {
 }
 
 export function createOpenElementTreeItemContextMenu(__appScope: Record<string, any>) {
-  return (event: MouseEvent<HTMLDivElement>, item: ElementTreeItem) => {
+  return (event: ReactMouseEvent<HTMLDivElement>, item: ElementTreeItem) => {
   const { activeLayerEdgeIdSet, activeLayerNodeIdSet, canvasInteractionRef, clearRecordSelection, isEditMode, projectListPointerInsideRef, resetConnectPreviewState, resetRoutableLinePreviewState, selectCanvasGraphics, setConnectSource, setContextMenu, setMode, setProjectMenu, setRewiring, setRoutableLinePlacement } = __appScope;
     event.preventDefault();
     event.stopPropagation();
@@ -6080,7 +6091,7 @@ export function createTidySelectedEdgeRoute(__appScope: Record<string, any>) {
       return;
     }
     const nextEdges = redrawConnectionRoutesForEdges(nodes, edges, [selectedEdge.id], canvasBounds);
-    const changedEdge = nextEdges.find((edge, index) => edge.id === selectedEdge.id && edge !== edges[index]);
+    const changedEdge = nextEdges.find((edge: Edge, index: number) => edge.id === selectedEdge.id && edge !== edges[index]);
     if (!changedEdge) {
       return;
     }
@@ -6109,7 +6120,7 @@ export function createTidyRoutableLineRoute(__appScope: Record<string, any>) {
     if (changedLineNodes.length === 0) {
       return;
     }
-    pushUndoSnapshot(true, false, undoScopeForGraphPatch(changedLineNodes.map((node) => node.id), []));
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch(changedLineNodes.map((node: ModelNode) => node.id), []));
     patchGraphNodes(changedLineNodes);
     writeOperationLog(`整理连接线：${lineNode.name}`);
   };
