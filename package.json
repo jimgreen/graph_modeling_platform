@@ -18,7 +18,7 @@
     "gen:gbk-table": "node scripts/gen-gbk-table.mjs",
     "test": "vitest run",
     "test:e2e": "vitest run --config vite.e2e.config.ts",
-    "test:all": "npm run test && npm run test:e2e",
+    "test:all": "pnpm run test && pnpm run test:e2e",
     "preview": "vite preview --host 127.0.0.1 --config vite.config.ts"
   },
   "dependencies": {
