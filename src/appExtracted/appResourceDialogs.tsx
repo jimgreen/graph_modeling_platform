@@ -1,8 +1,12 @@
-// @ts-nocheck
 import { memo } from "react";
-import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
+import { areViewSectionPropsEqual, type ViewSectionProps } from "./appViewRenderBoundary";
+import type { ImageAsset, ImageFolder } from "./appCoreCanvasUtilities";
 
-export const AppResourceDialogs = memo(function AppResourceDialogs({ scope }) {
+// 视图分段的 props 是 ViewSectionProps 的**超集**：section / inputs 供比较器做「数据不变就不重渲」
+// 的判定（appView.tsx 的调用点三者都传），scope 才是本段真正解构的数据来源。
+type AppResourceDialogsProps = ViewSectionProps & { scope: Record<string, any> };
+
+export const AppResourceDialogs = memo(function AppResourceDialogs({ scope }: AppResourceDialogsProps) {
   const __appScope = scope;
   const {
     AllNetworkTopologyDialog, ICON_LIBRARY_PAGE_SIZE, Trash2, WindowCloseButton, activeImageFolderId, applyExistingImage, applyIconLibraryCatalogIcon, clearSelectedImage,
@@ -80,7 +84,7 @@ export const AppResourceDialogs = memo(function AppResourceDialogs({ scope }) {
             {imagePickerShowsLibraryActions && (
               <div className="image-picker-actions">
                 <select value={activeImageFolderId} onChange={(event) => setActiveImageFolderId(event.target.value)}>
-                  {imageFolders.map((folder) => (<option key={folder.id} value={folder.id}>
+                  {imageFolders.map((folder: ImageFolder) => (<option key={folder.id} value={folder.id}>
                       {folder.name}{typeof folder.imageCount === "number" ? ` (${folder.imageCount})` : ""}
                     </option>))}
                 </select>
@@ -283,7 +287,7 @@ export const AppResourceDialogs = memo(function AppResourceDialogs({ scope }) {
                   分类
                   <select value={imagePickerActiveCategoryFilter} onChange={(event) => setImagePickerCategoryFilter(event.target.value)}>
                     <option value="">全部分类</option>
-                    {imagePickerCategoryOptions.map((category) => (
+                    {imagePickerCategoryOptions.map((category: string) => (
                       <option key={category} value={category}>
                         {category}
                       </option>
@@ -318,7 +322,7 @@ export const AppResourceDialogs = memo(function AppResourceDialogs({ scope }) {
               </div>
             )}
             {!imagePickerRendersCatalogSource && (<div className="image-asset-list">
-              {imageAssetList.length === 0 || (imagePickerUsesSeparateLibraryTabs && imagePickerActiveLibraryTab === "image" && sourceFilteredImageAssetList.length === 0) ? (<p className="image-empty">后台暂无图片，请先加载本地图片。</p>) : sourceFilteredImageAssetList.length === 0 ? (<p className="image-empty">{imagePickerUsesIconSources && imagePickerActiveSourceFilter === "external" ? "暂无外部导入图标，请使用上方外部导入按钮。" : `暂无可用${imagePickerAssetNoun}。`}</p>) : filteredImageAssetList.length === 0 ? (<p className="image-empty">{`没有匹配的${imagePickerAssetNoun}，请调整来源、分类或搜索关键字。`}</p>) : (filteredImageAssetList.map((asset, index) => {
+              {imageAssetList.length === 0 || (imagePickerUsesSeparateLibraryTabs && imagePickerActiveLibraryTab === "image" && sourceFilteredImageAssetList.length === 0) ? (<p className="image-empty">后台暂无图片，请先加载本地图片。</p>) : sourceFilteredImageAssetList.length === 0 ? (<p className="image-empty">{imagePickerUsesIconSources && imagePickerActiveSourceFilter === "external" ? "暂无外部导入图标，请使用上方外部导入按钮。" : `暂无可用${imagePickerAssetNoun}。`}</p>) : filteredImageAssetList.length === 0 ? (<p className="image-empty">{`没有匹配的${imagePickerAssetNoun}，请调整来源、分类或搜索关键字。`}</p>) : (filteredImageAssetList.map((asset: ImageAsset, index: number) => {
                 const canDeleteImageAsset = !isBrowseMode && !imagePickerAssetIsBuiltinIcon(asset) && (!imagePickerUsesIconSources || imagePickerActiveSourceFilter === "external");
                 return (<button key={asset.id} className="image-asset-option" disabled={isBrowseMode} onClick={() => {
                     setImageAssetContextMenu(null);
