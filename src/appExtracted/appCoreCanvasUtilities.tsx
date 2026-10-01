@@ -3485,8 +3485,21 @@ export function normalizeSavedProjectIndexes(project: SavedProjectRecord): Saved
     // 同 normalizeStoredDraftProject 的写法：先判数组再 map，滤掉非对象项。
     // 这一层是保存方案进入应用前的必经之路（后端 payload、浏览器缓存、图元库导入包
     // 都会走它），少一道判就是「导入一个畸形包整个应用起不来」。
+    //
+    // 补齐 kind / params / terminals 三个形状，与后端 normalizeProjectForStorage 的
+    // 边界归一**同一条规则**（见 server/CLAUDE.md「模型存储边界」那条不变量）：
+    // 两侧各有一份实现，规则必须一致，否则同一个畸形文件在后端能存、在前端就炸。
+    // kind 归空串是必须的——baseDeviceKind 对非字符串 kind 是**故意抛错**的
+    // （见 globalLinesKeys.test.ts 记录的理由：静默兜底会掩盖「取不到线路」），
+    // 所以形状必须在进它之前就补齐，而不是指望它兜。
     nodes: (Array.isArray(source.nodes) ? source.nodes : [])
       .filter((node) => node && typeof node === "object")
+      .map((node) => ({
+        ...node,
+        kind: String(node.kind ?? ""),
+        params: node.params && typeof node.params === "object" && !Array.isArray(node.params) ? node.params : {},
+        terminals: Array.isArray(node.terminals) ? node.terminals : []
+      }))
       .map(normalizeNodeTerminalsByTemplate),
     edges: Array.isArray(source.edges)
       ? source.edges.filter((edge) => edge && typeof edge === "object")
