@@ -1316,6 +1316,17 @@ describe("power system model", () => {
       expect(threeWindingDefinitions.has(retiredField), `three-winding.${retiredField}`).toBe(false);
     }
 
+    // 回归：canonical 与前个别名都是空串时，值必须落到第一个非空别名上，
+    // 不能被空串顶掉后再随别名键一起删掉（三绕组走的是同一条规则）。
+    const emptyCanonicalWithLateAlias = normalizeTwoWindingTransformerParams({
+      i_vbase: "",
+      high_vbase: "",
+      highVbase: "110"
+    });
+    expect(emptyCanonicalWithLateAlias.i_vbase).toBe("110");
+    expect("high_vbase" in emptyCanonicalWithLateAlias).toBe(false);
+    expect("highVbase" in emptyCanonicalWithLateAlias).toBe(false);
+
     expect(normalizeTwoWindingTransformerParams({
       high_vbase: "220",
       high_i_max: "300",
