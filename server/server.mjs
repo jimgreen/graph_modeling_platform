@@ -522,11 +522,14 @@ async function readSchemeDirectory(dirent, parentDir, options = {}) {
   try {
     entries = await readdir(schemeDir, { withFileTypes: true });
   } catch (error) {
-    // 与 schemeArchive.listModelJsonFiles 的约定相反：ZIP 导出路径读目录失败会上抛，
-    // 列表 API 却静默返回 null → 整个方案连同子方案与模型在响应里凭空消失，无日志。
-    // 降级保留（改动会让单目录不可读从 200 变 500），但必须留痕。
-    warnStoreReadFallback(error, schemeDir, "按「方案不存在」处理（该方案及其子方案不会出现在列表里）");
-    return null;
+    // 目录读不到就报错，与方案 ZIP 导出路径（schemeArchive.listModelJsonFiles 的
+    // 「目录读失败即上抛，不静默跳过」）对齐。此前这里静默返回 null，于是单个方案
+    // 目录被占用/改权限，整个方案连同子方案与模型就在响应里凭空消失、无日志 ——
+    // 用户以为方案被删了。只有 ENOENT（方案真的不存在）才正常返回 null。
+    if (error?.code === "ENOENT") {
+      return null;
+    }
+    throw new Error(`方案目录读取失败：${schemeDir}（${error?.code ?? error?.name ?? "unknown"}）`, { cause: error });
   }
   const projects = [];
   const children = [];
