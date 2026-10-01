@@ -140,7 +140,17 @@ export async function readSymbolExportSchemes(options = {}) {
   let parsed = null;
   try {
     parsed = JSON.parse(await readFile(filePath, "utf-8"));
-  } catch {
+  } catch (error) {
+    // 归 null 是既有降级，但**读不到**与**没配置过**不该同形：两者都回 exists:false，
+    // 界面上都显示「还没有导出方案」。于是用户看着空列表改点别的再保存，
+    // PUT /symbol-export-schemes 就把一份空配置写回去，磁盘上的原配置被永久覆盖。
+    // ENOENT 才是「没配置过」，静默即可。
+    if (error?.code !== "ENOENT") {
+      console.warn(
+        `[存储] 读取导出方案失败（${error?.code ?? error?.name ?? "unknown"}），已按「未配置」返回：` +
+        `界面会显示为空列表，此时保存会覆盖磁盘上的原配置。${filePath}`
+      );
+    }
     parsed = null;
   }
   const normalized = normalizeSymbolExportSchemes(parsed);
