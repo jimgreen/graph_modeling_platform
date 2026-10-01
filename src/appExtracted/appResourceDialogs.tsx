@@ -1,10 +1,10 @@
 import { memo } from "react";
-import { areViewSectionPropsEqual, type ViewSectionProps } from "./appViewRenderBoundary";
+import { areViewSectionPropsEqual, type ViewSectionInputs } from "./appViewRenderBoundary";
 import type { ImageAsset, ImageFolder } from "./appCoreCanvasUtilities";
 
-// 视图分段的 props 是 ViewSectionProps 的**超集**：section / inputs 供比较器做「数据不变就不重渲」
+// 视图分段的 props 是 ViewSectionInputs 的**超集**：section / inputs 供比较器做「数据不变就不重渲」
 // 的判定（appView.tsx 的调用点三者都传），scope 才是本段真正解构的数据来源。
-type AppResourceDialogsProps = ViewSectionProps & { scope: Record<string, any> };
+type AppResourceDialogsProps = ViewSectionInputs & { scope: Record<string, any> };
 
 export const AppResourceDialogs = memo(function AppResourceDialogs({ scope }: AppResourceDialogsProps) {
   const __appScope = scope;

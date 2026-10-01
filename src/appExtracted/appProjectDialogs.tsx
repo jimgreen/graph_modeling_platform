@@ -1,12 +1,12 @@
 import { memo } from "react";
-import { areViewSectionPropsEqual, type ViewSectionProps } from "./appViewRenderBoundary";
+import { areViewSectionPropsEqual, type ViewSectionInputs } from "./appViewRenderBoundary";
 import type { UndoSnapshot } from "./appCoreCanvasUtilities";
 import type { GlobalLinePlacementDialogState } from "../hooks/useGlobalLines";
 import type { GlobalLineRecord } from "../global-lines";
 
-// 视图分段的 props 是 ViewSectionProps 的**超集**：section / inputs 供比较器判定
+// 视图分段的 props 是 ViewSectionInputs 的**超集**：section / inputs 供比较器判定
 // 「数据不变就不重渲」（appView.tsx 的调用点三个都传），scope 才是本段解构的数据来源。
-type AppProjectDialogsProps = ViewSectionProps & { scope: Record<string, any> };
+type AppProjectDialogsProps = ViewSectionInputs & { scope: Record<string, any> };
 
 export const AppProjectDialogs = memo(function AppProjectDialogs({ scope }: AppProjectDialogsProps) {
   const __appScope = scope;

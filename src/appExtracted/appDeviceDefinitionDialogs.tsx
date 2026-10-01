@@ -1,11 +1,15 @@
 // @ts-nocheck
 import { memo } from "react";
-import { areViewSectionPropsEqual } from "./appViewRenderBoundary";
+import { areViewSectionPropsEqual, type ViewSectionInputs } from "./appViewRenderBoundary";
 import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
 import { PREDEFINED_E_DEVICE_TEMPLATES } from "../predefinedEDeviceTemplates";
 import { SymbolExportDialog } from "../SymbolExportDialog";
 
-export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialogs({ scope }) {
+// 分段对话框：section / inputs 供比较器判定「数据不变就不重渲」（appView.tsx 三个都传），
+// scope 才是本段解构的数据来源。
+type AppDeviceDefinitionDialogsProps = ViewSectionInputs & { scope: Record<string, any> };
+
+export const AppDeviceDefinitionDialogs = memo(function AppDeviceDefinitionDialogs({ scope }: AppDeviceDefinitionDialogsProps) {
   const __appScope = scope;
   const {
     ArrowDown, ArrowUp, BufferedTextInput, CONTAINER_TERMINAL_ASSOCIATION_OPTIONS, ChevronDown, ChevronRight, CustomComponentManagerTree, Download,
