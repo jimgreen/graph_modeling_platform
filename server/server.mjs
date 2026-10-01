@@ -465,16 +465,24 @@ function storedProjectFilePartDisplayName(filePart, fallback = "未命名模型"
 async function fileUpdatedAt(filePath) {
   try {
     return (await stat(filePath)).mtime.toISOString();
-  } catch {
+  } catch (error) {
+    // stat 失败退回 1970 是既有降级（文件确已不在时被并发删掉就会走到），改它会动语义。
+    // 但「磁盘读不动」与「文件不在」不该同形：前者会让方案树里整片模型显示成 1970 年，
+    // 而日志里一个字都没有。只在非 ENOENT 时留痕（ENOENT 由 warnStoreReadFallback 自行跳过）。
+    warnStoreReadFallback(error, filePath, "按 1970-01-01 显示");
     return new Date(0).toISOString();
   }
 }
 
 async function readLegacySchemeDirectoryMeta(schemeDir) {
+  const metaPath = join(schemeDir, "scheme.json");
   try {
-    const parsed = JSON.parse(await readFile(join(schemeDir, "scheme.json"), "utf-8"));
+    const parsed = JSON.parse(await readFile(metaPath, "utf-8"));
     return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
+  } catch (error) {
+    // 同上：legacy scheme.json 缺席是常态（早已迁移到目录名），静默即可；
+    // 但「读不到 / 内容坏了」会让方案在树上顶着目录名显示，与真实名字不符且无从察觉。
+    warnStoreReadFallback(error, metaPath, "按目录名显示方案");
     return null;
   }
 }
