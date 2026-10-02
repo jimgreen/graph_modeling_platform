@@ -8,8 +8,8 @@ import {
   createMergeUniqueEdgesById
 } from "./appExtracted/appSelectionDragFactories";
 
-const edge = (id: string) => ({ id });
-const node = (id: string) => ({ id });
+const edge = (id: string): any => ({ id });
+const node = (id: string): any => ({ id });
 
 describe("createMergeUniqueEdgesById", () => {
   const merge = createMergeUniqueEdgesById({});

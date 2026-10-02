@@ -12,7 +12,13 @@ const event = (clientX: number, clientY: number) => ({ clientX, clientY }) as an
 
 /** node 环境没有 Element，用一个带 closest 的类冒充。 */
 class FakeElement {
-  constructor(private readonly matched: boolean) {}
+  // 显式字段而非构造器参数属性：仓库开了 erasableSyntaxOnly，参数属性无法被擦除
+  private readonly matched: boolean;
+
+  constructor(matched: boolean) {
+    this.matched = matched;
+  }
+
   closest() {
     return this.matched ? ({ tagName: "HIT" } as any) : null;
   }

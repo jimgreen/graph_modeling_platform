@@ -34,7 +34,7 @@ describe("createCollectCurrentModelVoltageColorKeys", () => {
 
     createCollectCurrentModelVoltageColorKeys(scope)([node("n1", [{}, {}])]);
 
-    expect(scope.voltageColorKeyForTerminal.mock.calls.map((c) => c[2])).toEqual([0, 1]);
+    expect((scope.voltageColorKeyForTerminal.mock.calls as any[]).map((c: any[]) => c[2])).toEqual([0, 1]);
   });
 
   test("不传 sourceNodes 时用 scope.nodes", () => {

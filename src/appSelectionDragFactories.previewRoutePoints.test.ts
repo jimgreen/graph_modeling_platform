@@ -7,6 +7,10 @@ import {
   createSimpleOrthogonalDragPreviewPoints
 } from "./appExtracted/appSelectionDragFactories";
 
+/** 取第 index 次调用的参数数组：vi.fn() 的元组推断挡不住下标取值，统一走这里。 */
+const callArgs = (mock: any, index = 0): any[] => (mock.mock.calls[index] ?? []) as any[];
+
+
 const pt = (x: number, y: number) => ({ x, y });
 
 describe("createSimpleOrthogonalDragPreviewPoints", () => {
@@ -106,7 +110,7 @@ describe("createConnectionEndpointPreviewRoutePoints", () => {
 
     createConnectionEndpointPreviewRoutePoints(scope)(withPoints, endpoints() as any);
 
-    const previewEdge = scope.routeEdgesForStoredRendering.mock.calls[0][1][0];
+    const previewEdge = callArgs(scope.routeEdgesForStoredRendering, 0)[1][0];
     expect(previewEdge.sourcePoint).toEqual(pt(1, 1));
     expect(previewEdge.targetPoint).toEqual(pt(2, 2));
   });
@@ -117,7 +121,7 @@ describe("createConnectionEndpointPreviewRoutePoints", () => {
 
     createConnectionEndpointPreviewRoutePoints(scope)(edge as any, endpoints(pt(3, 3), pt(9, 9)) as any);
 
-    const previewEdge = scope.routeEdgesForStoredRendering.mock.calls[0][1][0];
+    const previewEdge = callArgs(scope.routeEdgesForStoredRendering, 0)[1][0];
     expect(previewEdge.sourcePoint).toEqual(pt(3, 3));
     expect(previewEdge.targetPoint).toEqual(pt(9, 9));
   });
@@ -128,7 +132,7 @@ describe("createConnectionEndpointPreviewRoutePoints", () => {
 
     createConnectionEndpointPreviewRoutePoints(scope)(edge as any, endpoints(pt(3, 3), pt(9, 9)) as any);
 
-    const previewEdge = scope.routeEdgesForStoredRendering.mock.calls[0][1][0];
+    const previewEdge = callArgs(scope.routeEdgesForStoredRendering, 0)[1][0];
     expect(previewEdge.sourcePoint).toEqual(pt(3, 3));
     expect(previewEdge.targetPoint).toBeNull();
   });
@@ -138,7 +142,7 @@ describe("createConnectionEndpointPreviewRoutePoints", () => {
 
     createConnectionEndpointPreviewRoutePoints(scope)(edge as any, endpoints() as any);
 
-    const previewEdge = scope.routeEdgesForStoredRendering.mock.calls[0][1][0];
+    const previewEdge = callArgs(scope.routeEdgesForStoredRendering, 0)[1][0];
     expect(previewEdge.id).toBe("e1");
     expect(previewEdge.sourceId).toBe("n1");
   });
@@ -148,6 +152,6 @@ describe("createConnectionEndpointPreviewRoutePoints", () => {
 
     createConnectionEndpointPreviewRoutePoints(scope)(edge as any, endpoints() as any);
 
-    expect(scope.routeEdgesForStoredRendering.mock.calls[0][2]).toEqual({ width: 1000, height: 800 });
+    expect(callArgs(scope.routeEdgesForStoredRendering, 0)[2]).toEqual({ width: 1000, height: 800 });
   });
 });

@@ -9,7 +9,7 @@ import {
 } from "./appExtracted/appGraphMeasurementFactories";
 
 describe("createCanvasBoundsForGraphContent", () => {
-  function createScope(contentSize: { width: number; height: number }) {
+  function createScope(contentSize: { width: number; height: number }): any {
     return {
       MOVE_BOUNDARY_GUARD: 40,
       nodes: [],
@@ -183,7 +183,7 @@ describe("createRejectAutoCanvasExpansionForContent", () => {
 });
 
 describe("createCanvasBoundsForAutoExpandedGraphContent", () => {
-  function createScope(allow: boolean) {
+  function createScope(allow: boolean): any {
     return {
       CANVAS_AUTO_EXPAND_PADDING: 80,
       allowAutoExpandCanvas: allow,
@@ -211,7 +211,7 @@ describe("createCanvasBoundsForAutoExpandedGraphContent", () => {
 
   test("默认 padding 用 CANVAS_AUTO_EXPAND_PADDING", () => {
     const scope = createScope(true);
-    const nodes = [{ id: "n" }];
+    const nodes: any[] = [{ id: "n" }];
     scope.nodes = nodes;
 
     createCanvasBoundsForAutoExpandedGraphContent(scope)({ width: 1, height: 1 });

@@ -13,7 +13,7 @@ const node = (id: string) => ({ id });
 describe("createMergeVoltageBaseSetResults", () => {
   const merge = createMergeVoltageBaseSetResults({});
 
-  const result = (ids: string[], targetIds: string[] = [], changedIds: string[] = []) => ({
+  const result = (ids: string[], targetIds: string[] = [], changedIds: string[] = []): any => ({
     nodes: ids.map(node),
     nodeUpdates: ids.map(node),
     targetNodeIds: targetIds,

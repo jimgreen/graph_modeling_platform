@@ -21,7 +21,7 @@ describe("cloneNodesForUndo", () => {
     position: pt(1, 2),
     size: { width: 40, height: 30 },
     terminals: [{ id: "t1", anchor: pt(0.5, 0.5) }],
-    params: { a: 1 }
+    params: { a: "1" }
   });
 
   test("字段逐项复制", () => {
@@ -56,8 +56,8 @@ describe("cloneNodesForUndo", () => {
     const [clone] = cloneNodesForUndo([source as any]);
 
     expect(clone.params).not.toBe(source.params);
-    clone.params.a = 2;
-    expect((source.params as any).a).toBe(1);
+    (clone.params as any).a = "2";
+    expect((source.params as any).a).toBe("1");
   });
 
   test("多端子全部被复制", () => {
@@ -90,8 +90,8 @@ describe("cloneEdgesForUndo", () => {
 
     expect(clone.sourcePoint).not.toBe(source.sourcePoint);
     expect(clone.manualPoints).not.toBe(source.manualPoints);
-    expect(clone.manualPoints[0]).not.toBe(source.manualPoints[0]);
-    expect(clone.routePoints[0]).not.toBe(source.routePoints[0]);
+    expect(clone.manualPoints![0]).not.toBe(source.manualPoints![0]);
+    expect(clone.routePoints![0]).not.toBe(source.routePoints![0]);
   });
 
   test("缺省的端点保持 undefined（不补成 0）", () => {

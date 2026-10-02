@@ -7,6 +7,10 @@ import {
   createBuildRoutableLinePreviewPath
 } from "./appExtracted/appGraphMeasurementFactories";
 
+/** 取第 index 次调用的参数数组：vi.fn() 的元组推断挡不住下标取值，统一走这里。 */
+const callArgs = (mock: any, index = 0): any[] => (mock.mock.calls[index] ?? []) as any[];
+
+
 const pt = (x: number, y: number) => ({ x, y });
 
 function createConnectScope(over: Record<string, any> = {}) {
@@ -73,7 +77,7 @@ describe("createBuildConnectPreviewPath", () => {
 
     build(scope)({ nodeId: "n1", terminalId: "t1", point: pt(2, 2) }, pt(9, 9), null, { node: bus, terminalId: "t1", point: pt(50, 50) });
 
-    expect(scope.routeEdgesForStoredRendering.mock.calls[0][1][0].targetPoint).toEqual(pt(50, 50));
+    expect(callArgs(scope.routeEdgesForStoredRendering, 0)[1][0].targetPoint).toEqual(pt(50, 50));
   });
 
   test("目标节点不是母线时目标点原样透传（缺省即 undefined，交给路由器按端子解析）", () => {
@@ -82,7 +86,7 @@ describe("createBuildConnectPreviewPath", () => {
 
     build(scope)({ nodeId: "n1", terminalId: "t1", point: pt(2, 2) }, pt(9, 9), null, { node: dev, terminalId: "t1" });
 
-    expect(scope.routeEdgesForStoredRendering.mock.calls[0][1][0].targetPoint).toBeUndefined();
+    expect(callArgs(scope.routeEdgesForStoredRendering, 0)[1][0].targetPoint).toBeUndefined();
   });
 
   test("无目标节点时目标点退回当前鼠标点", () => {
@@ -90,7 +94,7 @@ describe("createBuildConnectPreviewPath", () => {
 
     build(scope)({ nodeId: "n1", terminalId: "t1", point: pt(2, 2) }, pt(9, 9));
 
-    expect(scope.routeEdgesForStoredRendering.mock.calls[0][1][0].targetPoint).toEqual(pt(9, 9));
+    expect(callArgs(scope.routeEdgesForStoredRendering, 0)[1][0].targetPoint).toEqual(pt(9, 9));
   });
 
   test("显式 targetPoint 优先于鼠标点", () => {
@@ -98,7 +102,7 @@ describe("createBuildConnectPreviewPath", () => {
 
     build(scope)({ nodeId: "n1", terminalId: "t1", point: pt(2, 2) }, pt(9, 9), pt(7, 7));
 
-    expect(scope.routeEdgesForStoredRendering.mock.calls[0][1][0].targetPoint).toEqual(pt(7, 7));
+    expect(callArgs(scope.routeEdgesForStoredRendering, 0)[1][0].targetPoint).toEqual(pt(7, 7));
   });
 });
 
@@ -148,7 +152,7 @@ describe("createBuildRoutableLinePreviewPath", () => {
 
     createBuildRoutableLinePreviewPath(scope)(placement(), pt(9, 9), null, { node: { id: "n2" }, terminalId: "t1", point: pt(50, 50) });
 
-    expect(scope.routeEdgesForStoredRendering.mock.calls[0][1][0].targetPoint).toEqual(pt(50, 50));
+    expect(callArgs(scope.routeEdgesForStoredRendering, 0)[1][0].targetPoint).toEqual(pt(50, 50));
   });
 
   test("无目标节点时目标点用鼠标点", () => {
@@ -156,6 +160,6 @@ describe("createBuildRoutableLinePreviewPath", () => {
 
     createBuildRoutableLinePreviewPath(scope)(placement(), pt(9, 9));
 
-    expect(scope.routeEdgesForStoredRendering.mock.calls[0][1][0].targetPoint).toEqual(pt(9, 9));
+    expect(callArgs(scope.routeEdgesForStoredRendering, 0)[1][0].targetPoint).toEqual(pt(9, 9));
   });
 });

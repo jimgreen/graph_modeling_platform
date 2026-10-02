@@ -81,7 +81,7 @@ describe("createRoutingNodesForConnectionEdge", () => {
       visibleNodes: visible
     })(edge("e1", "a", "b"));
 
-    expect(result.map((n) => n.id).sort()).toEqual(["a", "b"]);
+    expect(result!.map((n: any) => n.id).sort()).toEqual(["a", "b"]);
   });
 
   test("一个都没收到时退回传入的源列表", () => {
@@ -122,11 +122,11 @@ describe("createRoutingNodesForConnectionEdges", () => {
   test("查不到的额外 id 被忽略", () => {
     const result = createRoutingNodesForConnectionEdges(scopeWith())([edge("e1", "a", "b")], full, ["不存在"]);
 
-    expect(result.map((n) => n.id).sort()).toEqual(["a", "b"]);
+    expect(result!.map((n: any) => n.id).sort()).toEqual(["a", "b"]);
   });
 
   test("作用域为空时退回源列表", () => {
-    const result = createRoutingNodesForConnectionEdges(scopeWith())([edge("e1", "缺失1", "缺失2")], full);
+    const result = createRoutingNodesForConnectionEdges(scopeWith())([edge("e1", "缺失1", "缺失2")], full) as any;
 
     expect(result).toBe(full);
   });

@@ -12,14 +12,14 @@ describe("normalizeSchemesForBackend", () => {
   test("方案 id 被剥掉（后端重新分配）", () => {
     const result = normalizeSchemesForBackend([scheme("顶层", [])]);
 
-    expect(result[0].id).not.toBe("id-顶层");
+    expect((result[0] as any).id).not.toBe("id-顶层");
   });
 
   test("children 是数组时递归归一", () => {
     const result = normalizeSchemesForBackend([scheme("顶层", [], [scheme("子", [])])]);
 
     expect(result[0].children).toHaveLength(1);
-    expect(result[0].children[0].name).toBe("子");
+    expect(result[0].children![0].name).toBe("子");
   });
 
   test("children 缺省时落成空数组", () => {
@@ -39,7 +39,7 @@ describe("normalizeSchemesForBackend", () => {
     const middle = scheme("子", [], [deep]);
     const result = normalizeSchemesForBackend([scheme("顶层", [], [middle])]);
 
-    expect(result[0].children[0].children[0].projects).toHaveLength(1);
+    expect(result[0].children![0].children![0].projects).toHaveLength(1);
   });
 
   test("空方案数组返回空数组", () => {

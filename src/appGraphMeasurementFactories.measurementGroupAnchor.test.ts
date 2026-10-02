@@ -14,9 +14,9 @@ function createScope(offsetScale = { x: 1, y: 1 }) {
   const measurementOffsetScaleForNode = vi.fn(() => offsetScale);
   const scope: Record<string, any> = { getTerminalPoint, measurementOffsetScaleForNode };
   scope.measurementGroupAnchorPoint = createMeasurementGroupAnchorPoint(scope);
-  scope.measurementGroupLocalOffset = (n: any, g: any) => ({
-    x: g.offset.x * measurementOffsetScaleForNode(n).x,
-    y: g.offset.y * measurementOffsetScaleForNode(n).y
+  scope.measurementGroupLocalOffset = (_n: any, g: any) => ({
+    x: g.offset.x * measurementOffsetScaleForNode().x,
+    y: g.offset.y * measurementOffsetScaleForNode().y
   });
   scope.measurementGroupCanvasPosition = createMeasurementGroupCanvasPosition(scope);
   return { scope, getTerminalPoint, measurementOffsetScaleForNode };

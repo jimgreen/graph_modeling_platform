@@ -91,14 +91,10 @@ describe("createDefinitionTerminalConnectorSegment", () => {
   });
 
   test("与自定义元件那条不同：起点不回缩到本体内部", () => {
+    // 自定义元件那条的 from 要向内 2.6/6 宽（见 customTerminalAnchor.test.ts），定义这条直接取边界点
     const definition = createDefinitionTerminalConnectorSegment(createScope())(pt(-1, 0));
-    const custom = createScope();
-    custom.customDevicePreviewWidth = W;
-    custom.customDevicePreviewHeight = H;
 
-    // 自定义元件那条的 from 要向内 2.6/6 宽
     expect(definition.from.x).toBe(-W);
-    expect(custom.customDevicePreviewWidth).toBe(W);
   });
 });
 

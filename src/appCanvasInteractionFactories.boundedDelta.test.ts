@@ -14,6 +14,10 @@ import {
   createNearestBoundarySafeDelta
 } from "./appExtracted/appCanvasInteractionFactories";
 
+/** 取第 index 次调用的参数数组：vi.fn() 的元组推断挡不住下标取值，统一走这里。 */
+const callArgs = (mock: any, index = 0): any[] => (mock.mock.calls[index] ?? []) as any[];
+
+
 const pt = (x: number, y: number) => ({ x, y });
 
 describe("createBoundedDeltaForNodes", () => {
@@ -66,7 +70,7 @@ describe("createBoundedDeltaForNodes", () => {
 
     createBoundedDeltaForNodes(scope)(["n1"], { n1: pt(0, 0) }, 1, 1);
 
-    expect(scope.clampNodePositionToExpandableBounds.mock.calls[0][1]).toEqual({ width: 100, height: 100 });
+    expect(callArgs(scope.clampNodePositionToExpandableBounds, 0)[1]).toEqual({ width: 100, height: 100 });
   });
 });
 
@@ -85,20 +89,20 @@ describe("createBoundedDeltaForMultiNodeInteractiveMove", () => {
   test("允许自动扩容时不做任何收敛", () => {
     const scope = createScope({ allowAutoExpandCanvas: true });
 
-    expect(createBoundedDeltaForMultiNodeInteractiveMove(scope)({ nodeIds: ["n1"] }, pt(999, 999))).toEqual(pt(999, 999));
+    expect(createBoundedDeltaForMultiNodeInteractiveMove(scope)({ nodeIds: ["n1"] } as any, pt(999, 999))).toEqual(pt(999, 999));
   });
 
   test("固定画布下按节点集合包围盒收敛", () => {
     const scope = createScope();
 
     // 左可走 -10、右可走 100-80=20、上 -20、下 100-60=40
-    expect(createBoundedDeltaForMultiNodeInteractiveMove(scope)({ nodeIds: ["n1"] }, pt(999, 999))).toEqual(pt(20, 40));
+    expect(createBoundedDeltaForMultiNodeInteractiveMove(scope)({ nodeIds: ["n1"] } as any, pt(999, 999))).toEqual(pt(20, 40));
   });
 
   test("超出左/上边界时收到边界值", () => {
     const scope = createScope();
 
-    expect(createBoundedDeltaForMultiNodeInteractiveMove(scope)({ nodeIds: ["n1"] }, pt(-999, -999))).toEqual(pt(-10, -20));
+    expect(createBoundedDeltaForMultiNodeInteractiveMove(scope)({ nodeIds: ["n1"] } as any, pt(-999, -999))).toEqual(pt(-10, -20));
   });
 
   test("预览自带包围盒时优先用它", () => {
@@ -112,14 +116,14 @@ describe("createBoundedDeltaForMultiNodeInteractiveMove", () => {
   test("算不出包围盒时原样返回", () => {
     const scope = createScope({ boundsForNodeSet: vi.fn(() => null) });
 
-    expect(createBoundedDeltaForMultiNodeInteractiveMove(scope)({ nodeIds: ["n1"] }, pt(50, 50))).toEqual(pt(50, 50));
+    expect(createBoundedDeltaForMultiNodeInteractiveMove(scope)({ nodeIds: ["n1"] } as any, pt(50, 50))).toEqual(pt(50, 50));
   });
 
   test("包围盒本身比画布还宽（区间反向）时不收敛，避免夹反", () => {
     // left=0 → 可走 0；right=200 > 画布宽 100 → 上限 -100。区间反向就不夹
     const scope = createScope({ boundsForNodeSet: vi.fn(() => ({ left: 0, top: 0, right: 200, bottom: 200 })) });
 
-    expect(createBoundedDeltaForMultiNodeInteractiveMove(scope)({ nodeIds: ["n1"] }, pt(999, 999))).toEqual(pt(999, 999));
+    expect(createBoundedDeltaForMultiNodeInteractiveMove(scope)({ nodeIds: ["n1"] } as any, pt(999, 999))).toEqual(pt(999, 999));
   });
 });
 
@@ -289,7 +293,7 @@ describe("createCanvasBoundsForMovedNodeDelta", () => {
 
     createCanvasBoundsForMovedNodeDelta(scope)(["n1"], { n1: pt(0, 0) }, 5.6, 0);
 
-    expect(scope.canvasBoundsForGraphContent.mock.calls[0][1][0].position).toEqual(pt(6, 0));
+    expect(callArgs(scope.canvasBoundsForGraphContent, 0)[1][0].position).toEqual(pt(6, 0));
   });
 
   test("重复 id 只算一次", () => {
@@ -297,7 +301,7 @@ describe("createCanvasBoundsForMovedNodeDelta", () => {
 
     createCanvasBoundsForMovedNodeDelta(scope)(["n1", "n1"], { n1: pt(0, 0) }, 5, 0);
 
-    expect(scope.canvasBoundsForGraphContent.mock.calls[0][1]).toHaveLength(1);
+    expect(callArgs(scope.canvasBoundsForGraphContent, 0)[1]).toHaveLength(1);
   });
 
   test("节点或原始位置缺失时该节点被跳过", () => {
@@ -311,6 +315,6 @@ describe("createCanvasBoundsForMovedNodeDelta", () => {
 
     createCanvasBoundsForMovedNodeDelta(scope)(["n1"], { n1: pt(0, 0) }, 5, 0);
 
-    expect(scope.canvasBoundsForGraphContent.mock.calls[0][4]).toBe(80);
+    expect(callArgs(scope.canvasBoundsForGraphContent, 0)[4]).toBe(80);
   });
 });

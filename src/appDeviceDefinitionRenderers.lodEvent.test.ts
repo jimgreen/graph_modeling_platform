@@ -11,10 +11,14 @@ import {
 
 /** 极简 DOM 替身：只需 closest / getAttribute。matches 是 [选择器, 命中元素] 的列表。 */
 class FakeElement {
-  constructor(
-    private readonly matches: Array<[string, FakeElement]>,
-    private readonly attributes: Record<string, string> = {}
-  ) {}
+  // 显式字段而非构造器参数属性：仓库开了 erasableSyntaxOnly，参数属性无法被擦除
+  private readonly matches: Array<[string, FakeElement]>;
+  private readonly attributes: Record<string, string>;
+
+  constructor(matches: Array<[string, FakeElement]>, attributes: Record<string, string> = {}) {
+    this.matches = matches;
+    this.attributes = attributes;
+  }
 
   closest(selector: string) {
     return this.matches.find(([candidate]) => candidate === selector)?.[1] ?? null;

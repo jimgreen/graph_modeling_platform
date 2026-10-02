@@ -82,7 +82,7 @@ describe("createBuildMovedNodeUpdates", () => {
 
     createBuildMovedNodeUpdates(scope)(["n1"], { n1: pt(0, 0) }, pt(9, 9));
 
-    expect(scope.nodeById.get("n1").position).toEqual(pt(0, 0));
+    expect((scope.nodeById.get("n1") as any).position).toEqual(pt(0, 0));
   });
 });
 
