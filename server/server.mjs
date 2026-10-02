@@ -5390,19 +5390,29 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     }]
   ]);
   const dynAssetPattern = (sub) => new RegExp(`^${escapeRegExp(apiPath(sub))}/([^/]+)$`, "u");
+  // 路径段来自 URL，畸形百分号转义（如 /image-folders/100%）会让 decodeURIComponent 抛 URIError，
+  // 冒到最外层变成 500 —— 客户端拼错 URL 却拿到「服务端崩了」的错误码，误导排查方向。
+  // 这里就地判掉：解码不了就回原样，交由下游按「查无此 id」回 404。
+  const decodePathSegment = (segment) => {
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      return segment;
+    }
+  };
   const dynamicRouteHandlers = [
     {
       method: "PUT",
       pattern: dynAssetPattern("/image-folders"),
       handle: async ({ match, request, response, paths }) => {
-        await handleRenameImageFolder(decodeURIComponent(match[1]), request, response, paths);
+        await handleRenameImageFolder(decodePathSegment(match[1]), request, response, paths);
       }
     },
     {
       method: "DELETE",
       pattern: dynAssetPattern("/image-folders"),
       handle: async ({ match, response, paths }) => {
-        await handleDeleteImageFolder(decodeURIComponent(match[1]), response, paths);
+        await handleDeleteImageFolder(decodePathSegment(match[1]), response, paths);
       }
     },
     {
