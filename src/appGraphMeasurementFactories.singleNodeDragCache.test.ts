@@ -46,7 +46,7 @@ describe("createBuildSingleNodeDragCache", () => {
     const cache = build(["moved"], [], affected)!;
 
     // e2 不可见、e3 与 moved 无关（也不在被拖边集合里）→ 只剩 e1
-    expect(cache.relevantEdges.map((e) => e.id)).toEqual(["e1"]);
+    expect(cache.relevantEdges.map((e: any) => e.id)).toEqual(["e1"]);
   });
 
   test("被显式拖拽的边即使两端都不动也算相关", () => {
@@ -55,7 +55,7 @@ describe("createBuildSingleNodeDragCache", () => {
 
     const cache = build(["moved"], ["e3"], [edge("e3", "far", "a")])!;
 
-    expect(cache.relevantEdges.map((e) => e.id)).toEqual(["e3"]);
+    expect(cache.relevantEdges.map((e: any) => e.id)).toEqual(["e3"]);
     expect(cache.draggedEdgeIds.has("e3")).toBe(true);
   });
 
@@ -67,7 +67,7 @@ describe("createBuildSingleNodeDragCache", () => {
     const cache = build(["moved"], [], affected)!;
 
     expect(cache.relevantEdges).toHaveLength(4);
-    expect(cache.previewEdges.map((e) => e.id)).toEqual(["e1"]);
+    expect(cache.previewEdges.map((e: any) => e.id)).toEqual(["e1"]);
     expect(cache.snapEdges).toHaveLength(3);
   });
 

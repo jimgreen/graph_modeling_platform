@@ -9,6 +9,10 @@ import {
   createTerminalReconcileNodeScope
 } from "./appExtracted/appSelectionDragFactories";
 
+/** 取第 index 次调用的参数数组：vi.fn() 的元组推断挡不住下标取值，统一走这里。 */
+const callArgs = (mock: any, index = 0): any[] => (mock.mock.calls[index] ?? []) as any[];
+
+
 const edge = (id: string, sourceId: string, targetId: string, over: Record<string, any> = {}) => ({
   id,
   sourceId,
@@ -21,7 +25,10 @@ function createScope(shouldAdjust?: (e: any) => boolean) {
     reuseSetOrCreate: (value: Iterable<string>) => (value instanceof Set ? value : new Set(value)),
     MOVE_ROUTE_LOCAL_SEARCH_PADDING: 24,
     boundsForNodeSet: vi.fn(() => null),
-    orderedNodesForIds: vi.fn((nodes: any[], ids: Iterable<string>) => nodes.filter((n) => ids.has(n.id) || [...ids].some((id) => id.startsWith(n.id)))),
+    orderedNodesForIds: vi.fn((nodes: any[], ids: Iterable<string>) => {
+      const idList = [...ids];
+      return nodes.filter((n: any) => idList.includes(n.id) || idList.some((id: string) => id.startsWith(n.id)));
+    }),
     queryNodeSpatialIndex: vi.fn(() => []),
     visibleNodeSpatialIndex: { sentinel: true }
   };
@@ -85,7 +92,7 @@ describe("createSynchronousEdgeAdjustmentCandidates", () => {
 
     const result = scope.synchronousEdgeAdjustmentCandidates(candidates, ["n1", "n2"]);
 
-    expect(result.map((e) => e.id)).toEqual(["e1"]);
+    expect(result.map((e: any) => e.id)).toEqual(["e1"]);
   });
 
   test("没有移动节点时返回空数组", () => {
@@ -98,8 +105,8 @@ describe("createSynchronousEdgeAdjustmentCandidates", () => {
     const scope = createScope();
     const candidates = [edge("e1", "b1", "n2")];
 
-    expect(scope.synchronousEdgeAdjustmentCandidates(candidates, ["n1"], [], ["b1"]).map((e) => e.id)).toEqual(["e1"]);
-    expect(scope.synchronousEdgeAdjustmentCandidates(candidates, ["n1"], [], [], { e1: [{ x: 0, y: 0 }] }).map((e) => e.id)).toEqual(["e1"]);
+    expect(scope.synchronousEdgeAdjustmentCandidates(candidates, ["n1"], [], ["b1"]).map((e: any) => e.id)).toEqual(["e1"]);
+    expect(scope.synchronousEdgeAdjustmentCandidates(candidates, ["n1"], [], [], { e1: [{ x: 0, y: 0 }] }).map((e: any) => e.id)).toEqual(["e1"]);
   });
 
   test("判定函数收到的是四个集合", () => {
@@ -108,9 +115,9 @@ describe("createSynchronousEdgeAdjustmentCandidates", () => {
 
     scope.synchronousEdgeAdjustmentCandidates([edge("e1", "n1", "n2")], ["n1"], ["e1"], ["b1"], { e1: [] });
 
-    expect(shouldAdjust.mock.calls[0][1]).toEqual(new Set(["n1"]));
-    expect(shouldAdjust.mock.calls[0][2]).toEqual(new Set(["e1"]));
-    expect(shouldAdjust.mock.calls[0][3]).toEqual(new Set(["b1"]));
+    expect(callArgs(shouldAdjust, 0)[1]).toEqual(new Set(["n1"]));
+    expect(callArgs(shouldAdjust, 0)[2]).toEqual(new Set(["e1"]));
+    expect(callArgs(shouldAdjust, 0)[3]).toEqual(new Set(["b1"]));
   });
 });
 
@@ -147,18 +154,21 @@ describe("createMergeAdjustedCandidateEdges", () => {
     const candidates = [edge("e1", "n1", "n2"), edge("e2", "n2", "n3")];
     const adjusted = [{ ...candidates[1], fixed: true }, { ...candidates[0], fixed: true }];
 
-    expect(merge(candidates, adjusted).map((e) => e.id)).toEqual(["e1", "e2"]);
+    expect(merge(candidates, adjusted).map((e: any) => e.id)).toEqual(["e1", "e2"]);
   });
 });
 
 describe("createTerminalReconcileNodeScope", () => {
-  function createReconcileScope(nearby: any[] = []) {
+  function createReconcileScope(nearby: any[] = []): any {
     return {
       MOVE_ROUTE_LOCAL_SEARCH_PADDING: 24,
       boundsForNodeSet: vi.fn(() => ({ left: 0, top: 0, right: 10, bottom: 10 })),
       queryNodeSpatialIndex: vi.fn(() => nearby),
       visibleNodeSpatialIndex: { sentinel: true },
-      orderedNodesForIds: vi.fn((nodes: any[], ids: Iterable<string>) => nodes.filter((n) => ids.has(n.id)))
+      orderedNodesForIds: vi.fn((nodes: any[], ids: Iterable<string>) => {
+        const idList = [...ids];
+        return nodes.filter((n: any) => idList.includes(n.id));
+      })
     };
   }
 
@@ -190,7 +200,7 @@ describe("createTerminalReconcileNodeScope", () => {
     createTerminalReconcileNodeScope(scope)([], [], new Set(["n1"]));
 
     expect(scope.queryNodeSpatialIndex).toHaveBeenCalledTimes(2);
-    expect(scope.queryNodeSpatialIndex.mock.calls[0][1]).toEqual({ left: 0, top: 0, right: 10, bottom: 10 });
+    expect(callArgs(scope.queryNodeSpatialIndex, 0)[1]).toEqual({ left: 0, top: 0, right: 10, bottom: 10 });
   });
 
   test("算不出包围盒时跳过空间查询（但仍按移动集合求值）", () => {
@@ -207,6 +217,6 @@ describe("createTerminalReconcileNodeScope", () => {
 
     createTerminalReconcileNodeScope(scope)([], [], new Set(["n1"]));
 
-    expect(scope.boundsForNodeSet.mock.calls[0][3]).toBe(24);
+    expect(callArgs(scope.boundsForNodeSet, 0)[3]).toBe(24);
   });
 });

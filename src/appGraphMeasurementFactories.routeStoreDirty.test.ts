@@ -219,7 +219,9 @@ describe("createPatchStoredRouteStoreForEdgeIds", () => {
 
     createPatchStoredRouteStoreForEdgeIds(scope)(store, new Set(["e1"]), { width: 1, height: 1 }, []);
 
-    const [, changedIds, previousRoutes] = scope.refreshCrossingArcPaths.mock.calls[0];
+    const args = (scope.refreshCrossingArcPaths.mock.calls[0] ?? []) as any[];
+    const changedIds = args[1] as Set<string>;
+    const previousRoutes = args[2] as any[];
     expect([...changedIds]).toEqual(["e1"]);
     expect(previousRoutes).toEqual([previous]);
   });

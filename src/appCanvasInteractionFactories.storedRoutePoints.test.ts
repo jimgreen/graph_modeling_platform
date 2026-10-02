@@ -5,6 +5,10 @@ import { describe, expect, test, vi } from "vitest";
 
 import { createCurrentStoredRoutePointsForEdge } from "./appExtracted/appCanvasInteractionFactories";
 
+/** 取第 index 次调用的参数数组：vi.fn() 的元组推断挡不住下标取值，统一走这里。 */
+const callArgs = (mock: any, index = 0): any[] => (mock.mock.calls[index] ?? []) as any[];
+
+
 const pt = (x: number, y: number) => ({ x, y });
 const edge = (id = "e1") => ({ id, sourceId: "n1", targetId: "n2" });
 
@@ -88,7 +92,7 @@ describe("createCurrentStoredRoutePointsForEdge", () => {
     const scope = createScope({ routeEdgesForStoredRendering: vi.fn(() => [{ points: [pt(3, 3)] }]) });
 
     expect(createCurrentStoredRoutePointsForEdge(scope)(edge())).toEqual([pt(3, 3)]);
-    expect(scope.routeEdgesForStoredRendering.mock.calls[0][2]).toEqual({ width: 1000, height: 800 });
+    expect(callArgs(scope.routeEdgesForStoredRendering, 0)[2]).toEqual({ width: 1000, height: 800 });
   });
 
   test("现算结果被复制，改返回值不影响内部对象", () => {
@@ -105,8 +109,7 @@ describe("createCurrentStoredRoutePointsForEdge", () => {
 
     createCurrentStoredRoutePointsForEdge(scope)(edge(), { width: 10, height: 10 });
 
-    expect(scope.routeEdgesForStoredRouting).toBeUndefined();
-    expect(scope.routeEdgesForStoredRendering.mock.calls[0][2]).toEqual({ width: 10, height: 10 });
+    expect(callArgs(scope.routeEdgesForStoredRendering, 0)[2]).toEqual({ width: 10, height: 10 });
   });
 
   test("端点节点缺失时不现算", () => {

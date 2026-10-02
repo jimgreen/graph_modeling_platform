@@ -10,7 +10,7 @@ import {
 const pt = (x: number, y: number) => ({ x, y });
 
 describe("createDragBoundsForSmartAlignment", () => {
-  function createScope() {
+  function createScope(): any {
     return {
       nodeById: new Map([
         ["n1", { id: "n1" }],
@@ -81,7 +81,7 @@ describe("createDragBoundsForSmartAlignment", () => {
 });
 
 describe("createTerminalOutflowAnchorsForSmartAlignmentDrag", () => {
-  function createScope() {
+  function createScope(): any {
     return {
       nodeById: new Map([
         ["n1", { id: "n1" }],

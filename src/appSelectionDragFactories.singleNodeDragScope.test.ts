@@ -9,6 +9,10 @@ import {
   createSingleNodeDragScopedEdges
 } from "./appExtracted/appSelectionDragFactories";
 
+/** 取第 index 次调用的参数数组：vi.fn() 的元组推断挡不住下标取值，统一走这里。 */
+const callArgs = (mock: any, index = 0): any[] => (mock.mock.calls[index] ?? []) as any[];
+
+
 const pt = (x: number, y: number) => ({ x, y });
 const box = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom });
 const edge = (id: string, sourceId = "n1", targetId = "n2") => ({ id, sourceId, targetId });
@@ -64,7 +68,7 @@ describe("createSingleNodeDragScopedEdges", () => {
 
     createSingleNodeDragScopedEdges(scope)(dragState as any, pt(1, 1));
 
-    expect(scope.singleNodeDragViewportLocalEdgesByScan.mock.calls[0][4]).toBe(3);
+    expect(callArgs(scope.singleNodeDragViewportLocalEdgesByScan, 0)[4]).toBe(3);
   });
 
   test("视口扫描一条都没扫到时退回全量相关边", () => {
@@ -127,7 +131,7 @@ describe("createSingleNodeDragPreviewBounds", () => {
     createSingleNodeDragPreviewBounds(scope)({ nodeIds: ["n1"] } as any, pt(0, 0));
 
     expect(scope.expandRouteBox).toHaveBeenCalledWith(box(0, 0, 100, 100), 16);
-    expect(scope.nodeVisualInteractionBounds.mock.calls[0][2]).toBe(16);
+    expect(callArgs(scope.nodeVisualInteractionBounds, 0)[2]).toBe(16);
   });
 });
 

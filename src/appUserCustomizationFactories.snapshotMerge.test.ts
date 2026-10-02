@@ -121,7 +121,7 @@ describe("快照合并", () => {
     const current = { deviceLibrary: { customDeviceTemplates: [{ id: "t1", kind: "ac-a" }] } } as any;
     const imported = { deviceLibrary: { customCategoryLibraries: [{ id: "c2", name: "新来" }] } } as any;
 
-    const result = mergeUserCustomizationSnapshots(current, imported, "merge");
+    const result = mergeUserCustomizationSnapshots(current, imported, "incremental");
 
     expect(result.deviceLibrary.customDeviceTemplates).toHaveLength(1);
   });
@@ -130,7 +130,7 @@ describe("快照合并", () => {
     const current = { deviceLibrary: { customCategoryLibraries: [{ id: "c1", name: "原有" }] } } as any;
     const imported = { deviceLibrary: { customCategoryLibraries: [{ id: "c1", name: "覆盖" }] } } as any;
 
-    const result = mergeUserCustomizationSnapshots(current, imported, "merge");
+    const result = mergeUserCustomizationSnapshots(current, imported, "incremental");
 
     expect(result.deviceLibrary.customCategoryLibraries).toHaveLength(1);
   });
@@ -139,15 +139,15 @@ describe("快照合并", () => {
     const current = { deviceLibrary: { customCategoryLibraries: [{ name: "原有" }] } } as any;
     const imported = { deviceLibrary: { customCategoryLibraries: [{ name: "新来" }] } } as any;
 
-    expect(createMergedUserCustomizationSnapshot(current, imported, "merge")).toEqual(
-      mergeUserCustomizationSnapshots(current, imported, "merge")
+    expect(createMergedUserCustomizationSnapshot(current, imported, "incremental")).toEqual(
+      mergeUserCustomizationSnapshots(current, imported, "incremental")
     );
   });
 
   test("导入为空时结果与当前一致", () => {
     const current = { deviceLibrary: { customCategoryLibraries: [{ name: "原有" }] } } as any;
 
-    const result = mergeUserCustomizationSnapshots(current, {}, "merge");
+    const result = mergeUserCustomizationSnapshots(current, {}, "incremental");
 
     expect(result.deviceLibrary.customCategoryLibraries).toHaveLength(1);
   });
