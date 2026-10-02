@@ -17,8 +17,14 @@ describe("schemePathQueryParam", () => {
     expect(result).toBe("schemePath=" + encodeURIComponent(JSON.stringify(["父方案", "子方案"])));
   });
 
-  test("空路径编码成 []", () => {
-    expect(schemePathQueryParam("schemePath", [])).toBe("schemePath=" + encodeURIComponent("[]"));
+  test("空路径编码成 %5B%5D（方括号也被编码，不是裸 JSON）", () => {
+    expect(schemePathQueryParam("schemePath", [])).toBe("schemePath=%5B%5D");
+  });
+
+  test("编码结果与裸 JSON 不同（确实做了 URL 编码）", () => {
+    const result = schemePathQueryParam("schemePath", ["a"]);
+
+    expect(result).not.toBe(`schemePath=${JSON.stringify(["a"])}`);
   });
 
   test("参数名原样出现在等号前", () => {
