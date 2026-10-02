@@ -142,3 +142,41 @@ describe("icon-library 静态托管", () => {
     expect([200, 404]).toContain(status);
   });
 });
+
+describe("图片文件夹动态路由的路径段解码", () => {
+  test("畸形百分号转义不再抛 URIError（回落到按原样查 id → 404）", async () => {
+    // /image-folders/100% 里的 "%" 不是合法转义，decodeURIComponent 原本会抛
+    const { status } = await fetchPath("/webgrp/image-folders/100%");
+    expect(status).toBe(404);
+  });
+
+  test("PUT 同样不 500（畸形转义回落到 404）", async () => {
+    const res = await fetch(`${baseUrl}/webgrp/image-folders/100%`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "改过" })
+    });
+    expect(res.status).toBe(404);
+  });
+
+  test("合法转义照常解码（中文目录名能命中）", async () => {
+    // 先建一个中文名的文件夹，再用编码后的 id 删它：能删掉即证明解码正常
+    const created = await fetch(`${baseUrl}/webgrp/image-folders`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "中文目录" })
+    });
+    expect(created.status).toBe(201);
+    const folder = await created.json();
+    expect(folder.id).toBeTruthy();
+
+    const deleted = await fetch(`${baseUrl}/webgrp/image-folders/${encodeURIComponent(folder.id)}`, { method: "DELETE" });
+    expect(deleted.status).toBe(200);
+  });
+
+  test("解码失败时按原样 id 查，仍是 404 而不是 500", async () => {
+    const { status, text } = await fetchPath("/webgrp/image-folders/%E4%B8%AD%E6%96%87");
+    expect(status).toBe(404);
+    expect(JSON.parse(text).error).toBeTruthy();
+  });
+});
