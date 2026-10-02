@@ -160,7 +160,7 @@ graph_modeling_platform/
 | `src/` | 前端 React 19 + TypeScript 源码 | 见 `src/AGENTS.md` |
 | `src/appExtracted/` | 从 `App.tsx` 抽取的大型工厂/视图模块 | 模块间经 `__appScope` 共享状态 |
 | `src/components/` | 受控输入/静态按钮等可复用组件 | 缓冲提交模式 |
-| `src/hooks/` | 自定义 React Hook | 当前仅 `useBatchEditors` |
+| `src/hooks/` | 自定义 React Hook | `useBatchEditors`（批量属性编辑）、`useGlobalLines`（全局线路放置） |
 | `src/encoding/` | 编码/解码工具（GBK、E 文件格式） | |
 | `src/model/` | 模型相关子模块 | |
 | `src/lib/` | 通用工具库 | |
@@ -183,6 +183,8 @@ graph_modeling_platform/
 | `src/model-routing.ts` | 模型路由算法：拓扑布线/路径规划（470KB 大型模块） |
 | `src/all-network-topology.ts` | 全网拓扑导出：多厂站 E 文件导出逻辑 |
 | `src/global-lines.ts` | 全局线路管理：跨模型线路注册与同步 |
+| `src/hooks/useGlobalLines.tsx` | 全局线路的放置对话框状态、跨模型线路增删与同步（UI 层，逻辑在 `global-lines.ts`） |
+| `src/graphStore.ts` / `src/routeStore.ts` | 图形状态与路由缓存的不可变更新入口 |
 | `src/svgModelImport.ts` | SVG 模型导入 |
 | `src/EFileEditor.tsx` | E 格式文件在线编辑器 |
 | `src/globalMessage.ts` | 全局消息提示系统 |
