@@ -101,12 +101,21 @@ describe("可见框缺失时的兜底（经由位移收敛观察）", () => {
   test("图片元素带裁剪参数时键不同，命中另一份可见框", () => {
     const image = { id: "e1", kind: "image", x: 100, y: 100, width: 20, height: 20, imageHref: "a.png", cropX: 5 };
     const key = "e1:a.png:cover:1:5:0";
-    const visibleFrames = { image: { [key]: { x: 0, y: 0, width: 100, height: 100, basisWidth: 100, basisHeight: 100 } } };
+    // 可见框 100×100，无 basis → 按元素自身尺寸缩放 1:1 → 选区 [100,200]
+    const visibleFrames = { image: { [key]: { x: 0, y: 0, width: 100, height: 100 } } };
 
-    // 命中缓存后选区变成 [100,200] → 最多右移 40
     const result = clampStateIconDrawingMovementDelta([image], pt(999, 0), frame(0, 0, 240, 160), visibleFrames);
 
     expect(result.x).toBe(40);
+  });
+
+  test("可见框带 basis 时按 basis 缩放到元素尺寸", () => {
+    const image = { id: "e1", kind: "image", x: 100, y: 100, width: 20, height: 20, imageHref: "a.png", cropX: 5 };
+    const key = "e1:a.png:cover:1:5:0";
+    // 原始 200×100，元素只有 20×20 → 缩放 0.1 → 选区回到 [100,120] → 最多右移 120
+    const visibleFrames = { image: { [key]: { x: 0, y: 0, width: 200, height: 100, basisWidth: 200, basisHeight: 100 } } };
+
+    expect(clampStateIconDrawingMovementDelta([image], pt(999, 0), frame(0, 0, 240, 160), visibleFrames).x).toBe(120);
   });
 
   test("可见框宽高为 0 时退回自身尺寸兜底", () => {
