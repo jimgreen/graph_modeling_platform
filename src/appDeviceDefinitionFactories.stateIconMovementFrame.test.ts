@@ -11,6 +11,9 @@ import {
 const pt = (x: number, y: number) => ({ x, y });
 
 describe("stateIconDrawingMovementFrameForDialog", () => {
+  const WITH_TERMINALS = { x: 30, y: 20, width: 180, height: 120, rx: 8 };
+  const NO_TERMINALS = { x: 0, y: 0, width: 240, height: 160, rx: 10 };
+
   const baseScope = {
     definitionVisualDraft: { terminalCount: 3 },
     customDeviceDraft: { terminalCount: 2 },
@@ -18,45 +21,64 @@ describe("stateIconDrawingMovementFrameForDialog", () => {
     customDraftTerminalTypes: ["x", "y"]
   };
 
-  test("定义页签用定义草稿的端子数", () => {
-    const result = stateIconDrawingMovementFrameForDialog(baseScope as any, { target: { scope: "definition" } });
-
-    expect(result).toEqual({ x: 0, y: 0, width: 240, height: 160 });
+  test("有端子时返回内缩的画框（给端子留位）", () => {
+    expect(stateIconDrawingMovementFrameForDialog(baseScope as any, { target: { scope: "definition" } })).toEqual(WITH_TERMINALS);
   });
 
-  test("自定义元件页签用自定义草稿的端子数", () => {
-    stateIconDrawingMovementFrameForDialog(baseScope as any, { target: { scope: "custom" } });
+  test("自定义元件页签有端子时同样用内缩框", () => {
+    expect(stateIconDrawingMovementFrameForDialog(baseScope as any, { target: { scope: "custom" } })).toEqual(WITH_TERMINALS);
   });
 
-  test("没有 target 时按「没有框」处理", () => {
-    expect(stateIconDrawingMovementFrameForDialog(baseScope as any, null)).toEqual({ x: 0, y: 0, width: 240, height: 160 });
+  test("没有 target 时按「无端子」处理", () => {
+    expect(stateIconDrawingMovementFrameForDialog(baseScope as any, null)).toEqual(NO_TERMINALS);
   });
 
-  test("scope 缺失时不启用框（即使端子数大于 0）", () => {
-    expect(stateIconDrawingMovementFrameForDialog(baseScope as any, { target: {} })).toEqual({ x: 0, y: 0, width: 240, height: 160 });
+  test("scope 缺失时不启用内缩框（即使端子数大于 0）", () => {
+    expect(stateIconDrawingMovementFrameForDialog(baseScope as any, { target: {} })).toEqual(NO_TERMINALS);
   });
 
-  test("端子数为 0 时不启用框", () => {
-    const scope = { ...baseScope, definitionVisualDraft: { terminalCount: 0 } };
+  test("端子数为 0 且没有端子类型时不启用内缩框", () => {
+    const scope = { ...baseScope, definitionVisualDraft: { terminalCount: 0 }, definitionVisualTerminalTypes: [] };
 
-    expect(stateIconDrawingMovementFrameForDialog(scope as any, { target: { scope: "definition" } })).toEqual({ x: 0, y: 0, width: 240, 160 } as any);
+    expect(stateIconDrawingMovementFrameForDialog(scope as any, { target: { scope: "definition" } })).toEqual(NO_TERMINALS);
+  });
+
+  test("terminalCount 为 0 是假值，会回落到端子类型数组长度", () => {
+    const scope = { ...baseScope, definitionVisualDraft: { terminalCount: 0 }, definitionVisualTerminalTypes: ["a", "b"] };
+
+    expect(stateIconDrawingMovementFrameForDialog(scope as any, { target: { scope: "definition" } })).toEqual(WITH_TERMINALS);
   });
 
   test("草稿缺 terminalCount 时回落到端子类型数组长度", () => {
     const scope = { ...baseScope, definitionVisualDraft: {} };
 
-    expect(stateIconDrawingMovementFrameForDialog(scope as any, { target: { scope: "definition" } })).toHaveProperty("width", 240);
+    expect(stateIconDrawingMovementFrameForDialog(scope as any, { target: { scope: "definition" } })).toEqual(WITH_TERMINALS);
+  });
+
+  test("terminalCount 为负时按 0 处理", () => {
+    const scope = { ...baseScope, definitionVisualDraft: { terminalCount: -5 }, definitionVisualTerminalTypes: [] };
+
+    expect(stateIconDrawingMovementFrameForDialog(scope as any, { target: { scope: "definition" } })).toEqual(NO_TERMINALS);
+  });
+
+  test("非零 terminalCount 优先于端子类型数组长度", () => {
+    const scope = { ...baseScope, definitionVisualDraft: { terminalCount: 1 }, definitionVisualTerminalTypes: ["a", "b", "c"] };
+
+    expect(stateIconDrawingMovementFrameForDialog(scope as any, { target: { scope: "definition" } })).toEqual(WITH_TERMINALS);
   });
 });
 
 describe("stateIconDrawingMovementVisibleFrames", () => {
   test("两个来源各取各的", () => {
-    const scope = {
-      stateIconDrawingImageVisibleFrames: { i1: { x: 0, y: 0, width: 10, height: 10 } },
-      stateIconDrawingSvgVisibleFrames: { s1: { x: 0, y: 0, width: 20, height: 20 } }
-    };
+    const image = { i1: { x: 0, y: 0, width: 10, height: 10 } };
+    const svg = { s1: { x: 0, y: 0, width: 20, height: 20 } };
 
-    expect(stateIconDrawingMovementVisibleFrames(scope as any)).toEqual(scope);
+    expect(
+      stateIconDrawingMovementVisibleFrames({
+        stateIconDrawingImageVisibleFrames: image,
+        stateIconDrawingSvgVisibleFrames: svg
+      } as any)
+    ).toEqual({ image, svg });
   });
 
   test("缺省时给空对象而不是 undefined", () => {
@@ -79,7 +101,7 @@ describe("可见框缺失时的兜底（经由位移收敛观察）", () => {
   test("图片元素带裁剪参数时键不同，命中另一份可见框", () => {
     const image = { id: "e1", kind: "image", x: 100, y: 100, width: 20, height: 20, imageHref: "a.png", cropX: 5 };
     const key = "e1:a.png:cover:1:5:0";
-    const visibleFrames = { image: { [key]: { x: 0, y: 0, width: 100, basisWidth: 100, basisHeight: 100 } } };
+    const visibleFrames = { image: { [key]: { x: 0, y: 0, width: 100, height: 100, basisWidth: 100, basisHeight: 100 } } };
 
     // 命中缓存后选区变成 [100,200] → 最多右移 40
     const result = clampStateIconDrawingMovementDelta([image], pt(999, 0), frame(0, 0, 240, 160), visibleFrames);
