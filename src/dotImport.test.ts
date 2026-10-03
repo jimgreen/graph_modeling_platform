@@ -87,6 +87,34 @@ describe("parseDot", () => {
     expect(g).toEqual({ stationName: "", stationId: "", nodes: [], edges: [] });
   });
 
+  // .dot 由用户从 Graphviz 外部导出，可能手工改过。NODE_RE 的 pos 是 ([^"]+)，
+  // 不要求逗号 —— 单值 pos 会让 split 只得一段，py 为 undefined，
+  // 原实现 py.replace 直接 TypeError，整次导入崩掉。
+  it("单值 pos（缺 y）跳过该节点，不崩、其余节点照常", () => {
+    const g = parseDot(`digraph G {
+  n0 [label="A", shape=rect, fillcolor=yellow, pos="100,300!"];
+  n1 [label="B", shape=rect, fillcolor=yellow, pos="615.0"];
+  n2 [label="C", shape=rect, fillcolor=yellow, pos="100,200!"];
+}`);
+    expect(g.nodes.map((n) => n.id)).toEqual(["n0", "n2"]);
+  });
+
+  it("非数值坐标跳过该节点（parseFloat 出 NaN）", () => {
+    const g = parseDot(`digraph G {
+  n0 [label="A", shape=rect, fillcolor=yellow, pos="abc,def"];
+  n1 [label="B", shape=rect, fillcolor=yellow, pos="100,200!"];
+}`);
+    expect(g.nodes.map((n) => n.id)).toEqual(["n1"]);
+  });
+
+  it("缺 x（pos 以逗号开头）同样跳过", () => {
+    const g = parseDot(`digraph G {
+  n0 [label="A", shape=rect, fillcolor=yellow, pos=",300"];
+  n1 [label="B", shape=rect, fillcolor=yellow, pos="100,200!"];
+}`);
+    expect(g.nodes.map((n) => n.id)).toEqual(["n1"]);
+  });
+
   it("无 digraph/无 Station 的文本返回空 graph（不抛错）", () => {
     const g = parseDot("some random text\nnot a dot file\n");
     expect(g.stationName).toBe("");
