@@ -115,6 +115,45 @@ describe(apiPath("/v1/control/device/add"), () => {
     expect(json.error.code).toBe("bad-request");
   });
 
+  // Number("abc") 是 NaN，原实现无 isFinite 校验就下发，前端把 NaN 写进节点坐标
+  // → 画布上节点消失、保存后文件带 NaN。转换不成即 400。
+  test("x 非数值 → 400 bad-request（不下发指令）", async () => {
+    let dispatched = false;
+    const ws = await connectCommandResponder("c1", () => {
+      dispatched = true;
+      return { ok: true, data: { id: "n1" } };
+    });
+    const { status, json } = await postV1(apiPath("/v1/control/device/add"), { kind: "busbar", x: "abc" });
+    expect(status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+    expect(dispatched).toBe(false);
+    ws.close();
+  });
+
+  test("y 非数值 → 400 bad-request（不下发指令）", async () => {
+    let dispatched = false;
+    const ws = await connectCommandResponder("c1", () => {
+      dispatched = true;
+      return { ok: true, data: { id: "n1" } };
+    });
+    const { status, json } = await postV1(apiPath("/v1/control/device/add"), { kind: "busbar", y: "abc" });
+    expect(status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+    expect(dispatched).toBe(false);
+    ws.close();
+  });
+
+  test("可转的字符串坐标仍放行（Number 语义不变）", async () => {
+    const ws = await connectCommandResponder("c1", (_name, params) => {
+      expect(params).toMatchObject({ kind: "busbar", x: 100, y: 200 });
+      return { ok: true, data: { id: "n1" } };
+    });
+    const { status, json } = await postV1(apiPath("/v1/control/device/add"), { kind: "busbar", x: "100", y: "200" });
+    expect(status).toBe(200);
+    expect(json.data.id).toBe("n1");
+    ws.close();
+  });
+
   test("非法 JSON body → 400 bad-request", async () => {
     const res = await fetch(`${baseUrl}${apiPath("/v1/control/device/add")}`, {
       method: "POST",
