@@ -2161,6 +2161,11 @@ export function getTerminalPoint(node: ModelNode, terminalId?: string): Point {
     }
   }
   const terminal = getTerminal(node, terminalId);
+  // 无端子节点（terminals 空且非母线类，getTerminal 返 undefined）：连到设备中心。
+  // 走下面的端子锚点会解引用 undefined 抛 TypeError，整条布线崩掉。
+  if (!terminal) {
+    return { x: Math.round(node.position.x), y: Math.round(node.position.y) };
+  }
   const width = node.size.width * getNodeScaleX(node);
   const height = node.size.height * getNodeScaleY(node);
   const local = {
@@ -3243,6 +3248,10 @@ export function getElementFocusPoint(
 
 export function getTerminalNormal(node: ModelNode, terminalId?: string): Point {
   const terminal = getTerminal(node, terminalId);
+  // 无端子节点：没有锚点就没有法线方向，退回「向上」，取锚点会直接抛 TypeError。
+  if (!terminal) {
+    return { x: 0, y: -1 };
+  }
   const scaledAnchor = {
     x: terminal.anchor.x * (Math.sign(getNodeScaleX(node)) || 1),
     y: terminal.anchor.y * (Math.sign(getNodeScaleY(node)) || 1)
@@ -3312,7 +3321,17 @@ export function canConnectTerminals(
   if (source.id === target.id) {
     return false;
   }
-  return getTerminal(source, sourceTerminalId).type === getTerminal(target, targetTerminalId).type;
+  const sourceTerminal = getTerminal(source, sourceTerminalId);
+  const targetTerminal = getTerminal(target, targetTerminalId);
+  // 两端都无端子：都是「连到设备本体」，判为可连。
+  // 只有一端无端子：类型无从比较（取 .type 会抛），判为不可连。
+  if (!sourceTerminal && !targetTerminal) {
+    return true;
+  }
+  if (!sourceTerminal || !targetTerminal) {
+    return false;
+  }
+  return sourceTerminal.type === targetTerminal.type;
 }
 
 type ConnectionEndpointRef = {
