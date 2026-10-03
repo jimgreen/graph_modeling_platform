@@ -3,14 +3,13 @@ import { createImageServer } from "./server.mjs";
 import { backendPort, frontendPort, host as configHost } from "./config.mjs";
 
 // 解析 --host <value>，CLI > env/config
-const parseHost = () => {
-  const args = process.argv.slice(2);
-  const idx = args.findIndex(a => a === "--host" || a.startsWith("--host="));
+export function parseHost(argv = process.argv.slice(2)) {
+  const idx = argv.findIndex(a => a === "--host" || a.startsWith("--host="));
   if (idx === -1) return configHost;
-  const arg = args[idx];
+  const arg = argv[idx];
   if (arg.includes("=")) return arg.split("=")[1];
-  return args[idx + 1] ?? configHost;
-};
+  return argv[idx + 1] ?? configHost;
+}
 
 const host = parseHost();
 const imagePort = backendPort;

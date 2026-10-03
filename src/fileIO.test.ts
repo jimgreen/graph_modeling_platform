@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { openExportedFile, saveBlobFile, saveLazyTextFile, saveTextFile, writeTextFileToDirectory } from "./fileIO";
+import { openExportedFile, saveBlobFile, saveLazyBlobFile, saveLazyTextFile, saveTextFile, writeTextFileToDirectory } from "./fileIO";
 import { encodeGbk } from "./encoding/gbk";
 
 describe("text file output", () => {
@@ -281,6 +281,104 @@ describe("text file output", () => {
     expect(write.mock.calls[0]?.[0]).not.toBeInstanceOf(Blob);
     expect(close).toHaveBeenCalledOnce();
   });
+
+  test("writes the loaded blob unchanged through the native save picker", async () => {
+    const blob = new Blob(["zip content"], { type: "application/zip" });
+    const write = vi.fn(async (_data: Blob | string) => undefined);
+    const close = vi.fn(async () => undefined);
+    const showSaveFilePicker = vi.fn(async () => ({
+      createWritable: async () => ({ write, close })
+    }));
+    const loadBlob = vi.fn(async () => blob);
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("window", { showSaveFilePicker });
+
+    await expect(saveLazyBlobFile({
+      filename: "space.zip",
+      loadBlob,
+      mime: "application/zip",
+      description: "空间压缩包",
+      extensions: [".zip"],
+      pickerId: "space-export",
+      startIn: "downloads"
+    })).resolves.toBe(true);
+
+    expect(loadBlob).toHaveBeenCalledOnce();
+    expect(showSaveFilePicker).toHaveBeenCalledWith(expect.objectContaining({
+      id: "space-export",
+      suggestedName: "space.zip",
+      startIn: "downloads",
+      types: [{ description: "空间压缩包", accept: { "application/zip": [".zip"] } }]
+    }));
+    const written = write.mock.calls[0]?.[0];
+    expect(written).toBe(blob);
+    expect((written as Blob).type).toBe("application/zip");
+    await expect((written as Blob).text()).resolves.toBe("zip content");
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  test("downloads the loaded blob with the requested filename and revokes its URL after clicking", async () => {
+    const blob = new Blob(["binary content"], { type: "application/octet-stream" });
+    const order: string[] = [];
+    const click = vi.fn(() => order.push("click"));
+    const link = { href: "", download: "", click };
+    const createObjectURL = vi.fn((value: Blob) => {
+      expect(value).toBe(blob);
+      order.push("create");
+      return "blob:lazy-download";
+    });
+    const revokeObjectURL = vi.fn((url: string) => {
+      expect(url).toBe("blob:lazy-download");
+      order.push("revoke");
+    });
+    const loadBlob = vi.fn(async () => blob);
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("document", { createElement: vi.fn(() => link) });
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+
+    await expect(saveLazyBlobFile({
+      filename: "payload.bin",
+      loadBlob,
+      mime: "application/octet-stream",
+      description: "二进制文件",
+      extensions: [".bin"]
+    })).resolves.toBe(true);
+
+    expect(loadBlob).toHaveBeenCalledOnce();
+    expect(link.href).toBe("blob:lazy-download");
+    expect(link.download).toBe("payload.bin");
+    expect(order).toEqual(["create", "click", "revoke"]);
+    expect(revokeObjectURL).toHaveBeenCalledOnce();
+  });
+
+  test("falls back to browser download when opening the save picker fails", async () => {
+    const showGlobalMessage = vi.fn();
+    const click = vi.fn();
+    const loadBlob = vi.fn(async () => new Blob(["fallback"], { type: "application/octet-stream" }));
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    vi.stubGlobal("window", {
+      showSaveFilePicker: vi.fn(async () => {
+        throw new Error("NotAllowedError");
+      })
+    });
+    vi.stubGlobal("document", { createElement: () => ({ click }) });
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:fallback"), revokeObjectURL });
+
+    await expect(saveLazyBlobFile({
+      filename: "fallback.bin",
+      loadBlob,
+      mime: "application/octet-stream",
+      description: "二进制文件",
+      extensions: [".bin"]
+    })).resolves.toBe(true);
+
+    expect(showGlobalMessage).toHaveBeenCalledWith("打开保存窗口失败，已改为浏览器下载。");
+    expect(loadBlob).toHaveBeenCalledOnce();
+    expect(click).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:fallback");
+  });
 });
 
 describe("导出文件查看凭据（viewToken）", () => {
@@ -431,5 +529,84 @@ describe("导出文件查看凭据（viewToken）", () => {
       .rejects.toThrow("文件已不存在：C:\\导出\\model.e");
     await expect(openExportedFile({ token: "", filename: "model.e", path: "" }))
       .rejects.toThrow("缺少导出文件令牌。");
+  });
+});
+
+// ── 保存窗口打开失败 → 浏览器下载兜底（此前 0 覆盖）───────────────────────────
+//
+// picker 抛错有两条完全不同的出路：
+//   - DOMException("AbortError") = 用户自己取消了 ⇒ 返回 false、不提示、不下载；
+//   - 其它错误（权限 / 环境不支持 / 弹窗异常）⇒ 提示 + 改走浏览器下载 + 返回 true。
+// 混淆这两者会让「用户点了取消」也弹出一句「已改为浏览器下载」并真的下载一次。
+
+describe("保存窗口打开失败的兜底分流", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const pickerOptions = {
+    filename: "model.e",
+    mime: "text/plain",
+    description: "E model",
+    extensions: [".e"]
+  };
+
+  /** node 环境补的最小下载桩：建 <a> 点一下 + createObjectURL。 */
+  function stubBrowserDownload() {
+    const click = vi.fn();
+    vi.stubGlobal("document", { createElement: () => ({ click }) });
+    vi.stubGlobal("URL", { createObjectURL: () => "blob:stub", revokeObjectURL: () => undefined });
+    return click;
+  }
+
+  test("★ picker 抛普通错误 → 提示改用浏览器下载并返回 true", async () => {
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    vi.stubGlobal("window", {
+      showSaveFilePicker: vi.fn(async () => {
+        throw new Error("NotAllowedError");
+      })
+    });
+    const click = stubBrowserDownload();
+
+    const saved = await saveTextFile({ ...pickerOptions, text: "<Model/>" });
+
+    expect(saved).toBe(true);
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("浏览器下载"));
+    expect(click).toHaveBeenCalled();
+  });
+
+  test("★ AbortError（用户取消）→ 返回 false，既不提示也不下载", async () => {
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    vi.stubGlobal("window", {
+      showSaveFilePicker: vi.fn(async () => {
+        throw new DOMException("cancelled", "AbortError");
+      })
+    });
+    const click = stubBrowserDownload();
+
+    const saved = await saveTextFile({ ...pickerOptions, text: "<Model/>" });
+
+    expect(saved).toBe(false);
+    expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(click).not.toHaveBeenCalled();
+  });
+
+  test("非 DOMException 形态的取消信号（Error 带 AbortError 名字）不被当取消", async () => {
+    // isPickerAbort 判据是 `instanceof DOMException && name === "AbortError"`；
+    // 构造一个同名的普通 Error 会被判成真错误 ⇒ 走下载兜底。
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("window", {
+      showSaveFilePicker: vi.fn(async () => {
+        throw new Error("AbortError");
+      })
+    });
+    const click = stubBrowserDownload();
+
+    const saved = await saveTextFile({ ...pickerOptions, text: "<Model/>" });
+
+    expect(saved).toBe(true);
+    expect(click).toHaveBeenCalled();
   });
 });

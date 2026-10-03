@@ -9,6 +9,7 @@ import { readPredefinedTemplateBase64, PREDEFINED_E_DEVICE_TEMPLATES } from "./e
 import { sendV1Error, sendV1PayloadTooLarge } from "./v1Response.mjs";
 import { accessControlOriginOnly } from "./cors.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
+import { readJsonBody as readJsonBodyWithLimit } from "./readJsonBody.mjs";
 
 const { buildEFileExport } = await import("../src/model-eexport.ts");
 const {
@@ -100,30 +101,9 @@ export async function buildEFileForSavedModel({ parts, name, templateName, templ
 const E_FILE_BODY_LIMIT = 2 * 1024 * 1024;
 
 // POST 端点通用的 JSON body 读取（含 2MB 上限）：/e-file 与 /send 共用。
-//
-// 超限时**读完整个流但不再累积 chunk**：提前中断会让 Node 认为 body 未读完，
-// 在响应写出前重置连接，客户端只见 ECONNRESET 而非 413（详见 server.mjs 的
-// PayloadTooLargeError 注释）。上限的意义是「不把超大内容留在内存」。
-export async function readJsonBody(request) {
-  const chunks = [];
-  let total = 0;
-  let oversize = false;
-  for await (const chunk of request) {
-    total += chunk.length;
-    if (total > E_FILE_BODY_LIMIT) {
-      oversize = true;
-      continue;
-    }
-    chunks.push(chunk);
-  }
-  if (oversize) {
-    const error = new Error("请求体超过 2MB 上限。");
-    error.code = "payload-too-large";
-    throw error;
-  }
-  const body = Buffer.concat(chunks).toString("utf-8");
-  return body ? JSON.parse(body) : {};
-}
+// 实现单源在 server/readJsonBody.mjs（原先 control/runtime/e-file 各有一份）。
+export const readJsonBody = (request) =>
+  readJsonBodyWithLimit(request, { limitBytes: E_FILE_BODY_LIMIT, limitLabel: "2MB" });
 
 // 未导出设备告警走响应头侧信道（生成器 file.warnings 单源产出，适配层只透传）：
 // 百分比编码 JSON 保证 ASCII 安全；无告警则不发该头。

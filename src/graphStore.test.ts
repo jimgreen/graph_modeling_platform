@@ -6,12 +6,16 @@
 import { describe, expect, it } from "vitest";
 import {
   createGraphStore,
+  graphStoreApplyPatch,
   graphStoreEdges,
   graphStoreNodes,
   graphStorePatchEdges,
   graphStorePatchEdgesFromArray,
+  graphStorePatchGraph,
+  graphStorePatchGraphFromArrays,
   graphStorePatchNodes,
   graphStorePatchNodesFromArray,
+  graphStoreSetGraph,
   graphStoreSetNodes,
   overlayGraphStoreNodes
 } from "./graphStore";
@@ -503,5 +507,90 @@ describe("graphStore / 访问器返回同一引用", () => {
     expect(before).toHaveLength(1);
     expect(after).toHaveLength(2);
     expect(after).not.toBe(before);
+  });
+});
+
+// ─── 组合更新与补丁分支 ────────────────────────────────────
+
+describe("graphStore / 组合更新与补丁", () => {
+  it("setGraph 同时替换节点与边，并保持输入数组不可共享", () => {
+    const store = storeOf([makeNode("a")], [makeEdge("e1", "a", "a")]);
+    const nodes = [makeNode("b")];
+    const edges = [makeEdge("e2", "b", "b")];
+    const patched = graphStoreSetGraph(store, nodes, edges);
+
+    expect(patched).not.toBe(store);
+    expect(patched.nodes).toEqual(nodes);
+    expect(patched.edges).toEqual(edges);
+    expect(patched.nodes).not.toBe(nodes);
+    expect(patched.edges).not.toBe(edges);
+    expect(store.nodes).toEqual([expect.objectContaining({ id: "a" })]);
+    expect(store.edges).toEqual([expect.objectContaining({ id: "e1" })]);
+  });
+
+  it("applyPatch 空补丁返回原引用，节点补丁不共享旧数组", () => {
+    const node = makeNode("a");
+    const store = storeOf([node], [makeEdge("e1", "a", "a")]);
+    expect(graphStoreApplyPatch(store, {})).toBe(store);
+
+    const next = graphStoreApplyPatch(store, { nodeUpdates: [makeNode("a", { name: "A2" })] });
+    expect(next).not.toBe(store);
+    expect(next.nodes).not.toBe(store.nodes);
+    expect(store.nodes[0]).toBe(node);
+    expect(next.nodes[0]!.name).toBe("A2");
+    expect(next.edges).toBe(store.edges);
+  });
+
+  it("applyPatch 对已有边走增量更新，对删除和新增边走整表重建", () => {
+    const store = storeOf([makeNode("a"), makeNode("b")], [makeEdge("e1", "a", "b")]);
+    const updated = makeEdge("e1", "a", "b", { manualPoints: [{ x: 2, y: 3 }] });
+    const patched = graphStoreApplyPatch(store, { edgeUpserts: [updated] });
+    expect(patched).not.toBe(store);
+    expect(patched.edgeMap.get("e1")).toBe(updated);
+    expect(patched.edgeOrder).toEqual(["e1"]);
+
+    const deleted = graphStoreApplyPatch(patched, { edgeDeleteIds: ["e1"] });
+    expect(deleted.edgeOrder).toEqual([]);
+    expect(deleted.edges).not.toBe(patched.edges);
+
+    const added = graphStoreApplyPatch(deleted, { edgeUpserts: [makeEdge("e2", "a", "b")] });
+    expect(added.edgeOrder).toEqual(["e2"]);
+    expect(added.edgeMap.get("e2")!.id).toBe("e2");
+  });
+
+  it("applyPatch 删除未知边仍保持删除语义，新增 upsert 按输入顺序追加", () => {
+    const store = storeOf([makeNode("a"), makeNode("b")], [makeEdge("e1", "a", "b")]);
+    const added = makeEdge("e2", "a", "b");
+    const next = graphStoreApplyPatch(store, { edgeDeleteIds: ["ghost"], edgeUpserts: [added] });
+    expect(next.edgeOrder).toEqual(["e1", "e2"]);
+    expect(next.edges[0]).toBe(store.edges[0]);
+    expect(next.edges[1]).toBe(added);
+    expect(next.edges).not.toBe(store.edges);
+  });
+
+  it("patchGraph 两侧都走增量内核，空输入保留原引用", () => {
+    const store = storeOf([makeNode("a")], [makeEdge("e1", "a", "a")]);
+    expect(graphStorePatchGraph(store, [], [])).toBe(store);
+    const nextNode = makeNode("a", { position: { x: 11, y: 12 } });
+    const nextEdge = makeEdge("e1", "a", "a", { manualPoints: [{ x: 1, y: 1 }] });
+    const patched = graphStorePatchGraph(store, [nextNode], [nextEdge]);
+    expect(patched).not.toBe(store);
+    expect(patched.nodes[0]).toBe(nextNode);
+    expect(patched.edges[0]).toBe(nextEdge);
+    expect(store.nodes[0]).not.toBe(nextNode);
+    expect(store.edges[0]).not.toBe(nextEdge);
+  });
+
+  it("patchGraphFromArrays 按 id 列表更新，并在数组顺序变化时退回整表", () => {
+    const store = storeOf([makeNode("a"), makeNode("b")], [makeEdge("e1", "a", "b"), makeEdge("e2", "b", "a")]);
+    const nodes = [makeNode("a", { name: "A2" }), makeNode("b")];
+    const edges = [makeEdge("e1", "a", "b", { manualPoints: [{ x: 4, y: 5 }] }), makeEdge("e2", "b", "a")];
+    const patched = graphStorePatchGraphFromArrays(store, nodes, edges, ["a"], ["e1"]);
+    expect(patched.nodes[0]).toBe(nodes[0]);
+    expect(patched.edges[0]).toBe(edges[0]);
+
+    const reordered = graphStorePatchGraphFromArrays(patched, [nodes[1], nodes[0]], edges, ["a"], ["e1"]);
+    expect(reordered.nodeOrder).toEqual(["b", "a"]);
+    expect(reordered.nodeIndexById.get("a")).toBe(1);
   });
 });

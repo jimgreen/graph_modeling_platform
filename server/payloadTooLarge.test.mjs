@@ -78,9 +78,9 @@ describe("请求体超限", () => {
     const cases = [
       { file: "./server.mjs", fn: "function readBody(" },
       { file: "./server.mjs", fn: "function readRawBody(" },
-      { file: "./apiV1Runtime.mjs", fn: "async function readJsonBody(" },
-      { file: "./apiV1Control.mjs", fn: "async function readJsonBody(" },
-      { file: "./eFileExport.mjs", fn: "export async function readJsonBody(" },
+      // v1 三域（control/runtime/e-file）的 readJsonBody 已合并到单源模块，
+      // 「读满整个流」这条纪律现在只需在那一处守住。
+      { file: "./readJsonBody.mjs", fn: "export async function readJsonBody(" },
       { file: "./apiV1Receive.mjs", fn: "async function readRawBody(" }
     ];
     for (const { file, fn } of cases) {

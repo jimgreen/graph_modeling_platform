@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import * as shared from "./device-definition-shared";
 import * as legacy from "../customDeviceUtils";
 import { DEVICE_LIBRARY, baseDeviceKind, templateDerivedComponentLibraryInfo } from "../model";
+import { DEVICE_DEFINITION_VISUAL_PARAM_KEYS } from "../deviceVisualParams";
 
 describe("src/export/device-definition-shared", () => {
   test("导出迁移后的关键函数", () => {
@@ -196,5 +197,272 @@ describe("SHARED_DEFINITION_METADATA_PARAM_NAMES", () => {
     for (const name of shared.SHARED_DEFINITION_METADATA_PARAM_NAMES) {
       expect(shared.isConcreteDeviceDefinitionParamName(name)).toBe(true);
     }
+  });
+});
+
+// 下面这组是「元件定义共享层」的判据函数，此前只在迁移测试里被断言存在（typeof === "function"），
+// 从未被调用过。判错的后果都是静默的：串改 / 漏改 / 串到不该串的模板上，全程不报错。
+
+describe("componentClassForConcreteTemplate", () => {
+  test("显式 componentClass 优先于一切推导", () => {
+    const template = { ...DEVICE_LIBRARY[0], componentClass: "MyExplicitClass" } as any;
+    expect(shared.componentClassForConcreteTemplate(template)).toBe("MyExplicitClass");
+  });
+
+  test("空白 componentClass 不算数（trim 后为空即走推导）", () => {
+    const template = { ...DEVICE_LIBRARY[0], componentClass: "   " } as any;
+    expect(shared.componentClassForConcreteTemplate(template))
+      .toBe(shared.componentClassForConcreteTemplate({ ...template, componentClass: undefined }));
+  });
+
+  test("派生件取 derivedComponentLibrary，而非基类的组件库", () => {
+    const derived = DEVICE_LIBRARY.find((template) => templateDerivedComponentLibraryInfo(template) !== null)!;
+    const info = templateDerivedComponentLibraryInfo(derived)!;
+    expect(shared.componentClassForConcreteTemplate(derived as any)).toBe(info.derivedComponentLibrary);
+  });
+
+  test("非派生件回落到组件库名（与 resolveTemplateComponentLibrary 同源）", () => {
+    const plain = DEVICE_LIBRARY.find((template) => !template.custom && !templateDerivedComponentLibraryInfo(template))!;
+    expect(shared.componentClassForConcreteTemplate(plain as any))
+      .toBe(shared.resolveTemplateComponentLibrary(plain));
+  });
+
+  test("全部内置模板都产出非空类名（空串会让后续按键分组全落到同一桶）", () => {
+    for (const template of DEVICE_LIBRARY) {
+      expect(shared.componentClassForConcreteTemplate(template as any).length, template.kind).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("normalizeCategoryLibraryName", () => {
+  test("四个别名归一到标准名，其余原样返回", () => {
+    expect(shared.normalizeCategoryLibraryName("交流系统")).toBe("交流设备");
+    expect(shared.normalizeCategoryLibraryName("直流系统")).toBe("直流设备");
+    expect(shared.normalizeCategoryLibraryName("变流设备")).toBe("直流设备");
+    // 不在别名表里则原样（含空串，不做兜底）
+    expect(shared.normalizeCategoryLibraryName("氢能设备")).toBe("氢能设备");
+    expect(shared.normalizeCategoryLibraryName("")).toBe("");
+  });
+
+  test("不做 trim / 不改大小写：这是精确匹配而非模糊归一", () => {
+    expect(shared.normalizeCategoryLibraryName(" 交流系统 ")).toBe(" 交流系统 ");
+  });
+});
+
+describe("normalizeComponentLibraryName", () => {
+  test("只 trim，其余不动", () => {
+    expect(shared.normalizeComponentLibraryName("  ACLoad  ")).toBe("ACLoad");
+    expect(shared.normalizeComponentLibraryName("   ")).toBe("");
+    expect(shared.normalizeComponentLibraryName("")).toBe("");
+  });
+});
+
+describe("isConcreteDeviceDefinitionParamName", () => {
+  test("视觉参数逐个被认作「元件定义参数」", () => {
+    // 这批键是 DEVICE_DEFINITION_VISUAL_PARAM_KEYS 全集；任一漏登记，
+    // 该键就会留在共享 params 里、随改写串到同组其它模板上。
+    for (const key of DEVICE_DEFINITION_VISUAL_PARAM_KEYS) {
+      expect(shared.isConcreteDeviceDefinitionParamName(key), key).toBe(true);
+    }
+    expect(DEVICE_DEFINITION_VISUAL_PARAM_KEYS.size, "视觉参数集合不该是空的").toBeGreaterThan(20);
+  });
+
+  test("button 前缀的参数被前缀匹配认作元件定义参数", () => {
+    expect(shared.isConcreteDeviceDefinitionParamName("buttonLayerId")).toBe(true);
+    expect(shared.isConcreteDeviceDefinitionParamName("button")).toBe(true);
+    expect(shared.isConcreteDeviceDefinitionParamName("buttonXYZ")).toBe(true);
+  });
+
+  test("相似但不同前缀的键不被前缀命中（button 与 buttons 不同）", () => {
+    // 前缀表是 ["button"]，"buttons..." 也会命中 —— 这不是 bug 也不是「精确前缀」，
+    // 记下来是为了让日后有人收紧判据时知道会影响到哪些键。
+    expect(shared.isConcreteDeviceDefinitionParamName("buttonsId")).toBe(true);
+    expect(shared.isConcreteDeviceDefinitionParamName("ButtonLayerId")).toBe(false);
+    expect(shared.isConcreteDeviceDefinitionParamName("mybutton")).toBe(false);
+  });
+
+  test("普通业务参数（rdf_id / u / i_p）不算元件定义参数", () => {
+    for (const key of ["rdf_id", "u", "i_p", "rated_voltage", "idx", "name"]) {
+      expect(shared.isConcreteDeviceDefinitionParamName(key), key).toBe(false);
+    }
+  });
+
+  test("实例图形参数（layerId / rotation / scaleX）不算 —— 它们属于实例而非定义", () => {
+    // 这是两条易混的集合：DEVICE_INSTANCE_GRAPH_PARAM_KEYS 刻意不在定义侧。
+    for (const key of ["layerId", "rotation", "scaleX", "scaleY"]) {
+      expect(shared.isConcreteDeviceDefinitionParamName(key), key).toBe(false);
+    }
+  });
+});
+
+describe("concreteDeviceDefinitionParams", () => {
+  test("只保留元件定义参数，业务参数被滤掉", () => {
+    const out = shared.concreteDeviceDefinitionParams({
+      icon: "i.svg",
+      layerId: "L1",
+      rdf_id: "R1",
+      u: "220"
+    } as any);
+    expect(Object.keys(out)).toEqual(["icon"]);
+  });
+
+  test("undefined 入参返回空对象（不抛错）", () => {
+    expect(shared.concreteDeviceDefinitionParams(undefined)).toEqual({});
+    expect(shared.concreteDeviceDefinitionParams({} as any)).toEqual({});
+  });
+
+  test("不修改原对象", () => {
+    const source = { icon: "i", rdf_id: "R" };
+    shared.concreteDeviceDefinitionParams(source as any);
+    expect(Object.keys(source)).toEqual(["icon", "rdf_id"]);
+  });
+});
+
+describe("sharedDefinitionParams", () => {
+  test("保留业务参数、滤掉元件定义参数（与 concreteDeviceDefinitionParams 互为补集）", () => {
+    const out = shared.sharedDefinitionParams({
+      params: { icon: "i", rdf_id: "R", u: "220" }
+    } as any);
+    expect(Object.keys(out).sort()).toEqual(["rdf_id", "u"]);
+  });
+
+  test("共享元参数是例外：即便被定义侧滤掉也留下", () => {
+    const out = shared.sharedDefinitionParams({
+      params: { component_type: "ACLoad", icon: "i", rdf_id: "R" }
+    } as any);
+    expect(Object.keys(out).sort()).toEqual(["component_type", "rdf_id"]);
+  });
+
+  test("无 params / 无 override 时返回空对象", () => {
+    expect(shared.sharedDefinitionParams(undefined)).toEqual({});
+    expect(shared.sharedDefinitionParams({} as any)).toEqual({});
+  });
+});
+
+describe("overrideTimestamp", () => {
+  test("非法时间戳归 0（排序时不炸）", () => {
+    expect(shared.overrideTimestamp(undefined)).toBe(0);
+    expect(shared.overrideTimestamp({} as any)).toBe(0);
+    expect(shared.overrideTimestamp({ updatedAt: "不是时间" } as any)).toBe(0);
+    expect(shared.overrideTimestamp({ updatedAt: "" } as any)).toBe(0);
+  });
+
+  test("合法 ISO 时间戳被解析成毫秒数", () => {
+    expect(shared.overrideTimestamp({ updatedAt: "2026-01-02T03:04:05.000Z" } as any))
+      .toBe(Date.parse("2026-01-02T03:04:05.000Z"));
+  });
+});
+
+describe("latestDefinitionSource / preferredDefinitionSource", () => {
+  // 覆盖源的真实形状要求 kind 等必填字段；这里只需要 updatedAt 参与排序，
+  // 故用 as any 构造最小对象（与同文件其余用例一致）。
+  const older = { updatedAt: "2026-01-01T00:00:00.000Z", params: { a: "1" } } as any;
+  const newer = { updatedAt: "2026-01-02T00:00:00.000Z", params: { b: "2" } } as any;
+
+  test("取时间戳最大的那个（参数顺序无关）", () => {
+    expect(shared.latestDefinitionSource(older, newer)).toBe(newer);
+    expect(shared.latestDefinitionSource(newer, older)).toBe(newer);
+  });
+
+  test("undefined 被跳过，全 undefined 返回 undefined", () => {
+    expect(shared.latestDefinitionSource(undefined, older)).toBe(older);
+    expect(shared.latestDefinitionSource(undefined, undefined)).toBeUndefined();
+    expect(shared.latestDefinitionSource()).toBeUndefined();
+  });
+
+  test("时间戳相同时取原数组里靠前的那个（比较器返回 0 ⇒ 稳定排序保持原序）", () => {
+    // 实现是 `sort((l, r) => ts(r) - ts(l))[0]`：时间戳全相等时比较器恒返回 0，
+    // 稳定排序保持原序，故取到先传入的那个。若日后有人改成不稳定排序或加二级比较器，
+    // 本条会先红 —— 那会改变「新旧覆盖同时存在时谁生效」的行为。
+    const first = { updatedAt: "2026-01-01T00:00:00.000Z", params: { x: "1" } } as any;
+    const second = { updatedAt: "2026-01-01T00:00:00.000Z", params: { x: "2" } } as any;
+    expect(shared.latestDefinitionSource(first, second)).toBe(first);
+  });
+
+  test("时间戳无法解析时全部归 0，于是取先传入的那个（不抛错、不随机）", () => {
+    const first = { updatedAt: "不是时间", params: { x: "1" } } as any;
+    const second = { updatedAt: "", params: { x: "2" } } as any;
+    expect(shared.latestDefinitionSource(first, second)).toBe(first);
+  });
+
+  test("sharedOverride 命中 predicate 时直接胜出，不与候选比时间", () => {
+    // 共享覆盖是「显式落到 shared key 上」的，理应优先于按 kind 命中的候选
+    const sharedOld = { updatedAt: "2020-01-01T00:00:00.000Z", params: { s: "1" } };
+    expect(shared.preferredDefinitionSource(sharedOld as any, [newer as any], () => true)).toBe(sharedOld);
+  });
+
+  test("sharedOverride 未命中 predicate 时退回候选里最新的命中者", () => {
+    // sharedOverride 是旧的、且不满足判据 ⇒ 让位给候选里最新的
+    const sharedOld = { updatedAt: "2020-01-01T00:00:00.000Z", params: { s: "1" } };
+    const acceptCandidatesOnly = (source: { params?: Record<string, string> }) => source.params?.s !== "1";
+    expect(shared.preferredDefinitionSource(sharedOld as any, [older as any, newer as any], acceptCandidatesOnly)).toBe(newer);
+    // 候选全不命中时无源可用
+    expect(shared.preferredDefinitionSource(undefined, [older as any, newer as any], () => false)).toBeUndefined();
+  });
+
+  test("候选里混有不命中 predicate 的项时，先过滤再排序", () => {
+    // 未命中的项即便时间戳最新也不该被选中 —— 判据是 predicate，不是时间
+    const isKindA = (source: { params?: Record<string, string> }) => source.params?.a === "1";
+    const winner = { updatedAt: "2026-01-01T00:00:00.000Z", params: { a: "1" } } as any;
+    const loser = { updatedAt: "2026-06-01T00:00:00.000Z", params: { b: "2" } } as any;
+    expect(shared.preferredDefinitionSource(undefined, [winner, loser], isKindA)).toBe(winner);
+  });
+});
+
+describe("visualOnlyOverride", () => {
+  test("剥掉参数表与量测定义，只留视觉覆盖", () => {
+    const out = shared.visualOnlyOverride({
+      kind: "ac-load",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      params: { icon: "i", rdf_id: "R" },
+      parameterDefinitions: [{ enName: "u" }],
+      measurementDefinitions: [{ id: "m" }]
+    } as any);
+    expect(out).toBeDefined();
+    expect(out!.parameterDefinitions).toBeUndefined();
+    expect(out!.measurementDefinitions).toBeUndefined();
+    expect(out!.params).toEqual({ icon: "i" });
+    // 元字段保留（判「这份覆盖还有没有内容」要用）
+    expect(out!.kind).toBe("ac-load");
+    expect(out!.updatedAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  test("连 Intent 标记一并剥掉（否则会被当成「待删空表」）", () => {
+    const out = shared.visualOnlyOverride({
+      kind: "k",
+      parameterDefinitionsIntent: "delete-all",
+      measurementDefinitionsIntent: "delete-all"
+    } as any);
+    expect(out!.parameterDefinitionsIntent).toBeUndefined();
+    expect(out!.measurementDefinitionsIntent).toBeUndefined();
+  });
+
+  test("不改原对象", () => {
+    const source = { kind: "k", params: { icon: "i" }, parameterDefinitions: [{ enName: "u" }] } as any;
+    shared.visualOnlyOverride(source);
+    expect(source.parameterDefinitions).toHaveLength(1);
+  });
+
+  test("undefined 返回 undefined", () => {
+    expect(shared.visualOnlyOverride(undefined)).toBeUndefined();
+  });
+});
+
+describe("deviceDefinitionKeyForTemplate", () => {
+  test("全部内置模板的 key 都非空且已 trim", () => {
+    for (const template of DEVICE_LIBRARY) {
+      const key = shared.deviceDefinitionKeyForTemplate(template as any);
+      expect(key.length, template.kind).toBeGreaterThan(0);
+      expect(key, template.kind).toBe(key.trim());
+    }
+  });
+});
+
+describe("deviceDefinitionSharedKeyForTemplate", () => {
+  test("带 shared: 前缀（与 kind 覆盖的键空间不撞）", () => {
+    const key = shared.deviceDefinitionSharedKeyForTemplate(DEVICE_LIBRARY[0] as any);
+    expect(key.startsWith("shared:")).toBe(true);
+    expect(key.slice("shared:".length))
+      .toBe(shared.deviceDefinitionSharedIdentityForTemplate(DEVICE_LIBRARY[0]));
   });
 });

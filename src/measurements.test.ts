@@ -1769,3 +1769,81 @@ describe("resolveMeasurementItemBindingMetadata", () => {
     }).bindingField).toBe("u");
   });
 });
+
+// ── 量测档位 fallback 推导链（fallbackMeasurementProfileKinds 此前 0 覆盖）─────
+//
+// measurementProfileForNode 是 `directKeys（组件库名 / kind / baseKind）命中
+// ?? fallbackMeasurementProfileKinds(baseKind) 命中` 两级。既有用例的 node 一律是
+// "ac-load"，第一级就命中，第二级（890-959 整块约 70 行）从未执行过。
+//
+// fallback 按 baseKind 的**词面**推导：含 storage/load/line/bus… 且以 ac-/dc-/
+// heat-/hydrogen- 开头，就推出对应的标准档位名。
+
+describe("量测档位的 fallback 推导（directKeys 落空时）", () => {
+  /** 只改某一档的 items，其余保持默认。 */
+  const withProfileItems = (deviceKind: string, items: Array<{ measurementTypeId: string; associatedField: string }>) => ({
+    ...DEFAULT_MEASUREMENT_CONFIG,
+    deviceProfiles: DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.map((profile) =>
+      profile.deviceKind === deviceKind ? { ...profile, items } : profile
+    )
+  });
+
+  // associatedField 与 measurementTypeId 故意不同：fallback 未生效时会退回
+  // 「绑定字段 = 测量类型 id」，两者一比就能区分。
+  const storageConfig = withProfileItems("ac-storage", [{ measurementTypeId: "soc", associatedField: "bat_soc" }]);
+
+  test("★ ac-storage-controller：directKeys 全不命中，经 fallback 落到 ac-storage 档", () => {
+    const derived = node("n9", "ac-storage-controller");
+    expect(
+      resolveMeasurementItemBindingMetadata({
+        config: storageConfig,
+        node: derived,
+        item: { measurementTypeId: "soc", sourcePoint: "" } as never
+      })
+    ).toEqual({ measurementTypeId: "soc", bindingField: "bat_soc", sourcePoint: "n9.bat_soc" });
+  });
+
+  test("对照组：kind 本身就是 ac-storage 时第一级就命中，结论相同（证明不是碰巧）", () => {
+    const direct = node("n9", "ac-storage");
+    expect(
+      resolveMeasurementItemBindingMetadata({
+        config: storageConfig,
+        node: direct,
+        item: { measurementTypeId: "soc", sourcePoint: "" } as never
+      }).bindingField
+    ).toBe("bat_soc");
+  });
+
+  test("★ 词面推不出来时退回「绑定字段 = 测量类型 id」（不硬套某一档）", () => {
+    const unknown = node("n9", "ac-完全未知的设备");
+    expect(
+      resolveMeasurementItemBindingMetadata({
+        config: storageConfig,
+        node: unknown,
+        item: { measurementTypeId: "soc", sourcePoint: "" } as never
+      }).bindingField
+    ).toBe("soc");
+  });
+
+  test("dc 前缀同理：dc-storage-xxx 落到 dc-storage 档", () => {
+    const dcConfig = withProfileItems("dc-storage", [{ measurementTypeId: "soc", associatedField: "dc_soc" }]);
+    expect(
+      resolveMeasurementItemBindingMetadata({
+        config: dcConfig,
+        node: node("n10", "dc-storage-controller"),
+        item: { measurementTypeId: "soc", sourcePoint: "" } as never
+      }).bindingField
+    ).toBe("dc_soc");
+  });
+
+  test("含 line 的派生 kind 落到 ac-line 档（词面推导的另一条分支）", () => {
+    const lineConfig = withProfileItems("ac-line", [{ measurementTypeId: "activePower", associatedField: "p" }]);
+    expect(
+      resolveMeasurementItemBindingMetadata({
+        config: lineConfig,
+        node: node("n11", "ac-line-架空"),
+        item: { measurementTypeId: "activePower", sourcePoint: "" } as never
+      }).bindingField
+    ).toBe("p");
+  });
+});

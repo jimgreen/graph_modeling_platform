@@ -2970,71 +2970,92 @@ function renderPreviewHtml(manifest) {
 `;
 }
 
-await rm(outputDir, { recursive: true, force: true });
-await mkdir(outputDir, { recursive: true });
+async function generateDocerCompatibleIcons() {
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
 
-const manifest = {
-  name: "docer-free-compatible",
-  label: "稻壳免费图库兼容图标库",
-  generatedAt: sourceAudit.checkedAt,
-  sourcePolicy:
-    "未复制稻壳受权益限制的 SVG；细分设备图标优先复用本地开源、Fluent 或平台已有基础图标；稻壳接口核验记录见 source-audit.json。",
-  root: "/icon-library/docer-free-compatible",
-  categories: [],
-};
-
-for (const category of iconCategories) {
-  const categoryDir = path.join(outputDir, category.id);
-  await mkdir(categoryDir, { recursive: true });
-
-  const manifestCategory = {
-    id: category.id,
-    label: category.label,
-    description: category.description,
-    icons: [],
+  const manifest = {
+    name: "docer-free-compatible",
+    label: "稻壳免费图库兼容图标库",
+    generatedAt: sourceAudit.checkedAt,
+    sourcePolicy:
+      "未复制稻壳受权益限制的 SVG；细分设备图标优先复用本地开源、Fluent 或平台已有基础图标；稻壳接口核验记录见 source-audit.json。",
+    root: "/icon-library/docer-free-compatible",
+    categories: [],
   };
 
-  for (const icon of category.icons) {
-    const fileName = `${icon.id}.svg`;
-    const filePath = path.join(categoryDir, fileName);
-    const rendered = await renderDocerIcon(icon, category);
-    await writeFile(filePath, rendered.svg, "utf8");
-    manifestCategory.icons.push({
-      id: icon.id,
-      name: icon.name,
-      file: `${category.id}/${fileName}`,
-      color: icon.color,
-      tags: icon.tags,
-      ...rendered.manifestSource,
-    });
+  for (const category of iconCategories) {
+    const categoryDir = path.join(outputDir, category.id);
+    await mkdir(categoryDir, { recursive: true });
+
+    const manifestCategory = {
+      id: category.id,
+      label: category.label,
+      description: category.description,
+      icons: [],
+    };
+
+    for (const icon of category.icons) {
+      const fileName = `${icon.id}.svg`;
+      const filePath = path.join(categoryDir, fileName);
+      const rendered = await renderDocerIcon(icon, category);
+      await writeFile(filePath, rendered.svg, "utf8");
+      manifestCategory.icons.push({
+        id: icon.id,
+        name: icon.name,
+        file: `${category.id}/${fileName}`,
+        color: icon.color,
+        tags: icon.tags,
+        ...rendered.manifestSource,
+      });
+    }
+
+    manifest.categories.push(manifestCategory);
   }
 
-  manifest.categories.push(manifestCategory);
+  const totalIcons = manifest.categories.reduce((sum, category) => sum + category.icons.length, 0);
+  manifest.totalIcons = totalIcons;
+
+  const searchIndex = manifest.categories.flatMap((category) =>
+    category.icons.map((icon) => ({
+      id: icon.id,
+      name: icon.name,
+      file: icon.file,
+      categoryId: category.id,
+      categoryLabel: category.label,
+      sourceId: icon.sourceId || icon.source || "unknown",
+      sourceLabel: icon.sourceLabel || icon.source || "Unknown",
+      sourceName: icon.sourceName || icon.id,
+      sourcePackage: icon.sourcePackage || "",
+      license: icon.license || "",
+      keywords: [icon.name, icon.id, ...(icon.tags || []), category.id, category.label],
+    })),
+  );
+
+  await writeFile(path.join(outputDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  await writeFile(path.join(outputDir, "search-index.json"), `${JSON.stringify(searchIndex, null, 2)}\n`, "utf8");
+  await writeFile(path.join(outputDir, "source-audit.json"), `${JSON.stringify(sourceAudit, null, 2)}\n`, "utf8");
+  await writeFile(path.join(outputDir, "README.md"), renderReadme(totalIcons), "utf8");
+  await writeFile(path.join(outputDir, "index.html"), renderPreviewHtml(manifest), "utf8");
+
+  console.log(`Generated ${totalIcons} SVG icons in ${path.relative(rootDir, outputDir)}`);
 }
 
-const totalIcons = manifest.categories.reduce((sum, category) => sum + category.icons.length, 0);
-manifest.totalIcons = totalIcons;
+export {
+  cleanReusableSvgInnerContent,
+  compactDocerHas,
+  compactDocerLabel,
+  formatSvgNumber,
+  gCircle,
+  gLine,
+  gPath,
+  gRect,
+  gText,
+  parseSvgViewBox,
+  renderSvg,
+  wrapReusableSvg,
+};
 
-const searchIndex = manifest.categories.flatMap((category) =>
-  category.icons.map((icon) => ({
-    id: icon.id,
-    name: icon.name,
-    file: icon.file,
-    categoryId: category.id,
-    categoryLabel: category.label,
-    sourceId: icon.sourceId || icon.source || "unknown",
-    sourceLabel: icon.sourceLabel || icon.source || "Unknown",
-    sourceName: icon.sourceName || icon.id,
-    sourcePackage: icon.sourcePackage || "",
-    license: icon.license || "",
-    keywords: [icon.name, icon.id, ...(icon.tags || []), category.id, category.label],
-  })),
-);
-
-await writeFile(path.join(outputDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-await writeFile(path.join(outputDir, "search-index.json"), `${JSON.stringify(searchIndex, null, 2)}\n`, "utf8");
-await writeFile(path.join(outputDir, "source-audit.json"), `${JSON.stringify(sourceAudit, null, 2)}\n`, "utf8");
-await writeFile(path.join(outputDir, "README.md"), renderReadme(totalIcons), "utf8");
-await writeFile(path.join(outputDir, "index.html"), renderPreviewHtml(manifest), "utf8");
-
-console.log(`Generated ${totalIcons} SVG icons in ${path.relative(rootDir, outputDir)}`);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await generateDocerCompatibleIcons();
+}

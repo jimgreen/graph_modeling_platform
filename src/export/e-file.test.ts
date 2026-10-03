@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
 import {
   applyEDeviceDefinitionSectionsToLibraryState,
+  applyEDeviceInterfaceFieldOrder,
   applyPredefinedEDeviceTemplateToLibraryState,
-  buildEFileExportOptionsFromLibrary
+  buildEDeviceInterfaceDefinitionRows,
+  buildEFileExportOptionsFromLibrary,
+  orderEDeviceInterfaceFields
 } from "./e-file";
 import * as legacy from "../appExtracted/appDeviceDefinitionEInterface";
 
@@ -88,6 +91,30 @@ describe("src/export/e-file", () => {
     expect(result.eDeviceDefinitionTemplateFields).toEqual({});
   });
 
+  test("字段辅助函数覆盖空值、别名与未知库分支", () => {
+    const fields = [
+      { sourceName: "i_max" },
+      { sourceName: "parent" },
+      { sourceName: "dev_type" },
+      { sourceName: "custom", exportName: "" }
+    ];
+    expect(applyEDeviceInterfaceFieldOrder(fields, ["max_current", "parent", "dev_type", "max_current"])).toEqual([
+      fields[0],
+      fields[1],
+      fields[2]
+    ]);
+    expect(orderEDeviceInterfaceFields("UnknownLibrary", fields, [])).toEqual([
+      fields[1],
+      fields[2],
+      fields[0],
+      fields[3]
+    ]);
+    expect(orderEDeviceInterfaceFields("UnknownLibrary", fields, ["dev_type"]).map((field: any) => field.sourceName)).toEqual([
+      "parent",
+      "dev_type"
+    ]);
+  });
+
   // 回归：ACTransWinding（绕组表）镜像 ACTransformer 字段时，列开关必须以 <trans> 段声明为准。
   // 基类 <trfm> 段没有 tap 这类绕组专属列，兜底补丁会把它标成不导出；镜像若原样继承，
   // <trans> 段明确声明的 tap 会连带消失（列名对、整列丢失）。
@@ -131,5 +158,35 @@ describe("src/export/e-file", () => {
     const tap = winding.fields.find((field: any) => field.exportName === "tap");
     expect(tap).toBeTruthy();
     expect(tap.exportEnabled).not.toBe(false);
+  });
+
+  test("build 行时按回调、标签和派生分支归一字段", () => {
+    const base = { kind: "custom-base", label: "", categoryLibrary: "", params: { component_type: "Base" }, parameterDefinitionsComplete: true, parameterDefinitions: [{ enName: "foo", cnName: "foo", exportEnabled: true }] };
+    const derived = {
+      kind: "custom-derived", label: "", params: {
+        component_type: "Derived", derived_from_component_type: "Base", derived_component_type: "Derived", is_derived_component_library: "1"
+      }, isDerivedComponentLibrary: true, derivedFromComponentLibrary: "Base", derivedComponentLibrary: "Derived",
+      parameterDefinitionsComplete: true, parameterDefinitions: [{ enName: "foo", cnName: "foo", exportEnabled: true }, { enName: "bar", cnName: "bar", exportEnabled: true }]
+    };
+    const rows = buildEDeviceInterfaceDefinitionRows({
+      libraryTemplates: [base, derived],
+      labels: { foo: "标签" },
+      resolveDefinitionComponentLibrary: (template: any) => template.kind === "custom-base" ? "ResolvedBase" : ""
+    });
+    expect(rows.map((row) => row.componentLibrary)).toEqual(["ResolvedBase", "Base", "Derived"]);
+    expect(rows.find((row) => row.componentLibrary === "Derived")?.fields.map((field: any) => field.sourceName)).toContain("bar");
+  });
+
+  test("可选字段、原始类名、既有 override 与自定义模板清理", () => {
+    const template = { kind: "ACLoad", params: { component_type: "ACLoad" }, parameterDefinitions: [{ enName: "p", exportEnabled: true }] };
+    const result = applyEDeviceDefinitionSectionsToLibraryState({
+      sections: [{ kind: "load", componentLibrary: "ACLoad", exportEnabled: false, fields: [{ exportName: "p" }] }],
+      libraryTemplates: [template], customDeviceTemplates: [{ parameterDefinitions: [{}], measurementDefinitions: [{}] }],
+      deviceDefinitionOverrides: { "shared:ACLoad": { stateDefinitions: [{ value: "ok" }] } },
+      resolveDefinitionComponentLibrary: () => "ACLoad"
+    });
+    expect(result.eDeviceDefinitionClassExportEnabled.ACLoad).toBe(false);
+    expect(result.deviceDefinitionOverrides["shared:ACLoad"]).toBeDefined();
+    expect(result.customDeviceTemplates[0]).not.toHaveProperty("parameterDefinitions");
   });
 });

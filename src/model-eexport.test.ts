@@ -226,9 +226,12 @@ import {
   deserializeProject,
   edgeWithSavedRouteGeometry,
   buildEDeviceRecords,
+  buildEDeviceHeaderParameterRecords,
   finalizeEDevicePreviewRecords,
   eOutputSectionName,
   formatEDeviceRecordColumnValue,
+  firstNumericToken,
+  keyToLong,
   type Edge,
   type DeviceKind,
   type DeviceTemplate,
@@ -4536,6 +4539,95 @@ describe("全网 E 文件导出", () => {
     expect(singleModelFile.text).not.toContain("<District>");
   });
 
+});
+
+describe("model-eexport branch coverage", () => {
+  test("covers numeric token and key_to_long fallbacks", () => {
+    expect(firstNumericToken("  +1.5e3 MW")).toBe("+1.5e3");
+    expect(firstNumericToken("no numeric token")).toBe("");
+    expect(keyToLong("bad", 0, 1)).toBe("0");
+    expect(keyToLong("00401", 0, 1)).toBe("112871465660973057");
+  });
+
+  test("covers voltage display fallbacks for single, ambiguous, side, and rated values", () => {
+    const base = createDefaultNode("ac-breaker", { x: 0, y: 0 });
+    const singleTerminal = {
+      ...base,
+      terminals: [{ ...base.terminals[0], vbase: "" }],
+      params: { ...base.params, vbase: "", voltage_level: "35 kV" }
+    };
+    expect(terminalVoltageDisplay(singleTerminal, singleTerminal.terminals[0])).toBe("35");
+    expect(terminalVoltageDisplay(base, { ...base.terminals[0], id: "missing", vbase: "0" })).toBe("0");
+
+    const transformer = createDefaultNode("ac-three-winding-transformer", { x: 0, y: 0 });
+    transformer.params = { ...transformer.params, i_vbase: "220", k_vbase: "110", j_vbase: "10" };
+    expect(terminalVoltageDisplay(transformer, transformer.terminals[0])).toBe("220");
+    expect(terminalVoltageDisplay(transformer, transformer.terminals[1])).toBe("110");
+  });
+
+  test("covers empty and malformed interface definition input", () => {
+    expect(buildEDeviceDefinitionFileFromInterfaceDefinitions([]).text).toBe("");
+    expect(parseEDeviceDefinitionFile("<ACLoad 接口配置=\"%E0\">\n@ idx\n// 序号\n</ACLoad>")[0].fields).toEqual([
+      { exportName: "idx", cnName: "序号" }
+    ]);
+    expect(parseEDeviceDefinitionFile("<ACLoad 接口配置=\"%\">\n@ idx\n// 序号\n</ACLoad>")[0].fields).toEqual([
+      { exportName: "idx", cnName: "序号" }
+    ]);
+  });
+
+  test("covers missing parameter fallbacks and transformer aliases", () => {
+    const node = (kind: DeviceKind, params: Record<string, string>) => ({
+      ...createDefaultNode(kind, { x: 0, y: 0 }), params
+    });
+    expect(getEParamValue("rated_capacity", node("hydrogen-tank", { capacity: "7" }))).toBe("7");
+    expect(getEParamValue("i_p", node("ac-transformer", { p: "3" }))).toBe("3");
+    expect(getEParamValue("run_stat", node("ac-source", {}))).toBe("");
+    expect(getEParamValue("closed_status_set", node("ac-switch", { status: "2" }))).toBe("");
+    const transformer = node("ac-three-winding-transformer", {
+      high_resistance_pu: "1", medium_reactance_pu: "2", low_tap_ratio: "3"
+    });
+    expect(getEParamValue("highResistancePu", transformer)).toBe("1");
+    expect(getEParamValue("mediumReactancePu", transformer)).toBe("2");
+    expect(getEParamValue("lowTapRatio", transformer)).toBe("3");
+    expect(getEParamValue("r1", transformer)).toBe("1");
+  });
+
+  test("covers empty model records and empty configured fields", () => {
+    const empty: ProjectFile = { version: 1, name: "空", nodes: [], edges: [] };
+    expect(buildEFileExport(empty).warnings).toEqual([]);
+    expect(buildMultiModelEFileExport([]).text).toContain("<Model>");
+    const source = createDefaultNode("ac-source", { x: 0, y: 0 });
+    expect(buildEDeviceRecords(empty, {
+      eDeviceDefinitionLabels: { ACGenerator: "unit" },
+      interfaceDefinitions: [{ componentLibrary: "ACGenerator", exportEnabled: true, exportName: "unit", fields: [] }]
+    })).toEqual([]);
+    expect(buildEDeviceRecords({ ...empty, nodes: [source] }, {
+      eDeviceDefinitionLabels: { ACGenerator: "unit" },
+      interfaceDefinitions: [{ componentLibrary: "ACGenerator", exportEnabled: true, exportName: "unit", fields: [] }]
+    }).some((record) => record.section === "ACGenerator")).toBe(false);
+  });
+
+  test("covers header fallback records for empty and populated projects", () => {
+    const empty: ProjectFile = { version: 1, name: "", nodes: [], edges: [] };
+    expect(buildEDeviceHeaderParameterRecords(empty)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ section: "Model" }),
+      expect.objectContaining({ section: "basevoltage" })
+    ]));
+    expect(buildEDeviceHeaderParameterRecords(empty, [], {
+      eDeviceDefinitionLabels: { basevalue: "basevalue" },
+      interfaceDefinitions: [
+        { componentLibrary: "basevalue", fields: [{ sourceName: "p_base", exportName: "p_base", cnName: "功率基值" }] },
+        { componentLibrary: "basevoltage", fields: [{ sourceName: "idx", exportName: "idx", cnName: "序号" }, { sourceName: "name", exportName: "name", cnName: "名称" }] },
+        { componentLibrary: "subcontrolarea", fields: [{ sourceName: "idx", exportName: "idx", cnName: "序号" }, { sourceName: "name", exportName: "name", cnName: "名称" }] },
+        { componentLibrary: "substation", fields: [{ sourceName: "idx", exportName: "idx", cnName: "序号" }, { sourceName: "name", exportName: "name", cnName: "名称" }, { sourceName: "idv", exportName: "idv", cnName: "电压" }] }
+      ]
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ section: "basevalue" }),
+      expect.objectContaining({ section: "basevoltage" }),
+      expect.objectContaining({ section: "subcontrolarea" }),
+      expect.objectContaining({ section: "substation" })
+    ]));
+  });
 });
 
 describe("terminalVoltageDisplay 电压继承着色", () => {

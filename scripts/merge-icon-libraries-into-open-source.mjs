@@ -10,6 +10,8 @@ const targetLibraryId = "open-source-svg";
 const mergedLibraryIds = ["docer-free-compatible", "office-fluent-compatible"];
 const targetRoot = `/icon-library/${targetLibraryId}`;
 const mergedRootDir = "merged";
+const mergedSourcePolicySuffix =
+  " 已将 Docer 兼容图标与 Office Fluent 兼容图标合并到 open-source-svg 统一检索；旧目录仅保留历史 URL 兼容。";
 
 function normalizeWebPath(...parts) {
   return parts
@@ -295,11 +297,12 @@ for (const sourceLibraryId of mergedLibraryIds) {
   }
 }
 
+const sourcePolicyBase = String(baseManifest.sourcePolicy || "开源 SVG 综合图标库。")
+  .replaceAll(mergedSourcePolicySuffix, "");
 const manifest = {
   ...baseManifest,
   generatedAt: new Date().toISOString(),
-  sourcePolicy:
-    `${baseManifest.sourcePolicy || "开源 SVG 综合图标库。"} 已将 Docer 兼容图标与 Office Fluent 兼容图标合并到 open-source-svg 统一检索；旧目录仅保留历史 URL 兼容。`,
+  sourcePolicy: `${sourcePolicyBase}${mergedSourcePolicySuffix}`,
   mergedCompatibilityLibraries: mergedLibraryIds,
   categories: [...categoryById.values()]
     .map((category) => ({

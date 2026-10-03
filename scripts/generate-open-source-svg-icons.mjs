@@ -2367,13 +2367,14 @@ function renderPreviewHtml(manifest) {
 `;
 }
 
-await rm(tempDir, { recursive: true, force: true });
-await rm(outputDir, { recursive: true, force: true });
-await mkdir(sourcePackDir, { recursive: true });
-await mkdir(sourceExtractDir, { recursive: true });
-await mkdir(outputDir, { recursive: true });
+async function generateOpenSourceSvgIcons() {
+  await rm(tempDir, { recursive: true, force: true });
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(sourcePackDir, { recursive: true });
+  await mkdir(sourceExtractDir, { recursive: true });
+  await mkdir(outputDir, { recursive: true });
 
-const manifest = {
+  const manifest = {
   name: "open-source-svg",
   label: "开源 SVG 综合图标库",
   generatedAt: new Date().toISOString(),
@@ -2591,4 +2592,28 @@ await writeFile(path.join(outputDir, "source-audit.json"), `${JSON.stringify(sou
 await writeFile(path.join(outputDir, "README.md"), renderReadme(manifest), "utf8");
 await writeFile(path.join(outputDir, "index.html"), renderPreviewHtml(manifest), "utf8");
 
-console.log(`Generated ${manifest.totalIcons} SVG icons in ${path.relative(rootDir, outputDir)}`);
+  console.log(`Generated ${manifest.totalIcons} SVG icons in ${path.relative(rootDir, outputDir)}`);
+}
+
+export {
+  categoryMatchScore,
+  categoryRejectsName,
+  classifyIcon,
+  duplicateSvgKey,
+  iconComplexity,
+  iconFamily,
+  isUsableSvg,
+  nameTokens,
+  normalizeSvg,
+  packageLicenseDeclarations,
+  packageLicenseMatches,
+  renderPreviewHtml,
+  renderReadme,
+  semanticIconKey,
+  slug,
+  tokenMatchesPattern,
+};
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await generateOpenSourceSvgIcons();
+}

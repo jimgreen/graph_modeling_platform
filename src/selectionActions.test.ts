@@ -27,6 +27,7 @@ import {
   autoAlignEdgeWithoutStoredRoute,
   autoAlignNodeLayoutUnits,
   autoAlignPreviewRoutes,
+  autoAlignStoredRouteDrops,
   autoAlignStoredRoutePlan,
   arrangeContainerInteriors,
   autoSpreadMovableRects,
@@ -41,6 +42,7 @@ import {
   countAutoAlignRouteBends,
   countAutoAlignRouteCrossings,
   createAutoAlignQualityReport,
+  createAutoAlignRouteQualityIndex,
   createCanvasGroupFromSelection,
   distributeNodeLayoutUnits,
   dissolveSelectedCanvasGroups,
@@ -1121,6 +1123,111 @@ describe("canvas selection actions", () => {
     }
   });
 
+  test("支持对齐方向、空选择和已对齐的平凡分支", () => {
+    const first = createDefaultNode("ac-load", { x: 110, y: 120 });
+    const second = createDefaultNode("ac-load", { x: 300, y: 260 });
+    const nodes = [first, second];
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+
+    expect(alignNodeLayoutUnits(nodes, [], "left")).toBe(nodes);
+    for (const direction of ["left", "right", "top", "bottom", "horizontal", "vertical"] as const) {
+      const aligned = alignNodeLayoutUnits(nodes, units, direction);
+      expect(aligned).not.toBe(nodes);
+    }
+    const horizontal = alignNodeLayoutUnits(nodes, units, "horizontal");
+    expect(horizontal[0].position.y).toBe(horizontal[1].position.y);
+    const vertical = alignNodeLayoutUnits(nodes, units, "vertical");
+    expect(vertical[0].position.x).toBe(vertical[1].position.x);
+    const sameNodes = [createDefaultNode("ac-load", { x: 100, y: 100 })];
+    expect(alignNodeLayoutUnits(sameNodes, buildCanvasLayoutUnits([], sameNodes, [sameNodes[0].id], []), "left")).toBe(sameNodes);
+  });
+
+  test("auto-align 对空、单元不足或无效间距直接保留原数组", () => {
+    const node = createDefaultNode("ac-load", { x: 110, y: 120 });
+    const nodes = [node];
+    const unit = buildCanvasLayoutUnits([], nodes, [node.id], []);
+    expect(autoAlignNodeLayoutUnits(nodes, [], 50)).toBe(nodes);
+    expect(autoAlignNodeLayoutUnits(nodes, unit, 0)).toBe(nodes);
+    expect(autoAlignNodeLayoutUnits(nodes, unit, -50)).toBe(nodes);
+  });
+
+  test("auto-align 线路候选可覆盖预算耗尽、无效候选和回退分支", () => {
+    const first = createDefaultNode("ac-load", { x: 112, y: 120 });
+    const second = createDefaultNode("ac-load", { x: 400, y: 200 });
+    const isolated = createDefaultNode("ac-source", { x: 700, y: 400 });
+    const edge: Edge = {
+      id: "edge-budget",
+      sourceId: first.id,
+      targetId: second.id,
+      sourceTerminalId: first.terminals[0].id,
+      targetTerminalId: second.terminals[0].id
+    };
+    const nodes = [first, second, isolated];
+    const units = buildCanvasLayoutUnits([], nodes, [first.id, isolated.id], []);
+    const report = createAutoAlignQualityReport();
+    const routeEdges = (stateNodes: readonly ModelNode[], edgeList: readonly Edge[]): RoutedEdge[] => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 2) {
+        // 让质量预算分支在测试中稳定耗尽。
+      }
+      return autoAlignPreviewRoutes(stateNodes, edgeList);
+    };
+    const degraded = autoAlignNodeLayoutUnits(nodes, units, 50, {
+      edges: [edge],
+      routeEdges,
+      timeBudgetMs: -1,
+      report
+    });
+    expect(degraded).not.toBe(nodes);
+    expect(report.degraded).toBe(true);
+    expect(report.frozenUnitCount).toBeGreaterThan(0);
+
+    const blockedUnits = [
+      units[0],
+      {
+        ...units[1],
+        collisionRects: [{ left: -1000, right: 1000, top: -1000, bottom: 1000 }]
+      }
+    ];
+    const blockedReport = createAutoAlignQualityReport();
+    const blocked = autoAlignNodeLayoutUnits(nodes, blockedUnits, 50, { edges: [edge], routeEdges, report: blockedReport });
+    expect(blocked.find((node) => node.id === isolated.id)?.position).toEqual(isolated.position);
+  });
+
+  test("auto-align 终检发现恶化时撤回并清理存档线路结果", () => {
+    const first = createDefaultNode("ac-load", { x: 112, y: 120 });
+    const second = createDefaultNode("ac-load", { x: 400, y: 200 });
+    const edge: Edge = {
+      id: "edge-verify",
+      sourceId: first.id,
+      targetId: second.id,
+      sourceTerminalId: first.terminals[0].id,
+      targetTerminalId: second.terminals[0].id
+    };
+    const nodes = [first, second];
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+    const storedRouteDrops: { edgeId: string; points: readonly { x: number; y: number }[] }[] = [];
+    const verifyRouteEdges = (stateNodes: readonly ModelNode[], edgeList: readonly Edge[]) => {
+      const moved = stateNodes.some((node) => node.position.x !== 112 && node.position.x !== 400);
+      return edgeList.map((item) => ({
+        edgeId: item.id,
+        points: moved
+          ? [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 50 }, { x: 100, y: 50 }]
+          : [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+        path: ""
+      }));
+    };
+    const result = autoAlignNodeLayoutUnits(nodes, units, 50, {
+      edges: [edge],
+      routeEdges: autoAlignPreviewRoutes,
+      verifyRouteEdges,
+      storedRouteDrops,
+      report: createAutoAlignQualityReport()
+    });
+    expect(result).toEqual(nodes);
+    expect(storedRouteDrops).toEqual([]);
+  });
+
   test("auto-aligns device centers to distinct grid intersections without overlap", () => {
     const first = createDefaultNode("ac-source", { x: 112, y: 113 });
     const second = createDefaultNode("ac-load", { x: 118, y: 119 });
@@ -1513,9 +1620,11 @@ describe("auto-align line quality constraints", () => {
   };
 
   test("counts route bends and only counts strict crossings", () => {
+    expect(countAutoAlignRouteBends([{ x: 0, y: 0 }])).toBe(0);
     expect(countAutoAlignRouteBends([{ x: 0, y: 0 }, { x: 100, y: 0 }])).toBe(0);
     expect(countAutoAlignRouteBends([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }])).toBe(1);
     expect(countAutoAlignRouteBends([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }, { x: 200, y: 50 }])).toBe(2);
+    expect(countAutoAlignRouteBends([{ x: 0, y: 0 }, { x: 100, y: 50 }])).toBe(0);
     // 共用端点的 T 型相接不是交叉
     expect(countAutoAlignRouteCrossings([
       [{ x: 0, y: 0 }, { x: 100, y: 0 }],
@@ -1530,6 +1639,31 @@ describe("auto-align line quality constraints", () => {
       [{ x: 0, y: 0 }, { x: 100, y: 0 }],
       [{ x: 50, y: -20 }, { x: 50, y: 80 }]
     ])).toBe(1);
+    expect(countAutoAlignRouteCrossings([])).toBe(0);
+    expect(countAutoAlignRouteCrossings([[{ x: 0, y: 0 }], [{ x: 1, y: 1 }]])).toBe(0);
+  });
+
+  test("维护线路质量索引并支持重复、退化、替换和删除", () => {
+    const straight: RoutedEdge = { edgeId: "straight", points: [{ x: 0, y: 0 }, { x: 100, y: 0 }], path: "" };
+    const bent: RoutedEdge = {
+      edgeId: "bent",
+      points: [{ x: 0, y: 10 }, { x: 50, y: 10 }, { x: 50, y: 60 }],
+      path: ""
+    };
+    const degenerate: RoutedEdge = { edgeId: "degenerate", points: [{ x: 3, y: 3 }], path: "" };
+    const index = createAutoAlignRouteQualityIndex([straight, bent, degenerate]);
+
+    expect(index.quality()).toEqual({ bends: 1, crossings: 0 });
+    expect(index.routes()).toEqual([straight, bent, degenerate]);
+    index.replace({ ...straight, points: [{ x: 0, y: 0 }, { x: 0, y: 40 }, { x: 80, y: 40 }], path: "" });
+    expect(index.quality()).toEqual({ bends: 2, crossings: 1 });
+    index.replace({ ...bent, points: [{ x: 0, y: 10 }, { x: 50, y: 10 }], path: "" });
+    expect(index.quality()).toEqual({ bends: 1, crossings: 0 });
+    index.remove("missing");
+    index.remove("degenerate");
+    expect(index.routes().map((route) => route.edgeId)).toEqual(["straight", "bent"]);
+    index.remove("straight");
+    expect(index.routes().map((route) => route.edgeId)).toEqual(["bent"]);
   });
 
   test("snaps an off-grid pair onto one shared grid line so the straight connection stays straight", () => {
@@ -1813,6 +1947,7 @@ describe("autoAlignStoredRoutePlan", () => {
     const plan = autoAlignStoredRoutePlan(nodes, [edgeOf("e1")], new Set(), routeEdges);
 
     expect(plan).toEqual(emptyPlan);
+    expect(autoAlignStoredRouteDrops(nodes, [edgeOf("e1")], new Set(), routeEdges)).toEqual([]);
     expect(calls).toHaveLength(0);
   });
 

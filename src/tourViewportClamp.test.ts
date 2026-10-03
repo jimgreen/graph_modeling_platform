@@ -1,13 +1,197 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+const reactHarness = vi.hoisted(() => {
+  let activeRunner: HookRunner | null = null;
+
+  const runner = () => {
+    if (!activeRunner) {
+      throw new Error("React hook called outside test runner");
+    }
+    return activeRunner;
+  };
+
+  const useState = <T,>(initial: T) => {
+    const current = runner();
+    const index = current.stateCursor++;
+    if (!(index in current.states)) {
+      current.states[index] = initial;
+    }
+    const setState = (next: T | ((previous: T) => T)) => {
+      current.states[index] =
+        typeof next === "function"
+          ? (next as (previous: T) => T)(current.states[index] as T)
+          : next;
+      current.dirty = true;
+    };
+    return [current.states[index] as T, setState] as const;
+  };
+
+  const useRef = <T,>(initial: T) => {
+    const current = runner();
+    const index = current.refCursor++;
+    if (!(index in current.refs)) {
+      current.refs[index] = { current: initial };
+    }
+    return current.refs[index] as { current: T };
+  };
+
+  const useCallback = <T,>(callback: T) => callback;
+
+  const useEffect = (effect: () => (() => void) | undefined, deps: unknown[]) => {
+    const current = runner();
+    current.pendingEffects[current.effectCursor++] = { effect, deps };
+  };
+
+  return {
+    useState,
+    useRef,
+    useCallback,
+    useEffect,
+    setActiveRunner: (current: HookRunner | null) => {
+      activeRunner = current;
+    }
+  };
+});
+
+vi.mock("react", () => reactHarness);
+
 import {
   TOUR_TOOLTIP_VIEWPORT_MARGIN,
   clampTourTooltipOffset,
   isZeroTourTooltipOffset,
   readTourTooltipViewport,
   tourTooltipTransform,
-  tourTooltipViewportBounds
+  tourTooltipViewportBounds,
+  useTourTooltipViewportClamp
 } from "./tourViewportClamp";
+
+type HookEffect = {
+  effect: () => (() => void) | undefined;
+  deps: unknown[];
+  cleanup?: () => void;
+};
+
+type HookRunner = {
+  states: unknown[];
+  refs: unknown[];
+  effects: Array<HookEffect | undefined>;
+  pendingEffects: Array<HookEffect | undefined>;
+  stateCursor: number;
+  refCursor: number;
+  effectCursor: number;
+  dirty: boolean;
+  value: ReturnType<typeof useTourTooltipViewportClamp>;
+  render: (resetKey: unknown) => void;
+  unmount: () => void;
+};
+
+function createHookRunner(): HookRunner {
+  const current = {
+    states: [],
+    refs: [],
+    effects: [],
+    pendingEffects: [],
+    stateCursor: 0,
+    refCursor: 0,
+    effectCursor: 0,
+    dirty: false,
+    value: undefined as unknown as ReturnType<typeof useTourTooltipViewportClamp>,
+    render(resetKey: unknown) {
+      current.stateCursor = 0;
+      current.refCursor = 0;
+      current.effectCursor = 0;
+      current.pendingEffects = [];
+      reactHarness.setActiveRunner(current);
+      current.value = useTourTooltipViewportClamp(resetKey);
+      reactHarness.setActiveRunner(null);
+
+      for (const [index, next] of current.pendingEffects.entries()) {
+        const previous = current.effects[index];
+        const changed =
+          !previous ||
+          previous.deps.length !== next!.deps.length ||
+          next!.deps.some((dependency, dependencyIndex) => dependency !== previous.deps[dependencyIndex]);
+        if (changed) {
+          previous?.cleanup?.();
+          const cleanup = next!.effect();
+          current.effects[index] = { ...next!, cleanup };
+        }
+      }
+      current.dirty = false;
+    },
+    unmount() {
+      for (const effect of current.effects) {
+        effect?.cleanup?.();
+        if (effect) {
+          effect.cleanup = undefined;
+        }
+      }
+    }
+  } as HookRunner;
+  return current;
+}
+
+function createFrameHarness() {
+  let nextId = 0;
+  const callbacks = new Map<number, FrameRequestCallback>();
+  const allCallbacks: FrameRequestCallback[] = [];
+  const request = vi.fn((callback: FrameRequestCallback) => {
+    const id = ++nextId;
+    callbacks.set(id, callback);
+    allCallbacks.push(callback);
+    return id;
+  });
+  const cancel = vi.fn((id: number) => {
+    callbacks.delete(id);
+  });
+  return {
+    request,
+    cancel,
+    allCallbacks,
+    flush() {
+      const next = callbacks.entries().next().value as [number, FrameRequestCallback] | undefined;
+      if (!next) {
+        throw new Error("no animation frame scheduled");
+      }
+      callbacks.delete(next[0]);
+      next[1](0);
+    }
+  };
+}
+
+function createTooltipElement(rect: TourTooltipMeasureLike) {
+  const style = {
+    transform: "",
+    removeProperty: vi.fn((property: string) => {
+      if (property === "transform") {
+        style.transform = "";
+      }
+    })
+  };
+  return {
+    style,
+    getBoundingClientRect: vi.fn(() => rect)
+  } as unknown as HTMLElement & { style: typeof style };
+}
+
+type TourTooltipMeasureLike = { top: number; left: number; width: number; height: number };
+
+class FakeResizeObserver {
+  static instances: FakeResizeObserver[] = [];
+  readonly callback: ResizeObserverCallback;
+  readonly observe = vi.fn();
+  readonly disconnect = vi.fn();
+
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback;
+    FakeResizeObserver.instances.push(this);
+  }
+
+  trigger() {
+    this.callback([], this as unknown as ResizeObserver);
+  }
+}
 
 // 视口 1280×800、无缩放；边界 = 12px 安全边距 → {top:12,left:12,right:1268,bottom:788}
 const VIEWPORT = { offsetTop: 0, offsetLeft: 0, width: 1280, height: 800 };
@@ -142,6 +326,10 @@ describe("readTourTooltipViewport", () => {
     expect(readTourTooltipViewport(null)).toBeNull();
   });
 
+  test("未传 target 且 node 环境没有 window → null", () => {
+    expect(readTourTooltipViewport()).toBeNull();
+  });
+
   test("优先使用 visualViewport（软键盘 / 缩放下才准确）", () => {
     const fake = {
       innerWidth: 1280,
@@ -170,9 +358,111 @@ describe("readTourTooltipViewport", () => {
     });
   });
 
+  test("尺寸属性缺失时也安全回落为 null", () => {
+    const fake = { innerWidth: undefined, innerHeight: undefined } as unknown as Window;
+    expect(readTourTooltipViewport(fake)).toBeNull();
+  });
+
   test("两者都拿不到尺寸 → null", () => {
     const fake = { innerWidth: 0, innerHeight: 0 } as unknown as Window;
     expect(readTourTooltipViewport(fake)).toBeNull();
+  });
+});
+
+describe("useTourTooltipViewportClamp", () => {
+  beforeEach(() => {
+    FakeResizeObserver.instances = [];
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("挂载后用 ResizeObserver 量测、夹取，并在重复清理时保持幂等", () => {
+    const frame = createFrameHarness();
+    vi.stubGlobal("requestAnimationFrame", frame.request);
+    vi.stubGlobal("cancelAnimationFrame", frame.cancel);
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+    vi.stubGlobal("window", { innerWidth: 1280, innerHeight: 800 });
+
+    const runner = createHookRunner();
+    runner.render(0);
+    const element = createTooltipElement({ top: 700, left: 1200, width: 360, height: 200 });
+    runner.value.clampRef(element);
+    runner.render(0);
+
+    expect(frame.request).toHaveBeenCalledTimes(1);
+    const observer = FakeResizeObserver.instances[0];
+    expect(observer.observe).toHaveBeenCalledWith(element);
+    observer.trigger();
+    expect(frame.request).toHaveBeenCalledTimes(1);
+
+    frame.flush();
+    runner.render(0);
+    expect(runner.value.shiftStyle).toEqual({ transform: "translate3d(-292px, -112px, 0)" });
+    expect(observer.disconnect).toHaveBeenCalledTimes(1);
+
+    frame.flush();
+    expect(element.style.removeProperty).toHaveBeenCalledWith("transform");
+    expect(element.style.transform).toBe("translate3d(-292px, -112px, 0)");
+
+    runner.unmount();
+    runner.unmount();
+    expect(FakeResizeObserver.instances[1].disconnect).toHaveBeenCalledTimes(1);
+    expect(element.style.removeProperty).toHaveBeenCalledWith("transform");
+  });
+
+  test("缺失 ResizeObserver 时退化为 window resize 订阅并可取消", () => {
+    const frame = createFrameHarness();
+    const addEventListener = vi.fn();
+    const removeEventListener = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", frame.request);
+    vi.stubGlobal("cancelAnimationFrame", frame.cancel);
+    vi.stubGlobal("ResizeObserver", undefined);
+    vi.stubGlobal("window", {
+      innerWidth: 1280,
+      innerHeight: 800,
+      addEventListener,
+      removeEventListener
+    });
+
+    const runner = createHookRunner();
+    runner.render(0);
+    const element = createTooltipElement({ top: 300, left: 400, width: 360, height: 200 });
+    runner.value.clampRef(element);
+    runner.render(0);
+
+    expect(addEventListener).toHaveBeenCalledWith("resize", expect.any(Function));
+    const onResize = addEventListener.mock.calls[0][1] as () => void;
+    onResize();
+    onResize();
+    expect(frame.request).toHaveBeenCalledTimes(1);
+    frame.flush();
+    runner.unmount();
+    expect(removeEventListener).toHaveBeenCalledWith("resize", onResize);
+  });
+
+  test("没有 window 时跳过量测与订阅；清理后迟到的 frame 不再执行", () => {
+    const frame = createFrameHarness();
+    vi.stubGlobal("requestAnimationFrame", frame.request);
+    vi.stubGlobal("cancelAnimationFrame", frame.cancel);
+    vi.stubGlobal("ResizeObserver", undefined);
+    vi.stubGlobal("window", undefined);
+
+    const runner = createHookRunner();
+    runner.render(0);
+    const element = createTooltipElement({ top: 300, left: 400, width: 360, height: 200 });
+    runner.value.clampRef(element);
+    runner.render(0);
+    frame.flush();
+    expect(element.getBoundingClientRect).not.toHaveBeenCalled();
+
+    runner.render(1);
+    const lateFrame = frame.allCallbacks.at(-1);
+    expect(lateFrame).toBeDefined();
+    runner.unmount();
+    lateFrame?.(0);
+    expect(frame.cancel).toHaveBeenCalledTimes(1);
   });
 });
 

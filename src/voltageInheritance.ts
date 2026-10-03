@@ -20,14 +20,10 @@ import {
   THREE_WINDING_TRANSFORMER_SIDES
 } from "./model-eexport";
 
-import { voltageBaseSettingModeForNode } from "./model-routing";
+// 端子类型判定单源放在 model-routing（本模块的 isElectricalTerminalType 与那份逐字相同）。
+import { isElectricalTerminalType, voltageBaseSettingModeForNode } from "./model-routing";
 
 // ─── 辅助函数 ──────────────────────────────────────────────
-
-/** 判断端子类型是否为电气类型（ac / dc） */
-function isElectricalTerminalType(type: TerminalType): boolean {
-  return type === "ac" || type === "dc";
-}
 
 /** 判断设备是否含有电气端子 */
 function hasElectricalTerminal(node: Pick<ModelNode, "terminals">): boolean {

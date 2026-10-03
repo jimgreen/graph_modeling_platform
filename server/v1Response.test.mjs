@@ -196,3 +196,67 @@ describe("sendV1PayloadTooLarge", () => {
     expect(res.statusCode, "headersSent 后不该再写").toBe(0);
   });
 });
+
+// ── 错误码 → HTTP 状态映射 ────────────────────────────────
+//
+// 映射表（server/v1Response.mjs:27）是第三方判断「重试 / 不重试」的唯一依据：
+// 4xx 表示请求本身的问题（改了再来），503 表示服务端暂时不可用（该重试）。
+// **未登记的码一律回落 500** —— 而前端确实会抛两个没登记的码：
+//   - unknown-command（App.tsx 遇到不认识的指令名）
+//   - not-implemented（量测属性修改等未实现的能力）
+// 第三方拿到 500 会当成「服务端故障」而重试，而这两类其实是「请求做不了」。
+//
+// 这里**只记录现状**、不改映射：改它等于改对外 API 契约，需要先确认在跑的
+// 第三方脚本是按 500 重试还是按 4xx 放弃。写成测试是为了让「要不要改」这个决定
+// 有据可依，而不是靠记忆。
+
+describe("sendV1Error —— 错误码到状态的映射", () => {
+  const statusOf = (code) => {
+    const response = createMockResponse();
+    sendV1Error(response, code, "测试");
+    return response.statusCode;
+  };
+
+  test("已登记的码各映射到约定的状态", () => {
+    expect(statusOf("bad-request")).toBe(400);
+    expect(statusOf("payload-too-large")).toBe(413);
+    expect(statusOf("not-found")).toBe(404);
+    expect(statusOf("no-active-model")).toBe(404);
+    expect(statusOf("no-selection")).toBe(404);
+    expect(statusOf("no-online-client")).toBe(503);
+    expect(statusOf("ws-timeout")).toBe(503);
+    expect(statusOf("internal")).toBe(500);
+  });
+
+  test("★ 前端会抛、但表里没有的两个码 → 回落 500（记录现状）", () => {
+    // unknown-command / not-implemented 都属「请求做不了」，却拿到 5xx。
+    // 若将来决定登记，用例应随之更新 —— 这正是把它写成测试的目的。
+    expect(statusOf("unknown-command")).toBe(500);
+    expect(statusOf("not-implemented")).toBe(500);
+  });
+
+  test("任意未登记码与空值都回落 500（不抛）", () => {
+    expect(statusOf("随便什么码")).toBe(500);
+    expect(statusOf("")).toBe(500);
+    expect(statusOf(undefined)).toBe(500);
+  });
+
+  test("statusOverride 优先于映射表（调用方可以自己定状态）", () => {
+    const response = createMockResponse();
+    sendV1Error(response, "not-found", "测试", 410);
+    expect(response.statusCode).toBe(410);
+  });
+
+  test("错误响应体仍是信封格式，且带 no-store（实时错误不该被缓存）", () => {
+    const response = createMockResponse();
+    const chunks = [];
+    const original = response.end.bind(response);
+    response.end = (data) => { if (data) chunks.push(data); original(data); };
+    sendV1Error(response, "bad-request", "参数不对");
+    expect(JSON.parse(String(chunks[0]))).toEqual({
+      ok: false,
+      error: { code: "bad-request", message: "参数不对" }
+    });
+    expect(response.headers["cache-control"]).toBe("no-store");
+  });
+});

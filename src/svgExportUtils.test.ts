@@ -12,7 +12,7 @@ import {
   svgDisplayAttribute
 } from "./svgExportUtils";
 import type { ModelNode, Terminal } from "./model";
-import { exportSvgSafeId } from "./svgExportUtils";
+import { exportSvgLayerId, exportSvgSafeId, exportSvgUniqueId } from "./svgExportUtils";
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
@@ -399,5 +399,68 @@ describe("svgExportUtils / exportSvgLayerScriptMarkup", () => {
   it("真值与假值各调一次结果稳定（纯函数，无隐藏状态）", () => {
     expect(exportSvgLayerScriptMarkup(true)).toBe(ON);
     expect(exportSvgLayerScriptMarkup(false)).toBe(OFF);
+  });
+});
+
+// ─── exportSvgUniqueId / exportSvgLayerId ─────────────────
+//
+// exportSvgUniqueId 是「保证导出 SVG 里所有 id 唯一」的唯一入口。
+// 它此前只在量测值 id 那一处被间接用到（svgExportUtilsMeasurement.test.ts 的
+// 「已占用的 id 会被去重成 _2」），**自身的三条规则没有直呼**：
+// 先净化、占用则递增、净化后为空走 fallback。
+//
+// 判错的后果是两条 <use> 撞成同一个 id ⇒ 浏览器解析时后者覆盖前者 ⇒
+// 画布上凭空少一个设备，而导出流程不报任何错。
+describe("svgExportUtils / exportSvgUniqueId", () => {
+  it("未占用时原样返回并登记进 usedIds", () => {
+    const used = new Set<string>();
+    expect(exportSvgUniqueId("node1", used, "device")).toBe("node1");
+    expect(used.has("node1")).toBe(true);
+  });
+
+  it("已占用时递增 _2 / _3，直到不撞为止", () => {
+    const used = new Set<string>();
+    exportSvgUniqueId("node1", used, "device");
+    expect(exportSvgUniqueId("node1", used, "device")).toBe("node1_2");
+    expect(exportSvgUniqueId("node1", used, "device")).toBe("node1_3");
+    expect(used.size).toBe(3);
+  });
+
+  it("跳号也能填上（已占用 _2 时给 _3，不退回 _2）", () => {
+    const used = new Set(["node1", "node1_2"]);
+    expect(exportSvgUniqueId("node1", used, "device")).toBe("node1_3");
+  });
+
+  it("原始 id 非法时先净化再查重（净化后也要走占用检查）", () => {
+    const used = new Set<string>();
+    expect(exportSvgUniqueId("a b", used, "device")).toBe("a_b");
+    expect(exportSvgUniqueId("a b", used, "device")).toBe("a_b_2");
+  });
+
+  it("空串走 fallback，fallback 也撞就继续递增", () => {
+    // exportSvgSafeId 的兜底条件是「净化结果为空串」，不是「原始 id 全非法」：
+    // "!!!" 被整体替换成 "_"，而 "_" 是合法首字符 ⇒ 结果 "_"，不触发 fallback。
+    // 想让 fallback 生效必须给**完全没有字符**的输入。
+    const used = new Set<string>();
+    expect(exportSvgUniqueId("", used, "device")).toBe("device");
+    expect(exportSvgUniqueId("", used, "device")).toBe("device_2");
+
+    const otherUsed = new Set<string>();
+    expect(exportSvgUniqueId("!!!", otherUsed, "device")).toBe("_");
+    // 递增是 `${baseId}_${index}`：baseId 已是 "_" ⇒ 撞上时给 "__2"（不是 "_2"）
+    expect(exportSvgUniqueId("!!!", otherUsed, "device")).toBe("__2");
+  });
+});
+
+describe("svgExportUtils / exportSvgLayerId", () => {
+  it("在安全 id 后加 _Layer 后缀", () => {
+    expect(exportSvgLayerId("layer 1", "fallback")).toBe("layer_1_Layer");
+    // 同上：全非法字符被替换成 "_" 而不是走 fallback ⇒ "__Layer"
+    expect(exportSvgLayerId("!!!", "fb")).toBe("__Layer");
+    expect(exportSvgLayerId("", "fb")).toBe("fb_Layer");
+  });
+
+  it("同一个输入两次调用结果一致（纯函数，不读全局状态）", () => {
+    expect(exportSvgLayerId("L1", "fb")).toBe(exportSvgLayerId("L1", "fb"));
   });
 });
