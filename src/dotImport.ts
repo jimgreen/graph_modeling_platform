@@ -67,15 +67,23 @@ export function parseDot(text: string): DotGraph {
       let label = unescapeLabel(nm[2]);
       const open = label.endsWith(OPEN_SUFFIX);
       if (open) label = label.slice(0, -OPEN_SUFFIX.length);
+      // Graphviz 恒输出 "x,y"，但 .dot 是用户从外部导出的、手工改过，
+      // 某行只给一个坐标时会 split 出 undefined，py.replace 直接 TypeError 崩掉整次导入。
+      // 单行坐标畸形不该废掉整个文件：解析不出有限数就跳过该节点。
       const [px, py] = nm[5].split(",");
+      const x = parseFloat(px.replace("!", ""));
+      const y = parseFloat(String(py ?? "").replace("!", ""));
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        continue;
+      }
       g.nodes.push({
         id: nm[1],
         label,
         open,
         shape: nm[3],
         fillcolor: nm[4],
-        x: parseFloat(px.replace("!", "")),
-        y: parseFloat(py.replace("!", "")),
+        x,
+        y
       });
       continue;
     }
