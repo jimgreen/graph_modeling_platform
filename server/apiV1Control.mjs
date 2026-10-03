@@ -90,11 +90,24 @@ export async function handleControlDeviceAdd({ request, url, response }, ctx) {
     return;
   }
   const params = { kind };
+  // 坐标必须是有限数。Number("abc") 是 NaN，无校验就经 WS 下发，
+  // 前端把 NaN 写进节点坐标 → 画布上节点消失，保存后文件带 NaN。
+  // 转换不成即 400，不下发。
   if (x !== undefined) {
-    params.x = Number(x);
+    const numericX = Number(x);
+    if (!Number.isFinite(numericX)) {
+      sendV1Error(response, "bad-request", "x 必须是数值。");
+      return;
+    }
+    params.x = numericX;
   }
   if (y !== undefined) {
-    params.y = Number(y);
+    const numericY = Number(y);
+    if (!Number.isFinite(numericY)) {
+      sendV1Error(response, "bad-request", "y 必须是数值。");
+      return;
+    }
+    params.y = numericY;
   }
   if (attrs !== undefined) {
     params.attrs = attrs;
