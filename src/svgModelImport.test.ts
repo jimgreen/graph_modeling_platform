@@ -599,3 +599,217 @@ describe("parseSvgModel round trip and batching", () => {
     expect(yields).toBeGreaterThanOrEqual(10);
   }, 15_000);
 });
+
+// ── href 推断 device kind（inferredKindFromHref 此前 0 调用）────────────────
+//
+// platform 导入里 `kind = declaredKind || inferredKindFromHref(href, templates)`。
+// 既有 PLATFORM_SVG 的每个 <use> 都带 dev-kind ⇒ 短路 ⇒ 推断分支从未执行过。
+// 这里刻意**不给 dev-kind**，让 kind 只能从 symbol id 反推。
+
+describe("parseSvgModel 由 symbol href 推断 device kind", () => {
+  // platform 判据是 `hasRoot && hasLayer && hasMetadata` 三者齐备：
+  // root_g + 语义层 id + 任一设备元数据属性。所以即便不给 dev-kind，也得有
+  // Segment_Layer 与 source-dev-id，否则整份会被判成 generic（推断分支走不到）。
+  const platform = (useAttrs: string, symbolId = "symbol_ACBreaker_ac-breaker_state_0") => `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600">
+      <defs id="svg_defs"><symbol id="${symbolId}" viewBox="-40 -30 80 60"><path d="M -20 0 L 20 0"/></symbol></defs>
+      <g id="root_g">
+        <g id="Segment_Layer">
+          <path id="edge-1" source-dev-id="N1" target-dev-id="N2" d="M 240 150 L 350 150 L 350 240"/>
+        </g>
+        <g id="ACBreaker_Layer" device-type="ACBreaker">
+          <use ${useAttrs}/>
+        </g>
+      </g>
+    </svg>`;
+
+  test("★ 无 dev-kind 时从 `#symbol_..._ac-breaker_...` 推断出 ac-breaker", async () => {
+    const result = await parse(
+      platform('href="#symbol_ACBreaker_ac-breaker_state_0" x="160" y="120" width="80" height="60"')
+    );
+    expect(result.mode).toBe("platform");
+    const node = result.project.nodes.find((item) => item.kind === "ac-breaker");
+    expect(node, "应推断出 ac-breaker 节点").toBeDefined();
+  });
+
+  test("symbol id 去掉开头的 # 后再匹配（`${kind}_` 前缀或结尾都算）", async () => {
+    const result = await parse(
+      platform('href="#_ac-breaker" x="10" y="10" width="80" height="60"', "_ac-breaker")
+    );
+    expect(result.project.nodes.some((item) => item.kind === "ac-breaker")).toBe(true);
+  });
+
+  test("★ 显式 dev-kind 压过 href 推断（两者不一致时以属性为准）", async () => {
+    const result = await parse(
+      platform('dev-kind="ac-bus" href="#symbol_ACBreaker_ac-breaker_state_0" x="160" y="120" width="80" height="60"')
+    );
+    expect(result.project.nodes.some((item) => item.kind === "ac-bus")).toBe(true);
+    expect(result.project.nodes.some((item) => item.kind === "ac-breaker")).toBe(false);
+  });
+
+  test("href 匹配不到任何 kind 时不凭空造 kind（走默认 kind）", async () => {
+    const result = await parse(
+      platform('href="#symbol_ACBreaker_完全未知类型_0" x="160" y="120" width="80" height="60"')
+    );
+    // 推断结果为空 ⇒ 不会凭空出现 ac-breaker；节点仍会被导入，只是 kind 不来自 href
+    expect(result.project.nodes.some((item) => item.kind === "ac-breaker")).toBe(false);
+    expect(result.project.nodes.length).toBeGreaterThan(0);
+  });
+});
+
+describe("parseSvgModel 输入边界与安全清理", () => {
+  test("使用浏览器 DOM adapter，并覆盖无 DOM、无 XMLSerializer 与空输入错误", async () => {
+    const globals = globalThis as unknown as Record<string, unknown>;
+    const savedParser = globals.DOMParser;
+    const savedSerializer = globals.XMLSerializer;
+    try {
+      delete globals.DOMParser;
+      await expect(parseSvgModel("<svg/>", { name: "无解析器", templates: DEVICE_LIBRARY })).rejects.toThrow("不支持 SVG XML 解析");
+      globals.DOMParser = DOMParser;
+      delete globals.XMLSerializer;
+      await expect(parseSvgModel("<svg/>", { name: "无序列化器", templates: DEVICE_LIBRARY })).rejects.toThrow("不支持 SVG XML 序列化");
+      globals.XMLSerializer = XMLSerializer;
+      const parsed = await parseSvgModel("<svg viewBox=\"0 0 10 10\"><rect width=\"1\" height=\"1\"/></svg>", { name: "浏览器适配器", templates: DEVICE_LIBRARY });
+      expect(parsed.mode).toBe("generic");
+      class ParserWithError {
+        parseFromString() {
+          return new DOMParser().parseFromString("<svg><parsererror/></svg>", "image/svg+xml");
+        }
+      }
+      globals.DOMParser = ParserWithError;
+      await expect(parseSvgModel("<svg/>", { name: "解析错误", templates: DEVICE_LIBRARY })).rejects.toThrow("SVG XML 解析失败");
+      await expect(parseSvgModel("  ", { name: "空", templates: DEVICE_LIBRARY, dom })).rejects.toThrow("SVG 文件为空");
+    } finally {
+      if (savedParser === undefined) delete globals.DOMParser;
+      else globals.DOMParser = savedParser;
+      if (savedSerializer === undefined) delete globals.XMLSerializer;
+      else globals.XMLSerializer = savedSerializer;
+    }
+  });
+
+  test("覆盖默认尺寸、畸形 URL、危险 style 与相对图片的清理分支", async () => {
+    const result = await parse(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="50%" height="bad">
+        <style>.x{background:url(javascript:alert(1))}</style>
+        <rect style="fill:expression(alert(1))" width="10" height="10"/>
+        <image width="10" height="10"/>
+        <image href="assets/photo.png" width="10" height="10"/>
+        <image href="data:image/png;base64,ok" width="10" height="10"/>
+        <animate values="javascript:alert(2)" to="vbscript:bad" from="0" by="#x"/>
+      </svg>
+    `);
+    expect(result.project.canvasWidth).toBe(1200);
+    expect(result.project.canvasHeight).toBe(800);
+    expect(result.warnings.join(" ")).toContain("默认尺寸");
+    expect(result.warnings.join(" ")).toContain("相对图片路径");
+    const svg = decodeURIComponent(result.project.nodes[0].params.backgroundImage.slice(result.project.nodes[0].params.backgroundImage.indexOf(",") + 1));
+    expect(svg).not.toContain("javascript:");
+    expect(svg).not.toContain("vbscript:");
+    expect(svg).not.toContain("expression(");
+    expect(svg).toContain("data:image/png");
+  });
+
+  test("保留坏 data URL，并移除不可解析及过深的嵌套 SVG", async () => {
+    const inner = (value: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(value)}`;
+    let nested = `<circle cx="1" cy="1" r="1"/>`;
+    for (let index = 0; index < 4; index += 1) {
+      nested = `<svg xmlns="http://www.w3.org/2000/svg"><image href="${inner(nested)}"/></svg>`;
+    }
+    const result = await parse(`<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/svg+xml;base64,###"/><image href="${inner("<svg><g></svg>")}"/><image href="${inner(nested)}"/></svg>`);
+    const svg = decodeURIComponent(result.project.nodes[0].params.backgroundImage.slice(result.project.nodes[0].params.backgroundImage.indexOf(",") + 1));
+    expect(svg).toContain("base64,###");
+    expect(result.warnings.join(" ")).toContain("无法安全解析");
+    expect(result.warnings.join(" ")).toContain("层级过深");
+  });
+
+  test("DOM adapter 抛出非 Error 时统一包装解析错误", async () => {
+    const throwingDom: SvgDomAdapter = {
+      parse() { throw "bad XML"; },
+      serialize() { return ""; }
+    };
+    await expect(parseSvgModel("<svg/>", { name: "坏适配器", templates: DEVICE_LIBRARY, dom: throwingDom })).rejects.toThrow("SVG XML 解析失败");
+  });
+});
+
+describe("parseSvgModel 平台异常内容与静态回退", () => {
+  const edgeFixture = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300">
+      <defs>
+        <symbol id="symbol_ACBreaker_ac-breaker_state_2" viewBox="-40 -30 80 60"><g transform="rotate(foo) scale(0 2)"><path d="M -20 0 L 20 0"/></g></symbol>
+        <symbol id="symbol_ACBus_ac-bus_default" viewBox="-100 -10 200 20"><path d="M -100 0 L 100 0"/></symbol>
+        <symbol id="symbol_unknown" viewBox="0 0 20 20"><rect width="20" height="20"/></symbol>
+      </defs>
+      <g id="root_g">
+        <g class="export-layer-definitions">
+          <g layer-id="" name="忽略"/><g layer-id="layer-a" name="A" visible="0"/><g layer-id="layer-a" name="重复"/>
+        </g>
+        <g id="Background_Layer"><rect fill="url(#pat)" style="fill:url(#pat)"/><rect class="export-canvas-background-image" fill="url(#pat)"/></g>
+        <g id="Segment_Layer">
+          <path id="same" source-dev-id="A" target-dev-id="B" d="M 40 30 L 100 30"/>
+          <g class="export-edge" data-export-edge-id="parent-edge" data-export-source-dev-id="A" data-export-target-dev-id="B"><path d="M 40 30 L 100 30"/></g>
+          <path id="bad-command" source-dev-id="A" target-dev-id="B" d="M 40 30 C 100 30 120 40 150 40"/>
+          <path id="bad-number" source-dev-id="A" target-dev-id="B" d="M 40 30 L nope"/>
+          <path id="short" source-dev-id="A" target-dev-id="B" d="M 40 30"/>
+          <path id="missing" d="M 10 10 L 20 20"/>
+        </g>
+        <g id="ACBreaker_Layer" device-type="ACBreaker">
+          <use id="A" dev-id="A" dev-kind="ac-breaker" href="#symbol_ACBreaker_ac-breaker_state_2" x="0" y="0" width="80" height="60" layer-id="unknown"/>
+          <use id="A" dev-id="A" dev-kind="ac-breaker" href="#symbol_ACBreaker_ac-breaker_state_2" x="0" y="100" width="80" height="60"/>
+          <use id="B" dev-id="B" dev-kind="ac-breaker" href="#symbol_ACBreaker_ac-breaker_state_2" x="200" y="0" width="80" height="60"/>
+          <use id="orphan" dev-kind="not-real" href="#missing-symbol" x="300" y="100" width="80" height="60"/>
+        </g>
+        <g id="Unknown_Layer" device-type="Unknown"><use id="u" dev-id="u" dev-kind="not-real" href="#symbol_unknown" x="300" y="0" width="20" height="20"/></g>
+        <g id="Text_Layer"><text id="loose" x="20" y="220" style="fill:#123;font-size:20px;font-weight:700;font-style:italic;text-decoration:underline;font-family:serif">自由文字</text><text dev-id="not-there">孤立</text></g>
+        <g id="Measurement_Layer"><g class="mg" dev="missing"><text><tspan class="mv" mt="p">x</tspan></text></g></g>
+        <g id="Other_Layer"><path id="other" d="M 1 1 L 2 2"/></g>
+      </g>
+    </svg>`;
+
+  test("无法恢复的设备、连接线、文本和图层均保留为可编辑静态内容", async () => {
+    const result = await parse(edgeFixture, "异常平台");
+    expect(result.mode).toBe("platform");
+    expect(result.project.nodes.some((node) => node.kind === "static-text" && node.name === "自由文字")).toBe(true);
+    expect(result.project.nodes.filter((node) => node.kind === "static-image").length).toBeGreaterThanOrEqual(3);
+    expect(result.warnings.join(" ")).toContain("无法恢复拓扑");
+    expect(result.warnings.join(" ")).toContain("在当前类中不存在");
+    expect(result.warnings.join(" ")).toContain("未关联到设备");
+    expect(result.warnings.join(" ")).toContain("图层");
+    expect(result.project.layers).toEqual(expect.arrayContaining([{ id: "layer-a", name: "A", visible: false }]));
+  });
+
+  test("无设备的有效平台 SVG 仍保留为平台结果，非法路径不会制造拓扑", async () => {
+    const result = await parse(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><g id="root_g"><g id="Segment_Layer"><path id="e" d="M 1 1 C 2 2 3 3 4 4"/></g><g id="Text_Layer"/><g id="Measurement_Layer"/><g id="Other_Layer"/></g></svg>`, "空平台");
+    expect(result.mode).toBe("generic");
+    expect(result.project.nodes).toHaveLength(1);
+    expect(result.project.edges).toEqual([]);
+  });
+
+  test("覆盖背景图片 fit、平铺图案、图层缺省与静态模板缺失错误", async () => {
+    const tiled = await parse(`
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80" active-layer-id="unknown-layer">
+        <defs><pattern id="tile" width="10" height="10"><image href="assets/tile.png"/></pattern></defs>
+        <g id="root_g"><g id="Background_Layer"><rect class="export-canvas-background-image" fill="url(#tile)"/></g>
+          <g id="Segment_Layer"/><g id="Text_Layer"/><g id="Measurement_Layer"/><g id="Other_Layer"/>
+          <g id="ACLoad_Layer" device-type="ACLoad"><use id="load" dev-kind="ac-load" href="#missing" x="10" y="10"/></g>
+        </g>
+      </svg>`);
+    expect(tiled.project.canvasBackgroundImage).toBe("assets/tile.png");
+    expect(tiled.project.canvasBackgroundImageFit).toBe("tile");
+    expect(tiled.project.activeLayerId).toBe(DEFAULT_MODEL_LAYER_ID);
+
+    const customTemplates = DEVICE_LIBRARY.filter((template) => template.kind !== "static-image" && template.kind !== "static-text");
+    const fallbackResult = await parseSvgModel(PLATFORM_SVG, { name: "缺图元库", templates: customTemplates, dom, yieldToMain: async () => undefined });
+    expect(fallbackResult.mode).toBe("platform");
+    expect(fallbackResult.project.nodes).toHaveLength(2);
+  });
+
+  test("量测组覆盖缺端子、空项目与无量测项分支", async () => {
+    const source = PLATFORM_SVG
+      .replace('<g class="mg" layer-id="layer-operating" transform="translate(265 125)" dev="ACBreaker-7" term="t1">', '<g class="mg" dev="missing" term="t1"><text><tspan class="mv">x</tspan></text></g><g class="mg" dev="ACBreaker-7" term="missing"><text><tspan class="mv" mt="p">x</tspan></text></g><g class="mg" dev="ACBreaker-7" term="t1"><text>no value</text></g><g class="mg" layer-id="layer-operating" transform="translate(265 125)" dev="ACBreaker-7" term="t1">')
+      .replace('<tspan id="mv-ACBreaker-7-t1-activePower-0" class="mv" mt="activePower" mti="activePower" mf="t1.r" dx="5">--</tspan>', '<tspan id="mv-ACBreaker-7-t1-activePower-0" class="mv" mr="r" dx="5">--</tspan><tspan class="mv">--</tspan>');
+    const result = await parse(source, "量测异常");
+    expect(result.warnings.join(" ")).toContain("不存在，已跳过");
+    expect(result.warnings.join(" ")).toContain("不存在端子");
+    expect(result.project.measurements?.groups).toEqual([]);
+  });
+});

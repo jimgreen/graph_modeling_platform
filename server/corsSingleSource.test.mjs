@@ -15,25 +15,71 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { accessControlHeaders, accessControlOriginOnly } from "./cors.mjs";
 
-const serverDir = fileURLToPath(new URL(".", import.meta.url));
+const repoRoot = fileURLToPath(new URL("../", import.meta.url));
+const sourceRoots = ["server", "src"];
+const sourceExtensions = new Set([".mjs", ".ts", ".tsx"]);
+
+function isExcludedDirectory(name) {
+  return (
+    name === "node_modules" ||
+    name === "dist" ||
+    name === "public" ||
+    name.startsWith("coverage") ||
+    name.startsWith(".coverage")
+  );
+}
+
+function sourceFilesUnder(directory) {
+  const files = [];
+  const pending = [directory];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const filePath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!isExcludedDirectory(entry.name)) pending.push(filePath);
+        continue;
+      }
+      if (
+        sourceExtensions.has(path.extname(entry.name)) &&
+        !/\.(?:test|spec)\.[^.]+$/i.test(entry.name)
+      ) {
+        files.push(filePath);
+      }
+    }
+  }
+  return files;
+}
 
 describe("CORS 响应头单源", () => {
-  test("除 cors.mjs 外，任何 server 模块都不得硬编码 access-control-* 头", () => {
+  test("除 cors.mjs 外，任何 server/src 生产模块都不得硬编码 access-control-* 头", () => {
     const offenders = [];
-    for (const name of readdirSync(serverDir)) {
-      if (!name.endsWith(".mjs") || name === "cors.mjs") continue;
-      const src = readFileSync(path.join(serverDir, name), "utf8");
-      // 只查对象字面量里的键写法（"access-control-allow-origin":），不查注释
-      src.split("\n").forEach((line, i) => {
-        if (/^\s*["']access-control-/.test(line)) {
-          offenders.push(`${name}:${i + 1}  ${line.trim()}`);
-        }
-      });
+    for (const root of sourceRoots) {
+      for (const filePath of sourceFilesUnder(path.join(repoRoot, root))) {
+        if (path.resolve(filePath) === path.resolve(repoRoot, "server", "cors.mjs")) continue;
+        const src = readFileSync(filePath, "utf8");
+        // 只查对象字面量里的键写法（"access-control-allow-origin":），不查注释。
+        src.split("\n").forEach((line, i) => {
+          if (/^\s*["']access-control-/.test(line)) {
+            const relativePath = path.relative(repoRoot, filePath).split(path.sep).join("/");
+            offenders.push(`${relativePath}:${i + 1}  ${line.trim()}`);
+          }
+        });
+      }
     }
     expect(
       offenders,
       `这些行硬编码了 access-control-* 头，请改为从 ./cors.mjs 导入\n${offenders.join("\n")}`
     ).toEqual([]);
+  });
+
+  test("accessControlHeaders 的三个键值完整，origin-only 只含 origin", () => {
+    expect(accessControlHeaders).toEqual({
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
+      "access-control-allow-headers": "content-type,x-space"
+    });
+    expect(Object.keys(accessControlOriginOnly)).toEqual(["access-control-allow-origin"]);
   });
 
   test("accessControlOriginOnly 与全量头的 origin 取值一致（不会分叉成两个值）", () => {

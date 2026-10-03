@@ -11,7 +11,9 @@ import { describe, expect, test } from "vitest";
 import { encodeSchemePath, parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 import { sanitizeSegment } from "../shared/pathSafety.mjs";
 
-const decode = (value) => parseSchemePathParam(encodeSchemePath(value));
+// 模拟生产链路：编码 → 放进 URL query → URL 层解码（searchParams.get 的效果）→ 交给解析函数。
+// 这层 decodeURIComponent **不能省**：省略它就等于测「传编码值」，而生产从不解两次。
+const decode = (value) => parseSchemePathParam(decodeURIComponent(encodeSchemePath(value)));
 // 每段的 fallback 就是字面量「方案」（见 safeFilePart 的第二参数）
 const FALLBACK = "方案";
 // 私有常量 maxFilePartLength = 80，与 shared/pathSafety.mjs 的默认参数同值
@@ -29,9 +31,9 @@ describe("encodeSchemePath：`encodeURIComponent(JSON.stringify(parts))`", () =>
     // 探针实测：编码成功，但回解必然 null（JSON.parse 后不是数组）。
     // 也就是说 `encodeSchemePath` **不保证产出可解码的值**。
     expect(encodeSchemePath("abc")).toBe(encodeURIComponent(JSON.stringify("abc")));
-    expect(parseSchemePathParam(encodeSchemePath("abc"))).toBeNull();
+    expect(decode("abc")).toBeNull();
     expect(encodeSchemePath(123)).toBe("123");
-    expect(parseSchemePathParam(encodeSchemePath(123))).toBeNull();
+    expect(decode(123)).toBeNull();
   });
 
   test("★ `undefined` 编成字面量 \"undefined\"（非 JSON）", () => {
@@ -66,10 +68,17 @@ describe("encodeSchemePath：`encodeURIComponent(JSON.stringify(parts))`", () =>
     }
   });
 
-  test("★ 未编码的裸 JSON 也能解（`decodeURIComponent` 对无 % 的串是恒等）", () => {
-    // 所以两种形态都能进：`encodeSchemePath` 的产物与手工拼的裸 JSON。
+  test("裸 JSON 与 URL 层已解码的值都能解（生产只走后者）", () => {
+    // 入参契约是「已解码」，所以裸 JSON（URL 层解码后的原样）与手工拼的裸 JSON 等价。
     expect(parseSchemePathParam('["方案A"]')).toEqual(["方案A"]);
-    expect(parseSchemePathParam(encodeSchemePath(["方案A"]))).toEqual(["方案A"]);
+    expect(decode(["方案A"])).toEqual(["方案A"]);
+  });
+
+  test("★ 方案名含 % 时不被当百分号转义（修复二次解码的回归）", () => {
+    // 旧实现多解一层：%41 → 'A'，方案名被静默改成另一个**合法但不同**的名字。
+    for (const name of ["50%41厂", "100%班", "50%AB班", "50%"]) {
+      expect(decode([name]), name).toEqual([name]);
+    }
   });
 });
 
@@ -157,7 +166,9 @@ describe("parseSchemePathParam：不可解析的参数一律 null", () => {
     });
   }
 
-  test("坏转义由 `decodeURIComponent` 抛 `URIError`、由 catch 吞成 null", () => {
+  test("坏转义串仍然 null，但已与 `decodeURIComponent` 无关", () => {
+    // 保留这条对照事实：decodeURIComponent("%") 抛 URIError。
+    // 解析函数**不再调用它**（契约是入参已解码），所以现在的 null 来自 JSON.parse 抛错。
     expect(() => decodeURIComponent("%")).toThrow(URIError);
     expect(parseSchemePathParam("%")).toBeNull();
   });
@@ -197,7 +208,6 @@ describe("parseSchemePathParam：不可解析的参数一律 null", () => {
     expect(parseSchemePathParam('[[["b"],2]]')).toEqual(["b,2"]);
     // 两元素的嵌套数组 → 两段（用 encodeSchemePath 生成，避免手数括号）
     expect(decode([["b"], ["2"]])).toEqual(["b", "2"]);
-    expect(parseSchemePathParam(encodeSchemePath([["b"], ["2"]]))).toEqual(["b", "2"]);
     // 往返视角：编码嵌套数组后解出来是一维的
     expect(decode([["a"]])).toEqual(["a"]);
     // 截断的嵌套数组（JSON 不完整）→ null，不是拍平

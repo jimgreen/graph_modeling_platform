@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { CanvasResizeEdge } from "./canvasViewport";
 import {
+  atLeastOneNumber,
   canvasBoundsChangeIsMeaningful,
   canvasBoundsScrollSyncTarget,
   canvasFitAvailableWidth,
@@ -24,6 +25,66 @@ import {
   CANVAS_RULER_SIZE,
   viewBoxAfterCanvasBoundsChange
 } from "./canvasViewport";
+
+// 模板尺寸兜底：0 / NaN / 缺值退回 fallback，负值被 max(1) 抬回 1。
+// 它决定图元导出的画布边幅（device-template-icon 的 padding 计算也走它），
+// 判错的后果是导出的 SVG 里出现 width="0" 或非有限值 —— 浏览器静默忽略、不报错。
+describe("atLeastOneNumber", () => {
+  test("零值（0 / \"0\" / null / false / 空串 / 空数组）一律走 fallback", () => {
+    // Number(null) 与 Number(false) 与 Number("") 与 Number([]) 全是 0，不是 NaN
+    expect(atLeastOneNumber(0)).toBe(1);
+    expect(atLeastOneNumber("0")).toBe(1);
+    expect(atLeastOneNumber(null)).toBe(1);
+    expect(atLeastOneNumber(false)).toBe(1);
+    expect(atLeastOneNumber("")).toBe(1);
+    expect(atLeastOneNumber([])).toBe(1);
+    expect(atLeastOneNumber(0, 104)).toBe(104);
+    expect(atLeastOneNumber(null, 104)).toBe(104);
+  });
+
+  test("非数值（NaN / undefined / \"abc\"）走 fallback", () => {
+    expect(atLeastOneNumber(undefined)).toBe(1);
+    expect(atLeastOneNumber("abc")).toBe(1);
+    expect(atLeastOneNumber(Number.NaN)).toBe(1);
+    expect(atLeastOneNumber(Number.NaN, 64)).toBe(64);
+  });
+
+  test("0 < 值 < 1 的小数被抬到 1（不返回 0.4 这种会让下游除出小数尺寸的值）", () => {
+    expect(atLeastOneNumber(0.4)).toBe(1);
+    expect(atLeastOneNumber(0.999)).toBe(1);
+  });
+
+  test("负数被抬到 1", () => {
+    expect(atLeastOneNumber(-5)).toBe(1);
+    expect(atLeastOneNumber(-0.001)).toBe(1);
+  });
+
+  test("正值原样透传（含字符串数值与小数）", () => {
+    expect(atLeastOneNumber(1)).toBe(1);
+    expect(atLeastOneNumber(104)).toBe(104);
+    expect(atLeastOneNumber("2.5")).toBe(2.5);
+    expect(atLeastOneNumber(63.75)).toBe(63.75);
+  });
+
+  test("±Infinity 不当缺值处理：+∞ 原样保留，-∞ 被 max(1) 抬回", () => {
+    // 注释里写的等价式是 `Math.max(1, Number(value) || fallback)`；
+    // Infinity 是 truthy，故不走 fallback —— 本条把这个刻意的选择钉住。
+    expect(atLeastOneNumber(Number.POSITIVE_INFINITY)).toBe(Number.POSITIVE_INFINITY);
+    expect(atLeastOneNumber(Number.NEGATIVE_INFINITY)).toBe(1);
+    // 对照：换成 `||` 的朴素写法，+Infinity 也保得住，两者在这里不冲突
+    expect(Math.max(1, Number(Number.POSITIVE_INFINITY) || 1)).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  test("与 `Math.max(1, Number(value) || fallback)` 逐例等价（穷举常用输入）", () => {
+    // 实现注释声称逐字等价。逐例对拍而不是抽查，是为了让日后有人改成
+    // `Number.isFinite` 判据时立刻看到差异（本函数刻意**不**拦 Infinity）。
+    const reference = (value: unknown, fallback = 1) =>
+      Math.max(1, Number(value) || fallback);
+    for (const value of [0, 1, 0.4, -5, 104, "2.5", "abc", "", null, undefined, false, true, []]) {
+      expect(atLeastOneNumber(value), JSON.stringify(value ?? null)).toBe(reference(value));
+    }
+  });
+});
 
 // 适配视图（fit）的可用区域：左右面板是浮动层，画布区占满工作区，
 // 所以可用宽必须扣掉可见面板宽度，每侧另留 20px 边距。

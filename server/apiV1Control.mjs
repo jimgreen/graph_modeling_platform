@@ -11,41 +11,14 @@
 
 import { sendV1JsonNoStore, sendV1Error, sendV1PayloadTooLarge } from "./v1Response.mjs";
 import { NoOnlineClientError, CommandTimeoutError } from "./runtimeRegistry.mjs";
+// JSON body 读取单源（原先 control/runtime/e-file 各有一份，只差上限常量）。
+// 这里用默认上限 1MB（审查 B-P0-2）：控制指令均为小 JSON，超限直接 413，防恶意大 body 打爆内存。
+import { readJsonBody } from "./readJsonBody.mjs";
 
 // 取 query clientId（trim），空串视为未指定
 function readClientId(url) {
   const raw = url.searchParams.get("clientId") ?? "";
   return raw.trim() || null;
-}
-
-// 轻量 JSON body 读取（control 模块自包含，不依赖 image-server 内部 readJsonBody）
-// 上限 1MB（审查 B-P0-2）：控制指令均为小 JSON，超限直接 413，防恶意大 body 打爆内存。
-const CONTROL_MAX_BODY_BYTES = 1024 * 1024;
-
-async function readJsonBody(request) {
-  const chunks = [];
-  let total = 0;
-  let oversize = false;
-  // **继续读完整个流**，只是超限后不再累积 chunk。
-  //
-  // 早退（break/throw）会让 Node 认为 body 未读完：响应还没写出连接就被重置，
-  // 客户端只看到 ECONNRESET 而非 413。上限的意义是「不把超大内容留在内存里」，
-  // 而这靠的是不再 push chunk，不是提前中断读取。
-  for await (const chunk of request) {
-    total += chunk.length;
-    if (total > CONTROL_MAX_BODY_BYTES) {
-      oversize = true;
-      continue;
-    }
-    chunks.push(chunk);
-  }
-  if (oversize) {
-    const error = new Error("请求体超过 1MB 上限。");
-    error.code = "payload-too-large";
-    throw error;
-  }
-  const body = Buffer.concat(chunks).toString("utf-8");
-  return body ? JSON.parse(body) : {};
 }
 
 // 统一处理 sendCommandToClient reject → v1 错误响应

@@ -12,36 +12,14 @@ import { sendV1JsonNoStore, sendV1Error, sendV1PayloadTooLarge } from "./v1Respo
 import { accessControlOriginOnly } from "./cors.mjs";
 import { NoOnlineClientError, FetchTimeoutError } from "./runtimeRegistry.mjs";
 import { PREDEFINED_E_DEVICE_TEMPLATES, readPredefinedTemplateBase64 } from "./eFileTemplates.mjs";
+// JSON body 读取单源（原先 control/runtime/e-file 各有一份，只差上限常量）。
+// runtime 这一域要传模板文本，上限 2MB。
+import { readJsonBody as readJsonBodyWithLimit } from "./readJsonBody.mjs";
 
-// 轻量 JSON body 读取（与 apiV1Control 同款），上限 2MB（模板文本体量）
 const E_FILE_MAX_BODY_BYTES = 2 * 1024 * 1024;
 
-async function readJsonBody(request) {
-  const chunks = [];
-  let total = 0;
-  let oversize = false;
-  // **继续读完整个流**，只是超限后不再累积 chunk。
-  //
-  // 早退（break/throw）会让 Node 认为 body 未读完：响应还没写出连接就被重置，
-  // 客户端只看到 ECONNRESET 而非 413。实测 pause() 只能撑到约 3MB（缓冲高水位），
-  // 再大仍会重置。读满是唯一可靠的做法 —— 上限的意义是「不把超大内容留在内存里」，
-  // 而这靠的是不再 push chunk，不是提前中断读取。
-  for await (const chunk of request) {
-    total += chunk.length;
-    if (total > E_FILE_MAX_BODY_BYTES) {
-      oversize = true;
-      continue;
-    }
-    chunks.push(chunk);
-  }
-  if (oversize) {
-    const error = new Error("请求体超过 2MB 上限。");
-    error.code = "payload-too-large";
-    throw error;
-  }
-  const body = Buffer.concat(chunks).toString("utf-8");
-  return body ? JSON.parse(body) : {};
-}
+const readJsonBody = (request) =>
+  readJsonBodyWithLimit(request, { limitBytes: E_FILE_MAX_BODY_BYTES, limitLabel: "2MB" });
 
 // 取 query clientId（trim），空串视为未指定
 function readClientId(url) {

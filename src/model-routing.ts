@@ -3660,9 +3660,12 @@ function createDisjointSet(): DisjointSet {
   return { ensure, find, union };
 }
 
-type ElectricalTerminalType = Extract<TerminalType, "ac" | "dc">;
+// 导出：voltageInheritance.ts 的同名判定与此**逐字相同**，只差这里的类型守卫标注。
+// 单源放在本模块是因为它对 TerminalType 的联合更熟；那边已经 import 本模块
+// （voltageBaseSettingModeForNode），不构成循环依赖。
+export type ElectricalTerminalType = Extract<TerminalType, "ac" | "dc">;
 
-function isElectricalTerminalType(type: TerminalType): type is ElectricalTerminalType {
+export function isElectricalTerminalType(type: TerminalType): type is ElectricalTerminalType {
   return type === "ac" || type === "dc";
 }
 

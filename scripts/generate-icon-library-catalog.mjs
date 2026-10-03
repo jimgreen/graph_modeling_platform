@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { escapeXmlFull as escapeXml } from "../shared/xmlEscape.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const iconLibraryDir = path.join(rootDir, "data", "icon-library");
+const iconLibraryDir = path.join(rootDir, "public", "icon-library");
 const mergedCompatibilityLibraryDirs = new Set(["docer-free-compatible", "office-fluent-compatible"]);
 
 function normalizeWebPath(...parts) {

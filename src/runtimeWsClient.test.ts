@@ -293,3 +293,84 @@ describe("runtimeWsClient 重连", () => {
     expect(mockWs.instances).toHaveLength(1);
   });
 });
+
+// ── getStatus 的取值口径（记录现状）─────────────────────────
+//
+// `getStatus` 是 `closed ? "closed" : ws ? (readyState === OPEN ? "open" : "connecting") : "closed"`：
+// readyState 只要**不是** OPEN 就报 "connecting"。于是 CLOSING(2) / CLOSED(3)
+// 在「onclose 尚未回调」的窗口里也显示 connecting —— 第三方据此判定「在线」，
+// 紧接着的请求却拿到 no-online-client 503。
+//
+// 只记录现状、不改：status 的取值集合是对外的（/api/v1/runtime 会透出它），
+// 引入新值（如 "closing"）要先确认第三方是否已穷举这三种。
+
+describe("runtimeWsClient getStatus 的 readyState 口径", () => {
+  const buildClient = () => createRuntimeWsClient(async () => ({ ok: true, data: {} }));
+
+  test("未连接 → closed", () => {
+    const client = buildClient();
+    expect(client.getStatus()).toBe("closed");
+  });
+
+  test("已连上 → open", () => {
+    vi.useFakeTimers();
+    const client = buildClient();
+    client.connect();
+    const ws = mockWs.instances[0];
+    ws.triggerOpen();
+    expect(client.getStatus()).toBe("open");
+    client.close();
+  });
+
+  test("★ 连接中（readyState=CONNECTING）→ connecting", () => {
+    vi.useFakeTimers();
+    const client = buildClient();
+    client.connect();
+    expect(client.getStatus()).toBe("connecting");
+    client.close();
+  });
+
+  test("★ 关闭中（readyState=CLOSING，onclose 未回调）也报 connecting 而不是 closed", () => {
+    // 这是最容易误判的窗口：第三方看到 connecting 就认为在线，
+    // 但服务端此时已经没有这条连接了。
+    vi.useFakeTimers();
+    const client = buildClient();
+    client.connect();
+    const ws = mockWs.instances[0];
+    ws.triggerOpen();
+    ws.readyState = 2; // CLOSING
+    expect(client.getStatus()).toBe("connecting");
+    client.close();
+  });
+
+  test("★ readyState=CLOSED 但 onclose 未回调时同样报 connecting", () => {
+    vi.useFakeTimers();
+    const client = buildClient();
+    client.connect();
+    const ws = mockWs.instances[0];
+    ws.triggerOpen();
+    ws.readyState = 3; // CLOSED，但没触发 onclose
+    expect(client.getStatus()).toBe("connecting");
+    client.close();
+  });
+
+  test("onclose 回调之后才是 closed", () => {
+    vi.useFakeTimers();
+    const client = buildClient();
+    client.connect();
+    const ws = mockWs.instances[0];
+    ws.triggerOpen();
+    ws.triggerClose();
+    expect(client.getStatus()).toBe("closed");
+    client.close();
+  });
+
+  test("close() 之后一律 closed（close 内部会置 closed 标志并把 ws 置 null）", () => {
+    vi.useFakeTimers();
+    const client = buildClient();
+    client.connect();
+    mockWs.instances[0].triggerOpen();
+    client.close();
+    expect(client.getStatus()).toBe("closed");
+  });
+});

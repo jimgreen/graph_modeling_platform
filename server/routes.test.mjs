@@ -180,3 +180,80 @@ describe("图片文件夹动态路由的路径段解码", () => {
     expect(JSON.parse(text).error).toBeTruthy();
   });
 });
+
+// ── 图片文件夹重命名的名称净化 ────────────────────────────
+//
+// `safeName`（server.mjs:1963）是 `sanitizeSegment` 的手抄劣化版，只做
+// 「非法字符换 _ + 截断」，不做去空白、不拒 "." / ".." 段。后果有两条：
+//   1. `safeName(payload.name || "")` 在空串时先被 `||` 换成「未命名图片」，
+//      所以紧跟其后的 `if (!name) 400` **永不可达** —— 用户提交空名不会被拒，
+//      而是被静默存成「未命名图片」；
+//   2. 名字 ".." 会原样落盘（sanitizeSegment 会兜底成 fallback）。
+//
+// 这里把两条都钉成端到端事实。**不改实现**：换掉 safeName 会改所有已存图片文件夹
+// 的落盘名，属于对外行为变更，得先确认历史数据兼容策略。
+
+describe("图片文件夹重命名 —— safeName 的净化口径", () => {
+  async function createFolder(name) {
+    const created = await fetch(`${baseUrl}/webgrp/image-folders`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    expect(created.status).toBe(201);
+    return created.json();
+  }
+
+  async function rename(folderId, name) {
+    const res = await fetch(`${baseUrl}/webgrp/image-folders/${encodeURIComponent(folderId)}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    const text = await res.text();
+    return { status: res.status, body: text ? JSON.parse(text) : null };
+  }
+
+  test("★ 空名不被拒，而是被存成「未命名图片」（if (!name) 400 是死代码）", async () => {
+    const folder = await createFolder("原名");
+    const renamed = await rename(folder.id, "");
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.name).toBe("未命名图片");
+  });
+
+  test("已存在「未命名图片」时重命名为空 → 409（判重发生在净化之后）", async () => {
+    // 依赖上一条用例已把某个文件夹改成「未命名图片」——本组用例共用同一个数据目录
+    // （createImageServer 暂不支持注入 dataRoot），所以顺序是有意义的。
+    const folder = await createFolder("另一个原名");
+    const renamed = await rename(folder.id, "");
+    expect(renamed.status).toBe(409);
+  });
+
+  test("★ 名字 '..' 原样落盘（不像 sanitizeSegment 那样兜底）", async () => {
+    const folder = await createFolder("原名3");
+    const renamed = await rename(folder.id, "..");
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.name).toBe("..");
+  });
+
+  test("非法字符仍被换成下划线（safeName 确实在做净化）", async () => {
+    const folder = await createFolder("原名4");
+    const renamed = await rename(folder.id, "a/b:c*d?e");
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.name).toBe("a_b_c_d_e");
+  });
+
+  test("首尾空白**不去除**（sanitizeSegment 会 trim，这里不会）", async () => {
+    const folder = await createFolder("原名5");
+    const renamed = await rename(folder.id, "  带空格  ");
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.name).toBe("  带空格  ");
+  });
+
+  test("超长名字按 maxFilePartLength 截断", async () => {
+    const folder = await createFolder("原名6");
+    const renamed = await rename(folder.id, "x".repeat(200));
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.name.length).toBe(80);
+  });
+});

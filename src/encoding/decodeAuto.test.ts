@@ -136,4 +136,26 @@ describe("looksLikeGbk", () => {
   it("空输入不抛错（true：无可判定的替换字符）", () => {
     expect(looksLikeGbk(new Uint8Array())).toBe(true);
   });
+
+  it("GBK 单字节非法区（0x81-0xA0 与 0xFF）解出替换字符 → false", () => {
+    // 判据的唯一依据是「GBK 解码后含 U+FFFD」。若解码器对非法单字节放行（返回空串
+    // 或原字节），本组全绿即说明解码器行为变了、判据失效 —— 故逐字节钉住。
+    for (const byte of [0x81, 0xa0, 0xff]) {
+      const bytes = Uint8Array.from([byte]);
+      expect(new TextDecoder("gbk").decode(bytes), `0x${byte.toString(16)} 应解出替换字符`).toContain("�");
+      expect(looksLikeGbk(bytes), `0x${byte.toString(16)} 应判为非 GBK`).toBe(false);
+    }
+    // 双字节高字节落在非法区同样如此
+    expect(looksLikeGbk(Uint8Array.from([0x81, 0x30]))).toBe(false);
+  });
+
+  it("0x80 是 euro 而非替换字符（与 0x81 明确区分，不误判）", () => {
+    // GBK/CP936 里 0x80 是唯一保留的单字节（€），落在「非法单字节区」的左侧。
+    // encodeGbk 对 U+20AC 有特判写 0x80；若哪天特判被删、查表落空退化成 '?'，
+    // 本条会先红。
+    expect(Array.from(encodeGbk("€"))).toEqual([0x80]);
+    expect(new TextDecoder("gbk").decode(Uint8Array.from([0x80]))).not.toContain("�");
+    expect(looksLikeGbk(Uint8Array.from([0x80]))).toBe(true);
+    expect(looksLikeGbk(Uint8Array.from([0x80, 0x40]))).toBe(true);
+  });
 });

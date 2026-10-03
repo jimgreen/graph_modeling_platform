@@ -204,6 +204,50 @@ describe("user customization inventory", () => {
     expect(inventory.countsByDomain["e-interface-definitions"]).toBe(1);
     expect(restored.deviceLibrary.eDeviceDefinitionFieldOrder?.ACGenerator).toBeUndefined();
   });
+
+  test("normalizes missing and malformed image data while retaining the first duplicate", () => {
+    const normalized = normalizeUserCustomizationSnapshot({
+      imageLibrary: {
+        folders: [
+          { id: "", name: "" },
+          { id: "custom", name: "自定义" },
+          { id: "custom", name: "覆盖名称" },
+          { id: "builtin-shared-icons", name: "内置" }
+        ],
+        assets: [
+          { id: "", name: "空", folderId: "custom", url: "" },
+          { id: "img-1", name: "旧", folderId: "missing", url: "" },
+          { id: "builtin-shared-icon-test", name: "内置", folderId: "custom", url: "x" },
+          { id: "img-1", name: "新", folderId: "custom", url: "/custom/img-1" }
+        ]
+      }
+    });
+
+    expect(normalized.imageLibrary.folders).toEqual([
+      { id: "root", name: "默认文件夹" },
+      { id: "custom", name: "自定义" }
+    ]);
+    expect(normalized.imageLibrary.assets).toEqual([{
+      id: "img-1",
+      name: "新",
+      folderId: "custom",
+      url: "/custom/img-1"
+    }]);
+  });
+
+  test("normalizes malformed snapshot domains to defaults", () => {
+    const normalized = normalizeUserCustomizationSnapshot({
+      deviceLibrary: undefined,
+      measurementConfig: undefined,
+      colorConfig: { colorDisplayMode: "invalid" as never, colorPalette: undefined as never },
+      imageLibrary: { folders: "bad" as never, assets: "bad" as never }
+    });
+
+    expect(normalized.deviceLibrary.customDeviceTemplates).toEqual([]);
+    expect(normalized.measurementConfig.measurementTypes.length).toBeGreaterThan(0);
+    expect(normalized.colorConfig.colorDisplayMode).toBe("energy");
+    expect(normalized.imageLibrary).toEqual({ folders: [{ id: "root", name: "默认文件夹" }], assets: [] });
+  });
 });
 
 describe("user customization merge and restore", () => {
@@ -309,6 +353,42 @@ describe("user customization merge and restore", () => {
     expect(preview.target.deviceLibrary.customDeviceTemplates.map((item) => item.kind)).toEqual(["new-id"]);
   });
 
+  test("preview replacement keeps absent legacy domains and counts removals as updates", () => {
+    const current = defaultSnapshot();
+    current.deviceLibrary.customDeviceTemplates = [customTemplate("local", "本地")];
+    current.colorConfig.colorDisplayMode = "voltage";
+
+    const preview = previewUserCustomizationImport(current, { deviceLibrary: emptyUserDeviceLibrary() }, "replace");
+
+    expect(preview.mode).toBe("replace");
+    expect(preview.target.colorConfig.colorDisplayMode).toBe("voltage");
+    expect(preview.target.deviceLibrary.customDeviceTemplates).toEqual([]);
+    expect(preview.additions).toBe(0);
+    expect(preview.updates).toBeGreaterThan(0);
+    expect(preview.unchanged).toBeGreaterThan(0);
+  });
+
+  test("incremental merge preserves omitted domains and merges folders and assets by IDs", () => {
+    const current = defaultSnapshot();
+    current.imageLibrary = {
+      folders: [{ id: "root", name: "默认文件夹" }, { id: "local", name: "本地" }],
+      assets: [{ id: "same", name: "旧", folderId: "local", url: "/old" }]
+    };
+    current.colorConfig.colorPalette.energy.ac = "#123456";
+    const imported = {
+      imageLibrary: {
+        folders: [{ id: "local", name: "导入" }, { id: "new", name: "新增" }],
+        assets: [{ id: "same", name: "新", folderId: "new", url: "/new" }, { id: "new", name: "新增", folderId: "new", url: "/new-asset" }]
+      }
+    };
+
+    const merged = mergeUserCustomizationSnapshots(current, imported, "incremental");
+
+    expect(merged.colorConfig.colorPalette.energy.ac).toBe("#123456");
+    expect(merged.imageLibrary.folders.map((folder) => folder.id)).toEqual(["root", "local", "new"]);
+    expect(merged.imageLibrary.assets.map((asset) => [asset.id, asset.name])).toEqual([["same", "新"], ["new", "新增"]]);
+  });
+
   test("restoring a custom device removes its dependent override, profile and E metadata", () => {
     const snapshot = defaultSnapshot();
     snapshot.deviceLibrary.customDeviceTemplates = [customTemplate("custom-source", "自定义电源")];
@@ -387,6 +467,81 @@ describe("user customization merge and restore", () => {
       deviceDefinitionSharedKeyForTemplate(acSource)
     ]?.parameterDefinitions).toBeUndefined();
   });
+
+  test("restores measurement definitions, graph templates, assets and colors", () => {
+    const snapshot = defaultSnapshot();
+    const customType = {
+      ...snapshot.measurementConfig.measurementTypes[0],
+      id: "custom-type",
+      name: "自定义量测"
+    };
+    snapshot.measurementConfig.measurementTypes.push(customType);
+    snapshot.measurementConfig.deviceProfiles.push({ deviceKind: "custom-kind", items: [] });
+    snapshot.measurementConfig.groupDefaults.borderWidth = 4;
+    snapshot.deviceLibrary.deviceDefinitionOverrides["ac-source"] = {
+      kind: "ac-source",
+      measurementDefinitions: [{ measurementTypeId: "activePower", associatedField: "custom" }]
+    };
+    snapshot.deviceLibrary.customGraphTemplateTypes = ["用户模板"];
+    snapshot.deviceLibrary.customGraphTemplates = [{
+      id: "tpl-1",
+      typeName: "用户模板",
+      name: "组合",
+      sourceSize: { width: 1, height: 1 },
+      clipboard: { nodes: [], edges: [], groups: [] },
+      createdAt: "now",
+      updatedAt: "now"
+    }];
+    snapshot.imageLibrary.assets.push({ id: "asset-1", name: "图片", folderId: "root", url: "/asset" });
+    snapshot.colorConfig.colorDisplayMode = "voltage";
+
+    const restored = restoreUserCustomizationItems(snapshot, [
+      "measurement-definitions:type:custom-type",
+      "measurement-definitions:profile:custom-kind",
+      "measurement-definitions:group-defaults",
+      "measurement-definitions:definition:ac-source",
+      "graph-templates:type:用户模板",
+      "graph-templates:template:tpl-1",
+      "user-assets:asset-1",
+      "color-settings:palette"
+    ]);
+
+    expect(restored.measurementConfig.measurementTypes.some((type) => type.id === "custom-type")).toBe(false);
+    expect(restored.measurementConfig.deviceProfiles.some((profile) => profile.deviceKind === "custom-kind")).toBe(false);
+    expect(restored.measurementConfig.groupDefaults).toEqual(DEFAULT_MEASUREMENT_CONFIG.groupDefaults);
+    expect(restored.deviceLibrary.deviceDefinitionOverrides["ac-source"]?.measurementDefinitions).toBeUndefined();
+    expect(restored.deviceLibrary.customGraphTemplateTypes).toEqual([]);
+    expect(restored.deviceLibrary.customGraphTemplates).toEqual([]);
+    expect(restored.imageLibrary.assets).toEqual([]);
+    expect(restored.colorConfig.colorDisplayMode).toBe("energy");
+  });
+
+  test("restores built-in measurement and profile items from defaults", () => {
+    const snapshot = defaultSnapshot();
+    snapshot.measurementConfig.measurementTypes = snapshot.measurementConfig.measurementTypes.filter((type) => type.id !== "activePower");
+    snapshot.measurementConfig.deviceProfiles = snapshot.measurementConfig.deviceProfiles.filter((profile) => profile.deviceKind !== "ac-source");
+
+    const restored = restoreUserCustomizationItems(snapshot, [
+      "measurement-definitions:type:activePower",
+      "measurement-definitions:profile:ac-source"
+    ]);
+
+    expect(restored.measurementConfig.measurementTypes.some((type) => type.id === "activePower")).toBe(true);
+    expect(restored.measurementConfig.deviceProfiles.some((profile) => profile.deviceKind === "ac-source")).toBe(true);
+  });
+
+  test("ignores malformed and unknown restore keys", () => {
+    const snapshot = defaultSnapshot();
+    const restored = restoreUserCustomizationItems(snapshot, [
+      "not-a-key",
+      "unknown-domain:item",
+      "measurement-definitions:%E0%A4%A",
+      "graph-templates:unknown:item",
+      "user-assets:missing"
+    ]);
+
+    expect(restored).toEqual(snapshot);
+  });
 });
 
 describe("user customization safety helpers", () => {
@@ -449,5 +604,44 @@ describe("user customization safety helpers", () => {
 
     expect(result.nodes[0]).toBe(orphan);
     expect(result.changed).toBe(false);
+  });
+
+  test("reconciles existing nodes when a customization changes its definition", () => {
+    const previous = {
+      ...customTemplate("custom-kind", "旧定义"),
+      parameterDefinitions: [{ cnName: "功率", enName: "power", valueType: "float" as const, typicalValue: "1" }]
+    };
+    const next = {
+      ...previous,
+      label: "新定义",
+      size: { width: 96, height: 60 },
+      terminalCount: 2,
+      parameterDefinitions: [{ cnName: "功率", enName: "power", valueType: "float" as const, typicalValue: "2" }]
+    };
+    const node = {
+      id: "node-1",
+      kind: "custom-kind",
+      name: "自定义设备",
+      position: { x: 0, y: 0 },
+      size: { width: 80, height: 48 },
+      params: { power: "1" },
+      terminals: [{ id: "t1", label: "交流端1", type: "ac", anchor: { x: 0.5, y: 0 }, nodeNumber: "N1" }],
+      nodeNumber: "N1",
+      acTopologyNode: 0,
+      dcTopologyNode: 0,
+      rotation: 0,
+      scale: 1
+    } as unknown as ModelNode;
+
+    const result = reconcileNodesAfterCustomizationChange(
+      [node],
+      new Map([[previous.kind, previous]]),
+      new Map([[next.kind, next]])
+    );
+
+    expect(result.changed).toBe(true);
+    expect(result.nodes[0]).not.toBe(node);
+    expect(result.nodes[0].size).toEqual({ width: 96, height: 60 });
+    expect(result.nodes[0].terminals).toHaveLength(2);
   });
 });

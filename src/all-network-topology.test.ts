@@ -1314,5 +1314,435 @@ describe("全网拓扑告警分类", () => {
     ))).toBe(false);
     expect(result.errors.some((alert) => alert.message.includes("i_max=199"))).toBe(false);
   });
+});
 
+describe("全网拓扑分支边界覆盖", () => {
+  test("空方案、无效索引和相同索引模型按名称与项目ID排序", () => {
+    expect(collectAllNetworkTopologyReferenceModels([])).toEqual([]);
+    expect(collectAllNetworkTopologyModels([])).toEqual([]);
+    expect(defaultAllNetworkTopologySelection([])).toEqual([]);
+
+    const first = projectRecord("project-b", "模型B", 0, "厂站");
+    first.name = "";
+    const second = projectRecord("project-a", "模型A", 0, "厂站");
+    second.name = "";
+    const invalid = projectRecord("project-invalid", "模型C", 1, "厂站");
+    invalid.project.idx = "not-a-number" as never;
+    invalid.project.modelType = undefined as never;
+    const emptyScheme = {
+      id: "empty-scheme",
+      name: "空方案",
+      updatedAt: "2026-08-17T00:00:00.000Z",
+      projects: undefined,
+      children: undefined
+    } as unknown as SavedSchemeRecord;
+
+    const models = collectAllNetworkTopologyReferenceModels([{
+      id: "scheme-root",
+      name: "主方案",
+      updatedAt: "2026-08-17T00:00:00.000Z",
+      projects: [first, second, invalid],
+      children: [emptyScheme]
+    }]);
+
+    expect(models.map((model) => [model.projectId, model.name, model.idx, model.modelType])).toEqual([
+      ["project-a", "模型A", 0, "厂站"],
+      ["project-b", "模型B", 0, "厂站"],
+      ["project-invalid", "模型C", 0, ""]
+    ]);
+    expect(collectAllNetworkTopologyModels([{
+      id: "scheme-root",
+      name: "主方案",
+      updatedAt: "2026-08-17T00:00:00.000Z",
+      projects: [first, second, invalid]
+    }]).map((model) => model.projectId)).toEqual(["project-a", "project-b"]);
+  });
+
+  test("全局线路引用可以按项目索引或方案路径名称回退匹配", () => {
+    const indexedRecord = projectRecord("indexed", "索引模型", 15, "厂站");
+    const indexedModel = collectAllNetworkTopologyReferenceModels([{
+      id: "scheme",
+      name: "主方案",
+      updatedAt: "2026-08-17T00:00:00.000Z",
+      projects: [indexedRecord]
+    }])[0];
+    const indexedReference = globalLineReference(
+      indexedModel,
+      "line-indexed",
+      "source",
+      "boundary-indexed",
+      "t1"
+    );
+    indexedReference.modelKey = "model:other";
+    expect(modelForGlobalLineReference(indexedReference, [indexedModel])).toBe(indexedModel);
+
+    const pathRecord = projectRecord("path-model", "路径模型", 0, "馈线");
+    const pathModel = collectAllNetworkTopologyReferenceModels([{
+      id: "scheme-path",
+      name: "路径方案",
+      updatedAt: "2026-08-17T00:00:00.000Z",
+      projects: [pathRecord]
+    }])[0];
+    const pathReference = globalLineReference(
+      pathModel,
+      "line-path",
+      "source",
+      "boundary-path",
+      "t1"
+    );
+    pathReference.modelKey = "path:other";
+    pathReference.projectIdx = 0;
+    expect(modelForGlobalLineReference(pathReference, [pathModel])).toBe(pathModel);
+
+    pathReference.projectName = "";
+    expect(modelForGlobalLineReference(pathReference, [pathModel])).toBeUndefined();
+  });
+
+  test("全局线路预检查覆盖重复记录、缺失端点连接和关联端点设备", () => {
+    const { record, sourceLine, sourceModel, targetModel } = completeGlobalLineConsistencyFixture(
+      "definition-branches"
+    );
+    const duplicateLine = {
+      ...sourceLine,
+      id: "duplicate-global-line-node",
+      params: { ...sourceLine.params }
+    };
+    sourceModel.record.project.nodes.push(duplicateLine);
+    sourceLine.params.idx = "";
+    const mismatchRecord = {
+      ...record,
+      name: "",
+      energyType: "dc" as const,
+      endpointSlots: {
+        ...record.endpointSlots!,
+        source: {
+          ...record.endpointSlots!.source!,
+          modelKey: "path:registry-source",
+          projectIdx: sourceModel.idx,
+          projectName: sourceModel.name,
+          nodeId: "",
+          terminalSlot: undefined,
+          boundaryEndpoint: undefined
+        }
+      },
+      terminalSlots: {
+        ...record.terminalSlots!,
+        i: {
+          ...record.terminalSlots!.i!,
+          modelKey: "path:registry-source",
+          projectIdx: sourceModel.idx,
+          projectName: sourceModel.name,
+          nodeId: "",
+          terminalSlot: undefined,
+          boundaryEndpoint: undefined
+        }
+      },
+      references: [
+        {
+          ...record.endpointSlots!.source!,
+          modelKey: "path:registry-source",
+          projectIdx: sourceModel.idx,
+          projectName: sourceModel.name,
+          nodeId: "",
+          terminalSlot: undefined,
+          boundaryEndpoint: undefined
+        },
+        record.endpointSlots!.target!
+      ],
+      idx: record.idx + 1
+    };
+    const mismatch = analyzeGlobalLinesForAllNetworkTopology(
+      [mismatchRecord],
+      [sourceModel, targetModel]
+    );
+    expect(mismatch.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: expect.stringContaining("definition-mismatch:source"),
+        modelName: sourceModel.name,
+        deviceName: record.id,
+        message: expect.stringMatching(/能源类型不一致|idx不一致|首末端方向不一致|连接定义缺失/)
+      })
+    ]));
+
+    delete sourceLine.params[ROUTABLE_LINE_SOURCE_NODE_PARAM];
+    delete sourceLine.params[ROUTABLE_LINE_SOURCE_TERMINAL_PARAM];
+    const missingConnection = analyzeGlobalLinesForAllNetworkTopology([record], [sourceModel, targetModel]);
+    expect(missingConnection.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: expect.stringContaining("definition-mismatch:source"),
+        message: expect.stringContaining("连接定义缺失")
+      })
+    ]));
+
+    sourceLine.params[ROUTABLE_LINE_SOURCE_NODE_PARAM] = "node-does-not-exist";
+    sourceLine.params[ROUTABLE_LINE_SOURCE_TERMINAL_PARAM] = "t1";
+    const missingEndpointNode = analyzeGlobalLinesForAllNetworkTopology([record], [sourceModel, targetModel]);
+    expect(missingEndpointNode.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: expect.stringContaining("definition-mismatch:source"),
+        message: expect.stringContaining("端点设备不存在")
+      })
+    ]));
+  });
+
+  test("加载覆盖检查覆盖仅加载末端、空名称和无效关联索引", () => {
+    const { record, targetLine, sourceModel, targetModel } = completeGlobalLineConsistencyFixture(
+      "target-only-loaded"
+    );
+    targetModel.name = "";
+    const targetReference = {
+      ...record.endpointSlots!.target!,
+      projectName: "",
+      nodeId: "",
+      modelKey: "model:72"
+    };
+    const sourceReference = {
+      ...record.endpointSlots!.source!,
+      projectName: "",
+      modelKey: "model:71"
+    };
+    const targetOnlyRecord = {
+      ...record,
+      name: "",
+      references: [sourceReference, targetReference],
+      endpointSlots: { source: sourceReference, target: targetReference },
+      terminalSlots: { i: sourceReference, j: targetReference },
+      degree: 1
+    };
+    const targetOnly = analyzeAllNetworkTopologyLoadCoverage(
+      [targetOnlyRecord],
+      [{ ...targetModel, record: { ...targetModel.record, project: { ...targetModel.record.project, nodes: [] } } }],
+      [sourceModel, targetModel]
+    );
+    expect(targetOnly.warnings).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("single-loaded-endpoint:target"),
+        modelName: "",
+        deviceName: targetOnlyRecord.id,
+        message: expect.stringMatching(/末端模型“model:72”已加载.*首端模型“model:71”未加载/)
+      })
+    ]);
+
+    expect(analyzeAllNetworkTopologyLoadCoverage(
+      [{ ...targetOnlyRecord, endpointSlots: { source: sourceReference, target: null }, terminalSlots: { i: sourceReference, j: null }, references: [sourceReference] }],
+      [],
+      []
+    )).toEqual({ errors: [], warnings: [] });
+
+    const unnamedAssociation = createDefaultNode("ac-feeder-load", { x: 10, y: 10 });
+    unnamedAssociation.name = "";
+    unnamedAssociation.params.model_id = "0";
+    const owner = {
+      projectId: "owner-empty",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "",
+      idx: 1,
+      modelType: "厂站" as const,
+      record: projectRecord("owner-empty", "", 1, "厂站", [unnamedAssociation])
+    };
+    const validAssociation = createDefaultNode("ac-feeder-load", { x: 10, y: 10 });
+    validAssociation.name = "";
+    validAssociation.params.model_id = "7";
+    const target = {
+      projectId: "target-project",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "",
+      idx: 7,
+      modelType: "馈线" as const,
+      record: projectRecord("target-project", "", 7, "馈线")
+    };
+    const loadedSameIndex = { ...target, projectId: "loaded-other-project" };
+    const unloaded = analyzeAllNetworkTopologyLoadCoverage(
+      [],
+      [{ ...owner, record: { ...owner.record, project: { ...owner.record.project, nodes: [validAssociation] } } }],
+      [owner, target]
+    );
+    expect(unloaded.warnings).toEqual([
+      expect.objectContaining({
+        deviceName: validAssociation.id,
+        message: expect.stringContaining(`模型“”中的${validAssociation.id}`)
+      })
+    ]);
+    expect(analyzeAllNetworkTopologyLoadCoverage(
+      [],
+      [{ ...owner, record: { ...owner.record, project: { ...owner.record.project, nodes: [validAssociation] } } }, loadedSameIndex],
+      [owner, target]
+    ).warnings).toEqual([]);
+    expect(analyzeAllNetworkTopologyLoadCoverage([], [owner], [owner, target]).warnings).toEqual([]);
+  });
+
+  test("一致性检查覆盖同模型双端登记、局部线路和端点电压回退", () => {
+    const { record, sourceLine, targetLine, sourceModel, targetModel } = completeGlobalLineConsistencyFixture(
+      "consistency-branches"
+    );
+    const doubleReferenceRecord = {
+      ...record,
+      references: [record.endpointSlots!.source!, record.endpointSlots!.source!],
+      endpointSlots: {
+        source: record.endpointSlots!.source!,
+        target: record.endpointSlots!.source!
+      },
+      terminalSlots: {
+        i: record.endpointSlots!.source!,
+        j: record.endpointSlots!.source!
+      }
+    };
+    expect(analyzeGlobalLineConsistency([doubleReferenceRecord], [sourceModel, targetModel]).errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.stringContaining("model-double-endpoint"),
+          message: expect.stringContaining("同时被全局线路表登记为首端和末端")
+        })
+      ])
+    );
+
+    delete sourceLine.params[GLOBAL_LINE_MODEL_PAIR_PARAM];
+    delete targetLine.params[GLOBAL_LINE_MODEL_PAIR_PARAM];
+    const sourceElectricalNode = sourceModel.record.project.nodes.find((node) => node.kind === "ac-load")!;
+    const targetElectricalNode = targetModel.record.project.nodes.find((node) => node.kind === "ac-source")!;
+    sourceElectricalNode.terminals[0].vbase = "";
+    targetElectricalNode.terminals[0].vbase = "";
+    sourceLine.terminals[sourceLine.terminals.length - 1].vbase = "11";
+    targetLine.terminals[0].vbase = "11";
+    expect(analyzeGlobalLineConsistency([record], [sourceModel, targetModel]).errors).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: expect.stringContaining("endpoint-voltage-base-mismatch") })])
+    );
+
+    const localSource = createDefaultNode("ac-load", { x: 10, y: 10 });
+    const localTarget = createDefaultNode("ac-source", { x: 100, y: 10 });
+    const localLine = connectAcLine("无边界全局线路", { node: localSource, terminalId: localSource.terminals[0].id }, { node: localTarget, terminalId: localTarget.terminals[0].id });
+    localLine.params[GLOBAL_LINE_ID_PARAM] = "local-only-global-line";
+    localLine.params.idx = "90";
+    sourceModel.record.project.nodes.push(localSource, localTarget, localLine);
+    const localSourceReference = globalLineReference(sourceModel, localLine.id, "source", localSource.id, "t1");
+    const localTargetReference = globalLineReference(sourceModel, localLine.id, "target", localTarget.id, "t1");
+    const localRecord = globalLineRecord(
+      "local-only-global-line",
+      90,
+      "无边界全局线路",
+      localLine,
+      localSourceReference,
+      localTargetReference
+    );
+    expect(analyzeGlobalLineConsistency([localRecord], [sourceModel]).errors.length).toBeGreaterThan(0);
+  });
+
+  test("空模型和未命名节点仍能返回现有拓扑错误分类", () => {
+    const emptyModel = {
+      projectId: "empty-model",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "空厂站",
+      idx: 0,
+      modelType: "厂站" as const,
+      record: projectRecord("empty-model", "空厂站", 0, "厂站")
+    };
+    expect(analyzeAllNetworkTopology([emptyModel], [emptyModel])).toEqual({ errors: [], warnings: [] });
+
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("dc-load", { x: 300, y: 100 });
+    source.name = "";
+    load.name = "";
+    const model = {
+      projectId: "unnamed-topology",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "未命名拓扑",
+      idx: 4,
+      modelType: "厂站" as const,
+      record: projectRecord("unnamed-topology", "未命名拓扑", 4, "厂站", [source, load], [{
+        id: "unnamed-edge",
+        sourceId: source.id,
+        targetId: load.id,
+        sourceTerminalId: source.terminals[0].id,
+        targetTerminalId: load.terminals[0].id
+      }])
+    };
+    const result = analyzeAllNetworkTopology([model], [model]);
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ deviceName: expect.any(String), message: expect.stringContaining("端子类型不一致") })
+    ]));
+  });
+
+  test("层级归属覆盖无效关联、空项目身份和相同索引父模型排序", () => {
+    const firstAssociation = createDefaultNode("ac-feeder-source", { x: 100, y: 100 });
+    firstAssociation.name = "";
+    firstAssociation.params.model_id = "12";
+    const secondAssociation = createDefaultNode("dc-feeder-load", { x: 200, y: 100 });
+    secondAssociation.name = "";
+    secondAssociation.params.model_id = "12";
+    const stationA = {
+      projectId: "station-a",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "同名厂站",
+      idx: 1,
+      modelType: "厂站" as const,
+      record: projectRecord("station-a", "同名厂站", 1, "厂站", [firstAssociation])
+    };
+    const stationB = {
+      projectId: "station-b",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "同名厂站",
+      idx: 1,
+      modelType: "厂站" as const,
+      record: projectRecord("station-b", "同名厂站", 1, "厂站", [secondAssociation])
+    };
+    const child = {
+      projectId: "",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "",
+      idx: 12,
+      modelType: "馈线" as const,
+      record: projectRecord("", "", 12, "馈线")
+    };
+    const result = analyzeAllNetworkTopology([stationA, stationB, child], [stationA, stationB, child]);
+    expect(result.errors.filter((alert) => alert.id.includes("duplicate-hierarchy-parent"))).toHaveLength(2);
+    expect(result.errors
+      .filter((alert) => alert.id.includes("duplicate-hierarchy-parent"))
+      .every((alert) => alert.deviceName === ""))
+      .toBe(true);
+
+    const invalidTypeAssociation = createDefaultNode("ac-feeder-source", { x: 10, y: 10 });
+    invalidTypeAssociation.params.model_id = "23";
+    const zeroAssociation = createDefaultNode("ac-feeder-source", { x: 10, y: 10 });
+    zeroAssociation.params.model_id = "0";
+    const stationWithInvalidLinks = {
+      ...stationA,
+      projectId: "station-invalid-links",
+      record: projectRecord("station-invalid-links", "无效关联厂站", 2, "厂站", [invalidTypeAssociation, zeroAssociation])
+    };
+    const wrongTypeChild = {
+      ...child,
+      projectId: "wrong-type-child",
+      idx: 23,
+      modelType: "台区" as const,
+      record: projectRecord("wrong-type-child", "错误类型模型", 23, "台区")
+    };
+    expect(analyzeAllNetworkTopology(
+      [stationWithInvalidLinks, wrongTypeChild],
+      [stationWithInvalidLinks, wrongTypeChild]
+    ).errors.some((alert) => alert.id.includes("duplicate-hierarchy-parent"))).toBe(false);
+
+    const pathParentA = {
+      ...stationA,
+      projectId: "",
+      schemePath: ["方案A"],
+      idx: 0,
+      record: projectRecord("", "路径父模型", 0, "厂站", [firstAssociation])
+    };
+    const pathParentB = {
+      ...stationB,
+      projectId: "",
+      schemePath: ["方案B"],
+      idx: 0,
+      record: projectRecord("", "路径父模型", 0, "厂站", [secondAssociation])
+    };
+    expect(analyzeAllNetworkTopology([pathParentA, pathParentB, child], [pathParentA, pathParentB, child]).errors)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ id: expect.stringContaining("duplicate-hierarchy-parent") })]));
+  });
 });

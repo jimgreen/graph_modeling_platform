@@ -158,11 +158,13 @@ describe(apiPath("/v1/schemes/model/svg") + " 模型 SVG", () => {
 });
 
 describe("schemePath 编解码", () => {
+  // 解析函数的入参是 **URL 层已解码的值**（`url.searchParams.get()` 的结果），
+  // 所以这里必须先 decodeURIComponent 一次，否则测的不是生产链路。
   test("encode/decode 往返一致", async () => {
     const { encodeSchemePath, parseSchemePathParam } = await import("./schemePath.mjs");
     const parts = ["方案A", "子方案B"];
     const encoded = encodeSchemePath(parts);
-    const decoded = parseSchemePathParam(encoded);
+    const decoded = parseSchemePathParam(decodeURIComponent(encoded));
     expect(decoded).toEqual(parts);
   });
 
@@ -171,7 +173,16 @@ describe("schemePath 编解码", () => {
     const parts = ["IEEE标准算例"];
     const encoded = encodeSchemePath(parts);
     expect(encoded).not.toContain("[");
-    const decoded = parseSchemePathParam(encoded);
+    const decoded = parseSchemePathParam(decodeURIComponent(encoded));
+    expect(decoded).toEqual(parts);
+  });
+
+  test("★ 经真实 URL（URLSearchParams）解析，方案名含 % 时原样保留", async () => {
+    const { encodeSchemePath, parseSchemePathParam } = await import("./schemePath.mjs");
+    const parts = ["50%41厂", "子方案"];
+    const url = new URL(`http://127.0.0.1/x?schemePath=${encodeSchemePath(parts)}`);
+    // 这一行就是生产写法（apiV1Schemes.mjs / cimExport.mjs / eFileExport.mjs / sendModel.mjs）
+    const decoded = parseSchemePathParam(url.searchParams.get("schemePath"));
     expect(decoded).toEqual(parts);
   });
 });

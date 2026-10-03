@@ -1985,11 +1985,12 @@ function renderPreviewHtml(manifest) {
 `;
 }
 
-await rm(tempDir, { recursive: true, force: true });
-await rm(outputDir, { recursive: true, force: true });
-await mkdir(packDir, { recursive: true });
-await mkdir(extractDir, { recursive: true });
-await mkdir(outputDir, { recursive: true });
+async function generateOfficeFluentIcons() {
+  await rm(tempDir, { recursive: true, force: true });
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(packDir, { recursive: true });
+  await mkdir(extractDir, { recursive: true });
+  await mkdir(outputDir, { recursive: true });
 
 const tarballName = run(npmCommand, ["pack", packageSpec, "--pack-destination", packDir, "--silent"]);
 const tarballPath = path.join(packDir, tarballName.split(/\r?\n/).filter(Boolean).at(-1));
@@ -2134,6 +2135,27 @@ await writeFile(path.join(outputDir, "search-index.json"), `${JSON.stringify(sea
 await writeFile(path.join(outputDir, "source-audit.json"), `${JSON.stringify(sourceAudit, null, 2)}\n`, "utf8");
 await writeFile(path.join(outputDir, "LICENSE-MIT.txt"), mitLicenseText, "utf8");
 await writeFile(path.join(outputDir, "README.md"), renderReadme(manifest), "utf8");
-await writeFile(path.join(outputDir, "index.html"), renderPreviewHtml(manifest), "utf8");
+  await writeFile(path.join(outputDir, "index.html"), renderPreviewHtml(manifest), "utf8");
 
-console.log(`Generated ${manifest.totalIcons} SVG icons in ${path.relative(rootDir, outputDir)}`);
+  console.log(`Generated ${manifest.totalIcons} SVG icons in ${path.relative(rootDir, outputDir)}`);
+}
+
+export {
+  categoryMatchScore,
+  categoryRejectsSourceName,
+  displayNameForSource,
+  duplicateSvgKey,
+  findIconFile,
+  iconComplexity,
+  listAvailableRegularIcons,
+  nameTokens,
+  normalizeSvg,
+  renderPreviewHtml,
+  renderReadme,
+  sourceAudit,
+  tokenMatchesPattern,
+};
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await generateOfficeFluentIcons();
+}

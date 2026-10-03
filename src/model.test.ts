@@ -139,7 +139,12 @@ import {
   routableLineDeviceCanvasPoints,
   routableLineDeviceLocalPoints,
   ROUTABLE_LINE_POINTS_PARAM,
+  ROUTABLE_LINE_SOURCE_LOCAL_POINT_PARAM,
+  ROUTABLE_LINE_TARGET_TERMINAL_PARAM,
+  ROUTABLE_LINE_TARGET_LOCAL_POINT_PARAM,
   ROUTABLE_LINE_DEFAULT_STROKE_WIDTH,
+  makeId,
+  DEFAULT_CONNECTION_STROKE_COLOR,
   createStaticBoxNodeFromDrawing,
   createInteractiveStaticDrawingNode,
   getElementFocusPoint,
@@ -155,6 +160,7 @@ import {
   isStaticGraphicNode,
   staticRenderKindForNode,
   isStaticLineLikeKind,
+  STATIC_LINE_LIKE_KINDS,
   isBlockingTopologyValidationError,
   isRepeatedEdgePointerClick,
   parseStaticDrawPoints,
@@ -728,6 +734,40 @@ describe("power system model", () => {
 
 
 
+  test("records static line-like kind members and their current length", () => {
+    expect(Array.isArray(STATIC_LINE_LIKE_KINDS)).toBe(true);
+    // 现状：static-self-loop 重复出现，见 model.ts:695-698 与 model-node-ops.ts:27。
+    expect(STATIC_LINE_LIKE_KINDS).toHaveLength(10);
+    expect(STATIC_LINE_LIKE_KINDS).toEqual([
+      "static-line",
+      "static-polyline",
+      "static-straight-connector",
+      "static-arrow-connector",
+      "static-double-arrow-connector",
+      "static-elbow-connector",
+      "static-bezier-connector",
+      "static-smoothstep-connector",
+      "static-self-loop",
+      "static-self-loop"
+    ]);
+    for (const kind of STATIC_LINE_LIKE_KINDS) {
+      expect(isStaticLineLikeKind(kind)).toBe(true);
+    }
+  });
+
+  test("generates unique prefixed ids and keeps the default connection color literal", () => {
+    const first = makeId("model-test");
+    const second = makeId("model-test");
+    const otherPrefix = makeId("edge-test");
+
+    expect(typeof first).toBe("string");
+    expect(first).toMatch(/^model-test-/u);
+    expect(second).toMatch(/^model-test-/u);
+    expect(otherPrefix).toMatch(/^edge-test-/u);
+    expect(new Set([first, second, otherPrefix]).size).toBe(3);
+    expect(DEFAULT_CONNECTION_STROKE_COLOR).toBe("#334155");
+  });
+
   test("preserves the per-model automatic canvas expansion setting", () => {
     const project: ProjectFile = {
       version: 1,
@@ -752,7 +792,17 @@ describe("power system model", () => {
 
 
 
-  test("creates routable line-like devices from snapped endpoint terminal points", () => {
+  test("keeps routable-line endpoint parameter keys and local points aligned", () => {
+    expect({
+      sourceLocalPoint: ROUTABLE_LINE_SOURCE_LOCAL_POINT_PARAM,
+      targetTerminal: ROUTABLE_LINE_TARGET_TERMINAL_PARAM,
+      targetLocalPoint: ROUTABLE_LINE_TARGET_LOCAL_POINT_PARAM
+    }).toEqual({
+      sourceLocalPoint: "_routableLineSourceLocalPoint",
+      targetTerminal: "_routableLineTargetTerminalId",
+      targetLocalPoint: "_routableLineTargetLocalPoint"
+    });
+
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
     expect(template).toBeTruthy();
     const source = { ...createDefaultNode("ac-source", { x: 100, y: 120 }), id: "source-node" };
@@ -766,8 +816,8 @@ describe("power system model", () => {
       targetPoint,
       "layer-a",
       {
-        source: routableLineDeviceEndpointRefForNode(source, "t1"),
-        target: routableLineDeviceEndpointRefForNode(target, "t1")
+        source: routableLineDeviceEndpointRefForNode(source, "t1", sourcePoint),
+        target: routableLineDeviceEndpointRefForNode(target, "t1", targetPoint)
       }
     );
     const points = routableLineDeviceCanvasPoints(line);
@@ -783,6 +833,15 @@ describe("power system model", () => {
     expect(Math.abs(line.terminals[1].anchor.y)).toBeLessThan(0.499);
     expect(refs.source).toMatchObject({ nodeId: "source-node", terminalId: "t1" });
     expect(refs.target).toMatchObject({ nodeId: "target-node", terminalId: "t1" });
+    expect(line.params[ROUTABLE_LINE_SOURCE_LOCAL_POINT_PARAM]).toBeTruthy();
+    expect(line.params[ROUTABLE_LINE_TARGET_TERMINAL_PARAM]).toBe("t1");
+    expect(line.params[ROUTABLE_LINE_TARGET_LOCAL_POINT_PARAM]).toBeTruthy();
+    expect(refs.source?.localPoint).toEqual(
+      routableLineDeviceEndpointRefForNode(source, "t1", sourcePoint).localPoint
+    );
+    expect(refs.target?.localPoint).toEqual(
+      routableLineDeviceEndpointRefForNode(target, "t1", targetPoint).localPoint
+    );
   });
 
 
