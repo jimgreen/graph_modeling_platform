@@ -1598,6 +1598,12 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         }
         const selectedSet = new Set(selectedIds);
         const selected = current.elements.filter((element: StateIconDrawingElement) => selectedSet.has(element.id)).sort((a, b) => axis === "x" ? a.x - b.x : a.y - b.y);
+        // 上面的守卫数的是「选中 id 数」，这里 filter 的是「当前仍存在的元素」。
+        // 切换图元库后 elements 被换、selectedElementIds 仍是陈旧 id 时，selected 会空，
+        // 随后的 selected[0] / selected[length-1] 就是 TypeError。同一道门补在过滤之后。
+        if (selected.length < 3) {
+          return current;
+        }
         const first = selected[0];
         const last = selected[selected.length - 1];
         const step = ((axis === "x" ? last.x - first.x : last.y - first.y) || 0) / Math.max(1, selected.length - 1);
