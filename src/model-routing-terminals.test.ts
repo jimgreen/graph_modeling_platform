@@ -3,7 +3,7 @@
 // 所以全部按契约钉住。
 import { describe, expect, test } from "vitest";
 
-import { busTerminalTypeByKind, getNodeVoltageLevel, getTerminalNormal } from "./model-routing";
+import { busTerminalTypeByKind, canConnectTerminals, getNodeVoltageLevel, getTerminalNormal, getTerminalPoint } from "./model-routing";
 import type { ModelNode, Terminal } from "./model";
 
 const terminal = (id: string, anchorX: number, anchorY: number, type: Terminal["type"] = "ac"): Terminal =>
@@ -163,12 +163,54 @@ describe("getTerminalNormal", () => {
     expect(normalOf(twoTerminals, "不存在")).toEqual({ x: 0, y: -1 });
   });
 
-  test("无端子且不是母线时抛 TypeError（getTerminal 最后一环是 node.terminals[0]）", () => {
-    // 如实记录：这里不是「优雅返回 undefined」，调用方必须自己保证节点有端子
-    expect(() => getTerminalNormal(node({ terminals: [] }))).toThrow(/anchor/u);
+  test("无端子且不是母线时退回「向上」，不再抛 TypeError", () => {
+    // 原实现直接取 terminal.anchor，无端子节点（getTerminal 末环是 node.terminals[0]，此时为空）
+    // 会让整条布线崩掉。已定语义：布线取不到端子就按「向上」接设备本体。
+    expect(normalOf(node({ terminals: [] }))).toEqual({ x: 0, y: -1 });
   });
 
   test("无端子但 kind 是母线：虚拟端子仍给出法线（向左）", () => {
     expect(normalOf(node({ kind: "ac-bus", terminals: [] }))).toEqual({ x: -1, y: 0 });
+  });
+});
+
+// 无端子节点（terminals 空且非母线类）时 getTerminal 返回 undefined，
+// 但其返回类型标注是 Terminal。三处解引用点已统一兜住：接到设备本体，不崩。
+describe("无端子节点：连到设备本体而非抛 TypeError", () => {
+  const bare = (extra: Partial<ModelNode> = {}): ModelNode =>
+    node({ terminals: [], position: { x: 30, y: 40 }, ...extra });
+
+  test("getTerminalPoint 落到设备中心（取 position，不取端子锚点）", () => {
+    expect(getTerminalPoint(bare(), "t1")).toEqual({ x: 30, y: 40 });
+  });
+
+  test("有端子时仍走端子锚点，不受兜底影响", () => {
+    // 锚点 (0,-55) 是未归一化的字面量：local.y = -55 * size.height(100) = -5500，
+    // 再加 outwardOffset(36) → 40 - 5500 + 36 = -5464。
+    // 关键是「不等于设备中心 (30,40)」——兜底分支没被误触发。
+    const point = getTerminalPoint(node({ position: { x: 30, y: 40 } }), "t1");
+    expect(point).toEqual({ x: 30, y: -5464 });
+    expect(point).not.toEqual({ x: 30, y: 40 });
+  });
+
+  test("canConnectTerminals 两端都无端子 → 可连（都是接设备本体）", () => {
+    expect(canConnectTerminals(bare({ id: "a" }), "t1", bare({ id: "b" }), "t1")).toBe(true);
+  });
+
+  test("canConnectTerminals 只有一端无端子 → 不可连（类型无从比较）", () => {
+    expect(canConnectTerminals(bare({ id: "a" }), "t1", node({ id: "b" }), "t1")).toBe(false);
+    expect(canConnectTerminals(node({ id: "a" }), "t1", bare({ id: "b" }), "t1")).toBe(false);
+  });
+
+  test("canConnectTerminals 两端都有端子：仍按 type 比较", () => {
+    const ac = node({ id: "a" });
+    const dc = node({ id: "b", terminals: [terminal("t1", 0, -55, "dc")] });
+
+    expect(canConnectTerminals(ac, "t1", node({ id: "c" }), "t1")).toBe(true);
+    expect(canConnectTerminals(ac, "t1", dc, "t1")).toBe(false);
+  });
+
+  test("canConnectTerminals 同节点自连仍为 false（兜底不越过自连闸）", () => {
+    expect(canConnectTerminals(bare(), "t1", bare(), "t1")).toBe(false);
   });
 });
