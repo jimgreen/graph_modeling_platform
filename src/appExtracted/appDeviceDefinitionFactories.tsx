@@ -646,6 +646,21 @@ function cloneStateIconDrawingElementSnapshot(element: any) {
   };
 }
 
+/**
+ * 状态图标绘制弹窗的分组 token。
+ *
+ * 随机后缀的去向（追踪结论）：**只活在弹窗内存里，不进任何输出**，故保留 Math.random 不注入。
+ * 它被写进 dialog elements 的 groupId，消费方只有弹窗内部的三类行为 ——
+ * `expandStateIconDrawingElementIds` 的整组选中、`ungroupStateIconDrawingSelection` 的解组、
+ * `cloneStateIconDrawingElements` 粘贴时的旧→新 groupId 重映射；
+ * 渲染侧（appDeviceDefinitionRenderers）只用它做相等性判断与双击整组拖拽，
+ * React key 用的是 element.id，groupId 从不进 DOM 属性或文本。
+ *
+ * 提交路径会把它丢掉：createApplyStateIconDrawingDialog 走 stateIconDrawingToImage 把 elements
+ * 栅格化成 data URL，而 stateIconDrawing.tsx 全文没有一处 groupId（只读几何/样式），
+ * 落盘的 stateIconDrawingInlineCanPersistDraft 也只比较那串图片。
+ * ⇒ 不进节点 params、不进保存方案、不进 SVG/E 导出。
+ */
 export function stateIconDrawingGroupId() {
   return `state-icon-group-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -3816,6 +3831,23 @@ export function imageLibraryImportKindForInput(input?: { dataset?: { imageImport
   return kind === "image" || kind === "archive" ? kind : "mixed";
 }
 
+/**
+ * 后台图片上传失败时，本地兜底素材的 id。
+ *
+ * 随机源可注入的原因（去向追踪结论）：这个 id 不停在内存里 ——
+ * 它先被 saveImageAsset 当作 localStorage 键写进浏览器存储（刷新后仍在），
+ * 再作为 asset.id 进入 setImageAssetList / setImageAssets，
+ * 随后经 createApplyExistingImage 落到节点的 params.backgroundImageAssetId
+ * （resolveNodeImage / resolveNodeForegroundImage 读的就是该字段），
+ * 而节点 params 正是保存方案与 SVG / E 文件导出的内容。
+ * 同一份图若换一台机器上传，id 会不同 ⇒ 导出结果不可复现。
+ *
+ * 默认参数仍是 Math.random，字符串格式与原先逐字一致（`asset-<ms>-<6位36进制>`）。
+ */
+export function createImageUploadFallbackAssetId(random: () => number = Math.random) {
+  return `asset-${Date.now()}-${random().toString(36).slice(2, 8)}`;
+}
+
 export function imageLibraryFileMatchesImportKind(fileName: string, importKind: ImageLibraryImportKind) {
   const normalizedName = String(fileName ?? "").trim().toLowerCase();
   const isArchive = IMAGE_LIBRARY_ARCHIVE_FILE_PATTERN.test(normalizedName);
@@ -3831,11 +3863,14 @@ export function imageLibraryFileMatchesImportKind(fileName: string, importKind: 
 
 export function createChooseImage(__appScope: Record<string, any>) {
   return (event: ChangeEvent<HTMLInputElement>) => {
-  const { activeImageFolderId, imageTarget, importBackendIconLibraryFile, refreshImageFolders, requireEditMode, saveImageAsset, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
+  const { activeImageFolderId, imageTarget, importBackendIconLibraryFile, randomSource: injectedRandomSource, refreshImageFolders, requireEditMode, saveImageAsset, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
     if (!requireEditMode("上传图片")) {
       event.target.value = "";
       return;
     }
+    // 兜底 id 会流进 localStorage 与节点 params（见 createImageUploadFallbackAssetId 的追踪注释），
+    // 所以随机源做成可注入；App.tsx 不装配该键 ⇒ 仍走 Math.random，行为不变。
+    const randomSource = typeof injectedRandomSource === "function" ? injectedRandomSource : Math.random;
     const files = Array.from(event.target.files ?? []);
     const importKind = imageLibraryImportKindForInput(event.currentTarget ?? event.target);
     event.target.value = "";
@@ -3885,7 +3920,7 @@ export function createChooseImage(__appScope: Record<string, any>) {
           asset = await uploadBackendImage(file.name, imageData, activeImageFolderId);
         } catch (error) {
           showGlobalMessage(error instanceof Error ? error.message : `上传 ${file.name || "图片"} 到后台失败。`);
-          const fallbackId = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const fallbackId = createImageUploadFallbackAssetId(randomSource);
           saveImageAsset(fallbackId, imageData);
           asset = { id: fallbackId, name: file.name || "本地图片", folderId: activeImageFolderId, url: imageData };
         }
