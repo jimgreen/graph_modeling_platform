@@ -39,8 +39,24 @@ describe("data/ 目录守卫", () => {
   test("★ data/ 下没有版本跟踪文件", () => {
     const tracked = trackedUnderData();
     if (tracked === null) {
-      // 没有 .git 的检出里谈不上「被跟踪」，这一半不适用
-      expect(true).toBe(true);
+      // 没有 .git 的检出里谈不上「被跟踪」，这一半不适用，跳过（见文件头）。
+      //
+      // 这里原先写的是 `expect(true).toBe(true)` —— 恒真、无主体、无失败信息，
+      // 而且在报告里长得和真的「通过」一模一样。实测它是真破口：把 trackedUnderData 里的
+      // `!hasGitDir` 写反（有 .git 时反而返回 null），本用例照样转绿 —— 守卫逻辑已经坏了，
+      // 报告却显示通过。
+      //
+      // 因此断言的是**跳过这件事的前提本身**，且必须绕开 hasGitDir 变量重新探一次盘：
+      // 分支正是靠 hasGitDir 选进来的，断言若也读 hasGitDir，两边同源就又成了恒真；
+      // 直接 existsSync(".git") 才与分支条件独立 —— 一旦 hasGitDir 的探测写错
+      // （路径写偏、工作树等），「因为没有 .git 所以跳过」就当场转红。
+      //
+      // 已知边界：在**有 .git 的检出里本分支根本不执行**，所以「无 .git 时改返回 []」
+      // 这类变异在本机恒绿（实测过）—— 那不是等价，只是环境不可观测。别把它记成「已覆盖」。
+      expect(
+        existsSync(path.join(repoRoot, ".git")),
+        "trackedUnderData 返回 null 的前提是 repoRoot 下没有 .git；若 .git 其实存在却被判为不存在，data/ 的跟踪检查会被静默跳过"
+      ).toBe(false);
       return;
     }
     expect(tracked, `这些 data/ 下的文件被 git 跟踪了，请 git rm --cached：\n${tracked.join("\n")}`).toEqual([]);
