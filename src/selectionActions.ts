@@ -660,12 +660,28 @@ function remapRoutableLineEndpointNodeRefs(
   return nextParams;
 }
 
+// 组合副本 id 的随机源。默认实现**逐字等价**于原先内联的 `Math.random()`：
+// 读取时机仍是调用那一刻，所以外部对 Math.random 的打桩照旧生效。
+// 收敛成具名依赖的意义：以前要固定随机值只能整体替换 createGroupId（连带把
+// Date.now() 那半截也换掉），现在可以只钉住随机项。
+export function randomSource(): number {
+  return Math.random();
+}
+
+// `cloneCanvasClipboard` 的 createGroupId 默认实现。
+// 注意这不是"视觉抖动/临时 id"：产出的就是 ModelGroup.id，会经 setGroups 进图元状态，
+// 再由 normalizeProjectForBackend 原样带走，落进保存的方案文件与导出包 —— 即持久化输出。
+// 所以随机源必须可注入，测试才能确定化（默认行为不变）。
+export function defaultCanvasGroupId(random: () => number = randomSource): string {
+  return `group-${Date.now()}-${random().toString(36).slice(2, 6)}`;
+}
+
 export function cloneCanvasClipboard(
   clipboard: CanvasClipboard,
   targetTopLeft: Point,
   createNodeId: () => string,
   createEdgeId: () => string,
-  createGroupId: () => string = () => `group-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  createGroupId: () => string = defaultCanvasGroupId
 ) {
   const bounds = canvasClipboardBounds(clipboard);
   if (!bounds) {
