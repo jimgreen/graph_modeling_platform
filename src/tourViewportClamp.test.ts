@@ -477,6 +477,36 @@ describe("tour tooltip viewport clamp wiring (source contract)", () => {
   const readSource = (relativePath: string) =>
     readFileSync(new URL(relativePath, import.meta.url), "utf8");
 
+  /**
+   * 源码扫描断言的前置守卫：`String.prototype.indexOf` 未命中返回 **-1**，
+   * 命中位置可以是 **0**（目标选择器 / 属性恰好就是文件的第一段）。
+   *
+   * 所以它守的是「存在」，**不是「靠后」** —— 判据只能是 `index < 0`。
+   * `x.toBeGreaterThanOrEqual(0)` 在这里并不是无条件恒真（`undefined >= 0` 为 false、
+   * `indexOf` 未命中时返回 -1 同样为 false），因此它有鉴别力；
+   * 反过来把判据加严成 `toBeGreaterThan(0)` 才会引入假阳性：
+   * 「`.tour-tooltip {` 恰好是 styles.css 的第一条规则」「组件文件第一行就是包装层」
+   * 都是完全合法的布局，此时 index === 0 而 `> 0` 会误报。
+   *
+   * 换成抛错而非断言，是为了让失败信息指名道姓地带上 needle，
+   * 而不是让下游 `slice` 先产出垃圾文本、再报一句误导性的「"" 里找不到 …」。
+   */
+  const expectFoundInSource = (index: number, needle: string): number => {
+    if (index < 0) {
+      throw new Error(`源码扫描未命中 ${needle}（indexOf 返回 ${index}）`);
+    }
+    return index;
+  };
+
+  test("扫描守卫自测：-1（未命中）必须报错，0（命中在首字节）必须放行", () => {
+    // 判据是 `< 0` 而**不是** `<= 0`。若有人把这三处「加严」成
+    // `toBeGreaterThan(0)`（语义上就是 `index <= 0` 即报错），本用例转红。
+    // 这是这三处存在性检查唯一可在不动 appTour.tsx / styles.css 的前提下
+    // 做出的变异验证 —— 它们扫描的是另外两个文件，而本守卫的判据就在本文件里。
+    expect(expectFoundInSource(0, ".sel {")).toBe(0);
+    expect(() => expectFoundInSource(-1, ".sel {")).toThrow(/源码扫描未命中 \.sel \{/);
+  });
+
   test("TourTooltip 用包装层承载位移，而不是直接放在 .tour-tooltip 上", () => {
     const source = readSource("./appTour.tsx");
     expect(source).toContain("useTourTooltipViewportClamp");
@@ -485,9 +515,23 @@ describe("tour tooltip viewport clamp wiring (source contract)", () => {
     expect(source).toContain("style={clamp.shiftStyle ?? undefined}");
     // 位移必须写在包装层上：写在 .tour-tooltip 自身会因内联 transform 优先级高于
     // keyframes 而压掉入场动画。
-    const floaterIndex = source.indexOf('className="tour-tooltip-floater"');
+    //
+    // 【此处原本是 `expect(floaterIndex).toBeGreaterThanOrEqual(0)`，判定：保留其鉴别力】
+    // floaterIndex = source.indexOf('className="tour-tooltip-floater"')，当前命中
+    // appTour.tsx:297，全文唯一。-1 是可达的（包装层改名 / 被挪进抽出的组件文件），
+    // 所以这一句不是恒真。
+    //
+    // 它还是下面顺序断言的**承重行**：tooltipIndex 以 floaterIndex 为起点继续找，
+    // 而 `indexOf(needle, -1)` 会被规范成 `indexOf(needle, 0)`（等价于 fromIndex 夹到 0），
+    // floaterIndex 一旦为 -1，tooltipIndex 仍会从文件头找到气泡本体 →
+    // `tooltipIndex > floaterIndex` 变成「任意正数 > -1」的恒真，
+    // 「包装层包在气泡外面」这条契约会静默失效。
+    // 因此上面那行 `toContain` 之外仍需这一句；不能用 `> 0` 代替（0 是合法命中位置）。
+    const floaterIndex = expectFoundInSource(
+      source.indexOf('className="tour-tooltip-floater"'),
+      'className="tour-tooltip-floater"'
+    );
     const tooltipIndex = source.indexOf('className="tour-tooltip"', floaterIndex);
-    expect(floaterIndex).toBeGreaterThanOrEqual(0);
     expect(tooltipIndex).toBeGreaterThan(floaterIndex);
   });
 
@@ -498,8 +542,19 @@ describe("tour tooltip viewport clamp wiring (source contract)", () => {
 
   test("styles.css 定义了包装层，且不引入尺寸约束", () => {
     const css = readSource("./styles.css");
-    const start = css.indexOf(".tour-tooltip-floater");
-    expect(start).toBeGreaterThanOrEqual(0);
+    // 【此处原本是 `expect(start).toBeGreaterThanOrEqual(0)`，判定：保留其鉴别力】
+    // start = css.indexOf(...) → -1 可达（规则改名 / 被删），所以不是恒真。
+    // 它承的是**诊断质量**：命中失败时 `slice(-1, css.indexOf("}", -1))` 不抛错
+    // （slice 的 -1 按「倒数第 1 个字符」起算），会静默产出一段垃圾文本，
+    // 后面 4 条 toContain / not.toContain 只能报出「"" 里找不到 transform-origin」
+    // 这种把「规则不存在」说成「声明缺失」的误导性失败；先在这里报错才指名道姓。
+    // 不能加严成 `> 0`：`.tour-tooltip-floater {` 恰好是 styles.css 第一条规则
+    // （例如把引导样式单独拆文件）就是合法布局。
+    // needle 带上 `{`：排除将来的 `.tour-tooltip-floater-wide {` 抢走整个切片。
+    const start = expectFoundInSource(
+      css.indexOf(".tour-tooltip-floater {"),
+      ".tour-tooltip-floater {"
+    );
     const block = css.slice(start, css.indexOf("}", start));
     expect(block).toContain("transform-origin: left top");
     expect(block).toContain("will-change: transform");
@@ -512,8 +567,13 @@ describe("tour tooltip viewport clamp wiring (source contract)", () => {
 
   test("styles.css 给 .tour-tooltip 加了竖向滚动兜底", () => {
     const css = readSource("./styles.css");
-    const start = css.indexOf(".tour-tooltip {");
-    expect(start).toBeGreaterThanOrEqual(0);
+    // 【此处原本是 `expect(start).toBeGreaterThanOrEqual(0)`，判定：保留其鉴别力】
+    // 同上：-1 可达（规则改名），判据 `< 0` 而非 `<= 0`（0 是合法命中位置）。
+    // needle `.tour-tooltip {` 带空格+花括号，因此天然排除 `.tour-tooltip__title {`
+    // 这类 BEM 元素规则 —— 这是它和上面那个 needle 一样必须带 `{` 的原因。
+    // 本仓库该 needle 命中 2 处（styles.css:16748 主规则、16770 `@media
+    // prefers-reduced-motion` 覆盖块），`indexOf` 取第一处 = 主规则，符合本用例意图。
+    const start = expectFoundInSource(css.indexOf(".tour-tooltip {"), ".tour-tooltip {");
     const block = css.slice(start, css.indexOf("}", start));
     expect(block).toContain("max-height: calc(100vh - 24px)");
     expect(block).toContain("overflow-y: auto");
