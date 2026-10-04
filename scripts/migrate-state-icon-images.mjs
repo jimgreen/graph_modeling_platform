@@ -147,16 +147,31 @@ transform(library);
 
 const newLibraryRaw = JSON.stringify(library, null, prettyIndent || undefined);
 
+// 报告统一走 report()：本脚本会**改写用户的设备库并写图片文件**，操作痕迹不能没有，
+// 但也不能是散落的裸 console.log —— 一条通道 + 统一前缀，便于操作员在 pnpm 的
+// 混合输出里 grep 「[migrate:state-icons]」把本轮的进度与结果捞出来。
+// 留在 stdout 是刻意的：scripts/migrate-state-icon-images.test.mjs 按 stdout
+// 断言报告内容（「内嵌位图字段命中」「DRY-RUN:未写入任何文件」「备份后缀」等）。
+// 本脚本没有诊断信息需要分流 —— 唯一的异常出口（缺 library.json）已在文件顶部
+// 走 console.error + exit 1，不混进报告流。
+const REPORT_PREFIX = "[migrate:state-icons]";
+// 变参 + join(" ") 与 console.log 的默认分隔完全一致，故报文措辞与间隔零变化。
+function report(...parts) {
+  console.log(`${REPORT_PREFIX} ${parts.join(" ")}`);
+}
+
 const fmt = (n) => n.toLocaleString();
-console.log("=== migrate-state-icon-images (" + (APPLY ? "APPLY" : "DRY-RUN") + ") ===");
-console.log("library.json:", fmt(libraryRaw.length), "->", fmt(newLibraryRaw.length), "bytes",
+// 前缀已带脚本名，故横幅不再重复脚本名；但 `(APPLY)` / `(DRY-RUN)` 的括号必须留着
+// —— 直测按这两个字面量（含括号）区分两种模式。
+report(`=== (${APPLY ? "APPLY" : "DRY-RUN"}) ===`);
+report("library.json:", fmt(libraryRaw.length), "->", fmt(newLibraryRaw.length), "bytes",
   `(${((1 - newLibraryRaw.length / libraryRaw.length) * 100).toFixed(1)}% 减少)`);
-console.log("内嵌位图字段命中:", rastersSeen, "| 去重后唯一位图:", byHash.size, "| 去重合并:", dedupHits);
-console.log("改写的图片字段:", fieldsChanged, "| 新增图片文件:", filesToWrite.length,
+report("内嵌位图字段命中:", rastersSeen, "| 去重后唯一位图:", byHash.size, "| 去重合并:", dedupHits);
+report("改写的图片字段:", fieldsChanged, "| 新增图片文件:", filesToWrite.length,
   "| 抽出 base64 总量:", fmt(bytesEmbeddedBefore), "chars");
 
 if (!APPLY) {
-  console.log("\nDRY-RUN:未写入任何文件。确认无误后用 `--apply` 执行(会先备份)。");
+  report("DRY-RUN:未写入任何文件。确认无误后用 `--apply` 执行(会先备份)。");
   process.exit(0);
 }
 
@@ -172,4 +187,4 @@ for (const file of filesToWrite) {
 // manifest 与 library 用原子写（审查 G-P1-3）：中途失败不留半写 JSON
 atomicWriteFileSync(manifestPath, JSON.stringify([...newManifestItems, ...manifest], null, 2));
 atomicWriteFileSync(libraryPath, newLibraryRaw);
-console.log(`\nAPPLIED。备份后缀:.${stamp}.bak。请刷新浏览器验证自定义器件状态图标渲染正常。`);
+report(`APPLIED。备份后缀:.${stamp}.bak。请刷新浏览器验证自定义器件状态图标渲染正常。`);
