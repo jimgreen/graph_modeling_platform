@@ -15,6 +15,8 @@ const host = parseHost();
 const imagePort = backendPort;
 
 await createImageServer({ host, port: imagePort });
+// 启动横幅：监听地址与接口文档地址，开发者启动时要看 —— 保留在 stdout。
+// 「Swigger」拼写与对齐空格是既有文案，改动会破坏外部对启动输出的依赖，勿动。
 console.log(`Image backend listening at http://${host}:${imagePort}`);
 console.log(`API Swigger:          http://${host}:${imagePort}/swigger`);
 
