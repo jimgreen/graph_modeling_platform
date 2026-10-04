@@ -10,7 +10,19 @@ const rootArg = args.find((item) => !item.startsWith("--"));
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const filesRoot = resolve(rootArg ?? join(repoRoot, "data", "schemes", "files"));
 const trashRoot = resolve(join(dirname(filesRoot), "trash"));
+/** 报告里 trash 路径的相对基准（trash 的父目录，即 schemes/）。 */
+const trashBase = dirname(trashRoot);
 const archiveId = new Date().toISOString().replace(/[:.]/gu, "-");
+
+// 归档报告统一走 report()：本脚本动的是真实数据，操作痕迹不能没有，
+// 但也不能是散落的裸 console.log —— 一条通道 + 统一前缀，便于操作员在 pnpm
+// 的混合输出里 grep 「[purge:derived]」把本轮的进度与结果捞出来。
+// 留在 stdout 是刻意的：scripts/purge-derived-scheme-files.test.mjs 按 stdout
+// 断言报告内容（「将归档」/「无待归档文件」/「已归档 N 个文件」）。
+const REPORT_PREFIX = "[purge:derived]";
+function report(message) {
+  console.log(`${REPORT_PREFIX} ${message}`);
+}
 
 async function collect(dir, isRoot = false) {
   const found = [];
@@ -50,16 +62,16 @@ try {
 
 if (Array.isArray(targets)) {
   if (targets.length === 0) {
-    console.log(`无待归档文件：${filesRoot}`);
+    report(`无待归档文件：${filesRoot}`);
   } else {
     for (const filePath of targets) {
       const target = join(trashRoot, archiveId, relative(filesRoot, filePath));
-      console.log(`${apply ? "归档" : "将归档"} ${relative(filesRoot, filePath)} → ${relative(join(trashRoot, ".."), target)}`);
+      report(`${apply ? "归档" : "将归档"} ${relative(filesRoot, filePath)} → ${relative(trashBase, target)}`);
       if (apply) {
         await mkdir(dirname(target), { recursive: true });
         await rename(filePath, target);
       }
     }
-    console.log(`${apply ? "已归档" : "待归档"} ${targets.length} 个文件${apply ? "" : "（加 --apply 执行）"}`);
+    report(`${apply ? "已归档" : "待归档"} ${targets.length} 个文件${apply ? "" : "（加 --apply 执行）"}`);
   }
 }
