@@ -1,15 +1,65 @@
 import { existsSync, readFileSync } from "node:fs";
-import { afterEach, describe, expect, test, vi } from "vitest";
-import { createAutoAlignCanvasGraphics } from "./appExtracted/appProjectCanvasFactories";
-import { runAutoAlignPlanInWorker } from "./autoAlign/autoAlignClient";
+import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { autoAlignEdgeWithoutStoredRoute, autoAlignStoredRouteDrops } from "./selectionActions";
 import { routeEdgesForStoredRendering, type Edge, type ModelNode } from "./model";
 
-vi.mock("./autoAlign/autoAlignClient", () => ({
-  runAutoAlignPlanInWorker: vi.fn()
-}));
+/**
+ * 自动对齐 Worker 计划的可编程替身。
+ *
+ * ## 为什么这个替身**不能**用顶层 `vi.mock` + 顶层静态 import 生产模块（这正是本文件曾经的写法）
+ *
+ * ESM 的依赖绑定发生在**模块被求值的那一刻**，而不是调用那一刻。`isolate: false` 时模块注册表在
+ * 整个 worker 内共享，于是「谁第一个 import `appProjectCanvasFactories`」就决定了它内部 import 到的
+ * `autoAlignClient` 是**谁的替身**。本文件若不是第一个（实测排在 `appProjectCanvasFactories.test.ts`
+ * 之后时必然如此 —— 那个文件也 `vi.mock` 了同一个模块，且用的是 `importOriginal` + 展开的替身），
+ * 生产模块早已在缓存里、里面绑的是**上一个文件**的 `runAutoAlignPlanInWorker`：
+ *   - 那份替身有自己的 spy，于是本文件的 `runPlan` 调用数恒为 **0**，报
+ *     `expected "spy" to be called with ... / Number of calls: 0`；
+ *   - 症状很像「数值不对」，其实是**函数身份不对** —— 注意同一用例里 `window.prompt` 的断言仍然通过，
+ *     因为它排在 `runAutoAlignPlanInWorker` 之前。别被这个误导去查参数值。
+ *
+ * 顶层 `vi.mock` 救不了场，两个原因缺一不可地都堵着：它只改**本文件自己的** mock 注册表
+ * （vitest 的 MockerRegistry 按 `state.filepath` 分桶，`getSuiteFilepath()` 为 key），
+ * 既到不了别的文件，也**不会让已缓存的生产模块重新求值**。两种模式症状一样，只是共享注册表下
+ * 先加载的文件赢 —— 于是「红哪几个」每次都不一样。
+ *
+ * ## 可靠修法
+ * `vi.resetModules()`（清模块缓存）+ `vi.doMock()`（改注册表）之后**动态 import** 生产模块，
+ * 让它在替身就位之后重新求值。两者缺一不可：只 doMock 仍然命中旧模块；只 resetModules 替身还
+ * 没注册进注册表。见下方 `loadFactoriesWithMockedDeps`。
+ *
+ * 注意此处用普通 `const` 而不是 `vi.hoisted`：`doMock` 的工厂是在**模块被请求时**（即下面
+ * `beforeEach` 里那次动态 import）才被调用的，那早已在本模块顶层求值之后，所以不存在提升时序问题。
+ */
+const runPlan = vi.fn();
 
-const runPlan = vi.mocked(runAutoAlignPlanInWorker);
+type CanvasFactories = typeof import("./appExtracted/appProjectCanvasFactories");
+
+let factoriesWithMockedDeps: CanvasFactories | undefined;
+
+// 同一个 worker 内不会有别的文件插进本文件的用例中间（顺序是文件粒度的），所以第一次加载后即可
+// 复用 —— 否则每条用例都要把 appProjectCanvasFactories 的整张依赖图重新求值一遍。
+const loadFactoriesWithMockedDeps = async (): Promise<CanvasFactories> => {
+  if (factoriesWithMockedDeps) return factoriesWithMockedDeps;
+  vi.resetModules();
+  vi.doMock("./autoAlign/autoAlignClient", () => ({
+    runAutoAlignPlanInWorker: runPlan
+  }));
+  factoriesWithMockedDeps = await import("./appExtracted/appProjectCanvasFactories");
+  return factoriesWithMockedDeps;
+};
+
+// 本文件在共享注册表下会把「绑着我们替身」的 appProjectCanvasFactories 留在 worker 的模块缓存里，
+// 后面排到的文件会继承它（`runAutoAlignPlanInWorker` 变成一个不属于它们的 vi.fn()，真实现被整个
+// 遮住）。离开本文件时精确清一次缓存，下一个文件拿到的是干净求值的模块 —— 这样本文件就不会
+// 变成**新的**肇事者。用 `vi.resetModules()`（只动 worker 模块缓存）而不是
+// `vi.restoreAllMocks()` / `vi.unstubAllGlobals()` 那类全注册表范围的清理。
+// 这只保证「不污染别人」，救不了别的文件本身：它们各自同样受制于「谁先加载生产模块」，
+// 要各自改成 doMock + 动态 import（模板见 src/appProjectCanvasFactories.test.ts 文件头）。
+afterAll(() => {
+  factoriesWithMockedDeps = undefined;
+  vi.resetModules();
+});
 
 /**
  * 本文件有两个用例：第一个是纯内存用例（自己造节点/边），任何环境都跑。
@@ -19,7 +69,8 @@ const runPlan = vi.mocked(runAutoAlignPlanInWorker);
  * `data/` 整个目录被 `.gitignore` 第 3 行忽略，`git ls-files -- data/**` 返回 0 个文件
  * —— 也就是说多能流.json 是本地运行时数据，**从未进过版本库**。
  * 于是全新 clone / CI 检出 / 换机器的检出里都不存在该文件，
- * 无条件执行会在 `readFileSync`（本文件第 97 行，惰性求值、只在用例体内跑）直接抛错，
+ * 无条件执行会在 `readFileSync`（本文件下方 `stale stored polyline cleanup ordering` 那条用例体内，
+ * 惰性求值、只在用例跑起来时才读）直接抛错，
  * 把整个套件拖红 —— 那不是被测代码有问题，是夹具缺失。
  * 所以按仓库既有约定用 `describe.skipIf`（见 autoAlignLineQuality.test.ts 等同款用法）守住。
  *
@@ -33,6 +84,12 @@ const projectAvailable = existsSync(PROJECT_FILE);
 
 describe("canvas automatic grid alignment", () => {
   const originalWindow = (globalThis as { window?: unknown }).window;
+
+  beforeEach(() => {
+    // 精确到这一个 spy 的重置：保证每条用例的计划结果都来自它自己那次 mockResolvedValue，
+    // 而不是上一条用例残留的实现（跨用例串味与跨文件串味是同一类病，只是范围更小）。
+    runPlan.mockReset();
+  });
 
   afterEach(() => {
     if (originalWindow === undefined) {
@@ -70,6 +127,7 @@ describe("canvas automatic grid alignment", () => {
     const commitLayoutNodePositions = vi.fn(() => 2);
     const writeOperationLog = vi.fn();
 
+    const { createAutoAlignCanvasGraphics } = await loadFactoriesWithMockedDeps();
     await createAutoAlignCanvasGraphics({
       AUTO_ALIGN_DEFAULT_THRESHOLD_PX: 50,
       AUTO_ALIGN_MAX_THRESHOLD_PX: 200,
@@ -208,6 +266,7 @@ describe("canvas automatic grid alignment", () => {
       });
       const writeOperationLog = vi.fn();
 
+      const { createAutoAlignCanvasGraphics } = await loadFactoriesWithMockedDeps();
       await createAutoAlignCanvasGraphics({
         AUTO_ALIGN_DEFAULT_THRESHOLD_PX: 50,
         AUTO_ALIGN_MAX_THRESHOLD_PX: 200,
