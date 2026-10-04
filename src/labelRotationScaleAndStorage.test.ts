@@ -186,13 +186,24 @@ describe("★ 非有限与极值：输出**不保证**是 90 的倍数", () => {
   });
 
   test("普通范围内输出**恒**是 90 的倍数（±10000 整数）", () => {
+    // 原实现是「循环里 throw + 末尾 `expect(true).toBe(true)`」。空断言恒真，
+    // 真正在承重的只有 throw（vitest 能把它记成 failure，但断言体本身没有
+    // 任何东西会因生产代码改动而转红）。这里换成两条真断言：
+    //
+    // ① 每个输出都落在 {0,90,180,270} 里 —— 与原 throw 等价，但一次列出全部违例
+    // ② 输出集合**恰好**是这 4 个角 —— 比①更强：少了任何一个都算退化。
+    //    `Math.round(v/90)*90` 若被改成 45° 或 180° 网格，①未必立刻抓到
+    //    （如 180° 网格全程只出 0/180，仍是 90 的倍数），②一定转红。
+    const legalAngles = [0, 90, 180, 270];
+    const violations: string[] = [];
+    const observed = new Set<number>();
     for (let v = -10000; v <= 10000; v += 1) {
       const out = normalizeNodeLabelRotation(v);
-      if (![0, 90, 180, 270].includes(out)) {
-        throw new Error(`${v} → ${out} 不是 4 个合法角之一`);
-      }
+      observed.add(out);
+      if (!legalAngles.includes(out)) violations.push(`${v} → ${out}`);
     }
-    expect(true).toBe(true);
+    expect(violations.slice(0, 20), `非 90 倍数的输出共 ${violations.length} 个，前 20 条`).toEqual([]);
+    expect([...observed].sort((a, b) => a - b), "输出集合退化了（少了或多了合法角）").toEqual(legalAngles);
   });
 });
 
