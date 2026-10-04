@@ -950,14 +950,32 @@ describe("canvas selection actions", () => {
     );
     const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
 
-    const arranged = autoSpreadNodeLayoutUnits(nodes, units, { padding: 4, bounds: { width: 1200, height: 900 } });
+    const canvasBounds = { width: 1200, height: 900 };
+    const padding = 4;
+    const arranged = autoSpreadNodeLayoutUnits(nodes, units, { padding, bounds: canvasBounds });
     const nextUnits = buildCanvasLayoutUnits([], arranged, arranged.map((node) => node.id), []);
 
+    // 判据是「**padded** 包围盒整个落在画布内」,不是「bounds 不为负」。
+    // auto-spread 全程只认 padded 矩形:搜索项是 padRect(unit.bounds, padding),
+    // 越界惩罚作用在 rectCanvasOverflow(padded 矩形),网格重排的落点也由
+    // clampSpreadOrigin 把 **padded** 网格夹进 [0, 画布];unit.bounds 是扣掉 padding 之后的可见框。
+    // 所以 padding=4 时 bounds 的合法下界是 4(实测本夹具 left/top 恰好 = 4,即 padded 边贴齐画布边),
+    // 写成 `>= 0` 会凭空多出 4px 宽容度。
+    // 变异证据(注入 → 跑本文件 → 从备份副本还原;全程未用 git 写操作):
+    //   ① clampSpreadOrigin 下界 `0` → `-size`(不夹下界):left=-132 / top=-17,
+    //      旧写法 `>= 0` 会红 —— 说明它并非恒真,负数(整簇被推出画布)这一类回归它抓得住。
+    //   ② 下界 `0` → `-4`、上界 `limit - size` → `limit - size + 4`(少夹一个 padding 的差一错误):
+    //      left/top **恰好 = 0**,旧写法 `>= 0` 依然绿 —— 这正是「断言值撞上变异硬编码值」的坑:
+    //      越界 4px 的单元和贴齐画布边的单元给出同一个数,旧断言没有鉴别力。
+    //      改用 padded 判据后 ① ② 都红,且 `>= 0` 仍是闭区间:单元合法贴边时取等号,合法通过。
     for (const unit of nextUnits) {
-      expect(unit.bounds.left).toBeGreaterThanOrEqual(0);
-      expect(unit.bounds.top).toBeGreaterThanOrEqual(0);
-      expect(unit.bounds.right).toBeLessThanOrEqual(1200);
-      expect(unit.bounds.bottom).toBeLessThanOrEqual(900);
+      expect(unit.bounds.left - padding).toBeGreaterThanOrEqual(0);
+      expect(unit.bounds.top - padding).toBeGreaterThanOrEqual(0);
+      // 同一条契约的另一半(右/下缘),与上面成对:padded 边同样不得越出画布。
+      // 实测 right 最大 472、bottom 最大 279.45,离 1200/900 很远,这里收紧到 padded 不改变通过性,
+      // 但堵住了「差一个 padding 越出画布右下缘」这类回归(变异 ② 的右侧对应面)。
+      expect(unit.bounds.right + padding).toBeLessThanOrEqual(canvasBounds.width);
+      expect(unit.bounds.bottom + padding).toBeLessThanOrEqual(canvasBounds.height);
     }
     for (let firstIndex = 0; firstIndex < nextUnits.length - 1; firstIndex += 1) {
       for (let secondIndex = firstIndex + 1; secondIndex < nextUnits.length; secondIndex += 1) {
