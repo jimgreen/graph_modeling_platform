@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
   createApplySelectedNodeLayout,
@@ -47,10 +47,6 @@ import {
 // 切空间要落到真模块（清缓存 + 写 cookie + reload），此处只关心它在**何时**被调用，
 // 故整模块替换；其余导出原样透传，避免影响本文件其他用例的依赖树。
 const switchToSpaceMock = vi.hoisted(() => vi.fn());
-vi.mock("./spaceSwitch", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./spaceSwitch")>()),
-  switchToSpace: switchToSpaceMock
-}));
 
 // 自动对齐的 Worker 计划:真跑会牵动整条线路重算链,难以稳定构造「各类质量结局」。
 // 只包一层可编程 spy(默认行为=真实现),既不改变其余用例的依赖树,又能按需注入质量报告。
@@ -64,10 +60,59 @@ const runAutoAlignPlanInWorkerMock = vi.hoisted(() => {
   });
   return { spy, real };
 });
-vi.mock("./autoAlign/autoAlignClient", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./autoAlign/autoAlignClient")>();
-  runAutoAlignPlanInWorkerMock.real.fn = actual.runAutoAlignPlanInWorker as (...args: unknown[]) => unknown;
-  return { ...actual, runAutoAlignPlanInWorker: runAutoAlignPlanInWorkerMock.spy };
+
+// 为什么这两个替身**不能**用顶层 vi.mock 而必须在 beforeEach 里 doMock + 动态 import：
+//
+// ESM 的依赖绑定发生在**模块被求值的那一刻**。关掉 isolate 后模块注册表全局共享，于是
+// 「谁第一个 import appProjectCanvasFactories」决定了它内部 import 到的 spaceSwitch /
+// autoAlignClient 是谁的版本。本文件若不是第一个（实测 src/autoAlignCanvasGraphics.test.ts
+// 就经常排在前面），生产模块早已在缓存里，里面绑的是**上一个文件**的依赖：
+//   - 那里没 mock spaceSwitch → switchToSpace 是真函数，本文件的 switchToSpaceMock 调用数为 0；
+//   - 那里 vi.mock 掉了 autoAlignClient（整模块替身）→ runAutoAlignPlanInWorker 返回
+//     undefined，createAutoAlignCanvasGraphics 走进 catch，严重程度恒为 "error"。
+// 而顶层 vi.mock 并不能救场：它只改**本文件自己的** mock 注册表（vitest 的 registry 按
+// state.filepath 分桶），并且只删 `mock:<id>` 这一条缓存项，不会让已缓存的
+// appProjectCanvasFactories 重新求值。两种模式的症状一样，只是共享注册表下先加载的
+// 文件赢 —— 于是「红哪几个」每次都不一样。
+//
+// 可靠修法：需要替身的用例统一走 resetModules（清模块缓存）+ doMock（改注册表）之后
+// **动态 import** 生产模块，让它在替身就位之后重新求值。两者缺一不可：只 doMock 缓存
+// 仍然命中旧模块；只 resetModules 替身还没注册到注册表。
+type CanvasFactories = typeof import("./appExtracted/appProjectCanvasFactories");
+
+let factoriesWithMockedDeps: CanvasFactories | undefined;
+
+// 同一个 worker 内只有本文件会 resetModules / 重新 import 生产模块（顺序是文件粒度的，
+// 别的文件不会插进本文件的用例中间），所以第一次加载后就可以复用——否则每条用例都要把
+// appProjectCanvasFactories 的整张依赖图重新求值一遍，全量套件要多付好几秒。
+const loadFactoriesWithMockedDeps = async (): Promise<CanvasFactories> => {
+  if (factoriesWithMockedDeps) return factoriesWithMockedDeps;
+  vi.resetModules();
+  vi.doMock("./spaceSwitch", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("./spaceSwitch")>()),
+    switchToSpace: switchToSpaceMock
+  }));
+  vi.doMock("./autoAlign/autoAlignClient", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("./autoAlign/autoAlignClient")>();
+    runAutoAlignPlanInWorkerMock.real.fn = actual.runAutoAlignPlanInWorker as (...args: unknown[]) => unknown;
+    return { ...actual, runAutoAlignPlanInWorker: runAutoAlignPlanInWorkerMock.spy };
+  });
+  factoriesWithMockedDeps = await import("./appExtracted/appProjectCanvasFactories");
+  return factoriesWithMockedDeps;
+};
+
+// 本文件在共享注册表下会把「绑着我们替身」的 appProjectCanvasFactories 留在模块缓存里，
+// 后面排到的文件会继承它（switchToSpace 变成一个什么都不做的 vi.fn()）。离开本文件时清一次
+// 缓存，下一个文件拿到的是干净求值的模块。
+// 注意：这救不了 autoAlignCanvasFactories 系列的**其他**文件本身 —— 它们同样受制于
+// 「谁先加载生产模块」，要各自改成 doMock + 动态 import（本文件头即是模板）。
+afterAll(() => {
+  factoriesWithMockedDeps = undefined;
+  vi.resetModules();
+  // 本文件有多条用例直接把 vi.fn() 挂到 globalThis.showGlobalMessage 上且不还原（量测/拓扑那几组）。
+  // 关掉隔离后 globalThis 也跨文件共享，而 src/test-setup.ts 只在「当前不是函数」时才补桩，
+  // 于是后面排到的文件会一直调我们留下的这个 spy。删掉即可 —— test-setup 会给下一个文件重新补上。
+  delete (globalThis as any).showGlobalMessage;
 });
 
 describe("跨模型告警定位的未保存修改衔接", () => {
@@ -208,9 +253,15 @@ describe("跨模型告警定位的未保存修改衔接", () => {
 describe("切空间的未保存修改衔接", () => {
   const action = { kind: "switch-space" as const, spaceId: "张三", label: "切换到空间“张三”" };
 
+  // 由 beforeEach 从「替身就位后重新求值」的模块实例回填：这两个工厂在 switch-space 分支上会真调
+  // switchToSpace，而该绑定的取值在生产模块求值那一刻就固定了（见文件头关于共享注册表的说明）。
+  // 故不能直接用文件头静态导入的那两个同名导出 —— 静态导入在共享注册表下可能绑着别人的依赖。
+  let createRequestAction: CanvasFactories["createRequestUnsavedChangeAction"];
+  let createResolveAction: CanvasFactories["createResolveUnsavedChangeAction"];
+
   const createRequest = (saveRequired: boolean) => {
     const setPendingUnsavedAction = vi.fn();
-    const request = createRequestUnsavedChangeAction({
+    const request = createRequestAction({
       enterBrowseMode: vi.fn(),
       loadSavedProjectRecord: vi.fn(),
       saveRequired,
@@ -221,7 +272,7 @@ describe("切空间的未保存修改衔接", () => {
 
   const createResolve = (pendingAction: typeof action, saveCurrentProject = vi.fn()) => {
     const setPendingUnsavedAction = vi.fn();
-    const resolve = createResolveUnsavedChangeAction({
+    const resolve = createResolveAction({
       enterBrowseMode: vi.fn(),
       loadSavedProjectRecord: vi.fn(),
       pendingUnsavedAction: pendingAction,
@@ -231,8 +282,13 @@ describe("切空间的未保存修改衔接", () => {
     return { resolve, setPendingUnsavedAction };
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     switchToSpaceMock.mockReset();
+    // 这两个工厂内部直接调 spaceSwitch.switchToSpace，静态导入的那份在共享注册表下
+    // 可能绑着别的文件的真函数，必须取「替身就位后重新求值」的那一份（见文件头说明）。
+    const factories = await loadFactoriesWithMockedDeps();
+    createRequestAction = factories.createRequestUnsavedChangeAction;
+    createResolveAction = factories.createResolveUnsavedChangeAction;
   });
 
   test("有未保存修改时只登记待确认操作，不直接切换", () => {
@@ -2399,6 +2455,9 @@ describe("容器整体参与布局", () => {
   test("自动对齐两阶段:容器内成员先自对齐,容器再作为整体参与(整组平移)", async () => {
     vi.stubGlobal("window", { prompt: () => "50" });
     try {
+      // 真跑 runAutoAlignPlanInWorker 才排得出整组平移；共享注册表下静态导入的那份可能
+      // 绑着别的文件的 autoAlignClient 替身（返回 undefined → 走不到提交），故取重新求值的那份。
+      const { createAutoAlignCanvasGraphics: createAutoAlign } = await loadFactoriesWithMockedDeps();
       const nodes = [container(525, 400), device("m1", 500, 400, "c1"), device("m2", 600, 400, "c1"), device("o1", 1500, 400)];
       const commits: any[] = [];
       const scope = {
@@ -2425,7 +2484,7 @@ describe("容器整体参与布局", () => {
         writeOperationLog: vi.fn()
       };
 
-       await createAutoAlignCanvasGraphics(scope as any)();
+       await createAutoAlign(scope as any)();
 
       expect([...commits[0].ids].sort()).toEqual(["c1", "m1", "m2", "o1"]);
       const byId = new Map<string, any>(commits[0].arranged.map((node: any) => [node.id, node]));
@@ -2553,6 +2612,9 @@ describe("自动对齐/自动散开的浮动提示", () => {
   test("自动对齐结束时弹出浮动提示,与状态栏日志同源", async () => {
     vi.stubGlobal("window", { prompt: () => "50" });
     try {
+      // 真跑计划才谈得上「与状态栏日志同源」：静态导入那份在共享注册表下可能绑着别的文件的
+      // autoAlignClient 替身（返回 undefined → 恒走 catch），同源断言就只剩一条断言在守。
+      const { createAutoAlignCanvasGraphics: createAutoAlign } = await loadFactoriesWithMockedDeps();
       const nodes = [
         { id: "m1", kind: "device", position: { x: 100, y: 100 } },
         { id: "m2", kind: "device", position: { x: 400, y: 200 } }
@@ -2579,7 +2641,7 @@ describe("自动对齐/自动散开的浮动提示", () => {
         writeOperationLog
       };
 
-      await createAutoAlignCanvasGraphics(scope as any)();
+      await createAutoAlign(scope as any)();
 
       const logMessage = writeOperationLog.mock.calls[0][0];
       expect(logMessage).toContain("自动对齐");
@@ -2588,6 +2650,9 @@ describe("自动对齐/自动散开的浮动提示", () => {
       expect(showGlobalMessage.mock.calls[0][0]).toBe(logMessage);
       // 严重程度取自结构化质量报告,只会是这两种值之一
       expect(["info", "error"]).toContain(showGlobalMessage.mock.calls[0][1]);
+      // 上一条的取值范围同时含 "info" 和 "error"，catch 分支也落在里面 —— 不钉住「计划真跑了」
+      // 的话，本用例在依赖被换掉时会**恒绿**，只剩 logMessage 那条在守。
+      expect(runAutoAlignPlanInWorkerMock.spy).toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -2662,6 +2727,9 @@ describe("自动对齐/自动散开的浮动提示", () => {
   ])("自动对齐浮动提示严重程度:%s → %s", async (_label, qualityOverride, expectedType) => {
     vi.stubGlobal("window", { prompt: () => "50" });
     try {
+      // 严重程度直接来自这里注入的质量报告；若生产模块绑着别的文件的 autoAlignClient 替身，
+      // 我们的 spy 根本不会被调用、严重程度恒为 "error"（只有 error 那一档会"通过"）。
+      const { createAutoAlignCanvasGraphics: createAutoAlign } = await loadFactoriesWithMockedDeps();
       const nodes = [
         { id: "m1", kind: "device", position: { x: 100, y: 100 } },
         { id: "m2", kind: "device", position: { x: 400, y: 200 } }
@@ -2702,8 +2770,12 @@ describe("自动对齐/自动散开的浮动提示", () => {
         writeOperationLog: vi.fn()
       };
 
-      await createAutoAlignCanvasGraphics(scope as any)();
+      await createAutoAlign(scope as any)();
 
+      // 严重程度是从**我们注入的那份质量报告**算出来的，所以「注入的 spy 真被调到了」是这套
+      // 映射的前提，必须先钉住它。缺了这一条时，另外三档（都期望 "error"）在依赖被换掉的
+      // 情况下会**恒绿**：catch 分支同样只发一条 "error"，断言照样成立 —— 三档都没有判别力。
+      expect(runAutoAlignPlanInWorkerMock.spy).toHaveBeenCalled();
       expect(showGlobalMessage).toHaveBeenCalledTimes(1);
       expect(showGlobalMessage.mock.calls[0][1]).toBe(expectedType);
     } finally {
