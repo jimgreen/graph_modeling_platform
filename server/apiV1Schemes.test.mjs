@@ -86,7 +86,7 @@ describe(apiPath("/v1/schemes/hierarchy") + " 层级树", () => {
 });
 
 describe(apiPath("/v1/schemes/models") + " 模型列表", () => {
-  test("缺少 schemePath 返 400", async () => {
+  test("缺少 schemePath 返 400（模型列表：无任何查询参数，error.code=bad-request）", async () => {
     const { status, json } = await fetchV1(apiPath("/v1/schemes/models"));
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
@@ -98,7 +98,7 @@ describe(apiPath("/v1/schemes/models") + " 模型列表", () => {
     expect(status).toBe(400);
   });
 
-  test("不存在的方案返 404", async () => {
+  test("不存在的方案返 404（模型列表：查模型清单，error.code=not-found）", async () => {
     const sp = encodeSchemePath(["不存在的方案xyz"]);
     const { status, json } = await fetchV1(apiPath(`/v1/schemes/models?schemePath=${sp}`));
     expect(status).toBe(404);
@@ -107,12 +107,12 @@ describe(apiPath("/v1/schemes/models") + " 模型列表", () => {
 });
 
 describe(apiPath("/v1/schemes/export") + " 方案导出", () => {
-  test("缺少 schemePath 返 400", async () => {
+  test("缺少 schemePath 返 400（方案导出 ZIP：无任何查询参数）", async () => {
     const { status } = await fetchV1(apiPath("/v1/schemes/export"));
     expect(status).toBe(400);
   });
 
-  test("不存在的方案返 404", async () => {
+  test("不存在的方案返 404（方案导出 ZIP：导出整包时方案不存在）", async () => {
     const sp = encodeSchemePath(["不存在的方案xyz"]);
     const { status } = await fetchV1(apiPath(`/v1/schemes/export?schemePath=${sp}`));
     expect(status).toBe(404);
@@ -120,18 +120,18 @@ describe(apiPath("/v1/schemes/export") + " 方案导出", () => {
 });
 
 describe(apiPath("/v1/schemes/model/json") + " 模型 JSON", () => {
-  test("缺少 schemePath 返 400", async () => {
+  test("缺少 schemePath 返 400（模型 JSON：已给 name 但缺 schemePath）", async () => {
     const { status } = await fetchV1(apiPath("/v1/schemes/model/json") + "?name=x");
     expect(status).toBe(400);
   });
 
-  test("缺少 name 返 400", async () => {
+  test("缺少 name 返 400（模型 JSON：已给 schemePath 但缺 name）", async () => {
     const sp = encodeSchemePath(["方案"]);
     const { status } = await fetchV1(apiPath(`/v1/schemes/model/json?schemePath=${sp}`));
     expect(status).toBe(400);
   });
 
-  test("不存在模型返 404", async () => {
+  test("不存在模型返 404（模型 JSON：schemePath 存在但 name 不存在）", async () => {
     const sp = encodeSchemePath(["方案xyz"]);
     const { status } = await fetchV1(apiPath(`/v1/schemes/model/json?schemePath=${sp}&name=不存在`));
     expect(status).toBe(404);
@@ -139,18 +139,18 @@ describe(apiPath("/v1/schemes/model/json") + " 模型 JSON", () => {
 });
 
 describe(apiPath("/v1/schemes/model/svg") + " 模型 SVG", () => {
-  test("缺少 schemePath 返 400", async () => {
+  test("缺少 schemePath 返 400（模型 SVG：已给 name 但缺 schemePath）", async () => {
     const { status } = await fetchV1(apiPath("/v1/schemes/model/svg") + "?name=x");
     expect(status).toBe(400);
   });
 
-  test("缺少 name 返 400", async () => {
+  test("缺少 name 返 400（模型 SVG：已给 schemePath 但缺 name）", async () => {
     const sp = encodeSchemePath(["方案"]);
     const { status } = await fetchV1(apiPath(`/v1/schemes/model/svg?schemePath=${sp}`));
     expect(status).toBe(400);
   });
 
-  test("不存在模型返 404", async () => {
+  test("不存在模型返 404（模型 SVG：schemePath 存在但 name 不存在）", async () => {
     const sp = encodeSchemePath(["方案xyz"]);
     const { status } = await fetchV1(apiPath(`/v1/schemes/model/svg?schemePath=${sp}&name=不存在`));
     expect(status).toBe(404);
