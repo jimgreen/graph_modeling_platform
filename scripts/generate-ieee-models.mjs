@@ -1499,9 +1499,10 @@ async function main() {
       filePath
     });
   }
+  // 结果报告：走 stdout（供人工核对生成结果），诊断信息一律走 stderr。
   for (const item of summaries) {
-    console.log(`${item.model}: buses=${item.buses}, generators=${item.generators}, branches=${item.branches}, nodes=${item.nodes}, edges=${item.edges}`);
-    console.log(`  ${item.filePath}`);
+    console.log(`[ieee] ${item.model}: buses=${item.buses}, generators=${item.generators}, branches=${item.branches}, nodes=${item.nodes}, edges=${item.edges}`);
+    console.log(`[ieee]   -> ${item.filePath}`);
   }
 }
 
