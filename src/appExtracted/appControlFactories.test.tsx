@@ -449,6 +449,46 @@ describe("programmaticGroupSelected", () => {
       expect(e.code).toBe("control-failed");
     }
   });
+
+  // 下面两条锁住「组合 id 的随机段可注入、且默认行为不变」。
+  // 背景（2026-10 审计）：group-${Date.now()}-${Math.random()...} 这个随机值
+  // 既进返回值 groupId（WS control 指令响应），又经 setGroups 进状态 →
+  // normalizeProjectForBackend 落盘/导出，runtimeSnapshot.buildTreeNodes 取 g.id
+  // 进运行时态树。它不是纯视觉抖动，必须能被确定化。
+  test("注入固定随机源 + 冻结时钟 → groupId 逐字可复现，且随机段取自注入源", () => {
+    const fixedMs = new Date("2024-01-02T03:04:05.678Z").getTime();
+    // 刻意不用 0.5 —— 它是 Math.random 的典型取值，恰是「硬编码随机段」变异最可能挑的值。
+    const injected = 0.123456789;
+    const expectedSuffix = injected.toString(36).slice(2, 6);
+    expect(expectedSuffix).toHaveLength(4);
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(fixedMs);
+      const run = () => {
+        const { scope, calls } = createGroupMockScope(["n1", "n2"]);
+        (scope as any).randomSource = () => injected;
+        const result = createProgrammaticGroupSelected(scope)();
+        return { result, calls };
+      };
+      const a = run();
+      const b = run();
+      // 同输入 → 同输出（默认 Math.random 下这两次几乎必然不同）
+      expect(a.result.groupId).toBe(`group-${fixedMs}-${expectedSuffix}`);
+      expect(b.result.groupId).toBe(a.result.groupId);
+      // 断言必须落在随机段真正流向的那份数据上：返回值与进状态的 group id 同值
+      expect(a.calls.groupsSet[0].id).toBe(a.result.groupId);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("未注入随机源（缺省或非函数）→ 仍走 Math.random，id 形状不变", () => {
+    for (const scope of [createGroupMockScope(["n1", "n2"]).scope, { ...createGroupMockScope(["n1", "n2"]).scope, randomSource: "not-a-function" }]) {
+      const groupId = createProgrammaticGroupSelected(scope as any)().groupId;
+      expect(groupId).toMatch(/^group-\d+-[0-9a-z]{1,4}$/);
+      expect(groupId).not.toBe("group-undefined-undefined");
+    }
+  });
 });
 
 // mock __appScope for deleteDevices：模拟 deleteNodesWithConnectedEdges + setters
