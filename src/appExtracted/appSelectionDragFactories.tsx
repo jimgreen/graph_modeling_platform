@@ -39,6 +39,30 @@ import type { MeasurementGroup, ProjectMeasurementConfig } from "../measurements
 import type { NodeLabelDisplayMode } from "../nodeLabelUtils";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 
+/**
+ * ─── 本文件 9 处随机 id 的随机源单源（2026-10 审计收敛）─────────────────────────
+ * 粘贴、模板落点、新建模板、组合、拖动后重叠端子自动补边这 9 处
+ * `Math.random().toString(36)` 产出的都是**图元主键**，不是视觉抖动/临时 id：
+ *   ① 节点/边 id 经 setGraphArrays 进图元状态 → createCurrentProject 落盘方案文件，
+ *      并被 model-eexport 原样写进 E 导出（`id: node.id`）；
+ *   ② 边 id 还被 cloneCanvasClipboard 的 idMap 改写 sourceId/targetId，漏了它整条边失联；
+ *   ③ 组合 id 经 setGroups 进状态、模板 id 经 persistTemplateLibraryChange 落盘模板库。
+ * 所以随机段必须可注入，测试才能确定化。
+ * 约定与 appControlFactories 同一套：`__appScope.randomSource` 是注入缝，缺省或非函数
+ * 一律回退 Math.random —— 默认行为逐字不变（读取时机仍是调用那一刻，外部对 Math.random
+ * 的打桩照旧生效），且不要求 App.tsx 装配该字段。
+ */
+function canvasIdRandom(__appScope: Record<string, any>): () => number {
+  const injected = __appScope?.randomSource;
+  return typeof injected === "function" ? injected : Math.random;
+}
+
+// 前缀 / 长度 / Date.now() 那半截逐字照抄原表达式，只把随机段换成可注入源。
+const createCanvasNodeId = (random: () => number) => `node-${Date.now()}-${random().toString(36).slice(2, 6)}`;
+const createCanvasEdgeId = (random: () => number) => `edge-${Date.now()}-${random().toString(36).slice(2, 6)}`;
+const createCanvasGroupId = (random: () => number) => `group-${Date.now()}-${random().toString(36).slice(2, 6)}`;
+const createGraphTemplateId = (random: () => number) => `graph-template-${Date.now()}-${random().toString(36).slice(2, 8)}`;
+const createOverlapEdgeId = (random: () => number, index: number) => `edge-overlap-${Date.now()}-${index}-${random().toString(36).slice(2, 6)}`;
 
 export function createEnsureDraggingUndoSnapshot(__appScope: Record<string, any>) {
   return () => {
@@ -914,12 +938,13 @@ export function createPasteSelection(__appScope: Record<string, any>) {
       x: targetPoint.x,
       y: targetPoint.y
     };
+    const pasteIdRandom = canvasIdRandom(__appScope);
     const cloned = cloneCanvasClipboard(
       canvasClipboard,
       pasteTargetPoint,
-      () => `node-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      () => `edge-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      () => `group-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      () => createCanvasNodeId(pasteIdRandom),
+      () => createCanvasEdgeId(pasteIdRandom),
+      () => createCanvasGroupId(pasteIdRandom)
     );
     if (cloned.nodes.length === 0 && cloned.edges.length === 0) {
       if (canvasClipboard.edges.length > 0) {
@@ -1419,7 +1444,7 @@ export function createConfirmAddGraphTemplate(__appScope: Record<string, any>) {
     }
     const now = new Date().toISOString();
     const template: GraphTemplate = {
-      id: `graph-template-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: createGraphTemplateId(canvasIdRandom(__appScope)),
       typeName,
       name,
       sourceSize: { ...templateDialog.sourceSize },
@@ -1507,12 +1532,13 @@ export function createDropGraphTemplate(__appScope: Record<string, any>) {
       x: pointerPosition.x - template.sourceSize.width / 2,
       y: pointerPosition.y - template.sourceSize.height / 2
     };
+    const dropIdRandom = canvasIdRandom(__appScope);
     const cloned = cloneCanvasClipboard(
       template.clipboard,
       targetTopLeft,
-      () => `node-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      () => `edge-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      () => `group-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      () => createCanvasNodeId(dropIdRandom),
+      () => createCanvasEdgeId(dropIdRandom),
+      () => createCanvasGroupId(dropIdRandom)
     );
     if (cloned.nodes.length === 0 && cloned.edges.length === 0) {
       showGlobalMessage("模板内容为空或包含悬空联络线，无法生成。");
@@ -1818,11 +1844,12 @@ export function createGroupSelectedGraphics(__appScope: Record<string, any>) {
     if (!canGroupSelectedGraphics) {
       return;
     }
+    const groupIdRandom = canvasIdRandom(__appScope);
     const result = createCanvasGroupFromSelection(
       groups,
       activeSelectedNodeIds,
       activeSelectedEdgeIds,
-      () => `group-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      () => createCanvasGroupId(groupIdRandom)
     );
     if (!result.group) {
       return;
@@ -3000,11 +3027,12 @@ export function createFinalizeMovedNodeEdgesFast(__appScope: Record<string, any>
   const { canvasBounds, prepareConnectionEdgeForCommit, reconcileOverlappingTerminalConnections, routedEdges, routingNodesForConnectionEdge, terminalReconcileNodeScope } = __appScope;
     const movedNodeIdSet = new Set(movedNodeIds);
     const reconcileNodes = terminalReconcileNodeScope(previousNodes, nextNodes, movedNodeIdSet);
+    const overlapEdgeIdRandom = canvasIdRandom(__appScope);
     const reconciled = reconcileOverlappingTerminalConnections(
       reconcileNodes.previous,
       reconcileNodes.next,
       candidateEdges,
-      (_first: unknown, _second: unknown, index: number) => `edge-overlap-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+      (_first: unknown, _second: unknown, index: number) => createOverlapEdgeId(overlapEdgeIdRandom, index),
       movedNodeIdSet,
       localCandidateEdges
     );

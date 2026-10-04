@@ -1,7 +1,7 @@
 // createCurrentProject 输出 backgroundProjectIdx：服务端靠它定位背景模型（前端 id 服务端无法解析）
 import { describe, expect, test, vi } from "vitest";
-import { createAddToContainer, createConfirmAddToContainer, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createPasteSelection, createRemoveFromContainer } from "./appSelectionDragFactories";
-import { canvasClipboardBounds, cloneCanvasClipboard } from "../selectionActions";
+import { createAddToContainer, createConfirmAddGraphTemplate, createConfirmAddToContainer, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createFinalizeMovedNodeEdgesFast, createGroupSelectedGraphics, createPasteSelection, createRemoveFromContainer } from "./appSelectionDragFactories";
+import { canvasClipboardBounds, cloneCanvasClipboard, createCanvasGroupFromSelection, expandSelectionByGroups } from "../selectionActions";
 import { containerKindSwitch, containerNamePick, containerNameSearch } from "../acContainer";
 import { deleteNodesWithConnectedEdges } from "../model-routing";
 import { createUndoGraphSnapshotPatchPlan } from "./appGraphMeasurementFactories";
@@ -662,6 +662,351 @@ describe("添加到容器:类型 + 名称双下拉", () => {
     // 新建的容器收编成员,原容器 v1 保留
     expect(graphs[0][0].filter((node: any) => node.kind === "ac-vpp-box")).toHaveLength(2);
     expect(graphs[0][0].find((node: any) => node.id === "m1").containerId).toBe(created.id);
+  });
+
+});
+
+// ─── 本文件 9 处 Math.random 的随机源可注入(2026-10 审计收敛) ────────────────
+// 这 9 处产出的都是**图元主键**,不是视觉抖动/临时 id:
+//   粘贴 / 模板落点 → 节点·边·组 id 经 setGraphArrays + setGroups 进图元状态,
+//     createCurrentProject 落盘方案文件,model-eexport 原样写成 `id: node.id`;
+//     边 id 还被 cloneCanvasClipboard 的 idMap 改写 sourceId/targetId;
+//   新建模板 → 模板 id 经 persistTemplateLibraryChange 落盘模板库;
+//   组合 → 组 id 经 setGroups 进状态;
+//   拖动后重叠端子自动补边 → 边 id 进 nextEdges 提交。
+// 注入缝:`__appScope.randomSource`(缺省或非函数一律回退 Math.random,默认行为不变)。
+describe("随机 id 的随机源可注入", () => {
+  const FIXED_MS = new Date("2024-03-04T05:06:07.890Z").getTime();
+  // 刻意避开 0.5 —— 那是 Math.random 的典型取值,恰是最可能被硬编码进实现的字面量。
+  const A = 0.123456789;
+  const B = 0.234567891;
+  const C = 0.345678912;
+  const D = 0.456789123;
+  const tag = (value: number, length: number) => value.toString(36).slice(2, 2 + length);
+  /** 顺序取值序列:顺带锁住「取用次数与次序」,即每个 id 都真的读了一次随机源。 */
+  const randomSequence = (values: number[]) => {
+    let i = 0;
+    return () => values[Math.min(i++, values.length - 1)];
+  };
+  // 两个节点 + 一条联络线 + 一个两成员组合:四个 id 工厂各被调一次
+  const clipboard = () => ({
+    nodes: [
+      bareNode("src1", "ac-load", { position: { x: 200, y: 200 }, params: { _labelVisible: "0" } }),
+      bareNode("src2", "ac-load", { position: { x: 300, y: 200 }, params: { _labelVisible: "0" } }),
+    ],
+    edges: [{
+      edge: { id: "e0", sourceId: "src1", targetId: "src2" },
+      routePoints: [{ x: 220, y: 215 }, { x: 300, y: 215 }],
+    }],
+    groups: [{ id: "g0", name: "组A", nodeIds: ["src1", "src2"], edgeIds: [] }],
+  });
+
+  const makeInsertScope = (randomSource?: unknown) => {
+    const nodesSet: any[][] = [];
+    const edgesSet: any[][] = [];
+    const groupsSet: any[][] = [];
+    const scope: any = {
+      CANVAS_AUTO_EXPAND_PADDING: 40,
+      activeLayerId: "default",
+      activateInspectorFromCanvas: vi.fn(),
+      applyCanvasBounds: vi.fn(),
+      assignPermanentDeviceIndex: (node: any) => ({ node, counters: {} }),
+      canvasBounds: { width: 1000, height: 800 },
+      canvasBoundsForAutoExpandedGraphContent: () => ({ width: 1000, height: 800 }),
+      canvasBoundsWithOriginShift: (bounds: any) => bounds,
+      canvasClipboard: clipboard(),
+      canvasClipboardBounds,
+      canvasHeight: 800,
+      canvasWidth: 1000,
+      clampNodePositionToBounds: (_node: any, _bounds: any, position: any) => position,
+      clampPointToBounds: (point: any) => point,
+      cloneCanvasClipboard,
+      deviceIndexCounters: {},
+      edges: [],
+      hasCanvasOriginShift: () => false,
+      lastCanvasPointerRef: { current: { x: 60, y: 75 } },
+      lastRawCanvasPointerRef: { current: { x: 60, y: 75 } },
+      leftTopCanvasOriginShiftForContent: () => ({ x: 0, y: 0 }),
+      markBusTerminalSyncDirtyForEdges: vi.fn(),
+      markStoredRouteEdgesDirty: vi.fn(),
+      modelType: "ac",
+      nodes: [],
+      normalizeDeviceIndexCounters: () => ({}),
+      normalizeModelGroups: (groups: any) => groups,
+      pushUndoSnapshot: vi.fn(),
+      rejectAutoCanvasExpansionForContent: () => false,
+      requireEditMode: () => true,
+      resetConnectPreviewState: vi.fn(),
+      setCanvasSelectionScope: vi.fn(),
+      setConnectSource: vi.fn(),
+      setContextMenu: vi.fn(),
+      setDeviceIndexCounters: vi.fn(),
+      setGraphArrays: (nextNodes: any[], nextEdges: any[]) => { nodesSet.push(nextNodes); edgesSet.push(nextEdges); },
+      setGroups: (updater: any) => { groupsSet.push(updater([])); },
+      setRewiring: vi.fn(),
+      setSelectedEdgeId: vi.fn(),
+      setSelectedEdgeIds: vi.fn(),
+      setSelectedNodeIds: vi.fn(),
+      shiftCachedRoutesForCanvasOrigin: vi.fn(),
+      showGlobalMessage: vi.fn(),
+      translateEdgeBy: (edge: any) => edge,
+      translateNodeBy: (node: any) => node,
+      translatePointBy: (point: any) => point,
+      writeOperationLog: vi.fn(),
+    };
+    if (randomSource !== undefined) {
+      scope.randomSource = randomSource;
+    }
+    return { scope, nodesSet, edgesSet, groupsSet };
+  };
+
+  // base36 截断可能切短(0.5 → "0.i")。先证明这四个注入值切得满长度,
+  // 否则下面的精确 id 断言会在「随机段其实短了一截」时给出误导性的绿灯。
+  test("注入值非退化:base36 随机段切得满预期长度", () => {
+    for (const [value, length] of [[A, 4], [B, 4], [C, 4], [D, 4]] as const) {
+      expect(tag(value, length)).toHaveLength(length);
+    }
+    expect(tag(A, 6)).toHaveLength(6);
+  });
+
+  test("粘贴:节点/边/组 id 逐字取自注入源,同输入两次可复现", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(FIXED_MS);
+      const run = () => {
+        const { scope, nodesSet, edgesSet, groupsSet } = makeInsertScope(randomSequence([A, B, C, D]));
+        createPasteSelection(scope)();
+        return {
+          ids: [
+            ...nodesSet[0].map((node: any) => node.id),
+            ...edgesSet[0].map((edge: any) => edge.id),
+            ...groupsSet[0].map((group: any) => group.id),
+          ],
+          nodes: nodesSet[0],
+          groupNodeIds: groupsSet[0][0].nodeIds,
+        };
+      };
+      const a = run();
+      const b = run();
+      expect(a.ids).toEqual([
+        `node-${FIXED_MS}-${tag(A, 4)}`,
+        `node-${FIXED_MS}-${tag(B, 4)}`,
+        `edge-${FIXED_MS}-${tag(C, 4)}`,
+        `group-${FIXED_MS}-${tag(D, 4)}`,
+      ]);
+      expect(b.ids).toEqual(a.ids);
+      // 断言要落在随机段真正流向的那份数据上:副本组合的成员引用就是新节点 id(不是源 id)
+      expect(a.groupNodeIds).toEqual([a.nodes[0].id, a.nodes[1].id]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("放置模板:同出口同结论(节点/边/组 id 同样取自注入源)", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(FIXED_MS);
+      const run = () => {
+        const { scope, nodesSet, edgesSet, groupsSet } = makeInsertScope(randomSequence([A, B, C, D]));
+        createDropGraphTemplate(scope)(
+          { typeName: "一次接线", name: "模板A", clipboard: clipboard(), sourceSize: { width: 40, height: 30 } } as any,
+          { x: 60, y: 75 }
+        );
+        return [
+          ...nodesSet[0].map((node: any) => node.id),
+          ...edgesSet[0].map((edge: any) => edge.id),
+          ...groupsSet[0].map((group: any) => group.id),
+        ];
+      };
+      const a = run();
+      expect(a).toEqual([
+        `node-${FIXED_MS}-${tag(A, 4)}`,
+        `node-${FIXED_MS}-${tag(B, 4)}`,
+        `edge-${FIXED_MS}-${tag(C, 4)}`,
+        `group-${FIXED_MS}-${tag(D, 4)}`,
+      ]);
+      expect(run()).toEqual(a);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  const makeTemplateDialogScope = (randomSource?: unknown) => {
+    const templatesSet: any[][] = [];
+    const persisted: any[] = [];
+    const scope: any = {
+      DEFAULT_GRAPH_TEMPLATE_TYPES: ["一次接线"],
+      cloneGraphTemplateClipboard: (cb: any) => cb,
+      customGraphTemplateTypes: [],
+      customGraphTemplates: [],
+      normalizeGraphTemplateTypeName: (type: string) => type,
+      persistTemplateLibraryChange: (payload: any) => persisted.push(payload),
+      setCustomGraphTemplateTypes: vi.fn(),
+      setCustomGraphTemplates: (next: any) => templatesSet.push(next),
+      setExpandedGraphTemplateTypes: vi.fn(),
+      setLeftPanelTab: vi.fn(),
+      setTemplateDialog: vi.fn(),
+      setTemplateDraftName: vi.fn(),
+      templateDialog: { sourceSize: { width: 40, height: 30 }, clipboard: clipboard() },
+      templateDraftName: "模板A",
+      templateDraftType: "一次接线",
+      writeOperationLog: vi.fn(),
+    };
+    if (randomSource !== undefined) {
+      scope.randomSource = randomSource;
+    }
+    return { scope, templatesSet, persisted };
+  };
+
+  test("新建模板:模板 id 取自注入源(随机段 6 位),并原样落进模板库持久化", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(FIXED_MS);
+      const run = () => {
+        const { scope, templatesSet, persisted } = makeTemplateDialogScope(randomSequence([A]));
+        createConfirmAddGraphTemplate(scope)();
+        return { id: templatesSet[0][0].id, persistedId: persisted[0].customGraphTemplates[0].id };
+      };
+      const a = run();
+      const b = run();
+      expect(a.id).toBe(`graph-template-${FIXED_MS}-${tag(A, 6)}`);
+      expect(b.id).toBe(a.id);
+      expect(a.persistedId).toBe(a.id);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  const makeGroupScope = (randomSource?: unknown) => {
+    const groupsSet: any[][] = [];
+    const nodes = [
+      bareNode("n1", "ac-load", { params: { _labelVisible: "0" } }),
+      bareNode("n2", "ac-load", { params: { _labelVisible: "0" } }),
+    ];
+    const scope: any = {
+      activeSelectedEdgeIds: [],
+      activeSelectedNodeIds: ["n1", "n2"],
+      canGroupSelectedGraphics: true,
+      createCanvasGroupFromSelection,
+      edges: [],
+      expandSelectionByGroups,
+      groups: [],
+      nodes,
+      normalizeModelGroups: (groups: any) => groups,
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: () => true,
+      setCanvasSelectionScope: vi.fn(),
+      setGroups: (next: any) => groupsSet.push(next),
+      setSelectedEdgeId: vi.fn(),
+      setSelectedEdgeIds: vi.fn(),
+      setSelectedNodeIds: vi.fn(),
+      writeOperationLog: vi.fn(),
+    };
+    if (randomSource !== undefined) {
+      scope.randomSource = randomSource;
+    }
+    return { scope, groupsSet };
+  };
+
+  test("组合:新组 id 取自注入源,并经 setGroups 进图元状态", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(FIXED_MS);
+      const run = () => {
+        const { scope, groupsSet } = makeGroupScope(randomSequence([A]));
+        createGroupSelectedGraphics(scope)();
+        return groupsSet[0][0].id;
+      };
+      const a = run();
+      expect(a).toBe(`group-${FIXED_MS}-${tag(A, 4)}`);
+      expect(run()).toBe(a);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // 重叠端子补边那条出口的随机 id 由 reconcileOverlappingTerminalConnections 传进来的
+  // createEdgeId 决定,故桩住它、让它真的把该 id 写进补出来的那条边再回传。
+  const makeFastFinishScope = (randomSource?: unknown) => {
+    const scope: any = {
+      canvasBounds: { width: 1000, height: 800 },
+      prepareConnectionEdgeForCommit: () => ({ ok: false }),
+      reconcileOverlappingTerminalConnections: (
+        _previous: any,
+        _next: any,
+        edges: any[],
+        createEdgeId: (first: any, second: any, index: number) => string
+      ) => ({
+        edges: [
+          ...edges,
+          {
+            id: createEdgeId({ nodeId: "n1", terminalId: "t1" }, { nodeId: "n2", terminalId: "t2" }, 2),
+            sourceId: "n1",
+            targetId: "n2",
+          },
+        ],
+        addedEdgeIds: [],
+      }),
+      routedEdges: [],
+      routingNodesForConnectionEdge: () => [],
+      terminalReconcileNodeScope: () => ({ previous: [], next: [] }),
+    };
+    if (randomSource !== undefined) {
+      scope.randomSource = randomSource;
+    }
+    return scope;
+  };
+
+  test("拖动后重叠端子补边:新边 id 取自注入源,index 原样带出", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(FIXED_MS);
+      const run = () => {
+        const nextEdges = createFinalizeMovedNodeEdgesFast(makeFastFinishScope(randomSequence([A])))(
+          [], [], [], ["n1"], []
+        ) as any[];
+        return nextEdges[nextEdges.length - 1].id;
+      };
+      const a = run();
+      expect(a).toBe(`edge-overlap-${FIXED_MS}-2-${tag(A, 4)}`);
+      expect(run()).toBe(a);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("未注入随机源(缺省或非函数)→ 仍走 Math.random,五个出口 id 形状不变", () => {
+    for (const randomSource of [undefined, "not-a-function"]) {
+      const insert = makeInsertScope(randomSource);
+      createPasteSelection(insert.scope)();
+      const pasteIds = [
+        ...insert.nodesSet[0].map((node: any) => node.id),
+        ...insert.edgesSet[0].map((edge: any) => edge.id),
+        ...insert.groupsSet[0].map((group: any) => group.id),
+      ];
+      for (const id of pasteIds) {
+        expect(id).toMatch(/^(node|edge|group)-\d+-[0-9a-z]{1,4}$/);
+        expect(id).not.toMatch(/undefined/);
+      }
+
+      const drop = makeInsertScope(randomSource);
+      createDropGraphTemplate(drop.scope)(
+        { typeName: "一次接线", name: "模板A", clipboard: clipboard(), sourceSize: { width: 40, height: 30 } } as any,
+        { x: 60, y: 75 }
+      );
+      expect(drop.nodesSet[0][0].id).toMatch(/^node-\d+-[0-9a-z]{1,4}$/);
+
+      const dialog = makeTemplateDialogScope(randomSource);
+      createConfirmAddGraphTemplate(dialog.scope)();
+      expect(dialog.templatesSet[0][0].id).toMatch(/^graph-template-\d+-[0-9a-z]{1,6}$/);
+
+      const group = makeGroupScope(randomSource);
+      createGroupSelectedGraphics(group.scope)();
+      expect(group.groupsSet[0][0].id).toMatch(/^group-\d+-[0-9a-z]{1,4}$/);
+
+      const fast = createFinalizeMovedNodeEdgesFast(makeFastFinishScope(randomSource))([], [], [], ["n1"], []) as any[];
+      expect(fast[fast.length - 1].id).toMatch(/^edge-overlap-\d+-\d+-[0-9a-z]{1,4}$/);
+    }
   });
 
 });
