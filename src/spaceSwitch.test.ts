@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 // 时序断言靠桩记录：清缓存与写 cookie 都换成记录器，才能断言**顺序**而不只是「都发生了」。
 const clearMock = vi.hoisted(() => vi.fn());
@@ -14,12 +14,37 @@ vi.mock("./spaceCache", () => ({
 // 只桩写 cookie；位置参数断言用得到，其余导出与本模块无关。
 vi.mock("./spaceClient", () => ({ writeSpaceCookie: writeCookieMock }));
 
-import { isSkipBeforeUnload, setSkipBeforeUnload, shouldPromptBeforeUnload, switchToSpace } from "./spaceSwitch";
+// **被测模块刻意不静态 import**，改由 beforeAll 动态 import —— 理由见 beforeAll 的注释。
+// 类型位置用 `typeof import()`：它只在编译期解析类型，不产生运行期 import（等于 0 依赖）。
+let isSkipBeforeUnload: typeof import("./spaceSwitch").isSkipBeforeUnload;
+let setSkipBeforeUnload: typeof import("./spaceSwitch").setSkipBeforeUnload;
+let shouldPromptBeforeUnload: typeof import("./spaceSwitch").shouldPromptBeforeUnload;
+let switchToSpace: typeof import("./spaceSwitch").switchToSpace;
 
 let reload: ReturnType<typeof vi.fn>;
 let notify: ReturnType<typeof vi.fn>;
 let originalLocation: unknown;
 let originalShowGlobalMessage: unknown;
+
+// 共享模块注册表（把 isolate 关掉以求全量提速）下，本文件的 `vi.mock` **可能整份失效**：
+// 若别的测试文件（如 appGraphMeasurementFactories.test.ts）先静态 import 过 ./spaceSwitch 且
+// 没有 mock 它，注册表里那份实例已经绑定了**真** spaceCache / spaceClient。静态 import 会直接
+// 命中它 —— 模块不再求值，本文件的 mock 工厂压根没被咨询。真 clearSpaceScopedBrowserCaches 于是
+// 真去跑，在 node 环境里撞 `ReferenceError: indexedDB is not defined` 并向上抛，
+// switchToSpace 走中止分支：记录数组空、提示文案里是 "indexedDB is not defined" 而非用例注入的
+// 那句。**症状随机**只是因为「谁先跑」随机，根因是同一件事。
+// 故先作废整份模块缓存，再动态 import 触发一次带桩的重新求值；作废后 mock 工厂正常生效。
+beforeAll(async () => {
+  vi.resetModules();
+  ({ isSkipBeforeUnload, setSkipBeforeUnload, shouldPromptBeforeUnload, switchToSpace } = await import("./spaceSwitch"));
+});
+
+// 反向的漏：这份「带桩的 spaceCache / spaceClient」会留在共享注册表里，害得后面跑的文件
+// import 到本文件的记录器。同样作废整份缓存交还干净状态 —— 下个文件会按自己的 mock 重新求值。
+// isolate 打开时每个文件本就是独立注册表，这两次 resetModules 是空转，无副作用。
+afterAll(() => {
+  vi.resetModules();
+});
 
 beforeEach(() => {
   setSkipBeforeUnload(false);
