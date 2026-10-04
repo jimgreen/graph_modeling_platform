@@ -8,8 +8,9 @@ import { apiPath } from "../server/config.mjs";
 // e2e 验收：切空间后新空间不被**旧空间留在浏览器里的缓存**污染（设计 §6 / §12#12，关闭 S2）。
 //
 // 污染是怎么发生的（三条回写路径）：后端某一空间为空（`exists:false`）时，前端会把
-// **浏览器本地缓存**当成该空间的初始内容写回后端 —— 配色 `appToolbarHookFactories.tsx:2780`、
-// 图元库 `:2823`、量测 `:2863`。故只要进入新空间时浏览器缓存里还留着旧空间的东西，
+// **浏览器本地缓存**当成该空间的初始内容写回后端 —— 配色 `appToolbarHookFactories.tsx:2826`、
+// 图元库 `:2880`、量测 `:2907`（原文写的 2780/2823/2863 是该文件漂移前的行号）。
+// 故只要进入新空间时浏览器缓存里还留着旧空间的东西，
 // 它就会被打包成新空间的 `color-config.json` / `device-library/library.json` /
 // `measurement-config.json` 落盘，且用户侧无法自愈。
 //
@@ -166,16 +167,34 @@ async function createSpaceViaUi(page, name) {
   await page.click(".ant-modal-footer .ant-btn-primary");
 }
 
-// A 的内容进入浏览器缓存的判据：前端把后端读来的值落到 localStorage（配色/标签两处各自
-// 证明一条回写路径的数据源已就位）。不等到它就切，测的就不是「缓存里有旧空间的东西」。
+// A 的内容进入浏览器缓存的判据：前端把后端读来的值落到 localStorage。
+//
+// **三条回写路径各自独立，三条都得等到**：配色 / 图元库 / 量测分属三个 mount effect，
+// 各自的 fetch 各自回来后才落自己的 localStorage 键 ——
+//   · 配色 `appToolbarHookFactories.tsx:2990`（还要先经一次 state→effect）
+//   · 图元库 `appPersistenceLibraryExport.tsx:3003`
+//   · 量测 `appPersistenceLibraryExport.tsx:3038`（由 `:2902` 同步调用）
+// 原先只等前两条，于是「量测那条压根没把 A 的配置落进缓存」这件事无人过问：那条断言
+// 照样绿，而它与「清缓存有没有生效」已无关。实测（M3 变异：摘掉 `:2902` 的那次写）
+// 旧前提照样满足、新前提超时 —— 前提缺口是实打实的，不是理论担忧。
+// 不等到它就切，测的就不是「缓存里有旧空间的东西」。
 async function waitForSpaceACachedInBrowser(page) {
   await page.waitForFunction(
-    ({ label, mode }) => {
+    ({ label, mode, measurementKey, measurementBg }) => {
       const labels = window.localStorage.getItem("power-system-e-device-definition-labels") || "";
       const current = window.localStorage.getItem("power-system-color-display-mode") || "";
-      return labels.includes(label) && current === mode;
+      const measurements = window.localStorage.getItem(measurementKey) || "";
+      return labels.includes(label) && current === mode && measurements.includes(measurementBg);
     },
-    { label: A_MARK.label, mode: A_MARK.colorMode },
+    {
+      label: A_MARK.label,
+      mode: A_MARK.colorMode,
+      // 量测配置的浏览器侧键（`appCoreCanvasUtilities.tsx:2181` 的 MEASUREMENT_CONFIG_STORAGE_KEY，
+      // 与 `spaceCache.ts` 清理清单同一条）。按**值**比对而非 import 常量：那份清单由
+      // `spaceCache.test.ts` 守卫着，e2e 这里再引一次只会多一处会一起漂移的副本。
+      measurementKey: "power-system-platform-measurements",
+      measurementBg: A_MARK.measurementBg
+    },
     { timeout: 60000 }
   );
 }
@@ -195,7 +214,19 @@ async function waitForFile(file, timeoutMs = 30000) {
  * 断言 B 的三个落盘文件**都不含 A 的内容**。
  *
  * 三个文件都必须先「等到存在」再断言 —— 只写「若存在则不含」会让「回写压根没发生」
- * 也算通过，那正是这条验收最容易骗过自己的地方（绿得没有判别力）。
+ * 也算通过，那正是这条验收最容易骗过自己的地方（绿得没有判别力）。实测：新空间建出来时
+ * 三个配置文件**都不存在**（`spaceStore.ensureSkeleton` 只 mkdir 空间根），故「文件存在」
+ * 这一条本身就证明了前端那条回写路径真的跑过，不是后端预置的。
+ *
+ * **这里刻意没有「值必须是合法取值 / 字段必须存在」那类断言** —— 加过，又删了：
+ * 服务端三个写入口都会归一化后再落盘（`server.mjs:700` `normalizeColorConfig` 恒产出
+ * `colorDisplayMode`；`:1043` `normalizeMeasurementConfig` 恒产出 `groupDefaults`；
+ * `:1689`/`:1565-1572` 恒产出 `eDeviceDefinitionLabels` 对象）。故「字段整个缺失」这个
+ * 担心由服务端兜掉了，那几条断言在本用例里**恒真** —— 正是这个文件要清理的那一类东西。
+ * 变异也打不红它们：把前端 `serializeColorConfigForStorage` 的 `colorDisplayMode` 字段
+ * 删掉，落盘文件里该字段仍在（服务端补成 `"energy"`）。别再加回来。
+ *
+ * 承重的只有「不含 A 的标记」那三条，它们对 A 的内容敏感（见 M1/M2 变异）。
  */
 async function expectSpaceBUnpolluted(dir, id) {
   const files = spaceFiles(dir, id);
@@ -206,6 +237,7 @@ async function expectSpaceBUnpolluted(dir, id) {
 
   const measurement = await waitForFile(files.measurement);
   expect(measurement, `${id} 的 measurement-config.json 未生成`).not.toBeNull();
+  // 整文件查，不只 groupDefaults.backgroundColor：A 的标记落在任何字段都算污染。
   expect(measurement).not.toContain(A_MARK.measurementBg);
 
   const library = await waitForFile(files.library);
@@ -248,6 +280,14 @@ describe("切空间 e2e：新空间不被旧空间的浏览器缓存污染", () 
     ]);
     await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
     await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
+
+    // **显式钉住「确实进了 B」**。选择器显示的是「current 这个空间的 name」，
+    // 故它显示丙空间 ⇒ 前端那次 `/webgrp/spaces` 拿到的 current 就是 spaceBId ——
+    // 也就是启动闸门 `reconcileSpaceCacheOwnership(resolvedSpaceId)` 的入参。
+    // 原先这条路径上没有任何「切换真的发生了」的断言，全靠后面「B 的文件被生成」反推：
+    // 一旦没切进 B，红的是「B 的 color-config.json 未生成」，理由错位，而**启动闸门
+    // 压根没被检验到** —— 正是「用例名声称验证切换、实际只验证元素在」的形态。
+    await waitForSwitcherText(page, "丙空间");
 
     await expectSpaceBUnpolluted(dataDir, spaceBId);
   }, 180000);
@@ -310,6 +350,12 @@ describe("切空间 e2e：新空间不被旧空间的浏览器缓存污染", () 
     );
     const statusText = await page.textContent(".bottom-statusbar");
     expect(statusText).not.toContain("总站");
+    // 下面这条与上面那条**近乎等价冗余**，记下依据，免得下一个人重新调研、也免得为它硬凑变异：
+    // 上面的 waitForFunction 已钉住「状态栏文本含 id 戊空间」，而该 id 由 `spaceIdFromName`
+    // 产出（实测 `POST /spaces 戊空间` → `{"id":"戊空间"}`）。要让状态栏出现「默认空间」，
+    // 得它同时显示两个空间的名字 —— 那是「id 格与 name 格并排」这类改法，不是任何单点
+    // 变异能造出来的。故承重的是上面那条。
+    // 仍留着它：廉价兜底，且真出现那种改法时它会红（两条并非互斥的恒真断言）。
     expect(statusText).not.toContain("默认空间");
   }, 180000);
 
