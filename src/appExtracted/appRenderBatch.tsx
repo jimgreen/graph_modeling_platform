@@ -213,6 +213,33 @@ import type { LibraryPackagePayload } from "./appPersistenceLibraryExport";
 import type { CustomDeviceDraft, CustomParamDraft, DeviceDefinitionDraftRow, DeviceDefinitionVisualDraft, ImageAsset, StateIconDrawingDialogState } from "./appCoreCanvasUtilities";
 import type { IconLibraryCatalogLibrary } from "../iconLibraryCatalog";
 
+// 量测编辑组 id 的随机源。默认实现**逐字等价**于原先内联的 `Math.random()`：
+// 读取时机仍是调用那一刻（这里每次调用都重新查一次 Math.random），
+// 所以外部对 Math.random 的打桩照旧生效。
+// 收敛成具名依赖的意义：以前要固定这个 id 只能整体替换 createMeasurementEditorGroupId
+// （连带把 Date.now() 那半截也换掉），现在可以只钉住随机项。
+export function randomSource(): number {
+  return Math.random();
+}
+
+// 量测编辑组 id。这**不是**"视觉抖动/临时 id"，产出的就是 MeasurementGroup.id：
+//   ① 组壳 id 经 createMeasurementEditorGroupForPosition 进 measurementEditorDialog.drafts；
+//   ② confirmMeasurementEditorDialog 用 cloneMeasurementGroupForDraft({ ...group }) 展开，
+//      `...group` 原样带走 id（该克隆函数不重写 id），随即 updateProjectMeasurementsWithUndo
+//      落进 projectMeasurements；
+//   ③ measurements.reconcileProjectMeasurementsWithConfig 对「非规范 id」逐字放行
+//      （id !== canonicalMeasurementGroupId 时直接 push），随机后缀不会被规范化掉；
+//   ④ 故它进持久化状态（model-routing 的 normalizeProjectMeasurements / 落盘方案与工程）
+//      与 runtimeSnapshot.buildSnapshot 的 measurements 输出，并作为 DOM 的
+//      data-export-measurement-group-id 与 React key 参与渲染。
+// 同输入产出不同 id，测试只能靠 mock 掩盖，故随机源必须可注入（默认行为不变）。
+export function createMeasurementEditorGroupId(
+  nodeId: string,
+  terminalId?: string,
+  random: () => number = randomSource
+): string {
+  return `measurement-${nodeId}${terminalId ? `-${terminalId}` : ""}-group-${Date.now().toString(36)}-${random().toString(36).slice(2, 6)}`;
+}
 
 export function useRenderBatch(__appScope: Record<string, any>) {
   const {
@@ -873,12 +900,18 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       items: []
     });
   Object.assign(__appScope, { createMeasurementGroupShellForNode });
-  const createMeasurementEditorGroupId = (nodeId: string, terminalId?: string) =>
-      `measurement-${nodeId}${terminalId ? `-${terminalId}` : ""}-group-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  Object.assign(__appScope, { createMeasurementEditorGroupId });
+  // 随机段取自可注入随机源 __appScope.randomSource（缺省即 Math.random，逐字保持原行为）。
+  // 缝与 appControlFactories 的组合 id 一致；注意缺省分支写成 `() => Math.random()` 而非 `Math.random`，
+  // 以保留原先"每次生成 id 时才查一次 Math.random"的读取时机（否则先 stub Math.random 再调用会失效）。
+  const editorGroupRandomSource = typeof __appScope.randomSource === "function"
+    ? (__appScope.randomSource as () => number)
+    : () => Math.random();
+  const createMeasurementEditorGroupIdForScope = (nodeId: string, terminalId?: string) =>
+      createMeasurementEditorGroupId(nodeId, terminalId, editorGroupRandomSource);
+  Object.assign(__appScope, { createMeasurementEditorGroupId: createMeasurementEditorGroupIdForScope });
   const createMeasurementEditorGroupShellForNode = (node: ModelNode, terminalId?: string): MeasurementGroup => ({
       ...createMeasurementGroupShellForNode(node, terminalId),
-      id: createMeasurementEditorGroupId(node.id, terminalId)
+      id: createMeasurementEditorGroupIdForScope(node.id, terminalId)
     });
   Object.assign(__appScope, { createMeasurementEditorGroupShellForNode });
   const measurementSourcePointForNodeItem = createMeasurementSourcePointForNodeItem(__appScope); Object.assign(__appScope, { measurementSourcePointForNodeItem });
