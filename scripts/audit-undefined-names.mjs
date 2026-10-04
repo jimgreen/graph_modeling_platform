@@ -150,7 +150,8 @@ function nodeAtPosition(sourceFile, position) {
 }
 
 // 剥掉会压掉语义诊断的整行注释（保留换行，行号不变）。
-// @ts-nocheck 压整个文件；@ts-ignore / @ts-expect-error 压下一行，同样会隐藏 2304。
+// `@ts-nocheck` 压整个文件，`@ts-ignore` / `@ts-expect-error` 压下一行，同样会藏起 2304。
+// 此处原先以 `// @ts-nocheck` 开头，但它一直是空转：本文件是 .mjs，不在 tsconfig.json 的 include（只有 ["src"]）内，allowJs 也是 false，tsconfig.node.json 只含 vite.config.ts。那行指令从未被 tsc 读到，只会误导读者以为本文件已做类型检查。
 function stripSuppressions(text) {
   return text.replace(/^[ \t]*\/\/[ \t]*@ts-(nocheck|ignore|expect-error)\b.*$/gm, "");
 }
