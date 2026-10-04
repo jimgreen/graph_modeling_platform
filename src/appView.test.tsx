@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { areCanvasPropsEqual } from "./appExtracted/appCanvasArea";
 import * as appViewModule from "./appExtracted/appView";
 import { ExportCompletionViewButton } from "./appExtracted/appView";
@@ -1346,11 +1346,16 @@ describe("顶栏空间选择器", () => {
         json: async () => ({ id: "新空间-id", name: "新空间", createdAt: "2026-01-04" })
       };
     });
-    vi.stubGlobal("fetch", fetchStub);
+    // 逐键还原，不用 vi.unstubAllGlobals()：那个清的是**整个 worker** 的桩表，
+    // 共享注册表下会顺手拆掉别的文件（或 test-setup）装的桩。
+    // 也不走 vi.stubGlobal：那会把 fetch 记进 worker 共享的桩表，给后来者留一颗雷。
+    const previousFetch = (globalThis as { fetch?: unknown }).fetch;
+    (globalThis as any).fetch = fetchStub;
     const { createSpaceThenSwitch } = await loadTopbar();
 
     await createSpaceThenSwitch("新空间", { requestSwitchSpace: (id: string) => requested.push(id) });
-    vi.unstubAllGlobals();
+    if (previousFetch === undefined) delete (globalThis as any).fetch;
+    else (globalThis as any).fetch = previousFetch;
 
     expect(fetchStub).toHaveBeenCalledTimes(1);
     expect(calls[0].init?.method).toBe("POST");
@@ -1382,7 +1387,43 @@ vi.mock("./fileIO", async (importOriginal) => ({
 }));
 
 describe("空间导入导出按钮", () => {
-  // 与上方「顶栏空间选择器」同一 TDZ 规避（appTopbar 经 model-node-ops 间接 import model.ts）
+  // 与上方「顶栏空间选择器」同一 TDZ 规避（appTopbar 经 model-node-ops 间接 import model.ts），
+  // 但这里多一步：清缓存 + 重新求值，让本文件那两个 vi.mock 工厂真的被咨询到。
+  //
+  // 共享模块注册表（isolate 关掉以求全量提速）下，`import("./appExtracted/appTopbar")`
+  // 未必会真的重新求值：若别的测试文件先把它装进了注册表且**没 mock** ./spaceClient
+  // （实测肇事者是 src/acContainerModel.test.ts —— 它静态 import 了 ./appExtracted/appView，
+  // 而 appView 静态引入 appTopbar；src/appViewImagePicker.test.ts 同理），缓存命中时
+  // 模块不再求值，本文件的 mock 工厂压根没被咨询，于是整套用例跑在**真** spaceClient /
+  // fileIO 上：
+  //   · 真 spaceClient 打真 fetch，node 下相对 URL 报 "Failed to parse URL from /webgrp/spaces…"，
+  //     被 appTopbar 的 catch 改写成「导入/改名/删除空间失败：Failed to parse URL…」；
+  //   · 真 fileIO 的 saveLazyBlobFile 读 window，本仓 node 环境无 window →
+  //     「导出空间失败：window is not defined」；
+  //   · 真 spaceClient 里 importSpaceArchive / renameSpace / deleteSpace 全是真身，
+  //     桩的 spy 自然 0 次调用，记录数组自然空。
+  // 那三种症状**同一个根因**（mock 工厂失效），不是三件事 —— 别去给 window / fetch 逐个打补丁。
+  //
+  // 清完缓存后必须**先从 appView 这条入口把整张图求值一遍**，再让下面的 loadTopbar() 取 appTopbar：
+  // 单独把 appTopbar 当入口，appTopbar → model-node-ops → model.ts → model-node-ops 的循环会让
+  // model.ts 的顶层在 model-node-ops 还没执行到 `export const INTERACTIVE_STATIC_DRAWING_KINDS`
+  // 时展开它，直接 `TypeError: INTERACTIVE_STATIC_DRAWING_KINDS is not iterable`（已实测：抽掉
+  // 这行 import 即 19 条红）。走 appView 入口时 appTopbar 已带着本文件的桩装进缓存，
+  // loadTopbar() 直接命中那份。
+  //   （另试过在前面多垫一句 `import("./appExtracted/appCanvasArea")` 以完全对齐本文件顶部
+  //    静态 import 的顺序 —— 删掉它结果不变红，那一步不承重，故不留。）
+  //
+  // 只清这一次，不在 afterAll 再清：`vi.resetModules()` 是全局模块缓存的整表清空，
+  // 清完交还给后面跑的文件时它们会**从各自入口**重新求值整张 appView 模块图 ——
+  // 入口顺序不受本文件控制，appCanvasArea → appView 这条在本文件能过的顺序换个入口就未必
+  // （实测：afterAll 里清一次，后面跑的 acContainerModel 会红
+  //  `componentClassForConcreteTemplate is not a function`，而它自己单跑是绿的）。
+  // 反向的漏（带桩实例留在注册表里）与修之前同形，不新增风险。
+  beforeAll(async () => {
+    vi.resetModules();
+    await import("./appExtracted/appView");
+  });
+
   const loadTopbar = () => import("./appExtracted/appTopbar");
 
   // appTopbar 的弹窗出口读的是 **globalThis 上的函数**（conflictDialogs / showSpaceActionMessage），
