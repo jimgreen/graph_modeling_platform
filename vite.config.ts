@@ -121,6 +121,23 @@ export default defineConfig({
     setupFiles: ["./src/test-setup.ts"],
     // e2e 起真实 Vite+浏览器，慢且依赖环境，不进默认 pnpm test；用 pnpm test:e2e 单独跑
     exclude: ["**/node_modules/**", "**/dist/**", "e2e/**"],
+    // pool: threads —— 全量套件的主要开销是「每个文件重新求值一次模块图」。
+    // forks（vitest 3 的默认池）每个文件要起一次子进程，实测 533 files / 10982 tests 需 212.91s，
+    // 其中 collect 累计 3322s（每文件约 6.2s：collect 4.6s + tests 1.4s）。
+    // threads 在同进程内跑，模块图求值成本大幅下降：实测同一套件 **143.67s**（快 33%），
+    // 533 files / 10982 tests 全过、零新增失败。
+    //
+    // 这里**只**换池，**不动 isolate**：isolate 仍为默认的 true，每个文件仍拿到全新模块注册表。
+    // 这一点由 scripts/vitestIsolation.test.mjs 守卫（server.mjs 在模块加载期求值 dataRoot、
+    // registries 是模块级 Map，关掉隔离会让 server 测试文件互相串数据）。
+    // 曾实测把 isolate 关掉：server/ 全量立刻 45 条红；src/ 单独跑则在 1~5 个文件间不确定地漏
+    // （三次跑出 12/3/8 条，名单每次不同）—— 属顺序/分片依赖的泄漏，不可作为默认配置。
+    // ⚠ 本注释刻意不写出「把 isolate 置为 false」这个字面串：上面那个守卫是对 test 块做纯文本
+    //   正则扫描的，散文里出现同样的字面量也会让它转红。改配置前先看守卫怎么匹配的。
+    //
+    // maxWorkers 保持默认（按 CPU 数 = 本机 32）。实测钉到 16 更慢（151.38s）：超订到逻辑核数
+    // 反而优于超订到物理核数。
+    pool: "threads",
     // 默认 5s 对这个套件太紧：全量一万余用例、32 路并发抢 CPU，而其中确有一批
     // 本身就慢的集成型用例（起 TS 编译器、遍历全图、真跑 HTTP/WS），空载 1~2s、
     // 并发下轻易过 5s —— 表现为「机器慢」被报成「用例坏了」，且逐个加预算会没完没了
