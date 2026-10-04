@@ -225,6 +225,21 @@ describe("透明开关的存取（源码守卫）", () => {
 
   test("已提交值已是 transparent 时走「恢复」分支而非「再存一次」", () => {
     // 两个分支写反了会形成自锁：连按两下就再也退不出透明态
+    //
+    // 判定：`indexOf(...) >= 0` 不是恒真断言，保留原样。
+    // `indexOf` 找不到 needle 时返回 -1，而 `-1 >= 0` 为 false —— 这正是它要抓的
+    // 状态（守卫被改名/挪出切片）。变异验证 M1（把守卫的常量改写成
+    // `TRANSPARENT_COLOR_VALUE.trim()`，语义等价、只是 needle 消失）→ 转红
+    // `expected -1 to be greater than or equal to 0`，确认有鉴别力。
+    //
+    // 为什么不再加严成 `> 0`：needle 落在切片下标 0 是合法的存在形态，
+    // 拿阈值当强度只会引入假红。「两个分支的先后」由下面 saveIndex 的比较承担。
+    //
+    // 已知边界（记录下来，免得下一个人再查一遍）：守卫的**分支体**被掏空
+    // （guard 还在、但里面不再恢复）时，本用例的两条断言都还绿 —— 红的会是上面
+    // 「切回来时消费掉存的颜色」那条（变异验证 M3：它断言
+    // `previousColorRef.current = null;` 与 `commitColor(restoreColor);`）。
+    // 文件级守卫成立，故此处不再重复断言分支体内容。
     return transparentBlock().then((block) => {
       expect(block.indexOf("if (committedRef.current === TRANSPARENT_COLOR_VALUE) {")).toBeGreaterThanOrEqual(0);
       const saveIndex = block.indexOf("previousColorRef.current = committedRef.current;");
@@ -233,10 +248,21 @@ describe("透明开关的存取（源码守卫）", () => {
   });
 
   test("disabled 时开关整体早退，不发 commit", () => {
+    // 判定：`indexOf("if (disabled)") >= 0` 不是恒真断言，保留原样。
+    // 变异验证 M4（`if (disabled)` 改写成语义等价的 `if (disabled === true)`，
+    // needle 消失）→ 转红 `expected -1 to be greater than or equal to 0`，有鉴别力。
+    //
+    // 但它只守「判定存在」，守不住测试名承诺的「整体早退」：变异验证 M2
+    // （删掉 `if (disabled) {` 里的 `return;`，分支变成空体，disabled 时照样发
+    // commit）→ 原先 37 条一条不红，空分支照样满足「判定存在 + 判定在 commit 之前」。
+    // 所以补一条内容断言：判定体内必须紧跟 return。用正则而非字面量，避免钉死
+    // 缩进与换行；同样被 M2 / M4 打红。
     return transparentBlock().then((block) => {
       const disabledIndex = block.indexOf("if (disabled)");
       expect(disabledIndex).toBeGreaterThanOrEqual(0);
       expect(disabledIndex).toBeLessThan(block.indexOf("onCommitRef.current(TRANSPARENT_COLOR_VALUE);"));
+      // 「早退」= 判定体里真的有 return，不是空 `if (disabled) {}` 摆设
+      expect(block).toMatch(/if \(disabled\) \{\s*return;\s*\}/);
     });
   });
 
