@@ -336,6 +336,85 @@ describe("nodeCounterTransformMatrix", () => {
   });
 });
 
+// 上方 4 处按位置解构矩阵，安全性完全依赖一个**未写进任何地方**的契约：
+// `matrix(${a} ${b} ${c} ${d} 0 0)` 里的分隔空格是模板字面量，而每个插值都来自
+// formatSvgNumber —— 它对任何输入都返回非空、不含空格的十进制串。
+// **这不是 E 文件那种形态**：那边是数据行按列宽左对齐填充，空单元格是一整串空格，
+// 解析器若用 `split(/\s+/).filter(Boolean)` 就会把它整格丢掉、令其后每格左移一列
+// （src/encoding/rdf-id-export.test.ts 记录了实测后果：dms_def_node 的 rdf_id
+// 被读成 basevoltage 的 id）。矩阵串没有「空单元格」这个概念 —— 每个槽位都必有一个值。
+//
+// 契约一旦被破坏，后果与那边同形且更隐蔽：`filter(Boolean)` 会塌掉空槽静默左移，
+// 而裸 `split(" ")` 留下 `""`、被 `Number("")` 折成 **0 而非 NaN** ——
+// 若被破坏的位置恰好期望 0，后续列照样会静默错位而不报错。
+//
+// ⚠️ 上方 4 处断言**盖不住**这一类：实测把 formatSvgNumber 改成「零值返回空串」后，
+// `90° 旋转产生交换项` 仍是绿的 —— 该用例期望 a≈0、d≈0，而 `Number("")` 正是 0，
+// 空槽被期望值吸收，看不出任何异常（与 AGENTS.md「断言值等于兜底值」同一形态）。
+// 故下面把它钉成可执行断言，而不是留作注释。
+const MATRIX_TOKEN_COUNT = 6;
+/** 与上方 4 处完全同口径的切分：裸 split(" ")，不 filter。 */
+const matrixTokens = (matrix: string): string[] => matrix.slice(7, -1).split(" ");
+/** 空槽位（切分出 ""）的下标 —— E 文件那种「空单元格塌格」的残留形态。 */
+const blankMatrixSlots = (matrix: string): number[] =>
+  matrixTokens(matrix).flatMap((token, index) => (token === "" ? [index] : []));
+
+describe("矩阵串切分不变量（上方 4 处按位置解构的安全依据）", () => {
+  test("检测逻辑自测：连续空格必须被抓住，合法形态不得误报", () => {
+    // 变异形态①：模板里多打一个空格 ⇒ 第 1 槽变空
+    expect(blankMatrixSlots("matrix(1  2 3 4 0 0)")).toEqual([1]);
+    // 变异形态②：formatSvgNumber 返回空串（有人把零值写成 ""）
+    expect(blankMatrixSlots("matrix( 1 2 3 4 0 0)")).toEqual([0]);
+    // 变异形态③：尾部多空格（末两槽塌进一个）
+    expect(blankMatrixSlots("matrix(1 2 3 4 0  0)")).toEqual([5]);
+    // 合法形态不得误报：负数、负零归零、小数都要放行
+    expect(blankMatrixSlots("matrix(1 -1 0 0.125 0 0)")).toEqual([]);
+    expect(blankMatrixSlots("matrix(0.5 0 0 1 0 0)")).toEqual([]);
+    // 只看 matrix 前缀的串不产生误报
+    expect(matrixTokens("matrix(0 0 1 0 0 0)")).toHaveLength(MATRIX_TOKEN_COUNT);
+  });
+
+  test("生产矩阵串恒为 6 个非空 token ⇒ 按位置解构不会位移", () => {
+    // 覆盖负缩放（会产生负值）、零缩放（走 `|| 1` 兜底）、非有限与非数值形态
+    const scales = [1, -1, 0, 0.5, 2, 8, -0.001, 1e-7, NaN, Infinity, -Infinity];
+    const rotations = [0, 45, 90, 180, 270, 360, -90, 359.99];
+    let scanned = 0;
+    for (const rotation of rotations) {
+      for (const scaleX of scales) {
+        for (const preserveScale of [true, false]) {
+          const matrix = nodeCounterTransformMatrix(
+            node({ rotation, scaleX, scaleY: scaleX }),
+            preserveScale
+          );
+          const where = `rotation=${rotation} scaleX=${String(scaleX)} preserveScale=${String(preserveScale)}`;
+          // ① 前缀后缀恒定 —— slice(7, -1) 的边界假设
+          expect(matrix.startsWith("matrix("), where).toBe(true);
+          expect(matrix.endsWith(")"), where).toBe(true);
+          // ② 槽位数恒定：不多不少，否则解构 [a,b,c,d] 会整体错位
+          expect(matrixTokens(matrix), where).toHaveLength(MATRIX_TOKEN_COUNT);
+          // ③ 无空槽位 ⇒ filter(Boolean) 是恒等操作，不存在塌格左移
+          expect(blankMatrixSlots(matrix), where).toEqual([]);
+          // ④ 每个槽位都能被 Number 解析（无 "NaN" 混进 SVG 属性）
+          expect(matrixTokens(matrix).every((token) => Number.isFinite(Number(token))), where).toBe(true);
+          scanned += 1;
+        }
+      }
+    }
+    expect(scanned, "扫描样本数不为 0（否则本条是恒绿守卫）").toBeGreaterThan(0);
+  });
+
+  test("filter(Boolean) 与裸 split 等价 —— 两者可互换的前提是恒无空槽位", () => {
+    // 这条直接钉住「不得把上方 4 处改成 split(' ').filter(Boolean) 的理由」：
+    // 一旦生产串出现空槽，filter 会塌掉它并令其后每格左移（E 文件同形的列位移）。
+    for (const rotation of [0, 45, 90, 180, 270]) {
+      for (const scaleX of [1, -1, 0, 2, 8]) {
+        const matrix = nodeCounterTransformMatrix(node({ rotation, scaleX, scaleY: scaleX }));
+        expect(matrixTokens(matrix).filter(Boolean), matrix).toEqual(matrixTokens(matrix));
+      }
+    }
+  });
+});
+
 // 文本容器：位移 + 同一个反向补偿矩阵，且 style 从 props 里摘出来单独传给 text。
 describe("uprightText", () => {
   test("产出 g[transform] 包裹 text，且 transform 以 translate 开头", () => {
