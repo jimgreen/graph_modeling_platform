@@ -284,11 +284,19 @@ describe("tour side panel lock wiring (source contract)", () => {
     //     `.active` 改名后 lockedIndex(75512) > -1 依旧成立、第 273 行照样绿，只有本行转红。
     //     删掉本行 == 放弃这条护栏（这是本测试最容易漏掉的一处）。
     // 偏移 0 是合法命中（同上），不要把 `>= 0` 收紧成 `> 0`。
-    // 已知弱断言（本轮未改）：末尾的 toContain('cursor: not-allowed') 是全文件匹配，
-    // styles.css 里有 24 处该声明，它并不证明锁定态规则块里带 cursor: not-allowed。
     expect(lockedIndex).toBeGreaterThanOrEqual(0);
     expect(inspectorIndex).toBeGreaterThanOrEqual(0);
     expect(lockedIndex).toBeGreaterThan(inspectorIndex);
-    expect(css).toContain('cursor: not-allowed');
+    // 锁定态规则块必须**自己**带 cursor: not-allowed —— 取该块的声明体再匹配，
+    // 而不是对整份 css 匹配（这一句原先是 `expect(css).toContain(...)`，属全文件匹配：
+    // styles.css 里有 26 处该声明，块外任意一处都能让它绿，证明不了锁定态的声明）。
+    // 块体从 lockedIndex 那行选择器切到**下一个 `}`**：这一段里没有 `{`，所以首个 `}` 就是本块收尾。
+    // ⚠ 终止符刻意用 `}` 而非本 describe 惯用的 "\n}\n" —— styles.css 是 CRLF（16900 行 CRLF、
+    // 0 行裸 LF），"\n}\n" 在这里恒为 -1，`slice(start, -1)` 会一路切到文件尾，
+    // 悄悄退化成又一次全文件匹配（变异验证时专门查过这一点）。
+    // ⚠ 锚点 `[data-tour-locked="true"] button,` 在文件里出现 2 次（块首 + 第 4 行选择器），
+    // indexOf 取第 1 次即块首，切块起点正确。
+    const lockedRuleBody = css.slice(lockedIndex, css.indexOf("}", lockedIndex));
+    expect(lockedRuleBody, "锁定态规则块缺少 cursor: not-allowed").toContain("cursor: not-allowed");
   });
 });
