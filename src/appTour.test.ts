@@ -249,6 +249,13 @@ describe("tour side panel lock wiring (source contract)", () => {
   });
 
   test("三个侧边栏交互工厂都读 tourBlockedSidePanelMode", () => {
+    // 审计结论（下面那句 toBeGreaterThanOrEqual(0) 有鉴别力，勿收紧）：它的被测值是
+    // String.indexOf 的返回值 —— 未命中是 **-1**，不是 undefined，所以 `>= 0` 恰好等价于
+    // 「该工厂确实被导出」，工厂改名/删除都会转红。
+    // 变异验证：把 `createSetSidePanelMode` 的导出改名为 `...Renamed`，本行红
+    // （AssertionError: createSetSidePanelMode 未找到: expected -1 to be greater than or equal to 0）。
+    // 为什么保留 `>= 0` 而不是收紧成 `> 0`：命中偏移 0（锚点恰好在文件开头）是合法命中，
+    // 这里要比的是「有没有命中」，不是「命中得多靠后」，收紧会把合法命中误判成失败。
     const source = readSource("./appExtracted/appCanvasInteractionFactories.tsx");
     for (const factory of [
       "createSetSidePanelMode",
@@ -268,6 +275,17 @@ describe("tour side panel lock wiring (source contract)", () => {
     const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
     const lockedIndex = css.indexOf('.side-panel-mode-controls[data-tour-locked="true"] button,');
     const inspectorIndex = css.indexOf(".inspector-title .side-panel-mode-controls button.active");
+    // 审计结论（两句 `>= 0` 都有鉴别力，勿删也勿收紧）：被测值同为 String.indexOf 的返回值，
+    // 失败值是 -1 而非 undefined，所以每句各自守一个「这条选择器还在不在」。
+    //   · lockedIndex（271）：变异删掉 styles.css 里全部 data-tour-locked 选择器行 → -1 → 转红。
+    //     它在结果上与下面的顺序断言重叠（-1 必然排在任何真实偏移之后），保留的理由是失败信息
+    //     直接指向「锁定态样式整段消失」，而不是让读者去解 -1 > 75332 这种算式。
+    //   · inspectorIndex（272）：**唯一**能抓到「模式态覆盖规则消失」的断言。变异只把那条规则的
+    //     `.active` 改名后 lockedIndex(75512) > -1 依旧成立、第 273 行照样绿，只有本行转红。
+    //     删掉本行 == 放弃这条护栏（这是本测试最容易漏掉的一处）。
+    // 偏移 0 是合法命中（同上），不要把 `>= 0` 收紧成 `> 0`。
+    // 已知弱断言（本轮未改）：末尾的 toContain('cursor: not-allowed') 是全文件匹配，
+    // styles.css 里有 24 处该声明，它并不证明锁定态规则块里带 cursor: not-allowed。
     expect(lockedIndex).toBeGreaterThanOrEqual(0);
     expect(inspectorIndex).toBeGreaterThanOrEqual(0);
     expect(lockedIndex).toBeGreaterThan(inspectorIndex);
