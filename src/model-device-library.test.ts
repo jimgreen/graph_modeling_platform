@@ -3962,36 +3962,40 @@ test("migrates legacy ACAC and DCDC converter controls to endpoint fields", () =
   }
 });
 
-// 下面两条用例都要读**已落盘的**图元库覆盖配置，而 data/ 整目录在 .gitignore 里
+// 下面这条用例要读**已落盘的**图元库覆盖配置，而 data/ 整目录在 .gitignore 里
 // （运行时数据），干净检出的仓库上不存在 —— 缺文件时跳过，别让 ENOENT 报成「库逻辑坏了」。
-// 每条各自还写了「为什么非得依赖这份本机数据」的理由，见各自 test.skipIf 上方注释。
+// 「为什么非得依赖这份本机数据」的理由写在用例上方的注释里。
 const PERSISTED_LIBRARY_URL = new URL("../data/device-library/library.json", import.meta.url);
 const persistedLibraryAvailable = existsSync(PERSISTED_LIBRARY_URL);
 
-// 显式条件跳过，理由：环境依赖，本条要拿**本机已落盘**的 shared:DCDCConverter /
-// shared:ACACConverter 覆盖表当样本，干净检出（CI、新克隆）上 data/ 整个目录不存在，
-// 直接 readFileSync 会 ENOENT，那是「没有本机数据」，不是 normalizeNodeTerminalsWithTemplate 坏了。
+// 本条**不读**本机落盘的 data/device-library/library.json，因此恒跑、不带跳过条件。
 //
-// 另需知情：这条不只是「读文件」，还断言这份落盘表**当前**的字段形状（端点设定值齐全、
-// 通用 p_set/i_set/v_set 已不在其中）。而这张表用户能在图元库界面改，也能被
-// apiV1Library 的「清空自定义图元」清成 {} —— 一旦被清空，本条会**真红**而不是跳过。
-// 那样红是本机运行时数据状态，不是被测代码回归，所以此处**不**把清空也算进跳过条件：
-// 宁可让改坏数据的人看见红，也不要悄悄跳过把数据问题藏起来。
-test.skipIf(!persistedLibraryAvailable)("removes generic ACAC and DCDC setpoints without migrating their values", () => {
-  const persistedLibrary = JSON.parse(readFileSync(PERSISTED_LIBRARY_URL, "utf8")) as {
-    deviceDefinitionOverrides?: Record<string, DeviceTemplateDefinitionOverride>;
-  };
+// 为什么：这张落盘表用户能在图元库界面改，也能被 apiV1Library 的「清空自定义图元」清成 {}，
+// 它的字段形状是**本机运行时数据状态**，不是 normalizeNodeTerminalsWithTemplate 的契约。
+// 在这里断言它，会让「用例红了」与「代码坏了」无法区分 —— 表被清空时本条会真红，
+// 而红的原因是数据。原先的版本除了读文件还断言「这份表此刻端点设定值齐全、
+// 通用 p_set/i_set/v_set 已不在其中」，正是这一段在数据被清空时假红。
+//
+// 收紧到被测函数的行为上：normalizeNodeTerminalsWithTemplate(node, template) 只吃一个
+// DeviceTemplate，从头到尾看不到那张落盘表，它的契约完全可以用代码派生的输入表达 ——
+// 模板自身的规范字段表（由 E_SECTION_COLUMNS 与端点设定值注入派生，见 model.ts 的
+// normalizeEndpointControlParameterDefinitions）+ 一个带着遗留通用设定值的节点。
+// 「规范字段表端点设定值齐全、通用 p_set/i_set/v_set 不在其中」这条原本挂在落盘快照上的
+// 事实，就钉在**代码派生的那份**上：两者本就是同一张表（落盘快照是它的持久化副本）。
+//
+// 另需知情：这里**不**把「表为空」加进跳过条件。那是放宽判定 —— 会让真实回归静默通过。
+// 本条改为恒跑、不依赖任何本机数据，可覆盖面严格变大；真正非要用这份落盘表当样本的
+// 只有下面那条（它得先有一份真实的完整覆盖表可裁剪）。
+test("removes generic ACAC and DCDC setpoints without migrating their values", () => {
   for (const kind of ["dcdc-converter", "acac-converter"] as const) {
     const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === kind)!;
-    const fieldNames = getTemplateParameterDefinitions(template).map((definition) => definition.enName);
     const expectedEndpointFields = kind === "dcdc-converter"
       ? ["i_p_set", "j_p_set", "i_i_set", "j_i_set", "i_v_set", "j_v_set"]
       : ["i_p_set", "j_p_set", "i_q_set", "j_q_set", "i_i_set", "j_i_set", "i_v_set", "j_v_set"];
-    const sharedKey = kind === "dcdc-converter" ? "shared:DCDCConverter" : "shared:ACACConverter";
-    const persistedFieldNames = (persistedLibrary.deviceDefinitionOverrides?.[sharedKey]?.parameterDefinitions ?? [])
-      .map((definition) => definition.enName);
-    expect(persistedFieldNames).toEqual(expect.arrayContaining(expectedEndpointFields));
-    expect(persistedFieldNames).not.toEqual(expect.arrayContaining(["p_set", "i_set", "v_set"]));
+    // 模板自身的规范字段表 = 被测函数唯一的定义侧输入，钉在这里（代码派生，恒定）。
+    const fieldNames = getTemplateParameterDefinitions(template).map((definition) => definition.enName);
+    expect(fieldNames).toEqual(expect.arrayContaining(expectedEndpointFields));
+    expect(fieldNames).not.toEqual(expect.arrayContaining(["p_set", "i_set", "v_set"]));
     const node = createDefaultNode(kind, { x: 100, y: 100 });
     Object.assign(node.params, {
       p_set: "91",
@@ -4035,7 +4039,6 @@ test.skipIf(!persistedLibraryAvailable)("removes generic ACAC and DCDC setpoints
     }
     const storedFieldNames = (JSON.parse(normalized.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[])
       .map((definition) => definition.enName);
-    expect(fieldNames).toEqual(expect.arrayContaining(expectedEndpointFields));
     expect(storedFieldNames).toEqual(expect.arrayContaining(expectedEndpointFields));
     expect(storedFieldNames).not.toEqual(expect.arrayContaining(["p_set", "i_set", "v_set"]));
   }
