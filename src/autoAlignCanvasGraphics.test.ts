@@ -11,6 +11,23 @@ vi.mock("./autoAlign/autoAlignClient", () => ({
 
 const runPlan = vi.mocked(runAutoAlignPlanInWorker);
 
+/**
+ * 本文件有两个用例：第一个是纯内存用例（自己造节点/边），任何环境都跑。
+ * 第二个用例要读真实标准案例当输入，依赖下面这个文件。
+ *
+ * **为什么这个文件必须条件跳过（环境依赖，不是断言过时、也不是所依赖的 bug 已修）：**
+ * `data/` 整个目录被 `.gitignore` 第 3 行忽略，`git ls-files -- data/**` 返回 0 个文件
+ * —— 也就是说多能流.json 是本地运行时数据，**从未进过版本库**。
+ * 于是全新 clone / CI 检出 / 换机器的检出里都不存在该文件，
+ * 无条件执行会在 `readFileSync`（本文件第 97 行，惰性求值、只在用例体内跑）直接抛错，
+ * 把整个套件拖红 —— 那不是被测代码有问题，是夹具缺失。
+ * 所以按仓库既有约定用 `describe.skipIf`（见 autoAlignLineQuality.test.ts 等同款用法）守住。
+ *
+ * 文件在位时它**是真跑的、且通过**（本机实测 2 passed，无 skip）；
+ * 不在位时它安静跳过（换 cwd 实测 1 passed | 1 skipped）。
+ * 一旦有人把这个用例改成无条件执行、或把 skip 换成 try/catch 吞掉 readFileSync 的异常，
+ * 都会让「全新检出」从「安静跳过」退化成「套件报错」，故在此写明理由。
+ */
 const PROJECT_FILE = "data/schemes/files/标准案例/子方案/多能流.json";
 const projectAvailable = existsSync(PROJECT_FILE);
 
@@ -92,6 +109,9 @@ describe("canvas automatic grid alignment", () => {
    * 直接用真实案例的数据:它当前没有「失效存档折线」(30 条边全部笔直),于是按同样的口径造一条
    * 「端点有效、中间绕路」的存档折线,让编排层真的走到清理分支 —— 否则本用例会退化成空跑。
    */
+  // 显式条件跳过：见上方 PROJECT_FILE 处的说明 —— 夹具 `data/schemes/.../多能流.json`
+  // 属于被 .gitignore 忽略的本地运行时数据（data/ 下 0 个受版本控制的文件），
+  // 全新检出里不存在，故用 skipIf 守住而非无条件执行。
   describe.skipIf(!projectAvailable)("stale stored polyline cleanup ordering", () => {
     test("commits the move first and cleans stale polylines after, in one undo unit", async () => {
       const raw = JSON.parse(readFileSync(PROJECT_FILE, "utf8"));
