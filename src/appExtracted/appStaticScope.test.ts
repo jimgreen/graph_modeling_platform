@@ -8,13 +8,72 @@
 // customDeviceUtils（后者经 model 的 `export *` 转出同一份实现）。今天无害，
 // 但哪天两边各写一份，scope 里的那个会无声地换成 customDeviceUtils 的版本。
 // 本守卫把「它们必须是同一个函数」钉住 —— 哪天分叉立刻转红。
-import { describe, expect, it } from "vitest";
-import { APP_STATIC_SCOPE } from "./appStaticScope";
-// 同时取 Map 与 MapIcon 两个来源：只有两者都在手，才能断出「别名指错了哪一个」
-// ——只取 Map 的话，把别名改指 MapIcon 后比较仍然相等（两者是同一份 lucide 导出）。
-import { Map as LucideMap, MapIcon as LucideMapIcon } from "lucide-react";
-import { templateDerivedComponentLibraryInfo as fromModel } from "../model";
-import { templateDerivedComponentLibraryInfo as fromCustom } from "../customDeviceUtils";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+
+// ⚠ 为什么业务模块全部改成「重置注册表后再动态导入」，而不是静态 import
+// ---------------------------------------------------------------------------
+// 这不是洁癖，是本文件在 isolate:false（共享模块注册表）下会红的**唯一**原因，
+// 而且红的还是断言本身（`expected undefined to be defined`），不修就是假绿。
+//
+// 模块图里有一条真实的环：
+//   customDeviceUtils.ts:25  ──值导入──▶  ./App
+//   App.tsx:541              ──值导入──▶  ./appExtracted/appStaticScope
+//   appStaticScope.ts:46     ──值导入──▶  ../customDeviceUtils
+// （customDeviceUtils.ts:24/35 那两行 `import type ... from "./App"` 是类型导入，
+//   编译后被擦除，不构成环；第 25 行起的是**值**导入，环是真的。）
+//
+// appStaticScope.ts:53 的 `Object.assign({}, ..., CustomDeviceUtilsScope, ...)`
+// 会在自己求值的那一刻**快照** customDeviceUtils 的命名空间。于是「谁先把环点亮」
+// 决定了快照拿到的是完整模块还是半成品：
+//
+//   入口 appStaticScope（隔离模式 / 生产 main.tsx→App.tsx 都是这条）：
+//     appStaticScope:46 → customDeviceUtils 起 → :25 → App.tsx 起 → App.tsx:541
+//     → appStaticScope（已在求值中，直接返回半成品给 App，但 App 求值期不用它）
+//     → App.tsx 结束 → customDeviceUtils 跑完整个 body → 回到 :46 拿到**完整**命名空间 ✓
+//
+//   入口 customDeviceUtils（例：先跑 src/customDeviceUtils.test.ts）：
+//     customDeviceUtils 起 → :25 → App.tsx 起 → App.tsx:541 → appStaticScope 起
+//     → :46 → customDeviceUtils **仍在求值中** → Object.assign 快照半成品 ✗
+//
+// 半成品的形态很有欺骗性：`export function` 被提升，快照里**在**；
+// 8 个 `export const`（customDeviceUtils.ts:54/260/378/382/397/400/708/718）与
+// 第 40 行的 `export *` 都还没执行，快照里是 **undefined**。
+// 所以「逐模块点名」那条（点名的是 `export function normalizeContainerTerminalAssociations`）
+// 照样绿，只有钉在 `export const templateDerivedComponentLibraryInfo` 上的这条转红。
+// 同一个半成品也解释了另一个文件的现象：`export *` 未执行 →
+// `resolveTemplateComponentLibrary is not a function`。
+//
+// 这里用 `vi.resetModules()` + 顺序动态导入把入口钉死成「appStaticScope」那条好路径：
+// 它和 isolate:true 下本文件拿到的模块图**完全一致**，断言强度不变（一条没删），
+// 只是不再取决于「哪个测试文件碰巧先跑」。
+//
+// 两条纪律：
+// ① 四个模块**顺序 await**，不能 Promise.all —— 必须保证 ./appStaticScope 是第一个
+//    被点亮的，那才是入口。并发发起时谁先求值就没准了。
+// ② ../model 与 ../customDeviceUtils 也要动态导入：resetModules 之后它们的模块
+//    实例换了，若留着顶层的静态 import，拿到的 `fromModel` / `fromCustom` 是**旧实例**，
+//    `toBe` 比的将是两个不同函数，恒红。lucide-react 同理（`MapIcon` 要比身份）。
+//    —— 换句话说：断言要比身份，就只能从同一份模块实例图里取。
+type AppStaticScope = typeof import("./appStaticScope").APP_STATIC_SCOPE;
+let APP_STATIC_SCOPE: AppStaticScope;
+let fromModel: typeof import("../model").templateDerivedComponentLibraryInfo;
+let fromCustom: typeof import("../customDeviceUtils").templateDerivedComponentLibraryInfo;
+let LucideMap: typeof import("lucide-react").Map;
+let LucideMapIcon: typeof import("lucide-react").MapIcon;
+
+beforeAll(async () => {
+  vi.resetModules();
+  // 顺序 await，见上方纪律①。./appStaticScope 必须排在第一个。
+  const scopeModule = await import("./appStaticScope");
+  const modelModule = await import("../model");
+  const customDeviceUtilsModule = await import("../customDeviceUtils");
+  const lucideModule = await import("lucide-react");
+  APP_STATIC_SCOPE = scopeModule.APP_STATIC_SCOPE;
+  fromModel = modelModule.templateDerivedComponentLibraryInfo;
+  fromCustom = customDeviceUtilsModule.templateDerivedComponentLibraryInfo;
+  LucideMap = lucideModule.Map;
+  LucideMapIcon = lucideModule.MapIcon;
+});
 
 describe("APP_STATIC_SCOPE 合并", () => {
   it("templateDerivedComponentLibraryInfo 在 model 与 customDeviceUtils 里是同一份实现", () => {
@@ -89,6 +148,20 @@ describe("APP_STATIC_SCOPE 合并", () => {
     ];
     const missing = representatives.filter(([, symbol]) => !(symbol in APP_STATIC_SCOPE)).map(([mod]) => mod);
     expect(missing, `这些命名空间没有并入 scope：${missing.join(", ")}`).toEqual([]);
+  });
+
+  // 上面那条点名挑的是 `export function`（被提升，半成品快照里也在），所以环的点亮顺序
+  // 坏了它照样绿。这条专挑 customDeviceUtils 里 8 个 `export const` 之一：
+  // customDeviceGeneratedDefaultImageCandidates（customDeviceUtils.ts:708，箭头函数）。
+  // 一旦 appStaticScope 在 customDeviceUtils 求值完成前就去快照它的命名空间，
+  // 这里读到 undefined → 转红。等于把「快照必须是完整模块」这条契约变成可执行的。
+  it("★ 快照拿到的是求值完成的 customDeviceUtils：export const 那批也在（半成品快照会红）", () => {
+    expect(APP_STATIC_SCOPE.customDeviceGeneratedDefaultImageCandidates).toBeDefined();
+    expect(typeof APP_STATIC_SCOPE.customDeviceGeneratedDefaultImageCandidates).toBe("function");
+    // 第 40 行 `export * from "./export/device-definition-shared"` 同理：
+    // 它也在模块 body 的开头，环点亮早了就没跑过，下游会拿到 undefined 的函数。
+    expect(APP_STATIC_SCOPE.resolveTemplateComponentLibrary).toBeDefined();
+    expect(typeof APP_STATIC_SCOPE.resolveTemplateComponentLibrary).toBe("function");
   });
 
   it("scope 体量在预期量级（粗哨兵，配合上一条逐模块点名）", () => {
