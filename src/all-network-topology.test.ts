@@ -300,6 +300,10 @@ describe("全网拓扑模型选择", () => {
     const globalLineButton = viewSource.indexOf('aria-label="全局线路"');
     const topologyButton = viewSource.indexOf('aria-label="全网拓扑"');
 
+    // 这两条不是恒真断言：indexOf 未命中返回 -1，而 -1 >= 0 为 false。
+    // globalLineButton 这条是「顶栏存在全局线路入口」的唯一守卫——入口被删时顺序断言会退化成
+    // 「一个大下标 > -1」照样通过。变异验证：锚点改成不存在的 aria-label 且删掉本断言后，
+    // 整份用例仍然全绿，一个用例都没红。
     expect(globalLineButton).toBeGreaterThanOrEqual(0);
     expect(topologyButton).toBeGreaterThan(globalLineButton);
     expect(viewSource).toMatch(/aria-label="全局线路"[^>]*>\s*<Cable size=\{16\}\/>\s*<\/button>/);
@@ -368,6 +372,11 @@ describe("全网拓扑模型选择", () => {
     const loadCoverageCheck = dialogSource.indexOf("analyzeAllNetworkTopologyLoadCoverage", runStart);
     const resultMerge = dialogSource.indexOf("const nextResult =", runStart);
 
+    // indexOf 的 fromIndex 为 -1 时按 0 处理，所以 runStart 必须先钉住：runTopology 一旦被改名，
+    // 下面五个锚点会从文件头开始搜，而这几个函数名首次出现在文件头的 import 块里，顺序断言就会
+    // 拿 import 位置去和调用位置比大小。变异验证（锚点换成不存在的名字）：本断言转红
+    // （expected -1 to be greater than or equal to 0）；删掉本断言则只剩下一条 relevantRecords
+    // 无关的报错（expected 521 to be greater than 32103），所以这条必须留着。
     expect(runStart).toBeGreaterThanOrEqual(0);
     expect(modelTopologyCheck).toBeGreaterThan(runStart);
     expect(relevantRecords).toBeGreaterThan(modelTopologyCheck);
