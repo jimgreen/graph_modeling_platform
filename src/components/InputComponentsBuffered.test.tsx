@@ -178,6 +178,34 @@ describe("缓冲提交内核的提交判定（源码守卫）", () => {
     expect(dedupeIndex, "缺少去重判定").toBeGreaterThanOrEqual(0);
     // 顺序要紧：先判 disabled 再判去重，反了会让 disabled 状态下的提交漏出去
     expect(disabledIndex).toBeLessThan(dedupeIndex);
+
+    // ↑↑ 上面两条 `toBeGreaterThanOrEqual(0)` **不是**「恒真」的空断言，审计记录如下。
+    //
+    // 常见坑是拿 `x >= 0` 去守一个「正常路径下不可能为 undefined」的量 —— 那种才退化成恒真。
+    // 这里两个量都来自 `String.prototype.indexOf`：命中返回 >= 0 的下标，未命中返回 **-1**，
+    // 而 `-1 >= 0` 为 false。于是每条都真能转红 —— 未命中即失败，不是被 undefined 放过。
+    //
+    // 变异验证（注入进 InputComponents.tsx 的备份副本，跑完从副本还原，不用 git checkout）：
+    //   M1 删掉 useBufferedCommit 里 `if (disabled) { return; }` 三行，保留去重判定
+    //      => RED:「缺少 disabled 早退: expected -1 to be greater than or equal to 0」
+    //      只有第 1 行转红、第 2 行仍绿 ⇒ 第 1 行有独立鉴别力。
+    //   M4 只删掉去重判定那层 if，**保留** disabled 早退
+    //      => RED:「缺少去重判定: expected -1 to be greater than or equal to 0」
+    //      第 1 行此时是绿的，只有第 2 行转红 ⇒ 第 2 行也没被第 1 行/顺序断言遮蔽。
+    //      （M4 下 `值未变则不提交` 那条也会一并转红，它含同样的 token —— 覆盖面重叠，
+    //        不是第 2 行无效：第 2 行是唯一定位「缺的是哪一条」的那条。）
+    //   M2 把 disabled 早退挪到去重之后 => RED，由上面那条 toBeLessThan 抓住。
+    //
+    // 第 2 行逻辑上被「第 1 行 + toBeLessThan」蕴含（dedupeIndex 必须 > disabledIndex >= 0）。
+    // 它仍然留着，因为它是**诊断守卫**：没有它，缺去重判定时报的是
+    //「expected 3 to be less than -1」这种看不出意图的错；留着就直接点名「缺少去重判定」。
+    //
+    // 已知边界（写下来免得下一个人重新查一遍）：这三条证明的是
+    //「守卫 token 存在且顺序正确」，**不是**「守卫真的拦得住」。
+    // 变异 M3 把 `if (disabled) { return; }` 的函数体换成一行注释、`if (disabled)` 这个
+    // token 原地保留、顺序也没变 ⇒ 本 describe 整组仍全绿，而 disabled 提交其实已经漏出去。
+    // 这是源码扫描的固有上限（jsdom / react-test-renderer 都不可用，见文件头），
+    // 补不了就别假装补了：真要守这条，得能跑起 React 闭包。
   });
 
   test("外部 value 变化时草稿与已提交值一起同步", async () => {
