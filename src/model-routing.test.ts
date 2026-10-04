@@ -1,3 +1,52 @@
+// 审计记录：`toBeGreaterThanOrEqual(0)` 这类「坐标非负」断言的鉴别力逐处判定
+// ============================================================================
+// 先厘清一个前提：`x.toBeGreaterThanOrEqual(0)` **不是无条件恒真**。
+// `undefined >= 0` 与 `NaN >= 0` 都是 false，所以它能抓到 undefined / null / NaN。
+// 它抓不到的是「值为 0」和「数组是空的」。于是两处要分开看：
+//   · 被测值在正常路径下不可能是 undefined，且逐点断言跑在 for 循环里
+//     → 真正的风险是 points 解析/产出成空数组，for 一次都不跑，零断言通过。
+//   · 被测值里合法地会出现 0（比如夹取的边界）→ 收紧成 `> 0` 是错的。
+//
+// 逐处结论（6 处断言，1264/1266、3620/3622、3660/3661 行附近）：
+//
+// ① 1264/1266 `routeEdgesForRendering` 路由点 ≥ 0 —— 改动前判为**无鉴别力**。
+//    依据：`point.x` 来自内部数值运算，从不经过字符串解析，undefined/NaN 这条路走不到；
+//    实测该组输入的点为 x∈[121,330]、y∈[37,120]，离 0 极远；更要命的是同一条边
+//    **传不传 bounds 结果完全一样**，也就是说夹取在这组输入上根本不生效。
+//    所以 `>= 0` 只在纸面上排除负坐标，实际排除不了任何东西。
+//    加强：① 循环前加 `points.length >= 2`，堵掉空数组导致零断言通过；
+//    ② 另加一组源节点留在界内、目标节点挂在画布左边界外的输入
+//    （源 x=200 → 目标 x=-300，路由最大 x=307 < 360），只有下界会越界，
+//    于是「夹取失效」只会打红 `x >= 0`，不会被 `x <= 360` 抢先报掉；
+//    同时把 minX === 0 钉死 —— 这也证明 0 是合法值，`> 0` 会把这组用例改坏。
+//
+// ② 3620/3622 route 层夹取后 x/y ≥ 0 —— 判为**有效，保留**。
+//    依据：输入自带负坐标（起点 x=-40、折点 y=-20、终点 y=300），夹取一旦不生效，
+//    x/y 就是负数 → 直接转红。它是「夹取真的发生了」的守卫，不是类型同义反复。
+//    但 0 同样是夹取的合法结果（本例实际夹出 x=0 与 y=0），不能收紧成 `> 0`。
+//    只补了一条循环前的 `length >= 2`（防御性，当前实测 5 点）。
+//
+// ③ 3660/3661 path 层解析回来的点 ≥ 0 —— 判为**改动前整条断言是死代码**。
+//    依据：`pointsFromPath` 按 `/(?: M |  L )/` 切分，两个分隔符都要求前导空格，
+//    而 pointsToOrthogonalPath 产出的 `M ` 打头无前导空格、`L` 前只有一个空格，
+//    于是整串切不开、`.slice(1)` 后返回**空数组**，for 循环一次都没跑过。
+//    已修：改成先剥 `M ` 再按 ` L ` 切，并按空白切坐标。
+//    同时把输入从 P(500,0)→P(0,500)（全是正数，不夹取也满足 `>= 0`）改成
+//    P(-30,60)→P(60,-30)，并补上「不给 bounds 时真的有负坐标」的对照，
+//    让 `>= 0` 承重。0 仍是合法结果，`> 0` 依旧不能加。
+//
+// 变异验证（6 处，逐条注入错误实现后跑上面那三条用例，全部 RED，
+// 跑完从 .autoi-tmp/ 备份还原 model-routing.ts；下面是实际报错文本）：
+//   ① buildFullRoute 不再 clamp          → {"x":-300,"y":37}: expected -300 to be greater than or equal to 0
+//   ② routeEdgesForRendering 输出压成单点 → expected 1 to be greater than or equal to 2
+//   ③ buildManualConnectionPreviewRoute 不再 clamp（site2）→ {"x":-40,"y":300}: expected -40 to be greater than or equal to 0
+//   ④ buildManualConnectionPreviewRoute 不再 clamp（site3）→ {"x":-30,"y":60}: expected -30 to be greater than or equal to 0
+//   ⑤ buildManualConnectionPreviewRoute 输出压成单点 → expected 1 to be greater than or equal to 2
+//   ⑥ pointsToOrthogonalPath 的 `M ` 改紧凑 `M` → expected NaN to be less than or equal to 100
+//      （顺带证明这组断言能抓 NaN，不只是抓负数）
+//   ⑦ pointsToOrthogonalPath 不再追加 L 段   → M 0 60: expected 1 to be greater than or equal to 2
+//
+
 import { describe, expect, test } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -1260,6 +1309,9 @@ test("keeps routed connection points inside the display area", () => {
 
   const route = routeEdgesForRendering([source, target], [edge], { width: 360, height: 240 })[0];
 
+  // 审计补记：下面这四条界断言逐点跑在 for 循环里，points 若是空数组则一条都不执行，
+  // 用例会「零断言通过」。路由至少要有起点与终点两点。
+  expect(route.points.length).toBeGreaterThanOrEqual(2);
   for (const point of route.points) {
     expect(point.x).toBeGreaterThanOrEqual(0);
     expect(point.x).toBeLessThanOrEqual(360);
@@ -1269,6 +1321,37 @@ test("keeps routed connection points inside the display area", () => {
   for (let index = 1; index < route.points.length; index += 1) {
     expect(route.points[index - 1].x === route.points[index].x || route.points[index - 1].y === route.points[index].y).toBe(true);
   }
+
+  // 上面这组点离画布边缘还很远（x∈[121,330]、y∈[37,120]），bounds 传不传结果完全一样，
+  // 所以那四条界断言在这个输入上只是类型层面的同义反复。补一个目标节点挂在画布左边界外的输入：
+  // 源节点留在界内（x=200，路由最大 x=307 < 360），只有目标端越界，
+  // 于是「夹取失效」只会打红 `x >= 0` 那一侧，不会被 `x <= 360` 抢先报掉。
+  const straddlingSource = createDefaultNode("ac-source", { x: 200, y: 120 });
+  const straddlingTarget = createDefaultNode("ac-load", { x: -300, y: 120 });
+  const straddling = routeEdgesForRendering(
+    [straddlingSource, straddlingTarget],
+    [
+      {
+        id: "straddling-route",
+        sourceId: straddlingSource.id,
+        targetId: straddlingTarget.id,
+        sourceTerminalId: "t1",
+        targetTerminalId: "t1"
+      }
+    ],
+    { width: 360, height: 240 }
+  )[0];
+  // 同样的非空守卫：这里的逐点断言也不能跑在空数组上。
+  expect(straddling.points.length).toBeGreaterThanOrEqual(2);
+  for (const point of straddling.points) {
+    expect(point.x, JSON.stringify(point)).toBeGreaterThanOrEqual(0);
+    expect(point.x, JSON.stringify(point)).toBeLessThanOrEqual(360);
+    expect(point.y, JSON.stringify(point)).toBeGreaterThanOrEqual(0);
+    expect(point.y, JSON.stringify(point)).toBeLessThanOrEqual(240);
+  }
+  // 必须真的贴到 0：否则上面那圈界断言对这组点又是恒真，等于什么都没验。
+  // 而 minX 恰好是 0 也正说明 0 是合法的界内坐标，`x >= 0` 不能收紧成 `x > 0`。
+  expect(Math.min(...straddling.points.map((point) => point.x))).toBe(0);
 });
 
 
@@ -3556,10 +3639,19 @@ describe("getTerminalVoltageLevel：按端子取电压等级", () => {
 describe("buildManualConnectionPreviewPath：手工连线预览路径", () => {
   const P = (x: number, y: number) => ({ x, y });
   const segCount = (d: string) => (d.match(/ L /g) ?? []).length;
-  /** 从 d 属性里把点读回来（"M x y L x y …"）。 */
+  /**
+   * 从 d 属性里把点读回来（"M x y L x y …"）。
+   *
+   * 审计修掉的一个真缺陷：这里原先按 `/(?: M |  L )/` 切分 —— 两个分隔符都要求
+   * **前导空格**，而 pointsToOrthogonalPath 产出的既没有前导空格（`M ` 打头）、
+   * `L` 前也只有一个空格。于是 `"M 100 0 L 0 0 L 0 100"` 一个都切不开，
+   * `.slice(1)` 之后返回空数组：下面「走 path 这一层也一样按 bounds 夹」那条用例里
+   * 逐点断言的 for 循环**一次都没跑过**，整条用例只剩末尾一句 `not.toBe` 在起作用。
+   * 现在改成先剥掉 `M `、再按 ` L ` 切，并按空白切坐标。
+   */
   const pointsFromPath = (d: string): Point[] =>
-    d.split(/(?: M |  L )/).slice(1).map((pair) => {
-      const [x, y] = pair.trim().split(" ").map(Number);
+    d.replace(/^M /, "").split(/ L /).map((pair) => {
+      const [x, y] = pair.trim().split(/\s+/).map(Number);
       return { x, y };
     });
 
@@ -3616,7 +3708,12 @@ describe("buildManualConnectionPreviewPath：手工连线预览路径", () => {
   test("★ 给了 bounds 就把整条线夹进画布并取整（不给则不夹）", () => {
     const bounds = { width: 200, height: 100 };
     const clamped = buildManualConnectionPreviewRoute(P(-40, 300), [P(500, -20)], P(120, 80), bounds);
+    // 逐点断言跑在 for 里：clamped 为空时下面四条一条都不执行。至少要有起点与终点两点。
+    expect(clamped.length).toBeGreaterThanOrEqual(2);
     for (const point of clamped) {
+      // 审计补记：这两条 `>= 0` 是承重的，别当类型同义反复删掉。输入本身就带负坐标
+      // （起点 x=-40、折点 y=-20、终点 y=300），夹取一旦不生效，x/y 就是负数 → 转红。
+      // 但 0 是夹取的合法结果（本例实际夹出 x=0 与 y=0），所以也不能收紧成 `> 0`。
       expect(point.x, JSON.stringify(point)).toBeGreaterThanOrEqual(0);
       expect(point.x, JSON.stringify(point)).toBeLessThanOrEqual(bounds.width);
       expect(point.y, JSON.stringify(point)).toBeGreaterThanOrEqual(0);
@@ -3653,17 +3750,27 @@ describe("buildManualConnectionPreviewPath：手工连线预览路径", () => {
 
   test("★ 走 path 这一层也一样按 bounds 夹（不是只有 route 夹）", () => {
     const bounds = { width: 100, height: 100 };
-    const points = pointsFromPath(buildManualConnectionPreviewPath(P(500, 0), [], P(0, 500), bounds));
+    // 起点与终点都放在界外，夹取后才能落回 [0,100]。原输入 P(500,0)→P(0,500) 全是正数，
+    // 不夹取也照样满足 `>= 0`，那两条断言等于没验东西。
+    const source = P(-30, 60);
+    const target = P(60, -30);
+    const boundedPath = buildManualConnectionPreviewPath(source, [], target, bounds);
+    const points = pointsFromPath(boundedPath);
+    // 逐点断言跑在 for 里：解析出空数组时下面四条一条都不执行（这正是上面的旧缺陷）。
+    expect(points.length, boundedPath).toBeGreaterThanOrEqual(2);
     for (const point of points) {
       expect(point.x, JSON.stringify(point)).toBeLessThanOrEqual(bounds.width);
       expect(point.y, JSON.stringify(point)).toBeLessThanOrEqual(bounds.height);
+      // `>= 0` 是承重的：同一组点不夹取时是 -30（见末尾的对照），夹取后正好落在 0。
+      // 而 0 是夹取的合法结果，所以不能收紧成 `> 0`。
       expect(point.x, JSON.stringify(point)).toBeGreaterThanOrEqual(0);
       expect(point.y, JSON.stringify(point)).toBeGreaterThanOrEqual(0);
     }
-    // 不给 bounds 时同一个输入保留原始坐标
-    expect(buildManualConnectionPreviewPath(P(500, 0), [], P(0, 500))).not.toBe(
-      buildManualConnectionPreviewPath(P(500, 0), [], P(0, 500), bounds)
-    );
+    // 不给 bounds 时同一个输入保留原始坐标 —— 且必须真的有负坐标，
+    // 否则上面的界断言只是「本来就都在界内」，恒真。
+    const freePath = buildManualConnectionPreviewPath(source, [], target);
+    expect(freePath).not.toBe(boundedPath);
+    expect(pointsFromPath(freePath).some((point) => point.x < 0 || point.y < 0)).toBe(true);
   });
 
   test("pointsToOrthogonalPath：空数组返回空串", () => {
