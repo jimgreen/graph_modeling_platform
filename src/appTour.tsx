@@ -432,7 +432,7 @@ export function AppTour({ scope }: AppTourProps) {
       // 存储不可用：不启动引导，不阻断应用
     }
     // 只在 mount 时跑一次：didInitRef 已保证。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // 依赖数组故意留空：startTour 的 useCallback 依赖为空、引用恒定，上面的守卫也挡住了重跑。
   }, []);
 
   // 订阅手动重放
