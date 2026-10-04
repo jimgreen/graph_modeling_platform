@@ -165,13 +165,13 @@ describe(apiPath("/v1/control/device/add"), () => {
     expect(json.error.code).toBe("bad-request");
   });
 
-  test("无在线客户端 → 503 no-online-client", async () => {
+  test("无在线客户端 → 503 no-online-client（control.device.add）", async () => {
     const { status, json } = await postV1(apiPath("/v1/control/device/add"), { kind: "busbar" });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
   });
 
-  test("前端返失败 → 透传 error code", async () => {
+  test("前端返失败 → 透传 error code（bad-request：未知图元类型 foo）", async () => {
     const ws = await connectCommandResponder("c1", () => ({
       ok: false,
       error: { code: "bad-request", message: "未知图元类型：foo" }
@@ -208,20 +208,20 @@ describe(apiPath("/v1/control/scheme/create"), () => {
     ws.close();
   });
 
-  test("缺 name → 400 bad-request（不下发指令）", async () => {
+  test("缺 name → 400 bad-request（不下发指令，body 只给 parentSchemeId）", async () => {
     const { status, json } = await postV1(apiPath("/v1/control/scheme/create"), { parentSchemeId: "p1" });
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
   });
 
-  test("无在线客户端 → 503 no-online-client", async () => {
+  test("无在线客户端 → 503 no-online-client（control.scheme.create）", async () => {
     const { status, json } = await postV1(apiPath("/v1/control/scheme/create"), { name: "方案1" });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
   });
 
-  test("前端返失败 → 透传 error code", async () => {
+  test("前端返失败 → 透传 error code（bad-request：方案名称重复）", async () => {
     const ws = await connectCommandResponder("c1", () => ({
       ok: false,
       error: { code: "bad-request", message: "方案名称重复，无法新建方案。" }
@@ -249,7 +249,7 @@ describe(apiPath("/v1/control/model/create"), () => {
     ws.close();
   });
 
-  test("缺 name → 400 bad-request（不下发指令）", async () => {
+  test("缺 name → 400 bad-request（不下发指令，body 只给 schemeId）", async () => {
     const { status, json } = await postV1(apiPath("/v1/control/model/create"), { schemeId: "s1" });
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
@@ -268,13 +268,13 @@ describe(apiPath("/v1/control/model/create"), () => {
     }
   });
 
-  test("无在线客户端 → 503 no-online-client", async () => {
+  test("无在线客户端 → 503 no-online-client（control.model.create）", async () => {
     const { status, json } = await postV1(apiPath("/v1/control/model/create"), { name: "模型1", modelType: "厂站" });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
   });
 
-  test("前端返失败 → 透传 error code", async () => {
+  test("前端返失败 → 透传 error code（bad-request：无可用方案）", async () => {
     const ws = await connectCommandResponder("c1", () => ({
       ok: false,
       error: { code: "bad-request", message: "无可用方案，请先创建方案" }
@@ -312,7 +312,7 @@ describe(apiPath("/v1/control/devices/select"), () => {
     expect(json.error.code).toBe("bad-request");
   });
 
-  test("无在线客户端 → 503 no-online-client", async () => {
+  test("无在线客户端 → 503 no-online-client（control.devices.select）", async () => {
     const { status, json } = await postV1(apiPath("/v1/control/devices/select"), { ids: ["n1"] });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
@@ -333,7 +333,7 @@ describe(apiPath("/v1/control/devices/group"), () => {
     ws.close();
   });
 
-  test("无在线客户端 → 503 no-online-client", async () => {
+  test("无在线客户端 → 503 no-online-client（control.devices.group）", async () => {
     const { status, json } = await postV1(apiPath("/v1/control/devices/group"), {});
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
@@ -384,7 +384,7 @@ describe(apiPath("/v1/control/device/delete"), () => {
     expect(json.error.code).toBe("bad-request");
   });
 
-  test("无在线客户端 → 503 no-online-client", async () => {
+  test("无在线客户端 → 503 no-online-client（control.device.delete）", async () => {
     const { status, json } = await postV1(apiPath("/v1/control/device/delete"), { ids: ["n1"] });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
@@ -423,7 +423,7 @@ describe(apiPath("/v1/control/device/property/update"), () => {
     expect(json.error.code).toBe("bad-request");
   });
 
-  test("无在线客户端 → 503 no-online-client", async () => {
+  test("无在线客户端 → 503 no-online-client（control.device.property.update）", async () => {
     const { status, json } = await postV1(apiPath("/v1/control/device/property/update"), { id: "n1", category: "graphic", patch: { x: 0 } });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
@@ -468,7 +468,7 @@ describe(apiPath("/v1/control/save"), () => {
     expect(json.error.code).toBe("bad-request");
   });
 
-  test("无在线客户端 → 503 no-online-client", async () => {
+  test("无在线客户端 → 503 no-online-client（control.save）", async () => {
     const { status, json } = await postV1(apiPath("/v1/control/save"), { scope: "currentModel" });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
@@ -516,7 +516,7 @@ describe(apiPath("/v1/control/template/saveFromSelection"), () => {
     expect(json.error.code).toBe("bad-request");
   });
 
-  test("无在线客户端 → 503 no-online-client", async () => {
+  test("无在线客户端 → 503 no-online-client（control.template.saveFromSelection）", async () => {
     const { status, json } = await postV1(apiPath("/v1/control/template/saveFromSelection"), {
       name: "模板", componentLibrary: "test"
     });
