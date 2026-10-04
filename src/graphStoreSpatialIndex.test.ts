@@ -248,9 +248,34 @@ describe("重复 id：后写覆盖（既有行为，如实记录）", () => {
     expect(keysOf(index, "a").length).toBeGreaterThan(1);
   });
 
-  test("**真实数据不应出现重复 id**（否则渲染只认最后一个位置）", () => {
-    // 本文件不读 data/（遵守 dataSampleGuard 约定），此处只记录该依赖。
-    expect(true).toBe(true);
+  test("**只认最后一个位置**：nodeBoundsById 存的是后一个节点的包围盒，且查询按它判定相交", () => {
+    // 「真实数据不应出现重复 id」是数据侧依赖，本文件不读 data/（遵守 dataSampleGuard 约定），
+    // 断言不了；此处改为钉住它的**后果** —— 一旦出现重复 id，渲染认哪个位置。
+    // 上一条只钉了 size===1 与 keys.length>1，这两个数在「先写赢」的实现下同样成立，
+    // 分不出胜负；所以这里必须比对**具体是哪一个节点的包围盒**，并从查询侧再看一遍后果。
+    /** 单节点索引的包围盒当 oracle：单节点时没有覆盖歧义，与被测的重复路径无关。 */
+    const boundsOfOnlyNode = (position: { x: number; y: number }): GraphRenderBounds => {
+      const bounds = buildGraphNodeSpatialIndex([node("a", position.x, position.y)], 100).nodeBoundsById.get("a");
+      if (!bounds) throw new Error("单节点索引里应能取到包围盒");
+      return bounds;
+    };
+    const firstBounds = boundsOfOnlyNode({ x: 0, y: 0 });
+    const lastBounds = boundsOfOnlyNode({ x: 200, y: 200 });
+    // 两侧的桶键必须真的不重叠，否则「按位置分别查询」测不出覆盖语义
+    expect(keysOf(buildGraphNodeSpatialIndex([node("a", 0, 0)], 100), "a")).not.toEqual(
+      keysOf(buildGraphNodeSpatialIndex([node("a", 200, 200)], 100), "a")
+    );
+
+    const duplicated = buildGraphNodeSpatialIndex([node("a", 0, 0), node("a", 200, 200)], 100);
+
+    // ① 赢的是**后一个**：存下来的必须是 (200,200) 的包围盒，且明确不是 (0,0) 的那个
+    expect(duplicated.nodeBoundsById.get("a")).toEqual(lastBounds);
+    expect(duplicated.nodeBoundsById.get("a")).not.toEqual(firstBounds);
+
+    // ② 渲染侧后果：查询的相交判定读 nodeBoundsById，所以
+    //    视口罩住最后一个位置 → 查得到；视口只罩住最早那个位置 → 查不到（已被覆盖）
+    expect(queryGraphStoreNodeSpatialIndex(duplicated, lastBounds).map((target) => target.id)).toEqual(["a"]);
+    expect(queryGraphStoreNodeSpatialIndex(duplicated, firstBounds).map((target) => target.id)).toEqual([]);
   });
 });
 
