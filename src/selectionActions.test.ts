@@ -1143,6 +1143,69 @@ describe("canvas selection actions", () => {
     }
   });
 
+  test("auto-spread leaves a label-overlapping measurement box inside the canvas instead of pushing it off the right edge", () => {
+    // 画布刻意开得比「设备标签 + 测量框」这一团的自然宽度还窄一点,
+    // 于是「就近让开」和「留在画布内」这两条路同时存在、且互相冲突:
+    //   · 向右让开(+49):位移最小,但右缘被推到 389 > 360 → 越界;
+    //   · 向左让开(-149):位移大得多,但完整落在画布内。
+    // `nearestNonOverlappingDelta` 的打分是 `overflow * 1_000_000 + … + dx² + dy²`,
+    // 越界项的量级(1e6)远大于位移平方,所以正确实现必须选左边那条。
+    // 固定框占满画布高度不是为了刁难:它是让上下两条让开路同样越界、
+    // 从而让「向左」成为唯一留在画布内的候选 —— 否则向右那条会直接赢。
+    const canvasBounds = { width: 360, height: 300 };
+    const padding = 4;
+    const minSeparation = 1;
+    const fixedRect = { left: 200, right: 260, top: 60, bottom: 240 };
+    const measurementRect = { left: 220, right: 340, top: 100, bottom: 180 };
+    const overlaps = (first: typeof fixedRect, second: typeof fixedRect) =>
+      Math.min(first.right, second.right) - Math.max(first.left, second.left) > 0 &&
+      Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top) > 0;
+
+    // 前置 1:测量框初始确实压在标签上 —— 否则整个让开搜索根本不会启动。
+    expect(overlaps(fixedRect, measurementRect)).toBe(true);
+    // 前置 2:夹具不是退化的。候选就是「贴住已放置矩形边缘 ± minSeparation」,
+    // 按 |位移| 取最近的几个:向右(+49)位移最小却恰好越界,向左(-149)位移大得多
+    // 但完整落在画布内。两条路都在候选表里,这个取舍才有意义。
+    // 这一段是给夹具本身上的一道自测:它保证「变红」不是因为只剩一条候选。
+    const pushRight = fixedRect.right + padding - (measurementRect.left - padding) + minSeparation;
+    const pushLeft = fixedRect.left - padding - (measurementRect.right + padding) - minSeparation;
+    expect(pushRight).toBeGreaterThan(0);
+    expect(measurementRect.right + padding + pushRight).toBeGreaterThan(canvasBounds.width);
+    expect(measurementRect.left - padding + pushLeft).toBeGreaterThanOrEqual(0);
+    expect(overlaps(
+      { ...fixedRect, left: fixedRect.left - padding, right: fixedRect.right + padding, top: fixedRect.top - padding, bottom: fixedRect.bottom + padding },
+      { ...measurementRect, left: measurementRect.left + pushRight, right: measurementRect.right + pushRight }
+    )).toBe(false);
+
+    const deltas = autoSpreadMovableRects(
+      [{ id: "measurement-1", rect: measurementRect }],
+      [fixedRect],
+      { padding, minSeparation, bounds: canvasBounds }
+    );
+    const delta = deltas.get("measurement-1");
+
+    expect(delta).toBeDefined();
+    const movedRect = {
+      left: measurementRect.left + delta!.x,
+      right: measurementRect.right + delta!.x,
+      top: measurementRect.top + delta!.y,
+      bottom: measurementRect.bottom + delta!.y
+    };
+    // 先离开标签,再谈画布 —— 只断言后者的话,「原地不动」也能过。
+    expect(overlaps(fixedRect, movedRect)).toBe(false);
+    // 被测契约:让开之后仍留在画布内(左上两条按 padded 口径 —— 搜索项是
+    // padRect(rect, padding),右侧两条直接用原始坐标,和下面注释里的实测数字对齐)。
+    // 变异证据(注入 → 跑本文件 → Copy-Item 从备份还原;全程未用 git 写操作):
+    //   · 去掉打分里的 `overflow * 1_000_000` → RED:退化成纯就近,选中 +49 那条,
+    //     右缘 389 > 360(实测 expected 389 to be <= 360)。
+    //   · 越界惩罚整体放宽 4px(= padding)→ 本例仍 GREEN,且**这是结构性的**,
+    //     不打算为它造用例,理由记在本文件末尾「越界惩罚放宽 4px 为何抓不住」注释里。
+    expect(movedRect.left - padding).toBeGreaterThanOrEqual(0);
+    expect(movedRect.top - padding).toBeGreaterThanOrEqual(0);
+    expect(movedRect.right).toBeLessThanOrEqual(canvasBounds.width);
+    expect(movedRect.bottom).toBeLessThanOrEqual(canvasBounds.height);
+  });
+
   test("支持对齐方向、空选择和已对齐的平凡分支", () => {
     const first = createDefaultNode("ac-load", { x: 110, y: 120 });
     const second = createDefaultNode("ac-load", { x: 300, y: 260 });
@@ -2252,3 +2315,27 @@ describe("autoAlignEdgeWithoutStoredRoute", () => {
     expect("routePoints" in stripped).toBe(false);
   });
 });
+// ─────────────────────────────────────────────────────────────────────────────
+// 「越界惩罚放宽 padding 像素」这个变异为什么抓不住、也不值得为它造用例
+// ─────────────────────────────────────────────────────────────────────────────
+// 变异：`nearestNonOverlappingDelta` 的 `consider` 里把越界项作用到的矩形边界
+// 从 `bounds` 放宽成 `{ width: bounds.width + 4, height: bounds.height + 4 }`
+// （4 = 夹具里的 padding），即「允许挂到画布外 4px」。实测：全文件仍绿。
+//
+// 这不是覆盖缺口，是几何上的死结：
+//   1. 候选位移都是整数（`uniqueNearestValues` 先 `Math.round`），
+//      所以 `rectCanvasOverflow` 返回的越界量也是整数。放宽 4px 只对
+//      **越界量 ∈ {1,2,3,4}** 的候选生效；越界量 ≥ 5 的候选照样吃满惩罚。
+//   2. 而「合法让开」天然会把矩形整个推出对方的宽度：候选值就是
+//      `placed.right - base.left + minSeparation`，让开后新右缘
+//      = `placed.left - 1`（横向）或 `placed.top - 1`（纵向），
+//      也就是说**越界量 ≈ 已放置矩形的宽度 − 画布剩余空间**。
+//      要把这个量压进 ≤ 4px，两个矩形都得窄到 ~8px —— 那种夹具测不出
+//      「就近 vs 不越界」的取舍，只是退化成一个点。
+//   3. 即便硬凑出「越界 1~4px + 画布内那条要绕很远」（惩罚项要压过位移平方，
+//      需要 |delta| > 1000·√(越界量) ≈ 1000px），那也只是一条 4px 宽的刀刃
+//      判据：把 padding 改成别的值，用例立刻失效。
+//
+// 结论：真正承重的是「越界项存在且量级 1e6」，这一点由
+// 「去掉 overflow * 1_000_000」那条用例钉住（见上面那条英文用例）。
+// 「放宽 4px」是同一行代码的严格弱化子集，绿是**正确结果**，不补断言。
