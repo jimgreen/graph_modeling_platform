@@ -489,8 +489,19 @@ export function generateStateVisualShapeImage(kind: StateVisualShapeKind, row: D
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-export function stateIconDrawingElementId() {
-  return `state-icon-element-${Math.random().toString(36).slice(2, 9)}`;
+// 这个 id 不是纯临时量，别把它当视觉抖动看待：它会以
+//   image 元件    → `<clipPath id="clip-<id>">` + `clip-path="url(#clip-<id>)"`
+//   带线端的线/弧 → `<marker id="cap-<id>-<位置>-<样式>">` + `marker-start/end="url(#...)"`
+// 的形式写进 stateIconDrawingElementMarkup 产出的 SVG 文本；而 stateIconDrawingToImage
+// 把那段 SVG 整体 encodeURIComponent 成 data URL，由元件定义「应用」写进
+// DeviceStateDefinition.image，随方案落盘并进入 E 文件 / SVG / CIM 导出。
+// 即：它是**进入输出与持久化状态的随机源**，同一输入因此产出不同 data URL，测试无法确定化。
+//
+// 收敛为可注入依赖：`randomSource` 默认仍是 `Math.random`，所以不传参的调用
+// （含 `cloneStateIconDrawingElements(clipboard, stateIconDrawingElementId)` 这种
+// 把本函数当值传的用法）行为逐字不变。
+export function stateIconDrawingElementId(randomSource: () => number = Math.random) {
+  return `state-icon-element-${randomSource().toString(36).slice(2, 9)}`;
 }
 
 export function visibleStateIconColor(fallback: string, ...values: Array<string | undefined | null>) {
@@ -804,10 +815,16 @@ function parseStateIconPolylinePointsAttribute(value: string) {
   return points.length >= 2 ? points : null;
 }
 
-export function createStateIconDrawingElement(kind: StateVisualShapeKind, row?: DeviceDefinitionStateDraftRow | null): StateIconDrawingElement {
+export function createStateIconDrawingElement(
+  kind: StateVisualShapeKind,
+  row?: DeviceDefinitionStateDraftRow | null,
+  // 见 stateIconDrawingElementId 的注释：id 会进 SVG → data URL → 持久化/导出，
+  // 故把随机源透传下来，让「建元素 → 出图」整条链在测试里可复现。省略即走默认 Math.random。
+  randomSource?: () => number
+): StateIconDrawingElement {
   const strokeColor = visibleStateIconColor(DEFAULT_SHAPE_STROKE_COLOR, row?.strokeColor, row?.color);
   return {
-    id: stateIconDrawingElementId(),
+    id: stateIconDrawingElementId(randomSource),
     kind,
     x: 120,
     y: 80,
