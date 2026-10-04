@@ -7,13 +7,24 @@ import { DEVICE_LIBRARY, type ProjectFile } from "../model";
 /**
  * 验证 createExportEFile 完整导出路径（含 eDeviceDefinitionTableIds）：
  * id 字段必须按 key_to_long 转换（用户反馈桌面导出文件 id 未转换）
- *
- * 用例要读真实工程样本，而 data/ 整目录在 .gitignore 里（运行时数据），
- * 干净检出的仓库上不存在 —— 缺样本时跳过本条，别让 ENOENT 报成「导出逻辑坏了」。
  */
 const TIANFU_PROJECT = "data/schemes/files/四川/成都/厂站/天府新区站.json";
+
+// 显式条件跳过的**唯一**理由：环境依赖 —— 不是用例写错、不是断言过时、也不是所依赖的 bug 已修。
+// 本用例要读真实工程样本，而 .gitignore 第 3 行 `data/` 忽略整个目录（运行时数据），
+// 该样本本身也未被 git 跟踪（`git ls-files` 查不到），干净检出的仓库上必然缺失。
+// 缺样本时跳过本条，别让 ENOENT 报成「导出逻辑坏了」。
+//
+// 反向核对（守卫没有掩盖失败）：
+// · 样本在场时本条是真跑通的，不是恒绿 —— 期望的两个 id 在样本原文里搜不到
+//   （节点 id 形如 `static-text-qe97l2a`，全文无长数字串），只能由 key_to_long 算出，
+//   所以「忘了转换」这类回归会让本条转红。
+// · 守卫只看「样本在不在」这一个条件，不含任何放宽断言的分支。
+const HAS_TIANFU_SAMPLE = fs.existsSync(TIANFU_PROJECT);
+
 describe("导出 E 文件 id 转换（完整路径）", () => {
-  it.skipIf(!fs.existsSync(TIANFU_PROJECT))("模拟 createExportEFile 导出，id 字段应为计算值", () => {
+  // 样本缺失（干净检出）时跳过；样本在场则真跑并断言，见上方说明。
+  it.skipIf(!HAS_TIANFU_SAMPLE)("模拟 createExportEFile 导出，id 字段应为计算值", () => {
     const template = fs.readFileSync("public/e-templates/ems_rtdb.e", "utf-8");
     const sections = parseEDeviceDefinitionFile(template);
     const result = applyEDeviceDefinitionSectionsToLibraryState({
