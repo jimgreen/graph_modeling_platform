@@ -128,6 +128,12 @@ export default defineConfig({
     // 放到 30s：真正的死循环/挂起仍会被抓到（只是晚一点），而慢用例不再假红。
     // 需要更严的守卫时，在具体用例上显式传更小的 timeout 即可覆盖本值。
     testTimeout: 30_000,
-    hookTimeout: 30_000
+    hookTimeout: 30_000,
+    coverage: {
+      provider: "v8",
+      reporter: ["text-summary"],
+      include: ["src/**", "server/**", "scripts/**", "shared/**"],
+      exclude: ["**/*.test.*", "**/node_modules/**"]
+    }
   }
 });
