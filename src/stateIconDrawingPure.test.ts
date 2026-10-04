@@ -22,12 +22,14 @@ import {
   DEFAULT_STATE_PAGE_ID,
   DEFAULT_STATE_VALUE,
   customParamId,
+  createStateIconDrawingElement,
   deviceDefinitionRowId,
   generateStateVisualShapeImage,
   isDefaultStatePageId,
   stateDraftImageValue,
   stateIconSvgVisibleViewBox,
   stateIconDrawingElementMarkup,
+  stateIconDrawingToImage,
   parseSvgStyleAttribute,
   stateDraftRowId,
   stateIconDrawingElementId,
@@ -312,6 +314,77 @@ describe("四种 id 生成器：前缀固定 + 互不碰撞", () => {
   test("不同生成器的 id 不会互相误认", () => {
     expect(deviceDefinitionRowId().startsWith("param-")).toBe(false);
     expect(customParamId().startsWith("def-")).toBe(false);
+  });
+});
+
+// stateIconDrawingElementId 的随机源可注入性。
+//
+// 为什么值得单独一块：`state-icon-element-<rand>` 这个 id 不是「视觉抖动」。
+// 它经 stateIconDrawingElementMarkup 直接写进 SVG 文本 ——
+//   image 元件     → <clipPath id="clip-<id>"> 与 clip-path="url(#clip-<id>)"
+//   带线端的线/弧  → <marker id="cap-<id>-<位置>-<样式>"> 与 marker-start/end="url(#...)"
+// 而 stateIconDrawingToImage 把整段 SVG encodeURIComponent 成 data URL，
+// 元件定义「应用」时把这串 data URL 写进 DeviceStateDefinition.image，
+// 随方案落盘并进入 E 文件 / SVG / CIM 导出 —— 即它**进入输出与持久化状态**，
+// 同一输入因此产出不同导出内容。
+// 收敛点：stateIconDrawingElementId(randomSource?) 与
+//        createStateIconDrawingElement(kind, row?, randomSource?)，默认实现仍是 Math.random。
+
+/** 固定随机源：按给定序列循环发号。同一序列 → 同一串 id，不同序列 → 不同 id。 */
+function sequenceRandomSource(values: readonly number[]) {
+  let index = 0;
+  return () => values[index++ % values.length];
+}
+
+describe("stateIconDrawingElementId：可注入随机源", () => {
+  test("★ 注入的随机源决定 id：同一注入源可复现，换源则不同", () => {
+    const first = stateIconDrawingElementId(() => 0.5);
+    expect(first.startsWith("state-icon-element-")).toBe(true);
+    expect(stateIconDrawingElementId(() => 0.5), "同一注入源两次调用").toBe(first);
+    expect(stateIconDrawingElementId(() => 0.25), "换注入源").not.toBe(first);
+  });
+
+  test("★ 默认实现仍是 Math.random（不传参走全局随机源，注入源不被触碰）", () => {
+    // 断言「默认行为逐字不变」：把全局 Math.random 钉成常量，
+    // 不传参的调用必须跟着变，注入固定源的调用必须不受影响。
+    const originalRandom = Math.random;
+    let defaultCalls = 0;
+    Math.random = () => {
+      defaultCalls += 1;
+      return 0.5;
+    };
+    let injected: string;
+    let byDefault: string;
+    try {
+      injected = stateIconDrawingElementId(() => 0.5);
+      byDefault = stateIconDrawingElementId();
+    } finally {
+      Math.random = originalRandom;
+    }
+    expect(byDefault, "默认路径没有走 Math.random").toBe(injected);
+    expect(defaultCalls, "Math.random 被调用的次数").toBe(1);
+  });
+
+  test("★ 注入固定随机源后 stateIconDrawingToImage 的 data URL 可复现", () => {
+    // 覆盖两条把 id 写进 SVG 的分支：image 的 clipPath 与带线端的 marker。
+    const build = () => [
+      { ...createStateIconDrawingElement("line", null, sequenceRandomSource([0.11, 0.22])), startCap: "arrow" as const },
+      { ...createStateIconDrawingElement("image", null, sequenceRandomSource([0.11, 0.22])), imageHref: "https://example.test/a.png" }
+    ];
+    const first = stateIconDrawingToImage(build());
+    expect(first).toBe(stateIconDrawingToImage(build()));
+    // 钉住「id 真的进了输出」——否则上面那句相等只是因为输出压根不含 id。
+    expect(decodeURIComponent(first)).toContain("clip-state-icon-element-");
+    expect(decodeURIComponent(first)).toContain("cap-state-icon-element-");
+  });
+
+  test("★ 反证：默认（随机）路径下同输入两次导出的 data URL 不同", () => {
+    // 这条记录的是「为什么要收敛」：不注入随机源，导出内容就不可复现。
+    // 随机源每次给 7 位 base36 后缀，重复概率可忽略。
+    const build = () => [
+      { ...createStateIconDrawingElement("image"), imageHref: "https://example.test/a.png" }
+    ];
+    expect(stateIconDrawingToImage(build())).not.toBe(stateIconDrawingToImage(build()));
   });
 });
 
