@@ -253,6 +253,35 @@ describe("staticConnectorMarker", () => {
     expect(html).not.toContain("NaN");
   });
 
+  // 下面这条钉的是本文件里 5 处 split(" ")（243/432/444/450/458 行）能**按位置取值**的前提，
+  // 它们切的都是 staticConnectorMarker 产出的 points 属性（staticConnectorPath 的两端箭头
+  // 也走这个函数）。实测过：这里没有 E 文件那种「定宽空格填充 + filter(Boolean)」的串列缺陷，
+  // 因为 points 由 staticRenderUtils.ts:143 的模板串拼出 —— 分隔符是两个字面空格、段数恒为 3、
+  // 坐标是 ${number} 插值（连非有限数也插成 "NaN"/"Infinity" 而不是空串），压根不存在空单元格。
+  // 但 split(" ") 的安全性完全押在「无空槽」上：分隔符一旦可变宽（多空格 join、按列宽填充、
+  // 空值渲染成空格），空槽要么留下空串 token（Number("") 得 0 → 断言红）、
+  // 要么整段消失（下标左移一列 → 读到邻槽的值）。两种都是真故障，故在此钉死。
+  test("points 属性恒为 3 段、无空槽 —— 这是 5 处按单个空格切分取值的根据", () => {
+    const arrowPoints = (element: ReactNode) => /points="([^"]+)"/.exec(markup(element))![1];
+    const cases: Array<[string, ReactNode]> = [
+      ["常规", staticConnectorMarker("arrow", 10, 0, 1, 0, 10, "#0f0", 1)],
+      // 零方向向量走 Math.hypot(...)||1 兜底，三段仍然齐全（不塌成两段）
+      ["零方向向量", staticConnectorMarker("arrow", 0, 0, 0, 0, 10, "#0f0", 1)],
+      // 非有限方向插值成字面量 NaN，仍是实打实的一段，不是空串
+      ["非有限方向", staticConnectorMarker("arrow", 3, 4, NaN, -Infinity, 10, "#0f0", 1)],
+      ["负坐标 + size 被夹到 min=4", staticConnectorMarker("arrow", -12.5, -7.25, -3, 4, 1, "#0f0", 1)]
+    ];
+    for (const [name, element] of cases) {
+      const attr = arrowPoints(element);
+      const tokens = attr.split(" ");
+      expect(tokens, `${name} 的 points 段数：${JSON.stringify(attr)}`).toHaveLength(3);
+      expect(
+        tokens.map((token, index) => (token === "" ? index : -1)).filter((index) => index >= 0),
+        `${name} 的 points 含空槽：${JSON.stringify(attr)}`
+      ).toEqual([]);
+    }
+  });
+
   test("未知标记名返回 null（不画任何东西）", () => {
     expect(staticConnectorMarker("none", 0, 0, 1, 0, 10, "#f00", 1)).toBeNull();
     expect(markup(staticConnectorMarker("", 0, 0, 1, 0, 10, "#f00", 1))).toBe("");
