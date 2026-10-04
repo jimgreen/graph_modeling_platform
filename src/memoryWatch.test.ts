@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { clearInterval as nodeClearInterval, setInterval as nodeSetInterval, setTimeout as nodeSetTimeout } from "node:timers";
 import {
   MEMORY_WATCH_CRITICAL_LIMIT_BYTES,
   MEMORY_WATCH_HARD_LIMIT_BYTES,
@@ -7,6 +8,63 @@ import {
   memoryWatchLevelFor,
   readJsHeapUsedBytes
 } from "./memoryWatch";
+
+// ─── 共享注册表（isolate 关掉）下，本文件依赖到的全局的基线 ──────────
+//
+// 唯一真正咬人的是 showGlobalMessage：memoryWatch 的 level 2/3 分支会调 globalThis 上的
+// 弹窗出口，而这个调用**夹在**「记处置」与「记 lastLevel」两句之间
+//（src/memoryWatch.ts:71 记处置 → :72 调弹窗 → :94 记 lastLevel）。那一刻的弹窗若会抛，
+// 抛出就把 lastLevel 的赋值吃掉 ⇒ 下一个 tick 又被判成升档、再处置一次 ⇒ 用例看到「多一项」。
+//
+// 共享注册表下这个前提极易不成立：src/globalMessage.ts 末尾三行在**模块加载期**把真弹窗
+// 写回 window，而 src/test-setup.ts 的 noop 只在 `typeof showGlobalMessage !== "function"`
+// 时才装 —— 真弹窗是函数，noop 装不上。任何先 import 过该模块的文件都会把 noop 顶掉；
+// 而本仓 test.environment 是 node，真弹窗一上来就 document.createElement ⇒ ReferenceError。
+// 实测肇事者 src/globalMessage.test.ts：`vi.stubGlobal("window", globalThis)` 之后
+// `await import("./globalMessage")`，其 afterEach 的 `vi.unstubAllGlobals()` 只还原它自己
+// stub 过的 document/window/requestAnimationFrame —— 被顶掉的那三个函数没人还原，
+// 真实残留（探针实测：残留函数体含 getContainer，且调用抛 document is not defined）。
+//
+// 故本文件不依赖「桩表是干净的」：下面把依赖到的键逐个显式钉死，afterEach 逐键精确还原。
+// 不用 vi.unstubAllGlobals() —— 共享注册表下它清的是整个 worker 的桩表，会顺手拆掉别的
+// 文件（或 test-setup）装的桩，那正是 isolate:false 下最难查的一类偶发红。
+//
+// performance.memory 不在这里钉：它每一组用例都由 stubHeapUsedBytes 自己按值快照/还原
+// （含「本来就没有」这一态，见「读不到堆占用时静默空转」），基线已经是逐例精确的；
+// 反过来若在此处把它删掉，readJsHeapUsedBytes 那条只会走 null 分支 —— 它「未来 node 提供了
+// performance.memory」的分支就被 setup 中和掉了，正是「setup 消掉了被测对象」那种假绿。
+const BASELINE_GLOBALS = ["showGlobalMessage", "setInterval", "clearInterval", "setTimeout"] as const;
+let baselineBackup: Array<[string, unknown]> = [];
+/** 本文件 level 2/3 用例里弹窗出口收到的文案（逐例清空）。 */
+let baselineMessages: string[] = [];
+
+beforeEach(() => {
+  baselineMessages = [];
+  baselineBackup = BASELINE_GLOBALS.map((key) => [key, (globalThis as Record<string, unknown>)[key]]);
+  vi.stubGlobal("showGlobalMessage", (text: string) => {
+    baselineMessages.push(text);
+  });
+  // 定时器基线取自 node:timers 而不是「当前全局值」：共享注册表下别的文件可能留下
+  // vi.useFakeTimers()（全局 setInterval/setTimeout 被换成假实现且不还原），而本文件整组
+  // 用例都靠**真**定时器的间隔推进、以及 clearInterval 生效与否来断言。node:timers 是
+  // 不受全局污染影响的原始引用。
+  vi.stubGlobal("setInterval", nodeSetInterval);
+  vi.stubGlobal("clearInterval", nodeClearInterval);
+  vi.stubGlobal("setTimeout", nodeSetTimeout);
+});
+
+afterEach(() => {
+  // 逐键精确还原：只动本文件 beforeEach 装过的那几个键，原样放回当时的值（含 undefined）。
+  for (const [key, value] of baselineBackup) {
+    if (value === undefined) {
+      delete (globalThis as Record<string, unknown>)[key];
+    } else {
+      (globalThis as Record<string, unknown>)[key] = value;
+    }
+  }
+  baselineBackup = [];
+  baselineMessages = [];
+});
 
 describe("memoryWatch 阈值分级", () => {
   it("低于 soft 阈值：不处置", () => {
@@ -133,6 +191,10 @@ describe("startMemoryWatch 的三条处置路径", () => {
     handle.stop();
     restore();
     expect(trimmed).toEqual([0]);
+    // 同一次升档只弹一次：这条断言把「基线钉死」本身也变成可执行的守卫 ——
+    // 若 showGlobalMessage 变回会抛的实现（共享注册表下的真弹窗），tick 会在
+    // 记处置与记 lastLevel 之间抛出，弹窗桩收不到文案、且 trimmed 会多出一项。
+    expect(baselineMessages).toHaveLength(1);
   });
 
   it("同一档位不重复处置：堆没继续涨时不重复裁剪", async () => {
