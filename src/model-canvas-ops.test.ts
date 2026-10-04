@@ -44,10 +44,45 @@ describe("clampNodePositionToBounds", () => {
 
   test("越出左/上边界时被推回，且推回后视觉框不越界", () => {
     const result = clampNodePositionToBounds(node(), bounds, { x: -100, y: -100 });
-    expect(result.x).toBeGreaterThanOrEqual(0);
-    expect(result.y).toBeGreaterThanOrEqual(0);
-    // 视觉框含图元体 + 线路 + **标签**（calculateNodeVisualBounds 合并三者），
-    // 故半宽不止 size.width/2 —— 这里断言「恰好贴合视觉框左缘」而非魔数。
+
+    // ── 逐处审计：原两行 toBeGreaterThanOrEqual(0) 的判定依据与替换理由 ────────────
+    //
+    // ① 原第 47 行 `expect(result.x).toBeGreaterThanOrEqual(0)`
+    //    非恒真，但鉴别力有明确缺口。
+    //    · 被测值类型：clampNodePositionToBounds 的返回值是 `{ x: Math.round(...),
+    //      y: Math.round(...) }` 字面量，x/y 恒为 number，**正常路径下不可能是 undefined**
+    //      —— 所以「undefined >= 0 为 false」这条性质在这里根本用不上。
+    //    · 它唯一的鉴别力是抓**负数**与 NaN：完全取消夹取时 result.x = -100，本条会红。
+    //    · 缺口：`>= 0` **放行 0**，而 0 恰是本测试要防的那条回归的产物 ——
+    //      「只夹中心、不看视觉框，退化成夹到画布原点」。变异实证：把 minX 改成 0 后
+    //      result.x 变成 0，本行照样绿，红的是下一行的 visual.left。
+    //      本夹具下 0 非法：节点视觉框左缘在 position.x - 40，中心落到 0 会有 40px
+    //      连同标签一起露在画布外。
+    //    ⇒ 改为比对**具体推回点**（视觉框左缘恰好贴 0 的那个中心坐标）。
+    //      期望值由公共几何函数推导、不写死魔数：40/10 只由 size(80×20) 决定，
+    //      与标签度量无关（标签只把 bottom 撑到 47.45，不影响 left/top）。
+    //
+    // ② 原第 48 行 `expect(result.y).toBeGreaterThanOrEqual(0)`
+    //    与 ① 同构：被测值恒为 number（不可能 undefined），鉴别力同样只来自负数/NaN，
+    //    同样放行 0。变异实证：minY 改成 0 后 result.y 变 0 而本行绿。
+    //    ⇒ 同样改成推导出的推回点。
+    //
+    // 推导前提：视觉框是节点的刚性平移，偏移量与 position 无关（下方 visual 断言
+    // 也依赖这一点）。故在原点处量一次偏移量即可。
+    const originVisual = calculateNodeVisualBounds(node(), 0, { x: 0, y: 0 });
+    expect(result.x).toBe(Math.round(-originVisual.left));
+    expect(result.y).toBe(Math.round(-originVisual.top));
+
+    // 推回后视觉框确实贴住画布左上角。
+    // 与上面两条的关系（记录下来，免得下一个人重新调查）：在「视觉框是刚性平移」成立时，
+    // 本处 visual.left === 0 与上面 result.x === -originVisual.left 逻辑等价。故上面两条
+    // 并不是独立于本处的额外覆盖 —— 它们的增量在于**由被测返回值自己**（而非重算一遍
+    // 夹取）来钉住推回点，从而在 `>= 0` 放过 0 的那个缺口上先红。
+    // 两处的量测位置不同（一个在 ORIGIN、一个在 result），故若日后
+    // calculateNodeVisualBounds 不再是刚性平移，这两条会互相拆台而不是一起绿。
+    //
+    // 更正原注释的一处事实错误：本夹具的标签框只向下溢出，故 left/top 方向的半宽半高
+    // 恰好等于 size.width/2 与 size.height/2（bottomOffset 才被撑到 47.45）。
     const visual = calculateNodeVisualBounds(node(), 0, result);
     expect(visual.left).toBe(0);
     expect(visual.top).toBe(0);
