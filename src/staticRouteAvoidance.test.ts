@@ -265,7 +265,7 @@ describe("`isStaticKind` 是前缀判定（大小写敏感），不是集合查�
     expect(avoid("staticGroupBox", { [P]: "否" })).toBe(true);
   });
 
-  test("★ 下面这条等价变异全绿是**正确的**（记录，避免下一个人重查）", () => {
+  test("★ 下面这条等价变异全绿是**正确的**（记录，避免下一个人重查）：等价变异 ⑧ —— `kind.startsWith` 已吸收 `static-point`，补显式分支语义不变", () => {
     // ⑧ `kind.startsWith("static-")` 改 `kind === "static-point" || kind.startsWith("static-")`
     //   —— 前缀判定本就包含 `"static-point"`（它以 `static-` 开头），
     //      所以新增的那一支是**恒被吸收**的冗余项。变异语义上根本没不同。
@@ -281,7 +281,7 @@ describe("`isStaticKind` 是前缀判定（大小写敏感），不是集合查�
     }
   });
 
-  test("★ 下面这条等价变异全绿是**正确的**（记录，避免下一个人重查）", () => {
+  test("★ 下面这条等价变异全绿是**正确的**（记录，避免下一个人重查）：等价变异 ④ 的旧坑 —— 曾在 fallback=1 的单一 kind 上断言，双侧断言才有鉴别力", () => {
     // ④ 的第一次尝试：只在 `static-point`（fallback=1）上断言真值别名「参与」。
     //   把该别名从源码里删掉 → 值落回 fallback=1 → 仍得 true → 全绿。
     //   **这不是等价变异，是我测试的洞**：断言选在了默认值与被测值相同的一侧。
