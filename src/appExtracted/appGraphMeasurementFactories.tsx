@@ -4486,6 +4486,13 @@ export function createCreateMeasurementItemForNode(__appScope: Record<string, an
     existingItems: readonly MeasurementItemBinding[] = []
   ): MeasurementItemBinding | null => {
   const { measurementConfig, measurementProfileItemsForMeasurementGroup, measurementSourcePointForNodeItem, measurementTypeById } = __appScope;
+    // item.id 不是纯临时值：它进 projectMeasurements（随方案/项目持久化）、进
+    // runtimeSnapshot 的 measurements 字段、进渲染层的 `mv-${item.id}`（本文件与
+    // appToolbarHookFactories.tsx）、还经 svgExportUtils.ts 的 exportMeasurementScopedId
+    // 进入 buildSvgDocument 导出的 SVG 元素 id；measurements.ts 的 isManualMeasurementItem
+    // 还会按 `${groupId}-${typeId}-<base36{6,}>-<base36{4}>` 解析它的后缀。
+    // 所以随机源必须可注入，测试才能拿到可复现的 id。默认仍是 Math.random，行为逐字不变。
+    const randomSource: () => number = typeof __appScope.randomSource === "function" ? __appScope.randomSource : Math.random;
     const profileItems = measurementProfileItemsForMeasurementGroup(node, terminalId);
     const usedTypeIds = new Set(existingItems.map((item) => item.measurementTypeId));
     const profileItem = measurementTypeId
@@ -4503,7 +4510,7 @@ export function createCreateMeasurementItemForNode(__appScope: Record<string, an
       terminalId
     );
     return {
-      id: `measurement-${node.id}${terminalId ? `-${terminalId}` : ""}-${type.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `measurement-${node.id}${terminalId ? `-${terminalId}` : ""}-${type.id}-${Date.now().toString(36)}-${randomSource().toString(36).slice(2, 6)}`,
       name: profileItem?.name ?? type.name,
       measurementTypeId: type.id,
       role: profileItem?.role,
