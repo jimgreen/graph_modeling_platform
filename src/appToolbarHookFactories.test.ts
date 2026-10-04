@@ -70,23 +70,30 @@ describe("device library persistence hook", () => {
 });
 
 describe("model library backend loading hook", () => {
-  const createScope = (fetchBackendSchemes: ReturnType<typeof vi.fn>) => ({
-    activeSchemeKey: "",
-    backendSchemesLoadTokenRef: { current: 0 },
-    backendSchemesLoadedRef: { current: false },
-    clearActiveProjectDisplay: vi.fn(),
-    fetchBackendSchemes,
-    findSavedProjectByActivePointer: vi.fn(() => null),
-    flattenSavedSchemes: (schemes: Array<{ id: string }>) => schemes,
-    latestActiveProjectPointerRef: { current: null },
-    loadSavedProjectRecord: vi.fn(),
-    rememberPersistedSchemesPayload: vi.fn(),
-    saveRequiredRef: { current: false },
-    serializeSchemesForStorage: JSON.stringify,
-    setExpandedSchemeIds: vi.fn(),
-    setSchemesState: vi.fn(),
-    suppressNextBackendSchemeSyncRef: { current: false }
-  });
+  // App.tsx 每帧重建 __appScope（const __appScope = {}），并把同一稳定 ref 挂在
+  // __appScope.__appScopeRef 上、每帧同步 __appScopeRef.current = __appScope。
+  // 这里如实复刻：scope 即「当帧的 __appScope」，__appScopeRef 是跨帧恒定的那个 ref。
+  const createScope = (fetchBackendSchemes: ReturnType<typeof vi.fn>, activeSchemeKey = "") => {
+    const scope: Record<string, any> = {
+      activeSchemeKey,
+      backendSchemesLoadTokenRef: { current: 0 },
+      backendSchemesLoadedRef: { current: false },
+      clearActiveProjectDisplay: vi.fn(),
+      fetchBackendSchemes,
+      findSavedProjectByActivePointer: vi.fn(() => null),
+      flattenSavedSchemes: (schemes: Array<{ id: string }>) => schemes,
+      latestActiveProjectPointerRef: { current: null },
+      loadSavedProjectRecord: vi.fn(),
+      rememberPersistedSchemesPayload: vi.fn(),
+      saveRequiredRef: { current: false },
+      serializeSchemesForStorage: JSON.stringify,
+      setExpandedSchemeIds: vi.fn(),
+      setSchemesState: vi.fn(),
+      suppressNextBackendSchemeSyncRef: { current: false }
+    };
+    scope.__appScopeRef = { current: scope };
+    return scope;
+  };
 
   const flushPromises = async () => {
     await Promise.resolve();
@@ -173,6 +180,48 @@ describe("model library backend loading hook", () => {
     expect(scope.setSchemesState).toHaveBeenCalledWith([]);
     expect(scope.clearActiveProjectDisplay).toHaveBeenCalledWith("没有可用方案，画布已清空");
     expect(scope.backendSchemesLoadedRef.current).toBe(true);
+    cleanup?.();
+  });
+
+  // 陈旧读数守卫：本 hook 的依赖数组是 []，effect 一生只跑挂载帧一次，而读
+  // activeSchemeKey 的 setExpandedSchemeIds updater 跑在 fetchBackendSchemes() 的
+  // .then() 里（异步）。若在 effect 里把它解构下来，它就永远是挂载帧的值：
+  // 用户在这段 await 期间切了方案，后台方案回来后左树仍展开旧方案。
+  // 模拟「重渲染」必须换一个新的 scope 对象 —— App.tsx 每帧重建 __appScope，
+  // 若只是改同一个对象的属性，那么「闭包里直接读 __appScope.activeSchemeKey」
+  // 这种没真修好的写法也能蒙对，断言就白写了。
+  test("prefers the scheme active after mount, not the one active at mount", async () => {
+    vi.stubGlobal("window", {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout
+    });
+    const backendSchemes = [
+      { id: "scheme-a", name: "方案A", projects: [], children: [] },
+      { id: "scheme-b", name: "方案B", projects: [], children: [] }
+    ];
+    // 挂起首次拉取：让我们能在「挂载帧」与「响应到达」之间插入一次重渲染。
+    let resolveFetch: (value: unknown) => void = () => {};
+    const fetchBackendSchemes = vi.fn(() => new Promise((resolve) => { resolveFetch = resolve; }));
+    const mountScope = createScope(fetchBackendSchemes, "scheme-a");
+
+    const cleanup = createAppHookCallback77(mountScope)();
+    await flushPromises();
+
+    // 一次重渲染：新对象（= 新帧的 __appScope），活动方案切到 scheme-b。
+    // 其余字段是 useState setter / ref，跨帧恒定，故沿用同一份。
+    const nextFrameScope = { ...mountScope, activeSchemeKey: "scheme-b" };
+    mountScope.__appScopeRef.current = nextFrameScope;
+
+    resolveFetch(backendSchemes);
+    await flushPromises();
+
+    // 挂载帧值 scheme-a 与兜底 backendSchemes[0] 同为 scheme-a，所以只有
+    // 「读到最新帧的 scheme-b」才能得到下面这个结果（scheme-b 在集合里且排第二）。
+    expect(backendSchemes.map((scheme) => scheme.id)).toEqual(["scheme-a", "scheme-b"]);
+    const updater = mountScope.setExpandedSchemeIds.mock.calls[0][0];
+    expect(updater([])).toEqual(["scheme-b"]);
     cleanup?.();
   });
 });

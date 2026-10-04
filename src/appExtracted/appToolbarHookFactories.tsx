@@ -2706,7 +2706,16 @@ export function createAppHookCallback76(__appScope: Record<string, any>) {
 
 export function createAppHookCallback77(__appScope: Record<string, any>) {
   return () => {
-  const { activeSchemeKey, backendSchemesLoadTokenRef, backendSchemesLoadedRef, clearActiveProjectDisplay, fetchBackendSchemes, findSavedProjectByActivePointer, flattenSavedSchemes, latestActiveProjectPointerRef, loadSavedProjectRecord, rememberPersistedSchemesPayload, saveRequiredRef, serializeSchemesForStorage, setExpandedSchemeIds, setSchemesState, suppressNextBackendSchemeSyncRef } = __appScope;
+  const { __appScopeRef, backendSchemesLoadTokenRef, backendSchemesLoadedRef, clearActiveProjectDisplay, fetchBackendSchemes, findSavedProjectByActivePointer, flattenSavedSchemes, latestActiveProjectPointerRef, loadSavedProjectRecord, rememberPersistedSchemesPayload, saveRequiredRef, serializeSchemesForStorage, setExpandedSchemeIds, setSchemesState, suppressNextBackendSchemeSyncRef } = __appScope;
+    // activeSchemeKey 为什么必须走 ref、不能在上面解构：
+    // ① __appScope 每帧重建（App.tsx 里 const __appScope = {}），本 hook 的依赖数组是 []，
+    //    effect 体一生只跑一次，即只在挂载帧 —— 在此处解构等于把它冻结在挂载帧的值。
+    // ② 读它的 setExpandedSchemeIds updater 跑在 fetchBackendSchemes() 的 .then() 里，
+    //    是异步的：用户很可能在这段 await 期间已经切过方案，此时用挂载帧的值会把展开项
+    //    落到旧方案上（表现是「后台方案回来了，但左树展开的是上一个方案」）。
+    // 所以每次读都回到 __appScopeRef.current（App.tsx 每帧同步）取当帧的 activeSchemeKey。
+    // 兜底给 ""：没有活动方案时本就落到 backendSchemes[0]，语义与旧代码一致。
+    const readActiveSchemeKey = () => __appScopeRef?.current?.activeSchemeKey ?? "";
     let disposed = false;
     let retryAttempt = 0;
     let retryTimeoutId: number | null = null;
@@ -2760,8 +2769,9 @@ export function createAppHookCallback77(__appScope: Record<string, any>) {
             if (retained.length > 0) {
               return retained;
             }
+            const latestActiveSchemeKey = readActiveSchemeKey();
             const preferredSchemeId =
-              (activeSchemeKey && backendSchemeIds.has(activeSchemeKey) ? activeSchemeKey : "") ||
+              (latestActiveSchemeKey && backendSchemeIds.has(latestActiveSchemeKey) ? latestActiveSchemeKey : "") ||
               backendSchemes[0]?.id ||
               "";
             return preferredSchemeId ? [preferredSchemeId] : [];
