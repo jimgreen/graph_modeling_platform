@@ -24,6 +24,24 @@ import {
  * 用仓库里的标准案例(多能流)当输入,对「原布局 / 旧行为(无约束)/ 新行为(带约束)」三者的
  * 拐点数与交叉数做对比 —— 正是用户反馈里「阈值 50 拐点没消掉、阈值 100 拐点暴增还多出交叉」的场景。
  * 判定几何用真路由器 `routeEdgesForStoredRendering`,和画布渲染同一套参数。
+ *
+ * ## 样本：`data/schemes/files/标准案例/子方案/多能流.json`
+ *
+ * ### 为什么保留条件跳过（而非去掉 skip 直接跑通）
+ *
+ * `data/` 整目录被 `.gitignore` 第 3 行忽略、**无任何版本跟踪文件**（`git ls-files data` 为空，
+ * 见 CLAUDE.md「数据目录」），所以干净检出 / CI 上这个文件必然不存在，届时 `readFileSync` 会 ENOENT 假红。
+ * 而上面这几条断言的价值恰恰在于**用真实工程数据**度量拐点与交叉 —— 合成节点造不出
+ * 「端子内缩 + 容器避让 + 存档折线」叠加下的真实路由形状，换成假数据等于把断言废掉。
+ * 所以这是**环境依赖**，不是用例写错 / 断言过时 / bug 已修，必须留着 `existsSync` 守卫 + `skipIf`；
+ * 这也正是 `scripts/dataSampleGuard.test.mjs` 强制、且被 CLAUDE.md 点名的仓库约定
+ * （「任何读 `data/` 样本的测试都要加 `existsSync` 守卫」）。
+ *
+ * ### 已知缺口（如实记录，别把绿灯当已验证）
+ *
+ * 样本缺席时整条 describe 静默跳过，套件仍报 passed —— 即「没跑」与「跑通」在报告里长得一样。
+ * 有样本时这 7 条全跑，`RESULT` / `PERF` 行会打印实测拐点与交叉数；
+ * 无样本的环境等于这条真实工程回归**完全没跑**，不能据此认为它被覆盖过。
  */
 const PROJECT_FILE = "data/schemes/files/标准案例/子方案/多能流.json";
 const projectAvailable = existsSync(PROJECT_FILE);
@@ -109,7 +127,11 @@ describe.skipIf(!projectAvailable)("auto-align line quality on a real project", 
       });
       const constrained = measureState(constrainedNodes);
 
-      // eslint-disable-next-line no-console
+      // 有意保留的实测输出，不是调试残留：本套件没有 reporter，`RESULT` / `PERF` 是拐点与交叉数的
+      // 唯一出口 —— 排查「阈值 50 拐点没消掉、阈值 100 拐点暴增还多出交叉」全靠它。
+      // 不再挂 `no-console` 压制：① 本仓库没有 eslint 依赖也没有任何 eslint 配置，该指令压制不到东西；
+      // ② 全仓测试（dotImport / ems-rtdb-* / fb18-probe 等）都用裸 console.log，这是既有约定；
+      // ③ 本文件第三处 console.log（PERF）本来就没压制，留两处压制反而造成「这里禁 console」的错觉。
       console.log("RESULT " + JSON.stringify({
         stage: `threshold-${threshold}`,
         initial,
@@ -148,7 +170,7 @@ describe.skipIf(!projectAvailable)("auto-align line quality on a real project", 
     });
     const after = measureState(aligned);
 
-    // eslint-disable-next-line no-console
+    // 同上：有意的实测输出（离网吸附前后的 bends/crossings 对照），故不挂 no-console 压制。
     console.log("RESULT " + JSON.stringify({
       stage: "off-grid",
       initial,
