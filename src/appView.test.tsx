@@ -129,6 +129,15 @@ describe("发送模型入口", () => {
     const sendButton = topbarSource.indexOf('id="topbar-send-model"');
     const templateLabel = topbarSource.indexOf("title={`当前模板：");
 
+    // 判别力（已变异验证，勿删）：exportButton = indexOf(...) 的值，找不到时是 -1，
+    // -1 >= 0 为 false，所以本条**不是恒真**，它守的是「导出按钮还在」。
+    // 它承重且是唯一守卫：exportButton 变 -1 时，下面三条排序断言
+    // （templateLabel > exportButton / sendButton > exportButton / sendButton < templateLabel）
+    // 全部成立（-1 最小），单靠它们整条用例会绿。
+    // 实测：① 只删 id="topbar-export" → 本条红（96 passed）；
+    //      ② 再删掉本条 → 97 passed 全绿。
+    // 另：这三个锚点都不可能落在偏移 0（源文件以 import 开头），
+    // 所以 >= 0 与 > 0 在真实输入域上等价，不必加严。
     expect(exportButton).toBeGreaterThanOrEqual(0);
     expect(templateLabel).toBeGreaterThan(exportButton);
     expect(sendButton).toBeGreaterThan(exportButton);
@@ -148,6 +157,14 @@ describe("全网拓扑入口", () => {
     const globalLineButton = topbarSource.indexOf('aria-label="全局线路"');
     const topologyButton = topbarSource.indexOf('aria-label="全网拓扑"');
 
+    // 判别力（已变异验证）：globalLineButton = indexOf('aria-label="全局线路"')，
+    // 找不到时 -1，-1 >= 0 为 false，本条会红。
+    // 但本条的**检测是冗余的**：下一条 toMatch(/aria-label="全局线路".../) 同样要求该字面量存在。
+    // 实测：① 只改掉 aria-label → 本条红（先失败，报错可读）；
+    //      ② 再删掉本条 → 仍在正则那条红。
+    // 保留理由：本条排在排序断言之前，失败信息是 "expected -1 to be greater than or equal to 0"，
+    // 比正则不匹配时打印整段源码好读。
+    // 注意排序断言本身抓不到锚点丢失（-1 最小），别以为它们兜底。
     expect(globalLineButton).toBeGreaterThanOrEqual(0);
     expect(topologyButton).toBeGreaterThan(globalLineButton);
     expect(topbarSource).toMatch(/aria-label="全局线路"[^>]*>\s*<Cable size=\{16\}\/>\s*<\/button>/);
@@ -185,6 +202,12 @@ describe("全局线路首末端提示", () => {
     const globalLineHook = source.indexOf("useGlobalLines(__appScope);");
     const renderBatchHook = source.indexOf("useRenderBatch(__appScope);");
 
+    // 判别力（已变异验证，勿删）：globalLineHook = indexOf("useGlobalLines(__appScope);")，
+    // 找不到时 -1，-1 >= 0 为 false，本条守的是「该 hook 仍在本文件里」。
+    // 它承重且是唯一守卫：删掉 useGlobalLines(__appScope); 后 renderBatchHook > -1 恒成立，
+    // 排序断言不会报警。
+    // 实测：① 只改掉 useGlobalLines(__appScope); → 本条红（96 passed）；
+    //      ② 再删掉本条 → 97 passed 全绿。
     expect(globalLineHook).toBeGreaterThanOrEqual(0);
     expect(renderBatchHook).toBeGreaterThan(globalLineHook);
   });
