@@ -3962,11 +3962,21 @@ test("migrates legacy ACAC and DCDC converter controls to endpoint fields", () =
   }
 });
 
-// 下面两条用例要读**已落盘的**图元库覆盖配置，而 data/ 整目录在 .gitignore 里
+// 下面两条用例都要读**已落盘的**图元库覆盖配置，而 data/ 整目录在 .gitignore 里
 // （运行时数据），干净检出的仓库上不存在 —— 缺文件时跳过，别让 ENOENT 报成「库逻辑坏了」。
+// 每条各自还写了「为什么非得依赖这份本机数据」的理由，见各自 test.skipIf 上方注释。
 const PERSISTED_LIBRARY_URL = new URL("../data/device-library/library.json", import.meta.url);
 const persistedLibraryAvailable = existsSync(PERSISTED_LIBRARY_URL);
 
+// 显式条件跳过，理由：环境依赖，本条要拿**本机已落盘**的 shared:DCDCConverter /
+// shared:ACACConverter 覆盖表当样本，干净检出（CI、新克隆）上 data/ 整个目录不存在，
+// 直接 readFileSync 会 ENOENT，那是「没有本机数据」，不是 normalizeNodeTerminalsWithTemplate 坏了。
+//
+// 另需知情：这条不只是「读文件」，还断言这份落盘表**当前**的字段形状（端点设定值齐全、
+// 通用 p_set/i_set/v_set 已不在其中）。而这张表用户能在图元库界面改，也能被
+// apiV1Library 的「清空自定义图元」清成 {} —— 一旦被清空，本条会**真红**而不是跳过。
+// 那样红是本机运行时数据状态，不是被测代码回归，所以此处**不**把清空也算进跳过条件：
+// 宁可让改坏数据的人看见红，也不要悄悄跳过把数据问题藏起来。
 test.skipIf(!persistedLibraryAvailable)("removes generic ACAC and DCDC setpoints without migrating their values", () => {
   const persistedLibrary = JSON.parse(readFileSync(PERSISTED_LIBRARY_URL, "utf8")) as {
     deviceDefinitionOverrides?: Record<string, DeviceTemplateDefinitionOverride>;
@@ -4031,6 +4041,16 @@ test.skipIf(!persistedLibraryAvailable)("removes generic ACAC and DCDC setpoints
   }
 });
 
+// 显式条件跳过，理由：环境依赖，且**比上面那条更依赖**这份文件——
+// 本条是拿落盘覆盖表当「一份完整的覆盖表」的真实样本：先从库里抄出每个模板的覆盖键，
+// 把其中属于 E 段固定列 + dev_type 的字段剔掉，再交给 applyDeviceTemplateDefinitionOverride
+// 重开，验固定字段被补回。样本取自 DEVICE_LIBRARY 的就不成立（那是模板自身，不是「覆盖表」）。
+//
+// 这里跳过的理由不是「怕 ENOENT」这么简单，**而是怕空洞地绿**：缺文件时循环里每个模板都命中
+// `if (!override?.parameterDefinitions?.length) continue`，missingByKind 恒为 {}，
+// 断言 `toEqual({})` 会当场通过——一个模板都没验，却报得像「每个基础设备都验过了」。
+// 所以下面额外用 exercisedTemplateCount 断言「至少真的走过一个模板」，
+// 让这条跳过时是有代价的、跑起来时也不是空壳。
 test.skipIf(!persistedLibraryAvailable)("restores fixed E fields omitted from persisted complete overrides for every base device", () => {
   const persistedLibrary = JSON.parse(readFileSync(PERSISTED_LIBRARY_URL, "utf8")) as {
     customDeviceTemplates?: DeviceTemplate[];
@@ -4039,6 +4059,7 @@ test.skipIf(!persistedLibraryAvailable)("restores fixed E fields omitted from pe
   };
   const templates = [...DEVICE_LIBRARY, ...(persistedLibrary.customDeviceTemplates ?? [])];
   const missingByKind: Record<string, string[]> = {};
+  let exercisedTemplateCount = 0;
 
   for (const template of templates) {
     if (template.kind.endsWith("-vertical") || templateDerivedComponentLibraryInfo(template)) {
@@ -4050,6 +4071,7 @@ test.skipIf(!persistedLibraryAvailable)("restores fixed E fields omitted from pe
     if (!override?.parameterDefinitions?.length) {
       continue;
     }
+    exercisedTemplateCount += 1;
     const fixedFieldNames = new Set([...(E_SECTION_COLUMNS[section] ?? []), "dev_type"]);
     const expectedFields = getTemplateParameterDefinitions(template)
       .map((definition) => definition.enName)
@@ -4074,6 +4096,8 @@ test.skipIf(!persistedLibraryAvailable)("restores fixed E fields omitted from pe
   }
 
   expect(missingByKind).toEqual({});
+  // 反空洞守卫：没有样本时 missingByKind 恒为 {}，上面那句会绿得像验过了所有基础设备。
+  expect(exercisedTemplateCount).toBeGreaterThan(0);
 });
 
 test("keeps explicit delete-all parameter overrides empty for E devices", () => {
