@@ -1,5 +1,9 @@
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+
+// 被测模块的类型别名：hook 用例改为动态 import 拿到「mock 就位后求值」的那一份实例，
+// 与文件顶部的静态 import（可能来自共享注册表里的旧缓存）不是同一个对象。
+type TourTooltipClampModule = typeof import("./tourViewportClamp");
 
 const reactHarness = vi.hoisted(() => {
   let activeRunner: HookRunner | null = null;
@@ -54,7 +58,25 @@ const reactHarness = vi.hoisted(() => {
   };
 });
 
-vi.mock("react", () => reactHarness);
+// ⚠ 这里**不能**用文件顶部的 `vi.mock("react", () => reactHarness)`（提升到所有 import 之前）。
+//
+// 原因不是「mock 注册表会漏给别的文件」——vitest 的 mock 注册表按**测试文件**分桶
+// （`VitestUtils.getMockerRegistry()` → `getSuiteFilepath()` = `executor.state.filepath`），
+// 关掉 isolate 也不会跨文件串 mock。真正的原因是：
+//
+// **`vi.mock` 只在被测模块「重新求值」的那一刻才有机会生效。** `react` 是被
+// `src/tourViewportClamp.ts` 自己 import 的，只有该模块被执行到才会去查 mock 注册表。
+// 而关掉 isolate 后模块缓存是共享的，`src/tourViewportClamp.ts` 完全可能已被别的测试文件
+// 先求值过——`src/appTour.test.ts` 直接 `import "./appTour"`；`src/appView.test.tsx` 经
+// `appExtracted/appView.tsx` / `appTopbar.tsx` 也一样；两者都静态引入 `./tourViewportClamp`。
+// 缓存命中时 vitest 直接返回旧实例（`VitestExecutor.dependencyRequest` 的 `super` 分支走
+// moduleCache），那份实例里的 `react` 绑定已经是**真 react**，本文件的 mock 贴不上去。
+// 于是 hook 走真 dispatcher ——React 19 的 `resolveDispatcher()` 只 `console.error` 一句
+// "Invalid hook call" 就返回 null——最终抛
+// `TypeError: Cannot read properties of null (reading 'useState')`。
+//
+// 所以改由 hook describe 自己在 `beforeAll` 里「清模块缓存 + 登记 mock + 动态 import」，
+// 见下方 `loadHookModuleUnderHarness()`；反向的**模块缓存**泄漏由同 describe 的 `afterAll` 收尾。
 
 import {
   TOUR_TOOLTIP_VIEWPORT_MARGIN,
@@ -86,7 +108,7 @@ type HookRunner = {
   unmount: () => void;
 };
 
-function createHookRunner(): HookRunner {
+function createHookRunner(hook: typeof useTourTooltipViewportClamp): HookRunner {
   const current = {
     states: [],
     refs: [],
@@ -103,7 +125,7 @@ function createHookRunner(): HookRunner {
       current.effectCursor = 0;
       current.pendingEffects = [];
       reactHarness.setActiveRunner(current);
-      current.value = useTourTooltipViewportClamp(resetKey);
+      current.value = hook(resetKey);
       reactHarness.setActiveRunner(null);
 
       for (const [index, next] of current.pendingEffects.entries()) {
@@ -369,13 +391,59 @@ describe("readTourTooltipViewport", () => {
   });
 });
 
+/**
+ * 在「react mock 已就位」的前提下重新求值 `src/tourViewportClamp.ts`，返回那一份模块。
+ *
+ * 两步都必需，缺一不可：
+ * - `vi.resetModules()` —— 清**模块缓存**。少了它，下面的 `import` 直接命中共享注册表里
+ *   别人留下的旧实例（那份的 react 绑真 react），压根不会重新求值、也就不会查 mock；
+ * - `vi.doMock("react", …)` —— `resetModules` **不动 mock 注册表**；mock 注册表按文件分桶，
+ *   本文件必须自己登记一份，重新求值时才会被 `tourViewportClamp.ts` 读到。
+ *
+ * 整个文件只调用一次（`beforeAll`）：`useTourTooltipViewportClamp` 自身零模块级状态
+ * （state/ref/effect/闭包变量全在函数体内），三条用例各自新建 HookRunner、互不串味，
+ * 所以三条共用同一份模块实例是安全的；而 `vi.resetModules()` 是全局缓存的整表清空，
+ * 每条用例清一次会把共享注册表下后面所有文件的模块图重求值一遍。
+ */
+async function loadHookModuleUnderHarness(): Promise<TourTooltipClampModule> {
+  vi.resetModules();
+  vi.doMock("react", () => reactHarness);
+  return await import("./tourViewportClamp");
+}
+
 describe("useTourTooltipViewportClamp", () => {
+  // 被动态 import 出来的「mock 就位」实例里的 hook；不是文件顶部静态 import 的那个绑定。
+  let hookUnderTest: typeof useTourTooltipViewportClamp;
+
+  beforeAll(async () => {
+    hookUnderTest = (await loadHookModuleUnderHarness()).useTourTooltipViewportClamp;
+  });
+
   beforeEach(() => {
     FakeResizeObserver.instances = [];
   });
 
   afterEach(() => {
+    // 回滚 vi.stubGlobal 记下的全局桩（rAF / ResizeObserver / window）。共享注册表下这层桩
+    // 挂在同一个 worker 的 globalThis 上，不清就会漏给后跑的文件（node 环境本来没有 window，
+    // 漏一个假 window 足以让后续文件走进完全不同的分支）。
+    // 不调 vi.restoreAllMocks() / 每条用例都 vi.resetModules()：那些作用于整个注册表，会连坐别的文件。
     vi.unstubAllGlobals();
+  });
+
+  afterAll(() => {
+    // 反向收尾：把「绑定了本文件 harness 的 src/tourViewportClamp.ts 实例」从共享模块缓存里
+    // 挤出去。不做的话，后面才跑的测试文件经 `appTour.tsx` → `./tourViewportClamp` 拿到的就是
+    // 这份毒化实例，组件外调用它会撞上 harness 的 "React hook called outside test runner"。
+    // （已用探针实测：删掉这一行 `vi.resetModules()`，后跑文件立刻拿到 harness 版实例。）
+    //
+    // `vi.doUnmock("react")` 在 vitest 3.2 其实多余（mock 注册表按文件分桶，不跨文件），
+    // 留着是显式表达「本文件不留下 react 的 mock」，代价为零。
+    //
+    // 整组只清一次，别挪进 beforeEach / afterEach：那是全局模块缓存的整表清空，共享注册表下
+    // 每条用例清一次会把后面几百个文件的模块图全部重求值一遍。
+    vi.doUnmock("react");
+    vi.resetModules();
   });
 
   test("挂载后用 ResizeObserver 量测、夹取，并在重复清理时保持幂等", () => {
@@ -385,7 +453,7 @@ describe("useTourTooltipViewportClamp", () => {
     vi.stubGlobal("ResizeObserver", FakeResizeObserver);
     vi.stubGlobal("window", { innerWidth: 1280, innerHeight: 800 });
 
-    const runner = createHookRunner();
+    const runner = createHookRunner(hookUnderTest);
     runner.render(0);
     const element = createTooltipElement({ top: 700, left: 1200, width: 360, height: 200 });
     runner.value.clampRef(element);
@@ -426,7 +494,7 @@ describe("useTourTooltipViewportClamp", () => {
       removeEventListener
     });
 
-    const runner = createHookRunner();
+    const runner = createHookRunner(hookUnderTest);
     runner.render(0);
     const element = createTooltipElement({ top: 300, left: 400, width: 360, height: 200 });
     runner.value.clampRef(element);
@@ -449,7 +517,7 @@ describe("useTourTooltipViewportClamp", () => {
     vi.stubGlobal("ResizeObserver", undefined);
     vi.stubGlobal("window", undefined);
 
-    const runner = createHookRunner();
+    const runner = createHookRunner(hookUnderTest);
     runner.render(0);
     const element = createTooltipElement({ top: 300, left: 400, width: 360, height: 200 });
     runner.value.clampRef(element);
