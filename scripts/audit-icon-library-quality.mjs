@@ -301,6 +301,10 @@ for (const duplicates of globalStructures.values()) {
   }
 }
 
+// 审计报告本体：stdout 只放这一份机器可读的 JSON，不得混入任何提示文案，
+// 调用方（scripts/audit-icon-library-quality.test.mjs 直接 JSON.parse(stdout)，
+// 人看报告时一般重定向 stdout 到文件）都依赖它。因此这行不是调试打印，不要删。
+// 面向人的诊断（缺库提示）一律走 console.error，见下。
 console.log(JSON.stringify(summary, null, 2));
 
 if (missingLibraries.length > 0) {
