@@ -208,6 +208,115 @@ function completeGlobalLineConsistencyFixture(id = "global-line-consistency-1") 
   return { record, sourceLine, targetLine, sourceModel, targetModel };
 }
 
+/**
+ * 取「函数声明头 → 函数体闭合花括号」的字符区间 [start, end)，start 是声明头首字符下标。
+ *
+ * 上界守的是「这几个调用确实写在 runTopology 的函数体里」，顺序断言只给了下界。取边界不能靠
+ * 「下一个 function 关键字之前」：runTopology 体内就有嵌套箭头函数
+ * （selectedModels.map(async (model) => {...})），也可能有内层具名函数，按关键字切会把
+ * 函数体腰斩。这里改用花括号配平：跳过字符串、模板字面量、行注释、块注释后做深度计数，
+ * 遇到 depth 归零的那个 } 即函数体结束。
+ *
+ * 找不到（声明头不存在 / 花括号不配平 / 体内出现本扫描器处理不了的字面量）时返回 null，
+ * **绝不**退回 source.length —— 那会让上界退化成「文件末尾」，断言重新变成恒真。
+ *
+ * 已知不覆盖：正则字面量、JSX 文本里的引号或花括号。runTopology 体内当前没有这两类写法，
+ * 万一将来引入，本函数会返回 null 使用例显式失败，而不是悄悄放宽上界。
+ */
+function functionBodyRange(source: string, declaration: string): { start: number; end: number } | null {
+  const declarationStart = source.indexOf(declaration);
+  if (declarationStart < 0) {
+    return null;
+  }
+  const bodyStart = source.indexOf("{", declarationStart + declaration.length);
+  if (bodyStart < 0) {
+    return null;
+  }
+  // 栈项：template = 正在模板字面量的文本段里；code = 正在代码段里，depth 是该代码段起手时的括号深度
+  const scopes: Array<{ kind: "code" | "template"; depth: number }> = [{ kind: "code", depth: 0 }];
+  let depth = 0;
+  let cursor = bodyStart;
+  while (cursor < source.length) {
+    const scope = scopes[scopes.length - 1];
+    const char = source[cursor];
+    if (scope.kind === "template") {
+      if (char === "\\") {
+        cursor += 2;
+        continue;
+      }
+      if (char === "`") {
+        scopes.pop();
+        cursor += 1;
+        continue;
+      }
+      if (char === "$" && source[cursor + 1] === "{") {
+        scopes.push({ kind: "code", depth });
+        depth += 1;
+        cursor += 2;
+        continue;
+      }
+      cursor += 1;
+      continue;
+    }
+    if (char === "/" && source[cursor + 1] === "/") {
+      while (cursor < source.length && source[cursor] !== "\n") {
+        cursor += 1;
+      }
+      continue;
+    }
+    if (char === "/" && source[cursor + 1] === "*") {
+      cursor += 2;
+      while (cursor < source.length && !(source[cursor] === "*" && source[cursor + 1] === "/")) {
+        cursor += 1;
+      }
+      cursor += 2;
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      const quote = char;
+      cursor += 1;
+      while (cursor < source.length) {
+        if (source[cursor] === "\\") {
+          cursor += 2;
+          continue;
+        }
+        if (source[cursor] === quote) {
+          cursor += 1;
+          break;
+        }
+        cursor += 1;
+      }
+      continue;
+    }
+    if (char === "`") {
+      scopes.push({ kind: "template", depth });
+      cursor += 1;
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+      cursor += 1;
+      continue;
+    }
+    if (char === "}") {
+      depth -= 1;
+      cursor += 1;
+      if (scopes.length === 1) {
+        if (depth === 0) {
+          return { start: declarationStart, end: cursor };
+        }
+        continue;
+      }
+      if (depth === scope.depth) {
+        scopes.pop();
+      }
+      continue;
+    }
+    cursor += 1;
+  }
+  return null;
+}
+
 describe("全网拓扑模型选择", () => {
   test("只展示厂站、馈线和台区，并按模型 idx 排序且默认全选", () => {
     const schemes: SavedSchemeRecord[] = [{
@@ -365,6 +474,7 @@ describe("全网拓扑模型选择", () => {
 
   test("全网拓扑在模型拓扑完成后筛选待加载线路并执行双向一致性与加载覆盖检查", () => {
     const dialogSource = readFileSync(new URL("./AllNetworkTopologyDialog.tsx", import.meta.url), "utf8");
+    const runTopologyRange = functionBodyRange(dialogSource, "const runTopology = async () =>");
     const runStart = dialogSource.indexOf("const runTopology = async () =>");
     const modelTopologyCheck = dialogSource.indexOf("analyzeAllNetworkTopology(loadedModels", runStart);
     const relevantRecords = dialogSource.indexOf("globalLineRecordsForAllNetworkTopologySelection", runStart);
@@ -383,6 +493,97 @@ describe("全网拓扑模型选择", () => {
     expect(globalLineCheck).toBeGreaterThan(relevantRecords);
     expect(loadCoverageCheck).toBeGreaterThan(globalLineCheck);
     expect(resultMerge).toBeGreaterThan(loadCoverageCheck);
+
+    // 上界：上面五条只给了下界 —— 它们保证这几个调用出现在 runTopology 之后、彼此相对顺序不变，
+    // 却不保证它们写在 runTopology 的函数体里。
+    // 变异验证（实测）：把含这五个锚点的 5 行从 runTopology 整体搬进紧随其后的 locateAlert、
+    // 保持相对顺序，改造前后的两份 AllNetworkTopologyDialog.tsx 副本喂给本用例 ——
+    //   改造前的断言链：40 条用例全绿，一条没红（前提成立）；
+    //   加上本段上界：转红「analyzeAllNetworkTopology(loadedModels 必须落在 runTopology 函数体内
+    //   （不晚于函数体闭合）: expected 34796 to be less than 34370」。
+    // 结论：搬走也能全绿，所以上界不是可有可无的重复断言。
+    //
+    // 为什么不能写死行号：AllNetworkTopologyDialog.tsx 的行号随别处增删注释/空行漂移，写死行号的
+    // 断言会在纯格式改动后集体变红，而这类红与被测行为无关，最后只会被人随手改回数字——守卫消失。
+    // 故用 functionBodyRange 在源码文本里现场求边界，行号漂移不影响。
+    //
+    // 边界依据：不是「下一个 function 关键字之前」——runTopology 体内就有嵌套箭头函数
+    // （selectedModels.map(async (model) => {...})），按关键字切会把函数体腰斩。改为花括号配平，
+    // 跳过字符串/模板字面量/行注释/块注释后数深度，depth 归零的那个 } 即函数体闭合。
+    expect(runTopologyRange).not.toBeNull();
+    const runBodyEnd = runTopologyRange!.end;
+    expect(runBodyEnd).toBeGreaterThan(runStart);
+    const orderedAnchors: Array<[string, number]> = [
+      ["analyzeAllNetworkTopology(loadedModels", modelTopologyCheck],
+      ["globalLineRecordsForAllNetworkTopologySelection", relevantRecords],
+      ["analyzeGlobalLineConsistency", globalLineCheck],
+      ["analyzeAllNetworkTopologyLoadCoverage", loadCoverageCheck],
+      ["const nextResult =", resultMerge]
+    ];
+    for (const [anchor, position] of orderedAnchors) {
+      expect(position, `${anchor} 必须落在 runTopology 函数体内（不早于声明）`).toBeGreaterThan(runStart);
+      expect(position, `${anchor} 必须落在 runTopology 函数体内（不晚于函数体闭合）`).toBeLessThan(runBodyEnd);
+    }
+  });
+
+  test("上界扫描能区分 runTopology 体内的调用与体内之后的调用", () => {
+    // 检测逻辑自身的自测：合成一段和 runTopology 同形状的源码（含嵌套箭头函数、模板字面量、
+    // 含花括号的注释与字符串），证明扫描器返回的边界既不会被嵌套函数腰斩，也能把「搬到下一个
+    // 函数里、保持相对顺序」的那批锚点判到界外。这样上界才不是恒真。
+    const syntheticSource = [
+      "const runTopology = async () => {",
+      "  const nested = models.map(async (model) => {",
+      "    return { id: model.id };",
+      "  });",
+      "  // } 注释里的花括号不参与配平",
+      "  /* } 块注释里的也不参与 */",
+      "  const text = `不配平的 } 与 { 无妨 ${(await Promise.all([1])).length}`;",
+      "  const modelTopologyCheck = analyzeAllNetworkTopology(loadedModels, referenceModels);",
+      "  const relevantRecords = globalLineRecordsForAllNetworkTopologySelection(records);",
+      "  const globalLineCheck = analyzeGlobalLineConsistency(records, models);",
+      "  const loadCoverageCheck = analyzeAllNetworkTopologyLoadCoverage(records, models, referenceModels);",
+      "  const nextResult = { errors: [], warnings: [] };",
+      "  return nested.map((item) => `完成：${item.id}`);",
+      "};",
+      "",
+      "const later = async () => {",
+      "  analyzeAllNetworkTopology(loadedModels, referenceModels);",
+      "  globalLineRecordsForAllNetworkTopologySelection(records);",
+      "  analyzeGlobalLineConsistency(records, models);",
+      "  analyzeAllNetworkTopologyLoadCoverage(records, models, referenceModels);",
+      "  const nextResult = { errors: [] };",
+      "};"
+    ].join("\n");
+    const anchors = [
+      "analyzeAllNetworkTopology(loadedModels",
+      "globalLineRecordsForAllNetworkTopologySelection",
+      "analyzeGlobalLineConsistency",
+      "analyzeAllNetworkTopologyLoadCoverage",
+      "const nextResult ="
+    ];
+
+    const range = functionBodyRange(syntheticSource, "const runTopology = async () =>");
+
+    expect(range).not.toBeNull();
+    const bodyStart = range!.start;
+    const bodyEnd = range!.end;
+    // 嵌套箭头函数与模板插值都没把边界算错：函数体最后一行仍落在区间内，下一个函数落在区间外
+    expect(syntheticSource.slice(bodyStart, bodyEnd)).toContain("return nested.map((item) =>");
+    expect(syntheticSource.slice(bodyStart, bodyEnd)).toContain("const nextResult = { errors: [], warnings: [] };");
+    expect(syntheticSource.slice(bodyEnd)).not.toContain("warnings: []");
+    // 扫描器返回的不是「文件末尾」这种糊弄边界：locateAlert 那 5 行确实在区间之外
+    expect(syntheticSource.slice(bodyEnd)).toContain("const nextResult = { errors: [] };");
+
+    const inBodyPositions = anchors.map((anchor) => syntheticSource.indexOf(anchor, bodyStart));
+    for (const position of inBodyPositions) {
+      expect(position).toBeGreaterThanOrEqual(bodyStart);
+      expect(position).toBeLessThan(bodyEnd);
+    }
+    // 上界真正咬住的那一刀：把五个锚点整体挪到 later 里、相对顺序不变 —— 旧的顺序链照样成立，
+    // 新上界把它们全判到界外。
+    const movedPositions = anchors.map((anchor) => syntheticSource.indexOf(anchor, bodyEnd));
+    expect(movedPositions.every((position) => position >= bodyEnd)).toBe(true);
+    expect(movedPositions).toEqual([...movedPositions].sort((left, right) => left - right));
   });
 });
 
