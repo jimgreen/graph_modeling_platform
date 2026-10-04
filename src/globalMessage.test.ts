@@ -9,7 +9,7 @@
 // 的同款做法用 vi.stubGlobal 造最小 document/window —— 但这个模块比 fileDownload 复杂
 // （innerHTML / appendChild / addEventListener / requestAnimationFrame / focus），
 // 所以手写一个极简 DOM 桩。
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, afterAll, vi } from "vitest";
 
 // ─── 极简 DOM 桩 ───────────────────────────────────────────
 
@@ -143,6 +143,52 @@ function installDom() {
   return { body, doc };
 }
 
+// ─── 共享全局污染：本文件是「真弹窗泄漏到 globalThis」的源头 ──────────
+//
+// src/globalMessage.ts 末尾三行在**模块加载期**把真弹窗写回 window（:163-165）。而本文件
+// installDom() 里 `vi.stubGlobal("window", globalThis)` 使 window 与 globalThis 是**同一个对象**
+// ⇒ 真弹窗直接落到共享全局上。本仓 test.environment 是 node，真弹窗一被调用就是
+// `document.createElement` ⇒ `ReferenceError: document is not defined`，连累后续任何文件。
+//
+// 为什么不能交给 vi.unstubAllGlobals()：它**只还原本文件 stub 过的键**
+// （document / window / requestAnimationFrame），被顶上去的那三个弹窗键它压根不认识。
+// 而 src/test-setup.ts 的 noop 是条件式补桩（`typeof … !== "function"` 才装），真弹窗是函数
+// ⇒ noop 装不回来 ⇒ 这份污染不可自愈，只能由本文件自己擦。
+//
+// 擦法：文件加载时快照这三个键，import 之后按快照逐键还原；「本来就没有」的键用 delete
+// 还原成「不存在」（与 memoryWatch.test.ts 的 baseline 约定一致：这三处不可能合法地是 undefined）。
+//
+// 变异验证记录（受害者探针：单独一个不 import 任何业务模块的测试文件，只在共享 globalThis
+// 上读这三个键、断言「调用不抛且体内不含 getContainer」；装置为关隔离 + 单线程 +
+// 强制 globalMessage.test.ts 先跑的 sequencer，跑完即删，不留在仓库里）：
+//   · 三处还原（loadFresh / afterEach / afterAll）**全部**删掉 → 探针转红（真弹窗残留）。
+//     这才是这套守卫的承重面。
+//   · 只删其中任意一处 → 全绿。这**不是**守卫失效，是三处对「本文件执行完之后」的观测窗口
+//     而言彼此等价：探针只在本文件彻底跑完后读一次全局，而 loadFresh 在每次 import 后就擦、
+//     afterEach 在每条用例后擦、afterAll 在文件末擦 —— 任意一处存活就足以让全局干净。
+//     保留三处是有意的冗余（belt-and-braces），不是三条独立的承重断言。
+//   · 若将来其中一处真的坏了而另外两处还在，探针**不会**报红 —— 那时靠的是「三处都在」
+//     这个事实，而不是任何单点断言。别把某处的删除当成无害重构。
+const LEAKED_POPUP_GLOBALS = ["showGlobalMessage", "showGlobalConfirm", "showGlobalPrompt"] as const;
+type LeakedPopupKey = (typeof LEAKED_POPUP_GLOBALS)[number];
+
+function snapshotPopupGlobals(): Array<[LeakedPopupKey, unknown]> {
+  const scope = globalThis as unknown as Record<string, unknown>;
+  return LEAKED_POPUP_GLOBALS.map((key) => [key, scope[key]]);
+}
+
+function restorePopupGlobals(snapshot: Array<[LeakedPopupKey, unknown]>): void {
+  const scope = globalThis as unknown as Record<string, unknown>;
+  for (const [key, value] of snapshot) {
+    if (value === undefined) delete scope[key];
+    else scope[key] = value;
+  }
+}
+
+// 模块级快照取自本文件被收集时（setupFiles 之后）的全局基线；本文件没有任何用例会合法地
+// 改这三个键，所以这一份快照同时供 afterEach 与 afterAll 使用。
+const popupGlobalsBaseline = snapshotPopupGlobals();
+
 // 模块级状态（container / nextId / queue）在模块加载时建立 —— 每条用例前重置模块，
 // 否则 MAX_VISIBLE 队列与 nextId 会跨用例串味。
 type GlobalMessageModule = typeof import("./globalMessage");
@@ -151,6 +197,10 @@ async function loadFresh(): Promise<{ mod: GlobalMessageModule; body: StubElemen
   vi.resetModules();
   const { body } = installDom();
   const mod = await import("./globalMessage");
+  // import 刚把真弹窗挂上这三个键，在任何用例跑到之前就按基线擦掉。
+  // 本文件的用例一律走 mod.* 的具名导入，从不读 window 上的副本，所以擦掉不影响任何断言。
+  // （与 afterEach / afterAll 那两处是并列冗余，见上面的变异验证记录。）
+  restorePopupGlobals(popupGlobalsBaseline);
   return { mod, body };
 }
 
@@ -166,8 +216,17 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+  // 分工明确：unstubAllGlobals 只管本文件 stub 过的 document/window/requestAnimationFrame，
+  // 它**不认识**真弹窗那三个键 —— 那三个由 restorePopupGlobals 负责，逐键精确还原。
   vi.unstubAllGlobals();
+  restorePopupGlobals(popupGlobalsBaseline);
   vi.resetModules();
+});
+
+// 离开本文件时再擦一次：即便将来有人在上面新增一条 import 路径，
+// 也保证「本文件弄脏了共享全局」这件事不会传给后续文件。
+afterAll(() => {
+  restorePopupGlobals(popupGlobalsBaseline);
 });
 
 // ─── showGlobalMessage ─────────────────────────────────────
