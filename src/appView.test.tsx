@@ -1385,18 +1385,43 @@ describe("空间导入导出按钮", () => {
   // 与上方「顶栏空间选择器」同一 TDZ 规避（appTopbar 经 model-node-ops 间接 import model.ts）
   const loadTopbar = () => import("./appExtracted/appTopbar");
 
+  // appTopbar 的弹窗出口读的是 **globalThis 上的函数**（conflictDialogs / showSpaceActionMessage），
+  // 不是模块 import，所以这套用例的基线必须由本文件显式钉死，不能依赖「注册表是干净的」：
+  //   · test-setup.ts 只装 showGlobalMessage / showGlobalConfirm 两个 noop，showGlobalPrompt 缺席；
+  //   · 而 src/globalMessage.ts 在**模块加载期**把三个真函数写回 window（其文件末尾三行）。
+  // 共享注册表下（isolate:false）任何先 import 过该模块的文件（例如 src/globalMessage.test.ts）
+  // 都会把那两个 noop 顶成真弹窗，而真弹窗一上来就 document.createElement ——
+  // 本仓 test.environment 是 node，没有 document，于是冒 ReferenceError，
+  // 再被 appTopbar 的 catch 改写成「导入/导出空间失败：document is not defined」。
+  // 「导入撞车但没有询问框可用」那条更是**靠 showGlobalPrompt 缺席**才让 conflictDialogs()
+  // 返回 null、走「问不了就别装问过了」分支，所以这三个键一个都不能少。
+  const DIALOG_GLOBALS = ["showGlobalMessage", "showGlobalConfirm", "showGlobalPrompt"] as const;
+  let dialogGlobalsBackup: Array<[string, unknown]> = [];
+
   beforeEach(() => {
     importSpaceArchiveMock.mockReset();
     renameSpaceMock.mockReset();
     deleteSpaceMock.mockReset();
     saveLazyBlobFileMock.mockReset();
+
+    dialogGlobalsBackup = DIALOG_GLOBALS.map((key) => [key, (globalThis as any)[key]]);
+    // 与 test-setup.ts 的基线逐项对齐；prompt 刻意留 undefined = 「没有询问框」。
+    vi.stubGlobal("showGlobalMessage", () => {});
+    vi.stubGlobal("showGlobalConfirm", () => Promise.resolve(true));
+    vi.stubGlobal("showGlobalPrompt", undefined);
   });
 
-  // 提示桩按用例装、用例后卸：直接赋值会把这个全局改脏，
-  // 后面追加的用例只能对着一个死数组断言（表现为「看不到文本」而非响亮失败）。
-  // 用 unstubAllGlobals 而非 delete —— 后者会拆掉 test-setup.ts 装的桩。
+  // 精确还原：只动本 describe 在 beforeEach 装过的那三个键。
+  // 不用 vi.unstubAllGlobals() —— 共享注册表下它清的是**整个 worker** 的桩表，会顺手拆掉别的文件
+  // （或 test-setup）装的桩，那正是 isolate:false 下最难查的一类偶发红。
+  // 也不用 delete —— 那会把 test-setup.ts 装的 showGlobalMessage/Confirm 一并带走，
+  // 后面追加的用例只能对着 undefined 打桩（表现为「看不到文本」而非响亮失败）。
   afterEach(() => {
-    vi.unstubAllGlobals();
+    for (const [key, value] of dialogGlobalsBackup) {
+      if (value === undefined) delete (globalThis as any)[key];
+      else (globalThis as any)[key] = value;
+    }
+    dialogGlobalsBackup = [];
   });
 
   test("导入成功后先刷列表再切到新空间", async () => {
