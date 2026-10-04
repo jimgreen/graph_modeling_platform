@@ -204,11 +204,20 @@ export function createProgrammaticGroupSelected(__appScope: Record<string, any>)
       e.code = "control-failed";
       throw e;
     }
+    // 组合 id 的随机段取自可注入随机源 __appScope.randomSource（缺省即 Math.random，
+    // 逐字保持原行为）。之所以要这条缝：这个 id 不是纯视觉/临时值 ——
+    //   ① 直接作为返回值 groupId 回给 WS control 指令调用方（用户可见输出）；
+    //   ② 经 setGroups 进图元状态，normalizeProjectForBackend 会把它写进落盘/导出工程；
+    //   ③ runtimeSnapshot.buildTreeNodes 取 g.id 作树节点 id，进 /api/v1/runtime 快照。
+    // 故必须可确定化，否则同输入产出不同 groupId，测试只能靠 mock 掩盖。
+    const randomSource = typeof __appScope.randomSource === "function"
+      ? (__appScope.randomSource as () => number)
+      : Math.random;
     const result = createCanvasGroupFromSelection(
       groups,
       currentNodes,
       currentEdges,
-      () => `group-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      () => `group-${Date.now()}-${randomSource().toString(36).slice(2, 6)}`
     );
     if (!result.group) {
       const e: any = new Error("无法组合所选图元。");
