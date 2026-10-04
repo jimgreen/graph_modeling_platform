@@ -123,6 +123,99 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/**
+ * E 文件一行按「空格分隔的 token」切开，并记下每段的**显示宽度**区间。
+ * 宽字符与导出端同规则计宽（model-eexport.ts 的 eFileCellDisplayWidth：5/3）。
+ */
+const E_FILE_WIDE_CHAR = /[ᄀ-ᅟ〈〉⺀-꓏가-힣豈-﫿︐-︙︰-﹯＀-｠￠-￦]/u;
+
+function eFileDisplayTokens(line: string): Array<{ start: number; end: number; text: string }> {
+  const tokens: Array<{ start: number; end: number; text: string }> = [];
+  let display = 0;
+  let start = 0;
+  let text = "";
+  for (const char of line) {
+    if (char === " ") {
+      if (text) {
+        tokens.push({ start, end: display, text });
+        text = "";
+      }
+      display += 1;
+      continue;
+    }
+    if (!text) start = display;
+    text += char;
+    display += E_FILE_WIDE_CHAR.test(char) ? 5 / 3 : 1;
+  }
+  if (text) tokens.push({ start, end: display, text });
+  return tokens;
+}
+
+/**
+ * 解析 E 导出文本的各段：表头列名 + 每行的「列名 -> 值」。
+ *
+ * **单元格值必须按列头偏移归位，绝不能按位置切分。** 导出时单元格按列宽左对齐填充，
+ * 空单元格是一串空格（model-eexport.ts 的 eFilePadCell + E_FILE_COLUMN_GAP=4）：
+ * 数据行里只要出现一个空单元格，按空白 split 出来的 token 数就少一格、
+ * 令其后每一格左移一列，读出来的值串到隔壁列去。实测 `# n1 电源A <空> RVF-001`
+ * 被读成 vbase="RVF-001"、rdf_id="" —— 与 src/encoding/rdf-id-export.test.ts 里
+ * 「把 dms_def_node 的 rdf_id 读成 basevoltage 的 id」是同一个位移。
+ *
+ * 表头行只由 ASCII 列名与空格组成，故「列名所在的显示偏移」就是该列单元格内容在数据行里
+ * 的显示偏移，按偏移归位即不受空单元格影响。列区间取到**下一列列名的起点**（末列取到行尾）：
+ * 导出端对填充量做过 Math.round，含宽字符的数据行相对表头有 <1 列/列的累积漂移，
+ * 区间若只取到本列列名末尾就会把漂移出去的 token 误判成「未对齐」。
+ * 残留风险是漂移越过整个 4 列列距（需一行里有 8 个以上宽字符列），那种情况下 token 会被
+ * 归到相邻列 —— 而调用处逐格与 buildEDeviceRecords 比对，正是这层兜底。
+ */
+function parseESectionsForTest(text: string): Record<string, { columns: string[]; rows: Array<Record<string, string>> }> {
+  const sections: Record<string, { columns: string[]; rows: Array<Record<string, string>> }> = {};
+  const sectionPattern = /<([^/][^>]*)>\s*\r?\n@ ([^\r\n]+)\r?\n([\s\S]*?)<\/\1>/g;
+  for (const match of text.matchAll(sectionPattern)) {
+    const [, sectionName, header, body] = match;
+    const columns = header.trim().split(/\s+/);
+    const headerTokens = eFileDisplayTokens(header);
+    // 第 i 列的区间 = [列名 i 起点, 列名 i+1 起点)；末列延伸到行尾。
+    const columnSpans = headerTokens.map((token, index) => ({
+      start: token.start,
+      end: headerTokens[index + 1]?.start ?? Number.POSITIVE_INFINITY
+    }));
+    const rows = body.split("\n")
+      .filter((line) => line.trim().startsWith("#"))
+      .map((line) => {
+        const values = eFileDisplayTokens(line.replace(/^#/, ""));
+        const row: Record<string, string> = Object.fromEntries(columns.map((column) => [column, ""]));
+        values.forEach((token, index) => {
+          const columnIndex = columnSpans.findIndex((span) => token.start >= span.start && token.start < span.end);
+          row[columns[columnIndex < 0 ? index : columnIndex]] = token.text;
+        });
+        return row;
+      });
+    sections[sectionName] = { columns, rows };
+  }
+  return sections;
+}
+
+/**
+ * 按与导出端同形的排版造一段 E 段文本（列宽左对齐填充、列间距 4 空格、整行 trimEnd），
+ * 专供解析器自测 —— 只用 ASCII，避免把 fixture 的填充算错成生产端的宽字符规则。
+ */
+function buildESectionForTest(sectionName: string, columns: string[], rows: string[][]) {
+  const widths = columns.map((column, index) =>
+    Math.max(column.length, ...rows.map((row) => (row[index] ?? "").length)));
+  const formatRow = (prefix: "@" | "#", cells: string[]) =>
+    [prefix, ...cells.map((cell, index) => {
+      const value = cells[index] ?? "";
+      return `${value}${" ".repeat(Math.max(0, widths[index] - value.length))}`;
+    })].join("    ").trimEnd();
+  return [
+    `<${sectionName}>`,
+    formatRow("@", columns),
+    ...rows.map((row) => formatRow("#", row)),
+    `</${sectionName}>`
+  ].join("\n");
+}
+
 describe("project tree model type icons", () => {
   test("uses a distinct semantic icon for every model type and a safe legacy fallback", () => {
     expect([
@@ -6244,18 +6337,12 @@ describe("导出 E 文件与国网 E 格式模板一致性", () => {
       }
     }
 
-    // 验证所有含 ist 列的表，ist=1（只有一个厂站）
-    const istSectionPattern = /<(\w+)[^>]*>\s*\r?\n@ ([^\r\n]+)\r?\n([\s\S]*?)<\/\1>/g;
-    let istSectionMatch;
-    while ((istSectionMatch = istSectionPattern.exec(eFileText)) !== null) {
-      const [, sectionName, header, body] = istSectionMatch;
-      const cols = header.trim().split(/\s+/);
-      const istColIdx = cols.indexOf("ist");
-      if (istColIdx < 0) continue;
-      for (const line of body.split("\n")) {
-        if (!line.trim().startsWith("#")) continue;
-        const values = line.replace(/^#\s*/, "").trim().split(/\s+/);
-        expect(values[istColIdx], `${sectionName}.ist`).toBe("1");
+    // 验证所有含 ist 列的表，ist=1（只有一个厂站）。同样走 parseESectionsForTest 按列名取值：
+    // 位置切分在行内出现空单元格时会把 ist 之后的列整体左移（见该函数注释）。
+    for (const [sectionName, section] of Object.entries(parseESectionsForTest(eFileText))) {
+      if (!section.columns.includes("ist")) continue;
+      for (const row of section.rows) {
+        expect(row.ist, `${sectionName}.ist`).toBe("1");
       }
     }
 
@@ -6266,22 +6353,24 @@ describe("导出 E 文件与国网 E 格式模板一致性", () => {
 });
 
 describe("E 文件查看/编辑弹窗头表补全", () => {
-  function parseESectionsForTest(text: string): Record<string, { columns: string[]; rows: Array<Record<string, string>> }> {
-    const sections: Record<string, { columns: string[]; rows: Array<Record<string, string>> }> = {};
-    const sectionPattern = /<([^/][^>]*)>\s*\r?\n@ ([^\r\n]+)\r?\n([\s\S]*?)<\/\1>/g;
-    for (const match of text.matchAll(sectionPattern)) {
-      const [, sectionName, header, body] = match;
-      const columns = header.trim().split(/\s+/);
-      const rows = body.split("\n")
-        .filter((line) => line.trim().startsWith("#"))
-        .map((line) => {
-          const values = line.replace(/^#\s*/, "").trim().split(/\s+/);
-          return Object.fromEntries(columns.map((column, index) => [column, values[index] ?? ""]));
-        });
-      sections[sectionName] = { columns, rows };
-    }
-    return sections;
-  }
+  // 守卫的检测逻辑自测：位置切分（split(/\s+/) + values[index]）在这行会把 RVF-001
+  // 读成 vbase、rdf_id 读成空 —— 与 rdf-id-export.test.ts 记录的「rdf_id 读成 basevoltage 的
+  // id」同一个位移。故此断言必须转红，否则本文件的头表比对仍然是瞎的。
+  test("段解析器：行内空单元格不导致其后各列左移", () => {
+    const parsed = parseESectionsForTest(buildESectionForTest(
+      "ACNode",
+      ["id", "name", "vbase", "rdf_id", "ist"],
+      [
+        ["n1", "SOURCE-A", "35", "RDF-1", "1"],
+        ["n2", "SOURCE-B", "", "RDF-2", "1"],
+        ["n3", "", "", "", "1"]
+      ]
+    ));
+    expect(parsed.ACNode.columns).toEqual(["id", "name", "vbase", "rdf_id", "ist"]);
+    expect(parsed.ACNode.rows[0]).toEqual({ id: "n1", name: "SOURCE-A", vbase: "35", rdf_id: "RDF-1", ist: "1" });
+    expect(parsed.ACNode.rows[1]).toEqual({ id: "n2", name: "SOURCE-B", vbase: "", rdf_id: "RDF-2", ist: "1" });
+    expect(parsed.ACNode.rows[2]).toEqual({ id: "n3", name: "", vbase: "", rdf_id: "", ist: "1" });
+  });
 
   test("头表记录与导出文件逐值一致，且按导出顺序排列", () => {
     const templateText = readFileSync(new URL("../public/e-templates/sgcc.e", import.meta.url), "utf8");
