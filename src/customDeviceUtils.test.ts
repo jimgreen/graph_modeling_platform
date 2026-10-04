@@ -655,7 +655,7 @@ describe("electric generation device library classification", () => {
     ]));
   });
 
-  test("keeps every built-in business definition effective after an unmarked empty shared override", () => {
+  test("keeps every built-in business definition effective after an unmarked empty shared override (every declared enName is still present, not merely a non-empty table)", () => {
     for (const template of DEVICE_LIBRARY) {
       const declaredDefinitions = resolveEffectiveTemplateParameterDefinitions(template, DEVICE_LIBRARY);
       if (template.custom || declaredDefinitions.length === 0) continue;
@@ -835,7 +835,7 @@ describe("electric generation device library classification", () => {
     expect(nonEmpty[sharedKey].measurementDefinitionsIntent).toBeUndefined();
   });
 
-  test("keeps every built-in business definition effective after an unmarked empty shared override", () => {
+  test("keeps every built-in business definition effective after an unmarked empty shared override (exact-enName check kept alongside the measurement table recovery contract)", () => {
     for (const template of DEVICE_LIBRARY) {
       const declaredDefinitions = resolveEffectiveTemplateParameterDefinitions(template, DEVICE_LIBRARY);
       if (template.custom || declaredDefinitions.length === 0) continue;
