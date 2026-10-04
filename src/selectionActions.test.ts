@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   assignPermanentDeviceIndex,
   calculateNodeVisualBounds,
@@ -44,10 +44,12 @@ import {
   createAutoAlignQualityReport,
   createAutoAlignRouteQualityIndex,
   createCanvasGroupFromSelection,
+  defaultCanvasGroupId,
   distributeNodeLayoutUnits,
   dissolveSelectedCanvasGroups,
   expandSelectionByGroups,
   mergeContainerLayoutUnits,
+  randomSource,
   reorderItemsByDisplayLayer,
   resolveCanvasSelection,
   resolveCanvasDeleteAction,
@@ -1441,6 +1443,124 @@ describe("剪贴板副本剥离容器归属", () => {
     expect(container.params.is_gateway).toBe("0");
     // 原剪贴板(存量模板内容)不被改写:模板可反复使用
     expect(clipboard.nodes[0].containerId).toBe("c1");
+  });
+});
+
+// ─── 组合副本 id 的随机源(收敛为可注入依赖) ────────────────────────────────
+// cloneCanvasClipboard 的 createGroupId 默认实现原本是内联
+// `group-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`。
+// 这个随机值产出的就是 ModelGroup.id —— 经 setGroups 进图元状态，再由
+// normalizeProjectForBackend 原样带走，落进保存的方案文件/导出包，
+// 属"进输出与持久化状态"，不是视觉抖动，故收敛成 defaultCanvasGroupId(random)。
+describe("组合副本 id 的随机源可注入", () => {
+  // 0.123456789 的 36 进制是 "0.4fzzzxjylrx"，slice(2, 6) = "4fzz"。
+  // 刻意选位数多的值：0.5 → "0.i"、slice 再窄一档也还是 "i"，那种输入下
+  // slice 边界类变异是绿的，等于没测。字面量写死而非在用例里重算表达式，
+  // 免得测试跟实现复制粘贴同一个公式、一起错。
+  const FIXED_RANDOM = 0.123456789;
+  const FIXED_SUFFIX = "4fzz";
+  const FIXED_NOW = Date.parse("2026-01-02T03:04:05.000Z");
+
+  // 两个成员的组合（克隆时 nodeIds+edgeIds >= 2 才保留该组合）
+  const groupedClipboard = () => {
+    const first = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const second = createDefaultNode("ac-load", { x: 220, y: 100 });
+    return buildCanvasClipboard(
+      [first, second],
+      [],
+      [],
+      [first.id, second.id],
+      [],
+      [{ id: "group-src", name: "组合1", nodeIds: [first.id, second.id], edgeIds: [] }]
+    );
+  };
+
+  test("默认 createGroupId 就是 defaultCanvasGroupId:钉住时钟与 Math.random 后 id 逐字可复现", () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, "random").mockReturnValue(FIXED_RANDOM);
+    try {
+      vi.setSystemTime(FIXED_NOW);
+      const clipboard = groupedClipboard();
+      const first = cloneCanvasClipboard(clipboard, { x: 500, y: 300 }, () => "node-1", () => "unused-edge");
+      const second = cloneCanvasClipboard(clipboard, { x: 500, y: 300 }, () => "node-1", () => "unused-edge");
+
+      // 走的确实是默认分支(未传 createGroupId)，且随机项逐字来自被钉住的值
+      expect(first.groups.map((group) => group.id)).toEqual([`group-${FIXED_NOW}-${FIXED_SUFFIX}`]);
+      expect(second.groups[0].id).toBe(first.groups[0].id);
+    } finally {
+      random.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  test("defaultCanvasGroupId 注入固定随机源:同一输入两次调用逐字相同,且随机源是被调用的那个", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(FIXED_NOW);
+      const calls: number[] = [];
+      const fixed = () => {
+        calls.push(calls.length);
+        return FIXED_RANDOM;
+      };
+      const first = defaultCanvasGroupId(fixed);
+      const second = defaultCanvasGroupId(fixed);
+      expect(first).toBe(`group-${FIXED_NOW}-${FIXED_SUFFIX}`);
+      expect(second).toBe(first);
+      // 注入的源确实被走到（不是被忽略后回落 Math.random）
+      expect(calls).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("注入固定随机源时,cloneCanvasClipboard 产出的组合 id 落在 groups 里并可复现", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(FIXED_NOW);
+      const clipboard = groupedClipboard();
+      let nodeSeq = 0;
+      const clone = () => cloneCanvasClipboard(
+        clipboard,
+        { x: 500, y: 300 },
+        () => `node-${++nodeSeq}`,
+        () => "unused-edge",
+        () => defaultCanvasGroupId(() => FIXED_RANDOM)
+      );
+      const first = clone();
+      const second = clone();
+
+      // 被断言的对象正是随机值落地处：groups[].id 会随方案持久化/导出
+      expect(first.groups).toHaveLength(1);
+      expect(first.groups[0].id).toBe(`group-${FIXED_NOW}-${FIXED_SUFFIX}`);
+      expect(second.groups[0].id).toBe(first.groups[0].id);
+      expect(first.groups[0].nodeIds).toEqual(["node-1", "node-2"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("默认实现仍是 Math.random:不注入随机源时同一毫秒内两次调用产出不同 id", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(FIXED_NOW);
+      const first = defaultCanvasGroupId();
+      const second = defaultCanvasGroupId();
+      // 钉住时钟后，两次只剩随机项可区分 —— 若随机源被换成常量，这两条就相等了
+      expect(first).toMatch(/^group-\d{13}-[0-9a-z]{4}$/);
+      expect(second).toMatch(/^group-\d{13}-[0-9a-z]{4}$/);
+      expect(first).not.toBe(second);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("randomSource 是 Math.random 的转发:钉住全局 Math.random 时随机项随之改变", () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(FIXED_RANDOM);
+    try {
+      expect(randomSource()).toBe(FIXED_RANDOM);
+    } finally {
+      random.mockRestore();
+    }
   });
 });
 
