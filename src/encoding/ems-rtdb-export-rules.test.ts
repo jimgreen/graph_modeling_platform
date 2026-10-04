@@ -122,19 +122,22 @@ describe.skipIf(!fs.existsSync(TIANFU_PROJECT))("XX实时库模板导出规则",
     const guCells = gu.data[0].slice(1).split("  ").map((c) => c.trim()).filter(Boolean);
     expect(guCells[guIdx.get("st_id")!]).toBe("113997365567815681");
     expect(guCells[guIdx.get("bv_id")!]).toBeTruthy();
-    // transformerwinding.tr_id 应指向 powertransformer 第一行
+    // transformerwinding.tr_id 应指向 powertransformer 第一行。
+    // 列的存在性由受版本跟踪的模板头保证（public/e-templates/ems_rtdb.e 的 transformerwinding
+    // 段 @ 行含 tr_id），untracked 的工程样本只影响行值、不影响列集 —— 所以这里必须**无条件断言**：
+    // 原来的 `if (twIdx.has("tr_id"))` 恒为真（实测列集恒含 tr_id），是一个永不生效的假可选分支；
+    // 一旦模板真的删掉该列，它会让断言静默消失而不是报错。
     const tw = sectionData("transformerwinding")!;
     const twIdx = new Map(tw.cols.map((c, i) => [c, i]));
     const twCells = tw.data[0].slice(1).split("  ").map((c) => c.trim()).filter(Boolean);
-    if (twIdx.has("tr_id")) {
-      expect(twCells[twIdx.get("tr_id")!]).toBe("117093590311632897");
-    }
-    // substation.subarea_id 应指向 subcontrolarea 第一行
+    expect(twIdx.has("tr_id"), "transformerwinding 必须有 tr_id 列").toBe(true);
+    expect(twCells[twIdx.get("tr_id")!]).toBe("117093590311632897");
+    // substation.subarea_id 应指向 subcontrolarea 第一行。同理，模板头 substation 段 @ 行含
+    // subarea_id，列集同样与样本无关，故去掉恒真的 `if (stIdx.has("subarea_id"))`。
     const st = sectionData("substation")!;
     const stIdx = new Map(st.cols.map((c, i) => [c, i]));
-    if (stIdx.has("subarea_id")) {
-      const stCells = st.data[0].slice(1).split("  ").map((c) => c.trim()).filter(Boolean);
-      expect(stCells[stIdx.get("subarea_id")!]).toBe("113715890591105025");
-    }
+    expect(stIdx.has("subarea_id"), "substation 必须有 subarea_id 列").toBe(true);
+    const stCells = st.data[0].slice(1).split("  ").map((c) => c.trim()).filter(Boolean);
+    expect(stCells[stIdx.get("subarea_id")!]).toBe("113715890591105025");
   });
 });
