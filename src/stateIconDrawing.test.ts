@@ -1,3 +1,20 @@
+// APP_STATIC_SCOPE 半求值 namespace：本文件为何要显式传 resolveTemplateComponentLibrary
+//
+// appStaticScope.ts:53 用 `Object.assign({}, …, CustomDeviceUtilsScope, …)` 在**求值那一刻**
+// 把 customDeviceUtils 的 namespace 拷成普通对象。而这三个站点构成一个环：
+//   appStaticScope.ts:46 → customDeviceUtils.ts:34 → App.tsx:541 → appStaticScope.ts
+// 环的另一端 App.tsx:538 也直接 import 了 customDeviceUtils。
+// 于是「谁先进模块图」决定结果：
+//   入口是 appStaticScope → customDeviceUtils 先求值完 → Object.assign 拷到完整 namespace（好）
+//   入口是 customDeviceUtils → customDeviceUtils 半求值 → App → appStaticScope → 拷到半成品（坏）
+// 后者下 APP_STATIC_SCOPE 会永久缺 `resolveTemplateComponentLibrary`，调用点
+// appDeviceDefinitionFactories.tsx:4949 报 "is not a function"（不是 undefined）。
+//
+// isolate:true 下每个文件全新注册表、入口固定为本文件的 `./stateIconDrawing`，所以一直绿；
+// 关掉 isolate 后入口由「同 worker 里谁先跑」决定 → 每次红的文件名单都不一样。
+// 本文件的 8 处 `...APP_STATIC_SCOPE` 里有 3 处会走到 4949，它们显式补回该 key。
+// 补的是同一个函数对象（import 自 ./customDeviceUtils，最终来自 export/device-definition-shared.ts:48），
+// 与 isolate 态下 APP_STATIC_SCOPE 里那个是同一个引用，所以断言含义不变。
 import { describe, expect, test } from "vitest";
 import { DOMParser as XmlDomParser, XMLSerializer as XmlSerializer } from "@xmldom/xmldom";
 
@@ -1273,6 +1290,10 @@ describe("default device state draft rows", () => {
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
       ...APP_STATIC_SCOPE,
       ...DEFINITION_MEASUREMENT_DRAFT_SCOPE,
+      // 显式补回真实实现，理由见本文件「APP_STATIC_SCOPE 半求值 namespace」处的说明：
+      // 缺了这个 key，createLoadDefinitionTemplateDraft 会在 appDeviceDefinitionFactories.tsx:4949
+      // 抛 "resolveTemplateComponentLibrary is not a function"。本文件另有 4 条用例早就这么写了。
+      resolveTemplateComponentLibrary,
       setCollapsedDefinitionComponentLibraries: (updater: any) => {
         updater([]);
       },
@@ -1322,6 +1343,8 @@ describe("default device state draft rows", () => {
       const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
         ...APP_STATIC_SCOPE,
         ...DEFINITION_MEASUREMENT_DRAFT_SCOPE,
+        // 同上：显式补回真实实现，不依赖 APP_STATIC_SCOPE 恰好带这个 key
+        resolveTemplateComponentLibrary,
         setCollapsedDefinitionComponentLibraries: (updater: any) => {
           updater([]);
         },
@@ -1367,6 +1390,8 @@ describe("default device state draft rows", () => {
       imageAssets: {
         staleFallback: staleFallbackImage
       },
+      // 同上：显式补回真实实现，不依赖 APP_STATIC_SCOPE 恰好带这个 key
+      resolveTemplateComponentLibrary,
       createDefinitionStateDraftRows: () => [
         createStateDraftRow({ value: "0", name: "打开/开断", image: staleFallbackImage }),
         createStateDraftRow({ value: "1", name: "闭合", imageAssetId: "staleFallback" })
