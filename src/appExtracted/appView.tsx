@@ -1921,7 +1921,11 @@ export function renderAppView(__appScope: Record<string, any>) {
       eDeviceDefinitionTemplateFields,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // 依赖数组有意不与 exhaustive-deps 的机械结论对齐，两处偏离都无害：
+    // ① labels / resolveTemplateComponentLibrary 是模块级稳定引用（PARAM_LABELS 常量与
+    //    customDeviceUtils 的纯函数），入列只会多一次比较，不会改变派生结果；
+    // ② eDeviceInterfaceLoadedTemplateName 回调里并不读取，保留它仅为模板来源切换时
+    //    兜底重算一次（多算不改变结果），删掉反而会少一次派生。
     [libraryTemplates, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, eDeviceInterfaceLoadedTemplateName]
   );
   // 段 -> 接口定义索引：E 文件编辑器算段标签用（与导出侧同一个索引构造 + 同一个 eOutputSectionName 判定）
