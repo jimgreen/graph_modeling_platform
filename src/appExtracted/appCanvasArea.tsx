@@ -377,7 +377,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     isBusNode, isLineSegmentBusNode, isStaticNode, isRoutableLineDeviceKind,
     canConnectTerminals,
     isCanvasGraphicContextMenuTarget,
-    isStaticButtonEnabledForNode, isStaticBoxLikeNode,
+    isStaticButtonEnabledForNode,
     resolveNodeStateVisual, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint,
     sameOptionalPoint, snapSingleTerminalAnchorToNearestSide, pointsToOrthogonalPath,
     routableLineDeviceCanvasPoints, routableLineDeviceRenderLocalPoints,
@@ -395,7 +395,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     SCALE_HANDLE_CONFIGS, GROUP_SCALE_HANDLE_CONFIGS,
     Copy, Grid2X2, Group, Layers, Layers2, LocateFixed, MapIcon,
     Maximize2, MemoDeviceGlyph, Minus, Plus, RotateCcw, Route,
-    ArrowUpRight, ScanSearch, Scissors, Shrink, Trash2, Type, Ungroup, X,
+    ArrowUpRight, ScanSearch, Scissors, Shrink, Trash2, Type, Ungroup,
     SvgMarkupChunk,
     nodeById, detailedViewportNodes, nodeImage, nodeForegroundImage,
     nodeGeometryTransform, nodeImageContentTransform,
@@ -435,7 +435,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     dragging, bindCanvasNodeElement, staticButtonVisual,
     centerSelectedViewportTitle, fitSelectedViewportTitle,
     routableLineEndpointHandles, routableLineEndpointDragColor,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    // 解构块内不留未使用字段；原先此处有一条 ESLint 抑制指令，但本仓库未安装 ESLint、无配置文件，压制不到任何东西，已删除。
   } = scope;
 
   const routableLineRouteEventPoint = (event: React.MouseEvent) => {
