@@ -62,12 +62,36 @@ describe("适配视图扣掉两侧面板让位", () => {
     expect(withPanels.width / withPanels.height).toBeCloseTo(bounds.width / bounds.height, 5);
   });
 
+  // 下面两条 toBeGreaterThanOrEqual(0) 经变异实测**有鉴别力**，不需要动：
+  // x / y 是 (bounds - viewBox) / 2 的居中量，确实会变负 —— 符号翻转（变异①/②）、
+  // 以及 scale 算小导致 viewBox 比画布大（变异⑤）都让这两行转红（见文件末尾汇总）。
+  // 也不能收紧成 toBeGreaterThan(0)：0 是**合法输出**，画布正好铺满可用区时
+  // scale === 1、居中量就是 0（下面「正好铺满」用例就是这么构造的）。
+  // 真正缺的是**居中语义**：光有「>= 0」守不住，把 x / y 抹成 0 这四条断言照样全绿
+  // （实测变异③/④ 在加下面两行之前是 GREEN）。而「把画布摆在可用区正中」正是 fit 的意义，
+  // 所以补上居中量本身的关系式。width / height 取自返回值而非写死数字：
+  // 关系式不依赖夹具的具体数值。
   test("viewBox 始终落在画布范围内", () => {
     const viewBox = fitWholeCanvasViewBox(bounds, frame, { left: 308, right: 340 });
     expect(viewBox.x).toBeGreaterThanOrEqual(0);
     expect(viewBox.y).toBeGreaterThanOrEqual(0);
     expect(viewBox.x + viewBox.width).toBeLessThanOrEqual(bounds.width + 1e-6);
     expect(viewBox.y + viewBox.height).toBeLessThanOrEqual(bounds.height + 1e-6);
+    expect(viewBox.x).toBeCloseTo((bounds.width - viewBox.width) / 2, 5);
+    expect(viewBox.y).toBeCloseTo((bounds.height - viewBox.height) / 2, 5);
+  });
+
+  // 夹具：可用区正好等于画布（宽 1000 - 0 - 0 = 1000；高 500 - 16×2 - 4 = 464 = bounds.height）
+  // → scale === 1 → viewBox 与画布等大、居中量合法地为 0。
+  // 这条用例的价值是**证明 0 是合法输出**，因此上面那两条断言的下界必须是 >= 而不是 >；
+  // 它本身不参与那两条断言的判定，所以把 >= 改成 > 时它仍然绿（实测：1 passed）。
+  test("画布正好铺满可用区时 viewBox 与画布重合（居中量合法地为 0）", () => {
+    const exactBounds = { width: 1000, height: 464 };
+    const viewBox = fitWholeCanvasViewBox(exactBounds, { clientWidth: 1000, clientHeight: 500 }, { left: 0, right: 0 });
+    expect(viewBox.x).toBe(0);
+    expect(viewBox.y).toBe(0);
+    expect(viewBox.width).toBe(exactBounds.width);
+    expect(viewBox.height).toBe(exactBounds.height);
   });
 });
 
