@@ -20,6 +20,10 @@ const MEASURED_RUNS = 21; // 取中位数
 const NODES_PER_DIAGRAM = 2000; // 模拟一个 2000 节点的方案
 const REPEAT_PER_RUN = 200; // 每次测量重复整张图，放大到 ~40 万次查找
 
+/** 统一前缀：结果报告走 stdout，便于 grep/重定向；诊断走 stderr（见 BENCH_DIAG_PREFIX） */
+const BENCH_PREFIX = "[bench:device-template-lookup]";
+const BENCH_DIAG_PREFIX = "[bench:device-template-lookup:diag]";
+
 const ALL_KINDS: DeviceKind[] = DEVICE_LIBRARY.map((template) => template.kind);
 
 /** 旧实现：与 model.ts 当前的 DEVICE_LIBRARY.find(...) 完全一致 */
@@ -102,14 +106,15 @@ function report(title: string, workload: string[]) {
 
   const nsPer = (ms: number, count: number) => ((ms * 1e6) / count).toFixed(1);
 
-  console.log(`\n=== ${title} ===`);
-  console.log(`library entries: ${DEVICE_LIBRARY.length} | lookups/run: ${lookupsPerRun.toLocaleString()} | runs: ${MEASURED_RUNS} (median)`);
-  console.log(`  linear .find : ${linearMs.toFixed(2)} ms  (${nsPer(linearMs, lookupsPerRun)} ns/op)`);
-  console.log(`  map    .get  : ${mapMs.toFixed(2)} ms  (${nsPer(mapMs, lookupsPerRun)} ns/op)`);
-  console.log(`  speedup      : ${(linearMs / mapMs).toFixed(1)}x faster`);
-  console.log(`  real getTemplate() (current build): ${realMs.toFixed(2)} ms`);
+  console.log(`\n${BENCH_PREFIX} ${title}`);
+  console.log(`${BENCH_PREFIX} library entries: ${DEVICE_LIBRARY.length} | lookups/run: ${lookupsPerRun.toLocaleString()} | runs: ${MEASURED_RUNS} (median)`);
+  console.log(`${BENCH_PREFIX}   linear .find : ${linearMs.toFixed(2)} ms  (${nsPer(linearMs, lookupsPerRun)} ns/op)`);
+  console.log(`${BENCH_PREFIX}   map    .get  : ${mapMs.toFixed(2)} ms  (${nsPer(mapMs, lookupsPerRun)} ns/op)`);
+  console.log(`${BENCH_PREFIX}   speedup      : ${(linearMs / mapMs).toFixed(1)}x faster`);
+  console.log(`${BENCH_PREFIX}   real getTemplate() (current build): ${realMs.toFixed(2)} ms`);
 }
 
-console.log(`node ${process.version} | DEVICE_LIBRARY kinds: ${ALL_KINDS.length}`);
+// 环境信息（node 版本 / 库规模）不是测量结果，只作参照 → stderr，避免污染 stdout 的报告流
+console.error(`${BENCH_DIAG_PREFIX} node ${process.version} | DEVICE_LIBRARY kinds: ${ALL_KINDS.length}`);
 report("All-hit workload (typical diagram)", buildWorkload(NODES_PER_DIAGRAM, 0));
 report("20% miss workload (inactive-layer / unknown kinds)", buildWorkload(NODES_PER_DIAGRAM, 0.2));
