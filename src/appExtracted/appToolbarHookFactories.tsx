@@ -1853,7 +1853,6 @@ export function createAppHookCallback45(__appScope: Record<string, any>) {
       observer?.disconnect();
     };
     // 事件处理函数只读取 ref 中的最新 viewBox；监听器不需要随每次渲染重建。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   };
 }
 
@@ -2803,7 +2802,6 @@ export function createAppHookCallback77(__appScope: Record<string, any>) {
       window.removeEventListener("online", handleOnline);
     };
     // 启动失败时持续重试，避免后端启动稍晚导致当前标签页永久显示空模型库。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   };
 }
 
@@ -2834,7 +2832,6 @@ export function createAppHookCallback78(__appScope: Record<string, any>) {
         // 后台不可用时继续使用浏览器本地配色缓存。
       });
     // 仅在启动时从后台拉取一次，避免后台配置刷新打断当前操作。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   };
 }
 
@@ -2889,7 +2886,6 @@ export function createAppHookCallback79(__appScope: Record<string, any>) {
         // 后台不可用时继续使用浏览器本地图元库缓存。
       });
     // 仅在启动时从后台拉取一次，避免后台定义刷新打断当前编辑。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   };
 }
 
@@ -2917,7 +2913,6 @@ export function createAppHookCallback80(__appScope: Record<string, any>) {
         // 后台不可用时继续使用浏览器本地量测配置缓存。
       });
     // 仅在启动时从后台拉取一次，避免后台配置刷新打断当前操作。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   };
 }
 
@@ -3033,7 +3028,9 @@ export function createAppHookCallback84(__appScope: Record<string, any>) {
       void refreshImageFolders();
     }
     void refreshImagesForFolder(activeImageFolderId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // 依赖只取决定「拉哪个文件夹」的 activeImageFolderId 与 imageTarget。
+    // 其余依赖（refreshImagesForFolder 等）随 __appScope 每次渲染重建，若纳入依赖会导致每帧重复拉取；
+    // 而这些函数体只用到稳定的 setState 与模块级纯函数 imageAssetsToMap，故不追踪其身份。
   };
 }
 
