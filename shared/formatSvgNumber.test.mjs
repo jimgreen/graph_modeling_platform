@@ -116,3 +116,120 @@ describe("输出可直接用作 SVG 属性值", () => {
     expect(attr).toBe('x="0" y="12.5"');
   });
 });
+
+// 以下输入全部**不是** JS number，一律走源码第一行 `Number(value)` 的 ToNumber 转换。
+//
+// 此前该转换面只有 null / undefined / `abc` / `{}` 顺带经过（见首个 describe），
+// 且只断言「归 0」这一个结果，**零断言覆盖**。缺口在于：哪些输入其实转换得出
+// 合法数字，从未被钉住。
+//
+// ## 各条断言的判别力（副本上注入变异实测，勿凭猜）
+//
+//   `Number(value)` → `Number.parseFloat(value)`：本块 4 条转红（布尔 / 对象与数组 /
+//     进制前缀串 / 非法字符串）。parseFloat("0x10")===0、parseFloat("12abc")===12、
+//     parseFloat(true)===NaN，三处都被抓。
+//   `Number(value)` → 直接用 `value`（删掉包装）：本块 5 条转红。
+//   `Number(value)` → `value * 1`：**只有 BigInt 那一条转红**。
+//
+//   最后一条是反直觉的，记在这里免得后人重新踩：`x * 1` 与 `Number(x)` 同为 ToNumber，
+//   对字符串**同样认** 0x / 0b / 0o 前缀。所以下面的「进制前缀串」断言
+//   **不能**区分二者 —— 别把它当成 `Number()` 的防线，它挡的是 parseFloat 和
+//   「删掉包装」这两种改法。
+//
+// 另有两条属于**契约钉桩而非判别项**（实测任何常见变异都转不了红，故如实标注）：
+// 「空类与空值」对 null/空串/空白串，parseFloat 与 Number 同值；「非有限值与负零」
+// 的 NaN 分支由首个 describe 的漂移修复用例先行拦下。保留它们是为了把当前行为写成
+// 可执行的文字契约，而不是为了挡变异。
+describe("Number() 隐式转换面：非 number 输入的实际取值", () => {
+  test("空类与空值：null / undefined / 空串 / 纯空白串 一律归 0", () => {
+    expect(formatSvgNumber(null)).toBe("0");
+    expect(formatSvgNumber(undefined)).toBe("0");
+    expect(formatSvgNumber("")).toBe("0");
+    expect(formatSvgNumber("   ")).toBe("0");
+    expect(formatSvgNumber("\n\t")).toBe("0");
+    // 空白串归 0 来自 Number() 的空串规则，不是本仓自加的守卫；
+    // 保留该行为是为了让「上游传来带 padding 的坐标」静默退化，而不是抛错。
+    // **契约钉桩，非判别项**（见上方变异实测）：这几条与 null/NaN 同归 0，
+    // 本就无法把 Number() 与 parseFloat / `* 1` 区分开。
+  });
+
+  test("布尔：true 转换为 1、false 转换为 0", () => {
+    expect(formatSvgNumber(true)).toBe("1");
+    expect(formatSvgNumber(false)).toBe("0");
+    // `false → "0"` 与 `NaN → "0"` 的**返回值完全相同**，故上方非有限值用例
+    // 无法证明布尔分支被走过；只有 `true → "1"` 才是这条分支的唯一判别项。
+  });
+
+  test("对象与数组：单元素数组按 ToPrimitive 取值，空数组与多元素数组归 0", () => {
+    // Number({}) === NaN → 归 0
+    expect(formatSvgNumber({})).toBe("0");
+    // Number([]) === 0；Number([""]) === Number("") === 0 —— 两者同值但路径不同
+    expect(formatSvgNumber([])).toBe("0");
+    expect(formatSvgNumber([""])).toBe("0");
+    // 单元素数组：ToPrimitive 先 join("")，故 ["5"] 与 [5] 都得到 5
+    expect(formatSvgNumber(["5"])).toBe("5");
+    expect(formatSvgNumber([5])).toBe("5");
+    // 多元素数组 join(",") → "1,2" → NaN → 0，**不会**静默取首元素
+    expect(formatSvgNumber(["1", "2"])).toBe("0");
+  });
+
+  test("进制前缀串：0x10 → 16、0b101 → 5、0o17 → 15", () => {
+    // 这三条能挡住 `Number.parseFloat`（parseFloat("0x10")===0）与「删掉 Number() 包装」
+    // （Number.isFinite("0x10")===false → 归 0）两种改法。
+    // 但**挡不住** `value * 1` —— 乘法同样是 ToNumber，实测仍得 16。
+    expect(formatSvgNumber("0x10")).toBe("16");
+    expect(formatSvgNumber("0b101")).toBe("5");
+    expect(formatSvgNumber("0o17")).toBe("15");
+    // 前缀十六进制带小数点不是合法数值 → NaN → 0。
+    // 注意这条**不判别**：parseFloat("0x10.8") 同样是 0（它在 'x' 处就截断），
+    // 两者同值。写在这里只为钉住「不该把 0x10.8 当成 16.8 解析」。
+    expect(formatSvgNumber("0x10.8")).toBe("0");
+  });
+
+  test("指数、前导符号与首尾空白：Number() 全部吞掉", () => {
+    expect(formatSvgNumber("1e3")).toBe("1000");
+    expect(formatSvgNumber(" 12 ")).toBe("12");
+    expect(formatSvgNumber("+7")).toBe("7");
+    expect(formatSvgNumber("-7")).toBe("-7");
+    // 刻意与「科学计数法**输出**」区分开：这里是**输入** `1e3` 被解析成有限值 1000，
+    // 不产出 `e+` 记号。输出侧 1e21 → "1e+21" 是另一回事，且**刻意不修**
+    // （理由见上文「如实记录：超大值会输出科学计数法」一条）。
+  });
+
+  test("非法字符串：abc / 12abc / 字符串 Infinity 均归 0", () => {
+    expect(formatSvgNumber("abc")).toBe("0");
+    // 部分数值前缀也不合法：parseFloat 能吃下 "12abc"，Number() 不能
+    expect(formatSvgNumber("12abc")).toBe("0");
+    // 字符串 "Infinity" 能被 Number() **成功**解析成 Infinity，再被有限性守卫归 0 ——
+    // 转换成功、随后守卫兜底，与直接传 Infinity 同守卫但不同路径。
+    expect(formatSvgNumber("Infinity")).toBe("0");
+    expect(formatSvgNumber("-Infinity")).toBe("0");
+  });
+
+  test("非有限值与负零：NaN / ±Infinity / -0 / 字符串 -0 全部归 0", () => {
+    expect(formatSvgNumber(NaN)).toBe("0");
+    expect(formatSvgNumber(Infinity)).toBe("0");
+    expect(formatSvgNumber(-Infinity)).toBe("0");
+    expect(formatSvgNumber(-0)).toBe("0");
+    // 字符串 "-0" 先转成 -0 再走 Object.is 判定，与数字 -0 殊途同归
+    expect(formatSvgNumber("-0")).toBe("0");
+    // 取整后落在 -0 的区间（|v| < 5e-6）
+    expect(formatSvgNumber("-0.000001")).toBe("0");
+    // 附注（实测）：源码里 `Object.is(rounded, -0) ? 0 : rounded` 这一层**是冗余的** ——
+    // 因为 `String(-0)` 本就等于 "0"。删掉它本块与既有「负零归零」用例全部照绿。
+    // 即属等价变异，绿是正确结果，别为它硬造断言；要动这层须先改变 String 的取用方式。
+  });
+
+  test("Symbol 会抛 TypeError —— 当前唯一未被归 0 兜住的输入（非有意设计）", () => {
+    // 与上面所有「静默归 0」相反：Number(Symbol) 本身即抛异常，函数无 try/catch。
+    // **不是有意为之**，此处仅把现状钉成契约：若日后补上 try/catch，这条会转红，
+    // 那时应当由改动者显式决定归 0 还是继续抛，而不是被静默改掉。
+    expect(() => formatSvgNumber(Symbol("x"))).toThrow(TypeError);
+    // 反之 BigInt 与 Number 包装对象 Number() 都能正常转换。
+    // **BigInt 这条是 `Number()` 唯一不可替代之处**：实测把 `Number(value)` 换成
+    // `value * 1` 时，本块**只有这一条**会红（`1n * 1` 抛 BigInt 混合运算错误）。
+    // 若日后有人删掉它，本块对 `Number()` vs `* 1` 就彻底零判别力了。
+    expect(formatSvgNumber(1n)).toBe("1");
+    expect(formatSvgNumber(new Number(7))).toBe("7");
+  });
+});

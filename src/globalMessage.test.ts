@@ -473,3 +473,217 @@ describe("globalMessage / 重复关闭只 resolve 一次", () => {
     expect(doc.listeners.get("keydown")?.length ?? 0).toBe(0);
   });
 });
+
+// ─── 非字符串入参 ────────────────────────────────────────────
+//
+// `showGlobalMessage(text: string)` 的类型签名只挡编译期；运行期没有任何 String()
+// 强转，`escapeHtmlToBr` 直接 `text.replace(...)`。因此所有非字符串入参都在
+// 「渲染之前」抛 TypeError —— 不会出现 `[object Object]`，也渲染不出任何东西。
+// 这条是契约，不是巧合：`escapeHtmlToBr` 只对 `replace` 链友好。
+
+/** showGlobalMessage 的形参声明为 string，绕过它才能喂非字符串 */
+const asText = (value: unknown) => value as unknown as string;
+
+function captureThrow(run: () => void): Error | null {
+  try {
+    run();
+    return null;
+  } catch (e) {
+    return e as Error;
+  }
+}
+
+describe("globalMessage / showGlobalMessage 非字符串入参", () => {
+  it("数字、布尔、对象、数组、NaN 一律抛 TypeError，不产生任何消息节点", () => {
+    const cases: Array<[string, unknown]> = [
+      ["数字", 42],
+      ["NaN", Number.NaN],
+      ["布尔", true],
+      ["对象", { a: 1 }],
+      ["数组", [1, 2]]
+    ];
+    for (const [label, value] of cases) {
+      const err = captureThrow(() => mod.showGlobalMessage(asText(value)));
+      expect(err, label).toBeInstanceOf(TypeError);
+      // 抛在 innerHTML 赋值之前 ⇒ 没有任何 html 被写入，更不可能出现 [object Object]
+      expect(body.findAll("global-message-item"), label).toHaveLength(0);
+      expect(JSON.stringify(body.findAll("global-message-item").map((e) => e.htmlHistory)), label).not.toContain("object Object");
+    }
+  });
+
+  it("null 与 undefined 同样抛 TypeError（读取 .replace 时自身为空）", () => {
+    // 与上一条分开：这两者的报错来自「在 null/undefined 上取属性」，而不是调用
+    // 不存在的 replace —— 但对外表现一致（TypeError + 什么都没渲染），
+    // 所以两条用例断言的是同一个对外契约。
+    for (const value of [null, undefined] as const) {
+      const err = captureThrow(() => mod.showGlobalMessage(asText(value)));
+      expect(err).toBeInstanceOf(TypeError);
+      expect(body.findAll("global-message-item")).toHaveLength(0);
+    }
+  });
+
+  it("抛错前容器已建好并留在 body 上，且队列未被污染", () => {
+    // getContainer() 在 escapeHtmlToBr 之前跑（:38 先于 :41），所以一次失败的调用
+    // 会把空容器留在 body 上。这是真实副作用，钉住它以防重构时静默改变。
+    expect(body.findAll("global-message-container")).toHaveLength(0);
+    captureThrow(() => mod.showGlobalMessage(asText(null)));
+    expect(body.findAll("global-message-container")).toHaveLength(1);
+    expect(body.findAll("global-message-container")[0]!.children).toHaveLength(0);
+    // 抛出发生在 queue.push 之前 ⇒ 队列没被塞进半成品，后续消息照常显示。
+    mod.showGlobalMessage("抛错之后仍可显示");
+    expect(body.findAll("global-message-item").map((e) => e.htmlHistory.at(-1))).toEqual(["抛错之后仍可显示"]);
+  });
+
+  it("空串不抛错：渲染成一条空消息，与 undefined 不是同一条路径", () => {
+    // 反面对照：undefined 抛 TypeError（见上），空串走完整渲染链路。
+    // 两者结果必须不同 —— 若哪天加了 `if (!text) return` 这类短路，这条会转红。
+    expect(captureThrow(() => mod.showGlobalMessage(asText(undefined)))).toBeInstanceOf(TypeError);
+    const fresh = installDom();
+    expect(captureThrow(() => mod.showGlobalMessage(""))).toBeNull();
+    const items = fresh.body.findAll("global-message-item");
+    expect(items).toHaveLength(1);
+    expect(items[0]!.htmlHistory.at(-1)).toBe("");
+  });
+});
+
+// ─── removeMessage 重复移除 ─────────────────────────────────
+//
+// removeMessage 是模块私有函数（无 export），签名是 `removeMessage(item: MessageItem)`，
+// **收的是 item 引用而不是 id**。因此「传一个不存在的 id」在公开面上没有入口 ——
+// 唯一能进入 `queue.indexOf(item) === -1` 那条分支的路径就是同一个 item 被移除两次：
+// 点击关闭 + 4 秒超时自动关闭都指向同一个 item 闭包。
+// 下面的用例就是这条分支的观测点：它必须「走完整流程」而不是提前 return。
+
+describe("globalMessage / removeMessage 双触发", () => {
+  it("点击关闭与超时自动关闭同时命中同一 item：不抛错，容器被清空", () => {
+    mod.showGlobalMessage("点一下，再等它自己超时");
+    const item = body.find("global-message-item")!;
+    const removeSpy = vi.spyOn(item, "remove");
+    const addClassSpy = vi.spyOn(item.classList, "add");
+
+    item.dispatch("click");
+    vi.advanceTimersByTime(300);
+    expect(body.findAll("global-message-item")).toHaveLength(0);
+    expect(removeSpy).toHaveBeenCalledTimes(1);
+    expect(item.classList.contains("global-message-leave")).toBe(true);
+
+    // 4 秒后自动关闭的定时器打到同一个 item ⇒ queue.indexOf(item) === -1
+    expect(() => vi.advanceTimersByTime(4000)).not.toThrow();
+    vi.advanceTimersByTime(300);
+
+    // 容器仍然是干净的（不会凭空多出节点）。
+    expect(body.findAll("global-message-item")).toHaveLength(0);
+    expect(item.removed).toBe(true);
+    // 已不在队列里的那次调用没有提前 return：离场 class 被再次加上。
+    expect(addClassSpy.mock.calls.filter((args) => args[0] === "global-message-leave")).toHaveLength(2);
+    // ⚠ 真实行为是 remove 被调了 **2 次**，不是 1 次：removeMessage 没有 openGlobalDialog
+    //   的 `settled` 守卫，每进入一次就排一个新的 setTimeout(…, 300)。
+    //   DOM 结果仍正确（Node.remove() 幂等），代价是一个多余的定时器 + 一次多余的 class 操作。
+    //   这里如实钉住现状；若将来加幂等守卫（与 close 的 settled 同款），本条会转红，属预期。
+    expect(removeSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("双触发打掉的队列条目不会连累后面还在屏幕上的消息", () => {
+    // 变异验证记录：这条是为了让 removeMessage 的 `if (idx >= 0)` 守卫**看得见**。
+    // 早先的写法（双触发后再连发 4 条、断言只剩最后 3 条）在删掉该守卫后仍然全绿 ——
+    // 因为空队列上 splice(-1,1) 是空操作，而被误摘的那条总是排在队首、下一次超限时
+    // 又会第一个被踢掉，误差刚好抵消。必须让「陈旧的那次移除」发生在**队列里还有别的
+    // 消息**的时刻，splice(-1,1) 才会摘掉队尾那条、造成队列少记一条。
+    mod.showGlobalMessage("A");
+    body.find("global-message-item")!.dispatch("click");
+    vi.advanceTimersByTime(300); // t = 300：A 已离场，队列为空，但它的自动关闭定时器还挂着
+
+    vi.advanceTimersByTime(3400); // t = 3700
+    mod.showGlobalMessage("B");
+    mod.showGlobalMessage("C"); // 队列 [B, C]，两者都还在屏幕上
+
+    vi.advanceTimersByTime(600); // t = 4300：A 的自动关闭打到已不在队列的 A
+    expect(body.findAll("global-message-item").map((e) => e.htmlHistory.at(-1))).toEqual(["B", "C"]);
+
+    for (const label of ["D", "E", "F"]) mod.showGlobalMessage(label);
+    vi.advanceTimersByTime(300); // t = 4600：离场动画落地
+    // 上限 3：屏幕上只能留 3 条。
+    // 删掉 `if (idx >= 0)` 后，t=4000 那次陈旧移除会把 C 用 splice(-1,1) 悄悄摘出队列，
+    // 而 C 还在屏幕上 ⇒ 队列少记一条 ⇒ 上限失效 ⇒ 这里会看到 4 条。
+    expect(body.findAll("global-message-item").map((e) => e.htmlHistory.at(-1))).toEqual(["D", "E", "F"]);
+  });
+
+  it("连续两次 showGlobalMessage 是堆叠而非替换", () => {
+    mod.showGlobalMessage("第一条");
+    const first = body.find("global-message-item")!;
+    mod.showGlobalMessage("第二条");
+    const items = body.findAll("global-message-item");
+    expect(items.map((el) => el.htmlHistory.at(-1))).toEqual(["第一条", "第二条"]);
+    // 先来的一条没有被标记离场 ⇒ 两条并存，不是「后一条顶掉前一条」。
+    expect(first.classList.contains("global-message-leave")).toBe(false);
+    expect(first.removed).toBe(false);
+  });
+});
+
+// ─── HTML 文案：安全面 ──────────────────────────────────────
+//
+// showGlobalMessage 走的是 `el.innerHTML = escapeHtmlToBr(text)`（:41）：赋值目标是
+// innerHTML，**唯一的防线就是 escapeHtmlToBr 里的转义**。所以文案里的 HTML 会被当文本
+// 渲染（`<b>x</b>` → `&lt;b&gt;x&lt;/b&gt;`），不是注入面 —— 但这份安全性完全挂在那串
+// replace 上：去掉 `<`/`>` 两条 replace 就会变成注入面，下面那条断言会立刻转红。
+
+describe("globalMessage / HTML 文案按文本渲染", () => {
+  it("提示文本里的 b 标签被转义，不产生可执行的 b 标记", () => {
+    mod.showGlobalMessage("<b>x</b>");
+    const html = body.find("global-message-item")!.htmlHistory.at(-1)!;
+    expect(html).toBe("&lt;b&gt;x&lt;/b&gt;");
+    expect(html).not.toContain("<b>");
+    // 换行仍按原样转成 <br>（唯一被允许进入 innerHTML 的标记来自模块自身，不是文案）
+    mod.showGlobalMessage("a\nb");
+    expect(body.findAll("global-message-item")[1]!.htmlHistory.at(-1)).toBe("a<br>b");
+  });
+});
+
+// ─── 全局弹窗键的还原（跨文件污染防线）─────────────────────
+//
+// 上面的机制说明已记录：installDom 把 window 接到 globalThis 上，而 globalMessage.ts
+// 末尾三行在模块加载期把真弹窗写上这三个键。loadFresh / afterEach / afterAll 三处逐键
+// 还原是本文件对共享全局的责任。
+//
+// 「afterEach 本身」无法在用例内部被观测（它在本用例断言之后才跑）。可观测的是它所
+// 维护的那个不变量：**用例执行期间这三个键持有的是基线 noop，不是真弹窗** ——
+// 一旦三处还原里有任何一处坏掉，真弹窗就会留在共享 globalThis 上被后续文件调到。
+//
+// 变异验证记录（本次补记）：删掉 loadFresh 里那行 restorePopupGlobals → 下面那条转红；
+// 单删 afterEach 里那行 → 全绿。后者不是守卫失效，而是与文件头已记录的「三处并列冗余」
+// 完全一致：本断言的观测窗口在用例体内，loadFresh 每次 import 后就擦，afterEach 那次发生在
+// 断言之后，够不着这条断言。afterEach 的价值是「文件跑完之后」的窗口，由文件头的
+// afterAll 旁证（受害者探针）覆盖，不靠本条。
+
+describe("globalMessage / 全局弹窗键还原", () => {
+  it("用例执行期间三个键是基线 noop 而非真弹窗（真弹窗已从 globalThis 擦掉）", () => {
+    const scope = globalThis as unknown as Record<string, unknown>;
+    for (const key of LEAKED_POPUP_GLOBALS) {
+      expect(scope[key], key).toBe(popupGlobalsBaseline.find(([k]) => k === key)![1]);
+      expect(scope[key], key).not.toBe((mod as unknown as Record<string, unknown>)[key]);
+    }
+    // 基线里 showGlobalPrompt 压根不存在（test-setup 只补了另两个 noop）
+    // ⇒ 还原必须是 delete 而不是塞 undefined，键的存在性本身也是契约。
+    expect("showGlobalPrompt" in scope).toBe(false);
+  });
+
+  it("restorePopupGlobals 逐键还原：被顶掉的键回到基线，原本不存在的键被删掉", () => {
+    const scope = globalThis as unknown as Record<string, unknown>;
+    const fake = () => {};
+    // 模拟一次真泄漏
+    scope.showGlobalMessage = mod.showGlobalMessage;
+    scope.showGlobalConfirm = mod.showGlobalConfirm;
+    scope.showGlobalPrompt = fake;
+    expect(scope.showGlobalMessage).toBe(mod.showGlobalMessage);
+
+    restorePopupGlobals(popupGlobalsBaseline);
+
+    expect(scope.showGlobalMessage).toBe(popupGlobalsBaseline[0]![1]);
+    expect(scope.showGlobalConfirm).toBe(popupGlobalsBaseline[1]![1]);
+    // 基线值为 undefined ⇒ 用 delete 还原成「键不存在」
+    expect("showGlobalPrompt" in scope).toBe(false);
+    // 还原后调基线 noop 不抛（真弹窗会因缺 document 而 ReferenceError）
+    expect(() => (scope.showGlobalMessage as () => void)()).not.toThrow();
+    expect(scope.showGlobalConfirm).toBeTypeOf("function");
+  });
+});

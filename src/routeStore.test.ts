@@ -5,7 +5,7 @@
 //
 // 特别要守的是 seenById 去重表：它是跨查询复用的，只增不减，靠 mark 判新旧。
 // 漏了那条清理，画布长期编辑（临时边反复建删）会无限累积。
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
   buildRouteSpatialIndex,
   createRouteStore,
@@ -207,6 +207,152 @@ describe("routeStore / 空间索引查询", () => {
   it("routeSpatialIndexRenderBounds 对未知 id 返回 null", () => {
     const index = buildRouteSpatialIndex([]);
     expect(routeSpatialIndexRenderBounds(index, "幽灵")).toBeNull();
+  });
+});
+
+// ─── 非法 bucketSize 与退化查询框 ─────────────────────────
+//
+// 桶区间是 `Math.floor(坐标 / bucketSize)` 再逐格 `x += 1` 扫过去的，所以分母一旦非法，
+// 不是「结果算错一点」而是直接把区间毁掉：
+//   bucketSize = 0 → 区间塌成 Infinity~Infinity，`x <= right` 恒真 ⇒ 建索引/查询死循环；
+//   查询框含 ±Infinity → 同样从 -Infinity 爬到 +Infinity，永不收敛。
+// 两条都必须有限时间返回，否则画布一帧就把主线程钉死。
+//
+// ⚠ 这里所有断言都写在修复之后的代码上。修复前用 bucketSize: 0 调 buildRouteSpatialIndex
+// 会真的挂死整个 vitest 进程（连超时都救不回来，只能杀进程），所以不要为了「先红后绿」
+// 把非法 bucketSize 塞进修复前的代码里跑一遍 —— 挂死的推演记录在上面的注释里。
+
+const BUCKET_FALLBACK = 320; // ROUTE_SPATIAL_BUCKET_SIZE（私有常量，测试只能硬写）
+
+const degenerateRoutes = () => [
+  makeRoute("near", [at(10, 10), at(40, 40)]),
+  makeRoute("far", [at(5000, 5000), at(5010, 5010)])
+];
+
+describe("routeStore / 非法 bucketSize", () => {
+  test("bucketSize 为 0 时回落到默认桶宽，查询有限时间返回", () => {
+    // 修复前：range 全是 Infinity，addRouteSpatialEntry 的双层 for 永不退出。
+    const index = buildRouteSpatialIndex(degenerateRoutes(), 0);
+    expect(index.bucketSize).toBe(BUCKET_FALLBACK);
+    // 桶键必须有限，且确实覆盖了坐标所在的那几格 —— 不能只是「不挂」
+    expect(index.routeBucketKeysById.get("near")).toEqual(expect.arrayContaining(["0:0"]));
+    expect(edgeIds(queryRouteSpatialIndex(index, bounds(-100, -100, 100, 100)))).toEqual(["near"]);
+    expect(edgeIds(queryRouteSpatialIndex(index, bounds(4900, 4900, 5100, 5100)))).toEqual(["far"]);
+  });
+
+  test("bucketSize 为负数时同样回落（负数会让区间倒挂成空区间，线全部丢失）", () => {
+    // 修复前：floor(10 / -10) = -1 > floor(40 / -10) = -4，区间倒挂 ⇒ 桶全空，线静默消失
+    const index = buildRouteSpatialIndex(degenerateRoutes(), -10);
+    expect(index.bucketSize).toBe(BUCKET_FALLBACK);
+    expect(edgeIds(queryRouteSpatialIndex(index, bounds(-100, -100, 100, 100)))).toEqual(["near"]);
+  });
+
+  test("bucketSize 为 NaN 时回落（NaN 坐标会让比较条件恒假，同样丢线）", () => {
+    const index = buildRouteSpatialIndex(degenerateRoutes(), Number.NaN);
+    expect(index.bucketSize).toBe(BUCKET_FALLBACK);
+    expect(edgeIds(queryRouteSpatialIndex(index, bounds(-100, -100, 100, 100)))).toEqual(["near"]);
+  });
+
+  test("bucketSize 为 Infinity 时回落（所有坐标 / Infinity 挤进 0:0，粗筛失效）", () => {
+    // 修复前：任意坐标 / Infinity = 0，两条线全落进 0:0 单桶
+    const index = buildRouteSpatialIndex(degenerateRoutes(), Number.POSITIVE_INFINITY);
+    expect(index.bucketSize).toBe(BUCKET_FALLBACK);
+    expect(index.routeBucketKeysById.get("near")).toEqual(expect.arrayContaining(["0:0"]));
+    expect(edgeIds(queryRouteSpatialIndex(index, bounds(4900, 4900, 5100, 5100)))).toEqual(["far"]);
+  });
+
+  test("非法 bucketSize 与显式传默认值产出完全一致的索引", () => {
+    // 断言「回落」而不是「随便取个别的值」：桶键集合、桶数都应逐格相同
+    const routes = degenerateRoutes();
+    const fallback = buildRouteSpatialIndex(routes, BUCKET_FALLBACK);
+    for (const bad of [0, -10, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const index = buildRouteSpatialIndex(routes, bad);
+      expect([...index.routeBucketKeysById.keys()].sort()).toEqual([...fallback.routeBucketKeysById.keys()].sort());
+      expect(index.routeBucketKeysById.get("far")).toEqual(fallback.routeBucketKeysById.get("far"));
+      expect([...index.buckets.keys()].sort()).toEqual([...fallback.buckets.keys()].sort());
+    }
+  });
+
+  test("正常正 bucketSize 不被改写，粒度照旧生效", () => {
+    // 回归：归一化只拦非法值，正常值必须原样落桶（显式传默认值 ⇒ 与不传等价）
+    const routes = degenerateRoutes();
+    const explicit = buildRouteSpatialIndex(routes, BUCKET_FALLBACK);
+    const implicit = buildRouteSpatialIndex(routes);
+    expect(explicit.bucketSize).toBe(BUCKET_FALLBACK);
+    expect(explicit.routeBucketKeysById.get("far")).toEqual(implicit.routeBucketKeysById.get("far"));
+
+    // 合法小值粒度更细：far 横跨 5000..5010，默认桶宽下压进 4 格，桶宽 10 则压进 26 格
+    const fine = buildRouteSpatialIndex(routes, 10);
+    expect(fine.bucketSize).toBe(10);
+    expect(fine.routeBucketKeysById.get("far")!.length).toBeGreaterThan(
+      explicit.routeBucketKeysById.get("far")!.length
+    );
+    expect(edgeIds(queryRouteSpatialIndex(fine, bounds(4900, 4900, 5100, 5100)))).toEqual(["far"]);
+  });
+
+  test("非法 bucketSize 落下的桶键全是有限值，没有 Infinity 或 NaN", () => {
+    // 修复前 bucketSize = 0 时桶键就是字符串 Infinity:Infinity
+    // （patchRouteSpatialIndex 复用 index.bucketSize 重算区间，所以这层也得干净）
+    const index = buildRouteSpatialIndex(degenerateRoutes(), 0);
+    const keys = [...index.routeBucketKeysById.values()].flat();
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) {
+      expect(key).not.toMatch(/Infinity|NaN/);
+    }
+    expect(index.routeBucketKeysById.get("far")).toEqual(["15:15"]);
+  });
+});
+
+describe("routeStore / 退化查询框", () => {
+  test("查询框含 NaN 时有限时间返回空集", () => {
+    // 精确复核的四个比较里只要有一个是 NaN，整条 routeBoundsIntersect 就是 false，
+    // 所以 NaN 查询框的确定结果是空集 —— 断言「空集」而不是「随便什么都行」
+    const index = buildRouteSpatialIndex(degenerateRoutes());
+    expect(queryRouteSpatialIndex(index, bounds(Number.NaN, -100, 100, 100))).toEqual([]);
+    expect(queryRouteSpatialIndex(index, bounds(-100, Number.NaN, 100, 100))).toEqual([]);
+    expect(queryRouteSpatialIndex(index, bounds(-100, -100, Number.NaN, 100))).toEqual([]);
+    expect(queryRouteSpatialIndex(index, bounds(-100, -100, 100, Number.NaN))).toEqual([]);
+  });
+
+  test("查询框含 Infinity 时有限时间返回全集", () => {
+    // 修复前：range 从 -Infinity 爬到 +Infinity，双层 for 永不退出
+    // 修复后走「遍历实际存在的桶」，精确复核对 ±Infinity 一律判 true ⇒ 全部命中
+    const index = buildRouteSpatialIndex(degenerateRoutes());
+    const hits = edgeIds(queryRouteSpatialIndex(index, bounds(-Infinity, -Infinity, Infinity, Infinity)));
+    expect(hits).toEqual(["far", "near"]);
+  });
+
+  test("半无限查询框按精确复核裁剪，不返回框外的线", () => {
+    // 只有 right/top 是 Infinity、bottom 是有限值 ⇒ 纵向区间仍然收窄
+    const index = buildRouteSpatialIndex(degenerateRoutes());
+    const hits = edgeIds(queryRouteSpatialIndex(index, bounds(-Infinity, -Infinity, Infinity, 100)));
+    expect(hits).toEqual(["near"]);
+  });
+
+  test("查询框只有纵向是半无限（上界 -Infinity）时也有限时间返回", () => {
+    // 横向 left/right 都是有限值 —— 只守 x 轴的守卫会漏掉这一支：
+    // 外层 x 循环正常跑，内层 y 从 -Infinity 起步逐格 +1，永远到不了有限的下界
+    const index = buildRouteSpatialIndex(degenerateRoutes());
+    expect(edgeIds(queryRouteSpatialIndex(index, bounds(-100, -Infinity, 100, 100)))).toEqual(["near"]);
+  });
+
+  test("退化查询框不污染 seenById 与 mark，后续正常查询仍正确", () => {
+    // 去重标记表跨查询复用：退化查询若留下脏 mark，会让紧随其后的正常查询误判为重复而丢线
+    const index = buildRouteSpatialIndex(degenerateRoutes());
+    expect(edgeIds(queryRouteSpatialIndex(index, bounds(-100, -100, 100, 100)))).toEqual(["near"]);
+    const markAfterNormal = index.queryState.mark;
+    queryRouteSpatialIndex(index, bounds(Number.NaN, 0, 0, 0));
+    queryRouteSpatialIndex(index, bounds(-Infinity, -Infinity, Infinity, Infinity));
+    expect(index.queryState.mark).toBe(markAfterNormal + 2);
+    expect(edgeIds(queryRouteSpatialIndex(index, bounds(-100, -100, 100, 100)))).toEqual(["near"]);
+    expect(edgeIds(queryRouteSpatialIndex(index, bounds(4900, 4900, 5100, 5100)))).toEqual(["far"]);
+  });
+
+  test("退化查询框走增量 patch 后索引依然可用", () => {
+    const store = createRouteStore(degenerateRoutes());
+    const patched = routeStorePatchRoutes(store, [makeRoute("moved", [at(5000, 5000), at(5010, 5010)])]);
+    const hits = edgeIds(queryRouteSpatialIndex(patched.routeSpatialIndex, bounds(4900, 4900, 5100, 5100)));
+    expect(hits).toEqual(["far", "moved"]);
   });
 });
 

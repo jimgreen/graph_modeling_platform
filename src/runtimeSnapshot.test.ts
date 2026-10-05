@@ -1,6 +1,7 @@
 // runtimeSnapshot.test.ts — 运行时态序列化单测
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, test, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { decodeAuto } from "./encoding/gbk";
 import {
   serializeModel,
   serializeDevices,
@@ -478,5 +479,149 @@ describe("createRuntimeSnapshotHandler", () => {
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.error.code).toBe("internal");
+  });
+});
+
+// ---- templateData 非法 base64：客户端坏数据应是 bad-request，不是 internal ----
+
+describe("serializeEFile templateData 非法 base64", () => {
+  const scopeWithSpy = (): any => {
+    const buildEFileExport = vi.fn((_project: any, _schemePath: string[], _options: any) => ({
+      filename: "model.e",
+      text: "E file content",
+      mime: "text/plain"
+    }));
+    return mockScope({ buildEFileExport, PARAM_LABELS: {} });
+  };
+
+  // atob 抛错有两类输入，修复前都被外层 wrap 吞成 internal：
+  //   ① 含 base64 字母表外字符 → InvalidCharacterError
+  //   ② 长度 % 4 === 1（如 5 字符；长度 % 4 === 3 反而合法，见文末注释）
+  const throwingInputs = ["!!!not-base64!!!", "!!!not base64!!!", "YW J!jZA==", "abcde"];
+
+  test("非法 base64 的 templateData 返回 bad-request 而非 internal", () => {
+    for (const templateData of throwingInputs) {
+      const scope = scopeWithSpy();
+      const res = serializeEFile(scope, { templateData });
+      expect(res.ok, `templateData=${JSON.stringify(templateData)}`).toBe(false);
+      if (res.ok) return;
+      expect(res.error.code).toBe("bad-request");
+      expect(res.error.code).not.toBe("internal");
+      expect(res.error.message).toContain("base64");
+      // 坏数据必须在真正生成 E 文件之前就被拒掉
+      expect(scope.buildEFileExport).not.toHaveBeenCalled();
+    }
+  });
+
+  test("仅含空白的 templateData 解出空串，同样落到 bad-request 空文本分支", () => {
+    // atob("   ") 不抛（WHATWG 宽容解码会先剥掉 ASCII 空白），解出空串后
+    // 由「模板文本为空」分支拒掉 —— 结果同为 bad-request，路径不同，一并锁住。
+    const scope = scopeWithSpy();
+    const res = serializeEFile(scope, { templateData: "   " });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("bad-request");
+    expect(res.error.code).not.toBe("internal");
+    expect(scope.buildEFileExport).not.toHaveBeenCalled();
+  });
+
+  // 合法 base64 的行为必须与修复前逐字段一致：用「同一份模板的纯文本路径」当基准，
+  // 两条路径解出的 templateText 相同 → 传给 buildEFileExport 的 options 必须完全相等。
+  // 硬编码期望值只能证明输出没变，等价断言才能证明 base64 分支没有走偏。
+  const templateBytes = readFileSync(new URL("../public/e-templates/sgcc.e", import.meta.url));
+  const templateBase64 = Buffer.from(templateBytes).toString("base64");
+  const templateScope = (): any => mockScope({
+    eDeviceDefinitionLabels: { ACGenerator: "手动改过" },
+    eDeviceDefinitionClassExportEnabled: { ACGenerator: true },
+    eDeviceDefinitionFieldOrder: { ACGenerator: ["dev_type", "name"] },
+    eDeviceDefinitionTemplateFields: { ACGenerator: [{ exportName: "手动字段" }] },
+    eDeviceDefinitionTableIds: { ACGenerator: "00099" },
+    libraryTemplates: [{
+      kind: "generator",
+      label: "发电机",
+      categoryLibrary: "发电设备",
+      size: { width: 84, height: 56 },
+      params: {},
+      terminalType: "ac",
+      terminalCount: 1
+    }],
+    PARAM_LABELS: {},
+    resolveTemplateComponentLibrary: undefined as unknown as (template: any) => string,
+    currentProject: () => ({ version: 1, name: "测试模型", modelType: "厂站", nodes: [], edges: [] }),
+    buildEFileExport: vi.fn((_project: any, _schemePath: string[], _options: any) => ({
+      filename: "model.e",
+      text: "E file content",
+      mime: "text/plain"
+    }))
+  });
+
+  test("合法 base64 回归：与同一模板的纯文本路径产生完全相同的结果", () => {
+    const templateText = decodeAuto(new Uint8Array(templateBytes));
+    const viaData = templateScope();
+    const viaText = templateScope();
+
+    const dataRes = serializeEFile(viaData, { templateName: "国网E格式", templateData: templateBase64 });
+    const textRes = serializeEFile(viaText, { templateName: "国网E格式", templateText });
+    expect(dataRes.ok).toBe(true);
+    expect(textRes.ok).toBe(true);
+    if (!dataRes.ok || !textRes.ok) return;
+    expect(dataRes.data).toEqual(textRes.data);
+
+    const viaDataMock = viaData.buildEFileExport as unknown as { mock: { calls: any[][] } };
+    const viaTextMock = viaText.buildEFileExport as unknown as { mock: { calls: any[][] } };
+    const optionsFromBase64 = viaDataMock.mock.calls[0]?.[2];
+    expect(optionsFromBase64).toBeTruthy();
+    expect(optionsFromBase64).toEqual(viaTextMock.mock.calls[0]?.[2]);
+    // 模板 override 生效，而非 appScope 里那份手动值
+    expect(optionsFromBase64.eDeviceDefinitionLabels["ACGenerator"]).not.toBe("手动改过");
+  });
+});
+
+// ---- appScope 依赖未注册 ----
+
+describe("serializeEFile 依赖未注册", () => {
+  test("buildEFileExport 未挂载时返回 internal 并点名缺失的依赖", () => {
+    // 真实触发方式：App.tsx 装配 __appScope 时没挂 buildEFileExport（或被覆盖成非函数）
+    for (const buildEFileExport of [undefined, "not-a-function", {}]) {
+      const res = serializeEFile(mockScope({ buildEFileExport }));
+      expect(res.ok, `buildEFileExport=${String(buildEFileExport)}`).toBe(false);
+      if (res.ok) return;
+      expect(res.error.code).toBe("internal");
+      expect(res.error.message).toBe("buildEFileExport 不可用");
+    }
+  });
+});
+
+// ---- tree tab：分组 nodeIds 形状 ----
+
+describe("serializeTab tree 分组 nodeIds", () => {
+  test("分组 nodeIds 非数组时按现状落到 internal（对非数组取 map 会抛）", () => {
+    // 现状判据只有 (g.nodeIds ?? [])：null/undefined 走兜底，其余非数组值直接抛，
+    // 被 serializeTab 的 catch 收成 internal。此处锁定现状，不是断言理想行为。
+    for (const nodeIds of ["node-1", 0, "", { 0: "node-1" }] as unknown[]) {
+      const res = serializeTab(
+        mockScope({ groups: [{ id: "g1", name: "分组1", nodeIds }] }),
+        "tree"
+      );
+      expect(res.ok, `nodeIds=${JSON.stringify(nodeIds)}`).toBe(false);
+      if (res.ok) return;
+      expect(res.error.code).toBe("internal");
+    }
+  });
+
+  test("分组缺少 nodeIds 时兜底为空数组，而不是回退到全部节点", () => {
+    const res = serializeTab(
+      mockScope({ groups: [{ id: "g1", name: "分组1" }], nodes: [mockNode()] }),
+      "tree"
+    );
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const tree = res.data.tree!.nodes;
+    // 树非空（layer 节点在），避免空树上的断言变成恒真
+    expect(tree.length).toBeGreaterThan(1);
+    // 分组节点自身 id 是 g.id（group: 前缀只是 byLayer 的 Map 键，不进 TreeNode）
+    const groupNode = tree.find((node) => node.kind === "group");
+    expect(groupNode?.id).toBe("g1");
+    expect(groupNode?.children).toEqual([]);
   });
 });

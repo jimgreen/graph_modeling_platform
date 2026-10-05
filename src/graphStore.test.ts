@@ -594,3 +594,247 @@ describe("graphStore / 组合更新与补丁", () => {
     expect(reordered.nodeIndexById.get("a")).toBe(1);
   });
 });
+
+// ─── 三条 params 相关性谓词的边界断言 ─────────────────────
+//
+// 目标谓词（全部**未导出**，是模块私有 const）：
+//   elementTreeParamRelevant   (graphStore.ts:340) —— key === "idx" || startsWith("idx_")
+//                                                     || startsWith("name_") || === "is_container"
+//   routeGeometryParamRelevant (graphStore.ts:343) —— 一串 key === 字面量，全小写下划线驼峰
+//   topologyParamRelevant      (graphStore.ts:358) —— **唯一先 key.toLowerCase()** 的一条
+//
+// 观察办法（不是重写一份实现再断言它）：三者唯一的出口是 nodeParamsChangedBy →
+// nodeAffectsElementTree / nodeAffectsRouteSpatialBounds / nodeAffectsTopology →
+// next*RevisionForNodes → 三个 revision 字段，全部是 GraphStore 的公开可读字段。
+//
+// 关键技巧：nodeAffects* 里那些字段判定全是**引用不等**（position !== / size !== /
+// rotation !== / scale !== / terminals !==），所以让前后两个节点共用同一批
+// position / size / terminals 引用、只换 params 对象，判定就只剩 params 一条路，
+// 三个 revision 的增量（各 0 或 1）逐一对应三条谓词的返回值。探针实测 44 个键，
+// 全部与源码逐条对照吻合。
+//
+// 不能用本文件既有的 makeNode：它每次调用都新建 position / size / terminals 引用，
+// 于是「字段不同」这条 OR 分支恒真，把三条谓词完全遮住（任何键都会让三个 revision
+// 全递增，谓词写错也照样绿）。
+
+describe("graphStore / params 相关性谓词的边界（经 revision 增量观察）", () => {
+  // 共享引用常量 —— 这是让 nodeAffects* 的字段分支恒为 false 的前提。
+  const SHARED_POSITION = { x: 0, y: 0 };
+  const SHARED_SIZE = { width: 80, height: 40 };
+  const SHARED_TERMINALS: Terminal[] = [
+    { id: "t1", label: "t1", type: "ac", anchor: { x: -0.5, y: 0 }, nodeNumber: "" }
+  ];
+
+  const baseNode = (params: Record<string, string>): ModelNode => ({
+    id: "a",
+    kind: "breaker" as ModelNode["kind"],
+    name: "a",
+    nodeNumber: "",
+    acTopologyNode: 0,
+    dcTopologyNode: 0,
+    position: SHARED_POSITION,
+    size: SHARED_SIZE,
+    rotation: 0,
+    scale: 1,
+    terminals: SHARED_TERMINALS,
+    params
+  });
+
+  const deltas = (store: GraphStore, patched: GraphStore) => ({
+    elementTree: patched.elementTreeRevision - store.elementTreeRevision,
+    routeGeometry: patched.routeGeometryRevision - store.routeGeometryRevision,
+    topology: patched.topologyRevision - store.topologyRevision
+  });
+
+  // 这个 helper 不含任何 ?? / || / 默认参数归一化 —— params 的值原样进入
+  // nodeParamsChangedBy 的 !== 比对，所以「某键是否被谓词认可」是唯一变量。
+  const probeParams = (keys: readonly string[]) => {
+    const params: Record<string, string> = {};
+    for (const key of keys) {
+      params[key] = "1";
+    }
+    const store = createGraphStore([baseNode({})], []);
+    return deltas(store, graphStoreSetNodes(store, [baseNode(params)]));
+  };
+  const probeKey = (key: string) => probeParams([key]);
+
+  const NOTHING = { elementTree: 0, routeGeometry: 0, topology: 0 };
+
+  // ── 观察通道自身的有效性：不变量是「三个 revision 只可能被这一条谓词推动」 ──
+
+  it("探针自检：前一个节点的字段全被新节点覆盖时，三个 revision 才可能同时不动", () => {
+    // 反面对照：若改用会新建引用的构造方式，任意键都会把三个 revision 全部推高，
+    // 谓词就观察不到了。这条断言把「观察通道有效」本身钉住。
+    expect(probeKey("random_key")).toEqual(NOTHING);
+  });
+
+  it("探针自检：同一份 position / size / terminals 引用被真正复用（不是碰巧相等）", () => {
+    const first = baseNode({});
+    const second = baseNode({ random_key: "1" });
+    expect(second.position).toBe(first.position);
+    expect(second.size).toBe(first.size);
+    expect(second.terminals).toBe(first.terminals);
+  });
+
+  // ── ① 大小写敏感性不对称 ──────────────────────────────────
+
+  it("elementTreeParamRelevant 大小写敏感：idx 命中，IDX 与 Idx 都不命中", () => {
+    // 正反两侧都在：只有小写这一侧的话，给谓词加上 toLowerCase 的变异会恒绿。
+    expect(probeKey("idx")).toEqual({ elementTree: 1, routeGeometry: 0, topology: 0 });
+    expect(probeKey("IDX")).toEqual(NOTHING);
+    expect(probeKey("Idx")).toEqual(NOTHING);
+  });
+
+  it("elementTreeParamRelevant 的两条 startsWith 前缀同样大小写敏感", () => {
+    expect(probeKey("idx_1")).toEqual({ elementTree: 1, routeGeometry: 0, topology: 0 });
+    expect(probeKey("IDX_1")).toEqual(NOTHING);
+
+    expect(probeKey("name_x")).toEqual({ elementTree: 1, routeGeometry: 0, topology: 0 });
+    expect(probeKey("NAME_X")).toEqual(NOTHING);
+  });
+
+  it("elementTreeParamRelevant 的 is_container 全等判定同样大小写敏感", () => {
+    expect(probeKey("is_container")).toEqual({ elementTree: 1, routeGeometry: 0, topology: 0 });
+    expect(probeKey("IS_CONTAINER")).toEqual(NOTHING);
+  });
+
+  it("elementTreeParamRelevant 的 startsWith 是逐前缀匹配，不会被 idxx 蹭到", () => {
+    // key === "idx" 与 key.startsWith("idx_") 是两条独立判定：idxx 既不等于 idx
+    // 也不以 idx_ 开头，所以前缀相似不等于命中。
+    expect(probeKey("idxx")).toEqual(NOTHING);
+  });
+
+  it("routeGeometryParamRelevant 大小写敏感：_labelText 命中，_LABELTEXT 与 _LabelText 都不命中", () => {
+    expect(probeKey("_labelText")).toEqual({ elementTree: 0, routeGeometry: 1, topology: 0 });
+    expect(probeKey("_LABELTEXT")).toEqual(NOTHING);
+    expect(probeKey("_LabelText")).toEqual(NOTHING);
+  });
+
+  it("routeGeometryParamRelevant 尾部大小写同样敏感：_labelX 命中，_labelx 不命中", () => {
+    // 只测首字母大小写会漏掉这一维：改的是键尾，谓词照样应当不认。
+    expect(probeKey("_labelX")).toEqual({ elementTree: 0, routeGeometry: 1, topology: 0 });
+    expect(probeKey("_labelx")).toEqual(NOTHING);
+  });
+
+  it("routeGeometryParamRelevant 的其余字面量键同样大小写敏感", () => {
+    // _routableLinePoints 来自 model.ts 的 ROUTABLE_LINE_POINTS_PARAM 常量，
+    // 谓词比的是常量值本身，参数名的大写变体不命中。
+    expect(probeKey("_routableLinePoints")).toEqual({ elementTree: 0, routeGeometry: 1, topology: 0 });
+    expect(probeKey("_ROUTABLELINEPOINTS")).toEqual(NOTHING);
+
+    expect(probeKey("backgroundImage")).toEqual({ elementTree: 0, routeGeometry: 1, topology: 0 });
+    expect(probeKey("BACKGROUNDIMAGE")).toEqual(NOTHING);
+  });
+
+  it("★ 不对称本身：同一批键里，小写变体只推 elementTree/routeGeometry，而大写变体只推 topology", () => {
+    // 这一条把「三条谓词大小写处理不一致」钉成一个可观察的事实：
+    //   小写 idx + _labelText + status  → e=1 r=1 t=1（三条谓词各自都认）
+    //   大写 IDX + _LABELTEXT + STATUS  → e=0 r=0 t=1（只有 topology 那条做了小写归一）
+    expect(probeParams(["idx", "_labelText", "status"])).toEqual({
+      elementTree: 1,
+      routeGeometry: 1,
+      topology: 1
+    });
+    expect(probeParams(["IDX", "_LABELTEXT", "STATUS"])).toEqual({
+      elementTree: 0,
+      routeGeometry: 0,
+      topology: 1
+    });
+  });
+
+  it("topologyParamRelevant 是唯一做小写归一的：status 的三种大小写全部命中", () => {
+    for (const key of ["status", "STATUS", "Status"]) {
+      expect(probeKey(key)).toEqual({ elementTree: 0, routeGeometry: 0, topology: 1 });
+    }
+  });
+
+  it("topologyParamRelevant 的全等字面量键任意大小写都命中", () => {
+    const pairs = [
+      ["run_stat", "RUN_STAT"],
+      ["control_type", "CONTROL_TYPE"],
+      ["i_control_type", "I_CONTROL_TYPE"],
+      ["j_control_type", "J_CONTROL_TYPE"],
+      ["ac_control_type", "AC_CONTROL_TYPE"],
+      ["dc_control_type", "DC_CONTROL_TYPE"]
+    ] as const;
+    for (const [lower, upper] of pairs) {
+      expect(probeKey(lower).topology, lower).toBe(1);
+      expect(probeKey(upper).topology, upper).toBe(1);
+    }
+  });
+
+  it("topologyParamRelevant 的 includes 分支也走小写归一：x_vbase_y 只有它能命中", () => {
+    // x_vbase_y 既不等于任何一个字面量、也不以 v_set 结尾 —— 删掉 includes("vbase")
+    // 这一条它就会掉到 0，所以它是 includes 分支的判别输入（不是恒绿的陪衬）。
+    expect(probeKey("vbase").topology).toBe(1);
+    expect(probeKey("VBASE").topology).toBe(1);
+    expect(probeKey("VBase").topology).toBe(1);
+    expect(probeKey("x_vbase_y").topology).toBe(1);
+    expect(probeKey("X_VBASE_Y").topology).toBe(1);
+  });
+
+  it("topologyParamRelevant 的 includes 不认 v_base（中间的下划线不是可省的）", () => {
+    // 归一化只做小写，不做分隔符折叠：V_BASE 归一后是 v_base，既不含 vbase 也不以 v_set 结尾。
+    expect(probeKey("V_BASE")).toEqual(NOTHING);
+  });
+
+  // ── ② 被 endsWith(v_set) 完全覆盖的 v_set 全等分支 ─────────
+
+  it("★ endsWith(v_set) 是承重分支：只有它能命中的那批键全靠它", () => {
+    // custom_v_set / _v_set / vbase_v_set 三者都不等于源码里任何一个字面量，
+    // 也不含 vbase 子串，因此唯一能让它们为 true 的就是 endsWith("v_set")。
+    // 删掉该子句这三条会全掉到 0 —— 这是本组断言里唯一真正咬得住的变异。
+    expect(probeKey("custom_v_set")).toEqual({ elementTree: 0, routeGeometry: 0, topology: 1 });
+    expect(probeKey("_v_set")).toEqual({ elementTree: 0, routeGeometry: 0, topology: 1 });
+    expect(probeKey("vbase_v_set")).toEqual({ elementTree: 0, routeGeometry: 0, topology: 1 });
+    // 大写变体一并覆盖：承重子句读的是小写归一后的字符串。
+    expect(probeKey("CUSTOM_V_SET").topology).toBe(1);
+    expect(probeKey("xv_set").topology).toBe(1);
+  });
+
+  it("v_set 后缀判定不含糊：v_set2 / v_setx / vset 都不命中（是 endsWith 不是 includes）", () => {
+    // 判别「后缀」这一维度：把 endsWith 换成 includes("v_set") 会让这三个变成 1。
+    expect(probeKey("v_set2")).toEqual(NOTHING);
+    expect(probeKey("v_setx")).toEqual(NOTHING);
+    expect(probeKey("vset")).toEqual(NOTHING);
+  });
+
+  it("v_set 后缀判定跨过了下划线：ac_v_set / dc_v_set 以 _v_set 收尾，命中", () => {
+    // 这两个键的末五位正是 "v_set"（ac_v_set = a c _ v _ s e t，末五位 v _ s e t）。
+    expect(probeKey("ac_v_set").topology).toBe(1);
+    expect(probeKey("dc_v_set").topology).toBe(1);
+  });
+
+  it("★ v_ac_set / v_dc_set 不靠 endsWith，靠的是自己的全等子句（承重，删掉必红）", () => {
+    // ⚠️ 修正一个容易想当然的推断：**并非**所有 v_set 全等子句都被 endsWith 覆盖。
+    //   "v_ac_set" 的末五位是 "c_set"（8 字符 v _ a c _ s e t），不是 "v_set"，
+    //   所以 normalized.endsWith("v_set") 对它是 false；它能命中全靠
+    //   normalized === "v_ac_set" 这一条。删掉该子句这两条断言立刻转红。
+    //   同理 "v_dc_set"。
+    expect("v_set".endsWith("v_set")).toBe(true);
+    expect("v_ac_set".endsWith("v_set")).toBe(false);
+    expect("v_dc_set".endsWith("v_set")).toBe(false);
+
+    expect(probeKey("v_ac_set").topology).toBe(1);
+    expect(probeKey("v_dc_set").topology).toBe(1);
+    expect(probeKey("V_AC_SET").topology).toBe(1);
+  });
+
+  it("回归锁：v_set / ac_v_set / dc_v_set 三个全等子句恒被 endsWith 覆盖", () => {
+    // ⚠️ 这三条断言**按构造不会转红**，只作回归锁，不要拿它们当判别力证据。
+    // 源码里 normalized === "v_set" / "ac_v_set" / "dc_v_set" 排在
+    // normalized.endsWith("v_set") 之后，而两者读的是同一个 normalized。
+    // 可证明的等价关系（endsWith 对「自身」与「以该串收尾」的字符串恒为真）：
+    //   · "v_set".endsWith("v_set")     → true（与自身相等）
+    //   · "ac_v_set".endsWith("v_set")  → true（末五位为 "v_set"）
+    //   · "dc_v_set".endsWith("v_set")  → true（末五位为 "v_set"）
+    // 于是删掉这三条 === 子句，任何输入下的可观察量都不变 ⇒ 变异必然 GREEN。
+    // 这是**可证明的等价变异**，不是输入维度缺失；承重证据在上一条（v_ac_set）
+    // 与「endsWith 是承重分支」那一条。
+    const covered = ["v_set", "ac_v_set", "dc_v_set"];
+    for (const key of covered) {
+      expect(probeKey(key).topology, key).toBe(1);
+      expect(probeKey(key.toUpperCase()).topology, key.toUpperCase()).toBe(1);
+    }
+  });
+});

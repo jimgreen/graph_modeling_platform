@@ -195,6 +195,28 @@ const TOKEN_LABELS = Object.freeze({
   factor: "因数"
 });
 
+// 两张表都是普通对象字面量，直接 `TABLE[key]` 会对原型链成员命中 `Object.prototype`
+// 上的东西：`constructor` / `toString` / `valueOf` / `hasOwnProperty` 是**函数**，
+// `__proto__` 是 `Object.prototype` **对象**，全都不是标签字符串。
+//
+// 英文参数名来自工程文件，属外部输入，规范化后直接进查表口，守卫不能省。实测后果：
+//   inferDeviceParameterChineseName("constructor")     → 函数 Object 本身
+//     （typeof 为 function，违反 string | undefined 的契约，下游拼表头会炸）
+//   inferDeviceParameterChineseName("source_constructor") → "首端function Object() { [native code] }"
+//   inferDeviceParameterChineseName("rated_constructor")  → "额定function Object() { [native code] }"
+// 后两条是 TOKEN_LABELS / 前缀剥离两处查表把函数当标签拼进了字符串里——
+// 导出不报错，只在 E 文件 / CIM 的**字段中文表头**里显示成一列乱码，属于静默劣化。
+//
+// 故两个查表口统一加 Object.hasOwn 自有键守卫：未命中（含原型链键）一律按
+// 「未登记」处理，走原有的未知参数分支，正常键的查找结果完全不变。
+function exactParameterLabel(key) {
+  return Object.hasOwn(EXACT_PARAMETER_LABELS, key) ? EXACT_PARAMETER_LABELS[key] : undefined;
+}
+
+function tokenLabel(token) {
+  return Object.hasOwn(TOKEN_LABELS, token) ? TOKEN_LABELS[token] : undefined;
+}
+
 export function normalizeDeviceParameterEnglishName(value) {
   return String(value ?? "")
     .trim()
@@ -212,7 +234,7 @@ export function isGenericCustomParameterChineseName(value) {
 function translatedTokenPhrase(normalizedName) {
   const tokens = normalizedName.split("_").filter(Boolean);
   if (!tokens.length) return undefined;
-  const labels = tokens.map((token) => TOKEN_LABELS[token]);
+  const labels = tokens.map((token) => tokenLabel(token));
   return labels.every(Boolean) ? labels.join("") : undefined;
 }
 
@@ -220,7 +242,7 @@ export function inferDeviceParameterChineseName(enNameValue) {
   const normalizedName = normalizeDeviceParameterEnglishName(enNameValue);
   if (!normalizedName) return undefined;
 
-  const exact = EXACT_PARAMETER_LABELS[normalizedName];
+  const exact = exactParameterLabel(normalizedName);
   if (exact) return exact;
 
   const relationMatch = /^idx_(ac_unit|dc_unit|ac_load|dc_load|h2_unit|h2_load|heat_unit|heat2_unit|transformer)_t(\d+)$/u.exec(normalizedName);
@@ -231,7 +253,7 @@ export function inferDeviceParameterChineseName(enNameValue) {
   for (const [prefix, sideLabel] of SIDE_PREFIXES) {
     if (!normalizedName.startsWith(prefix)) continue;
     const baseName = normalizedName.slice(prefix.length);
-    const baseLabel = EXACT_PARAMETER_LABELS[baseName] ?? translatedTokenPhrase(baseName);
+    const baseLabel = exactParameterLabel(baseName) ?? translatedTokenPhrase(baseName);
     if (baseLabel) return `${sideLabel}${baseLabel}`;
   }
 

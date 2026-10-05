@@ -1,6 +1,6 @@
 // 空间注册表：default 空间直接用数据根（不搬迁既有 data/），其余在 workspaces/ 下。
 import { expect, test, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, existsSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, existsSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSpaceStore, assertInSpace, resolveSpaceFromRequest, parseSpaceCookie, SPACE_COOKIE_NAME, SPACE_NAME_DUPLICATE } from "./spaceStore.mjs";
@@ -225,6 +225,90 @@ test("resolvePaths 对未知空间抛错", async () => {
   const store = createSpaceStore(dataRoot);
   await store.ensureInitialized();
   expect(() => store.resolvePaths("不存在")).toThrow(/未知空间/);
+});
+
+// ---------------------------------------------------------------------------
+// 以下直接覆盖三个同步只读方法里的 **state === null** 分支（模块刚加载、
+// 任何 load/ensureInitialized 之前）。这条路径此前只在 server/spaceApi.test.mjs
+// 里被间接碰到，而那批用例的输入往往来自已初始化过的 store —— 未初始化分支
+// 一旦被改坏，判据（has 恒 false / firstId 恒 default / resolvePaths 只放行
+// default）没有任何既有断言会红。
+// 注意：造这条状态**只能** new 出一个 store 且不碰任何异步入口
+// （ensureInitialized / list / create / rename / remove / touchLastAccess
+// 都会走 load() 把 state 填上）。
+// ---------------------------------------------------------------------------
+
+test("未初始化时 resolvePaths 只放行 default，非 default 恒抛未知空间", () => {
+  const store = createSpaceStore(dataRoot);
+  // 放行：default 的根就是数据根（不是 workspaces/ 之下）
+  expect(store.resolvePaths("default").root).toBe(dataRoot);
+  expect(store.resolvePaths("default").schemeFiles).toBe(join(dataRoot, "schemes", "files"));
+  // 拒绝：具体到错误文案，不只是「抛错」
+  expect(() => store.resolvePaths("张三")).toThrow("未知空间：张三");
+  expect(() => store.resolvePaths("")).toThrow(/未知空间/);
+  // resolvePaths 是纯字符串拼接：未初始化分支不得有任何落盘副作用
+  expect(existsSync(spacesFile())).toBe(false);
+});
+
+test("未初始化时 has 恒 false、firstId 恒为 default", () => {
+  const store = createSpaceStore(dataRoot);
+  // 注意 has(default) 在这里是 **false**：state 为 null 时没有可比对的条目集合，
+  // 跟 resolvePaths(default) 放行并不矛盾（后者特判了 DEFAULT_SPACE_ID）。
+  expect(store.has("default")).toBe(false);
+  expect(store.has("张三")).toBe(false);
+  expect(store.has(undefined)).toBe(false);
+  expect(store.firstId()).toBe("default");
+});
+
+test("初始化后同一批调用翻面：has(default) 变 true，其余仍按注册表判定", async () => {
+  // 防误伤的回归锚点：与上面两条未初始化用例构成同一组断言的正反面
+  const store = createSpaceStore(dataRoot);
+  await store.ensureInitialized();
+  expect(store.has("default")).toBe(true);
+  expect(store.has("张三")).toBe(false);
+  expect(store.firstId()).toBe("default");
+  expect(store.resolvePaths("default").root).toBe(dataRoot);
+});
+
+test("touchLastAccess 对未知 id 是 no-op：不抛错、不新建条目、不重写注册表", async () => {
+  const store = createSpaceStore(dataRoot);
+  await store.ensureInitialized();
+  await store.create("张三");
+  await store.touchLastAccess("张三"); // 先给一条已知空间留 lastAccessAt 当对照组
+
+  const idsBefore = (await store.list()).map((s) => s.id);
+  const jsonBefore = readFileSync(spacesFile(), "utf-8");
+  const mtimeBefore = statSync(spacesFile()).mtimeMs;
+
+  await expect(store.touchLastAccess("不存在")).resolves.toBeUndefined();
+
+  // ① 条目集合不变：未知 id 不会被塞进注册表
+  expect((await store.list()).map((s) => s.id)).toEqual(idsBefore);
+  // ② 落盘内容逐字节不变
+  expect(readFileSync(spacesFile(), "utf-8")).toBe(jsonBefore);
+  // ③ mtime 不变 —— 补 ② 的盲区：若 no-op 分支被改成照样 writeState，
+  //    内容可能完全相同（写回去的还是原数组），只有 mtime 会露馅
+  expect(statSync(spacesFile()).mtimeMs).toBe(mtimeBefore);
+  // ④ 对照组未被这次 no-op 波及
+  expect((await store.list()).find((s) => s.id === "张三").lastAccessAt).toEqual(expect.any(String));
+});
+
+test("touchLastAccess 对已知 id 落 lastAccessAt，且只动那一条", async () => {
+  const store = createSpaceStore(dataRoot);
+  await store.ensureInitialized();
+  await store.create("张三");
+  expect((await store.list()).find((s) => s.id === "default")).not.toHaveProperty("lastAccessAt");
+
+  await expect(store.touchLastAccess("default")).resolves.toBeUndefined();
+
+  const spaces = await store.list();
+  expect(spaces.find((s) => s.id === "default").lastAccessAt).toEqual(expect.any(String));
+  // 只动被点名的那条：张三 不该被顺带打上时间戳
+  expect(spaces.find((s) => s.id === "张三")).not.toHaveProperty("lastAccessAt");
+  expect(spaces.map((s) => s.id)).toEqual(["default", "张三"]);
+  // 真的落盘了（不是只改了内存态）
+  expect(JSON.parse(readFileSync(spacesFile(), "utf-8")).spaces.find((s) => s.id === "default"))
+    .toHaveProperty("lastAccessAt");
 });
 
 const fakeRequest = (headers = {}) => ({ headers });

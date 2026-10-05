@@ -384,3 +384,235 @@ describe("routeStoreSetRoutes：四条早返回 + 一条增量路径", () => {
     expect(out.routeMap.get("b")!.points).toEqual([{ x: 2, y: 2 }]);
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 现状钉桩（auto-improve 清单第 75 项）：非有限查询框 + 负 bucketSize
+//
+// ⚠ 三处「现状」与旧描述不符，全部以 probe 实测为准（0fa3569c 加归一化之后）：
+//
+//   ① **负 bucketSize 现在不死循环**，而是回落到默认桶宽 320。
+//      旧描述里的「负数 → 区间倒挂 → 空区间 → 静默全空索引」说的是**修复前**的行为。
+//      实测：`buildRouteSpatialIndex(routes, -10).bucketSize === 320`，
+//      且桶内容与不传第二参的索引**逐项相同**（不是「两堆空相等」——参照索引有 5 个桶）。
+//
+//   ② 会挂死的是 **bucketSize === 0**，不是负数：`Math.floor(1 / 0) === Infinity`，
+//      `for (let x = Infinity; x <= Infinity; x += 1)` 恒真。负数只是「区间倒挂 → 空区间」，
+//      而那也已由同一道归一化守卫兜住。
+//
+//   ③ 查询框含 ±Infinity 时**不走桶坐标循环**，而是遍历全部桶再逐条精确复核
+//      （routeStore.ts 里的 `rangeIsFinite` 守卫）。
+//
+// ⚠ 两个已知空洞，本块**故意不覆盖**（实测会打爆进程，vitest 的 per-test timeout 拦不住）：
+//   · `buildRouteSpatialIndex` 传一条坐标含 ±Infinity 的路线 → `addRouteSpatialEntry`
+//     里 `for (x = Infinity; x <= Infinity; x += 1)` 同步死循环 → 实测 JS heap OOM。
+//     守卫只加在 `queryRouteSpatialIndex`，落桶侧没有。
+//   · `bucketSize` 传极小的**正**数（如 1e-9）→ 守卫放行（有限且 > 0），
+//     桶数 ≈ 1e13 → 实测 `RangeError: Map maximum size exceeded`（跑满 30s testTimeout）。
+//   两者都不是本项要钉的现状，留给后续项处理。
+// ═════════════════════════════════════════════════════════════════════════════
+
+type Bounds4 = { left: number; right: number; top: number; bottom: number };
+
+/** 参照索引的三条路线：near 落 4 桶、far 落 1 桶、void 无桶且包围盒为 null。 */
+const SAMPLE_ROUTES = (): RoutedEdge[] => [
+  route("near", [[0, 0], [10, 10]]),            // 桶 -1:-1 / -1:0 / 0:-1 / 0:0
+  route("far", [[1000, 1000], [1010, 1010]]),   // 桶 3:3
+  route("void", [])                             // 0 桶，routeBoundsById 存 null
+];
+
+const sampleIndex = () => buildRouteSpatialIndex(SAMPLE_ROUTES());
+const FAR_BOX = box(995, 1015, 995, 1015);      // 只罩住 far（桶 3:3），远离原点
+const NEG_LEFT_BOX = box(-100, 20, -100, 20);   // 负 left：判别 per-axis `/ size` 变异
+/** 三个刻意避开「恰好等于默认桶号」的查询框。 */
+const qFar = (index: ReturnType<typeof sampleIndex>) => ids(queryRouteSpatialIndex(index, FAR_BOX));
+const qNeg = (index: ReturnType<typeof sampleIndex>) => ids(queryRouteSpatialIndex(index, NEG_LEFT_BOX));
+const qHalf = (index: ReturnType<typeof sampleIndex>) => ids(queryRouteSpatialIndex(index, box(0, Infinity, 0, Infinity)));
+
+describe("★ 非有限查询框（NaN）：恒空集，成因是精确复核而不是提前返回", () => {
+  test("护栏：同一索引上正常框能命中（否则下面的空集可能只是索引坏了）", () => {
+    const idx = sampleIndex();
+    expect([...idx.buckets.keys()].sort()).toEqual(["-1:-1", "-1:0", "0:-1", "0:0", "3:3"]);
+    expect(ids(queryRouteSpatialIndex(idx, box(0, 20, 0, 20)))).toEqual(["near"]);
+    expect(ids(queryRouteSpatialIndex(idx, FAR_BOX))).toEqual(["far"]);
+  });
+
+  test("★ 四轴任一为 NaN → 空集（逐轴构造，不靠「四轴全 NaN」一条蒙对）", () => {
+    const idx = sampleIndex();
+    const cases: Array<[string, Bounds4]> = [
+      ["left 轴 NaN", box(NaN, 20, 0, 20)],
+      ["right 轴 NaN", box(0, NaN, 0, 20)],
+      ["top 轴 NaN", box(0, 20, NaN, 20)],
+      ["bottom 轴 NaN", box(0, 20, 0, NaN)],
+      ["四轴全 NaN", box(NaN, NaN, NaN, NaN)],
+      // x 两轴 / y 两轴 NaN：桶区间四个端点全废，与「只坏一轴」同属非有限分支
+      ["x 两轴 NaN", box(NaN, NaN, 0, 20)],
+      ["y 两轴 NaN", box(0, 20, NaN, NaN)]
+    ];
+    for (const [label, bounds] of cases) {
+      expect(ids(queryRouteSpatialIndex(idx, bounds)), label).toEqual([]);
+    }
+  });
+
+  test("★ 空集由 `routeBoundsIntersect` 产出：同一个 NaN 框直接喂给它也是 false", () => {
+    // 变异实测：把 visitBucket 里的 `!routeBoundsIntersect(routeBounds, bounds)` 摘掉，
+    // 上面那条会从 [] 变成 ["near","far"]。所以空集**不是**某个 NaN 专用早返回的产物。
+    const near = SAMPLE_ROUTES()[0];
+    expect(routeIntersectsRenderBounds(near, box(NaN, 20, 0, 20)), "NaN 轴").toBe(false);
+    expect(routeIntersectsRenderBounds(near, box(0, 20, 0, 20)), "同框正常轴").toBe(true);
+    // 对照组：换成 ±Infinity 全覆盖框，同一条路线是相交的 ⇒ 差异只来自框，不来自路线
+    expect(routeIntersectsRenderBounds(near, box(-Infinity, Infinity, -Infinity, Infinity))).toBe(true);
+  });
+
+  test("NaN 查询不污染索引：后续正常查询与全新索引结果相同（同一个框连查两次也要对）", () => {
+    const used = sampleIndex();
+    expect(ids(queryRouteSpatialIndex(used, box(NaN, NaN, NaN, NaN)))).toEqual([]);
+    const first = ids(queryRouteSpatialIndex(used, box(0, 20, 0, 20)));
+    const second = ids(queryRouteSpatialIndex(used, box(0, 20, 0, 20)));
+    expect(first).toEqual(["near"]);
+    expect(second, "查询标记必须每次递增，否则第二次被自己的去重表挡掉").toEqual(first);
+    expect(qFar(used)).toEqual(["far"]);
+  });
+});
+
+describe("★ 非有限查询框（±Infinity）：遍历全部桶 + 精确复核", () => {
+  test("全覆盖框（-Inf..+Inf）→ 命中所有**有桶**的路线", () => {
+    const idx = sampleIndex();
+    const found = ids(queryRouteSpatialIndex(idx, box(-Infinity, Infinity, -Infinity, Infinity)));
+    expect(found).toEqual(["near", "far"]);
+    // 护栏：near 落了 4 个桶却只出现一次 ⇒ 非有限分支同样走 seenById 去重
+    expect(idx.routeBucketKeysById.get("near")).toHaveLength(4);
+    // void 没有任何桶 ⇒ 「遍历全部桶」也捞不到它（不是「返回索引里所有路线」）
+    expect(idx.routeBucketKeysById.get("void")).toEqual([]);
+    expect(routeSpatialIndexRenderBounds(idx, "void")).toBeNull();
+    expect(found).not.toContain("void");
+  });
+
+  test("★ ±Infinity 不是「无脑返回全部」：退化点与半开区间都由精确复核裁决", () => {
+    const idx = sampleIndex();
+    // 退化成单点 ±Infinity：有限路线的 `right >= Infinity` / `left <= -Infinity` 恒假
+    expect(ids(queryRouteSpatialIndex(idx, box(Infinity, Infinity, Infinity, Infinity))), "+Inf 退化点").toEqual([]);
+    expect(ids(queryRouteSpatialIndex(idx, box(-Infinity, -Infinity, -Infinity, -Infinity))), "-Inf 退化点").toEqual([]);
+    // 半开：-Inf..0 只罩住原点，0..+Inf 罩住两条
+    expect(ids(queryRouteSpatialIndex(idx, box(-Infinity, 0, -Infinity, 0))), "-Inf..0").toEqual(["near"]);
+    expect(qHalf(idx), "0..+Inf").toEqual(["near", "far"]);
+    // left 无穷但 right 有限 —— 判别「rangeIsFinite 只查 left 一个端点」的变异
+    expect(ids(queryRouteSpatialIndex(idx, box(-Infinity, 20, 0, 20))), "left=-Inf, right=20").toEqual(["near"]);
+    // 反向倒挂：left=+Inf > right=20，精确复核也过不去
+    expect(ids(queryRouteSpatialIndex(idx, box(Infinity, 20, 0, 20))), "left=+Inf, right=20").toEqual([]);
+  });
+
+  test("单轴无穷：另一轴仍按有限区间裁剪（不是「有一根无穷就全收」）", () => {
+    const idx = sampleIndex();
+    expect(ids(queryRouteSpatialIndex(idx, box(-Infinity, Infinity, 0, 20))), "x 无穷、y 有限").toEqual(["near"]);
+    expect(ids(queryRouteSpatialIndex(idx, box(0, 20, -Infinity, Infinity))), "y 无穷、x 有限").toEqual(["near"]);
+  });
+
+  test("同一个全覆盖框连查三次结果一致（去重标记跨查询复用不出错）", () => {
+    const idx = sampleIndex();
+    const runs = [1, 2, 3].map(() => ids(queryRouteSpatialIndex(idx, box(-Infinity, Infinity, -Infinity, Infinity))));
+    expect(runs[0]).toEqual(["near", "far"]);
+    expect(runs[1]).toEqual(runs[0]);
+    expect(runs[2]).toEqual(runs[0]);
+  });
+});
+
+describe("★ 负 / 非有限 bucketSize 的现状：build 侧一律回落默认桶宽 320", () => {
+  test("★ bucketSize = -10 → 索引与不传第二参的索引逐项相同（旧描述里的「空索引」已不成立）", () => {
+    const reference = sampleIndex();
+    const bad = buildRouteSpatialIndex(SAMPLE_ROUTES(), -10);
+
+    expect(bad.bucketSize).toBe(BUCKET);
+    // 护栏：参照索引非空，否则「两堆空相等」恒成立
+    expect(reference.buckets.size).toBe(5);
+    expect([...bad.buckets.entries()]).toEqual([...reference.buckets.entries()]);
+    expect([...bad.routeBucketKeysById]).toEqual([...reference.routeBucketKeysById]);
+    expect([...bad.routeBoundsById]).toEqual([...reference.routeBoundsById]);
+    expect(ids(queryRouteSpatialIndex(bad, box(0, 20, 0, 20))), "近端").toEqual(["near"]);
+    expect(qFar(bad), "远端").toEqual(["far"]);
+  });
+
+  test("0 / -0.5 / NaN / ±Infinity 六档非法输入，回落后索引逐项相同", () => {
+    // ⚠ 这里的 0 与旧描述不同：**有守卫时**它回落到 320，不挂死；
+    //   若把守卫变异成 `bucketSize >= 0`，这一档会同步死循环（只能靠进程级墙钟判红）。
+    const reference = sampleIndex();
+    const illegal: Array<[string, number]> = [
+      ["0", 0],
+      ["-0.5", -0.5],
+      ["-10", -10],
+      ["NaN", Number.NaN],
+      ["+Infinity", Number.POSITIVE_INFINITY],
+      ["-Infinity", Number.NEGATIVE_INFINITY]
+    ];
+    for (const [label, bad] of illegal) {
+      const idx = buildRouteSpatialIndex(SAMPLE_ROUTES(), bad);
+      expect(idx.bucketSize, label).toBe(BUCKET);
+      expect([...idx.buckets.entries()], label).toEqual([...reference.buckets.entries()]);
+    }
+  });
+
+  test("回归护栏：正的非默认桶宽仍**原样生效**（否则「一律回落」这条也是绿的）", () => {
+    const small = buildRouteSpatialIndex(SAMPLE_ROUTES(), 160);
+    expect(small.bucketSize).toBe(160);
+    // 桶号真的跟着变：far 从 3:3 挪到 6:6（floor(992/160)=6，floor(1018/320)=3）
+    expect([...small.buckets.keys()]).toContain("6:6");
+    expect([...small.buckets.keys()]).not.toContain("3:3");
+    expect([...sampleIndex().buckets.keys()]).toContain("3:3");
+    // 更小的桶宽 → far 横跨更多桶，桶总数上涨
+    expect(buildRouteSpatialIndex(SAMPLE_ROUTES(), 40).buckets.size).toBeGreaterThan(small.buckets.size);
+  });
+});
+
+describe("★ 查询侧 bucketSize 守卫：索引被外部改字段后仍按默认桶宽算区间", () => {
+  const tampered = (index: ReturnType<typeof sampleIndex>, bucketSize: number) => ({ ...index, bucketSize });
+
+  test("★ bucketSize = -10：近端、远端、负 left 框全部照常命中", () => {
+    // 负 left 的框是关键判别输入：不归一时 `Math.floor(-100 / -10) === 10`，
+    // 区间变成 left=10 > right=0 ⇒ 一次都不循环 ⇒ 查询恒空。
+    const idx = tampered(sampleIndex(), -10);
+    expect(idx.bucketSize, "字段本身仍是被改掉的原值").toBe(-10);
+    expect(ids(queryRouteSpatialIndex(idx, box(0, 20, 0, 20))), "近端").toEqual(["near"]);
+    expect(qFar(idx), "远端").toEqual(["far"]);
+    expect(qNeg(idx), "负 left").toEqual(["near"]);
+  });
+
+  test("0 / NaN / ±Infinity：查询结果与不传第二参的索引逐项相同", () => {
+    const reference = sampleIndex();
+    const expectedNear = ids(queryRouteSpatialIndex(reference, box(0, 20, 0, 20)));
+    const expectedFar = qFar(reference);
+    expect(expectedNear, "护栏：参照结果非空").toEqual(["near"]);
+    expect(expectedFar, "护栏：参照结果非空").toEqual(["far"]);
+
+    for (const [label, bad] of [
+      ["0", 0],
+      ["NaN", Number.NaN],
+      ["+Infinity", Number.POSITIVE_INFINITY],
+      ["-Infinity", Number.NEGATIVE_INFINITY]
+    ] as Array<[string, number]>) {
+      const idx = tampered(reference, bad);
+      expect(ids(queryRouteSpatialIndex(idx, box(0, 20, 0, 20))), label).toEqual(expectedNear);
+      expect(qFar(idx), label).toEqual(expectedFar);
+    }
+  });
+
+  test("★ 回归护栏：正的 2 会真的改变查询结果 —— 证明查询侧确实读 index.bucketSize", () => {
+    // 若查询侧把桶宽写死成 320（而不是读字段再归一），这一档会与对照相同而恒绿。
+    const idx = tampered(sampleIndex(), 2);
+    expect(idx.bucketSize).toBe(2);
+    expect(qFar(idx), "桶键是按 320 落的，2px 区间扫不到 3:3").toEqual([]);
+    expect(qFar(sampleIndex()), "对照：默认桶宽能查到").toEqual(["far"]);
+  });
+
+  test("记录：bucketSize = NaN 时查询侧归一是**冗余**的（变异全绿属正确结果）", () => {
+    // 变异实测：把 routeSpatialBucketRange 里的 `const size = routeSpatialBucketSize(bucketSize)`
+    // 换成 `const size = bucketSize`，下面这几条仍全绿。理由可证：
+    //   size = NaN ⇒ 四个 range 端点全 NaN ⇒ rangeIsFinite 必为 false
+    //   ⇒ 查询必然走「遍历全部桶」分支，扫到的桶集合与归一后（320）的坐标扫描**完全相同**，
+    //   再叠加同一套精确复核 ⇒ 输出逐位相同。
+    // 前提是 rangeIsFinite 那道守卫在（等价性正是靠它才成立）。所以下面钉的是**行为**，
+    // 不是「归一」；对 NaN 而言归一在查询侧不承重，承重的是 rangeIsFinite。
+    const idx = tampered(sampleIndex(), Number.NaN);
+    expect(ids(queryRouteSpatialIndex(idx, box(0, 20, 0, 20)))).toEqual(["near"]);
+    expect(qFar(idx)).toEqual(["far"]);
+    expect(qNeg(idx)).toEqual(["near"]);
+  });
+});

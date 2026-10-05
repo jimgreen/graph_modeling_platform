@@ -918,3 +918,224 @@ describe("importDotFile 望道变 fixture 朝向+正交布线集成（B4）", ()
     expect(crossing).toBeLessThanOrEqual(result.project.edges.length);
   });
 });
+
+// ===== C 修复守卫：DOT 属性顺序无关 + link 去重键无歧义 =====
+
+// 测试侧工具：引号感知的逗号切分（属性值里含逗号，如 pos="615.0,307.0!"）
+const splitDotAttrs = (body: string): string[] => {
+  const parts: string[] = [];
+  let cur = "";
+  let inQuote = false;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch === '"' && body[i - 1] !== "\\") inQuote = !inQuote;
+    if (ch === "," && !inQuote) {
+      parts.push(cur.trim());
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  parts.push(cur.trim());
+  return parts;
+};
+
+// 测试侧工具：把每行 `id [k=v, ...];` 的属性顺序整体反转（graph/node/edge 默认语句一并反转，
+// 它们仍不是节点行，不影响断言）。用于证明「换序解析结果与标准顺序逐项相同」。
+const reverseAttrOrder = (text: string): string =>
+  text
+    .split(/\r?\n/)
+    .map((line) => {
+      const m = line.match(/^(\s*[A-Za-z_][A-Za-z0-9_]*\s*\[)([\s\S]*)(\]\s*;?\s*)$/);
+      if (!m) return line;
+      const attrs = splitDotAttrs(m[2]);
+      if (attrs.length < 2) return line;
+      return `${m[1]}${attrs.reverse().join(", ")}${m[3]}`;
+    })
+    .join("\n");
+
+describe("parseDot 属性顺序无关与未知属性容忍（C）", () => {
+  it("C-1 属性换序（pos/fillcolor 在前）仍被解析，字段逐项正确、OPEN 标记照常剥离", () => {
+    const g = parseDot(`digraph G {
+  n0 [shape=rect, pos="10,20!", fillcolor=yellow, label="BBS_1"];
+  n1 [pos="100,250!", shape=invtriangle, label="SW_1\\n[OPEN]", fillcolor=orange];
+}`);
+    expect(g.nodes).toHaveLength(2);
+    expect(g.nodes[0]).toEqual({
+      id: "n0",
+      label: "BBS_1",
+      open: false,
+      shape: "rect",
+      fillcolor: "yellow",
+      x: 10,
+      y: 20,
+    });
+    // 换序后 [OPEN] 仍被剥离，open 标志不依赖属性顺序
+    expect(g.nodes[1]).toEqual({
+      id: "n1",
+      label: "SW_1",
+      open: true,
+      shape: "invtriangle",
+      fillcolor: "orange",
+      x: 100,
+      y: 250,
+    });
+  });
+
+  it("C-2 未知属性（color/comment/fontsize/style）不影响已知属性，节点照常解析", () => {
+    const g = parseDot(`digraph G {
+  n0 [label="A", shape=rect, color=red, fillcolor=yellow, fontsize=10, pos="1,2!", comment="x", style=filled];
+}`);
+    expect(g.nodes).toEqual([
+      { id: "n0", label: "A", open: false, shape: "rect", fillcolor: "yellow", x: 1, y: 2 },
+    ]);
+  });
+
+  it("C-3 空白分隔容忍：tab / 多空格 / = 两侧空格；属性跨行则不解析（行式扫描器的既有边界）", () => {
+    const g = parseDot("digraph G {\n" +
+      '  n0\t[label="A",   shape=rect,\tfillcolor=yellow,\tpos="1,2!"];\n' +
+      '  n1 [label = "B" ,  shape = rect, fillcolor = yellow, pos = "3,4!"];\n' +
+      '  n2 [label="C",\n    shape=rect, fillcolor=yellow, pos="5,6!"];\n' +
+      "}");
+    // tab / 多空格 / = 两侧空格：两条都解析出来
+    expect(g.nodes.map((n) => n.id)).toEqual(["n0", "n1"]);
+    expect(g.nodes[1]).toMatchObject({ label: "B", shape: "rect", fillcolor: "yellow", x: 3, y: 4 });
+    // 跨行属性串：parseDot 按行扫描，两行都不构成完整节点行 → 不产出节点（与修复前同，属既有边界）
+    expect(g.nodes.map((n) => n.id)).not.toContain("n2");
+  });
+
+  it("C-4 顺序无关：整份样本属性反转后解析结果与标准顺序逐项相同", () => {
+    const standard = parseDot(MINI_DOT);
+    const reversed = parseDot(reverseAttrOrder(MINI_DOT));
+    expect(reversed.nodes).toEqual(standard.nodes);
+    expect(reversed.edges).toEqual(standard.edges);
+    expect(reversed.stationName).toBe(standard.stationName);
+    // 反转确实动了输入（否则上面三条恒绿）
+    expect(reverseAttrOrder(MINI_DOT)).toContain('n0 [pos="100,300!", fillcolor=yellow, shape=rect, label="BBS_1"]');
+    // 边数不变
+    expect(reversed.edges).toHaveLength(3);
+  });
+
+  it("C-5 标准顺序回归：MINI_DOT / ESCAPE_DOT 节点逐项与既有期望一致（解析结果未因重写而变）", () => {
+    const g = parseDot(MINI_DOT);
+    expect(g.stationName).toBe("望道变");
+    expect(g.stationId).toBe("6");
+    expect(g.nodes).toEqual([
+      { id: "n0", label: "BBS_1", open: false, shape: "rect", fillcolor: "yellow", x: 100, y: 300 },
+      { id: "n1", label: "SW_1", open: true, shape: "invtriangle", fillcolor: "orange", x: 100, y: 250 },
+      { id: "n2", label: "CB_1", open: false, shape: "diamond", fillcolor: "green", x: 100, y: 200 },
+      { id: "n3", label: "INTERNAL_VL_1_230_10", open: false, shape: "point", fillcolor: "black", x: 100, y: 322 },
+    ]);
+    expect(g.edges).toEqual([
+      { from: "n0", to: "n3" },
+      { from: "n3", to: "n1" },
+      { from: "n1", to: "n2" },
+    ]);
+    const e = parseDot(ESCAPE_DOT);
+    expect(e.nodes[0]).toEqual({
+      id: "n0",
+      label: 'A "B" C',
+      open: false,
+      shape: "rect",
+      fillcolor: "yellow",
+      x: 10,
+      y: 20,
+    });
+  });
+
+  it("C-6 望道变 fixture 回归：250 节点 / 255 边；属性整体反转后节点逐项相同", () => {
+    const text = readFileSync(new URL("./__fixtures__/dot/望道变_6.dot", import.meta.url), "utf8");
+    const standard = parseDot(text);
+    expect(standard.nodes).toHaveLength(250);
+    expect(standard.edges).toHaveLength(255);
+    const reversed = parseDot(reverseAttrOrder(text));
+    expect(reversed.nodes).toEqual(standard.nodes);
+    expect(reversed.edges).toEqual(standard.edges);
+  });
+
+  it("C-7 graph/node/edge 默认语句与缺必需属性的行不会被误判为节点", () => {
+    const g = parseDot(`digraph G {
+  graph [rankdir=TB, label="\u671b\u9053\u53d8", fontsize=16, pad=0.5, splines=ortho];
+  node [fontsize=10, shape=rect, fillcolor=yellow, pos="1,2!"];
+  edge [arrowsize=0.6];
+  n0 [label="A", shape=rect, fillcolor=yellow, pos="1,2!"];
+  n1 [label="B", shape=rect, fillcolor=yellow];
+}`);
+    // 只有真正的设备节点行被解析：默认语句（无 pos）与缺 pos 的 n1 都不产出
+    expect(g.nodes.map((n) => n.id)).toEqual(["n0"]);
+  });
+});
+
+// label 含 | 的设备对：(A, B|C) 与 (A|B, C) 在旧的 `${x}|${y}` 键下撞同一个 key
+const PIPE_GRAPH = (): DotGraph =>
+  mg(
+    [
+      nd("n0", "A", "rect", "yellow"),
+      nd("n1", "B|C", "ellipse", "lightblue"),
+      nd("n2", "A|B", "diamond", "green"),
+      nd("n3", "C", "invtriangle", "orange"),
+    ],
+    [
+      ["n0", "n1"],
+      ["n2", "n3"],
+    ],
+  );
+
+describe("collapseDotGraph link 去重键无歧义（C）", () => {
+  it("C-8 label 含竖线：两条不同边都保留，未被并成一条", () => {
+    const r = collapseDotGraph(PIPE_GRAPH());
+    // 旧键下两条边的 key 同为 A|B|C，linkSet.set 覆盖后只剩 1 条
+    expect(r.links).toHaveLength(2);
+    expect(r.links).toEqual([
+      { from: "A", to: "B|C" },
+      { from: "A|B", to: "C" },
+    ]);
+    // 每条边的 label 原样透出（未被编码污染）
+    expect(r.links.map((l) => `${l.from}|${l.to}`)).toEqual(["A|B|C", "A|B|C"]);
+  });
+
+  it("C-9 label 含竖线的图装配到模型：两条边都在（下游 map 未合并）", () => {
+    const { project, report } = mapDotGraphToModel(PIPE_GRAPH());
+    expect(project.nodes).toHaveLength(4);
+    expect(report.edgeCount).toBe(2);
+    expect(project.edges).toHaveLength(2);
+    const nameOf = new Map(project.nodes.map((n) => [n.id, n.name]));
+    const pairs = project.edges.map((e) => [nameOf.get(e.sourceId)!, nameOf.get(e.targetId)!].sort());
+    expect(pairs).toEqual(expect.arrayContaining([["A", "B|C"], ["A|B", "C"]]));
+  });
+
+  it("C-10 常规 label 回归：MINI_DOT 与望道变 fixture 的 links 与修复前逐项相同", () => {
+    const mini = collapseDotGraph(parseDot(MINI_DOT));
+    expect(mini.devices.map((d) => d.label)).toEqual(["BBS_1", "SW_1", "CB_1"]);
+    expect(mini.links).toEqual([
+      { from: "BBS_1", to: "SW_1" },
+      { from: "CB_1", to: "SW_1" },
+    ]);
+    const text = readFileSync(new URL("./__fixtures__/dot/望道变_6.dot", import.meta.url), "utf8");
+    const full = collapseDotGraph(parseDot(text));
+    expect(full.devices).toHaveLength(141);
+    expect(full.links).toHaveLength(185);
+    expect(full.reportPart.selfLoopDropped).toBe(24);
+    // fixture 内无 label 含 |，全部 link 的 label 都不含竖线（新旧键一一对应，条数不变）
+    expect(full.links.every((l) => !l.from.includes("|") && !l.to.includes("|"))).toBe(true);
+  });
+});
+
+describe("orthogonalRouteWithinCorners 退化输入（C）", () => {
+  it("C-11 start 与 end 同一点（无阻挡）：退化为单点路径，不抛错", () => {
+    // 实跑行为：直连与两条 L 形 compactRoute 后都只剩 1 个点（route.length < 2 被跳过），
+    // 候选集耗尽 → 走防御兜底 compactRoute([start, {...}, end])，同样去重成单点。
+    const p = { x: 40, y: 60 };
+    const route = orthogonalRouteWithinCorners(p, { x: 40, y: 60 }, [], []);
+    expect(route).toEqual([{ x: 40, y: 60 }]);
+    expect(route).toHaveLength(1);
+  });
+
+  it("C-12 start 与 end 同一点且附近有阻挡盒：走廊退化为零面积，派生不出 Z lane，仍返回单点", () => {
+    // 实跑行为：start===end 时 corridor 宽高皆 0，任何阻挡盒都满足 minX > corridor.maxX 被跳过，
+    // 因此派生不出 lane；直连与两条 L 形 compactRoute 后也都只剩 1 个点 → 走防御兜底得单点。
+    const blocker = createDefaultNode("ac-switch", { x: 100, y: 0 });
+    const route = orthogonalRouteWithinCorners({ x: 0, y: 0 }, { x: 0, y: 0 }, [blocker], []);
+    expect(route).toEqual([{ x: 0, y: 0 }]);
+  });
+});

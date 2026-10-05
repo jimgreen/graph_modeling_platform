@@ -21,11 +21,34 @@ const deferredFixKeys = new Set<string>();
 const appliedFixKeys = new Set<string>();
 
 /**
+ * 分段编码：先把分段里当分隔符用的 `\u0000` 与转义符 `\u0001` 编码掉，再交给上层拼接。
+ *
+ * 为什么不能裸拼分隔符：三段里只要有一段自带 `\u0000`，拼出来的键就会撞车 ——
+ * `("a\u0000b", "c", "d")` 与 `("a", "b\u0000c", "d")` 都得到 `a\u0000b\u0000c\u0000d`，
+ * 两个不同修复项于是共用一条登记（其中一个会先被登记成 applied，另一个直接被吞掉）。
+ *
+ * 转义规则：`\u0001` → `\u0001\u0001`，`\u0000` → `\u0001\u0000`。
+ * 编码后分段内部的每处 `\u0000` 前面都紧跟一个会被消费掉的 `\u0001`，
+ * 剩下的裸 `\u0000` 只可能是分隔符；于是「从左扫：遇 `\u0001` 吃掉紧跟的一字符作为数据，
+ * 遇裸 `\u0000` 断段」唯一还原出原三元组 —— 编码是单射，不同三元组必得不同键。
+ *
+ * 不含这两个控制字符的分段（现实中全部 id 与参数键都是）编码后与原文逐字相同，
+ * 所以键的取值对既有输入没有任何变化。
+ */
+function encodeFixKeySegment(segment: string): string {
+  return segment.replace(/\u0001/g, "\u0001\u0001").replace(/\u0000/g, "\u0001\u0000");
+}
+
+/**
  * 会话内唯一的修复项标识：检查范围 + 设备 + 参数键。
  * 容器关联字段的额定容量参数键自带关系前缀（如 `idx_ac_load_t1.rated_capacity`），天然与本体字段区分。
+ *
+ * 只活在当前会话内存里（模块级两个 Set，以及 model-routing 单轮检查内的 Map），
+ * 不落盘、不跨进程传递，因此可以自由改编码而无需考虑旧数据。
+ * 注意：检查范围 `scopeKey` 由调用方拼好再传进来，本函数无法为它内部的拼接歧义兜底。
  */
 export function ratedCapacityFixKey(scopeKey: string, nodeId: string, paramKey: string): string {
-  return `${scopeKey}\u0000${nodeId}\u0000${paramKey}`;
+  return `${encodeFixKeySegment(scopeKey)}\u0000${encodeFixKeySegment(nodeId)}\u0000${encodeFixKeySegment(paramKey)}`;
 }
 
 /**

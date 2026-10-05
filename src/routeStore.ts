@@ -45,12 +45,27 @@ const nextRouteSpatialQueryMark = (state: RouteSpatialQueryState) => {
   return state.mark;
 };
 
-const routeSpatialBucketRange = (bounds: RouteRenderBounds, bucketSize: number) => ({
-  left: Math.floor(bounds.left / bucketSize),
-  right: Math.floor(bounds.right / bucketSize),
-  top: Math.floor(bounds.top / bucketSize),
-  bottom: Math.floor(bounds.bottom / bucketSize)
-});
+// bucketSize 是桶区间除数的分母，非法值会直接毁掉区间，而不是「算错一点」：
+//   0        → Math.floor(非零坐标 / 0) = Infinity，区间塌成 Infinity~Infinity，
+//              `for (x = Infinity; x <= Infinity; x += 1)` 条件恒真 ⇒ 建索引与查询都死循环卡死；
+//   负数     → floor 出的 left > right（区间倒挂）⇒ 空区间，所有线静默丢失；
+//   NaN      → floor 得 NaN，`x <= right` 恒假 ⇒ 同样是空区间；
+//   Infinity → 任何有限坐标 / Infinity = 0 ⇒ 全部挤进 0:0 单桶，粗筛彻底失效。
+// 一律回落到默认桶宽；正常正数（生产唯一取值来源是默认 320）逐位不变。
+const routeSpatialBucketSize = (bucketSize: number) =>
+  Number.isFinite(bucketSize) && bucketSize > 0 ? bucketSize : ROUTE_SPATIAL_BUCKET_SIZE;
+
+// 归一化在这里做，而不是只在 buildRouteSpatialIndex 入口做：patchRouteSpatialIndex 与
+// queryRouteSpatialIndex 都拿 index.bucketSize 再算一次区间，索引被外部改字段也会走到这里。
+const routeSpatialBucketRange = (bounds: RouteRenderBounds, bucketSize: number) => {
+  const size = routeSpatialBucketSize(bucketSize);
+  return {
+    left: Math.floor(bounds.left / size),
+    right: Math.floor(bounds.right / size),
+    top: Math.floor(bounds.top / size),
+    bottom: Math.floor(bounds.bottom / size)
+  };
+};
 
 const routeIndexMap = (order: readonly string[]) => new Map(order.map((id, index) => [id, index]));
 
@@ -135,13 +150,16 @@ export function buildRouteSpatialIndex(
   routes: readonly RoutedEdge[],
   bucketSize = ROUTE_SPATIAL_BUCKET_SIZE
 ): RouteSpatialIndex {
+  // 归一化后的值存回索引：bucketSize 字段必须与实际落桶用的桶宽一致，
+  // 否则 patchRouteSpatialIndex / queryRouteSpatialIndex 读 index.bucketSize 时会对不上已有桶键。
+  const size = routeSpatialBucketSize(bucketSize);
   const buckets = new Map<string, RoutedEdge[]>();
   const routeBucketKeysById = new Map<string, string[]>();
   const routeBoundsById = new Map<string, RouteRenderBounds | null>();
   for (const route of routes) {
-    addRouteSpatialEntry(route, routeRenderBounds(route), bucketSize, buckets, routeBucketKeysById, routeBoundsById);
+    addRouteSpatialEntry(route, routeRenderBounds(route), size, buckets, routeBucketKeysById, routeBoundsById);
   }
-  return { bucketSize, buckets, routeBucketKeysById, routeBoundsById, queryState: { mark: 0, seenById: new Map() } };
+  return { bucketSize: size, buckets, routeBucketKeysById, routeBoundsById, queryState: { mark: 0, seenById: new Map() } };
 }
 
 function patchRouteSpatialIndex(
@@ -220,23 +238,37 @@ export function queryRouteSpatialIndex(index: RouteSpatialIndex, bounds: RouteRe
   const matches: RoutedEdge[] = [];
   const queryMark = nextRouteSpatialQueryMark(index.queryState);
   const seenById = index.queryState.seenById;
-  for (let x = range.left; x <= range.right; x += 1) {
-    for (let y = range.top; y <= range.bottom; y += 1) {
-      const bucket = index.buckets.get(routeSpatialBucketKey(x, y));
-      if (!bucket) {
+  // 查询框本身含 NaN / ±Infinity 时，桶区间不是有限整数区间，坐标循环无从收敛
+  // （Infinity 起步会从 -Infinity 逐格爬到 +Infinity，NaN 起步则条件恒假）。
+  // 桶扫描只是粗筛，能不能相交由下面的精确判定裁决，所以这里不做任何猜测：
+  // 直接遍历实际存在的桶，让 routeBoundsIntersect 用同一组数字自己得出空集或全集。
+  const rangeIsFinite = Number.isFinite(range.left) && Number.isFinite(range.right)
+    && Number.isFinite(range.top) && Number.isFinite(range.bottom);
+  const visitBucket = (bucket: RoutedEdge[] | undefined) => {
+    if (!bucket) {
+      return;
+    }
+    for (const route of bucket) {
+      if (seenById.get(route.edgeId) === queryMark) {
         continue;
       }
-      for (const route of bucket) {
-        if (seenById.get(route.edgeId) === queryMark) {
-          continue;
-        }
-        const routeBounds = routeSpatialIndexRenderBounds(index, route.edgeId) ?? routeRenderBounds(route);
-        if (!routeBounds || !routeBoundsIntersect(routeBounds, bounds)) {
-          continue;
-        }
-        seenById.set(route.edgeId, queryMark);
-        matches.push(route);
+      const routeBounds = routeSpatialIndexRenderBounds(index, route.edgeId) ?? routeRenderBounds(route);
+      if (!routeBounds || !routeBoundsIntersect(routeBounds, bounds)) {
+        continue;
       }
+      seenById.set(route.edgeId, queryMark);
+      matches.push(route);
+    }
+  };
+  if (!rangeIsFinite) {
+    for (const bucket of index.buckets.values()) {
+      visitBucket(bucket);
+    }
+    return matches;
+  }
+  for (let x = range.left; x <= range.right; x += 1) {
+    for (let y = range.top; y <= range.bottom; y += 1) {
+      visitBucket(index.buckets.get(routeSpatialBucketKey(x, y)));
     }
   }
   return matches;

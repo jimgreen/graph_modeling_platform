@@ -75,14 +75,39 @@ export function canvasOuterInset() {
   return CANVAS_FRAME_INSET + CANVAS_RULER_SIZE;
 }
 
-// [from, to] 区间内 unit 的整数倍刻度值（含落在区间内的首尾）
+// 刻度数上限。真实调用方（appCanvasRulers.tsx）只取**可见** viewBox，
+// 而 viewBox 宽度被 clampViewBoxDimensionsForZoom 限死在「画布宽 × 20 倍」
+// 的缩小上限内，实际只有几千个刻度。这个上限只为保证循环一定终止。
+const CANVAS_RULER_TICK_LIMIT = 1_000_000;
+
+// [from, to] 区间内 unit 的整数倍刻度值（含落在区间内的首尾）。
+//
+// 四条守卫，前两条判参数、后两条判**可终止性** —— 后两条是这个函数唯一的
+// 真实风险：它被界面每帧调用，一次死循环就是整个界面卡死（不抛错、不打日志）。
+//   ① unit > 0 且 to >= from：参数非法，返回空数组。
+//   ② from / to 有限：±Infinity 会让 start = Math.ceil(from/unit)*unit 变成
+//      ±Infinity，`value <= to` 恒真且 `value + unit === value` 永不推进 → 死循环。
+//      NaN 也在这里被拦掉（`NaN >= x` 与 `x >= NaN` 都是 false）。
+//   ③ 每轮判 `next > value`：端点有限但超出可表示步进的尺度时（1e21 处的
+//      ULP 已是 262144，远大于 unit 25），`value + unit === value`。
+//      守卫 ② 拦不住这种，只能逐轮比。删掉这条 → 1e21 那两条用例直接挂死。
+//   ④ 刻数上限：区间极大而 unit 很小时（0..1e21 / unit 25），每轮都在前进、
+//      循环本会终止，但得跑 4e19 轮 —— 与死循环对界面是同一后果。
 export function canvasRulerTicks(from: number, to: number, unit: number): number[] {
-  if (!(unit > 0) || !(to >= from)) {
+  if (!(unit > 0) || !(to >= from) || !Number.isFinite(from) || !Number.isFinite(to)) {
     return [];
   }
   const ticks: number[] = [];
-  for (let value = Math.ceil(from / unit) * unit; value <= to; value += unit) {
+  for (let value = Math.ceil(from / unit) * unit; value <= to; ) {
     ticks.push(value);
+    if (ticks.length >= CANVAS_RULER_TICK_LIMIT) {
+      break;
+    }
+    const next = value + unit;
+    if (!(next > value)) {
+      break;
+    }
+    value = next;
   }
   return ticks;
 }

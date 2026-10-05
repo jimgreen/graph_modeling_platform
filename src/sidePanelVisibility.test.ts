@@ -7,6 +7,7 @@ import {
   createUpdateAutoPanelVisibility
 } from "./appExtracted/appCanvasInteractionFactories";
 import {
+  SIDE_PANEL_VIEWPORT_EDGE_GAP,
   isPointerInsideSidePanelViewportEdgeBridge,
   isSidePanelVisible,
   nextSidePanelAutoVisible,
@@ -75,6 +76,110 @@ describe("floating side panel visibility", () => {
     expect(isPointerInsideSidePanelViewportEdgeBridge("right", 987, 300, panelRect, 1000)).toBe(true);
     expect(isPointerInsideSidePanelViewportEdgeBridge("right", 986, 300, panelRect, 1000)).toBe(false);
     expect(isPointerInsideSidePanelViewportEdgeBridge("left", 6, 68, panelRect, 1000)).toBe(false);
+  });
+
+  test("视口宽度小于桥接区宽度时 Math.max 把右侧桥接起点夹到 0", () => {
+    const panelRect = { top: 70, bottom: 700 };
+    // 桥接区宽度 = SIDE_PANEL_VIEWPORT_EDGE_GAP(12) + POINTER_TOLERANCE(1) = 13，
+    // 13 以内的视口宽会让 viewportWidth - bridgeWidth 变成负数，被 Math.max 夹回 0。
+    expect(SIDE_PANEL_VIEWPORT_EDGE_GAP).toBe(12);
+
+    // 12：整个视口 [0, 12] 都是桥接区
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 0, 300, panelRect, 12)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 12, 300, panelRect, 12)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 13, 300, panelRect, 12)).toBe(false);
+
+    // 0：退化成一个点，只认 clientX === 0
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 0, 300, panelRect, 0)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 1, 300, panelRect, 0)).toBe(false);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", -1, 300, panelRect, 0)).toBe(false);
+
+    // 1：退化成 [0, 1]
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 0, 300, panelRect, 1)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 1, 300, panelRect, 1)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 2, 300, panelRect, 1)).toBe(false);
+  });
+
+  test("退化的视口宽度不影响左侧判定，左侧桥接区恒为 0 到 13", () => {
+    const panelRect = { top: 70, bottom: 700 };
+    // 左侧分支完全不读 viewportWidth。
+    for (const viewportWidth of [0, 1, 12, 14, 1000]) {
+      expect(isPointerInsideSidePanelViewportEdgeBridge("left", 0, 300, panelRect, viewportWidth)).toBe(true);
+      expect(isPointerInsideSidePanelViewportEdgeBridge("left", 13, 300, panelRect, viewportWidth)).toBe(true);
+      expect(isPointerInsideSidePanelViewportEdgeBridge("left", 14, 300, panelRect, viewportWidth)).toBe(false);
+    }
+  });
+
+  test("桥接区起点在 13 与 14 之间切换，退化阈值不是随手取的", () => {
+    const panelRect = { top: 70, bottom: 700 };
+    // 13 = 12 + 1：Math.max(0, 13 - 13) 恰好落到 0，桥接区仍覆盖整个视口 [0, 13]。
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 0, 300, panelRect, 13)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 1, 300, panelRect, 13)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 13, 300, panelRect, 13)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 14, 300, panelRect, 13)).toBe(false);
+    // 14 = 13 + 1：起点首次严格大于 0，clientX 0 掉出桥接区。
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 0, 300, panelRect, 14)).toBe(false);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 1, 300, panelRect, 14)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 14, 300, panelRect, 14)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 15, 300, panelRect, 14)).toBe(false);
+    // 20：中间值，起点 = 7。
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 6, 300, panelRect, 20)).toBe(false);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 7, 300, panelRect, 20)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 20, 300, panelRect, 20)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 21, 300, panelRect, 20)).toBe(false);
+  });
+
+  test("clientX 为负数时两侧都判 false", () => {
+    const panelRect = { top: 70, bottom: 700 };
+    expect(isPointerInsideSidePanelViewportEdgeBridge("left", -1, 300, panelRect, 1000)).toBe(false);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("left", -1000, 300, panelRect, 1000)).toBe(false);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", -1, 300, panelRect, 1000)).toBe(false);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", -1000, 300, panelRect, 1000)).toBe(false);
+    // 负数在退化视口下同样被 Math.max 夹住的 0 挡在外面。
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", -1, 300, panelRect, 5)).toBe(false);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", -1, 300, panelRect, 0)).toBe(false);
+  });
+
+  test("clientX 恰好等于视口宽度时右侧命中，左侧不命中", () => {
+    const panelRect = { top: 70, bottom: 700 };
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 1000, 300, panelRect, 1000)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 1001, 300, panelRect, 1000)).toBe(false);
+    // 同一坐标在左侧分支被 13 的上界拒绝。
+    expect(isPointerInsideSidePanelViewportEdgeBridge("left", 1000, 300, panelRect, 1000)).toBe(false);
+    // 退化视口下 clientX === viewportWidth 仍是命中端点。
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 12, 300, panelRect, 12)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 1, 300, panelRect, 1)).toBe(true);
+  });
+
+  test("panelRect 缺失或为 null 时抛 TypeError 而不是返回 false", () => {
+    expect(() =>
+      isPointerInsideSidePanelViewportEdgeBridge("left", 0, 300, undefined as never, 1000)
+    ).toThrow(TypeError);
+    expect(() => isPointerInsideSidePanelViewportEdgeBridge("left", 0, 300, null as never, 1000)).toThrow(
+      TypeError
+    );
+    expect(() => isPointerInsideSidePanelViewportEdgeBridge("right", 999, 300, undefined as never, 1000)).toThrow(
+      TypeError
+    );
+  });
+
+  test("panelRect 字段为 undefined 时比较结果为 NaN，一律判 false", () => {
+    // NaN 参与任何比较都是 false，因此 insidePanelHeight 直接短路。
+    expect(isPointerInsideSidePanelViewportEdgeBridge("left", 0, 300, {} as never, 1000)).toBe(false);
+    expect(
+      isPointerInsideSidePanelViewportEdgeBridge("left", 0, 300, { top: undefined } as never, 1000)
+    ).toBe(false);
+    expect(
+      isPointerInsideSidePanelViewportEdgeBridge("right", 999, 300, { bottom: undefined } as never, 1000)
+    ).toBe(false);
+    // 字段为 NaN 与为 undefined 同路径。
+    expect(
+      isPointerInsideSidePanelViewportEdgeBridge("left", 0, 300, { top: NaN, bottom: 700 } as never, 1000)
+    ).toBe(false);
+    // 一侧字段为 undefined 时，另一侧字段仍救不回来：整个 && 短路在 NaN 上。
+    expect(
+      isPointerInsideSidePanelViewportEdgeBridge("left", 0, 300, { top: 70, bottom: undefined } as never, 1000)
+    ).toBe(false);
   });
 
   test("panel leave does not close an auto panel while the pointer crosses its viewport-edge gap", () => {

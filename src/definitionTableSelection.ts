@@ -74,9 +74,19 @@ export function moveSelectedTableRows<Row, Key>(
 export function uniqueCopiedFieldName(sourceName: unknown, existingNames: Set<string>): string {
   const normalizedSource = String(sourceName ?? "").trim() || "field";
   const baseName = `${normalizedSource}_copy`;
+  // 占用判定必须是大小写不敏感的两种方向：
+  // 1) 探针侧 —— candidate 是 sourceName 原样拼出来的（sourceName 不做小写化），
+  //    所以探针一律走 toLowerCase()；
+  // 2) 种子侧 —— 集合里可能混着 FieldA、P_Set 这类未统一小写的名字。若只把探针
+  //    小写化再去 has，只有全小写种子才查得到，混合大小写种子会漏判，于是产出一个与
+  //    现有字段仅大小写不同的名字（Excel/表格导出的列名会撞车）。
+  // 因此先把种子也统一小写建一份查找表再查。全小写种子下这份查找表与原集合等价，
+  // 行为逐字节不变。
+  const occupied = new Set<string>();
+  for (const name of existingNames) occupied.add(name.toLowerCase());
   let candidate = baseName;
   let suffix = 2;
-  while (existingNames.has(candidate.toLowerCase())) {
+  while (occupied.has(candidate.toLowerCase())) {
     candidate = `${baseName}_${suffix}`;
     suffix += 1;
   }

@@ -9,11 +9,20 @@ const configFile = process.env.GRAPH_MODEL_CONFIG
   : resolve(repoRoot, "platform.config.json");
 
 function readConfig() {
+  let parsed;
   try {
-    return JSON.parse(readFileSync(configFile, "utf-8"));
+    parsed = JSON.parse(readFileSync(configFile, "utf-8"));
   } catch {
+    // 文件不存在 / 读失败 / JSON 语法错误：与「写了个非对象的 JSON」同属降级，静默用默认配置
     return {};
   }
+  // 合法 JSON 但不是配置对象（字面 null / 数组 / 字符串 / 数字）时，JSON.parse **不抛错**，
+  // 于是 cfg.host 会在**模块求值期**抛 TypeError —— 任何 import 本模块的东西（server、
+  // vite.config、几十个测试）都直接起不来。归一成 {} 让后续取值拿到 undefined 再走默认值。
+  // 数组一并排除：JSON 数组解析不出 host/frontend/backend 属性，取值与 {} 完全一致，
+  // 排除它只为让「这里期望的是一个配置对象」这件事在代码里读得出来。
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  return parsed;
 }
 
 const cfg = readConfig();
@@ -29,8 +38,26 @@ const normalizeBase = (value) => {
 };
 
 export const host = process.env.IMAGE_SERVER_HOST ?? cfg.host ?? "127.0.0.1";
-export const frontendPort = Number(process.env.VITE_PORT ?? cfg.frontend?.port ?? 5173);
-export const backendPort = Number(process.env.IMAGE_SERVER_PORT ?? cfg.backend?.port ?? 5174);
+
+// 端口归一。默认值只在 fallback 参数里写一处，避免「取值链里一个 ?? 默认 + 参数里
+// 再一个 fallback」两个真值源。
+//   - null / undefined 视同未设。**不能只靠 Number 的有限性兜底**：Number(null) 得 0，
+//     而 0 传给 listen 是「随机端口」—— 比回落默认值更糟：服务确实起来了，但没人
+//     知道它在哪。取值链里的 ?? 只能挡住左操作数为 nullish 的情形，挡不住
+//     cfg.frontend.port 本身就是 null。
+//   - 空串 / 纯空白同理视同未设（Number("") === 0，同一个坑）。
+//   - Number("abc") 得 NaN，而 NaN 会一路传到 server.listen / vite server.port ——
+//     表现为 RangeError。故非有限数（NaN 与 Infinity 都算）一律回落到既定默认值。
+// 合法数字与数字字符串（如 "3000"）行为不变。
+const toPort = (value, fallback) => {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "string" && value.trim() === "") return fallback;
+  const port = Number(value);
+  return Number.isFinite(port) ? port : fallback;
+};
+
+export const frontendPort = toPort(process.env.VITE_PORT ?? cfg.frontend?.port, 5173);
+export const backendPort = toPort(process.env.IMAGE_SERVER_PORT ?? cfg.backend?.port, 5174);
 export const apiPrefix = trimTrailingSlash(
   process.env.GRAPH_MODEL_API_PREFIX ?? cfg.backend?.prefix ?? "/webgrp"
 );

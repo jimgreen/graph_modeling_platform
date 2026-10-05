@@ -17,6 +17,7 @@ import {
   clampContainerCenterToMembers,
   containerBoundsForMembers,
   containerResizeMinSize,
+  ejectOutsiders,
   fitContainerToMembers,
   foldContainerScaleIntoSize,
   hasContainer,
@@ -60,10 +61,24 @@ describe("三个常量：数值固定，且 PADDING 与 CLEARANCE 语义不同�
   });
 
   test("最小尺寸是**冻结的对象**（调用方不得就地改）", () => {
-    // `fitContainerToMembers` 用 `{ ...CONTAINER_MIN_SIZE }` 拷贝后再返回，
-    // 所以这个常量本身不会被就地改。这里钉住它不是 undefined 之类的。
-    expect(typeof CONTAINER_MIN_SIZE.width).toBe("number");
-    expect(typeof CONTAINER_MIN_SIZE.height).toBe("number");
+    // `fitContainerToMembers` 用 `{ ...CONTAINER_MIN_SIZE }` 拷贝后再返回，所以本常量不会被就地改；
+    // 但「调用方都守规矩」是约定，`Object.freeze` 才是可执行的守卫 —— 删掉它下面三条全红。
+    expect(Object.isFrozen(CONTAINER_MIN_SIZE), "导出常量已 Object.freeze").toBe(true);
+    expect(Object.getOwnPropertyDescriptor(CONTAINER_MIN_SIZE, "width")!.writable).toBe(false);
+    expect(Object.getOwnPropertyDescriptor(CONTAINER_MIN_SIZE, "height")!.writable).toBe(false);
+    // 就地改写 → 抛 TypeError，原值不变。
+    // 探针实测：本文件被 vite 以 **ESM 严格模式**执行（ESM 恒严格），故是抛错而非「静默丢弃」。
+    // 若将来被改成 CommonJS/非严格执行，写入会静默失败 —— 上面三条
+    // （isFrozen + 两个 descriptor.writable === false）与最后一条取值断言仍然成立，只有这条会红。
+    let thrown: unknown = null;
+    try {
+      (CONTAINER_MIN_SIZE as { width: number }).width = -1;
+      (CONTAINER_MIN_SIZE as { height: number }).height = -1;
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown, "严格模式下写冻结对象抛 TypeError").toBeInstanceOf(TypeError);
+    expect(CONTAINER_MIN_SIZE, "★ 原值不变").toEqual({ width: 180, height: 112 });
   });
 });
 
@@ -419,5 +434,76 @@ describe("fitContainerToMembers：矩形左上角 + 尺寸 → 中心锚定", ()
     const c = node();
     const members = [member(), node({ kind: "ac-bus", position: { x: 300, y: 200 } })];
     expect(containerResizeMinSize(c, members)).toEqual(fitContainerToMembers(c, members).size);
+  });
+});
+
+// `withinClearance` 是 acContainer.ts 里的**私有**函数（未导出），故不能直接断言它的返回值。
+// 唯一可观察面是 `ejectOutsiders` → `pushBoundsOutOfRect` → `withinClearance`：
+// 谓词 **false ⇒ 不产出位移（补丁数组为 []）**，**true ⇒ 产出位移补丁**。据此反推谓词取值。
+describe("withinClearance：非有限值短路（经 ejectOutsiders 观察谓词取值）", () => {
+  // 容器 200×200 中心 (0,0) → 真实矩形 [-100,100]²（position 是中心，见文件头锚定口径）。
+  // 成员 100×60 且隐去标签 → 视觉包围盒 == 本体矩形 == position ± (50,30)，故四边可精确写死。
+  const container = () => node({ id: "c1", kind: "ac-vpp-box", size: { width: 200, height: 200 } });
+  const outsider = (over: Partial<ModelNode> = {}) => node({
+    id: "m1", kind: "ac-load", params: { _labelVisible: "0" }, size: { width: 100, height: 60 }, ...over
+  });
+  const eject = (m: ModelNode) => {
+    const c = container();
+    return ejectOutsiders(c, [c, m]);
+  };
+
+  test("★ NaN 入参（rotation 缺失/异常 → 包围盒四边皆 NaN）→ 短路 false：无补丁、不抛错", () => {
+    // 源码注释：「缺 rotation/scale 的异常节点算得 NaN，一律视为无需挪动（不写出 NaN 位置）」。
+    // NaN 会一路穿透 `pushBoundsOutOfRect` 的位移算术（Math.min(NaN,...) → NaN，
+    // 而 `m === dl` 全为 false ⇒ 落到最后的 `center.y + dd`），若无短路就会**写出 NaN 位置**。
+    const m = outsider({ rotation: NaN });
+    const b = calculateNodeVisualBounds(m);
+    // 前提：真的造出了 NaN 包围盒（否则下面断言恒绿 —— 是坏 fixture，不是守卫生效）
+    expect(Number.isNaN(b.left) && Number.isNaN(b.right) && Number.isNaN(b.top) && Number.isNaN(b.bottom),
+      "前提：包围盒四边皆 NaN").toBe(true);
+    expect(() => eject(m), "不抛错").not.toThrow();
+    expect(eject(m), "★ withinClearance 短路 → 无位移补丁（不写 NaN 位置）").toEqual([]);
+  });
+
+  test("★ Infinity / -Infinity 入参 → 同样短路 false（`every(Number.isFinite)` 一并挡住）", () => {
+    // `Number.isFinite` 而非 `!Number.isNaN`：故 ±Infinity 与 NaN 同路，都算「无需挪动」。
+    // ⚠ 三条 fixture 的差别是实测出来的，不是设计出来的 —— 记在此处免得下次重踩：
+    //  ① `scale: Infinity` → **全 NaN**。`visualHalfExtentsForNode` 算 `halfWidth*cos + halfHeight*sin`，
+    //     sin(0) === 0 ⇒ `Infinity * 0 === NaN` ⇒ 两轴一起塌成 NaN（等价于上一条那个用例）。
+    //  ② `size.width: Infinity` → x 两边是真 ±Infinity，但 **y 两边是 NaN**（同一个 `Inf * sin(0)`）。
+    //  ③ `position.x: ±Infinity` → 只有 x 两边非有限，y 仍是有限值（-30 / 30）—— 唯一「纯 ±Infinity」形状。
+    // size/scale 上的负号都会被 `Math.abs` 抹掉，故 -Infinity 也只能走 position。
+    const inf = outsider({ size: { width: Infinity, height: 60 } });
+    const ib = calculateNodeVisualBounds(inf);
+    expect(ib.left, "前提②：left = -Infinity").toBe(-Infinity);
+    expect(ib.right, "前提②：right = +Infinity").toBe(Infinity);
+    expect(ib.top, "前提②：y 被 Inf*sin(0) 污染成 NaN").toBeNaN();
+    expect(eject(inf), "∞ → 无补丁").toEqual([]);
+    for (const x of [Infinity, -Infinity]) {
+      const m = outsider({ position: { x, y: 0 } });
+      const b = calculateNodeVisualBounds(m);
+      expect(b.left, `前提③：left = ${x}`).toBe(x - 50); // ±Inf - 50 = ±Inf
+      expect(b.right, `前提③：right = ${x}`).toBe(x + 50);
+      expect(b.top, `前提③：${x} 时 y 轴仍有限 → 短路确实由 x 轴触发`).toBe(-30);
+      expect(b.bottom, `前提③：${x} 时 y 轴仍有限`).toBe(30);
+      expect(eject(m), `${x} → 无补丁`).toEqual([]);
+    }
+    // 反面对照不在这里重复：本 describe 最后两条已钉住「有限值 → 谓词 true → 有位移补丁」。
+    // 少了那两条，上面几条恒为 [] 也可能只是「fixture 压根没进排斥带」，守卫等于没咬。
+  });
+
+  test("回归：间隙**恰为** CONTAINER_CLEARANCE → 不动（边界不推，谓词 false）", () => {
+    // 本体 [150,250]：左沿 150 = 矩形右沿 100 + 50，即 `b.left >= r.x2 + CONTAINER_CLEARANCE` 成立。
+    const m = outsider({ position: { x: 200, y: 0 } });
+    expect(calculateNodeVisualBounds(m).left - 100, "前提：间隙 = 50").toBe(CONTAINER_CLEARANCE);
+    expect(eject(m)).toEqual([]);
+  });
+
+  test("回归：间隙**刚小于**排斥带（49）→ 推到间隙恰为 50（证明短路守卫没改正常判定）", () => {
+    // 与上一条构成边界两侧：同一容器、同一成员，只差 1px 间隙，结论必须相反。
+    const m = outsider({ position: { x: 199, y: 0 } });
+    expect(calculateNodeVisualBounds(m).left - 100, "前提：间隙 = 49").toBe(CONTAINER_CLEARANCE - 1);
+    // 四向最小位移 dl=399 / dr=1 / du=180 / dd=180 → 取 dr，往右推 1 → 中心落到 200（间隙 50）
+    expect(eject(m), "★ 谓词 true → 沿最近边右移 1").toEqual([{ nodeId: "m1", position: { x: 200, y: 0 } }]);
   });
 });

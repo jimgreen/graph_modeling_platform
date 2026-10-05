@@ -181,3 +181,118 @@ describe("randomId", () => {
     expect(bytesCalls).toBe(0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 前缀 / 长度 / 字符集 / 批量无碰撞 / crypto 缺失回退
+//
+// ⚠ 事实修正：`shared/randomId.mjs` **只导出一个函数** `randomId(prefix = "")`
+//   （`shared/randomId.d.mts` 亦只有 `randomId(prefix?: string): string` 一行）。
+//   并不存在 `randomSourceId` / `randomSessionId` 这类「各自带固定前缀」的封装 ——
+//   前缀一律由调用方传入。所以下面覆盖的是**真实调用点的前缀集合**，而不是
+//   三个假想的导出。
+//
+// REAL_PREFIXES 由 grep 全仓 `randomId("` 得到：
+//   server/runtimeWs.mjs:26            req-
+//   server/server.mjs:4037 / :4477     img- / folder-
+//   src/stateIconDrawing.tsx:143/147/151  param- / def- / state-
+//   src/runtimeWsClient.ts:21         client-
+const REAL_PREFIXES = ["req-", "img-", "folder-", "param-", "def-", "state-", "client-"];
+// UUIDv4 的字符数：8+1+4+1+4+1+4+1+12 = 36
+const UUID_LEN = 36;
+
+describe("randomId 前缀与格式契约", () => {
+  test("真实前缀集合:7 个前缀原样出现在开头,其后紧跟合法 UUIDv4", () => {
+    for (const prefix of REAL_PREFIXES) {
+      const id = randomId(prefix);
+      // 只钉前缀（startsWith），不钉整串 —— 随机部分逐次变化
+      expect(id.startsWith(prefix)).toBe(true);
+      // 这一条同时挡住「实现偷偷在前后加了分隔符」：多一个字符 slice 就会偏移
+      expect(id.slice(prefix.length)).toMatch(UUID_V4);
+    }
+  });
+
+  test("前缀不被自动补分隔符,空前缀时长度恰为 36", () => {
+    // 刻意用**不带连字符**的前缀：若实现改成 `${prefix}-${uuid}`，
+    // startsWith("req-") 会转 false、slice(3) 会多出一个前导连字符而转 red。
+    const bare = randomId("req");
+    expect(bare.startsWith("req-")).toBe(false);
+    expect(bare.slice("req".length)).toMatch(UUID_V4);
+
+    // 默认参数 prefix = "" ⇒ 无前缀时长度就是 UUID 自身长度
+    expect(randomId().length).toBe(UUID_LEN);
+    expect(randomId("").length).toBe(UUID_LEN);
+    expect(randomId().includes("-")).toBe(true);
+  });
+
+  test("返回值长度固定:恰为 前缀长度 + 36,同前缀连调三次长度不变", () => {
+    // 长度断言独立于格式断言：格式正则允许放过「多一位/少一位」的实现变化，
+    // 这里把总字符数钉死。随机部分每次都变，长度却恒定 —— 正是契约所在。
+    for (const prefix of [...REAL_PREFIXES, ""]) {
+      const expected = prefix.length + UUID_LEN;
+      const lengths = [randomId(prefix), randomId(prefix), randomId(prefix)].map((id) => id.length);
+      expect(lengths).toEqual([expected, expected, expected]);
+    }
+  });
+
+  test("字符集:随机段仅小写十六进制,连字符固定落在第 8/13/18/23 位", () => {
+    const id = randomId("img-");
+    const uuid = id.slice("img-".length);
+    // 显式小写：把实现改成 b.toString(16).toUpperCase() 会让这条转红
+    expect(uuid).toMatch(/^[0-9a-f-]{36}$/);
+    expect(id).toBe(id.toLowerCase());
+    // 剥掉连字符后必须恰好 32 位纯十六进制 —— 字符集与位数一起钉
+    expect(uuid.replace(/-/g, "")).toMatch(/^[0-9a-f]{32}$/);
+    // 连字符位置本身是 UUID 的结构契约，不能挪动
+    const dashAt = [...uuid].map((ch, i) => (ch === "-" ? i : -1)).filter((i) => i >= 0);
+    expect(dashAt).toEqual([8, 13, 18, 23]);
+  });
+
+  test("批量无碰撞:2000 个带前缀 id 互不相同(轮换全部真实前缀)", () => {
+    // 一次性统计断言，**不是**「取随机直到满足条件」的重试写法，故不存在概率性间歇红。
+    // 前缀是常量 ⇒ 碰撞空间仍等于 UUIDv4 的 122 bit：
+    // C(2000,2) / 2^122 ≈ 1.999e6 / 5.3e36 ≈ 3.8e-31。
+    // 与上面那条「无前缀 2000 个」互补：这里额外覆盖跨前缀不互相干扰。
+    const ids = new Set();
+    for (let i = 0; i < 2000; i += 1) ids.add(randomId(REAL_PREFIXES[i % REAL_PREFIXES.length]));
+    expect(ids.size).toBe(2000);
+  });
+
+  test("批量无碰撞:手工拼装 v4 那条路径 2000 个同样互不相同", () => {
+    // 只借真实 crypto 的 getRandomValues 并抹掉 randomUUID，强制走手工构造分支。
+    // 直接用真实 randomUUID 会走另一条分支，那样这条用例就测不到手工路径了。
+    setCrypto({ getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto) });
+    const ids = new Set();
+    for (let i = 0; i < 2000; i += 1) ids.add(randomId("t-"));
+    expect(ids.size).toBe(2000);
+    // 顺手确认这条路径确实产出了手工拼装的 v4（版本位/variant 位来自字节改写）
+    expect(randomId("t-")).toMatch(/^t-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
+  test("crypto 缺失回退:crypto 为 undefined 与 null 时不抛错,且仍返回带前缀的合法 id", () => {
+    // 上面的「crypto 为 undefined 时不抛错」只钉了 not.toThrow，**没有**断言返回值 ——
+    // 实现退化成 `return undefined` 或返回空串都照样绿。这里补上「仍返回合法 id」这半边。
+    for (const missing of [undefined, null]) {
+      setCrypto(missing);
+      let id = null;
+      expect(() => { id = randomId("fb-"); }).not.toThrow();
+      expect(id).toBeTypeOf("string");
+      expect(id.startsWith("fb-")).toBe(true);
+      // 兜底段用 36 进制而非 UUID（Date.now.toString(36) - Math.random.toString(36).slice(2,10)），
+      // 故只钉「两段小写字母数字 + 随机段被 slice 截到至多 8 位」。
+      // 实测 30 万次采样：随机段长度 6~8，字符集恒为 [0-9a-z]（极小值也不出科学计数法符号，
+      // 反而是更多前导零）。唯一能产出空串的输入是 Math.random() 恰为 0，概率 2^-53。
+      expect(id).toMatch(/^fb-[0-9a-z]+-[0-9a-z]{1,8}$/);
+      expect(id).toBe(id.toLowerCase());
+    }
+  });
+
+  test("批量无碰撞:crypto 缺失的时间兜底路径 1000 个互不相同", () => {
+    // 兜底路径的碰撞空间比 UUIDv4 小得多：随机段 8 位 36 进制 ≈ 36^8 ≈ 2^41.4。
+    // 故规模取 1000 而非 2000：C(1000,2)/2^41.4 ≈ 4.995e5/2.6e12 ≈ 1.9e-7，
+    // 比上面两条低两个数量级但仍可忽略；足够抓住「随机段被写死 / 时间段被写死」这类变异。
+    setCrypto(undefined);
+    const ids = new Set();
+    for (let i = 0; i < 1000; i += 1) ids.add(randomId("fb-"));
+    expect(ids.size).toBe(1000);
+  });
+});

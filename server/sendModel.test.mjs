@@ -26,6 +26,11 @@ let sinkUrl;
 // 接收端返回值可按用例调整（默认 200）
 let sinkStatus = 200;
 let sinkBody = "ok";
+// 多 chunk 响应：非 null 时按序分次 write，每次之间留事件循环间隔，
+// 让 undici 的响应体流把它们当作**多个** chunk 交付。默认 null = 单次 end(sinkBody)。
+// 单 chunk 时「只读首个 chunk」这条行为根本不可观测（没有第二个 chunk 可丢），
+// 所以截断守卫必须配多 chunk fixture，并在用例里先自证确实拆开了。
+let sinkChunks = null;
 let received = [];
 
 function device(id, kind, name, params, terminals = []) {
@@ -99,7 +104,21 @@ beforeAll(async () => {
     request.on("end", () => {
       received.push({ headers: request.headers, body: Buffer.concat(chunks) });
       response.writeHead(sinkStatus, { "content-type": "text/plain" });
-      response.end(sinkBody);
+      if (!Array.isArray(sinkChunks)) {
+        response.end(sinkBody);
+        return;
+      }
+      const pending = sinkChunks;
+      let index = 0;
+      const writeNext = () => {
+        if (index >= pending.length) {
+          response.end();
+          return;
+        }
+        response.write(pending[index++]);
+        setTimeout(writeNext, 20);
+      };
+      writeNext();
     });
   });
   await new Promise((resolve) => sink.listen(0, "127.0.0.1", resolve));
@@ -126,6 +145,7 @@ beforeEach(() => {
   received = [];
   sinkStatus = 200;
   sinkBody = "ok";
+  sinkChunks = null;
 });
 
 function postSend(body, query = `schemePath=${schemePath}&name=${encodeURIComponent(modelName)}`) {
@@ -383,5 +403,148 @@ describe(`${sendPath} 兼容路径下的 modelId 哨兵值`, () => {
     const structure = received[0].body.toString("utf-8");
     expect(structure).toMatch(MODEL_ID_EMPTY);
     expect(structure).not.toMatch(MODEL_ID_ONE);
+  });
+});
+
+// ─── 目标 5xx 响应体的读取与截断 ─────────────────────────────
+//
+// `readTargetErrorDetail` 只 `reader.read()` **一次**，然后
+// `Buffer.from(value).subarray(0, TARGET_ERROR_BODY_LIMIT)`（=512）截断。
+// 两个可观测契约，拆成两条用例 —— 因为它们各自需要不同的 fixture 才有判别力：
+//   (a) 首 chunk 内超出 512 字节的部分被切在边界上（需要**长**首 chunk）；
+//   (b) 第二个及以后的 chunk 整块不进错误文案（需要**短**首 chunk，
+//       否则「读完所有 chunk 再截断」这种变异会产出同样的前 512 字节 → 恒绿）。
+//
+// 共同前提：响应必须真的被拆成多个 chunk，单 chunk 时两条都恒绿，
+// 所以每条用例第一步先走同一条 fetch 链路读一次目标响应自证拆分。
+const ERROR_PREFIX = "目标服务器返回 HTTP 500：";
+// (a) 首 chunk：20 字节前缀 + 200 字节填充 + 700 字节标记串（>512 上限）。
+// 标记串用同一个不可能出现在别处的字符，于是「截断在边界」可逐字节断言：
+// 512 - (20 + 200) = 292 个 M 存活，293 个 M 从未出现。
+const LONG_HEAD = "HEAD-OF-FIRST-CHUNK|";
+const LONG_FIRST_CHUNK = `${LONG_HEAD}${"F".repeat(200)}${"M".repeat(700)}`;
+const SURVIVED_MARKS = 512 - (LONG_HEAD.length + 200);
+// (b) 首 chunk 刻意短于 512，把唯一标记串放进第二个 chunk
+const SHORT_FIRST_CHUNK = "FIRST-CHUNK-ONLY|";
+const LONG_SECOND_CHUNK = `|SECOND-CHUNK-MARKER|${"Q".repeat(600)}`;
+
+async function readAllChunks(response) {
+  const reader = response.body.getReader();
+  const chunks = [];
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  return chunks;
+}
+
+// 自检 fixture：确认目标响应在 undici 响应体流里确实被拆成 ≥2 个 chunk，
+// 且切分点正好落在两个字符串的边界上。少了这一步，(b) 的断言可能只是在
+// 断言一个不存在的第二个 chunk。
+async function expectSplitInto(expectedChunks) {
+  const chunks = await readAllChunks(await fetch(sinkUrl, { method: "POST", body: "probe" }));
+  expect(chunks.length).toBeGreaterThanOrEqual(2);
+  expect(chunks.map((chunk) => chunk.toString("utf-8"))).toEqual(expectedChunks);
+  received = [];
+}
+
+describe(`${sendPath} 目标 5xx 响应体的读取与截断`, () => {
+  test("首 chunk 内超过 512 字节的部分被截断在边界上", async () => {
+    sinkStatus = 500;
+    sinkChunks = [LONG_FIRST_CHUNK, LONG_SECOND_CHUNK];
+    await expectSplitInto([LONG_FIRST_CHUNK, LONG_SECOND_CHUNK]);
+
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] });
+    expect(res.status).toBe(502);
+    const payload = await res.json();
+    expect(payload.error.code).toBe("internal");
+    expect(payload.error.message.startsWith(ERROR_PREFIX)).toBe(true);
+
+    // 逐字节等于首 chunk 的前 512 字节：前缀与填充原样保留，
+    // 标记串恰好剩 292 个 M，第 293 个从未出现
+    const detail = payload.error.message.slice(ERROR_PREFIX.length);
+    expect(detail).toBe(LONG_FIRST_CHUNK.slice(0, 512));
+    expect(detail).toHaveLength(512);
+    expect(detail.startsWith(`${LONG_HEAD}${"F".repeat(200)}`)).toBe(true);
+    expect(detail.endsWith("M".repeat(SURVIVED_MARKS))).toBe(true);
+    expect(detail).not.toContain("M".repeat(SURVIVED_MARKS + 1));
+  });
+
+  test("第二个 chunk 整块不进错误文案（只读首个 chunk）", async () => {
+    sinkStatus = 500;
+    sinkChunks = [SHORT_FIRST_CHUNK, LONG_SECOND_CHUNK];
+    await expectSplitInto([SHORT_FIRST_CHUNK, LONG_SECOND_CHUNK]);
+
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] });
+    expect(res.status).toBe(502);
+    const payload = await res.json();
+
+    // 首 chunk 短于上限 → 文案就是首 chunk 原文，一个字节都不多
+    expect(payload.error.message).toBe(`${ERROR_PREFIX}${SHORT_FIRST_CHUNK}`);
+    expect(payload.error.message).not.toContain("SECOND-CHUNK-MARKER");
+    expect(payload.error.message).not.toContain("Q");
+  });
+});
+
+// ─── files[].encoding 的判据：严格等于小写 gbk ─────────────────
+//
+// `specs.push({ kind, encoding: item?.encoding === "gbk" ? "gbk" : "utf-8" })`
+// 是**大小写敏感、无 trim 的严格相等**。注意与同一循环里的 `kind` 处理不对称：
+// kind 走 `String(item?.kind ?? "").trim().toLowerCase()`，encoding 什么都不做。
+// 于是大写 GBK、带空格/换行的 gbk、utf8（无连字符）、空串、缺字段
+// 全部静默回落 utf-8 —— 不是 400，也不报错。
+//
+// 这条契约是承重的：一旦有人把它改成大小写不敏感（或顺手补上 trim，
+// 与 kind 对齐），大写 GBK 的模型就会**静默**从 UTF-8 字节变成 GBK 字节，
+// 接收方按 UTF-8 解码得到乱码，且响应一路 200，无任何信号。
+// 所以下面既断言非法值回落 utf-8，也带一条小写 gbk 的对照组 ——
+// 只有两侧都断言，才能证明 not.toMatch 真的在区分而不是恒绿。
+const ILLEGAL_ENCODINGS = ["GBK", "Gbk", " GBK", "gbk\n", "utf8", "UTF8", "", undefined, null];
+
+describe(`${sendPath} files[].encoding 的兜底`, () => {
+  test("大写 / 非法 / 缺省的 encoding 一律静默回落 utf-8", async () => {
+    for (const encoding of ILLEGAL_ENCODINGS) {
+      received = [];
+      const res = await postSend({ url: sinkUrl, files: [{ kind: "json", encoding }] });
+      expect(res.status).toBe(200);
+      // 响应里回显的归一化结果
+      expect((await res.json()).data.files[0].encoding).toBe("utf-8");
+
+      const { body } = received[0];
+      const structure = body.toString("utf-8");
+      // MIME 参数按 utf-8 下发
+      expect(structure).toContain("application/json; charset=utf-8");
+      expect(structure).not.toMatch(/charset=gbk/iu);
+      // 中文设备名的字节形态：UTF-8 在、GBK 不在（双向断言，避免只测一侧）
+      expect(body.includes(Buffer.from("母线一", "utf-8"))).toBe(true);
+      expect(body.includes(iconv.encode("母线一", "gbk"))).toBe(false);
+    }
+
+    // 对照组：唯一被接受的写法是小写 gbk —— 证明上面的 not.toMatch 有判别力
+    received = [];
+    await postSend({ url: sinkUrl, files: [{ kind: "json", encoding: "gbk" }] });
+    const gbkBody = received[0].body;
+    expect(gbkBody.toString("utf-8")).toMatch(/charset=gbk/iu);
+    expect(gbkBody.includes(iconv.encode("母线一", "gbk"))).toBe(true);
+    expect(gbkBody.includes(Buffer.from("母线一", "utf-8"))).toBe(false);
+  });
+
+  test("encoding 非法值不影响 SVG 的 XML 声明（仍声明 UTF-8）", async () => {
+    received = [];
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "svg", encoding: "GBK" }] });
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.files[0].encoding).toBe("utf-8");
+
+    const { body } = received[0];
+    // 声明走 withXmlEncodingDeclaration，只认小写 gbk
+    expect(body.toString("utf-8")).toContain('<?xml version="1.0" encoding="UTF-8"?>');
+    expect(body.toString("utf-8")).not.toContain('encoding="GBK"');
+    expect(body.includes(Buffer.from("母线一", "utf-8"))).toBe(true);
+    expect(body.includes(iconv.encode("母线一", "gbk"))).toBe(false);
   });
 });

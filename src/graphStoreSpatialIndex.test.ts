@@ -289,6 +289,126 @@ describe("默认 bucketSize", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// bucketSize 守卫：非正 / 非有限值会让空间索引进入死循环或静默失效。
+//
+// 缺陷推演（**只在注释里推演，测试绝不真跑修复前的代码**）：
+//   bucketSize = 0    → Math.floor(x / 0) === Infinity，spatialBucketRange 返回
+//                       (-Infinity, Infinity)，建索引与查询里的
+//                       `for (let x = left; x <= right; x += 1)` 从 -Infinity
+//                       起步、每步 +1，永远走不到 Infinity —— 同步死循环，界面卡死。
+//   bucketSize = -10  → 区间左右翻转（left > right），循环一次都不执行：不挂死，
+//                       但索引全空，节点在任何视口里都查不到（画面缺图元）。
+//   bucketSize = NaN  → 比较全部为 false，同上：静默失效。
+//   bucketSize = Inf  → 桶键全塌成 0:0，索引退化成单桶（性能塌陷）且语义已错。
+//
+// ⚠ 若把守卫变异掉，本块不会「变红」，而是**整个 vitest worker 同步死循环挂住**
+// （同步忙循环无法被 testTimeout 打断），只能靠进程级超时收场。所以「有限时间返回」
+// 只能钉成「真跑完 + 耗时上界」，而真正的判据是断言归一后的 bucketSize 与查询结果。
+describe("★ bucketSize 守卫：非正 / 非有限值回落到默认桶边长", () => {
+  /** 与 graphStore.ts 里的 GRAPH_NODE_SPATIAL_BUCKET_SIZE 同值（该常量未导出）。 */
+  const DEFAULT_BUCKET_SIZE = 256;
+  /** 视口 A 只罩住 a（在原点）；视口 B 把 a、b、c 全罩住。 */
+  const VIEW_NEAR_A: GraphRenderBounds = { left: -500, right: 500, top: -500, bottom: 500 };
+  const VIEW_ALL: GraphRenderBounds = { left: -1200, right: 1200, top: -1200, bottom: 1200 };
+  const NODES = () => [node("a", 0, 0), node("b", 900, 900), node("c", -700, 300)];
+
+  const idsOf = (index: GraphNodeSpatialIndex, view: GraphRenderBounds) =>
+    queryGraphStoreNodeSpatialIndex(index, view).map((target) => target.id).sort();
+
+  /** 建索引并记录耗时：死循环不会返回，所以「返回了」本身就是断言的一部分。 */
+  const buildTiming = (nodes: readonly ModelNode[], bucketSize: number) => {
+    const startedAt = Date.now();
+    const index = buildGraphNodeSpatialIndex(nodes, bucketSize);
+    return { index, elapsedMs: Date.now() - startedAt };
+  };
+
+  test("bucketSize 为 0 时不死循环，回落到默认桶边长且节点仍查得到", () => {
+    // 修复前：Math.floor(x / 0) === Infinity → for (x = -Infinity; x <= Infinity; x += 1) 永不退出
+    const { index, elapsedMs } = buildTiming(NODES(), 0);
+
+    expect(index.bucketSize).toBe(DEFAULT_BUCKET_SIZE);
+    expect(elapsedMs).toBeLessThan(1000);
+    expect(idsOf(index, VIEW_NEAR_A)).toEqual(["a"]);
+    expect(idsOf(index, VIEW_ALL)).toEqual(["a", "b", "c"]);
+  });
+
+  test("bucketSize 为负数 -10 时不死循环，回落后仍能命中（修复前是静默全空索引）", () => {
+    // 修复前：区间左右翻转，循环一次都不执行 → nodeBucketKeysById 全为空数组，
+    // 查询恒返回空（画面缺图元但不报错）。注意这条断言同时钉住「不只是不挂」。
+    const { index, elapsedMs } = buildTiming(NODES(), -10);
+
+    expect(index.bucketSize).toBe(DEFAULT_BUCKET_SIZE);
+    expect(elapsedMs).toBeLessThan(1000);
+    for (const target of NODES()) {
+      expect(keysOf(index, target.id).length, `${target.id} 应有桶`).toBeGreaterThan(0);
+    }
+    expect(idsOf(index, VIEW_NEAR_A)).toEqual(["a"]);
+  });
+
+  test("bucketSize 为 NaN 时不死循环，回落后桶键格式正常（修复前桶键全为空数组）", () => {
+    // 修复前：所有比较都为 false，循环不执行 → 与「节点 NaN 坐标」那条同型的静默丢弃
+    const { index, elapsedMs } = buildTiming(NODES(), Number.NaN);
+
+    expect(index.bucketSize).toBe(DEFAULT_BUCKET_SIZE);
+    expect(elapsedMs).toBeLessThan(1000);
+    for (const target of NODES()) {
+      const keys = keysOf(index, target.id);
+      expect(keys.length, `${target.id} 应有桶`).toBeGreaterThan(0);
+      for (const key of keys) {
+        expect(key, `桶键格式应为 <x>:<y>：${key}`).toMatch(/^-?\d+:-?\d+$/);
+      }
+    }
+    expect(idsOf(index, VIEW_ALL)).toEqual(["a", "b", "c"]);
+  });
+
+  test("bucketSize 为 Infinity 时不死循环，回落后不再退化成单桶", () => {
+    // 修复前：x / Infinity === 0，全部节点挤进 0:0 一个桶（索引形同虚设）
+    const { index, elapsedMs } = buildTiming(NODES(), Number.POSITIVE_INFINITY);
+
+    expect(index.bucketSize).toBe(DEFAULT_BUCKET_SIZE);
+    expect(elapsedMs).toBeLessThan(1000);
+    expect([...index.buckets.keys()].sort().length).toBeGreaterThan(1);
+    expect(idsOf(index, VIEW_NEAR_A)).toEqual(["a"]);
+    expect(idsOf(index, VIEW_ALL)).toEqual(["a", "b", "c"]);
+  });
+
+  test("四种非法输入回落后的索引与默认索引逐项相同", () => {
+    // 守卫只该改非法值；回落结果必须与「不传第二参」的正常索引完全一致（含桶键顺序）。
+    const reference = buildGraphNodeSpatialIndex(NODES());
+    const nodes = NODES();
+
+    for (const [label, bad] of [
+      ["0", 0],
+      ["-10", -10],
+      ["NaN", Number.NaN],
+      ["Infinity", Number.POSITIVE_INFINITY]
+    ] as Array<[string, number]>) {
+      const index = buildGraphNodeSpatialIndex(nodes, bad);
+      expect([...index.buckets.entries()], label).toEqual([...reference.buckets.entries()]);
+      expect([...index.nodeBucketKeysById], label).toEqual([...reference.nodeBucketKeysById]);
+      expect([...index.nodeBoundsById], label).toEqual([...reference.nodeBoundsById]);
+      expect(idsOf(index, VIEW_ALL), label).toEqual(["a", "b", "c"]);
+    }
+  });
+
+  test("正 bucketSize 回归：显式传默认值与不传第二参的索引、查询逐项相同", () => {
+    // 守住「正常正 bucketSize 的索引与查询结果必须完全不变」这一条。
+    // 护栏：先确认这两个索引本身非空，否则比较会退化成「两堆空相等」。
+    const nodes = NODES();
+    const byDefault = buildGraphNodeSpatialIndex(nodes);
+    const explicit = buildGraphNodeSpatialIndex(nodes, DEFAULT_BUCKET_SIZE);
+
+    expect(explicit.bucketSize).toBe(byDefault.bucketSize);
+    expect(byDefault.buckets.size).toBeGreaterThan(1);
+    expect([...explicit.buckets.entries()]).toEqual([...byDefault.buckets.entries()]);
+    expect([...explicit.nodeBucketKeysById]).toEqual([...byDefault.nodeBucketKeysById]);
+    expect([...explicit.nodeBoundsById]).toEqual([...byDefault.nodeBoundsById]);
+    expect(idsOf(explicit, VIEW_NEAR_A)).toEqual(["a"]);
+    expect(idsOf(explicit, VIEW_ALL)).toEqual(["a", "b", "c"]);
+  });
+});
+
 // queryGraphStoreNodeSpatialIndex 是视口裁剪的入口（App.tsx / appCanvasViewportBatch /
 // appGraphMeasurementFactories / appStateBatch 共 5 处生产调用，此前零测试）。
 // 判错的后果都不抛异常：漏查 → 视口内的节点凭空消失（画面缺图元）；多查 → 白渲染一批。

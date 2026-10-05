@@ -34,6 +34,11 @@ export interface ScreenshotParams {
 }
 
 /**
+ * PNG data URL 前缀。canvas.toDataURL("image/png") 的合法返回值以此开头。
+ */
+const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+
+/**
  * 核心 SVG 字符串 → PNG rasterize 函数。
  * 在浏览器环境中将自包含 SVG 字符串 → Blob → Image → 离屏 canvas → PNG base64。
  * canvas 不填底色，保持 PNG 透明背景。
@@ -65,7 +70,19 @@ export async function rasterizeSvgString(
     // 不填底色，保持 PNG 透明背景
     ctx.drawImage(img, 0, 0, width, height);
     const dataUrl = canvas.toDataURL("image/png");
-    return dataUrl.slice("data:image/png;base64,".length);
+    // 画布像素数超出浏览器上限时，toDataURL 返回内容为空的 data:, 。
+    // 无条件 slice(prefix.length) 会得到空串，却照样算成功，让下游拿到一张
+    // 「成功的空图」。因此必须在 slice 之前校验前缀。
+    if (!dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
+      throw new Error(
+        "canvas 尺寸超出浏览器上限，toDataURL 未返回 PNG data URL，截图内容为空。"
+      );
+    }
+    const base64 = dataUrl.slice(PNG_DATA_URL_PREFIX.length);
+    if (!base64) {
+      throw new Error("canvas.toDataURL 返回的 PNG data URL 内容为空，截图失败。");
+    }
+    return base64;
   } finally {
     URL.revokeObjectURL(url);
   }

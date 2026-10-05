@@ -147,4 +147,70 @@ describe("withXmlEncodingDeclaration", () => {
     expect(decoded).toContain('encoding="GBK"');
     expect(decoded).toContain("1号主变压器");
   });
+
+  // ---- `<?xml-stylesheet` 处理指令（PI）曾被误当声明整段吃掉 ----
+  // 旧正则用 `\b` 收尾，而 `\b` 在 `l` 与 `-` 之间同样成立：
+  // `<?xml-stylesheet type="text/xsl" href="style.xsl"?>` 整个匹配成功，
+  // 样式表 PI 直接从输出里消失（下游渲染成无样式文档）。改用 `\s` 后要求
+  // `xml` 之后必须真的跟空白，PI 才留在正文里。
+  const PI = '<?xml-stylesheet type="text/xsl" href="style.xsl"?>';
+
+  test("★ 开头的 xml-stylesheet 处理指令被保留（不再被当成声明吃掉）", () => {
+    const out = withXmlEncodingDeclaration(`${PI}<root/>`, "utf-8");
+    expect(out).toBe(`<?xml version="1.0" encoding="UTF-8"?>\n${PI}<root/>`);
+    expect(out).toContain(PI);
+    // 声明只由本函数产出一次；PI 不计入（PI 是 `<?xml-`，非 `<?xml` + 空白）
+    expect(out.match(/<\?xml\s/gu)).toHaveLength(1);
+    expect(out.match(/<\?xml-stylesheet/gu)).toHaveLength(1);
+  });
+
+  test("★ 真实文档顺序（声明在前、PI 在后）两个都各留一份", () => {
+    // XSLT 输出的 SVG/CIM 常见形态。旧正则在这里没出错（锚定在 ^，先吃掉声明即止），
+    // 此用例确保改成 `\s` 后也没有把它写坏。
+    const out = withXmlEncodingDeclaration(`<?xml version="1.0" encoding="utf-8"?>${PI}<root/>`, "utf-8");
+    expect(out).toBe(`<?xml version="1.0" encoding="UTF-8"?>\n${PI}<root/>`);
+    expect(out.match(/<\?xml\s/gu)).toHaveLength(1);
+  });
+
+  test("★ 前导 xml 声明仍被剥离（回归防护：\\s 不得削弱原有剥离）", () => {
+    expect(withXmlEncodingDeclaration('<?xml version="1.0"?>\n<root/>', "gbk")).toBe(
+      '<?xml version="1.0" encoding="GBK"?>\n<root/>'
+    );
+    // `\s` 是任意空白而非「一个字面空格」：制表符分隔的声明同样要剥离
+    expect(withXmlEncodingDeclaration('<?xml\tversion="1.0"?><root/>', "utf-8")).toBe(
+      '<?xml version="1.0" encoding="UTF-8"?>\n<root/>'
+    );
+  });
+
+  test("xml-stylesheet 紧跟问号（无空白）按真实行为不剥离", () => {
+    // 新正则要求 `xml` 后至少一个空白，故这种输入原样保留在正文里。
+    // 记下这条是为了免得后来者把它当成漏网之鱼：它被保留才是当前契约。
+    const out = withXmlEncodingDeclaration("<?xml-stylesheet?><root/>", "utf-8");
+    expect(out).toBe('<?xml version="1.0" encoding="UTF-8"?>\n<?xml-stylesheet?><root/>');
+  });
+});
+
+describe("编码兜底：非精确 gbk 一律按 UTF-8", () => {
+  // 源码判据是严格相等 `encoding === "gbk"`（`encodeTextBytes` 的 `encoding !== "gbk"`
+  // 与 `withXmlEncodingDeclaration` 的三元），因此大小写不同或写法不同都会落到
+  // UTF-8 分支 —— 这里断言的就是这个真实行为，防止有人「顺手支持大小写」时
+  // 悄悄改掉字节输出（那会破坏与前端落盘路径的逐字节一致）。
+  test("★ GBK 大写 / utf8 无连字符 / undefined / null 都落 UTF-8 label 与 UTF-8 字节", () => {
+    const body = "<root>中文</root>";
+    const expectedText = `<?xml version="1.0" encoding="UTF-8"?>\n${body}`;
+    const utf8Bytes = Buffer.from(body, "utf-8");
+    for (const encoding of ["GBK", "utf8", undefined, null]) {
+      expect(withXmlEncodingDeclaration(body, encoding)).toBe(expectedText);
+      expect(encodeTextBytes(body, encoding).equals(utf8Bytes)).toBe(true);
+    }
+  });
+
+  test("兜底字节与 UTF-8 声明自洽（声明说的就是实际字节用的编码）", () => {
+    const body = "母线负载";
+    const declared = withXmlEncodingDeclaration(body, "GBK");
+    expect(declared).toContain('encoding="UTF-8"');
+    // 按 GBK 解回来是乱码 —— 正好证明字节确实是 UTF-8，不是被 label 骗了
+    expect(iconv.decode(encodeTextBytes(declared, "GBK"), "gbk")).not.toBe(declared);
+    expect(encodeTextBytes(declared, "GBK").toString("utf-8")).toBe(declared);
+  });
 });

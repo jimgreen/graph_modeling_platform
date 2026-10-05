@@ -1,11 +1,14 @@
 // createCurrentProject 输出 backgroundProjectIdx：服务端靠它定位背景模型（前端 id 服务端无法解析）
 import { describe, expect, test, vi } from "vitest";
-import { createAddToContainer, createConfirmAddGraphTemplate, createConfirmAddToContainer, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createFinalizeMovedNodeEdgesFast, createGroupSelectedGraphics, createPasteSelection, createRemoveFromContainer } from "./appSelectionDragFactories";
+import { createAddToContainer, createCanvasPointerKeyboardShortcutAvailability, createConfirmAddGraphTemplate, createConfirmAddToContainer, createCreateGraphTemplateType, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createFinalizeMovedNodeEdgesFast, createGroupDeviceTerminalAssociationFor, createGroupSelectedGraphics, createPasteSelection, createRemoveFromContainer, createToggleFilterSelectionType } from "./appSelectionDragFactories";
 import { canvasClipboardBounds, cloneCanvasClipboard, createCanvasGroupFromSelection, expandSelectionByGroups } from "../selectionActions";
 import { containerKindSwitch, containerNamePick, containerNameSearch } from "../acContainer";
 import { deleteNodesWithConnectedEdges } from "../model-routing";
 import { createUndoGraphSnapshotPatchPlan } from "./appGraphMeasurementFactories";
 import { normalizeProjectMeasurements } from "../measurements";
+import { normalizeGraphTemplateTypeName } from "./appPersistenceLibraryExport";
+import { defaultContainerAssociationForTerminalType, normalizeContainerTerminalAssociations } from "../customDeviceUtils";
+import { CANVAS_KEYBOARD_SURFACE_SELECTOR, isCanvasKeyboardBlockingTarget } from "./appCoreCanvasUtilities";
 import { bareNode as sharedBareNode } from "./testFixtures";
 
 function makeScope(overrides: Record<string, unknown> = {}) {
@@ -1009,4 +1012,426 @@ describe("随机 id 的随机源可注入", () => {
     }
   });
 
+});
+
+// ─── 补断言:三条零命中导出 + 三个容器草稿出口的返回值直断 ──────────────────────
+// ① createToggleFilterSelectionType / createCreateGraphTemplateType /
+//    createCanvasPointerKeyboardShortcutAvailability 此前**一条用例都没有**;
+// ② 容器草稿三函数(containerKindSwitch / containerNamePick / containerNameSearch)
+//    此前只经 `Object.assign(draft, …) + submit()` 间接验 —— 提交侧把「返回值的
+//    哪个字段最终生效」测了个遍,唯独「它到底返回什么」本身没人直断。
+
+/** 装/拆一个全局:node 环境没有 window/document/Element,这几条出口靠它们才跑得起来 */
+const setGlobal = (key: string, value: unknown) => {
+  const holder = globalThis as any;
+  const had = Object.prototype.hasOwnProperty.call(holder, key);
+  const saved = holder[key];
+  holder[key] = value;
+  return () => {
+    if (had) {
+      holder[key] = saved;
+    } else {
+      delete holder[key];
+    }
+  };
+};
+
+describe("筛选对话框类型行的三态切换(createToggleFilterSelectionType)", () => {
+  const typeOptions = [
+    {
+      typeKey: "ac",
+      label: "交流",
+      count: 2,
+      items: [
+        { itemKey: "a1", typeKey: "ac", label: "负载1", count: 1, nodeIds: ["n1"] },
+        { itemKey: "a2", typeKey: "ac", label: "负载2", count: 1, nodeIds: ["n2"] },
+      ],
+    },
+    {
+      typeKey: "dc",
+      label: "直流",
+      count: 1,
+      items: [{ itemKey: "d1", typeKey: "dc", label: "直流1", count: 1, nodeIds: ["n3"] }],
+    },
+  ];
+
+  /** 出口把「新选中集合」以 updater 交给 setFilterSelectionTypeKeys,故抓 updater 而非断言是否调过 setter */
+  const toggle = (typeKey: string) => {
+    const captured: Array<(next: string[]) => string[]> = [];
+    createToggleFilterSelectionType({
+      filterSelectionTypeOptions: typeOptions,
+      setFilterSelectionTypeKeys: (updater: any) => { captured.push(updater); }
+    } as any)(typeKey);
+    return captured;
+  };
+  /** 模拟 setState:updater 作用在 current 上得到的即是新选中集合(断的就是这个返回值) */
+  const nextKeys = (current: string[], typeKey: string) => {
+    const captured = toggle(typeKey);
+    expect(captured).toHaveLength(1);
+    return captured[0](current);
+  };
+
+  test("未选中→选中:把该类型全部子项补进新集合", () => {
+    expect(nextKeys([], "ac")).toEqual(["a1", "a2"]);
+  });
+
+  test("部分选中→补齐:已选的不重复、不重排,只追加缺的那些", () => {
+    // 顺序也是契约:已选留在原位,新增追加在后(不是重排成表格顺序)
+    expect(nextKeys(["a2"], "ac")).toEqual(["a2", "a1"]);
+  });
+
+  test("全选中→取消:只摘该类型的子项,别的类型原样留着", () => {
+    expect(nextKeys(["d1", "a1", "a2"], "ac")).toEqual(["d1"]);
+  });
+
+  test("入参 current 不被就地修改(出口是纯计算,不 sort/splice 宿主那份数组)", () => {
+    // 冻结后仍能跑通即证明没写宿主;若哪天改成 sort/splice,这里会直接抛
+    const current = Object.freeze(["d1", "a2"]) as unknown as string[];
+    expect(nextKeys(current, "ac")).toEqual(["d1", "a2", "a1"]);
+    expect(current).toEqual(["d1", "a2"]);
+  });
+
+  test("未知 typeKey:连 updater 都不交(没有 option 可算,静默不动状态)", () => {
+    expect(toggle("nope")).toHaveLength(0);
+  });
+});
+
+describe("新增模板类型出口(createCreateGraphTemplateType)", () => {
+  const makeScope = (extra: Record<string, unknown> = {}): any => ({
+    customGraphTemplateTypes: [] as string[],
+    graphTemplateTypes: ["一次接线", "直流接线"],
+    normalizeGraphTemplateTypeName,
+    persistTemplateLibraryChange: vi.fn(),
+    requireEditMode: () => true,
+    setCustomGraphTemplateTypes: vi.fn(),
+    setExpandedGraphTemplateTypes: vi.fn(),
+    setTemplateDraftType: vi.fn(),
+    writeOperationLog: vi.fn(),
+    ...extra,
+  });
+
+  /** node 环境没有 window:装一个 prompt 桩(回用户输入值),跑完原样拆掉 */
+  const withPrompt = (answer: string | null, run: () => void) => {
+    const prompt = vi.fn(() => answer);
+    const restore = setGlobal("window", { prompt });
+    try {
+      run();
+    } finally {
+      restore();
+    }
+    return prompt;
+  };
+
+  test("空串 / 纯空白 / 取消(prompt 回 null)→ 拒绝:返回 undefined,且一个 setter 都不碰", () => {
+    // 本函数所有出口都 return undefined,故「拒绝」只能靠「什么都没写」来判
+    for (const answer of ["", "   ", "\t\n ", null]) {
+      const scope = makeScope();
+      let result: unknown = "出口没被调用";
+      withPrompt(answer, () => { result = createCreateGraphTemplateType(scope)(); });
+      expect(result, `输入 ${JSON.stringify(answer)}`).toBeUndefined();
+      expect(scope.setCustomGraphTemplateTypes).not.toHaveBeenCalled();
+      expect(scope.setExpandedGraphTemplateTypes).not.toHaveBeenCalled();
+      expect(scope.setTemplateDraftType).not.toHaveBeenCalled();
+      expect(scope.persistTemplateLibraryChange).not.toHaveBeenCalled();
+      expect(scope.writeOperationLog).not.toHaveBeenCalled();
+    }
+  });
+
+  test("合法名:先 trim 再入库,类型名在五处出口上完全一致", () => {
+    const scope = makeScope();
+    withPrompt("  直流接线2  ", () => { createCreateGraphTemplateType(scope)(); });
+
+    expect(scope.setCustomGraphTemplateTypes).toHaveBeenCalledWith(["直流接线2"]);
+    expect(scope.setTemplateDraftType).toHaveBeenCalledWith("直流接线2");
+    expect(scope.persistTemplateLibraryChange).toHaveBeenCalledWith({ customGraphTemplateTypes: ["直流接线2"] });
+    expect(scope.writeOperationLog).toHaveBeenCalledWith("新增模板类型：直流接线2");
+    // 展开列表走 updater:未展开才补,已展开原样返回(不重复追加)
+    const updater = scope.setExpandedGraphTemplateTypes.mock.calls[0][0];
+    expect(updater([])).toEqual(["直流接线2"]);
+    expect(updater(["直流接线2"])).toEqual(["直流接线2"]);
+  });
+
+  test("与已有类型重名 → 拒绝且不写任何状态;提示走的是全局 showGlobalMessage", () => {
+    const scope = makeScope();
+    const showGlobalMessage = vi.fn();
+    const restore = setGlobal("showGlobalMessage", showGlobalMessage);
+    try {
+      withPrompt("一次接线", () => { createCreateGraphTemplateType(scope)(); });
+    } finally {
+      restore();
+    }
+    expect(showGlobalMessage).toHaveBeenCalledWith("模板类型名称重复，请换一个名称。");
+    expect(scope.setCustomGraphTemplateTypes).not.toHaveBeenCalled();
+    expect(scope.persistTemplateLibraryChange).not.toHaveBeenCalled();
+  });
+
+  test("重名判定大小写不敏感:已有 AC 时输入 ac 同样被拒", () => {
+    const scope = makeScope({ graphTemplateTypes: ["AC"] });
+    withPrompt("ac", () => { createCreateGraphTemplateType(scope)(); });
+    expect(scope.setCustomGraphTemplateTypes).not.toHaveBeenCalled();
+    expect(scope.setTemplateDraftType).not.toHaveBeenCalled();
+  });
+
+  test("含非法字符**不**被拒:本出口只做 trim,没有字符集校验", () => {
+    // 与元件类名那道校验(须字母开头等)是两条独立路径;这里如实锁住现状,免得日后误以为已校验
+    const scope = makeScope();
+    withPrompt("  A B/系统!  ", () => { createCreateGraphTemplateType(scope)(); });
+    expect(scope.setCustomGraphTemplateTypes).toHaveBeenCalledWith(["A B/系统!"]);
+    expect(scope.setTemplateDraftType).toHaveBeenCalledWith("A B/系统!");
+  });
+
+  test("非编辑模式:连 prompt 都不问,直接返回 undefined", () => {
+    const scope = makeScope({ requireEditMode: () => false });
+    const prompt = withPrompt("新类型", () => { createCreateGraphTemplateType(scope)(); });
+    expect(prompt).not.toHaveBeenCalled();
+    expect(scope.setCustomGraphTemplateTypes).not.toHaveBeenCalled();
+  });
+});
+
+describe("画布指针下的快捷键可用性(createCanvasPointerKeyboardShortcutAvailability)", () => {
+  /**
+   * 极简 DOM 替身:这条出口只用到 `instanceof Element` 与 `closest(选择器)`。
+   * 选择器按逗号拆开、只认 `.` 前缀的 class token,并沿 parent 向上冒泡 ——
+   * 以还原真实结构:顶层元素是输入框,命中浮层的是它的祖先。
+   */
+  class FakeElement {
+    private readonly classes: string[];
+    private readonly parent: FakeElement | null;
+    constructor(classNames = "", parent: FakeElement | null = null) {
+      this.classes = classNames.split(/\s+/).filter(Boolean);
+      this.parent = parent;
+    }
+    closest(selector: string) {
+      const tokens = selector.split(",").map((token) => token.trim());
+      for (let node: FakeElement | null = this; node !== null; node = node.parent) {
+        const self: FakeElement = node;
+        if (tokens.some((token) => token.startsWith(".") && self.classes.includes(token.slice(1)))) {
+          return self;
+        }
+      }
+      return null;
+    }
+  }
+
+  const makeScope = (point: { x: number; y: number } | null, insideCanvas = true): any => ({
+    CANVAS_KEYBOARD_SURFACE_SELECTOR,
+    clientPointInsideRenderedCanvas: () => insideCanvas,
+    isCanvasKeyboardBlockingTarget,
+    lastCanvasClientPointerRef: { current: point },
+    lastKeyboardShortcutClientPointerRef: { current: null },
+  });
+
+  /** node 环境没有 document/Element:装上再跑,跑完拆掉 */
+  const withDom = (topElement: unknown, run: (elementFromPoint: ReturnType<typeof vi.fn>) => string) => {
+    const elementFromPoint = vi.fn(() => topElement);
+    const restoreElement = setGlobal("Element", FakeElement);
+    const restoreDocument = setGlobal("document", { elementFromPoint });
+    try {
+      return run(elementFromPoint);
+    } finally {
+      restoreDocument();
+      restoreElement();
+    }
+  };
+
+  const availabilityAt = (topElement: unknown, scope: any) =>
+    withDom(topElement, () => createCanvasPointerKeyboardShortcutAvailability(scope)());
+
+  test("指针在画布内、顶层元素命中画布面 → unblocked(画布聚焦:快捷键可用)", () => {
+    expect(availabilityAt(new FakeElement("diagram-canvas"), makeScope({ x: 40, y: 30 }))).toBe("unblocked");
+  });
+
+  test("指针落在输入框(拦截浮层 + 画布面之内)→ blocked(输入框聚焦:快捷键不可用)", () => {
+    // ⚠ 嵌套形状是判别力的所在,不能简化:浮层必须**同时**落在画布面之内,
+    //   否则「顶层元素不在画布面内」这条路径也会产出 blocked,删掉拦截分支照样绿(实测 M6)。
+    //   真实结构即如此:侧栏/浮层绝对定位压在画布区上,既在渲染画布矩形内,又属于
+    //   .canvas-scroll-surface / .diagram-canvas 的后代。
+    const input = new FakeElement("", new FakeElement("inspector-panel", new FakeElement("canvas-scroll-surface")));
+    expect(availabilityAt(input, makeScope({ x: 40, y: 30 }))).toBe("blocked");
+  });
+
+  test("画布面上的浮层(浮动工具条)同样 blocked —— 拦截浮层优先于画布面", () => {
+    const toolbar = new FakeElement("canvas-floating-toolbar", new FakeElement("diagram-canvas"));
+    expect(availabilityAt(toolbar, makeScope({ x: 40, y: 30 }))).toBe("blocked");
+  });
+
+  test("指针不在已渲染画布内 → blocked,且根本不查 elementFromPoint", () => {
+    const scope = makeScope({ x: 5000, y: 5000 }, false);
+    const result = withDom(new FakeElement("diagram-canvas"), (elementFromPoint) => {
+      const value = createCanvasPointerKeyboardShortcutAvailability(scope)();
+      expect(elementFromPoint).not.toHaveBeenCalled();
+      return value;
+    });
+    expect(result).toBe("blocked");
+  });
+
+  test("elementFromPoint 拿不到 Element(点在空白/未渲染处)→ blocked", () => {
+    expect(availabilityAt(null, makeScope({ x: 40, y: 30 }))).toBe("blocked");
+  });
+
+  test("顶层元素既不命中浮层也不命中画布面 → blocked(默认不可用,不是默认可用)", () => {
+    expect(availabilityAt(new FakeElement("topbar"), makeScope({ x: 40, y: 30 }))).toBe("blocked");
+  });
+
+  test("无任何指针记录 → unknown(既非可用也非不可用)", () => {
+    expect(availabilityAt(new FakeElement("diagram-canvas"), makeScope(null))).toBe("unknown");
+  });
+
+  test("键盘指针记录优先于画布指针记录", () => {
+    const scope = makeScope({ x: 40, y: 30 });
+    scope.lastKeyboardShortcutClientPointerRef = { current: { x: 9999, y: 9999 } };
+    scope.clientPointInsideRenderedCanvas = (point: { x: number }) => point.x < 5000;
+    expect(availabilityAt(new FakeElement("diagram-canvas"), scope)).toBe("blocked");
+  });
+});
+
+describe("三个容器草稿出口的返回值直断(不经提交侧)", () => {
+  // 一个虚拟电厂容器 + 两个开关箱容器 + 一个普通图元
+  const containerNodes = () => [
+    bareNode("m1", "ac-load", { name: "负载1" }),
+    bareNode("v1", "ac-vpp-box", { name: "虚拟电厂1", size: { width: 200, height: 200 } }),
+    bareNode("s1", "ac-switch-box", { name: "开关箱1", size: { width: 200, height: 200 } }),
+    bareNode("s2", "ac-switch-box", { name: "开关箱2", size: { width: 200, height: 200 } }),
+  ];
+
+  /** 深冻结:测试文件是 ESM(严格模式),任何就地写都会抛 —— 比事后比对快照更早暴露 */
+  const deepFreeze = (value: any): any => {
+    if (value && typeof value === "object" && !Object.isFrozen(value)) {
+      Object.freeze(value);
+      Object.values(value).forEach(deepFreeze);
+    }
+    return value;
+  };
+
+  test("containerKindSwitch:该类型已有容器 → 选中第一个(kind/名称/容器 id 三者齐全)", () => {
+    expect(containerKindSwitch("ac-vpp-box", deepFreeze(containerNodes()) as any)).toEqual({
+      kind: "ac-vpp-box",
+      name: "虚拟电厂1",
+      containerId: "v1",
+    });
+  });
+
+  test("containerKindSwitch:该类型还没有容器 → 预填默认名,containerId 必须为空(不残留旧类型的容器)", () => {
+    const nodes = deepFreeze(containerNodes()) as any;
+    expect(containerKindSwitch("ac-distribution-box", nodes)).toEqual({
+      kind: "ac-distribution-box",
+      name: "配变箱1",
+      containerId: "",
+    });
+    // 默认名的计数只按**本类型**数,不受别类型容器影响(否则这里会是 虚拟电厂4)
+    expect(containerKindSwitch("dc-vpp-box", nodes)).toEqual({
+      kind: "dc-vpp-box",
+      name: "虚拟电厂1",
+      containerId: "",
+    });
+  });
+
+  test("containerNamePick:命中已有容器 id → 选中它,name 同步为该容器名", () => {
+    expect(containerNamePick("s2", "ac-switch-box", deepFreeze(containerNodes()) as any)).toEqual({
+      kind: "ac-switch-box",
+      name: "开关箱2",
+      containerId: "s2",
+    });
+  });
+
+  test("containerNamePick:未命中 id → 视作新输入的名字,containerId 清空(新建口径)", () => {
+    expect(containerNamePick("我的开关箱", "ac-switch-box", deepFreeze(containerNodes()) as any)).toEqual({
+      kind: "ac-switch-box",
+      name: "我的开关箱",
+      containerId: "",
+    });
+  });
+
+  test("containerNamePick 只按 id 匹配、不校验类型:别的类型的容器 id 也会被选中", () => {
+    // UI 的名称候选只给本类型的容器,故线上碰不到;此处如实锁住纯函数口径:
+    // draft.kind 与被选容器的 kind 可以不一致,提交侧走 containerId 分支(加入它)不受影响
+    expect(containerNamePick("s1", "ac-vpp-box", deepFreeze(containerNodes()) as any)).toEqual({
+      kind: "ac-vpp-box",
+      name: "开关箱1",
+      containerId: "s1",
+    });
+  });
+
+  test("containerNameSearch:非空输入 → 覆盖名称并清空已选容器(直接点确定也按新名新建)", () => {
+    const draft = { kind: "ac-switch-box", name: "开关箱1", containerId: "s1" };
+    expect(containerNameSearch("  我的开关箱  ", draft as any)).toEqual({
+      kind: "ac-switch-box",
+      name: "我的开关箱",
+      containerId: "",
+    });
+  });
+
+  test("containerNameSearch:纯空白输入 → 原样返回入参本身(同一引用),既不改名也不清容器", () => {
+    const draft = { kind: "ac-switch-box", name: "开关箱1", containerId: "s1" };
+    const result = containerNameSearch("   ", draft as any);
+    expect(result).toBe(draft);
+    expect(result).toEqual({ kind: "ac-switch-box", name: "开关箱1", containerId: "s1" });
+  });
+
+  test("三个出口都不就地改入参:冻结入参 + 前后快照一致", () => {
+    const nodes = containerNodes();
+    const draft = { kind: "ac-vpp-box", name: "虚拟电厂1", containerId: "v1" };
+    const nodesBefore = JSON.stringify(nodes);
+    const draftBefore = JSON.stringify(draft);
+    deepFreeze(nodes);
+    deepFreeze(draft);
+
+    containerKindSwitch("ac-switch-box", nodes as any);
+    containerNamePick("s1", "ac-switch-box", nodes as any);
+    containerNameSearch("新名字", draft as any);
+
+    expect(JSON.stringify(nodes)).toBe(nodesBefore);
+    expect(JSON.stringify(draft)).toBe(draftBefore);
+  });
+});
+
+describe("组端子关联取值(createGroupDeviceTerminalAssociationFor)", () => {
+  const containerNode = (terminalTypes: string[]) =>
+    bareNode("c1", "ac-vpp-box", {
+      terminals: terminalTypes.map((type, index) => ({ id: `t${index + 1}`, label: "", type })),
+    });
+
+  const associationFor = (template: any, node: any, index: number, type: string) =>
+    createGroupDeviceTerminalAssociationFor({
+      defaultContainerAssociationForTerminalType,
+      libraryTemplateByKind: new Map([["ac-vpp-box", template]]),
+      normalizeContainerTerminalAssociations,
+    } as any)(node, index, type as any);
+
+  const containerTemplate = (terminalAssociations: string[]) => ({ isContainer: true, terminalAssociations });
+
+  test("节点没有端子(terminalCount=0):归一化给不出第 0 位 → 退回该端子类型的默认关联,不是 undefined", () => {
+    const node = containerNode([]);
+    const template = containerTemplate(["ac-load"]);
+    // 兜底取的是**入参** type(此时端子表是空的,无从按位取)
+    expect(associationFor(template, node, 0, "ac")).toBe("ac-generator");
+    expect(associationFor(template, node, 0, "dc")).toBe("dc-generator");
+    expect(associationFor(template, node, 0, "h2")).toBe("h2-source");
+  });
+
+  test("模板关联表比端子表短:缺的位按各自端子类型的默认关联补齐,不串位", () => {
+    const node = containerNode(["ac", "dc", "h2"]);
+    const template = containerTemplate(["ac-load"]);
+    expect(associationFor(template, node, 0, "ac")).toBe("ac-load");      // 表里已有
+    expect(associationFor(template, node, 1, "dc")).toBe("dc-generator");  // 缺位 → 按 dc 补
+    expect(associationFor(template, node, 2, "h2")).toBe("h2-source");     // 缺位 → 按 h2 补
+  });
+
+  test("补齐位取自端子表而非入参 type:同一 index 换传别的 type,结果不变", () => {
+    // 若兜底改看入参,第 1 位传 heat 会得到 heat-source —— 断言它仍是 dc-generator
+    const node = containerNode(["ac", "dc"]);
+    const template = containerTemplate(["ac-load"]);
+    expect(associationFor(template, node, 1, "dc")).toBe("dc-generator");
+    expect(associationFor(template, node, 1, "heat")).toBe("dc-generator");
+  });
+
+  test("非容器模板:一律用该端子类型的默认关联,不看模板里的关联表", () => {
+    const node = containerNode(["ac"]);
+    expect(associationFor({ isContainer: false, terminalAssociations: ["ac-load"] }, node, 0, "ac")).toBe("ac-generator");
+  });
+
+  test("索引超出端子数:同样退回默认关联(不会给 undefined)", () => {
+    const node = containerNode(["ac"]);
+    expect(associationFor(containerTemplate(["ac-load"]), node, 5, "ac")).toBe("ac-generator");
+  });
 });

@@ -277,3 +277,176 @@ describe("startMemoryWatch 的三条处置路径", () => {
     restore();
     expect(trimmed).toEqual([]);
   });});
+
+// ─── readJsHeapUsedBytes 的取数守卫 ─────────────────────────────────────
+//
+// 缺陷：函数体里写的是**裸标识符** `performance`，不是 `globalThis.performance`。
+// `performance` 不是语言内建全局，缺失时（node 老版本、worker 沙箱、被人为 delete ——
+// 下面第一条用例就是）裸标识符求值直接抛 `ReferenceError: performance is not defined`，
+// 而本函数的契约是「取不到就返回 null」。守望一旦踩进去，setInterval 的回调抛错、
+// 连 level 都不再计算，「静默空转」的语义退化成「静默炸掉」。
+//
+// 本组用例自带 performance 的快照/还原，不挂文件顶部那份 BASELINE_GLOBALS ——
+// 那里明确把 performance.memory 排除在外（理由见文件头注释）。
+describe("readJsHeapUsedBytes 的取数守卫", () => {
+  const GB = 1024 * 1024 * 1024;
+
+  /** 裸标识符求值是否真会抛。用于校验本组用例的桩没失效（否则核心那条会假绿）。 */
+  function barePerformanceThrows() {
+    try {
+      // new Function 造出的函数体在**全局**作用域求值，裸标识符 performance 只在它真是
+      // 全局时才解析得到；解析不到就抛。不能用 `typeof performance` 代替 ——
+      // typeof 对未声明标识符返回 "undefined" 而不抛，测不出任何东西。
+      new Function("return performance;")();
+      return false;
+    } catch {
+      return true;
+    }
+  }
+
+  /** 逐例精确还原 globalThis.performance 的自有属性描述符（含 node 的 getter/setter 形态）。 */
+  function snapshotPerformance() {
+    return Object.getOwnPropertyDescriptor(globalThis, "performance");
+  }
+  function restorePerformance(desc: PropertyDescriptor | undefined) {
+    if (desc) {
+      Object.defineProperty(globalThis, "performance", desc);
+    } else {
+      delete (globalThis as Record<string, unknown>).performance;
+    }
+  }
+
+  /** 整个替换 globalThis.performance（node 里它是可配置访问器，故用 defineProperty）。 */
+  function stubGlobalPerformance(value: unknown) {
+    Object.defineProperty(globalThis, "performance", {
+      value,
+      configurable: true,
+      writable: true,
+      enumerable: true
+    });
+  }
+
+  /** 只改 performance.memory，返回还原函数（浏览器原生 memory 是只读 getter）。 */
+  function stubMemory(perfObject: unknown, memory: unknown) {
+    const target = perfObject as Record<string, unknown>;
+    const original = Object.getOwnPropertyDescriptor(target, "memory");
+    Object.defineProperty(target, "memory", { value: memory, configurable: true, writable: true });
+    return () => {
+      if (original) Object.defineProperty(target, "memory", original);
+      else delete target.memory;
+    };
+  }
+
+  let perfSnapshot: PropertyDescriptor | undefined;
+  beforeEach(() => {
+    perfSnapshot = snapshotPerformance();
+  });
+  afterEach(() => {
+    restorePerformance(perfSnapshot);
+    perfSnapshot = undefined;
+  });
+
+  it("globalThis.performance 整个不存在时：返回 null，不抛 ReferenceError", () => {
+    delete (globalThis as Record<string, unknown>).performance;
+    // 桩的自检（两条都必须为 true，否则下面那条 not.toThrow 就是假绿）：
+    // ① 属性要**彻底不存在**，而不是被置成 undefined —— 后者之下裸标识符仍解析得到
+    //    undefined，表达式不抛、只是取到空，于是「回退成裸标识符」的变异照样全绿；
+    // ② 裸标识符确实要抛，否则本用例压根没覆盖到「全局缺失」这条真实路径。
+    expect("performance" in globalThis).toBe(false);
+    expect(barePerformanceThrows()).toBe(true);
+
+    expect(() => readJsHeapUsedBytes()).not.toThrow();
+    expect(readJsHeapUsedBytes()).toBeNull();
+  });
+
+  it("performance 存在但没有 memory 字段（普通 node 环境）时：返回 null", () => {
+    stubGlobalPerformance({ now: () => 123 });
+    expect(() => readJsHeapUsedBytes()).not.toThrow();
+    expect(readJsHeapUsedBytes()).toBeNull();
+  });
+
+  it("performance.memory 存在但缺 usedJSHeapSize 字段时：返回 null", () => {
+    stubGlobalPerformance({ memory: {} });
+    expect(readJsHeapUsedBytes()).toBeNull();
+  });
+
+  it("usedJSHeapSize 为 0 时：返回 0 而不是 null（0 是合法读数，不是假值）", () => {
+    // 这条咬住「把 0 当假值」：`used || null`、`used && ...`、`used > 0` 三种写法都会
+    // 把 0 吞成 null，从而把「堆恰好为空」和「读不到堆」两种状态混为一谈。
+    // 守卫若退回 `used > 0`，本用例立刻红。
+    stubGlobalPerformance({});
+    const restore = stubMemory(globalThis.performance, { usedJSHeapSize: 0 });
+    try {
+      const used = readJsHeapUsedBytes();
+      expect(used).not.toBeNull();
+      expect(used).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  it("usedJSHeapSize 为 NaN 时：返回 null（无效读数按读不到处理）", () => {
+    stubGlobalPerformance({});
+    const restore = stubMemory(globalThis.performance, { usedJSHeapSize: Number.NaN });
+    try {
+      expect(readJsHeapUsedBytes()).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it("usedJSHeapSize 为负数时：返回 null（物理上不可能的读数按读不到处理）", () => {
+    stubGlobalPerformance({});
+    const restore = stubMemory(globalThis.performance, { usedJSHeapSize: -4096 });
+    try {
+      expect(readJsHeapUsedBytes()).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it("usedJSHeapSize 为 Infinity 时：返回 null（Number.isFinite 这道守卫就在这里承重）", () => {
+    // Infinity >= 0 为 true，所以「只判非负、不判有限」会把 Infinity 当成合法读数放行。
+    // 删掉 Number.isFinite 子句的变异，正是被本用例咬住。
+    stubGlobalPerformance({});
+    const restore = stubMemory(globalThis.performance, { usedJSHeapSize: Number.POSITIVE_INFINITY });
+    try {
+      expect(readJsHeapUsedBytes()).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it("usedJSHeapSize 为数字字符串时：返回 null（只认真 number，不做隐式转换）", () => {
+    // 本条真正守住的是「不做隐式转换」这层语义（typeof 子句）。
+    // 注意：单把 Number.isFinite 换成全局 isFinite，本组用例测不出差别 —— 原因见文末记档 ①。
+    stubGlobalPerformance({});
+    const restore = stubMemory(globalThis.performance, { usedJSHeapSize: "1024" });
+    try {
+      expect(readJsHeapUsedBytes()).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it("Chrome 正常读数：原样返回 usedJSHeapSize（取数改造没动浏览器路径）", () => {
+    stubGlobalPerformance({ memory: { usedJSHeapSize: 1.3 * GB } });
+    expect(readJsHeapUsedBytes()).toBe(1.3 * GB);
+  });
+
+  // ── 变异验证记档（两条「绿但有据」的等价变异，别再重新调查一遍）─────────
+  //
+  // 守卫写的是 `typeof used === "number" && Number.isFinite(used) && used >= 0`，
+  // 三道子句各自都被上面的用例咬住，唯独下面两种改法测不出差别 —— 且**可证明**它们等价，
+  // 不是「输入太薄」：
+  //
+  // ① `Number.isFinite(used)` → 全局 `isFinite(used)`：仍全绿。因 `typeof used === "number"`
+  //    在前短路，字符串根本走不到 isFinite，全局版对非 number 的强转（isFinite("1024") 为 true）
+  //    在此恒不可观察。
+  // ② 删掉 `typeof used === "number" &&` 整句：仍全绿。`Number.isFinite` 对一切非 number
+  //    返回 false（它是刻意不做强转的那个版本），故在 Number.isFinite 在场时，
+  //    typeof 子句在整个定义域上都不改变结果。
+  //
+  // 反过来，「删掉 Number.isFinite」**不是**等价变异：Infinity >= 0 为 true，
+  // 只判非负会把 Infinity 当合法读数放行 —— 由上面那条 Infinity 用例咬住。
+});

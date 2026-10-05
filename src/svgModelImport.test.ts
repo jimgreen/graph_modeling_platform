@@ -813,3 +813,207 @@ describe("parseSvgModel 平台异常内容与静态回退", () => {
     expect(result.project.measurements?.groups).toEqual([]);
   });
 });
+
+// ── 现状钉桩：uniqueModelId / elementHref / elementStyleValue ──────────────
+//
+// 这三个都是模块私有函数（对外只导出 parseSvgModel），所以三条都经由公开入口反推：
+//   · id 归一化  → Text_Layer 里 dev-id 匹配不到设备的文本，落成 static-text 节点，节点 id 即 uniqueModelId 的产物；
+//   · href 取值  → <use> 的 symbol 定位 + device kind 推断；
+//   · style 取值 → static-text 节点的 params（默认值就是 elementStyleValue 返回空串的证据）。
+
+describe("parseSvgModel uniqueModelId 标识归一化现状", () => {
+  // platform 判据 = root_g + 语义层 id + 任一设备元数据属性；dev-id="ghost-N" 同时满足后两者，
+  // 且 ghost-N 不对应任何设备 ⇒ 文本必然进 unmatchedLabels（id 交给 uniqueModelId，fallback 为 static-text-<序号+1>）。
+  const textOnly = (ids: string[]) => `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300">
+      <g id="root_g">
+        <g id="Text_Layer">
+          ${ids.map((id, index) => `<text id="${id}" dev-id="ghost-${index + 1}">文本${index + 1}</text>`).join("")}
+        </g>
+      </g>
+    </svg>`;
+  const textIds = async (ids: string[]) => {
+    const result = await parse(textOnly(ids), "标识归一化");
+    expect(result.mode).toBe("platform");
+    return result.project.nodes.filter((node) => node.kind === "static-text").map((node) => node.id);
+  };
+
+  test("空格折叠成单个连字符；点号、连字符、冒号原样保留；井号等非法字符折叠", async () => {
+    expect(await textIds(["AC Breaker 7", "a.b-c#d", "ID:1-2.3"])).toEqual([
+      "AC-Breaker-7",
+      "a.b-c-d",
+      "ID:1-2.3"
+    ]);
+  });
+
+  test("开头连续的非法字符与数字被整段砍掉；砍空后落回退 id（不是空串）", async () => {
+    // 「开头数字」与「开头非法字符」走的是同一条规则 /^[^A-Za-z_]+/u —— 它砍的是一切非字母非下划线，
+    // 所以 "开关 3" 归一化成 "-3" 之后又被整段砍空，最终落 fallback，而不是留下 "3"。
+    expect(await textIds(["9lives", "  开关A  ", "开关 3", "   ", "***"])).toEqual([
+      "lives",
+      "A",
+      "static-text-3",
+      "static-text-4",
+      "static-text-5"
+    ]);
+  });
+
+  test("归一化后撞名的标识依次追加 _2 后缀，并逐条留下规范化告警", async () => {
+    const result = await parse(textOnly(["a b c d", "a-b-c-d", "ab.cd"]), "标识去重");
+    expect(result.project.nodes.filter((node) => node.kind === "static-text").map((node) => node.id)).toEqual([
+      "a-b-c-d",
+      "a-b-c-d_2",
+      "ab.cd"
+    ]);
+    // 只有前两条发生了改写；第三条归一化后与原串相同，不产生告警。
+    expect(result.warnings.filter((warning) => warning.includes("已规范化为")).length).toBe(2);
+  });
+});
+
+describe("parseSvgModel elementHref 属性名匹配现状", () => {
+  // xmlns:xlink 必须显式声明：xmldom 对未声明前缀直接抛 NamespaceError（见最后一条断言）。
+  const withHref = (useAttrs: string) => `
+    <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 900 600">
+      <defs id="svg_defs">
+        <symbol id="symbol_ACBreaker_ac-breaker_state_0" viewBox="-40 -30 80 60"><g transform="rotate(0) scale(1 1)"><path d="M -20 0 L 20 0"/></g></symbol>
+        <symbol id="symbol_ACBus_ac-bus_default" viewBox="-100 -10 200 20"><g transform="rotate(0) scale(1 1)"><path d="M -100 0 L 100 0"/></g></symbol>
+      </defs>
+      <g id="root_g">
+        <g id="Segment_Layer"/>
+        <g id="ACBreaker_Layer" device-type="ACBreaker">
+          <use dev-id="N1" name="被引用设备" x="160" y="120" width="80" height="60" ${useAttrs}/>
+        </g>
+      </g>
+    </svg>`;
+  const kindsOf = async (useAttrs: string) => {
+    const result = await parse(withHref(useAttrs), "href 匹配");
+    return {
+      mode: result.mode,
+      kinds: result.project.nodes.filter((node) => node.kind !== "static-image").map((node) => node.kind)
+    };
+  };
+
+  test("只给 href 时按该值定位 symbol 并推出 device kind", async () => {
+    expect(await kindsOf('href="#symbol_ACBreaker_ac-breaker_state_0"')).toEqual({
+      mode: "platform",
+      kinds: ["ac-breaker"]
+    });
+  });
+
+  test("只给 xlink:href 时同样能定位（elementHref 的回退分支）", async () => {
+    expect(await kindsOf('xlink:href="#symbol_ACBreaker_ac-breaker_state_0"')).toEqual({
+      mode: "platform",
+      kinds: ["ac-breaker"]
+    });
+  });
+
+  test("两者都给且值不同时以 href 为准（优先级钉桩）", async () => {
+    // href 指向母线 symbol、xlink:href 指向断路器 symbol ⇒ 实际得到的是 ac-bus。
+    expect(await kindsOf('href="#symbol_ACBus_ac-bus_default" xlink:href="#symbol_ACBreaker_ac-breaker_state_0"')).toEqual({
+      mode: "platform",
+      kinds: ["ac-bus"]
+    });
+  });
+
+  test("缺口：XML 区分大小写，大写的 HREF 不被识别，整份 SVG 退化为 generic", async () => {
+    // getAttribute("href") 精确匹配小写 ⇒ HREF 视为无关属性 ⇒ symbol 找不到、kind 推不出 ⇒ 无节点 ⇒ generic 兜底。
+    const result = await kindsOf('HREF="#symbol_ACBreaker_ac-breaker_state_0"');
+    expect(result.mode).toBe("generic");
+    expect(result.kinds).toEqual([]);
+  });
+
+  test("缺口：XLink:Href 的大写前缀未声明，解析期就抛命名空间错误", async () => {
+    await expect(parse(withHref('XLink:Href="#symbol_ACBreaker_ac-breaker_state_0"'), "前缀大小写"))
+      .rejects.toThrow(/SVG XML 解析失败[\s\S]*prefix/iu);
+  });
+});
+
+describe("parseSvgModel elementStyleValue 取值现状", () => {
+  // 静态文本节点的 params 逐个来自 elementStyleValue / numericStyleValue，
+  // 默认值（#111827 / Arial / 500 / 16）正是 elementStyleValue 返回空串时才出现的形态。
+  const textStyled = (attrChunks: string[]) => `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300">
+      <g id="root_g">
+        <g id="Text_Layer">
+          ${attrChunks.map((chunk, index) => `<text id="t${index + 1}" dev-id="ghost-${index + 1}" ${chunk}>文本${index + 1}</text>`).join("")}
+        </g>
+      </g>
+    </svg>`;
+  const styledTexts = async (attrChunks: string[]) => {
+    const result = await parse(textStyled(attrChunks), "style 取值");
+    expect(result.mode).toBe("platform");
+    return result.project.nodes.filter((node) => node.kind === "static-text");
+  };
+
+  test("冒号两侧有无空格都能取值，且同名的直接属性优先于 style", async () => {
+    const [noSpace, withSpace, beforeColon, aroundName, direct] = await styledTexts([
+      'style="fill:red"',
+      'style="fill: red"',
+      'style="fill :navy"',
+      'style=" ; fill:teal"',
+      'fill="blue" style="fill:green"'
+    ]);
+    expect(noSpace.params.textColor).toBe("red");
+    expect(withSpace.params.textColor).toBe("red");
+    // 分隔符 `;` 之后、属性名前、冒号前的空白都由模式里的 \s* 容忍；
+    // 值一侧的空白另由末尾 trim 吸收（所以只砍 \s*:\s* 里的后半段不会变色，这里必须钉住冒号前那一侧）。
+    expect(beforeColon.params.textColor).toBe("navy");
+    expect(aroundName.params.textColor).toBe("teal");
+    // elementStyleValue 先看 getAttribute(property)，所以直接属性赢了 style 里的同名字段。
+    expect(direct.params.textColor).toBe("blue");
+  });
+
+  test("多属性 style 只取目标属性，且取值在分号处截断", async () => {
+    const [node] = await styledTexts([
+      'style="stroke:#0f0;fill:blue;font-size:12px;font-family:serif;font-weight:700;font-style:italic;text-decoration:underline"'
+    ]);
+    expect(node.params).toMatchObject({
+      textColor: "blue",
+      fontFamily: "serif",
+      fontSize: "12",
+      fontWeight: "700",
+      fontStyle: "italic",
+      textDecoration: "underline"
+    });
+  });
+
+  test("属性名里带正则元字符的邻居属性不会串味，取不到就是取不到", async () => {
+    const [dotNeighbour, ownAfterDot, dottedName, prefixNeighbour] = await styledTexts([
+      'style="fill.x:1"',              // 点号邻居：fill 后面不是冒号 ⇒ 不匹配
+      'style="fill.x:1;fill:green"',   // 点号邻居在前、真正的 fill 在后 ⇒ 取后面的
+      'style="fi.ll:red"',             // 被查属性名 fill 在 style 文本里被拆开 ⇒ 不匹配
+      'style="fill-rule:evenodd"'      // 以 fill 打头的更长属性名 ⇒ 不匹配
+    ]);
+    // 四个里三个取不到 fill ⇒ 全部落 staticTextNode 的默认色（= elementStyleValue 返回空串的证据）
+    expect([dotNeighbour, dottedName, prefixNeighbour].map((node) => node.params.textColor))
+      .toEqual(["#111827", "#111827", "#111827"]);
+    expect(ownAfterDot.params.textColor).toBe("green");
+
+    // ⚠ 已知的覆盖死角（别再重查一遍）：stylePropertyPattern 里给「被查属性名」做转义的那一步
+    // （property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")）只有在 property 自身含正则元字符时才承重，
+    // 而本模块所有调用点传的都是不含元字符的字面量（fill / stroke / font-* / text-decoration /
+    // display / stroke-dasharray），故把那步转义整段删掉，本文件仍全绿（已用变异验证确认为 GREEN）。
+    // 这里四条断言钉的是「相邻维度」——被查名按字面匹配、不与邻居属性串味 —— 不是转义本身。
+    // 想让转义可测，只能导出该私有函数，那是改公开 API，不在本条范围内。
+  });
+
+  test("完全没有 style 时全部取默认值", async () => {
+    const [node] = await styledTexts([""]);
+    expect(node.params).toMatchObject({
+      textColor: "#111827",
+      fontFamily: "Arial",
+      fontWeight: "500",
+      fontStyle: "normal",
+      textDecoration: "none",
+      fontSize: "16"
+    });
+  });
+
+  test("同一属性在多个元素上反复取值结果稳定（正则复用不得漂移）", async () => {
+    // 守卫：style 取值正则现已按属性名缓存复用。若哪天给 flags 加上 g，
+    // lastIndex 会停在上一处匹配之后，第 2~6 个元素将返回空串（落成默认色）⇒ 本条转红。
+    const colors = ["#111111", "#222222", "#333333", "#444444", "#555555", "#666666"];
+    const nodes = await styledTexts(colors.map((color) => `style="fill:${color}"`));
+    expect(nodes.map((node) => node.params.textColor)).toEqual(colors);
+  });
+});

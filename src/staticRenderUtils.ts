@@ -62,12 +62,27 @@ function staticSymbolShadowStyle(node: ModelNode): CSSProperties | undefined {
 
 // ─── Symbol Text Values ──────────────────────────────────────────────────────
 
+// `params` 来自后端且落盘前不做运行时校验（ModelNode.params 只是**声明**为
+// Record<string, string>），故 text 可能是数字 / 布尔 / 对象 / 数组。
+// 原实现 `node.params.text ?? fallback` 把这类值原样放行，而下游
+// staticShapeText 会对它调 .split —— 直接抛 TypeError，整棵图元渲染中断。
+//
+// 兜底选「与 null / undefined 同处理」即回落 fallback，而不是 String(v)：
+//   · 合法字符串（含空串）行为逐字节不变，String(v) 也在这一点上等价；
+//   · undefined/null 本来就走 fallback，非字符串再走同一条分支 ⇒ 语义统一为
+//     「没有可用的文本值」，调用方只需处理一种形态；
+//   · String(v) 对 {} 会产出 "[object Object]"、对 [] 会产出 ""、对 false 会
+//     产出 "false" —— 全是画布上的垃圾标签，且 String([]) === "" 与
+//     String(0) === "0" 的分歧会让「空标签」有两条来源。
 function staticSymbolTextValue(node: ModelNode, fallback: string): string {
-  return node.params.text ?? fallback;
+  const text = node.params.text;
+  return typeof text === "string" ? text : fallback;
 }
 
+// 缩略图版同理：原实现只判 undefined，null.slice / (123).slice 直接抛 TypeError。
 function staticSymbolMiniatureTextValue(node: ModelNode, fallback: string): string {
-  return node.params.text === undefined ? fallback : node.params.text.slice(0, 2);
+  const text = node.params.text;
+  return typeof text === "string" ? text.slice(0, 2) : fallback;
 }
 
 // ─── Shape Text ──────────────────────────────────────────────────────────────
@@ -242,7 +257,12 @@ function resolveStateVisualImageHref(visual: DeviceStateVisual | null | undefine
     return "";
   }
   const assetId = visual.imageAssetId || visual.backgroundImageAssetId;
-  if (assetId && assets[assetId]) {
+  // 必须用 Object.hasOwn 判存在性，不能靠 `assets[assetId]` 的真值：
+  // 键为 "constructor" / "__proto__" / "toString" 时，裸索引取到的是**原型链成员**
+  // （对 assets 而言恒为真值），于是把 Object / toString 这些函数体当资源 url 传给
+  // inlineBackendImageRefsInSvgDataUrl —— 它 String() 后原样返回，画布上会出现
+  // "function Object() { [native code] }" 这样的 href，而不是「资源不存在」时的空串。
+  if (assetId && Object.hasOwn(assets, assetId) && assets[assetId]) {
     return inlineBackendImageRefsInSvgDataUrl(assets[assetId], assets);
   }
   return inlineBackendImageRefsInSvgDataUrl(visual.image || visual.backgroundImage || "", assets);

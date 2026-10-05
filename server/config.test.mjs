@@ -195,6 +195,163 @@ describe("host / port 取值", () => {
     expect(broken.apiPrefix).toBe("/webgrp");
     expect(broken.backendPort).toBe(5174);
   });
+
+  test("JSON 语法错误时全部取值回落到默认值（既有行为，未因归一化而改动）", () => {
+    // 补的是上面那条没覆盖的 host / frontendPort / frontendPrefix —— 那条只查了
+    // apiPrefix 与 backendPort。此处把「坏 JSON 走 catch 分支」这条既有契约钉全，
+    // 免得日后有人把 catch 分支删掉时只被上面那条的一半发现。
+    const [only] = loadWithEnv([{ GRAPH_MODEL_CONFIG: configFileWith("{ not json") }]);
+    expect(only.host).toBe("127.0.0.1");
+    expect(only.frontendPort).toBe(5173);
+    expect(only.backendPort).toBe(5174);
+    expect(only.apiPrefix).toBe("/webgrp");
+    expect(only.frontendPrefix).toBe("/");
+  });
+});
+
+// ── 合法 JSON 但不是配置对象 ──────────────────────────────────────────────
+//
+// 关键事实：**只有字面 null 会在修复前真的抛错**。cfg 是数组 / 字符串 / 数字时，
+// 属性访问不抛，只是返回 undefined —— 也就是说它们此前「碰巧」能工作。
+//
+// 变异验证记录：把 readConfig 里的判定从
+//   parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
+// 缩成只剩 `parsed === null`，本组两条用例**全绿**（GREEN）。这不是漏测，是可证的等价：
+//   - typeof 分支：JSON.parse 对字符串 / 数字产出原始值，其属性访问恒为 undefined，
+//     与 {} 上的取值完全一致；
+//   - Array.isArray 分支：JSON.parse 产出的数组带不上具名属性，cfg.host /
+//     cfg.frontend?.port 同样恒为 undefined。
+// 该等价成立的**前提**是取值只做具名属性访问。若日后改成 Object.assign(cfg, parsed)
+// 之类会把数组下标 / 字符串长度混进配置的写法，这条记录就不再成立 —— 故下面第 2 条
+// 把归一后的取值逐个钉死，作为那个前提的守卫。
+// 真正承重的是第 1 条：去掉整个判定（含 null 分支）立即 RED。
+describe("配置文件内容不是对象时的兜底", () => {
+  test("配置文件内容是字面 null 时不抛错，全部取值回落到默认值", () => {
+    // 修复前：JSON.parse("null") 得 null 且**不抛**，随后 cfg.host 在**模块求值期**
+    // 抛 TypeError —— 子进程非零退出，execFileSync 抛，本用例立刻红。
+    // 这也是本组唯一真正承重的判别用例。
+    const [only] = loadWithEnv([{ GRAPH_MODEL_CONFIG: configFileWith("null") }]);
+    expect(only.host).toBe("127.0.0.1");
+    expect(only.frontendPort).toBe(5173);
+    expect(only.backendPort).toBe(5174);
+    expect(only.apiPrefix).toBe("/webgrp");
+    expect(only.frontendPrefix).toBe("/");
+    // 派生值也要可用：证明模块是**完整求值完了**，而不只是没抛异常。
+    // 注意 frontendPrefix 此时是根，stripFrontendBase 是恒等映射（既有契约），
+    // 所以 /app/icon-library/x 原样返回 —— 别把它当成「剥错了」。
+    expect(only.apiPathSlash).toBe("/webgrp/images");
+    expect(only.stripIcon).toBe("/app/icon-library/x");
+    expect(only.stripRoot).toBe("/");
+  });
+
+  test("配置文件内容是数组、字符串或数字时不抛错，取值同样回落到默认值", () => {
+    const [fromArray, fromString, fromNumber] = loadWithEnv([
+      { GRAPH_MODEL_CONFIG: configFileWith('["a", "b"]') },
+      { GRAPH_MODEL_CONFIG: configFileWith('"just-a-string"') },
+      { GRAPH_MODEL_CONFIG: configFileWith("123") }
+    ]);
+    for (const only of [fromArray, fromString, fromNumber]) {
+      expect(only.host).toBe("127.0.0.1");
+      expect(only.frontendPort).toBe(5173);
+      expect(only.backendPort).toBe(5174);
+      expect(only.apiPrefix).toBe("/webgrp");
+      expect(only.frontendPrefix).toBe("/");
+      expect(only.apiPathSlash).toBe("/webgrp/images");
+    }
+  });
+});
+
+describe("端口不是有限数时的兜底", () => {
+  test("端口环境变量不是有限数时回落到默认值", () => {
+    // 一律指向不存在的配置文件：本组断言的是「环境变量这一侧」的兜底，不能被开发者
+    // 本机那份 platform.config.json 影响（既有默认值用例有同样的隐含假设）。
+    const noFile = { GRAPH_MODEL_CONFIG: join(tmpdir(), "gmp-config-absent-ports.json") };
+    const [abc, blank, spaces, infinite, unset] = loadWithEnv([
+      { ...noFile, VITE_PORT: "abc", IMAGE_SERVER_PORT: "abc" },
+      { ...noFile, VITE_PORT: "", IMAGE_SERVER_PORT: "" },
+      { ...noFile, VITE_PORT: "   ", IMAGE_SERVER_PORT: "\t" },
+      { ...noFile, VITE_PORT: "Infinity", IMAGE_SERVER_PORT: "-Infinity" },
+      { ...noFile }
+    ]);
+    // 判别点：修复前第一组得 NaN、第四组得 ±Infinity（Number("abc") / Number("Infinity")），
+    // 两者都会让下面这两行红 —— 非有限端口会一路传到 server.listen 与 vite server.port。
+    for (const only of [abc, blank, spaces, infinite, unset]) {
+      expect(Number.isFinite(only.frontendPort)).toBe(true);
+      expect(Number.isFinite(only.backendPort)).toBe(true);
+    }
+    // 再把真实值钉死（非有限与未设都落到既定默认值），免得有人用「返回 0」这类同样
+    // 是有限数的糊法把这组变绿。
+    for (const only of [abc, blank, spaces, infinite, unset]) {
+      expect(only.frontendPort).toBe(5173);
+      expect(only.backendPort).toBe(5174);
+    }
+  });
+
+  test("配置文件里的端口不是数字时同样回落到默认值", () => {
+    // 与上一条同一条代码路径的另一侧（配置文件而非环境变量）：cfg.frontend.port 同样
+    // 会被 Number() 处理，漏掉它就等于只兜了一半。
+    const file = configFileWith({ frontend: { port: "abc" }, backend: { port: "abc" } });
+    const [only] = loadWithEnv([{ GRAPH_MODEL_CONFIG: file }]);
+    expect(Number.isFinite(only.frontendPort)).toBe(true);
+    expect(Number.isFinite(only.backendPort)).toBe(true);
+    expect(only.frontendPort).toBe(5173);
+    expect(only.backendPort).toBe(5174);
+  });
+
+  test("配置文件里的端口是 null 时回落到默认值，而不是 0", () => {
+    // 判别力说明：Number(null) 是 0 且**是有限数**，所以「非有限则回落」这条兜底挡不住
+    // 它 —— 0 传给 listen 意味着随机端口。取值链里的 ?? 只能挡住左操作数为 nullish 的
+    // 情形，cfg.frontend.port 本身就是 null 时那条链给不出默认值，必须由 toPort 兜。
+    // 换句话说：这条断言与上一条的判别来源不同（有限但为 0 vs 非有限），不是重复覆盖。
+    const file = configFileWith({ frontend: { port: null }, backend: { port: null } });
+    const [only] = loadWithEnv([{ GRAPH_MODEL_CONFIG: file }]);
+    expect(Number.isFinite(only.frontendPort)).toBe(true);
+    expect(Number.isFinite(only.backendPort)).toBe(true);
+    expect(only.frontendPort).toBe(5173);
+    expect(only.backendPort).toBe(5174);
+  });
+
+  test("配置文件里的 frontend / backend 不是对象时端口回落到默认值", () => {
+    // 再往下一层的形状问题：frontend 写成字符串或数组时，cfg.frontend?.port 的可选链
+    // 给的是 undefined（不抛），但写成 null 时可选链同样给 undefined —— 两种形状都
+    // 不应让端口变成 NaN 或 0。
+    const [asString, asArray, asNull] = loadWithEnv([
+      { GRAPH_MODEL_CONFIG: configFileWith({ frontend: "oops", backend: "oops" }) },
+      { GRAPH_MODEL_CONFIG: configFileWith({ frontend: [], backend: [] }) },
+      { GRAPH_MODEL_CONFIG: configFileWith({ frontend: null, backend: null }) }
+    ]);
+    for (const only of [asString, asArray, asNull]) {
+      expect(Number.isFinite(only.frontendPort)).toBe(true);
+      expect(Number.isFinite(only.backendPort)).toBe(true);
+      expect(only.frontendPort).toBe(5173);
+      expect(only.backendPort).toBe(5174);
+    }
+  });
+});
+
+describe("正常配置文件不受兜底影响", () => {
+  test("合法 JSON 对象加数字端口时取值与文件一致（防兜底误伤）", () => {
+    // 兜底是「加在最外层」的：一旦误伤到合法输入，所有开发者的端口与前缀都会静默变默认。
+    const file = configFileWith({
+      host: "10.0.0.5",
+      frontend: { port: 8080, prefix: "/app" },
+      backend: { port: 6001, prefix: "/from-file/" }
+    });
+    const [only] = loadWithEnv([{ GRAPH_MODEL_CONFIG: file }]);
+    expect(only.host).toBe("10.0.0.5");
+    expect(only.frontendPort).toBe(8080);
+    expect(only.backendPort).toBe(6001);
+    expect(only.apiPrefix).toBe("/from-file");
+    expect(only.frontendPrefix).toBe("/app/");
+  });
+
+  test("数字字符串端口仍按数字取值，不被兜底改写", () => {
+    // 兜底判的是「有限性」而不是「类型」：若误改成 typeof 判数字，
+    // 字符串端口（环境变量与 JSON 里都常见）会全被吃掉。
+    const [only] = loadWithEnv([{ VITE_PORT: "3000", IMAGE_SERVER_PORT: "4000" }]);
+    expect(only.frontendPort).toBe(3000);
+    expect(only.backendPort).toBe(4000);
+  });
 });
 
 describe("frontendPrefix 归一与 stripFrontendBase", () => {

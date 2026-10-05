@@ -1956,3 +1956,162 @@ describe("全网拓扑分支边界覆盖", () => {
       .toEqual(expect.arrayContaining([expect.objectContaining({ id: expect.stringContaining("duplicate-hierarchy-parent") })]));
   });
 });
+
+describe("模型记录缺失 project 字段时的收集兜底", () => {
+  const UPDATED_AT = "2026-08-17T00:00:00.000Z";
+
+  function schemeWithProjects(projects: unknown[], schemeId = "scheme-root"): SavedSchemeRecord {
+    return {
+      id: schemeId,
+      name: "主方案",
+      updatedAt: UPDATED_AT,
+      projects: projects as SavedProjectRecord[]
+    };
+  }
+
+  function summary(models: ReturnType<typeof collectAllNetworkTopologyReferenceModels>) {
+    return models.map((model) => [model.projectId, model.name, model.idx, model.modelType]);
+  }
+
+  /**
+   * 下面两条排序守卫的关系（变异实测，别再重复排查）：
+   *
+   * ① 收集处的 name 兜底（`|| ""`）与排序处的 name 兜底（`String(left.name ?? "")`）互相冗余：
+   *    去掉收集处兜底会让本组用例转红（name 变成 undefined），但排序处兜底仍然把 undefined
+   *    归一成空串，比较阶段不抛错；去掉排序处兜底则全绿——因为收集处已保证 name 一定是字符串。
+   *    即：收集处兜底决定「收集出什么值」，排序处兜底决定「值万一不是字符串时优雅降级而不是抛错」。
+   *
+   * ② 排序处的 projectId 兜底不是冗余：`projectId: record.id` 是原样搬运、没有归一，
+   *    缺 id 的记录只有靠这道兜底才不会在比较阶段抛 TypeError。去掉它，对应用例转红。
+   */
+
+  test("记录缺少 project 字段时按占位值收集且不抛 TypeError", () => {
+    const named = { id: "broken-1", name: "残缺记录", updatedAt: UPDATED_AT } as unknown as SavedProjectRecord;
+    const nameless = { id: "broken-2", name: "", updatedAt: UPDATED_AT } as unknown as SavedProjectRecord;
+
+    expect(() => collectAllNetworkTopologyReferenceModels([
+      schemeWithProjects([named, nameless])
+    ])).not.toThrow();
+
+    const models = collectAllNetworkTopologyReferenceModels([schemeWithProjects([named, nameless])]);
+    expect(models).toHaveLength(2);
+    // 名称优先取 record.name；record.name 也为空时，缺 project 的记录名占位空串，
+    // 两条空 idx 记录按名称比较，空名占位排在前面。
+    expect(summary(models)).toEqual([
+      ["broken-2", "", 0, ""],
+      ["broken-1", "残缺记录", 0, ""]
+    ]);
+    expect(models[0].record).toBe(nameless);
+    expect(models[1].record).toBe(named);
+    // 占位 modelType 为空串，不在全网拓扑允许的类型集合内，模型列表沿用既有类型过滤把它们剔除。
+    expect(collectAllNetworkTopologyModels([schemeWithProjects([named, nameless])])).toEqual([]);
+  });
+
+  test("project 为 null 时与字段缺失表现一致", () => {
+    const record = projectRecord("null-project", "空对象记录", 4, "厂站");
+    (record as unknown as { project: unknown }).project = null;
+
+    const models = collectAllNetworkTopologyReferenceModels([schemeWithProjects([record])]);
+
+    expect(summary(models)).toEqual([["null-project", "空对象记录", 0, ""]]);
+    expect(collectAllNetworkTopologyModels([schemeWithProjects([record])])).toEqual([]);
+  });
+
+  test("project 存在但缺少 name 与 idx 时按记录名和零索引归一", () => {
+    const withoutName = projectRecord("a-without-project-name", "", 0, "台区");
+    delete (withoutName.project as unknown as Record<string, unknown>).name;
+    const withoutIdx = projectRecord("b-without-idx", "有名称模型", 0, "台区");
+    delete (withoutIdx.project as unknown as Record<string, unknown>).idx;
+    const normal = projectRecord("c-normal", "正常模型", 7, "台区");
+
+    const models = collectAllNetworkTopologyReferenceModels([
+      schemeWithProjects([normal, withoutIdx, withoutName])
+    ]);
+
+    // idx=7 的记录排最前；两条 idx 归零的记录再按名称比较：
+    // 缺 project.name 且 record.name 也为空的记录名占位空串，排在有名称的记录之前。
+    expect(summary(models)).toEqual([
+      ["c-normal", "正常模型", 7, "台区"],
+      ["a-without-project-name", "", 0, "台区"],
+      ["b-without-idx", "有名称模型", 0, "台区"]
+    ]);
+  });
+
+  test("参与名称比较的记录缺少名称时排序不抛错且空名占位排在前面", () => {
+    const nameless = { id: "nameless", name: "", updatedAt: UPDATED_AT } as unknown as SavedProjectRecord;
+    const named = projectRecord("named", "有名字模型", 0, "厂站");
+    named.name = "";
+
+    expect(() => collectAllNetworkTopologyReferenceModels([
+      schemeWithProjects([named, nameless])
+    ])).not.toThrow();
+
+    const models = collectAllNetworkTopologyReferenceModels([schemeWithProjects([named, nameless])]);
+    // 两条记录 idx 都是 0，排序必须落到名称比较：缺 project 的空名占位排在取到 project.name 的记录之前。
+    expect(models.map((model) => [model.projectId, model.name, model.idx])).toEqual([
+      ["nameless", "", 0],
+      ["named", "有名字模型", 0]
+    ]);
+  });
+
+  test("参与项目ID比较的记录缺少 id 时按空串占位比较", () => {
+    const idless = { name: "", updatedAt: UPDATED_AT } as unknown as SavedProjectRecord;
+    const other = { id: "b-id", name: "", updatedAt: UPDATED_AT } as unknown as SavedProjectRecord;
+
+    expect(() => collectAllNetworkTopologyReferenceModels([
+      schemeWithProjects([other, idless])
+    ])).not.toThrow();
+
+    const models = collectAllNetworkTopologyReferenceModels([schemeWithProjects([other, idless])]);
+    // 两条记录的名称都是空串占位且 idx 相同，比较只能落到项目ID：缺 id 的占位空串排在前面。
+    expect(models.map((model) => [String(model.projectId ?? "<缺失>"), model.name, model.idx])).toEqual([
+      ["<缺失>", "", 0],
+      ["b-id", "", 0]
+    ]);
+  });
+
+  test("project 完整的正常记录收集结果与修复前逐项一致", () => {
+    const station = projectRecord("station-1", "中心厂站", 1, "厂站");
+    const feeder = projectRecord("feeder-1", "十千伏一线", 5, "馈线");
+    const district = projectRecord("district-1", "一号台区", 9, "台区");
+    district.name = "";
+    const schemes = [schemeWithProjects([district, feeder, station])];
+
+    const models = collectAllNetworkTopologyReferenceModels(schemes);
+
+    expect(models.map((model) => [
+      model.projectId,
+      model.schemeId,
+      model.schemePath,
+      model.name,
+      model.idx,
+      model.modelType
+    ])).toEqual([
+      ["station-1", "scheme-root", ["主方案"], "中心厂站", 1, "厂站"],
+      ["feeder-1", "scheme-root", ["主方案"], "十千伏一线", 5, "馈线"],
+      ["district-1", "scheme-root", ["主方案"], "一号台区", 9, "台区"]
+    ]);
+    expect(models[0].record).toBe(station);
+    expect(models[1].record).toBe(feeder);
+    expect(models[2].record).toBe(district);
+    expect(collectAllNetworkTopologyModels(schemes).map((model) => model.projectId))
+      .toEqual(["station-1", "feeder-1", "district-1"]);
+    expect(defaultAllNetworkTopologySelection(collectAllNetworkTopologyModels(schemes)))
+      .toEqual(["station-1", "feeder-1", "district-1"]);
+  });
+
+  test("空方案数组与单条记录数组的收集结果", () => {
+    expect(collectAllNetworkTopologyReferenceModels([])).toEqual([]);
+    expect(collectAllNetworkTopologyModels([])).toEqual([]);
+    expect(defaultAllNetworkTopologySelection([])).toEqual([]);
+
+    // 单条记录时 sort 不会调用比较函数，收集结果就是这一条本身。
+    const only = projectRecord("only-1", "唯一模型", 4, "台区");
+    const models = collectAllNetworkTopologyReferenceModels([schemeWithProjects([only])]);
+    expect(models).toHaveLength(1);
+    expect(models[0].record).toBe(only);
+    expect(summary(models)).toEqual([["only-1", "唯一模型", 4, "台区"]]);
+    expect(collectAllNetworkTopologyModels([schemeWithProjects([only])]).map((model) => model.projectId))
+      .toEqual(["only-1"]);
+  });
+});

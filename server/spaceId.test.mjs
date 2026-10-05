@@ -244,3 +244,96 @@ test("圈数字母折叠（① → 1）", () => {
 test("全角空格折叠成半角空格后再被替换规则吃掉", () => {
   expect(spaceIdFromName("Ａ　Ｂ")).toBe("A-B");
 });
+
+// ─── 非字符串入参（变异验证补）────────────────────────────
+//
+// 这三个函数的入参在生产调用链上都是字符串/数组，但类型标注（.mjs 里靠约定）不构成约束，
+// 下面把 coercion 与「不防御」两种现状钉成契约：改掉就得同步改这些断言，
+// 而不是让某个上游的意外入参悄悄换一个 id 出去。
+
+test("spaceIdFromName 对非字符串 name 走 String 强制转换，空值落回 space 兜底", () => {
+  // 注意这里不是「拒绝」而是「转换」：null/undefined/空数组经 String() 得空串，
+  // 于是和全符号名一样落到 space 兜底。若把 `String(name ?? "")` 误改成 `String(name)`，
+  // null 会变成字符串 null —— 那是个合法且可用的 id，静默换 id，不报错。
+  expect(spaceIdFromName(null)).toBe("space");
+  expect(spaceIdFromName(undefined)).toBe("space");
+  expect(spaceIdFromName([])).toBe("space");
+  // 非空值：String() 的结果直接进入后续归一链
+  expect(spaceIdFromName(123)).toBe("123");
+  expect(spaceIdFromName(true)).toBe("true");
+  expect(spaceIdFromName(12n)).toBe("12");
+  // 对象的 String() 是 [object Object] → 括号与空格被替换规则吃掉
+  expect(spaceIdFromName({})).toBe("object-Object");
+  // 单元素数组的 String() 等于元素本身（Array#join 语义），不是 JSON
+  expect(spaceIdFromName(["a", "b"])).toBe("a-b");
+  expect(spaceIdFromName([["ab"]])).toBe("ab");
+  // 这些 id 仍必须过准入校验，否则 coercion 会造出建不出目录的 id
+  for (const raw of [null, undefined, [], 123, true, {}]) {
+    expect(isValidSpaceId(spaceIdFromName(raw))).toBe(true);
+  }
+  // 变异验证：把 `String(name ?? "")` 换成模板插值 `${name ?? ""}` 是**等价变异**，
+  // 28 条用例一条不红 —— 两者对任何实参都走同一条 ToString 路径（Symbol 同样都抛）。
+  // 故下面断言钉的是「结果长什么样」，不是「用哪种写法拿到它」。
+  // 真正把这条打红的是把 coercion 整个删掉（`name.normalize(...)`）或换成 `Object(name).toString()`。
+});
+
+test("taken 非数组时抛 TypeError —— 该函数不防御，调用方必须传真数组", () => {
+  // 现状是抛错而非静默降级，钉住：把 `taken.map(...)` 改成 `(taken ?? []).map(...)`
+  // 或 Array.isArray 兜底，会让这些用例转红（调用方的类型错误被静默吞掉，
+  // 去重失效 → 同名空间开出同一个目录）。
+  for (const bad of ["abc", 123, null, {}, Symbol("t"), { map: 1 }]) {
+    expect(() => spaceIdFromName("x", bad)).toThrow(TypeError);
+  }
+  // null 与 undefined 必须区别对待：默认值 `taken = []` 只在 undefined 时生效，
+  // 显式传 null 仍会落到 `null.map` 抛错。
+  expect(spaceIdFromName("x", undefined)).toBe("x");
+  // taken 的元素不校验类型，逐元素 String() 后参与小写去重
+  expect(spaceIdFromName("123", [null, 123])).toBe("123-2");
+});
+
+test("isValidSpaceId 不做 String 强制转换，非字符串一律拒收", () => {
+  // 与 isReservedSpaceId 相反：这里是 `typeof id === "string" &&` 短路在前，
+  // 所以包装对象（new String("abc")、new Number(1)）也一律 false。
+  // 若删掉 typeof 守卫，ID_OK.test(123) 会把数字转成 "123" 而返回 true —— 准入校验形同虚设。
+  for (const bad of [123, 0, null, undefined, true, {}, [], new String("abc"), new Number(1)]) {
+    expect(isValidSpaceId(bad)).toBe(false);
+  }
+  // 同为「空」的两条路结果一致：空串与纯空白都不满足 ID_OK 的首字符要求
+  expect(isValidSpaceId("")).toBe(false);
+  expect(isValidSpaceId("   ")).toBe(false);
+  expect(isValidSpaceId("abc")).toBe(true);
+});
+
+test("isReservedSpaceId 会做 String 强制转换，非字符串也能判成保留名", () => {
+  // 这里没有 typeof 守卫，只有 `String(id ?? "")`。所以自定义 toString 的对象、
+  // 装着保留名的单元素数组都会被判为保留名 —— 与 isValidSpaceId 对同一入参的
+  // 结论恰好相反（此处 true，那里 false）。这两个函数的入参类型约定不一致，别顺手统一。
+  expect(isReservedSpaceId({ toString: () => "con" })).toBe(true);
+  expect(isReservedSpaceId({ toString: () => "LPT3" })).toBe(true);
+  expect(isReservedSpaceId(["con"])).toBe(true);
+  expect(isValidSpaceId({ toString: () => "con" })).toBe(false);
+  // 这里逐个枚举「非保留」的 falsy 与近形值。**注意其中两处是等价变异**，
+  // 变异验证实测 28 条用例一条不红，故意不假装它是承重的：
+  //   ① `?? ""` 相对裸 `String(id)`：差别只在 null/undefined 上（"" vs "null"/"undefined"），
+  //      而 RESERVED 两条都不命中（nul 有 $ 锚点，"null" 比它多一个 l）。
+  //   ② 包裹的 String(...) 整层：RegExp#test 自己会对实参做 ToString，
+  //      故 `RESERVED.test(id)` 与 `RESERVED.test(String(id))` 对任意入参（含对象、包装对象）
+  //      结果完全一致。
+  // 上面三条 true 断言钉的是**行为**（非字符串也能判成保留名），不是那层显式转换。
+  // 真正承重的是 isValidSpaceId 那边 —— 它靠 `typeof` 短路，没有隐式 ToString 兜底。
+  for (const notReserved of [123, null, undefined, "", "   ", "con-2", "null", "com10"]) {
+    expect(isReservedSpaceId(notReserved)).toBe(false);
+  }
+});
+
+test("正常路径回归：非字符串入参不扰动常规生成与去重", () => {
+  // 防误伤：以上 coercion 断言不得改动常规调用链的行为。
+  expect(spaceIdFromName("张三")).toBe("张三");
+  expect(spaceIdFromName("李四", ["李四"])).toBe("李四-2");
+  expect(spaceIdFromName("con")).toBe("_con");
+  expect(spaceIdFromName("🎉")).toBe("space");
+  expect(spaceIdFromName("ＡＢＣ")).toBe("ABC");
+  expect(spaceIdFromName("字".repeat(50))).toBe("字".repeat(40));
+  expect(isReservedSpaceId("con")).toBe(true);
+  expect(isValidSpaceId("default")).toBe(true);
+});

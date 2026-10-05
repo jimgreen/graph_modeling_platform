@@ -172,3 +172,113 @@ describe("内层 SVG 图片 —— 三条非数据分支", () => {
     expect(warningsOf(result)).toContain("层级过深");
   });
 });
+
+/** charset 之后跟 base64：正则在 charset 段**之后**才吃 encoding 段（顺序不可换）。 */
+const charsetThenBase64Href = (svg: string) =>
+  `data:image/svg+xml;charset=utf-8;base64,${Buffer.from(svg, "utf-8").toString("base64")}`;
+
+/** 显式 ;utf8 段（段名不是 base64）：解码仍走 decodeURIComponent 裸分支。 */
+const utf8SegmentHref = (svg: string) => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+
+describe("内层 SVG 图片 —— data URL 形态矩阵（解析层现状钉桩）", () => {
+  test("★ 有 charset 段但无 encoding 段：走裸解码分支，与无 charset / 显式 utf8 段结果逐字相同", async () => {
+    // 三个输入形态，输出必须完全一致：
+    //   data:image/svg+xml,xxx                    无 charset
+    //   data:image/svg+xml;charset=utf-8,xxx     有 charset 无 encoding
+    //   data:image/svg+xml;utf8,xxx              有 encoding 段名 utf8
+    // charset 段被接受但**不改变**解码路径，三者 payload 都走 decodeURIComponent。
+    const [bare, charset, utf8] = await Promise.all([
+      parse(importWithInnerHref(bareHref(unsafeInner))),
+      parse(importWithInnerHref(utf8Href(unsafeInner))),
+      parse(importWithInnerHref(utf8SegmentHref(unsafeInner)))
+    ]);
+    const bareInner = innerSvgOfHref(innerHrefOf(bare));
+    expect(bareInner).toContain("<circle");
+    expect([innerSvgOfHref(innerHrefOf(charset)), innerSvgOfHref(innerHrefOf(utf8))]).toEqual([bareInner, bareInner]);
+    // 输入形态不被保留：三个输出统一重编码成规范小写 charset 形态
+    expect(innerHrefOf(charset)).toMatch(/^data:image\/svg\+xml;charset=utf-8,/u);
+    expect(innerHrefOf(utf8)).toMatch(/^data:image\/svg\+xml;charset=utf-8,/u);
+  });
+
+  test("charset 的值不参与解码：声明 gbk 的载荷仍按 UTF-8 百分号解出原字符", async () => {
+    // 正则的 charset 段只做形态匹配（[^;,]+），解出来的字符一律是 UTF-8。
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg"><text>あ</text></svg>`;
+    const result = await parse(importWithInnerHref(`data:image/svg+xml;charset=gbk,${encodeURIComponent(svg)}`));
+    expect(innerSvgOfHref(innerHrefOf(result))).toContain("あ");
+  });
+
+  test("★ base64 段放在 charset 之后：先吃 charset 段再吃 base64 段，仍按 base64 解码并消毒", async () => {
+    const result = await parse(importWithInnerHref(charsetThenBase64Href(unsafeInner)));
+    const inner = innerSvgOfHref(innerHrefOf(result));
+    expect(inner).toContain("<circle");
+    expect(inner).not.toContain("<script");
+    expect(inner).not.toContain("onclick");
+    // 载荷确实是 base64：若误走裸解码分支，base64 串不是合法 XML ⇒ href 会被摘空
+    expect(innerHrefOf(result)).toMatch(/^data:image\/svg\+xml;charset=utf-8,/u);
+    expect(warningsOf(result)).not.toContain("无法安全解析");
+  });
+
+  test("★ 空载荷：三种空 data URL 都解出空串而非 null，随后内层 XML 解析失败 → 摘 href 并告警", async () => {
+    // data:image/svg+xml, ／ data:image/svg+xml;base64, ／ data:image/svg+xml;charset=utf-8,
+    // payload 都是空串：atob("") / decodeURIComponent("") 都成功 ⇒ decode 返回 "" 而非 null
+    // ⇒ 继续往下走 ⇒ 根节点不是 svg ⇒ 失败点在 XML 解析，不是解码。
+    for (const href of ["data:image/svg+xml,", "data:image/svg+xml;base64,", "data:image/svg+xml;charset=utf-8,"]) {
+      const result = await parse(importWithInnerHref(href));
+      expect(innerHrefOf(result)).toBe("");
+      expect(importedSvgOf(result)).toContain("<image");
+      expect(warningsOf(result)).toContain("无法安全解析");
+      expect(warningsOf(result)).not.toContain("层级过深");
+    }
+  });
+
+  test("bare data:, 不是 svg MIME：压根不进 data URL 分支，被 safeUrl 判不安全直接摘掉", async () => {
+    // 正则只认 data:image/svg+xml ⇒ decodeSvgDataUrl 返回 null；但 safeUrl 对
+    // 带 scheme 且非 data:image/ 的值一律判不安全 ⇒ href 在更上一层就被摘掉。
+    // 失败点因此是「清理」类告警，而不是 data URL 分支的「无法安全解析」。
+    const result = await parse(importWithInnerHref("data:,"));
+    expect(innerHrefOf(result)).toBe("");
+    expect(importedSvgOf(result)).toContain("<image");
+    expect(warningsOf(result)).toContain("已清理");
+    expect(warningsOf(result)).not.toContain("无法安全解析");
+    expect(warningsOf(result)).not.toContain("已移除该图片引用");
+  });
+
+  test("MIME 大小写不同仍被识别：匹配大小写不敏感，输出统一重编码为小写规范形态", async () => {
+    for (const href of [
+      `DATA:IMAGE/SVG+XML;CHARSET=UTF-8,${encodeURIComponent(unsafeInner)}`,
+      `data:IMAGE/SVG+XML;charset=utf-8,${encodeURIComponent(unsafeInner)}`
+    ]) {
+      const result = await parse(importWithInnerHref(href));
+      const inner = innerSvgOfHref(innerHrefOf(result));
+      expect(inner).toContain("<circle");
+      expect(inner).not.toContain("<script");
+      expect(inner).not.toContain("onclick");
+      // 输入的大小写不被保留（svgDataUrl 恒产出小写形态）
+      expect(innerHrefOf(result)).toMatch(/^data:image\/svg\+xml;charset=utf-8,/u);
+    }
+  });
+
+  test("非 data URI 的普通 https URL：不进这条链路，href 原样保留且不产生告警", async () => {
+    const href = "https://example.com/a.svg";
+    const result = await parse(importWithInnerHref(href));
+    expect(innerHrefOf(result)).toBe(href);
+    expect(warningsOf(result)).not.toContain("无法安全解析");
+    expect(warningsOf(result)).not.toContain("已移除该图片引用");
+  });
+
+  test("非法载荷两种坏法都被解码层的 try 包住：href 原样保留，不报移除告警", async () => {
+    // base64 坏（atob 抛 InvalidCharacterError）与百分号坏（decodeURIComponent 抛 URIError）
+    // 两条都在解码层的 try 里 ⇒ 返回 null ⇒ 原样保留。
+    // 若去掉那个 try，失败点会后移到内层 XML 解析，出现「无法安全解析」告警 ⇒ 本条会红。
+    for (const href of [
+      "data:image/svg+xml;base64,###",
+      "data:image/svg+xml;charset=utf-8;base64,###",
+      "data:image/svg+xml,%zz"
+    ]) {
+      const result = await parse(importWithInnerHref(href));
+      expect(innerHrefOf(result)).toBe(href);
+      expect(warningsOf(result)).not.toContain("无法安全解析");
+      expect(warningsOf(result)).not.toContain("已移除该图片引用");
+    }
+  });
+});
