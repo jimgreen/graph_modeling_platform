@@ -380,3 +380,165 @@ describe("sanitizeSpaceFileName 与后端 sanitizeSegment 同规则", () => {
     expect(sanitizeSegment(null, FALLBACK, MAX)).toBe(FALLBACK);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 未覆盖分支组。四条契约，各自的判别输入说明见各测试内的注释：
+//   ① readSpaceCookie 的解码兜底（catch）
+//   ② fetchSpaces 的一次性种子（if + 取走后清空）
+//   ③ importSpaceArchive 的 File.type 回落（||）
+//   ④ 409 冲突字段与回执 spaces 的 ?? 回落
+// ---------------------------------------------------------------------------
+
+describe("readSpaceCookie 的解码兜底", () => {
+  test("非法百分号编码时原样返回 raw（不抛、也不返回空串）", () => {
+    // 来源：别的系统 / 旧版本写进 Cookie 的裸 "%"。decodeURIComponent("%") 抛 URIError；
+    // 没有这个 catch 的表现是「切空间后静默落到默认空间」，且现场没有任何线索。
+    // 期望值 "%" 与函数末尾「循环走完」的兜底 "" 不重合：catch 被抹掉时这里读到的是 ""，
+    // 所以这条断言不会被兜底值顶成恒绿。
+    mockDoc.setHeader(`${SPACE_COOKIE_NAME}=%`);
+    expect(readSpaceCookie()).toBe("%");
+
+    // 半截多字节序列同理（"%E4" 截断），且这条同时确认兜底与「按名取值」两条规则叠加时仍成立
+    mockDoc.setHeader(`a=1; ${SPACE_COOKIE_NAME}=%E4; b=2`);
+    expect(readSpaceCookie()).toBe("%E4");
+
+    // 对照组：合法编码走 try 分支，decodeURIComponent 真的解码了一次。
+    // 少了这一条，catch 分支被误改成「解码失败时回退到空串再重新编码」也可能看着合理。
+    mockDoc.setHeader(`${SPACE_COOKIE_NAME}=${encodeURIComponent("张三")}`);
+    expect(readSpaceCookie()).toBe("张三");
+  });
+});
+
+describe("fetchSpaces 的一次性种子", () => {
+  test("种子只被第一个消费者取走：首次零请求，第二次回到真请求", async () => {
+    // seededSpaces 是模块级状态；静态 import 的那个实例被本文件其它用例共享，
+    // 故用独立实例，避免本用例失败时把陈旧种子漏给后面的用例。
+    vi.resetModules();
+    const fresh = await import("./spaceClient");
+    const seeded = {
+      spaces: [{ id: "default", name: "默认空间", pinned: true, createdAt: "2026-01-01T00:00:00.000Z" }],
+      current: "种子空间"
+    };
+    const fetchMock = mockFetchJson({ spaces: [], current: "真请求空间" });
+
+    fresh.seedSpaces(seeded);
+    const first = await fresh.fetchSpaces();
+
+    // 种子命中 ⇒ 一个请求都不该发（首屏闸门已经拉过一次，再拉就是抢同一条连接）
+    expect(fetchMock).not.toHaveBeenCalled();
+    // toBe 断「返回的就是 seedSpaces 收下的那个对象」，而不仅是内容相等
+    expect(first).toBe(seeded);
+
+    const second = await fresh.fetchSpaces();
+
+    // 「一次性」本身：取走即清空。不清空的话，增删空间之后列表仍是启动时那份陈旧数据
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(second).not.toBe(seeded);
+    expect(second.current).toBe("真请求空间");
+  });
+});
+
+describe("importSpaceArchive 的 content-type 回落", () => {
+  test("File 无 type 时回落 application/zip；带非标准 type 时原样透传", async () => {
+    const space = { id: "甲", name: "甲", createdAt: "2026-01-01T00:00:00.000Z" };
+    const fetchMock = mockFetchJson({ space, spaces: [] });
+    const headerAt = (i: number) => (fetchMock.mock.calls[i][1]?.headers as Record<string, string>)["content-type"];
+
+    // 无 type 的 File：File.type 是 "" —— falsy 但非 nullish，
+    // 这正是唯一能把 `||` 与 `??` 区分开的输入（`"" ?? x` 不短路）。缺了它，
+    // 把 `||` 改成 `??` 恒绿，两种写法等价。
+    const noType = new File([new Uint8Array([1])], "甲.zip");
+    expect(noType.type).toBe("");
+    await importSpaceArchive(noType);
+    expect(headerAt(0)).toBe("application/zip");
+
+    // 透传一侧刻意用非 canonical 的 mime：断言值若恰好是 "application/zip"，
+    // 把整行换成那个字面量也照样绿。
+    const oddType = new File([new Uint8Array([1])], "乙.zip", { type: "application/x-zip-compressed" });
+    await importSpaceArchive(oddType, { mode: "overwrite" });
+    expect(headerAt(1)).toBe("application/x-zip-compressed");
+  });
+});
+
+describe("importSpaceArchive 的冲突字段与 spaces 回落", () => {
+  test("409 回执缺 name/conflictId 两个键时落空串（不是 undefined 字面量）", async () => {
+    // 后端 sendSpaceNameConflict 一定带这两个字段；这里是「后端版本不匹配 / 中间层截断正文」的兜底。
+    //
+    // 夹具要点：name / conflictId **键完全不存在**。写成 name: "" 时 `?? ` 短路取左值（"" 非
+    // nullish），右臂从未求值 —— 那种夹具对 `?? ""` 没有任何判别力，恒绿。
+    const conflictPayload = {
+      error: { code: SPACE_NAME_DUPLICATE, message: "空间名「甲」已存在。" }
+    };
+    const readJson = async () => conflictPayload;
+    (globalThis as any).fetch = vi.fn(async () => ({
+      ok: false,
+      status: 409,
+      clone: () => ({ json: readJson }),
+      json: readJson
+    }));
+
+    const error = await importSpaceArchive(new File([new Uint8Array([1])], "甲.zip")).then(() => null, (e: any) => e);
+
+    expect(error).toBeInstanceOf(SpaceNameConflictError);
+    // 两个字段各断一条：任一处的 `?? ""` 被删，这里拿到的会是 String(undefined) === "undefined"
+    expect(error.spaceName).toBe("");
+    expect(error.conflictId).toBe("");
+    // 上层拿这两个字段去说清「撞的是哪一个」，兜底必须是真空串而不是 "undefined" 字面量
+    expect(error.spaceName).not.toBe("undefined");
+    expect(error.conflictId).not.toBe("undefined");
+  });
+
+  test("conflictId 为数字 0 时 String 成 \"0\"，不被 ?? 或 || 吞掉", async () => {
+    // 这条同时钉两件事：外层 String() 承重（去掉它 error.conflictId 就是数字 0），
+    // 以及 `??` 不是 `||`（0 若是走了 `|| ""` 就会变成空串）。
+    const conflictPayload = {
+      error: { code: SPACE_NAME_DUPLICATE, message: "空间名「甲」已存在。" },
+      name: "甲",
+      conflictId: 0
+    };
+    const readJson = async () => conflictPayload;
+    (globalThis as any).fetch = vi.fn(async () => ({
+      ok: false,
+      status: 409,
+      clone: () => ({ json: readJson }),
+      json: readJson
+    }));
+
+    const error = await importSpaceArchive(new File([new Uint8Array([1])], "甲.zip")).then(() => null, (e: any) => e);
+
+    expect(error.conflictId).toBe("0");
+    expect(error.spaceName).toBe("甲");
+  });
+
+  test("回执缺 spaces 键时返回空数组；带 spaces 时原样透传", async () => {
+    const space = { id: "甲", name: "甲", createdAt: "2026-01-01T00:00:00.000Z" };
+    const other = { id: "乙", name: "乙", createdAt: "2026-01-01T00:00:00.000Z" };
+    // 第一份回执**没有 spaces 键** → `?? []` 的右臂才真的被求值。
+    // 写成 spaces: [] 的话左臂（空数组）被取走，右臂从未求值，右臂的任何写法都照样过。
+    // 第三份回执 spaces 为 0（falsy 但非 nullish）—— 这是**唯一**能把 `??` 与 `||` 区分开的输入类别
+    // （`0 ?? x` 不短路，`0 || x` 短路）。夹具里缺这一档时，把 `??` 改成 `||` 必然恒绿。
+    // 这类输入在真实回执里不出现，但「兜底只对 nullish 生效、不对 falsy 生效」正是选 `??` 的理由。
+    const payloads = [{ space }, { space, spaces: [space, other] }, { space, spaces: 0 }, { space, spaces: null }];
+    let call = 0;
+    (globalThis as any).fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => payloads[call++]
+    }));
+    const file = new File([new Uint8Array([1])], "甲.zip", { type: "application/zip" });
+
+    const withoutSpaces = await importSpaceArchive(file);
+    expect(withoutSpaces.space).toBe(space);
+    expect(withoutSpaces.spaces).toEqual([]);
+
+    const withSpaces = await importSpaceArchive(file, { mode: "overwrite" });
+    // 透传一侧：若实现写成 `payload.spaces ?? []` 之外的无条件兜底，这里会拿到 []，length 对不上
+    expect(withSpaces.spaces).toHaveLength(2);
+    expect(withSpaces.spaces[1].id).toBe("乙");
+
+    // ?? 的两侧各断一条：nullish 才兜底，falsy 原样透传（换成 || 时这条红成 []）
+    const falsy = await importSpaceArchive(file, { mode: "rename" });
+    expect(falsy.spaces).toBe(0);
+    const nullish = await importSpaceArchive(file, { mode: "rename" });
+    expect(nullish.spaces).toEqual([]);
+  });
+});

@@ -974,3 +974,178 @@ describe("programmaticSaveSelectionAsTemplate", () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 覆盖缺口补齐（针对 src/appExtracted/appControlFactories.tsx 的未覆盖分支）
+//
+// 纪律说明（留给下一个改这块的人，别重走一遍）：
+//  · §6.12：本文件 L167/L171 的 `?? []` 用的是「删操作符」变异（形态 1）→ 必然 GREEN。
+//    原因是 `new Set(undefined)` 与 `new Set([]) 在全域逐值相等（Set 构造对 undefined
+//    与空 iterable 同义），`?? []` 本身是冗余的。所以这两条守卫改用**形态 2（换哨兵值）**：
+//    `?? []` → `?? ["__SENTINEL..."]`，右臂被求值后结果立刻不同，断言咬得住。
+//    （L200/L201 同理，也是形态 2。）
+//  · §6.13：`??` 右臂的输入必须是**键完全不存在**，不是空数组。`createSelectMockScope`
+//    永远带 `selectedNodeIds: []`，`[]` 不是 nullish → `??` 短路，右臂从未被求值。
+//    故下面自己造了一个**不带该键**的 scope 工厂。
+//  · §4：断「未知 modelType」用的是 "储能舱" —— 不是 MODEL_TYPES 里任何一项，
+//    也不是任何硬编码变异会挑的典型值。
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("programmaticCreateBlankProject 的 modelType 与方案路径校验", () => {
+  // L97：!MODEL_TYPES.includes(modelType) → 抛 bad-request，且**不落盘**。
+  // 契约分两层：(1) 拒绝非枚举 modelType；(2) 拒绝发生在落盘之前（无副作用）。
+  test("modelType 不在 MODEL_TYPES 内 → 抛 bad-request 且不落盘", async () => {
+    const { scope, calls } = createBlankProjectMockScope();
+    // 刻意用 "储能舱"：不是 MODEL_TYPES 的任何一项，也不是硬编码变异会猜的值
+    const saveSpy = vi.fn(scope.saveBackendProjectRecord);
+    (scope as any).saveBackendProjectRecord = saveSpy;
+    const createBlankProject = createProgrammaticCreateBlankProject(scope);
+
+    await expect(createBlankProject("新模型", undefined, "储能舱")).rejects.toThrow(/modelType 须为微网、厂站、馈线、台区、其他。/);
+    await expect(createBlankProject("新模型", undefined, "储能舱")).rejects.toMatchObject({ code: "bad-request" });
+    // 拒绝必须发生在写后端之前：否则一次非法调用就留下孤儿模型
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(calls.upserted).toBe(false);
+    expect(calls.selected).toBeNull();
+    expect(calls.loaded).toBeNull();
+  });
+
+  // L121 的 `||` 两个臂各断一次：`!Array.isArray` 与 `schemePath.length === 0`。
+  // 只喂 `[]` 只能触达第二个臂（`!Array.isArray([])` 为假）——必须再喂一次非数组。
+  test("schemePath 为空数组或非数组 → 抛 bad-request 且不落盘", async () => {
+    // 臂一：`!Array.isArray(schemePath)` —— 桩直接返回 undefined
+    {
+      const { scope, calls } = createBlankProjectMockScope();
+      const saveSpy = vi.fn(scope.saveBackendProjectRecord);
+      (scope as any).saveBackendProjectRecord = saveSpy;
+      (scope as any).schemePathForScheme = () => undefined;
+      const createBlankProject = createProgrammaticCreateBlankProject(scope);
+
+      await expect(createBlankProject("模型甲", undefined, "台区")).rejects.toThrow(/无法确定模型所属方案路径。/);
+      await expect(createBlankProject("模型甲", undefined, "台区")).rejects.toMatchObject({ code: "bad-request" });
+      expect(saveSpy).not.toHaveBeenCalled();
+      expect(calls.upserted).toBe(false);
+    }
+    // 臂二：`schemePath.length === 0` —— 桩返回空数组（是数组但无路径段）
+    {
+      const { scope, calls } = createBlankProjectMockScope();
+      const saveSpy = vi.fn(scope.saveBackendProjectRecord);
+      (scope as any).saveBackendProjectRecord = saveSpy;
+      (scope as any).schemePathForScheme = () => [];
+      const createBlankProject = createProgrammaticCreateBlankProject(scope);
+
+      await expect(createBlankProject("模型乙", undefined, "台区")).rejects.toThrow(/无法确定模型所属方案路径。/);
+      expect(saveSpy).not.toHaveBeenCalled();
+      expect(calls.upserted).toBe(false);
+    }
+  });
+});
+
+// `??` 右臂专用：刻意**不带** selectedNodeIds 键（§6.13 —— 必须是「键不存在」）
+function createSelectScopeWithoutSelectedKey() {
+  const calls: { selectedIds: string[] | null } = { selectedIds: null };
+  return {
+    scope: {
+      nodes: ["n1", "n2", "n3"].map((id) => ({ id, kind: "static-text" })),
+      setSelectedNodeIds: (ids: string[]) => {
+        calls.selectedIds = ids;
+      }
+    } as any,
+    calls
+  };
+}
+
+describe("programmaticSelectDevices 在无 selectedNodeIds 时的 add / toggle", () => {
+  // L167：(selectedNodeIds as string[]) ?? [] 的右臂，add 分支内。
+  // 键不存在 → 右臂是唯一来源 → prev 从空集合起，add 后就是 validIds 本身。
+  test("add 模式且 selectedNodeIds 键不存在 → 从空集合起并入，返回 validIds 本身", () => {
+    const { scope, calls } = createSelectScopeWithoutSelectedKey();
+    const select = createProgrammaticSelectDevices(scope);
+    const result = select(["n1", "n2"], "add");
+    expect(result.validIds).toEqual(["n1", "n2"]);
+    // 断言必须落在 prev 真正流向的那份数据上（返回值 + 进 setter 的那份）
+    expect(result.selectedIds).toEqual(["n1", "n2"]);
+    expect(calls.selectedIds).toEqual(["n1", "n2"]);
+  });
+
+  // L171：同一表达式在 toggle 分支内的那一份。
+  test("toggle 模式且 selectedNodeIds 键不存在 → 空集合全为 add，返回 validIds 本身", () => {
+    const { scope, calls } = createSelectScopeWithoutSelectedKey();
+    const select = createProgrammaticSelectDevices(scope);
+    const result = select(["n2", "n3"], "toggle");
+    expect(result.validIds).toEqual(["n2", "n3"]);
+    expect(result.selectedIds).toEqual(["n2", "n3"]);
+    expect(calls.selectedIds).toEqual(["n2", "n3"]);
+  });
+});
+
+describe("programmaticGroupSelected 组合失败出口", () => {
+  // L222：!result.group → 抛 control-failed。
+  // 与「选中 <2」那条早退（源码 L202 的数量守卫）是**两条不同的失败路径**，
+  // 所以夹具必须让数量守卫通过（选中 2 项）、再由注入的工厂返回 group: null ——
+  // 否则这条分支永远被前一条守卫遮住。
+  test("注入的 createCanvasGroupFromSelection 返回 group:null → 抛 control-failed 且不写任何状态", () => {
+    const { scope, calls } = createGroupMockScope(["n1", "n2"]);
+    (scope as any).createCanvasGroupFromSelection = () => ({ groups: [], group: null });
+    const group = createProgrammaticGroupSelected(scope);
+
+    expect(() => group()).toThrow(/无法组合所选图元/);
+    try {
+      group();
+    } catch (e: any) {
+      expect(e.code).toBe("control-failed");
+    }
+    // 失败路径不得留下半成品：不得压 undo 栈、不得写 groups/选中
+    expect(calls.undo).toBe(false);
+    expect(calls.groupsSet).toBeNull();
+    expect(calls.selectedNodeIds).toBeNull();
+    expect(calls.selectionScope).toBeNull();
+  });
+});
+
+// 捕获注入工厂收到的 nodeIds / edgeIds，用来观察 L200 / L201 那两个 `?? []`
+// 究竟喂进去了什么（断言必须落在 prev/currentNodes 真正流向的对象上）。
+function createGroupSelectionArgProbe(
+  nodes: string[] | undefined,
+  edges: string[] | undefined
+) {
+  const probe = createGroupMockScope(nodes ?? [], edges ?? []);
+  // §6.13：键**完全不存在**（不是空数组）—— 空数组不是 nullish，`??` 会短路取左值，
+  // 右臂从未被求值，那样断言就是恒绿的。
+  if (nodes === undefined) delete (probe.scope as any).activeSelectedNodeIds;
+  if (edges === undefined) delete (probe.scope as any).activeSelectedEdgeIds;
+  const seen: { nodeIds: string[]; edgeIds: string[] }[] = [];
+  (probe.scope as any).createCanvasGroupFromSelection = (
+    _groups: any,
+    nodeIds: string[],
+    edgeIds: string[],
+    _createId: () => string
+  ) => {
+    seen.push({ nodeIds, edgeIds });
+    return { groups: [], group: { id: "g-probe", name: "组合1" } };
+  };
+  return { scope: probe.scope, seen };
+}
+
+describe("programmaticGroupSelected 在无 activeSelected* 时的取值兜底", () => {
+  // L200：(activeSelectedNodeIds as string[]) ?? [] 的右臂。
+  // 键不存在 + 边上已选 2 项 → 数量守卫放行，currentNodes 必须是空数组而非 undefined。
+  test("activeSelectedNodeIds 键不存在且靠边选满 2 项 → 传进工厂的 nodeIds 是空数组", () => {
+    const { scope, seen } = createGroupSelectionArgProbe(undefined, ["e1", "e2"]);
+    const result = createProgrammaticGroupSelected(scope)();
+    expect(result.groupId).toBe("g-probe");
+    expect(seen).toHaveLength(1);
+    expect(seen[0].nodeIds).toEqual([]);
+    expect(seen[0].edgeIds).toEqual(["e1", "e2"]);
+  });
+
+  // L201：(activeSelectedEdgeIds as string[]) ?? [] 的右臂。
+  test("activeSelectedEdgeIds 键不存在且靠点选满 2 项 → 传进工厂的 edgeIds 是空数组", () => {
+    const { scope, seen } = createGroupSelectionArgProbe(["n1", "n2"], undefined);
+    const result = createProgrammaticGroupSelected(scope)();
+    expect(result.groupId).toBe("g-probe");
+    expect(seen).toHaveLength(1);
+    expect(seen[0].nodeIds).toEqual(["n1", "n2"]);
+    expect(seen[0].edgeIds).toEqual([]);
+  });
+});

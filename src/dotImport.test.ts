@@ -1139,3 +1139,175 @@ describe("orthogonalRouteWithinCorners 退化输入（C）", () => {
     expect(route).toEqual([{ x: 0, y: 0 }]);
   });
 });
+
+// ===== D 未覆盖分支补齐（v8 分支覆盖：src/dotImport.ts 60/64/70/73/76/83/112/120/353/447）=====
+//
+// parseDotNodeAttrs 未导出，畸形输入只能从 parseDot 的公开结果观察：该行被判畸形则
+// 既不进 nodes 也不进 edges。每条用例都放一条合法兄弟行，避免整份文本全废导致断言恒绿。
+
+// 显式 join 传行：= 之后无值那种输入依赖行尾空白，模板字面量里的尾随空白会被格式化
+// 与编辑器吃掉，必须用字符串数组拼，空白本身就是被测输入的一部分。
+const dotLines = (...lines: string[]): string => ["digraph G {", ...lines, "}"].join("\n");
+
+describe("parseDotNodeAttrs 畸形输入与容错分支（D）", () => {
+  it("D-1 属性串开头与键之间的多余逗号被跳过：四个属性齐全照常产出节点", () => {
+    const g = parseDot(
+      dotLines(
+        '  n0 [, label="A", shape=rect, fillcolor=yellow, pos="1,2!"];',
+        '  n1 [label="B",, shape=rect, fillcolor=yellow, pos="3,4!"];',
+        '  n2 [label="C", shape=rect, fillcolor=yellow, pos="5,6!"];'
+      )
+    );
+    expect(g.nodes.map((n) => n.id)).toEqual(["n0", "n1", "n2"]);
+    expect(g.nodes[0]).toEqual({
+      id: "n0",
+      label: "A",
+      open: false,
+      shape: "rect",
+      fillcolor: "yellow",
+      x: 1,
+      y: 2,
+    });
+    expect(g.nodes[1]).toMatchObject({ id: "n1", label: "B", x: 3, y: 4 });
+  });
+
+  it("D-2 属性串末尾的逗号被跳过后由 ] 收尾：节点照常产出", () => {
+    const g = parseDot(dotLines('  n0 [label="A", shape=rect, fillcolor=yellow, pos="1,2!",];'));
+    expect(g.nodes).toEqual([
+      { id: "n0", label: "A", open: false, shape: "rect", fillcolor: "yellow", x: 1, y: 2 },
+    ]);
+    // 反证：去掉尾随逗号后仍走同一条 ] 收尾路径（这条断言证明 D-2 覆盖的是逗号容错，
+    // 而不是把整个属性串解析改了）
+    const plain = parseDot(dotLines('  n0 [label="A", shape=rect, fillcolor=yellow, pos="1,2!"];'));
+    expect(plain.nodes).toEqual(g.nodes);
+  });
+
+  it("D-3 key 起始非法字符：整行退回畸形（不进 nodes 也不进 edges），兄弟行不受影响", () => {
+    const g = parseDot(
+      dotLines(
+        '  n0 [=1, label="A", shape=rect, fillcolor=yellow, pos="1,2!"];',
+        '  n1 [label="B", shape=rect, fillcolor=yellow, pos="3,4!"];'
+      )
+    );
+    expect(g.nodes.map((n) => n.id)).toEqual(["n1"]);
+    expect(g.edges).toEqual([]);
+  });
+
+  it("D-4 key 之后不是等号：整行退回畸形，兄弟行不受影响", () => {
+    // ⚠ 畸形 key 必须放在四项必需属性**之后**：守卫一旦放宽成「也容忍逗号」，
+    //   裸值扫描会把下一个 token 的 key 一起吃掉，label/shape/… 仍凑不齐四项，
+    //   该行依旧不产出节点 → 断言恒绿。放在四项之后才有「被吃掉的是无关属性」这一处落点。
+    const g = parseDot(
+      dotLines(
+        '  n0 [label="A", shape=rect, fillcolor=yellow, pos="1,2!", style, width];',
+        '  n1 [label="B", shape=rect, fillcolor=yellow, pos="3,4!"];'
+      )
+    );
+    expect(g.nodes.map((n) => n.id)).toEqual(["n1"]);
+  });
+
+  it("D-5 等号之后只剩行尾空白：无值可用，整行退回畸形", () => {
+    // 走到这条分支的唯一形态：= 之后游标已越过行尾（尾部空白被 skipWs 吃掉）。
+    // ⚠ 本分支没有能红的变异，是**真等价**，不是漏覆盖：
+    //   删掉守卫后 s[i] 为 undefined → 既不进引号分支，裸值分支 while 首轮即停得空串
+    //   → attrs.set(key, "") → 其后 s[i] 仍非 , 非 ] → 落到「值后既非 , 也非 ]」同样 return null。
+    //   两条路返回同一个 null，所以这里恒绿是正确结果，不要为凑红去改断言。
+    const g = parseDot(
+      dotLines("  n0 [label=   ", '  n1 [label="B", shape=rect, fillcolor=yellow, pos="3,4!"];')
+    );
+    expect(g.nodes.map((n) => n.id)).toEqual(["n1"]);
+  });
+
+  it("D-6 引号值未闭合（含转义对吃掉收尾引号）：整行退回畸形，兄弟行不受影响", () => {
+    // ⚠ 本分支没有**忠实**的可红变异，是真等价：把 return null 换成 break 后，
+    //   游标已停在行尾，随后必然落到「值后既非 , 也非 ]」的同一个 null。
+    //   只有「无条件 break」（连正常引号值也一起废掉）才会红，而那由既有 parseDot 用例抓住，
+    //   不是本用例的鉴别力。别为凑红改这里的断言。
+    const g = parseDot(
+      dotLines(
+        '  n0 [label="A', // 无收尾引号，扫描到行尾仍未闭合
+        '  n1 [label="A\\"', // 转义对把本该收尾的引号吃掉，仍未闭合
+        '  n2 [label="B", shape=rect, fillcolor=yellow, pos="3,4!"];'
+      )
+    );
+    expect(g.nodes.map((n) => n.id)).toEqual(["n2"]);
+  });
+
+  it("D-7 属性值之后既非逗号也非右方括号：整行退回畸形（引号值与裸值两种落点）", () => {
+    // 同 D-4：畸形位置要留一个「跳过一个字就正好落在逗号上」的落点（x, 里的那个 x），
+    //   否则跳过之后仍凑不齐四项必需属性，断言会恒绿。
+    const g = parseDot(
+      dotLines(
+        '  n0 [label="A" x, shape=rect, fillcolor=yellow, pos="1,2!"];',
+        "  n1 [label=B", // 裸值吃到行尾，其后没有分隔符
+        '  n2 [label="C", shape=rect, fillcolor=yellow, pos="5,6!"];'
+      )
+    );
+    expect(g.nodes.map((n) => n.id)).toEqual(["n2"]);
+  });
+
+  it("D-8 右方括号或分号之后还有多余字符：整行退回畸形；合法分号收尾仍产出节点", () => {
+    const g = parseDot(
+      dotLines(
+        '  n0 [label="A", shape=rect, fillcolor=yellow, pos="1,2!"] junk',
+        '  n1 [label="B", shape=rect, fillcolor=yellow, pos="3,4!"] ; junk',
+        '  n2 [label="C", shape=rect, fillcolor=yellow, pos="5,6!"];'
+      )
+    );
+    expect(g.nodes.map((n) => n.id)).toEqual(["n2"]);
+    expect(g.nodes[0]).toMatchObject({ label: "C", x: 5, y: 6 });
+  });
+});
+
+describe("collapseDotGraph 端点解析：整组无设备的收缩组（D）", () => {
+  it("D-9 两个 point 相连且整组无任何设备：两端解析为空集，不产出 link 也不计自环", () => {
+    // 走的是「非 device → 取所在组设备集」这条路；组内无设备只能兜底成空数组。
+    // 兜底若被删，下游对解析结果取 length 会直接抛 TypeError（不是静默错值）。
+    const g = mg([nd("n0", "P_1", "point"), nd("n1", "P_2", "point")], [["n0", "n1"]]);
+    const r = collapseDotGraph(g);
+    expect(r.devices).toEqual([]);
+    expect(r.links).toEqual([]);
+    expect(r.reportPart).toEqual({ collapsedCount: 2, selfLoopDropped: 0, danglingEdgeDropped: 0 });
+    // 反证：同一个收缩组内接上设备后，同一条 resolve 路径给出的是设备集而非空集
+    const withDevice = collapseDotGraph(
+      mg(
+        [
+          nd("n0", "P_1", "point"),
+          nd("n1", "LD_1", "ellipse", "lightblue"),
+          nd("n2", "SW_1", "invtriangle", "orange"),
+        ],
+        [["n0", "n1"], ["n0", "n2"]]
+      )
+    );
+    expect(withDevice.links).toEqual([{ from: "LD_1", to: "SW_1" }]);
+    expect(withDevice.reportPart.selfLoopDropped).toBe(0);
+  });
+});
+
+describe("deviceAdjacentReferencePoints 悬空边（D）", () => {
+  it("D-10 边端点不在 nodes 中（单端缺失与双端缺失）时跳过该边，其余边参考点照常提取", () => {
+    // 单端缺失（n1 -> nX）是本守卫的鉴别输入：守卫一改成「仅双端缺失才跳」，
+    // 这里就会带着 undefined 端点继续往下走而抛 TypeError。
+    const g = mg(
+      [
+        ndp("n0", "SW_1", "invtriangle", "orange", 100, 100),
+        ndp("n1", "P_1", "point", "black", 100, 150),
+      ],
+      [["n0", "n1"], ["n1", "nX"], ["nY", "nZ"]],
+    );
+    const refs = deviceAdjacentReferencePoints(g);
+    expect(refs.get("n0")).toEqual([{ x: 100, y: 150 }]);
+    expect([...refs.keys()]).toEqual(["n0"]);
+    // 反证：去掉两条悬空边后结果完全一致（悬空边不贡献任何条目）
+    const clean = deviceAdjacentReferencePoints(
+      mg(
+        [
+          ndp("n0", "SW_1", "invtriangle", "orange", 100, 100),
+          ndp("n1", "P_1", "point", "black", 100, 150),
+        ],
+        [["n0", "n1"]],
+      )
+    );
+    expect(clean.get("n0")).toEqual([{ x: 100, y: 150 }]);
+  });
+});

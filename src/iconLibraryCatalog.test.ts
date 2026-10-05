@@ -745,3 +745,199 @@ describe("fetchIconLibraryManifest 的内存复用", () => {
     expect(second).toBe(first);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 导出函数的缺字段兜底：?? [] / ?? ""
+// ---------------------------------------------------------------------------
+//
+// catalog.json / manifest.json 由后端静态产出，但「字段缺失 / 字段类型不对」
+// 都是真实发生过的形态：手改过的文件、旧版本留下的缓存、被代理兜底页污染的条目。
+// 既有用例只喂合法数据，下面逐个构造缺字段的输入**直接调导出函数**，断的是返回值
+// 本身，而不是内部调用次数 —— 这些分支一旦被删，表现是渲染期 .map is not a
+// function，症状离原因很远。
+
+describe("iconLibraryCatalog 导出函数的缺字段兜底", () => {
+  test("file 为 null 时拼出空尾段，而不是把字面量 null 写进 URL", () => {
+    expect(iconLibraryIconUrl("/icon-library/lib", null as never)).toBe("/icon-library/lib/");
+  });
+
+  test("root 为 undefined 时退回空串，图标落在路径根部而不是字面量 undefined 之下", () => {
+    expect(iconLibraryIconUrl(undefined as never, "cat/a.svg")).toBe("/cat/a.svg");
+  });
+
+  test("manifest 整个缺 categories 字段时返回空数组，不崩在 flatMap 上", () => {
+    const icons = flattenIconLibraryManifest({
+      name: "solo-lib",
+      root: "/icon-library/solo-lib"
+    } as unknown as IconLibraryManifest);
+
+    expect(icons).toEqual([]);
+  });
+
+  test("单个分类缺 icons 字段时该分类不产出条目，后面的分类照常展开", () => {
+    const icons = flattenIconLibraryManifest({
+      name: "solo-lib",
+      root: "/icon-library/solo-lib",
+      categories: [
+        { id: "no-icons", label: "缺 icons" },
+        { id: "cat", label: "分类", icons: [{ id: "kept", name: "保留", file: "cat/kept.svg" }] }
+      ]
+    } as unknown as IconLibraryManifest);
+
+    expect(icons.map((icon) => icon.iconId)).toEqual(["kept"]);
+    expect(icons.map((icon) => icon.categoryId)).toEqual(["cat"]);
+  });
+
+  test("库缺 categories 字段时该库不产出分类，其他库不受影响", () => {
+    const broken = {
+      name: "icon-library",
+      libraries: [
+        { id: "bad-lib", label: "坏库", root: "/icon-library/bad-lib" },
+        { id: "ok-lib", label: "好库", root: "/icon-library/ok-lib", categories: [{ id: "weather", label: "气象", count: 1 }] }
+      ]
+    } as unknown as IconLibraryCatalog;
+
+    expect(iconLibraryCategoriesForSelection(broken, "").map((category) => category.key)).toEqual(["ok-lib::weather"]);
+    expect(iconLibraryCategoriesForSelection(broken, "bad-lib")).toEqual([]);
+    expect(iconLibraryCategoriesForSelection(broken, "ok-lib").map((category) => category.label)).toEqual(["气象"]);
+  });
+
+  test("query 为 null / undefined 时等价于不筛选，不把 null 当成检索词", () => {
+    const icons = flattenIconLibraryManifest(manifest, catalog.libraries[0]);
+
+    expect(filterIconLibraryIcons(icons, { libraryId: "", categoryKey: "", query: null as never }).map((icon) => icon.iconId))
+      .toEqual(["ac-source", "busbar"]);
+    expect(filterIconLibraryIcons(icons, { libraryId: "", categoryKey: "", query: undefined as never })).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// browserCacheStorages：单个 storage 不可访问时的逐个降级
+// ---------------------------------------------------------------------------
+//
+// 上面 installFakeStorageWindow 把两个 storage 指成同一个对象，于是
+// browserCacheStorages 只登记了一个；这里换成「读取 localStorage 时 getter
+// 直接抛错」的形态（隐私模式 / 被 iframe 策略拦 / 第三方 cookie 全禁），
+// 把两处 catch 真正跑起来。
+
+describe("browserCacheStorages 的逐个降级", () => {
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+    vi.resetModules();
+  });
+
+  test("localStorage 访问即抛错时仍会用 sessionStorage 的缓存，不整体放弃缓存", async () => {
+    let localReads = 0;
+    const session = makeStorage({ [MANIFEST_CACHE_KEY]: JSON.stringify(manifest) });
+    (globalThis as { window?: unknown }).window = {
+      get localStorage() {
+        localReads += 1;
+        throw new Error("storage access denied");
+      },
+      sessionStorage: session
+    };
+    const mod = await import("./iconLibraryCatalog");
+    const fetcher = vi.fn(jsonFetcher({ name: "network", root: "/icon-library/network", categories: [] }));
+
+    const result = await mod.fetchIconLibraryManifest(catalog.libraries[0], fetcher as unknown as typeof fetch);
+
+    // 先钉住「确实抛过」：不然一个「localStorage 正常返回 null」的改动也会让后半段全绿
+    expect(localReads).toBeGreaterThanOrEqual(1);
+    expect(result).toEqual(manifest);
+    expect(session.getItem).toHaveBeenCalledWith(MANIFEST_CACHE_KEY);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  test("sessionStorage 访问即抛错时仍会用 localStorage 的缓存", async () => {
+    let sessionReads = 0;
+    const local = makeStorage({ [MANIFEST_CACHE_KEY]: JSON.stringify(manifest) });
+    (globalThis as { window?: unknown }).window = {
+      localStorage: local,
+      get sessionStorage() {
+        sessionReads += 1;
+        throw new Error("storage access denied");
+      }
+    };
+    const mod = await import("./iconLibraryCatalog");
+    const fetcher = vi.fn(jsonFetcher({ name: "network", root: "/icon-library/network", categories: [] }));
+
+    const result = await mod.fetchIconLibraryManifest(catalog.libraries[0], fetcher as unknown as typeof fetch);
+
+    expect(sessionReads).toBeGreaterThanOrEqual(1);
+    expect(result).toEqual(manifest);
+    expect(local.getItem).toHaveBeenCalledWith(MANIFEST_CACHE_KEY);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// manifest 缓存的结构校验：不可用时必须把坏条目清掉，而不是每次白读
+// ---------------------------------------------------------------------------
+
+describe("isIconLibraryManifestCacheUsable 的结构校验", () => {
+  const networkManifest: IconLibraryManifest = {
+    name: "docer-free-compatible",
+    label: "稻壳兼容",
+    root: "/icon-library/docer-free-compatible",
+    categories: [{ id: "weather", label: "气象", icons: [{ id: "sun", name: "晴", file: "weather/sun.svg" }] }]
+  };
+
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+    vi.resetModules();
+  });
+
+  test("manifest 缓存的 categories 不是数组时整条清掉再回源", async () => {
+    const local = makeStorage({
+      [MANIFEST_CACHE_KEY]: JSON.stringify({
+        name: "docer-free-compatible",
+        root: "/icon-library/docer-free-compatible",
+        categories: "不是数组"
+      })
+    });
+    const session = makeStorage();
+    installStorages(local, session);
+    const mod = await import("./iconLibraryCatalog");
+    const fetcher = vi.fn(jsonFetcher(networkManifest));
+
+    const result = await mod.fetchIconLibraryManifest(catalog.libraries[0], fetcher as unknown as typeof fetch);
+
+    expect(result).toEqual(networkManifest);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(local.getItem).toHaveBeenCalledWith(MANIFEST_CACHE_KEY);
+    expect(session.getItem).toHaveBeenCalledWith(MANIFEST_CACHE_KEY);
+    // 承重断言：结构判定为「不可用」时 readCacheJson 会 removeItem 掉坏条目。
+    // 若把 Array.isArray(value.categories) 这道检查去掉，后面的 .every 会在
+    // 字符串上抛错，被 readCacheJson 的 catch 当成「未命中」—— 返回值与上面
+    // 几条完全相同，但坏数据会一直躺在 storage 里，每次开面板都白读一遍、
+    // 白解析一遍。只有 storage 的最终状态能把这两条路径区分开。
+    expect(local.removeItem).toHaveBeenCalledWith(MANIFEST_CACHE_KEY);
+    expect(JSON.parse(local.store.get(MANIFEST_CACHE_KEY)!)).toEqual(networkManifest);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fetchJson 的 content-type 兜底
+// ---------------------------------------------------------------------------
+
+describe("fetchJson 的 content-type 兜底", () => {
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+    vi.resetModules();
+  });
+
+  test("响应没有 content-type 头时错误信息写「未知」，不把 null 印给排查的人", async () => {
+    installStorages(makeStorage(), makeStorage());
+    const mod = await import("./iconLibraryCatalog");
+    // Response 的 body 为 null 时不会自动补 content-type；body 是字符串时会补
+    // text/plain;charset=UTF-8 —— 既有那条 text/plain 用例正是靠这个自动值过的。
+    const noHeader: typeof fetch = async () => new Response(null, { status: 503 });
+
+    const message = await errorMessageFrom(() => mod.fetchIconLibraryCatalog(noHeader));
+
+    expect(message).toContain("状态：503");
+    expect(message).toContain("类型：未知");
+    expect(message).not.toContain("类型：null");
+    expect(message).not.toContain("类型：undefined");
+  });
+});

@@ -771,3 +771,181 @@ describe("族解析排序：先按深度、同深度按 localeCompare", () => {
     }
   });
 });
+
+
+
+// ---------------------------------------------------------------------------
+// A 组：三条「隐藏兜底」分支的定向用例。观察口统一是
+// resolveComponentLibraryClassMetadata 的返回值。
+// ---------------------------------------------------------------------------
+
+describe("A 组：非派生类基名兜底 + 模板端子类型补齐", () => {
+  test("A1 派生类键缺省基类名 ⇒ 归一成空串 ⇒ 整类不可用；非派生类回落到自身类名", () => {
+    // 目标：componentLibraryMetadata.ts L121-126 的
+    //   definition?.derivedFromComponentLibrary || derivedInfo?.baseComponentLibrary
+    //   || (isDerivedComponentLibrary ? "" : className)
+    // 这里刻意**不写 derivedFromComponentLibrary 这个键**（不是写空串），
+    // 于是前两个 `||` 臂都落空，才会真的走到 L124 的 `""` 臂，再被 L126 早退成 null。
+    const defsDerivedNoKey = [{
+      name: "OrphanNoBase",
+      categoryLibraryName: "用户设备",
+      isDerivedComponentLibrary: true,
+      terminalCount: 3
+    }] as any;
+    expect(resolveComponentLibraryClassMetadata("OrphanNoBase", "用户设备", defsDerivedNoKey, [])).toBeNull();
+
+    const plain = resolveComponentLibraryClassMetadata("OrphanNoBase", "用户设备", [{
+      name: "OrphanNoBase",
+      categoryLibraryName: "用户设备",
+      isDerivedComponentLibrary: false,
+      terminalCount: 3
+    }] as any, [])!;
+    expect(plain.baseComponentLibrary).toBe("OrphanNoBase");
+
+    // ⚠️ 实测记录（变异验证）：上面那条 toBeNull() **也**证伪不了 L124 的 `""` 臂，
+    // 整行 L124 在当前输入集上不可观测，GREEN 是正确结果，不是测试失效：
+    //  ① `? ""` 臂：只有「派生 + 两处基类名都取不到」时命中 → base 为空串 → L126 立即 null。
+    //     若把 `""` 换成 className：基类变成它自己 ⇒ 递归解析基类时 L110 的 resolvingClassNames 自命中
+    //     ⇒ inheritedMetadata 为 null；但自己查得到（inheritedClassExists 为真）⇒ 被 L141 接管，同样 null。
+    //  ② `: className` 臂：结果被 L178 的 `|| className` 覆盖。
+    // 所以本条钉的是**行为契约**（派生类没有基类名就不可用，无论走 L126 还是 L141），
+    // 而不是 L124 这一行的实现细节。
+  });
+
+  test("A2 空白串基类名（truthy）折空后，由返回值兜底为自身类名", () => {
+    // 目标：返回值 L178 的 `baseComponentLibrary || className`。
+    // 必须用**非空空白串**（"   " / "\t\n"）而不是 ""：
+    //   "   " 是 truthy ⇒ L122 的第一个 `||` 臂被选中 ⇒ normalizeName 把它折成 ""
+    //   ""   本身 falsy ⇒ 根本不进 normalizeName 的第一个臂，直接落到 L124 的 className
+    // 两条路最终都得到 className，所以本条钉的是「折空之后值仍合法、且由 L178 补齐」，
+    // 删掉 L178 的 `|| className` 会让本条转红（值变成空串）。
+    for (const blank of ["   ", "\t\n"]) {
+      const metadata = resolveComponentLibraryClassMetadata("BlankBaseProbe", "用户设备", [{
+        name: "BlankBaseProbe",
+        categoryLibraryName: "用户设备",
+        isDerivedComponentLibrary: false,
+        derivedFromComponentLibrary: blank,
+        terminalCount: 1
+      }] as any, [])!;
+      expect(metadata.baseComponentLibrary, JSON.stringify(blank)).toBe("BlankBaseProbe");
+    }
+  });
+
+  test("A3 模板未写 terminalType 时按分类库默认类型补齐（氢能设备 ⇒ h2 / h2-load）", () => {
+    // 目标：L144-147 的
+    //   template?.terminalTypes ?? Array.from({ length: template?.terminalCount ?? 0 },
+    //     () => template?.terminalType ?? fallbackTerminalType)
+    // definitions 传 [] ⇒ 元数据只能由模板产生（走到 L172 的 template 臂），
+    // 且模板**故意不写** terminalType / terminalTypes ⇒ 右臂的 `?? fallbackTerminalType` 生效。
+    const template = {
+      kind: "custom-h2-probe",
+      label: "氢能探针模板",
+      componentClass: "H2TemplateProbe",
+      categoryLibrary: "氢能设备",
+      params: {},
+      terminalCount: 3
+    } as any;
+    const metadata = resolveComponentLibraryClassMetadata("H2TemplateProbe", "氢能设备", [], [template])!;
+    expect(metadata.terminalCount).toBe(3);
+    expect(metadata.terminalTypes).toEqual(["h2", "h2", "h2"]);
+    expect(metadata.terminalAssociations).toEqual(["h2-load", "h2-load", "h2-load"]);
+
+    // 对照组：同一模板显式写 terminalType: "heat" 时显式值胜出（不是分类默认值 h2）。
+    // 这条让「拿到 h2 是因为分类兜底」这件事不再是唯一解释。
+    const explicit = resolveComponentLibraryClassMetadata("H2TemplateProbe", "氢能设备", [], [{
+      ...template,
+      terminalType: "heat"
+    }] as any)!;
+    expect(explicit.terminalTypes).toEqual(["heat", "heat", "heat"]);
+
+    // ⚠️ 变异口径：`?? fallbackTerminalType` 只有换成**另一个合法**端子类型才有判别力。
+    //   · 换成 "WRONG"（不在 VALID_TERMINAL_TYPES 里）⇒ 被 normalizedTerminalType 折回
+    //     同一个 h2 ⇒ 假绿；
+    //   · 整个删掉 `?? fallbackTerminalType`（只剩 undefined）⇒ 同样折成 h2 ⇒ 假绿。
+    // 只有改成 `?? "ac"`（合法但不同）才会让上面三条断言转红。
+  });
+});
+
+
+
+// ---------------------------------------------------------------------------
+// B 组：族解析里三条「结构上难以观察」的分支。
+// 这三条的共同难点：它们都藏在 while 循环与两处早退里，必须先把循环走通、
+// 再用前置断言把「为什么走到这里」钉死，否则断言可能在另一条更早的路径上恒绿。
+// ---------------------------------------------------------------------------
+
+describe("B 组：族解析的环检测与成员过滤", () => {
+  // ---- B3：L218（visited 命中）+ L296（祖先为 null 时整族清空）----------------
+  // definitions 的**顺序**是承重的：CycleOther(cat2，派生) 必须排在 CycleOther(cat1，非派生) 之前。
+  // 机制（实测确认）：族解析传下去的 categoryLibraryName 是空串，
+  // 而 classDefinitionFor 在 categoryKey 为空时取 definitions 里**第一个**同名项，
+  // 所以 rootAndDepthFor 每往上走一步都重新落回 cat2 那个派生项：
+  //   CycleRoot(派生) → CycleOther(cat2，派生) → CycleRoot(派生) → visited 命中 ⇒ null
+  // 若把两个 CycleOther 对调，第一步就撞上 cat1 的非派生项，循环正常终止，族不为空。
+  const cycleDefinitions = [
+    { name: "CycleRoot", categoryLibraryName: "cat1", isDerivedComponentLibrary: true, derivedFromComponentLibrary: "CycleOther", terminalCount: 2 },
+    { name: "CycleOther", categoryLibraryName: "cat2", isDerivedComponentLibrary: true, derivedFromComponentLibrary: "CycleRoot", terminalCount: 2 },
+    { name: "CycleOther", categoryLibraryName: "cat1", isDerivedComponentLibrary: false, terminalCount: 2 }
+  ] as any;
+
+  test("B3 单类解析成功但祖先回溯撞环 ⇒ 整族返回空数组", () => {
+    // ⚠️ 三条前置断言是**必需**的：没有它们，下面的 [] 可能只是
+    // 「连单类都解析不出来」的早退（L294），而不是 visited 拦下的结果。
+    // 它们共同证明 selectedMetadata 非空且确实是个派生类，环只能出现在回溯循环里。
+    const single = resolveComponentLibraryClassMetadata("CycleRoot", "", cycleDefinitions, [])!;
+    expect(single).not.toBeNull();
+    expect(single.isDerivedComponentLibrary).toBe(true);
+    expect(single.baseComponentLibrary).toBe("CycleOther");
+    // 而族解析传的是同一个类名 + 同一个（空）分类，却一个成员都留不下
+    expect(resolveComponentLibraryClassFamilyMetadata("CycleRoot", "", cycleDefinitions, [])).toEqual([]);
+  });
+
+  // ---- B4：L310（成员自身解析不出来时被过滤掉）--------------------------------
+  test("B4 根类正常、另有一对互指派生的环成员 ⇒ 族里只剩根类", () => {
+    // CycA / CycB 互为基类：它们**单类解析**就已经是 null
+    // （派生链存在但基类解析失败 ⇒ 命中 L141 的 inheritedClassExists 早退），
+    // 于是在 L302-309 的 map 里 metadata 为 null，被 L310 整条丢弃。
+    // 注意选中的类必须是一个**能解析出来**的根类，否则会走 L294 的空数组早退，测不到 L310。
+    const definitions = [
+      { name: "RootClass", categoryLibraryName: "cat", isDerivedComponentLibrary: false, terminalCount: 2 },
+      { name: "CycA", categoryLibraryName: "cat", isDerivedComponentLibrary: true, derivedFromComponentLibrary: "CycB" },
+      { name: "CycB", categoryLibraryName: "cat", isDerivedComponentLibrary: true, derivedFromComponentLibrary: "CycA" }
+    ] as any;
+    // 前置自检：确认环成员确实是「解析为 null」而不是「解析得出但祖先为 null」——
+    // 两种情况都会让 L312 丢弃它们，但只有前者才真正依赖 L310 这个守卫。
+    expect(resolveComponentLibraryClassMetadata("CycA", "cat", definitions, [])).toBeNull();
+
+    const family = resolveComponentLibraryClassFamilyMetadata("RootClass", "cat", definitions, []);
+    expect(family.map((metadata) => metadata.className)).toEqual(["RootClass"]);
+    // 反证：同一条 definitions，选中环成员时走的是另一条早退（L294），结果同样是空数组。
+    // 两条路径结果相同，所以本组必须靠上面那个「选根类」的前置条件把 L310 摘出来。
+    expect(resolveComponentLibraryClassFamilyMetadata("CycA", "cat", definitions, [])).toEqual([]);
+  });
+
+  // ---- B5：L228（基类查不到时的兜底根；恒不可达的 null 分支只作定性记录）------
+  test("B5 派生类基类查不存在时，族解析返回非空数组（合成一个假想的根）", () => {
+    // 基类 NeverDefinedBase 在库中查不到 ⇒ 父节点为 null ⇒ 走 L229-238 造一个
+    // 「把缺失基类当根」的兜底，于是这个类仍然属于某个族，而不是凭空消失。
+    const definitions = [{
+      name: "LostBaseDerived",
+      categoryLibraryName: "用户设备",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "NeverDefinedBase",
+      terminalCount: 2
+    }] as any;
+    const family = resolveComponentLibraryClassFamilyMetadata("LostBaseDerived", "用户设备", definitions, []);
+
+    expect(family.length).toBeGreaterThan(0);
+    expect(family.length).toBe(2);
+    expect(family.map((metadata) => metadata.className)).toEqual(["NeverDefinedBase", "LostBaseDerived"]);
+    // 兜底根是合成的：基类名被当成类名本身，且被强行标成非派生，否则 while 会继续往上跑
+    expect(family[0].isDerivedComponentLibrary).toBe(false);
+    expect(family[0].baseComponentLibrary).toBe("NeverDefinedBase");
+    // ⚠️ L228 的 `if (!parentClassName) return null` 是**可证不可达**的，此处只作记录：
+    // 返回的 metadata 其 baseComponentLibrary 恒非空 —— L178 的 `baseComponentLibrary || className`
+    // 里的 className 已被 L108 的 `if (!className) return null` 保证非空，
+    // 所以循环里的 current.baseComponentLibrary 不可能是空串。
+    // 因此本组**不**为 L228 写断言：任何写出来的断言都会恒绿，属于自欺。
+    // 若日后有人改掉 L178 的 `|| className`，本条会在上面那句 toBeNull 之前先崩，属于别处的问题。
+  });
+});

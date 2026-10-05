@@ -1,10 +1,13 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import AdmZip from "adm-zip";
+import { apiPath } from "./config.mjs";
+import { spacePathsFor } from "./spaceStore.mjs";
 import {
   archiveStaleSchemeFiles,
+  defaultPaths,
   deleteSchemeProjectRecord,
   deleteSchemeRecordDirectory,
   eSectionColumns,
@@ -13,10 +16,12 @@ import {
   migrateDeviceLibraryConfig,
   normalizeDeviceLibraryConfig,
   normalizeMeasurementConfig,
+  readColorConfig,
   readSchemeProjectRecord,
   readSchemesFromFiles,
   saveSchemeProjectRecord,
-  saveSchemeRecordDirectory
+  saveSchemeRecordDirectory,
+  writeTextIfChanged
 } from "./server.mjs";
 
 describe("device library schema migration", () => {
@@ -1747,6 +1752,165 @@ describe("scheme file persistence", () => {
 
       // files 不变量：目标目录只留 .json，派生格式不写回磁盘
       expect((await readdir(join(filesRoot, "模型方案"))).sort()).toEqual(["模型.json"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// ===========================================================================
+// 下面这组针对 server.mjs 里几条未覆盖分支（补测批次）。
+// ===========================================================================
+
+describe("GRAPH_MODEL_DATA_DIR 数据根覆盖", () => {
+  let dataDir;
+  let scoped;
+  let setupDataDir;
+
+  beforeAll(async () => {
+    // 顶部静态 import 那一份 server.mjs 求值时读到的就是这个值（src/test-setup.ts 设的）
+    setupDataDir = process.env.GRAPH_MODEL_DATA_DIR;
+    dataDir = await mkdtemp(join(tmpdir(), "server-data-root-"));
+    process.env.GRAPH_MODEL_DATA_DIR = dataDir;
+    // 必须带 query 后缀才能重新求值：不带的话拿到的是顶部已缓存的同一个实例，
+    // 设 env 不会让它回头重算 dataRoot —— 所以这里用 ?query 强制一个新实例。
+    scoped = await import("./server.mjs?data-root-override");
+  });
+
+  afterAll(async () => {
+    if (setupDataDir === undefined) delete process.env.GRAPH_MODEL_DATA_DIR;
+    else process.env.GRAPH_MODEL_DATA_DIR = setupDataDir;
+    if (dataDir) await rm(dataDir, { recursive: true, force: true });
+  });
+
+  test("数据根取 GRAPH_MODEL_DATA_DIR（顶层三元真支），且 query 后缀确实换了一个模块实例", () => {
+    expect(scoped.defaultPaths.root).toBe(resolve(dataDir));
+    expect(scoped.defaultPaths.images).toBe(join(resolve(dataDir), "images"));
+    // 假支（env 未设 → 仓库 data/）在 vitest 下**不可达**：setupFiles 里的
+    // src/test-setup.ts 对每个测试文件都先把 GRAPH_MODEL_DATA_DIR 指到自己的 mkdtemp 目录，
+    // 任何 server.mjs 实例求值时 env 都已非空。故此处只断言真支，另证实例确实是新的：
+    // 顶部静态 import 那一份的 root 仍是 test-setup 的目录，没被本用例的 env 改写。
+    expect(defaultPaths.root).toBe(resolve(setupDataDir));
+    expect(defaultPaths.root).not.toBe(scoped.defaultPaths.root);
+  });
+
+  test("ensureStore() 不传 paths 时把 manifest/folders/icons 建在被覆盖的数据根下", async () => {
+    await scoped.ensureStore();
+    expect(JSON.parse(await readFile(join(dataDir, "images", "manifest.json"), "utf-8"))).toEqual([]);
+    const folders = JSON.parse(await readFile(join(dataDir, "images", "folders.json"), "utf-8"));
+    expect(folders.map((folder) => folder.id)).toEqual(["root"]);
+    expect((await stat(join(dataDir, "icons"))).isDirectory()).toBe(true);
+  });
+
+  test("GET /image-folders 归一化非数组落盘、补 root、并把空 id 压成 root", async () => {
+    const server = await scoped.createImageServer({ port: 0, host: "127.0.0.1" });
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const foldersFile = join(dataDir, "images", "folders.json");
+    try {
+      // ① 落盘不是数组：Array.isArray 假支 → 按空数组处理 → 没有 root → 补一个 root
+      await writeFile(foldersFile, JSON.stringify({ folders: [] }), "utf-8");
+      const nonArray = await (await fetch(`${baseUrl}${apiPath("/image-folders")}`)).json();
+      expect(nonArray).toEqual([
+        { id: "root", name: "默认文件夹", createdAt: "1970-01-01T00:00:00.000Z", imageCount: 0 }
+      ]);
+
+      // ② 数组里有空 id（既不等于 "root" 也不是真 id）：先补 root，再把 "" 压成 root。
+      //    两个断言分开才各有鉴别力：①盯「补 root」，②盯「空 id 的兜底」——
+      //    若把 String(folder.id || "root") 改成 String(folder.id)，只有 ② 会红。
+      await writeFile(
+        foldersFile,
+        JSON.stringify([{ id: "", name: "空 id 文件夹", createdAt: "2020-01-02T03:04:05.000Z" }]),
+        "utf-8"
+      );
+      const emptyId = await (await fetch(`${baseUrl}${apiPath("/image-folders")}`)).json();
+      expect(emptyId).toEqual([
+        { id: "root", name: "默认文件夹", createdAt: "1970-01-01T00:00:00.000Z", imageCount: 0 },
+        { id: "root", name: "空 id 文件夹", createdAt: "2020-01-02T03:04:05.000Z", imageCount: 0 }
+      ]);
+    } finally {
+      await new Promise((done) => server.close(done));
+    }
+  });
+});
+
+describe("writeTextIfChanged 的 nullish 内容", () => {
+  test("content 为 null 时落盘零字节，而不是字符串 null", async () => {
+    const root = await mkdtemp(join(tmpdir(), "server-write-text-nullish-"));
+    try {
+      const target = join(root, "空值.json");
+      await writeTextIfChanged(target, null);
+      // String(content ?? "") 给的是 ""；去掉 ?? 后 String(null) === "null"（4 字节）
+      expect(await readFile(target, "utf-8")).toBe("");
+      expect((await stat(target)).size).toBe(0);
+      // 同值重写：走「字节相同直接返回」的早退分支，内容仍应是零字节
+      await writeTextIfChanged(target, undefined);
+      expect((await stat(target)).size).toBe(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("存储读取失败的告警", () => {
+  test("JSON 语法错误时告警里出现 error.name（SyntaxError），并按「无配置」返回默认", async () => {
+    const root = await mkdtemp(join(tmpdir(), "server-store-warn-"));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const settingsDir = join(root, "settings");
+      await mkdir(settingsDir, { recursive: true });
+      await writeFile(join(settingsDir, "color-config.json"), "{ 这不是合法 JSON", "utf-8");
+
+      const config = await readColorConfig({ paths: spacePathsFor(root, "default") });
+
+      expect(config).toEqual({
+        exists: false,
+        colorDisplayMode: "energy",
+        colorPalette: { energy: {}, voltage: {} }
+      });
+      // 语法错误没有 code，走的是 error?.name 那一支 —— 告警文案必须能看出是 SyntaxError，
+      // 否则「IO 失败」与「文件不存在」在日志上无法区分（这正是 warnStoreReadFallback 的存在理由）
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const message = String(warnSpy.mock.calls[0][0]);
+      expect(message).toContain("color-config.json");
+      expect(message).toContain("SyntaxError");
+      expect(message).toContain("按「无配置」处理");
+    } finally {
+      warnSpy.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("未知 static kind 的图元库兜底", () => {
+  test("表里没有的 static- kind 落到默认图元库，因而分到默认 E 段并分配 idx", async () => {
+    const root = await mkdtemp(join(tmpdir(), "server-unknown-static-kind-"));
+    try {
+      const filesRoot = join(root, "files");
+      const saved = await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot: join(root, "trash"),
+        schemePath: ["默认方案"],
+        record: {
+          name: "未知静态图元",
+          project: {
+            version: 1,
+            name: "未知静态图元",
+            // static- 前缀让 isStaticKind 放行，但这个 kind 不在 staticComponentLibraryByKind 里：
+            // 命中的是 staticComponentLibraryForKind 的 ?? defaultStaticComponentLibrary 兜底
+            nodes: [{ id: "static-x", kind: "static-not-in-library", name: "未知静态图元-1", params: {}, terminals: [] }],
+            edges: []
+          }
+        }
+      });
+
+      // 兜底段名就是断言对象：把兜底改成 "" 会让 inferESection 返回空串，
+      // 于是既不分配 idx 也不记计数器（下面两条一起红），只有这一个 kind 能区分这两种结果
+      expect(saved.project.deviceIndexCounters).toEqual({ StaticBasicShape: 1 });
+      expect(saved.project.nodes[0].params.idx).toBe("1");
+
+      const stored = JSON.parse(await readFile(join(filesRoot, "默认方案", "未知静态图元.json"), "utf-8"));
+      expect(stored.deviceIndexCounters).toEqual({ StaticBasicShape: 1 });
+      expect(stored.nodes[0].params.idx).toBe("1");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

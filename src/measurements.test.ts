@@ -29,7 +29,7 @@ import {
   upsertMeasurementGroups
 } from "./measurements";
 import type { MeasurementRuntimeValue, ProjectMeasurementConfig } from "./measurements";
-import { DEVICE_LIBRARY, assignPermanentDeviceIndex, createDefaultNode, getTemplateParameterDefinitions } from "./model";
+import { DEVICE_LIBRARY, assignPermanentDeviceIndex, createDefaultNode, getTemplateParameterDefinitions, inferESection } from "./model";
 import type { ModelNode } from "./model";
 
 const node = (id: string, kind = "ac-load"): ModelNode => ({
@@ -1845,5 +1845,193 @@ describe("量测档位的 fallback 推导（directKeys 落空时）", () => {
         item: { measurementTypeId: "activePower", sourcePoint: "" } as never
       }).bindingField
     ).toBe("p");
+  });
+});
+
+// ── 档位物化的兜底分支与去重键归一（measurements.ts 111/112/119/121/131/132/141/169/227）──
+//
+// 逐条对应关系（行号取自 src/measurements.ts，改动前请重新核对）：
+//   111 previousReferences 里 associatedField 缺省 → ?? ""；以及 trim + 小写
+//   112 field 为空的档项不产生引用；position 缺省（?? "device"）与只有空白（|| "device"）
+//   119 本轮 position 缺省（?? "device"）与只有空白（|| "device"）
+//   121 本轮 associatedField 缺省 → ?? ""
+//   131 档项没写 name 时中文名取自量测类型的 name
+//   132 量测类型 valueType 为 string / boolean 都物化成「string」型参数，number 仍是 float
+//   141 positionDefinitions 里没有「设备本体」位时，参数定义退回调用方传入的那一份
+//   169 参数定义去重键按 enName 去空白 + 小写；没有 enName 的定义整条丢掉
+//   227 derivedBaseTemplateForMeasurementSource 把 source.params 透传给 templateDerivedComponentLibraryInfo
+//
+// 不可达的一行：134 `if (!definition) continue`。createMeasurementFieldParameterDefinition
+// 只在 normalizedAssociatedField(field) 为空时返回 null（measurementDefinitionTypes.ts:99），
+// 而 field 在 121 已 trim 过、122 又挡掉了空串 —— 同一个归一化跑两遍，所以这一行是死代码。
+// 不给它凑恒绿断言。
+describe("量测档位物化的兜底分支与去重键归一", () => {
+  const item = (over: Record<string, unknown> = {}) => ({ measurementTypeId: "activePower", ...over }) as never;
+
+  const typeDef = (over: Record<string, unknown> = {}) => ({
+    id: "customType",
+    key: "custom",
+    name: "自定义档位",
+    shortLabel: "自定义",
+    defaultUnit: "",
+    valueType: "number",
+    defaultDecimals: 3,
+    defaultValue: 0,
+    defaultColor: "#334155",
+    defaultFontFamily: "Arial",
+    defaultFontSize: 12,
+    defaultFontWeight: "700",
+    defaultVisible: true,
+    ...over
+  }) as never;
+
+  // 字段一律选不在 MEASUREMENT_FIELD_PARAMETER_METADATA 里的名字：那些名字的
+  // cnName / valueType 由元数据决定，会把 131 / 132 的 fallback 整条遮掉。
+  const devicePosition = () => [{ value: "device", label: "设备本体", parameterDefinitions: [] }] as never;
+
+  test("上一轮的引用键按「位置去空白 + 字段 trim 并小写」归一；没有字段的档项不产生引用", () => {
+    const result = materializeNewMeasurementDefinitionFields({
+      previousItems: [
+        item(),
+        item({ measurementTypeId: "reactivePower", associatedField: "  Up  " }),
+        item({ measurementTypeId: "voltage", associatedField: "VOL", position: "   " })
+      ],
+      nextItems: [
+        item({ associatedField: "up" }),
+        item({ measurementTypeId: "voltage", associatedField: "vol" }),
+        item({ measurementTypeId: "current", associatedField: "rated" })
+      ],
+      parameterDefinitions: [],
+      positionDefinitions: devicePosition()
+    });
+    // 前两条被上一轮的引用键挡掉，只剩本轮真正新增的字段
+    expect(result.additions.map((addition) => addition.field)).toEqual(["rated"]);
+  });
+
+  test("本轮档项 position 缺省或只有空白都落到「设备本体」；没有 associatedField 的档项被跳过", () => {
+    const result = materializeNewMeasurementDefinitionFields({
+      nextItems: [
+        item({ associatedField: "rated" }),
+        item({ measurementTypeId: "voltage", associatedField: "rated_u", position: "   " }),
+        item({ measurementTypeId: "current" })
+      ],
+      parameterDefinitions: [],
+      positionDefinitions: devicePosition()
+    });
+    expect(result.additions.map((addition) => `${addition.position}:${addition.field}`))
+      .toEqual(["device:rated", "device:rated_u"]);
+    expect(result.parameterDefinitions.map((definition) => definition.enName)).toEqual(["rated", "rated_u"]);
+  });
+
+  test("档项没写 name 时中文名取自量测类型；量测类型也查不到时退回字段名本身", () => {
+    const result = materializeNewMeasurementDefinitionFields({
+      measurementTypes: [typeDef({ id: "ratedType", name: "额定容量" })] as never,
+      nextItems: [
+        item({ measurementTypeId: "ratedType", associatedField: "rated" }),
+        item({ measurementTypeId: "missingType", associatedField: "unknown_field" })
+      ],
+      parameterDefinitions: [],
+      positionDefinitions: devicePosition()
+    });
+    expect(result.additions.map((addition) => addition.definition.cnName))
+      .toEqual(["额定容量", "unknown_field"]);
+  });
+
+  test("量测类型是字符串/布尔时物化成字符串型参数，数值型仍按浮点写", () => {
+    const result = materializeNewMeasurementDefinitionFields({
+      measurementTypes: [
+        typeDef({ id: "textType", valueType: "string" }),
+        typeDef({ id: "boolType", valueType: "boolean" }),
+        typeDef({ id: "numType", valueType: "number" })
+      ] as never,
+      nextItems: [
+        item({ measurementTypeId: "textType", associatedField: "text_field" }),
+        item({ measurementTypeId: "boolType", associatedField: "bool_field" }),
+        item({ measurementTypeId: "numType", associatedField: "num_field" })
+      ],
+      parameterDefinitions: [],
+      positionDefinitions: devicePosition()
+    });
+    expect(result.additions.map((addition) => addition.definition.valueType)).toEqual(["string", "string", "float"]);
+    // valueType 同时决定 typicalValue 的兜底（字符串型空串、浮点型 0）
+    expect(result.additions.map((addition) => addition.definition.typicalValue)).toEqual(["", "", "0"]);
+  });
+
+  test("positionDefinitions 里没有「设备本体」位时，参数定义退回调用方传入的那一份", () => {
+    const parameterDefinitions = [{ cnName: "额定值", enName: "rated", valueType: "float" as const, typicalValue: "0" }];
+    const withoutDevicePosition = materializeNewMeasurementDefinitionFields({
+      nextItems: [item({ measurementTypeId: "voltage", associatedField: "u", position: "t1" })],
+      parameterDefinitions,
+      positionDefinitions: [{ value: "t1", label: "1号端子", parameterDefinitions: [] }] as never
+    });
+    expect(withoutDevicePosition.additions.map((addition) => `${addition.position}:${addition.field}`))
+      .toEqual(["t1:u"]);
+    expect(withoutDevicePosition.parameterDefinitions.map((definition) => definition.enName)).toEqual(["rated"]);
+
+    // 对照组：把「设备本体」位补回去，返回的就不再是入参那一份，而是位上的定义。
+    // 这一对断言证明上面那条断的确实是 ?? 回退，而不是「两种写法结果本来就一样」。
+    const withDevicePosition = materializeNewMeasurementDefinitionFields({
+      nextItems: [item({ measurementTypeId: "voltage", associatedField: "u", position: "t1" })],
+      parameterDefinitions,
+      positionDefinitions: [
+        { value: "device", label: "设备本体", parameterDefinitions: [] },
+        { value: "t1", label: "1号端子", parameterDefinitions: [] }
+      ] as never
+    });
+    expect(withDevicePosition.parameterDefinitions).toEqual([]);
+  });
+
+  test("参数定义的去重键按 enName 去空白并小写；没有 enName 的定义整条丢掉", () => {
+    const positions = buildMeasurementProfilePositionDefinitions({
+      source: { kind: "ac-load", terminalCount: 0 },
+      parameterDefinitions: [
+        { cnName: "没有英文名", valueType: "float", typicalValue: "0" },
+        { cnName: "额定", enName: "  Rated  ", valueType: "float", typicalValue: "0" },
+        { cnName: "额定", enName: "rated", valueType: "float", typicalValue: "0" },
+        { cnName: "额定", enName: "RATED", valueType: "float", typicalValue: "0" }
+      ] as never
+    });
+    // 缺 enName 的那条去重键是空串，被 merge 丢掉；后三条同键只留第一条（连空白一起原样保留）
+    expect(positions).toHaveLength(1);
+    expect(positions[0].parameterDefinitions.map((definition) => definition.enName)).toEqual(["  Rated  "]);
+  });
+
+  test("派生元件档的 base 库参数只在 source.params 真带派生字段时才并进来（params 缺省时不并）", () => {
+    const baseTemplate = DEVICE_LIBRARY.find((template) => template.kind === "ac-load")!;
+    const baseSection = String(inferESection(baseTemplate.kind, baseTemplate.params)).trim();
+    const own = { cnName: "自定义", enName: "own_field", valueType: "float" as const, typicalValue: "0" };
+    const libraryTemplates = [{
+      ...baseTemplate,
+      parameterDefinitions: [{ cnName: "基础档位参数", enName: "base_only_field", valueType: "float", typicalValue: "0" }]
+    }] as never;
+
+    const withoutParams = buildMeasurementProfilePositionDefinitions({
+      source: { kind: "ac-load", terminalCount: 0, isDerivedComponentLibrary: true },
+      parameterDefinitions: [own],
+      libraryTemplates
+    });
+    const withParams = buildMeasurementProfilePositionDefinitions({
+      source: {
+        kind: "ac-load",
+        terminalCount: 0,
+        isDerivedComponentLibrary: true,
+        params: { derived_from_component_type: baseSection, derived_component_type: "CustomLoad" }
+      },
+      parameterDefinitions: [own],
+      libraryTemplates
+    });
+
+    // source.params 缺省 → 取不到 base 库 → 只剩调用方自己的定义
+    expect(withoutParams[0].parameterDefinitions.map((definition) => definition.enName)).toEqual(["own_field"]);
+    // source.params 带派生字段 → base 库的定义被并到前面（证明 params 真的透传下去了）
+    const mergedNames = withParams[0].parameterDefinitions.map((definition) => definition.enName);
+    expect(mergedNames).toContain("base_only_field");
+    expect(mergedNames).toContain("own_field");
+    expect(mergedNames[mergedNames.length - 1]).toBe("own_field");
+
+    // 变异补记：`params: source.params ?? {}` 里的 `?? {}` 本身删掉是等价变异 ——
+    // templateDerivedComponentLibraryInfo 第一行就是 `template.params ?? {}`（model.ts:3210），
+    // 传 undefined 和传 {} 在被调方眼里一样。这一行真正承重的是「把 source.params 透传下去」，
+    // 上面 withoutParams / withParams 两条断的正是它（换成 params: {} 就会退回只剩 own_field）。
   });
 });

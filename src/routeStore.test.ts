@@ -548,3 +548,119 @@ describe("routeStore / routeStorePatchRoutesById", () => {
     expect(fromSet.store.routeMap.get("a")).toEqual(fromArray.store.routeMap.get("a"));
   });
 });
+
+// ─── patchRouteSpatialIndex 的三条兜底分支 ─────────────────
+//
+// 目标分支（行号对应 src/routeStore.ts）：
+//   L190  桶已不在 buckets 里时 `continue`（不凭空 filter、不重新写桶）
+//   L205  routeBounds 为 null 时不落任何桶（patch 一条空 points 的路线）
+//   L255  routeBoundsById 查不到该 edgeId 时回退到路线自身的包围盒
+//
+// 三条兜底的前提都是「索引内部三张表对不上」，而 buildRouteSpatialIndex 与
+// patchRouteSpatialIndex 自己造不出这种状态：routeBucketKeysById 里记的 key 与 buckets
+// 里真实存在的 key 永远是同一批（同一次 range 循环里 push 的）。所以真实入口有两条：
+//   ① 外部改字段 —— RouteSpatialIndex 是可变对象，createRouteStore 把它原样挂进 store
+//      （源码 L59 那句「索引被外部改字段也会走到这里」就是为这种调用方留的口子）；
+//   ② 同名 edgeId 的两条记录互相覆盖 —— routeMap/routeBoundsById 后来者赢，
+//      而 buckets 里躺着的是先落桶那一条（routeStoreSpatialIndex.test.ts 已钉住
+//      「routeOrder 留重复、Map 后者赢」这条，故这里不是假设）。
+//
+// ── L172（`removedIds` 为空时的 `return index`）判为不可达，走全定义域枚举（§6.20 路线 A）：
+// patchRouteSpatialIndex 未导出，全仓唯一调用点是 routeStorePatchRoutes:371，而那一行的
+// 守卫是 `changed && (spatialUpserts.length > 0 || deleteIds.size > 0)`。逐一枚举它的两条真路径：
+//   ① deleteIds 非空 ⇒ removedIds = new Set([...deleteIds, ...updateIds]) 的 size ≥ 1；
+//   ② deleteIds 为空 ⇒ 守卫要求 spatialUpserts 非空 ⇒ routeUpdates 非空
+//      ⇒ updateIds 非空 ⇒ removedIds.size ≥ 1。
+// 两条路径下 `removedIds.size === 0` 恒假 ⇒ L173 的 `return index` 是死代码，
+// 且与它并存的 `&& routeUpdates.length === 0` 那一项在 deleteIds 非空时永远轮不到求值。
+// 真正拦住它的是调用点的 deleteIds 过滤与 changed 守卫，而那两个守卫已被既有三条用例钉住
+// （「无更新无删除时返回同一个 store」「更新未变的路线（引用相同）时返回同一个 store」
+//  「删除不存在的 id 时返回同一个 store」）。
+
+describe("routeStore / patchRouteSpatialIndex 兜底：索引三表对不上时", () => {
+  it("routeBucketKeysById 记了 key、buckets 里已无该桶时跳过：不抛，也不凭空补桶", () => {
+    const a = makeRoute("a", [at(10, 10), at(12, 12)]);
+    const b = makeRoute("b", [at(20, 20), at(22, 22)]);
+    const c = makeRoute("c", [at(5000, 5000), at(5010, 5010)]);
+    const store = createRouteStore([a, b, c]);
+
+    // 护栏：a 与 b 确实共桶 0:0，c 在 15:15 —— 否则下面的「桶不存在」是夹具没搭好
+    expect(store.routeSpatialIndex.routeBucketKeysById.get("a")).toEqual(["0:0"]);
+    expect(store.routeSpatialIndex.routeBucketKeysById.get("b")).toEqual(["0:0"]);
+    expect(store.routeSpatialIndex.routeBucketKeysById.get("c")).toEqual(["15:15"]);
+    expect(store.routeSpatialIndex.buckets.get("0:0")).toEqual([a, b]);
+
+    // 外部改字段：桶被摘掉，但 routeBucketKeysById 还留着 key，patch 仍会照跑
+    store.routeSpatialIndex.buckets.delete("0:0");
+
+    const patched = routeStorePatchRoutes(store, [], ["a", "b"]);
+
+    expect(patched).not.toBe(store);
+    // 两条路线的三张表记录都清掉了
+    expect(patched.routeSpatialIndex.routeBoundsById.has("a")).toBe(false);
+    expect(patched.routeSpatialIndex.routeBoundsById.has("b")).toBe(false);
+    expect(patched.routeSpatialIndex.routeBucketKeysById.has("a")).toBe(false);
+    expect(patched.routeSpatialIndex.routeBucketKeysById.has("b")).toBe(false);
+    // 核心契约：`continue` 只跳过，不把这个 key 写回 buckets（写回空数组同样是错的）
+    expect(patched.routeSpatialIndex.buckets.has("0:0")).toBe(false);
+    // 别的桶不受牵连，近端因桶已被外部摘掉而彻底查不到
+    expect(edgeIds(queryRouteSpatialIndex(patched.routeSpatialIndex, bounds(4900, 4900, 5100, 5100)))).toEqual(["c"]);
+    expect(edgeIds(queryRouteSpatialIndex(patched.routeSpatialIndex, bounds(-100, -100, 100, 100)))).toEqual([]);
+  });
+
+  it("patch 空 points 的路线：落 null 包围盒、零个桶，旧桶残留被清干净", () => {
+    const store = createRouteStore([makeRoute("a", [at(10, 10), at(40, 40)])]);
+    // 护栏：改之前 a 落在 0:0，且包围盒非 null
+    expect(store.routeSpatialIndex.routeBucketKeysById.get("a")).toEqual(["0:0"]);
+    expect(routeSpatialIndexRenderBounds(store.routeSpatialIndex, "a")).toEqual(bounds(10, 10, 40, 40));
+
+    const patched = routeStorePatchRoutes(store, [makeRoute("a", [])]);
+
+    expect(patched.routeSpatialIndex.routeBoundsById.get("a")).toBeNull();
+    expect(routeSpatialIndexRenderBounds(patched.routeSpatialIndex, "a")).toBeNull();
+    expect(patched.routeSpatialIndex.routeBucketKeysById.get("a")).toEqual([]);
+    // 旧位置 0:0 只剩它自己 ⇒ 整桶删除，不留空数组
+    expect(patched.routeSpatialIndex.buckets.has("0:0")).toBe(false);
+    // 反向对照：store 里确实还挂着这条路线（points 为空），只是索引不再承认它有包围盒
+    expect(patched.routeMap.get("a")!.points).toEqual([]);
+    expect(edgeIds(queryRouteSpatialIndex(patched.routeSpatialIndex, bounds(-1000, -1000, 1000, 1000)))).toEqual([]);
+  });
+
+  it("patch 落桶按 8px 外扩算：右端 632 的路线被拉进 2 号桶（不外扩就只进 1 号桶）", () => {
+    // 632 + 8 = 640 恰是桶宽 320 的整倍 ⇒ floor 后跨到 2；不外扩则 floor(632/320) = 1。
+    // 这是纯几何推导，不是「随便挑个数」：外扩量被改成 0 时 key 集合会缩成 ["1:0"]。
+    const store = createRouteStore([]);
+    const patched = routeStorePatchRoutes(store, [makeRoute("edge", [at(630, 0), at(632, 0)])]);
+
+    expect(patched.routeSpatialIndex.routeBucketKeysById.get("edge")).toEqual(["1:-1", "1:0", "2:-1", "2:0"]);
+    expect(patched.routeSpatialIndex.buckets.get("2:0")!.map((route) => route.edgeId)).toEqual(["edge"]);
+    // 精确复核仍然说了算：查询框要真罩住 1 号与 2 号桶才扫得到，命中还要过相交判定
+    expect(edgeIds(queryRouteSpatialIndex(patched.routeSpatialIndex, bounds(400, -100, 700, 100)))).toEqual(["edge"]);
+    expect(edgeIds(queryRouteSpatialIndex(patched.routeSpatialIndex, bounds(645, -5, 650, 5)))).toEqual([]);
+  });
+
+  it("同名 id：routeBoundsById 被后写入的空 points 覆盖成 null，查询回退到路线自身包围盒", () => {
+    // dup 两条：先落桶的是带点那条，后写进 routeBoundsById 的 null 属于空点那条。
+    // 于是 buckets 里躺着 withPoints，而 routeBoundsById.get("dup") 是 null
+    // —— routeSpatialIndexRenderBounds 只能给 null，精确复核就靠 `?? routeRenderBounds(route)`。
+    const withPoints = makeRoute("dup", [at(630, 0), at(632, 0)]);
+    const withoutPoints = makeRoute("dup", []);
+    const plain = makeRoute("plain", [at(0, 0), at(5, 0)]);
+    const index = buildRouteSpatialIndex([withPoints, withoutPoints, plain, makeRoute("solo", [])]);
+
+    // 护栏：确实是「桶里有带点的、索引表里存 null」这种错位状态
+    expect(index.routeBoundsById.get("dup")).toBeNull();
+    expect(index.routeBoundsById.get("solo")).toBeNull();
+    expect(index.routeBoundsById.get("plain")).toEqual(bounds(0, 0, 5, 0));
+    expect(index.buckets.get("2:0")).toEqual([withPoints]);
+    expect(routeSpatialIndexRenderBounds(index, "dup")).toBeNull();
+
+    // dup 只能靠 `?? routeRenderBounds(route)` 那条回退臂命中；plain 走索引里那份包围盒
+    expect(edgeIds(queryRouteSpatialIndex(index, bounds(-100, -100, 700, 100)))).toEqual(["dup", "plain"]);
+    // 回退出来的包围盒同样要过精确复核：换成与 630..632 不相交的框，dup 也返回不了
+    expect(edgeIds(queryRouteSpatialIndex(index, bounds(700, 100, 800, 200)))).toEqual([]);
+    // solo 一个桶都没有 ⇒ 坐标扫描碰不到它（不靠大范围遍历去证明，那会是 4 千万次循环）
+    expect(index.routeBucketKeysById.get("solo")).toEqual([]);
+    expect(new Set([...index.buckets.values()].flat().map((route) => route.edgeId))).toEqual(new Set(["dup", "plain"]));
+  });
+});

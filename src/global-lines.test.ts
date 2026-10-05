@@ -778,6 +778,370 @@ describe("applyGlobalLineRecordsToNodes", () => {
   });
 });
 
+// 本组补的是 global-lines.ts 里此前零覆盖的分支。判据一律按「断言必须落在变异真正
+// 改变的那个对象上」选：每条都在注释里写明「若这一行被改坏，哪一条断言会转红」。
+describe("补齐此前零覆盖的分支", () => {
+  const LOCAL = {
+    modelKey: "model:1",
+    projectIdx: 1,
+    schemePath: ["方案"],
+    projectName: "模型一",
+    nodeId: ""
+  };
+
+  test("oppositeGlobalLineEndpoint 反向端：关联负荷落在末端时，报文说首端反了", () => {
+    // placement.endpoint = "target"（关联负荷在末端）⇒ oppositeGlobalLineEndpoint 走 "source" 一侧。
+    // 载荷行：placement 的 source 槽里坐着 model_id=2（关联电源）⇒ 命中「首末端方向不一致」。
+    const feederLoad = createDefaultNode("ac-feeder-load", { x: 500, y: 0 });
+    feederLoad.params.model_id = "2";
+    const localBus = createDefaultNode("ac-bus", { x: 0, y: 500 });
+    const remoteSource = {
+      modelKey: "model:2",
+      projectIdx: 2,
+      schemePath: ["方案"],
+      projectName: "目标厂站",
+      nodeId: "remote-line",
+      boundaryEndpoint: "source" as const
+    };
+    const localTarget = {
+      modelKey: "model:7",
+      projectIdx: 7,
+      schemePath: ["主方案"],
+      projectName: "本地馈线",
+      nodeId: "local-line",
+      boundaryEndpoint: "target" as const
+    };
+    const swappedDirection = record({
+      id: "gl-swapped",
+      idx: 20,
+      references: [remoteSource, localTarget],
+      endpointSlots: { source: remoteSource, target: localTarget },
+      degree: 2
+    });
+    const localModel = { modelKey: "model:7", projectIdx: 7, projectName: "本地馈线" };
+
+    const fromTarget = globalLineExistingPlacementConflictMessage(
+      swappedDirection,
+      localBus,
+      feederLoad,
+      localModel
+    );
+
+    // 双侧断言：两个方向各断一次。少了对照组，下面那句「位于首端」可能只是
+    // 「端点标签压根不参与拼装」的恒真 —— 事实上 L86 的三向文案本就会写出另一侧。
+    expect(fromTarget).toContain("model_id=2 位于首端");
+    expect(fromTarget).toContain("要求位于末端");
+
+    // 对照组（双侧断言的另一半）：镜像形状 —— source 槽坐着本模型（不匹配 model_id=2），
+    // target 槽坐着 model:2。此时 placement.endpoint = "source" ⇒ opposite 走 "target" 一侧。
+    // 少了它，上面的「位于首端」可能只是「首端两个字恰好写死在文案里」的恒真。
+    const localSourceRef = {
+      modelKey: "model:7",
+      projectIdx: 7,
+      schemePath: ["主方案"],
+      projectName: "本地馈线",
+      nodeId: "local-line",
+      boundaryEndpoint: "source" as const
+    };
+    const remoteTargetRef = {
+      modelKey: "model:2",
+      projectIdx: 2,
+      schemePath: ["方案"],
+      projectName: "目标厂站",
+      nodeId: "remote-line",
+      boundaryEndpoint: "target" as const
+    };
+    const stationSource = createDefaultNode("ac-station-source", { x: 500, y: 0 });
+    stationSource.params.model_id = "2";
+    const fromSource = globalLineExistingPlacementConflictMessage(
+      record({
+        id: "gl-swapped-2",
+        idx: 21,
+        references: [localSourceRef, remoteTargetRef],
+        endpointSlots: { source: localSourceRef, target: remoteTargetRef },
+        degree: 2
+      }),
+      stationSource,
+      createDefaultNode("ac-load", { x: 900, y: 0 }),
+      localModel
+    );
+    expect(fromSource).toContain("model_id=2 位于末端");
+    expect(fromSource).toContain("要求位于首端");
+  });
+
+  test("负荷端文案在名字整个缺失时用 ?? 侧的兜底称谓", () => {
+    // 载荷行 93：`String(node.name ?? "该模型关联负荷").trim() || "该模型关联负荷"`。
+    // 这里专门喂 name === undefined —— 走 ?? 的右操作数，与既有「全空格」用例走的
+    // || 那一侧是**两条不同的分支**（coverage 上前者计数为 0）。
+    const load = createDefaultNode("ac-station-load", { x: 0, y: 0 });
+    delete (load as { name?: string }).name;
+
+    expect(globalLineSourcePlacementFailureMessage(load))
+      .toBe("“该模型关联负荷”属于厂站/馈线/台区负荷，只能位于线路末端。");
+
+    // 承重：?? 那一侧的兜底**文本**若被写成别的（本条专用变异），
+    // 上面这句立刻红；而既有「全空格」用例（走 || 侧）不受影响。
+    // 记一笔等价性：把 93 行的 ?? 换成 || 在全域等价 ——
+    // name 为 nullish 时两者都给同一个字面量，非 nullish 时 ?? 根本不起作用，
+    // 所以本条能分辨的是「兜底文本写错」，不是「?? 还是 ||」。
+  });
+
+  test("电源端文案在名字是纯空白时用 || 侧的兜底称谓", () => {
+    // 载荷行 101：既有测试只喂了 name 缺失（?? 侧，计数 1），
+    // 没喂 name = "   "（|| 侧，计数 0）。两条分支都要走。
+    const source = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+    source.name = "   ";
+
+    expect(globalLineTargetPlacementFailureMessage(source))
+      .toBe("“该模型关联电源”属于厂站/馈线/台区电源，只能位于线路首端。");
+
+    // 承重：删掉 101 行的 .trim() ⇒ "   " 非空 ⇒ 不再落兜底 ⇒ 这条转红。
+    // 对照：name 缺失的既有用例删掉 .trim() 仍绿（?? 侧本就非空），
+    // 所以这条是覆盖 .trim() 的唯一一条。
+  });
+
+  test("引用没有 projectIdx 时不写出该键：老式 path: 模型键靠 modelKey 识别", () => {
+    // 载荷行 186：`...(reference.projectIdx ? { projectIdx } : {})` 的假侧。
+    // 本图的 localReference 走老式 path: 键、没有 projectIdx ⇒ 这一支。
+    const stationSource = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+    stationSource.params.model_id = "22";
+    const localLoad = createDefaultNode("ac-load", { x: 500, y: 0 });
+    const legacyLocal = {
+      modelKey: "path:主方案/本地馈线",
+      schemePath: ["主方案"],
+      projectName: "本地馈线",
+      nodeId: "legacy-line"
+    };
+
+    const references = globalLineReferencesForPlacement(legacyLocal, {
+      source: { node: stationSource, terminalId: "" },
+      target: { node: localLoad, terminalId: "" }
+    });
+
+    const localSide = references?.[1];
+    expect(localSide?.modelKey).toBe("path:主方案/本地馈线");
+    // 断言「键不存在」而不是「值为 undefined」：变异把三元条件写成恒真时，
+    // projectIdx 会以 undefined 的形式**存在**，Object.hasOwn 仍为 true ⇒ 转红。
+    expect(Object.hasOwn(localSide ?? {}, "projectIdx")).toBe(false);
+    // 对照组：关联侧确实带 projectIdx，证明上一条不是「压根没写这个键」。
+    expect(references?.[0]?.projectIdx).toBe(22);
+  });
+
+  test("两端都不是模型关联设备时不产出任何引用（此前只覆盖了「两端都关联」的早退）", () => {
+    // 载荷行 211：`if (!endpointEntries.some(...)) return [];` 的真侧。
+    // 既有测试的两处 [] 都来自 205 行的「两端不能同时关联」早退，走不到 211。
+    const localModel = {
+      modelKey: "model:7",
+      projectIdx: 7,
+      schemePath: ["主方案"],
+      projectName: "本地馈线",
+      nodeId: "pure-local"
+    };
+
+    expect(globalLineReferencesForPlacement(localModel, {
+      source: { node: createDefaultNode("ac-bus", { x: 0, y: 0 }), terminalId: "" },
+      target: { node: createDefaultNode("ac-load", { x: 500, y: 0 }), terminalId: "" }
+    })).toEqual([]);
+
+    // 承重：删掉 211 行的 some 判据 ⇒ 会继续产出两条本地引用 ⇒ 上面的 [] 转红。
+    // 反向对照：加一条关联端进去，产出非空 —— 证明 [] 不是「这函数恒返回空」。
+    const stationSource = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+    stationSource.params.model_id = "22";
+    expect(globalLineReferencesForPlacement(localModel, {
+      source: { node: stationSource, terminalId: "" },
+      target: { node: createDefaultNode("ac-load", { x: 500, y: 0 }), terminalId: "" }
+    })).toHaveLength(2);
+  });
+
+  test("移除全局身份：三个键都没有时原样返回同一个节点对象", () => {
+    // 载荷行 280：三个 && 操作数一个都没被量过 —— 既有用例只喂「三键俱全」的节点。
+    const plain = connectLine("ac-routable-line", "s2", "t2");
+
+    // 身份断言：返回的是**同一个对象引用**，不是等价副本。
+    // 删掉 280 行整段早退 ⇒ 返回新对象 ⇒ toBe 转红（toEqual 不会红，所以不用它）。
+    expect(removeGlobalLineIdentityForLocalNode(plain)).toBe(plain);
+
+    // 短路的另一半：只带 pair 键 ⇒ 第二个操作数为真 ⇒ 落到第三个操作数（idx）；
+    // 只带 idx ⇒ 第三个操作数为真。三种形状都覆盖，&& 链才不是「只测过短路的第一段」。
+    const pairOnly = connectLine("ac-routable-line", "s3", "t3");
+    pairOnly.params = { ...pairOnly.params, [GLOBAL_LINE_MODEL_PAIR_PARAM]: "target" };
+    const pairDetached = removeGlobalLineIdentityForLocalNode(pairOnly);
+    expect(pairDetached).not.toBe(pairOnly);
+    expect(pairDetached.params[GLOBAL_LINE_MODEL_PAIR_PARAM]).toBeUndefined();
+
+    const idxOnly = connectLine("ac-routable-line", "s4", "t4");
+    idxOnly.params = { ...idxOnly.params, idx: "77" };
+    const idxDetached = removeGlobalLineIdentityForLocalNode(idxOnly);
+    expect(idxDetached).not.toBe(idxOnly);
+    expect(idxDetached.params.idx).toBeUndefined();
+
+    // 反向对照：全局 id 键在 ⇒ 不能走早退（否则下面这条恒绿，short-circuit 无鉴别力）。
+    const idKeyed = connectLine("ac-routable-line", "s5", "t5");
+    idKeyed.params = { ...idKeyed.params, [GLOBAL_LINE_ID_PARAM]: "global-77" };
+    expect(removeGlobalLineIdentityForLocalNode(idKeyed).params[GLOBAL_LINE_ID_PARAM]).toBeUndefined();
+  });
+
+  test("应用记录时若节点已是记录的样子就返回同一个对象（省一次无谓重渲染）", () => {
+    // 载荷行 304：`name 相同 && 参数深相等 ⇒ 返回 node` 此前从未为真。
+    const original = connectLine("ac-routable-line", "s", "t");
+    const first = applyGlobalLineRecordToNode(original, record());
+
+    // 前置条件自证：第一次**确实**改了对象，否则下面 toBe 可能只是「函数恒返回入参」。
+    expect(first).not.toBe(original);
+    expect(first.name).toBe(record().name);
+    const second = applyGlobalLineRecordToNode(first, record());
+
+    // 承重：删掉 304 行第二个操作数（参数深比较）⇒ 首次调用就早退 ⇒ first 仍是原节点，
+    // 它的 rated_capacity 停在模型里的 "0"，上面 name 断言与本条 toBe 同时转红。
+    expect(first.params.rated_capacity).toBe("220");
+    expect(second).toBe(first);
+
+    // 反向对照：名字已经是记录名、但**参数**仍旧 ⇒ 必须返回新对象。
+    // 少了它，上面那句 `first.params.rated_capacity === "220"` 就可能是「首次调用压根没比对参数」
+    // 的恒真 —— 而删掉深比较恰好能让那句话保持绿。
+    const staleParams = connectLine("ac-routable-line", "s", "t");
+    staleParams.name = record().name;
+    staleParams.params = { ...staleParams.params, rated_capacity: "999" };
+    const refreshed = applyGlobalLineRecordToNode(staleParams, record());
+    expect(refreshed).not.toBe(staleParams);
+    expect(refreshed.params.rated_capacity).toBe("220");
+  });
+
+  test("边界引用的归属模型经同节点的物理引用改判，删除本图线路时远端引用一并隐去", () => {
+    // 载荷行 341：boundaryNodeId 存在时，归属 modelKey 要改从「同 nodeId 且无
+    // boundaryNodeId 的物理引用」取。此前所有 fixture 的引用都没有 boundaryNodeId，
+    // 这一支从未被量过。
+    const stationSource = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+    stationSource.params.model_id = "22";
+    // 末端刻意悬空 ⇒ globalLinePlacementEndpointsForNode 返回 null ⇒ 第二轮循环在
+    // 498 行 continue，结果**纯粹**来自 450 行按归属过滤那一步，把 341 的效果单独暴露出来。
+    const localLine = connectLine("ac-routable-line", stationSource.id, "missing-target");
+    localLine.id = "line-a";
+    localLine.name = "待补端";
+    localLine.params = { ...localLine.params, [GLOBAL_LINE_ID_PARAM]: "gl-owner" };
+
+    const boundaryReference = {
+      modelKey: "model:2",
+      projectIdx: 2,
+      schemePath: ["方案"],
+      projectName: "模型二",
+      nodeId: "line-a",
+      boundaryEndpoint: "source" as const,
+      boundaryNodeId: "station-remote",
+      boundaryTerminalId: "t1"
+    };
+    const physicalReference = {
+      modelKey: "model:1",
+      projectIdx: 1,
+      schemePath: ["方案"],
+      projectName: "模型一",
+      nodeId: "line-a",
+      boundaryEndpoint: "target" as const
+    };
+
+    const withPhysicalSibling = previewGlobalLineRecordsForProject(
+      [record({
+        id: "gl-owner",
+        idx: 22,
+        references: [boundaryReference, physicalReference],
+        endpointSlots: { source: boundaryReference, target: physicalReference },
+        degree: 2
+      })],
+      [stationSource, localLine],
+      "厂站",
+      LOCAL
+    );
+    // 改判后 boundaryReference 的归属是 model:1 = 本模型 ⇒ 与物理引用一起被滤掉。
+    expect(withPhysicalSibling).toHaveLength(1);
+    expect(withPhysicalSibling[0].references).toEqual([]);
+    expect(withPhysicalSibling[0].degree).toBe(0);
+
+    // 对照组（双侧断言的另一半）：同样带 boundaryNodeId，但没有同节点物理引用 ⇒
+    // 归属回落成 reference 自身的 modelKey = model:2 ≠ 本模型 ⇒ 引用被保留。
+    // 少了它，上面那个 [] 可能只是「带 boundaryNodeId 就一律删掉」的恒真。
+    const orphanBoundary = previewGlobalLineRecordsForProject(
+      [record({
+        id: "gl-owner",
+        idx: 22,
+        references: [{ ...boundaryReference, nodeId: "line-a" }],
+        endpointSlots: { source: boundaryReference, target: null },
+        degree: 1
+      })],
+      [stationSource, localLine],
+      "厂站",
+      LOCAL
+    );
+    expect(orphanBoundary[0].references).toHaveLength(1);
+    expect(orphanBoundary[0].references[0].boundaryEndpoint).toBe("source");
+  });
+
+  test("合入引用时同 modelKey + nodeId 的旧引用被就地替换，不追加", () => {
+    // 载荷行 374：`modelKey 相同 && nodeId 相同` 的真侧 + 376 行的 >= 0 分支。
+    const stationSource = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+    stationSource.params.model_id = "22";
+    const localLoad = createDefaultNode("ac-load", { x: 500, y: 0 });
+
+    const otherModelReference = {
+      modelKey: "model:9",
+      projectIdx: 9,
+      schemePath: ["方案"],
+      projectName: "模型九",
+      nodeId: "line-x"
+    };
+    const staleLocalReference = {
+      modelKey: "model:1",
+      projectIdx: 1,
+      schemePath: ["方案"],
+      projectName: "模型一",
+      nodeId: "line-x",
+      boundaryEndpoint: "source" as const,
+      boundaryNodeId: "station-old"
+    };
+
+    const merged = previewGlobalLineRecordsForProject(
+      [record({
+        id: "gl-merge",
+        idx: 21,
+        references: [otherModelReference, staleLocalReference],
+        endpointSlots: { source: staleLocalReference, target: null },
+        degree: 2
+      })],
+      [stationSource, localLoad, { ...connectLine("ac-routable-line", stationSource.id, localLoad.id) }],
+      "厂站",
+      LOCAL
+    );
+    // 先取基线：确认这套装配本身能命中「就地替换」，否则下面是在断言恒真。
+    expect(merged[0].references).toHaveLength(2);
+
+    // 真正要断的是 nodeId 与线路节点一致的那条路径。
+    const liveLine = connectLine("ac-routable-line", stationSource.id, localLoad.id);
+    liveLine.id = "line-x";
+    liveLine.name = record().name;
+    liveLine.params = { ...liveLine.params, [GLOBAL_LINE_ID_PARAM]: "gl-merge", idx: "21" };
+
+    const replaced = previewGlobalLineRecordsForProject(
+      [record({
+        id: "gl-merge",
+        idx: 21,
+        references: [otherModelReference, staleLocalReference],
+        endpointSlots: { source: staleLocalReference, target: null },
+        degree: 2
+      })],
+      [stationSource, localLoad, liveLine],
+      "厂站",
+      LOCAL
+    )[0];
+
+    // 承重：把 374 行的 && 改成 || ⇒ 第 0 条（model:9 vs model:1）因 nodeId 相同而被判中
+    // ⇒ 换掉的是 index 0 ⇒ 下面 references[0].modelKey 立刻从 model:9 变 model:1。
+    expect(replaced.references).toHaveLength(2);
+    expect(replaced.references[0].modelKey).toBe("model:9");
+    // 就地替换 ⇒ 顺序不变（异模型那条仍在 index 0），且 source 槽拿到的是新端点。
+    expect(replaced.references[1].modelKey).toBe("model:1");
+    expect(replaced.endpointSlots?.source?.boundaryNodeId).toBe(stationSource.id);
+  });
+});
+
 describe("globalLineKindForEnergy", () => {
   test("能量类型映射回可路由线路 kind", () => {
     expect(globalLineKindForEnergy("ac")).toBe("ac-routable-line");

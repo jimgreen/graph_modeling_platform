@@ -8,6 +8,7 @@ import {
   memoryWatchLevelFor,
   readJsHeapUsedBytes
 } from "./memoryWatch";
+import { isSkipBeforeUnload, setSkipBeforeUnload } from "./spaceSwitch";
 
 // ─── 共享注册表（isolate 关掉）下，本文件依赖到的全局的基线 ──────────
 //
@@ -449,4 +450,172 @@ describe("readJsHeapUsedBytes 的取数守卫", () => {
   //
   // 反过来，「删掉 Number.isFinite」**不是**等价变异：Infinity >= 0 为 true，
   // 只判非负会把 Infinity 当合法读数放行 —— 由上面那条 Infinity 用例咬住。
+});
+
+// ─── critical 档（level 3）与 reloading 守卫 ──────────────────────────────
+//
+// level 3 是全仓少数会直接丢掉用户现场的地方：落盘恢复点 → 置 skip-beforeunload →
+// window.setTimeout(() => window.location.reload(), 400)。两处细节决定夹具怎么造：
+// ① 写的是 window. 前缀而不是 globalThis，node 测试环境没有 window ⇒ 必须整体桩掉 window；
+// ② 桩里的 setTimeout **只记录不排程** —— 真排程会在 400ms 后去 reload，而那时用例早已结束。
+//
+// 断言「reloading 守卫」时的三个坑（§8）：
+// - 堆读数在整个被测窗口里必须始终有效：还原 performance.memory 等于删掉被探测的输入，
+//   tick 会走 used === null 早退，断言恒绿；
+// - 堆必须**停在 critical 这一档**：level 3 走的是 return，不更新 lastLevel，
+//   所以「同档去重」不会替它兜底 —— 守卫若被删掉，persistRecovery 会在每轮 tick 重复调用。
+//   反之若此时把堆压到 soft 以下，去重会把守卫缺失的效应完全遮住；
+// - **不能用「堆读数次数」证明定时器活着**：reloading 守卫在 readJsHeapUsedBytes **之前**
+//   就 return，第二轮起根本不再读堆（实测读数恒为 1，无论守卫在与不在）。
+//   故这里给 startMemoryWatch 自己的 setInterval 套一层计数，直接数 tick 的点火次数。
+describe("startMemoryWatch 的 critical 档与 reloading 守卫", () => {
+  const GB = 1024 * 1024 * 1024;
+  type MemoryWatchHandle = { stop: () => void };
+
+  /** 本组用例开过的 handle：afterEach 统一 stop，残留定时器会污染同文件后续用例。 */
+  const openHandles: MemoryWatchHandle[] = [];
+
+  afterEach(() => {
+    while (openHandles.length > 0) openHandles.pop()?.stop();
+    // spaceSwitch 的跳过挽留标志是模块级 let：critical 分支会把它置 true，
+    // 用完必须复位，否则同文件后续用例读到的是残留状态。
+    setSkipBeforeUnload(false);
+  });
+
+  /** 给 startMemoryWatch 自己的 setInterval 套计数层：证明 tick 在窗口里真的点火过多轮。 */
+  function countIntervalFires(counter: { fires: number }) {
+    const holder = globalThis as unknown as Record<string, unknown>;
+    const original = holder.setInterval as (fn: () => void, ms?: number) => unknown;
+    Object.defineProperty(globalThis, "setInterval", {
+      value: (fn: () => void, ms?: number) => original(() => { counter.fires += 1; fn(); }, ms),
+      configurable: true,
+      writable: true
+    });
+    return () => {
+      Object.defineProperty(globalThis, "setInterval", { value: original, configurable: true, writable: true });
+    };
+  }
+
+  /** 桩出 critical 分支要用的两个 window 出口；返回还原函数。 */
+  function stubReloadWindow(record: { scheduled: number[]; reloaded: number }) {
+    const had = "window" in globalThis;
+    const original = (globalThis as Record<string, unknown>).window;
+    Object.defineProperty(globalThis, "window", {
+      value: {
+        setTimeout: (_fn: () => void, ms: number) => {
+          record.scheduled.push(ms);
+          return 0;
+        },
+        location: {
+          reload: () => {
+            record.reloaded += 1;
+          }
+        }
+      },
+      configurable: true,
+      writable: true
+    });
+    return () => {
+      if (had) {
+        Object.defineProperty(globalThis, "window", { value: original, configurable: true, writable: true });
+      } else {
+        delete (globalThis as Record<string, unknown>).window;
+      }
+    };
+  }
+
+  /** 固定堆读数（窗口内始终有效）；返回还原函数。 */
+  function stubHeapAt(usedBytes: number) {
+    const target = performance as unknown as { memory?: unknown };
+    const had = "memory" in target;
+    const original = target.memory;
+    Object.defineProperty(target, "memory", {
+      value: { usedJSHeapSize: usedBytes },
+      configurable: true,
+      writable: true
+    });
+    return () => {
+      if (had) {
+        Object.defineProperty(target, "memory", { value: original, configurable: true, writable: true });
+      } else {
+        delete target.memory;
+      }
+    };
+  }
+
+  it("level 3：落盘恢复点 + 置跳过挽留 + 排 400ms 延迟刷新，且 reloading 守卫挡住后续 tick 重复处置", async () => {
+    const CRITICAL = 1.9 * GB;
+    const record = { scheduled: [] as number[], reloaded: 0 };
+    const fires = { fires: 0 };
+    const restoreTimers = countIntervalFires(fires);
+    const restoreWindow = stubReloadWindow(record);
+    const restoreHeap = stubHeapAt(CRITICAL);
+    const persisted: string[] = [];
+    const trimmed: number[] = [];
+    const { startMemoryWatch } = await import("./memoryWatch");
+    const handle: MemoryWatchHandle = startMemoryWatch({
+      onTrimUndoHistory: (keep) => trimmed.push(keep),
+      persistRecovery: () => persisted.push("persisted"),
+      intervalMs: 1
+    });
+    openHandles.push(handle);
+    const skipBefore = isSkipBeforeUnload();
+    try {
+      // 堆必须停在 critical：**降档会把 reloading 缺失的效应吃掉**（见描述里的 ②）。
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const skipFlagAfterTick = isSkipBeforeUnload();
+
+      // 活性自检：60ms / intervalMs=1 下 tick 必须点火过多轮，否则下面「只处置一次」是空断言。
+      expect(fires.fires).toBeGreaterThanOrEqual(3);
+      // 被测的核心契约：critical 只处置一次，reloading 守卫把后续 tick 全部挡在门外。
+      expect(persisted).toEqual(["persisted"]);
+      // 刷新是延迟 400ms 的，且**只排一次**（重复排程正是守卫缺失的另一个可见后果）。
+      expect(record.scheduled).toEqual([400]);
+      // 400ms 未到，不该真的 reload —— 也说明桩确实没把那个回调排进真定时器。
+      expect(record.reloaded).toBe(0);
+      // critical 分支不走裁剪分支。
+      expect(trimmed).toEqual([]);
+      // 绕过未保存挽留弹窗的标志真的在窗口内由 false 翻成了 true
+      //（该标志读的是 spaceSwitch 的模块级状态，故要断言前后两档而不只是终态）。
+      expect(skipBefore).toBe(false);
+      expect(skipFlagAfterTick).toBe(true);
+      expect(baselineMessages).toEqual(["内存占用接近上限，即将自动刷新页面释放内存（已保存恢复点）。"]);
+    } finally {
+      handle.stop();
+      restoreHeap();
+      restoreWindow();
+      restoreTimers();
+    }
+    // 还原自检：window 桩与 setInterval 计数层都已摘掉（node 下本来没有 window）。
+    expect("window" in globalThis).toBe(false);
+  });
+
+  it("恢复点抛异常也继续刷新（critical 是最后防线，catch 不许把刷新一起吞掉）", async () => {
+    const record = { scheduled: [] as number[], reloaded: 0 };
+    const fires = { fires: 0 };
+    const restoreTimers = countIntervalFires(fires);
+    const restoreWindow = stubReloadWindow(record);
+    const restoreHeap = stubHeapAt(1.9 * GB);
+    const { startMemoryWatch } = await import("./memoryWatch");
+    const handle: MemoryWatchHandle = startMemoryWatch({
+      persistRecovery: () => {
+        throw new Error("snapshot failed");
+      },
+      intervalMs: 1
+    });
+    openHandles.push(handle);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      // 抛异常的处置不该影响刷新：延迟刷新仍被排上，且守卫仍把重复处置挡在外面。
+      expect(record.scheduled).toEqual([400]);
+      expect(record.reloaded).toBe(0);
+      expect(fires.fires).toBeGreaterThanOrEqual(3);
+    } finally {
+      handle.stop();
+      restoreHeap();
+      restoreWindow();
+      restoreTimers();
+    }
+    expect("window" in globalThis).toBe(false);
+  });
 });

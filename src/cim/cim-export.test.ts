@@ -250,3 +250,114 @@ describe("createCimExport 走后端", () => {
     vi.unstubAllGlobals();
   });
 });
+
+// 本轮补齐的四条分支（coverage 未覆盖）：L98 缺参「等」后缀、L120 后端非 2xx、
+// L152 saveLazyTextFile 缺省、L168 完成提示回落 showGlobalMessage。
+// 全部只注入 mock 保存层（saveLazyTextFile 是 vi.fn()），不落任何磁盘文件。
+describe("createCimExport 分支补强", () => {
+  const okXml = () => new Response('<?xml version="1.0"?><cim:FullModel/>', {
+    status: 200, headers: { "content-type": "application/xml" }
+  });
+
+  test("缺关键参数超过 3 个时确认文案带「等」后缀，且只列前 3 个设备名", async () => {
+    const showGlobalConfirm = vi.fn().mockResolvedValue(true);
+    const saveLazyTextFile = vi.fn().mockResolvedValue(false);
+    const exportCim = createCimExport({
+      nodes: [
+        node("line1", "ac-line", {}), // 缺 电压等级 + 线路阻抗 r/x
+        node("line2", "ac-line", {}),
+        node("bus1", "ac-bus", {}), // 缺 电压等级
+        node("bus9", "ac-bus", {})
+      ],
+      edges: [], projectName: "示范站", activeModelId: "m1",
+      showGlobalConfirm, saveLazyTextFile
+    } as never);
+    await expect(exportCim()).resolves.toBe(false);
+    expect(showGlobalConfirm).toHaveBeenCalledTimes(1);
+    const text = String(showGlobalConfirm.mock.calls[0][0]);
+    expect(text).toContain("4 个设备缺少关键参数");
+    // 超过 3 个 → 补「等」后缀；名称列表仍截断到前 3 个（第 4 个名字不出现）
+    expect(text).toContain("等），导出文件可能不完整");
+    expect(text).not.toContain("bus9");
+  });
+
+  test("后端返回非 2xx 时提示 HTTP 状态、不读体也不落盘", async () => {
+    // 用 503 而非 500：硬编码 HTTP 500 的变异会被这个状态码判出来
+    const fetchMock = vi.fn(async () => new Response("upstream exploded", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const showGlobalMessage = vi.fn();
+    // 保存层本身是「成功」的：这样「非 2xx 判定失效」的唯一症状就是导出竟然返回了 true
+    const saveLazyTextFile = vi.fn().mockResolvedValue(true);
+    const exportCim = createCimExport({
+      nodes: [node("bus1", "ac-bus", { i_vbase: "110" })],
+      edges: [], projectName: "示范站", activeModelId: "m1",
+      saveLazyTextFile, showGlobalMessage
+    } as never);
+    await expect(exportCim()).resolves.toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(showGlobalMessage).toHaveBeenCalledWith("CIM/XML 导出失败（HTTP 503）");
+    expect(showGlobalMessage).toHaveBeenCalledTimes(1);
+    expect(saveLazyTextFile).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  test("非 2xx 且装配了 backendErrorMessage 时以其消息与 fallback 为准", async () => {
+    // 418（teapot）：任何硬编码状态码的兜底文案都猜不到它
+    const fetchMock = vi.fn(async () => new Response("nope", { status: 418 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const backendErrorMessage = vi.fn(async (_res: Response, _fallback: string) => "后端说：方案已删除");
+    const showGlobalMessage = vi.fn();
+    const saveLazyTextFile = vi.fn();
+    const exportCim = createCimExport({
+      nodes: [node("bus1", "ac-bus", { i_vbase: "110" })],
+      edges: [], projectName: "示范站", activeModelId: "m1",
+      backendErrorMessage, saveLazyTextFile, showGlobalMessage
+    } as never);
+    await expect(exportCim()).resolves.toBe(false);
+    expect(backendErrorMessage).toHaveBeenCalledTimes(1);
+    expect(backendErrorMessage.mock.calls[0][1]).toBe("CIM/XML 导出失败。");
+    expect(showGlobalMessage).toHaveBeenCalledWith("后端说：方案已删除");
+    expect(showGlobalMessage).toHaveBeenCalledTimes(1);
+    expect(saveLazyTextFile).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  test("scope 未装配 saveLazyTextFile 时返回 false：拉到 XML 后不记日志也不弹完成框", async () => {
+    const fetchMock = vi.fn(async () => okXml());
+    vi.stubGlobal("fetch", fetchMock);
+    const writeOperationLog = vi.fn();
+    const showGlobalMessage = vi.fn();
+    const showStandaloneExportCompletion = vi.fn();
+    // 故意不传 saveLazyTextFile（键完全不存在）：走 : false 缺省臂，
+    // 而不是「装了保存层但它 resolve(false)」那条已覆盖路径
+    const exportCim = createCimExport({
+      nodes: [node("bus1", "ac-bus", { i_vbase: "110" })],
+      edges: [], projectName: "示范站", activeModelId: "m1",
+      writeOperationLog, showGlobalMessage, showStandaloneExportCompletion
+    } as never);
+    await expect(exportCim()).resolves.toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // 已完成后端拉取，只在保存层缺省处停下
+    expect(writeOperationLog).not.toHaveBeenCalled();
+    expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(showStandaloneExportCompletion).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  test("未装配 showStandaloneExportCompletion 时成功提示回落 showGlobalMessage", async () => {
+    const fetchMock = vi.fn(async () => okXml());
+    vi.stubGlobal("fetch", fetchMock);
+    const saveLazyTextFile = vi.fn().mockResolvedValue(true);
+    const showGlobalMessage = vi.fn();
+    const exportCim = createCimExport({
+      nodes: [node("bus1", "ac-bus", { i_vbase: "110" })],
+      edges: [], projectName: "缺参站", activeModelId: "m1",
+      saveLazyTextFile, showGlobalMessage
+    } as never);
+    await expect(exportCim()).resolves.toBe(true);
+    expect(saveLazyTextFile).toHaveBeenCalledTimes(1);
+    expect(showGlobalMessage).toHaveBeenCalledTimes(1);
+    const message = String(showGlobalMessage.mock.calls[0][0]);
+    expect(message).toMatch(/^CIM\/XML 文件导出成功：缺参站\.xml；字符编码：UTF-8；总耗时：\d+\.\d{2} 秒$/u);
+    vi.unstubAllGlobals();
+  });
+});

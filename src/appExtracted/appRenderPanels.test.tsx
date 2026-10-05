@@ -465,3 +465,214 @@ describe("面板工厂冒烟", () => {
     expect(noHit).toContain("未找到匹配图元。");
   });
 });
+
+/* ---------- 项目面板：搜索清空按钮 / 类型筛选高亮 / 两种空态文案 ---------- */
+
+const CLEAR_PROJECT_SEARCH = 'aria-label="清空模型库搜索"';
+
+const renderProjectPanel = (overrides: Record<string, unknown> = {}) =>
+  renderToStaticMarkup(
+    createElement(
+      createRenderProjectPanel({
+        Search: () => createElement("span", { "data-icon": "search" }),
+        X: () => createElement("span", { "data-icon": "x" }),
+        MODEL_TYPES,
+        openBlankProjectLibraryContextMenu: noop,
+        projectSearchQuery: "",
+        setProjectSearchQuery: noop,
+        projectModelTypeFilter: [],
+        setProjectModelTypeFilter: noop,
+        projectListPointerInsideRef: { current: false },
+        backendSchemesLoadedRef: { current: true },
+        schemes: [],
+        filteredProjectSchemes: [],
+        renderProjectSchemeNode: () => null,
+        ...overrides
+      })
+    )
+  );
+
+/** 取模型类型筛选按钮的开标签（按 title 定位）。 */
+const modelTypeButtonTag = (html: string, type: string): string =>
+  html.match(new RegExp(`<button[^>]*title="${type}"[^>]*>`))?.[0] ?? "";
+
+describe("项目面板搜索清空按钮只在有搜索词时出现", () => {
+  // L203：`projectSearchQuery &&` 两侧都要断。
+  // 只断「非空 → 有」的话，把条件换成恒真表达式（如 `projectSearchQuery !== undefined`）
+  // 一样是绿的 —— 所以「空串不渲染」与「undefined 不渲染」两条负向断言是承重的。
+  test("搜索词非空时渲染清空按钮，空串与 undefined 时都不渲染", () => {
+    expect(renderProjectPanel({ projectSearchQuery: "主变" })).toContain(CLEAR_PROJECT_SEARCH);
+    expect(renderProjectPanel({ projectSearchQuery: "" })).not.toContain(CLEAR_PROJECT_SEARCH);
+    expect(renderProjectPanel({ projectSearchQuery: undefined })).not.toContain(CLEAR_PROJECT_SEARCH);
+  });
+});
+
+describe("项目面板模型类型筛选高亮", () => {
+  // L214：`projectModelTypeFilter?.includes(type) ? " active" : ""`。
+  // 命中侧断「馈线带 active」，未命中侧断「厂站不带 active」，两侧互证；
+  // 再断筛选集合为 undefined（可选链左操作数为 nullish）时全都不带 active。
+  test("命中筛选集合的类型按钮带 active，未命中与筛选集合缺失时都不带", () => {
+    const html = renderProjectPanel({ projectModelTypeFilter: ["馈线"] });
+    expect(modelTypeButtonTag(html, "馈线")).toContain('class="project-model-type-btn active"');
+    expect(modelTypeButtonTag(html, "厂站")).toContain('class="project-model-type-btn"');
+    expect(modelTypeButtonTag(html, "厂站")).not.toContain("active");
+
+    const noFilter = renderProjectPanel({ projectModelTypeFilter: undefined });
+    expect(noFilter).not.toContain("project-model-type-btn active");
+  });
+});
+
+describe("项目面板方案空态文案按后端加载态二分", () => {
+  // L237：ternary 两侧互斥 —— 两侧文案互为负向判据，
+  // 交换两个分支（把「已加载」写成「正在连接」）会立刻红。
+  test("方案列表为空时，后端已加载与仍在加载给出两种互斥文案", () => {
+    const loaded = renderProjectPanel({ schemes: [], backendSchemesLoadedRef: { current: true } });
+    const loading = renderProjectPanel({ schemes: [], backendSchemesLoadedRef: { current: false } });
+    expect(loaded).toContain("暂无方案，右键此处创建方案");
+    expect(loaded).not.toContain("正在连接模型库");
+    expect(loading).toContain("正在连接模型库，恢复后将自动加载...");
+    expect(loading).not.toContain("暂无方案");
+  });
+
+  // 顺带把「有方案但筛选后为空」那条空态也钉住（与上面两条文案互斥）。
+  test("有方案但筛选后为空时给出未找到匹配文案", () => {
+    const html = renderProjectPanel({
+      schemes: [{ id: "S1" }],
+      filteredProjectSchemes: []
+    });
+    expect(html).toContain("未找到匹配方案或模型");
+    expect(html).not.toContain("正在连接模型库");
+  });
+});
+
+/* ---------- 图元树：搜索清空 / 英文标签 / 缺 deviceGroups 兜底 / 设备折叠 ---------- */
+
+const CLEAR_TREE_SEARCH = 'aria-label="清空图元树搜索"';
+
+describe("图元树搜索清空按钮只在有搜索词时出现", () => {
+  // L280：与项目面板那条同构 —— 负向断言（空串不渲染）是承重的一侧。
+  test("搜索词非空时渲染清空图元树按钮，空串与 undefined 时都不渲染", () => {
+    expect(renderElementTree({ elementTreeSearchQuery: "断路器" })).toContain(CLEAR_TREE_SEARCH);
+    expect(renderElementTree({ elementTreeSearchQuery: "" })).not.toContain(CLEAR_TREE_SEARCH);
+    expect(renderElementTree({ elementTreeSearchQuery: undefined })).not.toContain(CLEAR_TREE_SEARCH);
+  });
+});
+
+/** 带英文标签的类型分组 + 一个设备分组（英文标签齐全 / 全缺两态由入参决定）。 */
+const labeledGroup = (withEnglish: boolean): ElementTreeGroup => ({
+  typeKey: "TX",
+  typeLabel: "变压器 类型",
+  ...(withEnglish ? { typeEnglishLabel: "Transformer" } : {}),
+  items: buildItems(1, "TX-组内"),
+  deviceGroups: [
+    {
+      deviceKey: "DX",
+      deviceLabel: "DX 设备",
+      ...(withEnglish ? { deviceEnglishLabel: "Device X" } : {}),
+      items: buildItems(2, "DX")
+    } as ElementTreeDeviceGroup
+  ]
+});
+
+describe("图元树类型层与设备层的英文小标签", () => {
+  // L313 / L358：两个可选字段各自独立控制一处 `<small>`。
+  // 英文标签齐全时两处都在；两处都缺时整串标记里不应出现任何 `<small>` ——
+  // 设备分组里的图元走 `<span>{item.name}</span>` 而非 `<small>`，故这个负向断言无歧义。
+  test("英文标签存在时类型层与设备层各渲染一处 small，两个标签都缺失时整串无 small", () => {
+    const labeled = renderElementTree({
+      elementTree: [labeledGroup(true)],
+      filteredElementTree: [labeledGroup(true)]
+    });
+    expect(labeled).toContain("<small>Transformer</small>");
+    expect(labeled).toContain("<small>Device X</small>");
+
+    const plain = renderElementTree({
+      elementTree: [labeledGroup(false)],
+      filteredElementTree: [labeledGroup(false)]
+    });
+    expect(plain).not.toContain("<small>");
+    expect(plain).toContain("变压器 类型");
+    expect(plain).toContain("DX 设备");
+  });
+});
+
+describe("图元树类型分组缺少 deviceGroups 时按空列表兜底", () => {
+  // L299：`group.deviceGroups ?? []`。
+  // 兜底产物是空数组 → 类型行照常渲染（class/标题/条目数都在），但没有设备分组区块。
+  // 变异方向：把 `?? []` 换成一个「凭空造一个设备分组」的兜底，
+  // 就会出现 element-tree-device-group / element-tree-items，于是本条转红。
+  test("缺 deviceGroups 的类型分组仍渲染类型行，但不带任何设备分组区块", () => {
+    const bare = {
+      typeKey: "T0",
+      typeLabel: "空设备组 类型",
+      items: buildItems(2, "T0-组内")
+    } as ElementTreeGroup;
+    const html = renderElementTree({ elementTree: [bare], filteredElementTree: [bare] });
+    expect(html).toContain('class="element-tree-type"');
+    expect(html).toContain("空设备组 类型");
+    expect(html).toContain("<strong>2</strong>");
+    // 兜底是空数组 → 设备分组区块整段不存在；类型层的容器 div 仍在，但里面没有任何设备分组。
+    expect(html).not.toContain("element-tree-device-group");
+    expect(html).not.toContain("element-tree-device-type");
+    // 组内那 2 个图元只在设备分组层级渲染，故兜底下不出现在标记里。
+    expect(html).not.toContain("T0-组内-0");
+  });
+});
+
+describe("图元树设备分组折叠时用 chevron-right 且不展开图元列表", () => {
+  // L355：设备层 chevron 的 false 侧。
+  // 既有的「命中折叠集合」那条把类型层也折叠了，设备按钮压根不渲染，
+  // 所以这里的判别输入是「类型层展开 + 设备层折叠」这一组合。
+  test("设备分组折叠时渲染 chevron-right、aria-expanded false 且不列出图元", () => {
+    const group = buildGroup("T1", "D1", 3);
+    const html = renderElementTree({
+      elementTree: [group],
+      filteredElementTree: [group],
+      elementTreeSearchNeedle: "",
+      collapsedElementTreeGroups: [],
+      collapsedElementTreeDeviceGroups: ["D1"]
+    });
+    const tags = treeitemTags(html);
+    expect(tags).toHaveLength(2);
+    expect(tags[0]).toContain('aria-expanded="true"');
+    expect(tags[1]).toContain('aria-level="2"');
+    expect(tags[1]).toContain('aria-expanded="false"');
+    // 两层 chevron 图标按「类型层 → 设备层」顺序各一枚：类型层展开是 down，
+    // 设备层折叠是 right。若 355 行的两臂对调，这里会变成 down,down。
+    expect(html.match(/data-icon="chevron-(?:down|right)"/g)).toEqual([
+      'data-icon="chevron-down"',
+      'data-icon="chevron-right"'
+    ]);
+    // 设备层的图元容器整段不渲染（类型层的容器仍在，所以不能只断言 element-tree-items）。
+    expect(html).not.toContain("element-tree-device-items");
+    expect(html).not.toContain("D1-0");
+  });
+});
+
+describe("图元树窗口态恰好覆盖全部图元", () => {
+  // L336 真臂 `deviceGroup.items`：只有「窗口态恰好覆盖全部图元」这一种输入会走它 ——
+  // 其余用例要么走 `slice(windowStart, windowEnd)`，要么没有窗口态退回 `slice(0, visibleLimit)`。
+  //
+  // ⚠️ 注意这个 ternary 的两臂在**真臂触发时输出恒等**（windowEnd 已经过
+  // `Math.min(totalItems, ...)`，故 windowStart===0 && windowEnd===totalItems 时
+  // `items.slice(0, totalItems)` 与 `items` 逐元素相同）。所以「直接对调两臂」这类变异
+  // 单靠本条抓不到 —— 实测把条件取反（等价于让部分窗口场景改走真臂）会红 3 条，
+  // 说明**条件本身**被既有窗口用例钉住，而**真臂与 slice 的区别**由下面这条钉住：
+  // 注入「真臂改为 items.slice(0, visibleLimit)」后 D3-3..D3-5 消失，本条转红。
+  // 记录在案是为了下一个改这里的人不必重新调查这两个变异方向的不同结论。
+  test("窗口 start=0 且 end=total 时列出全部图元、无占位块且不出现显示更多按钮", () => {
+    const DEV = "D3";
+    const TOTAL = 6;
+    const group = buildGroup("T3", DEV, TOTAL);
+    const html = renderElementTree({
+      elementTree: [group],
+      filteredElementTree: [group],
+      elementTreeSearchNeedle: "",
+      elementTreeItemWindows: { [DEV]: { start: 0, end: TOTAL } }
+    });
+    expect(spacerHeights(html)).toEqual([]);
+    expect(html).toContain(`${DEV}-0`);
+    expect(html).toContain(`${DEV}-5`);
+    expect(html).not.toContain("显示更多");
+  });
+});

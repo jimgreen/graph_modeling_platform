@@ -25,7 +25,18 @@ vi.mock("./server.mjs", () => ({
   }
 }));
 
-import { readDeviceLibraryConfig, readMeasurementConfig } from "./server.mjs";
+import { readDeviceLibraryConfig, readMeasurementConfig, eSectionColumns } from "./server.mjs";
+
+// 临时往 mock 的 eSectionColumns 追加段名（用于触发 baseForESection 的兜底/兜底后分支），
+// 跑完即删 —— 既有断言依赖 eSections.length === 3，泄漏会误伤它们。
+async function withExtraESections(extraNames, run) {
+  try {
+    for (const name of extraNames) eSectionColumns[name] = [];
+    await run();
+  } finally {
+    for (const name of extraNames) delete eSectionColumns[name];
+  }
+}
 
 function createMockResponse() {
   const chunks = [];
@@ -190,5 +201,84 @@ describe("handleV1Library 聚合", () => {
     const { request, response } = ctx();
     await handleV1Library({ request, response });
     expect(response.statusCode).toBe(500);
+  });
+});
+
+// ── 未覆盖分支补齐 ──────────────────────────────────────────────
+// 目标行：apiV1Library.mjs 33（未知段名兜底 base）、39（customCategoryLibraries 非数组兜底）、
+// 72（categories catch 的非 Error 侧）、81（devices catch）、92/93（量测三字段兜底）、
+// 95（measurements catch）、105/106（图元定义三字段兜底）。
+describe("未覆盖分支", () => {
+  test("未知段名前缀落到静态图元兜底（末条 return）", async () => {
+    readDeviceLibraryConfig.mockResolvedValue({ exists: false });
+    await withExtraESections(["ZetaNode", "WindTurbineBay"], async () => {
+      const { request, response } = ctx();
+      await handleV1LibraryDevices({ request, response });
+      const eSections = response.jsonBody().data.eSections;
+      // 既不匹配静态白名单、也不匹配 AC/Ground/DC/Hydro*/Heat* 任一前缀
+      expect(eSections.find((s) => s.section === "ZetaNode").base).toBe("静态图元");
+      expect(eSections.find((s) => s.section === "WindTurbineBay").base).toBe("静态图元");
+    });
+  });
+
+  test("customCategoryLibraries 非数组时兜底空数组（不把非数组摊进 bases）", async () => {
+    // 输入是非数组对象：兜底生效时 bases 仍是 5 个静态 base；
+    // 若去掉 Array.isArray 守卫，`...{ weird: true }` 抛 TypeError → 500。
+    readDeviceLibraryConfig.mockResolvedValue({ exists: false, customCategoryLibraries: { weird: true } });
+    const { request, response } = ctx();
+    await handleV1LibraryCategories({ request, response });
+    expect(response.statusCode).toBe(200);
+    expect(response.jsonBody().data.categories.map((c) => c.name)).toEqual([
+      "静态图元", "交流设备", "直流设备", "氢能设备", "热能设备"
+    ]);
+  });
+
+  test("categories 端点：抛出的不是 Error 时用固定兜底文案", async () => {
+    readDeviceLibraryConfig.mockRejectedValue("字符串原因");
+    const { request, response } = ctx();
+    await handleV1LibraryCategories({ request, response });
+    expect(response.statusCode).toBe(500);
+    expect(response.jsonBody().error).toEqual({ code: "internal", message: "后端处理失败。" });
+  });
+
+  test("devices 端点抛错转 internal 并透传 Error.message", async () => {
+    readDeviceLibraryConfig.mockRejectedValue(new Error("设备库配置损坏"));
+    const { request, response } = ctx();
+    await handleV1LibraryDevices({ request, response });
+    expect(response.statusCode).toBe(500);
+    expect(response.jsonBody().error).toEqual({ code: "internal", message: "设备库配置损坏" });
+  });
+
+  test("量测配置三字段全缺失时各自兜底（空对象/空数组）", async () => {
+    readMeasurementConfig.mockResolvedValue({ exists: false });
+    const { request, response } = ctx();
+    await handleV1LibraryMeasurements({ request, response });
+    expect(response.statusCode).toBe(200);
+    expect(response.jsonBody().data).toEqual({
+      groupDefaults: {},
+      measurementTypes: [],
+      deviceProfiles: []
+    });
+  });
+
+  test("measurements 端点：抛出的不是 Error 时用固定兜底文案", async () => {
+    // 普通对象（非 Error），且自身带 code —— 若 handler 改走别的 code 分支会被断言抓住
+    readMeasurementConfig.mockRejectedValue({ code: "ENOENT", reason: "量测配置缺失" });
+    const { request, response } = ctx();
+    await handleV1LibraryMeasurements({ request, response });
+    expect(response.statusCode).toBe(500);
+    expect(response.jsonBody().error).toEqual({ code: "internal", message: "后端处理失败。" });
+  });
+
+  test("图元定义三字段全缺失时各自兜底（空对象/空数组）", async () => {
+    readDeviceLibraryConfig.mockResolvedValue({ exists: false });
+    const { request, response } = ctx();
+    await handleV1LibraryDeviceDefinitions({ request, response });
+    expect(response.statusCode).toBe(200);
+    expect(response.jsonBody().data).toEqual({
+      deviceDefinitionOverrides: {},
+      customComponentLibraries: [],
+      customCategoryLibraries: []
+    });
   });
 });

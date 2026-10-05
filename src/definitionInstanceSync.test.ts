@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   CUSTOM_DEVICE_TEMPLATE_KEY,
   CUSTOM_PARAM_DEFINITIONS_KEY,
@@ -876,5 +876,232 @@ describe("reconcileNodesWithEffectiveTemplateDefinitions 的 kind 落空分支",
         expect(Object.prototype.hasOwnProperty.call(plural.params, key), `${kind}.${key}`).toBe(true);
       }
     }
+  });
+});
+
+// ============================================================================
+// 下面这组覆盖「模板本身长得不规矩」时的四条分支。它们此前零覆盖，共同点是
+// **失败时不会抛异常**，只会安静地让实例几何/参数/端子标签跑偏：
+//   · L90  模板 params 不是普通对象（函数/缺省）→ 定义所有字段一个都不碰；
+//   · L108 模板 params 里某个定义所有字段的值是 null → 归一成空串而不是字符串 "null"；
+//   · L130 模板尺寸宽/高不是正数（含恰好等于下界 0）→ 保留实例现有几何；
+//   · L149 默认端子锚点表里没有该序号 → 退化到原点；
+//   · L153 端子端型不在 TERMINAL_TYPE_LIBRARY_LABELS 库表里 → 标签回落成端型原文。
+// 断言一律落在**返回的节点对象**上，不写「没抛异常」这种恒绿断言。
+// ============================================================================
+
+const irregularTemplate = (over: Partial<DeviceTemplate>): DeviceTemplate => ({
+  kind: "ac-load",
+  label: "不规矩模板",
+  categoryLibrary: "交流设备",
+  size: { width: 96, height: 72 },
+  params: {},
+  terminalType: "ac",
+  terminalCount: 1,
+  ...over
+});
+
+describe("模板输入不规矩时的边界分支", () => {
+  test("模板 params 不是普通对象时按缺失处理：定义所有字段一个都不碰（L90）", () => {
+    // typeof x === "object" 的非 null 值只有普通对象和数组。守卫的第一段挡 null/undefined，
+    // 第二段挡的正是「object 之外但仍然 truthy」的那类 —— 函数是唯一同时满足
+    // 「truthy」「不是 object」「Object.keys 还能用」的值，所以它是这道守卫唯一
+    // 能被输入探到的分支。若第二段被删（typeof 判成 "function"），下面这条断言会红。
+    const source = createDefaultNode("ac-load", { x: 0, y: 0 });
+    const node: ModelNode = {
+      ...source,
+      params: { ...source.params, fillColor: "#123456" }
+    };
+    // 载体上带一个会被同步逻辑当成「定义所有字段」写进来的键：
+    // 守卫生效时它必须**不**生效，否则断言里的 "#123456" 就没有意义了。
+    const carrier = Object.assign(() => undefined, { fillColor: "#abcdef" });
+    const template = irregularTemplate({
+      params: carrier as unknown as DeviceTemplate["params"]
+    });
+
+    const reconciled = reconcileNodeWithDefinition(node, template);
+
+    expect(reconciled.params.fillColor).toBe("#123456");
+    expect(reconciled.params.strokeColor).toBe(node.params.strokeColor);
+
+    // 守卫第一段（null/undefined）在本仓到不了：resolveEffectiveTemplateParameterDefinitions
+    // 先跑，getTemplateParameterDefinitions 会在 model.ts 的 `template.params[key]` 上抛
+    // TypeError，压根走不到 syncDefinitionParams。下面把这条实测钉住，免得下一个人
+    // 再花一轮去试「模板 params 能不能缺省」。若哪天 model.ts 改成容忍缺省 params，
+    // 这条会红 —— 那正是该给守卫第一段补断言的信号。
+    expect(() => reconcileNodeWithDefinition(node, irregularTemplate({ params: undefined }))).toThrow();
+    expect(() => reconcileNodeWithDefinition(
+      node,
+      irregularTemplate({ params: null as unknown as DeviceTemplate["params"] })
+    )).toThrow();
+  });
+
+  test("模板 params 里定义所有字段的值为 null 时归一成空串，同时不牵连兄弟字段（L108）", () => {
+    const source = createDefaultNode("ac-load", { x: 0, y: 0 });
+    const node: ModelNode = {
+      ...source,
+      params: { ...source.params, fillColor: "#123456", strokeColor: "#654321" }
+    };
+    const template = irregularTemplate({
+      params: { fillColor: null as never, strokeColor: "#0f0f0f" }
+    });
+
+    const reconciled = reconcileNodeWithDefinition(node, template);
+
+    // 期望值恰好是 ""（即那条 ?? 的右臂）。若把 ?? "" 删掉，String(null) 会得到
+    // "null"，这条直接红；所以它断的确实是「右臂被求值」，不是「写没写」。
+    expect(reconciled.params.fillColor).toBe("");
+    // 对照字段用的是一个硬编码变异不会挑的值：它证明第二个循环整体跑通了，
+    // 排除「因为模板 params 长得不对所以整个循环都没跑」这种同样产出 "" 的解释。
+    expect(reconciled.params.strokeColor).toBe("#0f0f0f");
+    // 入参节点没被就地改写。
+    expect(node.params.fillColor).toBe("#123456");
+  });
+
+  test("模板尺寸宽/高不是正数时保留实例现有几何，恰好等于下界 0 也要挡住（L130）", () => {
+    const source = createDefaultNode("ac-load", { x: 0, y: 0 });
+    const node: ModelNode = { ...source, size: { width: 111, height: 77 } };
+
+    const rejected: Array<{ width: number; height: number }> = [
+      { width: 0, height: 40 },            // 宽正好等于下界
+      { width: 40, height: 0 },            // 高正好等于下界
+      { width: -5, height: 40 },           // 负宽
+      { width: 40, height: Number.NaN },   // 非有限高
+      { width: 40, height: -0.5 }          // 负高
+    ];
+    for (const size of rejected) {
+      const reconciled = reconcileNodeWithDefinition(node, irregularTemplate({ size }));
+      expect(reconciled.size, JSON.stringify(size)).toEqual({ width: 111, height: 77 });
+    }
+
+    // 对照：合法尺寸仍然要覆盖实例几何 —— 否则上面五条可能只是「整体不生效」。
+    expect(
+      reconcileNodeWithDefinition(node, irregularTemplate({ size: { width: 60, height: 45 } })).size
+    ).toEqual({ width: 60, height: 45 });
+    // 边界另一侧：0.4 会被 Math.max(1, round(0.4)) 夹成 1，属于「合法但要夹」的另一档。
+    expect(
+      reconcileNodeWithDefinition(node, irregularTemplate({ size: { width: 0.4, height: 45.6 } })).size
+    ).toEqual({ width: 1, height: 46 });
+  });
+
+  test("默认端子锚点表里没有该序号时退化到原点（L149）", async () => {
+    // 这一条是全文件唯一必须改模块状态才能走到的分支，理由写在这里免得下一个人重新推一遍：
+    // syncDefinitionTerminals 的 count 先被 Math.max(0, Math.min(8, …)) 夹住，createTerminals
+    // 又自己夹一次到 8，于是 map 的下标最大是 7；而 DEFAULT_CUSTOM_DEVICE_TERMINAL_ANCHORS
+    // 有 8 项 —— 原样跑时下标永远落在表内，`?? { x: 0, y: 0 }` 是防御性兜底，正常输入碰不到。
+    // 要证明这道兜底还活着，只能把锚点表裁短；用 vi.doMock + 动态 import 造一个「表只有 3 项」
+    // 的模块实例，测完立刻 unmount + resetModules，不污染同文件其它用例的绑定。
+    vi.resetModules();
+    vi.doMock("./customDeviceUtils", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("./customDeviceUtils")>();
+      return {
+        ...actual,
+        DEFAULT_CUSTOM_DEVICE_TERMINAL_ANCHORS: actual.DEFAULT_CUSTOM_DEVICE_TERMINAL_ANCHORS.slice(0, 3)
+      };
+    });
+    const sync = await import("./definitionInstanceSync");
+    vi.doUnmock("./customDeviceUtils");
+    vi.resetModules();
+
+    const source = createDefaultNode("ac-load", { x: 0, y: 0 });
+    const node: ModelNode = { ...source, terminals: [] };
+    const template = irregularTemplate({
+      terminalCount: 8,
+      terminalAnchors: undefined,
+      terminalLabels: undefined
+    });
+
+    const reconciled = sync.reconcileNodeWithDefinition(node, template);
+
+    expect(reconciled.terminals).toHaveLength(8);
+    // 表内：仍走默认锚点表的第 3 项，说明不是「整体都退化成原点」。
+    expect(reconciled.terminals[2].anchor).toEqual({ x: 0, y: -0.5 });
+    // 表外：退化到原点。
+    expect(reconciled.terminals[3].anchor).toEqual({ x: 0, y: 0 });
+    expect(reconciled.terminals[7].anchor).toEqual({ x: 0, y: 0 });
+  });
+
+  test("端子端型不在端型库表里时标签回落成端型原文（L153）", () => {
+    const node = createDefaultNode("ac-load", { x: 0, y: 0 });
+    const template = irregularTemplate({
+      terminalCount: 1,
+      terminalTypes: ["totally-unknown" as never],
+      terminalLabels: undefined
+    });
+
+    const reconciled = reconcileNodeWithDefinition(node, template);
+
+    // 用一个库里没有的端型。若把 ?? type 删掉，这里会变成 "undefined端1"。
+    expect(reconciled.terminals[0].label).toBe("totally-unknown端1");
+    // 对照：库内的端型走中文名 + 「端N」后缀，确认不是整条标签逻辑都退化了。
+    const known = reconcileNodeWithDefinition(
+      node,
+      irregularTemplate({ terminalCount: 2, terminalTypes: ["h2", "heat"], terminalLabels: undefined })
+    );
+    expect(known.terminals.map((item) => item.label)).toEqual(["氢能设备端1", "热能设备端2"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 定性记录：L77 / L84 / L206 这三处分支在本仓的输入面上**不可达**，不是漏测。
+// 下面这条用例把「不可达」的前提钉住 —— 若哪天 model.ts 的归一化放开了，
+// 这条会先红，从而把「死代码」变成「活的 bug」。
+//
+//   · L77 `String(definition.enName ?? "")`：进 materializeDefinitionDefaults 的 definitions
+//     一定出自 resolveEffectiveTemplateParameterDefinitions，两条出口都经过
+//     model.ts 的 normalizeTemplateDefinition（enName 为空白即 return null 并被 filter 掉）。
+//     实测：喂一条 enName 缺省的定义进去，解析结果里只剩 parent，那条定义根本没活到 L77。
+//   · L84 `String(definition.typicalValue ?? "")`：同一处归一化把 typicalValue 定成
+//     `String(definition.typicalValue ?? "")`，出来必是字符串，右臂永远不求值。
+//     实测：喂 typicalValue: null 进去，解析结果是 ""，写进 params 的也是 ""。
+//   · L206 `definitions ? … : node`：resolveEffectiveTemplateParameterDefinitions 的返回类型
+//     是 DeviceParameterDefinition[]（非可空），两个 return 都是数组字面量，falsy 分支走不到。
+//
+// 因此对 L77 / L84 做「删掉 ?? 右臂」的变异**在全域等价**（入参恒非 nullish），
+// 恒绿是正确结果，别再去补断言硬凑。
+// ---------------------------------------------------------------------------
+describe("L77 / L84 两处 ?? 兜底在当前归一化下不可达（定性锚点）", () => {
+  test("enName 缺省的定义在解析阶段就被丢弃，typicalValue 为 null 被归一成空串", () => {
+    const template: DeviceTemplate = {
+      kind: "ac-load",
+      label: "退化定义模板",
+      categoryLibrary: "交流设备",
+      size: { width: 90, height: 60 },
+      params: {},
+      terminalType: "ac",
+      terminalCount: 1,
+      parameterDefinitions: [
+        { cnName: "无名字段", valueType: "string", typicalValue: "7.5" } as unknown as DeviceParameterDefinition,
+        { cnName: "空典型值", enName: "probe_null_typical", valueType: "string", typicalValue: null } as unknown as DeviceParameterDefinition,
+        { cnName: "正常字段", enName: "probe_ok", valueType: "string", typicalValue: "7.25" }
+      ],
+      parameterDefinitionsComplete: true
+    };
+
+    const resolved = resolveEffectiveTemplateParameterDefinitions(template, [template]);
+
+    // 无名那条根本没进生效定义表。
+    expect(resolved.some((definition) => definition.enName === "")).toBe(false);
+    expect(resolved.map((definition) => definition.enName)).toContain("probe_ok");
+    // typicalValue 为 null 的那条，归一化后已是字符串 ""，于是 L84 的 ?? 右臂不会被求值。
+    expect(
+      resolved.find((definition) => definition.enName === "probe_null_typical")?.typicalValue
+    ).toBe("");
+
+    const source = createDefaultNode("ac-load", { x: 0, y: 0 });
+    const params = { ...source.params };
+    delete params[CUSTOM_PARAM_DEFINITIONS_KEY];
+    delete params[CUSTOM_DEVICE_TEMPLATE_KEY];
+    const reconciled = reconcileNodeWithEffectiveTemplateDefinition(
+      { ...source, params },
+      template,
+      [template]
+    );
+
+    // 兄弟字段照常物化 —— 排除「压根没进内置分支」。
+    expect(reconciled.params.probe_ok).toBe("7.25");
+    expect(reconciled.params.probe_null_typical).toBe("");
+    // L77 的右臂若被求值（enName 缺省那条活下来），会凭空多出一个键名 "undefined"。
+    expect(Object.prototype.hasOwnProperty.call(reconciled.params, "undefined")).toBe(false);
   });
 });

@@ -604,6 +604,13 @@ describe("canvas viewport bounds changes", () => {
 // 注意两个名字极像的判定不是一回事：
 //   canvasResizeEdgeAnchorsStart（导出）= 这条边在**起始侧**，偏移要补偿；
 //   canvasResizeEdgeAnchorsAxis（内部）= 这条边**影响**这个轴。
+//
+// 下面两条用例把 8 条边 × 2 个轴 = 16 个 (edge, axis) 组合**逐个**钉满，
+// 所以「corner 两个轴都不锚定」不再单列一条：corner 已经同时出现在上面两条
+// 的 false 列表里，单独再断一次是可证恒绿的 —— predicate 是 (edge, axis)
+// 的函数，16 个组合全被断住之后，任何改动 predicate 的变异都会先让上面两条
+// 转红，本条只能跟着一起转红，不提供任何额外判别力（§6.13 的「另一个来源同值」）。
+// 「corner 是右下角、起点不动」这条意图记在上面的 false 列表里即可。
 describe("canvasResizeEdgeAnchorsStart：哪些边锚定在起始侧", () => {
   test("★ x 轴：left / top-left / bottom-left 锚定，其余不锚定", () => {
     for (const edge of ["left", "top-left", "bottom-left"] as CanvasResizeEdge[]) {
@@ -621,11 +628,6 @@ describe("canvasResizeEdgeAnchorsStart：哪些边锚定在起始侧", () => {
     for (const edge of ["bottom", "left", "right", "corner", "bottom-left"] as CanvasResizeEdge[]) {
       expect(canvasResizeEdgeAnchorsStart(edge, "y"), edge).toBe(false);
     }
-  });
-
-  test("corner 两个轴都不锚定（它是右下角，起点不动）", () => {
-    expect(canvasResizeEdgeAnchorsStart("corner", "x")).toBe(false);
-    expect(canvasResizeEdgeAnchorsStart("corner", "y")).toBe(false);
   });
 });
 
@@ -667,6 +669,302 @@ describe("canvasResizeAnchoredDisplayOffset：锚定边要反向补偿", () => {
 
   test("结果一律取整", () => {
     expect(canvasResizeAnchoredDisplayOffset(0, { ...drag, startDisplayWidth: 800, startDisplayOffsetX: 40.5 }, "x", 1000.4)).toBe(-160);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 视口计算的「兜底臂」守卫。
+//
+// 这一簇全部是**同一形状**的分支：先判一个前置条件（尺寸 > 0 / 轴受影响 /
+// 有滚动范围），条件不成立时走一条不走算式的兜底臂。它们的共同陷阱是
+// **兜底臂常常与「走了算式但算式自己也退回同一个值」产出相同结果** ——
+// 例如 viewBox 那条：`maxScrollTop <= 1` 时 syncVertical 为假走兜底，
+// 而 syncVertical 为真时 scrollPositionToViewBoxStart 内部同样因
+// `maxScroll > 1` 不成立而返回 fallbackStart（就是 currentViewBox.y）。
+// 所以下面每条断言都刻意挑一个「两条臂结果不同」的输入：
+//   · clampCanvasNoScrollOffset：兜底返回 0，正常臂返回传入的 offset（用 137/-73）
+//   · canvasResizePreviewRectForDraft：兜底 scale=1，正常臂 scale=0.5（用 500/1000）
+//   · canvasVisualRectScrollTarget：兜底原样透传 currentScroll，
+//     正常臂要 clamp —— 于是 currentScroll 必须**越界**（-50 / 1200），
+//     否则 clamp(0 偏移) 与透传同值，断言恒绿（已实测：maxScroll 内取值时
+//     两条臂都等于 currentScrollLeft，删掉条件也不红）
+//   · canvasViewBoxFromFrameScrollPosition：兜底保留 currentViewBox.y，
+//     同步臂算出 500 / 480，与保留值 640 明确不同
+// ---------------------------------------------------------------------------
+
+// 视口或画布尺寸为 0 时不留任何偏移：滚动位置会指向不存在的区域。
+describe("clampCanvasNoScrollOffset：视口或画布尺寸为 0 时偏移归零", () => {
+  test("★ viewportSize 恰好为 0 → 偏移归零（不是原值透传）", () => {
+    // 对照：同样 137 偏移、尺寸正常时返回 137，所以这里的 0 只能来自守卫
+    expect(clampCanvasNoScrollOffset(137, 1800, 0, 270, true)).toBe(0);
+    expect(clampCanvasNoScrollOffset(137, 1800, 800, 270, true)).toBe(137);
+  });
+
+  test("★ displaySize 恰好为 0 → 偏移归零（守卫的第二个操作数也要断）", () => {
+    // viewportSize 保持正常（800 > 0），只有 displaySize 为 0：
+    // 若 || 的右臂不存在，这里会返回 -73 而不是 0
+    expect(clampCanvasNoScrollOffset(-73, 0, 800, 270, true)).toBe(0);
+    expect(clampCanvasNoScrollOffset(-73, 1800, 800, 270, true)).toBe(-73);
+  });
+
+  test("负尺寸同样归零（判据是 <= 0 而非 === 0）", () => {
+    expect(clampCanvasNoScrollOffset(50, 1800, -1, 270, false)).toBe(0);
+    expect(clampCanvasNoScrollOffset(50, -640, 800, 270, false)).toBe(0);
+    expect(clampCanvasNoScrollOffset(50, -640, -1, 270, false)).toBe(0);
+  });
+
+  test("baseOffset 与 scrollActive 不参与判定（当前实现不读它们，改它们也换不出分支）", () => {
+    // 这两个形参留着是为了签名兼容；守卫只看前三个尺寸。
+    // 断这一点是为了防止后来者误以为「scrollActive=false 时会走另一条臂」。
+    //
+    // ⚠ offset **必须用非 0 值**：兜底臂返回的就是 0，用 0 当输入时「走守卫」与
+    //   「走正常臂 return offset」产出同一个数，本用例对 L212 恒绿（§6.13）。
+    //   137 与两处兜底值（0 / 270 / 999）都不同，删掉守卫后立刻露出来。
+    expect(clampCanvasNoScrollOffset(137, 1800, 800, 270, true)).toBe(137);
+    expect(clampCanvasNoScrollOffset(137, 1800, 800, 270, false)).toBe(137);
+    // 换掉 baseOffset 也不变 → 返回的确实是 offset，不是 baseOffset
+    expect(clampCanvasNoScrollOffset(137, 1800, 800, 999, true)).toBe(137);
+    expect(clampCanvasNoScrollOffset(137, 1800, 800, 999, false)).toBe(137);
+  });
+});
+
+// 拖画布边缘改尺寸时的预览矩形：起始画布尺寸为 0 时缩放系数兜底为 1，
+// 否则 startDisplayWidth / 0 = Infinity（startWidth 为负时更会算出负宽度）。
+describe("canvasResizePreviewRectForDraft：起始尺寸非正时缩放兜底为 1", () => {
+  const zeroBase = {
+    edge: "right" as CanvasResizeEdge,
+    startWidth: 0,
+    startHeight: 0,
+    startDisplayWidth: 500,
+    startDisplayHeight: 400,
+    startDisplayOffsetX: 120,
+    startDisplayOffsetY: 80
+  };
+
+  test("★ startWidth 与 startHeight 都为 0：预览矩形就是草稿尺寸本身", () => {
+    // 兜底 scaleX = scaleY = 1 → 300×240；right 边不锚定 → left/top 沿用起始偏移
+    expect(canvasResizePreviewRectForDraft(zeroBase, { width: 300, height: 240 })).toEqual({
+      left: 120,
+      top: 80,
+      width: 300,
+      height: 240
+    });
+  });
+
+  test("★ 只把 startWidth 置 0：x 走兜底 1，y 仍按真实比例 0.5 缩放", () => {
+    // 两个轴各断一次：只覆盖「两个都为 0」的话，
+    // 若 L235 的守卫被删（500/0 = Infinity），第二个用例仍会走 startHeight 的真臂。
+    const widthZero = canvasResizePreviewRectForDraft(
+      { ...zeroBase, startHeight: 800 },
+      { width: 300, height: 240 }
+    );
+    expect(widthZero.width).toBe(300); // 兜底 scaleX = 1
+    expect(widthZero.height).toBe(120); // 真臂 400/800 = 0.5
+
+    const heightZero = canvasResizePreviewRectForDraft(
+      { ...zeroBase, startWidth: 1000 },
+      { width: 300, height: 240 }
+    );
+    expect(heightZero.width).toBe(150); // 真臂 500/1000 = 0.5
+    expect(heightZero.height).toBe(240); // 兜底 scaleY = 1
+  });
+
+  test("负的起始尺寸也走兜底（判据是 > 0，负值除出来的负缩放必须被挡住）", () => {
+    expect(
+      canvasResizePreviewRectForDraft(
+        { ...zeroBase, startWidth: -1000, startHeight: -800 },
+        { width: 300, height: 240 }
+      )
+    ).toEqual({ left: 120, top: 80, width: 300, height: 240 });
+  });
+
+  test("对照：起始尺寸正常时按 显示尺寸/画布尺寸 缩放（证明兜底不是恒等映射）", () => {
+    expect(
+      canvasResizePreviewRectForDraft(
+        { ...zeroBase, startWidth: 1000, startHeight: 800 },
+        { width: 300, height: 240 }
+      )
+    ).toEqual({ left: 120, top: 80, width: 150, height: 120 });
+  });
+});
+
+// 画布自动扩展要补偿视觉矩形以保持视口不动，但只有真正被改动的那个轴才补偿：
+// 未受影响的轴必须**原样保留**当前滚动位置，且不被 clampNumber 改写。
+// ⚠ 越界的 currentScroll 是这条断言的关键（见上方簇注释）。
+describe("canvasVisualRectScrollTarget：未受影响的轴原样保留滚动位置", () => {
+  const rects = {
+    desiredRect: { left: 18, top: 111, width: 1364, height: 705 },
+    currentRect: { left: 467, top: 79, width: 1850, height: 769 }
+  };
+
+  test("★ affectsX=false：deltaX 归零，left 保留越界的 currentScrollLeft", () => {
+    const target = canvasVisualRectScrollTarget({
+      ...rects,
+      currentScrollLeft: -50, // 越界：走 clamp 会被拉成 0
+      currentScrollTop: 250,
+      maxScrollLeft: 900,
+      maxScrollTop: 900,
+      affectsX: false,
+      affectsY: true
+    });
+    expect(target.deltaX).toBe(0);
+    expect(target.left).toBe(-50);
+    // 另一轴照常同步，作为对照（deltaY = 79 - 111 = -32 → 250 - 32）
+    expect(target.deltaY).toBe(-32);
+    expect(target.top).toBe(218);
+    expect(target.affectsX).toBe(false);
+    expect(target.affectsY).toBe(true);
+
+    // 同上：218 落在 [0, 900] 内，clamp 没生效。补 L308 的越界维度（上下界各一）。
+    //   · 上界 250 - 32 = 218 > 200 → 200
+    //   · 下界  10 - 32 = -22 < 0    → 0
+    expect(
+      canvasVisualRectScrollTarget({
+        ...rects,
+        currentScrollLeft: 250,
+        currentScrollTop: 250,
+        maxScrollLeft: 900,
+        maxScrollTop: 200,
+        affectsX: false,
+        affectsY: true
+      }).top
+    ).toBe(200);
+    expect(
+      canvasVisualRectScrollTarget({
+        ...rects,
+        currentScrollLeft: 250,
+        currentScrollTop: 10,
+        maxScrollLeft: 900,
+        maxScrollTop: 800,
+        affectsX: false,
+        affectsY: true
+      }).top
+    ).toBe(0);
+  });
+
+  test("★ affectsY=false：deltaY 归零，top 保留越界的 currentScrollTop", () => {
+    const target = canvasVisualRectScrollTarget({
+      ...rects,
+      currentScrollLeft: 250,
+      currentScrollTop: 1200, // 越界：走 clamp 会被压成 800
+      maxScrollLeft: 900,
+      maxScrollTop: 800,
+      affectsX: true,
+      affectsY: false
+    });
+    expect(target.deltaY).toBe(0);
+    expect(target.top).toBe(1200);
+    expect(target.deltaX).toBe(449); // 467 - 18
+    expect(target.left).toBe(699); // 250 + 449
+
+    // ⚠ 上面那条 699 落在 [0, 900] 内，clampNumber 根本没生效 —— 整个文件里
+    // 原本没有任何一条断言能让 L307/L308 的 clamp **真的夹一次**。
+    // 下面是补上的越界维度：上界与下界各一条。
+    //   · 上界 250 + 449 = 699 > 400 → 400
+    //   · 下界 250 - 433 = -183 < 0  → 0
+    // 只断一端不够：变异成 Math.min / Math.max 单侧钳位仍会照样过。
+    expect(
+      canvasVisualRectScrollTarget({
+        ...rects,
+        currentScrollLeft: 250,
+        currentScrollTop: 1200,
+        maxScrollLeft: 400,
+        maxScrollTop: 800,
+        affectsX: true,
+        affectsY: false
+      }).left
+    ).toBe(400);
+    expect(
+      canvasVisualRectScrollTarget({
+        ...rects,
+        desiredRect: { left: 900, top: 111, width: 1364, height: 705 },
+        currentScrollLeft: 250,
+        currentScrollTop: 1200,
+        maxScrollLeft: 900,
+        maxScrollTop: 800,
+        affectsX: true,
+        affectsY: false
+      }).left
+    ).toBe(0);
+  });
+
+  test("两个轴都不受影响：滚动位置逐字不动（连 clamp 都不发生）", () => {
+    expect(
+      canvasVisualRectScrollTarget({
+        ...rects,
+        currentScrollLeft: -50,
+        currentScrollTop: 1200,
+        maxScrollLeft: 900,
+        maxScrollTop: 800,
+        affectsX: false,
+        affectsY: false
+      })
+    ).toEqual({ left: -50, top: 1200, deltaX: 0, deltaY: 0, affectsX: false, affectsY: false });
+  });
+});
+
+// 纵向没有滚动范围时，滚动位置不承载任何信息，必须原样保留 currentViewBox.y。
+// 注意「阈值恰好为 1」是边界：判据是 `maxScrollTop > 1`。
+describe("canvasViewBoxFromFrameScrollPosition：纵向无滚动范围时保留当前 y", () => {
+  const base = {
+    currentViewBox: { x: 120, y: 640, width: 1000, height: 800 },
+    canvasBounds: { width: 2000, height: 1600 },
+    scrollLeft: 300,
+    scrollTop: 360,
+    maxScrollLeft: 600
+  };
+
+  test("★ maxScrollTop=0 且纵向滚动条未激活：y 保持 640，不被 scrollTop 带偏", () => {
+    const viewBox = canvasViewBoxFromFrameScrollPosition({
+      ...base,
+      maxScrollTop: 0,
+      horizontalScrollbarsActive: true,
+      verticalScrollbarsActive: false
+    });
+    expect(viewBox.y).toBe(640);
+    // 横向对照：maxViewStart = 2000 - 1000 = 1000 → 300/600*1000 = 500
+    expect(viewBox.x).toBe(500);
+  });
+
+  test("★ maxScrollTop 恰好为 1（阈值边界）：同样视为没有纵向滚动范围", () => {
+    const viewBox = canvasViewBoxFromFrameScrollPosition({
+      ...base,
+      maxScrollTop: 1,
+      horizontalScrollbarsActive: true,
+      verticalScrollbarsActive: false
+    });
+    expect(viewBox.y).toBe(640);
+    // ⚠ 本条**不能**钉住 `> 1` 与 `>= 1` 的差别，这是可证的：L363 判据改成
+    //   `>= 1` 后 syncVertical 为真，但 scrollPositionToViewBoxStart 内部第一句
+    //   同样是 `maxScroll > 1`（1 > 1 为假）→ 退回 fallbackStart = currentViewBox.y
+    //   = 640，与兜底臂逐字相同。两臂同值，所以阈值差一个等号全域不可观测。
+    //   本条的作用是覆盖 L371 兜底臂在「恰好等于阈值」这一档的输入。
+  });
+
+  test("越过阈值（maxScrollTop=600）：y 改由滚动位置算出，与保留值明确不同", () => {
+    const viewBox = canvasViewBoxFromFrameScrollPosition({
+      ...base,
+      maxScrollTop: 600,
+      horizontalScrollbarsActive: true,
+      verticalScrollbarsActive: false
+    });
+    // maxViewStart = 1600 - 800 = 800 → 360/600*800 = 480 ≠ 640
+    expect(viewBox.y).toBe(480);
+    expect(viewBox.x).toBe(500);
+  });
+
+  test("纵向滚动条已激活 + maxScrollTop 越过阈值：同样走同步臂（|| 的第一个来源）", () => {
+    // 与上一条的差别只有 verticalScrollbarsActive —— 两条一起才把
+    // `verticalScrollbarsActive || maxScrollTop > 1` 的**两个**来源各自钉住。
+    // 标题原写「maxScrollTop=0」是错的：这里的输入是 600（0 那档会让同步臂与
+    // 兜底臂同值、什么都测不出，见上方簇注释）。
+    const viewBox = canvasViewBoxFromFrameScrollPosition({
+      ...base,
+      maxScrollTop: 600,
+      horizontalScrollbarsActive: false,
+      verticalScrollbarsActive: true
+    });
+    expect(viewBox.y).toBe(480);
   });
 });
 

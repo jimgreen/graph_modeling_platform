@@ -625,3 +625,300 @@ describe("serializeTab tree 分组 nodeIds", () => {
     expect(groupNode?.children).toEqual([]);
   });
 });
+
+// ============================================================================
+// 补测：safeStr / safeNum / safeBool 的兜底分支、errInternal 的非 Error 分支、
+// 以及 schemePath / nodes / edges / selectedNodeIds / canvasBounds / 模型名称
+// 各处 ?? 与 || 的兜底链（原文件未覆盖这些「输入缺失」维度）。
+// ============================================================================
+
+/** 取 serializeTab 结果里指定 key 的行值（model/graph tab 的 rows 都按 key 唯一） */
+const rowValue = (res: any, key: string): string => {
+  const row = res?.data?.rows?.find((r: any) => r.key === key);
+  if (row === undefined) throw new Error(`rows 中找不到 key=${key}`);
+  return row.value;
+};
+
+describe("safeStr 兜底分支（非字符串 → 空串）", () => {
+  test("activeModelName 为非字符串值时序列化为空串，而不是原值透传", () => {
+    // 取值刻意避开 String(v) 会与 "" 巧合相等的输入：数字 123 → "123"、
+    // 对象 → "[object Object]"、数组 → "x"（String(["x"]) === "x"）。
+    // 去掉 typeof 守卫（回落成 String(v)/v）时这三条断言全部转红。
+    for (const value of [123, { a: 1 }, ["x"], true]) {
+      const res = serializeModel(mockScope({ activeModelName: value }));
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.data.modelName, `activeModelName=${JSON.stringify(value)}`).toBe("");
+    }
+  });
+
+  test("undefined 也走兜底，且与「合法字符串原样透传」结果不同", () => {
+    // 双边断言：兜底值为 ""，真分支值非空 —— 两个默认值必须不同才有鉴别力。
+    const undef = serializeModel(mockScope({ activeModelName: undefined }));
+    const real = serializeModel(mockScope({ activeModelName: "保留这个名字" }));
+    expect(undef.ok && real.ok).toBe(true);
+    if (!undef.ok || !real.ok) return;
+    expect(undef.data.modelName).toBe("");
+    expect(real.data.modelName).toBe("保留这个名字");
+    expect(undef.data.modelName).not.toBe(real.data.modelName);
+  });
+
+  test("空串是真分支的合法输入，不应与 undefined 的兜底路径混淆", () => {
+    // 空串走 typeof 分支原样返回，结果同样是 ""，因此这条断言只能证明
+    // 「空串不被特殊处理成 fallback 之外的值」，不能区分两条分支。记录在此，
+    // 避免后人误以为它覆盖了兜底分支。
+    const res = serializeModel(mockScope({ activeModelName: "" }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.modelName).toBe("");
+  });
+});
+
+describe("safeNum 兜底分支（非有限数 → fallback）", () => {
+  // 两个调用点的 fallback 不同：position.x/size.width 是 0，scale/scaleX/scaleY 是 1。
+  // 因此「fallback 生效」在 x 行断言 "0"、在 scale 行断言 "1"，
+  // 且下面另有一条 finite 真分支断言把 scale 打成 "1.5" —— 若 fallback 恒为 0，
+  // scale 断言与真分支断言会同时指向不同值，双边断言才有鉴别力。
+  test("字符串 / NaN / Infinity 等都落到各自调用点的 fallback，而不是被透传", () => {
+    for (const bad of ["2", NaN, Infinity, -Infinity, null, undefined, {}]) {
+      const res = serializeTab(
+        mockScope({ inspectorSelectedNode: mockNode({ position: { x: bad, y: bad }, scale: bad, rotation: bad }) }),
+        "graph"
+      );
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const label = `bad=${String(bad)}`;
+      expect(rowValue(res, "x"), label).toBe("0");          // fallback 0
+      expect(rowValue(res, "y"), label).toBe("0");          // fallback 0
+      expect(rowValue(res, "rotation"), label).toBe("0°");  // fallback 0
+      expect(rowValue(res, "scale"), label).toBe("1");      // fallback 1，与上面 0 不同
+      expect(rowValue(res, "scaleX"), label).toBe("1");
+      expect(rowValue(res, "scaleY"), label).toBe("1");
+    }
+  });
+
+  test("有限数原样透传（证明兜底不是恒触发）", () => {
+    const res = serializeTab(
+      mockScope({ inspectorSelectedNode: mockNode({ position: { x: 12.5, y: -3 }, scale: 1.5, rotation: 90 }) }),
+      "graph"
+    );
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(rowValue(res, "x")).toBe("12.5");
+    expect(rowValue(res, "y")).toBe("-3");
+    expect(rowValue(res, "rotation")).toBe("90°");
+    expect(rowValue(res, "scale")).toBe("1.5");
+  });
+
+  test("序列化节点里的默认 scale 为 1（fallback 1，而非 0）", () => {
+    const res = serializeSelection(mockScope({ inspectorSelectedNode: mockNode({ scale: undefined, scaleX: undefined, scaleY: undefined }) }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const node = res.data.selectedNode!;
+    expect(node.scale).toBe(1);
+    expect(node.scaleX).toBe(1);
+    expect(node.scaleY).toBe(1);
+    expect(node.position).toEqual({ x: 100, y: 200 });
+    // 合法值仍透传，与 fallback 1 不同
+    const real = serializeSelection(mockScope({ inspectorSelectedNode: mockNode({ scale: 2.5, scaleX: 3, scaleY: 4 }) }));
+    if (!real.ok) return;
+    expect(real.data.selectedNode!.scale).toBe(2.5);
+    expect(real.data.selectedNode!.scale).not.toBe(node.scale);
+  });
+});
+
+describe("safeBool 兜底分支（非布尔 → fallback false）", () => {
+  test("字符串 / 数字 / 对象等非布尔值都判为否，而布尔 true 判为是", () => {
+    for (const bad of ["true", 1, 0, "", null, undefined, {}, []]) {
+      const res = serializeTab(mockScope({ allowAutoExpandCanvas: bad }), "model");
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(rowValue(res, "allowAutoExpandCanvas"), `bad=${JSON.stringify(bad)}`).toBe("否");
+    }
+    const yes = serializeTab(mockScope({ allowAutoExpandCanvas: true }), "model");
+    expect(yes.ok).toBe(true);
+    if (!yes.ok) return;
+    expect(rowValue(yes, "allowAutoExpandCanvas")).toBe("是");
+    // 两个默认值必须不同，否则双边断言没有鉴别力（Boolean("true") === true 会恒绿）
+    expect(rowValue(yes, "allowAutoExpandCanvas")).not.toBe("否");
+  });
+});
+
+describe("errInternal 接收非 Error 抛出值", () => {
+  // wrap 的 catch 把任意抛出值交给 errInternal，`e instanceof Error ? e.message : String(e)`
+  // 的 else 分支只有非 Error 才走得到。取值刻意满足 String(e) 与 e?.message 不同，
+  // 于是「把 String(e) 换成 e?.message」的变异会让 message 变 undefined 而转红。
+  test("抛出非 Error 值时 message 走 String(e)，不是 e.message", () => {
+    for (const thrown of [42, { code: 1 }, null, undefined, "boom", Symbol("s")]) {
+      const res = serializeModel(new Proxy(mockScope(), {
+        get() { throw thrown; }
+      }));
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.error.code, `thrown=${String(thrown)}`).toBe("internal");
+      expect(res.error.message, `thrown=${String(thrown)}`).toBe(String(thrown));
+      expect(res.error.message).not.toBe(undefined);
+    }
+  });
+
+  test("真正的 Error 仍只取 .message（而非带 Error 前缀的全量字符串化）", () => {
+    const res = serializeModel(new Proxy(mockScope(), {
+      get() { throw new Error("boom"); }
+    }));
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("internal");
+    expect(res.error.message).toBe("boom");
+    // String(e) 会是 "Error: boom"，两者必须不同，否则 instanceof 分支可删
+    expect(res.error.message).not.toBe(String(new Error("boom")));
+  });
+});
+
+describe("serializeModel schemePath 兜底链", () => {
+  test("pointer 缺失或 schemePath 为 null 时回落到 activeSchemeRecord.name", () => {
+    for (const pointer of [undefined, null, {}]) {
+      const res = serializeModel(mockScope({ currentActiveProjectPointer: pointer }));
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.data.schemePath, `pointer=${JSON.stringify(pointer)}`).toBe("测试方案");
+    }
+    // schemePath 显式 null 也走 ?? 回落
+    const nullPath = serializeModel(mockScope({ currentActiveProjectPointer: { schemePath: null } }));
+    expect(nullPath.ok).toBe(true);
+    if (!nullPath.ok) return;
+    expect(nullPath.data.schemePath).toBe("测试方案");
+  });
+
+  test("pointer 与 schemeRecord 都缺失时落到空串", () => {
+    const res = serializeModel(mockScope({ currentActiveProjectPointer: undefined, activeSchemeRecord: undefined }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.schemePath).toBe("");
+  });
+
+  test("pointer.schemePath 存在时优先于 schemeRecord.name（证明回落不是恒发生）", () => {
+    const res = serializeModel(mockScope({
+      currentActiveProjectPointer: { schemePath: "指针路径" },
+      activeSchemeRecord: { name: "记录方案名" }
+    }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.schemePath).toBe("指针路径");
+    expect(res.data.schemePath).not.toBe("记录方案名");
+  });
+});
+
+describe("serializeDevices 的 nodes / edges ?? [] 兜底", () => {
+  test("nodes / edges 为 null 或 undefined 时返回空数组而不是 null", () => {
+    for (const missing of [null, undefined]) {
+      const res = serializeDevices(mockScope({ nodes: missing, edges: missing }));
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.data.nodes, `missing=${String(missing)}`).toEqual([]);
+      expect(res.data.edges, `missing=${String(missing)}`).toEqual([]);
+      // 断言落在真正会被 `?? null` 变异改动的对象上（不是只断 ok）
+      expect(res.data.nodes).not.toBeNull();
+      expect(res.data.edges).not.toBeNull();
+    }
+  });
+
+  test("存在时原数组原样返回（证明兜底只在缺失时触发）", () => {
+    const nodes = [mockNode()];
+    const edges = [{ id: "edge-1" }];
+    const res = serializeDevices(mockScope({ nodes, edges }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.nodes).toBe(nodes);
+    expect(res.data.edges).toBe(edges);
+  });
+});
+
+describe("serializeSelection 的 selectedNodeIds 非数组兜底", () => {
+  test("非数组的 selectedNodeIds 归一为空数组，而不是原样透传", () => {
+    // 去掉 Array.isArray 守卫后，"node-1" / {0:"node-1"} 会原样进 data.selectedNodeIds。
+    for (const value of ["node-1", 0, { 0: "node-1" }, null, undefined, true]) {
+      const res = serializeSelection(mockScope({ selectedNodeIds: value }));
+      expect(res.ok, `selectedNodeIds=${JSON.stringify(value)}`).toBe(true);
+      if (!res.ok) return;
+      expect(res.data.selectedNodeIds, `selectedNodeIds=${JSON.stringify(value)}`).toEqual([]);
+      expect(Array.isArray(res.data.selectedNodeIds)).toBe(true);
+    }
+  });
+
+  test("数组输入原样透传，与非数组兜底结果不同", () => {
+    const res = serializeSelection(mockScope({ selectedNodeIds: ["node-1", "node-2"] }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.selectedNodeIds).toEqual(["node-1", "node-2"]);
+    expect(res.data.selectedNodeIds).not.toEqual([]);
+  });
+});
+
+describe("buildModelRows canvasBounds 缺失兜底", () => {
+  test("canvasBounds 为 null / undefined 时宽高落 0，不沿用任何默认画布尺寸", () => {
+    for (const missing of [null, undefined]) {
+      const res = serializeTab(mockScope({ canvasBounds: missing }), "model");
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(rowValue(res, "canvasWidth"), `missing=${String(missing)}`).toBe("0");
+      expect(rowValue(res, "canvasHeight"), `missing=${String(missing)}`).toBe("0");
+    }
+  });
+
+  test("canvasBounds 为 falsy 标量时不抛且宽高同样落 0", () => {
+    // 等价变异记录：`?? {}` 换成 `|| {}` 在本文件的输入集上不可观测 ——
+    // canvasBounds 为 0 / "" / false 时，保留标量再取 .width 与换成 {} 取 .width
+    // 都得到 undefined → safeNum 兜底 0 → "0"。故这里只锁「不抛 + 落 0」，
+    // 不声称覆盖了 ?? 与 || 的区分。
+    for (const scalar of [0, "", false]) {
+      const res = serializeTab(mockScope({ canvasBounds: scalar }), "model");
+      expect(res.ok, `canvasBounds=${JSON.stringify(scalar)}`).toBe(true);
+      if (!res.ok) return;
+      expect(rowValue(res, "canvasWidth")).toBe("0");
+      expect(rowValue(res, "canvasHeight")).toBe("0");
+    }
+  });
+});
+
+describe("buildModelRows 模型名称的 || 回落", () => {
+  test("记录名为空值时回落到 activeModelName", () => {
+    // `||` 而非 `??` 的鉴别输入就是空串：换成 `??` 后空串会原样透传 → 转红。
+    for (const name of ["", null, undefined, 0, false]) {
+      const res = serializeTab(
+        mockScope({
+          currentModelRecord: { id: "proj-1", name, updatedAt: "2026-06-22T00:00:00.000Z" },
+          activeModelName: "活动模型名"
+        }),
+        "model"
+      );
+      expect(res.ok, `name=${JSON.stringify(name)}`).toBe(true);
+      if (!res.ok) return;
+      expect(rowValue(res, "name"), `name=${JSON.stringify(name)}`).toBe("活动模型名");
+    }
+  });
+
+  test("记录整体缺失时同样回落，且更新时间行落空串", () => {
+    const res = serializeTab(
+      mockScope({ currentModelRecord: undefined, activeModelName: "活动模型名" }),
+      "model"
+    );
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(rowValue(res, "name")).toBe("活动模型名");
+    expect(rowValue(res, "updatedAt")).toBe("");
+  });
+
+  test("记录名非空时优先于 activeModelName（证明回落不是恒发生）", () => {
+    const res = serializeTab(
+      mockScope({
+        currentModelRecord: { id: "proj-1", name: "记录模型名", updatedAt: "2026-06-22T00:00:00.000Z" },
+        activeModelName: "活动模型名"
+      }),
+      "model"
+    );
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(rowValue(res, "name")).toBe("记录模型名");
+    expect(rowValue(res, "name")).not.toBe("活动模型名");
+  });
+});

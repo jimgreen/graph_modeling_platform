@@ -411,3 +411,168 @@ describe("InlineEditableValue 浏览态", () => {
     expect(onCommit).not.toHaveBeenCalled();
   });
 });
+
+/* ---------- 受控值归一：value ?? "" ---------- */
+
+/**
+ * `const normalizedValue = String(value ?? "")` 的两条臂。
+ *
+ * 为什么值得单独测：`value` 的静态类型是 `string | number`，两个都不是 nullish，
+ * 所以右臂在**类型正确的调用下**永远不求值 —— 但值来自项目 JSON / 旧版本数据，
+ * 属性表那一行渲染时可能真的缺字段。少了 `?? ""`，缺字段的行会把字面量
+ * `undefined` 当成属性值显示出来（而不是留空），类型检查完全看不见。
+ */
+describe("InlineEditableValue 的 value ?? \"\" 归一", () => {
+  const render = (value: unknown) =>
+    renderToStaticMarkup(createElement(InlineEditableValue, {
+      // 运行时数据来自 JSON，字段可能缺失 —— 这里显式绕过类型，如实喂进去
+      value: value as string,
+      onCommit: vi.fn()
+    }));
+
+  test("value 为 undefined 时归一成空串：渲染出 nbsp，而不是字面量 undefined", () => {
+    // 右臂必须被求值：少了 ??，String(undefined) 得 "undefined"，按钮里就出现这七个字
+    const html = render(undefined);
+    expect(html).toContain("\u00a0");
+    // 第二道：即便 nbsp 断言侥幸通过，字面量也不该出现在任何属性值里
+    expect(html).not.toContain("undefined");
+  });
+
+  test("键存在但值为 undefined 与键完全缺失是同一档（都不显示 undefined）", () => {
+    // 两档都试：`??` 只看 nullish，两者的右臂都必须求值；
+    // 若哪天改成 `||`，这里仍绿，但下面那组 falsy 输入会把它打红。
+    expect(render(undefined)).toContain("\u00a0");
+    expect(render(null)).toContain("\u00a0");
+  });
+
+  test("falsy 但非 nullish 的数值不被空串吞掉（这是 || 与 ?? 的判别输入）", () => {
+    // `String(x ?? "")` 对 0 / -0 / NaN / false 都保留原值；
+    // 一旦退化成 `String(x || "")`，这四档全被吞成 ""、渲染成 nbsp。
+    // 只测 undefined 与 null 的话，|| 与 ?? 在输出上完全一样 → 恒绿。
+    expect(render(NaN)).toContain(">NaN<");
+    expect(render(0)).toContain(">0<");
+    expect(render(-0)).toContain(">0<"); // Object.is 下 -0 !== 0，但 String 后同形：确认没有"按 0 短路"
+    expect(render(false)).toContain(">false<");
+  });
+
+  test("非空值原样上屏（左右两臂都有对照）", () => {
+    expect(render("abc")).toContain(">abc<");
+    expect(render(42)).toContain(">42<");
+  });
+});
+
+describe("DeferredColorInput 的透明色判定遇到 undefined", () => {
+  // isTransparentColorValue 未导出，只能从渲染结果观察：span 上的 transparent 类
+  // 与按钮的 aria-pressed 是同一判定的两个出口（复用上面那套判据）。
+  const state = (value: unknown) => {
+    const html = renderToStaticMarkup(createElement(DeferredColorInput, {
+      value: value as string,
+      onCommit: vi.fn()
+    }));
+    return {
+      transparent: /\btransparent\b/.test(wrapperClass(html)),
+      pressed: /aria-pressed="true"/.test(html)
+    };
+  };
+
+  test("value 为 undefined 时不算透明色", () => {
+    // String(undefined ?? "") 得 ""，不是 "transparent"。
+    // 右臂一旦被改写成 `?? "transparent"`，undefined 就被判成透明 → 这条立刻转红。
+    expect(state(undefined)).toEqual({ transparent: false, pressed: false });
+    expect(state(null)).toEqual({ transparent: false, pressed: false });
+  });
+
+  test("value 为 undefined 时色块显示 fallback（缺字段 ≠ 透明）", () => {
+    // 承重的是右臂：删掉 `?? ""` 后 String(undefined) 得 "undefined"，
+    // 过不了 hex 判定，**色块仍然显示 fallback** —— 所以本用例对删操作符是恒绿的，
+    // 它的作用是把「undefined 走的是兜底链」钉住，判别由上面那条断言承担。
+    const html = renderToStaticMarkup(createElement(DeferredColorInput, {
+      value: undefined as unknown as string,
+      fallback: "#010203",
+      onCommit: vi.fn()
+    }));
+    expect(pickedRgb(html)).toBe(hexToRgb("#010203"));
+  });
+
+  /**
+   * 形态 1（删掉 `?? ""`）在此**可证等价**，故不硬凑断言：
+   * 能触发右臂的输入只有 undefined / null。对这两者，
+   * `String(undefined ?? "")` 得 `""`、`String(undefined)` 得 `"undefined"`；
+   * `String(null ?? "")` 得 `""`、`String(null)` 得 `"null"`。
+   * `""` / `"undefined"` / `"null"` 三者经 `.trim().toLowerCase()` 后都不等于
+   * `"transparent"` —— 即删掉 `?? ""` 后该判定的返回值在**全域**不变。
+   * 所以这条分支的承重部分只能靠**换值**形态（`?? "transparent"`）证明右臂被求值，
+   * 上面那条断言正是它的判据。
+   */
+});
+
+/* ---------- 编辑态 JSX 内部逻辑：静态源码守卫 ---------- */
+
+/**
+ * 浏览态早退、Select 分支、多行 TextArea 三处的判定都在渲染期按状态迁移分支，
+ * renderToStaticMarkup 既不点击也不迁移状态（首次渲染 editing 恒为 false），
+ * 所以只能源码守卫 —— 与本文件上半部分那批守卫同源同因。
+ *
+ * 扫描按**行谓词**做，绝不按文件跳过：按文件跳过会把定义行本身一起排除，
+ * 注入到同一文件的变异全被漏掉，恒绿。
+ */
+describe("InlineEditableValue 编辑态的分支（源码守卫）", () => {
+  /** 整行相等（trim 后）匹配的行号。刻意不做子串匹配 —— 子串会把近似写法误判成命中。 */
+  const lineNumbersOf = (source: string, exact: string): number[] =>
+    source
+      .split(/\r?\n/)
+      .map((line, index) => ({ line: line.trim(), lineNumber: index + 1 }))
+      .filter((entry) => entry.line === exact)
+      .map((entry) => entry.lineNumber);
+
+  /** 行对匹配：`first` 的下一行必须整行等于 `second`，用来区分文件中重复出现的同文判定。 */
+  const linePairsOf = (source: string, first: string, second: string): number[] =>
+    source
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .flatMap((line, index, all) => (line === first && all[index + 1] === second ? [index + 1] : []));
+
+  const SELECT_GUARD = "if (optionList && optionList.length > 0) {";
+
+  const source = async () => readSource();
+
+  test("行扫描器自测：能按整行定位、能区分近似写法", () => {
+    // ① 缩进无关的正向命中
+    expect(lineNumbersOf(`  ${SELECT_GUARD}\n`, SELECT_GUARD)).toEqual([1]);
+    // ② 不做子串匹配：前缀多一个字符就不能命中
+    expect(lineNumbersOf(`x${SELECT_GUARD}`, SELECT_GUARD)).toEqual([]);
+    // ③ 变异体（&& → ||）不被误认成合法写法
+    expect(lineNumbersOf("if (optionList || optionList.length > 0) {", SELECT_GUARD)).toEqual([]);
+    // ④ 行对扫描器：下一行不符就不算命中，且能区分同文判定的两处出现
+    const dup = `if (!editing) {\n  setDraftValue(normalizedValue);\n}\nif (!editing) {\n  return (\n`;
+    expect(linePairsOf(dup, "if (!editing) {", "setDraftValue(normalizedValue);")).toEqual([1]);
+    expect(linePairsOf(dup, "if (!editing) {", "return (")).toEqual([4]);
+    expect(linePairsOf(dup, "if (!editing) {", "commitText();")).toEqual([]);
+  });
+
+  test("候选列表非空才走 Select 分支", async () => {
+    // 少判 length：`options: []` 的行一点进去就是一个没有选项、也打不开的下拉框
+    const hits = lineNumbersOf(await source(), SELECT_GUARD);
+    expect(hits.length).toBeGreaterThan(0);
+  });
+
+  test("浏览态早退必须排在 Select 分支之前（分支顺序）", async () => {
+    // `if (!editing)` 在文件里出现两次（useEffect 内、JSX 内），单行匹配无法区分，
+    // 故用行对：JSX 那处的下一行是 `return (`，effect 那处的下一行是 setDraftValue。
+    const src = await source();
+    const browseGate = linePairsOf(src, "if (!editing) {", "return (");
+    expect(browseGate.length).toBe(1);
+    const selectGate = lineNumbersOf(src, SELECT_GUARD);
+    expect(selectGate[0]).toBeGreaterThan(0);
+    // 顺序反了 ⇒ 浏览态的早退在 Select 之后，首次渲染就可能落进 Select 分支
+    expect(browseGate[0]).toBeLessThan(selectGate[0]);
+  });
+
+  test("多行编辑态走 TextArea，rows 缺省 4", async () => {
+    const src = await source();
+    const hits = lineNumbersOf(src, "<TextArea {...inputProps} rows={rows ?? 4} />");
+    expect(hits.length).toBeGreaterThan(0);
+    // 兜底必须是 4：属性表多行属性行按 4 行排版，改成别的值属于排版语义变更
+    expect(lineNumbersOf(src, "<TextArea {...inputProps} rows={rows ?? 6} />")).toEqual([]);
+  });
+});

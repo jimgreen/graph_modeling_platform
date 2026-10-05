@@ -1383,3 +1383,436 @@ describe("读侧容错：idx 缺失或重复时按 maxIndex+1 重分配", () => 
     ]);
   });
 });
+// ─── 端点参数缺失时的归一（endpointNodeIds，line 48 / line 49）────────────
+//
+// `endpointNodeIds` 对缺失的端点参数用 `?? ""` 兜成空串，随后被 `.filter(Boolean)`
+// 丢掉 —— 这正是它与 `boundaryReferenceMetadata`（line 456/457，同样读这两个参数）
+// 的区别：后者把缺失留成空串，靠 `if (!boundaryEndpoint) return {}` 挡住。
+//
+// 为什么这两条分支可观察：`lineTouchesBoundary` 只问「端点 id 集合里有没有边界设备」。
+// 去掉 `?? ""` 后 `String(undefined)` 得到字面量 "undefined"，它**会被 filter 保留**，
+// 于是「本来没端点」的线路可能因为项目里恰好有一个 id 为 "undefined" 的节点而被判为
+// 跨模型线路。这两种数据在现实中都出现过（前端 `String(node.params.x)` 写回、
+// 用户手改模型 JSON），因此是合法输入，不是构造出来的巧合。
+describe("缺失端点 id 归一为空串，不与同名字面量的设备串号", () => {
+  test("端点参数缺失的线路不迁移，项目里存在 id 字面量为 undefined 的边界设备也一样", async () => {
+    const ghost = node("undefined", "ac-station-source", { model_id: "7" }, "id 为 undefined 字面量的设备");
+    const bus = node("bus-1", "ac-bus");
+    const sourceMissing = node("line-source-missing", "ac-routable-line", {
+      rated_capacity: "220",
+      i_node: "1",
+      j_node: "2",
+      _routableLineTargetNodeId: bus.id
+    }, "缺首端点的线路");
+    const targetMissing = node("line-target-missing", "ac-routable-line", {
+      rated_capacity: "220",
+      i_node: "1",
+      j_node: "2",
+      _routableLineSourceNodeId: bus.id
+    }, "缺末端点的线路");
+    const good = line("line-good", "ac-routable-line", bus.id, ghost.id, {}, "正常边界线路");
+    const projectPath = await writeProject("方案A", "厂站一.json", {
+      version: 1, idx: 7, name: "厂站一", modelType: "厂站",
+      nodes: [ghost, bus, sourceMissing, targetMissing, good],
+      edges: []
+    });
+
+    const records = await registry.list();
+
+    // 探针非空：确实有一条线路迁了 —— 否则「没迁移」可能只是整批用例没进迁移流程
+    expect(records.map((record) => record.name)).toEqual(["正常边界线路"]);
+    expect(records[0].endpointSlots.target).toMatchObject({ boundaryNodeId: ghost.id });
+
+    const stored = JSON.parse(await readFile(projectPath, "utf-8"));
+    for (const id of ["line-source-missing", "line-target-missing"]) {
+      expect(stored.nodes.find((item) => item.id === id)?.params[GLOBAL_LINE_ID_PARAM], id).toBeUndefined();
+    }
+    expect(stored.nodes.find((item) => item.id === "line-good")?.params.idx).toBe(String(records[0].idx));
+  });
+});
+
+// ─── normalizedStringArray / globalLineModelKey 的缺省元素（line 74 / 85）──
+//
+// 两个都是「缺省值不得变成字符串字面量」的同类守卫：
+//   line 74 `String(item ?? "")`  —— schemePath 的元素为 null/undefined
+//   line 85 `String(projectName ?? "")` —— projectName 显式为 null
+// 均直接打 `globalLineModelKey`（已导出，discipline §3：走原始形态，不经聚合入口）。
+// 生产侧同样可达：`readStoredManagedProjects` 把磁盘上的 `project.name` 原样传进
+// line 85，手改过的模型 JSON 里 `name: null` 是真实形状。
+describe("schemePath 元素与 projectName 的缺省处理", () => {
+  test("schemePath 里的 null / undefined 元素按缺省处理，不进入 modelKey", () => {
+    expect(modelKeyForTest(0, [null, "方案", undefined, "子方案"])).toBe("path:方案/子方案");
+    expect(modelKeyForTest(0, [null, "方案"])).toBe("path:方案");
+    expect(modelKeyForTest(0, [undefined])).toBe("path:");
+  });
+
+  test("attach 的引用里 schemePath 含 null 元素时 modelKey 不含 null 字面量", async () => {
+    const record = await registry.attach({
+      energyType: "ac",
+      name: "空元素归一线路",
+      node: line("seed-line", "ac-routable-line", "src", "dst"),
+      reference: {
+        projectIdx: 0,
+        schemePath: [null, "方案", undefined, "子方案"],
+        projectName: "模型甲",
+        nodeId: "seed-line",
+        boundaryEndpoint: "source"
+      }
+    });
+    expect(record.references[0].modelKey).toBe("path:方案/子方案/模型甲");
+  });
+
+  test("projectName 显式为 null 时按缺省处理，不产生 null 字面量", () => {
+    expect(modelKeyForTest(0, ["方案"], null)).toBe("path:方案");
+    expect(modelKeyForTest(0, [], null)).toBe("path:");
+    // 对照：undefined 走的是默认形参，两条缺省路径产出同一个键
+    expect(modelKeyForTest(0, ["方案"], undefined)).toBe("path:方案");
+    expect(modelKeyForTest(0, ["方案"], "  ")).toBe("path:方案");
+  });
+});
+
+// ─── boundaryEndpoint 缺省时按 terminalSlot 回退（line 92 / line 93）──────
+//
+// normalizeReference 的入参来自 attach / detach 的请求体，客户端可以直接给
+// terminalSlot 而不给 boundaryEndpoint。若这两条回退被删，boundaryEndpoint 为空 ⇒
+// 抛 400「必须明确区分首端或末端」，即整条 attach 从成功变拒绝。
+describe("boundaryEndpoint 缺省时按 terminalSlot 回退", () => {
+  test("terminalSlot 为 i 时被认作首端", async () => {
+    const record = await registry.attach({
+      energyType: "ac",
+      name: "槽位回退首端线路",
+      node: line("line-slot-i", "ac-routable-line", "src", "dst"),
+      reference: { projectIdx: 1, schemePath: ["方案"], projectName: "模型一", nodeId: "line-slot-i", terminalSlot: "i" }
+    });
+    expect(record.references[0]).toMatchObject({ boundaryEndpoint: "source", terminalSlot: "i" });
+    expect(record.endpointSlots.source?.nodeId).toBe("line-slot-i");
+    expect(record.endpointSlots.target).toBeNull();
+    expect(record.terminalSlots.i?.nodeId).toBe("line-slot-i");
+    expect(record.terminalSlots.j).toBeNull();
+  });
+
+  test("terminalSlot 为 j 时被认作末端", async () => {
+    const record = await registry.attach({
+      energyType: "ac",
+      name: "槽位回退末端线路",
+      node: line("line-slot-j", "ac-routable-line", "src", "dst"),
+      reference: { projectIdx: 1, schemePath: ["方案"], projectName: "模型一", nodeId: "line-slot-j", terminalSlot: "j" }
+    });
+    expect(record.references[0]).toMatchObject({ boundaryEndpoint: "target", terminalSlot: "j" });
+    expect(record.endpointSlots.target?.nodeId).toBe("line-slot-j");
+    expect(record.endpointSlots.source).toBeNull();
+    expect(record.terminalSlots.j?.nodeId).toBe("line-slot-j");
+    expect(record.terminalSlots.i).toBeNull();
+  });
+
+  test("首末端都已占满时两条槽位回退仍分别落到不同槽", async () => {
+    const first = await registry.attach({
+      energyType: "dc",
+      name: "槽位回退双端线路",
+      node: line("line-dc", "dc-routable-line", "src", "dst"),
+      reference: { projectIdx: 1, schemePath: ["方案"], projectName: "模型一", nodeId: "line-dc", terminalSlot: "i" }
+    });
+    const both = await registry.attach({
+      globalLineId: first.id,
+      energyType: "dc",
+      node: line("line-dc-2", "dc-routable-line", "src", "dst"),
+      reference: { projectIdx: 2, schemePath: ["方案"], projectName: "模型二", nodeId: "line-dc-2", terminalSlot: "j" }
+    });
+    expect(both.degree).toBe(2);
+    expect(both.endpointSlots).toMatchObject({
+      source: { nodeId: "line-dc", boundaryEndpoint: "source" },
+      target: { nodeId: "line-dc-2", boundaryEndpoint: "target" }
+    });
+  });
+});
+
+// ─── 改接判定 boundaryAssociationChanged（line 107 / 108）───────────────
+//
+// addReference 只在「该引用已存在（existingIndex >= 0）」且「出线度已达 2」时
+// 才问 boundaryAssociationChanged。三条判据逐条独立，删掉任何一条都只会放过
+// 一次本该拒绝的改接。
+describe("首末端都已关联时的改接判定", () => {
+  const seedTwoEnded = async (name, sourceReference) => {
+    const first = await registry.attach({
+      energyType: "ac",
+      name,
+      node: line("line-a", "ac-routable-line", "a", "b", {}, name),
+      reference: sourceReference
+    });
+    await registry.attach({
+      globalLineId: first.id,
+      energyType: "ac",
+      name,
+      node: line("line-b", "ac-routable-line", "a", "b"),
+      reference: {
+        projectIdx: 2, schemePath: ["方案"], projectName: "模型二",
+        nodeId: "line-b", boundaryEndpoint: "target",
+        boundaryNodeId: "feeder-b", boundaryTerminalId: "t2"
+      }
+    });
+    return first.id;
+  };
+
+  test("已存引用没有边界节点、新引用补上边界节点时拒绝改接", async () => {
+    const id = await seedTwoEnded("补边界节点线路", {
+      projectIdx: 1, schemePath: ["方案"], projectName: "模型一",
+      nodeId: "line-a", boundaryEndpoint: "source"
+    });
+
+    await expect(registry.attach({
+      globalLineId: id,
+      energyType: "ac",
+      node: line("line-a", "ac-routable-line", "a", "b"),
+      reference: {
+        projectIdx: 1, schemePath: ["方案"], projectName: "模型一",
+        nodeId: "line-a", boundaryEndpoint: "source",
+        boundaryNodeId: "station-new"
+      }
+    })).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining("先删除另一端") });
+
+    const kept = (await registry.list()).find((record) => record.id === id);
+    expect(kept.endpointSlots.source).not.toHaveProperty("boundaryNodeId");
+    expect(kept.degree).toBe(2);
+  });
+
+  test("已存引用有边界节点、新引用不带时同样拒绝改接", async () => {
+    const id = await seedTwoEnded("去边界节点线路", {
+      projectIdx: 1, schemePath: ["方案"], projectName: "模型一",
+      nodeId: "line-a", boundaryEndpoint: "source",
+      boundaryNodeId: "station-old", boundaryTerminalId: "t1"
+    });
+
+    await expect(registry.attach({
+      globalLineId: id,
+      energyType: "ac",
+      node: line("line-a", "ac-routable-line", "a", "b"),
+      reference: {
+        projectIdx: 1, schemePath: ["方案"], projectName: "模型一",
+        nodeId: "line-a", boundaryEndpoint: "source",
+        boundaryTerminalId: "t1"
+      }
+    })).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining("先删除另一端") });
+
+    const kept = (await registry.list()).find((record) => record.id === id);
+    expect(kept.endpointSlots.source).toMatchObject({ boundaryNodeId: "station-old", boundaryTerminalId: "t1" });
+  });
+
+  test("边界节点相同但端子不同时拒绝改接（原引用端子不被改写）", async () => {
+    const id = await seedTwoEnded("换端子线路", {
+      projectIdx: 1, schemePath: ["方案"], projectName: "模型一",
+      nodeId: "line-a", boundaryEndpoint: "source",
+      boundaryNodeId: "station-a", boundaryTerminalId: "t1"
+    });
+
+    await expect(registry.attach({
+      globalLineId: id,
+      energyType: "ac",
+      node: line("line-a", "ac-routable-line", "a", "b"),
+      reference: {
+        projectIdx: 1, schemePath: ["方案"], projectName: "模型一",
+        nodeId: "line-a", boundaryEndpoint: "source",
+        boundaryNodeId: "station-a", boundaryTerminalId: "t9"
+      }
+    })).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining("先删除另一端") });
+
+    const kept = (await registry.list()).find((record) => record.id === id);
+    expect(kept.endpointSlots.source).toMatchObject({ boundaryNodeId: "station-a", boundaryTerminalId: "t1" });
+    expect(kept.degree).toBe(2);
+  });
+
+  // 上面两条关于 boundaryNodeId 的 `?? ""`：删掉它们在**可达域内恒等价** ——
+  // normalizeReference 只在 trim 后非空时才写 boundaryNodeId，所以每个参与
+  // 比较的值要么是 undefined、要么是非空字符串。把 undefined 换成 "undefined"
+  // 字面量，与换回空串对「是否相等」这一判定没有区别：两边都缺 → 两边都是同一个
+  // token；一边缺一边有 → 两种写法都判为不等。这属 AGENTS.md 记录的
+  // 「A green mutation is not always a broken test」，故按原样留白，不硬凑断言。
+  // 已实测确认：把 L107 的两个 `?? ""` 都删掉后本文件 52 条用例**全绿**，
+  // 属于上表登记的等价变异，不是漏测。
+  // 真正承重的是第三条：它证明这条判据链在 boundaryNodeId 相同之后**还会继续**
+  // 比 boundaryTerminalId。
+});
+
+// ─── 读侧容错：id / name 缺失或空白时的兜底（line 162 / line 164）────────
+//
+// 同 AGENTS.md 的 key 取值空间纪律：id 可以缺失、也可以是空白串，两条都落到
+// randomUUID 兜底。断言「三条坏 id 记录补出三个互不相同的 id」——若两条缺省路径
+// 产出相同 id，normalizeState 的 ids 去重会把记录整条吃掉，条数先变。
+const GENERATED_ID = /^global-line-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+describe("读侧容错：id 缺失或空白时补随机 id", () => {
+  test("缺 id、空白 id 与整条为 null 的记录各自补出互不相同的随机 id", async () => {
+    await seedRegistryFile([
+      null,
+      { id: "r-named", idx: 5, name: "有 id", energyType: "ac", params: {}, references: [], createdAt: STAMP, updatedAt: STAMP },
+      { id: "   ", idx: 6, name: "空白 id", energyType: "ac", params: {}, references: [], createdAt: STAMP, updatedAt: STAMP },
+      { idx: 7, name: "无 id", energyType: "ac", params: {}, references: [], createdAt: STAMP, updatedAt: STAMP }
+    ]);
+
+    const records = await registry.list();
+
+    // null 记录本身也要活下来（normalizeRecord 处处用 ?. 兜，不抛）
+    expect(records).toHaveLength(4);
+    const [nullRecord, named, blank, missing] = records;
+    expect(named.id).toBe("r-named");
+    expect(new Set([nullRecord.id, blank.id, missing.id]).size).toBe(3);
+    for (const record of [nullRecord, blank, missing]) {
+      expect(record.id).toMatch(GENERATED_ID);
+    }
+    // 兜底只补 id，其余字段照常归一
+    expect(nullRecord).toMatchObject({ idx: 1, name: "交流线路-1", energyType: "ac", degree: 0 });
+    expect(blank.idx).toBe(6);
+    expect(missing.idx).toBe(7);
+
+    const onDisk = JSON.parse(await readFile(registry.registryPath, "utf-8"));
+    expect(onDisk.records.filter((item) => item.id !== "r-named").every((item) => GENERATED_ID.test(item.id))).toBe(true);
+  });
+
+  test("补出的 id 落盘后重启不再变化", async () => {
+    await seedRegistryFile([
+      { idx: 2, name: "无 id", energyType: "ac", params: {}, references: [], createdAt: STAMP, updatedAt: STAMP }
+    ]);
+
+    const [first] = await registry.list();
+    expect(first.id).toMatch(GENERATED_ID);
+    const reloaded = await createGlobalLineRegistry({ dataRoot, schemeFilesRoot: filesRoot }).list();
+    expect(reloaded.map((item) => item.id)).toEqual([first.id]);
+  });
+});
+
+describe("读侧容错：name 缺失或空白时补默认名", () => {
+  test("按能源类型与原始 idx 补默认名，空白名同样被替换", async () => {
+    await seedRegistryFile([
+      { id: "r-no-name", idx: 1, energyType: "ac", params: {}, references: [], createdAt: STAMP, updatedAt: STAMP },
+      { id: "r-blank", idx: 4, name: "  \t ", energyType: "ac", params: {}, references: [], createdAt: STAMP, updatedAt: STAMP },
+      { id: "r-dc", idx: 0, energyType: "dc", params: {}, references: [], createdAt: STAMP, updatedAt: STAMP },
+      { id: "r-keep", idx: 9, name: "  保留两侧空白  ", energyType: "ac", params: {}, references: [], createdAt: STAMP, updatedAt: STAMP }
+    ]);
+
+    const records = await registry.list();
+
+    expect(records.map((item) => [item.id, item.name, item.idx])).toEqual([
+      // idx 为 0 时默认名落到 idx || 1 的 1 —— 0 本身是合法输入，不能写成 0
+      ["r-no-name", "交流线路-1", 1],
+      ["r-blank", "交流线路-4", 4],
+      ["r-dc", "直流线路-1", 5],
+      ["r-keep", "保留两侧空白", 9]
+    ]);
+  });
+
+  test("默认名里的序号取 normalizeRecord 当时的 idx，而非后续重分配的结果", async () => {
+    // 两条 idx 都被 normalizeState 抬到 maxIndex+1（3、4），但默认名是更早一步
+    // 用原始 idx（0、2）算出来的 —— 名字不会被重分配带偏。
+    await seedRegistryFile([
+      { id: "r-x", idx: 5, name: "占位", energyType: "ac", params: {}, references: [], createdAt: STAMP, updatedAt: STAMP },
+      { id: "r-y", energyType: "ac", params: {}, references: [], createdAt: STAMP, updatedAt: STAMP },
+      { id: "r-z", idx: 2, energyType: "dc", params: {}, references: [], createdAt: STAMP, updatedAt: STAMP }
+    ]);
+
+    const records = await registry.list();
+
+    // list() 按最终 idx 升序：2 / 5 / 6
+    expect(records.map((item) => [item.id, item.name, item.idx])).toEqual([
+      ["r-z", "直流线路-2", 2],
+      ["r-x", "占位", 5],
+      ["r-y", "交流线路-1", 6]
+    ]);
+    // 名字里的序号来自**归一化当时**的原始 idx（r-y 是 0 → 兜底 1），
+    // 与随后被 normalizeState 重分配出来的最终 idx 6 不是同一个数
+    const renamed = records.find((item) => item.id === "r-y");
+    expect(renamed.name).toBe(`交流线路-${1}`);
+    expect(renamed.name).not.toContain(String(renamed.idx));
+  });
+});
+// ─── line 108：boundaryTerminalId 两侧的 `?? ""` ────────────────────────
+//
+// 与 boundaryNodeId 不同，端子 id 这一侧的两个 `?? ""` **可达且承重**：
+// 归一化后的引用可以「完全没有边界端子」（attach 时不传 boundaryTerminalId），
+// 于是再传一个带端子的同端引用时，判据链要靠 `String(undefined ?? "")` 得到
+// 空串才判得出「变了」。删掉 `?? ""` 后两边都变成字面量 "undefined"，
+// 「一边有端子、一边没有」仍能判为不等 —— 所以这一侧要断的是**反向**：
+// 已存没有端子、新引用补上端子（current 侧），以及已存有端子、新引用删掉
+// 端子（next 侧）。两条都必须让 boundaryEndpoint 与 boundaryNodeId 都相等，
+// 才会落到第 108 行。
+describe("边界端子有增删同样算改接", () => {
+  const seedTwoEnded = async (name, sourceReference) => {
+    const first = await registry.attach({
+      energyType: "ac",
+      name,
+      node: line("line-a", "ac-routable-line", "a", "b", {}, name),
+      reference: sourceReference
+    });
+    await registry.attach({
+      globalLineId: first.id,
+      energyType: "ac",
+      name,
+      node: line("line-b", "ac-routable-line", "a", "b"),
+      reference: {
+        projectIdx: 2, schemePath: ["方案"], projectName: "模型二",
+        nodeId: "line-b", boundaryEndpoint: "target",
+        boundaryNodeId: "feeder-b", boundaryTerminalId: "t2"
+      }
+    });
+    return first.id;
+  };
+
+  test("已存引用没有边界端子、新引用补上端子时拒绝改接", async () => {
+    const id = await seedTwoEnded("补端子线路", {
+      projectIdx: 1, schemePath: ["方案"], projectName: "模型一",
+      nodeId: "line-a", boundaryEndpoint: "source",
+      boundaryNodeId: "station-a"
+    });
+
+    await expect(registry.attach({
+      globalLineId: id,
+      energyType: "ac",
+      node: line("line-a", "ac-routable-line", "a", "b"),
+      reference: {
+        projectIdx: 1, schemePath: ["方案"], projectName: "模型一",
+        nodeId: "line-a", boundaryEndpoint: "source",
+        boundaryNodeId: "station-a", boundaryTerminalId: "t9"
+      }
+    })).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining("先删除另一端") });
+
+    const kept = (await registry.list()).find((record) => record.id === id);
+    // 判据链能走到 boundaryTerminalId 这一层，说明前两段（端点、边界节点）都判为相等
+    expect(kept.endpointSlots.source).toMatchObject({ boundaryNodeId: "station-a" });
+    expect(kept.endpointSlots.source).not.toHaveProperty("boundaryTerminalId");
+  });
+
+  test("已存引用有边界端子、新引用不带端子时拒绝改接", async () => {
+    const id = await seedTwoEnded("去端子线路", {
+      projectIdx: 1, schemePath: ["方案"], projectName: "模型一",
+      nodeId: "line-a", boundaryEndpoint: "source",
+      boundaryNodeId: "station-a", boundaryTerminalId: "t1"
+    });
+
+    await expect(registry.attach({
+      globalLineId: id,
+      energyType: "ac",
+      node: line("line-a", "ac-routable-line", "a", "b"),
+      reference: {
+        projectIdx: 1, schemePath: ["方案"], projectName: "模型一",
+        nodeId: "line-a", boundaryEndpoint: "source",
+        boundaryNodeId: "station-a"
+      }
+    })).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining("先删除另一端") });
+
+    const kept = (await registry.list()).find((record) => record.id === id);
+    expect(kept.endpointSlots.source).toMatchObject({ boundaryNodeId: "station-a", boundaryTerminalId: "t1" });
+    expect(kept.degree).toBe(2);
+  });
+});
+
+// ─── 已知不可达：line 67 `localParams` 里的 `node?.params ?? {}` ──────────
+//
+// v8 分支覆盖显示 `?? {}` 的右侧分支计数恒为 0，且**无法**从公开入口把它走到：
+// `localParams` 只有两个调用点（`applyRecordToNode` L378、`globalLineNodeForStorage`
+// L391），而这两个函数各自的所有调用点（L439 / L973 / L993 / L418 / L771）都写在
+// `lineTouchesBoundary(node, nodeById)` 为真的分支之后。`lineTouchesBoundary` 依赖
+// `endpointNodeIds(node)`，后者要读 `node?.params?._routableLineSourceNodeId` ——
+// 若 `params` 为 nullish，它返回空数组、`.some()` 为假、守卫直接短路返回，
+// `localParams` 根本不会被调用。
+//
+// 反过来说：只要 `localParams` 真的被调用了，`params` 必然是个非空对象，
+// `?? {}` 右侧在定义域上恒不可达。L58 `sharedParams` 的 `?? {}` 是同一形状。
+// 按纪律不为它写恒绿断言，此处留注释备查。

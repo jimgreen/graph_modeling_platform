@@ -3777,3 +3777,292 @@ describe("buildManualConnectionPreviewPath：手工连线预览路径", () => {
     expect(pointsToOrthogonalPath([])).toBe("");
   });
 });
+
+// ============================================================================
+// 线路端点 / 折线形状（routable line）：未覆盖分支补测
+// ----------------------------------------------------------------------------
+// 覆盖 model-routing.ts 的 214/215、235/236、252、259、263、281、296、321、341、
+// 379/380/381、431。
+//
+// 不可达（已逐条核对，非「凑数」）：
+//   · 435 `if (currentPoints.length < 2) return baseNode;`
+//     currentPoints = routableLineDeviceCanvasPoints(node)，而 node.kind 已过 431 的
+//     isRoutableLineDeviceKind 门槛。routableLineDeviceLocalPoints 对可路由 kind 只会
+//     返回「已存 ≥2 点」或 defaultRoutableLineDeviceLocalPoints 的**恰好 2 点**，
+//     所以 length 恒 ≥ 2，该分支取不到。
+//   · 440 `if (!currentStart || !currentEnd)` 同理，需要 length < 2。
+// ============================================================================
+
+describe("routable line：端点/画布点归一化的兜底与幂等分支", () => {
+  const P = (x: number, y: number): Point => ({ x, y });
+
+  function routableLineAt(position: Point, overrides: Partial<ModelNode> = {}): ModelNode {
+    const base = createDefaultNode("ac-routable-line", position);
+    return { ...base, id: "test-routable-line", ...overrides };
+  }
+
+  /**
+   * 造一份**不带已存线路点参数**的线路节点。
+   *
+   * 注意：模板 `ac-routable-line` 自带默认两点（±79），直接用它去测 259 会得到
+   * 「currentLocalPoints 已有 2 点」的另一种状态。所以这里是把参数**摘掉**，
+   * 而不是断言它不存在 —— 后者在本仓是错的假设（模板本来就有）。
+   * 若 overrides 显式给了 points，则以调用方为准（两个缩放兜底用例正是要自带点）。
+   */
+  function freshRoutableLine(position: Point, overrides: Partial<ModelNode> = {}): ModelNode {
+    const node = routableLineAt(position, overrides);
+    if (overrides.params?.[ROUTABLE_LINE_POINTS_PARAM] !== undefined) {
+      return node;
+    }
+    return {
+      ...node,
+      params: Object.fromEntries(
+        Object.entries(node.params).filter(([key]) => key !== ROUTABLE_LINE_POINTS_PARAM)
+      )
+    };
+  }
+
+  function storedLocalPoints(node: ModelNode): Point[] {
+    const raw = node.params[ROUTABLE_LINE_POINTS_PARAM];
+    return raw ? (JSON.parse(raw) as Point[]) : [];
+  }
+
+  // ---- 214 / 215：nodeLocalPointToCanvasPoint 的 `|| 1` 兜底 ------------------
+  test("★ 画布点换算在节点缩放为 0 时按 1 兜底（否则两端点会塌到节点中心）", () => {
+    const node = freshRoutableLine(P(400, 300), {
+      scale: 1,
+      scaleX: 0,
+      scaleY: 0,
+      params: {
+        ...routableLineAt(P(400, 300)).params,
+        [ROUTABLE_LINE_POINTS_PARAM]: JSON.stringify([P(-60, 0), P(60, 0)])
+      }
+    });
+    // setup 自检：`|| 1` 正是为「缩放取到 0（falsy）」而存在，所以输入必须真是 0，
+    // 否则断言只是「本来就等于 1」的同义反复。
+    expect(getNodeScaleX(node)).toBe(0);
+    expect(getNodeScaleY(node)).toBe(0);
+
+    const points = routableLineDeviceCanvasPoints(node);
+
+    // 0 × local 会把两点都算成节点中心；兜底成 1 后两点仍分居中心左右 60。
+    expect(points).toEqual([P(340, 300), P(460, 300)]);
+  });
+
+  // ---- 235 / 236：canvasPointToNodeLocalPoint 的 `|| 1` 兜底 ----------------
+  test("★ 局部点换算在节点缩放为 0 时按 1 兜底（否则除零后线路点会被整条丢掉）", () => {
+    const node = freshRoutableLine(P(400, 300), {
+      scale: 1,
+      scaleX: 0,
+      scaleY: 0,
+      params: {
+        ...routableLineAt(P(400, 300)).params,
+        [ROUTABLE_LINE_POINTS_PARAM]: JSON.stringify([P(-60, 0), P(60, 0)])
+      }
+    });
+
+    const next = setRoutableLineDeviceCanvasPoints(node, [P(300, 300), P(500, 300)]);
+
+    // 去掉 `|| 1` 后是 dx/0 = ±Infinity，被 normalizeRoutableLineDevicePoints 当非有限值
+    // 全部丢弃 → 局部点为空 → 走 259 的 ensure 兜底，参数里只会剩原来那 2 点。
+    expect(storedLocalPoints(next)).toEqual([P(-100, 0), P(100, 0)]);
+    expect(routableLineDeviceCanvasPoints(next)).toEqual([P(300, 300), P(500, 300)]);
+  });
+
+  // ---- 252：非可路由 kind 直接原样返回 ---------------------------------------
+  test("非可路由 kind 不会被写入线路点参数", () => {
+    const load = createDefaultNode("ac-load", P(100, 100));
+    expect(isRoutableLineDeviceKind(load.kind)).toBe(false);
+
+    const result = setRoutableLineDeviceCanvasPoints(load, [P(0, 0), P(100, 0)]);
+
+    // 去掉 252 的守卫后，这里会算局部点并复制出一份带线路点参数的新节点。
+    expect(result).toBe(load);
+    expect(result.params[ROUTABLE_LINE_POINTS_PARAM]).toBeUndefined();
+  });
+
+  // ---- 259：局部点不足 2 个 → 退回默认线路点 ---------------------------------
+  test("★ 只给 1 个画布点时不落盘，改为写入默认的两点线路", () => {
+    const node = freshRoutableLine(P(400, 300));
+
+    const result = setRoutableLineDeviceCanvasPoints(node, [P(0, 0)]);
+
+    // 去掉 259 后会把那**一个**点原样序列化进参数（长度 1）。
+    expect(storedLocalPoints(result)).toHaveLength(2);
+    expect(routableLineDeviceLocalPoints(result)).toEqual(routableLineDeviceLocalPoints(node));
+  });
+
+  // ---- 263：写入与现状相同的点 → 不复制节点 ----------------------------------
+  test("★ 回写同一串画布点时不产生新节点（幂等）", () => {
+    const line = setRoutableLineDeviceCanvasPoints(
+      freshRoutableLine(P(400, 300)),
+      [P(300, 300), P(500, 300)]
+    );
+
+    const same = setRoutableLineDeviceCanvasPoints(line, routableLineDeviceCanvasPoints(line));
+
+    // 去掉 263 后仍会走 266 的复制分支 —— 参数内容一模一样，只有对象身份不同；
+    // 而 rebuild/redraw 两条流水线正是靠 `nextNode !== node` 判定要不要落更新。
+    expect(same).toBe(line);
+    expect(storedLocalPoints(same)).toEqual([P(-100, 0), P(100, 0)]);
+  });
+
+  // ---- 281 / 296 / 321 / 431：非可路由 kind 的四道守卫 ------------------------
+  test("非可路由 kind 在插弯/移段/改端点/保形改端点上都是原样返回", () => {
+    const load = createDefaultNode("ac-load", P(100, 100));
+    const refs = {
+      source: { nodeId: "src", terminalId: "t1" },
+      target: { nodeId: "dst", terminalId: "t1" }
+    };
+
+    expect(insertRoutableLineDeviceBend(load, 0, P(200, 100))).toBe(load);
+    expect(moveRoutableLineDeviceSegment(load, 0, "vertical", P(200, 150))).toBe(load);
+    expect(setRoutableLineDeviceEndpoints(load, P(0, 0), P(200, 0), refs)).toBe(load);
+    // 431：保形版先调 setRoutableLineDeviceEndpoints（321 已原样返回），再自己判一次 kind。
+    // 去掉 431 后会继续走 currentPoints.length < 2（恒 false）→ 440 → preserveDragged…
+    // → 最终仍会复制出 params 里带 ref 的新节点，故这里断的是身份 + 参数未变。
+    const preserving = setRoutableLineDeviceEndpointsPreservingRoute(
+      load,
+      P(0, 0),
+      P(200, 0),
+      refs,
+      new Map()
+    );
+    expect(preserving).toBe(load);
+    expect(preserving.params[ROUTABLE_LINE_POINTS_PARAM]).toBeUndefined();
+    for (const key of ["_routableLineSourceNodeId", "_routableLineTargetNodeId"]) {
+      expect(load.params[key]).toBeUndefined();
+    }
+  });
+
+  // ---- 341：端子重锚定时，第 3 个及以后的端子保持原锚点 ----------------------
+  test("★ 改端点只重锚前两个端子，第三个端子锚点原样保留", () => {
+    const base = freshRoutableLine(P(400, 300));
+    const threeTerminals: ModelNode = {
+      ...base,
+      terminals: [
+        ...base.terminals,
+        { ...base.terminals[0], id: "t3", anchor: P(0.31, -0.27) }
+      ]
+    };
+    expect(threeTerminals.terminals[2].anchor, "构造前提：确有三个端子").toEqual(P(0.31, -0.27));
+
+    const moved = setRoutableLineDeviceEndpoints(threeTerminals, P(340, 300), P(460, 300));
+
+    // 线宽 150：localStart.x = -60 → -60/150 = -0.4（未被 ±0.48 夹取，能区分算错）。
+    expect(moved.terminals[0].anchor).toEqual(P(-0.4, 0));
+    expect(moved.terminals[1].anchor).toEqual(P(0.4, 0));
+    // 第三个端子走 ternary 的 `terminal.anchor` 兜底。
+    expect(moved.terminals[2].anchor).toEqual(P(0.31, -0.27));
+  });
+
+  // ---- 376 / 379 / 380 / 381：保形折线「更干净则替换」的前置门槛 ----------------
+  //
+  // ⚠️ 376 排在 379/380/381 **前面**，而且它读的是 `preserved` ——
+  //    `preserveDraggedRouteShape` **之后**的折线，不是存进 params 的输入折线。
+  //    两者折弯数可以不同：ref 查得到节点时会带上 sourceNormal/targetNormal 去对齐
+  //    端点段，把某个折弯拉直（旧 zig 在母线侧就是 4 折 → 3 折）。
+  //    setup 自检若去断输入 zig，就是在给一条生产代码根本没走的路径背书：
+  //    376 会先 return，后面的门槛一次都没跑过，断言恒绿。
+  test("★ 端点 ref 缺失或端点是母线时，保留拖拽出的原折线而不是换成重算路线", () => {
+    /**
+     * 复刻 `setRoutableLineDeviceEndpointsPreservingRoute` 的 434-452，
+     * 让 setup 能拿到 376 真正读的那个 `preserved`，而不是输入 zig。
+     *
+     * 参数与调用顺序必须和生产一致：`routableLineDeviceCanvasPoints` 取现状、
+     * delta 由现状端点与新落点相减、normal 由 ref 查到节点后取端点法线。
+     * 少传 sourceNormal/targetNormal 会让端点段不被对齐，折弯数凭空 +1。
+     */
+    function preservedRouteAfterDrag(
+      line: ModelNode,
+      start: Point,
+      end: Point,
+      refs: Parameters<typeof setRoutableLineDeviceEndpointsPreservingRoute>[3],
+      nodeById: Map<string, ModelNode>
+    ): Point[] {
+      const currentPoints = routableLineDeviceCanvasPoints(line);
+      const normalFromRef = (
+        ref: { nodeId: string; terminalId?: string } | undefined,
+        endpoint: Point,
+        other: Point
+      ) => {
+        const node = ref ? nodeById.get(ref.nodeId) : undefined;
+        return node ? getRouteEndpointNormal(node, endpoint, other, ref?.terminalId) : undefined;
+      };
+      return preserveDraggedRouteShape({
+        routePoints: currentPoints,
+        nextStart: start,
+        nextEnd: end,
+        sourceDelta: { x: start.x - currentPoints[0].x, y: start.y - currentPoints[0].y },
+        targetDelta: {
+          x: end.x - currentPoints[currentPoints.length - 1].x,
+          y: end.y - currentPoints[currentPoints.length - 1].y
+        },
+        sourceNormal: normalFromRef(refs?.source, start, end),
+        targetNormal: normalFromRef(refs?.target, end, start)
+      });
+    }
+
+    // ---- ① 379/380 的 falsy 侧：refs 两侧都没有 → sourceNode/targetNode 皆 undefined
+    const zig: Point[] = [P(200, 200), P(200, 300), P(400, 300), P(400, 150), P(600, 150), P(600, 250)];
+    const line = setRoutableLineDeviceCanvasPoints(freshRoutableLine(P(400, 220)), zig);
+    const start = P(210, 200);
+    const end = P(600, 250);
+    const noNodeById = new Map<string, ModelNode>();
+
+    const preservedNoRefs = preservedRouteAfterDrag(line, start, end, {}, noNodeById);
+    // refs 为空 → 取不到端点法线 → 折线不被拉直，preserved 与输入 zig 同形（6 点 / 4 折），
+    // 376 的两道门槛都过，379 之后才不是死代码。
+    expect(preservedNoRefs.length, "376：preserved 点数需 ≥6").toBeGreaterThanOrEqual(6);
+    expect(routeBendCountForTest(preservedNoRefs), "376：preserved 折弯数需 ≥4").toBeGreaterThanOrEqual(4);
+
+    const kept = setRoutableLineDeviceEndpointsPreservingRoute(line, start, end, {}, noNodeById);
+    const keptPoints = routableLineDeviceCanvasPoints(kept);
+    expect(keptPoints).toEqual(preservedNoRefs);
+    expect(keptPoints[0]).toEqual(start);
+    expect(keptPoints[keptPoints.length - 1]).toEqual(end);
+
+    // ---- ② 381 的 isBusNode 侧：两侧 ref 都查得到节点，但源端是母线 ------------
+    const bus = createDefaultNode("ac-bus", P(180, 200));
+    const breaker = createDefaultNode("ac-box-breaker", P(640, 250));
+    const nodeById = new Map<string, ModelNode>([[bus.id, bus], [breaker.id, breaker]]);
+    const busRefs = {
+      source: { nodeId: bus.id, terminalId: "t1" },
+      target: { nodeId: breaker.id, terminalId: "t1" }
+    };
+
+    // 端点必须落在两端设备的**可连接落点**上：母线侧是「扣除禁绘区后的半宽」落点
+    // （busConnectableHalfWidth，不是 projectPointToBusCenterline 那个原始端子锚点），
+    // 断路器侧就是端子点。
+    // 这一点决定成败：重算路线的端点取的是对端可连接落点，落点对不上时 394
+    // （candidate 端点须与 preserved 端点一致）会独立返回 preserved ——
+    // isBusNode 删不删结果都一样，⑦ 就永远 GREEN。这是旧夹具转不了红的第二个成因。
+    const busStart = P(bus.position.x - busConnectableHalfWidth(bus.size.width / 2), bus.position.y);
+    const busEnd = getTerminalPoint(breaker, "t1");
+
+    // 首尾故意偏离新落点，两侧 delta 都非零，才是真实拖拽（delta 为零时保形函数走的是
+    // 另一条分支，测不到端点段对齐）。这里用**全斜段**的折线：折弯数得先由
+    // preserveDraggedRouteShape 末尾的 orthogonalizeRouteKeepingCollinear 拉出来。
+    // 不能沿用旧 zig 的 4 折 —— 母线侧的端点法线对齐会再吃掉一个折弯，
+    // 4 折进 3 折出，376 照样把 381 挡在后面。
+    const draggedZig: Point[] = [
+      P(105, 240), P(204, 80), P(303, 370), P(402, 80), P(501, 370), P(600, 210)
+    ];
+    const dragged = setRoutableLineDeviceCanvasPoints(freshRoutableLine(P(400, 300)), draggedZig);
+
+    const preservedByBus = preservedRouteAfterDrag(dragged, busStart, busEnd, busRefs, nodeById);
+    // 母线侧能查到节点 → 带端点法线 → 首尾段被对齐，preserved 是 11 点 / 7 折，
+    // 与输入 zig（6 点 / 0 折）不是同一个东西。自检必须断在这里。
+    expect(preservedByBus.length, "376：preserved 点数需 ≥6").toBeGreaterThanOrEqual(6);
+    expect(routeBendCountForTest(preservedByBus), "376：preserved 折弯数需 ≥4").toBeGreaterThanOrEqual(4);
+
+    const keptByBusPoints = routableLineDeviceCanvasPoints(
+      setRoutableLineDeviceEndpointsPreservingRoute(dragged, busStart, busEnd, busRefs, nodeById)
+    );
+    // 376/394/407/412 四道后续门槛都不返回 preserved，所以「结果 === preserved」
+    // 唯一能成立的原因就是 381 的 isBusNode 守卫。删掉它两侧 → 走重算路线、点列不同 → 转红。
+    expect(keptByBusPoints).toEqual(preservedByBus);
+    expect(keptByBusPoints[0]).toEqual(busStart);
+    expect(keptByBusPoints[keptByBusPoints.length - 1]).toEqual(busEnd);
+  });
+});

@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import {
+  CUSTOM_PARAM_DEFINITIONS_KEY,
   DEFAULT_COLOR_PALETTE,
   DEVICE_LIBRARY,
   applyDeviceTemplateDefinitionOverride,
@@ -904,4 +905,156 @@ describe("user customization cloneValue and canonicalValue contracts", () => {
     expect(block).toContain("localeCompare");
     expect(block).toContain("Object.fromEntries");
   });
+});
+
+describe("user customization payload tolerance", () => {
+  // 这组用例针对 normalizeUserImageLibrary / normalizeUserCustomizationSnapshot 里
+  // 「上游 normalizer 不保证字段存在」的那几层兜底：既有测试的图片全部带 name，
+  // 于是 `asset.name || asset.filename || id` 的后两级与文件夹名的 `: id` 分支从未被走过。
+  test("falls back to the folder id and to the asset filename or id when names are missing", () => {
+    const normalized = normalizeUserCustomizationSnapshot({
+      imageLibrary: {
+        folders: [{ id: "  Blank  ", name: "   " }, { id: "root", name: "我的根" }],
+        assets: [
+          { id: "img-file", filename: "photo.png", folderId: "Blank" },
+          { id: "img-bare" }
+        ]
+      }
+    } as never);
+
+    // 名字全空白且 id 不是 root → 名字回落成 id（不是「默认文件夹」）。
+    expect(normalized.imageLibrary.folders).toEqual([
+      { id: "Blank", name: "Blank" },
+      { id: "root", name: "我的根" }
+    ]);
+    // 第一条走 `|| asset.filename`，第二条两级都落空后走 `|| id`。
+    expect(normalized.imageLibrary.assets.map((asset) => asset.name)).toEqual(["photo.png", "img-bare"]);
+    // 第二条没有 folderId → 回落成 root，而不是留在空串上。
+    expect(normalized.imageLibrary.assets.map((asset) => asset.folderId)).toEqual(["Blank", "root"]);
+  });
+
+  test("normalizes a completely absent snapshot into program defaults", () => {
+    const normalized = normalizeUserCustomizationSnapshot(undefined);
+
+    expect(normalized).toEqual(normalizeUserCustomizationSnapshot({}));
+    expect(normalized.imageLibrary.folders).toEqual([{ id: "root", name: "默认文件夹" }]);
+    expect(normalized.deviceLibrary.customDeviceTemplates).toEqual([]);
+  });
+
+  test("merges category libraries by trimmed key and drops blanks across both sides", () => {
+    const current = defaultSnapshot();
+    current.deviceLibrary.customCategoryLibraries = ["用户类别", "  用户类别  ", ""];
+
+    const merged = mergeUserCustomizationSnapshots(current, {
+      deviceLibrary: {
+        ...emptyUserDeviceLibrary(),
+        customCategoryLibraries: ["用户类别", "另一类"]
+      }
+    }, "incremental");
+
+    // current 与 imported 各自的重复由上游 normalizer 收敛；跨两边的重复只有
+    // uniqueStrings 的 seen 集合能收敛，所以这条断言断的是它。
+    expect(merged.deviceLibrary.customCategoryLibraries).toEqual(["用户类别", "另一类"]);
+  });
+
+  // legacy 业务表里的参数定义以 params[CUSTOM_PARAM_DEFINITIONS_KEY] 存一段 JSON。
+  // 三种坏输入都必须退化成「没有参数定义」，而有效数组必须仍然产出条目 ——
+  // 没有这条对照，上面三条断言就是恒绿的（默认值恰好也是 0）。
+  test("tolerates absent, non-array and malformed legacy parameter definition payloads", () => {
+    const inventoryFor = (kind: string, raw?: string) => {
+      const snapshot = defaultSnapshot();
+      snapshot.deviceLibrary.deviceDefinitionOverrides[kind] = {
+        kind,
+        ...(raw === undefined ? {} : { params: { [CUSTOM_PARAM_DEFINITIONS_KEY]: raw } })
+      } as never;
+      return buildUserCustomizationInventory(snapshot, DEVICE_LIBRARY);
+    };
+
+    const control = inventoryFor("ghost-array", JSON.stringify([{
+      cnName: "燃料",
+      enName: "fuel",
+      valueType: "string",
+      typicalValue: "",
+      exportName: "fuel_type"
+    }]));
+    expect(control.countsByDomain["parameter-definitions"]).toBe(1);
+    expect(control.countsByDomain["e-interface-definitions"]).toBe(1);
+
+    // 覆盖 259（raw 缺失）、262（JSON 不是数组）、263（JSON 解析失败）三个早退。
+    const missing = inventoryFor("ghost-missing");
+    const nonArray = inventoryFor("ghost-object", JSON.stringify({ enName: "fuel", exportName: "fuel_type" }));
+    const malformed = inventoryFor("ghost-malformed", "{oops");
+    for (const inventory of [missing, nonArray, malformed]) {
+      expect(inventory.items).toEqual([]);
+      expect(inventory.countsByDomain["parameter-definitions"]).toBe(0);
+      expect(inventory.countsByDomain["e-interface-definitions"]).toBe(0);
+    }
+  });
+
+  // 292/293 的三重判定：只有「intent 是 delete-all」+「数组」+「长度 0」三者同时成立
+  // 才算显式删除。少了任何一条，definition 都会回落成内置的 27 项且与内置逐项相等，
+  // 于是 parameter-definitions 与 e-interface-definitions 两域都是 0 条。
+  test("reports an explicit delete-all intent while an empty array under another intent reports nothing", () => {
+    const inventoryFor = (override: Record<string, unknown>) => {
+      const snapshot = defaultSnapshot();
+      snapshot.deviceLibrary.deviceDefinitionOverrides["ac-source"] = override as never;
+      return buildUserCustomizationInventory(snapshot, DEVICE_LIBRARY);
+    };
+
+    const deletesAll = inventoryFor({
+      kind: "ac-source",
+      parameterDefinitions: [],
+      parameterDefinitionsIntent: "delete-all"
+    });
+    expect(deletesAll.countsByDomain["parameter-definitions"]).toBe(1);
+    expect(deletesAll.countsByDomain["e-interface-definitions"]).toBe(1);
+    // changeType 是 "added" 而不是 "modified"：归一化后 kind 落到 shared:ACGenerator，
+    // 内置表里没有这一项（builtInByKind.has(kind) 为 false），所以整体算新增。
+    expect(deletesAll.items).toContainEqual(expect.objectContaining({
+      domain: "parameter-definitions",
+      itemId: "shared:ACGenerator",
+      changeType: "added"
+    }));
+
+    const otherIntent = inventoryFor({
+      kind: "ac-source",
+      parameterDefinitions: [],
+      parameterDefinitionsIntent: "full"
+    });
+    const missingArray = inventoryFor({
+      kind: "ac-source",
+      parameterDefinitionsIntent: "delete-all"
+    });
+    for (const inventory of [otherIntent, missingArray]) {
+      expect(inventory.countsByDomain["parameter-definitions"]).toBe(0);
+      expect(inventory.countsByDomain["e-interface-definitions"]).toBe(0);
+    }
+  });
+
+  // ── 刻意不写用例的一处：userCustomizations.ts:270 的三元回落臂 ──
+  //
+  //   return effective.length > 0 ? effective : parameterDefinitionsFromParams(template.params);
+  //
+  // 它在当前调用图下是死代码，三条各自独立的理由（每条都用探针实测过，不是读代码猜的）：
+  //  ① templateParameterDefinitions 只有两个调用方（行 440、行 480），传进去的都是
+  //     `snapshot.deviceLibrary.customDeviceTemplates` —— 已经过 normalizeUserCustomizationSnapshot
+  //     的模板。归一化链（normalizeCustomDeviceTemplates → applyComponentLibraryMetadataToCustomTemplates
+  //     → normalizeDeviceDefinitionOwnership）实测结果：
+  //       - parameterDefinitions / parameterDefinitionsIntent **被删掉**；
+  //       - params 只留 concreteDeviceDefinitionParams 的白名单键，_customParamDefinitions 被剔除。
+  //     于是 model.ts:8691 那条 delete-all 早退永远进不去（它要求这两个字段都在），
+  //     而回落臂即便被调用，parameterDefinitionsFromParams 也会因 raw 缺失直接返回 []。
+  //  ② effective 恒非空：finalizeTemplateParameterDefinitions(model.ts:8531) 无条件补一条 parent，
+  //     除非 E 段是列数为 0 的 Static* 段才把 parent 过滤掉 —— 而落到 Static* 段必须靠
+  //     params 里的 component_type，那个键自己又会生成一条定义。
+  //     实测（normalizeUserCustomizationSnapshot 之后，getTemplateParameterDefinitions 的 enName）：
+  //       static-point        → ["component_type"]     static-text-symbol → ["parent"]
+  //       static-button       → ["component_type"]     普通自定义 kind     → ["parent", "component_type"]
+  //       static-group-box    → ["component_type"]     legacy-fuel-cell    → ["parent"]
+  //     没有一种 kind 产出 []。
+  //  ③ 回落臂即使执行，返回值也只能是 []，产不出任何可观察差异 —— 写断言就是恒绿断言。
+  //
+  // 若哪天有人删掉 concreteDeviceTemplateForStorage 那层归一化（或把它挪到
+  // projectDeviceLibraryPersistencePayloadForStorage 之外），这条分支会复活，
+  // 那时应当补一条「params 里有 legacy JSON、effective 为空 → 仍报 N 项参数定义」的用例。
 });

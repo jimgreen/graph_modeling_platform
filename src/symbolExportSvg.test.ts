@@ -6,6 +6,8 @@ import { buildTemplateTerminalSlotPaint } from "./export/svg";
 import {
   DEFAULT_SYMBOL_EXPORT_FILTER_KEYS,
   STANDALONE_SCHEMA_FILE_NAME,
+  SYMBOL_EXPORT_FILTERS,
+  type SymbolExportFilterKey,
   buildStandaloneSymbolExport,
   buildStandaloneSymbolFiles,
   buildSymbolExportSvg,
@@ -18,6 +20,7 @@ import {
   standaloneSymbolsZipFileName,
   symbolExportFileName,
   symbolExportFilterKeysForTemplate,
+  symbolExportSchemeIdFromName,
   terminalAttachmentMarkupForTemplate,
   upsertSymbolExportScheme
 } from "./symbolExportSvg";
@@ -681,5 +684,74 @@ describe("导出文件名与方案快照", () => {
       templateKinds: ["ac-load", "ac-bus"]
     });
     expect(removeSymbolExportScheme(overwritten, "s3").map((scheme) => scheme.name)).toEqual(["乙方案"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 缺省入参的归一（各处 `x ?? ""` 的右支）
+// ---------------------------------------------------------------------------
+
+/** 直调分类判据：绕过 symbolExportFilterKeysForTemplate 聚合入口（原因见下方用例注释）。 */
+const filterMatches = (key: SymbolExportFilterKey) => {
+  const filter = SYMBOL_EXPORT_FILTERS.find((item) => item.key === key);
+  expect(filter, `SYMBOL_EXPORT_FILTERS 里找不到分类 ${key}`).toBeTruthy();
+  return filter!.matches;
+};
+
+/** 一个「kind 字段缺失」的模板：只保留 params，避免其它判据先炸。 */
+const KINDLESS_TEMPLATE = { params: {} } as unknown as DeviceTemplate;
+
+describe("缺省入参归一（空 kind / 空正文 / 空名称）", () => {
+  test("分类判据直调：kind 缺失按「空 kind」处理，且不得抛（String() 是承重行）", () => {
+    // 为什么必须绕过聚合入口：symbolExportFilterKeysForTemplate 按表序逐条判，第 2 条
+    // isStaticNode 内部走 isStaticKind(node.kind) → node.kind.startsWith(...)，对 undefined
+    // 直接抛 TypeError（model.ts:8141），filter 中断 ⇒ vertical 之后的三条判据
+    // （含 `template.kind ?? ""` 右支）在聚合入口下永远走不到。
+    // SYMBOL_EXPORT_FILTERS 是 export 的、UI 分类勾选也是直接用 matches，故直调是真实入口。
+    for (const key of ["vertical", "adaptable", "bus"] as SymbolExportFilterKey[]) {
+      const matches = filterMatches(key);
+      // kind 缺失是「模板定义损坏」的正常输入，判据不得抛（也不得返回 true）。
+      expect(() => matches(KINDLESS_TEMPLATE), `${key} 判据对 kind 缺失抛错`).not.toThrow();
+      // `?? ""` 右支：缺失 kind 与空 kind 同解（三条判据都不命中）
+      expect(matches(KINDLESS_TEMPLATE), key).toBe(false);
+      expect(matches(KINDLESS_TEMPLATE), key).toBe(matches(templateOf({ kind: "" })));
+    }
+    // 变异记录（已跑）：这三处若只删 `String(...)` 或只删 `?? ""`，本组断言**不会转红** ——
+    // 删 String() 后 `?? ""` 仍先生效，adaptable 拿到 ""（非 undefined，baseDeviceKind 不抛）；
+    // 删 `?? ""` 后 String(undefined)="undefined"，而 /-vertical$/、/bus/iu、ROUTABLE_LINE_DEVICE_KINDS
+    // 在 ""、"undefined"、"null" 上结论完全一致。故这三处 `?? ""` 是**输出不可观察的防御层**，
+    // 断言承重的是「兜底值被写错」（例如把 `?? ""` 改成 `?? "bus"` → 缺失 kind 的母线
+    // 凭空命中 bus 分类，实测转红）与「判据退化成恒 false」（见下方对照组）。
+    // 对照组：非空 kind 仍按判据命中，证明上面不是「恒 false」。
+    expect(filterMatches("vertical")(templateOf({ kind: "ac-bus-vertical" }))).toBe(true);
+    expect(filterMatches("adaptable")(templateOf({ kind: "ac-routable-line" }))).toBe(true);
+    expect(filterMatches("bus")(templateOf({ kind: "ac-bus" }))).toBe(true);
+  });
+
+  test("方案 id 由名称派生：名称缺失/全非名字符 → scheme-unnamed（不是 scheme-null）", () => {
+    // 直调而非经 normalizeSymbolExportSchemes —— 后者在调用前已 `String(name ?? "").trim()`，
+    // 传进去的永远是字符串，本函数自己的 `name ?? ""` 那层就永远观察不到（§3：别只从聚合
+    // 入口进函数）。两条空名输入正是「硬编码变异不会猜到」的取值。
+    expect(symbolExportSchemeIdFromName(undefined as unknown as string)).toBe("scheme-unnamed");
+    expect(symbolExportSchemeIdFromName(null as unknown as string)).toBe("scheme-unnamed");
+    expect(symbolExportSchemeIdFromName("!!!")).toBe("scheme-unnamed");
+    // 名称全被安全化吃掉时，兜底名必须是 "unnamed" 而不是一个空 id（空 id 会与别的方案撞键）
+    expect(symbolExportSchemeIdFromName("!!!")).not.toBe(symbolExportSchemeIdFromName("母线方案"));
+    // 非空名称：CJK 保留、首尾分隔符压掉、中间空白折叠成一个连字符
+    expect(symbolExportSchemeIdFromName("  母线 方案!!  ")).toBe("scheme-母线-方案");
+  });
+
+  test("正文提取与空白压缩对 nullish 输入：返回空结果而非抛错", () => {
+    expect(extractSymbolExportParts(null as unknown as string)).toEqual({ styleRules: [], symbols: [] });
+    expect(extractSymbolExportParts(undefined as unknown as string)).toEqual({ styleRules: [], symbols: [] });
+    expect(compactSymbolExportWhitespace(null as unknown as string)).toBe("");
+    expect(compactSymbolExportWhitespace(undefined as unknown as string)).toBe("");
+    // 对照组：非空输入照常解析/压缩（证明上面不是「恒返回空」）
+    expect(extractSymbolExportParts(SINGLE_STATE_SYMBOL_DOC).symbols).toHaveLength(1);
+    expect(extractSymbolExportParts(SINGLE_STATE_SYMBOL_DOC).styleRules).toHaveLength(1);
+    expect(compactSymbolExportWhitespace("<a>\r\n\r\n<b/></a>")).toBe("<a>\n<b/></a>");
+    // 已知等价变异记录：extractSymbolExportParts 两处 `sourceSvg ?? ""` 只删 `?? ""`
+    // （留 String(...)）不会让上面转红 —— String(null)="null" 同样匹配不到 <style>/<symbol>。
+    // 断言承重的是 String(...) 这层归一（删掉即 null.matchAll → TypeError）。
   });
 });

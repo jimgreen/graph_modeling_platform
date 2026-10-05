@@ -2,6 +2,8 @@ import { describe, expect, test, beforeEach, afterEach } from "vitest";
 import { WebSocket } from "ws";
 import { createImageServer } from "./server.mjs";
 import { apiPath } from "./config.mjs";
+// 只为直调 handleV1RuntimeClients（listClients 由派发层注入，真实 server 下无法让它抛错）。
+import { handleV1RuntimeClients } from "./apiV1Runtime.mjs";
 
 // /webgrp/v1/runtime/* 集成测试：起真实 image-server（含 WS 桥接 + runtime 路由），
 // 用真实 WS 客户端连入响应 fetch，打 HTTP 请求验证端到端。
@@ -9,6 +11,10 @@ import { apiPath } from "./config.mjs";
 let server;
 let baseUrl;
 let wsUrl;
+// 收集所有已打开的 WS：断言失败时用例会跳过 ws.close()，
+// 残留连接会让 server.close() 在 afterEach 里挂到 hook timeout，
+// 把「干净的断言 RED」污染成「hook timed out 红」。
+const openSockets = new Set();
 
 async function startServer() {
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
@@ -22,6 +28,11 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // 先关掉本用例打开的全部 WS：断言失败时用例体会跳过 ws.close()，
+  // 残留连接会让 server.close() 挂到 afterEach 的 hook timeout，
+  // 把「干净的断言 RED」污染成「hook timed out 红」。
+  for (const ws of openSockets) ws.close();
+  openSockets.clear();
   // 关 WS 连接避免阻塞 server.close（wss 在 attachRuntimeWebSocket 内部，无外部引用，
   // server.close 后 wss 通过 server "close" 事件清理）
   await new Promise((resolve) => server.close(resolve));
@@ -31,6 +42,8 @@ afterEach(async () => {
 function connectResponder(clientId, responder) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
+    openSockets.add(ws);
+    ws.on("close", () => openSockets.delete(ws));
     ws.on("open", () => {
       ws.send(JSON.stringify({ type: "register", clientId }));
     });
@@ -363,5 +376,122 @@ describe("/v1/runtime/screenshot 的 width/height 校验", () => {
     const { status, json } = await fetchV1(`${apiPath("/v1/runtime/screenshot")}?width=abc&height=xyz`);
     expect(status).toBe(400);
     expect(json.error.message).toContain("width");
+  });
+});
+
+// ─── 未覆盖分支补测（变异验证）────────────────────────────────────────────────
+//
+// ① apiV1Runtime.mjs:69 —— handleV1RuntimeClients 的 catch。
+//    listClients 由派发层（createV1RuntimeRoutes 的 wrap）注入，真实 server 路径下
+//    没有任何办法让它抛错，故直接调导出 handler + 假 response
+//    （写法照 server/apiV1Schemes.test.mjs 的 directResponse）。
+//    `error instanceof Error ? error.message : "后端处理失败。"` 三元两侧各断一条，
+//    且两条的期望值互不相同（Error 侧是自定义 message 原文，非 Error 侧是固定文案），
+//    所以「删掉 instanceof 判断」只让 ①-a 红、「改掉兜底文案」只让 ①-b 红 —— 没有恒绿的那条。
+//
+// ② apiV1Runtime.mjs:185 —— handleV1RuntimeEFile(GET) 的 catch。
+//    既有 e-file 用例只覆盖了成功路径、?template= 已知/未知模板，
+//    从没让 fetchFromClient reject 过 —— 这一整段 catch 未被触达。
+//
+// ③ apiV1Runtime.mjs:216-221 —— handleV1RuntimeEFilePost 的 catch 落穿。
+//    body 合法 JSON（非 SyntaxError）→ 不落 payload-too-large / SyntaxError 两处 return，
+//    一直走到 handleFetchError。既有 POST 用例只有「空 templateText 早退」与
+//    「非法 JSON」两条，都在 handleFetchError 之前就 return 了。
+//    错误码刻意取自定义码而非 no-online-client：自定义码只能来自前端透传，
+//    硬编码变异猜不到；no-online-client 是本仓最容易被写死的字面量。
+function directResponse() {
+  const chunks = [];
+  return {
+    statusCode: 0,
+    headers: {},
+    headersSent: false,
+    writeHead(status, headers) {
+      this.statusCode = status;
+      this.headers = headers ?? {};
+      this.headersSent = true;
+    },
+    end(data) {
+      if (data !== undefined && data !== null) {
+        chunks.push(Buffer.isBuffer(data) ? data : Buffer.from(data));
+      }
+    },
+    body() {
+      return Buffer.concat(chunks).toString("utf-8");
+    },
+    jsonBody() {
+      return JSON.parse(this.body());
+    }
+  };
+}
+
+describe("handleV1RuntimeClients 直调：listClients 抛错 → 500 internal", () => {
+  test("抛 Error → 500 internal + error.message 原文", () => {
+    const res = directResponse();
+    handleV1RuntimeClients({ response: res }, {
+      listClients: () => {
+        throw new Error("注册表快照读取失败：ENOENT /data/clients.json");
+      }
+    });
+    expect(res.statusCode).toBe(500);
+    expect(res.jsonBody().ok).toBe(false);
+    expect(res.jsonBody().error.code).toBe("internal");
+    expect(res.jsonBody().error.message).toBe("注册表快照读取失败：ENOENT /data/clients.json");
+  });
+
+  test("抛非 Error → 500 internal + 兜底文案「后端处理失败。」", () => {
+    const res = directResponse();
+    handleV1RuntimeClients({ response: res }, {
+      listClients: () => {
+        throw "裸字符串原因";
+      }
+    });
+    expect(res.statusCode).toBe(500);
+    expect(res.jsonBody().ok).toBe(false);
+    expect(res.jsonBody().error.code).toBe("internal");
+    expect(res.jsonBody().error.message).toBe("后端处理失败。");
+  });
+});
+
+describe(apiPath("/v1/runtime/e-file") + " 错误映射（GET 的 catch）", () => {
+  test("GET 无在线客户端 → 503 no-online-client", async () => {
+    const { status, json } = await fetchV1(apiPath("/v1/runtime/e-file"));
+    expect(status).toBe(503);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("no-online-client");
+  });
+
+  test("GET 前端自定义错误码 → 500 且原样透传（不断言规范错误码）", async () => {
+    const ws = await connectResponder("c1", () => ({
+      ok: false,
+      error: { code: "e-file-template-unsupported", message: "该模板缺少必填段。" }
+    }));
+    const { status, json } = await fetchV1(
+      apiPath("/v1/runtime/e-file") + "?template=" + encodeURIComponent("配网实时库")
+    );
+    expect(status).toBe(500);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("e-file-template-unsupported");
+    expect(json.error.message).toBe("该模板缺少必填段。");
+    ws.close();
+  });
+});
+
+describe(apiPath("/v1/runtime/e-file") + " POST 的 catch 落穿", () => {
+  test("合法 JSON + 非空 templateText + 前端自定义错误码 → 500 透传", async () => {
+    const ws = await connectResponder("c1", () => ({
+      ok: false,
+      error: { code: "e-file-template-malformed", message: "模板文本缺少 ACLoad 根节点。" }
+    }));
+    const res = await fetch(`${baseUrl}${apiPath("/v1/runtime/e-file")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ templateName: "自定义模板B", templateText: "<ACLoad>\nname=名称\n</ACLoad>" })
+    });
+    expect(res.status).toBe(500);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("e-file-template-malformed");
+    expect(json.error.message).toBe("模板文本缺少 ACLoad 根节点。");
+    ws.close();
   });
 });

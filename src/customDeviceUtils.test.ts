@@ -1177,6 +1177,181 @@ describe("primaryOrthogonalAxis", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// 归属迁移 / 覆盖搬移里的 nullish 兜底与早退分支。
+//
+// 这些分支的共同形状是「输入可以整个缺失」：旧存档里 params 整体没有、
+// 覆盖上只写了其中一个表、模板是新建的（没有前一个模板可对照）。
+// 兜底一旦被去掉，表现不是结果算错，而是 Object.entries(undefined) 直接抛，
+// 整次迁移（含同一批里的其它模板）全废 —— 所以断言既要钉住「退化成空对象」，
+// 也要钉住「共享覆盖仍然是完整对象」，不能只看业务参数那几项。
+// ---------------------------------------------------------------------------
+
+// 旧存档 / 手工改过的导入包可能整体没有 params。
+// 这里被同一份 fixture 走到的两处独立兜底：
+//   templateBusinessDefinitionOverride 里的 `template.params ?? {}`（挑业务参数）
+//   normalizeDeviceDefinitionOwnership 汇总共享类参数时的 `template.params ?? {}`（flatMap 各模板）
+describe("params 整体缺失的旧模板仍能完成归属迁移", () => {
+  const noParamsTemplate = {
+    kind: "custom-no-params",
+    label: "无参旧模板",
+    categoryLibrary: "交流设备",
+    size: { width: 104, height: 64 },
+    params: undefined,
+    terminalType: "ac",
+    terminalCount: 1,
+    custom: true,
+    parameterDefinitions: [{ cnName: "有功", enName: "p", valueType: "float", typicalValue: "1" }]
+  } as any;
+
+  test("业务参数退化成空对象，共享覆盖与自定义模板都仍然建得出来", () => {
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(noParamsTemplate);
+    const normalized = normalizeDeviceDefinitionOwnership([noParamsTemplate], {});
+
+    // 参数定义是模板自带的，照样搬进共享类；params 则只能是空对象
+    expect(normalized.deviceDefinitionOverrides[sharedKey]).toMatchObject({
+      kind: sharedKey,
+      params: {},
+      parameterDefinitions: [{ enName: "p", typicalValue: "1" }]
+    });
+    expect(normalized.deviceDefinitionOverrides[sharedKey].params).toEqual({});
+    expect(normalized.customDeviceTemplates[0].params).toEqual({});
+  });
+
+  test("没有任何模板还持有的陈旧共享覆盖会被补上一个空 params", () => {
+    const ghostKey = "shared:GhostClass";
+    const normalized = normalizeDeviceDefinitionOwnership([noParamsTemplate], {
+      [ghostKey]: {
+        kind: ghostKey,
+        parameterDefinitions: [{ cnName: "遗留", enName: "legacy_p", valueType: "float", typicalValue: "1" }]
+      }
+    } as any);
+    const ghost = normalized.deviceDefinitionOverrides[ghostKey];
+
+    // 该键没有任何模板解析到：汇总出来的业务参数为空、共享覆盖自己的 params 又缺省，
+    // 结果必须是一个「存在着的空 params」而不是整个 params 键缺席。
+    expect(ghost).toMatchObject({
+      kind: ghostKey,
+      parameterDefinitions: [{ enName: "legacy_p" }]
+    });
+    expect(ghost.params).toEqual({});
+  });
+});
+
+// 用户显式清空过定义表时，清空标记必须跟着模板一起搬进共享类；
+// 否则这次迁移会把内置定义重新填回来，用户清空的操作被悄悄撤销。
+describe("归属迁移保留模板上的显式清空标记", () => {
+  const baseLegacy = {
+    categoryLibrary: "交流设备",
+    size: { width: 104, height: 64 },
+    terminalType: "ac",
+    terminalCount: 1,
+    custom: true
+  };
+
+  test("参数定义清空标记随模板搬进共享类", () => {
+    const template = {
+      ...baseLegacy,
+      kind: "custom-del-param",
+      label: "删参设备",
+      params: { component_type: "ACLoad", p: "1", backgroundImage: "del.svg" },
+      parameterDefinitions: [],
+      parameterDefinitionsIntent: "delete-all"
+    } as any;
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    const normalized = normalizeDeviceDefinitionOwnership([template], {});
+
+    expect(normalized.deviceDefinitionOverrides[sharedKey]).toMatchObject({
+      kind: sharedKey,
+      parameterDefinitions: [],
+      parameterDefinitionsIntent: "delete-all",
+      params: { p: "1", component_type: "ACLoad" }
+    });
+  });
+
+  test("测量定义清空标记随模板搬进共享类，且不会误长出参数定义清空标记", () => {
+    const template = {
+      ...baseLegacy,
+      kind: "custom-del-meas",
+      label: "删测量设备",
+      params: { component_type: "ACLoad", p: "1" },
+      measurementDefinitions: [],
+      measurementDefinitionsIntent: "delete-all"
+    } as any;
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    const normalized = normalizeDeviceDefinitionOwnership([template], {});
+    const shared = normalized.deviceDefinitionOverrides[sharedKey];
+
+    expect(shared).toMatchObject({
+      kind: sharedKey,
+      measurementDefinitions: [],
+      measurementDefinitionsIntent: "delete-all"
+    });
+    // 两个标记各走各的：只清了测量表，参数定义那边不该凭空多出一个 delete-all
+    expect(shared.parameterDefinitions).toBeUndefined();
+    expect(shared.parameterDefinitionsIntent).toBeUndefined();
+  });
+});
+
+describe("migrateSharedDeviceDefinitionOverrideForTemplateChange 的两条早退", () => {
+  const base = {
+    kind: "custom-move",
+    label: "搬移",
+    categoryLibrary: "交流设备",
+    size: { width: 104, height: 64 },
+    params: { component_type: "ACLoad" },
+    terminalType: "ac",
+    terminalCount: 1,
+    custom: true
+  } as any;
+
+  test("没有前一个模板时只按新模板集合归一：图形参数被剥掉，且没有任何键被搬动", () => {
+    const sameKeyNext = { ...base, params: { component_type: "ACLoad", backgroundImage: "next.svg" } };
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(base);
+    const migrated = migrateSharedDeviceDefinitionOverrideForTemplateChange({
+      [sharedKey]: { kind: sharedKey, params: { p: "1", backgroundImage: "keep.svg" } }
+    }, undefined, sameKeyNext, [sameKeyNext]);
+
+    expect(Object.keys(migrated)).toEqual([sharedKey]);
+    // 真的走了「对新模板集合归一」而不是原样透传：归一会按共享定义口径重算 params，
+    // backgroundImage 这类图形参数在这里被剥掉。
+    expect(migrated[sharedKey].params).toEqual({ p: "1" });
+  });
+
+  test("共享键未变时既不搬也不合并：新模板的 component_type 不会被塞进共享覆盖", () => {
+    const sameKeyNext = { ...base, params: { component_type: "ACLoad", backgroundImage: "next.svg" } };
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(base);
+    expect(deviceDefinitionSharedKeyForTemplate(sameKeyNext)).toBe(sharedKey);
+    const migrated = migrateSharedDeviceDefinitionOverrideForTemplateChange({
+      [sharedKey]: { kind: sharedKey, params: { p: "1" } }
+    }, base, sameKeyNext, [sameKeyNext]);
+
+    // 若不早退，搬移逻辑会把 nextTemplate 的元数据参数并进来
+    expect(migrated[sharedKey].params).toEqual({ p: "1" });
+    expect(migrated[sharedKey].params?.component_type).toBeUndefined();
+  });
+
+  test("共享键变了才搬：目标键上已有的参数优先于从旧键搬来的", () => {
+    const nextOther = { ...base, params: { component_type: "DCLoad" } };
+    const previousKey = deviceDefinitionSharedKeyForTemplate(base);
+    const nextKey = deviceDefinitionSharedKeyForTemplate(nextOther);
+    expect(nextKey).not.toBe(previousKey);
+    const migrated = migrateSharedDeviceDefinitionOverrideForTemplateChange({
+      [previousKey]: {
+        kind: previousKey,
+        params: { p: "1" },
+        parameterDefinitions: [{ cnName: "有功", enName: "p", valueType: "float", typicalValue: "1" }]
+      },
+      [nextKey]: { kind: nextKey, params: { p: "2" } }
+    }, base, nextOther, [nextOther]);
+
+    expect(migrated[previousKey]).toBeUndefined();
+    expect(migrated[nextKey].params).toEqual({ p: "2", component_type: "DCLoad" });
+    expect(migrated[nextKey].parameterDefinitions).toEqual([
+      { cnName: "有功", enName: "p", valueType: "float", typicalValue: "1" }
+    ]);
+  });
+});
 describe("constrainPointToOrthogonalAxis", () => {
   const start = { x: 4, y: 7 };
 

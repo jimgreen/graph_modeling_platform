@@ -1,5 +1,5 @@
 // 图元 Symbol 导出方案：归一化契约 + 空间路径读写 + 建目录守卫注入。
-import { expect, test, describe, beforeAll, afterAll, vi } from "vitest";
+import { expect, test, describe, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +19,42 @@ import {
 let dataDir;
 beforeAll(() => { dataDir = mkdtempSync(join(tmpdir(), "symbol-schemes-")); });
 afterAll(() => { rmSync(dataDir, { recursive: true, force: true }); });
+
+// ---------------------------------------------------------------------------
+// 读盘替身：只为让 readSymbolExportSchemes 的 catch 能收到「自定义形状」的 error。
+// 真实 fs 造不出这种输入（实测：ENOENT / EACCES / EISDIR / ERR_INVALID_ARG_TYPE
+// 全都带 code，JSON.parse 的 SyntaxError 带 name），而要断的正是
+// `error?.code ?? error?.name ?? "unknown"` 里**两个键都不存在**的那一格，
+// 以及**整个 error 本身为 nullish**（`throw undefined` / `throw null`）的那一格。
+//
+// 用 `armed` 显式武装而不是靠 `error` 的真值：一个 falsy 的 error（null/undefined）
+// 本身就是待注入的输入，用真值判断当开关会把它当成「没武装」而永远不抛。
+//
+// 用 vi.hoisted 共享可变状态（vi.mock 工厂被提升到 import 之前，普通闭包变量会 TDZ）；
+// 用 importOriginal 展开其余导出，保证 atomicWrite 的 mkdir/rename/writeFile 仍是真身，
+// 其余 26 条用例的落盘/回读完全不受影响。
+const readFailure = vi.hoisted(() => ({ armed: false, target: "", error: null }));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    readFile: async (path, ...rest) => {
+      if (readFailure.armed && String(path) === readFailure.target) {
+        throw readFailure.error;
+      }
+      return actual.readFile(path, ...rest);
+    }
+  };
+});
+
+// afterEach 统一还原替身：断言失败时也不能把注入中的错误对象泄给后续用例，
+// 否则后面某条用例会撞上一次本不存在的读失败（劣质 RED 的来源之一）。
+afterEach(() => {
+  readFailure.armed = false;
+  readFailure.target = "";
+  readFailure.error = null;
+});
 
 // 手写一份任意原始文本到某空间的 settings/symbol-export-schemes.json。
 // 写侧 writeSymbolExportSchemes 会先校验再归一化，造不出「合法 JSON 但形状错」的文件，
@@ -133,6 +169,8 @@ describe("normalizeSymbolExportSchemes", () => {
     // 已证明 `if (!id) return null` 这道守卫**不可达**，不构成覆盖：id 要么是显式值，
     // 要么是 schemeIdFromName 的返回值，而后者恒为非空的 `scheme-…`（把判据换成
     // 永不成立的条件，用例仍全绿）。留着它是因为源文件如此，此处只做记录。
+    // 完整论证与叠加变异证据见本文件末尾的
+    // 「normalizeScheme 第 50~53 行：id 恒非空」那一组。
   });
 
   test("★ updatedAt：给了就 trim 后保留，没给填当前 ISO 串", () => {
@@ -377,5 +415,149 @@ describe("读侧形状错降级：JSON 合法但取不到可用载荷", () => {
     const missing = await readCapturingWarns(missingPaths);
     expect(missing.result.exists).toBe(false);
     expect(missing.warns).toEqual([]);
+  });
+});
+
+describe("读侧告警文案的错误码兜底链：error?.code ?? error?.name ?? unknown", () => {
+  // 四格各一条，且互相排除：只有 code / 只有 name / 两个键都不存在 / error 本身为 nullish。
+  // 输入分别喂**真实 fs 会产出的形态**（EACCES）、**JSON.parse 会产出的形态**（SyntaxError）、
+  // 代码显式兜了的裸对象、以及可选链 `?.` 唯一承重的 nullish（throw undefined / throw null）。
+  // 每条都断言「取到了哪一档」，不只断言「有告警」—— 否则几档会互相顶替、恒绿。
+  test("★ 四级输入各占一格：只有 code / 只有 name / 两个键都不存在 / error 本身为 nullish", async () => {
+    const paths = spacePathsFor(dataDir, "无键错误");
+    const run = async (thrown) => {
+      readFailure.armed = true;
+      readFailure.target = paths.symbolExportSchemes;
+      readFailure.error = thrown;
+      try {
+        return await readCapturingWarns(paths);
+      } finally {
+        readFailure.armed = false;
+        readFailure.target = "";
+        readFailure.error = null;
+      }
+    };
+
+    // ① 只有 code（真实 fs 错误的形态）：取 code，且**不**落到 name
+    const onlyCode = await run({ code: "EACCES", name: "NotTheOneUsed" });
+    // ② 只有 name（JSON.parse 的形态，既有坏 JSON 用例走的就是这一格）：
+    //    取 name，且**不**落到 "unknown"
+    const onlyName = await run({ name: "BareSyntaxError" });
+    // ③ ★ 两个键都**不存在**（不是键存在但值为空）：只有这一格才求值 "unknown"
+    const neither = await run({ detail: "既无 code 也无 name" });
+    // ④ ★★ 整个 error 本身就是 nullish：这是「可选链 `?.`」唯一承重的输入。
+    //    `throw undefined` / `throw null` 在 JS 里合法（Promise.reject(undefined) 即走这条），
+    //    此时 `error.code` 会抛 TypeError 让**整个读侧**跟着炸，
+    //    而 `error?.code` 仍产出第三级兜底 "unknown" 并照常降级。
+    //    这一格是 ①②③ 覆盖不到的维度：前三个 error 都是非 null 对象，
+    //    所以只喂它们的话，把 `error?.code` 写成 `error.code` 一条都不会红（实测 GREEN）。
+    //    —— 故此判 GREEN 之前先枚举「变异触及的输入维度」，别把「夹具没覆盖」记成「代码等价」。
+    //
+    //    红在哪一步：断言落在返回值与告警上（`result.exists` / `warns`），不靠「没抛」。
+    //    变异掉 `?.` 后 readSymbolExportSchemes 会以 TypeError 拒绝，上面循环里第一条
+    //    `result.exists` 断言即红。按 §6.14 这属于**正确的**崩溃型 RED ——
+    //    被删的 `?.` 就是那道守卫，「没有它就崩」正是它承重的证据。
+    const nullish = [await run(undefined), await run(null)];
+
+    for (const { result } of [onlyCode, onlyName, neither, ...nullish]) {
+      expect(result.exists).toBe(false);
+      expect(result.schemes).toEqual([]);
+    }
+
+    expect(onlyCode.warns).toHaveLength(1);
+    // ① code 优先于 name
+    expect(onlyCode.warns[0]).toContain("（EACCES）");
+    expect(onlyCode.warns[0]).not.toContain("NotTheOneUsed");
+    // ② name 次之，且明确不落到 "unknown" —— 这条是对照，用来排除「②③ 走同一条路」
+    expect(onlyName.warns).toHaveLength(1);
+    expect(onlyName.warns[0]).toContain("（BareSyntaxError）");
+    expect(onlyName.warns[0]).not.toContain("unknown");
+    // ③ ★ 第三级兜底：两条 ?? 都没接住才取 "unknown"
+    expect(neither.warns).toHaveLength(1);
+    expect(neither.warns[0]).toContain("（unknown）");
+    // ④ ★ 可选链承重：error 为 nullish 时**不抛**、照常降级、仍取第三级兜底
+    for (const [index, entry] of nullish.entries()) {
+      const label = index === 0 ? "throw undefined" : "throw null";
+      expect(entry.warns, label).toHaveLength(1);
+      expect(entry.warns[0], label).toContain("（unknown）");
+    }
+    // 四条都带同一段风险提示（文案主体与错误码无关，是共用出口）
+    for (const { warns } of [onlyCode, onlyName, neither, ...nullish]) {
+      expect(warns[0]).toContain("覆盖磁盘上的原配置");
+      expect(warns[0]).toContain(paths.symbolExportSchemes);
+    }
+  });
+
+  test("对照组：替身没生效时这几格都取不到 —— 真读一个缺失文件仍是 ENOENT 静默", async () => {
+    // 证明上面的 warns 断言不是恒绿：target 不匹配时走真 fs，
+    // 坏 JSON 仍产出 SyntaxError 那一档，而「两个键都不存在」那一格取不到。
+    const brokenPaths = writeRawSchemeFile("兜底对照", "{ 不是 JSON");
+    const broken = await readCapturingWarns(brokenPaths);
+    expect(broken.warns[0]).toContain("SyntaxError");
+
+    readFailure.armed = true;
+    readFailure.target = "D:/work/graph_modeling_platform/tmp/ai-symsch-永不匹配.json";
+    readFailure.error = { detail: "这条不该被触发" };
+    try {
+      const missing = await readCapturingWarns(spacePathsFor(dataDir, "替身未命中"));
+      expect(missing.warns).toEqual([]);
+    } finally {
+      readFailure.armed = false;
+      readFailure.target = "";
+      readFailure.error = null;
+    }
+  });
+});
+
+describe("normalizeScheme 第 50~53 行：id 恒非空，故 !id 早退不可达（可达性论证，非覆盖）", () => {
+  const only = (raw) => normalizeSymbolExportSchemes({ schemes: [raw] }).schemes;
+
+  test("★ id 缺失 / 空白 / slug 为空时都落到派生的 scheme- 前缀，且恒非空", () => {
+    // ★ 断言顺序有讲究：先断**数组形状**再断 id 值。若把 `only(...)[0].id` 写在前面，
+    // 一旦派生改成能返回空串（守卫便会被触发、整条被丢弃），这里会先抛
+    // TypeError: Cannot read properties of undefined (reading 'id') ——
+    // 那是劣质 RED（崩的是测试自己，不是被测契约）。先断 length 才能拿到指名契约的断言失败。
+    // id 键完全不存在 → || 右臂
+    const missingId = only({ name: "缺失 id" });
+    expect(missingId).toHaveLength(1);
+    expect(missingId[0].id).toBe("scheme-缺失-id");
+    // id 为纯空白 → normalizedText trim 成 ""（falsy）→ 同样走右臂
+    const blankId = only({ name: "空白 id", id: "   " });
+    expect(blankId).toHaveLength(1);
+    expect(blankId[0].id).toBe("scheme-空白-id");
+    // 非字符串 id（数字 0）也是 falsy → 右臂
+    const numberId = only({ name: "数字 id", id: 0 });
+    expect(numberId).toHaveLength(1);
+    expect(numberId[0].id).toBe("scheme-数字-id");
+    // slug 化后为空（全标点）→ 回落 unnamed，仍以 scheme- 开头
+    const emptySlug = only({ name: "!!!" });
+    expect(emptySlug).toHaveLength(1);
+    expect(emptySlug[0].id).toBe("scheme-unnamed");
+    // 显式非空 id 优先，不参与派生
+    expect(only({ name: "显式", id: "KEEP-ME" })[0].id).toBe("KEEP-ME");
+  });
+
+  test("★ 全定义域论证（路线 A）：id 只可能来自两条产出路径，两条都恒非空", () => {
+    // 路径一：normalizedText(raw.id) 非空 ⇒ 本身即非空串。
+    // 路径二：为 falsy（""，含键不存在 / 非字符串 / 纯空白）时取 schemeIdFromName(name)，
+    //         其返回值是 `scheme-${slug || "unnamed"}` —— 模板串恒以 "scheme-" 开头，
+    //         长度 ≥ 7，与 slug 内容无关。两路径的并集恒不含 falsy，
+    // 故 `!id` 在整个输入域上恒为 false，L51 的 return null 不可达（非「测不出来」）。
+    //
+    // 路线 B 叠加变异给出的**可证机制**（实测，非推断）：
+    //   ① 单独删 L51 的 if (!id) return null → GREEN（28/28），即该守卫当前无行为；
+    //   ② 只把 L35 改成 return slug ? `scheme-${slug}` : "" （派生变可空）、守卫保留
+    //      → RED：expected [] to deeply equal [ 'scheme-unnamed' ]，**整条被丢弃**；
+    //   ③ ②再叠加删守卫 → RED：expected [ '' ] to deeply equal [ 'scheme-unnamed' ]，
+    //      **保留下来、id 为空串**。
+    //   ②③ 的失败文本之差（[] 与 ['']）就是这道守卫唯一的作用 ——
+    //   「把派生为空的方案整条丢掉」，而它在当前 L35 下永远触发不到。
+    // 下面把「恒非空」钉成可执行契约：② 那条变异一旦发生，本组立刻转红。
+    for (const name of ["a", "母线", "!!!", "A/B", "0", "-", "x".repeat(200), "Hello World!"]) {
+      const schemes = only({ name });
+      expect(schemes, name).toHaveLength(1);
+      expect(typeof schemes[0].id, name).toBe("string");
+      expect(schemes[0].id.length, name).toBeGreaterThan(0);
+    }
   });
 });

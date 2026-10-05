@@ -166,6 +166,59 @@ describe("bindUserSpaceToSession", () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
+  test("最近访问缺失时回退创建时间；两个时间都没有的空间排最旧", async () => {
+    // stamp = lastAccessAt ?? createdAt ?? ""。三档各自只有一个空间命中，
+    // 且必须 ≥2 个才能让 sort 真的去调比较器（单元素数组 sort 不比较，stamp 根本不会被求值）。
+    mockRouter({
+      "GET /webgrp/spaces": {
+        spaces: [
+          space("default", "默认空间"),
+          // 无 lastAccessAt → 走 createdAt 那一档，且它是全场最大时间戳
+          space("按创建时间", "按创建时间", { createdAt: "2026-09-20T00:00:00.000Z", owner: "张三" }),
+          space("按最近访问", "按最近访问", {
+            createdAt: "2026-01-01T00:00:00.000Z",
+            lastAccessAt: "2026-09-10T00:00:00.000Z",
+            owner: "张三"
+          }),
+          // 两个时间都没有 → stamp 退到空串，必须排在所有真实时间戳之后
+          space("无时间戳", "无时间戳", { createdAt: undefined, owner: "张三" })
+        ],
+        current: "default"
+      }
+    });
+
+    await bindUserSpaceToSession("张三");
+
+    expect(readSpaceCookie()).toBe("按创建时间");
+  });
+
+  test("新建被拒且回读也认不到：原样抛出并降级，不碰已有 Cookie", async () => {
+    writeSpaceCookie("default");
+    mockDoc.writes.length = 0;
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "GET") {
+        // 两次 GET 都没有自己的空间：首次探测为空，POST 失败后的回读也为空
+        return { ok: true, json: async () => ({ spaces: [space("default", "默认空间")], current: "default" }) };
+      }
+      return {
+        ok: false,
+        status: 400,
+        json: async () => ({ error: { code: "SPACE_NAME_INVALID", message: "空间名只能是字母、数字或中文。" } })
+      };
+    });
+    (globalThis as any).fetch = fetchMock;
+
+    await expect(bindUserSpaceToSession("张三")).resolves.toBeUndefined();
+
+    // 回读确实发生过（探测 GET + POST + 回读 GET），否则这条根本没走到认领分支
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(readSpaceCookie()).toBe("default");
+    expect(mockDoc.writes).toHaveLength(0);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    // 原样抛出的是建空间那次的 400，不是回读阶段自己造出来的别的东西
+    expect((warnSpy.mock.calls[0][1] as Error).message).toBe("空间名只能是字母、数字或中文。");
+  });
+
   test("新建撞名（并发）：回读认领同名空间，不把异常抛给启动流程", async () => {
     let listCalls = 0;
     (globalThis as any).fetch = vi.fn(async (_url: string, init?: RequestInit) => {
@@ -214,5 +267,22 @@ describe("filterSpacesForCurrentUser", () => {
     (globalThis as any).window = { __POWERED_BY_QIANKUN__: true, __QIANKUN_PROPS__: {} };
 
     expect(filterSpacesForCurrentUser(spaces)).toBe(spaces);
+  });
+
+  test("宿主传了用户但列表还没加载（undefined）：收窄成空数组而不是原样透出 undefined", () => {
+    // 右臂判别输入必须是「键/参数根本不存在」= undefined：
+    // 传 `[]` 的话 `Array.isArray([])` 为真，`? :` 直接取左臂，右臂从未被求值 —— 改它恒绿。
+    const narrowed = filterSpacesForCurrentUser(undefined);
+
+    expect(Array.isArray(narrowed)).toBe(true);
+    expect(narrowed).toEqual([]);
+  });
+
+  test("列表是非数组的畸形值（对象）：同样收窄成空数组，不把畸形值当数组展开", () => {
+    const malformed = { name: "张三", owner: "张三" } as unknown as { name: string; owner?: string }[];
+
+    // 断言落点：结果必须是**空数组**。若右臂被改成 `spaces as any` 之类的透传，
+    // 这里会拿到对象本身而不是数组 —— toEqual([]) 立刻红。
+    expect(filterSpacesForCurrentUser(malformed)).toEqual([]);
   });
 });

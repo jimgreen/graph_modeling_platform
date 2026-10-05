@@ -152,4 +152,60 @@ describe("E 文件接口模板类型限制策略", () => {
       expect(eDeviceTemplateNetworkTypeMismatchMessage("配网实时库", [null, undefined, "", "馈线"])).toBeNull();
     });
   });
+
+  // ── 网络标签表缺键时的两处 `??` 兜底 ────────────────────────────────────
+  //
+  // MODEL_TYPE_NETWORK_LABEL 只有 厂站/馈线/台区 三个键，而限制表里的类型恰好也都在这三键里，
+  // 于是「allowed 侧无标签」和「modelType 侧无标签」两档在当前配置下都不可达 ——
+  // 这是配置上的巧合，不是守卫。要触达就得临时往导出表里塞一条无标签类型；
+  // try/finally 精确还原（漏还原会被上面「限制表的键集被钉死」那条用例当场抓住）。
+  describe("网络标签缺键时的 ?? 兜底（两侧各断一条）", () => {
+    const table = E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES as Record<string, string[]>;
+    const TEMP_TEMPLATE = "__临时无标签模板__";
+    const UNLABELLED_ALLOWED = "未来区域类型"; // 不在标签表里，也不在允许列表对照位
+    const UNLABELLED_CURRENT = "未知模型类型"; // 不在标签表里
+
+    test("允许类型与当前类型都没有标签时：文案原样用类型名（allowed 侧 + modelType 侧各一条）", () => {
+      table[TEMP_TEMPLATE] = [UNLABELLED_ALLOWED];
+      try {
+        // 左半（allowed.map 里的 ?? type）：文案里出现的是**类型名本身**，不是标签也不是空串。
+        // 删掉右臂时 [undefined].join("、") 会抹成空串 —— 那正是「删操作符」型变异要暴露的。
+        expect(eDeviceTemplateSingleTypeMismatchMessage(TEMP_TEMPLATE, UNLABELLED_CURRENT)).toBe(
+          `当前模板「${TEMP_TEMPLATE}」仅支持${UNLABELLED_ALLOWED}模型，当前模型类型为「${UNLABELLED_CURRENT}」。请转为自定义配置或切换模型类型后重试。`
+        );
+        // 换档对照：当前类型换成**有**标签的（台区），右半必须走标签表。
+        // 没有这条，上面那条也可能只是「右半压根不查标签表、恒输出类型名」。
+        expect(eDeviceTemplateSingleTypeMismatchMessage(TEMP_TEMPLATE, "台区")).toBe(
+          `当前模板「${TEMP_TEMPLATE}」仅支持${UNLABELLED_ALLOWED}模型，当前模型类型为「台区」。请转为自定义配置或切换模型类型后重试。`
+        );
+        // 再换一档：允许类型换成有标签的，左半必须走标签表（期望值与前两条都不同）。
+        table[TEMP_TEMPLATE] = ["厂站"];
+        expect(eDeviceTemplateSingleTypeMismatchMessage(TEMP_TEMPLATE, "馈线")).toBe(
+          `当前模板「${TEMP_TEMPLATE}」仅支持主网模型，当前模型类型为「配网」。请转为自定义配置或切换模型类型后重试。`
+        );
+      } finally {
+        delete table[TEMP_TEMPLATE];
+      }
+      // 还原自检：临时键确实已从模块级状态里消失。
+      expect(Object.keys(table)).not.toContain(TEMP_TEMPLATE);
+    });
+
+    test("modelTypes 整个为 nullish（不是空数组）时按空集合处理", () => {
+      // 判别输入必须是「参数本身为 nullish」：`??` 的右臂只在 nullish 时求值，
+      // 传空数组会走左臂、右臂从未被求值（§6.13 的恒绿陷阱）。
+      const nullishTypes = undefined as unknown as readonly (string | null | undefined)[];
+      const nullTypes = null as unknown as readonly (string | null | undefined)[];
+      // 换档对照（放在前面）：同样走到 offending 计算那一步，喂真实类型时必须报出非法类型，
+      // 否则下面两条 null 断言可能只是因为「那条路什么都没算」。
+      expect(eDeviceTemplateNetworkTypeMismatchMessage("配网实时库", [UNLABELLED_CURRENT])).toBe(
+        `当前模板「配网实时库」不支持模型类型：${UNLABELLED_CURRENT}；请转为自定义配置或切换模板后重试。`
+      );
+      expect(() => eDeviceTemplateNetworkTypeMismatchMessage("配网实时库", nullishTypes)).not.toThrow();
+      expect(eDeviceTemplateNetworkTypeMismatchMessage("配网实时库", nullishTypes)).toBeNull();
+      expect(eDeviceTemplateNetworkTypeMismatchMessage("配网实时库", nullTypes)).toBeNull();
+      // 对照：空数组档（走 ?? 左臂）同样返回 null —— 两侧期望值相同，
+      // 所以真正的判别力来自变异（`?? []` 换成 `?? ["未来区域类型"]` 会让右臂产出非法类型）。
+      expect(eDeviceTemplateNetworkTypeMismatchMessage("配网实时库", [])).toBeNull();
+    });
+  });
 });

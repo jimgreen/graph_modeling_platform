@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { openExportedFile, saveBlobFile, saveLazyBlobFile, saveLazyTextFile, saveTextFile, writeTextFileToDirectory } from "./fileIO";
+import type { SavedExportFile } from "./fileIO";
 import { encodeGbk } from "./encoding/gbk";
 
 describe("text file output", () => {
@@ -803,5 +804,314 @@ describe("降级保存时加载器再失败", () => {
     // 若图省事写成 loadTextForFallbackSave(options.loadText) 就会二次生成。
     expect(loadText).toHaveBeenCalledOnce();
     expect(await bytesOf(created[0])).toEqual(utf8("<Model/>中文"));
+  });
+});
+
+// ── 本机另存为的准入判定与降级兜底（此前 0 覆盖）──────────────────────────────
+//
+// 这一段集中在 saveFileWithNativeDialog 与它前面的三道关口：
+//   1. canUseNativeExportDialog —— 只有本机回环地址才允许走后端写盘通道。
+//      window.location 缺失（老宿主 / 非浏览器上下文）与 hostname 带大小写、首尾空白
+//      都得有确定结论，不能读 hostname 就炸掉整条保存。
+//   2. 记住的上次导出目录 —— localStorage 在隐私模式 / 受限上下文里会**抛**。
+//      读抛、写抛都不能把一次本来成功的保存带崩。
+//   3. select / write 两步各自的失败出路 —— 「用户按取消」「没选出目标」「服务不可达」
+//      是三种完全不同的语义，混淆任何一种都会让用户拿到一份不该有的文件或一条假提示。
+
+describe("本机另存为的准入判定与降级兜底", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const STORAGE_KEY = "graph-modeling-platform.native-export.directory";
+  const SELECT_URL = "/webgrp/exports/native/select-file";
+  const WRITE_URL_PREFIX = "/webgrp/exports/native/write-text?token=";
+  const nativeOptions = {
+    filename: "model.e",
+    mime: "text/plain",
+    description: "E model",
+    extensions: [".e"],
+    preferNativeDialog: true as const
+  };
+
+  /** node 环境补的最小下载桩：抓住 createObjectURL 收到的 Blob 与被点开的 <a>。 */
+  function stubBrowserDownload() {
+    const created: Blob[] = [];
+    const link = { href: "", download: "", click: vi.fn() };
+    vi.stubGlobal("document", { createElement: vi.fn(() => link) });
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn((value: Blob) => {
+        created.push(value);
+        return `blob:stub-${created.length}`;
+      }),
+      revokeObjectURL: vi.fn()
+    });
+    return { created, link };
+  }
+
+  const bytesOf = async (blob: Blob) => Array.from(new Uint8Array(await blob.arrayBuffer()));
+  const utf8 = (text: string) => Array.from(new TextEncoder().encode(text));
+  const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" }
+  });
+
+  test("★ 准入判定：window.location 缺失 / location 里没有 hostname → 压根不走后端写盘通道", async () => {
+    // 守卫是 `String(window.location?.hostname ?? "").trim().toLowerCase()`。
+    // 这两个桩分别缺 location 和缺 hostname：守卫没写可选链的话，读 hostname 就会
+    // TypeError，整条 saveLazyTextFile 直接 reject —— 用户连降级下载都拿不到。
+    const write = vi.fn(async (_data: Blob | string) => undefined);
+    const close = vi.fn(async () => undefined);
+    const showSaveFilePicker = vi.fn(async () => ({
+      createWritable: async () => ({ write, close })
+    }));
+    const fetchMock = vi.fn();
+
+    const hosts: Array<Record<string, unknown>> = [
+      { showSaveFilePicker },            // 整个 location 都没有
+      { location: {}, showSaveFilePicker } // location 在，但 hostname 缺失
+    ];
+
+    for (const host of hosts) {
+      vi.stubGlobal("showGlobalMessage", vi.fn());
+      vi.stubGlobal("window", host);
+      vi.stubGlobal("fetch", fetchMock);
+      showSaveFilePicker.mockClear();
+
+      await expect(saveLazyTextFile({ ...nativeOptions, loadText: () => "<Model/>" })).resolves.toBe(true);
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(showSaveFilePicker).toHaveBeenCalledOnce();
+    }
+  });
+
+  test("★ 准入判定：hostname 的大小写与首尾空白归一后仍算本机回环，照常走后端写盘", async () => {
+    // 去掉 .trim() 或 .toLowerCase() 任一步，这个带空格的全大写主机名都匹配不上，
+    // 于是会静默退回浏览器下载 —— 断言落在「真的发了 select 请求」上。
+    // 这里必须补上下载桩：否则变异后代码退回 downloadBlob，会先因为 node 环境没有
+    // document 而 ReferenceError，红是红了，但断的不是「有没有走 select」这条契约。
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ supported: true, cancelled: false, token: "target-token" }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const showSaveFilePicker = vi.fn();
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("window", {
+      location: { hostname: "  LOCALHOST \t" },
+      showSaveFilePicker
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { link } = stubBrowserDownload();
+
+    await expect(saveLazyTextFile({ ...nativeOptions, loadText: () => "<Model/>" })).resolves.toBe(true);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(SELECT_URL);
+    expect(showSaveFilePicker).not.toHaveBeenCalled();
+    // 反面同样钉住：真的退回浏览器下载时，这条 select 请求压根不该发出去
+    expect(link.click).not.toHaveBeenCalled();
+  });
+
+  test("★ openExportedFile 拿到缺 token / 全空白 token 的凭据 → 不发请求，直接抛缺令牌", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const unusable: SavedExportFile[] = [
+      undefined as unknown as SavedExportFile,           // 整个凭据缺失 → file?.token 短路
+      { token: "   \t\n ", filename: "model.e", path: "" },  // 只有空白 → trim 后为空
+      { token: null as unknown as string, filename: "model.e", path: "" } // null → ?? ""
+    ];
+
+    for (const file of unusable) {
+      await expect(openExportedFile(file)).rejects.toThrow("缺少导出文件令牌。");
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("★ 记住的上次目录读不出来（getItem 抛错）→ 请求不带 initialDirectory，保存照常完成", async () => {
+    const getItem = vi.fn(() => {
+      throw new DOMException("The operation is insecure.", "SecurityError");
+    });
+    const setItem = vi.fn();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        supported: true,
+        cancelled: false,
+        token: "target-token",
+        directory: "D:\\exports\\model"
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        ok: true,
+        viewToken: "view-token",
+        filename: "model.e",
+        path: "D:\\exports\\model\\model.e"
+      }));
+    const onSaved = vi.fn();
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("window", {
+      location: { hostname: "127.0.0.1" },
+      localStorage: { getItem, setItem },
+      showSaveFilePicker: vi.fn()
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(saveLazyTextFile({ ...nativeOptions, loadText: () => "<Model/>", onSaved })).resolves.toBe(true);
+
+    expect(getItem).toHaveBeenCalledWith(STORAGE_KEY);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty("initialDirectory");
+    // 读失败不影响写：这一回选中的目录仍要记住，否则下次弹窗又从头开始
+    expect(setItem).toHaveBeenCalledWith(STORAGE_KEY, "D:\\exports\\model");
+    expect(onSaved).toHaveBeenCalledWith({
+      token: "view-token",
+      filename: "model.e",
+      path: "D:\\exports\\model\\model.e"
+    });
+  });
+
+  test("★ 记住的上次目录写不进去（setItem 抛错）→ 静默继续，整次保存不被带崩", async () => {
+    const setItem = vi.fn(() => {
+      throw new DOMException("Quota exceeded.", "QuotaExceededError");
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        supported: true,
+        cancelled: false,
+        token: "target-token",
+        directory: "D:\\exports"
+      }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, viewToken: "view-token" }));
+    const onSaved = vi.fn();
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("window", {
+      location: { hostname: "127.0.0.1" },
+      localStorage: { getItem: vi.fn(() => null), setItem },
+      showSaveFilePicker: vi.fn()
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(saveLazyTextFile({ ...nativeOptions, loadText: () => "<Model/>", onSaved })).resolves.toBe(true);
+
+    // 文件已经真的写到后端选定的路径上、凭据也拿到了 —— 只因为记不住目录就报失败是错的
+    expect(setItem).toHaveBeenCalledWith(STORAGE_KEY, "D:\\exports");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`${WRITE_URL_PREFIX}target-token`);
+    expect(onSaved).toHaveBeenCalledWith({ token: "view-token", filename: "model.e", path: "" });
+  });
+
+  test("★ openExportedFile 的错误文案：error 缺失 / null / 全空白 → 兜底句；非字符串 error → 原样透传", async () => {
+    // responseErrorMessage 里 `String(payload?.error ?? "").trim()` 与 `message || fallback`：
+    // error 缺失时若少了 ??，文案会变成字符串 "undefined"；全空白时若少了 trim，
+    // 会把一串空格当错误提示弹给用户。数字 404 是「硬编码变异不会猜到」的透传值。
+    const cases: Array<[string, string]> = [
+      ['{"ok":false}', "打开导出文件失败。"],
+      ['{"error":null}', "打开导出文件失败。"],
+      ['{"error":"   "}', "打开导出文件失败。"],
+      ['{"error":404}', "404"]
+    ];
+
+    for (const [body, expected] of cases) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, {
+        status: 500,
+        headers: { "content-type": "application/json" }
+      })));
+      await expect(openExportedFile({ token: "view-token", filename: "model.e", path: "" }))
+        .rejects.toThrow(expected);
+    }
+  });
+
+  test("★ 本机快速保存服务不可达（select 请求被拒）→ 提示 + 改走浏览器下载，落盘字节不变", async () => {
+    const showGlobalMessage = vi.fn();
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    const loadText = vi.fn(() => "<Model/>中文");
+    const onSaveTargetReady = vi.fn();
+    const onSaved = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    vi.stubGlobal("window", {
+      location: { hostname: "127.0.0.1" },
+      showSaveFilePicker: vi.fn()
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { created, link } = stubBrowserDownload();
+
+    await expect(saveLazyTextFile({
+      ...nativeOptions,
+      loadText,
+      onSaveTargetReady,
+      onSaved
+    })).resolves.toBe(true);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(showGlobalMessage).toHaveBeenCalledWith("本地快速保存服务不可用，已改为浏览器下载。");
+    expect(onSaveTargetReady).toHaveBeenCalledOnce();
+    expect(loadText).toHaveBeenCalledOnce();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(link.download).toBe("model.e");
+    expect(link.click).toHaveBeenCalledOnce();
+    expect(await bytesOf(created[0])).toEqual(utf8("<Model/>中文"));
+  });
+
+  test("★ 用户在本机另存为弹窗点了取消 → 返回 false：不下载、不写盘、不给查看凭据", async () => {
+    const showGlobalMessage = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ supported: true, cancelled: true }));
+    const loadText = vi.fn(() => "<Model/>");
+    const onSaved = vi.fn();
+    const onSaveTargetReady = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    vi.stubGlobal("window", { location: { hostname: "127.0.0.1" }, showSaveFilePicker: vi.fn() });
+    vi.stubGlobal("fetch", fetchMock);
+    const { link } = stubBrowserDownload();
+
+    await expect(saveLazyTextFile({
+      ...nativeOptions,
+      loadText,
+      onSaved,
+      onSaveTargetReady
+    })).resolves.toBe(false);
+
+    // 取消是真取消：没有第二次 fetch、没有浏览器下载、没有「已改为浏览器下载」提示
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(link.click).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onSaveTargetReady).not.toHaveBeenCalled();
+    // 但生成是与选路径并行跑的，取消不回滚已经开跑的那次生成
+    expect(loadText).toHaveBeenCalledOnce();
+  });
+
+  test("★ 本机另存为没给出有效目标（token 缺失 / null / 全空白）→ 改走浏览器下载，绝不写盘", async () => {
+    for (const token of [undefined, null, "   \t "]) {
+      const showGlobalMessage = vi.fn();
+      // select 成功但没选出目标。第二个 mock 只在真去写盘时才会被消耗。
+      const fetchMock = vi.fn().mockResolvedValue(
+        jsonResponse({ supported: true, cancelled: false, token })
+      );
+      vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+      vi.stubGlobal("window", { location: { hostname: "127.0.0.1" }, showSaveFilePicker: vi.fn() });
+      vi.stubGlobal("fetch", fetchMock);
+      const { created, link } = stubBrowserDownload();
+
+      await expect(saveLazyTextFile({
+        ...nativeOptions,
+        loadText: () => "<Model/>中文"
+      })).resolves.toBe(true);
+
+      // 只发了 select：拿空令牌去写盘会把文件写到一个后端认不出的地方
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(showGlobalMessage).toHaveBeenCalledWith("本地快速保存没有返回有效目标，已改为浏览器下载。");
+      expect(link.click).toHaveBeenCalledOnce();
+      expect(await bytesOf(created[0])).toEqual(utf8("<Model/>中文"));
+    }
+  });
+
+  test("★ 本机另存为的 token 是数字时也照写（字符串化后当令牌用，不当成缺失）", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ supported: true, cancelled: false, token: 42 }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    vi.stubGlobal("window", { location: { hostname: "127.0.0.1" }, showSaveFilePicker: vi.fn() });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(saveLazyTextFile({ ...nativeOptions, loadText: () => "<Model/>" })).resolves.toBe(true);
+
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`${WRITE_URL_PREFIX}42`);
+    expect(showGlobalMessage).not.toHaveBeenCalled();
   });
 });

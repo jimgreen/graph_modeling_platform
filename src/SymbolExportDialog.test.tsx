@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SymbolExportDialog, SymbolExportSelectedList } from "./SymbolExportDialog";
-import { DEVICE_LIBRARY } from "./model";
+import { DEVICE_LIBRARY, type DeviceTemplate } from "./model";
 import { groupDeviceTemplatesByCategoryLibraryAndComponentLibrary } from "./appExtracted/appPersistenceLibraryExport";
 import {
   DEFAULT_SYMBOL_EXPORT_FILTER_KEYS,
@@ -303,5 +303,160 @@ describe("取消「竖向图元」后的树内容（用户报告的 bug 回归�
 
     const kept = filterSymbolExportTemplates([vertical, nonVertical], withoutVertical);
     expect(kept).toEqual([nonVertical]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 树装配的缺省 / 兜底分支
+//
+// 本仓无 jsdom（environment: "node"），点不了勾选框，所以 selectedKinds 恒为空数组。
+// 因此这些分支只能靠「**改入参**」去走，而不是靠交互：
+//   - groupedByComponentLibrary / categoryLibraries 都是 props，缺省路径可直接喂进去；
+//   - 「勾选态」相关分支（checkStateFor 的 all/some、renderCheckbox 的 mixed）在静态渲染下
+//     恒为 none，本文件用「全树不得出现 mixed / some / all」把它们钉死（见下）。
+// ---------------------------------------------------------------------------
+describe("图元树装配的缺省入参与空类兜底", () => {
+  const BREAKER = DEVICE_LIBRARY.find((template) => template.kind === "ac-breaker")!;
+  const VERTICAL_DISCONNECTOR = DEVICE_LIBRARY.find(
+    (template) => template.kind === "ac-ground-disconnector-vertical"
+  )!;
+  const group = (section: string, templates: DeviceTemplate[]) => ({ section, templates });
+
+  /**
+   * 一个 kind 字段缺失的模板：`isDerivedComponentLibrary: false` 让
+   * templateDerivedComponentLibraryInfo 在触碰 kind 之前就早退（否则 baseDeviceKind
+   * 会对 undefined 调 endsWith 抛错），于是它能一路流到 uniqueTemplates。
+   * 这正是生产里「图元库导入包字段缺失」的形状。
+   */
+  const KINDLESS = {
+    label: "无kind幽灵图元",
+    params: {},
+    isDerivedComponentLibrary: false
+  } as unknown as DeviceTemplate;
+
+  test("kind 字段缺失的模板被 uniqueTemplates 丢弃：不进树、不进计数", () => {
+    const html = render({
+      categoryLibraries: ["交流设备"],
+      groupedByComponentLibrary: {
+        交流设备: [group("ACBreak", [BREAKER, KINDLESS])]
+      }
+    });
+
+    // 正常图元照常渲染（证明不是「整棵树炸了所以什么都没输出」）
+    expect(html).toContain(BREAKER.label);
+    // 幽灵图元既不能出现在类行的计数里（<strong>N</strong>），也不能作为图元行渲染出来
+    expect(html).not.toContain("无kind幽灵图元");
+    // 类行计数只算有 kind 的那一个
+    expect(html).toContain("<strong>1</strong>");
+  });
+
+  test("空类（无任何图元）渲染出 0 计数行，且全树勾选态恒为 none", () => {
+    const html = render({
+      categoryLibraries: ["交流设备"],
+      groupedByComponentLibrary: {
+        交流设备: [group("空类", []), group("ACBreak", [BREAKER])]
+      }
+    });
+
+    // 空类确实被渲染出来了（不是被裁掉），且计数为 0
+    expect(html).toContain('class="symbol-export-class-node"');
+    expect(html).toContain("<strong>0</strong>");
+    expect(html).toContain("<strong>1</strong>");
+
+    // checkStateFor(total=0) 必须短路到 none；否则（`||` 被改成 `&&`）
+    // 有图元的类会落到 0 !== N 的 "some" 分支上。
+    expect(html).not.toContain('data-check-state="some"');
+    expect(html).not.toContain('data-check-state="all"');
+    expect(html).not.toContain('aria-checked="mixed"');
+    expect(html).not.toContain('aria-checked="true"');
+    expect(html.match(/data-check-state="none"/g)?.length).toBeGreaterThan(0);
+  });
+
+  test("groupedByComponentLibrary 缺省时按空对象装配：树给空态而不是抛错", () => {
+    // props 契约上它是必填，但装配点漏传 / 后端还没回来时确实可能是 undefined，
+    // 组件自己那层 `?? {}` 就是为此而设。这里绕过类型直接喂 undefined。
+    const html = render({ groupedByComponentLibrary: undefined });
+
+    expect(html).toContain("未找到匹配图元");
+    expect(html).not.toContain('class="symbol-export-library"');
+    // 弹窗其余部分仍完整（证明是「空树」而不是「渲染中断」）
+    expect(html).toContain("symbol-export-footer");
+    expect(html).toContain("合并到一个 SVG 中导出");
+  });
+
+  test("categoryLibraries 为空时回落到 groupedByComponentLibrary 的键集合", () => {
+    const html = render({
+      categoryLibraries: [],
+      groupedByComponentLibrary: {
+        交流设备: [group("ACBreak", [BREAKER])]
+      }
+    });
+
+    // 顺序由 Object.keys(source) 决定：类别库行照常出现，图元行也装出来了
+    expect(html).toContain('class="symbol-export-library"');
+    expect(html).toContain('class="symbol-export-row library"');
+    expect(html).toContain(BREAKER.label);
+    expect(html).not.toContain("未找到匹配图元");
+  });
+
+  test("categoryLibraries 里的库在 source 中无对应条目时按空数组装配（不抛错）", () => {
+    const html = render({
+      categoryLibraries: ["幽灵类别库"],
+      groupedByComponentLibrary: {
+        交流设备: [group("ACBreak", [BREAKER])]
+      }
+    });
+
+    // 该库一条图元都装不出 → 整棵树给空态；真实存在的「交流设备」不该被顺带渲染出来
+    expect(html).toContain("未找到匹配图元");
+    expect(html).not.toContain('class="symbol-export-library"');
+    // 弹窗主体仍在（`source[library]` 若没兜底成 []，buildCustomComponentClassTree 会直接抛）
+    expect(html).toContain("symbol-export-tree");
+  });
+
+  test("空搜索词时 visibleTemplates 就是分类过滤的原样结果（搜索不额外收窄）", () => {
+    const templates = [BREAKER, VERTICAL_DISCONNECTOR];
+    const html = render({
+      categoryLibraries: ["交流设备"],
+      groupedByComponentLibrary: {
+        交流设备: [group("ACBreak", templates)]
+      }
+    });
+
+    const expected = filterSymbolExportTemplates(templates, DEFAULT_SYMBOL_EXPORT_FILTER_KEYS);
+    expect(expected.length).toBe(2);
+    // 标题栏的「可见 N」直接读 visibleTemplates.length：它必须等于纯过滤函数的结果，
+    // 即 searchNeedle 为空时走的是 `return byFilter` 早退，而不是叠了一层搜索收窄。
+    expect(html).toContain(`可见 <strong>${expected.length}</strong>`);
+    expect(html).toContain(`已选 <strong>0</strong>`);
+    for (const template of templates) {
+      expect(html).toContain(template.label);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 静态渲染够不到的分支：源码契约守卫
+//
+// 下面两处在本仓的测试环境里**没有任何输出断言能看见**：
+//   - normalizeNeedle 的 .trim()：唯一的真实调用点是 `normalizeNeedle(searchQuery)`，
+//     而 searchQuery 是 useState("")，renderToStaticMarkup 点不到输入框，永远是空串
+//     —— trim 对它空转。另两个调用点都在 `if (!searchNeedle) return byFilter` 的
+//     **后面**（248/252 行），空搜索词时根本走不到。
+//   - checkStateFor 的 "some" → aria-checked="mixed"：selectedKinds 恒为 []，
+//     所以 state 恒为 "none"，some / all 两个臂都不触发；把 "mixed" 写成 "all"
+//     在可达输入上与原实现等价。
+// 按「断言必须落在被变异的那行上」的判据，这里改用静态源码断言钉死整行，
+// 而不是补一条恒绿的行为断言。
+// ---------------------------------------------------------------------------
+describe("静态渲染够不到的分支：源码契约", () => {
+  const source = readFileSync(new URL("./SymbolExportDialog.tsx", import.meta.url), "utf8");
+
+  test("搜索词归一先 trim 再小写（trim 对空搜索词是空转，但整行字面量不许退化成只 toLowerCase）", () => {
+    expect(source).toContain('  return String(value ?? "").trim().toLowerCase();');
+  });
+
+  test("部分勾选态渲染成 aria-checked mixed（而不是 all）", () => {
+    expect(source).toContain('      aria-checked={state === "some" ? "mixed" : state === "all"}');
   });
 });

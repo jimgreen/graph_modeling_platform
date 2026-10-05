@@ -167,3 +167,91 @@ describe(`${receivePath} 与空间无关`, () => {
     expect(bare.headers.get("x-space-fallback")).toBeNull();
   });
 });
+
+// 把记录清零，使「本轮投递有没有落记录」不依赖前面用例留下的条数。
+function resetRecords() {
+  return fetch(`${baseUrl}${receivePath}`, { method: "DELETE" });
+}
+
+// 此前无覆盖的分支：L44/L50（超限）、L87（缺 content-type 头）、L104（catch）。
+//
+// 另记一条**判为不可达**的：L21 的 `String(contentTypeText ?? "")` 右臂。
+//   - `charsetOf` 只有两个调用点：`decodePreview(bytes, value.type)` 与
+//     `decodeFields` 尾部的 `decodePreview(raw, contentTypeText)`。
+//   - 前者的 `value.type` 恒为非空字符串：multipart 里不带 Content-Type 的 part，
+//     undici 的 formData() 也会补成 `text/plain`（实测确认）。
+//   - 后者拿到的就是 L87 归一后的 `String(...)` 结果，本身恒为字符串。
+//   即两头都喂不进 null/undefined，右臂无从求值。
+//   退一步说即便喂进去也不可观测：`String(undefined)`="undefined"、`String(null)`="null"，
+//   两者都不含 `charset` 子串，`/charset\s*=\s*"?([^";]+)"?/iu.exec` 必然不匹配，
+//   于是 `name` 都是 `""`、返回都是 `"utf-8"` —— 与 `?? ""` 逐字符等价（可证前提：
+//   函数体只有这一个消费点）。所以不为它写恒绿断言。
+describe(`${receivePath} 此前未覆盖的分支`, () => {
+  test("请求体超过 32MB 接收上限：413 + 本端点自己的上限文案，且不留记录", async () => {
+    // L44 `total > MAX_RECEIVE_BYTES` 与 L50 `if (oversize)` 同一条路径，一起覆盖。
+    // 上限是模块常量 32 * 1024 * 1024，只能真发一个超限体（实测 ~90ms）。
+    //
+    // 附带契约（模块注释：超限时**读完整个流但不再累积**）：提前中断会让 Node 在
+    // 响应写出前重置连接，客户端只看到 ECONNRESET。所以这里 fetch 必须正常拿到
+    // 响应而不是抛 "fetch failed" —— 上限被改成提前 destroy 时这条断言就红。
+    await resetRecords();
+    const res = await fetch(`${baseUrl}${receivePath}`, {
+      method: "POST",
+      body: Buffer.alloc(33 * 1024 * 1024, 0x61)
+    });
+    expect(res.status, "超限应回 413，而不是断开连接").toBe(413);
+    const payload = await res.json();
+    expect(payload.ok).toBe(false);
+    expect(payload.error.code).toBe("payload-too-large");
+    // 文案要点名 33554432：派发层 server.mjs 另有一个 PayloadTooLargeError，
+    // 文案是「请求体过大。」。若上限被挪到别处/派发层先动手，这条 toContain 会红。
+    expect(payload.error.message).toContain("33554432");
+
+    // 抛在 records.push 之前：这次投递不留痕
+    const view = await (await fetch(`${baseUrl}${receivePath}`)).json();
+    expect(view.data.count, "超限的投递不该进记录").toBe(0);
+    expect(view.data.latest).toBeNull();
+  });
+
+  test("请求未带 content-type 头：contentType 归一成空串（不是字符串 undefined）", async () => {
+    // L87 的 `?? ""`：右臂要的是「头字段不存在」。undici 只有在 body 是
+    // ArrayBuffer/TypedArray 时才不发 content-type —— 字符串、FormData、Blob
+    // 都会被自动补上，所以必须传字节数组，否则右臂从未求值、断言恒绿。
+    await resetRecords();
+    const text = "无头裸字节 body";
+    const bytes = new TextEncoder().encode(text);
+    const res = await fetch(`${baseUrl}${receivePath}`, { method: "POST", body: bytes });
+    expect(res.status).toBe(200);
+    const received = (await res.json()).data.received;
+    // 判别点：`??` 被删后这里是 String(undefined) 的产物 "undefined"
+    expect(received.contentType, "缺头时 contentType 必须是空串").toBe("");
+    expect(received.totalBytes).toBe(bytes.byteLength);
+    expect(received.fields).toHaveLength(1);
+    expect(received.fields[0].name).toBe("(raw)");
+    expect(received.fields[0].kind).toBe("raw");
+    expect(received.fields[0].text).toBe(text);
+  });
+
+  test("声明 multipart 却给不出合法正文：catch 回 400 bad-request 并透出原始 error.message", async () => {
+    // L104 的 catch：undici 的 formData() 抛 TypeError("Failed to parse body as FormData.")。
+    // 文案只断言含 "FormData"：措辞随 undici 版本变，但「透出 error.message」这条
+    // 契约稳定 —— 若走了 `: "请求体解析失败。"` 那一臂（error 不是 Error，或三元写反），
+    // 下面两条断言都会红。
+    await resetRecords();
+    const res = await fetch(`${baseUrl}${receivePath}`, {
+      method: "POST",
+      headers: { "content-type": "multipart/form-data; boundary=ZZZBOUNDARY" },
+      body: "这不是 multipart 的正文"
+    });
+    expect(res.status).toBe(400);
+    const payload = await res.json();
+    expect(payload.ok).toBe(false);
+    expect(payload.error.code).toBe("bad-request");
+    expect(payload.error.message).toContain("FormData");
+    expect(payload.error.message, "error 是 Error 实例，不该走固定文案兜底").not.toBe("请求体解析失败。");
+
+    // catch 发生在 records.push 之前：解析失败这次投递不留痕
+    const view = await (await fetch(`${baseUrl}${receivePath}`)).json();
+    expect(view.data.count, "解析失败的投递不该进记录").toBe(0);
+  });
+});

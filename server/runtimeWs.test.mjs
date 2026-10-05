@@ -3,6 +3,7 @@ import { describe, expect, test, afterEach, beforeEach, vi } from "vitest";
 import { WebSocket } from "ws";
 import { createRuntimeRegistry } from "./runtimeRegistry.mjs";
 import { attachRuntimeWebSocket } from "./runtimeWs.mjs";
+import { apiPath } from "./config.mjs";
 
 // WS 集成测试：起真实 http server + WS 升级，用真实 ws 客户端连接。
 let httpServer;
@@ -535,4 +536,263 @@ describe("runtimeWs 消息入口静默分支", () => {
     expect(scoped.unregisterCalls).toHaveLength(1);
     expect(scoped.registry._clients.has("stale2")).toBe(true);
   }, 20_000);
+});
+
+/**
+ * 假连接对象注入 —— 覆盖「真实 WS 客户端根本发不出来」的那些分支。
+ *
+ * 为什么要注入桩：既有测试全部走真实 http server + 真实 ws 客户端，帧格式由 ws 库
+ * 决定，能造出来的载荷只有「合法 JSON 对象」。于是这些分支真实客户端一条也走不到：
+ *   · clientId / requestId **键完全不存在**（既有那条只发了 clientId: ""，
+ *     那是 falsy 但**非 nullish**，?? 短路取左值，右臂从未被求值）
+ *   · upgrade 请求缺 url / host 头（真实握手一定会带 Host）
+ * 而这些恰恰是 4001 关闭与 requestId 兜底的唯一入口。
+ *
+ * 桩的形状照 runtimeWs.mjs 里被用到的方法对齐：OPEN/readyState、send、close、on。
+ * 注入方式：wss 是 EventEmitter（ws 8.x 的 WebSocketServer 没有覆写 emit），
+ * 故 `runtime.wss.emit("connection", 假连接, 假握手)` 即可直接跑那条 connection 处理器。
+ * 不起真服务器、不真连 socket、不依赖任何定时器。
+ */
+function createFakeWs() {
+  const handlers = new Map();
+  const sent = [];
+  const closes = [];
+  const ws = {
+    OPEN: 1,
+    readyState: 1,
+    sent,
+    closes,
+    on(event, handler) {
+      handlers.set(event, handler);
+    },
+    // 触发生产代码注册的处理函数（message / close / error）
+    fire(event, ...args) {
+      const handler = handlers.get(event);
+      if (!handler) {
+        throw new Error(`假连接未注册 ${event} 处理器`);
+      }
+      return handler(...args);
+    },
+    // 生产代码恒传 JSON 字符串，这里解析回来便于断言值而非仅计数
+    send(payload) {
+      sent.push(JSON.parse(payload));
+    },
+    close(code, reason) {
+      closes.push({ code, reason });
+      ws.readyState = 3;
+    }
+  };
+  return ws;
+}
+
+// 注入一条假连接，返回它；wsUrl / 真实服务器一概不碰。
+function connectFakeConnection({ headers = {} } = {}) {
+  const ws = createFakeWs();
+  runtime.wss.emit("connection", ws, { headers });
+  return ws;
+}
+
+// 已注册（clientId 已锁定）的假连接 + 注册调用计数，供消息分派类断言复用
+function connectRegisteredFake(clientId = "c1") {
+  const counters = spyRegistry(runtime.registry);
+  const ws = connectFakeConnection();
+  ws.fire("message", JSON.stringify({ type: "register", clientId }));
+  // 断言只看分派调用，register 本身先清零，避免与注册路径混在一起
+  counters.touch.length = 0;
+  counters.resolveFetch.length = 0;
+  counters.resolveCommand.length = 0;
+  return { ws, counters };
+}
+
+describe("runtimeWs register 的 clientId 归一（假连接注入）", () => {
+  test("clientId 键不存在或为 null：?? 右臂兜底空串，连接被 4001 关闭", () => {
+    const counters = spyRegistry(runtime.registry);
+
+    // 对照：合法 register 会进注册表并回 registered —— 没有这条，
+    // 后面「closes 为空」既可能是兜底被改坏，也可能是桩根本没跑
+    const okWs = connectFakeConnection();
+    okWs.fire("message", JSON.stringify({ type: "register", clientId: "c1" }));
+    expect(counters.register).toHaveLength(1);
+    expect(okWs.sent).toEqual([{ type: "registered", clientId: "c1" }]);
+    expect(okWs.closes).toEqual([]);
+
+    // ① 键完全不存在 → clientId 为 undefined，?? 右臂被求值 → trim 后为空 → 关闭
+    const missingWs = connectFakeConnection();
+    missingWs.fire("message", JSON.stringify({ type: "register" }));
+    expect(missingWs.closes).toEqual([{ code: 4001, reason: "缺少 clientId" }]);
+    expect(missingWs.sent).toEqual([]);
+
+    // ② clientId 显式为 null：null 也是 nullish，同走右臂
+    const nullWs = connectFakeConnection();
+    nullWs.fire("message", JSON.stringify({ type: "register", clientId: null }));
+    expect(nullWs.closes).toEqual([{ code: 4001, reason: "缺少 clientId" }]);
+
+    // ③ 只有空白：这里 ?? 取的是左值（非 nullish），空是 trim 出来的 —— 与 ①② 分开断
+    const blankWs = connectFakeConnection();
+    blankWs.fire("message", JSON.stringify({ type: "register", clientId: "   \t " }));
+    expect(blankWs.closes).toEqual([{ code: 4001, reason: "缺少 clientId" }]);
+
+    // 四次都不该有任何注册发生
+    expect(counters.register).toHaveLength(1);
+    expect(runtime.listClients().map((c) => c.clientId)).toEqual(["c1"]);
+  });
+
+  test("clientId 两侧空白被 trim 后才注册（回包与注册表都是 trim 后的值）", () => {
+    const counters = spyRegistry(runtime.registry);
+    const ws = connectFakeConnection();
+    ws.fire("message", JSON.stringify({ type: "register", clientId: "  padded-id \t" }));
+
+    expect(ws.sent).toEqual([{ type: "registered", clientId: "padded-id" }]);
+    expect(counters.register).toHaveLength(1);
+    expect(counters.register[0][0]).toBe("padded-id");
+    expect(runtime.listClients().map((c) => c.clientId)).toEqual(["padded-id"]);
+    ws.close();
+  });
+});
+
+describe("runtimeWs fetch-response 结算的入参兜底（假连接注入）", () => {
+  test("requestId 键不存在：兜底空串被当作 requestId 传给 resolveFetch", () => {
+    const { ws, counters } = connectRegisteredFake("c1");
+
+    ws.fire("message", JSON.stringify({ type: "fetch-response", ok: true, data: { model: "m1" } }));
+
+    expect(counters.resolveFetch).toHaveLength(1);
+    const [clientId, requestId, data, error] = counters.resolveFetch[0];
+    expect(clientId).toBe("c1");
+    // 兜底值是空串：这里期望值**不能**取任何有意义的 id，否则「硬编码某个 id」的变异抓不到
+    expect(requestId).toBe("");
+    expect(data).toEqual({ model: "m1" });
+    expect(error).toBeNull();
+
+    // 对照一：requestId 显式给数字时按 String() 归一，不受兜底影响
+    ws.fire("message", JSON.stringify({ type: "fetch-response", requestId: 42, ok: true, data: 1 }));
+    expect(counters.resolveFetch).toHaveLength(2);
+    expect(counters.resolveFetch[1][1]).toBe("42");
+
+    // 对照二：requestId 为 null 时同样走右臂，产出仍是空串
+    ws.fire("message", JSON.stringify({ type: "fetch-response", requestId: null, ok: true, data: 2 }));
+    expect(counters.resolveFetch[2][1]).toBe("");
+  });
+
+  test("ok 为假值且不带 error：兜底 code fetch-failed 被传给 resolveFetch", () => {
+    const { ws, counters } = connectRegisteredFake("c1");
+
+    // ① error 键完全不存在 → message.error?.code 为 undefined，?? 右臂
+    ws.fire("message", JSON.stringify({ type: "fetch-response", requestId: "r1", ok: false }));
+    expect(counters.resolveFetch).toHaveLength(1);
+    const [, , data1, error1] = counters.resolveFetch[0];
+    expect(data1).toBeNull();
+    expect(error1.code).toBe("fetch-failed");
+    expect(error1.message).toBeUndefined();
+
+    // ② error 对象存在但没有 code 子键 → 右臂；message 仍照传
+    ws.fire("message", JSON.stringify({ type: "fetch-response", requestId: "r2", ok: 0, error: { message: "炸了" } }));
+    expect(counters.resolveFetch[1][2]).toBeNull();
+    expect(counters.resolveFetch[1][3].code).toBe("fetch-failed");
+    expect(counters.resolveFetch[1][3].message).toBe("炸了");
+
+    // ③ 对照：error 带 code 时不走兜底
+    ws.fire("message", JSON.stringify({ type: "fetch-response", requestId: "r3", ok: false, error: { code: "no-selection", message: "未选中" } }));
+    expect(counters.resolveFetch[2][3].code).toBe("no-selection");
+
+    // ④ 对照：ok 为真值时整条错误侧不参与，data 原样透传
+    ws.fire("message", JSON.stringify({ type: "fetch-response", requestId: "r4", ok: "yes", data: { ok: 1 } }));
+    expect(counters.resolveFetch[3][2]).toEqual({ ok: 1 });
+    expect(counters.resolveFetch[3][3]).toBeNull();
+  });
+});
+
+describe("runtimeWs command-response 结算的入参兜底（假连接注入）", () => {
+  test("requestId 键不存在：兜底空串被当作 requestId 传给 resolveCommand", () => {
+    const { ws, counters } = connectRegisteredFake("c1");
+
+    ws.fire("message", JSON.stringify({ type: "command-response", ok: true, data: { id: "n1" } }));
+
+    expect(counters.resolveCommand).toHaveLength(1);
+    const [clientId, requestId, ok, data, error] = counters.resolveCommand[0];
+    expect(clientId).toBe("c1");
+    expect(requestId).toBe("");
+    expect(ok).toBe(true);
+    expect(data).toEqual({ id: "n1" });
+    expect(error).toBeNull();
+
+    // 对照：requestId 显式给数字时按 String() 归一
+    ws.fire("message", JSON.stringify({ type: "command-response", requestId: 7, ok: false, error: { code: "bad-request" } }));
+    expect(counters.resolveCommand[1][1]).toBe("7");
+
+    // requestId 为 null：同样走右臂，产出仍是空串
+    ws.fire("message", JSON.stringify({ type: "command-response", requestId: null, ok: true, data: 3 }));
+    expect(counters.resolveCommand[2][1]).toBe("");
+  });
+
+  test("ok 为假值且不带 error：兜底 code control-failed 被传给 resolveCommand", () => {
+    const { ws, counters } = connectRegisteredFake("c1");
+
+    // ① error 键完全不存在
+    ws.fire("message", JSON.stringify({ type: "command-response", requestId: "r1", ok: false }));
+    const [, , ok1, data1, error1] = counters.resolveCommand[0];
+    expect(ok1).toBe(false);
+    expect(data1).toBeNull();
+    expect(error1.code).toBe("control-failed");
+    expect(error1.message).toBeUndefined();
+
+    // ② error 存在但没有 code 子键：ok 用 0（falsy 但非 nullish）验证 Boolean 归一
+    ws.fire("message", JSON.stringify({ type: "command-response", requestId: "r2", ok: 0, error: { message: "boom" } }));
+    expect(counters.resolveCommand[1][2]).toBe(false);
+    expect(counters.resolveCommand[1][4].code).toBe("control-failed");
+    expect(counters.resolveCommand[1][4].message).toBe("boom");
+
+    // ③ 对照：error 带 code 时不走兜底
+    ws.fire("message", JSON.stringify({ type: "command-response", requestId: "r3", ok: false, error: { code: "bad-request", message: "kind 必填" } }));
+    expect(counters.resolveCommand[2][4].code).toBe("bad-request");
+
+    // ④ 对照：ok 为真值时错误侧整条不参与
+    ws.fire("message", JSON.stringify({ type: "command-response", requestId: "r4", ok: "yes", data: { ok: 1 } }));
+    expect(counters.resolveCommand[3][2]).toBe(true);
+    expect(counters.resolveCommand[3][3]).toEqual({ ok: 1 });
+    expect(counters.resolveCommand[3][4]).toBeNull();
+  });
+});
+
+describe("runtimeWs upgrade 路径的 URL 兜底（假 http server 注入）", () => {
+  test("请求缺 url 与 host 头：兜底路径 / 与 127.0.0.1 生效，非 /ws 升级被销毁", () => {
+    // 假 http server：只提供 on()，不 listen；handler 由本用例手动触发，
+    // 于是 request.url / request.headers.host 想缺就缺 —— 真实握手不可能造出这种请求。
+    const handlers = new Map();
+    const fakeServer = {
+      on(event, handler) {
+        handlers.set(event, handler);
+      }
+    };
+    const attached = attachRuntimeWebSocket(fakeServer, createRuntimeRegistry());
+    const upgrades = [];
+    attached.wss.handleUpgrade = (request, socket, head, done) => {
+      upgrades.push({ request, socket, head, done });
+    };
+
+    try {
+      // ① url 与 host 全缺：new URL("/", "http://127.0.0.1") → pathname 为 "/"，非 /ws → 销毁
+      const socketA = { destroy: vi.fn() };
+      handlers.get("upgrade")({ headers: {} }, socketA, Buffer.alloc(0));
+      expect(socketA.destroy).toHaveBeenCalledTimes(1);
+      expect(upgrades).toHaveLength(0);
+
+      // 对照：url 正确时确实走 handleUpgrade —— 没有这条，
+      // 上面「被销毁」就分不清是兜底生效还是整个 handler 没跑
+      const socketB = { destroy: vi.fn() };
+      handlers.get("upgrade")({ url: apiPath("/ws"), headers: {} }, socketB, Buffer.alloc(0));
+      expect(upgrades).toHaveLength(1);
+      expect(upgrades[0].socket).toBe(socketB);
+      expect(socketB.destroy).not.toHaveBeenCalled();
+
+      // 对照：/webgrp 前缀不在时仍被销毁
+      const socketC = { destroy: vi.fn() };
+      handlers.get("upgrade")({ url: "/ws", headers: {} }, socketC, Buffer.alloc(0));
+      expect(socketC.destroy).toHaveBeenCalledTimes(1);
+      expect(upgrades).toHaveLength(1);
+    } finally {
+      // 清掉 attachRuntimeWebSocket 建的 sweepTimer 与 wss
+      handlers.get("close")();
+    }
+  });
 });
