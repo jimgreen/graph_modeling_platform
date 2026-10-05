@@ -445,3 +445,74 @@ describe("handleV1ModelEFile —— GBK 不可映射字符", () => {
     expect(response.body.toString("utf-8")).toContain("母线𠀀");
   });
 });
+
+// ─── handleV1ModelEFile —— content-disposition 头契约 ───────────────────────
+//
+// 本模块此前对 content-disposition **零断言**。收拢成单一纯函数后，头模板从
+// 「每个端点各抄一份、漏改一处就格式不一致」变成「一个点」，但**函数本身**若
+// 被改坏（漏掉 filename*、把 `''` 写成单引号、编码被摘掉），8 个端点会**同时**
+// 坏掉，且没有任何一条既有用例会红 —— 故在这里钉住。
+describe("handleV1ModelEFile —— content-disposition", () => {
+  // 纯 ASCII 模板文本（含一个元件定义段 ⇒ parseEDeviceDefinitionFile 解析得出 sections），
+  // 与上面「templateName 优先级」组同一份。POST 分支少了它会落进「解析不出任何段 → 400」。
+  const templateText =
+    "<Model>\n@ path name\n# 自定义\n</Model>\n" +
+    "<node 类=\"ACLoad+交流负荷\" 表号=\"00401\">\n@ idx,name,dev_type,node\n// 序号,名称,类型,节点\n</node>\n</Model>\n";
+
+  beforeEach(() => {
+    const dir = join(paths.schemeFiles, SCHEME);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, `${MODEL}.json`),
+      JSON.stringify({
+        name: MODEL,
+        modelType: "厂站",
+        nodes: [{
+          id: "bus1",
+          kind: "ac-bus",
+          name: "母线1",
+          position: { x: 0, y: 0 },
+          size: { width: 100, height: 20 },
+          rotation: 0,
+          scale: 1,
+          terminals: [],
+          params: { i_vbase: "110" }
+        }],
+        edges: []
+      }),
+      "utf-8"
+    );
+  });
+
+  async function exportGetOk(search = validSearch) {
+    return runGet(search);
+  }
+
+  async function exportPostOk() {
+    return runPost({
+      search: `${validSearch}&template=${encodeURIComponent("国网E格式")}`,
+      body: { templateText }
+    });
+  }
+
+  test("★ 中文模型名 → 百分号编码，ASCII 回落项与 RFC5987 双写法逐字节一致", async () => {
+    const response = await exportGetOk();
+    expect(response.statusCode).toBe(200);
+    // 「模型1.e」纯中文；逐字钉住整条头而非 toContain：
+    // 只断言「含编码后的中文」的话，删掉 filename= 回落项或删掉整个 filename*
+    // 段都还能通过（编码串在两处都出现）。
+    expect(response.headers["content-disposition"]).toBe(
+      `attachment; filename="%E6%A8%A1%E5%9E%8B1.e"; filename*=UTF-8''%E6%A8%A1%E5%9E%8B1.e`
+    );
+    // 裸非 ASCII 放进 HTTP 头不合法（Node 侧也可能直接拒发），故必须全编码。
+    expect(response.headers["content-disposition"]).not.toContain("模型");
+  });
+
+  test("GET 与 POST 两条分支产出同一条头（收拢前是两份互不相干的副本）", async () => {
+    const get = await exportGetOk();
+    const post = await exportPostOk();
+    expect(get.statusCode).toBe(200);
+    expect(post.statusCode).toBe(200);
+    expect(post.headers["content-disposition"]).toBe(get.headers["content-disposition"]);
+  });
+});

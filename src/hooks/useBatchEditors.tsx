@@ -26,6 +26,8 @@ import {
 
 import { normalizeNodeLabelDisplayMode } from "../nodeLabelUtils";
 
+import { formatNumericAtMostThreeDecimals } from "../appExtracted/appInlineUtilityFunctions";
+
 import {
   PARAM_LABELS,
   PARAM_OPTIONS,
@@ -44,23 +46,10 @@ import {
   enumDisplayText,
 } from "../App";
 
-const INLINE_NUMERIC_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
-
-const formatAtMostThreeDecimals = (value: string | number): string => {
-  const text = String(value ?? "").trim();
-  if (!INLINE_NUMERIC_PATTERN.test(text)) {
-    return text;
-  }
-  const numericValue = Number(text);
-  return Number.isFinite(numericValue)
-    ? numericValue.toFixed(3).replace(/\.?(0+)$/, "")
-    : text;
-};
-
 const formatInlineDisplayText = (key: string, value: string | number): string => {
   const text = formatPowerBaseDisplayValue(key, String(value ?? "")).trim();
   const withoutUnit = text.replace(/\s*(?:kV|MW|Mvar|kW|kvar|A|m³|MPa|Nm³\/h|m\/s|[%°])$/i, "").trim();
-  return formatAtMostThreeDecimals(withoutUnit);
+  return formatNumericAtMostThreeDecimals(withoutUnit);
 };
 
 export interface UseBatchEditorsParams {
@@ -802,7 +791,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
       return renderBatchCommonMeasurementGroupColorEditor(row);
     }
     return (
-      <InlineEditableValue type="number" min={0} max={12} step={0.5} value={value} displayValue={row.mixed ? "多个不同值" : formatAtMostThreeDecimals(value) || "\u00a0"} disabled={isBrowseMode} onCommit={(nextValue) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue)} />
+      <InlineEditableValue type="number" min={0} max={12} step={0.5} value={value} displayValue={row.mixed ? "多个不同值" : formatNumericAtMostThreeDecimals(value) || "\u00a0"} disabled={isBrowseMode} onCommit={(nextValue) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue)} />
     );
   };
 

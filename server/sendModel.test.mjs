@@ -532,6 +532,86 @@ describe(`${sendPath} 目标 5xx 响应体的读取与截断`, () => {
   });
 });
 
+// ─── 512 字节截点落在多字节字符中间 ─────────────────────────
+//
+// 目标错误文案的字节上限与预览同为 512，`Buffer.from(value).subarray(0, 512)`
+// 直接切在字节上，而对方返回的往往是中文错误说明 ⇒ 截点常落在字符中间，
+// toString("utf-8") 会把残缺字节解成 U+FFFD 挂在文案尾巴上（假乱码）。
+//
+// 契约与预览侧一致：**只丢半个字符，不多丢一个完整字符**。所以三条用例都把
+// 完整文案钉死（toBe），因为：
+//   - 只断言「不含 U+FFFD」放得过宽 —— 少吐一个完整字符同样不含 U+FFFD；
+//   - 只断言「长度 ≤ 512」也放得过宽 —— 多一个 U+FFFD 字符照样 ≤ 512。
+// 三个失败方向各被一条钉死：
+//   不回退 → 尾部多出 U+FFFD（长度 +1）；回退过头 → 少一个完整字符（长度 -1）；
+//   不截断 → TAIL 标记串漏进文案。
+//
+// fixture 都在首 chunk 内自足（第二个 chunk 只作拆分陪跑），并用 expectSplitInto
+// 先自证 undici 确实按写入边界拆开了；两个 chunk 都收在字符边界上，
+// 否则自证用的 toString 本身就会产出 U+FFFD 而与源串比不上。
+// 首 chunk 的填充长度使 512 截点分别落在：三字节字第 2 字节后（510）、
+// 四字节字最后 1 字节前（509）、ASCII 尾（无多字节，不该回退）。
+const UTF8_SPLIT_3BYTE = `${"C".repeat(510)}中TAIL-3BYTE`;
+const UTF8_SPLIT_4BYTE = `${"D".repeat(509)}\u{1F600}TAIL-4BYTE`;
+const UTF8_EXACT_512 = `${"E".repeat(509)}中`;
+const SPLIT_TAIL = "|SECOND-CHUNK-PADDING|";
+
+describe(`${sendPath} 目标 5xx 响应体：截点落在多字节字符中间`, () => {
+  test("三字节中文被切一半 → 丢掉半个字符，文案里没有 U+FFFD", async () => {
+    sinkStatus = 500;
+    sinkChunks = [UTF8_SPLIT_3BYTE, SPLIT_TAIL];
+    await expectSplitInto([UTF8_SPLIT_3BYTE, SPLIT_TAIL]);
+
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] });
+    expect(res.status).toBe(502);
+    const payload = await res.json();
+    const detail = payload.error.message.slice(ERROR_PREFIX.length);
+
+    expect(detail, "截断处不许出现替换字符").not.toContain("\uFFFD");
+    // 截点在「中」的第 2 字节后：半个字丢掉，510 个 C 全留。
+    expect(detail).toBe("C".repeat(510));
+    expect(detail).toHaveLength(510);
+    expect(detail).not.toContain("中");
+    // TAIL 在 512 字节之外，必须仍然不出现（证明上限没被顺手放大）
+    expect(detail).not.toContain("TAIL-3BYTE");
+  });
+
+  test("四字节字符被切在第 3 字节后 → 回退 3 字节，文案里没有半个 emoji", async () => {
+    sinkStatus = 500;
+    sinkChunks = [UTF8_SPLIT_4BYTE, SPLIT_TAIL];
+    await expectSplitInto([UTF8_SPLIT_4BYTE, SPLIT_TAIL]);
+
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] });
+    const payload = await res.json();
+    const detail = payload.error.message.slice(ERROR_PREFIX.length);
+
+    expect(detail, "截断处不许出现替换字符").not.toContain("\uFFFD");
+    // 搜索窗口必须够 4 字节（前导 + 3 续），否则半个 emoji 会留下 U+FFFD。
+    expect(detail).toBe("D".repeat(509));
+    expect(detail).not.toContain("\u{1F600}");
+    expect(detail).not.toContain("TAIL-4BYTE");
+  });
+
+  test("恰好 512 字节且末字符完整 → 逐字等于首 chunk，一个字符都不多丢", async () => {
+    expect(Buffer.byteLength(UTF8_EXACT_512, "utf-8"), "fixture 必须恰好 512 字节").toBe(512);
+    sinkStatus = 500;
+    sinkChunks = [UTF8_EXACT_512, SPLIT_TAIL];
+    await expectSplitInto([UTF8_EXACT_512, SPLIT_TAIL]);
+
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] });
+    expect(res.status).toBe(502);
+    const payload = await res.json();
+    const detail = payload.error.message.slice(ERROR_PREFIX.length);
+
+    // 截点正好落在「中」末尾 = 合法边界，回退必须一个字节都不动。
+    // 无条件砍尾字符的实现会输出 509 个 E 而在这里红。
+    expect(detail).toBe(UTF8_EXACT_512);
+    expect(detail.endsWith("中")).toBe(true);
+    expect(detail).toHaveLength(510);
+    expect(detail).not.toContain("\uFFFD");
+  });
+});
+
 // ─── files[].encoding 的判据：严格等于小写 gbk ─────────────────
 //
 // `specs.push({ kind, encoding: item?.encoding === "gbk" ? "gbk" : "utf-8" })`

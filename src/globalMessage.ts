@@ -159,7 +159,7 @@ export function showGlobalPrompt(text: string, defaultValue = ""): Promise<strin
   return openGlobalDialog("prompt", text, defaultValue) as Promise<string | null>;
 }
 
-// 挂载到 window 方便全局调用
-(window as any).showGlobalMessage = showGlobalMessage;
-(window as any).showGlobalConfirm = showGlobalConfirm;
-(window as any).showGlobalPrompt = showGlobalPrompt;
+// 挂载到 window 方便全局调用（类型见 src/vite-env.d.ts 的 `declare global { interface Window }`）
+window.showGlobalMessage = showGlobalMessage;
+window.showGlobalConfirm = showGlobalConfirm;
+window.showGlobalPrompt = showGlobalPrompt;

@@ -16,6 +16,7 @@ import { BUILTIN_VOLTAGE_LEVELS, MODEL_TYPES, formatPowerBaseDisplayValue } from
 import { firstNonZeroVoltageBase, inferESection, isThreeWindingTransformer } from "../model-eexport";
 import { getTerminalVoltageLevel, voltageBaseSettingModeForNode } from "../model-routing";
 import { VOLTAGE_BASE_PARAM_KEYS, resolveContainerModelPanelParamKeys } from "./appCoreCanvasUtilities";
+import { formatNumericAtMostThreeDecimals } from "./appInlineUtilityFunctions";
 
 // 参数字段 → 单位后缀映射
 const PARAM_UNIT_SUFFIX: Record<string, string> = {
@@ -57,9 +58,9 @@ function getParamUnitSuffix(key: string): string | null {
   return PARAM_UNIT_SUFFIX[key] ?? null;
 }
 
-const PLAIN_NUMERIC_VALUE_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
 const NUMERIC_SUFFIX_VALUE_PATTERN = /^([+-]?(?:\d+(?:\.\d*)?|\.\d+))([%°])$/;
 
+// %/° 后缀是右臂面板独有的展示口径（后缀分支留在这里），纯数值部分与批量编辑器共用。
 function formatAtMostThreeDecimals(value: string): string {
   const text = String(value ?? "").trim();
   const suffixMatch = text.match(NUMERIC_SUFFIX_VALUE_PATTERN);
@@ -69,13 +70,7 @@ function formatAtMostThreeDecimals(value: string): string {
       ? `${numericValue.toFixed(3).replace(/\.?(0+)$/, "")}${suffixMatch[2]}`
       : text;
   }
-  if (!PLAIN_NUMERIC_VALUE_PATTERN.test(text)) {
-    return text;
-  }
-  const numericValue = Number(text);
-  return Number.isFinite(numericValue)
-    ? numericValue.toFixed(3).replace(/\.?(0+)$/, "")
-    : text;
+  return formatNumericAtMostThreeDecimals(text);
 }
 
 function stripParamUnit(value: string, key: string): string {

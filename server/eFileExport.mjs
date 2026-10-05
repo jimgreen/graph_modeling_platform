@@ -8,6 +8,7 @@ import { readDeviceLibraryConfig, readSchemeProjectRecord } from "./server.mjs";
 import { readPredefinedTemplateBase64, PREDEFINED_E_DEVICE_TEMPLATES } from "./eFileTemplates.mjs";
 import { sendV1Error, sendV1PayloadTooLarge } from "./v1Response.mjs";
 import { accessControlOriginOnly } from "./cors.mjs";
+import { contentDispositionAttachment } from "./contentDisposition.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 import { readJsonBody as readJsonBodyWithLimit } from "./readJsonBody.mjs";
 
@@ -150,7 +151,7 @@ function sendEFile(response, { file, encoding }) {
   response.writeHead(200, {
     "content-type": `text/plain; charset=${encoding}`,
     "content-length": String(bytes.length),
-    "content-disposition": `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    "content-disposition": contentDispositionAttachment(filename),
     "cache-control": "no-store",
     ...accessControlOriginOnly,
     // 自定义响应头跨域读取需显式放行（同源/代理场景无影响）

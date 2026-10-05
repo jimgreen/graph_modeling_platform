@@ -10,6 +10,7 @@
 import { describe, expect, test } from "vitest";
 import type { Edge, Point } from "../model";
 import {
+  formatNumericAtMostThreeDecimals,
   isObjectRecord,
   isStaticButtonEnabledForNode,
   safeFilePart,
@@ -123,6 +124,47 @@ describe("拖拽阈值判定（三个 should*）", () => {
     expect(shouldPatchRouteCacheForHighFanoutMove(["n1", "n2"], edges(3))).toBe(false);
     // 边很多但没动节点 → 不补丁
     expect(shouldPatchRouteCacheForHighFanoutMove([], edges(MAX + 1))).toBe(false);
+  });
+});
+
+describe("formatNumericAtMostThreeDecimals", () => {
+  test("最多三位小数并去掉末尾多余的 0", () => {
+    expect(formatNumericAtMostThreeDecimals("2.50")).toBe("2.5");
+    expect(formatNumericAtMostThreeDecimals("2.5000")).toBe("2.5");
+    expect(formatNumericAtMostThreeDecimals("2.000")).toBe("2");
+    expect(formatNumericAtMostThreeDecimals("0")).toBe("0");
+    expect(formatNumericAtMostThreeDecimals("-0.500")).toBe("-0.5");
+    expect(formatNumericAtMostThreeDecimals(".5")).toBe("0.5");
+    expect(formatNumericAtMostThreeDecimals("+1.25")).toBe("1.25");
+  });
+
+  test("超过三位小数按四舍五入截到三位", () => {
+    expect(formatNumericAtMostThreeDecimals("1.23456")).toBe("1.235");
+    expect(formatNumericAtMostThreeDecimals("1.0004")).toBe("1");
+  });
+
+  test("首尾空白先去掉", () => {
+    expect(formatNumericAtMostThreeDecimals("  2.50  ")).toBe("2.5");
+  });
+
+  test("非纯数字原样返回（不吞 %/° 后缀 —— 那是右臂面板调用侧的分支）", () => {
+    expect(formatNumericAtMostThreeDecimals("50%")).toBe("50%");
+    expect(formatNumericAtMostThreeDecimals("12°")).toBe("12°");
+    expect(formatNumericAtMostThreeDecimals("abc")).toBe("abc");
+    expect(formatNumericAtMostThreeDecimals("")).toBe("");
+  });
+
+  test("Number() 溢出到 Infinity 时保留原始数字串", () => {
+    // 与 useBatchEditors 的「测量值溢出」用例同一条缝：匹配数字模式但不是有限数。
+    const overflow = "9".repeat(400);
+    expect(Number(overflow)).toBe(Infinity);
+    expect(formatNumericAtMostThreeDecimals(overflow)).toBe(overflow);
+    expect(formatNumericAtMostThreeDecimals("Infinity")).toBe("Infinity");
+  });
+
+  test("接受 number 入参", () => {
+    expect(formatNumericAtMostThreeDecimals(2.5)).toBe("2.5");
+    expect(formatNumericAtMostThreeDecimals(12)).toBe("12");
   });
 });
 

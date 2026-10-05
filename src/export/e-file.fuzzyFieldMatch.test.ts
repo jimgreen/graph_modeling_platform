@@ -93,3 +93,90 @@ describe("模板段解析（parseEDeviceDefinitionFile 的输入形态）", () =
     expect(section.fields[0]).toEqual({ exportName: "idx,name,dev_type,node", cnName: "序号,名称,类型,节点" });
   });
 });
+
+// ─── 「同一个元件字段不会被两个模板字段各取一次」────────────────────────────
+//
+// `eDeviceInterfaceFieldOrderForRow` 的 `used` 集合既是查找时的排除条件，也是最终去重的唯一依据。
+// 该函数现在把每个元件字段的合规键（sourceKey / exportNameKey / fieldKeys）在循环外一次算好、
+// 供所有模板字段复用 —— 这条重构的前提正是「这三个键只由字段自身决定，与 `used` 无关」。
+// 若哪天有人把 `used` 的过滤一并搬进预计算（例如预计算时就跳过已用的字段），
+// 下面两条会立刻红：字段会被第一个模板字段吃掉，第二个只能退到别的字段或占位。
+//
+// 选用 ACLoad 是因为它同时具备同名的精确键与不同的中文名键，能覆盖两级分支的互动：
+// 模板字段 `p/有功值` 精确命中元件字段 `p`；第二个 `p/有功上限` 的精确键同为 `p`（已被 used 排除），
+// 只能靠 cnName 在 fuzzy 分支落到 `p_max`。
+describe("模板字段重叠时同一个元件字段只会被取一次", () => {
+  test("★ 第二个模板字段不再重复取已用的 exact 键，改按 cnName 落到别的字段", () => {
+    const sections = parseEDeviceDefinitionFile(`<Model>
+@ path name
+# 自定义
+</Model>
+<node 类="ACLoad+交流负荷" 表号="00401">
+@ p
+// 有功值
+@ p
+// 有功上限
+</node>
+</Model>
+`);
+    const state = applyEDeviceDefinitionSectionsToLibraryState({ sections, libraryTemplates: DEVICE_LIBRARY });
+    // 断言「p 只出现一次」+「第二个 p 拿到的是 p_max，而不是 p 或占位 p」
+    expect(state.eDeviceDefinitionFieldOrder.ACLoad).toEqual(["p", "p_max"]);
+  });
+
+  test("★ 三个重叠模板字段依次取到三个不同元件字段，无一重复", () => {
+    const sections = parseEDeviceDefinitionFile(`<Model>
+@ path name
+# 自定义
+</Model>
+<node 类="ACLoad+交流负荷" 表号="00401">
+@ p
+// 有功值
+@ p
+// 有功上限
+@ p
+// 有功下限
+</node>
+</Model>
+`);
+    const state = applyEDeviceDefinitionSectionsToLibraryState({ sections, libraryTemplates: DEVICE_LIBRARY });
+    expect(state.eDeviceDefinitionFieldOrder.ACLoad).toEqual(["p", "p_max", "p_min"]);
+  });
+
+  test("同名同中文名的模板字段只产出一次（第二个既不重取也不新增占位）", () => {
+    const sections = parseEDeviceDefinitionFile(`<Model>
+@ path name
+# 自定义
+</Model>
+<node 类="ACLoad+交流负荷" 表号="00401">
+@ p
+// 有功值
+@ p
+// 有功值
+</node>
+</Model>
+`);
+    const state = applyEDeviceDefinitionSectionsToLibraryState({ sections, libraryTemplates: DEVICE_LIBRARY });
+    expect(state.eDeviceDefinitionFieldOrder.ACLoad).toEqual(["p"]);
+  });
+
+  test("★ 只有大小写差异的两个模板字段（p / P）仍只产出一列", () => {
+    // 第二个 `P` 在 exact 与 fuzzy 两级都被 used 排除（complianceKey 大小写不敏感），
+    // 于是退回占位名 `P`；而占位名要再次经过外层 used 去重，**那道去重同样必须用 complianceKey** ——
+    // 若改成直接比原始名，`P` 与已用的 `p` 就不相等，这里会多出一列重复的 `P`。
+    const sections = parseEDeviceDefinitionFile(`<Model>
+@ path name
+# 自定义
+</Model>
+<node 类="ACLoad+交流负荷" 表号="00401">
+@ p
+// 有功值
+@ P
+// 毫不相干的中文名
+</node>
+</Model>
+`);
+    const state = applyEDeviceDefinitionSectionsToLibraryState({ sections, libraryTemplates: DEVICE_LIBRARY });
+    expect(state.eDeviceDefinitionFieldOrder.ACLoad).toEqual(["p"]);
+  });
+});

@@ -412,6 +412,27 @@ describe("latestDefinitionSource / preferredDefinitionSource", () => {
     const loser = { updatedAt: "2026-06-01T00:00:00.000Z", params: { b: "2" } } as any;
     expect(shared.preferredDefinitionSource(undefined, [winner, loser], isKindA)).toBe(winner);
   });
+
+  test("候选时间戳并列时取输入顺序里先出现的那个（reduce 用严格 > 才顶替）", () => {
+    // 实现是单遍 reduce 取最大时间戳，且只在 `>` 时顶替 incumbent ⇒ 并列时保留
+    // 先传入的那个。这与原 `sort((l, r) => ts(r) - ts(l))[0]`（比较器并列返回 0、
+    // 稳定排序保原序）逐字等价。一旦有人把 `>` 写成 `>=`，本条先红。
+    const first = { updatedAt: "2026-01-01T00:00:00.000Z", params: { x: "first" } } as any;
+    const second = { updatedAt: "2026-01-01T00:00:00.000Z", params: { x: "second" } } as any;
+    expect(shared.preferredDefinitionSource(undefined, [first, second], () => true)).toBe(first);
+    expect(shared.preferredDefinitionSource(undefined, [second, first], () => true)).toBe(second);
+
+    // 中间夹一个更旧的：并列的两个仍要按各自在输入里的先后决出，不能被更旧的挤掉
+    const olderInMiddle = { updatedAt: "2020-01-01T00:00:00.000Z", params: { x: "old" } } as any;
+    expect(shared.preferredDefinitionSource(undefined, [first, olderInMiddle, second], () => true))
+      .toBe(first);
+
+    // 坏时间戳与合法时间戳 0 值同档（都折成 0），并列时同样取先出现的
+    const bad = { updatedAt: "不是时间", params: { x: "bad" } } as any;
+    const epoch = { updatedAt: "1970-01-01T00:00:00.000Z", params: { x: "epoch" } } as any;
+    expect(shared.preferredDefinitionSource(undefined, [bad, epoch], () => true)).toBe(bad);
+    expect(shared.preferredDefinitionSource(undefined, [epoch, bad], () => true)).toBe(epoch);
+  });
 });
 
 describe("visualOnlyOverride", () => {

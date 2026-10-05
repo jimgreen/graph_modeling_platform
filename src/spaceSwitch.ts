@@ -37,11 +37,13 @@ export function shouldPromptBeforeUnload(options: {
   return Boolean(options.saveRequired) && !options.isViteFullReload && !options.isDev && !skipBeforeUnloadFlag;
 }
 
-// 失败提示走 window 上的 showGlobalMessage（src/globalMessage.ts 挂的，main.tsx 已 import）。
+// 失败提示走 window 上的 showGlobalMessage（src/globalMessage.ts 挂的，main.tsx 已 import；
+// 类型见 src/vite-env.d.ts）。
 // **不 import 那个模块**：它在模块顶层写 window，node 测试环境无 window，import 即炸；
-// 而本模块要能在 node 下被测。
+// 而本模块要能在 node 下被测。故此处只能从全局对象上取 —— 那个挂载在 node 下不存在，
+// `?.()` 是运行时必需（不是类型问题），不能省。
 function notifySwitchFailure(text: string): void {
-  (globalThis as any).showGlobalMessage?.(text);
+  globalThis.showGlobalMessage?.(text);
 }
 
 /**

@@ -6,6 +6,7 @@ installDomShim();
 import { readMeasurementConfig, readSchemeProjectRecord } from "./server.mjs";
 import { sendV1Error } from "./v1Response.mjs";
 import { accessControlOriginOnly } from "./cors.mjs";
+import { contentDispositionAttachment } from "./contentDisposition.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 
 const { buildCimXml, cimFilename } = await import("../src/cim/cim-export.ts");
@@ -89,7 +90,7 @@ export async function handleV1ModelCimXml({ url, response, paths }) {
     }
     response.writeHead(200, {
       "content-type": "application/xml; charset=utf-8",
-      "content-disposition": `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      "content-disposition": contentDispositionAttachment(filename),
       "cache-control": "no-store",
       ...accessControlOriginOnly
     });

@@ -2305,9 +2305,9 @@ function autoAlignOperationLog(options: {
  * 「放弃本次对齐」等否定结局传 `error`,让图标与颜色区别于成功路径。
  *
  * 取值优先 scope 上的 `showGlobalMessage`(带 `success/error/info` 类型,与 App 内既有
- * toast 同源);不可用时回落 `(globalThis as any).showGlobalMessage?.()` —— 走这条而**不**
+ * toast 同源);不可用时回落 `globalThis.showGlobalMessage?.()` —— 走这条而**不**
  * 顶层 `import` 是因为 `src/globalMessage.ts` 顶层即写 `window`,node 测试环境 import 就炸
- * (`memoryWatch.ts` 同款约束)。两条都不可用时静默降级,只留状态栏日志。
+ * (`memoryWatch.ts` 同款约束)。类型见 `src/vite-env.d.ts`。两条都不可用时静默降级,只留状态栏日志。
  */
 function emitLayoutOperationFeedback(
   __appScope: Record<string, any>,
@@ -2321,7 +2321,7 @@ function emitLayoutOperationFeedback(
     scopeShowGlobalMessage(message, type, duration);
     return;
   }
-  (globalThis as any).showGlobalMessage?.(message);
+  globalThis.showGlobalMessage?.(message);
 }
 
 export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {

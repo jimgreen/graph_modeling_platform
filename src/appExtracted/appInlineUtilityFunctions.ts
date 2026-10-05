@@ -15,10 +15,21 @@ import {
 
 // 可选点相等比较
 export const sameOptionalPoint = (first?: Point, second?: Point) =>
-  (!first && !second) || (Boolean(first && second) && first?.x === second?.x && first?.y === second?.y);
+  (!first && !second) || (!!first && !!second && first.x === second.x && first.y === second.y);
 
-// 连接目标相等比较（ConnectTarget 来自 appCoreCanvasUtilities）
-export const sameConnectTarget = (first: any, second: any) =>
+/**
+ * 连接目标相等比较所需的最小结构。
+ *
+ * 不写 `ConnectTarget`（定义在 appCoreCanvasUtilities，真实类型是
+ * `{ node: ModelNode; terminalId: string; point?: Point }`）：
+ * 本函数只读 node.id / terminalId / point 三项，而 test 与 __appScope 调用点手里的
+ * ConnectTarget 有的是子集视图（如 `{ node: { id } }`）。结构化最小类型对二者双向可赋值，
+ * 换来的是「比较逻辑读不到第三个字段」这件事由编译器兜住，而不是靠通读调用点。
+ */
+type SameConnectTargetLike = { node: { id: string }; terminalId?: string; point?: Point } | null | undefined;
+
+// 连接目标相等比较
+export const sameConnectTarget = (first: SameConnectTargetLike, second: SameConnectTargetLike) =>
   (!first && !second) ||
   Boolean(
     first &&
@@ -31,9 +42,10 @@ export const sameConnectTarget = (first: any, second: any) =>
 // 可选点列表相等比较
 export const sameOptionalPointList = (first?: Point[], second?: Point[]) =>
   (!first && !second) ||
-  (Boolean(first && second) &&
-    first?.length === second?.length &&
-    first?.every((point, index) => point.x === second?.[index]?.x && point.y === second?.[index]?.y));
+  (!!first &&
+    !!second &&
+    first.length === second.length &&
+    first.every((point, index) => point.x === second[index]?.x && point.y === second[index]?.y));
 
 // 单节点拖拽结束时是否同步更新边
 export const shouldFinalizeMovedNodeEdgesSynchronously = (movedNodeIds: string[], candidateEdges: Edge[]) =>
@@ -50,6 +62,20 @@ export const shouldDeferSingleNodeTerminalReconciliation = (movedNodeIds: string
 // 高扇出移动时是否应补丁路由缓存
 export const shouldPatchRouteCacheForHighFanoutMove = (movedNodeIds: string[], candidateEdges: Edge[]) =>
   movedNodeIds.length > 0 && candidateEdges.length > MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES;
+
+// 行内数值展示：最多三位小数，并去掉末尾多余的 0；非纯数字（含 Infinity 溢出）原样返回。
+// 批量编辑器（useBatchEditors）与右臂面板（appRightPanel）此前各存一份逐字相同的实现，
+// 收拢到此处；右臂面板额外的 %/° 后缀分支留在它的调用侧。
+const NUMERIC_TEXT_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
+
+export const formatNumericAtMostThreeDecimals = (value: string | number): string => {
+  const text = String(value ?? "").trim();
+  if (!NUMERIC_TEXT_PATTERN.test(text)) {
+    return text;
+  }
+  const numericValue = Number(text);
+  return Number.isFinite(numericValue) ? numericValue.toFixed(3).replace(/\.?(0+)$/, "") : text;
+};
 
 // 文件名安全化
 export const safeFilePart = (name: string) => name.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";

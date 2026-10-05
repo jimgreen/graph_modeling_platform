@@ -185,6 +185,128 @@ describe("回显的其它字段", () => {
   });
 });
 
+// ─── 512 字节截点落在多字节字符中间 ─────────────────────────
+//
+// 预览按**字节**硬截在 512（`subarray(0, PREVIEW_BYTES)`），而中文在 UTF-8 里 3 字节、
+// 在 GBK 里 2 字节 ⇒ 截点有相当概率落在字符中间。直接 toString 会把残缺字节解成
+// U+FFFD（GBK 则吐替换字形），联调者看到的是「对方发错字节」，而不是「截断了」。
+//
+// 契约：截点回退到合法字符边界，**只丢半个字符，绝不多丢一个完整字符**。所以每条
+// 用例都断言到「字节/字符确切等于某个值」：
+//   - 只断言「不含 U+FFFD」分不出「回退过头」（少吐一个完整字符照样不含 U+FFFD）；
+//   - 只断言「长度 ≤ 上限」分不出「没回退」（多一个 U+FFFD 字符照样 ≤ 上限）。
+// 两个方向的失败必须能被各自的断言抓住，故都用 toBe 钉死完整文本。
+//
+// 用 **multipart 文件字段**观测：raw body 那条路径额外做了 `slice(0, 200)` 的字符
+// 二次截断（TEXT_FIELD_PREVIEW_CHARS），会把 512 字节处的尾巴切掉，字节级断言不可见；
+// 文件字段的 preview 只经 decodePreview，截断点即所见即所测。
+async function postFilePart(bytes, partContentType) {
+  const boundary = "----probeBoundary";
+  const body = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="model"; filename="a.e"\r\nContent-Type: ${partContentType}\r\n\r\n`,
+      "utf-8"
+    ),
+    Buffer.from(bytes),
+    Buffer.from(`\r\n--${boundary}--\r\n`, "utf-8")
+  ]);
+  return postRaw(body, `multipart/form-data; boundary=${boundary}`);
+}
+
+/** postFilePart 的预览文本。 */
+async function previewOf(bytes, partContentType) {
+  const payload = await postFilePart(bytes, partContentType);
+  expect(payload.ok).toBe(true);
+  const field = payload.data.received.fields[0];
+  expect(field.kind, "应落在文件字段而不是文本字段").toBe("file");
+  return field.preview;
+}
+
+describe("512 字节截断回退到字符边界", () => {
+  test("UTF-8：截点切在三字节「中」的第 2 字节后 → 丢半个字符，不回显 U+FFFD", async () => {
+    // 填充 510 字节 ⇒ 「中」占 510-512，subarray(0,512) 只拿到它的前 2 字节。
+    // 正确结果：510 个 A，一个中文字都不留（半个字符不配进文本）。
+    // 回退过头会变成 509 个 A；不回退则是 510 个 A + 「\uFFFD」。
+    const preview = await previewOf(
+      Buffer.from(`${"A".repeat(510)}中TAIL`, "utf-8"),
+      "application/octet-stream"
+    );
+    expect(preview, "截断处不许出现替换字符").not.toContain("\uFFFD");
+    expect(preview).toBe("A".repeat(510));
+    expect(preview).toHaveLength(510);
+    expect(preview).not.toContain("中");
+    expect(preview).not.toContain("TAIL");
+  });
+
+  test("UTF-8：四字节字符（emoji）被切在第 3 字节后 → 回退 3 字节到位", async () => {
+    // 😀 占 509-512（4 字节），512 截点落在它的最后一个字节之前：
+    // 边界回退的搜索窗口必须够 4 字节（前导字节 + 3 个续字节），否则会把半个
+    // emoji 当成一个完整字符留下 U+FFFD。
+    const preview = await previewOf(
+      Buffer.from(`${"A".repeat(509)}\u{1F600}TAIL`, "utf-8"),
+      "application/octet-stream"
+    );
+    expect(preview, "截断处不许出现替换字符").not.toContain("\uFFFD");
+    expect(preview).toBe("A".repeat(509));
+    expect(preview).not.toContain("\u{1F600}");
+  });
+
+  test("UTF-8：恰好 512 字节且末字符完整 → 一个字节都不多丢", async () => {
+    // 509 + 3 = 512：截点正好落在「中」的**末尾**，是合法边界。
+    // 这条专门抓「回退过头」——无条件砍掉尾字符的实现会少掉这个「中」而输出 509 个 A。
+    const exact = `${"A".repeat(509)}中`;
+    expect(Buffer.byteLength(exact, "utf-8"), "fixture 必须恰好 512 字节").toBe(512);
+    const preview = await previewOf(Buffer.from(exact, "utf-8"), "application/octet-stream");
+    expect(preview).toBe(exact);
+    expect(preview.endsWith("中"), "合法的尾部字符必须留着").toBe(true);
+    expect(preview).toHaveLength(510);
+    expect(preview).not.toContain("\uFFFD");
+  });
+
+  test("GBK：截点切在双字节「中」的前导字节之后 → 只丢那 1 字节", async () => {
+    // 「中」在 GBK 里是 D6 D0（2 字节）。填充 511 字节 ⇒ 前导字节落在 511 位，
+    // 512 截点把它切成孤零零一个前导字节，丢掉它即可（GBK 回退恒 ≤1 字节）。
+    // 不回退时 iconv 解出来是一个替换字形；回退过头则只剩 510 个 B。
+    const preview = await previewOf(
+      iconv.encode(`${"B".repeat(511)}中TAIL`, "gbk"),
+      "application/octet-stream; charset=gbk"
+    );
+    expect(preview, "截断处不许出现替换字符").not.toContain("\uFFFD");
+    expect(preview).toBe("B".repeat(511));
+    expect(preview).toHaveLength(511);
+    expect(preview).not.toContain("中");
+    expect(preview).not.toContain("TAIL");
+  });
+
+  test("GBK：恰好 512 字节且末字符完整 → 不许丢「中」的续字节", async () => {
+    // 「中」= D6 D0，续字节 0xD0 **本身也落在 GBK 前导区间 0x81-0xFE 内**。
+    // 所以「看末字节是不是前导字节就砍掉」这种实现会把这条的正确输出砍成
+    // 510 个 B（少一个完整字符）—— 这条用例就是那道判别题。
+    const exact = "B".repeat(510) + "中";
+    expect(iconv.encode(exact, "gbk").length, "fixture 必须恰好 512 字节").toBe(512);
+    const preview = await previewOf(
+      iconv.encode(exact, "gbk"),
+      "application/octet-stream; charset=gbk"
+    );
+    expect(preview).toBe(exact);
+    expect(preview.endsWith("中")).toBe(true);
+    expect(preview).not.toContain("\uFFFD");
+  });
+
+  test("raw body：整段中文也能看到同样的回退（不经 200 字符二次截断）", async () => {
+    // raw body 的 preview 之后还要 slice(0, 200) 字符，所以要用「中文占比高」的
+    // payload：200 个中文字 = 600 字节，512 截点落在第 171 个字的第 2 字节后，
+    // 回退后剩 170 个中文字（170 < 200，二次截断不动它），字节级断言仍然可见。
+    const payload = await postRaw(new TextEncoder().encode("中".repeat(200)), "text/plain");
+    const field = payload.data.received.fields[0];
+    expect(field.kind).toBe("raw");
+    expect(field.text, "截断处不许出现替换字符").not.toContain("\uFFFD");
+    expect(field.text).toBe("中".repeat(170));
+    // 不回退时是 170 个中文字 + 1 个 U+FFFD（171 字符）；回退过头则是 169 个。
+    expect(field.text).toHaveLength(170);
+  });
+});
+
 describe("内存记录：只留最近 5 条", () => {
   test("第 6 条挤掉第 1 条（不是无上限增长）", async () => {
     for (let index = 1; index <= 6; index += 1) {

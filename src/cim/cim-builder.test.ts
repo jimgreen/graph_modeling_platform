@@ -65,6 +65,62 @@ describe("buildCimPackage 容器层次", () => {
   });
 });
 
+// buildCimPackage 的阶段 1 只扫一遍 input.nodes：baseVoltages 清单与派生的 rdfId 映射
+// 必须同源。若日后有人把映射改回独立重算（或从别的口径重算），本组断言转红。
+describe("buildCimPackage 电压基：清单与 rdfId 映射同源", () => {
+  /** 电压值 → rdfId 直读产物，映射侧一律经此与清单对照 */
+  const bvIds = (pkg: ReturnType<typeof buildCimPackage>) => pkg.baseVoltages.map((bv) => bv.rdfId);
+
+  it("空节点数组 → 清单/VoltageLevel 都为空，映射侧无悬挂引用", () => {
+    const pkg = buildCimPackage({ nodes: [], edges: [], projectName: "t", modelId: "m-empty" });
+    expect(pkg.baseVoltages).toEqual([]);
+    expect(pkg.voltageLevels).toEqual([]);
+    expect(pkg.substations).toHaveLength(1); // 容器恒在，与节点数无关
+  });
+
+  it("两节点电压基**相同** → 去重成一条，两个 VoltageLevel 合并", () => {
+    const nodes = [
+      makeNode({ id: "bus1", kind: "ac-bus", params: { i_vbase: "110" } }),
+      makeNode({ id: "bus2", kind: "ac-bus", params: { i_vbase: "110.0" } })
+    ];
+    const pkg = buildCimPackage({ nodes, edges: [], projectName: "t", modelId: "m" });
+    expect(bvIds(pkg)).toEqual(["BV_110"]);
+    expect(pkg.voltageLevels.map((vl) => vl.rdfId)).toEqual(["VL_110"]);
+    expect(pkg.voltageLevels[0].baseVoltageId).toBe("BV_110");
+    // 两个母线挂在同一个 VoltageLevel 上
+    expect(pkg.busbarSections.map((b) => b.voltageLevelId)).toEqual(["VL_110", "VL_110"]);
+  });
+
+  it("两节点电压基**不同** → 各自一条 VoltageLevel，且都指回清单里的 rdfId", () => {
+    const nodes = [
+      makeNode({ id: "bus1", kind: "ac-bus", params: { i_vbase: "110" } }),
+      makeNode({ id: "bus2", kind: "ac-bus", params: { i_vbase: "10" } }),
+      makeNode({
+        id: "line1", kind: "ac-line",
+        params: { i_vbase: "500", r: "0.1", x: "0.2" },
+        terminals: [{ id: "t1", label: "1", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1", vbase: "110" }]
+      })
+    ];
+    const pkg = buildCimPackage({ nodes, edges: [], projectName: "t", modelId: "m" });
+    expect(bvIds(pkg)).toEqual(["BV_10", "BV_110", "BV_500"]);
+    // 清单即映射的取值域：任何 baseVoltageId 都能在清单里找到（无悬挂引用）
+    const known = new Set(bvIds(pkg));
+    for (const vl of pkg.voltageLevels) {
+      expect(known.has(vl.baseVoltageId)).toBe(true);
+    }
+    expect(pkg.voltageLevels.map((vl) => [vl.rdfId, vl.baseVoltageId])).toEqual([
+      ["VL_10", "BV_10"],
+      ["VL_110", "BV_110"]
+    ]);
+    // 设备 baseVoltageId 取「主电压」（端子 110 优先于分侧 500），故指回 BV_110
+    expect(pkg.acLineSegments[0].baseVoltageId).toBe("BV_110");
+    expect(known.has(pkg.acLineSegments[0].baseVoltageId)).toBe(true);
+    // BV_500 进了清单（声明用到即收），但没成 VoltageLevel —— 清单比映射取值域更宽
+    expect(known.has("BV_500")).toBe(true);
+    expect(pkg.voltageLevels.some((vl) => vl.baseVoltageId === "BV_500")).toBe(false);
+  });
+});
+
 describe("inferTopology", () => {
   const line = makeNode({
     id: "line1", kind: "ac-line", params: { i_vbase: "110" },

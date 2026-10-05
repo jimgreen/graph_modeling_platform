@@ -199,6 +199,26 @@ test("删除空间把目录移入 trash-spaces 而非真删", async () => {
   expect((await store.list()).map((s) => s.id)).toEqual(["default"]);
 });
 
+test("空间目录已被手工删掉时：删除照常成功，跳过 rename 且不造 trash 目录", async () => {
+  const store = createSpaceStore(dataRoot);
+  await store.ensureInitialized();
+  await store.create("张三");
+  const paths = store.resolvePaths("张三");
+  mkdirSync(paths.schemes, { recursive: true });
+  writeFileSync(join(paths.schemes, "sentinel.json"), '{"keep":true}', "utf-8");
+  // 目录被用户手工删掉 → 存在性探测抛 ENOENT。这条分支的契约是「跳过 rename、
+  // 照常把注册表条目摘掉」，而不是整体报错：目录压根不存在正是探测想表达的常态
+  // （同步过来的半截数据、从别处迁入的注册表都会走到）。
+  rmSync(paths.root, { recursive: true, force: true });
+
+  await store.remove("张三");
+
+  // 注册表条目摘掉了
+  expect((await store.list()).map((s) => s.id)).toEqual(["default"]);
+  // 关键判据是「没建」，不是「建了个空的」——后者同样能骗过只断言 existsSync 的写法。
+  expect(existsSync(join(dataRoot, "trash-spaces"))).toBe(false);
+});
+
 test("并发写注册表不丢条目", async () => {
   const store = createSpaceStore(dataRoot);
   await store.ensureInitialized();
@@ -603,6 +623,44 @@ test("读盘抛出连 name/message 都没有的值时，告警降级文案不出
   expect(scanLine).toBeTruthy();
   expect(scanLine).toContain("（unknown）");
   expect(scanLine).not.toContain("undefined");
+});
+
+test("存在性探测报非 ENOENT（EACCES）时删除中止，注册表条目保留", async () => {
+  // 「只有 ENOENT 算不存在」这条不变量在 remove 上的落点。删空间用探测结果决定要不要
+  // 搬进回收站：把 EACCES 也当成「不存在」，目录会留在原地而注册表条目照摘 ——
+  // 空间从选择器里消失、数据成了无入口的孤儿，且没有任何报错。
+  //
+  // 真造一个 EACCES 在 Windows 上不稳（ACL 得管理员才拦得住）；「父路径是文件」那条
+  // 也不行 —— 实测本仓环境里 access("<文件>/子路径") 返回的仍是 ENOENT 而非 ENOTDIR，
+  // 拿它当判据会悄悄走进 ENOENT 分支、恒绿。故替换 access 打桩。
+  vi.doMock("node:fs/promises", async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+      ...actual,
+      access: async () => {
+        const error = new Error("permission denied");
+        error.code = "EACCES";
+        throw error;
+      }
+    };
+  });
+  const root = laneRoot("remove-eacces");
+  try {
+    // query 后缀强制全新模块实例，让它拿到上面替换过的 fs（同本文件既有那处）
+    const { createSpaceStore: createLockedStore } = await import("./spaceStore.mjs?remove-eacces");
+    const store = createLockedStore(root);
+    await store.ensureInitialized();
+    await store.create("张三");
+
+    await expect(store.remove("张三")).rejects.toMatchObject({ code: "EACCES" });
+
+    // 中止必须发生在摘条目**之前**：locked 抛错后锁已释放，但注册表不该被写坏。
+    // 只断言「抛错」不够 —— 上面那句为真时本句仍可能为假，反之亦然，两边都得看。
+    expect((await store.list()).map((s) => s.id)).toEqual(["default", "张三"]);
+    expect(existsSync(join(root, "trash-spaces"))).toBe(false);
+  } finally {
+    vi.doUnmock("node:fs/promises");
+  }
 });
 
 test("workspaces/ 下的普通文件不会被登记成空间（只有目录才算）", async () => {

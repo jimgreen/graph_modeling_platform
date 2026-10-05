@@ -125,6 +125,19 @@ describe("handleV1SchemeExport 正路径", () => {
     expect(res.headers["content-disposition"]).toContain(encodeURIComponent("方案A.zip"));
   });
 
+  // 上面那条只 toContain(encodeURIComponent(...))，把 filename* 整段删掉、或把
+  // `filename*=UTF-8''` 的定界符写成单引号，它都照样绿 —— 因为被编码的中文名
+  // 在两处都出现。逐字钉住整条头，这条才会红。
+  test("★ content-disposition 是 ASCII 回落 + RFC5987 双写法，逐字节钉住", async () => {
+    createSchemeArchiveBuffer.mockResolvedValue({ buffer: Buffer.from("zip"), filename: "方案A.zip" });
+    const res = createMockResponse();
+    const sp = encodeURIComponent(JSON.stringify(["方案A"]));
+    await handleV1SchemeExport({ url: mockUrl(apiPath("/v1/schemes/export"), `schemePath=${sp}`), response: res });
+    expect(res.headers["content-disposition"]).toBe(
+      `attachment; filename="%E6%96%B9%E6%A1%88A.zip"; filename*=UTF-8''%E6%96%B9%E6%A1%88A.zip`
+    );
+  });
+
   test("createSchemeArchiveBuffer 抛缺少路径返 400", async () => {
     createSchemeArchiveBuffer.mockRejectedValue(new Error("缺少方案路径"));
     const res = createMockResponse();

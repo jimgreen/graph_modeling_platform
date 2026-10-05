@@ -329,7 +329,7 @@ describe("启动闸门与渲染的先后", () => {
 // ---- window 不存在时的真实行为（现状记录，非期望） ----------------------------
 describe("window 不存在时的现状", () => {
   test("window 未定义时 import 直接抛 ReferenceError，不静默继续", async () => {
-    // ⚠ **这是缺口，不是期望行为。** `(window as any).__POWERED_BY_QIANKUN__` 读的是
+    // ⚠ **这是缺口，不是期望行为。** `window.__POWERED_BY_QIANKUN__` 读的是
     //   自由标识符 window，window 不存在时不会得到 undefined，而是 ReferenceError。
     //   生产上只在真实浏览器里跑，window 恒在，所以这个缺口今天不显形；但它意味着
     //   「任何非浏览器宿主（SSR / 预渲染 / 单测 import 入口）」都会在入口第一行就炸。
