@@ -212,6 +212,8 @@ import {
   terminalVoltageBaseNumber,
   topologyNodeNumberForEField,
   formatPowerBaseDisplayValue,
+  formatRatioParameterDisplayValue,
+  isPercentageRatioParameterName,
   normalizeRatioParameterInputValue,
   topologyCalculationMessage,
   voltageLevelColor,
@@ -1955,6 +1957,179 @@ describe("power system model", () => {
 
     expect(copiedNestedScheme.children?.map((item) => item.name)).toEqual(["子方案"]);
     expect(copiedNestedScheme.children?.[0]?.projects.map((item) => item.name)).toEqual(["子模型 副本"]);
+  });
+
+  // ===== 以下用例补 v8 报告里 count=0 的分支（目标行：model.ts:724 / 746 / 780 / 792 /
+  // 1005 / 1261 / 1263 / 1264 / 1267 / 1269 / 1271 / 1272 / 1273 / 1278）=====
+
+  test("keeps a base-power suffix without a numeric prefix verbatim", () => {
+    // 覆盖 model.ts:724 的 `?? text`。既有断言（model-device-library.test.ts:1604）只喂过
+    // "5 MW" / "1.2 kvar" 这类带数字前缀的输入，exec() 永远命中 `[1]`，于是「不匹配 → 整串回退」
+    // 这条路径无人走。判别依据：回退值就是原文，不是 undefined 也不是空串。
+    expect(formatPowerBaseDisplayValue("pbase", "MW")).toBe("MW");
+    expect(formatPowerBaseDisplayValue("qbase", "待填")).toBe("待填");
+    expect(formatPowerBaseDisplayValue("pbase", "≈5MW")).toBe("≈5MW");
+    // 对照组：带数字前缀时走的是 `[1]` 分支，输出形态与上面三条不同，
+    // 保证这条断言不是因为「函数恒返回原文」而绿。
+    expect(formatPowerBaseDisplayValue("pbase", "5 MW")).toBe("5");
+  });
+
+  test("reads a null power-base value as empty instead of the text null", () => {
+    // 覆盖 model.ts:792 的 `value ?? ""`。value 来自持久化记录，调用方不做非空校验。
+    // 去掉 `?? ""` 后 String(null) === "null"，非空 → "null" 会被当成真实显示值吐出去。
+    expect(formatPowerBaseDisplayValue("pbase", null as unknown as string)).toBe("");
+    expect(formatPowerBaseDisplayValue("qbase", null as unknown as string)).toBe("");
+    // 百分比键走的是 formatRatioParameterDisplayValue 子路径，同一份 null 也必须回落空串。
+    expect(formatPowerBaseDisplayValue("soc", null as unknown as string)).toBe("");
+    // 对照组：本函数并非恒返回空串（否则上面三条断言全是废话）。
+    expect(formatPowerBaseDisplayValue("rated_voltage", "10")).toBe("10");
+    expect(formatPowerBaseDisplayValue("soc", "0.5")).toBe("50%");
+  });
+
+  test("reads a null ratio value as empty instead of the text null", () => {
+    // 覆盖 model.ts:780 的 `value ?? ""`。既有断言（modelDeviceKindPredicates.test.ts:68）
+    // 只测了空串 ""，没测 null —— 而这两者恰恰是 `??` 的两侧。
+    expect(formatRatioParameterDisplayValue("eta", null as unknown as string)).toBe("");
+    expect(formatRatioParameterDisplayValue("soc_upper_limit", null as unknown as string)).toBe("");
+    // 非百分比名也回落空串（对照组：下面这行证明不是恒空）
+    expect(formatRatioParameterDisplayValue("rated_voltage", null as unknown as string)).toBe("");
+    expect(formatRatioParameterDisplayValue("eta", "0.5")).toBe("50%");
+  });
+
+  test("rejects non-decimal numeric literals for bounded ratio parameters", () => {
+    // 覆盖 model.ts:746 的 `return null` 早退。既有断言只喂了「模式匹配但越界」的输入
+    // （e2h_coeff "0.09" / "0.51"），RATIO_PARAMETER_INPUT_PATTERN.test 从未返回过 false，
+    // 这道格式闸门等于没被验证。
+    // 判别输入：Number("0x1") === 1，正好落在 h2e_coeff 的 [1, 2] 区间内 ——
+    // 删掉格式闸门后它会被 Number() 正常解析并判为合法，只有闸门本身能拒掉它。
+    expect(normalizeRatioParameterInputValue("h2e_coeff", "0x1")).toBeNull();
+    expect(normalizeRatioParameterInputValue("e2h_coeff", "0x1")).toBeNull();
+    expect(normalizeRatioParameterInputValue("h2e_coeff", "0b1")).toBeNull();
+    // 越界同样是 null，但那条路走的是范围闸门：两条路径的输入域必须分开，
+    // 否则删掉任意一条都测不出来。
+    expect(normalizeRatioParameterInputValue("h2e_coeff", "2.01")).toBeNull();
+    // 同值但十进制写法必须通过 —— 证明上面拒掉的是字面量格式，不是数值大小。
+    expect(normalizeRatioParameterInputValue("h2e_coeff", "1")).toBe("1");
+    expect(normalizeRatioParameterInputValue("e2h_coeff", "0.2")).toBe("0.2");
+  });
+
+  test("drops a non-array state definition payload instead of throwing", () => {
+    // 覆盖 model.ts:1278 的 `return []`。删掉 Array.isArray 闸门 → `for (const item of null)`
+    // 直接抛 TypeError，调用方（appPersistenceLibraryExport、stateIconDrawing）读存档时整片崩。
+    expect(normalizeDeviceStateDefinitions(null)).toEqual([]);
+    expect(normalizeDeviceStateDefinitions(undefined)).toEqual([]);
+    expect(normalizeDeviceStateDefinitions("[]")).toEqual([]);
+    // 长得像数组的对象不是数组：下标与 length 都齐了，仍必须被拒。
+    expect(normalizeDeviceStateDefinitions({ 0: { value: "1", name: "闭合" }, length: 1 })).toEqual([]);
+    // 对照组：真数组仍要正常产出（否则上面几条可能只是被空返回掩盖）。
+    expect(normalizeDeviceStateDefinitions([{ value: "1", name: "闭合" }])).toEqual([{ value: "1", name: "闭合" }]);
+    expect(normalizeDeviceStateDefinitions([{ value: "0", name: "打开" }, { value: "0", name: "重复" }])).toEqual([
+      { value: "0", name: "打开" }
+    ]);
+  });
+
+  test("falls back to the device kind when a node maps to no static component library", () => {
+    // 覆盖 model.ts:1005 的 `?? baseKind`。既有静态用例（model-device-library.test.ts:3776）
+    // 的 library 都登记在 STATIC_COMPONENT_RENDER_KIND_BY_LIBRARY 里，兜底从未被走到。
+    expect(staticRenderKindForNode({ kind: "ac-load", params: {} })).toBe("ac-load");
+    expect(staticRenderKindForNode({ kind: "ac-bus", params: { component_type: "" } })).toBe("ac-bus");
+    // params 指名了库 → 走左值，返回值与上面的兜底值不同：两条路径可区分，
+    // 删掉 `?? baseKind` 时第二条不会替第一条兜住。
+    expect(staticRenderKindForNode({ kind: "ac-load", params: { component_type: "StaticButton" } })).toBe("static-button");
+    // 对照组：静态 kind 本身登记在 STATIC_COMPONENT_LIBRARY_BY_KIND，1002 行提前返回 baseKind。
+    expect(staticRenderKindForNode({ kind: "static-rect", params: {} })).toBe("static-rect");
+  });
+
+  test("clones every optional state definition field and re-normalizes both image fit modes", () => {
+    // 覆盖 model.ts:1261 / 1263 / 1264 / 1267 / 1269 / 1271 / 1272 / 1273 八条 clone 分支。
+    // 入口刻意选 applyDeviceTemplateDefinitionOverride 的「无 stateDefinitions 覆盖」路径
+    // （model.ts:9071 直接 template.stateDefinitions.map(cloneDeviceStateDefinition)）：
+    // getTemplateStateDefinitions 那条路先过 normalizeDeviceStateDefinitions，imageFit 早已被归一，
+    // clone 自己的归一化层在那边永远观察不到。
+    const base = DEVICE_LIBRARY.find((item) => item.kind === "ac-switch")!;
+    const template: DeviceTemplate = {
+      ...base,
+      stateDefinitions: [
+        {
+          value: "1",
+          name: "闭合",
+          icon: "icon-closed",
+          image: apiPath("/images/state-closed"),
+          imageAssetId: "asset-closed",
+          imageFit: "Fixed", // 非法大小写：clone 内部必须归一到默认 cover
+          text: "合",
+          color: "#111111",
+          fillColor: "#eeeeee",
+          strokeColor: "#222222",
+          textColor: "#333333",
+          backgroundImage: apiPath("/images/state-bg"),
+          backgroundImageAssetId: "asset-bg",
+          backgroundImageFit: "Tile", // 同理 → cover
+          imageCleared: "1"
+        }
+      ]
+    };
+
+    const overridden = applyDeviceTemplateDefinitionOverride(template, {
+      kind: "ac-switch",
+      params: { status: "1" }
+    });
+
+    expect(overridden.stateDefinitions).toEqual([
+      {
+        value: "1",
+        name: "闭合",
+        icon: "icon-closed",
+        image: apiPath("/images/state-closed"),
+        imageAssetId: "asset-closed",
+        imageFit: "cover",
+        text: "合",
+        color: "#111111",
+        fillColor: "#eeeeee",
+        strokeColor: "#222222",
+        textColor: "#333333",
+        backgroundImage: apiPath("/images/state-bg"),
+        backgroundImageAssetId: "asset-bg",
+        backgroundImageFit: "cover",
+        imageCleared: "1"
+      }
+    ]);
+    // 克隆必须产出新对象：改返回值不得污染模板自带的定义。
+    overridden.stateDefinitions![0].imageFit = "tile";
+    expect(template.stateDefinitions![0].imageFit).toBe("Fixed");
+  });
+
+  test("normalizes a signed zero ratio to 0 (documented equivalent branch)", () => {
+    // 覆盖 model.ts:729 的 `Object.is(rounded, -0) ? 0 : rounded` 真分支（可达：负零不会被
+    // 770/773 行的范围判定拒掉 —— `-0 < 0` 为 false）。
+    //
+    // 等价变异记录：compactRatioNumber 返回**字符串**，而 String(-0) === "0"，
+    // 所以把那层 Object.is 整个删掉输出完全一样 —— 这是正确的绿，不是漏测。
+    // 什么情况下它会变承重：若 compactRatioNumber 改成返回 number，
+    // "-0" 就会变成 -0（Object.is(-0, 0) === false）。
+    expect(normalizeRatioParameterInputValue("eta", "-0")).toBe("0");
+    expect(normalizeRatioParameterInputValue("soc", "-0.0")).toBe("0");
+    expect(formatRatioParameterDisplayValue("eta", "-0")).toBe("0%");
+    // 对照组：正零与真正的负值不受影响（"-0.5" 走的是范围拒绝，不是负零归一）。
+    expect(normalizeRatioParameterInputValue("eta", "0")).toBe("0");
+    expect(normalizeRatioParameterInputValue("eta", "-0.5")).toBeNull();
+  });
+
+  test("accepts a missing ratio parameter name without throwing and passes the value through", () => {
+    // 覆盖 model.ts:733 / 740 / 745 的 `?? ""`（name/value 来自持久化记录，可能整条缺失）。
+    //
+    // 等价变异记录：`?? ""` 本身不可观察 —— String(null) === "null"，而 "null" 同样既不是
+    // 百分比名也不在任何 BOUNDED_NUMERIC_PARAMETER_RANGES 里，删掉 `?? ""` 输出不变。
+    // 真正承重的是下面这条契约：name 缺失时不抛错、且不被当成百分比参数处理。
+    expect(isPercentageRatioParameterName(null as unknown as string)).toBe(false);
+    expect(isPercentageRatioParameterName(undefined as unknown as string)).toBe(false);
+    // 值原样透传（不是百分比名 → 不做任何换算）；对照组：名字存在时会换算成 0.5。
+    expect(normalizeRatioParameterInputValue(null as unknown as string, "50%")).toBe("50%");
+    expect(normalizeRatioParameterInputValue("eta", "50%")).toBe("0.5");
+    // 覆盖 model.ts:745：受范围约束的参数名 + 空 value → null（而不是抛错）。
+    expect(normalizeRatioParameterInputValue("e2h_coeff", null as unknown as string)).toBeNull();
+    // 对照组：同一个受约束参数名，合法值仍要通过 —— 证明上面是「缺值拒收」而非「全拒」。
+    expect(normalizeRatioParameterInputValue("e2h_coeff", "0.2")).toBe("0.2");
   });
 
 

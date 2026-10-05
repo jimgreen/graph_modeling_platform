@@ -220,3 +220,188 @@ describe("meaningfulDeviceParameterChineseName", () => {
     }
   });
 });
+
+// ── 归一化输出形状：translatedTokenPhrase 里 `if (!tokens.length) return undefined`
+// 那道早退（L236）在当前调用图下**不可达**，它的可达性完全依赖下面这条不变量：
+// normalizeDeviceParameterEnglishName 的输出要么是空串，要么**首尾都是字母数字**。
+//
+// 论证（两条调用路径穷举）：
+//   · L260 `translatedTokenPhrase(normalizedName)`：调用前 L243 已排除空串，
+//     故 normalizedName 非空；配合「首尾是字母数字」⇒ 至少含 1 个非下划线 token。
+//   · L256 `translatedTokenPhrase(baseName)`，baseName = normalizedName.slice(prefix.length)，
+//     而 10 个 SIDE_PREFIXES 全部以 "_" 结尾。baseName 为空 ⇒ normalizedName 也以 "_"
+//     结尾（与不变量矛盾）；baseName 全是下划线 ⇒ 同理与不变量矛盾。
+// 所以下面这条形状断言就是 L236 可达性的**可执行前提**：它一旦转红（normalize 输出
+// 出现首尾下划线），L236 立刻变成活代码，届时必须补它的直接用例。
+//
+// 变异实测（本文件 v9 + 本文件用例）：
+//   · L236 `if (!tokens.length) return undefined;` → `if (false) …`：**GREEN**（不可达）。
+//   · 叠加变异（路线 B）—— 同上，**再**把 normalize 的 `.replace(/^_+|_+$/g, "")`
+//     换成永不匹配的 `.replace(/^$/, "")`：立刻 **RED**，红因是
+//     `AssertionError: "___": expected '' to be undefined`（另有一条 `"_" -> "_"` 的形状断言）。
+//     即：**L236 的唯一作用就是拦住「归一化吐出全下划线串」这一种形状**；一旦那条
+//     剥离被削弱，tokens=[] 会让 `labels.every(Boolean)` 恒真并返回 `""`。
+//     两条叠加起来就给出了可达性结论的机制，而不只是「测不出来」。
+describe("归一化输出形状：L236 空 token 早退的可达性前提", () => {
+  const NORMALIZED_SHAPE = /^[a-z0-9]([a-z0-9_]*[a-z0-9])?$/u;
+
+  test("输出要么空串、要么首尾都是字母数字（绝不出现首尾下划线）", () => {
+    // 逐条点名：全部下划线会被首尾剥离成空串；夹在字母中间的连写下划线折叠成一个；
+    // 首尾的下划线/连字符/点号都被剥掉；中文与符号整段变下划线后也被剥成空串。
+    for (const raw of [
+      "", "   ", null, undefined,
+      "_", "__", "___", "____",
+      "i_", "_i_", "i__", "a.b", "a/b", "node.1",
+      "-rated-", "_rated_", "rated/capacity", "rated.capacity_set",
+      "AC.rated.capacity", "ratedCapacity", "Rated", "1", "0", "构造", "a__b"
+    ]) {
+      const normalized = normalizeDeviceParameterEnglishName(raw);
+      const ok = normalized === "" || NORMALIZED_SHAPE.test(normalized);
+      expect(ok, `${JSON.stringify(raw)} -> ${JSON.stringify(normalized)}`).toBe(true);
+    }
+  });
+
+  test("纯下划线的键归一化成空串后按未登记处理，绝不返回空串标签", () => {
+    // 这组输入是「L236 那道早退」在 normalize 一旦失去剥离能力时唯一会漏出来的形状：
+    // 若同时去掉 L236 的 `if (!tokens.length)`，tokens=[] 会让 `labels.every(Boolean)`
+    // 恒真并返回 `""`，于是这里会收到空串而不是 undefined。
+    for (const key of ["_", "__", "___", "source__", "a._", "a._b", "j__", "k___"]) {
+      expect(inferDeviceParameterChineseName(key), JSON.stringify(key)).toBeUndefined();
+    }
+    // 反向钉住「剥离只剥下划线、不动字母数字」：`i__` 归一化成 `i`，而 `i` 是
+    // EXACT 的裸键 ⇒ 拿到真标签。若哪天把剥离改成整段丢弃，这里会变成 undefined。
+    expect(inferDeviceParameterChineseName("i__")).toBe("电流量测值");
+  });
+});
+
+// ── 关联设备标签表与关系正则的**同步不变量**（L250 的 `?? "设备"` 兜底）。
+// 正则 `/^idx_(ac_unit|…|transformer)_t(\d+)$/` 的 9 个设备种类与
+// ASSOCIATED_DEVICE_LABELS 的 9 个自有键**恰好一一对应**，且每个值都是非空串，
+// 所以查表永远命中 —— `?? "设备"` 这条右臂在当前定义域内**恒不求值**。
+// 但它是「正则加了种类却忘了加标签」时唯一的救命稻草，且失败是**静默**的：
+// 产出「第N端关联设备序号」没有任何报错，只在导出表头里变成一句泛称。
+// 故下面用「假想新增种类 ac_source」把这条兜底钉成可观测契约：它现在必须是
+// undefined（未匹配正则），一旦有人往正则里加了 ac_source 却没登记标签，
+// 这里立刻转红。
+//
+// 变异实测：`?? "设备"` → `?? "关系对象"` 与 →（删掉）都是 **GREEN**，与「右臂永不求值」
+// 一致（这是可证的：正则的 9 个 kind 与标签表 9 个自有键逐字相同，值均非空串）。
+// 真正能杀掉这一行的是**同步失配**，实测两条都 RED：
+//   · L248 正则加 `|ac_source` → `AssertionError: ac_source: expected
+//     '第1端关联设备序号' not to be '第1端关联设备序号'`；
+//   · L250 端号换成 kind → `expected '第ac_load端关联交流负荷序号' to be
+//     '第1端关联交流负荷序号'`。
+describe("关联设备标签表与关系正则的同步不变量（L250 的 ?? 兜底）", () => {
+  const REGISTERED_KINDS = [
+    ["ac_unit", "交流电源"],
+    ["dc_unit", "直流电源"],
+    ["ac_load", "交流负荷"],
+    ["dc_load", "直流负荷"],
+    ["h2_unit", "氢源"],
+    ["h2_load", "氢负荷"],
+    ["heat_unit", "热源"],
+    ["heat2_unit", "双端热源"],
+    ["transformer", "变压器"]
+  ];
+
+  test("9 个已登记种类各自取到专属标签，任何一种都不得落到「设备」兜底", () => {
+    // 序号也要覆盖：relationMatch[2] 是多位数，且不受前导零影响。
+    for (const [kind, label] of REGISTERED_KINDS) {
+      for (const terminal of ["1", "2", "7", "12", "0"]) {
+        const out = inferDeviceParameterChineseName(`idx_${kind}_t${terminal}`);
+        expect(out, `${kind}#${terminal}`).toBe(`第${Number(terminal)}端关联${label}序号`);
+        expect(out, `${kind}#${terminal}`).not.toBe(`第${terminal}端关联设备序号`);
+      }
+    }
+  });
+
+  test("正则未收录的设备种类不产出关联文案，也就不可能走到「设备」兜底", () => {
+    // 判别输入用的是**表里不存在的键**（ac_source），不是表里恰好存在的那个 ——
+    // 硬编码型变异猜不到它，两侧差异才明显。
+    for (const kind of ["ac_source", "dc_source", "h2_source", "water_unit", "transformer2"]) {
+      const out = inferDeviceParameterChineseName(`idx_${kind}_t1`);
+      expect(out, kind).not.toBe("第1端关联设备序号");
+      expect(out, kind).toBeUndefined();
+    }
+  });
+
+  test("未匹配关系正则的相邻形状（多一位、缺位、非数字）同样不进关联分支", () => {
+    for (const key of ["idx_ac_unit_t", "idx_ac_unit_tx", "idx_ac_unit_t1x", "idx_ac_unit_1", "x_idx_ac_unit_t1"]) {
+      const out = inferDeviceParameterChineseName(key);
+      // 不用 toContain：out 可能是 undefined，而 toContain 对非字符串/数组会直接抛。
+      expect(out === undefined || !out.includes("端关联"), key).toBe(true);
+    }
+  });
+});
+
+// ── 侧前缀剥离路径（L253-258）的穷举矩阵。顺带把 L236 的「余下 base 至少含一个
+// token」这条前提按 10 个前缀 × 已登记 token 逐条钉住：每个 (prefix, token)
+// 组合都必须产出「侧标签 + token 标签」，因此前缀循环不会静默退化成恒假。
+describe("侧前缀剥离：10 个前缀 × 已登记 token 穷举", () => {
+  const SIDE_PREFIX_LABELS = [
+    ["source_", "首端"],
+    ["target_", "末端"],
+    ["medium_", "中压侧"],
+    ["high_", "高压侧"],
+    ["low_", "低压侧"],
+    ["ac_", "交流侧"],
+    ["dc_", "直流侧"],
+    ["i_", "首端"],
+    ["j_", "末端"],
+    ["k_", "中压侧"]
+  ];
+  // 取 TOKEN_LABELS 里有、EXACT_PARAMETER_LABELS 里**没有** `<prefix><token>` 形式的 token，
+  // 保证走的是「前缀剥离后 token 拆解」这条路径而非精确表口。
+  // ⚠ `i_set` / `i_max` / `i_min` 是 EXACT 的真实键（电流设定值/上限/下限），
+  //   精确表优先于前缀循环 —— 那三条在下面单独钉，不混进本矩阵。
+  const TOKENS = [
+    ["rated", "额定"],
+    ["capacity", "容量"],
+    ["value", "值"],
+    ["upper_limit", "上限限值"],   // 拆成 upper + limit 两个 token
+    ["lower_limit", "下限限值"]
+  ];
+
+  test("每个前缀剥掉后余下的 token 都照常译出，产出「侧标签 + token 标签」", () => {
+    for (const [prefix, sideLabel] of SIDE_PREFIX_LABELS) {
+      for (const [token, tokenLabel] of TOKENS) {
+        expect(inferDeviceParameterChineseName(`${prefix}${token}`), prefix + token).toBe(`${sideLabel}${tokenLabel}`);
+      }
+    }
+  });
+
+  test("组合名恰好落进 EXACT 表时精确表优先（i_set / i_max / i_min 三个真实键）", () => {
+    // 顺序契约：L245 的精确表口先于 L253 的前缀循环。若把两处调换，
+    // 这三条会变成「首端 + token 标签」= 首端设定值/上限/下限，下游表头就变了。
+    expect(inferDeviceParameterChineseName("i_set")).toBe("电流设定值");
+    expect(inferDeviceParameterChineseName("i_max")).toBe("电流上限");
+    expect(inferDeviceParameterChineseName("i_min")).toBe("电流下限");
+    // 而带下划线的兄弟键不在 EXACT 里，所以走前缀循环 —— 与上面三条形成对照。
+    expect(inferDeviceParameterChineseName("i_max_value")).toBe("首端上限值");
+    expect(inferDeviceParameterChineseName("i_set_rated")).toBe("首端设定值额定");
+  });
+
+  test("前缀本身当键名时不会产出裸侧标签（剥完余下空串那一形状不存在）", () => {
+    // 10 个前缀全以 "_" 结尾，而归一化会剥掉尾下划线 ⇒ baseName 不可能是空串，
+    // 所以「剥空后拼出裸侧标签」这条形状不可达。这里逐个前缀按实际结果钉住。
+    const EXPECTED_BARE = {
+      source_: undefined,
+      target_: undefined,
+      medium_: undefined,
+      high_: undefined,
+      low_: undefined,
+      ac_: undefined,
+      dc_: undefined,
+      i_: "电流量测值",   // `i` 是 EXACT 的裸键
+      j_: undefined,
+      k_: undefined
+    };
+    for (const [prefix, sideLabel] of SIDE_PREFIX_LABELS) {
+      const bare = prefix.replace(/_+$/u, "");
+      const out = inferDeviceParameterChineseName(bare);
+      expect(out, bare).toBe(EXPECTED_BARE[prefix]);
+      // 无论命中哪条路，都不能是「只有侧标签」这种剥空产物。
+      expect(out, `${bare} 不得产出裸侧标签 ${sideLabel}`).not.toBe(sideLabel);
+    }
+  });
+});

@@ -38,6 +38,22 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   };
 });
 
+// 半个模块替身：只把 readSchemeProjectRecord 换成可编程的 vi.fn，其余导出
+// （关键是 createImageServer）原样透传给真实实现 —— 所以下面那批「起真 server 打真
+// HTTP」的集成用例完全不受影响。
+//
+// 为什么需要它：真实读盘路径上，readSchemeProjectRecord 会先把落盘模型过一遍
+// normalizeProjectForStorage（滤非对象节点/边、`kind` 归字符串、补 measurements.groups、
+// name 回落「未命名模型」）。于是 cimExport.mjs 里的 `record.project ?? {}`、
+// `Array.isArray(...) ? ... : []`、`node.kind ?? ""`、`project.name ?? name` 这些守卫
+// 在真实路径上**永远走不到右臂** —— 纯防御代码，不替身就一条也测不到。
+// 反例提醒：整体替换 `vi.mock("./server.mjs", () => ({ ...桩 }))` 会把 createImageServer
+// 变成 vi.fn()，`server.address()` 返回 undefined → 整文件崩。
+vi.mock("./server.mjs", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, readSchemeProjectRecord: vi.fn(actual.readSchemeProjectRecord) };
+});
+
 // —— 单元：buildCimXml 纯函数 ——
 describe("CIM/XML 后端生成", () => {
   test("可直载 src/cim/cim-export.ts", async () => {
@@ -141,6 +157,29 @@ beforeAll(async () => {
     name: UNREADABLE_MODEL,
     nodes: [busbar("bus8", "母线8", { i_vbase: "110" })],
     edges: []
+  });
+  // resolveModelId 最后一级 `|| "current"` 的靶子。
+  // 文件名必须叫「未命名模型」：readSchemeProjectRecord 会把传入的 name 先过
+  // storageProjectDisplayName("")，空名归一成「未命名模型」，再按这个名字找文件。
+  // 记录里 name 留空 ⇒ 三级回落（query 覆盖 → project.idx → 传入 name）全部落空。
+  seed("测试方案", "未命名模型", {
+    name: "",
+    nodes: [busbar("bus10", "母线10", { i_vbase: "110" })],
+    edges: []
+  });
+  // 唯一带 measurements 的种子：既有种子全都没有量测，于是
+  // `project.measurements?.groups` 的非短路臂（measurements 存在）从未被走到。
+  seed("测试方案", "含量测模型", {
+    name: "含量测模型",
+    nodes: [busbar("bus9", "母线9", { i_vbase: "110" })],
+    edges: [],
+    measurements: {
+      groups: [{
+        nodeId: "bus9",
+        name: "母线量测组",
+        items: [{ measurementTypeId: "母线电压", name: "母线电压", unit: "kV", decimalsOverride: 1 }]
+      }]
+    }
   });
   seed("测试方案", "纯静态模型", {
     name: "纯静态模型",
@@ -466,5 +505,196 @@ describe(`${cimXmlPath} 导出抛错的 500 分支`, () => {
     expect(res.headers.get("content-disposition")).toBeNull();
     // 错误路径不得漏出半截 XML
     expect(await res.text()).not.toContain("<cim:");
+  });
+});
+
+// ─── 真实读盘路径上补的两条分支（不碰替身） ──────────────────
+//
+// 这一组刻意不走 ./server.mjs 的替身：用真文件 + 真 readSchemeProjectRecord，
+// 证明这两条分支不是「mock 造出来的」。
+describe(`${cimXmlPath} 真实读盘路径的 modelId 兜底与量测透传`, () => {
+  test("三级回落全落空（name 传空串 + 无 idx）⇒ 兜底标识符 current", async () => {
+    // 只能直调 buildCimForSavedModel：handler 在缺 name 时就 400 了，走不到这里。
+    // 与上面「`|| current` 那级经本路径不可达」那条**不冲突** —— 那条走 HTTP，
+    // URL 的 name 恒非空（「空名模型」），第三级 `|| name` 有值；这里传空串，
+    // 第三级同样落空，`|| "current"` 才承重。
+    const { buildCimForSavedModel } = await import("./cimExport.mjs");
+    const result = await buildCimForSavedModel({ parts: ["测试方案"], name: "" });
+    expect(result.error).toBeUndefined();
+    expect(result.xml).toContain('rdf:ID="SUB_current"');
+    // 同一份记录的名字仍由 storageProjectDisplayName 回落给出（不是 current）：
+    // 落盘名与 rdf:ID 是两套独立来源，别混成一条断言。
+    expect(result.filename).toBe("未命名模型.xml");
+  });
+
+  test("模型带 measurements.groups ⇒ 量测进入 XML（`?.` 的非短路臂）", async () => {
+    const res = await fetch(
+      `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent("含量测模型")}`
+    );
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    // M_1 只能来自 cim-builder 阶段 5「量测映射」——它遍历的正是本层传下去的
+    // `project.measurements?.groups`。既有没有量测的种子时该臂从不执行。
+    expect(text).toContain('rdf:ID="M_1"');
+    expect(text).toContain("<cim:IdentifiedObject.name>母线电压</cim:IdentifiedObject.name>");
+    expect(text).toContain("母线9");
+  });
+});
+
+// ─── 畸形 record 的防御分支（半模块替身注入） ──────────────────
+//
+// 这里的五条都是 cimExport.mjs 自己的防御代码：真实读盘路径上
+// normalizeProjectForStorage 会先把落盘模型补成「渲染层可无条件解引用」的形状
+// （滤非对象节点/边、`kind: String(node.kind ?? "")`、name 回落「未命名模型」），
+// 于是这些 `??` / `: []` 的右臂在生产里一条也走不到。不替身就永远测不到。
+//
+// 替身只换 readSchemeProjectRecord 一个导出，且用 mockImplementationOnce ——
+// 用完即弃，不会漏给后面任何用例；默认实现仍是真实实现。
+describe(`${cimXmlPath} 畸形 record 的防御分支`, () => {
+  const node = (id) => ({
+    id,
+    kind: "ac-bus",
+    name: "母线1",
+    position: { x: 0, y: 0 },
+    size: { width: 100, height: 20 },
+    rotation: 0,
+    scale: 1,
+    terminals: [],
+    params: { name: "母线1", i_vbase: "110" }
+  });
+
+  // handler 只需要 headersSent / writeHead / end 三件（见 v1Response.sendV1Error）。
+  const stubResponse = () => {
+    const sent = { status: 0, headers: null, body: null };
+    return {
+      sent,
+      headersSent: false,
+      writeHead(status, headers) {
+        sent.status = status;
+        sent.headers = headers;
+      },
+      end(body) {
+        sent.body = body;
+      }
+    };
+  };
+
+  // 关键：cimExport.mjs 与 server.mjs 是**互相 import** 的（server.mjs → apiV1Schemes.mjs
+  // → cimExport.mjs → server.mjs），而替身工厂是在 importOriginal() 里求值真实 server.mjs 的。
+  // 若 cimExport.mjs 在那一轮被连带求值，它拿到的是**真实**的 readSchemeProjectRecord，
+  // mockImplementationOnce 永远不生效（实测症状：全部走真实读盘，残缺名字一律 404）。
+  // 解法：resetModules 清掉那份已被污染的 cimExport.mjs，再重新 import ——
+  // 此时它对 ./server.mjs 的依赖解析走的是**已注册好的替身**。
+  // 顺序上先 server 后 cimExport：若工厂结果仍在缓存里，先取 server 不会触发新的
+  // importOriginal，也就绕开了「server.mjs 求值时反手 await 正在求值的 cimExport.mjs」
+  // 这条死锁路径。
+  const mockedModules = async () => {
+    vi.resetModules();
+    const serverMod = await import("./server.mjs");
+    const cimMod = await import("./cimExport.mjs");
+    return { ...serverMod, ...cimMod };
+  };
+
+  test("record.project 为 nullish ⇒ 归一成空对象 ⇒ 400 无可导出的电力设备", async () => {
+    const { readSchemeProjectRecord, buildCimForSavedModel } = await mockedModules();
+    readSchemeProjectRecord.mockImplementationOnce(async () => ({ name: "残缺记录", project: null }));
+    const result = await buildCimForSavedModel({ parts: ["测试方案"], name: "残缺记录" });
+    expect(result).toEqual({ error: { code: "bad-request", message: "当前模型无可导出的电力设备。" } });
+    expect(result.xml).toBeUndefined();
+  });
+
+  test("project.nodes 非数组 ⇒ 当空数组处理（同批的 : [] 两级一起承重）", async () => {
+    const { readSchemeProjectRecord } = await import("./server.mjs");
+    const { buildCimForSavedModel } = await import("./cimExport.mjs");
+    readSchemeProjectRecord.mockImplementationOnce(async () => ({
+      name: "节点畸形",
+      project: { name: "节点畸形", nodes: "这不是数组", edges: [] }
+    }));
+    const result = await buildCimForSavedModel({ parts: ["测试方案"], name: "节点畸形" });
+    expect(result).toEqual({ error: { code: "bad-request", message: "当前模型无可导出的电力设备。" } });
+  });
+
+  test("project.edges 非数组 ⇒ 与 edges:[] 产出逐字节相同的 XML", async () => {
+    const { readSchemeProjectRecord } = await import("./server.mjs");
+    const { buildCimForSavedModel } = await import("./cimExport.mjs");
+    const withEdges = (edges) => {
+      readSchemeProjectRecord.mockImplementationOnce(async () => ({
+        name: "边畸形",
+        project: { name: "边畸形", nodes: [node("busA")], edges }
+      }));
+      return buildCimForSavedModel({ parts: ["测试方案"], name: "边畸形" });
+    };
+    // XML 里有 <md:Model.created> 时间戳，两次生成必然差几毫秒 —— 比对前先抹掉，
+    // 否则这条断言测的是「两次调用发生在同一毫秒」，coverage 一开就红。
+    const withoutTimestamp = (xml) => xml.replace(/<md:Model\.created>.*?<\/md:Model\.created>/u, "");
+    const malformed = await withEdges("这不是数组");
+    expect(malformed.error).toBeUndefined();
+    expect(malformed.xml).toContain("BusbarSection");
+    const empty = await withEdges([]);
+    // 去掉时间戳后逐字节相等才是「当空边处理」的真正判据：只断言「不抛错」「含
+    // BusbarSection」的话，把 `: []` 换成 `: [{…合法边…}]` 也能过（多一条边不影响
+    // 这两个断言），守卫就形同虚设。
+    expect(withoutTimestamp(malformed.xml)).toBe(withoutTimestamp(empty.xml));
+    expect(malformed.filename).toBe(empty.filename);
+  });
+
+  test("节点缺 kind ⇒ 不被当成 static-* 剔除（`?? \"\"` 那级默认值承重）", async () => {
+    const { readSchemeProjectRecord } = await import("./server.mjs");
+    const { buildCimForSavedModel } = await import("./cimExport.mjs");
+    readSchemeProjectRecord.mockImplementationOnce(async () => ({
+      name: "无kind",
+      project: {
+        name: "无kind",
+        nodes: [{ id: "nk1", position: { x: 0, y: 0 }, size: { width: 1, height: 1 }, terminals: [], params: {} }],
+        edges: []
+      }
+    }));
+    const result = await buildCimForSavedModel({ parts: ["测试方案"], name: "无kind" });
+    // 承重判据是「没有落到 400」：缺 kind 的节点若被默认成 static-*，
+    // electricalNodes 会清空、这里就变成「无可导出的电力设备」。
+    expect(result.error).toBeUndefined();
+    expect(result.xml).toContain("<cim:");
+    // 反向钉住：缺 kind 的节点映射不出 ConductingEquipment 类，XML 里只有容器。
+    // 这条不是装饰 —— 它说明「过了闸门」不等于「产出了设备」，两者不可互相替代。
+    expect(result.xml).not.toContain("BusbarSection");
+  });
+
+  test("project.name 缺失 ⇒ 回落到调用方传入的 name（XML 对象名与落盘文件名同源）", async () => {
+    const { readSchemeProjectRecord } = await import("./server.mjs");
+    const { buildCimForSavedModel } = await import("./cimExport.mjs");
+    readSchemeProjectRecord.mockImplementationOnce(async () => ({
+      name: "无名记录",
+      project: { nodes: [node("busB")], edges: [] }
+    }));
+    const result = await buildCimForSavedModel({ parts: ["测试方案"], name: "无名记录" });
+    expect(result.error).toBeUndefined();
+    // 第 58 行（传给 buildCimXml 的名字）与第 63 行（cimFilename 的名字）各取一次
+    // `project.name ?? name`，是两处独立调用，必须分别断言：只断言 XML 的话，
+    // 把第 63 行改掉照样绿。
+    expect(result.xml).toContain("<cim:IdentifiedObject.name>无名记录</cim:IdentifiedObject.name>");
+    expect(result.filename).toBe("无名记录.xml");
+  });
+
+  test("readSchemeProjectRecord reject 非 Error ⇒ 500 且文案是「后端处理失败。」", async () => {
+    const { readSchemeProjectRecord } = await import("./server.mjs");
+    const { handleV1ModelCimXml } = await import("./cimExport.mjs");
+    // 抛的不是 Error 实例 ⇒ `error instanceof Error` 为假，走右臂。
+    // 生产里 server.mjs 的读盘失败都被包成 new Error（所以既有那条 EACCES 用例
+    // 走的是左臂），右臂是给「非 Error 抛值」兜底的。
+    readSchemeProjectRecord.mockImplementationOnce(async () => {
+      throw { weird: true };
+    });
+    const response = stubResponse();
+    const url = new URL(
+      `http://127.0.0.1${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent("完整模型")}`
+    );
+    await handleV1ModelCimXml({ url, response, paths: undefined });
+    expect(response.sent.status).toBe(500);
+    const body = JSON.parse(response.sent.body);
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("internal");
+    // 判别输入：非 Error 抛值本身没有 .message，若代码写成 `error.message`
+    // 这里会是 undefined、被 JSON.stringify 丢掉，断言立刻红。
+    expect(body.error.message).toBe("后端处理失败。");
   });
 });

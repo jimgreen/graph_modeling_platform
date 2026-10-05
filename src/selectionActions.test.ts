@@ -5,6 +5,7 @@ import {
   createDefaultNode,
   createRoutableLineDeviceFromEndpoints,
   DEVICE_LIBRARY,
+  type DeviceKind,
   getEdgeEndpointPoint,
   getTerminalPoint,
   isCanvasNodeMovable,
@@ -2315,6 +2316,204 @@ describe("autoAlignEdgeWithoutStoredRoute", () => {
     expect("routePoints" in stripped).toBe(false);
   });
 });
+// ─── reorderItemsByDisplayLayer:layerId 归一化 + 「落回原位返回原数组」契约 ───
+// itemModelLayerId 把「缺失 / 全空白 / 非字符串」的 layerId 统一归到同一个默认层,
+// 而**默认层那个名字在生产代码里只当分组键用**,断言若回抄常量本身就跟实现同源了。
+// 所以下面一律断可见后果:「本该同层的图元是否被一起重排」。
+describe("reorderItemsByDisplayLayer 的 layerId 归一化与原数组返回", () => {
+  const idsOf = (items: readonly { id: string }[]) => items.map((item) => item.id);
+
+  test("缺失 layerId 与显式写着默认层 id 的图元同层(一起被重排)", () => {
+    // 变异:把默认层常量换成一个别的字符串 → 缺失 layerId 的 d2 与显式声明的 d1
+    // 分属两层,d1 独自成组、组内无处可越 → 无变化 → 原样返回,本条转红。
+    expect(idsOf(reorderItemsByDisplayLayer(
+      [
+        { id: "a1", layerId: "layer-a" },
+        { id: "d1", layerId: "__default_model_layer__" },
+        { id: "d2" },
+        { id: "a2", layerId: "layer-a" }
+      ],
+      ["d1"],
+      "raise"
+    ))).toEqual(["a1", "d2", "d1", "a2"]);
+  });
+
+  test("全空白 layerId 与缺失 layerId 同层(不能自成一层)", () => {
+    // 变异:去掉 trim 判空(`typeof ... === "string" ? item.layerId : 默认层`)
+    // → b1 的 "   " 自成一组,组内无处可越 → 原样返回,本条转红。
+    expect(idsOf(reorderItemsByDisplayLayer(
+      [
+        { id: "a1", layerId: "layer-a" },
+        { id: "b1", layerId: "   " },
+        { id: "d2" },
+        { id: "a2", layerId: "layer-a" }
+      ],
+      ["b1"],
+      "raise"
+    ))).toEqual(["a1", "d2", "b1", "a2"]);
+  });
+
+  test("非字符串 layerId 与缺失 layerId 同层(归一化不是让数字冒充图层)", () => {
+    // 变异实测:把判别改成 `typeof item.layerId === "string" && String(item.layerId).trim()`
+    // → **一样绿**,而且是结构性的等价变异:`&&` 会在同一个 typeof 守卫上短路,
+    //   对数字 layerId 两侧都取 else 分支,改的只是「永远走不到的后半截」。
+    //   (同理,直接删掉 typeof 会让 `.trim` 作用在数字上抛 TypeError —— 那是崩溃,不是行为差异。)
+    // 换成真正会分歧的写法:用 String() 归一化把 typeof 顶掉 → RED,
+    //   实测 expected [a1,d2,n1,a2] to deeply equal [a1,n1,d2,a2]:
+    //   数字被当成图层名 "7" 自成一层,d2 独自留在默认层,n1 组内无处可越 → 原样返回。
+    // 所以本条钉的不是「typeof 判断怎么写」,而是「数字 layerId 不得冒充图层」这个对外后果。
+    expect(idsOf(reorderItemsByDisplayLayer(
+      [
+        { id: "a1", layerId: "layer-a" },
+        { id: "n1", layerId: 7 as unknown as string },
+        { id: "d2" },
+        { id: "a2", layerId: "layer-a" }
+      ],
+      ["n1"],
+      "raise"
+    ))).toEqual(["a1", "d2", "n1", "a2"]);
+  });
+
+  test("没有模型层 id 且重排落回原位时返回同一个数组引用(不是等价的新数组)", () => {
+    // 无字符串 layerId → 走「不按模型层分组」那条路。
+    // 选中原序最后一项做 raise:它下边没有未选中项可越,重排必然落回原位。
+    const items = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+    const result = reorderItemsByDisplayLayer(items, ["c"], "raise");
+
+    expect(idsOf(result)).toEqual(["a", "b", "c"]);
+    // 引用相等才是这条分支的契约:调用侧拿返回值做记忆化比较,等价的新数组会平白触发重渲染。
+    // 变异:直接 return 重排结果 → Array.from 出来的新数组 → 本条转红(上面那条值断言仍绿)。
+    expect(result).toBe(items);
+  });
+
+  test("每个模型层的重排都落回原位时返回同一个数组引用(逐层跳过的可观察后果)", () => {
+    const items = [
+      { id: "a1", layerId: "layer-a" },
+      { id: "a2", layerId: "layer-a" },
+      { id: "b1", layerId: "layer-b" },
+      { id: "b2", layerId: "layer-b" }
+    ];
+
+    const result = reorderItemsByDisplayLayer(items, ["a2", "b2"], "raise");
+
+    expect(idsOf(result)).toEqual(["a1", "a2", "b1", "b2"]);
+    // 每一层都命中「本层无变化 → 跳过」,changed 始终为 false → 回退到原数组。
+    // 变异 A:删掉那处 continue(或把 every 写成 some)→ changed 变 true → 返回新数组,转红。
+    // 变异 B:末尾三元无条件返回新数组 → 同样转红。
+    expect(result).toBe(items);
+    // 前提自测:这两个 id 确实被选中且匹配得到(否则会从更早的「无选中项 / 选不中」早退返回,
+    // 上面那条引用断言就测不到目标分支了)。同样输入换成 back 就会真的动 ——
+    // front 在这个夹具里同样是原位(选中项已各自在层尾),所以拿它当前提会恒真。
+    expect(idsOf(reorderItemsByDisplayLayer(items, ["a2", "b2"], "back"))).toEqual(["a2", "a1", "b2", "b1"]);
+    expect(reorderItemsByDisplayLayer(items, ["a2", "b2"], "back")).not.toBe(items);
+  });
+});
+
+// ─── 组合树的悬空引用与环引用 ────────────────────────────────────────────────
+describe("组合树的悬空子组合与环引用分支", () => {
+  const nodeAt = (kind: DeviceKind, x: number) => createDefaultNode(kind, { x, y: 0 });
+
+  test("组合把自己列为子组合时展开收敛,且自身成员不被环保护丢掉", () => {
+    const first = nodeAt("ac-load", 0);
+    const second = nodeAt("dc-load", 200);
+    const selfCycle: ModelGroup = {
+      id: "g-self",
+      name: "组合1",
+      nodeIds: [first.id, second.id],
+      edgeIds: [],
+      childGroupIds: ["g-self"]
+    };
+
+    // 环保护命中时递归返回空集合,但**组合自身的成员仍由外层那次调用补上** ——
+    // 断的是这条:若环保护顺手把自身成员也丢了,结果会只剩 first。
+    expect(expandSelectionByGroups([selfCycle], [first.id], [])).toEqual({
+      nodeIds: [first.id, second.id],
+      edgeIds: []
+    });
+    expect(canvasGroupMemberNodeIds([selfCycle], ["g-self"])).toEqual([first.id, second.id]);
+    // 变异:去掉环保护判空 → 无限递归 → 栈溢出,本条转红。
+  });
+
+  test("两个组合互相列为子组合时展开同样收敛(两侧成员都进得来)", () => {
+    const inA = nodeAt("ac-load", 0);
+    const inB = nodeAt("dc-load", 200);
+    const a: ModelGroup = { id: "g-a", name: "组合1", nodeIds: [inA.id], edgeIds: [], childGroupIds: ["g-b"] };
+    const b: ModelGroup = { id: "g-b", name: "组合2", nodeIds: [inB.id], edgeIds: [], childGroupIds: ["g-a"] };
+    const groups = [a, b];
+
+    const expanded = expandSelectionByGroups(groups, [inB.id], []);
+
+    // 只断集合不断顺序:这条守卫的契约是「收敛且不漏成员」,顺序由「谁的成员先被摊平」决定,
+    // 与守卫无关。少断一个维度是为了不让用例被无关的顺序重构打碎。
+    expect([...expanded.nodeIds].sort()).toEqual([inA.id, inB.id].sort());
+    expect(expanded.edgeIds).toEqual([]);
+    // 前提自测:只选 inB 时,两侧组合都真的与选区相交(否则整段都在走「不相交 → 跳过」,
+    // 环保护根本没被走到,本条也就测不到它)。
+    expect(inB.id).not.toBe(inA.id);
+    expect(expanded.nodeIds).toHaveLength(2);
+  });
+
+  test("组合引用了不存在的子组合时按真实成员展开,悬空子组合 id 被跳过", () => {
+    const first = nodeAt("ac-load", 0);
+    const second = nodeAt("dc-load", 200);
+    const dangling: ModelGroup = {
+      id: "g-dangling",
+      name: "组合1",
+      nodeIds: [first.id, second.id],
+      edgeIds: [],
+      childGroupIds: ["g-ghost"]
+    };
+
+    expect(expandSelectionByGroups([dangling], [first.id], [])).toEqual({
+      nodeIds: [first.id, second.id],
+      edgeIds: []
+    });
+    expect(canvasGroupMemberNodeIds([dangling], ["g-dangling"])).toEqual([first.id, second.id]);
+    // 同一个悬空 id 在「解析选中组合」那条路上也必须被跳过:
+    // 变异:删掉那里的 continue → 对 undefined 递归取成员成员,两条断言一起转红(TypeError)。
+    expect(selectedCanvasGroupIds([dangling], [second.id], [])).toEqual(["g-dangling"]);
+  });
+
+  test("canvasGroupMemberNodeIds 跳过未知组合 id,已知 id 照常收集成员", () => {
+    const first = nodeAt("ac-load", 0);
+    const second = nodeAt("dc-load", 200);
+    const real: ModelGroup = { id: "g-real", name: "组合1", nodeIds: [first.id, second.id], edgeIds: [] };
+
+    expect(canvasGroupMemberNodeIds([real], ["g-unknown"])).toEqual([]);
+    expect(canvasGroupMemberNodeIds([real], ["g-unknown", "g-real"])).toEqual([first.id, second.id]);
+    // 变异:删掉跳过分支 → 对 undefined 取成员 → TypeError,本条转红。
+    // 这里断言的对象正是被变异改到的返回值(不是入参 groups,入参不会被改)。
+  });
+});
+
+// ─── createCanvasGroupFromSelection:成员不足 2 个就不建组合 ────────────────────
+describe("createCanvasGroupFromSelection 成员不足时的空操作", () => {
+  test("散装单个图元不成组:原样返回 groups 副本且 group 为 null", () => {
+    const only = createDefaultNode("ac-load", { x: 0, y: 0 });
+
+    const result = createCanvasGroupFromSelection([], [only.id], [], () => "group-should-not-exist");
+
+    expect(result.group).toBe(null);
+    expect(result.groups).toEqual([]);
+    // 变异:把「不足 2 个」的门槛从 2 放宽到 1 → 单个散装图元会被包成一个组合,本条转红。
+  });
+
+  test("只选中一个既有组合时不把它自己塞进新组合", () => {
+    const first = createDefaultNode("ac-load", { x: 0, y: 0 });
+    const second = createDefaultNode("dc-load", { x: 200, y: 0 });
+    const existing: ModelGroup = { id: "g-existing", name: "组合1", nodeIds: [first.id, second.id], edgeIds: [] };
+
+    // 两个成员都被 existing 吸收 → 待建组合里 nodeIds/edgeIds 都空,
+    // 只有「选中组合 1 个」这一个成员 → 不足 2 个 → 不建。
+    const result = createCanvasGroupFromSelection([existing], [first.id, second.id], [], () => "group-should-not-exist");
+
+    expect(result.group).toBe(null);
+    expect(result.groups).toEqual([existing]);
+    // 门槛放宽到 1 时这里会产出一个只含 childGroupIds 的组合 → 本条转红。
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 「越界惩罚放宽 padding 像素」这个变异为什么抓不住、也不值得为它造用例
 // ─────────────────────────────────────────────────────────────────────────────

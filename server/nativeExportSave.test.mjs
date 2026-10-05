@@ -542,4 +542,159 @@ describe("native export save service", () => {
       }
     });
   });
+
+  // 上面两组用例把 service 的令牌链路走完了，但 normalizeNativeExportDialogOptions
+  // 的四个兜底常量（文件名 model.txt / 描述 文件 / 标题 另存为）与
+  // buildSystemDefaultOpenCommand、openFailureDetail 的几处空值处理，从头到尾
+  // **一次都没被触发过** —— 既有的 "normalizes unsafe dialog metadata" 只给了
+  // 「非空且合法」的一组输入，所以这些分支既没被钉住，也从没被验证过。
+  //
+  // 四个兜底里只有 filename 的 fallback 出现在断言里，description/title 的
+  // fallback 只出现在 `.filter` / `title` 字符串拼装里 —— 而那两处拼装正是
+  // 真正把它们送进 PowerShell 的通道，所以断言同时断住「返回值」与「送往对话框的环境变量」。
+  describe("对话框元数据的空值兜底（此前一条断言都没盖到）", () => {
+    test("文件名：null 走 ?? 分支、纯空白走 || fallback、清洗后为空走末位 fallback", () => {
+      // 141: String(value ?? "") —— value 为 null 才是这一支；既有输入全是非 null 字符串
+      expect(normalizeNativeExportDialogOptions({ filename: null }).filename).toBe("model.txt");
+      expect(normalizeNativeExportDialogOptions({}).filename).toBe("model.txt");
+
+      // 141: || fallback —— 非 null 但 trim 后为空串，nullish 那支不触发，故可单独定位
+      expect(normalizeNativeExportDialogOptions({ filename: "   " }).filename).toBe("model.txt");
+      expect(normalizeNativeExportDialogOptions({ filename: "\t\n " }).filename).toBe("model.txt");
+
+      // 145: return normalized || fallback —— 过了 basename + 两道 replace 才变空串，
+      // 触发的是末位兜底而非 141 的那一处（"..." 被 /[. ]+$/ 剥光）
+      expect(normalizeNativeExportDialogOptions({ filename: "..." }).filename).toBe("model.txt");
+      expect(normalizeNativeExportDialogOptions({ filename: "/" }).filename).toBe("model.txt");
+
+      // 反面对照：合法名一个字都不该动（否则上面三条可能是「什么都没做」也照样绿）
+      expect(normalizeNativeExportDialogOptions({ filename: "模型.e" }).filename).toBe("模型.e");
+      expect(normalizeNativeExportDialogOptions({ filename: "  模型.e  " }).filename).toBe("模型.e");
+
+      // 变异记实情：把 141 的 `|| fallback` 整段删掉，本组断言**一条不红** ——
+      // 它被 145 的 `normalized || fallback` 完全遮蔽：141 的兜底只在
+      // `String(value).trim() === ""` 时触发，而那种输入经 basename/replace 后
+      // 必然仍是空串，于是 145 兜出同一个 "model.txt"。两条分支**输出可证相同**，
+      // 绿是正确结果（AGENTS.md「A branch that is totally shadowed by its sibling」）。
+      // 承重的是 145：把 145 的兜底换成别的常量，filename 立刻变成那个常量。
+    });
+
+    test("描述：竖线被换成空格后整条为空时兜底为 文件，且兜底值真的进了 filter", () => {
+      // 158 的 || "文件" 一支："|" 被 replace 成 " "，trim 后为空。
+      // 既有输入 "SVG|图形" 替换后还剩字，撑不到这一支
+      const piped = normalizeNativeExportDialogOptions({ description: "|", extensions: [".svg"] });
+      expect(piped.description).toBe("文件");
+      // filter 是这段描述唯一的去处，只断 description 等于没断「送进对话框的是什么」
+      expect(piped.filter).toBe("文件 (*.svg)|*.svg|所有文件 (*.*)|*.*");
+
+      // 纯空白同样走兜底（"   " 里没有竖线，靠 trim 清空）
+      expect(normalizeNativeExportDialogOptions({ description: "   " }).description).toBe("文件");
+
+      // 158 的 ?? "文件" 一支：整项缺失/nullish
+      expect(normalizeNativeExportDialogOptions({ description: null }).description).toBe("文件");
+      expect(normalizeNativeExportDialogOptions({}).description).toBe("文件");
+
+      // 反面对照：真描述照原样保留，且竖线被替换掉（竖线是 filter 的分隔符，留着会把过滤器切碎）
+      const real = normalizeNativeExportDialogOptions({ description: "E 模型文件", extensions: [".e"] });
+      expect(real.description).toBe("E 模型文件");
+      expect(real.filter).toBe("E 模型文件 (*.e)|*.e|所有文件 (*.*)|*.*");
+    });
+
+    test("标题：全空白时兜底为 另存为，nullish 时同样", () => {
+      // 179 的 || "另存为" 一支：非 null 但 trim 后为空
+      expect(normalizeNativeExportDialogOptions({ title: "   " }).title).toBe("另存为");
+      // ?? "另存为" 一支
+      expect(normalizeNativeExportDialogOptions({ title: null }).title).toBe("另存为");
+      expect(normalizeNativeExportDialogOptions({}).title).toBe("另存为");
+
+      // 反面对照：非空标题只被 trim，不被改写
+      expect(normalizeNativeExportDialogOptions({ title: "  导出 E 文件  " }).title).toBe("导出 E 文件");
+    });
+
+    test("扩展名：数组里的 nullish 项按空串丢掉，不会变成字面量 null 混进过滤器", () => {
+      // 151 的 String(item ?? "") 一支：数组里出现 null/undefined。
+      // 既有输入 "svg" / ".SVG" 全是非 null 字符串
+      expect(normalizeNativeExportDialogOptions({ extensions: [".E", null] }).extensions).toEqual([".e"]);
+      expect(normalizeNativeExportDialogOptions({ extensions: [null, undefined] }).extensions).toEqual([".txt"]);
+      expect(normalizeNativeExportDialogOptions({ extensions: [undefined, ".svg"] }).filter)
+        .toBe("文件 (*.svg)|*.svg|所有文件 (*.*)|*.*");
+
+      // 反面对照：合法项照旧，且大小写/去重规则没被这几条输入带歪
+      expect(normalizeNativeExportDialogOptions({ extensions: ["svg", ".SVG", ".bad ext"] }).extensions)
+        .toEqual([".svg"]);
+
+      // 变异记实情：把 `item ?? ""` 改成 `item`（即删掉这层 nullish 兜底），本组断言**一条不红**。
+      // 原因是它被下一行的正则完全遮蔽 —— nullish 经 String() 得到 "null"/"undefined"，
+      // 两者都不匹配 /^\.[a-z0-9]/，照样被 filter 丢掉。
+      // 能反证这层不是装饰的输入只有一个：把 nullish 换成**合法的**扩展名串（见下方变异表），
+      // 此时结果多出 ".b"，`toEqual([".e"])` 立刻转红。绿是正确结果，不是漏网。
+    });
+  });
+
+  describe("打开路径的空值处理", () => {
+    test("filePath 为 null/undefined 时判 invalid-path，而不是把字面量当路径去开", () => {
+      // 222 的 String(filePath ?? "") 一支：既有输入是 "  "（非 null，走 LHS）
+      // 若删掉 ?? 兜底，String(null) === "null" 是真值，会**不抛错**并真的去开一个叫 null 的文件
+      for (const bad of [null, undefined]) {
+        expect(() => buildSystemDefaultOpenCommand(bad, "win32")).toThrowError(/没有可打开的文件路径/);
+      }
+      // 反面对照：非空路径正常出命令；纯空白仍判空（走 LHS 那一支）
+      expect(() => buildSystemDefaultOpenCommand("   ", "win32")).toThrowError(/没有可打开的文件路径/);
+      expect(buildSystemDefaultOpenCommand("/tmp/model.svg", "linux").command).toBe("xdg-open");
+    });
+
+    test("子进程失败且回调没带 stderr 时，报通用文案而不是 undefined/null 字面量", async () => {
+      // 271 的 String(stderr ?? "") 一支：execFilePromise 会把回调的第三个实参原样挂到
+      // error.stderr 上；只传 error 不传 stderr，它就是 undefined。
+      // 既有两条 open-failed 用例分别传了字符串和 ""，都走的是 LHS
+      const execFileImpl = vi.fn((_command, _args, _options, callback) => {
+        callback(new Error("spawn ENOENT"));
+      });
+
+      await expect(openFileWithSystemDefault("C:\\gone.e", { platform: "win32", execFileImpl }))
+        .rejects.toThrow("未能用默认程序打开文件，请确认该文件类型已绑定打开程序。");
+
+      // 对照：回调显式传 undefined/null 也一样，且不能被当成可解析的行
+      for (const stderr of [undefined, null]) {
+        const impl = vi.fn((_command, _args, _options, callback) => {
+          callback(new Error("spawn ENOENT"), "", stderr);
+        });
+        await expect(openFileWithSystemDefault("C:\\gone.e", { platform: "win32", execFileImpl: impl }))
+          .rejects.toThrow("未能用默认程序打开文件，请确认该文件类型已绑定打开程序。");
+      }
+    });
+
+    test("不注入 platform 时按 process.platform 选命令（而不是掉到 xdg-open 兜底）", async () => {
+      let seen;
+      const execFileImpl = vi.fn((command, _args, _options, callback) => {
+        seen = command;
+        callback(null, "GRAPH_MODEL_OPEN_OK", "");
+      });
+
+      // 282 的 ?? process.platform 一支：既有 openFileWithSystemDefault 用例全都显式传了 platform
+      await expect(openFileWithSystemDefault("C:\\模型.e", { execFileImpl })).resolves.toBeUndefined();
+
+      // 断「命令是按真实平台选出来的」而不是断字面量：本仓此模块整体面向 Windows，
+      // 在 win32 上兜底分支会给出 xdg-open，与真实平台派生的结果对不上
+      expect(seen).toBe(buildSystemDefaultOpenCommand("C:\\模型.e", process.platform).command);
+      if (process.platform === "win32") {
+        expect(seen).toBe("powershell.exe");
+      }
+    });
+
+    // 剩下两条覆盖率报告点名的分支，本文件**无法**用输入覆盖，如实记录而不硬凑恒绿断言：
+    //
+    // ① nativeExportSave.mjs:193 `String(value ?? "")`（powershellSingleQuoted 内部）。
+    //    该函数全文件只有一处调用（:230），传进去的 `target` 已被 :224 的
+    //    `if (!target) throw` 挡过一遍 —— 走到那里时它必是非空字符串，
+    //    nullish 分支**不可达**。这正是 AGENTS.md「Upstream already normalises, so
+    //    your own normaliser is invisible」那条：即使导出它，也只能用 raw 值直接调才看得到。
+    //
+    // ② nativeExportSave.mjs:286 的 `catch (error)`。
+    //    它在加测试**之前**就报 count=0，而它内部 287-294 各语句的 count 是 3 ——
+    //    即三条 openFileWithSystemDefault 失败用例明明都进过这个 catch。
+    //    v8 对 catch 子句的 branch 计数本身不可靠（记在这里，免得下一个人以为是漏网）。
+    //    真要验证 catch 承重，得改它**内部**的行为（已由「open-failed only reports the
+    //    script's own line」那条用例承担）。
+  });
 });

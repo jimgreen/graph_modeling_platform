@@ -2,6 +2,7 @@ import { describe, expect, test, beforeEach, afterEach } from "vitest";
 import { WebSocket } from "ws";
 import { createImageServer } from "./server.mjs";
 import { apiPath } from "./config.mjs";
+import { handleControlDevicesGroup, handleControlSave } from "./apiV1Control.mjs";
 
 // /webgrp/v1/control/* 集成测试：起真实 image-server（含 WS 双向指令通道 + control 路由），
 // 用真实 WS 客户端连入响应 command，打 HTTP POST 验证端到端。
@@ -606,3 +607,197 @@ describe("control 请求体上限与 clientId 归一", () => {
     ws.close();
   });
 });
+
+// ─── payload 为 null（`payload ?? {}` 的回退侧）与非 Error 拒绝值 ────────────
+//
+// 下面两组守卫针对的都是 `?? {}` / `instanceof Error` 的**回退侧**，
+// 既有 41 条守卫一条都走不到：
+//
+// ① `const { kind, x, y, attrs } = payload ?? {};` —— 既有 body 全是 `{}` 或带字段的
+//    对象，`??` 的左操作数永不为 nullish，回退侧是死代码。把 body 送字面量
+//    `null`（JSON.parse("null") === null）才会让 `?? {}` 真正生效；
+//    删掉 `?? {}` 后解构 null 抛 TypeError → 500，状态码与错误码双双变。
+//
+// ② `const message = error instanceof Error ? error.message : "前端指令执行失败。";`
+//    —— 既有所有拒绝值都是 Error 实例（NoOnlineClientError / CommandTimeoutError /
+//    `Object.assign(new Error(...), {code})`），instanceof 恒为真。把 ctx 换成
+//    直接调用导出的 handler、reject 一个裸对象，才能走到三元表达式的 false 侧。
+//
+// 变异验证里 GREEN 的两条都是**正确结果**，不要去补恒绿断言：
+//   - 删掉 NoOnlineClientError / CommandTimeoutError 两段 instanceof 早退：
+//     两个类构造时都设了 `this.code`（"no-online-client" / "ws-timeout"），
+//     只留 `error?.code ?? "control-failed"` 兜底产出**完全相同**的 code 与 HTTP 状态，
+//     62 条用例一条不红。instanceof 是给人看的早退写法，不承重。
+//     反过来要杀掉 `error?.code` 那条兜底，得构造「既非这两个类、又没带 code」的
+//     错误 —— 本文件下面的「拒绝裸对象（无 code）」正是这个输入。
+describe("control body 为 JSON null（payload ?? {} 的回退侧）", () => {
+  test("device/add：body 为 null → 400 kind 必填（不是 500）", async () => {
+    const res = await fetch(`${baseUrl}${apiPath("/v1/control/device/add")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "null"
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("bad-request");
+    expect(json.error.message).toBe("kind 必填。");
+  });
+
+  test("scheme/create：body 为 null → 400 name 必填（不是 500）", async () => {
+    const res = await fetch(`${baseUrl}${apiPath("/v1/control/scheme/create")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "null"
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error.code).toBe("bad-request");
+    expect(json.error.message).toBe("name 必填。");
+  });
+
+  test("model/create：body 为 null → 400 name 必填（不是 500）", async () => {
+    const res = await fetch(`${baseUrl}${apiPath("/v1/control/model/create")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "null"
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error.code).toBe("bad-request");
+    expect(json.error.message).toBe("name 必填。");
+  });
+
+  test("devices/select：body 为 null → 400 ids 须为字符串数组（不是 500）", async () => {
+    const res = await fetch(`${baseUrl}${apiPath("/v1/control/devices/select")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "null"
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error.code).toBe("bad-request");
+    expect(json.error.message).toBe("ids 须为字符串数组。");
+  });
+
+  // 下面四个用例守的是各 handler 自己的 readJsonBody catch：
+  // 既有守卫只在 device/add 上打过一次「非法 JSON → 400」，
+  // 其余 handler 的 catch 从未进入过。断言同时断 code 与文案，
+  // 免得「catch 里 sendV1Error 换个错误码」这种变异靠状态码蒙混过关。
+  const BAD_JSON_CASES = [
+    ["/v1/control/scheme/create", "name 必填。"],
+    ["/v1/control/model/create", "name 必填。"],
+    ["/v1/control/devices/select", "ids 须为字符串数组。"],
+    ["/v1/control/device/delete", "ids 须为字符串数组。"]
+  ];
+
+  for (const [pathname, leakMessage] of BAD_JSON_CASES) {
+    test(`${pathname}：非法 JSON → 400 bad-request + 请求体须为合法 JSON。`, async () => {
+      const res = await fetch(`${baseUrl}${apiPath(pathname)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{not json"
+      });
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("bad-request");
+      expect(json.error.message).toBe("请求体须为合法 JSON。");
+      // 不能漏进校验分支：文案必须是 JSON 解析失败的原文，而不是字段校验那句
+      expect(json.error.message).not.toBe(leakMessage);
+    });
+  }
+
+  test("device/delete：body 为 null → 200（ids 缺省，下发空 params）", async () => {
+    // 这一条与上面四条相反：device/delete 对 ids 缺省不报错，
+    // 所以 payload 为 null 时仍要走到 relayCommand，删掉 `?? {}` 会变成 500。
+    let received = null;
+    const ws = await connectCommandResponder("c1", (name, params) => {
+      received = { name, params };
+      return { ok: true, data: { deletedIds: [] } };
+    });
+    const res = await fetch(`${baseUrl}${apiPath("/v1/control/device/delete")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "null"
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(received).toEqual({ name: "control.device.delete", params: {} });
+    ws.close();
+  });
+});
+
+describe("control sendCommandToClient 拒绝非 Error 值", () => {
+  // 直接调用导出的 handler，注入一个 reject 裸对象的 ctx：
+  // 生产路径（WS 通道）永远 reject Error 实例，那条路走不到 false 侧。
+  function fakeResponse() {
+    return {
+      headersSent: false,
+      statusCode: null,
+      raw: null,
+      writeHead(status) {
+        this.statusCode = status;
+        this.headersSent = true;
+      },
+      end(body) {
+        this.raw = body ?? null;
+      }
+    };
+  }
+
+  function fakeUrl() {
+    return new URL("http://127.0.0.1/webgrp/v1/control/devices/group");
+  }
+
+  test("拒绝裸对象（无 code）→ 500 control-failed + 默认中文文案", async () => {
+    const response = fakeResponse();
+    const ctx = { sendCommandToClient: () => Promise.reject({ reason: "裸对象，没有 code" }) };
+    await handleControlDevicesGroup({ url: fakeUrl(), response }, ctx);
+    expect(response.statusCode).toBe(500);
+    const body = JSON.parse(response.raw);
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("control-failed");
+    expect(body.error.message).toBe("前端指令执行失败。");
+  });
+
+  test("拒绝裸对象但带 code → 按 v1Response 映射该 code（不是 control-failed）", async () => {
+    const response = fakeResponse();
+    const ctx = { sendCommandToClient: () => Promise.reject({ code: "not-found", message: "找不到设备" }) };
+    await handleControlDevicesGroup({ url: fakeUrl(), response }, ctx);
+    expect(response.statusCode).toBe(404);
+    const body = JSON.parse(response.raw);
+    expect(body.error.code).toBe("not-found");
+    // 非 Error 但带 message：文案仍走 instanceof 的 false 侧（默认文案）
+    expect(body.error.message).toBe("前端指令执行失败。");
+  });
+
+  test("拒绝字符串 → 500 control-failed（error?.code 的 nullish 侧）", async () => {
+    const response = fakeResponse();
+    const ctx = { sendCommandToClient: () => Promise.reject("boom") };
+    await handleControlDevicesGroup({ url: fakeUrl(), response }, ctx);
+    expect(response.statusCode).toBe(500);
+    const body = JSON.parse(response.raw);
+    expect(body.error.code).toBe("control-failed");
+    expect(body.error.message).toBe("前端指令执行失败。");
+  });
+
+  test("拒绝 Error 实例 → 取它的 message（instanceof 的 true 侧）", async () => {
+    const response = fakeResponse();
+    const ctx = { sendCommandToClient: () => Promise.reject(Object.assign(new Error("真实原因"), { code: "internal" })) };
+    await handleControlSave(
+      { request: jsonBodyStream('{"scope":"currentModel"}'), url: fakeUrl(), response },
+      ctx
+    );
+    expect(response.statusCode).toBe(500);
+    const body = JSON.parse(response.raw);
+    expect(body.error.code).toBe("internal");
+    expect(body.error.message).toBe("真实原因");
+  });
+});
+
+// readJsonBody 只需要一个 async iterable，给 handleControlSave 造一个。
+async function* jsonBodyStream(text) {
+  yield Buffer.from(text, "utf-8");
+}

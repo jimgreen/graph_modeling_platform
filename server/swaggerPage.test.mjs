@@ -196,6 +196,128 @@ test.fails("内联 JSON 不含裸 </script>：端点字段里的该序列已被�
   expect(html, "探针内容疑似被整段丢弃而非转义").toContain("<img src=x");
 });
 
+// ---------------------------------------------------------------------------
+// 以下三条覆盖 renderCard 的**兜底分支**：method / scope / 参数说明 / 示例 / 响应 /
+// 端点描述缺失或非法时的渲染结果。
+//
+// 为什么值得守（可证的形状事实，不是猜测）：ENDPOINTS 里 81 条记录全是「完整形状」——
+// method ∈ {GET,POST,PUT,DELETE}、scope ∈ {space,session,global,host}、每个 pathParams/
+// query 条目都带 desc、examples 都是非空数组、81 条都有 response 与 desc。实测输出：
+// noDesc=0 noResp=0 noScope=0 noExamples=0 pathParamsNoDesc=[] queryNoDesc=[]。
+// 于是下面这些兜底臂在既有断言下**一次都没被求值**，而它们恰恰是「有人往端点表里加了一条
+// 字段不全的记录」时会立刻显形的分支：漏写 desc 会把字面量 `undefined` 印到页面上，
+// 漏写 response 会多出一块空的响应区。页面不会报错，只会印出一份看着挺正常的怪文档。
+//
+// 覆盖手法与上面那条 test.fails 相同：renderCard 未导出，只能把形状异常的探针端点临时挂到
+// 端点表尾部，让 renderSwaggerHtml 真渲染一遍，再按 path 切出那张卡片。
+// ---------------------------------------------------------------------------
+
+const CARD_OPEN = '<div class="card">';
+
+// 按 path 定位探针卡片。探针都挂在端点表尾部，故其卡片位于文档末尾若干张之中。
+const cardByPath = (html, path) => {
+  const chunks = html.split(CARD_OPEN);
+  const at = chunks.findIndex((chunk) => chunk.includes(`<span class="path">${path}</span>`));
+  // 0 号分块是首张卡片之前的那一坨（页首/head/CSS），故命中下标必 > 0
+  expect(at, `未找到探针 ${path} 的卡片`).toBeGreaterThan(0);
+  // 末张卡片的分块会连着组尾 </section> 与整段内联 <script>（脚本里同样有 <pre>、
+  // escapeHtmlJs 等字样）。切到 </section> 为止，否则断言会落在页面脚本上。
+  const cut = at === chunks.length - 1 ? chunks[at].indexOf("</section>") : -1;
+  return cut === -1 ? chunks[at] : chunks[at].slice(0, cut);
+};
+
+// 临时挂探针 → 渲染一次 → 无论成败都摘干净。
+// 必须摘干净：同文件的其它用例断言端点数恒为 81、示例恒为 106，漏一条就会把它们一起搞红。
+const renderCardsOf = (probes) => {
+  SWIGGER_ENDPOINTS.push(...probes);
+  let html;
+  try {
+    html = renderSwaggerHtml();
+  } finally {
+    for (const probe of probes) {
+      const at = SWIGGER_ENDPOINTS.lastIndexOf(probe);
+      if (at !== -1) SWIGGER_ENDPOINTS.splice(at, 1);
+    }
+  }
+  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(81);
+  return new Map(probes.map((probe) => [probe.path, cardByPath(html, probe.path)]));
+};
+
+// ① L815 `METHOD_COLORS[ep.method] || "#888"`
+// ② L817 `SCOPE_COLORS[ep.scope] || "#888"` + `SCOPE_LABELS[ep.scope] || ep.scope`
+// ③ L818 `SCOPE_TITLES[ep.scope] || ""`
+test("未知 method / 未知 scope 走兜底：颜色回落 #888、标题留空、标签回落 scope 原值", () => {
+  const oddMethod = { scope: "space", group: "探针", method: "PATCH", path: "/webgrp/probe-odd-method", desc: "未知方法", response: "{ok:1}", examples: [{ label: "e1", params: {} }] };
+  const oddScope = { scope: "weird-scope", group: "探针", method: "GET", path: "/webgrp/probe-odd-scope", desc: "未知 scope", response: "{ok:1}", examples: [{ label: "e1", params: {} }] };
+  const knownScope = { scope: "host", group: "探针", method: "GET", path: "/webgrp/probe-known-scope", desc: "已知 scope", response: "{ok:1}", examples: [{ label: "e1", params: {} }] };
+  const cards = renderCardsOf([oddMethod, oddScope, knownScope]);
+
+  // 对照组先行：已知 method / scope 必须命中查表值。只断兜底值没有鉴别力 ——
+  // 整张颜色表被误写成常量 #888 时，上面那些断言照样全绿。
+  expect(cards.get(knownScope.path)).toContain('<span class="method" style="background:#61affe">GET</span>');
+  expect(cards.get(knownScope.path)).toContain('<span class="scope" style="background:#f59e0b" title="本机端点：操作本机文件系统，与空间无关">本机</span>');
+
+  // PATCH 不在 METHOD_COLORS 里 → 回落 "#888"（硬编码一个删了兜底的变异会变成 background:undefined）
+  expect(cards.get(oddMethod.path)).toContain('<span class="method" style="background:#888">PATCH</span>');
+  // scope 三张表全未命中 → 颜色 #888、title 空串、标签用 scope 原值，三者合成一条断言：
+  // 改其中任一兜底（817 换颜色 / 818 换标题 / 标签回落）都会红
+  expect(cards.get(oddScope.path)).toContain('<span class="scope" style="background:#888" title="">weird-scope</span>');
+});
+
+// ④ L820 `escapeHtml(p.desc || "")`  ⑤ L823 `escapeHtml(q.desc || ""))`
+// ⑥ L855 `escapeHtml(ep.desc || "")`
+test("参数说明 / 端点描述缺 desc 时渲染空单元格与空描述（不吐 undefined），有 desc 时照写并转义", () => {
+  // desc **键不存在**，而不是 desc: "" —— 两者都能走到 || 右臂，但缺键才是「没写说明」
+  // 这个真实形状；写 desc:"" 的夹具看着像「写了说明」，更容易骗过人。
+  const params = {
+    scope: "space", group: "探针", method: "GET", path: "/webgrp/probe-params",
+    pathParams: [{ name: "folderId" }, { name: "described", desc: "有说明" }],
+    query: [{ name: "flag" }, { name: "described", desc: "有说明" }],
+    examples: [{ label: "e1", params: {} }]
+  };
+  const escaped = { scope: "space", group: "探针", method: "GET", path: "/webgrp/probe-escaped-desc", desc: '<b>A&B"c"</b>', examples: [{ label: "e1", params: {} }] };
+  const cards = renderCardsOf([params, escaped]);
+
+  // ④⑤ 缺 desc 的两行：说明列留空（`|| ""` 生效）。删掉 `|| ""` 会渲染出 undefined。
+  expect(cards.get(params.path)).toContain('<tr><td class="param-name">{folderId}</td><td>path</td><td></td></tr>');
+  expect(cards.get(params.path)).toContain('<tr><td class="param-name">flag</td><td>query</td><td></td></tr>');
+  // 对照：同一张表里带 desc 的两行必须照写 —— 证明断言不是「说明列一律为空」
+  expect(cards.get(params.path)).toContain('<tr><td class="param-name">{described}</td><td>path</td><td>有说明</td></tr>');
+  expect(cards.get(params.path)).toContain('<tr><td class="param-name">described</td><td>query</td><td>有说明</td></tr>');
+
+  // ⑥ 端点自身没写 desc（params 探针就没有）→ 描述 span 为空
+  expect(cards.get(params.path)).toContain('<span class="desc"></span>');
+  // 对照：desc 非空时既照写又过 escapeHtml —— 后者证明兜底没被写成「一律清空」
+  expect(cards.get(escaped.path)).toContain('<span class="desc">&lt;b&gt;A&amp;B&quot;c&quot;&lt;/b&gt;</span>');
+});
+
+// ⑦ L841 `Array.isArray(ep.examples) ? ep.examples : []`  ⑧ L844 `examples.length ? … : ""`
+// ⑨ L848 `ep.response ? … : ""`
+test("examples 为 null / 空数组 / 缺键时不出示例下拉，缺 response 时不渲染响应块", () => {
+  const nullExamples = { scope: "space", group: "探针", method: "GET", path: "/webgrp/probe-null-examples", desc: "d", response: "{ok:1}", examples: null };
+  const emptyExamples = { scope: "space", group: "探针", method: "GET", path: "/webgrp/probe-empty-examples", desc: "d", response: "{ok:1}", examples: [] };
+  const bare = { scope: "space", group: "探针", method: "GET", path: "/webgrp/probe-bare" };
+  const withExamples = { scope: "space", group: "探针", method: "GET", path: "/webgrp/probe-with-examples", desc: "d", examples: [{ label: "示例一", params: {} }] };
+  const cards = renderCardsOf([nullExamples, emptyExamples, bare, withExamples]);
+
+  // 三种「没有示例」的形状都不出下拉，但走的是不同分支：examples:null 与缺键走 841 右臂
+  // （注意 §6.13：这里判别输入是「非数组 / 键不存在」，写 examples:[] 只会走左臂），
+  // 而 examples:[] 走 841 左臂、被 842 的 length 判假走 844 的空串侧。三个都断，否则
+  // 只断一个形状时，841 与 844 谁坏掉都发现不了。
+  for (const probe of [nullExamples, emptyExamples, bare]) {
+    expect(cards.get(probe.path), `${probe.path} 不该渲染示例下拉`).not.toContain("<select");
+  }
+  // 对照：有 examples 时下拉与 option 都在 —— 否则上面三条「没有 <select」恒真。
+  // option 文本用「示例一」而不是随手写的 label，也便于下面 L841 换值变异被看见。
+  expect(cards.get(withExamples.path)).toContain("<select");
+  expect(cards.get(withExamples.path)).toContain('<option value="0">示例一</option>');
+
+  // ⑨ bare 连 response 键都没有 → 整块响应区不渲染；对照（nullExamples 有 response）必须渲染。
+  // 断言落在「field-label 响应」这个标记上：把 ep.response 判反的变异会让它出现在 bare 上。
+  expect(cards.get(bare.path), "缺 response 时不该有响应块").not.toContain('<div class="field-label">响应</div>');
+  expect(cards.get(nullExamples.path), "有 response 时响应块必须渲染").toContain('<div class="field-label">响应</div>');
+});
+
 // 守卫的检测逻辑自测：证明上面那个 closeScriptCount 探针真的能红，
 // 而不是恰好恒等于基线。喂它两段已知文本，与 swaggerPage.mjs 无关。
 test("闭合标签计数器自测：未转义序列会推高计数", () => {

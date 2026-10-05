@@ -2115,3 +2115,231 @@ describe("模型记录缺失 project 字段时的收集兜底", () => {
       .toEqual(["only-1"]);
   });
 });
+
+describe("全局线路端点身份与首末端方向兜底分支", () => {
+  /**
+   * 只改 references 里的 source / target 两个槽位，其余字段（id/idx/energyType/params）原样搬运。
+   * endpointSlots 与 terminalSlots 必须同步改写：globalLineEndpointReference 先读 endpointSlots，
+   * 只改 references 的话读到的仍是旧引用，被测分支根本走不到。
+   */
+  function patchEndpoints(
+    record: GlobalLineRecord,
+    patches: { source?: Partial<GlobalLineReference>; target?: Partial<GlobalLineReference> }
+  ): GlobalLineRecord {
+    const source = record.endpointSlots!.source
+      ? { ...record.endpointSlots!.source!, ...patches.source }
+      : null;
+    const target = record.endpointSlots!.target
+      ? { ...record.endpointSlots!.target!, ...patches.target }
+      : null;
+    return {
+      ...record,
+      references: [source, target].filter(Boolean) as GlobalLineReference[],
+      endpointSlots: { source, target },
+      terminalSlots: { i: source, j: target },
+      degree: Number(Boolean(source)) + Number(Boolean(target))
+    };
+  }
+
+  /** 线路首端接在普通电气图元（非模型关联派生类）上，用于走到按模型自身身份标注的兜底分支。 */
+  function plainEndpointRecord(modelIdx: number) {
+    const plainEndpoint = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const opposite = createDefaultNode("ac-source", { x: 400, y: 100 });
+    const line = connectAcLine(
+      "非关联端点全局线路",
+      { node: plainEndpoint, terminalId: plainEndpoint.terminals[0].id },
+      { node: opposite, terminalId: opposite.terminals[0].id }
+    );
+    line.params.idx = "61";
+    line.params[GLOBAL_LINE_ID_PARAM] = "plain-endpoint-global-line";
+    const model = {
+      projectId: `plain-endpoint-model-${modelIdx}`,
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: `非关联端点厂站-${modelIdx}`,
+      idx: modelIdx,
+      modelType: "厂站" as const,
+      record: projectRecord(
+        `plain-endpoint-model-${modelIdx}`,
+        `非关联端点厂站-${modelIdx}`,
+        modelIdx,
+        "厂站",
+        [plainEndpoint, opposite, line]
+      )
+    };
+    const sourceReference: GlobalLineReference = {
+      // 故意让 modelKey 与 projectIdx 都对不上：模型只能靠 projectName + schemePath 兜底命中，
+      // 于是端点模型身份比对必然不一致，把「模型侧」的 label 暴露到告警文案里。
+      modelKey: "model:other",
+      projectIdx: 0,
+      schemePath: [...model.schemePath],
+      projectName: model.name,
+      nodeId: line.id,
+      terminalSlot: "i",
+      boundaryEndpoint: "source",
+      boundaryNodeId: plainEndpoint.id,
+      boundaryTerminalId: plainEndpoint.terminals[0].id
+    };
+    const record = globalLineRecord(
+      "plain-endpoint-global-line",
+      61,
+      line.name,
+      line,
+      sourceReference,
+      null
+    );
+    return { record, model };
+  }
+
+  test("全局引用缺少 boundaryEndpoint 时按 terminalSlot 的 i 槽判为首端", () => {
+    const { record, sourceModel, targetModel } = completeGlobalLineConsistencyFixture(
+      "terminal-slot-i"
+    );
+    const asSourceSlot = patchEndpoints(record, {
+      source: { boundaryEndpoint: undefined, terminalSlot: "i" }
+    });
+
+    // 兜底值与「一致」不是同一件事：terminalSlot=i 必须被判成 source 才对得上被检查的端点，
+    // 所以这里断的是「一条首末端方向差异都没有」，而不是断某个 fallback 恰好等于的一致结果。
+    expect(analyzeGlobalLinesForAllNetworkTopology(
+      [asSourceSlot],
+      [sourceModel, targetModel]
+    )).toEqual({ errors: [], warnings: [] });
+
+    // 反向对照：terminalSlot=j 在首端槽位上必须被判成 target，方向差异才会出现，
+    // 且文案里的全局端点是「末端」而不是未定义 —— 若 j 槽兜底被删掉，这一条会退回空串而变绿。
+    const asTargetSlot = patchEndpoints(record, {
+      source: { boundaryEndpoint: undefined, terminalSlot: "j" }
+    });
+    expect(analyzeGlobalLinesForAllNetworkTopology(
+      [asTargetSlot],
+      [sourceModel, targetModel]
+    ).errors).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("definition-mismatch:source"),
+        message: expect.stringContaining("首末端方向不一致（模型检查=首端，全局引用=末端）")
+      })
+    ]);
+  });
+
+  test("端点模型身份不一致时全局侧标签在 modelKey 与未定义模型之间取值", () => {
+    const { record, sourceModel, targetModel } = completeGlobalLineConsistencyFixture(
+      "identity-label-fallback"
+    );
+
+    // projectIdx 归零后，全局侧的标签只能取 reference.modelKey。若这条兜底被写成 projectIdx>0
+    // 的同一分支或直接删掉，文案会退成 model_id=71 / 空串，两条断言都会红。
+    const byModelKey = patchEndpoints(record, {
+      source: { projectIdx: 0, modelKey: "model:other" }
+    });
+    expect(analyzeGlobalLinesForAllNetworkTopology(
+      [byModelKey],
+      [sourceModel, targetModel]
+    ).errors).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("definition-mismatch:source"),
+        message: expect.stringContaining("端点所在模型ID不一致（模型=model_id=71，全局=model:other）")
+      })
+    ]);
+
+    // modelKey 也为空时才轮到未定义模型：只断上一条的话，把 `|| "未定义模型"` 删掉依然全绿。
+    // 注意 modelKey 清空后模型仍能被 projectName + schemePath 兜底命中，否则这条断言会空转。
+    const withoutIdentity = patchEndpoints(record, {
+      source: { projectIdx: 0, modelKey: "" }
+    });
+    expect(analyzeGlobalLinesForAllNetworkTopology(
+      [withoutIdentity],
+      [sourceModel, targetModel]
+    ).errors).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("definition-mismatch:source"),
+        message: expect.stringContaining("端点所在模型ID不一致（模型=model_id=71，全局=未定义模型）")
+      })
+    ]);
+  });
+
+  test("端点关联图元缺 model_id 时按未定义 model_id 标注且不与空 modelKey 判为一致", () => {
+    const { record, sourceModel, targetModel } = completeGlobalLineConsistencyFixture(
+      "endpoint-without-model-id"
+    );
+    const boundary = sourceModel.record.project.nodes.find((node) => node.kind === "ac-station-source")!;
+    expect(boundary.params.model_id).toBe("71");
+    boundary.params.model_id = "";
+
+    // 模型侧身份退回「未定义model_id」，标签一旦被硬编码成 model_id= 就转红。
+    expect(analyzeGlobalLinesForAllNetworkTopology(
+      [record],
+      [sourceModel, targetModel]
+    ).errors).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("definition-mismatch:source"),
+        message: expect.stringContaining("端点所在模型ID不一致（模型=未定义model_id，全局=model_id=71）")
+      })
+    ]);
+
+    // 身份 modelKey 退成空串时不能与同样没有身份的全局引用判为一致：
+    // 若比对处的空串判断被改成宽松相等，这一条的错误会消失。
+    const anonymousReference = patchEndpoints(record, {
+      source: { projectIdx: 0, modelKey: "" }
+    });
+    expect(analyzeGlobalLinesForAllNetworkTopology(
+      [anonymousReference],
+      [sourceModel, targetModel]
+    ).errors).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("definition-mismatch:source"),
+        message: expect.stringContaining("模型=未定义model_id")
+      })
+    ]);
+  });
+
+  test("端点接普通电气图元时按所属模型的 idx 或路径键标注端点身份", () => {
+    const indexed = plainEndpointRecord(71);
+
+    // model.idx > 0 时标签是 model_id=71；若这层取值被换成路径键，字符串对不上而转红。
+    expect(analyzeGlobalLinesForAllNetworkTopology([indexed.record], [indexed.model]).errors).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("definition-mismatch:source"),
+        message: expect.stringContaining(
+          "端点所在模型ID不一致（模型=model_id=71，全局=model:other）"
+        )
+      })
+    ]);
+
+    const pathKeyed = plainEndpointRecord(0);
+    // model.idx 归零时标签退到 path: 主方案/模型名 这一套键上，与 model_id=0 明显不同。
+    expect(analyzeGlobalLinesForAllNetworkTopology([pathKeyed.record], [pathKeyed.model]).errors).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("definition-mismatch:source"),
+        message: expect.stringContaining(
+          "端点所在模型ID不一致（模型=path:主方案/非关联端点厂站-0，全局=model:other）"
+        )
+      })
+    ]);
+  });
+
+  test("端点身份按全局 projectIdx 相等判定，相等时不报身份差异", () => {
+    const { record, sourceModel, targetModel } = completeGlobalLineConsistencyFixture(
+      "identity-index-compare"
+    );
+
+    // 相等的一侧：模型侧身份 model_id=71 与全局 projectIdx=71 相同，不应出现身份差异。
+    const aligned = patchEndpoints(record, { source: { projectIdx: 71 } });
+    expect(analyzeGlobalLinesForAllNetworkTopology(
+      [aligned],
+      [sourceModel, targetModel]
+    )).toEqual({ errors: [], warnings: [] });
+
+    // 不等的一侧：modelKey 保持不变，模型仍能解析到，但按 projectIdx 比较必然不一致。
+    const drifted = patchEndpoints(record, { source: { projectIdx: 72 } });
+    expect(analyzeGlobalLinesForAllNetworkTopology(
+      [drifted],
+      [sourceModel, targetModel]
+    ).errors).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("definition-mismatch:source"),
+        message: expect.stringContaining("端点所在模型ID不一致（模型=model_id=71，全局=model_id=72）")
+      })
+    ]);
+  });
+});

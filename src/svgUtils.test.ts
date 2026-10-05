@@ -1,6 +1,15 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { decodeSvgImageSource, inlineBackendImageRefsInSvgDataUrl, isPlatformDeviceVisualReplacementImage, svgImageContentMarkup } from "./svgUtils";
+import {
+  backendImageIdFromHref,
+  decodeBase64Text,
+  decodeSvgImageSource,
+  inlineBackendImageRefsInSvgDataUrl,
+  inlineSvgRootMarkup,
+  isImageDataUrl,
+  isPlatformDeviceVisualReplacementImage,
+  svgImageContentMarkup
+} from "./svgUtils";
 import { apiPath } from "./config";
 
 describe("svg image content markup", () => {
@@ -305,5 +314,155 @@ describe("isPlatformDeviceVisualReplacementImage", () => {
     // （customDeviceUtils.ts），所以另两个名字进不到这里 —— 不是缺陷，是范围。
     expect(isPlatformDeviceVisualReplacementImage(raw('data-custom-device-persisted-terminals="true"'))).toBe(false);
     expect(isPlatformDeviceVisualReplacementImage(raw('data-custom-device-terminal-connectors="true"'))).toBe(false);
+  });
+});
+
+// 下面这一组针对三个 href / data URL 入口的同一句归一：`String(value ?? "").trim()`。
+// href 在渲染链路上来自模板 JSON、粘贴、后端图片缓存，带首尾空白是常态；而 value
+// 本身可能是 undefined/null。两条断言的鉴别力落在 **trim** 上：
+//   · 两个匹配正则都用 `^` / 锚定前缀，去掉 trim 后带空白的合法输入立刻失配 → 转红。
+//   · `?? ""` 这一侧不能被独立鉴别：String(null) 得到 "null"，同样匹配不上任何
+//     锚定正则 —— 把它改成 String(value) 在本函数的输入空间里全域等价，故只覆盖、
+//     不断言（见下方注释）。
+describe("图片 href / data URL 入口的归一化", () => {
+  test("backendImageIdFromHref 先去首尾空白，再解出百分号编码的 id", () => {
+    expect(backendImageIdFromHref(`  ${apiPath("/images/icon%20a")}  `)).toBe("icon a");
+    // 无空白 + 带查询串：路径段到 ? 为止，百分号解码后是图片 id
+    expect(backendImageIdFromHref(`${apiPath("/images/icon-a")}?cache=1`)).toBe("icon-a");
+  });
+
+  test("backendImageIdFromHref 对空值与非图片 href 返回空串", () => {
+    // `?? ""` 的右支：渲染链路里 backgroundImage 可能是 undefined，此处不得抛
+    expect(backendImageIdFromHref(null as unknown as string)).toBe("");
+    expect(backendImageIdFromHref(undefined as unknown as string)).toBe("");
+    expect(backendImageIdFromHref("   ")).toBe("");
+    expect(backendImageIdFromHref("data:image/png;base64,aWNvbi1h")).toBe("");
+    // 前缀不对就不认（少了 apiPath 前缀的裸路径）
+    expect(backendImageIdFromHref("/images/icon-a")).toBe("");
+  });
+
+  test("isImageDataUrl 忽略首尾空白，只认 data:image/ 前缀", () => {
+    expect(isImageDataUrl("  data:image/png;base64,aWNvbi1h  ")).toBe(true);
+    expect(isImageDataUrl("data:image/svg+xml;utf8,%3Csvg%2F%3E")).toBe(true);
+    // 对照组：前缀不是 data:image/ 的，即使带空白也不认
+    expect(isImageDataUrl("  data:text/html,<b>x</b>  ")).toBe(false);
+    expect(isImageDataUrl("https://example.com/icon.png")).toBe(false);
+    expect(isImageDataUrl(null as unknown as string)).toBe(false);
+  });
+});
+
+// decodeBase64Text 有两条环境兜底，都只在「宿主缺 API」时才走到，而 Node 测试环境
+// 里 atob / TextDecoder 都在 —— 所以必须先把全局桩掉再调用。
+// 两条用例都先断言正常路径，否则下面那条期望空串的断言在「函数压根不解码」的错误实现下
+// 也会恒绿（setup 把被探测的输入消掉 = 废断言）。
+describe("decodeBase64Text 的宿主环境兜底", () => {
+  const b64 = (text: string) => Buffer.from(text, "utf8").toString("base64");
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("atob 不是函数时返回空串，不抛", () => {
+    expect(decodeBase64Text(b64("<svg/>"))).toBe("<svg/>");
+    vi.stubGlobal("atob", undefined);
+    // 走到 typeof decoder !== "function" 的早退：返回空串而不是抛 TypeError
+    expect(decodeBase64Text(b64("<svg/>"))).toBe("");
+  });
+
+  test("缺 TextDecoder 时退回 latin1 原始字节，不做 UTF-8 解码", () => {
+    // "中" 的 UTF-8 是 E4 B8 AD；正常路径必须还原成 "中"
+    expect(decodeBase64Text(b64("中"))).toBe("中");
+    vi.stubGlobal("TextDecoder", undefined);
+    // 无 TextDecoder → 直接返回 atob 的 latin1 串，于是多字节 UTF-8 变成乱码
+    expect(decodeBase64Text(b64("中"))).toBe("\u00e4\u00b8\u00ad");
+    expect(decodeBase64Text(b64("中"))).toHaveLength(3);
+    // ASCII 载荷两条路径一致，说明退化只影响多字节
+    expect(decodeBase64Text(b64("ok"))).toBe("ok");
+  });
+});
+
+describe("decodeSvgImageSource 的承载形态与畸形输入", () => {
+  test("裸 SVG：去掉首尾空白后原样返回", () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>';
+    expect(decodeSvgImageSource(`\n  ${source}  \n`)).toBe(source);
+    expect(decodeSvgImageSource(source)).toBe(source);
+    // `?? ""` 的右支 + 空串早退：不得抛，也不得返回 "undefined"
+    expect(decodeSvgImageSource(null as unknown as string)).toBe("");
+    expect(decodeSvgImageSource(undefined as unknown as string)).toBe("");
+    expect(decodeSvgImageSource("   ")).toBe("");
+  });
+
+  test("svg+xml data URL 缺逗号时返回空串", () => {
+    // 元数据与 payload 之间没有分隔符，payload 无从切分
+    expect(decodeSvgImageSource("data:image/svg+xml;base64")).toBe("");
+    expect(decodeSvgImageSource("data:image/svg+xml")).toBe("");
+    // 对照：同一前缀带上逗号就是好的 —— 判据是「有没有逗号」而不是前缀本身
+    expect(decodeSvgImageSource("data:image/svg+xml,%3Csvg%2F%3E")).toBe("<svg/>");
+  });
+
+  test("URI 编码非法时原样返回未解码的 payload（钉住现状）", () => {
+    const href = "data:image/svg+xml;utf8,%3Csvg%3E%ZZ%3C%2Fsvg%3E";
+    expect(decodeSvgImageSource(href)).toBe("%3Csvg%3E%ZZ%3C%2Fsvg%3E");
+    // 对照：合法编码走 decodeURIComponent 分支，畸形才落 catch
+    expect(decodeSvgImageSource(`data:image/svg+xml;utf8,${encodeURIComponent("<svg/>")}`)).toBe("<svg/>");
+  });
+});
+
+describe("inlineSvgRootMarkup 的 id 作用域与 viewBox 合成", () => {
+  const options = { x: -12, y: -12, width: 24, height: 24, className: "node-background-image" };
+  const dataUrl = (svg: string) => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+
+  test("空 id 属性不进作用域集合，原样保留", () => {
+    const markup = inlineSvgRootMarkup(
+      dataUrl(
+        [
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">',
+          '<defs><clipPath id="clip-a"><rect x="0" y="0" width="24" height="24"/></clipPath></defs>',
+          '<rect id="" width="24" height="24" clip-path="url(#clip-a)"/>',
+          "</svg>"
+        ].join("")
+      ),
+      options
+    );
+    // id="" 不是合法引用目标，collectInlineSvgIds 会跳过它，于是重写 id 属性时
+    // 命中「不在集合里」那条腿、原样返回 match。若把判据写成恒真，这里会多出一个
+    // id="inline-svg-…-" 这种指向根节点的空 id。
+    expect(markup).toContain('id=""');
+    expect(markup).not.toMatch(/id="inline-svg-[^"]*-"/u);
+    // 同时证明作用域化确实发生了 —— 否则上面两条只是因为压根没进作用域分支才成立
+    expect(markup).toMatch(/clip-path="url\(#inline-svg-[^"]+-clip-a\)"/u);
+  });
+
+  test("无 viewBox 但宽高为正时按根属性宽高合成 viewBox", () => {
+    const markup = inlineSvgRootMarkup(
+      dataUrl('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="16"><rect/></svg>'),
+      options
+    );
+    expect(markup).toContain('viewBox="0 0 24 16"');
+    // 根属性的 width/height 必须被剔除，否则会和外层 svg 元素自己的宽高打架
+    // （body 里刻意不放 width，保证这里数到的就是根属性残留）
+    expect(markup.match(/width="24"/gu)).toHaveLength(1);
+    expect(markup).not.toContain('height="16"');
+  });
+
+  test("宽高缺一或为 0 时不合成 viewBox", () => {
+    // width=0 走到 width <= 0 那一腿（height 合法），且根属性里本来没有 viewBox
+    const zeroWidth = inlineSvgRootMarkup(
+      dataUrl('<svg xmlns="http://www.w3.org/2000/svg" width="0" height="16"><rect/></svg>'),
+      options
+    );
+    expect(zeroWidth).not.toContain("viewBox");
+    // 缺 height → svgLengthNumber("") 得 0 → 落到 height <= 0 那条腿
+    const noHeight = inlineSvgRootMarkup(
+      dataUrl('<svg xmlns="http://www.w3.org/2000/svg" width="24"><rect/></svg>'),
+      options
+    );
+    expect(noHeight).not.toContain("viewBox");
+    // 作者自己声明了 viewBox：即便没有宽高也不合成（viewBox 属性不被剔除，计数仍是 1）
+    const explicit = inlineSvgRootMarkup(
+      dataUrl('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect/></svg>'),
+      options
+    );
+    expect(explicit).toContain('viewBox="0 0 8 8"');
+    expect(explicit.match(/viewBox="/gu)).toHaveLength(1);
   });
 });

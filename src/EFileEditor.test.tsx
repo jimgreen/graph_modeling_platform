@@ -6,12 +6,13 @@ import { describe, expect, test } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
-import { EFileEditor, type EDeviceRecord } from "./EFileEditor";
+import { EFileEditor, isTopologyField, EDITABLE_ID_FIELDS, type EDeviceRecord } from "./EFileEditor";
 import {
   buildEDeviceRecords,
   buildEFileExport,
   eFileInterfaceDefinitionIndex,
   eOutputSectionName,
+  E_REFERENCE_FIELD_TABLE_IDS,
   finalizeEDevicePreviewRecords
 } from "./model-eexport";
 import { assignPermanentDeviceIndex, type ModelNode, type ProjectFile } from "./model";
@@ -202,5 +203,140 @@ describe("EFileEditor 成员关系段列解析", () => {
     expect(html).toContain(`title="${containerRow![1]}"`);
     expect(html).toContain(containerRow![2]);
     expect(html).toContain(containerRow![3]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 未覆盖分支补测（行号对应 src/EFileEditor.tsx 当前版本）
+//
+// 本仓 vitest 是 environment:"node"，没有 jsdom —— 渲染只能走 react-dom/server 的
+// renderToStaticMarkup，**事件回调一个都不会被触发**。因此本批只覆盖两类分支：
+//   ① 导出的纯函数 isTopologyField（可直接调用，含其内部白名单早退分支）；
+//   ② SSR 渲染结果本身即可观测的分支（open 早退、active 类、三处 toast 守卫、空记录兜底）。
+// 依赖交互的分支（editMode=true、copiedCell/savedMessage/protectedToast 的真值分支）
+// 在本环境不可达，见文件末尾「不可达分支」说明。
+// ---------------------------------------------------------------------------
+
+/** 最小夹具：含 id/idx 两个拓扑字段 + rdf_id 白名单字段 + 普通字段 */
+const SAMPLE_RECORDS: EDeviceRecord[] = [
+  {
+    id: "r1",
+    kind: "ac-source",
+    section: "ACGenerator",
+    params: { id: "1", idx: "1", name: "G1", rdf_id: "RDF-1" },
+    columns: ["id", "idx", "name", "rdf_id"]
+  }
+];
+
+const renderEditor = (props: Partial<Parameters<typeof EFileEditor>[0]> = {}): string =>
+  renderToStaticMarkup(
+    createElement(EFileEditor, { open: true, onClose: () => {}, records: SAMPLE_RECORDS, ...props })
+  );
+
+/** 取出模式切换按钮（查看/编辑）各自的 class 属性值 */
+const modeButtonClass = (html: string, title: "查看模式" | "编辑模式"): string | undefined =>
+  html.match(new RegExp(`<button title="${title}"[^>]*class="([^"]*)"`))?.[1];
+
+describe("EFileEditor 未覆盖分支：拓扑字段白名单早退（EFileEditor.tsx:101）", () => {
+  test("rdf_id 命中 EDITABLE_ID_FIELDS 即早退放行，尽管它以 _id 结尾（走不到 endsWith 分支）", () => {
+    // 判别力：rdf_id 满足 col.endsWith("_id")，若白名单早退被删/被反向，
+    // 结果会翻成 true —— 所以这条断言确实在咬 101 行，而不是恒绿。
+    expect("rdf_id".endsWith("_id")).toBe(true);
+    expect(EDITABLE_ID_FIELDS.has("rdf_id")).toBe(true);
+    expect(isTopologyField("rdf_id")).toBe(false);
+
+    // 对照组：同族但不在白名单的 _id 字段仍判为拓扑字段。
+    // 用一个硬编码变异不会挑的名字，且先证明它不在任何映射表里（否则翻转理由不成立）。
+    expect(E_REFERENCE_FIELD_TABLE_IDS["custom_owner_id"]).toBeUndefined();
+    expect(isTopologyField("custom_owner_id")).toBe(true);
+    // 双边断言的鉴别力：两个输入的结论必须真的不同，否则上面两条都是同义反复
+    expect(isTopologyField("rdf_id")).not.toBe(isTopologyField("custom_owner_id"));
+    // 白名单不得越权放行别的行标识字段
+    expect(EDITABLE_ID_FIELDS.has("id")).toBe(false);
+    expect(isTopologyField("id")).toBe(true);
+  });
+});
+
+describe("EFileEditor 未覆盖分支：open 早退（EFileEditor.tsx:291）", () => {
+  test("open=false 时整个窗口不渲染；open=true 时照常渲染（早退不能被写反）", () => {
+    // 判别力：把 `if (!open) return null` 写成 `if (open) return null`，
+    // 下面第二行（含标题的对照）立刻红。
+    expect(renderEditor({ open: false })).toBe("");
+    const opened = renderEditor({ open: true });
+    expect(opened).toContain("E文件查看与编辑");
+    expect(opened).toContain('class="e-file-editor-tabs"');
+    expect(opened).toContain("e-file-editor-table-container");
+  });
+});
+
+describe("EFileEditor 未覆盖分支：空记录段的取值兜底（EFileEditor.tsx:294/295/298）", () => {
+  test("records 为空：分组为空 → 无当前段、不出表、不崩", () => {
+    // 前置数据事实：空数组分不出任何 section，activeSection=0 越界 → currentSection 为 undefined
+    const html = renderEditor({ records: [] });
+    expect(html).toContain("E文件查看与编辑");
+    // tab 条在但不挂任何按钮（没有可切的面板）
+    expect(html).toContain('<div class="e-file-editor-tabs"></div>');
+    expect(html).not.toContain("e-file-editor-table-container");
+    // 294/295/298 的兜底值（"" / [] / []）在此路径被真正取到，且不会顺着
+    // sectionRecords.map / columns.map 炸掉 —— 这就是它们兜底的目的
+    expect(html).not.toContain("<table");
+  });
+
+  test("兜底取值的接线必须留在源码里（保语义改写只能静态守，会崩的改写动态也守）", () => {
+    // 边界（变异实测 M6/M8 校准，别再放宽）：
+    // · **保语义改写**只能静态守。M6 把 `currentSection?.records || []` 换成
+    //   `currentSection ? currentSection.records : []`（等价），10 条动态用例全绿，只有本条红 ——
+    //   因为空记录路径里这些值只被 410 的 `currentSection &&` 挡住，运行期读不到差异。
+    // · **会崩的改写**动态也守得住。M8 把 298 的 `: []` 换成 `currentSection!.key`（真崩），
+    //   「records 为空」用例直接 TypeError 转红，并不只靠本条静态守卫。
+    // 它们的契约是「万一 currentSection 为空也不能解引用 undefined」，
+    // 按静态守卫守住，并逐行精确匹配（不是整文件跳过）。
+    const source = readFileSync(new URL("./EFileEditor.tsx", import.meta.url), "utf8");
+    expect(source).toContain('const sectionName = currentSection?.label || "";');
+    expect(source).toContain("const sectionRecords = currentSection?.records || [];");
+    expect(source).toContain(
+      "const columns = currentSection ? eSectionColumns(currentSection.key, sectionRecords) : [];"
+    );
+  });
+});
+
+describe("EFileEditor 未覆盖分支：模式按钮 active 类（EFileEditor.tsx:357/366）", () => {
+  test("默认查看态：active 只落在查看按钮上，编辑按钮没有 active", () => {
+    const html = renderEditor();
+    const viewClass = modeButtonClass(html, "查看模式");
+    const editClass = modeButtonClass(html, "编辑模式");
+    // 前置：两个按钮都渲染出来了（否则 not.toBe 会因 undefined 而空洞地通过）
+    expect(viewClass).toBeTruthy();
+    expect(editClass).toBeTruthy();
+    // 357：`!editMode ? "active" : ""` —— 默认 editMode=false → 查看按钮带 active
+    expect(viewClass!.split(/\s+/)).toContain("active");
+    // 366：`editMode ? "active" : ""` —— 默认 editMode=false → 编辑按钮不带 active
+    expect(editClass!.split(/\s+/)).not.toContain("active");
+    // 判别力：任一侧的三元被写反（本轮变异 357↔366）都会红
+    expect(viewClass!.includes("active")).not.toBe(editClass!.includes("active"));
+  });
+});
+
+describe("EFileEditor 未覆盖分支：三条 toast 守卫（EFileEditor.tsx:375/378/381）", () => {
+  test("未触发任何动作时不出现复制/保存/拓扑提示 toast", () => {
+    const html = renderEditor();
+    expect(html).not.toContain("已复制到剪切板");
+    expect(html).not.toContain("已保存");
+    expect(html).not.toContain("为模型拓扑字段");
+    // 判别力：not.toContain 只有在「文案真的存在于另一条分支」时才有意义。
+    // 把三个守卫的条件写反（`!== null`→`=== null` 等）时，三个 toast 会一起冒出来 → 红。
+    const source = readFileSync(new URL("./EFileEditor.tsx", import.meta.url), "utf8");
+    expect(source).toContain("已复制到剪切板");
+    expect(source).toContain("已保存");
+    expect(source).toContain("为模型拓扑字段");
+    // 且这些文案不来自记录数据（记录里没有它们），否则上面的否定断言在夹具下就是同义反复
+    expect(renderEditor({ records: SAMPLE_RECORDS })).not.toContain("e-file-editor-copied-toast");
+    // 拓扑 toast（:381）必须断 class 名而不是文案 —— M7 变异实测：
+    // 把 protectedToast 守卫翻成 `!protectedToast` 时，上面的 `not.toContain("为模型拓扑字段")`
+    // **观察不到差异**。翻向后 div 照样渲染，但渲染成空标签：唯一子节点是 {protectedToast}，
+    // 此时恰为 null，React 不输出任何子节点；文案只存在于 showProtectedToast 的模板字符串里，
+    // 要产出它必须触发交互回调，而 SSR 下回调一个都不会跑。
+    // 即：文案在这个变异下物理不可达，可达的观测面只有 class 名 —— 断错面则该守卫恒绿。
+    expect(html).not.toContain("e-file-editor-protected-toast");
   });
 });

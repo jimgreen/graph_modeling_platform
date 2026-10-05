@@ -377,4 +377,172 @@ describe("voltageInheritance", () => {
       expect(capacity).toBeNull();
     });
   });
+
+  // ─── 索引越界 / 空值 / 数值边界分支 ────────────────────
+  //
+  // 本组用例针对三条互不相同、极易混淆的「写入通用 vbase」路径。
+  // 它们**只有靠 rated_voltage 的行为才能区分**：
+  //
+  //   · terminalId 缺省（L193 的 !terminalId 块）
+  //   · terminalId 找不到（L203 的 terminalIndex < 0 块）
+  //   · 索引超出侧电压映射表（L218 三绕组 else / L230 双端子 else）
+  //
+  // 前两者会连带把「零值默认的 rated_voltage」一起改写，后两者**只**写 vbase。
+  // 少了 rated_voltage 断言，protect 这两个 else 的门控就会被「兄弟分支完全遮蔽」：
+  // 因为 L193 与 L203 的语句体逐字符相同，而任何 terminalId 缺省/找不到的输入
+  // 翻转门控后都会落进另一个体等同的块里，产出完全一致的输出。
+
+  describe("端子索引越界与空值边界", () => {
+    // ── resolveSideVoltage：sideValues / 双端子索引表越界 ──
+
+    it("三绕组变压器第 4 个端子（中性点）无侧电压，回落到通用 vbase", () => {
+      // sideValues 只有 3 项，terminalIndex=3 命中 `?? []` 右臂 → 返回 ""，
+      // 于是 resolveNodeVoltageAtTerminal 继续走到通用 vbase。
+      // 若把 `?? []` 换成 `?? sideValues[0]`，这里会变成 i_vbase 的值。
+      const node = makeNode(
+        "ac-three-winding-transformer-neutral",
+        [
+          makeTerminal("t0"),
+          makeTerminal("t1"),
+          makeTerminal("t2"),
+          makeTerminal("tn"),
+        ],
+        { i_vbase: "110", k_vbase: "35", j_vbase: "10", vbase: "162" }
+      );
+      expect(resolveNodeVoltageAtTerminal(node, "tn")).toBe("162");
+      // 对照：索引 0..2 各自取到自己的侧电压，说明第 4 个端子不是「取不到节点参数」
+      expect(resolveNodeVoltageAtTerminal(node, "t0")).toBe("110");
+      expect(resolveNodeVoltageAtTerminal(node, "t1")).toBe("35");
+      expect(resolveNodeVoltageAtTerminal(node, "t2")).toBe("10");
+    });
+
+    it("非三绕组设备第 3 个端子无对应侧电压，有通用 vbase 时回落到它、无则为空串", () => {
+      // 双端子设备表只覆盖 index 0/1，第 3 个端子命中 `return ""`。
+      const withCommon = makeNode(
+        "ac-two-winding-transformer",
+        [makeTerminal("t0"), makeTerminal("t1"), makeTerminal("t2")],
+        { i_vbase: "63", j_vbase: "27", low_vbase: "17", vbase: "162" }
+      );
+      expect(resolveNodeVoltageAtTerminal(withCommon, "t2")).toBe("162");
+
+      // 对照：同一条索引越界路径在没有任何可用电压时产出空串（而非 undefined）。
+      const bare = makeNode(
+        "ac-two-winding-transformer",
+        [makeTerminal("t0"), makeTerminal("t1"), makeTerminal("t2")],
+        {}
+      );
+      expect(resolveNodeVoltageAtTerminal(bare, "t2")).toBe("");
+      expect(isNodeVoltageDefault(bare, "t2")).toBe(true);
+    });
+
+    // ── applyVoltageInheritance：sourceVoltage 的 falsy 边界 ──
+
+    it("sourceVoltage 归一化后为空串时用默认初始电压 '0'，非空则原样透传", () => {
+      const node = makeNode("ac-line", [makeTerminal("t0")], {});
+
+      // falsy 只有 "" 一种：terminalVoltageBaseNumber 恒返回字符串，
+      // 而 "0" 是**非空字符串**（truthy），所以它走的是左臂、不是 || 的右臂。
+      // 变异实测（勿改成 ??）：把 `|| DEFAULT` 换成 `?? DEFAULT` 会红 ——
+      // 因为 "" 是 falsy 但**非 nullish**，`??` 不短路，`expected '' to be '0'`。
+      // 也就是说 "0" 这条输入恰恰证明了 || 与 ?? 的区别承重。
+      expect(applyVoltageInheritance(node, "").vbase).toBe("0");
+      expect(applyVoltageInheritance(node, "kV").vbase).toBe("0");
+      expect(applyVoltageInheritance(node, "0").vbase).toBe("0");
+
+      // 对照：能归一出数字的输入不会被默认值吞掉。
+      expect(applyVoltageInheritance(node, "37.5").vbase).toBe("37.5");
+      expect(applyVoltageInheritance(node, "162 kV").vbase).toBe("162");
+    });
+
+    // ── applyVoltageInheritance：三条「写 vbase」路径的可区分性 ──
+
+    it("terminalId 缺省时写通用 vbase，即使存在 id 为空串的端子也不落到侧电压", () => {
+      // terminalId 为 "" 会被 `!terminalId` 判为缺省；
+      // 而它同时又是 terminals 里第一个端子的真实 id ——
+      // 门控一旦翻转（`!terminalId` → `terminalId`），findIndex 就会命中 0
+      // 并把电压写进 i_vbase，产出 `expected undefined to be '27.5'`。
+      // 这条空串 id 的夹具是**唯一**能看见该门控的输入：换成普通 id 的节点，
+      // 翻转后只是从 L193 体等同的 L203 块里出来，输出完全一致 → 恒绿。
+      const node = makeNode(
+        "ac-two-winding-transformer",
+        [makeTerminal(""), makeTerminal("t1")],
+        { rated_voltage: "0.0" }
+      );
+      const result = applyVoltageInheritance(node, "27.5", "");
+      expect(result.vbase).toBe("27.5");
+      expect(result.i_vbase).toBeUndefined();
+      expect(result.j_vbase).toBeUndefined();
+      // 该块会连带改写零值默认的 rated_voltage
+      expect(result.rated_voltage).toBe("27.5");
+    });
+
+    it("terminalId 查不到时写通用 vbase，并改写零值默认的 rated_voltage", () => {
+      const node = makeNode(
+        "ac-two-winding-transformer",
+        [makeTerminal("t0"), makeTerminal("t1")],
+        { rated_voltage: "0.0" }
+      );
+      const result = applyVoltageInheritance(node, "27.5", "no-such-terminal");
+      expect(result.vbase).toBe("27.5");
+      expect(result.i_vbase).toBeUndefined();
+      expect(result.j_vbase).toBeUndefined();
+      expect(result.rated_voltage).toBe("27.5");
+    });
+
+    it("三绕组变压器第 4 个端子写入通用 vbase，且不动 rated_voltage", () => {
+      // paramKeys 只有 i/k/j 三项，terminalIndex=3 时 key 为 undefined → else。
+      // 这条 else **只**写 vbase，不改 rated_voltage —— 与上面两条构成对照。
+      const node = makeNode(
+        "ac-three-winding-transformer-neutral",
+        [
+          makeTerminal("t0"),
+          makeTerminal("t1"),
+          makeTerminal("t2"),
+          makeTerminal("tn"),
+        ],
+        { rated_voltage: "0.0" }
+      );
+      const result = applyVoltageInheritance(node, "162", "tn");
+      expect(result.vbase).toBe("162");
+      expect(result.rated_voltage).toBe("0.0");
+      expect(result.i_vbase).toBeUndefined();
+      expect(result.k_vbase).toBeUndefined();
+      expect(result.j_vbase).toBeUndefined();
+    });
+
+    it("双端子设备第 3 个端子写入通用 vbase，且不动 rated_voltage", () => {
+      // terminalIndex=2 既不是 0 也不是 1 → else 写 vbase，同样不改 rated_voltage。
+      const node = makeNode(
+        "ac-two-winding-transformer",
+        [makeTerminal("t0"), makeTerminal("t1"), makeTerminal("t2")],
+        { rated_voltage: "0.0" }
+      );
+      const result = applyVoltageInheritance(node, "27.5", "t2");
+      expect(result.vbase).toBe("27.5");
+      expect(result.rated_voltage).toBe("0.0");
+      expect(result.i_vbase).toBeUndefined();
+      expect(result.j_vbase).toBeUndefined();
+    });
+
+    // ── 三条路径的横向对照：证明它们确实不是同一条 ──
+
+    it("索引越界与查不到端子：vbase 相同但 rated_voltage 行为不同", () => {
+      // 若缺少这条对照，上面四条用例里 L193 / L203 的门控任一被翻转，
+      // 都会落进体等同的兄弟块而**看不出差别**。这里用同一次调用的两份结果
+      // 明确区分「会改 rated_voltage」与「不会改 rated_voltage」两类。
+      const node = makeNode(
+        "ac-two-winding-transformer",
+        [makeTerminal("t0"), makeTerminal("t1"), makeTerminal("t2")],
+        { rated_voltage: "0.0" }
+      );
+      const viaMissing = applyVoltageInheritance(node, "27.5");
+      const viaOutOfRange = applyVoltageInheritance(node, "27.5", "t2");
+
+      expect(viaMissing.vbase).toBe("27.5");
+      expect(viaOutOfRange.vbase).toBe("27.5");
+      // 唯一的区别：前者走了会改 rated_voltage 的块，后者没有
+      expect(viaMissing.rated_voltage).toBe("27.5");
+      expect(viaOutOfRange.rated_voltage).toBe("0.0");
+    });
+  });
 });

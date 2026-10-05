@@ -2,16 +2,24 @@
 //
 // 这些是**导出主链路上的静默失真源**：ID 撞车会让 SVG 里的 <use> 指错设备，
 // 标签丢字/丢样式只表现为「画面有点不对」，不报任何错。
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   buildExportDeviceIdMap,
+  buildExportMeasurementGroupMarkup,
   buildSvgNodeLabelMarkup,
   buildSvgNodeLabelTextElementsMarkup,
   exportDeviceMetadataAttributes,
+  exportMeasurementItemMetadataAttributes,
   exportSvgLayerScriptMarkup,
   svgDisplayAttribute
 } from "./svgExportUtils";
 import type { ModelNode, Terminal } from "./model";
+import {
+  DEFAULT_MEASUREMENT_CONFIG,
+  type MeasurementGroup,
+  type MeasurementItemBinding
+} from "./measurements";
 import { exportSvgLayerId, exportSvgSafeId, exportSvgUniqueId } from "./svgExportUtils";
 
 // ─── 测试辅助 ─────────────────────────────────────────────
@@ -462,5 +470,257 @@ describe("svgExportUtils / exportSvgLayerId", () => {
 
   it("同一个输入两次调用结果一致（纯函数，不读全局状态）", () => {
     expect(exportSvgLayerId("L1", "fb")).toBe(exportSvgLayerId("L1", "fb"));
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// 以下补的是覆盖率报告里 svgExportUtils.ts 的未覆盖分支。
+//
+// 共同背景：这四条分支（152、268、269、278、279、280、281）全都是
+// 「**同一个规范化动作的三件套**」——`String(x ?? "")` + `.trim()` + 「缺了就原样返回」
+// 里的 nullish 兜底与空串早退。它们平时只在**畸形数据**（缺 id / 缺 sourcePoint）
+// 下才走到，而畸形数据的症状是「导出的 SVG 里凭空多出 undefined 这个 id」，
+// 不报任何错，所以必须直呼被测函数钉住。
+// ═══════════════════════════════════════════════════════════
+
+function makeItem(overrides: Partial<MeasurementItemBinding> = {}): MeasurementItemBinding {
+  return {
+    id: "measurement-1",
+    measurementTypeId: "activePower",
+    sourcePoint: "n1.P",
+    ...overrides
+  };
+}
+
+function makeGroup(overrides: Partial<MeasurementGroup> = {}): MeasurementGroup {
+  return {
+    id: "g1",
+    nodeId: "n1",
+    visible: true,
+    anchor: "top",
+    offset: { x: 0, y: 0 },
+    layout: "vertical",
+    items: [makeItem()],
+    ...overrides
+  };
+}
+
+// 畸形输入的统一写法：这几个参数在类型上是 string，但运行时的量测数据来自
+// 本地缓存 / 导入包，缺字段就是 undefined/null。用 null（不是 undefined）是因为
+// undefined 会命中小函数参数的默认值，等于绕过了被测的 `??` 分支。
+const NULLISH = null as unknown as string;
+
+// ─── 静态图元同 idx 冲突：重编号那条 while（152 行）───────────────────
+describe("svgExportUtils / 静态图元 idx 冲突重编号（152 行 while）", () => {
+  it("同类型静态图元撞 idx 时按 (idx, id) 排序后递增到下一个空位", () => {
+    // 必须断「重编号」这条：删掉 152 行的 while 后三个节点会拿到
+    // static-alpha-1 / static-alpha-1_2 / static-alpha-1_3（走 usedIds 去重那条路）。
+    // 断言写成 toEqual 数组而不是 toMatch(-N$) 就是为了让 _2 后缀那条路变红。
+    const nodes = [
+      makeNode({ id: "s1", kind: "static-alpha" as ModelNode["kind"], params: { idx: "1" } }),
+      makeNode({ id: "s2", kind: "static-alpha" as ModelNode["kind"], params: { idx: "1" } }),
+      makeNode({ id: "s3", kind: "static-alpha" as ModelNode["kind"], params: { idx: "1" } })
+    ];
+    const map = buildExportDeviceIdMap(nodes, new Set());
+    expect([...map.entries()].map(([nodeId]) => nodeId)).toEqual(["s1", "s2", "s3"]);
+    expect([...map.values()]).toEqual([
+      "static-alpha-1",
+      "static-alpha-2",
+      "static-alpha-3"
+    ]);
+  });
+
+  it("冲突时往后找的是「已占用的号」，不是下一个节点（1、2、2 ⇒ 1、2、3）", () => {
+    // 覆盖 while 的**多次**递增：第三个节点请求的 2 已被 s2 占掉，须再 +1 到 3。
+    const nodes = [
+      makeNode({ id: "s1", kind: "static-alpha" as ModelNode["kind"], params: { idx: "1" } }),
+      makeNode({ id: "s2", kind: "static-alpha" as ModelNode["kind"], params: { idx: "2" } }),
+      makeNode({ id: "s3", kind: "static-alpha" as ModelNode["kind"], params: { idx: "2" } })
+    ];
+    expect([...buildExportDeviceIdMap(nodes, new Set()).values()]).toEqual([
+      "static-alpha-1",
+      "static-alpha-2",
+      "static-alpha-3"
+    ]);
+  });
+
+  it("同 idx 撞车的静态图元与普通设备互不影响（两条 while 各走各的）", () => {
+    const nodes = [
+      makeNode({ id: "d1", kind: "breaker" as ModelNode["kind"], params: { idx: "1" } }),
+      makeNode({ id: "d2", kind: "breaker" as ModelNode["kind"], params: { idx: "1" } }),
+      makeNode({ id: "s1", kind: "static-alpha" as ModelNode["kind"], params: { idx: "1" } }),
+      makeNode({ id: "s2", kind: "static-alpha" as ModelNode["kind"], params: { idx: "1" } })
+    ];
+    const map = buildExportDeviceIdMap(nodes, new Set());
+    expect([...map.values()]).toEqual([
+      "breaker-1",
+      "breaker-2",
+      "static-alpha-1",
+      "static-alpha-2"
+    ]);
+  });
+});
+
+// ─── exportMeasurementSourcePoint 的 nullish / 空串守卫（278、279、280、281 行）──
+describe("svgExportUtils / exportMeasurementItemMetadataAttributes · sourcePoint 前缀守卫", () => {
+  it("★ sourcePoint 为 null 时按空串处理：不输出 mf，而不是 mf=\"null\"", () => {
+    // 去掉 278 行的 `?? ""` ⇒ String(null) = "null" ⇒ rawValue 非空 ⇒
+    // 281 行不早退 ⇒ 前缀循环匹配不上 ⇒ 输出 mf="null"。断在这里能咬住那个 `??`。
+    const attrs = exportMeasurementItemMetadataAttributes(makeItem(), "n1", "d1", NULLISH, "activePower");
+    expect(attrs).toBe('mt="activePower" mti="activePower"');
+  });
+
+  it("★ sourcePoint 只有空白时按空串处理：trim 生效，不写出 mf=\"   \"", () => {
+    // 覆盖 281 行的 `!rawValue` 早退；**区分点是空白串而非空串**：
+    // 空串走 `?? ""` 那侧也为空，只有 "   " 能证明 278 行的 `.trim()` 在干活。
+    //
+    // ⚠ 变异记录（已实测，别再重查）：把 281-283 整个早退删掉，这条**仍然绿**，
+    // 而且是**可证等价**、不是输入没覆盖 —— rawValue 为空串时，下面 for 循环里
+    // 任何非空前缀都匹配不上（`"".startsWith(p + ".")` 对任意非空 p 恒 false），
+    // 空前缀又被 `prefix &&` 挡掉，于是循环必然落到 289 行 `return rawValue`。
+    // 换句话说 282 行的 return 与 289 行的 return 在这条路径上同值。
+    // **什么时候这条会不再等价**：若前缀匹配改成允许空前缀（去掉 `prefix &&`），
+    // 或改成按包含关系而非前缀匹配 —— 那时空串会先命中空前缀而返回错值，
+    // 上面这条断言就会转红。
+    expect(exportMeasurementItemMetadataAttributes(makeItem(), "n1", "d1", "   ", "activePower")).toBe(
+      'mt="activePower" mti="activePower"'
+    );
+  });
+
+  it("★ nodeId 为 null 时不得把字面量 null 当节点前缀剥掉", () => {
+    // 合成输入：sourcePoint 以 "null." 开头。只有这样的输入才能观察到
+    // `String(nodeId ?? "")`（279 行）的差别 —— internalNodeId 缺省时必须以 "" 参与
+    // 前缀匹配；若被 String 化成 "null"，就会把 "null." 当成节点前缀剥掉。
+    const attrs = exportMeasurementItemMetadataAttributes(
+      makeItem({ sourcePoint: "null.temperature" }),
+      NULLISH,
+      "d1"
+    );
+    expect(attrs).toContain('mf="null.temperature"');
+  });
+
+  it("★ deviceId 为 null 时不得把字面量 null 当导出 id 前缀剥掉", () => {
+    // 与上一条同形，但只让 deviceId 缺省、nodeId 正常，用来单独咬住 280 行。
+    const attrs = exportMeasurementItemMetadataAttributes(
+      makeItem({ sourcePoint: "null.current" }),
+      "n1",
+      NULLISH
+    );
+    expect(attrs).toContain('mf="null.current"');
+  });
+
+  it("对照组：两个前缀都是正常字符串时，该剥的照样剥（证明上面三条不是恒绿）", () => {
+    // 前缀循环的正常路径：剥掉节点前缀 → 与 mt 相同就不输出 mf；
+    // 用导出 id 前缀（SVG 往返后的形态）同样要剥掉。
+    expect(
+      exportMeasurementItemMetadataAttributes(makeItem({ measurementTypeId: "P" }), "n1", "n1")
+    ).toBe('mt="P" mti="P"');
+    expect(
+      exportMeasurementItemMetadataAttributes(makeItem({ sourcePoint: "d1.P" }), "n1", "d1")
+    ).toContain('mf="P"');
+  });
+});
+
+// ─── exportMeasurementScopedId 的 nullish 守卫（268、269 行）────────
+describe("svgExportUtils / buildExportMeasurementGroupMarkup · 项 id 作用域化守卫", () => {
+  it("★ 项 id 为 null 时值 id 退回 deviceId，而不是拼出字面量 null", () => {
+    // 268 行的 `?? ""`：去掉后 String(null) = "null" 非空 ⇒ 271 行的早退不触发
+    // ⇒ exportedItemId 变成 "null" ⇒ 值 id 变成 mv-n1-null。
+    const markup = buildExportMeasurementGroupMarkup(
+      makeNode({ id: "n1" }),
+      makeGroup({ items: [makeItem({ id: NULLISH })] }),
+      DEFAULT_MEASUREMENT_CONFIG,
+      new Set()
+    );
+    expect(markup).toMatch(/id="mv-n1"/);
+    expect(markup).not.toMatch(/id="mv-[^"]*null/);
+  });
+
+  it("★ 节点 id 为 null 时不做作用域替换，项 id 原样进值 id", () => {
+    // 269 行的 `?? ""`：合成项 id 里含字面量 "null"（缺字段被序列化成字符串的形态）。
+    // 去掉守卫后 internalNodeId 变成 "null" ≠ ownerDeviceId ⇒ 274 行会把 id 里的
+    // "null" 替换成 owner id ⇒ 值 id 从 mv-null-x 变成 mv-owner-1-x。
+    const markup = buildExportMeasurementGroupMarkup(
+      makeNode({ id: NULLISH }),
+      makeGroup({ items: [makeItem({ id: "measurement-null-x" })] }),
+      DEFAULT_MEASUREMENT_CONFIG,
+      new Set(),
+      { deviceId: "dev-1", ownerDeviceId: "owner-1" }
+    );
+    expect(markup).toMatch(/id="mv-null-x"/);
+  });
+
+  it("对照组：节点 id 与 owner id 不同时才做作用域替换（证明上面那条不是恒绿）", () => {
+    const markup = buildExportMeasurementGroupMarkup(
+      makeNode({ id: "n1" }),
+      makeGroup({ items: [makeItem({ id: "n1-thing" })] }),
+      DEFAULT_MEASUREMENT_CONFIG,
+      new Set(),
+      { deviceId: "dev-1", ownerDeviceId: "owner-1" }
+    );
+    expect(markup).toMatch(/id="mv-dev-1-owner-1-thing"/);
+  });
+
+  // ⚠ 同一组里的 270 与 293 行**没有**行为断言，不是漏写，是断不了（已推演）：
+  //
+  // 270 行（stableDeviceId 的 `?? ""`）：它的实参是
+  //   `options.ownerDeviceId ?? (options.deviceId ?? node.id)`，所以
+  //   「stableDeviceId 为 nullish」蕴含「node.id 也为 nullish」⇒ internalNodeId
+  //   同样是空串 ⇒ 271 行的 `!internalNodeId` 先短路返回，stableDeviceId 后面
+  //   （只有 274 行的 replace 用得到）永远用不上。把 270 行的 `??` 去掉，
+  //   internalNodeId 与 stableDeviceId 会**同时**变成字符串 "null" ⇒ 271 行的
+  //   `internalNodeId === stableDeviceId` 又成立 ⇒ 早退照旧。**可证等价。**
+  //
+  // 293 行（rawItemId 的 `?? ""`）：实参是 exportMeasurementScopedId 的返回值，
+  //   而那个返回值恒为字符串（`String(x ?? "")` 永不产出 undefined/null）⇒
+  //   `??` 右侧**不可达**，不是等价问题而是压根到不了。
+  //
+  // 要让这两行变得可断，得先改生产代码的调用契约（例如给 node.id 一个显式的
+  // 「缺失」表示），那是另一个 lane 的事。
+});
+
+// ─── buildSvgNodeLabelTextMarkup 内的空文本早退（32 行）是死代码 ─────
+//
+// 32 行 `if (!text) return ""` 永远不成立：那个函数**只有一个调用点**（52 行），
+// 而调用点在 49 行已经先判过 `|| !text`。两条防线判的是同一个纯函数
+// nodeLabelText（`node.params._labelText ?? node.name`），所以真走到 32 行时
+// text 必然非空。行为断言覆盖不到它，改用静态守卫钉住「让它变可达的前提」。
+describe("svgExportUtils / buildSvgNodeLabelTextMarkup 的空文本早退不可达", () => {
+  const source = readFileSync(new URL("./svgExportUtils.ts", import.meta.url), "utf8");
+
+  const countCallSites = (src: string) =>
+    src
+      .split(/\r?\n/)
+      .filter((text) => text.includes("buildSvgNodeLabelTextMarkup(") && !/^\s*(export\s+)?function\s+buildSvgNodeLabelTextMarkup/.test(text))
+      .length;
+  const countEmptyTextGuards = (src: string) =>
+    src.split(/\r?\n/).filter((text) => text.includes("nodeLabelShouldRender(node, true) || !text")).length;
+
+  it("检测逻辑自测：两个计数器都看得见它们各自该抓的改动", () => {
+    // ① 守卫计数器：最可能的变异是删掉某处的 `|| !text`，必须被看见。
+    const guardMutated = source.replace(
+      "nodeLabelShouldRender(node, true) || !text",
+      "nodeLabelShouldRender(node, true)"
+    );
+    expect(guardMutated).not.toBe(source);
+    expect(countEmptyTextGuards(guardMutated)).toBe(countEmptyTextGuards(source) - 1);
+
+    // ② 调用点计数器：在**同一个文件里**再插一处调用必须被数出来。
+    // 这里用行谓词排除声明行，而不是跳过整个文件 —— 否则同文件注入会整体漏掉。
+    const callMutated = source.replace(
+      "  const baseAttributes = svgNodeLabelBaseAttributes(node);",
+      "  const extra = buildSvgNodeLabelTextMarkup(node);\n  const baseAttributes = svgNodeLabelBaseAttributes(node);"
+    );
+    expect(callMutated).not.toBe(source);
+    expect(countCallSites(callMutated)).toBe(countCallSites(source) + 1);
+    // 合成输入：声明行本身不算调用点
+    expect(countCallSites("function buildSvgNodeLabelTextMarkup(node: ModelNode) {\n  return 1;\n}")).toBe(0);
+    expect(countCallSites("  buildSvgNodeLabelTextMarkup(node);\n")).toBe(1);
+  });
+
+  it("唯一调用点之前已有空文本守卫 ⇒ 32 行的 !text 分支不可达", () => {
+    expect(countCallSites(source)).toBe(1);
+    // 两个导出入口（markup 与 textElements）都在调用前挡掉了空文本
+    expect(countEmptyTextGuards(source)).toBe(2);
   });
 });

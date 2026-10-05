@@ -54,6 +54,129 @@ describe("definition table row selection", () => {
   });
 });
 
+// L28-30 区间选择的 additive 分支：shift 命中区间时，ctrl/meta 让结果变成
+// 「原选择 ∪ 区间」。既有那条 `nextTableRowSelection(["b"], "d", ordered, "b", {shiftKey:true})`
+// 只走了非 additive 一侧，而且原选择恰好是区间的子集 —— 于是
+//   `orderedKeys.filter(k => current.includes(k) || range.includes(k))`
+// 与 `[...range]` 在那一个夹具上逐元素相同，改成任何一种都照样绿。
+// 下面全部用「原选择里含区间外的键」作夹具，additive 才有鉴别力。
+describe("range selection 的 additive 分支（L28-30）", () => {
+  const ordered = ["a", "b", "c", "d", "e"];
+
+  test("shift+ctrl/meta 时并入区间外的原有选择，anchor 仍为 shift 前的锚点", () => {
+    // anchor=c(2)、点击=b(1) ⇒ 区间 b..c；原有选择 {a, d} 里 a、d 都在区间外。
+    for (const modifiers of [{ shiftKey: true, ctrlKey: true }, { shiftKey: true, metaKey: true }]) {
+      expect(nextTableRowSelection(["d", "a"], "b", ordered, "c", modifiers))
+        .toEqual({ selectedKeys: ["a", "b", "c", "d"], anchorKey: "c" });
+    }
+  });
+
+  test("并集按表格行序输出，不是「区间在前 + 原选择在后」", () => {
+    // 原选择写成 ["d","a"]（表格序是 a,d）：filter 走 orderedKeys ⇒ a 先于 d。
+    // 若实现改成 `[...range, ...currentSelection]` 会得到 ["b","c","d","a"] —— 顺序不同。
+    expect(nextTableRowSelection(["d", "a"], "b", ordered, "c", { shiftKey: true, ctrlKey: true }))
+      .toEqual({ selectedKeys: ["a", "b", "c", "d"], anchorKey: "c" });
+  });
+
+  test("同一夹具去掉 ctrl/meta 就只留区间，additive 一侧因此有鉴别力", () => {
+    // 对照组：与上面同一个 anchor/clicked/原选择，只把 ctrlKey 去掉。
+    expect(nextTableRowSelection(["d", "a"], "b", ordered, "c", { shiftKey: true }))
+      .toEqual({ selectedKeys: ["b", "c"], anchorKey: "c" });
+  });
+
+  test("原选择全在区间内时并集与区间逐元素相同（恒真实现的对照组）", () => {
+    // 这一条让「additive 分支恒等于 range」的实现转红：区间是 b..d，原选择只有 b。
+    // 恒真实现给出 ["b","c","d"]（对），但它必须与上面 a/d 那条一起看才有意义。
+    expect(nextTableRowSelection(["b"], "d", ordered, "b", { shiftKey: true, ctrlKey: true }))
+      .toEqual({ selectedKeys: ["b", "c", "d"], anchorKey: "b" });
+  });
+
+  test("shift 无锚点（null/undefined）时不进区间分支，落回 additive 的 toggle 语义", () => {
+    // L20 的守卫：`anchorKey !== null && anchorKey !== undefined`。
+    // anchor 缺失 ⇒ 走 L36-41 的 toggle 分支：b 不在原选择里 ⇒ 并入。
+    // 结果顺序是 **orderedKeys 的行序**（["b","e"]），不是 currentSelection 追加的顺序 ——
+    // 这正是 L39 用 orderedKeys.filter 而非 [...current, clicked] 的可观测后果。
+    for (const anchor of [null, undefined]) {
+      expect(nextTableRowSelection(["e"], "b", ordered, anchor, { shiftKey: true, ctrlKey: true }))
+        .toEqual({ selectedKeys: ["b", "e"], anchorKey: "b" });
+    }
+    // 同一个 anchor 为 null 的夹具，去掉 ctrl 就只留点击项 —— 排除「另一条路产出同结果」。
+    expect(nextTableRowSelection(["e"], "b", ordered, null, { shiftKey: true }))
+      .toEqual({ selectedKeys: ["b"], anchorKey: "b" });
+  });
+
+  test("锚点或点击项不在 orderedKeys 中时区间分支整体跳过", () => {
+    // anchorKey 不在表里 ⇒ indexOf 返回 -1 ⇒ L23 守卫不成立，落回 toggle ⇒ ["b","e"]（行序）。
+    expect(nextTableRowSelection(["e"], "b", ordered, "Z", { shiftKey: true, ctrlKey: true }))
+      .toEqual({ selectedKeys: ["b", "e"], anchorKey: "b" });
+    // clickedKey 不在表里（锚点在表里）⇒ 同样跳过；且 L39 的 filter 遍历 orderedKeys，
+    // 不在表里的 "Y" 永远加不进去，结果只剩原选择。
+    expect(nextTableRowSelection(["e"], "Y", ordered, "c", { shiftKey: true, ctrlKey: true }))
+      .toEqual({ selectedKeys: ["e"], anchorKey: "Y" });
+  });
+});
+
+// L75：`String(sourceName ?? "").trim() || "field"` 两个操作符各有一道边界，
+// 且判别输入的取法不同：
+//   · `??` 右臂要 **nullish**（null / undefined）——空串不是 nullish，会短路取左值；
+//   · `||` 右臂要 **falsy**，且该 falsy 值必须 ≠ 兜底值 "field"：
+//     - `""`（及纯空白 "   "，trim 后为 ""）能断 `||` 变 `??`；
+//     - `0` / `false` / `NaN` 能断 `??` 变 `||`，因为它们非 nullish，`??` 会保留原值。
+// 既有那条 `uniqueCopiedFieldName("", existing)` 只覆盖了 `||` 那一侧，
+// 全程没有传过 nullish 或 falsy 非空串的源名。
+//
+// 变异实测（L75 三条形态此前全 GREEN，加上本组用例后全 RED）：
+//   · `??` → `||`  ⇒ `AssertionError: expected 'field_copy' to be '0_copy'`（源名 0）
+//   · 删 `?? ""`  ⇒ `AssertionError: expected 'null_copy' to be 'field_copy'`（源名 null）
+//   · `??` 换值  ⇒ `AssertionError: expected 'Xsrc_copy' to be 'field_copy'`
+// L28-30 同理：`additive` → `!additive` 与 `filter(k => range.includes(k))`
+// 此前都是 GREEN，现由「原选择含区间外的键」这一夹具杀掉：
+//   `expected { selectedKeys: [ 'b', 'c' ], … } to deeply equal { … 'a' … }`
+describe("uniqueCopiedFieldName 的源名边界（L75 的 ?? 与 ||）", () => {
+  test("源名为 nullish 时走 ?? 的右臂，落到 field_copy", () => {
+    expect(uniqueCopiedFieldName(null, new Set())).toBe("field_copy");
+    expect(uniqueCopiedFieldName(undefined, new Set())).toBe("field_copy");
+    // 回写契约对这两条同样成立（写回的是产出名的小写形式）。
+    const written = new Set<string>();
+    uniqueCopiedFieldName(null, written);
+    expect([...written]).toEqual(["field_copy"]);
+  });
+
+  test("源名是 falsy 但非 nullish 时 ?? 保留原值，|| 会把它换成 field", () => {
+    // 0 / false / NaN 与兜底值 "field" 逐字符不同，故三条都是有效判别输入。
+    expect(uniqueCopiedFieldName(0, new Set())).toBe("0_copy");
+    expect(uniqueCopiedFieldName(false, new Set())).toBe("false_copy");
+    expect(uniqueCopiedFieldName(Number.NaN, new Set())).toBe("NaN_copy");
+  });
+
+  test("falsy 非 nullish 源名的复制名同样参与去重递增", () => {
+    expect(uniqueCopiedFieldName(0, new Set(["0_copy"]))).toBe("0_copy_2");
+    expect(uniqueCopiedFieldName(0, new Set(["0_copy", "0_copy_2"]))).toBe("0_copy_3");
+    const written = new Set<string>();
+    uniqueCopiedFieldName(false, written);
+    expect([...written]).toEqual(["false_copy"]);
+  });
+
+  test("空串与纯空白走 || 的右臂，trim 先于 || 生效", () => {
+    // 与上一条互为对照：这些是 nullish 之外的真·空，两条操作符都会取右臂，
+    // 但必须断言产出是 "field_copy" 而不是 "_copy"（后者说明 trim 被绕过了）。
+    expect(uniqueCopiedFieldName("", new Set())).toBe("field_copy");
+    expect(uniqueCopiedFieldName("   ", new Set())).toBe("field_copy");
+    expect(uniqueCopiedFieldName("\t\n ", new Set())).toBe("field_copy");
+    // 空源的复制名也要参与去重。
+    expect(uniqueCopiedFieldName("   ", new Set(["field_copy"]))).toBe("field_copy_2");
+  });
+
+  test("非字符串源名按 String() 语义处理，数组/对象不报错", () => {
+    // String(["  a  "]) === "  a  "（单元素数组的 toString 就是元素本身）。
+    expect(uniqueCopiedFieldName(["  a  "], new Set())).toBe("a_copy");
+    // 多元素数组的 String() 是逗号连接；uniqueCopiedFieldName 只做 trim，
+    // 逗号原样留在名字里（这条钉住「除了 trim 没有别的清洗」这一事实）。
+    expect(uniqueCopiedFieldName(["a", "b"], new Set())).toBe("a,b_copy");
+    expect(uniqueCopiedFieldName({ toString: () => "  P_set  " }, new Set())).toBe("P_set_copy");
+  });
+});
+
 describe("uniqueCopiedFieldName", () => {
   // 快照「种子集合按小写折叠后的占用表」。函数会把产出的名字（小写形式）回写进
   // 调用方的 Set，所以必须在调用**之前**快照，否则断言会把自己刚写进去的名字当成种子。

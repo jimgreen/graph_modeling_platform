@@ -482,3 +482,159 @@ describe("runtimeRegistry 心跳陈旧口径", () => {
     }
   });
 });
+
+// ── resolveFetch / resolveCommand 的「客户端不存在」早退 + error 载荷兜底 ──
+//
+// 前面的用例只覆盖了「客户端存在且挂起 requestId 匹配」与「error 带完整
+// message / code」两侧。这里补齐四个方向：
+//
+//  ① 早退：clients 里查不到该 clientId 时，resolveFetch / resolveCommand 返 false。
+//     每条断言都配一条对照 —— 早退若顺手结算了**别的**客户端上同 requestId 的挂起
+//     请求，那两次 false 与「requestId 已被消费」就分不出来了（§6.13 的对照纪律）。
+//  ② error 载荷**缺 message 键**（nullish）→ 文案落兜底。这里不能用空串：空串是
+//     falsy 但非 nullish，`??` 不短路，属另一档（§6.18 的判别维度）。
+//  ③ error 载荷**缺 code 键** → code 落兜底。刻意用既非 NoOnlineClientError 也非
+//     CommandTimeoutError 的载荷：这两个错误类构造时都设了 this.code，拿它们当输入
+//     根本走不到 code 兜底（它们在左臂就短路了）。
+//  ④ message / code 同时为空串 → 两处兜底都不得触发。这是 `??` 被换成 `||` 时的
+//     唯一判别输入；没有它，②③ 对 `||` 变异恒绿。
+describe("runtimeRegistry resolveFetch/resolveCommand 早退与错误兜底", () => {
+  // 取 reject 出来的 Error 实例本身。toMatchObject 的失败输出不指名字段，
+  // 而下面每条断言都要能指名「红的是文案还是 code」。
+  async function rejectionOf(promise) {
+    const outcome = await promise.then(
+      (value) => ({ resolved: true, value }),
+      (error) => ({ resolved: false, error })
+    );
+    expect(outcome.resolved).toBe(false);
+    return outcome.error;
+  }
+
+  test("resolveFetch 客户端不存在：早退 false，且不结算别的客户端上同 requestId 的挂起请求", async () => {
+    const reg = createRuntimeRegistry();
+    reg.register("c1", () => {});
+    const mockSend = createMockSend();
+    const promise = reg.fetchFromClient("c1", "req-ghost", "runtime.snapshot", {}, mockSend.send);
+
+    // ghost 从未注册：成功载荷与失败载荷都必须走「无 entry」早退
+    expect(reg.resolveFetch("ghost", "req-ghost", { model: "poison" }, null)).toBe(false);
+    expect(reg.resolveFetch("ghost", "req-ghost", null, { message: "poison", code: "bad-request" })).toBe(false);
+
+    // 对照：c1 的挂起请求仍未被消费，它还能被正常结算
+    expect(reg.resolveFetch("c1", "req-ghost", { model: "m1" }, null)).toBe(true);
+    await expect(promise).resolves.toEqual({ model: "m1" });
+  });
+
+  test("resolveCommand 客户端不存在：早退 false，且不结算别的客户端上同 requestId 的挂起请求", async () => {
+    const reg = createRuntimeRegistry();
+    reg.register("c1", () => {});
+    const mockSend = createMockSend();
+    const promise = reg.commandFromClient("c1", "cmd-ghost", "control.device.add", {}, mockSend.send);
+
+    expect(reg.resolveCommand("ghost", "cmd-ghost", true, { id: "poison" }, null)).toBe(false);
+    expect(
+      reg.resolveCommand("ghost", "cmd-ghost", false, null, { message: "poison", code: "bad-request" })
+    ).toBe(false);
+
+    // 对照：c1 的挂起请求仍未被消费
+    expect(reg.resolveCommand("c1", "cmd-ghost", true, { id: "n1" }, null)).toBe(true);
+    await expect(promise).resolves.toEqual({ id: "n1" });
+  });
+
+  test("resolveFetch 前端报 error：缺 message 键才落兜底文案，空串不落兜底", async () => {
+    const reg = createRuntimeRegistry();
+    reg.register("c1", () => {});
+    const mockSend = createMockSend();
+
+    // ① error 存在但**没有 message 键**（nullish）→ ?? 右臂兜底文案
+    const p1 = reg.fetchFromClient("c1", "req-nomsg", "runtime.snapshot", {}, mockSend.send);
+    expect(reg.resolveFetch("c1", "req-nomsg", null, { code: "no-selection" })).toBe(true);
+    const e1 = await rejectionOf(p1);
+    expect(e1.message).toBe("前端拉取失败。");
+    expect(e1.code).toBe("no-selection");
+
+    // ② message 是空串（falsy 但非 nullish）→ ?? 不短路，保留空串。
+    //    把 ?? 换成 || 时这条会红，前一条不会。
+    const p2 = reg.fetchFromClient("c1", "req-emptymsg", "runtime.snapshot", {}, mockSend.send);
+    expect(reg.resolveFetch("c1", "req-emptymsg", null, { message: "", code: "no-selection" })).toBe(true);
+    const e2 = await rejectionOf(p2);
+    expect(e2.message).toBe("");
+    expect(e2.code).toBe("no-selection");
+
+    // ③ 对照：fetch 通道**没有** code 兜底（`{ code: error.code }` 是直传）。
+    //    与 command 通道的 control-failed 兜底形成对照，两条通道不可混为一谈。
+    const p3 = reg.fetchFromClient("c1", "req-nocode", "runtime.snapshot", {}, mockSend.send);
+    expect(reg.resolveFetch("c1", "req-nocode", null, { message: "前端炸了" })).toBe(true);
+    const e3 = await rejectionOf(p3);
+    expect(e3.message).toBe("前端炸了");
+    expect(e3.code).toBeUndefined();
+  });
+
+  test("resolveCommand 前端报失败：error 载荷缺字段时文案与 code 各落自己的兜底", async () => {
+    const reg = createRuntimeRegistry();
+    reg.register("c1", () => {});
+    const mockSend = createMockSend();
+    const start = (id) => reg.commandFromClient("c1", id, "control.device.add", {}, mockSend.send);
+
+    // ① ok=false 而 error 为 undefined：?. 短路，两处 ?? 都取右臂
+    const p1 = start("cmd-undef");
+    expect(reg.resolveCommand("c1", "cmd-undef", false, null, undefined)).toBe(true);
+    const e1 = await rejectionOf(p1);
+    expect(e1.message).toBe("前端指令失败。");
+    expect(e1.code).toBe("control-failed");
+
+    // ② error 为 null（另一档 nullish）：与 ① 同结果，两档都要覆盖
+    const p2 = start("cmd-null");
+    expect(reg.resolveCommand("c1", "cmd-null", false, null, null)).toBe(true);
+    const e2 = await rejectionOf(p2);
+    expect(e2.message).toBe("前端指令失败。");
+    expect(e2.code).toBe("control-failed");
+
+    // ③ 只有 message、没有 code：文案透传，code 落兜底。
+    //    载荷用 plain Error —— NoOnlineClientError / CommandTimeoutError 构造时
+    //    都设了 this.code，拿它们当输入 code 在左臂就短路了，测不到这个兜底。
+    const p3 = start("cmd-plainerr");
+    expect(reg.resolveCommand("c1", "cmd-plainerr", false, null, new Error("磁盘写不进去"))).toBe(true);
+    const e3 = await rejectionOf(p3);
+    expect(e3.message).toBe("磁盘写不进去");
+    expect(e3.code).toBe("control-failed");
+
+    // ④ 只有 code、没有 message 键：文案落兜底，code 透传
+    const p4 = start("cmd-onlycode");
+    expect(reg.resolveCommand("c1", "cmd-onlycode", false, null, { code: "bad-request" })).toBe(true);
+    const e4 = await rejectionOf(p4);
+    expect(e4.message).toBe("前端指令失败。");
+    expect(e4.code).toBe("bad-request");
+
+    // ⑤ message 与 code 都是空串（falsy 但非 nullish）：两处 ?? 都不得短路。
+    //    ①②③④ 对 `||` 变异全部恒绿，只有这一条能区分 `||` 与 `??`。
+    const p5 = start("cmd-emptyboth");
+    expect(reg.resolveCommand("c1", "cmd-emptyboth", false, null, { message: "", code: "" })).toBe(true);
+    const e5 = await rejectionOf(p5);
+    expect(e5.message).toBe("");
+    expect(e5.code).toBe("");
+  });
+
+  test("resolveCommand 对照：error 自带 code 时不落 code 兜底（两侧取值确实不同）", async () => {
+    const reg = createRuntimeRegistry();
+    reg.register("c1", () => {});
+    const mockSend = createMockSend();
+
+    // 左臂（错误类自带的 code / message）与右臂（兜底值）必须真的不同，
+    // 否则「code 是否落兜底」这组断言没有鉴别力。
+    const p1 = reg.commandFromClient("c1", "cmd-noc", "control.device.add", {}, mockSend.send);
+    expect(reg.resolveCommand("c1", "cmd-noc", false, null, new NoOnlineClientError())).toBe(true);
+    const e1 = await rejectionOf(p1);
+    expect(e1.message).toBe("无在线客户端。");
+    expect(e1.code).toBe("no-online-client");
+    expect(e1.code).not.toBe("control-failed");
+
+    const p2 = reg.commandFromClient("c1", "cmd-cmdto", "control.device.add", {}, mockSend.send);
+    expect(
+      reg.resolveCommand("c1", "cmd-cmdto", false, null, new CommandTimeoutError("control.device.add"))
+    ).toBe(true);
+    const e2 = await rejectionOf(p2);
+    expect(e2.code).toBe("ws-timeout");
+    expect(e2.code).not.toBe("control-failed");
+  });
+});

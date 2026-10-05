@@ -3,8 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { describe, expect, test, vi } from "vitest";
 
-import { createDefaultNode, DEVICE_LIBRARY, getTemplateParameterDefinitions, type DeviceKind, type DeviceParameterDefinition, type DeviceTemplate, type ModelNode, type SavedSchemeRecord } from "../model";
-import type { BatchCommonParamRow } from "../App";
+import { createDefaultNode, DEVICE_LIBRARY, getTemplateParameterDefinitions, getTemplateStateDefinitions, type DeviceKind, type DeviceParameterDefinition, type DeviceTemplate, type ModelNode, type SavedSchemeRecord } from "../model";
+import type { BatchCommonMeasurementGroupRow, BatchCommonParamRow } from "../App";
 import { useBatchEditors } from "./useBatchEditors";
 
 describe("batch common measurement scope wiring", () => {
@@ -463,5 +463,206 @@ describe("ratio parameter editors", () => {
     editors.updateNodeDoubleClickDraftParam(node.id, "soc", "99%");
     const committedDraft = nextDraft as { nodeId: string; node: ModelNode } | null;
     expect(committedDraft?.node.params.soc).toBe("0.99");
+  });
+});
+
+function batchMeasurementHtml(node: ModelNode, rows: BatchCommonMeasurementGroupRow[]): string {
+  const editors = useBatchEditors({
+    isBrowseMode: false,
+    activeSelectedNodeIds: [node.id],
+    nodeById: new Map([[node.id, node]]),
+    selectedNode: node,
+    inspectorSelectedNode: node,
+    selectedNodeIdsWithMeasurementGroups: new Set([node.id]),
+    batchCommonGraphicParamRows: [],
+    batchCommonModelParamRows: [],
+    batchCommonMeasurementGroupRows: rows,
+    batchCommonPropertyRowCount: rows.length,
+    layers: [],
+    schemes: [],
+    projectMeasurements: { version: 1, groups: [] },
+    nodeDoubleClickDraft: null,
+    setNodeDoubleClickDraft: vi.fn(),
+    updateParam: vi.fn(),
+    applyBatchCommonParam: vi.fn(),
+    applyBatchCommonParamPatch: vi.fn(),
+    applyBatchCommonMeasurementGroupSetting: vi.fn(),
+    assignSelectedNodesToModelLayer: vi.fn(),
+    updateSelectedNode: vi.fn(),
+    requireEditMode: () => true,
+    libraryTemplateByKind: new Map(DEVICE_LIBRARY.map((template) => [template.kind, template]))
+  });
+  return renderToStaticMarkup(createElement("div", null, editors.renderBatchCommonPropertyPanel()));
+}
+
+function templateLibrary(overrides: Record<string, Partial<DeviceTemplate>> = {}): Map<string, DeviceTemplate> {
+  return new Map<string, DeviceTemplate>(DEVICE_LIBRARY.map((template) => [
+    template.kind,
+    { ...template, ...overrides[template.kind] }
+  ]));
+}
+
+// 行内编辑器在值为空串时渲染 U+00A0（源码里是 `shownValue || "\u00a0"`）。
+// 用 fromCharCode 写出来，免得在测试源码里埋一个看不见的不间断空格。
+const NBSP_BUTTON = `>${String.fromCharCode(160)}</button>`;
+
+describe("batch numeric display fallback", () => {
+  test("keeps the raw digit string for a measurement value whose Number() overflows to Infinity", () => {
+    const node = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const overflow = "9".repeat(400);
+
+    // 前提：这条输入同时满足「匹配行内数字正则」与「Number() 溢出」。
+    // 真正证明它落在那条缝上的，是下面 2.50 → 2.5 的对照：普通小数在两侧行为一致，
+    // 只有溢出会分叉 —— 所以这里刻意不复刻 INLINE_NUMERIC_PATTERN。
+    expect(Number(overflow)).toBe(Infinity);
+
+    const html = batchMeasurementHtml(node, [{ key: "borderWidth", label: "线宽", value: overflow, mixed: false }]);
+
+    expect(html).toContain(`>${overflow}</button>`);
+    expect(html).not.toContain("Infinity");
+    expect(batchMeasurementHtml(node, [{ key: "borderWidth", label: "线宽", value: "2.50", mixed: false }]))
+      .toContain(">2.5</button>");
+  });
+
+  test("renders a missing measurement value as blank rather than the text undefined", () => {
+    const node = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const html = batchMeasurementHtml(node, [
+      { key: "borderWidth", label: "线宽", value: undefined as unknown as string, mixed: false }
+    ]);
+
+    expect(html).toContain(NBSP_BUTTON);
+    expect(html).not.toContain("undefined");
+  });
+});
+
+describe("batch param display fallback", () => {
+  test("renders a missing batch param value as blank rather than the text undefined", () => {
+    const node = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const html = batchParamHtml([node], {
+      key: "custom_note",
+      label: "备注",
+      value: undefined as unknown as string,
+      mixed: false,
+      definition: undefined
+    });
+
+    expect(html).toContain(NBSP_BUTTON);
+    expect(html).not.toContain("undefined");
+  });
+});
+
+describe("status choices when the selected node or its template is unavailable", () => {
+  const statusRow: BatchCommonParamRow = { key: "status", label: "运行状态", value: "RUN", mixed: false, definition: undefined };
+
+  test("offers no status choices when the selected node id is missing from the node map", () => {
+    const node = createDefaultNode("ac-load", { x: 100, y: 100 });
+    node.params.status = "RUN";
+    const library = templateLibrary({
+      "ac-load": { stateDefinitions: [{ value: "RUN", name: "运行" }, { value: "STOP", name: "停运" }] }
+    });
+
+    // 对照：nodeById 里有该节点时，选项来自模板状态定义。
+    expect(batchParamOptions([node], statusRow, library)).toEqual(["RUN", "STOP"]);
+
+    // activeSelectedNodeIds 指向的 id 不在 nodeById 里 → 没有可解析的节点，
+    // 也就不存在 batchParamOptionNode 与状态枚举来源。
+    const html = batchParamHtml([node], statusRow, library, [], []);
+
+    expect(html).not.toContain("data-inline-option-values");
+    expect(html).toContain(">RUN</button>");
+  });
+
+  test("offers no status choices when the node kind is missing from the template library", () => {
+    const node = createDefaultNode("ac-load", { x: 100, y: 100 });
+    node.params.status = "RUN";
+    const library = templateLibrary({
+      "ac-load": { stateDefinitions: [{ value: "RUN", name: "运行" }, { value: "STOP", name: "停运" }] }
+    });
+
+    expect(batchParamOptions([node], statusRow, library)).toEqual(["RUN", "STOP"]);
+    // 模板库没有 ac-load 这一行 → 查不到状态定义，只能退回空枚举。
+    expect(batchParamOptions([node], statusRow, new Map<string, DeviceTemplate>())).toEqual([]);
+  });
+
+  test("falls back to the node params when the template library has no entry for its kind", () => {
+    const node = createDefaultNode("ac-load", { x: 100, y: 100 });
+    node.params.status = "RUN";
+    // 节点自身带着开关元件参数，而 ac-load 的模板参数里没有 → 两边判定不同。
+    node.params.derived_component_type = "ACSwitch";
+    const library = templateLibrary({
+      "ac-load": { stateDefinitions: [{ value: "RUN", name: "运行" }, { value: "STOP", name: "停运" }] }
+    });
+
+    // 有模板：按模板 kind/params 判定为非开关 → 状态行走模板状态枚举。
+    expect(batchParamOptions([node], statusRow, library)).toEqual(["RUN", "STOP"]);
+    // 无模板：只能回落到 node.params（判定为开关 → 该行不是视觉状态键），
+    // 于是退回 PARAM_OPTIONS["status"] 的 ["1","0"]，并把非法当前值 RUN 顶到最前。
+    expect(batchParamOptions([node], statusRow, new Map<string, DeviceTemplate>())).toEqual(["RUN", "1", "0"]);
+  });
+
+  test("falls back to the node kind when the template library has no entry for its kind", () => {
+    const node = createDefaultNode("ac-switch", { x: 100, y: 100 });
+    node.params.status = "RUN";
+
+    // ac-switch 的 kind 本身含 switch：模板缺失时若不回落到 node.kind，
+    // 该行会被误判成视觉状态键，从而拿到空枚举（[]）而不是 status 的 ["1","0"]。
+    expect(batchParamOptions([node], statusRow, new Map<string, DeviceTemplate>())).toEqual(["RUN", "1", "0"]);
+  });
+});
+
+describe("saved project option index guard", () => {
+  test("skips saved projects whose idx is not a positive integer", () => {
+    const project = (id: string, name: string, idx: number) => ({
+      id,
+      name,
+      updatedAt: "2026-08-18T00:00:00.000Z",
+      project: { version: 1, name, idx, modelType: "厂站", nodes: [], edges: [] }
+    });
+    const schemes = [{
+      id: "scheme-1",
+      name: "方案一",
+      updatedAt: "2026-08-18T00:00:00.000Z",
+      projects: [
+        project("zero", "零号模型", 0),
+        project("fraction", "小数模型", 3.5),
+        project("nan", "非数模型", Number.NaN),
+        project("valid", "正常模型", 22)
+      ],
+      children: []
+    }] as SavedSchemeRecord[];
+    const node = createDefaultNode("ac-load", { x: 100, y: 100 });
+    node.params.parent = "22";
+    const template = DEVICE_LIBRARY.find((item) => item.kind === node.kind)!;
+    const definition = getTemplateParameterDefinitions(template).find((item) => item.enName === "parent");
+    const html = batchParamHtml([node], {
+      key: "parent",
+      label: "所属模型",
+      value: "22",
+      mixed: false,
+      definition
+    }, undefined, schemes);
+
+    // 0（非正整数）、3.5（非整数）、NaN（非整数）三种越界取值都必须被滤掉，只剩 22。
+    expect(html).toContain('data-inline-option-values="22"');
+    expect(html).not.toContain("零号模型");
+    expect(html).not.toContain("小数模型");
+    expect(html).not.toContain("非数模型");
+  });
+});
+
+describe("state name invariant", () => {
+  // ⚠ 记录一个不可达分支：statusOptionLabelsForNode 里的 `state.name || state.value`
+  // 兜底取不到 —— 它的唯一数据源 getTemplateStateDefinitions 两条出口都已经把 name 填满：
+  //   ① normalizeDeviceStateDefinitions：`name: String(source.name ?? stateValue).trim() || stateValue`
+  //   ② DEFAULT_BINARY_DEVICE_STATE_DEFINITIONS：两条硬编码状态都带中文名
+  // 因此「模板里写 name: ""」也会在 normalize 那一步被补成状态值本身。
+  // 下面这条断言守的是这个不变式：若哪天出现空名状态，说明该去复核这处兜底，
+  // 而不是补一条恒绿的断言去假装覆盖它。
+  test("every library template yields state definitions with a non-empty name", () => {
+    const withEmptyName = DEVICE_LIBRARY
+      .map((template) => ({ kind: template.kind, empty: getTemplateStateDefinitions(template).filter((state) => !state.name.trim()).map((state) => state.value) }))
+      .filter((entry) => entry.empty.length > 0);
+
+    expect(withEmptyName).toEqual([]);
   });
 });

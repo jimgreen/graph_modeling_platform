@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import * as legacy from "../appExtracted/appPersistenceLibraryExport";
 import { DEFAULT_CANVAS_BACKGROUND } from "../appExtracted/appCoreCanvasUtilities";
-import { createDefaultNode, DEVICE_LIBRARY, getTerminalPoint, type ModelNode } from "../model";
+import { createDefaultNode, DEVICE_LIBRARY, getTerminalPoint, type ModelNode, type ProjectFile } from "../model";
 import { decodeSvgImageSource } from "../svgUtils";
 import {
   createRoutableLineDeviceFromEndpoints,
@@ -11,7 +11,14 @@ import {
   routableLineDeviceLocalPoints,
   setRoutableLineDeviceCanvasPoints
 } from "../model-routing";
-import { buildSvgDocument, exportElectricTerminals, exportSvgImageHref, setSvgImageAssetsReader } from "./svg";
+import {
+  backgroundPageCanvasTransform,
+  buildSvgDeviceConnectorMarkup,
+  buildSvgDocument,
+  exportElectricTerminals,
+  exportSvgImageHref,
+  setSvgImageAssetsReader
+} from "./svg";
 import { SVG_BASELINE_EDGES, SVG_BASELINE_FIXTURE, SVG_BASELINE_NODES } from "./fixtures/svg-baseline";
 
 describe("src/export/svg", () => {
@@ -290,5 +297,291 @@ describe("exportElectricTerminals", () => {
     const picked = exportElectricTerminals(terminalNode(terminals));
     expect(picked[0]).toBe(terminals[0]);
     expect(picked[1]).toBe(terminals[1]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildSvgDocument：图元前景图解析（resolveNodeForegroundImage）
+// ---------------------------------------------------------------------------
+
+/** 非静态、非母排的普通图元（前景图在 body 里以 node-foreground-image 输出）。 */
+const imageNode = (params: Record<string, string>): ModelNode => {
+  const node = createDefaultNode("ac-load", { x: 200, y: 200 });
+  return { ...node, id: "fg-node", name: "fg-node", params: { ...node.params, ...params } };
+};
+
+const ASSET_PNG = "data:image/png;base64,ASSETBYTES";
+const PARAM_PNG = "data:image/png;base64,PARAMBYTES";
+
+describe("resolveNodeForegroundImage（前景图的 assetId / param 两条来源）", () => {
+  test("assetId 在 imageAssets 里命中时用它，不看 foregroundImage 参数", () => {
+    // 两个来源同时给且**故意给成不同字节**：只断「有图」的话，
+    // `|| params.foregroundImage` 被删掉后仍会出图（恒绿），断不出优先级。
+    const svg = buildSvgDocument(
+      [imageNode({ foregroundImageAssetId: "fg-1", foregroundImage: PARAM_PNG })] as never,
+      [],
+      { width: 800, height: 600, imageAssets: { "fg-1": ASSET_PNG } } as never
+    );
+    expect(svg).toContain("node-foreground-image");
+    expect(svg).toContain(ASSET_PNG);
+    expect(svg).not.toContain(PARAM_PNG);
+  });
+
+  test("assetId 查不到时回落到 foregroundImage 参数（不是「无图」）", () => {
+    // 与上一条互为对照：换掉的是 assetId 的**命中与否**，图仍在。
+    const svg = buildSvgDocument(
+      [imageNode({ foregroundImageAssetId: "missing", foregroundImage: PARAM_PNG })] as never,
+      [],
+      { width: 800, height: 600, imageAssets: { "fg-1": ASSET_PNG } } as never
+    );
+    expect(svg).toContain("node-foreground-image");
+    expect(svg).toContain(PARAM_PNG);
+    expect(svg).not.toContain(ASSET_PNG);
+  });
+
+  test("两个来源都没有时不输出前景图", () => {
+    const svg = buildSvgDocument([imageNode({})] as never, [], {
+      width: 800,
+      height: 600,
+      imageAssets: { "fg-1": ASSET_PNG }
+    } as never);
+    expect(svg).not.toContain("node-foreground-image");
+    expect(svg).not.toContain(ASSET_PNG);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildSvgDocument：背景页子文档（backgroundPage 的来源优先级 + 画布变换）
+// ---------------------------------------------------------------------------
+
+/** 取出背景页图层自身的标记区间（层组开标签 → 外框 rect），排除画布自身的背景标记。 */
+const backgroundLayerMarkup = (svg: string) => {
+  const start = svg.indexOf('class="export-background-page-layer"');
+  const end = svg.indexOf('class="export-background-page-frame"');
+  return start >= 0 && end > start ? svg.slice(start, end) : "";
+};
+
+const PAGE_IMAGE = "data:image/png;base64,PAGEIMAGEBYTES";
+const PROJECT_IMAGE = "data:image/png;base64,PROJECTIMAGEBYTES";
+const PROJECT_BACKGROUND = "#123456";
+
+const backgroundPageProject = (): ProjectFile => {
+  const first = createDefaultNode("ac-load", { x: 100, y: 100 });
+  const second = createDefaultNode("ac-load", { x: 320, y: 100 });
+  return {
+    version: 1,
+    name: "背景工程",
+    canvasWidth: 640,
+    canvasHeight: 480,
+    canvasBackgroundColor: PROJECT_BACKGROUND,
+    canvasBackgroundImage: PROJECT_IMAGE,
+    nodes: [{ ...first, id: "page-node-1" }, { ...second, id: "page-node-2" }],
+    edges: [{
+      id: "page-edge-1",
+      sourceId: "page-node-1",
+      targetId: "page-node-2",
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      sourcePoint: { x: 175, y: 100 },
+      targetPoint: { x: 245, y: 100 }
+    }]
+  };
+};
+
+describe("buildSvgDocument：背景页从 project 取尺寸 / 节点 / 连线 / 底色 / 背景图", () => {
+  const renderWithProjectOnly = () => buildSvgDocument([], [], {
+    width: 1000,
+    height: 800,
+    backgroundColor: "#000000",
+    imageAssets: {},
+    backgroundPage: { project: backgroundPageProject() }
+  } as never);
+
+  test("project.canvasWidth/canvasHeight 决定背景页尺寸（不是画布尺寸）", () => {
+    const layer = backgroundLayerMarkup(renderWithProjectOnly());
+    expect(layer).toContain('width="640"');
+    expect(layer).toContain('height="480"');
+    expect(layer).toContain('viewBox="0,0,640,480"');
+  });
+
+  test("backgroundPage.nodes 缺省时用 project.nodes，且 id 带背景页前缀", () => {
+    const layer = backgroundLayerMarkup(renderWithProjectOnly());
+    expect(layer).toContain('id="export_bg_page-node-1"');
+    expect(layer).toContain('id="export_bg_page-node-2"');
+  });
+
+  test("backgroundPage.edges 缺省时用 project.edges（背景页里真的有连线）", () => {
+    expect(backgroundLayerMarkup(renderWithProjectOnly())).toContain('id="export_bg_edge-1"');
+  });
+
+  test("背景页底色取 project.canvasBackgroundColor，不取 backgroundPage.backgroundColor", () => {
+    // backgroundColor 显式给成画布那份 #000000：若误取它，背景页底色就不是 #123456。
+    expect(backgroundLayerMarkup(renderWithProjectOnly())).toContain(`fill="${PROJECT_BACKGROUND}"`);
+  });
+
+  test("背景图取 project.canvasBackgroundImage", () => {
+    expect(backgroundLayerMarkup(renderWithProjectOnly())).toContain(PROJECT_IMAGE);
+  });
+
+  test("backgroundPage.transform 缺省时按两套画布算等比缩放居中", () => {
+    const layer = backgroundLayerMarkup(renderWithProjectOnly());
+    const expected = backgroundPageCanvasTransform(
+      { width: 640, height: 480 },
+      { width: 1000, height: 800 }
+    );
+    expect(expected).not.toBe("translate(0 0) scale(1)");
+    expect(layer).toContain(`transform="${expected}"`);
+  });
+});
+
+describe("buildSvgDocument：backgroundPage 自身字段优先于 project", () => {
+  const renderWithBoth = () => buildSvgDocument([], [], {
+    width: 1000,
+    height: 800,
+    imageAssets: {},
+    backgroundPage: {
+      nodes: [createDefaultNode("ac-load", { x: 100, y: 100 })],
+      edges: [],
+      backgroundBounds: { width: 300, height: 200 },
+      backgroundColor: "#abcdef",
+      backgroundImageUrl: PAGE_IMAGE,
+      transform: "translate(7 9) scale(0.25)",
+      project: backgroundPageProject()
+    }
+  } as never);
+
+  test("backgroundBounds / backgroundColor / backgroundImageUrl / transform 都压过 project", () => {
+    const layer = backgroundLayerMarkup(renderWithBoth());
+    expect(layer).toContain('viewBox="0,0,300,200"');
+    expect(layer).toContain('fill="#abcdef"');
+    expect(layer).toContain('transform="translate(7 9) scale(0.25)"');
+    expect(layer).toContain(PAGE_IMAGE);
+    // project 那份的图与底色都不该进背景页
+    expect(layer).not.toContain(PROJECT_IMAGE);
+    expect(layer).not.toContain(PROJECT_BACKGROUND);
+  });
+
+  test("backgroundPage.nodes 存在时 project.nodes 完全不参与（连同 project.edges）", () => {
+    const layer = backgroundLayerMarkup(renderWithBoth());
+    expect(layer).toContain('id="export_bg_');
+    expect(layer).not.toContain('id="export_bg_page-node-1"');
+    expect(layer).not.toContain('id="export_bg_page-node-2"');
+    expect(layer).not.toContain('id="export_bg_edge-1"');
+  });
+});
+
+describe("buildSvgDocument：backgroundPage 两级缺省（无 nodes 无 project）", () => {
+  test("背景页仍被输出，但尺寸回落画布尺寸、底色回落默认、节点与连线为空", () => {
+    const layer = backgroundLayerMarkup(buildSvgDocument([], [], {
+      width: 1000,
+      height: 800,
+      imageAssets: {},
+      backgroundPage: {}
+    } as never));
+    expect(layer).toContain('viewBox="0,0,1000,800"');
+    expect(layer).toContain(`fill="${DEFAULT_CANVAS_BACKGROUND}"`);
+    // 画布尺寸与背景页尺寸相同 → 变换退化成单位阵（不是恒真的「有 transform 属性」）
+    expect(layer).toContain(`transform="translate(0 0) scale(1)"`);
+    expect(layer).not.toContain("<symbol");
+    expect(layer).not.toContain("<use");
+    expect(layer).not.toContain("export-canvas-background-image");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildSvgDocument：端子 nodeNumber 的存量回填（拓扑重算端子 vs 存量端子）
+// ---------------------------------------------------------------------------
+
+const useNodeAttribute = (svg: string, nodeId: string) =>
+  svg.match(new RegExp(`<use id="${nodeId}"[^>]*>`))?.[0]?.match(/ node="[^"]*"/)?.[0] ?? "";
+
+const busWithTerminals = (id: string, terminals: unknown[]): ModelNode => {
+  const bus = createDefaultNode("ac-bus", { x: 100, y: 100 });
+  return { ...bus, id, name: id, terminals: terminals as never };
+};
+
+const BUS_TERMINAL = (id: string, nodeNumber: string) => ({
+  id,
+  label: "",
+  anchor: { x: 0.5, y: 0.5 },
+  type: "ac",
+  nodeNumber
+});
+
+const busToLoadEdge = (busId: string, load: ModelNode) => ({
+  id: "bus-load-edge",
+  sourceId: busId,
+  targetId: load.id,
+  sourceTerminalId: "t1",
+  targetTerminalId: load.terminals[0].id,
+  sourcePoint: { x: 200, y: 108 },
+  targetPoint: { x: 280, y: 108 }
+});
+
+describe("buildSvgDocument：端子 nodeNumber 回填优先用存量端子表", () => {
+  test("存量端子表里没有该端子 id 时，按下标取存量端子的 nodeNumber", () => {
+    // 母排端子被 syncBusNodeTerminals 重算成 t1（存量表里只有 t2），于是
+    // originalTerminalById.get("t1") 为空 → 走 node.terminals[0].nodeNumber = N7。
+    // 拓扑算出来的号是 1：断 7 而不是 1，才断得出「按存量号回填」而不是「拓扑号恰好相同」。
+    const bus = busWithTerminals("bus-mismatch", [BUS_TERMINAL("t2", "N7")]);
+    const load = createDefaultNode("ac-load", { x: 300, y: 100 });
+    const svg = buildSvgDocument([bus, load], [busToLoadEdge("bus-mismatch", load)] as never, {
+      width: 800,
+      height: 600,
+      imageAssets: {}
+    } as never);
+    expect(useNodeAttribute(svg, "bus-mismatch")).toBe(' node="7"');
+    expect(useNodeAttribute(svg, load.id)).not.toBe(' node="7"');
+  });
+
+  test("存量端子表里有该 id 时直接用存量号（与上一条构成对照）", () => {
+    // 同样的图，只把母排存量端子改成 t1：这时拓扑号与存量号都落在同一条路径上，
+    // 输出仍是存量号 —— 证明上一条不是「拓扑重算的号碰巧一样」。
+    const bus = busWithTerminals("bus-match", [BUS_TERMINAL("t1", "N4")]);
+    const load = createDefaultNode("ac-load", { x: 300, y: 100 });
+    const svg = buildSvgDocument([bus, load], [busToLoadEdge("bus-match", load)] as never, {
+      width: 800,
+      height: 600,
+      imageAssets: {}
+    } as never);
+    expect(useNodeAttribute(svg, "bus-match")).toBe(' node="4"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildSvgDeviceConnectorMarkup：voltagePaint.terminalRef 收到的端子 id
+// ---------------------------------------------------------------------------
+
+describe("buildSvgDeviceConnectorMarkup：terminalRef 收到的端子 id 形态", () => {
+  const nodeWithTerminals = (terminals: unknown[]): ModelNode => {
+    const node = createDefaultNode("ac-load", { x: 100, y: 100 });
+    return { ...node, terminals: terminals as never };
+  };
+  const collectTerminalRefArgs = (node: ModelNode) => {
+    const seen: string[] = [];
+    const markup = buildSvgDeviceConnectorMarkup(node, "energy", undefined, {
+      terminalRef: (terminalId: string) => {
+        seen.push(terminalId);
+        return "var(--t7)";
+      }
+    });
+    return { seen, markup };
+  };
+
+  test("端子有 id 时 terminalRef 收到原 id（对照组）", () => {
+    const { seen, markup } = collectTerminalRefArgs(nodeWithTerminals([BUS_TERMINAL("t1", "N1")]));
+    expect(seen).toEqual(["t1"]);
+    expect(markup).toContain('stroke="var(--t7)"');
+  });
+
+  test("端子缺 id 时 terminalRef 收到空串（不是 undefined 字面量）", () => {
+    // `String(terminal.id ?? "")`：id 缺失时传空串。若去掉 `?? ""`，
+    // terminalRef 收到的是 "undefined" 字符串 —— 断 `seen` 才能看出来。
+    const { seen, markup } = collectTerminalRefArgs(nodeWithTerminals([
+      { label: "", anchor: { x: 0.5, y: 0 }, type: "ac", nodeNumber: "N1" }
+    ]));
+    expect(seen).toEqual([""]);
+    expect(seen).not.toContain("undefined");
+    expect(markup).toContain('stroke="var(--t7)"');
   });
 });

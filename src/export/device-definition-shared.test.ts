@@ -1,7 +1,12 @@
 import { describe, expect, test } from "vitest";
 import * as shared from "./device-definition-shared";
 import * as legacy from "../customDeviceUtils";
-import { DEVICE_LIBRARY, baseDeviceKind, templateDerivedComponentLibraryInfo } from "../model";
+import {
+  DEVICE_LIBRARY,
+  baseDeviceKind,
+  templateDerivedComponentLibraryInfo,
+  resolveEffectiveTemplateParameterDefinitions
+} from "../model";
 import { DEVICE_DEFINITION_VISUAL_PARAM_KEYS } from "../deviceVisualParams";
 
 describe("src/export/device-definition-shared", () => {
@@ -464,5 +469,207 @@ describe("deviceDefinitionSharedKeyForTemplate", () => {
     expect(key.startsWith("shared:")).toBe(true);
     expect(key.slice("shared:".length))
       .toBe(shared.deviceDefinitionSharedIdentityForTemplate(DEVICE_LIBRARY[0]));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// deviceDefinitionOverrideForTemplate 的 class: 分支 + normalizeSharedDeviceDefinitionOverrides 的 peer 裁剪。
+// 这两条链上出错的共同形态是「静默」：class: 覆盖套错类名会让一个元件类的端子规格泄漏到别的类；
+// peer 裁剪判错会让本该保留的视觉覆盖整条消失。都不抛异常，只能靠断言钉住。
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("deviceDefinitionOverrideForTemplate：class: 元件类覆盖", () => {
+  // ac-vpp-box 所在分组 shared:ACContainer 有 3 个成员，且每个成员都不带 -vertical 后缀，
+  // 所以「peer 专属的 kind」是货真价实的第 5 类候选键（下面 L350 那条要靠它）。
+  const base = DEVICE_LIBRARY.find((template) => template.kind === "ac-vpp-box")!;
+  const peerKind = "ac-switch-box";
+  const className = shared.componentClassForConcreteTemplate(base as any);
+  const grouped = shared.groupPeerKindsBySharedKey(DEVICE_LIBRARY);
+
+  test("前置事实：base 自带参数表、className 非 Static —— 否则下面几条断的是兜底值", () => {
+    // §2：断言值不能恰好等于 fallback。这里先钉住夹具的两个前提，
+    // 免得日后有人改了内置库数据，本组用例悄悄退化成「只断兜底」。
+    expect(base.custom, "必须是内置模板（custom 为假才走 resolveEffectiveTemplateParameterDefinitions）").toBeFalsy();
+    expect(resolveEffectiveTemplateParameterDefinitions(base, DEVICE_LIBRARY).length).toBeGreaterThan(1);
+    expect(className.startsWith("Static"), "className 走静态库会让 class: 覆盖的语义换一族").toBe(false);
+    const peers = grouped.get(shared.deviceDefinitionSharedKeyForTemplate(base as any))!;
+    expect(peers).toContain(peerKind);
+    // 组里除 base 自己之外至少还有别的成员 —— peer 专属键才真的存在
+    expect(peers.filter((kind) => kind !== base.kind).length).toBeGreaterThan(0);
+  });
+
+  test("terminalCount 缺省时按 terminalTypes 的实际长度截断（不靠 terminalCount 也能定端子数）", () => {
+    // 既有那条用例同时给了 terminalCount: 3 和长度为 3 的 terminalTypes ——
+    // 两个来源同值，故 `terminalCount ?? terminalTypes.length` 删掉哪一侧都测不出来。
+    // 这里只给 terminalTypes，且故意用 p/q/r 这种非规范值（规范值是 ac/dc，硬编码变异会猜到）。
+    const out = shared.deviceDefinitionOverrideForTemplate(base, {
+      [`class:${className}`]: { terminalTypes: ["p", "q", "r"] }
+    } as any, DEVICE_LIBRARY, grouped)!;
+    expect(out.terminalTypes).toEqual(["p", "q", "r"]);
+    expect(out.terminalCount).toBe(3);
+    expect(out.terminalType).toBe("p");
+  });
+
+  test("terminalTypes 被 terminalCount 截短：多出来的端子连同 labels/roles/associations 一起丢掉", () => {
+    // 四条 slice 共用 classTerminalTypes.length 这一个上界，所以长度必须一致；
+    // 任一条把上界写成 terminalTypes.length 或写死常量，这里都会红。
+    const out = shared.deviceDefinitionOverrideForTemplate(base, {
+      [`class:${className}`]: {
+        terminalTypes: ["p", "q", "r"],
+        terminalLabels: ["L1", "L2", "L3", "L4"],
+        terminalRoles: ["R1", "R2", "R3", "R4"],
+        terminalAssociations: ["T1", "T2", "T3", "T4"]
+      }
+    } as any, DEVICE_LIBRARY, grouped)!;
+    expect(out.terminalTypes).toEqual(["p", "q", "r"]);
+    expect(out.terminalLabels).toEqual(["L1", "L2", "L3"]);
+    expect(out.terminalRoles).toEqual(["R1", "R2", "R3"]);
+    expect(out.terminalAssociations).toEqual(["T1", "T2", "T3"]);
+  });
+
+  test("terminalTypes 为空时 terminalType 退回模板自带的 —— 空数组本身不足以改写端子类型", () => {
+    // terminalCount=2 但 terminalTypes=[] ⇒ slice 得到空数组；空数组是 truthy，
+    // 于是仍会展开端子块，而 [0] 为 undefined 才真正需要 `?? template.terminalType`。
+    // 期望值取一个硬编码变异不会猜的 ZQXPROBE（规范值是 ac/dc）。
+    const tpl = { ...base, terminalType: "ZQXPROBE" } as any;
+    expect(tpl.terminalType).toBe("ZQXPROBE");
+    const out = shared.deviceDefinitionOverrideForTemplate(tpl, {
+      [`class:${className}`]: { terminalTypes: [], terminalCount: 2 }
+    } as any, DEVICE_LIBRARY, grouped)!;
+    expect(out.terminalTypes).toEqual([]);
+    expect(out.terminalCount).toBe(0);
+    expect(out.terminalType).toBe("ZQXPROBE");
+  });
+
+  test("派生元件按基类库名取 class: 覆盖，按派生库名取则完全落空（整条覆盖返回 undefined）", () => {
+    // terminalDefinitionClass 取的是 derivedInfo.baseComponentLibrary，而 componentClassForConcreteTemplate
+    // 取的是 derivedComponentLibrary —— 两者不同，这正是「按哪个键查」的判据。
+    const derived = DEVICE_LIBRARY.find((t) => t.kind === "ac-station-source")!;
+    const info = templateDerivedComponentLibraryInfo(derived)!;
+    // §2：先证明两个来源确实不同，否则双边断言没有鉴别力
+    expect(info.baseComponentLibrary).not.toBe(info.derivedComponentLibrary);
+    expect(shared.componentClassForConcreteTemplate(derived as any)).toBe(info.derivedComponentLibrary);
+
+    const byBase = shared.deviceDefinitionOverrideForTemplate(derived, {
+      [`class:${info.baseComponentLibrary}`]: { terminalTypes: ["p", "q"], terminalCount: 2 }
+    } as any, DEVICE_LIBRARY, grouped)!;
+    expect(byBase.terminalTypes).toEqual(["p", "q"]);
+    expect(byBase.terminalCount).toBe(2);
+
+    // 同一个覆盖改挂到派生库名下 ⇒ 该模板拿不到任何覆盖（无 shared / 无视觉 / 无 class 三者皆空）
+    const byDerived = shared.deviceDefinitionOverrideForTemplate(derived, {
+      [`class:${info.derivedComponentLibrary}`]: { terminalTypes: ["p", "q"], terminalCount: 2 }
+    } as any, DEVICE_LIBRARY, grouped);
+    expect(byDerived, "派生库名不是可用的 class 键").toBeUndefined();
+  });
+
+  test("peer 分组表缺该 sharedKey 的条目时，只按模板自身的候选键查 —— peer 的覆盖不再算数", () => {
+    // peerKind 是第 5 类候选键：既不是 sharedKey，也不是 legacySharedKey / kind / baseDeviceKind /
+    // deviceDefinitionKeyForTemplate。空表 ⇒ 它不在候选里 ⇒ 查不到那份参数表。
+    const overrides = {
+      [peerKind]: {
+        kind: peerKind,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        parameterDefinitions: [{ enName: "probe_peer_param", cnName: "探针" }]
+      }
+    };
+    const identity = shared.deviceDefinitionSharedIdentityForTemplate(base as any);
+    const baseKind = baseDeviceKind(base.kind);
+    const deviceKey = shared.deviceDefinitionKeyForTemplate(base as any);
+    for (const key of [shared.deviceDefinitionSharedKeyForTemplate(base as any), base.kind, baseKind, deviceKey, identity]) {
+      expect(peerKind === key, `peerKind 撞上了候选键 ${key}，本用例就失去鉴别力`).toBe(false);
+    }
+
+    const withTable = shared.deviceDefinitionOverrideForTemplate(base, overrides as any, DEVICE_LIBRARY, grouped)!;
+    expect(withTable.parameterDefinitions).toEqual([{ enName: "probe_peer_param", cnName: "探针" }]);
+
+    // 不传表时走的是独立 filter 路径，结果必须与查表路径一致（两条实现同源）
+    const noTable = shared.deviceDefinitionOverrideForTemplate(base, overrides as any, DEVICE_LIBRARY)!;
+    expect(noTable.parameterDefinitions).toEqual([{ enName: "probe_peer_param", cnName: "探针" }]);
+
+    // 传一张缺该键的空表 ⇒ 找不到 peer ⇒ 返回 undefined（三种路径两两不同，不是同一结果换皮）
+    const emptyTable = shared.deviceDefinitionOverrideForTemplate(base, overrides as any, DEVICE_LIBRARY, new Map());
+    expect(emptyTable, "空表下 peer 覆盖不该被查到").toBeUndefined();
+  });
+
+  test("没有任何参数表覆盖时回落到内置参数表，而不是留空", () => {
+    // 覆盖物只有 class: 端子（不含 parameterDefinitions）⇒ parameterSource 为空，
+    // 落进 builtInParameterDefinitions 那一档。既有那条 buildEffectiveLibraryTemplates 用例
+    // 断的是最终模板，本条断的是 deviceDefinitionOverrideForTemplate 自己返回的对象。
+    const out = shared.deviceDefinitionOverrideForTemplate(base, {
+      [`class:${className}`]: { terminalTypes: ["p"], terminalCount: 1 }
+    } as any, DEVICE_LIBRARY, grouped)!;
+    const builtIn = resolveEffectiveTemplateParameterDefinitions(base, DEVICE_LIBRARY);
+    expect(builtIn.length).toBeGreaterThan(1);
+    expect(out.parameterDefinitions).toEqual(builtIn);
+  });
+});
+
+describe("normalizeSharedDeviceDefinitionOverrides：peer 裁剪", () => {
+  const group = ["ac-vpp-box", "ac-switch-box", "ac-distribution-box"]
+    .map((kind) => DEVICE_LIBRARY.find((template) => template.kind === kind)!);
+
+  test("只剩视觉参数的 peer 整条保留 —— 键层面空空如也但 params 里有图标", () => {
+    // hasVisualContent 的左侧只看顶层键，右侧才看 params。覆盖里除 kind/updatedAt/params 外什么都没有，
+    // 所以左侧必然为假 —— 保住这条覆盖的**只有**右侧这一条路。
+    const overrides = {
+      "shared:ACContainer": {
+        kind: "shared:ACContainer",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        params: { u: "220" },
+        parameterDefinitions: [{ enName: "u", cnName: "电压" }]
+      },
+      "ac-switch-box": {
+        kind: "ac-switch-box",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        params: { icon: "i.svg" }
+      }
+    };
+    const out = shared.normalizeSharedDeviceDefinitionOverrides(overrides as any, group);
+    expect(out["ac-switch-box"], "只有视觉内容的 peer 不该被删").toBeDefined();
+    expect(out["ac-switch-box"]!.params).toEqual({ icon: "i.svg" });
+  });
+
+  test("两侧都为空的 peer 被整条删除（否则上面那条就成了恒绿断言）", () => {
+    // params 里只有业务参数 u，concreteDeviceDefinitionParams 会把它滤掉 ⇒ 视觉 params 为空；
+    // 顶层又只剩元字段 ⇒ 两条判据都为假 ⇒ 整条删除。
+    const overrides = {
+      "shared:ACContainer": {
+        kind: "shared:ACContainer",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        params: { u: "220" },
+        parameterDefinitions: [{ enName: "u", cnName: "电压" }]
+      },
+      "ac-distribution-box": {
+        kind: "ac-distribution-box",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        params: { u: "110" }
+      }
+    };
+    const out = shared.normalizeSharedDeviceDefinitionOverrides(overrides as any, group);
+    expect(out["ac-distribution-box"], "无任何视觉内容的 peer 该被删").toBeUndefined();
+    // 共享条目本身不受 peer 裁剪影响（对照组：证明上条删的是 peer 而不是 shared）
+    expect(out["shared:ACContainer"]!.parameterDefinitions).toEqual([{ enName: "u", cnName: "电压" }]);
+  });
+
+  test("peer 的 kind 恰好等于 sharedKey 时跳过裁剪 —— 否则共享条目会被自己的视觉化结果覆盖掉", () => {
+    // kind === "shared:" + identity 只能靠「kind 本身就是 shared: 前缀 + 组件库名」构造出来
+    // （身份取组件库名那一档：非派生件、dev_type 为空、组件库不以 Static 开头）。
+    const tpl = { kind: "shared:ACLoad", name: "探针", params: { component_type: "ACLoad" } } as any;
+    expect(shared.deviceDefinitionSharedIdentityForTemplate(tpl)).toBe("ACLoad");
+    expect(shared.deviceDefinitionSharedKeyForTemplate(tpl)).toBe(tpl.kind);
+
+    const overrides = {
+      "shared:ACLoad": {
+        kind: "shared:ACLoad",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        params: { probe_biz: "1" },
+        parameterDefinitions: [{ enName: "probe_shared", cnName: "探针" }]
+      }
+    };
+    const out = shared.normalizeSharedDeviceDefinitionOverrides(overrides as any, [tpl]);
+    expect(out[tpl.kind], "共享条目不该被 peer 裁剪掉").toBeDefined();
+    expect(out[tpl.kind]!.parameterDefinitions).toEqual([{ enName: "probe_shared", cnName: "探针" }]);
+    expect(out[tpl.kind]!.params).toEqual({ probe_biz: "1" });
   });
 });

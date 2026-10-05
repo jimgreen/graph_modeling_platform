@@ -1,8 +1,9 @@
 // 空间注册表：default 空间直接用数据根（不搬迁既有 data/），其余在 workspaces/ 下。
-import { expect, test, beforeEach, afterEach } from "vitest";
+import { expect, test, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, existsSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createSpaceStore, assertInSpace, resolveSpaceFromRequest, parseSpaceCookie, SPACE_COOKIE_NAME, SPACE_NAME_DUPLICATE } from "./spaceStore.mjs";
 
 let dataRoot;
@@ -368,3 +369,275 @@ test("cookie 解析：多 cookie、编码值、空值", () => {
   expect(parseSpaceCookie("")).toBe("");
   expect(parseSpaceCookie("other=1")).toBe("");
 });
+
+// ---------------------------------------------------------------------------
+// normalizeSpace / scanWorkspaces / load 的降级路径
+//
+// 这批用例的数据根一律指到**仓库内 tmp/**（下面 laneRoot），不碰系统 tmpdir，
+// 更不碰仓库真实的 data/ —— 本文件前半段那些用例写的是自己 mkdtemp 出来的
+// 临时根，与本批无关。
+//
+// 为什么不直接复用文件顶部的 dataRoot：那套 beforeEach 只建目录、不预置
+// spaces.json，而本批要断的正是「注册表**已经存在但内容残缺/畸形**」这一整族
+// 入口 —— 畸形输入必须落盘才能被 load() 读到。
+// ---------------------------------------------------------------------------
+
+const LANE_TMP = fileURLToPath(new URL("../tmp/ai-spaceStore-data/", import.meta.url));
+const laneRoots = [];
+
+const laneRoot = (label) => {
+  const dir = join(LANE_TMP, `${label}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
+  mkdirSync(dir, { recursive: true });
+  laneRoots.push(dir);
+  return dir;
+};
+
+afterEach(() => {
+  while (laneRoots.length > 0) rmSync(laneRoots.pop(), { recursive: true, force: true });
+});
+
+// console.warn 是本批多条用例的被测对象（告警文案就是契约的一部分：它告诉运维
+// 「磁盘上有、注册表里没有」的空间这次全看不见）。截下来断言，同时静音。
+// 必须在 finally 里还原 —— 漏还原会把它留给后面的既有用例。
+const captureWarn = () => {
+  const original = console.warn;
+  const lines = [];
+  console.warn = (...args) => { lines.push(args.map((a) => String(a)).join(" ")); };
+  return {
+    lines,
+    restore: () => { console.warn = original; },
+  };
+};
+
+// 直接调 createSpaceStore(dataRoot) 传的是参数，模块加载期没有缓存任何路径
+// （路径是每次调用时 resolve(dataRoot) 现算的），所以不需要 query 后缀强制新实例。
+
+test("注册表条目缺字段时：缺 name 回落成 id，缺 id（含整条为 null）被丢弃且不抛错", async () => {
+  const root = laneRoot("missing-fields");
+  writeFileSync(
+    join(root, "spaces.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      spaces: [
+        { id: "无名空间" },          // 缺 name → normalizeSpace 的 name 回落成 id
+        { name: "只有名字没有 id" }, // 缺 id   → id 回落成空串，随后被 isValidSpaceId 滤掉
+        null                          // 整条是 null：normalizeSpace 必须不抛
+      ]
+    }),
+    "utf-8"
+  );
+
+  const store = createSpaceStore(root);
+  await store.ensureInitialized();
+
+  const spaces = await store.list();
+  // 缺 id 的条目（含 null 那条）整条消失，且不会被顶替成某个凭空生成的空间
+  expect(spaces.map((s) => s.id)).toEqual(["default", "无名空间"]);
+  // name 回落成 id 本身：这条断言断的正是 `String(raw?.name ?? id)` 的右半边。
+  // 若变异把它改成 `?? "未命名"`，这里会红；若把 `?? id` 整个删掉（name 变 undefined）
+  // 也会红 —— 两种坏法都逃不掉。
+  expect(spaces.find((s) => s.id === "无名空间").name).toBe("无名空间");
+  expect(spaces.find((s) => s.id === "无名空间").pinned).toBe(false);
+});
+
+test("注册表里的 lastAccessAt 读回时保留并统一成字符串（数字入、字符串出）", async () => {
+  const root = laneRoot("last-access");
+  writeFileSync(
+    join(root, "spaces.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      spaces: [
+        // 故意写**数字**：ISO 串进出都是同一个字符串，删掉 String() 也照样绿；
+        // 只有非字符串入参才能把 `String(raw.lastAccessAt)` 这一层断出来。
+        { id: "default", name: "默认空间", lastAccessAt: 1700000000 },
+        { id: "没访问过", name: "没访问过" }
+      ]
+    }),
+    "utf-8"
+  );
+
+  const store = createSpaceStore(root);
+  await store.ensureInitialized();
+
+  const spaces = await store.list();
+  expect(spaces.find((s) => s.id === "default").lastAccessAt).toBe("1700000000");
+  // 对照组：没有这个字段的条目不得凭空长出 lastAccessAt（`: {}` 那半边）
+  expect(spaces.find((s) => s.id === "没访问过")).not.toHaveProperty("lastAccessAt");
+  // 落盘后仍然是字符串（归一化发生在写回之前）
+  expect(
+    JSON.parse(readFileSync(join(root, "spaces.json"), "utf-8")).spaces
+      .find((s) => s.id === "default").lastAccessAt
+  ).toBe("1700000000");
+});
+
+test("workspaces/ 读不动（不是目录）时告警，并只返回注册表里已登记的空间", async () => {
+  const root = laneRoot("workspaces-not-dir");
+  // workspaces 是个**文件** → readdir 抛 ENOTDIR（非 ENOENT），正是「目录读不动」
+  // 那条分支。ENOENT（目录压根不存在）是首启正常路径，不该告警。
+  writeFileSync(join(root, "workspaces"), "这不是目录", "utf-8");
+
+  const warn = captureWarn();
+  let spaces;
+  try {
+    const store = createSpaceStore(root);
+    await store.ensureInitialized();
+    spaces = await store.list();
+  } finally {
+    warn.restore();
+  }
+
+  expect(spaces.map((s) => s.id)).toEqual(["default"]);
+  const line = warn.lines.find((l) => l.includes("扫描工作区目录失败"));
+  expect(line).toBeTruthy();
+  // 告警必须带上错误码，否则运维看不出是权限问题还是磁盘坏了
+  expect(line).toContain("ENOTDIR");
+  // 降级只丢扫描结果，不动注册表内已登记的条目
+  expect(line).toContain("本次只返回注册表内已登记的空间");
+});
+
+test("注册表损坏时先备份原文件再按空注册表重建，告警三段文案齐全", async () => {
+  const root = laneRoot("corrupt-backup");
+  const raw = "{ 不是 JSON";
+  writeFileSync(join(root, "spaces.json"), raw, "utf-8");
+
+  const warn = captureWarn();
+  let spaces;
+  try {
+    const store = createSpaceStore(root);
+    await store.ensureInitialized();
+    spaces = await store.list();
+  } finally {
+    warn.restore();
+  }
+
+  expect(spaces.map((s) => s.id)).toEqual(["default"]);
+
+  const line = warn.lines.find((l) => l.includes("已按空注册表重建"));
+  expect(line).toBeTruthy();
+  expect(line).toContain("[空间] 读取");
+  // JSON.parse 的 SyntaxError 没有 code，靠 `error?.code ?? error?.name` 的第二档
+  expect(line).toContain("SyntaxError");
+  // 备份成功那一半：文案必须说清备份落在哪，且路径是真的（不只是文案自洽）
+  expect(line).toMatch(/已备份为 .*spaces\.json\.\d+\.bak，/);
+  expect(line).toMatch(/已按空注册表重建：\S/);
+  const bak = readdirSync(root).find((n) => /^spaces\.json\.\d+\.bak$/.test(n));
+  expect(bak).toBeTruthy();
+  // 备份的是**原始坏内容** —— 人工照抄回去才有意义
+  expect(readFileSync(join(root, bak), "utf-8")).toBe(raw);
+});
+
+test("注册表损坏且备份本身写不出时，如实告警「未能备份」而不是谎称已备份", async () => {
+  const root = laneRoot("backup-fails");
+  writeFileSync(join(root, "spaces.json"), "{ 坏文件", "utf-8");
+  // 备份文件名是 `<spaces.json>.<Date.now()>.bak`，时间戳不可预测，没法预置同名障碍。
+  // 这里把 Date.now 钉成 0，再在那个确切路径上放一个**目录**：writeFile 到已存在的
+  // 目录上必然失败（EISDIR），backupUnreadableSpacesFile 于是走 catch 返回 null。
+  // Date.now 只影响这一处文件名，new Date() 不经过它，故不影响其他时间戳。
+  mkdirSync(join(root, "spaces.json.0.bak"), { recursive: true });
+  const now = vi.spyOn(Date, "now").mockReturnValue(0);
+
+  const warn = captureWarn();
+  let spaces;
+  try {
+    const store = createSpaceStore(root);
+    await store.ensureInitialized();
+    spaces = await store.list();
+  } finally {
+    warn.restore();
+    now.mockRestore();
+  }
+
+  // 备份写失败不能连累降级重建：读失败当空表是既有契约
+  expect(spaces.map((s) => s.id)).toEqual(["default"]);
+  const line = warn.lines.find((l) => l.includes("已按空注册表重建"));
+  expect(line).toBeTruthy();
+  // 这一条断的是 backupUnreadableSpacesFile 的 catch 分支（返回 null）经由告警
+  // 文案三选一暴露出来的那半边。若 catch 改成返回一个非空值，告警就会谎称
+  // 「已备份为 …」，这里立刻红。
+  expect(line).toContain("未能备份（文件本身读不到）");
+  expect(line).not.toContain("已备份为");
+  // 备份确实没落地（那个 .bak 仍是空目录）
+  expect(readdirSync(join(root, "spaces.json.0.bak"))).toEqual([]);
+});
+
+test("读盘抛出连 name/message 都没有的值时，告警降级文案不出现 undefined", async () => {
+  // `error?.code ?? error?.name ?? "unknown"` 与 `error?.message ?? error` 的最后
+  // 两档只有抛出**非 Error 值**时才可达 —— 真实 fs 错误永远带 code 或 name，
+  // 所以这两档只能靠替换 node:fs/promises 才走得到（真实路径下它们是纯兜底）。
+  vi.doMock("node:fs/promises", async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+      ...actual,
+      readFile: async () => { throw {}; },
+      readdir: async () => { throw {}; }
+    };
+  });
+  const root = laneRoot("throw-nonerror");
+  // 只为证明 load() 走的是「读注册表失败」这条分支；内容本身不会被读到
+  writeFileSync(join(root, "spaces.json"), "{ 坏", "utf-8");
+
+  const warn = captureWarn();
+  let spaces;
+  try {
+    // query 后缀强制一个全新模块实例，让它拿到上面替换过的 fs
+    const { createSpaceStore: createThrowingStore } = await import("./spaceStore.mjs?throw-nonerror");
+    const store = createThrowingStore(root);
+    await store.ensureInitialized();
+    spaces = await store.list();
+  } finally {
+    warn.restore();
+    vi.doUnmock("node:fs/promises");
+  }
+
+  // 降级重建照旧（读失败当空表是既有契约）
+  expect(spaces.map((s) => s.id)).toEqual(["default"]);
+
+  const loadLine = warn.lines.find((l) => l.includes("已按空注册表重建"));
+  expect(loadLine).toBeTruthy();
+  expect(loadLine).toContain("失败（unknown）");
+  // `error?.message ?? error`：裸对象没有 message，于是回退到值本身
+  expect(loadLine).toContain("已按空注册表重建：[object Object]");
+  expect(loadLine).not.toContain("undefined");
+
+  const scanLine = warn.lines.find((l) => l.includes("扫描工作区目录失败"));
+  expect(scanLine).toBeTruthy();
+  expect(scanLine).toContain("（unknown）");
+  expect(scanLine).not.toContain("undefined");
+});
+
+test("workspaces/ 下的普通文件不会被登记成空间（只有目录才算）", async () => {
+  const root = laneRoot("stray-file");
+  mkdirSync(join(root, "workspaces", "真空间"), { recursive: true });
+  // 名字本身是**合法 id**（无扩展名），只差「不是目录」这一条 —— 既有那条
+  // 「非法目录名跳过」用的是 "a b" 这类会被 isValidSpaceId 拦掉的名字，
+  // 根本走不到 isDirectory 判定。
+  writeFileSync(join(root, "workspaces", "notadir"), "我是文件", "utf-8");
+
+  const store = createSpaceStore(root);
+  await store.ensureInitialized();
+
+  const ids = (await store.list()).map((s) => s.id);
+  expect(ids).toHaveLength(2);
+  expect(ids).toContain("default");
+  expect(ids).toContain("真空间");
+  expect(ids).not.toContain("notadir");
+});
+
+test("create 的名字归一后为空时，显示名回落成生成的 id", async () => {
+  const root = laneRoot("empty-name");
+  const store = createSpaceStore(root);
+  await store.ensureInitialized();
+
+  // 全空白 → normalizeSpaceName 归一成空串 → 断的正是 `name: trimmed || id` 的右半边。
+  // 注意这里走的是**非 HTTP 调用方**语义：HTTP 入口会先拒空名，store 不管。
+  const space = await store.create("   ");
+  expect(space.id).toBe("space");   // spaceIdFromName("") 的兜底名
+  expect(space.name).toBe("space"); // ← 若去掉 `|| id`，这里会变成 ""
+  expect((await store.list()).find((s) => s.id === "space").name).toBe("space");
+  // 对照组：名字里含非法 id 字符 → 归一化后 id 与 name 不同，证明 name 取的是
+  // 归一化后的**原名**（`trimmed`），而不是 id（`id || trimmed` 那种换序会红）。
+  const named = await store.create("工程 1");
+  expect(named.name).toBe("工程 1");
+  expect(named.id).toBe("工程-1");
+});
+

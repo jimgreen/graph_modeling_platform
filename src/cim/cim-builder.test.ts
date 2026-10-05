@@ -445,3 +445,104 @@ describe("collectMissingCriticalParams", () => {
     expect(missing).toEqual([]);
   });
 });
+
+// ── 阶段 2/3/4a/5 的兜底与守卫分支 ──
+describe("cim-builder 兜底与守卫分支", () => {
+  // 覆盖 L80 `input.projectName || 未命名`。
+  // 双侧断言：空串走兜底；纯空白串是 truthy，必须原样透传
+  //（若实现改成 `!input.projectName.trim()` 之类的加固，本断言会红）。
+  it("空 projectName → Substation 名为 未命名；纯空白串原样透传", () => {
+    const nodes = [makeNode({ id: "bus1", kind: "ac-bus", params: { i_vbase: "110" } })];
+    const blank = buildCimPackage({ nodes, edges: [], projectName: "", modelId: "m-blank" });
+    expect(blank.substations).toHaveLength(1);
+    expect(blank.substations[0].name).toBe("未命名");
+    expect(blank.substations[0].rdfId).toBe("SUB_m-blank");
+
+    const spaces = buildCimPackage({ nodes, edges: [], projectName: "  ", modelId: "m-blank" });
+    expect(spaces.substations[0].name).toBe("  "); // falsy vs 空白：不可混淆
+    expect(spaces.substations[0].name).not.toBe("未命名");
+  });
+
+  // 覆盖 L160 `keys.length === 0 continue`（acTopologyNode 合法但无 ac 端子）
+  // 与 L166 `bucket.length < 2 continue`（同拓扑号只有 1 个 ac 端子）。
+  //
+  // 等价性记录（变异验证实测 GREEN）：
+  // · L160 删掉后，多出的只是一个空数组桶；该桶在 L166 被 `< 2` 拦下，
+  //   且后续同拓扑号节点走 `if (bucket)` 真分支 push，桶内容与 `set(key, keys)` 相同 → 输出等价。
+  // · L166 删掉后，`for (index = 1; ...)` 对 length≤1 的桶本就不进循环 → 输出等价。
+  // 因此本用例只能证明「这两条守卫被执行」，无法证伪其删除；断言保持在真正受影响的
+  // 可见输出（CN 数量 / Terminal 归属）上。
+  it("acTopologyNode 有效但无 ac 端子 → 不入隐式合并；同拓扑号仅 1 个 ac 端子 → 不建组", () => {
+    const dcOnly = makeNode({
+      id: "dcOnly", kind: "dc-bus", acTopologyNode: 5,
+      terminals: [{ id: "d1", label: "d", type: "dc", anchor: { x: 0, y: 0 }, nodeNumber: "1" }]
+    });
+    const soloAc = makeNode({
+      id: "soloAc", kind: "ac-bus", params: { i_vbase: "110" }, acTopologyNode: 6,
+      terminals: [{ id: "a1", label: "1", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "1" }]
+    });
+    const pairA = makeNode({
+      id: "pairA", kind: "ac-bus", params: { i_vbase: "110" }, acTopologyNode: 7,
+      terminals: [{ id: "p1", label: "1", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "2" }]
+    });
+    const pairB = makeNode({
+      id: "pairB", kind: "ac-bus", params: { i_vbase: "110" }, acTopologyNode: 7,
+      terminals: [{ id: "p2", label: "1", type: "ac", anchor: { x: 0, y: 0 }, nodeNumber: "3" }]
+    });
+    const { connectivityNodes, terminals } = inferTopology({
+      nodes: [dcOnly, soloAc, pairA, pairB], edges: [], projectName: "t", modelId: "m"
+    });
+    expect(connectivityNodes).toHaveLength(1);
+    expect(connectivityNodes[0].rdfId).toBe("CN_1");
+    expect(terminals).toHaveLength(2);
+    expect(terminals.map((t) => t.conductingEquipmentId).sort()).toEqual(["N_pairA", "N_pairB"]);
+    for (const terminal of terminals) {
+      expect(terminal.connectivityNodeId).toBe("CN_1");
+    }
+  });
+
+  // 覆盖 L333 `ratedU > 0 ? ... : BV_UNKNOWN` 的 false 分支。
+  // 双侧断言保证断言值与「真分支产出」不同：ratedU>0 时产出的是 BV_110，
+  // 若守卫被改成 `>=` / 被删，兜底值会变成 BV_0 而非 BV_UNKNOWN → 本用例转红。
+  it("变压器缺一侧额定电压 → 该绕组 baseVoltageId 兜底 BV_UNKNOWN（ratedU=0）", () => {
+    const pkg = buildCimPackage({
+      nodes: [makeTransformer({ id: "trNoJ", name: "缺低压侧主变", params: { i_vbase: "110", sn: "50" } })],
+      edges: [], projectName: "t", modelId: "m"
+    });
+    expect(pkg.transformerEnds).toHaveLength(2);
+    expect(pkg.transformerEnds[0].ratedU).toBe(110);
+    expect(pkg.transformerEnds[0].baseVoltageId).toBe("BV_110");
+    expect(pkg.transformerEnds[0].ratedS).toBe(50);
+    expect(pkg.transformerEnds[1].ratedU).toBe(0);
+    expect(pkg.transformerEnds[1].baseVoltageId).toBe("BV_UNKNOWN");
+    expect(pkg.transformerEnds[1].baseVoltageId).not.toBe(pkg.transformerEnds[0].baseVoltageId);
+    expect(pkg.transformerEnds[1].ratedS).toBe(50);
+  });
+
+  // 覆盖 L491 `measurementTypeId ?? 空串` 与 L492 `decimalsOverride !== undefined`。
+  // i1 的 measurementTypeId 在运行时缺失（持久化边界允许缺字段），走 L491 右操作数 → Discrete；
+  // i2 无 analog 字样但显式给了小数位，走 L492 → Analog；
+  // i3 靠 defaultValue=0 判定（0 是 falsy，锁死 typeof 判断而非真值判断）；
+  // i4 无任何启发式特征 → Discrete，保证反向侧也有鉴别力。
+  it("无量测类型定义时的启发式：缺 measurementTypeId→Discrete、decimalsOverride→Analog、defaultValue=0→Analog", () => {
+    const items = [
+      { id: "i1", measurementTypeId: undefined, sourcePoint: "P1", name: "量测1" },
+      { id: "i2", measurementTypeId: "soc", sourcePoint: "SOC", decimalsOverride: 2 },
+      { id: "i3", measurementTypeId: "status", sourcePoint: "S", defaultValue: 0 },
+      { id: "i4", measurementTypeId: "breaker-state", sourcePoint: "B" }
+    ] as unknown as MeasurementGroup["items"];
+    const groups: MeasurementGroup[] = [{
+      id: "g-heur", nodeId: "load1", visible: true,
+      anchor: "top", offset: { x: 0, y: 0 }, layout: "vertical", items
+    }];
+    const pkg = buildCimPackage({
+      nodes: [makeNode({ id: "load1", kind: "ac-load", params: { i_vbase: "110" } })],
+      edges: [], projectName: "t", modelId: "m", measurementGroups: groups
+    });
+    expect(pkg.measurements.map((m) => m.measurementType)).toEqual(["Discrete", "Analog", "Analog", "Discrete"]);
+    expect(pkg.measurements.map((m) => m.name)).toEqual(["量测1", "SOC", "S", "B"]);
+    for (const measurement of pkg.measurements) {
+      expect(measurement.powerSystemResourceId).toBe("N_load1");
+    }
+  });
+});

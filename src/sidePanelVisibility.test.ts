@@ -481,3 +481,45 @@ describe("tour forced side panel expansion", () => {
     }
   });
 });
+
+// ─── 引导还原的第三道闸门 + 存储缺失档 ────────────────────────────────────
+describe("引导还原的写盘值闸门与 localStorage 缺失档", () => {
+  test("写盘值不是 pinned（用户在本帧刚点过模式按钮）时：不还原用户的选择", () => {
+    // 走到第三道闸门要同时满足三个条件：引导前不是 pinned（第 1 道不拦）、
+    // 当前是 pinned（第 2 道不拦）、写盘值非 null 且不是 pinned。
+    // 既有用例里凡是把 currentMode 换成 auto 的都提前在第 2 道返回了，这道闸门没被走到。
+    expect(resolveSidePanelModeAfterTour("hidden", "pinned", "auto", false)).toBeNull();
+    expect(resolveSidePanelModeAfterTour("hidden", "pinned", "hidden", true)).toBeNull();
+    expect(resolveSidePanelModeAfterTour("auto", "pinned", "hidden", false)).toBeNull();
+    // 换档对照：写盘值**就是** pinned 时必须还原。期望值（"hidden"/"auto"）与上面三条
+    // 完全不同 —— 没有这几条，上面三条可能只是因为「后面那步恒返回 null」。
+    expect(resolveSidePanelModeAfterTour("hidden", "pinned", "pinned", false)).toBe("hidden");
+    expect(resolveSidePanelModeAfterTour("auto", "pinned", "pinned", false)).toBe("auto");
+    // autoVisible=true 的 auto 面板本来就可见，同样不还原（第 4 步的 null 出口）。
+    expect(resolveSidePanelModeAfterTour("auto", "pinned", "pinned", true)).toBeNull();
+  });
+
+  test("localStorage 不存在时返回 null，且不落到存储调用上", () => {
+    const snapshot = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    // 用 getter 形态装 undefined：代码读到的确实是 undefined 档（局部 const 桩同样能让
+    // typeof 判成 undefined，这里选 getter 是为了下面那句桩自检能断言到「确实是 undefined」）。
+    //
+    // ⚠ 这道 typeof 守卫的唯一可观测作用是「不把那句 getItem 变成抛异常的调用」——
+    // 它抛出来的 TypeError 会被函数末尾的 catch 吞掉、同样返回 null，所以**单删守卫必然全绿**
+    // （实测：把 if 换成 if (false)，33 条用例一条不红，exit 0）。别把它当成「夹具没覆盖」。
+    // 守卫的承重由叠加变异证明（实测 RED）：删守卫 + 把 catch 改成 throw error ⇒
+    // 「expected [Function] to not throw an error but 'TypeError: Cannot read properties of
+    // undefined (reading getItem)' was thrown」。故本用例钉的是**契约**（缺失时返回 null、不抛），
+    // 而「守卫的作用是拦下那句必抛的 getItem」这条机制记在这里，别再重新调查一遍。
+    Object.defineProperty(globalThis, "localStorage", { get: () => undefined, configurable: true });
+    try {
+      expect(typeof localStorage).toBe("undefined");
+      expect(() => readPersistedSidePanelMode("tour-side-mode")).not.toThrow();
+      expect(readPersistedSidePanelMode("tour-side-mode")).toBeNull();
+    } finally {
+      if (snapshot) Object.defineProperty(globalThis, "localStorage", snapshot);
+      else delete (globalThis as Record<string, unknown>).localStorage;
+    }
+    expect("localStorage" in globalThis).toBe(snapshot !== undefined);
+  });
+});

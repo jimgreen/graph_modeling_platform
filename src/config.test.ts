@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 /** 两个前缀都由 vite define 注入的全局常量决定，测试里只能在 import 前打桩。 */
-async function loadConfig(env: { apiPrefix?: string; frontendBase?: string } = {}) {
+async function loadConfig(env: { apiPrefix?: string | null; frontendBase?: string | null } = {}) {
   vi.resetModules();
   if (env.apiPrefix !== undefined) vi.stubGlobal("__API_PREFIX__", env.apiPrefix);
   if (env.frontendBase !== undefined) vi.stubGlobal("__FRONTEND_BASE__", env.frontendBase);
@@ -88,5 +88,56 @@ describe("frontendPath", () => {
     expect(frontendPath("x")).toBe("/appx");
     const rooted = await loadConfig({ frontendBase: "/" });
     expect(rooted.frontendPath("x")).toBe("x");
+  });
+});
+
+// ── `??` 与 `||` 的分界：注入**空串**（falsy 但非 nullish）时，两条表达式给出不同结果。
+//   `(t ? X : undefined) ?? DEFAULT`  →  "" ?? DEFAULT  →  ""
+//   `(t ? X : undefined) || DEFAULT`  →  "" || DEFAULT  →  DEFAULT
+// 空串正是 vite define 可能产出的形态（`define: { __API_PREFIX__: '' }`），
+// 而把它悄悄换成 "/webgrp" 属于线上找不到后端 / 静态资源 404，且不报错。
+// 既有用例只注入过 "/webgrp" / "/api" / undefined 三个值（都是「非空串或 nullish」），
+// 所以这条分界此前没有任何断言在盯。
+//
+// 变异实测：`?? "/webgrp"` → `|| "/webgrp"`（L5）与 `?? "/"` → `|| "/"`（L11）此前都是
+// GREEN，加上下面两条用例后转红：
+//   · `AssertionError: expected '/webgrp' to be ''`（L5，config.test.ts:105）
+//   · `AssertionError: expected '/' to be ''`（L11，config.test.ts:114）
+describe("前缀回退用 ?? 而不是 ||：空串注入不被改写", () => {
+  test("API 前缀注入空串时保持空串（改成 || 会被写回 /webgrp）", async () => {
+    const { API_PREFIX, apiPath } = await loadConfig({ apiPrefix: "" });
+    // 两个断言都在看的正是变异真正改的那个值（导出常量本身，不是拼接结果）。
+    expect(API_PREFIX).toBe("");
+    expect(apiPath("/images")).toBe("/images");
+  });
+
+  test("base 注入空串时 FRONTEND_BASE 本身是空串（不是 /）", async () => {
+    // 既有那条「base 为空串时退化成只给子路径」只断言了 frontendPath("/x") === "/x"，
+    // 而 `"" || "/"` 同样产出 "/x"、再剥掉尾斜杠也还是 "" —— 两侧逐字节相同，
+    // 所以它对 `??`/`||` 这条分界**零鉴别力**。必须直接断常量本身。
+    const { FRONTEND_BASE, frontendPath } = await loadConfig({ frontendBase: "" });
+    expect(FRONTEND_BASE).toBe("");
+    expect(frontendPath("/x")).toBe("/x");
+  });
+
+  test("API 前缀注入 0 时保持 0 语义（?? 只吃 nullish，不吃 falsy）", async () => {
+    // 0 与兜底值 "/webgrp" 逐字符不同，故是有效判别输入（§6.18b）。
+    // 真值是 0 本身，所以下游拼出来是 "0/images"；写成 || 就会变成 "/webgrp/images"。
+    const { API_PREFIX, apiPath } = await loadConfig({ apiPrefix: 0 as unknown as string });
+    expect(API_PREFIX).toBe(0);
+    expect(apiPath("/images")).toBe("0/images");
+  });
+});
+
+describe("前缀常量被注入为 null 时仍然回退到默认值", () => {
+  test("null 是 nullish，?? 接住它，不产出字符串 \"null\"", async () => {
+    const { API_PREFIX, FRONTEND_BASE, apiPath, frontendPath } = await loadConfig({
+      apiPrefix: null,
+      frontendBase: null
+    });
+    expect(API_PREFIX).toBe("/webgrp");
+    expect(FRONTEND_BASE).toBe("/");
+    expect(apiPath("/images")).toBe("/webgrp/images");
+    expect(frontendPath("/x")).toBe("/x");
   });
 });

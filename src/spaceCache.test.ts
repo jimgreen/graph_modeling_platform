@@ -773,3 +773,211 @@ describe("storage 异常与边界输入", () => {
     expect(() => rememberCacheOwnerSpace("张三")).not.toThrow();
   });
 });
+
+// ============ 断言 5：清理函数自己的容错与「storage 不存在」守卫 ============
+//
+// 覆盖 `src/spaceCache.ts` 的 L284 / L293 / L307 / L326 / L327：
+//   · L284 `clearKeys` 的 `catch {}` ——「单项失败不阻断其余」的**逐项**容错
+//   · L293 `clearKeysByPrefix` 的早退 `if (!storage || prefixes.length === 0)`
+//   · L307 `clearKeysByPrefix` 的 `catch {}` —— 遍历抛错时整族清整体放弃
+//   · L326/L327 `typeof <storage> === "undefined" ? undefined : <storage>`
+//
+// 三条纪律（否则这批断言会恒绿）：
+//
+// ① **L326/L327 必须把属性整个 `delete`，不能只赋 `undefined`**。
+//    只赋 `undefined` 时 `typeof localStorage` 仍是 `"undefined"`（`typeof` 对
+//    值为 undefined 的已存在属性照样给出 `"undefined"`），且裸标识符求值也得到
+//    `undefined` —— 于是**「删掉 typeof 守卫」这种变异照样绿**，夹具把守卫藏起来了。
+//    `delete` 之后裸标识符才会真的 ReferenceError，守卫才有判别力。
+//    （上面那条既有的「localStorage 整个不存在」走的是 `= undefined`，它证明的是
+//    **读/写**两条早退，不覆盖 L326/L327 那两行。）
+//
+// ② **L284 的断言要落在「抛错点之后的那些 key」上**，不是落在抛错的那一项上。
+//    落在抛错项上只能证明「没删成功」，而 `catch {}` 改成 `return`（早退）
+//    同样满足它 —— 那时后面的项全都没被清，而断言照样通过。
+//
+// ③ **L307 的守卫证明只能来自「不抛」**：抛错时 `doomed` 是局部变量、整批丢弃，
+//    所以「清掉了什么」在有/无 catch 两种实现下**完全相同**（都等于没清）。
+//    唯一有差别的观察点就是异常会不会冒到调用方，故用 `.resolves` 把「拒绝」
+//    呈现成一条指名契约的断言失败。
+
+/**
+ * removeItem 只对**指定的那一个 key** 抛 SecurityError，其余照常删。
+ *
+ * 「只对一项抛」是关键：若所有项都抛，那么 `catch {}` 改成 `return` 与改成 `continue`
+ * 都表现为「后面的项没被清」—— 形态 1/形态 2 混在一起分不开。钉死单点后，
+ * 「跳过该项并继续」与「整段早退」才是两个互斥的结果。
+ */
+function createThrowOnOneRemoveStorageStub(throwingKey: string): {
+  storage: Storage;
+  base: Storage;
+  calls: { removeItem: string[] };
+} {
+  const base = createStorageStub();
+  const calls = { removeItem: [] as string[] };
+  const storage: Storage = {
+    get length() {
+      return base.length;
+    },
+    key: (index: number) => base.key(index),
+    getItem: (key: string) => base.getItem(key),
+    setItem: (key: string, value: string) => {
+      base.setItem(key, value);
+    },
+    removeItem: (key: string) => {
+      calls.removeItem.push(key);
+      if (key === throwingKey) throw securityError();
+      base.removeItem(key);
+    },
+    clear: () => base.clear()
+  };
+  return { storage, base, calls };
+}
+
+/** `key(index)` 抛 SecurityError（`removeItem` 正常）—— 逼 `clearKeysByPrefix` 的遍历抛错。 */
+function createThrowOnKeyStorageStub(): { storage: Storage; base: Storage; calls: { key: number } } {
+  const base = createStorageStub();
+  const calls = { key: 0 };
+  const storage: Storage = {
+    get length() {
+      return base.length;
+    },
+    key: (index: number) => {
+      calls.key += 1;
+      throw securityError();
+    },
+    getItem: (key: string) => base.getItem(key),
+    setItem: (key: string, value: string) => {
+      base.setItem(key, value);
+    },
+    removeItem: (key: string) => {
+      base.removeItem(key);
+    },
+    clear: () => base.clear()
+  };
+  return { storage, base, calls };
+}
+
+describe("清理函数自身的容错与 storage 缺失守卫", () => {
+  test("L284：某一项 removeItem 抛 SecurityError → 只跳过该项，抛错点之后的项照清", async () => {
+    const failing = SPACE_SCOPED_LOCAL_STORAGE_KEYS[0];
+    // 抛错点**之后**的连续几项：它们能不能被清掉，是「逐项容错」与「整段早退」的唯一分歧点
+    const following = SPACE_SCOPED_LOCAL_STORAGE_KEYS.slice(1, 4);
+    const probe = createThrowOnOneRemoveStorageStub(failing);
+    (globalThis as any).localStorage = probe.storage;
+    for (const key of [failing, ...following]) {
+      probe.storage.setItem(key, "dirty");
+    }
+    // 后续步骤也要照跑完（证明「单项失败」没有被放大成「整个清理失败」）
+    sessionStorage.setItem(SPACE_SCOPED_SESSION_STORAGE_KEYS[0], "dirty");
+    const db = await initDeviceLibraryDB();
+    await db.put("templates", { kind: "seed-kind", custom: true });
+
+    await expect(clearSpaceScopedBrowserCaches()).resolves.toBeUndefined();
+
+    // 抛错那一项仍在：容错是「跳过」，不是「假装删成功了」
+    expect(probe.base.getItem(failing)).toBe("dirty");
+    // 核心断言（纪律 ②）：抛错点之后的项全被删。`catch {}` 改成 `return` 时这条红。
+    expect(following.map((key) => probe.base.getItem(key))).toEqual([null, null, null]);
+    // 调用序列证明「抛错项确实被尝试过、且不是在末尾才试」——
+    // 只看「后面几项被删」无法区分「从一开始就跳过了失败项」与「真的一路试过去」
+    expect(probe.calls.removeItem[0]).toBe(failing);
+    expect(following.every((key) => probe.calls.removeItem.includes(key))).toBe(true);
+    expect(sessionStorage.getItem(SPACE_SCOPED_SESSION_STORAGE_KEYS[0])).toBeNull();
+    expect(await (await initDeviceLibraryDB()).getAll("templates")).toEqual([]);
+  });
+
+  test("L307：storage.key 抛 SecurityError → 整族清整体放弃且不向上抛，函数其余步骤照跑完", async () => {
+    const composed = `${SPACE_SCOPED_STORAGE_KEY_PREFIXES[0]}composed-lib-id`;
+    const exact = SPACE_SCOPED_LOCAL_STORAGE_KEYS[0];
+    const probe = createThrowOnKeyStorageStub();
+    (globalThis as any).localStorage = probe.storage;
+    probe.storage.setItem(exact, "dirty");
+    probe.storage.setItem(composed, "dirty");
+    // sessionStorage 是**正常**的：用来证明容错是「逐次调用」的，本地这次抛错
+    // 不影响下一轮对另一个 storage 的整族清（若把容错写成跨调用的全局状态就会露馅）
+    const sessionComposed = `${SPACE_SCOPED_STORAGE_KEY_PREFIXES[0]}session-composed-lib-id`;
+    sessionStorage.setItem(sessionComposed, "dirty");
+    const db = await initDeviceLibraryDB();
+    await db.put("graphTemplates", { id: "seed-graph", typeName: "常用模板" });
+
+    await expect(clearSpaceScopedBrowserCaches()).resolves.toBeUndefined();
+
+    // 抛错时 doomed 是局部变量、整批被丢弃，故拼装前缀项**未被清**。
+    // 这条不是「什么都没发生」的证据（同一结果在无 catch 时也成立，见纪律 ③），
+    // 它只是把「放弃」这件事钉死，真正的判别点是上面那条 resolves。
+    expect(probe.base.getItem(composed)).toBe("dirty");
+    // clearKeys 跑在 clearKeysByPrefix **之前**，故精确项已被清 —— 证明顺序与「抛错点」位置
+    expect(probe.base.getItem(exact)).toBeNull();
+    expect(probe.calls.key).toBeGreaterThan(0);
+    // 另一轮整族清照常生效（逐次容错，非全局熔断）
+    expect(sessionStorage.getItem(sessionComposed)).toBeNull();
+    expect(await (await initDeviceLibraryDB()).getAll("graphTemplates")).toEqual([]);
+  });
+
+  test("L326：localStorage 属性整个不存在（delete）→ sessionStorage 与 IDB 照清，不抛", async () => {
+    // 纪律 ①：必须是 `delete`（属性不存在），不是 `= undefined`。
+    delete (globalThis as any).localStorage;
+    expect("localStorage" in globalThis).toBe(false);
+    expect(typeof localStorage).toBe("undefined");
+
+    const sessionKey = SPACE_SCOPED_SESSION_STORAGE_KEYS[0];
+    const sessionComposed = `${SPACE_SCOPED_STORAGE_KEY_PREFIXES[0]}composed-lib-id`;
+    sessionStorage.setItem(sessionKey, "dirty");
+    sessionStorage.setItem(sessionComposed, "dirty");
+    const db = await initDeviceLibraryDB();
+    await db.put("templates", { kind: "seed-kind", custom: true });
+
+    // 这条同时覆盖 L293：`clearKeysByPrefix(undefined, prefixes)` 走 `!storage` 早退。
+    await expect(clearSpaceScopedBrowserCaches()).resolves.toBeUndefined();
+
+    expect(sessionStorage.getItem(sessionKey)).toBeNull();
+    expect(sessionStorage.getItem(sessionComposed)).toBeNull();
+    expect(await (await initDeviceLibraryDB()).getAll("templates")).toEqual([]);
+  });
+
+  test("L327：sessionStorage 属性整个不存在（delete）→ localStorage 与 IDB 照清，不抛", async () => {
+    delete (globalThis as any).sessionStorage;
+    expect("sessionStorage" in globalThis).toBe(false);
+    expect(typeof sessionStorage).toBe("undefined");
+
+    const dirty = SPACE_SCOPED_LOCAL_STORAGE_KEYS[0];
+    const composed = `${SPACE_SCOPED_STORAGE_KEY_PREFIXES[0]}composed-lib-id`;
+    localStorage.setItem(dirty, "dirty");
+    localStorage.setItem(composed, "dirty");
+    const db = await initDeviceLibraryDB();
+    await db.put("overrides", { kind: "seed-kind" });
+
+    await expect(clearSpaceScopedBrowserCaches()).resolves.toBeUndefined();
+
+    expect(localStorage.getItem(dirty)).toBeNull();
+    expect(localStorage.getItem(composed)).toBeNull();
+    expect(await (await initDeviceLibraryDB()).getAll("overrides")).toEqual([]);
+  });
+
+  test("L293 的 prefixes.length === 0 那一档在当前 API 下不可达：实参恒为非空模块常量", () => {
+    // clearKeysByPrefix 不是 export 的，唯一调用点是 clearSpaceScopedBrowserCaches，
+    // 实参恒为 SPACE_SCOPED_STORAGE_KEY_PREFIXES。故 L293 只按 `!storage` 那一档覆盖，
+    // **不要**假装已经覆盖了空前缀表那一档。
+    // 这条钉住前提：若清单被清空成 `[]`，下面的断言会红 —— 那时该档才需要行为断言。
+    expect(SPACE_SCOPED_STORAGE_KEY_PREFIXES.length).toBeGreaterThan(0);
+    expect(SPACE_SCOPED_STORAGE_KEY_PREFIXES).toEqual(
+      expect.arrayContaining([SPACE_SCOPED_STORAGE_KEY_PREFIXES[0]])
+    );
+  });
+
+  // 【实测记录 · 别重跑一遍再怀疑】L293 的 `!storage` 一档**当前无独立行为断言**，
+  // 因为它与 L307 的 try/catch 可证等价（变异实测，不是推断）：
+  //   变异 `!storage || prefixes.length === 0` → `prefixes.length === 0`：**31 passed（GREEN）**。
+  //   再叠加 L307 的 `catch {}` → 重抛：**3 failed**，红因是
+  //   `TypeError: Cannot read properties of undefined (reading 'length')`，
+  //   即被删掉的那半个守卫正是让 `storage.length`（L298）抛在 try 里、被 L307 吞掉。
+  // 可证前提：L293 与 `try {`（L296）之间**没有任何会抛的语句**（只有 `return; }`），
+  // 所以 storage===undefined 时两条路径的可观测结果完全相同 —— 都不删任何 key、都不抛。
+  // 因此：L293 分支**被覆盖**（`delete localStorage` 的用例确实走了它），
+  // 但它的判别力由 T3/T4 里的 **L326/L327 typeof 守卫**提供（删掉守卫时裸标识符先
+  // ReferenceError，根本走不到 L293）。想给 `!storage` 本身加判别力，需要先把 L307 的
+  // 容错去掉 —— 那属于改动生产代码的容错策略，不在本测试的职责内。
+  // 而 L293 的**第二个析取项**是有判别力的：`=== 0` → `!== 0` 实测 4 failed
+  // （拼装前缀 key 不再被清，见上面 T3/T4 里的 composed 断言）。
+});

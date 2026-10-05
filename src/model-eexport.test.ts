@@ -5986,3 +5986,165 @@ describe("multiModelRecordWithParent", () => {
     expect(result.params.parent).toBe("1");
   });
 });
+
+/**
+ * 未覆盖分支补齐：inferESection 的零阻抗自适应支路 / 储能段 dev_type 兜底，
+ * 以及 getRawEParamValue 的 dev_type、rated_capacity、legacy 高压侧量测、vbase、vltp 取值链。
+ *
+ * ⚠ 这些断言的**唯一生产出口是 inferESection / getEParamValue 本身**
+ * （零阻抗支路与储能段的「无 component_type / 关派生」形态、老存档缺 component_type 的节点），
+ * 所以一律走被测函数的原始形态，不经 buildEFileExport 的字段管线预处理 ——
+ * 经管线时 resolveEParameterFields 会先把 key 映射成别的 sourceName，下游分支根本走不到。
+ */
+describe("E 导出取值链未覆盖分支", () => {
+  /** 老存档 / 手写模型：params 里没有 component_type（判据 inferESection(kind) 的默认值就是 {}） */
+  function nodeWithoutComponentType(kind: DeviceKind): ModelNode {
+    const node = createDefaultNode(kind, { x: 0, y: 0 });
+    const params = { ...node.params };
+    delete params.component_type;
+    return { ...node, params } as ModelNode;
+  }
+
+  test("零阻抗自适应支路：无 component_type 时按 kind 字面量段落表（AC/DC 各自归位，不串段）", () => {
+    // component_type 在场时走的是 staticComponentLibrary 分支（本文件既有用例已覆盖），
+    // 只有把它删掉才落到这两条 kind 字面量分支 —— 前提先钉住，否则下面的段名可能来自另一条路
+    expect(inferESection("ac-zero-routable-branch", { component_type: "ACZeroBranch" })).toBe("ACZeroBranch");
+
+    const acZero = nodeWithoutComponentType("ac-zero-routable-branch");
+    const dcZero = nodeWithoutComponentType("dc-zero-routable-branch");
+    expect(acZero.params.component_type).toBeUndefined();
+    expect(dcZero.params.component_type).toBeUndefined();
+    expect(inferESection("ac-zero-routable-branch", acZero.params)).toBe("ACZeroBranch");
+    expect(inferESection("dc-zero-routable-branch", dcZero.params)).toBe("DCZeroBranch");
+    // dev_type 与段名同源：两条分支若被对调，这两行会互换而变红
+    expect(getEParamValue("dev_type", acZero)).toBe("ACZeroBranch");
+    expect(getEParamValue("dev_type", dcZero)).toBe("DCZeroBranch");
+
+    const payload = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "零阻抗自适应支路段归属",
+      nodes: [acZero, dcZero],
+      edges: []
+    }));
+    expect(payload.ACZeroBranch.rows.map((row) => row.name)).toEqual([acZero.name]);
+    expect(payload.DCZeroBranch.rows.map((row) => row.name)).toEqual([dcZero.name]);
+  });
+
+  test("储能段 dev_type：关掉派生标记后 ac-storage / dc-storage 仍各落本流发电机段", () => {
+    // 前提钉住：is_derived_component_library=0 让 templateDerivedComponentLibraryInfo 直接返回 null，
+    // 于是 ACGenerator/DCGenerator 只可能来自这两条 kind 分支（否则值相同，断言无鉴别力）。
+    // 顺带说明 is_derived_component_library 为何是这里的判别维度：ac-storage 默认命中派生族
+    // （基类段也是 ACGenerator），不带这个标记时本用例走的根本不是被测分支。
+    expect(templateDerivedComponentLibraryInfo({ kind: "ac-storage", params: { is_derived_component_library: "0" } })).toBeNull();
+    expect(templateDerivedComponentLibraryInfo({ kind: "dc-storage", params: { is_derived_component_library: "0" } })).toBeNull();
+
+    expect(inferESection("ac-storage", { is_derived_component_library: "0" })).toBe("ACGenerator");
+    expect(inferESection("dc-storage", { is_derived_component_library: "0" })).toBe("DCGenerator");
+
+    const acStorage = {
+      ...createDefaultNode("ac-storage", { x: 0, y: 0 }),
+      params: { is_derived_component_library: "0" }
+    } as ModelNode;
+    const dcStorage = {
+      ...createDefaultNode("dc-storage", { x: 0, y: 0 }),
+      params: { is_derived_component_library: "false" }
+    } as ModelNode;
+    expect(getEParamValue("dev_type", acStorage)).toBe("ACGenerator");
+    expect(getEParamValue("dev_type", dcStorage)).toBe("DCGenerator");
+
+    const payload = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "储能段归属",
+      nodes: [acStorage, dcStorage],
+      edges: []
+    }));
+    expect(payload.ACGenerator.rows.map((row) => row.name)).toEqual([acStorage.name]);
+    expect(payload.DCGenerator.rows.map((row) => row.name)).toEqual([dcStorage.name]);
+  });
+
+  test("dev_type 三级兜底末位：无 E 段的 kind 取 kind 名本身（不是空串）", () => {
+    // 段为空的两种成因都会落到末位兜底：is_container 参数、以及库外 kind。
+    // 这里用库外 kind —— 它同时钉住前提 inferESection === ""，否则 dev_type 可能取自 section 而非 kindName。
+    const kind = "ac-unknown-widget" as DeviceKind;
+    expect(inferESection(kind, {})).toBe("");
+
+    const node = {
+      ...createDefaultNode("ac-source", { x: 0, y: 0 }),
+      kind,
+      params: {}
+    } as ModelNode;
+    expect(getEParamValue("dev_type", node)).toBe("ac-unknown-widget");
+    // 对照：同一节点带 is_container 时段同样为空，兜底值不变（证明空段的两条成因同归一处）
+    expect(getEParamValue("dev_type", { ...node, params: { is_container: "1" } })).toBe("ac-unknown-widget");
+  });
+
+  test("HydroStorage.rated_capacity：capacity 兼容键兜底，两者皆缺时为空串", () => {
+    const tank = createDefaultNode("hydrogen-tank", { x: 0, y: 0 });
+    // 段名前提：capacity 兜底只在 HydroStorage 段生效
+    expect(inferESection("hydrogen-tank", tank.params)).toBe("HydroStorage");
+
+    const onlyCapacity = { ...tank, params: { ...tank.params, capacity: "777" } } as ModelNode;
+    delete onlyCapacity.params.rated_capacity;
+    // 非 canonical 值 777：删掉 capacity 兜底这一段就会得到空串而变红
+    expect(getEParamValue("rated_capacity", onlyCapacity)).toBe("777");
+
+    const neither = { ...tank, params: { ...tank.params } } as ModelNode;
+    delete neither.params.rated_capacity;
+    delete neither.params.capacity;
+    expect(getEParamValue("rated_capacity", neither)).toBe("");
+  });
+
+  test("ACTransformer 高压侧 legacy 字段：i_p 与 p 双缺时为空串", () => {
+    // i_p 不是 ACTransformer 段列，getEParamValue 原样把 key 传下去，才进 legacy 高压侧分支
+    expect(E_SECTION_COLUMNS.ACTransformer).not.toContain("i_p");
+    const transformer = createDefaultNode("ac-transformer", { x: 0, y: 0 });
+    const params = { ...transformer.params };
+    delete params.i_p;
+    delete params.p;
+    expect(getEParamValue("i_p", { ...transformer, params } as ModelNode)).toBe("");
+  });
+
+  test("vbase 取值链：params.vbase 优先于端子 vbase，两者皆缺为空串", () => {
+    // vbase 只在 ACNode/DCNode 段是列，而这两段的导出行走拓扑行管线（commonParams 里直接算 vbase），
+    // 不经 getRawEParamValue —— 所以这里必须自建 component_type=ACNode 的段形态才能进这条链。
+    const base = createDefaultNode("ac-source", { x: 0, y: 0 });
+    const acNodeLike = (params: Record<string, string>, terminalVbase?: string): ModelNode => ({
+      ...base,
+      kind: "customNodeThing" as DeviceKind,
+      params: { component_type: "ACNode", ...params },
+      terminals: terminalVbase === undefined ? [] : base.terminals.map((terminal) => ({ ...terminal, vbase: terminalVbase }))
+    });
+    expect(inferESection("customNodeThing", { component_type: "ACNode" })).toBe("ACNode");
+
+    // params 优先：两端给不同值，硬编码「只读端子」的变异会在这里现形
+    expect(getEParamValue("vbase", acNodeLike({ vbase: "380" }, "35"))).toBe("380");
+    // 端子兜底：params 缺失才轮到 terminals[0]
+    expect(getEParamValue("vbase", acNodeLike({}, "35"))).toBe("35");
+    // 无端子时整条链落空串（返回 undefined 的变异会在这里现形）
+    expect(getEParamValue("vbase", acNodeLike({}))).toBe("");
+  });
+
+  test("vltp 取值链：vltp > vbase > 端子 vbase，逐级兜底且结果 trim", () => {
+    const base = createDefaultNode("ac-source", { x: 0, y: 0 });
+    const acNodeLike = (params: Record<string, string>, terminalVbase?: string): ModelNode => ({
+      ...base,
+      kind: "customNodeThing" as DeviceKind,
+      params: { component_type: "ACNode", ...params },
+      terminals: terminalVbase === undefined ? [] : base.terminals.map((terminal) => ({ ...terminal, vbase: terminalVbase }))
+    });
+
+    // vltp 在，且带前后空白 → trim 生效（去掉 trim 会得到带空格的串而变红）
+    expect(getEParamValue("vltp", acNodeLike({ vltp: "  110  " }, "35"))).toBe("110");
+    // vltp 与 vbase 同时在场：必须 vltp 赢。
+    // ⚠ 只在「两者各自单独出现」的输入上断优先级是恒绿的 —— 两例里缺失的那个取到 undefined，
+    // 交换 `??` 两侧顺序后求值结果完全一样（纪律第 5 条：覆盖维度而非覆盖行）。
+    // 判别输入是「两个取值不同且都非空」的那一例。
+    expect(getEParamValue("vltp", acNodeLike({ vltp: "  110  ", vbase: "66" }, "35"))).toBe("110");
+    // vltp 缺 → 落到 params.vbase（同样 trim）
+    expect(getEParamValue("vltp", acNodeLike({ vbase: "  66  " }, "35"))).toBe("66");
+    // vltp 与 vbase 都缺 → 落到端子 vbase
+    expect(getEParamValue("vltp", acNodeLike({}, "  35  "))).toBe("35");
+    // 三级皆缺 → 空串
+    expect(getEParamValue("vltp", acNodeLike({}))).toBe("");
+  });
+});

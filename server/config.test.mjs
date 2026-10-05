@@ -419,3 +419,315 @@ describe("frontendPrefix 归一与 stripFrontendBase", () => {
     expect(only.stripShorter).toBe("/ap");
   });
 });
+
+// ── 同进程重新求值：模块求值期的那些分支 ────────────────────────────────
+//
+// 上面 loadWithEnv 把 env 组合放进**子进程**跑。子进程里的求值完全不进本进程的
+// v8 覆盖率，于是 config.mjs 里凡是**模块求值期**执行的代码（configFile 解析、
+// toPort、normalizeBase、apiPrefix/frontendPrefix 的取值链）在覆盖率报告里长期是 0 ——
+// 尽管它们的行为已被子进程用例逐条断言过。此处补的这组走同进程 + `?inproc=N`
+// 缓存击穿（Node ESM 以 query 区分同一文件的多次求值），让覆盖率与断言同时落在
+// 本进程。
+//
+// env 处理纪律：每次调用**前显式设置、调用后显式恢复**，不留残留给同文件后续用例
+// 与其它测试文件。恢复必须用 delete 而不是赋 undefined ——
+// process.env[k] = undefined 写入的是字符串 "undefined"，会让之后读该键的模块拿到脏值。
+// Vite 的 dynamic-import-helper 只接受**字面量** specifier，写成模板字符串会报
+// "Unknown variable dynamic import"。所以缓存击穿靠一组写死的 import 轮转：每个
+// query 串是一个独立的模块实例，Node ESM 以 query 区分同一文件的多次求值。
+// 池子容量必须 ≥ 全部调用次数 —— 重复用同一个 query 拿到的是缓存实例，不会重新求值。
+const INPROC_MODULES = [
+  () => import("./config.mjs?inproc=01"),
+  () => import("./config.mjs?inproc=02"),
+  () => import("./config.mjs?inproc=03"),
+  () => import("./config.mjs?inproc=04"),
+  () => import("./config.mjs?inproc=05"),
+  () => import("./config.mjs?inproc=06"),
+  () => import("./config.mjs?inproc=07"),
+  () => import("./config.mjs?inproc=08"),
+  () => import("./config.mjs?inproc=09"),
+  () => import("./config.mjs?inproc=10"),
+  () => import("./config.mjs?inproc=11"),
+  () => import("./config.mjs?inproc=12"),
+  () => import("./config.mjs?inproc=13"),
+  () => import("./config.mjs?inproc=14"),
+  () => import("./config.mjs?inproc=15"),
+  () => import("./config.mjs?inproc=16"),
+  () => import("./config.mjs?inproc=17"),
+  () => import("./config.mjs?inproc=18"),
+  () => import("./config.mjs?inproc=19"),
+  () => import("./config.mjs?inproc=20"),
+  () => import("./config.mjs?inproc=21"),
+  () => import("./config.mjs?inproc=22"),
+  () => import("./config.mjs?inproc=23"),
+  () => import("./config.mjs?inproc=24"),
+  () => import("./config.mjs?inproc=25"),
+  () => import("./config.mjs?inproc=26"),
+  () => import("./config.mjs?inproc=27"),
+  () => import("./config.mjs?inproc=28"),
+  () => import("./config.mjs?inproc=29"),
+  () => import("./config.mjs?inproc=30"),
+  () => import("./config.mjs?inproc=31"),
+  () => import("./config.mjs?inproc=32")
+];
+
+let inprocCursor = 0;
+const withInProcessEnv = async (patch) => {
+  if (inprocCursor >= INPROC_MODULES.length) throw new Error("in-process import 池已耗尽，请扩容");
+  const saved = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
+  for (const key of ENV_KEYS) delete process.env[key];
+  for (const [key, value] of Object.entries(patch)) {
+    if (value !== null) process.env[key] = value;
+  }
+  try {
+    const load = INPROC_MODULES[inprocCursor];
+    inprocCursor += 1;
+    return await load();
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+};
+
+/** 一个必然不存在的配置文件路径（覆盖 readConfig 的 catch 分支）。 */
+const absentConfigFile = () => join(tmpdir(), `gmp-inproc-absent-${process.pid}-${Math.random()}.json`);
+
+describe("GRAPH_MODEL_CONFIG 环境变量（模块求值期取值）", () => {
+  test("该变量指向的文件提供 host / 两端端口 / 两个前缀", async () => {
+    // 覆盖点：第 8 行的三元的**真**支（resolve(process.env.GRAPH_MODEL_CONFIG)）。
+    // 判别力：仓库根没有 platform.config.json，一旦这个变量被忽略，全部取值都会
+    // 落到 127.0.0.1 / 5173 / 5174 / webgrp / 根 —— 与下面的期望完全不同。
+    // 同时这一次求值会走到 readConfig 的正常返回（return parsed），把配置文件真正
+    // 读进来；返回 {} 时同样全红。
+    const file = configFileWith({
+      host: "10.9.8.7",
+      frontend: { port: 8080, prefix: "/app" },
+      backend: { port: 6001, prefix: "/from-file/" }
+    });
+    const mod = await withInProcessEnv({ GRAPH_MODEL_CONFIG: file });
+    expect(mod.host).toBe("10.9.8.7");
+    expect(mod.frontendPort).toBe(8080);
+    expect(mod.backendPort).toBe(6001);
+    expect(mod.frontendPrefix).toBe("/app/");
+    expect(mod.apiPrefix).toBe("/from-file");
+    expect(mod.apiPath("/images")).toBe("/from-file/images");
+  });
+
+  test("变量指向不存在的文件时走 catch 分支，全部回落默认值且不抛", async () => {
+    // 覆盖点：第 18 行的 return {}（readFileSync 抛 ENOENT）。
+    // 判别力：把 catch 整个删掉 / 改成重新抛，本用例在 import 处就红 —— 配置文件
+    // 写坏了恰恰是服务最需要起来的场合。
+    const mod = await withInProcessEnv({ GRAPH_MODEL_CONFIG: absentConfigFile() });
+    expect(mod.host).toBe("127.0.0.1");
+    expect(mod.frontendPort).toBe(5173);
+    expect(mod.backendPort).toBe(5174);
+    expect(mod.apiPrefix).toBe("/webgrp");
+    expect(mod.frontendPrefix).toBe("/");
+  });
+
+  test("文件存在但 JSON 语法错误时同样走 catch 分支", async () => {
+    // 与上一条同一条 catch，但输入维度不同：上一条是「文件不存在」（readFileSync
+    // 抛 ENOENT），这条是「读到了但 JSON.parse 抛 SyntaxError」。把 catch 收窄成
+    // 只吞 ENOENT（例如 `catch (e) { if (e.code !== "ENOENT") throw e; }`）
+    // 只有这条会红。
+    const mod = await withInProcessEnv({ GRAPH_MODEL_CONFIG: configFileWith("{ not json") });
+    expect(mod.host).toBe("127.0.0.1");
+    expect(mod.frontendPort).toBe(5173);
+    expect(mod.backendPort).toBe(5174);
+    expect(mod.apiPrefix).toBe("/webgrp");
+  });
+
+  test("文件内容是字符串时由 typeof 判定兜住，数组由 Array.isArray 判定兜住", async () => {
+    // 覆盖点：第 24 行那串判定的第 2、3 个操作数。
+    //   - "just-a-string" → parsed === null 为假、typeof !== "object" 为真，
+    //     短路，Array.isArray 那一项**不被求值**；
+    //   - ["a","b"]     → 前两项都为假，必须由 Array.isArray 兜住。
+    // 判别力：删掉整个 if，return parsed 会把 null / 字符串 / 数组原样交给下游，
+    // 模块求值期就在 cfg.host 上抛 TypeError，本用例红（已实测：删整条 → RED）。
+    //
+    // ⚠ 变异记录：只去掉 `|| Array.isArray(parsed)` 这一项，本用例**仍绿**（GREEN）。
+    // 这不是漏测，是可证的等价 —— 前提是下游只做具名属性访问：JSON.parse 产出的
+    // 数组 / 字符串 / 数字在 host、frontend?.port、backend?.port、backend?.prefix、
+    // frontend?.prefix 上取值恒为 undefined，与 {} 上的取值逐项相同（探针逐个枚举
+    // ["a","b"] / [] / {} / "str" / 123 / true 验过）。该等价的前提一旦被破坏（例如
+    // 改成 Object.assign(cfg, parsed) 之类会把数组下标、字符串长度混进配置），下面
+    // 逐项钉死的取值就是它的守卫。
+    const [fromString, fromArray, fromNumber] = [
+      await withInProcessEnv({ GRAPH_MODEL_CONFIG: configFileWith('"just-a-string"') }),
+      await withInProcessEnv({ GRAPH_MODEL_CONFIG: configFileWith('["a", "b"]') }),
+      await withInProcessEnv({ GRAPH_MODEL_CONFIG: configFileWith("123") })
+    ];
+    for (const mod of [fromString, fromArray, fromNumber]) {
+      expect(mod.host).toBe("127.0.0.1");
+      expect(mod.frontendPort).toBe(5173);
+      expect(mod.backendPort).toBe(5174);
+      expect(mod.apiPrefix).toBe("/webgrp");
+      expect(mod.frontendPrefix).toBe("/");
+    }
+  });
+
+  test("文件内容是字面 null 时兜住（不抛是本组唯一承重的判别用例）", async () => {
+    // 修复前：JSON.parse("null") 不抛，随后 cfg.host 在模块求值期抛 TypeError。
+    const mod = await withInProcessEnv({ GRAPH_MODEL_CONFIG: configFileWith("null") });
+    expect(mod.host).toBe("127.0.0.1");
+    expect(mod.apiPrefix).toBe("/webgrp");
+    expect(mod.frontendPrefix).toBe("/");
+  });
+});
+
+describe("normalizeBase（经 frontendPrefix 同进程求值）", () => {
+  test("空串与纯空白都归一到根", async () => {
+    // 覆盖点：第 34 行 `|| "/"` 的右侧。
+    // ⚠ 变异记录：把 `|| "/"` 改成 `|| ""`，本用例**仍绿**（GREEN）。这是**可证的
+    //   等价**，不是输入维度没覆盖：trim 后为空的输入（"" / "   " / "\t"）经 `|| ""`
+    //   得到的 v 仍是 ""，而 "" 走完后面三步（v === "/" 为假 → "".endsWith("/") 为假
+    //   → withSlash = "" + "/" = "/" → startsWith("/") 为真）得到的仍是 "/"。
+    //   探针枚举了 11 组输入（空串 / 纯空白 / 制表符 / 前后空白 / 带尾斜杠 / 不带尾斜杠
+    //   / 缺前导斜杠 / 根 / 前后空白+根 / 前后空白+缺斜杠）逐组比对，orig 与 mutant
+    //   输出全部相同 —— 等价覆盖整个定义域，不是「没测到」。
+    //   ⚠ 前提：后面三步的写法不变。若把第 36 行改成"空串不补斜杠"，该等价即失效。
+    const empty = await withInProcessEnv({ GRAPH_MODEL_FRONTEND_PREFIX: "" });
+    const blank = await withInProcessEnv({ GRAPH_MODEL_FRONTEND_PREFIX: "   " });
+    expect(empty.frontendPrefix).toBe("/");
+    expect(blank.frontendPrefix).toBe("/");
+  });
+
+  // 第 34 行的 `?? "/"` 那一支**不可达**，不替它写断言。
+  // normalizeBase 是本文件的私有函数，唯一调用方在第 66 行：
+  //   normalizeBase(process.env.GRAPH_MODEL_FRONTEND_PREFIX ?? cfg.frontend?.prefix ?? "/")
+  // 取值链末端已经有 `?? "/"`，所以传进来的 value 恒非 nullish，`?? "/"` 永不触发。
+  // 这是死代码，不是漏测；要让它可达得先改生产代码（把调用方的 `?? "/"` 去掉），
+  // 属于改语义，不在本任务范围内。
+
+  test("前后带空白时先 trim 再归一（覆盖 .trim 的可观测效果）", async () => {
+    // 覆盖点：第 34 行的 .trim()。
+    // 判别力：去掉 trim，"  /app  " 会变成 "/  /app  /"（先补尾斜杠、再补前导斜杠），
+    // 与期望的 "/app/" 差得远。
+    const mod = await withInProcessEnv({ GRAPH_MODEL_FRONTEND_PREFIX: "  /app  " });
+    expect(mod.frontendPrefix).toBe("/app/");
+  });
+
+  test("已带尾斜杠的直接采用，不重复追加", async () => {
+    // 覆盖点：第 36 行三元的**真**支（v）。
+    // 判别力：把它改成一律 `${v}/` 会得到 "/app//"，与 Vite 要求的单尾斜杠不符。
+    const mod = await withInProcessEnv({ GRAPH_MODEL_FRONTEND_PREFIX: "/app/" });
+    expect(mod.frontendPrefix).toBe("/app/");
+  });
+
+  test("不带尾斜杠的补一个", async () => {
+    // 覆盖点：第 36 行三元的**假**支。
+    // 判别力：改成一律取 v 会得到 "/app"，缺尾斜杠时前端相对路径资源会解析到上一层。
+    const mod = await withInProcessEnv({ GRAPH_MODEL_FRONTEND_PREFIX: "/app" });
+    expect(mod.frontendPrefix).toBe("/app/");
+  });
+
+  test("缺前导斜杠时补到最前面", async () => {
+    // 覆盖点：第 37 行三元的**假**支（`/${withSlash}`）。
+    // 判别力：删掉这个补斜杠，"app" 会原样留在 withSlash 里，frontendPrefix 变成
+    // "app/" —— stripFrontendBase 于是对所有路径都不 startsWith，base 部署直接失效。
+    const mod = await withInProcessEnv({ GRAPH_MODEL_FRONTEND_PREFIX: "app" });
+    expect(mod.frontendPrefix).toBe("/app/");
+    // 顺带断言归一后的下游行为确实变了：只有前缀是 "/app/" 时才剥得动。
+    expect(mod.stripFrontendBase("/app/icon-library/x")).toBe("/icon-library/x");
+    expect(mod.stripFrontendBase("/icon-library/x")).toBe("/icon-library/x");
+  });
+
+  test("已是根的原样返回（不经过补斜杠两步）", async () => {
+    // 覆盖点：第 34 行的 `v === "/"` 早退。这一步同样是行为钉子：删掉它，
+    // "/" 会先被补成 "//" 再原样返回，frontendPrefix 变成 "//"，而 stripFrontendBase
+    // 里 `frontendPrefix === "/"` 的早退随之失效（"/" 不 startsWith "//"，
+    // 但整串恒等映射仍在，纯靠本断言发现不了 —— 所以下一条同时钉住 stripRoot）。
+    const mod = await withInProcessEnv({ GRAPH_MODEL_FRONTEND_PREFIX: "/" });
+    expect(mod.frontendPrefix).toBe("/");
+    expect(mod.stripFrontendBase("/")).toBe("/");
+    expect(mod.stripFrontendBase("/icon-library/x")).toBe("/icon-library/x");
+  });
+});
+
+describe("toPort（经两个端口同进程求值）", () => {
+  test("端口环境变量是空串或纯空白时视同未设", async () => {
+    // 覆盖点：第 54 行的 if 体（return fallback）。
+    // 判别力：Number("") 是 0 且是有限数，所以第 56 行的有限性检查挡不住它 ——
+    // 删掉第 54 行，端口会变成 0，而 0 传给 listen 意味着随机端口，比回落默认值
+    // 更糟（服务起来了但没人知道它在哪）。纯空白同理（Number("  ") 也是 0）。
+    const empty = await withInProcessEnv({ VITE_PORT: "", IMAGE_SERVER_PORT: "" });
+    const blank = await withInProcessEnv({ VITE_PORT: "   ", IMAGE_SERVER_PORT: "\t" });
+    for (const mod of [empty, blank]) {
+      expect(mod.frontendPort).toBe(5173);
+      expect(mod.backendPort).toBe(5174);
+    }
+  });
+
+  test("端口环境变量不是有限数时回落默认值", async () => {
+    // 覆盖点：第 56 行三元的**假**支（`: fallback`）。
+    // 判别力：NaN 与 ±Infinity 都会一路传到 server.listen 与 vite server.port
+    // （表现为 RangeError），所以这里断的是「确实是既定默认值」而不是「有限」——
+    // 有限性对 0 之类同样成立，断它没有鉴别力。
+    const abc = await withInProcessEnv({ VITE_PORT: "abc", IMAGE_SERVER_PORT: "abc" });
+    const infinite = await withInProcessEnv({ VITE_PORT: "Infinity", IMAGE_SERVER_PORT: "-Infinity" });
+    for (const mod of [abc, infinite]) {
+      expect(mod.frontendPort).toBe(5173);
+      expect(mod.backendPort).toBe(5174);
+    }
+  });
+
+  test("端口环境变量是数字字符串时按数字取值，不被兜底改写", async () => {
+    // 覆盖点：第 54 行的**假**路径（typeof 是 string 但 trim 后非空）→ 第 56 行真支。
+    // 判别力：兜底若改成按 typeof 判数字，字符串端口会被全吃掉，期望的 3000/4000
+    // 变 5173/5174。
+    const mod = await withInProcessEnv({ VITE_PORT: "3000", IMAGE_SERVER_PORT: "4000" });
+    expect(mod.frontendPort).toBe(3000);
+    expect(mod.backendPort).toBe(4000);
+  });
+
+  test("端口来自配置文件时经可选链取出，取值同样规范化", async () => {
+    // 覆盖点：第 59、60 行的 `cfg.frontend?.port` / `cfg.backend?.port` 的**真**支
+    // （可选链左侧非 nullish 时才去取 .port）。此前所有用例要么带 VITE_PORT
+    // （?? 短路，右侧不被求值）、要么没有配置文件（cfg.frontend 是 undefined，
+    // 可选链短路），所以这一支在同进程里从未走过。
+    // 判别力：若把可选链去掉写成 cfg.frontend.port，配置文件缺 frontend 时模块求值
+    // 期就抛；本用例给的配置文件带 frontend，取值必须与文件一致。
+    const file = configFileWith({ frontend: { port: "8080" }, backend: { port: "6001" } });
+    const mod = await withInProcessEnv({ GRAPH_MODEL_CONFIG: file });
+    expect(mod.frontendPort).toBe(8080);
+    expect(mod.backendPort).toBe(6001);
+  });
+
+  test("配置文件里端口是 null 或非法串时由 toPort 兜住", async () => {
+    // 与上面同一条取值链的另一侧：值本身为 null（?? 只挡左操作数，挡不住
+    // cfg.frontend.port 自身是 null）与非数字串。
+    const nullFile = configFileWith({ frontend: { port: null }, backend: { port: null } });
+    const abcFile = configFileWith({ frontend: { port: "abc" }, backend: { port: "abc" } });
+    const fromNull = await withInProcessEnv({ GRAPH_MODEL_CONFIG: nullFile });
+    const fromAbc = await withInProcessEnv({ GRAPH_MODEL_CONFIG: abcFile });
+    for (const mod of [fromNull, fromAbc]) {
+      expect(mod.frontendPort).toBe(5173);
+      expect(mod.backendPort).toBe(5174);
+    }
+  });
+});
+
+describe("apiPrefix 尾斜杠剥离（经同进程求值）", () => {
+  test("配置文件的 backend.prefix 与环境变量都被剥掉尾斜杠", async () => {
+    // trimTrailingSlash 的多斜杠输入维度：/api/// 与 /api/ 都要剥成 /api。
+    // 判别力：正则改成只剥一个斜杠（replace(/\/$/, "")）时 /api/// 变 /api//，
+    // apiPath("/images") 于是是 /api///images，与前端拼的路径对不上。
+    const fromFile = await withInProcessEnv({
+      GRAPH_MODEL_CONFIG: configFileWith({ backend: { prefix: "/from-file///" } })
+    });
+    const fromEnv = await withInProcessEnv({ GRAPH_MODEL_API_PREFIX: "/api///" });
+    expect(fromFile.apiPrefix).toBe("/from-file");
+    expect(fromFile.apiPath("/images")).toBe("/from-file/images");
+    expect(fromEnv.apiPrefix).toBe("/api");
+    expect(fromEnv.apiPath("/images")).toBe("/api/images");
+  });
+
+  test("缺前导斜杠时不擅自补（钉住现状）", async () => {
+    // 补斜杠等于替调用方改配置，配置写错时应当看得见而不是被悄悄修正。
+    const mod = await withInProcessEnv({ GRAPH_MODEL_API_PREFIX: "webgrp" });
+    expect(mod.apiPrefix).toBe("webgrp");
+    expect(mod.apiPath("/images")).toBe("webgrp/images");
+  });
+});

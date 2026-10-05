@@ -16,6 +16,8 @@ import {
   createFitViewToSelection,
   createHandleMinimapNavigate,
   createHandleStaticButtonClick,
+  createJumpToAssociatedModel,
+  createOpenNodeDoubleClickEditor,
   createPlaceFloatingToolbar,
   createToolbarOverlapArea
 } from "./appToolbarHookFactories";
@@ -559,5 +561,331 @@ describe("createExecuteStaticButtonAction", () => {
     expect(scope.requestLoadSavedProject).toHaveBeenCalledWith(target.project, "S7");
     expect(scope.writeOperationLog).toHaveBeenCalledWith("按钮切换模型：主变接线");
     expect(scope.executeStaticButtonCommand).toHaveBeenCalledTimes(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. createJumpToAssociatedModel —— 关联图元跳模型的守卫（L48 / L61 / L65）
+// 目标行形态：`node.params?.model_id ?? ""`（L48）、`targets.length === 0`（L61）、
+// `targets.length > 1`（L65）。工厂只是转发依赖，所以断言全部落在
+// **showGlobalMessage 的实参**与**requestLoadSavedProject 的调用计数**上 ——
+// 断「不抛错」是废断言。
+//
+// 判别输入的取法（照 §6.13 / §6.18b 的规矩来，而不是机械套表）：
+// - L48 的 `??` 右臂：兜底值是 `""`，且要求**左操作数 nullish**。
+//   喂 `model_id: ""` 无效（`??` 对 `""` 不短路，右臂从未求值）；
+//   喂 `model_id: 0` 也无效（`String(0)` = `"0"`，非 nullish）。
+//   唯一的判别输入是「**params 键整体不存在**」→ `node.params?.model_id` 为 undefined。
+//   变异用形态 2（换右臂值）：`?? ""` → `?? "7"`，结果从「提示未定义」变成
+//   「按 idx=7 去查模型」——两条消息文本不同，指名了确切契约。
+// - L65 的 `> 1`：必须造**两个**匹配项（两个 scheme 各带一个 idx 相同、modelType 相同的项目）。
+//   只造一个时 `> 1` 与 `>= 1` 都成立 —— 那样的用例断不了条件本身。
+//
+// ⚠ L48 的形态 1（直接删掉 `?? ""`）判 GREEN，**不是夹具没覆盖**，而是可证等价
+//   （§6.20 路线 B 实测，勿重查）。机制：右臂只在左操作数 nullish 时求值，
+//   而 nullish 全域只有 undefined / null 两个值 ——
+//     原式 `String("")` = `""` → `Number("")` = 0
+//     删后 `String(undefined)` = `"undefined"` → `Number` = NaN；`String(null)` = `"null"` → NaN
+//   三个值在 L50 `!rawModelId || !Number.isInteger(modelIndex) || modelIndex <= 0`
+//   这道守卫上走的是**同一个出口**（提示未定义 + return）；`rawModelId` / `modelIndex`
+//   均为函数局部量，除此之外没有可观测出口，故两版逐输入输出相同。
+//   叠加验证：把 L50 缩成只剩 `modelIndex <= 0`（单独做这一条 = GREEN），
+//   再叠加删 `?? ""` ⇒ 转红
+//   `expected '未找到dc-model模型 idx=NaN；…' to contain '未定义有效的关联模型（model_id）'`，
+//   即被删掉的右臂确实参与了 `Number(...)` 的入参，只是那个差异被守卫的下游归一化抹平了。
+// ─────────────────────────────────────────────────────────────────────────────
+describe("createJumpToAssociatedModel", () => {
+  const makeScope = (over: Record<string, any> = {}) => ({
+    flattenSavedSchemes: (schemes: any) => schemes,
+    modelAssociationModelTypeForKind: vi.fn(() => "dc-model"),
+    requestLoadSavedProject: vi.fn(),
+    schemes: [] as any[],
+    showGlobalMessage: vi.fn(),
+    writeOperationLog: vi.fn(),
+    ...over
+  });
+
+  // 一个 idx=3、modelType 匹配的方案记录（flatMap 的元素是 { scheme, project }）
+  const schemeWithProject = (id: string, idx: number, name: string, modelType = "dc-model") => ({
+    id,
+    projects: [{ project: { idx, modelType }, name }]
+  });
+
+  const jumpNode = (params?: Record<string, any>) => ({
+    id: "n1",
+    kind: "ac-load",
+    name: "耦合电容器",
+    ...(params === undefined ? {} : { params })
+  });
+
+  test("L48 params 键整体不存在：提示「未定义有效的关联模型」，一个方案都不加载", () => {
+    // 关键：node 上**没有** params 键（不是 params:{}，也不是 model_id:""）
+    const scope = makeScope({ schemes: [schemeWithProject("S1", 3, "直流模型")] });
+
+    createJumpToAssociatedModel(scope)(jumpNode() as any);
+
+    expect(scope.showGlobalMessage).toHaveBeenCalledTimes(1);
+    expect(scope.showGlobalMessage.mock.calls[0][0]).toContain("未定义有效的关联模型（model_id）");
+    // 兜底值是 ""，所以 rawModelId 为空 ⇒ 一步都走不到查找那段
+    expect(scope.requestLoadSavedProject).toHaveBeenCalledTimes(0);
+    expect(scope.writeOperationLog).toHaveBeenCalledTimes(0);
+  });
+
+  test("L48 有 model_id：不被兜底吞掉，按 trim 后的 idx 命中唯一方案并加载", () => {
+    // 两侧对照：左臂成立时消息文本**完全不同**，证明上一条不是被同一个守卫拦下的
+    const scope = makeScope({ schemes: [schemeWithProject("S1", 3, "直流模型")] });
+
+    createJumpToAssociatedModel(scope)(jumpNode({ model_id: " 3 " }) as any);
+
+    expect(scope.showGlobalMessage).toHaveBeenCalledTimes(0);
+    expect(scope.requestLoadSavedProject).toHaveBeenCalledTimes(1);
+    expect(scope.requestLoadSavedProject.mock.calls[0][1]).toBe("S1");
+    expect(scope.writeOperationLog).toHaveBeenCalledTimes(1);
+    // params 有空格 ⇒ String(...).trim() 真被用到（去掉 trim 会按 idx=" 3 " 查不到）
+    expect(scope.requestLoadSavedProject.mock.calls[0][0].project.modelType).toBe("dc-model");
+  });
+
+  test("L65 两个模型命中同一 idx：提示「找到多个」并拒绝加载", () => {
+    const schemes = [schemeWithProject("S1", 3, "直流模型甲"), schemeWithProject("S2", 3, "直流模型乙")];
+    const scope = makeScope({ schemes });
+
+    createJumpToAssociatedModel(scope)(jumpNode({ model_id: "3" }) as any);
+
+    expect(scope.showGlobalMessage).toHaveBeenCalledTimes(1);
+    expect(scope.showGlobalMessage.mock.calls[0][0]).toContain("找到多个dc-model模型 idx=3");
+    expect(scope.requestLoadSavedProject).toHaveBeenCalledTimes(0);
+    expect(scope.writeOperationLog).toHaveBeenCalledTimes(0);
+  });
+
+  test("L65 唯一命中：加载第一个方案（与上一条构成 >1 的两侧对照）", () => {
+    const schemes = [schemeWithProject("S1", 3, "直流模型甲"), schemeWithProject("S2", 9, "别的模型")];
+    const scope = makeScope({ schemes });
+
+    createJumpToAssociatedModel(scope)(jumpNode({ model_id: "3" }) as any);
+
+    expect(scope.showGlobalMessage).toHaveBeenCalledTimes(0);
+    expect(scope.requestLoadSavedProject).toHaveBeenCalledTimes(1);
+    expect(scope.requestLoadSavedProject.mock.calls[0][1]).toBe("S1");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. createOpenNodeDoubleClickEditor —— 双击编辑器的四道早退闸门
+// （L88 非编辑/非活动层、L94 关闭抑制期、L118 image 早退）
+// 这三条都在 `export` 出来的工厂返回的闭包里，全部依赖经 `__appScope` 注入，
+// **不需要挂载组件、不需要 React 元素树**，因此断言直接落在
+// setNodeDoubleClickDialog / setImageTarget / setNodeDoubleClickDraft 的实参与
+// nodeDoubleClickOpenGuardRef.current 这个守卫写入上。
+//
+// 判别输入：
+// - L88 的 `!isEditMode || !activeLayerNodeIdSet.has(node.id)` 两个操作数**各断一条**。
+//   只断一个的话，把 `||` 换成 `&&` 后另一个操作数仍为真 ⇒ 恒绿。
+// - L94 的抑制期：ref 填 Number.MAX_SAFE_INTEGER（performance.now() 远小于它），
+//   对照侧填 0。喂「等于 now」无效 —— `<` 与 `<=` 在那种输入上无法区分。
+// - L118 的 editorKind === "image"：断言**两次 setImageTarget 调用的完整实参序列**
+//   （先 L115 的 null，再 L119 的 {kind:"node"}）。只断「被调用过一次」的话，
+//   非 image 分支也满足 ⇒ 恒绿。
+//
+// ⚠ L98/L104 的「`===` 翻成 `!==`」是**劣质 RED**（§6.14）：`&&` 右侧会因此被求值，
+//   而 `nodeDoubleClickOpenGuardRef.current` / `nodeDoubleClickDialog` 在多数用例里是 null
+//   ⇒ 报 `TypeError: Cannot read properties of null (reading 'time'/'nodeId')`，
+//   判别力低（任何字段缺失都产出同一个 TypeError）。这两条改用形态 2（把右操作数
+//   换成哨兵 `""`），拿到的是指名契约的 AssertionError。勿改回形态 3。
+// ─────────────────────────────────────────────────────────────────────────────
+describe("createOpenNodeDoubleClickEditor", () => {
+  const makeScope = (over: Record<string, any> = {}) => {
+    const scope: Record<string, any> = {
+      NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS: 300,
+      activeLayerNodeIdSet: new Set(["n1"]),
+      cloneNodeForDoubleClickDraft: (node: any) => ({ ...node }),
+      doubleClickDialogKindForNode: vi.fn(() => "text"),
+      flattenSavedSchemes: (schemes: any) => schemes,
+      flushSync: (fn: () => void) => fn(),
+      isBrowseMode: false,
+      isEditMode: true,
+      modelAssociationModelTypeForKind: vi.fn(() => ""),
+      nodeDoubleClickCloseSuppressUntilRef: { current: 0 },
+      nodeDoubleClickDialog: null,
+      nodeDoubleClickOpenGuardRef: { current: null },
+      requestLoadSavedProject: vi.fn(),
+      schemes: [],
+      selectCanvasGraphics: vi.fn(),
+      setContextMenu: vi.fn(),
+      setImageTarget: vi.fn(),
+      setNodeDoubleClickDialog: vi.fn(),
+      setNodeDoubleClickDraft: vi.fn(),
+      showGlobalMessage: vi.fn(),
+      writeOperationLog: vi.fn(),
+      ...over
+    };
+    return scope;
+  };
+
+  const editNode = { id: "n1", kind: "static-text", name: "文字按钮" };
+
+  test("L88 非编辑模式：连闸门后的选择动作都不发生", () => {
+    const scope = makeScope({ isEditMode: false });
+
+    createOpenNodeDoubleClickEditor(scope)(editNode as any);
+
+    expect(scope.selectCanvasGraphics).toHaveBeenCalledTimes(0);
+    expect(scope.setNodeDoubleClickDialog).toHaveBeenCalledTimes(0);
+    // 守卫 ref 没被写 ⇒ 后续的双击仍然可以打开弹窗
+    expect(scope.nodeDoubleClickOpenGuardRef.current).toBe(null);
+  });
+
+  test("L88 编辑模式但图元不在活动层集合里：同样早退", () => {
+    const scope = makeScope({ activeLayerNodeIdSet: new Set(["other"]) });
+
+    createOpenNodeDoubleClickEditor(scope)(editNode as any);
+
+    expect(scope.selectCanvasGraphics).toHaveBeenCalledTimes(0);
+    expect(scope.setNodeDoubleClickDialog).toHaveBeenCalledTimes(0);
+    expect(scope.nodeDoubleClickOpenGuardRef.current).toBe(null);
+  });
+
+  test("L94 关闭抑制期未过：不打开弹窗，也不消费这次双击", () => {
+    // performance.now() 是「进程启动以来的毫秒」，恒远小于 MAX_SAFE_INTEGER
+    const scope = makeScope({ nodeDoubleClickCloseSuppressUntilRef: { current: Number.MAX_SAFE_INTEGER } });
+
+    createOpenNodeDoubleClickEditor(scope)(editNode as any);
+
+    expect(scope.setNodeDoubleClickDialog).toHaveBeenCalledTimes(0);
+    expect(scope.setNodeDoubleClickDraft).toHaveBeenCalledTimes(0);
+    expect(scope.selectCanvasGraphics).toHaveBeenCalledTimes(0);
+    // 抑制期早退发生在守卫 ref 写入之前 ⇒ 这次双击不占去重槽
+    expect(scope.nodeDoubleClickOpenGuardRef.current).toBe(null);
+  });
+
+  test("L94 抑制期已过：正常打开 text 弹窗（与上一条构成 now < ref 的两侧对照）", () => {
+    const scope = makeScope({ nodeDoubleClickCloseSuppressUntilRef: { current: 0 } });
+
+    createOpenNodeDoubleClickEditor(scope)(editNode as any);
+
+    expect(scope.setNodeDoubleClickDialog).toHaveBeenCalledTimes(2);
+    expect(scope.setNodeDoubleClickDialog.mock.calls).toEqual([
+      [null],
+      [{ kind: "text", nodeId: "n1" }]
+    ]);
+    expect(scope.nodeDoubleClickOpenGuardRef.current).toEqual({ key: "n1:text", time: expect.any(Number) });
+  });
+
+  test("L118 editorKind 为 image：只设 imageTarget，不开弹窗也不建草稿", () => {
+    const scope = makeScope({ doubleClickDialogKindForNode: vi.fn(() => "image") });
+
+    createOpenNodeDoubleClickEditor(scope)(editNode as any);
+
+    // 断言**完整调用序列**：L115 的 null 之后必须是 L119 的 { kind:"node", nodeId }
+    expect(scope.setImageTarget.mock.calls).toEqual([[null], [{ kind: "node", nodeId: "n1" }]]);
+    expect(scope.setNodeDoubleClickDialog.mock.calls).toEqual([[null]]);
+    // image 分支在 L120 自带 return ⇒ 草稿只被 L117 清成 null，从未被写入
+    expect(scope.setNodeDoubleClickDraft.mock.calls).toEqual([[null]]);
+    expect(scope.selectCanvasGraphics).toHaveBeenCalledWith(["n1"], []);
+    // image 分支自带 return ⇒ 不会掉到 L127 的「当前图元没有双击定义」
+    expect(scope.showGlobalMessage).toHaveBeenCalledTimes(0);
+  });
+
+  test("L118 非 image：setImageTarget 只有 L115 的那一次 null（两侧对照）", () => {
+    const scope = makeScope();
+
+    createOpenNodeDoubleClickEditor(scope)(editNode as any);
+
+    expect(scope.setImageTarget.mock.calls).toEqual([[null]]);
+    expect(scope.setNodeDoubleClickDialog.mock.calls).toEqual([
+      [null],
+      [{ kind: "text", nodeId: "n1" }]
+    ]);
+  });
+
+  test("未定义双击类型的图元：走末尾提示，两处 setter 都不写对象", () => {
+    const scope = makeScope({ doubleClickDialogKindForNode: vi.fn(() => "none") });
+
+    createOpenNodeDoubleClickEditor(scope)(editNode as any);
+
+    expect(scope.showGlobalMessage).toHaveBeenCalledWith("当前图元没有双击定义。");
+    expect(scope.setNodeDoubleClickDialog.mock.calls).toEqual([[null]]);
+    expect(scope.setNodeDoubleClickDraft.mock.calls).toEqual([[null]]);
+    // 守卫 ref 已写入 ⇒ 紧接着的重复双击会被去重闸门吃掉
+    expect(scope.nodeDoubleClickOpenGuardRef.current).toEqual({ key: "n1:none", time: expect.any(Number) });
+  });
+
+  test("L104/L106 同 kind 同 nodeId 的弹窗已经开着：只补记去重 ref，不重开", () => {
+    // 两侧都在 true 才进入该 if：kind 相等 ∧ nodeId 相等。
+    // 少造一个条件的话，另一侧根本走不到 —— 这里两边都造。
+    const scope = makeScope({ nodeDoubleClickDialog: { kind: "text", nodeId: "n1" } });
+
+    createOpenNodeDoubleClickEditor(scope)(editNode as any);
+
+    expect(scope.selectCanvasGraphics).toHaveBeenCalledTimes(0);
+    expect(scope.setImageTarget).toHaveBeenCalledTimes(0);
+    expect(scope.setNodeDoubleClickDialog).toHaveBeenCalledTimes(0);
+    expect(scope.setNodeDoubleClickDraft).toHaveBeenCalledTimes(0);
+    // L107 仍写去重 ref —— 这是本分支与 L88/L94 早退唯一的可观测差别
+    expect(scope.nodeDoubleClickOpenGuardRef.current).toEqual({ key: "n1:text", time: expect.any(Number) });
+  });
+
+  test("L104/L106 kind 相同但 nodeId 不同（换了个图元）：照常重开弹窗", () => {
+    const scope = makeScope({ nodeDoubleClickDialog: { kind: "text", nodeId: "n2" } });
+
+    createOpenNodeDoubleClickEditor(scope)(editNode as any);
+
+    expect(scope.setNodeDoubleClickDialog.mock.calls).toEqual([
+      [null],
+      [{ kind: "text", nodeId: "n1" }]
+    ]);
+  });
+
+  test("L98/L100 去重窗口内的同一次双击：原样保留 ref 的旧时间戳，不开弹窗", () => {
+    // guardKey = `${node.id}:${editorKind}` = "n1:text"；时间差取 0ms，必 < DEDUPE_MS(300)。
+    // 断言的是 **ref 没被覆写**（旧 time 逐字保留）—— 若去重闸门被删，time 会被换成新的 now。
+    const openedAt = performance.now();
+    const scope = makeScope({ nodeDoubleClickOpenGuardRef: { current: { key: "n1:text", time: openedAt } } });
+
+    createOpenNodeDoubleClickEditor(scope)(editNode as any);
+
+    expect(scope.nodeDoubleClickOpenGuardRef.current).toEqual({ key: "n1:text", time: openedAt });
+    expect(scope.selectCanvasGraphics).toHaveBeenCalledTimes(0);
+    expect(scope.setNodeDoubleClickDialog).toHaveBeenCalledTimes(0);
+    expect(scope.setNodeDoubleClickDraft).toHaveBeenCalledTimes(0);
+  });
+
+  test("L98/L100 key 不同（同一图元换了编辑器类型）：不算重复，正常开弹窗", () => {
+    const openedAt = performance.now();
+    const scope = makeScope({ nodeDoubleClickOpenGuardRef: { current: { key: "n1:image", time: openedAt } } });
+
+    createOpenNodeDoubleClickEditor(scope)(editNode as any);
+
+    expect(scope.setNodeDoubleClickDialog.mock.calls).toEqual([
+      [null],
+      [{ kind: "text", nodeId: "n1" }]
+    ]);
+    // ref 已被换成新的 key
+    expect(scope.nodeDoubleClickOpenGuardRef.current!.key).toBe("n1:text");
+  });
+
+  test("L92 没有 performance 全局时改用 Date.now()：去重 ref 里记的是墙上时钟", () => {
+    // node 环境下 performance 恒存在，所以这条只能靠 stubGlobal 打掉。
+    // 断言落在 ref 上记录的 time：Date.now() ≈ 1.7e12，performance.now() 是进程启动以来的小值，
+    // 两者差 6 个数量级 —— 若左臂被跳过，断言立刻转红。
+    const scope = makeScope();
+    vi.stubGlobal("performance", undefined);
+    try {
+      createOpenNodeDoubleClickEditor(scope)(editNode as any);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(scope.nodeDoubleClickOpenGuardRef.current!.time).toBeGreaterThan(1_000_000_000_000);
+    expect(scope.setNodeDoubleClickDialog.mock.calls).toEqual([
+      [null],
+      [{ kind: "text", nodeId: "n1" }]
+    ]);
+  });
+
+  test("L92 performance 存在时走 performance.now()：与上一条构成时间源两侧对照", () => {
+    const scope = makeScope();
+
+    createOpenNodeDoubleClickEditor(scope)(editNode as any);
+
+    expect(scope.nodeDoubleClickOpenGuardRef.current!.time).toBeLessThan(1_000_000_000_000);
   });
 });

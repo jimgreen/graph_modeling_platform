@@ -1,4 +1,5 @@
 import { describe, test, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   AC_CONTAINER_POOL_KEY,
   CONTAINER_KINDS,
@@ -1438,5 +1439,168 @@ describe("容器手动尺寸", () => {
       nodes: [manual, node("d1", "ac-load", 900, 400) as any], movedIds: ["d1"], altKey: false, repelNonMembers: true
     });
     expect(updates.find((n) => n.id === "c1")!.size).toEqual({ ...CONTAINER_MIN_SIZE });
+  });
+});
+
+// ─── 缺省值/兜底口径:异常节点(无 name)不许把 undefined 渲染进界面文案 ─────────
+// 这一组全部覆盖同一种手误:`String(n.name ?? "")` 的 `??` 右臂被删 → 下拉/弹窗/确认框
+// 里出现字符串 "undefined"。每条都带**有 name 的对照组**,证明断言不是恒空 ——
+// 否则「期望值恰好等于兜底值」会让断言无判别力。
+describe("缺省值兜底(无 name 的异常节点)", () => {
+  test("下拉 label:容器无 name → 标签为空串(不是字符串 undefined)", () => {
+    const nameless = { ...node("c1", "ac-vpp-box", 0, 0), name: undefined } as any;
+    // 有 name 的对照组:标签用真名(证明不是恒空)
+    expect(containerSelectOptions([{ ...nameless, name: "开关箱甲" }])[1]).toEqual({ label: "开关箱甲", value: "c1" });
+    expect(containerSelectOptions([nameless])[1]).toEqual({ label: "", value: "c1" });
+    // 同一 helper 的另一出口:绑定设备候选(成员无 name)
+    const member = { ...node("m1", "ac-load", 0, 0), name: undefined, containerId: "c1" } as any;
+    expect(containerMemberOptions([nameless, member], "c1")).toEqual([{ label: "", value: "m1" }]);
+    expect(containerMemberOptions([nameless, { ...member, name: "负荷A" }], "c1")).toEqual([{ label: "负荷A", value: "m1" }]);
+    // 再一个出口:名称下拉候选
+    expect(containerNameOptions("ac-vpp-box", [nameless])).toEqual([{ label: "", value: "c1" }]);
+  });
+
+  test("containerKindSwitch:切到有该类型容器的类型 → 名称取该容器 name;无 name 则空串", () => {
+    const nameless = { ...node("c1", "ac-vpp-box", 0, 0), name: undefined } as any;
+    // 对照组:容器有 name → 草稿名用真名
+    expect(containerKindSwitch("ac-vpp-box", [{ ...nameless, name: "虚拟电厂7" }]))
+      .toEqual({ kind: "ac-vpp-box", name: "虚拟电厂7", containerId: "c1" });
+    expect(containerKindSwitch("ac-vpp-box", [nameless]))
+      .toEqual({ kind: "ac-vpp-box", name: "", containerId: "c1" });
+    // 对照组:该类型无容器 → 走默认名(不是 name 兜底那条臂)
+    expect(containerKindSwitch("ac-switch-box", [nameless]))
+      .toEqual({ kind: "ac-switch-box", name: "开关箱1", containerId: "" });
+  });
+
+  test("containerNamePick:命中已有容器 → 加入它;容器无 name 时草稿名为空串", () => {
+    const nameless = { ...node("c1", "ac-vpp-box", 0, 0), name: undefined } as any;
+    // 对照组:有 name → 草稿名同步为该容器名
+    expect(containerNamePick("c1", "ac-vpp-box", [{ ...nameless, name: "虚拟电厂7" }]))
+      .toEqual({ kind: "ac-vpp-box", name: "虚拟电厂7", containerId: "c1" });
+    expect(containerNamePick("c1", "ac-vpp-box", [nameless]))
+      .toEqual({ kind: "ac-vpp-box", name: "", containerId: "c1" });
+  });
+
+  test("默认容器名:未落库的 kind 兜底为 kind 本身(不产 undefined1)", () => {
+    const ghost = "zz-unknown-box" as DeviceKind;
+    expect(defaultContainerName(ghost, [])).toBe("zz-unknown-box1");
+    expect(defaultContainerName(ghost, [node("x", ghost as string, 0, 0)])).toBe("zz-unknown-box2");
+    // 对照组:已落库 kind 走 CONTAINER_KIND_LABELS 的中文名(证伪「恒用 kind」)
+    expect(defaultContainerName("ac-vpp-box", [])).toBe("虚拟电厂1");
+    expect(CONTAINER_KIND_LABELS[ghost]).toBeUndefined(); // 前提:该 kind 确实没 label
+  });
+
+  test("解绑提示:绑定设备无 name → 文案里设备名为空(不是 undefined)", () => {
+    const c = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), name: "虚拟电厂1", params: { is_gateway: "1", bound_device_id: "m1" } } as any;
+    const nameless = { ...node("m1", "ac-load", 300, 40), name: undefined, containerId: "c1" } as any;
+    expect(containerGatewayUnbindNotice([c, nameless] as any, ["m1"])).toBe("已解绑关口设备 ，关口已关闭");
+    // 对照组:设备有 name → 文案带真名(证伪「恒空名」)
+    expect(containerGatewayUnbindNotice([c, { ...nameless, name: "开关 K1" }] as any, ["m1"]))
+      .toBe("已解绑关口设备 开关 K1，关口已关闭");
+  });
+
+  test("解绑守卫:绑定指向图中不存在的 id → 不解绑、不弹提示", () => {
+    // 悬空绑定(老数据/跨图粘贴):bound 设备已不在 nodes 里 → byId.get(bound) 为 undefined,
+    // 该容器不得被清绑定(否则一次凭空出现的删除会静默关掉别人的关口)
+    const c = { ...node("c1", "ac-vpp-box", 0, 0, 180, 112), params: { is_gateway: "1", bound_device_id: "ghost" } } as any;
+    expect(containerGatewayUnbindNotice([c] as any, ["ghost"])).toBeNull();
+    const updates = applyRemoveFromContainer([c] as any, ["ghost"]);
+    expect(updates.find((n) => n.id === "c1")!.params.bound_device_id).toBe("ghost");
+    expect(updates.find((n) => n.id === "c1")!.params.is_gateway).toBe("1");
+    // 对照组:换成绑的就是 m1(且 m1 确在图里、是 c2 成员)→ 解绑照常(证明不是整体失效)
+    const c2 = { ...node("c2", "ac-vpp-box", 900, 900), params: { is_gateway: "1", bound_device_id: "m1" } } as any;
+    const m = { ...node("m1", "ac-load", 300, 40), containerId: "c2" } as any;
+    const hit = applyRemoveFromContainer([c2, m] as any, ["m1"]).find((n) => n.id === "c2")!;
+    expect(hit.params.bound_device_id).toBe("");
+    expect(hit.params.is_gateway).toBe("0");
+    expect(containerGatewayUnbindNotice([c2, m] as any, ["m1"])).toBe("已解绑关口设备 m1，关口已关闭");
+  });
+
+  test("删除确认文案:被删容器无 name → 容器名为空(不是 undefined)", () => {
+    const nameless = { ...node("c1", "ac-vpp-box", 0, 0, 200, 200), name: undefined } as any;
+    const m = { ...node("m1", "ac-load", 50, 50), containerId: "c1" } as any;
+    const text = containerDeletionWarning([nameless, m] as any, ["c1"])!;
+    expect(text).toBe("容器「」内有 1 个成员，删除后成员将散出（不随容器删除）。确认删除？");
+    // 对照组:容器有 name → 文案带真名(证伪「恒空名」)
+    expect(containerDeletionWarning([{ ...nameless, name: "虚拟电厂1" }, m] as any, ["c1"]))
+      .toContain("容器「虚拟电厂1」内有 1 个成员");
+  });
+
+  test("并入图出口:空 movedIds 原样返回同一引用(无变化不重建数组)", () => {
+    const nodes = [node("c1", "ac-vpp-box", 0, 0, 200, 200), node("m1", "ac-load", 50, 50)] as any;
+    expect(commitContainerMembership(nodes, [])).toBe(nodes);
+    // 空图 + 非空 movedIds:同样短路。注:这一条**断不出** nodes.length === 0 那一臂 ——
+    // nodes 为空时下游 applyDragContainerMembership → withNodeUpdates([], []) 本来就返回同一引用,
+    // 故删掉该条件结果与引用都不变(可证等价)。此处只作引用相等的锁,不计入变异证据。
+    const empty: any[] = [];
+    expect(commitContainerMembership(empty, ["x"])).toBe(empty);
+    // 对照组:非空 movedIds 且确有变化 → 返回**新**数组(证明不是恒返回入参)
+    expect(commitContainerMembership(nodes, ["m1"])).not.toBe(nodes);
+  });
+});
+
+// ─── 静态源码守卫:两处永不可达的 `?? kind` 兜底 ─────────────────────────────
+// acContainer.ts 里另有两处 `?? kind` 兜底(不在上面的行为用例覆盖范围内):
+//   ① CONTAINER_KIND_LABELS 初始化 —— 模块 import 时对 CONTAINER_KINDS 求值;
+//   ② containerKindOptions —— 只遍历 CONTAINER_KINDS。
+// 6 个容器 kind 全部在 DEVICE_LIBRARY_BY_KIND 里有 label,故 `?? kind` 的右臂
+// **在任何运行时输入下都不可达**,输出断言永远看不见它(不能像上面那样造 name/kind 夹具)。
+// 因此只能用静态源码守卫钉死这两行,并按行过滤 + 配检测逻辑自测:
+//   · 行谓词按**行**判定(不是按文件跳过)—— 按文件跳过会把定义行本身排除,
+//     注入到同文件的变异会全漏;
+//   · 自测用合成输入证明扫描器**能报**出变异文本,合法写法**不误报**。
+const containerKindLabelFallbackRules: { id: string; pattern: RegExp }[] = [
+  // ① CONTAINER_KIND_LABELS 初始化:DEVICE_LIBRARY_BY_KIND 取 label,取不到兜底为 kind
+  { id: "CONTAINER_KIND_LABELS 初始化", pattern: /DEVICE_LIBRARY_BY_KIND\.get\(kind\)\?\.label \?\? kind/ },
+  // ② containerKindOptions:弹窗类型下拉的 label 兜底为 kind
+  { id: "containerKindOptions", pattern: /label: CONTAINER_KIND_LABELS\[kind\] \?\? kind/ },
+];
+
+/** 逐行扫描源文本,返回**未命中**任一规则的规则 id(空数组 = 全部守住) */
+const findUnguardedKindLabelFallbacks = (source: string): string[] => {
+  const lines = source.split(/\r?\n/);
+  return containerKindLabelFallbackRules
+    .filter((rule) => !lines.some((line) => rule.pattern.test(line)))
+    .map((rule) => rule.id);
+};
+
+describe("静态源码守卫(永不可达的 ?? kind 兜底)", () => {
+  const acContainerSource = readFileSync(new URL("./acContainer.ts", import.meta.url), "utf8");
+
+  test("守卫检测逻辑自测:变异文本会被报出,合法写法不误报", () => {
+    // 合法源码:两处兜底都在 → 报出 0 条
+    expect(findUnguardedKindLabelFallbacks(`
+      export const CONTAINER_KIND_LABELS = Object.fromEntries(
+        CONTAINER_KINDS.map((kind) => [kind, DEVICE_LIBRARY_BY_KIND.get(kind)?.label ?? kind])
+      );
+      export function containerKindOptions() {
+        return CONTAINER_KINDS.map((kind) => ({ value: kind, label: CONTAINER_KIND_LABELS[kind] ?? kind }));
+      }
+    `)).toEqual([]);
+    // 变异①:初始化那处把兜底写成写死中文名 → 恰好报出该规则
+    expect(findUnguardedKindLabelFallbacks(`
+      CONTAINER_KINDS.map((kind) => [kind, DEVICE_LIBRARY_BY_KIND.get(kind)?.label ?? "容器"])
+      export function containerKindOptions() {
+        return CONTAINER_KINDS.map((kind) => ({ value: kind, label: CONTAINER_KIND_LABELS[kind] ?? kind }));
+      }
+    `)).toEqual(["CONTAINER_KIND_LABELS 初始化"]);
+    // 变异②:containerKindOptions 删掉 ?? kind → 恰好报出该规则
+    expect(findUnguardedKindLabelFallbacks(`
+      export const CONTAINER_KIND_LABELS = Object.fromEntries(
+        CONTAINER_KINDS.map((kind) => [kind, DEVICE_LIBRARY_BY_KIND.get(kind)?.label ?? kind])
+      );
+      return CONTAINER_KINDS.map((kind) => ({ value: kind, label: CONTAINER_KIND_LABELS[kind] }));
+    `)).toEqual(["containerKindOptions"]);
+    // 变异③:两处都坏 → 两条都报出(证明不是只认第一条)
+    expect(findUnguardedKindLabelFallbacks("const a = 1;")).toEqual([
+      "CONTAINER_KIND_LABELS 初始化",
+      "containerKindOptions",
+    ]);
+  });
+
+  test("acContainer.ts 两处 `?? kind` 兜底都在(不落库 kind 的可读性防线)", () => {
+    // 这两处的右臂运行时不可达(6 个容器 kind 全有 label),故只能静态钉死;
+    // 一旦有人改成写死文案或删掉兜底,上面的自测证明扫描器能报出来。
+    expect(findUnguardedKindLabelFallbacks(acContainerSource)).toEqual([]);
   });
 });

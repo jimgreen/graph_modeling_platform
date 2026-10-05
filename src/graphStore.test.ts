@@ -5,6 +5,7 @@
 // 该重建时没重建（画面上表现为「拖完不动」「改名字不刷新」）。
 import { describe, expect, it } from "vitest";
 import {
+  buildGraphNodeSpatialIndex,
   createGraphStore,
   graphStoreApplyPatch,
   graphStoreEdges,
@@ -17,9 +18,10 @@ import {
   graphStorePatchNodesFromArray,
   graphStoreSetGraph,
   graphStoreSetNodes,
-  overlayGraphStoreNodes
+  overlayGraphStoreNodes,
+  queryGraphStoreNodeSpatialIndex
 } from "./graphStore";
-import type { GraphStore } from "./graphStore";
+import type { GraphNodeSpatialIndex, GraphStore } from "./graphStore";
 import type { Edge, ModelNode, Terminal } from "./model";
 
 // ─── 测试辅助 ─────────────────────────────────────────────
@@ -836,5 +838,317 @@ describe("graphStore / params 相关性谓词的边界（经 revision 增量观�
       expect(probeKey(key).topology, key).toBe(1);
       expect(probeKey(key.toUpperCase()).topology, key.toUpperCase()).toBe(1);
     }
+  });
+});
+
+// ─── nodeElementTreeTerminalsChanged：按长度递增 elementTree ────
+//
+// 观察通道仍是三个 revision 的增量。nodeAffectsElementTree 里 position / size /
+// rotation / scale 全是引用不等，所以前后两个节点共用同一批引用（SHARED_*）、
+// 只换 terminals 数组，elementTree 的增量就只剩 terminals 这一条路可推。
+
+describe("graphStore / nodeElementTreeTerminalsChanged 的长度分支", () => {
+  const SHARED_POSITION = { x: 0, y: 0 };
+  const SHARED_SIZE = { width: 80, height: 40 };
+  const SHARED_PARAMS: Record<string, string> = {};
+
+  const terminal = (id: string, anchorX: number): Terminal => ({
+    id,
+    label: id,
+    type: "ac",
+    anchor: { x: anchorX, y: 0 },
+    nodeNumber: ""
+  });
+
+  const nodeWith = (terminals: Terminal[]): ModelNode => ({
+    id: "a",
+    kind: "breaker" as ModelNode["kind"],
+    name: "a",
+    nodeNumber: "",
+    acTopologyNode: 0,
+    dcTopologyNode: 0,
+    position: SHARED_POSITION,
+    size: SHARED_SIZE,
+    rotation: 0,
+    scale: 1,
+    terminals,
+    params: SHARED_PARAMS
+  });
+
+  const TWO = [terminal("t1", -0.5), terminal("t2", 0.5)];
+  const ONE = [terminal("t1", -0.5)];
+  const NOTHING = { elementTree: 0, routeGeometry: 0, topology: 0 };
+
+  const probe = (previousTerminals: Terminal[], nextTerminals: Terminal[]) => {
+    const store = createGraphStore([nodeWith(previousTerminals)], []);
+    const patched = graphStoreSetNodes(store, [nodeWith(nextTerminals)]);
+    return {
+      elementTree: patched.elementTreeRevision - store.elementTreeRevision,
+      routeGeometry: patched.routeGeometryRevision - store.routeGeometryRevision,
+      topology: patched.topologyRevision - store.topologyRevision
+    };
+  };
+
+  it("端子变多时 elementTree 递增（唯一能咬住长度分支的方向）", () => {
+    // ⚠️ 方向很关键：必须是 **next 更长**（ONE → TWO）。
+    //   some 循环遍历的是 previousNode.terminals，长度不等时它只看得到前 N 个，
+    //   所以 ONE → TWO 时循环全项相等、返回 false —— elementTree 只能由
+    //   `previousNode.terminals.length !== nextNode.terminals.length` 推高。
+    //   （反过来 TWO → ONE 时 some 循环会撞上 nextTerminal === undefined，
+    //   经 `terminal.id !== nextTerminal?.id` 同样返回 true，见下一条。）
+    const result = probe(ONE, TWO);
+    expect(result.elementTree).toBe(1);
+    expect(result.routeGeometry).toBe(1);
+    expect(result.topology).toBe(1);
+  });
+
+  it("端子变少时 elementTree 也递增，但那条路径与长度分支无关（回归锁）", () => {
+    // ⚠️ 按构造对「删掉长度分支」的变异**恒绿**，别拿它当判别力证据：
+    //   TWO → ONE 时 some 循环在 index=1 看到 nextTerminal 为 undefined，
+    //   `terminal.id !== nextTerminal?.id` 判为 true，返回值与走长度分支完全相同。
+    //   承重证据在上一条（ONE → TWO）。
+    const result = probe(TWO, ONE);
+    expect(result.elementTree).toBe(1);
+    expect(result.routeGeometry).toBe(1);
+    expect(result.topology).toBe(1);
+  });
+
+  it("反面对照：数量不变、只有 anchor 移动时 elementTree 不动", () => {
+    // 同长度 + 只有 anchor.x 不同：elementTree 的 some 循环看的是
+    // id / label / type，看不到 anchor ⇒ 必须为 0，否则说明它错把 anchor
+    // 也算进了 elementTree（会让图层树因纯几何改动而重建）。
+    const moved = [terminal("t1", -0.5), terminal("t2", 1.5)];
+    const result = probe(TWO, moved);
+    expect(result.elementTree).toBe(0);
+    expect(result.routeGeometry).toBe(1);
+    expect(result.topology).toBe(1);
+  });
+
+  it("端子内容完全一致（换了数组与端子对象）时三个 revision 都不动", () => {
+    // 参照组：证明上面两条不是「只要换了 terminals 引用就恒 +1」。
+    const same = [terminal("t1", -0.5), terminal("t2", 0.5)];
+    expect(same).not.toBe(TWO);
+    expect(same[0]).not.toBe(TWO[0]);
+    expect(probe(TWO, same)).toEqual(NOTHING);
+  });
+});
+
+// ─── pointChanged：undefined 点位的四组组合 ────────────────────
+//
+// pointChanged 未导出，观察通道是 graphStorePatchEdges 之后的
+// routeGeometryRevision 增量。edgeAffectsRouteGeometry 里
+// endpointChanged 走 id / sourceId / targetId / sourceTerminalId /
+// targetTerminalId，全部保持不变，于是增量只由 sourcePoint / targetPoint /
+// manualPoints 三条 pointChanged 决定。
+//
+// 四个 `?.` 的 nullish / 非 nullish 两侧必须都走到，缺一不可：
+//   prev undefined + next 有值  → 前者 nullish、后者非 nullish，随后 || 短路
+//   prev 有值 + next undefined  → x 比较相等（undefined !== undefined 为假），
+//                                 落到 y：前者非 nullish、后者 nullish
+//   prev undefined + next undefined → 两次都是 undefined !== undefined ⇒ false
+//   两侧都有值且 x 相同        → 两次比较都在非 nullish 侧
+// 最后一条（两侧都 undefined）是删掉 `?.` 后抛 TypeError 的那条变异。
+
+describe("graphStore / pointChanged 的 undefined 点位组合", () => {
+  const probe = (previousPoints: Partial<Edge>, nextPoints: Partial<Edge>) => {
+    const store = createGraphStore([], [makeEdge("e", "a", "b", previousPoints)]);
+    const patched = graphStorePatchEdges(store, [makeEdge("e", "a", "b", nextPoints)]);
+    return {
+      elementTree: patched.elementTreeRevision - store.elementTreeRevision,
+      routeGeometry: patched.routeGeometryRevision - store.routeGeometryRevision,
+      topology: patched.topologyRevision - store.topologyRevision
+    };
+  };
+
+  const ONLY_ROUTE = { elementTree: 0, routeGeometry: 1, topology: 0 };
+  const NOTHING = { elementTree: 0, routeGeometry: 0, topology: 0 };
+
+  it("两侧都没有点位：判定为未变化（不是恒 true）", () => {
+    // ⚠️ 若 pointChanged 里的 `?.` 被删掉，这里会抛 TypeError 而不是返回 false。
+    expect(probe({}, {})).toEqual(NOTHING);
+  });
+
+  it("两侧都没点位、只有 manualPoints 引用不同但内容相同：仍是未变化", () => {
+    // 走的是 routePointArrayChanged 里 pointChanged 的第二个调用点，
+    // 且证明它比的是坐标值不是引用。
+    const first = [{ x: 1, y: 1 }];
+    const second = [{ x: 1, y: 1 }];
+    expect(first).not.toBe(second);
+    expect(probe({ manualPoints: first }, { manualPoints: second })).toEqual(NOTHING);
+  });
+
+  it("previous 有点位而 next 没有：算变化（x 相等所以要落到 y 才判出来）", () => {
+    // prev {1,1} vs next undefined：x 侧 undefined !== undefined 为假，
+    // 靠 y 侧 number !== undefined 判为变化 —— 只写 x 侧的实现会漏掉这条。
+    expect(probe({ sourcePoint: { x: 1, y: 1 } }, {})).toEqual(ONLY_ROUTE);
+  });
+
+  it("previous 没有点位而 next 有：算变化", () => {
+    expect(probe({}, { sourcePoint: { x: 1, y: 1 } })).toEqual(ONLY_ROUTE);
+  });
+
+  it("两侧都有点位且 x 相同、只有 y 不同：算变化（走到第二个比较）", () => {
+    expect(probe({ sourcePoint: { x: 1, y: 1 } }, { sourcePoint: { x: 1, y: 2 } })).toEqual(ONLY_ROUTE);
+  });
+
+  it("targetPoint 与 sourcePoint 同规则：两侧都无不算变化、只有 y 变算变化", () => {
+    expect(probe({}, { targetPoint: { x: 0, y: 0 } })).toEqual(ONLY_ROUTE);
+    expect(probe({ targetPoint: { x: 0, y: 0 } }, {})).toEqual(ONLY_ROUTE);
+    expect(probe({ targetPoint: { x: 0, y: 0 } }, { targetPoint: { x: 0, y: 3 } })).toEqual(ONLY_ROUTE);
+  });
+
+  it("manualPoints 长度变化：按长度判变化，与坐标无关", () => {
+    expect(probe({ manualPoints: [] }, { manualPoints: [{ x: 1, y: 1 }] })).toEqual(ONLY_ROUTE);
+    expect(probe({ manualPoints: [{ x: 1, y: 1 }] }, { manualPoints: [] })).toEqual(ONLY_ROUTE);
+  });
+
+  it("manualPoints 坐标变化：等长不同值也算变化（some 循环里的 pointChanged）", () => {
+    expect(
+      probe({ manualPoints: [{ x: 1, y: 1 }] }, { manualPoints: [{ x: 1, y: 2 }] })
+    ).toEqual(ONLY_ROUTE);
+  });
+
+  it("端点字段（id / sourceId / targetId / terminalId）变化仍走 elementTree+topology", () => {
+    // 参照组：证明 ONLY_ROUTE 里 elementTree / topology 为 0 是因为端点没动，
+    // 而不是 routeGeometryRevision 独占一条通道。
+    expect(probe({ sourceTerminalId: "t9" }, { sourceTerminalId: "t9" })).toEqual(NOTHING);
+    expect(probe({}, { sourceTerminalId: "t9" })).toEqual({
+      elementTree: 1,
+      routeGeometry: 1,
+      topology: 1
+    });
+  });
+});
+
+// ─── seenById 上限：超过 16384 后清空重建 ─────────────────────
+//
+// nextSpatialQueryMark 未导出，但 GraphNodeSpatialIndex 是导出类型，
+// buildGraphNodeSpatialIndex / queryGraphStoreNodeSpatialIndex 都直接吃它，
+// 所以 queryState.mark 与 queryState.seenById 就是公开可断言的面。
+//
+// 节点全部落在 (0,0)（makeNode 默认），因此同处一个桶、bounds 恒相交，
+// 一次查询就能把 seenById 灌到指定条数。
+
+describe("graphStore / nodeSpatialIndex 的 seenById 上限清理", () => {
+  // graphStore.ts:64 的 GRAPH_NODE_SPATIAL_SEEN_LIMIT（未导出），阈值是严格大于。
+  const SEEN_LIMIT = 16384;
+  const WHOLE = { left: -400, right: 400, top: -400, bottom: 400 };
+  const nodesOfCount = (count: number) => Array.from({ length: count }, (_, index) => makeNode(`n${index}`));
+
+  it("seenById 恰好等于上限时不清理，mark 继续递增", () => {
+    const index = buildGraphNodeSpatialIndex(nodesOfCount(SEEN_LIMIT));
+    expect(queryGraphStoreNodeSpatialIndex(index, WHOLE)).toHaveLength(SEEN_LIMIT);
+    queryGraphStoreNodeSpatialIndex(index, WHOLE);
+    expect(index.queryState.seenById.size).toBe(SEEN_LIMIT);
+    // 判别输入：`>` 改成 `>=` 时这里会变成 1。
+    expect(index.queryState.mark).toBe(2);
+  });
+
+  it("seenById 超过上限后清空重建：mark 归零再递增，去重仍然有效", () => {
+    const index = buildGraphNodeSpatialIndex(nodesOfCount(SEEN_LIMIT + 1));
+    expect(queryGraphStoreNodeSpatialIndex(index, WHOLE)).toHaveLength(SEEN_LIMIT + 1);
+    expect(index.queryState.mark).toBe(1);
+    expect(index.queryState.seenById.size).toBe(SEEN_LIMIT + 1);
+
+    // 第二次查询进入 nextSpatialQueryMark 时 size > 上限 ⇒ clear() + mark = 0，
+    // 随后 mark += 1 ⇒ 观测值仍为 1（不清理的话会是 2）。
+    expect(queryGraphStoreNodeSpatialIndex(index, WHOLE)).toHaveLength(SEEN_LIMIT + 1);
+    expect(index.queryState.mark).toBe(1);
+    // 清空后本次查询的 seenById 重新记满，且节点仍只各出现一次
+    // （说明 clear 落在取 mark 之后，查询内去重没被破坏）。
+    expect(index.queryState.seenById.size).toBe(SEEN_LIMIT + 1);
+    expect(new Set(queryGraphStoreNodeSpatialIndex(index, WHOLE).map((node) => node.id)).size).toBe(
+      SEEN_LIMIT + 1
+    );
+    expect(index.queryState.mark).toBe(1);
+  });
+});
+
+// ─── nodeBoundsById 缺条目时的 graphNodeRenderBounds 兜底 ───────
+
+describe("graphStore / queryGraphStoreNodeSpatialIndex 的 bounds 兜底", () => {
+  // 可达性说明：走 createGraphStore / graphStorePatchNodes 时 buckets 与
+  // nodeBoundsById 永远成对写入（applyNodePatch 用 nextNode.id 反查 previousNode，
+  // 两者 id 必然相同；patchNodeSpatialIndexMany 每个 id 都 delete 后立即 set），
+  // 所以「桶里有节点但 nodeBoundsById 没有该 id」在 store 路径上不可能出现。
+  // 但 queryGraphStoreNodeSpatialIndex 接受裸 GraphNodeSpatialIndex，
+  // 外部构造的索引可以缺这条 entry —— 那正是 `?? graphNodeRenderBounds(node)`
+  // 唯一的调用场景，于是用两条构造索引的对照来钉住它。
+  const WHOLE = { left: -400, right: 400, top: -400, bottom: 400 };
+
+  const indexWithoutBounds: GraphNodeSpatialIndex = {
+    bucketSize: 256,
+    buckets: new Map([["0:0", [makeNode("ghost")]]]),
+    nodeBucketKeysById: new Map([["ghost", ["0:0"]]]),
+    nodeBoundsById: new Map(),
+    queryState: { mark: 0, seenById: new Map() }
+  };
+
+  it("索引里缺该 id 的 bounds 时按节点自身算包围盒，节点仍能命中", () => {
+    expect(queryGraphStoreNodeSpatialIndex(indexWithoutBounds, WHOLE).map((node) => node.id)).toEqual(["ghost"]);
+  });
+
+  it("索引里有不相交的 bounds 时落空（证明上一条是兜底而非恒命中）", () => {
+    const far = { left: 5000, right: 5100, top: 5000, bottom: 5100 };
+    const withFarBounds: GraphNodeSpatialIndex = {
+      ...indexWithoutBounds,
+      nodeBoundsById: new Map([["ghost", far]]),
+      queryState: { mark: 0, seenById: new Map() }
+    };
+    expect(queryGraphStoreNodeSpatialIndex(withFarBounds, WHOLE)).toEqual([]);
+  });
+
+  it("兜底算出的包围盒仍受 bounds 参数约束：视野外查不到", () => {
+    const away = { left: 5000, right: 5100, top: 5000, bottom: 5100 };
+    expect(queryGraphStoreNodeSpatialIndex(indexWithoutBounds, away)).toEqual([]);
+  });
+});
+// ─── removeEdgeFromTerminalRef：桶空则删 key、桶缺失则早退 ─────
+//
+// 观察通道是 GraphStore.edgesByTerminalRef 这个公开字段，key 形如 `${nodeId}:${terminalId}`
+// （terminalId 为空时 key 是空串，整条 key 直接被 !key 跳过，所以要设 terminalId 才有桶）。
+// 只有 endpointChanged 才会走 removeEdgeFromTerminalRef（applyEdgePatch:1035）。
+
+describe("graphStore / removeEdgeFromTerminalRef 的桶边界", () => {
+  it("桶里只剩这条边时整个 key 被删掉，不留空数组", () => {
+    const store = createGraphStore([], [makeEdge("e1", "a", "b", { sourceTerminalId: "t1" })]);
+    expect(store.edgesByTerminalRef.get("a:t1")).toHaveLength(1);
+
+    // 改 sourceTerminalId ⇒ endpointChanged ⇒ 先把 e1 从旧 key "a:t1" 摘掉。
+    // 桶里没有第二条边 ⇒ nextBucket.length === 0 ⇒ map.delete("a:t1")。
+    const patched = graphStorePatchEdges(store, [makeEdge("e1", "a", "b", { sourceTerminalId: "t2" })]);
+    expect(patched.edgesByTerminalRef.has("a:t1")).toBe(false);
+    expect(patched.edgesByTerminalRef.get("a:t2")).toHaveLength(1);
+  });
+
+  it("对照组：同一 key 上还有别的边时，key 保留且只剩存活的那条", () => {
+    // 与上一条成对，证明上一条转红/转绿的原因是「桶是否为空」而不是「是否发生了摘除」。
+    const store = createGraphStore(
+      [],
+      [
+        makeEdge("e1", "a", "b", { sourceTerminalId: "t1" }),
+        makeEdge("e2", "a", "b", { sourceTerminalId: "t1" })
+      ]
+    );
+    expect(store.edgesByTerminalRef.get("a:t1")).toHaveLength(2);
+
+    const patched = graphStorePatchEdges(store, [makeEdge("e1", "a", "b", { sourceTerminalId: "t2" })]);
+    expect(patched.edgesByTerminalRef.get("a:t1")!.map((edge) => edge.id)).toEqual(["e2"]);
+    expect(patched.edgesByTerminalRef.get("a:t2")).toHaveLength(1);
+  });
+
+  it("同一批次重复提交同一条边：第二次摘除时旧 key 已被删，走 !bucket 早退", () => {
+    // graphStorePatchEdges 每次都用 **store.edgeMap** 反查 previousEdge（不是用已累积的
+    // 边表），所以同一批次里两条同 id 的更新拿到的是同一个原始边对象：
+    // 第一次摘 "a:t1" 时桶里只有 e1 ⇒ key 被删；第二次再摘 "a:t1" 时桶已不存在 ⇒
+    // 命中 `if (!bucket) continue` 的早退（graphStore.ts:277-279）。
+    const store = createGraphStore([], [makeEdge("e1", "a", "b", { sourceTerminalId: "t1" })]);
+    const patched = graphStorePatchEdges(store, [
+      makeEdge("e1", "a", "b", { sourceTerminalId: "t2" }),
+      makeEdge("e1", "a", "b", { sourceTerminalId: "t3" })
+    ]);
+    expect(patched.edgesByTerminalRef.has("a:t1")).toBe(false);
+    expect(patched.edgesByTerminalRef.get("a:t2")).toHaveLength(1);
+    expect(patched.edgesByTerminalRef.get("a:t3")).toHaveLength(1);
   });
 });

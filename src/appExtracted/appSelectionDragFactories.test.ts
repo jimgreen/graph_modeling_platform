@@ -1,6 +1,6 @@
 // createCurrentProject 输出 backgroundProjectIdx：服务端靠它定位背景模型（前端 id 服务端无法解析）
 import { describe, expect, test, vi } from "vitest";
-import { createAddToContainer, createCanvasPointerKeyboardShortcutAvailability, createConfirmAddGraphTemplate, createConfirmAddToContainer, createCreateGraphTemplateType, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createFinalizeMovedNodeEdgesFast, createGroupDeviceTerminalAssociationFor, createGroupSelectedGraphics, createPasteSelection, createRemoveFromContainer, createToggleFilterSelectionType } from "./appSelectionDragFactories";
+import { createAddToContainer, createCanvasPointerKeyboardShortcutAvailability, createConfirmAddGraphTemplate, createConfirmAddToContainer, createCreateGraphTemplateType, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createFinalizeMovedNodeEdgesFast, createGroupDeviceTerminalAssociationFor, createGroupSelectedGraphics, createPasteSelection, createPersistDeviceLibraryChange, createQueuePendingBlankCanvasDeselect, createRemoveFromContainer, createRequireEditMode, createToggleFilterSelectionType } from "./appSelectionDragFactories";
 import { canvasClipboardBounds, cloneCanvasClipboard, createCanvasGroupFromSelection, expandSelectionByGroups } from "../selectionActions";
 import { containerKindSwitch, containerNamePick, containerNameSearch } from "../acContainer";
 import { deleteNodesWithConnectedEdges } from "../model-routing";
@@ -1433,5 +1433,166 @@ describe("组端子关联取值(createGroupDeviceTerminalAssociationFor)", () =>
   test("索引超出端子数:同样退回默认关联(不会给 undefined)", () => {
     const node = containerNode(["ac"]);
     expect(associationFor(containerTemplate(["ac-load"]), node, 5, "ac")).toBe("ac-generator");
+  });
+});
+
+// ─── 本批补覆盖:createEnsureDraggingUndoSnapshot 的已捕获守卫 / 拖动集缺失 / 多选标签 ──
+// 对应源文件 L70、L74、L75。三条都是「同一行里的不同档」,所以每条都必须两侧都断:
+// 期望值若恰好等于兜底值(空串),单侧断言没有鉴别力。
+describe("拖动撤销快照的标签与守卫 (源 L70 / L74 / L75)", () => {
+  const mkDragUndoScope = (over: Record<string, unknown> = {}) => {
+    const scope: any = {
+      dragUndoCapturedRef: { current: false },
+      draggingRef: { current: { nodeIds: ["m1"], edgeIds: [], affectedEdges: [] } },
+      nodeById: new Map<string, any>(),
+      nodes: [],
+      pushUndoSnapshot: vi.fn(),
+      undoScopeForDraggingState: vi.fn(() => ({ nodeIds: ["m1"], edgeIds: [] })),
+      ...over,
+    };
+    return scope;
+  };
+
+  // L70 真臂:上一次拖动已经压过快照 —— 同一批拖动再触发一次撤销快照会把撤销栈冲成两条。
+  test("已捕获过 → 早退:既不压快照也不算作用域", () => {
+    const scope = mkDragUndoScope({ dragUndoCapturedRef: { current: true } });
+    createEnsureDraggingUndoSnapshot(scope)();
+    expect(scope.pushUndoSnapshot).not.toHaveBeenCalled();
+    expect(scope.undoScopeForDraggingState).not.toHaveBeenCalled();
+  });
+
+  // L70 假臂对照:没捕获过就一定会压,并把守卫翻面(这是上面那条断言的鉴别力来源)
+  test("未捕获 → 压一条快照并置位捕获标记", () => {
+    const scope = mkDragUndoScope();
+    createEnsureDraggingUndoSnapshot(scope)();
+    expect(scope.pushUndoSnapshot).toHaveBeenCalledTimes(1);
+    expect(scope.pushUndoSnapshot.mock.calls[0][3]).toBe("移动设备");
+    expect(scope.dragUndoCapturedRef.current).toBe(true);
+  });
+
+  // L74 右臂:输入必须是「键/值根本不存在」,给 {nodeIds: []} 会让 ?? 短路取左臂、右臂从未求值。
+  test("无拖动态(draggingRef.current 为 undefined)→ nodeIds 走 ?? [] 右臂,标签是空串", () => {
+    const scope = mkDragUndoScope({ draggingRef: { current: undefined } });
+    expect(() => createEnsureDraggingUndoSnapshot(scope)()).not.toThrow();
+    expect(scope.pushUndoSnapshot).toHaveBeenCalledTimes(1);
+    expect(scope.pushUndoSnapshot.mock.calls[0][4]).toBe("");
+  });
+
+  // L75 外层真臂(单选):标签来自 nodeById 查到的 idx + 名称,和下面多选那档不是同一个值
+  test("单选拖动 → 标签是 idx 加名称", () => {
+    const scope = mkDragUndoScope({
+      nodeById: new Map<string, any>([["m1", { id: "m1", name: "负载1", params: { idx: 7 } }]]),
+    });
+    createEnsureDraggingUndoSnapshot(scope)();
+    expect(scope.pushUndoSnapshot.mock.calls[0][4]).toBe("7 负载1");
+  });
+
+  // L75 内层三元真臂(多选):期望值 "3 个设备" 与 L74 的空串、L75 单选档都不同
+  test("多选拖动 → 标签是 N 个设备", () => {
+    const scope = mkDragUndoScope({
+      draggingRef: { current: { nodeIds: ["m1", "m2", "m3"], edgeIds: [], affectedEdges: [] } },
+    });
+    createEnsureDraggingUndoSnapshot(scope)();
+    expect(scope.pushUndoSnapshot.mock.calls[0][4]).toBe("3 个设备");
+  });
+
+  // L75 里还剩的一条臂:节点名缺失 → 名称槽的 ?? "" 右臂。
+  // 判别值刻意取 "7"(trim 之后不带空格),不是兜底值本身,
+  // 否则删掉 ?? "" 与保留它产出相同、断言恒绿。
+  test("单选且节点无名称 → 标签只剩 idx(名称槽走 ?? 右臂)", () => {
+    const scope = mkDragUndoScope({
+      nodeById: new Map<string, any>([["m1", { id: "m1", params: { idx: 7 } }]]),
+    });
+    createEnsureDraggingUndoSnapshot(scope)();
+    expect(scope.pushUndoSnapshot.mock.calls[0][4]).toBe("7");
+  });
+});
+
+// ─── 本批补覆盖:createCurrentProject 的 idx 省略分支 (源 L205) ─────────────────
+// projectIdx > 0 才写 idx。projectIdx 为 0/负数时写出去会被后端当成真实全局索引,
+// 所以判据是「键存在与否」而不是「值是不是 0」。
+describe("createCurrentProject 的 idx 省略分支 (源 L205)", () => {
+  test("projectIdx 为 0 → 不写 idx 键", () => {
+    const project = createCurrentProject(makeScope({ projectIdx: 0 }))() as any;
+    expect(Object.prototype.hasOwnProperty.call(project, "idx")).toBe(false);
+    expect(project.name).toBe("宿主模型");
+  });
+
+  test("projectIdx 为负数 → 同样不写 idx 键", () => {
+    const project = createCurrentProject(makeScope({ projectIdx: -4 }))() as any;
+    expect(Object.prototype.hasOwnProperty.call(project, "idx")).toBe(false);
+  });
+
+  test("对照:projectIdx 为 7 → 写出 idx 7(证明上面两条靠的是条件而不是缺字段)", () => {
+    const project = createCurrentProject(makeScope({ projectIdx: 7 }))() as any;
+    expect(Object.prototype.hasOwnProperty.call(project, "idx")).toBe(true);
+    expect(project.idx).toBe(7);
+  });
+});
+
+// ─── 本批补覆盖:createQueuePendingBlankCanvasDeselect 的缺 ref 早退 (源 L288) ──
+// 两侧都断:只有「有 ref 时真的登记了坐标」才能证明这条守卫不是恒真。
+describe("空白画布待清除登记 (源 L288)", () => {
+  test("没有 pendingBlankCanvasDeselectRef → 早退,不抛", () => {
+    const queue = createQueuePendingBlankCanvasDeselect({} as any);
+    expect(() => queue({ clientX: 120, clientY: 240 })).not.toThrow();
+  });
+
+  test("ref 在 → 登记指针坐标", () => {
+    const ref: any = { current: null };
+    const queue = createQueuePendingBlankCanvasDeselect({ pendingBlankCanvasDeselectRef: ref } as any);
+    queue({ clientX: 120, clientY: 240 });
+    expect(ref.current).toEqual({ clientX: 120, clientY: 240 });
+  });
+});
+
+// ─── 本批补覆盖:createRequireEditMode 的 isEditMode 两档 (源 L345-L349) ────────
+describe("createRequireEditMode (源 L345-L349)", () => {
+  test("编辑模式 → 返回 true 且不写操作日志", () => {
+    const writeOperationLog = vi.fn();
+    expect(createRequireEditMode({ isEditMode: true, writeOperationLog })("删除设备")).toBe(true);
+    expect(writeOperationLog).not.toHaveBeenCalled();
+  });
+
+  test("浏览模式 → 返回 false 并把 action 拼进提示(action 透传)", () => {
+    const writeOperationLog = vi.fn();
+    expect(createRequireEditMode({ isEditMode: false, writeOperationLog })("删除设备")).toBe(false);
+    expect(writeOperationLog).toHaveBeenCalledWith("浏览模式下不能删除设备，请先切换到编辑模式");
+  });
+});
+
+  // ─── 本批补覆盖:createPersistDeviceLibraryChange 的后台未加载早退 (源 L387) ───
+// 承重点是早退时必须把 lastPersisted 复位:若残留 payload,下一次调用会命中
+// 「已持久化」短路而永远不再真正落盘。
+describe("createPersistDeviceLibraryChange 后台未加载早退 (源 L387)", () => {
+  const mkPersistScope = (backendLoaded: boolean) => {
+    const scope: any = {
+      backendDeviceLibraryLoadedRef: { current: backendLoaded },
+      lastPersistedDeviceLibraryPayloadRef: { current: null },
+      suppressNextBackendDeviceLibrarySyncRef: { current: true },
+      normalizeDeviceLibraryPersistencePayload: (payload: unknown) => ({ stamped: true, ...(payload as any) }),
+      serializeDeviceLibraryForStorage: (value: unknown) => `payload:${JSON.stringify(value)}`,
+      writeLocalDeviceLibraryPersistencePayload: vi.fn(),
+      saveBackendDeviceLibraryPayload: vi.fn(() => Promise.resolve(true)),
+      writeOperationLog: vi.fn(),
+    };
+    return scope;
+  };
+
+  test("后台未加载 → 落 Promise(false)、不复位就不落盘、写失败提示", async () => {
+    const scope = mkPersistScope(false);
+    const persist = createPersistDeviceLibraryChange(scope);
+    await expect(persist({ customGraphTemplates: [] }, { failure: "模板库自动保存到后台失败" })).resolves.toBe(false);
+    expect(scope.saveBackendDeviceLibraryPayload).not.toHaveBeenCalled();
+    expect(scope.writeOperationLog).toHaveBeenCalledWith("模板库自动保存到后台失败");
+    expect(scope.lastPersistedDeviceLibraryPayloadRef.current).toBeNull();
+  });
+
+  test("对照:后台已加载 → 真的落盘并落 success 提示", async () => {
+    const scope = mkPersistScope(true);
+    const persist = createPersistDeviceLibraryChange(scope);
+    await expect(persist({ customGraphTemplates: [] }, { success: "模板库已自动保存到后台" })).resolves.toBe(true);
+    expect(scope.saveBackendDeviceLibraryPayload).toHaveBeenCalledTimes(1);
+    expect(scope.writeOperationLog).toHaveBeenCalledWith("模板库已自动保存到后台");
   });
 });

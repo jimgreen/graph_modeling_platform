@@ -31,6 +31,11 @@ let sinkBody = "ok";
 // 单 chunk 时「只读首个 chunk」这条行为根本不可观测（没有第二个 chunk 可丢），
 // 所以截断守卫必须配多 chunk fixture，并在用例里先自证确实拆开了。
 let sinkChunks = null;
+// 原生响应覆写：非 null 时**接管**响应（连 writeHead 一起），用于构造
+// 「状态码 / 响应体形态」不由 `sinkStatus` + `sinkBody` 表达的场景 ——
+// 空 body、null-body 状态码、声明了 content-encoding 却是明文（解压流在读时抛）。
+// 这三种形态分别对应 readTargetErrorDetail 的 `!reader` / `value` 为假 / read 抛异常。
+let sinkRaw = null;
 let received = [];
 
 function device(id, kind, name, params, terminals = []) {
@@ -89,6 +94,37 @@ beforeAll(async () => {
     nodes: [device("busX", "ac-bus", "无序号母线", { vbase: "10" }, [])],
     edges: []
   }), "utf-8");
+  // 第四个模型：**文件名与内容 name 不一致**的畸形模型。
+  // 内容 name 含 Windows 文件名非法字符（`:` / `?`），磁盘上只能以净化后的形态存在：
+  // `readSchemeProjectFile` 取名走 `project.name || 文件名`，而
+  // `projectJsonFileForName` 按 `safeFilePart(name)` 去 stat —— 两者恰好是同一条规则
+  // （`shared/pathSafety.mjs:sanitizeSegment` 与 sendModel 的 `sanitizeFileBase` 同规则），
+  // 于是「内容名带非法字符、文件名已净化」的模型在查表时仍能命中。
+  // 这是 sendModel 里 `sanitizeFileBase` 的 `.replace(/[\\/:*?"<>|]+/g, "_")`
+  // 唯一可达的入口：名字若不带非法字符，磁盘文件名就得原样等于它，两者互相排斥。
+  writeFileSync(join(dir, "厂站_模型_A.json"), JSON.stringify({
+    name: "厂站:模型?A",
+    modelType: "厂站",
+    idx: 7,
+    canvasWidth: 800,
+    canvasHeight: 400,
+    nodes: [device("bus7", "ac-bus", "净化母线", { vbase: "10" }, [])],
+    edges: []
+  }), "utf-8");
+  // 第五个模型：**只有静态图元**，没有电力设备。
+  // `buildCimForSavedModel` 在 electricalNodes 为空时回 bad-request，
+  // 用来覆盖 sendModel 的 CIM 分支「error → sendV1Error(code)」**非 not-found** 的那条路。
+  writeFileSync(join(dir, "静态模型.json"), JSON.stringify({
+    name: "静态模型",
+    modelType: "厂站",
+    idx: 8,
+    canvasWidth: 800,
+    canvasHeight: 400,
+    nodes: [
+      { id: "txt1", kind: "static-text", name: "说明文字", position: { x: 0, y: 0 }, size: { width: 100, height: 20 }, rotation: 0, scale: 1, layerId: "default", params: { name: "说明文字", text: "hello" } }
+    ],
+    edges: []
+  }), "utf-8");
   const libDir = join(dataDir, "device-library");
   mkdirSync(libDir, { recursive: true });
   writeFileSync(join(libDir, "library.json"), JSON.stringify({
@@ -103,6 +139,10 @@ beforeAll(async () => {
     request.on("data", (chunk) => chunks.push(chunk));
     request.on("end", () => {
       received.push({ headers: request.headers, body: Buffer.concat(chunks) });
+      if (sinkRaw) {
+        sinkRaw(response);
+        return;
+      }
       response.writeHead(sinkStatus, { "content-type": "text/plain" });
       if (!Array.isArray(sinkChunks)) {
         response.end(sinkBody);
@@ -146,6 +186,7 @@ beforeEach(() => {
   sinkStatus = 200;
   sinkBody = "ok";
   sinkChunks = null;
+  sinkRaw = null;
 });
 
 function postSend(body, query = `schemePath=${schemePath}&name=${encodeURIComponent(modelName)}`) {
@@ -546,5 +587,272 @@ describe(`${sendPath} files[].encoding 的兜底`, () => {
     expect(body.toString("utf-8")).not.toContain('encoding="GBK"');
     expect(body.includes(Buffer.from("母线一", "utf-8"))).toBe(true);
     expect(body.includes(iconv.encode("母线一", "gbk"))).toBe(false);
+  });
+});
+
+// ─── body.url 的规范化 ─────────────────────────────────────────
+//
+// `normalizeTargetUrl` 三段都各有一次「放弃」，而它们给出的结果**完全相同**
+// （都是 null，最终都是同一条 400），所以必须靠**状态码**而不是文案来区分：
+//   (a) `if (!text)` —— 空串 / 纯空白 / 缺字段；
+//   (b) `catch` —— new URL 抛错（无 scheme、空 host、纯文本…）；
+//   (c) 协议不是 http/https —— 既有守卫已用 file:///etc/passwd 覆盖。
+// (a) 与 (b) 互为冗余（`new URL("")` 同样抛错，见文件末尾的变异结论），
+// 但两者各自的**输入维度**不同，所以分开钉：只有 (b) 那组能被「删掉 catch 的
+// return null」变异打红（删掉后 `url` 是 undefined，第 46 行解引用抛 TypeError，
+// 被外层 catch 接成 502），(a) 那组对那个变异是绿的。
+//
+// 注意 url 校验发生在 files 校验**之前**，所以这几条都用合法的 files，
+// 保证 400 一定来自 url 那一行而不是「未知格式」。
+const UNPARSABLE_URLS = ["not a url", "://缺协议", "http://", "127.0.0.1:8080/x", "/relative/path"];
+const BLANK_URL_BODIES = [{ url: "" }, { url: "   " }, { url: "\n\t" }, {}];
+
+describe(`${sendPath} body.url 的规范化`, () => {
+  test("无法被 URL 解析的地址 → 400，且不发出请求", async () => {
+    for (const url of UNPARSABLE_URLS) {
+      received = [];
+      const res = await postSend({ url, files: [{ kind: "json" }] });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error.message).toContain("http");
+      expect(received).toHaveLength(0);
+    }
+  });
+
+  test("空串 / 纯空白 / 缺字段的 url → 400，且不发出请求", async () => {
+    for (const extra of BLANK_URL_BODIES) {
+      received = [];
+      const res = await postSend({ ...extra, files: [{ kind: "json" }] });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error.message).toContain("http");
+      expect(received).toHaveLength(0);
+    }
+  });
+
+  test("对照组：合法地址两端带空白仍放行（trim 不该误伤真实地址）", async () => {
+    const res = await postSend({ url: `  ${sinkUrl}  `, files: [{ kind: "json" }] });
+    expect(res.status).toBe(200);
+    expect(received).toHaveLength(1);
+  });
+});
+
+// ─── 三种生成格式各自把生成层的 error 传出去 ─────────────────────
+//
+// `buildFileText` 三个格式分支都是 `return error ? { error } : { text }`，
+// 错误由调用方统一 `sendV1Error(response, built.error.code, ...)` 落成信封。
+// 既有守卫只走过 **json** 一支（模型不存在 → 404），e / svg / cim 三支的
+// 错误传播从未被执行过 —— 而它们是三个独立的表达式，删掉任一支都不会影响别的支。
+//
+// 触发方式：**兼容路径**对不存在的模型不报 404（`resolveSendTarget` 结尾是
+// `Number(record?.project?.idx) || 0`，record 为 null 也照样返回 parts/name），
+// 所以同一个「不存在的模型」能让请求先过参数校验、再在生成层拿到 not-found。
+//
+// 第二条用「只有静态图元」的模型走 cim：那条 error 是 **bad-request**（→400），
+// 与上面的 not-found（→404）不同 —— 证明 error.code 是被透传而不是写死。
+describe(`${sendPath} 生成层 error 的透传`, () => {
+  const missingModel = `schemePath=${schemePath}&name=${encodeURIComponent("不存在的模型")}`;
+
+  test("模型不存在：e / svg / cim 三支各自回 404，且不发出请求", async () => {
+    for (const kind of ["e", "svg", "cim"]) {
+      received = [];
+      const res = await postSend({ url: sinkUrl, files: [{ kind }] }, missingModel);
+      expect(res.status).toBe(404);
+      const payload = await res.json();
+      expect(payload.error.code).toBe("not-found");
+      expect(payload.error.message).toContain("模型不存在");
+      expect(received).toHaveLength(0);
+    }
+  });
+
+  test("只有静态图元的模型：cim 导出回 bad-request → 400（code 是透传而非写死）", async () => {
+    received = [];
+    const res = await postSend(
+      { url: sinkUrl, files: [{ kind: "cim" }] },
+      `schemePath=${schemePath}&name=${encodeURIComponent("静态模型")}`
+    );
+    expect(res.status).toBe(400);
+    const payload = await res.json();
+    expect(payload.error.code).toBe("bad-request");
+    expect(payload.error.message).toContain("电力设备");
+    expect(received).toHaveLength(0);
+  });
+});
+
+// ─── 目标错误响应体的三种「取不到片段」形态 ───────────────────────
+//
+// `readTargetErrorDetail` 有三条互不相同的放弃路径，全部返回 ""，
+// 最终都表现为文案尾部的「。」而不是「：<片段>」。既有守卫只覆盖了
+// 「读到 chunk」的形态；这三条各自需要不同的**响应形态**才有判别力，
+// 所以每条先用一次同形态的直接 fetch 自证分支条件成立（与本文件既有的
+// expectSplitInto 同一手法），再断言 send 端产出的文案。
+//
+//   (a) null body：304 是 null-body 状态码 → `response.body === null` → `!reader`
+//   (b) 空 body：500 + 无实体 → 首个 read 即 `{ done: true, value: undefined }`
+//   (c) 读时抛：声明 content-encoding: gzip 却是明文 → 解压流在首个 read 上 reject
+//
+// (b) 与 (c) 文案完全相同，只有自证能区分「确实抛了」与「只是拿到空值」。
+const PLAIN_500 = "目标服务器返回 HTTP 500。";
+
+function rawNoBody304(response) {
+  response.writeHead(304);
+  response.end();
+}
+
+function rawEmpty500(response) {
+  response.writeHead(500, { "content-type": "text/plain" });
+  response.end();
+}
+
+function rawBrokenGzip500(response) {
+  response.writeHead(500, { "content-type": "text/plain", "content-encoding": "gzip" });
+  response.end("这段明文并不是 gzip 数据");
+}
+
+describe(`${sendPath} 目标错误响应体取不到片段的三种形态`, () => {
+  test("304：响应体为 null（无 reader）→ 文案只带状态码", async () => {
+    sinkRaw = rawNoBody304;
+    // 自证：该响应形态下 body 确实是 null，而不是「有 body 但读出空」
+    const probe = await fetch(sinkUrl, { method: "POST", body: "probe" });
+    expect(probe.status).toBe(304);
+    expect(probe.body).toBeNull();
+    received = [];
+
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] });
+    expect(res.status).toBe(502);
+    const payload = await res.json();
+    expect(payload.error.code).toBe("internal");
+    expect(payload.error.message).toBe("目标服务器返回 HTTP 304。");
+  });
+
+  test("500 + 空响应体：首个 read 即 done → 文案只带状态码", async () => {
+    sinkRaw = rawEmpty500;
+    const probe = await fetch(sinkUrl, { method: "POST", body: "probe" });
+    const probeReader = probe.body.getReader();
+    const first = await probeReader.read();
+    expect(first.done).toBe(true);
+    expect(first.value).toBeUndefined();
+    await probeReader.cancel().catch(() => undefined);
+    received = [];
+
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] });
+    expect(res.status).toBe(502);
+    expect((await res.json()).error.message).toBe(PLAIN_500);
+  });
+
+  test("声明 gzip 却是明文：读取抛异常 → 文案同样只带状态码（且不能把异常泄成 500）", async () => {
+    sinkRaw = rawBrokenGzip500;
+    // 自证：同一形态下首个 read 真的 reject，而不是 done —— 否则这条与上一条同形
+    const probe = await fetch(sinkUrl, { method: "POST", body: "probe" });
+    const probeReader = probe.body.getReader();
+    await expect(probeReader.read()).rejects.toThrow();
+    await probeReader.cancel().catch(() => undefined);
+    received = [];
+
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] });
+    // 读取异常被 readTargetErrorDetail 自己吃掉 → 仍然是 502，不是 500
+    expect(res.status).toBe(502);
+    const payload = await res.json();
+    expect(payload.error.code).toBe("internal");
+    expect(payload.error.message).toBe(PLAIN_500);
+  });
+
+  test("取到的片段两端空白被 trim 掉（否则文案尾部会挂上空格）", async () => {
+    sinkStatus = 500;
+    sinkBody = "  \n  目标拒绝  \t ";
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] });
+    expect(res.status).toBe(502);
+    expect((await res.json()).error.message).toBe("目标服务器返回 HTTP 500：目标拒绝");
+  });
+});
+
+// ─── 兼容路径的 name 参数：缺字段 vs 纯空白 ───────────────────────
+//
+// `const name = (url.searchParams.get("name") ?? "").trim();`
+// 两个维度必须分别钉：
+//   · **缺字段**（query 里根本没有 name）→ 走 `?? ""` 那一支；
+//     变异把它改成 `String(url.searchParams.get("name"))` 时，name 变成字面量
+//     "null"（非空！）→ 过了 `if (!name)` → 一路走到生成层才报模型不存在 → 404。
+//     所以这条必须断 **400**。
+//   · **纯空白**（`name=%20` / 全角空格）→ 走 `.trim()` 那一支。
+//     删掉 `.trim()` 时 name 是 " "（真值）→ 过了 `if (!name)` → 查表时被
+//     safeFilePart 兜底成 `模型.json` → 同样落到 404。所以这条也必须断 **400**。
+//
+// 注意：合法名两端带空格**不能**用来断 trim —— `storageProjectDisplayName` 与
+// `safeFilePart` 各自也会 trim，那条路径上 `.trim()` 的缺失完全不可观测。
+//
+// 变异验证结论（14 行变异表，11 RED / 3 GREEN，GREEN 的三条**都是真等价**，
+// 不是输入维度没覆盖，记在这里免得下一个人重新查一遍）：
+//   1. `if (!text) return null` 删掉 → 绿。`.trim()` 之后为空 ⟺ 原串为空或全空白，
+//      而 `new URL("")` 必然抛错，被下一行的 catch 接成同一个 null。两条放弃路径
+//      产出相同结果，这段早退是给人看的。
+//   2. `String(raw ?? "")` → `String(raw)` → 绿。缺字段时 text 变成字面量
+//      "undefined"，`!text` 不成立，但 `new URL("undefined")` 同样抛错 → 同一个 null。
+//      **只在 catch 还在时等价**；两条互为对方的兜底。
+//   3. `record.project ?? {}` → `record.project` → 绿。`readSchemeProjectFile` 的
+//      返回值是 `{ ...project, name, ... }`，即使落盘 JSON 是 `null`／数组，
+//      `normalizeProjectForStorage` 第一行就展开成了对象，所以这个 `?? {}` 不可达。
+describe(`${sendPath} 兼容路径的 name 校验`, () => {
+  test("只给 schemePath、完全不给 name → 400「缺少模型名称」", async () => {
+    received = [];
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] }, `schemePath=${schemePath}`);
+    expect(res.status).toBe(400);
+    const payload = await res.json();
+    expect(payload.error.code).toBe("bad-request");
+    expect(payload.error.message).toContain("模型名称");
+    expect(received).toHaveLength(0);
+  });
+
+  test("name 为空串 / 半角空格 / 制表符 / 全角空格 → 同样 400", async () => {
+    for (const raw of ["", "%20", "%09", "%20%20", "%E3%80%80"]) {
+      received = [];
+      const res = await postSend(
+        { url: sinkUrl, files: [{ kind: "json" }] },
+        `schemePath=${schemePath}&name=${raw}`
+      );
+      expect(res.status).toBe(400);
+      expect((await res.json()).error.message).toContain("模型名称");
+      expect(received).toHaveLength(0);
+    }
+  });
+});
+
+// ─── 下发文件名的净化（sanitizeFileBase 的 replace 分支）──────────
+//
+// `sanitizeFileBase` 里 `replace(/[\\/:*?"<>|]+/g, "_")` 的**命中**分支，
+// 在本适配层里只有一个可达入口：模型名与磁盘文件名**不一致**的畸形模型。
+// 原因：正常模型 `name` 就等于 `safeFilePart(name)`，而 Windows 不允许那 7 个
+// 字符出现在文件名里 —— 只要名字带非法字符，「按名字查文件」就会落空。
+// 但读模型的取名规则是 `project.name || 文件名主体`，内容里的 name 优先；
+// 于是「文件名已净化、内容 name 仍带非法字符」的模型能被查到，且
+// `sanitizeFileBase` 拿到的是**未净化的那个**。
+//
+// 种子里的 `厂站_模型_A.json` 就是它（idx=7，内容 name = 厂站:模型?A）。
+// 断言成对：文件名必须是净化形态（`:` `?` → `_`），而 model_name 字段必须
+// 仍是原样 —— 只断其一，另一条退化（比如顺手把 model_name 也净化了）就发现不了。
+const WEIRD_NAME = "厂站:模型?A";
+const WEIRD_FILE_BASE = "厂站_模型_A";
+
+describe(`${sendPath} 下发文件名的净化`, () => {
+  test("兼容路径：文件名净化为下划线，model_name 字段仍原样", async () => {
+    const res = await postSend(
+      { url: sinkUrl, files: [{ kind: "json" }] },
+      `schemePath=${schemePath}&name=${encodeURIComponent(WEIRD_NAME)}`
+    );
+    expect(res.status).toBe(200);
+    expect(received).toHaveLength(1);
+    const structure = received[0].body.toString("utf-8");
+    expect(structure).toContain(`name="json_file"; filename="${WEIRD_FILE_BASE}.json"`);
+    expect(structure).not.toContain(`filename="${WEIRD_NAME}.json"`);
+    expect(structure).toMatch(/name="model_name"[\s\S]{0,40}\r?\n\r?\n厂站:模型\?A\r?\n/);
+  });
+
+  test("modelId 口径同形：名字由磁盘内容回填，同样净化（顺带证明 model_id=7 定位正确）", async () => {
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] }, "modelId=7");
+    expect(res.status).toBe(200);
+    expect(received).toHaveLength(1);
+    const structure = received[0].body.toString("utf-8");
+    expect(structure).toContain(`name="json_file"; filename="${WEIRD_FILE_BASE}.json"`);
+    expect(structure).toMatch(/name="model_id"[\s\S]{0,120}\r?\n\r?\n7\r?\n/);
+    // model_name 回填的是内容里的原始名，与兼容路径同形
+    expect(structure).toMatch(/name="model_name"[\s\S]{0,40}\r?\n\r?\n厂站:模型\?A\r?\n/);
   });
 });

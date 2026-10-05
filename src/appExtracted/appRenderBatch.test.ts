@@ -500,3 +500,180 @@ describe("useRenderBatch 的装配形态", () => {
     expect(showGlobalConfirm).not.toHaveBeenCalled();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 下面覆盖 useRenderBatch 装配期的图标库弹窗开合判定
+//   （appRenderBatch.tsx L630 / L640 / L642 / L643，导出物为 __appScope.iconLibraryPickerOpen）
+//
+// 生产代码（逐字）：
+//   L630 const imagePickerUsesIconSources = imageTarget?.kind === "canvasIcon"
+//        || (imageTarget?.kind === "stateIconDrawing" && imageTarget?.sourceMode !== "catalogOnly");
+//   L640 const imagePickerUsesIconSourcesCatalog =
+//          imagePickerUsesIconSources && imagePickerActiveSourceFilter === "catalog";
+//   L641 const iconLibraryPickerOpen =
+//          (imageTarget?.kind === "stateIconDrawing" && imageTarget.sourceMode === "catalogOnly") ||   ← L642
+//          (imagePickerUsesLibraryTabs(imageTarget) && imagePickerSourceFilter === "icon-library") ||   ← L643
+//          imagePickerUsesIconSourcesCatalog;                                                          ← L640
+//
+// ⚠️ 这是本仓反复出现的「同值不同机制」形态：L644 的 `||` 三条路径**产出同一个 true**。
+//   所以每个用例都必须先在注释里证明「另外两条路为假」，否则断言无法归因。
+//   下面每个 fixture 的排除理由都逐条列出。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * imagePickerUsesLibraryTabs(imageTarget) 的定义（appView.tsx:69-71）：
+ *   Boolean(imageTarget && kind !== "canvasIcon" && kind !== "stateIconDrawing")
+ * 即 kind 为 canvasIcon / stateIconDrawing 时它恒假 —— L643 因此要求第三种 kind。
+ */
+const KIND_NON_ICON_PICKER = "deviceParamIcon";
+
+describe("图标库弹窗开合判定：L642 / L643 是两条独立于 L640 的入口", () => {
+  test("L642：stateIconDrawing + sourceMode 为 catalogOnly 时开，此时 L630/L640/L643 全为假", () => {
+    const { scope: scopeOpen } = renderRenderBatchProbe({
+      imageTarget: { kind: "stateIconDrawing", sourceMode: "catalogOnly" },
+      imagePickerSourceFilter: "icon-library",
+    });
+
+    // 排除另外两条路，逐条说明（都是本次 fixture 的构造决定的，不是碰巧）：
+    //   L630 第一析取项：kind !== "canvasIcon"           → false
+    //   L630 第二析取项：sourceMode !== "catalogOnly" 为假 → imagePickerUsesIconSources = false
+    //     ⇒ L631 走 `: "builtin"` ⇒ L640 的左操作数为假
+    //   L643 第一合取项：usesLibraryTabs({kind:"stateIconDrawing"}) 恒假（定义见上）
+    // 故 open === true 只可能由 L642 产出。
+    expect(scopeOpen.iconLibraryPickerOpen).toBe(true);
+
+    // 同 fixture 的对照：只把 sourceMode 挪出 catalogOnly，L642 的**第二个合取项**立刻为假。
+    // 这条断言期望值是 false —— 与上面那条期望值不同，两侧都有断言才不会被
+    // 「把 L642 整体改成恒真/恒假」的变异混过去（§6.13 双侧要求）。
+    //   此时 L630 第二析取项转真、L640 左操作数为真，但 activeSourceFilter = "builtin" ≠ "catalog"
+    //   ⇒ L640 仍为假；L643 仍为假 ⇒ 整体为 false。
+    const { scope: scopeClosed } = renderRenderBatchProbe({
+      imageTarget: { kind: "stateIconDrawing", sourceMode: "builtinOnly" },
+      imagePickerSourceFilter: "icon-library",
+    });
+    expect(scopeClosed.iconLibraryPickerOpen).toBe(false);
+  });
+
+  test("L643：第三种 kind + image-library 过滤时开，此时 L630/L640/L642 全为假", () => {
+    const { scope: scopeOpen } = renderRenderBatchProbe({
+      imageTarget: { kind: KIND_NON_ICON_PICKER },
+      imagePickerSourceFilter: "icon-library",
+    });
+
+    // 排除另外两条路：
+    //   L630：kind 既非 canvasIcon 也非 stateIconDrawing ⇒ imagePickerUsesIconSources = false
+    //     ⇒ L631 走 `: "builtin"` ⇒ L640 的左操作数为假
+    //   L642：kind !== "stateIconDrawing" → false
+    // 故 open === true 只可能由 L643 产出。
+    expect(scopeOpen.iconLibraryPickerOpen).toBe(true);
+
+    // 对照：同 kind、同 imageTarget，只把过滤档改成 builtin。
+    // 变量只有 L643 的第二个合取项（=== "icon-library"），期望值 false ⇒ 该合取项承重。
+    const { scope: scopeClosed } = renderRenderBatchProbe({
+      imageTarget: { kind: KIND_NON_ICON_PICKER },
+      imagePickerSourceFilter: "builtin",
+    });
+    expect(scopeClosed.iconLibraryPickerOpen).toBe(false);
+  });
+});
+
+describe("图标库弹窗：L630 的两个析取项各自独立承重", () => {
+  test("第一析取项：kind 为 canvasIcon 时 L630 为真，经 L636 的 catalogOnly 分支推出 open", () => {
+    const { scope } = renderRenderBatchProbe({
+      imageTarget: { kind: "canvasIcon", sourceMode: "catalogOnly" },
+      imagePickerSourceFilter: "builtin",
+    });
+
+    // L630 的第一析取项命中即短路（第二析取项根本没求值）。
+    // L631 走到 L636 的 `sourceMode === "catalogOnly" ? "catalog"` ⇒ L640 两操作数皆真 ⇒ open。
+    // 排除：L642 需 kind === "stateIconDrawing" → false；L643 的 usesLibraryTabs({kind:"canvasIcon"}) 恒假。
+    expect(scope.iconLibraryPickerOpen).toBe(true);
+  });
+
+  test("第二析取项：stateIconDrawing 且 sourceMode 不在白名单里时 L630 为真", () => {
+    // **sourceMode 这个键整个不存在**（不是 sourceMode: "" 之类）。
+    // 判别依据：`undefined !== "catalogOnly"` 为真，这是本 fixture 让 L630 第二析取项成立的原因；
+    // 若写成 sourceMode: "catalogOnly" 就落到 L642 那一路去了，断言归因就错了。
+    const { scope } = renderRenderBatchProbe({
+      imageTarget: { kind: "stateIconDrawing" },
+      imagePickerSourceFilter: "catalog",
+    });
+
+    // L631：sourceMode 三个白名单档全不匹配 ⇒ 落到 L638 的尾三元
+    //   `imagePickerSourceFilter === "external" ? ... : === "catalog" ? "catalog" : "builtin"`
+    //   过滤档是 catalog ⇒ 产 "catalog" ⇒ L640 为真 ⇒ open。
+    // 排除：L642 需 sourceMode === "catalogOnly"，而这里 sourceMode 是 undefined → false；
+    //      L643 需 usesLibraryTabs({kind:"stateIconDrawing"}) → 恒假。
+    expect(scope.iconLibraryPickerOpen).toBe(true);
+  });
+
+  test("L640 的第二个合取项承重：L630 为真但 activeSourceFilter 不是 catalog 时不开", () => {
+    const { scope } = renderRenderBatchProbe({
+      imageTarget: { kind: "canvasIcon" },
+      imagePickerSourceFilter: "builtin",
+    });
+
+    // L630 第一析取项为真 ⇒ imagePickerUsesIconSources = true（L640 左操作数**为真**）。
+    // sourceMode 键不存在 ⇒ L631 落到 L638 尾三元，过滤档 builtin ⇒ 产 "builtin" ⇒ L640 右操作数为假。
+    // 排除：L642 需 kind === "stateIconDrawing" → false；L643 需 kind 非 canvasIcon → usesLibraryTabs 恒假。
+    // 期望值 false，且与上面两条（true）不同 —— 双侧都有断言。
+    expect(scope.iconLibraryPickerOpen).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// L907：量测编辑组 id 的随机源选择
+//   const editorGroupRandomSource = typeof __appScope.randomSource === "function"
+//     ? (__appScope.randomSource as () => number)
+//     : () => Math.random();
+//   const createMeasurementEditorGroupIdForScope = (nodeId, terminalId) =>
+//       createMeasurementEditorGroupId(nodeId, terminalId, editorGroupRandomSource);   ← L910
+//   Object.assign(__appScope, { createMeasurementEditorGroupId: … });                 ← L911
+// 观察层是 L911 回写的 scope.createMeasurementEditorGroupId；两条臂产出**不同的随机项**，
+// 所以断言同时落在完整 id 与「Math.random 有没有被调用」上（同值不同机制，§渲染批量类）。
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("量测编辑组 id 的随机源按 __appScope.randomSource 的类型二选一（L907）", () => {
+  test("注入了 function 时走注入源：不碰 Math.random，id 随注入值变化", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_EPOCH_MS);
+    const mathRandomStub = vi.spyOn(Math, "random").mockReturnValue(OTHER_RANDOM);
+
+    const { scope } = renderRenderBatchProbe({ randomSource: () => FIXED_RANDOM });
+    // 只清掉**装配期**可能发生的调用，把观察窗口收窄到被测的那一次调用上。
+    mathRandomStub.mockClear();
+
+    const id = scope.createMeasurementEditorGroupId("n1", "t1");
+
+    // 值：取的是注入源的 FIXED_RANDOM，不是 Math.random 的 OTHER_RANDOM。
+    // 两个值都不是「随机数」的典型值（0.5 / 0.123…），写死任一常量都会红。
+    expect(id).toBe(`measurement-n1-t1-group-${FIXED_EPOCH_BASE36}-${suffixOf(FIXED_RANDOM)}`);
+    // 机制：注入源被选中的可观测后果是 Math.random 一次都没被调用 ——
+    // 只断言 id 的话，`() => Math.random()` 分支被换成另一个恒定值也可能混过去。
+    expect(mathRandomStub).not.toHaveBeenCalled();
+
+    // 另一侧：同一注入源换值 ⇒ id 跟着变（证明随机项确实来自注入源，不是别的固定量）。
+    const { scope: scope2 } = renderRenderBatchProbe({ randomSource: () => OTHER_RANDOM });
+    expect(scope2.createMeasurementEditorGroupId("n1", "t1"))
+      .toBe(`measurement-n1-t1-group-${FIXED_EPOCH_BASE36}-${suffixOf(OTHER_RANDOM)}`);
+  });
+
+  test("未注入（非 function）时回落 Math.random，两侧产出必须不同", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_EPOCH_MS);
+    const mathRandomStub = vi.spyOn(Math, "random").mockReturnValue(OTHER_RANDOM);
+
+    // 探针底座不含 randomSource（APP_STATIC_SCOPE 里没有这个键）⇒ typeof 为 "undefined"。
+    const { scope } = renderRenderBatchProbe();
+    mathRandomStub.mockClear();
+
+    const id = scope.createMeasurementEditorGroupId("n1", "t1");
+
+    expect(id).toBe(`measurement-n1-t1-group-${FIXED_EPOCH_BASE36}-${suffixOf(OTHER_RANDOM)}`);
+    expect(mathRandomStub).toHaveBeenCalledTimes(1);
+
+    // 交叉对照：与上面「注入源」那条用例的期望值**不同**，双侧都有断言，
+    // 所以把两个分支写反（哪条臂产出哪个 id）也会红。
+    expect(id).not.toContain(`-${suffixOf(FIXED_RANDOM)}`);
+  });
+});

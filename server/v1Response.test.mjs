@@ -400,3 +400,129 @@ describe("sendV1Json —— If-None-Match 不匹配时的响应", () => {
     expect(res.body()).toBe("");
   });
 });
+
+// ── Accept-Encoding 的参数解析：gzipQualityFromParams 的三条跳过/兜底 ────
+//
+// gzipQualityFromParams 是**私有**函数（未 export），只能经 sendV1Json 传的
+// accept-encoding 头触达。既有测试的 q 参数一律「带 = 且名字恰好是 q」，于是下面
+// 三条从未被走到：
+//   L46  参数里没有 "="                        → continue（跳过该参数）
+//   L47  参数名不是 q                          → continue
+//   L49  q 解析不出有限数（NaN / ±Infinity）    → 兜底 0，即「不接受 gzip」
+//
+// 每条都配了**判别输入**，并且只靠 content-encoding 头观测「压不压缩」——
+// 不解压 body，所以变异后的失败是毫秒级的 AssertionError，而不是 zlib 抛错。
+const GZIP_PROBE_DATA = { data: "x".repeat(2048) };   // raw ≈ 2KB > GZIP_MIN_BYTES(1024)
+
+// 探针：跑一次 sendV1Json 并把 mock response 交回，便于同时看头与原始字节
+async function probeV1Gzip(acceptEncoding) {
+  const res = createMockResponse();
+  await sendV1Json(createMockRequest({ "accept-encoding": acceptEncoding }), res, GZIP_PROBE_DATA);
+  return res;
+}
+
+describe("sendV1Json —— Accept-Encoding 参数解析的跳过与兜底分支", () => {
+  test("★ L46：gzip 后跟不含 = 的参数 → 该参数被跳过，仍按缺省 q=1 压缩", async () => {
+    // 自然形态：q 没给取值。
+    expect((await probeV1Gzip("gzip;q")).headers["content-encoding"]).toBe("gzip");
+
+    // ★ 判别输入是 "qq" 而不是 "q"：把 L46 的 continue 删掉后
+    // `"qq".slice(0, -1) === "q"` → 名字判定误命中 → 解析 "qq" 得 NaN → 0 → 拒绝压缩。
+    // 用 "q" 测不到这一点（`"q".slice(0,-1)` 得 "" ，仍不等于 q，两条路径都 continue）。
+    const res = await probeV1Gzip("gzip;qq");
+    expect(res.headers["content-encoding"]).toBe("gzip");
+    expect(gunzipSync(res.rawBody()).toString("utf-8")).toBe(JSON.stringify({ ok: true, data: GZIP_PROBE_DATA }));
+  });
+
+  test("★ L47：参数名不是 q 就跳过，level=0 不会被当成 q=0", async () => {
+    // 关键在那个 "0"：删掉 L47 后 level=0 被当成 q=0 → 拒绝压缩 → 本条转红。
+    // 既有用例的参数名恰好都是 q，删掉这一行对它们**无影响** —— 判别力全在这里。
+    const res = await probeV1Gzip("gzip;level=0");
+    expect(res.headers["content-encoding"]).toBe("gzip");
+    expect(gunzipSync(res.rawBody()).toString("utf-8")).toBe(JSON.stringify({ ok: true, data: GZIP_PROBE_DATA }));
+
+    // 同一分支的另外两侧：名字确实是 q（大小写与空白都被归一）时按 q 解析，
+    // q=0 → 拒绝压缩。少了 toLowerCase 或少了 trim，这两条会各自转红。
+    expect((await probeV1Gzip("gzip;Q=0")).headers["content-encoding"]).toBeUndefined();
+    expect((await probeV1Gzip("gzip; q =0")).headers["content-encoding"]).toBeUndefined();
+  });
+
+  test("★ L49：q 解析不出有限数 → 按 q=0 处理，不压缩", async () => {
+    // 兜底 0 与「正常 q=0」产出相同，因此每条都靠 body 明文可解来确认
+    // 「这是真的没压缩」，并用末尾的对照组证明差别来自解析结果而非这个头不认 gzip。
+    for (const header of ["gzip;q=abc", "gzip;q=", "gzip;q=NaN", "gzip;q=Infinity"]) {
+      const res = await probeV1Gzip(header);
+      expect(res.headers["content-encoding"], header).toBeUndefined();
+      expect(res.headers.vary, header).toBeUndefined();
+      expect(res.jsonBody(), header).toEqual({ ok: true, data: GZIP_PROBE_DATA });
+    }
+    // 对照组：同一位置换成能解析且 >0 的 q，立刻压缩
+    expect((await probeV1Gzip("gzip;q=0.5")).headers["content-encoding"]).toBe("gzip");
+
+    // 不为「值上的 .trim()」写断言，理由可证：Number.parseFloat 按 spec 跳过前导
+    // 空白、且只解析前缀，故 `parseFloat(x.trim())` 在全域与 `parseFloat(x)` 相等。
+    // 写成断言只会给人「trim 被守卫着」的错觉。
+  });
+});
+
+// ── sendV1Wrapped 的 catch：非 Error 抛出的兜底文案 ────────────
+//
+// L182 是 `error instanceof Error ? error.message : "后端处理失败。"`。
+// 兜底文案与 Error 分支的 message 在本测试里**刻意不同**（同一段文本，
+// 一次裸抛、一次包成 Error 抛）—— 响应封装类模块最常见的假绿就是
+// 两条 catch 产出逐字节相同的文案，那样任何一条都咬不住。
+describe("sendV1Wrapped —— produce 抛非 Error 时的兜底文案", () => {
+  const TEXT = "设备未上线，控制指令没能下发（这段文本被裸抛，不是 Error 实例）";
+
+  test("★ 抛非 Error → 固定兜底文案；同样文本包成 Error 抛则原样透出", async () => {
+    const plain = createMockResponse();
+    await sendV1Wrapped(createMockRequest(), plain, async () => { throw TEXT; });
+    expect(plain.statusCode).toBe(500);
+    expect(plain.jsonBody()).toEqual({ ok: false, error: { code: "internal", message: "后端处理失败。" } });
+    expect(plain.headers["cache-control"]).toBe("no-store");
+
+    // 对照侧：Error 分支必须原样透出 message。两条产出不同，
+    // 才证明上一条真的走进了兜底，而不是「两边恰好同文案」。
+    const wrapped = createMockResponse();
+    await sendV1Wrapped(createMockRequest(), wrapped, async () => { throw new Error(TEXT); });
+    expect(wrapped.statusCode).toBe(500);
+    expect(wrapped.jsonBody()).toEqual({ ok: false, error: { code: "internal", message: TEXT } });
+    // 夹具自检：若 TEXT 恰好等于兜底文案，上面两条断言互为恒等，判别力归零
+    expect(TEXT).not.toBe("后端处理失败。");
+  });
+
+  test("★ 带 message 字段的普通对象仍走兜底：判据是 instanceof，不是取 .message", async () => {
+    // 把右臂改成 error.message（或去掉 instanceof）都会让本条转红。
+    const res = createMockResponse();
+    await sendV1Wrapped(createMockRequest(), res, async () => {
+      throw { code: "ERR_FAKE", message: "长得像错误的普通对象" };
+    });
+    expect(res.statusCode).toBe(500);
+    expect(res.jsonBody()).toEqual({ ok: false, error: { code: "internal", message: "后端处理失败。" } });
+  });
+});
+
+// ── no-store 响应与 ETag/304 互斥 ────────────────────────
+//
+// 说明：`sendPreparedV1` 里 L85 的 `if (prepared.noStore)` **true 分支在本模块
+// 不可达** —— 它只在 L117 被调用且第二实参写死 false（sendV1JsonNoStore 走的是
+// 自己那条 writeHead，根本不经 sendPreparedV1）。全仓 grep 也没有别的调用点。
+// 下面这条锁的是同一条语义在**可达路径**上的表现：no-store 响应即便与某个
+// 可缓存响应字节相同，也不带 ETag、不参与 304。
+describe("v1Response —— no-store 与可缓存响应的差异", () => {
+  test("同一份 data：可缓存路径带 ETag，no-store 路径字节相同但刻意不带", async () => {
+    const cached = createMockResponse();
+    await sendV1Json(createMockRequest(), cached, GZIP_PROBE_DATA);
+    const fresh = createMockResponse();
+    await sendV1JsonNoStore(fresh, GZIP_PROBE_DATA);
+
+    // 字节相同 → ETag 本可复用；不发它是有意的策略（运行时态不该被缓存）
+    expect(fresh.rawBody()).toEqual(cached.rawBody());
+    expect(cached.headers.etag).toBeTruthy();
+    expect(fresh.statusCode).toBe(200);
+    expect(fresh.headers.etag).toBeUndefined();
+    expect(fresh.headers["cache-control"]).toBe("no-store");
+    expect(cached.headers["cache-control"]).toBe("no-cache");
+    expect(fresh.headers["content-type"]).toBe("application/json; charset=utf-8");
+  });
+});

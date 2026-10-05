@@ -177,6 +177,135 @@ describe("src/export/e-file", () => {
     expect(rows.find((row) => row.componentLibrary === "Derived")?.fields.map((field: any) => field.sourceName)).toContain("bar");
   });
 
+  // resolveComponentLibrary 的 kind 兜底：section 只声明 kind（不写 componentLibrary）时，
+  // 必须落到同名类行上；若这层兜底被删，section.componentLibrary 为 undefined 会被 String() 成
+  // 「undefined」，整段进 skipped 且模板字段丢失（sectionFieldsByComponentLibrary 建在解析结果上）。
+  test("section 缺 componentLibrary 时按 kind 兜底到同名类行", () => {
+    const template = {
+      kind: "ACLoad",
+      params: { component_type: "ACLoad" },
+      parameterDefinitions: [{ enName: "p", exportEnabled: true }]
+    };
+    const result = applyEDeviceDefinitionSectionsToLibraryState({
+      sections: [{ kind: "ACLoad", exportEnabled: true, fields: [{ exportName: "p", cnName: "有功" }] }],
+      libraryTemplates: [template]
+    });
+    expect(result.eDeviceDefinitionClassExportEnabled.ACLoad).toBe(true);
+    expect(result.eDeviceDefinitionTemplateFields.ACLoad?.map((field: any) => field.exportName)).toEqual(["p"]);
+    expect(result.skipped).toEqual([]);
+    expect(result.matched.map((entry) => entry.device)).toEqual(["ACLoad"]);
+  });
+
+  // resolveComponentLibrary 的两条 ?? 兜底（componentLibrary / kind 同时缺失）：
+  // 解析结果必须是空串而不是字符串 undefined —— skipped 的 reason 里能直接看到解析值。
+  test("section 既无 componentLibrary 也无 kind 时按空串查类并报未匹配", () => {
+    const result = applyEDeviceDefinitionSectionsToLibraryState({
+      sections: [{ fields: [{ exportName: "p" }] }],
+      libraryTemplates: []
+    });
+    expect(result.matched).toEqual([]);
+    expect(result.skipped.map((entry) => entry.reason)).toEqual(["未找到对应的类设备："]);
+  });
+
+  // 反向映射分支：section.componentLibrary 写的是导出标签（eload）而非类名，
+  // reverseLabelToComponentLibrary 由 eDeviceDefinitionLabels 反建，必须还原到 ACLoad 行。
+  test("section 的 componentLibrary 是导出标签时按反向映射回到类名", () => {
+    const template = {
+      kind: "ACLoad",
+      params: { component_type: "ACLoad" },
+      parameterDefinitions: [{ enName: "p", exportEnabled: true }]
+    };
+    const result = applyEDeviceDefinitionSectionsToLibraryState({
+      sections: [{ kind: "eload", componentLibrary: "eload", exportEnabled: true, fields: [{ exportName: "p", cnName: "有功" }] }],
+      libraryTemplates: [template],
+      eDeviceDefinitionLabels: { ACLoad: "eload" }
+    });
+    expect(Object.keys(result.eDeviceDefinitionTemplateFields)).toEqual(["ACLoad"]);
+    expect(result.eDeviceDefinitionTemplateFields.ACLoad?.map((field: any) => field.exportName)).toEqual(["p"]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  // appendUniqueFields 的去重契约（断最终模板字段的精确列，而不是数 skipped 条目数）：
+  // 第二段的两个字段与第一段已有字段的 complianceKey 相同，必须都被丢弃
+  //   ① {exportName:"p"} 无 sourceName —— 验 seen 建键是 sourceName 优先：
+  //      第一段的 {sourceName:"p", exportName:"pmax"} 建出的 key 是 p，故它重复；
+  //      若 seen 改用 exportName 优先，key 变成 pmax，这条会作为第三列留下。
+  //   ② {sourceName:"Q_MAX"} —— 验 complianceKey 剥下划线并小写化：Q_MAX → qmax，与第一段重复。
+  //   两个无名字段（既无 sourceName 也无 exportName）分列两段：
+  //      第一段那个作为 target 侧成员原样保留（覆盖 seen 侧的两次 ?? 兜底），
+  //      第二段那个作为 source 侧成员 key 为空必须被丢弃 —— 否则它会作为
+  //      「未匹配设备属性」的空串列名混进 skipped.fields。
+  test("同名 section 合并字段时按 complianceKey 去重且丢弃无名字段", () => {
+    const template = {
+      kind: "ACLoad",
+      params: { component_type: "ACLoad" },
+      parameterDefinitions: [{ enName: "p", exportEnabled: true }]
+    };
+    const result = applyEDeviceDefinitionSectionsToLibraryState({
+      sections: [
+        {
+          kind: "load",
+          componentLibrary: "ACLoad",
+          exportEnabled: true,
+          fields: [
+            { sourceName: "p", exportName: "pmax", cnName: "有功" },
+            { sourceName: "qmax", exportName: "qmax", cnName: "无功" },
+            { cnName: "无名" }
+          ]
+        },
+        {
+          kind: "load",
+          componentLibrary: "ACLoad",
+          exportEnabled: true,
+          fields: [
+            { exportName: "p", cnName: "有功上限" },
+            { sourceName: "Q_MAX", exportName: "qmax", cnName: "无功上限" },
+            { cnName: "无名2" }
+          ]
+        }
+      ],
+      libraryTemplates: [template]
+    });
+    // 合并后只剩两列；去重坏掉会变成 4 列（多出 p 与重复的 qmax）
+    expect(result.eDeviceDefinitionTemplateFields.ACLoad?.map((field: any) => field.exportName)).toEqual(["pmax", "qmax"]);
+    // 两列都命中设备自带属性（ACLoad 默认带 p_max/q_max）
+    expect(result.matched).toEqual([
+      {
+        section: "load",
+        device: "ACLoad",
+        fields: [
+          { template: "pmax", device: "p_max" },
+          { template: "qmax", device: "q_max" }
+        ]
+      }
+    ]);
+    // 只有 target 侧那个无名字段进了未匹配列表（列名为空串）；
+    // source 侧那个若没被丢弃，这里会出现第二个空串列名。
+    expect(result.skipped).toEqual([{ section: "load", reason: "字段未匹配设备属性", fields: [""] }]);
+  });
+
+  // eDeviceInterfaceRelationKey 的 idx_base 兜底：基类名归一化后为空（全是非字母数字字符）时，
+  // 派生行的关系字段名退回 idx_base，而不是拼出 idx_ 空后缀。
+  test("派生模板基类名无字母数字时关系字段名退回 idx_base", () => {
+    const template = {
+      kind: "custom-derived",
+      label: "",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "__",
+      params: {
+        component_type: "__",
+        derived_from_component_type: "__",
+        derived_component_type: "MyDerived",
+        is_derived_component_library: "1"
+      },
+      parameterDefinitions: [{ enName: "p", exportEnabled: true }]
+    };
+    const rows = buildEDeviceInterfaceDefinitionRows({ libraryTemplates: [template] });
+    const derived = rows.find((row) => row.componentLibrary === "MyDerived");
+    expect(derived).toBeTruthy();
+    expect(derived?.fields.map((field: any) => field.sourceName)).toContain("idx_base");
+  });
+
   test("可选字段、原始类名、既有 override 与自定义模板清理", () => {
     const template = { kind: "ACLoad", params: { component_type: "ACLoad" }, parameterDefinitions: [{ enName: "p", exportEnabled: true }] };
     const result = applyEDeviceDefinitionSectionsToLibraryState({

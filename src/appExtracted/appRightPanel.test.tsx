@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { ContainerKindSelectValue, voltageBaseSideKeyForTerminal } from "./appRightPanel";
+import { CONTAINER_KIND_LABELS } from "../acContainer";
 import { MODEL_TYPES } from "../model";
 import { getTerminalVoltageLevel, voltageBaseSettingModeForNode } from "../model-routing";
 
@@ -127,5 +128,107 @@ describe("变流器等分压设备的按端子电压等级行", () => {
     // 两处调用点(容器参数表 / 通用参数表)都切到多行版本,旧单数调用不得残留
     expect(source.match(/renderVoltageBaseRows\(\)/g)?.length).toBe(2);
     expect(source.match(/renderVoltageBaseRow\(/g)).toBeNull();
+  });
+});
+
+/**
+ * 目标分支：`src/appExtracted/appRightPanel.tsx` L120（`keys[terminalIndex] ?? "vbase"`）
+ * 与 L142（`CONTAINER_KIND_LABELS[kind] ?? kind`）。
+ *
+ * 两条都是**导出函数/组件内的 `??` 右臂**，不需要渲染整面板、直接调即可：
+ *   · L120 —— `voltageBaseSideKeyForTerminal` 是纯函数，端子索引给超界值即可；
+ *   · L142 —— `ContainerKindSelectValue` 是个无状态组件，`kind` 给一个不在
+ *     CONTAINER_KIND_LABELS 里的英文 kind 即可（`CONTAINER_KIND_LABELS` 只覆盖
+ *     CONTAINER_KINDS 六种容器），渲染出的 displayValue 会走右臂回落到 kind 本身。
+ */
+describe("分压设备的侧电压 E 键兜底（超界索引 → vbase）", () => {
+  test("端子索引超出 keys 长度时回落到 vbase（变流器 / 双端 / 三绕组三条 keys 分支各测一次）", () => {
+    // 变流器：keys = [source_vbase, target_vbase]（长度 2），索引 2 越界
+    expect(voltageBaseSideKeyForTerminal({ kind: "dcdc-converter", params: {} }, 2)).toBe("vbase");
+    // 双端变压器：keys = [i_vbase, j_vbase]（长度 2），索引 2 越界
+    expect(voltageBaseSideKeyForTerminal({ kind: "ac-transformer", params: {} }, 2)).toBe("vbase");
+    // 三绕组变压器：keys = [i_vbase, k_vbase, j_vbase]（长度 3），索引 3 越界
+    expect(voltageBaseSideKeyForTerminal({ kind: "ac-three-winding-transformer", params: {} }, 3)).toBe("vbase");
+  });
+
+  test("负索引同样落空并回落到 vbase（不是 undefined）", () => {
+    // Array[-1] === undefined，右臂必须生效
+    expect(voltageBaseSideKeyForTerminal({ kind: "ac-transformer", params: {} }, -1)).toBe("vbase");
+    expect(voltageBaseSideKeyForTerminal({ kind: "dcdc-converter", params: {} }, -1)).toBe("vbase");
+  });
+
+  test("索引在界内时不得走右臂（防兜底值恰好等于某个真键导致断言无鉴别力）", () => {
+    // 显式反证：界内索引命中真键，不是 "vbase"
+    expect(voltageBaseSideKeyForTerminal({ kind: "dcdc-converter", params: {} }, 0)).toBe("source_vbase");
+    expect(voltageBaseSideKeyForTerminal({ kind: "ac-transformer", params: {} }, 1)).toBe("j_vbase");
+    expect(voltageBaseSideKeyForTerminal({ kind: "ac-three-winding-transformer", params: {} }, 2)).toBe("j_vbase");
+    // "vbase" 不在任何分支的 keys 里
+    for (const key of ["source_vbase", "target_vbase", "i_vbase", "j_vbase", "k_vbase"]) {
+      expect(key).not.toBe("vbase");
+    }
+  });
+});
+
+/**
+ * ⚠ 这批断言**必须**走 `disabled` 渲染：`disabled` 时 `InlineEditableValue` 只输出
+ * displayValue 的纯文本、不渲染候选清单。而候选清单里必然出现全部英文 kind
+ * （`data-inline-option-values="ac-vpp-box|ac-switch-box|..."`），于是 enabled 渲染下
+ * `toContain("ac-unknown-box")` 命中的其实是**候选项**而不是显示值 ——
+ * 变异验证实测：把 L142 的 `?? kind` 整段删掉（displayValue 变 undefined）时，
+ * enabled 版断言**全绿**。
+ *
+ * 变异验证补记（L142 的 `?? kind` 是**可证明的等价变异**，绿是正确结果）：
+ *   · 删掉 `?? kind` ⇒ displayValue 为 undefined，而子组件自己带兜底
+ *     `shownValue = displayValue ?? currentOption?.label ?? normalizedValue`
+ *     （InputComponents.tsx L324）⇒ 未登记 kind 时 currentOption 为 undefined，
+ *     于是 shownValue = normalizedValue = String(kind) = kind —— 与兜底臂**逐字相同**。
+ *   · 可证明的前提：`containerKindOptions()` 的候选值集与 `CONTAINER_KIND_LABELS`
+ *     的键集都派生自 `CONTAINER_KINDS`（acContainer.ts L572/L585），两集恒相等。
+ *     故「在候选里」⟺「在标签表里」，不存在「有候选但没标签」那种能分辨两臂的 kind。
+ *   · 什么会让它不再等价：`InlineEditableValue` 的 `?? currentOption?.label` 被删，
+ *     或 `containerKindOptions()` 的候选集合扩到 `CONTAINER_KINDS` 之外 ——
+ *     那时右臂就成了唯一承重的一层。
+ *   · 另一条「右臂的**取值**确实承重」的证据：把 `kind` 换成字面量 "WRONG_LABEL" ⇒ 转红。
+ */
+describe("容器「设备类型」行的显示值兜底（未登记 kind → 回落到 kind 本身）", () => {
+  const text = (kind: string) => renderValue({ kind, disabled: true });
+
+  /** disabled 渲染的正文：`<span class="inline-property-value read-only">显示值</span>` */
+  const displayText = (kind: string) => {
+    const matched = /^<span class="inline-property-value read-only">([^<]*)<\/span>$/.exec(text(kind));
+    expect(matched, `未渲染出只读显示值：${text(kind)}`).not.toBeNull();
+    return matched![1];
+  };
+
+  test("未登记的英文 kind：displayValue 回落到 kind 本身而不是空串", () => {
+    // 前提断言：确保传入的 kind 确实不在 CONTAINER_KIND_LABELS 里
+    expect(CONTAINER_KIND_LABELS["ac-unknown-box"]).toBeUndefined();
+    expect(displayText("ac-unknown-box")).toBe("ac-unknown-box");
+  });
+
+  test("非容器 kind（如变压器）：同样回落到 kind 本身", () => {
+    // 变压器不是容器 kind ⇒ 不在 CONTAINER_KIND_LABELS 里
+    expect(CONTAINER_KIND_LABELS["ac-transformer"]).toBeUndefined();
+    expect(displayText("ac-transformer")).toBe("ac-transformer");
+  });
+
+  test("已登记的容器 kind 走中文名，右臂不得被误触发（双侧断言）", () => {
+    // 显式反证：界内时走左臂（中文名）——纯文本里既没有英文 kind，也没有 <button> 候选清单
+    const html = text("ac-switch-box");
+    expect(html).not.toContain("<button");
+    expect(displayText("ac-switch-box")).toBe("开关箱");
+    expect(html).not.toContain("ac-switch-box");
+  });
+
+  test("兜底值必须逐字等于 kind 本身（防「恰好也是中文名」导致断言无鉴别力）", () => {
+    // 登记表里 6 个 kind 的中文名两两与英文 kind 不同 ⇒ 回落值不可能碰巧等于任一中文名
+    for (const kind of Object.keys(CONTAINER_KIND_LABELS)) {
+      expect(displayText(kind), kind).toBe(CONTAINER_KIND_LABELS[kind]);
+    }
+    // 未登记的一律逐字回落（这三个共用中文名「虚拟电厂」，不能拿中文名当回落值的证据）
+    for (const kind of ["ac-unknown-box", "ac-transformer", "dc-unknown-box", "ac-vpp-box-legacy"]) {
+      expect(CONTAINER_KIND_LABELS[kind], kind).toBeUndefined();
+      expect(displayText(kind), kind).toBe(kind);
+    }
   });
 });

@@ -11,6 +11,7 @@
 // handleSave / checkNameDuplicate 这些函数不在本文件覆盖范围内，文件末尾如实列出。
 
 import { createElement } from "react";
+import * as ReactNamespace from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -214,6 +215,192 @@ describe("VoltageLevelDialog 标签页数据源（源码守卫）", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// L107 / L108 / L164 的另一半
+//
+// 这三行都只看**组件内部 state**，而 renderToStaticMarkup 跑不到它们：
+//   - L107/L108 的四个三元式按 `tab` 分支。tab 的初值恒为 "ac"，只有 onClick 能改，
+//     静态渲染不派发事件 ⇒ 默认渲染永远只走 L107 的真臂、L108 的假臂。
+//   - L164 的 `{error && …}`。error 的初值恒为 ""，只有 updateRow / handleSave 能写。
+//
+// 换渲染器不现实（本项目没有 jsdom / react-test-renderer，见文件头），
+// 但组件本体是个**纯函数**：`useState` / `useRef` / `useEffect` 都是从 "react" 取的，
+// 而 React 19 把当前 dispatcher 挂在 `ReactSharedInternals.H` 上，**调用时才解析**。
+// 于是临时换掉那个槽位，就能按调用序号喂进指定的 state，直接调用组件函数拿到 React 元素树，
+// 再在元素树上断言 —— 全程不碰 DOM、不派发事件、不渲染 HTML。
+//
+// 只认 React 19 的 internals 槽位：换不到就明确抛错，绝不静默退化成「测不出来」。
+// ---------------------------------------------------------------------------
+
+type Internals = { H?: unknown };
+const REACT_INTERNALS =
+  (ReactNamespace as unknown as {
+    __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE?: Internals;
+  }).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+
+// 组件里的 useState 调用序号 → 语义（L20 tab / L21 draft / L22 error）。
+const STATE_TAB = 0;
+const STATE_DRAFT = 1;
+const STATE_ERROR = 2;
+
+type Element = { type?: unknown; props?: Record<string, any> };
+
+/** 在 React 元素树上按谓词收集元素（不渲染，只遍历 props.children）。 */
+const collectElements = (node: unknown, match: (el: Element) => boolean, out: Element[] = []): Element[] => {
+  if (Array.isArray(node)) {
+    for (const child of node) collectElements(child, match, out);
+    return out;
+  }
+  if (!node || typeof node !== "object") return out;
+  const el = node as Element;
+  if (match(el)) out.push(el);
+  if (el.props && "children" in el.props) collectElements(el.props.children, match, out);
+  return out;
+};
+
+/** 宿主标签元素，如 type === "button" 的原生按钮。 */
+const collectByType = (node: unknown, type: string, out?: Element[]) =>
+  collectElements(node, (el) => el.type === type, out);
+
+/**
+ * 按指定的内部 state 调用组件本体，返回收集到的按钮与 span。
+ *
+ * `state` 按 useState 调用序号给值；没给的序号退回源码里的初始值表达式，
+ * 因此这里必须与源码的 useState 顺序一致（L20-L22），改顺序会让本组用例失败而非误绿。
+ */
+const renderWithInternalState = (
+  state: { tab?: "ac" | "dc"; error?: string },
+  settings: { ac: Row[]; dc: Row[] } = { ac: [{ name: "0", vltp: "0" }], dc: [] }
+) => {
+  if (!REACT_INTERNALS || typeof REACT_INTERNALS !== "object") {
+    throw new Error(
+      "取不到 React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE —— React 版本已变，本组用例的前提失效"
+    );
+  }
+  const preset: unknown[] = [];
+  if (state.tab !== undefined) preset[STATE_TAB] = state.tab;
+  if (state.error !== undefined) preset[STATE_ERROR] = state.error;
+
+  const previous = REACT_INTERNALS.H;
+  let useStateCalls = 0;
+  const noop = () => {};
+  REACT_INTERNALS.H = {
+    useState: (initial: unknown) => {
+      const index = useStateCalls++;
+      const value = index < preset.length && index in preset ? preset[index] : initial;
+      return [value, noop];
+    },
+    useRef: () => ({ current: null }),
+    // 组件里的 useEffect 会 document.addEventListener；直接调用组件时它根本不该跑
+    useEffect: () => {}
+  };
+  let tree: unknown;
+  try {
+    tree = (VoltageLevelDialog as unknown as (props: unknown) => unknown)({
+      open: true,
+      onClose: noop,
+      settings,
+      onSave: noop
+    });
+  } finally {
+    REACT_INTERNALS.H = previous;
+  }
+  // 少喂一个 state 就说明源码的 useState 顺序变了；多喂说明新增了 state
+  expect(useStateCalls).toBe(3);
+
+  const buttons = collectByType(tree, "button");
+  const spans = collectByType(tree, "span");
+  // 保存/新增用的是 antd 的 <Button>，不是宿主 <button>：按 disabled 属性挑出来
+  const antdButtons = collectElements(tree, (el) => "disabled" in (el.props ?? {}));
+  const tabButton = (label: string) => {
+    const found = buttons.find((b) => b.props?.children === label);
+    if (!found) throw new Error(`没找到标签页按钮 ${label}`);
+    return found;
+  };
+  return { buttons, spans, antdButtons, tabButton };
+};
+
+describe("VoltageLevelDialog 标签页的另一半分支（L107/L108）", () => {
+  // tab 初值恒为 "ac"，所以这两行默认渲染只走 L107 真臂 + L108 假臂。
+  // 这里把内部 state 换成 "dc"，补上 L107 假臂 + L108 真臂。
+  const onDc = (): ReturnType<typeof renderWithInternalState> =>
+    renderWithInternalState(
+      { tab: "dc" },
+      { ac: [{ name: "0", vltp: "0" }], dc: [{ name: "800", vltp: "800" }] }
+    );
+
+  test("tab=dc 时交流按钮落到 L107 的假臂：非 active + 透明下边框 + 常规字重 + 灰字", () => {
+    const { tabButton } = onDc();
+    const ac = tabButton("交流");
+    expect(ac.props?.className).toBe("");
+    expect(ac.props?.style.borderBottom).toBe("2px solid transparent");
+    expect(ac.props?.style.fontWeight).toBe(400);
+    expect(ac.props?.style.color).toBe("#64748b");
+  });
+
+  test("tab=dc 时直流按钮落到 L108 的真臂：active + 蓝色下边框 + 半粗 + 蓝字", () => {
+    const { tabButton } = onDc();
+    const dc = tabButton("直流");
+    expect(dc.props?.className).toBe("active");
+    expect(dc.props?.style.borderBottom).toBe("2px solid #2563eb");
+    expect(dc.props?.style.fontWeight).toBe(600);
+    expect(dc.props?.style.color).toBe("#2563eb");
+  });
+
+  test("两个标签按钮的 className 互斥：同一时刻只有一个是 active", () => {
+    // 防「断言值恰好等于兜底值」：只断言其中一侧时，把另一侧的判据写死也照样绿。
+    // 这一条要求两侧在同一棵树里同时成立，两者的默认值必须真的不同。
+    const acTree = renderWithInternalState({ tab: "ac" });
+    const dcTree = onDc();
+    expect(acTree.tabButton("交流").props?.className).toBe("active");
+    expect(acTree.tabButton("直流").props?.className).toBe("");
+    expect(dcTree.tabButton("交流").props?.className).toBe("");
+    expect(dcTree.tabButton("直流").props?.className).toBe("active");
+  });
+
+  test("切到直流后渲染的是 dc 列表，交流行不出现在表体里", () => {
+    // tab 真的参与了渲染，而不是只改了按钮样式 —— 顺带钉住 draft[tab] 的取值
+    const { buttons } = onDc();
+    const rows = buttons.filter((b) => b.props?.title === "删除");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].props?.style.color).toBe("#ef4444");
+  });
+});
+
+describe("VoltageLevelDialog 错误提示条（L164）", () => {
+  // error 初值恒为 ""，静态渲染永远只走 `&&` 的假臂（不渲染 span）。
+  // 这里把内部 state 换成非空串，补上真臂。
+  const ON_ERROR = "第 7 行名称不能为空";
+
+  test("error 非空时渲染红色提示条，内容就是 error 本身", () => {
+    const { spans } = renderWithInternalState({ error: ON_ERROR });
+    // 新增/保存按钮里的 <span> 没有 style；错误提示条是唯一带 style 的 span
+    const banners = spans.filter((s) => s.props?.style !== undefined);
+    expect(banners).toHaveLength(1);
+    expect(banners[0].props?.style.color).toBe("#ef4444");
+    expect(banners[0].props?.style.fontSize).toBe(11);
+    expect(banners[0].props?.children).toBe(ON_ERROR);
+  });
+
+  test("error 为空串时不渲染提示条（`&&` 的假臂，与真臂互斥）", () => {
+    // 与上一条成对：期望值不落在兜底值上，两侧都断
+    const { spans } = renderWithInternalState({ error: "" });
+    expect(spans.filter((s) => s.props?.style !== undefined)).toHaveLength(0);
+    expect(spans.length).toBeGreaterThan(0);
+  });
+
+  test("error 非空时保存按钮被禁用，空串时不禁用", () => {
+    // disabled={!!error} 与提示条同源：提示条渲染了，按钮就该是禁用的
+    const withError = renderWithInternalState({ error: ON_ERROR });
+    const withoutError = renderWithInternalState({ error: "" });
+    // 新增（无 disabled 属性）与保存（type="primary"）两个 antd Button
+    expect(withError.antdButtons).toHaveLength(2);
+    expect(withError.antdButtons.filter((b) => b.props?.type === "primary")).toHaveLength(1);
+    expect(withError.antdButtons.find((b) => b.props?.type === "primary")?.props?.disabled).toBe(true);
+    expect(withoutError.antdButtons.find((b) => b.props?.type === "primary")?.props?.disabled).toBe(false);
+  });
+});
+
 describe("VoltageLevelDialog 渲染期不产生副作用", () => {
   test("首屏不回调 onSave / onClose", () => {
     render({ ac: [{ name: "0", vltp: "0" }], dc: [] });
@@ -243,3 +430,6 @@ describe("VoltageLevelDialog 渲染期不产生副作用", () => {
 //   - restoreRow：把内置行的 vltp 写回与 name 相同
 //   - handleSave：空名/重名校验、writeVoltageLevelSettings、onSave、onClose
 // 补这些需要能驱动交互的渲染器（jsdom 或 react-test-renderer），本项目尚未引入。
+//
+// 注意 L107/L108/L164**不在**上面这份清单里：它们只看内部 state，靠替换 React 的
+// dispatcher 槽位喂 state 就已覆盖（见上方两组 describe），不需要交互式渲染器。

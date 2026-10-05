@@ -382,3 +382,182 @@ describe("validateParams 现状：小数与极端值实际被接受（与注释�
     }
   });
 });
+
+/**
+ * 假 SVG 元素：属性存在一个普通对象里，getAttribute 命中不到时返回 null
+ * （与 DOM 一致，所以 `!clone.getAttribute("xmlns")` 能真的为真）。
+ * setAttribute 是 vi.fn()，可直接断言「被写了哪些键、写了什么值」。
+ */
+type FakeSvgClone = {
+  cloneNode: (deep: boolean) => FakeSvgClone;
+  querySelectorAll: (selector: string) => Array<{ remove: () => void }>;
+  setAttribute: (key: string, value: string) => void;
+  getAttribute: (key: string) => string | null;
+  __attrs: Record<string, string>;
+};
+
+function installSvgDomStub(initialAttrs: Record<string, string>) {
+  const attrs: Record<string, string> = { ...initialAttrs };
+  const setAttribute = vi.fn();
+  const clone: FakeSvgClone = {
+    cloneNode: () => clone,
+    querySelectorAll: () => [],
+    setAttribute: (key, value) => {
+      setAttribute(key, value);
+      attrs[key] = value;
+    },
+    getAttribute: (key) =>
+      Object.prototype.hasOwnProperty.call(attrs, key) ? attrs[key] : null,
+    __attrs: attrs,
+  };
+  vi.stubGlobal(
+    "XMLSerializer",
+    class {
+      serializeToString(el: FakeSvgClone): string {
+        return (
+          "<svg " +
+          Object.entries(el.__attrs)
+            .map(([k, v]) => `${k}="${v}"`)
+            .join(" ") +
+          "/>"
+        );
+      }
+    }
+  );
+  return { clone, setAttribute };
+}
+
+describe("svgRef 回退分支：xmlns 缺省补写 vs 已有 xmlns 保留", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("clone 无 xmlns → 补写标准命名空间，且只写 width/height/xmlns 三个键", async () => {
+    const { clone, setAttribute } = installSvgDomStub({ viewBox: "0 0 100 50" });
+    const rasterize = vi.fn().mockResolvedValue("svgref-base64");
+
+    const result = await serializeScreenshot(
+      mockAppScope({ buildSvgDocument: undefined, svgRef: { current: clone } }),
+      { width: 321, height: 654 },
+      rasterize
+    );
+
+    expect(result.ok).toBe(true);
+    // 只写这三项：背景元素被移除、无多余属性
+    expect(setAttribute.mock.calls.map((c) => c[0])).toEqual([
+      "width",
+      "height",
+      "xmlns",
+    ]);
+    expect(setAttribute).toHaveBeenCalledWith("width", "321");
+    expect(setAttribute).toHaveBeenCalledWith("height", "654");
+    expect(setAttribute).toHaveBeenCalledWith("xmlns", "http://www.w3.org/2000/svg");
+    // 序列化结果带上补写的 xmlns，宽度来自 params 而非 canvasBounds
+    expect(rasterize).toHaveBeenCalledWith(
+      '<svg viewBox="0 0 100 50" width="321" height="654" xmlns="http://www.w3.org/2000/svg"/>',
+      321,
+      654
+    );
+  });
+
+  test("clone 已有非标准 xmlns → 原样保留，不被补写覆盖（守卫另一侧）", async () => {
+    const { clone, setAttribute } = installSvgDomStub({
+      viewBox: "0 0 100 50",
+      xmlns: "urn:custom-svg-ns",
+    });
+    const rasterize = vi.fn().mockResolvedValue("svgref-keep");
+
+    const result = await serializeScreenshot(
+      mockAppScope({ buildSvgDocument: undefined, svgRef: { current: clone } }),
+      { width: 321, height: 654 },
+      rasterize
+    );
+
+    expect(result.ok).toBe(true);
+    // 守卫另一侧：xmlns 一个字都不能写
+    expect(setAttribute.mock.calls.map((c) => c[0])).toEqual(["width", "height"]);
+    expect(rasterize).toHaveBeenCalledWith(
+      '<svg viewBox="0 0 100 50" xmlns="urn:custom-svg-ns" width="321" height="654"/>',
+      321,
+      654
+    );
+  });
+});
+
+describe("rasterize 非 Error 拒绝：兜底文案而非 undefined", () => {
+  test("以裸字符串拒绝 → message 取固定兜底「画布截图失败。」", async () => {
+    const rasterize = vi.fn().mockRejectedValue("裸字符串原因");
+
+    const result = await serializeScreenshot(
+      mockAppScope(),
+      undefined,
+      rasterize
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("internal");
+      // 若三元被抹平，这里会拿到 undefined（字符串没有 .message）
+      expect(result.error.message).toBe("画布截图失败。");
+    }
+  });
+
+  test("对照：Error 实例拒绝 → message 取 error.message，两侧兜底值确实不同", async () => {
+    const rasterize = vi
+      .fn()
+      .mockRejectedValue(new Error("SVG 图像加载失败。"));
+
+    const result = await serializeScreenshot(
+      mockAppScope(),
+      undefined,
+      rasterize
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toBe("SVG 图像加载失败。");
+      // 与另一侧的兜底文案区分开，否则上面的断言可能只是「恰好等于默认值」
+      expect(result.error.message).not.toBe("画布截图失败。");
+    }
+  });
+});
+
+describe("外层 catch 非 Error 兜底：buildSvgDocument 抛非 Error", () => {
+  test("抛裸字符串 → 兜底文案「截图过程发生未知错误。」被采用", async () => {
+    const scope = mockAppScope({
+      buildSvgDocument: (): never => {
+        throw "裸字符串原因";
+      },
+    });
+    const rasterize = vi.fn();
+
+    const result = await serializeScreenshot(scope, undefined, rasterize);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("internal");
+      // 若三元被抹平，这里会拿到 undefined
+      expect(result.error.message).toBe("截图过程发生未知错误。");
+    }
+    // 抛错发生在 rasterize 之前，rasterize 不该被调用
+    expect(rasterize).not.toHaveBeenCalled();
+  });
+
+  test("对照：抛 Error 实例 → message 取 error.message，与另一侧兜底文案不同", async () => {
+    const scope = mockAppScope({
+      buildSvgDocument: (): never => {
+        throw new Error("图层数据畸形");
+      },
+    });
+    const rasterize = vi.fn();
+
+    const result = await serializeScreenshot(scope, undefined, rasterize);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toBe("图层数据畸形");
+      expect(result.error.message).not.toBe("截图过程发生未知错误。");
+    }
+    expect(rasterize).not.toHaveBeenCalled();
+  });
+});

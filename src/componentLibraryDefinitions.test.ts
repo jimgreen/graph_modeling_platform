@@ -1219,3 +1219,182 @@ describe("component library recursion guard and definition key collision merge",
     expect(padded?.metadata.className).toBe("ChainRoot");
   });
 });
+
+describe("component library 缺省入参与缺省字段的边界分支", () => {
+  const branchCategory = "交流设备";
+  const branchRootDefinition = {
+    name: "BranchRoot",
+    label: "支路根",
+    categoryLibraryName: branchCategory,
+    isDerivedComponentLibrary: false,
+    isContainerComponentLibrary: false,
+    terminalCount: 1,
+    terminalTypes: ["ac"],
+    terminalLabels: ["交流端"],
+    terminalRoles: ["single-load"],
+    terminalAssociations: ["ac-load"]
+  } as const;
+  const branchDerivedDefinition = {
+    name: "BranchDerived",
+    label: "支路派生",
+    categoryLibraryName: branchCategory,
+    isDerivedComponentLibrary: true,
+    derivedFromComponentLibrary: "BranchRoot"
+  } as const;
+  const branchLibraries = [branchRootDefinition, branchDerivedDefinition] as any;
+
+  const branchTemplate = (
+    kind: string,
+    measurementDefinitions: NonNullable<DeviceTemplate["measurementDefinitions"]>
+  ) => ({
+    kind,
+    label: kind,
+    componentClass: "BranchRoot",
+    categoryLibrary: branchCategory,
+    terminalType: "ac",
+    terminalCount: 1,
+    terminalTypes: ["ac"],
+    terminalLabels: ["交流端"],
+    size: { width: 80, height: 48 },
+    params: { component_type: "BranchRoot" },
+    measurementDefinitions
+  }) as DeviceTemplate;
+
+  test("override key 对缺省类名与纯空白类名返回空串而不是字符串 undefined", () => {
+    // 断言值刻意不用最常见的真类名：这里要断的是「归一之后落成空串」，
+    // 硬编码成某个类名的变异会立刻被抓到。
+    expect(componentLibraryDefinitionOverrideKey(undefined as unknown as string)).toBe("");
+    expect(componentLibraryDefinitionOverrideKey(null as unknown as string)).toBe("");
+    expect(componentLibraryDefinitionOverrideKey("")).toBe("");
+    expect(componentLibraryDefinitionOverrideKey("   ")).toBe("");
+    // 反向对照：非空类名仍按「去首尾空白 + class: 前缀」产出，供上面几条有鉴别力。
+    expect(componentLibraryDefinitionOverrideKey("  BranchRoot  ")).toBe("class:BranchRoot");
+  });
+
+  test("dev_type 典型值在类名缺省时落成空串而不是 undefined 文本", () => {
+    // 直接调被测函数的原始形态：生产里的入口（resolveEditableComponentLibraryDefinition）
+    // 早就把 className 归一成非空串，聚合入口永远看不到这里的 `?? ""`。
+    const rows = buildComponentLibraryDefaultParameterDefinitions(
+      undefined as unknown as string,
+      ["ac"]
+    );
+
+    expect(rows.find((row) => row.enName === "dev_type")).toMatchObject({
+      cnName: "设备类型",
+      typicalValue: "",
+      readonly: false
+    });
+    // 缺省类名不得被当成任一规范支路/三绕组类，否则端子字段会被重命名。
+    expect(rows.map((row) => row.enName)).toEqual(expect.arrayContaining(["node"]));
+    expect(rows.map((row) => row.enName)).not.toEqual(expect.arrayContaining(["i_node", "j_node", "k_node"]));
+  });
+
+  test("持久化行缺 enName 时按空键整行丢弃而不是落成字符串 undefined 键", () => {
+    const derivedKey = componentLibraryDefinitionOverrideKey("BranchDerived");
+    // enName 缺失的持久化行是真实脏数据形态（definitionKey 收到 nullish）。
+    const overrides = {
+      [derivedKey]: {
+        kind: derivedKey,
+        parameterDefinitions: [
+          { cnName: "额定功率", enName: "rated_power", valueType: "float", typicalValue: "10" },
+          { cnName: "缺英文名", enName: undefined, valueType: "float", typicalValue: "20" }
+        ]
+      }
+    } as unknown as Record<string, DeviceTemplateDefinitionOverride>;
+
+    const resolved = resolveEditableComponentLibraryDefinition({
+      className: "BranchDerived",
+      categoryLibraryName: branchCategory,
+      customComponentLibraries: branchLibraries,
+      templates: [],
+      overrides
+    });
+
+    expect(resolved?.parameterDefinitions.map((row) => row.enName)).toEqual(["rated_power"]);
+    expect(resolved?.parameterDefinitions).toHaveLength(1);
+  });
+
+  test("模板量测行缺 associatedField 与显式空串算同一条并被去重", () => {
+    const templates = [
+      branchTemplate("branch-a", [{ measurementTypeId: "p", position: "device", associatedField: "" }]),
+      branchTemplate("branch-b", [{ measurementTypeId: "p", position: "device" }])
+    ];
+
+    const resolved = resolveEditableComponentLibraryDefinition({
+      className: "BranchRoot",
+      categoryLibraryName: branchCategory,
+      customComponentLibraries: [branchRootDefinition] as any,
+      templates,
+      overrides: {}
+    });
+
+    // 去重键把「字段缺省」与「字段为空串」写成同一个 JSON 串。
+    // 若去掉 associatedField 的空串兜底，JSON.stringify 会直接丢掉该键，
+    // 两条量测行就不再相等，这里会得到两行。
+    expect(resolved?.measurementDefinitions).toEqual([
+      { measurementTypeId: "p", position: "device", associatedField: "" }
+    ]);
+  });
+
+  test("派生类自带的空串 associatedField 量测行与继承的缺省行按同一条丢弃", () => {
+    const rootKey = componentLibraryDefinitionOverrideKey("BranchRoot");
+    const derivedKey = componentLibraryDefinitionOverrideKey("BranchDerived");
+    const overrides = {
+      [rootKey]: {
+        kind: rootKey,
+        measurementDefinitions: [{ measurementTypeId: "p", position: "device" }]
+      },
+      [derivedKey]: {
+        kind: derivedKey,
+        measurementDefinitions: [{ measurementTypeId: "p", position: "device", associatedField: "" }]
+      }
+    } as Record<string, DeviceTemplateDefinitionOverride>;
+
+    const derived = resolveEditableComponentLibraryDefinition({
+      className: "BranchDerived",
+      categoryLibraryName: branchCategory,
+      customComponentLibraries: branchLibraries,
+      templates: [],
+      overrides
+    });
+
+    expect(derived?.measurementDefinitions).toEqual([]);
+    expect(derived?.inheritedMeasurementDefinitions).toHaveLength(1);
+    expect(derived?.effectiveMeasurementDefinitions).toHaveLength(1);
+  });
+
+  test("量测档案解析缺省 customComponentLibraries 时返回空数组", () => {
+    expect(resolveComponentLibraryMeasurementProfiles({})).toEqual([]);
+    expect(resolveComponentLibraryMeasurementProfiles({ overrides: {} })).toEqual([]);
+    // 非 class: 前缀的 override 不该凭空造出候选类
+    expect(resolveComponentLibraryMeasurementProfiles({
+      overrides: {
+        "branch-a": {
+          kind: "branch-a",
+          measurementDefinitions: [{ measurementTypeId: "p", position: "device" }]
+        }
+      }
+    })).toEqual([]);
+    // 反向对照：显式给出类定义时才产出档案（证明上面三条不是因为守卫恒空）
+    expect(resolveComponentLibraryMeasurementProfiles({
+      customComponentLibraries: [branchRootDefinition] as any,
+      overrides: {
+        [componentLibraryDefinitionOverrideKey("BranchRoot")]: {
+          kind: componentLibraryDefinitionOverrideKey("BranchRoot"),
+          measurementDefinitions: [{ measurementTypeId: "activePower", position: "device", associatedField: "t1_node" }]
+        }
+      }
+    })).toEqual([{
+      deviceKind: "BranchRoot",
+      items: [{ measurementTypeId: "activePower", position: "device", associatedField: "t1_node" }]
+    }]);
+  });
+
+  test("量测档案解析缺省 templates 时按类定义产出档案", () => {
+    const resolved = resolveComponentLibraryMeasurementProfiles({
+      customComponentLibraries: [branchRootDefinition] as any
+    });
+
+    expect(resolved).toEqual([{ deviceKind: "BranchRoot", items: [] }]);
+  });
+});
