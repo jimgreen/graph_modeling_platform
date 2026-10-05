@@ -19,6 +19,17 @@ declare global {
 
 let root: ReturnType<typeof createRoot> | null = null;
 
+// 代际守卫：mount 在 bindUserSpaceToSession / runStartupGate 上有两次 await，
+// 宿主完全可能在这段时间里就把子应用 unmount 掉（qiankun 的 mount/unmount 不互斥，
+// 路由切走时不必等 mount 的 promise 落地）。await 之后的代码若照旧往下跑，
+// 就会往一个宿主已经摘掉的容器上 render —— 子应用「复活」在页面之外：界面看不到，
+// 但定时器 / WS / EventSource 全部已经挂上了，且再也不会有人来 unmount 它们。
+//
+// 只由 unmount 递增，mount 自己不递增：这样「两次并发 mount」等既有行为一字未动，
+// 只有真正发生过 unmount 的那条路径会被拦下（见下方 mount 里的检查）。
+// 模块私有，不进导出集合。
+let mountGeneration = 0;
+
 // 生命周期诊断：只在 dev 下打印，前缀集中在这里一处（此前三个阶段各写各的字符串）。
 //
 // 为什么不再直接 `console.log("...", props)`：qiankun 注入的 props 里带 `container`
@@ -65,6 +76,8 @@ export async function mount(props: any) {
     "mount",
     `apiBaseUrl=${props.apiBaseUrl} schema=${props.schema} user=${props.user} project=${props.project ? "有" : "无"}`
   );
+  // 进入 mount 时先认下当前代；await 完若代已被 unmount 推进，说明自己这一轮已经作废。
+  const generation = mountGeneration;
   // 存储主应用传入的配置，供其他模块使用
   window.__QIANKUN_PROPS__ = {
     apiBaseUrl: props.apiBaseUrl,
@@ -77,6 +90,9 @@ export async function mount(props: any) {
   // 宿主没传 user 时本调用是空操作，行为与加此功能前一致。
   await bindUserSpaceToSession(props.user);
   await runStartupGate();
+  // 两次 await 期间宿主已 unmount：这一轮的容器早已被摘掉，绝不能再 createRoot/render。
+  // 顺序上放在容器查找之前 —— 容器没了也不该再去碰宿主节点。
+  if (generation !== mountGeneration) return;
   const container =
     props.container?.querySelector?.("#root") || document.getElementById("root");
   renderApp(container);
@@ -84,6 +100,9 @@ export async function mount(props: any) {
 
 export async function unmount(props: any) {
   traceLifecycle("unmount");
+  // 作废所有在途的 mount（它们 await 完就会各自撞上代际检查并自行返回），
+  // 重复 unmount 只是继续推进计数器，幂等。
+  mountGeneration += 1;
   if (root) {
     root.unmount();
     root = null;

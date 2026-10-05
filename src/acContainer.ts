@@ -18,8 +18,13 @@ export const CONTAINER_PADDING = 24;
  * 仅因历史原因曾共用一值 —— 改一个不得连带改另一个。
  */
 export const CONTAINER_CLEARANCE = 50;
-/** 容器最小尺寸(无成员或成员过少时收缩到此) */
-export const CONTAINER_MIN_SIZE = { width: 180, height: 112 };
+/**
+ * 容器最小尺寸(无成员或成员过少时收缩到此)。
+ * `Object.freeze`:本对象被**导出**且被多处共享,任何调用方就地改写都会污染全图的最小尺寸下限
+ * (表现为「某些容器莫名其妙缩不下去」)。调用方只应 `{ ...CONTAINER_MIN_SIZE }` 拷贝
+ * —— 见 `fitContainerToMembers` 的无成员分支。类型层由 `Object.freeze` 的返回类型隐式 `Readonly`(源码无 `as const`)。
+ */
+export const CONTAINER_MIN_SIZE = Object.freeze({ width: 180, height: 112 });
 
 export type Rect = { x: number; y: number; width: number; height: number };
 export type NodePositionPatch = { nodeId: string; position: { x: number; y: number } };

@@ -39,6 +39,40 @@ function httpStatusForError(code) {
   return errorCodeStatus[code] ?? 500;
 }
 
+// Accept-Encoding 里 gzip 的 q 权重。缺省等价 q=1；无法解析按 0（不支持）处理。
+function gzipQualityFromParams(params) {
+  for (const param of params) {
+    const eq = param.indexOf("=");
+    if (eq < 0) continue;
+    if (param.slice(0, eq).trim().toLowerCase() !== "q") continue;
+    const q = Number.parseFloat(param.slice(eq + 1).trim());
+    return Number.isFinite(q) ? q : 0;
+  }
+  return 1;
+}
+
+/**
+ * 客户端是否接受 gzip 响应。
+ *
+ * **此前这里是 `/\bgzip\b/iu.test(...)`，把 `;q=` 整个丢掉**，于是
+ * `Accept-Encoding: gzip;q=0`（RFC 9110 里明确表示「不接受 gzip」）照样被压缩，
+ * 客户端拿到解不开的字节流。
+ *
+ * 只改这一条判定，其余语义（阈值、`x-gzip` 别名、`Vary`、ETag/304）保持原样：
+ * - 按逗号分段，逐段取首个 token 精确匹配 `gzip` / `x-gzip`（不靠子串命中，
+ *   `gzip2` 这类仍不算）；
+ * - `q > 0` 即接受（`q=0.001` 也压缩）；
+ * - 头里重复出现 gzip 时，任一段 q>0 即接受。
+ */
+function acceptsGzipEncoding(headerValue) {
+  for (const part of String(headerValue ?? "").split(",")) {
+    const segments = part.split(";");
+    if (!/^(?:x-)?gzip$/i.test(segments[0].trim())) continue;
+    if (gzipQualityFromParams(segments.slice(1)) > 0) return true;
+  }
+  return false;
+}
+
 function prepareV1Payload(data, noStore) {
   const body = { ok: true, data };
   const raw = Buffer.from(JSON.stringify(body), "utf-8");
@@ -59,7 +93,7 @@ async function sendPreparedV1(request, response, prepared) {
     response.end();
     return;
   }
-  const acceptsGzip = /\bgzip\b/iu.test(String(request.headers["accept-encoding"] ?? ""));
+  const acceptsGzip = acceptsGzipEncoding(request.headers["accept-encoding"]);
   if (acceptsGzip && prepared.raw.length >= GZIP_MIN_BYTES) {
     if (!prepared.gzip) {
       prepared.gzip = await gzipAsync(prepared.raw);

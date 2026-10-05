@@ -16,7 +16,8 @@ import {
   SPACE_SCOPED_STORAGE_KEY_PREFIXES,
   clearSpaceScopedBrowserCaches,
   readCacheOwnerSpace,
-  reconcileSpaceCacheOwnership
+  reconcileSpaceCacheOwnership,
+  rememberCacheOwnerSpace
 } from "./spaceCache";
 
 // 测试环境是 node（无 jsdom）：手动注入 localStorage / sessionStorage / indexedDB 桩。
@@ -484,5 +485,291 @@ describe("空间缓存清单全覆盖守卫", () => {
     // （若将来恢复字面量建库，这条要改成两条都 > 0）
     expect(specKeyHits).toBeGreaterThanOrEqual(5);
     expect(literalHits).toBe(0);
+  });
+});
+
+
+// ============ 断言 4：storage 异常分支 / 空归属 id / 损坏值 ============
+//
+// 这一批**只加测试、不改生产逻辑**。每条断言的走向都先在 `src/spaceCache.ts` 里核对过：
+//   · `readCacheOwnerSpace`：`try { getItem(...) ?? "" } catch { return "" }`
+//     → getItem 抛时**退化为空串**、不向上抛。
+//   · `rememberCacheOwnerSpace`：`try { setItem(...) } catch {}`
+//     → setItem 抛时**完全吞掉**、不向上抛、也写不进去。
+//   · 「清缓存抛错向上抛」是**第三条**路径（IndexedDB，走 clearSpaceScopedBrowserCaches 里的
+//     await），已由上面「清缓存失败 → 向上抛且不写记账」覆盖 —— 故这里刻意不重复它。
+
+function securityError(): Error {
+  const error = new Error("The operation is insecure.");
+  error.name = "SecurityError";
+  return error;
+}
+
+interface StorageOverrides {
+  getItem?: boolean;
+  setItem?: boolean;
+}
+
+/**
+ * 在既有的内存 Map 桩之上叠一层「某些成员抛 SecurityError」的替身，并给出调用计数。
+ * 计数用于区分「短路返回」与「真去清了」—— 只看缓存有没有被清，这两条路径可能同解。
+ * `seed` 直接写进底层 Map，故不受 override 影响（否则要播种一个 setItem 会抛的桩就得先绕开它）。
+ */
+function createOverriddenStorageStub(
+  overrides: StorageOverrides,
+  seed: Record<string, string> = {}
+): {
+  storage: Storage;
+  /** 底层 Map 桩：断言要「缓存里还剩什么」时读它，别走会抛的 storage，否则断言自己先炸了。 */
+  base: Storage;
+  calls: { getItem: number; setItem: number; removeItem: number };
+} {
+  const base = createStorageStub();
+  for (const [key, value] of Object.entries(seed)) {
+    base.setItem(key, value);
+  }
+  const calls = { getItem: 0, setItem: 0, removeItem: 0 };
+  const storage: Storage = {
+    get length() {
+      return base.length;
+    },
+    key: (index: number) => base.key(index),
+    getItem: (key: string) => {
+      calls.getItem += 1;
+      if (overrides.getItem) throw securityError();
+      return base.getItem(key);
+    },
+    setItem: (key: string, value: string) => {
+      calls.setItem += 1;
+      if (overrides.setItem) throw securityError();
+      base.setItem(key, value);
+    },
+    removeItem: (key: string) => {
+      calls.removeItem += 1;
+      base.removeItem(key);
+    },
+    clear: () => base.clear()
+  };
+  return { storage, base, calls };
+}
+
+describe("storage 异常与边界输入", () => {
+  test("getItem 抛 SecurityError → 读归属退化为空串，不向上抛", () => {
+    // 前提：底层**本来是有记账的**。若不播种，这条断言在「读本就失败」的桩上也照样成立，
+    // 就成了恒绿 —— 播种之后「能读出 default」与「读成空串」才构成对照。
+    const probe = createOverriddenStorageStub(
+      { getItem: true },
+      { [SPACE_CACHE_OWNER_STORAGE_KEY]: "default" }
+    );
+    (globalThis as any).localStorage = probe.storage;
+
+    expect(readCacheOwnerSpace()).toBe("");
+    expect(probe.calls.getItem).toBe(1);
+
+    // 「退回空串」与「抛出去」是两件事，必须钉住是前者：抛出去会被 runStartupGate 的 catch
+    // 判成「本地缓存未清理干净」，**归属对齐整段被跳过**（`appStartup.ts:23-27`）。
+    // 空串则让闸门走「只记不清」，仍会记上新空间。
+  });
+
+  test("setItem 抛 SecurityError → 记账静默丢弃，不向上抛、也写不进去", () => {
+    const probe = createOverriddenStorageStub({ setItem: true });
+    (globalThis as any).localStorage = probe.storage;
+
+    expect(() => rememberCacheOwnerSpace("张三")).not.toThrow();
+    expect(probe.calls.setItem).toBe(1);
+    // 写不进去 = 下次启动仍读到「无归属」。这是**有意**的降级（源码注释：不阻断主流程），
+    // 代价是该浏览器上每次启动都要重走闸门。钉住它是为了别有人顺手把它改成向上抛 ——
+    // 那会让 runStartupGate 弹出「缓存未清理干净」，而 localStorage 其实一条都没在清。
+    expect(readCacheOwnerSpace()).toBe("");
+  });
+
+  test("读写都抛 → 两个都不抛：闸门既不报错也不清缓存", async () => {
+    const dirty = SPACE_SCOPED_LOCAL_STORAGE_KEYS[0];
+    const probe = createOverriddenStorageStub(
+      { getItem: true, setItem: true },
+      { [SPACE_CACHE_OWNER_STORAGE_KEY]: "default", [dirty]: "dirty" }
+    );
+    (globalThis as any).localStorage = probe.storage;
+
+    // 「读抛还是写抛」的答案：**两个都不抛**。别拿上面那条 IndexedDB 失败向上抛的用例当对照，
+    // 那是第三条路径（clearSpaceScopedBrowserCaches 里的 await）。
+    await expect(reconcileSpaceCacheOwnership("张三")).resolves.toBeUndefined();
+
+    // 读抛 → 归属读成空串 → 命中「无记账 → 只记不清」，故一次 removeItem 都不该发生。
+    // 只断言「缓存还在」是不够的：即使真调了 clear，被抛异常的 clearKeys 也会逐项吞掉、
+    // 于是「还在」照样成立。计数才是能区分两条路径的那个观察点。
+    // 内容要从底层桩读：走 storage.getItem 会自己再抛一次，那抛的是断言而不是被测代码。
+    expect(probe.calls.removeItem).toBe(0);
+    expect(probe.base.getItem(dirty)).toBe("dirty");
+    // 计数先落袋再读，免得后续断言自己的读把数字推高
+    const { getItem: getItemCalls, setItem: setItemCalls } = probe.calls;
+    expect([getItemCalls, setItemCalls]).toEqual([1, 1]);
+  });
+
+  test("空 resolvedSpaceId 连调三次（有旧记账）→ 第一次清完并把记账写成空串，后两次全部短路", async () => {
+    const dirty = SPACE_SCOPED_LOCAL_STORAGE_KEYS[0];
+    const probe = createOverriddenStorageStub(
+      {},
+      { [SPACE_CACHE_OWNER_STORAGE_KEY]: "default", [dirty]: "dirty" }
+    );
+    (globalThis as any).localStorage = probe.storage;
+    const db = await initDeviceLibraryDB();
+    await db.put("templates", { kind: "seed-kind", custom: true });
+
+    await reconcileSpaceCacheOwnership("");
+
+    expect(localStorage.getItem(dirty)).toBeNull();
+    expect(await (await initDeviceLibraryDB()).getAll("templates")).toEqual([]);
+    // 记账被写成空串 —— 而它与「无记账」不可区分，见下一个缺陷用例
+    expect(readCacheOwnerSpace()).toBe("");
+    expect(probe.calls.removeItem).toBeGreaterThan(0);
+
+    // 第 2、3 次：owner 已是空串，与空串参数相等 → 第一行就早退。
+    // 重新弄脏缓存后再调，才看得出「早退」而不是「清了但清了别的」。
+    localStorage.setItem(dirty, "dirty-after");
+    probe.calls.removeItem = 0;
+    probe.calls.setItem = 0;
+    probe.calls.getItem = 0;
+    await reconcileSpaceCacheOwnership("");
+    await reconcileSpaceCacheOwnership("");
+    expect(probe.calls.removeItem).toBe(0);
+    expect(probe.calls.setItem).toBe(0);
+    expect(probe.base.getItem(dirty)).toBe("dirty-after");
+    // 每次调用都重新读一次归属（没有记忆化），所以短路是「读到了相等」而不是「上次做过了」
+    expect(probe.calls.getItem).toBe(2);
+  });
+
+  test("空 resolvedSpaceId 连调三次（无旧记账）→ 每次都在第一行早退，记账永远写不进去", async () => {
+    const dirty = SPACE_SCOPED_LOCAL_STORAGE_KEYS[0];
+    const probe = createOverriddenStorageStub({}, { [dirty]: "dirty" });
+    (globalThis as any).localStorage = probe.storage;
+
+    await reconcileSpaceCacheOwnership("");
+    await reconcileSpaceCacheOwnership("");
+    await reconcileSpaceCacheOwnership("");
+
+    expect(probe.calls.removeItem).toBe(0);
+    expect(probe.calls.setItem).toBe(0);
+    expect(localStorage.getItem(dirty)).toBe("dirty");
+    expect(readCacheOwnerSpace()).toBe("");
+  });
+
+  test("【缺陷】空串记账与无记账不可区分 → 下次切到真实空间时被当成首次打开，缓存不清", async () => {
+    // 这不是假设出来的状态：正是上一个「有旧记账」用例连调后留下的那一条 ——
+    // `rememberCacheOwnerSpace("")` 写下的空串。`getItem` 返回空串、`?? ""` 不改变它，
+    // 于是空串与「从未记过账」完全同形。
+    const dirty = SPACE_SCOPED_LOCAL_STORAGE_KEYS[0];
+    const probe = createOverriddenStorageStub(
+      {},
+      { [SPACE_CACHE_OWNER_STORAGE_KEY]: "", [dirty]: "dirty-from-previous-space" }
+    );
+    (globalThis as any).localStorage = probe.storage;
+
+    await reconcileSpaceCacheOwnership("张三");
+
+    // 方向是**漏清**：上一空间的缓存原封不动地被算到新空间头上，
+    // 即 S2（后端读空 → 回写本地缓存把旧空间内容推给新空间）在这条路径上不设防。
+    // 记账还已被盖成新空间 —— 错误前提被固化，下一次启动连补救的机会都没有。
+    expect(localStorage.getItem(dirty)).toBe("dirty-from-previous-space");
+    expect(readCacheOwnerSpace()).toBe("张三");
+  });
+
+  test("合法 id 的正常路径回归：先清后记，且同 id 再调一次不再清", async () => {
+    const localKey = SPACE_SCOPED_LOCAL_STORAGE_KEYS[0];
+    const sessionKey = SPACE_SCOPED_SESSION_STORAGE_KEYS[0];
+    const probe = createOverriddenStorageStub(
+      {},
+      { [SPACE_CACHE_OWNER_STORAGE_KEY]: "default", [localKey]: "dirty" }
+    );
+    (globalThis as any).localStorage = probe.storage;
+    sessionStorage.setItem(sessionKey, "dirty");
+    const db = await initDeviceLibraryDB();
+    await db.put("templates", { kind: "seed-kind", custom: true });
+
+    await reconcileSpaceCacheOwnership("张三");
+
+    expect(localStorage.getItem(localKey)).toBeNull();
+    expect(sessionStorage.getItem(sessionKey)).toBeNull();
+    expect(await (await initDeviceLibraryDB()).getAll("templates")).toEqual([]);
+    // 记账改写为新空间，且整轮只写了一次
+    expect(readCacheOwnerSpace()).toBe("张三");
+    expect(probe.calls.setItem).toBe(1);
+
+    // 同 id 再来一次 → 早退：不重取、也不再清。
+    // 这条是上一条的**反面**：两次调用的结果必须不同，否则就是闸门每次启动都白清一遍。
+    localStorage.setItem(localKey, "dirty-again");
+    sessionStorage.setItem(sessionKey, "dirty-again");
+    probe.calls.removeItem = 0;
+    probe.calls.setItem = 0;
+    await reconcileSpaceCacheOwnership("张三");
+    expect(probe.calls.removeItem).toBe(0);
+    expect(probe.calls.setItem).toBe(0);
+    expect(localStorage.getItem(localKey)).toBe("dirty-again");
+    expect(sessionStorage.getItem(sessionKey)).toBe("dirty-again");
+  });
+
+  test("记账存的是非法 JSON → 原样读回（不做任何解析），并被当成真实的不同归属而清缓存", async () => {
+    const raw = '{"spaceId":"张三"}';
+    const dirty = SPACE_SCOPED_LOCAL_STORAGE_KEYS[0];
+    const probe = createOverriddenStorageStub(
+      {},
+      { [SPACE_CACHE_OWNER_STORAGE_KEY]: raw, [dirty]: "dirty" }
+    );
+    (globalThis as any).localStorage = probe.storage;
+
+    // 关键：这里**没有** JSON.parse 这回事。原样返回字符串，不是解析出的对象、也不是空串。
+    // 若哪天给记账引入 JSON 解析，这一条会红 —— 那正是缺陷：一个抛 SyntaxError 的读函数
+    // 会把 runStartupGate 的闸门整段跳过，而它同时又清不掉任何东西。
+    expect(readCacheOwnerSpace()).toBe(raw);
+
+    await reconcileSpaceCacheOwnership("张三");
+
+    // 方向上是安全的：非空串 → 判成「归属不同且非空」→ 清缓存（宁可多清，不可不清）
+    expect(localStorage.getItem(dirty)).toBeNull();
+    expect(readCacheOwnerSpace()).toBe("张三");
+  });
+
+  test("记账存的是空白串 → 不被 trim，与真正的空串分属两条不同分支", async () => {
+    const dirty = SPACE_SCOPED_LOCAL_STORAGE_KEYS[0];
+    const probe = createOverriddenStorageStub(
+      {},
+      { [SPACE_CACHE_OWNER_STORAGE_KEY]: "   ", [dirty]: "dirty" }
+    );
+    (globalThis as any).localStorage = probe.storage;
+
+    expect(readCacheOwnerSpace()).toBe("   ");
+
+    await reconcileSpaceCacheOwnership("张三");
+
+    // 空白串是**另一个输入维度**：它非空，故必须走清理分支。
+    // 若哪天给读函数加了 trim，这条会红 —— 那同样是缺陷（trim 后与无记账同形，见缺陷用例）。
+    expect(localStorage.getItem(dirty)).toBeNull();
+  });
+
+  test("记账被写成非字符串 → 由存储层强转成字符串后读回，并按真实归属清缓存", async () => {
+    const dirty = SPACE_SCOPED_LOCAL_STORAGE_KEYS[0];
+    // Storage 契约上 getItem 只可能给出 string | null，故「非字符串」只可能以字符串形式存在。
+    // 既有的内存桩与真 localStorage 一样做 String(value)，这里走的正是这条强转。
+    for (const raw of [123, undefined, { a: 1 }, null]) {
+      const probe = createOverriddenStorageStub({});
+      probe.storage.setItem(SPACE_CACHE_OWNER_STORAGE_KEY, raw as unknown as string);
+      probe.storage.setItem(dirty, "dirty");
+      (globalThis as any).localStorage = probe.storage;
+
+      expect(readCacheOwnerSpace()).toBe(String(raw));
+
+      await reconcileSpaceCacheOwnership("张三");
+      expect(localStorage.getItem(dirty)).toBeNull();
+    }
+  });
+
+  test("localStorage 整个不存在 → 读退化为空串、写静默丢弃，都不抛", () => {
+    (globalThis as any).localStorage = undefined;
+    // 钉住前提：生产代码走的是 `typeof localStorage === "undefined"` 早退分支，
+    // 不是靠 try/catch 兜住一次 ReferenceError。
+    expect(typeof localStorage).toBe("undefined");
+
+    expect(readCacheOwnerSpace()).toBe("");
+    expect(() => rememberCacheOwnerSpace("张三")).not.toThrow();
   });
 });

@@ -4,9 +4,10 @@
 // 后果是改坏它们时不会有任何测试报警 —— 上面 isSymbolExportTemplateVisible 那段注释
 // 记的正是本文件修过的两个真实 bug（取消「竖向图元」后竖向变体残留 / 取消「其它图元」
 // 把兜底类整批误杀），这两条规则必须被显式钉住，不能只靠间接捎带。
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   SYMBOL_EXPORT_FILTERS,
+  SYMBOL_EXPORT_SCHEME_SCHEMA_VERSION,
   DEFAULT_SYMBOL_EXPORT_FILTER_KEYS,
   isSymbolExportFilterKey,
   normalizeSymbolExportFilterKeys,
@@ -14,7 +15,8 @@ import {
   isSymbolExportTemplateVisible,
   symbolExportSchemeIdFromName,
   formatSymbolNumber,
-  safeSymbolFileStem
+  safeSymbolFileStem,
+  normalizeSymbolExportSchemes
 } from "./symbolExportSvg";
 
 const keys = (t: unknown) => symbolExportFilterKeysForTemplate(t as never);
@@ -263,5 +265,175 @@ describe("过滤键清单的自洽性", () => {
     expect(DEFAULT_SYMBOL_EXPORT_FILTER_KEYS).toContain("other");
     // 任一主分类 matches 为真时，归类结果就不该是 ['other']
     expect(keys(customOnly)).not.toEqual(["other"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// normalizeSymbolExportSchemes：落盘载荷归一（前端侧这一份实现）
+//
+// ⚠ 与后端 server/symbolExportSchemes.mjs 的同名函数是**两套独立代码**：后端那份还做
+// 键名小写化、32 字符上限、条数上限与严格校验，前端这份一概不做。本组只钉前端这份的真实
+// 行为，不要把 server/symbolExportSchemes.test.mjs 的期望搬过来（反之亦然）。
+//
+// 这三条路径此前没有任何直接断言，且改坏了都不会有测试报警：
+//   ① 载荷非对象（null/undefined/数组/字符串/数字）必须回落成**空方案集**而不是抛错 ——
+//      落盘文件畸形时前端仍要照常打开，白屏比丢方案更严重；
+//   ② 旧字段 symbolExportSchemes 的迁移回退（老版本落盘格式）仍要能读出来 ——
+//      删掉这条分支的代价是「老用户的保存方案在新版本里静默变成零方案」，且不报错；
+//   ③ updatedAt 缺失时回落 new Date().toISOString()，**非确定性** —— 直接断言字符串会随机
+//      红（跑到哪一秒就写哪一秒），必须先把时钟钉成固定时刻再断言。
+// ---------------------------------------------------------------------------
+
+/** 假时钟的固定时刻。带毫秒是因为 toISOString() 恒带 .sss，写 0 容易看漏。 */
+const FIXED_NOW = new Date("2026-03-04T05:06:07.008Z");
+const FIXED_ISO = "2026-03-04T05:06:07.008Z";
+
+describe("normalizeSymbolExportSchemes（落盘载荷归一）", () => {
+  const names = (payload: unknown) =>
+    normalizeSymbolExportSchemes(payload).schemes.map((scheme) => scheme.name);
+  const stamps = (records: ReadonlyArray<Record<string, unknown>>) =>
+    normalizeSymbolExportSchemes({ schemes: records }).schemes.map((scheme) => scheme.updatedAt);
+  /** payload 的可读标签（JSON.stringify(undefined) 会返回 undefined，故兜一层）。 */
+  const label = (value: unknown) => JSON.stringify(value) ?? "undefined";
+
+  // 本组会开假时钟。**必须**在 afterEach 还原：泄漏出去会让同一 worker 里后续文件
+  // （以及本文件后面不用时钟的用例）拿到被钉住的 Date，症状是「某个不相关的测试突然
+  // 断言当前时间失败」，极难定位。
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("载荷非对象（null/undefined/数组/字符串/数字/布尔）→ 回落空方案集，不抛错", () => {
+    const nonObjects: unknown[] = [null, undefined, [], ["数组载荷"], "schemes 文本", 0, 42, true, false];
+    for (const payload of nonObjects) {
+      const normalized = normalizeSymbolExportSchemes(payload);
+      expect(normalized.schemes, label(payload)).toEqual([]);
+      // schemaVersion 恒为当前常量。注意：这条断言与常量本身同源，改常量时两边一起变，
+      // 所以它**不是**「版本号不能改」的守卫；真正的载荷侧判据见下面旧字段那条。
+      expect(normalized.schemaVersion, label(payload)).toBe(SYMBOL_EXPORT_SCHEME_SCHEMA_VERSION);
+    }
+  });
+
+  test("条目层同样过滤：非对象条目丢弃，数组即使带 name 也丢，只有空白名的丢弃", () => {
+    // 与上面载荷层的判断是两处独立代码（一个整包归 {}，一个逐条 continue）
+    const namedArray = Object.assign([], { name: "数组带名" });
+    expect(names({ schemes: ["字符串", 42, null, namedArray, { name: "留我" }] })).toEqual(["留我"]);
+    // 空白名靠 trim 后判空丢弃 —— "   " 是这里唯一能验到 trim 的输入，
+    // 光断言 name: "" 会与「字符串拼出空名」的等价写法分不开。
+    expect(names({ schemes: [{ name: "   " }, { name: "" }, { name: null }, { id: "只有 id" }] }))
+      .toEqual([]);
+  });
+
+  test("旧字段 symbolExportSchemes 仍被读取（迁移兼容路径）", () => {
+    // 老版本落盘格式：顶层只有 symbolExportSchemes，完全没有 schemes 键 ——
+    // 这是唯一能验到那条回退分支的输入（两字段同时存在时被新字段压住，见优先级那条）。
+    const legacy = {
+      schemaVersion: 0,
+      symbolExportSchemes: [
+        {
+          id: "  old-1  ",
+          name: "  老方案  ",
+          templateKinds: [" ac-load ", "ac-load", "", null],
+          filterKeys: ["bus", "bogus"]
+        }
+      ]
+    };
+    const normalized = normalizeSymbolExportSchemes(legacy);
+    expect(normalized.schemes).toHaveLength(1);
+    expect(normalized.schemes[0]).toMatchObject({
+      id: "old-1",
+      name: "老方案",
+      templateKinds: ["ac-load"],
+      filterKeys: ["bus"]
+    });
+    // 载荷自带的 schemaVersion（这里是 0）被忽略，一律归一到当前常量：
+    // 老文件的版本号不认识也必须能读进来，否则「升级即丢方案」。
+    expect(normalized.schemaVersion).toBe(SYMBOL_EXPORT_SCHEME_SCHEMA_VERSION);
+    expect(normalized.schemaVersion).not.toBe(0);
+  });
+
+  test("新字段存在但不是数组时才回退旧字段（判据是 Array.isArray，不是 ?? 兜底）", () => {
+    // 若把 `Array.isArray(source.schemes) ? … : source.symbolExportSchemes` 改成
+    // `source.schemes ?? source.symbolExportSchemes`：字符串会让 for…of 逐字符迭代、
+    // 全被条目层过滤掉 → 变成空集；对象根本不可迭代 → 直接抛 TypeError。两条都会红。
+    const legacy = { symbolExportSchemes: [{ name: "老方案" }] };
+    for (const bad of [null, undefined, "schemes", 0, false, {}]) {
+      expect(names({ ...legacy, schemes: bad }), `schemes=${label(bad)}`).toEqual(["老方案"]);
+    }
+  });
+
+  test("新旧字段同时存在 → 新字段 schemes 优先，旧字段整批不参与", () => {
+    expect(names({ schemes: [{ name: "新方案" }], symbolExportSchemes: [{ name: "旧方案" }] }))
+      .toEqual(["新方案"]);
+    // ★ 空数组也优先：新字段「在场」的判据是 Array.isArray，不是长度。
+    // 把它改成 length > 0 判据时，只有这条能红 —— 上面那条两条路径产出不同，
+    // 靠它验不出「空数组」这个边界。
+    expect(names({ schemes: [], symbolExportSchemes: [{ name: "旧方案" }] })).toEqual([]);
+  });
+
+  test("updatedAt 缺失或空白 → 回落假时钟的固定时刻（钉住 new Date 的非确定性）", () => {
+    // 只假 Date，不假 setTimeout/setInterval：泄漏面最小，且本函数只用 new Date()。
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(FIXED_NOW);
+    expect(vi.isFakeTimers(), "前提自检：假时钟确实装上了").toBe(true);
+
+    const records = [
+      { name: "无字段" },
+      { name: "显式 undefined", updatedAt: undefined },
+      { name: "显式 null", updatedAt: null },
+      { name: "空串", updatedAt: "" },
+      { name: "纯空白", updatedAt: "   " }
+    ];
+    const values = stamps(records);
+    expect(values).toEqual(records.map(() => FIXED_ISO));
+    // 回落源确实是当前时钟而非某个写死的常量：固定时刻与此刻的 Date 读数一致。
+    expect(values[0]).toBe(new Date().toISOString());
+  });
+
+  test("不钉时钟时回落的是真实当前时刻（证明回落源确为 new Date 而非常量）", () => {
+    const before = Date.now();
+    const value = stamps([{ name: "现取" }])[0];
+    expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u);
+    expect(value).not.toBe(FIXED_ISO);
+    // 解析回的毫秒必须落在调用前后的窗口内（不写死具体值，容忍跨毫秒边界）
+    expect(Date.parse(value)).toBeGreaterThanOrEqual(before - 1000);
+    expect(Date.parse(value)).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+
+  test("updatedAt 给了就原样透传：ISO 串只 trim，时间戳数字按 String 原样、不转 ISO", () => {
+    // 断言的是**真实行为**而非期望行为：数字时间戳不会被归一化成 ISO 串。
+    // 若将来要改成 ISO 转换，这条会红 —— 那是有意的提醒，届时连同 server 那份一起改。
+    const cases: Array<[unknown, string]> = [
+      ["2026-01-02T03:04:05.000Z", "2026-01-02T03:04:05.000Z"],
+      ["  2026-01-02T03:04:05.000Z  ", "2026-01-02T03:04:05.000Z"],
+      [1700000000000, "1700000000000"],
+      // ★ 0 / false 是 falsy，但 String() 之后是 "0" / "false" 非空 → 仍然透传、不回落。
+      // 这两条验的是「回落的判据是 trim 后的字符串是否为空」，而不是「原值是否 truthy」；
+      // 只给一条合法时间戳的话，两种写法产出完全相同，永远分不开。
+      [0, "0"],
+      [false, "false"]
+    ];
+    const records = cases.map(([updatedAt], index) => ({ name: `方案${index}`, updatedAt }));
+    expect(stamps(records)).toEqual(cases.map(([, expected]) => expected));
+  });
+
+  test("updatedAt 非法格式不校验、原样透传（只有空串/纯空白才回落）", () => {
+    const values = stamps([
+      { name: "英文垃圾", updatedAt: "not-a-date" },
+      { name: "越界日期", updatedAt: "2026-13-45" },
+      { name: "裸数字串", updatedAt: "0" },
+      { name: "带空白垃圾", updatedAt: "  not-a-date  " }
+    ]);
+    expect(values).toEqual(["not-a-date", "2026-13-45", "0", "not-a-date"]);
+    // 顺带钉住「本函数不做格式校验」：前两个连 Date.parse 都不认，照样透传。
+    expect(Date.parse(values[0])).toBeNaN();
+    expect(Date.parse(values[1])).toBeNaN();
+  });
+
+  test("假时钟已在 afterEach 还原（不泄漏给同 worker 的后续用例）", () => {
+    // 本组最后一条，且它自己不开假时钟 —— 文件内用例按声明顺序执行，
+    // 所以这里的 isFakeTimers() 检查的是上面几条用完 afterEach 之后的状态。
+    expect(vi.isFakeTimers()).toBe(false);
+    expect(Math.abs(Date.now() - FIXED_NOW.getTime())).toBeGreaterThan(60_000);
   });
 });

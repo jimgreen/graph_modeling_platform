@@ -152,6 +152,11 @@ import {
   isBlockingTopologyValidationError,
   isRepeatedEdgePointerClick,
   parseStaticDrawPoints,
+  getTemplate,
+  serializeStaticDrawPoints,
+  INTERACTIVE_STATIC_DRAWING_KINDS,
+  STATIC_DRAWING_MIN_SIZE,
+  STATIC_DRAWING_PADDING,
   getContainerAssociationRelationKey,
   getContainerRelationKey,
   getEExportWarnings,
@@ -1177,5 +1182,176 @@ test("deletes selected devices and automatically removes their connected lines",
 
   expect(result.nodes.map((node) => node.id)).toEqual([nodes[0].id, nodes[2].id]);
   expect(result.edges).toEqual([]);
+});
+
+test("parseStaticDrawPoints 解析正常点串并把坐标规整到一位小数", () => {
+  // 正常分支：Number(...) 强制转数字，字符串坐标也能吃下
+  expect(parseStaticDrawPoints('[{"x":1,"y":2},{"x":"3.456","y":"-4.5"}]')).toEqual([
+    { x: 1, y: 2 },
+    { x: 3.5, y: -4.5 }
+  ]);
+
+  // 空值短路与空数组是同一条出口
+  expect(parseStaticDrawPoints(undefined)).toEqual([]);
+  expect(parseStaticDrawPoints("")).toEqual([]);
+  expect(parseStaticDrawPoints("[]")).toEqual([]);
+});
+
+test("parseStaticDrawPoints 遇到非数组与非法 JSON 一律退回空数组", () => {
+  // ⚠ 下面这一组**不能**证明 if (!Array.isArray(parsed)) 这道守卫承重，它是等价变异。
+  //   JSON.parse 的返回值只有 6 种：object / array / string / number / boolean / null，
+  //   其中只有数组带 .map。所以删掉守卫后，每一个非数组都会在 parsed.map(...) 抛
+  //   TypeError，被同一个 catch 吃掉，产出与守卫路径完全一样的 [] —— 全域等价，
+  //   不是「我的输入没覆盖到那个维度」。已用探针逐一比对 15 种非数组输入确认。
+  //   换句话说 Array.isArray 这道早退是给人看的，承重的是 catch（见下一组）。
+  expect(parseStaticDrawPoints('"hello"')).toEqual([]);
+  expect(parseStaticDrawPoints('{"x":1,"y":2}')).toEqual([]);
+  expect(parseStaticDrawPoints("null")).toEqual([]);
+  expect(parseStaticDrawPoints("0")).toEqual([]);
+  expect(parseStaticDrawPoints("true")).toEqual([]);
+  expect(parseStaticDrawPoints("123")).toEqual([]);
+
+  // 数组里的非对象元素不抛（数字取属性得 undefined），走逐点过滤
+  expect(parseStaticDrawPoints("[1,2]")).toEqual([]);
+
+  // 真正走 catch 分支：JSON.parse 本身抛 SyntaxError
+  expect(parseStaticDrawPoints("{not json")).toEqual([]);
+  expect(parseStaticDrawPoints("[")).toEqual([]);
+});
+
+test("parseStaticDrawPoints 丢弃坐标非有限的点，非法元素则整串作废", () => {
+  // 字段缺失 → Number(undefined) 得 NaN → isFinite 过滤掉
+  expect(parseStaticDrawPoints("[{}]")).toEqual([]);
+  expect(parseStaticDrawPoints('[{"x":1}]')).toEqual([]);
+  expect(parseStaticDrawPoints('[{"y":1}]')).toEqual([]);
+
+  // 字符串 NaN 与 1e999 展开的 Infinity 同样被丢掉，且只丢该点、不影响同伴
+  expect(parseStaticDrawPoints('[{"x":"NaN","y":0},{"x":1,"y":2}]')).toEqual([{ x: 1, y: 2 }]);
+  expect(parseStaticDrawPoints('[{"x":1e999,"y":0},{"x":3,"y":4}]')).toEqual([{ x: 3, y: 4 }]);
+
+  // ⚠ 元素为 null 时 (item as Point).x 抛 TypeError，整个数组被 catch 吞成 []，
+  // 而不是「跳过这一个点」——与上面的逐点过滤是不同的行为，这条断言才咬得住
+  expect(parseStaticDrawPoints("[null]")).toEqual([]);
+  expect(parseStaticDrawPoints('[{"x":1,"y":2},null]')).toEqual([]);
+  // 字符串元素不抛（取属性得 undefined），走逐点过滤，结果同样是 []
+  expect(parseStaticDrawPoints('["a","b"]')).toEqual([]);
+});
+
+test("序列化静态绘制点后能原样解析回来，坐标取整到一位小数", () => {
+  // 往返只对「能被一位小数精确表示」的坐标成立，故取整数与 0.1 的倍数
+  const tenths = [{ x: 0.1, y: 2.3 }, { x: -4.7, y: 0 }];
+  const integers = [{ x: 0, y: 0 }, { x: 120, y: -45 }];
+
+  expect(parseStaticDrawPoints(serializeStaticDrawPoints(tenths))).toEqual(tenths);
+  expect(parseStaticDrawPoints(serializeStaticDrawPoints(integers))).toEqual(integers);
+  expect(serializeStaticDrawPoints([])).toBe("[]");
+  expect(parseStaticDrawPoints(serializeStaticDrawPoints([]))).toEqual([]);
+
+  // 取整规则：Math.round(v * 10) / 10。半值不对称 —— 正侧进位（1.25→1.3），
+  // 负侧向 +∞ 取整（-1.05→-1）。这两条把「四舍五入到一位小数」钉死。
+  expect(serializeStaticDrawPoints([{ x: 1.234, y: 0 }])).toBe('[{"x":1.2,"y":0}]');
+  expect(serializeStaticDrawPoints([{ x: 1.25, y: -1.05 }])).toBe('[{"x":1.3,"y":-1}]');
+  expect(serializeStaticDrawPoints([{ x: 1.15, y: 0.7 }])).toBe('[{"x":1.2,"y":0.7}]');
+
+  // 相邻重复点被归一化去掉：往返一趟会让 [A, A, B] 变成 [A, B]
+  expect(serializeStaticDrawPoints([
+    { x: 1, y: 1 },
+    { x: 1, y: 1 },
+    { x: 2, y: 1 }
+  ])).toBe('[{"x":1,"y":1},{"x":2,"y":1}]');
+});
+
+test("parseStaticDrawPoints 保留奇数个点并原样保留给定点序", () => {
+  // 不做奇偶配对校验：3 个点、5 个点都整串留下
+  expect(parseStaticDrawPoints('[{"x":0,"y":0},{"x":10,"y":0},{"x":20,"y":10}]')).toEqual([
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 20, y: 10 }
+  ]);
+  expect(parseStaticDrawPoints(
+    '[{"x":0,"y":0},{"x":1,"y":1},{"x":2,"y":2},{"x":3,"y":3},{"x":4,"y":4}]'
+  )).toHaveLength(5);
+
+  // 单点也留下（不是「至少两个点」才认）
+  expect(parseStaticDrawPoints('[{"x":7,"y":8}]')).toEqual([{ x: 7, y: 8 }]);
+
+  // 顺序不重排：给出什么顺序就还什么顺序
+  expect(parseStaticDrawPoints('[{"x":20,"y":20},{"x":10,"y":10},{"x":0,"y":0}]')).toEqual([
+    { x: 20, y: 20 },
+    { x: 10, y: 10 },
+    { x: 0, y: 0 }
+  ]);
+  // 往返同样不重排
+  const reversed = [{ x: 20, y: 20 }, { x: 10, y: 10 }, { x: 0, y: 0 }];
+  expect(parseStaticDrawPoints(serializeStaticDrawPoints(reversed))).toEqual(reversed);
+
+  // 相邻重复点折叠，非相邻重复点保留
+  expect(parseStaticDrawPoints('[{"x":1,"y":1},{"x":1,"y":1},{"x":2,"y":1}]')).toEqual([
+    { x: 1, y: 1 },
+    { x: 2, y: 1 }
+  ]);
+  expect(parseStaticDrawPoints('[{"x":1,"y":1},{"x":2,"y":1},{"x":1,"y":1}]')).toHaveLength(3);
+});
+
+test("getTemplate 遇到未知设备种类时抛出可定位的错误", () => {
+  expect(() => getTemplate("no-such-kind" as DeviceKind)).toThrow(Error);
+  expect(() => getTemplate("no-such-kind" as DeviceKind)).toThrow("Unknown device kind: no-such-kind");
+  expect(() => getTemplate("" as DeviceKind)).toThrow("Unknown device kind: ");
+
+  // 已知 kind 回归：必须拿到 DEVICE_LIBRARY 里的那一个模板对象本身
+  const acLoad = getTemplate("ac-load");
+  expect(acLoad.kind).toBe("ac-load");
+  expect(acLoad.label).toBe("交流负荷");
+  expect(acLoad).toBe(DEVICE_LIBRARY.find((item) => item.kind === "ac-load"));
+  expect(getTemplate("static-line").kind).toBe("static-line");
+});
+
+test("isInteractiveStaticDrawingKind 只认交互式静态绘制种类", () => {
+  // 集合内每个成员都为 true（集合字面量由下一条用例钉桩，故此处不是同义反复）
+  for (const kind of INTERACTIVE_STATIC_DRAWING_KINDS) {
+    expect(isInteractiveStaticDrawingKind(kind), kind).toBe(true);
+  }
+  expect(isInteractiveStaticDrawingKind("static-line")).toBe(true);
+  expect(isInteractiveStaticDrawingKind("static-self-loop")).toBe(true);
+
+  // 集合外为 false。注意 ac-line（可路由线路）**不在**集合内，是最容易误收的一条
+  for (const kind of [
+    "static-text",
+    "static-circle",
+    "static-rect",
+    "static-group-box",
+    "static-point",
+    "static-button",
+    "ac-line",
+    "ac-load"
+  ] as DeviceKind[]) {
+    expect(isInteractiveStaticDrawingKind(kind), kind).toBe(false);
+  }
+
+  // 空串与非字符串入参：Set.prototype.has 走 SameValueZero，不抛、返回 false
+  expect(isInteractiveStaticDrawingKind("" as DeviceKind)).toBe(false);
+  for (const input of [undefined, null, 7, {}, []]) {
+    expect(isInteractiveStaticDrawingKind(input as unknown as DeviceKind)).toBe(false);
+  }
+});
+
+test("静态绘制的几何常量与交互式种类集合已钉桩", () => {
+  // 顺序也被 toEqual 钉住：model.ts 的 STATIC_LINE_LIKE_KINDS 按序展开本集合，
+  // 调整顺序会改变 line-like 判定的输出次序
+  expect(INTERACTIVE_STATIC_DRAWING_KINDS).toEqual([
+    "static-line",
+    "static-polyline",
+    "static-straight-connector",
+    "static-arrow-connector",
+    "static-double-arrow-connector",
+    "static-elbow-connector",
+    "static-bezier-connector",
+    "static-smoothstep-connector",
+    "static-self-loop"
+  ]);
+
+  // 几何常量：静默改动会让界面布局漂移，故用 toBe 钉死数值
+  expect(STATIC_DRAWING_PADDING).toBe(8);
+  expect(STATIC_DRAWING_MIN_SIZE).toBe(24);
 });
 });

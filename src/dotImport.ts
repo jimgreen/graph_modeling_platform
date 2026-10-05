@@ -30,9 +30,95 @@ export interface DotGraph {
 }
 
 // 节点行：n0 [label="...", shape=rect, fillcolor=yellow, pos="615.0,307.0!"];
-// label 内容容忍 \" 转义（Python 端只转义双引号）
-const NODE_RE =
-  /^\s*(\w+)\s+\[label="((?:[^"\\]|\\.)*)",\s*shape=([^,\]]+),\s*fillcolor=([^,\]]+),\s*pos="([^"]+)"\]\s*;\s*$/;
+// 属性顺序无关、容忍未知属性：只取 `id [` 前缀，属性串交由 parseDotNodeAttrs 逐项解析
+// （旧写法是写死 label,shape,fillcolor,pos 顺序的整行正则，DOT 里换序/多属性即整节点被静默丢弃）。
+const NODE_HEAD_RE = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\[/;
+
+// 属性 key 允许字符（Graphviz 属性名为字母数字下划线，容许点号）
+const DOT_ATTR_KEY_CHAR = /[A-Za-z0-9_.]/;
+// DOT 属性串内的空白分隔符（tab/多空格/换行均容忍）
+const isDotWs = (ch: string): boolean => ch === " " || ch === "\t" || ch === "\r" || ch === "\n";
+
+/**
+ * 逐项解析 `id [k=v, k=v, ...];` 的属性串（顺序无关、容忍未知属性与尾随逗号）。
+ * 返回 null 表示该行不是节点行（非 `id [` 前缀、属性串畸形、行尾有多余字符）。
+ * value 原样保留（引号值去掉首尾引号但保留 \" 等转义字符，裸值 trim 两侧空白），
+ * 不对 shape/fillcolor 额外剥引号——与旧正则 `shape=([^,\]]+)` 的取值范围保持一致。
+ */
+function parseDotNodeAttrs(line: string): { id: string; attrs: Map<string, string> } | null {
+  const head = line.match(NODE_HEAD_RE);
+  if (!head) return null;
+  const s = line;
+  let i = head[0].length; // 已越过 "id ["
+  const attrs = new Map<string, string>();
+  const skipWs = (): void => {
+    while (i < s.length && isDotWs(s[i])) i++;
+  };
+  for (;;) {
+    skipWs();
+    if (i >= s.length) return null;
+    if (s[i] === ",") {
+      i++;
+      continue;
+    }
+    if (s[i] === "]") {
+      i++;
+      break;
+    }
+    const keyStart = i;
+    while (i < s.length && DOT_ATTR_KEY_CHAR.test(s[i])) i++;
+    if (i === keyStart) return null; // 非 key 起始字符 → 畸形
+    const key = s.slice(keyStart, i);
+    skipWs();
+    if (s[i] !== "=") return null;
+    i++;
+    skipWs();
+    if (i >= s.length) return null;
+    let value: string;
+    if (s[i] === '"') {
+      // 引号值：容忍 \" 与 \\ 转义对（原样保留，label 由 unescapeLabel 还原 \"）
+      i++;
+      let out = "";
+      for (;;) {
+        if (i >= s.length) return null; // 引号未闭合
+        const c = s[i];
+        if (c === "\\" && i + 1 < s.length) {
+          out += c + s[i + 1];
+          i += 2;
+          continue;
+        }
+        if (c === '"') {
+          i++;
+          break;
+        }
+        out += c;
+        i++;
+      }
+      value = out;
+    } else {
+      const valueStart = i;
+      while (i < s.length && s[i] !== "," && s[i] !== "]") i++;
+      value = s.slice(valueStart, i).trim();
+    }
+    attrs.set(key, value);
+    skipWs();
+    if (s[i] === ",") {
+      i++;
+      continue;
+    }
+    if (s[i] === "]") {
+      i++;
+      break;
+    }
+    return null; // 值后既非 , 也非 ]
+  }
+  skipWs();
+  if (i < s.length && s[i] === ";") {
+    i++;
+    skipWs();
+  }
+  return i >= s.length ? { id: head[1], attrs } : null;
+}
 
 // 边行：n6 -> n241 [dir=none];
 const EDGE_RE = /^\s*(\w+)\s*->\s*(\w+)\s*(?:\[[^\]]*\])?\s*;\s*$/;
@@ -62,26 +148,37 @@ export function parseDot(text: string): DotGraph {
     }
   }
   for (const line of text.split(/\r?\n/)) {
-    const nm = line.match(NODE_RE);
-    if (nm) {
-      let label = unescapeLabel(nm[2]);
+    const parsed = parseDotNodeAttrs(line);
+    // 四项必需属性缺一即不是设备节点（graph/node/edge 默认语句走这里）→ 交回给边匹配
+    const labelRaw = parsed?.attrs.get("label");
+    const shapeRaw = parsed?.attrs.get("shape");
+    const fillRaw = parsed?.attrs.get("fillcolor");
+    const posRaw = parsed?.attrs.get("pos");
+    if (
+      parsed !== null &&
+      labelRaw !== undefined &&
+      shapeRaw !== undefined &&
+      fillRaw !== undefined &&
+      posRaw !== undefined
+    ) {
+      let label = unescapeLabel(labelRaw);
       const open = label.endsWith(OPEN_SUFFIX);
       if (open) label = label.slice(0, -OPEN_SUFFIX.length);
       // Graphviz 恒输出 "x,y"，但 .dot 是用户从外部导出的、手工改过，
       // 某行只给一个坐标时会 split 出 undefined，py.replace 直接 TypeError 崩掉整次导入。
       // 单行坐标畸形不该废掉整个文件：解析不出有限数就跳过该节点。
-      const [px, py] = nm[5].split(",");
+      const [px, py] = posRaw.split(",");
       const x = parseFloat(px.replace("!", ""));
       const y = parseFloat(String(py ?? "").replace("!", ""));
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
         continue;
       }
       g.nodes.push({
-        id: nm[1],
+        id: parsed.id,
         label,
         open,
-        shape: nm[3],
-        fillcolor: nm[4],
+        shape: shapeRaw,
+        fillcolor: fillRaw,
         x,
         y
       });
@@ -273,7 +370,11 @@ export function collapseDotGraph(graph: DotGraph): CollapsedDotGraph {
   // 边重写：端点 → 设备集；两端同单一设备=自环；端点不存在=悬空
   let selfLoopDropped = 0;
   let danglingEdgeDropped = 0;
-  const linkSet = new Map<string, DotLink>(); // key=label 对（无向规范化）
+  // key=label 对的无歧义编码（长度前缀）。设备 label 本身可含 |（如 A|B、C），
+  // 直接拼 `${x}|${y}` 会让 (A, B|C) 与 (A|B, C) 撞成同一个 key，两条不同的边被并成一条。
+  // 该 key 只在本函数内做去重，不落盘（对外只有 linkSet.values() 的 {from,to} label 对）。
+  const linkKey = (x: string, y: string): string => `${x.length}:${x}${y}`;
+  const linkSet = new Map<string, DotLink>(); // key=长度前缀的 label 对（无向规范化）
   const seenSelfEdge = new Set<string>(); // 自环按无向边去重计数
   for (const e of graph.edges) {
     if (!parent.has(e.from) || !parent.has(e.to)) {
@@ -295,7 +396,7 @@ export function collapseDotGraph(graph: DotGraph): CollapsedDotGraph {
       for (const b of sv) {
         if (a.label === b.label) continue;
         const [x, y] = a.label < b.label ? [a.label, b.label] : [b.label, a.label];
-        linkSet.set(`${x}|${y}`, { from: x, to: y });
+        linkSet.set(linkKey(x, y), { from: x, to: y });
       }
     }
   }

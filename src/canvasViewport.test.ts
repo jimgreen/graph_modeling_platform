@@ -132,6 +132,101 @@ describe("canvas ruler ticks", () => {
   });
 });
 
+// 刻度生成的可终止性守卫。修复前的实现是
+//   `for (let value = start; value <= to; value += unit)`
+// 它只挡了 unit <= 0 与 to < from，两种输入能让 `value += unit` 不再改变 value：
+//   · 端点是 ±Infinity（`value + Infinity` / `-Infinity + 25` 都不推进）
+//   · 端点有限但尺度超出可表示步进（1e21 处的 ULP 已是 262144 ≫ unit 25）
+// 后果不是抛错而是**界面卡死**：canvasRulerTicks 被画布每帧调用，一次死循环
+// 整个 tab 就没救了。
+//
+// ⚠ 不要为了「证明修复前会挂」而真的跑旧实现：那是同步死循环，vitest 的
+// testTimeout 也救不了（事件循环被占住，计时器根本不跑），只会挂死整个
+// worker、几分钟出不来结果。下面的注释只写**推演轨迹**，不断言运行时长。
+describe("canvas ruler ticks：病态端点必须立刻返回（死循环守卫）", () => {
+  test("★ 区间跨 ±Infinity：返回空数组，且在有限时间内返回", () => {
+    // 修复前推演：start = Math.ceil(-Infinity/25)*25 = -Infinity；
+    // `-Infinity <= Infinity` 恒真 → push(-Infinity)；`-Infinity + 25 === -Infinity`
+    // → value 永不改变 → 永不退出。
+    const startedAt = Date.now();
+    const ticks = canvasRulerTicks(Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY, 25);
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(ticks).toEqual([]);
+    // 时间上界给得很宽（真正该拦住的是永不返回），只为钉住「不是慢，是不返回」
+    expect(elapsedMs).toBeLessThan(5_000);
+  });
+
+  test("★ 只有单侧是 ±Infinity 也返回空数组（另一侧有限也不行）", () => {
+    // 修复前推演：start = ±Infinity，`value <= to` 恒真，`value + unit` 不推进 → 死循环
+    expect(canvasRulerTicks(Number.NEGATIVE_INFINITY, 100, 25)).toEqual([]);
+    expect(canvasRulerTicks(0, Number.POSITIVE_INFINITY, 25)).toEqual([]);
+  });
+
+  test("★ to = 1e21：步进不再改变 value，只产出首个刻度就中止", () => {
+    // 1e21 附近的 ULP 是 262144，远大于 unit 25，故 `1e21 + 25 === 1e21`。
+    // from 取 1e21-10 只是为了让区间看起来像个真区间 —— `1e21 - 10` 同样被舍回 1e21，
+    // 于是 start 落在 1e21 上，是唯一能触到「不推进」那条路径的入口。
+    // 修复前推演：push(1e21) 之后 `1e21 + 25 === 1e21`，`value <= to` 恒真 → 死循环。
+    expect(1e21 + 25).toBe(1e21);
+    expect(canvasRulerTicks(1e21 - 10, 1e21, 25)).toEqual([1e21]);
+  });
+
+  test("★ from = 1e21 且 to = 1e21 + 10：加 10 在该尺度被舍掉，等价零宽区间", () => {
+    // 前置事实：`1e21 + 10 === 1e21`，所以这实际是 [1e21, 1e21] 的零宽区间。
+    // 零宽区间本该只产出一个刻度；修复前因为 `value += unit` 不推进而挂死。
+    expect(1e21 + 10).toBe(1e21);
+    expect(canvasRulerTicks(1e21, 1e21 + 10, 25)).toEqual([1e21]);
+  });
+
+  test("★ 区间极大但每轮都在前进：靠刻数上限终止（0..1e21 / unit 25 要跑 4e19 轮）", () => {
+    // 这一条与上面两条是不同的失效形态：value 每轮都在 +25，循环「会」终止，
+    // 但要跑 4e19 轮 —— 对界面与死循环是同一后果（卡死），靠可终止性守卫②③
+    // 拦不住，只能靠刻数上限。
+    const ticks = canvasRulerTicks(0, 1e21, 25);
+
+    expect(ticks.length).toBe(1_000_000);
+    expect(ticks[0]).toBe(0);
+    expect(ticks[1]).toBe(25);
+  });
+
+  test("★ from / to 均为 NaN：走不了 to >= from 的比较，返回空数组", () => {
+    // 修复前就靠 `to >= from` 挡住了（NaN 的任何比较都是 false），此处钉住该行为：
+    // NaN 端点不是「漏了防护」，答案本就是空数组。
+    expect(canvasRulerTicks(Number.NaN, Number.NaN, 25)).toEqual([]);
+    // 单侧 NaN 同理：NaN >= x 与 x >= NaN 都是 false
+    expect(canvasRulerTicks(Number.NaN, 100, 25)).toEqual([]);
+    expect(canvasRulerTicks(0, Number.NaN, 25)).toEqual([]);
+  });
+});
+
+// 死循环守卫是「只在病态输入上生效」的：正常有限区间的刻度序列必须逐项不变。
+// 上面的 describe 已覆盖 0..50 / 10..60 / 30..40 / -30..10，这里补的是
+// 「大但仍正常」的那一侧 —— 从 1e6 起算时 ULP 已经很小，步进照常，
+// 顺带证明守卫没有把大坐标区间误判成病态。
+describe("canvas ruler ticks：正常有限区间的序列不受守卫影响", () => {
+  test("常规区间（含 0..100）逐项与修复前一致", () => {
+    expect(canvasRulerTicks(0, 100, 25)).toEqual([0, 25, 50, 75, 100]);
+    expect(canvasRulerTicks(0, 100, 5)).toEqual([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]);
+  });
+
+  test("大坐标但仍正常的区间（1e6 起 100 宽）：步进正常、序列不截断", () => {
+    expect(canvasRulerTicks(1e6, 1e6 + 100, 25)).toEqual([
+      1000000, 1000025, 1000050, 1000075, 1000100
+    ]);
+    // 负方向同理（Math.ceil 向 -Infinity 取整，首个刻度在 from 之内）
+    expect(canvasRulerTicks(-1e6, -1e6 + 100, 25)).toEqual([
+      -1000000, -999975, -999950, -999925, -999900
+    ]);
+  });
+
+  test("区间边界截断行为不变：首刻度在 from 之内、末刻度不超过 to", () => {
+    // from 不是 unit 的整数倍时向上取整，to 不是整数倍时丢弃末刻度
+    expect(canvasRulerTicks(-1e6 - 3, -1e6 + 7, 25)).toEqual([-1000000]);
+    expect(canvasRulerTicks(1e6 + 1, 1e6 + 49, 25)).toEqual([1000025]);
+  });
+});
+
 describe("canvas viewport bounds changes", () => {
   test("preserves free-drag overflow offsets while canvas scrollbars are active", () => {
     expect(clampCanvasNoScrollOffset(120, 1800, 800, 270, true)).toBe(120);

@@ -2,6 +2,29 @@ import { describe, expect, test } from "vitest";
 import { createAppHookCallback57 } from "./appToolbarHookFactories";
 import { readViewportResultCache, writeViewportResultCache, viewportBoundsCacheKey } from "./appCoreCanvasUtilities";
 
+// ── 以下为「视口定位 / 静态按钮动作」6 个工厂的测试 ────────────────────────────
+// 设计原则：工厂只做一层转发，所以断言必须落在**转发出去的实参**或**下游真实实现的结果**上，
+// 断「不抛错」是废断言。凡是 scope 里被工厂读到的字段，一律接真实实现（clampNumber /
+// selectionRectCenter / createFitViewToBounds / clampViewBoxDimensionsForZoom /
+// isStaticButtonEnabledForNode / boxesIntersect），只对 DOM 相关的量（clientWidth、
+// getBoundingClientRect）用替身 —— 这样「期望值」是能手算出来的常数，不是回读替身自己。
+import { afterEach, vi } from "vitest";
+import {
+  createCenterSelectedInView,
+  createClampFloatingToolbarPosition,
+  createExecuteStaticButtonAction,
+  createFitViewToSelection,
+  createHandleMinimapNavigate,
+  createHandleStaticButtonClick,
+  createPlaceFloatingToolbar,
+  createToolbarOverlapArea
+} from "./appToolbarHookFactories";
+import { boxesIntersect, FIT_SELECTION_MAX_ZOOM_PERCENT, selectionRectCenter } from "./appCoreCanvasUtilities";
+import { createFitViewToBounds } from "./appProjectCanvasFactories";
+import { isStaticButtonEnabledForNode } from "./appInlineUtilityFunctions";
+import { clampNumber } from "../canvasViewport";
+import { clampViewBoxDimensionsForZoom } from "../model-canvas-ops";
+
 // 画布视口节点序 = 画布绘制序（appRenderBatch 按数组序渲染）。
 // 容器沉底：容器必须排在 nodeIndexById 更小的普通设备之前。
 const node = (id: string, kind: string) => ({
@@ -46,5 +69,495 @@ describe("appToolbarHookFactories callback57 视口节点序", () => {
     const nodes = [node("b", "ac-load"), node("a", "ac-load")];
     const viewportNodes = createAppHookCallback57(makeScope(nodes))();
     expect(viewportNodes.map((n: any) => n.id)).toEqual(["b", "a"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1 & 2. createCenterSelectedInView —— 把选择包围盒中心挪到视口中心
+// 守卫的关键是那个 `if (!selectedCanvasBounds) return`：空选择时**一个视口调用都不能发生**，
+// 而不是「居中到 (0,0)」。centerViewBoxOnPoint 是 spy，计数 0 才是判别点。
+// ─────────────────────────────────────────────────────────────────────────────
+describe("createCenterSelectedInView", () => {
+  const makeScope = (over: Record<string, any> = {}) => ({
+    centerViewBoxOnPoint: vi.fn(),
+    selectionRectCenter,
+    selectedCanvasBounds: null,
+    ...over
+  });
+
+  test("空选择时不动视口：居中函数调用次数为 0", () => {
+    const scope = makeScope({ selectedCanvasBounds: null });
+
+    createCenterSelectedInView(scope)();
+
+    // 若把 `!selectedCanvasBounds` 早退删掉，这里会变成 1 次调用（且参数为 NaN）→ 转红。
+    expect(scope.centerViewBoxOnPoint).toHaveBeenCalledTimes(0);
+  });
+
+  test("有选择时把包围盒中心移到视口中心", () => {
+    // 左 10/右 30 → x=20；上 400/下 600 → y=500。故意让 x≠y、且两轴取值范围不同，
+    // 这样「拿 left+right 当 y」或「不除 2」都会转红。
+    const scope = makeScope({ selectedCanvasBounds: { left: 10, right: 30, top: 400, bottom: 600 } });
+
+    createCenterSelectedInView(scope)();
+
+    expect(scope.centerViewBoxOnPoint).toHaveBeenCalledTimes(1);
+    expect(scope.centerViewBoxOnPoint).toHaveBeenCalledWith({ x: 20, y: 500 });
+  });
+
+  test("包围盒为单点（零宽高）时中心就是该点本身", () => {
+    const scope = makeScope({ selectedCanvasBounds: { left: -12.5, right: -12.5, top: 7, bottom: 7 } });
+
+    createCenterSelectedInView(scope)();
+
+    expect(scope.centerViewBoxOnPoint).toHaveBeenCalledWith({ x: -12.5, y: 7 });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. createFitViewToSelection —— 固定 padding 80，缩放上限转交 scope 常量
+// 接的是**真实** createFitViewToBounds + 真实 clampViewBoxDimensionsForZoom，
+// 只把两个依赖 DOM 的量替掉：canvasFrameRef.current 置 null（走 viewBox 尺寸回退）、
+// clampViewBoxToCanvas 取恒等。期望值全部手算：
+//   bounds {100,300,40,160} + padding 80 → targetWidth=360, targetHeight=280
+//   视口宽高比 = viewBox 900/600 = 1.5；360/280≈1.29 < 1.5 → fitSize = {420, 280}
+// ─────────────────────────────────────────────────────────────────────────────
+describe("createFitViewToSelection", () => {
+  const BOUNDS = { left: 100, right: 300, top: 40, bottom: 160 };
+
+  const makeScope = (over: Record<string, any> = {}) => {
+    const scope: Record<string, any> = {
+      FIT_SELECTION_MAX_ZOOM_PERCENT,
+      selectedCanvasBounds: null,
+      canvasBounds: { left: 0, top: 0, width: 1200, height: 800 },
+      canvasFrameRef: { current: null },
+      viewBox: { x: 0, y: 0, width: 900, height: 600 },
+      clampViewBoxToCanvas: (viewBox: any) => viewBox,
+      clampViewBoxDimensionsForZoom,
+      resetViewportZoom: vi.fn(),
+      setViewBoxAtViewportCenter: vi.fn(),
+      ...over
+    };
+    // 只有调用方没自带替身时才接真实实现（转交实参那条用例要自带 spy）。
+    if (!over.fitViewToBounds) {
+      scope.fitViewToBounds = createFitViewToBounds(scope);
+    }
+    return scope;
+  };
+
+  test("空选择：走重置缩放分支，不改 viewBox", () => {
+    const scope = makeScope();
+
+    createFitViewToSelection(scope)();
+
+    expect(scope.resetViewportZoom).toHaveBeenCalledTimes(1);
+    expect(scope.setViewBoxAtViewportCenter).toHaveBeenCalledTimes(0);
+  });
+
+  test("有选择：把包围盒原样转交，padding 写死 80，上限取 scope 常量", () => {
+    // 常量当前就是 100，钉死：日后有人改它，这里会提醒同步改断言。
+    expect(FIT_SELECTION_MAX_ZOOM_PERCENT).toBe(100);
+    const fitViewToBounds = vi.fn();
+    const scope = makeScope({ selectedCanvasBounds: BOUNDS, fitViewToBounds });
+
+    createFitViewToSelection(scope)();
+
+    expect(fitViewToBounds).toHaveBeenCalledTimes(1);
+    expect(fitViewToBounds).toHaveBeenCalledWith(BOUNDS, 80, FIT_SELECTION_MAX_ZOOM_PERCENT);
+    expect(scope.resetViewportZoom).toHaveBeenCalledTimes(0);
+  });
+
+  test("有选择：viewBox 以包围盒中心为中心，尺寸被 100% 上限顶到画布尺寸", () => {
+    const scope = makeScope({ selectedCanvasBounds: BOUNDS });
+
+    createFitViewToSelection(scope)();
+
+    // 中心 (200,100)，clamp 后 size = 画布 1200×800 → 左上角 (200-600, 100-400)
+    expect(scope.setViewBoxAtViewportCenter).toHaveBeenCalledWith(
+      { x: -400, y: -300, width: 1200, height: 800 },
+      { x: 200, y: 100 }
+    );
+    expect(scope.setViewBoxAtViewportCenter.mock.calls[0][0].width).toBe(scope.canvasBounds.width);
+  });
+
+  // ⚠ 判别力说明（重要，见回报）：zoom 因子在两条分支上**相同**。
+  // FIT_SELECTION_MAX_ZOOM_PERCENT=100 使 clampViewBoxDimensionsForZoom 的
+  // minRatio=maxRatio=100/100=1，于是无论选择多大，viewBox 恒等于画布尺寸 → zoom 恒 100%；
+  // 空选择那侧 resetViewportZoom() 同样是 100%。所以「适应选择」永远无法放大。
+  // 真正有判别力的是：走哪条分支、以及中心坐标。本用例把这点钉成显式断言。
+  test("空选择与有选择的 zoom 因子都落在 100%：判别力在分支与中心，不在缩放", () => {
+    const empty = makeScope();
+    createFitViewToSelection(empty)();
+
+    const filled = makeScope({ selectedCanvasBounds: BOUNDS });
+    createFitViewToSelection(filled)();
+
+    // 有选择：zoom = 画布宽 / viewBox 宽 = 1200/1200
+    const zoomWithSelection = filled.canvasBounds.width / filled.setViewBoxAtViewportCenter.mock.calls[0][0].width;
+    expect(zoomWithSelection).toBe(1);
+    // 空选择：没有 setViewBoxAtViewportCenter 调用，缩放由 resetViewportZoom 复位
+    expect(empty.setViewBoxAtViewportCenter).toHaveBeenCalledTimes(0);
+
+    // 把上限调高，缩放因子才会真正变化 —— 证明 100 这个常量就是唯一的封顶点
+    const zoomed = makeScope({ selectedCanvasBounds: BOUNDS, FIT_SELECTION_MAX_ZOOM_PERCENT: 400 });
+    createFitViewToSelection(zoomed)();
+    const zoomWithoutCap = zoomed.canvasBounds.width / zoomed.setViewBoxAtViewportCenter.mock.calls[0][0].width;
+    expect(zoomed.setViewBoxAtViewportCenter.mock.calls[0][0]).toMatchObject({ width: 420, height: 280 });
+    expect(zoomWithoutCap).not.toBe(zoomWithSelection);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. createHandleMinimapNavigate —— 小地图点击坐标 → 画布坐标
+// 换算式：canvas = (client - rect.left - offsetX) / scale，再夹进 [0, canvasWidth]。
+// 夹取用例刻意取**明显为负**的输入（-180 → 0）；取恰好等于 0 的输入会与夹取下界
+// 无法区分（clampNumber(0,0,w) === 0），那样的用例在删掉 clamp 后仍然恒绿。
+// ─────────────────────────────────────────────────────────────────────────────
+describe("createHandleMinimapNavigate", () => {
+  const makeScope = (over: Record<string, any> = {}) => ({
+    canvasWidth: 2000,
+    canvasHeight: 1200,
+    minimapOffsetX: 10,
+    minimapOffsetY: 20,
+    minimapScale: 0.5,
+    clampNumber,
+    centerViewBoxOnPoint: vi.fn(),
+    ...over
+  });
+
+  const makeEvent = (clientX: number, clientY: number) => ({
+    clientX,
+    clientY,
+    currentTarget: { getBoundingClientRect: () => ({ left: 100, top: 50 }) },
+    preventDefault: vi.fn(),
+    stopPropagation: vi.fn()
+  });
+
+  test("点击坐标按偏移与缩放换算成画布坐标后居中", () => {
+    const scope = makeScope();
+    const event = makeEvent(260, 240);
+
+    createHandleMinimapNavigate(scope)(event as any);
+
+    // x = (260-100-10)/0.5 = 300；y = (240-50-20)/0.5 = 340
+    expect(scope.centerViewBoxOnPoint).toHaveBeenCalledTimes(1);
+    expect(scope.centerViewBoxOnPoint).toHaveBeenCalledWith({ x: 300, y: 340 });
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(event.stopPropagation).toHaveBeenCalledTimes(1);
+  });
+
+  test("换算结果越出画布时被夹到画布边界（左上 0,0）", () => {
+    const scope = makeScope();
+
+    createHandleMinimapNavigate(scope)(makeEvent(20, 0) as any);
+
+    // x = (20-100-10)/0.5 = -180 → 0；y = (0-50-20)/0.5 = -140 → 0
+    expect(scope.centerViewBoxOnPoint).toHaveBeenCalledWith({ x: 0, y: 0 });
+  });
+
+  test("换算结果越出画布时被夹到画布边界（右下 canvasWidth,canvasHeight）", () => {
+    const scope = makeScope();
+
+    createHandleMinimapNavigate(scope)(makeEvent(1200, 900) as any);
+
+    // x = (1200-100-10)/0.5 = 2180 → 2000；y = (900-50-20)/0.5 = 1660 → 1200
+    expect(scope.centerViewBoxOnPoint).toHaveBeenCalledWith({ x: 2000, y: 1200 });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. createPlaceFloatingToolbar —— 越界锚点被夹回视口内
+// 接真实 createClampFloatingToolbarPosition 与 createToolbarOverlapArea。
+// 视口 800×600、padding 8、工具条 120×40 ⇒ x∈[8,672]、y∈[8,552]。
+// ─────────────────────────────────────────────────────────────────────────────
+describe("createPlaceFloatingToolbar", () => {
+  const makeScope = (over: Record<string, any> = {}) => {
+    const scope: Record<string, any> = {
+      clampNumber,
+      boxesIntersect,
+      floatingToolbarPadding: 8,
+      floatingToolbarViewport: { left: 0, top: 0, right: 800, bottom: 600 },
+      floatingToolbarScreenScale: 1.25,
+      ...over
+    };
+    scope.clampFloatingToolbarPosition = createClampFloatingToolbarPosition(scope);
+    scope.toolbarOverlapArea = createToolbarOverlapArea(scope);
+    return scope;
+  };
+
+  test("锚点越过视口右下方时夹到内边缘", () => {
+    const scope = makeScope();
+
+    expect(createPlaceFloatingToolbar(scope)([{ x: 900, y: 700 }], 120, 40)).toEqual({
+      x: 672,
+      y: 552,
+      width: 120,
+      height: 40,
+      scale: 1.25
+    });
+  });
+
+  test("锚点越过视口左上方时夹到 padding 边缘", () => {
+    const scope = makeScope();
+
+    expect(createPlaceFloatingToolbar(scope)([{ x: -50, y: -20 }], 120, 40)).toEqual({
+      x: 8,
+      y: 8,
+      width: 120,
+      height: 40,
+      scale: 1.25
+    });
+  });
+
+  test("工具条比视口还宽时仍被夹到 padding 边缘，不会翻到视口另一侧", () => {
+    const scope = makeScope();
+
+    // maxX = max(8, 800-900-8) = 8 ⇒ x 落在 8 而不是 -108；y=300 本就在 [8,552] 内，不动。
+    expect(createPlaceFloatingToolbar(scope)([{ x: 500, y: 300 }], 900, 40)).toMatchObject({ x: 8, y: 300 });
+    // 等价变异记录：createClampFloatingToolbarPosition 里那句 `Math.max(minX, maxX)`
+    // **删掉也测不出来** —— maxX 变成 -108 时 clampNumber(500, 8, -108)
+    // = max(8, min(-108, 500)) = max(8, -108) = 8，与 maxX=8 时逐字相同。
+    // 根因是 clampNumber 自身已带 Math.max(min, …) 下界，那句守卫只是防御性重复。
+    // 只有换掉夹取器实现才会让两者分叉，故本用例覆盖不到它，也不假装覆盖。
+  });
+
+  test("多候选时按与避让矩形的重叠面积择优，而非按下标", () => {
+    const scope = makeScope();
+    const candidates = [{ x: 700, y: 300 }, { x: 200, y: 300 }];
+    // 避让区只压住候选 0 夹取后的矩形 {672,792,300,340}
+    const avoidOnFirst = [{ left: 640, right: 800, top: 280, bottom: 360 }];
+    // 避让区只压住候选 1 的矩形 {200,320,300,340}
+    const avoidOnSecond = [{ left: 160, right: 260, top: 280, bottom: 360 }];
+
+    // 压住候选 0 → 选候选 1（x=200）
+    expect(createPlaceFloatingToolbar(scope)(candidates, 120, 40, avoidOnFirst)).toMatchObject({ x: 200, y: 300 });
+    // 压住候选 1 → 选候选 0，且它被夹到 672
+    expect(createPlaceFloatingToolbar(scope)(candidates, 120, 40, avoidOnSecond)).toMatchObject({ x: 672, y: 300 });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6 & 7. 静态按钮：未知/未启用的按钮不得触发任何动作
+// ⚠ 这两个工厂**不看按钮 id**，id 只是透传参数；真正的闸门是
+// isStaticButtonEnabledForNode（node 侧）与 node.params.buttonActionType（动作侧）。
+// 所以「未知按钮」在本文件里必须落成这两个闸门之一，用 scope 里计数为 0 的 spy 钉住。
+// ─────────────────────────────────────────────────────────────────────────────
+const buttonNode = (id: string, params: Record<string, any>, kind = "static-text") => ({
+  id,
+  kind,
+  name: id,
+  position: { x: 0, y: 0 },
+  size: { width: 40, height: 30 },
+  rotation: 0,
+  scale: 1,
+  params,
+  terminals: []
+}) as any;
+
+const makeClickScope = (over: Record<string, any> = {}) => ({
+  isBrowseMode: true,
+  isStaticButtonEnabledForNode,
+  executeStaticButtonAction: vi.fn(),
+  setStaticButtonFeedback: vi.fn(),
+  setStaticButtonVisual: vi.fn(),
+  clearStaticButtonFeedback: vi.fn(),
+  staticButtonPointerRef: { current: null as any },
+  staticButtonFeedbackTimeoutRef: { current: null as any },
+  ...over
+});
+
+const makeClickEvent = (clientX = 10, clientY = 10) => ({
+  clientX,
+  clientY,
+  preventDefault: vi.fn(),
+  stopPropagation: vi.fn()
+});
+
+describe("createHandleStaticButtonClick", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("未启用按钮的未知 id：不抛错且一个动作都没触发，按下快照原样留着", () => {
+    vi.stubGlobal("window", { setTimeout: vi.fn(() => 77) });
+    const snapshot = { nodeId: "btn-unknown-42", clientX: 10, clientY: 10, moved: false };
+    const scope = makeClickScope({ staticButtonPointerRef: { current: snapshot } });
+    const node = buttonNode("btn-unknown-42", {});
+
+    expect(isStaticButtonEnabledForNode(node)).toBe(false);
+    expect(() => createHandleStaticButtonClick(scope)(makeClickEvent() as any, node)).not.toThrow();
+    expect(scope.executeStaticButtonAction).toHaveBeenCalledTimes(0);
+    expect(scope.setStaticButtonFeedback).toHaveBeenCalledTimes(0);
+    expect(scope.setStaticButtonVisual).toHaveBeenCalledTimes(0);
+    expect(scope.staticButtonFeedbackTimeoutRef.current).toBe(null);
+    // 早退发生在 `staticButtonPointerRef.current = null` 之前 ⇒ 快照没被消费。
+    // 若把早退挪到清空之后，这条就转红。
+    expect(scope.staticButtonPointerRef.current).toEqual(snapshot);
+  });
+
+  test("已启用且位移在 4px 内的点击：点亮反馈并只调用一次底层动作", () => {
+    vi.stubGlobal("window", { setTimeout: vi.fn(() => 77) });
+    const scope = makeClickScope({
+      staticButtonPointerRef: { current: { nodeId: "btn-1", clientX: 10, clientY: 10, moved: false } }
+    });
+    const node = buttonNode("btn-1", { buttonEnabled: "1", buttonActionType: "command", buttonCommand: "run" });
+    const event = makeClickEvent(11, 12);
+
+    createHandleStaticButtonClick(scope)(event as any, node);
+
+    // 与上一条互为反向证明：0 计数不是因为 spy 断了，而是这里真的能到 1。
+    expect(scope.executeStaticButtonAction).toHaveBeenCalledTimes(1);
+    expect(scope.executeStaticButtonAction).toHaveBeenCalledWith(node);
+    expect(scope.setStaticButtonFeedback).toHaveBeenCalledWith("btn-1", "clicked");
+    expect(scope.staticButtonFeedbackTimeoutRef.current).toBe(77);
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(event.stopPropagation).toHaveBeenCalledTimes(1);
+  });
+
+  test("按下后拖动超过 4px：视为取消，清反馈但不执行动作", () => {
+    vi.stubGlobal("window", { setTimeout: vi.fn(() => 77) });
+    const scope = makeClickScope({
+      staticButtonPointerRef: { current: { nodeId: "btn-1", clientX: 10, clientY: 10, moved: false } }
+    });
+    const node = buttonNode("btn-1", { buttonEnabled: "1", buttonActionType: "command", buttonCommand: "run" });
+    const event = makeClickEvent(30, 10);
+
+    createHandleStaticButtonClick(scope)(event as any, node);
+
+    expect(scope.executeStaticButtonAction).toHaveBeenCalledTimes(0);
+    expect(scope.clearStaticButtonFeedback).toHaveBeenCalledWith("btn-1");
+    expect(scope.setStaticButtonFeedback).toHaveBeenCalledTimes(0);
+    expect(scope.staticButtonFeedbackTimeoutRef.current).toBe(null);
+    // 快照已被消费（这次走到了清空那一行）
+    expect(scope.staticButtonPointerRef.current).toBe(null);
+    expect(event.preventDefault).toHaveBeenCalledTimes(0);
+  });
+
+  test("按下快照指向别的按钮：视为取消，不执行动作", () => {
+    vi.stubGlobal("window", { setTimeout: vi.fn(() => 77) });
+    const scope = makeClickScope({
+      staticButtonPointerRef: { current: { nodeId: "btn-other", clientX: 10, clientY: 10, moved: false } }
+    });
+    const node = buttonNode("btn-1", { buttonEnabled: "1", buttonActionType: "command", buttonCommand: "run" });
+
+    createHandleStaticButtonClick(scope)(makeClickEvent() as any, node);
+
+    expect(scope.executeStaticButtonAction).toHaveBeenCalledTimes(0);
+    expect(scope.clearStaticButtonFeedback).toHaveBeenCalledWith("btn-1");
+  });
+});
+
+describe("createExecuteStaticButtonAction", () => {
+  const makeScope = (over: Record<string, any> = {}) => ({
+    STATIC_BUTTON_COMMAND_LABELS: { run: "运行仿真" },
+    executeStaticButtonCommand: vi.fn(() => true),
+    isStaticButtonEnabledForNode,
+    layers: [
+      { id: "L1", name: "一次层", visible: false },
+      { id: "L2", name: "二次层", visible: true }
+    ],
+    requestLoadSavedProject: vi.fn(),
+    resolveStaticButtonTargetLayers: vi.fn(() => []),
+    resolveStaticButtonTargetProject: vi.fn(() => null),
+    setActiveLayerId: vi.fn(),
+    setLayers: vi.fn(),
+    writeOperationLog: vi.fn(),
+    ...over
+  });
+
+  test("command 动作：调底层命令执行并按中文标签写日志", () => {
+    const scope = makeScope();
+    const node = buttonNode("btn-1", { buttonEnabled: "1", buttonActionType: "command", buttonCommand: "run" });
+
+    createExecuteStaticButtonAction(scope)(node);
+
+    expect(scope.executeStaticButtonCommand).toHaveBeenCalledTimes(1);
+    expect(scope.executeStaticButtonCommand).toHaveBeenCalledWith("run");
+    expect(scope.writeOperationLog).toHaveBeenCalledWith("按钮执行命令：运行仿真");
+    expect(scope.requestLoadSavedProject).toHaveBeenCalledTimes(0);
+    expect(scope.setLayers).toHaveBeenCalledTimes(0);
+  });
+
+  test("layer 动作：切到首个目标层并按目标层集合改可见性", () => {
+    const scope = makeScope({ resolveStaticButtonTargetLayers: vi.fn(() => [{ id: "L2", name: "二次层" }]) });
+    const node = buttonNode("btn-1", { buttonEnabled: "1", buttonActionType: "layer" });
+
+    createExecuteStaticButtonAction(scope)(node);
+
+    expect(scope.resolveStaticButtonTargetLayers).toHaveBeenCalledWith(node, scope.layers);
+    expect(scope.setActiveLayerId).toHaveBeenCalledWith("L2");
+    expect(scope.setLayers).toHaveBeenCalledTimes(1);
+    // 调用方传进来的 updater 必须真的把可见性改成「只有目标层可见」
+    const updater = scope.setLayers.mock.calls[0][0];
+    expect(updater(scope.layers)).toEqual([
+      { id: "L1", name: "一次层", visible: false },
+      { id: "L2", name: "二次层", visible: true }
+    ]);
+    expect(scope.writeOperationLog).toHaveBeenCalledWith("按钮切换图层：二次层");
+  });
+
+  test("未知动作类型：既不执行命令也不切层，且不写日志", () => {
+    const scope = makeScope();
+    const node = buttonNode("btn-42", { buttonEnabled: "1", buttonActionType: "quantum_toggle" });
+
+    createExecuteStaticButtonAction(scope)(node);
+
+    expect(scope.executeStaticButtonCommand).toHaveBeenCalledTimes(0);
+    expect(scope.setActiveLayerId).toHaveBeenCalledTimes(0);
+    expect(scope.setLayers).toHaveBeenCalledTimes(0);
+    expect(scope.requestLoadSavedProject).toHaveBeenCalledTimes(0);
+    expect(scope.resolveStaticButtonTargetLayers).toHaveBeenCalledTimes(0);
+    expect(scope.resolveStaticButtonTargetProject).toHaveBeenCalledTimes(0);
+    expect(scope.writeOperationLog).toHaveBeenCalledTimes(0);
+  });
+
+  test("未配置动作类型（缺 buttonActionType）：按 none 处理，动作与日志均为 0", () => {
+    const scope = makeScope();
+    const node = buttonNode("btn-42", { buttonEnabled: "1" });
+
+    createExecuteStaticButtonAction(scope)(node);
+
+    expect(scope.executeStaticButtonCommand).toHaveBeenCalledTimes(0);
+    expect(scope.writeOperationLog).toHaveBeenCalledTimes(0);
+  });
+
+  test("未启用的未知按钮：全部动作与日志计数为 0", () => {
+    const scope = makeScope();
+    const node = buttonNode("btn-unknown-42", { buttonActionType: "command", buttonCommand: "run" });
+
+    createExecuteStaticButtonAction(scope)(node);
+
+    expect(scope.executeStaticButtonCommand).toHaveBeenCalledTimes(0);
+    expect(scope.writeOperationLog).toHaveBeenCalledTimes(0);
+  });
+
+  test("命令执行失败：提示但不写操作日志", () => {
+    // showGlobalMessage 在本工厂里是**裸全局引用**（没从 scope 解构，也没有
+    // `= globalThis.showGlobalMessage` 兜底，与同文件 43/83 行的写法不一致），
+    // 所以只能靠 stubGlobal 观测 —— 见回报。
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    const scope = makeScope({ executeStaticButtonCommand: vi.fn(() => false) });
+    const node = buttonNode("btn-1", { buttonEnabled: "1", buttonActionType: "command", buttonCommand: "nope" });
+
+    createExecuteStaticButtonAction(scope)(node);
+
+    expect(scope.executeStaticButtonCommand).toHaveBeenCalledWith("nope");
+    expect(scope.writeOperationLog).toHaveBeenCalledTimes(0);
+    expect(showGlobalMessage).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  test("project 动作：按目标项目切模型并写日志", () => {
+    const target = { project: { name: "主变接线" }, scheme: { id: "S7" } };
+    const scope = makeScope({ resolveStaticButtonTargetProject: vi.fn(() => target) });
+    const node = buttonNode("btn-1", { buttonEnabled: "1", buttonActionType: "project" });
+
+    createExecuteStaticButtonAction(scope)(node);
+
+    expect(scope.resolveStaticButtonTargetProject).toHaveBeenCalledWith(node);
+    expect(scope.requestLoadSavedProject).toHaveBeenCalledWith(target.project, "S7");
+    expect(scope.writeOperationLog).toHaveBeenCalledWith("按钮切换模型：主变接线");
+    expect(scope.executeStaticButtonCommand).toHaveBeenCalledTimes(0);
   });
 });

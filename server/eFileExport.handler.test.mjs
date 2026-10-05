@@ -228,6 +228,135 @@ describe("handleV1ModelEFilePost", () => {
     });
   });
 });
+
+// ── 模板文本解析不出任何元件定义段 → 400 ──────────────────
+//
+// `templateOverridesFromText`（eFileExport.mjs:30-43）只在
+// `parseEDeviceDefinitionFile(templateText).length === 0` 时返回 null，
+// `buildEFileForSavedModel` 据此回 `{ code: "bad-request", message: "模板文本中未解析到元件定义" }`。
+//
+// **这条分支在 `readSchemeProjectRecord` 之后**：模型不在盘上时先吃 404 not-found，
+// 永远走不到这里。所以本组用例必须先把模型写到盘上 —— 这一点顺带解释了本文件
+// 第一条 POST 用例为何用 `<ACLoad/>` 却拿到 404（见下方注释的补记）。
+//
+// **真实触发条件不是「没有 @ 字段行」**，而是「一个闭合标签对都没有」：
+// parseEDeviceDefinitionFile 的正则是 /<(\S+)([^>]*)>([\s\S]*?)<\/\1>/g
+// （src/model-eexport.ts:4590），任何 `<X>…</X>` 都算一个段，`<Model>` 也算。
+// 下方对照用例把这条事实钉住：只含 `<Model>` 段（确实不含任何元件定义段）照样解析出
+// 1 个段、不触发该 400。若有人把守卫改成「没有元件类段就报错」，对照用例会红。
+describe("模板文本无元件定义 → 400", () => {
+  beforeEach(() => {
+    const dir = join(paths.schemeFiles, SCHEME);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, `${MODEL}.json`),
+      JSON.stringify({
+        name: MODEL,
+        modelType: "厂站",
+        nodes: [{
+          id: "bus1",
+          kind: "ac-bus",
+          name: "母线1",
+          position: { x: 0, y: 0 },
+          size: { width: 100, height: 20 },
+          rotation: 0,
+          scale: 1,
+          terminals: [],
+          params: { i_vbase: "110" }
+        }],
+        edges: []
+      }),
+      "utf-8"
+    );
+  });
+
+  test("★ 模板文本解析不出任何段 → 400，且文案就是那一句（模型已在盘上，非 404）", async () => {
+    for (const [label, templateText] of [
+      // 纯注释文本：语法上就是一段话，压根没有标签
+      ["纯注释", "// 只有注释行，没有任何元件定义段\n# 说明\n"],
+      // 标签没闭合（模板文件被截断）
+      ["标签未闭合", "<Model>\n@ path name\n# 路径名\n"],
+      // 闭合标签名字对不上（`<Modle>` 手滑）
+      ["闭合标签不匹配", "<Model>\n@ path name\n# 路径名\n</Modle>\n"],
+      // 自闭合写法：没有成对的 </X>
+      ["自闭合", "<ACLoad/>"]
+    ]) {
+      const response = await runPost({ body: { templateText } });
+      expectBadRequest(response, "模板文本中未解析到元件定义");
+      expect(errorPayload(response).message).toBe("模板文本中未解析到元件定义");
+      // 模型确实在盘上：断言不是 404 才证明「过了读盘、卡在模板解析」
+      expect(response.statusCode, label).not.toBe(404);
+    }
+  });
+
+  test("对照组：只有 <Model> 段（无元件定义段）不触发该 400，正常导出", async () => {
+    // 只含 <Model> → parseEDeviceDefinitionFile 产出 1 个段 → 守卫不成立 → 继续导出。
+    // 若把守卫误改成「段里没有元件类就报错」，本用例会红。
+    const response = await runPost({
+      body: { templateText: "<Model>\n@ path name\n# 路径名\n</Model>\n" }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(errorPayload(response).code).toBeUndefined();
+  });
+
+  test("补记：<ACLoad/> 在模型不在盘上时是 404、在盘上时是本条 400（分支顺序的证据）", async () => {
+    // 第一条 POST 用例拿 404 不是因为模板能解析，而是因为读盘排在模板解析之前。
+    // 同一个模板文本换成模型已存在，就落到本 describe 覆盖的 400 上。
+    const response = await runPost({ body: { templateText: "<ACLoad/>" } });
+    expect(response.statusCode).toBe(400);
+    expect(errorPayload(response).code).toBe("bad-request");
+  });
+});
+
+// ── 请求体超过 2MB → 413 payload-too-large ─────────────────
+//
+// 上限常量 E_FILE_BODY_LIMIT = 2 * 1024 * 1024（eFileExport.mjs:101）；
+// 错误文案里的「2MB」来自 readJsonBody 调用处的 limitLabel 第二个参数 ——
+// 换文案只需改那一处，本组用例断言完整文案以盯住它。
+//
+// 判定顺序（server/readJsonBody.mjs:41-55）：逐 chunk 累加 total，
+// 一旦 `total > limitBytes` 就置 oversize 并 **continue（不再累积 chunk）**，
+// 但**继续读完整个流**；读完才抛 `code = "payload-too-large"`。
+// JSON.parse 排在抛错**之后**，所以体积判定一定先于解析。
+//
+// 「读完整个流」是有意的：提前中断会让 Node 认为 body 未读完、响应写出前连接就被重置，
+// 客户端拿到 ECONNRESET 而不是 413。下面第二条用例把「先判体积、后解析」这条顺序钉住。
+describe("请求体体积上限 → 413", () => {
+  const BODY_LIMIT = 2 * 1024 * 1024;
+  /** 造一个 ASCII 的 JSON body：{"templateText":"xxx…"}（ASCII 保证字节数 = 字符数）。 */
+  const bodyOf = (fill) => `{"templateText":"${"x".repeat(fill)}"}`;
+
+  test("★ 超过 2MB 的 body → 413 payload-too-large + v1 错误信封", async () => {
+    const body = bodyOf(BODY_LIMIT); // + {"templateText":""} 的 18 字节开销 ⇒ 必然超限
+    expect(Buffer.byteLength(body)).toBeGreaterThan(BODY_LIMIT);
+    const response = await runPost({ body });
+    const payload = response.json();
+    expect(response.statusCode, JSON.stringify(payload)).toBe(413);
+    expect(payload?.ok).toBe(false);
+    expect(payload?.error?.code).toBe("payload-too-large");
+    expect(payload?.error?.message).toBe("请求体超过 2MB 上限。");
+    // 走的是 sendV1Error（v1NoStoreJsonHeaders），不是别的应答路径
+    expect(response.headers["content-type"]).toBe("application/json; charset=utf-8");
+    expect(response.headers["cache-control"]).toBe("no-store");
+  });
+
+  test("★ 体积判定先于 JSON 解析：同样超限但语法非法 → 仍报 413 而非 400", async () => {
+    // 若有人把 JSON.parse 提到体积判定之前（或改成先拼再判），本用例会转红。
+    const response = await runPost({ body: "x".repeat(BODY_LIMIT + 1024) });
+    expect(response.statusCode).toBe(413);
+    expect(errorPayload(response).code).toBe("payload-too-large");
+  });
+
+  test("对照组：略小于 2MB 的 body 不报 413，继续读盘（本组无模型 → 404）", async () => {
+    // 只比上一条少 1KB，唯一变量就是体积：证明限额不是一刀切、也确实卡在 2MB 附近。
+    const body = bodyOf(BODY_LIMIT - 1024);
+    expect(Buffer.byteLength(body)).toBeLessThan(BODY_LIMIT);
+    const response = await runPost({ body });
+    expect(response.statusCode).toBe(404);
+    expect(errorPayload(response).code).toBe("not-found");
+  });
+});
+
 // ── GBK 不可映射字符：静默写成 '?' ────────────────────────
 //
 // `sendEFile` 走 `iconv.encode(text, "gbk")`，而 iconv 对 GBK 里没有的码位

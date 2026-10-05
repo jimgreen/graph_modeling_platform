@@ -1294,13 +1294,36 @@ function matchedTerminal(node: ModelNode, point: Point, warnings: string[], edge
   return { terminalId: best.terminal.id, endpointPoint: undefined };
 }
 
+/**
+ * style 取值正则按属性名缓存，取代“每次调用现 new 一个 RegExp”。
+ *
+ * 等价性依据：pattern 只由 property 决定（其余部分逐字固定），flags 为 `iu` —— **没有 g、没有 y**，
+ * 所以 exec 既不读也不写 lastIndex（无状态），复用同一实例与每次新建结果逐字一致。
+ * 若日后有人给 flags 加 g，缓存就会跨元素串味（lastIndex 停在上一处匹配之后，后续 exec 直接返回 null），
+ * 故此处的 flags 必须保持 `iu`。
+ *
+ * 缓存不会无界增长：property 全部来自本模块内的字面量（fill / stroke / stroke-width /
+ * stroke-dasharray / font-size / font-family / font-weight / font-style / text-decoration / display），
+ * 取值集合是固定的十几个。
+ */
+const STYLE_PROPERTY_PATTERNS = new Map<string, RegExp>();
+
+function stylePropertyPattern(property: string) {
+  const cached = STYLE_PROPERTY_PATTERNS.get(property);
+  if (cached) {
+    return cached;
+  }
+  const pattern = new RegExp(`(?:^|;)\\s*${property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*([^;]+)`, "iu");
+  STYLE_PROPERTY_PATTERNS.set(property, pattern);
+  return pattern;
+}
+
 function elementStyleValue(element: Element, property: string) {
   const direct = String(element.getAttribute(property) || "").trim();
   if (direct) {
     return direct;
   }
-  const pattern = new RegExp(`(?:^|;)\\s*${property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*([^;]+)`, "iu");
-  return pattern.exec(String(element.getAttribute("style") || ""))?.[1]?.trim() ?? "";
+  return stylePropertyPattern(property).exec(String(element.getAttribute("style") || ""))?.[1]?.trim() ?? "";
 }
 
 function elementHidden(element: Element) {

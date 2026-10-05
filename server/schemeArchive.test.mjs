@@ -17,16 +17,36 @@
 //
 // 注意：`.test.mjs` 必须是纯 JS —— 不要写类型标注或非空断言 `!`，
 // 那些会触发 RollupError: Parse failure，表现为「Tests: no tests」（看着像通过，实际没跑）。
-import { describe, expect, test, beforeEach, afterEach } from "vitest";
+import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import AdmZip from "adm-zip";
 import { listModelJsonFiles, buildSchemeArchiveBuffer } from "./schemeArchive.mjs";
 
+// stat 故障注入：Windows 上 chmod / ACL 不可移植，故只对指定目录名让 stat 抛指定错误码，
+// 其余路径一律透传真实实现（与 schemeArchiveRealtime.test.mjs / projectLookupReadFailure.test.mjs 同法）。
+// null = 不注入。用目录名而非路径比对：临时根目录每轮随机，只有尾段是稳定的。
+let statFailure = null;
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    stat: async (target, options) => {
+      if (statFailure && String(target).endsWith(statFailure.dirName)) {
+        const error = new Error(`${statFailure.code}: injected stat failure, stat '${target}'`);
+        error.code = statFailure.code;
+        throw error;
+      }
+      return actual.stat(target, options);
+    }
+  };
+});
+
 let root;
 
 beforeEach(() => {
+  statFailure = null;
   root = mkdtempSync(join(tmpdir(), "scheme-archive-"));
 });
 
@@ -128,6 +148,58 @@ describe("buildSchemeArchiveBuffer", () => {
     await expect(
       buildSchemeArchiveBuffer({ schemeDir: join(root, "不是目录.txt"), schemeName: "方案A", renderArtifacts })
     ).rejects.toThrow("方案目录不存在。");
+  });
+
+  // ── stat 的 catch 只吞 ENOENT ─────────────────────────
+  //
+  // 与 listModelJsonFiles 的目录读、空间 ZIP 侧 listSpaceFiles 同一口径：只有 ENOENT 算
+  // 「不存在」。此前这里是 `.catch(() => null)`，把「读不到」说成「不存在」——权限被改 /
+  // 文件被占用时用户收到的是「方案目录不存在。」，真实原因被整个丢掉，导出静默失败。
+  //
+  // 下面两条成对钉住口径两端，缺一条都不够：
+  //   · ENOENT 仍降级 —— 只测非 ENOENT 上抛的话，把 catch 写成 `throw`（ENOENT 也不再降级）
+  //     同样能过，友好提示就没了；
+  //   · 非 ENOENT 上抛 —— 只测 ENOENT 的话，把 catch 写回全吞，两条里第一条照样绿。
+
+  test("★ stat 抛 ENOENT 仍降级为「方案目录不存在。」并给出友好提示", async () => {
+    // 目录**确实在磁盘上**（里面有模型），只是 stat 抛 ENOENT ——
+    // 对应「stat 那一刻还在、枚举前已被删」的竞态。故意种下模型：
+    // 若 catch 不吞 ENOENT 而直接上抛，错误信息会是注入的 ENOENT 而不是友好提示，
+    // 断言 `模型A` 未被打包也没有意义（根本没走到枚举）。
+    seed("恰好被删方案/模型A.json");
+    statFailure = { dirName: "恰好被删方案", code: "ENOENT" };
+    const { renderArtifacts, calls } = fakeRenderer();
+
+    await expect(
+      buildSchemeArchiveBuffer({ schemeDir: join(root, "恰好被删方案"), schemeName: "方案A", renderArtifacts })
+    ).rejects.toThrow("方案目录不存在。");
+    expect(calls).toEqual([]);
+  });
+
+  test("★ stat 抛非 ENOENT（EACCES / EPERM）不再被当成目录不存在，原始错误上抛", async () => {
+    seed("权限被改方案/模型A.json");
+    // Windows 上造不出可移植的权限错误，故注入 EACCES 与 EPERM 两个真实码：
+    // EACCES 是权限被改，EPERM 是 Windows 上目标被占用（杀软 / 同步盘 / 另一进程）。
+    for (const code of ["EACCES", "EPERM"]) {
+      statFailure = { dirName: "权限被改方案", code };
+      const { renderArtifacts, calls } = fakeRenderer();
+
+      const settled = await buildSchemeArchiveBuffer({
+        schemeDir: join(root, "权限被改方案"),
+        schemeName: "方案A",
+        renderArtifacts
+      }).then(
+        (value) => ({ ok: true, value }),
+        (error) => ({ ok: false, error })
+      );
+
+      // 上抛的是原始 IO 错误（不是被换成的友好文案）：错误码原样保留。
+      expect(settled.ok).toBe(false);
+      expect(settled.error.code).toBe(code);
+      expect(settled.error.message).not.toContain("方案目录不存在");
+      // 也没有继续往下走 —— 没枚举、没调渲染器。
+      expect(calls).toEqual([]);
+    }
   });
 
   test("目录有效时逐模型调一次 renderArtifacts，返回 buffer/filename/schemeName", async () => {

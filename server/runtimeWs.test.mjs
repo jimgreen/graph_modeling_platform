@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { describe, expect, test, afterEach, beforeEach } from "vitest";
+import { describe, expect, test, afterEach, beforeEach, vi } from "vitest";
 import { WebSocket } from "ws";
 import { createRuntimeRegistry } from "./runtimeRegistry.mjs";
 import { attachRuntimeWebSocket } from "./runtimeWs.mjs";
@@ -43,11 +43,100 @@ function connectClient(clientId) {
   });
 }
 
+// 只连不注册：用于「未 register 就发消息」这类分支
+function connectRaw() {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(wsUrl);
+    const received = [];
+    ws.on("open", () => resolve({ ws, received }));
+    ws.on("message", (raw) => received.push(JSON.parse(String(raw))));
+    ws.on("error", reject);
+  });
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// 把 registry 的可观测入口包一层调用计数。
+// 「静默分支」的判别力全靠它：断言「计数器没涨」必须配一条对照（「合法消息会涨」），
+// 否则就退化成废断言（没抛错本来就恒成立）。
+// runtimeWs 每处都是 registry.touch(...) 的属性查找，包一层即可被观测到。
+function spyRegistry(registry) {
+  const counters = {};
+  for (const name of ["register", "unregister", "touch", "resolveFetch", "resolveCommand"]) {
+    counters[name] = [];
+    const original = registry[name].bind(registry);
+    registry[name] = (...args) => {
+      counters[name].push(args);
+      return original(...args);
+    };
+  }
+  return counters;
+}
+
+/**
+ * 装一套「假时钟下的」attachRuntimeWebSocket。
+ *
+ * 为什么要另起一个 server：sweepTimer 是在 attachRuntimeWebSocket 内部、
+ * 用模块作用域的 setInterval 建的（周期 15s，源码未 unref）。
+ * beforeEach 里那套已经用真定时器建好了，vi.useFakeTimers() 装得太晚就驱动不了它。
+ * 所以这里先装假定时器、再 attach，让 sweepTimer 本身落在假时钟上。
+ *
+ * 返回 { registry, seedStaleClient, close, unregisterCalls }。
+ * unregisterCalls 是清理次数计数器 —— 本测试全部断言都挂在它上面，
+ * 因为「定时器不再触发」只能通过「清理不再发生」来观测。
+ */
+async function withFakeTimersOnFreshServer() {
+  vi.useFakeTimers();
+  const scopedServer = createServer((req, res) => {
+    res.writeHead(404);
+    res.end();
+  });
+  const scopedRegistry = createRuntimeRegistry();
+  const unregisterCalls = [];
+  const originalUnregister = scopedRegistry.unregister.bind(scopedRegistry);
+  scopedRegistry.unregister = (...args) => {
+    unregisterCalls.push(args);
+    return originalUnregister(...args);
+  };
+  attachRuntimeWebSocket(scopedServer, scopedRegistry);
+
+  await new Promise((resolve) => scopedServer.listen(0, "127.0.0.1", resolve));
+
+  // 假时钟下 Date.now 也被冻结/可推进；lastActiveAt=0 保证恒早于 60s 截止线。
+  // 直接写 _clients 而不是 register()：register 会把 lastActiveAt 设为 now()，
+  // 而推进假时钟 15s 远不到 60s 阈值，那样种进去就永远不会被清理，测不到东西。
+  function seedStaleClient(clientId) {
+    scopedRegistry._clients.set(clientId, {
+      clientId,
+      workspaceId: "",
+      send: () => {},
+      registeredAt: 0,
+      lastActiveAt: 0,
+      pendingFetches: new Map(),
+      pendingCommands: new Map()
+    });
+  }
+
+  async function close() {
+    await new Promise((resolve) => scopedServer.close(resolve));
+  }
+
+  function restore() {
+    vi.useRealTimers();
+  }
+
+  return { server: scopedServer, registry: scopedRegistry, seedStaleClient, close, restore, unregisterCalls };
+}
+
 beforeEach(async () => {
   await startRuntimeServer();
 });
 
 afterEach(async () => {
+  // 假时钟必须复位：否则后续用例会继承被冻结的 Date 与被吞掉的定时器
+  vi.useRealTimers();
   if (runtime?.wss) {
     // 先关所有 WS 连接，释放 server.close 阻塞
     for (const client of runtime.wss.clients) {
@@ -261,4 +350,189 @@ describe("runtimeWs Origin 校验（CSWSH 防护）", () => {
     expect(ws.readyState).toBe(WebSocket.OPEN);
     ws.close();
   });
+});
+
+/**
+ * 消息入口的静默分支。
+ *
+ * 这几条分支的共同形态是「什么都没发生」，因此只断言「没抛错」是废断言：
+ * 删掉任何一条 return，测试照样全绿。判别力必须来自**一个可观测的正向结果没发生**，
+ * 所以下面每条都断言计数器 / 注册表状态 / 收到的消息列表保持不变，
+ * 并且在同一用例里配一条「合法消息会改变它」的对照 —— 没有对照，
+ * 「计数器为 0」和「计数器测错了」看起来一模一样。
+ */
+describe("runtimeWs 消息入口静默分支", () => {
+  test("非 JSON 文本消息被忽略：不 touch 注册表、不回任何消息、连接保持", async () => {
+    const counters = spyRegistry(runtime.registry);
+    const { ws, received } = await connectClient("c1");
+    expect(runtime.listClients()).toHaveLength(1);
+    const touchAfterRegister = counters.touch.length;
+    expect(touchAfterRegister, "对照：register 本身不 touch，但下面合法 ping 会 touch").toBe(0);
+
+    // 三种典型的坏载荷：纯文本、截断 JSON、空串
+    for (const junk of ["这不是 JSON", '{"type":', ""]) {
+      ws.send(junk);
+    }
+    await delay(80);
+
+    // 正向可观测结果 1：safeParseMessage 在 touch 之前就 return 了
+    expect(counters.touch.length).toBe(touchAfterRegister);
+    // 正向可观测结果 2：没有任何消息被回发（既没有 pong，也没有意外分支）
+    expect(received).toHaveLength(1);
+    expect(received[0].type).toBe("registered");
+    // 正向可观测结果 3：注册表状态未变，连接没被踢
+    expect(runtime.listClients()).toHaveLength(1);
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+
+    // 对照：同一连接上合法 ping 会真的推进 touch 并回 pong
+    ws.send(JSON.stringify({ type: "ping" }));
+    await delay(80);
+    expect(counters.touch.length).toBeGreaterThan(touchAfterRegister);
+    expect(received.some((m) => m.type === "pong")).toBe(true);
+    ws.close();
+  });
+
+  test("合法 JSON 但不是普通对象的载荷：数组会推进 touch，字符串与数字在 parse 关就被打回", async () => {
+    const counters = spyRegistry(runtime.registry);
+    const { ws, received } = await connectClient("c1");
+    // 对照：register 本身不调用 touch，故起点为 0
+    expect(counters.touch).toHaveLength(0);
+    expect(counters.register).toHaveLength(1);
+
+    // safeParseMessage 的闸门是 `parsed && typeof parsed === "object"`，
+    // 数组的 typeof 正是 object —— 故数组**能过这一关**，继续走到 registry.touch；
+    // 而字符串 / 数字 / 布尔在 parse 关就被打回 null，压根到不了 touch。
+    // 断言 touch 恰好被推进一次（只有数组那条），这条断言对
+    // 「把 typeof 关改成只判真值」是红的（那样字符串也会推进 touch）。
+    ws.send("[]");
+    await delay(80);
+    expect(counters.touch).toHaveLength(1);
+
+    for (const payload of ['"hello"', "42", "true", "false"]) {
+      ws.send(payload);
+    }
+    await delay(80);
+    expect(counters.touch).toHaveLength(1);
+
+    // null 走的是 `parsed` 为假那条，同样在 parse 关被打回
+    ws.send("null");
+    await delay(80);
+    expect(counters.touch).toHaveLength(1);
+
+    // 正向结果：无一注册、无一派发、无一回发，连接未被动过
+    expect(counters.register).toHaveLength(1);
+    expect(runtime.listClients()).toHaveLength(1);
+    expect(counters.resolveFetch).toHaveLength(0);
+    expect(counters.resolveCommand).toHaveLength(0);
+    expect(received).toHaveLength(1);
+    expect(received[0].type).toBe("registered");
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+
+    // 对照：真正的 ping 一定回 pong，且 touch 继续推进
+    ws.send(JSON.stringify({ type: "ping" }));
+    await delay(80);
+    expect(counters.touch).toHaveLength(2);
+    expect(received.some((m) => m.type === "pong")).toBe(true);
+    ws.close();
+  });
+
+  test("未 register 就发消息被忽略：ping 与 fetch-response 都不生效", async () => {
+    const counters = spyRegistry(runtime.registry);
+    const { ws, received } = await connectRaw();
+
+    // 未注册时发 ping：若 `if (!registeredEntry) return` 被删，
+    // 这里的 clientId 为 null，touch 会以 null 入参被调用并被计数器看到。
+    ws.send(JSON.stringify({ type: "ping" }));
+    await delay(80);
+    expect(counters.touch).toHaveLength(0);
+    expect(received).toHaveLength(0);
+
+    // 未注册时发 fetch-response：若守卫被删，registry.resolveFetch 会被调用
+    ws.send(JSON.stringify({ type: "fetch-response", requestId: "req-x", ok: true, data: { model: "m" } }));
+    ws.send(JSON.stringify({ type: "command-response", requestId: "req-y", ok: true, data: { id: "n" } }));
+    await delay(80);
+    expect(counters.resolveFetch).toHaveLength(0);
+    expect(counters.resolveCommand).toHaveLength(0);
+    expect(runtime.listClients()).toHaveLength(0);
+    expect(received).toHaveLength(0);
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+
+    // 对照：先 register 再发同样的 ping，pong 立刻回来、touch 计数推进
+    ws.send(JSON.stringify({ type: "register", clientId: "late" }));
+    await delay(80);
+    expect(runtime.listClients()).toHaveLength(1);
+    ws.send(JSON.stringify({ type: "ping" }));
+    await delay(80);
+    expect(counters.touch.length).toBe(1);
+    expect(received.some((m) => m.type === "pong")).toBe(true);
+    ws.close();
+  });
+
+  test("已注册但 type 未知时被忽略：不结算挂起的 fetch 与 command", async () => {
+    const counters = spyRegistry(runtime.registry);
+    const { ws, received } = await connectClient("c1");
+
+    // 真发一次 fetch，让服务端挂起一个 pending
+    let fetchRequestId;
+    ws.on("message", (raw) => {
+      const msg = JSON.parse(String(raw));
+      if (msg.type === "fetch") {
+        fetchRequestId = msg.requestId;
+      }
+    });
+    const pending = runtime.fetchFromClient("c1", "runtime.snapshot");
+    pending.catch(() => {});
+    await delay(80);
+    expect(typeof fetchRequestId).toBe("string");
+
+    // 未知 type —— 若末尾的「忽略」被换成兜底派发，这里就会误结算 pending
+    ws.send(JSON.stringify({ type: "fetch-response-x", requestId: fetchRequestId, ok: true, data: { model: "wrong" } }));
+    ws.send(JSON.stringify({ type: "", requestId: fetchRequestId, ok: true, data: { model: "wrong" } }));
+    ws.send(JSON.stringify({ type: 123, ok: true }));
+    await delay(120);
+
+    expect(counters.resolveFetch).toHaveLength(0);
+    expect(counters.resolveCommand).toHaveLength(0);
+    // 未知 type 会走到 registry.touch（它在 type 分派之前），所以 touch 会涨——
+    // 这条是「被忽略」与「被丢弃在 touch 之前」两条分支的边界：
+    // 只有 message 为 null（非 JSON / 非对象）才在 touch 之前 return。
+    expect(counters.touch.length).toBeGreaterThan(0);
+
+    // 对照：真 fetch-response 立刻结算，pending 得到正确的 data
+    ws.send(JSON.stringify({ type: "fetch-response", requestId: fetchRequestId, ok: true, data: { model: "right" } }));
+    await expect(pending).resolves.toEqual({ model: "right" });
+    expect(counters.resolveFetch).toHaveLength(1);
+    ws.close();
+  }, 10000);
+
+  test("server close 后清理定时器不再触发：超时条目不再被 unregister", async () => {
+    // sweepTimer 在 attachRuntimeWebSocket 里由 setInterval 建立，
+    // 周期 HEARTBEAT_CHECK_INTERVAL_MS = 15s，且源码未 unref()。
+    // 真实等待 30s 太慢且易抖动，故改为：直接驱动那条回调所依赖的定时器语义 ——
+    // 用假定时器重放一次「close 之前会清理、close 之后不再清理」。
+    // 但 attachRuntimeWebSocket 已在 beforeEach 用真 setInterval 建好定时器，
+    // 故这里另起一套 http server + registry，在装上假定时器之后再 attach，
+    // 这样 sweepTimer 本身就走假时钟，可被 vi.advanceTimersByTime 驱动。
+    const scoped = await withFakeTimersOnFreshServer();
+
+    // 超时条目：lastActiveAt 远早于 60s 阈值
+    scoped.seedStaleClient("stale");
+    expect(scoped.registry._clients.has("stale")).toBe(true);
+
+    // 对照：close 之前推进一个清理周期，超时条目确实被清掉
+    // （若这条不成立，下面的「不再清理」就是恒真的废断言）
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(scoped.unregisterCalls).toHaveLength(1);
+    expect(scoped.registry._clients.has("stale")).toBe(false);
+
+    // 再种一个超时条目，随后关闭 server → 触发 clearInterval(sweepTimer)
+    scoped.seedStaleClient("stale2");
+    expect(scoped.registry._clients.has("stale2")).toBe(true);
+    await scoped.close();
+
+    // 推进 4 个清理周期：close 之后定时器已清，超时条目应纹丝不动
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(scoped.unregisterCalls).toHaveLength(1);
+    expect(scoped.registry._clients.has("stale2")).toBe(true);
+  }, 20_000);
 });

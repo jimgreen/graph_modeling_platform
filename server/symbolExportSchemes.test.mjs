@@ -1,6 +1,6 @@
 // 图元 Symbol 导出方案：归一化契约 + 空间路径读写 + 建目录守卫注入。
-import { expect, test, describe, beforeAll, afterAll } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { expect, test, describe, beforeAll, afterAll, vi } from "vitest";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spacePathsFor } from "./spaceStore.mjs";
@@ -19,6 +19,26 @@ import {
 let dataDir;
 beforeAll(() => { dataDir = mkdtempSync(join(tmpdir(), "symbol-schemes-")); });
 afterAll(() => { rmSync(dataDir, { recursive: true, force: true }); });
+
+// 手写一份任意原始文本到某空间的 settings/symbol-export-schemes.json。
+// 写侧 writeSymbolExportSchemes 会先校验再归一化，造不出「合法 JSON 但形状错」的文件，
+// 所以这一组用例必须绕过它直接落盘。
+const writeRawSchemeFile = (spaceId, content) => {
+  const paths = spacePathsFor(dataDir, spaceId);
+  mkdirSync(paths.settings, { recursive: true });
+  writeFileSync(paths.symbolExportSchemes, content, "utf-8");
+  return paths;
+};
+
+// 读一次并同步收集 console.warn；**先还原 spy 再断言**，
+// 断言失败也不会把哑掉的 console 泄给后续用例。
+const readCapturingWarns = async (paths) => {
+  const warns = [];
+  const spy = vi.spyOn(console, "warn").mockImplementation((...args) => { warns.push(args.join(" ")); });
+  const result = await readSymbolExportSchemes({ paths });
+  spy.mockRestore();
+  return { result, warns };
+};
 
 describe("normalizeSymbolExportSchemes", () => {
   test("丢弃无名方案，按 id 与名称双重去重（同名后者胜）", () => {
@@ -256,5 +276,106 @@ describe("读写空间路径", () => {
     const paths = spacePathsFor(dataDir, "校验");
     await expect(writeSymbolExportSchemes(null, { paths })).rejects.toMatchObject({ statusCode: 400 });
     await expect(writeSymbolExportSchemes({}, { paths })).rejects.toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe("读侧形状错降级：JSON 合法但取不到可用载荷", () => {
+  test("★ 文件内容是字面 null：解析成功却取不到对象，exists 为 false 且不发告警", async () => {
+    const paths = writeRawSchemeFile("字面null", "null");
+
+    const { result, warns } = await readCapturingWarns(paths);
+
+    // 判据链全在 parsed !== null 这一步：JSON.parse 没抛错 → catch 根本没进 →
+    // parsed 保持为 null → exists 为 false。形状错这一支与 ENOENT 完全同形。
+    expect(result.exists).toBe(false);
+    expect(result.schemes).toEqual([]);
+    // ★ 断言 0 次告警，且这是当前实现的真实缺口而非笔误：告警挂在 catch 内的
+    // error.code !== ENOENT 上，而「解析成功但结果为 null」压根不抛错、不进 catch。
+    // 源码注释想防的正是这件事（空列表 + 保存即覆盖原配置），却漏掉了这条路径。
+    // 生产代码不在本次改动范围内，此处照实钉住行为，缺口记在此注释里。
+    expect(warns).toEqual([]);
+  });
+
+  test("顶层数组：解析成功且非 null，exists 为 true 但方案集为空", async () => {
+    const paths = writeRawSchemeFile("顶层数组", JSON.stringify([{ id: "s1", name: "数组里的方案" }]));
+
+    const { result, warns } = await readCapturingWarns(paths);
+
+    // 与字面 null 的对照就在这一条：exists 判的是「解析结果是否为 null」，
+    // 不是「形状是否可用」—— 数组是个非 null 的对象，于是 exists 为 true。
+    expect(result.exists).toBe(true);
+    // 数组载荷被 normalizeSymbolExportSchemes 按非对象丢弃，里面的方案一条都捞不回来
+    expect(result.schemes).toEqual([]);
+    expect(warns).toEqual([]);
+
+    // ★ 上一条断言看不见 normalizeSymbolExportSchemes 第 89 行的 !Array.isArray(payload)：
+    // 经 readSymbolExportSchemes 这条聚合入口进来时，payload 必是 JSON.parse 的结果，
+    // 而 JSON 语法无法给数组挂具名属性（写不出带 schemes 的数组），
+    // 所以那里加不加这道拦截在磁盘域上完全等价 —— 删掉它本组断言一条都不会红。
+    // 但该函数是导出的，进程内直接调用能造出这种数组，故在此**直接调用**把守卫钉住。
+    // （不要为了「覆盖」而去 mock JSON.parse 造文件内容 —— 那是在测 mock 自己。）
+    const namedArray = Object.assign([], { schemes: [{ id: "s1", name: "数组上的 schemes" }] });
+    expect(normalizeSymbolExportSchemes(namedArray).schemes).toEqual([]);
+    // 同一个数组去掉具名属性后，两种实现都取不到东西（说明上面的等价是域内的，不是判据写错）
+    expect(normalizeSymbolExportSchemes([{ id: "s1", name: "匿名数组项" }]).schemes).toEqual([]);
+  });
+
+  test("schemes 字段不是数组（对象 / 字符串 / 数字）：exists 仍为 true，方案集为空", async () => {
+    const cases = [
+      ["坏形状-对象", JSON.stringify({ schemes: { s1: { name: "对象里的方案" } } })],
+      ["坏形状-字符串", JSON.stringify({ schemes: "s1" })],
+      ["坏形状-数字", JSON.stringify({ schemes: 42 })]
+    ];
+
+    for (const [spaceId, content] of cases) {
+      const paths = writeRawSchemeFile(spaceId, content);
+      const { result } = await readCapturingWarns(paths);
+
+      // 顶层是对象 → parsed 非 null → exists 为 true
+      expect(result.exists, spaceId).toBe(true);
+      expect(result.schemes, spaceId).toEqual([]);
+    }
+
+    // 同样的三种形状在写侧是 400（validateSymbolExportSchemesPayload 只认数组）：
+    // 读侧静默吞掉、写侧硬拒，这个不对称是既有契约，此处只作对照记录。
+  });
+
+  test("手写的合法载荷：exists 为 true 且方案原样读回（防过度降级）", async () => {
+    const paths = writeRawSchemeFile("手写合法", JSON.stringify({
+      schemaVersion: SYMBOL_EXPORT_SCHEMES_SCHEMA_VERSION,
+      schemes: [{ id: "s1", name: "开关族", templateKinds: ["ac-breaker"], filterKeys: ["stateful"] }]
+    }));
+
+    const result = await readSymbolExportSchemes({ paths });
+
+    // 前三条都在钉「降级」，这条钉「别把合法文件也降级了」—— 两头都有断言，
+    // 改 exists 的判据或改 normalize 的数组拦截都会有一侧转红。
+    expect(result.exists).toBe(true);
+    expect(result.schemaVersion).toBe(SYMBOL_EXPORT_SCHEMES_SCHEMA_VERSION);
+    expect(result.schemes).toHaveLength(1);
+    expect(result.schemes[0]).toMatchObject({
+      id: "s1",
+      name: "开关族",
+      templateKinds: ["ac-breaker"],
+      filterKeys: ["stateful"]
+    });
+  });
+
+  test("★ 告警守卫只挂在真抛错上：坏 JSON 告警一次，ENOENT 与字面 null 都静默", async () => {
+    // 正对照：证明上面的 warns 断言不是恒绿 —— 真抛错时这条 spy 必须能变红
+    const brokenPaths = writeRawSchemeFile("坏JSON", "{ 不是 JSON");
+    const broken = await readCapturingWarns(brokenPaths);
+
+    expect(broken.result.exists).toBe(false);
+    expect(broken.warns).toHaveLength(1);
+    // error.code ?? error.name 这条兜底链在 SyntaxError 上取到的是 name 分支
+    expect(broken.warns[0]).toContain("SyntaxError");
+    expect(broken.warns[0]).toContain("覆盖磁盘上的原配置");
+
+    // ENOENT 静默 —— 把 catch 里的 error.code !== ENOENT 守卫删掉，这条会转红
+    const missingPaths = spacePathsFor(dataDir, "从不配置");
+    const missing = await readCapturingWarns(missingPaths);
+    expect(missing.result.exists).toBe(false);
+    expect(missing.warns).toEqual([]);
   });
 });

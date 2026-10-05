@@ -520,3 +520,136 @@ describe("staticHandleDot / staticFrameHandles", () => {
     }
   });
 });
+
+// ─── 防御性守卫 ①：assets 键存在性 ────────────────────────────────────────────
+//
+// 修复前是裸索引 `assets[assetId]`。普通对象字面量的原型链上恒有
+// constructor / __proto__ / toString / hasOwnProperty / valueOf，
+// 这些键**查得到且为真值** ⇒ 取到的是 Object、Object.prototype 或函数本身，
+// 再经 inlineBackendImageRefsInSvgDataUrl 的 String() 原样吐出，
+// 画布上会出现 "function Object() { [native code] }" 这样的死链 href。
+// Object.hasOwn 只认自有属性 ⇒ 这些键与「查不到」同结果。
+describe("assets 键存在性守卫", () => {
+  const assets = { "asset-a": "/uploads/pic.svg" };
+  const hrefOf = (imageAssetId: unknown) =>
+    resolveStateVisualImageHref({ imageAssetId } as unknown as DeviceStateVisual, assets);
+
+  test("原型链成员名与资源不存在同结果（不能吐成 native code 串）", () => {
+    // 基准：查不到的资产 id 在没有 inline image 时返回空串
+    const missing = hrefOf("asset-missing");
+    expect(missing).toBe("");
+    for (const key of ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]) {
+      expect(hrefOf(key), key).toBe(missing);
+    }
+  });
+
+  test("空串 / undefined / null / 0 / 数字 assetId 不落到原型链成员", () => {
+    // 这些形态走 `visual.imageAssetId || visual.backgroundImageAssetId` 的 falsy 分支
+    // 或查不到自有键 ⇒ 结果与「没填」一致
+    expect(hrefOf("")).toBe("");
+    expect(hrefOf(undefined)).toBe("");
+    expect(hrefOf(null)).toBe("");
+    expect(hrefOf(0)).toBe("");
+    // 非零数字会被当成键去查（hasOwn 内部转成 "42"），查不到 ⇒ 空串
+    expect(hrefOf(42)).toBe("");
+    // 有 inline image 时，上述任一形态都应回落到 inline image 而非原型链成员
+    const inline = { imageAssetId: "constructor", image: "/uploads/inline.svg" } as unknown as DeviceStateVisual;
+    expect(resolveStateVisualImageHref(inline, assets)).toBe("/uploads/inline.svg");
+    const backgroundOnly = {
+      imageAssetId: "",
+      backgroundImageAssetId: "toString",
+      backgroundImage: "/uploads/bg.svg"
+    } as unknown as DeviceStateVisual;
+    expect(resolveStateVisualImageHref(backgroundOnly, assets)).toBe("/uploads/bg.svg");
+  });
+
+  test("回归：合法资产 id 与 inline image 的产出逐字节不变", () => {
+    // 裸索引与 hasOwn 对**自有**键完全等价 ⇒ 合法路径不受守卫影响
+    expect(resolveStateVisualImageHref({ imageAssetId: "asset-a" } as DeviceStateVisual, assets)).toBe("/uploads/pic.svg");
+    expect(resolveStateVisualImageHref({ backgroundImageAssetId: "asset-a" } as DeviceStateVisual, assets)).toBe("/uploads/pic.svg");
+    // 资产缺失时仍优先 inline image（既有优先级语义）
+    expect(resolveStateVisualImageHref({ imageAssetId: "asset-missing", image: "/uploads/inline.svg" } as DeviceStateVisual, assets))
+      .toBe("/uploads/inline.svg");
+    expect(resolveStateVisualImageHref({ image: "  /uploads/padded.svg  " } as DeviceStateVisual, assets)).toBe("/uploads/padded.svg");
+  });
+});
+
+// ─── 防御性守卫 ②：params.text 非字符串 ───────────────────────────────────────
+//
+// params 来自后端，落盘前不做运行时校验（ModelNode.params 只是**声明**为
+// Record<string, string>）。修复前 staticSymbolTextValue 用 `?? fallback`
+// 放行数字/布尔/对象/数组，staticSymbolMiniatureTextValue 更只判 undefined ⇒
+// 数字会一路走到 staticShapeText 的 text.split 上抛 TypeError，
+// 而 null.slice 直接在取值函数里抛。
+describe("params.text 非字符串守卫", () => {
+  const nonStrings: Array<[string, unknown]> = [
+    ["数字", 123],
+    ["null", null],
+    ["undefined", undefined],
+    ["对象", { a: 1 }],
+    ["数组", ["a", "b"]],
+    ["布尔 false", false],
+    ["布尔 true", true]
+  ];
+  const withText = (value: unknown) => node({ params: { text: value } as never });
+
+  test("staticSymbolTextValue 对非字符串回落 fallback", () => {
+    for (const [label, value] of nonStrings) {
+      expect(staticSymbolTextValue(withText(value), "图元"), label).toBe("图元");
+    }
+  });
+
+  test("staticSymbolMiniatureTextValue 对非字符串回落 fallback（原先 null.slice 即抛）", () => {
+    for (const [label, value] of nonStrings) {
+      expect(staticSymbolMiniatureTextValue(withText(value), "图元"), label).toBe("图元");
+    }
+  });
+
+  test("staticShapeText 不抛错且标签确定：主标签回落节点名，缩略标签回落图元", () => {
+    for (const [label, value] of nonStrings) {
+      const target = withText(value);
+      expect(() => staticShapeText(target, 80, 40), `${label} 主标签`).not.toThrow();
+      expect(JSON.stringify(staticShapeText(target, 80, 40)).includes("文字1"), `${label} 主标签内容`).toBe(true);
+      expect(() => staticShapeText(target, 80, 40, true), `${label} 缩略标签`).not.toThrow();
+      expect(JSON.stringify(staticShapeText(target, 80, 40, true)).includes("图元"), `${label} 缩略标签内容`).toBe(true);
+    }
+  });
+
+  test("回归：合法字符串（含空串、多行）的取值与排版逐字节不变", () => {
+    expect(staticSymbolTextValue(node({ params: { text: "主变#1" } }), "图元")).toBe("主变#1");
+    // 空串是有效值，不退回 —— 若守卫写成 `!text` 会让这条红
+    expect(staticSymbolTextValue(node({ params: { text: "" } }), "图元")).toBe("");
+    expect(staticSymbolMiniatureTextValue(node({ params: { text: "" } }), "图元")).toBe("");
+    expect(staticSymbolMiniatureTextValue(node({ params: { text: "1号主变" } }), "图元")).toBe("1号");
+    expect(staticSymbolMiniatureTextValue(node({ params: { text: "ab\ncd" } }), "图元")).toBe("ab");
+    // 多行排版：三行 ⇒ (3-1)*20*0.6 = 24 的整体上移，且第 2/3 个 tspan 的 dy=24
+    const markup = JSON.stringify(staticShapeText(node({ params: { text: "a\nb\nc", fontSize: "20" } }), 80, 40));
+    expect(markup).toContain('"dy":0');
+    expect(markup).toContain('"dy":24');
+    expect(markup).toContain("-24");
+    // 缩略图路径取前 2 字
+    expect(JSON.stringify(staticShapeText(node({ params: { text: "1号主变" } }), 80, 40, true)).includes("主变")).toBe(false);
+  });
+});
+
+describe("params 容器本身的边界", () => {
+  test("params 为空对象时两个取值函数都回落 fallback，staticShapeText 走默认排版", () => {
+    expect(staticSymbolTextValue(node({ params: {} }), "图元")).toBe("图元");
+    expect(staticSymbolMiniatureTextValue(node({ params: {} }), "图元")).toBe("图元");
+    const markup = JSON.stringify(staticShapeText(node({ params: {} }), 80, 40));
+    expect(markup).toContain('"textAnchor":"middle"');
+    expect(markup).toContain('"fontSize":16');
+    expect(markup).toContain("文字1");
+  });
+
+  test("params 整个缺失仍抛 TypeError：本轮守卫只覆盖 text 的类型，不覆盖 params 的存在性", () => {
+    // 如实记录既有边界，不假装已修。ModelNode.params 是必填字段，
+    // 且 staticShapeText 还有 textAlign / fontColor 等十几处裸读，
+    // 单给这两个取值函数加 `?.` 只会制造「已加固」的错觉。
+    // 若日后统一给 params 补存在性兜底，本条会红 —— 那是提醒，不是回归。
+    const bare = node({ params: undefined as never });
+    expect(() => staticSymbolTextValue(bare, "图元")).toThrow(TypeError);
+    expect(() => staticSymbolMiniatureTextValue(bare, "图元")).toThrow(TypeError);
+    expect(() => staticShapeText(bare, 80, 40)).toThrow(TypeError);
+  });
+});

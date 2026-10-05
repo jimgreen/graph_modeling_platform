@@ -610,3 +610,198 @@ describe("保存窗口打开失败的兜底分流", () => {
     expect(click).toHaveBeenCalled();
   });
 });
+
+// ── 降级保存时加载器再失败：仍要存下文件，不能整条 reject ──────────────────────
+//
+// saveLazyTextFile 里那两处 catch 承诺的是「打开保存窗口出了岔子也照样把文件存下来」。
+// 修复前它们在 catch 里裸 await 同一个加载器，加载器第二次抛错就把整个函数带崩：
+// 用户既拿不到文件、也看不到任何提示，降级意图彻底落空（E 文件生成失败 + 保存窗口
+// 失败同时发生就是这个组合）。修复后经 loadTextForFallbackSave 取文本，加载器失败时
+// 用空串继续走降级下载。
+//
+// 空串这个兜底值不是随手挑的：源码里本来就有 `textPromise.catch(() => undefined)`，
+// 而 `undefined` 传到编码器会被 `TextEncoder.encode()` 的可选参数塌成 `""`（空文件）；
+// 直接写 `""` 是为了让 GBK 分支的 `encodeGbk()` 也能迭代（收到 `undefined` 会抛
+// TypeError，等于把拒绝从 catch 里又漏出去）。
+
+describe("降级保存时加载器再失败", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const pickerOptions = {
+    filename: "model.e",
+    mime: "text/plain",
+    description: "E model",
+    extensions: [".e"]
+  };
+
+  /** node 环境补的最小下载桩：抓住 createObjectURL 收到的 Blob 和被点开的 <a>。 */
+  function stubBrowserDownload() {
+    const created: Blob[] = [];
+    const link = { href: "", download: "", click: vi.fn() };
+    vi.stubGlobal("document", { createElement: vi.fn(() => link) });
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn((value: Blob) => {
+        created.push(value);
+        return `blob:stub-${created.length}`;
+      }),
+      revokeObjectURL: vi.fn()
+    });
+    return { created, link };
+  }
+
+  const bytesOf = async (blob: Blob) => Array.from(new Uint8Array(await blob.arrayBuffer()));
+  const utf8 = (text: string) => Array.from(new TextEncoder().encode(text));
+
+  /** 保存窗口**同步**抛错 → 落在 `picker.call` 外层那处 catch（catch ①）。 */
+  const pickerThrowsSynchronously = () => {
+    vi.stubGlobal("window", {
+      showSaveFilePicker: vi.fn(() => {
+        throw new Error("NotAllowedError");
+      })
+    });
+  };
+
+  /** 保存窗口返回**被拒的 promise** → 落在 `await handlePromise` 那处 catch（catch ②）。 */
+  const pickerRejectsAsynchronously = () => {
+    vi.stubGlobal("window", {
+      showSaveFilePicker: vi.fn(async () => {
+        throw new Error("NotAllowedError");
+      })
+    });
+  };
+
+  test("★ 加载器返回 rejected promise + 保存窗口被拒 → 仍 resolve 并存下空文件", async () => {
+    // 本任务的核心缺陷：修复前这里整条 reject，降级保存从未发生。
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    pickerRejectsAsynchronously();
+    const { created, link } = stubBrowserDownload();
+    const loadText = vi.fn(async () => {
+      throw new Error("E 文件生成失败");
+    });
+
+    await expect(saveLazyTextFile({ ...pickerOptions, loadText })).resolves.toBe(true);
+
+    expect(loadText).toHaveBeenCalledOnce();
+    expect(showGlobalMessage).toHaveBeenCalledWith("打开保存窗口失败，已改为浏览器下载。");
+    expect(created).toHaveLength(1);
+    expect(link.download).toBe("model.e");
+    expect(link.click).toHaveBeenCalledOnce();
+    expect(await bytesOf(created[0])).toEqual([]);
+  });
+
+  test("★ 加载器返回 rejected promise + 保存窗口同步抛错 → 同样 resolve 并存下空文件", async () => {
+    // 同一缺陷的另一处 catch：picker.call 同步抛出时走的是裸 `await options.loadText()`。
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    pickerThrowsSynchronously();
+    const { created, link } = stubBrowserDownload();
+    const loadText = vi.fn(async () => {
+      throw new Error("E 文件生成失败");
+    });
+
+    await expect(saveLazyTextFile({ ...pickerOptions, loadText })).resolves.toBe(true);
+
+    expect(loadText).toHaveBeenCalledOnce();
+    expect(showGlobalMessage).toHaveBeenCalledWith("打开保存窗口失败，已改为浏览器下载。");
+    expect(link.click).toHaveBeenCalledOnce();
+    expect(await bytesOf(created[0])).toEqual([]);
+  });
+
+  test("加载器同步抛错（不是返回 rejected promise）+ 保存窗口被拒 → 同样 resolve", async () => {
+    // Promise.resolve().then(loadText) 会把同步 throw 变成 textPromise 的拒绝，
+    // 所以这走的是 catch ② 里那层保护，与上一条不重复。
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    pickerRejectsAsynchronously();
+    const { created } = stubBrowserDownload();
+    const loadText = vi.fn(() => {
+      throw new Error("还没返回就已经炸了");
+    });
+
+    await expect(saveLazyTextFile({ ...pickerOptions, loadText })).resolves.toBe(true);
+
+    expect(loadText).toHaveBeenCalledOnce();
+    expect(await bytesOf(created[0])).toEqual([]);
+  });
+
+  test("加载器同步抛错 + 保存窗口同步抛错 → 同样 resolve", async () => {
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    pickerThrowsSynchronously();
+    const { created } = stubBrowserDownload();
+    const loadText = vi.fn(() => {
+      throw new Error("还没返回就已经炸了");
+    });
+
+    await expect(saveLazyTextFile({ ...pickerOptions, loadText })).resolves.toBe(true);
+
+    expect(loadText).toHaveBeenCalledOnce();
+    expect(await bytesOf(created[0])).toEqual([]);
+  });
+
+  test("加载器返回非字符串（数字 / 对象 / null）→ 不抛，按编码器的字符串化结果落盘", async () => {
+    // loadText 的类型标的是 string，但没人校验：TextEncoder.encode 会 ToString 化入参，
+    // 所以这些值都安安静静地产出一个「看起来有内容」的文件。这条钉住真实行为，
+    // 免得日后有人给降级路径加归一化时无声改掉落盘字节。
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    pickerThrowsSynchronously();
+    const { created } = stubBrowserDownload();
+    const values: unknown[] = [42, { attr: "1" }, null];
+
+    for (const value of values) {
+      created.length = 0;
+      await expect(saveLazyTextFile({ ...pickerOptions, loadText: () => value as string }))
+        .resolves.toBe(true);
+      expect(created).toHaveLength(1);
+      expect(await bytesOf(created[0])).toEqual(utf8(String(value)));
+    }
+  });
+
+  test("GBK 编码下加载器失败 → 存空文件，而不是被 encodeGbk 的迭代错误顶穿", async () => {
+    // 兜底值若写成 undefined：utf-8 分支靠 TextEncoder.encode() 的默认参数侥幸没事，
+    // 但 GBK 分支的 encodeGbk() 要 `for (const char of text)`，收到 undefined 直接
+    // TypeError，整条又 reject 回去 —— 缺陷只修了一半。
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    pickerThrowsSynchronously();
+    const { created } = stubBrowserDownload();
+
+    await expect(saveLazyTextFile({
+      ...pickerOptions,
+      encoding: "gbk",
+      loadText: async () => {
+        throw new Error("E 文件生成失败");
+      }
+    })).resolves.toBe(true);
+
+    expect(created).toHaveLength(1);
+    expect(await bytesOf(created[0])).toEqual([]);
+  });
+
+  test("回归：加载器正常时，保存窗口同步抛错那条降级下载逐字节不变", async () => {
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    pickerThrowsSynchronously();
+    const { created, link } = stubBrowserDownload();
+
+    await expect(saveLazyTextFile({ ...pickerOptions, loadText: () => "<Model/>" }))
+      .resolves.toBe(true);
+
+    expect(link.href).toBe("blob:stub-1");
+    expect(link.download).toBe("model.e");
+    expect(await bytesOf(created[0])).toEqual(utf8("<Model/>"));
+  });
+
+  test("回归：加载器正常时，保存窗口被拒那条降级下载逐字节不变且加载器只跑一次", async () => {
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    pickerRejectsAsynchronously();
+    const { created } = stubBrowserDownload();
+    const loadText = vi.fn(() => "<Model/>中文");
+
+    await expect(saveLazyTextFile({ ...pickerOptions, loadText })).resolves.toBe(true);
+
+    // 只跑一次很关键：catch ② 必须复用已记忆化的 textPromise，
+    // 若图省事写成 loadTextForFallbackSave(options.loadText) 就会二次生成。
+    expect(loadText).toHaveBeenCalledOnce();
+    expect(await bytesOf(created[0])).toEqual(utf8("<Model/>中文"));
+  });
+});

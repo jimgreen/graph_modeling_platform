@@ -10,9 +10,28 @@ export const E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES: Record<string, string[]> = {
 
 const MODEL_TYPE_NETWORK_LABEL: Record<string, string> = { "厂站": "主网", "馈线": "配网", "台区": "台区" };
 
+/**
+ * 限制表的唯一查表口。
+ *
+ * 表是普通对象，直接 `TABLE[key]` 会对原型链成员命中 `Object.prototype` 上的东西：
+ * constructor/toString/valueOf/hasOwnProperty 是函数，`__proto__` 是 `Object.prototype`
+ * 对象，全都不是数组。随后 `allowed.includes(...)` 抛
+ * `TypeError: allowed.includes is not a function` —— 模板名来自工程文件，是外部输入，
+ * 这条路径不能因为一个词就被打挂。
+ *
+ * 故统一加 `Object.hasOwn` 自有键守卫：未命中（含原型链键、空串、空白串）一律按
+ * 「无该 key 的模板名视为不限制类型」处理，即返回 undefined，交给调用方的
+ * 「不限制」分支 —— 与文件头注释既定的语义一致。
+ */
+function eDeviceTemplateAllowedModelTypes(templateName: string): string[] | undefined {
+  return Object.hasOwn(E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES, templateName)
+    ? E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES[templateName]
+    : undefined;
+}
+
 /** 主流程单模型校验：模板有类型限制且与 modelType 不符时返回提示文案，否则 null。 */
 export function eDeviceTemplateSingleTypeMismatchMessage(templateName: string, modelType: string): string | null {
-  const allowed = E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES[templateName];
+  const allowed = eDeviceTemplateAllowedModelTypes(templateName);
   if (!allowed || allowed.includes(modelType)) {
     return null;
   }
@@ -26,7 +45,7 @@ export function eDeviceTemplateNetworkTypeMismatchMessage(
   templateName: string | null | undefined,
   modelTypes: readonly (string | null | undefined)[]
 ): string | null {
-  const allowed = templateName ? E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES[templateName] : undefined;
+  const allowed = templateName ? eDeviceTemplateAllowedModelTypes(templateName) : undefined;
   if (!allowed) {
     return null;
   }

@@ -351,4 +351,195 @@ describe("native export save service", () => {
     await expect(openFileWithSystemDefault("C:\\gone.e", { platform: "win32", execFileImpl }))
       .rejects.toThrow("未能用默认程序打开文件，请确认该文件类型已绑定打开程序。");
   });
+
+  // 「另存为目标」令牌（targets，TTL 10 分钟）与「查看」令牌（viewTargets，TTL 60 分钟）
+  // 是两个各自独立的 Map，各有各的过期判断。此前那条只把时钟推了 61 分钟，
+  // 打到的是 viewTargets 那一半；targets 整条链 —— 签发 → 过期 → 被 cleanup 摘掉 →
+  // 写入前即被拒 —— 一条断言都没有。
+  //
+  // 清理判据是 `createdAt < now() - TTL`（严格小于），所以**恰好等于 TTL 的那一刻仍存活**。
+  // 这条边界下面单独钉了一次：写成 `<=` 与写成 `<` 只有这一毫秒之差，两种实现对
+  // 「提前一毫秒 / 晚一毫秒」的行为完全不同，光测 10 分钟 ± 1 毫秒之外看不出差别。
+  describe("两枚令牌的 TTL 各自独立清理", () => {
+    const TARGET_TTL_MS = 10 * 60 * 1000;
+    const VIEW_TARGET_TTL_MS = 60 * 60 * 1000;
+
+    // 落真文件：openWrittenFile 走 existsSync，假路径会在 TTL 判定之前就以
+    // open-failed 挂掉，那样测到的是文件在不在，不是令牌还有效没有。
+    function makeHarness() {
+      const clock = { value: 1_000_000 };
+      const directory = mkdtempSync(join(tmpdir(), "gmp-ttl-"));
+      const target = join(directory, "模型.e");
+      const writeFileImpl = vi.fn(async (filePath, data) => writeFileSync(filePath, data));
+      const openFileImpl = vi.fn(async () => undefined);
+      let issued = 0;
+      const service = createNativeExportSaveService({
+        platform: "win32",
+        chooseFile: async () => target,
+        writeFileImpl,
+        openFileImpl,
+        // 服务只在构造时抓一次 now，之后每次调用都读当前值
+        now: () => clock.value,
+        // 递增：多次 selectFile 必须拿到互不相同的令牌，否则第二次的断言
+        // 会被「上一枚已被一次性消费」污染
+        createToken: () => {
+          issued += 1;
+          return `token-${issued}`;
+        }
+      });
+      return {
+        clock,
+        target,
+        service,
+        writeFileImpl,
+        openFileImpl,
+        dispose: () => rmSync(directory, { recursive: true, force: true })
+      };
+    }
+
+    async function select(harness) {
+      return harness.service.selectFile({ filename: "模型.e", extensions: [".e"] });
+    }
+
+    test("写目标令牌过了 10 分钟即失效：一次落盘都不会发生", async () => {
+      const harness = makeHarness();
+      try {
+        const data = Buffer.from("<Model/>", "utf8");
+
+        // 先证明这条链路本来是通的（同一服务、同一形状），否则后面的
+        // 「没写盘」也可能只是因为令牌从来就不可用
+        const live = await select(harness);
+        await harness.service.writeText(live.token, data);
+        expect(harness.writeFileImpl).toHaveBeenCalledTimes(1);
+        expect(harness.writeFileImpl).toHaveBeenCalledWith(harness.target, data);
+
+        // 一枚全新的令牌，签发后停在 TTL 之内 —— 必须仍可写，
+        // 这一步同时把「10 分钟」这个时长钉住（TTL 被改短会在这里红）
+        harness.clock.value = 5 * 60 * 1000;
+        const fresh = await select(harness);
+        expect(fresh.token).not.toBe(live.token);
+        const freshIssuedAt = harness.clock.value;
+
+        // 越过它自己的 10 分钟
+        harness.clock.value = freshIssuedAt + TARGET_TTL_MS + 1;
+        await expect(harness.service.writeText(fresh.token, data)).rejects.toMatchObject({
+          code: "invalid-token"
+        });
+        // 被拒的令牌不得有任何写盘副作用（上面那次成功写盘仍是唯一一次）。
+        // 注意这条断言与「一次性令牌已被消费」是同一个 code：此处之所以测的是
+        // 过期而非消费，靠的是 fresh 这枚令牌自签发起从未被写过。
+        expect(harness.writeFileImpl).toHaveBeenCalledTimes(1);
+      } finally {
+        harness.dispose();
+      }
+    });
+
+    test("推进到 61 分钟之后，两半令牌都被清理", async () => {
+      const harness = makeHarness();
+      try {
+        const first = await select(harness);
+        const written = await harness.service.writeText(first.token, Buffer.from("<Model/>", "utf8"));
+        // 一律相对 t0 推时钟：绝对时间与初始基准混用会算出负的「已过时长」，
+        // 于是令牌看起来还在未来，失效断言随之恒真/恒假
+        const t0 = harness.clock.value;
+
+        // 11 分钟：写目标令牌那一侧早已过期，但查看令牌还活着。
+        // 这一步钉住「两个 TTL 不同」—— 若 cleanup 误把 TARGET 的判据套到
+        // viewTargets 上（10 分钟 < 11 分钟），会在这里红
+        harness.clock.value = t0 + TARGET_TTL_MS + 60 * 1000;
+        const alive = await select(harness);
+        await expect(harness.service.openWrittenFile(written.viewToken)).resolves.toMatchObject({
+          path: harness.target
+        });
+        await expect(harness.service.writeText(alive.token, Buffer.from("<Model/>", "utf8")))
+          .resolves.toMatchObject({ path: harness.target });
+        expect(harness.writeFileImpl).toHaveBeenCalledTimes(2);
+
+        // 同一时刻再签一枚**从头到尾不写**的令牌备用。必须留着它：
+        // 上面 alive 那枚是一次性的，61 分钟处若拿它去断言失效，得到的
+        // 是「早已被消费」而非「已过期」—— 变异 ①（targets 永不清理）照样绿。
+        const spare = await select(harness);
+        expect(spare.token).not.toBe(alive.token);
+
+        // 远超两个 TTL：spare（此时已 50 分钟、从没写过）与查看令牌（61 分钟）一起失效
+        harness.clock.value = t0 + 61 * 60 * 1000;
+        await expect(harness.service.writeText(spare.token, Buffer.from("<Model/>", "utf8")))
+          .rejects.toMatchObject({ code: "invalid-token" });
+        await expect(harness.service.openWrittenFile(written.viewToken))
+          .rejects.toMatchObject({ code: "invalid-token" });
+        // 失效的查看令牌不得再去启动程序
+        expect(harness.openFileImpl).toHaveBeenCalledTimes(1);
+        expect(harness.writeFileImpl).toHaveBeenCalledTimes(2);
+      } finally {
+        harness.dispose();
+      }
+    });
+
+    test("TTL 之内的两枚令牌都仍然可用（防止把 TTL 改成永不清理也绿）", async () => {
+      const harness = makeHarness();
+      try {
+        const data = Buffer.from("<Model/>", "utf8");
+        const selected = await select(harness);
+        const t0 = harness.clock.value;
+
+        // 距签发还差 1 毫秒就到期
+        harness.clock.value = t0 + TARGET_TTL_MS - 1;
+        const written = await harness.service.writeText(selected.token, data);
+        expect(harness.writeFileImpl).toHaveBeenCalledWith(harness.target, data);
+
+        // 距查看令牌签发还差 1 毫秒就到期（查看令牌的签发时刻是 writeText 那一刻）
+        harness.clock.value = harness.clock.value + VIEW_TARGET_TTL_MS - 1;
+        await expect(harness.service.openWrittenFile(written.viewToken))
+          .resolves.toMatchObject({ filename: "模型.e", path: harness.target });
+        expect(harness.openFileImpl).toHaveBeenCalledWith(harness.target);
+      } finally {
+        harness.dispose();
+      }
+    });
+
+    test("写目标令牌的 TTL 边界：恰好等于 TTL 仍可写，晚 1 毫秒即失效", async () => {
+      const harness = makeHarness();
+      try {
+        const data = Buffer.from("<Model/>", "utf8");
+        const atBoundary = await select(harness);
+        const t0 = harness.clock.value;
+
+        // 恰好等于 TTL：createdAt === now() - TTL，判据是严格小于 ⇒ 存活
+        harness.clock.value = t0 + TARGET_TTL_MS;
+        await harness.service.writeText(atBoundary.token, data);
+        expect(harness.writeFileImpl).toHaveBeenCalledTimes(1);
+
+        // 同一时刻再签发一枚，同一服务里直接对比另一侧：它得自己再活满一个 TTL，
+        // 再多 1 毫秒才过期（把时钟只往前拨 1 毫秒是不够的——那样两枚几乎同时到期）
+        const bornAtBoundary = await select(harness);
+        harness.clock.value = harness.clock.value + TARGET_TTL_MS + 1;
+        await expect(harness.service.writeText(bornAtBoundary.token, data))
+          .rejects.toMatchObject({ code: "invalid-token" });
+        expect(harness.writeFileImpl).toHaveBeenCalledTimes(1);
+      } finally {
+        harness.dispose();
+      }
+    });
+
+    test("查看令牌的 TTL 边界：恰好等于 60 分钟仍可打开，再过 1 毫秒失效", async () => {
+      const harness = makeHarness();
+      try {
+        const selected = await select(harness);
+        const written = await harness.service.writeText(selected.token, Buffer.from("<Model/>", "utf8"));
+        const issuedAt = harness.clock.value;
+
+        harness.clock.value = issuedAt + VIEW_TARGET_TTL_MS;
+        await expect(harness.service.openWrittenFile(written.viewToken))
+          .resolves.toMatchObject({ path: harness.target });
+        expect(harness.openFileImpl).toHaveBeenCalledTimes(1);
+
+        harness.clock.value = issuedAt + VIEW_TARGET_TTL_MS + 1;
+        await expect(harness.service.openWrittenFile(written.viewToken))
+          .rejects.toMatchObject({ code: "invalid-token" });
+        expect(harness.openFileImpl).toHaveBeenCalledTimes(1);
+      } finally {
+        harness.dispose();
+      }
+    });
+  });
 });

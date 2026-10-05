@@ -342,3 +342,143 @@ describe("runtimeRegistry 空间归属", () => {
     }
   });
 });
+
+// 心跳陈旧口径：HEARTBEAT_TIMEOUT_MS = 60s，条目超过 60s 未 touch 即视为离线。
+// 四个读入口（listClients / getClient / pickDefaultClient / resolveClient）各自
+// 按 lastActiveAt >= now - 60s 过滤，前面的用例只推进到几秒，从未让任何条目变陈旧。
+//
+// 判别力说明（三条断言各自独立承重，缺一不可）：
+// ① 阈值边界。判据是 >= 而非 >，故恰好 60s 时仍算在线，多 1ms 才算陈旧。
+//    边界断言让「阈值改成 0」和「阈值改成 120s」两种变异都会转红。
+// ② 陈旧 + 新鲜并存，且**分处不同空间**。无参选取时排序本就偏爱新鲜者，单独断言
+//    返回值会被 sort 掩盖；改用空间维度后，去掉陈旧过滤会直接把陈旧条目返回。
+// ③ 只有陈旧者在场 → 返回 null。去掉陈旧过滤即转红。
+describe("runtimeRegistry 心跳陈旧口径", () => {
+  // 条目 old 在 T0 注册，59s 后 new 注册；old 在 T0+60_000 起变陈旧、new 在 T0+119_001 起变陈旧
+  const T0 = 100_000;
+
+  test("listClients 过滤掉心跳陈旧条目", () => {
+    vi.useFakeTimers();
+    try {
+      const reg = createRuntimeRegistry();
+      vi.setSystemTime(T0);
+      reg.register("old", () => {}, "张三");
+      vi.setSystemTime(T0 + 59_000);
+      reg.register("new", () => {}, "李四");
+      // old 恰好 60s 未活跃（cutoff == lastActiveAt）：仍算在线
+      vi.setSystemTime(T0 + 60_000);
+      expect(reg.listClients().map((c) => c.clientId)).toEqual(["old", "new"]);
+      // 再多 1ms：old 出局，new 保留
+      vi.setSystemTime(T0 + 60_001);
+      expect(reg.listClients().map((c) => c.clientId)).toEqual(["new"]);
+      // 陈旧条目只是被读时过滤，条目本身仍在表里：touch 后立刻复活
+      expect(reg._clients.has("old")).toBe(true);
+      reg.touch("old");
+      expect(reg.listClients().map((c) => c.clientId)).toEqual(["old", "new"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("getClient 对心跳陈旧条目返回 null", () => {
+    vi.useFakeTimers();
+    try {
+      const reg = createRuntimeRegistry();
+      vi.setSystemTime(T0);
+      reg.register("old", () => {});
+      vi.setSystemTime(T0 + 59_000);
+      reg.register("new", () => {});
+      // 边界：恰好 60s 时两个条目都可取
+      vi.setSystemTime(T0 + 60_000);
+      expect(reg.getClient("old").clientId).toBe("old");
+      expect(reg.getClient("new").clientId).toBe("new");
+      // 越过 1ms：only old 变 null；未注册 id 同样为 null（两者不可混为一谈）
+      vi.setSystemTime(T0 + 60_001);
+      expect(reg.getClient("old")).toBeNull();
+      expect(reg.getClient("new").clientId).toBe("new");
+      expect(reg.getClient("never-registered")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("pickDefaultClient 跳过心跳陈旧条目：陈旧与新鲜并存", () => {
+    vi.useFakeTimers();
+    try {
+      const reg = createRuntimeRegistry();
+      vi.setSystemTime(T0);
+      reg.register("old", () => {}, "张三");
+      vi.setSystemTime(T0 + 59_000);
+      reg.register("new", () => {}, "李四");
+      // 边界：old 恰好 60s 未活跃，张三空间仍能取到它
+      vi.setSystemTime(T0 + 60_000);
+      expect(reg.pickDefaultClient("张三").clientId).toBe("old");
+      // 再多 1ms：old 陈旧、new 新鲜，两条并存
+      vi.setSystemTime(T0 + 60_001);
+      // 无参：取新鲜的那个
+      expect(reg.pickDefaultClient().clientId).toBe("new");
+      expect(reg.pickDefaultClient("李四").clientId).toBe("new");
+      // 张三空间只剩陈旧条目 → null。不能退到李四，也不能把陈旧条目当在线返回
+      expect(reg.pickDefaultClient("张三")).toBeNull();
+      // new 也陈旧：全表无在线条目
+      vi.setSystemTime(T0 + 119_001);
+      expect(reg.pickDefaultClient()).toBeNull();
+      expect(reg.pickDefaultClient("李四")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("resolveClient 指名陈旧条目抛错、默认选取跳过陈旧条目", () => {
+    vi.useFakeTimers();
+    try {
+      const reg = createRuntimeRegistry();
+      vi.setSystemTime(T0);
+      reg.register("old", () => {}, "张三");
+      vi.setSystemTime(T0 + 59_000);
+      reg.register("new", () => {}, "李四");
+      // 边界：恰好 60s 时指名仍生效（空间校验也通过，不会提前抛）
+      vi.setSystemTime(T0 + 60_000);
+      expect(reg.resolveClient("old", "张三").clientId).toBe("old");
+      // 再多 1ms：old 陈旧 → 指名按离线处理
+      vi.setSystemTime(T0 + 60_001);
+      expect(() => reg.resolveClient("old")).toThrow(NoOnlineClientError);
+      expect(() => reg.resolveClient("old", "张三")).toThrow(NoOnlineClientError);
+      // 并存时默认选取取新鲜者
+      expect(reg.resolveClient().clientId).toBe("new");
+      expect(reg.resolveClient(null, "李四").clientId).toBe("new");
+      // 张三空间只剩陈旧条目：既不返回它，也不跨空间回落到李四的新鲜条目
+      expect(() => reg.resolveClient(null, "张三")).toThrow(NoOnlineClientError);
+      // 全表陈旧：默认选取也抛
+      vi.setSystemTime(T0 + 119_001);
+      expect(() => reg.resolveClient()).toThrow(NoOnlineClientError);
+      expect(() => reg.resolveClient("new")).toThrow(NoOnlineClientError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("touch 刷新活跃时间后条目从陈旧恢复为在线", () => {
+    vi.useFakeTimers();
+    try {
+      const reg = createRuntimeRegistry();
+      vi.setSystemTime(T0);
+      reg.register("old", () => {}, "张三");
+      vi.setSystemTime(T0 + 59_000);
+      reg.register("new", () => {}, "李四");
+      // 推进到两条都陈旧
+      vi.setSystemTime(T0 + 119_001);
+      expect(reg.listClients()).toHaveLength(0);
+      expect(reg.getClient("old")).toBeNull();
+      expect(reg.pickDefaultClient()).toBeNull();
+      // old 收到心跳：立刻回到在线，new 仍是陈旧
+      reg.touch("old");
+      expect(reg.getClient("old").clientId).toBe("old");
+      expect(reg.listClients().map((c) => c.clientId)).toEqual(["old"]);
+      expect(reg.pickDefaultClient().clientId).toBe("old");
+      expect(reg.resolveClient().clientId).toBe("old");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -81,6 +81,24 @@ const spatialBucketRange = (bounds: GraphRenderBounds, bucketSize: number) => ({
   bottom: Math.floor(bounds.bottom / bucketSize)
 });
 
+/**
+ * 把非正 / 非有限的桶边长归一到默认值 `GRAPH_NODE_SPATIAL_BUCKET_SIZE`。
+ *
+ * 为什么必须在这里拦：`Math.floor(x / 0) === Infinity`（负数为 `-Infinity`），
+ * 于是 spatialBucketRange 的区间变成 `(-Infinity, Infinity)`，建索引与查询里的
+ * `for (let x = range.left; x <= range.right; x += 1)` 会从 -Infinity 起步、
+ * 每步 +1，永远走不到 Infinity —— **同步死循环，界面直接卡死**。
+ * 负数不挂死但同样坏：区间左右翻转，循环一次都不执行，索引全空，
+ * 节点在任何视口里都查不到（画面缺图元）。
+ *
+ * 收敛点选在构建函数入口，是因为它是唯一的收口处：返回的 `index.bucketSize`
+ * 用的是归一后的值，于是查询（`queryGraphStoreNodeSpatialIndex`）与增量更新
+ * （`patchNodeSpatialIndexMany`）读的同一个字段，两条路径一起得救。
+ * 正的有限值原样透传 —— 正常路径的桶划分与查询结果逐字节不变。
+ */
+const normalizeSpatialBucketSize = (bucketSize: number) =>
+  Number.isFinite(bucketSize) && bucketSize > 0 ? bucketSize : GRAPH_NODE_SPATIAL_BUCKET_SIZE;
+
 const orderedIndexMap = (order: readonly string[]) => new Map(order.map((id, index) => [id, index]));
 
 function graphNodeRenderBounds(node: ModelNode): GraphRenderBounds {
@@ -108,13 +126,14 @@ export function buildGraphNodeSpatialIndex(
   nodes: readonly ModelNode[],
   bucketSize = GRAPH_NODE_SPATIAL_BUCKET_SIZE
 ): GraphNodeSpatialIndex {
+  const safeBucketSize = normalizeSpatialBucketSize(bucketSize);
   const buckets = new Map<string, ModelNode[]>();
   const nodeBucketKeysById = new Map<string, string[]>();
   const nodeBoundsById = new Map<string, GraphRenderBounds>();
   for (const node of nodes) {
     const bounds = graphNodeRenderBounds(node);
     nodeBoundsById.set(node.id, bounds);
-    const range = spatialBucketRange(bounds, bucketSize);
+    const range = spatialBucketRange(bounds, safeBucketSize);
     const nodeBucketKeys: string[] = [];
     for (let x = range.left; x <= range.right; x += 1) {
       for (let y = range.top; y <= range.bottom; y += 1) {
@@ -130,7 +149,7 @@ export function buildGraphNodeSpatialIndex(
     }
     nodeBucketKeysById.set(node.id, nodeBucketKeys);
   }
-  return { bucketSize, buckets, nodeBucketKeysById, nodeBoundsById, queryState: { mark: 0, seenById: new Map() } };
+  return { bucketSize: safeBucketSize, buckets, nodeBucketKeysById, nodeBoundsById, queryState: { mark: 0, seenById: new Map() } };
 }
 
 function patchNodeSpatialIndexMany(

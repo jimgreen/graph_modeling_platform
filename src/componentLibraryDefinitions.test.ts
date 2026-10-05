@@ -831,3 +831,391 @@ describe("component library editable definitions", () => {
     }]);
   });
 });
+
+describe("component library recursion guard and definition key collision merge", () => {
+  const recursionCategory = "交流设备";
+
+  // 环与链的夹具都放在同一类别下，让 definitionKey 归一后的 recursionKey 稳定为
+  // 类别键 + :: + 类名键，与源码里 `${definitionKey(category)}::${definitionKey(class)}` 一致。
+  const chainRootDefinition = {
+    name: "ChainRoot",
+    label: "链根",
+    categoryLibraryName: recursionCategory,
+    isDerivedComponentLibrary: false,
+    isContainerComponentLibrary: false,
+    terminalCount: 1,
+    terminalTypes: ["ac"],
+    terminalLabels: ["交流端"],
+    terminalRoles: ["single-load"],
+    terminalAssociations: ["ac-load"]
+  } as const;
+  const chainMiddleDefinition = {
+    name: "ChainMiddle",
+    label: "链中",
+    categoryLibraryName: recursionCategory,
+    isDerivedComponentLibrary: true,
+    derivedFromComponentLibrary: "ChainRoot"
+  } as const;
+  const chainLeafDefinition = {
+    name: "ChainLeaf",
+    label: "链叶",
+    categoryLibraryName: recursionCategory,
+    isDerivedComponentLibrary: true,
+    derivedFromComponentLibrary: "ChainMiddle"
+  } as const;
+  const ringSelfDefinition = {
+    name: "RingSelf",
+    label: "自环",
+    categoryLibraryName: recursionCategory,
+    isDerivedComponentLibrary: true,
+    derivedFromComponentLibrary: "RingSelf"
+  } as const;
+  const ringLeftDefinition = {
+    name: "RingLeft",
+    label: "环左",
+    categoryLibraryName: recursionCategory,
+    isDerivedComponentLibrary: true,
+    derivedFromComponentLibrary: "RingRight"
+  } as const;
+  const ringRightDefinition = {
+    name: "RingRight",
+    label: "环右",
+    categoryLibraryName: recursionCategory,
+    isDerivedComponentLibrary: true,
+    derivedFromComponentLibrary: "RingLeft"
+  } as const;
+  const mergeRootDefinition = {
+    name: "MergeRoot",
+    label: "合并根",
+    categoryLibraryName: recursionCategory,
+    isDerivedComponentLibrary: false,
+    isContainerComponentLibrary: false,
+    terminalCount: 1,
+    terminalTypes: ["ac"],
+    terminalLabels: ["交流端"],
+    terminalRoles: ["single-load"],
+    terminalAssociations: ["ac-load"]
+  } as const;
+  const mergeDerivedDefinition = {
+    name: "MergeDerived",
+    label: "合并派生",
+    categoryLibraryName: recursionCategory,
+    isDerivedComponentLibrary: true,
+    derivedFromComponentLibrary: "MergeRoot"
+  } as const;
+
+  // as const 会把端子数组冻成 readonly，与 CustomComponentLibraryDefinition 要求的可变数组不兼容；
+  // 这里沿用本文件既有的 as any 写法，只把夹具的形状交给被测函数，不参与类型检查。
+  const chainLibraries = [chainRootDefinition, chainMiddleDefinition, chainLeafDefinition] as any;
+
+  test("派生类把基类指向自己时立刻返回 null 而不栈溢出", () => {
+    const startedAt = performance.now();
+    const resolved = resolveEditableComponentLibraryDefinition({
+      className: "RingSelf",
+      categoryLibraryName: recursionCategory,
+      customComponentLibraries: [ringSelfDefinition],
+      templates: [],
+      overrides: {}
+    });
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(resolved).toBeNull();
+    // 这个上限不是性能基准，只是把「守卫被摘掉后的无限递归」变成一条红断言：
+    // 真发生递归时要么直接抛栈溢出，要么远超 5s 挂住 worker。
+    expect(elapsedMs).toBeLessThan(5_000);
+  }, 5_000);
+
+  test("互相派生的双向环两端都立刻返回 null", () => {
+    const ringLibraries = [ringLeftDefinition, ringRightDefinition];
+    const startedAt = performance.now();
+
+    const fromLeft = resolveEditableComponentLibraryDefinition({
+      className: "RingLeft",
+      categoryLibraryName: recursionCategory,
+      customComponentLibraries: ringLibraries,
+      templates: [],
+      overrides: {}
+    });
+    const fromRight = resolveEditableComponentLibraryDefinition({
+      className: "RingRight",
+      categoryLibraryName: recursionCategory,
+      customComponentLibraries: ringLibraries,
+      templates: [],
+      overrides: {}
+    });
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(fromLeft).toBeNull();
+    expect(fromRight).toBeNull();
+    expect(elapsedMs).toBeLessThan(5_000);
+  }, 5_000);
+
+  test("环输入之后正常输入与环输入自身都能重复解析且结果稳定", () => {
+    const ringOptions = {
+      className: "RingLeft",
+      categoryLibraryName: recursionCategory,
+      customComponentLibraries: [ringLeftDefinition, ringRightDefinition],
+      templates: [],
+      overrides: {}
+    };
+    const leafOptions = {
+      className: "ChainLeaf",
+      categoryLibraryName: recursionCategory,
+      customComponentLibraries: chainLibraries,
+      templates: [],
+      overrides: {}
+    };
+
+    expect(resolveEditableComponentLibraryDefinition(ringOptions)).toBeNull();
+
+    const firstLeaf = resolveEditableComponentLibraryDefinition(leafOptions);
+    expect(firstLeaf?.metadata.className).toBe("ChainLeaf");
+
+    // resolving 是每次调用新建的集合：同一输入再解析一次必须与首次完全一致。
+    // 若有人把它上提到模块级（或把 finally 里的 delete 摘掉），第二次会直接命中
+    // 环守卫返回 null，这条断言就会变红。
+    expect(resolveEditableComponentLibraryDefinition(leafOptions)).toEqual(firstLeaf);
+    // 环输入重复调用依旧稳定为 null，不会因为前一次调用留下的状态而变形。
+    expect(resolveEditableComponentLibraryDefinition(ringOptions)).toBeNull();
+  });
+
+  test("无环的三级派生链把根类与中间类的行一并折进叶类的有效定义", () => {
+    const rootKey = componentLibraryDefinitionOverrideKey("ChainRoot");
+    const middleKey = componentLibraryDefinitionOverrideKey("ChainMiddle");
+    const leafKey = componentLibraryDefinitionOverrideKey("ChainLeaf");
+    const overrides: Record<string, DeviceTemplateDefinitionOverride> = {
+      [rootKey]: {
+        kind: rootKey,
+        parameterDefinitions: [
+          { cnName: "根类专有", enName: "root_only", valueType: "float", typicalValue: "1" }
+        ]
+      },
+      [middleKey]: {
+        kind: middleKey,
+        parameterDefinitions: [
+          { cnName: "中间类专有", enName: "middle_only", valueType: "float", typicalValue: "2" }
+        ]
+      },
+      [leafKey]: {
+        kind: leafKey,
+        parameterDefinitions: [
+          { cnName: "叶类专有", enName: "leaf_only", valueType: "float", typicalValue: "3" }
+        ]
+      }
+    };
+
+    const leaf = resolveEditableComponentLibraryDefinition({
+      className: "ChainLeaf",
+      categoryLibraryName: recursionCategory,
+      customComponentLibraries: chainLibraries,
+      templates: [],
+      overrides
+    });
+
+    expect(leaf?.metadata).toMatchObject({
+      className: "ChainLeaf",
+      isDerivedComponentLibrary: true,
+      baseComponentLibrary: "ChainMiddle",
+      // 端子信息一路从 ChainRoot 继承下来，跨两级仍然到达叶类
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["交流端"]
+    });
+    expect(leaf?.parameterDefinitions.map((row) => row.enName)).toEqual(["leaf_only"]);
+    expect(leaf?.inheritedParameterDefinitions.map((row) => row.enName)).toEqual(expect.arrayContaining([
+      "idx",
+      "name",
+      "run_stat",
+      "dev_type",
+      "node",
+      "root_only",
+      "middle_only"
+    ]));
+    expect(leaf?.inheritedParameterDefinitions.map((row) => row.enName)).not.toContain("leaf_only");
+    expect(leaf?.effectiveParameterDefinitions.map((row) => row.enName)).toEqual(expect.arrayContaining([
+      "root_only",
+      "middle_only",
+      "leaf_only"
+    ]));
+  });
+
+  test("归一后撞键的两行合并成一行且名字字段取先写者、值字段取后写者", () => {
+    // 用派生类当被测对象：派生类的 defaults 恒为 []，于是 mergeParameterDefinitions
+    // 拿到的是空的 defaults，撞键逻辑被单独隔离出来，不受生成默认行干扰。
+    const derivedKey = componentLibraryDefinitionOverrideKey("MergeDerived");
+    const resolved = resolveEditableComponentLibraryDefinition({
+      className: "MergeDerived",
+      categoryLibraryName: recursionCategory,
+      customComponentLibraries: [mergeRootDefinition, mergeDerivedDefinition] as any,
+      templates: [],
+      overrides: {
+        [derivedKey]: {
+          kind: derivedKey,
+          parameterDefinitions: [
+            {
+              cnName: "额定功率",
+              enName: "rated_power",
+              valueType: "float",
+              typicalValue: "10",
+              readonly: false
+            },
+            {
+              cnName: "被覆盖的额定功率",
+              enName: "  RATED_power ",
+              valueType: "string",
+              typicalValue: "20",
+              readonly: true
+            }
+          ]
+        }
+      }
+    });
+
+    // 只有一行：第二行的 key 归一后与第一行相同，走 rowIndexByKey 命中已有下标而不是 push
+    expect(resolved?.parameterDefinitions).toHaveLength(1);
+    const merged = resolved?.parameterDefinitions[0];
+    // 先写者保住身份字段（合并时显式回填 generated 的 cnName / enName / readonly）
+    expect(merged).toMatchObject({
+      cnName: "额定功率",
+      enName: "rated_power",
+      readonly: false
+    });
+    // 后写者覆盖值字段
+    expect(merged).toMatchObject({
+      valueType: "string",
+      typicalValue: "20"
+    });
+  });
+
+  test("撞上生成默认行时保留默认行的名字字段而让持久化值字段胜出", () => {
+    const baseKey = componentLibraryDefinitionOverrideKey("MergeRoot");
+    const overrides: Record<string, DeviceTemplateDefinitionOverride> = {
+      [baseKey]: {
+        kind: baseKey,
+        parameterDefinitions: [
+          {
+            cnName: "自定义设备类型",
+            enName: "DEV_TYPE",
+            valueType: "string",
+            typicalValue: "MyType",
+            readonly: true
+          },
+          {
+            cnName: "自定义父级",
+            enName: " Parent ",
+            valueType: "stringEnum",
+            typicalValue: "3",
+            readonly: true
+          }
+        ]
+      }
+    };
+    const resolved = resolveEditableComponentLibraryDefinition({
+      className: "MergeRoot",
+      categoryLibraryName: recursionCategory,
+      customComponentLibraries: [mergeRootDefinition] as any,
+      templates: [],
+      overrides
+    });
+
+    const rows = resolved?.parameterDefinitions ?? [];
+    // 单端类默认生成 7 行；两行撞上已有键，不会追加新行
+    expect(rows.map((row) => row.enName)).toEqual([
+      "idx",
+      "name",
+      "status",
+      "run_stat",
+      "parent",
+      "dev_type",
+      "node"
+    ]);
+
+    const devType = rows.find((row) => row.enName === "dev_type");
+    // cnName 与 enName 由默认行保住（大小写/空白不同的覆盖名被丢弃）
+    expect(devType).toMatchObject({ cnName: "设备类型", enName: "dev_type", typicalValue: "MyType" });
+
+    const parent = rows.find((row) => row.enName === "parent");
+    // 值字段由覆盖行胜出（默认的 numberEnum 被改成 stringEnum、typicalValue 被填上），
+    // 覆盖行没写的字段（enumValueType / exportEnabled / exportName）仍取默认行；
+    // 但 enumOptions / enumValues 被覆盖行的缺省值抹掉。
+    expect(parent).toMatchObject({
+      cnName: "所属模型",
+      enName: "parent",
+      valueType: "stringEnum",
+      typicalValue: "3",
+      enumValueType: "number",
+      exportEnabled: true,
+      exportName: "parent"
+    });
+    expect(parent?.enumOptions).toBeUndefined();
+    expect(parent?.enumValues).toBeUndefined();
+  });
+
+  test("仅大小写与首尾空白不同的 name 归一到同一个键且空名整行丢弃", () => {
+    const derivedKey = componentLibraryDefinitionOverrideKey("MergeDerived");
+    const resolved = resolveEditableComponentLibraryDefinition({
+      className: "MergeDerived",
+      categoryLibraryName: recursionCategory,
+      customComponentLibraries: [mergeRootDefinition, mergeDerivedDefinition] as any,
+      templates: [],
+      overrides: {
+        [derivedKey]: {
+          kind: derivedKey,
+          parameterDefinitions: [
+            { cnName: "额定功率", enName: "rated_power", valueType: "float", typicalValue: "10", readonly: false },
+            { cnName: "大写同键", enName: "RATED_POWER", valueType: "integer", typicalValue: "20", readonly: true },
+            { cnName: "带空白同键", enName: "\tRated_Power\n", valueType: "string", typicalValue: "30", readonly: true },
+            { cnName: "纯空白名", enName: "   ", valueType: "float", typicalValue: "40" },
+            { cnName: "空名", enName: "", valueType: "float", typicalValue: "50" }
+          ]
+        }
+      }
+    });
+
+    const rows = resolved?.parameterDefinitions ?? [];
+    // 三行同键归一为一行；两行空名因为 key 为空被 if (!key) continue 直接丢弃
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      enName: "rated_power",
+      cnName: "额定功率",
+      valueType: "string",
+      typicalValue: "30"
+    });
+    expect(rows.map((row) => row.enName.trim().toLowerCase())).toEqual(["rated_power"]);
+  });
+
+  test("空类名、纯空白类名、缺省类名与未知类名一律返回 null", () => {
+    const options = {
+      categoryLibraryName: recursionCategory,
+      customComponentLibraries: [chainRootDefinition] as any,
+      templates: [],
+      overrides: {}
+    };
+
+    expect(resolveEditableComponentLibraryDefinition({ ...options, className: "" })).toBeNull();
+    expect(resolveEditableComponentLibraryDefinition({ ...options, className: "   " })).toBeNull();
+    expect(resolveEditableComponentLibraryDefinition(options as any)).toBeNull();
+    expect(resolveEditableComponentLibraryDefinition({ ...options, className: "NoSuchClass" })).toBeNull();
+    expect(resolveEditableComponentLibraryDefinition({} as any)).toBeNull();
+  });
+
+  test("类名首尾空白在入口被裁掉且不影响与派生链无关的其它入参", () => {
+    const padded = resolveEditableComponentLibraryDefinition({
+      className: "  ChainRoot  ",
+      categoryLibraryName: `  ${recursionCategory}  `,
+      customComponentLibraries: chainLibraries,
+      templates: [],
+      overrides: {}
+    });
+    const plain = resolveEditableComponentLibraryDefinition({
+      className: "ChainRoot",
+      categoryLibraryName: recursionCategory,
+      customComponentLibraries: chainLibraries,
+      templates: [],
+      overrides: {}
+    });
+
+    expect(padded).toEqual(plain);
+    expect(padded?.metadata.className).toBe("ChainRoot");
+  });
+});

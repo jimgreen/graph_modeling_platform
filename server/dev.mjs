@@ -7,8 +7,14 @@ export function parseHost(argv = process.argv.slice(2)) {
   const idx = argv.findIndex(a => a === "--host" || a.startsWith("--host="));
   if (idx === -1) return configHost;
   const arg = argv[idx];
-  if (arg.includes("=")) return arg.split("=")[1];
-  return argv[idx + 1] ?? configHost;
+  // `--key=value`：只按首个 `=` 切分，取其后**全部**内容（值里可以再含 `=`）。
+  // split("=")[1] 会把 `--host=a=b` 截成 `a`。
+  const eq = arg.indexOf("=");
+  if (eq !== -1) return arg.slice(eq + 1);
+  // 无 `=` 时才看下一个 token：以 `-` 开头说明那是另一个 flag，不能被吞成 host 的值。
+  const next = argv[idx + 1];
+  if (next !== undefined && !next.startsWith("-")) return next;
+  return configHost;
 }
 
 const host = parseHost();

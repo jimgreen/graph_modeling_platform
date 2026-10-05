@@ -246,6 +246,37 @@ beforeAll(async () => {
     nodes: [breakerNode],
     edges: []
   }), "utf-8");
+  // —— backgroundProjectIdx 非法值 / 自引用种子 ——
+  // 判据（svgExport.mjs buildBackgroundPageOption）：
+  //   const backgroundIdx = Number(project?.backgroundProjectIdx);
+  //   if (!Number.isSafeInteger(backgroundIdx) || backgroundIdx <= 0 || Number(project?.idx) === backgroundIdx) return 空;
+  // 非法值在 findSchemeProjectRecordByIndex 之前就被短路，故这些模型「照常导出 + 零 warning」。
+  // 注意：磁盘 JSON 无法承载 NaN（JSON.stringify 会写成 null，Number(null) 走 <= 0 分支而非 isSafeInteger），
+  // 故 NaN 用非数字字符串制造（Number("不是数字") === NaN），并另配一个「数字但非安全整数」覆盖 isSafeInteger。
+  const illegalIdxSeed = (fileName, name, idx, backgroundProjectIdx) => writeFileSync(join(dir, fileName), JSON.stringify({
+    version: 1,
+    name,
+    idx,
+    canvasWidth: 800,
+    canvasHeight: 400,
+    canvasBackgroundColor: "#ffffff",
+    backgroundProjectIdx,
+    backgroundLayerIds: ["default"],
+    nodes: [breakerNode],
+    edges: []
+  }), "utf-8");
+  illegalIdxSeed("零值背景模型.json", "零值背景模型", 96, 0);
+  illegalIdxSeed("负值背景模型.json", "负值背景模型", 97, -5);
+  illegalIdxSeed("小数背景模型.json", "小数背景模型", 98, 91.5);
+  illegalIdxSeed("非数字背景模型.json", "非数字背景模型", 99, "不是数字");
+  // Number("9007199254740993") = 9007199254740992，超出安全整数上限 → isSafeInteger 为 false
+  illegalIdxSeed("超大背景模型.json", "超大背景模型", 100, "9007199254740993");
+  // 自引用：backgroundProjectIdx === 自身 idx（种子工厂传同一个值）
+  illegalIdxSeed("自引用背景模型.json", "自引用背景模型", 101, 101);
+  // 对照组：真悬空（idx 997 落盘无此模型）→ 必产生一条 warning，用来证明 warn spy 通道本身有效，
+  // 否则「非法值零 warning」这条断言可能是 spy 失灵导致的假绿
+  illegalIdxSeed("对照悬空模型.json", "对照悬空模型", 102, 997);
+
   process.env.GRAPH_MODEL_DATA_DIR = dataDir;
   const { createImageServer } = await import("./server.mjs");
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
@@ -466,5 +497,83 @@ describe(`${svgPath} 背景页重建`, () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+});
+
+// backgroundProjectIdx 非法值与自引用：判据在 svgExport.mjs buildBackgroundPageOption
+//   const backgroundIdx = Number(project?.backgroundProjectIdx);
+//   if (!Number.isSafeInteger(backgroundIdx) || backgroundIdx <= 0 || Number(project?.idx) === backgroundIdx) → 跳背景页
+// 这条判据在 findSchemeProjectRecordByIndex 之前短路，所以这些模型「照常导出 + 零 warning」，
+// 与「悬空 idx 记一条 warning」是两类不同的外部行为，分别断言。
+describe(`${svgPath} 背景页引用键非法与自引用`, () => {
+  // 只认本模块的 warn 通道（[svg-export] 前缀），避免第三方/框架日志污染计数。
+  // 但「零 warning」若因 spy 失灵而恒成立就是假绿，故先用对照组证明 spy 有效。
+  const captureSvgExportWarns = async (fn) => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const text = await fn();
+      const warnings = warnSpy.mock.calls.filter((call) => String(call[0]).includes("[svg-export]"));
+      return { text, warnings, totalWarnCalls: warnSpy.mock.calls.length };
+    } finally {
+      warnSpy.mockRestore();
+    }
+  };
+
+  // 断言「照常被导出」：宿主自身图元渲染出来（断路器状态符号来自 deviceTemplates 装配）
+  const expectHostExported = (text) => {
+    expect(text).toContain("<svg");
+    expect(text).toContain("ac-breaker_state_");
+    // 没有背景页图层：非法/自引用引用键一律跳背景页
+    expect(text).not.toContain("export-background-page-layer");
+  };
+
+  test("对照组自检：真悬空 idx 会记 warning，证明 warn spy 计数有效", async () => {
+    const { text, warnings } = await captureSvgExportWarns(() => fetchSvg("对照悬空模型"));
+    expectHostExported(text);
+    expect(warnings).toHaveLength(1);
+    expect(String(warnings[0][0])).toContain("997");
+  });
+
+  test("backgroundProjectIdx 为 0 时跳背景页：照常导出且零 warning", async () => {
+    const { text, warnings, totalWarnCalls } = await captureSvgExportWarns(() => fetchSvg("零值背景模型"));
+    expectHostExported(text);
+    expect(warnings).toHaveLength(0);
+    expect(totalWarnCalls).toBe(0);
+  });
+
+  test("backgroundProjectIdx 为负数时跳背景页：照常导出且零 warning", async () => {
+    const { text, warnings, totalWarnCalls } = await captureSvgExportWarns(() => fetchSvg("负值背景模型"));
+    expectHostExported(text);
+    expect(warnings).toHaveLength(0);
+    expect(totalWarnCalls).toBe(0);
+  });
+
+  test("backgroundProjectIdx 为小数时跳背景页：照常导出且零 warning", async () => {
+    const { text, warnings, totalWarnCalls } = await captureSvgExportWarns(() => fetchSvg("小数背景模型"));
+    expectHostExported(text);
+    expect(warnings).toHaveLength(0);
+    expect(totalWarnCalls).toBe(0);
+  });
+
+  test("backgroundProjectIdx 非数字字符串（Number 得 NaN）时跳背景页：照常导出且零 warning", async () => {
+    const { text, warnings, totalWarnCalls } = await captureSvgExportWarns(() => fetchSvg("非数字背景模型"));
+    expectHostExported(text);
+    expect(warnings).toHaveLength(0);
+    expect(totalWarnCalls).toBe(0);
+  });
+
+  test("backgroundProjectIdx 超安全整数上限时跳背景页：照常导出且零 warning", async () => {
+    const { text, warnings, totalWarnCalls } = await captureSvgExportWarns(() => fetchSvg("超大背景模型"));
+    expectHostExported(text);
+    expect(warnings).toHaveLength(0);
+    expect(totalWarnCalls).toBe(0);
+  });
+
+  test("自引用：backgroundProjectIdx 等于自身 idx 时自身背景页被跳过", async () => {
+    const { text, warnings, totalWarnCalls } = await captureSvgExportWarns(() => fetchSvg("自引用背景模型"));
+    // 宿主本体照常导出（种子 idx=101 且 backgroundProjectIdx=101）
+    expectHostExported(text);
+    expect(warnings).toHaveLength(0);
+    expect(totalWarnCalls).toBe(0);
   });
 });

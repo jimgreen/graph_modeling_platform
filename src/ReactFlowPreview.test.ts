@@ -56,4 +56,51 @@ describe("pathMidpoint", () => {
     expect(points[0].x).toBe(0);
     expect(points[1].x).toBe(4);
   });
+
+  // ---- 边界一：半程恰好落在分段点上（`cursor + length >= halfLength`）----
+  //
+  // 注意「恰好落在分段点」这件事在坐标上是**不可区分**的：折线里第 i 段的末端
+  // 就是第 i+1 段的起点，ratio=1（走完第 i 段）与 ratio=0（从第 i+1 段起步）
+  // 产出同一个坐标。所以把 `>=` 改成 `>` 对下面这些输入**同样绿**——这是折线
+  // 几何本身决定的等价，不是用例没覆盖。真正能区分的是下面第 2、3 例：
+  // 分段点后面还挂着别的段，边界判定或 cursor 记账一旦出错，结果会滑进下一段
+  // 内部（如 (3.5, 3)），断言立刻转红。
+  test("半程恰好落在分段点：返回该分段点本身，不被后续段带走", () => {
+    // 两段等长 5（3-4-5 对角线，避免轴互换蒙混过关）：总长 10，半程 5 = 第 0 段末端。
+    expect(pathMidpoint([p(0, 0), p(3, 4), p(6, 8)])).toEqual(p(3, 4));
+
+    // 段长 2 / 3 / 5：总长 10，半程 5 = 第 1 段末端，后面还挂着一条 5 长的第 2 段。
+    expect(pathMidpoint([p(0, 0), p(2, 0), p(2, 3), p(7, 3)])).toEqual(p(2, 3));
+
+    // 段长非二进制可表示（0.1/0.1/0.2）：半程落在第 0 段末端，ratio 恰为 1，
+    // 坐标必须严格等于 0.1，不允许 0.10000000000000002 这类漂移。
+    expect(pathMidpoint([p(0, 0), p(0, 0.1), p(0, 0.2)])).toEqual(p(0, 0.1));
+  });
+
+  // ---- 边界二：路径点里混入非有限坐标 ----
+  test("路径点含 NaN：不抛异常，退回末点", () => {
+    // hypot 遇 NaN → 段长 NaN → 累计与半程全为 NaN；`cursor + length >= NaN`
+    // 恒为 false，循环走空，落到函数末尾的 `return points[points.length - 1]`
+    // 即末点。这就是「含 NaN 时返回哪个确定点」的答案：不抛，返末点。
+    expect(pathMidpoint([p(0, 0), p(NaN, 0), p(10, 10)])).toEqual(p(10, 10));
+    expect(pathMidpoint([p(NaN, NaN), p(10, 10), p(20, 20)])).toEqual(p(20, 20));
+    expect(pathMidpoint([p(0, 0), p(0, NaN), p(10, 10)])).toEqual(p(10, 10));
+
+    // NaN 落在末点：进循环前就被末点分支返回，NaN 原样带出（仍不抛）。
+    // 这里 toEqual 对 NaN 用 SameValueZero 语义，NaN 等于 NaN。
+    expect(pathMidpoint([p(0, 0), p(10, 0), p(NaN, NaN)])).toEqual(p(NaN, NaN));
+  });
+
+  test("路径点含 Infinity：不抛异常，但插值比值退化成 NaN", () => {
+    // 与 NaN 走的**不是**同一条路：Infinity >= Infinity 为 true，会进插值分支；
+    // 而段长是 Infinity，比值 (Infinity - cursor) / Infinity = Infinity / Infinity
+    // = NaN，段上没有 Number.isFinite 保护 → 坐标整体变 NaN。
+    // 钉的是这个「与 NaN 走不同分支」的现状，不是期望行为。
+    expect(() => pathMidpoint([p(0, 0), p(Infinity, 0), p(10, 10)])).not.toThrow();
+    expect(pathMidpoint([p(0, 0), p(Infinity, 0), p(10, 10)])).toEqual({ x: NaN, y: NaN });
+    expect(pathMidpoint([p(0, 0), p(10, 0), p(10, Infinity)])).toEqual({ x: NaN, y: NaN });
+
+    // 单点分支在进循环前返回：Infinity 原样带出，不被插值成 NaN。
+    expect(pathMidpoint([p(Infinity, Infinity)])).toEqual(p(Infinity, Infinity));
+  });
 });

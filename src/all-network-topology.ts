@@ -78,12 +78,15 @@ export function collectAllNetworkTopologyReferenceModels(
       const schemePath = [...parentPath, scheme.name];
       for (const record of scheme.projects ?? []) {
         const modelType = String(record.project?.modelType ?? "").trim() as ModelType | "";
+        // project 缺失时按占位值收集，与同循环里 modelType 的 ?? "" 兜底同一套语义：
+        // name 占位空串、idx 占位 0（normalizedModelIndex 对缺失值的既有兜底），
+        // modelType 占位空串的记录会被 collectAllNetworkTopologyModels 按类型过滤掉。
         models.push({
           projectId: record.id,
           schemeId: scheme.id,
           schemePath,
-          name: record.name || record.project.name,
-          idx: normalizedModelIndex(record.project.idx),
+          name: record.name || record.project?.name || "",
+          idx: normalizedModelIndex(record.project?.idx),
           modelType,
           record
         });
@@ -92,10 +95,12 @@ export function collectAllNetworkTopologyReferenceModels(
     }
   };
   visit(schemes, []);
+  // 排序两侧都可能是残缺记录（缺 project 的记录名占位空串、缺 id 的记录 projectId 为 undefined），
+  // 统一按字符串兜底后再比较，避免比较阶段再抛一次 TypeError。
   return models.sort((left, right) =>
     (left.idx || Number.MAX_SAFE_INTEGER) - (right.idx || Number.MAX_SAFE_INTEGER) ||
-    left.name.localeCompare(right.name, "zh-CN") ||
-    left.projectId.localeCompare(right.projectId)
+    String(left.name ?? "").localeCompare(String(right.name ?? ""), "zh-CN") ||
+    String(left.projectId ?? "").localeCompare(String(right.projectId ?? ""))
   );
 }
 

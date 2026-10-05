@@ -8,13 +8,44 @@
  * rasterizeSvg 纯 DOM 逻辑在 node 环境无法真实执行，此处仅验证其
  * 接口签名和基本类型正确性；真实 DOM 测试需 jsdom 或浏览器环境。
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, test, expect, vi, afterEach } from "vitest";
 import {
   serializeScreenshot,
   rasterizeSvg,
+  rasterizeSvgString,
   createRuntimeScreenshotHandler,
   type ScreenshotParams,
 } from "./runtimeScreenshot";
+
+const PNG_PREFIX = "data:image/png;base64,";
+
+/**
+ * 为 rasterizeSvgString 装上假的浏览器环境。
+ * node 环境无 jsdom，需手动提供 Image / window / document。
+ * 返回的 canvas 记录 width/height 与 drawImage 入参，便于校验正常路径未被改动。
+ */
+function installCanvasStub(dataUrl: string) {
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext: vi.fn(() => ({ scale: vi.fn(), drawImage: vi.fn() })),
+    toDataURL: vi.fn(() => dataUrl),
+  };
+  class FakeImage {
+    crossOrigin = "";
+    onload: (() => void) | null = null;
+    onerror: ((e?: unknown) => void) | null = null;
+    set src(_value: string) {
+      queueMicrotask(() => this.onload?.());
+    }
+  }
+  vi.stubGlobal("Image", FakeImage);
+  vi.stubGlobal("window", { devicePixelRatio: 2 });
+  vi.stubGlobal("document", {
+    createElement: vi.fn(() => canvas),
+  });
+  return canvas;
+}
 
 // 模拟 appScope 工厂
 function mockAppScope(overrides?: Record<string, any>) {
@@ -225,5 +256,129 @@ describe("rasterizeSvg 类型签名", () => {
   it("导出 rasterizeSvg 为 async 函数", () => {
     expect(typeof rasterizeSvg).toBe("function");
     expect(rasterizeSvg.constructor.name).toBe("AsyncFunction");
+  });
+});
+
+describe("rasterizeSvgString 对 toDataURL 异常返回的防御", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("画布超限：toDataURL 返回内容为空的 data:, → 抛错而非返回空串", async () => {
+    installCanvasStub("data:,");
+
+    await expect(rasterizeSvgString("<svg></svg>", 800, 600)).rejects.toThrow(
+      /未返回 PNG data URL/
+    );
+  });
+
+  test("经 serializeScreenshot：toDataURL 返回 data:, → ok=false 且错误信息具体，不是空串加 ok:true", async () => {
+    installCanvasStub("data:,");
+
+    const result = await serializeScreenshot(
+      mockAppScope(),
+      undefined,
+      rasterizeSvgString
+    );
+
+    // 关键回归点：修复前这里会得到 { ok: true, data: { base64: "" } }
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("internal");
+      expect(result.error.message).toMatch(/未返回 PNG data URL/);
+    }
+    // 明确排除「成功的空图」
+    expect("data" in result).toBe(false);
+  });
+
+  test("其它非 PNG 前缀的 data URL（jpeg 与 data:,foo）→ 一律拒绝", async () => {
+    installCanvasStub("data:image/jpeg;base64,xxx");
+    await expect(rasterizeSvgString("<svg></svg>", 800, 600)).rejects.toThrow(
+      /未返回 PNG data URL/
+    );
+
+    vi.unstubAllGlobals();
+    installCanvasStub("data:,foo");
+    await expect(rasterizeSvgString("<svg></svg>", 800, 600)).rejects.toThrow(
+      /未返回 PNG data URL/
+    );
+  });
+
+  test("只有合法前缀但内容为空的 PNG data URL → 拒绝", async () => {
+    installCanvasStub(PNG_PREFIX);
+
+    await expect(rasterizeSvgString("<svg></svg>", 800, 600)).rejects.toThrow(
+      /内容为空/
+    );
+  });
+
+  test("toDataURL 返回空串 → 拒绝", async () => {
+    installCanvasStub("");
+
+    await expect(rasterizeSvgString("<svg></svg>", 800, 600)).rejects.toThrow(
+      /未返回 PNG data URL/
+    );
+  });
+
+  test("正常 PNG data URL → 逐字节相同地返回 base64，canvas 尺寸按 dpr 放大", async () => {
+    const payload = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const canvas = installCanvasStub(PNG_PREFIX + payload);
+
+    const base64 = await rasterizeSvgString("<svg>x</svg>", 800, 600);
+
+    expect(base64).toBe(payload);
+    expect(canvas.toDataURL).toHaveBeenCalledWith("image/png");
+    // devicePixelRatio = 2 → 800*2 / 600*2
+    expect(canvas.width).toBe(1600);
+    expect(canvas.height).toBe(1200);
+  });
+});
+
+describe("validateParams 现状：小数与极端值实际被接受（与注释的正整数说法不符）", () => {
+  test("小数 10.5 被当作合法尺寸透传", async () => {
+    const mockRasterize = vi.fn().mockResolvedValue("x");
+
+    const result = await serializeScreenshot(
+      mockAppScope(),
+      { width: 10.5, height: 10.5 },
+      mockRasterize
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.width).toBe(10.5);
+      expect(result.data.height).toBe(10.5);
+    }
+    expect(mockRasterize).toHaveBeenCalledWith("<svg>mock</svg>", 10.5, 10.5);
+  });
+
+  test("超大值 Number.MAX_SAFE_INTEGER 被接受，不做夹取", async () => {
+    const mockRasterize = vi.fn().mockResolvedValue("x");
+
+    const result = await serializeScreenshot(
+      mockAppScope(),
+      { width: Number.MAX_SAFE_INTEGER, height: 1 },
+      mockRasterize
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.width).toBe(Number.MAX_SAFE_INTEGER);
+    }
+  });
+
+  test("超小非整数 0.001 被接受", async () => {
+    const mockRasterize = vi.fn().mockResolvedValue("x");
+
+    const result = await serializeScreenshot(
+      mockAppScope(),
+      { width: 0.001 },
+      mockRasterize
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.width).toBe(0.001);
+    }
   });
 });

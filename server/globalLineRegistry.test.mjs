@@ -1105,3 +1105,281 @@ describe("schemePath 归一化对引用去重的影响", () => {
     await expect(registry.deleteEmpty({ id: record.id })).resolves.toMatchObject({ id: record.id });
   });
 });
+
+// ─── 读侧容错：归一化损坏输入（normalizeRecord / normalizeState）──────
+//
+// 这两个函数都只在读盘路径上生效（readState → normalizeState → normalizeRecord），
+// 且都**故意**不抛错：注册表 JSON 是用户可编辑的落盘文件，一个坏记录不该让
+// 整张表读不出来。因此必须从 `registryPath` 灌损坏数据、再新建一个 registry
+// 实例触发首次读取，才能观察到真实降级形态。
+//
+// 两个坑记在这里免得下一个人重走：
+//
+// ① `migrateStoredProjects` 在 ensureInitialized 里会执行
+//    `if (!reuseOnlyRecordIds.has(record.id)) record.references = []`，
+//    **无条件清空所有记录的 references**。所以直接 list() 看到的 degree 恒为 0，
+//    那不是 normalizeRecord 的降级结果。要观察归一化后的引用，
+//    必须在某个受管项目的 .json 里放一个带 `_globalLineId` 且
+//    `_globalLineModelPair` 为 source/target 的节点，把该记录标进 reuseOnlyRecordIds。
+//    下面的 seedReuseOnlyReference 就是干这个的。
+//
+// ② 反过来说，**不**放该节点时，「references 归一化后为空」这一条也可以观察 ——
+//    但它此时会被迁移清空混淆，只能用来断言降级后结构合法（数组、degree 0、
+//    endpointSlots 为 null），不能用来断言 normalizeRecord 保留了什么。
+//    故下面两条分别用两条通道：一条带 reuseOnly 看保留、一条不带看降级。
+const STAMP = "2026-01-01T00:00:00.000Z";
+
+async function seedRegistryFile(records, lastIndex = 1) {
+  await mkdir(join(dataRoot, "schemes"), { recursive: true });
+  return writeFile(
+    registry.registryPath,
+    `${JSON.stringify({ schemaVersion: 3, lastIndex, records }, null, 2)}\n`,
+    "utf-8"
+  );
+}
+
+function rawRecord(id, extra = {}) {
+  const record = {
+    id,
+    idx: 1,
+    name: id,
+    energyType: "ac",
+    params: {},
+    references: [],
+    createdAt: STAMP,
+    updatedAt: STAMP,
+    ...extra
+  };
+  // 显式表达「磁盘上没有 idx 键」：不靠 JSON.stringify 顺手省略 undefined 来蒙对
+  if (extra.idx === undefined) delete record.idx;
+  return record;
+}
+
+// 让 registryId 这条记录的 references 不被 migrateStoredProjects 清空。
+// 该节点 kind 取 ac-bus（不在 AC_LINE_KINDS 里）⇒ 第二遍迁移走 removeGlobalId，
+// 不会重写 record.references，只把项目文件里的 _globalLineId 抹掉。
+async function seedReuseOnlyReference(schemeName, registryId) {
+  await writeProject(schemeName, "模型甲.json", {
+    version: 1,
+    idx: 7,
+    name: "模型甲",
+    modelType: "厂站",
+    nodes: [{
+      id: "bus-keep-references",
+      kind: "ac-bus",
+      name: "保留引用用母线",
+      params: { [GLOBAL_LINE_ID_PARAM]: registryId, _globalLineModelPair: "target" },
+      terminals: []
+    }],
+    edges: []
+  });
+}
+
+describe("读侧容错：references 损坏时静默丢弃", () => {
+  const GOOD_SOURCE = {
+    projectIdx: 7,
+    schemePath: ["主方案"],
+    projectName: "模型甲",
+    nodeId: "line-good",
+    boundaryEndpoint: "source",
+    boundaryNodeId: "station-a",
+    boundaryTerminalId: "t1"
+  };
+  const GOOD_TARGET = {
+    projectIdx: 9,
+    schemePath: [],
+    projectName: "模型乙",
+    nodeId: "line-target",
+    boundaryEndpoint: "target",
+    boundaryNodeId: "feeder-b",
+    boundaryTerminalId: "t2"
+  };
+
+  // 探针实测：上列 9 条引用只有 GOOD_SOURCE 与 GOOD_TARGET 存活，其余逐条被
+  // normalizeReference 抛出的 GlobalLineRegistryError 命中空 catch 而丢弃。
+  // 逐条原因（哪一条会被丢）见每行注释 —— 这是本组断言的依据，不是推测。
+  const DROPPED_REFERENCES = [
+    { why: "null 引用：既无 modelKey 也无 nodeId", raw: null },
+    { why: "只有 projectIdx：缺 nodeId，模型键算不出可定位的线路节点", raw: { projectIdx: 8 } },
+    { why: "裸字符串：所有字段解引用后都是空", raw: "垃圾字符串" },
+    { why: "缺 boundaryEndpoint：首末端槽位无法判定", raw: { projectIdx: 9, nodeId: "line-no-endpoint" } },
+    { why: "boundaryEndpoint 是非法值 中间端", raw: { projectIdx: 10, nodeId: "line-bad-endpoint", boundaryEndpoint: "中间端" } },
+    { why: "nodeId 是空串", raw: { projectIdx: 11, nodeId: "" } },
+    { why: "与 GOOD_SOURCE 同一 modelKey+nodeId：去重", raw: { ...GOOD_SOURCE } },
+    { why: "首端槽位已被 GOOD_SOURCE 占用", raw: { projectIdx: 12, nodeId: "line-third", boundaryEndpoint: "source" } },
+    // ↓ 这一条**必须**放在 GOOD_TARGET 之前，否则 seenReferences 就观察不到：
+    // 它与 GOOD_SOURCE 共享 modelKey+nodeId（⇒ seenReferences 命中），但 boundaryEndpoint
+    // 是 target，此时 target 槽还空着（⇒ occupiedEndpoints 不命中）。
+    // 两条守卫里只有 seenReferences 在承重。把 GOOD_TARGET 挪到它前面，
+    // 这条就会被 occupiedEndpoints 完全遮住，删掉 seenReferences 整条用例照样绿
+    // （AGENTS.md「被兄弟分支完全遮蔽的那条分支」）。
+    { why: "与 GOOD_SOURCE 同 modelKey+nodeId 但占用另一个空槽位：靠 seenReferences 拦下", raw: { projectIdx: 7, nodeId: "line-good", boundaryEndpoint: "target" } }
+  ];
+
+  test("数组内混入的损坏引用被逐条丢弃，合法首末端按原顺序保留", async () => {
+    await seedRegistryFile([
+      rawRecord("r-mixed", {
+        idx: 2,
+        references: [
+          GOOD_SOURCE,
+          ...DROPPED_REFERENCES.map((item) => item.raw),
+          GOOD_TARGET
+        ]
+      })
+    ]);
+    await seedReuseOnlyReference("主方案", "r-mixed");
+
+    const [record] = await registry.list();
+
+    // 记录本身没有因为引用损坏而消失，也没有被降级成空记录
+    expect(record).toMatchObject({ id: "r-mixed", idx: 2, energyType: "ac" });
+    expect(record.references.map((item) => [item.modelKey, item.nodeId, item.boundaryEndpoint])).toEqual([
+      ["model:7", "line-good", "source"],
+      ["model:9", "line-target", "target"]
+    ]);
+    expect(record).toMatchObject({
+      degree: 2,
+      endpointSlots: { source: { nodeId: "line-good" }, target: { nodeId: "line-target" } },
+      terminalSlots: { i: { nodeId: "line-good" }, j: { nodeId: "line-target" } }
+    });
+    // 保留的引用被 normalizeReference 补全了 terminalSlot，并保持 schemePath 是拷贝
+    expect(record.references.map((item) => item.terminalSlot)).toEqual(["i", "j"]);
+    expect(record.references[0]).toMatchObject({
+      projectIdx: 7,
+      schemePath: ["主方案"],
+      projectName: "模型甲",
+      boundaryNodeId: "station-a",
+      boundaryTerminalId: "t1"
+    });
+  });
+
+  test("references 字段不是数组时整条记录仍保留，引用降级为空数组", async () => {
+    // normalizeRecord 的 for 循环写作
+    // `Array.isArray(record?.references) ? record.references : []`，
+    // 所以非数组形状（数字 / 字符串 / null / 类数组对象）一律按空数组处理，
+    // 记录照常返回，**不是**返回 null。
+    const BAD_SHAPES = [
+      { id: "r-number", extra: { references: 42 }, why: "数字" },
+      { id: "r-string", extra: { references: "不是数组", energyType: "dc" }, why: "字符串" },
+      { id: "r-null", extra: { references: null }, why: "null" },
+      { id: "r-arraylike", extra: { references: { 0: GOOD_SOURCE, length: 1 } }, why: "类数组对象" }
+    ];
+    await seedRegistryFile(
+      BAD_SHAPES.map((item, index) => rawRecord(item.id, { idx: 3 + index, ...item.extra }))
+    );
+
+    const records = await registry.list();
+
+    // 四条都在，顺序按 idx
+    expect(records.map((item) => item.id)).toEqual(["r-number", "r-string", "r-null", "r-arraylike"]);
+    for (const record of records) {
+      const shape = BAD_SHAPES.find((item) => item.id === record.id);
+      expect(Array.isArray(record.references), record.id).toBe(true);
+      expect(record.references, record.id).toEqual([]);
+      expect(record.degree, record.id).toBe(0);
+      expect(record.endpointSlots, record.id).toEqual({ source: null, target: null });
+      expect(record.terminalSlots, record.id).toEqual({ i: null, j: null });
+      // 记录的其他字段不受 references 形状影响
+      expect(record.name, record.id).toBe(record.id);
+      expect(shape.why).toBeTruthy();
+    }
+    expect(records.map((item) => item.idx)).toEqual([3, 4, 5, 6]);
+    expect(records.find((item) => item.id === "r-string")?.energyType).toBe("dc");
+
+    // 降级后的形状被原子写回磁盘：references 是数组而不是原始的坏值
+    const onDisk = JSON.parse(await readFile(registry.registryPath, "utf-8"));
+    expect(onDisk.records.map((item) => item.references)).toEqual([[], [], [], []]);
+  });
+
+  test("references 整体缺失的记录同样归一化为空引用而不是报错", async () => {
+    await seedRegistryFile([rawRecord("r-absent", { idx: 9 })]);
+
+    const [record] = await registry.list();
+
+    expect(record).toMatchObject({ id: "r-absent", idx: 9, degree: 0 });
+    expect(record.references).toEqual([]);
+    expect(record.endpointSlots).toEqual({ source: null, target: null });
+  });
+});
+
+describe("读侧容错：idx 缺失或重复时按 maxIndex+1 重分配", () => {
+  // normalizeState 的策略（源码 line 199-204）：
+  //   let idx = record.idx;                 // 已由 positiveInteger 归一，非正数 → 0
+  //   if (idx <= 0 || indexes.has(idx)) idx = maxIndex + 1;
+  //   indexes.add(idx); maxIndex = Math.max(maxIndex, idx);
+  // 关键：**取当前已分配的最大值 +1**，而不是「数组下标 +1」也不是「找最小空洞」。
+  // 因此出现过 12 之后，重分配只会继续往上走，绝不会回头补 11。
+  test("缺失、重复、负数、小数 idx 全部重分配为 maxIndex+1 且互不冲突", async () => {
+    await seedRegistryFile([
+      rawRecord("r-valid-5", { idx: 5 }),
+      rawRecord("r-valid-7", { idx: 7 }),
+      rawRecord("r-missing", { idx: undefined, name: "缺失序号" }),
+      rawRecord("r-dup-first", { idx: 12, name: "重复序号甲" }),
+      rawRecord("r-dup-second", { idx: 12, name: "重复序号乙" }),
+      rawRecord("r-negative", { idx: -3, name: "负序号" }),
+      rawRecord("r-fraction", { idx: 4.5, name: "小数序号" }),
+      rawRecord("r-numeric-string", { idx: "9", name: "数字字符串序号" }),
+      rawRecord("r-zero", { idx: 0, name: "零序号" }),
+      rawRecord("r-garbage", { idx: "不是数字", name: "非数字序号" })
+    ]);
+
+    const records = await registry.list();
+
+    // list() 按 idx 升序。注意 r-numeric-string 的 "9" 是合法正整数（positiveInteger
+    // 接受数字字符串），所以**不**走重分配，而是留在自己的 9 上。
+    expect(records.map((item) => [item.id, item.idx])).toEqual([
+      ["r-valid-5", 5],
+      ["r-valid-7", 7],
+      ["r-missing", 8],
+      ["r-numeric-string", 9],
+      ["r-dup-first", 12],
+      ["r-dup-second", 13],
+      ["r-negative", 14],
+      ["r-fraction", 15],
+      ["r-zero", 16],
+      ["r-garbage", 17]
+    ]);
+  });
+
+  test("idx 不重复且同刻写入磁盘，重启后不再二次重分配", async () => {
+    await seedRegistryFile([
+      rawRecord("r-a", { idx: 4 }),
+      rawRecord("r-b", { idx: 4 }),
+      rawRecord("r-c", { idx: undefined })
+    ]);
+
+    const records = await registry.list();
+    const idxs = records.map((item) => item.idx);
+
+    // 唯一性 + 策略一致：4 保留，第一条重复的 4 被抬到 5，缺失的那个抬到 6
+    expect(idxs).toEqual([4, 5, 6]);
+    expect(new Set(idxs).size).toBe(idxs.length);
+    expect(idxs.every((value) => Number.isSafeInteger(value) && value > 0)).toBe(true);
+    // 不会出现「补空洞」的结果：11 这类空洞不会被回头占用
+    expect(idxs).not.toContain(3);
+
+    const onDisk = JSON.parse(await readFile(registry.registryPath, "utf-8"));
+    expect(onDisk.records.map((item) => item.idx)).toEqual([4, 5, 6]);
+    // lastIndex 抬到重分配后的最大值，下一条新建记录从 7 起，不会与既有 idx 撞号
+    expect(onDisk.lastIndex).toBe(6);
+
+    const reloaded = await createGlobalLineRegistry({ dataRoot, schemeFilesRoot: filesRoot }).list();
+    expect(reloaded.map((item) => item.idx)).toEqual([4, 5, 6]);
+  });
+
+  test("id 重复的记录整条被丢弃，不会参与 idx 分配", async () => {
+    await seedRegistryFile([
+      rawRecord("r-dup-id", { idx: 3, name: "首个" }),
+      rawRecord("r-dup-id", { idx: 8, name: "第二个" }),
+      rawRecord("r-after", { idx: undefined })
+    ]);
+
+    const records = await registry.list();
+
+    // 第二条 r-dup-id 在 ids.has(record.id) 处 continue：既不占 idx，也不产生记录
+    expect(records.map((item) => [item.id, item.idx, item.name])).toEqual([
+      ["r-dup-id", 3, "首个"],
+      ["r-after", 4, "r-after"]
+    ]);
+  });
+});

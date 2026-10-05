@@ -292,3 +292,123 @@ describe("额定容量修复会话登记", () => {
     expect(pendingRatedCapacityFixCount()).toBe(2);
   });
 });
+
+describe("修复项标识键的分段编码", () => {
+  const NUL = "\u0000";
+  const ESC = "\u0001";
+
+  /**
+   * 独立按 documented 规则写的解码器（见 src/topology-capacity-fix.ts 的 encodeFixKeySegment）：
+   * 从左扫，遇转义符吃掉紧跟的一字符作为数据，遇裸分隔符断段。
+   * 写成测试侧自有实现，是为了让「能还原」这条断言不依赖生产代码内部结构。
+   */
+  function decodeFixKey(key: string): string[] {
+    const segments: string[] = [];
+    let current = "";
+    for (let index = 0; index < key.length; index += 1) {
+      const char = key[index];
+      if (char === ESC) {
+        current += key[index + 1];
+        index += 1;
+      } else if (char === NUL) {
+        segments.push(current);
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    return [...segments, current];
+  }
+
+  test("分段自带分隔符的两组输入不再撞成同一个键", () => {
+    const left = ratedCapacityFixKey(`a${NUL}b`, "c", "d");
+    const right = ratedCapacityFixKey("a", `b${NUL}c`, "d");
+
+    // 裸拼接修复前两者都等于 a<NUL>b<NUL>c<NUL>d。
+    expect(left).toBe(`a${ESC}${NUL}b${NUL}c${NUL}d`);
+    expect(right).toBe(`a${NUL}b${ESC}${NUL}c${NUL}d`);
+    expect(left).not.toBe(right);
+    expect(left).not.toBe(`a${NUL}b${NUL}c${NUL}d`);
+    expect(right).not.toBe(`a${NUL}b${NUL}c${NUL}d`);
+  });
+
+  test("曾会撞键的两组输入在会话登记里互不干扰", () => {
+    // 修复前第二组会命中第一组已登记的键，直接从 defer 跳到 apply。
+    expect(decideRatedCapacityFix(`a${NUL}b`, "c", "d")).toBe("defer");
+    expect(decideRatedCapacityFix("a", `b${NUL}c`, "d")).toBe("defer");
+    expect(pendingRatedCapacityFixCount()).toBe(2);
+
+    expect(decideRatedCapacityFix(`a${NUL}b`, "c", "d")).toBe("apply");
+    expect(decideRatedCapacityFix("a", `b${NUL}c`, "d")).toBe("apply");
+    expect(pendingRatedCapacityFixCount()).toBe(0);
+  });
+
+  test("含空格、分隔符、冒号、转义符与中文字段的键可还原出原三元组", () => {
+    const triples: Array<[string, string, string]> = [
+      ["方案 A", "节点 1", "rated_capacity"],
+      [`a${NUL}b`, `节 点${NUL}1`, `i${NUL}rated_capacity`],
+      ["sc:1:2", "n:1", "p:1"],
+      ["", NUL, ""],
+      [ESC, `${ESC}${NUL}`, `${NUL}${ESC}`]
+    ];
+
+    for (const triple of triples) {
+      const key = ratedCapacityFixKey(triple[0], triple[1], triple[2]);
+      expect(decodeFixKey(key)).toEqual(triple);
+    }
+  });
+
+  test("空串字段与边界拼接的两组输入互不撞键", () => {
+    const keys = [
+      ratedCapacityFixKey("", "", ""),
+      ratedCapacityFixKey("a", "", ""),
+      ratedCapacityFixKey("", "a", ""),
+      ratedCapacityFixKey("", "", "a"),
+      ratedCapacityFixKey("a", "b", "c"),
+      ratedCapacityFixKey("ab", "c", ""),
+      ratedCapacityFixKey("a", "bc", ""),
+      ratedCapacityFixKey(`a${NUL}b`, "c", ""),
+      ratedCapacityFixKey("a", "b", NUL),
+      ratedCapacityFixKey("a b", "c", "d"),
+      ratedCapacityFixKey("a", "b c", "d")
+    ];
+
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  test("含控制字符的分段做组合枚举后键两两不同", () => {
+    const segments = ["", "a", "a b", `a${NUL}b`, NUL, ESC, "中文"];
+    const keys = new Set<string>();
+    let total = 0;
+
+    for (const scopeKey of segments) {
+      for (const nodeId of segments) {
+        for (const paramKey of segments) {
+          keys.add(ratedCapacityFixKey(scopeKey, nodeId, paramKey));
+          total += 1;
+        }
+      }
+    }
+
+    expect(total).toBe(343);
+    expect(keys.size).toBe(total);
+  });
+
+  test("同一组输入反复编码得到同一个键（幂等）", () => {
+    const triple = [`方案 A${NUL}b`, "节 点", `rated${NUL}_capacity`] as const;
+    const first = ratedCapacityFixKey(triple[0], triple[1], triple[2]);
+
+    for (let round = 0; round < 3; round += 1) {
+      expect(ratedCapacityFixKey(triple[0], triple[1], triple[2])).toBe(first);
+    }
+    expect(decodeFixKey(first)).toEqual([triple[0], triple[1], triple[2]]);
+  });
+
+  test("纯 ASCII 输入的键与修复前逐字一致", () => {
+    // 转义只碰 \u0000 与 \u0001，普通字符原样透传，既有输入的键不变（会话状态不落盘，刷新即重置）。
+    expect(ratedCapacityFixKey("m1", "n1", "rated_capacity")).toBe(`m1${NUL}n1${NUL}rated_capacity`);
+    expect(
+      ratedCapacityFixKey("scheme-root:model-a", "node-1", "idx_ac_load_t1.rated_capacity")
+    ).toBe(`scheme-root:model-a${NUL}node-1${NUL}idx_ac_load_t1.rated_capacity`);
+  });
+});

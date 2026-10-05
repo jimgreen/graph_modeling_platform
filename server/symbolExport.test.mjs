@@ -4,6 +4,9 @@
 // 钉死坐标/尺寸的断言必然失效。这里只断言**关系与结构不变量**。
 import { describe, expect, test, beforeAll, afterAll } from "vitest";
 import AdmZip from "adm-zip";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createImageServer } from "./server.mjs";
 import { apiPath } from "./config.mjs";
 import {
@@ -25,6 +28,62 @@ describe("normalizeSymbolExportKinds", () => {
     expect(normalizeSymbolExportKinds(null)).toEqual([]);
     expect(normalizeSymbolExportKinds("ac-breaker")).toEqual([]);
     expect(normalizeSymbolExportKinds({ kinds: ["ac-breaker"] })).toEqual([]);
+  });
+});
+
+// summarizeKinds 的阈值是默认形参 limit = 5，判据是 kinds.length > limit（严格大于）。
+// 故「恰好 5 个」不截断、「6 个」才截断 —— 这两条必须成对存在，少任何一条都钉不住 < 与 <= 的差别。
+// 文案里的 N 是**总数**（kinds.length），不是「总数 - 阈值」的差值。
+// 驱动方式：未知 kind 全量落进 missingKinds，走 template-not-found 那句 summarizeKinds(missingKinds)。
+describe("summarizeKinds 截断文案边界", () => {
+  const unknownKinds = (count) => Array.from({ length: count }, (_, index) => `missing-kind-${index}`);
+
+  test("未知 kind 恰好 5 个（等于阈值）不出现截断文案，五个 kind 全部列出", async () => {
+    const kinds = unknownKinds(5);
+    const result = await renderSymbolExportSvg({ kinds });
+    expect(result.error?.code).toBe("template-not-found");
+    const message = result.error?.message ?? "";
+    // 截断文案形如「a、b 等 6 个」；此处一个都不该出现
+    expect(message).not.toContain(" 等 ");
+    expect(message).not.toMatch(/等\s*\d+\s*个/u);
+    // 反向确认不是「因为没列全所以看起来没截断」：五个 kind 都得在文案里
+    for (const kind of kinds) {
+      expect(message).toContain(kind);
+    }
+  });
+
+  test("未知 kind 比阈值多 1 个（6 个）才出现等 N 个文案，且 N 是总数", async () => {
+    const result = await renderSymbolExportSvg({ kinds: unknownKinds(6) });
+    expect(result.error?.code).toBe("template-not-found");
+    const message = result.error?.message ?? "";
+    expect(message).toContain(" 等 6 个");
+    // N 取 kinds.length（总数）。若误写成 kinds.length - limit，这里会变成「等 1 个」。
+    expect(message).not.toContain(" 等 1 个");
+    // 恰好多 1 个这条与上面「恰好 5 个不截断」成对：把 > 改成 >= 会让后者红
+    expect(message).toContain("missing-kind-4");
+  });
+
+  test("未知 kind 远大于阈值（12 个）时 N 仍等于总数", async () => {
+    const result = await renderSymbolExportSvg({ kinds: unknownKinds(12) });
+    expect(result.error?.code).toBe("template-not-found");
+    const message = result.error?.message ?? "";
+    expect(message).toContain(" 等 12 个");
+    expect(message).not.toContain(" 等 7 个");
+    // 前 5 个照常列出（排障要能看到具体是哪些 kind），第 6 个起被折叠
+    for (const kind of unknownKinds(5)) {
+      expect(message).toContain(kind);
+    }
+    expect(message).not.toContain("missing-kind-5");
+  });
+
+  test("kind 数量为 0 或列表全空白一律按 invalid-request 拒绝，不落到摘要分支", async () => {
+    for (const kinds of [[], ["  ", "", null], undefined, null, "ac-breaker"]) {
+      const result = await renderSymbolExportSvg({ kinds });
+      expect(result.error?.code).toBe("invalid-request");
+      expect(result.error?.message).toBe("请至少选择一个要导出的图元。");
+      // 空列表进 summarizeKinds 会拼出空串再跟一个「等 0 个」；此处根本不该出现摘要形态
+      expect(result.error?.message ?? "").not.toMatch(/等\s*\d+\s*个/u);
+    }
   });
 });
 
@@ -330,5 +389,105 @@ describe(`HTTP POST ${apiPath("/symbol-export-standalone")}`, () => {
     const missing = await post({ kinds: ["no-such-kind"] });
     expect(missing.status).toBe(404);
     expect((await missing.json()).error.code).toBe("template-not-found");
+  });
+});
+
+// 两条 empty-symbol 分支（symbolExport.mjs 内 renderSymbolExportSvg / renderStandaloneSymbolExportZip
+// 各自的 symbolCount === 0 与 files.length === 0 判据），HTTP 侧统一映射为 422。
+//
+// 二者都不是「未知 kind」：kind 必须在后端图元库里**查得到**（selected 非空），
+// 只是正文构建器一个 symbol / 一份独立 SVG 都产不出来（定义异常兜底）。
+// 触发手段 = 自定义静态图元声明 size 0×0：normalizeDefaultDeviceSize 对 static- 前缀
+// 图元原样保留模板尺寸，于是产出的 <symbol viewBox> 宽高为 0，
+// normalizeSymbolViewBox / symbolGraphicBody 的 parseViewBox 判 width>0 && height>0 拒绝该 symbol。
+//
+// 隔离：server.mjs 的 defaultPaths 在模块加载期求值（指向仓库 data/），改 env 无效；
+// 派发层每请求注入的 paths 一律来自 spaceStore.resolvePaths，故注入自建 store 即完成隔离。
+describe("empty-symbol → 422（两条分支各一条）", () => {
+  const BROKEN_KIND = "custom-staticbasicshape-zero";
+  const BROKEN_KINDS = Array.from({ length: 6 }, (_, index) => `custom-staticbasicshape-zero-${index}`);
+
+  let dataDir;
+  let server;
+  let baseUrl;
+  let store;
+
+  beforeAll(async () => {
+    dataDir = mkdtempSync(join(tmpdir(), "symbol-export-empty-"));
+    const deviceLibraryDir = join(dataDir, "device-library");
+    mkdirSync(deviceLibraryDir, { recursive: true });
+    const customDeviceTemplates = [BROKEN_KIND, ...BROKEN_KINDS].map((kind) => ({
+      kind,
+      label: `零尺寸静态图元 ${kind}`,
+      custom: true,
+      size: { width: 0, height: 0 },
+      params: {}
+    }));
+    writeFileSync(join(deviceLibraryDir, "library.json"), JSON.stringify({
+      schemaVersion: 4,
+      customDeviceTemplates,
+      deviceDefinitionOverrides: {}
+    }), "utf-8");
+
+    const { createSpaceStore } = await import("./spaceStore.mjs");
+    store = createSpaceStore(dataDir);
+    await store.ensureInitialized();
+    server = await createImageServer({ port: 0, host: "127.0.0.1", spaceStore: store });
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  afterAll(async () => {
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  const post = (route, payload) =>
+    fetch(`${baseUrl}${apiPath(route)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+  test("合并导出分支：库里有模板但产不出任何 symbol → 422 并点名被跳过的 kind", async () => {
+    const response = await post("/symbol-export", { kinds: [BROKEN_KIND] });
+    expect(response.status).toBe(422);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    const body = await response.json();
+    expect(body.error.code).toBe("empty-symbol");
+    // 该分支的文案锚点是「未能生成任何 symbol」；漏在正文里会退化成与独立导出分支无法区分
+    expect(body.error.message).toContain("未能生成任何 symbol");
+    expect(body.error.message).toContain(BROKEN_KIND);
+    // 失败响应不得夹带成功产物字段
+    expect(body.ok).toBeUndefined();
+    expect(body.svg).toBeUndefined();
+    expect(body.symbolCount).toBeUndefined();
+  });
+
+  test("独立导出分支：库里有模板但产不出任何独立 SVG → 422，文案与合并导出分支不同", async () => {
+    const response = await post("/symbol-export-standalone", { kinds: [BROKEN_KIND] });
+    expect(response.status).toBe(422);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    const body = await response.json();
+    expect(body.error.code).toBe("empty-symbol");
+    // 该分支的文案锚点是「未能生成任何独立 SVG」，与合并导出分支是两句话
+    expect(body.error.message).toContain("未能生成任何独立 SVG");
+    expect(body.error.message).not.toContain("未能生成任何 symbol");
+    expect(body.error.message).toContain(BROKEN_KIND);
+    // 二进制响应的元信息头只在 200 时给；422 不得提前发出来误导前端按成功路径解析
+    expect(response.headers.get("content-type")).not.toContain("image/svg+xml");
+    expect(response.headers.get("content-type")).not.toContain("application/zip");
+    expect(response.headers.get("x-symbol-export-file-count")).toBeNull();
+  });
+
+  test("被跳过的 kind 超过阈值时走 summarizeKinds 截断文案（6 个 → 等 6 个）", async () => {
+    const response = await post("/symbol-export", { kinds: BROKEN_KINDS });
+    expect(response.status).toBe(422);
+    const body = await response.json();
+    expect(body.error.code).toBe("empty-symbol");
+    // 走的是 skippedKinds 而非 missingKinds：库里有这些 kind，只是产不出 symbol
+    expect(body.error.message).toContain(` 等 ${BROKEN_KINDS.length} 个`);
+    expect(body.error.message).not.toContain(" 等 1 个");
   });
 });

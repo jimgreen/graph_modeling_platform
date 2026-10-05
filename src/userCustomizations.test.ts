@@ -1,4 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import ts from "typescript";
 import {
   DEFAULT_COLOR_PALETTE,
   DEVICE_LIBRARY,
@@ -643,5 +645,263 @@ describe("user customization safety helpers", () => {
     expect(result.nodes[0]).not.toBe(node);
     expect(result.nodes[0].size).toEqual({ width: 96, height: 60 });
     expect(result.nodes[0].terminals).toHaveLength(2);
+  });
+});
+
+// ── cloneValue / canonicalValue 的现状契约 ─────────────────────────────────
+//
+// 两个函数都是 userCustomizations.ts 的模块私有实现（没有 export），按约定不加进公开
+// API，所以这里分两条路径驱动：
+//
+// ① cloneValue —— 走真实导出入口 normalizeUserCustomizationSnapshot：其内部的
+//    normalizeUserImageLibrary 会执行 `{ ...cloneValue(asset), id, name, folderId, url }`，
+//    克隆出的嵌套引用在产物上直接可见。兜底分支是在每次调用时读
+//    `typeof structuredClone`，所以测试里临时把 globalThis.structuredClone 置空即可切过去。
+//
+// ② canonicalValue / canonicalJson —— 无法从任何导出入口观察到「键序无关」：每个到达
+//    canonicalEqual 的值都先被上游 normalizer 用字面量重建成了固定键序
+//    （normalizeMeasurementConfig / normalizeColorPalette /
+//    normalizeDeviceMeasurementDefinitions 都丢弃多余键）。所以这里从源码切出那段自包含
+//    声明、转译后在沙箱里求值 —— 跑的是真实交付的代码，不是测试里的一份复刻。切分失败
+//    直接抛错，不会静默通过。
+const userCustomizationsSource = readFileSync(
+  new URL("./userCustomizations.ts", import.meta.url),
+  "utf8"
+);
+
+const privateHelperBlock = () => {
+  const start = userCustomizationsSource.indexOf("const cloneValue");
+  const end = userCustomizationsSource.indexOf("const uniqueStrings");
+  if (start < 0 || end <= start) {
+    throw new Error("未能在 userCustomizations.ts 中定位 cloneValue 到 canonicalEqual 之间的声明块");
+  }
+  const block = userCustomizationsSource.slice(start, end);
+  ["const canonicalValue", "const canonicalJson", "const canonicalEqual", "localeCompare"].forEach((marker) => {
+    if (!block.includes(marker)) {
+      throw new Error(`切出的私有声明块缺少标记：${marker}`);
+    }
+  });
+  return block;
+};
+
+type CanonicalHelpers = {
+  canonicalValue: (value: unknown) => unknown;
+  // 运行时对 undefined 输入返回的是 undefined 本身（JSON.stringify 的原样透传），
+  // 生产里被 canonicalEqual 的 === 比较吃掉，这里如实建模，不谎称它返回字符串。
+  canonicalJson: (value: unknown) => string | undefined;
+  canonicalEqual: (left: unknown, right: unknown) => boolean;
+};
+
+const canonicalHelpers = (): CanonicalHelpers => {
+  const js = ts.transpileModule(privateHelperBlock(), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 }
+  }).outputText;
+  return new Function(`${js}\nreturn { canonicalValue, canonicalJson, canonicalEqual };`)() as CanonicalHelpers;
+};
+
+// 经导出入口 normalizeUserCustomizationSnapshot 触达 cloneValue。
+const normalizeAssetThroughClone = (asset: Record<string, unknown>) => normalizeUserCustomizationSnapshot({
+  imageLibrary: { folders: [], assets: [asset] }
+} as unknown as Partial<UserCustomizationSnapshot>).imageLibrary.assets[0] as unknown as Record<string, unknown>;
+
+const probeAsset = (extras: Record<string, unknown>): Record<string, unknown> => ({
+  id: "img-probe",
+  name: "探针图片",
+  folderId: "root",
+  url: "/probe",
+  ...extras
+});
+
+const withStructuredCloneMissing = <T,>(run: () => T): T => {
+  const global = globalThis as unknown as { structuredClone: unknown };
+  const original = global.structuredClone;
+  try {
+    global.structuredClone = undefined;
+    return run();
+  } finally {
+    global.structuredClone = original;
+  }
+};
+
+describe("user customization cloneValue and canonicalValue contracts", () => {
+  test("cloneValue main path deep copies nested structures without sharing references", () => {
+    const meta = { inner: { n: 1 }, list: [1, [2, { deep: true }]] };
+    const input = probeAsset({ meta });
+
+    const cloned = normalizeAssetThroughClone(input);
+    const clonedMeta = cloned.meta as { inner: { n: number }; list: unknown[] };
+
+    expect(clonedMeta).toEqual(meta);
+    expect(clonedMeta).not.toBe(meta);
+    expect(clonedMeta.inner).not.toBe(meta.inner);
+    expect(clonedMeta.list).not.toBe(meta.list);
+    expect(clonedMeta.list[1]).not.toBe(meta.list[1]);
+
+    clonedMeta.inner.n = 999;
+    expect(meta.inner.n).toBe(1);
+  });
+
+  test("cloneValue main path preserves Date, Map, Set and undefined-valued keys", () => {
+    const cloned = normalizeAssetThroughClone(probeAsset({
+      stamp: new Date("2020-05-06T07:08:09.010Z"),
+      lookup: new Map([["k", 1]]),
+      tags: new Set([1, 2]),
+      gone: undefined
+    }));
+
+    expect(cloned.stamp).toBeInstanceOf(Date);
+    expect((cloned.stamp as Date).toISOString()).toBe("2020-05-06T07:08:09.010Z");
+    expect(cloned.lookup).toBeInstanceOf(Map);
+    expect((cloned.lookup as Map<string, number>).get("k")).toBe(1);
+    expect(cloned.tags).toBeInstanceOf(Set);
+    expect([...(cloned.tags as Set<number>)]).toEqual([1, 2]);
+    expect(Object.prototype.hasOwnProperty.call(cloned, "gone")).toBe(true);
+    expect(cloned.gone).toBeUndefined();
+  });
+
+  test("cloneValue main path keeps cycles and rebinds them onto the copy", () => {
+    const input = probeAsset({});
+    input.self = input;
+
+    const cloned = normalizeAssetThroughClone(input);
+    const clonedSelf = cloned.self as Record<string, unknown>;
+
+    // 产物是 `{ ...cloneValue(asset), id, name, folderId, url }`，所以自引用指向的是
+    // cloneValue 造出来的那个副本，既不是展开后的产物，也绝不是原对象。
+    expect(clonedSelf).not.toBe(input);
+    expect(clonedSelf.self).toBe(clonedSelf);
+  });
+
+  // 下面四条钉的是 cloneValue 兜底路径当前真实发生的事：三条是真实的数据丢失，
+  // 一条是直接抛错。若将来修 cloneValue（换成结构化深拷贝、或换个降级实现），
+  // 本组用例会红 —— 那是提示该同步更新断言，不是断言写错了。
+  test("cloneValue fallback drops keys whose value is undefined", () => {
+    const cloned = withStructuredCloneMissing(() => normalizeAssetThroughClone(probeAsset({
+      gone: undefined,
+      keptNull: null
+    })));
+
+    expect(Object.prototype.hasOwnProperty.call(cloned, "gone")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(cloned, "keptNull")).toBe(true);
+    expect(cloned.keptNull).toBeNull();
+  });
+
+  test("cloneValue fallback degrades a Date into an ISO string", () => {
+    const cloned = withStructuredCloneMissing(() => normalizeAssetThroughClone(probeAsset({
+      stamp: new Date("2020-05-06T07:08:09.010Z")
+    })));
+
+    expect(cloned.stamp).not.toBeInstanceOf(Date);
+    expect(typeof cloned.stamp).toBe("string");
+    expect(cloned.stamp).toBe("2020-05-06T07:08:09.010Z");
+  });
+
+  test("cloneValue fallback degrades Map and Set into empty objects", () => {
+    const cloned = withStructuredCloneMissing(() => normalizeAssetThroughClone(probeAsset({
+      lookup: new Map([["k", 1]]),
+      tags: new Set([1, 2])
+    })));
+
+    expect(cloned.lookup).not.toBeInstanceOf(Map);
+    expect(cloned.tags).not.toBeInstanceOf(Set);
+    expect(cloned.lookup).toEqual({});
+    expect(cloned.tags).toEqual({});
+  });
+
+  test("cloneValue fallback throws on cyclic input while the main path accepts it", () => {
+    const input = probeAsset({});
+    input.self = input;
+
+    // 只断言 TypeError 是不够的：把兜底换成 `structuredClone(value)` 时，调用不存在的
+    // 全局同样抛 TypeError，这条用例会假绿。必须断言消息确实来自 JSON.stringify 撞环。
+    expect(() => withStructuredCloneMissing(() => normalizeAssetThroughClone(input)))
+      .toThrow(/circular structure to JSON/i);
+    expect(() => normalizeAssetThroughClone(input)).not.toThrow();
+  });
+
+  test("canonicalValue output is independent of object key order", () => {
+    const { canonicalValue, canonicalJson, canonicalEqual } = canonicalHelpers();
+
+    expect(Object.keys(canonicalValue({ b: 2, a: 1 }) as object)).toEqual(["a", "b"]);
+    expect(canonicalJson({ a: 1, b: 2 })).toBe(`{"a":1,"b":2}`);
+    expect(canonicalJson({ b: 2, a: 1 })).toBe(`{"a":1,"b":2}`);
+    expect(canonicalJson({ c: 3, a: 1, b: 2 })).toBe(`{"a":1,"b":2,"c":3}`);
+    expect(canonicalEqual({ a: 1, b: 2 }, { b: 2, a: 1 })).toBe(true);
+  });
+
+  test("canonicalValue stays key order independent when nested and keeps array order", () => {
+    const { canonicalValue, canonicalJson, canonicalEqual } = canonicalHelpers();
+    const left = { outer: { b: 2, a: 1 }, list: [3, 1, 2] };
+    const right = { list: [3, 1, 2], outer: { a: 1, b: 2 } };
+
+    expect(Object.keys(canonicalValue(left) as object)).toEqual(["list", "outer"]);
+    expect(Object.keys((canonicalValue(left) as { outer: object }).outer)).toEqual(["a", "b"]);
+    expect(canonicalJson(left)).toBe(`{"list":[3,1,2],"outer":{"a":1,"b":2}}`);
+    expect(canonicalJson(left)).toBe(canonicalJson(right));
+    expect(canonicalEqual(left, right)).toBe(true);
+
+    // 数组顺序有语义：数组分支先于对象分支命中，元素不会被排序抹掉。
+    expect(canonicalJson([3, 1, 2])).toBe(`[3,1,2]`);
+    expect(canonicalJson([1, 3, 2])).not.toBe(canonicalJson([3, 1, 2]));
+    expect(canonicalEqual([1, 2], [2, 1])).toBe(false);
+  });
+
+  test("canonicalValue serializes every primitive into its actual form", () => {
+    const { canonicalJson, canonicalEqual } = canonicalHelpers();
+
+    // 顶层 undefined 不是字符串 undefined —— JSON.stringify 对它返回 undefined 本身。
+    expect(canonicalJson(undefined)).toBeUndefined();
+    expect(canonicalJson(null)).toBe("null");
+    expect(canonicalJson(0)).toBe("0");
+    expect(canonicalJson(1.5)).toBe("1.5");
+    expect(canonicalJson(true)).toBe("true");
+    expect(canonicalJson(false)).toBe("false");
+    expect(canonicalJson("x")).toBe(`"x"`);
+    expect(canonicalJson("")).toBe(`""`);
+
+    // 对象里的 undefined 值在 JSON.stringify 阶段被丢掉：与 cloneValue 兜底同一类数据丢失。
+    expect(canonicalJson({ a: undefined })).toBe("{}");
+    expect(canonicalJson({ a: null })).toBe(`{"a":null}`);
+    expect(canonicalEqual({ a: undefined }, {})).toBe(true);
+
+    // 两侧同为 undefined 时比较成立；undefined 与 null 不等价（null 序列化成字符串 null）。
+    expect(canonicalEqual(undefined, undefined)).toBe(true);
+    expect(canonicalEqual(undefined, null)).toBe(false);
+    expect(canonicalEqual(null, undefined)).toBe(false);
+  });
+
+  test("array order stays significant through the exported inventory pipeline", () => {
+    const baseline = buildUserCustomizationInventory(defaultSnapshot(), DEVICE_LIBRARY);
+    expect(baseline.countsByDomain["measurement-definitions"]).toBe(0);
+
+    const snapshot = defaultSnapshot();
+    // 不能用 ac-line / dc-line：withRequiredBuiltInMeasurementProfileItems 会按内置必选项
+    // 重排它们，用户给的顺序根本到不了 canonicalEqual（这个坑先踩过一次）。
+    const sourceProfile = snapshot.measurementConfig.deviceProfiles
+      .find((profile) => profile.deviceKind === "ac-source");
+    expect(sourceProfile?.items.length ?? 0).toBeGreaterThan(1);
+    snapshot.measurementConfig.deviceProfiles = snapshot.measurementConfig.deviceProfiles
+      .map((profile) => (profile.deviceKind === "ac-source"
+        ? { ...profile, items: [...profile.items].reverse() }
+        : profile));
+
+    const inventory = buildUserCustomizationInventory(snapshot, DEVICE_LIBRARY);
+
+    // 比 key 更适合断言 itemId：key 走的是 customizationItemKey 的 encodeURIComponent，
+    // 冒号会被编成 %3A。
+    expect(inventory.items).toContainEqual(expect.objectContaining({
+      domain: "measurement-definitions",
+      itemId: "profile:ac-source",
+      changeType: "modified"
+    }));
+    expect(inventory.countsByDomain["measurement-definitions"]).toBe(1);
+  });
+
+  test("the sliced private block really carries the sort and the array branch", () => {
+    const block = privateHelperBlock();
+
+    expect(block).toContain("Array.isArray(value)");
+    expect(block).toContain("localeCompare");
+    expect(block).toContain("Object.fromEntries");
   });
 });

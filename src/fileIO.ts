@@ -350,6 +350,27 @@ export async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
   }
 }
 
+/**
+ * 降级保存时取文本：加载器可能**再失败一次**。
+ *
+ * 外层那两处 catch 的全部意义是「打开保存窗口出了岔子也照样把文件存下来」；但在 catch 里
+ * 裸 `await` 同一个加载器，加载器第二次抛错时整个 `saveLazyTextFile` 就 reject ——
+ * 一次失败的生成会让用户既拿不到文件、又看不到任何提示，降级意图彻底落空。
+ *
+ * 兜底值取空串，与本函数里已有的 `textPromise.catch(() => undefined)` 同口径：
+ * `undefined` 传到编码器会经 `TextEncoder.encode()` 的可选参数默认成 `""`（空文件），
+ * 这里直接写 `""` 是为了连 GBK 分支一起安全 —— `encodeGbk()` 要迭代字符串，
+ * 收到 `undefined` 会抛 `TypeError: undefined is not iterable`，等于把拒绝从 catch 里
+ * 又漏到了外面。
+ */
+async function loadTextForFallbackSave(load: () => Promise<string> | string): Promise<string> {
+  try {
+    return await load();
+  } catch {
+    return "";
+  }
+}
+
 export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<boolean> {
   let saveTargetReady = false;
   const notifySaveTargetReady = () => {
@@ -393,7 +414,7 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
     });
   } catch (error) {
     notifySaveTargetReady();
-    const text = await options.loadText();
+    const text = await loadTextForFallbackSave(options.loadText);
     showGlobalMessage("打开保存窗口失败，已改为浏览器下载。");
     downloadText(options.filename, text, options.mime, options.encoding);
     return true;
@@ -412,7 +433,8 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
       return false;
     }
     notifySaveTargetReady();
-    const text = await textPromise;
+    // 用 textPromise（已记忆化的那个）而不是 options.loadText：这条路**不能**再调一次加载器。
+    const text = await loadTextForFallbackSave(() => textPromise);
     showGlobalMessage("打开保存窗口失败，已改为浏览器下载。");
     downloadText(options.filename, text, options.mime, options.encoding);
     return true;

@@ -10,16 +10,23 @@ import { describe, expect, test } from "vitest";
 import {
   canvasResizeBoundsFromPointerDrag,
   canvasResizeMinimumBoundsForGeometry,
+  canvasResizeOriginShiftFromPointerDrag,
   clampNodePositionToBounds,
   calculateModelGeometryBounds,
   clampEdgeGeometryToBounds,
+  clampPointToBounds,
+  clampViewBoxDimensionsForZoom,
+  createInteractiveStaticDrawingNode,
+  createStaticBoxNodeFromDrawing,
   geometryBoundsInsideCanvas,
+  keyboardMoveStepForViewBox,
   mirrorNodes,
+  modelGeometryInsideCanvasBounds,
   normalizeViewBoxToCanvas,
   viewBoxZoomPercent
 } from "./model-canvas-ops";
-import { calculateNodeVisualBounds } from "./model";
-import type { Edge, ModelNode } from "./model";
+import { calculateNodeVisualBounds, parseStaticDrawPoints, STATIC_DRAW_POINTS_PARAM } from "./model";
+import type { CanvasResizeDragMetrics, DeviceTemplate, Edge, ModelNode, Point } from "./model";
 
 const bounds = { left: 0, top: 0, width: 1000, height: 800 };
 
@@ -463,5 +470,519 @@ describe("mirrorNodes", () => {
     const out = mirrorNodes(nodes, [], "horizontal");
     expect(out[0]).toBe(nodes[0]);
     expect(out[1]).toBe(nodes[1]);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// 以下几组是静态绘制几何与视口步长/夹取。上文各组补的是「被 mock 掉的被调方」，
+// 这里补的是「从没有直呼过的导出」——它们的判错都不会报错，只会画错。
+// ══════════════════════════════════════════════════════════════════════════
+
+// 静态绘制：用户拖出来的框 → 图元几何。三个数会静默地错：
+//   ① 最小尺寸 24 没抬起来 ⇒ 窄图元被压成 0×0，点不中；
+//   ② padding 8 每边漏掉 ⇒ 折线端点贴在图元边框上，看不出出头；
+//   ③ 坐标取整漏掉 ⇒ 保存的 drawPoints 与画出来的对不上，重载后图形漂移。
+const staticTemplate = (over: Partial<DeviceTemplate> = {}): DeviceTemplate =>
+  ({
+    kind: "static-rect",
+    label: "矩形",
+    categoryLibrary: "静态图元",
+    size: { width: 100, height: 60 },
+    params: {},
+    terminalType: "ac",
+    terminalCount: 0,
+    terminalTypes: [],
+    ...over
+  }) as unknown as DeviceTemplate;
+
+describe("createStaticBoxNodeFromDrawing / createInteractiveStaticDrawingNode", () => {
+  const box = (points: Point[]) => createStaticBoxNodeFromDrawing(staticTemplate(), points, "layer-user");
+  const line = (points: Point[]) => createInteractiveStaticDrawingNode(staticTemplate(), points, "layer-user");
+
+  // ── 点数守卫 ────────────────────────────────────────────────────────────
+  test("点数少于 2 个时抛错，两条路径各抛各的", () => {
+    // 源码是 throw（不是返回 null），消息也不同 —— 分别钉住，避免有人把
+    // 其中一条改成调用另一条、或改成返回 null 而调用方还在裸调。
+    expect(() => box([])).toThrow("Static box drawing requires at least two points.");
+    expect(() => box([{ x: 10, y: 10 }])).toThrow("Static box drawing requires at least two points.");
+    expect(() => line([])).toThrow("Interactive static drawing requires at least two points.");
+    expect(() => line([{ x: 10, y: 10 }])).toThrow("Interactive static drawing requires at least two points.");
+  });
+
+  test("两个重合点归一化后只剩 1 个，同样抛错（去重先于点数检查）", () => {
+    // normalizeStaticDrawingPoints 会丢掉连续重复点 —— 用户双击同一处时
+    // 屏幕上确实攒到了两个点，但归一化后只剩一个。此时若不抛错，
+    // 就会产出一个 0×0 图元（被最小尺寸抬成 24×24 的空壳）。
+    expect(() => box([{ x: 10, y: 10 }, { x: 10, y: 10 }])).toThrow(/at least two points/);
+    expect(() => line([{ x: 10, y: 10 }, { x: 10, y: 10 }])).toThrow(/at least two points/);
+
+    // 对照：落差 0.4 的两点归一化后仍然不同 ⇒ 合法，走产出路径且不被下限吞掉
+    expect(box([{ x: 10, y: 10 }, { x: 40.5, y: 10 }]).size).toEqual({ width: 30.5, height: 24 });
+  });
+
+  // ── 最小尺寸 24 ────────────────────────────────────────────────────────
+  test("最小尺寸 24 逐轴生效：窄的那轴被抬起、够宽的那轴保持原值", () => {
+    // 横向跨度 10 < 24 被抬起，纵向 200 > 24 原样。
+    // 判别力：若实现写成对整个 size 取一次 max（而不是逐轴 Math.max），
+    // 本例会得到 {200, 200} 而不是 {24, 200}。
+    expect(box([{ x: 0, y: 0 }, { x: 10, y: 200 }]).size).toEqual({ width: 24, height: 200 });
+    // 反向：横向够宽、纵向过窄
+    expect(box([{ x: 0, y: 0 }, { x: 200, y: 10 }]).size).toEqual({ width: 200, height: 24 });
+    // 两轴都过窄 ⇒ 各自抬到 24，而不是取较大者
+    expect(box([{ x: 0, y: 0 }, { x: 3, y: 5 }]).size).toEqual({ width: 24, height: 24 });
+    // 两点重合但未取整到同一点 ⇒ 跨度 0.2，仍被抬到 24，不产出 0×0
+    expect(box([{ x: 50, y: 50 }, { x: 50.2, y: 50.2 }]).size).toEqual({ width: 24, height: 24 });
+
+    // 中心也按**抬起来之后**的尺寸算：left 0 + 24/2 = 12（用原始跨度 10 会得 5）
+    expect(box([{ x: 0, y: 0 }, { x: 10, y: 200 }]).position).toEqual({ x: 12, y: 100 });
+  });
+
+  test("交互式绘制的最小尺寸同样逐轴生效（含 8px padding 之后仍不足 24 才抬）", () => {
+    // 跨度 10 + 16 = 26 > 24 ⇒ 加完 padding 已经够大，下限不参与
+    expect(line([{ x: 0, y: 0 }, { x: 10, y: 0 }]).size).toEqual({ width: 26, height: 24 });
+    // 同一行里 height 那轴跨度 0 + 16 = 16 < 24 ⇒ 被抬起 —— 证明下限在两个轴上分别判
+    // 跨度 8 ⇒ 8 + 16 = 24 恰好等于下限（闭区间：不抬也不加）
+    expect(line([{ x: 0, y: 0 }, { x: 8, y: 0 }]).size.width).toBe(24);
+    // 两轴都退化 ⇒ 16 < 24，双双抬起
+    expect(line([{ x: 7, y: 7 }, { x: 7, y: 7.4 }]).size).toEqual({ width: 24, height: 24 });
+  });
+
+  // ── padding 8 ──────────────────────────────────────────────────────────
+  test("padding 每边 8：交互式产出比输入大 16，盒子版不加大", () => {
+    const points: Point[] = [
+      { x: 100, y: 100 },
+      { x: 200, y: 160 }
+    ];
+    // 输入跨度 100 × 60
+    const interactive = line(points);
+    const staticBox = box(points);
+    expect(interactive.size).toEqual({ width: 116, height: 76 });
+    expect(staticBox.size).toEqual({ width: 100, height: 60 });
+    // 差值恰好 8 × 2，且两轴一致 —— padding 不是某条支路独有的
+    expect(interactive.size.width - staticBox.size.width).toBe(16);
+    expect(interactive.size.height - staticBox.size.height).toBe(16);
+
+    // drawPoints 按中心归零，盒子版不写这个参数
+    expect(parseStaticDrawPoints(interactive.params[STATIC_DRAW_POINTS_PARAM])).toEqual([
+      { x: -50, y: -30 },
+      { x: 50, y: 30 }
+    ]);
+    expect(staticBox.params[STATIC_DRAW_POINTS_PARAM]).toBeUndefined();
+  });
+
+  // ── 0.1 取整 ──────────────────────────────────────────────────────────
+  test("输入坐标先取整到 1 位小数再算几何（跳过输入取整会得到 100 而不是 100.1）", () => {
+    // 0.04 → 0（0.04×10 = 0.4），100.05 → 100.1（100.05×10 恰好落在 100.5，平局向 +∞）
+    // 于是宽度 = 100.1 − 0 = 100.1
+    const staticBox = box([
+      { x: 0.04, y: 0 },
+      { x: 100.05, y: 200 }
+    ]);
+    expect(staticBox.size).toEqual({ width: 100.1, height: 200 });
+    // 反证：若把「先对输入取整」这一步去掉，跨度是 100.01，取整后是 100。
+    // 100 与 100.1 就是本条的分辨距离。
+    // 中心同样走取整后的跨度：left 0 + 100.1/2 = 50.05 → 50.1（不是 50）
+    expect(staticBox.position).toEqual({ x: 50.1, y: 100 });
+
+    // 交互式版：中心 (0 + 100.1)/2 = 50.05 → 50.1，drawPoints 按 50.1 归零，
+    // 于是两端是 −50.1 与 50（不是围绕 50 的对称 −50 / 50）
+    const interactive = line([
+      { x: 0.04, y: 0 },
+      { x: 100.05, y: 0 }
+    ]);
+    expect(interactive.size).toEqual({ width: 116.1, height: 24 });
+    expect(interactive.position).toEqual({ x: 50.1, y: 0 });
+    expect(parseStaticDrawPoints(interactive.params[STATIC_DRAW_POINTS_PARAM])).toEqual([
+      { x: -50.1, y: 0 },
+      { x: 50, y: 0 }
+    ]);
+  });
+
+  test("最小尺寸 24 在跨度上真的生效：23.9 与 23.5 被抬起，24.1 原样通过", () => {
+    // 跨度 23.9 → 取整后仍是 23.9 → 被抬到 24。判别力：去掉 Math.max 会得 23.9。
+    expect(box([{ x: 0, y: 0 }, { x: 23.9, y: 100 }]).size.width).toBe(24);
+    // 跨度 23.5 同理（不是只对接近 24 的跨度有效）
+    expect(box([{ x: 0, y: 0 }, { x: 23.5, y: 100 }]).size.width).toBe(24);
+    // 对照组：24.1 够大，下限不参与。若前两条是恒 24（夹具退化），本条即红。
+    expect(box([{ x: 0, y: 0 }, { x: 24.1, y: 100 }]).size.width).toBe(24.1);
+
+    // ── 记录一处**等价变异**，免得下一个人重新调查 ──────────────────────────
+    // 「下限先作用在未取整的跨度上、再对结果取整」这个写法，与当前实现的差异
+    // 在本文件里**不可观测**，因此不必、也无法补断言去覆盖它：
+    //   normalizeStaticDrawingPoints 已经把每个输入坐标取整到 0.1，
+    //   所以 createStaticBoxNodeFromDrawing 看到的 right − left 恒已是 0.1 的倍数，
+    //   再对它 Math.round 恒为恒等。
+    // 换句话说 span ∈ [23.95, 24) 这一段——唯一能分开「先取整」与「先夹」的两个写法
+    // 的区间——在本实现下**不可达**（23.95 会先被取成 24.0）。
+    // 上面三条断言刻意避开该区间，改用跨度 23.9 / 23.5 / 24.1。
+  });
+
+  test("取整平局向正无穷：同样长度正负号给出不同的中心", () => {
+    // center.x = round((left + right) / 2)。0.1 / 2 = 0.05 是平局 → 向 +∞ → 0.1
+    expect(line([{ x: 0, y: 0 }, { x: 0.1, y: 0 }]).position.x).toBe(0.1);
+    // −0.1 / 2 = −0.05 同样是平局，但 +∞ 在右边 → 真负零 −0（不是 −0.1）。
+    // 换成「四舍五入远离零」的实现会得到 −0.1，本条即红。
+    const negative = line([
+      { x: -0.1, y: 0 },
+      { x: 0, y: 0 }
+    ]);
+    expect(Object.is(negative.position.x, -0), "平局向 +∞ 时负方向得到真负零").toBe(true);
+    // 同一节点的其余几何：宽度 0.1 + 16 = 16.1 < 24 ⇒ 抬起；drawPoints 按 −0 归零
+    expect(negative.size).toEqual({ width: 24, height: 24 });
+    expect(parseStaticDrawPoints(negative.params[STATIC_DRAW_POINTS_PARAM])).toEqual([
+      { x: -0.1, y: 0 },
+      { x: 0, y: 0 }
+    ]);
+  });
+
+  // ── 首尾两点 vs 全体极值 ───────────────────────────────────────────────
+  test("盒子版只用首尾两点定外框（中间越界的点被忽略），交互式版相反取全体极值", () => {
+    const points: Point[] = [
+      { x: 0, y: 0 },
+      { x: 400, y: 300 },
+      { x: 200, y: 150 }
+    ];
+    // 盒子路径读 points[0] 与 points[points.length − 1] ⇒ 200 × 150
+    expect(box(points).size).toEqual({ width: 200, height: 150 });
+    expect(box(points).position).toEqual({ x: 100, y: 75 });
+    // 交互式路径读全体 min/max ⇒ 400 × 300，再各加 16 padding
+    expect(line(points).size).toEqual({ width: 416, height: 316 });
+    // 判别力：若盒子版也改成取全体极值，本例会得到 400 × 300 —— 中间那点
+    // 「画出矩形」时被追加为第三点，此时把它算进去会让图元突然比用户框大一倍。
+  });
+});
+
+// 点夹取：交互期把点按整数像素钉回画布。判错的后果是元素能被拖出画布，
+// 或贴边时抖 1px。
+describe("clampPointToBounds", () => {
+  test("四个边界组合：水平越界/界内 × 垂直越界/界内", () => {
+    const cases: Array<{ name: string; point: Point; want: Point }> = [
+      { name: "两轴都在界内（顺带取整）", point: { x: 10.4, y: 20.6 }, want: { x: 10, y: 21 } },
+      { name: "只有水平越界（左侧）", point: { x: -50, y: 20 }, want: { x: 0, y: 20 } },
+      { name: "只有垂直越界（下侧）", point: { x: 10, y: 5000 }, want: { x: 10, y: bounds.height } },
+      { name: "两轴都越界（右上）", point: { x: 5000, y: -50 }, want: { x: bounds.width, y: 0 } }
+    ];
+    for (const item of cases) {
+      expect(clampPointToBounds(item.point, bounds), item.name).toEqual(item.want);
+    }
+    // 四条用例两两不同 ⇒ 若实现把某一轴的 min/max 写错（如两轴都用 width），
+    // 至少有一条会红；只有「两轴界内」这一条是恒绿的。
+    expect(new Set(cases.map((item) => JSON.stringify(item.want))).size).toBe(4);
+  });
+
+  test("恰好贴边（0 与 width/height）保持不变，越 1px 即被夹", () => {
+    expect(clampPointToBounds({ x: 0, y: 0 }, bounds)).toEqual({ x: 0, y: 0 });
+    expect(clampPointToBounds({ x: bounds.width, y: bounds.height }, bounds)).toEqual({
+      x: bounds.width,
+      y: bounds.height
+    });
+    // 闭区间是 [0, width] × [0, height]
+    expect(clampPointToBounds({ x: -0.6, y: bounds.height + 0.6 }, bounds)).toEqual({
+      x: 0,
+      y: bounds.height
+    });
+    // 反向：−0.6 越下界、height + 0.6 越上界，两个轴的 min/max 不能写混
+    expect(clampPointToBounds({ x: bounds.width + 0.6, y: -0.6 }, bounds)).toEqual({
+      x: bounds.width,
+      y: 0
+    });
+  });
+
+  test("返回新对象且不改传入的点；取整发生在夹取之后", () => {
+    const input = { x: 10.6, y: 10.4 };
+    const result = clampPointToBounds(input, bounds);
+    expect(result).not.toBe(input);
+    expect(result).toEqual({ x: 11, y: 10 });
+    expect(input).toEqual({ x: 10.6, y: 10.4 });
+    // 取整在夹取**之后**：10.6 本来就在界内，不会被当成 11 再夹一次；
+    // 而 10.4 会被 Math.round 抬到 10 —— 说明这一层不是「原样返回」。
+  });
+});
+
+describe("modelGeometryInsideCanvasBounds", () => {
+  const routes = (...points: Array<[number, number]>) => [
+    { points: points.map(([x, y]) => ({ x, y })) }
+  ];
+  // 节点视觉框相对 position 的偏移（刚体平移，与 position 无关 ——
+  // 上文 clampNodePositionToBounds 的注释已记录这一前提）。
+  // 这里量一次即可，期望值全部由它推导，不写死标签度量。
+  const offsets = calculateNodeVisualBounds(node(), 0, { x: 0, y: 0 });
+  // 贴住每条边外侧 1px 的 position
+  const outLeft = { x: -offsets.left - 1, y: 400 };
+  const outRight = { x: bounds.width - offsets.right + 1, y: 400 };
+  const outTop = { x: 500, y: -offsets.top - 1 };
+  const outBottom = { x: 500, y: bounds.height - offsets.bottom + 1 };
+  const insidePosition = { x: 500, y: 400 };
+
+  test("四个边界组合：水平越界/界内 × 垂直越界/界内（路由折线）", () => {
+    // 路由的包围盒就是全部点的极值（本函数不传 padding，节点那侧为 0）
+    expect(modelGeometryInsideCanvasBounds([], routes([10, 10], [20, 20]), bounds)).toBe(true);
+    expect(modelGeometryInsideCanvasBounds([], routes([-1, 10], [20, 20]), bounds)).toBe(false);
+    expect(modelGeometryInsideCanvasBounds([], routes([1001, 10], [20, 20]), bounds)).toBe(false);
+    expect(modelGeometryInsideCanvasBounds([], routes([10, -1], [20, 20]), bounds)).toBe(false);
+    expect(modelGeometryInsideCanvasBounds([], routes([10, 801], [20, 20]), bounds)).toBe(false);
+    // 空折线不参与包围盒 ⇒ 空模型视为界内（与 geometryBoundsInsideCanvas(null) 同源）
+    expect(modelGeometryInsideCanvasBounds([], routes(), bounds)).toBe(true);
+  });
+
+  test("四个边界组合：水平越界/界内 × 垂直越界/界内（节点按视觉框，不按 position 或 size）", () => {
+    // 居中 ⇒ 视觉框四边都在界内
+    expect(modelGeometryInsideCanvasBounds([node({ position: insidePosition })], [], bounds)).toBe(true);
+    // 四个方向各推 1px 出界：判据是视觉框，不是 position 本身，也不是 size
+    expect(modelGeometryInsideCanvasBounds([node({ position: outLeft })], [], bounds)).toBe(false);
+    expect(modelGeometryInsideCanvasBounds([node({ position: outRight })], [], bounds)).toBe(false);
+    expect(modelGeometryInsideCanvasBounds([node({ position: outTop })], [], bounds)).toBe(false);
+    expect(modelGeometryInsideCanvasBounds([node({ position: outBottom })], [], bounds)).toBe(false);
+
+    // 反证夹具本身有效：把「越界 1px」换成「刚好贴边」应当回到界内。
+    // 若上面四条是因为夹具退化成全越界（比如 offsets 算出了 NaN）而恒红，
+    // 这四条会与之矛盾。
+    expect(modelGeometryInsideCanvasBounds([node({ position: { x: -offsets.left, y: 400 } })], [], bounds)).toBe(true);
+    expect(modelGeometryInsideCanvasBounds([node({ position: { x: 500, y: -offsets.top } })], [], bounds)).toBe(true);
+  });
+
+  test("节点与路由取并集：任一越界即整体越界", () => {
+    const insideNode = node({ position: insidePosition });
+    const insideRoutes = routes([10, 10], [20, 20]);
+    expect(modelGeometryInsideCanvasBounds([insideNode], insideRoutes, bounds)).toBe(true);
+    // 节点界内、路由越界
+    expect(modelGeometryInsideCanvasBounds([insideNode], routes([10, 10], [1001, 20]), bounds)).toBe(false);
+    // 路由界内、节点越界
+    expect(modelGeometryInsideCanvasBounds([node({ position: outLeft })], insideRoutes, bounds)).toBe(false);
+  });
+
+  test("margin 转发到判定上（默认 0 与传入 10 的结论不同）", () => {
+    const tight = routes([2, 2], [998, 798]);
+    expect(modelGeometryInsideCanvasBounds([], tight, bounds)).toBe(true);
+    expect(modelGeometryInsideCanvasBounds([], tight, bounds, 10)).toBe(false);
+    // 恰好等于 margin 时仍算界内（闭区间）
+    expect(modelGeometryInsideCanvasBounds([], routes([10, 10], [990, 790]), bounds, 10)).toBe(true);
+    expect(modelGeometryInsideCanvasBounds([], routes([10, 10], [990, 790]), bounds, 11)).toBe(false);
+  });
+});
+
+// 键盘微移步长：放大后一个 CSS 像素代表更多画布单位，步长必须跟着缩放走，
+// 否则放大态下方向键一次只挪视觉上的零点几个像素（看起来完全不动）。
+describe("keyboardMoveStepForViewBox", () => {
+  const viewBox = (width: number, height: number) => ({ x: 0, y: 0, width, height });
+
+  test("步长随缩放档位变化：四个档位给出四个互不相同的步长", () => {
+    const steps: Array<{ name: string; box: ReturnType<typeof viewBox>; want: number }> = [
+      { name: "缩小一半", box: viewBox(500, 400), want: 3 },
+      { name: "1:1", box: viewBox(1000, 800), want: 6 },
+      { name: "放大两倍", box: viewBox(2000, 1600), want: 12 },
+      { name: "放大四倍", box: viewBox(4000, 3200), want: 24 }
+    ];
+    for (const item of steps) {
+      expect(keyboardMoveStepForViewBox(item.box, bounds), item.name).toBe(item.want);
+    }
+    // 四个期望值互不相同 —— 否则「步长随缩放变化」这句话就是恒绿的
+    expect(new Set(steps.map((item) => item.want)).size).toBe(4);
+  });
+
+  test("缩放比是宽高比的几何平均，宽高比不一致时既不是取宽也不是取高", () => {
+    // 宽 2 倍、高 1 倍 ⇒ 几何平均 sqrt(2) ≈ 1.414；取宽会得 12，取高会得 6
+    const wideOnly = keyboardMoveStepForViewBox(viewBox(2000, 800), bounds);
+    expect(wideOnly).toBeCloseTo(6 * Math.SQRT2, 10);
+    expect(wideOnly).not.toBe(12);
+    expect(wideOnly).not.toBe(6);
+    // 高 2 倍、宽 1 倍 ⇒ 同一个比值（几何平均对宽高对称）
+    expect(keyboardMoveStepForViewBox(viewBox(1000, 1600), bounds)).toBeCloseTo(6 * Math.SQRT2, 10);
+  });
+
+  test("viewBox 或画布任一维退化时回落成 1 倍步长（不产出 0 或 NaN）", () => {
+    const degenerate = [viewBox(0, 0), viewBox(1000, 0), viewBox(0, 800), viewBox(-10, -10)];
+    for (const box of degenerate) {
+      expect(keyboardMoveStepForViewBox(box, bounds), `${box.width}x${box.height}`).toBe(6);
+    }
+    // 画布退化同理（bounds 任一维 ≤ 0）
+    expect(keyboardMoveStepForViewBox(viewBox(1000, 800), { width: 0, height: 800 })).toBe(6);
+    expect(keyboardMoveStepForViewBox(viewBox(1000, 800), { width: 1000, height: 0 })).toBe(6);
+  });
+
+  test("baseStep 取绝对值且下限为 1", () => {
+    const box = viewBox(1000, 800);
+    expect(keyboardMoveStepForViewBox(box, bounds, 10)).toBe(10);
+    // 负步长与正步长等价（方向由调用方自己加符号）
+    expect(keyboardMoveStepForViewBox(box, bounds, -10)).toBe(10);
+    // 0 与 |0.4| 被抬到 1，而不是产出 0（0 步长会让方向键完全失效）
+    expect(keyboardMoveStepForViewBox(box, bounds, 0)).toBe(1);
+    expect(keyboardMoveStepForViewBox(box, bounds, -0.4)).toBe(1);
+    // 缺省 baseStep 是 6
+    expect(keyboardMoveStepForViewBox(box, bounds)).toBe(6);
+    // 步长也要随缩放：baseStep 抬到下限 1 之后仍乘缩放比
+    expect(keyboardMoveStepForViewBox(viewBox(2000, 1600), bounds, 0)).toBe(2);
+  });
+});
+
+// 拖边改画布尺寸时，被拖的那条边在画布原点坐标系里会移动，
+// 内容必须跟着平移同样的距离，否则拖完画布内容整体跳一下。
+describe("canvasResizeOriginShiftFromPointerDrag", () => {
+  const edges = [
+    "right",
+    "bottom",
+    "corner",
+    "left",
+    "top",
+    "top-left",
+    "top-right",
+    "bottom-left"
+  ] as const;
+  const drag = (
+    edge: CanvasResizeDragMetrics["edge"],
+    over: Partial<CanvasResizeDragMetrics> = {}
+  ): CanvasResizeDragMetrics => ({
+    edge,
+    startClientX: 100,
+    startClientY: 200,
+    startWidth: 1000,
+    startHeight: 800,
+    unitsPerCssX: 2,
+    unitsPerCssY: 2,
+    ...over
+  });
+  const minBounds = { width: 200, height: 100 };
+
+  test("指针未拖动时八个方向都不产生偏移", () => {
+    // 位移 0 ⇒ 新旧尺寸相同 ⇒ 差值为 0。
+    // 这一条是下面所有对称性的锚点：若「无位移」也有偏移，说明偏移算的
+    // 不是尺寸差而是别的东西（那下面几条的 0 就不代表原点没动）。
+    for (const edge of edges) {
+      expect(
+        canvasResizeOriginShiftFromPointerDrag(drag(edge), { clientX: 100, clientY: 200 }, minBounds),
+        edge
+      ).toEqual({ x: 0, y: 0 });
+    }
+  });
+
+  test("同一根边向右拖与向左拖的偏移互为相反数", () => {
+    // 拖 left 边时向右拖把画布变窄（1000 − 100）⇒ 内容左移 100
+    const toRight = canvasResizeOriginShiftFromPointerDrag(drag("left"), { clientX: 150, clientY: 200 }, minBounds);
+    expect(toRight).toEqual({ x: -100, y: 0 });
+    // 同一根边向左拖把画布变宽（1000 + 100）⇒ 内容右移 100
+    const toLeft = canvasResizeOriginShiftFromPointerDrag(drag("left"), { clientX: 50, clientY: 200 }, minBounds);
+    expect(toLeft).toEqual({ x: 100, y: 0 });
+    expect(toRight.x).toBe(-toLeft.x);
+    // 上下同理
+    expect(canvasResizeOriginShiftFromPointerDrag(drag("top"), { clientX: 100, clientY: 250 }, minBounds))
+      .toEqual({ x: 0, y: -100 });
+    expect(canvasResizeOriginShiftFromPointerDrag(drag("top"), { clientX: 100, clientY: 150 }, minBounds))
+      .toEqual({ x: 0, y: 100 });
+    expect(
+      canvasResizeOriginShiftFromPointerDrag(drag("top"), { clientX: 100, clientY: 250 }, minBounds).y
+    ).toBe(-canvasResizeOriginShiftFromPointerDrag(drag("top"), { clientX: 100, clientY: 150 }, minBounds).y);
+  });
+
+  test("八个方向两两不串：只有被拖的那条轴上的那条边产生偏移", () => {
+    // 指针右、下各 +50px（unitsPerCss 2 ⇒ 画布单位 +100）
+    const pointer = { clientX: 150, clientY: 250 };
+    const shifts = {} as Record<CanvasResizeDragMetrics["edge"], { x: number; y: number }>;
+    for (const edge of edges) {
+      shifts[edge] = canvasResizeOriginShiftFromPointerDrag(drag(edge), pointer, minBounds);
+    }
+    expect(shifts).toEqual({
+      right: { x: 0, y: 0 },
+      bottom: { x: 0, y: 0 },
+      corner: { x: 0, y: 0 },
+      left: { x: -100, y: 0 },
+      top: { x: 0, y: -100 },
+      "top-left": { x: -100, y: -100 },
+      "top-right": { x: 0, y: -100 },
+      "bottom-left": { x: -100, y: 0 }
+    });
+  });
+
+  test("拖过最小尺寸后偏移饱和（按夹取后的尺寸算，不是按指针位移）", () => {
+    // 拖 left 边时 deltaX = (2100−100)×2 = 4000 ⇒ 1000 − 4000 = −3000 ⇒ 触底 200 ⇒ 偏移 −800
+    expect(canvasResizeOriginShiftFromPointerDrag(drag("left"), { clientX: 2100, clientY: 200 }, minBounds))
+      .toEqual({ x: -800, y: 0 });
+    // 再拖更远也不变 —— 偏移走的是夹取后的尺寸，不是指针位移
+    expect(canvasResizeOriginShiftFromPointerDrag(drag("left"), { clientX: 99999, clientY: 200 }, minBounds))
+      .toEqual({ x: -800, y: 0 });
+    // 刚好差 1 画布单位触底（deltaX 798 ⇒ 202）⇒ 偏移还是跟着尺寸走
+    expect(canvasResizeOriginShiftFromPointerDrag(drag("left"), { clientX: 499, clientY: 200 }, minBounds))
+      .toEqual({ x: -798, y: 0 });
+  });
+
+  test("偏移按最终尺寸取整（起始尺寸是小数时也落到整数像素）", () => {
+    // 起始宽 1000.4（来自画布状态，不保证是整数），拖出整数宽 998
+    // ⇒ 差 −2.4 ⇒ 外层 Math.round 落 −2。
+    // 判别力：canvasResizeBoundsFromPointerDrag 已经把新尺寸取整过了，
+    // 所以**起始**尺寸是小数时，外层那一次 Math.round 才是唯一承重的一层；
+    // 起始宽取整数的话这一层恒等于内层的取整结果（等价变异，绿了也说明不了问题）。
+    const out = canvasResizeOriginShiftFromPointerDrag(
+      drag("left", { startWidth: 1000.4 }),
+      { clientX: 101, clientY: 200 },
+      minBounds
+    );
+    expect(out).toEqual({ x: -2, y: 0 });
+    // 负方向的平局同样向 +∞：unitsPerCssX 2.5、指针 +1px ⇒ 拖出整数宽 998，
+    // 998 − 1000.5 = −2.5 ⇒ Math.round 落 −2（不是 −3）。
+    // 判别力：去掉外层 Math.round 会得 −2.5；改成四舍五入远离零会得 −3。
+    expect(
+      canvasResizeOriginShiftFromPointerDrag(
+        drag("left", { startWidth: 1000.5, unitsPerCssX: 2.5 }),
+        { clientX: 101, clientY: 200 },
+        minBounds
+      )
+    ).toEqual({ x: -2, y: 0 });
+  });
+});
+
+// viewBox 尺寸夹取：把画布缩放到指定百分比时，viewBox 不能缩到让内容消失、
+// 也不能放大到画布本身变成一个点。阈值由 min/max 缩放百分比换算而来。
+describe("clampViewBoxDimensionsForZoom", () => {
+  // 默认 5% ~ 2000% ⇒ 宽 ∈ [1000×0.05, 1000×20] = [50, 20000]
+  //                        高 ∈ [ 800×0.05,  800×20] = [40, 16000]
+  test("小于下限被抬起、大于上限被压下，两个轴各自夹", () => {
+    expect(clampViewBoxDimensionsForZoom({ width: 10, height: 5 }, bounds)).toEqual({ width: 50, height: 40 });
+    expect(clampViewBoxDimensionsForZoom({ width: 99999, height: 99999 }, bounds))
+      .toEqual({ width: 20000, height: 16000 });
+    // 一轴触下界、另一轴触上界 ⇒ 两轴独立，互不串
+    expect(clampViewBoxDimensionsForZoom({ width: 10, height: 99999 }, bounds))
+      .toEqual({ width: 50, height: 16000 });
+    // 恰好贴上下界时不动（闭区间）
+    expect(clampViewBoxDimensionsForZoom({ width: 50, height: 40 }, bounds)).toEqual({ width: 50, height: 40 });
+  });
+
+  test("区间内原样返回：夹取只动两端，既不取整也不缩放", () => {
+    expect(clampViewBoxDimensionsForZoom({ width: 1000, height: 800 }, bounds))
+      .toEqual({ width: 1000, height: 800 });
+    // 小数原样透传 ⇒ 这一层没有偷偷取整
+    expect(clampViewBoxDimensionsForZoom({ width: 123.456, height: 78.9 }, bounds))
+      .toEqual({ width: 123.456, height: 78.9 });
+  });
+
+  test("自定义上下限真的换掉了默认阈值", () => {
+    // 50% ~ 100% ⇒ 宽 ∈ [1000×1, 1000×2] = [1000, 2000]，高 ∈ [800, 1600]
+    expect(clampViewBoxDimensionsForZoom({ width: 10, height: 10 }, bounds, 50, 100))
+      .toEqual({ width: 1000, height: 800 });
+    expect(clampViewBoxDimensionsForZoom({ width: 99999, height: 99999 }, bounds, 50, 100))
+      .toEqual({ width: 2000, height: 1600 });
+    // 同一输入在默认阈值下不被夹 ⇒ 证明上面那两条是自定义上下限在起作用
+    expect(clampViewBoxDimensionsForZoom({ width: 10, height: 10 }, bounds)).toEqual({ width: 50, height: 40 });
+  });
+
+  test("上下限给反时以 minZoomPercent 为准（区间收敛成一点，不产出空区间）", () => {
+    // min=100 / max=50 ⇒ safeMax 被抬到 100 ⇒ 两个比值都是 1 ⇒ 宽高都被钉成画布尺寸
+    expect(clampViewBoxDimensionsForZoom({ width: 500, height: 300 }, bounds, 100, 50))
+      .toEqual({ width: 1000, height: 800 });
+    // 判别力：若 safeMax 不被抬到 safeMin，区间会变成 [2000, 1000] 这个空区间，
+    // clampNumber 的 max(min, min(max, v)) 会把 500 抬到 2000 —— 与上面不同。
+    // 对照组：上下限顺序正常且范围够宽时，500/300 原样通过。
+    expect(clampViewBoxDimensionsForZoom({ width: 500, height: 300 }, bounds, 100, 1000))
+      .toEqual({ width: 500, height: 300 });
+  });
+
+  test("上下限非正或小于 1 时先被抬到 1（不产出除零或无限上界）", () => {
+    // min=0 ⇒ safeMin=1 ⇒ maxRatio=100 ⇒ 宽上界 1000×100 = 100000
+    expect(clampViewBoxDimensionsForZoom({ width: 999999, height: 999999 }, bounds, 0))
+      .toEqual({ width: 100000, height: 80000 });
+    // min 为负同样被抬到 1
+    expect(clampViewBoxDimensionsForZoom({ width: 999999, height: 999999 }, bounds, -50))
+      .toEqual({ width: 100000, height: 80000 });
+    // min=max=1 ⇒ 两个比值都是 100 ⇒ 区间收敛到 2000 倍，与 max 缺省时一致
+    expect(clampViewBoxDimensionsForZoom({ width: 999999, height: 999999 }, bounds, 1, 1))
+      .toEqual({ width: 100000, height: 80000 });
   });
 });

@@ -32,6 +32,8 @@ export function encodeTextBytes(text, encoding) {
 // 已有声明（含 BOM/前导空白）先剥离，避免出现两个声明。
 export function withXmlEncodingDeclaration(text, encoding) {
   const label = encoding === "gbk" ? "GBK" : "UTF-8";
-  const content = String(text ?? "").replace(/^﻿?\s*<\?xml\b[^?]*\?>\s*/iu, "");
+  // `xml` 后必须跟空白：`\b` 在 `l` 与 `-` 之间同样成立，会把文档开头的
+  // `<?xml-stylesheet …?>` 处理指令当成声明整段吃掉（样式表 PI 丢失）。
+  const content = String(text ?? "").replace(/^﻿?\s*<\?xml\s[^?]*\?>\s*/iu, "");
   return `<?xml version="1.0" encoding="${label}"?>\n${content}`;
 }

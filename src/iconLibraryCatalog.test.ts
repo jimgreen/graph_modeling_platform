@@ -499,3 +499,249 @@ describe("图标库缓存层", () => {
     expect(message).not.toContain("Unexpected token");
   });
 });
+
+// ---------------------------------------------------------------------------
+// readCacheJson / browserCacheStorages：多 storage 遍历与逐个降级
+// ---------------------------------------------------------------------------
+//
+// 上面 installFakeStorageWindow 把 localStorage 与 sessionStorage 指向**同一个**
+// 对象，于是 browserCacheStorages 里的 `sessionStorage !== storages[0]` 判否，
+// 实际只登记了一个 storage —— 整个 for 循环的「换一个后端再试」从未被执行过。
+// 下面用两个**互不相同**的假 storage 把这条路径真正跑起来。
+//
+// 注意这里断言的是可观测行为（拿到哪个 storage 的内容、回源与否），不是内部调用
+// 次数本身 —— 之所以还额外钉住 getItem 的调用，是因为「首个 storage 抛错」与
+// 「两个 storage 都没这条键」在返回值上都是回源，只有 getItem 各自是 throw 还是
+// return null 才能把这两条路径区分开（下面两条用例成对出现，别单独删一条）。
+
+const makeFailingStorage = () => {
+  const store = new Map<string, string>();
+  return {
+    store,
+    getItem: vi.fn(() => {
+      throw new Error("storage blocked");
+    }),
+    setItem: vi.fn(() => {
+      throw new Error("storage blocked");
+    }),
+    removeItem: vi.fn(() => {
+      throw new Error("storage blocked");
+    })
+  };
+};
+
+const makeStorage = (entries: Record<string, string> = {}) => {
+  const store = new Map<string, string>(Object.entries(entries));
+  return {
+    store,
+    getItem: vi.fn((key: string) => store.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      store.set(key, value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      store.delete(key);
+    })
+  };
+};
+
+const installStorages = (local: unknown, session: unknown) => {
+  (globalThis as { window?: unknown }).window = { localStorage: local, sessionStorage: session };
+};
+
+describe("readCacheJson 的多 storage 遍历与降级", () => {
+  const networkManifest: IconLibraryManifest = {
+    name: "docer-free-compatible",
+    label: "稻壳兼容",
+    root: "/icon-library/docer-free-compatible",
+    categories: [{ id: "weather", label: "气象", icons: [{ id: "sun", name: "晴", file: "weather/sun.svg" }] }]
+  };
+
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  test("首个 storage 的 getItem 抛错时继续试下一个 storage，而不是直接判定缓存未命中", async () => {
+    const broken = makeFailingStorage();
+    const backup = makeStorage({ [MANIFEST_CACHE_KEY]: JSON.stringify(manifest) });
+    installStorages(broken, backup);
+    const mod = await import("./iconLibraryCatalog");
+    const fetcher = vi.fn(jsonFetcher({ name: "network", root: "/icon-library/network", categories: [] }));
+
+    const result = await mod.fetchIconLibraryManifest(catalog.libraries[0], fetcher as unknown as typeof fetch);
+
+    expect(result).toEqual(manifest);
+    expect(broken.getItem).toHaveBeenCalledWith(MANIFEST_CACHE_KEY);
+    expect(backup.getItem).toHaveBeenCalledWith(MANIFEST_CACHE_KEY);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  test("所有 storage 的 getItem 都抛错时按未命中处理并回源，storage 异常不外泄", async () => {
+    const brokenLocal = makeFailingStorage();
+    const brokenSession = makeFailingStorage();
+    installStorages(brokenLocal, brokenSession);
+    const mod = await import("./iconLibraryCatalog");
+    const fetcher = vi.fn(jsonFetcher(networkManifest));
+
+    const result = await mod.fetchIconLibraryManifest(catalog.libraries[0], fetcher as unknown as typeof fetch);
+
+    expect(result).toEqual(networkManifest);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(brokenLocal.getItem).toHaveBeenCalledTimes(1);
+    expect(brokenSession.getItem).toHaveBeenCalledTimes(1);
+    // 回源成功后要写缓存；写不进去同样不许抛（配额/隐私模式下的常见形态）
+    expect(brokenLocal.setItem).toHaveBeenCalledTimes(1);
+    expect(brokenSession.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  test("所有 storage 都没有该键时也按未命中处理，但 getItem 是正常返回 null 而非抛错", async () => {
+    const local = makeStorage();
+    const session = makeStorage();
+    installStorages(local, session);
+    const mod = await import("./iconLibraryCatalog");
+    const fetcher = vi.fn(jsonFetcher(networkManifest));
+
+    const result = await mod.fetchIconLibraryManifest(catalog.libraries[0], fetcher as unknown as typeof fetch);
+
+    expect(result).toEqual(networkManifest);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(local.getItem).toHaveReturnedWith(null);
+    expect(session.getItem).toHaveReturnedWith(null);
+  });
+
+  test("首个 storage 里是坏 JSON 时同样回退到下一个 storage，且不触发 removeItem 清理", async () => {
+    const broken = makeStorage({ [MANIFEST_CACHE_KEY]: "{这不是 JSON" });
+    const backup = makeStorage({ [MANIFEST_CACHE_KEY]: JSON.stringify(manifest) });
+    installStorages(broken, backup);
+    const mod = await import("./iconLibraryCatalog");
+    const fetcher = vi.fn(jsonFetcher({ name: "network", root: "/icon-library/network", categories: [] }));
+
+    const result = await mod.fetchIconLibraryManifest(catalog.libraries[0], fetcher as unknown as typeof fetch);
+
+    expect(result).toEqual(manifest);
+    expect(fetcher).not.toHaveBeenCalled();
+    // removeItem 只在「JSON 解析成功但结构不可用」时调用；解析失败走的是 catch，
+    // 不清理。这条把两个分支钉开，别混成一条。
+    expect(broken.removeItem).not.toHaveBeenCalled();
+  });
+
+  test("没有 window 时 storage 层完全空转，直接回源", async () => {
+    delete (globalThis as { window?: unknown }).window;
+    const mod = await import("./iconLibraryCatalog");
+    const fetcher = vi.fn(jsonFetcher(catalog));
+
+    const result = await mod.fetchIconLibraryCatalog(fetcher as unknown as typeof fetch);
+
+    expect(result).toEqual(catalog);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// encodeIconFilePath：文件名的逐段编码
+// ---------------------------------------------------------------------------
+//
+// encodeIconFilePath 没有导出，只能经 iconLibraryIconUrl 观察；后者只是把它拼在
+// 归一化过的 root 后面，所以下面对编码的断言同时也是对拼接的断言。
+
+describe("图标文件名的逐段编码", () => {
+  test("文件名里的 # 与 ? 被编码，不会变成 URL 的 fragment 与 query", () => {
+    expect(iconLibraryIconUrl("/icon-library/lib", "cat/a#b.svg")).toBe("/icon-library/lib/cat/a%23b.svg");
+    expect(iconLibraryIconUrl("/icon-library/lib", "cat/a?b.svg")).toBe("/icon-library/lib/cat/a%3Fb.svg");
+  });
+
+  test("文件名里的 % 被再次编码成 %25，不把已有转义序列当原文透传", () => {
+    expect(iconLibraryIconUrl("/icon-library/lib", "cat/100%.svg")).toBe("/icon-library/lib/cat/100%25.svg");
+    // 若改成「先 decode 再 encode」这条会变成 a%2520b... 不含 %20，形态完全不同
+    expect(iconLibraryIconUrl("/icon-library/lib", "cat/a b%20c.svg")).toBe("/icon-library/lib/cat/a%20b%2520c.svg");
+  });
+
+  test("中文与空格按 UTF-8 百分号编码，逐段解码后能还原原文件名", () => {
+    const file = "气象/晴 天 #1.svg";
+    const url = iconLibraryIconUrl("/icon-library/lib", file);
+    const encoded = url.slice("/icon-library/lib/".length);
+
+    expect(encoded).toBe("%E6%B0%94%E8%B1%A1/%E6%99%B4%20%E5%A4%A9%20%231.svg");
+    expect(encoded.split("/").map(decodeURIComponent).join("/")).toBe(file);
+  });
+
+  test("路径段里的点段原样保留：编码层既不归一化也不做穿越防护", () => {
+    // 记录现状而非认可。encodeURIComponent 不解析也不折叠 `.`/`..`，所以来自
+    // catalog.json 的 file 字段可以把拼接结果指到图标库根目录之外 —— 本仓的
+    // catalog.json 是后端产出的静态文件，所以现在不算漏洞；但这条测试的用途是
+    // 把「这一层没有任何防护」钉在案上，将来若允许外部来源的 catalog，
+    // 应当在这里加上折叠或拒绝，而不是靠调用方自觉。
+    expect(iconLibraryIconUrl("/icon-library/lib", "../../etc/passwd")).toBe("/icon-library/lib/../../etc/passwd");
+    // 已经转义过的 ../ 会被再转义一层，反而逃不出当前段
+    expect(iconLibraryIconUrl("/icon-library/lib", "cat/..%2F..%2Fsecret.svg"))
+      .toBe("/icon-library/lib/cat/..%252F..%252Fsecret.svg");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fetchIconLibraryManifest 的内存复用：并发去重 / 失败不缓存 / 成功缓存
+// ---------------------------------------------------------------------------
+
+describe("fetchIconLibraryManifest 的内存复用", () => {
+  const networkManifest: IconLibraryManifest = {
+    name: "docer-free-compatible",
+    label: "稻壳兼容",
+    root: "/icon-library/docer-free-compatible",
+    categories: [{ id: "weather", label: "气象", icons: [{ id: "sun", name: "晴", file: "weather/sun.svg" }] }]
+  };
+
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+    // 这里用了 vi.spyOn(globalThis, "fetch")，必须还原，否则同 worker 里
+    // 后续文件会拿到这个替身。
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  test("同一库并发两次只发一次请求，两次拿到同一份结果；且走的是默认 fetcher", async () => {
+    installStorages(makeStorage(), makeStorage());
+    const mod = await import("./iconLibraryCatalog");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify(networkManifest), { status: 200, headers: { "content-type": "application/json" } })
+    );
+
+    const [left, right] = await Promise.all([
+      mod.fetchIconLibraryManifest(catalog.libraries[0]),
+      mod.fetchIconLibraryManifest(catalog.libraries[0])
+    ]);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(left).toEqual(networkManifest);
+    expect(left).toBe(right);
+    expect(String(fetchSpy.mock.calls[0][0])).toContain("/manifest.json");
+  });
+
+  test("首次 fetch 失败后不缓存失败结果：第二次调用会重新发请求", async () => {
+    installStorages(makeStorage(), makeStorage());
+    const mod = await import("./iconLibraryCatalog");
+    const failing: typeof fetch = async () =>
+      new Response("boom", { status: 500, headers: { "content-type": "text/plain" } });
+    const succeeding = vi.fn(jsonFetcher(networkManifest));
+
+    const firstMessage = await errorMessageFrom(() => mod.fetchIconLibraryManifest(catalog.libraries[0], failing));
+    expect(firstMessage).toContain("读取“稻壳兼容”图标清单失败。");
+
+    const result = await mod.fetchIconLibraryManifest(catalog.libraries[0], succeeding as unknown as typeof fetch);
+
+    expect(succeeding).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(networkManifest);
+  });
+
+  test("成功后第二次调用不再发请求，且返回同一个对象引用", async () => {
+    installStorages(makeStorage(), makeStorage());
+    const mod = await import("./iconLibraryCatalog");
+    const fetcher = vi.fn(jsonFetcher(networkManifest));
+
+    const first = await mod.fetchIconLibraryManifest(catalog.libraries[0], fetcher as unknown as typeof fetch);
+    const second = await mod.fetchIconLibraryManifest(catalog.libraries[0], fetcher as unknown as typeof fetch);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
+  });
+});

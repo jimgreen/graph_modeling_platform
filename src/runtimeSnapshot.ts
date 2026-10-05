@@ -453,7 +453,14 @@ export function serializeEFile(
     const hasTemplateParam = params != null && ("templateData" in params || "templateText" in params);
     let templateText = typeof params?.templateText === "string" ? params.templateText : "";
     if (!templateText && typeof params?.templateData === "string" && params.templateData) {
-      const binary = atob(params.templateData);
+      // templateData 是客户端传的 base64：解不出字节属于坏数据（bad-request），
+      // 不是服务端故障；不接住的话会冒到外层 wrap 被统一吞成 internal（HTTP 500）。
+      let binary = "";
+      try {
+        binary = atob(params.templateData);
+      } catch {
+        return errBadRequest("templateData 不是合法的 base64。");
+      }
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i += 1) {
         bytes[i] = binary.charCodeAt(i);

@@ -28,9 +28,16 @@ const DEFAULT_INTERVAL_MS = 30_000;
 
 /** 读取当前 JS 堆已用字节；仅 Chrome 系提供 performance.memory，其余环境返回 null（守望静默空转）。 */
 export function readJsHeapUsedBytes(): number | null {
-  const memory = (performance as unknown as { memory?: { usedJSHeapSize?: number } })?.memory;
-  const used = memory?.usedJSHeapSize;
-  return typeof used === "number" && Number.isFinite(used) && used > 0 ? used : null;
+  // 必须经 globalThis 取，**不能写裸标识符 `performance`**：
+  // 该全局并非语言内建，缺失时（node 老版本、worker 沙箱、被人为 delete）裸标识符求值会抛
+  // ReferenceError: performance is not defined —— 而本函数契约是「取不到就返回 null」。
+  // 浏览器里 globalThis.performance === performance === window.performance，正常返回路径逐字不变。
+  const perf = (globalThis as { performance?: { memory?: { usedJSHeapSize?: unknown } } }).performance;
+  const used = perf?.memory?.usedJSHeapSize;
+  // 用 `>= 0` 而非 `> 0`：0 是合法读数（刚启动、空页），`used || null` / `> 0` 会把它当假值
+  // 吞成 null，从而把「堆恰好为空」与「读不到堆」两种状态混为一谈；
+  // 负数（物理上不可能的读数）仍按「读不到」处理。
+  return typeof used === "number" && Number.isFinite(used) && used >= 0 ? used : null;
 }
 
 export type MemoryWatchOptions = {

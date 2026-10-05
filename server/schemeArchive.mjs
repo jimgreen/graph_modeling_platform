@@ -40,7 +40,14 @@ export async function listModelJsonFiles(rootDir) {
  * 任一模型生成失败即抛出，不产出残缺压缩包。
  */
 export async function buildSchemeArchiveBuffer({ schemeDir, schemeName, renderArtifacts }) {
-  const schemeStat = await stat(schemeDir).catch(() => null);
+  // 只把「路径不存在」降级成「方案目录不存在」：EACCES / EPERM / EBUSY 等 IO 失败一律上抛
+  // （与 listModelJsonFiles 的目录读、以及空间 ZIP 侧 listSpaceFiles 同一口径）。
+  // 全吞的代价是把「读不到」说成「不存在」——权限被改或文件被占用时，用户收到的是
+  // 「方案目录不存在。」这句友好提示，真实原因（权限 / 占用）被整个丢掉，导出静默失败。
+  const schemeStat = await stat(schemeDir).catch((error) => {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  });
   if (!schemeStat || !schemeStat.isDirectory()) {
     throw new Error("方案目录不存在。");
   }

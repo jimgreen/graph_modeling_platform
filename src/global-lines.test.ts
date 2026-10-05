@@ -1,6 +1,9 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { createDefaultNode } from "./model";
+import { useGlobalLines } from "./hooks/useGlobalLines";
 import {
   GLOBAL_LINE_ID_PARAM,
   GLOBAL_LINE_MODEL_PAIR_PARAM,
@@ -779,5 +782,331 @@ describe("globalLineKindForEnergy", () => {
   test("能量类型映射回可路由线路 kind", () => {
     expect(globalLineKindForEnergy("ac")).toBe("ac-routable-line");
     expect(globalLineKindForEnergy("dc")).toBe("dc-routable-line");
+  });
+});
+
+// ─── useGlobalLines 的 SSR 行为探针 ───
+//
+// 此前本文件对 useGlobalLines 只有两处 readFileSync + toContain 的**源码文本**断言
+// （见上面「全局线路数据同步」的两条）。文本断言能钉住「没有调某个会写表的接口」，
+// 但对**返回值**零覆盖：派生记录的数量、id、idx、出度、首末端的 modelKey 全部只被 e2e
+// 顺带观察到，改坏了不会有任何一条单测转红。
+//
+// 本组用 renderToStaticMarkup 驱动一个探针组件把 hook 的派生值渲染成 HTML 再断言。
+// 选它而不是手写 hook harness 的理由：useGlobalLines 是纯 hook（无模块级状态），
+// 而 renderToStaticMarkup 在 node 环境下就能跑完 useState / useMemo / useRef / Object.assign
+// 这一整条**渲染期**求值链，且 **useEffect 不执行** —— 于是「派生值不依赖 fetch」这条契约
+// 直接成为探针的前提，不需要先把 fetch 桩好才拿得到值。
+// 前例：src/acContainerModel.test.ts（同一 .ts 文件内用 createElement，非 .tsx）。
+
+// globalThis 上本组唯一会碰的键是 fetch（只在 loadRecords 这条异步路径上）。
+// 逐键快照 / 还原，理由与做法照 commit 0007e864：vi.unstubAllGlobals 只认得本文件
+// 通过 vi.stubGlobal 登记过的键，直接 delete 的键它还原不回来，会漏给后跑的文件。
+const GLOBAL_KEYS = ["fetch"] as const;
+type GlobalKey = (typeof GLOBAL_KEYS)[number];
+function snapshotGlobalKeys(): Array<[GlobalKey, unknown]> {
+  const target = globalThis as unknown as Record<string, unknown>;
+  return GLOBAL_KEYS.map((key) => [key, target[key]]);
+}
+function restoreGlobalKeys(snapshot: Array<[GlobalKey, unknown]>): void {
+  const target = globalThis as unknown as Record<string, unknown>;
+  for (const [key, value] of snapshot) {
+    if (value === undefined) delete target[key];
+    else target[key] = value;
+  }
+}
+const globalKeysBaseline = snapshotGlobalKeys();
+
+function stubFetch(handler: (url: string) => unknown) {
+  (globalThis as unknown as Record<string, unknown>).fetch = (url: string) =>
+    Promise.resolve(handler(String(url)));
+}
+
+/** 一个模型关联电源（跨模型边界设备），model_id 决定它归属哪个模型。 */
+function boundaryStation(modelId: string, name = "厂站电源") {
+  const node = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+  node.params.model_id = modelId;
+  node.name = name;
+  return node;
+}
+
+/** useGlobalLines 需要的最小 scope 形态（App.tsx 里 __appScope 的一个切片）。 */
+function globalLineScope(overrides: Record<string, any> = {}): Record<string, any> {
+  return {
+    projectIdx: 7,
+    projectName: "本地馈线",
+    modelType: "厂站",
+    savedSchemePathForId: () => ["主方案"],
+    ...overrides
+  };
+}
+
+/** 已挂上全局身份、按走向指向 model_id 模型的页面草稿线路。 */
+function draftGlobalLine(sourceId: string, targetId: string, name = "跨厂站线路") {
+  const line = connectLine("ac-routable-line", sourceId, targetId);
+  line.name = name;
+  line.params = {
+    ...line.params,
+    [GLOBAL_LINE_ID_PARAM]: "global-line-1",
+    [GLOBAL_LINE_MODEL_PAIR_PARAM]: "1",
+    idx: "8"
+  };
+  return line;
+}
+
+type GlobalLinesProbeProps = { scope: Record<string, any> };
+
+/**
+ * 把 hook 的派生记录渲染成 <li>，属性即断言面。
+ * 用 createElement 而非 JSX —— 本文件是 .ts。
+ */
+function GlobalLinesProbe({ scope }: GlobalLinesProbeProps) {
+  const derived = useGlobalLines(scope);
+  return createElement(
+    "ul",
+    { "data-record-count": String(derived.records.length) },
+    ...derived.records.map((record) => createElement("li", {
+      key: record.id,
+      "data-global-line-id": record.id,
+      "data-idx": String(record.idx),
+      "data-name": record.name,
+      "data-energy-type": record.energyType,
+      "data-degree": String(record.degree),
+      "data-source-model": record.endpointSlots?.source?.modelKey ?? "",
+      "data-target-model": record.endpointSlots?.target?.modelKey ?? ""
+    }))
+  );
+}
+
+function renderGlobalLines(scope: Record<string, any>) {
+  return renderToStaticMarkup(createElement(GlobalLinesProbe, { scope }));
+}
+
+function lineElements(html: string) {
+  return html.match(/<li /g)?.length ?? 0;
+}
+
+describe("useGlobalLines SSR 派生值", () => {
+  afterEach(() => {
+    restoreGlobalKeys(globalKeysBaseline);
+  });
+
+  test("页面草稿线路派生出一条记录，首末端分别指向 model_id 模型与本图", () => {
+    const station = boundaryStation("22");
+    const load = createDefaultNode("ac-load", { x: 500, y: 0 });
+    const line = draftGlobalLine(station.id, load.id, "厂站一号线");
+    const scope = globalLineScope({ nodes: [station, load, line] });
+
+    const html = renderGlobalLines(scope);
+
+    expect(lineElements(html)).toBe(1);
+    expect(html).toContain('data-record-count="1"');
+    expect(html).toContain('data-global-line-id="global-line-1"');
+    expect(html).toContain('data-idx="8"');
+    expect(html).toContain('data-energy-type="ac"');
+    // 走向两端各占一个引用 ⇒ 出度 2，且两端 modelKey 不同（这正是「跨模型」的判据）
+    expect(html).toContain('data-degree="2"');
+    expect(html).toContain('data-source-model="model:22"');
+    expect(html).toContain('data-target-model="model:7"');
+    expect(html).toContain("厂站一号线");
+  });
+
+  test("没有跨边界线路时渲染出零条记录，且模型类型不在管辖范围时同样为零", () => {
+    const station = boundaryStation("22");
+    const load = createDefaultNode("ac-load", { x: 500, y: 0 });
+
+    // 图里只有边界电源与一个本地负荷，没有任何跨边界线路
+    const empty = renderGlobalLines(globalLineScope({ nodes: [station, load] }));
+    expect(lineElements(empty)).toBe(0);
+    expect(empty).toContain('data-record-count="0"');
+
+    // 反向：线路确实跨边界，但当前模型类型不归全局线路管辖 ⇒ 派生记录仍为空
+    const unmanaged = renderGlobalLines(globalLineScope({
+      modelType: "配电",
+      nodes: [station, load, draftGlobalLine(station.id, load.id)]
+    }));
+    expect(lineElements(unmanaged)).toBe(0);
+    expect(unmanaged).toContain('data-record-count="0"');
+  });
+
+  // 下面两条钉的是 hook 里 modelReferenceFromScope 的那两处 as any：
+  //   nodeById.get(sourceNodeId) ?? { kind: "" as any, params: {} }
+  //   nodeById.get(targetNodeId) ?? { kind: "" as any, params: {} }
+  // 它们**不是**全局挂载、也不是取 DOM —— as any 只是给内联哨兵节点（kind 为空串）
+  // 绕过 Pick<ModelNode, "kind" | "params"> 的类型检查。运行时的真实语义只有一个：
+  // 端点 id 在图里查不到时，用哨兵节点去问 isGlobalLineBoundaryNode，得到 false（空串 kind
+  // 在 modelAssociationModelTypeForKind 的查表里必然落空），于是 boundaryEndpoint 判否。
+  // 暴露面选 globalLineBoundaryAdjustmentConflictMessage —— 它内部对原始/调整后两个节点
+  // 各调一次 modelReferenceFromScope，是这条链上唯一能从 scope 上取到的入口
+  // （requestExistingNodeGlobalLinePlacement 虽然在 hook 里定义了，但没被 Object.assign
+  // 到 scope、也没进返回值，是死代码，从外部调不到）。
+
+  /**
+   * 只造参数、不入图 —— modelReferenceFromScope 只读传入节点的 params，
+   * nodeById 则从 scope.nodes 里取，所以「引用形状」与「派生记录的 degree」可以分开调。
+   */
+  function referenceOf(base: ReturnType<typeof createDefaultNode>, sourceId: string, targetId: string, targetTerminal = "") {
+    return {
+      ...base,
+      params: {
+        ...base.params,
+        [GLOBAL_LINE_ID_PARAM]: "global-line-1",
+        _routableLineSourceNodeId: sourceId,
+        _routableLineTargetNodeId: targetId,
+        _routableLineTargetTerminalId: targetTerminal
+      }
+    };
+  }
+
+  test("哨兵节点判否而不抛错：首端 id 悬空时求值回落到末端，边界端不变故不报冲突", () => {
+    const station = boundaryStation("22");
+    const stationB = boundaryStation("33", "另一厂站电源");
+    const load = createDefaultNode("ac-load", { x: 500, y: 0 });
+    // 图里的线路只有一侧边界（草稿形态），派生记录 degree 才是 2 —— 冲突判据要求 degree >= 2
+    const line = draftGlobalLine(station.id, load.id);
+    const scope = globalLineScope({ nodes: [station, stationB, load, line] });
+    renderGlobalLines(scope);
+    expect(scope.globalLineRecords[0]).toMatchObject({ id: "global-line-1", degree: 2 });
+
+    // 原始态：首端是本地负荷（判否）⇒ 边界端 = target，boundaryNodeId = stationB，端子 = t1
+    const current = referenceOf(line, load.id, stationB.id, "t1");
+    expect(scope.globalLineBoundaryAdjustmentConflictMessage(current, current)).toBe("");
+
+    // 调整后：首端 id 悬空 ⇒ nodeById.get 返回 undefined ⇒ 落到哨兵节点 ⇒ 判否
+    // ⇒ 求值继续走末端分支，拿到的仍是 target/stationB/t1，与原始态完全一致 ⇒ 不报冲突。
+    // 这条承重：哨兵若被误判成边界端，端点会变成 source、boundaryNodeId 变 missing-station，
+    // 本条立刻转红。
+    const danglingSource = referenceOf(line, "missing-station", stationB.id, "t1");
+    expect(scope.globalLineBoundaryAdjustmentConflictMessage(current, danglingSource)).toBe("");
+
+    // 对照组：首端换成**真实存在**的边界电源 ⇒ 端点与端点 id 都变了 ⇒ 必须报冲突。
+    // 没有它，上面的空串可能只是「判据压根没触发」的恒真。
+    const realBoundarySource = referenceOf(line, station.id, stationB.id, "t1");
+    expect(scope.globalLineBoundaryAdjustmentConflictMessage(current, realBoundarySource))
+      .toContain("先删除另一端");
+  });
+
+  test("两端 id 都悬空时两处哨兵都判否，boundaryEndpoint 退化为 undefined", () => {
+    const station = boundaryStation("22");
+    const stationB = boundaryStation("33", "另一厂站电源");
+    const load = createDefaultNode("ac-load", { x: 500, y: 0 });
+    const line = draftGlobalLine(station.id, load.id);
+    const scope = globalLineScope({ nodes: [station, stationB, load, line] });
+    renderGlobalLines(scope);
+
+    const current = referenceOf(line, load.id, stationB.id, "t1");
+
+    // 两端都悬空 ⇒ 首端哨兵判否、末端哨兵也判否 ⇒ boundaryEndpoint 为 undefined，
+    // 冲突判据在 !nextReference?.boundaryEndpoint 处早退，返回空串。
+    const bothMissing = referenceOf(line, "missing-source", "missing-target");
+    expect(scope.globalLineBoundaryAdjustmentConflictMessage(current, bothMissing)).toBe("");
+
+    // 双侧断言的另一半：末端悬空但首端是**真实**边界设备 ⇒ 仍能拿到 source 边界端 ⇒ 报冲突。
+    // 期望值与上面那条不同（冲突文案 vs 空串），两条合起来才排除了「哨兵恒判否 ⇒ 一律空串」
+    // 与「冲突判据根本没跑」这两种让本组恒绿的可能。
+    const sourceOnly = referenceOf(line, station.id, "missing-target");
+    expect(scope.globalLineBoundaryAdjustmentConflictMessage(current, sourceOnly))
+      .toContain("先删除另一端");
+  });
+
+  test("同一个 scope 上数据变化后重新渲染，派生记录跟着变而非静态快照", () => {
+    const station = boundaryStation("22");
+    const load = createDefaultNode("ac-load", { x: 500, y: 0 });
+    const line = draftGlobalLine(station.id, load.id, "厂站一号线");
+    const scope = globalLineScope({ nodes: [station, load, line] });
+
+    const before = renderGlobalLines(scope);
+    expect(lineElements(before)).toBe(1);
+    expect(before).toContain('data-name="厂站一号线"');
+
+    // 就地改同一个 scope 的 nodes（不改 scope 引用），派生值必须重新求值
+    const dcStation = createDefaultNode("dc-district-load", { x: 800, y: 0 });
+    dcStation.params.model_id = "44";
+    const secondLine = connectLine("dc-routable-line", station.id, dcStation.id);
+    secondLine.name = "直流支线";
+    secondLine.params = {
+      ...secondLine.params,
+      [GLOBAL_LINE_ID_PARAM]: "global-line-2",
+      [GLOBAL_LINE_MODEL_PAIR_PARAM]: "1",
+      idx: "9"
+    };
+    scope.nodes = [station, load, line, dcStation, secondLine];
+
+    const after = renderGlobalLines(scope);
+    expect(lineElements(after)).toBe(2);
+    expect(after).toContain('data-record-count="2"');
+    expect(after).toContain('data-global-line-id="global-line-2"');
+    expect(after).toContain('data-name="直流支线"');
+    expect(after).toContain('data-energy-type="dc"');
+    // 旧记录仍在（派生是叠加而非替换）
+    expect(after).toContain('data-global-line-id="global-line-1"');
+
+    // 撤掉线路节点后重新渲染归零 —— 证明前一次的两条来自这批数据，不是模块级快照
+    scope.nodes = [station, load, dcStation];
+    expect(lineElements(renderGlobalLines(scope))).toBe(0);
+  });
+
+  test("SSR 渲染期不读全局 fetch：删掉 fetch 后渲染照常成功并给出派生值", () => {
+    const station = boundaryStation("22");
+    const load = createDefaultNode("ac-load", { x: 500, y: 0 });
+    const line = draftGlobalLine(station.id, load.id);
+    const scope = globalLineScope({ nodes: [station, load, line] });
+
+    // fetch 缺失时，渲染期依旧不抛错、派生值依旧拿得到（渲染期不发请求）。
+    // 这条同时钉住「派生链上没有 globalThis.fetch 依赖」—— 它若被挪到渲染期求值，
+    // 下面这一行就会 ReferenceError。
+    const target = globalThis as unknown as Record<string, unknown>;
+    delete target.fetch;
+    expect(target.fetch).toBeUndefined();
+    const html = renderGlobalLines(scope);
+    expect(lineElements(html)).toBe(1);
+    expect(html).toContain('data-global-line-id="global-line-1"');
+    // Object.assign 挂到 scope 上的派生值同样可用
+    expect(scope.globalLineRecords).toHaveLength(1);
+    expect(scope.globalLineRecords[0]).toMatchObject({ id: "global-line-1", degree: 2 });
+    expect(scope.globalLinePlacementDialog).toBeNull();
+    expect(scope.globalLineTransitionDialog).toBeNull();
+  });
+
+  test("fetch 缺失时显式加载按现状抛出，不被静默吞掉", async () => {
+    const station = boundaryStation("22");
+    const load = createDefaultNode("ac-load", { x: 500, y: 0 });
+    const line = draftGlobalLine(station.id, load.id);
+    const scope = globalLineScope({ nodes: [station, load, line] });
+    renderGlobalLines(scope);
+
+    const target = globalThis as unknown as Record<string, unknown>;
+    delete target.fetch;
+    // loadRecords 里的 fetch 是自由变量，缺失时抛 ReferenceError；
+    // loadGlobalLineRecords 自己不 catch，错误冒到调用方。
+    // 钉的是现状：hook 渲染期不碰它，只有显式调用加载入口才会踩到。
+    await expect(scope.loadGlobalLineRecords()).rejects.toThrow(ReferenceError);
+  });
+
+  test("fetch 返回的持久化记录不进 SSR 派生值（useEffect 在 SSR 下不执行）", async () => {
+    const seen: string[] = [];
+    stubFetch((url) => {
+      seen.push(url);
+      return { ok: true, json: () => Promise.resolve({ ok: true, records: [record()] }) };
+    });
+    const station = boundaryStation("22");
+    const load = createDefaultNode("ac-load", { x: 500, y: 0 });
+    const line = draftGlobalLine(station.id, load.id);
+    const scope = globalLineScope({ nodes: [station, load, line] });
+
+    const html = renderGlobalLines(scope);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // 渲染 + 一个宏任务之后，fetch 一次都没被调过
+    expect(seen).toEqual([]);
+    expect(lineElements(html)).toBe(1);
+
+    // 显式调用加载入口才会发请求，且带上 API 前缀
+    stubFetch((url) => {
+      seen.push(url);
+      return { ok: true, json: () => Promise.resolve({ ok: true, records: [] }) };
+    });
+    await scope.loadGlobalLineRecords();
+    expect(seen).toEqual(["/webgrp/global-lines"]);
   });
 });

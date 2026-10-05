@@ -110,12 +110,16 @@
     <script>
       // 后端未起是最常见的「卡住」原因，遮罩自己提示，别让人对着空白页猜。
       setTimeout(function () {
+        // 应用启动完会把 #app-boot 整块移除；此时取到 null 再 appendChild 就是
+        // 一次稳定复现的 TypeError（控制台每次加载 15s 后必红）。找不到就直接收工。
+        var boot = document.getElementById("app-boot");
+        if (!boot) return;
         var hint = document.querySelector("#app-boot .boot-hint");
         if (!hint) {
           hint = document.createElement("div");
           hint.className = "boot-hint";
           hint.textContent = "加载耗时较长，请确认后端服务（5174 端口）已启动。";
-          document.getElementById("app-boot").appendChild(hint);
+          boot.appendChild(hint);
         }
       }, 15000);
     </script>

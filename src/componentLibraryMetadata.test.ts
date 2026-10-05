@@ -403,3 +403,371 @@ describe("端子类型补齐：数组比端子数短时用分类兜底类型", (
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 以下两组覆盖内部归一函数的零覆盖分支。normalizeFlag / normalizeTerminalCount
+// 都不是 export（L31 / L37），唯一观察口是 resolveComponentLibraryClassMetadata：
+//   normalizeFlag        ← definition.isDerivedComponentLibrary（→ isDerivedComponentLibrary）
+//                           与 definition.isContainerComponentLibrary（→ isContainer）
+//   normalizeTerminalCount ← definition.terminalCount（→ terminalCount）
+// 三个字段在返回对象里都是**未经二次加工的归一结果**（L177 / L179 / L184），
+// 故断言它们即为直接断言归一函数。
+//
+// ⚠️ 观察口径的两个坑，写在这里免得后人重新踩：
+//   ① 只有当 definition 上该字段 !== undefined 时才走 normalizeFlag（见 L118 / L167）。
+//      字段缺省会绕开它落到 Boolean(derivedInfo) / Boolean(template.isContainer)，
+//      那条路上同样的输入可能得到同样的结果却根本没调用被测函数 —— 所以下面
+//      「undefined」一条用模板 isContainer 制造出与 normalizeFlag 相反的期望值，
+//      才能证明走的是哪条分支。
+//   ② isDerivedComponentLibrary 一旦为 true，元数据会去继承基类的 terminalCount /
+//      isContainer（L128-140），normalizeTerminalCount 就被 inheritedMetadata?.terminalCount
+//      短路掉了。所以端子数一组全部用 isDerivedComponentLibrary: false 的非派生类观察。
+// ---------------------------------------------------------------------------
+
+describe("布尔标记归一 normalizeFlag", () => {
+  // isContainerComponentLibrary 走 L167-169 这条最短的观察口：非派生类时
+  // isContainer = normalizeFlag(字段)，没有继承、没有二次加工。
+  const containerFlag = (raw: unknown) => resolveComponentLibraryClassMetadata(
+    "FlagProbe",
+    "用户设备",
+    [{
+      name: "FlagProbe",
+      categoryLibraryName: "用户设备",
+      isDerivedComponentLibrary: false,
+      isContainerComponentLibrary: raw
+    }] as any,
+    []
+  )!.isContainer;
+
+  test("四个真值串与布尔 true 都归一为 true", () => {
+    // 判据是 L34 的四元 or：trim + toLowerCase 后等于 1 / true / yes / 是
+    for (const raw of ["1", "true", "yes", "是"]) {
+      expect(containerFlag(raw), JSON.stringify(raw)).toBe(true);
+    }
+    // typeof === boolean 在 L32 就早退了，不经字符串判据 —— 但结果同为 true
+    expect(containerFlag(true)).toBe(true);
+    // 数字 1 也为真：String(1) === "1" 命中同一判据（说明这不是布尔专用分支）
+    expect(containerFlag(1)).toBe(true);
+  });
+
+  test("四个假值串、空串与 null 都归一为 false", () => {
+    // 假值是「不命中四元 or」的默认结果，不是另一条显式判据 —— 实现里没有假值白名单
+    for (const raw of ["0", "false", "no", "否"]) {
+      expect(containerFlag(raw), JSON.stringify(raw)).toBe(false);
+    }
+    // 空串：String("" ?? "") === "" → trim 后 "" → 不命中 → false
+    expect(containerFlag("")).toBe(false);
+    // null：String(null ?? "") === "" → 同上。注意 Number(null) 是 0 那种坑不在此函数
+    expect(containerFlag(null)).toBe(false);
+  });
+
+  test("undefined 不经 normalizeFlag，落到模板的 isContainer 分支", () => {
+    // L167 的判据是 `!== undefined`，所以字段为 undefined 时 normalizeFlag 压根不被调用，
+    // 而是走 Boolean(template?.isContainer)。这里给模板 isContainer: true：
+    // 若真的调了 normalizeFlag(undefined)，结果会是 false；得到 true 即证明走了模板分支。
+    // 这条同时钉住「undefined 不是真值」这个容易被误读的点。
+    const metadata = resolveComponentLibraryClassMetadata(
+      "FlagProbe",
+      "用户设备",
+      [{ name: "FlagProbe", categoryLibraryName: "用户设备", isDerivedComponentLibrary: false }] as any,
+      [{ kind: "custom-probe", label: "探针模板", componentClass: "FlagProbe", categoryLibrary: "用户设备", isContainer: true }] as any
+    )!;
+    expect(metadata.isContainer).toBe(true);
+
+    // 反证：同一个模板，去掉 isContainer 后就是 false；证明上一条不是因为别的原因为真
+    const withoutFlag = resolveComponentLibraryClassMetadata(
+      "FlagProbe",
+      "用户设备",
+      [{ name: "FlagProbe", categoryLibraryName: "用户设备", isDerivedComponentLibrary: false }] as any,
+      [{ kind: "custom-probe", label: "探针模板", componentClass: "FlagProbe", categoryLibrary: "用户设备" }] as any
+    )!;
+    expect(withoutFlag.isContainer).toBe(false);
+  });
+
+  test("已定义但为假的标记仍走 normalizeFlag，不被模板的 isContainer 顶掉", () => {
+    // ⚠️ 这条是 L167 那个 `!== undefined` 守卫的**唯一**有牙齿的断言。
+    // 判据取 `!== undefined` 而非 truthiness，正是为了区分这三类值：
+    //   字段缺省 / undefined → 不调用 normalizeFlag，落到 Boolean(template.isContainer)
+    //   字段已定义但为假（"" / null / false）→ **调用** normalizeFlag ⇒ 恒为 false
+    // 只断言「结果为 false」看不出来，因为模板 isContainer 为 true 时两条路都是……不对，
+    // 恰恰相反：模板 isContainer: true 时，若守卫被改成 truthiness 判断，
+    // "" / null / false 会绕开 normalizeFlag 而得到 **true**，与下面的断言相反。
+    // 所以模板必须给 isContainer: true —— 那样这条断言才有判别力。
+    const containerFlagWithTemplate = (raw: unknown) => resolveComponentLibraryClassMetadata(
+      "FlagProbe",
+      "用户设备",
+      [{
+        name: "FlagProbe",
+        categoryLibraryName: "用户设备",
+        isDerivedComponentLibrary: false,
+        isContainerComponentLibrary: raw
+      }] as any,
+      [{ kind: "custom-probe", label: "探针模板", componentClass: "FlagProbe", categoryLibrary: "用户设备", isContainer: true }] as any
+    )!.isContainer;
+
+    // 已定义但为假 ⇒ 走 normalizeFlag ⇒ false（而不是模板的 true）
+    for (const raw of ["", null, false, "0", "false", "no", "否"]) {
+      expect(containerFlagWithTemplate(raw), JSON.stringify(raw)).toBe(false);
+    }
+    // 对照：已定义且为真 ⇒ 也是 normalizeFlag 的 true，与模板同值但来源不同
+    for (const raw of ["1", "true", "yes", "是", true]) {
+      expect(containerFlagWithTemplate(raw), JSON.stringify(raw)).toBe(true);
+    }
+    // 把守卫从 `!== undefined` 改成 truthiness，上面那个假值循环会整体变红。
+  });
+
+  test("歧义输入：空白与大小写被吸收，全角数字与全角 TRUE 未被处理", () => {
+    // trim + toLowerCase 两条都生效：
+    expect(containerFlag("  1  ")).toBe(true);
+    expect(containerFlag("True")).toBe(true);
+    expect(containerFlag("YES")).toBe(true);
+    // 换行/制表符同样被 String.trim 吸收
+    expect(containerFlag("\t是\n")).toBe(true);
+
+    // ⚠️ 未被处理的两类输入（当前真实行为 = false，如实记录）：
+    //  ① 全角字符。toLowerCase 不做 NFKC 全角折叠，故 "１" 与 "ＴＲＵＥ" 都不命中四元 or。
+    expect(containerFlag("１")).toBe(false);
+    expect(containerFlag("ＴＲＵＥ")).toBe(false);
+    //  ② 中文「真」。判据只认「是」，「真」是 false。
+    expect(containerFlag("真")).toBe(false);
+    //  若日后有人加全角折叠或改用 NFKC，上面三条会先红 —— 那是一次行为变更。
+  });
+
+  test("isDerivedComponentLibrary 走同一个 normalizeFlag", () => {
+    // 另一个调用点（L119）。这里必须带基类，否则 L126 会因基类名缺失返回 null。
+    const derivedMetadata = (flag: unknown) => resolveComponentLibraryClassMetadata(
+      "FlagDerived",
+      "用户设备",
+      [
+        { name: "FlagBase", categoryLibraryName: "用户设备", isDerivedComponentLibrary: false, terminalCount: 2 },
+        {
+          name: "FlagDerived",
+          categoryLibraryName: "用户设备",
+          isDerivedComponentLibrary: flag,
+          derivedFromComponentLibrary: "FlagBase",
+          terminalCount: 3
+        }
+      ] as any,
+      []
+    );
+
+    // ⚠️ 判别力来自 terminalCount 这个**翻转**：FlagDerived 自己声明 terminalCount: 3，
+    // 基类 FlagBase 是 2。同一个 fixture 下 flag 为真 ⇒ 继承基类的 2（L128-134）；
+    // flag 为假 ⇒ inheritedMetadata 为 null，L148 改用自己声明的 3。
+    // 只断言 isDerivedComponentLibrary 的话，它是被测值的直接回显，恒定不变也能过，
+    // 而 terminalCount 的翻转证明 normalizeFlag 的结果真的改变了下游走向。
+    // 顺带记录一个曾踩的坑：baseComponentLibrary 两种情况下都是 FlagBase ——
+    // 声明的基类名优先于 L124 的 className 兜底，故此处不能拿它当派生与否的判据。
+    for (const flag of ["1", "true", "yes", "是", true]) {
+      const metadata = derivedMetadata(flag)!;
+      expect(metadata.isDerivedComponentLibrary, JSON.stringify(flag)).toBe(true);
+      expect(metadata.terminalCount, JSON.stringify(flag)).toBe(2);
+    }
+    for (const flag of ["0", "false", "no", "否", "", null]) {
+      const metadata = derivedMetadata(flag)!;
+      expect(metadata.isDerivedComponentLibrary, JSON.stringify(flag)).toBe(false);
+      expect(metadata.terminalCount, JSON.stringify(flag)).toBe(3);
+    }
+  });
+
+  test("已定义但为假的 isDerivedComponentLibrary 仍走 normalizeFlag，不被 derivedInfo 顶掉", () => {
+    // ⚠️ 这是 L118 那个 `!== undefined` 守卫的**唯一**有牙齿的断言，理由与
+    // isContainerComponentLibrary 那条完全对称：守卫取 `!== undefined` 而非
+    // truthiness，才区分得开「字段缺省（→ Boolean(derivedInfo)）」与
+    // 「字段已定义为假（→ normalizeFlag，恒 false）」。
+    // 所以模板必须**能产出 derivedInfo**，否则两条路都是 false，断言恒绿。
+    const derivedFlagWithTemplate = (flag: unknown) => resolveComponentLibraryClassMetadata(
+      "DerivedFlagProbe",
+      "用户设备",
+      [{
+        name: "DerivedFlagProbe",
+        categoryLibraryName: "用户设备",
+        isDerivedComponentLibrary: flag,
+        derivedFromComponentLibrary: "FlagBase",
+        terminalCount: 3
+      }] as any,
+      [{
+        kind: "ac-hydro-source",
+        label: "能产出 derivedInfo 的模板",
+        componentClass: "DerivedFlagProbe",
+        categoryLibrary: "用户设备",
+        // model.ts L3240-3244：base 与 derived 都有值且不等 ⇒ derivedInfo 非空
+        params: { component_type: "DerivedFlagProbe" },
+        derivedFromComponentLibrary: "FlagBase",
+        derivedComponentLibrary: "DerivedFlagProbe"
+      }] as any
+    )!;
+
+    // 前置自检：确认这条 fixture 真的能产出 derivedInfo，否则下面的断言没有判别力。
+    // 把 flag 整个删掉（→ 守卫短路到 Boolean(derivedInfo)）应当得到 true。
+    const viaDerivedInfo = resolveComponentLibraryClassMetadata(
+      "DerivedFlagProbe",
+      "用户设备",
+      [{ name: "DerivedFlagProbe", categoryLibraryName: "用户设备", derivedFromComponentLibrary: "FlagBase", terminalCount: 3 }] as any,
+      [{
+        kind: "ac-hydro-source",
+        label: "能产出 derivedInfo 的模板",
+        componentClass: "DerivedFlagProbe",
+        categoryLibrary: "用户设备",
+        params: { component_type: "DerivedFlagProbe" },
+        derivedFromComponentLibrary: "FlagBase",
+        derivedComponentLibrary: "DerivedFlagProbe"
+      }] as any
+    )!;
+    expect(viaDerivedInfo.isDerivedComponentLibrary).toBe(true);
+
+    // 已定义但为假 ⇒ 走 normalizeFlag ⇒ false，而**不是** derivedInfo 的 true
+    for (const flag of ["", null, false, "0", "false", "no", "否"]) {
+      expect(derivedFlagWithTemplate(flag).isDerivedComponentLibrary, JSON.stringify(flag)).toBe(false);
+    }
+    // 守卫若被改成 truthiness，上面整个循环会变红（拿到 true）。
+  });
+});
+
+describe("端子数归一 normalizeTerminalCount", () => {
+  // 观察口：非派生类（isDerivedComponentLibrary: false）的 definition.terminalCount。
+  // 此时 L148 的 inheritedMetadata?.terminalCount 为 null，normalizeTerminalCount 必定被调用。
+  const countFor = (raw: unknown) => resolveComponentLibraryClassMetadata(
+    "CountProbe",
+    "用户设备",
+    [{
+      name: "CountProbe",
+      categoryLibraryName: "用户设备",
+      isDerivedComponentLibrary: false,
+      terminalCount: raw
+    }] as any,
+    []
+  )!.terminalCount;
+
+  test("合法数值与数字字符串按原值透传", () => {
+    expect(countFor(5)).toBe(5);
+    expect(countFor("3")).toBe(3);   // 前端存的是字符串，Number("3") 解析成功
+    expect(countFor(0)).toBe(0);
+    // 带空白的数字串同样被 Number 解析（注意此处走的是 Number 不是 normalizeName）
+    expect(countFor("  4  ")).toBe(4);
+  });
+
+  test("非有限值退回 fallback 2，包括 Infinity", () => {
+    // 判据是 Number.isFinite(Number(value))，所以 Infinity 也退回而非夹到上限
+    for (const raw of [Number.NaN, Infinity, -Infinity, "不是数字", undefined]) {
+      expect(countFor(raw), String(raw)).toBe(2);
+    }
+    // ⚠️ 对照组：null 与空串不是 NaN（Number 折成 0），故得到 0 个端子而非 fallback。
+    // 若有人给归一加显式判缺值，这条与上面的 NaN 组会同时变红。
+    expect(countFor(null)).toBe(0);
+    expect(countFor("")).toBe(0);
+  });
+
+  test("小数按 Math.round 四舍五入，不是截断", () => {
+    expect(countFor(3.7)).toBe(4);
+    expect(countFor(3.2)).toBe(3);
+    expect(countFor(3.5)).toBe(4);
+    // 负小数先四舍五入再被下限夹到 0（顺序是 round → clamp，不是 clamp → round）
+    expect(countFor(-0.4)).toBe(0);
+  });
+
+  test("负数被下限夹到 0，而不是退回 fallback", () => {
+    // Math.max(0, ...) 的下限是 0，与 NaN 路径的 fallback 2 是两回事
+    expect(countFor(-2)).toBe(0);
+    expect(countFor(-1)).toBe(0);
+    // 对照：非有限值才会拿到 2 —— 证明 -2 得到 0 不是因为走了 fallback
+    expect(countFor(Number.NaN)).toBe(2);
+  });
+
+  test("上限 clamp 生效：上界与上界 +1 同值，上界 -1 与上界 +1 异值", () => {
+    // ⚠️ 边界口径说明（与任务提示相反，故记录在此）：clamp 到上界的函数在
+    // 「恰好等于上界」与「上界 +1」处必然同值 —— 这正是 clamp 生效的证据，
+    // 不是缺陷。真正有判别力的是「上界 -1 vs 上界 +1」两侧不同。
+    expect(countFor(COMPONENT_LIBRARY_MAX_TERMINALS)).toBe(COMPONENT_LIBRARY_MAX_TERMINALS);
+    expect(countFor(COMPONENT_LIBRARY_MAX_TERMINALS + 1)).toBe(COMPONENT_LIBRARY_MAX_TERMINALS);
+    expect(countFor(99)).toBe(COMPONENT_LIBRARY_MAX_TERMINALS);
+    expect(countFor(1000)).toBe(COMPONENT_LIBRARY_MAX_TERMINALS);
+
+    // 有判别力的那对：夹住之前与之后不同
+    const below = countFor(COMPONENT_LIBRARY_MAX_TERMINALS - 1);
+    const above = countFor(COMPONENT_LIBRARY_MAX_TERMINALS + 1);
+    expect(below).not.toBe(above);
+    expect(below).toBe(COMPONENT_LIBRARY_MAX_TERMINALS - 1);
+
+    // 去掉 clamp（即恒等返回）会让本条转红：99 会变成 99 而非 8
+  });
+
+  test("超出上限的部分不建端子（clamp 在建数组之前生效）", () => {
+    const metadata = resolveComponentLibraryClassMetadata(
+      "CountProbe",
+      "用户设备",
+      [{
+        name: "CountProbe",
+        categoryLibraryName: "用户设备",
+        isDerivedComponentLibrary: false,
+        terminalCount: 9
+      }] as any,
+      []
+    )!;
+    expect(metadata.terminalCount).toBe(COMPONENT_LIBRARY_MAX_TERMINALS);
+    expect(metadata.terminalTypes).toHaveLength(COMPONENT_LIBRARY_MAX_TERMINALS);
+    expect(metadata.terminalLabels).toHaveLength(COMPONENT_LIBRARY_MAX_TERMINALS);
+    expect(metadata.terminalRoles).toHaveLength(COMPONENT_LIBRARY_MAX_TERMINALS);
+    expect(metadata.terminalAssociations).toHaveLength(COMPONENT_LIBRARY_MAX_TERMINALS);
+  });
+});
+
+describe("族解析排序：先按深度、同深度按 localeCompare", () => {
+  // ⚠️ localeCompare 的结果依赖运行环境的 ICU 数据（同一个数组在 full-icu 与
+  // small-icu 下顺序可以不同）。故此处**不断言任何具体先后**，
+  // 只断言「结果是一个按 depth 非降的数组」+「类名集合与输入一致」。
+  // 这样既覆盖到排序这一步，又不会因 CI 的 ICU 版本不同而偶发红。
+  const definitions = [
+    { name: "SortRoot", categoryLibraryName: "交流设备", label: "排序根", isDerivedComponentLibrary: false, terminalCount: 2 },
+    { name: "SortChildB", categoryLibraryName: "交流设备", label: "子B", isDerivedComponentLibrary: true, derivedFromComponentLibrary: "SortRoot" },
+    { name: "SortChildA", categoryLibraryName: "交流设备", label: "子A", isDerivedComponentLibrary: true, derivedFromComponentLibrary: "SortRoot" },
+    { name: "SortGrandChild", categoryLibraryName: "交流设备", label: "孙", isDerivedComponentLibrary: true, derivedFromComponentLibrary: "SortChildA" }
+  ] as any;
+
+  const depthOf = (className: string) =>
+    className === "SortRoot" ? 0
+      : className === "SortGrandChild" ? 2
+        : 1;
+
+  test("结果按 depth 非降排列", () => {
+    const family = resolveComponentLibraryClassFamilyMetadata("SortRoot", "交流设备", definitions, []);
+    expect(family.length).toBe(4);
+    const depths = family.map((metadata) => depthOf(metadata.className));
+    // 非降即已足够：它约束的是 L317 的首个比较项 left.depth - right.depth，
+    // 与 ICU 无关。反序（降序）会让这条转红。
+    for (let index = 1; index < depths.length; index += 1) {
+      expect(depths[index], `第 ${index} 项深度`).toBeGreaterThanOrEqual(depths[index - 1]);
+    }
+    // 根必然在首位（depth 0 唯一），这一条不依赖 ICU
+    expect(family[0].className).toBe("SortRoot");
+    // 孙类（depth 2）必然在末位
+    expect(family[family.length - 1].className).toBe("SortGrandChild");
+  });
+
+  test("同深度的兄弟节点都保留，顺序不敏感", () => {
+    const family = resolveComponentLibraryClassFamilyMetadata("SortRoot", "交流设备", definitions, []);
+    // 用集合比较吸收 localeCompare 的环境差异：候选一个不落、也不多
+    expect([...family.map((metadata) => metadata.className)].sort()).toEqual([
+      "SortChildA",
+      "SortChildB",
+      "SortGrandChild",
+      "SortRoot"
+    ]);
+    // 两个同深度兄弟（SortChildA / SortChildB）都在结果里 —— 覆盖到 tie-break 分支被走到
+    expect(family.map((metadata) => metadata.className)).toContain("SortChildA");
+    expect(family.map((metadata) => metadata.className)).toContain("SortChildB");
+    // 无关分类的类不进族
+    expect(resolveComponentLibraryClassFamilyMetadata("SortRoot", "直流设备", definitions, []).length).toBe(0);
+  });
+
+  test("族内每个成员的元数据都已解析完成（排序不会漏掉成员）", () => {
+    const family = resolveComponentLibraryClassFamilyMetadata("SortRoot", "交流设备", definitions, []);
+    for (const metadata of family) {
+      expect(metadata).not.toBeNull();
+      expect(typeof metadata.className).toBe("string");
+      expect(metadata.categoryLibraryName).toBe("交流设备");
+      // depth 0 的根与 depth 2 的孙类都该有完整结构字段
+      expect(metadata.terminalTypes).toHaveLength(metadata.terminalCount);
+    }
+  });
+});
