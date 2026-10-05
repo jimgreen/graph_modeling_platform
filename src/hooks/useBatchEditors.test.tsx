@@ -533,6 +533,19 @@ describe("batch numeric display fallback", () => {
     expect(html).toContain(NBSP_BUTTON);
     expect(html).not.toContain("undefined");
   });
+
+  test("小数格式化只有一个实现：Hook 直接用共享纯函数，不留本地副本", () => {
+    // 守卫接线形态。变更风险：共享函数被改名/搬家时这里先红，而不是等到渲染出的
+    // displayValue 悄悄多出几位小数才发现。
+    const source = readFileSync(new URL("./useBatchEditors.tsx", import.meta.url), "utf8");
+    expect(source).toMatch(/import \{ formatNumericAtMostThreeDecimals \} from "\.\.\/appExtracted\/appInlineUtilityFunctions";/);
+    expect(source).toContain("formatNumericAtMostThreeDecimals(withoutUnit)");
+    // 本地副本不得残留：正则与 toFixed(3) 都只应存在于共享函数里
+    expect(source).not.toContain("INLINE_NUMERIC_PATTERN");
+    expect(source).not.toContain("toFixed(3)");
+    // 展示路径上共两个调用点（参数行 + 量测组行），防止「只改一个入口」的分叉
+    expect(source.match(/formatNumericAtMostThreeDecimals\(/g)?.length).toBe(2);
+  });
 });
 
 describe("batch param display fallback", () => {

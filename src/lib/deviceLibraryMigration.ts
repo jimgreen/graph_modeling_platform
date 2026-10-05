@@ -75,9 +75,19 @@ export interface MigrationResult {
 
 /**
  * 将 dataUrl 转换为 Blob
+ *
+ * 返回 null 表示 dataUrl 畸形：没有逗号分隔 metadata 与 base64 载荷，
+ * 此时 `split(",")` 只解出 metadata，base64 为 undefined，
+ * `atob(undefined)` 会抛 InvalidCharacterError。调用点据此**跳过该图**
+ * （沿用本文件既有的 `startsWith("data:")` 跳过写法），而不是让异常
+ * 冒到 migrateFromLocalStorage 的顶层 catch 打断整趟迁移 ——
+ * 后续模板的图片、图元模板、设备定义覆盖全都会被跳过。
+ *
+ * 合法的 data URL 必含逗号，所以这里的守卫对合法输入路径逐字无影响。
  */
-function dataUrlToBlob(dataUrl: string): Blob {
+function dataUrlToBlob(dataUrl: string): Blob | null {
   const [metadata, base64] = dataUrl.split(",");
+  if (base64 === undefined) return null;
   const mime = metadata.match(/:(.*?);/)?.[1] ?? "application/octet-stream";
   const binary = atob(base64);
   const array = new Uint8Array(binary.length);
@@ -139,10 +149,12 @@ export async function migrateFromLocalStorage(options: {
     for (const template of templates) {
       const imageBlobs: Record<string, Blob> = {};
       if (template.params.backgroundImage?.startsWith("data:")) {
-        imageBlobs.backgroundImage = dataUrlToBlob(template.params.backgroundImage);
+        const backgroundBlob = dataUrlToBlob(template.params.backgroundImage);
+        if (backgroundBlob) imageBlobs.backgroundImage = backgroundBlob;
       }
       if (template.params.foregroundImage?.startsWith("data:")) {
-        imageBlobs.foregroundImage = dataUrlToBlob(template.params.foregroundImage);
+        const foregroundBlob = dataUrlToBlob(template.params.foregroundImage);
+        if (foregroundBlob) imageBlobs.foregroundImage = foregroundBlob;
       }
       if (Object.keys(imageBlobs).length > 0) {
         try {

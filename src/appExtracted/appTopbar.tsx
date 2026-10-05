@@ -171,14 +171,14 @@ export async function exportCurrentSpace(scope: Record<string, any>): Promise<bo
   }
 }
 
-// 询问框借 globalMessage 的两个全局弹窗（挂在 window 上），故本模块在 node 测试里也能被直接调用
+// 询问框借 globalMessage 的两个全局弹窗（挂在 window 上，类型见 src/vite-env.d.ts），
+// 故本模块在 node 测试里也能被直接调用
 //（同 spaceSwitch.ts 的 notifySwitchFailure：不 import 那个模块，它在顶层写 window，node 下 import 即炸）。
+// node 下挂载不存在，故仍要判 typeof；类型非空是「浏览器里已挂载」的承诺，不代表 node 里也在。
 function conflictDialogs() {
-  const ask = (globalThis as any).showGlobalConfirm;
-  const prompt = (globalThis as any).showGlobalPrompt;
-  return typeof ask === "function" && typeof prompt === "function"
-    ? { ask: ask as (text: string) => Promise<boolean>, prompt: prompt as (text: string, value?: string) => Promise<string | null> }
-    : null;
+  const ask = globalThis.showGlobalConfirm;
+  const prompt = globalThis.showGlobalPrompt;
+  return typeof ask === "function" && typeof prompt === "function" ? { ask, prompt } : null;
 }
 
 // 改名建议值：从「原名-2」往上取第一个没被占用的。只是输入框的默认值，最终判重仍在后端（撞了就再问一次）。
@@ -292,7 +292,7 @@ export async function renameCurrentSpace(scope: Record<string, any>): Promise<bo
 export async function deleteCurrentSpace(scope: Record<string, any>): Promise<boolean> {
   const current = currentSpaceOf(scope);
   if (!current || current.pinned) return false;
-  const ask = (globalThis as any).showGlobalConfirm;
+  const ask = globalThis.showGlobalConfirm;
   if (typeof ask !== "function") return false;
   const confirmed = await ask(
     `确定删除空间「${current.name}」？\n\n它的全部数据（方案 / 图元库 / 图片 / 配色）会移入回收目录 trash-spaces，界面上不再显示，需要人工从磁盘找回。`
@@ -327,7 +327,7 @@ async function refreshSpacesQuietly(scope: Record<string, any>): Promise<void> {
 }
 
 function showSpaceActionMessage(text: string): void {
-  const notify = (globalThis as any).showGlobalMessage;
+  const notify = globalThis.showGlobalMessage;
   if (typeof notify === "function") {
     notify(text);
   }

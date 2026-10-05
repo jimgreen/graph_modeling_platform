@@ -1,8 +1,7 @@
 // 空间注册表 + 路径工厂 + 越界断言。
 // default 空间直接复用数据根：既有 data/ 原地不动（9 个后端测试与 3 处测试
 // 直读仓库 data/ 的扁平布局，搬迁会让它们静默失效）。
-import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { spaceIdFromName, isValidSpaceId, isReservedSpaceId, normalizeSpaceName } from "./spaceId.mjs";
 import { atomicWriteFile } from "../shared/atomicWrite.mjs";
@@ -293,7 +292,23 @@ export function createSpaceStore(dataRoot) {
         if (index < 0) throw new Error(`未知空间：${id}`);
         const paths = spacePathsFor(resolvedRoot, id);
         assertInSpace(id, paths.root, resolvedRoot);
-        if (existsSync(paths.root)) {
+        // 存在性探测用 await access 而非 existsSync：同步探测会**阻塞事件循环**，
+        // 而这一段全程持有写锁（locked 把所有注册表读-改-写串行化），于是一次删除
+        // 能把整个后端的并发请求一起卡住。任务本身已经是 async、也已经在锁内 await
+        // 了 load/mkdir/rename/writeState，多这一次 await 不影响锁的互斥语义。
+        //
+        // 只有 ENOENT 算「不存在」：目录压根不在 → 跳过 rename 是正确的。
+        // 其余 IO 失败（EACCES、EBUSY、EIO……）一律上抛 —— 静默当成不存在的话，
+        // 目录会留在原地而注册表已摘掉这一条，空间在选择器里消失、数据却成了孤儿，
+        // 静默降级的代价从来不是「多扫一次盘」。
+        let spaceDirExists = true;
+        try {
+          await access(paths.root);
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+          spaceDirExists = false;
+        }
+        if (spaceDirExists) {
           const stamp = new Date().toISOString().replace(/[:.]/g, "-");
           const trash = join(resolvedRoot, TRASH_DIR_NAME, stamp, id);
           await mkdir(join(resolvedRoot, TRASH_DIR_NAME, stamp), { recursive: true });

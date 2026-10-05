@@ -1,7 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   NativeExportSaveError,
   buildSystemDefaultOpenCommand,
@@ -11,6 +12,22 @@ import {
   openFileWithSystemDefault,
   showWindowsSaveFileDialog
 } from "./nativeExportSave.mjs";
+
+// 静态守卫共用：模块源码在用例外读一次（读文件是真 IO，放顶层只付一次代价）。
+const MODULE_SOURCE = readFileSync(
+  fileURLToPath(new URL("./nativeExportSave.mjs", import.meta.url)),
+  "utf8"
+);
+
+// 找出「从裸 node:fs 导入」的语句 —— 同步探测（existsSync）的唯一入口。
+// 逐行扫并跳过行注释行，而不是全文正则：这样注释里解释「为什么删掉它」不会误伤，
+// 而单双引号两种写法都盖得住（正则里写死 `"node:fs` 会漏掉 `from 'node:fs'`）。
+function syncFsImports(source) {
+  return source
+    .split(/\r?\n/)
+    .filter((line) => !line.trimStart().startsWith("//"))
+    .filter((line) => /\bfrom\s*["']node:fs["']/.test(line));
+}
 
 describe("native export save service", () => {
   test("stores a selected target behind a one-use token and writes bytes directly", async () => {
@@ -264,10 +281,82 @@ describe("native export save service", () => {
     const selected = await service.selectFile({ filename: "已删除.e", extensions: [".e"] });
     const written = await service.writeText(selected.token, Buffer.from("x"));
 
-    await expect(service.openWrittenFile(written.viewToken)).rejects.toMatchObject({
-      code: "open-failed"
-    });
+    // 不注入 accessImpl ⇒ 走真实 fs/promises.access，路径确实不存在 ⇒ 真 ENOENT。
+    // 这一条必须同时钉住错误**类**与 code：路由把 NativeExportSaveError("open-failed")
+    // 翻成 500 + 「文件已不存在」文案，掉成裸 Error 就会改说别的话。
+    const failure = await service.openWrittenFile(written.viewToken).then(
+      () => null,
+      (error) => error
+    );
+    expect(failure).toBeInstanceOf(NativeExportSaveError);
+    expect(failure).toMatchObject({ code: "open-failed" });
     expect(openFileImpl).not.toHaveBeenCalled();
+  });
+
+  // ENOENT → open-failed 由上一条 "reports a missing file" 覆盖（它落的是
+  // tmp\已删除.e，真不存在 ⇒ 真实 access 抛 ENOENT）。此处只补另一半纪律。
+  test("权限类失败不被当成「文件不存在」：按真实原因上抛，且不启动程序", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "gmp-open-eacces-"));
+    const target = join(directory, "模型.e");
+    // 真实落盘：文件**确实存在**。这样「回退成 existsSync」的变异会因
+    // existsSync 看不见注入的 EACCES 而走成功路径，测试立刻转红。
+    writeFileSync(target, "<Model/>", "utf8");
+    const openFileImpl = vi.fn(async () => undefined);
+    const denied = Object.assign(
+      new Error(`EACCES: permission denied, access '${target}'`),
+      { code: "EACCES" }
+    );
+    const service = createNativeExportSaveService({
+      platform: "win32",
+      chooseFile: async () => target,
+      writeFileImpl: async (filePath, data) => writeFileSync(filePath, data),
+      openFileImpl,
+      accessImpl: async () => {
+        throw denied;
+      }
+    });
+
+    try {
+      const selected = await service.selectFile({ filename: "模型.e", extensions: [".e"] });
+      const written = await service.writeText(selected.token, Buffer.from("<Model/>", "utf8"));
+
+      // 原始错误原样上抛：既不是 NativeExportSaveError，也不能被改写成 open-failed
+      // （「读不到」说成「不存在」正是本仓要禁的那类错误归因）
+      const failure = await service.openWrittenFile(written.viewToken).then(
+        () => null,
+        (error) => error
+      );
+      expect(failure).toBe(denied);
+      expect(failure).not.toBeInstanceOf(NativeExportSaveError);
+      expect(failure?.code).toBe("EACCES");
+      expect(openFileImpl).not.toHaveBeenCalled();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  // 契约是「请求路径上不做同步 IO」，输出断言看不见它 —— 换成 existsSync 时
+  // 成功路径与失败路径的返回值完全一样，只有事件循环被阻塞。故用静态断言守住。
+  test("openWrittenFile 的路径探测不再走同步 fs（别把 existsSync 改回来）", () => {
+    const source = MODULE_SOURCE;
+    // 同步探测在 ESM 里只有一条入口：从裸 "node:fs" 取 existsSync（没有 require，
+    // 也没有动态 import node:fs）。所以「没有这个 import」对「模块里够不着同步探测」
+    // 是**完备**的，而不只是「恰好现在没写」。
+    expect(syncFsImports(source)).toEqual([]);
+    // 探测本身必须是 await 的 —— 存在 import 换掉、调用点却忘了改的中间态，
+    // 那种情况下上面一条仍然绿（fs/promises 不算同步），这条才拦得住。
+    expect(source).toMatch(/await accessImpl\(view\.path\)/);
+  });
+
+  // 守卫自身的检测逻辑自测：断言扫描器真能转红，而不只是「扫过 N 处调用点」。
+  // 上面那条守卫全靠它才有意义 —— 扫描器若恒空，它就成了一条恒绿的装饰。
+  test("同步 fs 扫描器的自测：认得出裸 import，认不出 fs/promises", () => {
+    expect(syncFsImports('import { existsSync } from "node:fs";')).toHaveLength(1);
+    expect(syncFsImports("import fs from 'node:fs';")).toHaveLength(1);
+    // 精确到引号收尾：fs/promises 是异步 API，不算同步探测
+    expect(syncFsImports('import { access } from "node:fs/promises";')).toEqual([]);
+    // 注释里提到不算 —— 说明文档必须能自由解释「为什么删掉它」
+    expect(syncFsImports('// import { existsSync } from "node:fs";\n')).toEqual([]);
   });
 
   test("builds the per-platform default-open command without shell re-interpretation", () => {
@@ -364,7 +453,7 @@ describe("native export save service", () => {
     const TARGET_TTL_MS = 10 * 60 * 1000;
     const VIEW_TARGET_TTL_MS = 60 * 60 * 1000;
 
-    // 落真文件：openWrittenFile 走 existsSync，假路径会在 TTL 判定之前就以
+    // 落真文件：openWrittenFile 走 access，假路径会在 TTL 判定之前就以
     // open-failed 挂掉，那样测到的是文件在不在，不是令牌还有效没有。
     function makeHarness() {
       const clock = { value: 1_000_000 };

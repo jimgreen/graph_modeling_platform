@@ -26,9 +26,69 @@ function charsetOf(contentTypeText) {
   return "utf-8";
 }
 
+// 按字节上限截断后，把截点回退到**合法字符边界**，否则尾巴上会挂半个多字节字符。
+//
+// 为什么必须回退：`.toString("utf-8")` 遇到残缺序列会吐 U+FFFD，而 iconv 解 GBK 会
+// 吐替换字形 —— 回显里凭空多出一个乱码字符，联调者会误判成「对端发错了字节」，
+// 而这恰是本端点唯一要避免的事（回显必须如实）。
+//
+// 为什么回退发生在**解码之前**（而不是解完再洗文本）：解完再洗就只能删 U+FFFD 之类的
+// 替换字形，而 GBK 残缺尾字节可能被解成「恰好合法的另一个字」（0xD6 后接 0x00 会成
+// 「中」），删字符救不回来。回退只动字节，不动解码路径。
+//
+// 与 sendModel.mjs 的 `trimIncompleteUtf8Tail` 是同一份实现（刻意各写一份，见该文件
+// 同名函数的注释：不能放第三个文件，也不宜让一个端点 import 另一个端点）。
+function trimIncompleteUtf8Tail(bytes) {
+  const end = bytes.length;
+  // 最长字符 4 字节 ⇒ 末尾至多 4 字节可能是被切一半的那个字符（含它的前导字节）。
+  const window = Math.min(4, end);
+  let index = end - 1;
+  // 续字节形如 0b10xxxxxx（& 0xC0 === 0x80）：向前跳过，直到前导字节。
+  while (index >= end - window && (bytes[index] & 0xc0) === 0x80) {
+    index -= 1;
+  }
+  if (index < end - window) {
+    // 窗口内全是续字节：这段字节开头就没有前导字节，无合法前缀可保，整段丢弃。
+    return 0;
+  }
+  // 由前导位推出该字符的总字节数：0xF0-0xF7 → 4，0xE0-0xEF → 3，0xC0-0xDF → 2，其余 1。
+  const lead = bytes[index];
+  const need = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
+  // 字符装不下（末尾只剩残缺字节）⇒ 从它的前导字节起整段丢弃；装得下 ⇒ 一个字节都不动。
+  return index + need > end ? index : end;
+}
+
+// GBK 版的同一件事：单字节区（0x00-0x7F、0x80）不存在「半个」，双字节字符是
+// 0x81-0xFE 前导 + 下一个字节作续字节。所以截点切在两者之间时，末尾只会剩一个
+// **没有续字节的前导字节**，丢掉那 1 字节即可（GBK 字符上限 2 字节，回退恒 ≤1 字节）。
+//
+// 必须**从前导字节起正向走双字节奇偶**，不能只看「末字节是否落在前导区间」：
+// GBK 续字节本身就是 0x40-0x7E / 0x80-0xFE，「中」= D6 D0，其续字节 0xD0 同样
+// 落在前导区间内 —— 只看末字节会把「恰好 512 字节、末字符完整」的那次截断也砍掉，
+// 即回退过头。反向看不出 0xD0 是前导还是续，只能正向数奇偶。
+//
+// 前置条件：bytes 必须从字符边界开始（调用点传的是 `subarray(0, PREVIEW_BYTES)`，
+// 即字节 0 起，故恒满足）。若字节流本身就错位，奇偶也会跟着错位，但那种数据
+// 解出来本就是乱码，不靠这里兜。
+function trimIncompleteGbkTail(bytes) {
+  let index = 0;
+  while (index < bytes.length) {
+    const byte = bytes[index];
+    if (byte >= 0x81 && byte <= 0xfe) {
+      index += 2;
+      continue;
+    }
+    index += 1;
+  }
+  // index 越过末尾 ⇒ 末尾那 1 字节是没有续字节的前导字节（半个字符），丢掉它
+  return index > bytes.length ? bytes.length - 1 : bytes.length;
+}
+
 function decodePreview(bytes, contentTypeText) {
   const slice = bytes.subarray(0, PREVIEW_BYTES);
-  return charsetOf(contentTypeText) === "gbk" ? iconv.decode(slice, "gbk") : slice.toString("utf-8");
+  return charsetOf(contentTypeText) === "gbk"
+    ? iconv.decode(slice.subarray(0, trimIncompleteGbkTail(slice)), "gbk")
+    : slice.subarray(0, trimIncompleteUtf8Tail(slice)).toString("utf-8");
 }
 
 // 收原始字节并限长（Content-Length 不参与判断，直接按实际读取量截断）

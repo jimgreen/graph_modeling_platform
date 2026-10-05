@@ -62,7 +62,7 @@ export function createRuntimeWsClient(fetchHandler: FetchHandler, options: Runti
       return options.url;
     }
     // qiankun 环境：使用主应用传入的后端地址
-    const inQiankun = (window as any).__POWERED_BY_QIANKUN__;
+    const inQiankun = window.__POWERED_BY_QIANKUN__;
     if (inQiankun) {
       const qiankunProps = (window as any).__QIANKUN_PROPS__;
       const apiBaseUrl = qiankunProps?.apiBaseUrl;
@@ -78,7 +78,7 @@ export function createRuntimeWsClient(fetchHandler: FetchHandler, options: Runti
     // dev：vite (5173) 的 /ws WS 代理不稳定（升级常 pending），直连 image-server。
     // prod：同源同端口走 /ws。WS 路径带前端 base（如 /app/ws），后端剥前缀匹配 /ws。
     if (import.meta.env && import.meta.env.DEV) {
-      const devPort = (import.meta.env as any).VITE_IMAGE_SERVER_PORT ?? "5174";
+      const devPort = import.meta.env.VITE_IMAGE_SERVER_PORT ?? "5174";
       const devHost = window.location.hostname || "127.0.0.1";
       return `ws://${devHost}:${devPort}${apiPath("/ws")}`;
     }

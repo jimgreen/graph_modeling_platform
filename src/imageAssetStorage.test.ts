@@ -1,7 +1,7 @@
 // src/appExtracted/appCoreCanvasUtilities.tsx：图片资源的**存储边界**与解析回落
 //   IMAGE_STORAGE_KEY            localStorage 键
 //   readImageAssets               读出 id → dataUrl 映射（容错）
-//   saveImageAsset                **合并**写入单个资源
+//   saveImageAsset                **合并**写入单个资源（写入失败静默降级，与读侧对称）
 //   resolveNodeImage              节点的 backgroundImage 解析
 //   resolveNodeForegroundImage    节点的 foregroundImage 解析
 //   resolveProjectImage           方案的 canvasBackgroundImage 解析
@@ -174,6 +174,124 @@ describe("saveImageAsset：合并写入，不是覆盖", () => {
     saveImageAsset("a", "1");
     saveImageAsset("b", "2");
     expect(JSON.parse(store.getItem(IMAGE_STORAGE_KEY)!)).toEqual({ a: "1", b: "2" });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 写侧错误路径：与读侧 readImageAssets 的 catch **对称**
+//
+// 缺陷背景：唯一调用点 appDeviceDefinitionFactories.tsx 约 3924 行
+//   catch (error) {                       // ← 上传后台失败
+//     showGlobalMessage(...);
+//     saveImageAsset(fallbackId, imageData);   // ← 原来裸调，quota 满时抛
+//     asset = { id: fallbackId, ... };
+//   }
+// 这行坐在**别人的 catch 块里**，所以它再抛一次就是「异常逃出 catch 块」——
+// 一批图片的剩余处理被中断，本地兜底图片也建不出来。
+//
+// 降级约定沿用本文件既有写法，不新造错误类型：
+//   · 读侧 readImageAssets  catch → `return {}`（静默，见上文 describe）
+//   · 写侧 writeStoredInteractionMode / writeRefreshRecoveryProject
+//     catch → 静默吞掉、**无返回值**（同文件 211-220 / 3727-3733）
+//   ⇒ saveImageAsset 写失败时同样静默吞掉，return undefined。
+//
+// ★ 鉴别力来源：删掉 try/catch（把 catch 分支改回裸 setItem），
+//   下面第一条 `.not.toThrow()` 立刻转红 —— 桩是**抛异常**的实现，
+//   不是返回错误值，所以没有「另一条路产出同样结果」的问题。
+describe("★ saveImageAsset：写入失败降级，不抛（与读侧 catch 对称）", () => {
+  // domShim 装的是普通对象字面量，`setItem` 是自身可写属性，可直接替换。
+  const realSetItem = store.setItem;
+  const quotaExceeded = () => {
+    class QuotaExceededError extends Error {}
+    return new QuotaExceededError("quota");
+  };
+  const failWritesWith = (error: unknown) => {
+    Object.defineProperty(store, "setItem", {
+      configurable: true,
+      writable: true,
+      value: () => {
+        throw error;
+      }
+    });
+  };
+  const restoreWrites = () => {
+    Object.defineProperty(store, "setItem", { configurable: true, writable: true, value: realSetItem });
+  };
+
+  // 兜底：即使某条用例中途抛错，也不会把「抛异常的 setItem」留给后面的用例。
+  afterEach(restoreWrites);
+
+  test("配额写满 → **不抛**（catch 分支）", () => {
+    setRaw(null);
+    failWritesWith(quotaExceeded());
+    expect(() => saveImageAsset("a", "dA")).not.toThrow();
+    // ★ 若把 try/catch 删掉，这里就会因 QuotaExceededError 转红。
+  });
+
+  test("★ 返回值与降级约定一致：无返回值 `undefined`（不返 false / 不造错误类型）", () => {
+    // 写侧的既有约定（writeStoredInteractionMode / writeRefreshRecoveryProject）
+    // 就是「catch 里什么都不返回」。若改成 return false / return { ok: false }，
+    // 这条断言会转红，且与同文件读侧 `catch → {}` 的形态不对称。
+    failWritesWith(quotaExceeded());
+    expect(saveImageAsset("a", "dA")).toBeUndefined();
+    // 成功路径同样无返回值（成功/失败返回值不可区分 —— 现状即如此）
+    restoreWrites();
+    expect(saveImageAsset("b", "dB")).toBeUndefined();
+  });
+
+  test("★ 失败写入**不污染 store**：既有资源原样保留", () => {
+    // 断言对象 = 变异会改的那个对象。catch 分支不能顺手写坏或写空 IMAGE_STORAGE_KEY。
+    setRaw(JSON.stringify({ keep: "dKeep" }));
+    failWritesWith(quotaExceeded());
+    expect(() => saveImageAsset("new", "dNew")).not.toThrow();
+    restoreWrites();
+    expect(readImageAssets()).toEqual({ keep: "dKeep" });
+    expect(JSON.parse(store.getItem(IMAGE_STORAGE_KEY)!)).toEqual({ keep: "dKeep" });
+  });
+
+  test("★ 键缺席时失败 → 存储里**没有**被创建出半个键", () => {
+    setRaw(null);
+    failWritesWith(quotaExceeded());
+    expect(() => saveImageAsset("a", "dA")).not.toThrow();
+    restoreWrites();
+    expect(store.getItem(IMAGE_STORAGE_KEY)).toBeNull();
+    expect(readImageAssets()).toEqual({});
+  });
+
+  test("★ 任意异常都吞（非 DOM 的 Error、Safari 私密模式的 SecurityError 形态）", () => {
+    // catch 不带条件：quota 之外还有「存储被禁用」这一类，同样不该打断调用链。
+    for (const error of [
+      quotaExceeded(),
+      new TypeError("localStorage is not available"),
+      Object.assign(new Error("readonly"), { name: "SecurityError" })
+    ]) {
+      failWritesWith(error);
+      expect(() => saveImageAsset("a", "dA"), String(error)).not.toThrow();
+      expect(saveImageAsset("a", "dA"), String(error)).toBeUndefined();
+    }
+  });
+
+  test("失败后恢复正常写入（try/catch 不留坏状态）", () => {
+    setRaw(null);
+    failWritesWith(quotaExceeded());
+    expect(() => saveImageAsset("lost", "dLost")).not.toThrow();
+    restoreWrites();
+    // ★ 失败的 id 不进存储，成功的照常进；合并语义不受影响
+    saveImageAsset("kept", "dKept");
+    saveImageAsset("kept2", "dKept2");
+    expect(readImageAssets()).toEqual({ kept: "dKept", kept2: "dKept2" });
+  });
+
+  test("★ 读侧自身容错不受写侧 catch 影响（两边对称、各自独立）", () => {
+    setRaw("{oops");
+    failWritesWith(quotaExceeded());
+    // 坏 JSON 让 readImageAssets 走自己的 catch → {}；saveImageAsset 随后
+    // 写失败走自己的 catch → 静默。两层 catch 都生效，不互相吞掉对方的问题。
+    expect(() => saveImageAsset("a", "dA")).not.toThrow();
+    expect(readImageAssets()).toEqual({});
+    restoreWrites();
+    saveImageAsset("a", "dA");
+    expect(readImageAssets()).toEqual({ a: "dA" });
   });
 });
 

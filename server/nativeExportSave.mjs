@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { access } from "node:fs/promises";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { atomicWriteFile } from "../shared/atomicWrite.mjs";
 
@@ -380,6 +380,9 @@ export function createNativeExportSaveService(dependencies = {}) {
   const writeFileImpl = dependencies.writeFileImpl ?? atomicWriteFile;
   const openFileImpl = dependencies.openFileImpl
     ?? ((filePath) => openFileWithSystemDefault(filePath, { platform, execFileImpl: dependencies.execFileImpl }));
+  // 路径探测走异步 fs：openWrittenFile 在 HTTP 请求路径上，同步 existsSync 会阻塞事件循环。
+  // 测试仍可注入 accessImpl（与 writeFileImpl / openFileImpl 同一派发注入风格）
+  const accessImpl = dependencies.accessImpl ?? access;
   const now = dependencies.now ?? Date.now;
   const createToken = dependencies.createToken ?? randomUUID;
   const targets = new Map();
@@ -457,7 +460,15 @@ export function createNativeExportSaveService(dependencies = {}) {
         throw new NativeExportSaveError("invalid-token", "导出文件记录已失效，请重新导出后再查看。");
       }
       // 令牌只证明「本进程写过这个路径」，不证明文件此刻还在（用户可能挪走/删了）。
-      if (!existsSync(view.path)) {
+      // 「只有 ENOENT 算不存在」：existsSync 此前对任何失败都返回 false，把 EACCES /
+      // EPERM 一律说成「文件已不存在」——那是把「读不到」误报成「不存在」。这里只把
+      // ENOENT 降级成 open-failed，其余 IO 失败按真实原因上抛。
+      try {
+        await accessImpl(view.path);
+      } catch (error) {
+        if (error?.code !== "ENOENT") {
+          throw error;
+        }
         throw new NativeExportSaveError("open-failed", `文件已不存在：${view.path}`);
       }
       await openFileImpl(view.path);

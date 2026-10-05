@@ -8,6 +8,7 @@ import {
 } from "./server.mjs";
 import { sendV1Json, sendV1Error } from "./v1Response.mjs";
 import { accessControlOriginOnly } from "./cors.mjs";
+import { contentDispositionAttachment } from "./contentDisposition.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 import { handleV1ModelEFile, handleV1ModelEFilePost } from "./eFileExport.mjs";
 import { handleV1ModelCimXml } from "./cimExport.mjs";
@@ -109,7 +110,7 @@ export async function handleV1SchemeExport({ url, response, paths }) {
     response.writeHead(200, {
       "content-type": "application/zip",
       "content-length": String(buffer.length),
-      "content-disposition": `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      "content-disposition": contentDispositionAttachment(filename),
       "cache-control": "no-store",
       ...accessControlOriginOnly
     });

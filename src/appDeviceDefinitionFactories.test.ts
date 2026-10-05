@@ -6138,6 +6138,104 @@ describe("createExportEFile", () => {
     vi.unstubAllGlobals();
   });
 
+  /**
+   * 作用域没有 safeFilePart 时，filenameBase 走内建 fallback —— 该 fallback 与
+   * appInlineUtilityFunctions 的 safeFilePart 是同一份实现（共享工具单源）。
+   *
+   * 用例必须覆盖三类输入，缺一不可：
+   * - 混排非法字符：验证逐字符替换规则本身（哪些字符被换、`+` 是否把连续段并成一个 `_`）；
+   * - 纯非法字符：`+` 把整段并成单个 `_`，结果**非空**，故走不到「未命名」分支；
+   * - 纯空白：`trim()` 后为空，`||` 短路到「未命名」。
+   * 后两类是分岔点 —— 只断言第一类的话，把 `|| "未命名"` 或 `+` 改成 `*` 都可能测不出来。
+   */
+  test("作用域缺 safeFilePart 时导出文件名走内建 fallback", async () => {
+    // 形参放宽到 `string | null | undefined`：生产侧签名是 `String(projectName ?? "")`
+    // （__appScope 是 Record<string, any>），即它**承重**的输入域本就含 null/undefined，
+    // 形参标成 string 会把这个刻意输入挡在类型层。helper 内对 projectName 不做任何
+    // 字符串操作，只原样塞进 scope，所以放宽不会掩盖任何分支——`?? ""` 仍由生产代码走。
+    const runExport = async (
+      projectName: string | null | undefined,
+      scopeExtra: Record<string, unknown> = {}
+    ) => {
+      const fetchMock = vi.fn(async () => new Response("<Model>\n</Model>\n", {
+        status: 200,
+        headers: { "content-type": "text/plain; charset=gbk" }
+      }));
+      vi.stubGlobal("fetch", fetchMock);
+      const filenames: string[] = [];
+      const saveLazyTextFile = vi.fn(async (options: { filename: string; loadText: () => Promise<string> | string }) => {
+        filenames.push(options.filename);
+        await options.loadText();
+        return false;
+      });
+      const exportEFile = createExportEFile({
+        ensureSavedBeforeExport: () => true,
+        projectName,
+        saveLazyTextFile,
+        schemePathForScheme: () => ["默认方案"],
+        writeOperationLog: vi.fn(),
+        ...scopeExtra
+      });
+
+      await exportEFile();
+
+      expect(filenames).toHaveLength(1);
+      return filenames[0];
+    };
+
+    // 逐字符替换：每个非法字符各得一个 _（源里是 + 而非 *，故连续段要并成一个）
+    expect(await runExport("a/b:c*d?e\"f<g>h|i")).toBe("a_b_c_d_e_f_g_h_i.e");
+    // 反斜杠也在字符类里
+    expect(await runExport("a\\b")).toBe("a_b.e");
+    // 首尾空白由 trim() 去掉，不产生 _
+    expect(await runExport("  正常名字  ")).toBe("正常名字.e");
+    // 纯非法字符 -> 整段并成单个 _，非空，故不落「未命名」
+    expect(await runExport("/:*?\"<>|")).toBe("_.e");
+    expect(await runExport("///:::***")).toBe("_.e");
+    // trim 后为空 -> || 短路到「未命名」
+    expect(await runExport("")).toBe("未命名.e");
+    expect(await runExport("   ")).toBe("未命名.e");
+    expect(await runExport("\t\n ")).toBe("未命名.e");
+    // 非字符串项目名同样先 String() 再算
+    expect(await runExport(null)).toBe("未命名.e");
+  });
+
+  test("fallback 与作用域 safeFilePart 对同一输入产出相同文件名", async () => {
+    const projectName = "混排/name:with*all?chars\"<>|";
+    const fetchResponse = () => new Response("<Model>\n</Model>\n", {
+      status: 200,
+      headers: { "content-type": "text/plain; charset=gbk" }
+    });
+    const runExport = async (scopeExtra: Record<string, unknown>) => {
+      vi.stubGlobal("fetch", vi.fn(async () => fetchResponse()));
+      const filenames: string[] = [];
+      const exportEFile = createExportEFile({
+        ensureSavedBeforeExport: () => true,
+        projectName,
+        saveLazyTextFile: vi.fn(async (options: { filename: string; loadText: () => Promise<string> | string }) => {
+          filenames.push(options.filename);
+          await options.loadText();
+          return false;
+        }),
+        schemePathForScheme: () => ["默认方案"],
+        writeOperationLog: vi.fn(),
+        ...scopeExtra
+      });
+
+      await exportEFile();
+      return filenames[0];
+    };
+
+    // 两侧用同一个共享实现驱动：走作用域分支时注入的正是 sharedSafeFilePart，
+    // 因此本例等价于「重构前后产物不变」。
+    const { safeFilePart: sharedSafeFilePart } = await import("./appExtracted/appInlineUtilityFunctions");
+    const viaScope = await runExport({ safeFilePart: sharedSafeFilePart });
+    const viaFallback = await runExport({ safeFilePart: undefined });
+
+    expect(viaFallback).toBe("混排_name_with_all_chars_.e");
+    expect(viaFallback).toBe(viaScope);
+  });
+
   test("导出方案不再刷新磁盘 SVG/E 产物，直接打包下载", async () => {
     const project = { version: 1, name: "方案模型", nodes: [], edges: [] };
     const projectRecord = { id: "project-1", name: "方案模型", project };

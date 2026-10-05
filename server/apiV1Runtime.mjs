@@ -10,6 +10,7 @@
 
 import { sendV1JsonNoStore, sendV1Error, sendV1PayloadTooLarge } from "./v1Response.mjs";
 import { accessControlOriginOnly } from "./cors.mjs";
+import { contentDispositionAttachment } from "./contentDisposition.mjs";
 import { NoOnlineClientError, FetchTimeoutError } from "./runtimeRegistry.mjs";
 import { PREDEFINED_E_DEVICE_TEMPLATES, readPredefinedTemplateBase64 } from "./eFileTemplates.mjs";
 // JSON body 读取单源（原先 control/runtime/e-file 各有一份，只差上限常量）。
@@ -177,7 +178,7 @@ export async function handleV1RuntimeEFile({ url, response }, ctx) {
     const filename = String(data?.filename ?? "model.e");
     response.writeHead(200, {
       "content-type": "text/plain; charset=utf-8",
-      "content-disposition": `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      "content-disposition": contentDispositionAttachment(filename),
       "cache-control": "no-store",
       ...accessControlOriginOnly
     });
@@ -207,7 +208,7 @@ export async function handleV1RuntimeEFilePost({ request, response, url }, ctx) 
     const filename = String(data?.filename ?? "model.e");
     response.writeHead(200, {
       "content-type": "text/plain; charset=utf-8",
-      "content-disposition": `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      "content-disposition": contentDispositionAttachment(filename),
       "cache-control": "no-store",
       ...accessControlOriginOnly
     });

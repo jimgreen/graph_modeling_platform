@@ -126,6 +126,15 @@ export function overrideTimestamp(override: DeviceTemplateDefinitionOverride | u
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+// 单遍取最大：原先是 `filter(predicate).sort((l, r) => ts(r) - ts(l))[0]`（O(n log n) 次
+// Date.parse），现改为一次遍历。
+// 等价性依据（两条都成立才敢这么改）：
+//   ① ts 永不为 NaN —— overrideTimestamp 把 Date.parse 失败一律折成 0，故旧比较器
+//      总返回一个数，排序是全序，不存在「NaN 比较器 ⇒ 顺序由引擎决定」的情形。
+//   ② 旧写法取最大时间戳的第一个；并列时比较器恒返回 0，而 Array.prototype.sort 自
+//      ES2019 起稳定 ⇒ 留下的是输入顺序里先出现的那个。此处用严格 `>`（非 `>=`）
+//      复刻：只有严格更新的候选才顶替当前最优，平局保留先出现者。
+// 顺带把 incumbent 的时间戳缓存进变量，避免每轮重算最优项的时间戳。
 export function preferredDefinitionSource(
   sharedOverride: DeviceTemplateDefinitionOverride | undefined,
   candidates: readonly DeviceTemplateDefinitionOverride[],
@@ -134,17 +143,33 @@ export function preferredDefinitionSource(
   if (sharedOverride && predicate(sharedOverride)) {
     return sharedOverride;
   }
-  return candidates
-    .filter(predicate)
-    .sort((left, right) => overrideTimestamp(right) - overrideTimestamp(left))[0];
+  let best: DeviceTemplateDefinitionOverride | undefined;
+  let bestTimestamp = 0;
+  for (const candidate of candidates) {
+    if (!predicate(candidate)) continue;
+    const timestamp = overrideTimestamp(candidate);
+    if (!best || timestamp > bestTimestamp) {
+      best = candidate;
+      bestTimestamp = timestamp;
+    }
+  }
+  return best;
 }
 
 export function latestDefinitionSource(
   ...sources: Array<DeviceTemplateDefinitionOverride | undefined>
 ) {
-  return sources
-    .filter((source): source is DeviceTemplateDefinitionOverride => Boolean(source))
-    .sort((left, right) => overrideTimestamp(right) - overrideTimestamp(left))[0];
+  let best: DeviceTemplateDefinitionOverride | undefined;
+  let bestTimestamp = 0;
+  for (const source of sources) {
+    if (!source) continue;
+    const timestamp = overrideTimestamp(source);
+    if (!best || timestamp > bestTimestamp) {
+      best = source;
+      bestTimestamp = timestamp;
+    }
+  }
+  return best;
 }
 
 export function sharedDefinitionParams(override: DeviceTemplateDefinitionOverride | undefined) {

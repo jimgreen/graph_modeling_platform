@@ -25,7 +25,7 @@ async function startStandaloneApp(): Promise<void> {
   );
 }
 
-if (!(window as any).__POWERED_BY_QIANKUN__) {
+if (!window.__POWERED_BY_QIANKUN__) {
   void startStandaloneApp();
 }
 

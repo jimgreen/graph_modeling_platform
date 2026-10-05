@@ -86,15 +86,25 @@ describe("preferredDefinitionSource（共享覆盖优先，其次按时间戳取
     expect(preferredDefinitionSource(undefined, [], always)).toBeUndefined();
   });
 
-  test("时间戳并列时结果随入参顺序而变（探针实测）—— 如实记录当前行为", () => {
-    // sort 在键相等时是稳定的，但这里比较的是**差值为 0**，实际结果取决于
-    // 引擎的排序实现与入参顺序。与其猜测，不如钉住「不抛错、且返回一个候选」这个
-    // 真正的契约：并列时间戳不应导致 undefined 或崩溃。
+  test("时间戳并列时取输入顺序里先出现的那个（与原排序实现一致）", () => {
+    // 旧实现 `sort((l, r) => ts(r) - ts(l))[0]`：并列时比较器返回 0，稳定排序保原序，
+    // 故拿到的是先传入的那个。单遍 reduce 用严格 `>` 复刻同一语义 —— 平局不顶替。
+    // 此前此处只断言「A 或 B 都行」（把并列当成实现细节），那条断言在两种实现下都绿，
+    // 抓不住把 `>` 写成 `>=` 的回归；此处钉死成「先出现者胜」。
     const a = ov("2026-01-01T00:00:00Z", { x: "A" });
     const b = ov("2026-01-01T00:00:00Z", { x: "B" });
-    const picked = preferredDefinitionSource(undefined, [a, b], always);
-    expect(picked).toBeDefined();
-    expect(["A", "B"]).toContain(picked?.params?.x);
+    expect(preferredDefinitionSource(undefined, [a, b], always)).toBe(a);
+    expect(preferredDefinitionSource(undefined, [b, a], always)).toBe(b);
+
+    // 三个并列 + 一个更旧的夹在中间：赢家仍是输入里最早出现的那一个
+    const old = ov("2020-01-01T00:00:00Z", { x: "OLD" });
+    expect(preferredDefinitionSource(undefined, [a, old, b], always)).toBe(a);
+  });
+
+  test("全部时间戳非法（都折成 0）时也取先出现者，且不抛错", () => {
+    const bad1 = ov("x", { p: "1" });
+    const bad2 = ov("y", { p: "2" });
+    expect(preferredDefinitionSource(undefined, [bad1, bad2], always)).toBe(bad1);
   });
 });
 

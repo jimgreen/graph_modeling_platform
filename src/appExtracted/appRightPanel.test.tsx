@@ -232,3 +232,30 @@ describe("容器「设备类型」行的显示值兜底（未登记 kind → 回
     }
   });
 });
+
+/**
+ * 纯数值的小数格式化已收拢到 `appInlineUtilityFunctions.formatNumericAtMostThreeDecimals`
+ * （与批量编辑器共用）。右臂面板只保留它独有的 %/° 后缀分支。
+ *
+ * 这条是**静态接线守卫**：`formatAtMostThreeDecimals` 未导出，后缀分支无法用输出断言覆盖 ——
+ * 把后缀分支误删掉时渲染路径不变，只有源码形态能看出来。
+ */
+describe("右臂面板的小数格式化：后缀分支留在本地，纯数值分支走共享函数", () => {
+  const source = readFileSync(new URL("./appRightPanel.tsx", import.meta.url), "utf8");
+
+  test("后缀分支（%/°）仍是本文件的实现", () => {
+    expect(source).toContain("const NUMERIC_SUFFIX_VALUE_PATTERN = /^([+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+))([%°])$/;");
+    expect(source).toContain("${numericValue.toFixed(3).replace(/\\.?(0+)$/, \"\")}${suffixMatch[2]}");
+  });
+
+  test("纯数值分支委派给共享函数，本地不再留正则/toFixed 副本", () => {
+    expect(source).toMatch(
+      /import \{ formatNumericAtMostThreeDecimals \} from "\.\/appInlineUtilityFunctions";/
+    );
+    expect(source).toContain("return formatNumericAtMostThreeDecimals(text);");
+    // 反证：本地那份「纯数值正则 + toFixed(3)」不得复活（那正是本次收拢掉的重复）
+    expect(source).not.toContain("PLAIN_NUMERIC_VALUE_PATTERN");
+    // toFixed(3) 只允许出现在后缀分支那一行
+    expect(source.match(/toFixed\(3\)/g)?.length).toBe(1);
+  });
+});

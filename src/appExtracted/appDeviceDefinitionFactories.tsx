@@ -12,6 +12,8 @@ import { apiPath } from "../config";
 import { backendExportSchemePath } from "../backendExportPath";
 import { backendErrorMessage } from "./appCoreCanvasUtilities";
 import { triggerModeToggleHint } from "./appModeToggleHint";
+// 别名导入：作用域里同名的 safeFilePart 会遮蔽模块级绑定，fallback 分支需要它
+import { safeFilePart as sharedSafeFilePart } from "./appInlineUtilityFunctions";
 import { decodeGbk } from "../encoding/gbk";
 import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES } from "../eDeviceTemplateTypePolicy";
 import {
@@ -2849,7 +2851,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
 
     const filenameBase = typeof safeFilePart === "function"
       ? safeFilePart(String(projectName ?? ""))
-      : String(projectName ?? "").trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
+      : sharedSafeFilePart(String(projectName ?? ""));
     // 后端经响应头带回落盘用告警（生成器单源）；保存完成后展示
     let warningDetails: string[] = [];
     // E 文件生成已移至后端 /v1/schemes/model/e-file（预定义模板只读态随请求带模板名）。

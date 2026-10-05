@@ -344,6 +344,23 @@ describe("handleV1RuntimeEFilePost", () => {
     const { ctx } = await run(handleV1RuntimeEFilePost, { body: { templateText: text } });
     expect(Buffer.from(firstCallParams(ctx).templateData, "base64").toString("utf-8")).toBe(text);
   });
+
+  // POST 分支此前对 content-disposition 零断言：GET 那条覆盖不到这里，
+  // 而两条分支各自抄了一份头模板（收拢前是两份互不相干的副本）。
+  // 逐字钉住整条头：只断言 toContain(encodeURIComponent(...)) 的话，
+  // 把 filename= 回落项整个删掉、只留 filename* 也照样绿。
+  test("★ POST 分支的 content-disposition 与 GET 逐字节同形（中文名双写法）", async () => {
+    const { response } = await run(handleV1RuntimeEFilePost, {
+      body: { templateText: "<ACLoad/>" },
+      ctx: fakeCtx({ result: { text: "内容", filename: "模型 1.e" } })
+    });
+    // 「模型 1.e」含中文**与**空格：空格是「百分号编码真的跑了」的判别输入
+    // （若哪天只对非 ASCII 编码，空格会裸露成 %20 之外的形态）。
+    expect(response.headers["content-disposition"]).toBe(
+      `attachment; filename="%E6%A8%A1%E5%9E%8B%201.e"; filename*=UTF-8''%E6%A8%A1%E5%9E%8B%201.e`
+    );
+    expect(response.headers["content-disposition"]).not.toContain("模型");
+  });
 });
 
 // ─── handleV1RuntimeClients ──────────────────────────────

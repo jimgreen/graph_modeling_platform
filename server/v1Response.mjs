@@ -63,8 +63,12 @@ function gzipQualityFromParams(params) {
  *   `gzip2` 这类仍不算）；
  * - `q > 0` 即接受（`q=0.001` 也压缩）；
  * - 头里重复出现 gzip 时，任一段 q>0 即接受。
+ *
+ * **导出**：内部域（`server.mjs` 的 `sendPreparedJson`）此前自己抄了一份
+ * `/\bgzip\b/iu.test(...)`，同样丢掉了 `;q=`。同一个 HTTP 头在两个域得到两种
+ * 解读（v1 尊重 `gzip;q=0`、内部域不尊重），因此判定必须是**唯一一份**。
  */
-function acceptsGzipEncoding(headerValue) {
+export function acceptsGzipEncoding(headerValue) {
   for (const part of String(headerValue ?? "").split(",")) {
     const segments = part.split(";");
     if (!/^(?:x-)?gzip$/i.test(segments[0].trim())) continue;

@@ -104,3 +104,64 @@ describe("createNearestVoltageColor", () => {
     expect(probe).toMatch(/^#[0-9a-f]{6}$/);
   });
 });
+
+// parseColorToHsl 的 hsl 分支：分量正则 `([0-9.]+)` 会匹配到只含小数点的串，parseFloat → NaN。
+// 若不做有限性校验，返回的 `{ h: NaN, ... }` 对象仍 truthy，会绕过 deriveUnusedColor 的
+// `if (!base)` 早退，hslToHex 随后产出 `#NaNNaNNaN`（或 `#bfNaN40`）这类垃圾 hex。
+// 修复后：畸形输入解析失败 → 返回 null → 调用方走既有的 `!base` 分支原样返回基准色。
+describe("createNearestVoltageColor 遇到 hsl() 畸形分量", () => {
+  const scope = { DEFAULT_COLOR_PALETTE: { voltage: { "ac:0": "#000000" } } };
+  const nearest = createNearestVoltageColor(scope);
+
+  const cases: Array<[string, string]> = [
+    // ① 色相分量正则后面没有强制的 `%`，裸 "." 直接可匹配 —— 这条是守卫真正承重的地方。
+    ["色相位是裸小数点", "hsl(., 50%, 50%)"],
+    ["hsla 别名 + 裸小数点", "hsla(., 50%, 50%)"],
+    // ② s/l 分量的正则带强制 `%`，单个 "." 匹配不上（"hsl(0, ., 50%)" 会被正则整体拒绝），
+    //    但 `[0-9.]+` 贪婪吃掉多个点后接 `%` 仍然合法 → parseFloat("..") 也是 NaN。
+    ["饱和度是多点串", "hsl(0, ..%, 50%)"],
+    ["明度是多点串", "hsl(0, 50%, ..%)"],
+    // ③ 正则本就拒绝的输入：锁对外契约，但去掉守卫也照样绿，勿拿它们当守卫生效的证据。
+    ["明度裸小数点且漏了百分号", "hsl(0, 50%, .)"],
+    ["饱和度裸小数点且漏了百分号", "hsl(0, ., 50%)"]
+  ];
+
+  for (const [label, color] of cases) {
+    test(`${label}：解析失败并原样返回基准色，不产出含 NaN 的 hex`, () => {
+      // 形状①：畸形色作为**调色板兜底基准色**，已用色集合里只有正常 hex。
+      // 这条形状才真正承重 —— 若把畸形色本身放进 voltageColors，它会经 colorToHex
+      // 产出同一个垃圾 hex 占住 usedSet，12 步黄金角 + 明度/饱和度兜底全部撞车，
+      // 旧实现最终也会 `return baseColor`，断言就恒绿了（绿得毫无意义）。
+      const fallbackScope = { DEFAULT_COLOR_PALETTE: { voltage: { "dc:35": color } } };
+      const fromPalette = createNearestVoltageColor(fallbackScope)("dc:35", { "ac:220": "#123456" });
+
+      expect(fromPalette).toBe(color);
+      expect(fromPalette).not.toMatch(/NaN/i);
+
+      // 形状②：畸形色作为已有电压色的基准色（真实数据里 voltageColors 的条目就是这种形态）。
+      const asCandidate = createNearestVoltageColor({
+        DEFAULT_COLOR_PALETTE: { voltage: { "ac:0": "#000000" } }
+      })("ac:220", { "ac:220": color });
+
+      expect(asCandidate).toBe(color);
+      expect(asCandidate).not.toMatch(/NaN/i);
+    });
+  }
+
+  test("正常 hsl() 输入仍按黄金角旋转一步，产出与旧实现逐位一致", () => {
+    // 基准色解析为 h=210 s=0.6 l=0.5（等价 hex #3380cc，进入占用集合），
+    // 黄金角 137.508 旋转一步 → h=347.508 落到 sector≥300 分支。
+    // 注意 hslToHex 的 300–360 分支是 `{ r = c; b = x }`（g 留 0，与标准 HSL 转换不同），
+    // 这是既有实现的特征值，本任务不改业务语义，只把它钉住。
+    const derived = nearest("ac:220", { "ac:220": "hsl(210, 60%, 50%)" });
+
+    expect(derived).toBe("#cc3353");
+  });
+
+  test("正常 hsl() 基准色本身进入占用集合：派生色不是基准色的 hex", () => {
+    const derived = nearest("ac:220", { "ac:220": "hsl(210, 60%, 50%)" });
+
+    expect(derived).toMatch(/^#[0-9a-f]{6}$/);
+    expect(derived).not.toBe("#3380cc");
+  });
+});

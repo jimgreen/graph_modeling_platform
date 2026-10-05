@@ -61,13 +61,19 @@ export function extractBaseVoltages(nodes: readonly ModelNode[]): CimBaseVoltage
   }));
 }
 
-/** 电压值 → rdfId 映射（阶段 1 副产品，阶段 2-4 复用） */
-export function voltageBaseMap(nodes: readonly ModelNode[]): Map<number, string> {
+/** 电压清单 → rdfId 映射（阶段 1 副产品，阶段 2-4 复用）
+ *  与 `voltageBaseMap` 的差别只在入参：清单已算好时直接复用，不再扫一遍全量节点。 */
+function baseVoltageMapOf(baseVoltages: readonly CimBaseVoltage[]): Map<number, string> {
   const map = new Map<number, string>();
-  for (const bv of extractBaseVoltages(nodes)) {
+  for (const bv of baseVoltages) {
     map.set(bv.nominalVoltage, bv.rdfId);
   }
   return map;
+}
+
+/** 电压值 → rdfId 映射（阶段 1 副产品，阶段 2-4 复用） */
+export function voltageBaseMap(nodes: readonly ModelNode[]): Map<number, string> {
+  return baseVoltageMapOf(extractBaseVoltages(nodes));
 }
 
 /** 节点主电压（阶段 2 分组用）：取该节点第一个有效电压值 */
@@ -443,7 +449,9 @@ export function collectMissingCriticalParams(nodes: readonly ModelNode[]): Missi
 
 /** 五阶段总入口。当前实现阶段 1-3 + 4a；阶段 4b/5 由后续任务填充对应数组。 */
 export function buildCimPackage(input: CimBuildInput): CimPackage {
-  const vbaseById = voltageBaseMap(input.nodes);
+  // 阶段 1 只扫一遍全量节点：清单与 rdfId 映射同源，映射由清单派生（不重复计算）
+  const baseVoltages = extractBaseVoltages(input.nodes);
+  const vbaseById = baseVoltageMapOf(baseVoltages);
   const { substations, voltageLevels } = buildContainers(input, vbaseById);
   const { connectivityNodes, terminals } = inferTopology(input);
   const now = new Date().toISOString();
@@ -457,7 +465,7 @@ export function buildCimPackage(input: CimBuildInput): CimPackage {
     },
     substations,
     voltageLevels,
-    baseVoltages: extractBaseVoltages(input.nodes),
+    baseVoltages,
     busbarSections: [],
     acLineSegments: [],
     powerTransformers: [],

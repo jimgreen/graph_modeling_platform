@@ -659,42 +659,56 @@ function templateFieldToDeviceSourceName(sectionField: any): string {
   return templateExportName === "id" ? "idx" : templateExportName;
 }
 
+// 预计算条目：原始 rowField 元素 + 三个合规键（sourceKey / exportNameKey / fieldKeys）。
+// field 保持 any：它就是 row.fields 里的原始对象，下游按其真实形状取 sourceName。
+type EDeviceInterfacePreparedField = { field: any; sourceKey: string; exportNameKey: string; fieldKeys: string[] };
+
 function eDeviceInterfaceFieldOrderForRow(row: any, section: any | undefined) {
   if (!section) {
     return [];
   }
-  const rowFields = row.fields ?? [];
+  // row 为 any，故 row.fields ?? [] 推成 any；不标注时 map 的结果随之塌陷成 any，
+  // 下游 find 的回调参数便落成隐式 any（TS7006）。这里只补类型标注，运行时行为不变。
+  const rowFields: any[] = row.fields ?? [];
+  // 预计算每个元件字段的合规键。sourceKey / exportNameKey / fieldKeys 都只由该字段自身决定，
+  // 与外层循环无关，也不依赖增长中的 used 集合（used 只在查找时做过滤，见下方 findMatchingField），
+  // 故一次算好供全部模板字段复用：原先每个 sectionField 都要全量重扫 rowFields 并重算一遍键。
+  const preparedFields = rowFields.map((field: any): EDeviceInterfacePreparedField => {
+    const sourceName = String(field.sourceName ?? "").trim();
+    return {
+      field,
+      sourceKey: deviceDefinitionComplianceKey(sourceName),
+      exportNameKey: deviceDefinitionComplianceKey(field.exportName),
+      fieldKeys: [field.sourceName, field.exportName, field.cnName]
+        .map(deviceDefinitionComplianceKey)
+        .filter(Boolean)
+    };
+  });
   const used = new Set<string>();
   const ordered: string[] = [];
   const findMatchingField = (sectionField: any) => {
     const exportKey = deviceDefinitionComplianceKey(templateFieldToDeviceSourceName(sectionField));
     // 优先按 exportName/sourceName 精确匹配（如 runstat<->run_stat），避免误匹配同中文不同字段
-    const exact = rowFields.find((field: any) => {
-      const sourceName = String(field.sourceName ?? "").trim();
-      const sourceKey = deviceDefinitionComplianceKey(sourceName);
-      if (!sourceKey || used.has(sourceKey)) {
+    const exact = preparedFields.find((entry) => {
+      if (!entry.sourceKey || used.has(entry.sourceKey)) {
         return false;
       }
-      return sourceKey === exportKey || deviceDefinitionComplianceKey(field.exportName) === exportKey;
+      return entry.sourceKey === exportKey || entry.exportNameKey === exportKey;
     });
     if (exact) {
-      return exact;
+      return exact.field;
     }
     // 再按 cnName 模糊匹配
     const sectionKeys = [sectionField.sourceName, sectionField.exportName, sectionField.cnName]
       .map(deviceDefinitionComplianceKey)
       .filter(Boolean);
-    return rowFields.find((field: any) => {
-      const sourceName = String(field.sourceName ?? "").trim();
-      const sourceKey = deviceDefinitionComplianceKey(sourceName);
-      if (!sourceKey || used.has(sourceKey)) {
+    const fuzzy = preparedFields.find((entry) => {
+      if (!entry.sourceKey || used.has(entry.sourceKey)) {
         return false;
       }
-      const fieldKeys = [field.sourceName, field.exportName, field.cnName]
-        .map(deviceDefinitionComplianceKey)
-        .filter(Boolean);
-      return sectionKeys.some((key) => fieldKeys.includes(key));
+      return sectionKeys.some((key) => entry.fieldKeys.includes(key));
     });
+    return fuzzy?.field;
   };
   // 严格按模板字段顺序：设备有匹配用设备 sourceName，无匹配用模板 exportName 占位（值由导出时默认/引用解析填充）
   for (const sectionField of section.fields ?? []) {

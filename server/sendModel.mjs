@@ -70,6 +70,38 @@ async function buildFileText({ kind, parts, name, templateName, paths }) {
   return error ? { error } : { text: String(xml ?? "") };
 }
 
+// 按字节上限截断后，把截点回退到**合法字符边界**，否则尾巴上会挂半个多字节字符。
+//
+// 为什么必须回退：`toString("utf-8")` 遇到残缺序列会吐 U+FFFD，于是「对方返回了
+// 一段中文错误说明」在错误文案里显示成尾字乱码 —— 而这条文案是给对方看的诊断信息。
+//
+// 为什么回退发生在**解码之前**（而不是解完再洗文本）：解完再洗只能删替换字形，且
+// 无法区分「半个字符」与「完整但不含 U+FFFD 的字符」。回退只动字节，不改解码路径，
+// 也不改 TARGET_ERROR_BODY_LIMIT 本身（上限与不完整字节是两件事）。
+//
+// 与 apiV1Receive.mjs 的 `trimIncompleteUtf8Tail` 是同一份实现（刻意各写一份：
+// 放第三个生产文件会让那条改动落在本任务之外的文件里，让两个端点互相 import 又会把
+// 无关的重依赖（iconv / 导出适配层）拖进对方模块）。
+function trimIncompleteUtf8Tail(bytes) {
+  const end = bytes.length;
+  // 最长字符 4 字节 ⇒ 末尾至多 4 字节可能是被切一半的那个字符（含它的前导字节）。
+  const window = Math.min(4, end);
+  let index = end - 1;
+  // 续字节形如 0b10xxxxxx（& 0xC0 === 0x80）：向前跳过，直到前导字节。
+  while (index >= end - window && (bytes[index] & 0xc0) === 0x80) {
+    index -= 1;
+  }
+  if (index < end - window) {
+    // 窗口内全是续字节：这段字节开头就没有前导字节，无合法前缀可保，整段丢弃。
+    return 0;
+  }
+  // 由前导位推出该字符的总字节数：0xF0-0xF7 → 4，0xE0-0xEF → 3，0xC0-0xDF → 2，其余 1。
+  const lead = bytes[index];
+  const need = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
+  // 字符装不下（末尾只剩残缺字节）⇒ 从它的前导字节起整段丢弃；装得下 ⇒ 一个字节都不动。
+  return index + need > end ? index : end;
+}
+
 // 目标响应体的前 N 字节（只读首个 chunk，不整体读入）
 async function readTargetErrorDetail(targetResponse) {
   const reader = targetResponse.body?.getReader();
@@ -78,9 +110,11 @@ async function readTargetErrorDetail(targetResponse) {
   }
   try {
     const { value } = await reader.read();
-    return value
-      ? Buffer.from(value).subarray(0, TARGET_ERROR_BODY_LIMIT).toString("utf-8").trim()
-      : "";
+    if (!value) {
+      return "";
+    }
+    const slice = Buffer.from(value).subarray(0, TARGET_ERROR_BODY_LIMIT);
+    return slice.subarray(0, trimIncompleteUtf8Tail(slice)).toString("utf-8").trim();
   } catch {
     return "";
   } finally {

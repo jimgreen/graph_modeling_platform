@@ -1,4 +1,5 @@
 import { MemoizedViewSection } from "./appViewRenderBoundary";
+import type { Space } from "../spaceClient";
 
 type AppStatusbarProps = {
   scope: Record<string, any>;
@@ -41,7 +42,7 @@ function AppStatusbarContent({ scope }: { scope: Record<string, any> }) {
   // 目录名 = 空间 id（data/workspaces/<id>/），改名只改显示名、id 不动，故两者会分叉 ——
   // 认目录只能靠 id，这里固定显示它。名字放 title（悬浮可见），不占栏宽。
   const currentSpaceName = (Array.isArray(scope.spaces) ? scope.spaces : [])
-    .find((space: any) => space?.id === currentSpaceId)?.name ?? "";
+    .find((space: Space) => space?.id === currentSpaceId)?.name ?? "";
   const copySpaceId = (event: any) => {
     const id = String(currentSpaceId ?? "");
     if (!id) return;

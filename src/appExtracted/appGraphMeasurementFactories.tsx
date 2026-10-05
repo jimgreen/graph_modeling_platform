@@ -1316,10 +1316,19 @@ function parseColorToHsl(color: string): { h: number; s: number; l: number } | n
   }
   const hslMatch = text.match(/^hsla?\(\s*([0-9.]+)(?:deg)?\s*[,\s]\s*([0-9.]+)%\s*[,\s]\s*([0-9.]+)%/i);
   if (hslMatch) {
+    // 分量正则 [0-9.]+ 会匹配到裸 "."，parseFloat(".") === NaN。
+    // 若不校验就返回 { h: NaN, ... }，对象本身 truthy，会绕过调用方的 `if (!base)` 早退，
+    // hslToHex 随后产出 "#NaNNaNNaN" 这类垃圾色。任一分量非有限即视为无法解析，返回 null。
+    const h = parseFloat(hslMatch[1]);
+    const s = parseFloat(hslMatch[2]) / 100;
+    const l = parseFloat(hslMatch[3]) / 100;
+    if (!Number.isFinite(h) || !Number.isFinite(s) || !Number.isFinite(l)) {
+      return null;
+    }
     return {
-      h: ((parseFloat(hslMatch[1]) % 360) + 360) % 360,
-      s: parseFloat(hslMatch[2]) / 100,
-      l: parseFloat(hslMatch[3]) / 100
+      h: ((h % 360) + 360) % 360,
+      s,
+      l
     };
   }
   return null;

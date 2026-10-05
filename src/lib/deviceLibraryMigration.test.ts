@@ -560,6 +560,121 @@ describe("deviceLibraryMigration", () => {
     });
   });
 
+  describe("畸形 data URL 的跳过路径", () => {
+    // dataUrlToBlob 用 `dataUrl.split(",")` 解 metadata 与 base64 载荷。
+    // 没有逗号的畸形值（`data:image/png`）解出 base64 === undefined，
+    // 旧实现直接 `atob(undefined)` → atob("undefined") 抛 InvalidCharacterError。
+    // 该调用点不在任何 try 内，异常一路冒到 migrateFromLocalStorage 的顶层 catch：
+    // success 变 false、errors 里出现 `Migration failed: ...`，
+    // 且异常点之后的图元模板（第 2 步）、设备定义覆盖（第 3 步）、迁移状态标记全部不执行。
+    // 所以这些用例断言的不只是「没抛错」，还包括异常点之后那几步的产物 ——
+    // 单看 errors 为空无法区分「跳过该图」与「异常刚好被别的东西吞掉」。
+
+    it("缺逗号的畸形 data URL 只跳过该图，后续图元模板与覆盖仍迁移", async () => {
+      const templates: DeviceTemplate[] = [{
+        kind: "test-malformed-no-comma",
+        label: "缺逗号的畸形图",
+        categoryLibrary: "交流设备",
+        size: { width: 100, height: 80 },
+        params: { backgroundImage: "data:image/png" },
+        terminalType: "ac",
+        terminalCount: 2,
+        custom: true
+      }];
+      localStorageMock.setItem("power-system-custom-device-library", JSON.stringify(templates));
+      // 放两条后续步骤的数据：证明迁移没有被提前打断
+      localStorageMock.setItem("power-system-custom-graph-templates", JSON.stringify([{
+        id: "template-after-malformed",
+        typeName: "标准模板",
+        name: "畸形图之后的图元模板",
+        sourceSize: { width: 200, height: 150 },
+        clipboard: { nodes: [], edges: [], groups: [] },
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z"
+      } satisfies GraphTemplate]));
+      localStorageMock.setItem("power-system-device-definition-overrides", JSON.stringify({
+        "device-after-malformed": { kind: "device-after-malformed", params: { p: "1" } }
+      }));
+
+      const result = await migrateFromLocalStorage();
+
+      // 顶层 catch 没被触发：旧实现在这里会写入 `Migration failed: InvalidCharacterError...`
+      expect(result.errors).toEqual([]);
+      expect(result.success).toBe(true);
+      // 异常点之后的两步照常执行 —— 这是「只跳过该图」与「整体崩溃」的分界点
+      expect(result.migrated.graphTemplates).toBe(1);
+      expect(result.migrated.overrides).toBe(1);
+      // 模板本体照常落库（批量保存发生在图片循环之前）
+      expect(result.migrated.templates).toBe(1);
+      const stats = await getDBStats();
+      expect(stats.templates).toBe(1);
+      // 畸形值没有被当成图片存下来（若改成把 null 塞进 imageBlobs，这里会是 1）
+      expect(stats.templateImages).toBe(0);
+      // 迁移状态仍被标记完成
+      expect((await getMigrationStatus())?.completed).toBe(true);
+    });
+
+    it("同一模板里畸形的那张图被跳过，正常的那张仍走原路径落库", async () => {
+      const valid = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+      const templates: DeviceTemplate[] = [{
+        kind: "test-foreground-malformed",
+        label: "前景图畸形",
+        categoryLibrary: "交流设备",
+        size: { width: 100, height: 80 },
+        params: {
+          backgroundImage: valid,
+          foregroundImage: "data:image/gif;base64"
+        },
+        terminalType: "ac",
+        terminalCount: 2,
+        custom: true
+      }];
+      localStorageMock.setItem("power-system-custom-device-library", JSON.stringify(templates));
+
+      const result = await migrateFromLocalStorage();
+
+      expect(result.errors).toEqual([]);
+      expect(result.success).toBe(true);
+
+      const db = await initDeviceLibraryDB();
+      const images = await db.getAll("templateImages");
+      // 精确到「跳过的是哪一张」：前景图没有记录，背景图的内容真的解码了
+      expect(images.map((image: any) => image.id)).toEqual(["test-foreground-malformed_backgroundImage"]);
+      const background = images[0].blob as Blob;
+      expect(background.type).toBe("image/gif");
+      expect(background.size).toBeGreaterThan(0);
+    });
+
+    it("逗号后为空的 data URL 仍走原路径（RFC 2397 的合法空载荷，不属于畸形）", async () => {
+      // 守卫只管逗号存在性：`data:image/png;base64,` 解出 base64 === ""，
+      // atob("") 返回空串 → 0 字节 Blob，mime 取自 metadata。
+      // 若把守卫写成 `!base64`（空串也跳过），这条会红。
+      const templates: DeviceTemplate[] = [{
+        kind: "test-empty-payload",
+        label: "空载荷 data URL",
+        categoryLibrary: "交流设备",
+        size: { width: 100, height: 80 },
+        params: { backgroundImage: "data:image/png;base64," },
+        terminalType: "ac",
+        terminalCount: 2,
+        custom: true
+      }];
+      localStorageMock.setItem("power-system-custom-device-library", JSON.stringify(templates));
+
+      const result = await migrateFromLocalStorage();
+
+      expect(result.errors).toEqual([]);
+      expect(result.success).toBe(true);
+
+      const db = await initDeviceLibraryDB();
+      const images = await db.getAll("templateImages");
+      expect(images).toHaveLength(1);
+      const blob = images[0].blob as Blob;
+      expect(blob.type).toBe("image/png");
+      expect(blob.size).toBe(0);
+    });
+  });
+
   describe("foregroundImage 分支", () => {
     it("只带前景图的模板也会单独落一条 templateImages 记录", async () => {
       const templates: DeviceTemplate[] = [{

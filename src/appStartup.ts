@@ -23,7 +23,9 @@ export async function runStartupGate(): Promise<void> {
     } catch {
       // 清缓存失败（IDB 不可用）= 这一次没有空间校验，旧空间的浏览器缓存会照旧参与
       // 「后端读空 → 回写」，即 S2 不设防。**静默的失败比失败本身更坏**，必须让用户看见。
-      (globalThis as any).showGlobalMessage?.("本地缓存未清理干净，本次未做空间校验，请刷新重试。");
+      // 同 spaceSwitch.notifySwitchFailure：不 import globalMessage（node 下 import 即炸），
+      // 只能从全局对象取；node 下那个挂载不存在，`?.()` 是运行时必需。
+      globalThis.showGlobalMessage?.("本地缓存未清理干净，本次未做空间校验，请刷新重试。");
     }
   } catch {
     // 取不到空间列表（后端未起 / 离线）属常见情形：不阻断启动、也不打扰用户 ——

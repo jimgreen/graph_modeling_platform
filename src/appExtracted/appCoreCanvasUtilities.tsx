@@ -3752,7 +3752,14 @@ export function readImageAssets(): Record<string, string> {
 
 export function saveImageAsset(id: string, dataUrl: string) {
   const assets = readImageAssets();
-  window.localStorage.setItem(IMAGE_STORAGE_KEY, JSON.stringify({ ...assets, [id]: dataUrl }));
+  try {
+    window.localStorage.setItem(IMAGE_STORAGE_KEY, JSON.stringify({ ...assets, [id]: dataUrl }));
+  } catch {
+    // 与读侧 readImageAssets 的 catch 对称：存储不可用/配额写满时不抛。
+    // 写侧是调用链上的一环（如图标库上传失败后的本地兜底），抛出去会打断
+    // 那一整批图片的处理；调用方自己持有 dataUrl，丢的只是刷新后的持久化。
+    // 同 writeStoredInteractionMode / writeRefreshRecoveryProject：静默吞掉，不造新错误类型。
+  }
 }
 
 export function resolveNodeImage(node: ModelNode, assets = readImageAssets()) {

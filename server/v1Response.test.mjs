@@ -1,6 +1,20 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, beforeAll, afterAll } from "vitest";
+import { request as httpRequest } from "node:http";
+import { readFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
-import { sendV1Json, sendV1JsonNoStore, sendV1Error, sendV1PayloadTooLarge, sendV1Wrapped } from "./v1Response.mjs";
+import {
+  sendV1Json,
+  sendV1JsonNoStore,
+  sendV1Error,
+  sendV1PayloadTooLarge,
+  sendV1Wrapped,
+  acceptsGzipEncoding
+} from "./v1Response.mjs";
+import { apiPath } from "./config.mjs";
 
 // 构造 mock response：捕获 writeHead/end，提供 if-none-match 头注入
 function createMockResponse() {
@@ -524,5 +538,183 @@ describe("v1Response —— no-store 与可缓存响应的差异", () => {
     expect(fresh.headers["cache-control"]).toBe("no-store");
     expect(cached.headers["cache-control"]).toBe("no-cache");
     expect(fresh.headers["content-type"]).toBe("application/json; charset=utf-8");
+  });
+});
+
+// ── 内部域（/webgrp/*）的 gzip 判定：复用 acceptsGzipEncoding ──────────
+//
+// 此前 server.mjs 的 sendPreparedJson 自己抄了一份 `/\bgzip\b/iu.test(...)`，
+// 同样丢掉 `;q=` —— 同一个 Accept-Encoding 头在两个域被解读成两件事：
+// v1 域尊重 `gzip;q=0`，内部域不尊重，声明「不接受」的客户端照样收到解不开的字节。
+//
+// 下面起**真实 server 打真实请求**（与 apiInternal.test.mjs / routes.test.mjs 同一做法），
+// 而不是把判定再抄一遍到测试里。用 node:http 的裸请求而不是 fetch：
+// fetch 会对响应自动解压，`content-encoding` 头虽仍在，但解不开的字节会变成
+// 一次 zlib 抛错而不是一条断言失败；裸请求能同时验到「响应头说没压缩」和
+// 「body 确实是明文」这两件独立的事。
+const INTERNAL_GZIP_MIN_BYTES = 1024;   // server.mjs 的 GZIP_MIN_BYTES（这里只用来断言夹具够大）
+
+let internalServer;
+let internalDataDir;
+let previousDataDir;
+
+function rawRequest(method, pathname, { headers = {}, body } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      { host: "127.0.0.1", port: internalServer.address().port, path: pathname, method, headers },
+      (res) => {
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => resolve({ statusCode: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+      }
+    );
+    req.on("error", reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+const getInternal = (pathname, acceptEncoding) =>
+  rawRequest("GET", pathname, { headers: { "accept-encoding": acceptEncoding } });
+
+beforeAll(async () => {
+  internalDataDir = await mkdtemp(join(tmpdir(), "v1-response-internal-"));
+  previousDataDir = process.env.GRAPH_MODEL_DATA_DIR;
+  process.env.GRAPH_MODEL_DATA_DIR = internalDataDir;
+  // 动态 import：env 已设，server.mjs 模块求值时 dataRoot 才指向 tmpdir
+  const { createImageServer } = await import("./server.mjs");
+  internalServer = await createImageServer({ port: 0, host: "127.0.0.1" });
+
+  // 造一个「足够大」的内部域载荷。raw 必须 > GZIP_MIN_BYTES，否则 sendPreparedJson
+  // 的阈值判断会先短路，下面所有关于 content-encoding 的断言都恒绿（假阴性）。
+  // 字段名随意（normalizeDeviceLibraryConfig 展开 ...template，未知键原样保留）。
+  const payload = Buffer.from(
+    JSON.stringify({ customDeviceTemplates: [{ kind: "custom-gzip-probe", note: "x".repeat(2048) }] }),
+    "utf-8"
+  );
+  const seeded = await rawRequest("PUT", apiPath("/device-library"), {
+    headers: { "content-type": "application/json", "content-length": payload.length },
+    body: payload
+  });
+  expect(seeded.statusCode, "内部域 device-library PUT 失败，后续断言无意义").toBe(200);
+});
+
+afterAll(async () => {
+  if (internalServer) {
+    await new Promise((resolve) => internalServer.close(resolve));
+    internalServer = undefined;
+  }
+  if (previousDataDir === undefined) delete process.env.GRAPH_MODEL_DATA_DIR;
+  else process.env.GRAPH_MODEL_DATA_DIR = previousDataDir;
+  if (internalDataDir) await rm(internalDataDir, { recursive: true, force: true });
+});
+
+describe("内部域 sendPreparedJson —— gzip 判定与 v1 域对齐", () => {
+  test("★ Accept-Encoding: gzip;q=0 → 不压缩：无 content-encoding、无 Vary、body 是明文", async () => {
+    const res = await getInternal(apiPath("/device-library"), "gzip;q=0");
+    expect(res.statusCode).toBe(200);
+    // 夹具自检：载荷必须大到能进 gzip 分支，否则下面两条断言毫无判别力
+    expect(Number(res.headers["content-length"])).toBeGreaterThan(INTERNAL_GZIP_MIN_BYTES);
+
+    expect(res.headers["content-encoding"]).toBeUndefined();
+    expect(res.headers.vary).toBeUndefined();
+    // 独立佐证「真的没压缩」：body 直接可 JSON.parse，且载荷原样回来
+    const parsed = JSON.parse(res.body.toString("utf-8"));
+    expect(parsed.customDeviceTemplates[0].note.length).toBe(2048);
+  });
+
+  test("Accept-Encoding: gzip → 压缩；gunzip 后与明文逐字节相同（普通客户端行为不变）", async () => {
+    const plain = await getInternal(apiPath("/device-library"), "gzip;q=0");
+    const zipped = await getInternal(apiPath("/device-library"), "gzip");
+
+    expect(zipped.statusCode).toBe(200);
+    expect(zipped.headers["content-encoding"]).toBe("gzip");
+    expect(zipped.headers.vary).toBe("Accept-Encoding");
+    // content-length 是**压缩后**的长度，且小于明文长度 —— 证明 gzip 分支确实走过
+    expect(Number(zipped.headers["content-length"])).toBeLessThan(plain.body.length);
+    expect(gunzipSync(zipped.body)).toEqual(plain.body);
+  });
+
+  test("其余头形态：q>0 / x-gzip 压缩，缺省头与 gzip2 不压缩", async () => {
+    const encodingFor = async (acceptEncoding) =>
+      (await getInternal(apiPath("/device-library"), acceptEncoding)).headers["content-encoding"];
+
+    expect(await encodingFor("gzip;q=1")).toBe("gzip");
+    expect(await encodingFor("gzip;q=0.001")).toBe("gzip");
+    expect(await encodingFor("deflate, x-gzip;q=0.5")).toBe("gzip");
+    expect(await encodingFor("gzip;q=0")).toBeUndefined();
+    // 别名式误伤防护：gzip2 不是 gzip（旧正则靠 \b 挡住，新判定靠 token 精确匹配）
+    expect(await encodingFor("gzip2, deflate")).toBeUndefined();
+    expect(await encodingFor("identity")).toBeUndefined();
+    expect(await encodingFor("")).toBeUndefined();
+  });
+});
+
+describe("acceptsGzipEncoding —— 导出后成为两域共用的唯一判定", () => {
+  test("内部域关心的四种形态", () => {
+    // 直接调导出函数：sendPreparedJson 里的调用点若被换成别的判定，
+    // 上面那组端到端用例会红；这里再钉一层「helper 本身没被改松/改紧」。
+    expect(acceptsGzipEncoding("gzip;q=0")).toBe(false);
+    expect(acceptsGzipEncoding("gzip;q=0.001")).toBe(true);
+    expect(acceptsGzipEncoding("x-gzip")).toBe(true);
+    expect(acceptsGzipEncoding("gzip;q=1")).toBe(true);
+  });
+
+  test("缺省 / 多段并列 / 空值 / token 精确匹配", () => {
+    expect(acceptsGzipEncoding("gzip")).toBe(true);
+    expect(acceptsGzipEncoding("deflate, gzip;q=0")).toBe(false);
+    expect(acceptsGzipEncoding("gzip;q=0, gzip;q=1")).toBe(true);   // 任一段 q>0 即接受
+    expect(acceptsGzipEncoding("gzip2, deflate")).toBe(false);
+    expect(acceptsGzipEncoding("")).toBe(false);
+    expect(acceptsGzipEncoding(undefined)).toBe(false);
+    expect(acceptsGzipEncoding(null)).toBe(false);
+  });
+});
+
+// ── 静态源码守卫：钉住「判定唯一一份」这件事本身 ─────────────
+//
+// 端到端用例覆盖的是当前这批端点的载荷形状。将来若有人为了「本地调试方便」
+// 把 sendPreparedJson 的判定换回内联正则，端到端用例仍会红（gzip;q=0 那条）；
+// 但若同时把阈值调大到让夹具不再进压缩分支，端到端就哑了。下面这组不依赖任何
+// 运行时状态，直接读源码钉住「这一行调用的就是那个共享 helper」。
+describe("内部域判定已改为复用 acceptsGzipEncoding（静态源码守卫）", () => {
+  const serverSource = readFileSync(fileURLToPath(new URL("./server.mjs", import.meta.url)), "utf-8");
+  const sourceLines = serverSource.split(/\r?\n/);
+
+  // 取某个函数的源码行：从签名行扫到**列 0** 的 `}`（函数体内部的 `}` 都有缩进）。
+  function bodyLinesOf(signature) {
+    const start = sourceLines.findIndex((line) => line.includes(signature));
+    expect(start, `server.mjs 里找不到 ${signature}`).toBeGreaterThanOrEqual(0);
+    for (let i = start + 1; i < sourceLines.length; i += 1) {
+      if (sourceLines[i] === "}") return sourceLines.slice(start, i + 1);
+    }
+    throw new Error(`未找到 ${signature} 的函数结尾`);
+  }
+
+  test("server.mjs 从 v1Response.mjs 导入该 helper", () => {
+    expect(serverSource).toContain('import { acceptsGzipEncoding } from "./v1Response.mjs";');
+  });
+
+  test("sendPreparedJson 内只有一处判定，且就是 acceptsGzipEncoding(...)", () => {
+    const body = bodyLinesOf("async function sendPreparedJson(");
+    const callSites = body.filter((line) => line.includes('acceptsGzipEncoding(request.headers["accept-encoding"])'));
+    expect(callSites).toHaveLength(1);
+  });
+
+  test("★ sendPreparedJson 内不再有内联正则判定", () => {
+    // 行粒度过滤：只挑「读了 accept-encoding 又调 .test(」的行。
+    // 刻意**不**按文件过滤 —— 整文件跳过会把这条守卫变成永远绿的摆设。
+    const body = bodyLinesOf("async function sendPreparedJson(");
+    const inlineRegex = body.filter((line) => line.includes("accept-encoding") && line.includes(".test("));
+    expect(inlineRegex).toEqual([]);
+  });
+
+  test("守卫的自测：过滤器确实能抓到旧的写法", () => {
+    // 把内联正则代回源码形状，确认上面的行过滤器会命中它 ——
+    // 否则「过滤条件写错了」和「代码真的干净了」在结果上长得一模一样。
+    const mutatedLine = '  const acceptsGzip = /\\bgzip\\b/iu.test(String(request.headers["accept-encoding"] ?? ""));';
+    expect(mutatedLine.includes("accept-encoding") && mutatedLine.includes(".test(")).toBe(true);
+    const legalLine = '  const acceptsGzip = acceptsGzipEncoding(request.headers["accept-encoding"]);';
+    expect(legalLine.includes("accept-encoding") && legalLine.includes(".test(")).toBe(false);
   });
 });

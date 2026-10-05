@@ -14,6 +14,11 @@ import { atomicWriteFile } from "../shared/atomicWrite.mjs";
 import { formatSvgNumber } from "../shared/formatSvgNumber.mjs";
 import { apiPrefix, apiPath, escapeRegExp, backendPort, host, stripFrontendBase } from "./config.mjs";
 import { accessControlHeaders, accessControlOriginOnly } from "./cors.mjs";
+import { contentDispositionAttachment } from "./contentDisposition.mjs";
+// Accept-Encoding 的 gzip 判定唯一一份在 v1Response.mjs（v1 域与内部域共用）。
+// 不要在这里再抄一份正则：旧的那份 `/\bgzip\b/iu.test(...)` 丢掉 `;q=`，
+// 会让声明 `gzip;q=0`（RFC 9110 §12.5.3「不接受此编码」）的客户端拿到解不开的字节。
+import { acceptsGzipEncoding } from "./v1Response.mjs";
 import {
   NativeExportSaveError,
   createNativeExportSaveService,
@@ -1728,7 +1733,7 @@ async function sendPreparedJson(request, response, prepared) {
     response.end();
     return;
   }
-  const acceptsGzip = /\bgzip\b/iu.test(String(request.headers["accept-encoding"] ?? ""));
+  const acceptsGzip = acceptsGzipEncoding(request.headers["accept-encoding"]);
   if (acceptsGzip && prepared.raw.length >= GZIP_MIN_BYTES) {
     if (!prepared.gzip) {
       prepared.gzip = await gzipAsync(prepared.raw);
@@ -4752,7 +4757,7 @@ async function handleExportSchemeArchive(url, response, paths) {
     response.writeHead(200, {
       "content-type": "application/zip",
       "content-length": String(buffer.length),
-      "content-disposition": `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      "content-disposition": contentDispositionAttachment(filename),
       "cache-control": "no-store",
       ...accessControlHeaders
     });
@@ -4813,7 +4818,7 @@ async function handleExportSpaceArchive(response, paths, spaceName, archiveRootN
     response.writeHead(200, {
       "content-type": "application/zip",
       "content-length": String(buffer.length),
-      "content-disposition": `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      "content-disposition": contentDispositionAttachment(filename),
       "cache-control": "no-store",
       ...accessControlHeaders
     });
@@ -5015,7 +5020,7 @@ async function handleStandaloneSymbolExport(request, response, paths) {
     sendError(response, symbolExportErrorStatus[result.error.code] ?? 400, result.error.message, result.error.code);
     return;
   }
-  const disposition = `attachment; filename="${encodeURIComponent(result.fileName)}"; filename*=UTF-8''${encodeURIComponent(result.fileName)}`;
+  const disposition = contentDispositionAttachment(result.fileName);
   const metaHeaders = {
     "content-disposition": disposition,
     "cache-control": "no-store",
