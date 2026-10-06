@@ -1957,7 +1957,7 @@ export function createDeleteManualBendPoint(__appScope: Record<string, any>) {
 
 export function createSetRoutableLineManualPathPoints(__appScope: Record<string, any>) {
   return (nodeId: string, routePoints: Point[]) => {
-  const { activeLayerNodeIdSet, isRoutableLineDeviceKind, nodeById, patchGraphNodes, requireEditMode, setRoutableLineDeviceCanvasPoints } = __appScope;
+  const { activeLayerNodeIdSet, canvasBounds, isRoutableLineDeviceKind, nodeById, patchGraphNodes, requireEditMode, setRoutableLineDeviceCanvasPoints } = __appScope;
     if (!requireEditMode("修改可变线路路径")) {
       return;
     }
@@ -1965,7 +1965,8 @@ export function createSetRoutableLineManualPathPoints(__appScope: Record<string,
     if (!lineNode || !activeLayerNodeIdSet.has(nodeId) || !isRoutableLineDeviceKind(lineNode.kind)) {
       return;
     }
-    const nextNode = setRoutableLineDeviceCanvasPoints(lineNode, routePoints);
+    // 提交路径：面板/菜单改路径点时强制「从设备外侧指向锚点」。
+    const nextNode = setRoutableLineDeviceCanvasPoints(lineNode, routePoints, { nodeById, bounds: canvasBounds });
     if (nextNode !== lineNode) {
       patchGraphNodes([nextNode]);
     }
@@ -1988,7 +1989,8 @@ export function createInsertRoutableLineBendAtPoint(__appScope: Record<string, a
       return false;
     }
     pushUndoSnapshot();
-    const baseNode = setRoutableLineDeviceCanvasPoints(lineNode, routePoints);
+    // 提交路径：加拐点前先把基线摆成端点合规走向，再插拐点。
+    const baseNode = setRoutableLineDeviceCanvasPoints(lineNode, routePoints, { nodeById, bounds: canvasBounds });
     const nextNode = insertRoutableLineDeviceBend(baseNode, segmentIndex, clickPoint, canvasBounds);
     if (nextNode !== lineNode) {
       patchGraphNodes([nextNode]);

@@ -75,7 +75,11 @@ export function createCommitRoutableLineDevice(__appScope: Record<string, any>) 
       ? buildManualConnectionPreviewRoute(sourcePoint, manualPoints, targetPoint, canvasBounds)
       : null;
     const routedLine = manualRoutePoints
-      ? setRoutableLineDeviceCanvasPoints(rawLine, manualRoutePoints)
+      ? setRoutableLineDeviceCanvasPoints(rawLine, manualRoutePoints, {
+          // 提交路径：手动打点建线也要强制「从设备外侧指向锚点」。
+          nodeById: new Map([...nodes, rawLine].map((item: ModelNode) => [item.id, item])),
+          bounds: canvasBounds
+        })
       : routeRoutableLineDevice(rawLine, [...nodes, rawLine], canvasBounds);
     if (rejectAutoCanvasExpansionForContent([...nodes, routedLine], edges)) {
       return false;
@@ -6059,7 +6063,7 @@ export function createRouteManualPoints(__appScope: Record<string, any>) {
 
 export function createFinishManualPathDrag(__appScope: Record<string, any>) {
   return () => {
-  const { isRoutableLineDeviceKind, manualPathDrag, nodeById, patchGraphNodes, routeManualPoints, setEdgeManualPoints, setManualPathDrag, setRoutableLineDeviceCanvasPoints, writeOperationLog } = __appScope;
+  const { canvasBounds, isRoutableLineDeviceKind, manualPathDrag, nodeById, patchGraphNodes, routeManualPoints, setEdgeManualPoints, setManualPathDrag, setRoutableLineDeviceCanvasPoints, writeOperationLog } = __appScope;
     if (!manualPathDrag) {
       return;
     }
@@ -6067,7 +6071,11 @@ export function createFinishManualPathDrag(__appScope: Record<string, any>) {
       if (manualPathDrag.nodeId) {
         const lineNode = nodeById.get(manualPathDrag.nodeId);
         if (lineNode && isRoutableLineDeviceKind(lineNode.kind)) {
-          const nextNode = setRoutableLineDeviceCanvasPoints(lineNode, manualPathDrag.previewRoutePoints);
+          // 松手提交：预览期间不纠正（拖拽发涩），这里一次性套端点走向强制。
+          const nextNode = setRoutableLineDeviceCanvasPoints(lineNode, manualPathDrag.previewRoutePoints, {
+            nodeById,
+            bounds: canvasBounds
+          });
           if (nextNode !== lineNode) {
             patchGraphNodes([nextNode]);
             writeOperationLog(`调整可变线路路径：${nextNode.name}`);
