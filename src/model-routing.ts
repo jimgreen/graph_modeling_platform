@@ -248,7 +248,26 @@ export function routableLineDeviceCanvasPoints(node: ModelNode, position = node.
   return routableLineDeviceLocalPoints(node).map((point) => nodeLocalPointToCanvasPoint(node, point, position));
 }
 
-export function setRoutableLineDeviceCanvasPoints(node: ModelNode, canvasPoints: readonly Point[]): ModelNode {
+/**
+ * 写点位的最底层原语：直接把「已归一化的节点局部点列」写进 params。
+ * 不做任何端点法线纠正，供 setRoutableLineDeviceCanvasPoints 与
+ * enforceRoutableLineEndpointApproach 共用 —— 后者必须避免回调到前者（会无限递归）。
+ */
+function writeRoutableLineDeviceCanvasPointsRaw(node: ModelNode, localPoints: Point[]): ModelNode {
+  return {
+    ...node,
+    params: {
+      ...node.params,
+      [ROUTABLE_LINE_POINTS_PARAM]: serializeRoutableLineDevicePoints(localPoints)
+    }
+  };
+}
+
+export function setRoutableLineDeviceCanvasPoints(
+  node: ModelNode,
+  canvasPoints: readonly Point[],
+  approachContext?: RoutableLineEndpointApproachContext
+): ModelNode {
   if (!isRoutableLineDeviceKind(node.kind)) {
     return node;
   }
@@ -263,13 +282,12 @@ export function setRoutableLineDeviceCanvasPoints(node: ModelNode, canvasPoints:
   if (samePointList(currentLocalPoints, localPoints)) {
     return ensureRoutableLineDevicePathParam(node);
   }
-  return {
-    ...node,
-    params: {
-      ...node.params,
-      [ROUTABLE_LINE_POINTS_PARAM]: serializeRoutableLineDevicePoints(localPoints)
-    }
-  };
+  if (approachContext) {
+    // 提交期强制「设备端子只能从外侧指向锚点」。传了 context 才纠正：
+    // 拖拽预览每帧调用，不传，避免发涩。
+    return enforceRoutableLineEndpointApproach(writeRoutableLineDeviceCanvasPointsRaw(node, localPoints), approachContext);
+  }
+  return writeRoutableLineDeviceCanvasPointsRaw(node, localPoints);
 }
 
 export function insertRoutableLineDeviceBend(
@@ -454,7 +472,11 @@ export function setRoutableLineDeviceEndpointsPreservingRoute(
     ? orthogonalizeRouteKeepingCollinear(preserved.map((point) => clampPointToBounds(point, bounds)))
     : preserved;
   const simplified = simplifyPreservedRoutableLineRouteIfCleaner(baseNode, bounded, refs, nodeById, bounds);
-  return setRoutableLineDeviceCanvasPoints(baseNode, simplified);
+  // 端点拖拽提交：此处是提交路径（不是预览），套一次端点走向强制。
+  return enforceRoutableLineEndpointApproach(
+    setRoutableLineDeviceCanvasPoints(baseNode, simplified),
+    { nodeById, bounds }
+  );
 }
 
 export function createRoutableLineDeviceFromEndpoints(
@@ -490,6 +512,176 @@ export function ensureRoutableLineDevicePathParam(node: ModelNode): ModelNode {
 
 function samePointList(first: Point[], second: Point[]) {
   return first.length === second.length && first.every((point, index) => point.x === second[index]?.x && point.y === second[index]?.y);
+}
+
+export type RoutableLineEndpointApproachContext = {
+  nodeById: ReadonlyMap<string, ModelNode>;
+  bounds?: CanvasBounds;
+};
+
+type RoutableLineApproachSide = "source" | "target";
+
+type RoutableLineApproachEndpoint = {
+  side: RoutableLineApproachSide;
+  device: ModelNode;
+  normal: Point;
+  point: Point;
+  other: Point;
+};
+
+function routableLineApproachAdjacentPoint(points: Point[], side: RoutableLineApproachSide): Point | undefined {
+  return side === "source" ? points[1] : points[points.length - 2];
+}
+
+/**
+ * 端点走向强制：连接「设备端子」的线路段只允许从设备外侧指向锚点，
+ * 即相邻首/末段必须与该端子的外法线共线且同向（复用 routeSegmentMatchesNormal）。
+ *
+ * 范围边界：
+ * - 只管设备端子；端点连到母线（bus）的一端不参与纠正，两端都是母线 → 原样返回同一引用。
+ * - 不碰存量修复链路（repairUnsafeRoutableLineDeviceRoutes / routableLineStoredPathSafety），
+ *   只在「提交」路径上被调用；拖拽预览路径不调用。
+ * - 快路径（全部合规 → 返回入参本身）保证幂等，是防 undo/redo 震荡的关键。
+ */
+export function enforceRoutableLineEndpointApproach(
+  node: ModelNode,
+  context: RoutableLineEndpointApproachContext
+): ModelNode {
+  if (!isRoutableLineDeviceKind(node.kind)) {
+    return node;
+  }
+  const points = routableLineDeviceCanvasPoints(node);
+  if (points.length < 2) {
+    return node;
+  }
+  const start = points[0];
+  const end = points[points.length - 1];
+  if (!start || !end) {
+    return node;
+  }
+  // nodeById 可能不含线路自身（routeRoutableLineDevice 的构造就是 nodes.filter(id !== node.id)），补齐后再用。
+  const nodeById = new Map<string, ModelNode>(context.nodeById);
+  if (!nodeById.has(node.id)) {
+    nodeById.set(node.id, node);
+  }
+  const refs = routableLineDeviceEndpointRefs(node);
+  const sourceDevice = refs.source ? nodeById.get(refs.source.nodeId) : undefined;
+  const targetDevice = refs.target ? nodeById.get(refs.target.nodeId) : undefined;
+  const endpoints: RoutableLineApproachEndpoint[] = [];
+  // 母线端不纠正（isBusNode 直接跳过）——两端都是母线时 endpoints 为空 → 早退返回同一引用。
+  if (sourceDevice && !isBusNode(sourceDevice)) {
+    endpoints.push({
+      side: "source",
+      device: sourceDevice,
+      normal: routeEndpointNormal(sourceDevice, start, end, refs.source?.terminalId),
+      point: start,
+      other: end
+    });
+  }
+  if (targetDevice && !isBusNode(targetDevice)) {
+    endpoints.push({
+      side: "target",
+      device: targetDevice,
+      normal: routeEndpointNormal(targetDevice, end, start, refs.target?.terminalId),
+      point: end,
+      other: start
+    });
+  }
+  if (endpoints.length === 0) {
+    return node;
+  }
+  const matchesAt = (side: RoutableLineApproachSide, route: Point[], endpoint: RoutableLineApproachEndpoint) => {
+    const endpointPoint = side === "source" ? route[0] : route[route.length - 1];
+    const adjacent = routableLineApproachAdjacentPoint(route, side);
+    return endpointPoint && adjacent ? routeSegmentMatchesNormal(endpointPoint, adjacent, endpoint.normal) : false;
+  };
+  const allMatch = (route: Point[]) =>
+    route.length >= 2 && endpoints.every((endpoint) => matchesAt(endpoint.side, route, endpoint));
+  // 快路径：已合规 → 原样返回入参本身（同一引用）。这一步同时是幂等性的保证。
+  if (allMatch(points)) {
+    return node;
+  }
+
+  const routeEdge = routableLineDeviceRoutingEdge(node, start, end, nodeById);
+  const endpointNodes = [nodeById.get(routeEdge.sourceId), nodeById.get(routeEdge.targetId)];
+  // blockers 口径与 routeRoutableLineDevice 一致：排除线路自身 + 容器豁免。
+  const candidates = Array.from(context.nodeById.values()).filter((candidate) => candidate.id !== node.id);
+  candidates.push(node);
+  const blockers = routableLineRoutingBlockers(
+    nodesExcludingEndpointContainers(candidates, endpointNodes),
+    routeEdge
+  );
+
+  const sourceNeedsFix = endpoints.find(
+    (endpoint) => endpoint.side === "source" && !matchesAt("source", points, endpoint)
+  );
+  const targetNeedsFix = endpoints.find(
+    (endpoint) => endpoint.side === "target" && !matchesAt("target", points, endpoint)
+  );
+  const stubPointFor = (endpoint: RoutableLineApproachEndpoint) =>
+    endpointNormalEscapePointThroughBlockers(endpoint.point, endpoint.normal, blockers, context.bounds);
+
+  // 慢路径：只替换端点相邻的那个「stub 点」，不动锚点本身。
+  // 两点退化直线无法用「替换中间点」表达 stub —— 只能插入。
+  const escapeOnlyRoute = (() => {
+    const sourceStub = sourceNeedsFix ? stubPointFor(sourceNeedsFix) : undefined;
+    const targetStub = targetNeedsFix ? stubPointFor(targetNeedsFix) : undefined;
+    if (!sourceStub && !targetStub) {
+      return points.map((point) => ({ ...point }));
+    }
+    if (points.length <= 3) {
+      // 中间点不足以同时安放两个 stub：显式列出，保证两端各自的相邻段成立。
+      return [
+        { ...start },
+        ...(sourceStub ? [sourceStub] : []),
+        ...(targetStub ? [targetStub] : []),
+        { ...end }
+      ];
+    }
+    const next = points.map((point) => ({ ...point }));
+    if (sourceStub) {
+      next[1] = sourceStub;
+    }
+    if (targetStub) {
+      next[next.length - 2] = targetStub;
+    }
+    return next;
+  })();
+
+  const orthogonal = orthogonalizeRouteKeepingCollinear(escapeOnlyRoute);
+  const simplified = simplifyRoutePreservingEndpointStubs(orthogonal, {
+    blockers: filterBlockersForRoutePoints(orthogonal, blockers),
+    reduceTinyDoglegs: true
+  });
+  let corrected: Point[] | null = allMatch(simplified) ? simplified : null;
+  if (!corrected) {
+    // 点级纠正不足以让每一端都合规（例如 stub 长度不足或两端夹逼）→ 整体重布线。
+    const rebuilt = buildEndpointNormalPreservingRoutableLineRoute(
+      points,
+      blockers,
+      routeEdge,
+      nodeById,
+      context.bounds
+    );
+    if (rebuilt && allMatch(rebuilt)) {
+      corrected = rebuilt;
+    }
+  }
+  if (!corrected) {
+    // 兜底：不 simplify 的 escape 版本（orthogonal 已正交化，escapeOnlyRoute 本身可能含斜段）。
+    // 保证比现状好：至少首/末段共线同向。
+    corrected = orthogonal;
+  }
+  if (corrected.length < 2) {
+    return node;
+  }
+  const correctedLocalPoints = normalizeRoutableLineDevicePoints(
+    corrected.map((point) => canvasPointToNodeLocalPoint(node, point))
+  );
+  if (correctedLocalPoints.length < 2 || samePointList(routableLineDeviceLocalPoints(node), correctedLocalPoints)) {
+    return node;
+  }
+  return writeRoutableLineDeviceCanvasPointsRaw(node, correctedLocalPoints);
 }
 
 export type RoutableLineDeviceEndpointRef = {
@@ -1246,13 +1438,10 @@ export function routeRoutableLineDevice(
     if (samePointList(currentLocalPoints, nextLocalPoints)) {
       return ensureRoutableLineDevicePathParam(node);
     }
-    return {
-      ...node,
-      params: {
-        ...node.params,
-        [ROUTABLE_LINE_POINTS_PARAM]: serializeRoutableLineDevicePoints(nextLocalPoints)
-      }
-    };
+    return enforceRoutableLineEndpointApproach(
+      writeRoutableLineDeviceCanvasPointsRaw(node, nextLocalPoints),
+      { nodeById, bounds }
+    );
   }
   const preparedRoute =
     nodeById.has(routeEdge.sourceId) && nodeById.has(routeEdge.targetId)
@@ -1289,13 +1478,10 @@ export function routeRoutableLineDevice(
   if (samePointList(currentLocalPoints, nextLocalPoints)) {
     return ensureRoutableLineDevicePathParam(node);
   }
-  return {
-    ...node,
-    params: {
-      ...node.params,
-      [ROUTABLE_LINE_POINTS_PARAM]: serializeRoutableLineDevicePoints(nextLocalPoints)
-    }
-  };
+  return enforceRoutableLineEndpointApproach(
+    writeRoutableLineDeviceCanvasPointsRaw(node, nextLocalPoints),
+    { nodeById, bounds }
+  );
 }
 
 export function rebuildRoutableLineDeviceRouteUpdates(
