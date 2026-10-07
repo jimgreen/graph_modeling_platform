@@ -15,8 +15,9 @@
 // 既成做法（appView.test.tsx / EFileEditor.test.tsx 都是这么做的）：**渲染层断言
 // 走 renderToStaticMarkup 验透传，闭包内判定走源码扫描**。下面每条源码守卫都注明
 // 它守的是哪条行为，以及为什么只能这么守。
+import * as ReactNamespace from "react";
 import { createElement } from "react";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { BufferedTextInput, BufferedTextarea } from "./InputComponents";
 
 async function readSource(): Promise<string> {
@@ -220,10 +221,25 @@ describe("缓冲提交内核的提交判定（源码守卫）", () => {
     expect(body).toContain("onCommitRef.current(nextValue);");
   });
 
+  // 下面这组是源码契约，不是行为断言：真正的行为断言在文件末尾
+  // 「Escape 回退（行为断言）」那组 —— 它用 dispatcher harness 把 hook 真跑起来。
+  // 这里只钉住形状：revert 标志必须在 commitDraft 入口处被检查，否则那条行为
+  // 断言守的就不再是「回退的那一次 blur 被跳过」这一条路径了。
+  test("commitDraft 在入口检查回退标志（revert 后 blur 的那次提交被吞掉）", async () => {
+    const body = await hookBody();
+    const commitDraftIndex = body.indexOf("commitDraft:");
+    expect(commitDraftIndex, "缺少 commitDraft").toBeGreaterThanOrEqual(0);
+    const tail = body.slice(commitDraftIndex, commitDraftIndex + 200);
+    expect(tail).toMatch(/if \(revertingRef\.current\) \{/);
+    // 标志的置位/清零必须成对出现，且清零要发生在微任务里（见 revertDraft 的注释）
+    expect(body).toMatch(/revertingRef\.current = true;/);
+    expect(body).toMatch(/queueMicrotask\([\s\S]{0,120}?revertingRef\.current = false;/);
+  });
+
   test("revertDraft 回到已提交值而非清空", async () => {
     const body = await hookBody();
     // Escape 的语义是「放弃本次编辑」，不是「清空输入框」
-    expect(body).toMatch(/revertDraft:\s*\(\)\s*=>\s*setDraftValue\(committedValueRef\.current\)/);
+    expect(body).toMatch(/revertDraft:[\s\S]{0,320}?setDraftValue\(committedValueRef\.current\)/);
     // 两个薄壳都必须用 revertDraft，而不是直接 setDraftValue("") 之类
     const source = await readSource();
     const shells = source.slice(source.indexOf("export function BufferedTextInput("));
@@ -266,6 +282,299 @@ describe("BufferedTextarea", () => {
     const onCommit = vi.fn();
     renderToStaticMarkup(createElement(BufferedTextarea, { value: "x", onCommit }));
     expect(onCommit).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Escape 回退（行为断言）
+//
+// 前面那些都是源码扫描。这组不同：把组件本体真跑起来，模拟「输入 → 按 Escape」，
+// 断言 onCommit **一次都没被调用**。
+//
+// 为什么必须真跑：缺陷发生在两个闭包的**交互**里 —— revertDraft 的 setState 是
+// 批处理的（当前同步块内不重渲染），而紧随其后的 blur() 同步派发 onBlur，
+// 于是 onBlur 拿到的是回退前那次渲染的闭包，draftValue 还是用户刚敲的字，
+// 去重判定成立 → onCommit(用户输入的字)。任何「渲染后的 props 长什么样」的
+// 静态断言都看不到这一层，只能把处理器调起来。
+//
+// harness 见本文件末尾：换掉 React 19 的 dispatcher 槽位（.H）手写最小
+// dispatcher，直接调用组件函数 —— 与 useGlobalLines.test.tsx /
+// VoltageLevelDialog.test.tsx 同一手法，无需引入 jsdom / react-test-renderer。
+// ---------------------------------------------------------------------------
+type Internals = { H?: unknown };
+const REACT_INTERNALS = (ReactNamespace as unknown as {
+  __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE?: Internals;
+}).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+
+type Cells = {
+  states: unknown[];
+  refs: Array<{ current: unknown }>;
+  effects: Array<{ deps: unknown[] | null }>;
+  cursor: number;
+  useStateCalls: number;
+};
+
+const depsEqual = (a: unknown[] | null, b: unknown[]) => {
+  if (!a) return false;
+  if (a.length !== b.length) return false;
+  return a.every((v, i) => Object.is(v, b[i]));
+};
+
+function makeDispatcher(cells: Cells) {
+  return {
+    useState(initial: unknown) {
+      cells.useStateCalls += 1;
+      const index = cells.cursor;
+      cells.cursor += 1;
+      if (!(index in cells.states)) {
+        cells.states[index] = typeof initial === "function" ? (initial as () => unknown)() : initial;
+      }
+      const setState = (next: unknown) => {
+        cells.states[index] = typeof next === "function" ? (next as (p: unknown) => unknown)(cells.states[index]) : next;
+      };
+      return [cells.states[index], setState];
+    },
+    useRef(initial: unknown) {
+      const index = cells.cursor;
+      cells.cursor += 1;
+      if (!(index in cells.refs)) cells.refs[index] = { current: initial };
+      return cells.refs[index];
+    },
+    useEffect(create: () => unknown, deps: unknown[]) {
+      const index = cells.cursor;
+      cells.cursor += 1;
+      const already = cells.effects[index];
+      if (!already) {
+        cells.effects[index] = { deps: deps ?? null };
+        void create();
+      } else if (!depsEqual(already.deps, deps)) {
+        already.deps = deps;
+        void create();
+      }
+    },
+    useMemo(factory: () => unknown) {
+      cells.cursor += 1;
+      return factory();
+    },
+    useCallback(fn: unknown) {
+      cells.cursor += 1;
+      return fn;
+    }
+  };
+}
+
+type Element = { type?: unknown; props?: Record<string, any> };
+
+// 每个用例挂一次组件换一次 dispatcher 槽位，用完由 afterEach 还原。
+// 不在 mountBuffered 里用 try/finally 还原：dispatcher 必须活到用例结束，
+// 因为每次 type()/rerender() 都要重新调用组件函数。
+let restoreHookSlot: (() => void) | null = null;
+
+afterEach(() => {
+  restoreHookSlot?.();
+});
+
+function findEditor(node: unknown): Element | undefined {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findEditor(child);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  if (!node || typeof node !== "object") return undefined;
+  const el = node as Element;
+  if (el.props && "onKeyDown" in el.props && "onBlur" in el.props) return el;
+  if (el.props && "children" in el.props) return findEditor(el.props.children);
+  return undefined;
+}
+
+type Buffered = ReactNamespace.FunctionComponent<Record<string, unknown>>;
+
+/**
+ * 挂起一个 Buffered 组件。setState 只写格子、不立即重渲染 —— 这就是批处理：
+ * 真 React 里 setState 也不在当前同步块内重渲染，事件处理器持有的闭包同样是
+ * 「上一次渲染」那一份。rerender() 显式模拟 commit。
+ */
+function mountBuffered(
+  Comp: Buffered,
+  value: string | number,
+  onCommit: (v: string) => void,
+  extra: Record<string, unknown> = {}
+) {
+  if (!REACT_INTERNALS || !("H" in REACT_INTERNALS)) {
+    throw new Error(
+      "取不到 React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.H —— React 版本已变，本组用例的前提失效"
+    );
+  }
+  const cells: Cells = { states: [], refs: [], effects: [], cursor: 0, useStateCalls: 0 };
+  // dispatcher 必须活到本用例结束（后面每次 rerender 都要用），不是只在挂载那一刻。
+  // 因此这里不做 try/finally 还原，改由 afterEach 统一还原（见文件里 restoreHookSlot）。
+  const previous = REACT_INTERNALS.H;
+  REACT_INTERNALS.H = makeDispatcher(cells);
+  const restore = () => {
+    REACT_INTERNALS.H = previous;
+    restoreHookSlot = null;
+  };
+  restoreHookSlot = restore;
+
+  const render = () => {
+    cells.cursor = 0;
+    return Comp({ value, onCommit, ...extra });
+  };
+
+  let tree = render();
+  const editor = () => findEditor(tree);
+
+  const pressKey = (
+    key: string,
+    opts: { ctrlKey?: boolean; metaKey?: boolean; value?: string } = {}
+  ) => {
+    let blurred = 0;
+    const target = {
+      value: opts.value ?? editor()?.props?.value,
+      blur() {
+        blurred += 1;
+        // blur() 同步派发 blur 事件 —— 真实 DOM 就是这样，且它与 keydown
+        // 处理器处在同一个同步块里。
+        editor()?.props?.onBlur?.({ target });
+      }
+    };
+    editor()?.props?.onKeyDown?.({
+      key,
+      ctrlKey: opts.ctrlKey ?? false,
+      metaKey: opts.metaKey ?? false,
+      defaultPrevented: false,
+      target,
+      preventDefault() {}
+    });
+    return { blurred, target };
+  };
+
+  return {
+    rerender() {
+      tree = render();
+      return editor();
+    },
+    get draftValue() {
+      return editor()?.props?.value;
+    },
+    /** 模拟输入一个值（走 onChange），并 commit 一次重渲染。 */
+    type(next: string) {
+      editor()?.props?.onChange?.({ target: { value: next } });
+      tree = render();
+      return editor()?.props?.value;
+    },
+    pressKey,
+    /** 不按任何键、直接失焦（用户点别处）。 */
+    blur() {
+      let blurred = 0;
+      const target = {
+        value: editor()?.props?.value,
+        blur() {
+          blurred += 1;
+          editor()?.props?.onBlur?.({ target });
+        }
+      };
+      editor()?.props?.onBlur?.({ target });
+      return blurred;
+    },
+    useStateCalls: () => cells.useStateCalls
+  };
+}
+
+const ORIGINAL = "原始值";
+const TYPED = "原始值X";
+
+describe("Escape 回退不会把陈旧草稿提交出去（行为断言）", () => {
+  test("单行：输入后按 Escape，onCommit 一次都没被调用", () => {
+    const onCommit = vi.fn();
+    const ui = mountBuffered(BufferedTextInput as Buffered, ORIGINAL, onCommit);
+    // 内核一个 useState（草稿），顺带钉住 hook 数量：多一个会让序号错位
+    expect(ui.useStateCalls()).toBe(1);
+
+    expect(ui.type(TYPED)).toBe(TYPED);
+
+    const { blurred } = ui.pressKey("Escape");
+    // 前提：blur 确实发生了（否则下面的 not.toHaveBeenCalled 是空断言）
+    expect(blurred, "Escape 必须触发 blur，否则这条用例测不到东西").toBe(1);
+
+    // 这就是缺陷的判据：按「取消」却把用户输入的字提交了
+    expect(onCommit, "Escape 是取消，不能提交用户输入的值").not.toHaveBeenCalled();
+
+    ui.rerender();
+    // 草稿也确实回到了已提交值（不只是没提交，还得看得见回退）
+    expect(ui.draftValue).toBe(ORIGINAL);
+  });
+
+  test("多行：输入后按 Escape，onCommit 一次都没被调用", () => {
+    const onCommit = vi.fn();
+    const ui = mountBuffered(BufferedTextarea as Buffered, ORIGINAL, onCommit);
+    expect(ui.useStateCalls()).toBe(1);
+
+    expect(ui.type(TYPED)).toBe(TYPED);
+
+    const { blurred } = ui.pressKey("Escape");
+    expect(blurred, "Escape 必须触发 blur").toBe(1);
+    expect(onCommit, "Escape 是取消，不能提交用户输入的值").not.toHaveBeenCalled();
+
+    ui.rerender();
+    expect(ui.draftValue).toBe(ORIGINAL);
+  });
+
+  test("回退标志不会一直挂着：Escape 之后再编辑并失焦，那一次真提交仍然要到", async () => {
+    const onCommit = vi.fn();
+    const ui = mountBuffered(BufferedTextInput as Buffered, ORIGINAL, onCommit);
+
+    ui.type(TYPED);
+    ui.pressKey("Escape");
+    expect(onCommit).not.toHaveBeenCalled();
+
+    // 必须真的把微任务队列排空，标志的自动放开才发生。若不排空，这条断言会
+    // 因「标志还挂着」而恒红 —— 看着像守卫，实则是 setup 没跑完的那一步。
+    await Promise.resolve();
+
+    // 关键第二段：如果 revert 标志是「靠下一次 blur 消费」而不是在微任务里自动
+    // 清零，上面那次 Escape 之后，用户重新编辑并点别处时的提交会被一并吞掉。
+    ui.rerender();
+    expect(ui.type("第二版")).toBe("第二版");
+    ui.blur();
+
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith("第二版");
+  });
+
+  test("对照组：不按 Escape 时，失焦照常提交（否则上面几条只是把提交整体掐死了）", () => {
+    const onCommit = vi.fn();
+    const ui = mountBuffered(BufferedTextInput as Buffered, ORIGINAL, onCommit);
+    ui.type(TYPED);
+    ui.blur();
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith(TYPED);
+  });
+
+  test("对照组：Enter 仍然提交并失焦（回归护栏）", () => {
+    const onCommit = vi.fn();
+    const ui = mountBuffered(BufferedTextInput as Buffered, ORIGINAL, onCommit);
+    ui.type(TYPED);
+    const { blurred } = ui.pressKey("Enter");
+    expect(blurred).toBe(1);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith(TYPED);
+  });
+
+  test("对照组：多行的 Ctrl+Enter 仍提交，裸 Enter 只是换行不提交", () => {
+    const ctrlOnCommit = vi.fn();
+    const ctrlUi = mountBuffered(BufferedTextarea as Buffered, ORIGINAL, ctrlOnCommit);
+    ctrlUi.type(TYPED);
+    ctrlUi.pressKey("Enter", { ctrlKey: true, value: TYPED });
+    expect(ctrlOnCommit).toHaveBeenCalledWith(TYPED);
+
+    const plainOnCommit = vi.fn();
+    const plainUi = mountBuffered(BufferedTextarea as Buffered, ORIGINAL, plainOnCommit);
+    plainUi.type(TYPED);
+    plainUi.pressKey("Enter", { value: TYPED });
+    expect(plainOnCommit, "多行里裸 Enter 是换行，不是提交").not.toHaveBeenCalled();
   });
 });
 

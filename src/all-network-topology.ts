@@ -302,8 +302,13 @@ export function analyzeGlobalLinesForAllNetworkTopology(
 ): AllNetworkTopologyResult {
   const errors: AllNetworkTopologyAlert[] = [];
   const warnings: AllNetworkTopologyAlert[] = [];
+  // 与 collectAllNetworkTopologyReferenceModels 同款口径：排序两侧都可能是残缺记录
+  // （持久化 JSON 缺 name / id 时为 undefined），统一按字符串兜底后再比较，
+  // 避免比较阶段再抛一次 TypeError。idx 是数值字段，缺失只得到 NaN、不抛，故不套 MAX_SAFE_INTEGER。
   const orderedRecords = [...records].sort((left, right) => (
-    left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN") || left.id.localeCompare(right.id)
+    left.idx - right.idx ||
+    String(left.name ?? "").localeCompare(String(right.name ?? ""), "zh-CN") ||
+    String(left.id ?? "").localeCompare(String(right.id ?? ""))
   ));
   for (const record of orderedRecords) {
     for (const endpoint of ["source", "target"] as const) {

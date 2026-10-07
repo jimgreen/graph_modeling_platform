@@ -163,7 +163,12 @@ export async function handleV1RuntimeEFile({ url, response }, ctx) {
     let params;
     const templateName = (url.searchParams.get("template") ?? "").trim();
     if (templateName) {
-      if (!PREDEFINED_E_DEVICE_TEMPLATES[templateName]) {
+      // Object.hasOwn 守卫（同 eFileTemplates.mjs:23 口径）：PREDEFINED_E_DEVICE_TEMPLATES
+      // 是普通对象字面量，下标取值会走到 Object.prototype —— 传 `constructor` /
+      // `toString` / `__proto__` 时取到函数或原型对象（truthy），本守卫被绕过，
+      // 随后 readPredefinedTemplateBase64 抛错 → 落到 handleFetchError 变成 500，
+      // 而不是这里该回的 400「未知模板」。
+      if (!Object.hasOwn(PREDEFINED_E_DEVICE_TEMPLATES, templateName)) {
         sendV1Error(
           response,
           "bad-request",

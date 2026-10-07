@@ -622,6 +622,24 @@ import {
 import { imagePickerUsesLibraryTabs, renderAppView } from "./appView";
 import { MemoizedCanvasArea } from "./appCanvasArea";
 
+/**
+ * 解析图元树分组的 `data-total-items`。
+ *
+ * 该属性由 `appRenderPanels` 以 `{totalItems}` 写入（React 渲染为数字串），正常输入
+ * 一定是数字；但它是普通 DOM 属性，外部改写即可塞进 `"abc"` 这类串。`Number(raw ?? 0)`
+ * 里的 `??` 只挡 `undefined`，非数字串会得到 `NaN`，随后 `total <= WINDOW` 恒为
+ * false（NaN 比较恒假），`NaN` 一路穿到 `clampNumber` / `Math.min` / `Math.floor`，
+ * 产出 `{start: NaN, end: NaN}` 的窗口索引。
+ *
+ * 故补一道有限性守卫：非有限值按 `0` 处理——与 `?? 0` 的既有兜底同向，
+ * 且 `0 <= WINDOW` 恒真，会走「本组不参与窗口化、删掉旧窗口项」的分支。
+ * 合法数值输入逐字不变。
+ */
+export function elementTreeGroupTotalItems(raw: string | undefined): number {
+  const total = Number(raw ?? 0);
+  return Number.isFinite(total) ? total : 0;
+}
+
 export function useCanvasViewportBatch(__appScope: Record<string, any>) {
   const {
     activeLayerEdgeIdSet,
@@ -828,7 +846,7 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
         const groups = container.querySelectorAll<HTMLElement>(".element-tree-device-items");
         groups.forEach((groupEl) => {
           const deviceKey = groupEl.dataset.deviceKey;
-          const total = Number(groupEl.dataset.totalItems ?? 0);
+          const total = elementTreeGroupTotalItems(groupEl.dataset.totalItems);
           if (!deviceKey || total <= WINDOW) {
             // deviceKey 为空时不会走到这里（无 data-device-key 的分组不进窗口表），
             // 故把 deviceKey 一起判上：原写法会用 undefined 当索引键去查 next。

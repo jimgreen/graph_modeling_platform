@@ -545,8 +545,12 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       const radians = ((Number(stateIconCanvasTerminalNode.rotation) || 0) * Math.PI) / 180;
       const cos = Math.cos(radians);
       const sin = Math.sin(radians);
-      const rawWidth = Math.max(1, Number(size.width) * Math.abs(getNodeScaleX ? getNodeScaleX(stateIconCanvasTerminalNode) : 1));
-      const rawHeight = Math.max(1, Number(size.height) * Math.abs(getNodeScaleY ? getNodeScaleY(stateIconCanvasTerminalNode) : 1));
+      // 非有限(NaN/Infinity)不能靠 Math.max 兜底：Math.max(1, NaN) === NaN,守卫形同虚设。
+      // 回退 1 与下游同源约定一致(见下方 stateIconMapCanvasTerminalPoint 的 atLeastOneNumber(node.size?.width, 1))。
+      const scaledWidth = Number(size.width) * Math.abs(getNodeScaleX ? getNodeScaleX(stateIconCanvasTerminalNode) : 1);
+      const scaledHeight = Number(size.height) * Math.abs(getNodeScaleY ? getNodeScaleY(stateIconCanvasTerminalNode) : 1);
+      const rawWidth = Number.isFinite(scaledWidth) ? Math.max(1, scaledWidth) : 1;
+      const rawHeight = Number.isFinite(scaledHeight) ? Math.max(1, scaledHeight) : 1;
       const rotatedWidth = Math.abs(rawWidth * cos) + Math.abs(rawHeight * sin);
       const rotatedHeight = Math.abs(rawWidth * sin) + Math.abs(rawHeight * cos);
       const viewBoxWidth = Math.max(1, rotatedWidth + 24);

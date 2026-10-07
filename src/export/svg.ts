@@ -365,6 +365,13 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   const colorPalette = normalizeColorPalette(canvasSize.colorPalette ?? DEFAULT_COLOR_PALETTE);
   const terminalSlotPaint = canvasSize.terminalSlotPaint === true;
   const terminalGeometryVisible = canvasSize.terminalGeometryVisible !== false;
+  // 主画布尺寸兜底：与下方背景页 :378-379 的 atLeastOneNumber 同口径。
+  // ⚠ fallback 不能传 canvasSize.width —— 那与入参同源，两侧同为非法值时兜底值本身是 NaN，
+  //   viewBox 会重新产出 "0,0,NaN,600"。故此处 fallback 用本文件的 DEFAULT_CANVAS_* 常量。
+  // ⚠ atLeastOneNumber 刻意**不拦** +Infinity（见 canvasViewport.test.ts 的钉住用例），
+  //   故 Infinity 原样透传仍会进 viewBox。这是该函数的既定语义，不在此另造判据。
+  const canvasWidth = atLeastOneNumber(canvasSize.width, DEFAULT_CANVAS_WIDTH);
+  const canvasHeight = atLeastOneNumber(canvasSize.height, DEFAULT_CANVAS_HEIGHT);
   const buildBackgroundPageExportMarkup = () => {
     const backgroundPage = canvasSize.backgroundPage;
     if (!backgroundPage) {
@@ -375,8 +382,8 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
       width: backgroundProject?.canvasWidth ?? canvasSize.width,
       height: backgroundProject?.canvasHeight ?? canvasSize.height
     };
-    const backgroundWidth = atLeastOneNumber(backgroundBounds.width, canvasSize.width);
-    const backgroundHeight = atLeastOneNumber(backgroundBounds.height, canvasSize.height);
+    const backgroundWidth = atLeastOneNumber(backgroundBounds.width, canvasWidth);
+    const backgroundHeight = atLeastOneNumber(backgroundBounds.height, canvasHeight);
     const backgroundNodes = backgroundPage.nodes ?? backgroundProject?.nodes ?? [];
     const backgroundEdges = backgroundPage.edges ?? backgroundProject?.edges ?? [];
     const backgroundSvg = buildSvgDocument(backgroundNodes, backgroundEdges, {
@@ -397,7 +404,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
     );
     const transform = backgroundPage.transform ?? backgroundPageCanvasTransform(
       { width: backgroundWidth, height: backgroundHeight },
-      { width: canvasSize.width, height: canvasSize.height }
+      { width: canvasWidth, height: canvasHeight }
     );
     return `<g class="export-background-page-layer" transform="${escapeXml(transform)}" pointer-events="none">
 ${scopedBackgroundSvg}
@@ -551,7 +558,11 @@ ${scopedBackgroundSvg}
     `${type === "dc" ? "ldcv" : "lkv"}${exportVoltageClassSuffix(voltage)}`;
   // 单一 token 派生：类规则把字面色写入 --c-<类名>，正文/端子/引线全部经 var() 引用
   const exportVoltageColorVar = (className: string) => `--c-${className}`;
-  const exportVoltageCssColor = (color: string) => color.trim().replace(/[<>{};]/g, "") || "#64748b";
+  // 剥离集含 `<>{};` 与 `]`：`]]>` 是 CDATA 的终止符，一旦漏过就能提前闭合 <style> 块。
+  // 注：`>` 早已在剥离集里，故现状下 `]]>` 实际退化成 `]]` —— CDATA **不会**被提前闭合，
+  // 残留只是 CSS 自定义属性值里的垃圾文本（浏览器判为非法颜色值，丢弃该声明）。
+  // 补 `]` 是把这层垃圾也清掉：色值里的 `]` 本就不合法，正常 hex 永不含 `]`，故对正常输入零影响。
+  const exportVoltageCssColor = (color: string) => color.trim().replace(/[<>{};\]]/g, "") || "#64748b";
   const voltageStyleRules = new Map<string, { type: "ac" | "dc"; voltage: string; color: string }>();
   // 已登记过的类名集合：nodeVoltageSlotDeclarations 用它决定槽链到自身类还是回落到端子 1
   const registeredVoltageClasses = new Set<string>();
@@ -1107,8 +1118,8 @@ ${measurementAssociatedDevices
 ${backgroundImage ? svgImageContentMarkup(backgroundImage, {
     x: 0,
     y: 0,
-    width: canvasSize.width,
-    height: canvasSize.height,
+    width: canvasWidth,
+    height: canvasHeight,
     imageFit: canvasSize.backgroundImageFit,
     patternId: exportSvgUniqueId("canvas_background_image_pattern", usedSvgIds, "canvas_background_image_pattern"),
     className: "export-canvas-background-image"
@@ -1127,7 +1138,7 @@ ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
     .filter(([layerKey]) => !containerLayerKeys.has(layerKey))
     .map(exportDeviceLayerGroup)
     .join("\n");
-  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${canvasSize.width},${canvasSize.height}" active-layer-id="${escapeXml(activeExportLayerId)}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${canvasWidth},${canvasHeight}" active-layer-id="${escapeXml(activeExportLayerId)}">
 <defs id="${escapeXml(defsId)}">
 ${voltageColorStyleMarkup}
 ${nodeSymbolMarkup.join("\n")}

@@ -80,6 +80,20 @@ describe("parseEFileQuery —— 错误分支", () => {
     }
   });
 
+  // 原型链键：模板表是普通对象字面量，`!TEMPLATES[name]` 会在 constructor /
+  // toString / __proto__ 上取到 truthy 的原型成员而误判为「已知模板」，
+  // 真正的拒绝被推迟到读模板文件那步（→ 500）。故查表口径必须是 Object.hasOwn。
+  // 对照关系：这三个键与任意「不存在名」在 hasOwn 口径下行为一致，且与合法名相反，
+  // 因此本条既能咬住旧写法（500/bad-request 缺失），也不会误伤合法模板。
+  test("template 取原型链键（constructor / toString / __proto__ / hasOwnProperty / valueOf）时报未知模板", () => {
+    for (const templateName of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf"]) {
+      const parsed = query(`schemePath=${validSchemePath}&name=m&template=${encodeURIComponent(templateName)}`);
+      expect(parsed.error?.code, templateName).toBe("bad-request");
+      expect(parsed.error?.message, templateName).toContain("未知模板");
+      expect(parsed.templateName, templateName).toBeUndefined();
+    }
+  });
+
   test("已知 template 不错报（与上一条构成对照）", () => {
     const parsed = query(`schemePath=${validSchemePath}&name=m&template=${encodeURIComponent(KNOWN_TEMPLATE)}`);
     expect(parsed.error).toBeUndefined();

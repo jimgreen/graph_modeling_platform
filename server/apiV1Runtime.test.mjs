@@ -278,6 +278,19 @@ describe(apiPath("/v1/runtime/e-file"), () => {
     expect(json.error.message).toContain("可用模板");
   });
 
+  // Object.hasOwn 守卫（apiV1Runtime.mjs / eFileTemplates.mjs 同口径）：
+  // 下标取值会把 constructor / toString / __proto__ 这些原型链键放行，
+  // 后续读盘抛错 → 500。此处锁死它们必须停在 400 bad-request。
+  test("GET ?template= 原型链键（constructor / toString / __proto__）→ 400 而非 500", async () => {
+    for (const name of ["constructor", "toString", "__proto__"]) {
+      const { status, json } = await fetchV1(`${apiPath("/v1/runtime/e-file")}?template=${name}`);
+      expect(status, name).toBe(400);
+      expect(json.ok, name).toBe(false);
+      expect(json.error.code, name).toBe("bad-request");
+      expect(json.error.message, name).toContain("未知模板");
+    }
+  });
+
   test("POST templateText → 透传 templateName + templateData", async () => {
     let received = null;
     const ws = await connectResponder("c1", (resource, params) => {

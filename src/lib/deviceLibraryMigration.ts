@@ -24,39 +24,67 @@ import type { GraphTemplate } from "../appExtracted/appCoreCanvasUtilities";
 const DEVICE_LIBRARY_INDEXEDDB_SCHEMA_VERSION = 3;
 
 /**
+ * 单项 localStorage 解析失败时收集到 errors 的描述（不含 message）
+ */
+const LOCAL_STORAGE_PARSE_ERROR_LABELS: Record<string, string> = {
+  [CUSTOM_DEVICE_LIBRARY_STORAGE_KEY]: "custom device templates",
+  [CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY]: "graph templates",
+  [DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY]: "device definition overrides"
+};
+
+/**
+ * localStorage 读取 + JSON.parse 的公共外壳
+ *
+ * 损坏的数据**不参与**本趟迁移（返回 fallback：[] / {}），让其余步骤继续跑完 ——
+ * 但**必须留痕**：回退值本身就是 0 条 / 空对象，若解析失败也静默返回，
+ * 损坏数据会以「0 条」的形式被计入 migrated，而 `completed` 又只取决于 errors
+ * 是否为空，结果整趟迁移会被标成成功，问题既不可见也不再重试。
+ *
+ * 副作用：解析失败会给 errors 追加一条，故这三个读取函数在
+ * `verifyMigrationIntegrity` 里同样只在本地丢弃该详情
+ * （返回类型不变，公开 API 不变）。
+ */
+function readLocalStorageJson<T>(storageKey: string, fallback: T): { value: T; error: string | null } {
+  const label = LOCAL_STORAGE_PARSE_ERROR_LABELS[storageKey] ?? storageKey;
+  const describe = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(storageKey);
+  } catch (error) {
+    // 读键本身失败（隐私模式 / 配额 / 被禁用）与解析失败同源：数据不可得，必须留痕。
+    return { value: fallback, error: `Failed to read ${label} from localStorage: ${describe(error)}` };
+  }
+  if (!raw) return { value: fallback, error: null };
+  try {
+    return { value: JSON.parse(raw) as T, error: null };
+  } catch (error) {
+    return { value: fallback, error: `Failed to parse ${label} from localStorage: ${describe(error)}` };
+  }
+}
+
+/**
  * 从 localStorage 读取自定义设备模板
  */
-function readCustomDeviceTemplatesFromLocalStorage(): DeviceTemplate[] {
-  try {
-    const raw = window.localStorage.getItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+function readCustomDeviceTemplatesFromLocalStorage(): { templates: DeviceTemplate[]; error: string | null } {
+  const read = readLocalStorageJson<DeviceTemplate[]>(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, []);
+  return { templates: read.value, error: read.error };
 }
 
 /**
  * 从 localStorage 读取图元模板
  */
-function readCustomGraphTemplatesFromLocalStorage(): GraphTemplate[] {
-  try {
-    const raw = window.localStorage.getItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+function readCustomGraphTemplatesFromLocalStorage(): { templates: GraphTemplate[]; error: string | null } {
+  const read = readLocalStorageJson<GraphTemplate[]>(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, []);
+  return { templates: read.value, error: read.error };
 }
 
 /**
  * 从 localStorage 读取设备定义覆盖
  */
-function readDeviceDefinitionOverridesFromLocalStorage(): Record<string, any> {
-  try {
-    const raw = window.localStorage.getItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
+function readDeviceDefinitionOverridesFromLocalStorage(): { overrides: Record<string, any>; error: string | null } {
+  const read = readLocalStorageJson<Record<string, any>>(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, {});
+  return { overrides: read.value, error: read.error };
 }
 
 /**
@@ -134,10 +162,16 @@ export async function migrateFromLocalStorage(options: {
     }
 
     // 参数和量测必须先迁移到共享类，再允许具体图元写入 IndexedDB。
-    const rawTemplates = readCustomDeviceTemplatesFromLocalStorage();
+    // 三项读取各自带回一条可能为 null 的解析错误：null 表示这条数据可读，
+    // 非 null 表示该 localStorage 键损坏、被按空值处理，但损坏这件事本身要计入 errors。
+    const rawTemplatesRead = readCustomDeviceTemplatesFromLocalStorage();
+    const overridesRead = readDeviceDefinitionOverridesFromLocalStorage();
+    if (rawTemplatesRead.error) errors.push(rawTemplatesRead.error);
+    if (overridesRead.error) errors.push(overridesRead.error);
+    const rawTemplates = rawTemplatesRead.templates;
     const ownership = normalizeDeviceDefinitionOwnership(
       [...DEVICE_LIBRARY, ...rawTemplates],
-      readDeviceDefinitionOverridesFromLocalStorage()
+      overridesRead.overrides
     );
     const templates = ownership.customDeviceTemplates;
     try {
@@ -166,7 +200,9 @@ export async function migrateFromLocalStorage(options: {
     }
 
     // 2. 迁移图元模板
-    const graphTemplates = readCustomGraphTemplatesFromLocalStorage();
+    const graphTemplatesRead = readCustomGraphTemplatesFromLocalStorage();
+    if (graphTemplatesRead.error) errors.push(graphTemplatesRead.error);
+    const graphTemplates = graphTemplatesRead.templates;
     for (let i = 0; i < graphTemplates.length; i += batchSize) {
       const batch = graphTemplates.slice(i, i + batchSize);
       try {
@@ -186,9 +222,14 @@ export async function migrateFromLocalStorage(options: {
     }
 
     // 标记迁移完成
+    //
+    // completed 只在**真的没有攒到任何错误**时才为真：
+    // 部分失败若也标完成，非强制路径下次启动会在 `if (migrationStatus?.completed)` 处
+    // 直接早退（`App.tsx:687-688` 亦同），失败的数据永远不会被重试。
+    // 记录本身仍然写入（migrated 计数对排查有用），只是 completed 为假 —— 下次启动重跑。
     await db.put("migration", {
       key: "deviceLibrary",
-      completed: true,
+      completed: errors.length === 0,
       schemaVersion: DEVICE_LIBRARY_INDEXEDDB_SCHEMA_VERSION,
       timestamp: Date.now(),
       migrated
@@ -276,9 +317,12 @@ export async function verifyMigrationIntegrity(): Promise<{
   const db = await initDeviceLibraryDB();
 
   // 读取 localStorage 数据
-  const lsTemplates = readCustomDeviceTemplatesFromLocalStorage();
-  const lsGraphTemplates = readCustomGraphTemplatesFromLocalStorage();
-  const lsOverrides = readDeviceDefinitionOverridesFromLocalStorage();
+  // 这里同样按空值处理损坏的键（mismatches 会如实报出计数差），
+  // 但**不把解析错误塞进 mismatches**：那条账已被 localStorage/indexedDB 两侧的
+  // 数量对比完整覆盖，再重复一条只会把「数据没对齐」与「源数据坏了」混为一谈。
+  const lsTemplates = readCustomDeviceTemplatesFromLocalStorage().templates;
+  const lsGraphTemplates = readCustomGraphTemplatesFromLocalStorage().templates;
+  const lsOverrides = readDeviceDefinitionOverridesFromLocalStorage().overrides;
 
   // 读取 IndexedDB 数据
   const idbTemplates = await db.getAll("templates");

@@ -16,6 +16,21 @@ function decodeB64ToUint16(value: string): Uint16Array {
   for (let index = 0; index < raw.length; index += 1) {
     bytes[index] = raw.charCodeAt(index);
   }
+  // 每条记录占 2 字节（unicode / GBK 码各一个 uint16），所以字节数必须为偶数。
+  // 奇数时 `bytes.byteLength / 2` 被 Uint16Array 构造的 ToIndex 截成 floor(n/2)：
+  // 末尾半个字被静默丢弃，其后所有条目整体错位一格 —— 而 findGbkCode 的二分查找
+  // 对错位毫无察觉，只会把某个 unicode 配上**相邻**记录的 GBK 码，静默导出错字。
+  //
+  // 为何 atob 的既有失败路径接不住：base64 串本身可能完全合法（生成脚本写到一半、
+  // 手工改坏表数据），atob 只在**字符集**非法时才抛。实测非法的表会让
+  // encodeGbk 抛 DOMException/InvalidCharacterError 并向上传播 —— 这里抛同一个，
+  // 不另造一种失败方式，调用方看到的东西与其它表损坏完全一致。
+  if (bytes.byteLength % 2 !== 0) {
+    throw new DOMException(
+      `GBK 表字节数必须为偶数（实际 ${bytes.byteLength} 字节）`,
+      "InvalidCharacterError"
+    );
+  }
   return new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
 }
 

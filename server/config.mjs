@@ -46,14 +46,15 @@ export const host = process.env.IMAGE_SERVER_HOST ?? cfg.host ?? "127.0.0.1";
 //     知道它在哪。取值链里的 ?? 只能挡住左操作数为 nullish 的情形，挡不住
 //     cfg.frontend.port 本身就是 null。
 //   - 空串 / 纯空白同理视同未设（Number("") === 0，同一个坑）。
-//   - Number("abc") 得 NaN，而 NaN 会一路传到 server.listen / vite server.port ——
-//     表现为 RangeError。故非有限数（NaN 与 Infinity 都算）一律回落到既定默认值。
+//   - listen 接受的是 1..65535 的整数。NaN / Infinity 非有限（表现为 RangeError）；
+//     0 是上面说的「随机端口」；越界（<1 或 >65535）与非整数（如 1.5）会让
+//     server.listen **同步**抛 ERR_SOCKET_BAD_PORT，服务直接起不来 —— 四者皆回落。
 // 合法数字与数字字符串（如 "3000"）行为不变。
 const toPort = (value, fallback) => {
   if (value === null || value === undefined) return fallback;
   if (typeof value === "string" && value.trim() === "") return fallback;
   const port = Number(value);
-  return Number.isFinite(port) ? port : fallback;
+  return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : fallback;
 };
 
 export const frontendPort = toPort(process.env.VITE_PORT ?? cfg.frontend?.port, 5173);

@@ -88,9 +88,16 @@ function generatedStateIconVisualTransform(imageHref: string, nodeSize: { width:
     if (width <= 0 || height <= 0) {
       continue;
     }
+    // 与本文件 readStateIconSvgNumber 同形态的有限性守卫。GROUP_TRANSFORM_PATTERN 的
+    // 捕获组 `([-+]?[\d.]+)` 能匹配 "." / ".." / "-." / "1.2.3" 这类畸形串，
+    // 而 Number(".") === NaN，会让下面的坐标直接产出 NaN（SVG 属性写成 "NaN" 整条丢失）。
+    // fallback 取这条式子里被减去的同一对常量（240×160 视图盒的原点 120/80），
+    // 合法坐标的输出逐字不变。
+    const parsedTranslateX = Number(transformMatch[1]);
+    const parsedTranslateY = Number(transformMatch[2]);
     return {
-      x: (Number(transformMatch[1]) - 120) * (nodeSize.width / 240),
-      y: (Number(transformMatch[2]) - 80) * (nodeSize.height / 160),
+      x: ((Number.isFinite(parsedTranslateX) ? parsedTranslateX : 120) - 120) * (nodeSize.width / 240),
+      y: ((Number.isFinite(parsedTranslateY) ? parsedTranslateY : 80) - 80) * (nodeSize.height / 160),
       scale: Math.min(
         (width * (nodeSize.width / 240)) / Math.max(1, nodeSize.width),
         (height * (nodeSize.height / 160)) / Math.max(1, nodeSize.height)

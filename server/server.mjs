@@ -3776,8 +3776,20 @@ async function maxStoredProjectIndex(dir) {
     if (!entry.isFile() || !isModelJsonFile(entry.name)) {
       continue;
     }
+    let raw;
     try {
-      const parsed = JSON.parse(await readFile(entryPath, "utf-8"));
+      raw = await readFile(entryPath, "utf-8");
+    } catch (error) {
+      // 与同函数 readdir 失败处（及 readPersistedModelIndex）同一纪律：忽略是既有降级，
+      // 但非 ENOENT 意味着这个文件的 idx 看不见也无人知道，计数器一旦也偏低就会分配出
+      // 重复 idx。留一句，排查者才知道该去看哪儿。ENOENT（刚被删）继续静默。
+      if (error?.code !== "ENOENT") {
+        console.warn(`[模型序号] 读取模型文件失败（${error?.code ?? error?.name ?? "unknown"}），该模型的 idx 本次不参与计算：${entryPath}`);
+      }
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(raw);
       const idx = Number(parsed?.idx);
       if (Number.isSafeInteger(idx) && idx > maxIndex) {
         maxIndex = idx;

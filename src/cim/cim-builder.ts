@@ -132,8 +132,19 @@ function isAcTerminal(terminal: ModelNode["terminals"][number]): boolean {
   return terminal.type === "ac";
 }
 
+/** 有效拓扑编号：有限且 >= 1。
+ *
+ * 平台侧 `calculateElectricalTopology` 产出的拓扑号是 **1 起编**（见 model-topology.test.ts
+ * 「纯 DC 设备的 acTopologyNode 为 0」），而新建节点的持久化默认值同样是 `0`
+ * （model-node-ops.ts / appView.tsx / model-routing.ts 悬空端点），无 AC 端子时
+ * model-routing.ts 也会算出 0。故 `0` 是「未参与拓扑」的哨兵值，不是合法编号。
+ *
+ * 一旦把 0 放进桶，阶段 c 的 `bucket.length >= 2 即 union` 会把所有 acTopologyNode 为 0 的
+ * 节点并进同一个 ConnectivityNode —— CIM 导出链路不重算拓扑（server/cimExport.mjs 直读
+ * project.nodes，而 SVG / E 导出前都会调 calculateElectricalTopology），于是持久化里陈旧的
+ * 默认值会直接变成一个凭空捏造的大 CN。0 必须在入桶前排除。 */
 function validTopologyNumber(value: number): boolean {
-  return Number.isFinite(value) && value >= 0;
+  return Number.isFinite(value) && value >= 1;
 }
 
 /** 阶段 3：端子并查 → ConnectivityNode；每组一个 CN，组内每端子一个 Terminal */

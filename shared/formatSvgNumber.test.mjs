@@ -111,6 +111,26 @@ describe("输出可直接用作 SVG 属性值", () => {
     }
   });
 
+  test("乘 1e5 溢出为非有限的有限输入归 0（不输出字面 Infinity）", () => {
+    // 缺陷形态：输入 finite → 守卫放行 → `* 100000` 溢出成 ±Infinity →
+    // `Math.round(Infinity)/100000` 仍是 Infinity → 输出 "Infinity"。
+    // 即守卫只查输入、查不到这个**中间态**，与本文件「非有限归 0」的契约矛盾。
+    //
+    // 阈值 = Number.MAX_VALUE / 1e5 ≈ 1.797e303。实测 1.797e303 仍安全，
+    // 1.798e303 起溢出 —— 故下表同时钉住两侧，边界不是随手挑的数。
+    const overflowed = [1.798e303, 1e304, -1e307, Number.MAX_VALUE];
+    for (const v of overflowed) {
+      // 断言前提：输入本身必须是有限值，否则这个用例没有区分力
+      //（与首个 describe 的 NaN/Infinity 路径重复，证明不了新守卫）。
+      expect(Number.isFinite(v), String(v)).toBe(true);
+      expect(formatSvgNumber(v), String(v)).toBe("0");
+      expect(formatSvgNumber(v), String(v)).not.toMatch(/Infinity/i);
+    }
+    // 边界内侧不变：仍是 1.797e+303（与 fix 前逐字相同，见下方「零行为变化」对比）
+    expect(formatSvgNumber(1.797e303)).toBe("1.797e+303");
+    expect(formatSvgNumber(-1.797e303)).toBe("-1.797e+303");
+  });
+
   test("放进 SVG 根标签后是合法属性值（浏览器不会忽略）", () => {
     const attr = `x="${formatSvgNumber(NaN)}" y="${formatSvgNumber(12.5)}"`;
     expect(attr).toBe('x="0" y="12.5"');

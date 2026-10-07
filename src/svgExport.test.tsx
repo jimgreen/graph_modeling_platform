@@ -2155,4 +2155,89 @@ describe("SVG export", () => {
 
     expect(svg).toContain('d="M -22.22222222222222 -15.11111111111111 L 22.22222222222222 -15.11111111111111 L 0 15.11111111111111 Z"');
   });
+
+  // ① 色值防 CDATA 提前闭合。
+  // 事实校准（与 brief 的描述有出入，照实记录）：
+  // 剥离集 /[<>{};]/g 里的 `>` **已经**在拦 `]]>` —— 所以现状下 `]]>` 退化成 `]]`，
+  // CDATA 并**不会**被提前闭合（下面的 "]]> 次数 === 1" 就是证据：唯一那处是 :722 自己的闭合符）。
+  // 真实残留是垃圾文本进了 CSS 自定义属性值：浏览器判为非法颜色值、丢弃该声明（不影响安全）。
+  // 补 `]` 的收益是把 `]]` 也清掉，让色值里不残留任何括号残迹；正常 hex 永不含 `]`，故对正常输入零影响。
+  // 故本组断言钉的是「产出结构」而非「曾被攻破」：CDATA 区段必须完整、终止符仍唯一、
+  // 色值残迹不再带 `]`。若有人把 `]` 从剥离集里删掉，本组转红。
+  describe("电压色值剥离 CDATA 终止符", () => {
+    const EVIL_COLOR = "]]><style>*{fill:red}</style><![CDATA[";
+    const voltageColorStyleBlock = (svg: string) => svg.match(/<style[^>]*>[\s\S]*?<\/style>/)?.[0] ?? "";
+
+    const renderWithVoltageColor = (color: string) => {
+      const bus = createDefaultNode("ac-bus", { x: 100, y: 100 });
+      bus.id = "evil-color-bus";
+      bus.params = { ...bus.params, vbase: "10" };
+      const svg = buildSvgDocument([bus], [], {
+        width: 800,
+        height: 600,
+        colorDisplayMode: "voltage",
+        colorPalette: { ...DEFAULT_COLOR_PALETTE, voltage: { ...DEFAULT_COLOR_PALETTE.voltage, "ac:10": color } }
+      });
+      return svg;
+    };
+
+    test("色值含 ]]> 时 CDATA 区段仍完整、终止符唯一（不会被提前闭合）", () => {
+      const block = voltageColorStyleBlock(renderWithVoltageColor(EVIL_COLOR));
+
+      // 开标签与 CDATA 开标记各恰好一次
+      expect(block.match(/<style/g)?.length).toBe(1);
+      expect(block.match(/<!\[CDATA\[/g)?.length).toBe(1);
+      // 终止符只有 :722 自己那一处 —— 关键断言：色值没能再注入一个 ]]> 把块提前关掉
+      expect(block.match(/\]\]>/g)?.length).toBe(1);
+      // 块尾仍是干净的闭合序列
+      expect(block.endsWith("\n]]></style>")).toBe(true);
+    });
+
+    test("剥离集含 `]`：色值残迹里不留裸 `]`（[[ 也不成对）", () => {
+      const block = voltageColorStyleBlock(renderWithVoltageColor(EVIL_COLOR));
+
+      // 唯一允许的 `]]` 是 :722 自身的 CDATA 终止符；色值那行不得再含 `]]`
+      const kv10Rule = block.match(/\.kv10\{[^}]*\}/)?.[0] ?? "";
+      expect(kv10Rule).toContain("--c-kv10:");
+      expect(kv10Rule).not.toContain("]");
+      expect(block.replace("\n]]></style>", "")).not.toContain("]");
+    });
+
+    test("正常 hex 色值逐字节不回归（`]` 剥离不误伤）", () => {
+      const svg = renderWithVoltageColor("#aabbcc");
+
+      expect(svg).toContain(".kv10{--c-kv10:#aabbcc;stroke:var(--c-kv10);color:var(--c-kv10);fill:var(--c-kv10)}");
+      expect(voltageColorStyleBlock(svg)).toContain("]]></style>");
+    });
+  });
+
+  // ② 主画布尺寸兜底。与 :378-379 背景页同走 atLeastOneNumber。
+  // ⚠ 断言必须钉到**兜底常量 1920/1024**本身，不能只断言「不含 NaN」——
+  //   把 NaN formatSvgNumber 一下也能凑成合法数字那样的弱断言恒绿。
+  // ⚠ +Infinity 不在本组覆盖内：atLeastOneNumber 刻意不拦 +Infinity
+  //   （canvasViewport.test.ts 把它钉成既定语义），故它会原样透传。这是既定行为，
+  //   不是本处遗漏；要拦它得改 atLeastOneNumber，那是另一个函数的契约，不在本任务范围。
+  describe("主画布 viewBox 尺寸兜底", () => {
+    const rootViewBox = (svg: string) => svg.match(/\bviewBox="([^"]*)"/)?.[1] ?? "";
+
+    test("canvasWidth 非数字串 → 回落到 DEFAULT_CANVAS_WIDTH=1920", () => {
+      // 保存端点不校验 record.project（server/server.mjs 的保存接口注释明写「对 record.project
+      // 不做结构校验」），故 "不是数字" 能一路走到导出层。
+      expect(rootViewBox(buildSvgDocument([], [], { width: "不是数字" as never, height: 260 }))).toBe("0,0,1920,260");
+    });
+
+    test("canvasWidth 缺值 / NaN / 0（atLeastOneNumber 的三类缺值）→ 同一兜底值", () => {
+      expect(rootViewBox(buildSvgDocument([], [], { height: 260 } as never))).toBe("0,0,1920,260");
+      expect(rootViewBox(buildSvgDocument([], [], { width: Number.NaN as never, height: 260 }))).toBe("0,0,1920,260");
+      expect(rootViewBox(buildSvgDocument([], [], { width: 0 as never, height: 260 }))).toBe("0,0,1920,260");
+    });
+
+    test("canvasHeight 非数字串 → 回落到 DEFAULT_CANVAS_HEIGHT=1024", () => {
+      expect(rootViewBox(buildSvgDocument([], [], { width: 420, height: "不是数字" as never }))).toBe("0,0,420,1024");
+    });
+
+    test("正常数值逐字节不回归（仍用传入值，不用兜底值）", () => {
+      expect(rootViewBox(buildSvgDocument([], [], { width: 420, height: 260 }))).toBe("0,0,420,260");
+    });
+  });
 });

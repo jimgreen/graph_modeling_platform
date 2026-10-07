@@ -313,6 +313,51 @@ describe(apiPath("/v1/control/devices/select"), () => {
     expect(json.error.code).toBe("bad-request");
   });
 
+  // mode 白名单：只在 `mode !== undefined` 时校验，缺省仍然合法。
+  // 下面两条守住这个区分 —— 判据若写成真值检查，`{ ids: ["n1"] }` 会被误判成非法。
+  test("非法 mode → 400 bad-request + mode 文案（不下发指令）", async () => {
+    for (const mode of ["bogus", "SET", "", "Set", 1, null, ["set"]]) {
+      let dispatched = false;
+      const ws = await connectCommandResponder("c1", () => {
+        dispatched = true;
+        return { ok: true, data: { selectedIds: [] } };
+      });
+      const { status, json } = await postV1(apiPath("/v1/control/devices/select"), { ids: ["n1"], mode });
+      expect(status, JSON.stringify(mode)).toBe(400);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("bad-request");
+      expect(json.error.message, JSON.stringify(mode)).toBe("mode 须为 set、add 或 toggle。");
+      expect(dispatched, JSON.stringify(mode)).toBe(false);
+      ws.close();
+    }
+  });
+
+  test("三个合法 mode 都原样下发", async () => {
+    for (const mode of ["set", "add", "toggle"]) {
+      const ws = await connectCommandResponder("c1", (_name, params) => {
+        expect(params.mode).toBe(mode);
+        return { ok: true, data: { selectedIds: [] } };
+      });
+      const { status } = await postV1(apiPath("/v1/control/devices/select"), { ids: ["n1"], mode });
+      expect(status, mode).toBe(200);
+      ws.close();
+    }
+  });
+
+  test("mode 缺省仍然合法：200 且指令参数里根本没有 mode 字段", async () => {
+    let received = null;
+    const ws = await connectCommandResponder("c1", (name, params) => {
+      received = { name, params };
+      return { ok: true, data: { selectedIds: ["n1"] } };
+    });
+    const { status, json } = await postV1(apiPath("/v1/control/devices/select"), { ids: ["n1"] });
+    expect(status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(received).toEqual({ name: "control.devices.select", params: { ids: ["n1"] } });
+    expect(received.params).not.toHaveProperty("mode");
+    ws.close();
+  });
+
   test("无在线客户端 → 503 no-online-client（control.devices.select）", async () => {
     const { status, json } = await postV1(apiPath("/v1/control/devices/select"), { ids: ["n1"] });
     expect(status).toBe(503);
@@ -422,6 +467,60 @@ describe(apiPath("/v1/control/device/property/update"), () => {
     const { status, json } = await postV1(apiPath("/v1/control/device/property/update"), { id: "n1", category: "graphic" });
     expect(status).toBe(400);
     expect(json.error.code).toBe("bad-request");
+  });
+
+  // category 白名单：三个合法值之外一律 400，断言要落在具体文案上，
+  // 免得「把 category 校验整段删掉」只靠状态码就蒙混过关（400 也可能来自 patch 校验）。
+  test("非法 category → 400 bad-request + category 文案（不下发指令）", async () => {
+    // 只放「是字符串但不在白名单里」的输入。空串 / 数字 / 数组会被上面那道
+    // `!category || typeof category !== "string"` 先拦下，报「category 必填。」——
+    // 那条路径由 apiV1ControlHandlers.test.mjs 的 category 缺失用例覆盖。
+    // 大小写与前后空白都不做归一，故 "Graphic" / " graphic" / "GraphiC" 都算非法。
+    for (const category of ["任意", "Graphic", " graphic", "graphic ", "GraphiC"]) {
+      let dispatched = false;
+      const ws = await connectCommandResponder("c1", () => {
+        dispatched = true;
+        return { ok: true, data: { id: "n1" } };
+      });
+      const { status, json } = await postV1(apiPath("/v1/control/device/property/update"), {
+        id: "n1",
+        category,
+        patch: { rotation: 90 }
+      });
+      expect(status, JSON.stringify(category)).toBe(400);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("bad-request");
+      expect(json.error.message, JSON.stringify(category)).toBe("category 须为 graphic、model 或 measurement。");
+      expect(dispatched, JSON.stringify(category)).toBe(false);
+      ws.close();
+    }
+  });
+
+  test("三个合法 category 都原样下发", async () => {
+    for (const category of ["graphic", "model", "measurement"]) {
+      const ws = await connectCommandResponder("c1", (_name, params) => {
+        expect(params.category).toBe(category);
+        return { ok: true, data: { id: "n1", category } };
+      });
+      const { status } = await postV1(apiPath("/v1/control/device/property/update"), {
+        id: "n1",
+        category,
+        patch: { rotation: 90 }
+      });
+      expect(status, category).toBe(200);
+      ws.close();
+    }
+  });
+
+  test("category 非法优先于 patch 非法（校验顺序：id → category 取值域 → patch）", async () => {
+    const { status, json } = await postV1(apiPath("/v1/control/device/property/update"), {
+      id: "n1",
+      category: "任意",
+      patch: "不是对象"
+    });
+    expect(status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+    expect(json.error.message).toBe("category 须为 graphic、model 或 measurement。");
   });
 
   test("无在线客户端 → 503 no-online-client（control.device.property.update）", async () => {

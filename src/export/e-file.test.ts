@@ -91,6 +91,33 @@ describe("src/export/e-file", () => {
     expect(result.eDeviceDefinitionTemplateFields).toEqual({});
   });
 
+  // 查表键与 appendUniqueFields 的单键去重契约对齐（`sourceName ?? exportName`）。
+  // 字段补充处写出的占位字段是 `sourceName: sourceName || undefined`（e-file.ts:865）——
+  // 它只在 exportName 上有名字。查表若只认 sourceName，这些字段会全部塌进同一个空键、
+  // 最后一个胜出，模板列便永远命中不了，只能落到占位分支，把该字段自带的
+  // cnName / definition / readonly 一并丢掉。
+  test("★ sourceName 为空的字段仍能被模板列命中（只认 exportName 就塌到空键）", () => {
+    const def = { enName: "rated_voltage", unit: "kV" };
+    const fields = [
+      // 空串 sourceName：塌键形态下它与下一个字段共键，谁在后就用谁 → 前者永不可见
+      { sourceName: "", exportName: "rated_voltage", cnName: "额定电压", exportEnabled: true, readonly: true, definition: def },
+      // undefined sourceName：与 :865 写出的补齐字段同形
+      { sourceName: undefined, exportName: "rated_capacity", cnName: "额定容量", exportEnabled: true, readonly: false, definition: def },
+      // 两列皆空：空键查不到（模板侧空列项在 :170 被 `!key` 跳过）→ 必然被丢弃
+      { sourceName: undefined, exportName: "", cnName: "无名", readonly: true }
+    ];
+    const ordered = applyEDeviceInterfaceFieldOrder(fields, ["rated_capacity", "rated_voltage"]) as any[];
+    // 两个模板列各自命中原字段（不是占位），且字段自带信息一并带出；无名字段不进结果
+    expect(ordered).toHaveLength(2);
+    expect(ordered.map((field) => field.sourceName)).toEqual([undefined, ""]);
+    expect(ordered[0]).toBe(fields[1]);
+    expect(ordered[1]).toBe(fields[0]);
+    expect(ordered.map((field) => [field.cnName, field.exportName, field.readonly])).toEqual([
+      ["额定容量", "rated_capacity", false],
+      ["额定电压", "rated_voltage", true]
+    ]);
+  });
+
   test("字段辅助函数覆盖空值、别名与未知库分支", () => {
     const fields = [
       { sourceName: "i_max" },

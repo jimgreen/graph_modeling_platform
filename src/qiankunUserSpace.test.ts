@@ -166,6 +166,24 @@ describe("bindUserSpaceToSession", () => {
     expect(warnSpy).toHaveBeenCalled();
   });
 
+  // 上面「后端报错」那条锁的是「已有 Cookie 不被改写」。这条锁的是**回退语义本身**：
+  // Cookie 为空时绑定失败，必须一次都不写 —— 空 Cookie 交回后端解析链（回退 spaces[0]），
+  // 与本模块上线前一致；写了任何值反而等于前端自选一个空间，那才是「静默丢数据」。
+  test("绑定失败且 Cookie 为空：一次都不写，空间交回后端解析链（回退 spaces[0]）", async () => {
+    const failure = new Error("后端未起");
+    (globalThis as any).fetch = vi.fn(async () => {
+      throw failure;
+    });
+
+    await expect(bindUserSpaceToSession("张三")).resolves.toBeUndefined();
+
+    expect(mockDoc.writes).toHaveLength(0);
+    expect(readSpaceCookie()).toBe("");
+    // 静默吞掉不等于静默失败：错误必须原样带出去，否则宿主未登录 / 建空间被拒无法定位
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][1]).toBe(failure);
+  });
+
   test("最近访问缺失时回退创建时间；两个时间都没有的空间排最旧", async () => {
     // stamp = lastAccessAt ?? createdAt ?? ""。三档各自只有一个空间命中，
     // 且必须 ≥2 个才能让 sort 真的去调比较器（单元素数组 sort 不比较，stamp 根本不会被求值）。

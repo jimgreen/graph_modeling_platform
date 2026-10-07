@@ -249,7 +249,7 @@ describe("handleControlDevicesSelect", () => {
     expect(firstCallParams(ctx).ids).toEqual(["n1", 2, null]);
   });
 
-  test("mode 缺省不下发，给了原样透传（不校验取值域）", async () => {
+  test("mode 缺省不下发，给了原样透传（取值域限 set / add / toggle）", async () => {
     const without = await run(handleControlDevicesSelect, { body: { ids: ["n1"] } });
     expect(firstCallParams(without.ctx)).not.toHaveProperty("mode");
 

@@ -1149,6 +1149,107 @@ describe("globalLineKindForEnergy", () => {
   });
 });
 
+/**
+ * 两处排序比较器的残缺记录兜底：previewGlobalLineRecordsForProject 的返回值排序，
+ * 与 candidateGlobalLines 的候选排序。
+ *
+ * 缺 name 的真实来源就在 previewGlobalLineRecordsForProject 里：persisted 分支
+ * `name: persisted.name`（:524）是**原样搬运**，持久化 JSON 缺 name 时就是 undefined；
+ * 而 node 分支（:530）有 `String(node.name ?? "").trim() || preview.name` 兜底。
+ * 所以既有那条 `name: undefined` 用例（喂的是 node）根本触达不到这里，必须喂 persisted record。
+ *
+ * 两条形状上的依赖，缺一条断言就恒绿：
+ *
+ * ① 残缺记录必须排在**下标 >= 1**。二分插入排序对 2 个元素只比较一次
+ *    `compare(data[1], data[0])`，残缺记录才是 `left`；而 `left.name.localeCompare(...)`
+ *    只在 `left` 为 undefined 时抛（undefined 作为**实参**会被 String 强转）。
+ *    放在下标 0 时它只当 right，抛不出来。
+ *
+ * ② 残缺记录与对照记录必须 **idx 相同**。`left.idx - right.idx || ...` 是短路链，
+ *    idx 不同则后半段根本不求值，兜底删掉也不抛。
+ */
+describe("全局线路排序对残缺 persisted record 兜底", () => {
+  function persistedResidual(overrides: Partial<GlobalLineRecord> = {}): GlobalLineRecord {
+    // degree=0 + 空 references：走 candidateGlobalLines 的 `record.degree < 2` 分支，
+    // 不会被 filter 提前滤掉，确保真的走到 .sort。
+    return record({
+      id: "global-line-residual",
+      idx: 7,
+      name: "残缺线路",
+      references: [],
+      endpointSlots: { source: null, target: null },
+      terminalSlots: { i: null, j: null },
+      degree: 0,
+      ...overrides
+    });
+  }
+
+  const identity = {
+    modelKey: "model:1",
+    projectIdx: 1,
+    schemePath: ["方案"],
+    projectName: "模型一",
+    nodeId: ""
+  };
+
+  test("preview 返回值排序：persisted record 缺 name 时不抛 TypeError", () => {
+    const head = persistedResidual({ id: "global-line-head", name: "甲线路" });
+    const nameless = persistedResidual({ id: "global-line-nameless", name: undefined });
+
+    // 残缺记录在下标 1，且与对照记录 idx 相同 —— 这两条是抛错的前提。
+    expect(() => previewGlobalLineRecordsForProject([head, nameless], [], "厂站", identity))
+      .not.toThrow();
+    // name 兜底成空串，排在非空前缀之前；两条都没被静默丢掉。
+    expect(previewGlobalLineRecordsForProject([head, nameless], [], "厂站", identity).map((r) => r.id))
+      .toEqual(["global-line-nameless", "global-line-head"]);
+  });
+
+  test("preview 返回值排序：node 分支有 name 兜底，残缺 node 不影响结果", () => {
+    // 对照组：node 缺 name 走的是 :530 那条带兜底的分支，name 取 preview.name。
+    const station = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+    station.params.model_id = "22";
+    const load = createDefaultNode("ac-load", { x: 500, y: 0 });
+    const line = connectLine("ac-routable-line", load.id, station.id);
+    line.params = { ...line.params, [GLOBAL_LINE_ID_PARAM]: "global-line-node", idx: "7" };
+    const namelessNode = { ...line, name: undefined as unknown as string };
+    const head = persistedResidual({ id: "global-line-head", name: "甲线路" });
+
+    expect(() => previewGlobalLineRecordsForProject([head], [station, load, namelessNode], "厂站", identity))
+      .not.toThrow();
+    const preview = previewGlobalLineRecordsForProject([head], [station, load, namelessNode], "厂站", identity);
+    // node 的 name 缺失被 `String(node.name ?? "").trim() || preview.name` 兜住，不会产出 undefined name。
+    expect(preview.every((r) => typeof r.name === "string")).toBe(true);
+  });
+
+  test("候选线路排序：persisted record 缺 name 时不抛 TypeError", () => {
+    const head = persistedResidual({ id: "global-line-head", name: "甲线路" });
+    const nameless = persistedResidual({ id: "global-line-nameless", name: undefined });
+
+    expect(() => candidateGlobalLines([head, nameless], "ac", "model:1", "target")).not.toThrow();
+    expect(candidateGlobalLines([head, nameless], "ac", "model:1", "target").map((r) => r.id))
+      .toEqual(["global-line-nameless", "global-line-head"]);
+  });
+
+  test("字段齐全的输入排序结果逐字不变：idx 优先、name 次之", () => {
+    const byIdx = [
+      persistedResidual({ id: "c", idx: 3, name: "甲线路" }),
+      persistedResidual({ id: "a", idx: 1, name: "乙线路" }),
+      persistedResidual({ id: "b", idx: 2, name: "丙线路" })
+    ];
+    expect(candidateGlobalLines(byIdx, "ac", "model:1", "target").map((r) => r.id))
+      .toEqual(["a", "b", "c"]);
+
+    // 同 idx 按 zh-CN 名序；idx=0 是合法值（normalizedModelIndex 的无 model_id 占位），必须留在最前。
+    const byName = [
+      persistedResidual({ id: "z", idx: 4, name: "乙线路" }),
+      persistedResidual({ id: "a", idx: 4, name: "甲线路" }),
+      persistedResidual({ id: "m", idx: 0, name: "丙线路" })
+    ];
+    expect(candidateGlobalLines(byName, "ac", "model:1", "target").map((r) => r.id))
+      .toEqual(["m", "a", "z"]);
+  });
+});
+
 // ─── useGlobalLines 的 SSR 行为探针 ───
 //
 // 此前本文件对 useGlobalLines 只有两处 readFileSync + toContain 的**源码文本**断言

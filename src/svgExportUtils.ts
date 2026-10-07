@@ -104,6 +104,30 @@ export function exportSvgUniqueId(rawId: string, usedIds: Set<string>, fallback:
   return candidate;
 }
 
+/**
+ * 解析图元 params.idx，取不到「可安全用于重编号」的正整数时返回 0。
+ *
+ * `Number.parseInt` 对超出 2^53-1 的十进制串会静默舍入成相邻的 double，
+ * 而重编号是 `while (usedIndexes.has(exportIndex)) exportIndex += 1`：
+ * 一旦 `exportIndex + 1 === exportIndex`，这个循环永远退不出来，导出时标签页直接卡死。
+ * （idx 来自可导入的项目 JSON，是外部输入。）
+ * 故此处必须用 `Number.isSafeInteger` 判定 —— 光有 `/^[1-9]\d*$/` 挡不住超长数字串。
+ */
+function exportSvgRequestedIndex(value: unknown) {
+  const text = String(value ?? "").trim();
+  if (!/^[1-9]\d*$/.test(text)) {
+    return 0;
+  }
+  const parsed = Number.parseInt(text, 10);
+  return Number.isSafeInteger(parsed) ? parsed : 0;
+}
+
+// 碰撞重编号到 MAX_SAFE_INTEGER 后回到 1，避免 `index += 1` 在边界处原地不动。
+// 单个 MAX_SAFE_INTEGER 仍保留原编号；只有继续寻找空位时才回绕。
+function nextExportIndex(index: number) {
+  return index >= Number.MAX_SAFE_INTEGER ? 1 : index + 1;
+}
+
 export function buildExportDeviceIdMap(nodes: readonly ModelNode[], usedIds: Set<string>) {
   const usedIndexesByType = new Map<string, Set<number>>();
   const staticNodesByType = new Map<string, ModelNode[]>();
@@ -119,15 +143,14 @@ export function buildExportDeviceIdMap(nodes: readonly ModelNode[], usedIds: Set
     const typeId = exportSvgSafeId(inferESection(node.kind, node.params) || String(node.kind), "device");
     const usedIndexes = usedIndexesByType.get(typeId) ?? new Set<number>();
     usedIndexesByType.set(typeId, usedIndexes);
-    const requestedIndexText = String(node.params.idx ?? "").trim();
-    const requestedIndex = /^[1-9]\d*$/.test(requestedIndexText) ? Number.parseInt(requestedIndexText, 10) : 0;
+    const requestedIndex = exportSvgRequestedIndex(node.params.idx);
     if (requestedIndex <= 0) {
       result.set(node.id, exportSvgUniqueId(node.id, usedIds, "device"));
       continue;
     }
     let exportIndex = requestedIndex;
     while (usedIndexes.has(exportIndex)) {
-      exportIndex += 1;
+      exportIndex = nextExportIndex(exportIndex);
     }
     usedIndexes.add(exportIndex);
     result.set(node.id, exportSvgUniqueId(`${typeId}-${exportIndex}`, usedIds, "device"));
@@ -138,8 +161,7 @@ export function buildExportDeviceIdMap(nodes: readonly ModelNode[], usedIds: Set
     const indexedNodes: Array<{ node: ModelNode; requestedIndex: number }> = [];
     const unindexedNodes: ModelNode[] = [];
     for (const node of typeNodes) {
-      const requestedIndexText = String(node.params.idx ?? "").trim();
-      const requestedIndex = /^[1-9]\d*$/.test(requestedIndexText) ? Number.parseInt(requestedIndexText, 10) : 0;
+      const requestedIndex = exportSvgRequestedIndex(node.params.idx);
       if (requestedIndex > 0) {
         indexedNodes.push({ node, requestedIndex });
       } else {
@@ -150,7 +172,7 @@ export function buildExportDeviceIdMap(nodes: readonly ModelNode[], usedIds: Set
     for (const { node, requestedIndex } of indexedNodes) {
       let exportIndex = requestedIndex;
       while (usedIndexes.has(exportIndex)) {
-        exportIndex += 1;
+        exportIndex = nextExportIndex(exportIndex);
       }
       usedIndexes.add(exportIndex);
       result.set(node.id, exportSvgUniqueId(`${typeId}-${exportIndex}`, usedIds, "static"));
@@ -159,7 +181,7 @@ export function buildExportDeviceIdMap(nodes: readonly ModelNode[], usedIds: Set
     let exportIndex = 1;
     for (const node of unindexedNodes) {
       while (usedIndexes.has(exportIndex)) {
-        exportIndex += 1;
+        exportIndex = nextExportIndex(exportIndex);
       }
       usedIndexes.add(exportIndex);
       result.set(node.id, exportSvgUniqueId(`${typeId}-${exportIndex}`, usedIds, "static"));

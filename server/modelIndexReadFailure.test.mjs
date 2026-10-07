@@ -21,20 +21,48 @@ import { apiPath } from "./config.mjs";
 const SCHEME = "索引方案";
 
 let failReadFor = "";
+// 单文件读盘失败里「刚好被删掉」的那一类：readdir 已列出该文件，随后的 readFile 才报
+// ENOENT。它必须与 EACCES 分开对待，否则每次保存都会对着自己刚删的文件刷告警。
+let failReadWithEnoentFor = "";
+// 记录 readFile 真实被调到的路径：用来证明注入点真的走到了（否则 ENOENT 那条断言可能
+// 因为压根没调用而恒绿）。
+const readAttempts = [];
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
     readFile: async (path, ...rest) => {
+      // 先记账再决定放不放行：注入分支自身也必须留下「这里确实被调用过」的证据，
+      // 否则下面那条 ENOENT 不告警的断言可能只是因为探针压根没走到。
+      readAttempts.push(String(path));
       if (failReadFor && String(path) === failReadFor) {
         const error = new Error(`EACCES: permission denied, open '${path}'`);
         error.code = "EACCES";
+        throw error;
+      }
+      if (failReadWithEnoentFor && String(path) === failReadWithEnoentFor) {
+        const error = new Error(`ENOENT: no such file or directory, open '${path}'`);
+        error.code = "ENOENT";
         throw error;
       }
       return actual.readFile(path, ...rest);
     }
   };
 });
+
+const captureWarnings = async (run) => {
+  const original = console.warn;
+  const collected = [];
+  console.warn = (...args) => {
+    collected.push(args.map(String).join(" "));
+  };
+  try {
+    await run();
+  } finally {
+    console.warn = original;
+  }
+  return collected;
+};
 
 let server;
 let baseUrl;
@@ -74,6 +102,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   failReadFor = "";
+  failReadWithEnoentFor = "";
   if (server) await new Promise((resolve) => server.close(resolve));
   rmSync(dataDir, { recursive: true, force: true });
 });
@@ -110,5 +139,58 @@ describe("模型 idx 的稳定身份", () => {
     const response = await renameModel("", "全新模型");
     expect(response.status).toBe(200);
     expect(storedIdx("全新模型")).toBeGreaterThan(0);
+  });
+});
+
+// maxStoredProjectIndex 遍历全量模型文件求最大 idx。单个文件读盘失败时它**继续忽略**
+// （既有降级：读不到的最大值当它不存在，idx 分配仍可用其余文件推进），但静默与「确实
+// 没有这个 idx」同形 —— 计数器一旦也偏低就会分配出重复 idx，而日志里一个字都没有。
+// 与同函数 readdir 失败处（及 readPersistedModelIndex）保持同一纪律：按 error.code 区分，
+// 非 ENOENT 留一句。
+describe("全量扫盘时单个模型文件读盘失败", () => {
+  const blocked = () => join(schemeDir, "被占用的模型.json");
+
+  test("★ 非 ENOENT（EACCES）时告警，并说明该模型的 idx 本次不算", async () => {
+    seedModel("被占用的模型", 12);
+    failReadFor = blocked();
+    readAttempts.length = 0;
+    let status;
+    const warnings = await captureWarnings(async () => {
+      const response = await renameModel("", "扫盘保存甲");
+      status = response.status;
+    });
+    failReadFor = "";
+
+    expect(status, "扫盘读盘失败不该改变保存接口的响应码").toBe(200);
+    expect(readAttempts, "注入点没被走到，下面的告警断言会假绿").toContain(blocked());
+
+    const hit = warnings.filter((line) => line.includes("[模型序号]") && line.includes("读取模型文件失败"));
+    expect(hit.length, "单个模型文件读不动没有留痕").toBeGreaterThan(0);
+    expect(hit.some((line) => line.includes("EACCES"))).toBe(true);
+    expect(hit.some((line) => line.includes(blocked()))).toBe(true);
+  });
+
+  test("★ ENOENT（文件刚被删）不告警（否则每次保存都对着刚删的文件刷屏）", async () => {
+    seedModel("刚被删的模型", 13);
+    failReadWithEnoentFor = join(schemeDir, "刚被删的模型.json");
+    readAttempts.length = 0;
+    let status;
+    const warnings = await captureWarnings(async () => {
+      const response = await renameModel("", "扫盘保存乙");
+      status = response.status;
+    });
+    failReadWithEnoentFor = "";
+
+    expect(status).toBe(200);
+    expect(readAttempts, "ENOENT 注入点没被走到，本用例什么都没证明").toContain(join(schemeDir, "刚被删的模型.json"));
+    expect(warnings.filter((line) => line.includes("读取模型文件失败")), "ENOENT 属于正常路径，不该刷屏").toEqual([]);
+  });
+
+  test("一切正常时不产生读取模型文件失败的告警", async () => {
+    const warnings = await captureWarnings(async () => {
+      const response = await renameModel("", "扫盘保存丙");
+      expect(response.status).toBe(200);
+    });
+    expect(warnings.filter((line) => line.includes("读取模型文件失败"))).toEqual([]);
   });
 });

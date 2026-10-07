@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test, vi } from "vitest";
 import {
   CUSTOM_DEVICE_TEMPLATE_KEY,
@@ -601,6 +602,54 @@ describe("reconcileNodeWithEffectiveTemplateDefinition 的端子同步", () => {
       template({ terminalCount: Number.NaN as never })
     );
     expect(reconciled.terminals[0].nodeNumber).toBe("N777");
+  });
+
+  // 守卫必须是「真 number」而不是「Number(x) 有限」。后者把 null / "" / [] / false
+  // 全判成 0（四个都 Number() 等于 0 且 0 有限）→ 归零 → createTerminals(type, 0)
+  // 返回 [] → 节点端子被整体清空。判别输入必须是这四个，喂 NaN 会被旧断言覆盖、
+  // 守卫加不加都绿。
+  const zeroCoercibleInputs = [
+    { label: "null", value: null },
+    { label: "空串", value: "" },
+    { label: "空数组", value: [] },
+    { label: "false", value: false }
+  ] as const;
+
+  test.each(zeroCoercibleInputs)("terminalCount 为 $label 时端子原样不动（不被当成 0 清空）", ({ value }) => {
+    const node = nodeWithTerminals([t("t1", "ac", { nodeNumber: "N777" }), t("t2", "dc", { nodeNumber: "N888" })]);
+    const reconciled = reconcileNodeWithEffectiveTemplateDefinition(
+      node,
+      template({ terminalCount: value as never })
+    );
+    // 整段端子（含 id/type/label/nodeNumber/vbase/anchor）都必须保持 —— 不是只查长度。
+    // toEqual 是严格逐字段比较：任何「被当成 0」的路径都会造出全新的 terminals 数组
+    // （id 重排为 t1、label 按端型重生成），差异立刻可见。
+    expect(reconciled.terminals).toEqual(node.terminals);
+  });
+
+  // 只测 reconcile* 走不到 isCompleteTemplate：全仓 grep 确认它在 src 里没有任何调用点，
+  // 是一条死函数（定义 :70、tsc 未开 noUnusedLocals，所以不报未使用）。但它带着同一个
+  // Number() 判据，null 会被判成「完整模板」，因此用源码扫描钉住两处同形态。
+  test("isCompleteTemplate 的 terminalCount 判据与 syncDefinitionTerminals 同形态（源码契约）", () => {
+    const source = readFileSync(new URL("./definitionInstanceSync.ts", import.meta.url), "utf8");
+    // 守卫收敛到唯一一个 helper，两处共用，避免日后只改一处又分叉
+    const sharedGuardUses = source.split("templateTerminalCountIsUsable(template.terminalCount)").length - 1;
+    expect(sharedGuardUses).toBe(2);
+    // helper 必须是 typeof 判据而不是 Number(x) 有限性
+    expect(source).toContain("function templateTerminalCountIsUsable(raw: unknown): raw is number {");
+    expect(source).toMatch(
+      /function templateTerminalCountIsUsable\(raw: unknown\): raw is number \{\s*return typeof raw === "number" && Number\.isFinite\(raw\);/
+    );
+    // 旧写法必须已从本文件彻底消失（Number(x) 有限性挡不住 null 类输入）
+    expect(source).not.toContain("Number.isFinite(Number(template.terminalCount))");
+  });
+
+  // :589 钉住的合法语义不能被守卫顺手改掉：0 与负数是「定义明确要求无端子」，
+  // 不是「读不到」。守卫只该挡 null 类，0 / -3 仍须落到 createTerminals 的夹取。
+  test("terminalCount 为 0 与负数仍按定义清空端子（与 null 类读不到相区分）", () => {
+    const node = nodeWithTerminals([t("t1", "ac"), t("t2", "ac")]);
+    expect(reconcileNodeWithEffectiveTemplateDefinition(node, template({ terminalCount: 0 })).terminals).toHaveLength(0);
+    expect(reconcileNodeWithEffectiveTemplateDefinition(node, template({ terminalCount: -3 })).terminals).toHaveLength(0);
   });
 
   test("端型四级兜底：terminalType → terminalTypes[0] → 实例首端子 → 兜底 ac", () => {

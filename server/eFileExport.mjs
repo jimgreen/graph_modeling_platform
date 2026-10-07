@@ -175,7 +175,10 @@ export function parseEFileQuery(url) {
     return { error: { code: "bad-request", message: "encoding 须为 gbk 或 utf-8。" } };
   }
   const templateName = (url.searchParams.get("template") ?? "").trim();
-  if (templateName && !PREDEFINED_E_DEVICE_TEMPLATES[templateName]) {
+  // Object.hasOwn 守卫（与 readPredefinedTemplateBase64 同口径）：下标取值会沿
+  // Object.prototype 取到函数 / 原型对象，truthy 判定放行 "constructor" /
+  // "toString" / "__proto__"，真正的「未知模板」错误要到读文件那步才抛（→ 500）。
+  if (templateName && !Object.hasOwn(PREDEFINED_E_DEVICE_TEMPLATES, templateName)) {
     return {
       error: {
         code: "bad-request",

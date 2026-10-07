@@ -295,3 +295,72 @@ describe("useGlobalLines：新线路默认名 nextDefaultLineName", () => {
     expect(dialog.name).toBe("直流线路-1");
   });
 });
+
+// commitRoutableLineDevice 是可选能力（App.tsx 的 useRenderBatch 才把它挂上 scope）。
+// 旧写法用可选链调用，未挂载时返回 undefined，与 committed === false 一起落进
+// 「线路超出画布范围，未能添加。」—— 能力缺失被误报成越界。
+describe("useGlobalLines：commitGlobalLinePlacement 的能力缺失与真正越界必须分两支", () => {
+  async function openNewModeDialog(scope: AnyScope) {
+    const placed = scope.requestGlobalLinePlacement(
+      { kind: "ac-routable-line", label: "交流线路" } as any,
+      { node: { id: "s", kind: "ac-station-source", params: {}, name: "厂站电源", terminals: [] } as any, terminalId: "t1" },
+      { node: TARGET_NODE as any, terminalId: "t1" }
+    );
+    expect(placed).toBe(true);
+    // loadRecords 落地后 loading 才变 false，confirmGlobalLinePlacement 会因 loading 早退。
+    await flushMicrotasks();
+  }
+
+  test("函数未挂载时报不支持添加并写日志，绝不报越界", async () => {
+    const scope = baseScope();
+    // baseScope 刻意不含 commitRoutableLineDevice —— 这正是要覆盖的输入。
+    const view = mountUseGlobalLines(scope);
+    expect(view.useStateCalls()).toBe(3);
+    await openNewModeDialog(scope);
+
+    expect(view.rerender().dialog).toMatchObject({ mode: "new", loading: false });
+    await scope.confirmGlobalLinePlacement();
+    await flushMicrotasks();
+
+    const dialog = view.rerender().dialog as any;
+    // 判别力：把能力缺失那一支删掉（回到可选链写法）后 error 会变成越界文案 → 本条红。
+    expect(String(dialog.error)).toContain("当前模式不支持添加全局线路");
+    expect(String(dialog.error)).not.toContain("超出画布范围");
+    expect(dialog.saving).toBe(false);
+    expect(scope.writeOperationLog).toHaveBeenCalledWith("全局线路绘制失败：当前模式不支持添加线路。");
+  });
+
+  test("函数挂载但返回 false 时仍然报越界，且不写不支持的日志", async () => {
+    const commitRoutableLineDevice = vi.fn(async () => false);
+    const scope = baseScope({ commitRoutableLineDevice });
+    const view = mountUseGlobalLines(scope);
+    expect(view.useStateCalls()).toBe(3);
+    await openNewModeDialog(scope);
+
+    expect(view.rerender().dialog).toMatchObject({ mode: "new", loading: false });
+    await scope.confirmGlobalLinePlacement();
+    await flushMicrotasks();
+
+    expect(commitRoutableLineDevice).toHaveBeenCalledTimes(1);
+    const dialog = view.rerender().dialog as any;
+    expect(String(dialog.error)).toBe("线路超出画布范围，未能添加。");
+    expect(String(dialog.error)).not.toContain("当前模式不支持添加");
+    expect(scope.writeOperationLog).not.toHaveBeenCalled();
+  });
+
+  test("函数挂载且返回 true 时对话框关闭，不写任何失败日志", async () => {
+    const commitRoutableLineDevice = vi.fn(async () => true);
+    const scope = baseScope({ commitRoutableLineDevice });
+    const view = mountUseGlobalLines(scope);
+    expect(view.useStateCalls()).toBe(3);
+    await openNewModeDialog(scope);
+
+    expect(view.rerender().dialog).toMatchObject({ mode: "new", loading: false });
+    await scope.confirmGlobalLinePlacement();
+    await flushMicrotasks();
+
+    expect(commitRoutableLineDevice).toHaveBeenCalledTimes(1);
+    expect(view.rerender().dialog).toBe(null);
+    expect(scope.writeOperationLog).not.toHaveBeenCalled();
+  });
+});

@@ -4043,69 +4043,65 @@ export function createAppHookCallback113(__appScope: Record<string, any>) {
   };
 }
 
+/**
+ * 面板状态写 localStorage 的统一样板（callback114–119 共用）。
+ *
+ * 六处调用点此前各自复制一份 `try { setItem } catch {}`，catch 体只有注释、无 fallback、
+ * 不发事件、不写任何状态 —— 故为纯样板，可收敛为这一个模块内局部 helper（未 export）。
+ * 读侧**不在**本 helper 内：读失败时各面板的兜底值互不相同
+ * （readSidePanelMode → "pinned"，readStoredPanelDimension → 各不相同的 fallback/min/max），
+ * 已在 appPersistenceLibraryExport 侧各自独立实现，保持原样。
+ *
+ * storageKey 由调用方从 __appScope 传入 —— key 名逐字不变，不在此处拼接。
+ * 写失败静默降级：面板状态在当前会话内照常工作，只是不跨会话保留。
+ */
+function persistPanelState(storageKey: string, value: string) {
+  try {
+    window.localStorage.setItem(storageKey, value);
+  } catch {
+    // Ignore storage failures; panel state still works for the active session.
+  }
+}
+
 export function createAppHookCallback114(__appScope: Record<string, any>) {
   return () => {
   const { LEFT_PANEL_MODE_STORAGE_KEY, leftPanelMode } = __appScope;
-    try {
-      window.localStorage.setItem(LEFT_PANEL_MODE_STORAGE_KEY, leftPanelMode);
-    } catch {
-      // Ignore storage failures; panel mode still works for the active session.
-    }
+    persistPanelState(LEFT_PANEL_MODE_STORAGE_KEY, leftPanelMode);
   };
 }
 
 export function createAppHookCallback115(__appScope: Record<string, any>) {
   return () => {
   const { RIGHT_PANEL_MODE_STORAGE_KEY, rightPanelMode } = __appScope;
-    try {
-      window.localStorage.setItem(RIGHT_PANEL_MODE_STORAGE_KEY, rightPanelMode);
-    } catch {
-      // Ignore storage failures; panel mode still works for the active session.
-    }
+    persistPanelState(RIGHT_PANEL_MODE_STORAGE_KEY, rightPanelMode);
   };
 }
 
 export function createAppHookCallback116(__appScope: Record<string, any>) {
   return () => {
   const { LEFT_PANEL_WIDTH_STORAGE_KEY, leftPanelWidth } = __appScope;
-    try {
-      window.localStorage.setItem(LEFT_PANEL_WIDTH_STORAGE_KEY, String(leftPanelWidth));
-    } catch {
-      // Ignore storage failures; panel width still works for the active session.
-    }
+    persistPanelState(LEFT_PANEL_WIDTH_STORAGE_KEY, String(leftPanelWidth));
   };
 }
 
 export function createAppHookCallback117(__appScope: Record<string, any>) {
   return () => {
   const { RIGHT_PANEL_WIDTH_STORAGE_KEY, rightPanelWidth } = __appScope;
-    try {
-      window.localStorage.setItem(RIGHT_PANEL_WIDTH_STORAGE_KEY, String(rightPanelWidth));
-    } catch {
-      // Ignore storage failures; panel width still works for the active session.
-    }
+    persistPanelState(RIGHT_PANEL_WIDTH_STORAGE_KEY, String(rightPanelWidth));
   };
 }
 
 export function createAppHookCallback118(__appScope: Record<string, any>) {
   return () => {
   const { STATUSBAR_HEIGHT_STORAGE_KEY, statusbarHeight } = __appScope;
-    try {
-      window.localStorage.setItem(STATUSBAR_HEIGHT_STORAGE_KEY, String(statusbarHeight));
-    } catch {
-      // Ignore storage failures; status bar height still works for the active session.
-    }
+    persistPanelState(STATUSBAR_HEIGHT_STORAGE_KEY, String(statusbarHeight));
   };
 }
 
 export function createAppHookCallback119(__appScope: Record<string, any>) {
   return () => {
   const { VALIDATION_PANEL_HEIGHT_STORAGE_KEY, topologyWarningPanelHeight } = __appScope;
-    try {
-      window.localStorage.setItem(VALIDATION_PANEL_HEIGHT_STORAGE_KEY, String(topologyWarningPanelHeight));
-    } catch {
-      // Ignore storage failures; topology warning panel height still works for the active session.
-    }
+    persistPanelState(VALIDATION_PANEL_HEIGHT_STORAGE_KEY, String(topologyWarningPanelHeight));
   };
 }
 

@@ -294,7 +294,7 @@ describe("deviceLibraryStorage", () => {
   // 以下用例针对持久层里「只有裸读裸写才能观察到」的几条分支：
   //   · L22  normalizeStoredDefinitionOverride 的 intent 判定两个臂
   //   · L77  saveDeviceTemplate 对 foregroundImage 的 data: 剥离
-  //   · L172 deleteDeviceTemplate 的图片清理循环体
+  //   · L175 deleteDeviceTemplate 的图片清理循环体
   //   · L269 getOverride 的迁移回写判定两个臂
   //
   // 观察点一律是 **DB 里的裸记录**（initDeviceLibraryDB 直读），不是 getDeviceTemplate
@@ -442,37 +442,23 @@ describe("deviceLibraryStorage", () => {
       expect(raw.params.foregroundImage).toBe("devices/relay-outline.svg");
     });
 
-    // ---- L172/L173 循环体：带图模板删除时必抛 InvalidStateError（当前行为记录）----
+    // ---- L171 跨事务读：曾致带图模板删除抛 InvalidStateError（已修）----
     //
-    // ⚠ 这条用例钉住的是**缺陷**，不是契约。`deleteDeviceTemplate` 先在 L164 开
-    // readwrite tx，L168 await 完第一个请求后，L171 又用 `db.getAllFromIndex` 做了
-    // 一次**跨事务**读。IndexedDB 的 tx 在「无 pending 请求 + 控制权回到事件循环」
-    // 时自动提交，所以 L171 那个 await 一让出，L164 的 tx 就已经死了；L173 重新
-    // `tx.objectStore(...)` 拿到的是已提交事务，抛 InvalidStateError。
+    // `deleteDeviceTemplate` 先开 readwrite tx、await 掉第一个请求后，**曾经**用
+    // `db.getAllFromIndex` 做一次跨事务读。IndexedDB 的 tx 在「无 pending 请求 +
+    // 控制权回到事件循环」时自动提交，所以那个 await 一让出，外层 tx 就已经死了，
+    // 随后的 `tx.objectStore(...)` 抛 InvalidStateError ⇒ 带图的模板根本删不掉。
     //
-    // 机理已用探针逐步隔离（tmp/ 下同构形状，三档对照）：
-    //   · 两个请求连发、中间不 await          → OK（tx 始终有 pending 请求）
-    //   · await 完首个请求后紧接同 tx 请求     → OK（await 只让出微任务，不提交）
-    //   · 中间夹一次跨事务读（= 本函数形状）  → 抛 InvalidStateError
-    // 关键分界是**跨事务读**，不是「有个 await」。同事务内 `tx.objectStore(...).getAll()`
-    // 不会触发提交。
+    // 关键分界是**跨事务读**，不是「有个 await」：同事务内 `tx.objectStore(...).getAll()`
+    // 不会触发提交（下方对照用例与本用例形状完全相同，只差读法）。
+    // 修法就是把读换成本事务内的 index 读（见 deviceLibraryStorage.ts 的注释）。
     //
-    // 既有 18 条用例之所以从未暴露它：那些用例删的模板都没存过图片，
-    // `images` 为空数组 ⇒ L172 的循环体一次都不进。
-    //
-    // 附带结论（§6.20 路线 B）：变异「L173 delete(img.id) → delete(img.templateKind)」
-    // 判 GREEN，**不是**因为 `img.id` 不承重，而是因为
-    // `tx.objectStore("templateImages")` 是接收者表达式，**先于实参求值**就抛了，
-    // 实参根本没被求值（探针实测：tx 死时实参求值=false，tx 活时=true）。
-    // 把上游 tx 之死摘掉（改成同事务读）后，同一条变异立刻可观测：
-    // 正确键 img.id → 图片残留 0 张，错误键 templateKind → 残留 1 张。
-    // 即：删图的目标键在当前实现下**结构性不可观测**，必须先修 L171 才谈得上覆盖。
-    //
-    // 修法（未实施，因本 lane 只读生产代码）：把 L171 改成同事务读
-    // `await tx.objectStore("templateImages").index("templateKind").getAll(kind)`，
-    // 或把删图放到独立事务里。此用例在修复后应当翻红并改写为「图片被清理干净」，
-    // 那时删图目标键才成为可覆盖的分支。
-    it("带关联图片的模板删除时抛 InvalidStateError（当前行为：readwrite tx 已被跨事务读提交）", async () => {
+    // 这条用例现在钉的是修复后的契约：**模板与图片同一次调用一起删干净**。
+    // 三条断言各自对应一个会被撤销掉的错误实现：
+    //   · resolves 而非 rejects —— 撤销修复会退回 InvalidStateError
+    //   · templateImages === 0 —— 删图循环体被跳过
+    //   · 另一 kind 的图片留着 —— index 查询没按 templateKind 收窄
+    it("带关联图片的模板删除时模板与图片一起删干净（图片读在事务内，不触发事务提交）", async () => {
       const blob = new Blob(["foreground-bytes"], { type: "image/png" });
       await saveDeviceTemplate(
         {
@@ -488,11 +474,34 @@ describe("deviceLibraryStorage", () => {
         { backgroundImage: blob }
       );
 
-      // 前置条件：图片确实落库了，否则「循环体该不该进」这件事根本没被触发
-      expect((await getDBStats()).templateImages).toBe(1);
+      // 对照组：另一个 kind 的图片，用来证明 index 查询按 templateKind 收窄
+      await saveDeviceTemplate(
+        {
+          kind: "other-image",
+          label: "另一带图模板",
+          categoryLibrary: "交流设备",
+          size: { width: 100, height: 80 },
+          params: {},
+          terminalType: "ac",
+          terminalCount: 2,
+          custom: true
+        },
+        { foregroundImage: blob }
+      );
 
-      // 无图的模板走同一条路径但循环体不进 → 正常返回（对照组，见上方既有用例）
-      await expect(deleteDeviceTemplate("with-image")).rejects.toThrowError(/operation|InvalidState/i);
+      // 前置条件：两张图确实落库了，否则「图片是否被清理」根本没被触发
+      expect((await getDBStats()).templateImages).toBe(2);
+
+      // 修复前此处抛 /operation|InvalidState/i
+      await expect(deleteDeviceTemplate("with-image")).resolves.toBeUndefined();
+
+      const afterDelete = await getDBStats();
+      // 模板本身删掉了
+      expect(await getDeviceTemplate("with-image")).toBeNull();
+      // 自己的图删干净了
+      expect(afterDelete.templateImages).toBe(1);
+      // 别人的图一张没动 —— 只按本 kind 收窄，而不是清空整个 templateImages
+      expect(await getDeviceTemplate("other-image")).not.toBeNull();
     });
   });
 

@@ -168,7 +168,11 @@ export async function deleteDeviceTemplate(kind: string): Promise<void> {
   await tx.objectStore("templates").delete(kind);
 
   // 删除关联图片
-  const images = await db.getAllFromIndex("templateImages", "templateKind", kind);
+  //
+  // 这里必须用**本事务内**的 index 读，不能用 `db.getAllFromIndex`：后者会另开一个
+  // 事务，那个 await 一让出，本事务就「无 pending 请求 + 控制权回到事件循环」而被
+  // 自动提交，下面 `tx.objectStore(...)` 随即抛 InvalidStateError（带图的模板删不掉）。
+  const images = await tx.objectStore("templateImages").index("templateKind").getAll(kind);
   for (const img of images) {
     await tx.objectStore("templateImages").delete(img.id);
   }
