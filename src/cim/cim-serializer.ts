@@ -1,6 +1,10 @@
 // CIM IR → CIM/XML (RDF/XML) 序列化器
 
 import { CIM_NS } from "./cim-namespaces.ts";
+// 属性位专用：shared/xmlEscape.mjs 的唯一实现（转全部五个实体，含单引号）。
+// 参照 src/svgUtils.ts:6 的既有跨包引用写法；server/cimExport.mjs 直载本模块时
+// Node 原生 ESM 也能加载 .mjs（nativeLoad 守卫覆盖该路径）。
+import { escapeXmlFull } from "../../shared/xmlEscape.mjs";
 import type {
   CimACLineSegment,
   CimPackage,
@@ -29,7 +33,7 @@ export function tag(qname: string, body: { text?: string }, indent: number): str
 /** 缩进 + 自闭合资源引用元素 */
 function refTag(qname: string, resourceId: string, indent: number): string {
   const pad = "  ".repeat(indent);
-  return `${pad}<${qname} rdf:resource="#${escapeXmlText(resourceId)}"/>`;
+  return `${pad}<${qname} rdf:resource="#${escapeXmlFull(resourceId)}"/>`;
 }
 
 /** 引用元素入行：空 id 或 *_UNKNOWN 悬挂引用直接省略（评审 I2 固化） */
@@ -40,7 +44,7 @@ function pushRef(lines: string[], qname: string, resourceId: string, indent: num
 
 /** 带 rdf:ID 的对象开标签 */
 function openWithId(qname: string, rdfId: string, indent: number): string {
-  return `${"  ".repeat(indent)}<${qname} rdf:ID="${escapeXmlText(rdfId)}">`;
+  return `${"  ".repeat(indent)}<${qname} rdf:ID="${escapeXmlFull(rdfId)}">`;
 }
 
 function close(qname: string, indent: number): string {
@@ -210,7 +214,10 @@ export function serializeCimPackage(pkg: CimPackage): string {
     const root = m.measurementType === "Analog" ? "cim:Analog" : m.measurementType === "Discrete" ? "cim:Discrete" : "cim:StringMeasurement";
     lines.push(openWithId(root, m.rdfId, 1));
     lines.push(...identifiedObjectBody(m, 2));
-    if (m.unit) lines.push(tag("cim:Analog.unit", { text: escapeXmlText(m.unit) }, 2));
+    // unit 前缀跟随已选根元素：`<cim:Analog.unit>` 写进 `<cim:Discrete>` / `<cim:StringMeasurement>`
+    // 里是非法 CIM（属性 qname 的类前缀必须是宿主类）。基类属性（如 measurementClass）
+    // 才用 `cim:Measurement.` 前缀。
+    if (m.unit) lines.push(tag(`${root}.unit`, { text: escapeXmlText(m.unit) }, 2));
     if (m.measurementClass) lines.push(tag("cim:Measurement.measurementClass", { text: escapeXmlText(m.measurementClass) }, 2));
     pushRef(lines, "cim:Measurement.PowerSystemResource", m.powerSystemResourceId, 2);
     if (m.terminalId) pushRef(lines, "cim:Measurement.Terminal", m.terminalId, 2);

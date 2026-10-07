@@ -534,8 +534,11 @@ export function previewGlobalLineRecordsForProject(
     }, nextReferences));
   }
 
+  // 排序两侧都可能是残缺记录（persisted JSON 缺 name 时为 undefined，
+  // 上面 :522 的 persisted 分支是原样搬运、无 name 兜底），统一按字符串兜底后再比较，
+  // 避免比较阶段再抛一次 TypeError。idx 是数值字段，缺失只得到 NaN、不抛，故不套 MAX_SAFE_INTEGER。
   return [...previewById.values()].sort((left, right) => (
-    left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN")
+    left.idx - right.idx || String(left.name ?? "").localeCompare(String(right.name ?? ""), "zh-CN")
   ));
 }
 
@@ -657,6 +660,8 @@ export function candidateGlobalLines(
     ? globalLineModelAssociationPlacementForEndpoints(placementNodes.source, placementNodes.target)
     : null;
   // 全局表端点可以先指向当前模型、再由当前模型补画对应线路；只有画布中真实存在的全局线路 ID 才表示重复。
+  // 排序两侧都可能是残缺记录（persisted JSON 缺 name 时为 undefined），统一按字符串兜底后再比较，
+  // 避免比较阶段再抛一次 TypeError。idx 是数值字段，缺失只得到 NaN、不抛，故不套 MAX_SAFE_INTEGER。
   return records
     .filter((record) => (
       record.energyType === energyType &&
@@ -666,7 +671,9 @@ export function candidateGlobalLines(
         globalLineEndpointReference(record, boundaryEndpoint) === null
       ))
     ))
-    .sort((left, right) => left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN"));
+    .sort((left, right) => (
+      left.idx - right.idx || String(left.name ?? "").localeCompare(String(right.name ?? ""), "zh-CN")
+    ));
 }
 
 export function globalLineKindForEnergy(energyType: GlobalLineEnergyType): DeviceKind {

@@ -174,7 +174,11 @@ export async function handleV1ModelSend({ request, response, url, paths }) {
     const specs = [];
     for (const item of Array.isArray(body?.files) ? body.files : []) {
       const kind = String(item?.kind ?? "").trim().toLowerCase();
-      if (!FILE_KINDS[kind]) {
+      // 用 Object.hasOwn 判自有属性：属性取值会把 Object.prototype 上的
+      // constructor / toString / valueOf 当成合法 kind 放行，随后 218 行解构出
+      // {field, ext, mime} 全是 undefined，产出 filename="模型名undefined"。
+      // 合法四类（e/json/svg/cim）是自有属性，判别结果与原先完全一致。
+      if (!Object.hasOwn(FILE_KINDS, kind)) {
         sendV1Error(response, "bad-request", `body.files 含未知格式：${kind || "(空)"}。`);
         return;
       }

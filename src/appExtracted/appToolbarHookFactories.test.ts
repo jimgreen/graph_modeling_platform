@@ -10,6 +10,12 @@ import { readViewportResultCache, writeViewportResultCache, viewportBoundsCacheK
 // getBoundingClientRect）用替身 —— 这样「期望值」是能手算出来的常数，不是回读替身自己。
 import { afterEach, vi } from "vitest";
 import {
+  createAppHookCallback114,
+  createAppHookCallback115,
+  createAppHookCallback116,
+  createAppHookCallback117,
+  createAppHookCallback118,
+  createAppHookCallback119,
   createCenterSelectedInView,
   createClampFloatingToolbarPosition,
   createExecuteStaticButtonAction,
@@ -887,5 +893,207 @@ describe("createOpenNodeDoubleClickEditor", () => {
     createOpenNodeDoubleClickEditor(scope)(editNode as any);
 
     expect(scope.nodeDoubleClickOpenGuardRef.current!.time).toBeLessThan(1_000_000_000_000);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10. callback114–119 —— 六处「面板状态写 localStorage」样板
+//
+// 这六个工厂此前各自复制一份 `try { window.localStorage.setItem(key, v) } catch {}`，
+// 现已收敛为模块内局部 helper `persistPanelState(key, value)`（未 export）。读侧
+// **不在**该样板内，且不可合并：readSidePanelMode 兜底 "pinned"，readStoredPanelDimension
+// 兜底各自的 fallback/min/max，所以本文只覆盖写侧。
+//
+// 断言落点（按本文件惯例：断「不抛错」是废断言）：
+//   主断言 = setItem 被调用**恰好一次**，且 (key, value) 逐字不变 —— 这条钉死了
+//     「key 名逐字不变」与「String() 转换未被顺手去掉」。
+//   副断言 = 改完当前 scope 的面板值后**再次**调用仍会走到 setItem，证明 catch 没有被
+//     写成一次性短路（这里丢的正是 try/catch 被搬出循环/被 return 提前的那种 bug）。
+//   抛错态断言 = setItem 抛错时不抛、不崩、面板状态不被写入任何地方（scope 里除 key/value
+//     外没有任何 setter，被这次改动碰到就说明行为扩大了）。
+// ⚠ 下面第一条是「key 名逐字不变」的唯一承重用例：key 名全部写死成
+//   appCoreCanvasUtilities 里那些常量的真实字面量，helper 若改名/加前缀立刻转红。
+// ─────────────────────────────────────────────────────────────────────────────
+describe("面板状态持久化样板 createAppHookCallback114-119", () => {
+  // first/second 是两次调用前 scope 里的面板值（第一个必为字符串）；
+  // expectedFirst 是第一次调用后 setItem 收到的 value —— 数值类必须已 String() 化。
+  const PANEL_PERSISTERS = [
+    {
+      label: "callback114 左侧面板模式",
+      keyName: "LEFT_PANEL_MODE_STORAGE_KEY",
+      key: "power-system-left-panel-mode",
+      valueName: "leftPanelMode",
+      build: createAppHookCallback114,
+      first: "pinned",
+      second: "auto",
+      expectedFirst: "pinned",
+      expectedSecond: "auto"
+    },
+    {
+      label: "callback115 右侧面板模式",
+      keyName: "RIGHT_PANEL_MODE_STORAGE_KEY",
+      key: "power-system-right-panel-mode",
+      valueName: "rightPanelMode",
+      build: createAppHookCallback115,
+      first: "pinned",
+      second: "auto",
+      expectedFirst: "pinned",
+      expectedSecond: "auto"
+    },
+    {
+      label: "callback116 左侧面板宽度",
+      keyName: "LEFT_PANEL_WIDTH_STORAGE_KEY",
+      key: "power-system-left-panel-width",
+      valueName: "leftPanelWidth",
+      build: createAppHookCallback116,
+      first: "320",
+      second: 330,
+      expectedFirst: "320",
+      expectedSecond: "330"
+    },
+    {
+      label: "callback117 右侧面板宽度",
+      keyName: "RIGHT_PANEL_WIDTH_STORAGE_KEY",
+      key: "power-system-right-panel-width",
+      valueName: "rightPanelWidth",
+      build: createAppHookCallback117,
+      first: "320",
+      second: 330,
+      expectedFirst: "320",
+      expectedSecond: "330"
+    },
+    {
+      label: "callback118 状态栏高度",
+      keyName: "STATUSBAR_HEIGHT_STORAGE_KEY",
+      key: "power-system-statusbar-height",
+      valueName: "statusbarHeight",
+      build: createAppHookCallback118,
+      first: "28",
+      second: 29,
+      expectedFirst: "28",
+      expectedSecond: "29"
+    },
+    {
+      label: "callback119 拓扑告警面板高度",
+      keyName: "VALIDATION_PANEL_HEIGHT_STORAGE_KEY",
+      key: "power-system-validation-panel-height",
+      valueName: "topologyWarningPanelHeight",
+      build: createAppHookCallback119,
+      first: "180",
+      second: 181,
+      expectedFirst: "180",
+      expectedSecond: "181"
+    }
+  ];
+
+  const makeScope = (panel: (typeof PANEL_PERSISTERS)[number], value: any) => ({
+    [panel.keyName]: panel.key,
+    [panel.valueName]: value
+  }) as Record<string, any>;
+
+  /**
+   * 装一个 window 替身。⚠ 必须挂成 `window.localStorage.setItem` 两级路径：
+   * 生产代码写的是 `window.localStorage.setItem(...)`，只给 window 挂一个裸 setItem
+   * 的话 `window.localStorage` 是 undefined，会在 try 里抛 TypeError 被 catch 吃掉 ——
+   * 于是断言「零次写入」，看起来像行为坏了，其实是夹具坏了（探针常量返回的典型信号）。
+   */
+  const stubWindow = (onWrite: (key: string, value: string) => void) => {
+    const setItem = vi.fn((key: string, value: string) => {
+      onWrite(key, value);
+    });
+    vi.stubGlobal("window", { localStorage: { setItem } });
+    return setItem;
+  };
+
+  /** 装一个 localStorage 写入必定抛错的 window 替身（配额满 / 隐私模式）。 */
+  const stubThrowingWindow = () => {
+    const setItem = vi.fn((_key: string, _value: string) => {
+      throw new Error("QuotaExceededError");
+    });
+    vi.stubGlobal("window", { localStorage: { setItem } });
+    return setItem;
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("六个 storageKey 常量互不相同，且与 appCoreCanvasUtilities 的字面量一致", () => {
+    // 承重断言：key 名逐字不变。这六个字面量抄自 appCoreCanvasUtilities 里那些常量，
+    // helper 里若改名 / 加前缀 / 传错字段，只有这一条会转红。
+    const expectedKeys = [
+      "power-system-left-panel-mode",
+      "power-system-right-panel-mode",
+      "power-system-left-panel-width",
+      "power-system-right-panel-width",
+      "power-system-statusbar-height",
+      "power-system-validation-panel-height"
+    ];
+    expect(PANEL_PERSISTERS.map((p) => p.key)).toEqual(expectedKeys);
+    expect(new Set(expectedKeys).size).toBe(expectedKeys.length);
+  });
+
+  test.each(PANEL_PERSISTERS)("$label：setItem 恰好写一次，key 与 value 逐字不变", (panel) => {
+    const scope = makeScope(panel, panel.first);
+    const writes: Array<[string, string]> = [];
+    const setItem = stubWindow((key, value) => writes.push([key, value]));
+
+    panel.build(scope)();
+
+    expect(writes).toEqual([[panel.key, panel.expectedFirst]]);
+    expect(setItem).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(PANEL_PERSISTERS)("$label：按当前面板值写入，改值后二次调用不会短路", (panel) => {
+    const scope = makeScope(panel, panel.first);
+    const writes: Array<[string, string]> = [];
+    stubWindow((key, value) => writes.push([key, value]));
+
+    panel.build(scope)();
+    // 改一次面板状态再跑一次：catch 若把后续写入一并吞掉，这第二条就缺席
+    scope[panel.valueName] = panel.second;
+    panel.build(scope)();
+
+    expect(writes).toEqual([
+      [panel.key, panel.expectedFirst],
+      [panel.key, panel.expectedSecond]
+    ]);
+    // 第二次喂数值的那四个面板：期望值 "330"/"29"/"181" 说明 String() 转换仍在，
+    // 若有人把 String() 删掉，setItem 收到的会变成 number 330，这条转红。
+    // 两个「面板模式」面板的 second 本就是字符串，不适用这条。
+    if (typeof panel.second === "number") {
+      expect(writes[1][1]).not.toBe(panel.second);
+    }
+  });
+
+  test.each(PANEL_PERSISTERS)("$label：setItem 抛错时不抛不崩，且状态不被写入任何地方", (panel) => {
+    const scope = makeScope(panel, panel.first);
+    const setItem = stubThrowingWindow();
+
+    expect(() => panel.build(scope)()).not.toThrow();
+
+    // 写失败仍是静默降级：尝试过一次（key 正确），但没有任何东西被落盘
+    expect(setItem).toHaveBeenCalledTimes(1);
+    expect(setItem.mock.calls[0]).toEqual([panel.key, panel.expectedFirst]);
+    // 面板状态本身没被改写 —— scope 里除 key/value 外没有别的字段，
+    // 这次调用只该读它们，不该写它们。
+    expect(Object.keys(scope).sort()).toEqual([panel.keyName, panel.valueName].sort());
+    expect(scope[panel.valueName]).toBe(panel.first);
+  });
+
+  test("六处面对同一个抛错的 setItem 时行为一致：都不抛、都只尝试写一次", () => {
+    const setItem = stubThrowingWindow();
+    const scopes = PANEL_PERSISTERS.map((panel) => makeScope(panel, panel.first));
+
+    for (const [index, panel] of PANEL_PERSISTERS.entries()) {
+      expect(() => panel.build(scopes[index])()).not.toThrow();
+    }
+
+    expect(setItem.mock.calls.map(([key]) => key)).toEqual(PANEL_PERSISTERS.map((p) => p.key));
+    expect(setItem).toHaveBeenCalledTimes(PANEL_PERSISTERS.length);
+    // 写失败后每个 scope 里的面板值都还在原处（静默降级，不回滚、不置默认值）
+    PANEL_PERSISTERS.forEach((panel, index) => {
+      expect(scopes[index][panel.valueName]).toBe(panel.first);
+    });
   });
 });

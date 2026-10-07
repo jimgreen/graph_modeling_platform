@@ -1520,13 +1520,30 @@ export const voltageColorKeyForTerminal = (node: ModelNode, terminal: ModelNode[
     return "";
   }
   // 端子 vbase 未填时是空串而非 undefined（初始模板与电压继承都这么存），
-  // 所以这里必须按「归一后非空且非 0」判定，照电压继承 resolveNodeVoltageAtTerminal 的口径；
+  // 所以这里必须按「归一后非空且非 0」判定；
   // 用 `??` 判空会让下面的 params 兜底成为永不触发的死代码，电压配色键恒为空。
+  //
+  // 「非空且非 0」统一交给 firstNonZeroVoltageBase 判定，不在本文件手写判零表达式：
+  // 它的零判定 nonZeroTerminalVoltageBaseNumber 就是 `normalized && !isZeroNumericText(normalized)`，
+  // 与电压继承 src/voltageInheritance.ts 的 isZeroVoltage（`!normalized || isZeroNumericText(normalized)`）
+  // **逐字互为取反**，即同一口径。（isZeroVoltage 本身未从 voltageInheritance 导出，故复用其唯一 callee。）
+  // 原来这里写的是 `!== "0"`：只认字面 "0"，而「清零电压基值」写进 params/端子的是 "0.0"
+  // （src/model-routing.ts 清零分支传的就是 "0.0"），于是 "0.0" 被当成有效电压拼进配色键
+  // （`ac:0.0`），既不上 params 兜底也画不出真实电压的颜色。
   const terminalVbase = terminalVoltageBaseNumber(terminal.vbase);
-  const voltage = terminalVbase && terminalVbase !== "0"
-    ? terminalVbase
-    : terminalVoltageBaseNumber(terminalVbaseFallbackValue(node, terminalIndex));
-  return voltage && voltage !== "0" ? `${terminal.type}:${voltage}` : "";
+  const voltage = firstNonZeroVoltageBase([
+    terminalVbase,
+    terminalVbaseFallbackValue(node, terminalIndex)
+  ]);
+  // 这里的 `voltage ?` 与旧代码的 `voltage && voltage !== "0"` **可证等价**，冗余但承重记录在此：
+  //   不变量：firstNonZeroVoltageBase 只返回 nonZeroTerminalVoltageBaseNumber 的结果，
+  //   而那个函数返回 `normalized && !isZeroNumericText(normalized)`，恒满足「非空且数值非 0」。
+  //   故 `voltage !== "0"` 恒为真 → 加上 `!== "0"` 不改变任何输入的输出。
+  //   变异验证 ③（只把这一行退回成 `&& !== "0"`）跑出来是 GREEN，属**等价变异**而非覆盖缺失。
+  //   ⚠️ 真正承重的是它上面那一行：若改成 `[terminalVbase, ...].find(Boolean) ? … : ""`
+  //   （只挡空串、不挡 0.0），本行与它合起来就会产出 `ac:0.0`，
+  //   现有用例「★ params 兜底电压为 0.0 时不成键」会转红。
+  return voltage ? `${terminal.type}:${voltage}` : "";
 };
 
 // DEFAULT_CANVAS_*（宽/高/背景色）与 src/export/svg.ts 里的同名常量保持同值：

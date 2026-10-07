@@ -59,6 +59,15 @@ export async function bindUserSpaceToSession(user: unknown): Promise<void> {
     }
     writeSpaceCookie((await createUserSpace(name)).id);
   } catch (error) {
+    // 绑定失败**有意**降级到「后端解析链」，不是漏写 catch。三条理由：
+    // 1. 绑不上的唯一后果就是「当前空间仍由后端按 Cookie 解析」（头 > query > cookie > 回退 spaces[0]），
+    //    也就是本模块上线前的行为。绑定全程只改 Cookie 这一个字符串，不碰任何空间内容，
+    //    失败即等价于「这次调用没发生过」，数据一个不少。
+    // 2. 抛出去没有接收方：调用点在启动闸门之前（见文件头），一旦上抛，App 直接起不来 ——
+    //    宿主没传用户、后端离线这类瞬时故障会被放大成白屏，比不隔离更糟。
+    // 3. 错误仍可见：console.warn 带原始 error，宿主未登录 / 后端 5xx / 建空间被拒
+    //    （用户名全是符号等）都能在控制台定位，不是真的吞掉。
+    // 守卫：qiankunUserSpace.test.ts 的「后端报错」与「回退沿用后端解析链的空间」两条。
     console.warn("[qiankun] 用户空间绑定失败，沿用后端解析链的空间", error);
   }
 }

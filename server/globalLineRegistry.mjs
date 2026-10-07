@@ -79,6 +79,18 @@ function positiveInteger(value) {
   return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : 0;
 }
 
+// JSON.parse 的失败既没有 code，name 也不是 IO 错误码。它在项目文件读盘路径上是
+// **既有降级语义**（用户手改坏的文件不该让整次迁移抛出去），故与 ENOENT 同列「静默」。
+// 若不单列出来，下面两处 catch 的 `error?.code !== "ENOENT"` 会把每个坏 JSON 都
+// 当成读盘故障刷屏——那正是本次要修的反面：告警必须只在真正读不到时才响。
+function isJsonParseFailure(error) {
+  return error instanceof SyntaxError || error?.name === "SyntaxError";
+}
+
+function readFailureReason(error) {
+  return error?.code ?? error?.name ?? "unknown";
+}
+
 export function globalLineModelKey(projectIdx, schemePath = [], projectName = "") {
   const idx = positiveInteger(projectIdx);
   if (idx > 0) return `model:${idx}`;
@@ -637,8 +649,17 @@ async function readStoredManagedProjects(filesRoot) {
         schemePath,
         modelKey: globalLineModelKey(project.idx, schemePath, project.name)
       });
-    } catch {
-      // Ignore unreadable project files, matching the registry migration behavior.
+    } catch (error) {
+      // 「只有 ENOENT 算不存在」：把 EACCES / EPERM / EISDIR 当不存在，等于说
+      // 「这个模型没有全局线路」。syncProject 正是拿 storedProjects 判断本模型
+      // 上一次存过哪些线路——读不到时 previouslySavedGlobalLineIds 为空，
+      // 于是同一条线路会被重新分配记录；而这里此前连日志都没有。
+      // ENOENT（列举与读盘之间文件被删的竞态）与 JSON 损坏沿用既有静默降级。
+      if (error?.code !== "ENOENT" && !isJsonParseFailure(error)) {
+        console.warn(
+          `[全局线路] 读取已存项目失败（${readFailureReason(error)}），已按「该模型未参与本次判定」处理，其线路本次不被迁移也不被清理：${filePath}`
+        );
+      }
     }
   }
   return projects;
@@ -710,8 +731,15 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
           const record = recordForNode(state, node);
           if (record && (pairMode === "source" || pairMode === "target")) reuseOnlyRecordIds.add(record.id);
         }
-      } catch {
-        // The normal migration pass below ignores unreadable project files too.
+      } catch (error) {
+        // 同上：这里扫的是 reuseOnlyRecordIds（哪些记录不能被清空引用）。
+        // 读不到时那份名单是残缺的——第二遍照常把残缺名单之外的记录引用清空，
+        // 即「读不到」直接变成了「删除」。非 ENOENT 必须留一句。
+        if (error?.code !== "ENOENT" && !isJsonParseFailure(error)) {
+          console.warn(
+            `[全局线路] 读取已存项目失败（${readFailureReason(error)}），该模型未进入复用保护名单，其既有全局线路引用可能在本次迁移中被清空：${filePath}`
+          );
+        }
       }
     }
     const recordById = new Map(state.records.map((record) => [record.id, record]));

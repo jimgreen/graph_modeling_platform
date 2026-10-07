@@ -881,7 +881,17 @@ function stateIconDrawingMovementVisibleFrame(element: any, visibleFrames: any) 
     const key = `${element.id}:${element.svgSource ?? ""}:${element.strokeWidth}:${element.strokeColor ?? ""}:${element.strokeStyle ?? ""}`;
     frame = visibleFrames?.svg?.[key] ?? stateIconDrawingImportedSvgSelectionFrame(element);
   }
-  if (!frame || !(Number(frame.width) > 0) || !(Number(frame.height) > 0)) {
+  // frame 与宽高同源（visibleFrames 缓存或 stateIconDrawingImportedSvgSelectionFrame），
+  // x / y 缺失或非数值时，下面的角点会算出 NaN，Math.min/max 出来的边界盒整条都是 NaN，
+  // 于是拖拽收敛成 NaN 位移。判定沿用本文件校验 viewBox 坐标四元组的同一写法
+  // （`[...].every(Number.isFinite)`，见 stateIconDrawingImportedSvgSelectionFrame）：
+  // 坐标只要求有限、不要求 > 0（合法的负坐标会被 `> 0` 误杀），失败时回退值与非法宽高完全一致。
+  if (
+    !frame ||
+    !(Number(frame.width) > 0) ||
+    !(Number(frame.height) > 0) ||
+    ![frame.x, frame.y].every(Number.isFinite)
+  ) {
     return { x: -width / 2, y: -height / 2, width, height };
   }
   const basisWidth = atLeastOneNumber(frame.basisWidth, width);

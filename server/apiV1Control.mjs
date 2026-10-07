@@ -155,7 +155,13 @@ export async function handleControlDevicesSelect({ request, url, response }, ctx
     return;
   }
   const params = { ids };
+  // 缺省（mode === undefined）仍合法且不下发该字段；只有给了才校验取值域，
+  // 判据是 `mode !== undefined` 而非真值 —— 否则「不传」会被误判成非法。
   if (mode !== undefined) {
+    if (!["set", "add", "toggle"].includes(mode)) {
+      sendV1Error(response, "bad-request", "mode 须为 set、add 或 toggle。");
+      return;
+    }
     params.mode = mode;
   }
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.devices.select", params));
@@ -208,6 +214,10 @@ export async function handleControlDevicePropertyUpdate({ request, url, response
   }
   if (!category || typeof category !== "string") {
     sendV1Error(response, "bad-request", "category 必填。");
+    return;
+  }
+  if (!["graphic", "model", "measurement"].includes(category)) {
+    sendV1Error(response, "bad-request", "category 须为 graphic、model 或 measurement。");
     return;
   }
   if (!patch || typeof patch !== "object") {

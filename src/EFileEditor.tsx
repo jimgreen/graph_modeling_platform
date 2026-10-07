@@ -109,7 +109,14 @@ export const isTopologyField = (col: string): boolean => {
   );
 };
 
-/** 复制到剪贴板：优先 Clipboard API，被拒（非安全上下文 / 无权限）时回退隐藏 textarea + execCommand。 */
+/**
+ * 复制到剪贴板：优先 Clipboard API，被拒（非安全上下文 / 无权限）时回退隐藏 textarea + execCommand。
+ *
+ * 回退路径必须校验 execCommand 的返回值：它失败时**不抛异常，只返回 false**
+ * （用户手势失效、权限被拒、文档未聚焦等），旧实现空 catch 后照常 resolve，
+ * 于是上层无条件弹「已复制到剪切板」—— 剪贴板里其实什么都没有。
+ * 现在 false 与抛异常一并转成 reject，由调用方决定不提示。
+ */
 async function copyTextToClipboard(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
     try {
@@ -125,7 +132,12 @@ async function copyTextToClipboard(text: string): Promise<void> {
   ta.style.opacity = "0";
   document.body.appendChild(ta);
   ta.select();
-  try { document.execCommand("copy"); } catch {}
+  try {
+    if (document.execCommand("copy") === false) throw new Error("execCommand copy failed");
+  } catch (e) {
+    document.body.removeChild(ta);
+    throw e;
+  }
   document.body.removeChild(ta);
 }
 
@@ -143,6 +155,18 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const resizeRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
+  // 四个「排定时器 → 稍后复位 state」的 toasts 各自的定时器 id。
+  // 全部走 ref 是为了卸载时能 clearTimeout：React 18 下打到已卸载实例不告警，
+  // 但定时器会真的活到超时才释放（窗口早就没了，白挂 1~3s）。
+  const copiedCellTimer = useRef<number | null>(null);
+  const highlightedRowTimer = useRef<number | null>(null);
+  const savedMessageTimer = useRef<number | null>(null);
+  // 拖拽 resize 的 document 监听器：只在 handleResizeStart 内挂、handleUp 内移除。
+  // handleUp 依赖 pointerup/pointercancel 真的到达 —— 指针捕获只能保证「事件一定发出」，
+  // **不能保证组件还活着**。拖拽中卸载（父级直接删掉本组件、路由切走）时 handleUp 永不执行，
+  // document 上就永久残留这 3 个监听器，handleMove 还会持续对已卸载实例 setColWidths。
+  // 故在卸载 effect 里兜底移除。
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
   // 表名 tab 统一宽度：全部对齐到**名称最长**的那个 tab（实测渲染宽度取最大值）。
   // 纯 CSS 不覆盖本布局：tab 条要 wrap/多行滚动，没有「所有项等宽 = 最宽项」的纯 CSS 表达
   const tabsRef = useRef<HTMLDivElement | null>(null);
@@ -223,12 +247,17 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
       const newWidth = Math.max(MIN_COL_WIDTH, Math.min(MAX_COL_WIDTH, ref.startWidth + delta));
       setColWidths((prev) => ({ ...prev, [ref.colKey]: newWidth }));
     };
-    const handleUp = () => {
+    // 移除路径抽成一处：handleUp 与卸载 cleanup 共用同一段 removeEventListener。
+    // handleUp 可被 pointerup 与 pointercancel 各调一次，removeEventListener 本身幂等；
+    // 重复进入后立即把 ref 清空，故卸载时不会再对同一批监听器重复移除。
+    const cleanup = () => {
       resizeRef.current = null;
       document.removeEventListener("pointermove", handleMove);
       document.removeEventListener("pointerup", handleUp);
       document.removeEventListener("pointercancel", handleUp);
+      if (resizeCleanupRef.current === cleanup) resizeCleanupRef.current = null;
     };
+    const handleUp = cleanup;
     // 指针捕获：拖拽中指针移出窗口/失焦时 pointerup 仍必达（否则监听器与 resizeRef 残留泄漏）
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -238,16 +267,45 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
     document.addEventListener("pointermove", handleMove);
     document.addEventListener("pointerup", handleUp);
     document.addEventListener("pointercancel", handleUp);
+    resizeCleanupRef.current = cleanup;
   }, [colWidths]);
+
+  // 卸载兜底：清掉拖拽 resize 挂在 document 上的 3 个监听器 + 全部待触发定时器。
+  //
+  // 为什么必须有：① 拖拽中卸载时 pointerup/pointercancel 可能不再到达本组件
+  // （handleUp 里的 removeEventListener 是唯一清理点，它不跑就永久残留）；
+  // setPointerCapture 只保证事件**会发出**，不保证**组件还活着**。
+  // ② 四个 toast 定时器（复制 1s / 高亮 3s / 已保存 2s / 拓扑提示 2.5s）在 React 18 下
+  // 打到已卸载实例不告警，但定时器会一直活到超时才释放。
+  // cleanup 引用恒定（只读 ref），故依赖数组取空即可 —— 每次卸载都拿到最新 ref 的值。
+  useEffect(() => {
+    return () => {
+      resizeCleanupRef.current?.();
+      if (copiedCellTimer.current !== null) window.clearTimeout(copiedCellTimer.current);
+      if (highlightedRowTimer.current !== null) window.clearTimeout(highlightedRowTimer.current);
+      if (savedMessageTimer.current !== null) window.clearTimeout(savedMessageTimer.current);
+      if (protectedToastTimer.current !== null) window.clearTimeout(protectedToastTimer.current);
+      copiedCellTimer.current = null;
+      highlightedRowTimer.current = null;
+      savedMessageTimer.current = null;
+      protectedToastTimer.current = null;
+    };
+  }, []);
 
   const handleDoubleClickCell = useCallback((value: string) => {
     if (editMode) return;
     const text = value || "";
     if (!text) return;
-    copyTextToClipboard(text).then(() => {
-      setCopiedCell(text);
-      window.setTimeout(() => setCopiedCell(null), 1000);
-    });
+    // 复制失败（Clipboard API 被拒且 execCommand 返回 false / 抛错）时不得提示「已复制」——
+    // 剪贴板里什么都没有时给成功反馈，比不给反馈更糟。
+    copyTextToClipboard(text)
+      .then(() => {
+        setCopiedCell(text);
+        copiedCellTimer.current = window.setTimeout(() => setCopiedCell(null), 1000);
+      })
+      .catch(() => {
+        // 静默：复制失败不提示「已复制」
+      });
   }, [editMode]);
 
   // 跳转到引用行
@@ -284,7 +342,7 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
     if (targetRecord) {
       setHighlightedRow(targetRecord.id);
       // 3秒后取消高亮
-      setTimeout(() => setHighlightedRow(null), 3000);
+      highlightedRowTimer.current = window.setTimeout(() => setHighlightedRow(null), 3000);
     }
   }, [sections]);
 
@@ -315,7 +373,7 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
       onSave(editedRecords);
     }
     setSavedMessage(true);
-    window.setTimeout(() => setSavedMessage(false), 2000);
+    savedMessageTimer.current = window.setTimeout(() => setSavedMessage(false), 2000);
   };
 
   const handleCancel = () => {

@@ -5512,7 +5512,11 @@ export function createBeginMeasurementDrag(__appScope: Record<string, any>) {
         }
       }
     }
-    console.log("[量测拖动计时] begin 预计算", (performance.now() - t0).toFixed(1), "ms, 候选数:", alignmentCandidates?.length ?? 0);
+    // 计时日志只在 dev 打印（写法同 qiankunLifecycle.tsx 的 traceLifecycle）：
+    // 这条在 pointerdown 触发，拖动开始前必跑，生产构建里既无观测价值又白占控制台。
+    if (import.meta.env.DEV) {
+      console.log("[量测拖动计时] begin 预计算", (performance.now() - t0).toFixed(1), "ms, 候选数:", alignmentCandidates?.length ?? 0);
+    }
     setMeasurementDrag({
       groupId: group.id,
       pointerId: event.pointerId,
@@ -5544,7 +5548,10 @@ export function createUpdateMeasurementDrag(__appScope: Record<string, any>) {
     if (!measurementDrag.historyCaptured) {
       const tUndo = performance.now();
       pushUndoSnapshot();
-      console.log("[量测拖动计时] undo 快照", (performance.now() - tUndo).toFixed(1), "ms");
+      // 同上：undo 快照只在首次越过阈值时打一次，仍限 dev
+      if (import.meta.env.DEV) {
+        console.log("[量测拖动计时] undo 快照", (performance.now() - tUndo).toFixed(1), "ms");
+      }
       setMeasurementDrag({ ...measurementDrag, historyCaptured: true });
     }
     // 量测框间距不随设备缩放（scale 恒 1），rawOffset = startOffset + 指针位移

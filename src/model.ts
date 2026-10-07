@@ -7798,7 +7798,11 @@ export function readVoltageLevelSettings(): VoltageLevelSettings {
 export function writeVoltageLevelSettings(settings: VoltageLevelSettings): void {
   try {
     localStorage.setItem(VOLTAGE_LEVEL_SETTINGS_KEY, JSON.stringify(settings));
-  } catch {}
+  } catch (error) {
+    // 存不进去不能让设置对话框炸掉，但静默吞掉会让人以为「已保存」——
+    // 留一条 warn 供排查（读侧仍保持静默，失败即退回内置表）。
+    console.warn("[voltage-level] localStorage 写入失败:", error);
+  }
 }
 
 // 电压等级 → 线路/负荷 额定容量默认值映射

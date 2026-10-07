@@ -391,7 +391,15 @@ export function useGlobalLines(scope: Record<string, any>) {
       if (!dialog.template || !dialog.source || !dialog.target) {
         throw new Error("待添加线路信息不完整。");
       }
-      const committed = await latestScopeRef.current.commitRoutableLineDevice?.(
+      const commitRoutableLineDevice = latestScopeRef.current.commitRoutableLineDevice;
+      // 能力缺失与「提交后被判定越界」是两回事：可选链在函数未挂载时返回 undefined，
+      // 与 committed === false 撞在一起会让用户去排查画布位置，而真实原因是当前模式不支持放置线路。
+      if (typeof commitRoutableLineDevice !== "function") {
+        latestScopeRef.current.writeOperationLog?.("全局线路绘制失败：当前模式不支持添加线路。");
+        setDialog((current) => current ? { ...current, saving: false, error: "当前模式不支持添加全局线路，未能添加。" } : current);
+        return;
+      }
+      const committed = await commitRoutableLineDevice(
         dialog.template,
         dialog.source,
         dialog.target,

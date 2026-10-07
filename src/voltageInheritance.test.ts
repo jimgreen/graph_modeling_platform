@@ -195,6 +195,71 @@ describe("voltageInheritance", () => {
       );
       expect(resolveNodeVoltageAtTerminal(nodeC, "t0")).toBe("35");
     });
+
+    // ── 判零口径：0.0 这类零值写法不得被当成有效电压 ──────
+    // 这三条覆盖 resolveNodeVoltageAtTerminal 内三处「取第一个非零值」的判零
+    // （端子 ID 未命中时的通用 vbase、端子自身 vbase、层级回落时的通用 vbase）。
+    // 判别输入必须是 "0.0" 而不是 "0"：旧代码 `!== "0"` 在 "0.0" 上恒真，
+    // 喂 "0" 的断言对三种写法都绿，等于没测。
+
+    it("B-07: 端子 ID 未命中且通用 vbase 为 0.0 写法时返回空字符串", () => {
+      // 若这里退回 `commonVbase !== "0"`，本例会返回 "0.0" 而红。
+      const node = makeNode(
+        "ac-bus",
+        [makeTerminal("t0")],
+        { vbase: "0.0" }
+      );
+      expect(resolveNodeVoltageAtTerminal(node, "nonexistent")).toBe("");
+    });
+
+    it("B-08: 端子 vbase 为 0.0 写法时不参与继承，继续取侧电压", () => {
+      // 若这里退回 `terminalVbase !== "0"`，本例会返回 "0.0" 而红。
+      const node = makeNode(
+        "ac-line",
+        [makeTerminal("t0", "ac", "0.0"), makeTerminal("t1")],
+        { i_vbase: "110" }
+      );
+      expect(resolveNodeVoltageAtTerminal(node, "t0")).toBe("110");
+    });
+
+    it("B-09: 无侧电压可用且通用 vbase 为 0.0 写法时返回空字符串", () => {
+      // 若这里退回 `commonVbase !== "0"`，本例会返回 "0.0" 而红。
+      const node = makeNode(
+        "ac-ground",
+        [makeTerminal("t0")],
+        { vbase: "0.0" }
+      );
+      expect(resolveNodeVoltageAtTerminal(node, "t0")).toBe("");
+    });
+
+    it("B-10: isNodeVoltageDefault 对 0.0 写法同样判为默认电压", () => {
+      // 经由 resolveNodeVoltageAtTerminal 的三处判零，故也应返回 true。
+      const node = makeNode(
+        "ac-bus",
+        [makeTerminal("t0")],
+        { vbase: "0.0" }
+      );
+      expect(isNodeVoltageDefault(node, "nonexistent")).toBe(true);
+      expect(isNodeVoltageDefault(node, "t0")).toBe(true);
+    });
+
+    it("B-11: 非零电压经同一条判零路径输出保持不变", () => {
+      // 反向护栏：0.0 之外的形式必须逐字不变。
+      const node = makeNode(
+        "ac-bus",
+        [makeTerminal("t0")],
+        { vbase: "750" }
+      );
+      expect(resolveNodeVoltageAtTerminal(node, "nonexistent")).toBe("750");
+      expect(resolveNodeVoltageAtTerminal(node, "t0")).toBe("750");
+
+      const withTerminal = makeNode(
+        "ac-line",
+        [makeTerminal("t0", "ac", "220"), makeTerminal("t1")],
+        { i_vbase: "110" }
+      );
+      expect(resolveNodeVoltageAtTerminal(withTerminal, "t0")).toBe("220");
+    });
   });
 
   // ─── isNodeVoltageDefault ─────────────────────────────

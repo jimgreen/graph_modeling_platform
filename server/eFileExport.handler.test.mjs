@@ -105,6 +105,23 @@ describe("handleV1ModelEFile", () => {
     }
   });
 
+  // 原型链键：PREDEFINED_E_DEVICE_TEMPLATES 是普通对象字面量，下标取值会一路走到
+  // Object.prototype，拿到的是函数 / 原型对象（truthy）⇒ 旧口径 `!TEMPLATES[name]`
+  // 判定为「已知模板」而放行；真正的拒绝发生在 readPredefinedTemplateBase64 抛出后，
+  // 落到 catch 变成 500 internal。期望：query 层就 400 bad-request。
+  //
+  // 为什么必须钉这条：`Object.hasOwn` 与下标取值只在这 3 个键上不一致，
+  // 合法模板名与任意不存在名的行为两者相同 —— 缺了本条，改动可退回到旧写法而不变红。
+  test("template 为原型链键（constructor / toString / __proto__ / hasOwnProperty）时 400 而非 500", async () => {
+    for (const templateName of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf"]) {
+      const response = await runGet(`${validSearch}&template=${encodeURIComponent(templateName)}`);
+      const payload = response.json();
+      expect(response.statusCode, `${templateName}: ${JSON.stringify(payload)}`).toBe(400);
+      expect(payload?.error?.code, templateName).toBe("bad-request");
+      expect(payload?.error?.message, templateName).toContain("未知模板");
+    }
+  });
+
   test("校验失败时不写任何导出字节（body 为空而非 E 文件内容）", async () => {
     const response = await runGet(`name=${encodeURIComponent(MODEL)}`);
     expectBadRequest(response);

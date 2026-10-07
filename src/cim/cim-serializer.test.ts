@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DOMParser } from "@xmldom/xmldom";
 import { escapeXmlText, serializeCimPackage, tag } from "./cim-serializer";
 import { CIM_NS } from "./cim-namespaces";
 import type { CimPackage } from "./cim-types";
@@ -203,5 +204,49 @@ describe("serializeCimPackage", () => {
     expect(xml.match(/<cim:Analog\.unit>/g) ?? []).toHaveLength(1);
     expect(xml.match(/<cim:Measurement\.measurementClass>/g) ?? []).toHaveLength(1);
     expect(xml.match(/<cim:Measurement\.Terminal /g) ?? []).toHaveLength(2);
+  });
+
+  // 回归：unit 的 qname 前缀此前恒为 cim:Analog，Discrete 量测带 unit 时产出
+  // `<cim:Discrete>` 里嵌 `<cim:Analog.unit>` —— 属性 qname 的类前缀不是宿主类，非法 CIM。
+  // 可达性：cim-builder.ts:506 直接 `unit: item.unitOverride`（不看 analogType），
+  // 故离散量测一旦配了单位就必然走到这一行。
+  // 说明：本条只钉「前缀跟随已选根元素」。CIM16 里 StringMeasurement 并没有 unit 属性，
+  // 该分支产出的 `cim:StringMeasurement.unit` 是否该整体省略，属另一个问题，此处不表态。
+  it("Discrete 量测的 unit 前缀跟随根元素，不产出非法的 Analog.unit", () => {
+    const pkg = emptyPackage();
+    pkg.measurements = [
+      { rdfId: "M_D", name: "开关状态", measurementType: "Discrete", unit: "kV", powerSystemResourceId: "EQ_1" }
+    ];
+    const xml = serializeCimPackage(pkg);
+    expect(xml).toContain(`<cim:Discrete rdf:ID="M_D">`);
+    expect(xml).toContain(`<cim:Discrete.unit>kV</cim:Discrete.unit>`);
+    // 形态断言：Discrete 块内不得出现 Analog 前缀的 unit
+    const start = xml.indexOf(`<cim:Discrete rdf:ID=`);
+    const block = xml.slice(start, xml.indexOf(`</cim:Discrete>`, start));
+    expect(block).toContain(`<cim:Discrete.unit>kV</cim:Discrete.unit>`);
+    expect(block).not.toContain(`Analog.unit`);
+    expect(xml).not.toContain(`<cim:Analog.unit>`);
+  });
+
+  // 回归：属性位此前复用 escapeXmlText（只转 & < >），引号原样写进 rdf:ID / rdf:resource
+  // 的双引号里 → 属性提前闭合、整份 XML 不可解析。id 取自落盘 JSON，而
+  // normalizeProjectForStorage 只补形状、不清洗 id（server.mjs:2884），故外部可写。
+  // 可达性：refTag / openWithId 未导出，此处经公开入口 serializeCimPackage 驱动
+  // （substation.regionId 走 refTag，substation.rdfId 走 openWithId）。
+  // 文本节点契约不变：引号在文本节点里不转义。
+  it("rdf:ID 与 rdf:resource 的引号被转义，文本节点仍不转义引号", () => {
+    const pkg = emptyPackage();
+    pkg.substations = [{ rdfId: `SUB_a"b&c`, name: `站"名`, regionId: `R'x"y` }];
+    const xml = serializeCimPackage(pkg);
+    expect(xml).toContain(`<cim:Substation rdf:ID="SUB_a&quot;b&amp;c">`);
+    expect(xml).toContain(`<cim:Substation.Region rdf:resource="#R&apos;x&quot;y"/>`);
+    expect(xml).toContain(`<cim:IdentifiedObject.name>站"名</cim:IdentifiedObject.name>`);
+    // 转义后仍可解析，且两个属性值无损解回原串（含引号本身）
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    expect(doc.getElementsByTagName("parsererror")).toHaveLength(0);
+    const sub = doc.getElementsByTagName("cim:Substation")[0];
+    expect(sub.getAttribute("rdf:ID")).toBe(`SUB_a"b&c`);
+    const region = doc.getElementsByTagName("cim:Substation.Region")[0];
+    expect(region.getAttribute("rdf:resource")).toBe(`#R'x"y`);
   });
 });

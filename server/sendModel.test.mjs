@@ -223,6 +223,41 @@ describe(`${sendPath} 参数校验`, () => {
     expect((await res.json()).error.message).toContain("pdf");
   });
 
+  // 原型链上的键名必须同样被拒。`kind: "pdf"` 那条只看非原型字符串：
+  // 旧的 `!FILE_KINDS[kind]` 是**属性取值**，`FILE_KINDS["constructor"]` 取到
+  // Object.prototype.constructor（一个 Function，真值）→ 校验通过 →
+  // buildFileText 全部 if 不命中、掉进 CIM 分支 → 218 行
+  // `const { field, ext, mime } = FILE_KINDS["constructor"]` 三个变量全是
+  // undefined → form.append 字段名 undefined、filename=`厂站模型undefined`，
+  // 200 发出一个谁也解不出的附件。
+  //
+  // 断言落在**状态码 + 未发出请求**上：mutation 若把判别改回属性取值，本条转红。
+  // `received` 为空这条不可省 —— 400 可能来自后续别的分支，收到请求才算漏过去。
+  test("原型链上的 kind（constructor）→ 400，且不发出请求", async () => {
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "constructor" }] });
+    expect(res.status).toBe(400);
+    const { error } = await res.json();
+    expect(error.code).toBe("bad-request");
+    expect(error.message).toContain("constructor");
+    expect(received).toHaveLength(0);
+  });
+
+  // 收紧判别不得误伤合法四类。逐个断言 `Object.prototype` 上的键被拒、
+  // 自有键被收 —— 若某次把判别写成 `!(kind in FILE_KINDS)`（原型键全收），
+  // 本组里 constructor 那条会红，合法四类那组则证明没有反向误拒。
+  test("四种合法 kind 仍全部通过，Object 原型上的其余键仍全部被拒", async () => {
+    for (const kind of ["e", "json", "svg", "cim"]) {
+      const res = await postSend({ url: sinkUrl, files: [{ kind }] }, "modelId=1");
+      expect(res.status, `合法 kind ${kind} 不该被拒`).toBe(200);
+    }
+    expect(received).toHaveLength(4);
+    for (const key of ["constructor", "toString", "valueOf", "hasOwnProperty"]) {
+      const res = await postSend({ url: sinkUrl, files: [{ kind: key }] });
+      expect(res.status, `原型键 ${key} 应被拒`).toBe(400);
+    }
+    expect(received).toHaveLength(4);
+  });
+
   test("模型不存在 → 404", async () => {
     const res = await postSend(
       { url: sinkUrl, files: [{ kind: "json" }] },

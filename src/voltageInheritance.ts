@@ -104,7 +104,7 @@ export function resolveNodeVoltageAtTerminal(
   // 端子 ID 未找到时，回退到通用 vbase
   if (terminalIndex < 0) {
     const commonVbase = terminalVoltageBaseNumber(node.params.vbase);
-    if (commonVbase && commonVbase !== "0") {
+    if (!isZeroVoltage(commonVbase)) {
       return commonVbase;
     }
     return "";
@@ -120,7 +120,7 @@ export function resolveNodeVoltageAtTerminal(
 
   // 1. 端子自身的 vbase（非零）
   const terminalVbase = terminalVoltageBaseNumber(terminal.vbase);
-  if (terminalVbase && terminalVbase !== "0") {
+  if (!isZeroVoltage(terminalVbase)) {
     return terminalVbase;
   }
 
@@ -132,7 +132,7 @@ export function resolveNodeVoltageAtTerminal(
 
   // 3. 通用 vbase
   const commonVbase = terminalVoltageBaseNumber(node.params.vbase);
-  if (commonVbase && commonVbase !== "0") {
+  if (!isZeroVoltage(commonVbase)) {
     return commonVbase;
   }
 

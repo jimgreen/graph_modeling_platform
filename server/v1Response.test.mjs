@@ -318,6 +318,16 @@ describe("sendV1Json —— gzip 支持判定尊重 q 权重", () => {
     expect(res.headers["content-length"]).toBe(Buffer.byteLength(JSON.stringify({ ok: true, data }), "utf-8"));
   });
 
+  test("显式 gzip;q=0 覆盖 wildcard *;q=1 → 不压缩", async () => {
+    const req = createMockRequest({ "accept-encoding": "gzip;q=0, *;q=1" });
+    const res = createMockResponse();
+    const data = { data: "x".repeat(2048) };
+    await sendV1Json(req, res, data);
+    expect(res.headers["content-encoding"]).toBeUndefined();
+    expect(res.headers.vary).toBeUndefined();
+    expect(res.jsonBody()).toEqual({ ok: true, data });
+  });
+
   test("gzip 无 q 参数 → 仍压缩（回归防护：缺省 q 等价于 q=1）", async () => {
     // 这是防误伤的核心：把默认路径也一起判成不支持，会让所有 gzip 客户端回归。
     const req = createMockRequest({ "accept-encoding": "gzip" });
@@ -668,6 +678,113 @@ describe("acceptsGzipEncoding —— 导出后成为两域共用的唯一判定"
     expect(acceptsGzipEncoding("")).toBe(false);
     expect(acceptsGzipEncoding(undefined)).toBe(false);
     expect(acceptsGzipEncoding(null)).toBe(false);
+  });
+
+  // ── 通配符 token *（RFC 9110 §12.5.3）────────────────────────
+  //
+  // gzip / x-gzip 未显式列出时再看 `*`：**除本段显式列出的编码外全部接受**。
+  // 改动前 token 正则是 `/^(?:x-)?gzip$/i`，`*` 既不匹配 gzip 也不匹配空串，
+  // 整条头被判成「不支持」—— 实测 `Accept-Encoding: *` 走明文。
+  //
+  // 顺序刻意是「显式 gzip / x-gzip 优先，* 兜底」：显式 `gzip;q=0` / `x-gzip;q=0`
+  // 覆盖 wildcard；重复显式项中任一 q>0 仍接受。
+  describe("通配符 *", () => {
+    test("* 单独出现 → 接受 gzip（缺省 q 等价 q=1）", () => {
+      expect(acceptsGzipEncoding("*")).toBe(true);
+    });
+
+    // RFC 语义：显式列出的编码覆盖 wildcard，未显式列出的编码才由 `*` 兜底。
+    test("显式 gzip;q=0 覆盖逗号段 * → 拒绝", () => {
+      expect(acceptsGzipEncoding("gzip;q=0, *")).toBe(false);
+      // 重复显式项中任一 q>0 仍接受，不应被前面的 q=0 锁死。
+      expect(acceptsGzipEncoding("gzip;q=0, gzip;q=1, *;q=0")).toBe(true);
+      // 两段都显式拒绝时没有 * 段兜底。
+      expect(acceptsGzipEncoding("gzip;q=0, gzip;q=0, *")).toBe(false);
+    });
+
+    test("*;q=0 → 等价于没有任何编码可用 → 拒绝；两侧空白同样解析", () => {
+      // `*` 缺省 q=1 时接受、给 q=0 时拒绝：去掉 q 判据这条立刻转红。
+      expect(acceptsGzipEncoding("*;q=0")).toBe(false);
+      expect(acceptsGzipEncoding(" * ;q=0 ")).toBe(false);
+      // 对照：同一段把 q 提到 >0 立刻又接受
+      expect(acceptsGzipEncoding("*;q=0.001")).toBe(true);
+    });
+
+    test("与其它编码混排也认；x-* 是自定义编码名不是通配符", () => {
+      expect(acceptsGzipEncoding("deflate, *, br")).toBe(true);
+      expect(acceptsGzipEncoding("br, *, deflate;q=0")).toBe(true);
+      expect(acceptsGzipEncoding("gzip2, deflate, *")).toBe(true);
+      // 别名式误伤防护：若 token 判定写成 /\*/ 子串命中，x-* 会变成 true
+      expect(acceptsGzipEncoding("x-*")).toBe(false);
+    });
+
+    // 端到端：* 的客户端确实拿到 gzip 字节，而不只是判定函数返回 true。
+    test("sendV1Json：Accept-Encoding: * → 压缩；*:q=0 → 明文", async () => {
+      const zipped = await probeV1Gzip("*");
+      expect(zipped.headers["content-encoding"]).toBe("gzip");
+      expect(zipped.headers.vary).toBe("Accept-Encoding");
+      expect(gunzipSync(zipped.rawBody()).toString("utf-8")).toBe(JSON.stringify({ ok: true, data: GZIP_PROBE_DATA }));
+
+      const plain = await probeV1Gzip("*;q=0");
+      expect(plain.headers["content-encoding"]).toBeUndefined();
+      expect(plain.headers.vary).toBeUndefined();
+      expect(plain.jsonBody()).toEqual({ ok: true, data: GZIP_PROBE_DATA });
+    });
+
+    // ── 夹具自检：证明这组断言**能**变红，而不是永远绿 ──
+    //
+    // 上面几条若全落在恒等输入上（精确匹配那条路径已给出同一结果），
+    // 它们在 * 分支被整个删掉后仍然全绿。所以用三个**本地复刻**替身
+    // 分别代表三种可能的误写，并给出每条轴的判别输入与恒等对照组。
+    test("★ 夹具自检：三条新断言各自只可能由 * 分支的对应判据给出", () => {
+      const qOf = (segments) => {
+        const qParam = segments.slice(1).find((param) => /^\s*q\s*=/i.test(param));
+        if (!qParam) return 1;
+        const parsed = Number.parseFloat(qParam.slice(qParam.indexOf("=") + 1));
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+      const tokenList = (headerValue) =>
+        String(headerValue ?? "").split(",").map((part) => part.split(";"));
+
+      // 变异 1：* 分支不存在 —— 即本次改动之前的实现
+      const exactOnly = (headerValue) =>
+        tokenList(headerValue).some((segments) => /^(?:x-)?gzip$/i.test(segments[0].trim()) && qOf(segments) > 0);
+      // 变异 2：* 分支在，但不读 q（等价于 `if (token === "*") return true`）
+      const starIgnoresQ = (headerValue) =>
+        tokenList(headerValue).some(
+          (segments) => segments[0].trim() === "*" || (/^(?:x-)?gzip$/i.test(segments[0].trim()) && qOf(segments) > 0)
+        );
+      // 变异 3：* 分支用子串命中而非 token 相等
+      const starSubstring = (headerValue) =>
+        tokenList(headerValue).some(
+          (segments) =>
+            (segments[0].includes("*") || /^(?:x-)?gzip$/i.test(segments[0].trim())) &&
+            (segments[0].includes("*") || qOf(segments) > 0)
+        );
+
+      const MUTANTS = [["exactOnly", exactOnly], ["starIgnoresQ", starIgnoresQ], ["starSubstring", starSubstring]];
+
+      // 轴 1：* 分支在不在。删掉分支 → 未显式列出的编码输入结果应改变
+      for (const header of ["*", " * ", "*;q=0.001", "deflate, *, br", "br, *, deflate;q=0", "gzip2, deflate, *"]) {
+        expect(acceptsGzipEncoding(header), `${header}：删掉 * 分支后结果应改变`).not.toBe(exactOnly(header));
+      }
+      // 显式 gzip;q=0 覆盖 wildcard，加入该段后结果应与 exactOnly 相同。
+      expect(acceptsGzipEncoding("gzip;q=0, *"), "显式 gzip;q=0 覆盖 *").toBe(exactOnly("gzip;q=0, *"));
+      // 轴 2：* 分支认不认 q=0。不认 → 下面每条的结果都会变
+      for (const header of ["*;q=0", " * ;q=0 ", "*;q=0, deflate"]) {
+        expect(acceptsGzipEncoding(header), `${header}：* 分支忽略 q 后结果应改变`).not.toBe(starIgnoresQ(header));
+      }
+      // 轴 3：token 相等还是子串命中
+      expect(acceptsGzipEncoding("x-*"), "x-* 应拒绝").not.toBe(starSubstring("x-*"));
+
+      // 恒等对照组：这四条在三种变异下都与生产一致，因此**不能**用来证明任何东西。
+      // 写出来只为记录清楚，免得后来者把恒等输入当判别输入。
+      for (const header of ["gzip;q=0", "gzip;q=0, gzip;q=0", "identity", "gzip2, deflate"]) {
+        for (const [label, mutant] of MUTANTS) {
+          expect(acceptsGzipEncoding(header), `${header} / ${label}`).toBe(mutant(header));
+        }
+      }
+    });
   });
 });
 

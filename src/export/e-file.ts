@@ -158,9 +158,22 @@ export function applyEDeviceInterfaceFieldOrder(fields: readonly any[] = [], con
   if ((configuredOrder ?? []).length === 0) {
     return fields;
   }
-  const fieldByName = new Map(
-    (fields ?? []).map((field) => [deviceDefinitionComplianceKey(eDeviceInterfaceOrderFieldName(field?.sourceName)), field] as const)
-  );
+  // 查表键与 appendUniqueFields 的单键去重契约对齐：`sourceName ?? exportName`（此处用 `||`，
+  // 空串 sourceName 也算缺省）。字段补充处写出的占位字段是 `sourceName: sourceName || undefined`
+  // —— 它只在 exportName 上有名字；查表若只认 sourceName，这些字段会全部塌进同一个空键、
+  // 最后一个胜出，模板列便永远命中不了、只能落到下方占位分支，丢掉该字段自带的
+  // cnName / definition / readonly。
+  // 同名键先到先得：先登记的字段不再被后来的同名者覆盖（塌键时的「最后一个胜出」本就是缺陷）。
+  // 空键不入表：模板顺序里的空串项本就走占位分支，不能让它命中某个无名字段。
+  const fieldByName = new Map<string, any>();
+  for (const field of fields ?? []) {
+    const key = deviceDefinitionComplianceKey(
+      eDeviceInterfaceOrderFieldName(field?.sourceName || field?.exportName)
+    );
+    if (key && !fieldByName.has(key)) {
+      fieldByName.set(key, field);
+    }
+  }
   const ordered: any[] = [];
   const used = new Set<string>();
   // 严格按模板字段顺序：设备有匹配用设备 field，无匹配用占位 field（sourceName=exportName），不追加设备独有字段

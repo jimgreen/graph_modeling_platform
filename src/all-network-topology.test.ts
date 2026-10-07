@@ -2343,3 +2343,118 @@ describe("全局线路端点身份与首末端方向兜底分支", () => {
     ]);
   });
 });
+
+/**
+ * analyzeGlobalLinesForAllNetworkTopology 的排序比较器兜底。
+ *
+ * 这组用例的形状不是随手写的，有三处依赖关系，删掉任何一处都会让断言恒绿：
+ *
+ * ① 残缺记录必须排在**下标 >= 1**。`Array.prototype.sort` 用的二分插入排序对 2 个元素
+ *    只调用一次 `compare(data[1], data[0])`，即残缺记录永远是 `left`；而比较式写成
+ *    `left.name.localeCompare(right.name)` 时，只有 `left` 为 undefined 才抛
+ *    （`undefined` 作为**接收者**才是 TypeError，作为实参会被 String 强转）。
+ *    放在下标 0 时它只当 `right`，抛不出来 —— 变异实测：残缺记录挪到首位后本组转绿。
+ *
+ * ② 残缺记录与对照记录必须 **idx 相同**。`left.idx - right.idx || ...` 是短路链，
+ *    idx 不同则第一个操作数非 0，`name` / `id` 那一段根本不会求值，兜底删掉也不抛。
+ *
+ * ③ 断言要落在「不抛」上，而不是「抛的次数」上：`analyzeGlobalLinesForAllNetworkTopology`
+ *    对 references 为空的记录本来就会给 warnings，`not.toThrow` 是唯一能观察到
+ *    「比较阶段没有崩」的断言点。
+ *
+ * 排序口径对照：:98-104 那处把 idx 也套了 `(left.idx || Number.MAX_SAFE_INTEGER)`，
+ * 但 idx 是数值字段，缺失只得到 NaN、不抛，本组刻意**不**给 idx 加兜底 ——
+ * 给 idx 套 MAX_SAFE_INTEGER 会把 idx=0（normalizedModelIndex 的「无 model_id」占位值）
+ * 顶到数组末尾，对两侧字段齐全的输入改变顺序，属于改业务语义。
+ */
+describe("全网拓扑全局线路排序对残缺记录兜底", () => {
+  function residual(overrides: Record<string, unknown>) {
+    return {
+      id: "global-line-residual",
+      idx: 7,
+      name: "残缺线路",
+      energyType: "ac" as const,
+      params: {},
+      references: [],
+      degree: 0,
+      createdAt: "2026-08-18T00:00:00.000Z",
+      updatedAt: "2026-08-18T00:00:00.000Z",
+      ...overrides
+    } as unknown as GlobalLineRecord;
+  }
+
+/**
+   * 断言必须读 `alert.id` 而不是 `alert.deviceName`：
+   * `deviceName` 是 `record.name || record.id`（:292），name 缺失时会退到 id，
+   * 于是「按 name 排序」和「按 id 排序」两种顺序在 deviceName 上长得一样，断言没有分辨力。
+   * `alert.id` 是 `global-line:${record.id}:${kind}:${endpoint}`（:288），逐条唯一，
+   * 且 4 元素数组会触发完整的二分插入排序序列，顺序可观察。
+   */
+  function sortedOrder(records: GlobalLineRecord[]) {
+    return analyzeGlobalLinesForAllNetworkTopology(records, [])
+      .warnings
+      .filter((alert) => alert.id.includes(":missing-endpoint:source"))
+      .map((alert) => alert.id.replace(/^global-line:/, "").replace(/:missing-endpoint:source$/, ""));
+  }
+
+  /**
+   * 缺 id 的记录在 `sortedOrder` 里显示成字符串 `"undefined"` 而不是 `""`：
+   * `alert.id` 是模板字面量 `` `global-line:${record.id}:${kind}:${endpoint}` ``（:288），
+   * 插值会把 undefined 字符串化。这是**告警 id** 的性质，与排序比较器无关 ——
+   * 比较器里 id 走的仍是 `String(left.id ?? "")` 兜底成空串。
+   * 所以顺序断言的判别力来自「空串排在 "global-line-head" 之前」，不是字面量本身。
+   */
+
+  test("记录缺 name 且 idx 相同：排序阶段不抛 TypeError", () => {
+    const head = residual({ id: "global-line-head", name: "甲线路" });
+    const nameless = residual({ id: "global-line-nameless", name: undefined });
+
+    expect(() => analyzeGlobalLinesForAllNetworkTopology([head, nameless], [])).not.toThrow();
+    // name 兜底成空串，空串排在所有非空前缀之前 —— 结果确定。
+    expect(sortedOrder([head, nameless])).toEqual(["global-line-nameless", "global-line-head"]);
+  });
+
+  test("残缺记录挪到首位就测不出来了：只有 left 为 undefined 才抛", () => {
+    const nameless = residual({ id: "global-line-nameless", name: undefined });
+    const head = residual({ id: "global-line-head", name: "甲线路" });
+
+    // 对照组把残缺记录放在下标 0，它在二分插入排序里只当 right —— undefined 作为实参
+    // 会被 String 强转，所以这里照旧不抛。记录这个方向性是为了让下标 >= 1 的写法不再被质疑。
+    expect(() => analyzeGlobalLinesForAllNetworkTopology([nameless, head], [])).not.toThrow();
+  });
+
+  test("记录缺 id 且 name 相同：排序兜底 name 后仍走到 id 比较，不抛 TypeError", () => {
+    const head = residual({ id: "global-line-head", name: "同序号线路" });
+    const idless = residual({ id: undefined, name: "同序号线路" });
+
+    expect(() => analyzeGlobalLinesForAllNetworkTopology([head, idless], [])).not.toThrow();
+    // id 兜底成空串，空串排在 "global-line-head" 之前。
+    expect(sortedOrder([head, idless])).toEqual(["undefined", "global-line-head"]);
+  });
+
+  test("记录缺 name 与 id：两道兜底串起来仍不抛 TypeError", () => {
+    const head = residual({ id: "global-line-head", name: "甲线路" });
+    const bare = residual({ id: undefined, name: undefined });
+
+    expect(() => analyzeGlobalLinesForAllNetworkTopology([head, bare], [])).not.toThrow();
+    // 两道兜底各自降级成空串，残缺记录排在 "甲线路" 之前。
+    expect(sortedOrder([head, bare])).toEqual(["undefined", "global-line-head"]);
+  });
+
+  test("字段齐全的输入排序结果逐字不变：idx 优先、name 次之、id 兜底", () => {
+    const byIdx = [
+      residual({ id: "c", idx: 3, name: "甲线路" }),
+      residual({ id: "a", idx: 1, name: "乙线路" }),
+      residual({ id: "b", idx: 2, name: "丙线路" })
+    ];
+    expect(sortedOrder(byIdx)).toEqual(["a", "b", "c"]);
+
+    // 同 idx 时按 zh-CN 名序；名同再按 id。idx=0 是合法值，必须留在最前而不是被 MAX_SAFE_INTEGER 顶走。
+    const byName = [
+      residual({ id: "z", idx: 4, name: "乙线路" }),
+      residual({ id: "a", idx: 4, name: "甲线路" }),
+      residual({ id: "m", idx: 0, name: "丙线路" })
+    ];
+    expect(sortedOrder(byName)).toEqual(["m", "a", "z"]);
+  });
+});

@@ -3,6 +3,7 @@
 // 这些是**导出主链路上的静默失真源**：ID 撞车会让 SVG 里的 <use> 指错设备，
 // 标签丢字/丢样式只表现为「画面有点不对」，不报任何错。
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
   buildExportDeviceIdMap,
@@ -46,6 +47,20 @@ function makeNode(overrides: Partial<ModelNode> = {}): ModelNode {
   };
 }
 
+function runMaxSafeIndexProbe(kind: string) {
+  const sourceUrl = new URL("./svgExportUtils.ts", import.meta.url).href;
+  const code = `
+    import { buildExportDeviceIdMap } from ${JSON.stringify(sourceUrl)};
+    const makeNode = (id) => ({ id, kind: ${JSON.stringify(kind)}, params: { idx: String(Number.MAX_SAFE_INTEGER) } });
+    const map = buildExportDeviceIdMap([makeNode("a"), makeNode("b"), makeNode("c")], new Set());
+    process.stdout.write(JSON.stringify([...map.values()]));
+  `;
+  return spawnSync(process.execPath, ["--input-type=module", "-e", code], {
+    encoding: "utf8",
+    timeout: 10000
+  });
+}
+
 // ─── buildExportDeviceIdMap ───────────────────────────────
 
 describe("svgExportUtils / buildExportDeviceIdMap", () => {
@@ -71,6 +86,75 @@ describe("svgExportUtils / buildExportDeviceIdMap", () => {
       const map = buildExportDeviceIdMap([makeNode({ id: "n1", params: { idx } })], new Set());
       expect(map.get("n1"), `idx=${JSON.stringify(idx)}`).toBe("n1");
     }
+  });
+
+  // idx 来自可导入的项目 JSON，是外部输入。超过 2^53-1 的十进制串会被
+  // Number.parseInt 静默舍入成相邻 double，而重编号是 `while (usedIndexes.has(i)) i += 1`：
+  // 一旦 `i + 1 === i`，循环永远退不出来 —— 导出时标签页卡死。
+  // 下面三条用的都是「单个」超限 idx：不加校验时它们会正常退出并产出超长的
+  // `breaker-<2^53>` 形态，所以断言是**变红**而不是挂起，可被变异测试验证。
+  // 真死循环需要同 typeId 下两个 idx 解析成同一个 >= 2^53 的 double（如 ...993 与 ...994），
+  // 那种组合写进用例会让缺校验时直接超时，故只用单值 + 形态断言。
+  const UNSAFE_IDX = "9007199254740993"; // parseInt → 2^53，其 +1 是空操作
+
+  it("idx 超出安全整数时退回节点 id 路径，不产出超长编号", () => {
+    // 先写死前提：这个输入确实落在「+1 无效」的死循环区间里。
+    const parsed = Number.parseInt(UNSAFE_IDX, 10);
+    expect(Number.isSafeInteger(parsed)).toBe(false);
+    expect(parsed + 1).toBe(parsed);
+
+    const map = buildExportDeviceIdMap([makeNode({ id: "n1", params: { idx: UNSAFE_IDX } })], new Set());
+    // 走 :141-143 的兜底：直接用节点 id，与「无 idx」同形。
+    expect(map.get("n1")).toBe("n1");
+    // 直接断「重编号那条路没被走」——否则删除 isSafeInteger 判定时这条会变红。
+    expect(map.get("n1")).not.toContain("90071992547409");
+    expect(map.get("n1")).not.toMatch(/-\d{6,}/);
+  });
+
+  it("2^53-1 这个边界值本身仍按正常编号产出，不被安全整数判定误伤", () => {
+    const map = buildExportDeviceIdMap(
+      [makeNode({ id: "n1", params: { idx: "9007199254740991" } })],
+      new Set()
+    );
+    expect(map.get("n1")).toBe("breaker-9007199254740991");
+  });
+
+  it("静态图元同样：超限 idx 被降级为无 idx，按补空位产出小编号", () => {
+    // 静态路径的兜底形态与编号路径**同为 `${typeId}-${exportIndex}`**，光看单条无法区分。
+    // 区别在「降级进 unindexed 队列后从 1 起步补空位」：同组里 idx=1 已被占用，
+    // 所以补位结果必然是 2。未加校验时它会走编号路径产出 `static-alpha-9007199254740992`。
+    const map = buildExportDeviceIdMap(
+      [
+        makeNode({ id: "z", kind: "static-alpha" as ModelNode["kind"], params: { idx: "1" } }),
+        makeNode({ id: "u", kind: "static-alpha" as ModelNode["kind"], params: { idx: UNSAFE_IDX } })
+      ],
+      new Set()
+    );
+    expect(map.get("z")).toBe("static-alpha-1");
+    expect(map.get("u")).toBe("static-alpha-2");
+    expect(map.get("u")).not.toContain("90071992547409");
+  });
+
+  it("动态图元的 MAX_SAFE_INTEGER 冲突会回绕并终止", () => {
+    const result = runMaxSafeIndexProbe("breaker");
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual([
+      `breaker-${Number.MAX_SAFE_INTEGER}`,
+      "breaker-1",
+      "breaker-2"
+    ]);
+  });
+
+  it("静态图元的 MAX_SAFE_INTEGER 冲突会回绕并终止", () => {
+    const result = runMaxSafeIndexProbe("static-alpha");
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual([
+      `static-alpha-${Number.MAX_SAFE_INTEGER}`,
+      "static-alpha-1",
+      "static-alpha-2"
+    ]);
   });
 
   it("同类型同 idx 冲突时后者重编号，不靠 usedIds 兜底加 _2 后缀", () => {

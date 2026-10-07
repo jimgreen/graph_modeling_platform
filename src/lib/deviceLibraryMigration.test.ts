@@ -318,14 +318,20 @@ describe("deviceLibraryMigration", () => {
       expect(result.errors).not.toContain("Already migrated");
     });
 
-    it("应该处理迁移错误", async () => {
+    it("应该处理迁移错误：损坏的设备库不静默通过，记错误且不标完成", async () => {
       // 设置无效的 JSON
       localStorageMock.setItem("power-system-custom-device-library", "invalid json");
 
       const result = await migrateFromLocalStorage();
 
-      // 即使有错误，迁移也应该继续
+      // 即使有错误，迁移也应该继续：自定义模板按 0 条参与（内置库仍迁移）
       expect(result.migrated.templates).toBe(0);
+      // 但损坏必须留痕 —— 旧实现空 catch 吞掉解析错误，errors 为空、success 为 true
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain("Failed to parse custom device templates from localStorage:");
+      expect(result.success).toBe(false);
+      // 部分失败不许标完成，否则非强制模式永不重试
+      expect((await getMigrationStatus())?.completed).toBe(false);
     });
   });
 
@@ -336,7 +342,9 @@ describe("deviceLibraryMigration", () => {
     });
 
     it("应该返回迁移状态（已迁移）", async () => {
-      await migrateFromLocalStorage();
+      const migrated = await migrateFromLocalStorage();
+      // 排除「本趟带错误」这条路径：无错误才可能 completed 为真
+      expect(migrated.errors).toEqual([]);
 
       const status = await getMigrationStatus();
 
@@ -345,11 +353,27 @@ describe("deviceLibraryMigration", () => {
       expect(status?.timestamp).toBeDefined();
       expect(status?.migrated).toBeDefined();
     });
+
+    it("迁移带错误时 completed 为假，schemaVersion 仍随记录写入", async () => {
+      // 记录（schemaVersion / timestamp / migrated）与闸门（completed）解耦：
+      // 即使 completed 为假，记录也在，重试路径读到的仍是当前版本号。
+      localStorageMock.setItem("power-system-custom-device-library", "broken {");
+
+      const result = await migrateFromLocalStorage();
+      expect(result.success).toBe(false);
+
+      const status = await getMigrationStatus();
+      expect(status).not.toBeNull();
+      expect(status?.completed).toBe(false);
+      expect(status?.schemaVersion).toBeGreaterThan(0);
+      expect(status?.timestamp).toBeGreaterThan(0);
+    });
   });
 
   describe("rollbackMigration", () => {
     it("应该清除迁移状态", async () => {
-      await migrateFromLocalStorage();
+      const migrated = await migrateFromLocalStorage();
+      expect(migrated.errors).toEqual([]);
 
       let status = await getMigrationStatus();
       expect(status?.completed).toBe(true);
@@ -454,14 +478,21 @@ describe("deviceLibraryMigration", () => {
   });
 
   describe("localStorage 读取失败时的回退", () => {
-    // 以下三条断的是三个 read*FromLocalStorage 的 `catch`：
-    // 断言落在「迁移整体仍成功」+「该项计数为 0」上，
-    // 而不是只看计数 —— 因为回退值本身就是 0/[]，
-    // 单断计数无法区分「catch 回退」与「根本没读到数据」。
-    // 若把 catch 删掉，JSON.parse 的异常会一路冒到 migrateFromLocalStorage 的顶层 catch，
-    // success 变 false、errors 里出现 `Migration failed: ...` —— 断言立刻转红。
+    // 以下几条断的是三个 read*FromLocalStorage 的 `catch`。
+    // 断言分两半，缺一不可：
+    //
+    // ① **回退行为**：损坏的那一项按 0 条 / 空对象继续，迁移**没有整体提前返回** ——
+    //    同一趟里另一项仍正常迁移。这是回退值本身（0/[] 与 {}）无法单独证明的。
+    // ② **留痕行为**：损坏会往 errors 里追加一条 ⇒ success 变 false ⇒
+    //    迁移状态不再标完成。这是本次修复钉住的契约，旧实现（空 catch + 无条件
+    //    completed）会在这里转红：errors 为空、success 为 true、completed 为 true。
+    //    不能只断计数 —— 「catch 回退」与「根本没读到数据」都会得到 0。
+    //
+    // 若把 catch 整个删掉，JSON.parse 的异常会一路冒到 migrateFromLocalStorage 的
+    // 顶层 catch，errors 里出现的是 `Migration failed: ...`（而不是 `Failed to parse ...`），
+    // 且 completed 那半边拿不到记录 —— `toBeNull()` 照样成立，所以匹配文本不可省。
 
-    it("图元模板 JSON 损坏时按空列表继续迁移，不整体失败", async () => {
+    it("图元模板 JSON 损坏时按空列表继续迁移，但记错误且不标完成", async () => {
       const templates: DeviceTemplate[] = [{
         kind: "test-fallback-templates",
         label: "回退用例设备",
@@ -477,15 +508,21 @@ describe("deviceLibraryMigration", () => {
 
       const result = await migrateFromLocalStorage();
 
-      // 图元模板回退为空：没有迁移记录，但**没有**产生任何错误
+      // ① 回退：图元模板按 0 条继续，同一函数族的另一项仍正常迁移 —— 证明不是整体提前返回
       expect(result.migrated.graphTemplates).toBe(0);
-      expect(result.errors).toEqual([]);
-      expect(result.success).toBe(true);
-      // 同一函数族的另一项仍正常迁移 —— 证明不是整体提前返回
       expect(result.migrated.templates).toBe(1);
+      // ② 留痕：解析失败被记录（而不是静默吞掉）
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain("Failed to parse graph templates from localStorage:");
+      expect(result.success).toBe(false);
+      // ② 留痕的另一半：部分失败不许标完成，否则下次启动在 completed 闸门处早退、永不重试。
+      //        记录本身仍写入（migrated 计数对排查有用），只是 completed 为假。
+      const raw = await (await initDeviceLibraryDB()).get("migration", "deviceLibrary");
+      expect(raw).toMatchObject({ completed: false });
+      expect((await getMigrationStatus())?.completed).toBe(false);
     });
 
-    it("设备定义覆盖 JSON 损坏时按空对象继续迁移，不整体失败", async () => {
+    it("设备定义覆盖 JSON 损坏时按空对象继续迁移，但记错误且不标完成", async () => {
       const templates: DeviceTemplate[] = [{
         kind: "test-fallback-overrides",
         label: "回退用例设备",
@@ -501,12 +538,105 @@ describe("deviceLibraryMigration", () => {
 
       const result = await migrateFromLocalStorage();
 
+      // ① 回退：覆盖按空对象继续，模板仍迁移
       expect(result.migrated.overrides).toBe(0);
-      expect(result.errors).toEqual([]);
-      expect(result.success).toBe(true);
       expect(result.migrated.templates).toBe(1);
       const storedOverrides = await getAllOverrides();
       expect(storedOverrides).toEqual({});
+      // ② 留痕：解析失败被记录，迁移不标完成
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain("Failed to parse device definition overrides from localStorage:");
+      expect(result.success).toBe(false);
+      expect((await getMigrationStatus())?.completed).toBe(false);
+    });
+
+    it("自定义设备模板 JSON 损坏时按空列表继续迁移，但记错误且不标完成", async () => {
+      // 覆盖第三个 read*FromLocalStorage（模板键本身）。
+      // 特别注意：**内置 DEVICE_LIBRARY 仍会迁移**（`[...DEVICE_LIBRARY, ...rawTemplates]`），
+      // 所以 migrated.templates 的期望值不是 0 —— 绝不能拿它当「读到了空数据」的证据，
+      // 解析失败只能靠 errors 里那条文本与 completed=false 来钉。
+      localStorageMock.setItem("power-system-custom-device-library", "not json at all");
+      localStorageMock.setItem("power-system-custom-graph-templates", JSON.stringify([{
+        id: "template-after-broken-device-library",
+        typeName: "标准模板",
+        name: "设备库损坏之后仍迁移的图元模板",
+        sourceSize: { width: 200, height: 150 },
+        clipboard: { nodes: [], edges: [], groups: [] },
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z"
+      } satisfies GraphTemplate]));
+
+      const result = await migrateFromLocalStorage();
+
+      // ① 回退：图元模板照常迁移 —— 损坏的键没有打断整趟迁移
+      expect(result.migrated.graphTemplates).toBe(1);
+      // ② 留痕：只有模板键这一条错误（另两个键都是合法 JSON）
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain("Failed to parse custom device templates from localStorage:");
+      expect(result.success).toBe(false);
+      expect((await getMigrationStatus())?.completed).toBe(false);
+    });
+
+    it("三处 catch 都还原成空 catch 时不留痕：errors 空、标成功、下次启动早退", async () => {
+      // 本组用例的对照锚点：旧实现（`catch { return [] }` + 无条件 `completed: true`）
+      // 在同样的输入下会得到 success=true、completed=true、第二次迁移早退。
+      // 这里把两条契约并排钉住，使撤销修复必然转红。
+      localStorageMock.setItem("power-system-custom-device-library", "{{{ not json");
+      localStorageMock.setItem("power-system-custom-graph-templates", "[[[ not json");
+      localStorageMock.setItem("power-system-device-definition-overrides", "!!! not json");
+
+      const result = await migrateFromLocalStorage();
+
+      expect(result.success).toBe(false);
+      // 三个键各留一条，顺序即读取顺序（模板键与覆盖键在第 1 步之前，图元模板键在第 2 步）
+      expect(result.errors).toEqual([
+        expect.stringContaining("Failed to parse custom device templates from localStorage:"),
+        expect.stringContaining("Failed to parse device definition overrides from localStorage:"),
+        expect.stringContaining("Failed to parse graph templates from localStorage:")
+      ]);
+      expect((await getMigrationStatus())?.completed).toBe(false);
+
+      // 关键：修复前这趟被标成完成，第二次迁移在 completed 闸门处直接返回 "Already migrated"；
+      // 修复后 completed 为假，非强制模式会真的重跑（errors 里不再有 Already migrated）。
+      const second = await migrateFromLocalStorage();
+      expect(second.errors).not.toContain("Already migrated");
+      expect(second.success).toBe(false);
+      expect(second.errors).toHaveLength(3);
+    });
+
+    it("读键本身抛错（禁用 localStorage）时按空值继续，但同样要记错误", async () => {
+      // 上一组只覆盖 JSON.parse。getItem 失败是另一条路径：
+      // 隐私模式/配额/被策略禁用时抛 SecurityError / QuotaExceededError。
+      // 断言「值取不到 + 错误留痕」，故直接把 getItem 换成抛错替身。
+      // 必须用 try/finally 还原：模块顶部那条 defineProperty 是永久的，
+      // 不还原会污染后续每一条用例（它们往 mockLocalStorage 写数据，
+      // 读取端却已是抛错版本，errors 会被塞满 localStorage-disabled）。
+      const thrower = vi.fn(() => {
+        throw new Error("localStorage-disabled");
+      });
+      const originalLocalStorage = window.localStorage;
+      Object.defineProperty(window, "localStorage", { value: { getItem: thrower, setItem: vi.fn(), removeItem: vi.fn(), clear: vi.fn() }, writable: true });
+
+      try {
+        const result = await migrateFromLocalStorage();
+
+        expect(result.success).toBe(false);
+        expect(result.errors).toHaveLength(3);
+        expect(result.errors).toEqual([
+          expect.stringContaining("Failed to read custom device templates from localStorage: localStorage-disabled"),
+          expect.stringContaining("Failed to read device definition overrides from localStorage: localStorage-disabled"),
+          expect.stringContaining("Failed to read graph templates from localStorage: localStorage-disabled")
+        ]);
+        // 读不到数据 → 一条也不迁移。注意**不是**「内置 DEVICE_LIBRARY 仍会迁移」：
+        // customDeviceTemplates 只保留 `template.custom === true` 的条目
+        // （customDeviceUtils.ts:193-194），内置库 custom 为假，故这里是 0。
+        expect(result.migrated.templates).toBe(0);
+        expect(result.migrated.graphTemplates).toBe(0);
+        expect(result.migrated.overrides).toBe(0);
+        expect((await getMigrationStatus())?.completed).toBe(false);
+      } finally {
+        Object.defineProperty(window, "localStorage", { value: originalLocalStorage, writable: true });
+      }
     });
   });
 
@@ -707,7 +837,9 @@ describe("deviceLibraryMigration", () => {
   describe("分步保存失败时的错误收集", () => {
     // 覆盖四条内层 catch。它们都往 errors 追加信息、且 success 变 false，
     // 同时后续步骤仍然继续 —— 所以每条都同时断言 errors 文本与「后续步骤的产物」。
-    it("批量保存模板失败：记录错误但继续迁移覆盖并标记完成", async () => {
+    // 注意 completed：**部分失败不许标完成**（否则下次启动在 completed 闸门处早退、
+    // 失败的数据永不重试）。记录本身仍写入，只是 completed 为假。
+    it("批量保存模板失败：记录错误、继续迁移覆盖，但迁移不标完成", async () => {
       localStorageMock.setItem("power-system-custom-device-library", JSON.stringify([{
         kind: "test-save-templates-fail",
         label: "保存失败设备",
@@ -731,9 +863,10 @@ describe("deviceLibraryMigration", () => {
       expect(result.migrated.templates).toBe(0);
       // 覆盖迁移仍执行 → 失败被隔离在单个步骤内
       expect(result.migrated.overrides).toBe(1);
-      // 迁移状态仍被标记完成
+      // 迁移状态记录仍写入，但 completed 为假 → 下次启动会真的重跑
       const status = await getMigrationStatus();
-      expect(status?.completed).toBe(true);
+      expect(status?.completed).toBe(false);
+      expect(status?.migrated).toEqual({ templates: 0, graphTemplates: 0, overrides: 1 });
     });
 
     it("保存模板图片失败：记录 kind 并继续迁移其余模板", async () => {
@@ -811,7 +944,22 @@ describe("deviceLibraryMigration", () => {
       expect(result.migrated.overrides).toBe(0);
       expect(result.migrated.templates).toBe(1);
       const status = await getMigrationStatus();
-      expect(status?.completed).toBe(true);
+      expect(status?.completed).toBe(false);
+    });
+
+    it("无错误时仍然标完成并跳过后续非强制迁移", async () => {
+      // 与上面三条并排：completed 现在取决于 errors 是否为空，
+      // 所以「errors 空 ⇒ completed 真」这一半也得钉住，否则
+      // `completed: false` 写成常数也能让上面几条全绿。
+      // 另钉一条：completed 为真时后续非强制迁移真的早退（闸门本身没被改坏）。
+      const result = await migrateFromLocalStorage();
+
+      expect(result.errors).toEqual([]);
+      expect(result.success).toBe(true);
+      expect((await getMigrationStatus())?.completed).toBe(true);
+
+      const second = await migrateFromLocalStorage();
+      expect(second.errors).toContain("Already migrated");
     });
   });
 

@@ -30,6 +30,11 @@
 /** 格式化为 SVG 数值：最多 5 位小数、非有限值归 0、负零归零。 */
 export function formatSvgNumber(value) {
   const numeric = Number(value);
+  // 乘 1e5 本身也可能溢出：|numeric| > Number.MAX_VALUE / 1e5 ≈ 1.797e303 时结果为
+  // ±Infinity，而输入仍是**有限值**。原先的有限性守卫只查输入，查不到这个中间态，
+  // 于是输出字面 "Infinity" —— 与本函数「非有限归 0」的契约自相矛盾，且会生成
+  // 无效 SVG 属性（与 NaN 同类，浏览器静默忽略）。故对取整后的结果再查一次。
   const rounded = Math.round((Number.isFinite(numeric) ? numeric : 0) * 100000) / 100000;
+  if (!Number.isFinite(rounded)) return "0";
   return String(Object.is(rounded, -0) ? 0 : rounded);
 }

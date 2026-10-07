@@ -178,6 +178,38 @@ describe("inferTopology", () => {
     expect(connectivityNodes).toHaveLength(1);
   });
 
+  // acTopologyNode = 0 是「未参与拓扑」的哨兵值，不是合法拓扑号（拓扑号 1 起编）。
+  // 生产上它同时是新建节点的持久化默认值，且无 AC 端子时 model-routing 也会算出 0；
+  // CIM 导出链路又不重算拓扑（SVG / E 导出前都会重算），所以陈旧的 0 会直达阶段 c 的
+  // 隐式合并桶。
+  //
+  // 判别输入：这两个节点的 acTopologyNode 都是 0，唯一能把它们并起来的就是拓扑号桶。
+  // 撤销守卫（`>= 0`）→ 两节点同入桶 0、bucket.length=2 被 union → 断言从
+  // 「0 个 CN / 0 个 Terminal」翻成「1 个 CN / 2 个 Terminal」，转红。
+  //
+  // 后半段用 1（最小合法拓扑号）作反向侧：同样的端子形状换成 1 仍必须合并。
+  // 这条同时排除「fixture 退化导致恒为 0」——若两段的 0 与 1 结果相同，
+  // 说明端子里根本没有可合并的东西（ac 端子被过滤掉 / union 根本没跑），
+  // 那前半段的 0 就没有鉴别力，测试会静默失效。
+  it("acTopologyNode 为哨兵值 0 → 不参与隐式合并；最小合法值 1 仍合并", () => {
+    const zeroA = { ...busA, id: "zeroA", acTopologyNode: 0 };
+    const zeroB = { ...busB, id: "zeroB", acTopologyNode: 0 };
+    const zeros = inferTopology({
+      nodes: [zeroA, zeroB], edges: [], projectName: "t", modelId: "m-zero"
+    });
+    expect(zeros.connectivityNodes).toHaveLength(0);
+    expect(zeros.terminals).toHaveLength(0);
+
+    const oneA = { ...busA, id: "oneA", acTopologyNode: 1 };
+    const oneB = { ...busB, id: "oneB", acTopologyNode: 1 };
+    const ones = inferTopology({
+      nodes: [oneA, oneB], edges: [], projectName: "t", modelId: "m-one"
+    });
+    expect(ones.connectivityNodes).toHaveLength(1);
+    expect(ones.terminals).toHaveLength(2);
+    expect(ones.terminals.map((t) => t.connectivityNodeId)).toEqual(["CN_1", "CN_1"]);
+  });
+
   it("孤立设备无端子 → 无 ConnectivityNode 亦无 Terminal", () => {
     const { connectivityNodes, terminals } = inferTopology({ nodes: [line], edges: [], projectName: "t", modelId: "m" });
     expect(connectivityNodes).toHaveLength(0);

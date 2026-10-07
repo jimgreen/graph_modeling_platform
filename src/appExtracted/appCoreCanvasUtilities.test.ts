@@ -7,14 +7,24 @@
 // 本文件把这条路径真正跑起来，让缺失的 import 变成编译期/测试期可见的失败。
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { DeviceKind, ModelNode, TerminalType } from "../model";
+import type { MeasurementGroup } from "../measurements";
 import {
   canvasWheelTargetIsRenderedCanvas,
   groupTransformGeometry,
   isCanvasKeyboardBlockingTarget,
   isCanvasWheelZoomExcludedTarget,
+  isColorParamKey,
+  isRedundantBatchCommonParamRow,
+  measurementGroupCommonValue,
+  measurementGroupWithCommonSetting,
+  sameRenderViewportBounds,
+  serializeStaticButtonTargetLayerIds,
   terminalVbaseFallbackValue,
   voltageColorKeyForTerminal,
-  type GroupTransformDrag
+  type BatchCommonMeasurementGroupKey,
+  type BatchCommonParamRow,
+  type GroupTransformDrag,
+  type RenderViewportBounds
 } from "./appCoreCanvasUtilities";
 
 const terminal = (type: TerminalType, vbase: string, index: number) => ({
@@ -158,6 +168,9 @@ describe("voltageColorKeyForTerminal", () => {
     expect(voltageColorKeyForTerminal(n, terminal("ac", "", 0), 0)).toBe("");
   });
 
+  // 这条用例喂的是字面 "0"。零的**判定口径**（而非字符串相等）在下面
+  // describe「判零形态」里用 "0.0" / "0.00" 单独钉住 —— "0" 对任何判零实现都是
+  // 显然成立的输入，看不见 `!== "0"` 与数值判零的差别。
   test("电压为 0 视为未填（与电压继承 isNodeVoltageDefault 同口径）", () => {
     const n = node("ac-transformer", { i_vbase: "110" });
     expect(voltageColorKeyForTerminal(n, terminal("ac", "0", 0), 0)).toBe("ac:110");
@@ -182,6 +195,75 @@ describe("voltageColorKeyForTerminal", () => {
   test("params 主键为 '0' 时仍按别名键上色", () => {
     const n = node("ac-transformer", { i_vbase: "0", high_vbase: "35" });
     expect(voltageColorKeyForTerminal(n, terminal("ac", "", 0), 0)).toBe("ac:35");
+  });
+});
+
+// ── 判零形态：0.0 / 0.00 也算零（接上一条 "0" 用例）──────────────────────────
+//
+// 缺陷：`voltageColorKeyForTerminal` 的两处判零写的是 `!== "0"`，只认**字面** "0"。
+// 真实写入路径 src/model-routing.ts 的「清零电压基值」传的是 **"0.0"**
+// （清 params 的 i_vbase/j_vbase/... 与端子 vbase），于是清零后的设备：
+//   ① 端子 vbase 是 "0.0" → 第一处判零放行 → 直接返回 `ac:0.0`，
+//      **既不落到 params 兜底也画不出真实电压的颜色**（明明 params 里有 110）；
+//   ② params 侧 vbase 是 "0.0" → 第二处判零放行 → 返回 `ac:0.0` 而不是空串，
+//      下游把它当成一个真实电压档位去查配色表。
+//
+// 修法是判零统一交给 firstNonZeroVoltageBase（即 `normalized && !isZeroNumericText(normalized)`），
+// 与电压继承 src/voltageInheritance.ts 的 isZeroVoltage（`!normalized || isZeroNumericText(normalized)`）
+// 互为取反的同一口径。下面每条断言都落在**具体返回值**上。
+describe("voltageColorKeyForTerminal：0.0 形态的零判定", () => {
+  // 缺陷 ①：端子 vbase 是 0.0（清零后 params 仍有真电压）→ 必须继续往 params 找。
+  // 旧实现此时返回 "ac:0.0"；修复后返回 "ac:110"。
+  test("★ 端子 vbase 为 0.0 时不上 0.0 键，继续用 params 兜底电压", () => {
+    const n = node("ac-transformer", { i_vbase: "110" });
+    expect(voltageColorKeyForTerminal(n, terminal("ac", "0.0", 0), 0)).toBe("ac:110");
+  });
+
+  // 只判 "0" 的实现对 "0.00" 同样放行，所以这一条把**所有** 0 的十进制写法一起钉住。
+  test("★ 端子 vbase 为 0.00 / 0.000 时同样继续走 params 兜底", () => {
+    const n = node("ac-transformer", { i_vbase: "110" });
+    expect(voltageColorKeyForTerminal(n, terminal("ac", "0.00", 0), 0)).toBe("ac:110");
+    expect(voltageColorKeyForTerminal(n, terminal("ac", "0.000", 0), 0)).toBe("ac:110");
+  });
+
+  // 缺陷 ②：params 侧清零写的是 "0.0" → 必须返回空串，而不是把 0.0 当真实电压。
+  test("★ params 兜底电压为 0.0 时不成键（而不是 ac:0.0）", () => {
+    const zero = node("ac-transformer", { i_vbase: "0.0" });
+    expect(voltageColorKeyForTerminal(zero, terminal("ac", "", 0), 0)).toBe("");
+  });
+
+  // 两处都清零：端子和 params 侧都是 0.0 → 整条链走到底，返回空串。
+  // 这条同时钉住「第一处判零放行了也要被第二处拦住」——旧实现直接返回 ac:0.0。
+  test("★ 端子与 params 都为 0.0 时不成键", () => {
+    const zero = node("ac-transformer", { i_vbase: "0.0" });
+    expect(voltageColorKeyForTerminal(zero, terminal("ac", "0.0", 0), 0)).toBe("");
+  });
+
+  // 通用键 vbase 清零（不是侧键 i_vbase）：second/fourth 级兜底也会拿到 0.0。
+  test("★ 通用键 vbase 为 0.0 时不成键", () => {
+    const zero = node("ac-transformer", { i_vbase: "0.0", vbase: "0.0" });
+    expect(voltageColorKeyForTerminal(zero, terminal("ac", "", 0), 0)).toBe("");
+  });
+
+  // 对照组（防止上面几条变成「恒返回空串」）：
+  //  · 0.5 是**非零**，必须当真实电压用，否则「把所有小数点形态都当零」的过度修法会绿。
+  //  · 10.5 必须优先于 params 兜底，证明端子侧判零臂确实参与选择。
+  test("对照：0.5 这类小数仍算非零，端子值优先于 params", () => {
+    const n = node("ac-transformer", { i_vbase: "110" });
+    expect(voltageColorKeyForTerminal(n, terminal("ac", "0.5", 0), 0)).toBe("ac:0.5");
+    expect(voltageColorKeyForTerminal(n, terminal("ac", "10.5", 0), 0)).toBe("ac:10.5");
+  });
+
+  // dc 端子同样受影响（判零在类型分支之后统一生效，这里守住 ac 之外的第二条腿）。
+  test("对照：dc 端子 vbase 为 0.0 时同样走 params 兜底", () => {
+    const n = node("ac-transformer", { i_vbase: "750" });
+    expect(voltageColorKeyForTerminal(n, terminal("dc", "0.0", 0), 0)).toBe("dc:750");
+  });
+
+  // 端子下标 1（目标侧）：j_vbase 侧清零成 0.0 也必须回退，而不是产出 ac:0.0。
+  test("★ 端子下标 1 的目标侧清零为 0.0 时同样走兜底", () => {
+    const n = node("ac-transformer", { i_vbase: "110", j_vbase: "0.0", target_vbase: "35" });
+    expect(voltageColorKeyForTerminal(n, terminal("ac", "0.0", 1), 1)).toBe("ac:35");
   });
 });
 
@@ -393,5 +475,370 @@ describe("画布事件目标判定：非 Element 目标的三段兜底", () => {
     expect(canvasWheelTargetIsRenderedCanvas(new FakeElement(["diagram-canvas"]) as unknown as EventTarget)).toBe(true);
     expect(isCanvasKeyboardBlockingTarget(new FakeElement(["context-menu"]) as unknown as EventTarget)).toBe(true);
     expect(isCanvasWheelZoomExcludedTarget(new FakeElement(["context-menu"]) as unknown as EventTarget)).toBe(true);
+  });
+});
+
+// ══ 零覆盖的纯函数 ═══════════════════════════════════════════════════════════
+// 以下 6 个导出的纯函数此前没有任何直接用例。这里逐个先打印实际输出再写断言，
+// 覆盖空输入 / 边界 / 重复键三档。
+
+describe("sameRenderViewportBounds", () => {
+  const bounds = (left: number, top: number, right: number, bottom: number): RenderViewportBounds =>
+    ({ left, top, right, bottom });
+
+  test("四边全等时为 true（含两个不同对象——它比的是值不是引用）", () => {
+    expect(sameRenderViewportBounds(bounds(0, 0, 100, 100), bounds(0, 0, 100, 100))).toBe(true);
+    expect(sameRenderViewportBounds(bounds(-0, 0, 1e9, -1e9), bounds(0, 0, 1e9, -1e9))).toBe(true);
+  });
+
+  // 四条各差 1：逐边断言，防止「只比了某两维」的半吊子实现恒绿。
+  test("任一边不等时为 false（左/右/上/下逐边）", () => {
+    const base = bounds(0, 0, 100, 100);
+    expect(sameRenderViewportBounds(base, bounds(1, 0, 100, 100))).toBe(false);
+    expect(sameRenderViewportBounds(base, bounds(0, 0, 101, 100))).toBe(false);
+    expect(sameRenderViewportBounds(base, bounds(0, 1, 100, 100))).toBe(false);
+    expect(sameRenderViewportBounds(base, bounds(0, 0, 100, 101))).toBe(false);
+  });
+
+  // 负数坐标（画布向左滚时出现）是真实输入，不能被当成不等。
+  test("负坐标下逐边相等仍为 true", () => {
+    expect(sameRenderViewportBounds(bounds(-320, -240, -20, -40), bounds(-320, -240, -20, -40))).toBe(true);
+    expect(sameRenderViewportBounds(bounds(-320, -240, -20, -40), bounds(-320, -240, -20, -39))).toBe(false);
+  });
+
+  // ★ 它用的是 `===` 而不是 Object.is，所以 NaN === NaN 为 false。
+  // 若哪天换成 Object.is，这条断言会转红并指名是这次语义变更。
+  test("同值 NaN 判为不等（用的是 === 而非 Object.is）", () => {
+    expect(sameRenderViewportBounds(bounds(NaN, 0, 10, 10), bounds(NaN, 0, 10, 10))).toBe(false);
+  });
+
+  // 退化框（宽度或高度为 0，尚未展开的节点渲染框会出现）不能被当成「无框」。
+  test("退化框（宽/高为 0）逐边相等时为 true", () => {
+    expect(sameRenderViewportBounds(bounds(5, 5, 5, 5), bounds(5, 5, 5, 5))).toBe(true);
+  });
+});
+
+describe("serializeStaticButtonTargetLayerIds", () => {
+  test("空数组序列化为空数组的 JSON（不是空串、不是 null）", () => {
+    expect(serializeStaticButtonTargetLayerIds([])).toBe("[]");
+  });
+
+  test("单元素与多元素按原样保序", () => {
+    expect(serializeStaticButtonTargetLayerIds(["layer-1"])).toBe('["layer-1"]');
+    expect(serializeStaticButtonTargetLayerIds(["b", "a"])).toBe('["b","a"]');
+  });
+
+  // ★ 重复键：它**不去重**，重复原样落库。
+  // 去重会静默改变「多选图层」的语义（顺序 + 重复都是用户选出来的），故这里钉住不去重。
+  test("★ 重复 id 原样保留（不去重也不重排）", () => {
+    expect(serializeStaticButtonTargetLayerIds(["a", "a", "b"])).toBe('["a","a","b"]');
+    expect(serializeStaticButtonTargetLayerIds(["a", "a"])).toBe('["a","a"]');
+  });
+
+  // 含引号的 id 必须被 JSON 转义 —— 图层名允许任意字符，漏转义会产出非法 JSON。
+  test("含双引号的 id 被转义成合法 JSON", () => {
+    expect(serializeStaticButtonTargetLayerIds(['a"b'])).toBe('["a\\"b"]');
+    expect(JSON.parse(serializeStaticButtonTargetLayerIds(['a"b']))).toEqual(['a"b']);
+  });
+
+  test("非 ASCII（中文图层名）原样保留且可回读", () => {
+    const serialized = serializeStaticButtonTargetLayerIds(["电气图层", "母线"]);
+    expect(JSON.parse(serialized)).toEqual(["电气图层", "母线"]);
+  });
+});
+
+describe("isRedundantBatchCommonParamRow", () => {
+  const row = (key: string) => ({ key, label: key, value: "", mixed: false }) as BatchCommonParamRow;
+  const keys = (...available: string[]) => new Set(available);
+  const redundant = (key: string, ...available: string[]) =>
+    isRedundantBatchCommonParamRow(row(key), keys(...available));
+
+  // 三个旧字段各自被哪个新字段取代：
+  //   buttonTargetSchemeId / buttonTargetProjectName → buttonTargetProjectId
+  //   buttonTargetLayerId  → buttonTargetLayerIds
+  //   buttonTargetLayerNames → buttonTargetLayerIds
+  // 只有新字段**存在**时旧行才是冗余；都不在时旧行仍要显示。
+  test("旧目标字段在新字段存在时判为冗余", () => {
+    expect(redundant("buttonTargetSchemeId", "buttonTargetProjectId")).toBe(true);
+    expect(redundant("buttonTargetProjectName", "buttonTargetProjectId")).toBe(true);
+    expect(redundant("buttonTargetLayerId", "buttonTargetLayerIds")).toBe(true);
+    expect(redundant("buttonTargetLayerNames", "buttonTargetLayerIds")).toBe(true);
+  });
+
+  // ★ 缺失 vs 存在但为空：availableKeys 装的是**键**不是值，
+  // 所以「存在但值为空」与「存在且有值」对它完全一样 —— 用一个空串成员做对照，
+  // 钉住判的是 Set.has（键存在性）而不是值的非空。
+  test("★ 只看键存在性：新字段存在即冗余（与它的值无关）", () => {
+    expect(redundant("buttonTargetLayerId", "buttonTargetLayerIds", "")).toBe(true);
+    expect(redundant("buttonTargetSchemeId", "buttonTargetProjectId")).toBe(true);
+  });
+
+  // 缺失侧：新字段不在 → 旧行必须留着，否则用户就改不到这个字段了。
+  test("★ 新字段缺失时旧行不判冗余（空 Set 下全部保留）", () => {
+    expect(redundant("buttonTargetSchemeId")).toBe(false);
+    expect(redundant("buttonTargetProjectName")).toBe(false);
+    expect(redundant("buttonTargetLayerId")).toBe(false);
+    expect(redundant("buttonTargetLayerName")).toBe(false);
+    expect(redundant("buttonTargetLayerNames")).toBe(false);
+  });
+
+  // buttonTargetLayerName（单数 Name）特殊：它被 **Ids 或 Id** 任一取代。
+  // 两条都缺才算保留 —— 少一条 OR 就会让它在某些组合下永久消失。
+  test("★ buttonTargetLayerName 被 LayerIds 或 LayerId 任一取代", () => {
+    expect(redundant("buttonTargetLayerName", "buttonTargetLayerIds")).toBe(true);
+    expect(redundant("buttonTargetLayerName", "buttonTargetLayerId")).toBe(true);
+    expect(redundant("buttonTargetLayerName", "buttonTargetLayerIds", "buttonTargetLayerId")).toBe(true);
+    expect(redundant("buttonTargetLayerName", "buttonTargetProjectId")).toBe(false);
+  });
+
+  // 单数 LayerId 只被复数 LayerIds 取代，**不能**被单数自己或 ProjectId 取代：
+  // 若误写成 `has("buttonTargetLayerId")`，这条恒 true，行会自己把自己判冗余而消失。
+  test("★ 单数 LayerId 不被单数自己 / ProjectId 取代（防自吞）", () => {
+    expect(redundant("buttonTargetLayerId", "buttonTargetLayerId")).toBe(false);
+    expect(redundant("buttonTargetLayerId", "buttonTargetProjectId")).toBe(false);
+  });
+
+  // 未知键一律不冗余（默认分支）。这条同时挡住「fallback 成 true」的写法。
+  test("未知键恒不冗余（含相似前缀，防止子串误判）", () => {
+    expect(redundant("vbase", "buttonTargetLayerIds")).toBe(false);
+    expect(redundant("buttonTargetLayerIdExtra", "buttonTargetLayerIds")).toBe(false);
+    expect(redundant("", "buttonTargetLayerIds")).toBe(false);
+  });
+});
+
+describe("isColorParamKey", () => {
+  // 正则 /color$/i：全小写、驼峰、全大写、单独 color、词中间出现都算。
+  test("以 color 结尾的键（大小写不敏感）都算颜色键", () => {
+    for (const key of ["color", "Color", "COLOR", "borderColor", "BORDERCOLOR", "borderCOLOR", "itemColor"]) {
+      expect(isColorParamKey(key), key).toBe(true);
+    }
+  });
+
+  // ★ 位置维度：正则锚在 `$`，所以 color **不在结尾**不算。
+  // 这条区分「/color\$/i」与写成 /color/i —— 后者会让下面全部为 true。
+  test("★ color 不在结尾不算（正则锚在串尾）", () => {
+    for (const key of ["colorRgb", "colorHex", "borderColorRgb", "colours", "isColored"]) {
+      expect(isColorParamKey(key), key).toBe(false);
+    }
+  });
+
+  // 「只看结尾」这条规则的边界：color 出现在**词中间**照样算
+  // （rgcolor 以 color 收尾），因为没有词边界断言 —— 写 \bcolor$ 就会变 false。
+  test("★ color 作为词的后缀（中间无分隔）也算：rgcolor 判 true", () => {
+    expect(isColorParamKey("rgcolor")).toBe(true);
+  });
+
+  test("完全不含 color 的键为 false（空串、纯下划线、数字）", () => {
+    for (const key of ["", "_", "vbase", "0"]) {
+      expect(isColorParamKey(key), key).toBe(false);
+    }
+  });
+
+  // 对照组（颜色键确实存在）：证明上面那批 false 不是「函数恒返回 false」。
+  test("对照：确有真实颜色参数被判为颜色键", () => {
+    expect(isColorParamKey("backgroundColor")).toBe(true);
+    expect(isColorParamKey("borderColor")).toBe(true);
+  });
+});
+
+describe("measurementGroupCommonValue", () => {
+  const group = (over: Record<string, unknown> = {}): MeasurementGroup =>
+    ({
+      id: "mg1",
+      nodeId: "n1",
+      visible: true,
+      anchor: "top",
+      offset: { x: 0, y: 0 },
+      layout: "vertical",
+      items: [],
+      ...over
+    }) as MeasurementGroup;
+
+  // 全字段缺省的组 → 每个键各自的兜底值。
+  // layout **没有** `??` 兜底（直接返回 group.layout），所以这里返回 undefined：
+  // 这条把「哪个键有兜底、哪个没有」钉住，写法改动会立刻暴露。
+  test("缺省组的九个键各自返回值", () => {
+    const empty = group({ visible: undefined, layout: undefined });
+    expect(measurementGroupCommonValue(empty, "visible")).toBe("0");
+    expect(measurementGroupCommonValue(empty, "layout")).toBeUndefined();
+    expect(measurementGroupCommonValue(empty, "labelVisible")).toBe("1");
+    expect(measurementGroupCommonValue(empty, "unitVisible")).toBe("1");
+    expect(measurementGroupCommonValue(empty, "backgroundVisible")).toBe("0");
+    expect(measurementGroupCommonValue(empty, "backgroundColor")).toBe("transparent");
+    expect(measurementGroupCommonValue(empty, "borderStyle")).toBe("none");
+    expect(measurementGroupCommonValue(empty, "borderColor")).toBe("#64748b");
+    expect(measurementGroupCommonValue(empty, "borderWidth")).toBe("0");
+  });
+
+  // labelVisible / unitVisible 用的是 `=== false`：undefined 与 true 都归 "1"，
+  // 只有显式 false 归 "0"。这条是「缺失键 vs 存在但为空」的又一处区分。
+  test("★ labelVisible/unitVisible 只认显式 false（undefined 归 1）", () => {
+    const explicitFalse = group({ labelVisible: false, unitVisible: false });
+    expect(measurementGroupCommonValue(explicitFalse, "labelVisible")).toBe("0");
+    expect(measurementGroupCommonValue(explicitFalse, "unitVisible")).toBe("0");
+    expect(measurementGroupCommonValue(group({ labelVisible: true }), "labelVisible")).toBe("1");
+    expect(measurementGroupCommonValue(group({ labelVisible: undefined }), "labelVisible")).toBe("1");
+  });
+
+  // backgroundVisible 的判据是「空串或 transparent 视为不显示」——
+  // 空串走 falsy 分支，与 undefined 同结果；transparent 是显式值。
+  test("★ backgroundVisible 把空串与 transparent 都算不显示", () => {
+    expect(measurementGroupCommonValue(group({ backgroundColor: "transparent" }), "backgroundVisible")).toBe("0");
+    expect(measurementGroupCommonValue(group({ backgroundColor: "" }), "backgroundVisible")).toBe("0");
+    expect(measurementGroupCommonValue(group({ backgroundColor: undefined }), "backgroundVisible")).toBe("0");
+    expect(measurementGroupCommonValue(group({ backgroundColor: "#ffffff" }), "backgroundVisible")).toBe("1");
+  });
+
+  test("已填值的组按原样读出（九键全非默认）", () => {
+    const filled = group({
+      visible: false,
+      layout: "grid",
+      labelVisible: false,
+      unitVisible: false,
+      backgroundColor: "#fff",
+      borderStyle: "solid",
+      borderColor: "#000",
+      borderWidth: 3
+    });
+    expect(measurementGroupCommonValue(filled, "visible")).toBe("0");
+    expect(measurementGroupCommonValue(filled, "layout")).toBe("grid");
+    expect(measurementGroupCommonValue(filled, "labelVisible")).toBe("0");
+    expect(measurementGroupCommonValue(filled, "unitVisible")).toBe("0");
+    expect(measurementGroupCommonValue(filled, "backgroundVisible")).toBe("1");
+    expect(measurementGroupCommonValue(filled, "backgroundColor")).toBe("#fff");
+    expect(measurementGroupCommonValue(filled, "borderStyle")).toBe("solid");
+    expect(measurementGroupCommonValue(filled, "borderColor")).toBe("#000");
+    expect(measurementGroupCommonValue(filled, "borderWidth")).toBe("3");
+  });
+
+  // ★ borderWidth 的兜底与「显式 0」不可区分（都是 "0"）。
+  // AGENTS.md 那条「断言前先确认默认值不等于期望值」的坑在此：这里只能钉住
+  // 「显式 0 → 字符串 0」，无法区分「没填」与「填了 0」。故把这条与
+  // String(0) 对照写出来，而不是假装它有鉴别力。
+  test("borderWidth 数值转字符串：显式 0 与缺省同为 0（默认即期望值，无鉴别力）", () => {
+    expect(measurementGroupCommonValue(group({ borderWidth: 0 }), "borderWidth")).toBe("0");
+    expect(measurementGroupCommonValue(group(), "borderWidth")).toBe("0");
+    expect(measurementGroupCommonValue(group({ borderWidth: 3 }), "borderWidth")).toBe("3");
+  });
+
+  test("未知键返回空串（default 分支，不抛）", () => {
+    expect(measurementGroupCommonValue(group(), "zzz" as BatchCommonMeasurementGroupKey)).toBe("");
+  });
+});
+
+describe("measurementGroupWithCommonSetting", () => {
+  const group = (over: Record<string, unknown> = {}): MeasurementGroup =>
+    ({
+      id: "mg1",
+      nodeId: "n1",
+      visible: true,
+      anchor: "top",
+      offset: { x: 0, y: 0 },
+      layout: "vertical",
+      items: [],
+      ...over
+    }) as MeasurementGroup;
+
+  // 布尔型（visible / labelVisible / unitVisible）只认 "1" 为真，
+  // 任何其他串都归 false。缺省（undefined）必须变成**显式** false/true，
+  // 否则工具栏批量改完还是 undefined。
+  test("★ 布尔型键只认 1 为真，且缺省被写成显式值", () => {
+    expect(measurementGroupWithCommonSetting(group(), "visible", "1").visible).toBe(true);
+    expect(measurementGroupWithCommonSetting(group(), "visible", "0").visible).toBe(false);
+    expect(measurementGroupWithCommonSetting(group(), "visible", "x").visible).toBe(false);
+    const bare = group({ visible: undefined, labelVisible: undefined, unitVisible: undefined });
+    expect(measurementGroupWithCommonSetting(bare, "labelVisible", "0").labelVisible).toBe(false);
+    expect(measurementGroupWithCommonSetting(bare, "unitVisible", "1").unitVisible).toBe(true);
+  });
+
+  test("layout 原样写入（含无法识别的串，不做校验）", () => {
+    expect(measurementGroupWithCommonSetting(group(), "layout", "grid").layout).toBe("grid");
+    expect(measurementGroupWithCommonSetting(group(), "layout", "zzz").layout).toBe("zzz");
+  });
+
+  // ★ backgroundVisible=1 时把 transparent / 缺省换成 #ffffff，
+  // 已有颜色不动。这是「缺失键 vs 存在但为 transparent」的岔路。
+  test("★ backgroundVisible 置 1：transparent 与缺省都换成 #ffffff，已有颜色不动", () => {
+    expect(measurementGroupWithCommonSetting(group({ backgroundColor: "transparent" }), "backgroundVisible", "1").backgroundColor).toBe("#ffffff");
+    expect(measurementGroupWithCommonSetting(group(), "backgroundVisible", "1").backgroundColor).toBe("#ffffff");
+    expect(measurementGroupWithCommonSetting(group({ backgroundColor: "#123456" }), "backgroundVisible", "1").backgroundColor).toBe("#123456");
+  });
+
+  test("backgroundVisible 置 0 一律写 transparent（覆盖已有颜色）", () => {
+    expect(measurementGroupWithCommonSetting(group({ backgroundColor: "#123456" }), "backgroundVisible", "0").backgroundColor).toBe("transparent");
+    expect(measurementGroupWithCommonSetting(group(), "backgroundVisible", "0").backgroundColor).toBe("transparent");
+  });
+
+  // 空串回落默认色（`value || 兜底`）——空串不是「透明」。
+  test("★ 颜色键传空串时回落到默认色（不是空串、不是 transparent）", () => {
+    expect(measurementGroupWithCommonSetting(group({ backgroundColor: "#123456" }), "backgroundColor", "").backgroundColor).toBe("#ffffff");
+    expect(measurementGroupWithCommonSetting(group({ borderColor: "#000000" }), "borderColor", "").borderColor).toBe("#64748b");
+  });
+
+  test("颜色键传值时原样写入", () => {
+    expect(measurementGroupWithCommonSetting(group(), "backgroundColor", "#123").backgroundColor).toBe("#123");
+    expect(measurementGroupWithCommonSetting(group(), "borderColor", "#456").borderColor).toBe("#456");
+  });
+
+  // ★ borderStyle 切到 none 时线宽归 0，切到有线型时线宽至少 1。
+  // 两条都要有：只测 solid 的话，「none 归 0」这条臂删掉照样绿。
+  test("★ borderStyle 切 none 时线宽归 0，切有线型时线宽至少为 1", () => {
+    expect(measurementGroupWithCommonSetting(group({ borderWidth: 7 }), "borderStyle", "none").borderWidth).toBe(0);
+    expect(measurementGroupWithCommonSetting(group({ borderWidth: 7 }), "borderStyle", "solid").borderWidth).toBe(7);
+    expect(measurementGroupWithCommonSetting(group(), "borderStyle", "solid").borderWidth).toBe(1);
+    expect(measurementGroupWithCommonSetting(group(), "borderStyle", "dashed").borderWidth).toBe(1);
+  });
+
+  // borderWidth 走 clampNumber(Number(value), 0, 12)。
+  test("borderWidth 按数值钳位到 0..12", () => {
+    expect(measurementGroupWithCommonSetting(group(), "borderWidth", "99").borderWidth).toBe(12);
+    expect(measurementGroupWithCommonSetting(group(), "borderWidth", "-3").borderWidth).toBe(0);
+    expect(measurementGroupWithCommonSetting(group(), "borderWidth", "").borderWidth).toBe(0);
+    expect(measurementGroupWithCommonSetting(group(), "borderWidth", "3.7").borderWidth).toBe(3.7);
+    expect(measurementGroupWithCommonSetting(group(), "borderWidth", "0").borderWidth).toBe(0);
+  });
+
+  // ★ 非数字串产出 NaN（clampNumber 不处理 NaN：Math.min(NaN,12) 是 NaN）。
+  // 这条把「非数字宽度会让线宽变成 NaN」这个事实钉在用例里，
+  // 将来若有人给 clampNumber 补 NaN 兜底，这条会转红并指名是那次行为变更。
+  test("★ borderWidth 传非数字产出 NaN（当前无 NaN 兜底）", () => {
+    expect(measurementGroupWithCommonSetting(group(), "borderWidth", "abc").borderWidth).toBeNaN();
+  });
+
+  // 未知键原样返回同一个对象（default 分支返回 group 本身，不是拷贝）。
+  test("未知键原样返回入参对象本身", () => {
+    const source = group();
+    expect(measurementGroupWithCommonSetting(source, "zzz" as BatchCommonMeasurementGroupKey, "v")).toBe(source);
+  });
+
+  // 纯函数语义：返回新对象，不改入参。断言的是「入参原对象没被改」——
+  // 这正是批量编辑后能安全撤销的原因。
+  test("★ 返回新对象且不改入参（批量编辑可撤销的前提）", () => {
+    const source = group({ borderWidth: 2, backgroundColor: "#123456" });
+    const next = measurementGroupWithCommonSetting(source, "borderWidth", "5");
+    expect(next).not.toBe(source);
+    expect(source.borderWidth).toBe(2);
+    expect(source.backgroundColor).toBe("#123456");
+    expect(next.borderWidth).toBe(5);
+  });
+
+  // 往返一致：commonValue(withSetting(g, k, v), k) === v —— 工具栏那圈
+  // 「读当前值 → 写回新值」的循环依赖它。用九个键全覆盖。
+  test("★ 九键往返一致（读到的值写回去能原样读回）", () => {
+    const base = group();
+    const values = {
+      visible: "0",
+      layout: "horizontal",
+      labelVisible: "0",
+      unitVisible: "0",
+      backgroundVisible: "0",
+      backgroundColor: "#abcdef",
+      borderStyle: "dashed",
+      borderColor: "#fedcba",
+      borderWidth: "12"
+    } as Record<BatchCommonMeasurementGroupKey, string>;
+    for (const [key, value] of Object.entries(values) as [BatchCommonMeasurementGroupKey, string][]) {
+      expect(measurementGroupCommonValue(measurementGroupWithCommonSetting(base, key, value), key), key).toBe(value);
+    }
   });
 });

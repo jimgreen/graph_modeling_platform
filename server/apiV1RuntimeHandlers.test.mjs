@@ -264,6 +264,17 @@ describe("handleV1RuntimeEFile", () => {
     }
   });
 
+  // Object.hasOwn 守卫：原型链键下标取值 truthy，会绕过后续读盘抛错 → 500。
+  // 这里锁死它们在查表处就被 400 拦下，且不下发 fetch。
+  test("原型链键模板名（constructor / toString / __proto__）→ 400 且不下发", async () => {
+    for (const name of ["constructor", "toString", "__proto__"]) {
+      const { response, ctx } = await run(handleV1RuntimeEFile, { search: `template=${name}` });
+      expectBadRequest(response, name);
+      expectNoCall(ctx);
+      expect(response.json()?.error?.message, name).toContain("未知模板");
+    }
+  });
+
   test("空白 template 按「无模板」处理（不是未知模板）", async () => {
     const { response, ctx } = await run(handleV1RuntimeEFile, { search: "template=%20%20" });
     expect(response.statusCode).toBe(200);

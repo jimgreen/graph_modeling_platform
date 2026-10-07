@@ -217,6 +217,10 @@ import {
   normalizeRatioParameterInputValue,
   topologyCalculationMessage,
   voltageLevelColor,
+  BUILTIN_VOLTAGE_LEVELS,
+  readVoltageLevelSettings,
+  writeVoltageLevelSettings,
+  type VoltageLevelSettings,
   boundaryBusInternalConnectorSegment,
   boundaryBusInternalConnectorStrokeWidth,
   DEFAULT_COLOR_PALETTE,
@@ -2132,8 +2136,59 @@ describe("power system model", () => {
     expect(normalizeRatioParameterInputValue("e2h_coeff", "0.2")).toBe("0.2");
   });
 
+  // 电压等级表写入 localStorage 失败（隐私模式 / 配额满）时必须静默失败：
+  // 抛错会让设置对话框关不掉（VoltageLevelDialog.handleSave 直接调它），
+  // 而读侧随时可能退回内置表 —— 那时用户改的等级就「不见了」。
+  // 断言只钉「不抛 + 读回默认值」，不断言 console.warn 本身（留 warn 只为排查，
+  // 断言日志文本会让测试随措辞变脆）。
+  test("写 localStorage 失败时不抛，读侧退回内置等级表", () => {
+    const store = new Map<string, string>();
+    const original = (globalThis as { localStorage?: unknown }).localStorage;
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: () => {
+        throw new Error("quota exceeded");
+      },
+      removeItem: (key: string) => store.delete(key),
+      clear: () => store.clear()
+    };
+    try {
+      const settings: VoltageLevelSettings = {
+        ac: [{ name: "低压 400V", vltp: "0.4" }],
+        dc: [{ name: "直流 750V", vltp: "750" }]
+      };
+      expect(() => writeVoltageLevelSettings(settings)).not.toThrow();
+      // 写入没落盘，所以读回来必须是内置表而不是刚写的那份
+      expect(store.size).toBe(0);
+      const readBack = readVoltageLevelSettings();
+      expect(readBack.ac.map((item) => item.vltp)).toEqual(BUILTIN_VOLTAGE_LEVELS);
+      expect(readBack.dc.map((item) => item.vltp)).toEqual(BUILTIN_VOLTAGE_LEVELS);
+    } finally {
+      if (original === undefined) delete (globalThis as { localStorage?: unknown }).localStorage;
+      else (globalThis as { localStorage?: unknown }).localStorage = original;
+    }
+  });
 
-
+  test("存储不可用（读也抛错）时读侧仍退回内置表，写侧继续不抛", () => {
+    const original = (globalThis as { localStorage?: unknown }).localStorage;
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: () => {
+        throw new Error("storage blocked");
+      },
+      setItem: () => {
+        throw new Error("storage blocked");
+      },
+      removeItem: () => {},
+      clear: () => {}
+    };
+    try {
+      expect(readVoltageLevelSettings().ac.map((item) => item.vltp)).toEqual(BUILTIN_VOLTAGE_LEVELS);
+      expect(() => writeVoltageLevelSettings({ ac: [], dc: [] })).not.toThrow();
+    } finally {
+      if (original === undefined) delete (globalThis as { localStorage?: unknown }).localStorage;
+      else (globalThis as { localStorage?: unknown }).localStorage = original;
+    }
+  });
 
 
 

@@ -707,6 +707,65 @@ describe("toPort（经两个端口同进程求值）", () => {
       expect(mod.backendPort).toBe(5174);
     }
   });
+
+  // 数字端口与越界数字串：这两条在有限性检查下都会被放行
+  // （Number.isFinite(0) / Number.isFinite(99999) 皆为 true），靠字符串空串早退
+  // 挡住的只有 `""` / `"   "` 那一路。断言落在 config.mjs 导出的两个端口上 ——
+  // 即 readConfig 取值链加归一后的公开观测面。
+  test("端口是数字 0 时回落默认，不被当成随机端口放行", async () => {
+    // 判别力：把守卫退回成 Number.isFinite 时，0 是有限数 → frontendPort 变 0，
+    // 而 0 传给 listen 是随机端口，比回落默认值更糟（服务起来了但没人知道它在哪）。
+    const mod = await withInProcessEnv({
+      GRAPH_MODEL_CONFIG: configFileWith({ frontend: { port: 0 }, backend: { port: 0 } })
+    });
+    expect(mod.frontendPort).toBe(5173);
+    expect(mod.backendPort).toBe(5174);
+  });
+
+  test("端口越界（99999）时回落默认，不把监听失败推迟到 listen", async () => {
+    // 判别力：有限性检查同样放行 99999，而 server.listen(99999) **同步**抛
+    // ERR_SOCKET_BAD_PORT，createImageServer 的 Promise 直接 reject，服务起不来。
+    // 反向对照见下一条：区间内的正常端口仍原样返回，所以这不是「一刀切不吃端口」。
+    const mod = await withInProcessEnv({
+      GRAPH_MODEL_CONFIG: configFileWith({ frontend: { port: 99999 }, backend: { port: 99999 } })
+    });
+    expect(mod.frontendPort).toBe(5173);
+    expect(mod.backendPort).toBe(5174);
+    // 环境变量侧同一条取值链：字符串化的越界值（VITE_PORT / IMAGE_SERVER_PORT）。
+    const fromEnv = await withInProcessEnv({ VITE_PORT: "99999", IMAGE_SERVER_PORT: "99999" });
+    expect(fromEnv.frontendPort).toBe(5173);
+    expect(fromEnv.backendPort).toBe(5174);
+  });
+
+  test("端口是区间两端的边界值 1 与 65535 时按原值采用", async () => {
+    // 反向对照：把下界写成 > 1 或上界写成 < 65535 会让这两个合法端口被吃掉。
+    const min = await withInProcessEnv({
+      GRAPH_MODEL_CONFIG: configFileWith({ frontend: { port: 1 }, backend: { port: 1 } })
+    });
+    expect(min.frontendPort).toBe(1);
+    expect(min.backendPort).toBe(1);
+    const max = await withInProcessEnv({
+      GRAPH_MODEL_CONFIG: configFileWith({ frontend: { port: 65535 }, backend: { port: 65535 } })
+    });
+    expect(max.frontendPort).toBe(65535);
+    expect(max.backendPort).toBe(65535);
+  });
+
+  test("端口是非整数或负数时回落默认", async () => {
+    // 1.5 与 -1 在有限性检查下都会漏过去。listen 侧的表现是 ERR_SOCKET_BAD_PORT
+    // （非整数）或 ERR_SOCKET_BAD_PORT（负数同样出范围），都同步抛。
+    const mod = await withInProcessEnv({
+      GRAPH_MODEL_CONFIG: configFileWith({ frontend: { port: 1.5 }, backend: { port: -1 } })
+    });
+    expect(mod.frontendPort).toBe(5173);
+    expect(mod.backendPort).toBe(5174);
+    // 反向对照：8080 这类常规端口仍原样返回（数字，非字符串）。
+    const ok = await withInProcessEnv({
+      GRAPH_MODEL_CONFIG: configFileWith({ frontend: { port: 8080 }, backend: { port: 8080 } })
+    });
+    expect(ok.frontendPort).toBe(8080);
+    expect(ok.backendPort).toBe(8080);
+  });
 });
 
 describe("apiPrefix 尾斜杠剥离（经同进程求值）", () => {

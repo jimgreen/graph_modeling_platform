@@ -150,6 +150,21 @@ function useBufferedCommit<T extends HTMLElement>(
   const committedValueRef = useRef(normalizedValue);
   const onCommitRef = useRef(onCommit);
 
+  /**
+   * Escape 的 revertDraft() 与紧随其后的 blur() 在**同一个同步块**里。
+   *
+   * blur() 会立刻派发 onBlur，而 setState 是批处理的 —— 那一刻组件还没重渲染，
+   * onBlur 拿到的仍是回退前那次渲染的闭包，其中 draftValue 还是用户刚敲的字。
+   * 于是 commitValue 里的去重判定 `nextValue !== committedValueRef.current` 成立，
+   * 「按取消」实际变成了「提交」。
+   *
+   * 标志位只吞掉这一次 blur 的提交，并在当前同步块结束后的 microtask 里自动放开：
+   * 必须自动放开而不是靠「下一次 blur 消费」，因为调用方的 onKeyDown 会**先**于本组件
+   * 的判定执行，它可以自己把输入框 blur 掉而 preventDefault；那样 revertDraft 设的标志
+   * 就等不到随后的 blur 来消费，会把用户之后正常编辑后的一次真实提交也吞掉。
+   */
+  const revertingRef = useRef(false);
+
   const commitValue = (nextValue: string) => {
     if (disabled) {
       return;
@@ -173,8 +188,19 @@ function useBufferedCommit<T extends HTMLElement>(
     draftValue,
     setDraftValue,
     commitValue,
-    commitDraft: () => commitValue(draftValue),
-    revertDraft: () => setDraftValue(committedValueRef.current)
+    commitDraft: () => {
+      if (revertingRef.current) {
+        return;
+      }
+      commitValue(draftValue);
+    },
+    revertDraft: () => {
+      revertingRef.current = true;
+      setDraftValue(committedValueRef.current);
+      queueMicrotask(() => {
+        revertingRef.current = false;
+      });
+    }
   };
 }
 

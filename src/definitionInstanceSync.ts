@@ -47,6 +47,26 @@ function isDefinitionOwnedParam(key: string) {
     DEVICE_DEFINITION_VISUAL_PARAM_KEYS.has(key);
 }
 
+/**
+ * 「读到了一个可用的端子数」的判据。
+ *
+ * 不能用 `Number.isFinite(Number(raw))`：`Number(null)`、`Number("")`、`Number([])`、
+ * `Number(false)` 全都等于 0 且有限,于是守卫放行 → terminalCount 归零 →
+ * createTerminals(type, 0) 返回 [] → 节点端子被整体清空。意图是「读不到就不动」
+ * (与 syncDefinitionSize :128-131 同形态),而这几个值恰恰是「读不到」。
+ *
+ * 判据用 `typeof raw === "number"` 而非 `raw == null` 兜底:`DeviceTemplate.terminalCount`
+ * 在 model.ts 里就是 `number`(非 unknown),全仓所有赋值点(model.ts 内置表、
+ * componentLibraryMetadata/appDeviceDefinitionFactories 的 metadata/draft、
+ * export/device-definition-shared 的 override 合并)产出的都是真 number;
+ * 唯一的 JSON 入口 appPersistenceLibraryExport.tsx:1429 也已经 Number() 规范化。
+ * 没有字符串来源,收窄成 typeof 不会破坏任何既有行为,而它能同时挡掉 ""/[]/false
+ * —— 后两者 `raw == null` 放行不了,但同样会归零清空端子。
+ */
+function templateTerminalCountIsUsable(raw: unknown): raw is number {
+  return typeof raw === "number" && Number.isFinite(raw);
+}
+
 function isCompleteTemplate(template: DefinitionSyncTemplate): template is DeviceTemplate {
   return Boolean(
     template.kind &&
@@ -55,7 +75,7 @@ function isCompleteTemplate(template: DefinitionSyncTemplate): template is Devic
     template.params &&
     template.size &&
     template.terminalType &&
-    Number.isFinite(Number(template.terminalCount))
+    templateTerminalCountIsUsable(template.terminalCount)
   );
 }
 
@@ -168,10 +188,10 @@ function sameTerminal(left: Terminal | undefined, right: Terminal) {
 }
 
 function syncDefinitionTerminals(node: ModelNode, template: DefinitionSyncTemplate): ModelNode {
-  if (!Number.isFinite(Number(template.terminalCount))) {
+  if (!templateTerminalCountIsUsable(template.terminalCount)) {
     return node;
   }
-  const terminalCount = Math.max(0, Math.min(8, Math.round(Number(template.terminalCount) || 0)));
+  const terminalCount = Math.max(0, Math.min(8, Math.round(template.terminalCount || 0)));
   const fallbackType = template.terminalType ?? template.terminalTypes?.[0] ?? node.terminals[0]?.type ?? "ac";
   const generated = createTerminals(fallbackType, terminalCount);
   const terminals = generated.map((terminal, index) => {
