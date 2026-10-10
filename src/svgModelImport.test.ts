@@ -1,10 +1,12 @@
+import { readFileSync } from "node:fs";
+
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { describe, expect, test } from "vitest";
 
 import { DEFAULT_MODEL_LAYER_ID, DEVICE_LIBRARY, createDefaultNode, createSavedProject, type Edge, type ModelNode } from "./model";
 import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import { buildSvgDocument } from "./appExtracted/appPersistenceLibraryExport";
-import { parseSvgModel, type SvgDomAdapter } from "./svgModelImport";
+import { parseSvgModel, pointDistance, type SvgDomAdapter } from "./svgModelImport";
 
 const dom: SvgDomAdapter = {
   parse(source) {
@@ -1448,5 +1450,97 @@ describe("parseSvgModel elementName 在缺少 localName 时改用 nodeName", () 
     // 对照：同名的安全 style 留下，且只剩它一个 ⇒ 认名的确是 "style" 这个字符串
     expect(svg).toContain(".safe{fill:#123456}");
     expect(svg.match(/<style[\s/>]/gu)?.length ?? 0).toBe(1);
+  });
+});
+
+/* pointDistance：模块内私有的小工具，除本文件 3 处调用外没有公开入口，
+ * 故随实现一并导出（见 svgModelImport.ts 的注释）以便直接断言。
+ * 下半段另用源码守卫把它与 model-routing.ts 那份逐字钉在一起——
+ * 那份是私有的、导不出来，只能读源码比对（同 savedNameKeyAndRouteBounds.test.ts 做法）。 */
+
+describe("pointDistance 行为", () => {
+  test("勾股：轴对齐的 3-4-5 三角形距离为 5", () => {
+    expect(pointDistance({ x: 0, y: 0 }, { x: 3, y: 4 })).toBe(5);
+  });
+
+  test("同点距离为 0，且不是 -0", () => {
+    // toBe 走 Object.is，-0 !== 0：这条能挡住把结果取负/翻转的变异
+    expect(pointDistance({ x: 12.5, y: -7 }, { x: 12.5, y: -7 })).toBe(0);
+  });
+
+  test("负坐标差取正距离（不是带符号的差）", () => {
+    expect(pointDistance({ x: -2, y: -3 }, { x: 1, y: 1 })).toBe(5);
+  });
+
+  test("参数顺序无关，且与独立的平方和开方算法一致", () => {
+    const first = { x: 1.5, y: -2.25 };
+    const second = { x: -0.75, y: 3.5 };
+    const dx = first.x - second.x;
+    const dy = first.y - second.y;
+    expect(pointDistance(first, second)).toBe(pointDistance(second, first));
+    // 对照用另一套算法（平方和再开方），确保不是恒等式自我印证
+    expect(pointDistance(first, second)).toBeCloseTo(Math.sqrt(dx * dx + dy * dy), 12);
+  });
+
+  test("不修改入参（冻结后调用不抛）", () => {
+    const first = Object.freeze({ x: 3, y: 4 });
+    const second = Object.freeze({ x: -1, y: 2 });
+    expect(() => pointDistance(first, second)).not.toThrow();
+    expect(first).toEqual({ x: 3, y: 4 });
+    expect(second).toEqual({ x: -1, y: 2 });
+  });
+});
+
+describe("pointDistance 与 model-routing.ts 那份保持逐字一致", () => {
+  const CANONICAL_BODY = "Math.hypot(first.x - second.x, first.y - second.y)";
+
+  // 形参名与顺序写死在正则里：一旦有人把 pointDistance(second, first) 调换，
+  // 匹配数会掉到 0，由下面的 toEqual([...]) 报错，而不是悄悄放过。
+  const DECLARATION =
+    /function\s+pointDistance\s*\(\s*first\s*:\s*Point\s*,\s*second\s*:\s*Point\s*\)\s*(?::\s*number\s*)?\{\s*return\s+(?<body>[^;{}]+);\s*\}/gu;
+
+  const pointDistanceBodies = (source: string): string[] =>
+    Array.from(source.matchAll(DECLARATION), (match) => (match.groups?.body ?? "").replace(/\s+/gu, " ").trim());
+
+  test("本文件的实现即基准", () => {
+    const bodies = pointDistanceBodies(readFileSync(new URL("./svgModelImport.ts", import.meta.url), "utf8"));
+    expect(bodies).toEqual([CANONICAL_BODY]);
+  });
+
+  test("model-routing.ts 的私有副本与基准一致", () => {
+    const bodies = pointDistanceBodies(readFileSync(new URL("./model-routing.ts", import.meta.url), "utf8"));
+    expect(bodies).toEqual([CANONICAL_BODY]);
+  });
+
+  // 检测逻辑自测：证明这套扫描真能变红，而不只是扫了一遍没找到东西。
+  test("守卫的检测逻辑自测", () => {
+    const wrap = (declaration: string) => `const before = 1;\n${declaration}\nconst after = 2;\n`;
+
+    // 合法变体：带显式返回类型、多余空白 —— 归一后应与基准相等（不被误报）
+    expect(pointDistanceBodies(wrap(
+      "function pointDistance(first: Point, second: Point): number {\n  return Math.hypot(first.x - second.x, first.y - second.y);\n}"
+    ))).toEqual([CANONICAL_BODY]);
+
+    // ① 形参顺序对调 → 匹配不到
+    expect(pointDistanceBodies(wrap(
+      "function pointDistance(second: Point, first: Point) {\n  return Math.hypot(first.x - second.x, first.y - second.y);\n}"
+    ))).toEqual([]);
+
+    // ② 退化成曼哈顿距离 → 命中但不等
+    expect(pointDistanceBodies(wrap(
+      "function pointDistance(first: Point, second: Point) {\n  return Math.abs(first.x - second.x) + Math.abs(first.y - second.y);\n}"
+    ))).not.toEqual([CANONICAL_BODY]);
+
+    // ③ hypot 改 sqrt → 命中但不等
+    expect(pointDistanceBodies(wrap(
+      "function pointDistance(first: Point, second: Point) {\n  return Math.sqrt((first.x - second.x) ** 2 + (first.y - second.y) ** 2);\n}"
+    ))).not.toEqual([CANONICAL_BODY]);
+
+    // ④ 多出一份实现 → 命中 2 处，toEqual([...]) 会因长度不等而红
+    expect(pointDistanceBodies(wrap(
+      "function pointDistance(first: Point, second: Point) {\n  return Math.hypot(first.x - second.x, first.y - second.y);\n}"
+    ) + wrap(
+      "function pointDistance(first: Point, second: Point) {\n  return Math.hypot(first.x - second.x, first.y - second.y);\n}"
+    ))).toHaveLength(2);
   });
 });

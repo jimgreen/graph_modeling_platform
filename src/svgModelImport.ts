@@ -1213,7 +1213,16 @@ function parsePolylinePath(data: string) {
   return deduplicated.length >= 2 ? deduplicated : null;
 }
 
-function pointDistance(first: Point, second: Point) {
+// 两点欧氏距离。参数顺序无关（差值取反，hypot 对 ± 等价）。
+// 全仓另有一份逐字相同的实现：src/model-routing.ts 的 `function pointDistance`。
+// 那份未收敛过来的原因是两侧都是**未导出的模块私有函数**，且 model-routing.ts 近 500KB、
+// 属高影响面（src/CLAUDE.md 要求改前先跑 impact），本次不动它；
+// 改为用 svgModelImport.test.ts 的源码守卫把两份钉成逐字一致。
+// 真正单源的落点应是 src/model.ts（`Point` 的定义处，两侧本就已 import 它），
+// 届时两侧各改一行 import 即可，需一次触及 model-routing.ts 的改动。
+// 导出仅为供单测直接断言（同 ReactFlowPreview.tsx 的 pathMidpoint 做法）；
+// 收敛前请勿在别处新增第三份实现。
+export function pointDistance(first: Point, second: Point) {
   return Math.hypot(first.x - second.x, first.y - second.y);
 }
 
