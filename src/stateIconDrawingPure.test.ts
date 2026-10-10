@@ -26,6 +26,8 @@ import {
   deviceDefinitionRowId,
   generateStateVisualShapeImage,
   isDefaultStatePageId,
+  normalizeStateIconFrameNumber,
+  normalizeStateIconFrameText,
   stateDraftImageValue,
   stateIconSvgVisibleViewBox,
   stateIconDrawingElementMarkup,
@@ -758,5 +760,71 @@ describe("stateIconSvgVisibleViewBox：无 DOM 时的正则兜底", () => {
 
   test("viewBox 为空串时按 width / height 兜（空值不当作有效 viewBox）", () => {
     expect(viewBoxOf('<svg viewBox="" width="120" height="60"></svg>')).toBe("0 0 120 60");
+  });
+});
+
+// ── 帧归一单源：normalizeStateIconFrameText / normalizeStateIconFrameNumber ──
+//
+// 这两个函数原先在本文件（stateIconDrawing.tsx）内被内联复制过，另有一份副本在
+// src/appExtracted/appDeviceDefinitionEInterface.ts。现已收敛，**直呼源函数**断言，
+// 不能只经 stateIconDrawingFrameHasPersistedContent 间接测 —— 那条路上
+// 「归一后的值」永远观测不到，只能观测到「两个归一值是否相等」，
+// 而 `Number(x) || 0` 这层在 fallback 恰好也是 0 时会被掩盖。
+describe("帧归一单源", () => {
+  describe("normalizeStateIconFrameText：String(value ?? 空串) → trim → toLowerCase", () => {
+    test("null / undefined → 空串", () => {
+      expect(normalizeStateIconFrameText(null)).toBe("");
+      expect(normalizeStateIconFrameText(undefined)).toBe("");
+    });
+
+    test("★ 两侧空白 + 大小写一起归一（trim 与 toLowerCase 都真的跑了）", () => {
+      expect(normalizeStateIconFrameText("  AbC  ")).toBe("abc");
+      expect(normalizeStateIconFrameText("TRANSPARENT")).toBe("transparent");
+    });
+
+    test("非字符串走 String() 强制转换，不抛", () => {
+      expect(normalizeStateIconFrameText(123)).toBe("123");
+      expect(normalizeStateIconFrameText(true)).toBe("true");
+    });
+
+    test("★ 空串与纯空白不可区分（两者归一后都是空串）", () => {
+      // 决定 isTransparentStateIconColor 的 `!normalized` 分支：
+      // 纯空白必须和空串一样被当成「没有颜色」，而不是留下一个非空的归一值。
+      expect(normalizeStateIconFrameText("   ")).toBe("");
+      expect(normalizeStateIconFrameText("   ")).toBe(normalizeStateIconFrameText(""));
+    });
+  });
+
+  describe("normalizeStateIconFrameNumber：`Math.max(0, Number(value) || 0)`", () => {
+    test("★ 负数被 Math.max 夹到 0，不是原样返回 -5", () => {
+      expect(normalizeStateIconFrameNumber(-5)).toBe(0);
+      expect(normalizeStateIconFrameNumber(-0.5)).toBe(0);
+      expect(normalizeStateIconFrameNumber("-12")).toBe(0);
+    });
+
+    test("★ NaN 与非数字串都走 `|| 0` 兜底到 0（Number 先算出 NaN）", () => {
+      expect(normalizeStateIconFrameNumber(Number.NaN)).toBe(0);
+      expect(normalizeStateIconFrameNumber("abc")).toBe(0);
+      expect(normalizeStateIconFrameNumber(undefined)).toBe(0);
+      expect(normalizeStateIconFrameNumber(null)).toBe(0);
+    });
+
+    test("★ 数字串被 Number 转换（不是被丢弃）", () => {
+      expect(normalizeStateIconFrameNumber("7")).toBe(7);
+      expect(normalizeStateIconFrameNumber(" 7 ")).toBe(7);
+    });
+
+    test("★ 小数**不被取整**（`Number` 保留小数位，只有 `|| 0` 那层会吞 0）", () => {
+      // 小数是这层唯一能观测到「没有做 Math.floor / Math.trunc」的输入：
+      // 1.5 既不为 0 也不为 NaN，Math.max 也放它过。
+      expect(normalizeStateIconFrameNumber(1.5)).toBe(1.5);
+      expect(normalizeStateIconFrameNumber("2.25")).toBe(2.25);
+      expect(normalizeStateIconFrameNumber(-1.5)).toBe(0);
+    });
+
+    test("0 与 -0 都得 0（`Number(-0) || 0` 里 -0 是 falsy，被 || 吞掉）", () => {
+      expect(normalizeStateIconFrameNumber(0)).toBe(0);
+      expect(Object.is(normalizeStateIconFrameNumber(-0), 0), "不该是 -0").toBe(true);
+    });
   });
 });

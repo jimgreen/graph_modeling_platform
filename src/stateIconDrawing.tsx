@@ -519,7 +519,8 @@ export function visibleStateIconColor(fallback: string, ...values: Array<string 
 }
 
 function isTransparentStateIconColor(value: string | undefined | null) {
-  const normalized = String(value ?? "").trim().toLowerCase();
+  // 复用文件末尾的 normalizeStateIconFrameText，不再内联第二份同样的归一化
+  const normalized = normalizeStateIconFrameText(value);
   return !normalized || normalized === "transparent" || normalized === "none";
 }
 
@@ -554,7 +555,7 @@ function stateIconDrawingFrameMarkup(
   if (!frame) {
     return "";
   }
-  const strokeWidth = Math.max(0, Number(frame.strokeWidth) || 0);
+  const strokeWidth = normalizeStateIconFrameNumber(frame.strokeWidth);
   const fill = String(frame.fillColor ?? "").trim() || "transparent";
   const stroke = String(frame.strokeColor ?? "").trim() || "transparent";
   const dashArray = stateIconStrokeDashArray(frame.strokeStyle, strokeWidth);
@@ -2473,11 +2474,27 @@ export function stateIconDrawingToImage(
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-function normalizeStateIconFrameText(value: unknown) {
+// ── 帧归一：全文件单源 ────────────────────────────────────────────────
+// 这两个归一函数原先在本文件内被内联复制了两份
+// （isTransparentStateIconColor 的 `String(value ?? "").trim().toLowerCase()`、
+//   stateIconDrawingFrameMarkup 的 `Math.max(0, Number(v) || 0)`），
+// 在 src/appExtracted/appDeviceDefinitionEInterface.ts 还有第三份同名副本。
+// 函数体逐字相同，故文件内两处已改为复用下面这两份定义。
+//
+// ⚠️ 关于 appExtracted 那侧的第三个函数**没有**收敛，记录原因如下：
+//   它的 fallback 常量 STATE_ICON_DRAFT_FRAME 只是 DEFAULT_STATE_ICON_DRAWING_FRAME
+//   的别名绑定（`export const STATE_ICON_DRAFT_FRAME = DEFAULT_STATE_ICON_DRAWING_FRAME;`），
+//   实测 `STATE_ICON_DRAFT_FRAME === DEFAULT_STATE_ICON_DRAWING_FRAME === true`，
+//   即两侧 fallback 指向**同一对象**，并不存在两个取值不同的常量；
+//   但那侧 `stateIconDrawingFrameHasPersistedContent(frame)` 把 fallback 写死，
+//   签名少了本侧的 `fallbackFrame` 形参，函数体也不是同一份代码。
+//   要收敛成同一个函数必须改 appExtracted 的签名（不在本文件内），此处只作记录。
+
+export function normalizeStateIconFrameText(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
 }
 
-function normalizeStateIconFrameNumber(value: unknown) {
+export function normalizeStateIconFrameNumber(value: unknown) {
   return Math.max(0, Number(value) || 0);
 }
 
