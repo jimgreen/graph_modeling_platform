@@ -915,7 +915,15 @@ export type EFileExportOptions = {
   templateName?: string;
 };
 
-function normalizeGasQuantityFieldName(value: unknown): string {
+/**
+ * 气量/SOC 字段名归一（前端单源）。
+ *
+ * 原先本文件与 `appExtracted/appPersistenceLibraryExport.tsx` 各有一份逐字相同的实现。
+ * 此处为唯一定义：model-eexport.ts 被 server/eFileExport.mjs 以 Node 原生方式直载，
+ * 不能反向 import .tsx（会拖入 React/antd），故单源必须落在本文件，由 .tsx 侧 import。
+ * server/server.mjs:1058 另有一份（仅多 /u regex flag），不在本次收敛范围，保持原样。
+ */
+export function normalizeGasQuantityFieldName(value: unknown): string {
   const text = String(value ?? "").trim();
   if (/^(?:gasQuantity|gasquantity)$/.test(text)) return "gas_quantity";
   if (/^(?:state_of_charge|stateOfCharge)$/.test(text)) return "soc";
