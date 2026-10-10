@@ -126,6 +126,10 @@ import { cloneEdgeEditablePoints, calculateNodeVisualBounds,
   type SavedProjectRecord,
   getSafeNodeScaleX,
   getSafeNodeScaleY } from "../model";
+// 气量/SOC 字段名归一单源（收敛自本文件与 model-eexport.ts 的两份逐字相同副本）。
+// 单源落在 model-eexport.ts：它被 server/eFileExport.mjs 以 Node 原生方式直载，
+// 不能反向依赖本 .tsx（会拖入 React/antd）。
+import { normalizeGasQuantityFieldName } from "../model-eexport";
 import {
   canvasClipboardBounds,
   type CanvasClipboard,
@@ -1299,13 +1303,6 @@ function normalizeBooleanRecord(value: unknown): Record<string, boolean> {
     }
     return record;
   }, {});
-}
-
-function normalizeGasQuantityFieldName(value: unknown): string {
-  const text = String(value ?? "").trim();
-  if (/^(?:gasQuantity|gasquantity)$/.test(text)) return "gas_quantity";
-  if (/^(?:state_of_charge|stateOfCharge)$/.test(text)) return "soc";
-  return text;
 }
 
 function normalizeStringArrayRecord(value: unknown): Record<string, string[]> {
