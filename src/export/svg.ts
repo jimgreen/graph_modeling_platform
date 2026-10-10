@@ -70,6 +70,8 @@ import {
   formatSvgNumber,
   inlineBackendImageRefsInSvgDataUrl,
   renderSvgElementMarkup,
+  resolveNodeForegroundImage,
+  resolveNodeImage,
   svgImageContentMarkup,
   svgStrokeDashArray
 } from "../svgUtils.ts";
@@ -145,16 +147,11 @@ function readImageAssets() {
   return readImageAssetsImpl();
 }
 
-// resolveNodeImage / resolveNodeForegroundImage 原实现位于 appCoreCanvasUtilities.tsx 的同名函数（.tsx），
-// 纯函数复制内联（不 import，避免拖入 .tsx）；改实现时两处需同步。
-function resolveNodeImage(node: ModelNode, assets: Record<string, string>) {
-  const assetId = node.params.backgroundImageAssetId;
-  return (assetId && assets[assetId]) || node.params.backgroundImage || "";
-}
-function resolveNodeForegroundImage(node: ModelNode, assets: Record<string, string>) {
-  const assetId = node.params.foregroundImageAssetId;
-  return (assetId && assets[assetId]) || node.params.foregroundImage || "";
-}
+// resolveNodeImage / resolveNodeForegroundImage 现从 ../svgUtils.ts 单源取用。
+// 曾因「appCoreCanvasUtilities.tsx 是 .tsx 且 import 了 react，顶层 import 会把 React 拖进
+// Node 直载闭包」而在此复制内联一份 —— 该理由已不成立：svgUtils.ts 本身就是本文件的既有依赖
+// （上方 import 块），把它设为单源不给 server 直载链路新增任何 import 边。
+// app 侧同步改为委托同一实现，两份拷贝不再存在，无需再手工同步。
 
 export function exportSvgImageHref(value: string, imageExportPathById: Record<string, string> = {}) {
   const href = inlineBackendImageRefsInSvgDataUrl(String(value ?? ""), imageExportPathById);
