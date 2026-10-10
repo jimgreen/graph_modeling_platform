@@ -13,6 +13,7 @@ import {
 import { finiteNumber, degreesToRadians } from "./formatUtils.ts";
 import { clampNumber } from "./canvasViewport.ts";
 import { createMeasurementFieldParameterDefinition } from "./measurementDefinitionTypes.ts";
+import { numericNodeParam } from "./nodeLabelUtils.ts";
 
 export type MeasurementValueType = "number" | "string" | "boolean";
 export type MeasurementQuality = "good" | "bad" | "stale" | "missing";
@@ -1381,11 +1382,6 @@ export function measurementProfileItemsForNodePosition(
 function measurementSourcePointForProfileItem(nodeId: string, item: Pick<DeviceMeasurementProfileItem, "measurementTypeId" | "role" | "associatedField">, terminalId?: string): string {
   const sourceKey = item.associatedField || `${item.role ? `${item.role}.` : ""}${item.measurementTypeId}`;
   return terminalId ? `${nodeId}.${terminalId}.${sourceKey}` : `${nodeId}.${sourceKey}`;
-}
-
-function numericNodeParam(node: ModelNode, key: string, fallback: number) {
-  const parsed = Number(node.params[key]);
-  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function defaultMeasurementGroupEstimatedHeight(
