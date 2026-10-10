@@ -260,6 +260,47 @@ describe("normalizeComponentLibraryName", () => {
     expect(shared.normalizeComponentLibraryName("   ")).toBe("");
     expect(shared.normalizeComponentLibraryName("")).toBe("");
   });
+
+  // 签名写的是 string，但运行期实参来自导入包 / 后端 payload，
+  // 而 normalizeDeviceLibraryPersistencePayload **不**收敛 section 的类型
+  // （探针实测：数字 / null / 对象 / 数组原样穿过）。所以下面用 `as unknown as string`
+  // 显式喂非字符串 —— 这不是「测不该有的输入」，而是这个函数真实面对的输入。
+  //
+  // 断言一律比对具体返回值，不写「不抛错」：抛错与「返回 undefined / null」都是错的，
+  // 只有精确的 "" 才是契约。
+  test("非字符串一律归空串，不抛 TypeError", () => {
+    const asRuntimeInput = (value: unknown) => value as unknown as string;
+    expect(shared.normalizeComponentLibraryName(asRuntimeInput(null))).toBe("");
+    expect(shared.normalizeComponentLibraryName(asRuntimeInput(undefined))).toBe("");
+    expect(shared.normalizeComponentLibraryName(asRuntimeInput(123))).toBe("");
+    expect(shared.normalizeComponentLibraryName(asRuntimeInput({}))).toBe("");
+  });
+
+  test("非字符串归空串而不是 String(name) 兜底", () => {
+    // 这是本条守卫真正的分水岭：String({}) === "[object Object]"、String(123) === "123"，
+    // 两者都会让垃圾值直接出现在元件库 key 与界面标签上。断言写死 "" 才能挡住那种改法。
+    const asRuntimeInput = (value: unknown) => value as unknown as string;
+    expect(shared.normalizeComponentLibraryName(asRuntimeInput({ a: 1 }))).toBe("");
+    expect(shared.normalizeComponentLibraryName(asRuntimeInput(123))).toBe("");
+    expect(shared.normalizeComponentLibraryName(asRuntimeInput(true))).toBe("");
+    expect(shared.normalizeComponentLibraryName(asRuntimeInput([]))).toBe("");
+    expect(shared.normalizeComponentLibraryName(asRuntimeInput(["ACLoad"]))).toBe("");
+  });
+
+  test("typeof 判定只认真正的字符串，不被类 String 对象蒙混", () => {
+    // `typeof new String("x") === "object"` ⇒ 归空串。这一条把实现钉死在
+    // `typeof name === "string"` 上：换成 `name?.trim() ?? ""` 或 String() 兜底都会红。
+    const asRuntimeInput = (value: unknown) => value as unknown as string;
+    expect(shared.normalizeComponentLibraryName(asRuntimeInput(new String("ACLoad")))).toBe("");
+    expect(shared.normalizeComponentLibraryName(asRuntimeInput(new Date(0)))).toBe("");
+  });
+
+  test("字符串入参仍走 trim 分支（typeof 守卫没有把正常路径也短路成空串）", () => {
+    // 反向夹逼：只断言非字符串归空的话，把整个函数换成 `return ""` 也会全绿。
+    expect(shared.normalizeComponentLibraryName("ACLoad")).toBe("ACLoad");
+    expect(shared.normalizeComponentLibraryName("\tStaticBasicShape\n")).toBe("StaticBasicShape");
+    expect(shared.normalizeComponentLibraryName("  ACLoad  ")).toBe("ACLoad");
+  });
 });
 
 describe("isConcreteDeviceDefinitionParamName", () => {
