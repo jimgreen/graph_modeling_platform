@@ -28,7 +28,14 @@ export function normalizeCategoryLibraryName(categoryLibraryName: string): strin
 }
 
 export function normalizeComponentLibraryName(name: string): string {
-  return name.trim();
+  // 元件库来自导入包与后端 payload，而 normalizeDeviceLibraryPersistencePayload **不**收敛
+  // section 的类型（数字 / null / 对象 / 数组都原样穿过）。此处直接 .trim() 抛 TypeError，
+  // 表现是「导入一个包，元件库树整个渲染不出来」。
+  // 非字符串一律归空串，**不是** String(name)：后者会把 {a:1} 变成 "[object Object]"，
+  // 让这串垃圾直接出现在界面标签/元件库 key 上。空串则由上层按「未分类」处理。
+  // 与 appExtracted/appPersistenceLibraryExport.tsx 的同名函数保持逐字等价（单源，
+  // 两边任一处改动都要同步）。
+  return typeof name === "string" ? name.trim() : "";
 }
 
 export function fallbackComponentLibraryForCategoryLibrary(categoryLibraryName: string) {
