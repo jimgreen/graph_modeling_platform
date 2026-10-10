@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
@@ -8,8 +9,16 @@ import {
   inlineSvgRootMarkup,
   isImageDataUrl,
   isPlatformDeviceVisualReplacementImage,
+  resolveNodeForegroundImage,
+  resolveNodeImage,
   svgImageContentMarkup
 } from "./svgUtils";
+// app 侧包装（.tsx）：只补「assets 缺省读 localStorage」这一层，算法在 ./svgUtils。
+import {
+  resolveNodeForegroundImage as appResolveNodeForegroundImage,
+  resolveNodeImage as appResolveNodeImage
+} from "./appExtracted/appCoreCanvasUtilities";
+import type { ModelNode } from "./model";
 import { apiPath } from "./config";
 
 describe("svg image content markup", () => {
@@ -464,5 +473,188 @@ describe("inlineSvgRootMarkup 的 id 作用域与 viewBox 合成", () => {
     );
     expect(explicit).toContain('viewBox="0 0 8 8"');
     expect(explicit.match(/viewBox="/gu)).toHaveLength(1);
+  });
+});
+
+/* 节点图片回落链：单源在 svgUtils.ts，app 侧与 server 直载侧各走一个入口 */
+
+describe("resolveNodeImage / resolveNodeForegroundImage 单源回落链", () => {
+  // 直接调单源（不是经某个聚合入口）—— 否则单源里任何一层归一化都不可观测。
+  const nodeWith = (params: Record<string, string>) => ({ params } as ModelNode);
+
+  // 键值覆盖到位图 dataUrl。**刻意含空串键 ""**：`(assetId && assets[assetId])` 的
+  // `assetId &&` 短路正是为它准备的 —— 把守卫换成裸 `assets[assetId]` 时，
+  // `assetId === ""` 这一行会从「回落到 param」翻成「返回 assets[""]」。
+  const ASSETS = { a: "assetA.png", b: "assetB.png", "": "emptyKeyAsset.png" } as Record<string, string>;
+
+  test("assetId 命中优先于 param", () => {
+    const node = nodeWith({ backgroundImageAssetId: "a", backgroundImage: "paramBg.png" });
+    expect(resolveNodeImage(node, ASSETS)).toBe("assetA.png");
+
+    const fg = nodeWith({ foregroundImageAssetId: "b", foregroundImage: "paramFg.png" });
+    expect(resolveNodeForegroundImage(fg, ASSETS)).toBe("assetB.png");
+  });
+
+  test("assetId 未命中（键不存在）回落到 param", () => {
+    expect(resolveNodeImage(nodeWith({ backgroundImageAssetId: "zz", backgroundImage: "bg.png" }), ASSETS)).toBe("bg.png");
+    expect(resolveNodeForegroundImage(nodeWith({ foregroundImageAssetId: "zz", foregroundImage: "fg.png" }), ASSETS)).toBe("fg.png");
+  });
+
+  test("assetId 命中但值为空串时仍回落 param —— 空串是 falsy，不是命中", () => {
+    const emptyValued = { a: "" } as Record<string, string>;
+    expect(resolveNodeImage(nodeWith({ backgroundImageAssetId: "a", backgroundImage: "bg.png" }), emptyValued)).toBe("bg.png");
+  });
+
+  test("assetId 缺省时不查表；assetId 为空串时短路不查表", () => {
+    // 缺 assetId：`undefined && ...` → undefined，压根不读 assets
+    expect(resolveNodeImage(nodeWith({ backgroundImage: "bg.png" }), ASSETS)).toBe("bg.png");
+    // assetId === ""：`"" && ...` → "" falsy → 回落。注意 ASSETS 里 "" 键有值，
+    // 裸 `assets[assetId]` 会在这里返回 emptyKeyAsset.png 而不是 bg.png。
+    expect(resolveNodeImage(nodeWith({ backgroundImageAssetId: "", backgroundImage: "bg.png" }), ASSETS)).toBe("bg.png");
+    expect(resolveNodeForegroundImage(nodeWith({ foregroundImageAssetId: "", foregroundImage: "fg.png" }), ASSETS)).toBe("fg.png");
+  });
+
+  test("两级都落空时返回空串（不是 undefined）", () => {
+    expect(resolveNodeImage(nodeWith({}), ASSETS)).toBe("");
+    expect(resolveNodeForegroundImage(nodeWith({}), ASSETS)).toBe("");
+    // assetId 指向一张图，但没有 param —— 这一腿仍应返回图，而不是空串
+    expect(resolveNodeImage(nodeWith({ backgroundImageAssetId: "a" }), ASSETS)).toBe("assetA.png");
+  });
+
+  test("assets 缺省时按空表处理（读 localStorage 的默认值只在浏览器侧补）", () => {
+    expect(resolveNodeImage(nodeWith({ backgroundImageAssetId: "a", backgroundImage: "bg.png" }))).toBe("bg.png");
+    expect(resolveNodeImage(nodeWith({ backgroundImageAssetId: "a" }))).toBe("");
+  });
+
+  // 跨侧一致性：app 侧（.tsx 包装，assets 缺省读 localStorage）与 server 直载侧
+  // （src/export/svg.ts 直接 import 单源）走的是**同一个**回落链实现。
+  // 这条断言锁的是「不再各写一份」：任一侧回退成内联拷贝、或两条链的某一级次序不同，
+  // 就会在这里转红。
+  test("app 侧包装与单源逐例一致（同 node + 同 assets → 同字符串）", () => {
+    const cases: Record<string, string>[] = [
+      { backgroundImageAssetId: "a", backgroundImage: "bg.png" },
+      { backgroundImageAssetId: "zz", backgroundImage: "bg.png" },
+      { backgroundImageAssetId: "", backgroundImage: "bg.png" },
+      { backgroundImageAssetId: "a" },
+      { backgroundImageAssetId: "a", backgroundImage: "" },
+      { backgroundImage: "bg.png" },
+      {}
+    ];
+    for (const params of cases) {
+      expect(appResolveNodeImage(nodeWith(params), ASSETS)).toBe(resolveNodeImage(nodeWith(params), ASSETS));
+    }
+
+    const fgCases: Record<string, string>[] = [
+      { foregroundImageAssetId: "b", foregroundImage: "fg.png" },
+      { foregroundImageAssetId: "zz", foregroundImage: "fg.png" },
+      { foregroundImageAssetId: "", foregroundImage: "fg.png" },
+      { foregroundImageAssetId: "b" },
+      { foregroundImage: "fg.png" },
+      {}
+    ];
+    for (const params of fgCases) {
+      expect(appResolveNodeForegroundImage(nodeWith(params), ASSETS)).toBe(
+        resolveNodeForegroundImage(nodeWith(params), ASSETS)
+      );
+    }
+  });
+
+  // app 侧包装只在 assets 缺省时读 localStorage；显式传入时不应碰存储。
+  // 若哪天包装层被改成无条件 readImageAssets()，这条会因 localStorage 未装而抛。
+  test("app 侧包装显式传入 assets 时不读 localStorage", () => {
+    const saved = (globalThis as { localStorage?: unknown }).localStorage;
+    (globalThis as { localStorage?: unknown }).localStorage = undefined;
+    try {
+      expect(appResolveNodeImage(nodeWith({ backgroundImageAssetId: "a" }), ASSETS)).toBe("assetA.png");
+    } finally {
+      (globalThis as { localStorage?: unknown }).localStorage = saved;
+    }
+  });
+});
+
+/* 「单源」这条契约本身：两侧都不得再内联回落链 */
+
+/**
+ * 「只有一份实现」这条契约的守卫：两个消费方（server 直载的 `svg.ts` / 浏览器侧
+ * `appCoreCanvasUtilities.tsx`）都只该调用 svgUtils 的单源，不该各自内联回落链。
+ *
+ * 为什么必须是静态守卫：上面那些**行为**断言在本任务之前就已经全绿了 ——
+ * 把 svg.ts 改回内联拷贝，它们一条都不会红。契约是「只有一份实现」，
+ * 不是「两份实现行为相同」，所以只能读源码验。
+ */
+const INLINE_ASSET_RESOLVE_DEF = /^\s*(?:export\s+)?function\s+(?:resolveNodeImage|resolveNodeForegroundImage)\s*\(/u;
+
+/**
+ * 扫出「自己内联了回落链」的 `resolveNodeImage` / `resolveNodeForegroundImage` 定义，返回行号。
+ *
+ * 粒度是**函数定义**而不是文件，也不是整行匹配 `assets[assetId]`：
+ *   - 文件粒度会把这个函数自己的定义也一起豁免掉，等于没扫；
+ *   - 整行粒度会误伤 `resolveProjectImage`（同文件、同样的 `(assetId && assets[assetId])`
+ *     形态，但读的 param 不同、也不在本任务范围内）。
+ * 判据是「该函数体里出现了回落链本体」——`const assetId` 或 `assets[assetId]`。
+ */
+const findInlineAssetResolve = (source: string): number[] => {
+  const lines = source.split(/\r?\n/u);
+  const hits: number[] = [];
+  lines.forEach((line, index) => {
+    if (!INLINE_ASSET_RESOLVE_DEF.test(line)) {
+      return;
+    }
+    // 顶层函数以「行首 }」收尾；扫到那里为止就是函数体。
+    const end = lines.findIndex((candidate, cursor) => cursor > index && candidate === "}");
+    const body = lines.slice(index + 1, end === -1 ? undefined : end).join("\n");
+    if (/const\s+assetId\b/u.test(body) || body.includes("assets[assetId]")) {
+      hits.push(index + 1);
+    }
+  });
+  return hits;
+};
+
+describe("resolveNodeImage 回落链只有单源（静态守卫）", () => {
+  // 检测逻辑自测：拿「恰好是当初那份内联拷贝」的文本喂进去，证明扫描器会转红。
+  // 顺带证明它不是靠匹配本仓库现状蒙对的。
+  const INLINE_COPY = [
+    "function resolveNodeImage(node: ModelNode, assets: Record<string, string>) {",
+    "  const assetId = node.params.backgroundImageAssetId;",
+    "  return (assetId && assets[assetId]) || node.params.backgroundImage || \"\";",
+    "}"
+  ].join("\n");
+  const DELEGATING_WRAPPER = [
+    "export function resolveNodeImage(node: ModelNode, assets = readImageAssets()) {",
+    "  return resolveNodeImageFromAssets(node, assets);",
+    "}"
+  ].join("\n");
+
+  test("守卫自测：内联拷贝被检出，委托包装与调用侧不被误报", () => {
+    expect(findInlineAssetResolve(INLINE_COPY)).toEqual([1]);
+    expect(findInlineAssetResolve(DELEGATING_WRAPPER)).toEqual([]);
+    // 同文件的 resolveProjectImage 是同形态的**另一条**链，不在本守卫范围内
+    expect(
+      findInlineAssetResolve(
+        [
+          "export function resolveProjectImage(project, assets = readImageAssets()) {",
+          "  const assetId = project.canvasBackgroundImageAssetId;",
+          "  return (assetId && assets[assetId]) || project.canvasBackgroundImage || \"\";",
+          "}"
+        ].join("\n")
+      )
+    ).toEqual([]);
+    // 调用侧只是传参，不含 assetId 局部变量 —— 不该被判成内联
+    expect(findInlineAssetResolve("const href = resolveNodeImage(node, imageAssets);")).toEqual([]);
+    expect(findInlineAssetResolve("const href = exportSvgImageHref(resolveNodeForegroundImage(n, assets), map);")).toEqual([]);
+  });
+
+  test("两份拷贝（背景 + 前景都在同一文件内联）都算命中", () => {
+    expect(findInlineAssetResolve(`${INLINE_COPY}\n${INLINE_COPY.replace("resolveNodeImage", "resolveNodeForegroundImage").replace("backgroundImage", "foregroundImage")}`)).toEqual([1, 5]);
+  });
+
+  test("src/export/svg.ts 不再内联回落链", async () => {
+    const source = await readFile(new URL("./export/svg.ts", import.meta.url), "utf8");
+    expect(findInlineAssetResolve(source)).toEqual([]);
+  });
+
+  test("src/appExtracted/appCoreCanvasUtilities.tsx 不再内联回落链", async () => {
+    const source = await readFile(new URL("./appExtracted/appCoreCanvasUtilities.tsx", import.meta.url), "utf8");
+    expect(findInlineAssetResolve(source)).toEqual([]);
   });
 });

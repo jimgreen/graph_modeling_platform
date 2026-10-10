@@ -3,6 +3,8 @@
 import { Fragment, isValidElement } from "react";
 import { imageFitPreserveAspectRatio, normalizeImageFitMode } from "./imageFit.ts";
 import { API_PREFIX } from "./config.ts";
+// 仅类型，编译期擦除 —— 不给 server 直载链路新增任何运行时 import 边。
+import type { ModelNode } from "./model.ts";
 import { escapeXmlFull } from "../shared/xmlEscape.mjs";
 import { escapeRegExp } from "../shared/regexEscape.mjs";
 import { formatSvgNumber } from "../shared/formatSvgNumber.mjs";
@@ -161,6 +163,32 @@ export function inlineBackendImageRefsInSvgDataUrl(value: string, assets: Record
     }
   );
   return changed ? `data:image/svg+xml;utf8,${encodeURIComponent(nextSource)}` : href;
+}
+
+/* 节点图片资产解析（单源） */
+
+/**
+ * 节点图片回落链的**单源实现**：`(assetId && assets[assetId]) || param 里的图 || ""`。
+ *
+ * 为什么放在这里：调用方有两侧，且两侧都不能退让 ——
+ *   - `src/appExtracted/appCoreCanvasUtilities.tsx`（浏览器侧）：原内联实现就在那里，
+ *     它 import 了 `react`（`lazy`），是 `.tsx`，**不能**被 server 直载；
+ *   - `src/export/svg.ts`（server 以 Node 原生方式直载，闭包不得含 .tsx / JSX）。
+ * 本文件是纯 `.ts`，且**两侧本来就已经 import 它**（appCoreCanvasUtilities.tsx:110、
+ * svg.ts 的 svgUtils.ts import 块），所以把它设为单源既不给 server 直载链路新增任何
+ * import 边（react 的引入是既有事实），也不给 app 侧新增依赖 —— 无需再手工同步两份。
+ *
+ * 注意 `assets` 默认空表：读 localStorage 的默认值只在浏览器侧有意义，由
+ * appCoreCanvasUtilities 的同名包装补上（那边 `assets = readImageAssets()`）。
+ */
+export function resolveNodeImage(node: ModelNode, assets: Record<string, string> = {}): string {
+  const assetId = node.params.backgroundImageAssetId;
+  return (assetId && assets[assetId]) || node.params.backgroundImage || "";
+}
+
+export function resolveNodeForegroundImage(node: ModelNode, assets: Record<string, string> = {}): string {
+  const assetId = node.params.foregroundImageAssetId;
+  return (assetId && assets[assetId]) || node.params.foregroundImage || "";
 }
 
 /* SVG 解析 */

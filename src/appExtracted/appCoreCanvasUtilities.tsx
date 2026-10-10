@@ -107,6 +107,8 @@ import {
 } from "../formatUtils";
 import {
   formatSvgNumber,
+  resolveNodeImage as resolveNodeImageFromAssets,
+  resolveNodeForegroundImage as resolveNodeForegroundImageFromAssets,
 } from "../svgUtils";
 import {
   type NodeLabelDisplayMode
@@ -3779,14 +3781,15 @@ export function saveImageAsset(id: string, dataUrl: string) {
   }
 }
 
+// 节点图片回落链的单源实现在 ../svgUtils.ts（纯 .ts，两侧本来都已 import 它）：
+// svg.ts 由此取用，因此这里只保留「assets 缺省读 localStorage」这个浏览器侧特有的默认值，
+// 算法本身不再有第二份拷贝。两处行为一致性由 src/svgUtils.test.ts 的跨侧断言守护。
 export function resolveNodeImage(node: ModelNode, assets = readImageAssets()) {
-  const assetId = node.params.backgroundImageAssetId;
-  return (assetId && assets[assetId]) || node.params.backgroundImage || "";
+  return resolveNodeImageFromAssets(node, assets);
 }
 
 export function resolveNodeForegroundImage(node: ModelNode, assets = readImageAssets()) {
-  const assetId = node.params.foregroundImageAssetId;
-  return (assetId && assets[assetId]) || node.params.foregroundImage || "";
+  return resolveNodeForegroundImageFromAssets(node, assets);
 }
 
 export function resolveProjectImage(project: Pick<ProjectFile, "canvasBackgroundImage" | "canvasBackgroundImageAssetId">, assets = readImageAssets()) {
