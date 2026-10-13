@@ -190,8 +190,13 @@ describe("packageScopedDeviceLibraryPayload", () => {
     expect(result.customDeviceTemplates.map((t: any) => t.id)).toEqual(["d1"]);
   });
 
-  test("载荷为 undefined 时不抛", () => {
-    expect(() => packageScopedDeviceLibraryPayload(undefined, "device-library" as any)).not.toThrow();
+  test("载荷为 undefined 时不抛，且返回归一化空载荷（模板字段清空）", () => {
+    // 只断 not.toThrow 的话，返回 undefined / 垃圾对象也绿 —— 契约其实是「空输入给出可安全序列化的空载荷」
+    const result = packageScopedDeviceLibraryPayload(undefined, "device-library" as any);
+
+    expect(result).toBeDefined();
+    expect(result.customGraphTemplateTypes).toEqual([]);
+    expect(result.customGraphTemplates).toEqual([]);
   });
 });
 

@@ -57,7 +57,14 @@ describe("createDragBoundsForSmartAlignment", () => {
   test("节点查不到时跳过", () => {
     const scope = createScope();
 
-    expect(createDragBoundsForSmartAlignment(scope)({ nodeIds: ["查无此节点"], originalPositions: {} } as any, pt(1, 1))).toBeNull();
+    // 原始位置必须给全：守卫是 `!node || !originalPosition` 合取，
+    // 位置也缺时会被后半个条件提前吃掉，去掉 !node 那半边照样返回 null，测不出东西。
+    expect(
+      createDragBoundsForSmartAlignment(scope)(
+        { nodeIds: ["查无此节点"], originalPositions: { 查无此节点: pt(0, 0) } } as any,
+        pt(1, 1)
+      )
+    ).toBeNull();
   });
 
   test("没有原始位置时跳过", () => {

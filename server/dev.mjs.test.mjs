@@ -59,21 +59,13 @@ describe("parseHost", () => {
     expect(parseHost(["--host", "--port", "3000"])).toBe(configHost);
   });
 
-  test("空格分隔的 --host 值回归：下一个 token 不以减号开头时照常取值", () => {
-    expect(parseHost(["--host", "0.0.0.0"])).toBe("0.0.0.0");
-    expect(parseHost(["--port", "3000", "--host", "0.0.0.0"])).toBe("0.0.0.0");
-  });
-
-  test("--host= 空值返回空字符串，值里的等号不影响判定", () => {
-    expect(parseHost(["--host="])).toBe("");
-    expect(parseHost(["--host=", "--port=3000"])).toBe("");
-  });
-
-  test("--host 位于参数列表末尾时无值回退 config host", () => {
-    expect(parseHost(["--verbose", "--debug", "--host"])).toBe(configHost);
-  });
-
-  test("正常的等号形式不受影响", () => {
-    expect(parseHost(["--port=3000", "--host=1.2.3.4", "--debug"])).toBe("1.2.3.4");
-  });
+  // 下列情形已由上方用例逐条钉住，不再重复：
+  //   · ["--host","0.0.0.0"] / ["--port","3000","--host","0.0.0.0"] → 「空格分隔取值」
+  //     与「非首位查找」两条规则已分别由上方用例以同一形态覆盖（换的只是字面量）。
+  //   · ["--host="] → "" 与上方「空值」用例是同一输入同一期望，逐字重复。
+  //   · ["--host=","--port=3000"] → 命中 `eq !== -1` 后立即 return，代码路径上
+  //     根本不会去读下一个 token，补这一条不产生任何可观测差异。
+  //   · ["--verbose","--debug","--host"] → 仍是「末尾无值回退 configHost」，与上方同一条。
+  //   · ["--port=3000","--host=1.2.3.4","--debug"] → 等号形式 + 非首位，是上方
+  //     「等号形式」「非首位」两条的合取，无新增判别点。
 });

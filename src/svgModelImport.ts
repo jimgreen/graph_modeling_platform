@@ -186,7 +186,21 @@ function decodeSvgDataUrl(value: string) {
   }
 }
 
-function svgDataUrl(svg: string) {
+/**
+ * 全仓 SVG data URL 的**单一编码入口**。
+ *
+ * 前缀恒为 `;charset=utf-8,`（data URL 的标准形式，比裸 `;utf8,` 更明确）：
+ * 收敛前本文件与 src/sharedIconLibrary.ts 各有一份 svgDataUrl，前者 `;charset=utf-8,`、
+ * 后者 `;utf8,`，同一份 SVG 经两条路径产出的形态不一致。
+ *
+ * 两种前缀都是合法 data URL，且仓库内所有反解点（decodeSvgDataUrl / decodeSvgImageSource /
+ * appCanvasArea / appDeviceDefinitionFactories / appPersistenceLibraryExport / stateIconDrawing）
+ * 都是「先匹配 `data:image/svg+xml` 再取首个逗号之后的内容」的宽松写法，
+ * 不对 `;utf8,` 做精确匹配，因此收敛不会破坏任何解析路径。
+ *
+ * 导出仅为供 src/sharedIconLibrary.ts 复用（单一来源）与单测钉桩前缀。
+ */
+export function svgDataUrl(svg: string) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 

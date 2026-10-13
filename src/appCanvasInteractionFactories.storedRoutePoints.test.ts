@@ -61,9 +61,12 @@ describe("createCurrentStoredRoutePointsForEdge", () => {
       nodeById: new Map()
     });
 
-    // 标脏只让「端点匹配缓存」这一步失效；最终兜底仍读缓存的原始点
-    expect(scope.endpointMatchedRoutePointsForEdge).toBeDefined();
-    expect(createCurrentStoredRoutePointsForEdge(scope)(edge())).toEqual([pt(2, 2)]);
+    // 判据必须落在「端点匹配拿到的第二参」上：末步兜底永远会读回 cachedRoute.points，
+    // 光断返回值时，pending 守卫被删与没删都是 [pt(2,2)]，分不出真假。
+    const result = createCurrentStoredRoutePointsForEdge(scope)(edge());
+
+    expect(scope.endpointMatchedRoutePointsForEdge).toHaveBeenCalledWith(edge(), undefined);
+    expect(result).toEqual([pt(2, 2)]);
   });
 
   test("边被标为待重算（已存路由那条）时同样跳过端点匹配", () => {
@@ -74,7 +77,10 @@ describe("createCurrentStoredRoutePointsForEdge", () => {
       endpointMatchedRoutePointsForEdge: vi.fn(() => [])
     });
 
-    expect(createCurrentStoredRoutePointsForEdge(scope)(edge())).toEqual([pt(2, 2)]);
+    const result = createCurrentStoredRoutePointsForEdge(scope)(edge());
+
+    expect(scope.endpointMatchedRoutePointsForEdge).toHaveBeenCalledWith(edge(), undefined);
+    expect(result).toEqual([pt(2, 2)]);
   });
 
   test("缓存端点对不上时不走端点匹配，转现算 / 兜底", () => {

@@ -45,7 +45,9 @@ describe("createBoundedDeltaForNodes", () => {
   });
 
   test("逐个节点收敛：后一个节点只会继续收紧，不会放宽", () => {
-    const scope = createScope((_n, _b, p) => ({ x: Math.min(p.x, 5), y: p.y }));
+    // 两节点的钳制阈值必须不同：n1 收到 8、n2 更紧收到 5。
+    // 阈值相同的话第二个节点永远夹不出新值，「跑满两轮」与「只跑第一个」都是 5，测不出东西。
+    const scope = createScope((node, _b, p) => ({ x: Math.min(p.x, node.id === "n1" ? 8 : 5), y: p.y }));
 
     expect(createBoundedDeltaForNodes(scope)(["n1", "n2"], { n1: pt(0, 0), n2: pt(0, 0) }, 10, 0)).toEqual(pt(5, 0));
   });
@@ -196,11 +198,16 @@ describe("createBoundedDeltaForMoveGeometry", () => {
   });
 
   test("显式回退位移被透传给二分", () => {
-    const scope = createScope({ nodeMoveGeometryInsideCanvas: vi.fn(() => false) });
+    // 判据只认 x === 2：请求位移 pt(10,10) 与默认兜底 pt(0,0) 都不满足，
+    // 只有把调用方给的 pt(2,0) 原样传下去，二分才会收敛到 2。
+    // fallback 被丢掉时结果是 pt(0,0)，两者分得开。
+    const scope = createScope({
+      nodeMoveGeometryInsideCanvas: vi.fn((_a: any, _b: any, _c: any, _d: any, _e: any, _f: any, delta: any) => delta.x === 2)
+    });
 
     const result = scope.boundedDeltaForMoveGeometry(["n1"], [], [], {}, {}, {}, 10, 0, pt(2, 0));
 
-    expect(result).toEqual(pt(0, 0));
+    expect(result).toEqual(pt(2, 0));
   });
 });
 

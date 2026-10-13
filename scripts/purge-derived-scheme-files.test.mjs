@@ -16,7 +16,7 @@ import { describe, expect, test, beforeEach, afterEach } from "vitest";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT = fileURLToPath(new URL("./purge-derived-scheme-files.mjs", import.meta.url));
@@ -39,11 +39,6 @@ function seedTree(files) {
 function run(args) {
   const result = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: "utf-8" });
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
-}
-
-/** 把 Windows 的 \ 换成 /，让断言与平台无关。 */
-function posix(path) {
-  return relative(caseDir, path).replace(/\\/gu, "/");
 }
 
 beforeEach(() => {
@@ -106,11 +101,6 @@ describe("purge:derived —— 默认 dry-run", () => {
 
     expect(status).toBe(0);
     expect(stdout).toContain("无待归档文件");
-  });
-
-  test("路径分隔符断言辅助函数本身可用（本组用例的基座）", () => {
-    filesRoot = seedTree(["模型A.e"]);
-    expect(posix(join(filesRoot, "模型A.e"))).toBe("files/模型A.e");
   });
 });
 
