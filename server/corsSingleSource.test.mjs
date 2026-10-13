@@ -281,9 +281,9 @@ describe("CORS 响应头单源", () => {
     );
   });
 
-  test("origin-only 变体确实只含 origin 一项（下载类端点不需要 methods/headers）", () => {
-    expect(Object.keys(accessControlOriginOnly)).toEqual(["access-control-allow-origin"]);
-  });
+  // 「origin-only 只含 origin 一项」已由上面「三个键值完整」那条里的
+  //   expect(Object.keys(accessControlOriginOnly)).toEqual(["access-control-allow-origin"])
+  // 逐字覆盖，故不再单列一条同断言的用例。
 });
 
 // ——————————————————————— 检测逻辑自测 ———————————————————————

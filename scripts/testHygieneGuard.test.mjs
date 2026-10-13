@@ -48,40 +48,32 @@ function testFiles(dir) {
 const SELF = "scripts/testHygieneGuard.test.mjs";
 
 /**
- * 零断言文件的**既有**豁免名单：这些是一次性排查留下的探针（正文只有 console.log，
- * 没有 expect），它们不是守卫，删不删由人决定，但规则不该让它们把全量测试拉红。
- * 新写零断言文件一律被拦。
+ * 零断言文件的豁免名单。**现为空** —— 历史上唯一的 6 条已于 2026-10 清理。
  *
- * ★ 2026-10 修过一处假绿。这 6 条**全部 untracked**，且被 `.gitignore:46` 的 `*.temp.test.ts`
- * 忽略 —— 干净检出上根本不存在。原来的「名单不得腐烂」只看「文件还在不在工作区」，两头都错：
- *   · 本机文件没删  → 名单对它们空洞地成立，零断言豁免其实什么也没豁免；
- *   · 文件被删掉（干净检出即如此）→ 反而转红，逼着人改一个**受版本控制**的文件，
- *     去记录「我的本地临时文件被清理了」这件与仓库无关的事。
- * 也就是说那条检查的判据方向对 gitignore 文件是反的。现在改由四个互相独立的桶钉住，
- * 详见下面 auditExemptionList。
+ * 那 6 条是什么：`src/encoding/` 下 6 个 `*.temp.test.ts`（energy-debug、energy-full-debug、
+ * fb18-probe、infer-debug、param-struct、text-debug），一次性排查留下的本地探针。三重理由让它们
+ * 本来就不该由一条**受版本控制**的守卫去记着：
+ *   1. 全部 untracked，且被 `.gitignore:46` 的 `*.temp.test.ts` 忽略 —— 干净检出 / CI 上根本不存在；
+ *   2. 没有任何一处生产代码或测试引用它们（grep 全库零命中），删掉不影响编译与运行；
+ *   3. 正文主体只有 console.log（其中 fb18-probe 后来补过断言，但整组 `skipIf(!HAS_SAMPLES)`，
+ *      而样本在同样被 gitignore 的 `data/` 下 —— 依旧只在单机上可能执行）。它们守的 fb18 契约
+ *      （成员表 device_id 必须过 finalizeEDevicePreviewRecords 定稿）另有受版本控制的守卫：
+ *      `src/encoding/e-file-editor-reference.test.ts` 的「编辑器 records 与导出文件逐值同源（容器模型）」。
+ *
+ * ★ 因此「名单不得为空」不能再写成 `size > 0` —— 那只会在**下一次**有人加豁免时逼出一个假失败，
+ * 而在名单为空的今天则完全失语（`toBeGreaterThan(0)` 对空集语义正确，但对「应该清空」的场合是错的）。
+ * 改用下面那条**有原则**的判据：名单为空不是「无所谓」，而是「真的一个都不该有」——
+ * 反过来全量扫一遍，断言零断言集合为空。见 describe 里的「豁免名单为空时必须真的没有零断言文件」。
+ * 非空时（将来若确有正当豁免）仍要求理由表非空，逐项对齐与四个桶照旧跑。
  */
-const ZERO_ASSERTION_EXEMPT = new Set([
-  "src/encoding/energy-debug.temp.test.ts",
-  "src/encoding/energy-full-debug.temp.test.ts",
-  "src/encoding/fb18-probe.temp.test.ts",
-  "src/encoding/infer-debug.temp.test.ts",
-  "src/encoding/param-struct.temp.test.ts",
-  "src/encoding/text-debug.temp.test.ts"
-]);
+const ZERO_ASSERTION_EXEMPT = new Set();
 
 /**
  * 每条豁免都必须写明理由。**刻意与上面的名单分开写、不互为推导**：只从名单删掉一项而不动这里，
  * 「双向对齐」那条断言立刻转红 —— 这正是原来缺的那道「删名单项也能被发现」。
- * 反过来多塞一项而忘了写理由，同样转红。
+ * 反过来多塞一项而忘了写理由，同样转红。当前随名单一并清空。
  */
-const ZERO_ASSERTION_EXEMPT_REASON = new Map([
-  ["src/encoding/energy-debug.temp.test.ts", "energy 编码一次性排查留下的探针"],
-  ["src/encoding/energy-full-debug.temp.test.ts", "energy 全量比对一次性排查留下的探针"],
-  ["src/encoding/fb18-probe.temp.test.ts", "fb18 报文一次性排查留下的探针"],
-  ["src/encoding/infer-debug.temp.test.ts", "infer 路径一次性排查留下的探针"],
-  ["src/encoding/param-struct.temp.test.ts", "param 结构一次性排查留下的探针"],
-  ["src/encoding/text-debug.temp.test.ts", "text 编码一次性排查留下的探针"]
-]);
+const ZERO_ASSERTION_EXEMPT_REASON = new Map();
 
 /**
  * 跑一条 git 命令并取 stdout 文本；判定不了时返回 null。
@@ -107,7 +99,10 @@ function gitLines(args, { input, accept = [0] } = {}) {
  */
 function exemptReachability(paths) {
   const nulInput = paths.map((file) => `${file}\0`).join("");
-  if (nulInput === "") return null;
+  // 空名单 = **没有豁免要查**，不是「查不到 git 事实」。返回恒定 unknown 的判据，
+  // 好让下面两条审计照常**运行**（四个桶必为空，断言空洞成立），
+  // 而不是被 skipIf 标成「跳过」—— 后者会被读成「环境问题没跑到」，反而更难解释。
+  if (nulInput === "") return () => "unknown";
   // 注意 check-ignore -z --stdin 的**输入**也必须是 NUL 分隔（git 2.47 实测：换行输入会静默返回空）
   const listed = gitLines(["ls-files", "-z", "--", ...paths]);
   const ignoredOut = gitLines(["check-ignore", "-z", "--stdin"], { input: nulInput, accept: [0, 1] });
@@ -189,9 +184,20 @@ describe("测试卫生守卫", () => {
     expect(audit.orphaned, `理由表里有、名单里没有，请同步移除或恢复：${audit.orphaned.join(", ")}`).toEqual([]);
   });
 
-  test("★ 豁免名单不得为空（整体清空属刻意改动，须与理由表同时进行并在 PR 里说明）", () => {
-    expect(ZERO_ASSERTION_EXEMPT.size).toBeGreaterThan(0);
-    expect(ZERO_ASSERTION_EXEMPT_REASON.size).toBeGreaterThan(0);
+  test("★ 豁免名单为空时必须真的没有零断言测试文件（不是「空名单无所谓」）", () => {
+    if (ZERO_ASSERTION_EXEMPT.size > 0) {
+      // 非空：仍要求理由表非空（下面的「逐项对齐」负责两处清单一致）
+      expect(ZERO_ASSERTION_EXEMPT_REASON.size).toBeGreaterThan(0);
+      return;
+    }
+    // ★ 空：判据反过来 —— 不是「允许为空」，而是「一个零断言文件都不该存在」。
+    // 这让清空名单不再是个能让守卫失语的盲区：名单一空，正文里任何新写的零断言文件立刻转红。
+    expect(ZERO_ASSERTION_EXEMPT_REASON, "空名单时理由表也必须空").toEqual(new Map());
+    const zeroAssertion = scanned.filter((file) => !hasExpectation(codeOf(file)));
+    expect(
+      zeroAssertion,
+      `豁免名单已空，仓库里不该再有零断言测试文件：${zeroAssertion.join(", ")}`
+    ).toEqual([]);
   });
 
   // 下面两条依赖 git 事实；git 不可得时用 skipIf 明说，而不是让它们恒绿

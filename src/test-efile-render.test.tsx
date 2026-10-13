@@ -12,14 +12,6 @@ describe("EFileEditor tooltip 逻辑", () => {
     }
   ];
 
-  it("组件可正常渲染（不崩溃）", () => {
-    const html = renderToStaticMarkup(
-      React.createElement(EFileEditor, { open: true, onClose: () => {}, records })
-    );
-    expect(html).toContain("E文件查看与编辑");
-    expect(html).toContain("ACGenerator");
-  });
-
   it("传入 fieldCnNames 后组件仍正常渲染", () => {
     const html = renderToStaticMarkup(
       React.createElement(EFileEditor, {
@@ -29,6 +21,8 @@ describe("EFileEditor tooltip 逻辑", () => {
     );
     expect(html).toContain("E文件查看与编辑");
   });
+  // 「组件可正常渲染（不崩溃）」已并入 EFileEditor.test.tsx 的 open=true 用例
+  // （那边额外断言 tabs + 表格容器，严格强于本文件原第 1 条，故不重复保留）。
 });
 
 describe("isTopologyField（编辑模式禁止修改的拓扑结构字段）", () => {

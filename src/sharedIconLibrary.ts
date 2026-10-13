@@ -1,4 +1,5 @@
 import type { ImageAsset } from "./appExtracted/appCoreCanvasUtilities";
+import { svgDataUrl } from "./svgModelImport";
 
 export const BUILTIN_SHARED_ICON_FOLDER_ID = "builtin-shared-icons";
 
@@ -306,10 +307,6 @@ function mapPinPath() {
 function svgSourceForSpec(spec: BuiltinSharedIconSpec) {
   const title = `${spec.category} / ${spec.name}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" role="img" aria-label="${escapeSvgText(title)}"><title>${escapeSvgText(title)}</title><rect width="24" height="24" fill="${SOFT_GRAY}" fill-opacity="0"/>${spec.body}</svg>`;
-}
-
-function svgDataUrl(source: string) {
-  return `data:image/svg+xml;utf8,${encodeURIComponent(source)}`;
 }
 
 export const BUILTIN_SHARED_ICON_ASSETS: ImageAsset[] = BUILTIN_SHARED_ICON_SPECS.map((spec, index) => {

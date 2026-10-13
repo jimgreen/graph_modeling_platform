@@ -27,7 +27,7 @@ import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { describe, expect, test } from "vitest";
 
 import { DEVICE_LIBRARY } from "./model";
-import { parseSvgModel, type SvgDomAdapter } from "./svgModelImport";
+import { parseSvgModel, svgDataUrl, type SvgDomAdapter } from "./svgModelImport";
 
 const dom: SvgDomAdapter = {
   parse(source) {
@@ -280,5 +280,74 @@ describe("内层 SVG 图片 —— data URL 形态矩阵（解析层现状钉桩
       expect(warningsOf(result)).not.toContain("无法安全解析");
       expect(warningsOf(result)).not.toContain("已移除该图片引用");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// svgDataUrl 前缀收敛（单源契约）
+//
+// 收敛前 src/sharedIconImport.ts 与 src/sharedIconLibrary.ts 各有一份 svgDataUrl，
+// 前缀分别是 `;charset=utf-8,` 与 `;utf8,` —— 同一份 SVG 经两条路径得到两种形态。
+// 现在 sharedIconLibrary 复用本文件导出的 svgDataUrl，前缀恒为 `;charset=utf-8,`。
+//
+// 为什么前缀钉桩放在本文件：src/sharedIconLibrary.ts 的 svgDataUrl 曾经是模块私有、
+// 无导出，无法从外部喂进任意字符串，只能靠「内置资产实测 URL」间接观察。
+// 收敛后本文件导出 svgDataUrl，于是前缀与载荷都能直接断言 —— 前缀不再是间接推论。
+// ---------------------------------------------------------------------------
+
+describe("svgDataUrl 前缀单源", () => {
+  test("★ 前缀恒为 ;charset=utf-8,，不再产出裸 ;utf8, 形态", () => {
+    // 断言整个串而不只是 startsWith：前缀若退回 `;utf8,`，
+    // 长度与内容都会变，两种写法都在下面这条里被咬住。
+    expect(svgDataUrl("<svg/>")).toBe("data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E");
+    expect(svgDataUrl("<svg/>")).toMatch(/^data:image\/svg\+xml;charset=utf-8,/u);
+    // 反向钉桩：收敛前的第二种形态必须不再出现
+    expect(svgDataUrl("<svg/>")).not.toContain(";utf8,");
+    expect(svgDataUrl("")).toBe("data:image/svg+xml;charset=utf-8,");
+  });
+
+  test("★ 空串不特殊处理：仍产出合法 data URL（无内容但形态正确）", () => {
+    // 与 stateIconDrawing 的 svgSourceToDataUrl 相反（那边空串返回 ""），
+    // 这边调用点都传已序列化的文档，不存在空输入。钉住差异，避免后人「顺手对齐」时
+    // 把 sharedIconLibrary 的图标 URL 变成空串 —— 那会让 212 个内置资产全是空图。
+    const url = svgDataUrl("");
+    expect(url).toBe("data:image/svg+xml;charset=utf-8,");
+    expect(url.startsWith("data:image/svg+xml;charset=utf-8,")).toBe(true);
+  });
+
+  test("★ 前缀与载荷无关：任何输入都只换载荷、不换前缀", () => {
+    // 载荷维度：ASCII / 中文 / emoji / 尖括号 / 空串。
+    // 前缀是模板串的常量部分，只有它被改成别的形态时下面这条才会红。
+    for (const payload of ["", "<svg/>", "厂站模型", "🚀⛽", '"><script>', "a b/c#d"]) {
+      expect(svgDataUrl(payload).slice(0, "data:image/svg+xml;charset=utf-8,".length)).toBe("data:image/svg+xml;charset=utf-8,");
+    }
+  });
+
+  test("★ 中文与 emoji 经 data URL 往返后逐字不变", async () => {
+    // encodeURIComponent 对中文按 UTF-8 百分号编码，对 emoji 按代理对编码；
+    // decodeURIComponent 必须原样还原，否则浏览器渲染出的图标标题会变成乱码。
+    // 这条同时钉住前缀 —— 往返链路的起点必须是本文件导出的这一个函数。
+    const tricky = "厂站/线路 · 🚀⛽ · <b>&amp;</b> · \"引号\"";
+    const url = svgDataUrl(`<svg xmlns="http://www.w3.org/2000/svg"><title>${tricky}</title></svg>`);
+    const comma = url.indexOf(",");
+    expect(url.slice(0, comma)).toBe("data:image/svg+xml;charset=utf-8");
+    expect(decodeURIComponent(url.slice(comma + 1))).toBe(`<svg xmlns="http://www.w3.org/2000/svg"><title>${tricky}</title></svg>`);
+    // 载荷里不得残留裸尖括号/双引号（否则会截断外层 SVG 的属性）
+    expect(url.slice(comma + 1)).not.toMatch(/[<>"#]/u);
+  });
+
+  test("★ 往返链路整体：带中文与 emoji 的内层 SVG 经导入链路后内容不变", async () => {
+    // 走完整链路而不只是直接调 svgDataUrl：前缀单源后，导入产出的内层 href
+    // 与 svgDataUrl 的输出必须是同一种形态，且中文/emoji 经过
+    // 「解码 → DOM 解析 → 消毒 → 重新序列化 → 重新编码」五步后仍逐字相同。
+    const tricky = "厂站模型 🚀⛽";
+    const inner = `<svg xmlns="http://www.w3.org/2000/svg"><title>${tricky}</title><circle cx="5" cy="5" r="4"/></svg>`;
+    const result = await parse(importWithInnerHref(utf8Href(inner)));
+    const href = innerHrefOf(result);
+    // 前缀与 svgDataUrl 的产出逐字一致（不是「也以 data:image/svg+xml 开头」这种弱断言）
+    expect(href.slice(0, href.indexOf(","))).toBe("data:image/svg+xml;charset=utf-8");
+    const roundTripped = innerSvgOfHref(href);
+    expect(roundTripped).toContain(`<title>${tricky}</title>`);
+    expect(roundTripped).toContain("<circle");
   });
 });

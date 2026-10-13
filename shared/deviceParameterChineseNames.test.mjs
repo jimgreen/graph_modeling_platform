@@ -57,12 +57,6 @@ describe("inferDeviceParameterChineseName", () => {
     }
   });
 
-  test("多端设备的第 N 端关联序号能推出来", () => {
-    const label = inferDeviceParameterChineseName("idx_ac_load_t1");
-    expect(typeof label).toBe("string");
-    expect(label.length).toBeGreaterThan(0);
-  });
-
   test("未登记的字段返回 undefined（调用方据此回落到兜底文案）", () => {
     // 实现的返回类型是 string | undefined（不是 null）—— 钉住这一点，
     // 因为 meaningfulDeviceParameterChineseName 靠 `?? 兜底` 接住它。

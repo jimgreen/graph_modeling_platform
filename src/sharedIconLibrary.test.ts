@@ -74,12 +74,13 @@ describe("shared icon library", () => {
 // ---------------------------------------------------------------------------
 // 转义现状与资源映射
 //
-// 前提事实（已实测）：escapeSvgText 与 svgDataUrl 都是 sharedIconLibrary.ts 的
-// 模块私有 const，没有导出。本模块导出的只有 5 个符号：
+// 前提事实（已实测）：escapeSvgText 是 sharedIconLibrary.ts 的模块私有 const，
+// 没有导出；svgDataUrl 已收敛到 svgModelImport.ts 并由本文件 import 复用。
+// 本模块导出的只有 5 个符号：
 //   BUILTIN_SHARED_ICON_FOLDER_ID / BUILTIN_SHARED_ICON_ASSETS
 //   builtinSharedIconAssetMap / isBuiltinSharedIconAssetId / mergeBuiltinSharedIconAssets
 // 其中 assetMap 只读 asset.id 与 asset.url、merge 只读 asset.id，
-// 没有任何导出函数能把自定义字符串喂进 escapeSvgText 或 svgDataUrl。
+// 没有任何导出函数能把自定义字符串喂进 escapeSvgText。
 // 且 212 个内置标题里没有一个包含 & < > " '（见下方行为断言）。
 // 因此「哪些字符被转义」「实体二次转义」这类契约只能以静态源码守卫固定，
 // 这是本仓既有模式（见 all-network-topology.test.ts 的 readFileSync + new URL 守卫）。
@@ -191,17 +192,17 @@ describe("sharedIconLibrary 转义现状", () => {
   });
 });
 
-describe("sharedIconLibrary svgDataUrl 编码现状", () => {
+describe("sharedIconLibrary svgDataUrl 编码现状（复用 svgModelImport 的单源实现）", () => {
   // 逐字符抄录自实测输出，不要重新生成 —— 一旦 svgDataUrl 改了拼接方式就会红。
   const FIRST_ASSET_URL =
-    "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2296%22%20height%3D%2296%22%20viewBox%3D%220%200%2024%2024%22%20role%3D%22img%22%20aria-label%3D%22%E9%A2%84%E8%AE%BE%2F%E7%BA%BF%E6%9D%A1%20%2F%20%E7%9B%B4%E7%BA%BF%22%3E%3Ctitle%3E%E9%A2%84%E8%AE%BE%2F%E7%BA%BF%E6%9D%A1%20%2F%20%E7%9B%B4%E7%BA%BF%3C%2Ftitle%3E%3Crect%20width%3D%2224%22%20height%3D%2224%22%20fill%3D%22%23f8fafc%22%20fill-opacity%3D%220%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%232f63ff%22%20stroke-width%3D%221.75%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%225%22%20y1%3D%225%22%20x2%3D%2219%22%20y2%3D%2219%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E";
+    "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2296%22%20height%3D%2296%22%20viewBox%3D%220%200%2024%2024%22%20role%3D%22img%22%20aria-label%3D%22%E9%A2%84%E8%AE%BE%2F%E7%BA%BF%E6%9D%A1%20%2F%20%E7%9B%B4%E7%BA%BF%22%3E%3Ctitle%3E%E9%A2%84%E8%AE%BE%2F%E7%BA%BF%E6%9D%A1%20%2F%20%E7%9B%B4%E7%BA%BF%3C%2Ftitle%3E%3Crect%20width%3D%2224%22%20height%3D%2224%22%20fill%3D%22%23f8fafc%22%20fill-opacity%3D%220%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%232f63ff%22%20stroke-width%3D%221.75%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%225%22%20y1%3D%225%22%20x2%3D%2219%22%20y2%3D%2219%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E";
   const FIRST_ASSET_SOURCE =
     '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" role="img" aria-label="预设/线条 / 直线"><title>预设/线条 / 直线</title><rect width="24" height="24" fill="#f8fafc" fill-opacity="0"/><g fill="none" stroke="#2f63ff" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="5" x2="19" y2="19"/></g></svg>';
 
   test("svgDataUrl 完整编码结果：固定前缀加 encodeURIComponent 全文", () => {
     const asset = BUILTIN_SHARED_ICON_ASSETS[0];
     expect(asset.url).toBe(FIRST_ASSET_URL);
-    expect(asset.url.startsWith("data:image/svg+xml;utf8,")).toBe(true);
+    expect(asset.url.startsWith("data:image/svg+xml;charset=utf-8,")).toBe(true);
     expect(asset.size).toBe(FIRST_ASSET_SOURCE.length);
     // 载荷可无损还原成原始 SVG 源码
     expect(decodeURIComponent(asset.url.slice(asset.url.indexOf(",") + 1))).toBe(FIRST_ASSET_SOURCE);
@@ -226,7 +227,7 @@ describe("sharedIconLibrary svgDataUrl 编码现状", () => {
   test("svgDataUrl 全量载荷自洽：212 个资产的 size 等于解码后源码长度", () => {
     for (const asset of BUILTIN_SHARED_ICON_ASSETS) {
       const comma = asset.url.indexOf(",");
-      expect(asset.url.slice(0, comma)).toBe("data:image/svg+xml;utf8");
+      expect(asset.url.slice(0, comma)).toBe("data:image/svg+xml;charset=utf-8");
       const payload = asset.url.slice(comma + 1);
       expect(decodeURIComponent(payload).length).toBe(asset.size);
       // encodeURIComponent 不转义单引号，所以载荷里出现 ' 只能来自源码本身。

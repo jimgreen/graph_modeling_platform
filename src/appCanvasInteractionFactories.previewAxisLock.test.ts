@@ -94,11 +94,10 @@ describe("createLockConnectPreviewAxis", () => {
     expect(scope.connectPreviewAxisLockRef.current).toBeNull();
   });
 
-  test("重复释放是空操作", () => {
-    const scope = createLockScope();
-
-    expect(() => createReleaseConnectPreviewAxisLock(scope)()).not.toThrow();
-  });
+  // 曾有一条「重复释放是空操作」的 not.toThrow 守卫，已删：
+  // createReleaseConnectPreviewAxisLock 只是 `ref.current = null`，从不读锁本身，
+  // 第二次释放与第一次逐字节等价；而且它一旦真抛异常，同文件「释放后清空锁」
+  // 那条会先失败，覆盖不丢失。
 });
 
 /** 语义别名，读起来更贴近用例语义。 */

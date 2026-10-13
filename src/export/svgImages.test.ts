@@ -21,6 +21,8 @@
 //    （`??` 短路，nodes 存在即完全忽略 project.nodes）。
 // ⑤ 重复 id 先到先得；且 `appendAssetId` 与 `appendHref` 对同一 id 产出**相同的 href**
 //    （都是 `/webgrp/images/<encoded>`），所以顺序差异在普通 id 上观察不到。
+// ⑥ 状态图标：节点的 state 要先在 `libraryTemplateByKind` 里查到模板才会去解状态，
+//    查不到就**连状态解析都不发起**（否则整幅图每个节点都会拉一遍无关图标）。
 import { describe, expect, test } from "vitest";
 import { collectSvgExportReferencedImageHrefById } from "./svg-images";
 import { backendImageIdFromHref, decodeSvgImageSource } from "../svgUtils";
@@ -29,10 +31,12 @@ import type { ModelNode } from "../model";
 /**
  * 按 ModelNode 的**全部必填字段**构造节点 fixture，不用 `as` 绕过检查 ——
  * 让 tsc 验证 fixture 真的合法（前面几轮已吃过漏传必填字段造出假警报的亏）。
+ *
+ * kind 可覆盖：状态图标那一组要按 kind 查模板表（见文件头⑥），其余用例固定 ac-load。
  */
-const asNode = (id: string, params: Record<string, string>): ModelNode => ({
+const asNode = (id: string, params: Record<string, string>, kind = "ac-load"): ModelNode => ({
   id,
-  kind: "ac-load",
+  kind,
   name: id,
   nodeNumber: "1",
   acTopologyNode: 0,
@@ -226,5 +230,54 @@ describe("依赖函数的行为（collect 正确性的前提）", () => {
     // 非 svg+xml 的 data URI 不解析（避免把 PNG 当 SVG 扫 href）
     expect(decodeSvgImageSource("data:image/png;base64,xx")).toBe("");
     expect(decodeSvgImageSource("")).toBe("");
+  });
+});
+
+/**
+ * ⑥ 状态图标（device state → 闭合/断开图标）。
+ *
+ * 来源：原 `svg-images.test.ts`。该文件与本文件测的是同一个函数（`collectSvgExportReferencedImageHrefById`），
+ * 17 条里 14 条是本文件的重复覆盖（assetId 拼接待遇、空串过滤、嵌套 href 三种写法、去重先到先得、
+ * canvas 三来源、backgroundPage 的 `??` 优先级……），已随该文件删除。
+ * 独有的是下面这 3 条状态图标，搬到这里保住。
+ */
+describe("状态图标收集（见文件头⑥）", () => {
+  const templateMap = (kind: string) => new Map([[kind, { kind, label: "断路器" } as never]]);
+
+  test("命中模板且解析出状态图标时收进 map", () => {
+    const map = collectSvgExportReferencedImageHrefById({
+      nodes: [asNode("n1", { state: "closed" }, "ac-breaker")],
+      libraryTemplateByKind: templateMap("ac-breaker"),
+      resolveDeviceStateVisual: () => ({ kind: "closed" }) as never,
+      resolveStateVisualImageHref: () => "/webgrp/images/stateIcon"
+    });
+    expect(map.get("stateIcon")).toBe("/webgrp/images/stateIcon");
+  });
+
+  test("★ 无对应模板时连状态解析都不发起（否则整幅图的无关图标都会被收进来）", () => {
+    let called = 0;
+    // 替身照抄真实实现对 null 的待遇（staticRenderUtils 的 resolveStateVisualImageHref(null) → ""），
+    // 不能写成"无视入参恒返回 URL" —— 那样下面 map 为空就恒绿，测不出任何东西。
+    const map = collectSvgExportReferencedImageHrefById({
+      nodes: [asNode("n1", {}, "unknown-kind")],
+      resolveDeviceStateVisual: () => {
+        called += 1;
+        return null;
+      },
+      resolveStateVisualImageHref: (visual) => (visual as { image?: string } | null)?.image ?? ""
+    });
+    // 没有模板 ⇒ 根本不发起状态解析（这才是本用例的判据，见上方注释）
+    expect(called).toBe(0);
+    expect(map.size).toBe(0);
+  });
+
+  test("状态图标为空串时静默跳过（不进 map）", () => {
+    const map = collectSvgExportReferencedImageHrefById({
+      nodes: [asNode("n1", {}, "ac-breaker")],
+      libraryTemplateByKind: templateMap("ac-breaker"),
+      resolveDeviceStateVisual: () => null,
+      resolveStateVisualImageHref: () => ""
+    });
+    expect(map.size).toBe(0);
   });
 });

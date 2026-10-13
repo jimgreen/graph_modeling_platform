@@ -31,12 +31,9 @@ describe("fieldCnNames 构建检查", () => {
         if (col && label && label !== col) (cnBySection[section] ??= {})[col] = label;
       }
     }
-    // 无空值
-    for (const [section, cols] of Object.entries(cnBySection)) {
-      for (const [col, label] of Object.entries(cols)) {
-        expect(label.trim().length, `${section}.${col}`).toBeGreaterThan(0);
-      }
-    }
+    // 注：原这里有一个「无空值」循环，恒绿死断言 —— cnBySection 只在 label 非空时才
+    // 写入（上面两处 `if (... && label ...)` 过滤），循环里再断 label.length > 0 永远为真，
+    // 防不了任何 Bug。真正的中文列名契约由下面三条关键 section 断言钉住。
     // 关键 section 存在
     expect(cnBySection.ACGenerator?.id).toBeTruthy();
     expect(cnBySection.basevalue?.id).toBeTruthy();
