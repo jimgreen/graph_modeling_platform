@@ -7,6 +7,7 @@ import {
   DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
   measurementFontScaleForNode,
   measurementOffsetScaleForNode,
+  measurementRowLineHeight,
   resolveMeasurementItemBindingMetadata,
   resolveMeasurementItemDisplay,
   formatMeasurementDisplayValue,
@@ -413,7 +414,7 @@ export function exportMeasurementGroupMetrics(node: ModelNode, group: Measuremen
   }
   let maxFontSize = 0;
   for (const row of rows) if (row.fontSize > maxFontSize) maxFontSize = row.fontSize;
-  const lineHeight = Math.max(16, maxFontSize + 6);
+  const lineHeight = measurementRowLineHeight(maxFontSize);
   const columns = group.layout === "grid" ? 2 : group.layout === "horizontal" ? rows.length : 1;
   const charWidthFor = (fontSize: number) => fontSize * MEASUREMENT_CHAR_WIDTH_RATIO;
   const rowsPerColumn = Math.ceil(rows.length / columns);

@@ -237,14 +237,20 @@ describe("svgExportUtils / exportMeasurementGroupMetrics", () => {
     expect(metrics(node, group({ items: three, layout: "grid" })).columns).toBe(2);
   });
 
-  it("高度随行数增长，行距不小于 16", () => {
+  it("高度随行数增长，行距 = max(12, 字号 + 2)", () => {
     const one = metrics(node, group());
     const two = metrics(
       node,
       group({ items: [item({ id: "measurement-1" }), item({ id: "measurement-2" })] })
     );
     expect(two.height / two.lineHeight).toBeGreaterThan(one.height / one.lineHeight);
-    expect(one.lineHeight).toBeGreaterThanOrEqual(16);
+    // 行距公式由 max(16, 字号 + 6) 收紧为 max(12, 字号 + 2)：字号没动，
+    // 只把行间余量从 6 收到 2，下限从 16 降到 12（否则下限会把收紧吃掉）。
+    // 默认字号 12 ⇒ max(12, 12 + 2) = 14。
+    expect(one.lineHeight).toBe(14);
+    // 行距必须严格大于字号：行文本用 dominant-baseline="middle" 垂直居中在
+    // 本行行带里，行距 <= 字号时相邻两行字形必然压在一起。
+    expect(one.lineHeight).toBeGreaterThan(one.maxFontSize);
   });
 
   it("宽度 = 列宽 × 列数", () => {

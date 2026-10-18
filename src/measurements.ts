@@ -741,6 +741,17 @@ export const MEASUREMENT_VALUE_TOTAL_WIDTH = MEASUREMENT_VALUE_INTEGER_WIDTH + 1
 export const MEASUREMENT_VALUE_DECIMALS = 3;
 export const MEASUREMENT_CHAR_WIDTH_RATIO = 0.5;
 export const MEASUREMENT_INTER_COLUMN_GAP = 6;
+// 行距：字号不变，只收紧行间余量（旧的 max(16, 字号+6) 在默认字号 12 时给到 18，偏松）。
+// 默认字号 12 ⇒ 行距 max(12, 12+2) = 14，字形 12px 在 dominant-baseline=middle 下
+// 上下各留 1px，不压字。
+// 下限必须小于「最小字号 + 余量」，否则下限会把这个收紧直接吃掉。
+export const MEASUREMENT_LINE_HEIGHT_MIN = 12;
+export const MEASUREMENT_LINE_HEIGHT_EXTRA = 2;
+// 实时画布（appGraphMeasurementFactories）、SVG 导出（svgExportUtils）与默认占位高度
+// （defaultMeasurementGroupEstimatedHeight）三处共用，否则导出与画布会错位。
+export function measurementRowLineHeight(maxFontSize: number): number {
+  return Math.max(MEASUREMENT_LINE_HEIGHT_MIN, maxFontSize + MEASUREMENT_LINE_HEIGHT_EXTRA);
+}
 
 export function measurementVisualWidth(text: string): number {
   let width = 0;
@@ -1400,7 +1411,7 @@ function defaultMeasurementGroupEstimatedHeight(
       return (item.styleOverride?.fontSize ?? type?.defaultFontSize ?? DEFAULT_TYPE_VALUES.defaultFontSize) * fontScale;
     })
   );
-  const lineHeight = Math.max(16, maxFontSize + 6);
+  const lineHeight = measurementRowLineHeight(maxFontSize);
   return visibleCount * lineHeight;
 }
 

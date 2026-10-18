@@ -281,7 +281,10 @@ describe("measurement canvas interactions", () => {
     const [group] = measurementDefinitions.createDefaultMeasurementGroupsForNode(node as any, config);
 
     expect(group).toBeTruthy();
-    const lineHeight = 18;
+    // 行距 = measurementRowLineHeight(12) = max(12, 12 + 2) = 14。
+    // 旧的 max(16, 字号 + 6) 在同样字号下给的是 18，行间偏松，这里已收紧；
+    // 字号（DEFAULT_TYPE_VALUES.defaultFontSize = 12）本身没动。
+    const lineHeight = 14;
     const measurementHeight = group.items.filter((item) => item.visible !== false).length * lineHeight;
     const measurementTop = group.offset.y - measurementHeight / 2;
     const labelBottom = Number(node.params._labelY) + Number(node.params._labelFontSize) * 0.75;
