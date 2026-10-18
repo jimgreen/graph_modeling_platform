@@ -9,9 +9,12 @@ import {
   measurementFontScaleForNode,
   measurementOffsetScaleForNode,
   measurementPadTextToVisualWidth,
+  measurementRowLineHeight,
   measurementVisualWidth,
   materializeNewMeasurementDefinitionFields,
   MEASUREMENT_INTER_COLUMN_GAP,
+  MEASUREMENT_LINE_HEIGHT_EXTRA,
+  MEASUREMENT_LINE_HEIGHT_MIN,
   MEASUREMENT_VALUE_DECIMAL_WIDTH,
   MEASUREMENT_VALUE_DECIMALS,
   MEASUREMENT_VALUE_INTEGER_WIDTH,
@@ -1523,6 +1526,31 @@ describe("量测文字视觉宽度", () => {
   // 两者在「刚好等宽」时结果相同（repeat(0) + text 还是 text），属等价变异，
   // 不是这条测试没守住。所以别把它当成「>= 那一半被覆盖了」的证据。
   // measurementPadTextToVisualWidth / measurementVisualWidth 的其余分支均已被抓。
+});
+
+describe("量测行距 measurementRowLineHeight", () => {
+  // 行距公式从 max(16, 字号 + 6) 收紧为 max(12, 字号 + 2)：字号不动，
+  // 只把行间余量从 6 收到 2，同时把下限从 16 降到 12 —— 下限若留在 16，
+  // 默认字号 12 会被下限顶回 16，这次收紧就白改了。
+  test("默认值：余量 2px、下限 12px", () => {
+    expect(MEASUREMENT_LINE_HEIGHT_EXTRA).toBe(2);
+    expect(MEASUREMENT_LINE_HEIGHT_MIN).toBe(12);
+  });
+
+  test("字号分支与下限分支各给一个能区分两者的值", () => {
+    // 字号分支：12 + 2 = 14（下限也会给 12，只有余量分支给 14，有鉴别力）
+    expect(measurementRowLineHeight(12)).toBe(14);
+    expect(measurementRowLineHeight(30)).toBe(32);
+    // 下限分支：6 + 2 = 8 < 12（余量分支会给 8，只有下限分支给 12，有鉴别力）
+    expect(measurementRowLineHeight(6)).toBe(12);
+    expect(measurementRowLineHeight(9)).toBe(12);
+  });
+
+  test("任何字号下行距都严格大于字号，否则相邻两行字形会压在一起", () => {
+    for (const fontSize of [6, 8, 9, 10, 11, 12, 14, 20, 32, 48]) {
+      expect(measurementRowLineHeight(fontSize)).toBeGreaterThan(fontSize);
+    }
+  });
 });
 
 describe("materializeNewMeasurementDefinitionFields", () => {
