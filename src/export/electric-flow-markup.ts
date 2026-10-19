@@ -44,6 +44,16 @@ export const ELECTRIC_FLOW_EDGE_CLASS = "electric-flow-edge";
 const ELECTRIC_FLOW_FLOWING_CLASS = "electric-flow-flowing";
 
 /**
+ * 参考路径长度（SVG px）：`--electric-flow-duration` 是**这段长度**走完一个周期的时间，
+ * 由此定义「基准流速 = ELECTRIC_FLOW_REFERENCE_PATH_LENGTH / durationSeconds（px/s）」。
+ *
+ * 各条线路的动画周期 = 路径实长 / 基准流速 —— 长线路周期等比放大、短线路等比缩小，
+ * 所有线路上的箭头在屏幕上以**同一个像素速度**前进（offset-distance 是路径长度百分比，
+ * 若所有边共用同一周期，长线路每周期扫过的像素更多，看起来就慢、箭头也被拉得更稀）。
+ */
+const ELECTRIC_FLOW_REFERENCE_PATH_LENGTH = 100;
+
+/**
  * 三角箭头图元（`<path>` 的 `d`）。
  *
  * 顶点朝局部 **+x**（路径切线方向）。包围盒 x∈[-4,4]、y∈[-4,4] **关于原点对称** ——
@@ -134,17 +144,71 @@ function arrowSpecsFor(direction: ElectricFlowDirection, arrowCount: number): Ar
   return specs;
 }
 
+/**
+ * 从 path `d` 字符串估量路径总长度（SVG px）。
+ *
+ * 只处理绝对坐标的 M/L/Q 命令 —— 这正是本模块所有输入的两类来源：
+ * `pointsToOrthogonalPath`（纯 L）与 `pathWithCrossingArcs`（L + 二次贝塞尔 Q 跨线弧）。
+ * M 记为跳转点，不贡献长度；Q 用二次贝塞尔的几何近似（控制点与两端的中点）
+ * 估长，误差在跨线弧（半径 7px）上远小于一个箭头间距，不影响视觉一致性。
+ * 解析不了任何命令（空串/残缺）时返回 null，调用方回落到共用周期。
+ */
+export function estimateElectricFlowPathLength(pathD: string): number | null {
+  const matches = pathD.matchAll(/([MLQ])\s*([^MLQZmlqz]*)/g);
+  let length: number | null = null;
+  let cursorX: number | null = null;
+  let cursorY: number | null = null;
+  for (const match of matches) {
+    const command = match[1];
+    const numbers = (match[2].match(/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g) ?? []).map(Number);
+    if (command === "Q") {
+      if (numbers.length < 4) continue;
+      const [controlX, controlY, endX, endY] = numbers;
+      if (cursorX !== null && cursorY !== null) {
+        // 二次贝塞尔弧长 ≈ (起点→终点) 与 (起点→控制点→终点) 两段折线的平均
+        const chord = Math.hypot(endX - cursorX, endY - cursorY);
+        const polyline = Math.hypot(controlX - cursorX, controlY - cursorY) + Math.hypot(endX - controlX, endY - controlY);
+        const approx = (chord + polyline) / 2;
+        length = (length ?? 0) + approx;
+      }
+      cursorX = endX;
+      cursorY = endY;
+      continue;
+    }
+    if (numbers.length < 2) continue;
+    const [x, y] = numbers;
+    if (command === "L" && cursorX !== null && cursorY !== null) {
+      length = (length ?? 0) + Math.hypot(x - cursorX, y - cursorY);
+    }
+    cursorX = x;
+    cursorY = y;
+  }
+  return length !== null && Number.isFinite(length) && length > 0 ? length : null;
+}
+
 /** 箭头内联样式：`offset-path` + 方向 + 错峰延迟。 */
 function arrowStyleAttribute(spec: ArrowSpec, pathD: string): string {
   // path 里的双引号必须转义成 &quot;：整个 style 属性本身就用双引号包着。
   const offsetPath = `path(&quot;${escapeXml(pathD)}&quot;)`;
   const offsetRotate = spec.direction === "forward" ? "auto" : "auto 180deg";
   const animationName = spec.direction === "forward" ? "electric-flow-run-forward" : "electric-flow-run-reverse";
-  // 错峰用 calc 表达「半个周期」：延迟跟着 --electric-flow-duration 走，改速度不必改延迟。
-  const delay = spec.offsetFactor === 0 ? "0s" : `calc(var(--electric-flow-duration) * -${spec.offsetFactor})`;
+  // 等流速：本条边的周期 = 路径实长 / 基准流速（参考长度走 --electric-flow-duration 的时间）。
+  // 量不出长度（null/∞/≤0）时回落共用周期 —— 长度歧路比错误周期安全。
+  const pathLength = estimateElectricFlowPathLength(pathD);
+  const durationRatio = pathLength !== null ? (pathLength / ELECTRIC_FLOW_REFERENCE_PATH_LENGTH).toFixed(4) : null;
+  const duration = durationRatio !== null
+    ? `calc(var(--electric-flow-duration) * ${durationRatio})`
+    : "var(--electric-flow-duration)";
+  // 错峰是「本条边周期的固定比例」：必须跟着 per-edge 周期缩放，否则长边上的
+  // 箭头会按参考周期错峰、彼此挤在一起（等流速的同时还要等间距）。
+  const delay = spec.offsetFactor === 0
+    ? "0s"
+    : durationRatio !== null
+      ? `calc(var(--electric-flow-duration) * ${durationRatio} * -${spec.offsetFactor})`
+      : `calc(var(--electric-flow-duration) * -${spec.offsetFactor})`;
   return (
     ` style="offset-path: ${offsetPath}; offset-rotate: ${offsetRotate};` +
-    ` animation-name: ${animationName}; animation-duration: var(--electric-flow-duration);` +
+    ` animation-name: ${animationName}; animation-duration: ${duration};` +
     ` animation-timing-function: linear; animation-iteration-count: infinite; animation-delay: ${delay}"`
   );
 }
@@ -156,6 +220,9 @@ function arrowStyleAttribute(spec: ArrowSpec, pathD: string): string {
  * - 无可渲染内容时返回空串 `""`（调用方不必特判 `null`）。
  * - 每条有向边默认 2 个箭头错峰成流动感；`routedEdges.length > 600` 时降级为每边 1 个
  *   （大量 motion path 同时动画是实打实的掉帧来源）。
+ * - **等流速**：每条边的动画周期按其路径实长等比缩放（周期 ∝ 长度），保证所有线路上的
+ *   箭头像素速度一致 —— 不再出现「短线快、长线慢」的百分比动画错觉；量不出长度的边
+ *   回落共用周期（`--electric-flow-duration`）。
  */
 export function buildElectricFlowLayerMarkup(
   routedEdges: { edgeId: string; path: string }[],

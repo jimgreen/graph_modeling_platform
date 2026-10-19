@@ -9,6 +9,7 @@ import { computeElectricFlowDirections, type ElectricFlowDirection } from "./ele
 import {
   buildElectricFlowLayerMarkup,
   buildElectricFlowStyleMarkup,
+  estimateElectricFlowPathLength,
   ELECTRIC_FLOW_ARROW_CLASS,
   ELECTRIC_FLOW_LAYER_CLASS
 } from "./electric-flow-markup.ts";
@@ -305,8 +306,40 @@ describe("buildElectricFlowLayerMarkup", () => {
     expect(markup.startsWith(`<g class="${ELECTRIC_FLOW_LAYER_CLASS}" pointer-events="none">`)).toBe(true);
     expect(markup.match(new RegExp(`class="${ELECTRIC_FLOW_ARROW_CLASS}`, "g"))?.length).toBe(2);
     expect(markup).toContain("animation-delay: 0s");
-    expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * -0.5)");
+    // 100px 路径 = 参考长度 → 周期比 1.0000，错峰延迟跟着本边周期走
+    expect(markup).toContain("animation-duration: calc(var(--electric-flow-duration) * 1.0000)");
+    expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * 1.0000 * -0.5)");
     expect(markup).toContain("offset-rotate: auto");
+  });
+
+  it("等流速：长线路周期等比放大，像素速度恒定", () => {
+    // 同一方向、长度 100 vs 400：短边 1 个周期走 100px，长边 4 个周期时间走 400px —— px/s 相同
+    const edges = [
+      { edgeId: "short", path: "M 0 0 L 100 0" },
+      { edgeId: "long", path: "M 0 0 L 400 0" }
+    ];
+    const directions = new Map([["short", "forward"], ["long", "forward"]] as const);
+    const markup = buildElectricFlowLayerMarkup(edges, directions);
+    expect(markup).toContain("animation-duration: calc(var(--electric-flow-duration) * 1.0000)");
+    expect(markup).toContain("animation-duration: calc(var(--electric-flow-duration) * 4.0000)");
+  });
+
+  it("等间距：错峰延迟与本边周期同比缩放，箭头不因线路加长而挤在一起", () => {
+    const markup = buildElectricFlowLayerMarkup(
+      [{ edgeId: "e1", path: "M 0 0 L 300 0" }],
+      new Map([["e1", "forward"]])
+    );
+    // 300px 路径：半程错峰 = 周期 × 3 × 0.5 —— 与周期同比例，屏上间距仍是路径长度的一半
+    expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * 3.0000 * -0.5)");
+  });
+
+  it("量不出长度的路径回落共用周期（duration 与 delay 都不带比例）", () => {
+    const markup = buildElectricFlowLayerMarkup(
+      [{ edgeId: "e1", path: "M 5 5" }],
+      new Map([["e1", "forward"]])
+    );
+    expect(markup).toContain("animation-duration: var(--electric-flow-duration)");
+    expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * -0.5)");
   });
 
   it("reverse 用 offset-rotate: auto 180deg 回程；both 两个方向各一个箭头", () => {
@@ -328,6 +361,33 @@ describe("buildElectricFlowLayerMarkup", () => {
     const markup = buildElectricFlowLayerMarkup(many, directions);
     expect(markup.match(new RegExp(`class="${ELECTRIC_FLOW_ARROW_CLASS}`, "g"))?.length).toBe(601);
     expect(markup).not.toContain("-0.5");
+  });
+});
+
+/** 路径长度估量（等流速的输入）。 */
+describe("estimateElectricFlowPathLength", () => {
+  it("L 折线求欧氏段长和", () => {
+    expect(estimateElectricFlowPathLength("M 0 0 L 100 0")).toBe(100);
+    expect(estimateElectricFlowPathLength("M 0 0 L 30 0 L 30 40")).toBe(70);
+    // M 只跳转不贡献长度
+    expect(estimateElectricFlowPathLength("M 0 0 M 10 10 L 110 10")).toBe(100);
+  });
+
+  it("Q 二次贝塞尔用几何近似估长", () => {
+    // 直线型 Q（控制点在弦上）≈ 弦长
+    const straight = estimateElectricFlowPathLength("M 0 0 Q 50 0 100 0") ?? 0;
+    expect(Math.abs(straight - 100)).toBeLessThan(0.001);
+    // 直角拐弯弧（垂直控制点）在 50 与 100 之间（弧长界）
+    const corner = estimateElectricFlowPathLength("M 0 0 Q 0 50 50 50") ?? 0;
+    expect(corner).toBeGreaterThan(50);
+    expect(corner).toBeLessThan(100);
+  });
+
+  it("空串/残缺/零长返回 null", () => {
+    expect(estimateElectricFlowPathLength("")).toBeNull();
+    expect(estimateElectricFlowPathLength("M 5 5")).toBeNull();
+    expect(estimateElectricFlowPathLength("M 0 0 L 0 0")).toBeNull();
+    expect(estimateElectricFlowPathLength("garbage")).toBeNull();
   });
 });
 
