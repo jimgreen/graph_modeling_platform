@@ -7,6 +7,7 @@ import {
   createRoutableLineDeviceFromEndpoints,
   pointsToOrthogonalPath,
   routeRoutableLineDevice,
+  routableLineDeviceCanvasPoints,
   routableLineDeviceEndpointRefForNode,
   routableLineDeviceLocalPoints,
   setRoutableLineDeviceCanvasPoints
@@ -725,5 +726,52 @@ describe("buildSvgDocument 电流流水线开关", () => {
     const off = buildSvgDocument(nodes, edges, fixture);
     expect(off).not.toContain('id="Flow_Layer"');
     expect(off).not.toContain("electric-flow");
+  });
+
+  /** 自适应线路（ac-routable-line）：本体是 2 端子**节点**，箭头必须来自合成虚拟边。 */
+  const flowingModelWithLine = () => {
+    const { nodes, edges } = flowingModel();
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line")!;
+    const source = nodes[0];
+    const load = nodes[2];
+    const line = createRoutableLineDeviceFromEndpoints(
+      template,
+      getTerminalPoint(source, source.terminals[1]?.id ?? source.terminals[0]!.id),
+      getTerminalPoint(load, load.terminals[0]!.id),
+      "layer-default",
+      {
+        source: routableLineDeviceEndpointRefForNode(source, source.terminals[1]?.id ?? source.terminals[0]!.id),
+        target: routableLineDeviceEndpointRefForNode(load, load.terminals[0]!.id)
+      }
+    );
+    return { nodes: [...nodes, line] as any[], edges, line };
+  };
+
+  test("自适应线路本体：Flow_Layer 内出现 data-edge-id=线路节点 id 的箭头组", () => {
+    const { nodes, edges, line } = flowingModelWithLine();
+    const fixture = { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any;
+    const svg = buildSvgDocument(nodes, edges, { ...fixture, electricFlowVisible: true });
+
+    // 线路节点 id 进了箭头层（它不是 edge，没有这条虚拟边通道就永远不会出现），
+    // 且方向类为 forward：电流从电源侧端子流向负荷侧端子。
+    const lineGroup = `<g class="electric-flow-edge electric-flow-flowing electric-flow-layer-forward" data-edge-id="${line.id}">`;
+    expect(svg).toContain(lineGroup);
+
+    // 关闸时一个字节都不多
+    const off = buildSvgDocument(nodes, edges, fixture);
+    expect(off).not.toContain(`data-edge-id="${line.id}"`);
+    expect(off).not.toContain("electric-flow");
+  });
+
+  test("自适应线路箭头 path 与本体渲染同源（pointsToOrthogonalPath(canvasPoints)）", () => {
+    const { nodes, edges, line } = flowingModelWithLine();
+    const fixture = { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any;
+    const svg = buildSvgDocument(nodes, edges, { ...fixture, electricFlowVisible: true });
+
+    const linePathD = pointsToOrthogonalPath(routableLineDeviceCanvasPoints(line));
+    expect(linePathD).not.toBe("");
+    // 箭头 offset-path 内联的就是线路本体的同一条 d（与 DeviceGlyph 渲染同源）
+    const escaped = linePathD.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    expect(svg).toContain(`offset-path: path(&quot;${escaped}&quot;)`);
   });
 });

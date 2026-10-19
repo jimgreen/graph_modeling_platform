@@ -5,7 +5,7 @@ import type { DeviceKind, Edge, ModelNode } from "../model.ts";
 // 先引本模块（它第一个值依赖就是 ../model.ts）再引工厂模块：
 // model-node-ops 与 model.ts 互为循环，单独先加载 model-node-ops 会让
 // model.ts 的 STATIC_LINE_LIKE_KINDS 读到尚未初始化的 INTERACTIVE_STATIC_DRAWING_KINDS。
-import { computeElectricFlowDirections, type ElectricFlowDirection } from "./electric-flow.ts";
+import { computeElectricFlowDirections, type ElectricFlowDirection, type ElectricFlowLinePath } from "./electric-flow.ts";
 import {
   buildElectricFlowLayerMarkup,
   buildElectricFlowStyleMarkup,
@@ -534,5 +534,73 @@ describe("buildElectricFlowStyleMarkup", () => {
     expect(style).toContain(".electric-flow-edge.revert .electric-flow-arrow-reverse {");
     expect(style).toContain("animation-name: electric-flow-run-forward !important");
     expect(style).toContain("offset-rotate: auto !important");
+  });
+});
+
+/** 自适应线路（ac-routable-line 等）本体：合成虚拟边参与 BFS。 */
+describe("computeElectricFlowDirections — 自适应线路虚拟边", () => {
+  const lineNode = node("ac-routable-line");
+  const source = node("ac-source");
+  const load = node("ac-load");
+  // 线路两端设备与线路本体的真实连线（画布上真实存在的 edge）。
+  const toSource = edge(source, lineNode);
+  const toLoad = edge(lineNode, load);
+  // 线路本体合成虚拟边：id = 线路节点 id，两端 = 线路端点 ref 指向的设备。
+  const flowLine: ElectricFlowLinePath = {
+    edgeId: lineNode.id,
+    path: "M 0 0 L 200 0",
+    sourceId: source.id,
+    targetId: load.id
+  };
+
+  it("虚拟边参与 BFS：两端设备方向正确，虚拟条目拿到与流向一致的 forward", () => {
+    const directions = computeElectricFlowDirections([source, lineNode, load], [toSource, toLoad], [flowLine]);
+
+    // map 同时覆盖真实边与虚拟条目
+    expect(directions.size).toBe(3);
+    expect(directions.get(toSource.id)).toBe("forward");
+    expect(directions.get(toLoad.id)).toBe("forward");
+    // 线路本体：电流从电源侧端子流向负荷侧端子 ⇒ forward
+    expect(directions.get(flowLine.edgeId)).toBe("forward");
+  });
+
+  it("线路端点对调（端子顺序相反）后虚拟边变 reverse", () => {
+    const reversed: ElectricFlowLinePath = { ...flowLine, sourceId: load.id, targetId: source.id };
+    const directions = computeElectricFlowDirections([source, lineNode, load], [toSource, toLoad], [reversed]);
+    expect(directions.get(flowLine.edgeId)).toBe("reverse");
+    // 真实边不受虚拟条目影响
+    expect(directions.get(toLoad.id)).toBe("forward");
+  });
+
+  it("中继展开穿越线路：电源 → 线路(虚拟边) → 负荷，虚拟边不需要真实 edge 中转", () => {
+    // 线路两端设备只通过虚拟边相连（真实 edges 里没有直接连线）。
+    const dangling = edge(lineNode, load);
+    const directions = computeElectricFlowDirections([source, lineNode, load], [toSource, dangling], [flowLine]);
+    expect(directions.get(flowLine.edgeId)).toBe("forward");
+  });
+
+  it("虚拟边不创建超能力：线路悬空（端点设备不在 nodes 里）时保持 none", () => {
+    const ghostFlowLine: ElectricFlowLinePath = {
+      edgeId: lineNode.id,
+      path: "M 0 0 L 200 0",
+      sourceId: "ghost-a",
+      targetId: "ghost-b"
+    };
+    const directions = computeElectricFlowDirections([source, lineNode, load], [toSource, toLoad], [ghostFlowLine]);
+    expect(directions.get(flowLine.edgeId)).toBe("none");
+  });
+
+  it("flowLines 缺省 = 旧行为：返回 Map 只覆盖真实 edges", () => {
+    const directions = computeElectricFlowDirections([source, lineNode, load], [toSource, toLoad]);
+    expect(directions.size).toBe(2);
+    expect(directions.has(flowLine.edgeId)).toBe(false);
+  });
+
+  it("虚拟 id 与真实 edge 撞车时真实边胜出（虚拟条目不反向吞掉真实方向）", () => {
+    const clash: ElectricFlowLinePath = { ...flowLine, edgeId: toLoad.id };
+    const directions = computeElectricFlowDirections([source, lineNode, load], [toSource, toLoad], [clash]);
+    // edgesById 先注册真实边；虚拟条目在同 id 上按已存在跳过，保留真实判定。
+    expect(directions.get(toLoad.id)).toBe("forward");
+    expect(directions.size).toBe(2);
   });
 });

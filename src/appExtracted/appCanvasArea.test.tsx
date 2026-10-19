@@ -101,6 +101,8 @@ function baseScope(anchor: { x: number; y: number }, transform: string) {
     isLineSegmentBusNode: () => false,
     isStaticNode: () => false,
     isRoutableLineDeviceKind: () => false,
+    routableLineDeviceEndpointRefs: () => ({}),
+    inferMissingRoutableLineDeviceEndpointRefs: (node: any) => node,
     isStaticButtonEnabledForNode: () => false,
     resolveNodeStateVisual: () => null,
     nodeKindAllowsResizeTransform: () => false,

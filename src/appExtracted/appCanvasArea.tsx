@@ -9,7 +9,7 @@ import type { CSSProperties } from "react";
 import type { ModelNode, Point, RoutedEdge, Terminal } from "../model";
 import type { CanvasLayoutUnit } from "../selectionActions";
 import type { ScaleHandleConfig, SmartAlignmentGuide } from "./appCoreCanvasUtilities";
-import { computeElectricFlowDirections } from "../export/electric-flow";
+import { computeElectricFlowDirections, type ElectricFlowLinePath } from "../export/electric-flow";
 import { buildElectricFlowLayerMarkup, buildElectricFlowStyleMarkup } from "../export/electric-flow-markup";
 
 // 以下形状全部来自 __appScope（Record<string, any>），在此按**实际用到的字段**声明局部别名，
@@ -397,6 +397,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     resolveNodeStateVisual, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint,
     sameOptionalPoint, snapSingleTerminalAnchorToNearestSide, pointsToOrthogonalPath,
     routableLineDeviceCanvasPoints, routableLineDeviceRenderLocalPoints,
+    routableLineDeviceEndpointRefs, inferMissingRoutableLineDeviceEndpointRefs,
     formatSvgNumber, svgImageContentMarkup,
     appendConnectPreviewManualPoint, appendRoutableLinePreviewManualPoint,
     appendStaticDrawingPoint, insertManualBendFromEdgePath, insertManualBendFromPointer,
@@ -517,9 +518,55 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     [electricFlowSettings, electricFlowVisible]
   );
 
+  // 交流线路（自适应）等线路型节点：本体就是一条"线"，也要参与方向判定并挂箭头。
+  // 合成虚拟边（id = 线路节点 id，两端 = 线路端点 ref 指向的设备）参与 BFS；
+  // 箭头 path 用线路本体渲染点（routableLineDeviceCanvasPoints）保证与本体逐字节同源。
+  // 过渡态抑制判据对齐上面 renderViewportRoutedEdges 的过滤与下方节点渲染循环：
+  //   整节点隐藏（组变换预览）或线路本体隐藏（拖拽/端点拖拽/改线预览接管）时不出箭头，
+  //   保证「有箭头必有可见线路本体」。
+  const electricFlowLineEntries = useMemo(() => {
+    const empty: ElectricFlowLinePath[] = [];
+    if (!electricFlowVisible) {
+      return empty;
+    }
+    for (const node of nodes ?? []) {
+      if (!isRoutableLineDeviceKind(node.kind)) {
+        continue;
+      }
+      if (
+        groupTransformPreviewNodeIdSet.has(node.id) ||
+        dragGhostRoutableLineNodeIdSet.has(node.id) ||
+        groupTransformPreviewRoutableLineNodeIdSet.has(node.id) ||
+        routableLineEndpointDrag?.nodeId === node.id
+      ) {
+        continue;
+      }
+      const refs = routableLineDeviceEndpointRefs(inferMissingRoutableLineDeviceEndpointRefs(node, nodes ?? []));
+      if (!refs.source?.nodeId || !refs.target?.nodeId || refs.source.nodeId === refs.target.nodeId) {
+        continue;
+      }
+      const path = pointsToOrthogonalPath(routableLineDeviceCanvasPoints(node));
+      if (!path) {
+        continue;
+      }
+      empty.push({
+        edgeId: node.id,
+        path,
+        sourceId: refs.source.nodeId,
+        targetId: refs.target.nodeId,
+        sourceTerminalId: refs.source.terminalId,
+        targetTerminalId: refs.target.terminalId
+      });
+    }
+    return empty;
+  }, [
+    dragGhostRoutableLineNodeIdSet, electricFlowVisible, groupTransformPreviewNodeIdSet,
+    groupTransformPreviewRoutableLineNodeIdSet, nodes, routableLineEndpointDrag?.nodeId
+  ]);
+
   const electricFlowDirections = useMemo(
-    () => (electricFlowVisible ? computeElectricFlowDirections(nodes ?? [], edges ?? []) : new Map()),
-    [electricFlowVisible, nodes, edges]
+    () => (electricFlowVisible ? computeElectricFlowDirections(nodes ?? [], edges ?? [], electricFlowLineEntries) : new Map()),
+    [edges, electricFlowLineEntries, electricFlowVisible, nodes]
   );
 
   // 过渡态抑制：拖拽 / 改线 / 组变换期间，底层连线被隐藏、由别处的预览线接管
@@ -541,11 +588,18 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     multiNodeDragging, renderViewportRoutedEdges, rewiring?.edgeId, terminalPressPreviewEdgeIdSet
   ]);
 
+  const electricFlowLayerInput = useMemo(
+    () => (electricFlowLineEntries.length
+      ? [...electricFlowRoutedEdges, ...electricFlowLineEntries]
+      : electricFlowRoutedEdges),
+    [electricFlowLineEntries, electricFlowRoutedEdges]
+  );
+
   const electricFlowLayerMarkup = useMemo(
     () => (electricFlowVisible
-      ? buildElectricFlowLayerMarkup(electricFlowRoutedEdges, electricFlowDirections, electricFlowSettings)
+      ? buildElectricFlowLayerMarkup(electricFlowLayerInput, electricFlowDirections, electricFlowSettings)
       : ""),
-    [electricFlowDirections, electricFlowSettings, electricFlowVisible, electricFlowRoutedEdges]
+    [electricFlowDirections, electricFlowSettings, electricFlowVisible, electricFlowLayerInput]
   );
 
   return (

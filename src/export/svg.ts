@@ -39,6 +39,7 @@ import {
   voltageLevelColor
 } from "../model.ts";
 import type { ElectricFlowSettings } from "../model.ts";
+import type { ElectricFlowLinePath } from "./electric-flow.ts";
 import {
   boundaryBusInternalConnectorSegment,
   boundaryBusInternalConnectorStrokeWidth,
@@ -51,6 +52,10 @@ import {
   rebuildContainerExemptConnectionRoutes,
   rebuildContainerExemptRoutableLineDeviceRoutes,
   routeEdgesForSavedPathRendering,
+  inferMissingRoutableLineDeviceEndpointRefs,
+  pointsToOrthogonalPath,
+  routableLineDeviceCanvasPoints,
+  routableLineDeviceEndpointRefs,
   terminalRenderLocalPoint,
   terminalStubSegment,
   terminalStubStrokeWidth
@@ -1171,14 +1176,44 @@ ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
     .filter(([layerKey]) => !containerLayerKeys.has(layerKey))
     .map(exportDeviceLayerGroup)
     .join("\n");
+  // 自适应线路（ac-routable-line 等）：本体是 2 端子**节点**而不是 edge，方向判定与箭头层
+  // 原本只吃 edges ⇒ 本体永远没箭头。这里把每条线路合成一条虚拟边（id = 线路节点 id，
+  // 两端 = 线路端点 ref 指向的设备）喂给 BFS，并把线路本体 path（与 DeviceGlyph 渲染同源：
+  // pointsToOrthogonalPath(routableLineDeviceCanvasPoints(node))，局部点经 rotate(0) scale(1)
+  // 变换等价于全局点）拼进箭头层输入。端点 ref 缺失时按线路首末点 + referenceNodes 推断
+  // （inferMissingRoutableLineDeviceEndpointRefs，返回新 node，不改原对象）。
+  const electricFlowLineEntries: ElectricFlowLinePath[] = [];
+  if (canvasSize.electricFlowVisible === true) {
+    for (const lineNode of exportNodes) {
+      if (!isRoutableLineDeviceKind(lineNode.kind)) {
+        continue;
+      }
+      const refs = routableLineDeviceEndpointRefs(inferMissingRoutableLineDeviceEndpointRefs(lineNode, exportNodes));
+      if (!refs.source?.nodeId || !refs.target?.nodeId || refs.source.nodeId === refs.target.nodeId) {
+        continue;
+      }
+      const path = pointsToOrthogonalPath(routableLineDeviceCanvasPoints(lineNode));
+      if (!path) {
+        continue;
+      }
+      electricFlowLineEntries.push({
+        edgeId: lineNode.id,
+        path,
+        sourceId: refs.source.nodeId,
+        targetId: refs.target.nodeId,
+        sourceTerminalId: refs.source.terminalId,
+        targetTerminalId: refs.target.terminalId
+      });
+    }
+  }
   // 电流流水线（开关关闭 / 无可渲染内容时为 ""，插值处不产生任何多余字节）
   const electricFlowLayer = canvasSize.electricFlowVisible === true
     ? buildElectricFlowLayerMarkup(
-        routedEdges,
+        electricFlowLineEntries.length ? [...routedEdges, ...electricFlowLineEntries] : routedEdges,
         // 节点取 exportNodes：它是上方路由实际吃进去的那一份，方向判定与线路位置同源。
         // calculateElectricalTopology 的结果只用于取端子号，**不回写**（回写会把拓扑推导的
         // 派生字段渗进导出模型，污染既有输出），此处也不使用。
-        computeElectricFlowDirections(exportNodes, edges),
+        computeElectricFlowDirections(exportNodes, edges, electricFlowLineEntries),
         // 箭头形状/大小/密度与样式四项同源：都来自存档设置（缺省回落内置默认）。
         canvasSize.electricFlowSettings,
         // 语义 id：外部联动脚本按 Flow_Layer 定位流水线层、按边 g 的 data-edge-id
