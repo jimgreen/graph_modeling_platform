@@ -3,12 +3,14 @@
  *
  * 通过自定义比较器，在 tab 切换时跳过画布 SVG 协调。
  */
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import type React from "react";
 import type { CSSProperties } from "react";
 import type { ModelNode, Point, RoutedEdge, Terminal } from "../model";
 import type { CanvasLayoutUnit } from "../selectionActions";
 import type { ScaleHandleConfig, SmartAlignmentGuide } from "./appCoreCanvasUtilities";
+import { computeElectricFlowDirections } from "../export/electric-flow";
+import { buildElectricFlowLayerMarkup, buildElectricFlowStyleMarkup } from "../export/electric-flow-markup";
 
 // 以下形状全部来自 __appScope（Record<string, any>），在此按**实际用到的字段**声明局部别名，
 // 免得把每个回调都标成 any。字段集与生产端一致，改动生产端形状时这里会立刻报错。
@@ -17,6 +19,9 @@ type RoutableLineEndpointHandle = { node: ModelNode; endpoint: "source" | "targe
 type ScaleHandleForNode = ScaleHandleConfig & { node: ModelNode };
 type EdgePreviewRoute = { edgeId: string; path: string; color?: string };
 type MinimapRoute = { edgeId: string; points: Point[] };
+
+/** 流水线关闭时 `filter` 结果的稳定单例：让那一步 useMemo 在关闭态下真正不再产出新数组。 */
+const EMPTY_ROUTED_EDGES: RoutedEdge[] = [];
 import { CanvasRulers } from "./appCanvasRulers";
 import { SelectionActionCluster } from "./appTopbar";
 
@@ -235,7 +240,9 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
     'marquee', 'connectPreviewDom', 'routableLinePreview', 'resizeSizeHint',
     'draggingDelta', 'smartAlignmentGuides', 'connectSource', 'libraryPlacement',
     'canvasBackgroundColor', 'canvasBackgroundImageUrl', 'canvasBackgroundImageFit', 'backgroundPageRender',
-    'colorDisplayMode', 'colorPalette', 'deviceLabelsVisible', 'deviceMeasurementsVisible'
+    'colorDisplayMode', 'colorPalette', 'deviceLabelsVisible', 'deviceMeasurementsVisible',
+    // 电流流水线：开关不进这组键就会停在旧值 —— 顶栏切了开关画布不重渲染
+    'electricFlowVisible'
   ];
 
   for (const key of dataKeys) {
@@ -421,6 +428,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     activeSelectedEdgeSet,
     activeDropHintPoint, activeDropHintStyle,
     lodCanvasNodeChunks, lodCanvasRouteChunks, lodSelectedNodeMarkup,
+    // 电流流水线：开关 + 整图模型（方向判定要跑在**全图**上，见 electricFlowLayerMarkup 的注释）
+    electricFlowVisible, nodes, edges,
     minimapVisible, minimapNodes, minimapRoutes,
     minimapContentWidth, minimapContentHeight,
     minimapOffsetX, minimapOffsetY, minimapScale,
@@ -485,6 +494,58 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     !terminalPressPreviewEdgeIdSet.has(selectedEdge.id) &&
     rewiring?.edgeId !== selectedEdge.id
   );
+
+  // ==========================================================================
+  // 电流流水线（方向箭头层）
+  // ==========================================================================
+  //
+  // 三个 useMemo 分开挂，各自只盯自己那几项输入：
+  //   ① styleMarkup  —— 只依赖开关。动画关键帧串每帧重建没意义，且重建会让
+  //      <style> 节点被重新 innerHTML 一次，浏览器要重解析一遍 CSS。
+  //   ② directions   —— 依赖 [nodes, edges]。方向判定是**全图 BFS**：只看视口内的
+  //      节点会让跨屏链路的中继段判不出方向（上游不在视口 ⇒ 整条支路落到 none）。
+  //      所以这里必须喂整图模型，视口裁剪留给第三步。
+  //   ③ layerMarkup  —— 依赖 [开关, directions, 视口路由边]。视口筛选只在这里做。
+  //
+  // 开关关闭时三步全部短路成空串：不跑 BFS、不拼标记、不建 <g>，
+  // 画布输出与开关这个功能上线前逐字节一致。
+
+  const electricFlowStyleMarkup = useMemo(
+    () => (electricFlowVisible ? buildElectricFlowStyleMarkup() : ""),
+    [electricFlowVisible]
+  );
+
+  const electricFlowDirections = useMemo(
+    () => (electricFlowVisible ? computeElectricFlowDirections(nodes ?? [], edges ?? []) : new Map()),
+    [electricFlowVisible, nodes, edges]
+  );
+
+  // 过渡态抑制：拖拽 / 改线 / 组变换期间，底层连线被隐藏、由别处的预览线接管
+  // （见下面 renderViewportRoutedEdges.map 里的同一组判据）。此时路由还是改线**之前**
+  // 的那份，箭头会脱离可见连线悬在半空。判据逐条对齐那条 map，保证「有箭头必有连线」。
+  const electricFlowRoutedEdges = useMemo(() => {
+    if (!electricFlowVisible) {
+      return EMPTY_ROUTED_EDGES;
+    }
+    return renderViewportRoutedEdges.filter((route: RoutedEdge) =>
+      !dragGhostEdgeIdSet.has(route.edgeId) &&
+      !(multiNodeDragging && dragOverlayEdgeIdSet.has(route.edgeId)) &&
+      !groupTransformPreviewEdgeIdSet.has(route.edgeId) &&
+      !terminalPressPreviewEdgeIdSet.has(route.edgeId) &&
+      rewiring?.edgeId !== route.edgeId
+    );
+  }, [
+    dragGhostEdgeIdSet, dragOverlayEdgeIdSet, electricFlowVisible, groupTransformPreviewEdgeIdSet,
+    multiNodeDragging, renderViewportRoutedEdges, rewiring?.edgeId, terminalPressPreviewEdgeIdSet
+  ]);
+
+  const electricFlowLayerMarkup = useMemo(
+    () => (electricFlowVisible
+      ? buildElectricFlowLayerMarkup(electricFlowRoutedEdges, electricFlowDirections)
+      : ""),
+    [electricFlowDirections, electricFlowVisible, electricFlowRoutedEdges]
+  );
+
   return (
     <>
         <section className="canvas-frame" ref={canvasFrameRef} tabIndex={-1} onPointerEnter={focusCanvasKeyboardShortcutHost} onPointerMove={focusCanvasKeyboardShortcutHost} style={{
@@ -795,6 +856,11 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         }
         setContextMenu({ x: event.clientX, y: event.clientY, target: "blank", canvasPoint: pointer });
     }}>
+            {/* 流水线动画样式：与导出 SVG 共用 buildElectricFlowStyleMarkup 的同一份串。
+                SVG <style> 是文档级作用域，放在根 <svg> 里一次即可（后续开关只改这一次注入）。
+                串里的 <![CDATA[ ]]> 在**行内 SVG**（HTML 文档里的 foreign content）里由
+                解析器的 CDATA 分支消费，内容原样成为文本节点 —— 与 XML 解析路径等价。 */}
+            {electricFlowStyleMarkup && (<SvgMarkupChunk className="electric-flow-style" markup={electricFlowStyleMarkup}/>)}
             <defs>
               <pattern id="small-grid" width="5" height="5" patternUnits="userSpaceOnUse">
                 <path d="M 5 0 L 0 0 0 5" fill="none" stroke="#e2e8f0" strokeWidth="0.45"/>
@@ -953,6 +1019,22 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                 }}/>)}
                 </g>);
     })}
+            {/* 电流流水线层。
+                —— 插入点为什么在这里（层级顺序）
+                画布是纯 SVG，靠**文档顺序**决定压盖关系，没有 z-index 可用。上/下三块是：
+                  上游  lod-route-layer（LOD 精简连线）→ 本段 renderViewportRoutedEdges.map（详细连线）
+                  本层  electric-flow-layer
+                  下游  lod-node-layer → detailedViewportNodes.map（设备图元 + 文字标识）
+                ① 必须在**两条连线分支之后**：LOD 开启时详细连线整段 return null（见上面 map 里的
+                   `useSimplifiedCanvasRoutes && !selected`），此时画布上的连线来自更早的
+                   lod-route-layer。插在它前面，箭头会被连线盖住；插在它与详细连线之间，
+                   LOD 分支又会丢层。放在详细连线之后，两种分支都在它上游 —— 不会丢、也不会重复
+                   （两个分支互斥：LOD 分支明确 return null 掉详细连线）。
+                ② 必须在**节点之前**：箭头要贴着连线走，压在设备图元上会糊住设备符号；
+                   文字标识（Text_Layer 语义）最靠后，本层又在其下方，双重保险。
+                ③ 组选框/变换手柄在本层之上 —— 它们是交互覆盖物，理应盖住一切。
+                开关关闭时本段输出 null，DOM 与开关上线前完全一致。 */}
+            {electricFlowLayerMarkup && (<SvgMarkupChunk className="electric-flow-layer-host" markup={electricFlowLayerMarkup}/>)}
             {visibleSelectedGroupLayoutUnits.map((unit: CanvasLayoutUnit) => {
         const transforming = groupTransformPreviewGroupId === unit.id;
         const focused = selectedTransformGroupUnit?.id === unit.id;

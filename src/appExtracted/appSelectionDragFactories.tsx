@@ -195,7 +195,7 @@ export function createRouteForCurrentEdgeSave(__appScope: Record<string, any>) {
 
 export function createCurrentProject(__appScope: Record<string, any>) {
   return (): ProjectFile => {
-  const { activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, backgroundProjectRecord, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageFit, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edgeWithCurrentRouteGeometryForSave, edges, groups, layers, lockProjectEdgeTerminals, nodes, normalizeModelGroups, normalizeProjectLayers, normalizeProjectMeasurements, powerBaseValue, powerUnit, projectMeasurements, projectName, projectIdx, voltageUnit, substation, feeder, modelType, subcontrolarea, taiqu } = __appScope;
+  const { activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, backgroundProjectRecord, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageFit, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edgeWithCurrentRouteGeometryForSave, edges, electricFlowVisible, groups, layers, lockProjectEdgeTerminals, nodes, normalizeModelGroups, normalizeProjectLayers, normalizeProjectMeasurements, powerBaseValue, powerUnit, projectMeasurements, projectName, projectIdx, voltageUnit, substation, feeder, modelType, subcontrolarea, taiqu } = __appScope;
     // 背景页引用键取模型全局 idx：SavedProjectRecord 顶层无 idx，模型自身落盘才有（同 nextGlobalProjectIndex 口径）
     const backgroundProjectIdx = Number(backgroundProjectRecord?.project?.idx);
     const projectEdges = edges.map(edgeWithCurrentRouteGeometryForSave);
@@ -215,6 +215,10 @@ export function createCurrentProject(__appScope: Record<string, any>) {
       backgroundProjectId,
       ...(backgroundProjectIdx > 0 ? { backgroundProjectIdx } : {}),
       backgroundLayerIds,
+      // 电流流水线开关落盘：服务端导出链（svgExport.mjs 等）只读存档，不看前端内存态，
+      // 不带这个字段的话「导出 SVG 文件」永远看不到用户自己打开的流水线。
+      // 显式 `!!` 是为了不把 undefined 写进 JSON —— 缺字段的旧存档读回来走 `?? false`。
+      electricFlowVisible: !!electricFlowVisible,
       powerUnit,
       voltageUnit,
       currentUnit,

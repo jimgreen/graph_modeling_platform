@@ -147,7 +147,10 @@ export async function renderSavedModelSvg({ parts, name, colorMode = "energy", p
       // 同一份 id→dataURL 映射两用：imageAssets 供 assetId 解析（节点/状态图元），imageExportPathById 供 href 替换。
       // 只读被引用的图片，不整库内联；代价是响应体随图片体积膨胀。
       imageExportPathById,
-      imageAssets: imageExportPathById
+      imageAssets: imageExportPathById,
+      // 电流流水线开关随模型走：后端导出与前端「导出 SVG」按钮共用同一个 buildSvgDocument，
+      // 不透传就会出现「前端开着、后端导出没有」的两套产物。缺省 false（渲染器自身默认）。
+      electricFlowVisible: project.electricFlowVisible
     }
   );
   return { svg };

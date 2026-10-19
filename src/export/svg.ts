@@ -90,6 +90,10 @@ import {
 import { DeviceGlyph, usesTransformerTerminalSlotPaint } from "../DeviceGlyph.ts";
 import { deviceStateVisualToken, resolveStateVisualImageHref } from "../staticRenderUtils.ts";
 import { resolveStaticButtonTargetLayers } from "./static-button-targets.ts";
+// 电流流水线：方向判定与标记渲染都是纯字符串模块，与画布（React）共用同一份实现，
+// 导出 SVG 才能带上和界面一致的那层流动箭头。两个模块都不得引入 .tsx / DOM 依赖。
+import { computeElectricFlowDirections } from "./electric-flow.ts";
+import { buildElectricFlowLayerMarkup, buildElectricFlowStyleMarkup } from "./electric-flow-markup.ts";
 
 // DEFAULT_CANVAS_* 原唯一定义在 appCoreCanvasUtilities.tsx（.tsx），此处本地定义同值常量
 // （与 CanvasRenderOptions 同为 .tsx 唯一定义的本地化处理）。改值必须同时改两处：
@@ -135,6 +139,12 @@ export type CanvasRenderOptions = CanvasBounds & {
   activeLayerId?: string;
   measurements?: ProjectMeasurementConfig;
   measurementConfig?: PlatformMeasurementConfig;
+  /**
+   * 电流流水线图层开关。**默认 false**：缺省必须与本选项引入前的输出逐字节一致
+   * （既有 golden 基线与前端「导出 SVG」按钮都不传该字段，改默认值会炸基线）。
+   * 关闭时既不跑方向判定（BFS 有成本）也不输出 `<style>` 与图层，一个字节都不多给。
+   */
+  electricFlowVisible?: boolean;
 };
 
 // readImageAssets 惰性注入：appCoreCanvasUtilities.tsx 是 .tsx，顶层 import 会把 React 拖进 Node 闭包。
@@ -458,11 +468,27 @@ ${scopedBackgroundSvg}
   const otherLayerId = exportSvgUniqueId(exportSvgLayerId("Other", "Other"), usedSvgIds, "Other_Layer");
   const exportNodeType = (node: ModelNode) => inferESection(node.kind, node.params) || node.kind || "Other";
   const exportNodeLayerKey = (node: ModelNode) => isStaticNode(node) ? "Other" : exportNodeType(node);
+  // 语义层 id 是导入契约的一部分(svgModelImport.platformSvg 只认这几个 id):
+  // 既不可重命名,也不可退化成 `Other_Layer_2` 这种带序号的副本。
+  // 设备层按层键派生的自然名撞上语义层时(静态图元层键恒为 "Other" → Other_Layer),
+  // 让设备层退让到 <层键>_Device_Layer,语义层保持唯一。
+  const semanticLayerIds = new Set([
+    backgroundLayerId,
+    segmentLayerId,
+    textLayerId,
+    measurementLayerId,
+    otherLayerId
+  ]);
   const nodeTypeLayerIds = new Map<string, string>();
   for (const node of exportNodes) {
     const layerKey = exportNodeLayerKey(node);
     if (!nodeTypeLayerIds.has(layerKey)) {
-      nodeTypeLayerIds.set(layerKey, exportSvgUniqueId(exportSvgLayerId(layerKey, "Device"), usedSvgIds, "Device_Layer"));
+      const baseLayerId = exportSvgLayerId(layerKey, "Device");
+      nodeTypeLayerIds.set(layerKey, exportSvgUniqueId(
+        semanticLayerIds.has(baseLayerId) ? `${exportSvgSafeId(layerKey, "Device")}_Device_Layer` : baseLayerId,
+        usedSvgIds,
+        "Device_Layer"
+      ));
     }
   }
   // 容器沉底:容器节点层在 segment(线路)层之前输出,与画布同口径(acContainer.containerFirstComparator)。
@@ -776,12 +802,15 @@ ${rules.join("\n")}
     return `<line class="export-boundary-bus-internal-connector${voltageLineClass ? ` ${voltageLineClass}` : ""}"${edgeAttributes} x1="${formatSvgNumber(segment.from.x)}" y1="${formatSvgNumber(segment.from.y)}" x2="${formatSvgNumber(segment.to.x)}" y2="${formatSvgNumber(segment.to.y)}"${suppressStroke ? "" : ` stroke="${escapeXml(stroke)}"`} stroke-width="${formatSvgNumber(boundaryBusInternalConnectorStrokeWidth(node, segment))}" stroke-linecap="round"${dashAttribute}/>`;
   };
   // 容器豁免存量回填:端点连容器内设备的连线按豁免口径重算后回放(容器是避让障碍物;服务容器内设备的线路豁免)
-  const edgeMarkup = routeEdgesForSavedPathRendering(
+  // 路由结果留在变量里:电流流水线的箭头要沿**同一条**已算好的 path 走,再跑一遍路由不仅
+  // 浪费(大模型上很贵),还可能因避让抖动而与线路像素错位。
+  const routedEdges = routeEdgesForSavedPathRendering(
     exportNodes,
     rebuildContainerExemptConnectionRoutes(exportNodes, edges, canvasSize),
     canvasSize,
     { refreshCrossingArcs: true }
-  )
+  );
+  const edgeMarkup = routedEdges
     .map((route, index) => {
       const edge = edgeById.get(route.edgeId);
       const stroke = edge ? getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) : "#334155";
@@ -1135,6 +1164,21 @@ ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
     .filter(([layerKey]) => !containerLayerKeys.has(layerKey))
     .map(exportDeviceLayerGroup)
     .join("\n");
+  // 电流流水线（开关关闭 / 无可渲染内容时为 ""，插值处不产生任何多余字节）
+  const electricFlowLayer = canvasSize.electricFlowVisible === true
+    ? buildElectricFlowLayerMarkup(
+        routedEdges,
+        // 节点取 exportNodes：它是上方路由实际吃进去的那一份，方向判定与线路位置同源。
+        // calculateElectricalTopology 的结果只用于取端子号，**不回写**（回写会把拓扑推导的
+        // 派生字段渗进导出模型，污染既有输出），此处也不使用。
+        computeElectricFlowDirections(exportNodes, edges)
+      )
+    : "";
+  // 样式串只在真有图层时才输出：单独一段 <style> 而没有箭头是无意义的体积，
+  // 也会让「开关打开但模型无电源」的空模型导出多出一段死代码。
+  // 两块都自带尾随换行，插值处便能在关闭时与旧输出逐字节相同。
+  const electricFlowStyleBlock = electricFlowLayer ? `${buildElectricFlowStyleMarkup()}\n` : "";
+  const electricFlowLayerBlock = electricFlowLayer ? `${electricFlowLayer}\n` : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${canvasWidth},${canvasHeight}" active-layer-id="${escapeXml(activeExportLayerId)}">
 <defs id="${escapeXml(defsId)}">
 ${voltageColorStyleMarkup}
@@ -1147,14 +1191,14 @@ ${exportLayerDefinitionsMarkup}
 <g class="export-associated-device-definitions" style="display:none">
 ${associatedDeviceMetadataMarkup}
 </g>
-<g id="${escapeXml(backgroundLayerId)}">
+${electricFlowStyleBlock}<g id="${escapeXml(backgroundLayerId)}">
 ${backgroundMarkup}
 ${backgroundPageMarkup}
 </g>
 ${containerLayerMarkup}<g id="${escapeXml(segmentLayerId)}">
 ${edgeMarkup}
 </g>
-${deviceLayerMarkup}
+${electricFlowLayerBlock}${deviceLayerMarkup}
 <g id="${escapeXml(textLayerId)}">
 ${textLayerMarkup.join("\n")}
 </g>

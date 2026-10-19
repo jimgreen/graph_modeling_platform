@@ -94,6 +94,18 @@ describe("src/export/svg", () => {
     expect(otherAt).toBeGreaterThan(segmentAt);
   });
 
+  test("Other 语义层唯一：静态图元层不挤占 Other_Layer_2", () => {
+    const staticRect: ModelNode = { ...createDefaultNode("static-image", { x: 120, y: 90 }), id: "st1" };
+    const svg = buildSvgDocument([staticRect] as any, [], { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any);
+
+    // 语义 Other_Layer 是导入契约的一部分,只允许出现一次,且不得退化成带序号副本
+    expect(svg).toContain('<g id="Other_Layer">');
+    expect(svg.match(/<g id="Other_Layer[^"]*"/g)).toEqual(['<g id="Other_Layer"']);
+    expect(svg).not.toContain("Other_Layer_2");
+    // 静态图元照旧落在自己的设备层里(device-type="Other"),只是不再与语义层抢名
+    expect(svg).toMatch(/<g id="Other_Device_Layer" device-type="Other">\s*<g /);
+  });
+
   test("导出时按容器豁免口径回填设备型线路的存量路径", () => {
     const inner = createDefaultNode("ac-switch", { x: 300, y: 200 });
     const outer = createDefaultNode("ac-load", { x: 950, y: 200 });
@@ -583,5 +595,100 @@ describe("buildSvgDeviceConnectorMarkup：terminalRef 收到的端子 id 形态"
     expect(seen).toEqual([""]);
     expect(seen).not.toContain("undefined");
     expect(markup).toContain('stroke="var(--t7)"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 电流流水线图层：开关状态 → 导出产物
+// 口径：箭头图层插在 Segment_Layer（线路）之后、设备层之前 —— 压在连线上方、被设备符号盖住。
+// ---------------------------------------------------------------------------
+
+describe("buildSvgDocument 电流流水线开关", () => {
+  /** 电源 → 母线 → 负荷：有电源可达，判定结果非 none，图层必有内容。 */
+  const flowingModel = () => {
+    const source = { ...createDefaultNode("ac-source", { x: 120, y: 120 }), id: "src1", layerId: "layer-default" };
+    const bus = { ...createDefaultNode("ac-bus", { x: 320, y: 120 }), id: "bus9", layerId: "layer-default" };
+    const load = { ...createDefaultNode("ac-load", { x: 560, y: 120 }), id: "load9", layerId: "layer-default" };
+    const edges = [
+      { id: "ef1", sourceId: source.id, sourceTerminalId: source.terminals[0]?.id, targetId: bus.id, targetTerminalId: bus.terminals[0]?.id },
+      { id: "ef2", sourceId: bus.id, sourceTerminalId: bus.terminals[0]?.id, targetId: load.id, targetTerminalId: load.terminals[0]?.id }
+    ];
+    return { nodes: [source, bus, load] as any[], edges: edges as any[] };
+  };
+  /** 无电源：两只负荷互连，BFS 无起点 → 全 none → 图层空串。 */
+  const sourceLessModel = () => {
+    const loadA = { ...createDefaultNode("ac-load", { x: 200, y: 200 }), id: "la1", layerId: "layer-default" };
+    const loadB = { ...createDefaultNode("ac-load", { x: 460, y: 200 }), id: "lb1", layerId: "layer-default" };
+    const edges = [{ id: "eo1", sourceId: loadA.id, sourceTerminalId: loadA.terminals[0]?.id, targetId: loadB.id, targetTerminalId: loadB.terminals[0]?.id }];
+    return { nodes: [loadA, loadB] as any[], edges: edges as any[] };
+  };
+
+  test("开关关闭：与不传该选项逐字节相同（基线 fixture 逐字对比）", () => {
+    const withoutOption = buildSvgDocument(SVG_BASELINE_NODES as any, SVG_BASELINE_EDGES as any, {
+      ...SVG_BASELINE_FIXTURE,
+      imageAssets: {}
+    } as any);
+    const explicitlyOff = buildSvgDocument(SVG_BASELINE_NODES as any, SVG_BASELINE_EDGES as any, {
+      ...SVG_BASELINE_FIXTURE,
+      imageAssets: {},
+      electricFlowVisible: false
+    } as any);
+    expect(explicitlyOff).toBe(withoutOption);
+    expect(explicitlyOff).not.toContain("electric-flow");
+  });
+
+  test("开关开启且电源可达：输出流水线图层与样式，且插在线路层之后、设备层之前", () => {
+    const { nodes, edges } = flowingModel();
+    const fixture = { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any;
+    const svg = buildSvgDocument(nodes, edges, { ...fixture, electricFlowVisible: true });
+    const off = buildSvgDocument(nodes, edges, fixture);
+
+    // 图层与样式都在（样式块含 CDATA 与 keyframes，是动画可见的前提）
+    expect(svg).toContain('<g class="electric-flow-layer"');
+    expect(svg).toContain("electric-flow-run-forward");
+    expect(svg).toContain("electric-flow-arrow");
+    expect(off).not.toContain("electric-flow");
+
+    // 位置：Segment_Layer < 流水线图层 < 设备层（箭头盖在线路上、又被设备符号盖住）
+    const segmentAt = svg.indexOf('<g id="Segment_Layer"');
+    const flowAt = svg.indexOf('<g class="electric-flow-layer"');
+    const deviceAt = svg.indexOf('device-type="');
+    expect(segmentAt).toBeGreaterThan(-1);
+    expect(flowAt).toBeGreaterThan(segmentAt);
+    expect(deviceAt).toBeGreaterThan(flowAt);
+
+    // 既有语义层结构与相对顺序不动
+    expect(svg).toContain('<g id="Other_Layer">');
+    expect(svg.match(/<g id="Other_Layer[^"]*"/g)).toEqual(['<g id="Other_Layer"']);
+    expect(svg.indexOf('<g id="Other_Layer">')).toBeGreaterThan(flowAt);
+    expect(svg.indexOf('<g id="Text_Layer">')).toBeGreaterThan(segmentAt);
+  });
+
+  test("箭头沿已算好的线路路径走（与线路 path 同源，不重跑路由）", () => {
+    const { nodes, edges } = flowingModel();
+    const fixture = { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any;
+    const svg = buildSvgDocument(nodes, edges, { ...fixture, electricFlowVisible: true });
+    // offset-path 里内联的就是 Segment_Layer 中那条 <path d="..."> 的 d。
+    // \s 锚定不可省：`source-dev-id="..."` 里也藏着 `d="`，不加会抓到设备 id 而不是路径。
+    const edgePathD = Array.from(svg.matchAll(/<path id="edge-\d+"[^>]*?\sd="([^"]+)"/g)).map((m) => m[1]);
+    expect(edgePathD.length).toBeGreaterThan(0);
+    for (const d of edgePathD) {
+      const escaped = d.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      expect(svg).toContain(`offset-path: path(&quot;${escaped}&quot;)`);
+    }
+  });
+
+  test("无电源的孤立支路：开关开启也不产生流水线图层（无内容时返回空串，一个字节都不多）", () => {
+    const { nodes, edges } = sourceLessModel();
+    const fixture = { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any;
+    const on = buildSvgDocument(nodes, edges, { ...fixture, electricFlowVisible: true });
+    const off = buildSvgDocument(nodes, edges, fixture);
+    expect(on).toBe(off);
+    expect(on).not.toContain("electric-flow");
+  });
+
+  test("空模型开开关也不多输出（与缺省逐字相同）", () => {
+    expect(buildSvgDocument([], [], { ...SVG_BASELINE_FIXTURE, imageAssets: {}, electricFlowVisible: true } as any))
+      .toBe(buildSvgDocument([], [], { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any));
   });
 });
