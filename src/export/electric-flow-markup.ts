@@ -137,6 +137,18 @@ export function buildElectricFlowStyleMarkup(settings?: ElectricFlowSettings | n
   paint-order: stroke;
   pointer-events: none;
 }
+/* 流向反转钩子：外部联动脚本给某条边的 <g> 加 revert 类即可整组反向 —— 前向箭头换
+   反向关键帧并把朝向调转 180°，反向箭头对调回前向；both 边两箭头互换后仍是双向。
+   两条规则必须带 !important：箭头的 animation-name / offset-rotate 写在 style 内联
+   属性上，普通选择器特异性压不过内联声明。 */
+.${ELECTRIC_FLOW_EDGE_CLASS}.revert .${ELECTRIC_FLOW_ARROW_CLASS}-forward {
+  animation-name: electric-flow-run-reverse !important;
+  offset-rotate: auto 180deg !important;
+}
+.${ELECTRIC_FLOW_EDGE_CLASS}.revert .${ELECTRIC_FLOW_ARROW_CLASS}-reverse {
+  animation-name: electric-flow-run-forward !important;
+  offset-rotate: auto !important;
+}
 @keyframes electric-flow-run-forward {
   from { offset-distance: 0%; }
   to { offset-distance: 100%; }
@@ -251,6 +263,8 @@ function arrowStyleAttribute(spec: ArrowSpec, pathD: string): string {
  *
  * - 只处理 `forward` / `reverse` / `both`；`none` 与「无方向的边」直接跳过。
  * - 无可渲染内容时返回空串 `""`（调用方不必特判 `null`）。
+ * - **可选语义 id**：`layerId` 传入时写在最外层 `<g>` 上（导出侧的 `Flow_Layer`）；
+ *   不传则不输出 id —— 画布调用保持逐字节稳定。
  * - **密度（按线路长度）**：每边箭头数 = round(路径实长 / arrowSpacing)，
  *   相位均匀铺满一个周期 —— 相邻箭头屏上间距 ≈ arrowSpacing（SVG px）且与边长无关；
  *   `routedEdges.length > 600` 时降级为每边 1 个（大量 motion path 同时动画是实打实的掉帧来源）。
@@ -263,7 +277,8 @@ function arrowStyleAttribute(spec: ArrowSpec, pathD: string): string {
 export function buildElectricFlowLayerMarkup(
   routedEdges: { edgeId: string; path: string }[],
   directions: Map<string, ElectricFlowDirection>,
-  settings?: ElectricFlowSettings | null
+  settings?: ElectricFlowSettings | null,
+  layerId?: string
 ): string {
   const s = normalizeElectricFlowSettings(settings);
   const arrowPathD = electricFlowArrowPathD(s);
@@ -298,5 +313,8 @@ export function buildElectricFlowLayerMarkup(
   }
 
   if (chunks.length === 0) return "";
-  return `<g class="${ELECTRIC_FLOW_LAYER_CLASS}" pointer-events="none">${chunks.join("")}</g>`;
+  // 可选语义 id：导出侧传 "Flow_Layer"（撞名时经 exportSvgUniqueId 加后缀），
+  // 画布调用不传 —— 保持既有输出逐字节稳定。
+  const idAttribute = layerId ? ` id="${escapeXml(layerId)}"` : "";
+  return `<g${idAttribute} class="${ELECTRIC_FLOW_LAYER_CLASS}" pointer-events="none">${chunks.join("")}</g>`;
 }

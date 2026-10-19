@@ -384,6 +384,16 @@ describe("buildElectricFlowLayerMarkup", () => {
     expect(markup.match(new RegExp(`class="${ELECTRIC_FLOW_ARROW_CLASS}`, "g"))?.length).toBe(2);
     expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * 1.0000 * -0.5)");
   });
+
+  it("可选 layerId：传入时写在外层 <g> 上，缺省不输出 id", () => {
+    const withId = buildElectricFlowLayerMarkup(routed, new Map([["e1", "forward"]]), null, "Flow_Layer");
+    expect(withId.startsWith('<g id="Flow_Layer" class="electric-flow-layer" pointer-events="none">')).toBe(true);
+    // 缺省调用（画布侧）保持旧输出：外层 g 无 id，箭头 path 不带 id
+    const without = buildElectricFlowLayerMarkup(routed, new Map([["e1", "forward"]]));
+    expect(without.startsWith('<g class="electric-flow-layer" pointer-events="none">')).toBe(true);
+    // 无可渲染内容时即使传了 id 也返回空串（导出插值处不产生多余字节）
+    expect(buildElectricFlowLayerMarkup([], new Map([["e1", "forward"]]), null, "Flow_Layer")).toBe("");
+  });
 });
 
 /** 设置归一化（新增三字段）。 */
@@ -512,5 +522,17 @@ describe("buildElectricFlowStyleMarkup", () => {
     expect(style).toContain("--electric-flow-arrow-fill: #38bdf8");
     expect(style).toContain("--electric-flow-arrow-stroke: #ffffff");
     expect(style).toContain("--electric-flow-arrow-stroke-width: 1.5px");
+  });
+
+  it("revert 反转钩子：给边 g 加 revert 类可整组反向（!important 压过内联 style）", () => {
+    const style = buildElectricFlowStyleMarkup();
+    // 前向箭头 → 反向关键帧 + 朝向调转 180°
+    expect(style).toContain(".electric-flow-edge.revert .electric-flow-arrow-forward {");
+    expect(style).toContain("animation-name: electric-flow-run-reverse !important");
+    expect(style).toContain("offset-rotate: auto 180deg !important");
+    // 反向箭头 → 对调回前向
+    expect(style).toContain(".electric-flow-edge.revert .electric-flow-arrow-reverse {");
+    expect(style).toContain("animation-name: electric-flow-run-forward !important");
+    expect(style).toContain("offset-rotate: auto !important");
   });
 });
