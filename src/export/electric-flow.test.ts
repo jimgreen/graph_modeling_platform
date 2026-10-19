@@ -340,4 +340,48 @@ describe("buildElectricFlowStyleMarkup", () => {
     expect(style).toContain("@keyframes electric-flow-run-forward");
     expect(style).toContain("@keyframes electric-flow-run-reverse");
   });
+
+  it("箭头带白色轮廓（stroke 垫在填充下，不侵蚀本体形状）", () => {
+    const style = buildElectricFlowStyleMarkup();
+    expect(style).toContain("stroke: var(--electric-flow-arrow-stroke, #ffffff)");
+    expect(style).toContain("stroke-width: var(--electric-flow-arrow-stroke-width, 1.5px)");
+    // paint-order: stroke 是「轮廓在外、填充在上」的关键 —— 少了它描边会往箭头内部吃半个线宽
+    expect(style).toContain("paint-order: stroke");
+  });
+
+  it("无参调用输出内置默认四项（与 ELECTRIC_FLOW_DEFAULTS 一致）", () => {
+    const style = buildElectricFlowStyleMarkup();
+    expect(style).toContain("--electric-flow-duration: 1.6s");
+    expect(style).toContain("--electric-flow-arrow-fill: #38bdf8");
+    expect(style).toContain("--electric-flow-arrow-stroke: #ffffff");
+    expect(style).toContain("--electric-flow-arrow-stroke-width: 1.5px");
+  });
+
+  it("接受设置参数：四项全部覆盖 CSS 变量与回退值", () => {
+    const style = buildElectricFlowStyleMarkup({
+      durationSeconds: 3,
+      arrowFill: "#ff8800",
+      arrowStroke: "#112233",
+      arrowStrokeWidth: 2.5
+    });
+    expect(style).toContain("--electric-flow-duration: 3s");
+    expect(style).toContain("--electric-flow-arrow-fill: #ff8800");
+    expect(style).toContain("--electric-flow-arrow-stroke: #112233");
+    expect(style).toContain("--electric-flow-arrow-stroke-width: 2.5px");
+    // 回退值与生效值同步，避免「变量缺失时回落到旧默认色」的分裂
+    expect(style).toContain("fill: var(--electric-flow-arrow-fill, #ff8800)");
+  });
+
+  it("非法值逐项回落默认（normalizeElectricFlowSettings）", () => {
+    const style = buildElectricFlowStyleMarkup({
+      durationSeconds: -2,
+      arrowFill: "   ",
+      arrowStroke: undefined as unknown as string,
+      arrowStrokeWidth: Number.NaN
+    });
+    expect(style).toContain("--electric-flow-duration: 1.6s");
+    expect(style).toContain("--electric-flow-arrow-fill: #38bdf8");
+    expect(style).toContain("--electric-flow-arrow-stroke: #ffffff");
+    expect(style).toContain("--electric-flow-arrow-stroke-width: 1.5px");
+  });
 });

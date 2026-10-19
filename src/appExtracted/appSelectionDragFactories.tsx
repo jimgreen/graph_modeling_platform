@@ -32,6 +32,7 @@ type DragPreviewEndpointPoints = { start: Point; end: Point; source: ModelNode; 
 
 // 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 遮住）：按真实出处补齐，均为 type-only import。
 import type { CanvasBounds, ContainerTerminalAssociationValue, DeviceTemplate, DeviceParameterDefinition, Edge, ModelGroup, ModelLayer, ModelNode, Point, ProjectFile, RoutedEdge, Terminal, TerminalType } from "../model";
+import { normalizeElectricFlowSettings } from "../export/electric-flow-markup.ts";
 import type { GraphStore } from "../graphStore";
 import type { BulkMovePlan, CustomDeviceDraft, FilterSelectionTypeOption, UndoSnapshot, CanvasSelectionSnapshot, DeviceLibraryPersistencePayload, DraggingState, FastMovedGraphCommitOptions, GraphTemplate, GroupDeviceTerminalDraft, ModifierSelectionPressState, ModifierSelectionPressTarget, NodeDragPreviewRoute, NodeTerminalSnapTarget, RenderViewportBounds, SingleNodeDeferredRepairOptions, SingleNodeDragCache } from "./appCoreCanvasUtilities";
 import type { CanvasClipboard, CanvasSelectionScope, DisplayLayerAction, SelectionRect } from "../selectionActions";
@@ -195,7 +196,7 @@ export function createRouteForCurrentEdgeSave(__appScope: Record<string, any>) {
 
 export function createCurrentProject(__appScope: Record<string, any>) {
   return (): ProjectFile => {
-  const { activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, backgroundProjectRecord, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageFit, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edgeWithCurrentRouteGeometryForSave, edges, electricFlowVisible, groups, layers, lockProjectEdgeTerminals, nodes, normalizeModelGroups, normalizeProjectLayers, normalizeProjectMeasurements, powerBaseValue, powerUnit, projectMeasurements, projectName, projectIdx, voltageUnit, substation, feeder, modelType, subcontrolarea, taiqu } = __appScope;
+  const { activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, backgroundProjectRecord, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageFit, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edgeWithCurrentRouteGeometryForSave, edges, electricFlowVisible, electricFlowSettings, groups, layers, lockProjectEdgeTerminals, nodes, normalizeModelGroups, normalizeProjectLayers, normalizeProjectMeasurements, powerBaseValue, powerUnit, projectMeasurements, projectName, projectIdx, voltageUnit, substation, feeder, modelType, subcontrolarea, taiqu } = __appScope;
     // 背景页引用键取模型全局 idx：SavedProjectRecord 顶层无 idx，模型自身落盘才有（同 nextGlobalProjectIndex 口径）
     const backgroundProjectIdx = Number(backgroundProjectRecord?.project?.idx);
     const projectEdges = edges.map(edgeWithCurrentRouteGeometryForSave);
@@ -219,6 +220,9 @@ export function createCurrentProject(__appScope: Record<string, any>) {
       // 不带这个字段的话「导出 SVG 文件」永远看不到用户自己打开的流水线。
       // 显式 `!!` 是为了不把 undefined 写进 JSON —— 缺字段的旧存档读回来走 `?? false`。
       electricFlowVisible: !!electricFlowVisible,
+      // 外观设置随开关一起落盘：全空对象也显式写入（四项缺省走内置默认），
+      // 让存档里「开关开 + 外观」始终成对出现，读回侧不用猜。
+      electricFlowSettings: normalizeElectricFlowSettings(electricFlowSettings),
       powerUnit,
       voltageUnit,
       currentUnit,

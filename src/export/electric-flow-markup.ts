@@ -13,6 +13,24 @@
 // 会被大部分静态渲染管线忽略。CSS motion path（`offset-path` + `offset-distance` 关键帧）
 // 正好是纯 CSS，浏览器与导出管线都能吃下。
 import type { ElectricFlowDirection } from "./electric-flow.ts";
+import { ELECTRIC_FLOW_DEFAULTS, type ElectricFlowSettings } from "../model.ts";
+
+/** 归一化外观设置：非法值（NaN/≤0 时长/非有限宽度/空色串）逐项回落默认。 */
+export function normalizeElectricFlowSettings(settings?: ElectricFlowSettings | null): Required<ElectricFlowSettings> {
+  const merged = { ...ELECTRIC_FLOW_DEFAULTS, ...(settings ?? {}) };
+  const durationSeconds =
+    typeof merged.durationSeconds === "number" && Number.isFinite(merged.durationSeconds) && merged.durationSeconds > 0
+      ? merged.durationSeconds
+      : ELECTRIC_FLOW_DEFAULTS.durationSeconds;
+  const arrowFill = typeof merged.arrowFill === "string" && merged.arrowFill.trim() ? merged.arrowFill : ELECTRIC_FLOW_DEFAULTS.arrowFill;
+  const arrowStroke =
+    typeof merged.arrowStroke === "string" && merged.arrowStroke.trim() ? merged.arrowStroke : ELECTRIC_FLOW_DEFAULTS.arrowStroke;
+  const arrowStrokeWidth =
+    typeof merged.arrowStrokeWidth === "number" && Number.isFinite(merged.arrowStrokeWidth) && merged.arrowStrokeWidth >= 0
+      ? merged.arrowStrokeWidth
+      : ELECTRIC_FLOW_DEFAULTS.arrowStrokeWidth;
+  return { durationSeconds, arrowFill, arrowStroke, arrowStrokeWidth };
+}
 
 /** 整层最外层 `<g>` 的 class。`pointer-events="none"`：箭头只做视觉，不吃画布事件。 */
 export const ELECTRIC_FLOW_LAYER_CLASS = "electric-flow-layer";
@@ -55,20 +73,29 @@ function escapeXml(value: string): string {
 /**
  * 动画样式：CSS motion path 关键帧 + 箭头基础外观。
  *
- * 速度走 CSS 变量 `--electric-flow-duration`（默认 `1.6s`），外部改一个变量即可整体调速；
- * 填充色同理走 `--electric-flow-arrow-fill`。
- *
- * 反向箭头不另写一份关键帧而是靠 `offset-rotate: auto 180deg` + `offset-distance` 反向走 ——
- * 路径只有一条，方向差异完全由内联样式承担，外部要覆写行为只需改这两个属性。
+ * 四项外观全部经 CSS 变量下发，取值来自 `settings`（缺省即内置默认）：
+ * `--electric-flow-duration`（速度）、`--electric-flow-arrow-fill`（填充）、
+ * `--electric-flow-arrow-stroke` / `-stroke-width`（白轮廓）。
+ * 反向箭头不另写关键帧而是靠 `offset-rotate: auto 180deg` + `offset-distance` 反向走。
  */
-export function buildElectricFlowStyleMarkup(): string {
+export function buildElectricFlowStyleMarkup(settings?: ElectricFlowSettings | null): string {
+  const s = normalizeElectricFlowSettings(settings);
+  const duration = `${Number(s.durationSeconds)}s`;
+  const strokeWidth = `${Number(s.arrowStrokeWidth)}px`;
   return `<style><![CDATA[
 .${ELECTRIC_FLOW_LAYER_CLASS} {
-  --electric-flow-duration: 1.6s;
+  --electric-flow-duration: ${duration};
+  --electric-flow-arrow-fill: ${s.arrowFill};
+  --electric-flow-arrow-stroke: ${s.arrowStroke};
+  --electric-flow-arrow-stroke-width: ${strokeWidth};
 }
 .${ELECTRIC_FLOW_ARROW_CLASS} {
-  fill: var(--electric-flow-arrow-fill, #38bdf8);
-  stroke: none;
+  fill: var(--electric-flow-arrow-fill, ${s.arrowFill});
+  /* 白色轮廓：线路上箭头密集交错时靠描边把相邻箭头区分开，视觉上不再糊成一团。
+     paint-order: stroke 让描边垫在填充下面 —— 轮廓向外扩、不侵蚀箭头本体形状。 */
+  stroke: var(--electric-flow-arrow-stroke, ${s.arrowStroke});
+  stroke-width: var(--electric-flow-arrow-stroke-width, ${strokeWidth});
+  paint-order: stroke;
   pointer-events: none;
 }
 @keyframes electric-flow-run-forward {

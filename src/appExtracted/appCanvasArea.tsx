@@ -242,7 +242,9 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
     'canvasBackgroundColor', 'canvasBackgroundImageUrl', 'canvasBackgroundImageFit', 'backgroundPageRender',
     'colorDisplayMode', 'colorPalette', 'deviceLabelsVisible', 'deviceMeasurementsVisible',
     // 电流流水线：开关不进这组键就会停在旧值 —— 顶栏切了开关画布不重渲染
-    'electricFlowVisible'
+    'electricFlowVisible',
+    // 外观设置（时长/填充/描边）同理：对象引用变化（弹窗确定）必须触发重渲染
+    'electricFlowSettings'
   ];
 
   for (const key of dataKeys) {
@@ -428,8 +430,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     activeSelectedEdgeSet,
     activeDropHintPoint, activeDropHintStyle,
     lodCanvasNodeChunks, lodCanvasRouteChunks, lodSelectedNodeMarkup,
-    // 电流流水线：开关 + 整图模型（方向判定要跑在**全图**上，见 electricFlowLayerMarkup 的注释）
-    electricFlowVisible, nodes, edges,
+    // 电流流水线：开关 + 外观设置 + 整图模型（方向判定要跑在**全图**上，见 electricFlowLayerMarkup 的注释）
+    electricFlowVisible, electricFlowSettings, nodes, edges,
     minimapVisible, minimapNodes, minimapRoutes,
     minimapContentWidth, minimapContentHeight,
     minimapOffsetX, minimapOffsetY, minimapScale,
@@ -511,8 +513,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
   // 画布输出与开关这个功能上线前逐字节一致。
 
   const electricFlowStyleMarkup = useMemo(
-    () => (electricFlowVisible ? buildElectricFlowStyleMarkup() : ""),
-    [electricFlowVisible]
+    () => (electricFlowVisible ? buildElectricFlowStyleMarkup(electricFlowSettings) : ""),
+    [electricFlowSettings, electricFlowVisible]
   );
 
   const electricFlowDirections = useMemo(

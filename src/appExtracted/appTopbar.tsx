@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo, useRef, useState } from "react";
-import { Input, Modal, Select, Tooltip } from "antd";
+import { Input, InputNumber, Modal, Select, Tooltip } from "antd";
+import { ELECTRIC_FLOW_DEFAULTS, type ElectricFlowSettings } from "../model";
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 import { createNodeFromTemplate } from "../model-node-ops";
 import { modelAssociationModelTypeForKind } from "../model";
@@ -32,6 +33,96 @@ const T = (title: string, child: React.ReactNode, extra?: Record<string, any>) =
     {child}
   </Tooltip>
 );
+
+/**
+ * 电流流水线外观设置弹窗：流速 / 箭头填充 / 白轮廓颜色 / 轮廓宽度。
+ *
+ * 草稿在本地 state 改、确定才 setElectricFlowSettings（对象引用换新触发画布重渲染）；
+ * 存档链路交给 createCurrentProject / loadSavedProject，本组件只碰内存态。
+ */
+function ElectricFlowSettingsDialog({ open, onClose, scope }: { open: boolean; onClose: () => void; scope: Record<string, any> }) {
+  const [draft, setDraft] = useState<ElectricFlowSettings>({});
+  const [previousOpen, setPreviousOpen] = useState(false);
+  // 打开瞬间从 scope 快照一份草稿：弹窗期间外部改设置不影响草稿，取消可直接丢弃。
+  if (open && !previousOpen) {
+    setPreviousOpen(true);
+    setDraft({ ...(scope.electricFlowSettings ?? {}) });
+  } else if (!open && previousOpen) {
+    setPreviousOpen(false);
+  }
+
+  const current = { ...ELECTRIC_FLOW_DEFAULTS, ...draft };
+
+  return (
+    <Modal
+      open={open}
+      title="电流流水线设置"
+      okText="确定"
+      cancelText="取消"
+      destroyOnHidden
+      onOk={() => {
+        scope.setElectricFlowSettings({ ...draft });
+        onClose();
+      }}
+      onCancel={onClose}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 96 }}>流动周期（秒）</span>
+          <InputNumber
+            aria-label="电流流水线流动周期（秒）"
+            min={0.1}
+            max={60}
+            step={0.1}
+            value={current.durationSeconds}
+            onChange={(value) => setDraft((d) => ({ ...d, durationSeconds: typeof value === "number" ? value : ELECTRIC_FLOW_DEFAULTS.durationSeconds }))}
+          />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 96 }}>箭头填充色</span>
+          <input
+            type="color"
+            aria-label="电流流水线箭头填充色"
+            value={/^#[0-9a-fA-F]{6}$/.test(current.arrowFill) ? current.arrowFill : ELECTRIC_FLOW_DEFAULTS.arrowFill}
+            onChange={(event) => setDraft((d) => ({ ...d, arrowFill: event.target.value }))}
+          />
+          <Input
+            aria-label="电流流水线箭头填充色值"
+            value={current.arrowFill}
+            onChange={(event) => setDraft((d) => ({ ...d, arrowFill: event.target.value }))}
+            style={{ width: 120 }}
+          />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 96 }}>轮廓颜色</span>
+          <input
+            type="color"
+            aria-label="电流流水线轮廓颜色"
+            value={/^#[0-9a-fA-F]{6}$/.test(current.arrowStroke) ? current.arrowStroke : ELECTRIC_FLOW_DEFAULTS.arrowStroke}
+            onChange={(event) => setDraft((d) => ({ ...d, arrowStroke: event.target.value }))}
+          />
+          <Input
+            aria-label="电流流水线轮廓颜色值"
+            value={current.arrowStroke}
+            onChange={(event) => setDraft((d) => ({ ...d, arrowStroke: event.target.value }))}
+            style={{ width: 120 }}
+          />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 96 }}>轮廓宽度（px）</span>
+          <InputNumber
+            aria-label="电流流水线轮廓宽度（像素）"
+            min={0}
+            max={10}
+            step={0.5}
+            value={current.arrowStrokeWidth}
+            onChange={(value) => setDraft((d) => ({ ...d, arrowStrokeWidth: typeof value === "number" ? value : ELECTRIC_FLOW_DEFAULTS.arrowStrokeWidth }))}
+          />
+        </label>
+      </div>
+    </Modal>
+  );
+}
 
 export function AppTopbar({ scope, inputs }: AppTopbarProps) {
   return (
@@ -465,6 +556,7 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
 
 function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
   const [sendModelDialogOpen, setSendModelDialogOpen] = useState(false);
+  const [electricFlowSettingsDialogOpen, setElectricFlowSettingsDialogOpen] = useState(false);
   const {
     Bell, Cable, ChevronDown, ChevronRight, Download, FileJson, FolderOpen,
     Grid2X2, Layers, Network, Paintbrush, Palette, Pencil, Save, Settings2, Type, Zap,
@@ -559,6 +651,13 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
               <path d="M10.5 4.5 14 8l-3.5 3.5"/>
             </svg>
           </button>)}
+          {T("电流流水线设置", <button type="button" id="topbar-electric-flow-settings" className="topbar-primary-button" onClick={() => setElectricFlowSettingsDialogOpen(true)} aria-label="电流流水线设置" aria-haspopup="dialog">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1.5 8h7"/>
+              <path d="M5 4.5 8.5 8 5 11.5"/>
+              <circle cx="12.5" cy="8" r="1.6"/>
+            </svg>
+          </button>)}
         </div>
         {/* 图片资源组 */}
         <div className="topbar-button-group">
@@ -608,6 +707,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
       {sendModelDialogOpen && (
         <SendModelDialog open={sendModelDialogOpen} onClose={() => setSendModelDialogOpen(false)} scope={scope}/>
       )}
+      <ElectricFlowSettingsDialog open={electricFlowSettingsDialogOpen} onClose={() => setElectricFlowSettingsDialogOpen(false)} scope={scope}/>
     </>
   );
 }

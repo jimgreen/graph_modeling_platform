@@ -38,6 +38,7 @@ import {
   terminalVoltageBaseNumber,
   voltageLevelColor
 } from "../model.ts";
+import type { ElectricFlowSettings } from "../model.ts";
 import {
   boundaryBusInternalConnectorSegment,
   boundaryBusInternalConnectorStrokeWidth,
@@ -145,6 +146,8 @@ export type CanvasRenderOptions = CanvasBounds & {
    * 关闭时既不跑方向判定（BFS 有成本）也不输出 `<style>` 与图层，一个字节都不多给。
    */
   electricFlowVisible?: boolean;
+  /** 电流流水线外观设置（时长/填充/描边）：只在 electricFlowVisible 为 true 时参与输出。 */
+  electricFlowSettings?: ElectricFlowSettings;
 };
 
 // readImageAssets 惰性注入：appCoreCanvasUtilities.tsx 是 .tsx，顶层 import 会把 React 拖进 Node 闭包。
@@ -1177,7 +1180,7 @@ ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
   // 样式串只在真有图层时才输出：单独一段 <style> 而没有箭头是无意义的体积，
   // 也会让「开关打开但模型无电源」的空模型导出多出一段死代码。
   // 两块都自带尾随换行，插值处便能在关闭时与旧输出逐字节相同。
-  const electricFlowStyleBlock = electricFlowLayer ? `${buildElectricFlowStyleMarkup()}\n` : "";
+  const electricFlowStyleBlock = electricFlowLayer ? `${buildElectricFlowStyleMarkup(canvasSize.electricFlowSettings)}\n` : "";
   const electricFlowLayerBlock = electricFlowLayer ? `${electricFlowLayer}\n` : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${canvasWidth},${canvasHeight}" active-layer-id="${escapeXml(activeExportLayerId)}">
 <defs id="${escapeXml(defsId)}">
