@@ -28,12 +28,17 @@ type AppTopbarProps = {
   inputs: readonly unknown[];
 };
 
-// 即时 tooltip 包装：鼠标进入立刻显示，离开立刻消失（顶栏与画布底部「选中操作」组共用）
-const T = (title: string, child: React.ReactNode, extra?: Record<string, any>) => (
-  <Tooltip title={title} mouseEnterDelay={0} mouseLeaveDelay={0}>
-    {child}
-  </Tooltip>
-);
+// 即时 tooltip 包装：鼠标进入立刻显示，离开立刻消失（顶栏与画布底部「选中操作」组共用）。
+// 带下拉菜单的按钮（aria-haspopup="menu"）tooltip 延迟 1s：悬浮第一眼看到的是菜单展开，
+// tooltip 抢在菜单前面弹出来会显得「连击」，迟 1s 等菜单稳定后再提示。
+const T = (title: string, child: React.ReactNode, extra?: Record<string, any>) => {
+  const hasMenu = typeof child === "object" && child !== null && "props" in child && (child.props as Record<string, any>)?.["aria-haspopup"] === "menu";
+  return (
+    <Tooltip title={title} mouseEnterDelay={hasMenu ? 1 : 0} mouseLeaveDelay={0}>
+      {child}
+    </Tooltip>
+  );
+};
 
 /**
  * 电流流水线外观设置弹窗：箭头样式（预设/大小/填充/轮廓色/轮廓宽）、流速、密度。
