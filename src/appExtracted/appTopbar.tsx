@@ -132,58 +132,53 @@ function ElectricFlowSettingsDialog({ open, onClose, scope }: { open: boolean; o
         </div>
       )}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 96 }}>箭头样式</span>
-          <Select
-            aria-label="电流流水线箭头样式预设"
-            style={{ width: 140 }}
-            value={current.arrowStyleId}
-            onChange={(value) => updateDraft({ arrowStyleId: value })}
-            options={ELECTRIC_FLOW_ARROW_STYLES.map((style) => ({ value: style.id, label: style.label }))}
-          />
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 96 }}>箭头大小</span>
-          <InputNumber
-            aria-label="电流流水线箭头大小（缩放系数）"
-            min={0.5}
-            max={3}
-            step={0.1}
-            value={current.arrowSize}
-            onChange={(value) => updateDraft({ arrowSize: typeof value === "number" ? value : ELECTRIC_FLOW_DEFAULTS.arrowSize })}
-          />
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 96 }}>箭头密度</span>
-          <Select
-            aria-label="电流流水线箭头密度"
-            style={{ width: 160 }}
-            value={current.arrowSpacing}
-            onChange={(value) => updateDraft({ arrowSpacing: value })}
-            options={[
-              { value: 150, label: "疏（150px 一只）" },
-              { value: 100, label: "中（100px 一只）" },
-              { value: 50, label: "密（50px 一只）" }
-            ]}
-          />
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 96 }}>流动周期（秒）</span>
-          <InputNumber
-            aria-label="电流流水线流动周期（秒）"
-            min={0.1}
-            max={60}
-            step={0.1}
-            value={current.durationSeconds}
-            onChange={(value) => updateDraft({ durationSeconds: typeof value === "number" ? value : ELECTRIC_FLOW_DEFAULTS.durationSeconds })}
-          />
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 96 }}>箭头填充色</span>
+      <div style={{ display: "grid", gridTemplateColumns: "88px 1fr", rowGap: 14, columnGap: 12, alignItems: "center" }}>
+        <span style={{ textAlign: "right", color: "#475569" }}>箭头样式</span>
+        <Select
+          aria-label="电流流水线箭头样式预设"
+          style={{ width: "100%" }}
+          value={current.arrowStyleId}
+          onChange={(value) => updateDraft({ arrowStyleId: value })}
+          options={ELECTRIC_FLOW_ARROW_STYLES.map((style) => ({ value: style.id, label: style.label }))}
+        />
+        <span style={{ textAlign: "right", color: "#475569" }}>箭头大小</span>
+        <InputNumber
+          aria-label="电流流水线箭头大小（缩放系数）"
+          min={0.5}
+          max={3}
+          step={0.1}
+          style={{ width: "100%" }}
+          value={current.arrowSize}
+          onChange={(value) => updateDraft({ arrowSize: typeof value === "number" ? value : ELECTRIC_FLOW_DEFAULTS.arrowSize })}
+        />
+        <span style={{ textAlign: "right", color: "#475569" }}>箭头密度</span>
+        <Select
+          aria-label="电流流水线箭头密度"
+          style={{ width: "100%" }}
+          value={current.arrowSpacing}
+          onChange={(value) => updateDraft({ arrowSpacing: value })}
+          options={[
+            { value: 150, label: "疏（150px 一只）" },
+            { value: 100, label: "中（100px 一只）" },
+            { value: 50, label: "密（50px 一只）" }
+          ]}
+        />
+        <span style={{ textAlign: "right", color: "#475569" }}>流动周期（秒）</span>
+        <InputNumber
+          aria-label="电流流水线流动周期（秒）"
+          min={0.1}
+          max={60}
+          step={0.1}
+          style={{ width: "100%" }}
+          value={current.durationSeconds}
+          onChange={(value) => updateDraft({ durationSeconds: typeof value === "number" ? value : ELECTRIC_FLOW_DEFAULTS.durationSeconds })}
+        />
+        <span style={{ textAlign: "right", color: "#475569" }}>箭头填充色</span>
+        <div style={{ display: "flex", gap: 8 }}>
           <input
             type="color"
             aria-label="电流流水线箭头填充色"
+            style={{ width: 32, height: 32, padding: 0, border: "1px solid #d9d9d9", borderRadius: 6, cursor: "pointer" }}
             value={/^#[0-9a-fA-F]{6}$/.test(current.arrowFill) ? current.arrowFill : ELECTRIC_FLOW_DEFAULTS.arrowFill}
             onChange={(event) => updateDraft({ arrowFill: event.target.value })}
           />
@@ -191,14 +186,15 @@ function ElectricFlowSettingsDialog({ open, onClose, scope }: { open: boolean; o
             aria-label="电流流水线箭头填充色值"
             value={current.arrowFill}
             onChange={(event) => updateDraft({ arrowFill: event.target.value })}
-            style={{ width: 120 }}
+            style={{ flex: 1 }}
           />
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 96 }}>轮廓颜色</span>
+        </div>
+        <span style={{ textAlign: "right", color: "#475569" }}>轮廓颜色</span>
+        <div style={{ display: "flex", gap: 8 }}>
           <input
             type="color"
             aria-label="电流流水线轮廓颜色"
+            style={{ width: 32, height: 32, padding: 0, border: "1px solid #d9d9d9", borderRadius: 6, cursor: "pointer" }}
             value={/^#[0-9a-fA-F]{6}$/.test(current.arrowStroke) ? current.arrowStroke : ELECTRIC_FLOW_DEFAULTS.arrowStroke}
             onChange={(event) => updateDraft({ arrowStroke: event.target.value })}
           />
@@ -206,20 +202,19 @@ function ElectricFlowSettingsDialog({ open, onClose, scope }: { open: boolean; o
             aria-label="电流流水线轮廓颜色值"
             value={current.arrowStroke}
             onChange={(event) => updateDraft({ arrowStroke: event.target.value })}
-            style={{ width: 120 }}
+            style={{ flex: 1 }}
           />
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 96 }}>轮廓宽度（px）</span>
-          <InputNumber
-            aria-label="电流流水线轮廓宽度（像素）"
-            min={0}
-            max={10}
-            step={0.5}
-            value={current.arrowStrokeWidth}
-            onChange={(value) => updateDraft({ arrowStrokeWidth: typeof value === "number" ? value : ELECTRIC_FLOW_DEFAULTS.arrowStrokeWidth })}
-          />
-        </label>
+        </div>
+        <span style={{ textAlign: "right", color: "#475569" }}>轮廓宽度（px）</span>
+        <InputNumber
+          aria-label="电流流水线轮廓宽度（像素）"
+          min={0}
+          max={10}
+          step={0.5}
+          style={{ width: "100%" }}
+          value={current.arrowStrokeWidth}
+          onChange={(value) => updateDraft({ arrowStrokeWidth: typeof value === "number" ? value : ELECTRIC_FLOW_DEFAULTS.arrowStrokeWidth })}
+        />
       </div>
     </Modal>
   );
