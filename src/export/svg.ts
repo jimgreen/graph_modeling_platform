@@ -1174,7 +1174,9 @@ ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
         // 节点取 exportNodes：它是上方路由实际吃进去的那一份，方向判定与线路位置同源。
         // calculateElectricalTopology 的结果只用于取端子号，**不回写**（回写会把拓扑推导的
         // 派生字段渗进导出模型，污染既有输出），此处也不使用。
-        computeElectricFlowDirections(exportNodes, edges)
+        computeElectricFlowDirections(exportNodes, edges),
+        // 箭头形状/大小/密度与样式四项同源：都来自存档设置（缺省回落内置默认）。
+        canvasSize.electricFlowSettings
       )
     : "";
   // 样式串只在真有图层时才输出：单独一段 <style> 而没有箭头是无意义的体积，

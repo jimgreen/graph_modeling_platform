@@ -10,9 +10,11 @@ import {
   buildElectricFlowLayerMarkup,
   buildElectricFlowStyleMarkup,
   estimateElectricFlowPathLength,
+  normalizeElectricFlowSettings,
   ELECTRIC_FLOW_ARROW_CLASS,
   ELECTRIC_FLOW_LAYER_CLASS
 } from "./electric-flow-markup.ts";
+import { ELECTRIC_FLOW_ARROW_STYLES, ELECTRIC_FLOW_DEFAULTS } from "../model.ts";
 import { createDefaultNode } from "../model-node-ops.ts";
 
 let nodeSeq = 0;
@@ -341,6 +343,64 @@ describe("buildElectricFlowLayerMarkup", () => {
     expect(markup).toContain("animation-duration: var(--electric-flow-duration)");
     expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * -0.5)");
   });
+
+  it("箭头形状预设：无 settings 时用默认三角，选预设后 d 随之切换", () => {
+    const routed = [{ edgeId: "e1", path: "M 0 0 L 100 0" }];
+    const directions = new Map([["e1", "forward" as ElectricFlowDirection]]);
+    const fallback = buildElectricFlowLayerMarkup(routed, directions);
+    expect(fallback).toContain(`d="${ELECTRIC_FLOW_DEFAULTS.arrowStyleId === "triangle" ? ELECTRIC_FLOW_ARROW_STYLES[0].pathD : ""}"`);
+    const slim = ELECTRIC_FLOW_ARROW_STYLES.find((style) => style.id === "slim")!;
+    const styled = buildElectricFlowLayerMarkup(routed, directions, { arrowStyleId: "slim" });
+    expect(styled).toContain(`d="${slim.pathD}"`);
+  });
+
+  it("箭头大小：arrowSize 缩放图元坐标、几何中心仍在原点", () => {
+    const markup = buildElectricFlowLayerMarkup(
+      [{ edgeId: "e1", path: "M 0 0 L 100 0" }],
+      new Map([["e1", "forward"]]),
+      { arrowSize: 2 }
+    );
+    // 基准 M 4 0 L -4 4 L -4 -4 Z × 2 → 顶点 ±8
+    expect(markup).toContain('d="M 8 0 L -8 8 L -8 -8 Z"');
+  });
+
+  it("箭头密度：spacing 0.25 → 每边 4 个箭头、相位 0/0.25/0.5/0.75", () => {
+    const markup = buildElectricFlowLayerMarkup(
+      [{ edgeId: "e1", path: "M 0 0 L 100 0" }],
+      new Map([["e1", "forward"]]),
+      { arrowSpacing: 0.25 }
+    );
+    expect(markup.match(new RegExp(`class="${ELECTRIC_FLOW_ARROW_CLASS}`, "g"))?.length).toBe(4);
+    expect(markup).toContain("animation-delay: 0s");
+    expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * 1.0000 * -0.25)");
+    expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * 1.0000 * -0.5)");
+    expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * 1.0000 * -0.75)");
+  });
+});
+
+/** 设置归一化（新增三字段）。 */
+describe("normalizeElectricFlowSettings 新字段", () => {
+  it("缺省/非法值回落默认：大小 ≤0、未知预设 id、密度越界", () => {
+    expect(normalizeElectricFlowSettings(undefined)).toEqual(ELECTRIC_FLOW_DEFAULTS);
+    expect(normalizeElectricFlowSettings({ arrowSize: 0 }).arrowSize).toBe(ELECTRIC_FLOW_DEFAULTS.arrowSize);
+    expect(normalizeElectricFlowSettings({ arrowSize: -1 }).arrowSize).toBe(ELECTRIC_FLOW_DEFAULTS.arrowSize);
+    expect(normalizeElectricFlowSettings({ arrowStyleId: "no-such" }).arrowStyleId).toBe(ELECTRIC_FLOW_DEFAULTS.arrowStyleId);
+    expect(normalizeElectricFlowSettings({ arrowSpacing: 0 }).arrowSpacing).toBe(ELECTRIC_FLOW_DEFAULTS.arrowSpacing);
+    expect(normalizeElectricFlowSettings({ arrowSpacing: 0.9 }).arrowSpacing).toBe(ELECTRIC_FLOW_DEFAULTS.arrowSpacing);
+    expect(normalizeElectricFlowSettings({ arrowSpacing: Number.NaN }).arrowSpacing).toBe(ELECTRIC_FLOW_DEFAULTS.arrowSpacing);
+  });
+
+  it("合法新值原样通过", () => {
+    const normalized = normalizeElectricFlowSettings({ arrowSize: 1.8, arrowStyleId: "diamond", arrowSpacing: 0.2 });
+    expect(normalized.arrowSize).toBe(1.8);
+    expect(normalized.arrowStyleId).toBe("diamond");
+    expect(normalized.arrowSpacing).toBe(0.2);
+  });
+});
+
+/** 标记层（续）：方向、转义、降级。 */
+describe("buildElectricFlowLayerMarkup 续", () => {
+  const routed = [{ edgeId: "e1", path: "M 0 0 L 100 0" }];
 
   it("reverse 用 offset-rotate: auto 180deg 回程；both 两个方向各一个箭头", () => {
     expect(buildElectricFlowLayerMarkup(routed, new Map([["e1", "reverse"]]))).toContain("offset-rotate: auto 180deg");

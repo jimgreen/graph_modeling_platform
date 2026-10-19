@@ -643,26 +643,57 @@ export const MODEL_TYPE_META: Record<ModelType, { color: string; icon: string }>
 };
 
 /**
- * 电流流水线外观设置：四项全部可选，缺省值与 buildElectricFlowStyleMarkup 内置 CSS 变量一致。
+ * 电流流水线外观设置：各项全部可选，缺省值与 buildElectricFlowStyleMarkup 内置 CSS 变量一致。
  *
  * - durationSeconds：动画周期（秒），越小越快。0/负数视为非法，回落默认。
  * - arrowFill：箭头填充色（任意 CSS color）。
- * - arrowStroke：箭头描边色（白色轮廓的颜色）。
- * - arrowStrokeWidth：描边宽度（CSS px 数值）。
+ * - arrowStroke：箭头描边色（轮廓颜色）。
+ * - arrowStrokeWidth：轮廓宽度（CSS px 数值）。
+ * - arrowSize：箭头大小（基准图元约 8px，此值是缩放系数，1 = 默认）。
+ * - arrowStyleId：箭头形状预设 id（见 ELECTRIC_FLOW_ARROW_STYLES）。
+ * - arrowSpacing：箭头密度 —— 同一边上相邻箭头的错峰相位间隔（周期占比，
+ *   0.5 = 每边 2 个箭头，越小越密；0.1~0.5 合法，非法回落默认）。
  */
 export type ElectricFlowSettings = {
   durationSeconds?: number;
   arrowFill?: string;
   arrowStroke?: string;
   arrowStrokeWidth?: number;
+  arrowSize?: number;
+  arrowStyleId?: string;
+  arrowSpacing?: number;
 };
 
-/** ElectricFlowSettings 各项的内置默认值（唯一来源，样式与弹窗共用）。 */
+/** 单个箭头形状预设：id + 显示名 + 基准图元 `d`（顶点朝局部 +x，几何中心在原点）。 */
+export type ElectricFlowArrowStyle = {
+  id: string;
+  label: string;
+  pathD: string;
+};
+
+/**
+ * 箭头形状预设表（弹窗下拉 + 标记渲染共用同一来源）。
+ *
+ * 全部顶点朝局部 **+x**（路径切线方向）、包围盒**关于原点对称** —— motion path 锚点语义
+ * （`offset-anchor: auto`）在各实现间细节不一，几何中心钉在原点上，锚点取偏了也不会偏航。
+ */
+export const ELECTRIC_FLOW_ARROW_STYLES: readonly ElectricFlowArrowStyle[] = [
+  { id: "triangle", label: "三角", pathD: "M 4 0 L -4 4 L -4 -4 Z" },
+  { id: "slim", label: "细长", pathD: "M 5 0 L -4 2.5 L -4 -2.5 Z" },
+  { id: "chevron", label: "尖角", pathD: "M 4 0 L -3 4 L -1 0 L -3 -4 Z" },
+  { id: "diamond", label: "菱形", pathD: "M 5 0 L 0 3 L -5 0 L 0 -3 Z" },
+  { id: "bar", label: "短杠", pathD: "M 2 -4 L 2 4 L -1 4 L -1 -4 Z" }
+] as const;
+
+/** ElectricFlowSettings 各项的内置默认值（唯一来源，样式、标记与弹窗共用）。 */
 export const ELECTRIC_FLOW_DEFAULTS: Required<ElectricFlowSettings> = {
   durationSeconds: 1.6,
   arrowFill: "#38bdf8",
   arrowStroke: "#ffffff",
-  arrowStrokeWidth: 1.5
+  arrowStrokeWidth: 1.5,
+  arrowSize: 1,
+  arrowStyleId: "triangle",
+  arrowSpacing: 0.5
 };
 
 export type ProjectFile = {

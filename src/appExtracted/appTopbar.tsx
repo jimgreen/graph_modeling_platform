@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { Input, InputNumber, Modal, Select, Tooltip } from "antd";
-import { ELECTRIC_FLOW_DEFAULTS, type ElectricFlowSettings } from "../model";
+import { ELECTRIC_FLOW_ARROW_STYLES, ELECTRIC_FLOW_DEFAULTS, type ElectricFlowSettings } from "../model";
+import { normalizeElectricFlowSettings } from "../export/electric-flow-markup";
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 import { createNodeFromTemplate } from "../model-node-ops";
 import { modelAssociationModelTypeForKind } from "../model";
@@ -35,15 +36,17 @@ const T = (title: string, child: React.ReactNode, extra?: Record<string, any>) =
 );
 
 /**
- * 电流流水线外观设置弹窗：流速 / 箭头填充 / 白轮廓颜色 / 轮廓宽度。
+ * 电流流水线外观设置弹窗：箭头样式（预设/大小/填充/轮廓色/轮廓宽）、流速、密度。
  *
- * 草稿在本地 state 改、确定才 setElectricFlowSettings（对象引用换新触发画布重渲染）；
- * 存档链路交给 createCurrentProject / loadSavedProject，本组件只碰内存态。
+ * **实时生效**：任何控件 onChange 都把「归一化后的完整设置」立即写入 scope
+ * （setElectricFlowSettings 换对象引用 → 画布 memo 重渲染），确定/取消不回滚 ——
+ * 用户要的是「弹窗中的修改实时反映到画布」；颜色输入的中间态（合法 CSS color）
+ * 由 normalizeElectricFlowSettings 逐项兜底。
  */
 function ElectricFlowSettingsDialog({ open, onClose, scope }: { open: boolean; onClose: () => void; scope: Record<string, any> }) {
   const [draft, setDraft] = useState<ElectricFlowSettings>({});
   const [previousOpen, setPreviousOpen] = useState(false);
-  // 打开瞬间从 scope 快照一份草稿：弹窗期间外部改设置不影响草稿，取消可直接丢弃。
+  // 打开瞬间从 scope 快照一份草稿作为编辑起点（仅初始态；之后每次改动都即时落 scope）。
   if (open && !previousOpen) {
     setPreviousOpen(true);
     setDraft({ ...(scope.electricFlowSettings ?? {}) });
@@ -53,20 +56,64 @@ function ElectricFlowSettingsDialog({ open, onClose, scope }: { open: boolean; o
 
   const current = { ...ELECTRIC_FLOW_DEFAULTS, ...draft };
 
+  // 草稿变更 → 归一化 → 立即落 scope（实时生效）；非法中间值在 normalize 里逐项回落。
+  const updateDraft = useCallback(
+    (patch: ElectricFlowSettings) => {
+      setDraft((d) => {
+        const next = { ...d, ...patch };
+        scope.setElectricFlowSettings(normalizeElectricFlowSettings(next));
+        return next;
+      });
+    },
+    [scope]
+  );
+
   return (
     <Modal
       open={open}
       title="电流流水线设置"
       okText="确定"
-      cancelText="取消"
+      cancelText="关闭"
       destroyOnHidden
-      onOk={() => {
-        scope.setElectricFlowSettings({ ...draft });
-        onClose();
-      }}
+      onOk={onClose}
       onCancel={onClose}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 96 }}>箭头样式</span>
+          <Select
+            aria-label="电流流水线箭头样式预设"
+            style={{ width: 140 }}
+            value={current.arrowStyleId}
+            onChange={(value) => updateDraft({ arrowStyleId: value })}
+            options={ELECTRIC_FLOW_ARROW_STYLES.map((style) => ({ value: style.id, label: style.label }))}
+          />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 96 }}>箭头大小</span>
+          <InputNumber
+            aria-label="电流流水线箭头大小（缩放系数）"
+            min={0.5}
+            max={3}
+            step={0.1}
+            value={current.arrowSize}
+            onChange={(value) => updateDraft({ arrowSize: typeof value === "number" ? value : ELECTRIC_FLOW_DEFAULTS.arrowSize })}
+          />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 96 }}>箭头密度</span>
+          <Select
+            aria-label="电流流水线箭头密度"
+            style={{ width: 140 }}
+            value={current.arrowSpacing}
+            onChange={(value) => updateDraft({ arrowSpacing: value })}
+            options={[
+              { value: 0.5, label: "疏（每边 2 个）" },
+              { value: 0.25, label: "中（每边 4 个）" },
+              { value: 0.1, label: "密（每边 10 个）" }
+            ]}
+          />
+        </label>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ width: 96 }}>流动周期（秒）</span>
           <InputNumber
@@ -75,7 +122,7 @@ function ElectricFlowSettingsDialog({ open, onClose, scope }: { open: boolean; o
             max={60}
             step={0.1}
             value={current.durationSeconds}
-            onChange={(value) => setDraft((d) => ({ ...d, durationSeconds: typeof value === "number" ? value : ELECTRIC_FLOW_DEFAULTS.durationSeconds }))}
+            onChange={(value) => updateDraft({ durationSeconds: typeof value === "number" ? value : ELECTRIC_FLOW_DEFAULTS.durationSeconds })}
           />
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -84,12 +131,12 @@ function ElectricFlowSettingsDialog({ open, onClose, scope }: { open: boolean; o
             type="color"
             aria-label="电流流水线箭头填充色"
             value={/^#[0-9a-fA-F]{6}$/.test(current.arrowFill) ? current.arrowFill : ELECTRIC_FLOW_DEFAULTS.arrowFill}
-            onChange={(event) => setDraft((d) => ({ ...d, arrowFill: event.target.value }))}
+            onChange={(event) => updateDraft({ arrowFill: event.target.value })}
           />
           <Input
             aria-label="电流流水线箭头填充色值"
             value={current.arrowFill}
-            onChange={(event) => setDraft((d) => ({ ...d, arrowFill: event.target.value }))}
+            onChange={(event) => updateDraft({ arrowFill: event.target.value })}
             style={{ width: 120 }}
           />
         </label>
@@ -99,12 +146,12 @@ function ElectricFlowSettingsDialog({ open, onClose, scope }: { open: boolean; o
             type="color"
             aria-label="电流流水线轮廓颜色"
             value={/^#[0-9a-fA-F]{6}$/.test(current.arrowStroke) ? current.arrowStroke : ELECTRIC_FLOW_DEFAULTS.arrowStroke}
-            onChange={(event) => setDraft((d) => ({ ...d, arrowStroke: event.target.value }))}
+            onChange={(event) => updateDraft({ arrowStroke: event.target.value })}
           />
           <Input
             aria-label="电流流水线轮廓颜色值"
             value={current.arrowStroke}
-            onChange={(event) => setDraft((d) => ({ ...d, arrowStroke: event.target.value }))}
+            onChange={(event) => updateDraft({ arrowStroke: event.target.value })}
             style={{ width: 120 }}
           />
         </label>
@@ -116,7 +163,7 @@ function ElectricFlowSettingsDialog({ open, onClose, scope }: { open: boolean; o
             max={10}
             step={0.5}
             value={current.arrowStrokeWidth}
-            onChange={(value) => setDraft((d) => ({ ...d, arrowStrokeWidth: typeof value === "number" ? value : ELECTRIC_FLOW_DEFAULTS.arrowStrokeWidth }))}
+            onChange={(value) => updateDraft({ arrowStrokeWidth: typeof value === "number" ? value : ELECTRIC_FLOW_DEFAULTS.arrowStrokeWidth })}
           />
         </label>
       </div>
