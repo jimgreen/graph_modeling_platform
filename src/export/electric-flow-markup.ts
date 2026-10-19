@@ -13,9 +13,13 @@
 // 会被大部分静态渲染管线忽略。CSS motion path（`offset-path` + `offset-distance` 关键帧）
 // 正好是纯 CSS，浏览器与导出管线都能吃下。
 import type { ElectricFlowDirection } from "./electric-flow.ts";
-import { ELECTRIC_FLOW_DEFAULTS, type ElectricFlowSettings } from "../model.ts";
+import {
+  ELECTRIC_FLOW_ARROW_STYLES,
+  ELECTRIC_FLOW_DEFAULTS,
+  type ElectricFlowSettings
+} from "../model.ts";
 
-/** 归一化外观设置：非法值（NaN/≤0 时长/非有限宽度/空色串）逐项回落默认。 */
+/** 归一化外观设置：非法值（NaN/≤0 时长/非有限宽度/空色串/未知预设/越界密度）逐项回落默认。 */
 export function normalizeElectricFlowSettings(settings?: ElectricFlowSettings | null): Required<ElectricFlowSettings> {
   const merged = { ...ELECTRIC_FLOW_DEFAULTS, ...(settings ?? {}) };
   const durationSeconds =
@@ -29,7 +33,31 @@ export function normalizeElectricFlowSettings(settings?: ElectricFlowSettings | 
     typeof merged.arrowStrokeWidth === "number" && Number.isFinite(merged.arrowStrokeWidth) && merged.arrowStrokeWidth >= 0
       ? merged.arrowStrokeWidth
       : ELECTRIC_FLOW_DEFAULTS.arrowStrokeWidth;
-  return { durationSeconds, arrowFill, arrowStroke, arrowStrokeWidth };
+  const arrowSize =
+    typeof merged.arrowSize === "number" && Number.isFinite(merged.arrowSize) && merged.arrowSize > 0
+      ? merged.arrowSize
+      : ELECTRIC_FLOW_DEFAULTS.arrowSize;
+  const arrowStyle = ELECTRIC_FLOW_ARROW_STYLES.find((style) => style.id === merged.arrowStyleId);
+  const arrowStyleId = arrowStyle ? arrowStyle.id : ELECTRIC_FLOW_DEFAULTS.arrowStyleId;
+  // 密度 = 相邻箭头的错峰相位间隔（周期占比）：0.1~0.5 合法（0.5 即默认每边 2 个）；
+  // 超界/非有限回落默认，防止 0/负数造出无限个箭头。
+  const arrowSpacing =
+    typeof merged.arrowSpacing === "number" && Number.isFinite(merged.arrowSpacing) && merged.arrowSpacing >= 0.1 && merged.arrowSpacing <= 0.5
+      ? merged.arrowSpacing
+      : ELECTRIC_FLOW_DEFAULTS.arrowSpacing;
+  return { durationSeconds, arrowFill, arrowStroke, arrowStrokeWidth, arrowSize, arrowStyleId, arrowSpacing };
+}
+
+/** 按预设 id 取箭头形状（未知 id 回落三角）；同时把基准图元按 arrowSize 缩放。 */
+function electricFlowArrowPathD(settings: Required<ElectricFlowSettings>): string {
+  const style = ELECTRIC_FLOW_ARROW_STYLES.find((candidate) => candidate.id === settings.arrowStyleId)
+    ?? ELECTRIC_FLOW_ARROW_STYLES[0];
+  if (settings.arrowSize === 1) return style.pathD;
+  // 基准图元顶点在 ±4~±5，缩放保持几何中心在原点（等流速注释里的锚点前提不破坏）。
+  const numbers = style.pathD.match(/-?\d+(?:\.\d+)?/g) ?? [];
+  const scaled = numbers.map((value) => (Number(value) * settings.arrowSize).toString());
+  let index = 0;
+  return style.pathD.replace(/-?\d+(?:\.\d+)?/g, () => scaled[index++]);
 }
 
 /** 整层最外层 `<g>` 的 class。`pointer-events="none"`：箭头只做视觉，不吃画布事件。 */
@@ -54,7 +82,8 @@ const ELECTRIC_FLOW_FLOWING_CLASS = "electric-flow-flowing";
 const ELECTRIC_FLOW_REFERENCE_PATH_LENGTH = 100;
 
 /**
- * 三角箭头图元（`<path>` 的 `d`）。
+ * 三角箭头基准图元（`<path>` 的 `d`）—— 现为预设表 `ELECTRIC_FLOW_ARROW_STYLES`
+ * 中 `triangle` 的一项，保留此常量供无设置时的字节稳定输出（与旧行为逐字节一致）。
  *
  * 顶点朝局部 **+x**（路径切线方向）。包围盒 x∈[-4,4]、y∈[-4,4] **关于原点对称** ——
  * motion path 的锚点语义（`offset-anchor: auto` 解析到元素中心）在各实现间细节不一，
@@ -124,13 +153,13 @@ type ArrowSpec = { direction: "forward" | "reverse"; offsetFactor: number };
 /**
  * 某条边应有的箭头序列。
  *
- * `both` 两个方向各一个；单向边则用**两个同向**箭头错开半个周期，
- * 形成"沿路径流过去"的连续感（一个箭头是"有向"，两个才是"流动"）。
+ * `both` 两个方向各一个；单向边则用多个同向箭头按 `arrowSpacing` 相位错开，
+ * 形成"沿路径流过去"的连续感（间距 0.5 = 2 个箭头，越小越密）。
  * `arrowCount === 1` 是 >600 条有向边时的性能降级，此时每边只剩一个箭头。
  *
  * `offsetFactor` 是错峰相位（周期占比）。
  */
-function arrowSpecsFor(direction: ElectricFlowDirection, arrowCount: number): ArrowSpec[] {
+function arrowSpecsFor(direction: ElectricFlowDirection, arrowCount: number, arrowSpacing: number): ArrowSpec[] {
   const specs: ArrowSpec[] = [];
   if (direction === "forward" || direction === "both") {
     specs.push({ direction: "forward", offsetFactor: 0 });
@@ -139,7 +168,10 @@ function arrowSpecsFor(direction: ElectricFlowDirection, arrowCount: number): Ar
     specs.push({ direction: "reverse", offsetFactor: 0 });
   }
   if (specs.length === 1 && arrowCount > 1) {
-    specs.push({ direction: specs[0].direction, offsetFactor: 0.5 });
+    const phaseCount = Math.max(1, Math.round(1 / arrowSpacing));
+    for (let phase = 1; phase < phaseCount; phase += 1) {
+      specs.push({ direction: specs[0].direction, offsetFactor: phase * arrowSpacing });
+    }
   }
   return specs;
 }
@@ -218,17 +250,22 @@ function arrowStyleAttribute(spec: ArrowSpec, pathD: string): string {
  *
  * - 只处理 `forward` / `reverse` / `both`；`none` 与「无方向的边」直接跳过。
  * - 无可渲染内容时返回空串 `""`（调用方不必特判 `null`）。
- * - 每条有向边默认 2 个箭头错峰成流动感；`routedEdges.length > 600` 时降级为每边 1 个
- *   （大量 motion path 同时动画是实打实的掉帧来源）。
+ * - **密度**：单向边默认每边 2 个箭头（相位间隔 = arrowSpacing，默认 0.5）；
+ *   `routedEdges.length > 600` 时降级为每边 1 个（大量 motion path 同时动画是实打实的掉帧来源）。
  * - **等流速**：每条边的动画周期按其路径实长等比缩放（周期 ∝ 长度），保证所有线路上的
  *   箭头像素速度一致 —— 不再出现「短线快、长线慢」的百分比动画错觉；量不出长度的边
  *   回落共用周期（`--electric-flow-duration`）。
+ * - **形状/大小**：箭头 `d` 来自 `settings.arrowStyleId` 预设并按 `arrowSize` 缩放；
+ *   缺省调用（无 settings）输出与旧行为逐字节一致。
  */
 export function buildElectricFlowLayerMarkup(
   routedEdges: { edgeId: string; path: string }[],
-  directions: Map<string, ElectricFlowDirection>
+  directions: Map<string, ElectricFlowDirection>,
+  settings?: ElectricFlowSettings | null
 ): string {
-  const arrowCount = routedEdges.length > ELECTRIC_FLOW_SINGLE_ARROW_THRESHOLD ? 1 : 2;
+  const s = normalizeElectricFlowSettings(settings);
+  const arrowPathD = electricFlowArrowPathD(s);
+  const arrowCount = routedEdges.length > ELECTRIC_FLOW_SINGLE_ARROW_THRESHOLD ? 1 : Math.max(1, Math.round(1 / s.arrowSpacing));
   const chunks: string[] = [];
 
   for (const routed of routedEdges) {
@@ -237,11 +274,11 @@ export function buildElectricFlowLayerMarkup(
     const pathD = String(routed.path ?? "").trim();
     if (!pathD) continue;
 
-    const arrows = arrowSpecsFor(direction, arrowCount)
+    const arrows = arrowSpecsFor(direction, arrowCount, s.arrowSpacing)
       .map(
         (spec) =>
           `<path class="${ELECTRIC_FLOW_ARROW_CLASS} ${ELECTRIC_FLOW_ARROW_CLASS}-${spec.direction}"` +
-          ` d="${escapeXml(ELECTRIC_FLOW_ARROW_PATH_D)}"` +
+          ` d="${escapeXml(arrowPathD)}"` +
           `${arrowStyleAttribute(spec, pathD)}/>`
       )
       .join("");

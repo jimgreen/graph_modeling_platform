@@ -1,5 +1,6 @@
 // createCurrentProject 输出 backgroundProjectIdx：服务端靠它定位背景模型（前端 id 服务端无法解析）
 import { describe, expect, test, vi } from "vitest";
+import { ELECTRIC_FLOW_DEFAULTS } from "../model";
 import { createAddToContainer, createCanvasPointerKeyboardShortcutAvailability, createConfirmAddGraphTemplate, createConfirmAddToContainer, createCreateGraphTemplateType, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createFinalizeMovedNodeEdgesFast, createGroupDeviceTerminalAssociationFor, createGroupSelectedGraphics, createPasteSelection, createPersistDeviceLibraryChange, createQueuePendingBlankCanvasDeselect, createRemoveFromContainer, createRequireEditMode, createToggleFilterSelectionType } from "./appSelectionDragFactories";
 import { canvasClipboardBounds, cloneCanvasClipboard, createCanvasGroupFromSelection, expandSelectionByGroups } from "../selectionActions";
 import { containerKindSwitch, containerNamePick, containerNameSearch } from "../acContainer";
@@ -69,40 +70,41 @@ describe("createCurrentProject 背景页引用键", () => {
 
 describe("createCurrentProject 电流流水线外观设置", () => {
   // 存档里「开关开 + 外观」成对出现：服务端导出链只读存档，缺字段就永远用默认外观
-  test("electricFlowSettings 随 scope 落盘且经 normalize 归一", () => {
+  test("electricFlowSettings 随 scope 落盘且经 normalize 归一（七项全覆盖）", () => {
     const project = createCurrentProject(makeScope({
       electricFlowVisible: true,
-      electricFlowSettings: { durationSeconds: 3, arrowFill: "#ff8800", arrowStroke: "#112233", arrowStrokeWidth: 2.5 }
+      electricFlowSettings: {
+        durationSeconds: 3,
+        arrowFill: "#ff8800",
+        arrowStroke: "#112233",
+        arrowStrokeWidth: 2.5,
+        arrowSize: 1.4,
+        arrowStyleId: "chevron",
+        arrowSpacing: 0.25
+      }
     }))();
     expect(project.electricFlowVisible).toBe(true);
     expect(project.electricFlowSettings).toEqual({
       durationSeconds: 3,
       arrowFill: "#ff8800",
       arrowStroke: "#112233",
-      arrowStrokeWidth: 2.5
+      arrowStrokeWidth: 2.5,
+      arrowSize: 1.4,
+      arrowStyleId: "chevron",
+      arrowSpacing: 0.25
     });
   });
 
-  test("scope 未提供外观时输出默认四项（不落 undefined）", () => {
+  test("scope 未提供外观时输出默认七项（不落 undefined）", () => {
     const project = createCurrentProject(makeScope())();
-    expect(project.electricFlowSettings).toEqual({
-      durationSeconds: 1.6,
-      arrowFill: "#38bdf8",
-      arrowStroke: "#ffffff",
-      arrowStrokeWidth: 1.5
-    });
+    expect(project.electricFlowSettings).toEqual(ELECTRIC_FLOW_DEFAULTS);
   });
 
-  test("非法外观值回落默认", () => {
+  test("非法外观值回落默认（旧四项 + 新三项）", () => {
     const project = createCurrentProject(makeScope({
-      electricFlowSettings: { durationSeconds: -5, arrowStrokeWidth: Number.NaN }
+      electricFlowSettings: { durationSeconds: -5, arrowStrokeWidth: Number.NaN, arrowSize: 0, arrowStyleId: "?", arrowSpacing: 9 }
     }))();
-    expect(project.electricFlowSettings).toEqual({
-      durationSeconds: 1.6,
-      arrowFill: "#38bdf8",
-      arrowStroke: "#ffffff",
-      arrowStrokeWidth: 1.5
-    });
+    expect(project.electricFlowSettings).toEqual(ELECTRIC_FLOW_DEFAULTS);
   });
 });
 

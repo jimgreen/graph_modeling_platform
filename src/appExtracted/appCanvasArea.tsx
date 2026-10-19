@@ -543,9 +543,9 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
 
   const electricFlowLayerMarkup = useMemo(
     () => (electricFlowVisible
-      ? buildElectricFlowLayerMarkup(electricFlowRoutedEdges, electricFlowDirections)
+      ? buildElectricFlowLayerMarkup(electricFlowRoutedEdges, electricFlowDirections, electricFlowSettings)
       : ""),
-    [electricFlowDirections, electricFlowVisible, electricFlowRoutedEdges]
+    [electricFlowDirections, electricFlowSettings, electricFlowVisible, electricFlowRoutedEdges]
   );
 
   return (
