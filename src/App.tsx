@@ -305,7 +305,8 @@ import {
   viewBoxZoomPercent,
   type PersistedSavedSchemeRecord,
   type SavedSchemeRecord,
-  type SavedProjectRecord
+  type SavedProjectRecord,
+  type ElectricFlowSettings
 } from "./model";
 import { isGlobalSaveShortcut, resolveKeyboardShortcutScope } from "./keyboardShortcuts";
 import {
@@ -1087,7 +1088,9 @@ Object.assign(__appScope, { deviceMeasurementsVisible, setDeviceMeasurementsVisi
 // 电流流水线（沿线路移动的方向箭头）。**默认关**：它是一个纯显示开关，而 SVG 导出
 // 读的是存档里的这个值，默认开着会改掉所有存量模型的导出基线。
 const [electricFlowVisible, setElectricFlowVisible] = useState(false);
-Object.assign(__appScope, { electricFlowVisible, setElectricFlowVisible });
+// 电流流水线外观设置（时长/填充/描边），随方案存档；缺省走 ELECTRIC_FLOW_DEFAULTS。
+const [electricFlowSettings, setElectricFlowSettings] = useState<ElectricFlowSettings>({});
+Object.assign(__appScope, { electricFlowVisible, setElectricFlowVisible, electricFlowSettings, setElectricFlowSettings });
 const [minimapVisible, setMinimapVisible] = useState(false);
 Object.assign(__appScope, { minimapVisible, setMinimapVisible });
 const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT });

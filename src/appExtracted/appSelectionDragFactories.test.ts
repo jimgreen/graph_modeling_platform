@@ -67,6 +67,45 @@ describe("createCurrentProject 背景页引用键", () => {
   });
 });
 
+describe("createCurrentProject 电流流水线外观设置", () => {
+  // 存档里「开关开 + 外观」成对出现：服务端导出链只读存档，缺字段就永远用默认外观
+  test("electricFlowSettings 随 scope 落盘且经 normalize 归一", () => {
+    const project = createCurrentProject(makeScope({
+      electricFlowVisible: true,
+      electricFlowSettings: { durationSeconds: 3, arrowFill: "#ff8800", arrowStroke: "#112233", arrowStrokeWidth: 2.5 }
+    }))();
+    expect(project.electricFlowVisible).toBe(true);
+    expect(project.electricFlowSettings).toEqual({
+      durationSeconds: 3,
+      arrowFill: "#ff8800",
+      arrowStroke: "#112233",
+      arrowStrokeWidth: 2.5
+    });
+  });
+
+  test("scope 未提供外观时输出默认四项（不落 undefined）", () => {
+    const project = createCurrentProject(makeScope())();
+    expect(project.electricFlowSettings).toEqual({
+      durationSeconds: 1.6,
+      arrowFill: "#38bdf8",
+      arrowStroke: "#ffffff",
+      arrowStrokeWidth: 1.5
+    });
+  });
+
+  test("非法外观值回落默认", () => {
+    const project = createCurrentProject(makeScope({
+      electricFlowSettings: { durationSeconds: -5, arrowStrokeWidth: Number.NaN }
+    }))();
+    expect(project.electricFlowSettings).toEqual({
+      durationSeconds: 1.6,
+      arrowFill: "#38bdf8",
+      arrowStroke: "#ffffff",
+      arrowStrokeWidth: 1.5
+    });
+  });
+});
+
 // ─── 拖动撤销作用域:图中存在容器时必须退化为全量对比 ─────────────────────────
 // 拖动集只含被抓住的节点,而容器的几何重算 / 成员归属 / 关口解绑 / 挤出全在集合之外;
 // 作用域一开 patch 通道,这些节点就落在撤销计划之外 → Ctrl+Z 后容器残留新几何与新归属。

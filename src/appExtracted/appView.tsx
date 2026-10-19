@@ -2564,6 +2564,9 @@ export function renderAppView(__appScope: Record<string, any>) {
             __appScope.runtimeWsStatus,
             __appScope.runtimeWsBlinkSeq,
             __appScope.runtimeWsClientId,
+            // 电流流水线开关 + 外观设置：弹窗确定后对象引用变化必须让顶栏重渲染
+            __appScope.electricFlowVisible,
+            __appScope.electricFlowSettings,
             eDeviceInterfaceTemplateLabel
           ]}
         />

@@ -197,7 +197,8 @@ export async function serializeScreenshot(
           // 电流流水线开关透传：截图必须与导出 SVG 同源，否则「截图里没箭头、导出里有」。
           // 注意 rasterizeSvgString 走 <img> 加载、CSS 动画不执行 → 画面停在第 0 帧；
           // 流水线箭头是静态 <path> + 动画属性（无 opacity 入场动画），第 0 帧即可见。
-          electricFlowVisible: appScope.electricFlowVisible
+          electricFlowVisible: appScope.electricFlowVisible,
+          electricFlowSettings: appScope.electricFlowSettings
         })
       );
     } else {

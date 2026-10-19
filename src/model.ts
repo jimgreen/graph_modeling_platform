@@ -642,6 +642,29 @@ export const MODEL_TYPE_META: Record<ModelType, { color: string; icon: string }>
   "其他": { color: "#94a3b8", icon: "FileJson" }
 };
 
+/**
+ * 电流流水线外观设置：四项全部可选，缺省值与 buildElectricFlowStyleMarkup 内置 CSS 变量一致。
+ *
+ * - durationSeconds：动画周期（秒），越小越快。0/负数视为非法，回落默认。
+ * - arrowFill：箭头填充色（任意 CSS color）。
+ * - arrowStroke：箭头描边色（白色轮廓的颜色）。
+ * - arrowStrokeWidth：描边宽度（CSS px 数值）。
+ */
+export type ElectricFlowSettings = {
+  durationSeconds?: number;
+  arrowFill?: string;
+  arrowStroke?: string;
+  arrowStrokeWidth?: number;
+};
+
+/** ElectricFlowSettings 各项的内置默认值（唯一来源，样式与弹窗共用）。 */
+export const ELECTRIC_FLOW_DEFAULTS: Required<ElectricFlowSettings> = {
+  durationSeconds: 1.6,
+  arrowFill: "#38bdf8",
+  arrowStroke: "#ffffff",
+  arrowStrokeWidth: 1.5
+};
+
 export type ProjectFile = {
   version: 1;
   name: string;
@@ -662,6 +685,9 @@ export type ProjectFile = {
   // 电流流水线（沿线路移动的方向箭头）是否显示。默认关 —— 它是纯显示开关，
   // 而导出 SVG / E 文件读的是存档里的这个值，默认开着会改掉存量模型的导出基线。
   electricFlowVisible?: boolean;
+  // 电流流水线外观设置（随方案存档）。四项均为可选：缺省走内置默认值，
+  // 与 buildElectricFlowStyleMarkup 的 CSS 变量默认值一一对应。
+  electricFlowSettings?: ElectricFlowSettings;
   powerUnit?: string;
   voltageUnit?: string;
   currentUnit?: string;

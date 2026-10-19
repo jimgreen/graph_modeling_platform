@@ -150,7 +150,9 @@ export async function renderSavedModelSvg({ parts, name, colorMode = "energy", p
       imageAssets: imageExportPathById,
       // 电流流水线开关随模型走：后端导出与前端「导出 SVG」按钮共用同一个 buildSvgDocument，
       // 不透传就会出现「前端开着、后端导出没有」的两套产物。缺省 false（渲染器自身默认）。
-      electricFlowVisible: project.electricFlowVisible
+      electricFlowVisible: project.electricFlowVisible,
+      // 外观设置随开关一起透传（时长/填充/描边）；normalizeProjectForStorage 展开透传保证存档里有。
+      electricFlowSettings: project.electricFlowSettings
     }
   );
   return { svg };

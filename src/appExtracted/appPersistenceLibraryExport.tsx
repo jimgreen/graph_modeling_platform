@@ -2,6 +2,7 @@ export * from "../export/svg";
 import { buildSvgDocument, nodeGeometryTransform, setSvgImageAssetsReader } from "../export/svg";
 // 分类库名归一化单源在 Node 直载的纯模块（原此处另有一份实现）
 import { normalizeCategoryLibraryName } from "../export/device-definition-shared";
+import { normalizeElectricFlowSettings } from "../export/electric-flow-markup";
 import { memo, MouseEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { apiPath } from "../config";
@@ -185,6 +186,8 @@ export function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
     // 电流流水线默认关：存量模型 / 手工 JSON 里没有这个键，落盘时补成 false，
     // 服务端 normalizeProjectForStorage 是展开透传（不校验未知顶层键），原样带过去。
     electricFlowVisible: project.electricFlowVisible ?? false,
+    // 外观设置：缺省补默认四项；服务端 normalizeProjectForStorage 展开透传原样带过去。
+    electricFlowSettings: normalizeElectricFlowSettings(project.electricFlowSettings),
     powerUnit: project.powerUnit ?? DEFAULT_POWER_UNIT,
     voltageUnit: project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT,
     currentUnit: project.currentUnit ?? DEFAULT_CURRENT_UNIT,
