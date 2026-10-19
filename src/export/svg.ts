@@ -472,7 +472,8 @@ ${scopedBackgroundSvg}
   const backgroundLayerId = exportSvgUniqueId(exportSvgLayerId("Background", "Background"), usedSvgIds, "Background_Layer");
   // 电流流水线层：单独的语义 id（Flow_Layer），供外部联动脚本按层定位流水线 <g>。
   // 注意这不是 svgModelImport 的语义层（导入只认 Segment/Text/Measurement/Other 四个 id，
-  // Flow_Layer 会被导入忽略），仅是导出物上的定位锚点。
+  // Flow_Layer 会被导入忽略），仅是导出物上的定位锚点。线路节点本体的箭头在设备层之上
+  // 另有一层（无 id，按 data-edge-id 寻址），方向判定与主层同源。
   const electricFlowLayerId = exportSvgUniqueId(exportSvgLayerId("Flow", "Flow"), usedSvgIds, "Flow_Layer");
   const segmentLayerId = exportSvgUniqueId(exportSvgLayerId("Segment", "Segment"), usedSvgIds, "Segment_Layer");
   const textLayerId = exportSvgUniqueId(exportSvgLayerId("Text", "Text"), usedSvgIds, "Text_Layer");
@@ -1206,26 +1207,46 @@ ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
       });
     }
   }
-  // 电流流水线（开关关闭 / 无可渲染内容时为 ""，插值处不产生任何多余字节）
-  const electricFlowLayer = canvasSize.electricFlowVisible === true
-    ? buildElectricFlowLayerMarkup(
-        electricFlowLineEntries.length ? [...routedEdges, ...electricFlowLineEntries] : routedEdges,
+  // 电流流水线（开关关闭 / 无可渲染内容时为 ""，插值处不产生任何多余字节）。
+  // 两层：edge 箭头在设备层之下（主层，Flow_Layer）；线路节点本体的箭头压在设备层
+  // 之上（Flow_Line_Layer）—— 本体是节点、画在主层之上，箭头放主层会被本体盖住。
+  const electricFlowDirections = canvasSize.electricFlowVisible === true
+    ? computeElectricFlowDirections(
         // 节点取 exportNodes：它是上方路由实际吃进去的那一份，方向判定与线路位置同源。
         // calculateElectricalTopology 的结果只用于取端子号，**不回写**（回写会把拓扑推导的
         // 派生字段渗进导出模型，污染既有输出），此处也不使用。
-        computeElectricFlowDirections(exportNodes, edges, electricFlowLineEntries),
+        exportNodes,
+        edges,
         // 箭头形状/大小/密度与样式四项同源：都来自存档设置（缺省回落内置默认）。
+        electricFlowLineEntries
+      )
+    : null;
+  const electricFlowLayer = electricFlowDirections
+    ? buildElectricFlowLayerMarkup(
+        // 线路条目**不**并入主层：它们的箭头在上方独立层输出，并入会被设备本体盖住
+        // （白画一遍），还会让 Flow_Layer 里出现永远不可见的重复箭头。
+        routedEdges,
+        electricFlowDirections,
         canvasSize.electricFlowSettings,
         // 语义 id：外部联动脚本按 Flow_Layer 定位流水线层、按边 g 的 data-edge-id
         // 挂 revert 类反转流向。
         electricFlowLayerId
       )
     : "";
+  // 线路条目单列一层（无 id 需求 —— 定位锚点在主层，线路箭头随 data-edge-id 寻址）：
+  // 只在真有线路条目时输出，确保开关开/关与「有/无线路」各状态输出逐字节可预期。
+  const electricFlowLineLayer = electricFlowDirections && electricFlowLineEntries.length
+    ? buildElectricFlowLayerMarkup(electricFlowLineEntries, electricFlowDirections, canvasSize.electricFlowSettings)
+    : "";
   // 样式串只在真有图层时才输出：单独一段 <style> 而没有箭头是无意义的体积，
   // 也会让「开关打开但模型无电源」的空模型导出多出一段死代码。
   // 两块都自带尾随换行，插值处便能在关闭时与旧输出逐字节相同。
-  const electricFlowStyleBlock = electricFlowLayer ? `${buildElectricFlowStyleMarkup(canvasSize.electricFlowSettings)}\n` : "";
+  const electricFlowStyleBlock = electricFlowLayer || electricFlowLineLayer
+    ? `${buildElectricFlowStyleMarkup(canvasSize.electricFlowSettings)}\n`
+    : "";
+  // 线路箭头覆盖层：设备层**之后**、Text_Layer 之前（文字标识最靠后不变）。
   const electricFlowLayerBlock = electricFlowLayer ? `${electricFlowLayer}\n` : "";
+  const electricFlowLineLayerBlock = electricFlowLineLayer ? `${electricFlowLineLayer}\n` : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${canvasWidth},${canvasHeight}" active-layer-id="${escapeXml(activeExportLayerId)}">
 <defs id="${escapeXml(defsId)}">
 ${voltageColorStyleMarkup}
@@ -1246,7 +1267,7 @@ ${containerLayerMarkup}<g id="${escapeXml(segmentLayerId)}">
 ${edgeMarkup}
 </g>
 ${electricFlowLayerBlock}${deviceLayerMarkup}
-<g id="${escapeXml(textLayerId)}">
+${electricFlowLineLayerBlock}<g id="${escapeXml(textLayerId)}">
 ${textLayerMarkup.join("\n")}
 </g>
 <g id="${escapeXml(measurementLayerId)}">

@@ -747,7 +747,7 @@ describe("buildSvgDocument 电流流水线开关", () => {
     return { nodes: [...nodes, line] as any[], edges, line };
   };
 
-  test("自适应线路本体：Flow_Layer 内出现 data-edge-id=线路节点 id 的箭头组", () => {
+  test("自适应线路本体：线路箭头在设备层之上的覆盖层（不并入 Flow_Layer）", () => {
     const { nodes, edges, line } = flowingModelWithLine();
     const fixture = { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any;
     const svg = buildSvgDocument(nodes, edges, { ...fixture, electricFlowVisible: true });
@@ -756,6 +756,21 @@ describe("buildSvgDocument 电流流水线开关", () => {
     // 且方向类为 forward：电流从电源侧端子流向负荷侧端子。
     const lineGroup = `<g class="electric-flow-edge electric-flow-flowing electric-flow-layer-forward" data-edge-id="${line.id}">`;
     expect(svg).toContain(lineGroup);
+
+    // 线路箭头**不在** Flow_Layer 主层（主层在设备层之下，会被线路本体盖住），
+    // 而在设备层之后的独立覆盖层：文档顺序 = 设备层 g → 线路箭头层 → Text_Layer。
+    const flowLayerAt = svg.indexOf('<g id="Flow_Layer"');
+    const deviceLayerAt = svg.indexOf('<g id="ACBranch_Layer"');
+    const lineGroupAt = svg.indexOf(lineGroup);
+    const textLayerAt = svg.indexOf('<g id="Text_Layer"');
+    expect(flowLayerAt).toBeGreaterThanOrEqual(0);
+    expect(deviceLayerAt).toBeGreaterThan(flowLayerAt);
+    expect(lineGroupAt).toBeGreaterThan(deviceLayerAt);
+    expect(textLayerAt).toBeGreaterThan(lineGroupAt);
+    // 主层（Flow_Layer）里没有线路条目 —— 不重复渲染被盖住的箭头。
+    const flowLayerEnd = svg.indexOf("</g>", svg.indexOf(`data-edge-id`, flowLayerAt + 1));
+    const mainLayerChunk = flowLayerEnd >= 0 ? "" : svg.slice(flowLayerAt, deviceLayerAt);
+    expect(mainLayerChunk).not.toContain(`data-edge-id="${line.id}"`);
 
     // 关闸时一个字节都不多
     const off = buildSvgDocument(nodes, edges, fixture);

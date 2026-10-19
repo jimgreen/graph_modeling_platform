@@ -588,18 +588,21 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     multiNodeDragging, renderViewportRoutedEdges, rewiring?.edgeId, terminalPressPreviewEdgeIdSet
   ]);
 
-  const electricFlowLayerInput = useMemo(
+  // 两层箭头：edge 箭头压在连线之上、设备图元之下（主层，与开关上线前一致）；
+  // 线路节点（ac-routable-line 等）的本体是**节点**、画在主层之上 ⇒ 它的箭头必须
+  // 单独放一层、渲染在节点层之后，否则会被线路本体盖住（SVG 只有文档顺序）。
+  const electricFlowLineLayerMarkup = useMemo(
     () => (electricFlowLineEntries.length
-      ? [...electricFlowRoutedEdges, ...electricFlowLineEntries]
-      : electricFlowRoutedEdges),
-    [electricFlowLineEntries, electricFlowRoutedEdges]
+      ? buildElectricFlowLayerMarkup(electricFlowLineEntries, electricFlowDirections, electricFlowSettings)
+      : ""),
+    [electricFlowDirections, electricFlowSettings, electricFlowLineEntries]
   );
 
   const electricFlowLayerMarkup = useMemo(
     () => (electricFlowVisible
-      ? buildElectricFlowLayerMarkup(electricFlowLayerInput, electricFlowDirections, electricFlowSettings)
+      ? buildElectricFlowLayerMarkup(electricFlowRoutedEdges, electricFlowDirections, electricFlowSettings)
       : ""),
-    [electricFlowDirections, electricFlowSettings, electricFlowVisible, electricFlowLayerInput]
+    [electricFlowDirections, electricFlowSettings, electricFlowVisible, electricFlowRoutedEdges]
   );
 
   return (
@@ -1440,6 +1443,9 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                     </g>) : null)}
                 </g>);
     })}
+            {/* 线路节点箭头覆盖层：本体（节点层）之上、交互覆盖物之下 —— 箭头在线路上方可见，
+                又不会糊住设备符号与选框。开关关闭 / 无线路条目时输出 null，DOM 与之前逐字节一致。 */}
+            {electricFlowLineLayerMarkup && (<SvgMarkupChunk className="electric-flow-line-layer-host" markup={electricFlowLineLayerMarkup}/>)}
             {dragging?.historyCaptured && dragging.nodeIds.length > 0 && (<g className="drag-origin-measurement-layer" pointerEvents="none">
                 {dragging.nodeIds.map((nodeId: string) => {
             const node = nodeById.get(nodeId);
