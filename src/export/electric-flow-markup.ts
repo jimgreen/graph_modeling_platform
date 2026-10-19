@@ -138,7 +138,7 @@ export function buildElectricFlowStyleMarkup(settings?: ElectricFlowSettings | n
   pointer-events: none;
 }
 /* 流向反转钩子：外部联动脚本给某条边的 <g> 加 revert 类即可整组反向 —— 前向箭头换
-   反向关键帧并把朝向调转 180°，反向箭头对调回前向；both 边两箭头互换后仍是双向。
+   反向关键帧并把朝向调转 180°，反向箭头对调回前向（每条边只有一种方向的箭头）。
    两条规则必须带 !important：箭头的 animation-name / offset-rotate 写在 style 内联
    属性上，普通选择器特异性压不过内联声明。 */
 .${ELECTRIC_FLOW_EDGE_CLASS}.revert .${ELECTRIC_FLOW_ARROW_CLASS}-forward {
@@ -165,20 +165,22 @@ type ArrowSpec = { direction: "forward" | "reverse"; offsetFactor: number };
 /**
  * 某条边应有的箭头序列。
  *
- * `both` 两个方向各一个；单向边则用多个同向箭头按等分相位错开 —— 箭头数由
- * 「路径实长 / 目标间距」换算（`arrowCount`），相位均匀铺满一个周期，屏上间距 ≈ 目标间距
- * 且**与边长无关**（长边多排几只、短边少排几只，间距一致）。
+ * 同一条线路上不允许出现 2 个不同方向的箭头（画布规则）：方向只会是 `forward` /
+ * `reverse` 单向，用多个同向箭头按等分相位错开 —— 箭头数由「路径实长 / 目标间距」
+ * 换算（`arrowCount`），相位均匀铺满一个周期，屏上间距 ≈ 目标间距且**与边长无关**
+ * （长边多排几只、短边少排几只，间距一致）。
  * `arrowCount === 1` 是 >600 条有向边时的性能降级，此时每边只剩一个箭头。
+ * （`both` 已从方向判定中移除；类型保留该值只为兼容旧 Map 输入，此处按 forward 处理。）
  *
  * `offsetFactor` 是错峰相位（周期占比）。
  */
 function arrowSpecsFor(direction: ElectricFlowDirection, arrowCount: number): ArrowSpec[] {
   const specs: ArrowSpec[] = [];
-  if (direction === "forward" || direction === "both") {
-    specs.push({ direction: "forward", offsetFactor: 0 });
-  }
-  if (direction === "reverse" || direction === "both") {
+  if (direction === "reverse") {
     specs.push({ direction: "reverse", offsetFactor: 0 });
+  } else {
+    // forward（含防御性的 both → forward：绝不允许同边双方向箭头）
+    specs.push({ direction: "forward", offsetFactor: 0 });
   }
   if (specs.length === 1 && arrowCount > 1) {
     for (let phase = 1; phase < arrowCount; phase += 1) {
@@ -261,7 +263,8 @@ function arrowStyleAttribute(spec: ArrowSpec, pathD: string): string {
 /**
  * 渲染有向边箭头层。
  *
- * - 只处理 `forward` / `reverse` / `both`；`none` 与「无方向的边」直接跳过。
+ * - 只处理 `forward` / `reverse`（防御性接受 `both`，按 forward 渲染）；`none` 与
+ *   「无方向的边」直接跳过。
  * - 无可渲染内容时返回空串 `""`（调用方不必特判 `null`）。
  * - **可选语义 id**：`layerId` 传入时写在最外层 `<g>` 上（导出侧的 `Flow_Layer`）；
  *   不传则不输出 id —— 画布调用保持逐字节稳定。
