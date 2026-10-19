@@ -28,6 +28,19 @@ import {
 import { isBusNode, resolveTopologyEdgeTerminal } from "../model-routing.ts";
 import { terminalVoltageDisplayValue } from "../model-eexport.ts";
 
+/** 流水线箭头与自适应线路本体 path 同源：线路首末点即两端子方向（见 routableLineDeviceEndpointRefs）。 */
+export interface ElectricFlowLinePath {
+  /** 合成虚拟边 id = 线路节点 id（BFS 返回 Map 的 key 空间由此与真实 edgeId 天然不撞）。 */
+  edgeId: string;
+  /** 线路本体 path（画布/导出各自与本体渲染同源产出的 d 字符串）。 */
+  path: string;
+  /** 线路两端设备：直接作为虚拟 Edge 的 source/target 参与 BFS。 */
+  sourceId: string;
+  targetId: string;
+  sourceTerminalId?: string;
+  targetTerminalId?: string;
+}
+
 /**
  * 电流方向。
  *
@@ -154,8 +167,31 @@ function transformerSideVoltages(node: ModelNode): number[] {
  *
  * 返回的 Map **覆盖 `edges` 里的全部 edge**（包括悬空边与不可达边，值均为 `"none"`）：
  * 调用方按缺省 none 处理与读到显式 none 等价，直接 `map.get(id)` 即可，不必判存在。
+ *
+ * `flowLines`（可选）：自适应线路节点合成的虚拟边（id = 线路节点 id）。虚拟边与真实 edge
+ * 走完全相同的 BFS 判定（中继展开/变压器电压规则/开关分闸掐断/both 收敛），返回 Map 同时
+ * 覆盖虚拟条目。虚拟边排在真实 edge **之后**：id 撞车时真实 edge 先注册、虚拟条目按同 id
+ * 跳过（方向退化为该真实 edge 的方向），不会反向吞掉真实边。缺省不传 = 旧行为逐字节稳定。
  */
-export function computeElectricFlowDirections(nodes: ModelNode[], edges: Edge[]): Map<string, ElectricFlowDirection> {
+export function computeElectricFlowDirections(
+  nodes: ModelNode[],
+  edges: Edge[],
+  flowLines?: ElectricFlowLinePath[],
+): Map<string, ElectricFlowDirection> {
+  // 虚拟边（自适应线路节点合成，id = 线路节点 id）排在真实边**之后**：id 撞车时真实 edge
+  // 先注册 edgesById，虚拟条目按同 id 跳过（方向退化为该真实 edge 的方向），不会反向吞掉。
+  const virtualEdges: Edge[] = flowLines?.length
+    ? [
+        ...edges,
+        ...flowLines.map((line) => ({
+          id: line.edgeId,
+          sourceId: line.sourceId,
+          targetId: line.targetId,
+          sourceTerminalId: line.sourceTerminalId,
+          targetTerminalId: line.targetTerminalId
+        }))
+      ]
+    : edges;
   const nodesById = new Map<string, ModelNode>();
   for (const node of nodes) {
     nodesById.set(node.id, node);
@@ -171,7 +207,7 @@ export function computeElectricFlowDirections(nodes: ModelNode[], edges: Edge[])
     else incidentByNode.set(nodeId, [item]);
   };
 
-  for (const edge of edges) {
+  for (const edge of virtualEdges) {
     if (edgesById.has(edge.id)) continue;
     edgesById.set(edge.id, edge);
     const source = nodesById.get(edge.sourceId);
@@ -287,7 +323,7 @@ export function computeElectricFlowDirections(nodes: ModelNode[], edges: Edge[])
   }
 
   const directions = new Map<string, ElectricFlowDirection>();
-  for (const edge of edges) {
+  for (const edge of virtualEdges) {
     directions.set(edge.id, recorded.get(edge.id) ?? "none");
   }
   return directions;
