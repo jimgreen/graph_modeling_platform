@@ -1,4 +1,5 @@
-// 电流方向判定：多源 BFS 生成有向生成树（arborescence），环路闭合边在冲突处收敛为 "both"。
+// 电流方向判定：多源 BFS 生成有向生成树（arborescence）。同一条线路上不允许出现
+// 2 个不同方向的箭头 —— 环路闭合边在冲突处保留先到的方向（单方向），绝不判 "both"。
 //
 // ## 为什么不直接「每条边各看两端电压等级」
 //
@@ -9,8 +10,8 @@
 //   - 展开节点 N 时，N 的每条入边以外的导通边都记方向 —— N 是该边 source 端记 `forward`，
 //     是 target 端记 `reverse`；
 //   - 同一个节点**只展开一次**，保证结果是树（不会因为环路无限传播）；
-//   - 同一条边先后被记入两个相反方向 → 判定为 `both`。树形网络天然不会误报（树里每条边
-//     只有一个展开点先碰到它），只有环路闭合边才会真的撞上两个方向。
+//   - 同一条边先后被记入两个相反方向 → 保留先到方向（树形展开下结果稳定）。树形网络
+//     天然无冲突；只有环路闭合边才会撞上两个方向，规则落地后取首个记录。
 //
 // ## 纯模块约束
 //
@@ -46,8 +47,10 @@ export interface ElectricFlowLinePath {
  *
  * - `forward` —— 电流沿 edge 的 `sourceId → targetId`（画布上的箭头指向 target）。
  * - `reverse` —— 电流沿 `targetId → sourceId`。
- * - `both` —— 双向导通（环路闭合边、或电压规则与 BFS 推导互相矛盾时）。
  * - `none` —— 不导通 / 无潮流（分闸开关串断，或整条支路没有电源可达）。
+ *
+ * 不会产出 `both`：同一条线路上不允许出现 2 个不同方向的箭头（画布规则），
+ * 环路闭合边在冲突处保留先到的方向。
  */
 export type ElectricFlowDirection = "forward" | "reverse" | "both" | "none";
 
@@ -169,7 +172,7 @@ function transformerSideVoltages(node: ModelNode): number[] {
  * 调用方按缺省 none 处理与读到显式 none 等价，直接 `map.get(id)` 即可，不必判存在。
  *
  * `flowLines`（可选）：自适应线路节点合成的虚拟边（id = 线路节点 id）。虚拟边与真实 edge
- * 走完全相同的 BFS 判定（中继展开/变压器电压规则/开关分闸掐断/both 收敛），返回 Map 同时
+ * 走完全相同的 BFS 判定（中继展开/变压器电压规则/开关分闸掐断），返回 Map 同时
  * 覆盖虚拟条目。虚拟边排在真实 edge **之后**：id 撞车时真实 edge 先注册、虚拟条目按同 id
  * 跳过（方向退化为该真实 edge 的方向），不会反向吞掉真实边。缺省不传 = 旧行为逐字节稳定。
  */
@@ -219,11 +222,10 @@ export function computeElectricFlowDirections(
     addIncidence(edge.targetId, { edgeId: edge.id, side: "target" });
   }
 
-  /** 记一次方向；同一条边拿到相反方向即判 `both`。 */
+  /** 记一次方向；同一条边拿到相反方向时保留**先到**的方向 —— 画布规则：同一条线路上
+   *  不允许出现 2 个不同方向的箭头，冲突时退化为单方向（先到先得，树形展开下结果稳定）。 */
   const recordFlow = (edgeId: string, direction: "forward" | "reverse") => {
-    const current = recorded.get(edgeId);
-    if (current === undefined) recorded.set(edgeId, direction);
-    else if (current !== direction && current !== "both") recorded.set(edgeId, "both");
+    if (!recorded.has(edgeId)) recorded.set(edgeId, direction);
   };
 
   const queue: QueueItem[] = [];

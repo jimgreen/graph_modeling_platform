@@ -106,11 +106,12 @@ describe("computeElectricFlowDirections — 母线扩散", () => {
 
 /** 场景 3：环网冲突。 */
 describe("computeElectricFlowDirections — 环网闭合边", () => {
-  it("电源接在环的中段节点上：闭合边 C→A 判 both", () => {
+  it("电源接在环的中段节点上：闭合边 C→A 保留先到方向（不判 both）", () => {
     // 母线三角环 A→B→C→A，电源接在 B 上。B 一展开就把 A、C 两条环边收进生成树，
-    // 于是 C→A 在 A 侧记 reverse、在 C 侧记 forward ⇒ 闭合边判 both（环上真双向）。
+    // 于是 C→A 在 A 侧先记 reverse（先到）、在 C 侧本会记 forward ⇒ 保留先到的 reverse。
+    // 画布规则：同一条线路上不允许出现 2 个不同方向的箭头，冲突退化为单方向。
     // A→B 只在 B 侧记过一次 reverse（A 正是经它到达的）、B→C 只记过一次 forward，
-    // 两条生成树边都不误报。
+    // 两条生成树边都不受影响。
     const source = node("ac-source");
     const a = node("ac-bus");
     const b = node("ac-bus");
@@ -126,14 +127,13 @@ describe("computeElectricFlowDirections — 环网闭合边", () => {
       "forward",
       "reverse",
       "forward",
-      "both"
+      "reverse"
     ]);
   });
 
-  it("电源本身在环上的 S→A→B→C→S：整环恰有一条冲突边，且是生成树之外的那条", () => {
+  it("电源本身在环上的 S→A→B→C→S：冲突边保留先到方向，全网没有任何 both", () => {
     // BFS 生成树把 S→A 与 C→S 定成两棵子树（S 是电源，它的每条 incident 边各自成树），
-    // 因此 C 先经 C→S 到达，B→C 才是树上多出来的那条边 —— 冲突落在它身上，
-    // 而图纸上"闭合"回路的 C→S 只是普通反向边，不误报。
+    // 因此 C 先经 C→S 到达，B→C 才是树上多出来的那条边 —— 冲突落在它身上，保留先到方向。
     const source = node("ac-source");
     const a = node("ac-bus");
     const b = node("ac-bus");
@@ -142,9 +142,9 @@ describe("computeElectricFlowDirections — 环网闭合边", () => {
 
     const directions = computeElectricFlowDirections([source, a, b, c], ring);
 
-    expect(ring.map((item) => directionOf(directions, item))).toEqual(["forward", "forward", "both", "reverse"]);
-    // 全网只有一条 both —— 树形分支绝不会被误判成环
-    expect(ring.filter((item) => directionOf(directions, item) === "both")).toHaveLength(1);
+    expect(ring.map((item) => directionOf(directions, item))).toEqual(["forward", "forward", "reverse", "reverse"]);
+    // 全网不允许出现 both —— 同一条线路上不允许 2 个不同方向的箭头
+    expect(ring.filter((item) => directionOf(directions, item) === "both")).toHaveLength(0);
   });
 
   it("树形网络（无环）不会误报 both", () => {
@@ -223,9 +223,9 @@ describe("computeElectricFlowDirections — 储能", () => {
     expect(directionOf(directions, charge)).toBe("reverse");
   });
 
-  it("同一台储能既被电源侧充又被负荷侧充时，共用进线判 both（真·双向）", () => {
-    // 电源进线与负荷侧进线落在同一条边上时不可能只留一个方向：
-    // 储能已由电源到达、必然从自身侧记一次 forward，负荷侧母线再记一次 reverse ⇒ both。
+  it("同一台储能既被电源侧充又被负荷侧充时，共用进线保留先到方向（不判 both）", () => {
+    // 电源进线与负荷侧进线落在同一条边上时，储能已由电源到达、必然从自身侧先记一次
+    // forward；负荷侧母线再记的 reverse 不覆盖先到方向 ⇒ 保留 forward（单方向规则）。
     const source = node("ac-source");
     const storage = node("ac-storage");
     const loadSideBus = node("ac-bus");
@@ -238,7 +238,7 @@ describe("computeElectricFlowDirections — 储能", () => {
     );
 
     expect(directionOf(directions, fromSource)).toBe("forward");
-    expect(directionOf(directions, shared)).toBe("both");
+    expect(directionOf(directions, shared)).toBe("forward");
   });
 });
 
@@ -421,11 +421,12 @@ describe("normalizeElectricFlowSettings 新字段", () => {
 describe("buildElectricFlowLayerMarkup 续", () => {
   const routed = [{ edgeId: "e1", path: "M 0 0 L 100 0" }];
 
-  it("reverse 用 offset-rotate: auto 180deg 回程；both 两个方向各一个箭头", () => {
+  it("reverse 用 offset-rotate: auto 180deg 回程；both 输入按 forward 单向渲染（单方向规则）", () => {
     expect(buildElectricFlowLayerMarkup(routed, new Map([["e1", "reverse"]]))).toContain("offset-rotate: auto 180deg");
     const both = buildElectricFlowLayerMarkup(routed, new Map([["e1", "both"]]));
+    // both 已从方向判定移除：同一条线路上不允许 2 个不同方向的箭头，防御性按 forward 处理
     expect(both).toContain("offset-rotate: auto;");
-    expect(both).toContain("offset-rotate: auto 180deg;");
+    expect(both).not.toContain("offset-rotate: auto 180deg;");
   });
 
   it("路径里的引号 / & / < / > 被 XML 转义，不会截断 style 属性", () => {
