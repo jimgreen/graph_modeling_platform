@@ -46,10 +46,15 @@ const T = (title: string, child: React.ReactNode, extra?: Record<string, any>) =
 function ElectricFlowSettingsDialog({ open, onClose, scope }: { open: boolean; onClose: () => void; scope: Record<string, any> }) {
   const [draft, setDraft] = useState<ElectricFlowSettings>({});
   const [previousOpen, setPreviousOpen] = useState(false);
+  // 拖动偏移：标题行 mousedown 起拖，整个 Modal 面板随 transform 平移；关闭即复位。
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [dragTick, setDragTick] = useState(0);
   // 打开瞬间从 scope 快照一份草稿作为编辑起点（仅初始态；之后每次改动都即时落 scope）。
   if (open && !previousOpen) {
     setPreviousOpen(true);
     setDraft({ ...(scope.electricFlowSettings ?? {}) });
+    dragOffsetRef.current = { x: 0, y: 0 };
   } else if (!open && previousOpen) {
     setPreviousOpen(false);
   }
@@ -68,15 +73,59 @@ function ElectricFlowSettingsDialog({ open, onClose, scope }: { open: boolean; o
     [scope]
   );
 
+  const onTitleMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    // 只响应左键；文本选中/双击选词不参与拖动
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const panel = panelRef.current;
+    if (!panel) return;
+    const start = { x: event.clientX - dragOffsetRef.current.x, y: event.clientY - dragOffsetRef.current.y };
+    const onMove = (moveEvent: MouseEvent) => {
+      // 全屏 clamp：面板不许被拖出视口（留 0 容差，标题行始终可抓回）
+      const rect = panel.getBoundingClientRect();
+      const width = rect.width || panel.offsetWidth;
+      const height = rect.height || panel.offsetHeight;
+      const x = Math.min(Math.max(moveEvent.clientX - start.x, 16 - width), window.innerWidth - 16);
+      const y = Math.min(Math.max(moveEvent.clientY - start.y, 0), window.innerHeight - 16);
+      dragOffsetRef.current = { x, y };
+      panel.style.transform = `translate(${x}px, ${y}px)`;
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      setDragTick((tick) => tick + 1);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
+  // dragTick 仅用于让重渲染读到最新 offset（transform 直接写在 DOM 上，不进 React 状态）
+  void dragTick;
+
   return (
     <Modal
       open={open}
-      title="电流流水线设置"
+      title={
+        <div
+          style={{ cursor: "move", userSelect: "none", margin: "-8px -24px", padding: "8px 24px" }}
+          onMouseDown={onTitleMouseDown}
+          title="拖动此标题行可移动弹窗"
+        >
+          电流流水线设置
+        </div>
+      }
       okText="确定"
       cancelText="关闭"
       destroyOnHidden
       onOk={onClose}
       onCancel={onClose}
+      modalRender={(node) => (
+        <div
+          ref={panelRef}
+          style={{ transform: `translate(${dragOffsetRef.current.x}px, ${dragOffsetRef.current.y}px)` }}
+        >
+          {node}
+        </div>
+      )}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
