@@ -182,6 +182,9 @@ export function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
     ...project,
     canvasBackgroundColor: project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
     canvasBackgroundImage: projectBackground,
+    // 电流流水线默认关：存量模型 / 手工 JSON 里没有这个键，落盘时补成 false，
+    // 服务端 normalizeProjectForStorage 是展开透传（不校验未知顶层键），原样带过去。
+    electricFlowVisible: project.electricFlowVisible ?? false,
     powerUnit: project.powerUnit ?? DEFAULT_POWER_UNIT,
     voltageUnit: project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT,
     currentUnit: project.currentUnit ?? DEFAULT_CURRENT_UNIT,

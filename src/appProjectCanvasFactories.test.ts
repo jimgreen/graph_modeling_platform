@@ -956,6 +956,7 @@ function createLoadScope(overrides: Record<string, unknown> = {}) {
     setCurrentUnit: noop,
     setDeviceIndexCounters: noop,
     setDragging: noop,
+    setElectricFlowVisible: noop,
     setGraphArrays: noop,
     setGroups: noop,
     setHasUnsavedChanges: noop,

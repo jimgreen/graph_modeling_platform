@@ -479,6 +479,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
     runTopologyCalculation, saveCurrentProject, saveRequired,
     setDeviceLabelsVisible, setDeviceMeasurementsVisible, setEDeviceDefinitionInterfaceDialogOpen, setImageTarget,
     setSmartAlignmentEnabled, setVoltageLevelDialogOpen, smartAlignmentEnabled,
+    setElectricFlowVisible, electricFlowVisible,
     toggleColorDisplayMode, toggleInteractionMode, topologyErrors, topologyWarningPanelClosed
   } = scope;
 
@@ -550,6 +551,14 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
           {T("电压等级设置", <button id="topbar-voltage-level" className="topbar-primary-button" onClick={() => setVoltageLevelDialogOpen(true)} disabled={isBrowseMode} aria-label="电压等级设置"><Zap size={16}/></button>)}
           {T(deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识", <button id="topbar-device-labels" className={`topbar-primary-button ${deviceLabelsVisible ? "active" : ""}`} onClick={() => setDeviceLabelsVisible((current: boolean) => !current)} aria-label={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}><Type size={16}/></button>)}
           {T(deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测", <button id="topbar-device-measurements" className={`topbar-primary-button ${deviceMeasurementsVisible ? "active" : ""}`} onClick={() => setDeviceMeasurementsVisible((current: boolean) => !current)} aria-label={deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测"} style={{ fontWeight: 700, fontSize: 16, fontFamily: "'Times New Roman', Times, serif" }}>M</button>)}
+          {/* 电流流水线：沿线路流动的方向箭头。与「设备标识 / 量测」同属显示类开关，
+              文案口径沿用「对齐标线：开/关」那一组，让用户一眼看出它是可切换的显示态。 */}
+          {T(electricFlowVisible ? "电流流水线：开（点击关闭）" : "电流流水线：关（点击开启）", <button type="button" id="topbar-electric-flow" className={`topbar-primary-button ${electricFlowVisible ? "active" : ""}`} onClick={() => setElectricFlowVisible((current: boolean) => !current)} aria-label={electricFlowVisible ? "关闭电流流水线" : "开启电流流水线"} aria-pressed={Boolean(electricFlowVisible)}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1.5 8h13"/>
+              <path d="M10.5 4.5 14 8l-3.5 3.5"/>
+            </svg>
+          </button>)}
         </div>
         {/* 图片资源组 */}
         <div className="topbar-button-group">

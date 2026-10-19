@@ -659,6 +659,9 @@ export type ProjectFile = {
   // 背景页引用键：模型全局 idx（服务端据它定位被引用模型重建背景页；前端 id 服务端无法解析）
   backgroundProjectIdx?: number;
   backgroundLayerIds?: string[];
+  // 电流流水线（沿线路移动的方向箭头）是否显示。默认关 —— 它是纯显示开关，
+  // 而导出 SVG / E 文件读的是存档里的这个值，默认开着会改掉存量模型的导出基线。
+  electricFlowVisible?: boolean;
   powerUnit?: string;
   voltageUnit?: string;
   currentUnit?: string;

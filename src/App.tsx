@@ -1084,6 +1084,10 @@ const [deviceLabelsVisible, setDeviceLabelsVisible] = useState(true);
 Object.assign(__appScope, { deviceLabelsVisible, setDeviceLabelsVisible });
 const [deviceMeasurementsVisible, setDeviceMeasurementsVisible] = useState(true);
 Object.assign(__appScope, { deviceMeasurementsVisible, setDeviceMeasurementsVisible });
+// 电流流水线（沿线路移动的方向箭头）。**默认关**：它是一个纯显示开关，而 SVG 导出
+// 读的是存档里的这个值，默认开着会改掉所有存量模型的导出基线。
+const [electricFlowVisible, setElectricFlowVisible] = useState(false);
+Object.assign(__appScope, { electricFlowVisible, setElectricFlowVisible });
 const [minimapVisible, setMinimapVisible] = useState(false);
 Object.assign(__appScope, { minimapVisible, setMinimapVisible });
 const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT });

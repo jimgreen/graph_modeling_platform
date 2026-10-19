@@ -405,7 +405,10 @@ export function serializeSvg(appScope: Record<string, any>): V1Result<string> {
         activeLayerId: appScope.activeLayerId,
         backgroundPage: appScope.backgroundPageRender,
         measurements: appScope.projectMeasurements,
-        measurementConfig: appScope.measurementConfig
+        measurementConfig: appScope.measurementConfig,
+        // 电流流水线开关透传给渲染器：runtime.svg 是「导出 SVG」按钮的同源产物，
+        // 界面开了却在这里丢一层，等于该端点导出的是另一个模型。缺省 false（渲染器自身默认）。
+        electricFlowVisible: appScope.electricFlowVisible
       });
       return { ok: true, data: String(svgStr) };
     }
