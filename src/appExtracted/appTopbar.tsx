@@ -104,13 +104,13 @@ function ElectricFlowSettingsDialog({ open, onClose, scope }: { open: boolean; o
           <span style={{ width: 96 }}>箭头密度</span>
           <Select
             aria-label="电流流水线箭头密度"
-            style={{ width: 140 }}
+            style={{ width: 160 }}
             value={current.arrowSpacing}
             onChange={(value) => updateDraft({ arrowSpacing: value })}
             options={[
-              { value: 0.5, label: "疏（每边 2 个）" },
-              { value: 0.25, label: "中（每边 4 个）" },
-              { value: 0.1, label: "密（每边 10 个）" }
+              { value: 150, label: "疏（150px 一只）" },
+              { value: 100, label: "中（100px 一只）" },
+              { value: 50, label: "密（50px 一只）" }
             ]}
           />
         </label>

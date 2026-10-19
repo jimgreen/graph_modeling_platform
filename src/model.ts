@@ -651,8 +651,9 @@ export const MODEL_TYPE_META: Record<ModelType, { color: string; icon: string }>
  * - arrowStrokeWidth：轮廓宽度（CSS px 数值）。
  * - arrowSize：箭头大小（基准图元约 8px，此值是缩放系数，1 = 默认）。
  * - arrowStyleId：箭头形状预设 id（见 ELECTRIC_FLOW_ARROW_STYLES）。
- * - arrowSpacing：箭头密度 —— 同一边上相邻箭头的错峰相位间隔（周期占比，
- *   0.5 = 每边 2 个箭头，越小越密；0.1~0.5 合法，非法回落默认）。
+ * - arrowSpacing：箭头密度 —— 沿线路方向相邻箭头的目标间距（SVG px，按路径实长换算
+ *   每边箭头数，**与边长无关**：100px 的线和 400px 的线上相邻箭头屏上距离相同）。
+ *   合法区间 10~400，非法回落默认。
  */
 export type ElectricFlowSettings = {
   durationSeconds?: number;
@@ -693,7 +694,7 @@ export const ELECTRIC_FLOW_DEFAULTS: Required<ElectricFlowSettings> = {
   arrowStrokeWidth: 1.5,
   arrowSize: 1,
   arrowStyleId: "triangle",
-  arrowSpacing: 0.5
+  arrowSpacing: 100
 };
 
 export type ProjectFile = {

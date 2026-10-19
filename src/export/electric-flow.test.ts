@@ -331,8 +331,9 @@ describe("buildElectricFlowLayerMarkup", () => {
       [{ edgeId: "e1", path: "M 0 0 L 300 0" }],
       new Map([["e1", "forward"]])
     );
-    // 300px 路径：半程错峰 = 周期 × 3 × 0.5 —— 与周期同比例，屏上间距仍是路径长度的一半
-    expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * 3.0000 * -0.5)");
+    // 300px 路径、缺省密度 100px → 3 个箭头（相位 0、1/3、2/3），错峰与本边周期同比
+    expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * 3.0000 * -0.3333)");
+    expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * 3.0000 * -0.6667)");
   });
 
   it("量不出长度的路径回落共用周期（duration 与 delay 都不带比例）", () => {
@@ -364,37 +365,45 @@ describe("buildElectricFlowLayerMarkup", () => {
     expect(markup).toContain('d="M 8 0 L -8 8 L -8 -8 Z"');
   });
 
-  it("箭头密度：spacing 0.25 → 每边 4 个箭头、相位 0/0.25/0.5/0.75", () => {
-    const markup = buildElectricFlowLayerMarkup(
-      [{ edgeId: "e1", path: "M 0 0 L 100 0" }],
-      new Map([["e1", "forward"]]),
-      { arrowSpacing: 0.25 }
-    );
-    expect(markup.match(new RegExp(`class="${ELECTRIC_FLOW_ARROW_CLASS}`, "g"))?.length).toBe(4);
-    expect(markup).toContain("animation-delay: 0s");
-    expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * 1.0000 * -0.25)");
+  it("箭头密度按线路长度：相邻箭头屏上间距 ≈ arrowSpacing，与边长无关", () => {
+    const directions = new Map([["e1", "forward" as ElectricFlowDirection]]);
+    // 300px 线、间距 100 → 3 个箭头（相位 0、1/3、2/3）
+    const short = buildElectricFlowLayerMarkup([{ edgeId: "e1", path: "M 0 0 L 300 0" }], directions);
+    expect(short.match(new RegExp(`class="${ELECTRIC_FLOW_ARROW_CLASS}`, "g"))?.length).toBe(3);
+    expect(short).toContain("animation-delay: calc(var(--electric-flow-duration) * 3.0000 * -0.3333)");
+    // 900px 线、间距 100 → 9 个箭头：线变长箭头变多，间距不变
+    const long = buildElectricFlowLayerMarkup([{ edgeId: "e1", path: "M 0 0 L 900 0" }], directions);
+    expect(long.match(new RegExp(`class="${ELECTRIC_FLOW_ARROW_CLASS}`, "g"))?.length).toBe(9);
+    // 60px 线、间距 100 → 下限 2（单只表达不了流动）
+    const tiny = buildElectricFlowLayerMarkup([{ edgeId: "e1", path: "M 0 0 L 60 0" }], directions);
+    expect(tiny.match(new RegExp(`class="${ELECTRIC_FLOW_ARROW_CLASS}`, "g"))?.length).toBe(2);
+  });
+
+  it("缺省密度 100px：100px 参考边仍是 2 个箭头（与旧行为一致）", () => {
+    const markup = buildElectricFlowLayerMarkup(routed, new Map([["e1", "forward"]]));
+    expect(markup.match(new RegExp(`class="${ELECTRIC_FLOW_ARROW_CLASS}`, "g"))?.length).toBe(2);
     expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * 1.0000 * -0.5)");
-    expect(markup).toContain("animation-delay: calc(var(--electric-flow-duration) * 1.0000 * -0.75)");
   });
 });
 
 /** 设置归一化（新增三字段）。 */
 describe("normalizeElectricFlowSettings 新字段", () => {
-  it("缺省/非法值回落默认：大小 ≤0、未知预设 id、密度越界", () => {
+  it("缺省/非法值回落默认：大小 ≤0、未知预设 id、间距越界", () => {
     expect(normalizeElectricFlowSettings(undefined)).toEqual(ELECTRIC_FLOW_DEFAULTS);
     expect(normalizeElectricFlowSettings({ arrowSize: 0 }).arrowSize).toBe(ELECTRIC_FLOW_DEFAULTS.arrowSize);
     expect(normalizeElectricFlowSettings({ arrowSize: -1 }).arrowSize).toBe(ELECTRIC_FLOW_DEFAULTS.arrowSize);
     expect(normalizeElectricFlowSettings({ arrowStyleId: "no-such" }).arrowStyleId).toBe(ELECTRIC_FLOW_DEFAULTS.arrowStyleId);
     expect(normalizeElectricFlowSettings({ arrowSpacing: 0 }).arrowSpacing).toBe(ELECTRIC_FLOW_DEFAULTS.arrowSpacing);
-    expect(normalizeElectricFlowSettings({ arrowSpacing: 0.9 }).arrowSpacing).toBe(ELECTRIC_FLOW_DEFAULTS.arrowSpacing);
+    expect(normalizeElectricFlowSettings({ arrowSpacing: 9 }).arrowSpacing).toBe(ELECTRIC_FLOW_DEFAULTS.arrowSpacing);
+    expect(normalizeElectricFlowSettings({ arrowSpacing: 401 }).arrowSpacing).toBe(ELECTRIC_FLOW_DEFAULTS.arrowSpacing);
     expect(normalizeElectricFlowSettings({ arrowSpacing: Number.NaN }).arrowSpacing).toBe(ELECTRIC_FLOW_DEFAULTS.arrowSpacing);
   });
 
   it("合法新值原样通过", () => {
-    const normalized = normalizeElectricFlowSettings({ arrowSize: 1.8, arrowStyleId: "diamond", arrowSpacing: 0.2 });
+    const normalized = normalizeElectricFlowSettings({ arrowSize: 1.8, arrowStyleId: "diamond", arrowSpacing: 60 });
     expect(normalized.arrowSize).toBe(1.8);
     expect(normalized.arrowStyleId).toBe("diamond");
-    expect(normalized.arrowSpacing).toBe(0.2);
+    expect(normalized.arrowSpacing).toBe(60);
   });
 });
 

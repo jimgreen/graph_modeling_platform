@@ -39,10 +39,10 @@ export function normalizeElectricFlowSettings(settings?: ElectricFlowSettings | 
       : ELECTRIC_FLOW_DEFAULTS.arrowSize;
   const arrowStyle = ELECTRIC_FLOW_ARROW_STYLES.find((style) => style.id === merged.arrowStyleId);
   const arrowStyleId = arrowStyle ? arrowStyle.id : ELECTRIC_FLOW_DEFAULTS.arrowStyleId;
-  // 密度 = 相邻箭头的错峰相位间隔（周期占比）：0.1~0.5 合法（0.5 即默认每边 2 个）；
-  // 超界/非有限回落默认，防止 0/负数造出无限个箭头。
+  // 密度 = 沿线路相邻箭头的目标间距（SVG px）：10~400 合法；超界/非有限回落默认。
+  // 每边箭头数按各边实长换算（见 buildElectricFlowLayerMarkup），间距本身与边长无关。
   const arrowSpacing =
-    typeof merged.arrowSpacing === "number" && Number.isFinite(merged.arrowSpacing) && merged.arrowSpacing >= 0.1 && merged.arrowSpacing <= 0.5
+    typeof merged.arrowSpacing === "number" && Number.isFinite(merged.arrowSpacing) && merged.arrowSpacing >= 10 && merged.arrowSpacing <= 400
       ? merged.arrowSpacing
       : ELECTRIC_FLOW_DEFAULTS.arrowSpacing;
   return { durationSeconds, arrowFill, arrowStroke, arrowStrokeWidth, arrowSize, arrowStyleId, arrowSpacing };
@@ -153,13 +153,14 @@ type ArrowSpec = { direction: "forward" | "reverse"; offsetFactor: number };
 /**
  * 某条边应有的箭头序列。
  *
- * `both` 两个方向各一个；单向边则用多个同向箭头按 `arrowSpacing` 相位错开，
- * 形成"沿路径流过去"的连续感（间距 0.5 = 2 个箭头，越小越密）。
+ * `both` 两个方向各一个；单向边则用多个同向箭头按等分相位错开 —— 箭头数由
+ * 「路径实长 / 目标间距」换算（`arrowCount`），相位均匀铺满一个周期，屏上间距 ≈ 目标间距
+ * 且**与边长无关**（长边多排几只、短边少排几只，间距一致）。
  * `arrowCount === 1` 是 >600 条有向边时的性能降级，此时每边只剩一个箭头。
  *
  * `offsetFactor` 是错峰相位（周期占比）。
  */
-function arrowSpecsFor(direction: ElectricFlowDirection, arrowCount: number, arrowSpacing: number): ArrowSpec[] {
+function arrowSpecsFor(direction: ElectricFlowDirection, arrowCount: number): ArrowSpec[] {
   const specs: ArrowSpec[] = [];
   if (direction === "forward" || direction === "both") {
     specs.push({ direction: "forward", offsetFactor: 0 });
@@ -168,9 +169,9 @@ function arrowSpecsFor(direction: ElectricFlowDirection, arrowCount: number, arr
     specs.push({ direction: "reverse", offsetFactor: 0 });
   }
   if (specs.length === 1 && arrowCount > 1) {
-    const phaseCount = Math.max(1, Math.round(1 / arrowSpacing));
-    for (let phase = 1; phase < phaseCount; phase += 1) {
-      specs.push({ direction: specs[0].direction, offsetFactor: phase * arrowSpacing });
+    for (let phase = 1; phase < arrowCount; phase += 1) {
+      // 相位钉到 4 位小数（与 duration 比例精度一致）：1/3 之类分数不再拖出 16 位尾巴
+      specs.push({ direction: specs[0].direction, offsetFactor: Number((phase / arrowCount).toFixed(4)) });
     }
   }
   return specs;
@@ -250,13 +251,14 @@ function arrowStyleAttribute(spec: ArrowSpec, pathD: string): string {
  *
  * - 只处理 `forward` / `reverse` / `both`；`none` 与「无方向的边」直接跳过。
  * - 无可渲染内容时返回空串 `""`（调用方不必特判 `null`）。
- * - **密度**：单向边默认每边 2 个箭头（相位间隔 = arrowSpacing，默认 0.5）；
+ * - **密度（按线路长度）**：每边箭头数 = round(路径实长 / arrowSpacing)，
+ *   相位均匀铺满一个周期 —— 相邻箭头屏上间距 ≈ arrowSpacing（SVG px）且与边长无关；
  *   `routedEdges.length > 600` 时降级为每边 1 个（大量 motion path 同时动画是实打实的掉帧来源）。
  * - **等流速**：每条边的动画周期按其路径实长等比缩放（周期 ∝ 长度），保证所有线路上的
  *   箭头像素速度一致 —— 不再出现「短线快、长线慢」的百分比动画错觉；量不出长度的边
  *   回落共用周期（`--electric-flow-duration`）。
  * - **形状/大小**：箭头 `d` 来自 `settings.arrowStyleId` 预设并按 `arrowSize` 缩放；
- *   缺省调用（无 settings）输出与旧行为逐字节一致。
+ *   缺省调用（无 settings）输出与旧行为一致（默认间距 100px ⇒ 100px 参考边 2 个箭头）。
  */
 export function buildElectricFlowLayerMarkup(
   routedEdges: { edgeId: string; path: string }[],
@@ -265,7 +267,7 @@ export function buildElectricFlowLayerMarkup(
 ): string {
   const s = normalizeElectricFlowSettings(settings);
   const arrowPathD = electricFlowArrowPathD(s);
-  const arrowCount = routedEdges.length > ELECTRIC_FLOW_SINGLE_ARROW_THRESHOLD ? 1 : Math.max(1, Math.round(1 / s.arrowSpacing));
+  const degraded = routedEdges.length > ELECTRIC_FLOW_SINGLE_ARROW_THRESHOLD;
   const chunks: string[] = [];
 
   for (const routed of routedEdges) {
@@ -274,7 +276,13 @@ export function buildElectricFlowLayerMarkup(
     const pathD = String(routed.path ?? "").trim();
     if (!pathD) continue;
 
-    const arrows = arrowSpecsFor(direction, arrowCount, s.arrowSpacing)
+    // 按本边实长换算箭头数：round(实长 / 目标间距)；下限 2 —— 单只箭头表达不了"流动"，
+    // 太短的边宁可保持经典的双箭头错峰（此时实际间距略小于目标值）。量不出长度时按
+    // 参考长度算（回落到与旧行为一致的每 100px 一只 —— 错也要错得和旧版一样）。
+    const pathLength = estimateElectricFlowPathLength(pathD) ?? ELECTRIC_FLOW_REFERENCE_PATH_LENGTH;
+    const arrowCount = degraded ? 1 : Math.max(2, Math.round(pathLength / s.arrowSpacing));
+
+    const arrows = arrowSpecsFor(direction, arrowCount)
       .map(
         (spec) =>
           `<path class="${ELECTRIC_FLOW_ARROW_CLASS} ${ELECTRIC_FLOW_ARROW_CLASS}-${spec.direction}"` +

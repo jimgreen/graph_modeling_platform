@@ -80,7 +80,7 @@ describe("createCurrentProject 电流流水线外观设置", () => {
         arrowStrokeWidth: 2.5,
         arrowSize: 1.4,
         arrowStyleId: "chevron",
-        arrowSpacing: 0.25
+        arrowSpacing: 80
       }
     }))();
     expect(project.electricFlowVisible).toBe(true);
@@ -91,7 +91,7 @@ describe("createCurrentProject 电流流水线外观设置", () => {
       arrowStrokeWidth: 2.5,
       arrowSize: 1.4,
       arrowStyleId: "chevron",
-      arrowSpacing: 0.25
+      arrowSpacing: 80
     });
   });
 
