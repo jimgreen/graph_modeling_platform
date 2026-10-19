@@ -465,6 +465,10 @@ ${scopedBackgroundSvg}
   const rootId = "root_g";
   const defsId = exportSvgUniqueId("svg_defs", usedSvgIds, "svg_defs");
   const backgroundLayerId = exportSvgUniqueId(exportSvgLayerId("Background", "Background"), usedSvgIds, "Background_Layer");
+  // 电流流水线层：单独的语义 id（Flow_Layer），供外部联动脚本按层定位流水线 <g>。
+  // 注意这不是 svgModelImport 的语义层（导入只认 Segment/Text/Measurement/Other 四个 id，
+  // Flow_Layer 会被导入忽略），仅是导出物上的定位锚点。
+  const electricFlowLayerId = exportSvgUniqueId(exportSvgLayerId("Flow", "Flow"), usedSvgIds, "Flow_Layer");
   const segmentLayerId = exportSvgUniqueId(exportSvgLayerId("Segment", "Segment"), usedSvgIds, "Segment_Layer");
   const textLayerId = exportSvgUniqueId(exportSvgLayerId("Text", "Text"), usedSvgIds, "Text_Layer");
   const measurementLayerId = exportSvgUniqueId(exportSvgLayerId("Measurement", "Measurement"), usedSvgIds, "Measurement_Layer");
@@ -1176,7 +1180,10 @@ ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
         // 派生字段渗进导出模型，污染既有输出），此处也不使用。
         computeElectricFlowDirections(exportNodes, edges),
         // 箭头形状/大小/密度与样式四项同源：都来自存档设置（缺省回落内置默认）。
-        canvasSize.electricFlowSettings
+        canvasSize.electricFlowSettings,
+        // 语义 id：外部联动脚本按 Flow_Layer 定位流水线层、按边 g 的 data-edge-id
+        // 挂 revert 类反转流向。
+        electricFlowLayerId
       )
     : "";
   // 样式串只在真有图层时才输出：单独一段 <style> 而没有箭头是无意义的体积，

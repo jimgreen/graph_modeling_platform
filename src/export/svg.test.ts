@@ -643,15 +643,15 @@ describe("buildSvgDocument 电流流水线开关", () => {
     const svg = buildSvgDocument(nodes, edges, { ...fixture, electricFlowVisible: true });
     const off = buildSvgDocument(nodes, edges, fixture);
 
-    // 图层与样式都在（样式块含 CDATA 与 keyframes，是动画可见的前提）
-    expect(svg).toContain('<g class="electric-flow-layer"');
+    // 图层与样式都在（样式块含 CDATA 与 keyframes，是动画可见的前提）；导出层带 Flow_Layer 语义 id
+    expect(svg).toContain('<g id="Flow_Layer" class="electric-flow-layer"');
     expect(svg).toContain("electric-flow-run-forward");
     expect(svg).toContain("electric-flow-arrow");
     expect(off).not.toContain("electric-flow");
 
     // 位置：Segment_Layer < 流水线图层 < 设备层（箭头盖在线路上、又被设备符号盖住）
     const segmentAt = svg.indexOf('<g id="Segment_Layer"');
-    const flowAt = svg.indexOf('<g class="electric-flow-layer"');
+    const flowAt = svg.indexOf('<g id="Flow_Layer"');
     const deviceAt = svg.indexOf('device-type="');
     expect(segmentAt).toBeGreaterThan(-1);
     expect(flowAt).toBeGreaterThan(segmentAt);
@@ -690,5 +690,40 @@ describe("buildSvgDocument 电流流水线开关", () => {
   test("空模型开开关也不多输出（与缺省逐字相同）", () => {
     expect(buildSvgDocument([], [], { ...SVG_BASELINE_FIXTURE, imageAssets: {}, electricFlowVisible: true } as any))
       .toBe(buildSvgDocument([], [], { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any));
+  });
+
+  test("导出层带 Flow_Layer 语义 id，每条边一个 g 绑 data-edge-id，样式含 revert 反转钩子", () => {
+    const { nodes, edges } = flowingModel();
+    const fixture = { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any;
+    const svg = buildSvgDocument(nodes, edges, { ...fixture, electricFlowVisible: true });
+
+    // 单独的 Flow_Layer：id 唯一，位置仍在 Segment_Layer 之后、设备层之前
+    expect(svg.match(/<g id="Flow_Layer"/g)).toEqual(['<g id="Flow_Layer"']);
+    const segmentAt = svg.indexOf('<g id="Segment_Layer"');
+    const flowAt = svg.indexOf('<g id="Flow_Layer"');
+    const deviceAt = svg.indexOf('device-type="');
+    expect(flowAt).toBeGreaterThan(segmentAt);
+    expect(deviceAt).toBeGreaterThan(flowAt);
+
+    // 同一线路的箭头都在一个 g 里、绑线路 id（外部联动脚本按此挂 revert 类）
+    const edgeGroupIds = Array.from(svg.matchAll(/<g class="electric-flow-edge[^"]*" data-edge-id="([^"]+)"/g)).map((m) => m[1]);
+    expect(edgeGroupIds.length).toBeGreaterThan(0);
+    expect(edgeGroupIds).toEqual([...new Set(edgeGroupIds)]);
+    for (const edgeId of edgeGroupIds) {
+      expect(edges.some((edge) => edge.id === edgeId)).toBe(true);
+    }
+
+    // revert 反转钩子随样式块一起导出（CDTA 内两条 !important 规则）
+    expect(svg).toContain(".electric-flow-edge.revert .electric-flow-arrow-forward {");
+    expect(svg).toContain(".electric-flow-edge.revert .electric-flow-arrow-reverse {");
+    expect(svg).toContain("animation-name: electric-flow-run-reverse !important");
+  });
+
+  test("开关关闭时不输出 Flow_Layer（id 只在图层存在时出现）", () => {
+    const { nodes, edges } = flowingModel();
+    const fixture = { ...SVG_BASELINE_FIXTURE, imageAssets: {} } as any;
+    const off = buildSvgDocument(nodes, edges, fixture);
+    expect(off).not.toContain('id="Flow_Layer"');
+    expect(off).not.toContain("electric-flow");
   });
 });

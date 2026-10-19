@@ -242,7 +242,7 @@ function fullScope(overrides: Record<string, any> = {}) {
     // ---- 引用 ----
     // 用真实的 store 工厂而非手搓字面量：routeStoreSetRoutes 会读 store.routeOrder
     // 与 routes.length 比对，手搓的残缺 store 会在那里炸（实测报 routeStore.ts:297）。
-    graphStore: createGraphStore([], [], [], []),
+    graphStore: createGraphStore([], []),
     cachedRouteStoreRef: { current: createRouteStore([]) },
     setCanvasWidth: NOOP,
     setCanvasHeight: NOOP,
