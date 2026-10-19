@@ -740,20 +740,27 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
           {T(deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识", <button id="topbar-device-labels" className={`topbar-primary-button ${deviceLabelsVisible ? "active" : ""}`} onClick={() => setDeviceLabelsVisible((current: boolean) => !current)} aria-label={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}><Type size={16}/></button>)}
           {T(deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测", <button id="topbar-device-measurements" className={`topbar-primary-button ${deviceMeasurementsVisible ? "active" : ""}`} onClick={() => setDeviceMeasurementsVisible((current: boolean) => !current)} aria-label={deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测"} style={{ fontWeight: 700, fontSize: 16, fontFamily: "'Times New Roman', Times, serif" }}>M</button>)}
           {/* 电流流水线：沿线路流动的方向箭头。与「设备标识 / 量测」同属显示类开关，
-              文案口径沿用「对齐标线：开/关」那一组，让用户一眼看出它是可切换的显示态。 */}
-          {T(electricFlowVisible ? "电流流水线：开（点击关闭）" : "电流流水线：关（点击开启）", <button type="button" id="topbar-electric-flow" className={`topbar-primary-button ${electricFlowVisible ? "active" : ""}`} onClick={() => setElectricFlowVisible((current: boolean) => !current)} aria-label={electricFlowVisible ? "关闭电流流水线" : "开启电流流水线"} aria-pressed={Boolean(electricFlowVisible)}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M1.5 8h13"/>
-              <path d="M10.5 4.5 14 8l-3.5 3.5"/>
-            </svg>
-          </button>)}
-          {T("电流流水线设置", <button type="button" id="topbar-electric-flow-settings" className="topbar-primary-button" onClick={() => setElectricFlowSettingsDialogOpen(true)} aria-label="电流流水线设置" aria-haspopup="dialog">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M1.5 8h7"/>
-              <path d="M5 4.5 8.5 8 5 11.5"/>
-              <circle cx="12.5" cy="8" r="1.6"/>
-            </svg>
-          </button>)}
+              文案口径沿用「对齐标线：开/关」那一组，让用户一眼看出它是可切换的显示态。
+              悬浮展开下拉菜单（与导出文件按钮同一套 .topbar-dropdown 样式），
+              菜单项「设置」打开流水线设置弹窗。 */}
+          <div className="topbar-dropdown electric-flow-dropdown">
+            {T(electricFlowVisible ? "电流流水线：开（点击切换关闭）" : "电流流水线：关（点击切换开启）", <button type="button" id="topbar-electric-flow" className={`topbar-primary-button ${electricFlowVisible ? "active" : ""}`} onClick={() => setElectricFlowVisible((current: boolean) => !current)} aria-label={electricFlowVisible ? "关闭电流流水线" : "开启电流流水线"} aria-haspopup="menu" aria-pressed={Boolean(electricFlowVisible)}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1.5 8h13"/>
+                <path d="M10.5 4.5 14 8l-3.5 3.5"/>
+              </svg>
+            </button>)}
+            <div className="topbar-dropdown-menu" role="menu" aria-label="电流流水线选项">
+              <button type="button" id="topbar-electric-flow-settings" role="menuitem" onClick={() => { setElectricFlowSettingsDialogOpen(true); }} title="设置" aria-label="电流流水线设置" aria-haspopup="dialog">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1.5 8h7"/>
+                  <path d="M5 4.5 8.5 8 5 11.5"/>
+                  <circle cx="12.5" cy="8" r="1.6"/>
+                </svg>
+                <span>设置</span>
+              </button>
+            </div>
+          </div>
         </div>
         {/* 图片资源组 */}
         <div className="topbar-button-group">
