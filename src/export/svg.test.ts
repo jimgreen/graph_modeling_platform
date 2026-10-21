@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 import * as legacy from "../appExtracted/appPersistenceLibraryExport";
-import { DEFAULT_CANVAS_BACKGROUND } from "../appExtracted/appCoreCanvasUtilities";
+import { LIGHT_CANVAS_BACKGROUND } from "../canvasTheme";
 import { createDefaultNode, DEVICE_LIBRARY, getTerminalPoint, type ModelNode, type ProjectFile } from "../model";
 import { decodeSvgImageSource } from "../svgUtils";
 import {
@@ -40,9 +40,9 @@ describe("src/export/svg", () => {
     expect(svg).toContain("bus-glyph");
   });
 
-  test("省略 backgroundColor 时用默认底色（与 appCoreCanvasUtilities.tsx 的同名常量副本一致）", () => {
+  test("省略 backgroundColor 时用浅色画布纯白（导出默认按浅色出图）", () => {
     const svg = buildSvgDocument([], [], { width: 800, height: 600 });
-    expect(svg).toContain(`fill="${DEFAULT_CANVAS_BACKGROUND}"`);
+    expect(svg).toContain(`fill="${LIGHT_CANVAS_BACKGROUND}"`);
   });
 
   test("容器沉底：容器层在 segment（线路）层之前输出，且无容器时输出不变", () => {
@@ -492,7 +492,7 @@ describe("buildSvgDocument：backgroundPage 两级缺省（无 nodes 无 project
       backgroundPage: {}
     } as never));
     expect(layer).toContain('viewBox="0,0,1000,800"');
-    expect(layer).toContain(`fill="${DEFAULT_CANVAS_BACKGROUND}"`);
+    expect(layer).toContain(`fill="${LIGHT_CANVAS_BACKGROUND}"`);
     // 画布尺寸与背景页尺寸相同 → 变换退化成单位阵（不是恒真的「有 transform 属性」）
     expect(layer).toContain(`transform="translate(0 0) scale(1)"`);
     expect(layer).not.toContain("<symbol");

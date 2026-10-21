@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 const clearMock = vi.hoisted(() => vi.fn());
 const writeCookieMock = vi.hoisted(() => vi.fn());
 const rememberOwnerMock = vi.hoisted(() => vi.fn());
+const syncUrlMock = vi.hoisted(() => vi.fn());
 
 vi.mock("./spaceCache", () => ({
   clearSpaceScopedBrowserCaches: clearMock,
@@ -13,6 +14,8 @@ vi.mock("./spaceCache", () => ({
 }));
 // 只桩写 cookie；位置参数断言用得到，其余导出与本模块无关。
 vi.mock("./spaceClient", () => ({ writeSpaceCookie: writeCookieMock }));
+// 地址栏同步单独桩：本文件在 node 下跑，没有真 history，且要断言**写的是哪个空间**。
+vi.mock("./workspaceUrl", () => ({ syncWorkspaceUrl: syncUrlMock }));
 
 // **被测模块刻意不静态 import**，改由 beforeAll 动态 import —— 理由见 beforeAll 的注释。
 // 类型位置用 `typeof import()`：它只在编译期解析类型，不产生运行期 import（等于 0 依赖）。
@@ -51,6 +54,7 @@ beforeEach(() => {
   clearMock.mockReset();
   writeCookieMock.mockReset();
   rememberOwnerMock.mockReset();
+  syncUrlMock.mockReset();
   clearMock.mockResolvedValue(undefined);
   originalLocation = (globalThis as any).location;
   originalShowGlobalMessage = (globalThis as any).showGlobalMessage;
@@ -94,18 +98,28 @@ describe("switchToSpace 的时序", () => {
     await switchToSpace("张三");
 
     expect(seq).toEqual(["clear", "cookie:张三", "owner:张三", "reload"]);
+    // 地址栏与 Cookie 必须一起改、且在 reload 之前。
+    // 只写 Cookie 不改地址栏 = 启动闸门（appStartup 的 adoptUrlSpace）重载后让地址栏里的
+    // **旧**空间重新优先，用户看到的是「切成功了又弹回去」，且没有任何报错。
+    expect(syncUrlMock).toHaveBeenCalledWith({ spaceId: "张三" });
+    expect(syncUrlMock.mock.invocationCallOrder[0]).toBeLessThan(reload.mock.invocationCallOrder[0]);
+    // 只写 space：模型要等新空间的方案树回来才定位得到，写旧空间的 idx 只会开错东西
+    expect(Object.keys(syncUrlMock.mock.calls[0][0])).toEqual(["spaceId"]);
     // 置标志本身不留痕（同模块内直接调用），用两处探针把它夹在写 cookie 与 reload 之间：
     // 写 cookie 时还没置 -> 它不在清缓存/写 cookie 之前；reload 时已置 -> 它在 reload 之前。
     expect(skipAtCookieWrite).toBe(false);
     expect(skipAtReload).toBe(true);
   });
 
-  test("清缓存失败时中止切换：不写 cookie、不 reload、提示用户重试", async () => {
+  test("清缓存失败时中止切换：不写 cookie、不改地址栏、不 reload、提示用户重试", async () => {
     clearMock.mockRejectedValue(new Error("IndexedDB 不可用"));
 
     await switchToSpace("张三");
 
     expect(writeCookieMock).not.toHaveBeenCalled();
+    // 地址栏同样不能改：CleanCookie 与地址栏是同一件事的两半，只改一半会让
+    // 「地址栏说新空间、Cookie 说旧空间」这种分叉一直留在浏览器里
+    expect(syncUrlMock).not.toHaveBeenCalled();
     expect(reload).not.toHaveBeenCalled();
     // 记账同样不能写：清都没清干净就把归属改写成新空间，等于把「已对齐」这个错误前提固化，
     // 重载后的闸门会照此放行，S2 就此打开

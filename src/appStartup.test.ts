@@ -34,12 +34,21 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const fetchSpacesMock = vi.hoisted(() => vi.fn());
 const seedSpacesMock = vi.hoisted(() => vi.fn());
 const reconcileMock = vi.hoisted(() => vi.fn());
+const writeSpaceCookieMock = vi.hoisted(() => vi.fn());
+const rememberCacheOwnerSpaceMock = vi.hoisted(() => vi.fn());
+
+// 地址栏（workspaceUrl）在后端解析链之前先决定空间；node 测试环境没有 location，
+// 这里给一个可改写的桩：默认「地址栏没写空间」，与加此功能前逐字节一致。
+const locationMock = { hash: "" };
 
 vi.mock("./spaceClient", () => ({
   fetchSpaces: fetchSpacesMock,
-  seedSpaces: seedSpacesMock
+  seedSpaces: seedSpacesMock,
+  readSpaceCookie: () => "",
+  writeSpaceCookie: writeSpaceCookieMock
 }));
 vi.mock("./spaceCache", () => ({
+  rememberCacheOwnerSpace: rememberCacheOwnerSpaceMock,
   reconcileSpaceCacheOwnership: reconcileMock
 }));
 
@@ -53,6 +62,10 @@ beforeEach(() => {
   fetchSpacesMock.mockReset();
   seedSpacesMock.mockReset();
   reconcileMock.mockReset();
+  writeSpaceCookieMock.mockReset();
+  rememberCacheOwnerSpaceMock.mockReset();
+  locationMock.hash = "";
+  (globalThis as any).window = { location: locationMock };
   fetchSpacesMock.mockResolvedValue(SPACES);
   seedSpacesMock.mockImplementation(() => {});
   reconcileMock.mockResolvedValue(undefined);
@@ -62,6 +75,7 @@ beforeEach(() => {
 
 afterEach(() => {
   (globalThis as any).showGlobalMessage = originalShowGlobalMessage;
+  delete (globalThis as any).window;
 });
 
 const notified = () => (globalThis as any).showGlobalMessage as ReturnType<typeof vi.fn>;
@@ -234,6 +248,45 @@ describe("runStartupGate 取列表失败", () => {
     });
     await expect(runStartupGate()).resolves.toBeUndefined();
     expect(notified()).not.toHaveBeenCalled();
+  });
+});
+
+// 地址栏里写了空间时，空间由地址栏说了算（打开分享链接必须进对空间）。
+//
+// 这一层要保证的是三条：①Cookie 被改写；②`fetchSpaces()` 那次是在改 Cookie **之前**
+// 发出的，它的 current 与列表都不作数 —— 不播种；③闸门拿「真实生效的空间」对齐缓存。
+describe("runStartupGate 地址栏指定空间", () => {
+  test("hash 里的 space 与 Cookie 不同时写 Cookie，并作废启动时分的那次 fetchSpaces", async () => {
+    locationMock.hash = "#space=w9";
+
+    await runStartupGate();
+
+    expect(writeSpaceCookieMock).toHaveBeenCalledTimes(1);
+    expect(writeSpaceCookieMock).toHaveBeenCalledWith("w9");
+    // 那次请求按旧 Cookie 解析出 current=w1，已作废：播种会让 App 显示成 w1
+    expect(seedSpacesMock).not.toHaveBeenCalled();
+    expect(notified()).not.toHaveBeenCalled();
+  });
+
+  test("作废的那次 fetchSpaces 若抛错，改写的 Cookie 不会被回滚（重载后仍进对的地址空间）", async () => {
+    locationMock.hash = "#space=w9";
+    fetchSpacesMock.mockRejectedValue(new Error("fetch failed"));
+
+    await expect(runStartupGate()).resolves.toBeUndefined();
+
+    expect(writeSpaceCookieMock).toHaveBeenCalledWith("w9");
+    expect(rememberCacheOwnerSpaceMock).not.toHaveBeenCalled();
+  });
+
+  test("hash 里的 space 与 Cookie 相同时什么都不写、照常播种（刷新页面不该触发一次切换）", async () => {
+    // readSpaceCookie 的桩恒返回空串，故这里写的 space 也是空 —— 即「地址栏没约束」
+    locationMock.hash = "#model=m1";
+
+    await runStartupGate();
+
+    expect(writeSpaceCookieMock).not.toHaveBeenCalled();
+    expect(seedSpacesMock).toHaveBeenCalledWith(SPACES);
+    expect(reconcileMock).toHaveBeenCalledWith(SPACES.current);
   });
 });
 

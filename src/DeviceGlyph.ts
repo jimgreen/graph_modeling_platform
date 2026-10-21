@@ -1,5 +1,8 @@
 import { createElement, Fragment, memo, type ReactNode } from "react";
 import type { ColorDisplayMode, ColorPalette, DeviceStateVisual, ModelNode } from "./model";
+// 扩展名不能省：DeviceGlyph 在 server/*.mjs 的 Node 原生直载链上（server/nativeLoad.test.mjs 守卫）。
+import type { CanvasThemeMode } from "./canvasTheme.ts";
+import { themeGlyphColor } from "./canvasTheme.ts";
 import {
   baseDeviceKind,
   CONVERTER_GLYPH_BORDER_INSET,
@@ -63,6 +66,8 @@ export type DeviceGlyphProps = {
   mode?: DeviceGlyphMode;
   colorDisplayMode?: ColorDisplayMode;
   colorPalette?: ColorPalette;
+  /** 画布主题：决定从配色表里取浅色值还是深色值。不传按浅色（保持存量调用行为）。 */
+  themeMode?: CanvasThemeMode;
   stateVisual?: DeviceStateVisual | null;
   /** 导出态专用：非空时电压色改为 class 驱动（currentColor / var(--tN)）。活画布不传 */
   voltagePaint?: DeviceGlyphVoltagePaint | null;
@@ -100,7 +105,7 @@ function deviceVisualReplacesGlyph(node: ModelNode, stateVisual: DeviceStateVisu
   ].some(isPlatformDeviceVisualReplacementImage);
 }
 
-export function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE, stateVisual = null, voltagePaint = null }: DeviceGlyphProps) {
+export function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE, themeMode = "light", stateVisual = null, voltagePaint = null }: DeviceGlyphProps) {
   if (deviceVisualReplacesGlyph(node, stateVisual)) {
     return null;
   }
@@ -123,7 +128,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
   const renderGeometry = mode !== "text";
   const renderText = mode !== "geometry";
   const stateColor = stateVisual?.color?.trim();
-  const deviceStroke = stateVisual?.strokeColor || stateColor || getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
+  const deviceStroke = stateVisual?.strokeColor || stateColor || getDeviceStrokeColor(node, colorDisplayMode, colorPalette, themeMode);
   // 导出态：电压着色改为 class 驱动。nodeRef 缺省为 currentColor —— 它取元素自身的 color，
   // 由 <use class="kvN"> 上的 .kvN{color:...} 继承而来；多端子器件由调用方传 var(--t1)。
   // 状态色（stateVisual.strokeColor / color）优先于电压色（spec §5.2）：状态 symbol 的
@@ -157,9 +162,13 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
                       : glyphVariant === "breaker"
                       ? "#eef2ff"
                       : "#ffffff";
-  const fill = stateVisual?.fillColor || baseFill;
+  // 图元填充随主题换算。填充在**两种主题下一律透明**（用户要求：除盒型开关外，
+  // 设备填充都改成透明）：图元只靠描边和文字表达，底色交给画布自己 —— 深色下不会
+  // 被亮块糊住内部笔画，浅色下也不会出现一块块和画布底色不一样的色疤。
+  // baseFill 是「节点没设 fillColor」时的按类型兜底色，它同样过主题层，保证同一结果。
+  const fill = themeGlyphColor(stateVisual?.fillColor, themeMode, "fill") || themeGlyphColor(baseFill, themeMode, "fill") || "transparent";
   const stateText = stateVisualText(stateVisual);
-  const stateTextFill = stateVisual?.textColor || stateColor || stroke;
+  const stateTextFill = themeGlyphColor(stateVisual?.textColor, themeMode, "stroke") || stateColor || stroke;
   const renderStateTextOverlay = () => stateText
     ? uprightText(
         node,
@@ -189,7 +198,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       // 必须早于 glyphVariant 分派 —— getDeviceGlyphVariant 的 includes("switch") 会把 ac-switch-box 误判成开关符号。
       const corner = staticNumericParam(node, "cornerRadius", 8, 0);
       const lineWidth = Number(node.params.lineWidth || 2);
-      const containerStroke = node.params.strokeColor || deviceStroke;
+      const containerStroke = themeGlyphColor(node.params.strokeColor, themeMode, "stroke") || deviceStroke;
       const labelFontSize = staticNumericParam(node, "fontSize", 16, 8);
       const labelPad = Math.min(staticNumericParam(node, "padding", 12, 0), Math.max(0, Math.min(w, h) / 2 - 2));
       const align = node.params.textAlign || "left";
@@ -200,7 +209,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         align === "left" ? -w / 2 + labelPad : align === "right" ? w / 2 - labelPad : 0,
         verticalAlign === "top" ? -h / 2 + labelPad + labelFontSize / 2 : verticalAlign === "bottom" ? h / 2 - labelPad - labelFontSize / 2 : 0,
         {
-          fill: node.params.textColor || containerStroke,
+          fill: themeGlyphColor(node.params.textColor, themeMode, "stroke") || containerStroke,
           fontSize: labelFontSize,
           fontFamily: node.params.fontFamily || "Arial",
           fontWeight: node.params.fontWeight || "500",
@@ -218,7 +227,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       }
       const boxProps = { x: -w / 2, y: -h / 2, width: w, height: h, rx: corner };
       return (
-        createElement("g", { "data-container-box": "1" }, createElement("rect", { ...boxProps, className: "ac-container-fill", fill: node.params.fillColor || "transparent", style: { pointerEvents: "none" } }), createElement("rect", { ...boxProps, className: "ac-container-stroke-hit", fill: "none", stroke: "transparent", strokeWidth: 8 }), createElement("rect", { ...boxProps, fill: "none", stroke: containerStroke, strokeWidth: lineWidth, strokeDasharray: svgStrokeDashArray(node.params.strokeStyle), style: { pointerEvents: "none" } }), renderText && label)
+        createElement("g", { "data-container-box": "1" }, createElement("rect", { ...boxProps, className: "ac-container-fill", fill: themeGlyphColor(node.params.fillColor, themeMode, "fill") || "transparent", style: { pointerEvents: "none" } }), createElement("rect", { ...boxProps, className: "ac-container-stroke-hit", fill: "none", stroke: "transparent", strokeWidth: 8 }), createElement("rect", { ...boxProps, fill: "none", stroke: containerStroke, strokeWidth: lineWidth, strokeDasharray: svgStrokeDashArray(node.params.strokeStyle), style: { pointerEvents: "none" } }), renderText && label)
       );
     }
     if (isRoutableLineGlyph) {
@@ -241,8 +250,8 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     if (modelHierarchyGlyphFamily) {
       const hierarchyRole = modelHierarchyGlyphRoleForKind(node.kind);
       const hierarchyEnergy = modelHierarchyGlyphEnergyForKind(node.kind);
-      const associationStroke = node.params.strokeColor || deviceStroke;
-      const associationAccent = node.params.accentColor || associationStroke;
+      const associationStroke = themeGlyphColor(node.params.strokeColor, themeMode, "stroke") || deviceStroke;
+      const associationAccent = themeGlyphColor(node.params.accentColor, themeMode, "stroke") || associationStroke;
       const associationLineWidth = clampNumber(Number(node.params.lineWidth || 2), 1, 3.5);
       const iconAvailableHeight = Math.max(30, h - 6);
       const iconSize = clampNumber(Math.min(w * 0.54, iconAvailableHeight), miniature ? 28 : 34, miniature ? 40 : 52);
@@ -273,12 +282,12 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       );
     }
     if (isStaticGlyph) {
-    const staticStroke = node.params.strokeColor || deviceStroke;
-    const staticFill = node.params.fillColor || "transparent";
+    const staticStroke = themeGlyphColor(node.params.strokeColor, themeMode, "stroke") || deviceStroke;
+    const staticFill = themeGlyphColor(node.params.fillColor, themeMode, "fill") || "transparent";
     const lineWidth = Number(node.params.lineWidth || 2);
     const dashArray = svgStrokeDashArray(node.params.strokeStyle);
     const cornerRadius = staticNumericParam(node, "cornerRadius", 8, 0);
-    const accentColor = node.params.accentColor || staticStroke;
+    const accentColor = themeGlyphColor(node.params.accentColor, themeMode, "stroke") || staticStroke;
     const explicitAccentColor = node.params.accentColor?.trim();
     const simpleAccentVisible = Boolean(explicitAccentColor && explicitAccentColor !== "transparent" && explicitAccentColor !== "none");
     const hasStaticText = Boolean(node.params.text?.trim());
@@ -308,7 +317,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         0,
         -((textLines.length - 1) * fontSize * 0.6),
         {
-          fill: node.params.textColor || staticStroke,
+          fill: themeGlyphColor(node.params.textColor, themeMode, "stroke") || staticStroke,
           fontSize,
           fontFamily: node.params.fontFamily || "Arial",
           fontWeight: node.params.fontWeight || "400",
@@ -370,7 +379,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
               0,
               0,
               {
-                fill: node.params.textColor || "#64748b",
+                fill: themeGlyphColor(node.params.textColor, themeMode, "stroke") || "#64748b",
                 fontSize: miniature ? 14 : Number(node.params.fontSize || 16),
                 textAnchor: "middle",
                 dominantBaseline: "middle"
@@ -383,7 +392,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         return null;
       }
       return (
-        createElement("g", null, createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: "4", fill: staticFill, stroke: staticStroke, strokeWidth: lineWidth, strokeDasharray: dashArray }), renderText && !node.params.backgroundImage && uprightText(node, 0, 0, { fill: node.params.textColor || "#64748b", fontSize: miniature ? 14 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, "图片"))
+        createElement("g", null, createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: "4", fill: staticFill, stroke: staticStroke, strokeWidth: lineWidth, strokeDasharray: dashArray }), renderText && !node.params.backgroundImage && uprightText(node, 0, 0, { fill: themeGlyphColor(node.params.textColor, themeMode, "stroke") || "#64748b", fontSize: miniature ? 14 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, "图片"))
       );
     }
     if (staticRenderKind === "static-rounded-rect") {
@@ -694,7 +703,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       }
       const toolbarY = -h / 2 - 18;
       return (
-        createElement("g", { style: staticSymbolShadowStyle(node) }, createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: cornerRadius, fill: staticFill, stroke: staticStroke, strokeWidth: lineWidth, strokeDasharray: dashArray }), createElement("rect", { x: -52, y: toolbarY, width: "104", height: "24", rx: "6", fill: accentColor, stroke: staticStroke, strokeWidth: "1", opacity: "0.92" }), createElement("circle", { cx: "-28", cy: toolbarY + 12, r: "4", fill: "#ffffff" }), createElement("rect", { x: "-4", y: toolbarY + 8, width: "8", height: "8", rx: "2", fill: "#ffffff" }), createElement("path", { d: `M 24 ${toolbarY + 16} L 32 ${toolbarY + 8} M 24 ${toolbarY + 8} L 32 ${toolbarY + 16}`, stroke: "#ffffff", strokeWidth: "2", strokeLinecap: "round" }), renderText && staticShapeText(node, w, h * 0.7, miniature))
+        createElement("g", { style: staticSymbolShadowStyle(node) }, createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: cornerRadius, fill: staticFill, stroke: staticStroke, strokeWidth: lineWidth, strokeDasharray: dashArray }), createElement("rect", { x: -52, y: toolbarY, width: "104", height: "24", rx: "6", fill: accentColor, stroke: staticStroke, strokeWidth: "1", opacity: "0.92" }), createElement("circle", { cx: "-28", cy: toolbarY + 12, r: "4", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("rect", { x: "-4", y: toolbarY + 8, width: "8", height: "8", rx: "2", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("path", { d: `M 24 ${toolbarY + 16} L 32 ${toolbarY + 8} M 24 ${toolbarY + 8} L 32 ${toolbarY + 16}`, stroke: themeGlyphColor("#ffffff", themeMode, "stroke"), strokeWidth: "2", strokeLinecap: "round" }), renderText && staticShapeText(node, w, h * 0.7, miniature))
       );
     }
     if (staticRenderKind === "static-resizer-frame") {
@@ -717,7 +726,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       }
       const headerHeight = clampNumber(h * 0.28, 26, 38);
       return (
-        createElement("g", null, createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: cornerRadius, fill: staticFill, stroke: staticStroke, strokeWidth: lineWidth, strokeDasharray: dashArray }), createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: headerHeight, rx: cornerRadius, fill: accentColor, stroke: "none" }), createElement("path", { d: `M ${-w / 2} ${-h / 2 + headerHeight} H ${w / 2}`, stroke: staticStroke, strokeWidth: lineWidth }), createElement("rect", { x: -w / 2 + 16, y: -h / 2 + headerHeight + 22, width: w * 0.34, height: h * 0.28, rx: "6", fill: "#ffffff", stroke: accentColor, strokeWidth: "1.5" }), createElement("rect", { x: w / 2 - w * 0.34 - 16, y: h / 2 - h * 0.28 - 16, width: w * 0.34, height: h * 0.28, rx: "6", fill: "#ffffff", stroke: accentColor, strokeWidth: "1.5" }), createElement("path", { d: `M ${-w * 0.08} ${-h * 0.02} H ${w * 0.08}`, stroke: accentColor, strokeWidth: "2", strokeLinecap: "round" }), renderText && staticShapeText(node, w, h, miniature))
+        createElement("g", null, createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: cornerRadius, fill: staticFill, stroke: staticStroke, strokeWidth: lineWidth, strokeDasharray: dashArray }), createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: headerHeight, rx: cornerRadius, fill: accentColor, stroke: "none" }), createElement("path", { d: `M ${-w / 2} ${-h / 2 + headerHeight} H ${w / 2}`, stroke: staticStroke, strokeWidth: lineWidth }), createElement("rect", { x: -w / 2 + 16, y: -h / 2 + headerHeight + 22, width: w * 0.34, height: h * 0.28, rx: "6", fill: themeGlyphColor("#ffffff", themeMode, "fill"), stroke: accentColor, strokeWidth: "1.5" }), createElement("rect", { x: w / 2 - w * 0.34 - 16, y: h / 2 - h * 0.28 - 16, width: w * 0.34, height: h * 0.28, rx: "6", fill: themeGlyphColor("#ffffff", themeMode, "fill"), stroke: accentColor, strokeWidth: "1.5" }), createElement("path", { d: `M ${-w * 0.08} ${-h * 0.02} H ${w * 0.08}`, stroke: accentColor, strokeWidth: "2", strokeLinecap: "round" }), renderText && staticShapeText(node, w, h, miniature))
       );
     }
     if (staticRenderKind === "static-bezier-connector") {
@@ -789,35 +798,35 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     }
     if (staticRenderKind === "static-web") {
       if (mode === "text") {
-        return uprightText(node, 0, 12, { fill: node.params.textColor || "#334155", fontSize: miniature ? 10 : 13, textAnchor: "middle" }, miniature ? "WEB" : staticSymbolTextValue(node, "https://"));
+        return uprightText(node, 0, 12, { fill: themeGlyphColor(node.params.textColor, themeMode, "stroke") || "#334155", fontSize: miniature ? 10 : 13, textAnchor: "middle" }, miniature ? "WEB" : staticSymbolTextValue(node, "https://"));
       }
       if (!renderGeometry) {
         return null;
       }
       return (
-        createElement("g", null, createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: "4", fill: staticFill, stroke: staticStroke, strokeWidth: lineWidth, strokeDasharray: dashArray }), createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: "22", rx: "4", fill: "#e2e8f0" }), renderText && uprightText(node, 0, 12, { fill: node.params.textColor || "#334155", fontSize: miniature ? 10 : 13, textAnchor: "middle" }, miniature ? "WEB" : staticSymbolTextValue(node, "https://")))
+        createElement("g", null, createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: "4", fill: staticFill, stroke: staticStroke, strokeWidth: lineWidth, strokeDasharray: dashArray }), createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: "22", rx: "4", fill: themeGlyphColor("#e2e8f0", themeMode, "fill") }), renderText && uprightText(node, 0, 12, { fill: themeGlyphColor(node.params.textColor, themeMode, "stroke") || "#334155", fontSize: miniature ? 10 : 13, textAnchor: "middle" }, miniature ? "WEB" : staticSymbolTextValue(node, "https://")))
       );
     }
     if (["static-date", "static-time", "static-datetime", "static-input"].includes(staticRenderKind)) {
       if (mode === "text") {
-        return uprightText(node, -w / 2 + 10, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 11 : Number(node.params.fontSize || 16), dominantBaseline: "middle" }, miniature ? "控件" : staticSymbolTextValue(node, node.name));
+        return uprightText(node, -w / 2 + 10, 0, { fill: themeGlyphColor(node.params.textColor, themeMode, "stroke") || "#111827", fontSize: miniature ? 11 : Number(node.params.fontSize || 16), dominantBaseline: "middle" }, miniature ? "控件" : staticSymbolTextValue(node, node.name));
       }
       if (!renderGeometry) {
         return null;
       }
       return (
-        createElement("g", null, createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: "5", fill: staticFill, stroke: staticStroke, strokeWidth: lineWidth, strokeDasharray: dashArray }), renderText && uprightText(node, -w / 2 + 10, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 11 : Number(node.params.fontSize || 16), dominantBaseline: "middle" }, miniature ? "控件" : staticSymbolTextValue(node, node.name)))
+        createElement("g", null, createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: "5", fill: staticFill, stroke: staticStroke, strokeWidth: lineWidth, strokeDasharray: dashArray }), renderText && uprightText(node, -w / 2 + 10, 0, { fill: themeGlyphColor(node.params.textColor, themeMode, "stroke") || "#111827", fontSize: miniature ? 11 : Number(node.params.fontSize || 16), dominantBaseline: "middle" }, miniature ? "控件" : staticSymbolTextValue(node, node.name)))
       );
     }
     if (staticRenderKind === "static-button") {
       if (mode === "text") {
-        return uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, miniature ? "按钮" : staticSymbolTextValue(node, node.name));
+        return uprightText(node, 0, 0, { fill: themeGlyphColor(node.params.textColor, themeMode, "stroke") || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, miniature ? "按钮" : staticSymbolTextValue(node, node.name));
       }
       if (!renderGeometry) {
         return null;
       }
       return (
-        createElement("g", null, createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: "6", fill: staticFill, stroke: staticStroke, strokeWidth: lineWidth, strokeDasharray: dashArray }), renderText && uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, miniature ? "按钮" : staticSymbolTextValue(node, node.name)))
+        createElement("g", null, createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: "6", fill: staticFill, stroke: staticStroke, strokeWidth: lineWidth, strokeDasharray: dashArray }), renderText && uprightText(node, 0, 0, { fill: themeGlyphColor(node.params.textColor, themeMode, "stroke") || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, miniature ? "按钮" : staticSymbolTextValue(node, node.name)))
       );
     }
     return renderGeometry ? createElement("rect", { x: -w / 2, y: -h / 2, width: w, height: h, rx: "4", fill: staticFill, stroke: staticStroke, strokeWidth: lineWidth, strokeDasharray: dashArray }) : null;
@@ -1216,7 +1225,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       return null;
     }
     return (
-      createElement("g", { fill, stroke, strokeWidth: "2.4", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("circle", { cx: "0", cy: "0", r: miniature ? 4 : 6 }), createElement("path", { d: "M 0 0 L 0 -18 M 0 0 L 16 10 M 0 0 L -16 10" }), createElement("path", { d: "M 0 6 V 22" }))
+      createElement("g", { fill: themeGlyphColor(fill, themeMode, "fill"), stroke, strokeWidth: "2.4", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("circle", { cx: "0", cy: "0", r: miniature ? 4 : 6 }), createElement("path", { d: "M 0 0 L 0 -18 M 0 0 L 16 10 M 0 0 L -16 10" }), createElement("path", { d: "M 0 6 V 22" }))
     );
   }
 
@@ -1225,7 +1234,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       return null;
     }
     return (
-      createElement("g", { fill, stroke, strokeWidth: "2.2", strokeLinejoin: "round" }, createElement("path", { d: "M -22 -12 H 22 V 14 H -22 Z" }), createElement("path", { d: "M -7 -12 V 14 M 8 -12 V 14 M -22 1 H 22" }), createElement("path", { d: "M 0 -22 V -17 M -18 -20 L -14 -16 M 18 -20 L 14 -16" }))
+      createElement("g", { fill: themeGlyphColor(fill, themeMode, "fill"), stroke, strokeWidth: "2.2", strokeLinejoin: "round" }, createElement("path", { d: "M -22 -12 H 22 V 14 H -22 Z" }), createElement("path", { d: "M -7 -12 V 14 M 8 -12 V 14 M -22 1 H 22" }), createElement("path", { d: "M 0 -22 V -17 M -18 -20 L -14 -16 M 18 -20 L 14 -16" }))
     );
   }
 
@@ -1268,7 +1277,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       return null;
     }
     return (
-      createElement("g", { fill, stroke, strokeWidth: "2.2" }, createElement("circle", { cx: "0", cy: "0", r: miniature ? 16 : 22 }), createElement("ellipse", { cx: "0", cy: "0", rx: "6", ry: "20", fill: "none", transform: "rotate(0)" }), createElement("ellipse", { cx: "0", cy: "0", rx: "6", ry: "20", fill: "none", transform: "rotate(60)" }), createElement("ellipse", { cx: "0", cy: "0", rx: "6", ry: "20", fill: "none", transform: "rotate(120)" }), createElement("circle", { cx: "0", cy: "0", r: "3", fill: stroke }))
+      createElement("g", { fill: themeGlyphColor(fill, themeMode, "fill"), stroke, strokeWidth: "2.2" }, createElement("circle", { cx: "0", cy: "0", r: miniature ? 16 : 22 }), createElement("ellipse", { cx: "0", cy: "0", rx: "6", ry: "20", fill: "none", transform: "rotate(0)" }), createElement("ellipse", { cx: "0", cy: "0", rx: "6", ry: "20", fill: "none", transform: "rotate(60)" }), createElement("ellipse", { cx: "0", cy: "0", rx: "6", ry: "20", fill: "none", transform: "rotate(120)" }), createElement("circle", { cx: "0", cy: "0", r: "3", fill: stroke }))
     );
   }
 
@@ -1340,10 +1349,10 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     const sideX = miniature ? 10 : hasNeutralTerminal ? 17 : 16;
     const neutralLeadTop = topY - windingRadius - (miniature ? 6 : 20);
     const windingColors = node.terminals.slice(0, 3).map((t) =>
-      terminalPaint(t, getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette))
+      terminalPaint(t, getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette, themeMode))
     );
     return (
-      createElement("g", { className: `three-winding-transformer-glyph${hasNeutralTerminal ? " three-winding-transformer-neutral-glyph" : ""}`, fill, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("circle", { className: "transformer-winding", cx: -sideX, cy: topY, r: windingRadius, stroke: windingColors[0] ?? stroke }), createElement("circle", { className: "transformer-winding", cx: sideX, cy: topY, r: windingRadius, stroke: windingColors[1] ?? stroke }), createElement("circle", { className: "transformer-winding", cx: "0", cy: bottomY, r: windingRadius, stroke: windingColors[2] ?? stroke }), createElement("path", { d: `M ${-sideX - windingRadius - 8} ${topY} H ${-sideX - windingRadius} M ${sideX + windingRadius} ${topY} H ${sideX + windingRadius + 8} M 0 ${bottomY + windingRadius} V ${bottomY + windingRadius + 10}`, stroke }), createElement("path", { d: `M ${-sideX + windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${-windingRadius * 0.28} ${bottomY - windingRadius * 0.72} M ${sideX - windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${windingRadius * 0.28} ${bottomY - windingRadius * 0.72}`, stroke, strokeWidth: "1.6" }), hasNeutralTerminal && (
+      createElement("g", { className: `three-winding-transformer-glyph${hasNeutralTerminal ? " three-winding-transformer-neutral-glyph" : ""}`, fill: themeGlyphColor(fill, themeMode, "fill"), strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("circle", { className: "transformer-winding", cx: -sideX, cy: topY, r: windingRadius, stroke: windingColors[0] ?? stroke }), createElement("circle", { className: "transformer-winding", cx: sideX, cy: topY, r: windingRadius, stroke: windingColors[1] ?? stroke }), createElement("circle", { className: "transformer-winding", cx: "0", cy: bottomY, r: windingRadius, stroke: windingColors[2] ?? stroke }), createElement("path", { d: `M ${-sideX - windingRadius - 8} ${topY} H ${-sideX - windingRadius} M ${sideX + windingRadius} ${topY} H ${sideX + windingRadius + 8} M 0 ${bottomY + windingRadius} V ${bottomY + windingRadius + 10}`, stroke }), createElement("path", { d: `M ${-sideX + windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${-windingRadius * 0.28} ${bottomY - windingRadius * 0.72} M ${sideX - windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${windingRadius * 0.28} ${bottomY - windingRadius * 0.72}`, stroke, strokeWidth: "1.6" }), hasNeutralTerminal && (
           createElement(Fragment, null, createElement("path", { d: `M 0 ${neutralLeadTop} V ${topY - windingRadius}`, stroke }), createElement("circle", { cx: "0", cy: topY - windingRadius, r: miniature ? 2.2 : 3.2, fill: stroke, stroke: "none" }))
         ))
     );
@@ -1360,10 +1369,10 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     const loadWidth = miniature ? 11 : 15;
     const loadHeight = miniature ? 10 : 13;
     const windingColors = node.terminals.slice(0, 2).map((t) =>
-      terminalPaint(t, getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette))
+      terminalPaint(t, getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette, themeMode))
     );
     return (
-      createElement("g", { className: "terminal-transformer-load-glyph", fill, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("circle", { cx: leftCoilX, cy: "0", r: windingRadius, stroke: windingColors[0] ?? stroke }), createElement("circle", { cx: rightCoilX, cy: "0", r: windingRadius, stroke: windingColors[1] ?? stroke }), createElement("path", { d: `M ${-loadWidth / 2} ${loadTop} H ${loadWidth / 2} L 0 ${loadTop + loadHeight} Z`, fill: "#ffffff", stroke }))
+      createElement("g", { className: "terminal-transformer-load-glyph", fill, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("circle", { cx: leftCoilX, cy: "0", r: windingRadius, stroke: windingColors[0] ?? stroke }), createElement("circle", { cx: rightCoilX, cy: "0", r: windingRadius, stroke: windingColors[1] ?? stroke }), createElement("path", { d: `M ${-loadWidth / 2} ${loadTop} H ${loadWidth / 2} L 0 ${loadTop + loadHeight} Z`, fill: themeGlyphColor("#ffffff", themeMode, "fill"), stroke: deviceStroke }))
     );
   }
 
@@ -1372,10 +1381,10 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       return null;
     }
     const windingColors = node.terminals.slice(0, 2).map((t) =>
-      terminalPaint(t, getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette))
+      terminalPaint(t, getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette, themeMode))
     );
     return (
-      createElement("g", { fill, strokeWidth: "2.5" }, createElement("circle", { cx: "-14", cy: "0", r: miniature ? 11 : 18, stroke: windingColors[0] ?? stroke }), createElement("circle", { cx: "14", cy: "0", r: miniature ? 11 : 18, stroke: windingColors[1] ?? stroke }))
+      createElement("g", { fill: themeGlyphColor(fill, themeMode, "fill"), strokeWidth: "2.5" }, createElement("circle", { cx: "-14", cy: "0", r: miniature ? 11 : 18, stroke: windingColors[0] ?? stroke }), createElement("circle", { cx: "14", cy: "0", r: miniature ? 11 : 18, stroke: windingColors[1] ?? stroke }))
     );
   }
 
@@ -1385,7 +1394,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     }
     const closed = getSwitchVisualState(node) === "closed";
     return (
-      createElement("g", { fill: "none", stroke, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: -w / 2 + 8, y1: "0", x2: "-13", y2: "0" }), createElement("line", { x1: "13", y1: "0", x2: w / 2 - 8, y2: "0" }), createElement("circle", { cx: "-13", cy: "0", r: "3.2", fill: "#ffffff" }), createElement("circle", { cx: "13", cy: "0", r: "3.2", fill: "#ffffff" }), createElement("line", { x1: "-13", y1: "0", x2: closed ? "13" : "10", y2: closed ? "0" : "-15" }), !closed && createElement("line", { x1: "8", y1: "-15", x2: "16", y2: "-15" }))
+      createElement("g", { fill: "none", stroke, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: -w / 2 + 8, y1: "0", x2: "-13", y2: "0" }), createElement("line", { x1: "13", y1: "0", x2: w / 2 - 8, y2: "0" }), createElement("circle", { cx: "-13", cy: "0", r: "3.2", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("circle", { cx: "13", cy: "0", r: "3.2", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("line", { x1: "-13", y1: "0", x2: closed ? "13" : "10", y2: closed ? "0" : "-15" }), !closed && createElement("line", { x1: "8", y1: "-15", x2: "16", y2: "-15" }))
     );
   }
 
@@ -1395,7 +1404,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     }
     const closed = getSwitchVisualState(node) === "closed";
     return (
-      createElement("g", { className: "ground-disconnector-glyph", fill: "none", stroke, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: -w / 2 + 8, y1: "0", x2: "-18", y2: "0" }), createElement("circle", { cx: "-18", cy: "0", r: "3.2", fill: "#ffffff" }), createElement("circle", { cx: "8", cy: "0", r: "3.2", fill: "#ffffff" }), createElement("line", { x1: "-18", y1: "0", x2: closed ? "8" : "2", y2: closed ? "0" : "-15" }), !closed && createElement("line", { x1: "0", y1: "-15", x2: "12", y2: "-15" }), createElement("path", { d: "M 8 0 H 18 V 15 M 18 15 V 20 M 8 20 H 28 M 11 24 H 25 M 14 28 H 22" }))
+      createElement("g", { className: "ground-disconnector-glyph", fill: "none", stroke, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: -w / 2 + 8, y1: "0", x2: "-18", y2: "0" }), createElement("circle", { cx: "-18", cy: "0", r: "3.2", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("circle", { cx: "8", cy: "0", r: "3.2", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("line", { x1: "-18", y1: "0", x2: closed ? "8" : "2", y2: closed ? "0" : "-15" }), !closed && createElement("line", { x1: "0", y1: "-15", x2: "12", y2: "-15" }), createElement("path", { d: "M 8 0 H 18 V 15 M 18 15 V 20 M 8 20 H 28 M 11 24 H 25 M 14 28 H 22" }))
     );
   }
 
@@ -1405,7 +1414,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     }
     const closed = getSwitchVisualState(node) === "closed";
     return (
-      createElement("g", { className: "ground-disconnector-vertical-glyph", fill: "none", stroke, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: "0", y1: -h / 2 + 8, x2: "0", y2: "-18" }), createElement("circle", { cx: "0", cy: "-18", r: "3.2", fill: "#ffffff" }), createElement("circle", { cx: "0", cy: "8", r: "3.2", fill: "#ffffff" }), createElement("line", { x1: "0", y1: "-18", x2: closed ? "0" : "14", y2: closed ? "8" : "-6" }), !closed && createElement("line", { x1: "14", y1: "-8", x2: "14", y2: "0" }), createElement("path", { d: "M 0 8 V 18 M 0 18 V 24 M -10 24 H 10 M -7 28 H 7 M -4 32 H 4" }))
+      createElement("g", { className: "ground-disconnector-vertical-glyph", fill: "none", stroke, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: "0", y1: -h / 2 + 8, x2: "0", y2: "-18" }), createElement("circle", { cx: "0", cy: "-18", r: "3.2", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("circle", { cx: "0", cy: "8", r: "3.2", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("line", { x1: "0", y1: "-18", x2: closed ? "0" : "14", y2: closed ? "8" : "-6" }), !closed && createElement("line", { x1: "14", y1: "-8", x2: "14", y2: "0" }), createElement("path", { d: "M 0 8 V 18 M 0 18 V 24 M -10 24 H 10 M -7 28 H 7 M -4 32 H 4" }))
     );
   }
 
@@ -1428,8 +1437,11 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     const boxHeight = miniature ? 16 : 20;
     const leftWireEnd = -boxWidth / 2;
     const rightWireStart = boxWidth / 2;
+    // 盒型开关是唯一保留实心填充的图元（用户明确豁免）：
+    // 闭合时用描边色填满方框 —— 这是它表达「导通」的语义，不能改成透明。
+    // 断开时用 none，让它和其余设备一样透出画布底色。
     return (
-      createElement("g", { className: "box-breaker-glyph", fill: "none", stroke, strokeWidth: "2.8", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: -w / 2 + 8, y1: "0", x2: leftWireEnd, y2: "0" }), createElement("line", { x1: rightWireStart, y1: "0", x2: w / 2 - 8, y2: "0" }), createElement("rect", { x: -boxWidth / 2, y: -boxHeight / 2, width: boxWidth, height: boxHeight, rx: "2", fill: closed ? stroke : "#ffffff" }))
+      createElement("g", { className: "box-breaker-glyph", fill: "none", stroke, strokeWidth: "2.8", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: -w / 2 + 8, y1: "0", x2: leftWireEnd, y2: "0" }), createElement("line", { x1: rightWireStart, y1: "0", x2: w / 2 - 8, y2: "0" }), createElement("rect", { x: -boxWidth / 2, y: -boxHeight / 2, width: boxWidth, height: boxHeight, rx: "2", fill: closed ? stroke : "none" }))
     );
   }
 
@@ -1440,7 +1452,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     const bodyHalfWidth = w * 2 / 9;
     const bodyHalfHeight = h * 2 / 9;
     return (
-      createElement("g", { className: "electric-load-glyph", fill, stroke, strokeWidth: "2.5", strokeLinejoin: "round" }, createElement("path", { d: `M ${-bodyHalfWidth} ${-bodyHalfHeight} L ${bodyHalfWidth} ${-bodyHalfHeight} L 0 ${bodyHalfHeight} Z` }))
+      createElement("g", { className: "electric-load-glyph", fill: themeGlyphColor(fill, themeMode, "fill"), stroke, strokeWidth: "2.5", strokeLinejoin: "round" }, createElement("path", { d: `M ${-bodyHalfWidth} ${-bodyHalfHeight} L ${bodyHalfWidth} ${-bodyHalfHeight} L 0 ${bodyHalfHeight} Z` }))
     );
   }
 
@@ -1495,18 +1507,8 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
   if (glyphVariant === "custom-device" || node.params[CUSTOM_DEVICE_TEMPLATE_KEY] === "1") {
     const label = node.name || node.kind;
     const abbreviation = label.slice(0, 4).toUpperCase();
-    const hasTerminalReservedArea = node.terminals.length > 0;
-    const hasImageVisual = Boolean(
-      node.params.backgroundImage ||
-      node.params.backgroundImageAssetId ||
-      stateVisual?.image ||
-      stateVisual?.imageAssetId ||
-      stateVisual?.backgroundImage ||
-      stateVisual?.backgroundImageAssetId
-    );
-    const baseRectFill = hasTerminalReservedArea && hasImageVisual
-      ? "transparent"
-      : node.params.fillColor || "#f8fafc";
+    // 自定义元件：填充同样透明（与内置图元一致，见 themeGlyphColor 的说明）。
+    const baseRectFill = themeGlyphColor(node.params.fillColor, themeMode, "fill") || "transparent";
     if (mode === "text") {
       return uprightText(node, 0, -2, { fill: stroke, fontSize: miniature ? 10 : 15, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, abbreviation);
     }
@@ -1522,7 +1524,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     return null;
   }
   return (
-    createElement("g", null, createElement("circle", { cx: "0", cy: "0", r: miniature ? 16 : 24, fill, stroke, strokeWidth: "2.5" }), createElement("path", { d: "M -10 0 H 10 M 0 -10 V 10", stroke, strokeWidth: "2.5", strokeLinecap: "round" }))
+    createElement("g", null, createElement("circle", { cx: "0", cy: "0", r: miniature ? 16 : 24, fill: themeGlyphColor(fill, themeMode, "fill") || "transparent", stroke, strokeWidth: "2.5" }), createElement("path", { d: "M -10 0 H 10 M 0 -10 V 10", stroke, strokeWidth: "2.5", strokeLinecap: "round" }))
   );
   };
 
@@ -1545,7 +1547,7 @@ export const MemoDeviceGlyph = memo(
     previous.miniature === next.miniature &&
     previous.mode === next.mode &&
     previous.colorDisplayMode === next.colorDisplayMode &&
-    previous.colorPalette === next.colorPalette &&
+    previous.colorPalette === next.colorPalette && previous.themeMode === next.themeMode &&
     deviceStateVisualToken(previous.stateVisual) === deviceStateVisualToken(next.stateVisual)
 );
 

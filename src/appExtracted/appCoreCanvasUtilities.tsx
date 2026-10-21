@@ -1474,6 +1474,15 @@ export type VoltageColorVisibility = "all" | "current";
 
 export const terminalColor = terminalTypeColor;
 
+/**
+ * 母线连接点（`circle.bus-connection-dot`）的填充。
+ *
+ * 用户要求两种主题下都透明：这类点只是边的可控端点，画成实心圆会在母排上糊出一串色块。
+ * 保留这个导出是因为它属于 `__appScope` 的公开契约（有单测断言），但画布渲染已改为
+ * 直接取主题 token `canvasThemeColors.busEndpointDot`，两者值一致。
+ */
+export const BUS_ENDPOINT_DOT_COLOR = "transparent";
+
 export const busEndpointColor = (node: ModelNode, colorPalette?: ColorPalette) => terminalColor(node.terminals[0]?.type, colorPalette);
 
 export const ENERGY_COLOR_ROWS: Array<{ type: TerminalType; label: string }> = [
@@ -1564,7 +1573,14 @@ export const MAX_CANVAS_WIDTH = 50000;
 
 export const MAX_CANVAS_HEIGHT = 50000;
 
-export const DEFAULT_CANVAS_BACKGROUND = "#f1f5f9";
+/**
+ * 画布底色的「未设置」标记。
+ *
+ * 曾经是浅灰 `#f1f5f9`：清空画布 / 新建项目时把它写进 `canvasBackgroundColor`，
+ * 于是画布底色被钉成浅灰，切深色主题时永远不变黑（`fill` 优先于主题色）。
+ * 现在空串表示「交给当前主题」：浅色纯白、深色纯黑。
+ */
+export const DEFAULT_CANVAS_BACKGROUND = "";
 
 export const MOVE_BOUNDARY_GUARD = 8;
 
@@ -2196,6 +2212,9 @@ export const CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY = "power-system-custom-graph-tem
 export const COLOR_DISPLAY_MODE_STORAGE_KEY = "power-system-color-display-mode";
 
 export const COLOR_PALETTE_STORAGE_KEY = "power-system-color-palette";
+
+// 画布主题（浅色/深色）的用户选择。本机 UI 偏好，不随方案落盘。
+export const CANVAS_THEME_STORAGE_KEY = "power-system-canvas-theme";
 
 export const MEASUREMENT_CONFIG_STORAGE_KEY = "power-system-platform-measurements";
 

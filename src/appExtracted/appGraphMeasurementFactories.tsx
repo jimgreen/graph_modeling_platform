@@ -202,7 +202,7 @@ export function createEdgeListForNodeIds(__appScope: Record<string, any>) {
 
 export function createBuildSingleNodeDragCache(__appScope: Record<string, any>) {
   return (nodeIds: string[], edgeIds: string[], affectedEdges: Edge[]): SingleNodeDragCache | undefined => {
-  const { CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT, colorDisplayMode, colorPalette, currentStoredRoutePointsForEdge, edgeWithFrozenBusEndpointPoints, getConnectionStrokeColor, getModelEdgeEndpointPoint, getRouteEndpointNormal, isBusNode, nodeById, visibleEdgeIdSet } = __appScope;
+  const { CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT, colorDisplayMode, colorPalette, themeMode, currentStoredRoutePointsForEdge, edgeWithFrozenBusEndpointPoints, getConnectionStrokeColor, getModelEdgeEndpointPoint, getRouteEndpointNormal, isBusNode, nodeById, visibleEdgeIdSet } = __appScope;
     if (nodeIds.length !== 1) {
       return undefined;
     }
@@ -240,7 +240,7 @@ export function createBuildSingleNodeDragCache(__appScope: Record<string, any>) 
       const end = getModelEdgeEndpointPoint(targetNode, frozenEdge.targetPoint, frozenEdge.targetTerminalId);
       previewEndpointByEdgeId.set(edge.id, {
         edgeId: edge.id,
-        color: getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette),
+        color: getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette, themeMode),
         start,
         end,
         sourceNode,
@@ -371,7 +371,7 @@ export function createRoutingNodesForConnectionEdges(__appScope: Record<string, 
 
 export function createCachedConnectionStrokeColor(__appScope: Record<string, any>) {
   return (edge: Edge) => {
-  const { colorDisplayMode, colorPalette, connectionStrokeColorCacheRef, connectionStrokeColorCacheToken, getConnectionStrokeColor, nodeById } = __appScope;
+  const { colorDisplayMode, colorPalette, themeMode, connectionStrokeColorCacheRef, connectionStrokeColorCacheToken, getConnectionStrokeColor, nodeById } = __appScope;
     const cache = connectionStrokeColorCacheRef.current;
     if (cache.nodeById !== nodeById || cache.token !== connectionStrokeColorCacheToken) {
       cache.nodeById = nodeById;
@@ -382,7 +382,7 @@ export function createCachedConnectionStrokeColor(__appScope: Record<string, any
     if (cached && cached.edge === edge) {
       return cached.color;
     }
-    const color = getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette);
+    const color = getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette, themeMode);
     cache.colors.set(edge.id, { edge, color });
     return color;
   };
@@ -448,15 +448,18 @@ export function computeMeasurementColumnPositions(
 // 量测框 metrics 缓存：以 group 对象引用为 key。拖动中仅被拖 group 每帧新建对象，
 // 其他 group 引用不变，直接命中缓存，避免每帧全量重算。
 // 量测配置引用变化时整体失效（WeakMap 无 clear，直接换新实例）。
+// 主题也参与失效判断：量测文本色按主题解析，切主题后旧缓存会继续吐浅色字。
 let measurementMetricsCache: WeakMap<object, { node: ModelNode; result: unknown }> = new WeakMap();
 let measurementMetricsCacheConfig: unknown = null;
+let measurementMetricsCacheTheme: unknown = null;
 
 export function createMeasurementGroupRenderMetrics(__appScope: Record<string, any>) {
   return (node: ModelNode, group: MeasurementGroup) => {
-  const { formatMeasurementDisplayValue, measurementConfig, resolveMeasurementItemDisplay } = __appScope;
+  const { formatMeasurementDisplayValue, measurementConfig, resolveMeasurementItemDisplay, themeMode, themedMeasurementTextColor } = __appScope;
     const runtimeMeasurementConfig = __appScope.runtimeMeasurementConfig ?? measurementConfig;
-    if (measurementMetricsCacheConfig !== runtimeMeasurementConfig) {
+    if (measurementMetricsCacheConfig !== runtimeMeasurementConfig || measurementMetricsCacheTheme !== themeMode) {
       measurementMetricsCacheConfig = runtimeMeasurementConfig;
+      measurementMetricsCacheTheme = themeMode;
       measurementMetricsCache = new WeakMap();
     }
     const cached = measurementMetricsCache.get(group);
@@ -482,7 +485,13 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
       // 自定义格式只改变值的内容、精度和补零规则；值列仍保持定宽，避免 %.3f 等格式破坏列对齐。
       const valueText = measurementFormatValueText(rawValueText, display.format);
       const unitText = group.unitVisible === false ? "" : display.unit;
-      return [{ item, display, labelText, valueText, unitText, fontSize: display.fontSize }];
+      // display.color 是按浅色画布保存的数据色（默认 #334155 深灰）。
+      // 深色画布上统一经主题层抬到浅色字；用户显式设过的彩色原样保留。
+      // 在 metrics 这一层改，React 渲染与 SVG 串渲染（baseAttributes）两条路径同时生效。
+      const themedDisplay = display.color === undefined
+        ? display
+        : { ...display, color: themedMeasurementTextColor(display.color, themeMode) };
+      return [{ item, display: themedDisplay, labelText, valueText, unitText, fontSize: display.fontSize }];
     });
     if (rows.length === 0) {
       return null;
@@ -588,7 +597,7 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
 
 export function createBuildRoutableLineDragGhostRoutesForNodeIds(__appScope: Record<string, any>) {
   return (nodeIds: Iterable<string>): DragGhostRoute[] => {
-  const { colorDisplayMode, colorPalette, getDeviceStrokeColor, isRoutableLineDeviceKind, nodeById, pointsToPreviewPath, routableLineDeviceCanvasPoints, routableLineNodeIdsByEndpointNodeId, visibleNodeIdSet } = __appScope;
+  const { colorDisplayMode, colorPalette, themeMode, getDeviceStrokeColor, isRoutableLineDeviceKind, nodeById, pointsToPreviewPath, routableLineDeviceCanvasPoints, routableLineNodeIdsByEndpointNodeId, visibleNodeIdSet } = __appScope;
     const candidateLineIds = new Set<string>();
     for (const nodeId of nodeIds) {
       const node = nodeById.get(nodeId);
@@ -613,7 +622,7 @@ export function createBuildRoutableLineDragGhostRoutesForNodeIds(__appScope: Rec
         edgeId: `routable-line:${lineNode.id}`,
         routableLineNodeId: lineNode.id,
         path: pointsToPreviewPath(points),
-        color: getDeviceStrokeColor(lineNode, colorDisplayMode, colorPalette)
+        color: getDeviceStrokeColor(lineNode, colorDisplayMode, colorPalette, themeMode)
       });
     }
     return routes;
@@ -628,7 +637,7 @@ export function createBuildMultiNodeDragOverlayPreview(__appScope: Record<string
     originalRoutePointsForDrag: Record<string, Point[]>,
     movingEdgeIds: Iterable<string> = []
   ): MultiNodeDragOverlayPreview => {
-  const { CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT, CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT, buildMeasurementGroupsMarkup, buildNodePreviewImageMarkup, buildRoutableLineDragGhostRoutesForNodeIds, colorDisplayMode, colorPalette, escapeXml, formatSvgNumber, getConnectionStrokeColor, getDeviceStrokeColor, getDeviceStrokeWidth, includeMeasurementGroupBounds, isBusNode, nodeById, nodeGeometryTransform, nodeHasUprightBoundsContent, nodeVisualInteractionBounds, pointsToPreviewPath, visibleEdgeIdSet, visibleNodeIdSet } = __appScope;
+  const { CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT, CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT, buildMeasurementGroupsMarkup, buildNodePreviewImageMarkup, buildRoutableLineDragGhostRoutesForNodeIds, colorDisplayMode, colorPalette, themeMode, escapeXml, formatSvgNumber, getConnectionStrokeColor, getDeviceStrokeColor, getDeviceStrokeWidth, includeMeasurementGroupBounds, isBusNode, nodeById, nodeGeometryTransform, nodeHasUprightBoundsContent, nodeVisualInteractionBounds, pointsToPreviewPath, visibleEdgeIdSet, visibleNodeIdSet } = __appScope;
     const movingNodeIdSet = new Set(dragNodeIds);
     const movingEdgeIdSet = new Set(movingEdgeIds);
     const movingBusNodeIdSet = new Set(
@@ -670,7 +679,7 @@ export function createBuildMultiNodeDragOverlayPreview(__appScope: Record<string
         const positionTransform = `translate(${formatSvgNumber(originalPosition.x)} ${formatSvgNumber(originalPosition.y)})`;
         const transform = `${positionTransform} ${nodeGeometryTransform(node)}`;
         const fill = node.params.fillColor || node.params.backgroundColor || "#ffffff";
-        const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
+        const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette, themeMode);
         const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
         const imageMarkup = buildNodePreviewImageMarkup(node, `multi-node-drag-lite-preview-clip-${node.id}`, { clip: false });
         const measurementMarkup = buildMeasurementGroupsMarkup(previewNode, { absolute: true });
@@ -709,7 +718,7 @@ export function createBuildMultiNodeDragOverlayPreview(__appScope: Record<string
         ghostRoutes.push({
           edgeId: edge.id,
           path: pointsToPreviewPath(points),
-          color: getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette)
+          color: getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette, themeMode)
         });
       }
       if (!edgeMovesWithDraggedGraphics) {
@@ -723,7 +732,7 @@ export function createBuildMultiNodeDragOverlayPreview(__appScope: Record<string
       }
       const path = pointsToPreviewPath(points);
       if (useSimplifiedOverlay) {
-        const color = getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette);
+        const color = getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette, themeMode);
         simplifiedEdgeMarkup.push(
           `<path class="connection-line drag-preview" d="${escapeXml(path)}" style="--connection-color:${escapeXml(color)}"/>`
         );
@@ -763,7 +772,7 @@ export function createBuildMultiNodeDragOverlayPreview(__appScope: Record<string
 
 export function createRenderMultiNodeDragOverlay(__appScope: Record<string, any>) {
   return () => {
-  const { MemoDeviceGlyph, buildMeasurementGroupsMarkup, circle, clipPath, colorDisplayMode, colorPalette, connectionLineStyle, dragging, draggingRef, g, getNodeScaleX, getNodeScaleY, getTerminalDisplayColor, image, isBusNode, isMultiNodeMoveState, isRoutableLineDeviceKind, isStaticNode, line, multiNodeDragOverlayDeltaRef, multiNodeDragOverlayRef, nodeById, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, path, rect, resolveNodeStateVisual, svgStrokeDashArray, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, title, updateMultiNodeDragOverlayTransform, visibleNodeIdSet } = __appScope;
+  const { MemoDeviceGlyph, buildMeasurementGroupsMarkup, circle, clipPath, colorDisplayMode, colorPalette, themeMode, connectionLineStyle, dragging, draggingRef, g, getNodeScaleX, getNodeScaleY, getTerminalDisplayColor, image, isBusNode, isMultiNodeMoveState, isRoutableLineDeviceKind, isStaticNode, line, multiNodeDragOverlayDeltaRef, multiNodeDragOverlayRef, nodeById, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, path, rect, resolveNodeStateVisual, svgStrokeDashArray, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, title, updateMultiNodeDragOverlayTransform, visibleNodeIdSet } = __appScope;
     if (!dragging || !isMultiNodeMoveState(dragging)) {
       return null;
     }
@@ -841,8 +850,8 @@ export function createRenderMultiNodeDragOverlay(__appScope: Record<string, any>
                 </clipPath>
               )}
               <g className="node-geometry" transform={nodeGeometryTransform(node)}>
-                <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
-                <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
+                <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(node)} />
+                <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(node)} />
               </g>
               {!nodeIsBus && (imageHref || foregroundImageHref) && (
                 <g className="node-upright-content" transform={nodeImageContentTransform(node)}>
@@ -899,7 +908,7 @@ export function createRenderMultiNodeDragOverlay(__appScope: Record<string, any>
                   {node.terminals.map((terminal) => {
                     const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
                     const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
-                    const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
+                    const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette, themeMode);
                     return (
                       <g key={terminal.id} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
                         <line
@@ -968,7 +977,7 @@ export function createGroupTransformPreviewNodeFromSnapshot(__appScope: Record<s
 
 export function createRenderGroupTransformPhotoPreview(__appScope: Record<string, any>) {
   return () => {
-  const { MemoDeviceGlyph, canvasBounds, circle, clipPath, colorDisplayMode, colorPalette, connectionLineStyle, g, getDeviceStrokeColor, getNodeScaleX, getNodeScaleY, getTerminalDisplayColor, groupTransformGeometry, groupTransformPreviewEdgeRoutes, groupTransformPreviewNodeFromSnapshot, groupTransformPreviewRoutableLineNodeIdSet, groupTransformPreviewTransform, image, isBusNode, isGroupTransformDrag, isRoutableLineDeviceKind, isStaticNode, line, nodeById, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, nodes, normalizeRotationDegrees, path, pointsToPreviewPath, rect, resolveNodeStateVisual, routableLineDeviceCanvasPoints, routeRoutableLineDevice, svgStrokeDashArray, syncRoutableLineDeviceEndpointsToRefs, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, title, transformDrag, transformGroupPoint, visibleNodeIdSet } = __appScope;
+  const { MemoDeviceGlyph, canvasBounds, circle, clipPath, colorDisplayMode, colorPalette, themeMode, connectionLineStyle, g, getDeviceStrokeColor, getNodeScaleX, getNodeScaleY, getTerminalDisplayColor, groupTransformGeometry, groupTransformPreviewEdgeRoutes, groupTransformPreviewNodeFromSnapshot, groupTransformPreviewRoutableLineNodeIdSet, groupTransformPreviewTransform, image, isBusNode, isGroupTransformDrag, isRoutableLineDeviceKind, isStaticNode, line, nodeById, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, nodes, normalizeRotationDegrees, path, pointsToPreviewPath, rect, resolveNodeStateVisual, routableLineDeviceCanvasPoints, routeRoutableLineDevice, svgStrokeDashArray, syncRoutableLineDeviceEndpointsToRefs, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, title, transformDrag, transformGroupPoint, visibleNodeIdSet } = __appScope;
     if (!transformDrag || !isGroupTransformDrag(transformDrag) || !groupTransformPreviewTransform) {
       return null;
     }
@@ -1019,7 +1028,7 @@ export function createRenderGroupTransformPhotoPreview(__appScope: Record<string
       return [{
         nodeId: lineNode.id,
         path: pointsToPreviewPath(points),
-        color: getDeviceStrokeColor(lineNode, colorDisplayMode, colorPalette)
+        color: getDeviceStrokeColor(lineNode, colorDisplayMode, colorPalette, themeMode)
       }];
     });
     return (
@@ -1087,8 +1096,8 @@ export function createRenderGroupTransformPhotoPreview(__appScope: Record<string
                   </clipPath>
                 )}
                 <g className="node-geometry" transform={nodeGeometryTransform(node)}>
-                  <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
-                  <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
+                  <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(node)} />
+                  <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(node)} />
                 </g>
                 {!nodeIsBus && (imageHref || foregroundImageHref) && (
                   <g className="node-upright-content" transform={nodeImageContentTransform(node)}>
@@ -1145,7 +1154,7 @@ export function createRenderGroupTransformPhotoPreview(__appScope: Record<string
                     {node.terminals.map((terminal) => {
                       const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
                       const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
-                      const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
+                      const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette, themeMode);
                       return (
                         <g key={terminal.id} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
                           <line
@@ -1220,8 +1229,8 @@ export function createRenderSingleTransformRotateOriginGhost(__appScope: Record<
             rx="8"
             className={`node-hitbox ${isBusNode(ghostNode) ? "bus-hitbox" : ""} ${isStaticNode(ghostNode) ? "static-hitbox" : ""}`}
           />
-          <MemoDeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(ghostNode)} />
-          <MemoDeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(ghostNode)} />
+          <MemoDeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(ghostNode)} />
+          <MemoDeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(ghostNode)} />
         </g>
         {renderNodePreviewImageContent(ghostNode, `rotate-origin-ghost-preview-clip-${ghostNode.id}`)}
       </g>

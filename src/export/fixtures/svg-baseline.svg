@@ -17,7 +17,7 @@
 <symbol id="symbol_ACBreak_ac-breaker_default" viewBox="-16 -16 32 32" overflow="visible">
   <title>ACBreak</title>
   <g transform="rotate(90) scale(1 1)">
-  <g fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="-8" y1="0" x2="-20" y2="0"></line><line x1="20" y1="0" x2="8" y2="0"></line><rect x="-20" y="-15" width="40" height="30" rx="5" fill="#eef2ff"></rect><path d="M -10 -8 V 8 M 10 -8 V 8"></path><path d="M -10 0 H 10"></path></g>
+  <g fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="-8" y1="0" x2="-20" y2="0"></line><line x1="20" y1="0" x2="8" y2="0"></line><rect x="-20" y="-15" width="40" height="30" rx="5" fill="transparent"></rect><path d="M -10 -8 V 8 M 10 -8 V 8"></path><path d="M -10 0 H 10"></path></g>
   
   <g transform="translate(0 20)">
   <line x1="0" y1="-4" x2="0" y2="0" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round"/>
@@ -35,7 +35,7 @@
 <symbol id="symbol_ACLoad_ac-load_default" viewBox="-20 -20 40 40" overflow="visible">
   <title>ACLoad</title>
   <g transform="rotate(0) scale(1 1)">
-  <g class="electric-load-glyph" fill="#ffffff" stroke="#2563eb" stroke-width="2.5" stroke-linejoin="round"><path d="M -8.88888888888889 -8.88888888888889 L 8.88888888888889 -8.88888888888889 L 0 8.88888888888889 Z"></path></g>
+  <g class="electric-load-glyph" fill="transparent" stroke="#2563eb" stroke-width="2.5" stroke-linejoin="round"><path d="M -8.88888888888889 -8.88888888888889 L 8.88888888888889 -8.88888888888889 L 0 8.88888888888889 Z"></path></g>
   
   <g transform="translate(24 0)">
   <line x1="-19.55556" y1="0" x2="0" y2="0" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round"/>

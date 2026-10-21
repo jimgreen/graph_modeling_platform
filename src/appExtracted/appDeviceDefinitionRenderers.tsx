@@ -97,7 +97,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       hideDefaultPage?: boolean;
     }
   ) => {
-  const { BufferedTextInput, COMPONENT_LIBRARY_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDeviceTerminalAnchorDragIndex, customDeviceTerminalAnchorValue, customDeviceTerminalAnchors, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionStateDraftRows, definitionTerminalAnchorDragIndex, definitionVisualDraft, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, getNodeScaleX, getNodeScaleY, image, imageAssets, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, projectCustomDeviceTerminalAnchorToBoundary, rect, resolveTemplateComponentLibrary, selectedDefinitionTemplate, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setDefinitionStateDraftRows, setDefinitionTerminalAnchorDragIndex, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImageVisibleFrames, setStateIconDrawingSvgVisibleFrames, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingDragDeltaRef, stateIconDrawingDragRef, stateIconDrawingElementId, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, stateIconDrawingFrameRect, stateIconDrawingHistoryRef, stateIconDrawingImageVisibleFrames, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingSvgVisibleFrames, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, updateCustomDeviceTerminalAnchor, updateDefinitionTerminalAnchor, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
+  const { BufferedTextInput, COMPONENT_LIBRARY_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, themeMode, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDeviceTerminalAnchorDragIndex, customDeviceTerminalAnchorValue, customDeviceTerminalAnchors, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionStateDraftRows, definitionTerminalAnchorDragIndex, definitionVisualDraft, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, getNodeScaleX, getNodeScaleY, image, imageAssets, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, projectCustomDeviceTerminalAnchorToBoundary, rect, resolveTemplateComponentLibrary, selectedDefinitionTemplate, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setDefinitionStateDraftRows, setDefinitionTerminalAnchorDragIndex, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImageVisibleFrames, setStateIconDrawingSvgVisibleFrames, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingDragDeltaRef, stateIconDrawingDragRef, stateIconDrawingElementId, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, stateIconDrawingFrameRect, stateIconDrawingHistoryRef, stateIconDrawingImageVisibleFrames, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingSvgVisibleFrames, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, updateCustomDeviceTerminalAnchor, updateDefinitionTerminalAnchor, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
     const hideDefaultPage = handlers.hideDefaultPage === true;
     const displayRows = hideDefaultPage ? rows : nonDefaultStateDraftRows(rows);
     const defaultVisual = handlers.drawingScope === "definition"
@@ -312,7 +312,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           aria-hidden="true"
         >
           <g transform={nodeGeometryTransform(preview)}>
-            <MemoDeviceGlyph node={preview} colorPalette={colorPalette} stateVisual={null} />
+            <MemoDeviceGlyph node={preview} colorPalette={colorPalette} themeMode={themeMode} stateVisual={null} />
           </g>
         </svg>
       );
@@ -2608,7 +2608,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
 
 export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<string, any>) {
   return (template: DeviceTemplate) => {
-  const { BufferedTextInput, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, Fragment, MemoDeviceGlyph, SvgMarkupChunk, TERMINAL_TYPE_LIBRARY_LABELS, addDefinitionStateDraftRow, button, circle, colorDisplayMode, colorPalette, createDefinitionStateDraftRows, createDefinitionVisualDraft, createNodeFromTemplate, customDeviceTerminalAnchorValue, definitionDraftError, definitionStateDraftRows, definitionStatePageId, definitionStatePreviewVisual, definitionTemplateIconInputRef, definitionTerminalAnchorDragIndex, definitionTerminalConnectorSegment, definitionVisualDraft, definitionVisualPreviewHeight, definitionVisualPreviewImage, definitionVisualPreviewWidth, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteDefinitionStateDraftRow, div, formatCustomDeviceTerminalAnchorValue, formatSvgNumber, g, image, isBusNode, isDefaultStatePageId, isStaticNode, label, line, nodeForegroundImage, nodeGeometryTransform, nodeImageContentTransform, openStateIconDrawingDialog, p, rect, renderStateVisualPager, resolveNodeStateVisual, saveDeviceDefinitionStateVisualDraft, saveDeviceDefinitionVisualDraft, section, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setStateImageUploadTarget, small, span, stateVisualImageInputRef, strong, svgImageContentMarkup, terminalColor, text, title, updateDefinitionStateDraftRow, updateDefinitionTerminalAnchor, updateDefinitionTerminalAnchorFromPreview } = __appScope;
+  const { BufferedTextInput, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, Fragment, MemoDeviceGlyph, SvgMarkupChunk, TERMINAL_TYPE_LIBRARY_LABELS, addDefinitionStateDraftRow, button, circle, colorDisplayMode, colorPalette, themeMode, createDefinitionStateDraftRows, createDefinitionVisualDraft, createNodeFromTemplate, customDeviceTerminalAnchorValue, definitionDraftError, definitionStateDraftRows, definitionStatePageId, definitionStatePreviewVisual, definitionTemplateIconInputRef, definitionTerminalAnchorDragIndex, definitionTerminalConnectorSegment, definitionVisualDraft, definitionVisualPreviewHeight, definitionVisualPreviewImage, definitionVisualPreviewWidth, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteDefinitionStateDraftRow, div, formatCustomDeviceTerminalAnchorValue, formatSvgNumber, g, image, isBusNode, isDefaultStatePageId, isStaticNode, label, line, nodeForegroundImage, nodeGeometryTransform, nodeImageContentTransform, openStateIconDrawingDialog, p, rect, renderStateVisualPager, resolveNodeStateVisual, saveDeviceDefinitionStateVisualDraft, saveDeviceDefinitionVisualDraft, section, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setStateImageUploadTarget, small, span, stateVisualImageInputRef, strong, svgImageContentMarkup, terminalColor, text, title, updateDefinitionStateDraftRow, updateDefinitionTerminalAnchor, updateDefinitionTerminalAnchorFromPreview } = __appScope;
     if (!definitionVisualDraft) {
       return null;
     }
@@ -2670,8 +2670,8 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
             </clipPath>
           )}
           <g className="node-geometry" transform={nodeGeometryTransform(previewFrameNode)}>
-            <MemoDeviceGlyph node={previewFrameNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual} />
-            <MemoDeviceGlyph node={previewFrameNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual} />
+            <MemoDeviceGlyph node={previewFrameNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={previewStateVisual} />
+            <MemoDeviceGlyph node={previewFrameNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={previewStateVisual} />
           </g>
           {!previewIsBus && (previewImageHref || previewForegroundHref) && (
             <g className="node-upright-content" transform={nodeImageContentTransform(previewFrameNode)}>
@@ -2879,7 +2879,7 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
 
 export function createRenderGraphTemplatePreview(__appScope: Record<string, any>) {
   return (template: GraphTemplate) => {
-  const { MemoDeviceGlyph, canvasClipboardBounds, colorPalette, g, nodeGeometryTransform, path, pointsToPreviewPath, rect, resolveNodeStateVisual, svg } = __appScope;
+  const { MemoDeviceGlyph, canvasClipboardBounds, colorPalette, themeMode, g, nodeGeometryTransform, path, pointsToPreviewPath, rect, resolveNodeStateVisual, svg } = __appScope;
     const bounds = canvasClipboardBounds(template.clipboard);
     if (!bounds) {
       return (
@@ -2911,7 +2911,7 @@ export function createRenderGraphTemplatePreview(__appScope: Record<string, any>
         {template.clipboard.nodes.map((node: ModelNode) => (
           <g key={node.id} transform={`translate(${node.position.x} ${node.position.y})`}>
             <g transform={nodeGeometryTransform(node)}>
-              <MemoDeviceGlyph node={node} miniature colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
+              <MemoDeviceGlyph node={node} miniature colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(node)} />
             </g>
           </g>
         ))}
@@ -2922,7 +2922,7 @@ export function createRenderGraphTemplatePreview(__appScope: Record<string, any>
 
 export function createRenderLibraryTemplateButton(__appScope: Record<string, any>) {
   return (item: DeviceTemplate, section: string) => {
-  const { MemoDeviceGlyph, SvgMarkupChunk, button, cancelLibraryPlacement, clipPath, colorPalette, componentLibraryDisplayMode, createNodeFromTemplate, defs, formatSvgNumber, g, hideLibraryFlyout, image, isBrowseMode, isBusNode, isEditMode, libraryPreviewByKind, modelType, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, rect, resolveNodeStateVisual, startLibraryDevicePlacement, svg, svgImageContentMarkup } = __appScope;
+  const { MemoDeviceGlyph, SvgMarkupChunk, button, cancelLibraryPlacement, clipPath, colorPalette, themeMode, componentLibraryDisplayMode, createNodeFromTemplate, defs, formatSvgNumber, g, hideLibraryFlyout, image, isBrowseMode, isBusNode, isEditMode, libraryPreviewByKind, modelType, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, rect, resolveNodeStateVisual, startLibraryDevicePlacement, svg, svgImageContentMarkup } = __appScope;
     const modelTypeFailureMessage = modelAssociationDeviceModelTypeFailureMessage(modelType, item.kind);
     const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
     const libraryPreviewImageHref = nodeImage(preview);
@@ -2976,7 +2976,7 @@ export function createRenderLibraryTemplateButton(__appScope: Record<string, any
           )}
           {!libraryPreviewHasImage && (
             <g transform={nodeGeometryTransform(preview)}>
-              <MemoDeviceGlyph node={preview} miniature colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(preview)} />
+              <MemoDeviceGlyph node={preview} miniature colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(preview)} />
             </g>
           )}
           {libraryPreviewHasImage && (

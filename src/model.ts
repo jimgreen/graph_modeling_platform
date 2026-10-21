@@ -7777,14 +7777,38 @@ export function getDeviceGlyphVariant(kind: DeviceKind): DeviceGlyphVariant {
   return "default";
 }
 
-export const TERMINAL_TYPE_COLORS: Record<TerminalType, string> = {
-  ac: "#2563eb",
-  dc: "#0f766e",
-  h2: "#7c3aed",
-  heat: "#dc2626"
+export type ColorDisplayMode = "energy" | "voltage";
+
+/**
+ * 画布配色两套值：`light` 用于纯白画布，`dark` 用于纯黑画布。
+ *
+ * 深色那一套必须能在 #000000 上看清 —— 浅色画布用的深饱和色（#2563eb、#7f1d1d、#0e7490）
+ * 直接放到黑底上会糊成一团，所以深色侧整体提亮。
+ *
+ * 这里只放“配色表的两套值”；界面外壳不参与，永远是原来的浅色。
+ */
+export type ColorThemeMode = "light" | "dark";
+
+export type ThemeColorPair = {
+  light: string;
+  dark: string;
 };
 
-export type ColorDisplayMode = "energy" | "voltage";
+/** 能流配色两套值（浅色沿用历史配色）。 */
+export const ENERGY_THEME_COLORS: Record<TerminalType, ThemeColorPair> = {
+  ac: { light: "#2563eb", dark: "#60a5fa" },
+  dc: { light: "#0f766e", dark: "#2dd4bf" },
+  h2: { light: "#7c3aed", dark: "#c084fc" },
+  heat: { light: "#dc2626", dark: "#f87171" }
+};
+
+/** 能流配色的浅色值（兼容仍按单值取色的旧调用点）。 */
+export const TERMINAL_TYPE_COLORS: Record<TerminalType, string> = {
+  ac: ENERGY_THEME_COLORS.ac.light,
+  dc: ENERGY_THEME_COLORS.dc.light,
+  h2: ENERGY_THEME_COLORS.h2.light,
+  heat: ENERGY_THEME_COLORS.heat.light
+};
 
 export type ColorPalette = {
   energy: Record<TerminalType, string>;
@@ -7793,24 +7817,36 @@ export type ColorPalette = {
 
 export const BUILTIN_VOLTAGE_LEVELS = ["0", "0.22", "0.4", "6", "10", "10.5", "20", "35", "66", "110", "220", "330", "500", "750", "800", "1000"];
 
-export const VOLTAGE_LEVEL_COLORS: Record<string, string> = {
-  "0": "#64748b",
-  "0.22": "#22c55e",
-  "0.4": "#22c55e",
-  "6": "#0ea5e9",
-  "10": "#f97316",
-  "10.5": "#f97316",
-  "20": "#f97316",
-  "35": "#a855f7",
-  "66": "#6366f1",
-  "110": "#ef4444",
-  "220": "#b91c1c",
-  "330": "#7f1d1d",
-  "500": "#dc2626",
-  "750": "#0891b2",
-  "800": "#0e7490",
-  "1000": "#0e7490"
+/**
+ * 电压等级配色两套值。
+ *
+ * 浅色：沿用历史配色（纯白画布上足够区分）。
+ * 深色：纯黑画布上重新取值 —— 历史值里的 #7f1d1d / #b91c1c / #0e7490 在黑底上几乎不可见，
+ * 一律换成同色相的高明度版本，并保持相邻电压等级的区分度。
+ */
+export const VOLTAGE_LEVEL_THEME_COLORS: Record<string, ThemeColorPair> = {
+  "0": { light: "#64748b", dark: "#94a3b8" },
+  "0.22": { light: "#22c55e", dark: "#4ade80" },
+  "0.4": { light: "#22c55e", dark: "#4ade80" },
+  "6": { light: "#0ea5e9", dark: "#38bdf8" },
+  "10": { light: "#f97316", dark: "#fb923c" },
+  "10.5": { light: "#f97316", dark: "#fb923c" },
+  "20": { light: "#f97316", dark: "#fb923c" },
+  "35": { light: "#a855f7", dark: "#c084fc" },
+  "66": { light: "#6366f1", dark: "#818cf8" },
+  "110": { light: "#ef4444", dark: "#f87171" },
+  "220": { light: "#b91c1c", dark: "#fb7185" },
+  "330": { light: "#7f1d1d", dark: "#fda4af" },
+  "500": { light: "#dc2626", dark: "#f87171" },
+  "750": { light: "#0891b2", dark: "#22d3ee" },
+  "800": { light: "#0e7490", dark: "#67e8f9" },
+  "1000": { light: "#0e7490", dark: "#67e8f9" }
 };
+
+/** 电压等级配色的浅色值（兼容仍按单值取色的旧调用点）。 */
+export const VOLTAGE_LEVEL_COLORS: Record<string, string> = Object.fromEntries(
+  Object.entries(VOLTAGE_LEVEL_THEME_COLORS).map(([voltage, pair]) => [voltage, pair.light])
+);
 
 function buildDefaultVoltagePalette(): Record<string, string> {
   const typedEntries = Object.entries(VOLTAGE_LEVEL_COLORS).flatMap(([voltage, color]) => [
@@ -7826,6 +7862,41 @@ function buildDefaultVoltagePalette(): Record<string, string> {
 export const DEFAULT_COLOR_PALETTE: ColorPalette = {
   energy: { ...TERMINAL_TYPE_COLORS },
   voltage: buildDefaultVoltagePalette()
+};
+
+/**
+ * 按主题把内置的两套默认值解析成单值表（不读用户存档，纯粹是“内置默认”的主题化）。
+ *
+ * 为什么不让 `ColorPalette` 本身变成 `{light,dark}`：那个类型贯穿 30 多个调用点、
+ * 导出链路和用户定制快照比较，改结构会把风险扩散到与主题无关的功能上。
+ * 这里把“两套值”收在解析函数里，调用点只需要多传一个 theme 参数。
+ */
+export function colorPaletteForTheme(palette: ColorPalette, theme: ColorThemeMode = "light"): ColorPalette {
+  const pick = (pair: ThemeColorPair | undefined, fallback: string): string => {
+    if (!pair) return fallback;
+    return theme === "dark" ? pair.dark || pair.light || fallback : pair.light || fallback;
+  };
+  return {
+    energy: {
+      ac: pick(ENERGY_THEME_COLORS.ac, TERMINAL_TYPE_COLORS.ac),
+      dc: pick(ENERGY_THEME_COLORS.dc, TERMINAL_TYPE_COLORS.dc),
+      h2: pick(ENERGY_THEME_COLORS.h2, TERMINAL_TYPE_COLORS.h2),
+      heat: pick(ENERGY_THEME_COLORS.heat, TERMINAL_TYPE_COLORS.heat)
+    },
+    voltage: Object.fromEntries(
+      Object.keys(VOLTAGE_LEVEL_THEME_COLORS).flatMap((voltage) => [
+        [voltage, pick(VOLTAGE_LEVEL_THEME_COLORS[voltage], VOLTAGE_LEVEL_COLORS[voltage] ?? "#64748b")],
+        [`ac:${voltage}`, pick(VOLTAGE_LEVEL_THEME_COLORS[voltage], VOLTAGE_LEVEL_COLORS[voltage] ?? "#64748b")],
+        [`dc:${voltage}`, pick(VOLTAGE_LEVEL_THEME_COLORS[voltage], VOLTAGE_LEVEL_COLORS[voltage] ?? "#64748b")]
+      ])
+    )
+  };
+}
+
+/** 两套默认配色。 */
+export const THEMED_COLOR_PALETTES: Record<ColorThemeMode, ColorPalette> = {
+  light: colorPaletteForTheme(DEFAULT_COLOR_PALETTE, "light"),
+  dark: colorPaletteForTheme(DEFAULT_COLOR_PALETTE, "dark")
 };
 
 export type VoltageLevelConfig = {
@@ -7961,31 +8032,76 @@ export function normalizeColorPalette(value?: Partial<ColorPalette> | null): Col
   };
 }
 
+/**
+ * 把“用户配色表 + 内置两套默认值”解析成指定主题下的一整张单值配色表。
+ *
+ * 关键在于分清“用户改过的值”和“默认值”：`DEFAULT_COLOR_PALETTE` 里存的就是历史浅色值，
+ * 存档里没有的键也会被 `normalizeColorPalette` 补上同样的浅色值。所以这里不能简单地把
+ * `palette` 当成用户值 —— 与内置值相同的键一律按“未自定义”处理，落回当前主题的内置值。
+ *
+ * 解析顺序：内置该主题值 → 用户改过的值覆盖。
+ */
+export function resolveThemedPalette(palette: ColorPalette = DEFAULT_COLOR_PALETTE, theme: ColorThemeMode = "light"): ColorPalette {
+  const pick = (custom: string | undefined, pair: ThemeColorPair): string => {
+    const trimmed = typeof custom === "string" ? custom.trim() : "";
+    if (!trimmed) return theme === "dark" ? pair.dark : pair.light;
+    // 与内置浅色值相同 = 用户没改过 → 走当前主题值
+    if (trimmed.toLowerCase() === pair.light.toLowerCase()) return theme === "dark" ? pair.dark : pair.light;
+    // 与内置深色值相同（读的是深色存档）= 同样没改过
+    if (trimmed.toLowerCase() === pair.dark.toLowerCase()) return theme === "dark" ? pair.dark : pair.light;
+    return trimmed;
+  };
+  // 用户在配色设置里可能只改了 `ac:110` 而没改 `110`：逐个键单独判定即可。
+  const voltageEntries: Record<string, string> = {};
+  for (const [voltage, pair] of Object.entries(VOLTAGE_LEVEL_THEME_COLORS)) {
+    for (const key of [voltage, `ac:${voltage}`, `dc:${voltage}`]) {
+      voltageEntries[key] = pick(palette.voltage[key], pair);
+    }
+  }
+  const energyEntries = {
+    ac: pick(palette.energy.ac, ENERGY_THEME_COLORS.ac),
+    dc: pick(palette.energy.dc, ENERGY_THEME_COLORS.dc),
+    h2: pick(palette.energy.h2, ENERGY_THEME_COLORS.h2),
+    heat: pick(palette.energy.heat, ENERGY_THEME_COLORS.heat)
+  } as Record<TerminalType, string>;
+  return { energy: energyEntries, voltage: voltageEntries };
+}
+
 export function terminalTypeColor(type?: TerminalType, palette: ColorPalette = DEFAULT_COLOR_PALETTE): string {
   return type ? palette.energy[type] ?? DEFAULT_COLOR_PALETTE.energy[type] : palette.energy.ac ?? DEFAULT_COLOR_PALETTE.energy.ac;
 }
 
 export const DEFAULT_CONNECTION_STROKE_COLOR = "#334155";
 
-function voltageColorFallback(value: string): string {
+/** 连线兜底描边的两套值（有端子类型时走能流/电压配色）。 */
+export const CONNECTION_STROKE_THEME_COLORS: ThemeColorPair = { light: "#334155", dark: "#cbd5e1" };
+
+/** 当前主题下的连线兜底色。 */
+export function connectionStrokeColor(theme: ColorThemeMode = "light"): string {
+  return theme === "dark" ? CONNECTION_STROKE_THEME_COLORS.dark : CONNECTION_STROKE_THEME_COLORS.light;
+}
+
+function voltageColorFallback(value: string, theme: ColorThemeMode = "light"): string {
   let hash = 0;
   for (let index = 0; index < value.length; index += 1) {
     hash = (hash * 31 + value.charCodeAt(index)) % 360;
   }
-  return `hsl(${hash} 72% 42%)`;
+  // 浅色画布用深底彩字（明度 42%）；深色画布必须提到 68%，否则黑底上看不见。
+  return `hsl(${hash} 72% ${theme === "dark" ? 68 : 42}%)`;
 }
 
 function voltageColorKey(value?: string): string {
   return terminalVoltageBaseNumber(value) || "0";
 }
 
-export function voltageLevelColor(value?: string, type?: TerminalType, palette: ColorPalette = DEFAULT_COLOR_PALETTE): string {
+export function voltageLevelColor(value?: string, type?: TerminalType, palette: ColorPalette = DEFAULT_COLOR_PALETTE, theme: ColorThemeMode = "light"): string {
+  const resolved = resolveThemedPalette(palette, theme);
   const key = voltageColorKey(value);
   if (isElectricColorType(type)) {
     const typedKey = `${type}:${key}`;
-    return palette.voltage[typedKey] ?? palette.voltage[key] ?? DEFAULT_COLOR_PALETTE.voltage[typedKey] ?? DEFAULT_COLOR_PALETTE.voltage[key] ?? voltageColorFallback(typedKey);
+    return resolved.voltage[typedKey] ?? resolved.voltage[key] ?? voltageColorFallback(typedKey, theme);
   }
-  return palette.voltage[key] ?? DEFAULT_COLOR_PALETTE.voltage[key] ?? voltageColorFallback(key);
+  return resolved.voltage[key] ?? voltageColorFallback(key, theme);
 }
 
 function isElectricColorType(type?: TerminalType): type is "ac" | "dc" {
@@ -8013,18 +8129,21 @@ export function getTerminalDisplayColor(
   node: Pick<ModelNode, "kind" | "terminals" | "params">,
   terminal: Pick<Terminal, "id" | "type" | "vbase">,
   mode: ColorDisplayMode = "energy",
-  palette: ColorPalette = DEFAULT_COLOR_PALETTE
+  palette: ColorPalette = DEFAULT_COLOR_PALETTE,
+  theme: ColorThemeMode = "light"
 ): string {
+  const themedPalette = resolveThemedPalette(palette, theme);
   return mode === "voltage" && isElectricColorType(terminal.type)
-    ? voltageLevelColor(terminalVoltageDisplayForColor(node, terminal), terminal.type, palette)
-    : terminalTypeColor(terminal.type, palette);
+    ? voltageLevelColor(terminalVoltageDisplayForColor(node, terminal), terminal.type, palette, theme)
+    : terminalTypeColor(terminal.type, themedPalette);
 }
 
 export function getConnectionStrokeColor(
   edge: Pick<Edge, "id" | "sourceId" | "targetId" | "sourceTerminalId" | "targetTerminalId">,
   nodeById: ReadonlyMap<string, Pick<ModelNode, "kind" | "terminals" | "params">>,
   mode: ColorDisplayMode = "energy",
-  palette: ColorPalette = DEFAULT_COLOR_PALETTE
+  palette: ColorPalette = DEFAULT_COLOR_PALETTE,
+  theme: ColorThemeMode = "light"
 ): string {
   const sourceNode = nodeById.get(edge.sourceId);
   const targetNode = nodeById.get(edge.targetId);
@@ -8032,14 +8151,14 @@ export function getConnectionStrokeColor(
   const targetTerminal = findDisplayTerminal(targetNode, edge.targetTerminalId);
   const type = sourceTerminal?.type ?? targetTerminal?.type;
   if (!type) {
-    return DEFAULT_CONNECTION_STROKE_COLOR;
+    return connectionStrokeColor(theme);
   }
   if (mode === "voltage" && isElectricColorType(type)) {
     const sourceVoltage = sourceNode && sourceTerminal?.type === type ? terminalVoltageDisplayForColor(sourceNode, sourceTerminal) : "";
     const targetVoltage = targetNode && targetTerminal?.type === type ? terminalVoltageDisplayForColor(targetNode, targetTerminal) : "";
-    return voltageLevelColor(sourceVoltage && sourceVoltage !== "0" ? sourceVoltage : targetVoltage, type, palette);
+    return voltageLevelColor(sourceVoltage && sourceVoltage !== "0" ? sourceVoltage : targetVoltage, type, palette, theme);
   }
-  return terminalTypeColor(type, palette);
+  return terminalTypeColor(type, resolveThemedPalette(palette, theme));
 }
 
 function isHydrogenVisualKind(kind: string): boolean {
@@ -8068,7 +8187,7 @@ function isPureThermalNetworkKind(kind: string): boolean {
   return isThermalVisualKind(kind) && kind !== "ac-heater" && kind !== "dc-heater" && kind !== "ac-two-port-heater" && kind !== "dc-two-port-heater";
 }
 
-export function getDeviceStrokeColor(node: Pick<ModelNode, "kind" | "terminals" | "params">, mode: ColorDisplayMode = "energy", palette: ColorPalette = DEFAULT_COLOR_PALETTE): string {
+export function getDeviceStrokeColor(node: Pick<ModelNode, "kind" | "terminals" | "params">, mode: ColorDisplayMode = "energy", palette: ColorPalette = DEFAULT_COLOR_PALETTE, theme: ColorThemeMode = "light"): string {
   const primaryTerminal = node.terminals.find((terminal) => isElectricColorType(terminal.type)) ?? node.terminals[0] ?? virtualBusTerminal(node);
   const busTerminalType = busTerminalTypeByKind(node.kind);
   const busVoltage = firstNonZeroVoltageBase([
@@ -8077,16 +8196,17 @@ export function getDeviceStrokeColor(node: Pick<ModelNode, "kind" | "terminals" 
     deviceParamValue(node.params, "rated_voltage"),
     node.params.voltage
   ]);
+  const themedPalette = resolveThemedPalette(palette, theme);
   return (deviceParamValue(node.params, "foreground_color") ?? "") || (
     mode === "voltage" && isElectricColorType(busTerminalType) && busVoltage
-      ? voltageLevelColor(busVoltage, busTerminalType, palette)
+      ? voltageLevelColor(busVoltage, busTerminalType, palette, theme)
       : isHydrogenVisualKind(node.kind)
-      ? terminalTypeColor("h2", palette)
+      ? terminalTypeColor("h2", themedPalette)
       : isThermalVisualKind(node.kind)
-        ? terminalTypeColor("heat", palette)
+        ? terminalTypeColor("heat", themedPalette)
         : primaryTerminal
-          ? getTerminalDisplayColor(node, primaryTerminal, mode, palette)
-          : terminalTypeColor(undefined, palette)
+          ? getTerminalDisplayColor(node, primaryTerminal, mode, palette, theme)
+          : terminalTypeColor(undefined, themedPalette)
   );
 }
 

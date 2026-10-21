@@ -54,7 +54,9 @@ describe("DeviceGlyph static nodes", () => {
 
     const markup = renderToStaticMarkup(<svg><DeviceGlyph node={styledNode} /></svg>);
 
-    expect(markup).toContain('fill="#e91616"');
+    // 填充一律透明（两种主题都如此）：图元只靠描边和文字表达，底色交给画布。
+    expect(markup).toContain('fill="transparent"');
+    expect(markup).not.toContain('fill="#e91616"');
     expect(markup).toContain('stroke="#176ee8"');
     expect(markup).toContain('stroke-width="2"');
     expect(markup).toContain('stroke-dasharray="2 6"');
@@ -83,7 +85,8 @@ describe("DeviceGlyph static nodes", () => {
 
     const markup = renderToStaticMarkup(<svg><DeviceGlyph node={styledNode} /></svg>);
 
-    expect(markup).toContain('fill="#fff4cc"');
+    expect(markup).toContain('fill="transparent"');
+    expect(markup).not.toContain('fill="#fff4cc"');
     expect(markup).toContain('stroke="#176ee8"');
     expect(markup).toContain('stroke-width="3"');
     expect(markup).toContain('stroke-dasharray="10 6"');

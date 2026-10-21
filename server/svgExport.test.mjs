@@ -399,8 +399,8 @@ describe(`${svgPath} 正路径`, () => {
   test("模型无 canvasBackgroundColor 时用渲染器默认底色", async () => {
     const res = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("无底色模型")}`);
     expect(res.status).toBe(200);
-    // 渲染器默认 DEFAULT_CANVAS_BACKGROUND（前端侧同值），后端不再写 "#f8fafc" 第二份默认
-    expect(await res.text()).toContain('fill="#f1f5f9"');
+    // 渲染器默认 DEFAULT_CANVAS_BACKGROUND = 浅色画布纯白（见 src/canvasTheme.ts），后端不再写第二份默认
+    expect(await res.text()).toContain('fill="#ffffff"');
   });
 
   test("deviceDefinitionOverrides 生效：改写内置模板状态定义后 SVG 随之变化", async () => {
@@ -812,14 +812,14 @@ describe(`${svgPath} 上游归一化挡死的兜底（打桩读盘层）`, () =>
 // 覆盖 `backgroundProject.canvasBackgroundColor ?? undefined`（L77）的右臂。
 // 可达性依据：背景模型不落 canvasBackgroundColor 键 → normalizeProjectForStorage
 // 不补这个未知键 → 归一化透传 undefined → 兜底生效 → 背景页底色落渲染器默认
-// （DEFAULT_CANVAS_BACKGROUND），而不是宿主自己的 #ffffff。
+// （DEFAULT_CANVAS_BACKGROUND，浅色画布纯白），而不是宿主自己的兜底色。
 describe(`${svgPath} 背景页底色兜底`, () => {
   test("背景模型不落 canvasBackgroundColor 时兜底 undefined：背景页用渲染器默认底色", async () => {
     const text = await fetchSvg("引用无底色背景模型");
     // 背景页容器在（backgroundProjectIdx=104 合法）→ 不是「跳过背景页」分支
     expect(text).toContain('class="export-background-page-layer"');
-    // 背景模型缺该键 → 兜底 undefined → 渲染器回落自身默认 #f1f5f9
-    expect(text).toContain('fill="#f1f5f9"');
+    // 背景模型缺该键 → 兜底 undefined → 渲染器回落自身默认（浅色画布纯白 #ffffff）
+    expect(text).toContain('fill="#ffffff"');
   });
 });
 
@@ -844,7 +844,7 @@ describe(`${svgPath} 背景页底色兜底`, () => {
 //   行   兜底改动                                    红在哪条断言
 //   50   `: []` → `: ["default"]`                     not.toContain("母线1")（背景设备冒出来了）
 //   58   `?? []` → `?? [一条边]`                       not.toContain("source-dev-id=")
-//   77   `?? undefined` → `?? "#123456"`               toContain('fill="#f1f5f9"')
+//   77   `?? undefined` → `?? "#123456"`               toContain('fill="#ffffff"')
 //   95   `?? {}` → `?? { canvasWidth:111, canvasHeight:222 }`  toContain('viewBox="0,0,1920,1024"')
 //   102  `?? []` → `?? [遮蔽 ac-breaker 的自定义模板]`     toContain("ac-breaker_state_")
 //   103  `?? {}` → `?? { "ac-breaker": { stateDefinitions: [] } }`  同上
@@ -856,5 +856,5 @@ describe(`${svgPath} 背景页底色兜底`, () => {
 // L77 一条要留个反记：动手前曾判定 `?? undefined` 与 `?? backgroundProject?.canvasBackgroundColor`
 //（下游 src/export/svg.ts:368 那条同款 `??`）互为「可证等价」，理由是兜底产 undefined 而下游
 // 会重新供给同一值。**该判定是错的**，实测红：兜底一旦产出非 nullish 的值，下游那条 `??`
-// 就不再触发，渲染器默认底色 `#f1f5f9` 被顶掉。记在这里，免得下一个人重推一遍。
+// 就不再触发，渲染器默认底色（浅色画布纯白）被顶掉。记在这里，免得下一个人重推一遍。
 

@@ -3485,7 +3485,7 @@ export function createAppendDistinctStaticDrawingPoint(__appScope: Record<string
 
 export function createRenderStaticBoxDrawingPreview(__appScope: Record<string, any>) {
   return () => {
-  const { MemoDeviceGlyph, activeLayerId, circle, colorDisplayMode, colorPalette, createStaticBoxNodeFromDrawing, formatSvgNumber, g, nodeGeometryTransform, rect, renderNodePreviewImageContent, resolveNodeStateVisual, staticDrawing, staticDrawingPreviewPoints } = __appScope;
+  const { MemoDeviceGlyph, activeLayerId, circle, colorDisplayMode, colorPalette, themeMode, createStaticBoxNodeFromDrawing, formatSvgNumber, g, nodeGeometryTransform, rect, renderNodePreviewImageContent, resolveNodeStateVisual, staticDrawing, staticDrawingPreviewPoints } = __appScope;
     if (!staticDrawing) {
       return null;
     }
@@ -3511,8 +3511,8 @@ export function createRenderStaticBoxDrawingPreview(__appScope: Record<string, a
         />
         <g transform={`translate(${formatSvgNumber(previewNode.position.x)} ${formatSvgNumber(previewNode.position.y)})`}>
           <g className="node-geometry" transform={nodeGeometryTransform(previewNode)}>
-            <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(previewNode)} />
-            <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(previewNode)} />
+            <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(previewNode)} />
+            <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(previewNode)} />
           </g>
           {renderNodePreviewImageContent(previewNode, `static-drawing-preview-clip-${staticDrawing.kind.replace(/[^A-Za-z0-9_-]/g, "-")}`)}
         </g>
@@ -3929,7 +3929,7 @@ export function createCommitLibraryPlacementAtPoint(__appScope: Record<string, a
 
 export function createRenderLibraryPlacementPreview(__appScope: Record<string, any>) {
   return () => {
-  const { MemoDeviceGlyph, activeLayerId, canvasClipboardBounds, colorDisplayMode, colorPalette, createNodeFromTemplate, formatSvgNumber, g, libraryPlacement, nodeGeometryTransform, path, pointsToPreviewPath, renderNodePreviewImageContent, resolveNodeStateVisual } = __appScope;
+  const { MemoDeviceGlyph, activeLayerId, canvasClipboardBounds, colorDisplayMode, colorPalette, themeMode, createNodeFromTemplate, formatSvgNumber, g, libraryPlacement, nodeGeometryTransform, path, pointsToPreviewPath, renderNodePreviewImageContent, resolveNodeStateVisual } = __appScope;
     if (!libraryPlacement?.previewPoint) {
       return null;
     }
@@ -3940,8 +3940,8 @@ export function createRenderLibraryPlacementPreview(__appScope: Record<string, a
         <g className="library-placement-preview library-placement-preview-device">
           <g transform={`translate(${formatSvgNumber(previewNode.position.x)} ${formatSvgNumber(previewNode.position.y)})`}>
             <g transform={nodeGeometryTransform(previewNode)}>
-              <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(previewNode)} />
-              <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(previewNode)} />
+              <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(previewNode)} />
+              <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(previewNode)} />
             </g>
             {renderNodePreviewImageContent(previewNode, `library-placement-preview-clip-${libraryPlacement.template.kind.replace(/[^A-Za-z0-9_-]/g, "-")}`)}
           </g>
@@ -3969,8 +3969,8 @@ export function createRenderLibraryPlacementPreview(__appScope: Record<string, a
         {libraryPlacement.template.clipboard.nodes.map((node: ModelNode) => (
           <g key={node.id} transform={`translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})`}>
             <g transform={nodeGeometryTransform(node)}>
-              <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
-              <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
+              <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(node)} />
+              <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(node)} />
             </g>
             {renderNodePreviewImageContent(node, `library-placement-template-preview-clip-${node.id}`)}
           </g>

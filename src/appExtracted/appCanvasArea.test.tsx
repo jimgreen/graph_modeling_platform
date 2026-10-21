@@ -17,6 +17,7 @@
 // 直接 import 的子组件（不经 scope），与守卫无关，mock 成空壳即可。
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { canvasThemeColorsFor } from "../canvasTheme";
 import {
   adjustGeneratedStateIconTerminalStub,
   areCanvasPropsEqual,
@@ -70,6 +71,9 @@ function baseScope(anchor: { x: number; y: number }, transform: string) {
   const noop = () => undefined;
   const noopComponent = () => null;
   const emptySet = () => new Set<string>();
+  // 画布在「没打开任何模型」时会整体早退成空状态提示（不渲染 SVG）。
+  // 本文件验的是有图时的渲染，故必须给出一个非空 activeProjectKey。
+  const activeProjectKey = "project:fixture";
   const node = {
     id: "node-1",
     name: "N1",
@@ -117,6 +121,7 @@ function baseScope(anchor: { x: number; y: number }, transform: string) {
     svgImageContentMarkup: () => "",
 
     // —— 画布外框 ——
+    activeProjectKey,
     svgRef: { current: null },
     canvasFrameRef: { current: null },
     canvasInteractionRef: { current: true },
@@ -389,6 +394,9 @@ function baseScope(anchor: { x: number; y: number }, transform: string) {
     selectedAssociationJumpNode: null,
     colorDisplayMode: "energy",
     colorPalette: {},
+    // 画布配色：画布底色/网格/边框/辅助线与端子描边都从这里取，缺了会在渲染时抛 TypeError。
+    themeMode: "light",
+    canvasThemeColors: canvasThemeColorsFor("light"),
     deviceLabelsVisible: false,
     deviceMeasurementsVisible: false,
     overlappedTerminalKeys: emptySet(),
@@ -894,5 +902,44 @@ describe("areCanvasPropsEqual", () => {
     const edges = [{ id: "edge-1" }];
     expect(areCanvasPropsEqual({ scope: { visibleEdges: edges } }, { scope: { visibleEdges: edges } })).toBe(true);
     expect(areCanvasPropsEqual({ scope: { visibleEdges: [{ id: "edge-1" }] } }, { scope: { visibleEdges: [{ id: "edge-1" }] } })).toBe(false);
+  });
+});
+
+describe("未打开模型时的画布空状态", () => {
+  // 需求：没加载任何模型时不显示画布，只给一句「请打开要编辑的模型」。
+  // 这些用例走 SSR 渲染真组件，断言的是「渲染结果里有没有 SVG」。
+
+  it("没有 activeProjectKey 时只渲染提示，不渲染画布 SVG 与标尺", () => {
+    const scope = { ...baseScope(HORIZONTAL_ANCHOR, "translate(140, 80)"), activeProjectKey: "" };
+    const html = renderToStaticMarkup(<MemoizedCanvasArea scope={scope}/>);
+
+    expect(html).toContain("请打开要编辑的模型");
+    // 关键：整个画布 SVG 都不能出现 —— 空状态不是「盖一层蒙版」，是压根不画。
+    // 断言画布根节点自身的属性而不是 "diagram-canvas" 字面量：该字面量仍出现在
+    // 文件下方有图分支的模板里，用它判空会永远真。
+    expect(html).not.toContain("data-theme-mode");
+    expect(html).not.toContain("canvas-scroll-surface");
+    expect(html).not.toContain("terminal-stub");
+  });
+
+  it("activeProjectKey 为空串 / undefined / null 一律算没打开模型", () => {
+    for (const empty of ["", undefined, null]) {
+      const scope = { ...baseScope(HORIZONTAL_ANCHOR, "translate(140, 80)"), activeProjectKey: empty };
+      expect(renderToStaticMarkup(<MemoizedCanvasArea scope={scope}/>)).toContain("请打开要编辑的模型");
+    }
+  });
+
+  it("打开了模型就正常画画布，不出现空状态提示", () => {
+    const html = renderToStaticMarkup(
+      <MemoizedCanvasArea scope={baseScope(HORIZONTAL_ANCHOR, "translate(140, 80)")}/>
+    );
+
+    expect(html).toContain("data-theme-mode");
+    expect(html).not.toContain("请打开要编辑的模型");
+  });
+
+  it("空状态与有图的切换会触发重渲染（activeProjectKey 在比较键里）", () => {
+    // 少了这个键，关闭模型后画布会停在旧图上：React.memo 认为 props 没变
+    expect(areCanvasPropsEqual({ scope: { activeProjectKey: "project:a" } }, { scope: { activeProjectKey: "" } })).toBe(false);
   });
 });

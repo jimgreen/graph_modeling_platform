@@ -133,9 +133,39 @@ export function nodeLabelFontSize(node: ModelNode) {
   return baseSize * Math.sqrt(scaleX * scaleY);
 }
 
-export function nodeLabelTextStyle(node: ModelNode): CSSProperties {
+/** 设备名标签的默认文字色（浅色画布上用的深灰）。 */
+const DEFAULT_LABEL_COLOR_LIGHT = "#334155";
+/** 深色（纯黑画布）上的默认文字色。 */
+const DEFAULT_LABEL_COLOR_DARK = "#e2e8f0";
+
+/**
+ * 设备名标签的颜色：返回 null 表示“跟随主题”。
+ *
+ * 关键点：新建节点时会把默认色 #334155 真实写进 `params._labelColor`，
+ * 所以“有 _labelColor”并不等于“用户选过颜色”。只有当它与深/浅两套默认色都不同时，
+ * 才视为用户显式指定的颜色，主题切换时保持不变；否则交给主题。
+ */
+export function nodeLabelExplicitColor(node: ModelNode): string | null {
+  const raw = typeof node.params?._labelColor === "string" ? node.params._labelColor.trim() : "";
+  if (!raw) {
+    return null;
+  }
+  const normalized = raw.toLowerCase();
+  if (normalized === DEFAULT_LABEL_COLOR_LIGHT || normalized === DEFAULT_LABEL_COLOR_DARK) {
+    // 与某个主题的默认色完全相同，当作“未设置”，让主题决定
+    return null;
+  }
+  return raw;
+}
+
+/**
+ * 设备名标签样式。
+ * 默认色是按「浅色纯白画布」定的深灰，深色（纯黑画布）上必须换成浅色，否则读不出来；
+ * 用户显式改过的颜色不随主题变。
+ */
+export function nodeLabelTextStyle(node: ModelNode, themeMode: "light" | "dark" = "light"): CSSProperties {
   return {
-    fill: node.params._labelColor || "#334155",
+    fill: nodeLabelExplicitColor(node) || (themeMode === "dark" ? DEFAULT_LABEL_COLOR_DARK : DEFAULT_LABEL_COLOR_LIGHT),
     fontFamily: node.params._labelFontFamily || "Arial",
     fontSize: nodeLabelFontSize(node),
     fontWeight: node.params._labelFontWeight || "500",
@@ -147,9 +177,9 @@ export function nodeLabelTextStyle(node: ModelNode): CSSProperties {
   };
 }
 
-export function nodeLabelVerticalTokenStyle(node: ModelNode): CSSProperties {
+export function nodeLabelVerticalTokenStyle(node: ModelNode, themeMode: "light" | "dark" = "light"): CSSProperties {
   return {
-    ...nodeLabelTextStyle(node),
+    ...nodeLabelTextStyle(node, themeMode),
     writingMode: "horizontal-tb",
     textOrientation: "mixed"
   };

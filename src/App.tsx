@@ -1,6 +1,8 @@
 import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { useTransition } from "react";
+import { flipCanvasThemeMode, canvasThemeColorsFor, migrateLegacyCanvasBackground, themeSemanticColor, type CanvasThemeMode } from "./canvasTheme";
+import { themedMeasurementTextColor } from "./themedColors";
 import {
   AlignCenter,
   AlignEndHorizontal,
@@ -306,7 +308,9 @@ import {
   type PersistedSavedSchemeRecord,
   type SavedSchemeRecord,
   type SavedProjectRecord,
-  type ElectricFlowSettings
+  type ElectricFlowSettings,
+  ENERGY_THEME_COLORS,
+  VOLTAGE_LEVEL_THEME_COLORS
 } from "./model";
 import { isGlobalSaveShortcut, resolveKeyboardShortcutScope } from "./keyboardShortcuts";
 import {
@@ -559,7 +563,19 @@ import {
   createMapPointToMinimap
 } from "./appExtracted/appCanvasViewportCalculations";
 import { createRuntimeWsClient } from "./runtimeWsClient";
-import { fetchSpaces, type Space } from "./spaceClient";
+import { fetchSpaces, readSpaceCookie, type Space } from "./spaceClient";
+import { switchToSpace } from "./spaceSwitch";
+import {
+  PENDING_URL_MODEL_RETRY_LIMIT,
+  clearPendingUrlModel,
+  readInitialWorkspaceUrlIntent,
+  readPendingUrlModel,
+  readWorkspaceUrl,
+  schemeSlugForModelKey,
+  syncWorkspaceUrl,
+  writePendingUrlModel,
+  type ParsedWorkspaceUrl
+} from "./workspaceUrl";
 import { finishBoot } from "./startupProgress";
 import { createRuntimeSnapshotHandler } from "./runtimeSnapshot";
 import { createRuntimeScreenshotHandler } from "./runtimeScreenshot";
@@ -598,7 +614,7 @@ export * from "./appExtracted/appPersistenceLibraryExport";
 export { DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH } from "./appExtracted/appCoreCanvasUtilities";
 export type { CanvasRenderOptions } from "./appExtracted/appCoreCanvasUtilities";
 import { ENABLE_REACT_FLOW_PREVIEW, ReactFlowPreview, INTERACTION_MODE_STORAGE_KEY, CANVAS_GRAPHIC_CONTEXT_MENU_TARGET_SELECTOR, CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR, CANVAS_KEYBOARD_BLOCKING_SELECTOR, CANVAS_KEYBOARD_SURFACE_SELECTOR, normalizeInteractionMode, isCanvasGraphicContextMenuTarget, isCanvasWheelZoomExcludedTarget, canvasWheelTargetIsRenderedCanvas, isCanvasKeyboardBlockingTarget, readStoredInteractionMode, writeStoredInteractionMode, CANVAS_SELECTION_DRAG_THRESHOLD, hasCanvasSelectionModifier, canvasWheelEventHasNoModifier, shouldZoomCanvasFromWheelEvent, isGroupTransformDrag, selectionRectCenter, combineSelectionRects, routeMidpoint, rotatePointAround, snapRotationDeltaToRightAngle, normalizedRotationDelta, transformPointAngle, rotationDeltaFromTransformPoint, rotationDeltaBetweenTransformPoints, rotationTrajectoryArcPath, mirrorPointAcrossAxis, localScaleKindForScreenHandle, groupTransformGeometry, transformGroupPoint, groupTransformSvgTransform, NODE_LABEL_DISPLAY_MODES, CONTEXT_MENU_VIEWPORT_PADDING, CONTEXT_MENU_FALLBACK_WIDTH, CONTEXT_MENU_FALLBACK_HEIGHT, CONTEXT_MENU_SUBMENU_FALLBACK_WIDTH, CONTEXT_MENU_SUBMENU_FALLBACK_HEIGHT, NODE_LABEL_FOOTPRINT_PARAM_KEYS, isMultiNodeMoveState, reuseSetOrCreate, cloneMeasurementGroupForDraft, terminalColor, busEndpointColor, ENERGY_COLOR_ROWS, ELECTRIC_COLOR_TYPES, ELECTRIC_COLOR_TYPE_LABELS, isElectricPaletteType, terminalVbaseFallbackValue, voltageColorKeyForTerminal, DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, MIN_CANVAS_HEIGHT, MAX_CANVAS_WIDTH, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_BACKGROUND, MOVE_BOUNDARY_GUARD, CANVAS_AUTO_EXPAND_PADDING, CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE, CANVAS_RESIZE_HANDLE_SIZE, MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES, ORIGINAL_POSITION_REROUTE_PADDING, MOVE_ROUTE_LOCAL_SEARCH_PADDING, MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES, MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES, KEYBOARD_MOVE_COMMIT_DELAY_MS, KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND, KEYBOARD_MOVE_FRAME_INTERVAL_MS, ELEMENT_TREE_INITIAL_ITEM_LIMIT, ELEMENT_TREE_ITEM_LIMIT_STEP, TOPOLOGY_WARNING_PAGE_SIZE, CANVAS_MINIMAP_WIDTH, CANVAS_MINIMAP_HEIGHT, CANVAS_MINIMAP_PADDING, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MARGIN, DEVICE_DEFINITION_DIALOG_DEFAULT_WIDTH, DEVICE_DEFINITION_DIALOG_DEFAULT_HEIGHT, CUSTOM_DEVICE_DIALOG_DEFAULT_WIDTH, CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT, MEASUREMENT_CONFIG_DIALOG_DEFAULT_WIDTH, MEASUREMENT_CONFIG_DIALOG_DEFAULT_HEIGHT, DEVICE_LIBRARY_DIALOG_MIN_WIDTH, DEVICE_LIBRARY_DIALOG_MIN_HEIGHT, DEVICE_LIBRARY_DIALOG_MARGIN, DEVICE_LIBRARY_DIALOG_CONFIG, TOPOLOGY_WARNING_PANEL_DEFAULT_WIDTH, TOPOLOGY_WARNING_PANEL_MIN_WIDTH, TOPOLOGY_WARNING_PANEL_MAX_WIDTH, TOPOLOGY_WARNING_PANEL_MARGIN, CANVAS_MINIMAP_MAX_NODE_MARKS, CANVAS_MINIMAP_MAX_ROUTE_MARKS, CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD, FIT_SELECTION_MAX_ZOOM_PERCENT, TERMINAL_OVERLAP_DEFER_NODE_THRESHOLD, CANVAS_LOD_NODE_DETAIL_LIMIT, CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, CANVAS_LOD_MAX_ZOOM_PERCENT, CANVAS_LOD_MAX_NODE_SCREEN_SIZE, CANVAS_LOD_NODE_SCREEN_SAMPLE_LIMIT, CANVAS_LOD_SELECTED_DETAIL_LIMIT, CANVAS_LOD_MARKUP_CHUNK_SIZE, CANVAS_INITIAL_LOD_DETAIL_CHUNK_SIZE, CANVAS_INITIAL_LOD_FIRST_DETAIL_DELAY_MS, CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS, CONNECTION_HIT_SCREEN_TOLERANCE, CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT, CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_MULTI_NODE_DRAG_SNAP_NODE_LIMIT, CANVAS_BULK_MOVE_EDGE_THRESHOLD, ROUTE_BULK_TRANSLATE_REBUILD_THRESHOLD, BULK_MOVE_PERF_LOG_THRESHOLD_MS, SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE, SMART_ALIGNMENT_GUIDE_PADDING, CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_PREVIEW_PADDING, CANVAS_FLOATING_TOOLBAR_GAP, NODE_FLOATING_TOOLBAR_WIDTH, NODE_FLOATING_TOOLBAR_HEIGHT, EDGE_FLOATING_TOOLBAR_WIDTH, EDGE_FLOATING_TOOLBAR_HEIGHT, CONTEXT_MENU_AUTO_HIDE_MARGIN, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, E_SECTION_OPTIONS, COMPONENT_LIBRARY_LABELS, SCALE_HANDLE_CONFIGS, GROUP_SCALE_HANDLE_CONFIGS, POWER_UNIT_OPTIONS, VOLTAGE_UNIT_OPTIONS, CURRENT_UNIT_OPTIONS, DEFAULT_CATEGORY_LIBRARIES, CUSTOM_CATEGORY_LIBRARY_BASES, PROTECTED_CATEGORY_LIBRARIES, DEVICE_TYPE_NAME_PATTERN, MAX_CUSTOM_DEVICE_TERMINALS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET, CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN, TERMINAL_TYPE_OPTIONS, CONTAINER_TERMINAL_ASSOCIATION_OPTIONS, PARAM_VALUE_TYPE_OPTIONS, PROJECT_PANEL_MIN_HEIGHT, PROJECT_PANEL_MAX_HEIGHT, PROJECT_PANEL_DEFAULT_HEIGHT, LEFT_PANEL_DEFAULT_WIDTH, RIGHT_PANEL_DEFAULT_WIDTH, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH, STATUSBAR_DEFAULT_HEIGHT, STATUSBAR_MIN_HEIGHT, STATUSBAR_MAX_HEIGHT, VALIDATION_PANEL_DEFAULT_HEIGHT, VALIDATION_PANEL_MIN_HEIGHT, VALIDATION_PANEL_MAX_HEIGHT, CONNECT_TERMINAL_SNAP_TOLERANCE, CONNECT_BUS_SNAP_TOLERANCE, connectTargetSearchBounds, findNodeTerminalSnapTarget, applyNodeTerminalSnap, pointOnBusForSnap, findNodeBusSnapTarget, SAMPLE_NODES, SAMPLE_EDGES, PROJECT_STORAGE_KEY, SCHEME_STORAGE_KEY, ACTIVE_PROJECT_STORAGE_KEY, DRAFT_PROJECT_STORAGE_KEY, REFRESH_RECOVERY_STORAGE_KEY, EMPTY_VOLTAGE_COLOR_KEY_SET, EMPTY_ID_LIST, EMPTY_EDGE_ID_LIST, EMPTY_MODEL_GROUPS, EMPTY_MODEL_GROUP_BY_ID, EMPTY_CANVAS_LAYOUT_UNITS, EMPTY_CANVAS_SELECTION, IMAGE_STORAGE_KEY, CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, MEASUREMENT_CONFIG_STORAGE_KEY, LEFT_PANEL_MODE_STORAGE_KEY, RIGHT_PANEL_MODE_STORAGE_KEY, LEFT_PANEL_WIDTH_STORAGE_KEY, RIGHT_PANEL_WIDTH_STORAGE_KEY, STATUSBAR_HEIGHT_STORAGE_KEY, VALIDATION_PANEL_HEIGHT_STORAGE_KEY, DEFAULT_GRAPH_TEMPLATE_TYPES, scheduleIdleWork, elementTreeCacheSignature, CONNECTION_REDRAW_SCOPE_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VOLTAGE_BASE_SET_PRESETS, VIEWPORT_RENDER_PADDING_RATIO, VIEWPORT_RENDER_MIN_PADDING, CANVAS_VIEWPORT_QUERY_SNAP_SIZE, NODE_SPATIAL_BUCKET_SIZE, nextSpatialQueryMark, expandViewBoxForRendering, snapRenderViewportBoundsForQuery, sameCanvasViewBox, canvasFrameHasHorizontalScrollableRange, canvasFrameHasVerticalScrollableRange, canvasFrameHasScrollableRange, renderedCanvasFullyFitsFrame, canvasFrameViewportSizeChanged, visibleCanvasViewBoxFromRects, canvasScrollScaleFromViewBox, estimatedViewportNodeScreenSize, canvasScrollEdgeInset, canvasScrollSurfaceSize, canvasDisplayOffset, canvasFramePaddingOffset, anchoredCanvasScrollPosition, anchoredCanvasNoScrollOffset, initialVisibleCanvasViewBox, fitWholeCanvasViewBox, boxesIntersect, sameRenderViewportBounds, VIEWPORT_RESULT_CACHE_LIMIT, viewportBoundsCacheKey, viewportResultCacheOwnersEqual, resetViewportResultCache, readViewportResultCache, writeViewportResultCache, mergeRenderViewportBounds, smartAlignmentAxisAnchors, bestSmartAlignmentAxisSnap, nodeRenderBounds, nodeIntersectsRenderViewport, spatialBucketKey, spatialBucketRange, buildNodeSpatialIndex, queryNodeSpatialIndex, compactPreviewNodes, PARAM_LABELS, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, PARAM_OPTIONS, STATIC_BUTTON_ACTION_LABELS, STATIC_BUTTON_COMMAND_LABELS, PARAM_OPTION_LABELS, parseStaticButtonTargetLayerValues, serializeStaticButtonTargetLayerIds, resolveStaticButtonTargetLayers, paramOptionsForSection, READONLY_E_PARAM_KEYS, BATCH_PARAM_EXCLUDED_KEYS, BATCH_PARAM_EXCLUDED_PREFIXES, canBatchEditParam, BATCH_GRAPH_PARAM_KEYS, BATCH_GRAPH_PARAM_PREFIXES, isBatchGraphCommonParamKey, isRedundantBatchCommonParamRow, COLOR_PARAM_KEY_PATTERN, isColorParamKey, BATCH_MEASUREMENT_GROUP_KEYS, BATCH_MEASUREMENT_GROUP_LABELS, measurementGroupCommonValue, measurementGroupWithCommonSetting, normalizeLegacyPowerSystemLabel, normalizeSavedProjectIndexes, normalizeSavedSchemeIndexes, normalizeStoredDraftProject, readActiveProjectPointer, savedSchemePathForId, findSavedSchemeByPath, findSavedProjectByActivePointer, activeProjectPointerPayload, draftProjectFromSavedSchemes, readRefreshRecoveryProject, writeRefreshRecoveryProject, clearRefreshRecoveryProject, readImageAssets, saveImageAsset, resolveNodeImage, resolveNodeForegroundImage, resolveProjectImage, imageAssetsToMap, localImageAssetsFromStorage, pointsToPreviewPath, backendJsonHeaders, backendErrorMessage, fetchBackendJson, backendJsonRequest, fetchBackendImageFolders, createBackendImageFolder, renameBackendImageFolder, deleteBackendImageFolder, fetchBackendImages, fetchAllBackendImages, deleteBackendImageAsset, uploadBackendImage } from "./appExtracted/appCoreCanvasUtilities";
-import { normalizeProjectForBackend, normalizeSchemesForBackendRuntime, normalizeSchemesForBackend, serializeSchemesForStorage, findProjectRecordInSchemes, findProjectRecordByNameInScheme, clonePoint, cloneNodesForUndo, cloneEdgesForUndo, cloneGroupsForUndo, cloneTopologyForUndo, cloneTopologyErrorsForUndo, clampCanvasDimension, fetchBackendSchemes, schemePathQueryParam, savedProjectRecordIsSummary, fetchBackendProjectRecord, downloadBackendSchemeArchive, uploadBackendSchemeArchive, saveBackendProjectRecord, deleteBackendProjectRecord, saveBackendSchemeRecord, deleteBackendSchemeRecord, normalizeColorDisplayMode, serializeColorConfigForStorage, fetchBackendColorConfig, saveBackendColorConfigPayload, serializeDeviceLibraryForStorage, fetchBackendDeviceLibrary, saveBackendDeviceLibraryPayload, serializeMeasurementConfigForStorage, fetchBackendMeasurementConfig, saveBackendMeasurementConfigPayload, createLibraryPackage, normalizeLibraryPackage, deviceLibraryPayloadForPackageScope, normalizeIconLibraryPersistencePayload, importBackendImageLibraryPayload, groupDeviceTemplatesByCategoryLibrary, groupDeviceTemplatesByCategoryLibraryAndComponentLibrary, normalizeLibrarySearchText, categoryLibraryComponentLibraryKey, componentLibraryDisplayParts, componentLibraryDisplayName, filterSelectionTreeLabel, filterSelectionTemplateComponentLibraryKey, libraryTemplateMatchesSearch, filterCategoryLibraryComponentLibraryGroups, normalizeCategoryLibraryName, normalizeCustomCategoryLibraries, defaultCategoryLibraryForComponentLibrary, isBuiltInCategoryLibrary, isBuiltInComponentLibrary, categoryLibraryOptionClass, componentLibraryOptionClass, sourceSelectClassName, selectableCategoryLibraryList, isValidComponentLibraryName, normalizeCustomComponentLibraries, templateResizeTransformValue, templateAllowsResizeTransform, DEFAULT_PARAMETER_ENUM_VALUES, DEFAULT_PARAMETER_ENUM_OPTIONS, normalizeEnumValueList, definitionRowIsEnum, defaultEnumValuesForDefinitionRow, defaultEnumOptionsForDefinitionRow, normalizeEnumOption, normalizeEnumValueType, enumValueTypeForDefinitionRow, enumDefinitionValueTypeForEnumValueType, parameterValueTypeLabelForDefinitionRow, rawEnumValuesForRow, normalizeEnumOptionsForRow, enumValueFromOptions, enumDisplayText, enumValuesForRow, normalizeDefinitionRowEnumFields, renderTypicalValueEditor, renderEnumValuesEditor, normalizeCustomDeviceTemplates, normalizeGraphTemplateTypeName, normalizeGraphTemplateTypes, cloneTemplatePoint, cloneGraphTemplateClipboard, normalizeGraphTemplateClipboard, normalizeGraphTemplates, graphTemplateTypeList, groupGraphTemplatesByType, filterGraphTemplatesByType, uniqueGraphTemplateName, normalizeDefinitionRows, normalizeDefinitionResizePermission, normalizeDefinitionOverrideSize, normalizeDefinitionOverrideTerminalType, normalizeDefinitionOverrideTerminalTypes, normalizeDefinitionOverrideTerminalAnchors, normalizeDeviceDefinitionOverrides, normalizeDeviceLibraryPersistencePayload, readLocalStorageJson, readCustomDeviceTemplates, readCustomCategoryLibraries, readCustomComponentLibraries, readDeviceDefinitionOverrides, readCustomGraphTemplateTypes, readCustomGraphTemplates, readLocalDeviceLibraryPersistencePayload, writeLocalDeviceLibraryPersistencePayload, readMeasurementConfig, writeMeasurementConfig, readColorDisplayMode, readColorPalette, readSidePanelMode, clampPanelDimension, clampFloatingDialogLayout, clampNodeDoubleClickDialogLayout, clampDeviceLibraryDialogLayout, readStoredPanelDimension, SCHEME_EXPORT_DIRECTORY_PICKER_ID, fetchBackendImageDataUrl, imageExportPathByIdFromAssets, exportSvgImageHref, nodeGeometryTransform, nodeUprightScaleTransform, nodeImageContentTransform, defaultBackgroundLayerIdsForProject, backgroundPageCanvasTransform, nodeTransformedHalfExtents, nodeScaledLocalHalfExtents, nodeRotateHandleControlPoints, nodeUprightRotateHandleControlPoints, scaleHandleControlPoint, nodeScaleHandleControlPoint, scaleHandleCursorClass, nodeUsesUprightStaticSelectionOutline, TEXT_DOUBLE_CLICK_KINDS, IMAGE_DOUBLE_CLICK_KINDS, NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS, NODE_DOUBLE_CLICK_CLOSE_SUPPRESS_MS, cloneNodeForDoubleClickDraft, stringRecordShallowEqual, nodeDoubleClickDraftHasModelChanges, isTextDoubleClickKind, isImageDoubleClickKind, nodeHasInteractionDoubleClickEditor, nodeHasTextDoubleClickEditor, nodeHasImageDoubleClickEditor, doubleClickDialogKindForNode, nodeUprightSelectionOutlineRect, emptySmartAlignmentAnchorMap, positionedNodeForSmartAlignment, nodeTerminalOutflowSmartAlignmentAnchors, nodeSmartAlignmentBounds, nodeVisualInteractionBounds, buildSvgTerminalMarkup, CustomComponentManagerTree, tokenArraysEqual, customSingleTerminalAnchorToken, stableSvgMarkupChunks, buildSvgDocument } from "./appExtracted/appPersistenceLibraryExport";
+import { normalizeProjectForBackend, normalizeSchemesForBackendRuntime, normalizeSchemesForBackend, serializeSchemesForStorage, findProjectRecordInSchemes, findProjectRecordByNameInScheme, clonePoint, cloneNodesForUndo, cloneEdgesForUndo, cloneGroupsForUndo, cloneTopologyForUndo, cloneTopologyErrorsForUndo, clampCanvasDimension, fetchBackendSchemes, schemePathQueryParam, savedProjectRecordIsSummary, fetchBackendProjectRecord, downloadBackendSchemeArchive, uploadBackendSchemeArchive, saveBackendProjectRecord, deleteBackendProjectRecord, saveBackendSchemeRecord, deleteBackendSchemeRecord, normalizeColorDisplayMode, serializeColorConfigForStorage, fetchBackendColorConfig, saveBackendColorConfigPayload, serializeDeviceLibraryForStorage, fetchBackendDeviceLibrary, saveBackendDeviceLibraryPayload, serializeMeasurementConfigForStorage, fetchBackendMeasurementConfig, saveBackendMeasurementConfigPayload, createLibraryPackage, normalizeLibraryPackage, deviceLibraryPayloadForPackageScope, normalizeIconLibraryPersistencePayload, importBackendImageLibraryPayload, groupDeviceTemplatesByCategoryLibrary, groupDeviceTemplatesByCategoryLibraryAndComponentLibrary, normalizeLibrarySearchText, categoryLibraryComponentLibraryKey, componentLibraryDisplayParts, componentLibraryDisplayName, filterSelectionTreeLabel, filterSelectionTemplateComponentLibraryKey, libraryTemplateMatchesSearch, filterCategoryLibraryComponentLibraryGroups, normalizeCategoryLibraryName, normalizeCustomCategoryLibraries, defaultCategoryLibraryForComponentLibrary, isBuiltInCategoryLibrary, isBuiltInComponentLibrary, categoryLibraryOptionClass, componentLibraryOptionClass, sourceSelectClassName, selectableCategoryLibraryList, isValidComponentLibraryName, normalizeCustomComponentLibraries, templateResizeTransformValue, templateAllowsResizeTransform, DEFAULT_PARAMETER_ENUM_VALUES, DEFAULT_PARAMETER_ENUM_OPTIONS, normalizeEnumValueList, definitionRowIsEnum, defaultEnumValuesForDefinitionRow, defaultEnumOptionsForDefinitionRow, normalizeEnumOption, normalizeEnumValueType, enumValueTypeForDefinitionRow, enumDefinitionValueTypeForEnumValueType, parameterValueTypeLabelForDefinitionRow, rawEnumValuesForRow, normalizeEnumOptionsForRow, enumValueFromOptions, enumDisplayText, enumValuesForRow, normalizeDefinitionRowEnumFields, renderTypicalValueEditor, renderEnumValuesEditor, normalizeCustomDeviceTemplates, normalizeGraphTemplateTypeName, normalizeGraphTemplateTypes, cloneTemplatePoint, cloneGraphTemplateClipboard, normalizeGraphTemplateClipboard, normalizeGraphTemplates, graphTemplateTypeList, groupGraphTemplatesByType, filterGraphTemplatesByType, uniqueGraphTemplateName, normalizeDefinitionRows, normalizeDefinitionResizePermission, normalizeDefinitionOverrideSize, normalizeDefinitionOverrideTerminalType, normalizeDefinitionOverrideTerminalTypes, normalizeDefinitionOverrideTerminalAnchors, normalizeDeviceDefinitionOverrides, normalizeDeviceLibraryPersistencePayload, readLocalStorageJson, readCustomDeviceTemplates, readCustomCategoryLibraries, readCustomComponentLibraries, readDeviceDefinitionOverrides, readCustomGraphTemplateTypes, readCustomGraphTemplates, readLocalDeviceLibraryPersistencePayload, writeLocalDeviceLibraryPersistencePayload, readMeasurementConfig, writeMeasurementConfig, readColorDisplayMode, readColorPalette, readThemeMode, writeThemeMode, readSidePanelMode, clampPanelDimension, clampFloatingDialogLayout, clampNodeDoubleClickDialogLayout, clampDeviceLibraryDialogLayout, readStoredPanelDimension, SCHEME_EXPORT_DIRECTORY_PICKER_ID, fetchBackendImageDataUrl, imageExportPathByIdFromAssets, exportSvgImageHref, nodeGeometryTransform, nodeUprightScaleTransform, nodeImageContentTransform, defaultBackgroundLayerIdsForProject, backgroundPageCanvasTransform, nodeTransformedHalfExtents, nodeScaledLocalHalfExtents, nodeRotateHandleControlPoints, nodeUprightRotateHandleControlPoints, scaleHandleControlPoint, nodeScaleHandleControlPoint, scaleHandleCursorClass, nodeUsesUprightStaticSelectionOutline, TEXT_DOUBLE_CLICK_KINDS, IMAGE_DOUBLE_CLICK_KINDS, NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS, NODE_DOUBLE_CLICK_CLOSE_SUPPRESS_MS, cloneNodeForDoubleClickDraft, stringRecordShallowEqual, nodeDoubleClickDraftHasModelChanges, isTextDoubleClickKind, isImageDoubleClickKind, nodeHasInteractionDoubleClickEditor, nodeHasTextDoubleClickEditor, nodeHasImageDoubleClickEditor, doubleClickDialogKindForNode, nodeUprightSelectionOutlineRect, emptySmartAlignmentAnchorMap, positionedNodeForSmartAlignment, nodeTerminalOutflowSmartAlignmentAnchors, nodeSmartAlignmentBounds, nodeVisualInteractionBounds, buildSvgTerminalMarkup, CustomComponentManagerTree, tokenArraysEqual, customSingleTerminalAnchorToken, stableSvgMarkupChunks, buildSvgDocument } from "./appExtracted/appPersistenceLibraryExport";
 import { createSetNodes, createSetEdges, createSetGraphArrays, createPatchGraphNodes, createPatchGraphEdges, createUpdateGraphNodeById, createSetSchemes, createUpdateSmartAlignmentGuides, createSetCanvasPanning, createSetContextMarqueeSelection, createMarkGraphicContextMenuHandled, createConsumeGraphicContextMenuHandled, createOpenGraphicContextMenu, createSetOperationLogText, createEdgeListForNodeIds, createBuildSingleNodeDragCache, createOrderedNodeFromList, createOrderedNodesForIds, createAddRoutingNodesForConnectionEdge, createRoutingNodesForConnectionEdge, createRoutingNodesForConnectionEdges, createCachedConnectionStrokeColor, createConnectionLineStyle, createMeasurementGroupAnchorPoint, createMeasurementGroupLocalOffset, createMeasurementGroupCanvasPosition, createMeasurementGroupRenderMetrics, createIncludeMeasurementGroupBounds, createBuildMeasurementGroupMarkup, createBuildRoutableLineDragGhostRoutesForNodeIds, createBuildMultiNodeDragOverlayPreview, createRenderMultiNodeDragOverlay, createGroupTransformPreviewNodeFromSnapshot, createRenderGroupTransformPhotoPreview, createRenderSingleTransformRotateOriginGhost, createRenderTransformRotationTrajectory, createRenderBoundaryBusInternalConnector, createCollectCurrentModelVoltageColorKeys, createNearestVoltageColor, createFillMissingVoltageColorRows, createToggleColorDisplayMode, createOpenColorPaletteDialog, createSaveColorPalette, createResetEnergyColors, createResetVoltageColors, createUpdateEnergyColor, createSetVoltageColorRows, createUpdateVoltageColorRow, createDeleteVoltageColorRow, createAddVoltageColorRow, createResolveNodeStateVisual, createStatusStatesForNode, createNodeKindAllowsResizeTransform, createClearLibraryFlyoutCloseTimer, createHideLibraryFlyout, createScheduleLibraryFlyoutClose, createLibraryFlyoutStyle, createFitLibraryFlyoutsToVisibleArea, createToggleCategoryLibrary, createToggleCategoryLibraryComponentLibrary, createResolveConfiguredBackgroundLayerIds, createToggleBackgroundLayer, createElementTreeItemChildren, createUpdateElementTreeDraft, createClearElementTreeDraft, createElementTreeCommittedDraftValue, createCommitElementTreeInputOnEnter, createMarkBusTerminalSyncDirty, createBusNodeIdsFromEdges, createMarkBusTerminalSyncDirtyForEdges, createBusTerminalSyncNodeIdsForGraphPatch, createSynchronizePendingBusTerminalsWithGraphStore, createApplyCanvasPanningVisualOffset, createCancelCanvasBoundsScrollSyncPendingRelease, createClearCanvasBoundsScrollSyncPending, createReleaseCanvasBoundsScrollSyncPending, createMarkCanvasBoundsScrollSyncPending, createCanvasBoundsForGraphContent, createApplyCanvasBounds, createRejectAutoCanvasExpansionForContent, createCanvasBoundsForAutoExpandedGraphContent, createTranslateStoredEdgeGeometryBy, createShiftCachedRoutesForCanvasOrigin, createLeftTopCanvasOriginShiftForContent, createMinimumCanvasBoundsForResizeEdge, createClampNodePositionToExpandableBounds, createClampPointToExpandableBounds, createClampEdgeGeometryToExpandableBounds, createCanvasNoScrollOffsetForCanvasResizeAnchor, createSetCanvasFrameScrollPosition, createCenterCanvasFrameScrollPosition, createSyncCanvasFrameScrollToViewBox, createSyncCanvasFrameScrollToCanvasResizeCommitAnchor, createSyncCanvasFrameScrollToWheelAnchor, createCurrentViewBoxFromCanvasFrameScroll, createScheduleCanvasVisibleViewBoxUpdate, createHandleCanvasFrameScroll, createUpdateCanvasFrameViewportSize, createUpdateCanvasFrameViewportAndVisibleBox, createNodeImage, createRenderNodePreviewImageContent, createBuildNodePreviewImageMarkup, createBuildConnectPreviewPath, createBuildRoutableLinePreviewPath, createPatchStoredRouteStoreForEdgeIds, createMarkRouteEdgesDirty, createMarkStoredRouteEdgesDirty, createEdgeListsHaveSameOrder, createEdgeReferenceDiffIds, createDirtyEdgeIdsAfterMove, createDirtyEdgeIdsForMovedLocalRoutes, createDirtyEdgeIdsAfterBulkMove, createLogBulkMoveCommitStats, createBuildMovedNodeUpdates, createNextNodesForMovedGraphCommit, createEdgePatchFromCandidateEdges, createGraphStorePatchStillCurrent, createShouldRunSynchronousMoveBlockerRepair, createMarkGraphDirtyForInteractiveCommit, createPatchSingleTerminalAnchorFromPoint, createRebuildEdgeUpdatesAfterNodeGeometryChange, createRebuildEdgesAfterNodeGeometryChange, createStoredRouteEndpointMatchPoint, createEndpointMatchedRoutePointsForEdge, createEdgeWithFrozenBusEndpointPoints, createPreviewStoredRoutePointsForEdge, createClearLocalSchemeModelCache, createRememberPersistedSchemesPayload, createRefreshSchemesFromBackendDirectory, createHandleBackendSchemeMutationFailure, createSaveSchemeTreeToBackend, createPersistSchemeTreeToBackend, createReplaceSchemeTreeInBackend, createPersistRefreshRecoveryNow, createClearRecordSelection, createBlurLayerManagementDropdownFocus, createSelectSingleScheme, createSelectSingleProject, createToggleSchemeSelection, createToggleProjectSelection, createUndoGraphSnapshotPatchPlan, createApplyUndoGraphSnapshot, createPushUndoSnapshot, createUniqueUndoScopeIds, createPushNodeOnlyUndoSnapshot, createSyncExistingNodesWithTemplateDefinitions, createUpdateMeasurementConfig, createPrepareMeasurementConfigDraft, createOpenMeasurementConfigDialog, createCloseMeasurementConfigDialog, createSaveMeasurementConfigDialog, createUpdateMeasurementType, createAddMeasurementType, createDeleteMeasurementType, createSetMeasurementProfileItems, createCreateMeasurementProfileItem, createAddMeasurementProfileItem, createUpdateMeasurementProfileItem, createDeleteMeasurementProfileItem, createMoveMeasurementProfileItem, createUpdateProjectMeasurementsWithUndo, createAddDefaultMeasurementsToNode, createRemoveMeasurementsFromNode, createMeasurementGroupShellOffsetForNode, createMeasurementSourcePointForNodeItem, createMeasurementTypeOptionsForMeasurementGroup, createCreateMeasurementItemForNode, createUpdateMeasurementGroupById, createUpdateSelectedMeasurementGroup, createUpdateSelectedMeasurementGroups, createAddMeasurementItemToGroup, createAddMeasurementItemToNode, createUpdateMeasurementItem, createRemoveMeasurementItem, createCreateMeasurementEditorGroupForPosition, createUpdateMeasurementEditorGroupSettings, createUpdateMeasurementEditorDraftItem, createAddMeasurementEditorDraftItem, createRemoveMeasurementEditorDraftItem, createMoveMeasurementEditorDraftItem, createUpdateMeasurementEditorDraftItemPosition, createDuplicateMeasurementEditorItemNames, createConfirmMeasurementEditorDialog, createRenderSelectedNodeMeasurementTable, createBeginMeasurementDrag, createUpdateMeasurementDrag, createFinishMeasurementDrag } from "./appExtracted/appGraphMeasurementFactories";
 import { createFlushMeasurementConfigDialogDraftInputs } from "./appExtracted/appGraphMeasurementFactories";
 import { createEnsureDraggingUndoSnapshot, createRequestCanvasFrameCenter, createUndoLastOperation, createCanvasPointerKeyboardShortcutAvailability, createRouteForCurrentEdgeSave, createCurrentProject, createAdjustSelectedDisplayLayer, createClearTransientSelectionState, createWriteOperationLog, createRequireEditMode, createPersistDeviceLibraryChange, createPersistTemplateLibraryChange, createConnectionCommitFailureMessage, createSwitchInspectorTabForCanvasSelection, createSelectCanvasGraphics, createSetModifierSelectionPress, createToggleNodeSelectionFromModifierClick, createToggleEdgeSelectionFromModifierClick, createToggleSelectionFromModifierClick, createRestoreCanvasSelectionSnapshot, createRestoreCanvasSelectionSnapshotWithInspector, createStartModifierSelectionPress, createCancelModifierSelectionPress, createFinishModifierSelectionPress, createStartNodeLabelDrag, createStartNodeLabelRotateDrag, createFinishNodeLabelDrag, createFinishNodeLabelRotateDrag, createSetSelectedNodeLabelDisplayMode, createToggleSelectedNodeLabelDisplay, createCopySelection, createCutSelection, createPasteSelection, createCreateGraphTemplateType, createCreateGroupDeviceIconSvg, createGroupDeviceTerminalAnchor, createGroupDeviceTerminalSortKey, createGroupDeviceTerminalAssociationFor, createGroupDeviceExternalTerminals, createValidateGroupDeviceIconReplacement, createReplaceBuiltinDeviceIconOverride, createOpenGroupDeviceDefinitionDialog, createConfirmCreateDeviceFromGroup, createConfirmReplaceDeviceIconFromGroup, createOpenAddTemplateDialog, createCancelTemplateDialog, createConfirmAddGraphTemplate, createDeleteGraphTemplate, createDeleteGraphTemplateType, createDropGraphTemplate, createFinishMarqueeSelectionFromPoints, createStartContextMarqueeSelection, createOpenFilterSelectionDialog, createToggleFilterSelectionType, createToggleFilterSelectionItem, createConfirmFilterSelectionDialog, createFinishMarqueeSelection, createDeleteSelection, createDeleteSelectedGraphicsFromCanvas, createGroupSelectedGraphics, createUngroupSelectedGraphics, createManualPointDeltaForEdge, createRoutePreserveEdgeIdsForMovedNodes, createRouteSnapshotEdgesForMove, createRouteTouchesExpandedBoxes, createBoundsForNodeSet, createMergeNodeUpdateLists, createMergeUniqueEdgesById, createCompleteNodeListForPartialPatch, createIsWholeActiveLayerMove, createInternalMoveEdgeIdsForMovedNodes, createExternalMoveCandidateEdges, createInternalMoveCandidateEdges, createTranslateInternalMoveCandidateEdges, createTranslateWholeMoveCandidateEdges, createInternalRoutableLineNodeUpdatesForMove, createRoutableLineRouteCandidateIdsForMovedNodes, createRebuildRoutableLineNodeUpdatesForChangedNodes, createScheduleDeferredRoutableLineRouteRepair, createLocalRouteOptimizationEdges, createLocalRouteOptimizationCandidateEdges, createRoutePointsForMovedNodeBlockers, createRoutePointsForMovedEdgesBlockedByStationaryNodes, createRoutePointsNearOriginalMovedNodes, createAdjustEdgesAfterNodeMove, createRebuildSingleAffectedConnectionRoute, createSynchronousEdgeAdjustmentCandidates, createShouldAdjustEdgeSynchronouslyAfterMove, createMergeAdjustedCandidateEdges, createTerminalReconcileNodeScope, createFinalizeMovedNodeEdgesFast, createOptimizeMovedNodeEdgeRoutes, createShouldRunDeferredMoveOptimization, createScheduleMovedEdgeOptimization, createScheduleDeferredMovedConnectionRepair, createMoveRouteRepairSeedEdges, createLightweightMovedEndpointRoute, createPatchCachedRoutesForHighFanoutMove, createPatchCachedRoutesForBulkTranslation, createPatchCachedRoutesForWholeMove, createPatchCachedRoutesForInternalMove, createStoredRouteDirtyIdsForMove, createBuildBulkMovePlan, createCommitFastMovedGraphPatches, createUpdateMouseStatus, createUpdateMultiNodeDragOverlayTransform, createShowImperativeMultiNodeDragOverlay, createHideImperativeMultiNodeDragOverlay, createResetMultiNodeDragOverlayTransform, createBuildSingleNodeDragPreviewNodeMarkup, createClearImperativeNodeDragEdgePreview, createShowImperativeSingleNodeDragPreview, createCssSelectorEscape, createClearImperativeSingleNodeDragOriginLines, createSetImperativeSingleNodeDragOriginLines, createSetImperativeSingleNodeDragOrigin, createBindCanvasNodeElement, createHideImperativeSingleNodeDragPreview, createSingleNodeDragPreviewNodeFor, createSingleNodeDragRelevantEdges, createSingleNodeDragPreviewBounds, createSingleNodeDragEdgeTouchesBounds, createSingleNodeDragViewportLocalEdgesByScan, createSingleNodeDragScopedEdges, createSimpleOrthogonalDragPreviewPoints, createRoutableLineIdsConnectedToNodeIds, createRoutableLineEndpointPreviewRoutePoints, createBuildRoutableLinePreviewRoutesForNodeUpdates, createBuildRoutableLineEndpointPreviewNodeUpdates, createBuildTranslatedInternalRoutableLineDragPreviewRoutes, createBuildRoutableLineDragPreviewRoutes, createBuildCachedSingleNodeDragPreviewRoutes, createBuildDragPreviewEndpointPoints, createConnectionEndpointPreviewRoutePoints, createBuildLightweightNodeDragPreviewRoutes, createBuildLightweightNodeDragPreviewRouteMarkup, createSyncImperativeNodeDragPreviewPaths, createUpdateNodeDragLightweightEdgePreview, createSingleNodeDragInteractionNodes, createMultiNodeDragInteractionNodes, createUpdateImperativeNodeDragDropHint, createFindSingleNodeDragSnapTargetAtDelta, createFindMultiNodeDragSnapTargetAtDelta } from "./appExtracted/appSelectionDragFactories";
@@ -963,7 +979,7 @@ const [canvasSizeDraft, setCanvasSizeDraft] = useState(() => ({
 Object.assign(__appScope, { canvasSizeDraft, setCanvasSizeDraft });
 const [allowAutoExpandCanvas, setAllowAutoExpandCanvas] = useState(() => initialDraft?.allowAutoExpandCanvas ?? true);
 Object.assign(__appScope, { allowAutoExpandCanvas, setAllowAutoExpandCanvas });
-const [canvasBackgroundColor, setCanvasBackgroundColor] = useState(() => initialDraft?.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND);
+const [canvasBackgroundColor, setCanvasBackgroundColor] = useState(() => migrateLegacyCanvasBackground(initialDraft?.canvasBackgroundColor));
 Object.assign(__appScope, { canvasBackgroundColor, setCanvasBackgroundColor });
 const [canvasBackgroundImage, setCanvasBackgroundImage] = useState(() => initialDraft?.canvasBackgroundImage ?? "");
 Object.assign(__appScope, { canvasBackgroundImage, setCanvasBackgroundImage });
@@ -1445,6 +1461,39 @@ const [minimapSamplingReady, setMinimapSamplingReady] = useState(false);
 Object.assign(__appScope, { minimapSamplingReady, setMinimapSamplingReady });
 const [staticTerminalOverlapReadyKey, setStaticTerminalOverlapReadyKey] = useState("");
 Object.assign(__appScope, { staticTerminalOverlapReadyKey, setStaticTerminalOverlapReadyKey });
+// 画布主题（浅色 / 深色）。只影响画布及其配色，不影响界面配色。
+const [themeMode, setThemeMode] = useState<CanvasThemeMode>(() => readThemeMode());
+Object.assign(__appScope, { themeMode, setThemeMode });
+const toggleThemeMode = useCallback(() => {
+  setThemeMode((current) => {
+    const next = flipCanvasThemeMode(current);
+    writeThemeMode(next);
+    return next;
+  });
+}, []);
+Object.assign(__appScope, { toggleThemeMode });
+// 当前主题下的整套画布配色：画布、右侧面板、导出、下拉预览统一从这里取，避免各调用点各算一套。
+const canvasThemeColors = useMemo(() => canvasThemeColorsFor(themeMode), [themeMode]);
+Object.assign(__appScope, { canvasThemeColors });
+// 量测文本的取色适配：把按浅色画布保存的 display.color 抬到当前主题。
+Object.assign(__appScope, { themedMeasurementTextColor });
+// 语义色（能流类型色 / 电压等级色）的取色适配：配色弹框的色块与画布共用同一套换算。
+// 换算是两段式的：内置色查下面两张「浅色-深色」表（与画布 resolveThemedPalette 同源），
+// 用户自选的、表里没有的颜色才退到对比度兜底。两张表必须一起进 scope，
+// 否则弹框里的内置色只能走兜底分支 —— 在纯黑上已经够亮的色会原样不动，切主题色块不变。
+Object.assign(__appScope, { themeSemanticColor, ENERGY_THEME_COLORS, VOLTAGE_LEVEL_THEME_COLORS });
+// 画布上由 CSS 着色的部分（标尺条/刻度/边框）自身拿不到 React 状态，改由这里把当前主题的值写到根节点变量上。
+// 这些变量只被 .canvas-ruler* 消费，界面其它部分不受影响。
+useEffect(() => {
+  const root = document.documentElement;
+  root.style.setProperty("--canvas-ruler-background", canvasThemeColors.rulerBackground);
+  root.style.setProperty("--canvas-ruler-border", canvasThemeColors.rulerBorder);
+  root.style.setProperty("--canvas-ruler-text", canvasThemeColors.rulerText);
+  root.style.setProperty("--canvas-ruler-tick-major", canvasThemeColors.rulerTickMajor);
+  root.style.setProperty("--canvas-ruler-tick-minor", canvasThemeColors.rulerTickMinor);
+  root.style.setProperty("--canvas-ink-on-dark", canvasThemeColors.halo);
+  root.style.setProperty("--canvas-frame-background", canvasThemeColors.frameBackground);
+}, [canvasThemeColors]);
 const [colorDisplayMode, setColorDisplayMode] = useState<ColorDisplayMode>(() => readColorDisplayMode());
 Object.assign(__appScope, { colorDisplayMode, setColorDisplayMode });
 const [colorPalette, setColorPalette] = useState<ColorPalette>(() => readColorPalette());
@@ -1597,6 +1646,209 @@ Object.assign(__appScope, { requestSwitchSpace });
 // 依赖写成每帧新对象会让该请求每次渲染都重发。
 useEffect(() => {
   void __appScopeRef.current?.refreshSpaces?.();
+}, []);
+
+// 地址栏 ↔ 空间/模型双向同步。两条链路：
+// 1. **地址栏 → 应用**：打开（刷新 / 分享 / 前进后退）带 #space=/model=/scheme= 的地址。
+//    空间那一段在启动闸门里就已经改写 Cookie 了（src/appStartup.ts）；这里负责按地址栏
+//    打开模型，且**只在挂载时跑一次** —— 之后地址栏是"输出"，不再反向驱动，否则每次
+//    replaceState 都会重新触发加载。
+// 2. **应用 → 地址栏**：当前空间/模型一变就写回 hash（replaceState，不产生历史记录）。
+//    用 useRef 记上一次写下的值，避免每帧都调 replaceState。
+//
+// 地址栏里的 `model` 是**模型稳定序号 project.idx**、`scheme` 是方案路径 slug，两者都不含中文。
+// 为什么不用 `activeProjectKey`：它是 `project:<中文名的百分号编码>`，贴给别人一个字都读不懂，
+// 且每次加载都由 hydrateSavedSchemeRuntimeIds 重算，不是稳定身份。idx 由后端
+// allocateStableProjectIndex 分配，跨方案唯一、改名或移动方案后不变（server/server.mjs:3835）。
+
+type UrlModelTarget = { modelId: string; modelKey: string };
+
+// 地址栏 → 可用的定位目标。`mk` 只在旧格式兼容时非空（此时 modelId 是进程内 key）。
+function pickUrlModelTarget(url: ParsedWorkspaceUrl): UrlModelTarget {
+  return { modelId: String(url.modelId ?? ""), modelKey: String(url.modelKey ?? "") };
+}
+
+// 运行期 key → 稳定序号 idx。模型还没保存 / 方案树里没有它时返回 0（调用方据此不写 model）。
+function savedProjectIndexByKey(schemes: any, modelKey: string): number {
+  const key = String(modelKey ?? "");
+  if (!schemes || !key) return 0;
+  const walk = (records: readonly any[]): number => {
+    for (const record of records ?? []) {
+      for (const project of record?.projects ?? []) {
+        if (String(project?.id ?? "") === key) {
+          return Number(project?.project?.idx ?? project?.idx) || 0;
+        }
+      }
+      const found = walk(record?.children ?? []);
+      if (found > 0) return found;
+    }
+    return 0;
+  };
+  return walk(Array.isArray(schemes) ? schemes : []);
+}
+
+// 地址栏里「这一刻要求打开哪个模型」必须在**模块加载时就定格**，不能在 effect 体里现读。
+//
+// 原因：同一个组件里「应用 → 地址栏」那条 effect 也是挂载即跑一次，它会在打开模型完成之前
+// 先把当前（还没切过去的）模型写成 hash。等到这条 effect 再 readWorkspaceUrl()，读到的
+// 已经不是用户贴进来的那条地址了（实测：贴 model=13 进来，effect 里读到的是 model=9）。
+// 模块求值发生在任何 effect 之前，读到的才是用户真正打开的地址。
+const initialUrlModelIntent = readInitialWorkspaceUrlIntent();
+
+// 地址栏要的模型如果第一次尝试时方案树还没回来（`schemes` 还是空数组），不能就此作罢 ——
+// 方案树是异步 fetch 的，挂载那一刻几乎必然为空。这里记下"还欠一次打开"，等后面某次渲染
+// 看到方案树非空了再补；补成功或补到重试上限就清掉，不会无限重试。
+let urlModelAwaitingSchemes = initialUrlModelIntent.hasModel && Boolean(initialUrlModelIntent.modelId || initialUrlModelIntent.modelKey);
+// 按地址栏的要求打开一次模型。启动时调一次；方案树晚到时由下面的重试 effect 补一次。
+//
+// 返回 ``true`` 表示这次调用已经有了结论（打开了 / 明确不存在 / 判定该由切空间重载处理），
+// 后续不必再试；返回 ``false`` 表示方案树还没到，得等。
+type UrlOpenOutcome = "done" | "awaiting-schemes";
+
+async function openUrlModelOnce(url: ParsedWorkspaceUrl): Promise<UrlOpenOutcome> {
+  // 地址栏没写 model：什么都不做，保持「打开就是上次的草稿」这个既有行为
+  if (!url.hasModel) {
+    urlModelAwaitingSchemes = false;
+    return "done";
+  }
+  // 切空间会 location.reload()，这一次不打开模型：重载后的新页面自己会读 hash 打开。
+  //
+  // 空间对不对由 **Cookie** 判断（`src/appStartup.ts` 的 `adoptUrlSpace` 已经在 createRoot
+  // 之前把地址栏的空间写进 Cookie），**不能**拿 `__appScope.currentSpaceId` 比：它在
+  // `fetchSpaces()` 回来前是空串，会把「同一个空间」误判成「要切空间」，从而永远跳过打开模型。
+  if (url.hasSpace && url.spaceId && url.spaceId !== readSpaceCookie()) {
+    urlModelAwaitingSchemes = false;
+    return "done";
+  }
+  const latest = __appScopeRef.current as any;
+  // 地址栏里放的是**模型 idx**（纯数字），不是进程内的 `activeProjectKey`。
+  // 旧格式地址（`model=project:%E6%8E%92…`）由 pickUrlModelTarget 拆成 key 再走老路径。
+  const target = pickUrlModelTarget(url);
+  // 方案树还没从后端回来：记进 sessionStorage，等树到了再由重试 effect 补一次。
+  //
+  // 判据是**长度**不是 `!schemes`：方案树在拿到后端数据前是个空数组 `[]`（不是 undefined），
+  // 空数组是真值，`!latest?.schemes` 永远为假 —— 拿它当「树到了吗」用，等于对着空树找模型，
+  // 必然找不到、必然返回 false，地址栏要的模型就永远打不开。
+  if (!Array.isArray(latest?.schemes) || latest.schemes.length === 0) {
+    // 这里**不能**清 `urlModelAwaitingSchemes`：清了就等于宣布「这次没有下文」，
+    // 重试 effect 再跑时看到标志是 false 会直接返回，方案树到了也不会补开。
+    writePendingUrlModel(target.modelId, url.schemeId, 0, target.modelKey, url.schemeKey);
+    return "awaiting-schemes";
+  }
+  // 走到这里说明已经有结论了（无论打开成功与否），后面不必再补。
+  urlModelAwaitingSchemes = false;
+  // 登记重试计数：模型真的不存在时只重试一次，不会每次刷新都弹一次提示
+  const pending = readPendingUrlModel();
+  const pendingMatches =
+    pending && ((target.modelId && pending.modelId === target.modelId) || (target.modelKey && pending.modelKey === target.modelKey));
+  const attempts = pendingMatches ? pending.attempts + 1 : 0;
+  if (attempts > PENDING_URL_MODEL_RETRY_LIMIT) {
+    clearPendingUrlModel();
+    globalThis.showGlobalMessage?.(`地址栏指定的模型已不存在：${target.modelId || target.modelKey}`);
+    return "done";
+  }
+  writePendingUrlModel(target.modelId, url.schemeId, attempts, target.modelKey, url.schemeKey);
+  const opened = await latest.openProjectFromUrl?.(target.modelId || target.modelKey, url.schemeId || url.schemeKey, target.modelKey);
+  if (opened) {
+    clearPendingUrlModel();
+    return "done";
+  }
+  if (attempts >= PENDING_URL_MODEL_RETRY_LIMIT) {
+    clearPendingUrlModel();
+    globalThis.showGlobalMessage?.(`地址栏指定的模型已不存在：${target.modelId || target.modelKey}`);
+  }
+  return "done";
+}
+
+const urlSyncAppliedRef = useRef(false);
+useEffect(() => {
+  if (urlSyncAppliedRef.current) {
+    return;
+  }
+  urlSyncAppliedRef.current = true;
+  void openUrlModelOnce(initialUrlModelIntent);
+}, []);
+// 地址栏欠的那次打开，补在这里：方案树一非空就补一次。
+//
+// 依赖里放 `schemes`：它从 `[]` 变成真数据时会触发重跑。补完把 `urlModelAwaitingSchemes`
+// 清掉，后面再渲染也不会重复打开（重试次数仍由 `power-system-url-model` 记账兜底）。
+//
+// 依赖必须用 `schemes` 这个 state 本身：`__appScope` 是每帧新建再 Object.assign 的普通对象，
+// 写 `[__appScope.schemes]` 取到的是**当前这一帧**的值，之后帧帧重建但依赖数组算出来的
+// 还是第一次那个数组引用 —— effect 只在挂载时跑一次，方案树到了也不会重跑。
+useEffect(() => {
+  if (!urlModelAwaitingSchemes) {
+    return;
+  }
+  if (!Array.isArray(schemes) || schemes.length === 0) {
+    return;
+  }
+  void openUrlModelOnce(initialUrlModelIntent);
+}, [schemes]);
+
+// 当前空间/模型 → 地址栏。地址栏是这个状态的**投影**，不是数据源；失败（跨源 iframe、
+// file://）静默放弃，绝不打断建模主流程。
+//
+// 写进地址栏的是 `project.idx` 与方案 slug —— 都是纯 ASCII。`activeProjectKey` 形如
+// `project:%E6%8E%92…`（中文名的百分号编码），贴给别人既不可读也不稳定，只作进程内定位用。
+const lastSyncedUrlRef = useRef<string | null>(null);
+useEffect(() => {
+  const activeKey = String(__appScope.activeProjectKey ?? "");
+  const hash = `${__appScope.currentSpaceId ?? ""}|${activeKey}|${__appScope.activeSchemeKey ?? ""}`;
+  if (lastSyncedUrlRef.current === hash) {
+    return;
+  }
+  lastSyncedUrlRef.current = hash;
+  // 空间还没定下来（`fetchSpaces` 未回）时**一个字都不能写**。
+  //
+  // 挂载帧 `currentSpaceId` 是空串，而地址栏这条 effect 是「挂载即写」；若此时放行，
+  // 会先把 `#space=default&model=13&scheme=DOT` 改写成 `#space=`，紧接着同步 effect 又用
+  // 「当前还没有模型」把它改成 `#space=default` —— 地址栏里的 model 被自己的投影抹掉，
+  // 再去读已经晚了（实测：第 1 帧 hash 正确，第 2 帧已被清空）。
+  if (!__appScope.currentSpaceId) {
+    return;
+  }
+  // 方案树里找不到这个模型（例如模型还没保存）时不写 model/scheme：写一个错的值比不写更糟，
+  // 下次刷新会打开别的东西。
+  const index = savedProjectIndexByKey(__appScope.schemes, activeKey);
+  syncWorkspaceUrl({
+    spaceId: String(__appScope.currentSpaceId ?? ""),
+    modelId: index > 0 ? String(index) : "",
+    schemeId: index > 0 ? schemeSlugForModelKey(__appScope.schemes, activeKey) : ""
+  });
+});
+
+// 浏览器前进/后退：hash 变了就按新地址收敛（换空间走完整切换编排，换模型走加载）。
+useEffect(() => {
+  const handler = () => {
+    const url = readWorkspaceUrl();
+    const scope = __appScopeRef.current as any;
+    if (url.hasSpace && url.spaceId && url.spaceId !== scope?.currentSpaceId) {
+      void switchToSpace(url.spaceId);
+      return;
+    }
+    const target = pickUrlModelTarget(url);
+    if (!url.hasModel && !target.modelId && !target.modelKey) {
+      return;
+    }
+    // 已经打开的就是它：不用再加载一遍（对比用当次算出的 key，不用地址栏里的数字）
+    if (target.modelId && target.modelId === String(savedProjectIndexByKey(scope?.schemes, scope?.activeProjectKey))) {
+      return;
+    }
+    if (target.modelKey && target.modelKey === scope?.activeProjectKey) {
+      return;
+    }
+    void (async () => {
+      const latest = __appScopeRef.current as any;
+      if (target.modelId || target.modelKey) {
+        await latest?.openProjectFromUrl?.(target.modelId || target.modelKey, url.schemeId || url.schemeKey, target.modelKey);
+      } else {
+        await latest?.enterBrowseMode?.();
+      }
+    })();
+  };
+  window.addEventListener("hashchange", handler);
+  return () => window.removeEventListener("hashchange", handler);
 }, []);
 
 // 运行时态 WS 客户端：连入 server /ws，注册 clientId，响应 server 的 fetch 拉取。

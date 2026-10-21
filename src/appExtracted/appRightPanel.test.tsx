@@ -259,3 +259,38 @@ describe("右臂面板的小数格式化：后缀分支留在本地，纯数值�
     expect(source.match(/toFixed\(3\)/g)?.length).toBe(1);
   });
 });
+
+/**
+ * 【基础】→【背景色】只能黑白二选一。
+ *
+ * 验收口径是「浅色画布纯白、深色画布纯黑」。若还留着任意取色器，用户挑一个近白色
+ * （存量项目里就落盘过 #f9fafa）就会把纯黑挡掉，切主题时画布不变色。
+ */
+describe("【基础】→【背景色】是黑白二档切换", () => {
+  const source = readFileSync(new URL("./appRightPanel.tsx", import.meta.url), "utf8");
+
+  test("用 Segmented 提供「白色 / 黑色」两个选项", () => {
+    expect(source).toContain('import { Segmented } from "antd";');
+    expect(source).toContain('{ label: "白色", value: "light" }');
+    expect(source).toContain('{ label: "黑色", value: "dark" }');
+  });
+
+  test("背景色行不再挂任意取色器", () => {
+    const rowStart = source.indexOf('renderChineseParamHeader("canvasBackgroundColor")');
+    expect(rowStart).toBeGreaterThan(-1);
+    // 取该行到下一个表头之间的一小段
+    const rowEnd = source.indexOf("renderChineseParamHeader", rowStart + 10);
+    const row = source.slice(rowStart, rowEnd === -1 ? rowStart + 1200 : rowEnd);
+    expect(row).not.toContain("DeferredColorInput");
+    expect(row).not.toContain('type="color"');
+  });
+
+  test("选白色/黑色即切主题，并清掉存量显式底色", () => {
+    const index = source.indexOf('renderChineseParamHeader("canvasBackgroundColor")');
+    const row = source.slice(index, index + 1400);
+    expect(row).toContain("setThemeMode(next)");
+    expect(row).toContain('setCanvasBackgroundColor("")');
+    // 浏览态不可切换
+    expect(row).toContain("disabled={isBrowseMode}");
+  });
+});
