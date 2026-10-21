@@ -1443,7 +1443,7 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
   if (!template) {
     return "";
   }
-  const { DeviceGlyph, MAX_CUSTOM_DEVICE_TERMINALS, createNodeFromTemplate, escapeXml, formatSvgNumber, nodeGeometryTransform, renderSvgElementMarkup, colorDisplayMode, colorPalette } = __appScope;
+  const { DeviceGlyph, MAX_CUSTOM_DEVICE_TERMINALS, createNodeFromTemplate, escapeXml, formatSvgNumber, nodeGeometryTransform, renderSvgElementMarkup, colorDisplayMode, colorPalette, themeMode } = __appScope;
   if (!DeviceGlyph || !createNodeFromTemplate || !renderSvgElementMarkup) {
     return "";
   }
@@ -1492,8 +1492,8 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
         imageCleared: ""
       }
     : null;
-  const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
-  const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
+  const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, themeMode, stateVisual }));
+  const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, themeMode, stateVisual }));
   const viewBoxX = -width / 2;
   const viewBoxY = -height / 2;
   const viewBoxWidth = width;

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { Segmented } from "antd";
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 import type { ContainerDeviceParameterView, ContainerDeviceParameterViewRow, DeviceParameterDefinition, DeviceTemplate, ModelLayer, ModelNode, Terminal } from "../model";
 import { InlineEditableValue } from "../components/InputComponents";
@@ -17,6 +18,7 @@ import { firstNonZeroVoltageBase, inferESection, isThreeWindingTransformer } fro
 import { getTerminalVoltageLevel, voltageBaseSettingModeForNode } from "../model-routing";
 import { VOLTAGE_BASE_PARAM_KEYS, resolveContainerModelPanelParamKeys } from "./appCoreCanvasUtilities";
 import { formatNumericAtMostThreeDecimals } from "./appInlineUtilityFunctions";
+// 画布底色按主题取纯白/纯黑（不依赖 canvasBackgroundColor，存量项目里它是浅灰 #f1f5f9）
 
 // 参数字段 → 单位后缀映射
 const PARAM_UNIT_SUFFIX: Record<string, string> = {
@@ -175,7 +177,6 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     DEFAULT_DEVICE_LABEL_FONT_SIZE,
     DEFAULT_MODEL_LAYER_ID,
     DEFAULT_POWER_BASE_VALUE,
-    DeferredColorInput,
     FileJson,
     Fragment,
     IMAGE_FIT_MODE_OPTIONS,
@@ -202,6 +203,11 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     batchEditors,
     canvasBackgroundColor,
     canvasBackgroundImage,
+    // 当前画布主题：右侧面板背景色要跟着它显示纯黑/纯白
+    themeMode,
+    setThemeMode,
+    // 画布配色：随画布主题（浅色/深色）切换，【基础】→【背景色】显示当前主题的画布底色
+    canvasThemeColors,
     canvasSizeDraft,
     clearSelectedImageForNode,
     colorPalette,
@@ -607,12 +613,27 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                   <tr>
                     {batchEditors.renderChineseParamHeader("canvasBackgroundColor")}
                     <td>
-                      <div className="color-field with-clear">
-                        <DeferredColorInput value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND} fallback={DEFAULT_CANVAS_BACKGROUND} disabled={isBrowseMode} onCommit={(value: string) => {
-                pushUndoSnapshot();
-                setCanvasBackgroundColor(value);
-            }}/>
-                      </div>
+                      {/* 画布底色不再开放任意取色：验收口径是「浅色纯白、深色纯黑」，
+                          用户手动挑一个近白色会把纯黑挡掉。这里只给黑白两档，
+                          选中即把主题切到对应模式，画布底色随之取纯白/纯黑。 */}
+                      <Segmented
+                        size="small"
+                        block
+                        value={themeMode === "dark" ? "dark" : "light"}
+                        disabled={isBrowseMode}
+                        options={[
+                          { label: "白色", value: "light" },
+                          { label: "黑色", value: "dark" },
+                        ]}
+                        onChange={(value) => {
+                          const next = value === "dark" ? "dark" : "light";
+                          if (next === themeMode) return;
+                          pushUndoSnapshot();
+                          setThemeMode(next);
+                          // 底色由主题决定，清掉存量项目里落盘的显式底色，避免它继续压着主题色
+                          setCanvasBackgroundColor("");
+                        }}
+                      />
                     </td>
                   </tr>
                   <tr>

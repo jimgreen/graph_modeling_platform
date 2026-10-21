@@ -138,7 +138,14 @@ export const SPACE_SCOPED_SESSION_STORAGE_KEYS: readonly string[] = [
   // （`appCanvasInteractionFactories.tsx:3444,3748`、`appProjectCanvasFactories.tsx:107`），
   // 而自定义元件的 kind 属空间数据 —— 它可能指向**另一个空间**的自定义图元种类。
   // 清掉的代价只是丢一个便利快捷列表。
-  "recentGlyphKinds"
+  "recentGlyphKinds",
+  // 地址栏带来的「没打开成功的模型」重试诉求（`workspaceUrl.ts:131`）。
+  //
+  // 【为何判「清」】它记的是 `schemeId + modelId`，两者**都带空间语义**：
+  // 切空间后的 `location.reload()` 不清 sessionStorage，而地址栏刚被改写成
+  // `#space=<新空间>`；若这条诉求跨过切换留下，新空间启动时会拿**旧空间的
+  // modelId** 去打开，最坏撞上同名的另一份模型。清掉的代价只是少一次重试。
+  "power-system-url-model"
 ];
 
 /**
@@ -226,6 +233,10 @@ export const SPACE_CACHE_OWNER_STORAGE_KEY = "gmp_cache_space";
  * 清掉只会让用户每个空间都要重新调面板，或让运行时态 WS 换一个 clientId。
  */
 export const KEPT_LOCAL_STORAGE_KEYS: readonly { key: string; reason: string }[] = [
+  {
+    key: "power-system-canvas-theme",
+    reason: "画布浅色/深色主题，本机 UI 偏好"
+  },
   {
     key: "graph-modeling-platform:interaction-mode",
     reason: "画布交互模式（选择/平移），本机操作习惯"

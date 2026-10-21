@@ -346,25 +346,26 @@ describe("A 隐藏图层与槽声明合并（§7.2.8 正向缺口）", () => {
 
 describe("symbol 填充不变量（§7.2.9 + §7.2.3 正向）", () => {
   // §7.2.9：symbol 正文任何带 fill 的元素不得是字面电压色填充——固定本体色走白名单，
-  // 电压色一律由 use 上的类/槽驱动；§7.2.3：绕组内芯固定本体色 fill=#ffffff 必须保留。
-  it("正文每个带 fill 且值非 none 的元素都是白名单固定色或 currentColor/var()", () => {
+  // 电压色一律由 use 上的类/槽驱动；§7.2.3：图元本体不再画实心填充（用户要求设备填充
+  // 全透明，仅盒型开关闭合时以描边色填充），因此 transparent 也属于合规值。
+  it("正文每个带 fill 且值非 none 的元素都是白名单固定色、transparent 或 currentColor/var()", () => {
     const svg = buildSvgDocument([threeWindingTransformer()], [], { width: 800, height: 600, colorDisplayMode: "voltage" });
     const symbolSection = svg.slice(svg.indexOf("<defs"), svg.indexOf("</defs>"));
-    // 复用文件内断言：只拦与调色板电压 hex 撞色的字面填充，#ffffff 等固定色走白名单
-    assertNoLiteralVoltageColor(symbolSection, ["#ffffff"]);
+    // 复用文件内断言：只拦与调色板电压 hex 撞色的字面填充，#ffffff / transparent 等走白名单
+    assertNoLiteralVoltageColor(symbolSection, ["#ffffff", "transparent"]);
     // 正向不变量：取所有非 none 的 fill 值逐一核对必须命中白名单/currentColor/var(--tN)
     const fills = Array.from(symbolSection.matchAll(/\bfill="([^"]*)"/g), (match) => match[1]).filter((value) => value !== "none");
     expect(fills.length).toBeGreaterThan(0);
-    const allowed = new Set([...["#ffffff"], "currentColor"].map((color) => color.toLowerCase()));
+    const allowed = new Set([...["#ffffff", "transparent"], "currentColor"].map((color) => color.toLowerCase()));
     for (const fill of fills) {
       expect(fill.toLowerCase().startsWith("var(") || allowed.has(fill.toLowerCase())).toBe(true);
     }
   });
 
-  it("绕组内芯保留固定本体填充 #ffffff（正向，§7.2.3）", () => {
+  it("图元本体不画实心填充：glyph 容器 fill=transparent（§7.2.3 正向）", () => {
     const svg = buildSvgDocument([threeWindingTransformer()], [], { width: 800, height: 600, colorDisplayMode: "voltage" });
     const symbolSection = svg.slice(svg.indexOf("<defs"), svg.indexOf("</defs>"));
-    // 三绕组主变 glyph 容器 fill=#ffffff：固定本体色不受电压色彩染，也不被删字面色
-    expect(symbolSection).toContain('fill="#ffffff"');
+    // 三绕组主变 glyph 容器 fill=transparent：不填充底色，只留绕组描边与端子电压色。
+    expect(symbolSection).toContain('class="three-winding-transformer-glyph" fill="transparent"');
   });
 });

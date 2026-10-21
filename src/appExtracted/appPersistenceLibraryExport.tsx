@@ -6,6 +6,7 @@ import { normalizeElectricFlowSettings } from "../export/electric-flow-markup";
 import { memo, MouseEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { apiPath } from "../config";
+import { normalizeCanvasThemeMode, migrateLegacyCanvasBackground, type CanvasThemeMode } from "../canvasTheme";
 import { Select, Input, Button, type InputRef } from "antd";
 import {
   componentLibraryDefinitionFromMetadata,
@@ -169,7 +170,7 @@ import {
 } from "../components/InputComponents";
 import { MemoDeviceGlyph } from "../DeviceGlyph";
 import { resolveTemplateComponentLibrary, isReservedDeviceDefinitionParamName, projectCustomDeviceTerminalAnchorToBoundary, createDefaultCustomDeviceTerminalAnchors, normalizeDeviceDefinitionOwnership, normalizeSharedDeviceDefinitionOverrides, concreteDeviceTemplateForStorage, customDeviceImageWithTerminalConnectors,  } from "../customDeviceUtils";
-import { rotatePointAround, terminalColor, DEFAULT_CANVAS_BACKGROUND, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MARGIN, DEVICE_LIBRARY_DIALOG_CONFIG, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, E_SECTION_OPTIONS, COMPONENT_LIBRARY_LABELS, DEFAULT_CATEGORY_LIBRARIES, PROTECTED_CATEGORY_LIBRARIES, ENERGY_COLOR_ROWS, DEVICE_TYPE_NAME_PATTERN, MAX_CUSTOM_DEVICE_TERMINALS, TERMINAL_TYPE_OPTIONS, PARAM_VALUE_TYPE_OPTIONS, CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, LEGACY_CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, LEGACY_CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, MEASUREMENT_CONFIG_STORAGE_KEY, DEFAULT_GRAPH_TEMPLATE_TYPES, mergeRenderViewportBounds, normalizeSavedProjectIndexes, normalizeSavedSchemeIndexes, readImageAssets, backendErrorMessage, fetchBackendJson, backendJsonRequest,  } from "./appCoreCanvasUtilities";
+import { rotatePointAround, terminalColor, DEFAULT_CANVAS_BACKGROUND, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MARGIN, DEVICE_LIBRARY_DIALOG_CONFIG, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, E_SECTION_OPTIONS, COMPONENT_LIBRARY_LABELS, DEFAULT_CATEGORY_LIBRARIES, PROTECTED_CATEGORY_LIBRARIES, ENERGY_COLOR_ROWS, DEVICE_TYPE_NAME_PATTERN, MAX_CUSTOM_DEVICE_TERMINALS, TERMINAL_TYPE_OPTIONS, PARAM_VALUE_TYPE_OPTIONS, CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, LEGACY_CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, LEGACY_CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, CANVAS_THEME_STORAGE_KEY, MEASUREMENT_CONFIG_STORAGE_KEY, DEFAULT_GRAPH_TEMPLATE_TYPES, mergeRenderViewportBounds, normalizeSavedProjectIndexes, normalizeSavedSchemeIndexes, readImageAssets, backendErrorMessage, fetchBackendJson, backendJsonRequest,  } from "./appCoreCanvasUtilities";
 
 // SVG 图片资产读取器注入：原先夹在 import 语句之间靠 ESM 提升才不炸，移到 import 区之后（readImageAssets 来自上一条 import）
 setSvgImageAssetsReader(readImageAssets);
@@ -181,7 +182,9 @@ export function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
       : project.canvasBackgroundImage;
   return {
     ...project,
-    canvasBackgroundColor: project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
+    // 走主题：存量工程里落盘的浅色默认底色（#f1f5f9）迁移为空值，
+    // 让画布底色交回主题（浅色纯白 / 深色纯黑），否则深色模式下永远是浅灰。
+    canvasBackgroundColor: migrateLegacyCanvasBackground(project.canvasBackgroundColor),
     canvasBackgroundImage: projectBackground,
     // 电流流水线默认关：存量模型 / 手工 JSON 里没有这个键，落盘时补成 false，
     // 服务端 normalizeProjectForStorage 是展开透传（不校验未知顶层键），原样带过去。
@@ -3060,6 +3063,22 @@ export function readColorPalette(): ColorPalette {
   }
 }
 
+export function readThemeMode(): CanvasThemeMode {
+  try {
+    return normalizeCanvasThemeMode(window.localStorage.getItem(CANVAS_THEME_STORAGE_KEY));
+  } catch {
+    return "light";
+  }
+}
+
+export function writeThemeMode(themeMode: CanvasThemeMode): void {
+  try {
+    window.localStorage.setItem(CANVAS_THEME_STORAGE_KEY, normalizeCanvasThemeMode(themeMode));
+  } catch {
+    // localStorage 不可用时退化为本次会话内生效。
+  }
+}
+
 export function readSidePanelMode(storageKey: string): SidePanelMode {
   try {
     return normalizeSidePanelMode(window.localStorage.getItem(storageKey));
@@ -3465,7 +3484,7 @@ export function nodeVisualInteractionBounds(
   });
 }
 
-export function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayMode = "energy", colorPalette: ColorPalette = DEFAULT_COLOR_PALETTE) {
+export function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorDisplayMode = "energy", colorPalette: ColorPalette = DEFAULT_COLOR_PALETTE, themeMode: CanvasThemeMode = "light") {
   if (isBusNode(node) || isStaticNode(node) || isRoutableLineDeviceKind(node.kind)) {
     return "";
   }
@@ -3480,7 +3499,7 @@ export function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorD
       const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
       const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
       const strokeWidth = terminalStubStrokeWidth(node, terminal);
-      const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
+      const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette, themeMode);
       const label = `${terminal.label} / ${terminal.type.toUpperCase()}`;
       return `<g class="export-terminal ${terminal.type}" data-terminal-id="${escapeXml(terminal.id)}" node-id="${escapeXml(node.id)}" transform="translate(${formatSvgNumber(renderPoint.x)} ${formatSvgNumber(renderPoint.y)}) scale(${inverseScaleX} ${inverseScaleY})">
   <line class="export-terminal-stub ${terminal.type}" x1="${stub.from.x}" y1="${stub.from.y}" x2="${stub.to.x}" y2="${stub.to.y}" stroke="${terminalColor}" stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round"${dashAttribute}/>
@@ -3923,7 +3942,7 @@ export const CustomComponentTreeTemplateThumbnail = memo(function CustomComponen
     <span className="custom-component-tree-thumbnail" aria-hidden="true">
       <svg viewBox="-11 -11 22 22" focusable="false">
         <g transform={`scale(${previewScale})`}>
-          <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode="energy" colorPalette={DEFAULT_COLOR_PALETTE} stateVisual={null} />
+          <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode="energy" colorPalette={DEFAULT_COLOR_PALETTE} themeMode={readThemeMode()} stateVisual={null} />
           {backgroundImage && (
             <image
               href={backgroundImage}
@@ -3934,7 +3953,7 @@ export const CustomComponentTreeTemplateThumbnail = memo(function CustomComponen
               preserveAspectRatio="xMidYMid meet"
             />
           )}
-          <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode="energy" colorPalette={DEFAULT_COLOR_PALETTE} stateVisual={null} />
+          <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode="energy" colorPalette={DEFAULT_COLOR_PALETTE} themeMode={readThemeMode()} stateVisual={null} />
         </g>
       </svg>
     </span>

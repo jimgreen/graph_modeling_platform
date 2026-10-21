@@ -9,6 +9,7 @@ import type { CSSProperties } from "react";
 import type { ModelNode, Point, RoutedEdge, Terminal } from "../model";
 import type { CanvasLayoutUnit } from "../selectionActions";
 import type { ScaleHandleConfig, SmartAlignmentGuide } from "./appCoreCanvasUtilities";
+import { themeCanvasFill } from "../canvasTheme";
 import { computeElectricFlowDirections, type ElectricFlowLinePath } from "../export/electric-flow";
 import { buildElectricFlowLayerMarkup, buildElectricFlowStyleMarkup } from "../export/electric-flow-markup";
 
@@ -235,15 +236,19 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
 
   // 比较渲染数据（节点、边等）- 使用浅比较
   const dataKeys = [
+    // 打开/关闭模型的瞬间画布要在「有图」与「空状态提示」之间切换；
+    // activeProjectKey 不进这组键，关闭模型后画布会停在旧图上不重渲染。
+    'activeProjectKey',
     'visibleNodes', 'visibleEdges', 'selectedNodeIdSet', 'selectedEdgeIds',
     'visibleMeasurementGroups',
     'marquee', 'connectPreviewDom', 'routableLinePreview', 'resizeSizeHint',
     'draggingDelta', 'smartAlignmentGuides', 'connectSource', 'libraryPlacement',
     'canvasBackgroundColor', 'canvasBackgroundImageUrl', 'canvasBackgroundImageFit', 'backgroundPageRender',
     'colorDisplayMode', 'colorPalette', 'deviceLabelsVisible', 'deviceMeasurementsVisible',
+    // 主题不进这组键会让切主题后画布不重绘（底色/网格/取色全停在旧模式）
+    'themeMode', 'canvasThemeColors',
     // 电流流水线：开关不进这组键就会停在旧值 —— 顶栏切了开关画布不重渲染
-    'electricFlowVisible',
-    // 外观设置（时长/填充/描边）同理：对象引用变化（弹窗确定）必须触发重渲染
+    'electricFlowVisible',    // 外观设置（时长/填充/描边）同理：对象引用变化（弹窗确定）必须触发重渲染
     'electricFlowSettings'
   ];
 
@@ -317,6 +322,23 @@ export function staticDrawingContextMenuFinalPoint(drawing: {
  * MemoizedCanvasArea - 接收整个 __appScope，内部解构使用。
  */
 export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { scope: Record<string, any> }) {
+  // 没有打开任何模型时不画布：网格、标尺、背景页、图元全都不渲染，只留一句提示。
+  //
+  // 判据用 `activeProjectKey` 而不是 `currentProject`：后者在「未选中方案 / 未选中模型」时
+  // 也可能是个带默认值的空项目对象，拿它判断会把空画布当成已打开的模型。
+  // 早退放在最前面 —— 后面几百行解构与 handler 都是为「真有一张图」准备的。
+  if (!String(scope?.activeProjectKey ?? "")) {
+    return (
+      <section className="canvas-frame" ref={scope?.canvasFrameRef} tabIndex={-1}>
+        <div className="canvas-empty-state">
+          <div className="canvas-empty-state-inner">
+            <div className="canvas-empty-state-title">请打开要编辑的模型</div>
+            <div className="canvas-empty-state-hint">在左侧模型库中双击一个模型，或在「新建」里创建</div>
+          </div>
+        </div>
+      </section>
+    );
+  }
   // 从 scope 解构所有画布需要的变量
   const {
     svgRef, canvasFrameRef, canvasInteractionRef, projectListPointerInsideRef,
@@ -333,7 +355,9 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     canvasBackgroundColor, canvasBackgroundImageUrl, canvasBackgroundImageFit,
     connectSource, terminalPress, staticDrawing, libraryPlacement, contextMarqueeSelection,
     activeDropReady, panning, multiNodeDragging, singleNodeDragging,
-    isEditMode, isBrowseMode, isReadonlyCanvasMode, mode,
+    isEditMode, isBrowseMode, isReadonlyCanvasMode, mode, themeMode,
+    // 画布配色：由 App 按 themeMode 解析好的整套画布 token（网格/边框/提示线/选中框/文本/端子等）
+    canvasThemeColors,
     nodeLabelDrag, nodeLabelRotateDrag, manualPathDrag, transformDrag,
     isGroupTransformDrag, rewiring, routableLinePlacement, routableLineEndpointDrag,
     hasCanvasSelectionModifier, isRepeatedEdgePointerClick,
@@ -407,7 +431,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     openEdgeContextMenu, openGraphicContextMenu, openNodeDoubleClickEditor,
     useSimplifiedCanvasNodes, useSimplifiedCanvasRoutes, useSimplifiedSelectedCanvasNodes,
     canGroupSelectedGraphics, canUngroupSelectedGraphics, canAddTemplateFromSelection,
-    CANVAS_MINIMAP_WIDTH, CANVAS_MINIMAP_HEIGHT, DEFAULT_CANVAS_BACKGROUND,
+    CANVAS_MINIMAP_WIDTH, CANVAS_MINIMAP_HEIGHT,
     TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP,
     SCALE_HANDLE_CONFIGS, GROUP_SCALE_HANDLE_CONFIGS,
     Copy, Grid2X2, Group, Layers, Layers2, LocateFixed, MapIcon,
@@ -605,6 +629,27 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     [electricFlowDirections, electricFlowSettings, electricFlowVisible, electricFlowRoutedEdges]
   );
 
+  // 画布内 CSS 变量：把当前主题的取值挂在根 <svg> 上，样式表里只写 var(...)，
+  // 切主题时 CSS 与 SVG 属性两侧一起换，不会出现「属性变了样式没变」的半切换。
+  const canvasThemeStyleVars = {
+    "--canvas-guide": canvasThemeColors.alignmentGuide,
+    "--canvas-selection-stroke": canvasThemeColors.selectionStroke,
+    "--canvas-selection-fill": canvasThemeColors.marqueeFill,
+    "--canvas-border": canvasThemeColors.canvasBorder,
+    "--canvas-text-halo": canvasThemeColors.halo,
+    "--canvas-terminal-dot-stroke": canvasThemeColors.terminalDotStroke,
+    "--canvas-bus-endpoint-dot": canvasThemeColors.busEndpointDot,
+    "--canvas-bus-endpoint-dot-stroke": canvasThemeColors.busEndpointDotStroke,
+    "--canvas-connection-stroke": canvasThemeColors.surfaceStroke,
+    "--canvas-connection-preview": canvasThemeColors.connectionPreview,
+    "--canvas-text-primary": canvasThemeColors.primary,
+    "--canvas-text-secondary": canvasThemeColors.secondary,
+    "--canvas-text-muted": canvasThemeColors.muted,
+    "--canvas-accent": canvasThemeColors.accent,
+    "--canvas-surface-fill": canvasThemeColors.surfaceFill,
+    "--canvas-background": canvasThemeColors.canvasBackground
+  } as CSSProperties;
+
   return (
     <>
         <section className="canvas-frame" ref={canvasFrameRef} tabIndex={-1} onPointerEnter={focusCanvasKeyboardShortcutHost} onPointerMove={focusCanvasKeyboardShortcutHost} style={{
@@ -654,7 +699,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         fitWholeCanvasToFrame();
     }}>
             <CanvasRulers scope={scope}/>
-            <svg ref={svgRef} className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${terminalPress?.moved ? "terminal-dragging" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${libraryPlacement ? "library-place-mode" : ""} ${contextMarqueeSelection ? "context-marquee-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""} ${singleNodeDragging ? "single-node-dragging" : ""}`} style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY }} viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`} onDrop={handleDrop} onDragOver={(event) => event.preventDefault()} onWheel={handleWheel} onDoubleClick={fitWholeCanvasFromBlankDoubleClick} onPointerDownCapture={handleCanvasPointerDownCapture} onPointerMove={handlePointerMove} onPointerEnter={(event) => {
+            <svg ref={svgRef} className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${terminalPress?.moved ? "terminal-dragging" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${libraryPlacement ? "library-place-mode" : ""} ${contextMarqueeSelection ? "context-marquee-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""} ${singleNodeDragging ? "single-node-dragging" : ""}`} style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY, ...canvasThemeStyleVars }} data-theme-mode={themeMode === "dark" ? "dark" : "light"} viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`} onDrop={handleDrop} onDragOver={(event) => event.preventDefault()} onWheel={handleWheel} onDoubleClick={fitWholeCanvasFromBlankDoubleClick} onPointerDownCapture={handleCanvasPointerDownCapture} onPointerMove={handlePointerMove} onPointerEnter={(event) => {
         canvasInteractionRef.current = true;
         projectListPointerInsideRef.current = false;
         const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);
@@ -922,17 +967,18 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             {electricFlowStyleMarkup && (<SvgMarkupChunk className="electric-flow-style" markup={electricFlowStyleMarkup}/>)}
             <defs>
               <pattern id="small-grid" width="5" height="5" patternUnits="userSpaceOnUse">
-                <path d="M 5 0 L 0 0 0 5" fill="none" stroke="#e2e8f0" strokeWidth="0.45"/>
+                <path d="M 5 0 L 0 0 0 5" fill="none" stroke={canvasThemeColors.gridMinor} strokeWidth="0.45"/>
               </pattern>
               <pattern id="large-grid" width="25" height="25" patternUnits="userSpaceOnUse">
                 <rect width="25" height="25" fill="url(#small-grid)"/>
-                <path d="M 25 0 L 0 0 0 25" fill="none" stroke="#cbd5e1" strokeWidth="0.8"/>
+                <path d="M 25 0 L 0 0 0 25" fill="none" stroke={canvasThemeColors.gridMajor} strokeWidth="0.8"/>
               </pattern>
             </defs>
-            <rect data-canvas-background width={canvasRenderBounds.width} height={canvasRenderBounds.height} fill={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}/>
+            {/* 画布底色：显式设置的近白色底在深色主题下必须让位给纯黑，否则切主题画布不变色 */}
+            <rect data-canvas-background data-theme-background={canvasThemeColors.canvasBackground} width={canvasRenderBounds.width} height={canvasRenderBounds.height} fill={themeCanvasFill(themeMode, canvasBackgroundColor) || canvasThemeColors.canvasBackground}/>
             {canvasBackgroundImageUrl && (<SvgMarkupChunk className="canvas-background-image-markup" markup={svgImageContentMarkup(canvasBackgroundImageUrl, { x: 0, y: 0, width: canvasRenderBounds.width, height: canvasRenderBounds.height, imageFit: canvasBackgroundImageFit, className: "canvas-background-image", extraAttributes: " data-canvas-background=\"true\" pointer-events=\"none\"" })}/>)}
             <rect width={canvasRenderBounds.width} height={canvasRenderBounds.height} fill="url(#large-grid)"/>
-            <rect className="canvas-boundary" x="0" y="0" width={canvasRenderBounds.width} height={canvasRenderBounds.height}/>
+            <rect className="canvas-boundary" data-theme-border={canvasThemeColors.canvasBorder} x="0" y="0" width={canvasRenderBounds.width} height={canvasRenderBounds.height}/>
             {renderReadonlyBackgroundPage()}
             <g className="canvas-content">
             {marquee && (<rect className="marquee-box" x={Math.min(marquee.start.x, marquee.current.x)} y={Math.min(marquee.start.y, marquee.current.y)} width={Math.abs(marquee.current.x - marquee.start.x)} height={Math.abs(marquee.current.y - marquee.start.y)}/>)}
@@ -954,8 +1000,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         return (<g key={`drag-ghost-${node.id}`} className={`node-drag-ghost ${ghostNodeIsBus ? "bus-node" : ""}`} transform={`translate(${ghostNode.position.x} ${ghostNode.position.y})`}>
                   <g transform={nodeGeometryTransform(ghostNode)}>
                     <rect x={-ghostNode.size.width / 2} y={-ghostNode.size.height / 2} width={ghostNode.size.width} height={ghostNode.size.height} rx="8" className="node-drag-ghost-box"/>
-                    <MemoDeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(ghostNode)}/>
-                    <MemoDeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(ghostNode)}/>
+                    <MemoDeviceGlyph node={ghostNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(ghostNode)}/>
+                    <MemoDeviceGlyph node={ghostNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(ghostNode)}/>
                   </g>
                   {renderNodePreviewImageContent(ghostNode, `drag-ghost-preview-clip-${ghostNode.id}`)}
                 </g>);
@@ -1014,7 +1060,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                   />
                   {renderBoundaryBusInternalConnector(sourceNode, sourceBusDotPoint, `${edge.id}-source-internal-connector`)}
                   {renderBoundaryBusInternalConnector(targetNode, targetBusDotPoint, `${edge.id}-target-internal-connector`)}
-                  {isEditMode && sourceBusDotPoint && (<circle className="bus-connection-dot" cx={sourceBusDotPoint.x} cy={sourceBusDotPoint.y} r={7} fill={busEndpointColor((rewiringSource ? rewireTarget?.node : sourceNode) ?? sourceNode!, colorPalette)} onPointerDown={editable ? (event) => {
+                  {isEditMode && sourceBusDotPoint && (<circle className="bus-connection-dot" cx={sourceBusDotPoint.x} cy={sourceBusDotPoint.y} r={7} fill={canvasThemeColors.busEndpointDot} stroke={canvasThemeColors.busEndpointDotStroke} onPointerDown={editable ? (event) => {
                     event.stopPropagation();
                     if (event.button !== 0 || !svgRef.current) {
                         return;
@@ -1028,7 +1074,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                     });
                     event.currentTarget.setPointerCapture(event.pointerId);
                 } : undefined}/>)}
-                  {isEditMode && targetBusDotPoint && (<circle className="bus-connection-dot" cx={targetBusDotPoint.x} cy={targetBusDotPoint.y} r={7} fill={busEndpointColor((rewiringTarget ? rewireTarget?.node : targetNode) ?? targetNode!, colorPalette)} onPointerDown={editable ? (event) => {
+                  {isEditMode && targetBusDotPoint && (<circle className="bus-connection-dot" cx={targetBusDotPoint.x} cy={targetBusDotPoint.y} r={7} fill={canvasThemeColors.busEndpointDot} stroke={canvasThemeColors.busEndpointDotStroke} onPointerDown={editable ? (event) => {
                     event.stopPropagation();
                     if (event.button !== 0 || !svgRef.current) {
                         return;
@@ -1293,7 +1339,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             return {
                 terminalId: terminalDragTerminal.id,
                 type: terminalDragTerminal.type,
-                color: getTerminalDisplayColor(node, terminalDragTerminal, colorDisplayMode, colorPalette),
+                color: getTerminalDisplayColor(node, terminalDragTerminal, colorDisplayMode, colorPalette, themeMode),
                 previewStrokeWidth: terminalStubStrokeWidth(node, previewTerminal),
                 ...previewGeometry
             };
@@ -1358,8 +1404,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                     </clipPath>)}
                   <g className="node-geometry" transform={nodeGeometryTransformValue}>
                     <rect x={-node.size.width / 2} y={-node.size.height / 2} width={node.size.width} height={node.size.height} rx="8" className={`node-hitbox ${nodeIsBus ? "bus-hitbox" : ""} ${nodeIsStatic ? "static-hitbox" : ""}`}/>
-                    <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={nodeStateVisual}/>
-                    <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={nodeStateVisual}/>
+                    <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={nodeStateVisual}/>
+                    <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={nodeStateVisual}/>
                     {routableLineDeviceHitPath && (<path className="routable-line-device-hitline" d={routableLineDeviceHitPath} onPointerDown={(event) => handleRoutableLineNodePathPointerDown(event, node)}/>)}
                     {staticButtonEnabled && (<rect x={-node.size.width / 2} y={-node.size.height / 2} width={node.size.width} height={node.size.height} rx={staticButtonCornerRadius} className="static-button-feedback-surface"/>)}
                     {showStaticSelectionFrame && (<g className="node-static-selection-frame">
@@ -1375,9 +1421,9 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                     </g>)}
                   {uprightSelectionOutlineRect && (<rect className="node-upright-selection-outline" x={uprightSelectionOutlineRect.x} y={uprightSelectionOutlineRect.y} width={uprightSelectionOutlineRect.width} height={uprightSelectionOutlineRect.height} rx="4"/>)}
                   {nodeLabelVisible && (<g className={`node-device-label ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${nodeLabelIsVertical ? "vertical" : "horizontal"}`} data-node-id={node.id} data-label-owner="device" transform={nodeLabelTransform(node)} onPointerDown={isEditMode ? (event) => startNodeLabelDrag(event, node) : undefined}>
-                      {nodeLabelIsVertical ? (nodeLabelVerticalTokens.map((segment: { text: string; numeric: boolean }, index: number) => (<text key={`${segment.text}-${index}`} className={`node-label-vertical-token ${segment.numeric ? "numeric" : ""}`} x="0" y={nodeLabelVerticalTokenY(index, nodeLabelVerticalTokens.length, node)} dominantBaseline="middle" textAnchor="middle" style={nodeLabelVerticalTokenStyle(node)}>
+                      {nodeLabelIsVertical ? (nodeLabelVerticalTokens.map((segment: { text: string; numeric: boolean }, index: number) => (<text key={`${segment.text}-${index}`} className={`node-label-vertical-token ${segment.numeric ? "numeric" : ""}`} x="0" y={nodeLabelVerticalTokenY(index, nodeLabelVerticalTokens.length, node)} dominantBaseline="middle" textAnchor="middle" style={nodeLabelVerticalTokenStyle(node, themeMode)}>
                             {segment.text}
-                          </text>))) : (<text x="0" y="0" dominantBaseline="middle" textAnchor={nodeLabelTextAnchor(node)} style={nodeLabelTextStyle(node)}>
+                          </text>))) : (<text x="0" y="0" dominantBaseline="middle" textAnchor={nodeLabelTextAnchor(node)} style={nodeLabelTextStyle(node, themeMode)}>
                           {nodeLabelContent}
                         </text>)}
                       {isEditMode && selected && focused && selectedNodeCount === 1 && (<g className="node-label-rotate-control" transform={`translate(0 ${formatSvgNumber(-nodeLabelFontSizeValue - 18)})`}>
@@ -1416,10 +1462,10 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                     nodeScaleY,
                     terminalVisualTransform
                 );
-                const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
+                const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette, themeMode);
                 return hideFixedTerminal ? null : (<g key={terminal.id} className={`terminal-control ${terminalDragPreview?.terminalId === terminal.id ? "terminal-drag-active" : ""}`} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
                           <line className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`} strokeDasharray={terminalStubDashArray} style={{
-                        "--terminal-stub-color": disabled ? "#cbd5e1" : terminalDisplayColor,
+                        "--terminal-stub-color": disabled ? canvasThemeColors.disabledStub : terminalDisplayColor,
                         "--terminal-stub-width": terminalStubStrokeWidth(node, displayTerminal)
                     } as CSSProperties} x1={stub.from.x} y1={stub.from.y} x2={stub.to.x} y2={stub.to.y}/>
                           <circle className={`terminal-dot ${terminal.type} ${overlapped ? "overlapped" : ""} ${disabled ? "disabled" : ""} ${isConnectCandidate ? "connect-candidate" : ""}`} style={{ "--terminal-color": terminalDisplayColor } as CSSProperties} cx="0" cy="0" r={overlapped ? 7.2 : 6} onPointerDown={isEditMode ? (event) => handleTerminalPointerDown(event, node, terminal.id) : undefined}>

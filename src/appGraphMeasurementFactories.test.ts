@@ -24,6 +24,7 @@ import {
   measurementTypeComplianceMessage
 } from "./appExtracted/appGraphMeasurementFactories";
 import { createRenderDeviceDefinitionMeasurementPanel } from "./appExtracted/appProjectCanvasFactories";
+import { themedMeasurementTextColor } from "./themedColors";
 import {
   createBuildSingleNodeDragPreviewNodeMarkup,
   createSetImperativeSingleNodeDragOrigin
@@ -1208,7 +1209,9 @@ describe("measurement canvas interactions", () => {
         textDecoration: "none",
         visible: true,
         defaultValue: 0
-      })
+      }),
+      themeMode: "light",
+      themedMeasurementTextColor
     } as any);
 
     const metrics = measurementGroupRenderMetrics(
@@ -1416,6 +1419,8 @@ describe("measurement canvas interactions", () => {
     const renderMeasurementGroup = createMeasurementGroupRenderer({
       dragging: null,
       draggingNodeIdSet: new Set<string>(),
+      themeMode: "light",
+      themedMeasurementTextColor,
       measurementGroupRenderMetrics: () => ({
         columnWidth: 96,
         columns: 1,

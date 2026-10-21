@@ -8,6 +8,7 @@
 
 import { writeSpaceCookie } from "./spaceClient";
 import { clearSpaceScopedBrowserCaches, rememberCacheOwnerSpace } from "./spaceCache";
+import { syncWorkspaceUrl } from "./workspaceUrl";
 
 // 与 appDeviceDefinitionFactories 的 skipSaveCheck 同形态（模块级 let + 一对读写函数），
 // 但**刻意不复用后者**：`getSkipSaveCheck()` 被导出流程消费
@@ -59,6 +60,15 @@ export async function switchToSpace(id: string): Promise<void> {
     notifySwitchFailure(`切换空间失败：本地缓存未清理干净，已取消切换。请重试。\n${message}`);
     return;
   }
+  // 地址栏里多半还写着**旧**空间（`#space=default`），必须在 reload 之前改掉。
+  //
+  // 启动闸门 `runStartupGate()` 让地址栏的空间优先于 Cookie（`src/appStartup.ts` 的
+  // `adoptUrlSpace`）。地址栏不改，重载后旧空间就会被重新采纳 —— 表现是「切的瞬间像成功了，
+  // 一秒后又弹回原空间」，且没有任何报错。这就是「切换空间失败，刷新后总是回到默认空间」。
+  //
+  // 只写 `space`，不写 `model`/`scheme`：模型要等新空间的方案树回来才定位得到，
+  // 写一个属于旧空间的 idx 只会把用户带到错误的地方。
+  syncWorkspaceUrl({ spaceId: id });
   writeSpaceCookie(id);
   // 紧随其后的 reload 会跑启动闸门（spaceCache.ts 的 reconcileSpaceCacheOwnership）。
   // 若此刻不记账，闸门会看到「记账=旧空间、current=新空间」而**再清一次** —— 那不是

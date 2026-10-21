@@ -1055,7 +1055,7 @@ export function createCreateGraphTemplateType(__appScope: Record<string, any>) {
 
 export function createCreateGroupDeviceIconSvg(__appScope: Record<string, any>) {
   return (clipboard: CanvasClipboard) => {
-  const { DeviceGlyph, canvasClipboardBounds, colorDisplayMode, colorPalette, escapeXml, formatSvgNumber, generateCustomDeviceImage, isBusNode, isStaticNode, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, pointsToPreviewPath, renderSvgElementMarkup, resolveNodeStateVisual } = __appScope;
+  const { DeviceGlyph, canvasClipboardBounds, colorDisplayMode, colorPalette, escapeXml, formatSvgNumber, generateCustomDeviceImage, isBusNode, isStaticNode, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, pointsToPreviewPath, renderSvgElementMarkup, resolveNodeStateVisual, themeMode } = __appScope;
     const bounds = canvasClipboardBounds(clipboard);
     if (!bounds) {
       return generateCustomDeviceImage("Group", ["ac"]);
@@ -1071,8 +1071,8 @@ export function createCreateGroupDeviceIconSvg(__appScope: Record<string, any>) 
     const nodeMarkup = clipboard.nodes
       .map((node) => {
         const stateVisual = resolveNodeStateVisual(node);
-        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
-        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
+        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, themeMode, stateVisual }));
+        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, themeMode, stateVisual }));
         const imageHref = nodeImage(node);
         const foregroundHref = nodeForegroundImage(node);
         const nodeIsBus = isBusNode(node);
@@ -4234,7 +4234,7 @@ export function createResetMultiNodeDragOverlayTransform(__appScope: Record<stri
 
 export function createBuildSingleNodeDragPreviewNodeMarkup(__appScope: Record<string, any>) {
   return (dragState: DraggingState) => {
-  const { DeviceGlyph, buildMeasurementGroupsMarkup, buildNodePreviewImageMarkup, buildSvgNodeLabelMarkup, buildSvgTerminalMarkup, colorDisplayMode, colorPalette, escapeXml, formatSvgNumber, isBusNode, isMultiNodeMoveState, isStaticNode, nodeById, nodeGeometryTransform, renderSvgElementMarkup, resolveNodeStateVisual, visibleNodeIdSet } = __appScope;
+  const { DeviceGlyph, buildMeasurementGroupsMarkup, buildNodePreviewImageMarkup, buildSvgNodeLabelMarkup, buildSvgTerminalMarkup, colorDisplayMode, colorPalette, escapeXml, formatSvgNumber, isBusNode, isMultiNodeMoveState, isStaticNode, nodeById, nodeGeometryTransform, renderSvgElementMarkup, resolveNodeStateVisual, themeMode, visibleNodeIdSet } = __appScope;
     if (isMultiNodeMoveState(dragState) || dragState.nodeIds.length !== 1) {
       return "";
     }
@@ -4246,8 +4246,8 @@ export function createBuildSingleNodeDragPreviewNodeMarkup(__appScope: Record<st
     }
     const nodeIsBus = isBusNode(node);
     const stateVisual = resolveNodeStateVisual(node);
-    const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
-    const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
+    const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, themeMode, stateVisual }));
+    const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, themeMode, stateVisual }));
     const imageMarkup = buildNodePreviewImageMarkup(node, `single-node-drag-preview-clip-${node.id}`);
     const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
     const labelMarkup = buildSvgNodeLabelMarkup(node);
@@ -4615,7 +4615,7 @@ export function createBuildRoutableLinePreviewRoutesForNodeUpdates(__appScope: R
     nodeUpdates: Iterable<ModelNode>,
     options: { routeFully?: boolean; bounds?: CanvasBounds } = {}
   ): NodeDragPreviewRoute[] => {
-  const { colorDisplayMode, colorPalette, getDeviceStrokeColor, isRoutableLineDeviceKind, pointsToPreviewPath, routableLineDeviceCanvasPoints, routableLineDeviceEndpointRefs, routableLineEndpointPreviewRoutePoints, routableLineIdsConnectedToNodeIds, routeRoutableLineDevice, simpleOrthogonalDragPreviewPoints, syncRoutableLineDeviceEndpointsToRefs, visibleNodeIdSet } = __appScope;
+  const { colorDisplayMode, colorPalette, themeMode, getDeviceStrokeColor, isRoutableLineDeviceKind, pointsToPreviewPath, routableLineDeviceCanvasPoints, routableLineDeviceEndpointRefs, routableLineEndpointPreviewRoutePoints, routableLineIdsConnectedToNodeIds, routeRoutableLineDevice, simpleOrthogonalDragPreviewPoints, syncRoutableLineDeviceEndpointsToRefs, visibleNodeIdSet } = __appScope;
     const changedNodeIdList = Array.from(changedNodeIds);
     if (changedNodeIdList.length === 0) {
       return [];
@@ -4658,7 +4658,7 @@ export function createBuildRoutableLinePreviewRoutesForNodeUpdates(__appScope: R
         edgeId: `routable-line:${lineNode.id}`,
         routableLineNodeId: lineNode.id,
         path: pointsToPreviewPath(previewPoints),
-        color: getDeviceStrokeColor(lineNode, colorDisplayMode, colorPalette)
+        color: getDeviceStrokeColor(lineNode, colorDisplayMode, colorPalette, themeMode)
       });
     }
     return routes;
@@ -4705,7 +4705,7 @@ export function createBuildTranslatedInternalRoutableLineDragPreviewRoutes(__app
     delta: Point,
     movedNodeIds: string[]
   ) => {
-  const { colorDisplayMode, colorPalette, getDeviceStrokeColor, inferMissingRoutableLineDeviceEndpointRefs, isMultiNodeMoveState, isRoutableLineDeviceKind, nodeById, nodes, pointsToPreviewPath, routableLineDeviceCanvasPoints, routableLineDeviceEndpointRefs, routableLineIdsConnectedToNodeIds, translatePointBy, visibleNodeIdSet } = __appScope;
+  const { colorDisplayMode, colorPalette, themeMode, getDeviceStrokeColor, inferMissingRoutableLineDeviceEndpointRefs, isMultiNodeMoveState, isRoutableLineDeviceKind, nodeById, nodes, pointsToPreviewPath, routableLineDeviceCanvasPoints, routableLineDeviceEndpointRefs, routableLineIdsConnectedToNodeIds, translatePointBy, visibleNodeIdSet } = __appScope;
     if (!dragState.wholeLayerMove && !isMultiNodeMoveState(dragState)) {
       return [];
     }
@@ -4730,7 +4730,7 @@ export function createBuildTranslatedInternalRoutableLineDragPreviewRoutes(__app
         edgeId: `routable-line:${lineNode.id}`,
         routableLineNodeId: lineNode.id,
         path: pointsToPreviewPath(points),
-        color: getDeviceStrokeColor(lineNode, colorDisplayMode, colorPalette)
+        color: getDeviceStrokeColor(lineNode, colorDisplayMode, colorPalette, themeMode)
       });
     }
     return routes;

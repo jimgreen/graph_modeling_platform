@@ -11,7 +11,10 @@ export function hashSvg(text: string): string {
 // 去 JSX 重构前的基线哈希：Task 11-12 重写 DeviceGlyph/staticRenderUtils 后输出必须逐字节一致。
 // 2026-09-21 变更：terminal 锚点 class 升级为 "terminal terminal-anchor"（锚点实现抽取为
 // buildSymbolTerminalAnchorMarkup，与图元 Symbol 导出共用；单类 .terminal-anchor 选择器仍命中）。
-export const SVG_BASELINE_HASH = "6b2840e934a0af322c4f0168e987e413596b38376d7425f995608add044f601d";
+// 2026-10-21 变更：图元填充两种主题下一律透明（用户要求：除盒型开关外设备填充全透明），
+// 基线里 bus-glyph 的 fill="#eef2ff" 与 electric-load-glyph 的 fill="#ffffff" 都变成 "transparent"，
+// 逐字节 diff 只有这两处，其余不变。
+export const SVG_BASELINE_HASH = "2dae99733f916499590e6ac4df8dcc3da34be9893434e906499ff908d340e0a9";
 
 describe("SVG 导出基线", () => {
   test("输出哈希与基线一致", () => {

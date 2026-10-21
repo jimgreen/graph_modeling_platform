@@ -98,7 +98,9 @@ describe("normalizeSchemesForBackendRuntime", () => {
     ]);
 
     expect(result.map((item: any) => item.name)).toEqual(["甲", "乙"]);
-    expect(runtimeProjectsOf([result[1]])[0].canvasBackgroundColor).toBe("#f1f5f9");
+    // 未设置画布底色时留空，由画布主题决定（浅色纯白 / 深色纯黑）；
+    // 存量工程里落盘的旧默认底色 #f1f5f9 会被迁移成空值。
+    expect(runtimeProjectsOf([result[1]])[0].canvasBackgroundColor).toBe("");
   });
 
   test("projects 缺省会抛错（这里刻意不兜底）", () => {
@@ -129,7 +131,8 @@ describe("normalizeSchemesForBackendRuntime", () => {
     const project = runtimeProjectsOf(result)[0];
 
     expect(project).toMatchObject({
-      canvasBackgroundColor: "#f1f5f9",
+      // 空 = 交给画布主题（浅色纯白 / 深色纯黑），不再钉死浅色画布底色
+      canvasBackgroundColor: "",
       powerUnit: "MW",
       voltageUnit: "kV",
       currentUnit: "A",

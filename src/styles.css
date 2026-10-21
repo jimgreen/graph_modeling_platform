@@ -1907,7 +1907,8 @@ button:not(.ant-btn):disabled {
   overflow: auto;
   overscroll-behavior: contain;
   padding: 0;
-  background: #e5e7eb;
+  /* 画布视口底色：露出在画布 SVG 之外的区域（画布小于视口、滚动留白）。随画布主题切换。 */
+  background: var(--canvas-frame-background, #e5e7eb);
 }
 
 .canvas-frame:focus {
@@ -1918,6 +1919,45 @@ button:not(.ant-btn):disabled {
   position: relative;
   min-width: 100%;
   min-height: 100%;
+  /* 画布可滚动区域范围之外，跟随画布底色，避免深色画布配深色视口时露出一截浅灰。 */
+  background: var(--canvas-frame-background, #e5e7eb);
+}
+
+/* 没有打开任何模型：画布整个让位给空状态提示，不画网格/标尺。
+   宽度高度由内联样式给满视口，故这里只负责居中与配色。 */
+.canvas-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: #64748b;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.canvas-empty-state-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  /* 画布视口底色是浅灰，提示块给一层白底卡片，避免文字直接压在灰底上发闷 */
+  padding: 28px 44px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.canvas-empty-state-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #334155;
+}
+
+.canvas-empty-state-hint {
+  font-size: 13px;
+  color: #94a3b8;
 }
 
 .viewport-overlay {
@@ -2161,7 +2201,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .canvas-boundary {
   fill: none;
-  stroke: #475569;
+  stroke: var(--canvas-border, #475569);
   stroke-width: 5;
   pointer-events: none;
 }
@@ -2328,7 +2368,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .connection-line {
   fill: none;
-  stroke: var(--connection-color, #334155);
+  stroke: var(--connection-color, var(--canvas-connection-stroke, #334155));
   stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -2411,7 +2451,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .connection-line.drag-ghost {
-  stroke: var(--connection-color, #64748b);
+  stroke: var(--connection-color, var(--canvas-connection-preview, #64748b));
   stroke-width: 2.5;
   stroke-linecap: butt;
   stroke-dasharray: 12 10;
@@ -2565,8 +2605,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .marquee-box {
-  fill: rgba(37, 99, 235, 0.12);
-  stroke: #2563eb;
+  fill: var(--canvas-selection-fill, rgba(37, 99, 235, 0.12));
+  stroke: var(--canvas-selection-stroke, #2563eb);
   stroke-width: 1.5;
   stroke-dasharray: 8 5;
   pointer-events: none;
@@ -2574,7 +2614,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .smart-alignment-guide {
   fill: none;
-  stroke: #0284c7;
+  stroke: var(--canvas-guide, #0284c7);
   stroke-width: 1.6;
   stroke-linecap: round;
   stroke-dasharray: 7 5;
@@ -2682,7 +2722,12 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .bus-connection-dot {
-  stroke: #ffffff;
+  /* 母线连接点：fill 与 stroke 两种主题都透明（用户要求）。
+     fill/stroke 由 SVG 属性与主题变量给出，这里兜底同样的值，
+     避免任何未走到主题变量的渲染路径把点画成实心色块或白圈。
+     圆本身仍然保留（pointer-events: all + r=7），只是不可见 —— 它是拖拽端点用的热区。 */
+  fill: var(--canvas-bus-endpoint-dot, transparent);
+  stroke: var(--canvas-bus-endpoint-dot-stroke, transparent);
   stroke-width: 2.5;
   cursor: crosshair;
   pointer-events: all;
@@ -3089,7 +3134,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .node-device-label text {
   paint-order: stroke;
-  stroke: rgba(255, 255, 255, 0.86);
+  stroke: var(--canvas-text-halo, rgba(255, 255, 255, 0.86));
   stroke-width: 3px;
   stroke-linejoin: round;
   pointer-events: all;
@@ -3397,7 +3442,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .terminal-dot {
   fill: var(--terminal-color, #2563eb);
-  stroke: #ffffff;
+  stroke: var(--canvas-terminal-dot-stroke, #ffffff);
   stroke-width: 2;
   cursor: crosshair;
   transform-box: fill-box;
@@ -13713,9 +13758,13 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   filter: drop-shadow(0 0 1px rgba(37, 99, 235, 0.72)) drop-shadow(0 2px 5px rgba(15, 23, 42, 0.12));
 }
 
+/* 量测文本的描边（光晕）用来把字从背景上托起来。
+   浅色画布：浅底 + 深字 → 白色光晕。
+   深色画布：黑底 + 白字 → 必须换成黑色光晕，否则白描边会和浅色字糊成一团。
+   颜色由主题变量提供，见 canvasTheme.ts 的 textHalo。 */
 .measurement-item {
   paint-order: stroke;
-  stroke: rgba(255, 255, 255, 0.9);
+  stroke: var(--canvas-text-halo, rgba(255, 255, 255, 0.9));
   stroke-linejoin: round;
   stroke-width: 3px;
 }
@@ -16609,18 +16658,18 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .canvas-ruler {
   position: absolute;
   overflow: hidden;
-  border: 1px solid #d8dee8;
+  border: 1px solid var(--canvas-ruler-border, #d8dee8);
   border-radius: 2px;
-  background-color: #f8fafc;
-  color: #64748b;
+  background-color: var(--canvas-ruler-background, #f8fafc);
+  color: var(--canvas-ruler-text, #64748b);
   font-size: 9px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   background-repeat: repeat-x;
   /* 刻度线：细刻度 5 单位、大刻度 25 单位，从贴画布的那一侧向内长 */
   background-image:
-    repeating-linear-gradient(to right, #94a3b8 0 1px, transparent 1px var(--ruler-major-step, 25px)),
-    repeating-linear-gradient(to right, #dbe3ec 0 1px, transparent 1px var(--ruler-minor-step, 5px));
+    repeating-linear-gradient(to right, var(--canvas-ruler-tick-major, #94a3b8) 0 1px, transparent 1px var(--ruler-major-step, 25px)),
+    repeating-linear-gradient(to right, var(--canvas-ruler-tick-minor, #dbe3ec) 0 1px, transparent 1px var(--ruler-minor-step, 5px));
   background-size: var(--ruler-major-step, 25px) 12px, var(--ruler-minor-step, 5px) 6px;
   background-position: left bottom, left bottom;
 }
@@ -16634,8 +16683,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .canvas-ruler-right {
   background-repeat: repeat-y;
   background-image:
-    repeating-linear-gradient(to bottom, #94a3b8 0 1px, transparent 1px var(--ruler-major-step, 25px)),
-    repeating-linear-gradient(to bottom, #dbe3ec 0 1px, transparent 1px var(--ruler-minor-step, 5px));
+    repeating-linear-gradient(to bottom, var(--canvas-ruler-tick-major, #94a3b8) 0 1px, transparent 1px var(--ruler-major-step, 25px)),
+    repeating-linear-gradient(to bottom, var(--canvas-ruler-tick-minor, #dbe3ec) 0 1px, transparent 1px var(--ruler-minor-step, 5px));
   background-size: 12px var(--ruler-major-step, 25px), 6px var(--ruler-minor-step, 5px);
   background-position: right top, right top;
 }
@@ -16646,7 +16695,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .canvas-ruler-label {
   position: absolute;
-  color: #64748b;
+  color: var(--canvas-ruler-text, #64748b);
 }
 
 /* 居中/贴边对齐由组件按刻度位置内联计算（贴边的数字不能居中，否则会被裁） */
@@ -16670,9 +16719,9 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 /* 尺子四角：补上两条尺子端点之间的缺口 */
 .canvas-ruler-corner {
   position: absolute;
-  border: 1px solid #d8dee8;
+  border: 1px solid var(--canvas-ruler-border, #d8dee8);
   border-radius: 2px;
-  background-color: #f8fafc;
+  background-color: var(--canvas-ruler-background, #f8fafc);
 }
 
 /* 状态栏缩放标签：点击回到 100%，带悬浮/点击反馈 */

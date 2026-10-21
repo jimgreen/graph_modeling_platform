@@ -20,7 +20,7 @@ import {
 import { currentQiankunUser, filterSpacesForCurrentUser } from "../qiankunUserSpace";
 import { startAppTour } from "../appTour";
 import { saveLazyBlobFile, type SavedExportFile } from "../fileIO";
-import { Download, Pencil, Send, Trash2, Upload } from "lucide-react";
+import { Download, Moon, Pencil, Send, Sun, Trash2, Upload } from "lucide-react";
 import { SendModelDialog } from "../SendModelDialog";
 
 type AppTopbarProps = {
@@ -668,7 +668,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
     setDeviceLabelsVisible, setDeviceMeasurementsVisible, setEDeviceDefinitionInterfaceDialogOpen, setImageTarget,
     setSmartAlignmentEnabled, setVoltageLevelDialogOpen, smartAlignmentEnabled,
     setElectricFlowVisible, electricFlowVisible,
-    toggleColorDisplayMode, toggleInteractionMode, topologyErrors, topologyWarningPanelClosed
+    toggleColorDisplayMode, toggleInteractionMode, toggleThemeMode, themeMode, topologyErrors, topologyWarningPanelClosed
   } = scope;
 
   return (
@@ -805,6 +805,19 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
           <line x1="12" y1="17" x2="12" y2="17.01"/>
         </svg>
       </button>)}
+      {/* 画布主题切换：紧贴新手引导右侧，图标在太阳/月亮之间交替 */}
+      <button
+        type="button"
+        id="topbar-theme-toggle"
+        className={`topbar-primary-button topbar-theme-toggle${themeMode === "dark" ? " active" : ""}`}
+        onClick={() => toggleThemeMode()}
+        aria-label={themeMode === "dark" ? "切换到浅色模式" : "切换到深色模式"}
+        aria-pressed={themeMode === "dark"}
+        title={themeMode === "dark" ? "切换到浅色模式" : "切换到深色模式"}
+        data-theme-mode={themeMode === "dark" ? "dark" : "light"}
+      >
+        {themeMode === "dark" ? <Moon size={16}/> : <Sun size={16}/>}
+      </button>
       <RuntimeWsIndicator scope={scope}/>
     </header>
       {sendModelDialogOpen && (
@@ -969,7 +982,7 @@ export const RecentGlyphsToolbar = memo(function RecentGlyphsToolbar({ scope }: 
               onClick={() => scope.startLibraryDevicePlacement?.(template)}
             >
               <svg width="100%" height="100%" viewBox={vb}>
-                <MemoDeviceGlyph node={node} colorDisplayMode={scope.colorDisplayMode} colorPalette={scope.colorPalette} />
+                <MemoDeviceGlyph node={node} colorDisplayMode={scope.colorDisplayMode} colorPalette={scope.colorPalette} themeMode={scope.themeMode} />
               </svg>
             </button>
           );

@@ -1,7 +1,9 @@
 import { canvasFitCenterOffsetX, clampNumber } from "../canvasViewport";
 import { canvasFitSideInsetsFromDom, resolveContainerModelPanelParamKeys } from "./appCoreCanvasUtilities";
 import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
+import { themedMeasurementTextColor } from "../themedColors";
 import { shouldPromptBeforeUnload } from "../spaceSwitch";
+import { readInitialWorkspaceUrlIntent, readWorkspaceUrl } from "../workspaceUrl";
 import { resolveEffectiveTemplateParameterDefinitions, withNodesParentModelId } from "../model";
 import { buildEffectiveLibraryTemplates } from "../export/device-definition-shared";
 import { containerFirstComparator, isContainerNode } from "../acContainer";
@@ -226,7 +228,8 @@ export function createPlaceFloatingToolbar(__appScope: Record<string, any>) {
 
 export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
   return (group: MeasurementGroup) => {
-  const { beginMeasurementDrag, finishMeasurementDrag, dragging, draggingNodeIdSet, formatSvgNumber, g, measurementGroupBackgroundColor, measurementGroupBorderColor, measurementGroupBorderDashArray, measurementGroupBorderWidth, measurementGroupCanvasPosition, measurementGroupRenderMetrics, openMeasurementEditorForNode, rect, selectedMeasurementGroup, text, title, visibleNodeById } = __appScope;
+  const { beginMeasurementDrag, finishMeasurementDrag, dragging, draggingNodeIdSet, formatSvgNumber, g, measurementGroupBackgroundColor, measurementGroupBorderColor, measurementGroupBorderDashArray, measurementGroupBorderWidth, measurementGroupCanvasPosition, measurementGroupRenderMetrics, openMeasurementEditorForNode, rect, selectedMeasurementGroup, text, themeMode, themedMeasurementTextColor, title, visibleNodeById } = __appScope;
+
     const node = visibleNodeById.get(group.nodeId);
     if (!node || !group.visible) {
       return null;
@@ -286,7 +289,9 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
               className="measurement-item mi"
               y={formatSvgNumber(textY)}
               dominantBaseline="middle"
-              fill={row.display.color}
+              // display.color 是按浅色画布保存的数据色；深色下默认深灰字会消失，
+              // 经 themedMeasurementTextColor 抬到浅色字，用户自定义的彩色原样保留。
+              fill={themedMeasurementTextColor(row.display.color, themeMode)}
               fontFamily={metrics.fontFamily}
               fontSize={row.fontSize}
               fontWeight={row.display.fontWeight}
@@ -575,12 +580,12 @@ export function createBeginReadonlyBackgroundStaticButtonPointerFeedback(__appSc
 
 export function createRenderReadonlyBackgroundPage(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_CANVAS_BACKGROUND, MemoDeviceGlyph, backgroundPageRender, beginReadonlyBackgroundStaticButtonPointerFeedback, circle, clearStaticButtonFeedback, clipPath, colorDisplayMode, colorPalette, deviceLabelsVisible, g, getConnectionStrokeColor, getNodeScaleX, getNodeScaleY, getTerminalDisplayColor, handleStaticButtonClick, image, isBrowseMode, isBusNode, isRoutableLineDeviceKind, isStaticButtonEnabledForNode, isStaticNode, line, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, nodeLabelShouldRender, nodeLabelText, nodeLabelTextAnchor, nodeLabelTextStyle, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenStyle, nodeLabelVerticalTokenY, path, rect, resolveNodeStateVisual, setStaticButtonFeedback, staticButtonPointerRef, staticButtonVisual, svgStrokeDashArray, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, title } = __appScope;
+  const { DEFAULT_CANVAS_BACKGROUND, MemoDeviceGlyph, backgroundPageRender, beginReadonlyBackgroundStaticButtonPointerFeedback, circle, clearStaticButtonFeedback, clipPath, colorDisplayMode, colorPalette, themeMode, deviceLabelsVisible, g, getConnectionStrokeColor, getNodeScaleX, getNodeScaleY, getTerminalDisplayColor, handleStaticButtonClick, image, isBrowseMode, isBusNode, isRoutableLineDeviceKind, isStaticButtonEnabledForNode, isStaticNode, line, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, nodeLabelShouldRender, nodeLabelText, nodeLabelTextAnchor, nodeLabelTextStyle, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenStyle, nodeLabelVerticalTokenY, path, rect, resolveNodeStateVisual, setStaticButtonFeedback, staticButtonPointerRef, staticButtonVisual, svgStrokeDashArray, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, title } = __appScope;
     if (!backgroundPageRender) {
       return null;
     }
     const backgroundConnectionLineStyle = (edge: Edge) => ({
-      "--connection-color": getConnectionStrokeColor(edge, backgroundPageRender.nodeById, colorDisplayMode, colorPalette)
+      "--connection-color": getConnectionStrokeColor(edge, backgroundPageRender.nodeById, colorDisplayMode, colorPalette, themeMode)
     } as CSSProperties);
     return (
       <g className="background-page-layer" transform={backgroundPageRender.transform} aria-label="背景页面">
@@ -692,8 +697,8 @@ export function createRenderReadonlyBackgroundPage(__appScope: Record<string, an
                     rx="8"
                     className={`node-hitbox ${nodeIsBus ? "bus-hitbox" : ""} ${isStaticNode(node) ? "static-hitbox" : ""}`}
                   />
-                  <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
-                  <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(node)} />
+                  <MemoDeviceGlyph node={node} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(node)} />
+                  <MemoDeviceGlyph node={node} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} themeMode={themeMode} stateVisual={resolveNodeStateVisual(node)} />
                   {staticButtonEnabled && (
                     <rect
                       x={-node.size.width / 2}
@@ -771,7 +776,7 @@ export function createRenderReadonlyBackgroundPage(__appScope: Record<string, an
                           y={nodeLabelVerticalTokenY(index, nodeLabelVerticalSegments(nodeLabelText(node)).length, node)}
                           dominantBaseline="middle"
                           textAnchor="middle"
-                          style={nodeLabelVerticalTokenStyle(node)}
+                          style={nodeLabelVerticalTokenStyle(node, themeMode)}
                         >
                           {segment.text}
                         </text>
@@ -782,7 +787,7 @@ export function createRenderReadonlyBackgroundPage(__appScope: Record<string, an
                         y="0"
                         dominantBaseline="middle"
                         textAnchor={nodeLabelTextAnchor(node)}
-                        style={nodeLabelTextStyle(node)}
+                        style={nodeLabelTextStyle(node, themeMode)}
                       >
                         {nodeLabelText(node)}
                       </text>
@@ -794,7 +799,7 @@ export function createRenderReadonlyBackgroundPage(__appScope: Record<string, an
                     const hideFixedTerminal = nodeIsBus || isStaticNode(node) || isRoutableLineDeviceKind(node.kind);
                     const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
                     const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
-                    const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
+                    const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette, themeMode);
                     return hideFixedTerminal ? null : (
                       <g key={terminal.id} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
                         <line
@@ -1865,7 +1870,7 @@ export function createAppHookCallback46(__appScope: Record<string, any>) {
 
 export function createAppHookCallback47(__appScope: Record<string, any>) {
   return () => {
-  const { colorDisplayMode, colorPalette, connectSource, getBusTerminalType, getTerminalDisplayColor, terminalColor, visibleNodeById } = __appScope;
+  const { colorDisplayMode, colorPalette, themeMode, connectSource, getBusTerminalType, getTerminalDisplayColor, terminalColor, visibleNodeById } = __appScope;
     if (!connectSource) {
       return "";
     }
@@ -1875,7 +1880,7 @@ export function createAppHookCallback47(__appScope: Record<string, any>) {
       sourceNode?.terminals[0];
     const terminalType = terminal?.type ?? (sourceNode ? getBusTerminalType(sourceNode) : undefined);
     return sourceNode && terminal
-      ? getTerminalDisplayColor(sourceNode, terminal, colorDisplayMode, colorPalette)
+      ? getTerminalDisplayColor(sourceNode, terminal, colorDisplayMode, colorPalette, themeMode)
       : terminalType
         ? terminalColor(terminalType, colorPalette)
         : "";
@@ -2715,6 +2720,25 @@ export function createAppHookCallback77(__appScope: Record<string, any>) {
     //    落到旧方案上（表现是「后台方案回来了，但左树展开的是上一个方案」）。
     // 所以每次读都回到 __appScopeRef.current（App.tsx 每帧同步）取当帧的 activeSchemeKey。
     // 兜底给 ""：没有活动方案时本就落到 backendSchemes[0]，语义与旧代码一致。
+    // 地址栏显式指定了模型时，**不能**再用「上次打开的模型」覆盖它。
+    //
+    // 两段代码原本各管一段、互不知情：本 effect 在方案树回来后按 localStorage 的
+    // active-pointer 自动重开上次的模型；App.tsx 的地址栏 effect 按 `#model=<idx>` 打开
+    // 地址栏要的模型。谁后完成谁生效 —— 表现就是「贴一条带模型的链接进去，打开的却是
+    // 上一个模型」。地址栏是更明确的意图，故这里让位，由地址栏那条链路负责打开。
+    const urlModelPending = () => {
+      // 先看「这一次页面打开时地址栏要求什么」，再看当前 hash。
+      //
+      // 只读当前 hash 不够：App.tsx 那条「应用 → 地址栏」的 effect 挂载即写，它会在方案树
+      // 回来之前就把 hash 改写成「当前这个（还没切换过去的）模型」。等本函数在 fetch 回来
+      // 之后才来读，读到的是被投影覆盖过的地址，于是判成「地址栏没要求模型」→ 自动重开
+      // 上次的模型 → 把地址栏要的模型顶掉。
+      if (readInitialWorkspaceUrlIntent().hasModel) {
+        return true;
+      }
+      const url = readWorkspaceUrl();
+      return Boolean(url.hasModel && (url.modelId || url.modelKey));
+    };
     const readActiveSchemeKey = () => __appScopeRef?.current?.activeSchemeKey ?? "";
     let disposed = false;
     let retryAttempt = 0;
@@ -2756,7 +2780,7 @@ export function createAppHookCallback77(__appScope: Record<string, any>) {
           rememberPersistedSchemesPayload(backendPayload);
           suppressNextBackendSchemeSyncRef.current = true;
           setSchemesState(backendSchemes);
-          if (!saveRequiredRef.current) {
+          if (!saveRequiredRef.current && !urlModelPending()) {
             const activePointer = latestActiveProjectPointerRef.current;
             const backendActiveProject = findSavedProjectByActivePointer(backendSchemes, activePointer);
             if (backendActiveProject) {
@@ -4412,7 +4436,7 @@ export function createAppHookCallback133(__appScope: Record<string, any>) {
 
 export function createAppHookCallback134(__appScope: Record<string, any>) {
   return () => {
-  const { CANVAS_LOD_MARKUP_CHUNK_SIZE, DeviceGlyph, activeLayerNodeIdSet, buildSvgTerminalMarkup, colorDisplayMode, colorPalette, customSingleTerminalAnchorToken, deviceStateVisualToken, dragGhostRoutableLineNodeIdSet, escapeXml, exportDeviceMetadataAttributes, formatSvgNumber, getDeviceStrokeColor, getDeviceStrokeWidth, groupTransformPreviewNodeIdSet, imageAssets, initialCanvasDetailedNodeIdSet, isBusNode, isEditMode, isRoutableLineDeviceKind, isStaticNode, libraryTemplateByKind, lodCanvasNodeChunkCacheRef, nodeGeometryTransform, nodeLabelDrag, nodeLabelRotateDrag, pointsToOrthogonalPath, renderSvgElementMarkup, resolveNodeStateVisual, resolveStateVisualImageHref, routableLineDeviceRenderLocalPoints, routableLineEndpointDrag, stableSvgMarkupChunks, stateVisualText, transformDrag, useSimplifiedCanvasNodes, viewportNodes } = __appScope;
+  const { CANVAS_LOD_MARKUP_CHUNK_SIZE, DeviceGlyph, activeLayerNodeIdSet, buildSvgTerminalMarkup, colorDisplayMode, colorPalette, themeMode, customSingleTerminalAnchorToken, deviceStateVisualToken, dragGhostRoutableLineNodeIdSet, escapeXml, exportDeviceMetadataAttributes, formatSvgNumber, getDeviceStrokeColor, getDeviceStrokeWidth, groupTransformPreviewNodeIdSet, imageAssets, initialCanvasDetailedNodeIdSet, isBusNode, isEditMode, isRoutableLineDeviceKind, isStaticNode, libraryTemplateByKind, lodCanvasNodeChunkCacheRef, nodeGeometryTransform, nodeLabelDrag, nodeLabelRotateDrag, pointsToOrthogonalPath, renderSvgElementMarkup, resolveNodeStateVisual, resolveStateVisualImageHref, routableLineDeviceRenderLocalPoints, routableLineEndpointDrag, stableSvgMarkupChunks, stateVisualText, transformDrag, useSimplifiedCanvasNodes, viewportNodes } = __appScope;
     if (!useSimplifiedCanvasNodes || transformDrag || nodeLabelDrag || nodeLabelRotateDrag) {
       lodCanvasNodeChunkCacheRef.current.chunks = [];
       return [];
@@ -4449,7 +4473,7 @@ export function createAppHookCallback134(__appScope: Record<string, any>) {
       const stateText = stateVisualText(stateVisual);
       const stateImageHref = resolveStateVisualImageHref(stateVisual, imageAssets);
       const fill = stateVisual?.fillColor || node.params.fillColor || node.params.backgroundColor || "#ffffff";
-      const stroke = stateVisual?.strokeColor || stateVisual?.color || getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
+      const stroke = stateVisual?.strokeColor || stateVisual?.color || getDeviceStrokeColor(node, colorDisplayMode, colorPalette, themeMode);
       const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
       const stateImageMarkup = stateImageHref && !nodeIsBus
         ? `<image class="lod-node-state-image" href="${escapeXml(stateImageHref)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" preserveAspectRatio="xMidYMid slice"/>`
@@ -4476,8 +4500,8 @@ export function createAppHookCallback134(__appScope: Record<string, any>) {
   </g>
 </g>`;
       }
-      const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
-      const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
+      const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, themeMode, stateVisual }));
+      const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, themeMode, stateVisual }));
       return `<g class="${className}" ${dataNodeAttributes} transform="${escapeXml(transform)}"><title>${escapeXml(node.name)}</title>${glyphMarkup}${stateImageMarkup}${glyphTextMarkup}</g>`;
       }
     });

@@ -63,6 +63,9 @@ import {
 import { getNodeScaleX, getNodeScaleY } from "../model-canvas-ops.ts";
 import { atLeastOneNumber } from "../canvasViewport.ts";
 import { inferESection } from "../model-eexport.ts";
+// 深浅两套画布底色与「未设置」语义统一在 canvasTheme.ts 里定义。
+// 这里曾经自带一份 `#f1f5f9` 字面量副本，与共享常量分叉，导致改主题后导出仍走浅灰。
+import { LIGHT_CANVAS_BACKGROUND } from "../canvasTheme.ts";
 import { isContainerNode, withNodeUpdates } from "../acContainer.ts";
 import {
   DEFAULT_MEASUREMENT_CONFIG,
@@ -108,7 +111,8 @@ import { buildElectricFlowLayerMarkup, buildElectricFlowStyleMarkup } from "./el
 // 宽高导出供 server/svgExport.mjs 复用：适配层不再自带第三份默认字面量
 export const DEFAULT_CANVAS_WIDTH = 1920;
 export const DEFAULT_CANVAS_HEIGHT = 1024;
-const DEFAULT_CANVAS_BACKGROUND = "#f1f5f9";
+// 导出 SVG 没有「屏幕主题」概念：产出的是一张独立的图，默认就按浅色画布（纯白）出图。
+const DEFAULT_CANVAS_BACKGROUND = LIGHT_CANVAS_BACKGROUND;
 
 // CanvasRenderOptions 原唯一定义在 appCoreCanvasUtilities.tsx（.tsx），此处本地定义同构类型（纯类型，编译期擦除），
 // 并按 Task 13 brief 新增 imageAssets 可注入字段。

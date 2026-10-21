@@ -71,8 +71,16 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }: AppCan
     updateEnergyColor, updateVoltageColorRow, visibleEdges, visibleNodes, visibleVoltageColorRows, nodes, edges, voltageBaseClearDialogOpen, voltageBaseClearResultForScope, voltageBaseClearScope,
     voltageBaseSetDialogOpen, voltageBaseSetHasUniformTargets, voltageBaseSetMode, voltageBaseSetModeLabel, voltageBaseSetOptions, voltageBaseSetReady, voltageBaseSetResultForScope, voltageBaseSetScope,
     voltageBaseSetScopeDeviceCount, voltageBaseSetTerminalRows, voltageBaseSetValue, voltageBaseTerminalRowKey, voltageColorVisibility, voltageLevelDialogOpen, voltageLevelSettings, voltageTab,
-    pushUndoSnapshot, writeOperationLog, undoScopeForGraphPatch
+    pushUndoSnapshot, writeOperationLog, undoScopeForGraphPatch,
+    // 配色弹框的色块要跟着画布主题走，并且必须与画布**同源**：内置能流色 / 电压等级色
+    // 各有一对明确的浅色-深色值（ENERGY_THEME_COLORS / VOLTAGE_LEVEL_THEME_COLORS），
+    // 画布取色走 resolveThemedPalette 查表。弹框若只按「对比度够不够」算，那些本来就
+    // 够亮的中亮度色会原样返回 —— 切主题后色块纹丝不动，与画布对不上（用户实测反馈）。
+    themeMode, themeSemanticColor, ENERGY_THEME_COLORS, VOLTAGE_LEVEL_THEME_COLORS
   } = scope;
+  // 把「按类型/电压索引的双值表」摊平成 themeSemanticColor 要的 pair 列表。
+  const energyThemePairs = Object.values(ENERGY_THEME_COLORS ?? {});
+  const voltageThemePairs = Object.values(VOLTAGE_LEVEL_THEME_COLORS ?? {});
   const [activeVoltageBaseDeviceTab, setActiveVoltageBaseDeviceTab] = useState("");
   const [perDeviceScope, setPerDeviceScope] = useState<Record<string, string>>({});
   const voltageBaseDeviceInitRef = useRef(false);
@@ -596,10 +604,12 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }: AppCan
             {colorPaletteTab === "energy" ? (<div className="color-palette-table" aria-label="能流类型配色">
                 {ENERGY_COLOR_ROWS.map((row: EnergyColorRow) => {
                 const color = colorPaletteDraft.energy[row.type] ?? DEFAULT_COLOR_PALETTE.energy[row.type];
+                // 色块/输入框里显示的是「当前主题下真正上画布的那个色」，与画布一致
+                const themedColor = themeSemanticColor(color, themeMode, energyThemePairs);
                 return (<label className="color-palette-row" key={row.type}>
                       <span>{row.label}</span>
-                      <DeferredColorInput value={color} fallback={DEFAULT_COLOR_PALETTE.energy[row.type]} onCommit={(value: string) => updateEnergyColor(row.type, value)} aria-label={`${row.label}颜色`}/>
-                      <BufferedTextInput value={color} onCommit={(nextValue: string) => updateEnergyColor(row.type, nextValue)} aria-label={`${row.label}颜色值`}/>
+                      <DeferredColorInput value={themedColor} fallback={themeSemanticColor(DEFAULT_COLOR_PALETTE.energy[row.type], themeMode, energyThemePairs)} onCommit={(value: string) => updateEnergyColor(row.type, value)} aria-label={`${row.label}颜色`}/>
+                      <BufferedTextInput value={themedColor} onCommit={(nextValue: string) => updateEnergyColor(row.type, nextValue)} aria-label={`${row.label}颜色值`}/>
                     </label>);
             })}
               </div>) : (<div className="voltage-color-panel">
@@ -630,7 +640,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }: AppCan
                         {filteredRows.length > 0 ? (filteredRows.map((row: VoltageColorRow) => (<div className="voltage-color-row" key={row.key} style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 12, padding: "2px 12px", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
                               <BufferedTextInput value={row.voltage} onCommit={(nextValue: string) => updateVoltageColorRow(row.key, { voltage: nextValue })} aria-label="电压基值"/>
                               <div className="color-field" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                <DeferredColorInput value={row.color} fallback="#64748b" onCommit={(value: string) => updateVoltageColorRow(row.key, { color: value })} aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色`}/>
+                                <DeferredColorInput value={themeSemanticColor(row.color, themeMode, voltageThemePairs)} fallback={themeSemanticColor("#64748b", themeMode, voltageThemePairs)} onCommit={(value: string) => updateVoltageColorRow(row.key, { color: value })} aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色`}/>
                               </div>
                               <button type="button" onClick={() => deleteVoltageColorRow(row.key)} style={{ padding: "4px 8px" }}>删除</button>
                             </div>))) : (<div className="voltage-color-empty" style={{ padding: 12, textAlign: "center", color: "#94a3b8" }}>当前模型暂无{voltageTab === "ac" ? "交流" : "直流"}电压等级。</div>)}

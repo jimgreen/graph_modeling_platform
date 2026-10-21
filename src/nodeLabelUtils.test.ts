@@ -9,6 +9,7 @@ import {
   nodeLabelDisplayMode,
   nodeLabelFontSize,
   nodeLabelOffset,
+  nodeLabelExplicitColor,
   nodeLabelRotationFromPoint,
   nodeLabelShouldRender,
   nodeLabelText,
@@ -540,6 +541,39 @@ describe("nodeLabelTextStyle：默认值一律走 `||`", () => {
       expect(st.writingMode, `rotation=${rotation}`).toBe("horizontal-tb");
       expect(st.textOrientation, `rotation=${rotation}`).toBeUndefined();
     }
+  });
+});
+
+describe("nodeLabelTextStyle：画布主题（浅色纯白 / 深色纯黑）", () => {
+  test("未设置 _labelColor 时随主题切换默认色", () => {
+    expect(nodeLabelTextStyle(node(), "light").fill).toBe("#334155");
+    expect(nodeLabelTextStyle(node(), "dark").fill).toBe("#e2e8f0");
+  });
+
+  test("★ 存量节点把默认色 #334155 写进了 params，也要跟随深色主题", () => {
+    // 新建节点时默认色会被真实写进 params._labelColor，
+    // 若直接 `_labelColor || 主题色` 会让深色画布上停留深灰字（纯黑底上读不出来）。
+    const legacy = withParam("_labelColor", "#334155");
+    expect(nodeLabelTextStyle(legacy, "light").fill).toBe("#334155");
+    expect(nodeLabelTextStyle(legacy, "dark").fill).toBe("#e2e8f0");
+    // 大小写不同也算默认色
+    expect(nodeLabelTextStyle(withParam("_labelColor", "#334155"), "dark").fill).toBe("#e2e8f0");
+    // 深色默认值被写回 params 时同理
+    expect(nodeLabelTextStyle(withParam("_labelColor", "#e2e8f0"), "light").fill).toBe("#334155");
+  });
+
+  test("用户显式设置的颜色不随主题变", () => {
+    const custom = withParam("_labelColor", "#ff0000");
+    expect(nodeLabelTextStyle(custom, "light").fill).toBe("#ff0000");
+    expect(nodeLabelTextStyle(custom, "dark").fill).toBe("#ff0000");
+  });
+
+  test("nodeLabelExplicitColor：区分“默认值”与“用户自选值”", () => {
+    expect(nodeLabelExplicitColor(node())).toBeNull();
+    expect(nodeLabelExplicitColor(withParam("_labelColor", ""))).toBeNull();
+    expect(nodeLabelExplicitColor(withParam("_labelColor", "#334155"))).toBeNull();
+    expect(nodeLabelExplicitColor(withParam("_labelColor", "#E2E8F0"))).toBeNull();
+    expect(nodeLabelExplicitColor(withParam("_labelColor", "#ff0000"))).toBe("#ff0000");
   });
 });
 

@@ -1,10 +1,12 @@
 import { Select, Input, Button, InputNumber } from "antd";
 import { canvasFitCenterOffsetX, clampNumber } from "../canvasViewport";
+import { migrateLegacyCanvasBackground } from "../canvasTheme";
 import { canvasFitSideInsetsFromDom } from "./appCoreCanvasUtilities";
 import { DEFAULT_MEASUREMENT_CONFIG, defaultMeasurementDisplayFormat } from "../measurements";
 import { WindowCloseButton } from "../WindowCloseButton";
 import { setSkipSaveCheck } from "./appDeviceDefinitionFactories";
 import { switchToSpace } from "../spaceSwitch";
+import { findSavedProjectByIndex } from "../workspaceUrl";
 import { rebuildContainerExemptConnectionRoutes, rebuildContainerExemptRoutableLineDeviceRoutes, reconcileTransformerSideVoltageParamsWithTerminals, routeEdgesForStoredRendering } from "../model-routing";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
 import { GLOBAL_LINE_ID_PARAM, applyGlobalLineRecordToNode, deriveLocalDeviceIndexCounters, globalLineEndpointPlacementFailureMessage, globalLineSourcePlacementFailureMessage, shouldManageLineGlobally, shouldUseGlobalLineForEndpoints } from "../global-lines";
@@ -3069,7 +3071,7 @@ export function createClearActiveProjectDisplay(__appScope: Record<string, any>)
 
 export function createLoadSavedProject(__appScope: Record<string, any>) {
   return (project: SavedProjectRecord, schemeId?: string) => {
-  const { CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, assignMissingDeviceIndexes, cachedRoutedEdgesRef, canvasFrameRef, clearNodeDragMoveSchedule, clearRefreshRecoveryProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, findSchemeForProject, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, isLineSegmentBusNode, isRoutableLineDeviceKind, lastBusTerminalSyncEndpointRevisionRef, libraryTemplateByKind, lockProjectEdgeTerminals, measurementConfig, normalizeModelGroups, normalizeNodeTerminalsByTemplate, normalizeNodeTerminalsWithTemplate, normalizeProjectLayers, normalizeProjectMeasurements, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, rebuildRoutableLineDeviceRouteUpdates, reconcileNodeWithDefinition, reconcileProjectMeasurementsWithConfig, requestCanvasFrameCenter, resetConnectPreviewState, resolveConfiguredBackgroundLayerIds, selectSingleProject, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasSelectionScope, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setCurrentUnit, setDeviceIndexCounters, setDragging, setElectricFlowSettings, setElectricFlowVisible, setFeeder, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setManualPathDrag, setMarquee, setModelType, setModifierSelectionPress, setPowerBaseValue, setPowerUnit, setProjectIdx, setProjectMeasurements, setProjectName, setRewiring, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSubcontrolarea, setSubstation, setTaiqu, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
+  const { CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, assignMissingDeviceIndexes, cachedRoutedEdgesRef, canvasFrameRef, clearNodeDragMoveSchedule, clearRefreshRecoveryProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, findSchemeForProject, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, isLineSegmentBusNode, isRoutableLineDeviceKind, lastBusTerminalSyncEndpointRevisionRef, libraryTemplateByKind, lockProjectEdgeTerminals, measurementConfig, normalizeModelGroups, normalizeNodeTerminalsByTemplate, normalizeNodeTerminalsWithTemplate, normalizeProjectLayers, normalizeProjectMeasurements, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, rebuildRoutableLineDeviceRouteUpdates, reconcileNodeWithDefinition, reconcileProjectMeasurementsWithConfig, requestCanvasFrameCenter, resetConnectPreviewState, resolveConfiguredBackgroundLayerIds, selectSingleProject, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasSelectionScope, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setCurrentUnit, setDeviceIndexCounters, setDragging, setElectricFlowSettings, setElectricFlowVisible, setFeeder, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setManualPathDrag, setMarquee, setModelType, setModifierSelectionPress, setPowerBaseValue, setPowerUnit, setProjectIdx, setProjectMeasurements, setProjectName, setRewiring, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSubcontrolarea, setSubstation, setTaiqu, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
     if (schemeId === undefined) {
       schemeId = findSchemeForProject(project.id)?.id ?? "";
     }
@@ -3150,7 +3152,7 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     setCanvasWidth(nextCanvasBounds.width);
     setCanvasHeight(nextCanvasBounds.height);
     setAllowAutoExpandCanvas(project.project.allowAutoExpandCanvas ?? true);
-    setCanvasBackgroundColor(project.project.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND);
+    setCanvasBackgroundColor(migrateLegacyCanvasBackground(project.project.canvasBackgroundColor));
     setCanvasBackgroundImage(project.project.canvasBackgroundImage ?? "");
     setCanvasBackgroundImageAssetId(project.project.canvasBackgroundImageAssetId ?? "");
     setBackgroundProjectId(project.project.backgroundProjectId ?? "");
@@ -3247,6 +3249,55 @@ export function createLoadSavedProjectRecord(__appScope: Record<string, any>) {
       }
     }
     loadSavedProject(projectToLoad, resolvedSchemeId);
+    return true;
+  };
+}
+
+// 地址栏指定了模型（`#space=…&model=<idx>&scheme=<slug>`）时按它打开。
+//
+// 与顶栏/方案树点击走**同一条** `requestLoadSavedProject`：有未保存修改会弹确认框，
+// 而不是绕过它把用户的草稿直接冲掉。找不到记录时返回 false 且不打扰用户 ——
+// 提示由调用方（App.tsx 的地址栏同步 effect）按重试计数决定，避免每次刷新都弹一次。
+//
+// 定位顺序：**先 idx，后 key**。
+// - idx（`project.idx`）是后端分配的稳定序号，跨方案唯一、改名或移动方案后不变
+//   （`server/server.mjs:3835` `allocateStableProjectIndex`），地址栏里放的就是它；
+// - key（`project:<编码后的路径>`）只在旧格式地址里出现，兼容历史书签/聊天记录。
+// 两者都定位不到才返回 false —— 不要一失败就回退成「打开第一个模型」，那会静默打开错的东西。
+export function createOpenProjectFromUrl(__appScope: Record<string, any>) {
+  return async (target: string, schemeHint?: string, legacyModelKey?: string): Promise<boolean> => {
+    const { enterBrowseMode, findSavedProjectRecordInSchemes, requestLoadSavedProject, schemes } = __appScope;
+    const raw = String(target ?? "");
+    const keyHint = String(legacyModelKey ?? "");
+    if (!raw && !keyHint) {
+      // 地址栏显式要求"没有任何模型打开"
+      enterBrowseMode?.();
+      return true;
+    }
+    let found: { record: any; scheme: any } | null = null;
+    if (Number.isSafeInteger(Number(raw)) && Number(raw) > 0) {
+      found = findSavedProjectByIndex(schemes, Number(raw));
+    }
+    if (!found) {
+      // 旧格式（`project:…`）或 idx 已失效：退回按运行期 key 找
+      const byKey = keyHint || raw;
+      if (byKey && !/^\d+$/u.test(byKey)) {
+        found = findSavedProjectRecordInSchemes?.(schemes, byKey) ?? null;
+      }
+    }
+    if (!found) {
+      return false;
+    }
+    if (found.record.id === __appScope.activeProjectKey) {
+      return true;
+    }
+    // 必须传方案**运行期 id**（`scheme:<编码路径>`），不是地址栏里那个 `scheme=<slug>`。
+    //
+    // `loadSavedProjectRecord` 拿它去 `schemePathForScheme` 解析出磁盘路径，传 slug 解析不出来
+    // 就退化成 `schemePathForProject(project.id)`；一旦那个函数按 id 找不到对应方案，就会
+    // 报「未找到所属方案路径」或干脆加载到错的位置。slug 只用于让地址栏可读，
+    // 定位始终以 `findSavedProjectByIndex` 返回的 `scheme` 对象为准。
+    requestLoadSavedProject?.(found.record, found.scheme?.id || undefined);
     return true;
   };
 }
