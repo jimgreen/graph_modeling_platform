@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { Children, Fragment, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { Button, message } from "antd";
 
@@ -16,6 +17,7 @@ import {
   createRenderSelectedNodeMeasurementTable,
   createPersistRefreshRecoveryNow,
   createRenderMultiNodeDragOverlay,
+  createRenderSingleTransformRotateOriginGhost,
   createSaveMeasurementConfigDialog,
   createUpdateMeasurementDrag,
   createUpdateMeasurementItem,
@@ -1345,6 +1347,51 @@ describe("measurement canvas interactions", () => {
     expect(buildMeasurementGroupsMarkup).toHaveBeenCalledWith(
       expect.objectContaining({ position: { x: 120, y: 80 } })
     );
+  });
+
+  // 回归：单节点旋转起点幽灵曾漏从 __appScope 解构 themeMode，旋转时直接
+  // ReferenceError: themeMode is not defined（文件带 @ts-nocheck，tsc 拦不住）。
+  test("forwards canvas theme mode to the rotate origin ghost glyph", () => {
+    const ghostSourceNode = {
+      id: "node-rotate",
+      name: "发电机",
+      kind: "generator",
+      params: {},
+      position: { x: 300, y: 200 },
+      size: { width: 80, height: 60 },
+      rotation: 15,
+      scale: 1,
+      scaleX: 1,
+      scaleY: 1,
+      terminals: []
+    };
+    const MemoDeviceGlyph = (props: any) => createElement("g", { "data-theme": String(props.themeMode) });
+    const renderRotateOriginGhost = createRenderSingleTransformRotateOriginGhost({
+      MemoDeviceGlyph,
+      colorDisplayMode: "default",
+      colorPalette: {},
+      g: "g",
+      isBusNode: () => false,
+      isGroupTransformDrag: () => false,
+      isStaticNode: () => false,
+      nodeById: new Map([["node-rotate", ghostSourceNode]]),
+      nodeGeometryTransform: () => "",
+      rect: "rect",
+      renderNodePreviewImageContent: () => null,
+      resolveNodeStateVisual: () => null,
+      themeMode: "dark",
+      transformDrag: {
+        kind: "rotate",
+        nodeId: "node-rotate",
+        originalNode: ghostSourceNode,
+        previewPoint: { x: 320, y: 220 }
+      },
+      visibleNodeIdSet: new Set(["node-rotate"])
+    } as any);
+
+    const markup = renderToStaticMarkup(renderRotateOriginGhost() as ReactElement);
+
+    expect(markup).toContain('data-theme="dark"');
   });
 
   test("renders dragged origin measurement groups as non-interactive ghosts", () => {

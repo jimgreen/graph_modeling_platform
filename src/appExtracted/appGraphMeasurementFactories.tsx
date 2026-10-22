@@ -1199,7 +1199,7 @@ export function createRenderGroupTransformPhotoPreview(__appScope: Record<string
 
 export function createRenderSingleTransformRotateOriginGhost(__appScope: Record<string, any>) {
   return () => {
-  const { MemoDeviceGlyph, colorDisplayMode, colorPalette, g, isBusNode, isGroupTransformDrag, isStaticNode, nodeById, nodeGeometryTransform, rect, renderNodePreviewImageContent, resolveNodeStateVisual, transformDrag, visibleNodeIdSet } = __appScope;
+  const { MemoDeviceGlyph, colorDisplayMode, colorPalette, g, isBusNode, isGroupTransformDrag, isStaticNode, nodeById, nodeGeometryTransform, rect, renderNodePreviewImageContent, resolveNodeStateVisual, themeMode, transformDrag, visibleNodeIdSet } = __appScope;
     if (!transformDrag || isGroupTransformDrag(transformDrag) || transformDrag.kind !== "rotate" || !transformDrag.previewPoint) {
       return null;
     }
