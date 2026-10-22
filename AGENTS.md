@@ -45,6 +45,20 @@ gitnexus 块的 MUST（impact / detect_changes）适用于**中、大档**；小
 - 改动 `data/` 下任何模型/配置 JSON 前：先 dry-run 打印将改动的条数，`--apply` 时逐文件 `.bak` 备份，改完再 dry-run 一次验幂等。
 - 一次性数据修复脚本**只写到"能跑一次"为止**；不为 3 个节点写缩进探测/多空间枚举之类的通用工具。备份与幂等校验不省，其余不省时间的地方都可以省。
 
+## 提交与推送（默认动作，无需再确认）
+
+用户说「提交并推送」时，**两条远程都推**，顺序固定：
+
+```bash
+git push origin HEAD:master
+git push origin_tsysmart HEAD:refs/for/master
+```
+
+- `origin` = GitHub（`git@github.com:jimgreen/graph_modeling_platform.git`），推 `master` 分支。
+- `origin_tsysmart` = Gerrit（`ssh://foree@tsysmart.com:29418/graph_modeling_platform`），推 `refs/for/master` 走评审。Gerrit 侧 `master` 与 GitHub `origin/master` 目前指向同一提交，所以这样推不会分叉。
+- 提交前先跑 `mcommit` 技能收敛为单个 commit（`Change-Id` 复用最底部提交的）；Gerrit 的 `commit-msg` hook 会生成 `Change-Id`，不要在 message 里手写。
+- 推送成功后把 Gerrit 返回的 change 链接（`https://tsysmart.com:8080/review/c/graph_modeling_platform/+/<id>`）报给用户。
+
 ## 输出
 
 - 汇报代码改动时**不必**为每条改动生成 dsh-ui 组件；小档改动用纯文本 + 关键 diff 行即可。组件只用于确实需要并排对比/多指标/流程图的场合。
