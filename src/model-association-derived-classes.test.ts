@@ -19,9 +19,13 @@ import {
   normalizeDefaultDeviceSize,
   parseEDeviceDefinitionFile,
   resolveEffectiveTemplateParameterDefinitionGroups,
-  templateDerivedComponentLibraryInfo
+  templateDerivedComponentLibraryInfo,
+  // 走 ./model 这个统一入口，而不是直接引 ./model-routing：model.ts 末尾有
+  // `export * from "./model-routing.ts"`（src/model.ts:10277），两条路径等价；
+  // 但 src/model-routable-line.test.ts 等既有用例一律从 ./model 取，
+  // 混用会让「这个符号到底属于哪个模块」无从判断。改模块内部结构时也不必跟着改测试的 import。
+  terminalStubSegment
 } from "./model";
-import { terminalStubSegment } from "./model-routing";
 
 const modelAssociationDerivedClassCases = [
   { kind: "ac-station-source", label: "交流厂站电源", baseKind: "ac-source", baseClass: "ACGenerator", derivedClass: "ACStationGen", terminalType: "ac", relationKey: "idx_acgenerator", modelType: "厂站" },
@@ -190,6 +194,15 @@ describe("model association derived power-source and load classes", () => {
     expect(createDefaultNode("ac-district-source", { x: 0, y: 0 }).terminals[0].anchor).toEqual({ x: 0, y: -0.5 });
     expect(createDefaultNode("dc-station-source", { x: 0, y: 0 }).terminals[0].anchor).toEqual({ x: 0, y: -0.5 });
     expect(createDefaultNode("ac-feeder-source", { x: 0, y: 0 }).terminals[0].anchor).toEqual({ x: -0.5, y: 0 });
+  });
+
+  test("./model 是 ./model-routing 的再导出入口，两条路径拿到同一个函数", async () => {
+    // 为什么要钉这条：本仓 22 个 src/*.test.ts 直接 `from "./model-routing"`（测路由模块本身），
+    // 而 src/model-routable-line.test.ts 等既有用例从 `./model` 取 terminalStubSegment。
+    // 两条路径**都合法**的前提就是 src/model.ts:10277 的 `export * from "./model-routing.ts";`。
+    // 一旦这行被删，走 `./model` 的调用方会静默拿不到该符号 —— 这里用同一性断言把它钉住。
+    const [modelModule, routingModule] = await Promise.all([import("./model"), import("./model-routing")]);
+    expect(modelModule.terminalStubSegment).toBe(routingModule.terminalStubSegment);
   });
 
   test("adds model_id as the only derived-specific editable exported number enum", () => {
