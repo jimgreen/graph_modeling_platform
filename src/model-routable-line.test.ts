@@ -729,7 +729,7 @@ test("routes routable line-like devices around endpoint device bodies", () => {
 });
 
 
-test("routes a straight line to a right-side model-association terminal without crossing its body", () => {
+test("routes a straight line to a top-side model-association terminal without crossing its body", () => {
   const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
   const source = { ...createDefaultNode("ac-station-source", { x: 140, y: 200 }), id: "station-source" };
   const target = { ...createDefaultNode("ac-source", { x: 520, y: 200 }), id: "target-source" };
@@ -764,7 +764,14 @@ test("routes a straight line to a right-side model-association terminal without 
 
 test("repairs a saved straight line that crosses a right-side model-association endpoint body", () => {
   const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
-  const source = { ...createDefaultNode("ac-station-source", { x: 140, y: 200 }), id: "saved-station-source" };
+  // 厂站派生电源的默认端子已改到上边（与同层级负荷一致）。这里显式还原「迁移前落盘」的右侧
+  // 端子：未跑迁移的旧模型文件里仍是 {x:0.5,y:0}，修复逻辑必须继续覆盖这种既有数据。
+  const stationSource = createDefaultNode("ac-station-source", { x: 140, y: 200 });
+  const source = {
+    ...stationSource,
+    id: "saved-station-source",
+    terminals: stationSource.terminals.map((terminal) => ({ ...terminal, anchor: { x: 0.5, y: 0 } }))
+  };
   const target = { ...createDefaultNode("ac-source", { x: 520, y: 200 }), id: "saved-target-source" };
   const start = getTerminalPoint(source, "t1");
   const end = getTerminalPoint(target, "t1");
@@ -825,7 +832,7 @@ test("keeps a container-exempt routable line path without re-routing it on repai
   expect(repairedNodes.find((node) => node.id === line.id)).toBe(routedLine);
 });
 
-test("routes a vertical dogleg to a right-side model-association terminal without crossing its body", () => {
+test("routes a vertical dogleg to a top-side model-association terminal without crossing its body", () => {
   const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
   const source = { ...createDefaultNode("ac-station-source", { x: 420, y: 80 }), id: "upper-station-source" };
   const target = { ...createDefaultNode("ac-station-source", { x: 560, y: 300 }), id: "lower-station-source" };

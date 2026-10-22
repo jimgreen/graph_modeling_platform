@@ -202,6 +202,16 @@ export function createLoadSymbolExportSchemes(__appScope: Record<string, any>) {
     try {
       const payload = await fetchBackendSymbolExportSchemes();
       setSymbolExportSchemes(payload.schemes);
+      // 读失败必须说出来：否则「读取失败」和「一个方案都没存过」在界面上完全同形，
+      // 用户会在这个假空列表上再保存一次，把磁盘上的原方案整份覆盖（有 .bak 兜底但不该靠它）。
+      if (payload.readError) {
+        const detail = `${payload.readError.code}${payload.readError.message ? `：${payload.readError.message}` : ""}`;
+        setSymbolExportSchemesStatus(
+          `读取后端方案失败（${detail}）—— 这里显示的不是真实方案列表，保存会覆盖后台原方案。`
+        );
+        writeOperationLog(`读取导出方案失败：${detail}`);
+        return payload.schemes;
+      }
       setSymbolExportSchemesStatus(
         payload.schemes.length > 0 ? `已读取 ${payload.schemes.length} 个后端方案。` : "后端暂无已保存方案。"
       );

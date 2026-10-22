@@ -2,7 +2,7 @@
 // 打真实请求测图片/方案/配置 CRUD + 错误码（400/404/409）。
 // 动态 import：在设 env 后加载 server.mjs，确保 dataRoot 指向 tmpdir。
 
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
@@ -517,5 +517,57 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
     expect(migrated.status).toBe(200);
     expect(migrated.json).not.toHaveProperty("savedAt");
     expect(JSON.parse(await readFile(libraryPath, "utf8"))).not.toHaveProperty("savedAt");
+  });
+});
+
+// 图元导出方案的 HTTP 面：路由只是把 symbolExportSchemes.mjs 的结果原样回给前端，
+// 但「读失败」这一格必须穿过路由仍然可见 —— 前端靠 readError 区分「读不到」与「没配置」，
+// 一旦路由层把它抹掉，界面又会回到「暂无已保存方案 → 用户再保存一次 → 原方案被覆盖」那条路。
+describe("图元导出方案 /webgrp/symbol-export-schemes", () => {
+  const schemeFile = () => join(dataDir, "settings", "symbol-export-schemes.json");
+
+  test("空目录：exists=false 且不带 readError（从没配置过）", async () => {
+    const got = await fetchJson(apiPath("/symbol-export-schemes"));
+    expect(got.status).toBe(200);
+    expect(got.json.exists).toBe(false);
+    expect(got.json.schemes).toEqual([]);
+    expect(got.json).not.toHaveProperty("readError");
+  });
+
+  test("PUT 落盘后 GET 读回；再次 PUT 时原文件已被备份成 .bak", async () => {
+    const saved = await fetchJson(apiPath("/symbol-export-schemes"), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ schemes: [{ name: "方案甲", templateKinds: ["ac-breaker"] }] })
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.json.ok).toBe(true);
+
+    const got = await fetchJson(apiPath("/symbol-export-schemes"));
+    expect(got.json.exists).toBe(true);
+    expect(got.json.schemes.map((s) => s.name)).toEqual(["方案甲"]);
+
+    await fetchJson(apiPath("/symbol-export-schemes"), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ schemes: [{ name: "方案乙" }] })
+    });
+
+    const backups = (await readdir(join(dataDir, "settings")))
+      .filter((name) => name.startsWith("symbol-export-schemes.json.") && name.endsWith(".bak"));
+    expect(backups).toHaveLength(1);
+    // 备份的是被覆盖掉的「方案甲」，不是本次写入的「方案乙」
+    const backup = JSON.parse(await readFile(join(dataDir, "settings", backups[0]), "utf8"));
+    expect(backup.schemes.map((s) => s.name)).toEqual(["方案甲"]);
+  });
+
+  test("★ 文件损坏：GET 仍 200，但带上 readError，前端才能说「读失败」而非「没有方案」", async () => {
+    await mkdir(join(dataDir, "settings"), { recursive: true });
+    await writeFile(schemeFile(), "{ 不是 JSON", "utf8");
+
+    const got = await fetchJson(apiPath("/symbol-export-schemes"));
+    expect(got.status).toBe(200);
+    expect(got.json.exists).toBe(false);
+    expect(got.json.readError.code).toBe("SyntaxError");
   });
 });

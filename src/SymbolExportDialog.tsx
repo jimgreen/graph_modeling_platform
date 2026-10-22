@@ -345,11 +345,16 @@ export function SymbolExportDialog({
       await onSaveScheme({ name, templateKinds: selectedKinds, filterKeys: activeFilterKeys });
     } finally {
       setBusy(false);
+      // 必须清掉本地「正在保存…」，否则它会一直压在 statusMessage 上面
+      //（渲染取 status || statusMessage）：保存成功看不到「已保存到后端」，
+      // 保存失败也看不到「已在本地生效，但…」—— 失败被蒙在鼓里的直接原因。
+      setStatus("");
     }
   }, [activeFilterKeys, onSaveScheme, schemeName, selectedKinds]);
 
   const handleDeleteScheme = useCallback(async (scheme: SymbolExportScheme) => {
     setBusy(true);
+    setStatus("正在删除方案…");
     try {
       await onDeleteScheme(scheme.id);
       if (activeSchemeId === scheme.id) {
@@ -357,6 +362,7 @@ export function SymbolExportDialog({
       }
     } finally {
       setBusy(false);
+      setStatus("");
     }
   }, [activeSchemeId, onDeleteScheme]);
 

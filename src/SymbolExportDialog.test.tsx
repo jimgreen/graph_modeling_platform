@@ -156,6 +156,17 @@ describe("SymbolExportDialog", () => {
     expect(render({ statusMessage: "后端暂无已保存方案。" })).toContain("后端暂无已保存方案。");
   });
 
+  test("保存/删除结束后必须清本地 status，否则外部提示被永久压住（回归：卡在「正在保存方案…」）", () => {
+    // 渲染取 `status || statusMessage`。保存时 setStatus("正在保存方案…") 之后若不清空，
+    // 弹窗就一直停在「正在保存方案…」——成功看不到「已保存到后端」，
+    // **失败也看不到「已在本地生效，但…」**，保存失败被完全蒙住。
+    const source = readFileSync(new URL("./SymbolExportDialog.tsx", import.meta.url), "utf8");
+    const saveBody = source.slice(source.indexOf("const handleSaveScheme"), source.indexOf("const handleDeleteScheme"));
+    const deleteBody = source.slice(source.indexOf("const handleDeleteScheme"), source.indexOf("const handleExport "));
+    expect(saveBody).toContain('setStatus("")');
+    expect(deleteBody).toContain('setStatus("")');
+  });
+
   test("关闭按钮带可达名称（与窗口关闭覆盖扫描一致）", () => {
     expect(render()).toContain('aria-label="关闭导出图元Symbol"');
   });
@@ -275,6 +286,39 @@ describe("已选图元清单的方格布局契约", () => {
     const source = readFileSync(new URL("./SymbolExportDialog.tsx", import.meta.url), "utf8");
     expect(source).toContain('className="symbol-export-filter-note"');
     expect(source).toContain("取消勾选即排除该分类");
+  });
+});
+
+describe("侧栏三块的高度分配（用户报告「方案文件存在、弹窗里一条也看不到」的回归）", () => {
+  // 现象：data/settings/symbol-export-schemes.json 里确有方案、接口也回了、DOM 里 .symbol-export-scheme-row
+  // 也在，但屏幕上一条都看不见。实测（1829×952 视口）：侧栏 396px，导出方案块只分到 73px，
+  // 块内「头部 20px + 保存行 26px」吃光后清单独占的轨道被压成 0px，行渲染在块底之外被 overflow:hidden 裁掉。
+  // 本仓无视觉回归工具，故直接读样式表钉住「第三块必须有 px 下限」这条约束。
+  const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+  const ruleBody = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at).toBeGreaterThanOrEqual(0);
+    return css.slice(at, css.indexOf("}", at));
+  };
+
+  test("导出方案块所在轨道带 px 下限，不会被压成 0 高度", () => {
+    const side = ruleBody(".symbol-export-side");
+    // 纯 fr（minmax(0, 1fr)）就是出问题时的写法：把下限还回去等于复现该 bug。
+    expect(side).not.toContain("grid-template-rows: auto minmax(0, 2fr) minmax(0, 1fr);");
+    const floor = /grid-template-rows:\s*auto\s+minmax\(0,\s*2fr\)\s+minmax\((\d+)px,\s*1fr\);/u.exec(side);
+    expect(floor).not.toBeNull();
+    // 126px = 内边距 16 + gap 12 + 头部 20 + 保存行 26 + 两行方案 52；低于 100px 连一行都露不出来。
+    expect(Number(floor![1])).toBeGreaterThanOrEqual(100);
+  });
+
+  test("清单靠自身滚动，侧栏在极端短屏下也内滚而不是裁切", () => {
+    expect(ruleBody(".symbol-export-scheme-list")).toContain("overflow: auto;");
+    expect(ruleBody(".symbol-export-side")).toContain("overflow-y: auto;");
+  });
+
+  test("弹窗最小高度与第三块下限配套", () => {
+    // 低到 520px 时侧栏只剩 396px，第三块有了下限也会把「已选图元」挤到只剩一行。
+    expect(ruleBody(".symbol-export-dialog")).toContain("min-height: min(560px, calc(100vh - 24px));");
   });
 });
 

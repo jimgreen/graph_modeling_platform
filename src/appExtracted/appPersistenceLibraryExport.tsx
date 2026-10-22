@@ -511,17 +511,34 @@ export async function saveBackendDeviceLibraryPayload(normalizedDeviceLibraryPay
 
 // 图元 Symbol 导出方案：独立后端文件（<空间>/settings/symbol-export-schemes.json），
 // 不进 device-library 的归一化链路 —— 方案只是勾选快照，不参与图元库的迁移契约。
+//
+// readError 必须一路带出去：读失败（权限/占用/坏 JSON）与「从没配置过」都回 exists:false，
+// 界面若只看 schemes 就都是「暂无已保存方案」。用户在这个假空列表上再保存一次，
+// 就会把磁盘上原来的方案整份覆盖掉 —— 「之前存的方案不见了」正是这么发生的。
 export async function fetchBackendSymbolExportSchemes(): Promise<{
   schemes: SymbolExportScheme[];
   exists: boolean;
+  readError: { code: string; message: string } | null;
 }> {
-  const payload = await fetchBackendJson<{ schemes?: unknown; symbolExportSchemes?: unknown; exists?: boolean }>(
+  const payload = await fetchBackendJson<{
+    schemes?: unknown;
+    symbolExportSchemes?: unknown;
+    exists?: boolean;
+    readError?: { code?: unknown; message?: unknown };
+  }>(
     apiPath("/symbol-export-schemes"),
     "读取后台导出方案失败。"
   );
+  const rawError = payload?.readError;
   return {
     ...normalizeSymbolExportSchemes(payload),
-    exists: Boolean(payload.exists)
+    exists: Boolean(payload.exists),
+    readError: rawError && typeof rawError === "object"
+      ? {
+          code: String(rawError.code ?? "unknown"),
+          message: String(rawError.message ?? "")
+        }
+      : null
   };
 }
 

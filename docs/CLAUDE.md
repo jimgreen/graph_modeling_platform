@@ -11,6 +11,7 @@
 
 | File | Description |
 |------|-------------|
+| `ARCHITECTURE.md` | **功能清单 / 代码映射 / 架构风格索引**。查「有没有这个功能」「某符号在哪」时读这里（由原 CLAUDE.md 移交，按需查阅，不必通读） |
 | `DESIGN_THIRD_PARTY_API.md` | 第三方 API 设计（三域 + 运行时态 WS 桥接） |
 | `REQUIREMENTS_THIRD_PARTY_API.md` | 第三方 API 需求 |
 | `WORKFLOW_THIRD_PARTY_API.md` | 第三方 API 工作流 |

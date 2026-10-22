@@ -458,6 +458,30 @@ describe("方案读写", () => {
     expect(statusMessage).toContain("1");
   });
 
+  test("加载方案：后端读失败时状态必须点明「不是空、是读不到」", async () => {
+    stubFetch(() => ({
+      body: {
+        exists: false,
+        schemes: [],
+        readError: { code: "EACCES", message: "permission denied" }
+      }
+    }));
+    let statusMessage = "";
+    const load = createLoadSymbolExportSchemes({
+      setSymbolExportSchemes: () => undefined,
+      setSymbolExportSchemesStatus: (next: string) => {
+        statusMessage = next;
+      },
+      writeOperationLog: () => undefined
+    });
+
+    expect(await load()).toEqual([]);
+    // 关键区别：不能报「后端暂无已保存方案」，那会让用户以为方案从来不存在
+    expect(statusMessage).not.toContain("暂无");
+    expect(statusMessage).toContain("EACCES");
+    expect(statusMessage).toContain("覆盖");
+  });
+
   test("删除方案：本地与后端同步移除", async () => {
     const calls = stubFetch(() => ({ body: { ok: true } }));
     let schemes: Array<Record<string, unknown>> = [

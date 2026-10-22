@@ -21,6 +21,7 @@ import {
   resolveEffectiveTemplateParameterDefinitionGroups,
   templateDerivedComponentLibraryInfo
 } from "./model";
+import { terminalStubSegment } from "./model-routing";
 
 const modelAssociationDerivedClassCases = [
   { kind: "ac-station-source", label: "交流厂站电源", baseKind: "ac-source", baseClass: "ACGenerator", derivedClass: "ACStationGen", terminalType: "ac", relationKey: "idx_acgenerator", modelType: "厂站" },
@@ -129,10 +130,11 @@ describe("model association derived power-source and load classes", () => {
         derivedComponentLibraryLabel: expected.label
       });
       expect(template?.size).toEqual(normalizeDefaultDeviceSize(expected.kind, { width: 132, height: 52 }));
-      expect(template?.terminalAnchors).toEqual(
-        expected.modelType === "馈线"
-          ? [{ x: -0.5, y: 0 }]
-          : baseTemplate?.terminalAnchors
+      // 端子锚点按模型层级统一，而不是按基类模板继承：同一层级的电源与负荷引线方向必须一致。
+      // 基类 `ac-load`/`dc-load` 是上边 {0,-0.5}，而 `ac-source`/`dc-source` 缺省（右边 {0.5,0}），
+      // 直接继承会让厂站/台区出现「电源引线朝右、负荷引线朝上」的视觉不一致。
+      expect(template?.terminalAnchors, expected.kind).toEqual(
+        expected.modelType === "馈线" ? [{ x: -0.5, y: 0 }] : [{ x: 0, y: -0.5 }]
       );
       expect(template?.params).toMatchObject({
         ...modelAssociationVisualParams,
@@ -151,6 +153,43 @@ describe("model association derived power-source and load classes", () => {
       });
       expect(ELEMENT_TREE_COMPONENT_LIBRARY_LABELS[expected.derivedClass]).toBe(expected.label);
     }
+  });
+
+  test("keeps source and load glyphs of the same model level pointing the same way", () => {
+    // 用户可见行为：同一层级里「电源」和「负荷」的图元外观必须一模一样 —— 图标本身同源
+    // (DeviceGlyph 的 station/feeder/district 三族各一套 path)，画布上唯一的差别就是端子引线方向。
+    // 引线方向由 terminals[0].anchor 决定(src/model-routing.ts:1978 terminalStubSegment)。
+    const pairs = [
+      ["ac-station-source", "ac-station-load"],
+      ["ac-feeder-source", "ac-feeder-load"],
+      ["ac-district-source", "ac-district-load"],
+      ["dc-station-source", "dc-station-load"],
+      ["dc-feeder-source", "dc-feeder-load"],
+      ["dc-district-source", "dc-district-load"]
+    ] as const;
+
+    // 画布/导出上真正被看见的是**引线线段**，不是 anchor 数字。落盘节点实测尺寸是 150×60，
+    // 这里按该尺寸再比一遍 `terminalStubSegment`，确保「引线长度 + 方向」也逐值相同。
+    const savedSize = { width: 150, height: 60 };
+
+    for (const [sourceKind, loadKind] of pairs) {
+      const sourceNode = createDefaultNode(sourceKind, { x: 0, y: 0 });
+      const loadNode = createDefaultNode(loadKind, { x: 0, y: 0 });
+      expect(sourceNode.terminals, `${sourceKind} vs ${loadKind}`).toHaveLength(1);
+      expect(loadNode.terminals, `${sourceKind} vs ${loadKind}`).toHaveLength(1);
+      expect(sourceNode.terminals[0].anchor, `${sourceKind} vs ${loadKind}`)
+        .toEqual(loadNode.terminals[0].anchor);
+      expect(
+        terminalStubSegment(sourceNode.terminals[0], 1, 1, 24, sourceKind, savedSize),
+        `${sourceKind} vs ${loadKind} terminal stub`
+      ).toEqual(terminalStubSegment(loadNode.terminals[0], 1, 1, 24, loadKind, savedSize));
+    }
+
+    // 具体落点：厂站/台区走「上边」(与负荷基类一致)，馈线沿用「左边」。
+    expect(createDefaultNode("ac-station-source", { x: 0, y: 0 }).terminals[0].anchor).toEqual({ x: 0, y: -0.5 });
+    expect(createDefaultNode("ac-district-source", { x: 0, y: 0 }).terminals[0].anchor).toEqual({ x: 0, y: -0.5 });
+    expect(createDefaultNode("dc-station-source", { x: 0, y: 0 }).terminals[0].anchor).toEqual({ x: 0, y: -0.5 });
+    expect(createDefaultNode("ac-feeder-source", { x: 0, y: 0 }).terminals[0].anchor).toEqual({ x: -0.5, y: 0 });
   });
 
   test("adds model_id as the only derived-specific editable exported number enum", () => {

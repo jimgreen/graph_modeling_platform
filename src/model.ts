@@ -5225,6 +5225,22 @@ function modelAssociationVisualParams(label: string): Record<string, string> {
   } satisfies Record<(typeof MODEL_ASSOCIATION_VISUAL_PARAM_KEYS)[number], string>;
 }
 
+/**
+ * 模型层级派生件的端子锚点 —— 按**模型层级**统一，不按基类模板继承。
+ *
+ * 同一层级内「电源」与「负荷」的引线方向必须一致，否则画布上同处一个厂站的
+ * 「交流厂站电源」引线朝右、「交流厂站负荷」引线朝上，看起来像两套图元。
+ * 基类模板此处并不对称：`ac-load`(src/model.ts:4885) / `dc-load`(src/model.ts:5070)
+ * 显式声明上边 `{x:0,y:-0.5}`，而 `ac-source` / `dc-source` 没有声明 ——
+ * `createTerminals` 的单端子默认是右边 `{x:0.5,y:0}`(见 src/definitionInstanceSync.ts:162-170)。
+ * 若直接继承基类，厂站/台区的电源就会与同层级负荷方向相反。馈线一族原本就统一覆盖成左边。
+ */
+function modelAssociationDerivedTerminalAnchors(
+  modelType: ModelAssociationDerivedClassSpec["modelType"]
+): Point[] {
+  return modelType === "馈线" ? [{ x: -0.5, y: 0 }] : [{ x: 0, y: -0.5 }];
+}
+
 function createModelAssociationDerivedDeviceTemplate(
   baseTemplate: DeviceTemplate,
   spec: ModelAssociationDerivedClassSpec
@@ -5248,9 +5264,7 @@ function createModelAssociationDerivedDeviceTemplate(
     },
     terminalTypes: baseTemplate.terminalTypes ? [...baseTemplate.terminalTypes] : undefined,
     terminalLabels: baseTemplate.terminalLabels ? [...baseTemplate.terminalLabels] : undefined,
-    terminalAnchors: spec.modelType === "馈线"
-      ? [{ x: -0.5, y: 0 }]
-      : baseTemplate.terminalAnchors?.map((anchor) => ({ ...anchor })),
+    terminalAnchors: modelAssociationDerivedTerminalAnchors(spec.modelType),
     terminalRoles: baseTemplate.terminalRoles ? [...baseTemplate.terminalRoles] : undefined,
     terminalAssociations: baseTemplate.terminalAssociations ? [...baseTemplate.terminalAssociations] : undefined,
     isContainer: false,

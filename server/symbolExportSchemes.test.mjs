@@ -1,11 +1,12 @@
 // 图元 Symbol 导出方案：归一化契约 + 空间路径读写 + 建目录守卫注入。
 import { expect, test, describe, beforeAll, afterAll, afterEach, vi } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spacePathsFor } from "./spaceStore.mjs";
 import {
   MAX_SYMBOL_EXPORT_SCHEMES,
+  MAX_SYMBOL_EXPORT_SCHEME_BACKUPS,
   MAX_SYMBOL_EXPORT_SCHEME_KINDS,
   MAX_SYMBOL_EXPORT_SCHEME_NAME_LENGTH,
   SYMBOL_EXPORT_SCHEMES_SCHEMA_VERSION,
@@ -65,6 +66,12 @@ const writeRawSchemeFile = (spaceId, content) => {
   writeFileSync(paths.symbolExportSchemes, content, "utf-8");
   return paths;
 };
+
+// 某空间 settings/ 下已有的备份文件名（升序 = 由旧到新）。
+const bakFilesOf = (paths) =>
+  readdirSync(paths.settings)
+    .filter((name) => name.startsWith("symbol-export-schemes.json.") && name.endsWith(".bak"))
+    .sort();
 
 // 读一次并同步收集 console.warn；**先还原 spy 再断言**，
 // 断言失败也不会把哑掉的 console 泄给后续用例。
@@ -303,6 +310,53 @@ describe("读写空间路径", () => {
     });
 
     expect(calls).toEqual([paths.settings]);
+  });
+
+  test("★ 写入前把原文件备份成带时间戳的 .bak（「方案不见了」唯一能捞回来的凭据）", async () => {
+    const paths = spacePathsFor(dataDir, "备份");
+    await writeSymbolExportSchemes({ schemes: [{ name: "原方案", templateKinds: ["ac-breaker"] }] }, { paths });
+    // 首次写入时没有原文件 → 不该产生 .bak
+    expect(bakFilesOf(paths)).toEqual([]);
+
+    await writeSymbolExportSchemes({ schemes: [{ name: "新方案" }] }, { paths });
+
+    const backups = bakFilesOf(paths);
+    expect(backups, "覆盖前没有留备份").toHaveLength(1);
+    // 备份的是**写入前**的内容，不是这次写进去的
+    const saved = JSON.parse(readFileSync(join(paths.settings, backups[0]), "utf-8"));
+    expect(saved.schemes.map((s) => s.name)).toEqual(["原方案"]);
+  });
+
+  test("★ 备份只保留最近 5 份，不会无限增长", async () => {
+    const paths = spacePathsFor(dataDir, "备份上限");
+    for (let i = 0; i < 8; i += 1) {
+      await writeSymbolExportSchemes({ schemes: [{ name: `方案${i}` }] }, { paths });
+    }
+
+    const backups = bakFilesOf(paths);
+    expect(backups).toHaveLength(MAX_SYMBOL_EXPORT_SCHEME_BACKUPS);
+    // 留下的是最近几次：末份备份里应是倒数第二次的「方案6」
+    const latest = JSON.parse(readFileSync(join(paths.settings, backups[backups.length - 1]), "utf-8"));
+    expect(latest.schemes.map((s) => s.name)).toEqual(["方案6"]);
+  });
+
+  test("★ 读失败把原因一并带回（readError），与「没配置过」区分开", async () => {
+    // 坏 JSON：exists 仍是 false（降级不变），但 readError 让界面能说「读失败」而不是「没有方案」。
+    const paths = writeRawSchemeFile("读到坏文件", "{ 不是 JSON");
+    const { result, warns } = await readCapturingWarns(paths);
+
+    expect(result.exists).toBe(false);
+    expect(result.schemes).toEqual([]);
+    expect(result.readError).toMatchObject({ code: "SyntaxError" });
+    expect(warns.length).toBeGreaterThan(0);
+  });
+
+  test("对照组：ENOENT（从没配置过）不带 readError", async () => {
+    const paths = spacePathsFor(dataDir, "从没配置过");
+    const result = await readSymbolExportSchemes({ paths });
+
+    expect(result.exists).toBe(false);
+    expect(result.readError).toBeUndefined();
   });
 
   test("缺 paths 显式抛错，不静默落回默认空间", async () => {
