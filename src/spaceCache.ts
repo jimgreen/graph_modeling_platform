@@ -266,6 +266,10 @@ export const KEPT_LOCAL_STORAGE_KEYS: readonly { key: string; reason: string }[]
     reason: "校验面板高度，本机 UI 偏好"
   },
   {
+    key: "graph-modeling-platform:library-tree-order",
+    reason: "图元库面板树一二级菜单的拖动排序，本机 UI 偏好"
+  },
+  {
     key: "graph-modeling-platform.native-export.directory",
     reason: "上次另存的目录，本机路径"
   },

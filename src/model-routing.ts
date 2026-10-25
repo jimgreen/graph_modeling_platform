@@ -8093,8 +8093,7 @@ export function moveSavedSchemeToParent(
   schemeId: string,
   targetParentSchemeId: string,
   options: { targetName?: string; overwriteSchemeId?: string } = {}
-): SavedSchemeRecord[] {
-  const sourceScheme = findSavedSchemeById(schemes, schemeId);
+): SavedSchemeRecord[] {  const sourceScheme = findSavedSchemeById(schemes, schemeId);
   if (!sourceScheme || schemeId === targetParentSchemeId) {
     return schemes;
   }
@@ -8145,6 +8144,59 @@ export function moveSavedSchemeToParent(
       updatedAt: now,
       children: [...savedSchemeChildren(scheme), movedScheme]
     };
+  });
+  return inserted ? insertedSchemes : schemes;
+}
+
+/**
+ * 把方案移动到指定父级下的**指定位置**（面板拖动排序的跨层级落点用）。
+ * 与 moveSavedSchemeToParent 的差别：
+ *   · 支持目标父级为空串（移到**根层**）；
+ *   · 支持 insertBeforeId —— 插到该兄弟之前（为空则追加到该父级末尾）。
+ * 返回新树；源方案不存在 / 目标父级不存在 / 目标在源子树内（原样返回，不成环）时返回原树。
+ */
+export function moveSavedSchemeToPosition(
+  schemes: SavedSchemeRecord[],
+  schemeId: string,
+  targetParentSchemeId: string,
+  insertBeforeId?: string
+): SavedSchemeRecord[] {
+  const sourceScheme = findSavedSchemeById(schemes, schemeId);
+  if (!sourceScheme || schemeId === targetParentSchemeId) {
+    return schemes;
+  }
+  if (targetParentSchemeId && savedSchemeTreeContainsId(sourceScheme, targetParentSchemeId)) {
+    // 目标父级在源子树内 —— 移动会成环，拒绝。
+    return schemes;
+  }
+  const now = new Date().toISOString();
+  const movedScheme: SavedSchemeRecord = { ...sourceScheme, updatedAt: now };
+  const removed = removeSavedSchemesByIds(schemes, new Set([schemeId]), now);
+  if (!removed.changed) {
+    return schemes;
+  }
+  const insertInto = (siblings: SavedSchemeRecord[]): SavedSchemeRecord[] => {
+    if (!insertBeforeId) {
+      return [...siblings, movedScheme];
+    }
+    const index = siblings.findIndex((scheme) => scheme.id === insertBeforeId);
+    if (index < 0) {
+      return [...siblings, movedScheme];
+    }
+    const next = siblings.slice();
+    next.splice(index, 0, movedScheme);
+    return next;
+  };
+  if (!targetParentSchemeId) {
+    return insertInto(removed.schemes);
+  }
+  let inserted = false;
+  const insertedSchemes = mapSavedSchemeTree(removed.schemes, (scheme) => {
+    if (scheme.id !== targetParentSchemeId) {
+      return scheme;
+    }
+    inserted = true;
+    return { ...scheme, updatedAt: now, children: insertInto(savedSchemeChildren(scheme)) };
   });
   return inserted ? insertedSchemes : schemes;
 }

@@ -48,6 +48,11 @@ import {
 } from "../componentLibraryDefinitions";
 import type { SavedExportFile, TextFileEncoding } from "../fileIO";
 import { buildDeviceTemplateCopyVisualSvg as defaultBuildDeviceTemplateCopyVisualSvg, schemePathQueryParam } from "./appPersistenceLibraryExport";
+import { moveKeyToEdge, reorderKeys, sortByKeyOrder, writeLibraryTreeOrder } from "../libraryTreeOrder";
+// 直接 import 图标而**不改 appStaticScope 的 lucide 清单** —— 往 appStaticScope 加新图标会改变
+// 该模块的求值顺序，把 appStaticScope ↔ customDeviceUtils ↔ App 的既有循环导入点亮
+// （表现为 DEFAULT_CUSTOM_DEVICE_TERMINAL_ANCHORS is not defined，App 渲染中断）。
+import { GripVertical } from "lucide-react";
 
 
 
@@ -4361,7 +4366,6 @@ export function createStartProjectRecordDrag(__appScope: Record<string, any>) {
     event.dataTransfer.effectAllowed = "move";
   };
 }
-
 export function createFinishProjectRecordDrag(__appScope: Record<string, any>) {
   return () => {
   const { projectRecordDragActiveRef } = __appScope;
@@ -4390,17 +4394,424 @@ export function projectModelTypeIconName(modelType: unknown) {
   return MODEL_TYPE_META[t]?.icon ?? MODEL_TYPE_META["其他"].icon;
 }
 
+// ── 模型库方案树拖动排序（方案行 / 模型行）────────────────────────────────────
+// 与图元库、模板库同口径：
+//   · 行首把手拖动 = **唯一可拖入口**（行本体 draggable=false —— 祖先可拖会把把手的拖动顶掉）：
+//     同层重排 = 顺序覆盖（只存本机偏好 libraryTreeOrder.projectSchemes / projectModels，
+//     **不写回后端**）；跨层级移动 = 数据变更（改归属，落库）。
+//   · 插入位提示同样是目标行上/下边缘的一条虚线直线（before / after）；
+//     跨层级落在目标行上半区 = 成为其子方案（inside，浅蓝底提示）。
+// 键设计：方案桶按「父方案 id」分桶（顶层用空串），模型桶按「所属方案 id」分桶。
+
+export const PROJECT_TREE_DRAG_TYPE_SCHEME = "application/x-project-tree-scheme";
+export const PROJECT_TREE_DRAG_TYPE_MODEL = "application/x-project-tree-model";
+/** 方案列表的**末尾落点**（拖到列表空白处）= 移到顶层末尾。 */
+export const PROJECT_TREE_ROOT_END_KEY = "__project-tree-root-end__";
+
+/** 方案所在层级（父方案 id；顶层为空串）。 */
+export function projectTreeParentKey(schemes: readonly any[], schemeId: string): string {
+  const walk = (list: readonly any[], parentId: string): string | null => {
+    for (const scheme of list) {
+      if (scheme.id === schemeId) {
+        return parentId;
+      }
+      const found = walk(scheme.children ?? [], scheme.id);
+      if (found !== null) {
+        return found;
+      }
+    }
+    return null;
+  };
+  return walk(schemes ?? [], "") ?? "";
+}
+
+/** 某父方案下的方案 id 清单。 */
+export function projectTreeSiblingIds(schemes: readonly any[], parentKey: string): string[] {
+  if (parentKey === "") {
+    return (schemes ?? []).map((scheme: any) => scheme.id);
+  }
+  const walk = (list: readonly any[]): any[] | null => {
+    for (const scheme of list) {
+      if (scheme.id === parentKey) {
+        return scheme.children ?? [];
+      }
+      const found = walk(scheme.children ?? []);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  };
+  return (walk(schemes ?? []) ?? []).map((scheme: any) => scheme.id);
+}
+
+/** 某方案下的模型 id 清单。 */
+export function projectTreeModelIds(schemes: readonly any[], schemeId: string): string[] {
+  const walk = (list: readonly any[]): any[] | null => {
+    for (const scheme of list) {
+      if (scheme.id === schemeId) {
+        return scheme.projects ?? [];
+      }
+      const found = walk(scheme.children ?? []);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  };
+  return (walk(schemes ?? []) ?? []).map((project: any) => project.id);
+}
+
+/**
+ * 同级清单的**完整显示顺序** = 数据原始顺序 + 本机覆盖表重排。
+ * 渲染（sortByKeyOrder）与落点结算（reorderKeys）必须用同一份清单 ——
+ * 若结算用数据顺序、渲染用覆盖顺序，两套顺序一旦分叉，拖动就会「插错位置」
+ * （表现为两项互换，而不是插入到虚线处）。
+ */
+export function projectTreeDisplayIds(
+  ids: readonly string[],
+  order: readonly string[]
+): string[] {
+  const rankById = new Map<string, number>();
+  order.forEach((id, index) => {
+    if (!rankById.has(id)) {
+      rankById.set(id, index);
+    }
+  });
+  return ids
+    .map((id, index) => ({ id, index, rank: rankById.get(id) }))
+    .sort((a, b) => {
+      const rankA = a.rank ?? Number.MAX_SAFE_INTEGER;
+      const rankB = b.rank ?? Number.MAX_SAFE_INTEGER;
+      return rankA !== rankB ? rankA - rankB : a.index - b.index;
+    })
+    .map((entry) => entry.id);
+}
+
+/** 模型所属方案 id（模型桶键）；找不到返回空串。 */
+export function projectTreeModelOwnerKey(schemes: readonly any[], modelId: string): string {
+  const walk = (list: readonly any[]): string => {
+    for (const scheme of list) {
+      if ((scheme.projects ?? []).some((project: any) => project.id === modelId)) {
+        return scheme.id;
+      }
+      const found = walk(scheme.children ?? []);
+      if (found) {
+        return found;
+      }
+    }
+    return "";
+  };
+  return walk(schemes ?? []);
+}
+
+export function createStartProjectTreeSortDrag(__appScope: Record<string, any>) {
+  return (event: DragEvent<HTMLSpanElement>, dragKey: string) => {
+    const { setProjectTreeDragKey } = __appScope;
+    // 方案/模型 id 本身已带 "scheme:" / "model:" 前缀（后端生成的记录 id），
+    // 这里**不能再加前缀** —— 否则会出现 "scheme:scheme:xxx" 这样的双前缀，
+    // 落点判定与顺序覆盖都对不上（拖动看起来毫无反应）。
+    const layer = dragKey.split(":")[0];
+    if (layer !== "scheme" && layer !== "model") {
+      return;
+    }
+    // 方案行/模型行**本体**也是 draggable（既有跨方案移动通道）。当拖动从把手发起时，
+    // 必须阻止本体通道接管，否则两条通道同时启动、dataTransfer 互相覆盖。
+    const target = event.target as HTMLElement | null;
+    if (!target?.closest?.(".project-tree-drag-handle")) {
+      return;
+    }
+    event.stopPropagation();
+    event.dataTransfer.setData(layer === "model" ? PROJECT_TREE_DRAG_TYPE_MODEL : PROJECT_TREE_DRAG_TYPE_SCHEME, dragKey);
+    event.dataTransfer.effectAllowed = "move";
+    setProjectTreeDragKey(dragKey);
+  };
+}
+
+export function createEndProjectTreeSortDrag(__appScope: Record<string, any>) {
+  return () => {
+    const { setProjectTreeDragKey, setProjectTreeDropKey } = __appScope;
+    setProjectTreeDragKey("");
+    setProjectTreeDropKey("");
+  };
+}
+
+/**
+ * 拖动离开某个方案/模型行（或整个列表）时清掉落点键 ——
+ * 否则插入线会残留在上一次的位置上。
+ * 与图元库的 handleLibraryTreeDragLeave 同款，但清的是模型库自己的状态。
+ */
+export function createHandleProjectTreeDragLeave(__appScope: Record<string, any>) {
+  return (event: DragEvent<HTMLElement>) => {
+    const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
+    const { setProjectTreeDropKey } = scope;
+    if (!(event.currentTarget as Node).contains(event.relatedTarget as Node | null)) {
+      setProjectTreeDropKey("");
+    }
+  };
+}
+
+export function createHandleProjectTreeDragOver(__appScope: Record<string, any>) {
+  // **__appScope 每帧重建**（App.tsx:661），工厂闭包捕获的引用会冻结在首帧 ——
+  // 拖动键/顺序表必须从 __appScopeRef.current（当前帧的 scope）读，否则永远是首帧快照。
+  return (event: DragEvent<HTMLElement>, dropKey: string) => {
+    const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
+    const { projectTreeDragKey, setProjectTreeDropKey, libraryTreeOrder, schemes } = scope;
+    if (!projectTreeDragKey) {
+      return;
+    }
+    const dragLayer = projectTreeDragKey.split(":")[0];
+    const dropLayer = dropKey.split(":")[0];
+    // 末尾落点（拖到列表空白处）= 移到顶层末尾，只有一条边（after）。
+    // 必须在「层一致」检查**之前**判定 —— 末尾落点的键不是 scheme:/model: 前缀。
+    if (dropKey === PROJECT_TREE_ROOT_END_KEY) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      const dropStateKey = `${dropKey}|after`;
+      setProjectTreeDropKey((current: string) => current === dropStateKey ? current : dropStateKey);
+      return;
+    }
+    // 方案↔方案、模型↔模型、模型→方案行（移动到该方案下）都允许；方案→模型行不允许。
+    const isModelIntoScheme = dragLayer === "model" && dropLayer === "scheme";
+    if (dragLayer !== dropLayer && !isModelIntoScheme) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    // 落点分三种（与图元库/模板库同款提示）：
+    //   inside = 指针在目标行**上半区** → 成为目标的**子方案**（跨层级移动，落库）
+    //   before/after = 指针在目标行下半区的上下四分位 → 插到目标之前/之后（同层重排，本机偏好）
+    // 覆盖表里已有顺序时按覆盖表的先后算边；没有则按指针位置兜底。
+    const edge = projectTreeInsertEdge(scope, event, projectTreeDragKey, dropKey);
+    const dropStateKey = `${dropKey}|${edge}`;
+    setProjectTreeDropKey((current: string) => current === dropStateKey ? current : dropStateKey);
+  };
+}
+
+/**
+ * 插入位判定（**以指针位置为准**，所见即所得）：
+ *   · 同层（父子相同）：
+ *       上半区 → "before"（插到目标**之前**）；下半区 → "after"（插到目标**之后**）。
+ *   · 跨层（父子不同）：
+ *       上半区 → "inside"（成为目标的**子方案**）；下半区 → "after"（成为目标的**后继兄弟**）。
+ *   落点判定**不能**用「覆盖表里的相对先后」—— 那是结算用的顺序，不是用户指针的位置。
+ *   早前用覆盖表判边会导致：把已在目标前面的项拖到目标上方（想插到它前面），
+ *   却被判成 after（插到它后面），看起来就像两项互换。
+ */
+function projectTreeInsertEdge(
+  scope: Record<string, any>,
+  event: DragEvent<HTMLElement>,
+  dragKey: string,
+  dropKey: string
+): "inside" | "before" | "after" {
+  const { schemes } = scope;
+  const dragLayer = dragKey.split(":")[0];
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
+  const sameLevel = dragLayer === "scheme"
+    ? projectTreeParentKey(schemes ?? [], dragKey) === projectTreeParentKey(schemes ?? [], dropKey)
+    : projectTreeModelOwnerKey(schemes ?? [], dragKey) === projectTreeModelOwnerKey(schemes ?? [], dropKey);
+  // 上半区：同层 → 插到目标之前；跨层 → 成为目标的子方案。
+  if (ratio < 0.5) {
+    return sameLevel ? "before" : "inside";
+  }
+  // 下半区：同层/跨层都是「插到目标之后」（跨层 = 成为目标的后继兄弟）。
+  return "after";
+}
+
+export function createHandleProjectTreeDrop(__appScope: Record<string, any>) {
+  return (event: DragEvent<HTMLElement>, dropKey: string) => {
+    // 同上：从当前帧 scope 读状态（__appScope 每帧重建，闭包捕获会冻结）。
+    const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
+    const {
+      projectTreeDragKey, setProjectTreeDragKey, setProjectTreeDropKey, setLibraryTreeOrder,
+      libraryTreeOrder, schemes, moveSchemeRecordToScheme, moveSchemeRecordToPosition, moveProjectRecordToScheme
+    } = scope;
+    event.preventDefault();
+    event.stopPropagation();
+    const dragKey = projectTreeDragKey;
+    // 落点边（inside = 成为目标的子方案；before/after = 同层插入位）。
+    const stateKey = scope.projectTreeDropKey ?? "";
+    const edge = stateKey.endsWith("|inside") ? "inside" : stateKey.endsWith("|after") ? "after" : "before";
+    setProjectTreeDragKey("");
+    setProjectTreeDropKey("");
+    if (!dragKey) {
+      return;
+    }
+    const dragLayer = dragKey.split(":")[0];
+    const dropLayer = dropKey.split(":")[0];
+    // 末尾落点（拖到列表空白处）= 移到顶层末尾。
+    if (dropKey === PROJECT_TREE_ROOT_END_KEY) {
+      if (dragLayer === "scheme" && typeof moveSchemeRecordToPosition === "function") {
+        moveSchemeRecordToPosition(dragKey, "", "");
+      } else if (dragLayer === "model" && typeof moveProjectRecordToScheme === "function") {
+        // 模型 → 顶层：顶层没有方案可挂，放到第一个顶层方案下。
+        const firstRootScheme = (schemes ?? [])[0];
+        if (firstRootScheme) {
+          moveProjectRecordToScheme(dragKey, firstRootScheme.id);
+        }
+      }
+      return;
+    }
+    // 模型 → 方案行 = 移动到该方案下（跨层级，允许）；方案 → 模型行 = 不允许。
+    const isModelIntoScheme = dragLayer === "model" && dropLayer === "scheme";
+    if (dragLayer !== dropLayer && !isModelIntoScheme) {
+      return;
+    }
+    const currentOrder = libraryTreeOrder ?? {
+      categoryLibraries: [],
+      componentLibraries: {},
+      templateTypes: [],
+      templates: {},
+      projectSchemes: {},
+      projectModels: {}
+    };
+    // ── 跨层级落点（数据变更，落库）──────────────────────────────────────────────
+    //  · inside = 成为目标行的**子方案**
+    //  · after  = 成为目标的**后继兄弟**（落到目标所在父级）
+    const dragParentKey = dragLayer === "scheme"
+      ? projectTreeParentKey(schemes ?? [], dragKey)
+      : projectTreeModelOwnerKey(schemes ?? [], dragKey);
+    const dropParentKey = dropLayer === "scheme"
+      ? projectTreeParentKey(schemes ?? [], dropKey)
+      : projectTreeModelOwnerKey(schemes ?? [], dropKey);
+    const isCrossLevel = dragParentKey !== dropParentKey;
+    if (isCrossLevel) {
+      if (dragLayer === "scheme") {
+        // inside = 成为目标行的子方案；after = 成为目标的后继兄弟（落到目标父级、排在目标之后）。
+        if (edge === "inside") {
+          if (typeof moveSchemeRecordToScheme === "function") {
+            moveSchemeRecordToScheme(dragKey, dropKey);
+          }
+          return;
+        }
+        if (typeof moveSchemeRecordToPosition === "function") {
+          // 插到目标**之后** → 目标是其父级里的第 N 项，插到第 N+1 项之前；
+          // 目标是最后一项时传空 → 追加到该父级末尾。
+          const insertBeforeId = projectTreeNextSiblingId(
+            schemes ?? [],
+            dropParentKey,
+            dropKey,
+            currentOrder.projectSchemes[dropParentKey] ?? []
+          );
+          moveSchemeRecordToPosition(dragKey, dropParentKey, insertBeforeId);
+        }
+        return;
+      }
+      if (typeof moveProjectRecordToScheme === "function") {
+        // 模型 → 方案行：inside = 落进该方案；after = 落到目标模型所在方案。
+        const targetSchemeId = edge === "inside" ? dropKey : dropParentKey;
+        if (targetSchemeId) {
+          moveProjectRecordToScheme(dragKey, targetSchemeId);
+        }
+      }
+      return;
+    }
+    if (dragLayer === "scheme") {
+      // 方案 id 本身带 "scheme:" 前缀 —— 整串就是清单里的键，**不能再 slice**。
+      const dragId = dragKey;
+      const dropId = dropKey;
+      const parentKey = projectTreeParentKey(schemes ?? [], dragId);
+      // 结算必须用**完整显示顺序**（数据顺序 + 覆盖表），与渲染口径一致 ——
+      // 否则会按数据顺序插入、按显示顺序渲染，看起来变成「两项互换」而非插入。
+      const siblings = projectTreeDisplayIds(
+        projectTreeSiblingIds(schemes ?? [], parentKey),
+        currentOrder.projectSchemes[parentKey] ?? []
+      );
+      // 方向由**指针位置**给出（before = 插到目标之前），不靠索引反推。
+      const next = moveKeyToEdge(siblings, dragId, dropId, edge === "after" ? "after" : "before");
+      if (!next) {
+        return;
+      }
+      const nextOrder = { ...currentOrder, projectSchemes: { ...currentOrder.projectSchemes, [parentKey]: next } };
+      writeLibraryTreeOrder(nextOrder);
+      setLibraryTreeOrder(nextOrder);
+      return;
+    }
+    if (dragLayer === "model") {
+      // 模型 id 同样带 "model:" 前缀 —— 整串即清单键。
+      const dragId = dragKey;
+      const dropId = dropKey;
+      const owner = projectTreeModelOwnerKey(schemes ?? [], dragId);
+      const siblings = projectTreeDisplayIds(
+        projectTreeModelIds(schemes ?? [], owner),
+        currentOrder.projectModels[owner] ?? []
+      );
+      const next = moveKeyToEdge(siblings, dragId, dropId, edge === "after" ? "after" : "before");
+      if (!next) {
+        return;
+      }
+      const nextOrder = { ...currentOrder, projectModels: { ...currentOrder.projectModels, [owner]: next } };
+      writeLibraryTreeOrder(nextOrder);
+      setLibraryTreeOrder(nextOrder);
+    }
+  };
+}
+
+/**
+ * 从方案记录 id 反推其父方案 id。
+ * id 形如 "scheme:根/甲" → 父 id 为 "scheme:根"（去掉最后一段路径）。
+ * 顶层方案（无 "/"）返回空串。
+ */
+export function projectTreeParentIdOf(schemeId: string): string {
+  const index = schemeId.lastIndexOf("/");
+  return index < 0 ? "" : schemeId.slice(0, index);
+}
+
+/**
+ * 目标在其父级清单里的**下一个兄弟 id**（用于「插到目标之后」）。
+ * 目标已是最后一项 → 返回空串（追加到该父级末尾）。
+ * 用**完整显示顺序**（数据顺序 + 覆盖表）算，与渲染/结算口径一致。
+ */
+export function projectTreeNextSiblingId(
+  schemes: readonly any[],
+  parentKey: string,
+  schemeId: string,
+  order: readonly string[] = []
+): string {
+  const siblings = projectTreeDisplayIds(projectTreeSiblingIds(schemes, parentKey), order);
+  const index = siblings.indexOf(schemeId);
+  if (index < 0) {
+    return "";
+  }
+  return siblings[index + 1] ?? "";
+}
 export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
-  return (scheme: SavedSchemeRecord, depth = 0): ReactNode => {
-  const { Cable, ChevronDown, ChevronRight, Factory, FileJson, FolderOpen, HousePlug, Network, activeProjectKey, div, expandedSchemeIds, finishProjectRecordDrag, finishSchemeRecordDrag, isEditMode, moveProjectRecordToScheme, moveSchemeRecordToScheme, p, projectModelTypeFilter, projectSearchNeedle, renderProjectSchemeNode, requestLoadSavedProject, selectSingleProject, selectSingleScheme, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setInspectorTab, setProjectMenu, span, startProjectRecordDrag, startSchemeRecordDrag, toggleProjectSelection, toggleSchemeExpanded, toggleSchemeSelection } = __appScope;
+  return (scheme: SavedSchemeRecord, depth = 0, showRootEndLine = false): ReactNode => {
+  // __appScope 每帧重建，本工厂闭包捕获的是首帧 scope —— 拖动态（projectTreeDropKey）与
+  // 顺序覆盖（libraryTreeOrder）必须从当前帧 scope 读，否则指示线与新顺序不会反映到 DOM。
+  const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
+  const { Cable, ChevronDown, ChevronRight, Factory, FileJson, FolderOpen, HousePlug, Network, activeProjectKey, div, endProjectTreeSortDrag, expandedSchemeIds, handleProjectTreeDragLeave, handleProjectTreeDragOver, handleProjectTreeDrop, isEditMode, libraryTreeOrder, p, projectModelTypeFilter, projectSearchNeedle, projectTreeDropKey, renderProjectSchemeNode, requestLoadSavedProject, selectSingleProject, selectSingleScheme, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setInspectorTab, setProjectMenu, span, startProjectTreeSortDrag, toggleProjectSelection, toggleSchemeExpanded, toggleSchemeSelection } = scope;
     const isFiltering = Boolean(projectSearchNeedle || (projectModelTypeFilter && projectModelTypeFilter.length > 0));
     const isExpanded = isFiltering ? true : expandedSchemeIds.includes(scheme.id);
-    const children = scheme.children ?? [];
+    // 同层顺序覆盖：方案按父层级分桶，模型按所属方案分桶；未拖动过的项保持原相对顺序垫底。
+    const children = sortByKeyOrder(
+      scheme.children ?? [],
+      (child: SavedSchemeRecord) => child.id,
+      libraryTreeOrder?.projectSchemes?.[scheme.id] ?? []
+    );
+    const orderedProjects = sortByKeyOrder(
+      scheme.projects ?? [],
+      (project: SavedProjectRecord) => project.id,
+      libraryTreeOrder?.projectModels?.[scheme.id] ?? []
+    );
     const countModels = (s: SavedSchemeRecord): number => s.projects.length + (s.children ?? []).reduce((sum: number, c: SavedSchemeRecord) => sum + countModels(c), 0);
     const modelCount = countModels(scheme);
     const hasContent = scheme.projects.length > 0 || children.length > 0;
     const schemeIndentStyle = { "--scheme-depth": depth } as CSSProperties;
     const projectIndentStyle = { "--scheme-depth": depth + 1 } as CSSProperties;
+    // 方案/模型 id 本身已带 "scheme:" / "model:" 前缀 —— 拖动键直接用 id，不再叠加前缀。
+    const schemeDropKey = scheme.id;
+    const schemeDropLineClass = projectTreeDropKey === `${schemeDropKey}|before`
+      ? " library-tree-drop-line-before"
+      : projectTreeDropKey === `${schemeDropKey}|after`
+        ? " library-tree-drop-line-after"
+        : projectTreeDropKey === `${schemeDropKey}|inside`
+          ? " library-tree-drop-inside"
+          : showRootEndLine
+            // 列表末尾落点（拖到空白处 = 移到顶层末尾）：线画在本行下边缘。
+            ? " library-tree-drop-line-after"
+            : "";
     return (
       <div
         className={`scheme-group ${depth > 0 ? "nested" : ""}`}
@@ -4413,8 +4824,10 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
           aria-selected={selectedSchemeIds.includes(scheme.id) || selectedSchemeId === scheme.id}
           aria-expanded={isExpanded}
           tabIndex={0}
-          draggable={isEditMode}
-          className={`scheme-option ${selectedSchemeIds.includes(scheme.id) || selectedSchemeId === scheme.id ? "selected" : ""}`}
+          // 行本体**不可拖** —— 只有行首把手能发起拖动（拖动排序 + 跨层级移动都走把手）。
+          // 行本体若也 draggable，浏览器会从祖先发起拖拽，把手的拖动根本起不来。
+          draggable={false}
+          className={`scheme-option ${selectedSchemeIds.includes(scheme.id) || selectedSchemeId === scheme.id ? "selected" : ""}${schemeDropLineClass}`}
           style={schemeIndentStyle}
           onClick={(event) => {
             if (event.ctrlKey || event.metaKey || event.shiftKey) {
@@ -4435,31 +4848,26 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
               toggleSchemeExpanded(scheme.id);
             }
           }}
-          onDragOver={(event) => event.preventDefault()}
-          onDragStart={(event) => {
-            if (!isEditMode) {
-              event.preventDefault();
-              return;
-            }
-            startSchemeRecordDrag(event, scheme.id);
+          onDragOver={(event) => {
+            // 排序通道（把手拖动）：算出插入边并画指示线；本体拖动（跨方案移动）只放行。
+            // 阻止冒泡 —— 列表容器的 dragover（末尾落点）不能覆盖行内算好的插入边。
+            event.stopPropagation();
+            handleProjectTreeDragOver(event, schemeDropKey);
+            event.preventDefault();
           }}
-          onDragEnd={finishSchemeRecordDrag}
+          onDragLeave={handleProjectTreeDragLeave}
           onDrop={(event) => {
             event.preventDefault();
             event.stopPropagation();
             if (!isEditMode) {
               return;
             }
-            finishProjectRecordDrag();
-            finishSchemeRecordDrag();
-            const schemeId = event.dataTransfer.getData("application/scheme-id");
-            if (schemeId) {
-              moveSchemeRecordToScheme(schemeId, scheme.id);
-              return;
-            }
-            const projectId = event.dataTransfer.getData("application/project-id");
-            if (projectId) {
-              moveProjectRecordToScheme(projectId, scheme.id);
+            // 只有把手能发起拖动（行本体不可拖），所以这里只处理排序通道。
+            // 跨层级移动也在把手通道里完成（落在目标行上半区 = 成为其子方案）。
+            const sortSchemeId = event.dataTransfer.getData(PROJECT_TREE_DRAG_TYPE_SCHEME);
+            if (sortSchemeId) {
+              // dropKey = **目标行**的键（拖动源由 libraryTreeDragKey 读出）。
+              handleProjectTreeDrop(event, schemeDropKey);
             }
           }}
           onContextMenu={(event) => {
@@ -4471,6 +4879,17 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
             setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id });
           }}
         >
+          <span
+            className="library-tree-drag-handle project-tree-drag-handle"
+            title="拖动调整顺序"
+            aria-label={`拖动调整方案 ${scheme.name} 的顺序`}
+            draggable={isEditMode}
+            onDragStart={(event) => startProjectTreeSortDrag(event, scheme.id)}
+            onDragEnd={endProjectTreeSortDrag}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <GripVertical size={12} aria-hidden="true" />
+          </span>
           {isExpanded ? <ChevronDown className="scheme-toggle-icon" size={14} /> : <ChevronRight className="scheme-toggle-icon" size={14} />}
           <FolderOpen className="scheme-folder-icon" size={15} />
           <span className="project-tree-name">{scheme.name}</span>
@@ -4482,7 +4901,7 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
               <p className="project-empty" style={projectIndentStyle}>暂无模型或子方案</p>
             ) : (
               <>
-                {scheme.projects.map((project) => {
+                {orderedProjects.map((project) => {
                   const isProjectSelected = selectedProjectIds.includes(project.id) || project.id === selectedProjectId;
                   const projectModelType = ["微网", "厂站", "馈线", "台区"].includes(project.project?.modelType)
                     ? project.project.modelType
@@ -4494,16 +4913,45 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
                     HousePlug,
                     Network
                   }[projectModelTypeIconName(projectModelType)] ?? FileJson;
+                  const modelDropKey = project.id;
+                  const modelDropLineClass = projectTreeDropKey === `${modelDropKey}|before`
+                    ? " library-tree-drop-line-before"
+                    : projectTreeDropKey === `${modelDropKey}|after`
+                      ? " library-tree-drop-line-after"
+                      : projectTreeDropKey === `${modelDropKey}|inside`
+                        ? " library-tree-drop-inside"
+                        : "";
                   return (
                     <div
                       role="option"
                       aria-label={`模型：${project.name}`}
                       aria-selected={isProjectSelected}
                       tabIndex={0}
-                      draggable={isEditMode}
-                      className={`project-option ${isProjectSelected ? "selected" : ""} ${project.id === activeProjectKey ? "active" : ""}`}
+                      // 行本体**不可拖** —— 只有行首把手能发起拖动（拖动排序 + 跨方案移动都走把手）。
+                      draggable={false}
+                      className={`project-option ${isProjectSelected ? "selected" : ""} ${project.id === activeProjectKey ? "active" : ""}${modelDropLineClass}`}
                       style={projectIndentStyle}
                       key={project.id}
+                      onDragOver={(event) => {
+                        // 阻止冒泡 —— 列表容器的 dragover（末尾落点）不能覆盖行内插入边。
+                        event.stopPropagation();
+                        handleProjectTreeDragOver(event, modelDropKey);
+                        event.preventDefault();
+                      }}
+                      onDragLeave={handleProjectTreeDragLeave}
+                      onDrop={(event) => {
+                        // 只有把手能发起拖动（行本体不可拖），所以这里只处理排序通道。
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (!isEditMode) {
+                          return;
+                        }
+                        const sortModelId = event.dataTransfer.getData(PROJECT_TREE_DRAG_TYPE_MODEL);
+                        if (sortModelId) {
+                          // dropKey = **目标行**的键（拖动源由 libraryTreeDragKey 读出）。
+                          handleProjectTreeDrop(event, modelDropKey);
+                        }
+                      }}
                       onClick={(event) => {
                         if (event.ctrlKey || event.metaKey || event.shiftKey) {
                           toggleProjectSelection(scheme.id, project.id);
@@ -4513,14 +4961,6 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
                         setInspectorTab("model");
                       }}
                       onDoubleClick={() => requestLoadSavedProject(project, scheme.id)}
-                      onDragStart={(event) => {
-                        if (!isEditMode) {
-                          event.preventDefault();
-                          return;
-                        }
-                        startProjectRecordDrag(event, project.id);
-                      }}
-                      onDragEnd={finishProjectRecordDrag}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
                           requestLoadSavedProject(project, scheme.id);
@@ -4542,6 +4982,17 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
                         setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id, projectId: project.id });
                       }}
                     >
+                      <span
+                        className="library-tree-drag-handle project-tree-drag-handle"
+                        title="拖动调整顺序"
+                        aria-label={`拖动调整模型 ${project.name} 的顺序`}
+                        draggable={isEditMode}
+                        onDragStart={(event) => startProjectTreeSortDrag(event, project.id)}
+                        onDragEnd={endProjectTreeSortDrag}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <GripVertical size={12} aria-hidden="true" />
+                      </span>
                       <ProjectModelTypeIcon
                         aria-label={`${projectModelType}模型`}
                         className="project-item-icon"
@@ -4554,8 +5005,7 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
                     </div>
                   );
                 })}
-                {children.map((child) => renderProjectSchemeNode(child, depth + 1))}
-              </>
+                {children.map((child) => renderProjectSchemeNode(child, depth + 1))}              </>
             )}
           </div>
         )}

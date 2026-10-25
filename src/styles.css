@@ -747,6 +747,8 @@ button:not(.ant-btn):disabled {
   overflow: auto;
   margin-top: 8px;
   border-top: 1px solid #e2e8f0;
+  /* 方案列表末尾落点的插入线（虚线）需要相对定位来定位伪元素。 */
+  position: relative;
 }
 
 .project-list.listbox {
@@ -1027,6 +1029,69 @@ button:not(.ant-btn):disabled {
   gap: 0;
 }
 
+/* 图元库面板树拖动排序：行首把手 + 插入位指示线（一级/二级共用） */
+.library-tree-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 22px;
+  margin-left: -4px;
+  border-radius: 4px;
+  /* 把手必须一眼可见：浅灰在浅色行底上几乎看不见，故用中性偏深蓝灰。 */
+  color: #64748b;
+  cursor: grab;
+}
+
+.library-tree-drag-handle:hover {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.library-tree-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* 插入位指示线：一条虚线直线，绝对定位在目标行的上/下边缘（不框住整行）。
+   before = 线在行上边缘（插到目标之前）；after = 线在行下边缘（插到目标之后）。
+   两个容器类都要 position:relative，供伪元素定位；模板类型节与模板卡片同用。 */
+.library-group-section,
+.category-library-component-library-section,
+.template-library-type-section,
+.template-library-item {
+  position: relative;
+}
+
+.library-tree-drop-line-before::before,
+.library-tree-drop-line-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  /* 3px + 端点圆点：细线在窄面板里几乎看不见，必须加粗。 */
+  border-top: 3px dashed #2563eb;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.library-tree-drop-line-before::before {
+  top: -1px;
+}
+
+.library-tree-drop-line-after::after {
+  bottom: -1px;
+}
+
+/* 跨层级落点（inside）：成为目标行的子方案 —— 用整行浅蓝底 + 左侧标记条提示，
+   与「同层插入」的虚线直线区分开。 */
+.library-tree-drop-inside {
+  background: #eff6ff;
+  box-shadow: inset 3px 0 0 #2563eb;
+  border-radius: 6px;
+}
+
 .category-library-component-library-list {
   display: grid;
   gap: 8px;
@@ -1222,12 +1287,22 @@ button:not(.ant-btn):disabled {
   width: 100%;
   min-height: 104px;
   padding: 7px;
+  padding-top: 16px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   color: #0f172a;
   background: #f8fafc;
   text-align: center;
   cursor: grab;
+}
+
+/* 模板卡片左上角把手：单独承载面板树排序拖动（卡片本体拖动仍是放到画布） */
+.template-tree-card-handle {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 13px;
 }
 
 .template-library-item:hover,

@@ -277,6 +277,7 @@ import {
   buildManualConnectionPreviewPath,
   mirrorNodes,
   moveSavedSchemeToParent,
+  moveSavedSchemeToPosition,
   renameSavedScheme,
   renameSavedProject,
   replaceSavedSchemeById,

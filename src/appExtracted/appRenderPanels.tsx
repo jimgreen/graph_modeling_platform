@@ -3,6 +3,15 @@
 
 import { createPortal } from "react-dom";
 import { Input, Button } from "antd";
+import { sortByKeyOrder } from "../libraryTreeOrder";
+// 直接 import 图标（不改 appStaticScope 的 lucide 清单 —— 那会点亮 appStaticScope ↔
+// customDeviceUtils ↔ App 的既有循环导入，导致 App 渲染中断）。
+import { GripVertical } from "lucide-react";
+import {
+  PROJECT_TREE_DRAG_TYPE_MODEL,
+  PROJECT_TREE_DRAG_TYPE_SCHEME,
+  PROJECT_TREE_ROOT_END_KEY
+} from "./appDeviceDefinitionFactories";
 import type React from "react";
 import type { GraphTemplate } from "./appCoreCanvasUtilities";
 import type {
@@ -97,11 +106,39 @@ export function createRenderGraphTemplateButton(__appScope: Record<string, any>)
     clearLibraryFlyoutCloseTimer, setHoveredGraphTemplateType,
     hideLibraryFlyout, renderGraphTemplatePreview
   } = __appScope;
-  return (template: GraphTemplate) => (
+  // 模板卡片把手拖动（面板树内排序/跨类型移动）的处理函数在 useRenderBatch 的**后段**才
+  // Object.assign 进 __appScope（本工厂在其之前创建）—— 不能在工厂创建期解构，否则拿到
+  // undefined，把手永远拖不动。改为每次渲染时从**当前帧** scope 直读最新装配值
+  // （__appScope 每帧重建，闭包捕获的引用会冻结在首帧）。
+  const templateTreeDeps = () => {
+    const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
+    return {
+      startTemplateTreeDrag: scope.startTemplateTreeDrag,
+      endTemplateTreeDrag: scope.endTemplateTreeDrag,
+      handleTemplateTreeDragOver: scope.handleTemplateTreeDragOver,
+      handleTemplateTreeDrop: scope.handleTemplateTreeDrop,
+      handleLibraryTreeDragLeave: scope.handleLibraryTreeDragLeave,
+      templateLibraryTreeDragKey: scope.templateLibraryTreeDragKey,
+      templateLibraryTreeDropKey: scope.templateLibraryTreeDropKey
+    };
+  };
+  return (template: GraphTemplate) => {
+    const {
+      startTemplateTreeDrag, endTemplateTreeDrag,
+      handleTemplateTreeDragOver, handleTemplateTreeDrop, handleLibraryTreeDragLeave,
+      templateLibraryTreeDragKey, templateLibraryTreeDropKey
+    } = templateTreeDeps();
+    // 拖动排序进行中才可能携带边；dropKey 形如 `template:<类型>::<id>|before/after`。
+    const dropLineClass = templateLibraryTreeDropKey === `template:${template.typeName}::${template.id}|before`
+      ? " library-tree-drop-line-before"
+      : templateLibraryTreeDropKey === `template:${template.typeName}::${template.id}|after`
+        ? " library-tree-drop-line-after"
+        : "";
+    return (
     <button
       key={template.id}
       type="button"
-      className="template-library-item"
+      className={`template-library-item${dropLineClass}`}
       draggable={isEditMode}
       disabled={isBrowseMode}
       title={`${template.typeName} / ${template.name} / ${template.sourceSize.width}×${template.sourceSize.height}`}
@@ -134,14 +171,29 @@ export function createRenderGraphTemplateButton(__appScope: Record<string, any>)
           hideLibraryFlyout();
         }
       }}
+      onDragOver={(event) => handleTemplateTreeDragOver(event, `template:${template.typeName}::${template.id}`)}
+      onDragLeave={handleLibraryTreeDragLeave}
+      onDrop={(event) => handleTemplateTreeDrop(event, `template:${template.typeName}::${template.id}`)}
     >
+      <span
+        className="library-tree-drag-handle template-tree-card-handle"
+        title="拖动调整顺序（可跨类型移动）"
+        aria-label={`拖动调整模板 ${template.name} 的顺序`}
+        draggable
+        onDragStart={(event) => startTemplateTreeDrag(event, `template:${template.typeName}::${template.id}`)}
+        onDragEnd={endTemplateTreeDrag}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <GripVertical size={11} aria-hidden="true" />
+      </span>
       <span className="template-library-icon">
         {renderGraphTemplatePreview(template)}
       </span>
       <span className="template-library-name">{template.name}</span>
       <small>{template.sourceSize.width}×{template.sourceSize.height}</small>
     </button>
-  );
+    );
+  };
 }
 
 // 图模板浮动面板
@@ -183,8 +235,27 @@ export function createRenderProjectPanel(__appScope: Record<string, any>) {
     projectModelTypeFilter, setProjectModelTypeFilter,
     projectListPointerInsideRef,
     backendSchemesLoadedRef,
-    schemes, filteredProjectSchemes, renderProjectSchemeNode
+    schemes, filteredProjectSchemes
   } = __appScope;
+  // 顺序覆盖随拖动变化，而本工厂闭包捕获的是**首帧** scope（__appScope 每帧重建）——
+  // 故每次渲染都从当前帧 scope 读，否则拖动后的顺序不会反映到 DOM。
+  const currentScope = () => (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
+  const currentLibraryTreeOrder = () => currentScope().libraryTreeOrder;
+  // 同理：renderProjectSchemeNode 必须在**当前帧**取 —— 首帧闭包里的旧版本不含
+  // 拖动排序的 JSX（把手/指示线 class），用它渲染会一直是旧界面。
+  const currentRenderProjectSchemeNode = () => currentScope().renderProjectSchemeNode;
+  // 列表末尾落点的拖拽处理（跨层级移动到顶层末尾）。
+  // 用 React 的事件类型（工厂签名一致）；这里只转发，不做类型收窄。
+  const handleProjectTreeDragOver = (event: React.DragEvent<HTMLElement>, dropKey: string) =>
+    currentScope().handleProjectTreeDragOver?.(event, dropKey);
+  const handleProjectTreeDrop = (event: React.DragEvent<HTMLElement>, dropKey: string) =>
+    currentScope().handleProjectTreeDrop?.(event, dropKey);
+  const handleLibraryTreeDragLeave = (event: React.DragEvent<HTMLElement>) =>
+    currentScope().handleLibraryTreeDragLeave?.(event);
+  const projectTreeDropKey = currentScope().projectTreeDropKey ?? "";
+  // 末尾落点（拖到列表空白处 = 移到顶层末尾）：插入线画在**最后一个顶层方案**的下边缘，
+  // 而不是容器底部（容器很高时线会落到很远的地方，看不出插入位）。
+  const rootEndDropKey = projectTreeDropKey === `${PROJECT_TREE_ROOT_END_KEY}|after`;
   const toggleModelType = (type: string) => {
     setProjectModelTypeFilter((prev: string[]) =>
       prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
@@ -229,6 +300,32 @@ export function createRenderProjectPanel(__appScope: Record<string, any>) {
         onPointerLeave={() => {
           projectListPointerInsideRef.current = false;
         }}
+        onDragOver={(event) => {
+          // 列表空白处 = 末尾落点（移到顶层末尾）。
+          // **必须排除行内**：dragover 会从具体行冒泡到容器，容器若无条件接管，
+          // 会把行处理器刚算好的插入边覆盖成末尾落点 —— 结果只有最后一行有虚线。
+          if ((event.target as HTMLElement)?.closest?.(".scheme-option, .project-option")) {
+            return;
+          }
+          handleProjectTreeDragOver(event, PROJECT_TREE_ROOT_END_KEY);
+          event.preventDefault();
+        }}
+        onDragLeave={handleLibraryTreeDragLeave}
+        onDrop={(event) => {
+          // 同上：落在行上时交给行自己的 drop 处理。
+          if ((event.target as HTMLElement)?.closest?.(".scheme-option, .project-option")) {
+            return;
+          }
+          const sortSchemeId = event.dataTransfer?.getData?.(PROJECT_TREE_DRAG_TYPE_SCHEME);
+          if (sortSchemeId) {
+            handleProjectTreeDrop(event, PROJECT_TREE_ROOT_END_KEY);
+            return;
+          }
+          const sortModelId = event.dataTransfer?.getData?.(PROJECT_TREE_DRAG_TYPE_MODEL);
+          if (sortModelId) {
+            handleProjectTreeDrop(event, PROJECT_TREE_ROOT_END_KEY);
+          }
+        }}
         onContextMenu={openBlankProjectLibraryContextMenu}
       >
         {schemes.length === 0 ? (
@@ -238,7 +335,18 @@ export function createRenderProjectPanel(__appScope: Record<string, any>) {
         ) : filteredProjectSchemes.length === 0 ? (
           <p className="project-empty project-search-empty">未找到匹配方案或模型</p>
         ) : (
-          filteredProjectSchemes.map((scheme: SavedSchemeRecord) => renderProjectSchemeNode(scheme))
+          (() => {
+            const ordered = sortByKeyOrder(
+              filteredProjectSchemes,
+              (scheme: SavedSchemeRecord) => scheme.id,
+              currentLibraryTreeOrder()?.projectSchemes?.[""] ?? []
+            );
+            const renderNode = currentRenderProjectSchemeNode();
+            return ordered.map((scheme: SavedSchemeRecord, index: number) =>
+              // 末尾落点：插入线画在最后一个顶层方案的下边缘。
+              renderNode(scheme, 0, index === ordered.length - 1 && rootEndDropKey)
+            );
+          })()
         )}
       </div>
     </section>

@@ -677,3 +677,336 @@ describe("量测编辑组 id 的随机源按 __appScope.randomSource 的类型�
     expect(id).not.toContain(`-${suffixOf(FIXED_RANDOM)}`);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 模板库面板树拖动排序（templateLibraryTreeDragKey/DropKey）：
+//   一级（template-type:）= 顺序覆盖（libraryTreeOrder.templateTypes，本机偏好）；
+//   二级（template:<类型>::<id>）= 同类型重排是顺序覆盖（libraryTreeOrder.templates），
+//   跨类型移动是数据变更（typeName 改写 → persistTemplateLibraryChange 落库）。
+// ─────────────────────────────────────────────────────────────────────────────
+
+const stubGraphTemplate = (id: string, typeName: string): GraphTemplateLike => ({
+  id,
+  typeName,
+  name: `模板${id}`,
+  sourceSize: { width: 10, height: 10 },
+  clipboard: { nodes: [], edges: [] },
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z"
+});
+type GraphTemplateLike = {
+  id: string; typeName: string; name: string;
+  sourceSize: { width: number; height: number };
+  clipboard: { nodes: unknown[]; edges: unknown[] };
+  createdAt: string; updatedAt: string;
+};
+
+describe("模板库面板树拖动排序：装配物行为", () => {
+  test("一级落点：向上拖插到目标之前，结算进 libraryTreeOrder.templateTypes", () => {
+    const setLibraryTreeOrder = vi.fn();
+    const setCustomGraphTemplates = vi.fn();
+    const { scope } = renderRenderBatchProbe({
+      ...LIBRARY_PANEL_RENDER_SUPPORT,
+      templateLibraryTreeDragKey: "template-type:自定义类型",
+      setTemplateLibraryTreeDragKey: vi.fn(),
+      setTemplateLibraryTreeDropKey: vi.fn(),
+      templateLibraryTreeDropKey: "template-type:自定义类型|before",
+      libraryTreeOrder: { categoryLibraries: [], componentLibraries: {}, templateTypes: [], templates: {} },
+      displayedGraphTemplateTypes: ["常用模板", "自定义类型"],
+      groupedGraphTemplates: {},
+      customGraphTemplates: [],
+      setLibraryTreeOrder,
+      setCustomGraphTemplates,
+      persistTemplateLibraryChange: vi.fn(),
+      writeOperationLog: vi.fn(),
+    });
+
+    scope.handleTemplateTreeDrop(makeDragEvent(), "template-type:常用模板");
+
+    expect(setLibraryTreeOrder).toHaveBeenCalledTimes(1);
+    expect(setLibraryTreeOrder).toHaveBeenCalledWith({
+      categoryLibraries: [],
+      componentLibraries: {},
+      templateTypes: ["自定义类型", "常用模板"],
+      templates: {}
+    });
+    // 一级是本机显示偏好：不碰模板数据、不落库。
+    expect(setCustomGraphTemplates).not.toHaveBeenCalled();
+  });
+
+  test("二级同类型落点：重排是顺序覆盖（libraryTreeOrder.templates），不改模板数据", () => {
+    const setLibraryTreeOrder = vi.fn();
+    const setCustomGraphTemplates = vi.fn();
+    const persistTemplateLibraryChange = vi.fn();
+    const templates = [stubGraphTemplate("t1", "常用模板"), stubGraphTemplate("t2", "常用模板")];
+    const { scope } = renderRenderBatchProbe({
+      ...LIBRARY_PANEL_RENDER_SUPPORT,
+      templateLibraryTreeDragKey: "template:常用模板::t2",
+      setTemplateLibraryTreeDragKey: vi.fn(),
+      setTemplateLibraryTreeDropKey: vi.fn(),
+      templateLibraryTreeDropKey: "template:常用模板::t1|before",
+      libraryTreeOrder: { categoryLibraries: [], componentLibraries: {}, templateTypes: [], templates: {} },
+      displayedGraphTemplateTypes: ["常用模板"],
+      groupedGraphTemplates: { "常用模板": templates },
+      customGraphTemplates: templates,
+      setLibraryTreeOrder,
+      setCustomGraphTemplates,
+      persistTemplateLibraryChange,
+      writeOperationLog: vi.fn(),
+    });
+
+    scope.handleTemplateTreeDrop(makeDragEvent(), "template:常用模板::t1");
+
+    expect(setLibraryTreeOrder).toHaveBeenCalledWith({
+      categoryLibraries: [],
+      componentLibraries: {},
+      templateTypes: [],
+      templates: { "常用模板": ["t2", "t1"] }
+    });
+    expect(setCustomGraphTemplates).not.toHaveBeenCalled();
+    expect(persistTemplateLibraryChange).not.toHaveBeenCalled();
+  });
+
+  test("二级跨类型落点：改写 typeName、从原类型摘除并按边插入目标类型，走落库", () => {
+    const setLibraryTreeOrder = vi.fn();
+    const setCustomGraphTemplates = vi.fn();
+    // hook 装配期会用真实工厂重建 persistTemplateLibraryChange / persistDeviceLibraryChange，
+    // 探针的同名桩会被覆盖 —— 断言打在真实持久化链的终点 saveBackendDeviceLibraryPayload 上。
+    const saveBackendDeviceLibraryPayload = vi.fn().mockResolvedValue(true);
+    const setOperationLogText = vi.fn();
+    const ac = stubGraphTemplate("ac1", "交流");
+    const other = stubGraphTemplate("other1", "直流");
+    const { scope } = renderRenderBatchProbe({
+      ...LIBRARY_PANEL_RENDER_SUPPORT,
+      templateLibraryTreeDragKey: "template:交流::ac1",
+      setTemplateLibraryTreeDragKey: vi.fn(),
+      setTemplateLibraryTreeDropKey: vi.fn(),
+      templateLibraryTreeDropKey: "template:直流::other1|after",
+      libraryTreeOrder: { categoryLibraries: [], componentLibraries: {}, templateTypes: [], templates: {} },
+      displayedGraphTemplateTypes: ["交流", "直流"],
+      groupedGraphTemplates: { "交流": [ac], "直流": [other] },
+      customGraphTemplates: [ac, other],
+      setLibraryTreeOrder,
+      setCustomGraphTemplates,
+      saveBackendDeviceLibraryPayload,
+      setOperationLogText,
+      // 真实持久化链读这些 ref —— 给 null 基座即可。
+      lastPersistedDeviceLibraryPayloadRef: { current: null },
+      suppressNextBackendDeviceLibrarySyncRef: { current: false },
+      backendDeviceLibraryLoadedRef: { current: true },
+    });
+
+    scope.handleTemplateTreeDrop(makeDragEvent(), "template:直流::other1");
+
+    expect(setCustomGraphTemplates).toHaveBeenCalledTimes(1);
+    const nextTemplates = setCustomGraphTemplates.mock.calls[0][0] as GraphTemplateLike[];
+    expect(nextTemplates.find((template) => template.id === "ac1")?.typeName).toBe("直流");
+    expect(nextTemplates.filter((template) => template.typeName === "直流").map((template) => template.id))
+      .toEqual(["other1", "ac1"]);
+    expect(saveBackendDeviceLibraryPayload).toHaveBeenCalledTimes(1);
+    expect(setOperationLogText).toHaveBeenCalledTimes(1);
+    // 跨类型是数据变更：不动显示覆盖。
+    expect(setLibraryTreeOrder).not.toHaveBeenCalled();
+  });
+
+  test("跨类型 dragover：指针半区决定插入边（上半区 before）", () => {
+    const setTemplateLibraryTreeDropKey = vi.fn();
+    const ac = stubGraphTemplate("ac1", "交流");
+    const other = stubGraphTemplate("other1", "直流");
+    const { scope } = renderRenderBatchProbe({
+      ...LIBRARY_PANEL_RENDER_SUPPORT,
+      templateLibraryTreeDragKey: "template:交流::ac1",
+      displayedGraphTemplateTypes: ["交流", "直流"],
+      groupedGraphTemplates: { "交流": [ac], "直流": [other] },
+      setTemplateLibraryTreeDropKey,
+      setTemplateLibraryTreeDragKey: vi.fn(),
+      setCustomGraphTemplates: vi.fn(),
+      persistTemplateLibraryChange: vi.fn(),
+      writeOperationLog: vi.fn(),
+    });
+
+    const event = {
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+      clientY: 0,
+      currentTarget: { getBoundingClientRect: () => ({ top: 0, height: 100 }) },
+      dataTransfer: { setData: vi.fn(), dropEffect: "" }
+    } as unknown as DragEvent;
+    scope.handleTemplateTreeDragOver(event, "template:直流::other1");
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    const updater = setTemplateLibraryTreeDropKey.mock.calls[0][0] as (current: string) => string;
+    expect(updater("")).toBe("template:直流::other1|before");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 图元库面板树拖动排序（libraryTreeOrder）：
+//   useRenderBatch 把 startLibraryTreeDrag / handleLibraryTreeDragOver /
+//   handleLibraryTreeDrop 装配到 __appScope。落点结算读 libraryTreeDragKey（React 状态，
+//   非 dataTransfer.getData —— dragover 期间浏览器禁止读取跨页数据）。
+//   探针直接调装配物；事件对象只需 preventDefault / stopPropagation / dataTransfer 形状。
+// ─────────────────────────────────────────────────────────────────────────────
+
+const makeDragEvent = () => ({
+  preventDefault: vi.fn(),
+  stopPropagation: vi.fn(),
+  dataTransfer: { setData: vi.fn(), dropEffect: "" }
+}) as unknown as DragEvent;
+
+// renderLibraryPanel 的 useMemo 在 hook 装配期就会执行；displayedCategoryLibraries 非空时
+// map 体会真实运行，需要补齐面板渲染依赖（不供则首个 .includes 就炸）。只构造形状，不渲染。
+const LIBRARY_PANEL_RENDER_SUPPORT = {
+  componentLibraryDisplayMode: "expanded",
+  collapsedExpandedModeCategoryLibraries: [],
+  expandedCategoryLibraries: [],
+  collapsedExpandedModeComponentLibraries: [],
+  expandedCategoryLibraryComponentLibraries: [],
+  hoveredCategoryLibrary: "",
+  hoveredCategoryLibraryComponentLibrary: [],
+  libraryFlyoutPositions: {},
+  toggleCategoryLibrary: vi.fn(),
+  toggleCategoryLibraryComponentLibrary: vi.fn(),
+  setLibraryComponentLibraryHeaderRef: () => undefined,
+  setLibraryComponentListRef: () => undefined,
+  libraryComponentListRefKey: () => "probe-key",
+};
+
+describe("图元库面板树拖动排序：装配物行为", () => {
+  test("startLibraryTreeDrag：写 dataTransfer（text/plain）并记录拖动键", () => {
+    const setLibraryTreeDragKey = vi.fn();
+    const { scope } = renderRenderBatchProbe({ setLibraryTreeDragKey });
+    const event = makeDragEvent();
+
+    scope.startLibraryTreeDrag(event, "group:直流设备");
+
+    expect((event.dataTransfer as DataTransfer).setData).toHaveBeenCalledWith("text/plain", "group:直流设备");
+    expect(setLibraryTreeDragKey).toHaveBeenCalledWith("group:直流设备");
+  });
+
+  test("dragover：同层放行且 dropKey 携带插入边（下拖=after/上拖=before），拖自己与跨层不放行", () => {
+    const setLibraryTreeDropKey = vi.fn();
+    const { scope } = renderRenderBatchProbe({
+      ...LIBRARY_PANEL_RENDER_SUPPORT,
+      libraryTreeDragKey: "group:交流设备",
+      displayedCategoryLibraries: ["静态图元", "交流设备", "直流设备"],
+      setLibraryTreeDropKey,
+      setLibraryTreeDragKey: vi.fn(),
+      setLibraryTreeOrder: vi.fn(),
+    });
+
+    // 向下拖（交流设备 index 1 → 直流设备 index 2）：线画在目标下边缘 = after。
+    // setLibraryTreeDropKey 收到的是函数更新器，解包验证它的返回值。
+    const downOver = makeDragEvent();
+    scope.handleLibraryTreeDragOver(downOver, "group:直流设备");
+    expect(downOver.preventDefault).toHaveBeenCalledTimes(1);
+    expect(setLibraryTreeDropKey).toHaveBeenCalledTimes(1);
+    const downUpdater = setLibraryTreeDropKey.mock.calls[0][0] as (current: string) => string;
+    expect(downUpdater("")).toBe("group:直流设备|after");
+    expect(downUpdater("group:直流设备|after")).toBe("group:直流设备|after");
+
+    // 向上拖（交流设备 index 1 → 静态图元 index 0）：线画在目标上边缘 = before。
+    const upOver = makeDragEvent();
+    scope.handleLibraryTreeDragOver(upOver, "group:静态图元");
+    expect(upOver.preventDefault).toHaveBeenCalledTimes(1);
+    const upUpdater = setLibraryTreeDropKey.mock.calls[1][0] as (current: string) => string;
+    expect(upUpdater("")).toBe("group:静态图元|before");
+
+    // 拖自己：无插入边 → 不放行、不写落点。
+    const selfOver = makeDragEvent();
+    scope.handleLibraryTreeDragOver(selfOver, "group:交流设备");
+    expect(selfOver.preventDefault).not.toHaveBeenCalled();
+
+    const crossLayer = makeDragEvent();
+    scope.handleLibraryTreeDragOver(crossLayer, "class:交流设备::ACLoad");
+    expect(crossLayer.preventDefault).not.toHaveBeenCalled();
+  });
+
+  test("一级落点：向上拖（原索引更大）插到目标之前，结算为新覆盖并清空拖动态", () => {
+    const setLibraryTreeOrder = vi.fn();
+    const setLibraryTreeDragKey = vi.fn();
+    const setLibraryTreeDropKey = vi.fn();
+    const { scope } = renderRenderBatchProbe({
+      ...LIBRARY_PANEL_RENDER_SUPPORT,
+      libraryTreeDragKey: "group:直流设备",
+      libraryTreeOrder: { categoryLibraries: [], componentLibraries: {} },
+      displayedCategoryLibraries: ["静态图元", "交流设备", "直流设备"],
+      setLibraryTreeOrder,
+      setLibraryTreeDragKey,
+      setLibraryTreeDropKey,
+    });
+
+    scope.handleLibraryTreeDrop(makeDragEvent(), "group:静态图元");
+
+    expect(setLibraryTreeOrder).toHaveBeenCalledTimes(1);
+    expect(setLibraryTreeOrder).toHaveBeenCalledWith({
+      categoryLibraries: ["直流设备", "静态图元", "交流设备"],
+      componentLibraries: {}
+    });
+    expect(setLibraryTreeDragKey).toHaveBeenCalledWith("");
+    expect(setLibraryTreeDropKey).toHaveBeenCalledWith("");
+  });
+
+  test("二级落点：同一类别库内按显示顺序重排，只改该库的类清单", () => {
+    const setLibraryTreeOrder = vi.fn();
+    const { scope } = renderRenderBatchProbe({
+      ...LIBRARY_PANEL_RENDER_SUPPORT,
+      libraryTreeDragKey: "class:交流设备::ACGenerator",
+      libraryTreeOrder: { categoryLibraries: ["静态图元"], componentLibraries: {} },
+      displayedCategoryLibraries: ["交流设备"],
+      groupedCategoryLibraryByComponentLibrary: {
+        "交流设备": [{ section: "ACLoad", templates: [] }, { section: "ACGenerator", templates: [] }]
+      },
+      customComponentLibraries: [],
+      librarySearchNeedle: "",
+      setLibraryTreeOrder,
+      setLibraryTreeDragKey: vi.fn(),
+      setLibraryTreeDropKey: vi.fn(),
+    });
+
+    scope.handleLibraryTreeDrop(makeDragEvent(), "class:交流设备::ACLoad");
+
+    expect(setLibraryTreeOrder).toHaveBeenCalledTimes(1);
+    expect(setLibraryTreeOrder).toHaveBeenCalledWith({
+      categoryLibraries: ["静态图元"],
+      componentLibraries: { "交流设备": ["ACGenerator", "ACLoad"] }
+    });
+  });
+
+  test("不结算的落点：跨层、自拖自放、未知拖动键", () => {
+    const base = {
+      setLibraryTreeOrder: vi.fn(),
+      setLibraryTreeDragKey: vi.fn(),
+      setLibraryTreeDropKey: vi.fn(),
+    };
+    const crossGroup = renderRenderBatchProbe({
+      ...base,
+      ...LIBRARY_PANEL_RENDER_SUPPORT,
+      libraryTreeDragKey: "class:交流设备::ACLoad",
+      displayedCategoryLibraries: ["交流设备", "直流设备"],
+      libraryTreeOrder: { categoryLibraries: [], componentLibraries: {} },
+    });
+    crossGroup.scope.handleLibraryTreeDrop(makeDragEvent(), "class:直流设备::DCLoad");
+    expect(base.setLibraryTreeOrder).not.toHaveBeenCalled();
+
+    const selfDrop = renderRenderBatchProbe({
+      ...base,
+      ...LIBRARY_PANEL_RENDER_SUPPORT,
+      libraryTreeDragKey: "group:交流设备",
+      displayedCategoryLibraries: ["交流设备", "直流设备"],
+      libraryTreeOrder: { categoryLibraries: [], componentLibraries: {} },
+    });
+    selfDrop.scope.handleLibraryTreeDrop(makeDragEvent(), "group:交流设备");
+    expect(base.setLibraryTreeOrder).not.toHaveBeenCalled();
+
+    const noDrag = renderRenderBatchProbe({
+      ...base,
+      ...LIBRARY_PANEL_RENDER_SUPPORT,
+      libraryTreeDragKey: "",
+      displayedCategoryLibraries: ["交流设备"],
+      libraryTreeOrder: { categoryLibraries: [], componentLibraries: {} },
+    });
+    noDrag.scope.handleLibraryTreeDrop(makeDragEvent(), "group:交流设备");
+    expect(base.setLibraryTreeOrder).not.toHaveBeenCalled();
+  });
+});

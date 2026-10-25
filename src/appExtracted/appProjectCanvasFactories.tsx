@@ -4085,6 +4085,71 @@ export function createMoveSchemeRecordToScheme(__appScope: Record<string, any>) 
   };
 }
 
+/**
+ * 面板拖动排序的**跨层级**方案移动（带插入位）：
+ *   · targetParentSchemeId 为空串 → 移到**根层**（顶层）；
+ *   · insertBeforeId 指定插到该兄弟之前（为空则追加到该父级末尾）；
+ *   · 走既有落库路径（saveBackendSchemeRecord + 失败回滚提示），与跨方案移动一致。
+ */
+export function createMoveSchemeRecordToPosition(__appScope: Record<string, any>) {
+  return (schemeId: string, targetParentSchemeId: string, insertBeforeId?: string) => {
+  const {
+    findSavedSchemeById, flattenSavedSchemes, handleBackendSchemeMutationFailure, hasSameName,
+    moveSavedSchemeToPosition, requireEditMode, saveBackendSchemeRecord, schemePathForRecord,
+    schemePathForScheme, schemes, selectedSchemeId, selectedSchemeIds, setExpandedSchemeIds,
+    setPendingRecordPasteConflict, setSchemes, setSelectedProjectId, setSelectedProjectIds,
+    setSelectedSchemeId, setSelectedSchemeIds, writeOperationLog
+  } = __appScope;
+    if (!requireEditMode("移动方案")) {
+      return;
+    }
+    const sourceScheme = findSavedSchemeById(schemes, schemeId);
+    if (!sourceScheme) {
+      return;
+    }
+    const targetScheme = targetParentSchemeId ? findSavedSchemeById(schemes, targetParentSchemeId) : null;
+    if (targetParentSchemeId && !targetScheme) {
+      return;
+    }
+    const movedSchemeIds = new Set(flattenSavedSchemes([sourceScheme]).map((scheme: SavedSchemeRecord) => scheme.id));
+    if (targetScheme && movedSchemeIds.has(targetScheme.id)) {
+      return;
+    }
+    // 同名冲突：沿用既有冲突对话框（与跨方案移动同一套机制）。
+    const siblings = targetScheme ? (targetScheme.children ?? []) : schemes;
+    const duplicateScheme = siblings.find(
+      (scheme: SavedSchemeRecord) => scheme.id !== sourceScheme.id && hasSameName(scheme.name, [sourceScheme.name])
+    );
+    if (duplicateScheme) {
+      setPendingRecordPasteConflict({
+        kind: "scheme-drag",
+        schemeId,
+        targetSchemeId: targetParentSchemeId,
+        duplicateSchemeId: duplicateScheme.id,
+        duplicateName: duplicateScheme.name
+      });
+      return;
+    }
+    const sourcePath = schemePathForRecord(sourceScheme);
+    const targetParentPath = targetScheme ? schemePathForScheme(targetScheme) : [];
+    const nextPath = [...targetParentPath, sourceScheme.name];
+    setSchemes((current: SavedSchemeRecord[]) => moveSavedSchemeToPosition(current, schemeId, targetParentSchemeId, insertBeforeId));
+    void saveBackendSchemeRecord(nextPath, sourcePath)
+      .catch((error: unknown) => handleBackendSchemeMutationFailure(`移动方案同步后台：${sourceScheme.name}`, error));
+    if (targetScheme) {
+      setExpandedSchemeIds((current: string[]) => (current.includes(targetScheme.id) ? current : [...current, targetScheme.id]));
+    }
+    if (selectedSchemeId === schemeId || selectedSchemeIds.includes(schemeId)) {
+      setSelectedSchemeId(schemeId);
+      setSelectedSchemeIds([]);
+      setSelectedProjectId("");
+      setSelectedProjectIds([]);
+    }
+    const targetName = targetScheme ? `“${targetScheme.name}”下` : "顶层";
+    writeOperationLog(`移动方案“${sourceScheme.name}”到${targetName}`);
+  };
+}
+
 export function createSaveActiveProjectPointer(__appScope: Record<string, any>) {
   return (draftProjectId: string, draftSchemeId: string, sourceSchemes?: SavedSchemeRecord[]) => {
   const { ACTIVE_PROJECT_STORAGE_KEY, DRAFT_PROJECT_STORAGE_KEY, activeProjectPointerPayload, schemes } = __appScope;

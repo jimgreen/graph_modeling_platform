@@ -34,6 +34,10 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 - 自定义元件模板、图元模板
 - 派生设备类（风电/光伏/储能等）动态库名
 - 设备定义覆盖（override）机制与定义-实例同步（definitionInstanceSync）
+- 图元库面板树拖动排序：一二级菜单行首把手拖拽重排，顺序为本机 UI 偏好（libraryTreeOrder）
+- 模板库面板树拖动排序：类型行重排为本机偏好（libraryTreeOrder.templateTypes），模板卡片同类型重排为本机偏好（templates）、跨类型移动改模板 typeName 并自动落库
+- 模型库方案树拖动排序：**只有行首把手可拖**（行本体 draggable=false）；把手拖动 = 同层重排（顺序为本机偏好 libraryTreeOrder.projectSchemes / projectModels，不写回后端）；跨层级移动落库 —— 目标行上半区=成为其子方案、下半区=成为其后继兄弟、列表空白=移到顶层末尾（虚线/浅蓝底指示）
+- 方案移动带插入位（moveSavedSchemeToPosition）：支持移到根层与插到指定兄弟之前，供面板跨层级拖动用
 - 组件库定义与元数据（componentLibraryDefinitions / componentLibraryMetadata）
 - 共享图标库管理：图标库目录、完整性审计（iconLibraryCatalog / iconLibraryIntegrity / sharedIconLibrary）
 - 最近使用图元快选（顶栏）

@@ -282,6 +282,7 @@ import {
   buildManualConnectionPreviewPath,
   mirrorNodes,
   moveSavedSchemeToParent,
+  moveSavedSchemeToPosition,
   renameSavedScheme,
   renameSavedProject,
   replaceSavedSchemeById,
@@ -405,6 +406,7 @@ import {
   type SidePanelMode,
   type SidePanelSide
 } from "./sidePanelVisibility";
+import { readLibraryTreeOrder, type LibraryTreeOrderState } from "./libraryTreeOrder";
 import {
   DEFAULT_MEASUREMENT_CONFIG,
   DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
@@ -1155,6 +1157,25 @@ const [librarySearchQuery, setLibrarySearchQuery] = useState("");
 Object.assign(__appScope, { librarySearchQuery, setLibrarySearchQuery });
 const [componentLibraryDisplayMode, setComponentLibraryDisplayMode] = useState<ComponentLibraryDisplayMode>("right");
 Object.assign(__appScope, { componentLibraryDisplayMode, setComponentLibraryDisplayMode });
+// 图元库面板树（一级类别库 / 二级类）的拖动排序覆盖；本机 UI 偏好，读盘失败归空走原始顺序。
+const [libraryTreeOrder, setLibraryTreeOrder] = useState<LibraryTreeOrderState>(() => readLibraryTreeOrder());
+Object.assign(__appScope, { libraryTreeOrder, setLibraryTreeOrder });
+// 拖动排序的瞬时状态（拖动项 / 落点项），不持久化。dropKey 形如 `<行键>|before/after`，
+// 同时服务图元库（group:/class: 前缀）与模板库（template-type:/template: 前缀）两棵树。
+const [libraryTreeDragKey, setLibraryTreeDragKey] = useState("");
+Object.assign(__appScope, { libraryTreeDragKey, setLibraryTreeDragKey });
+const [libraryTreeDropKey, setLibraryTreeDropKey] = useState("");
+Object.assign(__appScope, { libraryTreeDropKey, setLibraryTreeDropKey });
+// 模板库树拖动排序的瞬时状态（独立于图元库，避免两棵树同时拖时互相污染；dropKey 同样带边）。
+const [templateLibraryTreeDragKey, setTemplateLibraryTreeDragKey] = useState("");
+Object.assign(__appScope, { templateLibraryTreeDragKey, setTemplateLibraryTreeDragKey });
+const [templateLibraryTreeDropKey, setTemplateLibraryTreeDropKey] = useState("");
+Object.assign(__appScope, { templateLibraryTreeDropKey, setTemplateLibraryTreeDropKey });
+// 模型库方案树拖动排序的瞬时状态（方案行 / 模型行）。
+const [projectTreeDragKey, setProjectTreeDragKey] = useState("");
+Object.assign(__appScope, { projectTreeDragKey, setProjectTreeDragKey });
+const [projectTreeDropKey, setProjectTreeDropKey] = useState("");
+Object.assign(__appScope, { projectTreeDropKey, setProjectTreeDropKey });
 const [templateLibrarySearchQuery, setTemplateLibrarySearchQuery] = useState("");
 Object.assign(__appScope, { templateLibrarySearchQuery, setTemplateLibrarySearchQuery });
 const [templateLibraryDisplayMode, setTemplateLibraryDisplayMode] = useState<ComponentLibraryDisplayMode>("right");

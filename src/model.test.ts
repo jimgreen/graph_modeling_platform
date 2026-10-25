@@ -73,6 +73,7 @@ import {
   resolveStraightBusSlideEndpointToPoint,
   moveProjectToScheme,
   moveSavedSchemeToParent,
+  moveSavedSchemeToPosition,
   nextSavedProjectAfterProjectBatchDeletion,
   nextSavedProjectAfterProjectDeletion,
   nextSavedProjectAfterSchemeDeletion,
@@ -1833,8 +1834,35 @@ describe("power system model", () => {
     expect(cycleAttempt).toBe(tree);
   });
 
-  test("moves saved schemes with explicit rename or overwrite conflict handling", () => {
-    const source = createSavedScheme("同名方案", [
+  test("moveSavedSchemeToPosition：带插入位的跨层级移动（根层 / 指定兄弟之前）", () => {
+    const first = createSavedScheme("方案A");
+    const second = createSavedScheme("方案B");
+    const third = createSavedScheme("方案C");
+    const tree = [first, second, third];
+
+    // 移到根层末尾（目标父级为空串）。
+    const toRoot = moveSavedSchemeToPosition(tree, first.id, "");
+    expect(toRoot.map((scheme) => scheme.name)).toEqual(["方案B", "方案C", "方案A"]);
+
+    // 插到指定兄弟之前（成为它的前一个兄弟）：方案C 移到根层、排在方案B 之前。
+    const beforeSecond = moveSavedSchemeToPosition(tree, third.id, "", second.id);
+    expect(beforeSecond.map((scheme) => scheme.name)).toEqual(["方案A", "方案C", "方案B"]);
+
+    // 插到某个父级下的指定兄弟之前。
+    const child = createSavedScheme("子方案");
+    const parented = insertChildSavedScheme(tree, first.id, child);
+    const movedIn = moveSavedSchemeToPosition(parented, second.id, first.id, child.id);
+    expect(findSavedSchemeById(movedIn, first.id)?.children?.map((scheme) => scheme.name)).toEqual(["方案B", "子方案"]);
+    // 方案B 仍在树里，只是换了父级（不再在根层）。
+    expect(findSavedSchemeById(movedIn, second.id)?.name).toBe("方案B");
+    expect(movedIn.map((scheme) => scheme.name)).toEqual(["方案A", "方案C"]);
+
+    // 目标在源子树内 → 成环，拒绝（返回原树）。
+    const cyclic = moveSavedSchemeToPosition(parented, first.id, child.id);
+    expect(cyclic).toBe(parented);
+  });
+
+  test("moves saved schemes with explicit rename or overwrite conflict handling", () => {    const source = createSavedScheme("同名方案", [
       createSavedProject("源模型", { version: 1, name: "源模型", nodes: [], edges: [] })
     ]);
     const duplicate = createSavedScheme("同名方案", [
