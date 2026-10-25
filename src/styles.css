@@ -1296,15 +1296,6 @@ button:not(.ant-btn):disabled {
   cursor: grab;
 }
 
-/* 模板卡片左上角把手：单独承载面板树排序拖动（卡片本体拖动仍是放到画布） */
-.template-tree-card-handle {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 14px;
-  height: 13px;
-}
-
 .template-library-item:hover,
 .template-library-item:focus-visible {
   border-color: #93c5fd;

@@ -13,10 +13,6 @@ export type LibraryTreeOrderState = {
   categoryLibraries: string[];
   /** 二级（类）显示顺序：键为归一化类别库名，值为该库下类的 section 名清单。 */
   componentLibraries: Record<string, string[]>;
-  /** 模板库一级（模板类型）显示顺序；只存被拖动整理过的完整可见清单。 */
-  templateTypes: string[];
-  /** 模板库二级（模板卡片）显示顺序：键为模板类型名，值为该类型下模板 id 清单。 */
-  templates: Record<string, string[]>;
   /**
    * 模型库方案树：方案同级显示顺序。
    * 键 = 父方案 id（顶层用空串），值为该层级下方案 id 清单。
@@ -37,8 +33,6 @@ export const LIBRARY_TREE_DRAG_TYPE_COMPONENT_LIBRARY = "application/x-library-t
 export const EMPTY_LIBRARY_TREE_ORDER: LibraryTreeOrderState = {
   categoryLibraries: [],
   componentLibraries: {},
-  templateTypes: [],
-  templates: {},
   projectSchemes: {},
   projectModels: {}
 };
@@ -52,15 +46,13 @@ function normalizeKeyList(value: unknown): string[] {
 
 /** 任意来源（localStorage JSON、拖放 payload）→ 合法顺序状态；畸形输入一律归空，不抛错。 */
 export function parseLibraryTreeOrder(raw: unknown): LibraryTreeOrderState {
-  const empty = { categoryLibraries: [], componentLibraries: {}, templateTypes: [], templates: {}, projectSchemes: {}, projectModels: {} };
+  const empty = { categoryLibraries: [], componentLibraries: {}, projectSchemes: {}, projectModels: {} };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return empty;
   }
   const source = raw as {
     categoryLibraries?: unknown;
     componentLibraries?: unknown;
-    templateTypes?: unknown;
-    templates?: unknown;
     projectSchemes?: unknown;
     projectModels?: unknown;
   };
@@ -76,23 +68,9 @@ export function parseLibraryTreeOrder(raw: unknown): LibraryTreeOrderState {
       }
     }
   }
-  const templates: Record<string, string[]> = {};
-  if (source.templates && typeof source.templates === "object" && !Array.isArray(source.templates)) {
-    for (const [typeName, value] of Object.entries(source.templates)) {
-      if (!typeName) {
-        continue;
-      }
-      const list = normalizeKeyList(value);
-      if (list.length > 0) {
-        templates[typeName] = list;
-      }
-    }
-  }
   return {
     categoryLibraries: normalizeKeyList(source.categoryLibraries),
     componentLibraries,
-    templateTypes: normalizeKeyList(source.templateTypes),
-    templates,
     projectSchemes: normalizeOrderBuckets(source.projectSchemes),
     projectModels: normalizeOrderBuckets(source.projectModels)
   };

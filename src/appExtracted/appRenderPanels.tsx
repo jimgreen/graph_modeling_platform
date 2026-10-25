@@ -4,9 +4,6 @@
 import { createPortal } from "react-dom";
 import { Input, Button } from "antd";
 import { sortByKeyOrder } from "../libraryTreeOrder";
-// 直接 import 图标（不改 appStaticScope 的 lucide 清单 —— 那会点亮 appStaticScope ↔
-// customDeviceUtils ↔ App 的既有循环导入，导致 App 渲染中断）。
-import { GripVertical } from "lucide-react";
 import {
   PROJECT_TREE_DRAG_TYPE_MODEL,
   PROJECT_TREE_DRAG_TYPE_SCHEME,
@@ -106,39 +103,11 @@ export function createRenderGraphTemplateButton(__appScope: Record<string, any>)
     clearLibraryFlyoutCloseTimer, setHoveredGraphTemplateType,
     hideLibraryFlyout, renderGraphTemplatePreview
   } = __appScope;
-  // 模板卡片把手拖动（面板树内排序/跨类型移动）的处理函数在 useRenderBatch 的**后段**才
-  // Object.assign 进 __appScope（本工厂在其之前创建）—— 不能在工厂创建期解构，否则拿到
-  // undefined，把手永远拖不动。改为每次渲染时从**当前帧** scope 直读最新装配值
-  // （__appScope 每帧重建，闭包捕获的引用会冻结在首帧）。
-  const templateTreeDeps = () => {
-    const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
-    return {
-      startTemplateTreeDrag: scope.startTemplateTreeDrag,
-      endTemplateTreeDrag: scope.endTemplateTreeDrag,
-      handleTemplateTreeDragOver: scope.handleTemplateTreeDragOver,
-      handleTemplateTreeDrop: scope.handleTemplateTreeDrop,
-      handleLibraryTreeDragLeave: scope.handleLibraryTreeDragLeave,
-      templateLibraryTreeDragKey: scope.templateLibraryTreeDragKey,
-      templateLibraryTreeDropKey: scope.templateLibraryTreeDropKey
-    };
-  };
-  return (template: GraphTemplate) => {
-    const {
-      startTemplateTreeDrag, endTemplateTreeDrag,
-      handleTemplateTreeDragOver, handleTemplateTreeDrop, handleLibraryTreeDragLeave,
-      templateLibraryTreeDragKey, templateLibraryTreeDropKey
-    } = templateTreeDeps();
-    // 拖动排序进行中才可能携带边；dropKey 形如 `template:<类型>::<id>|before/after`。
-    const dropLineClass = templateLibraryTreeDropKey === `template:${template.typeName}::${template.id}|before`
-      ? " library-tree-drop-line-before"
-      : templateLibraryTreeDropKey === `template:${template.typeName}::${template.id}|after`
-        ? " library-tree-drop-line-after"
-        : "";
-    return (
+  return (template: GraphTemplate) => (
     <button
       key={template.id}
       type="button"
-      className={`template-library-item${dropLineClass}`}
+      className="template-library-item"
       draggable={isEditMode}
       disabled={isBrowseMode}
       title={`${template.typeName} / ${template.name} / ${template.sourceSize.width}×${template.sourceSize.height}`}
@@ -171,29 +140,14 @@ export function createRenderGraphTemplateButton(__appScope: Record<string, any>)
           hideLibraryFlyout();
         }
       }}
-      onDragOver={(event) => handleTemplateTreeDragOver(event, `template:${template.typeName}::${template.id}`)}
-      onDragLeave={handleLibraryTreeDragLeave}
-      onDrop={(event) => handleTemplateTreeDrop(event, `template:${template.typeName}::${template.id}`)}
     >
-      <span
-        className="library-tree-drag-handle template-tree-card-handle"
-        title="拖动调整顺序（可跨类型移动）"
-        aria-label={`拖动调整模板 ${template.name} 的顺序`}
-        draggable
-        onDragStart={(event) => startTemplateTreeDrag(event, `template:${template.typeName}::${template.id}`)}
-        onDragEnd={endTemplateTreeDrag}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <GripVertical size={11} aria-hidden="true" />
-      </span>
       <span className="template-library-icon">
         {renderGraphTemplatePreview(template)}
       </span>
       <span className="template-library-name">{template.name}</span>
       <small>{template.sourceSize.width}×{template.sourceSize.height}</small>
     </button>
-    );
-  };
+  );
 }
 
 // 图模板浮动面板

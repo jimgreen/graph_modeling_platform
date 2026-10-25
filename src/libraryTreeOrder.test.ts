@@ -56,20 +56,10 @@ describe("parseLibraryTreeOrder：畸形输入一律归空", () => {
 
   test("字段类型不对时逐字段归空，不抛错", () => {
     expect(parseLibraryTreeOrder({ categoryLibraries: "x", componentLibraries: 5 })).toEqual(EMPTY_LIBRARY_TREE_ORDER);
-    expect(parseLibraryTreeOrder({ categoryLibraries: [1, null, "", "ok", "ok"] })).toEqual({ categoryLibraries: ["ok"], componentLibraries: {}, templateTypes: [], templates: {}, projectSchemes: {}, projectModels: {} });
+    expect(parseLibraryTreeOrder({ categoryLibraries: [1, null, "", "ok", "ok"] })).toEqual({ categoryLibraries: ["ok"], componentLibraries: {}, projectSchemes: {}, projectModels: {} });
     expect(parseLibraryTreeOrder({ componentLibraries: { "": ["a"], g: "junk", g2: ["b", 1, "c"] } })).toEqual({
       categoryLibraries: [],
       componentLibraries: { g2: ["b", "c"] },
-      templateTypes: [],
-      templates: {},
-      projectSchemes: {},
-      projectModels: {}
-    });
-    expect(parseLibraryTreeOrder({ templateTypes: [3, "t", "t"], templates: { "": ["x"], T: "junk", T2: ["a", 2] } })).toEqual({
-      categoryLibraries: [],
-      componentLibraries: {},
-      templateTypes: ["t"],
-      templates: { T2: ["a"] },
       projectSchemes: {},
       projectModels: {}
     });
@@ -82,8 +72,6 @@ describe("parseLibraryTreeOrder：畸形输入一律归空", () => {
     })).toEqual({
       categoryLibraries: [],
       componentLibraries: {},
-      templateTypes: [],
-      templates: {},
       projectSchemes: { "": ["s2", "s1"], s1: ["c1"] },
       projectModels: { s1: ["m1", "m2"] }
     });
@@ -92,14 +80,10 @@ describe("parseLibraryTreeOrder：畸形输入一律归空", () => {
   test("合法 payload 原样解析", () => {
     expect(parseLibraryTreeOrder({
       categoryLibraries: ["交流设备", "静态图元"],
-      componentLibraries: { "静态图元": ["StaticTextSymbol"] },
-      templateTypes: ["常用模板"],
-      templates: { "常用模板": ["tpl-1", "tpl-2"] }
+      componentLibraries: { "静态图元": ["StaticTextSymbol"] }
     })).toEqual({
       categoryLibraries: ["交流设备", "静态图元"],
       componentLibraries: { "静态图元": ["StaticTextSymbol"] },
-      templateTypes: ["常用模板"],
-      templates: { "常用模板": ["tpl-1", "tpl-2"] },
       projectSchemes: {},
       projectModels: {}
     });
@@ -115,24 +99,18 @@ describe("readLibraryTreeOrder / writeLibraryTreeOrder：localStorage 往返", (
     writeLibraryTreeOrder({
       categoryLibraries: ["b", "a"],
       componentLibraries: { g: ["x", "y"] },
-      templateTypes: ["t2", "t1"],
-      templates: { T: ["a"] },
       projectSchemes: { "": ["s2", "s1"], s1: ["c1"] },
       projectModels: { s1: ["m1", "m2"] }
     });
     expect(readLibraryTreeOrder()).toEqual({
       categoryLibraries: ["b", "a"],
       componentLibraries: { g: ["x", "y"] },
-      templateTypes: ["t2", "t1"],
-      templates: { T: ["a"] },
       projectSchemes: { "": ["s2", "s1"], s1: ["c1"] },
       projectModels: { s1: ["m1", "m2"] }
     });
     expect(JSON.parse(localStorage.getItem(LIBRARY_TREE_ORDER_STORAGE_KEY) ?? "")).toEqual({
       categoryLibraries: ["b", "a"],
       componentLibraries: { g: ["x", "y"] },
-      templateTypes: ["t2", "t1"],
-      templates: { T: ["a"] },
       projectSchemes: { "": ["s2", "s1"], s1: ["c1"] },
       projectModels: { s1: ["m1", "m2"] }
     });

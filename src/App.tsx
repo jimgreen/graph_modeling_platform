@@ -1166,11 +1166,6 @@ const [libraryTreeDragKey, setLibraryTreeDragKey] = useState("");
 Object.assign(__appScope, { libraryTreeDragKey, setLibraryTreeDragKey });
 const [libraryTreeDropKey, setLibraryTreeDropKey] = useState("");
 Object.assign(__appScope, { libraryTreeDropKey, setLibraryTreeDropKey });
-// 模板库树拖动排序的瞬时状态（独立于图元库，避免两棵树同时拖时互相污染；dropKey 同样带边）。
-const [templateLibraryTreeDragKey, setTemplateLibraryTreeDragKey] = useState("");
-Object.assign(__appScope, { templateLibraryTreeDragKey, setTemplateLibraryTreeDragKey });
-const [templateLibraryTreeDropKey, setTemplateLibraryTreeDropKey] = useState("");
-Object.assign(__appScope, { templateLibraryTreeDropKey, setTemplateLibraryTreeDropKey });
 // 模型库方案树拖动排序的瞬时状态（方案行 / 模型行）。
 const [projectTreeDragKey, setProjectTreeDragKey] = useState("");
 Object.assign(__appScope, { projectTreeDragKey, setProjectTreeDragKey });

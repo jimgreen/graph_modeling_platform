@@ -394,7 +394,7 @@ describe("面板工厂冒烟", () => {
     expect(html).not.toContain("disabled");
   });
 
-  test("createRenderGraphTemplateButton 可渲染单个模板按钮并带预览插槽与排序把手", () => {
+  test("createRenderGraphTemplateButton 可渲染单个模板按钮并带预览插槽（无排序把手）", () => {
     const renderTemplateButton = createRenderGraphTemplateButton({
       isEditMode: true,
       isBrowseMode: false,
@@ -407,24 +407,15 @@ describe("面板工厂冒烟", () => {
       clearLibraryFlyoutCloseTimer: noop,
       setHoveredGraphTemplateType: noop,
       hideLibraryFlyout: noop,
-      renderGraphTemplatePreview: () => createElement("span", { "data-preview": "TPL1" }),
-      GripVertical: () => createElement("span", { "data-icon": "grip" }),
-      startTemplateTreeDrag: noop,
-      endTemplateTreeDrag: noop,
-      handleTemplateTreeDragOver: noop,
-      handleTemplateTreeDrop: noop,
-      handleLibraryTreeDragLeave: noop,
-      templateLibraryTreeDragKey: "",
-      templateLibraryTreeDropKey: ""
+      renderGraphTemplatePreview: () => createElement("span", { "data-preview": "TPL1" })
     });
     const html = renderToStaticMarkup(createElement("div", null, renderTemplateButton(stubTemplate)));
     expect(html).toContain('class="template-library-item');
     expect(html).toContain('data-preview="TPL1"');
     expect(html).toContain("标准主变模板");
     expect(html).toContain("320×240");
-    // 排序把手：拖模板卡片左上角的把手是面板树排序（可跨类型移动），卡片本体拖动仍是放到画布。
-    // 把手的 dragKey 在事件闭包里、不落在 DOM 属性上，冒烟只验把手存在。
-    expect(html).toContain("template-tree-card-handle");
+    // 模板库已移除拖动排序：卡片不再有排序把手，卡片本体拖动仍是「放到画布」。
+    expect(html).not.toContain("template-tree-card-handle");
   });
 
   test("createRenderGraphTemplateFlyout 在无 document 环境直接返回飞行面板而非 portal", () => {

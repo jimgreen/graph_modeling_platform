@@ -540,10 +540,6 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     statusbarResize,
     templateLibraryDisplayMode,
     templateLibrarySearchNeedle,
-    templateLibraryTreeDragKey,
-    templateLibraryTreeDropKey,
-    setTemplateLibraryTreeDragKey,
-    setTemplateLibraryTreeDropKey,
     templateLibrarySearchQuery,
     terminalPress,
     terminalPressPreviewEdgeIdSet,
@@ -3027,172 +3023,6 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const renderGraphTemplatePreview = createRenderGraphTemplatePreview(__appScope); Object.assign(__appScope, { renderGraphTemplatePreview });
   const renderGraphTemplateButton = createRenderGraphTemplateButton(__appScope); Object.assign(__appScope, { renderGraphTemplateButton });
   const renderGraphTemplateFlyout = createRenderGraphTemplateFlyout(__appScope); Object.assign(__appScope, { renderGraphTemplateFlyout });
-  // ── 模板库面板树拖动排序（一级模板类型 / 二级模板卡片）──────────────────────────
-  // 一级（模板类型）与图元库一级同口径：顺序覆盖存 libraryTreeOrder.templateTypes（本机 UI 偏好）。
-  // 二级（模板卡片）：
-  //   · 同类型内重排 = 显示顺序覆盖，存 libraryTreeOrder.templates[<类型名>]（本机 UI 偏好）；
-  //   · 跨类型移动 = **数据变更**（模板的 typeName 要改），走 persistTemplateLibraryChange
-  //     落库（与「新增/删除模板」同一条自动保存路径），移动后该模板在新类型下按原始顺序垫底。
-  // 提示方式与图元库一致：目标行上/下边缘的一条虚线直线（before/after），不框住整行；
-  // 跨类型落点的线画在指针进入的半区（上=before 下=after），所见即插入位。
-  // 模板卡片把手拖动（text/plain）与「拖到画布放置」（appRenderPanels 的 onDragStart，
-  // application/graph-template-id）是两条互不串扰的通道；排序状态独立于图元库树。
-  const startTemplateTreeDrag = (event: DragEvent, dragKey: string) => {
-    event.stopPropagation();
-    event.dataTransfer.setData("text/plain", dragKey);
-    event.dataTransfer.effectAllowed = "move";
-    setTemplateLibraryTreeDragKey(dragKey);
-  };
-  const endTemplateTreeDrag = () => {
-    setTemplateLibraryTreeDragKey("");
-    setTemplateLibraryTreeDropKey("");
-  };
-  // 某模板类型下按当前显示顺序排好的模板 id 清单（插入位判定与落点结算共用同一口径）。
-  const templateTreeSortedIds = (typeName: string): string[] =>
-    sortByKeyOrder(
-      groupedGraphTemplates[typeName] ?? [],
-      (template: { id: string }) => template.id,
-      libraryTreeOrder?.templates?.[typeName] ?? []
-    ).map((template: { id: string }) => template.id);
-  // 插入边判定：返回 before / after / "cross"（跨类型，按指针半区定边）/ null（不放行）。
-  // 跨层级放行：模板卡片（template:）可以拖到**类型行**（template-type:）上 —— 语义是移动到
-  // 该类型（改 typeName 落库），线同样画在指针所在半区；反向（类型行 → 卡片）不放行。
-  const templateTreeDropEdge = (dragKey: string, dropKey: string): "before" | "after" | "cross" | null => {
-    const dragLayer = dragKey.split(":")[0];
-    const dropLayer = dropKey.split(":")[0];
-    if (dragLayer === "template" && dropLayer === "template-type") {
-      const dragTypeName = dragKey.slice("template:".length).split("::")[0];
-      const dragId = dragKey.slice(`template:${dragTypeName}::`.length);
-      const targetTypeName = dropKey.slice("template-type:".length);
-      // 自家类型行 = 无操作；目标类型必须真实存在。
-      if (dragTypeName === targetTypeName) {
-        return null;
-      }
-      return templateTreeSortedIds(dragTypeName).includes(dragId) && displayedGraphTemplateTypes.includes(targetTypeName)
-        ? "cross"
-        : null;
-    }
-    if (dragLayer !== dropLayer) {
-      return null;
-    }
-    if (dragLayer === "template-type") {
-      const from = displayedGraphTemplateTypes.indexOf(dragKey.slice("template-type:".length));
-      const to = displayedGraphTemplateTypes.indexOf(dropKey.slice("template-type:".length));
-      return from < 0 || to < 0 || from === to ? null : from < to ? "after" : "before";
-    }
-    const dragTypeName = dragKey.slice("template:".length).split("::")[0];
-    const dropTypeName = dropKey.slice("template:".length).split("::")[0];
-    const dragId = dragKey.slice(`template:${dragTypeName}::`.length);
-    const dropId = dropKey.slice(`template:${dropTypeName}::`.length);
-    const from = templateTreeSortedIds(dragTypeName).indexOf(dragId);
-    const to = templateTreeSortedIds(dropTypeName).indexOf(dropId);
-    if (from < 0 || to < 0) {
-      return null;
-    }
-    if (dragTypeName === dropTypeName) {
-      return from === to ? null : from < to ? "after" : "before";
-    }
-    // 跨类型：目标清单里没有拖动项，边由指针所在半区决定（handleTemplateTreeDragOver）。
-    return "cross";
-  };
-  const handleTemplateTreeDragOver = (event: DragEvent, dropKey: string) => {
-    const dragKey = templateLibraryTreeDragKey;
-    const edgeOrCross = templateTreeDropEdge(dragKey, dropKey);
-    if (!edgeOrCross) {
-      return;
-    }
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    const edge = edgeOrCross === "cross"
-      ? // 跨类型移动：线画在指针进入的半区（上=before 下=after）。
-        (() => {
-          const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-          return event.clientY - rect.top < rect.height / 2 ? "before" : "after";
-        })()
-      : edgeOrCross;
-    const dropStateKey = `${dropKey}|${edge}`;
-    setTemplateLibraryTreeDropKey((current: string) => current === dropStateKey ? current : dropStateKey);
-  };
-  const handleTemplateTreeDrop = (event: DragEvent, dropKey: string) => {
-    event.preventDefault();
-    const dragKey = templateLibraryTreeDragKey;
-    // 落点边沿用 dragover 已判定的方向（dropKey|before/after）。
-    const stateKey = templateLibraryTreeDropKey;
-    const edge: "before" | "after" = stateKey.endsWith("|before") ? "before" : "after";
-    endTemplateTreeDrag();
-    if (!dragKey) {
-      return;
-    }
-    const dragLayer = dragKey.split(":")[0];
-    if (dragLayer === "template-type" && dropKey.startsWith("template-type:")) {
-      const next = reorderKeys(displayedGraphTemplateTypes, dragKey.slice("template-type:".length), dropKey.slice("template-type:".length));
-      if (next) {
-        const nextOrder = { ...libraryTreeOrder, templateTypes: next };
-        writeLibraryTreeOrder(nextOrder);
-        setLibraryTreeOrder(nextOrder);
-      }
-      return;
-    }
-    if (dragLayer !== "template") {
-      return;
-    }
-    const dragTypeName = dragKey.slice("template:".length).split("::")[0];
-    const dragId = dragKey.slice(`template:${dragTypeName}::`.length);
-    const dragged = (groupedGraphTemplates[dragTypeName] ?? []).find((template: GraphTemplate) => template.id === dragId);
-    if (!dragged) {
-      return;
-    }
-    // 卡片 → 类型行 = 跨类型移动到该类型的末尾（before = 该类型行之前的位置语义在类型层无意义，
-    // 统一落到该类型下；半区仅决定视觉线，落点都是进入该类型）。
-    if (dropKey.startsWith("template-type:")) {
-      const targetTypeName = dropKey.slice("template-type:".length);
-      if (dragTypeName === targetTypeName) {
-        return;
-      }
-      commitCrossTypeMove(dragged, targetTypeName, (groupedGraphTemplates[targetTypeName] ?? []).length);
-      return;
-    }
-    if (!dropKey.startsWith("template:")) {
-      return;
-    }
-    const dropTypeName = dropKey.slice("template:".length).split("::")[0];
-    const dropId = dropKey.slice(`template:${dropTypeName}::`.length);
-    if (dragTypeName === dropTypeName) {
-      // 同类型内重排 = 显示顺序覆盖（本机偏好），不动模板数据。
-      const nextIds = reorderKeys(templateTreeSortedIds(dragTypeName), dragId, dropId);
-      if (nextIds) {
-        const nextOrder = {
-          ...libraryTreeOrder,
-          templates: { ...libraryTreeOrder?.templates, [dragTypeName]: nextIds }
-        };
-        writeLibraryTreeOrder(nextOrder);
-        setLibraryTreeOrder(nextOrder);
-      }
-      return;
-    }
-    // 跨类型移动 = 数据变更：改 typeName，从原数组摘除、按边插进目标类型清单，整表持久化。
-    // 注意 groupedGraphTemplates 的成员与 customGraphTemplates 是同一批对象引用（memo 分组不复制），
-    // 组装结果必须「其它类型模板 + 目标类型重排后的模板」各恰好一份 —— 不能 filter 后又拼分组清单。
-    const dropList = templateTreeSortedIds(dropTypeName);
-    const dropIndex = dropList.indexOf(dropId);
-    const insertIndex = edge === "before" ? dropIndex : dropIndex + 1;
-    commitCrossTypeMove(dragged, dropTypeName, insertIndex < 0 ? (groupedGraphTemplates[dropTypeName] ?? []).length : insertIndex);
-  };
-  // 跨类型移动的共用落库出口：改 typeName、插到目标类型的 insertIndex 处，其余类型保持原状。
-  const commitCrossTypeMove = (dragged: GraphTemplate, targetTypeName: string, insertIndex: number) => {
-    const moved: GraphTemplate = { ...dragged, typeName: targetTypeName, updatedAt: new Date().toISOString() };
-    const restOfType = (groupedGraphTemplates[targetTypeName] ?? []).slice();
-    restOfType.splice(Math.min(Math.max(insertIndex, 0), restOfType.length), 0, moved);
-    const nextTemplates = [
-      ...customGraphTemplates.filter((template: GraphTemplate) =>
-        template.id !== dragged.id && template.typeName !== targetTypeName),
-      ...restOfType
-    ];
-    setCustomGraphTemplates(nextTemplates);
-    persistTemplateLibraryChange({ customGraphTemplateTypes, customGraphTemplates: nextTemplates });
-    writeOperationLog(`移动模板到类型「${targetTypeName}」：${dragged.name}`);
-  };
-  Object.assign(__appScope, { startTemplateTreeDrag, endTemplateTreeDrag, handleTemplateTreeDragOver, handleTemplateTreeDrop });
   const renderTemplateLibraryPanel = () => (
       <div className="template-library-panel library-panel-stack">
         <div className="library-search">
@@ -3273,11 +3103,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
             }
           }}
         >
-          {displayedGraphTemplateTypes.length > 0 ? sortByKeyOrder(
-              displayedGraphTemplateTypes,
-              (typeName: string) => typeName,
-              libraryTreeOrder?.templateTypes ?? []
-            ).map((typeName: string) => {
+          {displayedGraphTemplateTypes.length > 0 ? displayedGraphTemplateTypes.map((typeName: string) => {
             const templates = filteredGroupedGraphTemplates[typeName] ?? [];
             const templateExpanded = templateLibrarySearchNeedle
               ? true
@@ -3290,11 +3116,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
             const flyoutListKey = libraryComponentListRefKey("flyout", `template:${typeName}`);
             return (
               <section
-                className={`library-group-section template-library-type-section ${templateLibraryDisplayMode === "right" ? "flyout-mode" : ""} ${templateLibraryTreeDropKey === `template-type:${typeName}|before` ? "library-tree-drop-line-before" : ""} ${templateLibraryTreeDropKey === `template-type:${typeName}|after` ? "library-tree-drop-line-after" : ""}`}
+                className={`library-group-section template-library-type-section ${templateLibraryDisplayMode === "right" ? "flyout-mode" : ""}`}
                 key={typeName}
-                onDragOver={(event) => handleTemplateTreeDragOver(event, `template-type:${typeName}`)}
-                onDragLeave={handleLibraryTreeDragLeave}
-                onDrop={(event) => handleTemplateTreeDrop(event, `template-type:${typeName}`)}
                 onMouseEnter={() => {
                   if (templateLibraryDisplayMode === "right" && !templateLibrarySearchNeedle) {
                     clearLibraryFlyoutCloseTimer();
@@ -3336,19 +3159,6 @@ export function useRenderBatch(__appScope: Record<string, any>) {
                     );
                   }}
                 >
-                  {!templateLibrarySearchNeedle && (
-                    <span
-                      className="library-tree-drag-handle"
-                      title="拖动调整顺序"
-                      aria-label={`拖动调整模板类型 ${typeName} 的顺序`}
-                      draggable
-                      onDragStart={(event) => startTemplateTreeDrag(event, `template-type:${typeName}`)}
-                      onDragEnd={endTemplateTreeDrag}
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <GripVertical size={12} aria-hidden="true" />
-                    </span>
-                  )}
                   {templateExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   {typeName}
                   <strong>{templates.length}</strong>
@@ -3356,11 +3166,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
                 {templateExpanded && (
                   templates.length > 0 ? (
                     <div className="template-library-grid">
-                      {sortByKeyOrder<GraphTemplate>(
-                        templates,
-                        (template) => template.id,
-                        libraryTreeOrder?.templates?.[typeName] ?? []
-                      ).map((template) => renderGraphTemplateButton(template))}
+                      {templates.map((template: GraphTemplate) => renderGraphTemplateButton(template))}
                     </div>
                   ) : (
                     <div className="template-library-empty">暂无模板</div>
@@ -4205,8 +4011,6 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         templateLibraryDisplayMode,
         templateLibrarySearchNeedle,
         templateLibrarySearchQuery,
-        templateLibraryTreeDragKey,
-        templateLibraryTreeDropKey,
         libraryTreeOrder,
         groupedGraphTemplates,
         customGraphTemplates,
