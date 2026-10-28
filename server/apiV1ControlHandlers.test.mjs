@@ -562,11 +562,11 @@ describe("handleCommandError：三种错误类的映射", () => {
 // ─── createV1ControlRoutes ────────────────────────────────
 
 describe("createV1ControlRoutes", () => {
-  test("路由表覆盖 11 个端点，路径互不重复", () => {
+  test("路由表覆盖 13 个端点，路径互不重复", () => {
     const routes = createV1ControlRoutes(fakeCtx());
-    expect(routes).toHaveLength(11);
+    expect(routes).toHaveLength(13);
     const sources = routes.map((route) => route.pattern.source);
-    expect(new Set(sources).size).toBe(11);
+    expect(new Set(sources).size).toBe(13);
     for (const route of routes) {
       expect(route.method, route.pattern.source).toBe("POST");
     }
@@ -611,7 +611,9 @@ describe("createV1ControlRoutes", () => {
       "/webgrp/v1/control/save",
       "/webgrp/v1/control/template/saveFromSelection",
       "/webgrp/v1/control/e-device-definition/export",
-      "/webgrp/v1/control/e-device-definition/import"
+      "/webgrp/v1/control/e-device-definition/import",
+      "/webgrp/v1/control/space/switch",
+      "/webgrp/v1/control/model/switch"
     ];
     for (const route of routes) {
       const matched = paths.filter((path) => route.pattern.test(path));

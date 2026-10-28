@@ -443,7 +443,7 @@ export function AppTour({ scope }: AppTourProps) {
   }, []);
 
   // 把引导期间的侧边栏锁定状态挂到 scope 上，供各交互工厂读取。
-  // 每帧重算：scope 原地更新，必须用最新字段（见 src/CLAUDE.md）。
+  // 每帧重算：scope 原地更新，必须用最新字段（见 根 AGENTS.md「分域规则 · src」）。
   const tourBody = run && stepIndex >= 1;
   // 锁定目标：锚定侧边栏的步骤锁对应侧边栏；引导其余时间至少锁左侧栏
   // （第 0 步切到编辑模式后左侧栏会多出「图元库 / 模板库」tab，第 1 步要锚定它）。
@@ -512,7 +512,7 @@ export function AppTour({ scope }: AppTourProps) {
   });
 
   // 每帧检查闸门：满足则自动前进。
-  // 不写 dep 数组：应用每帧都会重渲染（见 src/CLAUDE.md），这里只做布尔比较，成本极低。
+  // 不写 dep 数组：应用每帧都会重渲染（见 根 AGENTS.md「分域规则 · src」），这里只做布尔比较，成本极低。
   // scope 通过 Object.assign 原地修改、引用不变，因此必须每帧读取其最新字段。
   useEffect(() => {
     if (!run) return;

@@ -1,10 +1,10 @@
-<!-- Parent: ../CLAUDE.md -->
+<!-- Parent: ../AGENTS.md -->
 <!-- Generated: 2026-10-23 -->
 
 # 架构与功能索引
 
 本文件是**查阅型**资料：功能清单、符号映射、架构风格。开工前不需要通读，按关键词跳转即可。
-**执行型**约束（改动分档、检索规则、测试要求、命令）在 `../AGENTS.md` 与 `../CLAUDE.md`。
+**执行型**约束（改动分档、检索规则、测试要求、命令）在 `../AGENTS.md`（根目录单一入口；各子目录的规范见其「分域规则」一节）。
 
 ## 概述
 
@@ -89,9 +89,9 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 
 ### 运行时态桥接
 
-- WS 客户端（runtimeWsClient）：clientId 注册、ping 心跳、fetch/command 响应
+- WS 客户端（runtimeWsClient）：把地址栏 `?token=` 当作 clientId 注册（缺省时生成并写回地址栏）、ping 心跳、fetch/command 响应
 - 运行时态序列化（runtimeSnapshot）：model/devices/selection/tab/snapshot/svg
-- 前端 RT-WS 指示灯，点击复制 clientId
+- 前端 RT-WS 指示灯，点击复制页面 token（= 地址栏 `?token=`，MCP 用它指定目标页面）
 
 ### 第三方 API（/api/v1）
 
@@ -104,15 +104,26 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 
 ### 控制台写操作（v1 control）
 
-- 11 端点：device/scheme/model/select/group/delete/update/save/template/e-device-definition
+- 13 端点：device/scheme/model/select/group/delete/update/save/template/e-device-definition + space/switch + model/switch（切空间/切模型）
 - 经 WS 下发 command 到前端 __appScope 程序化方法
 - 前端回 command-response
+
+### MCP 服务（/webgrp/mcp）
+
+- 把本平台暴露成 Model Context Protocol 服务（SDK 1.32.2）：**streamable HTTP 无状态**模式，每个 POST 一次 JSON-RPC 往返，不建 SSE 长连接（GET/DELETE 回 405 + `Allow: POST`）
+- **29 个 `gmp_*` 工具**，三段式：方案域（列方案/模型 JSON/导出 SVG·E 文件·CIM XML/方案 ZIP/发送到外部）、图元库域（分类/设备图元/量测/元件定义/模板）、运行时态域（clients/model/devices/selection/tabs/screenshot/svg/e-file/dom）+ 控制台写操作域（13 个工具，含切换工作空间与切换模型；破坏性的标 `destructiveHint`）
+- **不是第二份实现**：全部工具转调 `server/apiV1*.mjs` / `eFileExport.mjs` / `cimExport.mjs` / `sendModel.mjs` 已导出的 handler —— 参数校验、错误码、空间隔离口径与 v1 同源（`server/mcp/v1Bridge.mjs` 用捕获型假 request/response 驱动 v1 handler）
+- 空间隔离与 v1 一致：`/mcp` **不进** `isSpaceAgnostic` 白名单，照常走 `X-Space` 头 > `?space=` > Cookie > 首个空间的解析链
+- **页面选择用 token**：前端把 `?token=` 写进自己的地址栏，该值同时是 WS clientId。MCP 的会话类工具**入参与出参**都叫 `token`：本空间只有一个在线页面时可不填，多个时必须填，否则回 `token-required` 并列出可选值 —— 不静默退回「最近活跃」（v1 REST 仍用 clientId，契约不变）。复制标签页会连同 token 一起复制，服务端在注册阶段仲裁：旧连接已断则沿用原 token（刷新场景），仍被占则给后缀 token 并回 `renamed`，前端写回地址栏
+- 写操作经 WS 打到前端 `__appScope` 程序化方法 → **需要前端页面在线**；且只改前端内存，**要落盘须另调 `gmp_save_model`**
+- Origin 校验复用 `isAllowedNativeExportOrigin`（挡掉浏览器里任意网页对本机端口发 POST —— 发送不受 CORS 约束）
+- 文档：`docs/MCP.md`（连接方式、29 工具速查、错误码、限制）；评测：`docs/mcp-evaluation.xml`
 
 ### 空间隔离（多工作空间）
 
 - 一个部署内多套互相隔离的数据空间：`data/` 是 default 空间根，其余在 `data/workspaces/<id>/`
 - 空间标识解析链：`X-Space` 头 > `?space=` > `Cookie: gmp_space` > 回退 `spaces[0]`
-- 不变量（**改后端前先读 `server/CLAUDE.md` 的 Common Patterns**）：不得新增模块级路径常量（一律 `options.paths ?? defaultPaths` 显式透传）；一切建目录调用均经退休守护（`mkdirInSpace` / `writeTextIfChanged`）
+- 不变量（**改后端前先读 根 `AGENTS.md`「分域规则 · server」 的 Common Patterns**）：不得新增模块级路径常量（一律 `options.paths ?? defaultPaths` 显式透传）；一切建目录调用均经退休守护（`mkdirInSpace` / `writeTextIfChanged`）
 - 空间导入/导出：顶栏空间下拉右侧四按钮（导出 / 导入 / 改名 / 删除，均作用于**当前空间**）；`GET /webgrp/spaces/export` 把当前空间原样打包成 ZIP（只遍历 `spacePathsFor` 枚举的子目录，default 空间的根是数据根、**不得**按根递归），`POST /webgrp/spaces/import` 一律新建空间、不落在当前空间，失败回滚不落半成品；改名走 `PUT /webgrp/spaces`（只改显示名、不重载页面），删除走 `DELETE /webgrp/spaces`（确认后目录进 `trash-spaces/`、删完切到剩余空间）
 - 空间**名**唯一：新建 / 改名 / 导入撞上已有名字一律 409 `SPACE_NAME_DUPLICATE`（正文带冲突者 `name` / `conflictId`），**不再**静默加 `-2` 后缀；导入撞车时前端弹询问框（确定=覆盖该空间、取消=改用其他名字导入，改名框再取消=放弃），带 `?mode=overwrite` 或 `?mode=rename&name=` 重发
 - 空间 **id 与 name 会分叉**：目录名恒为 id（`data/workspaces/<id>/`），创建时由名字 slug 而来、此后**永不改**；改名只改 `spaces.json` 里的 name。认目录只能靠 id —— 底部状态栏「空间ID <id>」常驻显示并支持点击复制，顶栏选择器显示的是 name
@@ -154,6 +165,10 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 | createRuntimeWsClient | 函数 | src/runtimeWsClient.ts | 前端 WS 客户端 |
 | buildSvgDocument | 函数 | src/export/svg.ts | 自包含 SVG 导出（前端经 appPersistenceLibraryExport 转出；后端适配层 Node 原生直载） |
 | createProgrammaticAddDevice | 函数 | src/appExtracted/appControlFactories.tsx | 控制台写操作工厂（9 方法） |
+| createMcpServer | 函数 | server/mcp/mcpServer.mjs | 装配 MCP server（29 个 gmp_* 工具 + instructions） |
+| createMcpToolRegistry | 函数 | server/mcp/tools.mjs | MCP 工具定义（参数翻译 + v1 信封搬运） |
+| invokeV1Handler | 函数 | server/mcp/v1Bridge.mjs | 用捕获型假 request/response 驱动 v1 handler |
+| handleMcpPost | 函数 | server/mcp/httpHandler.mjs | /webgrp/mcp 的 POST 入口（Origin 校验 + 无状态 transport） |
 | renderSwaggerHtml | 函数 | server/swaggerPage.mjs | /swigger 页面 HTML |
 
 ## 独特风格

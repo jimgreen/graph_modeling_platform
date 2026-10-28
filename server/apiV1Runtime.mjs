@@ -228,6 +228,41 @@ export async function handleV1RuntimeEFilePost({ request, response, url }, ctx) 
   }
 }
 
+// /webgrp/v1/runtime/dom —— 当前前端页面的整体 DOM 结构
+// query: format=outline|html（默认 outline）、maxDepth / maxNodes / maxTextLength（outline）、
+//        maxChars（html）、clientId。
+// 纯读：不碰前端状态，只把页面的结构折成 JSON 回传。
+export async function handleV1RuntimeDom({ url, response }, ctx) {
+  const params = {};
+  const format = (url.searchParams.get("format") ?? "").trim();
+  if (format) {
+    if (format !== "outline" && format !== "html") {
+      sendV1Error(response, "bad-request", "format 须为 outline 或 html。");
+      return;
+    }
+    params.format = format;
+  }
+  // 数值参数：给非法值就地 400，别把 NaN 一路传到前端再折成空结构
+  for (const [queryName, paramName] of [
+    ["maxDepth", "maxDepth"],
+    ["maxNodes", "maxNodes"],
+    ["maxTextLength", "maxTextLength"],
+    ["maxChars", "maxChars"]
+  ]) {
+    const raw = url.searchParams.get(queryName);
+    if (raw === null || raw === "") {
+      continue;
+    }
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 0) {
+      sendV1Error(response, "bad-request", `${queryName} 须为非负整数。`);
+      return;
+    }
+    params[paramName] = value;
+  }
+  await relayJson(response, ctx.fetchFromClient(readClientId(url), "runtime.dom", params));
+}
+
 import { apiPattern } from "./config.mjs";
 
 // 构造 v1 运行时态路由表。ctx = { fetchFromClient, listClients }
@@ -261,6 +296,7 @@ export function createV1RuntimeRoutes(ctx) {
     { method: "GET", pattern: apiPattern("/v1/runtime/screenshot", "/?$"), handle: wrap(handleV1RuntimeScreenshot) },
     { method: "GET", pattern: apiPattern("/v1/runtime/svg", "/?$"), handle: wrap(handleV1RuntimeSvg) },
     { method: "GET", pattern: apiPattern("/v1/runtime/e-file", "/?$"), handle: wrap(handleV1RuntimeEFile) },
+    { method: "GET", pattern: apiPattern("/v1/runtime/dom", "/?$"), handle: wrap(handleV1RuntimeDom) },
     { method: "POST", pattern: apiPattern("/v1/runtime/e-file", "/?$"), handle: wrap(handleV1RuntimeEFilePost) }
   ];
 }

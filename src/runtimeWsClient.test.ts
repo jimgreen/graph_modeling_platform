@@ -78,13 +78,28 @@ function installMockLocalStorage() {
 let originalWebSocket: any;
 let originalLocalStorage: any;
 let mockWs: ReturnType<typeof installMockWebSocket>;
+// 地址栏写入记录：token 现在靠 URL 承载（MCP 用它指定目标页面），
+// 故「有没有写回地址栏」是要断言的契约，不只是副作用。
+let writtenUrls: string[] = [];
+
+function installMockWindow(href = "http://127.0.0.1:5173/") {
+  writtenUrls = [];
+  (globalThis as any).window = {
+    location: { protocol: "http:", host: "127.0.0.1:5173", href },
+    history: {
+      replaceState: (_state: unknown, _title: string, url: string) => {
+        writtenUrls.push(url);
+      }
+    }
+  };
+}
 
 beforeEach(() => {
   originalWebSocket = (globalThis as any).WebSocket;
   originalLocalStorage = (globalThis as any).localStorage;
   mockWs = installMockWebSocket();
   installMockLocalStorage();
-  (globalThis as any).window = { location: { protocol: "http:", host: "127.0.0.1:5173" } };
+  installMockWindow();
 });
 
 afterEach(() => {
@@ -94,7 +109,7 @@ afterEach(() => {
 });
 
 describe("runtimeWsClient 连接与注册", () => {
-  test("connect 后 onopen 发 register + clientId 持久化", () => {
+  test("connect 后 onopen 发 register（clientId 即页面 token）", () => {
     vi.useFakeTimers();
     const client = createRuntimeWsClient(async () => ({ ok: true, data: {} }));
     client.connect();
@@ -103,15 +118,84 @@ describe("runtimeWsClient 连接与注册", () => {
     expect(ws.sent).toHaveLength(1);
     const msg = JSON.parse(ws.sent[0]);
     expect(msg.type).toBe("register");
-    expect(msg.clientId).toBeTruthy();
+    expect(msg.clientId).toBe(client.clientId);
+    expect(msg.clientId).toMatch(/^page-/u);
     expect(client.getStatus()).toBe("open");
     client.close();
   });
 
-  test("clientId 复用 localStorage", () => {
-    localStorage.setItem("runtimeWsClientId", "persisted-id");
+  test("地址栏已有 ?token= → 直接用它（刷新/切空间 reload 后身份不变）", () => {
+    installMockWindow("http://127.0.0.1:5173/?token=page-abc123#space=default&model=13");
     const client = createRuntimeWsClient(async () => ({ ok: true, data: {} }));
-    expect(client.clientId).toBe("persisted-id");
+    expect(client.clientId).toBe("page-abc123");
+    // 已一致就不该再写地址栏（避免每次挂载塞一条无变化的历史记录）
+    expect(writtenUrls).toHaveLength(0);
+  });
+
+  test("地址栏没有 token → 生成一个并写回地址栏（MCP 靠它指定页面）", () => {
+    installMockWindow("http://127.0.0.1:5173/#space=default");
+    const client = createRuntimeWsClient(async () => ({ ok: true, data: {} }));
+    expect(client.clientId).toMatch(/^page-/u);
+    expect(writtenUrls).toHaveLength(1);
+    expect(writtenUrls[0]).toContain(`token=${client.clientId}`);
+    // hash 必须保留：里面装着空间/模型标识，丢了等于换工作空间
+    expect(writtenUrls[0]).toContain("#space=default");
+  });
+
+  test("qiankun 下不写宿主地址栏（token 只在本次会话有效）", () => {
+    installMockWindow("http://host/app/#/");
+    (globalThis as any).window.__POWERED_BY_QIANKUN__ = true;
+    try {
+      const client = createRuntimeWsClient(async () => ({ ok: true, data: {} }));
+      expect(client.clientId).toMatch(/^page-/u);
+      expect(writtenUrls).toHaveLength(0);
+    } finally {
+      delete (globalThis as any).window.__POWERED_BY_QIANKUN__;
+    }
+  });
+
+  test("显式 clientId 优先于地址栏（测试/嵌入方可注入）", () => {
+    installMockWindow("http://127.0.0.1:5173/?token=page-fromurl");
+    const client = createRuntimeWsClient(async () => ({ ok: true, data: {} }), { clientId: "page-explicit" });
+    expect(client.clientId).toBe("page-explicit");
+  });
+
+  test("★ 服务端给了新 token（复制标签页去重）→ 采纳、写回地址栏、并通知界面", () => {
+    vi.useFakeTimers();
+    installMockWindow("http://127.0.0.1:5173/?token=page-shared#space=default");
+    const changed: string[] = [];
+    const client = createRuntimeWsClient(async () => ({ ok: true, data: {} }), {
+      onClientIdChange: (id) => changed.push(id)
+    });
+    expect(client.clientId).toBe("page-shared");
+    client.connect();
+    const ws = mockWs.instances[0];
+    ws.triggerOpen();
+    // 服务端仲裁后回执：这个页面的 token 被换成带后缀的那个
+    ws.triggerMessage({ type: "registered", clientId: "page-shared-2", renamed: true });
+    expect(client.clientId).toBe("page-shared-2");
+    expect(changed).toEqual(["page-shared-2"]);
+    // 必须写回**本页**地址栏，否则刷新后又撞回旧 token，仲裁白做
+    expect(writtenUrls).toHaveLength(1);
+    expect(writtenUrls[0]).toContain("token=page-shared-2");
+    expect(writtenUrls[0]).toContain("#space=default");
+    client.close();
+  });
+
+  test("★ 回执里的 token 与本地一致时不做任何事（不重复写历史）", () => {
+    vi.useFakeTimers();
+    installMockWindow("http://127.0.0.1:5173/?token=page-same");
+    const changed: string[] = [];
+    const client = createRuntimeWsClient(async () => ({ ok: true, data: {} }), {
+      onClientIdChange: (id) => changed.push(id)
+    });
+    client.connect();
+    const ws = mockWs.instances[0];
+    ws.triggerOpen();
+    ws.triggerMessage({ type: "registered", clientId: "page-same" });
+    expect(changed).toHaveLength(0);
+    expect(writtenUrls).toHaveLength(0);
+    client.close();
   });
 });
 
@@ -416,48 +500,30 @@ function connectWithDevFlag(
   }
 }
 
-describe("runtimeWsClient clientId 的 localStorage 降级", () => {
-  test("★ getItem 抛错时降级为临时 id，且仍把新 id 写回（L18 catch）", () => {
-    const writes: Array<[string, string]> = [];
-    (globalThis as any).localStorage = {
-      getItem: () => {
-        throw new Error("SecurityError: 隐私模式禁用存储");
-      },
-      setItem: (key: string, value: string) => {
-        writes.push([key, value]);
-      },
-      removeItem: () => {}
+describe("runtimeWsClient 的 token 降级", () => {
+  test("★ 地址栏写不进去（replaceState 抛错）时照常出 token，不阻断启动", () => {
+    installMockWindow("http://127.0.0.1:5173/");
+    (globalThis as any).window.history = {
+      replaceState: () => {
+        throw new Error("SecurityError: 历史记录被禁用");
+      }
     };
     let clientId: string | undefined;
     expect(() => {
       clientId = createRuntimeWsClient(async () => ({ ok: true, data: {} })).clientId;
     }).not.toThrow();
-    expect(clientId).toMatch(/^client-/);
-    // 读失败不等于写失败：不写回的话每次刷新都换一个 clientId，
-    // server 侧会话也跟着丢。所以读失败后仍必须尝试落盘。
-    expect(writes).toHaveLength(1);
-    expect(writes[0][0]).toBe("runtimeWsClientId");
-    expect(writes[0][1]).toBe(clientId);
+    // token 仍然有效（本次会话内可用），只是地址栏里看不到 —— 不能因为写失败就不连
+    expect(clientId).toMatch(/^page-/u);
   });
 
-  test("★ setItem 抛错时忽略写入失败，仍照常返回临时 id（L24 catch）", () => {
-    const getItem = vi.fn(() => null);
-    (globalThis as any).localStorage = {
-      getItem,
-      setItem: () => {
-        throw new Error("QuotaExceededError");
-      },
-      removeItem: () => {}
-    };
-    let clientId: string | undefined;
-    expect(() => {
-      clientId = createRuntimeWsClient(async () => ({ ok: true, data: {} })).clientId;
-    }).not.toThrow();
-    expect(getItem).toHaveBeenCalledWith("runtimeWsClientId");
-    expect(clientId).toMatch(/^client-/);
-    // 写失败 ⇒ 没落盘 ⇒ 下一个实例拿到的是另一个临时 id（不是同一个）
-    const nextId = createRuntimeWsClient(async () => ({ ok: true, data: {} })).clientId;
-    expect(nextId).not.toBe(clientId);
+  test("★ 地址栏里是非法 token 时当作没有，重新生成并覆盖", () => {
+    // `%20` 解码后是空格：非法 token 不能带进注册链路（抄错 / 被别处污染）
+    installMockWindow("http://127.0.0.1:5173/?token=a%20b");
+    const client = createRuntimeWsClient(async () => ({ ok: true, data: {} }));
+    expect(client.clientId).toMatch(/^page-/u);
+    expect(client.clientId).not.toContain(" ");
+    expect(writtenUrls).toHaveLength(1);
+    expect(writtenUrls[0]).toContain(`token=${client.clientId}`);
   });
 });
 

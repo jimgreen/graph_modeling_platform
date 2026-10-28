@@ -41,7 +41,7 @@ function findRecord(records: ReturnType<typeof buildEditorRecords>, section: str
   return records.find((r) => r.section === section && (!nameContains || r.params.name?.includes(nameContains)));
 }
 
-// 样本依赖：data/ 整目录被 .gitignore 忽略（见 CLAUDE.md），干净检出上必然缺失。
+// 样本依赖：data/ 整目录被 .gitignore 忽略（见 AGENTS.md），干净检出上必然缺失。
 // 按仓库既有约定（见 ems-rtdb-export-path.test.ts）用 skipIf 而非 existsSync 提前 return ——
 // 后者在缺样本时会"静默通过"，等于没测。
 const TITAN_PROJECT_SAMPLE = "data/schemes/files/四川/成都/厂站/天府新区站.json";

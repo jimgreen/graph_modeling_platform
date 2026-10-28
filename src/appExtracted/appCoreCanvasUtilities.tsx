@@ -3526,7 +3526,7 @@ export function normalizeSavedProjectIndexes(project: SavedProjectRecord): Saved
     // 都会走它），少一道判就是「导入一个畸形包整个应用起不来」。
     //
     // 补齐 kind / params / terminals 三个形状，与后端 normalizeProjectForStorage 的
-    // 边界归一**同一条规则**（见 server/CLAUDE.md「模型存储边界」那条不变量）：
+    // 边界归一**同一条规则**（见 根 AGENTS.md「分域规则 · server」「模型存储边界」那条不变量）：
     // 两侧各有一份实现，规则必须一致，否则同一个畸形文件在后端能存、在前端就炸。
     // kind 归空串是必须的——baseDeviceKind 对非字符串 kind 是**故意抛错**的
     // （见 globalLinesKeys.test.ts 记录的理由：静默兜底会掩盖「取不到线路」），
@@ -3546,7 +3546,7 @@ export function normalizeSavedProjectIndexes(project: SavedProjectRecord): Saved
     // 入参是刚归一过的**部分形状**：source 来自不可信来源（后端 payload / 浏览器缓存 /
     // 图元库导入包），version 等字段未必存在。normalizeProjectLayers 只读 layers / nodes /
     // activeLayerId 并把其余键原样透传，故在此收口成 ProjectFile —— 与后端
-    // normalizeProjectForStorage 是同一条边界规则，见 server/CLAUDE.md「模型存储边界」。
+    // normalizeProjectForStorage 是同一条边界规则，见 根 AGENTS.md「分域规则 · server」「模型存储边界」。
   } as ProjectFile);
   return {
     ...project,

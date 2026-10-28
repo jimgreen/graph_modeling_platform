@@ -1,6 +1,6 @@
 // `data/` 不得有任何版本跟踪文件 —— 守卫。
 //
-// 项目 CLAUDE.md 写着「`data/` 整目录忽略、无版本跟踪文件（`git ls-files data` 为空）」，
+// 项目 AGENTS.md 写着「`data/` 整目录忽略、无版本跟踪文件（`git ls-files data` 为空）」，
 // 但此前没有任何测试盯着。为什么值得盯：
 //   · `data/` 是运行时数据根（default 空间就是它），里面会出现用户的方案、导出的派生文件
 //     （.e / .svg / CIM）、缓存与回收站。误提交 = 用户数据进仓库，且 `data/workspaces/` 会

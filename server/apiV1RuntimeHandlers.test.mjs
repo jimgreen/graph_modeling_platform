@@ -492,19 +492,19 @@ describe("handleFetchError：三种错误类的映射", () => {
 // ─── createV1RuntimeRoutes ───────────────────────────────
 
 describe("createV1RuntimeRoutes", () => {
-  test("路由表覆盖 10 条（含 e-file 的 GET 与 POST 两条）", () => {
+  test("路由表覆盖 11 条（含 e-file 的 GET 与 POST 两条）", () => {
     const routes = createV1RuntimeRoutes(fakeCtx());
-    expect(routes).toHaveLength(10);
-    expect(new Set(routes.map((route) => route.pattern.source)).size).toBe(9);
+    expect(routes).toHaveLength(11);
+    expect(new Set(routes.map((route) => route.pattern.source)).size).toBe(10);
     // e-file 有 GET + POST 两条，pattern 相同但 method 不同
     const eFile = routes.filter((route) => route.pattern.source.includes("runtime\\/e-file"));
     expect(eFile.map((route) => route.method).sort()).toEqual(["GET", "POST"]);
   });
 
-  test("9 条 GET + 1 条 POST（唯 e-file 有 POST）", () => {
+  test("10 条 GET + 1 条 POST（唯 e-file 有 POST）", () => {
     const routes = createV1RuntimeRoutes(fakeCtx());
     const methods = routes.map((route) => route.method);
-    expect(methods.filter((method) => method === "GET")).toHaveLength(9);
+    expect(methods.filter((method) => method === "GET")).toHaveLength(10);
     expect(methods.filter((method) => method === "POST")).toHaveLength(1);
   });
 

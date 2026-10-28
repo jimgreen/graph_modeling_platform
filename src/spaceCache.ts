@@ -28,9 +28,11 @@
 //         · `CATALOG_CACHE_KEY`、`MANIFEST_CACHE_KEY_PREFIX`（`iconLibraryCatalog.ts:6-7`）
 //           —— 经 helper 形参间接进 storage，见 (f)
 //         · `VOLTAGE_LEVEL_SETTINGS_KEY`（`model.ts:7398`，用于 `:7402`/`:7418`）
-//         · `CLIENT_ID_KEY`（`runtimeWsClient.ts:8`，用于 `:14`/`:23`）
-//       后两条以**纯标识符实参直接**调 storage，四层扫描全看不见 —— 把
-//       `model.ts:7398` 的值改掉、或把 runtimeWsClient 的 key 改名，**守卫照样绿**，
+//         · `CLIENT_ID_KEY`（`runtimeWsClient.ts`）—— **已退役**：页面身份改用地址栏
+//           `?token=`（见 `src/runtimeToken.ts`），该 key 不再读写。清单里仍登记着
+//           `runtimeWsClientId`，只是为了让老浏览器里残留的那个值不被误清（清它也无副作用）。
+//       最后两条以**纯标识符实参直接**调 storage，四层扫描全看不见 —— 把
+//       `model.ts:7398` 的值改掉、或把 clientId 的存储位置挪走，**守卫照样绿**，
 //       而前者会让上一空间的电压基值设定跨空间留存（与 S2 同类）。
 //       今天 4 条都在清单里（`runtimeWsClientId` 属「不清」、其余属「清」）故无现网泄漏；
 //       但**别把「在清单里」读成「受守卫保护」** —— 本模块头那句「源里改名、这里没改

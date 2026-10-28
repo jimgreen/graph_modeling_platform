@@ -300,8 +300,72 @@ export async function handleControlImportEDeviceDefinition({ request, url, respo
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.e-device-definition.import", { text }));
 }
 
-import { apiPattern } from "./config.mjs";
+// /webgrp/v1/control/space/switch —— 切换工作空间
+// body: { spaceId } → 回执 { scheduled, spaceId, spaceName }
+//
+// **异步语义**：前端会先回执、再在下一个宏任务里 clear caches → 写 Cookie → location.reload()。
+// 页面一重载 WS 就断，故回执里的 scheduled=true 表示「已排期」，不表示「已切完」。
+// clientId 是切换的发起方 —— 目标前端不需要在目标空间里（它正是要切过去的那个）。
+export async function handleControlSpaceSwitch({ request, url, response }, ctx) {
+  let payload;
+  try {
+    payload = await readJsonBody(request);
+  } catch (error) {
+    if (sendV1PayloadTooLarge(response, error)) return;
+    sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
+    return;
+  }
+  const spaceId = typeof payload?.spaceId === "string" ? payload.spaceId.trim() : "";
+  if (!spaceId) {
+    sendV1Error(response, "bad-request", "spaceId 必填。");
+    return;
+  }
+  await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.space.switch", { spaceId }));
+}
 
+// /webgrp/v1/control/model/switch —— 切换当前打开的模型
+// body: { modelId? , modelKey? , schemePath? , name? } → 回执 { alreadyOpen, modelId, name, schemeId, schemePath }
+// 定位优先级：modelId（后端稳定序号 idx）> modelKey > schemePath + name。
+// 无未保存修改才放行（前端侧校验，有则回 bad-request）。
+export async function handleControlModelSwitch({ request, url, response }, ctx) {
+  let payload;
+  try {
+    payload = await readJsonBody(request);
+  } catch (error) {
+    if (sendV1PayloadTooLarge(response, error)) return;
+    sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
+    return;
+  }
+  const params = {};
+  const rawModelId = payload?.modelId;
+  if (rawModelId !== undefined && rawModelId !== null && String(rawModelId).trim() !== "") {
+    const numeric = Number(rawModelId);
+    // 稳定序号必须是正整数：把 "abc" / 0 / 负数就地拒掉，不下发到前端
+    if (!Number.isSafeInteger(numeric) || numeric <= 0) {
+      sendV1Error(response, "bad-request", "modelId 必须是正整数。");
+      return;
+    }
+    params.modelId = numeric;
+  }
+  const modelKey = typeof payload?.modelKey === "string" ? payload.modelKey.trim() : "";
+  if (modelKey) {
+    params.modelKey = modelKey;
+  }
+  if (Array.isArray(payload?.schemePath) && payload.schemePath.length > 0) {
+    params.schemePath = payload.schemePath;
+  }
+  const name = typeof payload?.name === "string" ? payload.name.trim() : "";
+  if (name) {
+    params.name = name;
+  }
+  if (params.modelId === undefined && !params.modelKey && !(params.schemePath && params.name)) {
+    sendV1Error(response, "bad-request", "请用 modelId、modelKey 或 schemePath + name 指定要切换的模型。");
+    return;
+  }
+  await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.model.switch", params));
+}
+
+import { apiPattern } from "./config.mjs";
 // 构造 v1 控制台路由表。ctx = { sendCommandToClient }
 // handle 签名：({ request, response, url, match, spaceId }, ctx) => Promise<void>
 // spaceId 由派发层注入（server.mjs 的 ...spaceCtx）：会话类端点不切数据，
@@ -333,6 +397,8 @@ export function createV1ControlRoutes(ctx) {
     { method: "POST", pattern: apiPattern("/v1/control/save", "/?$"), handle: wrap(handleControlSave) },
     { method: "POST", pattern: apiPattern("/v1/control/template/saveFromSelection", "/?$"), handle: wrap(handleControlTemplateSaveFromSelection) },
     { method: "POST", pattern: apiPattern("/v1/control/e-device-definition/export", "/?$"), handle: wrap(handleControlExportEDeviceDefinition) },
-    { method: "POST", pattern: apiPattern("/v1/control/e-device-definition/import", "/?$"), handle: wrap(handleControlImportEDeviceDefinition) }
+    { method: "POST", pattern: apiPattern("/v1/control/e-device-definition/import", "/?$"), handle: wrap(handleControlImportEDeviceDefinition) },
+    { method: "POST", pattern: apiPattern("/v1/control/space/switch", "/?$"), handle: wrap(handleControlSpaceSwitch) },
+    { method: "POST", pattern: apiPattern("/v1/control/model/switch", "/?$"), handle: wrap(handleControlModelSwitch) }
   ];
 }

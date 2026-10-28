@@ -6,7 +6,7 @@
 // 鉴别力来源逐例说明：用例 2/3（跨空间筛选）靠「前提自检 + 反转活跃度」——先证明不筛空间时
 // 会取到**另一个**前端，断言才有意义；用例 1（无 Cookie 归位）靠「取消归位即 503」取得区分度；
 // 用例 4 用显式 clientId，不依赖活跃度。
-import { expect, test, beforeAll, afterAll } from "vitest";
+import { expect, test, beforeAll, afterAll, beforeEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -54,6 +54,29 @@ afterAll(async () => {
   if (server) await new Promise((r) => server.close(r));
   delete process.env.GRAPH_MODEL_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
+});
+
+// 每个用例都重新用 c-lisi / c-def 这两个身份上线，所以**必须**先把上一个用例的前端收干净。
+//
+// 不收的后果（实测过）：服务端对「同一个 token 又来一条连接」会做占用仲裁 ——
+// 旧 socket 还开着就判定为「另一个页面」（复制标签页），新连接拿到 c-lisi-2。
+// 于是断言里的 lastActive("c-lisi") 读到的是上一条已死的连接，活跃度对比随机红。
+beforeEach(async () => {
+  for (const frontend of opened.splice(0)) {
+    try {
+      frontend.ws.close();
+    } catch {
+      // 已断开
+    }
+  }
+  // close 是异步送达服务端的：等注册表真的空了再开下一个用例
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const { data } = await fetchV1(apiPath("/v1/runtime/clients"));
+    if ((data?.clients ?? []).length === 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
 });
 
 // 连一个前端并注册 clientId；Cookie 决定它被归位到哪个空间。

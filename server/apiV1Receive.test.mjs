@@ -113,7 +113,7 @@ describe(`${receivePath} 接收`, () => {
   });
 
   test("内存只留最近 5 次：淘汰的是最旧的（文档承诺的 MAX_RECORDS，此前无覆盖）", async () => {
-    // apiV1Receive.mjs 的模块注释与 server/CLAUDE.md 都写明「内存留最近 5 次」。
+    // apiV1Receive.mjs 的模块注释与 根 AGENTS.md「分域规则 · server」 都写明「内存留最近 5 次」。
     // 越界淘汰靠 `records.splice(0, records.length - MAX_RECORDS)` 手工维护：
     //   - 漏掉 → 内存随联调次数无限增长（无鉴权端点，任何跨源请求都能灌）
     //   - 起点写成 1 → 8 条里 splice(1,3) 后**长度仍恰好是 5**，而且最新那条

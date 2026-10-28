@@ -92,13 +92,17 @@ export function createRuntimeRegistry() {
     return Date.now();
   }
 
-  function register(clientId, send, workspaceId) {
+  function register(clientId, send, workspaceId, isOpen) {
     const entry = {
       clientId,
       // 空间归属：注册时由 WS 层从握手 Cookie 解析并归位（缺 Cookie / 空间已删 → 首个空间），
       // 故线上条目恒有具体空间，空串只出现在未注入 store 的单测里
       workspaceId: String(workspaceId ?? ""),
       send, // (message) => void，由 WS 层注入
+      // 连接存活探针：由 WS 层注入 `() => ws.readyState === ws.OPEN`。
+      // isClientLive 靠它区分「这条 token 真的还被另一个页面占着」与
+      // 「旧连接已经断了、只是 close 事件还没跑到」。缺省（纯逻辑单测）视为活。
+      isOpen: typeof isOpen === "function" ? isOpen : null,
       registeredAt: now(),
       lastActiveAt: now(),
       pendingFetches: new Map(), // requestId -> pending fetch
@@ -193,6 +197,33 @@ export function createRuntimeRegistry() {
       return null;
     }
     return entry;
+  }
+
+  /**
+   * 该 clientId 是否被一条**仍然活着**的连接占着。
+   *
+   * WS 层在注册前用它做「token 占用仲裁」（见 runtimeWs.mjs 的 claimToken）：
+   * 只有「活着」才算被占 —— 刷新 / 切空间 reload 时旧 socket 往往还挂在注册表里
+   * 几百毫秒，那属于「同一页面的旧连接即将消失」，不该让页面的 token 被换掉，
+   * 否则用户抄给 MCP 的 token 在每次刷新后都会失效。
+   *
+   * 没有 isOpen 探针（纯逻辑单测直接调 register）时按「活着」处理：宁可让
+   * 调用方多等一轮，也不要静默顶替掉另一个真实页面。
+   */
+  function isClientLive(clientId) {
+    const entry = getClient(clientId);
+    if (!entry) {
+      return false;
+    }
+    if (typeof entry.isOpen !== "function") {
+      return true;
+    }
+    try {
+      return entry.isOpen() !== false;
+    } catch {
+      // 探针抛错（socket 已被拆掉）当作不活：这只会让新连接更快拿到 token
+      return false;
+    }
   }
 
   // 按 clientId 或默认选取客户端。无在线客户端抛 NoOnlineClientError。
@@ -290,6 +321,7 @@ export function createRuntimeRegistry() {
     listClients,
     pickDefaultClient,
     getClient,
+    isClientLive,
     resolveClient,
     fetchFromClient,
     resolveFetch,

@@ -111,6 +111,11 @@ function runtimeResponder(resource, params) {
       return { ok: true, data: "<svg></svg>" };
     case "runtime.e-file":
       return { ok: true, data: { filename: "model.e", text: "<Section>", mime: "text/plain" } };
+    // runtime.dom：outline 回元素树，html 回标记 —— 按 params.format 分派，与真实前端同语义
+    case "runtime.dom":
+      return params.format === "html"
+        ? { ok: true, data: { format: "html", title: "t", url: "u", html: "<html></html>", nodeCount: 1, totalChars: 13, truncated: false } }
+        : { ok: true, data: { format: "outline", title: "t", url: "u", root: { tag: "html", children: [{ tag: "body" }] }, nodeCount: 2, truncated: false } };
     default:
       return { ok: false, error: { code: "fetch-failed", message: "unknown resource" } };
   }
@@ -141,6 +146,10 @@ function commandResponder(name, params) {
       return { ok: true, data: { filename: "device-definitions.e", text: "<Section>", mime: "text/plain" } };
     case "control.e-device-definition.import":
       return { ok: true, data: { matched: [], skipped: [], matchedCount: 0, skippedCount: 0 } };
+    case "control.space.switch":
+      return { ok: true, data: { scheduled: true, alreadyCurrent: false, spaceId: params.spaceId, spaceName: params.spaceId } };
+    case "control.model.switch":
+      return { ok: true, data: { alreadyOpen: false, modelId: 1, name: params.name || "模型1", schemeId: "s1", schemePath: params.schemePath || [] } };
     default:
       return { ok: false, error: { code: "unknown-command", message: `unknown command: ${name}` } };
   }
@@ -263,6 +272,16 @@ function expectFor(ep, ex) {
   if (p === apiPath("/v1/runtime/screenshot")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/png") };
   if (p === apiPath("/v1/runtime/svg")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/svg") };
   if (p === apiPath("/v1/runtime/e-file")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("text/plain") };
+  // runtime.dom：两条示例分别打 outline 与 html 分支，断言 format 与结构字段
+  if (p === apiPath("/v1/runtime/dom")) return { status: 200, check: (r) => {
+    expect(r.json.ok).toBe(true);
+    if (r.json.data.format === "html") {
+      expect(typeof r.json.data.html).toBe("string");
+    } else {
+      expect(r.json.data.format).toBe("outline");
+      expect(r.json.data.root.tag).toBeTruthy();
+    }
+  } };
 
   // 图片域
   if (p === apiPath("/images") && ep.method === "GET") return { status: 200, check: (r) => expect(Array.isArray(r.json)).toBe(true) };
@@ -432,6 +451,8 @@ function expectFor(ep, ex) {
   if (p === apiPath("/v1/control/template/saveFromSelection")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.templateKind).toBeTruthy(); } };
   if (p === apiPath("/v1/control/e-device-definition/export")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.filename).toBeTruthy(); } };
   if (p === apiPath("/v1/control/e-device-definition/import")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.matched).toBeInstanceOf(Array); } };
+  if (p === apiPath("/v1/control/space/switch")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.spaceId).toBe("default"); expect(r.json.data.scheduled).toBe(true); } };
+  if (p === apiPath("/v1/control/model/switch")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.modelId).toBe(1); } };
 
   throw new Error(`未定义期望: ${ep.method} ${p} (示例: ${label})`);
 }

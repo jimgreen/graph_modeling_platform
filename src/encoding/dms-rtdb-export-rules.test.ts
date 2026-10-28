@@ -23,7 +23,7 @@ function loadDmsOptions() {
   });
 }
 
-// 样本依赖：data/ 整目录被 .gitignore 忽略（见 CLAUDE.md），干净检出上必然缺失。
+// 样本依赖：data/ 整目录被 .gitignore 忽略（见 AGENTS.md），干净检出上必然缺失。
 // 用 describe.skipIf 守卫（仓库既有约定，见 ems-rtdb-export-path.test.ts）。
 //
 // **注意**：describe.skipIf 只阻止 it 执行，describe 的回调体仍会跑。所以下面

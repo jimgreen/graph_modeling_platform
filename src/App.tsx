@@ -1892,7 +1892,12 @@ useEffect(() => {
       "control.device.delete": (p) => scope.programmaticDeleteDevices?.(p.ids),
       "control.save": (p) => scope.programmaticSave?.(p.scope),
       "control.e-device-definition.export": () => scope.programmaticExportEDeviceDefinition?.(),
-      "control.e-device-definition.import": (p) => scope.programmaticImportEDeviceDefinition?.(p.text)
+      "control.e-device-definition.import": (p) => scope.programmaticImportEDeviceDefinition?.(p.text),
+      // 切空间 / 切模型：改「当前打开的是哪个空间 / 模型」。两条都会在无未保存修改时才放行
+      // （有则抛 bad-request，不弹模态框 —— MCP 调用方答不了确认框）。
+      // 切空间最后会 location.reload()，工厂内部用 setTimeout 推迟，好让本函数的回执先发出去。
+      "control.space.switch": (p) => scope.programmaticSwitchSpace?.(p.spaceId),
+      "control.model.switch": (p) => scope.programmaticSwitchModel?.(p)
     };
     const handler = dispatch[name];
     if (!handler) {
@@ -1910,7 +1915,10 @@ useEffect(() => {
   }, {
     onStatusChange: (s) => setRuntimeWsStatus(s),
     onActivity: () => setRuntimeWsBlinkSeq((n) => n + 1),
-    commandHandler
+    commandHandler,
+    // 服务端在注册阶段可能换掉 token（「复制标签页」会连同 ?token= 一起复制，
+    // 它给后到的那个页面一个新后缀 token 并写回地址栏）→ 指示灯上显示的值要跟着变。
+    onClientIdChange: (id) => setRuntimeWsClientId(id)
   });
   // 审查 T16-P0-3 备注：空依赖为有意设计——WS 客户端生命周期与组件挂载绑定，
   // dispatch/commandHandler 捕获的 __appScope 为模块级稳定引用，不存在过期闭包。

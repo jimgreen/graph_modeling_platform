@@ -120,7 +120,7 @@ describe("readJsonBody 调用点的畸形 JSON 保护", () => {
   });
 
   // 下面两条把「413 分支全仓唯一一份」变成可执行的约束。
-  // 抽取前是 13 处逐字节相同的手抄；漏改一处就会出现「同一个超限错误在不同端点
+  // 抽取前是 15 处逐字节相同的手抄；漏改一处就会出现「同一个超限错误在不同端点
   // 返回不同状态码」。行为测试在 v1Response.test.mjs，这里管的是**唯一性**。
   test("★ 413（payload-too-large）分支的应答只出现在 v1Response.mjs 一处", () => {
     const offenders = [];
@@ -135,9 +135,9 @@ describe("readJsonBody 调用点的畸形 JSON 保护", () => {
     expect(offenders, `这些文件又自己写了一遍 413 应答（应改调 sendV1PayloadTooLarge）:\n${offenders.join("\n")}`).toEqual([]);
   });
 
-  test("★ 13 个调用点都改用了 sendV1PayloadTooLarge（新增端点时须一并跟进）", () => {
+  test("★ 15 个调用点都改用了 sendV1PayloadTooLarge（新增端点时须一并跟进）", () => {
     const EXPECTED_CALL_SITES = {
-      "apiV1Control.mjs": 9,
+      "apiV1Control.mjs": 11,
       "apiV1Receive.mjs": 1,
       "apiV1Runtime.mjs": 1,
       "sendModel.mjs": 1,
@@ -152,10 +152,10 @@ describe("readJsonBody 调用点的畸形 JSON 保护", () => {
       if (count > 0) actual[file] = count;
     }
     expect(actual, "调用点分布（改动后须同步核对这张表）").toEqual(EXPECTED_CALL_SITES);
-    // 且这 13 处必须仍然在 try 块里 —— 否则上面的「每个调用点都被 catch 保护」会红，
+    // 且这 15 处必须仍然在 try 块里 —— 否则上面的「每个调用点都被 catch 保护」会红，
     // 这里显式说明两者是配套的，不是两件独立的事。
     // （键名带点，必须用括号访问：`obj.apiV1Control.mjs` 不是合法标识符）
     const total = Object.values(EXPECTED_CALL_SITES).reduce((sum, n) => sum + n, 0);
-    expect(total, "合计 13 处").toBe(13);
+    expect(total, "合计 15 处").toBe(15);
   });
 });

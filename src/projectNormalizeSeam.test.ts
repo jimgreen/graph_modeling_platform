@@ -6,7 +6,7 @@
 // 实测正是这样漏的：nodes 里放一个「有 kind 无 params」的节点，
 // 抛在 normalizeLegacyGasQuantityDeviceParams 的 hasOwnProperty 上。
 //
-// 补齐形状的规则与后端 normalizeProjectForStorage 一致（server/CLAUDE.md「模型存储边界」）：
+// 补齐形状的规则与后端 normalizeProjectForStorage 一致（根 AGENTS.md「分域规则 · server」「模型存储边界」）：
 // 同一份文件在两侧各过一道边界归一，规则必须相同。
 import { describe, expect, test } from "vitest";
 import { normalizeSavedProjectIndexes } from "./appExtracted/appCoreCanvasUtilities";

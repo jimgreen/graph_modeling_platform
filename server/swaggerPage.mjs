@@ -249,6 +249,11 @@ const ENDPOINTS = [
     { label: "按自定义模板文本生成", params: { __body__: { templateText: "<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>", templateName: "" } } }
   ]},
 
+  { scope: "session", group: "v1 运行时态", method: "GET", path: "/webgrp/v1/runtime/dom", desc: "当前前端页面的整体 DOM 结构（format=outline 元素树 / html 整页标记）", query: [{ name: "format", desc: "可选，outline（默认，元素树）| html（整页 outerHTML）" }, { name: "maxDepth", desc: "可选，outline 深度上限（默认 6）" }, { name: "maxNodes", desc: "可选，outline 节点数上限（默认 800）" }, { name: "maxChars", desc: "可选，html 字符上限（默认 200000）" }, { name: "clientId", desc: "可选" }], response: "{ok:true,data:{format,title,url,root|html,nodeCount,truncated}}", examples: [
+    { label: "元素树（默认 outline）", params: {} },
+    { label: "整页 HTML（截断到 20000 字符）", params: { q_format: "html", q_maxChars: "20000" } }
+  ]},
+
   // ---- v1 控制台域（经 WS 下发前端 __appScope，写操作 no-store）----
   { scope: "session", group: "控制台", method: "POST", path: "/webgrp/v1/control/device/add", desc: "新增图元（经 WS 到前端，压 undo 栈不自动落盘）", query: [{ name: "clientId", desc: "可选" }], body: { kind: "busbar", x: 100, y: 200, attrs: { name: "母线1" } }, response: "{ok:true,data:{id}}", examples: [
     { label: "新增母排", params: { __body__: { kind: "busbar", x: 100, y: 200 } } },
@@ -290,6 +295,16 @@ const ENDPOINTS = [
   ]},
   { scope: "session", group: "控制台", method: "POST", path: "/webgrp/v1/control/e-device-definition/import", desc: "导入 E 文件定义（校验匹配，不实际写入；返回 matched/skipped）", query: [{ name: "clientId", desc: "可选" }], body: { text: "<ACLoad ...>...</ACLoad>" }, response: "{ok:true,data:{matched,skipped,matchedCount,skippedCount}}", examples: [
     { label: "导入 E 文件定义（校验匹配）", params: { __body__: { text: "<ACLoad 中文名=\"交流负荷\" 类别库=\"交流设备\">\n@idx name\n//序号 名称\n</ACLoad>" } } }
+  ]},
+  // 切空间 / 切模型：改「当前打开的是哪个工作空间 / 模型」。
+  // 两条都要求「无未保存修改」（有则 400，不弹模态框）。切空间会硬重载页面，
+  // 故回执 scheduled=true 只表示「已排期」。
+  { scope: "session", group: "控制台", method: "POST", path: "/webgrp/v1/control/space/switch", desc: "切换工作空间（前端随后 clear caches → 写 Cookie → 硬重载；回执 scheduled=true 表示已排期）", query: [{ name: "clientId", desc: "可选" }], body: { spaceId: "default" }, response: "{ok:true,data:{scheduled,spaceId,spaceName}}", examples: [
+    { label: "切到默认空间", params: { __body__: { spaceId: "default" } } }
+  ]},
+  { scope: "session", group: "控制台", method: "POST", path: "/webgrp/v1/control/model/switch", desc: "切换当前打开的模型（定位优先级 modelId > modelKey > schemePath+name；无未保存修改才放行）", query: [{ name: "clientId", desc: "可选" }], body: { modelId: 1 }, response: "{ok:true,data:{alreadyOpen,modelId,name,schemeId,schemePath}}", examples: [
+    { label: "按稳定序号 idx 切换", params: { __body__: { modelId: 1 } } },
+    { label: "按方案路径 + 模型名切换", params: { __body__: { schemePath: ["默认方案"], name: "未命名模型" } } }
   ]},
 
   // ---- 空间管理（管理面，与「某一空间的数据」无关：派发层对 /spaces 短路，不注入空间上下文）----

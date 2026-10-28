@@ -1,0 +1,42 @@
+<evaluation>
+  <qa_pair>
+    <question>请用本平台的 MCP 工具读取图元库中的设备图元部分（E 段定义）。图元库里一共定义了多少个 E 段？请只回答这个数量。</question>
+    <answer>64</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>按图元的大类（静态图元、交流设备、直流设备、氢能设备、热能设备）分别统计 E 段数量，哪一个大类下的 E 段最多？请给出这个大类的名称。</question>
+    <answer>热能设备</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>在图元库的 E 段定义里，列数量最多的那个段是哪一个？请给出它的段名。</question>
+    <answer>ACTransfomer3</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>图元库里的静态图元映射表把每一种静态图元类型（kind）指向一个元件库。这张映射表一共有多少条映射？请只回答这个数量。</question>
+    <answer>44</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>在静态图元映射表里，哪一个元件库被最多的静态图元类型共用？请给出该元件库名。</question>
+    <answer>StaticFlowNode</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>图元库里有一些 E 段是只表达分组、不带任何列定义的。共有多少个这样的段？请只回答这个数量。</question>
+    <answer>8</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>把交流设备与直流设备各自的段名统一去掉开头的 AC / DC 前缀后逐一比对：交流设备里有若干段在直流设备中找不到同名对应。请给出这个数量。</question>
+    <answer>5</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>热能设备这一类里，段名以数字结尾（例如 xxx2、xxx3 这样的后缀）的段一共有多少个？请只回答这个数量。</question>
+    <answer>7</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>在图元库的 E 段里，名称中包含 Converter 的段有好几个。其中列定义最多的那个段叫什么？请给出它的段名。</question>
+    <answer>DCACConverter</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>用 E 文件格式导出一个模型时，如果指定了一个并不存在的预定义模板名，报错信息会列出若干个可用的预定义模板。请问它一共列出了几个？请只回答这个数量。</question>
+    <answer>4</answer>
+  </qa_pair>
+</evaluation>

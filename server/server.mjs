@@ -5404,6 +5404,23 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     }],
     [routeKey("POST", "/symbol-export-standalone"), async ({ request, response, paths }) => {
       await handleStandaloneSymbolExport(request, response, paths);
+    }],
+    // ── MCP（/webgrp/mcp）：streamable HTTP 无状态端点 ──
+    // GET / DELETE 回 405（带 Allow: POST）：无状态模式下没有会话可关，
+    // 挂 SSE 长连接只会占住端口、让进程退不出来。POST 才是真正的 JSON-RPC 往返。
+    [routeKey("GET", "/mcp"), async ({ response }) => {
+      const { handleMcpMethodNotAllowed } = await import("./mcp/httpHandler.mjs");
+      handleMcpMethodNotAllowed({ response });
+    }],
+    [routeKey("DELETE", "/mcp"), async ({ response }) => {
+      const { handleMcpMethodNotAllowed } = await import("./mcp/httpHandler.mjs");
+      handleMcpMethodNotAllowed({ response });
+    }],
+    [routeKey("POST", "/mcp"), async ({ request, response, paths, spaceId }) => {
+      // 动态 import 避开循环依赖：mcp/httpHandler → mcp/mcpServer → mcp/tools
+      // → apiV1*.mjs → server.mjs（静态 import 会成环）。
+      const { handleMcpPost } = await import("./mcp/httpHandler.mjs");
+      await handleMcpPost({ request, response, paths, spaceId, runtimeWs });
     }]
   ]);
   const dynAssetPattern = (sub) => new RegExp(`^${escapeRegExp(apiPath(sub))}/([^/]+)$`, "u");

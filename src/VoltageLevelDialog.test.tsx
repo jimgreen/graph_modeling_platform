@@ -5,7 +5,7 @@
 // 判错，用户会看到「内置电压等级可以改名」或「自定义行冒出还原按钮」——都不会报错，
 // 只是界面说谎，所以值得钉住。
 //
-// 本项目没有 jsdom / react-test-renderer（见 components/AGENTS.md），用
+// 本项目没有 jsdom / react-test-renderer（见 根 AGENTS.md「分域规则 · src/components」），用
 // renderToStaticMarkup 做无 DOM 渲染。它**只跑渲染期**：onChange / onClick 闭包与
 // useEffect（ESC 关闭）都不会执行，故 updateRow / addRow / removeRow / restoreRow /
 // handleSave / checkNameDuplicate 这些函数不在本文件覆盖范围内，文件末尾如实列出。

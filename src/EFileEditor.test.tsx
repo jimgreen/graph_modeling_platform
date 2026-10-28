@@ -349,7 +349,7 @@ describe("EFileEditor 未覆盖分支：三条 toast 守卫（EFileEditor.tsx:37
 // 卸载清理 / 复制结果校验
 //
 // 本仓 vitest 是 environment:"node"，没有 jsdom、没有 @testing-library、
-// 没有 react-test-renderer（见 components/AGENTS.md），故**不能**用 createRoot
+// 没有 react-test-renderer（见 根 AGENTS.md「分域规则 · src/components」），故**不能**用 createRoot
 // 真正 mount 整个 EFileEditor —— 那要真实的 document/HTMLElement，而 antd 的
 // Button/Input 一上来就量尺寸。本组要验的只是「回调 + 副作用清理」，不需要布局。
 //

@@ -5,6 +5,9 @@ import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdge
 import { commitContainerMembership, finalizeContainerAfterNodeDeletion, normalizeInboundContainerNode, withNodeUpdates } from "../acContainer";
 import { createCanvasGroupFromSelection, removeGraphicsFromGroups } from "../selectionActions";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
+import { switchToSpace } from "../spaceSwitch";
+import { findSavedProjectByIndex } from "../workspaceUrl";
+import { findSavedProjectRecordInSchemes } from "../model-routing";
 
 // 新增图元：kind 限 DeviceKind 枚举，attrs 从 deviceDefinition 取默认（createDefaultNode 内部完成），
 // 调用方可 override（position/params 等）。压 undo 栈（C-5），不落盘（D-3）。
@@ -496,5 +499,178 @@ export function createProgrammaticSaveSelectionAsTemplate(__appScope: Record<str
       failure: `模板保存到本地，后台保存失败：${name}`
     });
     return { templateKind: customKind };
+  };
+}
+
+// ───────────────────── 切空间 / 切模型（MCP / 控制台） ─────────────────────
+//
+// 这两条与上面 9 个工厂的差别：它们改的是「当前打开的是哪个空间 / 哪个模型」，
+// 而不是当前模型的图元。
+//
+// ## 为什么有未保存修改时**直接拒**，而不是弹确认框
+//
+// UI 路径（顶栏空间选择器、方案树点击）走 `requestUnsavedChangeAction`：有未保存
+// 修改就 setPendingUnsavedAction 弹「保存 / 放弃 / 取消」。这条路径对**人**是对的，
+// 对程序化调用方是死路 —— 模态框没人点，调用方只能等到 ws-timeout，而那既不是
+// 「成功」也不是可读的失败。故此处显式回 `bad-request` 并指明「先调 control.save」，
+// 让调用方能自我纠正。
+//
+// ## 为什么切空间要 setTimeout 推迟
+//
+// `switchToSpace` 的最后一步是 `location.reload()`：页面一卸载，WS 连接就断，
+// 回执根本发不出去，调用方拿到的是 ws-timeout 而不是成功。推迟一个宏任务让
+// `handleCommand` 先把 `command-response` 写出去，再开始切换 —— 回执里的
+// `scheduled: true` 就是「已排期，别等重载结果」的意思。
+
+/**
+ * 切换工作空间（等同顶栏空间选择器）。
+ *
+ * @param __appScope __appScope
+ * @param deps.switchToSpace 可注入的切换实现（测试用；缺省用 src/spaceSwitch.ts 的真实现）
+ */
+export function createProgrammaticSwitchSpace(
+  __appScope: Record<string, any>,
+  deps: { switchToSpace?: (id: string) => unknown; schedule?: (fn: () => void) => unknown } = {}
+) {
+  return (spaceId: string) => {
+    const { spaces, saveRequired, currentSpaceId } = __appScope;
+    const target = typeof spaceId === "string" ? spaceId.trim() : "";
+    if (!target) {
+      const e: any = new Error("spaceId 必填。");
+      e.code = "bad-request";
+      throw e;
+    }
+    const known = Array.isArray(spaces) ? spaces : [];
+    const space = known.find((item: any) => item?.id === target);
+    // 未知空间就地拒：切过去只会撞派发层的 400 SPACE_UNKNOWN，页面白屏且无从纠正。
+    // 顺带把可用空间列出来，调用方据此能自己改对。
+    if (known.length > 0 && !space) {
+      const available = known.map((item: any) => item?.id).filter(Boolean).join("、");
+      const e: any = new Error(`未知空间：${target}。可用空间：${available}`);
+      e.code = "bad-request";
+      throw e;
+    }
+    if (target === currentSpaceId) {
+      return { scheduled: false, alreadyCurrent: true, spaceId: target, spaceName: space?.name ?? target };
+    }
+    if (saveRequired) {
+      const e: any = new Error("当前模型有未保存修改，切换空间会丢弃这些修改。请先调用 control.save 落盘（gmp_save_model）后再切换。");
+      e.code = "bad-request";
+      throw e;
+    }
+    const switchFn = deps.switchToSpace ?? switchToSpace;
+    const schedule = deps.schedule ?? ((fn: () => void) => setTimeout(fn, 0));
+    schedule(() => {
+      // 失败（本地缓存没清干净）由 switchToSpace 内部提示用户并中止，这里无从回执
+      void switchFn(target);
+    });
+    return { scheduled: true, alreadyCurrent: false, spaceId: target, spaceName: space?.name ?? target };
+  };
+}
+
+/**
+ * 切换当前打开的模型（等同方案树点击 / 地址栏 `#model=<idx>`）。
+ *
+ * 定位优先级：modelId（后端稳定序号 idx）> modelKey（运行期 key）> schemePath + name。
+ * 三种都找不到即 bad-request —— 不回退「打开第一个模型」，那会静默打开错的东西。
+ *
+ * @param __appScope __appScope
+ */
+export function createProgrammaticSwitchModel(__appScope: Record<string, any>) {
+  return async (params: { modelId?: number | string; modelKey?: string; schemePath?: string[]; name?: string } = {}) => {
+    const { activeProjectKey, loadSavedProjectRecord, saveRequired, schemes } = __appScope;
+    const rawModelId = params?.modelId;
+    const modelKey = typeof params?.modelKey === "string" ? params.modelKey.trim() : "";
+    const name = typeof params?.name === "string" ? params.name.trim() : "";
+    const schemePath = Array.isArray(params?.schemePath) ? params.schemePath.filter(Boolean) : [];
+
+    if (
+      (rawModelId === undefined || rawModelId === null || String(rawModelId).trim() === "")
+      && !modelKey
+      && !(schemePath.length > 0 && name)
+    ) {
+      const e: any = new Error("请用 modelId、modelKey 或 schemePath + name 指定要切换的模型。");
+      e.code = "bad-request";
+      throw e;
+    }
+
+    if (saveRequired) {
+      const e: any = new Error("当前模型有未保存修改，切换模型会丢弃这些修改。请先调用 control.save 落盘（gmp_save_model）后再切换。");
+      e.code = "bad-request";
+      throw e;
+    }
+
+    let found: { record: any; scheme: any } | null = null;
+
+    if (rawModelId !== undefined && rawModelId !== null && String(rawModelId).trim() !== "") {
+      const index = Number(rawModelId);
+      if (!Number.isSafeInteger(index) || index <= 0) {
+        const e: any = new Error(`modelId 必须是正整数（后端分配的稳定序号），收到：${rawModelId}`);
+        e.code = "bad-request";
+        throw e;
+      }
+      found = findSavedProjectByIndex(schemes, index);
+      if (!found) {
+        const e: any = new Error(`未找到 modelId 为 ${index} 的模型。`);
+        e.code = "bad-request";
+        throw e;
+      }
+    } else if (modelKey) {
+      const hit = findSavedProjectRecordInSchemes(schemes, modelKey);
+      if (hit) {
+        // findSavedProjectRecordInSchemes 返回 { scheme, project }，这里统一成 { scheme, record }
+        found = { record: hit.project, scheme: hit.scheme };
+      }
+      if (!found) {
+        const e: any = new Error(`未找到 modelKey 为 ${modelKey} 的模型。`);
+        e.code = "bad-request";
+        throw e;
+      }
+    } else {
+      // schemePath + name：逐层下钻，最后按模型名精确匹配（不做模糊/前缀匹配）
+      let level = Array.isArray(schemes) ? schemes : [];
+      let scheme: any = null;
+      for (const segment of schemePath) {
+        scheme = (level ?? []).find((item: any) => item?.name === segment) ?? null;
+        if (!scheme) {
+          break;
+        }
+        level = scheme.children ?? [];
+      }
+      if (!scheme) {
+        const e: any = new Error(`未找到方案路径：${schemePath.join("/")}`);
+        e.code = "bad-request";
+        throw e;
+      }
+      const project = (scheme.projects ?? []).find((item: any) => item?.name === name);
+      if (!project) {
+        const e: any = new Error(`方案「${schemePath.join("/")}」下未找到模型：${name}`);
+        e.code = "bad-request";
+        throw e;
+      }
+      found = { record: project, scheme };
+    }
+
+    if (found.record?.id && found.record.id === activeProjectKey) {
+      return {
+        alreadyOpen: true,
+        modelId: Number(found.record?.project?.idx ?? found.record?.idx ?? 0),
+        name: String(found.record?.name ?? name)
+      };
+    }
+
+    const loaded = await loadSavedProjectRecord(found.record, found.scheme?.id || undefined);
+    if (!loaded) {
+      const e: any = new Error(`切换模型失败：${found.record?.name ?? name} 读取失败。`);
+      e.code = "internal";
+      throw e;
+    }
+    return {
+      alreadyOpen: false,
+      modelId: Number(found.record?.project?.idx ?? found.record?.idx ?? 0),
+      name: String(found.record?.name ?? name),
+      schemeId: String(found.scheme?.id ?? ""),
+      schemePath
+    };
   };
 }

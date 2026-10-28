@@ -465,6 +465,16 @@ describe("createRuntimeSnapshotHandler", () => {
     expect(res.error.code).toBe("bad-request");
   });
 
+  it("runtime.dom 在 node 环境（无 document）回 bad-request 而不是空树", async () => {
+    const handler = createRuntimeSnapshotHandler(mockScope());
+    const res = await handler("runtime.dom");
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // 静默回空结构会让调用方以为「页面是空的」，那是错的诊断方向
+    expect(res.error.code).toBe("bad-request");
+    expect(res.error.message).toContain("没有 DOM");
+  });
+
   it("异常时返回 internal", async () => {
     const scope = mockScope();
     // 让 activeProjectKey getter 抛错

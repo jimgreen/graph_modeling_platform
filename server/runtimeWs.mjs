@@ -75,6 +75,7 @@ export function attachRuntimeWebSocket(server, registry, spaceStore = null) {
     const workspaceId = workspaceIdForRequest(request);
     let clientId = null;
     let registeredEntry = null;
+    let conflictTimer = null;
 
     const send = (message) => {
       if (ws.readyState === ws.OPEN) {
@@ -82,19 +83,77 @@ export function attachRuntimeWebSocket(server, registry, spaceStore = null) {
       }
     };
 
+    // ── token 占用仲裁（「复制标签页会自动换 token」）──
+    //
+    // 浏览器「复制标签页」会把地址栏里的 `?token=` 一起复制，两个页面于是抢同一个
+    // clientId；注册表按 id 去重（后注册的顶掉前一个），结果两个页面都活着、
+    // 却只有一个能被 MCP 指定地址。这里在**注册时**仲裁：
+    //
+    //   · token 空闲（或旧连接的 socket 已断）→ 直接注册，沿用原 token；
+    //   · token 被一条**仍活着**的连接占着 → 先等一轮再判：
+    //     刷新 / 切空间 reload 时，旧 socket 常常还挂在注册表里几百毫秒
+    //     （浏览器的 close 帧还没到服务端）。这种情形必须**沿用**原 token ——
+    //     换了的话，用户已经抄给 MCP 的 token 会在每次刷新后失效。
+    //   · 等满仍然被占 → 那确实是另一个页面（复制标签页），给它一个后缀 token，
+    //     并回 `renamed: true` 让前端把新 token 写回自己的地址栏。
+    const TOKEN_CONFLICT_POLL_MS = 250;
+    const TOKEN_CONFLICT_MAX_WAIT_MS = 1250;
+
+    function finalizeRegister(id, renamed) {
+      clientId = id;
+      registeredEntry = registry.register(id, send, workspaceId, () => ws.readyState === ws.OPEN);
+      // 未改名时不带 renamed 字段：既有客户端/测试按 { type, clientId } 两个键断言
+      send(renamed ? { type: "registered", clientId: id, renamed: true } : { type: "registered", clientId: id });
+    }
+
+    // 找第一个空闲后缀：`page-x` → `page-x-2`、`page-x-3`……（三四个复制标签页也够用）
+    function allocateToken(base) {
+      for (let index = 2; index <= 99; index += 1) {
+        const candidate = `${base}-${index}`;
+        if (!registry.isClientLive(candidate)) {
+          return candidate;
+        }
+      }
+      return `${base}-${Date.now().toString(36)}`;
+    }
+
+    function claimToken(requested, waitedMs) {
+      if (conflictTimer) {
+        clearTimeout(conflictTimer);
+        conflictTimer = null;
+      }
+      if (!registry.isClientLive(requested)) {
+        finalizeRegister(requested, false);
+        return;
+      }
+      if (waitedMs >= TOKEN_CONFLICT_MAX_WAIT_MS) {
+        finalizeRegister(allocateToken(requested), true);
+        return;
+      }
+      // 只在第一轮通知一次：前端据此知道「可能要和另一个页面区分」，仅等待、不改地址栏
+      if (waitedMs === 0) {
+        send({ type: "token-conflict", clientId: requested });
+      }
+      conflictTimer = setTimeout(() => {
+        conflictTimer = null;
+        if (ws.readyState === ws.OPEN) {
+          claimToken(requested, waitedMs + TOKEN_CONFLICT_POLL_MS);
+        }
+      }, TOKEN_CONFLICT_POLL_MS);
+    }
+
     ws.on("message", (raw) => {
       const message = safeParseMessage(String(raw));
       if (!message) {
         return;
       }
       if (message.type === "register") {
-        clientId = String(message.clientId ?? "").trim();
-        if (!clientId) {
+        const requested = String(message.clientId ?? "").trim();
+        if (!requested) {
           ws.close(4001, "缺少 clientId");
           return;
         }
-        registeredEntry = registry.register(clientId, send, workspaceId);
-        send({ type: "registered", clientId });
+        claimToken(requested, 0);
         return;
       }
       if (!registeredEntry) {
@@ -132,16 +191,25 @@ export function attachRuntimeWebSocket(server, registry, spaceStore = null) {
       // 未知消息类型忽略
     });
 
-    // 注销必须带上 registeredEntry 做身份比对：clientId 持久化在 localStorage，
-    // 多标签页共用同一个 id，只按 id 注销会误杀另一条仍在线的连接（详见
+    // 注销必须带上 registeredEntry 做身份比对：两个页面可能曾经共用同一个
+    // clientId（复制标签页），只按 id 注销会误杀另一条仍在线的连接（详见
     // runtimeRegistry.unregister 的注释与实测复现）。
     ws.on("close", () => {
+      if (conflictTimer) {
+        // 还在等 token 仲裁就断了：停掉轮询，避免给已关闭的连接注册
+        clearTimeout(conflictTimer);
+        conflictTimer = null;
+      }
       if (clientId) {
         registry.unregister(clientId, registeredEntry);
       }
     });
 
     ws.on("error", () => {
+      if (conflictTimer) {
+        clearTimeout(conflictTimer);
+        conflictTimer = null;
+      }
       if (clientId) {
         registry.unregister(clientId, registeredEntry);
       }

@@ -433,7 +433,8 @@ export function resolveInspectorGraphId(nodes: any[], node: any) {
 
 // 运行时态 WS 指示灯：open=绿、connecting=黄、closed=灰；收发消息时闪烁一次。
 // runtimeWsBlinkSeq 递增 → key 变化 → 重放 blink 动画。
-// 悬浮提示「点击复制 clientId」，点击复制当前页面 clientId 到剪贴板。
+// 悬浮提示「页面 token（= 地址栏 ?token=）」，点击复制到剪贴板 ——
+// 多页面在线时 MCP 用它指定要操作哪一个页面。
 
 // 拓扑告警面板内容组件：左侧分类 + 顶部状态Tab + 滚动懒加载列表
 const TOPOLOGY_CATEGORIES = [

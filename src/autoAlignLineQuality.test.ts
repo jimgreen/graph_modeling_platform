@@ -30,11 +30,11 @@ import {
  * ### 为什么保留条件跳过（而非去掉 skip 直接跑通）
  *
  * `data/` 整目录被 `.gitignore` 第 3 行忽略、**无任何版本跟踪文件**（`git ls-files data` 为空，
- * 见 CLAUDE.md「数据目录」），所以干净检出 / CI 上这个文件必然不存在，届时 `readFileSync` 会 ENOENT 假红。
+ * 见 AGENTS.md「数据目录」），所以干净检出 / CI 上这个文件必然不存在，届时 `readFileSync` 会 ENOENT 假红。
  * 而上面这几条断言的价值恰恰在于**用真实工程数据**度量拐点与交叉 —— 合成节点造不出
  * 「端子内缩 + 容器避让 + 存档折线」叠加下的真实路由形状，换成假数据等于把断言废掉。
  * 所以这是**环境依赖**，不是用例写错 / 断言过时 / bug 已修，必须留着 `existsSync` 守卫 + `skipIf`；
- * 这也正是 `scripts/dataSampleGuard.test.mjs` 强制、且被 CLAUDE.md 点名的仓库约定
+ * 这也正是 `scripts/dataSampleGuard.test.mjs` 强制、且被 AGENTS.md 点名的仓库约定
  * （「任何读 `data/` 样本的测试都要加 `existsSync` 守卫」）。
  *
  * ### 已知缺口（如实记录，别把绿灯当已验证）

@@ -1,6 +1,6 @@
 // CORS 单源守卫。
 //
-// server/CLAUDE.md 写着「跨源头**唯一一份**（`access-control-*`）：`server.mjs` 与
+// 根 AGENTS.md「分域规则 · server」 写着「跨源头**唯一一份**（`access-control-*`）：`server.mjs` 与
 // `v1Response.mjs` 均从此导入 —— **勿在别处再定义一份**（T13 单源化）」。
 //
 // 实际曾有 10 处硬编码散在 6 个文件（apiV1Runtime 4、apiV1Schemes 2、server.mjs 2、

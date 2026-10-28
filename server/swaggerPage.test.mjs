@@ -2,14 +2,14 @@
 //
 // 为什么值得守：swaggerPage.mjs 把接口元数据与一大段 JS/CSS 直接内联进 HTML，
 // 历史上踩过「模板字面量里的换行没转义成 \\n → 整页 SyntaxError → 页面全白」的坑
-// （见 server/CLAUDE.md 的注意事项）。而 swigger.examples.test.mjs 打的是**后端端点**，
+// （见 根 AGENTS.md「分域规则 · server」 的注意事项）。而 swigger.examples.test.mjs 打的是**后端端点**，
 // 完全不碰这个 HTML —— 也就是说上面那个回归至今没有任何测试能发现。
 //
 // 这里不启服务、不需要 DOM，分两段：
 //   前三条是静态校验（HTML 骨架）：
 //     1. 内联 <script> 能被真实 JS 引擎解析（SyntaxError 即页面全白）；
 //     2. 页面确实是完整 HTML 文档，且带 highlight.js（文档承诺的自包含交互依赖）；
-//     3. 端点数与示例总数符合文档记载的 81 端点 / 106 示例。
+//     3. 端点数与示例总数符合文档记载的 84 端点 / 111 示例。
 //   后几条走数据流（读 ENDPOINTS 本身，见下方分隔线之后）：
 //     _idx 注入的唯一性、重复渲染的幂等、非默认 apiPrefix 下的 path 重写、
 //     以及内联 JSON 的 </script> 注入面 —— 后者是已知未修漏洞，用 test.fails 钉住。
@@ -40,13 +40,13 @@ test("页面是完整 HTML 文档且自带 highlight.js", () => {
 // 端点/示例数会随功能增长；这里钉住的是「文档与实际同步」这一事实，具体数字见
 // swaggerPage.mjs 的 ENDPOINTS。真正的漂移防护在 routeCoverage.test.mjs
 // （已注册路由 vs 已文档化端点），本条只防手滑漏改。
-test("端点数与示例总数符合文档记载（81 端点 / 106 示例）", () => {
-  expect(SWIGGER_ENDPOINTS).toHaveLength(81);
+test("端点数与示例总数符合文档记载（84 端点 / 111 示例）", () => {
+  expect(SWIGGER_ENDPOINTS).toHaveLength(84);
   const exampleTotal = SWIGGER_ENDPOINTS.reduce(
     (sum, endpoint) => sum + (endpoint.examples?.length ?? 0),
     0
   );
-  expect(exampleTotal).toBe(106);
+  expect(exampleTotal).toBe(111);
   // 每个端点都必须有示例：swigger.examples.test.mjs 靠它逐条真实调用
   for (const endpoint of SWIGGER_ENDPOINTS) {
     expect(endpoint.examples?.length ?? 0, `${endpoint.method} ${endpoint.path} 没有示例`).toBeGreaterThan(0);
@@ -182,7 +182,7 @@ test.fails("内联 JSON 不含裸 </script>：端点字段里的该序列已被�
     const at = SWIGGER_ENDPOINTS.lastIndexOf(probe);
     if (at !== -1) SWIGGER_ENDPOINTS.splice(at, 1);
   }
-  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(81);
+  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(84);
 
   // ① 核心断言：注入 </script> 不应让闭合标签数超过基线。
   //    对「转义成 <\/script>」与「转义成 <」两种实现都成立，不锁死修法。
@@ -200,9 +200,9 @@ test.fails("内联 JSON 不含裸 </script>：端点字段里的该序列已被�
 // 以下三条覆盖 renderCard 的**兜底分支**：method / scope / 参数说明 / 示例 / 响应 /
 // 端点描述缺失或非法时的渲染结果。
 //
-// 为什么值得守（可证的形状事实，不是猜测）：ENDPOINTS 里 81 条记录全是「完整形状」——
+// 为什么值得守（可证的形状事实，不是猜测）：ENDPOINTS 里 84 条记录全是「完整形状」——
 // method ∈ {GET,POST,PUT,DELETE}、scope ∈ {space,session,global,host}、每个 pathParams/
-// query 条目都带 desc、examples 都是非空数组、81 条都有 response 与 desc。实测输出：
+// query 条目都带 desc、examples 都是非空数组、84 条都有 response 与 desc。实测输出：
 // noDesc=0 noResp=0 noScope=0 noExamples=0 pathParamsNoDesc=[] queryNoDesc=[]。
 // 于是下面这些兜底臂在既有断言下**一次都没被求值**，而它们恰恰是「有人往端点表里加了一条
 // 字段不全的记录」时会立刻显形的分支：漏写 desc 会把字面量 `undefined` 印到页面上，
@@ -227,7 +227,7 @@ const cardByPath = (html, path) => {
 };
 
 // 临时挂探针 → 渲染一次 → 无论成败都摘干净。
-// 必须摘干净：同文件的其它用例断言端点数恒为 81、示例恒为 106，漏一条就会把它们一起搞红。
+// 必须摘干净：同文件的其它用例断言端点数恒为 84、示例恒为 111，漏一条就会把它们一起搞红。
 const renderCardsOf = (probes) => {
   SWIGGER_ENDPOINTS.push(...probes);
   let html;
@@ -239,7 +239,7 @@ const renderCardsOf = (probes) => {
       if (at !== -1) SWIGGER_ENDPOINTS.splice(at, 1);
     }
   }
-  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(81);
+  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(84);
   return new Map(probes.map((probe) => [probe.path, cardByPath(html, probe.path)]));
 };
 

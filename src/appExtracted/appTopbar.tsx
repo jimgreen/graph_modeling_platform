@@ -266,7 +266,13 @@ function RuntimeWsIndicator({ scope }: { scope: Record<string, any> }) {
   return (
     <span
       style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: 10, padding: "0 8px", fontSize: 12, color: "#6b7280", cursor: clientId ? "pointer" : "default", userSelect: "none", position: "relative" }}
-      title={clientId ? `点击复制 clientId：${clientId}` : label}
+      title={
+        clientId
+          // 这个 id 就是「页面 token」：地址栏 ?token= 存的是同一个值，
+          // MCP / 第三方用它指定要操作哪一个页面（多页面在线时必填）。
+          ? `页面 token（= 地址栏 ?token= 的值，MCP 的 token 参数用它指定本页面）：${clientId}\n点击复制`
+          : label
+      }
       onClick={copyClientId}
     >
       <span key={blinkSeq} style={{

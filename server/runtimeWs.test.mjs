@@ -174,6 +174,53 @@ describe("runtimeWs 连接与注册", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(runtime.listClients()).toHaveLength(0);
   });
+
+  // ── token 占用仲裁：复制标签页（同一个 ?token=）必须自动去重 ──
+  //
+  // 两个页面带着同一个 token 上来时，注册表按 id 去重会互相顶替 —— 结果两个页面
+  // 都活着却只有一个能被指定。仲裁规则：先等一轮（刷新场景下旧 socket 很快会断，
+  // 此时应**沿用**原 token），等满仍被占才给后缀 token 并回 renamed。
+
+  test("第二个连接用同一 token：等到旧连接断开后**沿用**原 token（刷新场景）", async () => {
+    const first = await connectClient("page-x");
+    // 模拟「刷新」：新连接先上来，旧连接过一会儿才断
+    const secondPromise = connectClient("page-x").catch(() => null);
+    setTimeout(() => first.ws.close(), 60);
+    const second = await secondPromise;
+    expect(second).not.toBeNull();
+    // 没有换 token：用户抄走的 token 在刷新后仍然有效
+    expect(second.received.some((m) => m.type === "registered" && m.clientId === "page-x")).toBe(true);
+    expect(second.received.some((m) => m.renamed)).toBe(false);
+    expect(runtime.listClients().map((c) => c.clientId)).toEqual(["page-x"]);
+    second.ws.close();
+  });
+
+  test("两个页面同时在线用同一 token：后到的拿到后缀 token 且回 renamed", async () => {
+    const first = await connectClient("page-y");
+    // 旧连接一直活着（复制标签页），等满一轮后必须换 token
+    const second = await connectClient("page-y");
+    const registered = second.received.find((m) => m.type === "registered");
+    expect(registered.clientId).toBe("page-y-2");
+    expect(registered.renamed).toBe(true);
+    // 仲裁期间会先通知一次 token-conflict，让前端知道要等
+    expect(second.received.some((m) => m.type === "token-conflict")).toBe(true);
+    // 两个页面都在线，且各自一个 token
+    expect(runtime.listClients().map((c) => c.clientId).sort()).toEqual(["page-y", "page-y-2"]);
+    first.ws.close();
+    second.ws.close();
+  });
+
+  test("三个页面同一 token：后缀递增（y / y-2 / y-3）", async () => {
+    const a = await connectClient("page-z");
+    const b = await connectClient("page-z");
+    const c = await connectClient("page-z");
+    expect(b.received.find((m) => m.type === "registered").clientId).toBe("page-z-2");
+    expect(c.received.find((m) => m.type === "registered").clientId).toBe("page-z-3");
+    expect(runtime.listClients().map((x) => x.clientId).sort()).toEqual(["page-z", "page-z-2", "page-z-3"]);
+    a.ws.close();
+    b.ws.close();
+    c.ws.close();
+  });
 });
 
 describe("runtimeWs 心跳", () => {

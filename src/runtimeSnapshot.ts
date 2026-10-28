@@ -7,6 +7,7 @@ import { applyEDeviceDefinitionSectionsToLibraryState } from "./appExtracted/app
 import { parseEDeviceDefinitionFile } from "./model-eexport";
 import { eDeviceTemplateSingleTypeMismatchMessage } from "./eDeviceTemplateTypePolicy";
 import { decodeAuto } from "./encoding/gbk";
+import { buildDomOutline, serializeDomHtml } from "./runtimeDom";
 
 /** 可用 runtime resource 类型 */
 export type RuntimeSnapshotResource =
@@ -16,7 +17,8 @@ export type RuntimeSnapshotResource =
   | "runtime.model"
   | "runtime.devices"
   | "runtime.e-file"
-  | "runtime.svg";
+  | "runtime.svg"
+  | "runtime.dom";
 
 /** v1 信封：成功 */
 export type V1Ok<T> = { ok: true; data: T };
@@ -549,8 +551,72 @@ export function serializeEFile(
   });
 }
 
-// ---- 工厂：createRuntimeSnapshotHandler ----
+/**
+ * runtime.dom → 当前前端页面的整体 DOM 结构
+ *
+ * 与其它 resource 不同，本函数**不看 appScope**：它要的是页面真实 DOM。
+ * 两种格式：
+ *   · outline（默认）：元素树，深度/节点数双上限，给 LLM 看页面结构；
+ *   · html：整页 outerHTML，按 maxChars 截断（带画布的页面几百 KB，故非默认）。
+ *
+ * node 环境（无 document）下返回 bad-request 而不是空树 —— 静默返回空结构会让
+ * 调用方以为「页面是空的」，那是错的诊断方向。
+ *
+ * @param params.format "outline" | "html"；params.maxDepth / maxNodes / maxTextLength / maxChars
+ */
+export function serializeDom(params?: Record<string, any>): V1Result<Record<string, unknown>> {
+  return wrap<Record<string, unknown>>(() => {
+    const format = params?.format === "html" ? "html" : "outline";
+    const doc = (globalThis as any).document;
+    const root = doc?.documentElement;
+    if (!root) {
+      return errBadRequest("当前环境没有 DOM（只能在浏览器前端取页面结构）。");
+    }
+    const title = safeStr(doc?.title);
+    const url = safeStr(doc?.location?.href);
 
+    if (format === "html") {
+      const result = serializeDomHtml(root, { maxChars: Number(params?.maxChars) });
+      if (!result) {
+        return { ok: false, error: { code: "internal", message: "无法序列化页面 HTML。" } };
+      }
+      return {
+        ok: true,
+        data: {
+          format: "html",
+          title,
+          url,
+          html: result.html,
+          nodeCount: result.nodeCount,
+          totalChars: result.totalChars,
+          truncated: result.truncated
+        }
+      };
+    }
+
+    const outline = buildDomOutline(root, {
+      maxDepth: Number(params?.maxDepth),
+      maxNodes: Number(params?.maxNodes),
+      maxTextLength: params?.maxTextLength === undefined ? undefined : Number(params.maxTextLength)
+    });
+    if (!outline) {
+      return { ok: false, error: { code: "internal", message: "无法序列化页面结构。" } };
+    }
+    return {
+      ok: true,
+      data: {
+        format: "outline",
+        title,
+        url,
+        root: outline.root,
+        nodeCount: outline.nodeCount,
+        truncated: outline.truncated
+      }
+    };
+  });
+}
+
+// ---- 工厂：createRuntimeSnapshotHandler ----
 /**
  * 创建 runtime snapshot fetch handler
  * @param appScope __appScope 对象（Record<string, any>）
@@ -577,6 +643,8 @@ export function createRuntimeSnapshotHandler(appScope: Record<string, any>) {
           return serializeEFile(appScope, params);
         case "runtime.svg":
           return serializeSvg(appScope);
+        case "runtime.dom":
+          return serializeDom(params);
         default:
           return errBadRequest(`未知 resource: ${resource}`);
       }

@@ -3,7 +3,7 @@
  *
  * ## 背景
  *
- * `data/` 整目录被 .gitignore 忽略（见 CLAUDE.md），所以干净检出 / CI 上必然没有样本。
+ * `data/` 整目录被 .gitignore 忽略（见 AGENTS.md），所以干净检出 / CI 上必然没有样本。
  * 仓库既有约定是给这类用例加 skipIf 守卫（如 ems-rtdb-export-path.test.ts）。
  *
  * 但这个约定有个**极隐蔽的破口**：`describe.skipIf(...)` 只阻止 `it` 执行，
