@@ -93,7 +93,8 @@ git push origin_tsysmart HEAD:refs/for/master
 ```
 
 - `origin` = GitHub（`git@github.com:jimgreen/graph_modeling_platform.git`），推 `master` 分支。
-- `origin_tsysmart` = Gerrit（`ssh://foree@tsysmart.com:29418/graph_modeling_platform`），推 `refs/for/master` 走评审。Gerrit 侧 `master` 与 GitHub `origin/master` 目前指向同一提交，所以这样推不会分叉。
+- `origin_tsysmart` = Gerrit（`ssh://foree@tsysmart.com:29418/graph_modeling_platform`），推 `refs/for/master` 走评审。Gerrit 侧 `master` 与 GitHub `origin/master` 指向同一提交，所以这样推不会分叉。
+- 仓库远程的**默认分支当前是 `main`**（`origin/HEAD -> origin/main`），与上述推送约定并存：推送仍固定走 `master`；首次推 `master` 时若远程还没有该分支，会在 GitHub 上新建，之后以 `master` 为发布分支。
 - 提交前先跑 `mcommit` 技能收敛为单个 commit（`Change-Id` 复用最底部提交的）；Gerrit 的 `commit-msg` hook 会生成 `Change-Id`，不要在 message 里手写。
 - 推送成功后把 Gerrit 返回的 change 链接（`https://tsysmart.com:8080/review/c/graph_modeling_platform/+/<id>`）报给用户。
 
