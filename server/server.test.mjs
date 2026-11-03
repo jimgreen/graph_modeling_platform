@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
@@ -21,6 +21,7 @@ import {
   readSchemesFromFiles,
   saveSchemeProjectRecord,
   saveSchemeRecordDirectory,
+  updateSchemeProjectRecordIfUnchanged,
   writeTextIfChanged
 } from "./server.mjs";
 
@@ -790,6 +791,58 @@ describe("scheme enum validation", () => {
       await expect(readFile(join(filesRoot, "枚举测试", "非法枚举.json"), "utf8")).rejects.toThrow();
     } finally {
       await rm(filesRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+
+describe("saved scheme project atomic update", () => {
+  test("serializes competing repairs so only one update can consume the same model version", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-atomic-project-update-"));
+    const filesRoot = join(root, "files");
+    const trashRoot = join(root, "trash");
+    const paths = { ...spacePathsFor(root, "default"), schemeFiles: filesRoot, schemeTrash: trashRoot };
+    try {
+      const original = await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        paths,
+        schemePath: ["方案A"],
+        record: {
+          name: "模型A",
+          project: { version: 1, name: "模型A", nodes: [], edges: [] }
+        }
+      });
+      const originalFile = join(filesRoot, "方案A", "模型A.json");
+      await utimes(originalFile, new Date("2026-01-01T00:00:00.000Z"), new Date("2026-01-01T00:00:00.000Z"));
+      const expectedRecord = await readSchemeProjectRecord({ filesRoot, paths, schemePath: ["方案A"], name: "模型A" });
+      const expectedUpdatedAt = expectedRecord.updatedAt;
+      const expectedContentHash = expectedRecord.contentHash;
+      const consistencyRecord = await readSchemeProjectRecord({ filesRoot, paths, schemePath: ["方案A"], name: "模型A" });
+      expect(consistencyRecord).toMatchObject({ updatedAt: expectedUpdatedAt, contentHash: expectedContentHash });
+      const makeRepair = (marker, updatedAt) => ({
+        ...original,
+        updatedAt,
+        project: { ...original.project, repairMarker: marker }
+      });
+
+      const results = await Promise.all([
+        updateSchemeProjectRecordIfUnchanged({
+          filesRoot, trashRoot, paths, schemePath: ["方案A"], name: "模型A", expectedUpdatedAt, expectedContentHash,
+          record: makeRepair("repair one", "2026-01-02T00:00:00.000Z")
+        }),
+        updateSchemeProjectRecordIfUnchanged({
+          filesRoot, trashRoot, paths, schemePath: ["方案A"], name: "模型A", expectedUpdatedAt, expectedContentHash,
+          record: makeRepair("repair two", "2026-01-03T00:00:00.000Z")
+        })
+      ]);
+
+      expect(results.filter((result) => result.conflict)).toHaveLength(1);
+      expect(results.filter((result) => !result.conflict)).toHaveLength(1);
+      const saved = await readSchemeProjectRecord({ filesRoot, paths, schemePath: ["方案A"], name: "模型A" });
+      expect(["repair one", "repair two"]).toContain(saved.project.repairMarker);
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

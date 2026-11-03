@@ -1,7 +1,7 @@
 // server/mcp/tools.mjs + server/mcp/mcpServer.mjs 的单测。
 //
 // 这里断言的是**工具层与 MCP 装配层**的契约：
-//   · 29 个工具齐备、命名统一 gmp_ 前缀、各有描述与 annotations；
+//   · 31 个工具齐备、命名统一 gmp_ 前缀、各有描述与 annotations；
 //   · 声明了 outputSchema 的工具**每次都回 structuredContent**（SDK 服务端与客户端都强制）；
 //   · v1 的错误码被翻成可执行建议，且以 isError 回报（而不是抛异常）；
 //   · 写操作缺前端在线会话时，错误码是 no-online-client 且文案给出下一步。
@@ -27,7 +27,7 @@ import { createMcpToolRegistry } from "./tools.mjs";
 import { spacePathsFor } from "../spaceStore.mjs";
 import { NoOnlineClientError } from "../runtimeRegistry.mjs";
 
-const EXPECTED_TOOL_COUNT = 29;
+const EXPECTED_TOOL_COUNT = 31;
 
 let dataDir;
 let paths;
@@ -98,8 +98,14 @@ beforeAll(async () => {
   // 预置一个方案 + 一个模型：读类工具要真的读到东西，才算测到「桥 → v1」的通路
   const schemeDir = join(dataDir, "workspaces", "zhangsan", "schemes", "files", "方案A");
   mkdirSync(schemeDir, { recursive: true });
+  mkdirSync(join(dataDir, "workspaces", "zhangsan", "schemes", "files", "默认方案"), { recursive: true });
   writeFileSync(
     join(schemeDir, "模型1.json"),
+    JSON.stringify({ name: "模型1", idx: 1, nodes: [], edges: [] }),
+    "utf-8"
+  );
+  writeFileSync(
+    join(dataDir, "workspaces", "zhangsan", "schemes", "files", "默认方案", "模型1.json"),
     JSON.stringify({ name: "模型1", idx: 1, nodes: [], edges: [] }),
     "utf-8"
   );
@@ -121,7 +127,7 @@ afterAll(async () => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-test("工具清单齐备：29 个 gmp_* 工具，命名唯一，各有标题、描述与 annotations", async () => {
+test("gmp 工具清单齐备：31 个工具，命名唯一，各有标题、描述与 annotations", async () => {
   const { tools } = await client.listTools();
   expect(tools).toHaveLength(EXPECTED_TOOL_COUNT);
   const names = tools.map((tool) => tool.name);
@@ -151,7 +157,7 @@ test("读工具的 outputSchema 是 { ok, data?, error? } 形状", async () => {
 
 test("gmp_list_schemes 读当前空间的方案并回 structuredContent.ok=true", async () => {
   const result = await client.callTool({ name: "gmp_list_schemes", arguments: {} });
-  expect(result.isError).toBeFalsy();
+  expect(result.isError, JSON.stringify(result.structuredContent)).toBeFalsy();
   expect(result.structuredContent.ok).toBe(true);
   expect(result.structuredContent.data).toBeTruthy();
   expect(result.content[0].type).toBe("text");
@@ -162,7 +168,7 @@ test("gmp_list_scheme_models 按方案路径列出模型（数组入参 → v1 �
     name: "gmp_list_scheme_models",
     arguments: { schemePath: ["方案A"] }
   });
-  expect(result.isError).toBeFalsy();
+  expect(result.isError, JSON.stringify(result.structuredContent)).toBeFalsy();
   expect(result.structuredContent.ok).toBe(true);
   const models = result.structuredContent.data.models;
   expect(Array.isArray(models)).toBe(true);
@@ -201,14 +207,14 @@ test("gmp_export_model 在 format 不接受该参数时报错（不静默丢弃�
 
 test("运行时态读工具能拿到前端会话的数据", async () => {
   const result = await client.callTool({ name: "gmp_get_runtime_model", arguments: {} });
-  expect(result.isError).toBeFalsy();
+  expect(result.isError, JSON.stringify(result.structuredContent)).toBeFalsy();
   expect(result.structuredContent.ok).toBe(true);
   expect(result.structuredContent.data.name).toBe("模型1");
 });
 
 test("gmp_list_runtime_clients 列出在线页面（token / workspaceId / ISO 时间）", async () => {
   const result = await client.callTool({ name: "gmp_list_runtime_clients", arguments: {} });
-  expect(result.isError).toBeFalsy();
+  expect(result.isError, JSON.stringify(result.structuredContent)).toBeFalsy();
   const clients = result.structuredContent.data.clients;
   expect(clients).toHaveLength(1);
   // 出参也叫 token（与入参同词汇），v1 的 clientId 不外泄到 MCP 面
@@ -227,12 +233,110 @@ test("写操作下发到前端并回执", async () => {
     name: "gmp_add_device",
     arguments: { kind: "ACLoad", x: 10, y: 20 }
   });
-  expect(result.isError).toBeFalsy();
+  expect(result.isError, JSON.stringify(result.structuredContent)).toBeFalsy();
   expect(result.structuredContent.ok).toBe(true);
   expect(result.structuredContent.data.command).toBe("control.device.add");
 });
 
-test("删除类工具标了 destructiveHint（提示宿主这是破坏性操作）", async () => {
+test("gmp_check_topology 检查已保存模型并返回修正预览", async () => {
+  const { tools } = await client.listTools();
+  const check = tools.find((tool) => tool.name === "gmp_check_topology");
+  expect(check.annotations.readOnlyHint).toBe(false);
+  expect(check.annotations.destructiveHint).toBe(false);
+  const result = await client.callTool({
+    name: "gmp_check_topology",
+    arguments: { target: "saved", schemePath: ["默认方案"], name: "模型1" }
+  });
+  expect(result.isError, JSON.stringify(result.structuredContent)).toBeFalsy();
+  expect(result.structuredContent.ok).toBe(true);
+  expect(result.structuredContent.data).toMatchObject({ target: "saved", modified: false, saved: false });
+  expect(result.structuredContent.data.errors).toBeInstanceOf(Array);
+  expect(result.structuredContent.data.corrections).toBeInstanceOf(Array);
+});
+
+test("gmp_repair_topology 标为 destructive 并写入修复后的已保存模型", async () => {
+  const { tools } = await client.listTools();
+  const repair = tools.find((tool) => tool.name === "gmp_repair_topology");
+  expect(repair.annotations.readOnlyHint).toBe(false);
+  expect(repair.annotations.destructiveHint).toBe(true);
+  const result = await client.callTool({
+    name: "gmp_repair_topology",
+    arguments: { target: "saved", schemePath: ["默认方案"], name: "模型1" }
+  });
+  expect(result.isError, JSON.stringify(result.structuredContent)).toBeFalsy();
+  expect(result.structuredContent.ok).toBe(true);
+  expect(result.structuredContent.data.target).toBe("saved");
+  expect(typeof result.structuredContent.data.saved).toBe("boolean");
+});
+
+test("拓扑 current 多页面未传 token 时拒绝，不猜目标页", async () => {
+  const multi = createMcpServer({
+    spaceId: "zhangsan",
+    paths,
+    runtimeWs: createFakeRuntimeWs({ clientIds: ["client-1", "client-2"] })
+  });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const multiClient = new Client({ name: "test-client", version: "0.0.0" });
+  await Promise.all([multiClient.connect(clientTransport), multi.connect(serverTransport)]);
+  try {
+    const result = await multiClient.callTool({
+      name: "gmp_check_topology",
+      arguments: { target: "current" }
+    });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent.error.code).toBe("token-required");
+    expect(result.structuredContent.error.message).toContain("client-1");
+    expect(result.structuredContent.error.message).toContain("client-2");
+  } finally {
+    await multiClient.close();
+    await multi.close();
+  }
+});
+
+test("拓扑 current 工具把 token 解析并传给 WS 目标页", async () => {
+  const result = await client.callTool({
+    name: "gmp_check_topology",
+    arguments: { target: "current", token: "client-1" }
+  });
+  expect(result.isError).toBeFalsy();
+  expect(result.structuredContent.ok).toBe(true);
+  expect(result.structuredContent.data.target).toBe("current");
+  expect(result.structuredContent.data.command).toBeUndefined();
+  expect(result.structuredContent.data).not.toHaveProperty("nodes");
+  expect(result.structuredContent.data).not.toHaveProperty("topology");
+});
+
+test("拓扑工具在 MCP schema 层拒绝互斥目标混传", async () => {
+  const currentWithSavedTarget = await client.callTool({
+    name: "gmp_check_topology",
+    arguments: { target: "current", schemePath: ["方案A"], name: "模型1" }
+  });
+  expect(currentWithSavedTarget.isError).toBe(true);
+
+  const savedWithPageToken = await client.callTool({
+    name: "gmp_repair_topology",
+    arguments: { target: "saved", schemePath: ["方案A"], name: "模型1", token: "client-1" }
+  });
+  expect(savedWithPageToken.isError).toBe(true);
+});
+
+test("gmp_check_topology saved 目标要求非空 schemePath", async () => {
+  const result = await client.callTool({
+    name: "gmp_check_topology",
+    arguments: { target: "saved", schemePath: [], name: "模型1" }
+  });
+  expect(result.isError).toBe(true);
+  expect(result.structuredContent.error.code).toBe("bad-request");
+  expect(result.content[0].text).toContain("schemePath");
+});
+
+test("gmp_repair_topology 拒绝缺少目标的请求", async () => {
+  const result = await client.callTool({ name: "gmp_repair_topology", arguments: {} });
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain("Invalid arguments");
+});
+
+test("gmp_delete_devices 的 MCP annotation 明确 destructive", async () => {
   const { tools } = await client.listTools();
   const del = tools.find((tool) => tool.name === "gmp_delete_devices");
   expect(del.annotations.readOnlyHint).toBe(false);
@@ -306,7 +410,7 @@ test("gmp_switch_space 把 spaceId 经 control.space.switch 下发", async () =>
     name: "gmp_switch_space",
     arguments: { spaceId: "zhangsan" }
   });
-  expect(result.isError).toBeFalsy();
+  expect(result.isError, JSON.stringify(result.structuredContent)).toBeFalsy();
   expect(result.structuredContent.ok).toBe(true);
   expect(result.structuredContent.data.command).toBe("control.space.switch");
   // 回执里能看到目标空间：调用方据此确认「排的是哪个空间」
@@ -318,7 +422,7 @@ test("gmp_switch_model 按 modelId 经 control.model.switch 下发", async () =>
     name: "gmp_switch_model",
     arguments: { modelId: 1 }
   });
-  expect(result.isError).toBeFalsy();
+  expect(result.isError, JSON.stringify(result.structuredContent)).toBeFalsy();
   expect(result.structuredContent.data.command).toBe("control.model.switch");
   expect(result.structuredContent.data.modelId).toBe(1);
 });
@@ -374,7 +478,7 @@ test("会话类工具的入参是 token，不再是 clientId（对外契约改�
 
 test("本空间只有一个在线页面：不传 token 也能用（自动选那一个）", async () => {
   const result = await client.callTool({ name: "gmp_get_runtime_model", arguments: {} });
-  expect(result.isError).toBeFalsy();
+  expect(result.isError, JSON.stringify(result.structuredContent)).toBeFalsy();
   expect(result.structuredContent.ok).toBe(true);
   expect(result.structuredContent.data.name).toBe("模型1");
 });
@@ -396,7 +500,7 @@ test("本空间多个在线页面 + 传对 token → 打到指定页面", async 
       name: "gmp_get_runtime_model",
       arguments: { token: "page-bbb" }
     });
-    expect(result.isError).toBeFalsy();
+    expect(result.isError, JSON.stringify(result.structuredContent)).toBeFalsy();
     expect(result.structuredContent.ok).toBe(true);
   });
 });
@@ -432,7 +536,8 @@ test("写操作同样按 token 选目标：多页面不传 token 被拒，传了
   });
 });
 
-test("工具注册表本身返回 29 个定义，且每个都有 handler", () => {  const registry = createMcpToolRegistry({
+test("工具注册表本身返回 31 个定义，且每个都有 handler", () => {
+  const registry = createMcpToolRegistry({
     spaceId: "zhangsan",
     paths,
     runtimeWs: createFakeRuntimeWs()

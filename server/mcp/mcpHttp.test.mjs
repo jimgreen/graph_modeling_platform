@@ -4,7 +4,7 @@
 // 那份测「工具层与装配层」，这份测「HTTP 入口 + 派发层 + 空间隔离 + 协议级拒绝」。
 //
 // 覆盖：
-//   · 官方客户端能 initialize → tools/list → tools/call（29 个工具，读得到当前空间的数据）；
+//   · 官方客户端能 initialize → tools/list → tools/call（31 个工具，读得到当前空间的数据）；
 //   · GET / DELETE /webgrp/mcp → 405（带 Allow: POST），不挂 SSE 长连接；
 //   · Accept 缺 text/event-stream → 406（SDK 的协议要求）；
 //   · 非本机 Origin → 403（写操作暴露在端口上，必须挡住网页发起的跨源调用）；
@@ -25,7 +25,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { WebSocket } from "ws";
 
-const EXPECTED_TOOL_COUNT = 29;
+const EXPECTED_TOOL_COUNT = 31;
 
 let dataDir;
 let server;
@@ -78,7 +78,7 @@ async function withMcpClient(spaceId, fn) {
   }
 }
 
-test("官方客户端能 initialize 并列出 29 个工具", async () => {
+test("官方客户端能 initialize 并列出 31 个工具", async () => {
   await withMcpClient("zhangsan", async (client) => {
     const { tools } = await client.listTools();
     expect(tools).toHaveLength(EXPECTED_TOOL_COUNT);

@@ -21,6 +21,7 @@ import { graphStorePatchNodes } from "../graphStore";
 import { applyDragContainerMembership, clampContainerCenterToMembers, containerDragGroup, containerGatewayUnbindNotice, containerMemberNodes, containerResizeMinSize, finalizeContainerAfterNodeDeletion, foldContainerScaleIntoSize, hasContainer, isContainerNode, normalizeInboundContainerNode, withNodeUpdates } from "../acContainer";
 import { arrangeContainerInteriors, autoAlignEdgeWithoutStoredRoute, autoAlignStoredRouteDrops, createAutoAlignQualityReport, mergeContainerLayoutUnits, type AutoAlignQualityReport } from "../selectionActions";
 import { runAutoAlignPlanInWorker } from "../autoAlign/autoAlignClient";
+import { runTopologyOperation } from "../topology-operation";
 
 // 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 遮住）：按真实出处补齐，均为 type-only import。
 import type { AlignMode, CanvasBounds, DeviceKind, DeviceTemplate, Edge, ElementTreeItem, ModelLayer, ModelNode, Point, SavedProjectRecord, SavedSchemeRecord, TopologyValidationError } from "../model";
@@ -5697,89 +5698,66 @@ export function createLocateTopologyError(__appScope: Record<string, any>) {
   };
 }
 
-export function createRunTopologyCalculation(__appScope: Record<string, any>) {
+export function createRunTopologyCalculation(
+  __appScope: Record<string, any>,
+  topologyOperation?: typeof runTopologyOperation
+) {
+  const calculate = topologyOperation ?? __appScope.topologyOperation ?? runTopologyOperation;
   return () => {
-  const { EMPTY_TOPOLOGY, activeProjectKey, activeSchemeKey, buildTopology, calculateElectricalTopology, currentUnit, edges, isBlockingTopologyValidationError, locateTopologyError, modelType, nodes, normalizeDeviceOperatingLimitsAfterTopology, powerUnit, pushUndoSnapshot, requireEditMode, schemes, setNodes, setTopology, setTopologyErrors, setTopologyStatus, setTopologyWarningPanelClosed, skipNextTopologyStaleRef, topologyCalculationMessage, validateTopology, validateVoltageSetpointDeviations, voltageUnit, writeOperationLog } = __appScope;
+    const {
+      activeProjectKey, activeSchemeKey, currentUnit, edges, locateTopologyError,
+      modelType, nodes, powerUnit, pushUndoSnapshot, requireEditMode, schemes,
+      setNodes, setTopology, setTopologyErrors, setTopologyStatus, setTopologyWarningPanelClosed,
+      skipNextTopologyStaleRef, topologyCalculationMessage, voltageUnit, writeOperationLog,
+      EMPTY_TOPOLOGY
+    } = __appScope;
     if (!requireEditMode("执行图上拓扑计算")) {
       return;
     }
     setTopologyWarningPanelClosed(false);
-    const calculatedNodes = calculateElectricalTopology(nodes, edges);
-    const modelAssociationProjectIndexes = modelAssociationProjectIndexesForSchemes(schemes ?? []);
-    const topologyErrors = validateTopology(calculatedNodes, edges, {
-      includeVoltageSetpointDeviations: false,
+    const result = calculate({
+      nodes,
+      edges,
       modelType,
-      modelAssociationProjectIndexes
-    });
-    const invalidVoltageBaseNodeIds = new Set(
-      topologyErrors
-        .filter((error: TopologyValidationError) => [
-          "voltage-mismatch",
-          "missing-island-voltage",
-          "island-voltage-mismatch",
-          "transformer-island-short"
-        ].includes(error.type))
-        .flatMap((error: TopologyValidationError) => error.relatedNodeIds)
-    );
-    const normalizedLimits = normalizeDeviceOperatingLimitsAfterTopology(calculatedNodes, {
       powerUnit,
       voltageUnit,
-      currentUnit,
-      skipVoltageNodeIds: invalidVoltageBaseNodeIds,
-      sourceNodes: nodes,
-      // 图上拓扑与全网拓扑共用同一套「第几次检查」判定，但按 `方案:模型` 隔离，避免不同模型互相顶掉。
-      capacityFixScopeKey: `${activeSchemeKey ?? ""}:${activeProjectKey ?? ""}`
+      currentUnit
+    }, {
+      mode: "ui",
+      capacityFixScopeKey: `${activeSchemeKey ?? ""}:${activeProjectKey ?? ""}`,
+      modelAssociationProjectIndexes: modelAssociationProjectIndexesForSchemes(schemes ?? [])
     });
-    const voltageDeviationErrors = validateVoltageSetpointDeviations(normalizedLimits.nodes, edges);
-    const ratedVoltageDeviationErrors = voltageDeviationErrors.filter(
-      (error: TopologyValidationError) => error.type === "rated-voltage-deviation"
-    );
-    const errors = [...topologyErrors, ...normalizedLimits.warnings, ...ratedVoltageDeviationErrors];
-    const blockingErrors = errors.filter(isBlockingTopologyValidationError);
-    const nonBlockingWarnings = errors.filter((error) => !isBlockingTopologyValidationError(error));
-    setTopologyErrors(errors);
-    if (blockingErrors.length === 0) {
+    const displayedErrors = [...result.errors, ...result.warnings];
+    setTopologyErrors(displayedErrors);
+    if (result.errors.length === 0) {
       pushUndoSnapshot(true, false, undefined, "拓扑计算");
-      const nextTopology = buildTopology(normalizedLimits.nodes, edges);
-      const voltageSetpointWarnings = voltageDeviationErrors.filter(
-        (error: TopologyValidationError) => error.type !== "rated-voltage-deviation"
-      );
-      const nextWarnings = [...nonBlockingWarnings, ...voltageSetpointWarnings];
       skipNextTopologyStaleRef.current = true;
-      setNodes(normalizedLimits.nodes);
-      setTopology(nextTopology);
-      setTopologyErrors(nextWarnings);
-      if (nextWarnings.length === 0) {
-        setTopologyStatus({ state: "success", message: `成功，${nextTopology.connectedComponents.length} 个拓扑岛` });
-        writeOperationLog(`图上拓扑成功，${nextTopology.connectedComponents.length} 个拓扑岛`);
+      setNodes(result.nodes);
+      setTopology(result.topology ?? EMPTY_TOPOLOGY);
+      if (displayedErrors.length === 0) {
+        setTopologyStatus({ state: "success", message: `成功，${result.topologyIslandCount ?? 0} 个拓扑岛` });
+        writeOperationLog(`图上拓扑成功，${result.topologyIslandCount ?? 0} 个拓扑岛`);
         showGlobalMessage(topologyCalculationMessage(0));
       } else {
-        setTopologyStatus({ state: "failed", message: `完成，${nextWarnings.length} 条告警` });
-        writeOperationLog(`图上拓扑完成，${nextWarnings.length} 条告警`);
-        locateTopologyError(nextWarnings[0]);
-        showGlobalMessage(`图上拓扑完成：发现 ${nextWarnings.length} 条告警，已定位到第一条告警。`);
+        setTopologyStatus({ state: "failed", message: `完成，${displayedErrors.length} 条告警` });
+        writeOperationLog(`图上拓扑完成，${displayedErrors.length} 条告警`);
+        locateTopologyError(displayedErrors[0]);
+        showGlobalMessage(`图上拓扑完成：发现 ${displayedErrors.length} 条告警，已定位到第一条告警。`);
       }
-    } else {
-      if (normalizedLimits.corrections.length > 0) {
-        const correctionsByNodeId = new Map();
-        for (const correction of normalizedLimits.corrections) {
-          const nodeCorrections = correctionsByNodeId.get(correction.nodeId) ?? {};
-          nodeCorrections[correction.paramKey] = correction.value;
-          correctionsByNodeId.set(correction.nodeId, nodeCorrections);
-        }
-        pushUndoSnapshot(true, false, undefined, "自动修正设备限值");
-        skipNextTopologyStaleRef.current = true;
-        setNodes(nodes.map((node: ModelNode) => {
-          const nodeCorrections = correctionsByNodeId.get(node.id);
-          return nodeCorrections ? { ...node, params: { ...node.params, ...nodeCorrections } } : node;
-        }));
-      }
-      setTopology(EMPTY_TOPOLOGY);
-      setTopologyStatus({ state: "failed", message: `失败，${blockingErrors.length} 条阻断错误` });
-      writeOperationLog(`图上拓扑失败，${blockingErrors.length} 条阻断错误`);
-      locateTopologyError(blockingErrors[0]);
-      showGlobalMessage(topologyCalculationMessage(blockingErrors.length));
+      return result;
     }
+
+    if (result.corrections.length > 0) {
+      pushUndoSnapshot(true, false, undefined, "自动修正设备限值");
+      skipNextTopologyStaleRef.current = true;
+      setNodes(result.nodes);
+    }
+    setTopology(EMPTY_TOPOLOGY);
+    setTopologyStatus({ state: "failed", message: `失败，${result.errors.length} 条阻断错误` });
+    writeOperationLog(`图上拓扑失败，${result.errors.length} 条阻断错误`);
+    locateTopologyError(result.errors[0]);
+    showGlobalMessage(topologyCalculationMessage(result.errors.length));
+    return result;
   };
 }
 

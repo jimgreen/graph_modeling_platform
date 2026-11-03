@@ -2028,6 +2028,19 @@ describe("topology calculation operating-limit normalization", () => {
       return { nodes: normalizedNodes, warnings: [], corrections: [] };
     });
     const nextTopology = { connectedComponents: [["node-1"]] };
+    const topologyOperation = vi.fn((project, options) => {
+      calls.push("calculate", "validate", "normalize");
+      expect(options).toMatchObject({ mode: "ui", capacityFixScopeKey: "scheme-1:feeder-7" });
+      return {
+        status: "success",
+        nodes: normalizedNodes,
+        errors: [],
+        warnings: [],
+        corrections: [],
+        topology: nextTopology,
+        topologyIslandCount: 1
+      };
+    });
 
     createRunTopologyCalculation({
       EMPTY_TOPOLOGY: { connectedComponents: [] },
@@ -2063,31 +2076,28 @@ describe("topology calculation operating-limit normalization", () => {
       setTopologyWarningPanelClosed: vi.fn(),
       skipNextTopologyStaleRef: { current: false },
       topologyCalculationMessage: () => "拓扑成功",
-      validateTopology,
-      validateVoltageSetpointDeviations: vi.fn(() => []),
+      topologyOperation,
       voltageUnit: "V",
       writeOperationLog: vi.fn()
     })();
 
     expect(calls).toEqual(["calculate", "validate", "normalize"]);
-    expect(validateTopology).toHaveBeenCalledWith(calculatedNodes, [], {
-      includeVoltageSetpointDeviations: false,
+    expect(topologyOperation).toHaveBeenCalledWith({
+      nodes: sourceNodes,
+      edges: [],
       modelType: undefined,
+      powerUnit: "kW",
+      voltageUnit: "V",
+      currentUnit: "A"
+    }, {
+      mode: "ui",
+      capacityFixScopeKey: "scheme-1:feeder-7",
       modelAssociationProjectIndexes: {
         "厂站": [],
         "馈线": ["7"],
         "台区": []
       }
     });
-    expect(normalizeDeviceOperatingLimitsAfterTopology).toHaveBeenCalledWith(calculatedNodes, {
-      powerUnit: "kW",
-      voltageUnit: "V",
-      currentUnit: "A",
-      skipVoltageNodeIds: expect.any(Set),
-      sourceNodes,
-      capacityFixScopeKey: "scheme-1:feeder-7"
-    });
-    expect(normalizeDeviceOperatingLimitsAfterTopology.mock.calls[0][1].skipVoltageNodeIds.size).toBe(0);
     expect(setNodes).toHaveBeenCalledWith(normalizedNodes);
     expect(setTopology).toHaveBeenCalledWith(nextTopology);
     expect(setTopologyErrors).toHaveBeenLastCalledWith([]);
@@ -2101,51 +2111,35 @@ describe("topology calculation operating-limit normalization", () => {
       nodeNumber: "",
       params: { ac_q_max: "0", ac_q_min: "0", untouched: "original" }
     };
-    const calculatedNode = {
-      id: "node-1",
-      nodeNumber: "99",
-      params: { ac_q_max: "0", ac_q_min: "0", untouched: "calculated" }
-    };
-    const normalizedNode = {
-      ...calculatedNode,
-      params: { ...calculatedNode.params, ac_q_max: "10", ac_q_min: "-10" }
-    };
     const blockingError = {
       type: "missing-island-voltage",
       nodeId: "node-1",
       relatedNodeIds: ["node-1"],
       message: "基准电压缺失"
     };
-    const normalizeDeviceOperatingLimitsAfterTopology = vi.fn((
-      _nodes: unknown[],
-      _options: { skipVoltageNodeIds: Set<string>; sourceNodes: unknown[] }
-    ) => ({
-      nodes: [normalizedNode],
-      warnings: [{
-        type: "device-limit-invalid",
-        nodeId: "node-1",
-        relatedNodeIds: ["node-1"],
-        message: "无功限值已修正"
-      }],
+    const setNodes = vi.fn();
+    const showGlobalMessage = vi.fn();
+    (globalThis as any).showGlobalMessage = showGlobalMessage;
+
+    const topologyOperation = vi.fn(() => ({
+      status: "failed",
+      nodes: [{ ...originalNode, params: { ...originalNode.params, ac_q_max: "10", ac_q_min: "-10" } }],
+      errors: [blockingError],
+      warnings: [],
       corrections: [
         { nodeId: "node-1", paramKey: "ac_q_max", value: "10" },
         { nodeId: "node-1", paramKey: "ac_q_min", value: "-10" }
       ]
     }));
-    const setNodes = vi.fn();
-    const showGlobalMessage = vi.fn();
-    (globalThis as any).showGlobalMessage = showGlobalMessage;
 
     createRunTopologyCalculation({
       EMPTY_TOPOLOGY: { connectedComponents: [] },
       buildTopology: vi.fn(),
-      calculateElectricalTopology: vi.fn(() => [calculatedNode]),
       currentUnit: "A",
       edges: [],
       isBlockingTopologyValidationError: (error: { type: string }) => error.type === "missing-island-voltage",
       locateTopologyError: vi.fn(),
       nodes: [originalNode],
-      normalizeDeviceOperatingLimitsAfterTopology,
       powerUnit: "MW",
       pushUndoSnapshot: vi.fn(),
       requireEditMode: () => true,
@@ -2156,14 +2150,19 @@ describe("topology calculation operating-limit normalization", () => {
       setTopologyWarningPanelClosed: vi.fn(),
       skipNextTopologyStaleRef: { current: false },
       topologyCalculationMessage: (count: number) => `拓扑失败 ${count}`,
-      validateTopology: vi.fn(() => [blockingError]),
-      validateVoltageSetpointDeviations: vi.fn(() => []),
+      topologyOperation,
       voltageUnit: "kV",
       writeOperationLog: vi.fn()
     })();
 
-    const options = normalizeDeviceOperatingLimitsAfterTopology.mock.calls[0][1];
-    expect(options.skipVoltageNodeIds.has("node-1")).toBe(true);
+    expect(topologyOperation).toHaveBeenCalledWith({
+      nodes: [originalNode],
+      edges: [],
+      modelType: undefined,
+      powerUnit: "MW",
+      voltageUnit: "kV",
+      currentUnit: "A"
+    }, expect.objectContaining({ mode: "ui" }));
     expect(setNodes).toHaveBeenCalledWith([{
       ...originalNode,
       params: { ...originalNode.params, ac_q_max: "10", ac_q_min: "-10" }
@@ -2227,13 +2226,18 @@ describe("topology calculation operating-limit normalization", () => {
       setTopologyWarningPanelClosed: vi.fn(),
       skipNextTopologyStaleRef: { current: false },
       topologyCalculationMessage: (count: number) => `拓扑失败 ${count}`,
-      validateTopology: vi.fn(() => [missingVoltageError]),
-      validateVoltageSetpointDeviations: vi.fn(() => [ratedVoltageError, ordinarySetpointWarning]),
+      topologyOperation: () => ({
+        status: "failed",
+        nodes: [node],
+        errors: [missingVoltageError, ratedVoltageError],
+        warnings: [ordinarySetpointWarning],
+        corrections: []
+      }),
       voltageUnit: "kV",
       writeOperationLog: vi.fn()
     })();
 
-    expect(setTopologyErrors).toHaveBeenCalledWith([missingVoltageError, ratedVoltageError]);
+    expect(setTopologyErrors).toHaveBeenCalledWith([missingVoltageError, ratedVoltageError, ordinarySetpointWarning]);
     expect(setTopology).toHaveBeenCalledWith(emptyTopology);
     expect(setTopologyStatus).toHaveBeenCalledWith({ state: "failed", message: "失败，2 条阻断错误" });
     expect(locateTopologyError).toHaveBeenCalledWith(missingVoltageError);
@@ -2281,8 +2285,13 @@ describe("topology calculation operating-limit normalization", () => {
       setTopologyWarningPanelClosed: vi.fn(),
       skipNextTopologyStaleRef: { current: false },
       topologyCalculationMessage: (count: number) => `拓扑失败 ${count}`,
-      validateTopology: vi.fn(() => []),
-      validateVoltageSetpointDeviations: vi.fn(() => []),
+      topologyOperation: () => ({
+        status: "failed",
+        nodes: [node],
+        errors: [blockingWarning],
+        warnings: [],
+        corrections: []
+      }),
       voltageUnit: "kV",
       writeOperationLog: vi.fn()
     })();

@@ -254,6 +254,15 @@ const ENDPOINTS = [
     { label: "整页 HTML（截断到 20000 字符）", params: { q_format: "html", q_maxChars: "20000" } }
   ]},
 
+  // ---- v1 拓扑检查与修复 ----
+  { scope: "space", group: "v1 拓扑操作", method: "POST", path: "/webgrp/v1/topology/check", desc: "检查当前页面或指定已保存模型；可能触发该空间全局线路登记表首次初始化与存量迁移", query: [{ name: "clientId", desc: "可选，仅 target=current 时指定目标页面" }], body: { target: "saved", schemePath: ["默认方案"], name: "__不存在的模型__" }, response: "{ok:true,data:{target,status,errors,warnings,corrections,modified:false,saved:false}}", examples: [
+    { label: "检查不存在模型（404）", params: { __body__: { target: "saved", schemePath: ["默认方案"], name: "__不存在的模型__" } } },
+    { label: "检查当前页面（需页面在线）", params: { __body__: { target: "current" } } }
+  ]},
+  { scope: "space", group: "v1 拓扑操作", method: "POST", path: "/webgrp/v1/topology/repair", desc: "修复当前页面或指定已保存模型；当前页面仅改内存，已保存模型有修正时直接写盘", query: [{ name: "clientId", desc: "可选，仅 target=current 时指定目标页面" }], body: { target: "saved", schemePath: ["默认方案"], name: "__不存在的模型__" }, response: "{ok:true,data:{target,status,errors,warnings,corrections,modified,saved}}", examples: [
+    { label: "修复不存在模型（404，不写入）", params: { __body__: { target: "saved", schemePath: ["默认方案"], name: "__不存在的模型__" } } }
+  ]},
+
   // ---- v1 控制台域（经 WS 下发前端 __appScope，写操作 no-store）----
   { scope: "session", group: "控制台", method: "POST", path: "/webgrp/v1/control/device/add", desc: "新增图元（经 WS 到前端，压 undo 栈不自动落盘）", query: [{ name: "clientId", desc: "可选" }], body: { kind: "busbar", x: 100, y: 200, attrs: { name: "母线1" } }, response: "{ok:true,data:{id}}", examples: [
     { label: "新增母排", params: { __body__: { kind: "busbar", x: 100, y: 200 } } },

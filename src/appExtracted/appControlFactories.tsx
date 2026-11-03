@@ -1,13 +1,66 @@
 // swigger 控制台写操作程序化方法工厂。
 // 与 UI 写方法隔离：参数显式传入，复用底层 setter，绕过 prompt/alert/draft/editMode。
 // 经 WS control 指令调用（App.tsx commandHandler 分发）。
-import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdges, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, syncedSwitchStatusPatch } from "../model";
+import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdges, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage, modelAssociationProjectIndexesForSchemes, syncedSwitchStatusPatch } from "../model";
+import { runTopologyOperation } from "../topology-operation";
 import { commitContainerMembership, finalizeContainerAfterNodeDeletion, normalizeInboundContainerNode, withNodeUpdates } from "../acContainer";
 import { createCanvasGroupFromSelection, removeGraphicsFromGroups } from "../selectionActions";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
 import { switchToSpace } from "../spaceSwitch";
 import { findSavedProjectByIndex } from "../workspaceUrl";
 import { findSavedProjectRecordInSchemes } from "../model-routing";
+
+// 当前页面拓扑操作：check 只回预览；repair 写当前内存并压入 undo，不自动落盘。
+export function createProgrammaticTopologyOperation(
+  __appScope: Record<string, any>,
+  topologyOperation: typeof runTopologyOperation = runTopologyOperation
+) {
+  return (mode: "check" | "repair") => {
+    const {
+      activeProjectKey, activeSchemeKey, edges, modelType, nodes,
+      powerUnit, voltageUnit, currentUnit, schemes,
+      setNodes, setTopology, setTopologyErrors, setTopologyStatus,
+      pushUndoSnapshot, EMPTY_TOPOLOGY, skipNextTopologyStaleRef
+    } = __appScope;
+    const result = topologyOperation({
+      nodes,
+      edges,
+      modelType,
+      powerUnit,
+      voltageUnit,
+      currentUnit
+    }, {
+      mode,
+      capacityFixScopeKey: `${activeSchemeKey ?? ""}:${activeProjectKey ?? ""}`,
+      modelAssociationProjectIndexes: modelAssociationProjectIndexesForSchemes(schemes ?? [])
+    });
+    if (mode === "repair") {
+      if (result.topology) {
+        pushUndoSnapshot(true, false, undefined, "拓扑计算");
+        skipNextTopologyStaleRef.current = true;
+        setNodes(result.nodes);
+        setTopology(result.topology);
+      } else {
+        if (result.corrections.length > 0) {
+          pushUndoSnapshot(true, false, undefined, "自动修正设备限值");
+          skipNextTopologyStaleRef.current = true;
+          setNodes(result.nodes);
+        }
+        setTopology(EMPTY_TOPOLOGY);
+      }
+      setTopologyErrors([...result.errors, ...result.warnings]);
+      setTopologyStatus({
+        state: result.errors.length === 0 && result.warnings.length === 0 ? "success" : "failed",
+        message: result.errors.length > 0
+          ? `失败，${result.errors.length} 条阻断错误`
+          : result.warnings.length > 0
+            ? `完成，${result.warnings.length} 条告警`
+            : `成功，${result.topologyIslandCount ?? 0} 个拓扑岛`
+      });
+    }
+    return result;
+  };
+}
 
 // 新增图元：kind 限 DeviceKind 枚举，attrs 从 deviceDefinition 取默认（createDefaultNode 内部完成），
 // 调用方可 override（position/params 等）。压 undo 栈（C-5），不落盘（D-3）。

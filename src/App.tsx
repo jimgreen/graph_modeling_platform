@@ -1897,7 +1897,9 @@ useEffect(() => {
       // （有则抛 bad-request，不弹模态框 —— MCP 调用方答不了确认框）。
       // 切空间最后会 location.reload()，工厂内部用 setTimeout 推迟，好让本函数的回执先发出去。
       "control.space.switch": (p) => scope.programmaticSwitchSpace?.(p.spaceId),
-      "control.model.switch": (p) => scope.programmaticSwitchModel?.(p)
+      "control.model.switch": (p) => scope.programmaticSwitchModel?.(p),
+      "topology.check": () => scope.programmaticTopologyOperation?.("check"),
+      "topology.repair": () => scope.programmaticTopologyOperation?.("repair")
     };
     const handler = dispatch[name];
     if (!handler) {

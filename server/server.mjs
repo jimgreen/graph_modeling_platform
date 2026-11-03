@@ -524,6 +524,7 @@ async function readSchemeProjectFile(filePath, fileName, paths = defaultPaths) {
   return {
     name,
     updatedAt: await fileUpdatedAt(filePath),
+    contentHash: createHash("sha256").update(raw).digest("hex"),
     project: {
       ...project,
       name
@@ -655,9 +656,11 @@ export async function readSchemes(options = {}) {
 }
 
 async function writeSchemes(schemes, options = {}) {
-  await ensureSchemeStore(options);
-  await writeSchemeFiles(schemes, options);
-  await removeLegacySchemeManifest(options);
+  return withSchemeStoreWriteLock(async () => {
+    await ensureSchemeStore(options);
+    await writeSchemeFiles(schemes, options);
+    await removeLegacySchemeManifest(options);
+  });
 }
 
 function normalizeColorRecord(source) {
@@ -3560,6 +3563,10 @@ export async function createSchemeArchiveBuffer(options) {
 }
 
 export async function importSchemeArchiveBuffer(options) {
+  return withSchemeStoreWriteLock(() => importSchemeArchiveBufferUnlocked(options));
+}
+
+async function importSchemeArchiveBufferUnlocked(options) {
   const paths = options.paths ?? defaultPaths;
   const filesRoot = options.filesRoot ?? paths.schemeFiles;
   const trashRoot = options.trashRoot ?? paths.schemeTrash;
@@ -3635,36 +3642,40 @@ function sameSchemePath(first, second) {
 }
 
 export async function saveSchemeRecordDirectory(options) {
-  const paths = options.paths ?? defaultPaths;
-  const filesRoot = options.filesRoot ?? paths.schemeFiles;
-  const schemePath = schemePathOrDefault(options.schemePath);
-  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
-  const previousSchemePath = options.previousSchemePath;
-  if (Array.isArray(previousSchemePath) && previousSchemePath.length > 0 && !sameSchemePath(previousSchemePath, schemePath)) {
-    const previousDir = schemeDirectoryFromPath(filesRoot, previousSchemePath);
-    await mkdirInSpace(dirname(schemeDir));
-    try {
-      await rename(previousDir, schemeDir);
-      return;
-    } catch (error) {
-      if (error?.code !== "ENOENT") {
-        throw error;
+  return withSchemeStoreWriteLock(async () => {
+    const paths = options.paths ?? defaultPaths;
+    const filesRoot = options.filesRoot ?? paths.schemeFiles;
+    const schemePath = schemePathOrDefault(options.schemePath);
+    const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
+    const previousSchemePath = options.previousSchemePath;
+    if (Array.isArray(previousSchemePath) && previousSchemePath.length > 0 && !sameSchemePath(previousSchemePath, schemePath)) {
+      const previousDir = schemeDirectoryFromPath(filesRoot, previousSchemePath);
+      await mkdirInSpace(dirname(schemeDir));
+      try {
+        await rename(previousDir, schemeDir);
+        return;
+      } catch (error) {
+        if (error?.code !== "ENOENT") {
+          throw error;
+        }
       }
     }
-  }
-  await mkdirInSpace(schemeDir);
+    await mkdirInSpace(schemeDir);
+  });
 }
 
 export async function deleteSchemeRecordDirectory(options) {
-  const paths = options.paths ?? defaultPaths;
-  const filesRoot = options.filesRoot ?? paths.schemeFiles;
-  const trashRoot = options.trashRoot ?? paths.schemeTrash;
-  const schemePath = requireSchemePathArray(options.schemePath);
-  if (schemePath.length === 0) {
-    return;
-  }
-  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
-  await archiveSchemeStoreEntry(schemeDir, filesRoot, trashRoot, options.archiveId ?? schemeArchiveId());
+  return withSchemeStoreWriteLock(async () => {
+    const paths = options.paths ?? defaultPaths;
+    const filesRoot = options.filesRoot ?? paths.schemeFiles;
+    const trashRoot = options.trashRoot ?? paths.schemeTrash;
+    const schemePath = requireSchemePathArray(options.schemePath);
+    if (schemePath.length === 0) {
+      return;
+    }
+    const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
+    await archiveSchemeStoreEntry(schemeDir, filesRoot, trashRoot, options.archiveId ?? schemeArchiveId());
+  });
 }
 
 function projectFilePathsForName(schemeDir, name) {
@@ -3723,6 +3734,15 @@ async function projectJsonFileForName(schemeDir, name) {
     }
   }
   return null;
+}
+
+let schemeStoreWriteQueue = Promise.resolve();
+
+// ponytail: 全局队列串行各空间方案写入；仅当跨空间争用可测时再改为按根目录分队列。
+function withSchemeStoreWriteLock(task) {
+  const run = schemeStoreWriteQueue.then(task, task);
+  schemeStoreWriteQueue = run.then(() => undefined, () => undefined);
+  return run;
 }
 
 let projectIndexAllocationQueue = Promise.resolve();
@@ -3866,6 +3886,19 @@ export async function readSchemeProjectRecord(options = {}) {
   return readSchemeProjectFile(projectFile.filePath, projectFile.fileName, paths);
 }
 
+// 在方案写入队列内比对模型版本并保存，避免「检查后、写前」被并发保存覆盖。
+export async function updateSchemeProjectRecordIfUnchanged({ paths = defaultPaths, schemePath, name, expectedUpdatedAt, expectedContentHash, record }) {
+  return withSchemeStoreWriteLock(async () => {
+    const latestRecord = await readSchemeProjectRecord({ paths, schemePath, name });
+    if (!latestRecord || latestRecord.updatedAt !== expectedUpdatedAt ||
+      latestRecord.contentHash !== expectedContentHash) {
+      return { conflict: true };
+    }
+    const savedRecord = await saveSchemeProjectRecordUnlocked({ paths, schemePath, record });
+    return { conflict: false, record: savedRecord };
+  });
+}
+
 // 按模型稳定序号 idx 定位模型（idx 由 allocateStableProjectIndex 分配，跨方案唯一）。
 // 供以 model_id 指定模型的接口使用（如 /v1/schemes/model/send），以及 SVG 端点重建背景页
 // （svgExport.mjs → buildBackgroundPageOption）：与方案路径解耦，模型改名或移到别的方案后 model_id 不变。
@@ -3922,6 +3955,10 @@ async function scanProjectByIndex(dir, schemePath, target, paths = defaultPaths)
 }
 
 export async function saveSchemeProjectRecord(options) {
+  return withSchemeStoreWriteLock(() => saveSchemeProjectRecordUnlocked(options));
+}
+
+async function saveSchemeProjectRecordUnlocked(options) {
   const paths = options.paths ?? defaultPaths;
   const filesRoot = options.filesRoot ?? paths.schemeFiles;
   const trashRoot = options.trashRoot ?? paths.schemeTrash;
@@ -3983,16 +4020,18 @@ export async function saveSchemeProjectRecord(options) {
 }
 
 export async function deleteSchemeProjectRecord(options) {
-  const paths = options.paths ?? defaultPaths;
-  const filesRoot = options.filesRoot ?? paths.schemeFiles;
-  const trashRoot = options.trashRoot ?? paths.schemeTrash;
-  const schemePath = schemePathOrDefault(options.schemePath);
-  const name = storageProjectDisplayName(options.name || options.projectName);
-  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
-  const archiveId = options.archiveId ?? schemeArchiveId();
-  const projectPaths = projectFilePathsForName(schemeDir, name);
-  await registryFor(paths).detachProject({ schemePath, projectName: name });
-  await Promise.all(Object.values(projectPaths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, archiveId)));
+  return withSchemeStoreWriteLock(async () => {
+    const paths = options.paths ?? defaultPaths;
+    const filesRoot = options.filesRoot ?? paths.schemeFiles;
+    const trashRoot = options.trashRoot ?? paths.schemeTrash;
+    const schemePath = schemePathOrDefault(options.schemePath);
+    const name = storageProjectDisplayName(options.name || options.projectName);
+    const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
+    const archiveId = options.archiveId ?? schemeArchiveId();
+    const projectPaths = projectFilePathsForName(schemeDir, name);
+    await registryFor(paths).detachProject({ schemePath, projectName: name });
+    await Promise.all(Object.values(projectPaths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, archiveId)));
+  });
 }
 
 async function writeSchemeFiles(schemes, options = {}) {
@@ -5532,7 +5571,9 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         const { v1SchemeRoutes } = await import("./apiV1Schemes.mjs");
         const { v1LibraryRoutes } = await import("./apiV1Library.mjs");
         const { v1ReceiveRoutes } = await import("./apiV1Receive.mjs");
-        const v1Routes = [...v1SchemeRoutes, ...v1LibraryRoutes, ...v1ReceiveRoutes, ...v1RuntimeRoutes, ...v1ControlRoutes];
+        const { createV1TopologyRoutes } = await import("./apiV1Topology.mjs");
+        const v1TopologyRoutes = createV1TopologyRoutes(runtimeWs);
+        const v1Routes = [...v1SchemeRoutes, ...v1LibraryRoutes, ...v1ReceiveRoutes, ...v1TopologyRoutes, ...v1RuntimeRoutes, ...v1ControlRoutes];
         for (const route of v1Routes) {
           if (route.method !== request.method) {
             continue;

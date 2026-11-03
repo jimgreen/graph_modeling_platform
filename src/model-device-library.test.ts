@@ -3966,7 +3966,14 @@ test("migrates legacy ACAC and DCDC converter controls to endpoint fields", () =
 // （运行时数据），干净检出的仓库上不存在 —— 缺文件时跳过，别让 ENOENT 报成「库逻辑坏了」。
 // 「为什么非得依赖这份本机数据」的理由写在用例上方的注释里。
 const PERSISTED_LIBRARY_URL = new URL("../data/device-library/library.json", import.meta.url);
-const persistedLibraryAvailable = existsSync(PERSISTED_LIBRARY_URL);
+const persistedLibraryAvailable = existsSync(PERSISTED_LIBRARY_URL) && (() => {
+  const persistedLibrary = JSON.parse(readFileSync(PERSISTED_LIBRARY_URL, "utf8")) as {
+    deviceDefinitionOverrides?: Record<string, DeviceTemplateDefinitionOverride>;
+  };
+  return Object.values(persistedLibrary.deviceDefinitionOverrides ?? {}).some(
+    (override) => (override?.parameterDefinitions?.length ?? 0) > 0
+  );
+})();
 
 // 本条**不读**本机落盘的 data/device-library/library.json，因此恒跑、不带跳过条件。
 //

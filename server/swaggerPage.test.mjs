@@ -9,7 +9,7 @@
 //   前三条是静态校验（HTML 骨架）：
 //     1. 内联 <script> 能被真实 JS 引擎解析（SyntaxError 即页面全白）；
 //     2. 页面确实是完整 HTML 文档，且带 highlight.js（文档承诺的自包含交互依赖）；
-//     3. 端点数与示例总数符合文档记载的 84 端点 / 111 示例。
+//     3. 端点数与示例总数符合文档记载的 86 端点 / 114 示例。
 //   后几条走数据流（读 ENDPOINTS 本身，见下方分隔线之后）：
 //     _idx 注入的唯一性、重复渲染的幂等、非默认 apiPrefix 下的 path 重写、
 //     以及内联 JSON 的 </script> 注入面 —— 后者是已知未修漏洞，用 test.fails 钉住。
@@ -40,13 +40,13 @@ test("页面是完整 HTML 文档且自带 highlight.js", () => {
 // 端点/示例数会随功能增长；这里钉住的是「文档与实际同步」这一事实，具体数字见
 // swaggerPage.mjs 的 ENDPOINTS。真正的漂移防护在 routeCoverage.test.mjs
 // （已注册路由 vs 已文档化端点），本条只防手滑漏改。
-test("端点数与示例总数符合文档记载（84 端点 / 111 示例）", () => {
-  expect(SWIGGER_ENDPOINTS).toHaveLength(84);
+test("端点数与示例总数符合文档记载（86 端点 / 114 示例）", () => {
+  expect(SWIGGER_ENDPOINTS).toHaveLength(86);
   const exampleTotal = SWIGGER_ENDPOINTS.reduce(
     (sum, endpoint) => sum + (endpoint.examples?.length ?? 0),
     0
   );
-  expect(exampleTotal).toBe(111);
+  expect(exampleTotal).toBe(114);
   // 每个端点都必须有示例：swigger.examples.test.mjs 靠它逐条真实调用
   for (const endpoint of SWIGGER_ENDPOINTS) {
     expect(endpoint.examples?.length ?? 0, `${endpoint.method} ${endpoint.path} 没有示例`).toBeGreaterThan(0);
@@ -66,6 +66,13 @@ const closeScriptCount = (html) => (html.match(/<\/script>/g) || []).length;
 
 // 前端 onclick 形如 sendRequest(this, ENDPOINTS[7])，_idx 是它与数组下标对齐的锚点。
 // 若注入被删或改坏，onclick 就会指向别的端点，而页面不会报任何错 —— 只能靠数据比对发现。
+test("拓扑接口在 Try-it 中提供 clientId 页面选择参数", () => {
+  for (const path of ["/webgrp/v1/topology/check", "/webgrp/v1/topology/repair"]) {
+    const endpoint = SWIGGER_ENDPOINTS.find((item) => item.path === path);
+    expect(endpoint?.query ?? []).toContainEqual(expect.objectContaining({ name: "clientId" }));
+  }
+});
+
 test("每条端点记录都被赋了唯一的 _idx（Set 长度与端点数相等）", () => {
   renderSwaggerHtml(); // _idx 在 renderSwaggerHtml 内部注入，必须先调一次
 
@@ -182,7 +189,7 @@ test.fails("内联 JSON 不含裸 </script>：端点字段里的该序列已被�
     const at = SWIGGER_ENDPOINTS.lastIndexOf(probe);
     if (at !== -1) SWIGGER_ENDPOINTS.splice(at, 1);
   }
-  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(84);
+  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(86);
 
   // ① 核心断言：注入 </script> 不应让闭合标签数超过基线。
   //    对「转义成 <\/script>」与「转义成 <」两种实现都成立，不锁死修法。
@@ -239,7 +246,7 @@ const renderCardsOf = (probes) => {
       if (at !== -1) SWIGGER_ENDPOINTS.splice(at, 1);
     }
   }
-  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(84);
+  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(86);
   return new Map(probes.map((probe) => [probe.path, cardByPath(html, probe.path)]));
 };
 

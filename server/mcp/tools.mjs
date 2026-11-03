@@ -55,6 +55,11 @@ import {
   handleV1RuntimeDom
 } from "../apiV1Runtime.mjs";
 import {
+  handleTopologyCheck,
+  handleTopologyRepair
+} from "../apiV1Topology.mjs";
+
+import {
   handleControlDeviceAdd,
   handleControlSchemeCreate,
   handleControlModelCreate,
@@ -293,6 +298,13 @@ const TOKEN = z
     "目标页面的 token（就是该页面地址栏里的 ?token= 的值）。本空间只有一个在线页面时可不填；"
     + "有多个在线页面时必须填，否则工具会回 token-required 并列出在线 token。用 gmp_list_runtime_clients 查看在线页面各自的 token。"
   );
+
+const TOPOLOGY_TARGET_INPUT = {
+  target: z.enum(["current", "saved"]).describe("操作目标：current 为当前在线页面；saved 为已保存模型。"),
+  schemePath: SCHEME_PATH.optional().describe("saved 目标必填：方案路径数组。"),
+  name: z.string().min(1).optional().describe("saved 目标必填：模型名。"),
+  token: TOKEN.describe("current 目标可选：页面 token。多页面时必填。")
+};
 
 // ───────────────────────────── 工具注册表 ─────────────────────────────
 
@@ -852,6 +864,78 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
         },
         { ctx: sessionCtx }
       );
+    }
+  });
+
+  tools.push({
+    name: "gmp_check_topology",
+    title: "检查拓扑",
+    description: "检查当前在线页面或指定已保存模型，返回拓扑诊断与自动修正预览；不保存模型。saved 检查的既有读取链可能首次初始化该空间的全局线路登记表并迁移存量数据。",
+    inputSchema: TOPOLOGY_TARGET_INPUT,
+    outputSchema: ENVELOPE_OUTPUT_SHAPE,
+    annotations: { ...READ_ONLY, readOnlyHint: false },
+    handler: async (args) => {
+      const spaceError = requireSpace();
+      if (spaceError) return spaceError;
+      if (args.target === "current" && (args.schemePath !== undefined || args.name !== undefined)) {
+        return badRequest("target=current 不可同时指定已保存模型。");
+      }
+      if (args.target === "saved" && (!args.schemePath || !args.name || args.token)) {
+        return badRequest("target=saved 须提供 schemePath 与 name，且不可指定页面 token。");
+      }
+      let clientId;
+      if (args.target === "current") {
+        const resolved = resolveClientToken(args.token, { spaceId, clients: sessionCtx.listClients() });
+        if (resolved.error) return errorResult(resolved.error.code, resolved.error.message);
+        clientId = resolved.clientId;
+      }
+      return runV1(handleTopologyCheck, {
+        method: "POST",
+        path: "/v1/topology/check",
+        query: { clientId },
+        body: {
+          target: args.target,
+          ...(args.target === "saved" ? { schemePath: args.schemePath, name: args.name } : {})
+        },
+        paths,
+        spaceId
+      }, args.target === "current" ? { ctx: sessionCtx } : {});
+    }
+  });
+
+  tools.push({
+    name: "gmp_repair_topology",
+    title: "修复拓扑",
+    description: "修复当前在线页面或指定已保存模型的可自动修正参数。current 仅改页面内存；saved 有修正时直接写盘。仍有阻断错误会随结果返回。读取可能首次初始化该空间的全局线路登记表并迁移存量数据。",
+    inputSchema: TOPOLOGY_TARGET_INPUT,
+    outputSchema: ENVELOPE_OUTPUT_SHAPE,
+    annotations: DESTRUCTIVE,
+    handler: async (args) => {
+      const spaceError = requireSpace();
+      if (spaceError) return spaceError;
+      if (args.target === "current" && (args.schemePath !== undefined || args.name !== undefined)) {
+        return badRequest("target=current 不可同时指定已保存模型。");
+      }
+      if (args.target === "saved" && (!args.schemePath || !args.name || args.token)) {
+        return badRequest("target=saved 须提供 schemePath 与 name，且不可指定页面 token。");
+      }
+      let clientId;
+      if (args.target === "current") {
+        const resolved = resolveClientToken(args.token, { spaceId, clients: sessionCtx.listClients() });
+        if (resolved.error) return errorResult(resolved.error.code, resolved.error.message);
+        clientId = resolved.clientId;
+      }
+      return runV1(handleTopologyRepair, {
+        method: "POST",
+        path: "/v1/topology/repair",
+        query: { clientId },
+        body: {
+          target: args.target,
+          ...(args.target === "saved" ? { schemePath: args.schemePath, name: args.name } : {})
+        },
+        paths,
+        spaceId
+      }, args.target === "current" ? { ctx: sessionCtx } : {});
     }
   });
 

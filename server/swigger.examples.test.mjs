@@ -150,6 +150,8 @@ function commandResponder(name, params) {
       return { ok: true, data: { scheduled: true, alreadyCurrent: false, spaceId: params.spaceId, spaceName: params.spaceId } };
     case "control.model.switch":
       return { ok: true, data: { alreadyOpen: false, modelId: 1, name: params.name || "模型1", schemeId: "s1", schemePath: params.schemePath || [] } };
+    case "topology.check":
+      return { ok: true, data: { target: "current", status: "success", errors: [], warnings: [], corrections: [], topologyIslandCount: 1, modified: false, saved: false } };
     default:
       return { ok: false, error: { code: "unknown-command", message: `unknown command: ${name}` } };
   }
@@ -430,6 +432,21 @@ function expectFor(ep, ex) {
   if (p === apiPath("/v1/receive") && ep.method === "DELETE") return { status: 200, check: (r) => {
     expect(typeof r.json.data.cleared).toBe("number");
   } };
+
+  // v1 拓扑操作：检查当前页面只读；修复示例指向不存在模型，确保没有文件副作用。
+  if (p === apiPath("/v1/topology/check")) {
+    if (ex.label.includes("不存在模型")) {
+      return { status: 404, check: (r) => expect(r.json.error.code).toBe("not-found") };
+    }
+    return { status: 200, check: (r) => {
+      expect(r.json.data).toMatchObject({ target: "current", modified: false, saved: false });
+      expect(r.json.data.errors).toBeInstanceOf(Array);
+      expect(r.json.data.corrections).toBeInstanceOf(Array);
+    } };
+  }
+  if (p === apiPath("/v1/topology/repair")) {
+    return { status: 404, check: (r) => expect(r.json.error.code).toBe("not-found") };
+  }
 
   // v1 图元库域
   if (p === apiPath("/v1/library")) return { status: 200, check: (r) => expect(r.json.data.categories).toBeInstanceOf(Array) };
