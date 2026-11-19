@@ -2129,7 +2129,7 @@ function terminalStubVisibleBoundaryDistance(
     if (isThreeWindingTransformerKind(nodeKind)) {
       const hasNeutralTerminal = isThreeWindingNeutralTransformerKind(nodeKind);
       const windingRadius = hasNeutralTerminal ? 14 : 15;
-      const sideX = hasNeutralTerminal ? 17 : 16;
+      const sideX = 13;
       return scaled(sideX + windingRadius + 8);
     }
     if (glyphVariant === "transformer" || glyphVariant === "terminal-transformer-load") {
@@ -2205,7 +2205,7 @@ function terminalStubVisibleBoundaryDistance(
     const hasNeutralTerminal = isThreeWindingNeutralTransformerKind(nodeKind);
     const windingRadius = hasNeutralTerminal ? 14 : 15;
     const topY = -8;
-    const bottomY = hasNeutralTerminal ? 16 : 14;
+    const bottomY = topY + Math.sqrt(3) * 13;
     return terminal.anchor.y < 0
       ? scaled(Math.abs(topY - windingRadius - 20))
       : scaled(bottomY + windingRadius + 10);

@@ -14,7 +14,8 @@ export function hashSvg(text: string): string {
 // 2026-10-21 变更：图元填充两种主题下一律透明（用户要求：除盒型开关外设备填充全透明），
 // 基线里 bus-glyph 的 fill="#eef2ff" 与 electric-load-glyph 的 fill="#ffffff" 都变成 "transparent"，
 // 逐字节 diff 只有这两处，其余不变。
-export const SVG_BASELINE_HASH = "2dae99733f916499590e6ac4df8dcc3da34be9893434e906499ff908d340e0a9";
+// 2026-11-19：母线两侧端点改为半厚度圆角弧形端帽（bus-glyph 增加 rx）。
+export const SVG_BASELINE_HASH = "62d7c1a3717b04b22cf4036372dc8571dcccadeec83ee6cad6329325ab737736";
 
 describe("SVG 导出基线", () => {
   test("输出哈希与基线一致", () => {

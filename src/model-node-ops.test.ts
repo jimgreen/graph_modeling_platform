@@ -609,8 +609,8 @@ test("stops border terminal stubs at visible arcs and borders", () => {
 
   const transformer = createDefaultNode("ac-three-winding-transformer", { x: 200, y: 120 });
   const transformerGlyphScale = Math.max(1, Math.max(transformer.size.width, transformer.size.height) / 100);
-  expect(stubStartPoint(transformer, transformer.terminals[0]).x).toBeCloseTo(-(16 + 15 + 8) * transformerGlyphScale);
-  expect(stubStartPoint(transformer, transformer.terminals[1]).x).toBeCloseTo((16 + 15 + 8) * transformerGlyphScale);
+  expect(stubStartPoint(transformer, transformer.terminals[0]).x).toBeCloseTo(-(13 + 15 + 8) * transformerGlyphScale);
+  expect(stubStartPoint(transformer, transformer.terminals[1]).x).toBeCloseTo((13 + 15 + 8) * transformerGlyphScale);
 
   const pipeline = createDefaultNode("hydrogen-pipeline", { x: 200, y: 120 });
   const pipelineGlyphScale = Math.max(1, Math.max(pipeline.size.width, pipeline.size.height) / 100);

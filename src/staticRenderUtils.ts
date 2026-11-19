@@ -223,7 +223,7 @@ const DEVICE_GLYPH_DESIGN_LONGEST_SIDE = 100;
 
 function renderBusGlyphRect(width: number, height: number, color: string) {
   const thickness = Math.max(8, height / 3);
-  return createElement("rect", { className: "bus-glyph", x: -width / 2, y: -thickness / 2, width, height: thickness, fill: color, stroke: color, strokeWidth: "0" });
+  return createElement("rect", { className: "bus-glyph", x: -width / 2, y: -thickness / 2, width, height: thickness, rx: thickness / 2, fill: color, stroke: color, strokeWidth: "0" });
 }
 
 function deviceStateVisualToken(visual?: DeviceStateVisual | null) {

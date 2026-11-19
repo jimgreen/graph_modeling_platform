@@ -105,6 +105,25 @@ function deviceVisualReplacesGlyph(node: ModelNode, stateVisual: DeviceStateVisu
   ].some(isPlatformDeviceVisualReplacementImage);
 }
 
+function circleEdgePoint(
+  centerX: number,
+  centerY: number,
+  targetX: number,
+  targetY: number,
+  radius: number
+) {
+  const deltaX = targetX - centerX;
+  const deltaY = targetY - centerY;
+  const distance = Math.hypot(deltaX, deltaY);
+  if (distance === 0) {
+    return { x: centerX, y: centerY };
+  }
+  return {
+    x: centerX + (deltaX * radius) / distance,
+    y: centerY + (deltaY * radius) / distance
+  };
+}
+
 export function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE, themeMode = "light", stateVisual = null, voltagePaint = null }: DeviceGlyphProps) {
   if (deviceVisualReplacesGlyph(node, stateVisual)) {
     return null;
@@ -1345,14 +1364,15 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     const hasNeutralTerminal = isThreeWindingNeutralTransformerKind(node.kind);
     const windingRadius = miniature ? 9 : hasNeutralTerminal ? 14 : 15;
     const topY = miniature ? -5 : -8;
-    const bottomY = miniature ? 10 : hasNeutralTerminal ? 16 : 14;
-    const sideX = miniature ? 10 : hasNeutralTerminal ? 17 : 16;
+    // 三个等半径绕组按等边三角形布置：三对圆心距离相同，故三处交叠区域大小一致。
+    const sideX = miniature ? 8 : 13;
+    const bottomY = topY + Math.sqrt(3) * sideX;
     const neutralLeadTop = topY - windingRadius - (miniature ? 6 : 20);
     const windingColors = node.terminals.slice(0, 3).map((t) =>
       terminalPaint(t, getTerminalDisplayColor(node, t, colorDisplayMode, colorPalette, themeMode))
     );
     return (
-      createElement("g", { className: `three-winding-transformer-glyph${hasNeutralTerminal ? " three-winding-transformer-neutral-glyph" : ""}`, fill: themeGlyphColor(fill, themeMode, "fill"), strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("circle", { className: "transformer-winding", cx: -sideX, cy: topY, r: windingRadius, stroke: windingColors[0] ?? stroke }), createElement("circle", { className: "transformer-winding", cx: sideX, cy: topY, r: windingRadius, stroke: windingColors[1] ?? stroke }), createElement("circle", { className: "transformer-winding", cx: "0", cy: bottomY, r: windingRadius, stroke: windingColors[2] ?? stroke }), createElement("path", { d: `M ${-sideX - windingRadius - 8} ${topY} H ${-sideX - windingRadius} M ${sideX + windingRadius} ${topY} H ${sideX + windingRadius + 8} M 0 ${bottomY + windingRadius} V ${bottomY + windingRadius + 10}`, stroke }), createElement("path", { d: `M ${-sideX + windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${-windingRadius * 0.28} ${bottomY - windingRadius * 0.72} M ${sideX - windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${windingRadius * 0.28} ${bottomY - windingRadius * 0.72}`, stroke, strokeWidth: "1.6" }), hasNeutralTerminal && (
+      createElement("g", { className: `three-winding-transformer-glyph${hasNeutralTerminal ? " three-winding-transformer-neutral-glyph" : ""}`, fill: themeGlyphColor(fill, themeMode, "fill"), strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("circle", { className: "transformer-winding", cx: -sideX, cy: topY, r: windingRadius, stroke: windingColors[0] ?? stroke }), createElement("circle", { className: "transformer-winding", cx: sideX, cy: topY, r: windingRadius, stroke: windingColors[1] ?? stroke }), createElement("circle", { className: "transformer-winding", cx: "0", cy: bottomY, r: windingRadius, stroke: windingColors[2] ?? stroke }), createElement("path", { className: "transformer-terminal-lead", d: `M ${-sideX - windingRadius - 8} ${topY} H ${-sideX - windingRadius}`, stroke: windingColors[0] ?? stroke }), createElement("path", { className: "transformer-terminal-lead", d: `M ${sideX + windingRadius} ${topY} H ${sideX + windingRadius + 8}`, stroke: windingColors[1] ?? stroke }), createElement("path", { className: "transformer-terminal-lead", d: `M 0 ${bottomY + windingRadius} V ${bottomY + windingRadius + 10}`, stroke: windingColors[2] ?? stroke }), createElement("path", { className: "transformer-winding-intersection", d: `M ${-sideX + windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${-windingRadius * 0.28} ${bottomY - windingRadius * 0.72} M ${sideX - windingRadius * 0.55} ${topY + windingRadius * 0.55} L ${windingRadius * 0.28} ${bottomY - windingRadius * 0.72}`, stroke, strokeWidth: "1.6" }), hasNeutralTerminal && (
           createElement(Fragment, null, createElement("path", { d: `M 0 ${neutralLeadTop} V ${topY - windingRadius}`, stroke }), createElement("circle", { cx: "0", cy: topY - windingRadius, r: miniature ? 2.2 : 3.2, fill: stroke, stroke: "none" }))
         ))
     );
@@ -1393,8 +1413,10 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       return null;
     }
     const closed = getSwitchVisualState(node) === "closed";
+    const contactRadius = 3.2;
+    const leftContact = circleEdgePoint(-13, 0, closed ? 13 : 10, closed ? 0 : -15, contactRadius);
     return (
-      createElement("g", { fill: "none", stroke, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: -w / 2 + 8, y1: "0", x2: "-13", y2: "0" }), createElement("line", { x1: "13", y1: "0", x2: w / 2 - 8, y2: "0" }), createElement("circle", { cx: "-13", cy: "0", r: "3.2", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("circle", { cx: "13", cy: "0", r: "3.2", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("line", { x1: "-13", y1: "0", x2: closed ? "13" : "10", y2: closed ? "0" : "-15" }), !closed && createElement("line", { x1: "8", y1: "-15", x2: "16", y2: "-15" }))
+      createElement("g", { fill: "none", stroke, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: -w / 2 + 8, y1: "0", x2: -13 - contactRadius, y2: "0" }), createElement("line", { x1: 13 + contactRadius, y1: "0", x2: w / 2 - 8, y2: "0" }), createElement("circle", { cx: "-13", cy: "0", r: contactRadius, fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("circle", { cx: "13", cy: "0", r: contactRadius, fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("line", { x1: leftContact.x, y1: leftContact.y, x2: closed ? 13 - contactRadius : 10, y2: closed ? 0 : -15 }), !closed && createElement("line", { x1: "8", y1: "-15", x2: "16", y2: "-15" }))
     );
   }
 
@@ -1403,8 +1425,10 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       return null;
     }
     const closed = getSwitchVisualState(node) === "closed";
+    const contactRadius = 3.2;
+    const leftContact = circleEdgePoint(-18, 0, closed ? 8 : 2, closed ? 0 : -15, contactRadius);
     return (
-      createElement("g", { className: "ground-disconnector-glyph", fill: "none", stroke, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: -w / 2 + 8, y1: "0", x2: "-18", y2: "0" }), createElement("circle", { cx: "-18", cy: "0", r: "3.2", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("circle", { cx: "8", cy: "0", r: "3.2", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("line", { x1: "-18", y1: "0", x2: closed ? "8" : "2", y2: closed ? "0" : "-15" }), !closed && createElement("line", { x1: "0", y1: "-15", x2: "12", y2: "-15" }), createElement("path", { d: "M 8 0 H 18 V 15 M 18 15 V 20 M 8 20 H 28 M 11 24 H 25 M 14 28 H 22" }))
+      createElement("g", { className: "ground-disconnector-glyph", fill: "none", stroke, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: -w / 2 + 8, y1: "0", x2: -18 - contactRadius, y2: "0" }), createElement("circle", { cx: "-18", cy: "0", r: contactRadius, fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("circle", { cx: "8", cy: "0", r: contactRadius, fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("line", { x1: leftContact.x, y1: leftContact.y, x2: closed ? 8 - contactRadius : 2, y2: closed ? 0 : -15 }), !closed && createElement("line", { x1: "0", y1: "-15", x2: "12", y2: "-15" }), createElement("path", { d: `M ${8 + contactRadius} 0 H 18 V 15 M 18 15 V 20 M 8 20 H 28 M 11 24 H 25 M 14 28 H 22` }))
     );
   }
 
@@ -1413,8 +1437,10 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       return null;
     }
     const closed = getSwitchVisualState(node) === "closed";
+    const contactRadius = 3.2;
+    const topContact = circleEdgePoint(0, -18, closed ? 0 : 14, closed ? 8 : -6, contactRadius);
     return (
-      createElement("g", { className: "ground-disconnector-vertical-glyph", fill: "none", stroke, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: "0", y1: -h / 2 + 8, x2: "0", y2: "-18" }), createElement("circle", { cx: "0", cy: "-18", r: "3.2", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("circle", { cx: "0", cy: "8", r: "3.2", fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("line", { x1: "0", y1: "-18", x2: closed ? "0" : "14", y2: closed ? "8" : "-6" }), !closed && createElement("line", { x1: "14", y1: "-8", x2: "14", y2: "0" }), createElement("path", { d: "M 0 8 V 18 M 0 18 V 24 M -10 24 H 10 M -7 28 H 7 M -4 32 H 4" }))
+      createElement("g", { className: "ground-disconnector-vertical-glyph", fill: "none", stroke, strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }, createElement("line", { x1: "0", y1: -h / 2 + 8, x2: "0", y2: -18 - contactRadius }), createElement("circle", { cx: "0", cy: "-18", r: contactRadius, fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("circle", { cx: "0", cy: "8", r: contactRadius, fill: themeGlyphColor("#ffffff", themeMode, "fill") }), createElement("line", { x1: topContact.x, y1: topContact.y, x2: closed ? 0 : 14, y2: closed ? 8 - contactRadius : -6 }), !closed && createElement("line", { x1: "14", y1: "-8", x2: "14", y2: "0" }), createElement("path", { d: `M 0 ${8 + contactRadius} V 18 M 0 18 V 24 M -10 24 H 10 M -7 28 H 7 M -4 32 H 4` }))
     );
   }
 

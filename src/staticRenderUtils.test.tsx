@@ -312,6 +312,11 @@ describe("renderBusGlyphRect", () => {
     expect(markup(renderBusGlyphRect(60, 12, "#111"))).toContain('height="8"');
     expect(markup(renderBusGlyphRect(60, 12, "#111"))).toContain('y="-4"');
   });
+
+  test("两侧端点使用半厚度圆角，形成圆弧端帽", () => {
+    expect(markup(renderBusGlyphRect(60, 30, "#111"))).toContain('rx="5"');
+    expect(markup(renderBusGlyphRect(60, 12, "#111"))).toContain('rx="4"');
+  });
 });
 
 // ─── 以下是还没被上面几组覆盖到的那一半 ───────────────────────────────────────

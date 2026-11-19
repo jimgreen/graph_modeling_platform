@@ -936,9 +936,9 @@ test("adds a four-terminal three-winding transformer with a visible neutral poin
   expect(terminalPoints[2]).toEqual({ x: 0, y: node.size.height / 2 });
   expect(terminalPoints[3]).toEqual({ x: 0, y: -node.size.height / 2 });
   const terminalStubs = node.terminals.map((terminal) => terminalStubSegment(terminal, 1, 1, 24, node.kind, node.size));
-  expect(terminalStubs[0].from.x).toBeCloseTo(20.5);
-  expect(terminalStubs[1].from.x).toBeCloseTo(-20.5);
-  expect(terminalStubs[2].from.y).toBeCloseTo(-6);
+  expect(terminalStubs[0].from.x).toBeCloseTo(26.5);
+  expect(terminalStubs[1].from.x).toBeCloseTo(-26.5);
+  expect(terminalStubs[2].from.y).toBeCloseTo(-8.2250092524);
   expect(terminalStubs[3].from.y).toBeCloseTo(3);
   expect(describeContainerTerminalAssociations(template!)).toEqual([]);
 });

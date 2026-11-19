@@ -1760,7 +1760,7 @@ describe("SVG export", () => {
     expect(svg).not.toMatch(/<text[^>]*>按钮<\/text>/);
   });
 
-  test("exports energy buses as square ended rectangles", () => {
+  test("exports energy buses with rounded arc end caps", () => {
     const buses = [
       createDefaultNode("ac-bus", { x: 120, y: 120 }),
       createDefaultNode("dc-bus", { x: 240, y: 120 }),
@@ -1776,7 +1776,7 @@ describe("SVG export", () => {
     expect(svg).not.toContain('<line class="bus-glyph"');
     expect(svg).not.toContain('class="bus-glyph" x1=');
     expect(svg).not.toContain('stroke-linecap="round"');
-    expect(svg).not.toContain('rx="');
+    expect(svg).toContain('rx="6"');
     expect(svgDeviceUseTag(svg, "ac-bus-node-export")).toContain('node="1"');
     expect(svgDeviceUseTag(svg, "ac-bus-node-export")).not.toContain("node-id=");
   });

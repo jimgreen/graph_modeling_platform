@@ -24,6 +24,32 @@ const glyphHtml = (voltagePaint?: DeviceGlyphVoltagePaint | null) =>
     })
   );
 
+const threeWindingGlyphHtml = () => {
+  const node = createDefaultNode("ac-three-winding-transformer", { x: 0, y: 0 });
+  node.id = "three-winding-test";
+  return renderSvgElementMarkup(
+    DeviceGlyph({
+      node,
+      mode: "geometry",
+      colorDisplayMode: "voltage",
+      voltagePaint: {
+        nodeRef: "var(--t1)",
+        terminalRef: (terminalId) => ({ t1: "var(--t1)", t2: "var(--t2)", t3: "var(--t3)" }[terminalId])
+      }
+    })
+  );
+};
+
+const threeWindingCircleGeometry = (kind: "ac-three-winding-transformer" | "ac-three-winding-transformer-neutral", miniature = false) => {
+  const node = createDefaultNode(kind, { x: 0, y: 0 });
+  const html = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", miniature }));
+  return Array.from(html.matchAll(/<circle class="transformer-winding" cx="([^"]+)" cy="([^"]+)" r="([^"]+)"/gu), (match) => ({
+    x: Number(match[1]),
+    y: Number(match[2]),
+    radius: Number(match[3])
+  }));
+};
+
 describe("DeviceGlyph 导出态电压着色", () => {
   it("不传 voltagePaint 时行为不变（活画布路径）", () => {
     const html = glyphHtml(undefined);
@@ -71,6 +97,32 @@ describe("DeviceGlyph 导出态电压着色", () => {
       })
     );
     expect(html).toContain('fill="#123456"');
+  });
+
+  it("三绕组连接锚点的三条短线分别消费对应绕组电压槽，交叠区域保持独立", () => {
+    const html = threeWindingGlyphHtml();
+    expect(html.match(/class="transformer-terminal-lead"/g)?.length).toBe(3);
+    expect(html).toMatch(/class="transformer-terminal-lead"[^>]*stroke="var\(--t1\)"/u);
+    expect(html).toMatch(/class="transformer-terminal-lead"[^>]*stroke="var\(--t2\)"/u);
+    expect(html).toMatch(/class="transformer-terminal-lead"[^>]*stroke="var\(--t3\)"/u);
+    expect(html).toContain('class="transformer-winding-intersection"');
+  });
+
+  it("三个绕组两两相交，三对圆的交叠大小相同", () => {
+    for (const kind of ["ac-three-winding-transformer", "ac-three-winding-transformer-neutral"] as const) {
+      for (const miniature of [false, true]) {
+        const circles = threeWindingCircleGeometry(kind, miniature);
+        expect(circles).toHaveLength(3);
+        const distances = [
+          Math.hypot(circles[0].x - circles[1].x, circles[0].y - circles[1].y),
+          Math.hypot(circles[0].x - circles[2].x, circles[0].y - circles[2].y),
+          Math.hypot(circles[1].x - circles[2].x, circles[1].y - circles[2].y)
+        ];
+        expect(distances[0]).toBeCloseTo(distances[1], 8);
+        expect(distances[1]).toBeCloseTo(distances[2], 8);
+        expect(distances[0]).toBeLessThan(2 * circles[0].radius);
+      }
+    }
   });
 });
 

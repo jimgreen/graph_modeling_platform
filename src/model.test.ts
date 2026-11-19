@@ -933,9 +933,9 @@ describe("power system model", () => {
     expect(terminalPoints[1].y).toBeCloseTo((-8 / 76) * node.size.height);
     expect(terminalPoints[2]).toEqual({ x: 0, y: node.size.height / 2 });
     const terminalStubs = node.terminals.map((terminal) => terminalStubSegment(terminal, 1, 1, 24, node.kind, node.size));
-    expect(terminalStubs[0].from.x).toBeCloseTo(20.5);
-    expect(terminalStubs[1].from.x).toBeCloseTo(-20.5);
-    expect(terminalStubs[2].from.y).toBeCloseTo(-0.5);
+    expect(terminalStubs[0].from.x).toBeCloseTo(25);
+    expect(terminalStubs[1].from.x).toBeCloseTo(-25);
+    expect(terminalStubs[2].from.y).toBeCloseTo(0);
   });
 
 

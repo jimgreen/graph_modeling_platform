@@ -276,6 +276,67 @@ describe("DeviceGlyph converter terminal ordering", () => {
   });
 });
 
+describe("DeviceGlyph switching contacts", () => {
+  const lineTags = (markup: string) => Array.from(markup.matchAll(/<line\b[^>]*>/gu), (match) => match[0]);
+
+  it("开关的引线和开合线连接到圆边，不落在两个圆心", () => {
+    const node = createDefaultNode("ac-switch", { x: 0, y: 0 });
+    node.params = { ...node.params, status: "1" };
+    const markup = renderToStaticMarkup(<svg><DeviceGlyph node={node} /></svg>);
+    const lines = lineTags(markup).join(" ");
+
+    expect(markup).toContain('cx="-13" cy="0" r="3.2"');
+    expect(markup).toContain('cx="13" cy="0" r="3.2"');
+    expect(lines).not.toContain('x2="-13" y2="0"');
+    expect(lines).not.toContain('x1="13" y1="0"');
+    expect(lines).toContain('x1="-9.8" y1="0"');
+    expect(lines).toContain('x2="9.8" y2="0"');
+
+    const openNode = { ...node, params: { ...node.params, status: "0" } };
+    const openLines = lineTags(renderToStaticMarkup(<svg><DeviceGlyph node={openNode} /></svg>)).join(" ");
+    expect(openLines).not.toContain('x1="-13" y1="0"');
+  });
+
+  it("水平接地刀闸的设备线、接地支路和开合线都从圆边出发", () => {
+    const node = createDefaultNode("ac-ground-disconnector", { x: 0, y: 0 });
+    node.params = { ...node.params, status: "1" };
+    const markup = renderToStaticMarkup(<svg><DeviceGlyph node={node} /></svg>);
+    const lines = lineTags(markup).join(" ");
+
+    expect(lines).not.toContain('x2="-18" y2="0"');
+    expect(lines).not.toContain('x1="-18" y1="0"');
+    expect(lines).not.toContain('x2="8" y2="0"');
+    expect(markup).not.toContain("M 8 0 H 18 V 15");
+    expect(lines).toContain('x1="-14.8" y1="0"');
+    expect(lines).toContain('x2="4.8" y2="0"');
+    expect(markup).toContain("M 11.2 0 H 18 V 15");
+
+    const openNode = { ...node, params: { ...node.params, status: "0" } };
+    const openLines = lineTags(renderToStaticMarkup(<svg><DeviceGlyph node={openNode} /></svg>)).join(" ");
+    expect(openLines).not.toContain('x1="-18" y1="0"');
+  });
+
+  it("竖向接地刀闸从上下两个圆的边缘连接", () => {
+    const node = createDefaultNode("ac-ground-disconnector-vertical", { x: 0, y: 0 });
+    node.params = { ...node.params, status: "1" };
+    const markup = renderToStaticMarkup(<svg><DeviceGlyph node={node} /></svg>);
+    const lines = lineTags(markup).join(" ");
+
+    expect(lines).not.toContain('y2="-18"');
+    expect(lines).not.toContain('y1="-18"');
+    expect(lines).not.toContain('y2="8"');
+    expect(markup).not.toContain("M 0 8 V 18");
+    expect(lines).toContain('y2="-21.2"');
+    expect(lines).toContain('y1="-14.8"');
+    expect(lines).toContain('y2="4.8"');
+    expect(markup).toContain("M 0 11.2 V 18");
+
+    const openNode = { ...node, params: { ...node.params, status: "0" } };
+    const openLines = lineTags(renderToStaticMarkup(<svg><DeviceGlyph node={openNode} /></svg>)).join(" ");
+    expect(openLines).not.toContain('x1="0" y1="-18"');
+  });
+});
+
 describe("DeviceGlyph AC compensators", () => {
   it("renders distinct shunt capacitor and reactor symbols connected to the terminal side", () => {
     const capacitor = createDefaultNode("ac-capacitor", { x: 0, y: 0 });
