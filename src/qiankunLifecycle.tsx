@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { ConfigProvider } from "antd";
-import { App } from "./App";
+import { AppStartupRoot } from "./AppStartupRoot";
 import { runStartupGate } from "./appStartup";
 import { bindUserSpaceToSession } from "./qiankunUserSpace";
 
@@ -44,7 +44,7 @@ function traceLifecycle(phase: "bootstrap" | "mount" | "unmount", detail?: strin
 }
 
 // 与 main.tsx 独立运行时的渲染保持一致（antd 紧凑 + 圆角主题）
-function renderApp(container?: Element | DocumentFragment) {
+function renderApp(container: Element | DocumentFragment | undefined, needsInitialSpace: boolean) {
   const appContainer = container || document.getElementById("root");
   if (!appContainer) return;
 
@@ -61,7 +61,7 @@ function renderApp(container?: Element | DocumentFragment) {
         },
       }}
     >
-      <App />
+      <AppStartupRoot needsInitialSpace={needsInitialSpace} />
     </ConfigProvider>
   );
 }
@@ -89,13 +89,13 @@ export async function mount(props: any) {
   // 闸门按 Cookie 解析 current 并据此对齐浏览器缓存归属，反了就会先按旧空间播种一次。
   // 宿主没传 user 时本调用是空操作，行为与加此功能前一致。
   await bindUserSpaceToSession(props.user);
-  await runStartupGate();
+  const needsInitialSpace = await runStartupGate();
   // 两次 await 期间宿主已 unmount：这一轮的容器早已被摘掉，绝不能再 createRoot/render。
   // 顺序上放在容器查找之前 —— 容器没了也不该再去碰宿主节点。
   if (generation !== mountGeneration) return;
   const container =
     props.container?.querySelector?.("#root") || document.getElementById("root");
-  renderApp(container);
+  renderApp(container, needsInitialSpace);
 }
 
 export async function unmount(props: any) {

@@ -60,20 +60,31 @@ export function readSpaceCookie(): string {
 // 就是纯重复（两个请求抢同一条连接、拿同一份数据）。
 // 故留一个**一次性**种子：只被第一个消费者取走，之后一律真请求 ——
 // 那之后的调用都发生在挂载与增删空间之后，留缓存只会带来陈旧。
-let seededSpaces: { spaces: Space[]; current: string } | null = null;
+type SpaceListResponse = { spaces: Space[]; current: string; setupRequired?: boolean };
 
-export function seedSpaces(payload: { spaces: Space[]; current: string }): void {
+let seededSpaces: SpaceListResponse | null = null;
+
+export function seedSpaces(payload: SpaceListResponse): void {
   seededSpaces = payload;
 }
 
 // current 由后端解析链算出（头 > query > cookie > 回退），前端不自算「我是谁」
-export async function fetchSpaces(): Promise<{ spaces: Space[]; current: string }> {
+export async function fetchSpaces(): Promise<SpaceListResponse> {
   if (seededSpaces) {
     const payload = seededSpaces;
     seededSpaces = null;
     return payload;
   }
-  return fetchBackendJson<{ spaces: Space[]; current: string }>(apiPath("/spaces"), "读取空间列表失败。");
+  return fetchBackendJson<SpaceListResponse>(apiPath("/spaces"), "读取空间列表失败。");
+}
+
+export async function initializeDefaultSpace(name: string, owner?: string): Promise<Space> {
+  const body = owner ? { name, owner } : { name };
+  return fetchBackendJson<Space>(
+    apiPath("/spaces/initialize"),
+    "创建默认空间失败。",
+    backendJsonRequest("POST", JSON.stringify(body))
+  );
 }
 
 // owner 只在 qiankun 下传（宿主登录用户名）；不传就是无主空间 —— 与加这个参数前逐字节一致，

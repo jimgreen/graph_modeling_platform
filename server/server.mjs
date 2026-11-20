@@ -32,6 +32,7 @@ import { meaningfulDeviceParameterChineseName } from "../shared/deviceParameterC
 import { withXmlEncodingDeclaration } from "./xmlEncoding.mjs";
 import { readSymbolExportSchemes, writeSymbolExportSchemes } from "./symbolExportSchemes.mjs";
 import { buildSpaceArchiveBuffer, readSpaceArchiveName, SPACE_ARCHIVE_META_FILENAME } from "./spaceArchive.mjs";
+import { PREDEFINED_E_DEVICE_TEMPLATES } from "./eFileTemplates.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -96,6 +97,12 @@ function registryFor(paths) {
     registries.set(paths.root, registry);
   }
   return registry;
+}
+
+// 供空间级派生导出复用当前空间的全局线路记录，避免另建未缓存的 registry 实例。
+export async function readGlobalLineRecords(options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  return registryFor(paths).list();
 }
 
 // 删除空间前必须：排空在飞写队列 → 驱逐缓存 → 才允许调用方把目录改名/删除。
@@ -3523,6 +3530,7 @@ export async function createSchemeArchiveBuffer(options) {
   const paths = options.paths ?? defaultPaths;
   const filesRoot = options.filesRoot ?? paths.schemeFiles;
   const schemePath = requireSchemePathArray(options.schemePath);
+  const templateName = String(options.templateName ?? "").trim();
   if (schemePath.length === 0) {
     throw badSchemePathError("缺少方案路径。");
   }
@@ -3536,12 +3544,22 @@ export async function createSchemeArchiveBuffer(options) {
   const schemeName = safeFilePart(schemePath[schemePath.length - 1], "方案");
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
   const { buildSchemeArchiveBuffer } = await import("./schemeArchive.mjs");
+  const { buildEFileForSavedModel, eFileTemplateAllowsModelType } = await import("./eFileExport.mjs");
   return buildSchemeArchiveBuffer({
     schemeDir,
     schemeName,
+    shouldIncludeModel: async ({ dirParts, modelName }) => {
+      if (!templateName) return true;
+      const record = await readSchemeProjectRecord({
+        schemePath: [...schemePath, ...dirParts],
+        name: modelName,
+        paths
+      });
+      // 让后续渲染链报告损坏/缺失模型，而不是因类型未知而静默漏掉它。
+      return !record || eFileTemplateAllowsModelType(templateName, record.project?.modelType);
+    },
     renderArtifacts: async ({ dirParts, modelName }) => {
       const { renderSavedModelSvg } = await import("./svgExport.mjs");
-      const { buildEFileForSavedModel } = await import("./eFileExport.mjs");
       const parts = [...schemePath, ...dirParts];
       // colorMode 取 voltage：与前端单模型导出同口径（旧 ZIP 内 svg 即由此产生），energy 仅为端点旧契约缺省
       // paths 必须透传：json 按 filesRoot 枚举，e/svg 也必须读同一路径集合，否则产出混合 ZIP
@@ -3549,7 +3567,7 @@ export async function createSchemeArchiveBuffer(options) {
       if (svgResult.error) {
         throw new Error(`模型“${modelName}”SVG 生成失败：${svgResult.error.message}`);
       }
-      const eResult = await buildEFileForSavedModel({ parts, name: modelName, paths });
+      const eResult = await buildEFileForSavedModel({ parts, name: modelName, templateName, paths });
       if (eResult.error) {
         throw new Error(`模型“${modelName}”E 文件生成失败：${eResult.error.message}`);
       }
@@ -4802,9 +4820,14 @@ async function handleDeleteSchemeRecord(request, response, paths) {
 
 async function handleExportSchemeArchive(url, response, paths) {
   const schemePath = parseSchemePathParam(url.searchParams.get("schemePath"));
+  const templateName = (url.searchParams.get("template") ?? "").trim();
+  if (templateName && !Object.hasOwn(PREDEFINED_E_DEVICE_TEMPLATES, templateName)) {
+    sendError(response, 400, `未知模板：${templateName}。可用模板：${Object.keys(PREDEFINED_E_DEVICE_TEMPLATES).join("、")}`);
+    return;
+  }
   try {
     // 只传 paths：Task 5 的守卫要求枚举根与渲染根同源，且渲染适配层只跟随 paths
-    const { buffer, filename } = await createSchemeArchiveBuffer({ paths, schemePath });
+    const { buffer, filename } = await createSchemeArchiveBuffer({ paths, schemePath, templateName });
     response.writeHead(200, {
       "content-type": "application/zip",
       "content-length": String(buffer.length),
@@ -5228,8 +5251,12 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       response.end(html);
     }],
     // 空间管理：本系统自身的管理面，返回 /webgrp/* 内部域形态，不进 /v1 信封。
-    // 这四个端点由派发层的 isSpaceAgnostic 短路（不注入 spaceCtx），current 由 handler 自算。
+    // 空间管理端点由派发层的 isSpaceAgnostic 短路（不注入 spaceCtx），current 由 handler 自算。
     [routeKey("GET", "/spaces"), async ({ request, response, url }) => {
+      if (spaceStore.requiresInitialSpaceSetup()) {
+        sendJson(response, 200, { spaces: [], current: "", setupRequired: true });
+        return;
+      }
       // current 用与派发层同一个解析函数算出，保证与请求实际生效的空间一致
       const current = resolveSpaceFromRequest(request, url, spaceStore).id;
       // 活跃度只在这一次管理调用上刷（不做每请求写盘），且先刷再列，
@@ -5237,6 +5264,28 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       await spaceStore.touchLastAccess(current);
       const spaces = await spaceStore.list();
       sendJson(response, 200, { spaces, current });
+    }],
+    [routeKey("POST", "/spaces/initialize"), async ({ request, response }) => {
+      const body = await readJsonBody(request);
+      const name = normalizeSpaceName(body?.name);
+      const reject = spaceNameRejectMessage(name);
+      if (reject) {
+        sendError(response, 400, reject, "SPACE_NAME_INVALID");
+        return;
+      }
+      try {
+        const space = await spaceStore.initializeDefaultSpace(name, {
+          owner: normalizeSpaceOwner(body?.owner)
+        });
+        sendJson(response, 200, space);
+      } catch (error) {
+        if (sendSpaceNameConflict(response, error)) return;
+        if (error?.code === "SPACE_ALREADY_INITIALIZED") {
+          sendError(response, 409, error.message, error.code);
+          return;
+        }
+        throw error;
+      }
     }],
     [routeKey("POST", "/spaces"), async ({ request, response }) => {
       const body = await readJsonBody(request);
@@ -5258,6 +5307,10 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         space = await spaceStore.create(name, { onDuplicate: "reject", owner });
       } catch (error) {
         if (sendSpaceNameConflict(response, error)) return;
+        if (error?.code === "SPACE_NOT_INITIALIZED") {
+          sendError(response, 409, error.message, error.code);
+          return;
+        }
         throw error;
       }
       // 同名空间会复用刚被删掉的 id（即同一个根）：撤下退休登记，否则它一建出来就被拒写
@@ -5535,12 +5588,18 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         || url.pathname === apiPath("/exports/native/write-text")
         || url.pathname === apiPath("/exports/native/open-file")
         || url.pathname === apiPath("/spaces")
+        || url.pathname === apiPath("/spaces/initialize")
         || url.pathname === apiPath("/v1/receive");
       let spaceCtx = {};
-      if (!isSpaceAgnostic) {
+      const isApiRequest = url.pathname === apiPrefix || url.pathname.startsWith(`${apiPrefix}/`);
+      if (!isSpaceAgnostic && isApiRequest) {
         const resolution = resolveSpaceFromRequest(request, url, spaceStore);
         if (resolution.unknown) {
           sendError(response, 400, `未知空间：${resolution.unknownValue ?? ""}`, "SPACE_UNKNOWN");
+          return;
+        }
+        if (spaceStore.requiresInitialSpaceSetup()) {
+          sendError(response, 409, "请先初始化默认空间。", "SPACE_NOT_INITIALIZED");
           return;
         }
         spaceCtx = { paths: spaceStore.resolvePaths(resolution.id), spaceId: resolution.id };
@@ -5569,11 +5628,12 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       // /webgrp/v1/* 第三方只读路由（动态加载避开循环依赖）
       if (url.pathname.startsWith(apiPrefix + "/v1/")) {
         const { v1SchemeRoutes } = await import("./apiV1Schemes.mjs");
+        const { v1SpaceRoutes } = await import("./apiV1Spaces.mjs");
         const { v1LibraryRoutes } = await import("./apiV1Library.mjs");
         const { v1ReceiveRoutes } = await import("./apiV1Receive.mjs");
         const { createV1TopologyRoutes } = await import("./apiV1Topology.mjs");
         const v1TopologyRoutes = createV1TopologyRoutes(runtimeWs);
-        const v1Routes = [...v1SchemeRoutes, ...v1LibraryRoutes, ...v1ReceiveRoutes, ...v1TopologyRoutes, ...v1RuntimeRoutes, ...v1ControlRoutes];
+        const v1Routes = [...v1SchemeRoutes, ...v1SpaceRoutes, ...v1LibraryRoutes, ...v1ReceiveRoutes, ...v1TopologyRoutes, ...v1RuntimeRoutes, ...v1ControlRoutes];
         for (const route of v1Routes) {
           if (route.method !== request.method) {
             continue;

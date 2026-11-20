@@ -21,6 +21,7 @@ import { graphStorePatchNodes } from "../graphStore";
 import { applyDragContainerMembership, clampContainerCenterToMembers, containerDragGroup, containerGatewayUnbindNotice, containerMemberNodes, containerResizeMinSize, finalizeContainerAfterNodeDeletion, foldContainerScaleIntoSize, hasContainer, isContainerNode, normalizeInboundContainerNode, withNodeUpdates } from "../acContainer";
 import { arrangeContainerInteriors, autoAlignEdgeWithoutStoredRoute, autoAlignStoredRouteDrops, createAutoAlignQualityReport, mergeContainerLayoutUnits, type AutoAlignQualityReport } from "../selectionActions";
 import { runAutoAlignPlanInWorker } from "../autoAlign/autoAlignClient";
+import { modelTrace } from "../modelTrace";
 import { runTopologyOperation } from "../topology-operation";
 
 // 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 遮住）：按真实出处补齐，均为 type-only import。
@@ -2985,7 +2986,8 @@ export function createCloneSchemeRecordForPaste(__appScope: Record<string, any>)
 
 export function createClearActiveProjectDisplay(__appScope: Record<string, any>) {
   return (logMessage: string) => {
-  const { DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_PROJECT_MEASUREMENTS, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, cachedRoutedEdgesRef, canvasFrameRef, canvasFullViewBoxFromBounds, clearNodeDragMoveSchedule, clearRecordSelection, clearRefreshRecoveryProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, lastBusTerminalSyncEndpointRevisionRef, normalizeModelLayers, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, requestCanvasFrameCenter, resetConnectPreviewState, saveActiveProjectPointer, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasResizeDraft, setCanvasSelectionScope, setCanvasSizeDraft, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setContextMarqueeSelection, setContextMenu, setCurrentUnit, setDeviceIndexCounters, setDragging, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setLibraryPlacement, setManualPathDrag, setMarquee, setModifierSelectionPress, setNodeLabelDrag, setNodeLabelRotateDrag, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectMenu, setProjectName, setRewiring, setRoutableLineEndpointDrag, setRoutableLinePlacement, setRoutableLinePreview, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
+  const { DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_PROJECT_MEASUREMENTS, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, cachedRoutedEdgesRef, canvasFrameRef, canvasFullViewBoxFromBounds, clearNodeDragMoveSchedule, clearRecordSelection, clearRefreshRecoveryProject, currentModelSelectionRef, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, lastBusTerminalSyncEndpointRevisionRef, normalizeModelLayers, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, requestCanvasFrameCenter, resetConnectPreviewState, saveActiveProjectPointer, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasResizeDraft, setCanvasSelectionScope, setCanvasSizeDraft, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setContextMarqueeSelection, setContextMenu, setCurrentUnit, setDeviceIndexCounters, setDragging, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setLibraryPlacement, setManualPathDrag, setMarquee, setModifierSelectionPress, setNodeLabelDrag, setNodeLabelRotateDrag, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectMenu, setProjectName, setRewiring, setRoutableLineEndpointDrag, setRoutableLinePlacement, setRoutableLinePreview, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
+    currentModelSelectionRef.current = { projectKey: "", schemeKey: "", loading: false };
     clearRefreshRecoveryProject();
     const emptyCanvasBounds = {
       width: DEFAULT_CANVAS_WIDTH,
@@ -3072,7 +3074,15 @@ export function createClearActiveProjectDisplay(__appScope: Record<string, any>)
 
 export function createLoadSavedProject(__appScope: Record<string, any>) {
   return (project: SavedProjectRecord, schemeId?: string) => {
-  const { CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, assignMissingDeviceIndexes, cachedRoutedEdgesRef, canvasFrameRef, clearNodeDragMoveSchedule, clearRefreshRecoveryProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, findSchemeForProject, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, isLineSegmentBusNode, isRoutableLineDeviceKind, lastBusTerminalSyncEndpointRevisionRef, libraryTemplateByKind, lockProjectEdgeTerminals, measurementConfig, normalizeModelGroups, normalizeNodeTerminalsByTemplate, normalizeNodeTerminalsWithTemplate, normalizeProjectLayers, normalizeProjectMeasurements, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, rebuildRoutableLineDeviceRouteUpdates, reconcileNodeWithDefinition, reconcileProjectMeasurementsWithConfig, requestCanvasFrameCenter, resetConnectPreviewState, resolveConfiguredBackgroundLayerIds, selectSingleProject, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasSelectionScope, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setCurrentUnit, setDeviceIndexCounters, setDragging, setElectricFlowSettings, setElectricFlowVisible, setFeeder, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setManualPathDrag, setMarquee, setModelType, setModifierSelectionPress, setPowerBaseValue, setPowerUnit, setProjectIdx, setProjectMeasurements, setProjectName, setRewiring, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSubcontrolarea, setSubstation, setTaiqu, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
+    modelTrace("load-project-commit-start", {
+      projectId: project.id,
+      projectName: project.name,
+      schemeId,
+      previousActiveProjectKey: __appScope.activeProjectKey,
+      previousProjectName: __appScope.projectName,
+      nodeCount: project.project?.nodes?.length ?? 0
+    });
+  const { CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, assignMissingDeviceIndexes, cachedRoutedEdgesRef, canvasFrameRef, clearNodeDragMoveSchedule, clearRefreshRecoveryProject, currentModelSelectionRef, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, findSchemeForProject, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, isLineSegmentBusNode, isRoutableLineDeviceKind, lastBusTerminalSyncEndpointRevisionRef, libraryTemplateByKind, lockProjectEdgeTerminals, measurementConfig, normalizeModelGroups, normalizeNodeTerminalsByTemplate, normalizeNodeTerminalsWithTemplate, normalizeProjectLayers, normalizeProjectMeasurements, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, rebuildRoutableLineDeviceRouteUpdates, reconcileNodeWithDefinition, reconcileProjectMeasurementsWithConfig, requestCanvasFrameCenter, resetConnectPreviewState, resolveConfiguredBackgroundLayerIds, selectSingleProject, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasSelectionScope, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setCurrentUnit, setDeviceIndexCounters, setDragging, setElectricFlowSettings, setElectricFlowVisible, setFeeder, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setManualPathDrag, setMarquee, setModelType, setModifierSelectionPress, setPowerBaseValue, setPowerUnit, setProjectIdx, setProjectMeasurements, setProjectName, setRewiring, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSubcontrolarea, setSubstation, setTaiqu, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
     if (schemeId === undefined) {
       schemeId = findSchemeForProject(project.id)?.id ?? "";
     }
@@ -3203,6 +3213,13 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     setCanvasPanning(null);
     // ponytail: normalize/reconcile 是幂等函数，对已存储的归一化数据返回相同引用/结构，旧 dirty flag 永远为 false
     setHasUnsavedChanges(false);
+    modelTrace("load-project-commit-state-writes", {
+      projectId: project.id,
+      projectName: project.name,
+      schemeId,
+      nodeCount: containerSafeNodes.length,
+      selection: currentModelSelectionRef.current
+    });
     writeOperationLog(`加载模型：${project.name}`);
     requestCanvasFrameCenter();
   };
@@ -3215,24 +3232,59 @@ export function createLoadSavedProjectRecord(__appScope: Record<string, any>) {
     sourceSchemes?: SavedSchemeRecord[]
   ) => {
   const { fetchBackendProjectRecord, findSchemeForProject, loadSavedProject, savedProjectRecordIsSummary, schemePathForProject, schemePathForScheme, schemes, setSchemes, suppressNextBackendSchemeSyncRef, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+    const projectLoadTokenRef = __appScope.projectLoadTokenRef as { current: number } | undefined;
+    const currentModelSelectionRef = __appScope.currentModelSelectionRef as
+      | { current: { projectKey: string; schemeKey: string; loading: boolean } }
+      | undefined;
+    const loadToken = projectLoadTokenRef ? ++projectLoadTokenRef.current : 0;
+    const isCurrentLoad = () => !projectLoadTokenRef || projectLoadTokenRef.current === loadToken;
+    modelTrace("load-record-start", {
+      projectId: project.id,
+      projectName: project.name,
+      schemeId,
+      loadToken,
+      activeProjectKey: __appScope.activeProjectKey,
+      activeSchemeKey: __appScope.activeSchemeKey,
+      selection: currentModelSelectionRef?.current,
+      initialPointer: __appScope.latestActiveProjectPointerRef?.current
+    });
     if (schemeId === undefined) {
       schemeId = findSchemeForProject(project.id)?.id ?? "";
     }
     if (sourceSchemes === undefined) {
       sourceSchemes = schemes;
     }
+    const sourceRecords = sourceSchemes ?? schemes;
     const resolvedSchemeId = schemeId || findSchemeForProject(project.id)?.id || "";
+    if (currentModelSelectionRef) {
+      currentModelSelectionRef.current = { projectKey: project.id, schemeKey: resolvedSchemeId, loading: true };
+    }
+    const activeProjectPointerPayload = __appScope.activeProjectPointerPayload as
+      | ((records: SavedSchemeRecord[], projectKey: string, schemeKey: string) => unknown)
+      | undefined;
+    const latestActiveProjectPointerRef = __appScope.latestActiveProjectPointerRef as
+      | { current: unknown }
+      | undefined;
+    if (activeProjectPointerPayload && latestActiveProjectPointerRef) {
+      latestActiveProjectPointerRef.current = activeProjectPointerPayload(sourceRecords, project.id, resolvedSchemeId);
+    }
     let projectToLoad = project;
     if (savedProjectRecordIsSummary(project)) {
-      const ownerSchemePath = resolvedSchemeId ? schemePathForScheme(resolvedSchemeId, sourceSchemes) : [];
-      const schemePath = ownerSchemePath.length > 0 ? ownerSchemePath : schemePathForProject(project.id, sourceSchemes);
+      const ownerSchemePath = resolvedSchemeId ? schemePathForScheme(resolvedSchemeId, sourceRecords) : [];
+      const schemePath = ownerSchemePath.length > 0 ? ownerSchemePath : schemePathForProject(project.id, sourceRecords);
       if (schemePath.length === 0) {
+        if (isCurrentLoad() && currentModelSelectionRef) {
+          currentModelSelectionRef.current.loading = false;
+        }
         showGlobalMessage(`无法读取模型“${project.name}”：未找到所属方案路径。`);
         writeOperationLog(`读取模型失败：${project.name}`);
         return false;
       }
       try {
         const loadedProject = await fetchBackendProjectRecord(schemePath, project.name);
+        if (!isCurrentLoad()) {
+          return false;
+        }
         projectToLoad = {
           ...loadedProject,
           id: project.id || loadedProject.id,
@@ -3243,12 +3295,23 @@ export function createLoadSavedProjectRecord(__appScope: Record<string, any>) {
           setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, resolvedSchemeId, projectToLoad));
         }
       } catch (error) {
+        if (!isCurrentLoad()) {
+          return false;
+        }
+        if (currentModelSelectionRef) {
+          currentModelSelectionRef.current.loading = false;
+        }
         const message = error instanceof Error ? error.message : `读取模型失败：${project.name}`;
         showGlobalMessage(message);
         writeOperationLog(`读取模型失败：${project.name}`);
         return false;
       }
     }
+    if (!isCurrentLoad()) {
+      modelTrace("load-record-stale-before-apply", { projectId: project.id, projectName: project.name, loadToken, currentToken: projectLoadTokenRef?.current });
+      return false;
+    }
+    modelTrace("load-record-apply", { projectId: projectToLoad.id, projectName: projectToLoad.name, schemeId: resolvedSchemeId, loadToken, nodeCount: projectToLoad.project?.nodes?.length ?? 0 });
     loadSavedProject(projectToLoad, resolvedSchemeId);
     return true;
   };
@@ -3267,7 +3330,7 @@ export function createLoadSavedProjectRecord(__appScope: Record<string, any>) {
 // 两者都定位不到才返回 false —— 不要一失败就回退成「打开第一个模型」，那会静默打开错的东西。
 export function createOpenProjectFromUrl(__appScope: Record<string, any>) {
   return async (target: string, schemeHint?: string, legacyModelKey?: string): Promise<boolean> => {
-    const { enterBrowseMode, findSavedProjectRecordInSchemes, requestLoadSavedProject, schemes } = __appScope;
+    const { enterBrowseMode, findSavedProjectRecordInSchemes, requestLoadSavedProject, schemes, setExpandedSchemeIds } = __appScope;
     const raw = String(target ?? "");
     const keyHint = String(legacyModelKey ?? "");
     if (!raw && !keyHint) {
@@ -3287,6 +3350,7 @@ export function createOpenProjectFromUrl(__appScope: Record<string, any>) {
       }
     }
     if (!found) {
+      modelTrace("url-model-not-found", { target, legacyModelKey, schemeHint });
       return false;
     }
     if (found.record.id === __appScope.activeProjectKey) {
@@ -3298,7 +3362,36 @@ export function createOpenProjectFromUrl(__appScope: Record<string, any>) {
     // 就退化成 `schemePathForProject(project.id)`；一旦那个函数按 id 找不到对应方案，就会
     // 报「未找到所属方案路径」或干脆加载到错的位置。slug 只用于让地址栏可读，
     // 定位始终以 `findSavedProjectByIndex` 返回的 `scheme` 对象为准。
-    requestLoadSavedProject?.(found.record, found.scheme?.id || undefined);
+    const targetSchemeId = String(found.scheme?.id ?? "");
+    modelTrace("url-model-resolved", {
+      target,
+      legacyModelKey,
+      targetProjectId: found.record?.id ?? "",
+      targetProjectName: found.record?.name ?? "",
+      targetSchemeId,
+      activeProjectKey: __appScope.activeProjectKey
+    });
+    if (targetSchemeId && typeof setExpandedSchemeIds === "function") {
+      const pathToScheme = (records: readonly any[], ancestors: string[] = []): string[] => {
+        for (const record of records ?? []) {
+          const nextPath = [...ancestors, String(record?.id ?? "")].filter(Boolean);
+          if (String(record?.id ?? "") === targetSchemeId) {
+            return nextPath;
+          }
+          const nested = pathToScheme(record?.children ?? [], nextPath);
+          if (nested.length > 0) {
+            return nested;
+          }
+        }
+        return [];
+      };
+      const expandedPath = pathToScheme(schemes ?? []);
+      if (expandedPath.length > 0) {
+        // URL 是明确的导航意图：只展开目标方案的祖先链，其他方案收缩。
+        setExpandedSchemeIds(expandedPath);
+      }
+    }
+    requestLoadSavedProject?.(found.record, targetSchemeId || undefined);
     return true;
   };
 }
@@ -3330,9 +3423,24 @@ export function createRequestUnsavedChangeAction(__appScope: Record<string, any>
 
 export function createRequestLoadSavedProject(__appScope: Record<string, any>) {
   return (project: SavedProjectRecord, schemeId?: string) => {
-  const { findSchemeForProject, requestUnsavedChangeAction } = __appScope;
+  const { currentModelSelectionRef, findSchemeForProject, manualModelSelectionRef, requestUnsavedChangeAction, saveRequired } = __appScope;
+    if (manualModelSelectionRef) {
+      manualModelSelectionRef.current = true;
+    }
+    modelTrace("request-load-model", {
+      projectId: project.id,
+      projectName: project.name,
+      schemeId,
+      activeProjectKey: __appScope.activeProjectKey,
+      activeSchemeKey: __appScope.activeSchemeKey,
+      saveRequired,
+      currentSelection: currentModelSelectionRef?.current
+    });
     if (schemeId === undefined) {
       schemeId = findSchemeForProject(project.id)?.id ?? "";
+    }
+    if (!saveRequired && currentModelSelectionRef) {
+      currentModelSelectionRef.current = { projectKey: project.id, schemeKey: schemeId, loading: true };
     }
     requestUnsavedChangeAction({
       kind: "load-project",
@@ -5293,9 +5401,27 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
 
 export function createSaveCurrentProject(__appScope: Record<string, any>) {
   return async (targetId?: string) => {
-  const { activeProjectKey, activeSchemeKey, clearRefreshRecoveryProject, createSavedProject, currentGraphDirtyBaseline, currentProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, finalizeSavedGlobalLineProjectNodes, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, graphDirtyBaselineRef, projectById, projectName, rememberPersistedSchemesPayload, requireEditMode, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, savedUndoStackLengthRef, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, undoStack, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+  const { activeProjectKey, activeSchemeKey, clearRefreshRecoveryProject, createSavedProject, currentGraphDirtyBaseline, currentModelSelectionRef, currentProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, finalizeSavedGlobalLineProjectNodes, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, graphDirtyBaselineRef, projectById, projectName, rememberPersistedSchemesPayload, requireEditMode, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, savedUndoStackLengthRef, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, undoStack, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+    const currentSelection = currentModelSelectionRef?.current;
+    const currentProjectKey = currentSelection?.projectKey || activeProjectKey;
+    const currentSchemeKey = currentSelection?.schemeKey || activeSchemeKey;
+    modelTrace("save-start", {
+      requestedTargetId: targetId ?? "",
+      currentProjectKey,
+      currentSchemeKey,
+      activeProjectKey,
+      activeSchemeKey,
+      projectName,
+      loading: currentSelection?.loading ?? false,
+      nodeCount: __appScope.nodes?.length ?? 0,
+      initialPointer: __appScope.latestActiveProjectPointerRef?.current
+    });
+    if (currentSelection?.loading) {
+      writeOperationLog("模型正在切换，加载完成后再保存。");
+      return false;
+    }
     if (targetId === undefined) {
-      targetId = activeProjectKey;
+      targetId = currentProjectKey;
     }
     if (!requireEditMode("保存模型")) {
       return false;
@@ -5349,6 +5475,9 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
       const nextSchemes = upsertSavedProjectInScheme(schemes, ownerScheme.id, savedRecord);
       setSchemes(nextSchemes);
       rememberPersistedSchemesPayload(serializeSchemesForStorage(nextSchemes));
+      if (currentModelSelectionRef) {
+        currentModelSelectionRef.current = { projectKey: targetId, schemeKey: currentSchemeKey || ownerScheme.id || selectedSchemeId, loading: false };
+      }
       setActiveProjectKey(targetId);
       if (savedRecord.name !== projectName) {
         suppressNextGraphDirtyRef.current += 1;
@@ -5357,9 +5486,10 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
       graphDirtyBaselineRef.current = { ...currentGraphDirtyBaseline(), nodes: savedGraphNodes };
       savedUndoStackLengthRef.current = undoStack.length;
       setHasUnsavedChanges(false);
-      saveActiveProjectPointer(targetId, activeSchemeKey || ownerScheme.id || selectedSchemeId, nextSchemes);
+      saveActiveProjectPointer(targetId, currentSchemeKey || ownerScheme.id || selectedSchemeId, nextSchemes);
       clearRefreshRecoveryProject();
       writeOperationLog(`保存模型：${savedRecord.name}`);
+      modelTrace("save-complete", { branch: "existing", targetId, savedName: savedRecord.name, activeProjectKey: targetId, nodeCount: record.project?.nodes?.length ?? 0 });
       return true;
     }
     const targetSchemeId = activeSchemeKey || selectedSchemeId || schemes[0]?.id || "";
@@ -5396,6 +5526,9 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
     const nextSchemes = upsertSavedProjectInScheme(fallbackSchemes, resolvedSchemeId, savedRecord);
     setSchemes(nextSchemes);
     rememberPersistedSchemesPayload(serializeSchemesForStorage(nextSchemes));
+    if (currentModelSelectionRef) {
+      currentModelSelectionRef.current = { projectKey: savedRecord.id, schemeKey: resolvedSchemeId, loading: false };
+    }
     setActiveProjectKey(savedRecord.id);
     setActiveSchemeKey(resolvedSchemeId);
     graphDirtyBaselineRef.current = { ...currentGraphDirtyBaseline(), nodes: savedGraphNodes };
@@ -5404,6 +5537,7 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
     saveActiveProjectPointer(savedRecord.id, resolvedSchemeId, nextSchemes);
     clearRefreshRecoveryProject();
     writeOperationLog(`保存模型：${savedRecord.name}`);
+    modelTrace("save-complete", { branch: "fallback", targetId: savedRecord.id, savedName: savedRecord.name, activeProjectKey: savedRecord.id, nodeCount: record.project?.nodes?.length ?? 0 });
     return true;
   };
 }

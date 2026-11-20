@@ -84,6 +84,10 @@ button:not(.ant-btn):disabled {
   border-radius: 8px;
 }
 
+.space-bootstrap-error {
+  margin-bottom: 16px;
+}
+
 .ant-message-notice-content {
   border-radius: 6px;
   padding: 8px 16px;

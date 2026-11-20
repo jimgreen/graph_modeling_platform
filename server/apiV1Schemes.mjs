@@ -11,6 +11,7 @@ import { accessControlOriginOnly } from "./cors.mjs";
 import { contentDispositionAttachment } from "./contentDisposition.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 import { handleV1ModelEFile, handleV1ModelEFilePost } from "./eFileExport.mjs";
+import { PREDEFINED_E_DEVICE_TEMPLATES } from "./eFileTemplates.mjs";
 import { handleV1ModelCimXml } from "./cimExport.mjs";
 import { renderSavedModelSvg } from "./svgExport.mjs";
 import { handleV1ModelSend } from "./sendModel.mjs";
@@ -96,17 +97,26 @@ export async function handleV1SchemeModels({ url, request, response, paths }) {
 }
 
 // /webgrp/v1/schemes/export —— 方案导出 ZIP
-// query: schemePath=<encoded>
+// query: schemePath=<encoded>, template=<预定义 E 模板名，可选>
 export async function handleV1SchemeExport({ url, response, paths }) {
   const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
   if (!requireSchemePath(parts)) {
     sendV1Error(response, "bad-request", "缺少或非法 schemePath。");
     return;
   }
+  const templateName = (url.searchParams.get("template") ?? "").trim();
+  if (templateName && !Object.hasOwn(PREDEFINED_E_DEVICE_TEMPLATES, templateName)) {
+    sendV1Error(
+      response,
+      "bad-request",
+      `未知模板：${templateName}。可用模板：${Object.keys(PREDEFINED_E_DEVICE_TEMPLATES).join("、")}`
+    );
+    return;
+  }
   try {
     // 只传 paths，不传 filesRoot：Task 5 的守卫要求枚举根与渲染根同源，
     // 传空间根作 filesRoot 会被显式拒绝（且渲染链只跟随 paths）。
-    const { buffer, filename } = await createSchemeArchiveBuffer({ paths, schemePath: parts });
+    const { buffer, filename } = await createSchemeArchiveBuffer({ paths, schemePath: parts, templateName });
     response.writeHead(200, {
       "content-type": "application/zip",
       "content-length": String(buffer.length),

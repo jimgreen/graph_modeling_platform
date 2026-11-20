@@ -9,6 +9,7 @@ import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
 import { switchToSpace } from "../spaceSwitch";
 import { findSavedProjectByIndex } from "../workspaceUrl";
 import { findSavedProjectRecordInSchemes } from "../model-routing";
+import { modelTrace } from "../modelTrace";
 
 // 当前页面拓扑操作：check 只回预览；repair 写当前内存并压入 undo，不自动落盘。
 export function createProgrammaticTopologyOperation(
@@ -631,7 +632,16 @@ export function createProgrammaticSwitchSpace(
  */
 export function createProgrammaticSwitchModel(__appScope: Record<string, any>) {
   return async (params: { modelId?: number | string; modelKey?: string; schemePath?: string[]; name?: string } = {}) => {
-    const { activeProjectKey, loadSavedProjectRecord, saveRequired, schemes } = __appScope;
+    const { activeProjectKey, loadSavedProjectRecord, manualModelSelectionRef, saveRequired, schemes } = __appScope;
+    modelTrace("programmatic-switch-model", {
+      params,
+      activeProjectKey,
+      saveRequired,
+      pointer: __appScope.latestActiveProjectPointerRef?.current
+    });
+    if (manualModelSelectionRef) {
+      manualModelSelectionRef.current = true;
+    }
     const rawModelId = params?.modelId;
     const modelKey = typeof params?.modelKey === "string" ? params.modelKey.trim() : "";
     const name = typeof params?.name === "string" ? params.name.trim() : "";

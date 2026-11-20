@@ -4,6 +4,7 @@ import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
 import { themedMeasurementTextColor } from "../themedColors";
 import { shouldPromptBeforeUnload } from "../spaceSwitch";
 import { readInitialWorkspaceUrlIntent, readWorkspaceUrl } from "../workspaceUrl";
+import { modelTrace } from "../modelTrace";
 import { resolveEffectiveTemplateParameterDefinitions, withNodesParentModelId } from "../model";
 import { buildEffectiveLibraryTemplates } from "../export/device-definition-shared";
 import { containerFirstComparator, isContainerNode } from "../acContainer";
@@ -2711,7 +2712,7 @@ export function createAppHookCallback76(__appScope: Record<string, any>) {
 
 export function createAppHookCallback77(__appScope: Record<string, any>) {
   return () => {
-  const { __appScopeRef, backendSchemesLoadTokenRef, backendSchemesLoadedRef, clearActiveProjectDisplay, fetchBackendSchemes, findSavedProjectByActivePointer, flattenSavedSchemes, latestActiveProjectPointerRef, loadSavedProjectRecord, rememberPersistedSchemesPayload, saveRequiredRef, serializeSchemesForStorage, setExpandedSchemeIds, setSchemesState, suppressNextBackendSchemeSyncRef } = __appScope;
+  const { __appScopeRef, backendSchemesLoadTokenRef, backendSchemesLoadedRef, clearActiveProjectDisplay, fetchBackendSchemes, findSavedProjectByActivePointer, flattenSavedSchemes, latestActiveProjectPointerRef, loadSavedProjectRecord, manualModelSelectionRef, rememberPersistedSchemesPayload, saveRequiredRef, serializeSchemesForStorage, setExpandedSchemeIds, setSchemesState, suppressNextBackendSchemeSyncRef } = __appScope;
     // activeSchemeKey 为什么必须走 ref、不能在上面解构：
     // ① __appScope 每帧重建（App.tsx 里 const __appScope = {}），本 hook 的依赖数组是 []，
     //    effect 体一生只跑一次，即只在挂载帧 —— 在此处解构等于把它冻结在挂载帧的值。
@@ -2767,6 +2768,12 @@ export function createAppHookCallback77(__appScope: Record<string, any>) {
         return;
       }
       const loadToken = ++backendSchemesLoadTokenRef.current;
+      modelTrace("backend-schemes-request", {
+        loadToken,
+        initialPointer: latestActiveProjectPointerRef.current,
+        manualSelection: manualModelSelectionRef.current,
+        saveRequired: saveRequiredRef.current
+      });
       void fetchBackendSchemes()
       .then((backendSchemes: SavedSchemeRecord[]) => {
         if (disposed || loadToken !== backendSchemesLoadTokenRef.current) {
@@ -2775,14 +2782,27 @@ export function createAppHookCallback77(__appScope: Record<string, any>) {
         clearRetry();
         retryAttempt = 0;
         backendSchemesLoadedRef.current = true;
+        modelTrace("backend-schemes-response", {
+          loadToken,
+          schemeCount: backendSchemes.length,
+          manualSelection: manualModelSelectionRef.current,
+          saveRequired: saveRequiredRef.current,
+          initialPointer: latestActiveProjectPointerRef.current
+        });
         if (backendSchemes.length > 0) {
           const backendPayload = serializeSchemesForStorage(backendSchemes);
           rememberPersistedSchemesPayload(backendPayload);
           suppressNextBackendSchemeSyncRef.current = true;
           setSchemesState(backendSchemes);
-          if (!saveRequiredRef.current && !urlModelPending()) {
+          if (!manualModelSelectionRef.current && !saveRequiredRef.current && !urlModelPending()) {
             const activePointer = latestActiveProjectPointerRef.current;
             const backendActiveProject = findSavedProjectByActivePointer(backendSchemes, activePointer);
+            modelTrace("backend-auto-restore-decision", {
+              activePointer,
+              foundProjectId: backendActiveProject?.project?.id ?? "",
+              foundProjectName: backendActiveProject?.project?.name ?? "",
+              schemeId: backendActiveProject?.scheme?.id ?? ""
+            });
             if (backendActiveProject) {
               void loadSavedProjectRecord(backendActiveProject.project, backendActiveProject.scheme.id, backendSchemes);
             }
@@ -3822,18 +3842,30 @@ export function createAppHookCallback109(__appScope: Record<string, any>) {
 
 export function createAppHookCallback110(__appScope: Record<string, any>) {
   return () => {
-  const { activeLayerEdges, activeLayerNodes, cancelInteractiveStaticDrawing, cancelLibraryPlacement, canvasBounds, canvasInteractionRef, canvasPointerKeyboardShortcutAvailability, clearRecordSelection, connectPreviewPointRef, connectSource, copySelectedRecord, copySelection, customDeviceDialogOpen, cutSelection, deleteProjectRecord, deleteSchemeRecord, deleteSelectedGraphicsFromCanvas, deleteSelectedRecords, findSavedSchemeById, finishInteractiveStaticDrawing, hideLibraryFlyout, hoveredCategoryLibraryComponentLibrary, isEditMode, isGlobalSaveShortcut, keyboardMoveStepForViewBox, lastCanvasPointerRef, libraryPlacement, lockConnectPreviewAxis, lockRoutableLinePreviewAxis, nudgeSelectionByKeyboard, pasteSelectedRecord, pasteSelection, projectById, projectListPointerInsideRef, recordClipboard, releaseConnectPreviewAxisLock, releaseKeyboardMoveKey, releaseRoutableLinePreviewAxisLock, resetConnectPreviewState, resetRoutableLinePreviewState, resolveKeyboardShortcutScope, routableLinePlacement, routableLinePreviewPointRef, saveCurrentProject, saveCustomDeviceDefinitionDialog, schemes, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setCanvasSelectionScope, setConnectSource, setMode, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, switchInspectorTabForCanvasSelection, undoLastOperation, viewBox, writeOperationLog } = __appScope;
+  const { activeLayerEdges, activeLayerNodes, cancelInteractiveStaticDrawing, cancelLibraryPlacement, canvasBounds, canvasInteractionRef, canvasPointerKeyboardShortcutAvailability, clearRecordSelection, connectPreviewPointRef, connectSource, copySelectedRecord, copySelection, cutSelection, deleteProjectRecord, deleteSchemeRecord, deleteSelectedGraphicsFromCanvas, deleteSelectedRecords, findSavedSchemeById, finishInteractiveStaticDrawing, hideLibraryFlyout, hoveredCategoryLibraryComponentLibrary, isEditMode, isGlobalSaveShortcut, keyboardMoveStepForViewBox, lastCanvasPointerRef, libraryPlacement, lockConnectPreviewAxis, lockRoutableLinePreviewAxis, nudgeSelectionByKeyboard, pasteSelectedRecord, pasteSelection, projectById, projectListPointerInsideRef, recordClipboard, releaseConnectPreviewAxisLock, releaseKeyboardMoveKey, releaseRoutableLinePreviewAxisLock, resetConnectPreviewState, resetRoutableLinePreviewState, resolveKeyboardShortcutScope, routableLinePlacement, routableLinePreviewPointRef, schemes, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setCanvasSelectionScope, setConnectSource, setMode, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, switchInspectorTabForCanvasSelection, undoLastOperation, viewBox, writeOperationLog } = __appScope;
     const handleGlobalSaveKeyDown = (event: KeyboardEvent) => {
       if (!isGlobalSaveShortcut(event)) {
         return;
       }
       event.preventDefault();
-      if (!isEditMode) {
-        writeOperationLog("浏览模式下不能保存，请先切换到编辑模式");
-      } else if (customDeviceDialogOpen) {
-        saveCustomDeviceDefinitionDialog({ closeAfterSave: false });
+      // __appScope 每帧重建；键盘事件可能在模型切换后的 effect 重绑前到达。
+      // 保存必须读取当前帧，否则 Ctrl+S 会调用上一个模型的保存闭包。
+      const currentScope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
+      if (!currentScope.isEditMode) {
+        currentScope.writeOperationLog?.("浏览模式下不能保存，请先切换到编辑模式");
+      } else if (currentScope.customDeviceDialogOpen) {
+        currentScope.saveCustomDeviceDefinitionDialog?.({ closeAfterSave: false });
       } else {
-        void saveCurrentProject();
+        modelTrace("save-shortcut", {
+          eventKey: event.key,
+          currentSelection: currentScope.currentModelSelectionRef?.current,
+          activeProjectKey: currentScope.activeProjectKey,
+          activeSchemeKey: currentScope.activeSchemeKey,
+          projectName: currentScope.projectName,
+          nodeCount: currentScope.nodes?.length ?? 0,
+          initialPointer: currentScope.latestActiveProjectPointerRef?.current
+        });
+        void currentScope.saveCurrentProject?.();
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {

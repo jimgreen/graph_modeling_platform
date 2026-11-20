@@ -579,6 +579,7 @@ import {
   type ParsedWorkspaceUrl
 } from "./workspaceUrl";
 import { finishBoot } from "./startupProgress";
+import { modelTrace } from "./modelTrace";
 import { createRuntimeSnapshotHandler } from "./runtimeSnapshot";
 import { createRuntimeScreenshotHandler } from "./runtimeScreenshot";
 import {
@@ -670,6 +671,14 @@ Object.assign(__appScope, { stateIconDrawingFrameRect, stateIconDrawingInitialFr
 const initialSavedSchemes = useMemo<SavedSchemeRecord[]>(() => [], []); Object.assign(__appScope, { initialSavedSchemes });
 const initialProjectSources = useMemo(createAppHookCallback1(__appScope), []);
 const initialDraft = initialProjectSources.draft; Object.assign(__appScope, { initialDraft });
+useLayoutEffect(() => {
+  modelTrace("app-initial-state", {
+    initialProjectKey: initialDraft?.activeProjectKey ?? "",
+    initialSchemeKey: initialDraft?.activeSchemeKey ?? "",
+    initialProjectName: initialDraft?.projectName ?? "",
+    activePointer: readActiveProjectPointer()
+  });
+}, []);
 const initialCanvasBounds = useMemo(() => ({
     width: initialDraft?.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
     height: initialDraft?.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
@@ -790,6 +799,16 @@ const lastPersistedSchemesPayloadRef = useRef<string | null>(null); Object.assig
 const backendSchemesLoadTokenRef = useRef(0); Object.assign(__appScope, { backendSchemesLoadTokenRef });
 const latestSchemesRef = useRef<SavedSchemeRecord[]>([]); Object.assign(__appScope, { latestSchemesRef });
 const latestActiveProjectPointerRef = useRef<ActiveProjectPointer | null>(readActiveProjectPointer()); Object.assign(__appScope, { latestActiveProjectPointerRef });
+// 模型详情读取代际：切换模型后，旧模型的慢响应不得再覆盖当前模型。
+const projectLoadTokenRef = useRef(0); Object.assign(__appScope, { projectLoadTokenRef });
+// React state 提交前的短窗口也必须有确定的当前模型，Ctrl+S 不能读回上一模型。
+const currentModelSelectionRef = useRef({
+  projectKey: String(initialDraft?.activeProjectKey ?? ""),
+  schemeKey: String(initialDraft?.activeSchemeKey ?? ""),
+  loading: false
+});
+Object.assign(__appScope, { currentModelSelectionRef });
+const manualModelSelectionRef = useRef(false); Object.assign(__appScope, { manualModelSelectionRef });
 const backendColorConfigLoadedRef = useRef(false); Object.assign(__appScope, { backendColorConfigLoadedRef });
 const suppressNextBackendColorSyncRef = useRef(false); Object.assign(__appScope, { suppressNextBackendColorSyncRef });
 const lastPersistedColorConfigPayloadRef = useRef<string | null>(null); Object.assign(__appScope, { lastPersistedColorConfigPayloadRef });
@@ -1009,6 +1028,21 @@ const [activeProjectKey, setActiveProjectKey] = useState<string>(() => initialDr
 Object.assign(__appScope, { activeProjectKey, setActiveProjectKey });
 const [activeSchemeKey, setActiveSchemeKey] = useState<string>(() => initialDraft?.activeSchemeKey ?? "");
 Object.assign(__appScope, { activeSchemeKey, setActiveSchemeKey });
+// 模型加载函数会同步发起多组 setState；只有 React 提交了新的 active key 后，
+// 保存快捷键才允许继续。否则会出现“目标 id 已变、画布内容仍是上一个模型”的错配。
+useLayoutEffect(() => {
+  const selection = currentModelSelectionRef.current;
+  modelTrace("active-state-commit", {
+    activeProjectKey,
+    activeSchemeKey,
+    projectName,
+    selection: { ...selection }
+  });
+  if (!selection.loading) return;
+  if (selection.projectKey === activeProjectKey && selection.schemeKey === activeSchemeKey) {
+    selection.loading = false;
+  }
+}, [activeProjectKey, activeSchemeKey]);
 const [mode, setMode] = useState<ToolMode>("select");
 Object.assign(__appScope, { mode, setMode });
 const [interactionMode, setInteractionMode] = useState<InteractionMode>(() => readStoredInteractionMode());
@@ -1219,6 +1253,7 @@ const leftPanelRef = useRef<HTMLElement | null>(null); Object.assign(__appScope,
 const rightPanelRef = useRef<HTMLElement | null>(null); Object.assign(__appScope, { rightPanelRef });
 const projectRecordDragActiveRef = useRef(false); Object.assign(__appScope, { projectRecordDragActiveRef });
 const schemeRecordDragActiveRef = useRef(false); Object.assign(__appScope, { schemeRecordDragActiveRef });
+const projectTreeDragSuppressClickRef = useRef(false); Object.assign(__appScope, { projectTreeDragSuppressClickRef });
 const [containerParamViewId, setContainerParamViewId] = useState("container");
 Object.assign(__appScope, { containerParamViewId, setContainerParamViewId });
 const [expandedCategoryLibraries, setExpandedCategoryLibraries] = useState<CategoryLibrary[]>([...DEFAULT_CATEGORY_LIBRARIES]);
@@ -1715,6 +1750,7 @@ const initialUrlModelIntent = readInitialWorkspaceUrlIntent();
 // 方案树是异步 fetch 的，挂载那一刻几乎必然为空。这里记下"还欠一次打开"，等后面某次渲染
 // 看到方案树非空了再补；补成功或补到重试上限就清掉，不会无限重试。
 let urlModelAwaitingSchemes = initialUrlModelIntent.hasModel && Boolean(initialUrlModelIntent.modelId || initialUrlModelIntent.modelKey);
+let urlModelOpenStarted = false;
 // 按地址栏的要求打开一次模型。启动时调一次；方案树晚到时由下面的重试 effect 补一次。
 //
 // 返回 ``true`` 表示这次调用已经有了结论（打开了 / 明确不存在 / 判定该由切空间重载处理），
@@ -1722,6 +1758,20 @@ let urlModelAwaitingSchemes = initialUrlModelIntent.hasModel && Boolean(initialU
 type UrlOpenOutcome = "done" | "awaiting-schemes";
 
 async function openUrlModelOnce(url: ParsedWorkspaceUrl): Promise<UrlOpenOutcome> {
+  const latestScope = __appScopeRef.current as any;
+  if (latestScope.manualModelSelectionRef?.current) {
+    modelTrace("url-model-skip-manual-selection", {
+      target: url.modelId || url.modelKey,
+      activeProjectKey: latestScope.activeProjectKey,
+      activeSchemeKey: latestScope.activeSchemeKey
+    });
+    urlModelAwaitingSchemes = false;
+    return "done";
+  }
+  if (urlModelOpenStarted) {
+    modelTrace("url-model-skip-duplicate", { target: url.modelId || url.modelKey });
+    return "done";
+  }
   // 地址栏没写 model：什么都不做，保持「打开就是上次的草稿」这个既有行为
   if (!url.hasModel) {
     urlModelAwaitingSchemes = false;
@@ -1751,6 +1801,8 @@ async function openUrlModelOnce(url: ParsedWorkspaceUrl): Promise<UrlOpenOutcome
     writePendingUrlModel(target.modelId, url.schemeId, 0, target.modelKey, url.schemeKey);
     return "awaiting-schemes";
   }
+  urlModelOpenStarted = true;
+  modelTrace("url-model-open-start", { target: target.modelId || target.modelKey, scheme: url.schemeId || url.schemeKey });
   // 走到这里说明已经有结论了（无论打开成功与否），后面不必再补。
   urlModelAwaitingSchemes = false;
   // 登记重试计数：模型真的不存在时只重试一次，不会每次刷新都弹一次提示

@@ -97,7 +97,8 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 
 - 只读域：schemes / library / runtime
 - 信封响应：{ok:true,data} / {ok:false,error:{code,message}}
-- v1 方案域：方案树、层级树、模型列表、导出 ZIP、模型 JSON/SVG/E 文件/CIM XML（界面导出按钮均先保存再走后端）
+- v1 方案域：方案树、层级树、模型列表、导出 ZIP、模型 JSON/SVG/E 文件/CIM XML（界面导出按钮均先保存再走后端）；方案 ZIP 指定 `template` 时只保留模板允许的模型类型
+- v1 空间派生导出：`GET /webgrp/v1/spaces/export-artifacts` 遍历当前空间模型，按 `eMode=per-model|merged` 输出模型 E/SVG 或合并 `space.e` + 每模型 SVG；指定 `template` 时按模板类型筛选，不写回派生文件
 - v1 图元库域：分类树、设备、量测、设备定义、模板
 - v1 运行时态：clients/model/devices/selection/tabs/screenshot/svg/e-file
 - 全局线路 API（globalLineApi / globalLineRegistry）
@@ -123,6 +124,7 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 
 - 一个部署内多套互相隔离的数据空间：`data/` 是 default 空间根，其余在 `data/workspaces/<id>/`
 - 空间标识解析链：`X-Space` 头 > `?space=` > `Cookie: gmp_space` > 回退 `spaces[0]`
+- 首次启动且没有可恢复空间时，`spaces.json` 持久化 `setupRequired`；`GET /webgrp/spaces` 返回空列表，`POST /webgrp/spaces/initialize` 创建固定 id=`default`（名称可编辑、可选归属 owner），完成前空间数据 API 返回 409 `SPACE_NOT_INITIALIZED`。独立入口与 qiankun 入口共用阻断式初始化对话框，缓存归属校验完成后才挂载 App；默认空间可重命名但不可删除。
 - 不变量（**改后端前先读 根 `AGENTS.md`「分域规则 · server」 的 Common Patterns**）：不得新增模块级路径常量（一律 `options.paths ?? defaultPaths` 显式透传）；一切建目录调用均经退休守护（`mkdirInSpace` / `writeTextIfChanged`）
 - 空间导入/导出：顶栏空间下拉右侧四按钮（导出 / 导入 / 改名 / 删除，均作用于**当前空间**）；`GET /webgrp/spaces/export` 把当前空间原样打包成 ZIP（只遍历 `spacePathsFor` 枚举的子目录，default 空间的根是数据根、**不得**按根递归），`POST /webgrp/spaces/import` 一律新建空间、不落在当前空间，失败回滚不落半成品；改名走 `PUT /webgrp/spaces`（只改显示名、不重载页面），删除走 `DELETE /webgrp/spaces`（确认后目录进 `trash-spaces/`、删完切到剩余空间）
 - 空间**名**唯一：新建 / 改名 / 导入撞上已有名字一律 409 `SPACE_NAME_DUPLICATE`（正文带冲突者 `name` / `conflictId`），**不再**静默加 `-2` 后缀；导入撞车时前端弹询问框（确定=覆盖该空间、取消=改用其他名字导入，改名框再取消=放弃），带 `?mode=overwrite` 或 `?mode=rename&name=` 重发

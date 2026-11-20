@@ -218,17 +218,22 @@ export function readWorkspaceUrl(): ParsedWorkspaceUrl {
   return parseWorkspaceHash(location ? String(location.hash ?? "") : "");
 }
 
-// 页面打开那一刻地址栏要求什么 —— **模块求值时就定格**，之后永不改变。
+// 页面打开那一刻地址栏要求什么 —— **模块求值时就定格**；首次空间初始化可显式清除旧目标。
 //
 // 为什么要单独存一份，而不是每次 `readWorkspaceUrl()` 现读：本页一旦跑起来，App.tsx 那条
 // 「应用状态 → 地址栏」的 effect 就会把 hash 改写成「当前这个模型」。所有"要不要按地址栏
 // 行事"的判断都必须以**用户当初打开的地址**为准，读现值的判断会读到被自己改写过的结果，
 // 于是把用户的意图判成「没要求」（实测：贴 `model=13` 进来，fetch 回来时读到的是 `model=9`）。
-const INITIAL_WORKSPACE_URL_INTENT: ParsedWorkspaceUrl = readWorkspaceUrl();
+const initialWorkspaceUrlIntent: ParsedWorkspaceUrl = readWorkspaceUrl();
 
 /** 用户当初打开本页时地址栏里的内容（不是当前 hash）。 */
 export function readInitialWorkspaceUrlIntent(): ParsedWorkspaceUrl {
-  return INITIAL_WORKSPACE_URL_INTENT;
+  return initialWorkspaceUrlIntent;
+}
+
+/** 首次空间初始化后丢弃旧地址里的空间/模型目标，避免把无效链接重新应用到新空间。 */
+export function resetInitialWorkspaceUrlIntent(): void {
+  Object.assign(initialWorkspaceUrlIntent, parseWorkspaceHash(""));
 }
 
 /**

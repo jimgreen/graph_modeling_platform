@@ -4507,7 +4507,7 @@ export function projectTreeModelOwnerKey(schemes: readonly any[], modelId: strin
 
 export function createStartProjectTreeSortDrag(__appScope: Record<string, any>) {
   return (event: DragEvent<HTMLSpanElement>, dragKey: string) => {
-    const { setProjectTreeDragKey } = __appScope;
+    const { projectTreeDragSuppressClickRef, setProjectTreeDragKey } = __appScope;
     // 方案/模型 id 本身已带 "scheme:" / "model:" 前缀（后端生成的记录 id），
     // 这里**不能再加前缀** —— 否则会出现 "scheme:scheme:xxx" 这样的双前缀，
     // 落点判定与顺序覆盖都对不上（拖动看起来毫无反应）。
@@ -4521,6 +4521,9 @@ export function createStartProjectTreeSortDrag(__appScope: Record<string, any>) 
     if (!target?.closest?.(".project-tree-drag-handle")) {
       return;
     }
+    if (projectTreeDragSuppressClickRef) {
+      projectTreeDragSuppressClickRef.current = true;
+    }
     event.stopPropagation();
     event.dataTransfer.setData(layer === "model" ? PROJECT_TREE_DRAG_TYPE_MODEL : PROJECT_TREE_DRAG_TYPE_SCHEME, dragKey);
     event.dataTransfer.effectAllowed = "move";
@@ -4530,9 +4533,16 @@ export function createStartProjectTreeSortDrag(__appScope: Record<string, any>) 
 
 export function createEndProjectTreeSortDrag(__appScope: Record<string, any>) {
   return () => {
-    const { setProjectTreeDragKey, setProjectTreeDropKey } = __appScope;
+    const { projectTreeDragSuppressClickRef, setProjectTreeDragKey, setProjectTreeDropKey } = __appScope;
     setProjectTreeDragKey("");
     setProjectTreeDropKey("");
+    // 浏览器可能在 dragend 后补发一次 click；给它一个事件循环机会消费抑制标记，
+    // 没有 click 时自动清理，避免影响下一次正常单击。
+    if (projectTreeDragSuppressClickRef) {
+      window.setTimeout(() => {
+        projectTreeDragSuppressClickRef.current = false;
+      }, 0);
+    }
   };
 }
 
@@ -4953,14 +4963,19 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
                         }
                       }}
                       onClick={(event) => {
+                        const currentScope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
+                        if (currentScope.projectTreeDragSuppressClickRef?.current) {
+                          currentScope.projectTreeDragSuppressClickRef.current = false;
+                          return;
+                        }
                         if (event.ctrlKey || event.metaKey || event.shiftKey) {
                           toggleProjectSelection(scheme.id, project.id);
                         } else {
                           selectSingleProject(scheme.id, project.id);
+                          requestLoadSavedProject(project, scheme.id);
                         }
                         setInspectorTab("model");
                       }}
-                      onDoubleClick={() => requestLoadSavedProject(project, scheme.id)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
                           requestLoadSavedProject(project, scheme.id);

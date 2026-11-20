@@ -28,11 +28,14 @@ export function adoptUrlSpace(): boolean {
   return true;
 }
 
-export async function runStartupGate(): Promise<void> {
-  const adoptedFromUrl = adoptUrlSpace();
+export async function runStartupGate(options: { skipUrlAdoption?: boolean } = {}): Promise<boolean> {
+  const adoptedFromUrl = options.skipUrlAdoption ? false : adoptUrlSpace();
   try {
     setBootPhase("正在获取工作空间列表…");
     const initial = await fetchSpaces();
+    if (initial.setupRequired) {
+      return true;
+    }
     // 这次请求已在关键路径上；把它交给 App 挂载时的首次 refreshSpaces，省掉同一条数据的第二次拉取。
     // 但它是在改 Cookie **之前**发出的：地址栏指定了别的空间时，它的 current 已作废，不能播种。
     if (!adoptedFromUrl) {
@@ -51,8 +54,10 @@ export async function runStartupGate(): Promise<void> {
       // 只能从全局对象取；node 下那个挂载不存在，`?.()` 是运行时必需。
       globalThis.showGlobalMessage?.("本地缓存未清理干净，本次未做空间校验，请刷新重试。");
     }
+    return false;
   } catch {
     // 取不到空间列表（后端未起 / 离线）属常见情形：不阻断启动、也不打扰用户 ——
     // 白屏比「这次不校验」更坏。归属记账未写，下次启动会重试。
+    return false;
   }
 }

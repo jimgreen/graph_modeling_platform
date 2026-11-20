@@ -129,7 +129,7 @@ export function createSpaceStore(dataRoot) {
           `[空间] 扫描工作区目录失败（${error?.code ?? error?.name ?? "unknown"}），本次只返回注册表内已登记的空间：${workspacesRoot}`
         );
       }
-      return known;
+      return { spaces: known, complete: error?.code === "ENOENT" };
     }
     const result = [...known];
     const taken = new Set(result.map((s) => s.id.toLowerCase()));
@@ -145,7 +145,7 @@ export function createSpaceStore(dataRoot) {
       taken.add(id.toLowerCase());
       result.push(normalizeSpace({ id, name: id }));
     }
-    return result;
+    return { spaces: result, complete: true };
   }
 
   /**
@@ -173,13 +173,16 @@ export function createSpaceStore(dataRoot) {
   async function load() {
     if (state) return state;
     let parsed = null;
+    let registryMissing = false;
     try {
       parsed = JSON.parse(await readFile(spacesFile, "utf-8"));
     } catch (error) {
       // 降级（读失败当空表）是既有契约：ensureInitialized 会把这个残缺状态写回，
       // 于是读失败会把各空间的用户自定义显示名与归属永久覆盖掉。重建前先备份，
       // 至少事后还能捞回来；ENOENT 是「还没有注册表」的正常首启路径，不备份不告警。
-      if (error?.code !== "ENOENT") {
+      if (error?.code === "ENOENT") {
+        registryMissing = true;
+      } else {
         const backupPath = await backupUnreadableSpacesFile();
         console.warn(
           `[空间] 读取 ${spacesFile} 失败（${error?.code ?? error?.name ?? "unknown"}），` +
@@ -193,10 +196,20 @@ export function createSpaceStore(dataRoot) {
     const normalized = rawSpaces
       .map(normalizeSpace)
       .filter((space) => isValidSpaceId(space.id) && !isReservedSpaceId(space.id));
-    if (!normalized.some((space) => space.id === DEFAULT_SPACE_ID)) {
-      normalized.unshift(normalizeSpace({ id: DEFAULT_SPACE_ID, name: "默认空间" }));
+    const workspaceScan = await scanWorkspaces(normalized);
+    const discovered = workspaceScan.spaces;
+    const emptyRegistry = registryMissing || (Array.isArray(parsed?.spaces) && parsed.spaces.length === 0);
+    const setupRequired = discovered.length === 0 && (
+      parsed?.setupRequired === true || (workspaceScan.complete && emptyRegistry)
+    );
+    if (setupRequired) {
+      state = { schemaVersion: SCHEMA_VERSION, spaces: [], setupRequired: true };
+      return state;
     }
-    state = { schemaVersion: SCHEMA_VERSION, spaces: await scanWorkspaces(normalized) };
+    if (!discovered.some((space) => space.id === DEFAULT_SPACE_ID)) {
+      discovered.unshift(normalizeSpace({ id: DEFAULT_SPACE_ID, name: "默认空间" }));
+    }
+    state = { schemaVersion: SCHEMA_VERSION, spaces: discovered };
     return state;
   }
 
@@ -219,6 +232,32 @@ export function createSpaceStore(dataRoot) {
 
     async list() {
       return (await load()).spaces.map((space) => ({ ...space }));
+    },
+
+    requiresInitialSpaceSetup() {
+      return state?.setupRequired === true;
+    },
+
+    async initializeDefaultSpace(name, { owner } = {}) {
+      return locked(async () => {
+        const current = await load();
+        const existingDefault = current.spaces.find((space) => space.id === DEFAULT_SPACE_ID);
+        if (current.setupRequired !== true) {
+          if (existingDefault) return { ...existingDefault };
+          const error = new Error("工作空间已经初始化。");
+          error.code = "SPACE_ALREADY_INITIALIZED";
+          throw error;
+        }
+        const trimmed = normalizeSpaceName(name);
+        if (!trimmed) throw new Error("空间名不能为空。");
+        const clash = findByName(current.spaces, trimmed);
+        if (clash && clash.id !== DEFAULT_SPACE_ID) {
+          throw duplicateSpaceNameError(trimmed, clash.id);
+        }
+        const space = normalizeSpace({ id: DEFAULT_SPACE_ID, name: trimmed, owner });
+        await writeState({ schemaVersion: SCHEMA_VERSION, spaces: [space] });
+        return { ...space };
+      });
     },
 
     firstId() {
@@ -251,6 +290,11 @@ export function createSpaceStore(dataRoot) {
     async create(name, { onDuplicate = "allow", owner } = {}) {
       return locked(async () => {
         const current = await load();
+        if (current.setupRequired === true) {
+          const error = new Error("请先初始化默认空间。");
+          error.code = "SPACE_NOT_INITIALIZED";
+          throw error;
+        }
         const trimmed = normalizeSpaceName(name);
         const clash = findByName(current.spaces, trimmed);
         if (clash && onDuplicate === "reject") {

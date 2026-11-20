@@ -606,7 +606,7 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
         className="topbar-primary-button"
         title="重命名当前空间"
         aria-label="重命名空间"
-        disabled={scope.isBrowseMode || !current || current.pinned}
+        disabled={scope.isBrowseMode || !current}
         onClick={() => void renameCurrentSpace(scope)}
       >
         <Pencil size={14} />

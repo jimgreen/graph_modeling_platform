@@ -12,7 +12,7 @@ import { contentDispositionAttachment } from "./contentDisposition.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 import { readJsonBody as readJsonBodyWithLimit } from "./readJsonBody.mjs";
 
-const { buildEFileExport } = await import("../src/model-eexport.ts");
+const { buildEFileExport, buildMultiModelEFileExport } = await import("../src/model-eexport.ts");
 const {
   buildEFileExportOptionsFromLibrary,
   applyPredefinedEDeviceTemplateToLibraryState
@@ -20,7 +20,11 @@ const {
 const { parseEDeviceDefinitionFile } = await import("../src/model-eexport.ts");
 // 库模板装配单源：内置库 + 自定义模板 + 元件定义覆盖（与前端 libraryTemplates、svgExport 同一条实现）
 const { buildEffectiveLibraryTemplates } = await import("../src/export/device-definition-shared.ts");
-const { eDeviceTemplateSingleTypeMismatchMessage } = await import("../src/eDeviceTemplateTypePolicy.ts");
+const {
+  E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES,
+  eDeviceTemplateSingleTypeMismatchMessage,
+  eDeviceTemplateNetworkTypeMismatchMessage
+} = await import("../src/eDeviceTemplateTypePolicy.ts");
 const { decodeAuto } = await import("../src/encoding/gbk.ts");
 
 // 从模板文本推导 override 映射（与前端「加载预定义模板」共用 applyPredefinedEDeviceTemplateToLibraryState）
@@ -43,14 +47,16 @@ function templateOverridesFromText(templateText, library) {
   });
 }
 
-// paths：多空间路径集合（spaceStore.spacePathsFor）。缺省时各被调函数回落 defaultPaths，
-// 保证「方案 ZIP 的 json 与 e/svg 同源」——调用方传了 paths，派生格式就必须读同一个根。
-export async function buildEFileForSavedModel({ parts, name, templateName, templateText, paths }) {
-  const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
-  if (!record) {
-    return { error: { code: "not-found", message: "模型不存在。" } };
+/** 预定义模板有类型限制；自定义/未知模板不限制模型类型。 */
+export function eFileTemplateAllowsModelType(templateName, modelType) {
+  const name = String(templateName ?? "").trim();
+  if (!name || !Object.hasOwn(E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES, name)) {
+    return true;
   }
-  const project = record.project;
+  return E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES[name].includes(String(modelType ?? ""));
+}
+
+async function buildEFileExportOptionsForPaths({ paths, templateText }) {
   const library = await readDeviceLibraryConfig({ paths });
 
   let overrides = {
@@ -83,20 +89,69 @@ export async function buildEFileForSavedModel({ parts, name, templateName, templ
     );
   }
 
+  return {
+    options: buildEFileExportOptionsFromLibrary({
+      libraryTemplates,
+      labels: undefined,
+      ...overrides
+    })
+  };
+}
+
+// paths：多空间路径集合（spaceStore.spacePathsFor）。缺省时各被调函数回落 defaultPaths，
+// 保证「方案 ZIP 的 json 与 e/svg 同源」——调用方传了 paths，派生格式就必须读同一个根。
+export async function buildEFileForSavedModel({ parts, name, templateName, templateText, paths }) {
+  const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
+  if (!record) {
+    return { error: { code: "not-found", message: "模型不存在。" } };
+  }
+  const prepared = await buildEFileExportOptionsForPaths({ paths, templateText });
+  if (prepared.error) {
+    return prepared;
+  }
   if (templateName) {
-    const mismatch = eDeviceTemplateSingleTypeMismatchMessage(templateName, String(project?.modelType ?? ""));
+    const mismatch = eDeviceTemplateSingleTypeMismatchMessage(templateName, String(record.project?.modelType ?? ""));
     if (mismatch) {
       return { error: { code: "bad-request", message: mismatch } };
     }
   }
-
-  const options = buildEFileExportOptionsFromLibrary({
-    libraryTemplates,
-    labels: undefined,
-    ...overrides
-  });
-  const file = buildEFileExport(project, parts, options);
+  const file = buildEFileExport(record.project, parts, prepared.options);
   return { file };
+}
+
+/**
+ * 为一批已保存模型复用一次库/模板装配。
+ * 合并模式必须走 buildMultiModelEFileExport，不能把单模型文本直接拼接，
+ * 因为该生成器还负责模型序号、层级关系和全局线路引用的重排。
+ */
+export async function buildEFilesForSavedModels({
+  models,
+  templateName,
+  templateText,
+  paths,
+  globalLineRecords = []
+}) {
+  const modelTypes = models.map((model) => String(model?.project?.modelType ?? ""));
+  if (templateName) {
+    const mismatch = eDeviceTemplateNetworkTypeMismatchMessage(templateName, modelTypes);
+    if (mismatch) {
+      return { error: { code: "bad-request", message: mismatch } };
+    }
+  }
+  const prepared = await buildEFileExportOptionsForPaths({ paths, templateText });
+  if (prepared.error) {
+    return prepared;
+  }
+  const files = models.map((model) => ({
+    ...model,
+    file: buildEFileExport(model.project, model.schemePath, prepared.options)
+  }));
+  const merged = buildMultiModelEFileExport(
+    models.map(({ id, schemePath, project }) => ({ id, schemePath, project })),
+    prepared.options,
+    globalLineRecords
+  );
+  return { files, merged };
 }
 
 const E_FILE_BODY_LIMIT = 2 * 1024 * 1024;

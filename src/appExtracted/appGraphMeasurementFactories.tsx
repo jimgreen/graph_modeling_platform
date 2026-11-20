@@ -40,6 +40,7 @@ import {
 import { withNodesParentModelId } from "../model";
 import { bestSmartAlignmentAxisSnap } from "./appCoreCanvasUtilities";
 import { InlineEditableValue } from "../components/InputComponents";
+import { modelTrace } from "../modelTrace";
 
 export function createSetNodes(__appScope: Record<string, any>) {
   return (value: SetStateAction<ModelNode[]>) => {
@@ -3781,7 +3782,13 @@ export function createSelectSingleScheme(__appScope: Record<string, any>) {
 
 export function createSelectSingleProject(__appScope: Record<string, any>) {
   return (schemeId: string, projectId: string) => {
-  const { setSelectedProjectId, setSelectedProjectIds, setSelectedSchemeId, setSelectedSchemeIds } = __appScope;
+  const { manualModelSelectionRef, setSelectedProjectId, setSelectedProjectIds, setSelectedSchemeId, setSelectedSchemeIds } = __appScope;
+    // 行点击是用户模型选择的最早入口，先于异步加载和 React state 提交。
+    // 启动恢复链看到这个标记后必须让位，不能把模型切回页面初始值。
+    if (manualModelSelectionRef) {
+      manualModelSelectionRef.current = true;
+    }
+    modelTrace("manual-model-select", { projectId, schemeId });
     setSelectedSchemeId(schemeId);
     setSelectedProjectId(projectId);
     setSelectedProjectIds([projectId]);

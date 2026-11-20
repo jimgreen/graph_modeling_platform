@@ -49,7 +49,9 @@ export async function bindUserSpaceToSession(user: unknown): Promise<void> {
   // 宿主没传用户（旧版宿主、未登录、cookie 过期）→ 维持原行为
   if (!name) return;
   try {
-    const mine = (await fetchSpaces()).spaces.filter((space) => belongsToUser(space, name));
+    const list = await fetchSpaces();
+    if (list.setupRequired) return;
+    const mine = list.spaces.filter((space) => belongsToUser(space, name));
     const cookieId = readSpaceCookie();
     if (cookieId && mine.some((space) => space.id === cookieId)) return;
     const recent = mostRecentlyUsed(mine);

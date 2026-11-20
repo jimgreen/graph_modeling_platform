@@ -61,7 +61,7 @@ const ENDPOINTS = [
     { label: "方案树摘要", params: {} },
     { label: "含完整 project", params: { q_includeProjects: "1" } }
   ]},
-  { scope: "space", group: "方案（内部）", method: "GET", path: "/webgrp/schemes/export", desc: "导出方案 ZIP", query: [{ name: "schemePath", desc: "encodeURIComponent(JSON.stringify(['方案A','子方案']))" }], response: "<application/zip 二进制>", examples: [
+  { scope: "space", group: "方案（内部）", method: "GET", path: "/webgrp/schemes/export", desc: "导出方案 ZIP；指定 template 时只导出该模板对应类型的模型", query: [{ name: "schemePath", desc: "encodeURIComponent(JSON.stringify(['方案A','子方案']))" }, { name: "template", desc: "可选：国网E格式|主网实时库|配网实时库|台区实时库" }], response: "<application/zip 二进制>", examples: [
     { label: "导出「默认方案」", params: { q_schemePath: SP_DEFAULT } },
     { label: "导出子方案「1-1」", params: { q_schemePath: SP_SUB } }
   ]},
@@ -154,8 +154,15 @@ const ENDPOINTS = [
     { label: "「默认方案」下模型", params: { q_schemePath: SP_DEFAULT } },
     { label: "子方案「1-1」下模型", params: { q_schemePath: SP_SUB } }
   ]},
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/export", desc: "导出方案 ZIP", query: [{ name: "schemePath", desc: "方案路径" }], response: "<application/zip 二进制>", examples: [
+  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/export", desc: "导出方案 ZIP；指定 template 时只导出该模板对应类型的模型", query: [{ name: "schemePath", desc: "方案路径" }, { name: "template", desc: "可选：国网E格式|主网实时库|配网实时库|台区实时库" }], response: "<application/zip 二进制>", examples: [
     { label: "导出「默认方案」", params: { q_schemePath: SP_DEFAULT } }
+  ]},
+  { scope: "space", group: "v1 空间派生导出", method: "GET", path: "/webgrp/v1/spaces/export-artifacts", desc: "导出当前空间全部模型的 E/SVG ZIP；eMode=per-model 时每模型一个 E，merged 时根目录额外生成 space.e", query: [
+    { name: "eMode", desc: "可选，per-model（默认）| merged" },
+    { name: "template", desc: "可选：国网E格式|主网实时库|配网实时库|台区实时库；同时按类型筛选模型" }
+  ], response: "<application/zip 二进制>", examples: [
+    { label: "每模型 E + SVG", params: { q_eMode: "per-model" } },
+    { label: "合并 space.e + 每模型 SVG", params: { q_eMode: "merged" } }
   ]},
   { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/json", desc: "模型 project JSON", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }], response: "{ok:true,data:{project}}", examples: [
     { label: "「图元连接」JSON", params: { q_schemePath: SP_DEFAULT, q_name: "图元连接" } },
@@ -319,13 +326,16 @@ const ENDPOINTS = [
   // ---- 空间管理（管理面，与「某一空间的数据」无关：派发层对 /spaces 短路，不注入空间上下文）----
   // 返回 /webgrp/* 内部域形态（非 /v1 信封）。示例刻意不依赖其它用例的前置状态：
   // PUT 指向尚未建出的空间（400），DELETE 指向 default（pinned，400）。
-  { scope: "global", group: "空间管理", method: "GET", path: "/webgrp/spaces", desc: "空间列表与当前生效空间（current 与请求实际落到的空间一致；本次调用会刷新该空间的 lastAccessAt）", response: "{spaces:[{id,name,pinned,createdAt,lastAccessAt}],current}", examples: [
+  { scope: "global", group: "空间管理", method: "GET", path: "/webgrp/spaces", desc: "空间列表与当前生效空间；首次初始化前返回 setupRequired=true 且不刷新 lastAccessAt", response: "{spaces:[{id,name,pinned,createdAt,lastAccessAt}],current,setupRequired?}", examples: [
     { label: "全部空间", params: {} }
   ]},
-  { scope: "global", group: "空间管理", method: "POST", path: "/webgrp/spaces", desc: "新建空间（名称 → id；**空间名唯一**，重名返回 409 SPACE_NAME_DUPLICATE + 冲突者 name/conflictId）", body: { name: "示例空间" }, response: "{id,name,pinned,createdAt}", examples: [
+  { scope: "global", group: "空间管理", method: "POST", path: "/webgrp/spaces/initialize", desc: "首次启动初始化固定 id=default 的空间；名称默认「默认空间」、允许改名，可选 owner；重复调用幂等返回现有 default", body: { name: "默认空间", owner: "可选的 qiankun 用户名" }, response: "{id:\"default\",name,pinned:true,createdAt,owner?}", examples: [
+    { label: "初始化或读取 default", params: { __body__: { name: "默认空间" } } }
+  ]},
+  { scope: "global", group: "空间管理", method: "POST", path: "/webgrp/spaces", desc: "新建普通空间（名称 → id；首次初始化前返回 409 SPACE_NOT_INITIALIZED；名称重复返回 409 SPACE_NAME_DUPLICATE + 冲突者 name/conflictId）", body: { name: "示例空间" }, response: "{id,name,pinned,createdAt}", examples: [
     { label: "新建「示例空间」", params: { __body__: { name: "示例空间" } } }
   ]},
-  { scope: "global", group: "空间管理", method: "PUT", path: "/webgrp/spaces", desc: "空间改名（只改显示名，绝不 rename 目录；id 不是 name，须填空间 id；撞上别的空间名 → 409）", body: { id: "示例空间", name: "新名" }, response: "{ok:true}", examples: [
+  { scope: "global", group: "空间管理", method: "PUT", path: "/webgrp/spaces", desc: "空间改名（只改显示名，绝不 rename 目录；id 不是 name，须填空间 id；default 允许改名；撞上别的空间名 → 409）", body: { id: "示例空间", name: "新名" }, response: "{ok:true}", examples: [
     { label: "改名不存在的空间（400）", params: { __body__: { id: "示例空间", name: "新名" } } }
   ]},
   { scope: "global", group: "空间管理", method: "DELETE", path: "/webgrp/spaces", desc: "删除空间（登记退休 → 驱逐在线客户端 → 目录移入 trash-spaces；default 不可删）", body: { id: "default" }, response: "{ok:true}", examples: [
@@ -417,6 +427,7 @@ export function renderSwaggerHtml() {
       <li><b><code>?clientId=</code> 同时校验空间</b>：指名一个属于其它空间的 clientId 时必须带上 <code>?space=&lt;该空间&gt;</code>，否则返回 <code>503 no-online-client</code>（复用既有错误码，不是 404）。不带 <code>clientId</code> 时，目标客户端按调用方自身解析出的空间筛选，不再取「任意最近活跃」。</li>
       <li><b><code>${escapeHtml(apiPath("/v1/runtime/clients"))}</code> 的响应条目新增 <code>workspaceId</code></b>：标明该客户端注册时所属空间。</li>
       <li><b>空间校验失败的 400 <u>没有</u> <code>ok:false</code></b>：形如 <code>{"error":{"code":"SPACE_UNKNOWN","message":"未知空间：x"}}</code>，与 v1 域其它错误的 <code>{"ok":false,"error":{…}}</code> 不同形（校验发生在请求将落到哪个分支之前）。按 <code>body.ok === false</code> 判错的客户端会看空。</li>
+      <li><b>首次空间初始化</b>：新数据根通过 <code>${escapeHtml(apiPath("/spaces/initialize"))}</code> 创建固定 id <code>default</code>；在完成前，空间数据 API 返回 409 <code>SPACE_NOT_INITIALIZED</code>。</li>
     </ol>
     scope 徽标：空间 = 随空间隔离（带未知空间标识会 400）；会话 = 可带 <code>?space=</code> 筛目标客户端；全局 = 数据全局共享或管理面，不因空间标识被拒；本机 = 操作本机文件系统，与空间无关。`;
 

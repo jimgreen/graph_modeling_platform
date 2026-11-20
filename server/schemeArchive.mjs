@@ -39,7 +39,7 @@ export async function listModelJsonFiles(rootDir) {
  * 构建方案 ZIP：json 用磁盘原文，e/svg 由 renderArtifacts 实时生成。
  * 任一模型生成失败即抛出，不产出残缺压缩包。
  */
-export async function buildSchemeArchiveBuffer({ schemeDir, schemeName, renderArtifacts }) {
+export async function buildSchemeArchiveBuffer({ schemeDir, schemeName, renderArtifacts, shouldIncludeModel }) {
   // 只把「路径不存在」降级成「方案目录不存在」：EACCES / EPERM / EBUSY 等 IO 失败一律上抛
   // （与 listModelJsonFiles 的目录读、以及空间 ZIP 侧 listSpaceFiles 同一口径）。
   // 全吞的代价是把「读不到」说成「不存在」——权限被改或文件被占用时，用户收到的是
@@ -54,6 +54,9 @@ export async function buildSchemeArchiveBuffer({ schemeDir, schemeName, renderAr
   const models = await listModelJsonFiles(schemeDir);
   const zip = new AdmZip();
   for (const model of models) {
+    if (typeof shouldIncludeModel === "function" && !(await shouldIncludeModel(model))) {
+      continue;
+    }
     const { eFileBytes, svg } = await renderArtifacts({
       dirParts: model.dirParts,
       modelName: model.modelName

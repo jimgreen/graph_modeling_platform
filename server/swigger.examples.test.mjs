@@ -246,6 +246,11 @@ beforeEach(async () => {
   const port = server.address().port;
   baseUrl = `http://127.0.0.1:${port}`;
   wsUrl = `ws://127.0.0.1:${port}/webgrp/ws`;
+  await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "默认空间" })
+  });
   wsClient = await connectRuntimeClient();
 });
 
@@ -318,6 +323,10 @@ function expectFor(ep, ex) {
   if (p === apiPath("/spaces") && ep.method === "POST") return { status: 200, check: (r) => {
     expect(r.json.id).toBeTruthy();
     expect(r.json.pinned).toBe(false);
+  } };
+  if (p === apiPath("/spaces/initialize") && ep.method === "POST") return { status: 200, check: (r) => {
+    expect(r.json.id).toBe("default");
+    expect(r.json.pinned).toBe(true);
   } };
   if (p === apiPath("/spaces") && ep.method === "PUT") {
     // 示例指向本用例内尚未建出的空间 → 400（每个用例重建 dataDir，不依赖前一个用例的副作用）
