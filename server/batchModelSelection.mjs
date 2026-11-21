@@ -1,5 +1,8 @@
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 import { PREDEFINED_E_DEVICE_TEMPLATES } from "./eFileTemplates.mjs";
+import { listSpaceArtifactModels } from "./spaceArtifactExport.mjs";
+import { readSchemes, resolveSchemePathForSelector } from "./server.mjs";
+import { modelAssociationModelTypeForKind } from "../src/model.ts";
 
 const FORMAT_ORDER = ["json", "svg", "cim", "e"];
 const FORMAT_SET = new Set(FORMAT_ORDER);
@@ -118,5 +121,181 @@ export function parseBatchModelExportQuery(url) {
     includeAssociatedModels: includeAssociatedModels.value,
     colorMode,
     strict: strict.value
+  };
+}
+
+function numericModelId(project) {
+  const value = Number(project?.idx);
+  return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+function stableModelKey(model) {
+  const numeric = numericModelId(model.project);
+  if (numeric !== undefined && model.modelType) return `idx:${model.modelType}:${numeric}`;
+  return `path:${model.schemePath.join("/")}/${model.name}`;
+}
+
+function normalizeModel(model, schemeIdByPath) {
+  const numeric = numericModelId(model.project);
+  return {
+    ...model,
+    id: numeric ?? String(model.id),
+    modelType: String(model.project?.modelType ?? ""),
+    ...(schemeIdByPath.has(model.schemePath.join("/"))
+      ? { schemeId: schemeIdByPath.get(model.schemePath.join("/")) }
+      : {})
+  };
+}
+
+function flattenSchemes(schemes, parentPath = [], output = new Map()) {
+  for (const scheme of schemes ?? []) {
+    const path = [...parentPath, scheme.name];
+    output.set(path.join("/"), scheme.schemeId);
+    flattenSchemes(scheme.children ?? [], path, output);
+  }
+  return output;
+}
+
+function compareModels(left, right) {
+  const pathResult = left.schemePath.join("/").localeCompare(right.schemePath.join("/"), "zh-CN");
+  if (pathResult !== 0) return pathResult;
+  const nameResult = left.name.localeCompare(right.name, "zh-CN");
+  if (nameResult !== 0) return nameResult;
+  return (numericModelId(left.project) ?? Number.MAX_SAFE_INTEGER) - (numericModelId(right.project) ?? Number.MAX_SAFE_INTEGER);
+}
+
+export async function collectBatchModels({ paths, query }) {
+  const rawModels = await listSpaceArtifactModels(paths, "");
+  const schemeIdByPath = flattenSchemes(await readSchemes({ paths }));
+  const allModels = rawModels.map((model) => normalizeModel(model, schemeIdByPath)).sort(compareModels);
+
+  if (query.scope === "space") {
+    return { selectedModels: allModels, allModels, selectedBy: { scope: "space" } };
+  }
+
+  if (query.scope === "scheme") {
+    const resolvedPath = await resolveSchemePathForSelector({
+      schemePath: query.schemePath,
+      schemeId: query.schemeId,
+      paths
+    });
+    const prefix = resolvedPath.join("/");
+    const selectedModels = allModels.filter((model) => {
+      const path = model.schemePath.join("/");
+      return query.includeDescendants ? (path === prefix || path.startsWith(`${prefix}/`)) : path === prefix;
+    });
+    return {
+      selectedModels,
+      allModels,
+      selectedBy: { scope: "scheme", schemePath: resolvedPath, ...(query.schemeId !== undefined ? { schemeId: query.schemeId } : {}) }
+    };
+  }
+
+  let selectedModels;
+  if (query.modelId !== undefined) {
+    selectedModels = allModels.filter((model) => numericModelId(model.project) === query.modelId);
+  } else {
+    const resolvedPath = await resolveSchemePathForSelector({
+      schemePath: query.schemePath,
+      schemeId: query.schemeId,
+      paths
+    });
+    selectedModels = allModels.filter((model) => model.name === query.name && model.schemePath.join("/") === resolvedPath.join("/"));
+  }
+  if (selectedModels.length === 0) {
+    const error = new Error("模型不存在。");
+    error.code = "not-found";
+    throw error;
+  }
+  return {
+    selectedModels,
+    allModels,
+    selectedBy: { scope: "model", ...(query.modelId !== undefined ? { modelId: query.modelId } : { schemePath: selectedModels[0].schemePath, name: query.name }) }
+  };
+}
+
+function modelKeysFromGlobalLineRecord(record) {
+  const keys = [];
+  for (const slot of [record?.endpointSlots?.source, record?.endpointSlots?.target]) {
+    const idx = Number(slot?.projectIdx);
+    if (Number.isSafeInteger(idx) && idx > 0) keys.push({ type: "idx", value: idx });
+    if (slot?.projectId) keys.push({ type: "projectId", value: String(slot.projectId) });
+    if (slot?.modelKey) keys.push({ type: "modelKey", value: String(slot.modelKey) });
+  }
+  return keys;
+}
+
+function modelMatchesReference(model, reference) {
+  if (reference.type === "idx") return numericModelId(model.project) === reference.value;
+  if (reference.type === "projectId") return String(model.project?.projectId ?? model.id) === reference.value;
+  return String(model.relativePath ?? "") === reference.value || String(model.id) === reference.value;
+}
+
+export function expandAssociatedModels({ selectedModels, allModels, globalLineRecords = [], includeAssociatedModels }) {
+  const selectedKeys = new Set(selectedModels.map(stableModelKey));
+  if (!includeAssociatedModels) {
+    return { models: [...selectedModels].sort(compareModels), warnings: [], expandedModelKeys: [] };
+  }
+
+  const byTypeAndId = new Map();
+  const byId = new Map();
+  for (const model of allModels) {
+    const numeric = numericModelId(model.project);
+    if (numeric !== undefined) {
+      byId.set(numeric, model);
+      const key = `${model.modelType}:${numeric}`;
+      byTypeAndId.set(key, model);
+    }
+  }
+  const adjacency = new Map();
+  const addEdge = (left, right) => {
+    if (!left || !right || left === right) return;
+    const leftKey = stableModelKey(left);
+    const rightKey = stableModelKey(right);
+    const values = adjacency.get(leftKey) ?? new Set();
+    values.add(rightKey);
+    adjacency.set(leftKey, values);
+  };
+  const warnings = [];
+
+  for (const model of allModels) {
+    for (const node of model.project?.nodes ?? []) {
+      const expectedType = modelAssociationModelTypeForKind(node.kind);
+      if (!expectedType) continue;
+      const rawId = String(node.params?.model_id ?? "").trim();
+      if (!rawId) continue;
+      const target = byTypeAndId.get(`${expectedType}:${Number(rawId)}`);
+      if (!target) {
+        warnings.push({ code: "associated-model-not-found", sourceModelId: model.id, sourceModelName: model.name, targetModelId: rawId, message: `模型“${model.name}”关联的${expectedType}模型不存在。` });
+        continue;
+      }
+      addEdge(model, target);
+      addEdge(target, model);
+    }
+  }
+
+  for (const record of globalLineRecords) {
+    const references = modelKeysFromGlobalLineRecord(record);
+    const models = allModels.filter((model) => references.some((reference) => modelMatchesReference(model, reference)));
+    for (const left of models) for (const right of models) addEdge(left, right);
+  }
+
+  const byKey = new Map(allModels.map((model) => [stableModelKey(model), model]));
+  const queue = selectedModels.map(stableModelKey);
+  const visited = new Set(queue);
+  const expandedModelKeys = [];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    for (const targetKey of adjacency.get(current) ?? []) {
+      if (visited.has(targetKey)) continue;
+      visited.add(targetKey);
+      queue.push(targetKey);
+      expandedModelKeys.push(targetKey);
+    }
+  }
+  return {
+    models: [...visited].map((key) => byKey.get(key)).filter(Boolean).sort(compareModels),
+    warnings,
+    expandedModelKeys
   };
 }
