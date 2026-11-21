@@ -44,13 +44,13 @@ describe("SVG export", () => {
     // XML 声明由后端产出（前端不再前置），SVG 响应体原样落盘
     const fetchMock = vi.fn(async (url: string) => {
       const target = String(url);
-      if (target.includes("/v1/schemes/model/json")) {
+      if (target.includes("/v1/schemes/model/export?format=json")) {
         return new Response(JSON.stringify({ ok: true, data: { project: backendProject } }), {
           status: 200,
           headers: { "content-type": "application/json" }
         });
       }
-      if (target.includes("/v1/schemes/model/e-file")) {
+      if (target.includes("/v1/schemes/model/export?format=e-file")) {
         return new Response("<Model/>", {
           status: 200,
           headers: { "content-type": "text/plain; charset=gbk" }
@@ -104,9 +104,9 @@ describe("SVG export", () => {
     // 三份产物全由后端生成：SVG 请求带方案路径与 colorMode=voltage（与本地导出原着色一致）
     expect(fetchMock).toHaveBeenCalledTimes(3);
     const exportUrls = fetchMock.mock.calls.map((call) => String(call[0]));
-    const eUrl = exportUrls.find((url) => url.includes("/v1/schemes/model/e-file")) ?? "";
-    const svgUrl = exportUrls.find((url) => url.includes("/v1/schemes/model/svg")) ?? "";
-    const jsonUrl = exportUrls.find((url) => url.includes("/v1/schemes/model/json")) ?? "";
+    const eUrl = exportUrls.find((url) => url.includes("/v1/schemes/model/export?format=e-file")) ?? "";
+    const svgUrl = exportUrls.find((url) => url.includes("/v1/schemes/model/export?format=svg")) ?? "";
+    const jsonUrl = exportUrls.find((url) => url.includes("/v1/schemes/model/export?format=json")) ?? "";
     expect(eUrl).toContain(encodeURIComponent(JSON.stringify(["主方案", "子方案"])));
     expect(eUrl).toContain(encodeURIComponent("voltage-export"));
     expect(svgUrl).toContain(encodeURIComponent(JSON.stringify(["主方案", "子方案"])));
@@ -181,13 +181,13 @@ describe("SVG export", () => {
     }));
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       const target = String(url);
-      if (target.includes("/v1/schemes/model/json")) {
+      if (target.includes("/v1/schemes/model/export?format=json")) {
         return new Response(JSON.stringify({ ok: true, data: { project: { version: 1, name: "partial-export", nodes: [], edges: [] } } }), {
           status: 200,
           headers: { "content-type": "application/json" }
         });
       }
-      if (target.includes("/v1/schemes/model/e-file")) {
+      if (target.includes("/v1/schemes/model/export?format=e-file")) {
         return new Response("<Model/>", {
           status: 200,
           headers: { "content-type": "text/plain; charset=utf-8", "x-e-file-warnings": warningsHeader }
@@ -335,7 +335,7 @@ describe("SVG export", () => {
     const exportPromise = exportJsonFile("gbk");
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v1/schemes/model/json");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v1/schemes/model/export?format=json");
     expect(executionOrder[0]).toBe("save-picker");
     expect(setExportCompletionDialog).not.toHaveBeenCalled();
 
@@ -396,7 +396,7 @@ describe("SVG export", () => {
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     const fetchedUrl = String(fetchMock.mock.calls[0][0]);
-    expect(fetchedUrl).toContain("/v1/schemes/model/e-file");
+    expect(fetchedUrl).toContain("/v1/schemes/model/export?format=e-file");
     expect(fetchedUrl).toContain(encodeURIComponent(JSON.stringify(["主方案", "子方案"])));
     expect(fetchedUrl).toContain("encoding=utf-8");
     expect(showGlobalMessage).not.toHaveBeenCalled();
@@ -790,13 +790,13 @@ describe("SVG export", () => {
     // 只有 SVG 走挂起的响应；JSON 立即返回，才能验证「SVG 未回时 E/JSON 已落盘」
     const fetchMock = vi.fn((url: string) => {
       const target = String(url);
-      if (target.includes("/v1/schemes/model/json")) {
+      if (target.includes("/v1/schemes/model/export?format=json")) {
         return Promise.resolve(new Response(JSON.stringify({
           ok: true,
           data: { project: { version: 1, name: "parallel-export", nodes: [], edges: [] } }
         }), { status: 200, headers: { "content-type": "application/json" } }));
       }
-      if (target.includes("/v1/schemes/model/e-file")) {
+      if (target.includes("/v1/schemes/model/export?format=e-file")) {
         return Promise.resolve(new Response("<Model/>", {
           status: 200,
           headers: { "content-type": "text/plain; charset=utf-8" }

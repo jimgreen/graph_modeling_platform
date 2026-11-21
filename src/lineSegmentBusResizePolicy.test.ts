@@ -27,7 +27,6 @@ describe("line-segment bus resize policy", () => {
         nodeRotateHandleControlPoints: () => ({ handle: { x: 0, y: -50 } }),
         nodeUprightRotateHandleControlPoints: () => ({ handle: { x: 0, y: -50 } }),
         nodeUsesUprightStaticSelectionOutline: () => false,
-        requireEditMode: () => true,
         screenToSvgPoint: (_svg: unknown, x: number, y: number) => ({ x, y }),
         setTransformDrag,
         snapshotSingleTransformNode: (current: typeof node) => ({
@@ -89,7 +88,6 @@ describe("line-segment bus resize policy", () => {
       nodeRotateHandleControlPoints: () => ({ handle: { x: 0, y: -50 } }),
       nodeUprightRotateHandleControlPoints: () => ({ handle: { x: 0, y: -50 } }),
       nodeUsesUprightStaticSelectionOutline: () => false,
-      requireEditMode: () => true,
       screenToSvgPoint: (_svg: unknown, x: number, y: number) => ({ x, y }),
       setTransformDrag,
       snapshotSingleTransformNode: vi.fn(),

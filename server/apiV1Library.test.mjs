@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   handleV1Library,
+  handleV1LibraryUnified,
   handleV1LibraryCategories,
   handleV1LibraryDevices,
   handleV1LibraryMeasurements,
@@ -201,6 +202,44 @@ describe("handleV1Library 聚合", () => {
     const { request, response } = ctx();
     await handleV1Library({ request, response });
     expect(response.statusCode).toBe(500);
+  });
+});
+
+describe("handleV1LibraryUnified", () => {
+  test("part=categories 复用分类 handler", async () => {
+    readDeviceLibraryConfig.mockResolvedValue(fullLib);
+    const { request, response } = ctx();
+    await handleV1LibraryUnified({
+      request,
+      response,
+      url: new URL("http://127.0.0.1/webgrp/v1/library?part=categories")
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.jsonBody().data.categories.map((item) => item.name)).toContain("自定义库A");
+  });
+
+  test("缺省 part 复用聚合响应", async () => {
+    readDeviceLibraryConfig.mockResolvedValue(fullLib);
+    readMeasurementConfig.mockResolvedValue(fullMeasurement);
+    const { request, response } = ctx();
+    await handleV1LibraryUnified({
+      request,
+      response,
+      url: new URL("http://127.0.0.1/webgrp/v1/library")
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.jsonBody().data.templates.customDeviceTemplates).toHaveLength(1);
+  });
+
+  test("未知 part 返回 bad-request", async () => {
+    const { request, response } = ctx();
+    await handleV1LibraryUnified({
+      request,
+      response,
+      url: new URL("http://127.0.0.1/webgrp/v1/library?part=unknown")
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.jsonBody().error.code).toBe("bad-request");
   });
 });
 

@@ -35,6 +35,7 @@ import {
   normalizeProjectLayers,
   normalizeSavedProjectRecordNames,
   savedProjectRecordNameKey,
+  savedSchemeIdOf,
   normalizeScaleValue,
   isBusNode,
   isStaticNode,
@@ -122,10 +123,6 @@ export const ReactFlowPreview = ENABLE_REACT_FLOW_PREVIEW ? lazy(() => import(".
 
 export type ToolMode = "select" | "connect" | "static-draw";
 
-export type InteractionMode = "browse" | "edit";
-
-export const INTERACTION_MODE_STORAGE_KEY = "graph-modeling-platform:interaction-mode";
-
 export const CANVAS_GRAPHIC_CONTEXT_MENU_TARGET_SELECTOR = [
   ".diagram-node",
   ".lod-node",
@@ -176,10 +173,6 @@ export const CANVAS_KEYBOARD_BLOCKING_SELECTOR = [
 
 export const CANVAS_KEYBOARD_SURFACE_SELECTOR = ".diagram-canvas, .canvas-scroll-surface";
 
-export function normalizeInteractionMode(value: unknown): InteractionMode {
-  return value === "edit" ? "edit" : "browse";
-}
-
 export function isCanvasGraphicContextMenuTarget(target: EventTarget | null) {
   return target instanceof Element && Boolean(target.closest(CANVAS_GRAPHIC_CONTEXT_MENU_TARGET_SELECTOR));
 }
@@ -197,28 +190,6 @@ export function canvasWheelTargetIsRenderedCanvas(target: EventTarget | null) {
 export function isCanvasKeyboardBlockingTarget(target: EventTarget | null) {
   const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
   return Boolean(element?.closest(CANVAS_KEYBOARD_BLOCKING_SELECTOR));
-}
-
-export function readStoredInteractionMode(): InteractionMode {
-  if (typeof window === "undefined") {
-    return "browse";
-  }
-  try {
-    return normalizeInteractionMode(window.localStorage.getItem(INTERACTION_MODE_STORAGE_KEY));
-  } catch {
-    return "browse";
-  }
-}
-
-export function writeStoredInteractionMode(mode: InteractionMode) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    window.localStorage.setItem(INTERACTION_MODE_STORAGE_KEY, mode);
-  } catch {
-    // Ignore storage failures; the visible mode state should still update.
-  }
 }
 
 export type StaticButtonVisualState = "hover" | "pressed" | "clicked";
@@ -599,10 +570,6 @@ export type UnsavedChangeAction = (
       schemeId: string;
       label: string;
       onLoaded?: () => void;
-    }
-  | {
-      kind: "enter-browse";
-      label: string;
     }
   | {
       kind: "export";
@@ -3630,12 +3597,15 @@ export function readActiveProjectPointer(): ActiveProjectPointer | null {
 
 export function savedSchemePathForId(
   schemes: SavedSchemeRecord[],
-  schemeId: string,
+  schemeId: number | string,
   parentPath: string[] = []
 ): string[] | null {
+  const normalizedSchemeId = typeof schemeId === "string" && /^\s*\d+\s*$/u.test(schemeId)
+    ? Number(schemeId.trim())
+    : schemeId;
   for (const scheme of schemes) {
     const path = [...parentPath, scheme.name];
-    if (scheme.id === schemeId) {
+    if (savedSchemeIdOf(scheme) === normalizedSchemeId) {
       return path;
     }
     const childPath = savedSchemePathForId(scheme.children ?? [], schemeId, path);
@@ -3698,7 +3668,7 @@ export function activeProjectPointerPayload(
   }
   return {
     activeProjectName: found.project.name,
-    activeSchemePath: savedSchemePathForId(schemes, found.scheme.id) ?? [found.scheme.name]
+    activeSchemePath: savedSchemePathForId(schemes, savedSchemeIdOf(found.scheme) ?? "") ?? [found.scheme.name]
   };
 }
 
@@ -3796,7 +3766,7 @@ export function saveImageAsset(id: string, dataUrl: string) {
     // 与读侧 readImageAssets 的 catch 对称：存储不可用/配额写满时不抛。
     // 写侧是调用链上的一环（如图标库上传失败后的本地兜底），抛出去会打断
     // 那一整批图片的处理；调用方自己持有 dataUrl，丢的只是刷新后的持久化。
-    // 同 writeStoredInteractionMode / writeRefreshRecoveryProject：静默吞掉，不造新错误类型。
+    // 与其他本地存储写入保持一致：静默吞掉，不造新错误类型。
   }
 }
 

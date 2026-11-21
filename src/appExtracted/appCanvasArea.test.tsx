@@ -172,7 +172,6 @@ function baseScope(anchor: { x: number; y: number }, transform: string) {
     multiNodeDragging: false,
     singleNodeDragging: false,
     isEditMode: false,
-    isBrowseMode: false,
     isReadonlyCanvasMode: false,
     mode: "select",
     nodeLabelDrag: null,

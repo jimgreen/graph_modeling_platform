@@ -81,7 +81,7 @@ describe("方案目录读不到时的模型定位", () => {
 
   test("★ 导出适配层同样不再把它说成「模型不存在」", async () => {
     const response = await fetch(
-      `${baseUrl}${apiPath(`/v1/schemes/model/cim-xml?schemePath=${encodeURIComponent(JSON.stringify([UNREADABLE_SCHEME]))}&name=${encodeURIComponent("模型一")}`)}`
+      `${baseUrl}${apiPath(`/v1/schemes/model/export?format=cim-xml&schemePath=${encodeURIComponent(JSON.stringify([UNREADABLE_SCHEME]))}&name=${encodeURIComponent("模型一")}`)}`
     );
     expect(response.status).not.toBe(404);
   });

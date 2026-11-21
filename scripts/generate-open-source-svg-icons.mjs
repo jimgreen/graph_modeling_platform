@@ -4,9 +4,10 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { escapeXmlFull as escapeXml } from "../shared/xmlEscape.mjs";
+import { configuredDataDir } from "../server/config.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const outputDir = path.join(rootDir, "data", "icon-library", "open-source-svg");
+const outputDir = path.join(configuredDataDir, "icon-library", "open-source-svg");
 const tempDir = path.join(rootDir, "tmp", "open-source-svg-icons");
 const sourcePackDir = path.join(tempDir, "pack");
 const sourceExtractDir = path.join(tempDir, "extract");

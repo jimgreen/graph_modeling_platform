@@ -21,11 +21,10 @@ function createScope(over: Record<string, any> = {}) {
     setStaticButtonVisual: vi.fn(),
     staticButtonPointerRef: { current: null as any },
     setStaticButtonFeedback: vi.fn(),
-    isBrowseMode: true,
     isStaticButtonEnabledForNode: vi.fn(() => true),
     staticDrawing: false,
     connectSource: null,
-    mode: "browse",
+    mode: "select",
     flattenSavedSchemes: vi.fn((schemes: any[]) => schemes),
     schemes: [],
     ...over
@@ -136,7 +135,7 @@ describe("createBeginStaticButtonPointerFeedback", () => {
   const event = { clientX: 10, clientY: 20 };
   const node = { id: "n1" } as any;
 
-  test("浏览模式下按下会记下指针并点亮按钮", () => {
+  test("按下会记下指针并点亮按钮", () => {
     const scope = createScope();
 
     scope.beginStaticButtonPointerFeedback(event as any, node);
@@ -144,15 +143,6 @@ describe("createBeginStaticButtonPointerFeedback", () => {
     expect(scope.staticButtonPointerRef.current).toEqual({ nodeId: "n1", clientX: 10, clientY: 20, moved: false });
     // setStaticButtonFeedback 走的是真实工厂，最终落到 setStaticButtonVisual
     expect(scope.setStaticButtonVisual).toHaveBeenCalledWith({ nodeId: "n1", state: "pressed" });
-  });
-
-  test("非浏览模式不响应", () => {
-    const scope = createScope({ isBrowseMode: false });
-
-    scope.beginStaticButtonPointerFeedback(event as any, node);
-
-    expect(scope.staticButtonPointerRef.current).toBeNull();
-    expect(scope.setStaticButtonVisual).not.toHaveBeenCalled();
   });
 
   test("按钮未启用时不响应", () => {

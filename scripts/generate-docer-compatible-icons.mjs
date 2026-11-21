@@ -2,9 +2,11 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { escapeXmlFull as escapeXml } from "../shared/xmlEscape.mjs";
+import { configuredDataDir } from "../server/config.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const outputDir = path.join(rootDir, "data", "icon-library", "docer-free-compatible");
+const outputDir = path.join(configuredDataDir, "icon-library", "docer-free-compatible");
+const dataRoot = configuredDataDir;
 
 const commonAttrs =
   'fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"';
@@ -2566,7 +2568,7 @@ const sourceManifestCache = new Map();
 
 async function readSourceManifest(libraryId) {
   if (!sourceManifestCache.has(libraryId)) {
-    const manifestPath = path.join(rootDir, "data", "icon-library", libraryId, "manifest.json");
+    const manifestPath = path.join(dataRoot, "icon-library", libraryId, "manifest.json");
     sourceManifestCache.set(libraryId, JSON.parse(await readFile(manifestPath, "utf8")));
   }
   return sourceManifestCache.get(libraryId);
@@ -2667,7 +2669,7 @@ ${identityMark}
 async function renderReusableExternalIcon(icon, category, ref) {
   const { category: sourceCategory, icon: sourceIcon } = await findExternalSourceIcon(ref);
   const sourceSvg = await readFile(
-    path.join(rootDir, "data", "icon-library", ref.libraryId, ref.file),
+    path.join(dataRoot, "icon-library", ref.libraryId, ref.file),
     "utf8",
   );
   const sourceName = sourceIcon.sourceName || sourceIcon.name || sourceIcon.id || path.basename(ref.file, ".svg");

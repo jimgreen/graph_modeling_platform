@@ -12,7 +12,7 @@ export const AppProjectDialogs = memo(function AppProjectDialogs({ scope }: AppP
   const __appScope = scope;
   const {
     Download, FileInput, UserCustomizationManagerDialog, WindowCloseButton, cancelGlobalLinePlacement, cancelGlobalLineTransition, closeLibraryPackageDialog, confirmGlobalLinePlacement,
-    confirmGlobalLineTransition, confirmLibraryPackageDialog, globalLinePlacementCandidates, globalLinePlacementConflictMessageForId, globalLinePlacementDialog, globalLineRepairCandidate, globalLineTransitionDialog, isBrowseMode,
+    confirmGlobalLineTransition, confirmLibraryPackageDialog, globalLinePlacementCandidates, globalLinePlacementConflictMessageForId, globalLinePlacementDialog, globalLineRepairCandidate, globalLineTransitionDialog,
     libraryPackageDialogMode, libraryPackageDialogOpen, libraryPackageDialogScope, libraryPackageDialogScopeOptions, pendingModelImportConflict, pendingRecordPasteConflict, pendingSchemeImportConflict, pendingUnsavedAction,
     projectName, renderMeasurementConfigDialog, renderMeasurementEditorDialog, resolveDuplicateModelImport, resolveDuplicateSchemeImport, resolveRecordPasteConflict, resolveUnsavedChangeAction, saveCurrentProject,
     savedUndoStackLengthRef, setGlobalLinePlacementDialog, setHasUnsavedChanges, setLibraryPackageDialogMode, setLibraryPackageDialogScope, setUnsavedChangesDialogOpen, undoLastOperation, undoStack,
@@ -65,7 +65,7 @@ export const AppProjectDialogs = memo(function AppProjectDialogs({ scope }: AppP
               <button
                 type="button"
                 className="primary"
-                disabled={libraryPackageDialogMode === "import" && isBrowseMode}
+                disabled={libraryPackageDialogMode === "import"}
                 onClick={() => void confirmLibraryPackageDialog?.()}
               >
                 {libraryPackageDialogMode === "import" ? "导入" : "导出"}
@@ -296,11 +296,11 @@ export const AppProjectDialogs = memo(function AppProjectDialogs({ scope }: AppP
             <div className="unsaved-change-actions">
               {pendingUnsavedAction.kind !== "export" && (
                 <button type="button" disabled={pendingUnsavedActionResolving} onClick={() => resolveUnsavedChangeAction("discard")}>
-                  {pendingUnsavedAction.kind === "enter-browse" ? "不保存直接浏览" : "不保存继续切换/关闭"}
+                  不保存继续切换/关闭
                 </button>
               )}
               <button type="button" disabled={pendingUnsavedActionResolving} onClick={() => resolveUnsavedChangeAction("save")}>
-                {pendingUnsavedActionResolving ? "正在保存..." : pendingUnsavedAction.kind === "enter-browse" ? "保存后浏览" : pendingUnsavedAction.kind === "export" ? "保存后导出" : "保存后切换/关闭"}
+                {pendingUnsavedActionResolving ? "正在保存..." : pendingUnsavedAction.kind === "export" ? "保存后导出" : "保存后切换/关闭"}
               </button>
               <button type="button" disabled={pendingUnsavedActionResolving} onClick={() => resolveUnsavedChangeAction("cancel")}>退出操作</button>
             </div>

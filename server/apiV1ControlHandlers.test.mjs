@@ -26,6 +26,7 @@ import {
   handleControlExportEDeviceDefinition,
   handleControlImportEDeviceDefinition,
   handleControlModelCreate,
+  handleControlModelSwitch,
   handleControlSave,
   handleControlSchemeCreate,
   handleControlTemplateSaveFromSelection,
@@ -181,9 +182,9 @@ describe("handleControlSchemeCreate", () => {
     expect(firstCallParams(ctx)).not.toHaveProperty("parentSchemeId");
   });
 
-  test("parentSchemeId 不校验形状，原样透传", async () => {
-    const { ctx } = await run(handleControlSchemeCreate, { body: { name: "新方案", parentSchemeId: { id: "S1" } } });
-    expect(firstCallParams(ctx).parentSchemeId).toEqual({ id: "S1" });
+  test("parentSchemeId 规范化为正安全整数", async () => {
+    const { ctx } = await run(handleControlSchemeCreate, { body: { name: "新方案", parentSchemeId: "42" } });
+    expect(firstCallParams(ctx).parentSchemeId).toBe(42);
   });
 });
 
@@ -211,12 +212,59 @@ describe("handleControlModelCreate", () => {
     expectBadRequest(response, "name 必填");
   });
 
-  test("schemeId 缺省不下发，给了原样透传", async () => {
+  test("schemeId 缺省不下发，给了数字后规范化透传", async () => {
     const without = await run(handleControlModelCreate, { body: { name: "模型1", modelType: "厂站" } });
     expect(firstCallParams(without.ctx)).not.toHaveProperty("schemeId");
 
-    const with_ = await run(handleControlModelCreate, { body: { name: "模型1", modelType: "厂站", schemeId: "S1" } });
-    expect(firstCallParams(with_.ctx).schemeId).toBe("S1");
+    const with_ = await run(handleControlModelCreate, { body: { name: "模型1", modelType: "厂站", schemeId: "42" } });
+    expect(firstCallParams(with_.ctx).schemeId).toBe(42);
+  });
+
+  test("schemeId 规范化后透传", async () => {
+    const { response, ctx } = await run(handleControlModelCreate, {
+      body: { name: "模型1", modelType: "厂站", schemeId: "42" }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(firstCallParams(ctx)).toEqual({ name: "模型1", modelType: "厂站", schemeId: 42 });
+  });
+
+  test("schemeId 非正安全整数 → 400 且不下发", async () => {
+    for (const schemeId of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "x", {}]) {
+      const { response, ctx } = await run(handleControlModelCreate, { body: { name: "模型1", modelType: "厂站", schemeId } });
+      expectBadRequest(response, "schemeId");
+      expectNoCall(ctx);
+    }
+  });
+});
+
+describe("handleControlModelSwitch / schemeId", () => {
+  test("schemeId + name 转发给浏览器控制流", async () => {
+    const { response, ctx } = await run(handleControlModelSwitch, { body: { schemeId: 42, name: "模型1" } });
+    expect(response.statusCode).toBe(200);
+    expect(firstCallName(ctx)).toBe("control.model.switch");
+    expect(firstCallParams(ctx)).toEqual({ schemeId: 42, name: "模型1" });
+  });
+
+  test("schemeId 无效或缺少 name → 400 且不下发", async () => {
+    for (const body of [
+      { schemeId: 0, name: "模型1" },
+      { schemeId: "bad", name: "模型1" },
+      { schemeId: 42 }
+    ]) {
+      const { response, ctx } = await run(handleControlModelSwitch, { body });
+      expectBadRequest(response, body.schemeId === 42 ? "schemeId + name" : "schemeId");
+      expectNoCall(ctx);
+    }
+  });
+
+  test("schemeId 与无效 schemePath 混传 → 400 且不忽略路径", async () => {
+    for (const schemePath of ["父方案", [], [" "]]) {
+      const { response, ctx } = await run(handleControlModelSwitch, {
+        body: { schemeId: 42, schemePath, name: "模型1" }
+      });
+      expectBadRequest(response, "schemePath");
+      expectNoCall(ctx);
+    }
   });
 });
 

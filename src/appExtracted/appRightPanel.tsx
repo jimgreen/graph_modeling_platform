@@ -235,7 +235,6 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     inspectorTopologyEntry,
     invalidEnumOptionLabel,
     Italic,
-    isBrowseMode,
     isBusNode,
     isStaticBoxLikeNode,
     layers,
@@ -381,7 +380,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
             value={currentValue}
             displayValue={formatAtMostThreeDecimals(currentValue)}
             modified={Boolean(savedNode) && !parameterValuesEqual(currentValue, savedValue)}
-            disabled={isBrowseMode}
+
             options={options.map((level) => ({ value: level, label: level }))}
             onCommit={(nextValue) => {
                 if (nextValue === currentValue) {
@@ -439,7 +438,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
             value={normalizedCurrent}
             displayValue={formatAtMostThreeDecimals(normalizedCurrent)}
             modified={isInspectorParamModified("vbase", normalizedCurrent)}
-            disabled={isBrowseMode}
+
             options={options.map((level) => ({ value: level, label: level }))}
             onCommit={(nextValue) => {
                 if (nextValue === normalizedCurrent) {
@@ -500,7 +499,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
         <td>
           <InlineEditableValue
             value={node.containerId ?? ""}
-            disabled={isBrowseMode}
+
             options={containerSelectItems}
             onCommit={(nextValue) => commitNodeContainerId(node.id, nextValue || undefined)}
           />
@@ -523,7 +522,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
         <td>
           <InlineEditableValue
             value={gateway}
-            disabled={isBrowseMode}
+
             options={[{ value: "0", label: "否" }, { value: "1", label: "是" }]}
             onCommit={(nextValue) => updateParam("is_gateway", nextValue === "1" ? "1" : "0")}
           />
@@ -534,7 +533,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
         <td className="container-bound-device-cell">
           <InlineEditableValue
             value={boundDeviceId}
-            disabled={isBrowseMode}
+
             options={[{ value: "", label: "未绑定" }, ...containerMemberSelectItems]}
             onCommit={(nextValue) => {
               // 绑定/解绑的容器量测组同步在 updateParam 内随归一化出口收敛
@@ -586,13 +585,13 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                   <tr>
                     {batchEditors.renderChineseParamHeader("canvasWidth")}
                     <td>
-                      <InlineEditableValue type="number" min={MIN_CANVAS_WIDTH} max={MAX_CANVAS_WIDTH} step="10" value={canvasSizeDraft.width} displayValue={formatAtMostThreeDecimals(String(canvasSizeDraft.width))} disabled={isBrowseMode} onCommit={(nextValue) => commitCanvasSizeDraft({ ...canvasSizeDraft, width: nextValue })}/>
+                      <InlineEditableValue type="number" min={MIN_CANVAS_WIDTH} max={MAX_CANVAS_WIDTH} step="10" value={canvasSizeDraft.width} displayValue={formatAtMostThreeDecimals(String(canvasSizeDraft.width))}  onCommit={(nextValue) => commitCanvasSizeDraft({ ...canvasSizeDraft, width: nextValue })}/>
                     </td>
                   </tr>
                   <tr>
                     {batchEditors.renderChineseParamHeader("canvasHeight")}
                     <td>
-                      <InlineEditableValue type="number" min={MIN_CANVAS_HEIGHT} max={MAX_CANVAS_HEIGHT} step="10" value={canvasSizeDraft.height} displayValue={formatAtMostThreeDecimals(String(canvasSizeDraft.height))} disabled={isBrowseMode} onCommit={(nextValue) => commitCanvasSizeDraft({ ...canvasSizeDraft, height: nextValue })}/>
+                      <InlineEditableValue type="number" min={MIN_CANVAS_HEIGHT} max={MAX_CANVAS_HEIGHT} step="10" value={canvasSizeDraft.height} displayValue={formatAtMostThreeDecimals(String(canvasSizeDraft.height))}  onCommit={(nextValue) => commitCanvasSizeDraft({ ...canvasSizeDraft, height: nextValue })}/>
                     </td>
                   </tr>
                   <tr>
@@ -601,7 +600,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       <InlineEditableValue
                         value={allowAutoExpandCanvas ? "allow" : "deny"}
                         displayValue={allowAutoExpandCanvas ? "允许" : "不允许"}
-                        disabled={isBrowseMode}
+
                         options={[{ value: "allow", label: "允许" }, { value: "deny", label: "不允许" }]}
                         onCommit={(value: string) => {
                 pushUndoSnapshot();
@@ -620,7 +619,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         size="small"
                         block
                         value={themeMode === "dark" ? "dark" : "light"}
-                        disabled={isBrowseMode}
+
                         options={[
                           { label: "白色", value: "light" },
                           { label: "黑色", value: "dark" },
@@ -641,13 +640,13 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                     <td>
                       <div className="image-field-actions">
                         <span className="inline-property-value read-only">{canvasBackgroundImage ? "已设置" : "未设置"}</span>
-                        <button type="button" disabled={isBrowseMode} onClick={() => setImageTarget({ kind: "canvas" })}>选择</button>
+                        <button type="button"  onClick={() => setImageTarget({ kind: "canvas" })}>选择</button>
                         <button type="button" onClick={() => {
                 pushUndoSnapshot();
                 setCanvasBackgroundImage("");
                 setCanvasBackgroundImageAssetId("");
                 __appScope.setCanvasBackgroundImageFit?.("cover");
-            }} disabled={isBrowseMode || !canvasBackgroundImage}>
+            }} disabled={!canvasBackgroundImage}>
                           清除
                         </button>
                       </div>
@@ -659,7 +658,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       <InlineEditableValue
                         value={normalizeImageFitMode(__appScope.canvasBackgroundImageFit)}
                         displayValue={IMAGE_FIT_MODE_OPTIONS.find((option: { value: string; label: string }) => option.value === normalizeImageFitMode(__appScope.canvasBackgroundImageFit))?.label ?? normalizeImageFitMode(__appScope.canvasBackgroundImageFit)}
-                        disabled={isBrowseMode}
+
                         options={IMAGE_FIT_MODE_OPTIONS.map((option: { value: string; label: string }) => ({ value: option.value, label: option.label }))}
                         onCommit={(value: string) => {
                 pushUndoSnapshot();
@@ -675,7 +674,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         <InlineEditableValue
                           value={backgroundProjectId}
                           displayValue={backgroundProjectOptions.find(({ project }: { project: ModelNode; label: string }) => project.id === backgroundProjectId)?.label ?? "不使用背景页面"}
-                          disabled={isBrowseMode}
+
                           options={[
                             { value: "", label: "不使用背景页面" },
                             ...backgroundProjectOptions.map(({ project, label }: { project: ModelNode; label: string }) => ({ value: project.id, label }))
@@ -696,7 +695,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                 pushUndoSnapshot();
                 setBackgroundProjectId("");
                 setBackgroundLayerIds([]);
-            }} disabled={isBrowseMode || !backgroundProjectId} className="background-page-clear-btn">
+            }} disabled={!backgroundProjectId} className="background-page-clear-btn">
                           <Trash2 size={14} />
                         </button>
                       </div>
@@ -707,7 +706,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                     <td>
                       {backgroundProjectRecord ? (<div className="background-layer-checklist">
                           {backgroundLayerOptions.map((layer: ModelLayer) => (<label key={layer.id} className="background-layer-option">
-                              <input type="checkbox" checked={backgroundLayerIds.includes(layer.id)} disabled={isBrowseMode} onChange={() => toggleBackgroundLayer(layer.id)}/>
+                              <input type="checkbox" checked={backgroundLayerIds.includes(layer.id)}  onChange={() => toggleBackgroundLayer(layer.id)}/>
                               <span>{layer.name}</span>
                             </label>))}
                           {backgroundLayerOptions.length === 0 && <span className="muted-inline-text">背景页面没有可配置图层</span>}
@@ -720,7 +719,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       <InlineEditableValue
                         value={powerUnit}
                         displayValue={powerUnit}
-                        disabled={isBrowseMode}
+
                         options={POWER_UNIT_OPTIONS.map((unit: string) => ({ value: unit, label: unit }))}
                         onCommit={(value: string) => {
                 pushUndoSnapshot();
@@ -735,7 +734,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       <InlineEditableValue
                         value={voltageUnit}
                         displayValue={voltageUnit}
-                        disabled={isBrowseMode}
+
                         options={VOLTAGE_UNIT_OPTIONS.map((unit: string) => ({ value: unit, label: unit }))}
                         onCommit={(value: string) => {
                 pushUndoSnapshot();
@@ -750,7 +749,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       <InlineEditableValue
                         value={currentUnit}
                         displayValue={currentUnit}
-                        disabled={isBrowseMode}
+
                         options={CURRENT_UNIT_OPTIONS.map((unit: string) => ({ value: unit, label: unit }))}
                         onCommit={(value: string) => {
                 pushUndoSnapshot();
@@ -768,7 +767,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                           step="0.1"
                           value={powerBaseValue}
                           displayValue={formatAtMostThreeDecimals(String(powerBaseValue))}
-                          disabled={isBrowseMode}
+
                           onCommit={(nextValue) => {
                 pushUndoSnapshot();
                 const numericValue = Number(nextValue);
@@ -780,7 +779,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                   <tr>
                     {batchEditors.renderChineseParamHeader("subcontrolarea")}
                     <td>
-                      <InlineEditableValue type="text" value={subcontrolarea} displayValue={subcontrolarea} disabled={isBrowseMode} onCommit={(nextValue) => {
+                      <InlineEditableValue type="text" value={subcontrolarea} displayValue={subcontrolarea}  onCommit={(nextValue) => {
                 pushUndoSnapshot();
                 setSubcontrolarea(nextValue);
             }}/>
@@ -792,7 +791,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       <InlineEditableValue
                         value={modelType}
                         displayValue={modelType || "请选择"}
-                        disabled={isBrowseMode}
+
                         options={[
                           // 与「新建模型」弹窗逐项一致的清单(model.ts MODEL_TYPES 单源,不含「请选择」空项 ——
                           // 轮 20 裁决两侧逐项一致):此前此处硬编码三项,少了「微网/其他」,
@@ -824,7 +823,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                   {(modelType === "厂站" || modelType === "馈线" || modelType === "台区") && (<tr>
                     {batchEditors.renderChineseParamHeader("substation")}
                     <td>
-                      <InlineEditableValue type="text" value={substation} displayValue={substation} disabled={isBrowseMode} onCommit={(nextValue) => {
+                      <InlineEditableValue type="text" value={substation} displayValue={substation}  onCommit={(nextValue) => {
                 pushUndoSnapshot();
                 setSubstation(nextValue);
             }}/>
@@ -833,7 +832,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                   {(modelType === "馈线" || modelType === "台区") && (<tr>
                     {batchEditors.renderChineseParamHeader("feeder")}
                     <td>
-                      <InlineEditableValue type="text" value={feeder} displayValue={feeder} disabled={isBrowseMode} onCommit={(nextValue) => {
+                      <InlineEditableValue type="text" value={feeder} displayValue={feeder}  onCommit={(nextValue) => {
                 pushUndoSnapshot();
                 setFeeder(nextValue);
             }}/>
@@ -842,7 +841,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                   {modelType === "台区" && (<tr>
                     {batchEditors.renderChineseParamHeader("taiqu", "台区")}
                     <td>
-                      <InlineEditableValue type="text" value={taiqu} displayValue={taiqu} disabled={isBrowseMode} onCommit={(nextValue) => {
+                      <InlineEditableValue type="text" value={taiqu} displayValue={taiqu}  onCommit={(nextValue) => {
                 pushUndoSnapshot();
                 setTaiqu(nextValue);
             }}/>
@@ -907,17 +906,17 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                     </tr>
                     <tr>
                       {batchEditors.renderChineseParamHeader("graph_x", "X坐标")}
-                      <td><InlineEditableValue type="number" value={Math.round(inspectorSelectedNode.position.x)} displayValue={formatAtMostThreeDecimals(String(Math.round(inspectorSelectedNode.position.x)))} disabled={isBrowseMode} onCommit={(nextValue) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, x: Number(nextValue) } })}/></td>
+                      <td><InlineEditableValue type="number" value={Math.round(inspectorSelectedNode.position.x)} displayValue={formatAtMostThreeDecimals(String(Math.round(inspectorSelectedNode.position.x)))}  onCommit={(nextValue) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, x: Number(nextValue) } })}/></td>
                     </tr>
                     <tr>
                       {batchEditors.renderChineseParamHeader("graph_y", "Y坐标")}
-                      <td><InlineEditableValue type="number" value={Math.round(inspectorSelectedNode.position.y)} displayValue={formatAtMostThreeDecimals(String(Math.round(inspectorSelectedNode.position.y)))} disabled={isBrowseMode} onCommit={(nextValue) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, y: Number(nextValue) } })}/></td>
+                      <td><InlineEditableValue type="number" value={Math.round(inspectorSelectedNode.position.y)} displayValue={formatAtMostThreeDecimals(String(Math.round(inspectorSelectedNode.position.y)))}  onCommit={(nextValue) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, y: Number(nextValue) } })}/></td>
                     </tr>
                     {isStaticBoxLikeNode(inspectorSelectedNode) && (<>
                         <tr>
                           {batchEditors.renderChineseParamHeader("staticWidth", "宽度")}
                           <td>
-                            <InlineEditableValue type="number" min="4" max={MAX_CANVAS_WIDTH} step="1" value={Math.round(inspectorSelectedNode.size.width * 10) / 10} displayValue={formatAtMostThreeDecimals(String(Math.round(inspectorSelectedNode.size.width * 10) / 10))} disabled={isBrowseMode} onCommit={(nextValue) => {
+                            <InlineEditableValue type="number" min="4" max={MAX_CANVAS_WIDTH} step="1" value={Math.round(inspectorSelectedNode.size.width * 10) / 10} displayValue={formatAtMostThreeDecimals(String(Math.round(inspectorSelectedNode.size.width * 10) / 10))}  onCommit={(nextValue) => {
                             const width = normalizeStaticBoxDimension(Number(nextValue), inspectorSelectedNode.size.width, MAX_CANVAS_WIDTH);
                             updateSelectedNode({ size: { ...inspectorSelectedNode.size, width: width } });
                         }}/>
@@ -926,7 +925,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         <tr>
                           {batchEditors.renderChineseParamHeader("staticHeight", "高度")}
                           <td>
-                            <InlineEditableValue type="number" min="4" max={MAX_CANVAS_HEIGHT} step="1" value={Math.round(inspectorSelectedNode.size.height * 10) / 10} displayValue={formatAtMostThreeDecimals(String(Math.round(inspectorSelectedNode.size.height * 10) / 10))} disabled={isBrowseMode} onCommit={(nextValue) => {
+                            <InlineEditableValue type="number" min="4" max={MAX_CANVAS_HEIGHT} step="1" value={Math.round(inspectorSelectedNode.size.height * 10) / 10} displayValue={formatAtMostThreeDecimals(String(Math.round(inspectorSelectedNode.size.height * 10) / 10))}  onCommit={(nextValue) => {
                             const height = normalizeStaticBoxDimension(Number(nextValue), inspectorSelectedNode.size.height, MAX_CANVAS_HEIGHT);
                             updateSelectedNode({ size: { ...inspectorSelectedNode.size, height: height } });
                         }}/>
@@ -935,11 +934,11 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       </>)}
                     <tr>
                       {batchEditors.renderChineseParamHeader("rotation")}
-                      <td><InlineEditableValue type="number" value={inspectorSelectedNode.rotation} displayValue={formatAtMostThreeDecimals(String(inspectorSelectedNode.rotation))} disabled={isBrowseMode} onCommit={(nextValue) => updateSelectedNode({ rotation: Number(nextValue) })}/></td>
+                      <td><InlineEditableValue type="number" value={inspectorSelectedNode.rotation} displayValue={formatAtMostThreeDecimals(String(inspectorSelectedNode.rotation))}  onCommit={(nextValue) => updateSelectedNode({ rotation: Number(nextValue) })}/></td>
                     </tr>
                     <tr>
                       {batchEditors.renderChineseParamHeader("scaleX")}
-                      <td><InlineEditableValue type="number" step="0.1" value={formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))} displayValue={formatAtMostThreeDecimals(formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode)))} disabled={isBrowseMode} onCommit={(nextValue) => {
+                      <td><InlineEditableValue type="number" step="0.1" value={formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))} displayValue={formatAtMostThreeDecimals(formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode)))}  onCommit={(nextValue) => {
                         const scaleX = normalizeScale(Number(nextValue), getNodeScaleX(inspectorSelectedNode));
                         const nextScaleY = selectedNodeAllowsIndependentScale
                             ? getNodeScaleY(inspectorSelectedNode)
@@ -960,7 +959,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       <td>
                         <InlineEditableValue
                           value={inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID}
-                          disabled={isBrowseMode}
+
                           options={layers.map((layer: ModelLayer) => ({ value: layer.id, label: layer.name }))}
                           displayValue={layers.find((layer: ModelLayer) => layer.id === (inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID))?.name ?? inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID}
                           onCommit={(value: string) => updateSelectedNode({ layerId: value })}
@@ -973,7 +972,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                           <td>
                             <InlineEditableValue
                               value={nodeLabelDisplayMode(inspectorSelectedNode)}
-                              disabled={isBrowseMode}
+
                               displayValue={{ always: "始终显示", hidden: "始终隐藏", follow: "跟随显示" }[nodeLabelDisplayMode(inspectorSelectedNode) as "always" | "hidden" | "follow"] ?? nodeLabelDisplayMode(inspectorSelectedNode)}
                               options={[
                                 { value: "always", label: "始终显示" },
@@ -987,7 +986,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         <tr>
                           {batchEditors.renderChineseParamHeader("_labelText")}
                           <td>
-                            <InlineEditableValue value={inspectorSelectedNode.params._labelText ?? inspectorSelectedNode.name} displayValue={inspectorSelectedNode.params._labelText ?? inspectorSelectedNode.name} disabled={isBrowseMode} onCommit={(nextValue) => updateParam("_labelText", nextValue)}/>
+                            <InlineEditableValue value={inspectorSelectedNode.params._labelText ?? inspectorSelectedNode.name} displayValue={inspectorSelectedNode.params._labelText ?? inspectorSelectedNode.name}  onCommit={(nextValue) => updateParam("_labelText", nextValue)}/>
                           </td>
                         </tr>
                         <tr>
@@ -1001,7 +1000,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         <tr>
                           {batchEditors.renderChineseParamHeader("_labelFontSize")}
                           <td>
-                            <InlineEditableValue type="number" min="6" max="96" value={inspectorSelectedNode.params._labelFontSize || String(DEFAULT_DEVICE_LABEL_FONT_SIZE)} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params._labelFontSize || String(DEFAULT_DEVICE_LABEL_FONT_SIZE))} disabled={isBrowseMode} onCommit={(nextValue) => updateParam("_labelFontSize", nextValue)}/>
+                            <InlineEditableValue type="number" min="6" max="96" value={inspectorSelectedNode.params._labelFontSize || String(DEFAULT_DEVICE_LABEL_FONT_SIZE)} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params._labelFontSize || String(DEFAULT_DEVICE_LABEL_FONT_SIZE))}  onCommit={(nextValue) => updateParam("_labelFontSize", nextValue)}/>
                           </td>
                         </tr>
                         <tr>
@@ -1009,7 +1008,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                           <td>
                             <InlineEditableValue
                               value={String(normalizeNodeLabelRotation(inspectorSelectedNode.params._labelRotation))}
-                              disabled={isBrowseMode}
+
                               displayValue={`${normalizeNodeLabelRotation(inspectorSelectedNode.params._labelRotation)} ${[0, 180].includes(normalizeNodeLabelRotation(inspectorSelectedNode.params._labelRotation)) ? "横排" : "纵排"}`}
                               options={[
                                 { value: "0", label: "0° 横排" },
@@ -1042,7 +1041,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                           <td>
                             <InlineEditableValue
                               value={nodeLabelTextAnchor(inspectorSelectedNode)}
-                              disabled={isBrowseMode}
+
                               displayValue={{ start: "左对齐", middle: "居中", end: "右对齐" }[nodeLabelTextAnchor(inspectorSelectedNode) as "start" | "middle" | "end"] ?? nodeLabelTextAnchor(inspectorSelectedNode)}
                               options={[
                                 { value: "start", label: "左对齐" },
@@ -1056,13 +1055,13 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         <tr>
                           {batchEditors.renderChineseParamHeader("_labelX")}
                           <td>
-                            <InlineEditableValue type="number" step="0.1" value={nodeLabelOffset(inspectorSelectedNode).x} displayValue={formatAtMostThreeDecimals(String(nodeLabelOffset(inspectorSelectedNode).x))} disabled={isBrowseMode} onCommit={(nextValue) => updateParam("_labelX", nextValue)}/>
+                            <InlineEditableValue type="number" step="0.1" value={nodeLabelOffset(inspectorSelectedNode).x} displayValue={formatAtMostThreeDecimals(String(nodeLabelOffset(inspectorSelectedNode).x))}  onCommit={(nextValue) => updateParam("_labelX", nextValue)}/>
                           </td>
                         </tr>
                         <tr>
                           {batchEditors.renderChineseParamHeader("_labelY")}
                           <td>
-                            <InlineEditableValue type="number" step="0.1" value={nodeLabelOffset(inspectorSelectedNode).y} displayValue={formatAtMostThreeDecimals(String(nodeLabelOffset(inspectorSelectedNode).y))} disabled={isBrowseMode} onCommit={(nextValue) => updateParam("_labelY", nextValue)}/>
+                            <InlineEditableValue type="number" step="0.1" value={nodeLabelOffset(inspectorSelectedNode).y} displayValue={formatAtMostThreeDecimals(String(nodeLabelOffset(inspectorSelectedNode).y))}  onCommit={(nextValue) => updateParam("_labelY", nextValue)}/>
                           </td>
                         </tr>
                         <tr>
@@ -1080,7 +1079,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                           <td>
                             <InlineEditableValue
                               value={staticNodeParticipatesInRoutingAvoidance(inspectorSelectedNode) ? "1" : "0"}
-                              disabled={isBrowseMode}
+
                               displayValue={staticNodeParticipatesInRoutingAvoidance(inspectorSelectedNode) ? "参与" : "不参与"}
                               options={[
                                 { value: "1", label: "参与" },
@@ -1092,7 +1091,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         </tr>
                         <tr>
                           {batchEditors.renderChineseParamHeader("text")}
-                          <td><InlineEditableValue multiline rows={4} value={inspectorSelectedNode.params.text || ""} displayValue={inspectorSelectedNode.params.text || ""} disabled={isBrowseMode} onCommit={(nextValue) => updateParam("text", nextValue)}/></td>
+                          <td><InlineEditableValue multiline rows={4} value={inspectorSelectedNode.params.text || ""} displayValue={inspectorSelectedNode.params.text || ""}  onCommit={(nextValue) => updateParam("text", nextValue)}/></td>
                         </tr>
                         <tr>
                           {batchEditors.renderChineseParamHeader("fontFamily")}
@@ -1100,7 +1099,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         </tr>
                         <tr>
                           <th title="fontSize">字体大小（100%）</th>
-                          <td><InlineEditableValue type="number" min="8" max="160" value={inspectorSelectedNode.params.fontSize || "24"} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params.fontSize || "24")} disabled={isBrowseMode} onCommit={(nextValue) => updateParam("fontSize", nextValue)}/></td>
+                          <td><InlineEditableValue type="number" min="8" max="160" value={inspectorSelectedNode.params.fontSize || "24"} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params.fontSize || "24")}  onCommit={(nextValue) => updateParam("fontSize", nextValue)}/></td>
                         </tr>
                         <tr>
                           <th>文字样式</th>
@@ -1132,7 +1131,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         </tr>
                         <tr>
                           {batchEditors.renderChineseParamHeader("lineWidth")}
-                          <td><InlineEditableValue type="number" min="0" max="20" value={inspectorSelectedNode.params.lineWidth || "2"} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params.lineWidth || "2")} disabled={isBrowseMode} onCommit={(nextValue) => updateParam("lineWidth", nextValue)}/></td>
+                          <td><InlineEditableValue type="number" min="0" max="20" value={inspectorSelectedNode.params.lineWidth || "2"} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params.lineWidth || "2")}  onCommit={(nextValue) => updateParam("lineWidth", nextValue)}/></td>
                         </tr>
                         <tr>
                           {batchEditors.renderChineseParamHeader("strokeStyle")}
@@ -1140,7 +1139,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         </tr>
                         <tr>
                           {batchEditors.renderChineseParamHeader("cornerRadius")}
-                          <td><InlineEditableValue type="number" min="0" max="999" value={inspectorSelectedNode.params.cornerRadius || "8"} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params.cornerRadius || "8")} disabled={isBrowseMode} onCommit={(nextValue) => updateParam("cornerRadius", nextValue)}/></td>
+                          <td><InlineEditableValue type="number" min="0" max="999" value={inspectorSelectedNode.params.cornerRadius || "8"} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params.cornerRadius || "8")}  onCommit={(nextValue) => updateParam("cornerRadius", nextValue)}/></td>
                         </tr>
                         <tr>
                           {batchEditors.renderChineseParamHeader("accentColor")}
@@ -1152,7 +1151,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         </tr>
                         <tr>
                           {batchEditors.renderChineseParamHeader("padding")}
-                          <td><InlineEditableValue type="number" min="0" max="120" value={inspectorSelectedNode.params.padding || "12"} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params.padding || "12")} disabled={isBrowseMode} onCommit={(nextValue) => updateParam("padding", nextValue)}/></td>
+                          <td><InlineEditableValue type="number" min="0" max="120" value={inspectorSelectedNode.params.padding || "12"} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params.padding || "12")}  onCommit={(nextValue) => updateParam("padding", nextValue)}/></td>
                         </tr>
                         <tr>
                           {batchEditors.renderChineseParamHeader("textAlign")}
@@ -1172,7 +1171,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         </tr>
                         <tr>
                           {batchEditors.renderChineseParamHeader("arrowSize")}
-                          <td><InlineEditableValue type="number" min="4" max="80" value={inspectorSelectedNode.params.arrowSize || "10"} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params.arrowSize || "10")} disabled={isBrowseMode} onCommit={(nextValue) => updateParam("arrowSize", nextValue)}/></td>
+                          <td><InlineEditableValue type="number" min="4" max="80" value={inspectorSelectedNode.params.arrowSize || "10"} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params.arrowSize || "10")}  onCommit={(nextValue) => updateParam("arrowSize", nextValue)}/></td>
                         </tr>
                         <tr>
                           {batchEditors.renderChineseParamHeader("handleColor")}
@@ -1180,7 +1179,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                         </tr>
                         <tr>
                           {batchEditors.renderChineseParamHeader("handleSize")}
-                          <td><InlineEditableValue type="number" min="3" max="40" value={inspectorSelectedNode.params.handleSize || "8"} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params.handleSize || "8")} disabled={isBrowseMode} onCommit={(nextValue) => updateParam("handleSize", nextValue)}/></td>
+                          <td><InlineEditableValue type="number" min="3" max="40" value={inspectorSelectedNode.params.handleSize || "8"} displayValue={formatAtMostThreeDecimals(inspectorSelectedNode.params.handleSize || "8")}  onCommit={(nextValue) => updateParam("handleSize", nextValue)}/></td>
                         </tr>
                         {batchEditors.renderStaticButtonActionEditor(inspectorSelectedNode)}
                         <tr>
@@ -1198,7 +1197,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                           <td>
                             <InlineEditableValue
                               value={normalizeImageFitMode(inspectorSelectedNode.params.backgroundImageFit)}
-                              disabled={isBrowseMode}
+
                               displayValue={IMAGE_FIT_MODE_OPTIONS.find((option: { value: string; label: string }) => option.value === normalizeImageFitMode(inspectorSelectedNode.params.backgroundImageFit))?.label ?? normalizeImageFitMode(inspectorSelectedNode.params.backgroundImageFit)}
                               options={IMAGE_FIT_MODE_OPTIONS.map((option: { value: string; label: string }) => ({ value: option.value, label: option.label }))}
                               onCommit={(value: string) => updateParam("backgroundImageFit", value)}
@@ -1226,7 +1225,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                           <td>
                             <InlineEditableValue
                               value={normalizeImageFitMode(inspectorSelectedNode.params.foregroundImageFit)}
-                              disabled={isBrowseMode}
+
                               displayValue={IMAGE_FIT_MODE_OPTIONS.find((option: { value: string; label: string }) => option.value === normalizeImageFitMode(inspectorSelectedNode.params.foregroundImageFit))?.label ?? normalizeImageFitMode(inspectorSelectedNode.params.foregroundImageFit)}
                               options={IMAGE_FIT_MODE_OPTIONS.map((option: { value: string; label: string }) => ({ value: option.value, label: option.label }))}
                               onCommit={(value: string) => updateParam("foregroundImageFit", value)}
@@ -1287,7 +1286,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             // 逐字等价。让 viewRow 带上定义会改变「已修改」标记的判定，属行为变更，未做。
                             ? isInspectorParamModified(row.paramKey, rawValue)
                             : false;
-                        const rowElement = row.key === "name" && selectedContainerParameterView.kind === "container" ? (<td><InlineEditableValue value={inspectorSelectedNode.name} displayValue={inspectorSelectedNode.name} modified={rowModified} disabled={isBrowseMode} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/></td>) : row.readonly || !row.paramKey ? (<td><span className={`inline-property-value read-only${rowModified ? " modified" : ""}`} data-modified={rowModified ? "true" : undefined}>{displayValue || "\u00a0"}</span></td>) : options ? (<td><InlineEditableValue value={rawValue} displayValue={options.find((option: string) => option === rawValue) ?? displayValue} options={options.map((option: string) => ({ value: option, label: option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option, disabled: option === optionConfig.invalidValue }))} modified={rowModified} disabled={isBrowseMode} onCommit={(value: string) => updateParam(row.paramKey!, value)}/></td>) : (<td><InlineEditableValue value={rawValue} displayValue={displayValue} modified={rowModified} disabled={isBrowseMode} onCommit={(nextValue) => updateParam(row.paramKey!, nextValue)}/></td>);
+                        const rowElement = row.key === "name" && selectedContainerParameterView.kind === "container" ? (<td><InlineEditableValue value={inspectorSelectedNode.name} displayValue={inspectorSelectedNode.name} modified={rowModified}  onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/></td>) : row.readonly || !row.paramKey ? (<td><span className={`inline-property-value read-only${rowModified ? " modified" : ""}`} data-modified={rowModified ? "true" : undefined}>{displayValue || "\u00a0"}</span></td>) : options ? (<td><InlineEditableValue value={rawValue} displayValue={options.find((option: string) => option === rawValue) ?? displayValue} options={options.map((option: string) => ({ value: option, label: option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option, disabled: option === optionConfig.invalidValue }))} modified={rowModified}  onCommit={(value: string) => updateParam(row.paramKey!, value)}/></td>) : (<td><InlineEditableValue value={rawValue} displayValue={displayValue} modified={rowModified}  onCommit={(nextValue) => updateParam(row.paramKey!, nextValue)}/></td>);
                         const rowFragment = (<tr key={row.key}>{batchEditors.renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}{rowElement}</tr>);
                         const containerRowAfter = rowIndex === containerRowIndex ? renderContainerRow() : null;
                         if (row.key === "name" && !hasVoltageParam) {
@@ -1345,7 +1344,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                             const modified = isInspectorParamModified(key, rawValue, definition);
                             // 容器「设备类型」行:中文下拉选 kind(提交即切 node.kind);普通设备仍走原编辑器
                             const isContainerDevTypeRow = isContainerNodeSelected && key === "dev_type";
-                            const inputElement = key === "name" ? (<InlineEditableValue value={inspectorSelectedNode.name} displayValue={inspectorSelectedNode.name} modified={modified} disabled={isBrowseMode} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : isContainerDevTypeRow ? (<ContainerKindSelectValue kind={rawValue} modified={modified} disabled={isBrowseMode} onCommitKind={(nextKind) => updateSelectedNode({ kind: nextKind })}/>) : readonly ? (<span className={`inline-property-value read-only${modified ? " modified" : ""}`} data-modified={modified ? "true" : undefined}>{displayValue || "\u00a0"}</span>) : batchEditors.renderParamEditor(key, rawValue, false, definition, undefined, modified);
+                            const inputElement = key === "name" ? (<InlineEditableValue value={inspectorSelectedNode.name} displayValue={inspectorSelectedNode.name} modified={modified}  onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : isContainerDevTypeRow ? (<ContainerKindSelectValue kind={rawValue} modified={modified}  onCommitKind={(nextKind) => updateSelectedNode({ kind: nextKind })}/>) : readonly ? (<span className={`inline-property-value read-only${modified ? " modified" : ""}`} data-modified={modified ? "true" : undefined}>{displayValue || "\u00a0"}</span>) : batchEditors.renderParamEditor(key, rawValue, false, definition, undefined, modified);
                             const hasVoltageParam = keys.some((candidate) => VOLTAGE_BASE_PARAM_KEYS.has(candidate));
                             const rowFragment = (<tr key={key}>
                                   {batchEditors.renderParamHeader(key, key, definition?.cnName === key ? PARAM_LABELS[key] ?? key : (definition?.cnName ?? PARAM_LABELS[key] ?? key))}

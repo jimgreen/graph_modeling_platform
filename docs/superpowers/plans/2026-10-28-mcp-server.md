@@ -97,8 +97,8 @@
 |---|------|------|----------|-------------|
 | 1 | `gmp_list_schemes` | 读 | GET /v1/schemes | readOnly |
 | 2 | `gmp_list_scheme_models` | 读 | GET /v1/schemes/models | readOnly |
-| 3 | `gmp_get_model_json` | 读 | GET /v1/schemes/model/json | readOnly |
-| 4 | `gmp_export_model` | 读 | GET /v1/schemes/model/{svg,e-file,cim-xml} | readOnly |
+| 3 | `gmp_get_model_json` | 读 | GET /v1/schemes/model/export?format=json | readOnly |
+| 4 | `gmp_export_model` | 读 | GET /v1/schemes/model/export?format=svg|e-file|cim-xml（自定义 E 模板为 POST） | readOnly |
 | 5 | `gmp_export_scheme_archive` | 读 | GET /v1/schemes/export | readOnly |
 | 6 | `gmp_send_model` | 写（外发） | POST /v1/schemes/model/send | 非幂等 |
 | 7 | `gmp_get_library` | 读 | GET /v1/library（+5 个分片，`part` 参数） | readOnly |
@@ -108,8 +108,8 @@
 | 11 | `gmp_get_runtime_selection` | 读 | GET /v1/runtime/selection | readOnly |
 | 12 | `gmp_get_runtime_tabs` | 读 | GET /v1/runtime/tabs（+ /tabs/{tab}） | readOnly |
 | 13 | `gmp_capture_runtime_screenshot` | 读 | GET /v1/runtime/screenshot | readOnly |
-| 14 | `gmp_get_runtime_svg` | 读 | GET /v1/runtime/svg | readOnly |
-| 15 | `gmp_get_runtime_e_file` | 读 | GET/POST /v1/runtime/e-file | readOnly |
+| 14 | `gmp_get_runtime_svg` | 读 | GET /v1/runtime/export?format=svg | readOnly |
+| 15 | `gmp_get_runtime_e_file` | 读 | GET/POST /v1/runtime/export?format=e-file | readOnly |
 | 16 | `gmp_add_device` | 写 | POST /v1/control/device/add | 非幂等 |
 | 17 | `gmp_create_scheme` | 写 | POST /v1/control/scheme/create | 非幂等 |
 | 18 | `gmp_create_model` | 写 | POST /v1/control/model/create | 非幂等 |

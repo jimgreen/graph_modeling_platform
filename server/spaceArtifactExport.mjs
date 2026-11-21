@@ -82,7 +82,9 @@ export async function buildSpaceArtifactArchive({ paths, eMode = "per-model", te
     globalLineRecords
   });
   if (eResult.error) {
-    throw new Error(eResult.error.message);
+    const error = new Error(eResult.error.message);
+    error.code = eResult.error.code;
+    throw error;
   }
   const eFileByRelativePath = new Map(
     eResult.files.map((item) => [item.relativePath, item.file])

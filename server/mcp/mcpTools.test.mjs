@@ -13,6 +13,7 @@
 //   绝不能当成通过（见 根 AGENTS.md「分域规则 · server」 的测试约定）。
 import { expect, test, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installDomShim } from "../domShim.mjs";
@@ -98,7 +99,10 @@ beforeAll(async () => {
   // 预置一个方案 + 一个模型：读类工具要真的读到东西，才算测到「桥 → v1」的通路
   const schemeDir = join(dataDir, "workspaces", "zhangsan", "schemes", "files", "方案A");
   mkdirSync(schemeDir, { recursive: true });
-  mkdirSync(join(dataDir, "workspaces", "zhangsan", "schemes", "files", "默认方案"), { recursive: true });
+  const defaultSchemeDir = join(dataDir, "workspaces", "zhangsan", "schemes", "files", "默认方案");
+  mkdirSync(defaultSchemeDir, { recursive: true });
+  writeFileSync(join(schemeDir, "scheme.json"), JSON.stringify({ schemeId: 41 }), "utf-8");
+  writeFileSync(join(defaultSchemeDir, "scheme.json"), JSON.stringify({ schemeId: 42 }), "utf-8");
   writeFileSync(
     join(schemeDir, "模型1.json"),
     JSON.stringify({ name: "模型1", idx: 1, nodes: [], edges: [] }),
@@ -173,6 +177,86 @@ test("gmp_list_scheme_models 按方案路径列出模型（数组入参 → v1 �
   const models = result.structuredContent.data.models;
   expect(Array.isArray(models)).toBe(true);
   expect(models.some((model) => model.name === "模型1")).toBe(true);
+});
+
+test("方案模型工具可用 schemeId 定位，并拒绝冲突的路径与编号", async () => {
+  const byNumber = await client.callTool({
+    name: "gmp_list_scheme_models",
+    arguments: { schemeId: 41 }
+  });
+  expect(byNumber.isError, JSON.stringify(byNumber.structuredContent)).toBeFalsy();
+  expect(byNumber.structuredContent.data.schemeId).toBe(41);
+  expect(byNumber.structuredContent.data.models.map((model) => model.name)).toEqual(["模型1"]);
+
+  const conflict = await client.callTool({
+    name: "gmp_list_scheme_models",
+    arguments: { schemePath: ["默认方案"], schemeId: 41 }
+  });
+  expect(conflict.isError).toBe(true);
+  expect(conflict.structuredContent.error.code).toBe("bad-request");
+});
+
+test("模型 JSON 与方案归档工具可用 schemeId 定位", async () => {
+  const model = await client.callTool({
+    name: "gmp_get_model_json",
+    arguments: { schemeId: 41, name: "模型1" }
+  });
+  expect(model.isError, JSON.stringify(model.structuredContent)).toBeFalsy();
+  expect(model.structuredContent.data.project.name).toBe("模型1");
+
+  const exported = await client.callTool({
+    name: "gmp_export_model",
+    arguments: { schemeId: 41, name: "模型1", format: "svg" }
+  });
+  expect(exported.isError, JSON.stringify(exported.structuredContent)).toBeFalsy();
+  expect(exported.structuredContent.data.text).toContain("<svg");
+
+  const archive = await client.callTool({
+    name: "gmp_export_scheme_archive",
+    arguments: { schemeId: 41 }
+  });
+  expect(archive.isError, JSON.stringify(archive.structuredContent)).toBeFalsy();
+  expect(archive.content.some((item) => item.type === "resource")).toBe(true);
+
+  const receiver = createHttpServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      response.writeHead(200, { "content-type": "text/plain" });
+      response.end("received");
+    });
+  });
+  await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = receiver.address();
+    const sent = await client.callTool({
+      name: "gmp_send_model",
+      arguments: {
+        schemeId: 41,
+        name: "模型1",
+        url: `http://127.0.0.1:${address.port}/receive`,
+        files: [{ kind: "json" }]
+      }
+    });
+    expect(sent.isError, JSON.stringify(sent.structuredContent)).toBeFalsy();
+    expect(sent.structuredContent.data.files.map((file) => file.kind)).toEqual(["json"]);
+  } finally {
+    await new Promise((resolve) => receiver.close(resolve));
+  }
+});
+
+test("保存模型拓扑检查与切换工具可用 schemeId 定位", async () => {
+  const topology = await client.callTool({
+    name: "gmp_check_topology",
+    arguments: { target: "saved", schemeId: 41, name: "模型1" }
+  });
+  expect(topology.isError, JSON.stringify(topology.structuredContent)).toBeFalsy();
+
+  const switched = await client.callTool({
+    name: "gmp_switch_model",
+    arguments: { schemeId: 41, name: "模型1" }
+  });
+  expect(switched.isError, JSON.stringify(switched.structuredContent)).toBeFalsy();
+  expect(switched.structuredContent.data.schemeId).toBe(41);
 });
 
 test("方案不存在时回 bad-request 语义的错误信封，且带「下一步」建议", async () => {

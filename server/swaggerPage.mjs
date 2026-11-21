@@ -13,6 +13,7 @@ import { SPACE_COOKIE_NAME } from "./spaceStore.mjs";
 //   注意：示例值存原始值（未编码），buildUrl 统一负责 encodeURIComponent，避免双重编码。
 const SP_DEFAULT = JSON.stringify(["默认方案"]);
 const SP_SUB = JSON.stringify(["默认方案", "1-1"]);
+const DEMO_SCHEME_ID = 987654321;
 const PNG_1X1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 // 联调接收端地址：「发送模型」示例的目标 URL 指向它，即可在 /swigger 里自测整条发送链路。
 // 按后端默认端口拼（改过 platform.config.json 的 backend.port 时按实际填写）。
@@ -57,35 +58,42 @@ const ENDPOINTS = [
   ]},
 
   // ---- 方案域（内部读写）----
-  { scope: "space", group: "方案（内部）", method: "GET", path: "/webgrp/schemes", desc: "方案树", query: [{ name: "includeProjects", desc: "1 时含完整 project 数据" }], response: "{schemes:[{name,updatedAt,projects,children}]}", examples: [
+  { scope: "space", group: "方案（内部）", method: "GET", path: "/webgrp/schemes", desc: "方案树（每个方案节点含当前空间内唯一的 schemeId）", query: [{ name: "includeProjects", desc: "1 时含完整 project 数据" }], response: "{schemes:[{schemeId,name,updatedAt,projects,children}]}", examples: [
     { label: "方案树摘要", params: {} },
     { label: "含完整 project", params: { q_includeProjects: "1" } }
   ]},
-  { scope: "space", group: "方案（内部）", method: "GET", path: "/webgrp/schemes/export", desc: "导出方案 ZIP；指定 template 时只导出该模板对应类型的模型", query: [{ name: "schemePath", desc: "encodeURIComponent(JSON.stringify(['方案A','子方案']))" }, { name: "template", desc: "可选：国网E格式|主网实时库|配网实时库|台区实时库" }], response: "<application/zip 二进制>", examples: [
+  { scope: "space", group: "方案（内部）", method: "GET", path: "/webgrp/schemes/export", desc: "导出方案 ZIP；可用 schemeId 或 schemePath 定位；指定 template 时只导出该模板对应类型的模型", query: [{ name: "schemeId", desc: "方案编号；可单独或与 schemePath 同时提供，同时提供时必须一致" }, { name: "schemePath", desc: "encodeURIComponent(JSON.stringify(['方案A','子方案']))；可单独或与 schemeId 同时提供，同时必须一致" }, { name: "template", desc: "可选：国网E格式|主网实时库|配网实时库|台区实时库" }], response: "<application/zip 二进制>", examples: [
     { label: "导出「默认方案」", params: { q_schemePath: SP_DEFAULT } },
-    { label: "导出子方案「1-1」", params: { q_schemePath: SP_SUB } }
+    { label: "导出子方案「1-1」", params: { q_schemePath: SP_SUB } },
+    { label: "按 schemeId 导出「默认方案」", params: { q_schemeId: DEMO_SCHEME_ID } }
   ]},
-  { scope: "space", group: "方案（内部）", method: "POST", path: "/webgrp/schemes/import", desc: "导入方案 ZIP（body 为二进制）", query: [{ name: "parentPath", desc: "父方案路径" }, { name: "fileName", desc: "文件名" }, { name: "mode", desc: "overwrite|check（默认 check）" }, { name: "targetName", desc: "目标方案名" }], body: "<binary zip>", response: "{ok,schemes,importedName,...}", examples: [
-    { label: "check 模式预检（需上传 zip）", params: { q_parentPath: SP_DEFAULT, q_fileName: "导入方案.zip", q_mode: "check", q_targetName: "导入的方案", __body__: "<binary zip>" } }
+  { scope: "space", group: "方案（内部）", method: "POST", path: "/webgrp/schemes/import", desc: "导入方案 ZIP（body 为二进制；导入的方案及子方案分配新编号）", query: [{ name: "parentPath", desc: "父方案路径；可单独或与 parentSchemeId 同时提供，同时提供时必须一致" }, { name: "parentSchemeId", desc: "父方案编号；可单独或与 parentPath 同时提供，同时提供时必须一致" }, { name: "fileName", desc: "文件名" }, { name: "mode", desc: "overwrite|check（默认 check）" }, { name: "targetName", desc: "目标方案名" }], body: "<binary zip>", response: "{ok,schemes,importedName,importedPath,schemeId,...}", examples: [
+    { label: "check 模式预检（需上传 zip）", params: { q_parentPath: SP_DEFAULT, q_fileName: "导入方案.zip", q_mode: "check", q_targetName: "导入的方案", __body__: "<binary zip>" } },
+    { label: "按父方案编号预检（需上传 zip）", params: { q_parentSchemeId: DEMO_SCHEME_ID, q_fileName: "导入方案.zip", q_mode: "check", q_targetName: "导入的方案", __body__: "<binary zip>" } }
   ]},
   { scope: "space", group: "方案（内部）", method: "PUT", path: "/webgrp/schemes", desc: "保存方案树", body: { schemes: [] }, response: "{ok:true,schemes,savedAt}", examples: [
     { label: "保存空方案树（会清空，慎用）", params: { __body__: { schemes: [] } } }
   ]},
-  { scope: "space", group: "方案（内部）", method: "GET", path: "/webgrp/schemes/project", desc: "读取单个模型", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名（或 projectName）" }], response: "{ok:true,project}", examples: [
+  { scope: "space", group: "方案（内部）", method: "GET", path: "/webgrp/schemes/project", desc: "读取单个模型", query: [{ name: "schemePath", desc: "方案路径；可单独或与 schemeId 同时提供，同时提供时必须一致" }, { name: "schemeId", desc: "方案编号；可单独或与 schemePath 同时提供，同时提供时必须一致" }, { name: "name", desc: "模型名（或 projectName）" }], response: "{ok:true,project}", examples: [
     { label: "读「图元连接」", params: { q_schemePath: SP_DEFAULT, q_name: "图元连接" } },
-    { label: "读「线路」", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } }
+    { label: "读「线路」", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } },
+    { label: "按 schemeId 读「线路」", params: { q_schemeId: DEMO_SCHEME_ID, q_name: "线路" } }
   ]},
-  { scope: "space", group: "方案（内部）", method: "PUT", path: "/webgrp/schemes/project", desc: "保存模型", body: { schemePath: ["默认方案"], name: "模型1", project: {} }, response: "{ok:true,project,savedAt}", examples: [
-    { label: "保存空模型到「默认方案/新模型」", params: { __body__: { schemePath: ["默认方案"], name: "新模型", project: { canvasWidth: 1920, canvasHeight: 1024, nodes: [], edges: [] } } } }
+  { scope: "space", group: "方案（内部）", method: "PUT", path: "/webgrp/schemes/project", desc: "保存模型；至少提供一个 schemePath 或 schemeId；同时提供时必须一致", body: { schemePath: ["默认方案"], schemeId: DEMO_SCHEME_ID, name: "模型1", project: {} }, response: "{ok:true,project,savedAt}", examples: [
+    { label: "保存空模型到「默认方案/新模型」", params: { __body__: { schemePath: ["默认方案"], name: "新模型", project: { canvasWidth: 1920, canvasHeight: 1024, nodes: [], edges: [] } } } },
+    { label: "按 schemeId 保存模型", params: { __body__: { schemeId: DEMO_SCHEME_ID, name: "编号示例模型", project: { canvasWidth: 1920, canvasHeight: 1024, nodes: [], edges: [] } } } }
   ]},
-  { scope: "space", group: "方案（内部）", method: "DELETE", path: "/webgrp/schemes/project", desc: "删除模型", body: { schemePath: ["默认方案"], name: "模型1" }, response: "{ok:true,savedAt}", examples: [
-    { label: "删除「未命名模型」", params: { __body__: { schemePath: ["默认方案"], name: "未命名模型" } } }
+  { scope: "space", group: "方案（内部）", method: "DELETE", path: "/webgrp/schemes/project", desc: "删除模型；至少提供一个 schemePath 或 schemeId；同时提供时必须一致", body: { schemePath: ["默认方案"], schemeId: DEMO_SCHEME_ID, name: "模型1" }, response: "{ok:true,savedAt}", examples: [
+    { label: "删除「未命名模型」", params: { __body__: { schemePath: ["默认方案"], name: "未命名模型" } } },
+    { label: "按 schemeId 删除「线路」", params: { __body__: { schemeId: DEMO_SCHEME_ID, name: "线路" } } }
   ]},
-  { scope: "space", group: "方案（内部）", method: "PUT", path: "/webgrp/schemes/scheme", desc: "保存方案目录", body: { schemePath: ["方案A"] }, response: "{ok:true,savedAt}", examples: [
-    { label: "保存方案目录「默认方案」", params: { __body__: { schemePath: ["默认方案"] } } }
+  { scope: "space", group: "方案（内部）", method: "PUT", path: "/webgrp/schemes/scheme", desc: "保存方案目录；新建时仅需 schemePath，重命名或移动时用 schemeId 标识来源、schemePath 表示目标位置", body: { schemePath: ["默认方案"], schemeId: DEMO_SCHEME_ID, previousSchemePath: ["默认方案"] }, response: "{ok:true,schemeId,savedAt}", examples: [
+    { label: "保存方案目录「默认方案」", params: { __body__: { schemePath: ["默认方案"] } } },
+    { label: "按 schemeId 更新方案目录", params: { __body__: { schemeId: DEMO_SCHEME_ID, schemePath: ["默认方案"], previousSchemePath: ["默认方案"] } } }
   ]},
-  { scope: "space", group: "方案（内部）", method: "DELETE", path: "/webgrp/schemes/scheme", desc: "删除方案目录", body: { schemePath: ["方案A"] }, response: "{ok:true,savedAt}", examples: [
-    { label: "删除子方案「1-1」", params: { __body__: { schemePath: ["默认方案", "1-1"] } } }
+  { scope: "space", group: "方案（内部）", method: "DELETE", path: "/webgrp/schemes/scheme", desc: "删除方案目录，支持 schemeId 或 schemePath", body: { schemePath: ["方案A"], schemeId: DEMO_SCHEME_ID }, response: "{ok:true,savedAt}", examples: [
+    { label: "删除子方案「1-1」", params: { __body__: { schemePath: ["默认方案", "1-1"] } } },
+    { label: "按 schemeId 删除方案", params: { __body__: { schemeId: DEMO_SCHEME_ID } } }
   ]},
 
   // ---- 配置域 ----
@@ -143,19 +151,21 @@ const ENDPOINTS = [
   ]},
 
   // ---- v1 方案域（第三方只读）----
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes", desc: "方案树（信封 {ok,data}）", query: [{ name: "includeProjects", desc: "1 时含完整 project" }], response: "{ok:true,data:{schemes:[...]}}", examples: [
+  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes", desc: "方案树（每个方案节点含当前空间内唯一的 schemeId；信封 {ok,data}）", query: [{ name: "includeProjects", desc: "1 时含完整 project" }], response: "{ok:true,data:{schemes:[{schemeId,...}]}}", examples: [
     { label: "方案树摘要", params: {} },
     { label: "含完整 project", params: { q_includeProjects: "1" } }
   ]},
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/hierarchy", desc: "纯层级树", response: "{ok:true,data:{nodes:[{name,children}]}}", examples: [
+  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/hierarchy", desc: "纯层级树（节点含 schemeId）", response: "{ok:true,data:{nodes:[{schemeId,name,children}]}}", examples: [
     { label: "层级树", params: {} }
   ]},
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/models", desc: "方案下模型列表", query: [{ name: "schemePath", desc: "方案路径" }], response: "{ok:true,data:{models:[{name,updatedAt}]}}", examples: [
+  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/models", desc: "方案下模型列表；至少提供一个 schemeId 或 schemePath；同时提供时必须一致，同时提供时必须指向同一方案", query: [{ name: "schemePath", desc: "方案路径；可单独或与 schemeId 同时提供，同时提供时必须一致" }, { name: "schemeId", desc: "当前空间内唯一的方案编号；可单独或与 schemePath 同时提供，同时提供时必须一致" }], response: "{ok:true,data:{schemeId,models:[{name,updatedAt}]}}", examples: [
     { label: "「默认方案」下模型", params: { q_schemePath: SP_DEFAULT } },
-    { label: "子方案「1-1」下模型", params: { q_schemePath: SP_SUB } }
+    { label: "子方案「1-1」下模型", params: { q_schemePath: SP_SUB } },
+    { label: "按 schemeId 列「默认方案」下模型", params: { q_schemeId: DEMO_SCHEME_ID } }
   ]},
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/export", desc: "导出方案 ZIP；指定 template 时只导出该模板对应类型的模型", query: [{ name: "schemePath", desc: "方案路径" }, { name: "template", desc: "可选：国网E格式|主网实时库|配网实时库|台区实时库" }], response: "<application/zip 二进制>", examples: [
-    { label: "导出「默认方案」", params: { q_schemePath: SP_DEFAULT } }
+  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/export", desc: "导出方案 ZIP；可用 schemeId 或 schemePath 定位；指定 template 时只导出该模板对应类型的模型", query: [{ name: "schemePath", desc: "方案路径；可单独或与 schemeId 同时提供，同时提供时必须一致" }, { name: "schemeId", desc: "当前空间内唯一的方案编号；可单独或与 schemePath 同时提供，同时提供时必须一致" }, { name: "template", desc: "可选：国网E格式|主网实时库|配网实时库|台区实时库" }], response: "<application/zip 二进制>", examples: [
+    { label: "导出「默认方案」", params: { q_schemePath: SP_DEFAULT } },
+    { label: "按 schemeId 导出「默认方案」", params: { q_schemeId: DEMO_SCHEME_ID } }
   ]},
   { scope: "space", group: "v1 空间派生导出", method: "GET", path: "/webgrp/v1/spaces/export-artifacts", desc: "导出当前空间全部模型的 E/SVG ZIP；eMode=per-model 时每模型一个 E，merged 时根目录额外生成 space.e", query: [
     { name: "eMode", desc: "可选，per-model（默认）| merged" },
@@ -164,30 +174,29 @@ const ENDPOINTS = [
     { label: "每模型 E + SVG", params: { q_eMode: "per-model" } },
     { label: "合并 space.e + 每模型 SVG", params: { q_eMode: "merged" } }
   ]},
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/json", desc: "模型 project JSON", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }], response: "{ok:true,data:{project}}", examples: [
-    { label: "「图元连接」JSON", params: { q_schemePath: SP_DEFAULT, q_name: "图元连接" } },
-    { label: "「线路」JSON", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } }
+  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/export", desc: "统一已保存模型导出入口；format=json|svg|e-file|cim-xml；至少提供一个 schemeId 或 schemePath，并提供 name", query: [{ name: "format", desc: "必填，json|svg|e-file|cim-xml" }, { name: "schemePath", desc: "方案路径；可单独或与 schemeId 同时提供，同时提供时必须一致" }, { name: "schemeId", desc: "当前空间内唯一的方案编号；可单独或与 schemePath 同时提供，同时提供时必须一致" }, { name: "name", desc: "模型名" }, { name: "colorMode", desc: "仅 format=svg：energy（默认）|voltage" }, { name: "encoding", desc: "format=svg/e-file 时可选 utf-8|gbk" }, { name: "template", desc: "仅 format=e-file：预定义模板名" }, { name: "modelId", desc: "仅 format=cim-xml：覆盖生成的模型 ID" }, { name: "strict", desc: "仅 format=cim-xml：1 时关键参数缺失返回 400" }], response: "按 format 返回 JSON/SVG/E/CIM", examples: [
+    { label: "「图元连接」JSON", params: { q_format: "json", q_schemePath: SP_DEFAULT, q_name: "图元连接" } },
+    { label: "「线路」JSON", params: { q_format: "json", q_schemePath: SP_DEFAULT, q_name: "线路" } },
+    { label: "按 schemeId 读取「线路」JSON", params: { q_format: "json", q_schemeId: DEMO_SCHEME_ID, q_name: "线路" } },
+    { label: "「线路」SVG", params: { q_format: "svg", q_schemePath: SP_DEFAULT, q_name: "线路" } },
+    { label: "按 schemeId 读取「线路」SVG", params: { q_format: "svg", q_schemeId: DEMO_SCHEME_ID, q_name: "线路" } },
+    { label: "「图元连接」SVG", params: { q_format: "svg", q_schemePath: SP_DEFAULT, q_name: "图元连接" } },
+    { label: "「线路」SVG（电压配色）", params: { q_format: "svg", q_schemePath: SP_DEFAULT, q_name: "线路", q_colorMode: "voltage" } },
+    { label: "「线路」SVG（GBK 编码）", params: { q_format: "svg", q_schemePath: SP_DEFAULT, q_name: "线路", q_encoding: "gbk" } },
+    { label: "「线路」E 文件（当前模板）", params: { q_format: "e-file", q_schemePath: SP_DEFAULT, q_name: "线路" } },
+    { label: "按 schemeId 读取「线路」E 文件", params: { q_format: "e-file", q_schemeId: DEMO_SCHEME_ID, q_name: "线路" } },
+    { label: "「线路」E 文件（配网实时库模板）", params: { q_format: "e-file", q_schemePath: SP_DEFAULT, q_name: "线路", q_template: "配网实时库" } },
+    { label: "「线路」CIM/XML", params: { q_format: "cim-xml", q_schemePath: SP_DEFAULT, q_name: "线路" } },
+    { label: "按 schemeId 读取「线路」CIM/XML", params: { q_format: "cim-xml", q_schemeId: DEMO_SCHEME_ID, q_name: "线路" } }
   ]},
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/svg", desc: "已保存模型 SVG（复用前端 buildSvgDocument，含图层/测量/状态图标；不含背景页；自带 XML 声明）", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }, { name: "colorMode", desc: "可选，energy（默认）|voltage" }, { name: "encoding", desc: "可选，utf-8（默认）|gbk" }], response: "<image/svg+xml>", examples: [
-    { label: "「线路」SVG", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } },
-    { label: "「图元连接」SVG", params: { q_schemePath: SP_DEFAULT, q_name: "图元连接" } },
-    { label: "「线路」SVG（电压配色）", params: { q_schemePath: SP_DEFAULT, q_name: "线路", q_colorMode: "voltage" } },
-    { label: "「线路」SVG（GBK 编码）", params: { q_schemePath: SP_DEFAULT, q_name: "线路", q_encoding: "gbk" } }
+  { scope: "space", group: "v1 方案域", method: "POST", path: "/webgrp/v1/schemes/model/export", desc: "统一已保存模型 E 文件自定义模板入口；固定 format=e-file，模板文本放在请求体", query: [{ name: "format", desc: "必填且只能是 e-file" }, { name: "schemePath", desc: "方案路径；可单独或与 schemeId 同时提供，同时提供时必须一致" }, { name: "schemeId", desc: "当前空间内唯一的方案编号；可单独或与 schemePath 同时提供，同时提供时必须一致" }, { name: "name", desc: "模型名" }, { name: "encoding", desc: "可选，gbk（默认）|utf-8" }], body: { templateText: "<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>" }, response: "<text/plain GBK 二进制>", examples: [
+    { label: "按自定义模板文本生成", params: { q_format: "e-file", q_schemePath: SP_DEFAULT, q_name: "线路", __body__: { templateText: "<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>" } } }
   ]},
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/e-file", desc: "已保存模型 E 文件（后端计算，默认 GBK，可选预定义模板）", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }, { name: "template", desc: "可选，预定义模板名（国网E格式|主网实时库|配网实时库|台区实时库）" }, { name: "encoding", desc: "可选，gbk（默认）|utf-8" }], response: "<text/plain GBK 二进制>", examples: [
-    { label: "「线路」E 文件（当前模板）", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } },
-    { label: "「线路」E 文件（配网实时库模板）", params: { q_schemePath: SP_DEFAULT, q_name: "线路", q_template: "配网实时库" } }
-  ]},
-  { scope: "space", group: "v1 方案域", method: "POST", path: "/webgrp/v1/schemes/model/e-file", desc: "已保存模型 E 文件（指定模板文本，后端计算）", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }, { name: "encoding", desc: "可选，gbk（默认）|utf-8" }], body: { templateText: "<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>" }, response: "<text/plain GBK 二进制>", examples: [
-    { label: "按自定义模板文本生成", params: { q_schemePath: SP_DEFAULT, q_name: "线路", __body__: { templateText: "<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>" } } }
-  ]},
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/cim-xml", desc: "已保存模型 CIM/XML（IEC 61970 CIM16）", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }, { name: "modelId", desc: "可选，覆盖生成的模型 ID" }, { name: "strict", desc: "可选，1 时关键参数缺失返回 400" }], response: "<application/xml 二进制>", examples: [
-    { label: "「线路」CIM/XML", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } }
-  ]},
-  { scope: "space", group: "v1 方案域", method: "POST", path: "/webgrp/v1/schemes/model/send", desc: "把已保存模型按所选格式 POST 到目标 URL（后端代理转发，multipart/form-data）；可选 templateName 指定 E 文件模板。⚠ 空间读 + 对外副作用：读侧按空间解析，但出站目标是调用方给定的 url，不受空间约束。它虽归 scope: space，却是全仓唯一能把空间内数据主动推送到任意外部 URL 的端点 —— 无来源时按既定策略回退 default，一次忘带空间标识的调用会把默认空间的模型发出去，且不可撤回。", query: [{ name: "modelId", desc: "模型稳定序号 idx（推荐，与方案路径解耦）" }, { name: "schemePath", desc: "方案路径（modelId 的兼容替代）" }, { name: "name", desc: "模型名（modelId 的兼容替代）" }], body: { url: RECEIVE_URL, files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }], templateName: "国网E格式（可选，仅作用于 E 文件）" }, response: "{ok:true,data:{url,status,elapsedMs,templateName,files:[{kind,field,filename,encoding,bytes}]}}", examples: [
+  { scope: "space", group: "v1 方案域", method: "POST", path: "/webgrp/v1/schemes/model/send", desc: "把已保存模型按所选格式 POST 到目标 URL（后端代理转发，multipart/form-data）；可用 modelId，或 schemeId/schemePath + name；可选 templateName 指定 E 文件模板。⚠ 空间读 + 对外副作用：读侧按空间解析，但出站目标是调用方给定的 url，不受空间约束。它虽归 scope: space，却是全仓唯一能把空间内数据主动推送到任意外部 URL 的端点 —— 无来源时按既定策略回退 default，一次忘带空间标识的调用会把默认空间的模型发出去，且不可撤回。", query: [{ name: "modelId", desc: "模型稳定序号 idx（推荐，与方案选择器解耦）" }, { name: "schemePath", desc: "方案路径；可单独或与 schemeId 同时提供，同时提供时必须一致" }, { name: "schemeId", desc: "当前空间内唯一的方案编号；可单独或与 schemePath 同时提供，同时提供时必须一致" }, { name: "name", desc: "模型名（modelId 或方案选择器的替代定位参数）" }], body: { url: RECEIVE_URL, files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }], templateName: "国网E格式（可选，仅作用于 E 文件）" }, response: "{ok:true,data:{url,status,elapsedMs,templateName,files:[{kind,field,filename,encoding,bytes}]}}", examples: [
     { label: "按 modelId 发送 E + JSON 到本服务接收端（kind: e|json|svg|cim，encoding: gbk|utf-8）", params: { q_modelId: 1, __body__: { url: RECEIVE_URL, files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] } } },
     { label: "指定 E 文件模板（配网实时库 —— 「线路」是馈线模型；国网E格式/主网实时库限厂站、台区实时库限台区）", params: { q_modelId: 1, __body__: { url: RECEIVE_URL, files: [{ kind: "e", encoding: "gbk" }], templateName: "配网实时库" } } },
-    { label: "按 schemePath + name 发送（兼容旧调用）", params: { q_schemePath: SP_DEFAULT, q_name: "线路", __body__: { url: RECEIVE_URL, files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] } } }
+    { label: "按 schemePath + name 发送（兼容旧调用）", params: { q_schemePath: SP_DEFAULT, q_name: "线路", __body__: { url: RECEIVE_URL, files: [{ kind: "e", encoding: "gbk" }, { kind: "json", encoding: "utf-8" }] } } },
+    { label: "按 schemeId + name 发送", params: { q_schemeId: DEMO_SCHEME_ID, q_name: "线路", __body__: { url: RECEIVE_URL, files: [{ kind: "json", encoding: "utf-8" }] } } }
   ]},
   // 联调接收端：把「发送模型」的 url 指向这里即可自测发送闭环，再 GET 回看收到的内容
   { scope: "global", group: "v1 方案域", method: "POST", path: "/webgrp/v1/receive", desc: `联调接收端：把「发送模型」的目标 URL 填 ${RECEIVE_URL}，发送后 GET 本端点即可看到收到的字段/文件名/字节数与内容回显（multipart/form-data 与原始 body 都收，内存留最近 5 次，不落盘）`, body: { model_id: "7", model_name: "厂站模型", note: "任意字段" }, response: "{ok:true,data:{received:{receivedAt,contentType,totalBytes,fields:[{name,kind,filename,contentType,bytes,text|preview}]},kept}}", examples: [
@@ -201,30 +210,20 @@ const ENDPOINTS = [
   ]},
 
   // ---- v1 图元库域（第三方只读）----
-  { scope: "space", group: "v1 图元库域", method: "GET", path: "/webgrp/v1/library", desc: "图元库聚合", response: "{ok:true,data:{categories,devices,measurements,deviceDefinitions,templates}}", examples: [
-    { label: "聚合全量", params: {} }
-  ]},
-  { scope: "space", group: "v1 图元库域", method: "GET", path: "/webgrp/v1/library/categories", desc: "图元分类树", response: "{ok:true,data:{categories:[{id,name}]}}", examples: [
-    { label: "分类树", params: {} }
-  ]},
-  { scope: "space", group: "v1 图元库域", method: "GET", path: "/webgrp/v1/library/devices", desc: "各类图元信息", response: "{ok:true,data:{eSections,staticComponentLibraries,customComponentLibraries}}", examples: [
-    { label: "图元信息", params: {} }
-  ]},
-  { scope: "space", group: "v1 图元库域", method: "GET", path: "/webgrp/v1/library/measurements", desc: "量测定义", response: "{ok:true,data:{groupDefaults,measurementTypes,deviceProfiles}}", examples: [
-    { label: "量测定义", params: {} }
-  ]},
-  { scope: "space", group: "v1 图元库域", method: "GET", path: "/webgrp/v1/library/device-definitions", desc: "图元定义", response: "{ok:true,data:{deviceDefinitionOverrides,customComponentLibraries,customCategoryLibraries}}", examples: [
-    { label: "图元定义", params: {} }
-  ]},
-  { scope: "space", group: "v1 图元库域", method: "GET", path: "/webgrp/v1/library/templates", desc: "模板库", response: "{ok:true,data:{customDeviceTemplates,customGraphTemplates,customGraphTemplateTypes}}", examples: [
-    { label: "模板库", params: {} }
+  { scope: "space", group: "v1 图元库域", method: "GET", path: "/webgrp/v1/library", desc: "统一图元库入口；part=all 返回聚合，或按 part 读取单个分片", query: [{ name: "part", desc: "可选：all|categories|devices|measurements|device-definitions|templates" }], response: "按 part 返回图元库聚合或分片", examples: [
+    { label: "聚合全量", params: {} },
+    { label: "分类树", params: { q_part: "categories" } },
+    { label: "图元信息", params: { q_part: "devices" } },
+    { label: "量测定义", params: { q_part: "measurements" } },
+    { label: "图元定义", params: { q_part: "device-definitions" } },
+    { label: "模板库", params: { q_part: "templates" } }
   ]},
 
   // ---- v1 运行时态域（经 WS 拉前端，需前端在线）----
   { scope: "session", group: "v1 运行时态", method: "GET", path: "/webgrp/v1/runtime/clients", desc: "在线客户端列表（server 直返；条目带 workspaceId，标明该客户端注册时所属空间）", response: "{ok:true,data:{clients:[{clientId,role,lastActiveAt,workspaceId}]}}", examples: [
     { label: "在线客户端（无前端在线时为空）", params: {} }
   ]},
-  { scope: "session", group: "v1 运行时态", method: "GET", path: "/webgrp/v1/runtime/model", desc: "当前打开模型定位", query: [{ name: "clientId", desc: "可选，不传取最近活跃" }], response: "{ok:true,data:{modelName,modelId,schemePath,updatedAt}}", examples: [
+  { scope: "session", group: "v1 运行时态", method: "GET", path: "/webgrp/v1/runtime/model", desc: "当前打开模型定位（含统一数字 schemeId）", query: [{ name: "clientId", desc: "可选，不传取最近活跃" }], response: "{ok:true,data:{modelName,modelId,schemeId,schemePath,updatedAt}}", examples: [
     { label: "默认客户端（需前端在线）", params: {} }
   ]},
   { scope: "session", group: "v1 运行时态", method: "GET", path: "/webgrp/v1/runtime/devices", desc: "当前模型设备清单", query: [{ name: "clientId", desc: "可选" }], response: "{ok:true,data:{nodes,edges}}", examples: [
@@ -245,15 +244,13 @@ const ENDPOINTS = [
     { label: "默认尺寸截图", params: {} },
     { label: "800×600 截图", params: { q_width: "800", q_height: "600" } }
   ]},
-  { scope: "session", group: "v1 运行时态", method: "GET", path: "/webgrp/v1/runtime/svg", desc: "画布 SVG 文本", query: [{ name: "clientId", desc: "可选" }], response: "<image/svg+xml>", examples: [
-    { label: "画布 SVG", params: {} }
+  { scope: "session", group: "v1 运行时态", method: "GET", path: "/webgrp/v1/runtime/export", desc: "统一运行时导出入口；format=svg|e-file，纯后台计算不改变前端状态", query: [{ name: "format", desc: "必填，svg|e-file" }, { name: "template", desc: "仅 format=e-file：可选预定义模板名" }, { name: "clientId", desc: "可选" }], response: "按 format 返回 SVG 或 E 文件（attachment）", examples: [
+    { label: "画布 SVG", params: { q_format: "svg" } },
+    { label: "E 文件（前端当前模板状态）", params: { q_format: "e-file" } },
+    { label: "E 文件（按「配网实时库」模板生成）", params: { q_format: "e-file", q_template: "配网实时库" } }
   ]},
-  { scope: "session", group: "v1 运行时态", method: "GET", path: "/webgrp/v1/runtime/e-file", desc: "E 文件文本（可指定预定义模板，纯后台计算不影响前端状态）", query: [{ name: "template", desc: "可选，预定义模板名（国网E格式|主网实时库|配网实时库|台区实时库）" }, { name: "clientId", desc: "可选" }], response: "<text/plain，attachment>", examples: [
-    { label: "E 文件（前端当前模板状态）", params: {} },
-    { label: "E 文件（按「配网实时库」模板生成）", params: { q_template: "配网实时库" } }
-  ]},
-  { scope: "session", group: "v1 运行时态", method: "POST", path: "/webgrp/v1/runtime/e-file", desc: "E 文件文本（指定模板定义文本，纯后台计算不影响前端状态）", query: [{ name: "clientId", desc: "可选" }], body: { templateText: "<ACLoad>...</ACLoad>", templateName: "自定义模板A" }, response: "<text/plain，attachment>", examples: [
-    { label: "按自定义模板文本生成", params: { __body__: { templateText: "<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>", templateName: "" } } }
+  { scope: "session", group: "v1 运行时态", method: "POST", path: "/webgrp/v1/runtime/export", desc: "统一运行时 E 文件自定义模板入口；固定 format=e-file，模板文本放在请求体", query: [{ name: "format", desc: "必填且只能是 e-file" }, { name: "clientId", desc: "可选" }], body: { templateText: "<ACLoad>...</ACLoad>", templateName: "自定义模板A" }, response: "<text/plain，attachment>", examples: [
+    { label: "按自定义模板文本生成", params: { q_format: "e-file", __body__: { templateText: "<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>", templateName: "" } } }
   ]},
 
   { scope: "session", group: "v1 运行时态", method: "GET", path: "/webgrp/v1/runtime/dom", desc: "当前前端页面的整体 DOM 结构（format=outline 元素树 / html 整页标记）", query: [{ name: "format", desc: "可选，outline（默认，元素树）| html（整页 outerHTML）" }, { name: "maxDepth", desc: "可选，outline 深度上限（默认 6）" }, { name: "maxNodes", desc: "可选，outline 节点数上限（默认 800）" }, { name: "maxChars", desc: "可选，html 字符上限（默认 200000）" }, { name: "clientId", desc: "可选" }], response: "{ok:true,data:{format,title,url,root|html,nodeCount,truncated}}", examples: [
@@ -262,12 +259,12 @@ const ENDPOINTS = [
   ]},
 
   // ---- v1 拓扑检查与修复 ----
-  { scope: "space", group: "v1 拓扑操作", method: "POST", path: "/webgrp/v1/topology/check", desc: "检查当前页面或指定已保存模型；可能触发该空间全局线路登记表首次初始化与存量迁移", query: [{ name: "clientId", desc: "可选，仅 target=current 时指定目标页面" }], body: { target: "saved", schemePath: ["默认方案"], name: "__不存在的模型__" }, response: "{ok:true,data:{target,status,errors,warnings,corrections,modified:false,saved:false}}", examples: [
-    { label: "检查不存在模型（404）", params: { __body__: { target: "saved", schemePath: ["默认方案"], name: "__不存在的模型__" } } },
-    { label: "检查当前页面（需页面在线）", params: { __body__: { target: "current" } } }
-  ]},
-  { scope: "space", group: "v1 拓扑操作", method: "POST", path: "/webgrp/v1/topology/repair", desc: "修复当前页面或指定已保存模型；当前页面仅改内存，已保存模型有修正时直接写盘", query: [{ name: "clientId", desc: "可选，仅 target=current 时指定目标页面" }], body: { target: "saved", schemePath: ["默认方案"], name: "__不存在的模型__" }, response: "{ok:true,data:{target,status,errors,warnings,corrections,modified,saved}}", examples: [
-    { label: "修复不存在模型（404，不写入）", params: { __body__: { target: "saved", schemePath: ["默认方案"], name: "__不存在的模型__" } } }
+  { scope: "space", group: "v1 拓扑操作", method: "POST", path: "/webgrp/v1/topology", desc: "统一拓扑入口；请求体 action=check|repair，target=current 检查在线页面，target=saved 检查或修复已保存模型；可能触发该空间全局线路登记表首次初始化与存量迁移", query: [{ name: "clientId", desc: "可选，仅 target=current 时指定目标页面" }], body: { action: "check", target: "saved", schemePath: ["默认方案"], name: "__不存在的模型__" }, response: "{ok:true,data:{target,status,errors,warnings,corrections,modified,saved}}", examples: [
+    { label: "检查不存在模型（404）", params: { __body__: { action: "check", target: "saved", schemePath: ["默认方案"], name: "__不存在的模型__" } } },
+    { label: "按 schemeId 检查不存在模型（404）", params: { __body__: { action: "check", target: "saved", schemeId: DEMO_SCHEME_ID, name: "__不存在的模型__" } } },
+    { label: "检查当前页面（需页面在线）", params: { q_clientId: "swigger-test-client", __body__: { action: "check", target: "current" } } },
+    { label: "修复不存在模型（404，不写入）", params: { __body__: { action: "repair", target: "saved", schemePath: ["默认方案"], name: "__不存在的模型__" } } },
+    { label: "按 schemeId 修复不存在模型（404，不写入）", params: { __body__: { action: "repair", target: "saved", schemeId: DEMO_SCHEME_ID, name: "__不存在的模型__" } } }
   ]},
 
   // ---- v1 控制台域（经 WS 下发前端 __appScope，写操作 no-store）----
@@ -275,12 +272,13 @@ const ENDPOINTS = [
     { label: "新增母排", params: { __body__: { kind: "busbar", x: 100, y: 200 } } },
     { label: "新增带 attrs override", params: { __body__: { kind: "busbar", x: 0, y: 0, attrs: { name: "自定义母线", rotation: 45 } } } }
   ]},
-  { scope: "session", group: "控制台", method: "POST", path: "/webgrp/v1/control/scheme/create", desc: "新建方案（经 WS 到前端，不压栈不落盘）", query: [{ name: "clientId", desc: "可选" }], body: { name: "新方案", parentSchemeId: "" }, response: "{ok:true,data:{id,name,path}}", examples: [
+  { scope: "session", group: "控制台", method: "POST", path: "/webgrp/v1/control/scheme/create", desc: "新建方案（经 WS 到前端，不压栈不落盘；parentSchemeId 使用数字方案 ID）", query: [{ name: "clientId", desc: "可选" }], body: { name: "新方案", parentSchemeId: DEMO_SCHEME_ID }, response: "{ok:true,data:{id,schemeId,name,path}}", examples: [
     { label: "新建顶级方案", params: { __body__: { name: "新方案" } } },
-    { label: "新建子方案", params: { __body__: { name: "子方案", parentSchemeId: "parent-id" } } }
+    { label: "新建子方案", params: { __body__: { name: "子方案", parentSchemeId: DEMO_SCHEME_ID } } }
   ]},
-  { scope: "session", group: "控制台", method: "POST", path: "/webgrp/v1/control/model/create", desc: "新建模型并立即落盘，由后台分配永久全局 idx", query: [{ name: "clientId", desc: "可选" }], body: { name: "新模型", modelType: "厂站", schemeId: "" }, response: "{ok:true,data:{id,name,schemeId,modelType,idx}}", examples: [
-    { label: "新建到默认方案", params: { __body__: { name: "新模型", modelType: "厂站" } } }
+  { scope: "session", group: "控制台", method: "POST", path: "/webgrp/v1/control/model/create", desc: "新建模型并立即落盘，由后台分配永久全局 idx；使用数字 schemeId 定位方案", query: [{ name: "clientId", desc: "可选" }], body: { name: "新模型", modelType: "厂站", schemeId: DEMO_SCHEME_ID }, response: "{ok:true,data:{id,name,schemeId,modelType,idx}}", examples: [
+    { label: "新建到默认方案", params: { __body__: { name: "新模型", modelType: "厂站" } } },
+    { label: "按 schemeId 新建到「默认方案」", params: { __body__: { name: "编号示例模型", modelType: "厂站", schemeId: DEMO_SCHEME_ID } } }
   ]},
   { scope: "session", group: "控制台", method: "POST", path: "/webgrp/v1/control/devices/select", desc: "选中图元（set/add/toggle 三模式，自动过滤不存在的 id）", query: [{ name: "clientId", desc: "可选" }], body: { ids: ["n1", "n2"], mode: "set" }, response: "{ok:true,data:{selectedIds,validIds,invalidIds}}", examples: [
     { label: "替换选中", params: { __body__: { ids: ["n1", "n2"], mode: "set" } } },
@@ -318,9 +316,15 @@ const ENDPOINTS = [
   { scope: "session", group: "控制台", method: "POST", path: "/webgrp/v1/control/space/switch", desc: "切换工作空间（前端随后 clear caches → 写 Cookie → 硬重载；回执 scheduled=true 表示已排期）", query: [{ name: "clientId", desc: "可选" }], body: { spaceId: "default" }, response: "{ok:true,data:{scheduled,spaceId,spaceName}}", examples: [
     { label: "切到默认空间", params: { __body__: { spaceId: "default" } } }
   ]},
-  { scope: "session", group: "控制台", method: "POST", path: "/webgrp/v1/control/model/switch", desc: "切换当前打开的模型（定位优先级 modelId > modelKey > schemePath+name；无未保存修改才放行）", query: [{ name: "clientId", desc: "可选" }], body: { modelId: 1 }, response: "{ok:true,data:{alreadyOpen,modelId,name,schemeId,schemePath}}", examples: [
+  { scope: "session", group: "控制台", method: "POST", path: "/webgrp/v1/control/model/switch", desc: "切换当前打开的模型（支持 modelId、modelKey、schemeId+name、schemePath+name；无未保存修改才放行）", query: [{ name: "clientId", desc: "可选" }], body: { modelId: 1 }, response: "{ok:true,data:{alreadyOpen,modelId,name,schemeId,schemePath}}", examples: [
     { label: "按稳定序号 idx 切换", params: { __body__: { modelId: 1 } } },
-    { label: "按方案路径 + 模型名切换", params: { __body__: { schemePath: ["默认方案"], name: "未命名模型" } } }
+    { label: "按方案路径 + 模型名切换", params: { __body__: { schemePath: ["默认方案"], name: "未命名模型" } } },
+    { label: "按 schemeId + 模型名切换", params: { __body__: { schemeId: DEMO_SCHEME_ID, name: "线路" } } }
+  ]},
+
+  // ---- 平台管理（本机数据根迁移）----
+  { scope: "host", group: "平台管理", method: "POST", path: "/webgrp/platform/data-dir", desc: "把当前数据根迁移到已存在且为空的新目录；复制校验、旧目录归档、配置更新和运行时切换全部成功后才返回 200，失败会回滚", body: { path: "D:/graph-modeling-data" }, response: "{ok:true,dataRoot,archivePath,savedAt}", examples: [
+    { label: "目标不存在（400）", params: { __body__: { path: "__swigger_missing_data_dir__" } } }
   ]},
 
   // ---- 空间管理（管理面，与「某一空间的数据」无关：派发层对 /spaces 短路，不注入空间上下文）----
@@ -420,6 +424,7 @@ export function renderSwaggerHtml() {
   // 页首空间说明。以下四条是第三方直接可感、却只看接口形状推不出来的差异
   // （分别由空间解析、clientId 校验、运行时态、派发层校验暴露），必须显式写出。
   const spacesApi = apiPath("/spaces");
+  const modelUpdateWsPath = apiPath("/v1/subscriptions/ws");
   const spaceNoteHtml = `除空间管理面 <code>${escapeHtml(spacesApi)}</code>、本机端点 <code>${escapeHtml(apiPath("/exports"))}/*</code> 与联调接收端 <code>${escapeHtml(apiPath("/v1/receive"))}</code> 外，本页端点默认作用于「当前空间」（Cookie <code>${escapeHtml(SPACE_COOKIE_NAME)}</code> 决定，右上角下拉可切换）。
     脚本调用可用 <code>X-Space: &lt;id&gt;</code> 头或 <code>?space=&lt;id&gt;</code> 覆盖；跨源浏览器调用只能用 <code>?space=</code>（<code>allow-origin: *</code> 与携带 Cookie 的跨源请求互斥，浏览器会丢弃 Cookie）。
     <ol>
@@ -539,6 +544,53 @@ export function renderSwaggerHtml() {
   <nav>${groupNavHtml}</nav>
   <main>
     ${groupCardsHtml}
+    <section class="group" id="model-update-websocket">
+      <h2>模型更新 WebSocket 订阅</h2>
+      <p>连接当前服务器的同一端口：<code>ws(s)://&lt;host&gt;:${backendPort}${escapeHtml(modelUpdateWsPath)}?space=&lt;spaceId&gt;</code>。浏览器客户端可使用任意 HTTP(S) Origin；原生客户端可不发送 Origin。显式空间不存在时握手返回 404。</p>
+      <p>每条连接可创建多项订阅。<code>space</code> 匹配空间全部模型，<code>scheme</code> 匹配方案及其子方案，<code>model</code> 使用稳定的正整数 <code>modelId</code>。文件类型支持 <code>json</code>、<code>xml</code>、<code>e</code>；编码只有明确指定 <code>gbk</code> 才使用 GBK，其余情况使用 UTF-8。</p>
+      <div class="field-label">连接、订阅与取消</div>
+      <pre><code>const socketPath = ${JSON.stringify(`${modelUpdateWsPath}?space=default`)};
+const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+const socket = new WebSocket(protocol + "//" + location.host + socketPath);
+socket.addEventListener("open", () =&gt; {
+  socket.send(JSON.stringify({
+    type: "subscribe",
+    scope: { type: "scheme", schemePath: ["默认方案"] },
+    files: [
+      { kind: "json" },
+      { kind: "xml" },
+      { kind: "e", encoding: "gbk" }
+    ]
+  }));
+});
+socket.addEventListener("message", (event) =&gt; {
+  const message = JSON.parse(event.data);
+  if (message.type === "subscribed") {
+    socket.send(JSON.stringify({ type: "unsubscribe", subscriptionId: message.data.subscriptionId }));
+  }
+});</code></pre>
+      <div class="field-label">更新帧</div>
+      <pre><code>{
+  "type": "model.updated",
+  "data": {
+    "model_id": "12",
+    "model_name": "线路",
+    "template_name": "",
+    "scheme_path": "[\"默认方案\"]",
+    "sent_at": "2026-11-21T10:00:00.000Z",
+    "files": [{
+      "kind": "json",
+      "field": "json_file",
+      "filename": "线路.json",
+      "contentType": "application/json; charset=utf-8",
+      "encoding": "utf-8",
+      "bytes": 123,
+      "contentBase64": "eyJ2ZXJzaW9uIjoxLCJuYW1lIjoi6Lev5b6EIn0="
+    }]
+  }
+}</code></pre>
+      <p>文件项复用 <code>/webgrp/v1/schemes/model/send</code> 的 multipart 字段与文件名约定；<code>contentBase64</code> 解码后是完整文件字节。成功订阅返回 <code>subscribed</code>，更新帧为 <code>model.updated</code>，导出失败返回订阅级 <code>error</code>。订阅只在连接期间有效；断线不补发历史消息。</p>
+    </section>
   </main>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>

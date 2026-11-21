@@ -70,52 +70,61 @@
 
 `schemePath` 表示方案的层级路径，填写 JSON 字符串数组。例如顶层方案写 `["默认方案"]`，子方案写 `["默认方案","1-1"]`。在 `/swigger` 中优先选择接口自带示例；直接调用 API 时要对参数做 URL 编码。不要把已经编码过的值再交给 `/swigger` 编码。
 
-### 模型校验
+### 模型校验与自动修复
 
-接口：`POST /webgrp/v1/topology/check`
+统一接口：POST /webgrp/v1/topology，请求体 action=check|repair。
 
-检查已保存模型时，请求体如下：
+检查已保存模型时：
 
-```json
+~~~json
 {
+  "action": "check",
   "target": "saved",
   "schemePath": ["默认方案"],
   "name": "模型名"
 }
-```
+~~~
 
-检查当前页面时，请求体如下：
+检查当前页面时：
 
-```json
+~~~json
 {
+  "action": "check",
   "target": "current"
 }
-```
+~~~
 
-当前页面检查要求平台页面在线。检查不会保存模型；但检查已保存模型时，首次读取可能初始化该工作空间的全局线路登记表并迁移旧数据。该底层副作用不等同于保存模型内容。
+修复已保存模型时只把 action 改为 repair：
 
-### 自动修复
+~~~json
+{
+  "action": "repair",
+  "target": "saved",
+  "schemePath": ["默认方案"],
+  "name": "模型名"
+}
+~~~
 
-接口：`POST /webgrp/v1/topology/repair`
-
-请求体与检查接口相同。目标为 `current` 时只修改页面内存；目标为 `saved` 时，若模型内容有变化，接口会直接保存到磁盘，不会再弹确认框。
-
-**操作已保存模型前，先导出备份。** 修复可能成功应用部分安全参数，同时仍报告无法自动处理的拓扑错误。修复时若模型被其它操作同时改动，接口会拒绝覆盖；先重新检查，再决定是否重试。
+target=current 只修改页面内存；target=saved 有修正时直接写盘。检查已保存模型时，首次读取可能初始化该工作空间的全局线路登记表并迁移旧数据。操作已保存模型前建议先导出备份。旧的 /webgrp/v1/topology/check 与 /webgrp/v1/topology/repair 路径已删除。
 
 ### 导出已保存模型
 
-| 内容 | 接口 | 参数 | 返回内容 |
+统一接口：GET /webgrp/v1/schemes/model/export?format=...；自定义 E 模板使用 POST /webgrp/v1/schemes/model/export?format=e-file。
+
+| 内容 | format | 关键参数 | 返回内容 |
 |---|---|---|---|
-| JSON | `GET /webgrp/v1/schemes/model/json` | `schemePath`、`name` | `{ok:true,data:{project:...}}` |
-| SVG | `GET /webgrp/v1/schemes/model/svg` | `schemePath`、`name`；可选 `colorMode=energy\|voltage`、`encoding=utf-8\|gbk` | SVG 文本 |
-| E 文件 | `GET /webgrp/v1/schemes/model/e-file` | `schemePath`、`name`；可选 `template`、`encoding=gbk\|utf-8` | E 文件文本；默认 GBK |
-| E 文件（自定义模板） | `POST /webgrp/v1/schemes/model/e-file` | URL 参数 `schemePath`、`name`；JSON 请求体含 `templateText` | 按指定模板生成的 E 文件 |
+| JSON | json | schemeId 或 schemePath、name | {ok:true,data:{project:...}} |
+| SVG | svg | schemeId 或 schemePath、name；可选 colorMode、encoding | SVG 文本 |
+| E 文件 | e-file | schemeId 或 schemePath、name；可选 template、encoding | E 文件文本，默认 GBK |
+| CIM/XML | cim-xml | schemeId 或 schemePath、name；可选 modelId、strict | XML 文本 |
 
-在 `/swigger` 中找到“v1 方案域”下对应接口，选择模型名和方案路径，再点“发送请求”。JSON 会返回模型数据；SVG 与 E 文件会显示导出文本，可复制保存。
+POST 自定义 E 模板的 JSON body 含 templateText，可选 templateName。format 不匹配或携带了该格式不接受的参数时返回 400。
 
-可选 E 模板名称：`国网E格式`、`主网实时库`、`配网实时库`、`台区实时库`。若模板与模型类型不匹配，接口会返回错误，不会静默改用其它模板。
+### 运行时导出
 
-> 通过 MCP 导出 SVG、E 文件或 CIM/XML 时，请说明要导出的模型和格式。读取模型 JSON 时，请让助手读取已保存模型的数据；不要选择不支持的 JSON 导出格式。
+统一接口：GET /webgrp/v1/runtime/export?format=svg|e-file；自定义 E 模板使用 POST /webgrp/v1/runtime/export?format=e-file。接口要求前端页面在线，仍保留 no-online-client、ws-timeout、no-active-model 等错误。
+
+在 /swigger 中选择 v1 方案域、v1 运行时态或 v1 拓扑操作下的统一入口示例即可验证请求。
 
 ## 把模型交给其它系统
 
@@ -125,11 +134,10 @@
 
 接收系统可按需调用以下接口：
 
-- JSON：`GET /webgrp/v1/schemes/model/json`
-- SVG：`GET /webgrp/v1/schemes/model/svg`
-- E 文件：`GET /webgrp/v1/schemes/model/e-file`
+- 已保存模型导出：`GET /webgrp/v1/schemes/model/export?format=json|svg|e-file|cim-xml`
+- 自定义 E 模板：`POST /webgrp/v1/schemes/model/export?format=e-file`
 
-每个接口都要提供方案路径 `schemePath` 和模型名 `name`。如果模型会改名或移动，先用方案列表接口查询最新路径和名称。跨工作空间调用时，使用 `X-Space` 请求头或 `?space=<空间ID>` 指定空间；不指定时，服务按现有空间选择规则处理请求。
+每个接口都要提供 `schemeId` 或 `schemePath` 以及模型名 `name`。推荐先用方案列表接口读取当前空间的数字 `schemeId`；如果模型会改名或移动，路径选择器应先查询最新路径。两种选择器同时提供时必须指向同一方案。跨工作空间调用时，使用 `X-Space` 请求头或 `?space=<空间ID>` 指定空间；不指定时，服务按现有空间选择规则处理请求。
 
 ### 方式二：平台主动发送文件
 
@@ -154,7 +162,7 @@ Content-Type: application/json
 }
 ```
 
-把 `url` 换成接收系统提供的地址；把 `modelId` 换成模型稳定 ID。也可用 `schemePath` 和 `name` 指定模型。`files` 可选择 `json`、`svg`、`e`、`cim`，可一次发送多种格式。`templateName` 只作用于 E 文件。
+把 `url` 换成接收系统提供的地址；把 `modelId` 换成模型稳定 ID。也可用 `schemeId` 或 `schemePath` 加 `name` 指定模型；两种方案选择器同时提供时必须一致。`files` 可选择 `json`、`svg`、`e`、`cim`，可一次发送多种格式。`templateName` 只作用于 E 文件。
 
 平台会向目标地址发送 `multipart/form-data`。接收端会收到这些字段：
 

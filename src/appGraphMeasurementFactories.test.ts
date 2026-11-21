@@ -504,7 +504,6 @@ describe("measurement canvas interactions", () => {
     const panel = createRenderDeviceDefinitionMeasurementPanel({
       BufferedTextInput: (props: any) => createElement("input", props),
       editableMeasurementTypeById: new Map(config.measurementTypes.map((type) => [type.id, type])),
-      isBrowseMode: false,
       measurementConfig: config,
       measurementConfigDraft: null,
       measurementConfigSaveStatus: "idle"
@@ -556,7 +555,6 @@ describe("measurement canvas interactions", () => {
     const renderPanel = createRenderDeviceDefinitionMeasurementPanel({
       BufferedTextInput: (props: any) => createElement("input", props),
       editableMeasurementTypeById: new Map(config.measurementTypes.map((type) => [type.id, type])),
-      isBrowseMode: false,
       measurementConfig: config,
       measurementConfigDraft: null,
       measurementConfigSaveStatus: "idle"
@@ -579,7 +577,6 @@ describe("measurement canvas interactions", () => {
     const panel = createRenderDeviceDefinitionMeasurementPanel({
       BufferedTextInput,
       editableMeasurementTypeById: new Map(config.measurementTypes.map((type) => [type.id, type])),
-      isBrowseMode: false,
       measurementConfig: config,
       measurementConfigDraft: null,
       measurementConfigSaveStatus: "idle"
@@ -665,7 +662,6 @@ describe("measurement canvas interactions", () => {
         ]
       ]),
       editableMeasurementTypeById: new Map([["activePower", { id: "activePower", name: "有功功率", defaultVisible: true }]]),
-      isBrowseMode: false,
       measurementConfig: {
         measurementTypes: [{ id: "activePower", name: "有功功率", defaultVisible: true }],
         deviceProfiles: []
@@ -749,7 +745,6 @@ describe("measurement canvas interactions", () => {
     const panel = createRenderDeviceDefinitionMeasurementPanel({
       BufferedTextInput: (props: any) => createElement("input", props),
       editableMeasurementTypeById: new Map([["activePower", { id: "activePower", name: "有功功率", defaultVisible: true }]]),
-      isBrowseMode: false,
       measurementConfig: {
         measurementTypes: [{ id: "activePower", name: "有功功率", defaultVisible: true }]
       },
@@ -809,7 +804,6 @@ describe("measurement canvas interactions", () => {
     const panel = createRenderDeviceDefinitionMeasurementPanel({
       BufferedTextInput: (props: any) => createElement("input", props),
       editableMeasurementTypeById: new Map([["activePower", { id: "activePower", name: "有功功率", defaultVisible: true }]]),
-      isBrowseMode: false,
       measurementConfig: {
         measurementTypes: [{ id: "activePower", name: "有功功率", defaultVisible: true }]
       },
@@ -892,7 +886,6 @@ describe("measurement canvas interactions", () => {
       addMeasurementItemToNode: vi.fn(),
       button: "button",
       div: "div",
-      isBrowseMode: false,
       measurementConfig: { measurementTypes: [] },
       measurementGroupBackgroundColor: () => "transparent",
       measurementTypeById: new Map(),
@@ -968,7 +961,7 @@ describe("measurement canvas interactions", () => {
     };
     collectBackgroundColorInputs(panel);
     expect(backgroundColorInputs).toHaveLength(1);
-    expect(backgroundColorInputs[0].props.disabled).toBe(false);
+    expect(backgroundColorInputs[0].props.disabled).not.toBe(true);
   });
 
   test("selects the owning device when pressing a measurement group", () => {
@@ -979,7 +972,6 @@ describe("measurement canvas interactions", () => {
     const setInspectorTab = vi.fn();
     const setSelectedDeviceInfoView = vi.fn();
     const beginMeasurementDrag = createBeginMeasurementDrag({
-      isBrowseMode: false,
       screenToSvgPoint: vi.fn(() => ({ x: 120, y: 80 })),
       selectCanvasGraphics,
       setMeasurementDrag,

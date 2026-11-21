@@ -1073,41 +1073,6 @@ export function createCancelActiveEditInteractions(__appScope: Record<string, an
   };
 }
 
-export function createEnterBrowseMode(__appScope: Record<string, any>) {
-  return () => {
-  const { cancelActiveEditInteractions, setInteractionMode, writeOperationLog } = __appScope;
-    cancelActiveEditInteractions();
-    setInteractionMode("browse");
-    writeOperationLog("切换到浏览模式");
-  };
-}
-
-export function createRequestEnterBrowseMode(__appScope: Record<string, any>) {
-  return () => {
-  const { enterBrowseMode, saveRequired, setPendingUnsavedAction } = __appScope;
-    if (!saveRequired) {
-      enterBrowseMode();
-      return;
-    }
-    setPendingUnsavedAction({
-      kind: "enter-browse",
-      label: "切换到浏览模式"
-    });
-  };
-}
-
-export function createToggleInteractionMode(__appScope: Record<string, any>) {
-  return () => {
-  const { isEditMode, requestEnterBrowseMode, setInteractionMode, writeOperationLog } = __appScope;
-    if (isEditMode) {
-      requestEnterBrowseMode();
-      return;
-    }
-    setInteractionMode("edit");
-    writeOperationLog("切换到编辑模式");
-  };
-}
-
 export function createFinishDraggingMove(__appScope: Record<string, any>) {
   return (
     activeDragging: DraggingState | null,
@@ -1819,10 +1784,7 @@ export function createReleaseKeyboardMoveKey(__appScope: Record<string, any>) {
 
 export function createStartKeyboardMoveSession(__appScope: Record<string, any>) {
   return (renderInitial = true) => {
-  const { activeSelectedEdgeIds, activeSelectedNodeIds, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clearNodeDragMoveSchedule, currentCanvasSelectionSnapshot, displaySelectedEdgeIds, displaySelectedNodeIds, dragUndoCapturedRef, dragging, draggingRef, edgeListForNodeIds, isMultiNodeMoveState, isWholeActiveLayerMove, movableCanvasNodeIds, nodeById, nodes, requireEditMode, routePointsSnapshotForMove, snapshotRouteBounds, startDraggingState } = __appScope;
-    if (!requireEditMode("移动图元")) {
-      return null;
-    }
+  const { activeSelectedEdgeIds, activeSelectedNodeIds, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clearNodeDragMoveSchedule, currentCanvasSelectionSnapshot, displaySelectedEdgeIds, displaySelectedNodeIds, dragUndoCapturedRef, dragging, draggingRef, edgeListForNodeIds, isMultiNodeMoveState, isWholeActiveLayerMove, movableCanvasNodeIds, nodeById, nodes, routePointsSnapshotForMove, snapshotRouteBounds, startDraggingState } = __appScope;
     const rawMoveNodeIds = canvasSelectionScope === "direct" ? displaySelectedNodeIds : activeSelectedNodeIds;
     // 拖容器 = 整组(键盘方向键与鼠标拖动同口径)
     const moveNodeIds = movableCanvasNodeIds(containerDragGroup(nodes, rawMoveNodeIds));
@@ -1885,10 +1847,7 @@ export function createStartKeyboardMoveSession(__appScope: Record<string, any>) 
 
 export function createNudgeSelectionByKeyboard(__appScope: Record<string, any>) {
   return (key: string, dx: number, dy: number, repeated = false) => {
-  const { appendPendingKeyboardMoveDelta, clearKeyboardMoveCommitSchedule, draggingRef, flushPendingKeyboardMove, keyboardMoveActiveKeyDeltasRef, keyboardMoveLastFrameTimeRef, moveSelection, requireEditMode, scheduleKeyboardNudgeFrame, startKeyboardMoveSession } = __appScope;
-    if (!requireEditMode("移动图元")) {
-      return;
-    }
+  const { appendPendingKeyboardMoveDelta, clearKeyboardMoveCommitSchedule, draggingRef, flushPendingKeyboardMove, keyboardMoveActiveKeyDeltasRef, keyboardMoveLastFrameTimeRef, moveSelection, scheduleKeyboardNudgeFrame, startKeyboardMoveSession } = __appScope;
     clearKeyboardMoveCommitSchedule();
     const wasActive = keyboardMoveActiveKeyDeltasRef.current.has(key);
     if (!repeated && !wasActive && !draggingRef.current) {
@@ -1913,10 +1872,7 @@ export function createNudgeSelectionByKeyboard(__appScope: Record<string, any>) 
 
 export function createMoveSelection(__appScope: Record<string, any>) {
   return (dx: number, dy: number) => {
-  const { activeSelectedEdgeIds, activeSelectedNodeIds, adjustEdgesAfterNodeMove, applyCanvasBounds, boundedDeltaForMoveGeometry, boundedDeltaForNodes, buildMovedNodeUpdates, busNodeIdSet, canvasBoundsForMoveDelta, canvasSelectionScope, commitFastMovedGraphPatches, displaySelectedEdgeIds, displaySelectedNodeIds, edgeListForNodeIds, externalMoveCandidateEdges, finalizeMovedNodeEdgesFast, graphStore, internalMoveEdgeIdsForMovedNodes, isWholeActiveLayerMove, mergeAdjustedCandidateEdges, mergeNodeUpdateLists, movableCanvasNodeIds, nextNodesForMovedGraphCommit, nodeById, nodes, pushUndoSnapshot, requireEditMode, routePointsSnapshotForMove, routePreserveEdgeIdsForMovedNodes, shouldFinalizeMovedNodeEdgesSynchronously, snapshotEdgePoints, synchronousEdgeAdjustmentCandidates, translateInternalMoveCandidateEdges, translateWholeMoveCandidateEdges, undoScopeForGraphPatch, updateSmartAlignmentGuides, writeOperationLog } = __appScope;
-    if (!requireEditMode("移动图元")) {
-      return;
-    }
+  const { activeSelectedEdgeIds, activeSelectedNodeIds, adjustEdgesAfterNodeMove, applyCanvasBounds, boundedDeltaForMoveGeometry, boundedDeltaForNodes, buildMovedNodeUpdates, busNodeIdSet, canvasBoundsForMoveDelta, canvasSelectionScope, commitFastMovedGraphPatches, displaySelectedEdgeIds, displaySelectedNodeIds, edgeListForNodeIds, externalMoveCandidateEdges, finalizeMovedNodeEdgesFast, graphStore, internalMoveEdgeIdsForMovedNodes, isWholeActiveLayerMove, mergeAdjustedCandidateEdges, mergeNodeUpdateLists, movableCanvasNodeIds, nextNodesForMovedGraphCommit, nodeById, nodes, pushUndoSnapshot, routePointsSnapshotForMove, routePreserveEdgeIdsForMovedNodes, shouldFinalizeMovedNodeEdgesSynchronously, snapshotEdgePoints, synchronousEdgeAdjustmentCandidates, translateInternalMoveCandidateEdges, translateWholeMoveCandidateEdges, undoScopeForGraphPatch, updateSmartAlignmentGuides, writeOperationLog } = __appScope;
     const rawMoveNodeIds = canvasSelectionScope === "direct" ? displaySelectedNodeIds : activeSelectedNodeIds;
     // 拖容器 = 整组(与鼠标拖动/键盘按住的方向键同口径)
     const moveNodeIds = movableCanvasNodeIds(containerDragGroup(nodes, rawMoveNodeIds));
@@ -2067,10 +2023,7 @@ export function createUndoScopeForNodeFootprintPatch(__appScope: Record<string, 
 
 export function createUpdateSelectedNode(__appScope: Record<string, any>) {
   return (patch: Partial<ModelNode>) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, adjustEdgesAfterNodeMove, applyCanvasBounds, canvasBounds, canvasBoundsForAutoExpandedGraphContent, clampNodePositionToExpandableBounds, commitFastMovedGraphPatches, currentStoredRoutePointsForEdge, edgeListForNodeIds, expandCanvasToFitGraph, finalizeMovedNodeEdgesFast, focusedGroupedNodeMovesGroup, graphStore, graphStoreApplyPatch, mergeNodeUpdateLists, moveSelection, nodeById, nodes, overlayGraphStoreNodes, patchGraphNodes, pushNodeOnlyUndoSnapshot, pushUndoSnapshot, rebuildEdgeUpdatesAfterNodeGeometryChange, rebuildRoutableLineNodeUpdatesForChangedNodes, rejectAutoCanvasExpansionForContent, requireEditMode, selectedNode, selectedNodeId, setGraphStore, snapshotEdgePoints, undoScopeForGraphPatch } = __appScope;
-    if (!requireEditMode("修改图元")) {
-      return;
-    }
+  const { CANVAS_AUTO_EXPAND_PADDING, adjustEdgesAfterNodeMove, applyCanvasBounds, canvasBounds, canvasBoundsForAutoExpandedGraphContent, clampNodePositionToExpandableBounds, commitFastMovedGraphPatches, currentStoredRoutePointsForEdge, edgeListForNodeIds, expandCanvasToFitGraph, finalizeMovedNodeEdgesFast, focusedGroupedNodeMovesGroup, graphStore, graphStoreApplyPatch, mergeNodeUpdateLists, moveSelection, nodeById, nodes, overlayGraphStoreNodes, patchGraphNodes, pushNodeOnlyUndoSnapshot, pushUndoSnapshot, rebuildEdgeUpdatesAfterNodeGeometryChange, rebuildRoutableLineNodeUpdatesForChangedNodes, rejectAutoCanvasExpansionForContent, selectedNode, selectedNodeId, setGraphStore, snapshotEdgePoints, undoScopeForGraphPatch } = __appScope;
     if (!selectedNodeId) {
       return;
     }
@@ -2225,10 +2178,7 @@ export function createCommitNodeFootprintUpdates(__appScope: Record<string, any>
     nodeUpdates: ModelNode[],
     options: { previousNodes?: ModelNode[] } = {}
   ) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, allowAutoExpandCanvas, applyCanvasBounds, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsForGraphContent, canvasBoundsWithOriginShift, edgeListForNodeIds, edgePatchFromCandidateEdges, edges, expandCanvasToFitGraph, graphStore, graphStoreApplyPatch, graphStoreSetGraph, hasCanvasOriginShift, leftTopCanvasOriginShiftForContent, localRouteOptimizationCandidateEdges, localRouteOptimizationEdges, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, mergeNodeUpdateLists, nodeById, nodes, optimizeMovedNodeEdgeRoutes, overlayGraphStoreNodes, rebuildRoutableLineNodeUpdatesForChangedNodes, rejectAutoCanvasExpansionForContent, requireEditMode, routePointsForMovedNodeBlockers, setGraphStore, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy } = __appScope;
-    if (!requireEditMode("修改图元")) {
-      return;
-    }
+  const { CANVAS_AUTO_EXPAND_PADDING, allowAutoExpandCanvas, applyCanvasBounds, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsForGraphContent, canvasBoundsWithOriginShift, edgeListForNodeIds, edgePatchFromCandidateEdges, edges, expandCanvasToFitGraph, graphStore, graphStoreApplyPatch, graphStoreSetGraph, hasCanvasOriginShift, leftTopCanvasOriginShiftForContent, localRouteOptimizationCandidateEdges, localRouteOptimizationEdges, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, mergeNodeUpdateLists, nodeById, nodes, optimizeMovedNodeEdgeRoutes, overlayGraphStoreNodes, rebuildRoutableLineNodeUpdatesForChangedNodes, rejectAutoCanvasExpansionForContent, routePointsForMovedNodeBlockers, setGraphStore, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy } = __appScope;
     const existingUpdates = nodeUpdates.filter((node) => nodeById.has(node.id));
     if (existingUpdates.length === 0) {
       return;
@@ -2325,10 +2275,7 @@ export function createCommitNodeFootprintUpdates(__appScope: Record<string, any>
 
 export function createAssignSelectedNodesToModelLayer(__appScope: Record<string, any>) {
   return (layerId: string) => {
-  const { DEFAULT_MODEL_LAYER_ID, activeSelectedNodeIds, layers, nodeById, nodes, patchGraphNodes, pushUndoSnapshot, requireEditMode, writeOperationLog } = __appScope;
-    if (!requireEditMode("修改图元所属图层")) {
-      return;
-    }
+  const { DEFAULT_MODEL_LAYER_ID, activeSelectedNodeIds, layers, nodeById, nodes, patchGraphNodes, pushUndoSnapshot, writeOperationLog } = __appScope;
     if (activeSelectedNodeIds.length === 0) {
       return;
     }
@@ -2354,10 +2301,7 @@ export function createAssignSelectedNodesToModelLayer(__appScope: Record<string,
 
 export function createOpenLayerAssignmentDialog(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_MODEL_LAYER_ID, activeLayerId, activeSelectedNodeIds, layers, nodeById, requireEditMode, setLayerAssignmentDialogOpen, setLayerAssignmentTargetId } = __appScope;
-    if (!requireEditMode("修改图元所属图层")) {
-      return;
-    }
+  const { DEFAULT_MODEL_LAYER_ID, activeLayerId, activeSelectedNodeIds, layers, nodeById, setLayerAssignmentDialogOpen, setLayerAssignmentTargetId } = __appScope;
     if (activeSelectedNodeIds.length === 0) {
       return;
     }
@@ -2383,10 +2327,7 @@ export function createApplyLayerAssignmentDialog(__appScope: Record<string, any>
 
 export function createRotateSelectedLayoutUnits(__appScope: Record<string, any>) {
   return (direction: "left" | "right") => {
-  const { buildRotateLayoutUnitEdgeUpdates, edges, expandCanvasToFitGraph, graphStore, graphStoreApplyPatch, markRouteEdgesDirty, markStoredRouteEdgesDirty, overlayGraphStoreNodes, pushUndoSnapshot, rebuildEdgeUpdatesAfterNodeGeometryChange, requireEditMode, rotateLayoutUnitNodeUpdates, selectedLayoutUnits, setGraphStore, setSelectedEdgeId, writeOperationLog } = __appScope;
-    if (!requireEditMode("旋转图元")) {
-      return;
-    }
+  const { buildRotateLayoutUnitEdgeUpdates, edges, expandCanvasToFitGraph, graphStore, graphStoreApplyPatch, markRouteEdgesDirty, markStoredRouteEdgesDirty, overlayGraphStoreNodes, pushUndoSnapshot, rebuildEdgeUpdatesAfterNodeGeometryChange, rotateLayoutUnitNodeUpdates, selectedLayoutUnits, setGraphStore, setSelectedEdgeId, writeOperationLog } = __appScope;
     if (selectedLayoutUnits.length === 0) {
       return;
     }
@@ -2418,10 +2359,7 @@ export function createRotateSelectedLayoutUnits(__appScope: Record<string, any>)
 
 export function createMirrorSelectedNodes(__appScope: Record<string, any>) {
   return (axis: "horizontal" | "vertical") => {
-  const { buildMirrorLayoutUnitEdgeUpdates, edges, expandCanvasToFitGraph, graphStore, graphStoreApplyPatch, markRouteEdgesDirty, markStoredRouteEdgesDirty, mirrorLayoutUnitNodeUpdates, overlayGraphStoreNodes, pushUndoSnapshot, rebuildEdgeUpdatesAfterNodeGeometryChange, requireEditMode, selectedLayoutUnits, setGraphStore, setSelectedEdgeId, writeOperationLog } = __appScope;
-    if (!requireEditMode("镜像图元")) {
-      return;
-    }
+  const { buildMirrorLayoutUnitEdgeUpdates, edges, expandCanvasToFitGraph, graphStore, graphStoreApplyPatch, markRouteEdgesDirty, markStoredRouteEdgesDirty, mirrorLayoutUnitNodeUpdates, overlayGraphStoreNodes, pushUndoSnapshot, rebuildEdgeUpdatesAfterNodeGeometryChange, selectedLayoutUnits, setGraphStore, setSelectedEdgeId, writeOperationLog } = __appScope;
     if (selectedLayoutUnits.length === 0) {
       return;
     }
@@ -2452,10 +2390,7 @@ export function createMirrorSelectedNodes(__appScope: Record<string, any>) {
 
 export function createUpdateCanvasSize(__appScope: Record<string, any>) {
   return (nextWidth: number, nextHeight: number) => {
-  const { DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, MAX_CANVAS_HEIGHT, MAX_CANVAS_WIDTH, MIN_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, applyCanvasBounds, canvasBoundsChangeIsMeaningful, canvasBoundsRef, clampCanvasDimension, clampEdgeGeometryToBounds, clampNodePositionToBounds, edges, nodes, pushUndoSnapshot, requireEditMode, setGraphArrays } = __appScope;
-    if (!requireEditMode("修改画布尺寸")) {
-      return;
-    }
+  const { DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, MAX_CANVAS_HEIGHT, MAX_CANVAS_WIDTH, MIN_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, applyCanvasBounds, canvasBoundsChangeIsMeaningful, canvasBoundsRef, clampCanvasDimension, clampEdgeGeometryToBounds, clampNodePositionToBounds, edges, nodes, pushUndoSnapshot, setGraphArrays } = __appScope;
     const currentBounds = canvasBoundsRef.current;
     const width = clampCanvasDimension(nextWidth, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, DEFAULT_CANVAS_WIDTH);
     const height = clampCanvasDimension(nextHeight, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_HEIGHT);
@@ -2540,10 +2475,7 @@ export function createHandleCanvasSizeKeyDown(__appScope: Record<string, any>) {
 
 export function createUpdateParam(__appScope: Record<string, any>) {
   return (key: string, value: string) => {
-  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, commitNodeFootprintUpdates, inferESection, nodeById, normalizeNodeLabelDisplayMode, normalizeProjectMeasurements, normalizeRatioParameterInputValue, patchGraphNodes, pushNodeOnlyUndoSnapshot, pushUndoSnapshot, requireEditMode, selectedNodeId, setProjectMeasurements, undoScopeForNodeFootprintPatch, nodes, edges, undoScopeForGraphPatch } = __appScope;
-    if (!requireEditMode("修改图元参数")) {
-      return;
-    }
+  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, commitNodeFootprintUpdates, inferESection, nodeById, normalizeNodeLabelDisplayMode, normalizeProjectMeasurements, normalizeRatioParameterInputValue, patchGraphNodes, pushNodeOnlyUndoSnapshot, pushUndoSnapshot, selectedNodeId, setProjectMeasurements, undoScopeForNodeFootprintPatch, nodes, edges, undoScopeForGraphPatch } = __appScope;
     if (!selectedNodeId) {
       return;
     }
@@ -2655,10 +2587,7 @@ export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>
     patchForNode: (node: ModelNode) => BatchCommonParamPatch,
     allowMissingParamKeys: readonly string[] = []
   ) => {
-  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, activeSelectedNodeIds, canBatchEditParam, commitNodeFootprintUpdates, edgeListForNodeIds, nodeById, nodes, normalizeProjectMeasurements, patchGraphNodes, pushUndoSnapshot, requireEditMode, setProjectMeasurements, undoScopeForGraphPatch, writeOperationLog } = __appScope;
-    if (!requireEditMode("批量修改图元参数")) {
-      return;
-    }
+  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, activeSelectedNodeIds, canBatchEditParam, commitNodeFootprintUpdates, edgeListForNodeIds, nodeById, nodes, normalizeProjectMeasurements, patchGraphNodes, pushUndoSnapshot, setProjectMeasurements, undoScopeForGraphPatch, writeOperationLog } = __appScope;
     const allowedMissingParamKeySet = new Set(allowMissingParamKeys);
     const targetNodes = activeSelectedNodeIds.flatMap((nodeId: string) => nodeById.get(nodeId) ?? []);
     const changedPatchKeys = new Set<string>();
@@ -2758,10 +2687,7 @@ export function createApplyBatchCommonParam(__appScope: Record<string, any>) {
 
 export function createApplyBatchCommonMeasurementGroupSetting(__appScope: Record<string, any>) {
   return (key: BatchCommonMeasurementGroupKey, value: string) => {
-  const { BATCH_MEASUREMENT_GROUP_LABELS, measurementGroupCommonValue, measurementGroupWithCommonSetting, projectMeasurements, requireEditMode, selectedNodeIdsWithMeasurementGroups, updateProjectMeasurementsWithUndo } = __appScope;
-    if (!requireEditMode("批量修改量测属性")) {
-      return;
-    }
+  const { BATCH_MEASUREMENT_GROUP_LABELS, measurementGroupCommonValue, measurementGroupWithCommonSetting, projectMeasurements, selectedNodeIdsWithMeasurementGroups, updateProjectMeasurementsWithUndo } = __appScope;
     if (!value || selectedNodeIdsWithMeasurementGroups.size === 0) {
       return;
     }
@@ -2789,10 +2715,7 @@ export function createApplyBatchCommonMeasurementGroupSetting(__appScope: Record
 
 export function createCommitElementTreeNodeIdentity(__appScope: Record<string, any>) {
   return (nodeId: string, field: "idx" | "name", value: string, draftKey?: string) => {
-  const { activeLayerNodeIdSet, clearElementTreeDraft, nodeById, pushNodeOnlyUndoSnapshot, requireEditMode, updateElementTreeDraft, updateGraphNodeById } = __appScope;
-    if (!requireEditMode("修改图元树参数")) {
-      return;
-    }
+  const { activeLayerNodeIdSet, clearElementTreeDraft, nodeById, pushNodeOnlyUndoSnapshot, updateElementTreeDraft, updateGraphNodeById } = __appScope;
     if (!activeLayerNodeIdSet.has(nodeId)) {
       return;
     }
@@ -2822,10 +2745,7 @@ export function createCommitElementTreeNodeIdentity(__appScope: Record<string, a
 
 export function createCommitElementTreeContainerChildParam(__appScope: Record<string, any>) {
   return (nodeId: string, key: string, value: string, draftKey?: string) => {
-  const { activeLayerNodeIdSet, clearElementTreeDraft, nodeById, pushNodeOnlyUndoSnapshot, requireEditMode, updateElementTreeDraft, updateGraphNodeById } = __appScope;
-    if (!requireEditMode("修改图元树参数")) {
-      return;
-    }
+  const { activeLayerNodeIdSet, clearElementTreeDraft, nodeById, pushNodeOnlyUndoSnapshot, updateElementTreeDraft, updateGraphNodeById } = __appScope;
     if (!key) {
       if (draftKey) {
         clearElementTreeDraft(draftKey);
@@ -2865,10 +2785,7 @@ export function createTerminalVbaseFallback(__appScope: Record<string, any>) {
 
 export function createUpdateTerminalVbase(__appScope: Record<string, any>) {
   return (terminalId: string, value: string) => {
-  const { normalizeVoltageBaseInput, pushNodeOnlyUndoSnapshot, requireEditMode, selectedNodeId, updateGraphNodeById } = __appScope;
-    if (!requireEditMode("修改端子参数")) {
-      return;
-    }
+  const { normalizeVoltageBaseInput, pushNodeOnlyUndoSnapshot, selectedNodeId, updateGraphNodeById } = __appScope;
     if (!selectedNodeId) {
       return;
     }
@@ -3526,10 +3443,7 @@ export function createRenderStaticBoxDrawingPreview(__appScope: Record<string, a
 
 export function createStartInteractiveStaticDrawing(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, startPoint: Point) => {
-  const { activateInspectorFromCanvas, clampPointToCanvas, requireEditMode, resetConnectPreviewState, setCanvasSelectionScope, setConnectSource, setContextMenu, setMode, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, writeOperationLog } = __appScope;
-    if (!requireEditMode("绘制图元")) {
-      return;
-    }
+  const { activateInspectorFromCanvas, clampPointToCanvas, resetConnectPreviewState, setCanvasSelectionScope, setConnectSource, setContextMenu, setMode, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, writeOperationLog } = __appScope;
     const pointer = clampPointToCanvas(startPoint);
     setMode("static-draw");
     setStaticDrawing({
@@ -3566,10 +3480,7 @@ export function createCancelInteractiveStaticDrawing(__appScope: Record<string, 
 
 export function createFinishInteractiveStaticDrawing(__appScope: Record<string, any>) {
   return (finalPoint?: Point) => {
-  const { activateInspectorFromCanvas, activeLayerId, appendDistinctStaticDrawingPoint, clampPointToCanvas, createInteractiveStaticDrawingNode, createStaticBoxNodeFromDrawing, edges, isStaticBoxLikeTemplate, nodes, pushRecentGlyph, pushUndoSnapshot, requireEditMode, setCanvasSelectionScope, setGraphArrays, setMode, setRecentGlyphKinds, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, staticDrawingPreviewPoints, updateSmartAlignmentGuides, writeOperationLog } = __appScope;
-    if (!requireEditMode("绘制图元")) {
-      return;
-    }
+  const { activateInspectorFromCanvas, activeLayerId, appendDistinctStaticDrawingPoint, clampPointToCanvas, createInteractiveStaticDrawingNode, createStaticBoxNodeFromDrawing, edges, isStaticBoxLikeTemplate, nodes, pushRecentGlyph, pushUndoSnapshot, setCanvasSelectionScope, setGraphArrays, setMode, setRecentGlyphKinds, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, staticDrawingPreviewPoints, updateSmartAlignmentGuides, writeOperationLog } = __appScope;
     if (!staticDrawing) {
       return;
     }
@@ -3677,10 +3588,7 @@ export function createRenderInteractiveStaticDrawingPreview(__appScope: Record<s
 
 export function createStartLibraryDevicePlacement(__appScope: Record<string, any>) {
   return (template: DeviceTemplate) => {
-  const { componentLibraryDisplayMode, hideLibraryFlyout, isRoutableLineDeviceKind, modelType, requireEditMode, resetConnectPreviewState, resetRoutableLinePreviewState, setCanvasSelectionScope, setConnectSource, setContextMenu, setLibraryPlacement, setMode, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, writeOperationLog } = __appScope;
-    if (!requireEditMode("放置图元")) {
-      return;
-    }
+  const { componentLibraryDisplayMode, hideLibraryFlyout, isRoutableLineDeviceKind, modelType, resetConnectPreviewState, resetRoutableLinePreviewState, setCanvasSelectionScope, setConnectSource, setContextMenu, setLibraryPlacement, setMode, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, writeOperationLog } = __appScope;
     const modelTypeFailureMessage = modelAssociationDeviceModelTypeFailureMessage(modelType, template.kind);
     if (modelTypeFailureMessage) {
       showGlobalMessage(modelTypeFailureMessage);
@@ -3725,10 +3633,7 @@ export function createStartLibraryDevicePlacement(__appScope: Record<string, any
 
 export function createStartLibraryGraphTemplatePlacement(__appScope: Record<string, any>) {
   return (template: GraphTemplate) => {
-  const { requireEditMode, resetConnectPreviewState, resetRoutableLinePreviewState, setConnectSource, setContextMenu, setLibraryPlacement, setMode, setRewiring, setRoutableLinePlacement, setStaticDrawing, writeOperationLog } = __appScope;
-    if (!requireEditMode("放置模板")) {
-      return;
-    }
+  const { resetConnectPreviewState, resetRoutableLinePreviewState, setConnectSource, setContextMenu, setLibraryPlacement, setMode, setRewiring, setRoutableLinePlacement, setStaticDrawing, writeOperationLog } = __appScope;
     setLibraryPlacement({ kind: "graph-template", template, previewPoint: null });
     setRoutableLinePlacement(null);
     resetRoutableLinePreviewState();
@@ -3817,10 +3722,7 @@ export function createClearLibraryPlacementPreview(__appScope: Record<string, an
 
 export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, pointerPosition: Point) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, createNodeFromTemplate, deviceIndexCounters, edges, hasCanvasOriginShift, isInteractiveStaticDrawingKind, isRoutableLineDeviceKind, isStaticBoxLikeTemplate, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, modelType, nodes, pushRecentGlyph, pushUndoSnapshot, rebuildRoutableLineDeviceRouteUpdates, rejectAutoCanvasExpansionForContent, requireEditMode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setLibraryPlacement, setMode, setRecentGlyphKinds, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, startInteractiveStaticDrawing, startLibraryDevicePlacement, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
-    if (!requireEditMode("放置图元")) {
-      return;
-    }
+  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, createNodeFromTemplate, deviceIndexCounters, edges, hasCanvasOriginShift, isInteractiveStaticDrawingKind, isRoutableLineDeviceKind, isStaticBoxLikeTemplate, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, modelType, nodes, pushRecentGlyph, pushUndoSnapshot, rebuildRoutableLineDeviceRouteUpdates, rejectAutoCanvasExpansionForContent, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setLibraryPlacement, setMode, setRecentGlyphKinds, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, startInteractiveStaticDrawing, startLibraryDevicePlacement, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
     const modelTypeFailureMessage = modelAssociationDeviceModelTypeFailureMessage(modelType, template.kind);
     if (modelTypeFailureMessage) {
       showGlobalMessage(modelTypeFailureMessage);
@@ -3908,10 +3810,7 @@ export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>)
 export function createCommitLibraryPlacementAtPoint(__appScope: Record<string, any>) {
   const resolveLibraryPlacementSmartAlignmentPoint = createResolveLibraryPlacementSmartAlignmentPoint(__appScope);
   return (point: Point) => {
-  const { dropGraphTemplate, libraryPlacement, placeLibraryDeviceAtPoint, requireEditMode, setLibraryPlacement, updateSmartAlignmentGuides } = __appScope;
-    if (!requireEditMode("放置图元")) {
-      return;
-    }
+  const { dropGraphTemplate, libraryPlacement, placeLibraryDeviceAtPoint, setLibraryPlacement, updateSmartAlignmentGuides } = __appScope;
     if (!libraryPlacement) {
       return;
     }
@@ -3996,12 +3895,9 @@ export function createStartSidePanelResize(__appScope: Record<string, any>) {
 
 export function createStartCanvasResize(__appScope: Record<string, any>) {
   return (event: ReactPointerEvent<Element>, edge: CanvasResizeEdge) => {
-  const { canvasBoundsRef, canvasDisplayHeight, canvasDisplayOffsetX, canvasDisplayOffsetY, canvasDisplayWidth, canvasFrameRef, canvasHorizontalScrollbarsActive, canvasResizeUndoCapturedRef, canvasScrollSurfaceHeight, canvasScrollSurfaceWidth, canvasVerticalScrollbarsActive, clearCanvasBoundsScrollSyncPending, minimumCanvasBoundsForResizeEdge, pendingCanvasResizeCommitAnchorRef, requireEditMode, setCanvasResizeDrag, svgRef } = __appScope;
+  const { canvasBoundsRef, canvasDisplayHeight, canvasDisplayOffsetX, canvasDisplayOffsetY, canvasDisplayWidth, canvasFrameRef, canvasHorizontalScrollbarsActive, canvasResizeUndoCapturedRef, canvasScrollSurfaceHeight, canvasScrollSurfaceWidth, canvasVerticalScrollbarsActive, clearCanvasBoundsScrollSyncPending, minimumCanvasBoundsForResizeEdge, pendingCanvasResizeCommitAnchorRef, setCanvasResizeDrag, svgRef } = __appScope;
     event.preventDefault();
     event.stopPropagation();
-    if (!requireEditMode("调整画布边界")) {
-      return;
-    }
     if (!svgRef.current) {
       return;
     }
@@ -4598,13 +4494,10 @@ export function createOverlayEdgeUpdatesForTransform(__appScope: Record<string, 
 
 export function createStartGroupTransformDrag(__appScope: Record<string, any>) {
   return (event: ReactPointerEvent<SVGElement>, unit: CanvasLayoutUnit, kind: "rotate" | ScaleHandleKind) => {
-  const { TRANSFORM_ROTATE_HANDLE_GAP, clampPointToCanvas, hasCanvasSelectionModifier, requireEditMode, screenToSvgPoint, selectionRectCenter, setTransformDrag, snapshotGroupTransformEdgeRoutes, snapshotGroupTransformNodes, startModifierSelectionPress, svgRef, transformDragChangedRef } = __appScope;
+  const { TRANSFORM_ROTATE_HANDLE_GAP, clampPointToCanvas, hasCanvasSelectionModifier, screenToSvgPoint, selectionRectCenter, setTransformDrag, snapshotGroupTransformEdgeRoutes, snapshotGroupTransformNodes, startModifierSelectionPress, svgRef, transformDragChangedRef } = __appScope;
     event.stopPropagation();
     if (hasCanvasSelectionModifier(event)) {
       startModifierSelectionPress(event, { kind: "selection", nodeIds: unit.nodeIds, edgeIds: unit.edgeIds });
-      return;
-    }
-    if (!requireEditMode("拖拽图元")) {
       return;
     }
     if (kind !== "rotate" && kind !== "scale-both") {
@@ -4640,13 +4533,10 @@ export function createStartSingleTransformDrag(__appScope: Record<string, any>) 
     kind: "rotate" | ScaleHandleKind,
     handle?: ScaleHandleConfig
   ) => {
-  const { TRANSFORM_ROTATE_HANDLE_GAP, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_STEM_START, clampPointToCanvas, hasCanvasSelectionModifier, isLineSegmentBusNode, nodeForegroundImage, nodeImage, nodeKindAllowsResizeTransform, nodeRotateHandleControlPoints, nodeUprightRotateHandleControlPoints, nodeUsesUprightStaticSelectionOutline, requireEditMode, screenToSvgPoint, setTransformDrag, snapshotSingleTransformNode, startModifierSelectionPress, svgRef, transformDragChangedRef } = __appScope;
+  const { TRANSFORM_ROTATE_HANDLE_GAP, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_STEM_START, clampPointToCanvas, hasCanvasSelectionModifier, isLineSegmentBusNode, nodeForegroundImage, nodeImage, nodeKindAllowsResizeTransform, nodeRotateHandleControlPoints, nodeUprightRotateHandleControlPoints, nodeUsesUprightStaticSelectionOutline, screenToSvgPoint, setTransformDrag, snapshotSingleTransformNode, startModifierSelectionPress, svgRef, transformDragChangedRef } = __appScope;
     event.stopPropagation();
     if (hasCanvasSelectionModifier(event)) {
       startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
-      return;
-    }
-    if (!requireEditMode("拖拽图元")) {
       return;
     }
     const lineSegmentBusResize = isLineSegmentBusNode(node);
@@ -4682,7 +4572,7 @@ export function createStartSingleTransformDrag(__appScope: Record<string, any>) 
 
 export function createStartGroupMoveDrag(__appScope: Record<string, any>) {
   return (event: ReactPointerEvent<SVGRectElement>, unit: CanvasLayoutUnit) => {
-  const { activateInspectorFromCanvas, activeLayerNodeIdSet, activeSelectedNodeIds, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clampPointToCanvas, clearNodeDragMoveSchedule, connectSource, createCanvasSelectionSnapshot, dragUndoCapturedRef, edgeListForNodeIds, expandActiveGroupSelection, groupExpandedCanvasSelection, hasCanvasSelectionModifier, isMultiNodeMoveState, isWholeActiveLayerMove, mode, movableCanvasNodeIds, nodeById, nodes, requireEditMode, routePointsSnapshotForMove, screenToSvgPoint, setCanvasSelectionScope, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, snapshotRouteBounds, startDraggingState, startModifierSelectionPress, svgRef } = __appScope;
+  const { activateInspectorFromCanvas, activeLayerNodeIdSet, activeSelectedNodeIds, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clampPointToCanvas, clearNodeDragMoveSchedule, connectSource, createCanvasSelectionSnapshot, dragUndoCapturedRef, edgeListForNodeIds, expandActiveGroupSelection, groupExpandedCanvasSelection, hasCanvasSelectionModifier, isMultiNodeMoveState, isWholeActiveLayerMove, mode, movableCanvasNodeIds, nodeById, nodes, routePointsSnapshotForMove, screenToSvgPoint, setCanvasSelectionScope, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, snapshotRouteBounds, startDraggingState, startModifierSelectionPress, svgRef } = __appScope;
     event.preventDefault();
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || mode === "connect" || connectSource) {
@@ -4690,9 +4580,6 @@ export function createStartGroupMoveDrag(__appScope: Record<string, any>) {
     }
     if (hasCanvasSelectionModifier(event)) {
       startModifierSelectionPress(event, { kind: "selection", nodeIds: unit.nodeIds, edgeIds: unit.edgeIds });
-      return;
-    }
-    if (!requireEditMode("拖拽图元")) {
       return;
     }
     if (unit.nodeIds.length === 0 || unit.nodeIds.some((nodeId) => !activeLayerNodeIdSet.has(nodeId))) {

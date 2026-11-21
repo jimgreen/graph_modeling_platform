@@ -187,7 +187,6 @@ describe("graph template library actions", () => {
       customGraphTemplateTypes: ["自定义类型", "其他类型"],
       customGraphTemplates: [firstDeleted, remaining, secondDeleted],
       persistTemplateLibraryChange: (payload: any) => persistTemplateLibraryChangeCalls.push(payload),
-      requireEditMode: () => true,
       setCustomGraphTemplateTypes: (types: string[]) => setCustomGraphTemplateTypesCalls.push(types),
       setCustomGraphTemplates: (templates: any[]) => setCustomGraphTemplatesCalls.push(templates),
       setTemplateMenu: (next: any) => { templateMenu = next; },
@@ -234,7 +233,6 @@ describe("model-association containment guards for multi-node insertion", () => 
       canvasClipboard,
       modelType: "厂站",
       pushUndoSnapshot,
-      requireEditMode: () => true,
       setGraphArrays,
       writeOperationLog: vi.fn()
     });
@@ -271,7 +269,6 @@ describe("model-association containment guards for multi-node insertion", () => 
     const dropGraphTemplate = createDropGraphTemplate({
       modelType: "台区",
       pushUndoSnapshot,
-      requireEditMode: () => true,
       setGraphArrays,
       writeOperationLog: vi.fn()
     });

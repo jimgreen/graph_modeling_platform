@@ -1,5 +1,5 @@
 // 导出/发送端点的文本编码与 XML 声明单源：
-// /v1/schemes/model/e-file、/svg、/cim-xml、/send 共用，保证响应体与前端落盘文件逐字节一致。
+// /v1/schemes/model/export 的 e-file/svg/cim-xml format 与 /send 共用，保证响应体与前端落盘文件逐字节一致。
 import iconv from "iconv-lite";
 
 // 文本 → 目标编码字节：gbk 走 iconv，其余按 UTF-8。

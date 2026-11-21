@@ -2,12 +2,18 @@
 // 模式：export function createXxx(__appScope: Record<string, any>) { ...; return () => <JSX />; }
 
 import { createPortal } from "react-dom";
-import { Input, Button } from "antd";
+import { Input, Button, Tree } from "antd";
+import { Cable, ChevronDown, ChevronRight, Factory, FileJson, FolderOpen, HousePlug, Network } from "lucide-react";
 import { sortByKeyOrder } from "../libraryTreeOrder";
 import {
   PROJECT_TREE_DRAG_TYPE_MODEL,
   PROJECT_TREE_DRAG_TYPE_SCHEME,
-  PROJECT_TREE_ROOT_END_KEY
+  PROJECT_TREE_ROOT_END_KEY,
+  clearProjectTreeDragExpandTimer,
+  projectTreeDragLayer,
+  projectTreeSchemeContainsId,
+  scheduleProjectTreeDragExpand,
+  projectModelTypeIconName
 } from "./appDeviceDefinitionFactories";
 import type React from "react";
 import type { GraphTemplate } from "./appCoreCanvasUtilities";
@@ -17,13 +23,15 @@ import type {
   ElementTreeGroup,
   ElementTreeItem,
   ModelLayer,
+  SavedProjectRecord,
   SavedSchemeRecord
 } from "../model";
+import { MODEL_TYPE_META } from "../model";
 
 // 图层管理面板
 export function createRenderLayerManager(__appScope: Record<string, any>) {
   const {
-    layers, activeLayerId, setActiveLayer, isBrowseMode,
+    layers, activeLayerId, setActiveLayer,
     addModelLayer, setAllModelLayersVisibility, toggleModelLayerVisibility,
     commitModelLayerName, moveModelLayer, deleteModelLayer,
     BufferedTextInput
@@ -60,7 +68,7 @@ export function createRenderLayerManager(__appScope: Record<string, any>) {
               className="layer-name-input"
               aria-label={`图层名称：${layer.name}`}
               value={layer.name}
-              disabled={isBrowseMode}
+
               onCommit={(nextValue: string) => commitModelLayerName(layer.id, nextValue)}
               onKeyDown={(event: React.KeyboardEvent) => event.stopPropagation()}
             />
@@ -76,18 +84,18 @@ export function createRenderLayerManager(__appScope: Record<string, any>) {
 
 // 类定义操作按钮
 export function createRenderLibraryDefinitionActions(__appScope: Record<string, any>) {
-  const { isBrowseMode, openMeasurementConfigDialog, openDeviceDefinitionDialog } = __appScope;
+  const { openMeasurementConfigDialog, openDeviceDefinitionDialog } = __appScope;
   return () => (
     <div className="library-definition-actions">
       <button
         type="button"
         className="custom-device-create-button measurement-config-open-button"
-        disabled={isBrowseMode}
+
         onClick={openMeasurementConfigDialog}
       >
         量测定义
       </button>
-      <button type="button" className="custom-device-create-button" disabled={isBrowseMode} onClick={openDeviceDefinitionDialog}>
+      <button type="button" className="custom-device-create-button"  onClick={openDeviceDefinitionDialog}>
         元件定义
       </button>
     </div>
@@ -97,7 +105,7 @@ export function createRenderLibraryDefinitionActions(__appScope: Record<string, 
 // 图模板按钮
 export function createRenderGraphTemplateButton(__appScope: Record<string, any>) {
   const {
-    isEditMode, isBrowseMode, templateLibraryDisplayMode,
+    isEditMode, templateLibraryDisplayMode,
     startLibraryGraphTemplatePlacement, cancelLibraryPlacement,
     setContextMenu, setProjectMenu, setTemplateMenu,
     clearLibraryFlyoutCloseTimer, setHoveredGraphTemplateType,
@@ -109,7 +117,7 @@ export function createRenderGraphTemplateButton(__appScope: Record<string, any>)
       type="button"
       className="template-library-item"
       draggable={isEditMode}
-      disabled={isBrowseMode}
+
       title={`${template.typeName} / ${template.name} / ${template.sourceSize.width}×${template.sourceSize.height}`}
       onClick={() => startLibraryGraphTemplatePlacement(template)}
       onContextMenu={(event) => {
@@ -191,120 +199,427 @@ export function createRenderProjectPanel(__appScope: Record<string, any>) {
     backendSchemesLoadedRef,
     schemes, filteredProjectSchemes
   } = __appScope;
-  // 顺序覆盖随拖动变化，而本工厂闭包捕获的是**首帧** scope（__appScope 每帧重建）——
-  // 故每次渲染都从当前帧 scope 读，否则拖动后的顺序不会反映到 DOM。
   const currentScope = () => (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
-  const currentLibraryTreeOrder = () => currentScope().libraryTreeOrder;
-  // 同理：renderProjectSchemeNode 必须在**当前帧**取 —— 首帧闭包里的旧版本不含
-  // 拖动排序的 JSX（把手/指示线 class），用它渲染会一直是旧界面。
-  const currentRenderProjectSchemeNode = () => currentScope().renderProjectSchemeNode;
-  // 列表末尾落点的拖拽处理（跨层级移动到顶层末尾）。
-  // 用 React 的事件类型（工厂签名一致）；这里只转发，不做类型收窄。
-  const handleProjectTreeDragOver = (event: React.DragEvent<HTMLElement>, dropKey: string) =>
-    currentScope().handleProjectTreeDragOver?.(event, dropKey);
-  const handleProjectTreeDrop = (event: React.DragEvent<HTMLElement>, dropKey: string) =>
-    currentScope().handleProjectTreeDrop?.(event, dropKey);
-  const handleLibraryTreeDragLeave = (event: React.DragEvent<HTMLElement>) =>
-    currentScope().handleLibraryTreeDragLeave?.(event);
-  const projectTreeDropKey = currentScope().projectTreeDropKey ?? "";
-  // 末尾落点（拖到列表空白处 = 移到顶层末尾）：插入线画在**最后一个顶层方案**的下边缘，
-  // 而不是容器底部（容器很高时线会落到很远的地方，看不出插入位）。
-  const rootEndDropKey = projectTreeDropKey === `${PROJECT_TREE_ROOT_END_KEY}|after`;
   const toggleModelType = (type: string) => {
     setProjectModelTypeFilter((prev: string[]) =>
       prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
     );
   };
-  return () => (
-    <section className="project-panel" onContextMenu={openBlankProjectLibraryContextMenu}>
+
+  const modelCountForScheme = (scheme: SavedSchemeRecord): number =>
+    (scheme.projects ?? []).length + (scheme.children ?? []).reduce((sum, child) => sum + modelCountForScheme(child), 0);
+
+  const buildProjectTreeData = (scope: Record<string, any>): any[] => {
+    const order = scope.libraryTreeOrder ?? {};
+    const build = (list: SavedSchemeRecord[], parentKey: string): any[] => {
+      const orderedSchemes = sortByKeyOrder(
+        list ?? [],
+        (scheme: SavedSchemeRecord) => scheme.id,
+        order.projectSchemes?.[parentKey] ?? []
+      );
+      return orderedSchemes.map((scheme) => {
+        const orderedProjects = sortByKeyOrder(
+          scheme.projects ?? [],
+          (project: SavedProjectRecord) => project.id,
+          order.projectModels?.[scheme.id] ?? []
+        );
+        const projectNodes = orderedProjects.map((project) => ({
+          key: project.id,
+          kind: "model",
+          schemeId: scheme.id,
+          project,
+          isLeaf: true,
+          title: project.name
+        }));
+        return {
+          key: scheme.id,
+          kind: "scheme",
+          scheme,
+          isLeaf: false,
+          title: scheme.name,
+          children: [...projectNodes, ...build(scheme.children ?? [], scheme.id)]
+        };
+      });
+    };
+    return build(scope.filteredProjectSchemes ?? scope.schemes ?? [], "");
+  };
+
+  const treeNodeKeys = (nodes: readonly any[], kind: string, result: string[] = []): string[] => {
+    for (const node of nodes) {
+      if (node.kind === kind) {
+        result.push(String(node.key));
+      }
+      if (Array.isArray(node.children)) {
+        treeNodeKeys(node.children, kind, result);
+      }
+    }
+    return result;
+  };
+
+  const dataTransferDragKey = (event: { dataTransfer?: DataTransfer | null } | null | undefined): string => {
+    const dataTransfer = event?.dataTransfer;
+    if (!dataTransfer) {
+      return "";
+    }
+    return dataTransfer.getData(PROJECT_TREE_DRAG_TYPE_MODEL) || dataTransfer.getData(PROJECT_TREE_DRAG_TYPE_SCHEME) || "";
+  };
+
+  const clearTreeDragExpand = () => {
+    clearProjectTreeDragExpandTimer(currentScope());
+  };
+
+  const debugProjectTreeDrag = (label: string, payload: Record<string, unknown>) => {
+    if (import.meta.env.DEV && typeof window !== "undefined") {
+      const diagnosticWindow = window as typeof window & {
+        __projectTreeDragLogs?: Array<{ at: number; label: string; payload: Record<string, unknown> }>;
+      };
+      const logs = diagnosticWindow.__projectTreeDragLogs ?? [];
+      logs.push({ at: Date.now(), label: `tree:${label}`, payload });
+      diagnosticWindow.__projectTreeDragLogs = logs.slice(-100);
+      console.info(`[project-tree-drag] tree:${label} ${JSON.stringify(payload)}`);
+    }
+  };
+
+  const handleRootDragOver = (event: React.DragEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement)?.closest?.(".ant-tree-treenode")) {
+      return;
+    }
+    const dragKey = currentScope().projectTreeDragKey || dataTransferDragKey(event.nativeEvent);
+    if (!dragKey) {
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
+  };
+
+  const handleRootDrop = (event: React.DragEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement)?.closest?.(".ant-tree-treenode")) {
+      return;
+    }
+    const dragKey = currentScope().projectTreeDragKey || dataTransferDragKey(event.nativeEvent);
+    if (!dragKey) {
+      return;
+    }
+    event.preventDefault();
+    currentScope().handleProjectTreeDrop?.(event, PROJECT_TREE_ROOT_END_KEY, { dragKey, edge: "after" });
+  };
+
+  const renderProjectTreeTitle = (nodeData: any, expandedKeys: readonly string[], isFiltering: boolean) => {
+    const scope = currentScope();
+    if (nodeData.kind === "scheme") {
+      const scheme = nodeData.scheme as SavedSchemeRecord;
+      const selected = Boolean(scope.selectedSchemeIds?.includes(nodeData.key) || scope.selectedSchemeId === nodeData.key);
+      const isEmpty = (scheme.projects ?? []).length === 0 && (scheme.children ?? []).length === 0;
+      const displaySchemeId = scheme.schemeId;
+      const schemeIdTooltip = typeof displaySchemeId === "number" && Number.isSafeInteger(displaySchemeId) && displaySchemeId > 0
+        ? `方案 ID：${displaySchemeId}`
+        : "方案 ID：未分配";
+      return (
+        <span
+          className={`project-tree-node-title project-tree-node-title-scheme${selected ? " selected" : ""}`}
+          aria-label={`方案：${scheme.name}`}
+          title={schemeIdTooltip}
+        >
+          <FolderOpen className="scheme-folder-icon" size={15} aria-hidden="true" />
+          <span className="project-tree-name">{scheme.name}</span>
+          <span className="scheme-model-count">{modelCountForScheme(scheme)}</span>
+          {isEmpty && expandedKeys.includes(nodeData.key) && !isFiltering ? (
+            <span className="project-tree-empty-hint">暂无模型或子方案</span>
+          ) : null}
+        </span>
+      );
+    }
+
+    const project = nodeData.project as SavedProjectRecord;
+    const rawProjectModelType = project.project?.modelType;
+    const projectModelType = typeof rawProjectModelType === "string" && ["微网", "厂站", "馈线", "台区"].includes(rawProjectModelType)
+      ? rawProjectModelType
+      : "其他";
+    const projectModelTypeIcons: Record<string, typeof FileJson> = {
+      Cable,
+      Factory,
+      FileJson,
+      HousePlug,
+      Network
+    };
+    const ProjectModelTypeIcon = projectModelTypeIcons[projectModelTypeIconName(projectModelType)] ?? FileJson;
+    const selected = Boolean(scope.selectedProjectIds?.includes(nodeData.key) || scope.selectedProjectId === nodeData.key);
+    const active = project.id === scope.activeProjectKey;
+    const displayProjectId = project.project?.idx;
+    const projectIdTooltip = typeof displayProjectId === "number" && Number.isSafeInteger(displayProjectId) && displayProjectId > 0
+      ? `模型 ID：${displayProjectId}`
+      : "模型 ID：未分配";
+    return (
+      <span
+        className={`project-tree-node-title project-tree-node-title-model${selected ? " selected" : ""}${active ? " active" : ""}`}
+        aria-label={`模型：${project.name}`}
+        title={projectIdTooltip}
+      >
+        <ProjectModelTypeIcon
+          aria-hidden="true"
+          className="project-item-icon"
+          data-model-type={projectModelType}
+          size={14}
+        />
+        <span className="project-tree-name">{project.name}</span>
+        <span className="project-model-type-tag" style={{ background: MODEL_TYPE_META[projectModelType]?.color ?? "#94a3b8" }}>
+          {projectModelType}
+        </span>
+      </span>
+    );
+  };
+
+  const renderProjectTree = () => {
+    const scope = currentScope();
+    const treeData = buildProjectTreeData(scope);
+    const schemeKeys = treeNodeKeys(treeData, "scheme");
+    const isFiltering = Boolean(scope.projectSearchNeedle || (scope.projectModelTypeFilter?.length ?? 0) > 0);
+    const expandedKeys = isFiltering
+      ? schemeKeys
+      : (scope.expandedSchemeIds ?? []).filter((key: string) => schemeKeys.includes(key));
+    const selectedKeys = [
+      ...(scope.selectedSchemeIds ?? []),
+      ...(scope.selectedProjectIds ?? [])
+    ];
+
+    const handleTreeDragStart = (info: any) => {
+      const dragKey = String(info.node?.key ?? "");
+      const layer = projectTreeDragLayer(dragKey);
+      const event = info.event as DragEvent | undefined;
+      if (!scope.isEditMode || !layer || !dragKey) {
+        event?.preventDefault?.();
+        return;
+      }
+      if (scope.projectTreeDragSuppressClickRef) {
+        scope.projectTreeDragSuppressClickRef.current = true;
+      }
+      event?.dataTransfer?.setData(layer === "model" ? PROJECT_TREE_DRAG_TYPE_MODEL : PROJECT_TREE_DRAG_TYPE_SCHEME, dragKey);
+      if (event?.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+      }
+      if (scope.projectTreeDragKeyRef) {
+        scope.projectTreeDragKeyRef.current = dragKey;
+      }
+      scope.setProjectTreeDragKey?.(dragKey);
+      debugProjectTreeDrag("start", { dragKey, layer });
+    };
+
+    const handleTreeDragEnter = (info: any) => {
+      const latestScope = currentScope();
+      const dragKey = latestScope.projectTreeDragKeyRef?.current || latestScope.projectTreeDragKey || dataTransferDragKey(info.event);
+      const dropKey = String(info.node?.key ?? "");
+      const isModelIntoScheme = projectTreeDragLayer(dragKey) === "model" && projectTreeDragLayer(dropKey) === "scheme";
+      if (isModelIntoScheme && !expandedKeys.includes(dropKey)) {
+        scheduleProjectTreeDragExpand(latestScope, dropKey);
+      } else {
+        clearProjectTreeDragExpandTimer(latestScope);
+      }
+    };
+
+    const handleTreeDragLeave = () => {
+      clearTreeDragExpand();
+      currentScope().setProjectTreeDropKey?.("");
+    };
+
+    const allowTreeDrop = ({ dropNode, dropPosition }: any) => {
+      const latestScope = currentScope();
+      const dragKey = latestScope.projectTreeDragKeyRef?.current || latestScope.projectTreeDragKey;
+      const dragLayer = projectTreeDragLayer(dragKey);
+      const dropKey = String(dropNode?.key ?? "");
+      const dropLayer = projectTreeDragLayer(dropKey);
+      if (!latestScope.isEditMode || !dragLayer || !dropLayer) {
+        debugProjectTreeDrag("allow-rejected", { dragKey, dropKey, dragLayer, dropLayer, dropPosition });
+        return false;
+      }
+      if (dragLayer === "scheme" && dropLayer === "model") {
+        debugProjectTreeDrag("allow-rejected", { dragKey, dropKey, dragLayer, dropLayer, dropPosition });
+        return false;
+      }
+      if (dragLayer === "scheme" && (
+        dropKey === dragKey
+        || projectTreeSchemeContainsId(latestScope.schemes ?? [], dragKey, dropKey)
+        || dropKey.startsWith(`${dragKey}/`)
+      )) {
+        debugProjectTreeDrag("allow-rejected", { dragKey, dropKey, dragLayer, dropLayer, dropPosition, reason: "cycle" });
+        return false;
+      }
+      if (dragLayer === "model" && dragKey === dropKey) {
+        debugProjectTreeDrag("allow-rejected", { dragKey, dropKey, dragLayer, dropLayer, dropPosition, reason: "self" });
+        return false;
+      }
+      if (dropLayer === "model" && Number(dropPosition) === 0) {
+        debugProjectTreeDrag("allow-rejected", { dragKey, dropKey, dragLayer, dropLayer, dropPosition, reason: "model-inside" });
+        return false;
+      }
+      debugProjectTreeDrag("allow", { dragKey, dropKey, dragLayer, dropLayer, dropPosition });
+      return true;
+    };
+
+    const handleTreeDrop = (info: any) => {
+      const latestScope = currentScope();
+      const dragKey = String(info.dragNode?.key ?? latestScope.projectTreeDragKey ?? "");
+      const dropKey = String(info.node?.key ?? "");
+      if (!dragKey || !dropKey) {
+        debugProjectTreeDrag("drop-ignored", { dragKey, dropKey });
+        return;
+      }
+      const edge = info.dropToGap ? (Number(info.dropPosition) < 0 ? "before" : "after") : "inside";
+      debugProjectTreeDrag("drop", {
+        dragKey,
+        dropKey,
+        dropPosition: info.dropPosition,
+        dropToGap: Boolean(info.dropToGap),
+        edge
+      });
+      latestScope.handleProjectTreeDrop?.(info.event as any, dropKey, { dragKey, edge });
+    };
+
+    const handleTreeSelect = (keys: React.Key[], info: any) => {
+      const node = info.node as any;
+      const key = String(node.key);
+      const multi = Boolean(info.nativeEvent?.ctrlKey || info.nativeEvent?.metaKey || info.nativeEvent?.shiftKey);
+      if (node.kind === "scheme") {
+        if (multi) {
+          scope.toggleSchemeSelection?.(key);
+        } else {
+          scope.selectSingleScheme?.(key);
+        }
+        scope.toggleSchemeExpanded?.(key);
+        return;
+      }
+      const schemeId = String(node.schemeId ?? "");
+      if (multi) {
+        scope.toggleProjectSelection?.(schemeId, key);
+      } else {
+        scope.selectSingleProject?.(schemeId, key);
+        scope.requestLoadSavedProject?.(node.project, schemeId);
+      }
+      scope.setInspectorTab?.("model");
+    };
+
+    const handleTreeRightClick = ({ event, node }: any) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const key = String(node.key);
+      if (node.kind === "scheme") {
+        if (!scope.selectedSchemeIds?.includes(key)) {
+          scope.selectSingleScheme?.(key);
+        }
+        scope.setProjectMenu?.({ x: event.clientX, y: event.clientY, schemeId: key });
+      } else {
+        const schemeId = String(node.schemeId ?? "");
+        if (!scope.selectedProjectIds?.includes(key)) {
+          scope.selectSingleProject?.(schemeId, key);
+        }
+        scope.setProjectMenu?.({ x: event.clientX, y: event.clientY, schemeId, projectId: key });
+      }
+    };
+
+    return (
+      <Tree
+        className="project-tree-antd"
+        aria-label="绘图模型列表"
+        blockNode
+        showLine={{ showLeafIcon: false }}
+        treeData={treeData}
+        selectedKeys={selectedKeys}
+        expandedKeys={expandedKeys}
+        autoExpandParent={false}
+        multiple
+        selectable
+        draggable={Boolean(scope.isEditMode)}
+        allowDrop={allowTreeDrop}
+        switcherIcon={({ expanded, isLeaf }: any) => isLeaf ? null : expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        titleRender={(nodeData: any) => renderProjectTreeTitle(nodeData, expandedKeys, isFiltering)}
+        onExpand={(nextKeys: React.Key[]) => {
+          if (!isFiltering) {
+            scope.setExpandedSchemeIds?.((nextKeys as string[]).filter((key) => schemeKeys.includes(key)));
+          }
+        }}
+        onSelect={handleTreeSelect}
+        onRightClick={handleTreeRightClick}
+        onDragStart={handleTreeDragStart}
+        onDragEnter={handleTreeDragEnter}
+        onDragLeave={handleTreeDragLeave}
+        onDragEnd={() => {
+          clearTreeDragExpand();
+          scope.endProjectTreeSortDrag?.();
+        }}
+        onDrop={handleTreeDrop}
+      />
+    );
+  };
+
+  return () => {
+    const scope = currentScope();
+    const currentSchemes = scope.schemes ?? schemes ?? [];
+    const currentFilteredSchemes = scope.filteredProjectSchemes ?? filteredProjectSchemes ?? currentSchemes;
+    const currentProjectSearchQuery = scope.projectSearchQuery ?? projectSearchQuery ?? "";
+    const currentProjectModelTypeFilter = scope.projectModelTypeFilter ?? projectModelTypeFilter ?? [];
+    const currentBackendSchemesLoadedRef = scope.backendSchemesLoadedRef ?? backendSchemesLoadedRef;
+    return (
+      <section className="project-panel" onContextMenu={openBlankProjectLibraryContextMenu}>
       <div className="library-search project-search">
         <Search size={15} aria-hidden="true" />
         <Input
-          value={projectSearchQuery}
+          value={currentProjectSearchQuery}
           onChange={(event) => setProjectSearchQuery(event.target.value)}
           placeholder="搜索方案/模型"
           aria-label="搜索模型库"
         />
-        {projectSearchQuery && (
+        {currentProjectSearchQuery && (
           <button type="button" aria-label="清空模型库搜索" title="清空" onClick={() => setProjectSearchQuery("")}>
             <X size={14} />
           </button>
         )}
       </div>
       <div className="project-model-type-filter">
-        {MODEL_TYPES.map((type: string) => (
-          <button
-            key={type}
-            type="button"
-            className={`project-model-type-btn${projectModelTypeFilter?.includes(type) ? " active" : ""}`}
-            onClick={() => toggleModelType(type)}
-            title={type}
-          >
-            {type}
-          </button>
-        ))}
+        {MODEL_TYPES.map((type: string) => {
+          const modelTypeColor = MODEL_TYPE_META[type as keyof typeof MODEL_TYPE_META]?.color ?? "#94a3b8";
+          return (
+            <button
+              key={type}
+              type="button"
+              className={`project-model-type-btn${currentProjectModelTypeFilter?.includes(type) ? " active" : ""}`}
+              data-model-type={type}
+              aria-label={`按模型类型筛选：${type}`}
+              onClick={() => toggleModelType(type)}
+              style={{ "--model-type-color": modelTypeColor } as React.CSSProperties}
+              title={type}
+            >
+              {type}
+            </button>
+          );
+        })}
       </div>
       <div
         className="project-list listbox"
-        role="listbox"
-        aria-label="绘图模型列表"
+        role="tree"
         onPointerEnter={() => {
           projectListPointerInsideRef.current = true;
         }}
         onPointerLeave={() => {
           projectListPointerInsideRef.current = false;
         }}
-        onDragOver={(event) => {
-          // 列表空白处 = 末尾落点（移到顶层末尾）。
-          // **必须排除行内**：dragover 会从具体行冒泡到容器，容器若无条件接管，
-          // 会把行处理器刚算好的插入边覆盖成末尾落点 —— 结果只有最后一行有虚线。
-          if ((event.target as HTMLElement)?.closest?.(".scheme-option, .project-option")) {
-            return;
-          }
-          handleProjectTreeDragOver(event, PROJECT_TREE_ROOT_END_KEY);
-          event.preventDefault();
-        }}
-        onDragLeave={handleLibraryTreeDragLeave}
-        onDrop={(event) => {
-          // 同上：落在行上时交给行自己的 drop 处理。
-          if ((event.target as HTMLElement)?.closest?.(".scheme-option, .project-option")) {
-            return;
-          }
-          const sortSchemeId = event.dataTransfer?.getData?.(PROJECT_TREE_DRAG_TYPE_SCHEME);
-          if (sortSchemeId) {
-            handleProjectTreeDrop(event, PROJECT_TREE_ROOT_END_KEY);
-            return;
-          }
-          const sortModelId = event.dataTransfer?.getData?.(PROJECT_TREE_DRAG_TYPE_MODEL);
-          if (sortModelId) {
-            handleProjectTreeDrop(event, PROJECT_TREE_ROOT_END_KEY);
-          }
-        }}
+        onDragOver={handleRootDragOver}
+        onDrop={handleRootDrop}
         onContextMenu={openBlankProjectLibraryContextMenu}
       >
-        {schemes.length === 0 ? (
+        {currentSchemes.length === 0 ? (
           <p className="project-empty">
-            {backendSchemesLoadedRef.current ? "暂无方案，右键此处创建方案" : "正在连接模型库，恢复后将自动加载..."}
+            {currentBackendSchemesLoadedRef?.current ? "暂无方案，右键此处创建方案" : "正在连接模型库，恢复后将自动加载..."}
           </p>
-        ) : filteredProjectSchemes.length === 0 ? (
+        ) : currentFilteredSchemes.length === 0 ? (
           <p className="project-empty project-search-empty">未找到匹配方案或模型</p>
         ) : (
-          (() => {
-            const ordered = sortByKeyOrder(
-              filteredProjectSchemes,
-              (scheme: SavedSchemeRecord) => scheme.id,
-              currentLibraryTreeOrder()?.projectSchemes?.[""] ?? []
-            );
-            const renderNode = currentRenderProjectSchemeNode();
-            return ordered.map((scheme: SavedSchemeRecord, index: number) =>
-              // 末尾落点：插入线画在最后一个顶层方案的下边缘。
-              renderNode(scheme, 0, index === ordered.length - 1 && rootEndDropKey)
-            );
-          })()
+          renderProjectTree()
         )}
       </div>
     </section>
-  );
+    );
+  };
 }
 
 // 图元树面板
@@ -326,7 +641,6 @@ export function createRenderElementTreePanel(__appScope: Record<string, any>) {
     focusElementTreeItem, jumpToElementTreeItem,
     openElementTreeItemContextMenu,
     elementTreeItemRefs,
-    isBrowseMode,
     commitElementTreeNodeIdentity, commitElementTreeContainerChildParam
   } = __appScope;
   return () => (
@@ -477,7 +791,7 @@ export function createRenderElementTreePanel(__appScope: Record<string, any>) {
                                             onClick={(event: React.MouseEvent) => event.stopPropagation()}
                                             onDoubleClick={(event: React.MouseEvent) => event.stopPropagation()}
                                             onKeyDown={(event: React.KeyboardEvent) => event.stopPropagation()}
-                                            disabled={!editable || isBrowseMode}
+                                            disabled={!editable}
                                             onCommit={(nextValue: string) => commitElementTreeNodeIdentity(item.id, "idx", nextValue)}
                                           />
                                         </label>
@@ -488,7 +802,7 @@ export function createRenderElementTreePanel(__appScope: Record<string, any>) {
                                             onClick={(event: React.MouseEvent) => event.stopPropagation()}
                                             onDoubleClick={(event: React.MouseEvent) => event.stopPropagation()}
                                             onKeyDown={(event: React.KeyboardEvent) => event.stopPropagation()}
-                                            disabled={!editable || isBrowseMode}
+                                            disabled={!editable}
                                             onCommit={(nextValue: string) => commitElementTreeNodeIdentity(item.id, "name", nextValue)}
                                           />
                                         </label>
@@ -517,7 +831,7 @@ export function createRenderElementTreePanel(__appScope: Record<string, any>) {
                                                 onClick={(event: React.MouseEvent) => event.stopPropagation()}
                                                 onDoubleClick={(event: React.MouseEvent) => event.stopPropagation()}
                                                 onKeyDown={(event: React.KeyboardEvent) => event.stopPropagation()}
-                                                disabled={!editable || isBrowseMode}
+                                                disabled={!editable}
                                                 onCommit={(nextValue: string) => commitElementTreeContainerChildParam(item.id, childIdxKey, nextValue)}
                                               />
                                             </label>
@@ -528,7 +842,7 @@ export function createRenderElementTreePanel(__appScope: Record<string, any>) {
                                                 onClick={(event: React.MouseEvent) => event.stopPropagation()}
                                                 onDoubleClick={(event: React.MouseEvent) => event.stopPropagation()}
                                                 onKeyDown={(event: React.KeyboardEvent) => event.stopPropagation()}
-                                                disabled={!editable || isBrowseMode}
+                                                disabled={!editable}
                                                 onCommit={(nextValue: string) => commitElementTreeContainerChildParam(item.id, child.nameKey, nextValue)}
                                               />
                                             </label>

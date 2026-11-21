@@ -6,6 +6,7 @@ import {
   createAutoSpreadCanvasGraphics,
   createCommitRoutableLineDevice,
   createCommitLayoutNodePositions,
+  createCreateSchemeRecord,
   createFinishConnectToTarget,
   createFinishRoutableLineToTarget,
   createFinishRoutableLineEndpointDrag,
@@ -23,7 +24,7 @@ import { createMergeNodeUpdateLists } from "./appExtracted/appSelectionDragFacto
 import { reconcileNodeWithDefinition as reconcileNodeWithDefinitionReal } from "./definitionInstanceSync";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
 import { savedSchemePathForId } from "./appExtracted/appCoreCanvasUtilities";
-import { findSavedProjectRecordInSchemes, findSavedSchemeById } from "./model-routing";
+import { findSavedProjectRecordInSchemes, findSavedSchemeById, replaceSavedSchemeById } from "./model-routing";
 import { DEVICE_LIBRARY, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, canConnectTerminals, createDefaultNode, getNodeScaleX, getNodeScaleY, getTerminalPoint, isBusNode, isCanvasNodeMovable, isLineSegmentBusNode, isRoutableLineDeviceKind, type ModelNode } from "./model";
 import {
   createRoutableLineDeviceFromEndpoints,
@@ -120,7 +121,6 @@ describe("跨模型告警定位的未保存修改衔接", () => {
     const onLoaded = vi.fn();
     const loadSavedProjectRecord = vi.fn().mockResolvedValue(true);
     const request = createRequestUnsavedChangeAction({
-      enterBrowseMode: vi.fn(),
       loadSavedProjectRecord,
       saveRequired: false,
       setPendingUnsavedAction: vi.fn()
@@ -161,7 +161,6 @@ describe("跨模型告警定位的未保存修改衔接", () => {
     };
     const setPendingUnsavedAction = vi.fn();
     const resolve = createResolveUnsavedChangeAction({
-      enterBrowseMode: vi.fn(),
       loadSavedProjectRecord,
       pendingUnsavedAction: action,
       saveCurrentProject: vi.fn().mockResolvedValue(true),
@@ -194,7 +193,6 @@ describe("跨模型告警定位的未保存修改衔接", () => {
     const loadSavedProjectRecord = vi.fn();
     const setPendingUnsavedAction = vi.fn();
     const resolve = createResolveUnsavedChangeAction({
-      enterBrowseMode: vi.fn(),
       loadSavedProjectRecord,
       pendingUnsavedAction: action,
       saveCurrentProject: vi.fn(() => savePromise),
@@ -221,33 +219,6 @@ describe("跨模型告警定位的未保存修改衔接", () => {
     expect(loadSavedProjectRecord).not.toHaveBeenCalled();
   });
 
-  test("放弃修改进入浏览态时，撤回保存基线后的操作并清除未保存状态", async () => {
-    const enterBrowseMode = vi.fn();
-    const setHasUnsavedChanges = vi.fn();
-    const setPendingUnsavedAction = vi.fn();
-    const undoLastOperation = vi.fn();
-    const resolve = createResolveUnsavedChangeAction({
-      enterBrowseMode,
-      loadSavedProjectRecord: vi.fn(),
-      pendingUnsavedAction: {
-        kind: "enter-browse",
-        label: "切换到浏览模式"
-      },
-      saveCurrentProject: vi.fn().mockResolvedValue(true),
-      savedUndoStackLengthRef: { current: 2 },
-      setHasUnsavedChanges,
-      setPendingUnsavedAction,
-      undoLastOperation,
-      undoStack: [{}, {}, {}, {}, {}]
-    });
-
-    await resolve("discard");
-
-    expect(undoLastOperation).toHaveBeenCalledTimes(3);
-    expect(setHasUnsavedChanges).toHaveBeenCalledWith(false);
-    expect(enterBrowseMode).toHaveBeenCalledOnce();
-    expect(setPendingUnsavedAction).toHaveBeenCalledWith(null);
-  });
 });
 
 describe("切空间的未保存修改衔接", () => {
@@ -262,7 +233,6 @@ describe("切空间的未保存修改衔接", () => {
   const createRequest = (saveRequired: boolean) => {
     const setPendingUnsavedAction = vi.fn();
     const request = createRequestAction({
-      enterBrowseMode: vi.fn(),
       loadSavedProjectRecord: vi.fn(),
       saveRequired,
       setPendingUnsavedAction
@@ -273,7 +243,6 @@ describe("切空间的未保存修改衔接", () => {
   const createResolve = (pendingAction: typeof action, saveCurrentProject = vi.fn()) => {
     const setPendingUnsavedAction = vi.fn();
     const resolve = createResolveAction({
-      enterBrowseMode: vi.fn(),
       loadSavedProjectRecord: vi.fn(),
       pendingUnsavedAction: pendingAction,
       saveCurrentProject,
@@ -391,7 +360,6 @@ describe("保存模型后的全局线路正式身份回填", () => {
       projectMeasurements: { version: 1, groups: [] },
       projectName: record.name,
       rememberPersistedSchemesPayload: vi.fn(),
-      requireEditMode: () => true,
       saveActiveProjectPointer: vi.fn(),
       saveBackendProjectRecord: vi.fn().mockResolvedValue(savedRecord),
       savedSchemePathForId: () => [scheme.name],
@@ -912,6 +880,7 @@ function createLoadScope(overrides: Record<string, unknown> = {}) {
     canvasFrameRef: { current: null },
     clearNodeDragMoveSchedule: noop,
     clearRefreshRecoveryProject: noop,
+    currentModelSelectionRef: { current: { projectKey: "", schemeKey: "", loading: false } },
     deferredMoveOptimizationCancelRef: { current: null },
     deferredRoutableLineRouteRepairCancelRef: { current: null },
     dragUndoCapturedRef: { current: false },
@@ -998,6 +967,160 @@ function createLoadScope(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe("模型行加载进度状态", () => {
+  const summaryProject = (id: string) => ({
+    id,
+    name: id,
+    project: { name: id, __summaryOnly: true }
+  }) as any;
+
+  const createLoadRecord = (scope: Record<string, unknown>) =>
+    loadFactoriesWithMockedDeps().then(({ createLoadSavedProjectRecord }) =>
+      createLoadSavedProjectRecord(scope as never)
+    );
+  const progressCalls = (setLoadingModel: ReturnType<typeof vi.fn>) =>
+    setLoadingModel.mock.calls.map(([state]) => state === null ? null : [state.projectId, state.progress]);
+
+  test("快速切换时旧请求完成不会清掉新模型的进度状态", async () => {
+    const pendingRequests = new Map<string, (project: unknown) => void>();
+    const setLoadingModel = vi.fn();
+    const scope = createLoadScope({
+      projectLoadTokenRef: { current: 0 },
+      currentModelSelectionRef: { current: { projectKey: "", schemeKey: "", loading: false } },
+      findSchemeForProject: () => undefined,
+      savedProjectRecordIsSummary: () => true,
+      schemePathForProject: () => ["方案"],
+      schemePathForScheme: () => [],
+      fetchBackendProjectRecord: (_path: string[], name: string) => new Promise((resolve) => {
+        pendingRequests.set(name, resolve);
+      }),
+      loadSavedProject: vi.fn(),
+      setLoadingModel,
+      showGlobalMessage: vi.fn()
+    });
+    const loadSavedProjectRecord = await createLoadRecord(scope);
+
+    const firstLoad = loadSavedProjectRecord(summaryProject("model-a"));
+    await Promise.resolve();
+    const secondLoad = loadSavedProjectRecord(summaryProject("model-b"));
+    await Promise.resolve();
+    expect(progressCalls(setLoadingModel)).toEqual([
+      ["model-a", 0], ["model-a", 15], ["model-b", 0], ["model-b", 15]
+    ]);
+
+    pendingRequests.get("model-a")?.({
+      ...summaryProject("model-a"),
+      project: { version: 1, name: "model-a", nodes: [], edges: [] }
+    });
+    await firstLoad;
+    expect(progressCalls(setLoadingModel)).toEqual([
+      ["model-a", 0], ["model-a", 15], ["model-b", 0], ["model-b", 15]
+    ]);
+
+    pendingRequests.get("model-b")?.({
+      ...summaryProject("model-b"),
+      project: { version: 1, name: "model-b", nodes: [], edges: [] }
+    });
+    await secondLoad;
+    expect(progressCalls(setLoadingModel)).toEqual([
+      ["model-a", 0], ["model-a", 15], ["model-b", 0], ["model-b", 15],
+      ["model-b", 65], ["model-b", 85], ["model-b", 100], null
+    ]);
+  });
+
+  test("读取失败后清除对应模型的进度状态", async () => {
+    const setLoadingModel = vi.fn();
+    const scope = createLoadScope({
+      projectLoadTokenRef: { current: 0 },
+      currentModelSelectionRef: { current: { projectKey: "", schemeKey: "", loading: false } },
+      findSchemeForProject: () => undefined,
+      savedProjectRecordIsSummary: () => true,
+      schemePathForProject: () => ["方案"],
+      schemePathForScheme: () => [],
+      fetchBackendProjectRecord: vi.fn().mockRejectedValue(new Error("读取失败")),
+      loadSavedProject: vi.fn(),
+      setLoadingModel,
+      showGlobalMessage: vi.fn()
+    });
+    const loadSavedProjectRecord = await createLoadRecord(scope);
+
+    await expect(loadSavedProjectRecord(summaryProject("model-failed"))).resolves.toBe(false);
+
+    expect(progressCalls(setLoadingModel)).toEqual([["model-failed", 0], ["model-failed", 15], null]);
+  });
+
+  test("完整缓存模型提交前让浏览器绘制进度行", async () => {
+    const animationFrames: FrameRequestCallback[] = [];
+    let clearCompletedProgress: (() => void) | undefined;
+    let clearDelay = 0;
+    vi.stubGlobal("window", {
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        animationFrames.push(callback);
+        return animationFrames.length;
+      },
+      setTimeout: (callback: () => void, delay: number) => {
+        clearCompletedProgress = callback;
+        clearDelay = delay;
+        return 1;
+      }
+    });
+    try {
+      const setLoadingModel = vi.fn();
+      const loadSavedProject = vi.fn();
+      const scope = createLoadScope({
+        projectLoadTokenRef: { current: 0 },
+        savedProjectRecordIsSummary: () => false,
+        loadSavedProject,
+        setLoadingModel
+      });
+      const loadSavedProjectRecord = await createLoadRecord(scope);
+      const load = loadSavedProjectRecord({
+        id: "model-cached",
+        name: "缓存模型",
+        project: { version: 1, name: "缓存模型", nodes: [], edges: [] }
+      } as any);
+      const flushAnimationFrame = async () => {
+        for (let attempt = 0; animationFrames.length === 0 && attempt < 5; attempt += 1) {
+          await Promise.resolve();
+        }
+        const callback = animationFrames.shift();
+        expect(callback).toBeTypeOf("function");
+        callback?.(0);
+        await Promise.resolve();
+        await Promise.resolve();
+      };
+
+      expect(progressCalls(setLoadingModel)).toEqual([["model-cached", 0]]);
+      expect(animationFrames).toHaveLength(1);
+      expect(loadSavedProject).not.toHaveBeenCalled();
+
+      for (let frame = 0; frame < 4; frame += 1) {
+        await flushAnimationFrame();
+      }
+      expect(progressCalls(setLoadingModel)).toEqual([
+        ["model-cached", 0], ["model-cached", 35], ["model-cached", 70]
+      ]);
+      expect(loadSavedProject).not.toHaveBeenCalled();
+
+      await flushAnimationFrame();
+      await flushAnimationFrame();
+      await expect(load).resolves.toBe(true);
+      expect(loadSavedProject).toHaveBeenCalledTimes(1);
+      expect(progressCalls(setLoadingModel)).toEqual([
+        ["model-cached", 0], ["model-cached", 35], ["model-cached", 70],
+        ["model-cached", 100]
+      ]);
+      expect(clearDelay).toBeGreaterThanOrEqual(160);
+      expect(clearCompletedProgress).toBeTypeOf("function");
+
+      clearCompletedProgress?.();
+      expect(progressCalls(setLoadingModel).at(-1)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe("保存模型不再上传 SVG/E 产物", () => {
   test("保存只发 json：不计算产物，也不给保存请求带第 4 个产物实参", async () => {
     const noop = vi.fn();
@@ -1020,7 +1143,6 @@ describe("保存模型不再上传 SVG/E 产物", () => {
       projectById: new Map([["project-1", projectRecord]]),
       projectName: "模型一",
       rememberPersistedSchemesPayload: noop,
-      requireEditMode: () => true,
       saveActiveProjectPointer: noop,
       saveBackendProjectRecord,
       savedSchemePathForId: () => ["方案一"],
@@ -1847,7 +1969,6 @@ describe("automatic canvas layout", () => {
       includeMeasurementGroupBounds: vi.fn(),
       isCanvasNodeMovable: () => true,
       nodes,
-      requireEditMode: () => true,
       routedEdges: [],
       writeOperationLog: vi.fn()
     };
@@ -1937,7 +2058,6 @@ describe("automatic canvas layout", () => {
       nodes,
       projectMeasurements,
       pushUndoSnapshot,
-      requireEditMode: () => true,
       routedEdges: [],
       scheduleIdleWork,
       setProjectMeasurements,
@@ -2056,7 +2176,6 @@ describe("topology calculation operating-limit normalization", () => {
       normalizeDeviceOperatingLimitsAfterTopology,
       powerUnit: "kW",
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: () => true,
       schemes: [{
         id: "scheme-1",
         name: "主方案",
@@ -2142,7 +2261,6 @@ describe("topology calculation operating-limit normalization", () => {
       nodes: [originalNode],
       powerUnit: "MW",
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: () => true,
       setNodes,
       setTopology: vi.fn(),
       setTopologyErrors: vi.fn(),
@@ -2218,7 +2336,6 @@ describe("topology calculation operating-limit normalization", () => {
       })),
       powerUnit: "MW",
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: () => true,
       setNodes: vi.fn(),
       setTopology,
       setTopologyErrors,
@@ -2277,7 +2394,6 @@ describe("topology calculation operating-limit normalization", () => {
       })),
       powerUnit: "MW",
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: () => true,
       setNodes,
       setTopology,
       setTopologyErrors,
@@ -2490,12 +2606,18 @@ describe("容器整体参与布局", () => {
         isCanvasNodeMovable,
         nodes,
         readjustActiveLayerBusEndpointRoutes: () => 0,
-        requireEditMode: () => true,
         routedEdges: [],
         writeOperationLog: vi.fn()
       };
 
        await createAutoAlign(scope as any)();
+
+      const planPromise = runAutoAlignPlanInWorkerMock.spy.mock.results.at(-1)?.value as Promise<any> | undefined;
+      const planResult = planPromise ? await planPromise : undefined;
+      expect(planResult?.layoutUnitCount).toBe(2);
+      expect(planResult?.qualityReport.revertedByVerification).toBe(false);
+      const plannedById = new Map<string, any>(planResult?.arranged.map((node: any) => [node.id, node]) ?? []);
+      expect(plannedById.get("m2")!.position.x - plannedById.get("m1")!.position.x).toBe(100);
 
       expect([...commits[0].ids].sort()).toEqual(["c1", "m1", "m2", "o1"]);
       const byId = new Map<string, any>(commits[0].arranged.map((node: any) => [node.id, node]));
@@ -2534,7 +2656,6 @@ describe("容器整体参与布局", () => {
       },
       isCanvasNodeMovable,
       nodes,
-      requireEditMode: () => true,
       routedEdges: [],
       writeOperationLog: vi.fn()
     };
@@ -2577,7 +2698,6 @@ describe("自动对齐/自动散开的浮动提示", () => {
       includeMeasurementGroupBounds: vi.fn(),
       isCanvasNodeMovable: () => true,
       nodes,
-      requireEditMode: () => true,
       routedEdges: [],
       showGlobalMessage,
       writeOperationLog
@@ -2608,7 +2728,6 @@ describe("自动对齐/自动散开的浮动提示", () => {
       includeMeasurementGroupBounds: vi.fn(),
       isCanvasNodeMovable: () => true,
       nodes,
-      requireEditMode: () => true,
       routedEdges: [],
       showGlobalMessage,
       writeOperationLog
@@ -2646,7 +2765,6 @@ describe("自动对齐/自动散开的浮动提示", () => {
         isCanvasNodeMovable,
         nodes,
         readjustActiveLayerBusEndpointRoutes: () => 0,
-        requireEditMode: () => true,
         routedEdges: [],
         showGlobalMessage,
         writeOperationLog
@@ -2682,7 +2800,6 @@ describe("自动对齐/自动散开的浮动提示", () => {
       canvasBounds: { width: 2000, height: 1200 },
       edges: [],
       nodes: [{ id: "only", kind: "device", position: { x: 0, y: 0 } }],
-      requireEditMode: () => true,
       routedEdges: [],
       showGlobalMessage,
       writeOperationLog
@@ -2713,7 +2830,6 @@ describe("自动对齐/自动散开的浮动提示", () => {
         includeMeasurementGroupBounds: vi.fn(),
         isCanvasNodeMovable: () => true,
         nodes,
-        requireEditMode: () => true,
         routedEdges: [],
         // 刻意不提供 scope.showGlobalMessage → 应回落 globalThis
         writeOperationLog
@@ -2775,7 +2891,6 @@ describe("自动对齐/自动散开的浮动提示", () => {
         isCanvasNodeMovable,
         nodes,
         readjustActiveLayerBusEndpointRoutes: () => 0,
-        requireEditMode: () => true,
         routedEdges: [],
         showGlobalMessage,
         writeOperationLog: vi.fn()
@@ -2866,5 +2981,40 @@ describe("方案路径（scope 注入的纯函数）", () => {
     const scope = createScope({ savedSchemePathForId: () => undefined });
     expect(createSchemePathForScheme(scope as never)("s1a")).toEqual(["子方案"]);
     expect(createSchemePathForProject(scope as never)("p1")).toEqual(["子方案"]);
+  });
+});
+
+describe("createCreateSchemeRecord 方案编号回执", () => {
+  test("新建方案保存后按运行时 id 把 schemeId 合并进本地树", async () => {
+    const prompt = vi.fn(() => "新建方案");
+    vi.stubGlobal("window", { prompt });
+    let schemes: any[] = [];
+    const setSchemes = vi.fn((update: any) => {
+      schemes = typeof update === "function" ? update(schemes) : update;
+    });
+    const create = createCreateSchemeRecord({
+      createSavedScheme: (name: string) => ({ id: "runtime-created", name, updatedAt: "", projects: [], children: [] }),
+      findSavedSchemeById,
+      handleBackendSchemeMutationFailure: vi.fn(),
+      hasSameName: () => false,
+      insertChildSavedScheme: (current: any[], _parentId: string, record: any) => [...current, record],
+      saveBackendSchemeRecord: vi.fn().mockResolvedValue({ schemeId: 73 }),
+      replaceSavedSchemeById,
+      savedChildSchemeNames: () => [],
+      schemePathForScheme: () => [],
+      schemes,
+      selectSingleScheme: vi.fn(),
+      setExpandedSchemeIds: vi.fn(),
+      setSchemes,
+      writeOperationLog: vi.fn()
+    });
+
+    try {
+      create();
+      await vi.waitFor(() => expect(schemes[0]?.schemeId).toBe(73));
+      expect(schemes[0].id).toBe("73");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

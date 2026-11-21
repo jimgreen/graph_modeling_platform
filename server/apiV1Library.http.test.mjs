@@ -2,10 +2,10 @@ import { describe, expect, test, beforeEach, afterEach } from "vitest";
 import { createImageServer } from "./server.mjs";
 import { apiPath } from "./config.mjs";
 
-// HTTP 冒烟集成测试：起真实 server，打 /webgrp/v1/library/* 真实请求。
+// HTTP 冒烟集成测试：起真实 server，打统一 /webgrp/v1/library?part=... 真实请求。
 //
-// 为什么需要它（API 单测 apiV1Library.test.mjs 已覆盖 18 条 handler 级行为，
-// 这里只守「handler 单测测不到」的**接线层**，共 2 条）：
+// 为什么需要它（API 单测 apiV1Library.test.mjs 已覆盖 21 条 handler 级行为，
+// 这里只守「handler 单测测不到」的**接线层**：
 //   ① 路由真的被挂载且 pattern 与 path 对得上 —— handler 单测直接调函数，
 //      v1LibraryRoutes 表里的 apiPattern 写错（如漏了 apiPath 前缀）单测照样全绿；
 //   ② 信封格式经真实序列化后形态正确 —— mock 断言的是对象，真实响应走 JSON.stringify。
@@ -17,6 +17,12 @@ let baseUrl;
 beforeEach(async () => {
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const initialized = await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "默认空间" })
+  });
+  if (!initialized.ok) throw new Error(`default space initialization failed: ${initialized.status}`);
 });
 
 afterEach(async () => {
@@ -48,9 +54,18 @@ describe("v1 library HTTP 接线冒烟", () => {
     expect(typeof json.data).toBe("object");
   });
 
-  test("未知 v1/library/* 路径不落入聚合兜底", async () => {
-    const { status } = await fetchV1(apiPath("/v1/library") + "/no-such-endpoint");
+  test("part=measurements 真实返回量测分片", async () => {
+    const { status, json } = await fetchV1(apiPath("/v1/library?part=measurements"));
+    expect(status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.data.measurementTypes).toBeInstanceOf(Array);
+  });
 
-    expect(status).toBe(404);
+  test("旧分片路径和未知路径都返回 404", async () => {
+    const legacy = await fetchV1(apiPath("/v1/library/categories"));
+    const unknown = await fetchV1(apiPath("/v1/library") + "/no-such-endpoint");
+
+    expect(legacy.status).toBe(404);
+    expect(unknown.status).toBe(404);
   });
 });

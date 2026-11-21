@@ -302,7 +302,6 @@ describe("SVG model import factories", () => {
     const target = { current: "" };
     const input = { value: "old", click };
     const open = createOpenSvgModelImportFilePicker({
-      requireEditMode: vi.fn(() => true),
       svgModelImportInputRef: { current: input },
       modelImportTargetSchemeIdRef: target
     });
@@ -331,7 +330,6 @@ describe("SVG model import factories", () => {
       schemes: [targetScheme],
       libraryTemplates: [],
       modelImportTargetSchemeIdRef: { current: "scheme-2" },
-      requireEditMode: vi.fn(() => true),
       findSavedSchemeById: (_schemes: unknown, id: string) => id === "scheme-2" ? targetScheme : null,
       createSavedScheme: vi.fn(),
       createSavedProject: (name: string, project: unknown) => ({ id: "project-new", name, project }),
@@ -369,7 +367,6 @@ describe("SVG model import factories", () => {
       schemes: [targetScheme],
       libraryTemplates: [],
       modelImportTargetSchemeIdRef: { current: "scheme-2" },
-      requireEditMode: vi.fn(() => true),
       findSavedSchemeById: () => targetScheme,
       createSavedScheme: vi.fn(),
       createSavedProject: vi.fn(),
@@ -434,7 +431,6 @@ describe("SVG model import factories", () => {
       selectedSchemeRecord: null,
       schemes: [targetScheme],
       pendingModelImportConflict: conflict,
-      requireEditMode: vi.fn(() => true),
       findSavedSchemeById: () => targetScheme,
       createSavedScheme: vi.fn(),
       uniqueRecordName: () => "一次图 (2)",
@@ -513,27 +509,11 @@ describe("createCommitImportedModelRecord", () => {
 });
 
 describe("dot model import factories", () => {
-  test("blocks the dot picker before entering edit mode", () => {
-    const click = vi.fn();
-    const target = { current: "" };
-    const open = createOpenDotModelImportFilePicker({
-      requireEditMode: vi.fn(() => false),
-      dotModelImportInputRef: { current: { value: "old", click } },
-      modelImportTargetSchemeIdRef: target
-    });
-
-    open("scheme-2");
-
-    expect(target.current).toBe("");
-    expect(click).not.toHaveBeenCalled();
-  });
-
   test("opens the dot picker for the right-clicked scheme in edit mode", () => {
     const click = vi.fn();
     const target = { current: "" };
     const input = { value: "old", click };
     const open = createOpenDotModelImportFilePicker({
-      requireEditMode: vi.fn(() => true),
       dotModelImportInputRef: { current: input },
       modelImportTargetSchemeIdRef: target
     });
@@ -571,7 +551,6 @@ describe("dot model import factories", () => {
       selectedSchemeRecord: null,
       schemes: [targetScheme],
       modelImportTargetSchemeIdRef: { current: "scheme-2" },
-      requireEditMode: vi.fn(() => true),
       findSavedSchemeById: (_schemes: unknown, id: string) => id === "scheme-2" ? targetScheme : null,
       createSavedScheme: vi.fn(),
       createSavedProject: (name: string, project: unknown) => ({ id: "project-new", name, project }),
@@ -607,7 +586,6 @@ describe("dot model import factories", () => {
       selectedSchemeRecord: null,
       schemes: [],
       modelImportTargetSchemeIdRef: { current: "" },
-      requireEditMode: vi.fn(() => true),
       findSavedSchemeById: () => null,
       createSavedScheme: vi.fn(),
       createSavedProject: vi.fn(),
@@ -638,7 +616,6 @@ describe("dot model import factories", () => {
       selectedSchemeRecord: null,
       schemes: [targetScheme],
       modelImportTargetSchemeIdRef: { current: "scheme-2" },
-      requireEditMode: vi.fn(() => true),
       findSavedSchemeById: () => targetScheme,
       createSavedScheme: vi.fn(),
       createSavedProject: vi.fn(),
@@ -702,29 +679,6 @@ describe("dot model import factories", () => {
     expect(markup).toContain("从 SVG 生成模型");
   });
 
-  test("hides the dot import entry from the scheme context menu in browse mode", () => {
-    const Icon = () => null;
-    const scope = {
-      contextMenu: undefined,
-      projectMenu: { schemeId: "scheme-1" },
-      isEditMode: false,
-      contextMenuClassName: () => "ctx",
-      contextMenuStyle: () => ({}),
-      contextMenuRef: { current: null },
-      runContextMenuAction: () => undefined,
-      FolderOpen: Icon,
-      Trash2: Icon,
-      Download: Icon,
-      FileInput: Icon,
-      Pencil: Icon,
-      Copy: Icon,
-      Plus: Icon
-    };
-    const markup = renderToStaticMarkup(createElement(AppContextMenus, { scope }));
-
-    expect(markup).not.toContain("从 dot 生成模型");
-    expect(markup).not.toContain("从 SVG 生成模型");
-  });
 });
 
 // 这个分组曾叫 "manual bend interaction helpers"，但里面 88 条用例里只有 2 条与手动折线有关，
@@ -950,7 +904,6 @@ describe("device definition persistence, library and export factories", () => {
       deviceDefinitionOverrideForTemplate: () => undefined,
       getTemplateParameterDefinitions: () => parameterDefinitions,
       hasOverlappingCustomDeviceTerminalAnchors: () => false,
-      requireEditMode: () => true,
       selectedDefinitionTemplate: {
         kind: "custom-userlibrary",
         label: "用户元件",
@@ -1037,7 +990,6 @@ describe("device definition persistence, library and export factories", () => {
       measurementConfigDraftRef: { current: null },
       normalizeComponentLibraryName: (value: string) => value.trim(),
       normalizeDefinitionRowEnumFields: (row: any) => row,
-      requireEditMode: () => true,
       selectedDefinitionTemplate: {
         kind: "ac-hydro-source",
         label: "交流水力发电机",
@@ -1096,7 +1048,6 @@ describe("device definition persistence, library and export factories", () => {
     createSaveDeviceDefinitionDraft({
       definitionDraftRows: [],
       definitionDeleteAllParametersRequestedRef: { current: false },
-      requireEditMode: () => true,
       selectedDefinitionTemplate: template,
       setDefinitionDraftError,
       setDeviceDefinitionOverrides
@@ -1129,7 +1080,6 @@ describe("device definition persistence, library and export factories", () => {
       measurementConfigDraftRef: { current: null },
       normalizeComponentLibraryName: (value: string) => value.trim(),
       normalizeDefinitionRowEnumFields: (row: any) => row,
-      requireEditMode: () => true,
       selectedDefinitionTemplate: template,
       setDefinitionDraftError,
       setDefinitionDraftRows: vi.fn(),
@@ -1196,7 +1146,6 @@ describe("device definition persistence, library and export factories", () => {
       measurementConfigDraftRef: { current: null },
       normalizeComponentLibraryName: (value: string) => value.trim(),
       normalizeDefinitionRowEnumFields: (row: any) => row,
-      requireEditMode: () => true,
       selectedDefinitionTemplate: {
         kind: "ac-hydro-source",
         label: "交流水力发电机",
@@ -1241,7 +1190,6 @@ describe("device definition persistence, library and export factories", () => {
     createSaveDeviceDefinitionDraft({
       definitionDraftRows: [],
       definitionDeleteAllParametersRequestedRef: { current: false },
-      requireEditMode: () => true,
       selectedDefinitionTemplate: template,
       setDefinitionDraftError,
       setDeviceDefinitionOverrides
@@ -1270,7 +1218,6 @@ describe("device definition persistence, library and export factories", () => {
       libraryTemplates: DEVICE_LIBRARY,
       normalizeComponentLibraryName: (value: string) => value.trim(),
       normalizeDefinitionRowEnumFields: (row: any) => row,
-      requireEditMode: () => true,
       selectedDefinitionTemplate: template,
       setDefinitionDraftError,
       setDefinitionDraftRows: vi.fn(),
@@ -1334,7 +1281,6 @@ describe("device definition persistence, library and export factories", () => {
       measurementConfigDraftRef: { current: null },
       normalizeComponentLibraryName: (value: string) => value.trim(),
       normalizeDefinitionRowEnumFields: (row: any) => row,
-      requireEditMode: () => true,
       selectedDefinitionTemplate: {
         kind: "ac-nuclear-source",
         label: "交流核能发电机",
@@ -1390,7 +1336,6 @@ describe("device definition persistence, library and export factories", () => {
       imageTarget: { kind: "stateIconFrameBackground" },
       libraryTemplateByKind: new Map(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: () => true,
       setCanvasBackgroundImage: vi.fn(),
       setCanvasBackgroundImageAssetId: vi.fn(),
       setImageTarget,
@@ -1440,7 +1385,6 @@ describe("device definition persistence, library and export factories", () => {
       imageTarget: { kind: "canvas" },
       libraryTemplateByKind: new Map(),
       pushUndoSnapshot,
-      requireEditMode: () => true,
       setCanvasBackgroundImage,
       setCanvasBackgroundImageAssetId,
       setImageTarget,
@@ -1537,7 +1481,6 @@ describe("device definition persistence, library and export factories", () => {
       normalizeContainerTerminalAssociations: () => [],
       normalizeDefinitionRowEnumFields: (rows: any) => rows,
       persistDeviceLibraryChange: vi.fn(),
-      requireEditMode: () => true,
       setCustomComponentTreeSelection: vi.fn(),
       setCustomDeviceDefinitionMode: vi.fn(),
       setCustomDeviceDraft: (updater: any) => {
@@ -1679,7 +1622,6 @@ describe("device definition persistence, library and export factories", () => {
       persistDeviceLibraryChange: vi.fn((payload: any) => {
         persistedPayload = payload;
       }),
-      requireEditMode: () => true,
       setCustomComponentLibraries,
       setCustomComponentTreeSelection: vi.fn(),
       setCustomDeviceDraft: (updater: any) => {
@@ -1822,7 +1764,6 @@ describe("device definition persistence, library and export factories", () => {
       normalizeCustomComponentLibraries: (value: unknown) => value as any[],
       normalizeDefinitionRowEnumFields: (row: any) => row,
       persistDeviceLibraryChange: vi.fn(),
-      requireEditMode: () => true,
       setCustomComponentLibraries: vi.fn(),
       setCustomComponentTreeSelection: vi.fn(),
       setCustomDeviceDraft: (updater: any) => {
@@ -1957,7 +1898,6 @@ describe("device definition persistence, library and export factories", () => {
       normalizeContainerTerminalAssociations: normalizeAssociations,
       normalizeDefinitionRowEnumFields: normalizeDefinition,
       persistDeviceLibraryChange: vi.fn(() => persistenceResult),
-      requireEditMode: () => true,
       setCustomDeviceDraft: (updater: any) => {
         customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
       },
@@ -2419,7 +2359,6 @@ describe("device definition persistence, library and export factories", () => {
       normalizeContainerTerminalAssociations: (_terminalTypes: any, values: any[]) => values,
       normalizeDefinitionRowEnumFields: (row: any) => row,
       persistDeviceLibraryChange,
-      requireEditMode: () => true,
       setCustomDeviceDraft: (updater: any) => {
         customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
       },
@@ -2545,7 +2484,6 @@ describe("device definition persistence, library and export factories", () => {
       normalizeContainerTerminalAssociations: (_terminalTypes: any, values: any[]) => values,
       normalizeDefinitionRowEnumFields: (row: any) => row,
       persistDeviceLibraryChange: vi.fn(),
-      requireEditMode: () => true,
       setCustomDeviceDraft: (updater: any) => {
         customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
       },
@@ -2617,7 +2555,6 @@ describe("device definition persistence, library and export factories", () => {
       normalizeCustomCategoryLibraries: (value: unknown) => Array.from(new Set((value as string[]).map((item) => item.trim()).filter(Boolean))),
       normalizeCustomComponentLibraries: (value: unknown) => value as any[],
       persistDeviceLibraryChange,
-      requireEditMode: () => true,
       setCustomCategoryLibraries: (updater: any) => {
         customCategoryLibraries = typeof updater === "function" ? updater(customCategoryLibraries) : updater;
       },
@@ -2752,7 +2689,6 @@ describe("device definition persistence, library and export factories", () => {
       normalizeCustomCategoryLibraries: (value: unknown) => value as string[],
       normalizeCustomComponentLibraries,
       persistDeviceLibraryChange,
-      requireEditMode: () => true,
       setCustomCategoryLibraries: vi.fn(),
       setCustomComponentLibraries: (updater: any) => {
         customComponentLibraries = typeof updater === "function" ? updater(customComponentLibraries) : updater;
@@ -2943,7 +2879,6 @@ describe("device definition persistence, library and export factories", () => {
       normalizeCustomCategoryLibraries: (value: unknown) => value as string[],
       normalizeCustomComponentLibraries: (value: unknown) => value as any[],
       persistDeviceLibraryChange,
-      requireEditMode: () => true,
       setCustomCategoryLibraries: vi.fn(),
       setCustomComponentLibraries: vi.fn(),
       setCustomComponentTreeSelection,
@@ -3062,7 +2997,6 @@ describe("device definition persistence, library and export factories", () => {
       defaultComponentLibraryForCategoryLibrary: () => "ACGenerator",
       nextCustomTemplateKind: (section: string) => `custom-${section}`,
       normalizeCategoryLibraryName: (name: string) => name.trim(),
-      requireEditMode: () => true,
       setCustomLibraryCreateDialog: (value: any) => {
         customLibraryCreateDialog = value;
       }
@@ -3102,7 +3036,6 @@ describe("device definition persistence, library and export factories", () => {
         nextCustomTemplateKind: (section: string) => `custom-${section}`,
         normalizeCategoryLibraryName: (name: string) => name.trim(),
         normalizeComponentLibraryName: (name: string) => name.trim(),
-        requireEditMode: () => true,
         setCustomLibraryCreateDialog
       })();
 
@@ -3429,7 +3362,6 @@ describe("device definition persistence, library and export factories", () => {
       nextCustomTemplateKind: (section: string) => `custom-${section}`,
       normalizeCategoryLibraryName: (name: string) => name.trim(),
       normalizeComponentLibraryName: (name: string) => name.trim(),
-      requireEditMode: () => true,
       setCustomLibraryCreateDialog
     });
 
@@ -3545,7 +3477,6 @@ describe("device definition persistence, library and export factories", () => {
       normalizeComponentLibraryName: (name: string) => name.trim(),
       normalizeCustomCategoryLibraries: (value: unknown) => value as string[],
       normalizeCustomComponentLibraries: (value: unknown) => value as any[],
-      requireEditMode: () => true,
       resolveTemplateComponentLibrary,
       saveCustomDeviceTemplate,
       setCustomCategoryLibraries: vi.fn(),
@@ -3717,7 +3648,6 @@ describe("device definition persistence, library and export factories", () => {
 
     const imported = await createImportCustomComponentSvg({
       DEFAULT_STATE_PAGE_ID,
-      requireEditMode: () => true,
       setCustomDeviceDialogView,
       setCustomDeviceDraft: (updater: any) => {
         customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
@@ -3771,7 +3701,6 @@ describe("device definition persistence, library and export factories", () => {
 
     const imported = await createImportCustomComponentSvg({
       DEFAULT_STATE_PAGE_ID,
-      requireEditMode: () => true,
       setCustomDeviceDialogView: vi.fn(),
       setCustomDeviceDraft: (updater: any) => {
         customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
@@ -3796,7 +3725,6 @@ describe("device definition persistence, library and export factories", () => {
         nextCustomComponentLibraryName: () => "CustomDevice99",
         normalizeCategoryLibraryName: (name: string) => name.trim(),
         normalizeComponentLibraryName: (name: string) => name.trim(),
-        requireEditMode: () => true,
         setCustomLibraryCreateDialog
       })();
       return setCustomLibraryCreateDialog;
@@ -3969,7 +3897,6 @@ describe("device definition persistence, library and export factories", () => {
       normalizeContainerTerminalAssociations,
       normalizeDefinitionRowEnumFields,
       persistDeviceLibraryChange,
-      requireEditMode: () => true,
       setCustomDeviceDraft: (updater: any) => {
         customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
       },
@@ -4233,7 +4160,6 @@ describe("device definition persistence, library and export factories", () => {
       defaultComponentLibraryForCategoryLibrary: () => "ACLoad",
       isBuiltInComponentLibrary: () => false,
       normalizeCategoryLibraryName: (name: string) => name.trim(),
-      requireEditMode: () => true,
       resolveTemplateComponentLibrary: (template: any) => template.params?.component_type ?? "",
       setCollapsedCustomComponentTreeLibraries: vi.fn(),
       setCollapsedCustomComponentTreeTypes: vi.fn(),
@@ -4282,7 +4208,6 @@ describe("device definition persistence, library and export factories", () => {
       libraryTemplates: [],
       normalizeCategoryLibraryName: (name: string) => name.trim(),
       normalizeComponentLibraryName: (name: string) => name.trim(),
-      requireEditMode: () => true,
       resolveTemplateComponentLibrary: (template: any) => template.params?.component_type ?? "",
       setCollapsedCustomComponentTreeTypes: vi.fn(),
       setCustomComponentLibraries,
@@ -4331,7 +4256,6 @@ describe("device definition persistence, library and export factories", () => {
       libraryTemplates: [],
       normalizeCategoryLibraryName: (name: string) => name.trim(),
       normalizeComponentLibraryName: (name: string) => name.trim(),
-      requireEditMode: () => true,
       resolveTemplateComponentLibrary: (template: any) => template.params?.component_type ?? "",
       setCollapsedCustomComponentTreeTypes: vi.fn(),
       setCustomComponentLibraries,
@@ -4443,7 +4367,6 @@ describe("device definition persistence, library and export factories", () => {
       persistDeviceLibraryChange: vi.fn((payload: any) => {
         persistedPayload = payload;
       }),
-      requireEditMode: () => true,
       setCustomComponentTreeSelection: vi.fn(),
       setCustomDeviceDraft: (updater: any) => {
         customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
@@ -5652,7 +5575,6 @@ describe("manual bend interaction helpers", () => {
       markRouteEdgesDirty: vi.fn(),
       markStoredRouteEdgesDirty: vi.fn(),
       patchGraphEdges,
-      requireEditMode: () => true,
       sameOptionalPointList: (first?: Point[], second?: Point[]) =>
         JSON.stringify(first ?? []) === JSON.stringify(second ?? [])
     });
@@ -6105,7 +6027,7 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
 });
 
 describe("createExportEFile", () => {
-  test("从后端 /v1/schemes/model/e-file 拉取文本并交给保存层", async () => {
+  test("从后端 /v1/schemes/model/export?format=e-file 拉取文本并交给保存层", async () => {
     const fetchMock = vi.fn(async (_url: string) => new Response("<Model>\n</Model>\n", {
       status: 200,
       headers: { "content-type": "text/plain; charset=gbk" }
@@ -6130,7 +6052,7 @@ describe("createExportEFile", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const url = String(fetchMock.mock.calls[0][0]);
-    expect(url).toContain("/v1/schemes/model/e-file");
+    expect(url).toContain("/v1/schemes/model/export?format=e-file");
     expect(url).toContain(`schemePath=${encodeURIComponent(JSON.stringify(["默认方案"]))}`);
     expect(url).toContain(`name=${encodeURIComponent("当前模型")}`);
     expect(url).toContain("encoding=gbk");
@@ -6285,8 +6207,8 @@ describe("createExportEFile", () => {
     expect(buildSvgDocument).not.toHaveBeenCalled();
     expect(buildEFileExport).not.toHaveBeenCalled();
     expect(saveBackendProjectArtifacts).not.toHaveBeenCalled();
-    // 第三个参数是 onSaved 回调（拿查看凭据用），不是又一个位置参数
-    expect(downloadBackendSchemeArchive).toHaveBeenCalledWith(["方案一"], "方案一.zip", expect.any(Function));
+    // 第三个参数是 onSaved 回调；第四个参数是可选 schemeId。
+    expect(downloadBackendSchemeArchive).toHaveBeenCalledWith(["方案一"], "方案一.zip", expect.any(Function), undefined);
     // 取消另存为（返回 false）时不弹完成框
     expect(setExportCompletionDialog).not.toHaveBeenCalled();
   });
@@ -6550,50 +6472,19 @@ describe("E 文件查看/编辑弹窗头表补全", () => {
 });
 
 describe("createOpenBlankProjectLibraryContextMenu", () => {
-  // 浏览模式下的右键行为：不再静默返回，而是给出全局提示并闪动顶栏"编辑/浏览"按钮
-  test("in browse mode, shows a global message and triggers the mode-toggle hint instead of silently returning", () => {
-    const showGlobalMessage = vi.fn();
-    // 直接 mock 模块导出，避免 DOM 依赖
-    vi.resetModules();
-    vi.doMock("./appExtracted/appModeToggleHint", () => ({ triggerModeToggleHint: vi.fn() }));
-    // 重新加载被测模块以拿到 mock 后的依赖
-    return import("./appExtracted/appDeviceDefinitionFactories").then((mod) => {
-      const factory = mod.createOpenBlankProjectLibraryContextMenu;
-      const setProjectMenu = vi.fn();
-      const handler = factory({ isEditMode: false, setProjectMenu, showGlobalMessage });
-
-      const event = {
-        preventDefault: vi.fn(),
-        stopPropagation: vi.fn(),
-        clientX: 42,
-        clientY: 99,
-        target: { closest: () => null }
-      } as any;
-
-      handler(event);
-
-      expect(event.preventDefault).toHaveBeenCalled();
-      expect(event.stopPropagation).toHaveBeenCalled();
-      expect(setProjectMenu).not.toHaveBeenCalled();
-      expect(showGlobalMessage).toHaveBeenCalledTimes(1);
-      expect(showGlobalMessage.mock.calls[0][0]).toContain("浏览模式");
-      expect(showGlobalMessage.mock.calls[0][0]).toContain("编辑");
-    }).finally(() => {
-      vi.doUnmock("./appExtracted/appModeToggleHint");
-      vi.resetModules();
-    });
-    // 本用例要 resetModules 后整棵模块图重新求值（含 appDeviceDefinitionFactories 的全部
-    // 传递依赖），空载已 ~1.5s；并发抢 CPU 时 5s 默认值偶发不够。显式给预算。
-  }, 30_000);
-
-  test("source form: browse-mode branch no longer returns silently and imports the hint helper", () => {
-    const source = readFileSync(new URL("./appExtracted/appDeviceDefinitionFactories.tsx", import.meta.url), "utf8");
-    // 必须导入闪动提示 helper
-    expect(source).toContain('import { triggerModeToggleHint } from "./appModeToggleHint"');
-    // 浏览模式分支不再是一个空的 if-return：应包含 showGlobalMessage 调用
-    const browseBranch = source.match(/if\s*\(\s*!isEditMode\s*\)\s*\{[\s\S]*?triggerModeToggleHint\(\)/);
-    expect(browseBranch).not.toBeNull();
-    // 提示文案应指向顶栏"编辑"按钮
-    expect(source).toContain("当前为浏览模式，请点击顶栏的\\\"编辑\\\"按钮切换后再操作。");
+  test("blank-area right click opens the project menu", () => {
+    const setProjectMenu = vi.fn();
+    const handler = createOpenBlankProjectLibraryContextMenu({ setProjectMenu });
+    const event = {
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+      clientX: 42,
+      clientY: 99,
+      target: { closest: () => null }
+    } as any;
+    handler(event);
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopPropagation).toHaveBeenCalled();
+    expect(setProjectMenu).toHaveBeenCalledWith({ x: 42, y: 99 });
   });
 });

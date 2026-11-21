@@ -17,12 +17,15 @@ export function AppLeftPanel({ scope, inputs }: AppLeftPanelProps) {
 function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
   const {
     effectiveLeftPanelTab,
+    activeSchemeKey,
     handleSidePanelPointerLeave,
     isEditMode,
     leftPanelContent,
     leftPanelRef,
     leftPanelTab,
     leftPanelVisible,
+    schemes,
+    findSavedSchemeById,
     projectIdx,
     renderSidePanelModeControls,
     setLeftPanelTab,
@@ -31,20 +34,32 @@ function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
     updateAutoPanelVisibility
   } = scope;
 
-  // 底部显示当前模型的 model_id（project.idx 编号），点击复制该编号
-  const copyModelId = (event: any, projectIdx: number) => {
+  const activeScheme = findSavedSchemeById(schemes ?? [], activeSchemeKey);
+  const displaySchemeId = activeScheme?.schemeId;
+  const currentSchemeId = Number.isSafeInteger(displaySchemeId) && displaySchemeId > 0
+    ? displaySchemeId
+    : null;
+  const currentProjectIdx = Number.isSafeInteger(projectIdx) && projectIdx > 0 ? projectIdx : null;
+
+  const copyId = async (event: any, value: number) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const id = String(projectIdx || "");
-    navigator.clipboard.writeText(id).then(() => {
-      const toast = document.createElement("span");
-      toast.className = "id-copy-toast";
-      toast.textContent = "已复制";
-      toast.style.position = "fixed";
-      toast.style.left = `${rect.left + rect.width / 2}px`;
-      toast.style.top = `${rect.top - 8}px`;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 1000);
+    let message = "已复制";
+    try {
+      await navigator.clipboard.writeText(String(value));
+    } catch {
+      message = "复制失败";
+    }
+    const toast = document.createElement("span");
+    toast.className = "id-copy-toast";
+    toast.setAttribute("role", "status");
+    toast.style.position = "fixed";
+    toast.style.left = `${rect.left + rect.width / 2}px`;
+    toast.style.top = `${rect.top - 8}px`;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => {
+      toast.textContent = message;
     });
+    setTimeout(() => toast.remove(), 1000);
   };
 
   return (
@@ -69,10 +84,30 @@ function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
       </div>
       <div className="left-panel-footer">
         <span className="left-panel-footer-item">
+          <span className="left-panel-footer-label">方案ID：</span>
+          <button
+            type="button"
+            className="scheme-copy-cell"
+            title="点击复制方案 ID（schemeId）"
+            aria-label={currentSchemeId ? `复制方案 ID ${currentSchemeId}` : "方案 ID 未分配"}
+            disabled={currentSchemeId === null}
+            onClick={(event) => currentSchemeId && copyId(event, currentSchemeId)}
+          >
+            {currentSchemeId ?? "—"}
+          </button>
+        </span>
+        <span className="left-panel-footer-item">
           <span className="left-panel-footer-label">模型ID：</span>
-          <span className="id-copy-cell" title="点击复制模型 ID（model_id）" onClick={(event) => copyModelId(event, projectIdx)}>
-            {projectIdx > 0 ? projectIdx : "—"}
-          </span>
+          <button
+            type="button"
+            className="id-copy-cell"
+            title="点击复制模型 ID（model_id）"
+            aria-label={currentProjectIdx ? `复制模型 ID ${currentProjectIdx}` : "模型 ID 未分配"}
+            disabled={currentProjectIdx === null}
+            onClick={(event) => currentProjectIdx && copyId(event, currentProjectIdx)}
+          >
+            {currentProjectIdx ?? "—"}
+          </button>
         </span>
       </div>
     </aside>

@@ -342,9 +342,10 @@ export function savedProjectRecordIsSummary(record: SavedProjectRecord | null | 
   return Boolean((record?.project as ProjectFile & { __summaryOnly?: boolean } | undefined)?.__summaryOnly);
 }
 
-export async function fetchBackendProjectRecord(schemePath: string[], name: string): Promise<SavedProjectRecord> {
+export async function fetchBackendProjectRecord(schemePath: string[], name: string, schemeId?: number): Promise<SavedProjectRecord> {
+  const selector = schemeId ? `schemeId=${encodeURIComponent(String(schemeId))}` : schemePathQueryParam("schemePath", schemePath);
   const payload = await fetchBackendJson<BackendProjectLoadResponse>(
-    `${apiPath("/schemes/project")}?${schemePathQueryParam("schemePath", schemePath)}&name=${encodeURIComponent(name)}`,
+    `${apiPath("/schemes/project")}?${selector}&name=${encodeURIComponent(name)}`,
     "读取后台模型失败。"
   );
   if (!payload.project) {
@@ -356,7 +357,8 @@ export async function fetchBackendProjectRecord(schemePath: string[], name: stri
 export async function downloadBackendSchemeArchive(
   schemePath: string[],
   filename: string,
-  onSaved?: (file: SavedExportFile) => void
+  onSaved?: (file: SavedExportFile) => void,
+  schemeId?: number
 ): Promise<boolean> {
   return saveLazyBlobFile({
     filename,
@@ -368,7 +370,8 @@ export async function downloadBackendSchemeArchive(
     preferNativeDialog: true,
     ...(onSaved ? { onSaved } : {}),
     loadBlob: async () => {
-      const response = await fetch(`${apiPath("/schemes/export")}?${schemePathQueryParam("schemePath", schemePath)}`);
+      const selector = schemeId ? `schemeId=${encodeURIComponent(String(schemeId))}` : schemePathQueryParam("schemePath", schemePath);
+      const response = await fetch(`${apiPath("/schemes/export")}?${selector}`);
       if (!response.ok) {
         throw new Error(await backendErrorMessage(response, "导出方案压缩包失败。"));
       }
@@ -405,13 +408,14 @@ export async function uploadBackendSchemeArchive(
   return payload;
 }
 
-export async function saveBackendProjectRecord(schemePath: string[], record: SavedProjectRecord, previousName = ""): Promise<SavedProjectRecord> {
+export async function saveBackendProjectRecord(schemePath: string[], record: SavedProjectRecord, previousName = "", schemeId?: number): Promise<SavedProjectRecord> {
   if (savedProjectRecordIsSummary(record)) {
     throw new Error(`模型"${record.name}"仍是目录摘要，尚未读取完整内容，不能写回后台。`);
   }
   const normalizedRecord = normalizeSchemesForBackend([createSavedScheme("__single_project__", [record])])[0]?.projects?.[0] ?? record;
   const body = {
     schemePath,
+    ...(Number.isSafeInteger(schemeId) && (schemeId as number) > 0 ? { schemeId } : {}),
     previousName,
     record: normalizedRecord
   };
@@ -423,27 +427,27 @@ export async function saveBackendProjectRecord(schemePath: string[], record: Sav
   return payload.project ? { ...normalizeSavedProjectIndexes(payload.project), id: record.id } : record;
 }
 
-export async function deleteBackendProjectRecord(schemePath: string[], name: string): Promise<void> {
+export async function deleteBackendProjectRecord(schemePath: string[], name: string, schemeId?: number): Promise<void> {
   await fetchBackendJson<{ ok?: boolean }>(
     apiPath("/schemes/project"),
     "删除后台模型失败。",
-    backendJsonRequest("DELETE", JSON.stringify({ schemePath, name }))
+    backendJsonRequest("DELETE", JSON.stringify({ schemePath, ...(schemeId ? { schemeId } : {}), name }))
   );
 }
 
-export async function saveBackendSchemeRecord(schemePath: string[], previousSchemePath?: string[]): Promise<void> {
-  await fetchBackendJson<{ ok?: boolean }>(
+export async function saveBackendSchemeRecord(schemePath: string[], previousSchemePath?: string[], schemeId?: number): Promise<{ schemeId?: number }> {
+  return fetchBackendJson<{ schemeId?: number }>(
     apiPath("/schemes/scheme"),
     "保存方案到后台失败。",
-    backendJsonRequest("PUT", JSON.stringify({ schemePath, previousSchemePath }))
+    backendJsonRequest("PUT", JSON.stringify({ schemePath, previousSchemePath, ...(schemeId ? { schemeId } : {}) }))
   );
 }
 
-export async function deleteBackendSchemeRecord(schemePath: string[]): Promise<void> {
+export async function deleteBackendSchemeRecord(schemePath: string[], schemeId?: number): Promise<void> {
   await fetchBackendJson<{ ok?: boolean }>(
     apiPath("/schemes/scheme"),
     "删除后台方案失败。",
-    backendJsonRequest("DELETE", JSON.stringify({ schemePath }))
+    backendJsonRequest("DELETE", JSON.stringify({ schemePath, ...(schemeId ? { schemeId } : {}) }))
   );
 }
 

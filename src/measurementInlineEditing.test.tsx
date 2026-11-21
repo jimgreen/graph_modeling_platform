@@ -9,7 +9,7 @@ function measurementEditors(overrides: Record<string, unknown> = {}, terminalId?
   const type = { id: "q", name: "无功功率", shortLabel: "Q", defaultUnit: "Mvar", valueType: "number", defaultDecimals: 3 };
   const update = vi.fn();
   const panel = createRenderSelectedNodeMeasurementTable({
-    Fragment, DeferredColorInput: () => null, isBrowseMode: false,
+    Fragment, DeferredColorInput: () => null,
     measurementConfig: { measurementTypes: [type] },
     measurementTypeById: new Map([["q", type]]),
     measurementTypeOptionsForMeasurementGroup: () => [type],

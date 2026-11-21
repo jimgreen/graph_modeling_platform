@@ -50,9 +50,10 @@ export function buildCimXml(
   projectName: string,
   modelId: string,
   measurementGroups?: readonly MeasurementGroup[],
-  measurementTypes?: readonly { id: string; valueType?: string }[]
+  measurementTypes?: readonly { id: string; valueType?: string }[],
+  createdAt?: string
 ): string {
-  const pkg = buildCimPackage({ nodes, edges, projectName, modelId, measurementGroups, measurementTypes });
+  const pkg = buildCimPackage({ nodes, edges, projectName, modelId, measurementGroups, measurementTypes, createdAt });
   return serializeCimPackage(pkg);
 }
 
@@ -107,12 +108,12 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
       }
       if (!confirmed) return false;
     }
-    // CIM/XML 生成已移至后端 /v1/schemes/model/cim-xml（与 E 文件同一适配层模式）
+    // CIM/XML 生成已移至后端 /v1/schemes/model/export?format=cim-xml（与 E 文件同一适配层模式）
     const schemePath = Array.isArray(scope.schemePath) && scope.schemePath.length > 0 ? scope.schemePath : ["默认方案"];
     const query = `schemePath=${encodeURIComponent(JSON.stringify(schemePath))}`
       + `&name=${encodeURIComponent(projectName)}`
       + (activeModelId || activeProjectKey ? `&modelId=${encodeURIComponent(String(activeModelId || activeProjectKey).replace(/[^A-Za-z0-9_.-]/g, "_"))}` : "");
-    const path = `/v1/schemes/model/cim-xml?${query}`;
+    const path = `/v1/schemes/model/export?format=cim-xml&${query}`;
     const url = typeof scope.apiPath === "function" ? scope.apiPath(path) : path;
     let xml: string;
     try {

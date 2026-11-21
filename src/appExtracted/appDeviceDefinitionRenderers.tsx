@@ -2922,7 +2922,7 @@ export function createRenderGraphTemplatePreview(__appScope: Record<string, any>
 
 export function createRenderLibraryTemplateButton(__appScope: Record<string, any>) {
   return (item: DeviceTemplate, section: string) => {
-  const { MemoDeviceGlyph, SvgMarkupChunk, button, cancelLibraryPlacement, clipPath, colorPalette, themeMode, componentLibraryDisplayMode, createNodeFromTemplate, defs, formatSvgNumber, g, hideLibraryFlyout, image, isBrowseMode, isBusNode, isEditMode, libraryPreviewByKind, modelType, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, rect, resolveNodeStateVisual, startLibraryDevicePlacement, svg, svgImageContentMarkup } = __appScope;
+  const { MemoDeviceGlyph, SvgMarkupChunk, button, cancelLibraryPlacement, clipPath, colorPalette, themeMode, componentLibraryDisplayMode, createNodeFromTemplate, defs, formatSvgNumber, g, hideLibraryFlyout, image, isBusNode, libraryPreviewByKind, modelType, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, rect, resolveNodeStateVisual, startLibraryDevicePlacement, svg, svgImageContentMarkup } = __appScope;
     const modelTypeFailureMessage = modelAssociationDeviceModelTypeFailureMessage(modelType, item.kind);
     const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
     const libraryPreviewImageHref = nodeImage(preview);
@@ -2940,8 +2940,8 @@ export function createRenderLibraryTemplateButton(__appScope: Record<string, any
       <button
         key={item.kind}
         className="library-item"
-        draggable={isEditMode && !modelTypeFailureMessage}
-        disabled={isBrowseMode || Boolean(modelTypeFailureMessage)}
+        draggable={!modelTypeFailureMessage}
+        disabled={Boolean(modelTypeFailureMessage)}
         title={`${item.label} / ${section}${modelTypeFailureMessage ? `（${modelTypeFailureMessage}）` : ""}`}
         onClick={() => startLibraryDevicePlacement(item)}
         onContextMenu={(event) => {
@@ -2949,7 +2949,7 @@ export function createRenderLibraryTemplateButton(__appScope: Record<string, any
           cancelLibraryPlacement();
         }}
         onDragStart={(event) => {
-          if (!isEditMode || modelTypeFailureMessage) {
+          if (modelTypeFailureMessage) {
             event.preventDefault();
             return;
           }

@@ -19,7 +19,7 @@
  * - `modelId` / `schemeId` 是**给人看、能贴进聊天框的身份**，不是 `__appScope` 里的 key。
  *   模型取后端分配的稳定序号 `project.idx`（`allocateStableProjectIndex`，
  *   `server/server.mjs:3835`：跨方案唯一、改名或移动方案后不变），纯数字，无中文；
- *   方案取层级路径逐段 slug（`schemePathSlugPrefixes`），也用不到中文。
+ *   方案取后端分配的数字 `schemeId`，也用不到中文。
  * - `modelKey` / `schemeKey` 是运行期的 `activeProjectKey` / `activeSchemeKey`，
  *   形如 `project:<编码后的方案路径>/<编码后的模型名>`（`src/model-routing.ts:7486`
  *   `savedRuntimePathKey`）—— **整串是中文名的百分号编码**。它们只在进程内有效、
@@ -29,7 +29,7 @@ export type WorkspaceUrlState = {
   spaceId: string;
   /** 地址栏展示用：模型稳定序号 `project.idx`（十进制正整数），无中文 */
   modelId: string;
-  /** 地址栏展示用：方案路径 slug，无中文 */
+  /** 地址栏展示用：后端分配的数字方案 ID */
   schemeId: string;
   /** 进程内用：`activeProjectKey`，用于在方案树里精确定位 */
   modelKey: string;
@@ -90,7 +90,7 @@ export function isModelIndex(value: string): boolean {
 /** 一次 `readWorkspaceUrl` 的结果。`present` 用来区分「地址栏没写」与「写了空串」。 */
 export type ParsedWorkspaceUrl = {
   spaceId: string;
-  /** 地址栏展示值（模型 idx / 方案 slug） */
+  /** 地址栏展示值（模型 idx / 数字 schemeId） */
   modelId: string;
   schemeId: string;
   /** 进程内 key（`mk` / `sk` 参数），可能为空 */
@@ -129,7 +129,7 @@ function decodePart(value: string): string {
  * 解析 hash。只认 `#space=x&model=y&scheme=z&mk=…&sk=…` 这种键值对写法；
  * 不认识 `#/router/path` 这类路径式 hash（没有 `=` 的段一律跳过，解析结果为空）。
  *
- * `model` / `scheme` 现在是 idx / slug；但它们**曾经**是 `project:…` / `scheme:…` 运行期 key。
+ * `model` / `scheme` 现在是 idx / 数字 schemeId；但它们**曾经**是 `project:…` / `scheme:…` 运行期 key。
  * 旧值一旦被读到就直接挪进 `modelKey` / `schemeKey`，让上层走「按 key 定位」的老路径。
  */
 export function parseWorkspaceHash(hash: string): ParsedWorkspaceUrl {
@@ -189,7 +189,7 @@ export function parseWorkspaceHash(hash: string): ParsedWorkspaceUrl {
 /**
  * 组装 hash（含前导 `#`）。空字段直接省略 —— 地址栏不留下 `model=` 这种噪声。
  *
- * **只写 idx / slug**：`modelKey` / `schemeKey` 是运行期 key、含中文名，绝不进地址栏。
+ * **只写 idx / schemeId**：`modelKey` / `schemeKey` 是运行期 key，绝不进地址栏。
  * 因此正常情况下产生的地址永远不含中文；读入旧地址后才可能带中文，那是兼容层的事。
  */
 export function buildWorkspaceHash(state: Partial<WorkspaceUrlState>): string {
@@ -253,7 +253,7 @@ export function spaceIdToAdopt(url: ParsedWorkspaceUrl, cookieSpaceId: string): 
 // 加载、也要能被最早期启动代码引用，故只吃「方案树 + 谓词」，树怎么遍历由调用方注入。
 
 /** 方案树里的一层。只需要三个字段，故用最小结构约束，不 import `SavedSchemeRecord`。 */
-export type SchemeTreeLike = { name?: string; children?: readonly any[]; projects?: readonly any[] };
+export type SchemeTreeLike = { name?: string; schemeId?: number; children?: readonly any[]; projects?: readonly any[] };
 
 /**
  * 从方案树里量出「当前模型所属方案」的层级路径（根 → 叶），用于算 slug。
@@ -281,15 +281,30 @@ export function schemePathForModelKey(
   return walk(schemes, []) ?? [];
 }
 
-/** 当前模型 → 地址栏里的 `scheme=<slug>`。拿不到路径就返回空串（地址栏不写 scheme）。 */
-export function schemeSlugForModelKey(
+/** 当前模型 → 地址栏里的数字 `scheme=<schemeId>`。拿不到编号就返回空串。 */
+export function schemeIdForModelKey(
   schemes: readonly SchemeTreeLike[] | null | undefined,
   modelKey: string
 ): string {
-  const path = schemePathForModelKey(schemes, modelKey);
-  if (path.length === 0) return "";
-  return schemePathSlugPrefixes(path).join("/");
+  const key = String(modelKey ?? "");
+  const walk = (records: readonly SchemeTreeLike[]): string => {
+    for (const scheme of records ?? []) {
+      if ((scheme.projects ?? []).some((project: any) => String(project?.id ?? "") === key)) {
+        const candidate = scheme.schemeId;
+        return typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate > 0
+          ? String(candidate)
+          : "";
+      }
+      const nested = walk((scheme.children ?? []) as readonly SchemeTreeLike[]);
+      if (nested) return nested;
+    }
+    return "";
+  };
+  return walk(schemes ?? []);
 }
+
+/** 旧名称保留为兼容导出，但新地址栏只写数字 schemeId。 */
+export const schemeSlugForModelKey = schemeIdForModelKey;
 
 /**
  * 在方案树里按「模型稳定序号 idx」找模型记录。

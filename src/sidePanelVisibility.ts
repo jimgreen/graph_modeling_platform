@@ -70,7 +70,7 @@ export function shouldIgnoreWorkspaceAutoHide(
 // ---------- 新手引导（AppTour）期间的侧边栏强制展开 ----------
 
 /**
- * 侧边栏步骤的索引 → 侧边栏映射（新手引导的第 2 步锚定左侧栏、第 5 步锚定右侧栏）。
+ * 侧边栏步骤的索引 → 侧边栏映射（新手引导的第 1 步锚定左侧栏、第 4 步锚定右侧栏）。
  *
  * 引导 tooltip 的定位依赖目标元素真实可见；侧边栏处于 `hidden` 时被 `display:none` 摘出布局
  * （styles.css 的 `.app-shell.{left,right}-panel-hidden ... .hidden` 分支），
@@ -83,8 +83,8 @@ export function shouldIgnoreWorkspaceAutoHide(
  * 索引以 `APP_TOUR_STEPS` 为唯一口径，对应关系由 `appTour.test.ts` 的契约测试反查钉住。
  */
 export const TOUR_SIDE_PANEL_STEP_TARGETS: ReadonlyArray<{ stepIndex: number; side: SidePanelSide }> = [
-  { stepIndex: 1, side: "left" },
-  { stepIndex: 4, side: "right" }
+  { stepIndex: 0, side: "left" },
+  { stepIndex: 3, side: "right" }
 ];
 
 /** 返回第 `stepIndex` 步需要强制展开的侧边栏；非侧边栏步骤返回 null。 */

@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
-import { MODEL_TYPES } from "./model";
+import { MODEL_TYPE_META, MODEL_TYPES } from "./model";
 import { createRenderProjectPanel } from "./appExtracted/appRenderPanels";
 
 const Icon = () => createElement("span");
@@ -34,5 +34,14 @@ describe("model library empty state", () => {
   test("guides the novice to right-click to create a scheme after a successful backend load", () => {
     expect(renderEmptyProjectPanel(true)).toContain(">暂无方案，右键此处创建方案<");
     expect(renderEmptyProjectPanel(true)).not.toContain("正在连接模型库");
+  });
+
+  test("model type filters use the same colors as tree type tags", () => {
+    const markup = renderEmptyProjectPanel(false);
+    for (const type of MODEL_TYPES) {
+      expect(markup).toContain(`data-model-type="${type}"`);
+      expect(markup).toContain(`--model-type-color:${MODEL_TYPE_META[type].color}`);
+      expect(markup).toContain(`aria-label="按模型类型筛选：${type}"`);
+    }
   });
 });

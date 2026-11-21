@@ -8,6 +8,7 @@ import {
   modelAssociationModelTypeForKind,
   normalizeDeviceOperatingLimitsAfterTopology,
   routableLineDeviceEndpointRefs,
+  savedSchemeIdOf,
   validateTopology,
   validateVoltageSetpointDeviations,
   type ModelNode,
@@ -32,7 +33,7 @@ export type AllNetworkTopologyModelType = Extract<ModelType, "厂站" | "馈线"
 
 export type AllNetworkTopologyReferenceModel = {
   projectId: string;
-  schemeId: string;
+  schemeId: number | string;
   schemePath: string[];
   name: string;
   idx: number;
@@ -47,7 +48,7 @@ export type AllNetworkTopologyModel = Omit<AllNetworkTopologyReferenceModel, "mo
 export type AllNetworkTopologyAlert = {
   id: string;
   projectId: string;
-  schemeId: string;
+  schemeId: number | string;
   modelName: string;
   deviceName: string;
   message: string;
@@ -76,6 +77,7 @@ export function collectAllNetworkTopologyReferenceModels(
   const visit = (items: readonly SavedSchemeRecord[], parentPath: readonly string[]) => {
     for (const scheme of items) {
       const schemePath = [...parentPath, scheme.name];
+      const schemeId = savedSchemeIdOf(scheme) ?? 0;
       for (const record of scheme.projects ?? []) {
         const modelType = String(record.project?.modelType ?? "").trim() as ModelType | "";
         // project 缺失时按占位值收集，与同循环里 modelType 的 ?? "" 兜底同一套语义：
@@ -83,7 +85,7 @@ export function collectAllNetworkTopologyReferenceModels(
         // modelType 占位空串的记录会被 collectAllNetworkTopologyModels 按类型过滤掉。
         models.push({
           projectId: record.id,
-          schemeId: scheme.id,
+          schemeId,
           schemePath,
           name: record.name || record.project?.name || "",
           idx: normalizedModelIndex(record.project?.idx),
@@ -287,7 +289,7 @@ function globalLineTopologyAlert(
   return {
     id: `global-line:${record.id}:${kind}:${endpoint}`,
     projectId: model?.projectId ?? "",
-    schemeId: model?.schemeId ?? "",
+    schemeId: model?.schemeId ?? 0,
     modelName: model?.name || reference?.projectName || "全局线路注册表",
     deviceName: record.name || record.id,
     message,

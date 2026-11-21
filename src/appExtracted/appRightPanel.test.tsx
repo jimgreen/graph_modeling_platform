@@ -290,7 +290,5 @@ describe("【基础】→【背景色】是黑白二档切换", () => {
     const row = source.slice(index, index + 1400);
     expect(row).toContain("setThemeMode(next)");
     expect(row).toContain('setCanvasBackgroundColor("")');
-    // 浏览态不可切换
-    expect(row).toContain("disabled={isBrowseMode}");
   });
 });

@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   alignNodes,
@@ -1484,6 +1486,47 @@ test("rebuilds only requested routable line-like device routes", () => {
 
   expect(updates.map((node) => node.id)).toEqual([line.id]);
   expect(routableLineDeviceCanvasPoints(updates[0]).length).toBeGreaterThan(2);
+});
+
+
+const MODEL_25_PERFORMANCE_FIXTURE = resolve(process.cwd(), "data/schemes/files/四川/所有图元.json");
+
+/** Model 25 is gitignored and this benchmark is CPU-heavy; set GMP_MODEL25_PERF=1 to run it. */
+test.skipIf(!existsSync(MODEL_25_PERFORMANCE_FIXTURE) || process.env.GMP_MODEL25_PERF !== "1")(
+  "keeps model 25 stored-route checks below ten seconds in Vitest",
+  () => {
+    const project = JSON.parse(readFileSync(MODEL_25_PERFORMANCE_FIXTURE, "utf8")) as ProjectFile;
+    const lineNodeIds = project.nodes
+      .filter((node) => isRoutableLineDeviceKind(node.kind))
+      .map((node) => node.id);
+
+    expect(project.idx).toBe(25);
+    expect(project.nodes.length).toBeGreaterThan(100);
+    expect(lineNodeIds.length).toBeGreaterThanOrEqual(5);
+
+    const startedAt = performance.now();
+    rebuildRoutableLineDeviceRouteUpdates(
+      project.nodes,
+      lineNodeIds,
+      { width: project.canvasWidth ?? 1920, height: project.canvasHeight ?? 1024 }
+    );
+
+    expect(performance.now() - startedAt).toBeLessThan(10_000);
+  }
+);
+
+
+test("rechecks route-avoidance flags after the same node params change", () => {
+  const node = { ...createDefaultNode("static-rect", { x: 300, y: 180 }), size: { width: 100, height: 40 } };
+  const start = { x: 200, y: 180 };
+  const end = { x: 400, y: 180 };
+  node.params[STATIC_ROUTE_AVOIDANCE_PARAM] = "0";
+
+  expect(segmentIntersectsNodeBody(start, end, node)).toBe(false);
+
+  node.params[STATIC_ROUTE_AVOIDANCE_PARAM] = "1";
+
+  expect(segmentIntersectsNodeBody(start, end, node)).toBe(true);
 });
 
 

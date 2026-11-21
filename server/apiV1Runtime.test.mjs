@@ -11,6 +11,9 @@ import { handleV1RuntimeClients } from "./apiV1Runtime.mjs";
 let server;
 let baseUrl;
 let wsUrl;
+const runtimeExportPath = apiPath("/v1/runtime/export");
+const runtimeSvgPath = `${runtimeExportPath}?format=svg`;
+const runtimeEFilePath = `${runtimeExportPath}?format=e-file`;
 // 收集所有已打开的 WS：断言失败时用例会跳过 ws.close()，
 // 残留连接会让 server.close() 在 afterEach 里挂到 hook timeout，
 // 把「干净的断言 RED」污染成「hook timed out 红」。
@@ -21,6 +24,12 @@ async function startServer() {
   const port = server.address().port;
   baseUrl = `http://127.0.0.1:${port}`;
   wsUrl = `ws://127.0.0.1:${port}/webgrp/ws`;
+  const initialized = await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "默认空间" })
+  });
+  if (!initialized.ok) throw new Error(`default space initialization failed: ${initialized.status}`);
 }
 
 beforeEach(async () => {
@@ -230,12 +239,12 @@ describe(apiPath("/v1/runtime/screenshot"), () => {
   });
 });
 
-describe(apiPath("/v1/runtime/svg"), () => {
+describe(runtimeSvgPath, () => {
   test("SVG 文本透传，content-type image/svg+xml", async () => {
     const ws = await connectResponder("c1", () => ({
       ok: true, data: "<svg></svg>"
     }));
-    const res = await fetch(`${baseUrl}${apiPath("/v1/runtime/svg")}`);
+    const res = await fetch(`${baseUrl}${runtimeSvgPath}`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("image/svg+xml; charset=utf-8");
     expect(await res.text()).toBe("<svg></svg>");
@@ -243,12 +252,12 @@ describe(apiPath("/v1/runtime/svg"), () => {
   });
 });
 
-describe(apiPath("/v1/runtime/e-file"), () => {
+describe(runtimeEFilePath, () => {
   test("E 文件文本透传，content-type text/plain + attachment", async () => {
     const ws = await connectResponder("c1", () => ({
       ok: true, data: { filename: "模型.e", text: "<Section>", mime: "text/plain" }
     }));
-    const res = await fetch(`${baseUrl}${apiPath("/v1/runtime/e-file")}`);
+    const res = await fetch(`${baseUrl}${runtimeEFilePath}`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/plain; charset=utf-8");
     expect(res.headers.get("content-disposition")).toContain("attachment");
@@ -262,7 +271,7 @@ describe(apiPath("/v1/runtime/e-file"), () => {
       received = params;
       return { ok: true, data: { filename: "model.e", text: "E", mime: "text/plain" } };
     });
-    const res = await fetch(`${baseUrl}${apiPath("/v1/runtime/e-file")}?template=${encodeURIComponent("配网实时库")}`);
+    const res = await fetch(`${baseUrl}${runtimeEFilePath}&template=${encodeURIComponent("配网实时库")}`);
     expect(res.status).toBe(200);
     expect(received.templateName).toBe("配网实时库");
     expect(typeof received.templateData).toBe("string");
@@ -271,7 +280,7 @@ describe(apiPath("/v1/runtime/e-file"), () => {
   });
 
   test("GET ?template= 未知模板 → 400", async () => {
-    const { status, json } = await fetchV1(`${apiPath("/v1/runtime/e-file")}?template=不存在模板`);
+    const { status, json } = await fetchV1(`${runtimeEFilePath}&template=不存在模板`);
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
@@ -283,7 +292,7 @@ describe(apiPath("/v1/runtime/e-file"), () => {
   // 后续读盘抛错 → 500。此处锁死它们必须停在 400 bad-request。
   test("GET ?template= 原型链键（constructor / toString / __proto__）→ 400 而非 500", async () => {
     for (const name of ["constructor", "toString", "__proto__"]) {
-      const { status, json } = await fetchV1(`${apiPath("/v1/runtime/e-file")}?template=${name}`);
+      const { status, json } = await fetchV1(`${runtimeEFilePath}&template=${name}`);
       expect(status, name).toBe(400);
       expect(json.ok, name).toBe(false);
       expect(json.error.code, name).toBe("bad-request");
@@ -297,7 +306,7 @@ describe(apiPath("/v1/runtime/e-file"), () => {
       received = params;
       return { ok: true, data: { filename: "model.e", text: "E", mime: "text/plain" } };
     });
-    const res = await fetch(`${baseUrl}${apiPath("/v1/runtime/e-file")}`, {
+    const res = await fetch(`${baseUrl}${runtimeEFilePath}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ templateName: "自定义模板A", templateText: "<ACLoad>\nname=名称\n</ACLoad>" })
@@ -309,7 +318,7 @@ describe(apiPath("/v1/runtime/e-file"), () => {
   });
 
   test("POST 空 templateText → 400", async () => {
-    const res = await fetch(`${baseUrl}${apiPath("/v1/runtime/e-file")}`, {
+    const res = await fetch(`${baseUrl}${runtimeExportPath}?format=e-file`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ templateText: "  " })
@@ -320,7 +329,7 @@ describe(apiPath("/v1/runtime/e-file"), () => {
   });
 
   test("POST 非法 JSON → 400", async () => {
-    const r = await fetch(`${baseUrl}${apiPath("/v1/runtime/e-file")}`, {
+    const r = await fetch(`${baseUrl}${runtimeExportPath}?format=e-file`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{invalid"
@@ -465,9 +474,9 @@ describe("handleV1RuntimeClients 直调：listClients 抛错 → 500 internal", 
   });
 });
 
-describe(apiPath("/v1/runtime/e-file") + " 错误映射（GET 的 catch）", () => {
+describe(runtimeEFilePath + " 错误映射（GET 的 catch）", () => {
   test("GET 无在线客户端 → 503 no-online-client", async () => {
-    const { status, json } = await fetchV1(apiPath("/v1/runtime/e-file"));
+    const { status, json } = await fetchV1(runtimeEFilePath);
     expect(status).toBe(503);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("no-online-client");
@@ -479,7 +488,7 @@ describe(apiPath("/v1/runtime/e-file") + " 错误映射（GET 的 catch）", () 
       error: { code: "e-file-template-unsupported", message: "该模板缺少必填段。" }
     }));
     const { status, json } = await fetchV1(
-      apiPath("/v1/runtime/e-file") + "?template=" + encodeURIComponent("配网实时库")
+      runtimeEFilePath + "&template=" + encodeURIComponent("配网实时库")
     );
     expect(status).toBe(500);
     expect(json.ok).toBe(false);
@@ -489,13 +498,13 @@ describe(apiPath("/v1/runtime/e-file") + " 错误映射（GET 的 catch）", () 
   });
 });
 
-describe(apiPath("/v1/runtime/e-file") + " POST 的 catch 落穿", () => {
+describe(runtimeExportPath + " POST 的 catch 落穿", () => {
   test("合法 JSON + 非空 templateText + 前端自定义错误码 → 500 透传", async () => {
     const ws = await connectResponder("c1", () => ({
       ok: false,
       error: { code: "e-file-template-malformed", message: "模板文本缺少 ACLoad 根节点。" }
     }));
-    const res = await fetch(`${baseUrl}${apiPath("/v1/runtime/e-file")}`, {
+    const res = await fetch(`${baseUrl}${runtimeExportPath}?format=e-file`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ templateName: "自定义模板B", templateText: "<ACLoad>\nname=名称\n</ACLoad>" })
@@ -506,5 +515,12 @@ describe(apiPath("/v1/runtime/e-file") + " POST 的 catch 落穿", () => {
     expect(json.error.code).toBe("e-file-template-malformed");
     expect(json.error.message).toBe("模板文本缺少 ACLoad 根节点。");
     ws.close();
+  });
+});
+
+describe("deleted runtime export routes", () => {
+  test.each(["/v1/runtime/svg", "/v1/runtime/e-file"])("旧路径 %s 返回 404", async (path) => {
+    const res = await fetch(`${baseUrl}${apiPath(path)}`);
+    expect(res.status).toBe(404);
   });
 });

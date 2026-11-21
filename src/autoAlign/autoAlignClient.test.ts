@@ -47,6 +47,42 @@ describe("auto-align worker client", () => {
     expect(worker.terminate).toHaveBeenCalledTimes(1);
   });
 
+  test("reports worker progress without settling until the final result", async () => {
+    const worker = makeWorker();
+    const onProgress = vi.fn();
+    const input = {} as AutoAlignPlanInput;
+    const result = {
+      arranged: [], nodeIds: [], layoutUnitCount: 0, storedRouteDrops: [],
+      qualityReport: {
+        verifiedCandidateCount: 0, bendRejectedCount: 0, crossingRejectedCount: 0,
+        frozenUnitCount: 0, degraded: false, revertedByVerification: false
+      }
+    } satisfies AutoAlignPlanResult;
+    const promise = runAutoAlignPlanInWorker(input, () => worker as unknown as Worker, undefined, { onProgress });
+
+    worker.onmessage?.({ data: { type: "progress", progress: { percent: 35, stage: "拓扑布局" } } } as MessageEvent);
+    expect(onProgress).toHaveBeenCalledWith({ percent: 35, stage: "拓扑布局" });
+    expect(worker.terminate).not.toHaveBeenCalled();
+
+    worker.onmessage?.({ data: { ok: true, result } } as MessageEvent);
+    await expect(promise).resolves.toEqual(result);
+  });
+
+  test("AbortSignal terminates an active worker and rejects with AbortError exactly once", async () => {
+    const worker = makeWorker();
+    const controller = new AbortController();
+    const promise = runAutoAlignPlanInWorker({} as AutoAlignPlanInput, () => worker as unknown as Worker, 0, { signal: controller.signal });
+    const lateMessage = worker.onmessage;
+
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expect(worker.onmessage).toBeNull();
+    lateMessage?.({ data: { ok: true, result: {} } } as unknown as MessageEvent);
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
+
   /**
    * 以下覆盖的是「promise 会不会永远不 settle」与「worker 会不会泄漏」。
    * 两者都是最难察觉的失效：界面直接卡住、或者每次操作漏一个 worker，
@@ -64,13 +100,44 @@ describe("auto-align worker client", () => {
       edges: [],
       routedEdges: [],
       canvasBounds: { width: 800, height: 600 },
-      gridSpacing: 50,
       editModeRouteRenderOptions: { preserveManualRouteDisplay: true }
     } as unknown as AutoAlignPlanInput;
     const result = await runAutoAlignPlanInWorker(input, undefined);
     expect(result).toBeDefined();
     expect(Array.isArray(result.nodeIds)).toBe(true);
     expect(result.layoutUnitCount).toBe(0);
+  });
+
+  test("浏览器缺少 Worker 时拒绝同步回退，避免阻塞主线程", async () => {
+    const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+    const originalWorkerDescriptor = Object.getOwnPropertyDescriptor(globalThis, "Worker");
+    const originalDocumentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+    Object.defineProperty(globalThis, "window", { configurable: true, value: {} });
+    Object.defineProperty(globalThis, "Worker", { configurable: true, value: undefined });
+    Object.defineProperty(globalThis, "document", { configurable: true, value: {} });
+    try {
+      const input = {
+        nodes: [],
+        activeLayerNodes: [],
+        activeLayerEdges: [],
+        activeLayerGroups: [],
+        edges: [],
+        routedEdges: [],
+        canvasBounds: { width: 800, height: 600 },
+        editModeRouteRenderOptions: { preserveManualRouteDisplay: true }
+      } as unknown as AutoAlignPlanInput;
+
+      await expect(runAutoAlignPlanInWorker(input, undefined)).rejects.toThrow(
+        "当前浏览器不支持 Web Worker，无法执行自动对齐"
+      );
+    } finally {
+      if (originalWindowDescriptor) Object.defineProperty(globalThis, "window", originalWindowDescriptor);
+      else Reflect.deleteProperty(globalThis, "window");
+      if (originalWorkerDescriptor) Object.defineProperty(globalThis, "Worker", originalWorkerDescriptor);
+      else Reflect.deleteProperty(globalThis, "Worker");
+      if (originalDocumentDescriptor) Object.defineProperty(globalThis, "document", originalDocumentDescriptor);
+      else Reflect.deleteProperty(globalThis, "document");
+    }
   });
 
   test("Worker 回 ok:false 时以该 error 消息 reject", async () => {

@@ -1,12 +1,12 @@
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, test, vi, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
 import AdmZip from "adm-zip";
+import { createSpaceStore } from "./spaceStore.mjs";
 
 // 半个模块替身：只把 apiV1Schemes.mjs 真正消费的那 3 个函数换成可编程的 vi.fn，
-// 其余导出（关键是 createImageServer）原样透传给真实实现 —— 所以文件上方那批
-// 「起真 server 打真 HTTP」的集成用例完全不受影响。
+// 其余导出（关键是 createImageServer）原样透传给真实实现。
 // 反例提醒：早先版本想用 `vi.mock("./server.mjs", () => ({ ...3 个桩 }))` 整体替换，
 // 那会把 createImageServer 变成 vi.fn()，`server.address()` 返回 undefined → 整文件崩。
 vi.mock("./server.mjs", async (importOriginal) => {
@@ -19,40 +19,71 @@ vi.mock("./server.mjs", async (importOriginal) => {
   };
 });
 
-import { createImageServer, readSchemes, createSchemeArchiveBuffer, readSchemeProjectRecord } from "./server.mjs";
-import {
-  handleV1Schemes,
-  handleV1SchemesHierarchy,
-  handleV1SchemeModels,
-  handleV1SchemeExport,
-  handleV1ModelJson
-} from "./apiV1Schemes.mjs";
 import { encodeSchemePath } from "./schemePath.mjs";
 import { apiPath } from "./config.mjs";
 
+const modelExportPath = apiPath("/v1/schemes/model/export");
+
 // 真实实现引用（绕过 mock）：本文件末尾的直调用例在 afterEach 里把三个 vi.fn
 // 复位成真实实现，避免一个用例的 mockImplementation 泄漏给后面的用例。
-const actualServer = await vi.importActual("./server.mjs");
+let createImageServer;
+let readSchemes;
+let createSchemeArchiveBuffer;
+let readSchemeProjectRecord;
+let handleV1Schemes;
+let handleV1SchemesHierarchy;
+let handleV1SchemeModels;
+let handleV1SchemeExport;
+let handleV1ModelJson;
+let actualServer;
+let dataDir;
+let previousDataRoot;
 
-// 集成测试：起真实 server（临时端口 + tmpdir 数据目录），打真实 /webgrp/v1 请求。
-// 问题：createImageServer 用模块级 schemeDataDir（repo data/），无法注入 tmpdir。
-// 解法：用环境变量? 不支持。改为直接调 handler 函数 + mock req/res 测纯逻辑层，
-//      或用 repo 真实 data 目录（若有 IEEE 数据）。
-// 务实：测 handler 纯逻辑（parseSchemePathParam/encodeSchemePath + handler 信封格式），
-//      完整 HTTP 集成用 repo data 目录只读验证 schemes 接口可响应。
+// 集成测试使用临时 GRAPH_MODEL_DATA_DIR + 注入的 SpaceStore，避免触碰本地 data/。
 
 let server;
 let baseUrl;
+let spaceStore;
+
+beforeAll(async () => {
+  previousDataRoot = process.env.GRAPH_MODEL_DATA_DIR;
+  dataDir = await mkdtemp(join(tmpdir(), "api-v1-schemes-"));
+  process.env.GRAPH_MODEL_DATA_DIR = dataDir;
+  ({ createImageServer, readSchemes, createSchemeArchiveBuffer, readSchemeProjectRecord } = await import("./server.mjs"));
+  ({
+    handleV1Schemes,
+    handleV1SchemesHierarchy,
+    handleV1SchemeModels,
+    handleV1SchemeExport,
+    handleV1ModelJson
+  } = await import("./apiV1Schemes.mjs"));
+  actualServer = await vi.importActual("./server.mjs");
+});
 
 beforeEach(async () => {
-  server = await createImageServer({ port: 0, host: "127.0.0.1" });
+  await rm(dataDir, { recursive: true, force: true });
+  await mkdir(dataDir, { recursive: true });
+  spaceStore = createSpaceStore(dataDir);
+  server = await createImageServer({ port: 0, host: "127.0.0.1", spaceStore });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const initialized = await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "默认空间" })
+  });
+  if (!initialized.ok) throw new Error(`default space initialization failed: ${initialized.status}`);
 });
 
 afterEach(async () => {
   if (server) {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+afterAll(async () => {
+  await rm(dataDir, { recursive: true, force: true });
+  if (previousDataRoot === undefined) delete process.env.GRAPH_MODEL_DATA_DIR;
+  else process.env.GRAPH_MODEL_DATA_DIR = previousDataRoot;
 });
 
 async function fetchV1(pathname) {
@@ -146,40 +177,52 @@ describe(apiPath("/v1/schemes/export") + " 方案导出", () => {
   });
 });
 
-describe(apiPath("/v1/schemes/model/json") + " 模型 JSON", () => {
+describe(modelExportPath + "?format=json 模型 JSON", () => {
   test("缺少 schemePath 返 400（模型 JSON：已给 name 但缺 schemePath）", async () => {
-    const { status } = await fetchV1(apiPath("/v1/schemes/model/json") + "?name=x");
+    const { status } = await fetchV1(`${modelExportPath}?format=json&name=x`);
     expect(status).toBe(400);
   });
 
   test("缺少 name 返 400（模型 JSON：已给 schemePath 但缺 name）", async () => {
     const sp = encodeSchemePath(["方案"]);
-    const { status } = await fetchV1(apiPath(`/v1/schemes/model/json?schemePath=${sp}`));
+    const { status } = await fetchV1(`${modelExportPath}?format=json&schemePath=${sp}`);
     expect(status).toBe(400);
   });
 
   test("不存在模型返 404（模型 JSON：schemePath 存在但 name 不存在）", async () => {
     const sp = encodeSchemePath(["方案xyz"]);
-    const { status } = await fetchV1(apiPath(`/v1/schemes/model/json?schemePath=${sp}&name=不存在`));
+    const { status } = await fetchV1(`${modelExportPath}?format=json&schemePath=${sp}&name=不存在`);
     expect(status).toBe(404);
   });
 });
 
-describe(apiPath("/v1/schemes/model/svg") + " 模型 SVG", () => {
+describe(modelExportPath + "?format=svg 模型 SVG", () => {
   test("缺少 schemePath 返 400（模型 SVG：已给 name 但缺 schemePath）", async () => {
-    const { status } = await fetchV1(apiPath("/v1/schemes/model/svg") + "?name=x");
+    const { status } = await fetchV1(`${modelExportPath}?format=svg&name=x`);
     expect(status).toBe(400);
   });
 
   test("缺少 name 返 400（模型 SVG：已给 schemePath 但缺 name）", async () => {
     const sp = encodeSchemePath(["方案"]);
-    const { status } = await fetchV1(apiPath(`/v1/schemes/model/svg?schemePath=${sp}`));
+    const { status } = await fetchV1(`${modelExportPath}?format=svg&schemePath=${sp}`);
     expect(status).toBe(400);
   });
 
   test("不存在模型返 404（模型 SVG：schemePath 存在但 name 不存在）", async () => {
     const sp = encodeSchemePath(["方案xyz"]);
-    const { status } = await fetchV1(apiPath(`/v1/schemes/model/svg?schemePath=${sp}&name=不存在`));
+    const { status } = await fetchV1(`${modelExportPath}?format=svg&schemePath=${sp}&name=不存在`);
+    expect(status).toBe(404);
+  });
+});
+
+describe("deleted model export routes", () => {
+  test.each([
+    "/v1/schemes/model/json",
+    "/v1/schemes/model/svg",
+    "/v1/schemes/model/e-file",
+    "/v1/schemes/model/cim-xml"
+  ])("旧路径 %s 返回 404", async (path) => {
+    const { status } = await fetchV1(apiPath(`${path}?schemePath=${encodeSchemePath(["方案"])}&name=x`));
     expect(status).toBe(404);
   });
 });

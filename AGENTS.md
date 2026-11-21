@@ -406,7 +406,7 @@ pnpm purge:derived --apply
 
 - 所有模块签名模式：`export function renderXxx(__appScope: Record<string, any>) { ... }`，从 `__appScope` 解构取值。
 - 文件带 `// @ts-nocheck`（自动生成属性），改时注意类型不校验。
-- `buildSvgDocument`（`appPersistenceLibraryExport.tsx`）是 SVG / SVG 截图的唯一自包含输出源，改它影响 `/webgrp/v1/runtime/svg`、`/webgrp/v1/runtime/screenshot`、导出按钮三处。
+- `buildSvgDocument`（`appPersistenceLibraryExport.tsx`）是 SVG / SVG 截图的唯一自包含输出源，改它影响 `/webgrp/v1/runtime/export?format=svg`、`/webgrp/v1/runtime/screenshot`、导出按钮三处。
 - 画布背景层 `<rect data-canvas-background>` 标记用于截图/序列化时移除背景。
 - 从 `__appScope` 解构：`const { activeProjectKey, nodes, edges, ... } = __appScope;`；`Object.assign(__appScope, { ... })` 回写派生状态。
 - 对应测试在 `src/` 根：`appDeviceDefinitionFactories.test.ts`、`appGraphMeasurementFactories.test.ts`、`appInspector.functional.test.ts`、`appPersistenceLibraryExport.test.ts`、`appSelectionDragFactories.test.ts`、`backgroundPageRender.test.ts`、`canvasLod.test.ts`

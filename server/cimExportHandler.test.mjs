@@ -11,16 +11,20 @@
 // 注意：`.test.mjs` 必须是纯 JS —— 不要写 `as never` / 类型标注 / 非空断言，
 // 那些会触发 RollupError: Parse failure，表现为「Tests: no tests」（看着像通过，实际没跑）。
 import { describe, expect, test } from "vitest";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { handleV1ModelCimXml } from "./cimExport.mjs";
 import { fakeResponse, fakeUrl } from "./handlerTestHarness.mjs";
+import { spacePathsFor } from "./spaceStore.mjs";
 
 function schemePath(parts) {
   return encodeURIComponent(JSON.stringify(parts));
 }
 
-async function run(search) {
+async function run(search, paths) {
   const response = fakeResponse();
-  await handleV1ModelCimXml({ response, url: fakeUrl(search) });
+  await handleV1ModelCimXml({ response, url: fakeUrl(search), paths });
   return response;
 }
 
@@ -89,5 +93,51 @@ describe("handleV1ModelCimXml / 其余 query 的取值口径", () => {
   test("modelId 缺省不报错（后续由 resolveModelId 从 project.idx / 名字回落）", async () => {
     const response = await run(`schemePath=${schemePath(["方案A"])}&name=x`);
     expect(response.statusCode).not.toBe(400);
+  });
+});
+
+describe("handleV1ModelCimXml / schemeId 定位", () => {
+  async function withScheme(runWithFixture) {
+    const dataDir = await mkdtemp(join(tmpdir(), "cim-scheme-no-"));
+    const paths = spacePathsFor(dataDir, "default");
+    const schemeDir = join(paths.schemeFiles, "方案A");
+    await mkdir(schemeDir, { recursive: true });
+    const { saveSchemeRecordDirectory } = await import("./server.mjs");
+    const schemeId = await saveSchemeRecordDirectory({ paths, schemePath: ["方案A"] });
+    await writeFile(join(schemeDir, "模型A.json"), JSON.stringify({
+      name: "模型A",
+      modelType: "厂站",
+      idx: 1,
+      nodes: [{
+        id: "bus1",
+        kind: "ac-bus",
+        name: "母线1",
+        position: { x: 0, y: 0 },
+        size: { width: 100, height: 20 },
+        terminals: [{ id: "t1", type: "ac", anchor: { x: 0.5, y: 0.5 }, nodeNumber: "1", vbase: "10" }],
+        params: { name: "母线1", vbase: "10" }
+      }],
+      edges: []
+    }));
+    try {
+      await runWithFixture({ paths, schemeId });
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  }
+
+  test("schemeId + name 可替代 schemePath 导出 CIM/XML", async () => {
+    await withScheme(async ({ paths, schemeId }) => {
+      const response = await run(`schemeId=${schemeId}&name=%E6%A8%A1%E5%9E%8BA`, paths);
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toContain("application/xml");
+    });
+  });
+
+  test("schemePath 与 schemeId 冲突时返回 400", async () => {
+    await withScheme(async ({ paths, schemeId }) => {
+      const response = await run(`schemePath=${schemePath(["另一个方案"])}&schemeId=${schemeId}&name=%E6%A8%A1%E5%9E%8BA`, paths);
+      expectBadRequest(response, "schemePath");
+    });
   });
 });

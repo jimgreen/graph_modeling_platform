@@ -77,7 +77,9 @@ export type BuildCanvasLayoutUnitsOptions = {
   extraBoundsByNodeId?: ReadonlyMap<string, readonly SelectionRect[]>;
 };
 
-export const AUTO_ALIGN_DEFAULT_THRESHOLD_PX = 50;
+export const AUTO_ALIGN_CANONICAL_STEP_PX = 50;
+// 保留旧导出名供普通布局测试和内部调用兼容；自动对齐入口不再向用户暴露该值。
+export const AUTO_ALIGN_DEFAULT_THRESHOLD_PX = AUTO_ALIGN_CANONICAL_STEP_PX;
 export const AUTO_ALIGN_MIN_THRESHOLD_PX = 5;
 export const AUTO_ALIGN_MAX_THRESHOLD_PX = 200;
 
@@ -1106,6 +1108,527 @@ export function distributeNodeLayoutUnits(nodes: ModelNode[], units: readonly Ca
   return moveNodesByUnitDeltas(nodes, units, deltas);
 }
 
+type TopologyUnitPlan = {
+  unit: CanvasLayoutUnit;
+  targetCenter: Point;
+};
+
+type TopologyRootStrategy = "stable-id" | "bus-degree" | "graph-center";
+type TopologyOrientation = "horizontal" | "vertical";
+type TopologyOrderStrategy = "barycenter" | "alternating-barycenter";
+type TopologyAutoAlignOptions = {
+  step?: number;
+  origin?: Point;
+  rootStrategy?: TopologyRootStrategy;
+  orientation?: TopologyOrientation;
+  orderStrategy?: TopologyOrderStrategy;
+  componentColumns?: number;
+  preserveIsolatedPositions?: boolean;
+};
+
+export type TopologyAutoAlignCandidate = {
+  key: string;
+  nodes: ModelNode[];
+};
+
+const compareStableIds = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0;
+
+type TopologyGraph = {
+  movableUnits: CanvasLayoutUnit[];
+  unitById: Map<string, CanvasLayoutUnit>;
+  unitByNodeId: Map<string, string>;
+  neighbors: Map<string, Set<string>>;
+  components: string[][];
+};
+
+function topologyGraphForUnits(units: readonly CanvasLayoutUnit[], edges: readonly Edge[]): TopologyGraph {
+  const movableUnits = units.filter((unit) => unit.nodeIds.length > 0);
+  const unitById = new Map(movableUnits.map((unit) => [unit.id, unit]));
+  const unitByNodeId = new Map<string, string>();
+  for (const unit of movableUnits) {
+    for (const nodeId of unit.nodeIds) unitByNodeId.set(nodeId, unit.id);
+  }
+  const neighbors = new Map<string, Set<string>>(movableUnits.map((unit) => [unit.id, new Set()]));
+  for (const edge of edges) {
+    const sourceUnitId = unitByNodeId.get(edge.sourceId);
+    const targetUnitId = unitByNodeId.get(edge.targetId);
+    if (!sourceUnitId || !targetUnitId || sourceUnitId === targetUnitId) continue;
+    neighbors.get(sourceUnitId)?.add(targetUnitId);
+    neighbors.get(targetUnitId)?.add(sourceUnitId);
+  }
+
+  const unvisited = new Set(movableUnits.map((unit) => unit.id));
+  const components: string[][] = [];
+  while (unvisited.size > 0) {
+    const root = [...unvisited].sort(compareStableIds)[0];
+    const component: string[] = [];
+    const queue = [root];
+    unvisited.delete(root);
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      component.push(current);
+      for (const next of [...(neighbors.get(current) ?? [])].sort(compareStableIds)) {
+        if (!unvisited.has(next)) continue;
+        unvisited.delete(next);
+        queue.push(next);
+      }
+    }
+    components.push(component.sort(compareStableIds));
+  }
+  components.sort((left, right) => compareStableIds(left[0], right[0]));
+  return { movableUnits, unitById, unitByNodeId, neighbors, components };
+}
+
+function topologyRootForComponent(
+  component: readonly string[],
+  graph: TopologyGraph,
+  nodeById: ReadonlyMap<string, ModelNode>,
+  strategy: TopologyRootStrategy
+): string {
+  const busRank = (unitId: string) => {
+    const unit = graph.unitById.get(unitId);
+    return unit?.nodeIds.some((nodeId) => {
+      const node = nodeById.get(nodeId);
+      return Boolean(node && isBusNode(node));
+    }) ? 0 : 1;
+  };
+  const degree = (unitId: string) => graph.neighbors.get(unitId)?.size ?? 0;
+  if (strategy === "stable-id") {
+    return [...component].sort(compareStableIds)[0];
+  }
+  if (strategy === "bus-degree") {
+    return [...component].sort((left, right) => busRank(left) - busRank(right) || degree(right) - degree(left) || compareStableIds(left, right))[0];
+  }
+
+  const eccentricities = new Map<string, number>();
+  for (const root of component) {
+    const distance = new Map<string, number>([[root, 0]]);
+    const queue = [root];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const next of [...(graph.neighbors.get(current) ?? [])].sort(compareStableIds)) {
+        if (distance.has(next)) continue;
+        distance.set(next, (distance.get(current) ?? 0) + 1);
+        queue.push(next);
+      }
+    }
+    eccentricities.set(root, Math.max(0, ...distance.values()));
+  }
+  return [...component].sort((left, right) => (eccentricities.get(left) ?? 0) - (eccentricities.get(right) ?? 0) || busRank(left) - busRank(right) || degree(right) - degree(left) || compareStableIds(left, right))[0];
+}
+
+function topologyComponentPlans(
+  nodes: ModelNode[],
+  graph: TopologyGraph,
+  options: TopologyAutoAlignOptions
+): Array<{ id: string; plans: TopologyUnitPlan[]; bounds: SelectionRect }> {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const step = options.step ?? AUTO_ALIGN_CANONICAL_STEP_PX;
+  const orientation = options.orientation ?? "horizontal";
+  const rootStrategy = options.rootStrategy ?? "stable-id";
+  const orderStrategy = options.orderStrategy ?? "barycenter";
+  return graph.components.map((component) => {
+    const root = topologyRootForComponent(component, graph, nodeById, rootStrategy);
+    const levelByUnitId = new Map<string, number>([[root, 0]]);
+    const queue = [root];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const nextLevel = (levelByUnitId.get(current) ?? 0) + 1;
+      for (const next of [...(graph.neighbors.get(current) ?? [])].sort(compareStableIds)) {
+        if (levelByUnitId.has(next)) continue;
+        levelByUnitId.set(next, nextLevel);
+        queue.push(next);
+      }
+    }
+    const maxLevel = Math.max(...component.map((unitId) => levelByUnitId.get(unitId) ?? 0));
+    const levelOrders = new Map<number, string[]>();
+    for (let level = 0; level <= maxLevel; level += 1) {
+      levelOrders.set(level, component.filter((unitId) => levelByUnitId.get(unitId) === level));
+    }
+    const unitHasBus = (unitId: string) => graph.unitById.get(unitId)?.nodeIds.some((nodeId) => {
+      const node = nodeById.get(nodeId);
+      return Boolean(node && isBusNode(node));
+    }) ?? false;
+    const busRank = (unitId: string) => unitHasBus(unitId) ? 0 : 1;
+    const sortByStableBusKey = (left: string, right: string) => busRank(left) - busRank(right) || compareStableIds(left, right);
+    const sortByNeighborLayer = (level: number, neighborLevel: number, busFirst: boolean) => {
+      const neighborIndex = new Map((levelOrders.get(neighborLevel) ?? []).map((unitId, index) => [unitId, index]));
+      const position = (unitId: string) => {
+        const indexes = [...(graph.neighbors.get(unitId) ?? [])]
+          .filter((neighbor) => levelByUnitId.get(neighbor) === neighborLevel && neighborIndex.has(neighbor))
+          .map((neighbor) => neighborIndex.get(neighbor)!)
+          .sort((left, right) => left - right);
+        if (indexes.length === 0) return Number.POSITIVE_INFINITY;
+        if (orderStrategy === "alternating-barycenter") return indexes[Math.floor(indexes.length / 2)];
+        return indexes.reduce((sum, index) => sum + index, 0) / indexes.length;
+      };
+      levelOrders.get(level)?.sort((left, right) =>
+        (busFirst ? busRank(left) - busRank(right) : 0) || position(left) - position(right) ||
+        (!busFirst ? busRank(left) - busRank(right) : 0) || compareStableIds(left, right)
+      );
+    };
+
+    if (orderStrategy === "barycenter") {
+      for (let level = 0; level <= maxLevel; level += 1) {
+        if (level === 0) levelOrders.get(level)?.sort(sortByStableBusKey);
+        else sortByNeighborLayer(level, level - 1, true);
+      }
+    } else {
+      for (let level = 0; level <= maxLevel; level += 1) levelOrders.get(level)?.sort(sortByStableBusKey);
+      for (let sweep = 0; sweep < 2; sweep += 1) {
+        for (let level = 1; level <= maxLevel; level += 1) sortByNeighborLayer(level, level - 1, false);
+        for (let level = maxLevel - 1; level >= 0; level -= 1) sortByNeighborLayer(level, level + 1, false);
+      }
+    }
+
+    const plans: TopologyUnitPlan[] = [];
+    if (orientation === "horizontal") {
+      let levelX = 0;
+      for (let level = 0; level <= maxLevel; level += 1) {
+        const members = levelOrders.get(level) ?? [];
+        let levelY = 0;
+        const levelWidth = Math.max(...members.map((unitId) => {
+          const rect = unitLayoutBounds(graph.unitById.get(unitId)!);
+          return Math.max(1, rect.right - rect.left);
+        }), 1);
+        for (const unitId of members) {
+          const unit = graph.unitById.get(unitId)!;
+          const rect = unitLayoutBounds(unit);
+          const width = Math.max(1, rect.right - rect.left);
+          const height = Math.max(1, rect.bottom - rect.top);
+          plans.push({
+            unit,
+            targetCenter: {
+              x: Math.round((levelX + width / 2) / step) * step,
+              y: Math.round((levelY + height / 2) / step) * step
+            }
+          });
+          levelY += height + step;
+        }
+        levelX += levelWidth + step;
+      }
+    } else {
+      let levelY = 0;
+      for (let level = 0; level <= maxLevel; level += 1) {
+        const members = levelOrders.get(level) ?? [];
+        let levelX = 0;
+        const levelHeight = Math.max(...members.map((unitId) => {
+          const rect = unitLayoutBounds(graph.unitById.get(unitId)!);
+          return Math.max(1, rect.bottom - rect.top);
+        }), 1);
+        for (const unitId of members) {
+          const unit = graph.unitById.get(unitId)!;
+          const rect = unitLayoutBounds(unit);
+          const width = Math.max(1, rect.right - rect.left);
+          const height = Math.max(1, rect.bottom - rect.top);
+          plans.push({
+            unit,
+            targetCenter: {
+              x: Math.round((levelX + width / 2) / step) * step,
+              y: Math.round((levelY + height / 2) / step) * step
+            }
+          });
+          levelX += width + step;
+        }
+        levelY += levelHeight + step;
+      }
+    }
+
+    const left = Math.min(...plans.map(({ unit, targetCenter }) => targetCenter.x - (unitLayoutBounds(unit).right - unitLayoutBounds(unit).left) / 2));
+    const right = Math.max(...plans.map(({ unit, targetCenter }) => targetCenter.x + (unitLayoutBounds(unit).right - unitLayoutBounds(unit).left) / 2));
+    const top = Math.min(...plans.map(({ unit, targetCenter }) => targetCenter.y - (unitLayoutBounds(unit).bottom - unitLayoutBounds(unit).top) / 2));
+    const bottom = Math.max(...plans.map(({ unit, targetCenter }) => targetCenter.y + (unitLayoutBounds(unit).bottom - unitLayoutBounds(unit).top) / 2));
+    return { id: component[0], plans, bounds: { left, right, top, bottom } };
+  });
+}
+
+function topologyLayoutForVariant(
+  nodes: ModelNode[],
+  units: readonly CanvasLayoutUnit[],
+  edges: readonly Edge[],
+  options: TopologyAutoAlignOptions = {}
+): ModelNode[] {
+  const step = options.step ?? AUTO_ALIGN_CANONICAL_STEP_PX;
+  const origin = options.origin ?? { x: 0, y: 0 };
+  const graph = topologyGraphForUnits(units, edges);
+  const movableUnits = graph.movableUnits;
+  if (movableUnits.length < 2) {
+    return nodes;
+  }
+  const isolatedIds = new Set(graph.components
+    .filter((component) => component.length === 1 && (graph.neighbors.get(component[0])?.size ?? 0) === 0)
+    .map((component) => component[0]));
+  const keepIsolatedPositions = options.preserveIsolatedPositions ?? false;
+  const components = topologyComponentPlans(nodes, graph, options)
+    .filter((component) => !keepIsolatedPositions || !isolatedIds.has(component.id));
+  const columns = Math.max(1, Math.min(components.length, Math.floor(options.componentColumns ?? 1)));
+  const rows = Math.ceil(components.length / columns);
+  const columnWidths = Array.from({ length: columns }, () => 0);
+  const rowHeights = Array.from({ length: rows }, () => 0);
+  components.forEach((component, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    columnWidths[column] = Math.max(columnWidths[column], component.bounds.right - component.bounds.left);
+    rowHeights[row] = Math.max(rowHeights[row], component.bounds.bottom - component.bounds.top);
+  });
+  const columnOffsets: number[] = [];
+  const rowOffsets: number[] = [];
+  let offset = 0;
+  for (const width of columnWidths) {
+    columnOffsets.push(offset);
+    offset += width + step;
+  }
+  offset = 0;
+  for (const height of rowHeights) {
+    rowOffsets.push(offset);
+    offset += height + step;
+  }
+  const deltas = new Map<string, Point>();
+  if (keepIsolatedPositions) {
+    for (const unitId of isolatedIds) {
+      const unit = graph.unitById.get(unitId)!;
+      const center = { x: unitCenter(unit, "x"), y: unitCenter(unit, "y") };
+      const target = {
+        x: Math.round(center.x / step) * step,
+        y: Math.round(center.y / step) * step
+      };
+      deltas.set(unitId, { x: Math.round(target.x - center.x), y: Math.round(target.y - center.y) });
+    }
+  }
+  for (const [index, component] of components.entries()) {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const targetLeft = origin.x + columnOffsets[column];
+    const targetTop = origin.y + rowOffsets[row];
+    const shiftX = Math.ceil((targetLeft - component.bounds.left) / step) * step;
+    const shiftY = Math.ceil((targetTop - component.bounds.top) / step) * step;
+    for (const plan of component.plans) {
+      const targetCenter = { x: plan.targetCenter.x + shiftX, y: plan.targetCenter.y + shiftY };
+      deltas.set(plan.unit.id, {
+        x: Math.round(targetCenter.x - unitCenter(plan.unit, "x")),
+        y: Math.round(targetCenter.y - unitCenter(plan.unit, "y"))
+      });
+    }
+  }
+  return deltas.size > 0 ? moveNodesByUnitDeltas(nodes, movableUnits, deltas) : nodes;
+}
+
+/** 拓扑优先的确定性布局：先分层排设备，再由提交出口统一重算线路。 */
+export function topologyAutoAlignNodeLayoutUnits(
+  nodes: ModelNode[],
+  units: readonly CanvasLayoutUnit[],
+  edges: readonly Edge[],
+  options: TopologyAutoAlignOptions = {}
+): ModelNode[] {
+  return topologyLayoutForVariant(nodes, units, edges, { preserveIsolatedPositions: true, ...options });
+}
+
+export function topologyAutoAlignNodeLayoutCandidates(
+  nodes: ModelNode[],
+  units: readonly CanvasLayoutUnit[],
+  edges: readonly Edge[],
+  options: { step?: number; origin?: Point } = {}
+): TopologyAutoAlignCandidate[] {
+  const graph = topologyGraphForUnits(units, edges);
+  if (graph.movableUnits.length < 2) {
+    return [{ key: "topology:empty", nodes }];
+  }
+  const balancedColumns = Math.max(1, Math.ceil(Math.sqrt(graph.components.length)));
+  const variants: Array<Omit<TopologyAutoAlignOptions, "step" | "origin">> = [
+    { rootStrategy: "stable-id", orientation: "horizontal", orderStrategy: "barycenter", componentColumns: 1 },
+    { rootStrategy: "stable-id", orientation: "vertical", orderStrategy: "barycenter", componentColumns: balancedColumns },
+    { rootStrategy: "bus-degree", orientation: "horizontal", orderStrategy: "alternating-barycenter", componentColumns: balancedColumns },
+    { rootStrategy: "bus-degree", orientation: "vertical", orderStrategy: "barycenter", componentColumns: 1 },
+    { rootStrategy: "graph-center", orientation: "horizontal", orderStrategy: "barycenter", componentColumns: balancedColumns },
+    { rootStrategy: "graph-center", orientation: "vertical", orderStrategy: "alternating-barycenter", componentColumns: 1 },
+    { rootStrategy: "stable-id", orientation: "horizontal", orderStrategy: "alternating-barycenter", componentColumns: balancedColumns },
+    { rootStrategy: "stable-id", orientation: "vertical", orderStrategy: "barycenter", componentColumns: 1 }
+  ];
+  const candidateLimit = graph.movableUnits.length <= 32 && edges.length <= 64
+    ? 8
+    : graph.movableUnits.length <= 128 && edges.length <= 256 ? 6 : 4;
+  const candidates: TopologyAutoAlignCandidate[] = [];
+  const seen = new Set<string>();
+  for (const variant of variants.slice(0, candidateLimit)) {
+    const candidateNodes = topologyLayoutForVariant(nodes, units, edges, { ...options, ...variant, preserveIsolatedPositions: false });
+    const positionsById = new Map(candidateNodes.map((node) => [node.id, node.position]));
+    const signature = [...graph.movableUnits]
+      .flatMap((unit) => unit.nodeIds)
+      .sort(compareStableIds)
+      .map((nodeId) => `${nodeId}:${positionsById.get(nodeId)?.x},${positionsById.get(nodeId)?.y}`)
+      .join("|");
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    candidates.push({
+      key: `${variant.rootStrategy}:${variant.orientation}:${variant.orderStrategy}:columns-${variant.componentColumns}`,
+      nodes: candidateNodes
+    });
+  }
+  return candidates;
+}
+
+type LocalAxisAlignmentGroup = {
+  units: CanvasLayoutUnit[];
+  target: number;
+};
+
+function localAxisAlignmentGroups(
+  units: readonly CanvasLayoutUnit[],
+  axis: "x" | "y",
+  step: number,
+  tolerance: number
+): LocalAxisAlignmentGroup[] {
+  const ordered = units
+    .filter((unit) => unit.nodeIds.length > 0)
+    .map((unit) => ({ unit, center: unitCenter(unit, axis) }))
+    .sort((left, right) => left.center - right.center || compareStableIds(left.unit.id, right.unit.id));
+  const groups: LocalAxisAlignmentGroup[] = [];
+  for (let start = 0; start < ordered.length;) {
+    let end = start + 1;
+    while (end < ordered.length && ordered[end].center - ordered[start].center <= tolerance) end += 1;
+    if (end - start > 1) {
+      const cluster = ordered.slice(start, end);
+      const average = cluster.reduce((sum, item) => sum + item.center, 0) / cluster.length;
+      groups.push({ units: cluster.map((item) => item.unit), target: Math.round(average / step) * step });
+    }
+    start = end;
+  }
+  return groups;
+}
+
+function moveLocalAxisGroups(
+  nodes: ModelNode[],
+  units: readonly CanvasLayoutUnit[],
+  axis: "x" | "y",
+  groups: readonly LocalAxisAlignmentGroup[]
+): ModelNode[] {
+  const deltaByUnitId = new Map<string, Point>();
+  for (const group of groups) {
+    for (const unit of group.units) {
+      const delta = group.target - unitCenter(unit, axis);
+      deltaByUnitId.set(unit.id, axis === "x" ? { x: delta, y: 0 } : { x: 0, y: delta });
+    }
+  }
+  return deltaByUnitId.size > 0 ? moveNodesByUnitDeltas(nodes, units, deltaByUnitId) : nodes;
+}
+
+/** 生成小幅局部候选，吸附到固定网格并合并相邻的 X/Y 中心线。 */
+export function localAutoAlignNodeLayoutCandidates(
+  nodes: ModelNode[],
+  units: readonly CanvasLayoutUnit[],
+  options: { step?: number; tolerance?: number } = {}
+): TopologyAutoAlignCandidate[] {
+  const step = options.step ?? AUTO_ALIGN_CANONICAL_STEP_PX;
+  const tolerance = options.tolerance ?? step / 2;
+  const xGroups = localAxisAlignmentGroups(units, "x", step, tolerance);
+  const yGroups = localAxisAlignmentGroups(units, "y", step, tolerance);
+  const snapDeltas = new Map<string, Point>();
+  for (const unit of units) {
+    if (unit.nodeIds.length === 0) continue;
+    const center = { x: unitCenter(unit, "x"), y: unitCenter(unit, "y") };
+    const target = {
+      x: Math.round(center.x / step) * step,
+      y: Math.round(center.y / step) * step
+    };
+    snapDeltas.set(unit.id, { x: target.x - center.x, y: target.y - center.y });
+  }
+  const snap = snapDeltas.size > 0 ? moveNodesByUnitDeltas(nodes, units, snapDeltas) : nodes;
+  const alignX = moveLocalAxisGroups(nodes, units, "x", xGroups);
+  const alignY = moveLocalAxisGroups(nodes, units, "y", yGroups);
+  const alignXY = moveLocalAxisGroups(alignX, units, "y", yGroups);
+  const candidates = [
+    { key: "local:grid-snap", nodes: snap },
+    { key: "local:align-x", nodes: alignX },
+    { key: "local:align-y", nodes: alignY },
+    { key: "local:align-xy", nodes: alignXY },
+    ...xGroups.map((group, index) => ({
+      key: `local:align-x:${index}:${group.units.map((unit) => unit.id).sort(compareStableIds).join(",")}`,
+      nodes: moveLocalAxisGroups(nodes, units, "x", [group])
+    })),
+    ...yGroups.map((group, index) => ({
+      key: `local:align-y:${index}:${group.units.map((unit) => unit.id).sort(compareStableIds).join(",")}`,
+      nodes: moveLocalAxisGroups(nodes, units, "y", [group])
+    }))
+  ];
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const positionsById = new Map(candidate.nodes.map((node) => [node.id, node.position]));
+    const signature = units.flatMap((unit) => unit.nodeIds).sort(compareStableIds)
+      .map((nodeId) => `${nodeId}:${positionsById.get(nodeId)?.x},${positionsById.get(nodeId)?.y}`).join("|");
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
+export type AutoAlignLayoutRegularityScore = {
+  overlapCount: number;
+  aspectRatioDeviation: number;
+  occupiedArea: number;
+  balancedAxisPairCount: number;
+  totalAxisPairCount: number;
+};
+
+/** 重叠最少、长宽比和面积更小、双轴对齐组合更多的布局排在前面。 */
+export function compareAutoAlignLayoutRegularity(
+  left: AutoAlignLayoutRegularityScore,
+  right: AutoAlignLayoutRegularityScore
+): number {
+  return left.overlapCount - right.overlapCount ||
+    left.aspectRatioDeviation - right.aspectRatioDeviation ||
+    left.occupiedArea - right.occupiedArea ||
+    right.balancedAxisPairCount - left.balancedAxisPairCount ||
+    right.totalAxisPairCount - left.totalAxisPairCount;
+}
+
+/** 对布局单元的整体外框、重叠和双轴对齐程度给出确定性分数。 */
+export function scoreAutoAlignLayoutRegularity(
+  units: readonly CanvasLayoutUnit[],
+  routePoints: readonly (readonly Point[])[] = []
+): AutoAlignLayoutRegularityScore {
+  const unitRects = units.map((unit) => unit.collisionRects.length > 0 ? unit.collisionRects : [unitLayoutBounds(unit)]);
+  let overlapCount = 0;
+  for (let first = 0; first < unitRects.length; first += 1) {
+    for (let second = first + 1; second < unitRects.length; second += 1) {
+      if (unitRects[first].some((left) => unitRects[second].some((right) =>
+        Math.min(left.right, right.right) > Math.max(left.left, right.left) &&
+        Math.min(left.bottom, right.bottom) > Math.max(left.top, right.top)
+      ))) overlapCount += 1;
+    }
+  }
+  const allBounds = units.map(unitLayoutBounds);
+  for (const points of routePoints) {
+    for (const point of points) allBounds.push({ left: point.x, right: point.x, top: point.y, bottom: point.y });
+  }
+  if (allBounds.length === 0) {
+    return { overlapCount, aspectRatioDeviation: 0, occupiedArea: 0, balancedAxisPairCount: 0, totalAxisPairCount: 0 };
+  }
+  const left = Math.min(...allBounds.map((rect) => rect.left));
+  const right = Math.max(...allBounds.map((rect) => rect.right));
+  const top = Math.min(...allBounds.map((rect) => rect.top));
+  const bottom = Math.max(...allBounds.map((rect) => rect.bottom));
+  const width = Math.max(1, right - left);
+  const height = Math.max(1, bottom - top);
+  const pairsOnAxis = (axis: "x" | "y") => {
+    const counts = new Map<number, number>();
+    for (const unit of units) {
+      const center = unitCenter(unit, axis);
+      const key = Math.round(center / AUTO_ALIGN_ALIGNMENT_EPSILON);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.values()].reduce((sum, count) => sum + count * (count - 1) / 2, 0);
+  };
+  const xPairs = pairsOnAxis("x");
+  const yPairs = pairsOnAxis("y");
+  return {
+    overlapCount,
+    aspectRatioDeviation: Math.abs(Math.log(width / height)),
+    occupiedArea: width * height,
+    balancedAxisPairCount: Math.min(xPairs, yPairs),
+    totalAxisPairCount: xPairs + yPairs
+  };
+}
+
 /** 每个单元最多试算的候选网格点数:9 = 就近网格点 + 一圈 8 邻点,位移上界约 1.5×阈值 */
 const AUTO_ALIGN_DEFAULT_CANDIDATE_CHECKS = 9;
 /** 带线路校验时的候选搜索半径(环):2 ⇒ 5×5 网格邻域内找候选,位移有界且扫描代价可控 */
@@ -1116,11 +1639,17 @@ const AUTO_ALIGN_DEFAULT_QUALITY_BUDGET_MS = 800;
 /** 端口对齐判定容差(px):节点/端子坐标取整后可能差 0.5px 以内 */
 const AUTO_ALIGN_ALIGNMENT_EPSILON = 0.5;
 
-/** 自动对齐的线路质量度量:拐点数 + 交叉数。 */
+/** 自动对齐的线路质量度量:交叉数、拐点数、正交线路长度。 */
 export type AutoAlignRouteQuality = {
   bends: number;
   crossings: number;
+  length: number;
 };
+
+/** 线路评分按交叉数、拐点数、长度的字典序比较；负值表示左侧更优。 */
+export function compareAutoAlignRouteQuality(left: AutoAlignRouteQuality, right: AutoAlignRouteQuality): number {
+  return left.crossings - right.crossings || left.bends - right.bends || left.length - right.length;
+}
 
 export type AutoAlignQualityReport = {
   /** 完成线路重算的候选数 */
@@ -1133,7 +1662,7 @@ export type AutoAlignQualityReport = {
   frozenUnitCount: number;
   /** 线路重算耗时超预算 → 剩余单元一律原地保留 */
   degraded: boolean;
-  /** 终检仍然发现全图拐点/交叉增加 → 已放弃本次对齐(位置不变) */
+  /** 终检仍然发现全图线路质量变差 → 已放弃本次对齐(位置不变) */
   revertedByVerification: boolean;
 };
 
@@ -1163,7 +1692,7 @@ export type AutoAlignQualityContext = {
   routeEdges?: (nodes: readonly ModelNode[], edges: readonly Edge[]) => readonly RoutedEdge[];
   /**
    * 终检用重算(与画布同一套参数,例如 `routeEdgesForStoredRendering`):
-   * 对原布局与对齐后的布局各跑一次全量重算,全图拐点 / 交叉只要有一项增加,就整单放弃(位置不变)。
+   * 对原布局与对齐后的布局各跑一次全量重算,线路质量字典序变差就整单放弃(位置不变)。
    * 只跑两次,所以可以承受昂贵的画布路由器;缺省则不做终检。
    */
   verifyRouteEdges?: (nodes: readonly ModelNode[], edges: readonly Edge[]) => readonly RoutedEdge[];
@@ -1234,6 +1763,15 @@ export function countAutoAlignRouteBends(points: readonly Point[]): number {
     previousOrientation = orientation;
   }
   return bends;
+}
+
+/** 正交线路长度:各水平/垂直线段长度之和(曼哈顿长度)。 */
+export function countAutoAlignRouteLength(points: readonly Point[]): number {
+  let length = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    length += Math.abs(points[index].x - points[index - 1].x) + Math.abs(points[index].y - points[index - 1].y);
+  }
+  return length;
 }
 
 /** 一条边去掉存档折线几何(manualPoints / routePoints)后的副本:等价于「交给路由器按当前端口重算」。 */
@@ -1368,9 +1906,11 @@ export type AutoAlignRouteQualityIndex = {
 export function createAutoAlignRouteQualityIndex(routes: readonly RoutedEdge[]): AutoAlignRouteQualityIndex {
   const routeById = new Map<string, RoutedEdge>();
   const bendById = new Map<string, number>();
+  const lengthById = new Map<string, number>();
   const pairById = new Map<string, Map<string, number>>();
   let bendTotal = 0;
   let crossingTotal = 0;
+  let lengthTotal = 0;
 
   const pairKey = (first: string, second: string) => first < second ? [first, second] as const : [second, first] as const;
   const pairCount = (first: string, second: string) => {
@@ -1394,6 +1934,9 @@ export function createAutoAlignRouteQualityIndex(routes: readonly RoutedEdge[]):
     const bends = countAutoAlignRouteBends(route.points);
     bendById.set(route.edgeId, bends);
     bendTotal += bends;
+    const length = countAutoAlignRouteLength(route.points);
+    lengthById.set(route.edgeId, length);
+    lengthTotal += length;
     for (const [edgeId, other] of routeById) {
       if (edgeId === route.edgeId || other.points.length < 2) continue;
       const crossings = countAutoAlignRoutePairCrossings(route.points, other.points);
@@ -1414,6 +1957,8 @@ export function createAutoAlignRouteQualityIndex(routes: readonly RoutedEdge[]):
     }
     bendTotal -= bendById.get(edgeId) ?? 0;
     bendById.delete(edgeId);
+    lengthTotal -= lengthById.get(edgeId) ?? 0;
+    lengthById.delete(edgeId);
     routeById.delete(edgeId);
   };
 
@@ -1423,7 +1968,7 @@ export function createAutoAlignRouteQualityIndex(routes: readonly RoutedEdge[]):
   }
 
   return {
-    quality: () => ({ bends: bendTotal, crossings: crossingTotal }),
+    quality: () => ({ bends: bendTotal, crossings: crossingTotal, length: lengthTotal }),
     routes: () => [...routeById.values()],
     replace: (route) => {
       removeRoute(route.edgeId);
@@ -1467,7 +2012,7 @@ function autoAlignUnitEdges(unit: CanvasLayoutUnit, edgesByNodeId: ReadonlyMap<s
  * 线路是否参与「端点对齐」判定:
  * - 母线连接由母线落点投影自行对齐(落点会被母线整理重算),参与判定只会产生噪声;
  * - 手绘线路保留用户画的形状,拐点由手绘点决定,与端口是否对齐无关;
- * 两者都排除。注意:它们仍然参与「拐点 / 交叉」重算(见 autoAlignEdgesWithEndpoints)。
+ * 两者都排除。注意:它们仍然参与线路质量重算(见 autoAlignEdgesWithEndpoints)。
  */
 function autoAlignEdgeAlignmentApplies(edge: Edge, nodeById: ReadonlyMap<string, ModelNode>): boolean {
   const source = nodeById.get(edge.sourceId);
@@ -1577,13 +2122,13 @@ function autoAlignCandidateIsNearer(candidate: AutoAlignGridCandidate, current: 
  *
  * 不带 `quality` 时保持原行为:每个布局单元吸附到「就近且不重叠」的网格交叉点。
  *
- * 带 `quality` 时增加两条硬约束(用户裁决:**线路拐点** 与 **线路交叉** 都不能因本次对齐增加):
+ * 带 `quality` 时增加线路质量硬约束(交叉数优先、拐点数次之、长度再次之):
  * 1. 当前状态里已经对齐(两端端口共 x / 共 y)的线路,候选状态下必须仍然对齐 —— 零拐点直连不被破坏;
- * 2. 用真实路由器重算该单元相关线路,与其余线路合成「全图几何」,拐点数 / 交叉数任一超过当前值即否决该候选。
+ * 2. 用真实路由器重算该单元相关线路,与其余线路合成「全图几何」,线路质量字典序变差即否决该候选。
  * 两条都过才接受,所有候选都不合格时该单元原地保留(宁可不吸附,也不把线路画坏)。
  * 基线随每个被接受的移动一起前进,于是每一步都不让指标变差 ⇒ 最终结果必定不差于原始布局,
  * 阈值调大也不会出现用户反馈的「布局剧变 + 拐点成片暴增 + 多出交叉」。
- * 候选择优顺序:全图拐点数 → 全图交叉数 → 位移;候选取自同心网格点(3×3 邻域),位移天然受限,
+ * 候选优先顺序:全图交叉数 → 全图拐点数 → 全图长度 → 位移;候选取自同心网格点(3×3 邻域),位移天然受限,
  * 不会为了少一个拐点把图元甩出去。孤立图元(无线路可重算)自然退化为就近吸附。
  */
 export function autoAlignNodeLayoutUnits(
@@ -1722,12 +2267,12 @@ export function autoAlignNodeLayoutUnits(
   }
 
   // ===== 带线路约束的路径 =====
-  // 约束口径(用户裁决):**线路拐点** 与 **线路交叉** 都不能因本次对齐而增加。
+  // 约束口径(用户裁决):线路质量按「交叉数 → 拐点数 → 长度」字典序比较,候选不得变差。
   // 判定方式:维护一份「当前布局的全图线路几何」,逐个单元试算候选网格点:
   //   候选状态 = 本单元按候选位移 + 「与本单元共用线路、且尚未处理的邻居单元」按计划位移预演 ——
   //   这样「两个已经对齐的图元一起吸到同一条网格线」才不会被误判成「掰弯了线路」,本来能消掉的拐点才消得掉。
-  //   要求全图拐点数 / 交叉数都不超过初始布局;两条都过才接受,所有候选都不合格则该单元原地保留。
-  // 每一步都以「不差于初始布局」为上限 ⇒ 阈值调大也不会出现用户反馈的「布局剧变 + 拐点暴增 + 多出交叉」。
+  //   要求全图线路质量不超过初始布局;所有候选都不合格则该单元原地保留。
+  // 每一步都以「不差于初始布局」为上限 ⇒ 阈值调大也不会出现用户反馈的「布局剧变 + 绕行变长 + 多出交叉」。
   // 逐候选判定用的是**快速代理几何**(见 autoAlignPreviewRoutes):真路由器一次几十毫秒,放不进候选循环。
   // 收尾两步保底:①代理空间局部回退(回退那些单独让代理指标变差的单元)
   // ②用参考几何(真路由器)复算全量终检,变差就按后进先出逐个撤回,仍差则整单放弃。
@@ -1753,7 +2298,8 @@ export function autoAlignNodeLayoutUnits(
     const list = [...routes].filter((points) => points.length >= 2);
     return {
       bends: list.reduce((sum, points) => sum + countAutoAlignRouteBends(points), 0),
-      crossings: countAutoAlignRouteCrossings(list)
+      crossings: countAutoAlignRouteCrossings(list),
+      length: list.reduce((sum, points) => sum + countAutoAlignRouteLength(points), 0)
     };
   };
   const previewRoutesOf = (state: ModelNode[], edges: readonly Edge[]): readonly RoutedEdge[] => {
@@ -1807,7 +2353,6 @@ export function autoAlignNodeLayoutUnits(
     };
   };
   const baselineQuality = routeQualityIndex.quality();
-
   const originalPositionByNodeId = new Map(nodes.map((node) => [node.id, node.position]));
   const unitIdByNodeId = new Map<string, string>();
   const nodeIdsByUnitId = new Map<string, readonly string[]>();
@@ -1965,24 +2510,22 @@ export function autoAlignNodeLayoutUnits(
         }
         continue;
       }
-      // 约束二:重算本单元与邻居的线路,与其余线路合成「全图几何」,拐点 / 交叉任一超过初始布局即否决
+      // 约束二:重算本单元与邻居的线路,与其余线路合成「全图几何」,线路质量变差即否决
       const trialRoutes = previewRoutesOf(state, metricEdges);
       const undoTrial = applyPreviewRoutes(trialRoutes);
       const candidateQuality = routeQualityIndex.quality();
       undoTrial();
-      if (candidateQuality.bends > baselineQuality.bends) {
+      if (compareAutoAlignRouteQuality(candidateQuality, baselineQuality) > 0) {
         if (report) {
-          report.bendRejectedCount += 1;
+          if (candidateQuality.crossings > baselineQuality.crossings) {
+            report.crossingRejectedCount += 1;
+          } else if (candidateQuality.bends > baselineQuality.bends) {
+            report.bendRejectedCount += 1;
+          }
         }
         continue;
       }
-      if (candidateQuality.crossings > baselineQuality.crossings) {
-        if (report) {
-          report.crossingRejectedCount += 1;
-        }
-        continue;
-      }
-      const score = [candidateQuality.bends, candidateQuality.crossings, candidate.distanceSquared];
+      const score = [candidateQuality.crossings, candidateQuality.bends, candidateQuality.length, candidate.distanceSquared];
       if (!chosenScore || autoAlignScoreIsBetter(score, chosenScore)) {
         chosenScore = score;
         chosen = candidate;
@@ -2012,7 +2555,7 @@ export function autoAlignNodeLayoutUnits(
         const undoTrial = applyPreviewRoutes(trialRoutes);
         const after = routeQualityIndex.quality();
         undoTrial();
-        if (!autoAlignScoreIsBetter([after.bends, after.crossings], [before.bends, before.crossings])) {
+        if (compareAutoAlignRouteQuality(after, before) >= 0) {
           continue;
         }
         working = state;
@@ -2032,7 +2575,7 @@ export function autoAlignNodeLayoutUnits(
 
   // 终检:候选判定用的是快速代理,它看不见「躲避障碍造成的绕行」——图元挪走后别的线路可能被迫多拐两个弯。
   // 所以最后必须用**参考几何**(与画布同一套参数的准确重算)对「原布局 / 对齐后布局」各跑一次全量,
-  // 只要全图拐点或交叉有一项增加,就按「后接受的先撤回」的顺序逐个回退(每次重算一遍全量,回到不差于原布局就停);
+  // 只要全图线路质量变差,就按「后接受的先撤回」的顺序逐个回退(每次重算一遍全量,回到不差于原布局就停);
   // 回退到无可回退仍然更差,则整单放弃(位置不变)。参考几何缺省即用注入的判定几何,两者都没有则不做终检。
   const authoritativeRouteEdges = quality.verifyRouteEdges ?? quality.routeEdges;
   if (authoritativeRouteEdges && movedAnyUnit) {
@@ -2066,7 +2609,7 @@ export function autoAlignNodeLayoutUnits(
     };
     const beforeQuality = measureAuthoritative(nodes);
     const isWorseThanOriginal = (qualityOfState: AutoAlignRouteQuality) =>
-      qualityOfState.bends > beforeQuality.bends || qualityOfState.crossings > beforeQuality.crossings;
+      compareAutoAlignRouteQuality(qualityOfState, beforeQuality) > 0;
     let afterQuality = measureAuthoritative(working);
     if (isWorseThanOriginal(afterQuality)) {
       const acceptedUnits = orderedUnits.filter(({ unit }) => deltas.has(unit.id)).reverse();
@@ -2083,10 +2626,7 @@ export function autoAlignNodeLayoutUnits(
         }
         const revertedState = applyAutoAlignUnitDelta(working, unit, { x: -delta.x, y: -delta.y });
         const revertedQuality = measureAuthoritative(revertedState);
-        if (!autoAlignScoreIsBetter(
-          [revertedQuality.bends, revertedQuality.crossings],
-          [afterQuality.bends, afterQuality.crossings]
-        )) {
+        if (compareAutoAlignRouteQuality(revertedQuality, afterQuality) >= 0) {
           continue;
         }
         working = revertedState;

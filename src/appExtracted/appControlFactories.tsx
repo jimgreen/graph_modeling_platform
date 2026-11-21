@@ -11,6 +11,60 @@ import { findSavedProjectByIndex } from "../workspaceUrl";
 import { findSavedProjectRecordInSchemes } from "../model-routing";
 import { modelTrace } from "../modelTrace";
 
+function normalizeSchemeId(value: unknown): number | null {
+  if (value === undefined || value === null) return null;
+  const numeric = typeof value === "number"
+    ? value
+    : typeof value === "string" && value.trim()
+      ? Number(value.trim())
+      : NaN;
+  if (!Number.isSafeInteger(numeric) || numeric <= 0) {
+    const error: any = new Error("schemeId 必须是正安全整数。");
+    error.code = "bad-request";
+    throw error;
+  }
+  return numeric;
+}
+
+function findSchemeById(schemes: any[], schemeId: number, parentPath: string[] = []): { scheme: any; path: string[] } | null {
+  for (const scheme of Array.isArray(schemes) ? schemes : []) {
+    const path = [...parentPath, String(scheme?.name ?? "")];
+    const candidateId = scheme?.schemeId ?? Number(scheme?.id);
+    if (candidateId === schemeId) return { scheme, path };
+    const nested = findSchemeById(scheme?.children, schemeId, path);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function findSchemeByPath(schemes: any[], schemePath: string[]): { scheme: any; path: string[] } | null {
+  let level = Array.isArray(schemes) ? schemes : [];
+  let scheme: any = null;
+  for (const segment of schemePath) {
+    scheme = level.find((item: any) => item?.name === segment) ?? null;
+    if (!scheme) return null;
+    level = scheme.children ?? [];
+  }
+  return scheme ? { scheme, path: [...schemePath] } : null;
+}
+
+function findSchemePathByRecord(schemes: any[], target: any, parentPath: string[] = []): string[] {
+  for (const scheme of Array.isArray(schemes) ? schemes : []) {
+    const path = [...parentPath, String(scheme?.name ?? "")].filter(Boolean);
+    const sameScheme = scheme === target || (
+      scheme?.schemeId !== undefined && target?.schemeId !== undefined && scheme.schemeId === target.schemeId
+    ) || (scheme?.id && target?.id && scheme.id === target.id);
+    if (sameScheme) {
+      return path;
+    }
+    const nested = findSchemePathByRecord(scheme?.children, target, path);
+    if (nested.length > 0) {
+      return nested;
+    }
+  }
+  return [];
+}
+
 // 当前页面拓扑操作：check 只回预览；repair 写当前内存并压入 undo，不自动落盘。
 export function createProgrammaticTopologyOperation(
   __appScope: Record<string, any>,
@@ -108,39 +162,64 @@ export function createProgrammaticAddDevice(__appScope: Record<string, any>) {
 // 复用 createSavedScheme/insertChildSavedScheme，绕过 prompt/editMode/落盘（落盘由独立 control.save 指令）。
 // 经 WS control.scheme.create 指令调用。
 export function createProgrammaticCreateScheme(__appScope: Record<string, any>) {
-  return (name: string, parentSchemeId?: string) => {
-    const { createSavedScheme, hasSameName, insertChildSavedScheme, savedChildSchemeNames, schemePathForScheme, schemes, selectSingleScheme, setSchemes } = __appScope;
+  return async (name: string, rawParentSchemeId?: number | string) => {
+    const { createSavedScheme, findSavedSchemeById, hasSameName, insertChildSavedScheme, savedChildSchemeNames, saveBackendSchemeRecord, schemePathForScheme, schemes, selectSingleScheme, setSchemes } = __appScope;
     if (!name || typeof name !== "string" || !name.trim()) {
       const e: any = new Error("name 必填。");
       e.code = "bad-request";
       throw e;
     }
-    if (parentSchemeId && hasSameName(name, savedChildSchemeNames(schemes, parentSchemeId))) {
+    const numericParentSchemeId = typeof rawParentSchemeId === "number"
+      || (typeof rawParentSchemeId === "string" && /^\s*\d+\s*$/u.test(rawParentSchemeId))
+      ? normalizeSchemeId(rawParentSchemeId)
+      : null;
+    const parentMatch = numericParentSchemeId === null
+      ? (typeof rawParentSchemeId === "string" && rawParentSchemeId && typeof findSavedSchemeById === "function"
+        ? findSavedSchemeById(schemes, rawParentSchemeId)
+        : null)
+      : findSchemeById(schemes, numericParentSchemeId)?.scheme ?? null;
+    const parentRuntimeId = parentMatch?.id
+      ?? (numericParentSchemeId === null && typeof rawParentSchemeId === "string" ? rawParentSchemeId : "");
+    if (parentRuntimeId && hasSameName(name, savedChildSchemeNames(schemes, parentRuntimeId))) {
       const e: any = new Error("方案名称重复，无法新建方案。");
       e.code = "bad-request";
       throw e;
     }
-    const record = createSavedScheme(name);
-    const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
-    const recordPath = [...parentPath, record.name];
-    setSchemes((current: any) => insertChildSavedScheme(current, parentSchemeId || "", record));
+    const parentPath = parentRuntimeId ? schemePathForScheme(parentRuntimeId) : [];
+    const recordName = name.trim();
+    const recordPath = [...parentPath, recordName];
+    const receipt = await saveBackendSchemeRecord(recordPath);
+    const schemeId = Number(receipt?.schemeId);
+    if (!Number.isSafeInteger(schemeId) || schemeId <= 0) {
+      const e: any = new Error("后台未返回有效的 schemeId。");
+      e.code = "internal";
+      throw e;
+    }
+    const record = { ...createSavedScheme(recordName), id: String(schemeId), schemeId };
+    setSchemes((current: any) => insertChildSavedScheme(current, parentRuntimeId, record));
     selectSingleScheme(record.id);
-    return { id: record.id, name: record.name, path: recordPath };
+    return { id: record.id, schemeId, name: record.name, path: recordPath };
   };
 }
 
 // 新建模型：name/modelType 必填，schemeId 缺省取 schemes[0]。确认后直接落盘，
 // 由后台分配全局 idx，再将后台返回的完整记录加入前端方案树。
 export function createProgrammaticCreateBlankProject(__appScope: Record<string, any>) {
-  return async (name: string, schemeId?: string, modelType = "其他") => {
+  return async (name: string, rawSchemeId?: number | string, modelType = "其他") => {
     const { DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_BACKGROUND, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, MODEL_TYPES, createSavedProject, findSavedSchemeById, hasSameName, requestLoadSavedProject, saveBackendProjectRecord, schemePathForScheme, schemes, selectSingleProject, setSchemes, upsertSavedProjectInScheme } = __appScope;
     if (!name || typeof name !== "string" || !name.trim()) {
       const e: any = new Error("name 必填。");
       e.code = "bad-request";
       throw e;
     }
-    const resolvedSchemeId = schemeId ?? schemes[0]?.id;
-    const targetScheme = findSavedSchemeById(schemes, resolvedSchemeId) ?? schemes[0];
+    const schemeId = normalizeSchemeId(rawSchemeId);
+    const numberedScheme = schemeId === null ? null : findSchemeById(schemes, schemeId);
+    if (schemeId !== null && !numberedScheme) {
+      const e: any = new Error(`方案 ID ${schemeId} 不存在。`);
+      e.code = "not-found";
+      throw e;
+    }
+    const targetScheme = numberedScheme?.scheme ?? schemes[0] ?? null;
     if (!targetScheme) {
       const e: any = new Error("无可用方案，请先创建方案");
       e.code = "bad-request";
@@ -180,14 +259,14 @@ export function createProgrammaticCreateBlankProject(__appScope: Record<string, 
       e.code = "bad-request";
       throw e;
     }
-    const savedRecord = await saveBackendProjectRecord(schemePath, record);
+    const savedRecord = await saveBackendProjectRecord(schemePath, record, "", targetScheme.schemeId);
     setSchemes((current: any) => upsertSavedProjectInScheme(current, targetScheme.id, savedRecord));
     selectSingleProject(targetScheme.id, savedRecord.id);
     requestLoadSavedProject(savedRecord, targetScheme.id);
     return {
       id: savedRecord.id,
       name: savedRecord.name,
-      schemeId: targetScheme.id,
+      schemeId: targetScheme.schemeId,
       modelType: savedRecord.project.modelType,
       idx: savedRecord.project.idx
     };
@@ -631,8 +710,8 @@ export function createProgrammaticSwitchSpace(
  * @param __appScope __appScope
  */
 export function createProgrammaticSwitchModel(__appScope: Record<string, any>) {
-  return async (params: { modelId?: number | string; modelKey?: string; schemePath?: string[]; name?: string } = {}) => {
-    const { activeProjectKey, loadSavedProjectRecord, manualModelSelectionRef, saveRequired, schemes } = __appScope;
+  return async (params: { modelId?: number | string; modelKey?: string; schemePath?: string[]; schemeId?: number | string; name?: string } = {}) => {
+    const { activeProjectKey, loadSavedProjectRecord, manualModelSelectionRef, saveRequired, schemePathForScheme, schemes } = __appScope;
     modelTrace("programmatic-switch-model", {
       params,
       activeProjectKey,
@@ -643,6 +722,7 @@ export function createProgrammaticSwitchModel(__appScope: Record<string, any>) {
       manualModelSelectionRef.current = true;
     }
     const rawModelId = params?.modelId;
+    const schemeId = normalizeSchemeId(params?.schemeId);
     const modelKey = typeof params?.modelKey === "string" ? params.modelKey.trim() : "";
     const name = typeof params?.name === "string" ? params.name.trim() : "";
     const schemePath = Array.isArray(params?.schemePath) ? params.schemePath.filter(Boolean) : [];
@@ -651,8 +731,9 @@ export function createProgrammaticSwitchModel(__appScope: Record<string, any>) {
       (rawModelId === undefined || rawModelId === null || String(rawModelId).trim() === "")
       && !modelKey
       && !(schemePath.length > 0 && name)
+      && !(schemeId !== null && name)
     ) {
-      const e: any = new Error("请用 modelId、modelKey 或 schemePath + name 指定要切换的模型。");
+      const e: any = new Error("请用 modelId、modelKey、schemePath + name 或 schemeId + name 指定要切换的模型。");
       e.code = "bad-request";
       throw e;
     }
@@ -664,6 +745,7 @@ export function createProgrammaticSwitchModel(__appScope: Record<string, any>) {
     }
 
     let found: { record: any; scheme: any } | null = null;
+    let foundSchemePath = schemePath;
 
     if (rawModelId !== undefined && rawModelId !== null && String(rawModelId).trim() !== "") {
       const index = Number(rawModelId);
@@ -690,35 +772,47 @@ export function createProgrammaticSwitchModel(__appScope: Record<string, any>) {
         throw e;
       }
     } else {
-      // schemePath + name：逐层下钻，最后按模型名精确匹配（不做模糊/前缀匹配）
-      let level = Array.isArray(schemes) ? schemes : [];
-      let scheme: any = null;
-      for (const segment of schemePath) {
-        scheme = (level ?? []).find((item: any) => item?.name === segment) ?? null;
-        if (!scheme) {
-          break;
-        }
-        level = scheme.children ?? [];
+      const pathMatch = schemePath.length > 0 ? findSchemeByPath(schemes, schemePath) : null;
+      const numberMatch = schemeId === null ? null : findSchemeById(schemes, schemeId);
+      if (schemeId !== null && !numberMatch) {
+        const e: any = new Error(`未找到 schemeId 为 ${schemeId} 的方案。`);
+        e.code = "not-found";
+        throw e;
       }
-      if (!scheme) {
+      if (schemePath.length > 0 && schemeId !== null && (!pathMatch || pathMatch.scheme.schemeId !== numberMatch?.scheme.schemeId)) {
+        const e: any = new Error("schemePath 与 schemeId 指向不同方案。");
+        e.code = "bad-request";
+        throw e;
+      }
+      const selected = numberMatch ?? pathMatch;
+      if (!selected) {
         const e: any = new Error(`未找到方案路径：${schemePath.join("/")}`);
         e.code = "bad-request";
         throw e;
       }
-      const project = (scheme.projects ?? []).find((item: any) => item?.name === name);
+      const project = (selected.scheme.projects ?? []).find((item: any) => item?.name === name);
       if (!project) {
-        const e: any = new Error(`方案「${schemePath.join("/")}」下未找到模型：${name}`);
+        const e: any = new Error(`方案「${selected.path.join("/")}」下未找到模型：${name}`);
         e.code = "bad-request";
         throw e;
       }
-      found = { record: project, scheme };
+      found = { record: project, scheme: selected.scheme };
+      foundSchemePath = selected.path;
+    }
+
+    if (found && foundSchemePath.length === 0) {
+      foundSchemePath = typeof schemePathForScheme === "function"
+        ? schemePathForScheme(found.scheme?.id ?? String(found.scheme?.schemeId ?? ""))
+        : findSchemePathByRecord(schemes, found.scheme);
     }
 
     if (found.record?.id && found.record.id === activeProjectKey) {
       return {
         alreadyOpen: true,
         modelId: Number(found.record?.project?.idx ?? found.record?.idx ?? 0),
-        name: String(found.record?.name ?? name)
+        name: String(found.record?.name ?? name),
+        schemeId: Number(found.scheme?.schemeId ?? 0),
+        schemePath: foundSchemePath
       };
     }
 
@@ -732,8 +826,8 @@ export function createProgrammaticSwitchModel(__appScope: Record<string, any>) {
       alreadyOpen: false,
       modelId: Number(found.record?.project?.idx ?? found.record?.idx ?? 0),
       name: String(found.record?.name ?? name),
-      schemeId: String(found.scheme?.id ?? ""),
-      schemePath
+      schemeId: Number(found.scheme?.schemeId ?? 0),
+      schemePath: foundSchemePath
     };
   };
 }

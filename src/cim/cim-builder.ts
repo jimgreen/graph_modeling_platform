@@ -11,6 +11,8 @@ export type CimBuildInput = {
   edges: readonly Edge[];
   projectName: string;
   modelId: string;
+  /** Stable source timestamp for exports that must reproduce the same saved model bytes. */
+  createdAt?: string;
   measurementGroups?: readonly MeasurementGroup[];
   /** 平台量测类型定义（阶段 5 Analog/Discrete 判定真源；缺省回退启发式） */
   measurementTypes?: readonly { id: string; valueType?: string }[];
@@ -465,7 +467,7 @@ export function buildCimPackage(input: CimBuildInput): CimPackage {
   const vbaseById = baseVoltageMapOf(baseVoltages);
   const { substations, voltageLevels } = buildContainers(input, vbaseById);
   const { connectivityNodes, terminals } = inferTopology(input);
-  const now = new Date().toISOString();
+  const now = input.createdAt ?? new Date().toISOString();
   const sink: CimPackage = {
     fullModel: {
       rdfAbout: `urn:uuid:${input.modelId}`,

@@ -62,7 +62,7 @@ function buildDevices(deviceLibrary) {
   };
 }
 
-// /webgrp/v1/library/categories
+// 统一入口 part=categories
 // paths：多空间路径集合（spaceStore.spacePathsFor），缺省时被调函数回落 defaultPaths。
 export async function handleV1LibraryCategories({ request, response, paths }) {
   try {
@@ -73,7 +73,7 @@ export async function handleV1LibraryCategories({ request, response, paths }) {
   }
 }
 
-// /webgrp/v1/library/devices
+// 统一入口 part=devices
 export async function handleV1LibraryDevices({ request, response, paths }) {
   try {
     const lib = await readDeviceLibraryConfig({ paths });
@@ -83,7 +83,7 @@ export async function handleV1LibraryDevices({ request, response, paths }) {
   }
 }
 
-// /webgrp/v1/library/measurements —— 量测定义
+// 统一入口 part=measurements —— 量测定义
 export async function handleV1LibraryMeasurements({ request, response, paths }) {
   try {
     const config = await readMeasurementConfig({ paths });
@@ -97,7 +97,7 @@ export async function handleV1LibraryMeasurements({ request, response, paths }) 
   }
 }
 
-// /webgrp/v1/library/device-definitions —— 图元定义
+// 统一入口 part=device-definitions —— 图元定义
 export async function handleV1LibraryDeviceDefinitions({ request, response, paths }) {
   try {
     const lib = await readDeviceLibraryConfig({ paths });
@@ -111,7 +111,7 @@ export async function handleV1LibraryDeviceDefinitions({ request, response, path
   }
 }
 
-// /webgrp/v1/library/templates —— 模板库
+// 统一入口 part=templates —— 模板库
 export async function handleV1LibraryTemplates({ request, response, paths }) {
   try {
     const lib = await readDeviceLibraryConfig({ paths });
@@ -156,15 +156,35 @@ export async function handleV1Library({ request, response, paths }) {
   }
 }
 
+const LIBRARY_PARTS = {
+  all: handleV1Library,
+  categories: handleV1LibraryCategories,
+  devices: handleV1LibraryDevices,
+  measurements: handleV1LibraryMeasurements,
+  "device-definitions": handleV1LibraryDeviceDefinitions,
+  templates: handleV1LibraryTemplates
+};
+
+// 统一图元库入口：part 缺省/all 返回聚合，其余值返回对应只读分片。
+export async function handleV1LibraryUnified({ request, response, paths, url }) {
+  const unexpected = [...url.searchParams.keys()].find((key) => key !== "part");
+  if (unexpected) {
+    sendV1Error(response, "bad-request", `图元库入口不接受参数 ${unexpected}。`);
+    return;
+  }
+  const part = (url.searchParams.get("part") ?? "all").trim() || "all";
+  const handler = LIBRARY_PARTS[part];
+  if (!handler) {
+    sendV1Error(response, "bad-request", "part 仅支持 all、categories、devices、measurements、device-definitions 或 templates。");
+    return;
+  }
+  return handler({ request, response, paths });
+}
+
 import { apiPattern } from "./config.mjs";
 import { withSpacePaths } from "./spaceStore.mjs";
 
 // 全表经 withSpacePaths 包装：paths 缺失即抛接线错误，不得静默落回默认空间。
 export const v1LibraryRoutes = [
-  { method: "GET", pattern: apiPattern("/v1/library", "/?$"), handle: withSpacePaths(handleV1Library) },
-  { method: "GET", pattern: apiPattern("/v1/library/categories", "/?$"), handle: withSpacePaths(handleV1LibraryCategories) },
-  { method: "GET", pattern: apiPattern("/v1/library/devices", "/?$"), handle: withSpacePaths(handleV1LibraryDevices) },
-  { method: "GET", pattern: apiPattern("/v1/library/measurements", "/?$"), handle: withSpacePaths(handleV1LibraryMeasurements) },
-  { method: "GET", pattern: apiPattern("/v1/library/device-definitions", "/?$"), handle: withSpacePaths(handleV1LibraryDeviceDefinitions) },
-  { method: "GET", pattern: apiPattern("/v1/library/templates", "/?$"), handle: withSpacePaths(handleV1LibraryTemplates) }
+  { method: "GET", pattern: apiPattern("/v1/library", "/?$"), handle: withSpacePaths(handleV1LibraryUnified) }
 ];

@@ -43,7 +43,6 @@ describe("createSaveColorPalette", () => {
       colorPaletteDraft: { voltage: {}, energy: {} },
       colorPaletteTab: "energy",
       normalizeColorPalette: vi.fn(() => ({ voltage: { "ac:220": "#123456" }, energy: {} })),
-      requireEditMode: vi.fn(() => true),
       setColorDisplayMode: vi.fn(),
       setColorPalette: vi.fn(),
       setColorPaletteDialogOpen: vi.fn()
@@ -51,29 +50,11 @@ describe("createSaveColorPalette", () => {
 
     createSaveColorPalette(scope)();
 
-    expect(scope.requireEditMode).toHaveBeenCalledWith("保存配色");
     expect(scope.setColorPalette).toHaveBeenCalledWith({ voltage: { "ac:220": "#123456" }, energy: {} });
     expect(scope.setColorDisplayMode).toHaveBeenCalledWith("energy");
     expect(scope.setColorPaletteDialogOpen).toHaveBeenCalledWith(false);
   });
 
-  test("只读模式下什么都不做", () => {
-    const scope = {
-      colorPaletteDraft: { voltage: {}, energy: {} },
-      colorPaletteTab: "energy",
-      normalizeColorPalette: vi.fn(),
-      requireEditMode: vi.fn(() => false),
-      setColorDisplayMode: vi.fn(),
-      setColorPalette: vi.fn(),
-      setColorPaletteDialogOpen: vi.fn()
-    };
-
-    createSaveColorPalette(scope)();
-
-    expect(scope.normalizeColorPalette).not.toHaveBeenCalled();
-    expect(scope.setColorPalette).not.toHaveBeenCalled();
-    expect(scope.setColorPaletteDialogOpen).not.toHaveBeenCalled();
-  });
 });
 
 describe("能量色 / 电压色重置与改写", () => {

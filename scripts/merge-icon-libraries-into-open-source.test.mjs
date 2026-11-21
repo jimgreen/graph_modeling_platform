@@ -66,6 +66,7 @@ function svg(pathData) {
 function run() {
   const result = spawnSync(process.execPath, [scriptPath], {
     cwd: caseDir,
+    env: { ...process.env, GRAPH_MODEL_DATA_DIR: path.join(caseDir, "data") },
     encoding: "utf8",
     maxBuffer: 8 * 1024 * 1024,
   });

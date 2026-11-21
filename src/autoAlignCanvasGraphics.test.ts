@@ -99,8 +99,10 @@ describe("canvas automatic grid alignment", () => {
     }
   });
 
-  test("uses the configured value as grid spacing and reports the grid alignment", async () => {
-    const prompt = vi.fn(() => "50");
+  test("does not prompt for a grid spacing and reports a deterministic alignment", async () => {
+    const prompt = vi.fn(() => {
+      throw new Error("自动对齐不应再读取网格间距");
+    });
     (globalThis as { window?: unknown }).window = { prompt };
     const nodes = [
       { id: "node-1", kind: "device", position: { x: 112, y: 113 } },
@@ -129,9 +131,6 @@ describe("canvas automatic grid alignment", () => {
 
     const { createAutoAlignCanvasGraphics } = await loadFactoriesWithMockedDeps();
     await createAutoAlignCanvasGraphics({
-      AUTO_ALIGN_DEFAULT_THRESHOLD_PX: 50,
-      AUTO_ALIGN_MAX_THRESHOLD_PX: 200,
-      AUTO_ALIGN_MIN_THRESHOLD_PX: 5,
       activeLayerEdges: [],
       activeLayerGroups: [],
       activeLayerNodes: nodes,
@@ -141,21 +140,158 @@ describe("canvas automatic grid alignment", () => {
       editModeRouteRenderOptions: { preserveManualRouteDisplay: true },
       nodes,
       readjustActiveLayerBusEndpointRoutes: vi.fn(() => 0),
-      requireEditMode: () => true,
       routedEdges: [],
       writeOperationLog
     } as any)();
 
-    expect(prompt).toHaveBeenCalledWith("请输入自动对齐网格间距（5-200px）", "50");
+    expect(prompt).not.toHaveBeenCalled();
     expect(runPlan).toHaveBeenCalledWith(expect.objectContaining({
       nodes,
       activeLayerNodes: nodes,
-      gridSpacing: 50,
       edges: [],
       routedEdges: []
+    }), undefined, undefined, expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      onProgress: expect.any(Function)
     }));
     expect(commitLayoutNodePositions).toHaveBeenCalledWith(["node-1", "node-2"], arranged, expect.objectContaining({ readjustBusEndpoints: true }));
-    expect(writeOperationLog).toHaveBeenCalledWith("自动对齐 2 个图元，网格间距 50px");
+    expect(writeOperationLog).toHaveBeenCalledWith("自动对齐 2 个图元");
+  });
+
+  test("cancelling during planning does not commit or clean routes and clears the progress UI", async () => {
+    const prompt = vi.fn();
+    (globalThis as { window?: unknown }).window = { prompt };
+    const nodes = [
+      { id: "node-1", kind: "device", position: { x: 112, y: 113 } },
+      { id: "node-2", kind: "device", position: { x: 118, y: 119 } }
+    ];
+    const commitLayoutNodePositions = vi.fn();
+    const cleanupStaleConnectionRoutes = vi.fn();
+    const setAutoAlignProgress = vi.fn();
+    const autoAlignAbortControllerRef = { current: null as AbortController | null };
+    const abortError = Object.assign(new Error("cancelled"), { name: "AbortError" });
+    runPlan.mockImplementation((_input: unknown, _factory: unknown, _timeout: unknown, options: { signal: AbortSignal }) =>
+      new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(abortError), { once: true }))
+    );
+
+    const { createAutoAlignCanvasGraphics } = await loadFactoriesWithMockedDeps();
+    const operation = createAutoAlignCanvasGraphics({
+      activeLayerEdges: [],
+      activeLayerGroups: [],
+      activeLayerNodes: nodes,
+      autoAlignAbortControllerRef,
+      canvasBounds: { width: 800, height: 600 },
+      cleanupStaleConnectionRoutes,
+      commitLayoutNodePositions,
+      edges: [],
+      editModeRouteRenderOptions: {},
+      nodes,
+      readjustActiveLayerBusEndpointRoutes: vi.fn(() => 0),
+      routedEdges: [],
+      setAutoAlignProgress,
+      writeOperationLog: vi.fn()
+    } as any);
+    const pending = operation();
+    const signal = runPlan.mock.calls[0][3].signal as AbortSignal;
+    autoAlignAbortControllerRef.current?.abort();
+    await pending;
+
+    expect(signal.aborted).toBe(true);
+    expect(commitLayoutNodePositions).not.toHaveBeenCalled();
+    expect(cleanupStaleConnectionRoutes).not.toHaveBeenCalled();
+    expect(setAutoAlignProgress).toHaveBeenLastCalledWith(null);
+    expect(prompt).not.toHaveBeenCalled();
+  });
+
+  test("route-quality rejection skips node commit, stored-route cleanup, and bus-endpoint adjustment", async () => {
+    const nodes = [
+      { id: "node-1", kind: "device", position: { x: 100, y: 100 } },
+      { id: "node-2", kind: "device", position: { x: 400, y: 300 } }
+    ];
+    runPlan.mockResolvedValue({
+      arranged: nodes,
+      nodeIds: nodes.map((node) => node.id),
+      layoutUnitCount: 2,
+      storedRouteDrops: [],
+      qualityReport: {
+        verifiedCandidateCount: 0,
+        bendRejectedCount: 0,
+        crossingRejectedCount: 0,
+        frozenUnitCount: 0,
+        degraded: false,
+        revertedByVerification: true
+      }
+    });
+    const commitLayoutNodePositions = vi.fn(() => 0);
+    const cleanupStaleConnectionRoutes = vi.fn(() => 1);
+    const readjustActiveLayerBusEndpointRoutes = vi.fn(() => 17);
+    const writeOperationLog = vi.fn();
+
+    const { createAutoAlignCanvasGraphics } = await loadFactoriesWithMockedDeps();
+    await createAutoAlignCanvasGraphics({
+      activeLayerEdges: [],
+      activeLayerGroups: [],
+      activeLayerNodes: nodes,
+      canvasBounds: { width: 800, height: 600 },
+      cleanupStaleConnectionRoutes,
+      commitLayoutNodePositions,
+      edges: [],
+      editModeRouteRenderOptions: {},
+      nodes,
+      readjustActiveLayerBusEndpointRoutes,
+      routedEdges: [],
+      writeOperationLog
+    } as any)();
+
+    expect(commitLayoutNodePositions).not.toHaveBeenCalled();
+    expect(cleanupStaleConnectionRoutes).not.toHaveBeenCalled();
+    expect(readjustActiveLayerBusEndpointRoutes).not.toHaveBeenCalled();
+    expect(writeOperationLog).toHaveBeenCalledWith(expect.stringContaining("已保留原图"));
+  });
+
+  test("route-quality rejection may clean a strictly simpler stored route without moving nodes", async () => {
+    const nodes = [
+      { id: "node-1", kind: "device", position: { x: 100, y: 100 } },
+      { id: "node-2", kind: "device", position: { x: 400, y: 300 } }
+    ];
+    const drops = [{ edgeId: "edge-1", points: [{ x: 10, y: 10 }, { x: 20, y: 10 }] }];
+    runPlan.mockResolvedValue({
+      arranged: nodes,
+      nodeIds: [],
+      layoutUnitCount: 2,
+      storedRouteDrops: drops,
+      qualityReport: {
+        verifiedCandidateCount: 0,
+        bendRejectedCount: 1,
+        crossingRejectedCount: 0,
+        frozenUnitCount: 0,
+        degraded: false,
+        revertedByVerification: true
+      }
+    });
+    const commitLayoutNodePositions = vi.fn();
+    const cleanupStaleConnectionRoutes = vi.fn(() => 1);
+    const readjustActiveLayerBusEndpointRoutes = vi.fn(() => 17);
+    const { createAutoAlignCanvasGraphics } = await loadFactoriesWithMockedDeps();
+
+    await createAutoAlignCanvasGraphics({
+      activeLayerEdges: [],
+      activeLayerGroups: [],
+      activeLayerNodes: nodes,
+      canvasBounds: { width: 800, height: 600 },
+      cleanupStaleConnectionRoutes,
+      commitLayoutNodePositions,
+      edges: [],
+      editModeRouteRenderOptions: {},
+      nodes,
+      readjustActiveLayerBusEndpointRoutes,
+      routedEdges: [],
+      writeOperationLog: vi.fn()
+    } as any)();
+
+    expect(commitLayoutNodePositions).not.toHaveBeenCalled();
+    expect(cleanupStaleConnectionRoutes).toHaveBeenCalledWith(drops);
+    expect(readjustActiveLayerBusEndpointRoutes).not.toHaveBeenCalled();
   });
 
   /**
@@ -285,7 +421,6 @@ describe("canvas automatic grid alignment", () => {
         isCanvasNodeMovable: () => true,
         nodes,
         readjustActiveLayerBusEndpointRoutes: vi.fn(() => 0),
-        requireEditMode: () => true,
         routedEdges: [],
         writeOperationLog
       } as any)();

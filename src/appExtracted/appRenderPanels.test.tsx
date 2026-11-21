@@ -56,7 +56,6 @@ const renderLayerManager = (layers: ModelLayer[], overrides: Record<string, unkn
         layers,
         activeLayerId: layers[0]?.id ?? "",
         setActiveLayer: () => undefined,
-        isBrowseMode: false,
         addModelLayer: () => undefined,
         setAllModelLayersVisibility: () => undefined,
         toggleModelLayerVisibility: () => undefined,
@@ -125,14 +124,6 @@ describe("图层管理器三档 disabled 守卫", () => {
     expect(isDisabled(buttonTagByTitle(second, UP))).toBe(false);
   });
 
-  // 浏览态：图层名输入框随 isBrowseMode 变 disabled（BufferedTextInput 的 disabled 透传）。
-  test("浏览态下图层名称输入框为 disabled、编辑态下可用", () => {
-    const browse = renderLayerManager([layer("L1", "底层")], { isBrowseMode: true });
-    const edit = renderLayerManager([layer("L1", "底层")], { isBrowseMode: false });
-    const inputTag = (html: string) => html.match(/<input[^>]*aria-label="图层名称：底层"[^>]*>/)?.[0] ?? "";
-    expect(isDisabled(inputTag(browse))).toBe(true);
-    expect(isDisabled(inputTag(edit))).toBe(false);
-  });
 });
 
 /* ---------- 图元树 ---------- */
@@ -196,7 +187,6 @@ const treeScope = (overrides: Record<string, unknown> = {}) => ({
   jumpToElementTreeItem: () => undefined,
   openElementTreeItemContextMenu: () => undefined,
   elementTreeItemRefs: { current: {} as Record<string, unknown> },
-  isBrowseMode: false,
   commitElementTreeNodeIdentity: () => undefined,
   commitElementTreeContainerChildParam: () => undefined,
   ...overrides
@@ -383,7 +373,6 @@ describe("面板工厂冒烟", () => {
     const html = renderToStaticMarkup(
       createElement(
         createRenderLibraryDefinitionActions({
-          isBrowseMode: false,
           openMeasurementConfigDialog: noop,
           openDeviceDefinitionDialog: noop
         })
@@ -397,7 +386,6 @@ describe("面板工厂冒烟", () => {
   test("createRenderGraphTemplateButton 可渲染单个模板按钮并带预览插槽（无排序把手）", () => {
     const renderTemplateButton = createRenderGraphTemplateButton({
       isEditMode: true,
-      isBrowseMode: false,
       templateLibraryDisplayMode: "left",
       startLibraryGraphTemplatePlacement: noop,
       cancelLibraryPlacement: noop,

@@ -6,7 +6,6 @@ import {
   clearTourSeen,
   isSidePanelLockedByTour,
   readTourSeen,
-  tourGateSatisfied,
   writeTourSeen
 } from "./appTour";
 import { TOUR_SIDE_PANEL_STEP_TARGETS } from "./sidePanelVisibility";
@@ -64,15 +63,8 @@ describe("app tour step definitions", () => {
     expect(new Set(targets).size).toBe(targets.length);
   });
 
-  test("共 7 步（编辑模式 / 图元库 / 画布 / 画布工具 / 属性面板 / 保存 / 顶栏总览）", () => {
-    expect(APP_TOUR_STEPS.length).toBe(7);
-  });
-
-  test("只有第 1 步标记 actionStep（其余为纯介绍步骤）", () => {
-    expect((APP_TOUR_STEPS[0].data as { actionStep?: boolean })?.actionStep).toBe(true);
-    for (let i = 1; i < APP_TOUR_STEPS.length; i++) {
-      expect((APP_TOUR_STEPS[i].data as { actionStep?: boolean } | undefined)?.actionStep).toBeFalsy();
-    }
+  test("共 6 步（图元库 / 画布 / 画布工具 / 属性面板 / 保存 / 顶栏总览）", () => {
+    expect(APP_TOUR_STEPS.length).toBe(6);
   });
 });
 
@@ -117,30 +109,6 @@ describe("app tour localStorage helpers", () => {
   });
 });
 
-// ---------- 动作闸门（tourGateSatisfied）纯函数 ----------
-
-describe("tourGateSatisfied", () => {
-  test("步骤 0：未切编辑模式 → false", () => {
-    expect(tourGateSatisfied(0, { isEditMode: false })).toBe(false);
-  });
-
-  test("步骤 0：切到编辑模式 → true（唯一带闸门的一步）", () => {
-    expect(tourGateSatisfied(0, { isEditMode: true })).toBe(true);
-  });
-
-  test("其余步骤一律不自动跳（纯介绍，由用户点「下一步」推进）", () => {
-    for (const stepIndex of [1, 2, 3, 4, 5, 6]) {
-      expect(tourGateSatisfied(stepIndex, { isEditMode: true })).toBe(false);
-      expect(tourGateSatisfied(stepIndex, { isEditMode: false })).toBe(false);
-    }
-  });
-
-  test("越界 index 返回 false（防御性）", () => {
-    expect(tourGateSatisfied(-1, { isEditMode: true })).toBe(false);
-    expect(tourGateSatisfied(99, { isEditMode: true })).toBe(false);
-  });
-});
-
 // ---------- 侧边栏步骤的强制展开 / 锁定 ----------
 
 describe("tour side panel locking", () => {
@@ -154,8 +122,8 @@ describe("tour side panel locking", () => {
     }
   });
 
-  test("只有第 2 步（索引 1）与第 5 步（索引 4）锚定侧边栏", () => {
-    expect(TOUR_SIDE_PANEL_STEP_TARGETS.map((item) => item.stepIndex)).toEqual([1, 4]);
+  test("只有第 1 步（索引 0）与第 4 步（索引 3）锚定侧边栏", () => {
+    expect(TOUR_SIDE_PANEL_STEP_TARGETS.map((item) => item.stepIndex)).toEqual([0, 3]);
     expect(TOUR_SIDE_PANEL_STEP_TARGETS.map((item) => item.side)).toEqual(["left", "right"]);
   });
 
@@ -191,13 +159,12 @@ describe("tour side panel locking", () => {
     ).toBe(true);
   });
 
-  test("两条「上一步」回退路径（1→0 与 4→3）都仍处于引导体内，锁定不中断", () => {
-    // 回到第 0 步时 tourBody 为 false，但锁定目标仍是左侧栏（第 0 步切到编辑模式后
-    // 左侧栏会多出「图元库 / 模板库」tab，第 1 步要锚定它）。
+  test("侧边栏步骤回退时仍处于引导体内，锁定不中断", () => {
+    // 回到第 0 步时 tourBody 为 false，但锁定目标仍是左侧栏。
     expect(
       isSidePanelLockedByTour("left", { tourActive: true, tourBody: false, tourSidePanel: "left" })
     ).toBe(true);
-    // 从第 5 步回到第 4 步：仍在引导体内，两侧边栏都锁。
+    // 从右侧栏步骤回退：仍在引导体内，两侧边栏都锁。
     expect(
       isSidePanelLockedByTour("right", { tourActive: true, tourBody: true, tourSidePanel: "left" })
     ).toBe(true);

@@ -26,13 +26,12 @@
 
 import { copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { atomicWriteFileSync } from "../shared/atomicWrite.mjs";
+import { configuredDataDir } from "../server/config.mjs";
 import { MODEL_ASSOCIATION_DERIVED_CLASS_SPECS } from "../src/model.ts";
 
 const APPLY = process.argv.includes("--apply");
-const repoRoot = fileURLToPath(new URL("..", import.meta.url));
-const dataRoot = resolve(repoRoot, "data");
+const dataRoot = configuredDataDir;
 
 const REPORT_PREFIX = "[migrate:source-anchor]";
 function report(message) {

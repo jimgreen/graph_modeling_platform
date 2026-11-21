@@ -3,6 +3,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { isModelJsonFile } from "./schemeFiles.mjs";
 import { atomicWriteFile } from "../shared/atomicWrite.mjs";
+import { configuredDataDir } from "./config.mjs";
 
 export const GLOBAL_LINE_ID_PARAM = "_globalLineId";
 const GLOBAL_LINE_MODEL_PAIR_PARAM = "_globalLineModelPair";
@@ -707,7 +708,7 @@ function otherStoredEndpointRetainsGlobalLine(record, storedProjects, projectIdx
 }
 
 export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
-  const resolvedDataRoot = resolve(dataRoot ?? "data");
+  const resolvedDataRoot = resolve(dataRoot ?? configuredDataDir);
   const filesRoot = resolve(schemeFilesRoot ?? join(resolvedDataRoot, "schemes", "files"));
   const registryPath = join(resolvedDataRoot, "schemes", "global-lines.json");
   const legacyRegistryPath = join(resolvedDataRoot, "settings", "global-lines.json");

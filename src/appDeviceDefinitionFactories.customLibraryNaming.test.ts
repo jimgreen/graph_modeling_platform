@@ -95,18 +95,3 @@ describe("createNextCustomTemplateKind", () => {
     expect(createNextCustomTemplateKind(scope([]))("a---b")).toBe("custom-a_b");
   });
 });
-
-describe("createCreateCustomCategoryLibrary", () => {
-  test("只读模式下不打开新建对话框", async () => {
-    const { createCreateCustomCategoryLibrary } = await import("./appExtracted/appDeviceDefinitionFactories");
-    const setCustomLibraryCreateDialog = vi.fn();
-    const create = createCreateCustomCategoryLibrary({
-      requireEditMode: vi.fn(() => false),
-      setCustomLibraryCreateDialog
-    });
-
-    create();
-
-    expect(setCustomLibraryCreateDialog).not.toHaveBeenCalled();
-  });
-});

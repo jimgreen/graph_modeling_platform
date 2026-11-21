@@ -111,6 +111,7 @@ const serializeNode = (node: any): SerializedNode => ({
 export function serializeModel(appScope: Record<string, any>): V1Result<{
   clientId?: string;
   schemePath: string;
+  schemeId: number | null;
   modelName: string;
   modelId: string;
   updatedAt: string;
@@ -127,6 +128,7 @@ export function serializeModel(appScope: Record<string, any>): V1Result<{
       data: {
         modelName: safeStr(appScope.activeModelName),
         modelId: safeStr(appScope.activeProjectKey),
+        schemeId: Number.isSafeInteger(schemeRec?.schemeId) && schemeRec.schemeId > 0 ? schemeRec.schemeId : null,
         updatedAt: safeStr(mr?.updatedAt),
         schemePath
       }

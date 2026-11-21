@@ -14,7 +14,7 @@ export const AppResourceDialogs = memo(function AppResourceDialogs({ scope }: Ap
     iconLibraryPicker, iconLibrarySelectedLibraryId, iconLibraryVisibleResult, imageAssetContextMenu, imageAssetList, imageAssets, imageFolders, imageInputRef,
     imagePickerActiveCategoryFilter, imagePickerActiveLibraryTab, imagePickerActiveSourceFilter, imagePickerAssetIsBuiltinIcon, imagePickerAssetNoun, imagePickerCanClear, imagePickerCategoryOptions, imagePickerDialogClassName,
     imagePickerHint, imagePickerRendersCatalogSource, imagePickerSearchQuery, imagePickerShowsLibraryActions, imagePickerSourceLocked, imagePickerTitle, imagePickerUsesIconSources, imagePickerUsesSeparateLibraryTabs,
-    imageTarget, isBrowseMode, renameImageFolder, renderNodeDoubleClickDialog, setActiveImageFolderId, setIconLibraryPicker, setImageAssetContextMenu, setImagePickerCategoryFilter,
+    imageTarget, renameImageFolder, renderNodeDoubleClickDialog, setActiveImageFolderId, setIconLibraryPicker, setImageAssetContextMenu, setImagePickerCategoryFilter,
     setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, sourceFilteredImageAssetList
   } = scope;
   return (<>
@@ -88,18 +88,18 @@ export const AppResourceDialogs = memo(function AppResourceDialogs({ scope }: Ap
                       {folder.name}{typeof folder.imageCount === "number" ? ` (${folder.imageCount})` : ""}
                     </option>))}
                 </select>
-                <button onClick={createImageFolder} disabled={isBrowseMode}>新建文件夹</button>
-                <button onClick={renameImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>重命名</button>
-                <button onClick={deleteImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>删除文件夹</button>
+                <button onClick={createImageFolder} >新建文件夹</button>
+                <button onClick={renameImageFolder} disabled={activeImageFolderId === "root"}>重命名</button>
+                <button onClick={deleteImageFolder} disabled={activeImageFolderId === "root"}>删除文件夹</button>
                 <button onClick={() => {
                   setImagePickerSourceFilter("external");
                   imageInputRef.current?.click();
-                }} disabled={isBrowseMode}>导入外部 SVG/PNG</button>
+                }} >导入外部 SVG/PNG</button>
                 <button onClick={() => {
                   setImagePickerSourceFilter("external");
                   __appScope.imageArchiveInputRef.current?.click();
-                }} disabled={isBrowseMode}>导入文档图片/图标</button>
-                {imagePickerCanClear && <button onClick={clearSelectedImage} disabled={isBrowseMode}>取消当前图片</button>}
+                }} >导入文档图片/图标</button>
+                {imagePickerCanClear && <button onClick={clearSelectedImage} >取消当前图片</button>}
               </div>
             )}
             {imagePickerRendersCatalogSource ? (
@@ -202,7 +202,7 @@ export const AppResourceDialogs = memo(function AppResourceDialogs({ scope }: Ap
                           <button
                             key={asset.id || index}
                             className="image-asset-option icon-library-catalog-option"
-                            disabled={isBrowseMode}
+
                             onClick={() => applyExistingImage(asset.id)}
                             title={asset.name || `内置图标 ${index + 1}`}
                           >
@@ -228,7 +228,7 @@ export const AppResourceDialogs = memo(function AppResourceDialogs({ scope }: Ap
                         <button
                           key={icon.id}
                           className="image-asset-option icon-library-catalog-option"
-                          disabled={isBrowseMode}
+
                           onClick={() => applyIconLibraryCatalogIcon(icon.id)}
                           title={`${icon.libraryLabel} / ${icon.categoryLabel} / ${icon.name}`}
                         >
@@ -323,8 +323,8 @@ export const AppResourceDialogs = memo(function AppResourceDialogs({ scope }: Ap
             )}
             {!imagePickerRendersCatalogSource && (<div className="image-asset-list">
               {imageAssetList.length === 0 || (imagePickerUsesSeparateLibraryTabs && imagePickerActiveLibraryTab === "image" && sourceFilteredImageAssetList.length === 0) ? (<p className="image-empty">后台暂无图片，请先加载本地图片。</p>) : sourceFilteredImageAssetList.length === 0 ? (<p className="image-empty">{imagePickerUsesIconSources && imagePickerActiveSourceFilter === "external" ? "暂无外部导入图标，请使用上方外部导入按钮。" : `暂无可用${imagePickerAssetNoun}。`}</p>) : filteredImageAssetList.length === 0 ? (<p className="image-empty">{`没有匹配的${imagePickerAssetNoun}，请调整来源、分类或搜索关键字。`}</p>) : (filteredImageAssetList.map((asset: ImageAsset, index: number) => {
-                const canDeleteImageAsset = !isBrowseMode && !imagePickerAssetIsBuiltinIcon(asset) && (!imagePickerUsesIconSources || imagePickerActiveSourceFilter === "external");
-                return (<button key={asset.id} className="image-asset-option" disabled={isBrowseMode} onClick={() => {
+                const canDeleteImageAsset = !imagePickerAssetIsBuiltinIcon(asset) && (!imagePickerUsesIconSources || imagePickerActiveSourceFilter === "external");
+                return (<button key={asset.id} className="image-asset-option"  onClick={() => {
                     setImageAssetContextMenu(null);
                     applyExistingImage(asset.id);
                   }} onContextMenu={(event) => {
@@ -352,7 +352,7 @@ export const AppResourceDialogs = memo(function AppResourceDialogs({ scope }: Ap
                 onPointerDown={(event) => event.stopPropagation()}
                 onContextMenu={(event) => event.preventDefault()}
               >
-                <button type="button" role="menuitem" onClick={deleteImageAssetFromContextMenu} disabled={isBrowseMode}>
+                <button type="button" role="menuitem" onClick={deleteImageAssetFromContextMenu} >
                   <Trash2 size={14} aria-hidden="true"/>
                   删除
                 </button>

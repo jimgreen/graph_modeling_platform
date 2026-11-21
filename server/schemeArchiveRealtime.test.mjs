@@ -135,8 +135,8 @@ test("ZIP 内 e/svg 与单模型端点输出逐字节一致，json 与磁盘原�
   const zip = new AdmZip(Buffer.from(await response.arrayBuffer()));
   const read = (entryName) => zip.getEntry(entryName).getData();
 
-  const eUrl = `${baseUrl}${apiPath("/v1/schemes/model/e-file")}?schemePath=${schemePathParam()}&name=${encodeURIComponent("厂站")}&encoding=gbk`;
-  const svgUrl = `${baseUrl}${apiPath("/v1/schemes/model/svg")}?schemePath=${schemePathParam()}&name=${encodeURIComponent("厂站")}&colorMode=voltage&encoding=utf-8`;
+  const eUrl = `${baseUrl}${apiPath("/v1/schemes/model/export")}?format=e-file&schemePath=${schemePathParam()}&name=${encodeURIComponent("厂站")}&encoding=gbk`;
+  const svgUrl = `${baseUrl}${apiPath("/v1/schemes/model/export")}?format=svg&schemePath=${schemePathParam()}&name=${encodeURIComponent("厂站")}&colorMode=voltage&encoding=utf-8`;
 
   expect(read("测试方案/厂站.e").equals(Buffer.from(await (await fetch(eUrl)).arrayBuffer()))).toBe(true);
   expect(read("测试方案/厂站.svg").equals(Buffer.from(await (await fetch(svgUrl)).arrayBuffer()))).toBe(true);

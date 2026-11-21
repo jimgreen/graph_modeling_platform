@@ -2,13 +2,12 @@
 // data/schemes/trash/<timestamp>/<原相对路径>。默认 dry-run，--apply 才实际移动。
 import { mkdir, readdir, rename } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { configuredDataDir } from "../server/config.mjs";
 
 const args = process.argv.slice(2);
 const apply = args.includes("--apply");
 const rootArg = args.find((item) => !item.startsWith("--"));
-const repoRoot = fileURLToPath(new URL("..", import.meta.url));
-const filesRoot = resolve(rootArg ?? join(repoRoot, "data", "schemes", "files"));
+const filesRoot = resolve(rootArg ?? join(configuredDataDir, "schemes", "files"));
 const trashRoot = resolve(join(dirname(filesRoot), "trash"));
 /** 报告里 trash 路径的相对基准（trash 的父目录，即 schemes/）。 */
 const trashBase = dirname(trashRoot);

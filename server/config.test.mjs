@@ -12,15 +12,21 @@
 // 本文件是纯 JS：.test.mjs 里出现 TS 语法会触发 RollupError，表现为
 // 「Tests: no tests」，而 no tests 看起来像通过 —— 绝不能当绿。
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 
-import { apiPath, apiPattern, escapeRegExp, frontendPrefix, stripFrontendBase } from "./config.mjs";
-
 const configUrl = pathToFileURL(fileURLToPath(new URL("./config.mjs", import.meta.url))).href;
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+const defaultAbsentConfig = join(tmpdir(), `gmp-config-default-absent-${process.pid}.json`);
+const savedConfigPath = process.env.GRAPH_MODEL_CONFIG;
+process.env.GRAPH_MODEL_CONFIG = defaultAbsentConfig;
+const { apiPath, apiPattern, escapeRegExp, frontendPrefix, stripFrontendBase } =
+  await import(`${configUrl}?baseline`);
+if (savedConfigPath === undefined) delete process.env.GRAPH_MODEL_CONFIG;
+else process.env.GRAPH_MODEL_CONFIG = savedConfigPath;
 
 const ENV_KEYS = [
   "IMAGE_SERVER_HOST",
@@ -28,7 +34,8 @@ const ENV_KEYS = [
   "IMAGE_SERVER_PORT",
   "GRAPH_MODEL_API_PREFIX",
   "GRAPH_MODEL_FRONTEND_PREFIX",
-  "GRAPH_MODEL_CONFIG"
+  "GRAPH_MODEL_CONFIG",
+  "GRAPH_MODEL_DATA_DIR"
 ];
 
 /**
@@ -43,6 +50,9 @@ const loadWithEnv = (cases) => {
     const out = [];
     for (const [index, patch] of cases.entries()) {
       for (const key of keys) delete process.env[key];
+      if (!Object.hasOwn(patch, "GRAPH_MODEL_CONFIG")) {
+        process.env.GRAPH_MODEL_CONFIG = ${JSON.stringify(defaultAbsentConfig)};
+      }
       for (const [key, value] of Object.entries(patch)) {
         if (value !== null) process.env[key] = value;
       }
@@ -53,6 +63,8 @@ const loadWithEnv = (cases) => {
         backendPort: mod.backendPort,
         apiPrefix: mod.apiPrefix,
         frontendPrefix: mod.frontendPrefix,
+        configuredDataDir: mod.configuredDataDir,
+        platformConfigPath: mod.platformConfigPath,
         apiPathSlash: mod.apiPath("/images"),
         apiPatternSource: mod.apiPattern("/images").source,
         apiPatternFlags: mod.apiPattern("/images").flags,
@@ -89,6 +101,27 @@ describe("config.mjs 默认值", () => {
     expect(only.backendPort).toBe(5174);
     expect(only.apiPrefix).toBe("/webgrp");
     expect(only.frontendPrefix).toBe("/");
+    expect(only.configuredDataDir).toBe(join(repoRoot, "data"));
+    expect(only.platformConfigPath).toBe(defaultAbsentConfig);
+  });
+
+  test("platform.config.json.example 使用 ./data 作为默认地址", () => {
+    const example = JSON.parse(readFileSync(join(repoRoot, "platform.config.json.example"), "utf8"));
+    expect(example.dataDir).toBe("./data");
+  });
+
+  test("配置文件里的 dataDir 按仓库根解析", () => {
+    const file = configFileWith({ dataDir: "./configured-data" });
+    const [only] = loadWithEnv([{ GRAPH_MODEL_CONFIG: file }]);
+    expect(only.configuredDataDir).toBe(join(repoRoot, "configured-data"));
+    expect(only.platformConfigPath).toBe(file);
+  });
+
+  test("GRAPH_MODEL_DATA_DIR 覆盖配置文件里的 dataDir", () => {
+    const file = configFileWith({ dataDir: "./from-config" });
+    const envDir = join(repoRoot, "tmp", "from-env");
+    const [only] = loadWithEnv([{ GRAPH_MODEL_CONFIG: file, GRAPH_MODEL_DATA_DIR: envDir }]);
+    expect(only.configuredDataDir).toBe(envDir);
   });
 
   test("apiPath 直接拼前缀", () => {

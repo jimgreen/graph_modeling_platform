@@ -9,13 +9,27 @@
 //   前三条是静态校验（HTML 骨架）：
 //     1. 内联 <script> 能被真实 JS 引擎解析（SyntaxError 即页面全白）；
 //     2. 页面确实是完整 HTML 文档，且带 highlight.js（文档承诺的自包含交互依赖）；
-//     3. 端点数与示例总数符合文档记载的 86 端点 / 114 示例。
+//     3. 端点数与示例总数符合文档记载的 79 端点 / 136 示例。
 //   后几条走数据流（读 ENDPOINTS 本身，见下方分隔线之后）：
 //     _idx 注入的唯一性、重复渲染的幂等、非默认 apiPrefix 下的 path 重写、
 //     以及内联 JSON 的 </script> 注入面 —— 后者是已知未修漏洞，用 test.fails 钉住。
 import { expect, test, vi } from "vitest";
 import vm from "node:vm";
 import { renderSwaggerHtml, SWIGGER_ENDPOINTS } from "./swaggerPage.mjs";
+import { apiPath } from "./config.mjs";
+
+test("documents model update WebSocket separately from executable HTTP endpoints", () => {
+  const endpointCount = SWIGGER_ENDPOINTS.length;
+  const html = renderSwaggerHtml();
+
+  expect(html).toContain("模型更新 WebSocket 订阅");
+  expect(html).toContain(apiPath("/v1/subscriptions/ws"));
+  expect(html).toContain("model.updated");
+  expect(html).toContain("contentBase64");
+  expect(html).toContain("unsubscribe");
+  expect(SWIGGER_ENDPOINTS.some((endpoint) => endpoint.path.endsWith("/v1/subscriptions/ws"))).toBe(false);
+  expect(SWIGGER_ENDPOINTS).toHaveLength(endpointCount);
+});
 
 test("内联脚本能被 JS 引擎解析（防模板字面量换行导致的 SyntaxError）", () => {
   const html = renderSwaggerHtml();
@@ -40,13 +54,13 @@ test("页面是完整 HTML 文档且自带 highlight.js", () => {
 // 端点/示例数会随功能增长；这里钉住的是「文档与实际同步」这一事实，具体数字见
 // swaggerPage.mjs 的 ENDPOINTS。真正的漂移防护在 routeCoverage.test.mjs
 // （已注册路由 vs 已文档化端点），本条只防手滑漏改。
-test("端点数与示例总数符合文档记载（86 端点 / 114 示例）", () => {
-  expect(SWIGGER_ENDPOINTS).toHaveLength(86);
+test("端点数与示例总数符合文档记载（79 端点 / 136 示例）", () => {
+  expect(SWIGGER_ENDPOINTS).toHaveLength(79);
   const exampleTotal = SWIGGER_ENDPOINTS.reduce(
     (sum, endpoint) => sum + (endpoint.examples?.length ?? 0),
     0
   );
-  expect(exampleTotal).toBe(114);
+  expect(exampleTotal).toBe(136);
   // 每个端点都必须有示例：swigger.examples.test.mjs 靠它逐条真实调用
   for (const endpoint of SWIGGER_ENDPOINTS) {
     expect(endpoint.examples?.length ?? 0, `${endpoint.method} ${endpoint.path} 没有示例`).toBeGreaterThan(0);
@@ -67,10 +81,11 @@ const closeScriptCount = (html) => (html.match(/<\/script>/g) || []).length;
 // 前端 onclick 形如 sendRequest(this, ENDPOINTS[7])，_idx 是它与数组下标对齐的锚点。
 // 若注入被删或改坏，onclick 就会指向别的端点，而页面不会报任何错 —— 只能靠数据比对发现。
 test("拓扑接口在 Try-it 中提供 clientId 页面选择参数", () => {
-  for (const path of ["/webgrp/v1/topology/check", "/webgrp/v1/topology/repair"]) {
-    const endpoint = SWIGGER_ENDPOINTS.find((item) => item.path === path);
-    expect(endpoint?.query ?? []).toContainEqual(expect.objectContaining({ name: "clientId" }));
-  }
+  const endpoint = SWIGGER_ENDPOINTS.find((item) => item.path === "/webgrp/v1/topology");
+  expect(endpoint?.query ?? []).toContainEqual(expect.objectContaining({ name: "clientId" }));
+  expect(endpoint?.examples ?? []).toEqual(expect.arrayContaining([
+    expect.objectContaining({ params: expect.objectContaining({ q_clientId: "swigger-test-client" }) })
+  ]));
 });
 
 test("每条端点记录都被赋了唯一的 _idx（Set 长度与端点数相等）", () => {
@@ -189,7 +204,7 @@ test.fails("内联 JSON 不含裸 </script>：端点字段里的该序列已被�
     const at = SWIGGER_ENDPOINTS.lastIndexOf(probe);
     if (at !== -1) SWIGGER_ENDPOINTS.splice(at, 1);
   }
-  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(86);
+    expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(79);
 
   // ① 核心断言：注入 </script> 不应让闭合标签数超过基线。
   //    对「转义成 <\/script>」与「转义成 <」两种实现都成立，不锁死修法。
@@ -207,9 +222,9 @@ test.fails("内联 JSON 不含裸 </script>：端点字段里的该序列已被�
 // 以下三条覆盖 renderCard 的**兜底分支**：method / scope / 参数说明 / 示例 / 响应 /
 // 端点描述缺失或非法时的渲染结果。
 //
-// 为什么值得守（可证的形状事实，不是猜测）：ENDPOINTS 里 84 条记录全是「完整形状」——
+// 为什么值得守（可证的形状事实，不是猜测）：ENDPOINTS 里 79 条记录全是「完整形状」——
 // method ∈ {GET,POST,PUT,DELETE}、scope ∈ {space,session,global,host}、每个 pathParams/
-// query 条目都带 desc、examples 都是非空数组、84 条都有 response 与 desc。实测输出：
+// query 条目都带 desc、examples 都是非空数组、79 条都有 response 与 desc。实测输出：
 // noDesc=0 noResp=0 noScope=0 noExamples=0 pathParamsNoDesc=[] queryNoDesc=[]。
 // 于是下面这些兜底臂在既有断言下**一次都没被求值**，而它们恰恰是「有人往端点表里加了一条
 // 字段不全的记录」时会立刻显形的分支：漏写 desc 会把字面量 `undefined` 印到页面上，
@@ -234,7 +249,7 @@ const cardByPath = (html, path) => {
 };
 
 // 临时挂探针 → 渲染一次 → 无论成败都摘干净。
-// 必须摘干净：同文件的其它用例断言端点数恒为 84、示例恒为 111，漏一条就会把它们一起搞红。
+// 必须摘干净：同文件的其它用例断言端点数恒为 79、示例恒为 136，漏一条就会把它们一起搞红。
 const renderCardsOf = (probes) => {
   SWIGGER_ENDPOINTS.push(...probes);
   let html;
@@ -246,7 +261,7 @@ const renderCardsOf = (probes) => {
       if (at !== -1) SWIGGER_ENDPOINTS.splice(at, 1);
     }
   }
-  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(86);
+  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(79);
   return new Map(probes.map((probe) => [probe.path, cardByPath(html, probe.path)]));
 };
 

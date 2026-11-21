@@ -91,11 +91,13 @@ MCP **不做自己的空间解析** —— 走派发层（`server/server.mjs`）
 | 工具 | 作用 | 参数 |
 |------|------|------|
 | `gmp_list_schemes` | 列方案树（方案名、更新时间、模型摘要） | `includeProjects?`（true 时带回完整模型数据，很大） |
-| `gmp_list_scheme_models` | 列某方案下的模型（模型名 + 更新时间） | `schemePath`（字符串数组） |
-| `gmp_get_model_json` | 读模型完整 JSON（节点、连线、量测） | `schemePath`、`name` |
-| `gmp_export_model` | 导出模型为 SVG / E 文件 / CIM XML | `schemePath`、`name`、`format`∈`svg｜e-file｜cim-xml`，以及按 format 限定的可选参数（见下） |
-| `gmp_export_scheme_archive` | 打包整个方案为 ZIP（二进制） | `schemePath` |
-| `gmp_send_model` | 把模型 POST 到外部接收端 | `url`、`files[]`、`modelId` 或 `schemePath`+`name`、`templateName?` |
+| `gmp_list_scheme_models` | 列某方案下的模型（方案编号、模型名 + 更新时间） | `schemeId?`、`schemePath?`（至少一个；可同时传，须指向同一方案） |
+| `gmp_get_model_json` | 读模型完整 JSON（节点、连线、量测） | `schemeId?`、`schemePath?`（至少一个；同时传须一致）、`name` |
+| `gmp_export_model` | 导出模型为 SVG / E 文件 / CIM XML | `schemeId?`、`schemePath?`（至少一个；同时传须一致）、`name`、`format`∈`svg｜e-file｜cim-xml`，以及按 format 限定的可选参数（见下） |
+| `gmp_export_scheme_archive` | 打包整个方案为 ZIP（二进制） | `schemeId?`、`schemePath?`（至少一个；同时传须一致） |
+| `gmp_send_model` | 把模型 POST 到外部接收端 | `url`、`files[]`、`modelId` 或 `schemeId?` / `schemePath?` + `name`（方案选择器可同时传，须一致）、`templateName?` |
+
+每个空间内的方案（包括子方案）都有唯一的正整数 `schemeId`。方案重命名或移动时编号不变；复制和导入会分配新编号。优先用 `gmp_list_schemes` 查看编号。旧调用继续支持 `schemePath`；`schemeId` 与 `schemePath` 可单独或同时提供，同时提供时必须指向同一方案。
 
 `gmp_export_model` 的**按 format 限定**参数（传了不适用于该 format 的参数会**报错**，
 不静默丢弃）：
@@ -112,7 +114,7 @@ MCP **不做自己的空间解析** —— 走派发层（`server/server.mjs`）
 
 | 工具 | 作用 | 参数 | 注解 |
 |------|------|------|------|
-| `gmp_check_topology` | 检查当前页面或指定已保存模型；返回错误、告警、拓扑岛数量及参数修正预览 | `target`∈`current｜saved`；`saved` 时需 `schemePath`、`name`；`current` 时可传 `token?` | 不保存模型；**读取不是纯只读**：首次读取可能初始化全局线路登记表并迁移存量数据 |
+| `gmp_check_topology` | 检查当前页面或指定已保存模型；返回错误、告警、拓扑岛数量及参数修正预览 | `target`∈`current｜saved`；`saved` 时需 `schemeId?` / `schemePath?`（至少一个；同时传须一致）及 `name`；`current` 时可传 `token?` | 不保存模型；**读取不是纯只读**：首次读取可能初始化全局线路登记表并迁移存量数据 |
 | `gmp_repair_topology` | 应用现有自动参数修正；当前页面只改内存，已保存模型有修正时直接落盘 | 同 `gmp_check_topology` | 写；**已保存模型会直接写盘**（`destructiveHint: true`） |
 
 两工具仅处理一个模型，不新增结构拓扑修复规则。修复后仍有阻断错误时，会返回剩余错误；已安全生成的参数修正仍可应用。
@@ -132,7 +134,7 @@ MCP **不做自己的空间解析** —— 走派发层（`server/server.mjs`）
 | 工具 | 作用 | 参数 |
 |------|------|------|
 | `gmp_list_runtime_clients` | 列在线前端页面。**每条带 `token`**（= 该页面地址栏的 `?token=`）、所属空间、注册与最后活跃时间 | 无 |
-| `gmp_get_runtime_model` | 读当前打开的模型（名称、类型、图元数） | `token?` |
+| `gmp_get_runtime_model` | 读当前打开的模型（模型 ID、统一数字方案 ID、方案路径、更新时间） | `token?` |
 | `gmp_get_runtime_devices` | 读当前模型的图元清单 | `token?` |
 | `gmp_get_runtime_selection` | 读当前选中的图元 | `token?` |
 | `gmp_get_runtime_tabs` | 读三面板快照（model / tree / graph） | `token?`、`tab?` |
@@ -149,7 +151,7 @@ MCP **不做自己的空间解析** —— 走派发层（`server/server.mjs`）
 |------|------|------|------|
 | `gmp_get_page_dom` | 读整体 DOM 结构（默认元素树，可选整页 HTML） | `token?`、`format?`∈`outline｜html`、`maxDepth?`、`maxNodes?`、`maxTextLength?`、`maxChars?` | 读 |
 | `gmp_switch_space` | 让前端切到另一个工作空间 | `spaceId`、`token?` | 写（**异步生效**，见下） |
-| `gmp_switch_model` | 让前端打开另一个已保存模型 | `modelId` / `modelKey` / `schemePath`+`name`、`token?` | 写 |
+| `gmp_switch_model` | 让前端打开另一个已保存模型 | `modelId` / `modelKey` / (`schemeId?` 或 `schemePath?`) + `name`、`token?`；两个方案选择器可同时传但须一致 | 写 |
 
 #### `gmp_get_page_dom` 的两种格式
 
@@ -179,10 +181,11 @@ MCP **不做自己的空间解析** —— 走派发层（`server/server.mjs`）
 #### `gmp_switch_model` 的定位优先级
 
 `modelId`（后端分配的稳定序号 `project.idx`，跨方案唯一、改名/移动不变）>
-`modelKey`（运行期 `project:…` key）> `schemePath` + `name`。
+`modelKey`（运行期 `project:…` key）> `schemeId` + `name` 或 `schemePath` + `name`。方案编号和路径可同时提供，但必须指向同一方案。
 
-三种都定位不到就报错 —— **不会**回退去打开「第一个模型」。已经是当前模型时回
+定位失败就报错 —— **不会**回退去打开「第一个模型」。已经是当前模型时回
 `alreadyOpen: true` 且不重复加载。
+同时提供 `schemeId` 和 `schemePath` 时，两者必须指向同一方案，否则回 `bad-request`。
 
 #### 两条写操作都要求「无未保存修改」
 
@@ -302,7 +305,7 @@ v1 的 `/webgrp/v1/runtime/*` 与 `/control/*` 保持原口径（不填 `clientI
 | code | 含义 | 建议动作 |
 |------|------|----------|
 | `bad-request` | 参数不合法 | 按 message 改参数 |
-| `not-found` | 方案/模型不存在 | 先 `gmp_list_schemes` / `gmp_list_scheme_models` 确认名字 |
+| `not-found` | 方案/模型不存在 | 先用 `gmp_list_schemes` 确认 `schemeId`，再用 `gmp_list_scheme_models` 确认模型名 |
 | `payload-too-large` | 请求体超限 | 缩小输入 |
 | `no-online-client` | 没有在线前端会话 | 打开前端页面；或 `gmp_list_runtime_clients` 看会话 |
 | `token-required` | 本空间有多个在线页面但没传 `token` | 取目标页面地址栏的 `?token=` 作为 `token` 参数重试；文案里已列出可选项 |
@@ -346,7 +349,7 @@ E 文件默认 **GBK** 编码，工具层按响应头 charset 解码（不会给
 | 文件 | 职责 |
 |------|------|
 | `server/mcp/v1Bridge.mjs` | 驱动 v1 handler 的桥（假 request/response 捕获信封） |
-| `server/mcp/tools.mjs` | 29 个工具定义（参数翻译 + 信封搬运 + 错误可执行化） |
+| `server/mcp/tools.mjs` | 31 个工具定义（参数翻译 + 信封搬运 + 错误可执行化） |
 | `server/mcp/mcpServer.mjs` | 装配 `McpServer`（server info + instructions + 注册工具） |
 | `server/mcp/httpHandler.mjs` | `/webgrp/mcp` 的 POST / GET / DELETE 入口（Origin 校验 + 无状态 transport） |
 | `server/mcp/mcpBridge.test.mjs` | 桥的单测 |

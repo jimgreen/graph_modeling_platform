@@ -151,6 +151,35 @@ afterEach(async () => {
 });
 
 describe("runtimeWs 连接与注册", () => {
+  test("新握手使用当前的动态 spaceStore getter", async () => {
+    const scopedServer = createServer((req, res) => {
+      res.writeHead(404);
+      res.end();
+    });
+    const registry = createRuntimeRegistry();
+    let activeStore = { has: () => false, firstId: () => "旧空间" };
+    attachRuntimeWebSocket(scopedServer, registry, () => activeStore);
+    await new Promise((resolve) => scopedServer.listen(0, "127.0.0.1", resolve));
+    const port = scopedServer.address().port;
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/webgrp/ws`, {
+      headers: { cookie: `gmp_space=${encodeURIComponent("新空间")}` }
+    });
+    try {
+      activeStore = { has: (id) => id === "新空间", firstId: () => "旧空间" };
+      await new Promise((resolve, reject) => {
+        ws.on("open", () => ws.send(JSON.stringify({ type: "register", clientId: "dynamic-store" })));
+        ws.on("message", (raw) => {
+          if (JSON.parse(String(raw)).type === "registered") resolve();
+        });
+        ws.on("error", reject);
+      });
+      expect(registry.listClients()[0].workspaceId).toBe("新空间");
+    } finally {
+      ws.terminate();
+      await new Promise((resolve) => scopedServer.close(resolve));
+    }
+  });
+
   test("客户端连接并发 register，收到 registered", async () => {
     const { received } = await connectClient("c1");
     expect(received.some((m) => m.type === "registered" && m.clientId === "c1")).toBe(true);

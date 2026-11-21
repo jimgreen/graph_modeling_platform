@@ -51,7 +51,11 @@ function seedLibrary(library) {
 
 /** 跑脚本，cwd 指向 tmpdir 沙箱。 */
 function run(args = []) {
-  const result = spawnSync(process.execPath, [SCRIPT, ...args], { cwd: workDir, encoding: "utf-8" });
+  const result = spawnSync(process.execPath, [SCRIPT, ...args], {
+    cwd: workDir,
+    env: { ...process.env, GRAPH_MODEL_DATA_DIR: join(workDir, "data") },
+    encoding: "utf-8"
+  });
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 

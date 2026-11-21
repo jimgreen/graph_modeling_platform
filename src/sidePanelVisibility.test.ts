@@ -280,9 +280,9 @@ describe("floating side panel visibility", () => {
 
 describe("tour forced side panel expansion", () => {
   test("maps tour steps to the side panel they anchor", () => {
-    expect(tourSidePanelStepSide(1)).toBe("left");
-    expect(tourSidePanelStepSide(4)).toBe("right");
-    for (const stepIndex of [0, 2, 3, 5, 6, -1, 99]) {
+    expect(tourSidePanelStepSide(0)).toBe("left");
+    expect(tourSidePanelStepSide(3)).toBe("right");
+    for (const stepIndex of [1, 2, 4, 5, 6, -1, 99]) {
       expect(tourSidePanelStepSide(stepIndex)).toBeNull();
     }
   });

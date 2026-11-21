@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { installDomShim } from "./domShim.mjs";
 import { apiPath } from "./config.mjs";
 import { encodeSchemePath } from "./schemePath.mjs";
+import { spacePathsFor } from "./spaceStore.mjs";
+import { buildModelUpdatePayload } from "./modelUpdatePayload.mjs";
 
 installDomShim();
 
@@ -21,6 +23,7 @@ const modelName = "厂站模型";
 let dataDir;
 let server;
 let baseUrl;
+let readSchemeProjectRecord;
 let sink;
 let sinkUrl;
 // 接收端返回值可按用例调整（默认 200）
@@ -37,6 +40,7 @@ let sinkChunks = null;
 // 这三种形态分别对应 readTargetErrorDetail 的 `!reader` / `value` 为假 / read 抛异常。
 let sinkRaw = null;
 let received = [];
+let schemeId;
 
 function device(id, kind, name, params, terminals = []) {
   return {
@@ -165,9 +169,20 @@ beforeAll(async () => {
   sinkUrl = `http://127.0.0.1:${sink.address().port}/receive`;
 
   process.env.GRAPH_MODEL_DATA_DIR = dataDir;
-  const { createImageServer } = await import("./server.mjs");
+  const serverModule = await import("./server.mjs");
+  const { createImageServer, readSchemes } = serverModule;
+  readSchemeProjectRecord = serverModule.readSchemeProjectRecord;
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const initializeResponse = await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "默认空间" })
+  });
+  if (!initializeResponse.ok) {
+    throw new Error(`测试默认空间初始化失败：HTTP ${initializeResponse.status}`);
+  }
+  schemeId = (await readSchemes()).find((item) => item.name === scheme)?.schemeId;
 });
 
 afterAll(async () => {
@@ -195,6 +210,33 @@ function postSend(body, query = `schemePath=${schemePath}&name=${encodeURICompon
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
   });
+}
+
+function multipartFilePart(receivedRequest, field) {
+  const boundary = /boundary=([^;]+)/i.exec(receivedRequest.headers["content-type"] ?? "")?.[1];
+  if (!boundary) throw new Error("目标请求缺少 multipart boundary");
+  const body = receivedRequest.body;
+  const marker = Buffer.from(`--${boundary}`);
+  let markerIndex = body.indexOf(marker);
+  while (markerIndex >= 0) {
+    let headerStart = markerIndex + marker.length;
+    if (body.subarray(headerStart, headerStart + 2).toString("ascii") === "--") break;
+    if (body.subarray(headerStart, headerStart + 2).toString("ascii") === "\r\n") headerStart += 2;
+    const headerEnd = body.indexOf(Buffer.from("\r\n\r\n"), headerStart);
+    if (headerEnd < 0) break;
+    const nextMarker = body.indexOf(Buffer.from(`\r\n--${boundary}`), headerEnd + 4);
+    if (nextMarker < 0) break;
+    const partHeaders = body.subarray(headerStart, headerEnd).toString("utf-8");
+    const disposition = new RegExp(`name="${field}"; filename="([^"]*)"`).exec(partHeaders);
+    if (disposition) {
+      return {
+        filename: disposition[1],
+        bytes: body.subarray(headerEnd + 4, nextMarker)
+      };
+    }
+    markerIndex = nextMarker + 2;
+  }
+  throw new Error(`multipart 中未找到文件字段 ${field}`);
 }
 
 describe(`${sendPath} 参数校验`, () => {
@@ -269,6 +311,39 @@ describe(`${sendPath} 参数校验`, () => {
 });
 
 describe(`${sendPath} 转发`, () => {
+  test("订阅载荷文件字节与 /send multipart 文件逐字节一致", async () => {
+    const response = await postSend({
+      url: sinkUrl,
+      files: [
+        { kind: "json", encoding: "utf-8" },
+        { kind: "cim", encoding: "utf-8" },
+        { kind: "e", encoding: "gbk" }
+      ]
+    });
+    expect(response.status).toBe(200);
+
+    const paths = spacePathsFor(dataDir, "default");
+    const record = await readSchemeProjectRecord({ paths, schemePath: [scheme], name: modelName });
+    expect(record).toBeTruthy();
+    const update = await buildModelUpdatePayload({
+      record,
+      schemePath: [scheme],
+      files: [
+        { kind: "json", encoding: "utf-8" },
+        { kind: "xml", encoding: "utf-8" },
+        { kind: "e", encoding: "gbk" }
+      ],
+      paths
+    });
+
+    expect(received).toHaveLength(1);
+    for (const file of update.files) {
+      const sentFile = multipartFilePart(received[0], file.field);
+      expect(sentFile.filename).toBe(file.filename);
+      expect(sentFile.bytes).toEqual(Buffer.from(file.contentBase64, "base64"));
+    }
+  });
+
   test("四种格式：字段名/文件名/编码字节正确，返回目标状态", async () => {
     const res = await postSend({
       url: sinkUrl,
@@ -377,6 +452,23 @@ describe(`${sendPath} 按 modelId 定位模型`, () => {
     expect(res.status).toBe(200);
     const structure = received[0].body.toString("utf-8");
     expect(structure).toMatch(/name="model_id"[\s\S]{0,40}\r?\n\r?\n1\r?\n/);
+  });
+
+  test("schemeId + name 可替代 schemePath 定位并发送", async () => {
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] }, `schemeId=${schemeId}&name=${encodeURIComponent(modelName)}`);
+    expect(res.status).toBe(200);
+    const structure = received[0].body.toString("utf-8");
+    expect(structure).toContain(modelName);
+    expect(structure).toContain('name="scheme_path"');
+    expect(structure).toContain('name="model_id"');
+  });
+
+  test("schemePath 与 schemeId 冲突时返回 400 且不发送", async () => {
+    const otherPath = encodeSchemePath(["另一个方案"]);
+    const res = await postSend({ url: sinkUrl, files: [{ kind: "json" }] }, `schemePath=${otherPath}&schemeId=${schemeId}&name=${encodeURIComponent(modelName)}`);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("bad-request");
+    expect(received).toHaveLength(0);
   });
 });
 

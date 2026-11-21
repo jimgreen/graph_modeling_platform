@@ -79,7 +79,7 @@ function makeScope(overrides: Record<string, any> = {}) {
 }
 
 describe("createExportEFile 走后端", () => {
-  test("从 /v1/schemes/model/e-file 拉取文本并交给保存层", async () => {
+  test("从 /v1/schemes/model/export?format=e-file 拉取文本并交给保存层", async () => {
     const fetchMock = vi.fn(async (_url: string) => new Response("<Model>\n</Model>\n", {
       status: 200,
       headers: { "content-type": "text/plain; charset=gbk" }
@@ -89,7 +89,7 @@ describe("createExportEFile 走后端", () => {
     await createExportEFile(scope)("gbk");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const url = String(fetchMock.mock.calls[0][0]);
-    expect(url).toContain("/v1/schemes/model/e-file");
+    expect(url).toContain("/v1/schemes/model/export?format=e-file");
     expect(url).toContain("encoding=gbk");
     expect(saved[0].filename).toBe("线路.e");
     expect(saved[0].text).toContain("<Model>");
@@ -202,7 +202,7 @@ describe("createExportEFile 走后端", () => {
 });
 
 describe("createExportSvgFile 走后端", () => {
-  test("从 /v1/schemes/model/svg 拉取 SVG（colorMode=voltage）并交给保存层", async () => {
+  test("从 /v1/schemes/model/export?format=svg 拉取 SVG（colorMode=voltage）并交给保存层", async () => {
     const fetchMock = vi.fn(async (_url: string) => new Response('<svg xmlns="http://www.w3.org/2000/svg"/>', {
       status: 200,
       headers: { "content-type": "image/svg+xml; charset=utf-8" }
@@ -213,7 +213,7 @@ describe("createExportSvgFile 走后端", () => {
     await createExportSvgFile(scope)("utf-8");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const url = String(fetchMock.mock.calls[0][0]);
-    expect(url).toContain("/v1/schemes/model/svg");
+    expect(url).toContain("/v1/schemes/model/export?format=svg");
     expect(url).toContain("colorMode=voltage");
     expect(url).toContain("encoding=utf-8");
     expect(url).toContain(encodeURIComponent(JSON.stringify(["默认方案"])));
@@ -234,7 +234,7 @@ describe("createExportSvgFile 走后端", () => {
 });
 
 describe("createExportJsonFile 走后端", () => {
-  test("从 /v1/schemes/model/json 拉取 project 并存为压缩 JSON", async () => {
+  test("从 /v1/schemes/model/export?format=json 拉取 project 并存为压缩 JSON", async () => {
     const fetchMock = vi.fn(async (_url: string) => new Response(JSON.stringify({
       ok: true,
       data: { project: { version: 1, name: "线路", nodes: [], edges: [] } }
@@ -245,7 +245,7 @@ describe("createExportJsonFile 走后端", () => {
     await createExportJsonFile(scope)("utf-8");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const url = String(fetchMock.mock.calls[0][0]);
-    expect(url).toContain("/v1/schemes/model/json");
+    expect(url).toContain("/v1/schemes/model/export?format=json");
     expect(url).toContain(encodeURIComponent(JSON.stringify(["默认方案"])));
     expect(url).toContain(encodeURIComponent("线路"));
     expect(saved[0].filename).toBe("线路.json");
@@ -266,13 +266,13 @@ describe("createExportSvg bundle 走后端", () => {
   test("E、JSON 与 SVG 全部从后端拉取后写入同一目录", async () => {
     const fetchMock = vi.fn(async (url: string) => {
       const target = String(url);
-      if (target.includes("/v1/schemes/model/json")) {
+      if (target.includes("/v1/schemes/model/export?format=json")) {
         return new Response(JSON.stringify({ ok: true, data: { project: { version: 1, name: "线路" } } }), {
           status: 200,
           headers: { "content-type": "application/json" }
         });
       }
-      if (target.includes("/v1/schemes/model/e-file")) {
+      if (target.includes("/v1/schemes/model/export?format=e-file")) {
         return new Response("<Model/>", {
           status: 200,
           headers: { "content-type": "text/plain; charset=utf-8" }
@@ -295,9 +295,9 @@ describe("createExportSvg bundle 走后端", () => {
     await createExportSvg(scope)("utf-8");
     expect(fetchMock).toHaveBeenCalledTimes(3);
     const urls = fetchMock.mock.calls.map((call) => String(call[0]));
-    expect(urls.some((url) => url.includes("/v1/schemes/model/e-file"))).toBe(true);
-    expect(urls.some((url) => url.includes("/v1/schemes/model/svg") && url.includes("colorMode=voltage"))).toBe(true);
-    expect(urls.some((url) => url.includes("/v1/schemes/model/json"))).toBe(true);
+    expect(urls.some((url) => url.includes("/v1/schemes/model/export?format=e-file"))).toBe(true);
+    expect(urls.some((url) => url.includes("/v1/schemes/model/export?format=svg") && url.includes("colorMode=voltage"))).toBe(true);
+    expect(urls.some((url) => url.includes("/v1/schemes/model/export?format=json"))).toBe(true);
     expect(writes.map((write) => write.filename)).toEqual(["线路.e", "线路.json", "线路.svg"]);
     expect(writes[0].text).toBe("<Model/>");
     expect(JSON.parse(writes[1].text)).toEqual({ version: 1, name: "线路" });

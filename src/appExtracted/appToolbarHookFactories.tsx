@@ -83,11 +83,7 @@ export function createJumpToAssociatedModel(__appScope: Record<string, any>) {
 export function createOpenNodeDoubleClickEditor(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
   // 审查 T11-P0-2：showGlobalMessage 纳入 scope 解构（test-setup 有全局桩兜底，但显式依赖可测试）
-  const { NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS, activeLayerNodeIdSet, cloneNodeForDoubleClickDraft, doubleClickDialogKindForNode, flattenSavedSchemes, flushSync, isBrowseMode, isEditMode, modelAssociationModelTypeForKind, nodeDoubleClickCloseSuppressUntilRef, nodeDoubleClickDialog, nodeDoubleClickOpenGuardRef, requestLoadSavedProject, schemes, selectCanvasGraphics, setContextMenu, setImageTarget, setNodeDoubleClickDialog, setNodeDoubleClickDraft, showGlobalMessage = globalThis.showGlobalMessage, writeOperationLog } = __appScope;
-    if (isBrowseMode) {
-      attemptJumpToAssociatedModel(__appScope, node);
-      return;
-    }
+  const { NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS, activeLayerNodeIdSet, cloneNodeForDoubleClickDraft, doubleClickDialogKindForNode, flattenSavedSchemes, flushSync, isEditMode, modelAssociationModelTypeForKind, nodeDoubleClickCloseSuppressUntilRef, nodeDoubleClickDialog, nodeDoubleClickOpenGuardRef, requestLoadSavedProject, schemes, selectCanvasGraphics, setContextMenu, setImageTarget, setNodeDoubleClickDialog, setNodeDoubleClickDraft, showGlobalMessage = globalThis.showGlobalMessage, writeOperationLog } = __appScope;
     if (!isEditMode || !activeLayerNodeIdSet.has(node.id)) {
       return;
     }
@@ -416,8 +412,8 @@ export function createClearStaticButtonFeedback(__appScope: Record<string, any>)
 
 export function createBeginStaticButtonPointerFeedback(__appScope: Record<string, any>) {
   return (event: ReactPointerEvent<SVGGElement>, node: ModelNode) => {
-  const { connectSource, isBrowseMode, isStaticButtonEnabledForNode, mode, setStaticButtonFeedback, staticButtonPointerRef, staticDrawing } = __appScope;
-    if (!isBrowseMode || !isStaticButtonEnabledForNode(node) || staticDrawing || connectSource || mode === "connect") {
+  const { connectSource, isStaticButtonEnabledForNode, mode, setStaticButtonFeedback, staticButtonPointerRef, staticDrawing } = __appScope;
+    if (!isStaticButtonEnabledForNode(node) || staticDrawing || connectSource || mode === "connect") {
       return;
     }
     staticButtonPointerRef.current = {
@@ -544,8 +540,8 @@ export function createExecuteStaticButtonAction(__appScope: Record<string, any>)
 
 export function createHandleStaticButtonClick(__appScope: Record<string, any>) {
   return (event: ReactMouseEvent<SVGGElement>, node: ModelNode) => {
-  const { clearStaticButtonFeedback, executeStaticButtonAction, isBrowseMode, isStaticButtonEnabledForNode, setStaticButtonFeedback, setStaticButtonVisual, staticButtonFeedbackTimeoutRef, staticButtonPointerRef } = __appScope;
-    if (!isBrowseMode || !isStaticButtonEnabledForNode(node)) {
+  const { clearStaticButtonFeedback, executeStaticButtonAction, isStaticButtonEnabledForNode, setStaticButtonFeedback, setStaticButtonVisual, staticButtonFeedbackTimeoutRef, staticButtonPointerRef } = __appScope;
+    if (!isStaticButtonEnabledForNode(node)) {
       return;
     }
     const pointerSnapshot = staticButtonPointerRef.current;
@@ -581,7 +577,7 @@ export function createBeginReadonlyBackgroundStaticButtonPointerFeedback(__appSc
 
 export function createRenderReadonlyBackgroundPage(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_CANVAS_BACKGROUND, MemoDeviceGlyph, backgroundPageRender, beginReadonlyBackgroundStaticButtonPointerFeedback, circle, clearStaticButtonFeedback, clipPath, colorDisplayMode, colorPalette, themeMode, deviceLabelsVisible, g, getConnectionStrokeColor, getNodeScaleX, getNodeScaleY, getTerminalDisplayColor, handleStaticButtonClick, image, isBrowseMode, isBusNode, isRoutableLineDeviceKind, isStaticButtonEnabledForNode, isStaticNode, line, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, nodeLabelShouldRender, nodeLabelText, nodeLabelTextAnchor, nodeLabelTextStyle, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenStyle, nodeLabelVerticalTokenY, path, rect, resolveNodeStateVisual, setStaticButtonFeedback, staticButtonPointerRef, staticButtonVisual, svgStrokeDashArray, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, title } = __appScope;
+  const { DEFAULT_CANVAS_BACKGROUND, MemoDeviceGlyph, backgroundPageRender, beginReadonlyBackgroundStaticButtonPointerFeedback, circle, clearStaticButtonFeedback, clipPath, colorDisplayMode, colorPalette, themeMode, deviceLabelsVisible, g, getConnectionStrokeColor, getNodeScaleX, getNodeScaleY, getTerminalDisplayColor, handleStaticButtonClick, image, isBusNode, isRoutableLineDeviceKind, isStaticButtonEnabledForNode, isStaticNode, line, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, nodeLabelShouldRender, nodeLabelText, nodeLabelTextAnchor, nodeLabelTextStyle, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenStyle, nodeLabelVerticalTokenY, path, rect, resolveNodeStateVisual, setStaticButtonFeedback, staticButtonPointerRef, staticButtonVisual, svgStrokeDashArray, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, title } = __appScope;
     if (!backgroundPageRender) {
       return null;
     }
@@ -645,7 +641,7 @@ export function createRenderReadonlyBackgroundPage(__appScope: Record<string, an
             const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
             const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
             const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
-            const staticButtonEnabled = isBrowseMode && isStaticButtonEnabledForNode(node);
+            const staticButtonEnabled = isStaticButtonEnabledForNode(node);
             const staticButtonState = staticButtonVisual?.nodeId === node.id ? staticButtonVisual.state : "";
             const staticButtonCornerRadius = Math.max(0, Number(node.params.cornerRadius || 8));
             return (
@@ -862,13 +858,6 @@ export function createAppHookCallback2(__appScope: Record<string, any>) {
     const indexed = assignMissingDeviceIndexes(initialLayeredProject.nodes, initialDraft?.deviceIndexCounters);
     const nodes = withNodesParentModelId(indexed.nodes, initialDraft?.idx);
     return nodes === indexed.nodes ? indexed : { ...indexed, nodes };
-  };
-}
-
-export function createAppHookCallback3(__appScope: Record<string, any>) {
-  return () => {
-  const { interactionMode, writeStoredInteractionMode } = __appScope;
-    writeStoredInteractionMode(interactionMode);
   };
 }
 
@@ -2559,10 +2548,7 @@ export function createAppHookCallback68(__appScope: Record<string, any>) {
 
 export function createAppHookCallback69(__appScope: Record<string, any>) {
   return () => {
-  const { getOverlappingTerminalGroups, getTerminalBusContactGroups, isReadonlyCanvasMode, suppressDragTerminalInteraction, terminalOverlapAffectedNodeIds, terminalOverlapCalculationReady, terminalOverlapNodes } = __appScope;
-      if (isReadonlyCanvasMode) {
-        return new Set<string>();
-      }
+  const { getOverlappingTerminalGroups, getTerminalBusContactGroups, suppressDragTerminalInteraction, terminalOverlapAffectedNodeIds, terminalOverlapCalculationReady, terminalOverlapNodes } = __appScope;
       if (suppressDragTerminalInteraction) {
         return new Set<string>();
       }
@@ -3851,9 +3837,7 @@ export function createAppHookCallback110(__appScope: Record<string, any>) {
       // __appScope 每帧重建；键盘事件可能在模型切换后的 effect 重绑前到达。
       // 保存必须读取当前帧，否则 Ctrl+S 会调用上一个模型的保存闭包。
       const currentScope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
-      if (!currentScope.isEditMode) {
-        currentScope.writeOperationLog?.("浏览模式下不能保存，请先切换到编辑模式");
-      } else if (currentScope.customDeviceDialogOpen) {
+      if (currentScope.customDeviceDialogOpen) {
         currentScope.saveCustomDeviceDefinitionDialog?.({ closeAfterSave: false });
       } else {
         modelTrace("save-shortcut", {
@@ -3884,11 +3868,7 @@ export function createAppHookCallback110(__appScope: Record<string, any>) {
       const isRecordShortcutTarget = shortcutScope === "records";
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
-        if (isEditMode) {
-          undoLastOperation();
-        } else {
-          writeOperationLog("浏览模式下不能撤销编辑操作，请先切换到编辑模式");
-        }
+        undoLastOperation();
         return;
       }
       if (event.key === "Escape" && hoveredCategoryLibraryComponentLibrary) {
@@ -3910,37 +3890,6 @@ export function createAppHookCallback110(__appScope: Record<string, any>) {
         if (lockPoint) {
           lockRoutableLinePreviewAxis(lockPoint);
         }
-      }
-      if (!isEditMode) {
-        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a" && isCanvasShortcutTarget) {
-          event.preventDefault();
-          writeOperationLog("浏览模式下不执行全画布全选，请先切换到编辑模式");
-          return;
-        }
-        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
-          if (isRecordShortcutTarget && (selectedProjectId || selectedSchemeId || selectedProjectIds.length > 0 || selectedSchemeIds.length > 0)) {
-            event.preventDefault();
-            copySelectedRecord();
-          } else if (isCanvasShortcutTarget) {
-            event.preventDefault();
-            copySelection();
-          }
-          return;
-        }
-        if (
-          ((event.ctrlKey || event.metaKey) && ["x", "v"].includes(event.key.toLowerCase())) ||
-          event.key === "Delete" ||
-          event.key === "Backspace" ||
-          event.key === "ArrowLeft" ||
-          event.key === "ArrowRight" ||
-          event.key === "ArrowUp" ||
-          event.key === "ArrowDown"
-        ) {
-          event.preventDefault();
-          releaseKeyboardMoveKey(event.key);
-          writeOperationLog("浏览模式下不能修改图元，请先切换到编辑模式");
-        }
-        return;
       }
       if (libraryPlacement && isCanvasShortcutTarget) {
         if (event.key === "Escape") {
@@ -4065,8 +4014,8 @@ export function createAppHookCallback110(__appScope: Record<string, any>) {
 
 export function createAppHookCallback111(__appScope: Record<string, any>) {
   return () => {
-  const { isBrowseMode, leftPanelTab, setLeftPanelTab } = __appScope;
-    if (isBrowseMode && leftPanelTab !== "projects") {
+  const { leftPanelTab, setLeftPanelTab } = __appScope;
+    if (false) {
       setLeftPanelTab("projects");
     }
   };

@@ -40,7 +40,10 @@ import {
   canvasGroupMemberNodeIds,
   canvasClipboardBounds,
   cloneCanvasClipboard,
+  compareAutoAlignLayoutRegularity,
+  compareAutoAlignRouteQuality,
   countAutoAlignRouteBends,
+  countAutoAlignRouteLength,
   countAutoAlignRouteCrossings,
   createAutoAlignQualityReport,
   createAutoAlignRouteQualityIndex,
@@ -50,6 +53,9 @@ import {
   dissolveSelectedCanvasGroups,
   expandSelectionByGroups,
   mergeContainerLayoutUnits,
+  localAutoAlignNodeLayoutCandidates,
+  scoreAutoAlignLayoutRegularity,
+  topologyAutoAlignNodeLayoutUnits,
   randomSource,
   reorderItemsByDisplayLayer,
   resolveCanvasSelection,
@@ -63,6 +69,78 @@ describe("canvas selection actions", () => {
     expect(AUTO_ALIGN_DEFAULT_THRESHOLD_PX).toBe(50);
     expect(AUTO_ALIGN_MIN_THRESHOLD_PX).toBe(5);
     expect(AUTO_ALIGN_MAX_THRESHOLD_PX).toBe(200);
+  });
+
+  test("topology-first layout ignores stored route points and is idempotent", () => {
+    const root = createDefaultNode("ac-source", { x: 420, y: 360 });
+    const left = createDefaultNode("ac-load", { x: 80, y: 40 });
+    const right = createDefaultNode("ac-load", { x: 760, y: 40 });
+    const edges: Edge[] = [
+      { id: "edge-root-left", sourceId: root.id, targetId: left.id, routePoints: [{ x: 1, y: 2 }, { x: 3, y: 4 }] },
+      { id: "edge-root-right", sourceId: root.id, targetId: right.id, routePoints: [{ x: 9, y: 8 }, { x: 7, y: 6 }] }
+    ];
+    const nodes = [root, left, right];
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+
+    const first = topologyAutoAlignNodeLayoutUnits(nodes, units, edges);
+    const secondUnits = buildCanvasLayoutUnits([], first, first.map((node) => node.id), []);
+    const second = topologyAutoAlignNodeLayoutUnits(first, secondUnits, edges.map((edge) => ({ ...edge, routePoints: undefined })));
+
+    expect(second.map((node) => [node.id, node.position])).toEqual(first.map((node) => [node.id, node.position]));
+    expect(new Set(first.map((node) => `${node.position.x},${node.position.y}`)).size).toBe(first.length);
+  });
+
+  test("route scoring compares crossings, bends, then length", () => {
+    expect(compareAutoAlignRouteQuality({ crossings: 1, bends: 100, length: 10_000 }, { crossings: 2, bends: 0, length: 1 })).toBeLessThan(0);
+    expect(compareAutoAlignRouteQuality({ crossings: 2, bends: 3, length: 10_000 }, { crossings: 2, bends: 4, length: 1 })).toBeLessThan(0);
+    expect(compareAutoAlignRouteQuality({ crossings: 2, bends: 4, length: 100 }, { crossings: 2, bends: 4, length: 101 })).toBeLessThan(0);
+    expect(compareAutoAlignRouteQuality({ crossings: 2, bends: 4, length: 100 }, { crossings: 2, bends: 4, length: 100 })).toBe(0);
+  });
+
+  test("regularity ranking values balanced X/Y alignment after shape and compactness", () => {
+    const square = {
+      overlapCount: 0,
+      aspectRatioDeviation: 0,
+      occupiedArea: 40_000,
+      balancedAxisPairCount: 2,
+      totalAxisPairCount: 4
+    };
+    const longRow = {
+      overlapCount: 0,
+      aspectRatioDeviation: Math.log(4),
+      occupiedArea: 40_000,
+      balancedAxisPairCount: 0,
+      totalAxisPairCount: 6
+    };
+    expect(compareAutoAlignLayoutRegularity(square, longRow)).toBeLessThan(0);
+
+    const unit = (id: string, left: number, top: number): CanvasLayoutUnit => {
+      const bounds = { left, top, right: left + 100, bottom: top + 60 };
+      return { id, kind: "node", nodeIds: [id], edgeIds: [], bounds, layoutBounds: bounds, collisionRects: [bounds] };
+    };
+    const score = scoreAutoAlignLayoutRegularity([
+      unit("square-1", 0, 0), unit("square-2", 200, 0),
+      unit("square-3", 0, 150), unit("square-4", 200, 150)
+    ]);
+    expect(score.overlapCount).toBe(0);
+    expect(score.balancedAxisPairCount).toBe(2);
+  });
+
+  test("local axis candidates align near centers deterministically", () => {
+    const nodes = [
+      { ...createDefaultNode("ac-load", { x: 100, y: 100 }), id: "near-a" },
+      { ...createDefaultNode("ac-load", { x: 102, y: 300 }), id: "near-b" }
+    ];
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+    const candidates = localAutoAlignNodeLayoutCandidates(nodes, units);
+    const secondRun = localAutoAlignNodeLayoutCandidates(nodes, units);
+    const hasXAlignedCandidate = candidates.some((candidate) => {
+      const byId = new Map(candidate.nodes.map((node) => [node.id, node]));
+      return Math.abs(byId.get("near-a")!.position.x - byId.get("near-b")!.position.x) <= 0.5;
+    });
+
+    expect(hasXAlignedCandidate).toBe(true);
+    expect(secondRun).toEqual(candidates);
   });
 
   test("deletes selected graphics including nodes and connection lines", () => {
@@ -1845,6 +1923,17 @@ describe("auto-align line quality constraints", () => {
     expect(countAutoAlignRouteCrossings([[{ x: 0, y: 0 }], [{ x: 1, y: 1 }]])).toBe(0);
   });
 
+  test("counts orthogonal route length with Manhattan distance", () => {
+    expect(countAutoAlignRouteLength([{ x: 0, y: 0 }])).toBe(0);
+    expect(countAutoAlignRouteLength([{ x: 0, y: 0 }, { x: 100, y: 0 }])).toBe(100);
+    expect(countAutoAlignRouteLength([
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 50 },
+      { x: 40, y: 50 }
+    ])).toBe(210);
+  });
+
   test("维护线路质量索引并支持重复、退化、替换和删除", () => {
     const straight: RoutedEdge = { edgeId: "straight", points: [{ x: 0, y: 0 }, { x: 100, y: 0 }], path: "" };
     const bent: RoutedEdge = {
@@ -1855,12 +1944,12 @@ describe("auto-align line quality constraints", () => {
     const degenerate: RoutedEdge = { edgeId: "degenerate", points: [{ x: 3, y: 3 }], path: "" };
     const index = createAutoAlignRouteQualityIndex([straight, bent, degenerate]);
 
-    expect(index.quality()).toEqual({ bends: 1, crossings: 0 });
+    expect(index.quality()).toEqual({ bends: 1, crossings: 0, length: 200 });
     expect(index.routes()).toEqual([straight, bent, degenerate]);
     index.replace({ ...straight, points: [{ x: 0, y: 0 }, { x: 0, y: 40 }, { x: 80, y: 40 }], path: "" });
-    expect(index.quality()).toEqual({ bends: 2, crossings: 1 });
+    expect(index.quality()).toEqual({ bends: 2, crossings: 1, length: 220 });
     index.replace({ ...bent, points: [{ x: 0, y: 10 }, { x: 50, y: 10 }], path: "" });
-    expect(index.quality()).toEqual({ bends: 1, crossings: 0 });
+    expect(index.quality()).toEqual({ bends: 1, crossings: 0, length: 170 });
     index.remove("missing");
     index.remove("degenerate");
     expect(index.routes().map((route) => route.edgeId)).toEqual(["straight", "bent"]);
@@ -1934,6 +2023,30 @@ describe("auto-align line quality constraints", () => {
     expect(countAutoAlignRouteCrossings([otherRoute.points, routes[0].points])).toBe(0);
     // 最近的网格点(x=100)会新增交叉被否决,改选不会新增交叉的候选
     expect(positionOf(aligned, moving.id).x).toBeGreaterThan(moving.position.x);
+  });
+
+  test("when crossings and bends tie, chooses the shorter route before grid distance", () => {
+    const moving = createDefaultNode("ac-load", { x: 112, y: 123 });
+    const partner = createDefaultNode("ac-load", { x: 400, y: 200 });
+    const isolated = createDefaultNode("ac-source", { x: 700, y: 400 });
+    const nodes = [moving, partner, isolated];
+    const edge = connect(moving, partner, "edge-shorter-route");
+    const units = buildCanvasLayoutUnits([], nodes, [moving.id, isolated.id], []);
+    const routeEdges = (stateNodes: readonly ModelNode[], edgeList: readonly Edge[]): RoutedEdge[] => {
+      const movingX = stateNodes.find((node) => node.id === moving.id)?.position.x;
+      const length = movingX === 150 ? 100 : movingX === 100 ? 200 : 300;
+      return edgeList.map((item) => ({
+        edgeId: item.id,
+        points: [{ x: 0, y: 0 }, { x: length, y: 0 }],
+        path: ""
+      }));
+    };
+
+    const aligned = autoAlignNodeLayoutUnits(nodes, units, 50, { edges: [edge], routeEdges });
+
+    // x=100 是更近的网格候选,但 x=150 的线路更短;长度应在交叉和拐点打平后生效。
+    expect(positionOf(aligned, moving.id).x).toBe(150);
+    expect(countAutoAlignRouteLength(routeEdges(aligned, [edge])[0].points)).toBe(100);
   });
 
   test("reports frozen units so the caller can explain skipped grid snapping", () => {

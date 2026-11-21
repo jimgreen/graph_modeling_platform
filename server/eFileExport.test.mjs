@@ -1,4 +1,4 @@
-// /webgrp/v1/schemes/model/e-file 适配层测试：
+// /webgrp/v1/schemes/model/export?format=e-file 适配层测试：
 // tmpdir 种子（模型 + 库配置）→ GRAPH_MODEL_DATA_DIR → 起真实 server（端口 0）→ 端点到共享装配逐字比对。
 // 关键锚点：适配层必须用「生效库」（内置 + 自定义 + 覆盖）装配库模板，否则输出与共享装配不一致。
 // （仅传自定义模板时内置类无法匹配：列集/列序错位、`?template=` 整段丢失。）
@@ -13,7 +13,7 @@ import { encodeSchemePath } from "./schemePath.mjs";
 
 installDomShim();
 
-const eFilePath = apiPath("/v1/schemes/model/e-file");
+const eFilePath = apiPath("/v1/schemes/model/export");
 const scheme = "测试方案";
 const schemePath = encodeSchemePath([scheme]);
 const modelName = "厂站模型";
@@ -21,6 +21,7 @@ const modelName = "厂站模型";
 let dataDir;
 let server;
 let baseUrl;
+let schemeId;
 
 function device(id, kind, name, params, terminals = []) {
   return {
@@ -133,9 +134,16 @@ beforeAll(async () => {
     }
   }), "utf-8");
   process.env.GRAPH_MODEL_DATA_DIR = dataDir;
-  const { createImageServer } = await import("./server.mjs");
+  const { createImageServer, readSchemes } = await import("./server.mjs");
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const initialized = await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "默认空间" })
+  });
+  if (!initialized.ok) throw new Error(`default space initialization failed: ${initialized.status}`);
+  schemeId = (await readSchemes()).find((item) => item.name === scheme)?.schemeId;
 });
 
 afterAll(async () => {
@@ -171,9 +179,26 @@ async function fetchText(path) {
 }
 
 describe(`${eFilePath} GBK 与库模板装配`, () => {
+  test("schemeId 可替代 schemePath 导出模型", async () => {
+    const res = await fetch(
+      `${baseUrl}${eFilePath}?format=e-file&schemeId=${schemeId}&name=${encodeURIComponent(modelName)}`
+    );
+    expect(res.status).toBe(200);
+    expect(iconv.decode(Buffer.from(await res.arrayBuffer()), "gbk")).toContain(modelName);
+  }, 30000);
+
+  test("schemePath 与 schemeId 冲突时返回 400", async () => {
+    const otherPath = encodeSchemePath(["另一个方案"]);
+    const res = await fetch(
+      `${baseUrl}${eFilePath}?format=e-file&schemePath=${otherPath}&schemeId=${schemeId}&name=${encodeURIComponent(modelName)}`
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("bad-request");
+  });
+
   test("默认 GBK 字节经 iconv 解码含中文模型名", async () => {
     const res = await fetch(
-      `${baseUrl}${eFilePath}?schemePath=${schemePath}&name=${encodeURIComponent(modelName)}`
+      `${baseUrl}${eFilePath}?format=e-file&schemePath=${schemePath}&name=${encodeURIComponent(modelName)}`
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("charset=gbk");
@@ -184,7 +209,7 @@ describe(`${eFilePath} GBK 与库模板装配`, () => {
 
   test("无模板：端点输出逐字等于共享装配（生效库）输出，且含覆盖列", async () => {
     const text = await fetchText(
-      `${eFilePath}?schemePath=${schemePath}&name=${encodeURIComponent(modelName)}`
+      `${eFilePath}?format=e-file&schemePath=${schemePath}&name=${encodeURIComponent(modelName)}`
     );
     const { text: expected } = await sharedAssemblyText();
     expect(text).toBe(expected);
@@ -194,7 +219,7 @@ describe(`${eFilePath} GBK 与库模板装配`, () => {
 
   test("预定义模板：内置类段（node/line/load）不丢失", async () => {
     const text = await fetchText(
-      `${eFilePath}?schemePath=${schemePath}&name=${encodeURIComponent(modelName)}&template=${encodeURIComponent("国网E格式")}`
+      `${eFilePath}?format=e-file&schemePath=${schemePath}&name=${encodeURIComponent(modelName)}&template=${encodeURIComponent("国网E格式")}`
     );
     // 模板推导需在内置类（ACNode/ACRealBs/ACGenerator/…）上匹配：库模板只有自定义时 matched=[]，
     // 这些设备段会整段消失（只剩 basevalue 等公共段）
@@ -208,7 +233,7 @@ describe(`${eFilePath} GBK 与库模板装配`, () => {
 describe(`${eFilePath} 未导出设备告警侧信道`, () => {
   test("有未导出设备时响应头带回明细（百分比编码 JSON）", async () => {
     const res = await fetch(
-      `${baseUrl}${eFilePath}?schemePath=${schemePath}&name=${encodeURIComponent("告警模型")}`
+      `${baseUrl}${eFilePath}?format=e-file&schemePath=${schemePath}&name=${encodeURIComponent("告警模型")}`
     );
     expect(res.status).toBe(200);
     const raw = res.headers.get("x-e-file-warnings");
@@ -221,7 +246,7 @@ describe(`${eFilePath} 未导出设备告警侧信道`, () => {
 
   test("无未导出设备时不发该头", async () => {
     const res = await fetch(
-      `${baseUrl}${eFilePath}?schemePath=${schemePath}&name=${encodeURIComponent(modelName)}`
+      `${baseUrl}${eFilePath}?format=e-file&schemePath=${schemePath}&name=${encodeURIComponent(modelName)}`
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("x-e-file-warnings")).toBeNull();
@@ -229,7 +254,7 @@ describe(`${eFilePath} 未导出设备告警侧信道`, () => {
 
   test("长中文名 30 条：头编码长度封顶、total 真实、可解析", async () => {
     const res = await fetch(
-      `${baseUrl}${eFilePath}?schemePath=${schemePath}&name=${encodeURIComponent("长名告警模型")}`
+      `${baseUrl}${eFilePath}?format=e-file&schemePath=${schemePath}&name=${encodeURIComponent("长名告警模型")}`
     );
     expect(res.status).toBe(200);
     const raw = res.headers.get("x-e-file-warnings");
@@ -246,7 +271,7 @@ describe(`${eFilePath} 未导出设备告警侧信道`, () => {
 
   test("单条即超上限：只回总数（不带 items），长度远小于上限", async () => {
     const res = await fetch(
-      `${baseUrl}${eFilePath}?schemePath=${schemePath}&name=${encodeURIComponent("超长名告警模型")}`
+      `${baseUrl}${eFilePath}?format=e-file&schemePath=${schemePath}&name=${encodeURIComponent("超长名告警模型")}`
     );
     expect(res.status).toBe(200);
     const raw = res.headers.get("x-e-file-warnings");

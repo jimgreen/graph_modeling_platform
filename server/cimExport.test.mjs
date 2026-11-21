@@ -1,4 +1,4 @@
-// /webgrp/v1/schemes/model/cim-xml 适配层测试：
+// /webgrp/v1/schemes/model/export?format=cim-xml 适配层测试：
 // 1) 单元：直载 src/cim/cim-export.ts（Node 原生 TS）验证 buildCimXml 纯函数；
 // 2) 集成：GRAPH_MODEL_DATA_DIR 指向 tmpdir 种子数据 → 起真实 server（端口 0）→ 400/404/200/strict 全链路。
 import { describe, expect, test, beforeAll, afterAll, vi } from "vitest";
@@ -11,7 +11,7 @@ import { encodeSchemePath } from "./schemePath.mjs";
 
 installDomShim();
 
-const cimXmlPath = apiPath("/v1/schemes/model/cim-xml");
+const cimXmlPath = apiPath("/v1/schemes/model/export");
 
 // 故障注入：只让「崩溃模型.json」这一个文件的 readFile 抛 EACCES。
 //
@@ -200,6 +200,14 @@ beforeAll(async () => {
   ({ createImageServer } = await import("./server.mjs"));
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const initializeResponse = await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "默认空间" })
+  });
+  if (!initializeResponse.ok) {
+    throw new Error(`测试默认空间初始化失败：HTTP ${initializeResponse.status}`);
+  }
 });
 
 afterAll(async () => {
@@ -214,20 +222,20 @@ const schemePath = encodeSchemePath(["测试方案"]);
 
 describe(`${cimXmlPath} 参数校验与错误路径`, () => {
   test("缺 schemePath → 400 bad-request", async () => {
-    const res = await fetch(`${baseUrl}${cimXmlPath}?name=${encodeURIComponent("完整模型")}`);
+    const res = await fetch(`${baseUrl}${cimXmlPath}?format=cim-xml&name=${encodeURIComponent("完整模型")}`);
     expect(res.status).toBe(400);
     expect((await res.json()).error.code).toBe("bad-request");
   });
 
   test("缺 name → 400 bad-request", async () => {
-    const res = await fetch(`${baseUrl}${cimXmlPath}?schemePath=${schemePath}`);
+    const res = await fetch(`${baseUrl}${cimXmlPath}?format=cim-xml&schemePath=${schemePath}`);
     expect(res.status).toBe(400);
     expect((await res.json()).error.code).toBe("bad-request");
   });
 
   test("模型不存在 → 404 not-found", async () => {
     const res = await fetch(
-      `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent("不存在的模型")}`
+      `${baseUrl}${cimXmlPath}?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent("不存在的模型")}`
     );
     expect(res.status).toBe(404);
     expect((await res.json()).error.code).toBe("not-found");
@@ -235,7 +243,7 @@ describe(`${cimXmlPath} 参数校验与错误路径`, () => {
 
   test("只有 static-* 节点 → 400 无可导出的电力设备", async () => {
     const res = await fetch(
-      `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent("纯静态模型")}`
+      `${baseUrl}${cimXmlPath}?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent("纯静态模型")}`
     );
     expect(res.status).toBe(400);
     expect((await res.json()).error.message).toContain("电力设备");
@@ -245,7 +253,7 @@ describe(`${cimXmlPath} 参数校验与错误路径`, () => {
 describe(`${cimXmlPath} 正路径与 strict 语义`, () => {
   test("完整模型导出 XML（attachment + 模型名.xml 文件名）", async () => {
     const res = await fetch(
-      `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent("完整模型")}`
+      `${baseUrl}${cimXmlPath}?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent("完整模型")}`
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/xml");
@@ -260,7 +268,7 @@ describe(`${cimXmlPath} 正路径与 strict 语义`, () => {
 
   test("modelId 覆盖默认 idx → 输出 SUB_<modelId>", async () => {
     const res = await fetch(
-      `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent("完整模型")}&modelId=my-model-1`
+      `${baseUrl}${cimXmlPath}?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent("完整模型")}&modelId=my-model-1`
     );
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -269,7 +277,7 @@ describe(`${cimXmlPath} 正路径与 strict 语义`, () => {
 
   test("strict=1 且参数齐全 → 200", async () => {
     const res = await fetch(
-      `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent("完整模型")}&strict=1`
+      `${baseUrl}${cimXmlPath}?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent("完整模型")}&strict=1`
     );
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("<cim:");
@@ -277,7 +285,7 @@ describe(`${cimXmlPath} 正路径与 strict 语义`, () => {
 
   test("strict=1 且缺关键参数 → 400 关键参数缺失", async () => {
     const res = await fetch(
-      `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent("缺参数模型")}&strict=1`
+      `${baseUrl}${cimXmlPath}?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent("缺参数模型")}&strict=1`
     );
     expect(res.status).toBe(400);
     const body = await res.json();
@@ -287,7 +295,7 @@ describe(`${cimXmlPath} 正路径与 strict 语义`, () => {
 
   test("缺参数模型非 strict → 默认导出 200", async () => {
     const res = await fetch(
-      `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent("缺参数模型")}`
+      `${baseUrl}${cimXmlPath}?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent("缺参数模型")}`
     );
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("<cim:");
@@ -305,7 +313,7 @@ describe(`${cimXmlPath} 正路径与 strict 语义`, () => {
 describe(`${cimXmlPath} modelId 解析链`, () => {
   const fetchXml = async (name, extra = "") => {
     const res = await fetch(
-      `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent(name)}${extra}`
+      `${baseUrl}${cimXmlPath}?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent(name)}${extra}`
     );
     expect(res.status).toBe(200);
     return res.text();
@@ -397,7 +405,7 @@ describe(`${cimXmlPath} modelId 解析链`, () => {
 describe(`${cimXmlPath} 200 响应头`, () => {
   const fetchHeaders = async (name, init) => {
     const res = await fetch(
-      `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent(name)}`,
+      `${baseUrl}${cimXmlPath}?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent(name)}`,
       init
     );
     expect(res.status).toBe(200);
@@ -479,7 +487,7 @@ describe(`${cimXmlPath} 200 响应头`, () => {
 describe(`${cimXmlPath} 导出抛错的 500 分支`, () => {
   test("注入读盘失败 → 500 且走 internal 信封（不是 200 也不是 404）", async () => {
     const res = await fetch(
-      `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent(UNREADABLE_MODEL)}`
+      `${baseUrl}${cimXmlPath}?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent(UNREADABLE_MODEL)}`
     );
     expect(res.status).toBe(500);
     const body = await res.json();
@@ -494,7 +502,7 @@ describe(`${cimXmlPath} 导出抛错的 500 分支`, () => {
 
   test("500 响应换成 v1 信封头：JSON + no-store，且不带附件下载头", async () => {
     const res = await fetch(
-      `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent(UNREADABLE_MODEL)}`
+      `${baseUrl}${cimXmlPath}?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent(UNREADABLE_MODEL)}`
     );
     expect(res.status).toBe(500);
     // 走的是 v1Response 的 v1NoStoreJsonHeaders，不是 handler 里那条附件头 ——
@@ -529,7 +537,7 @@ describe(`${cimXmlPath} 真实读盘路径的 modelId 兜底与量测透传`, ()
 
   test("模型带 measurements.groups ⇒ 量测进入 XML（`?.` 的非短路臂）", async () => {
     const res = await fetch(
-      `${baseUrl}${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent("含量测模型")}`
+      `${baseUrl}${cimXmlPath}?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent("含量测模型")}`
     );
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -686,7 +694,7 @@ describe(`${cimXmlPath} 畸形 record 的防御分支`, () => {
     });
     const response = stubResponse();
     const url = new URL(
-      `http://127.0.0.1${cimXmlPath}?schemePath=${schemePath}&name=${encodeURIComponent("完整模型")}`
+      `http://127.0.0.1${cimXmlPath}?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent("完整模型")}`
     );
     await handleV1ModelCimXml({ url, response, paths: undefined });
     expect(response.sent.status).toBe(500);

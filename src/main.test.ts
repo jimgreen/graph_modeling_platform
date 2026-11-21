@@ -27,6 +27,7 @@ const unmountMock = vi.hoisted(() => vi.fn());
 const runStartupGateMock = vi.hoisted(() => vi.fn());
 const configProviderStub = vi.hoisted(() => vi.fn());
 const appStub = vi.hoisted(() => vi.fn());
+const appStartupRootStub = vi.hoisted(() => vi.fn());
 const bootstrapStub = vi.hoisted(() => vi.fn());
 const mountStub = vi.hoisted(() => vi.fn());
 const unmountLifecycleStub = vi.hoisted(() => vi.fn());
@@ -37,6 +38,7 @@ vi.mock("react-dom/client", () => ({ createRoot: createRootMock }));
 vi.mock("antd", () => ({ ConfigProvider: configProviderStub }));
 vi.mock("./appStartup", () => ({ runStartupGate: runStartupGateMock }));
 vi.mock("./App", () => ({ App: appStub }));
+vi.mock("./AppStartupRoot", () => ({ AppStartupRoot: appStartupRootStub }));
 // main.tsx 只对 globalMessage 做副作用导入（挂 window 弹窗）。替成空模块，
 // 免得真弹窗函数被写上替身 window（虽然替身是独立对象，这里是第二重保险）。
 vi.mock("./globalMessage", () => ({}));
@@ -104,7 +106,7 @@ async function loadEntry(): Promise<MainModule> {
   renderMock.mockReset();
   unmountMock.mockReset();
   runStartupGateMock.mockReset();
-  runStartupGateMock.mockResolvedValue(undefined);
+  runStartupGateMock.mockResolvedValue(false);
   createRootMock.mockImplementation(() => ({
     render: renderMock,
     unmount: unmountMock
@@ -187,13 +189,14 @@ describe("入口在非 qiankun 下走完整渲染路径", () => {
     ]);
   });
 
-  test("ConfigProvider 的唯一子节点是 App 组件本身", async () => {
+  test("ConfigProvider 的唯一子节点是 AppStartupRoot，并透传启动空间初始化状态", async () => {
     armStandalone();
     await loadEntry();
     await flushAsyncWork();
 
     const element = renderMock.mock.calls[0][0] as any;
-    expect(element.props.children.type).toBe(appStub);
+    expect(element.props.children.type).toBe(appStartupRootStub);
+    expect(element.props.children.props.needsInitialSpace).toBe(false);
   });
 });
 

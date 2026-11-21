@@ -26,7 +26,6 @@ describe("createUpdateCanvasSize", () => {
       canvasBoundsRef: { current: { width: 800, height: 600 } },
       clampCanvasDimension: clamp,
       canvasBoundsChangeIsMeaningful: vi.fn(() => true),
-      requireEditMode: vi.fn(() => true),
       pushUndoSnapshot: vi.fn(),
       applyCanvasBounds: vi.fn(),
       nodes: [{ id: "n1" }],
@@ -54,15 +53,6 @@ describe("createUpdateCanvasSize", () => {
     scope.updateCanvasSize(NaN, NaN);
 
     expect(scope.applyCanvasBounds).toHaveBeenCalledWith({ width: 800, height: 600 });
-  });
-
-  test("只读模式下什么都不做", () => {
-    const scope = createScope({ requireEditMode: vi.fn(() => false) });
-
-    scope.updateCanvasSize(300, 300);
-
-    expect(scope.applyCanvasBounds).not.toHaveBeenCalled();
-    expect(scope.pushUndoSnapshot).not.toHaveBeenCalled();
   });
 
   test("尺寸没变化时整段短路", () => {

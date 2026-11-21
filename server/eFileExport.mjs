@@ -4,7 +4,7 @@ import { installDomShim } from "./domShim.mjs";
 installDomShim();
 
 import iconv from "iconv-lite";
-import { readDeviceLibraryConfig, readSchemeProjectRecord } from "./server.mjs";
+import { readDeviceLibraryConfig, readSchemeProjectRecord, resolveSchemePathForSelector } from "./server.mjs";
 import { readPredefinedTemplateBase64, PREDEFINED_E_DEVICE_TEMPLATES } from "./eFileTemplates.mjs";
 import { sendV1Error, sendV1PayloadTooLarge } from "./v1Response.mjs";
 import { accessControlOriginOnly } from "./cors.mjs";
@@ -100,8 +100,9 @@ async function buildEFileExportOptionsForPaths({ paths, templateText }) {
 
 // paths：多空间路径集合（spaceStore.spacePathsFor）。缺省时各被调函数回落 defaultPaths，
 // 保证「方案 ZIP 的 json 与 e/svg 同源」——调用方传了 paths，派生格式就必须读同一个根。
-export async function buildEFileForSavedModel({ parts, name, templateName, templateText, paths }) {
-  const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
+export async function buildEFileForSavedModel({ parts, schemeId, name, templateName, templateText, paths }) {
+  const resolvedParts = await resolveSchemePathForSelector({ schemePath: parts, schemeId, paths });
+  const record = await readSchemeProjectRecord({ schemePath: resolvedParts, name, paths });
   if (!record) {
     return { error: { code: "not-found", message: "模型不存在。" } };
   }
@@ -115,7 +116,7 @@ export async function buildEFileForSavedModel({ parts, name, templateName, templ
       return { error: { code: "bad-request", message: mismatch } };
     }
   }
-  const file = buildEFileExport(record.project, parts, prepared.options);
+  const file = buildEFileExport(record.project, resolvedParts, prepared.options);
   return { file };
 }
 
@@ -215,11 +216,13 @@ function sendEFile(response, { file, encoding }) {
   response.end(bytes);
 }
 
-// 解析并校验公共 query；返回 { parts, name, encoding, templateName } 或 { error }
+// 解析并校验公共 query；返回 { parts, schemeId, name, encoding, templateName } 或 { error }
 export function parseEFileQuery(url) {
-  const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
-  if (!requireSchemePath(parts)) {
-    return { error: { code: "bad-request", message: "缺少或非法 schemePath。" } };
+  const rawSchemePath = url.searchParams.get("schemePath");
+  const parts = parseSchemePathParam(rawSchemePath);
+  const schemeId = url.searchParams.get("schemeId");
+  if ((rawSchemePath !== null && !requireSchemePath(parts)) || (rawSchemePath === null && schemeId === null)) {
+    return { error: { code: "bad-request", message: "缺少或非法 schemePath，或 schemeId。" } };
   }
   const name = (url.searchParams.get("name") ?? "").trim();
   if (!name) {
@@ -241,10 +244,15 @@ export function parseEFileQuery(url) {
       }
     };
   }
-  return { parts, name, encoding, templateName };
+  return { parts, schemeId, name, encoding, templateName };
 }
 
-// GET /webgrp/v1/schemes/model/e-file
+function sendEFileError(response, error) {
+  const code = error?.code === "bad-request" || error?.code === "not-found" ? error.code : "internal";
+  sendV1Error(response, code, error instanceof Error ? error.message : "后端处理失败。");
+}
+
+// GET /webgrp/v1/schemes/model/export?format=e-file（schemePath 或 schemeId + name）
 // paths：多空间路径集合（spaceStore.spacePathsFor），缺省时被调函数回落 defaultPaths。
 export async function handleV1ModelEFile({ url, response, paths }) {
   const parsed = parseEFileQuery(url);
@@ -260,6 +268,7 @@ export async function handleV1ModelEFile({ url, response, paths }) {
     }
     const { file, error } = await buildEFileForSavedModel({
       parts: parsed.parts,
+      schemeId: parsed.schemeId,
       name: parsed.name,
       templateName: parsed.templateName,
       templateText,
@@ -271,11 +280,11 @@ export async function handleV1ModelEFile({ url, response, paths }) {
     }
     sendEFile(response, { file, encoding: parsed.encoding });
   } catch (error) {
-    sendV1Error(response, "internal", error instanceof Error ? error.message : "后端处理失败。");
+    sendEFileError(response, error);
   }
 }
 
-// POST /webgrp/v1/schemes/model/e-file —— body { templateText, templateName? }
+// POST /webgrp/v1/schemes/model/export?format=e-file —— body { templateText, templateName? }
 export async function handleV1ModelEFilePost({ request, response, url, paths }) {
   const parsed = parseEFileQuery(url);
   if (parsed.error) {
@@ -292,6 +301,7 @@ export async function handleV1ModelEFilePost({ request, response, url, paths }) 
     const bodyTemplateName = typeof body?.templateName === "string" ? body.templateName.trim() : "";
     const { file, error } = await buildEFileForSavedModel({
       parts: parsed.parts,
+      schemeId: parsed.schemeId,
       name: parsed.name,
       templateName: bodyTemplateName || parsed.templateName,
       templateText,
@@ -308,6 +318,6 @@ export async function handleV1ModelEFilePost({ request, response, url, paths }) 
       sendV1Error(response, "bad-request", "请求体不是合法 JSON。");
       return;
     }
-    sendV1Error(response, "internal", error instanceof Error ? error.message : "后端处理失败。");
+    sendEFileError(response, error);
   }
 }

@@ -6,6 +6,7 @@ import {
   autoAlignStoredRouteDrops,
   buildCanvasLayoutUnits,
   countAutoAlignRouteBends,
+  countAutoAlignRouteLength,
   countAutoAlignRouteCrossings,
   createAutoAlignQualityReport,
   createAutoAlignRouteQualityIndex
@@ -356,21 +357,24 @@ describe.skipIf(!projectAvailable)("auto-align line quality on a real project", 
     const current = () => index.routes().map((route) => route.points);
     expect(index.quality()).toEqual({
       bends: routes.reduce((sum, route) => sum + countAutoAlignRouteBends(route.points), 0),
-      crossings: countAutoAlignRouteCrossings(current())
+      crossings: countAutoAlignRouteCrossings(current()),
+      length: routes.reduce((sum, route) => sum + countAutoAlignRouteLength(route.points), 0)
     });
 
     index.replace({ edgeId: "b", points: [{ x: 150, y: -50 }, { x: 150, y: 50 }], path: "" });
     const replaced = current();
     expect(index.quality()).toEqual({
       bends: replaced.reduce((sum, points) => sum + countAutoAlignRouteBends(points), 0),
-      crossings: countAutoAlignRouteCrossings(replaced)
+      crossings: countAutoAlignRouteCrossings(replaced),
+      length: replaced.reduce((sum, points) => sum + countAutoAlignRouteLength(points), 0)
     });
 
     index.remove("a");
     const removed = current();
     expect(index.quality()).toEqual({
       bends: removed.reduce((sum, points) => sum + countAutoAlignRouteBends(points), 0),
-      crossings: countAutoAlignRouteCrossings(removed)
+      crossings: countAutoAlignRouteCrossings(removed),
+      length: removed.reduce((sum, points) => sum + countAutoAlignRouteLength(points), 0)
     });
   });
 });

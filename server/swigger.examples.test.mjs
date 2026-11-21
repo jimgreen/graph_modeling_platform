@@ -20,6 +20,7 @@ let wsClient;
 
 // 测试环境里 seed 模型的 idx（避开 repo 真实数据已占用的 1）
 const TEST_MODEL_ID = 900001;
+const TEST_SCHEME_ID = 987654321;
 
 // 只复制真实方案数据：data/schemes/trash 是历史归档（几十个目录、上百个文件），
 // 逐个用例复制它既拖慢 hook，又让 Windows 下的递归删除容易撞 ENOTEMPTY
@@ -129,7 +130,7 @@ function commandResponder(name, params) {
     case "control.scheme.create":
       return { ok: true, data: { id: "s-test", name: params.name || "新方案", path: [params.name || "新方案"] } };
     case "control.model.create":
-      return { ok: true, data: { id: "m-test", name: params.name || "新模型", schemeId: "s1" } };
+      return { ok: true, data: { id: "m-test", name: params.name || "新模型", schemeId: 1 } };
     case "control.devices.select":
       return { ok: true, data: { selectedIds: params.ids || [], validIds: params.ids || [], invalidIds: [] } };
     case "control.devices.group":
@@ -149,7 +150,7 @@ function commandResponder(name, params) {
     case "control.space.switch":
       return { ok: true, data: { scheduled: true, alreadyCurrent: false, spaceId: params.spaceId, spaceName: params.spaceId } };
     case "control.model.switch":
-      return { ok: true, data: { alreadyOpen: false, modelId: 1, name: params.name || "模型1", schemeId: "s1", schemePath: params.schemePath || [] } };
+      return { ok: true, data: { alreadyOpen: false, modelId: 1, name: params.name || "模型1", schemeId: 1, schemePath: params.schemePath || [] } };
     case "topology.check":
       return { ok: true, data: { target: "current", status: "success", errors: [], warnings: [], corrections: [], topologyIslandCount: 1, modified: false, saved: false } };
     default:
@@ -224,6 +225,7 @@ beforeEach(async () => {
   // 补种子：swagger 示例引用的「默认方案」+ 模型，确保只读示例不 404
   const seedDir = join(dataDir, "schemes", "files", "默认方案");
   await mkdir(seedDir, { recursive: true });
+  await writeFile(join(seedDir, "scheme.json"), JSON.stringify({ schemeId: TEST_SCHEME_ID }));
   // 「线路」seed 带 modelType=馈线：e-file 配网实时库模板示例需通过模板类型门控（E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES）
   const seedProject = (name, extra = {}) => writeFile(
     join(seedDir, `${name}.json`),
@@ -277,8 +279,11 @@ function expectFor(ep, ex) {
   if (p === apiPath("/v1/runtime/tabs")) return { status: 200, check: (r) => expect(r.json.data.tabs).toBeTruthy() };
   if (p === apiPath("/v1/runtime/tabs/{tab}")) return { status: 200, check: (r) => expect(r.json.data.tab).toBeTruthy() };
   if (p === apiPath("/v1/runtime/screenshot")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/png") };
-  if (p === apiPath("/v1/runtime/svg")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/svg") };
-  if (p === apiPath("/v1/runtime/e-file")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("text/plain") };
+  if (p === apiPath("/v1/runtime/export")) {
+    const format = ex.params?.q_format;
+    if (format === "svg") return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/svg") };
+    return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("text/plain") };
+  }
   // runtime.dom：两条示例分别打 outline 与 html 分支，断言 format 与结构字段
   if (p === apiPath("/v1/runtime/dom")) return { status: 200, check: (r) => {
     expect(r.json.ok).toBe(true);
@@ -320,6 +325,9 @@ function expectFor(ep, ex) {
     expect(r.json.spaces).toBeInstanceOf(Array);
     expect(typeof r.json.current).toBe("string");
   } };
+  if (p === apiPath("/platform/data-dir")) {
+    return { status: 409, check: (r) => expect(r.json.error.code).toBe("DATA_DIR_ENV_OVERRIDE") };
+  }
   if (p === apiPath("/spaces") && ep.method === "POST") return { status: 200, check: (r) => {
     expect(r.json.id).toBeTruthy();
     expect(r.json.pinned).toBe(false);
@@ -338,6 +346,9 @@ function expectFor(ep, ex) {
   }
   // 导出/导入**不**在派发层短路：示例不带空间标识 → 取 Cookie/回退首个空间（default），照常 200。
   if (p === apiPath("/spaces/export")) {
+    return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
+  }
+  if (p === apiPath("/v1/spaces/export-artifacts")) {
     return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
   }
   if (p === apiPath("/spaces/import")) {
@@ -415,10 +426,14 @@ function expectFor(ep, ex) {
   if (p === apiPath("/v1/schemes/hierarchy")) return { status: 200, check: (r) => expect(r.json.data.nodes).toBeInstanceOf(Array) };
   if (p === apiPath("/v1/schemes/models")) return { status: 200, check: (r) => expect(r.json.data.models).toBeInstanceOf(Array) };
   if (p === apiPath("/v1/schemes/export")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
-  if (p === apiPath("/v1/schemes/model/json")) return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
-  if (p === apiPath("/v1/schemes/model/svg")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/svg") };
-  if (p === apiPath("/v1/schemes/model/e-file")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("text/plain") };
-  if (p === apiPath("/v1/schemes/model/cim-xml")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/xml") };
+  if (p === apiPath("/v1/spaces/export-artifacts")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
+  if (p === apiPath("/v1/schemes/model/export")) {
+    const format = ex.params?.q_format;
+    if (format === "json") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+    if (format === "svg") return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/svg") };
+    if (format === "cim-xml") return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/xml") };
+    return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("text/plain") };
+  }
   if (p === apiPath("/v1/schemes/model/send")) return { status: 200, check: (r) => {
     expect(r.json.ok).toBe(true);
     // 目标即本服务接收端（示例 url 指向 /v1/receive），故转发结果状态为 200
@@ -442,8 +457,8 @@ function expectFor(ep, ex) {
     expect(typeof r.json.data.cleared).toBe("number");
   } };
 
-  // v1 拓扑操作：检查当前页面只读；修复示例指向不存在模型，确保没有文件副作用。
-  if (p === apiPath("/v1/topology/check")) {
+  // v1 拓扑操作：统一入口由 body.action 区分检查/修复。
+  if (p === apiPath("/v1/topology")) {
     if (ex.label.includes("不存在模型")) {
       return { status: 404, check: (r) => expect(r.json.error.code).toBe("not-found") };
     }
@@ -453,22 +468,28 @@ function expectFor(ep, ex) {
       expect(r.json.data.corrections).toBeInstanceOf(Array);
     } };
   }
-  if (p === apiPath("/v1/topology/repair")) {
-    return { status: 404, check: (r) => expect(r.json.error.code).toBe("not-found") };
-  }
 
   // v1 图元库域
-  if (p === apiPath("/v1/library")) return { status: 200, check: (r) => expect(r.json.data.categories).toBeInstanceOf(Array) };
-  if (p === apiPath("/v1/library/categories")) return { status: 200, check: (r) => expect(r.json.data.categories).toBeInstanceOf(Array) };
-  if (p === apiPath("/v1/library/devices")) return { status: 200, check: (r) => expect(r.json.data.eSections).toBeInstanceOf(Array) };
-  if (p === apiPath("/v1/library/measurements")) return { status: 200, check: (r) => expect(r.json.data.measurementTypes).toBeInstanceOf(Array) };
-  if (p === apiPath("/v1/library/device-definitions")) return { status: 200, check: (r) => expect(r.json.data).toBeTruthy() };
-  if (p === apiPath("/v1/library/templates")) return { status: 200, check: (r) => expect(r.json.data).toBeTruthy() };
+  if (p === apiPath("/v1/library")) {
+    const part = ex.params?.q_part ?? "all";
+    return {
+      status: 200,
+      check: (r) => {
+        if (part === "categories") expect(r.json.data.categories).toBeInstanceOf(Array);
+        else if (part === "devices") expect(r.json.data.eSections).toBeInstanceOf(Array);
+        else if (part === "measurements") expect(r.json.data.measurementTypes).toBeInstanceOf(Array);
+        else expect(r.json.data).toBeTruthy();
+      }
+    };
+  }
 
   // v1 控制台域（经 WS 下发前端，测试 WS 客户端模拟回执）
   if (p === apiPath("/v1/control/device/add")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
   if (p === apiPath("/v1/control/scheme/create")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
-  if (p === apiPath("/v1/control/model/create")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/model/create")) return { status: 200, check: (r) => {
+    expect(r.json.ok).toBe(true);
+    expect(r.json.data.id).toBeTruthy();
+  } };
   if (p === apiPath("/v1/control/devices/select")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.selectedIds).toBeInstanceOf(Array); expect(r.json.data.validIds).toBeInstanceOf(Array); expect(r.json.data.invalidIds).toBeInstanceOf(Array); } };
   if (p === apiPath("/v1/control/devices/group")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.groupId).toBeTruthy(); } };
   if (p === apiPath("/v1/control/device/delete")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.deletedIds).toBeInstanceOf(Array); } };
@@ -478,7 +499,10 @@ function expectFor(ep, ex) {
   if (p === apiPath("/v1/control/e-device-definition/export")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.filename).toBeTruthy(); } };
   if (p === apiPath("/v1/control/e-device-definition/import")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.matched).toBeInstanceOf(Array); } };
   if (p === apiPath("/v1/control/space/switch")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.spaceId).toBe("default"); expect(r.json.data.scheduled).toBe(true); } };
-  if (p === apiPath("/v1/control/model/switch")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.modelId).toBe(1); } };
+  if (p === apiPath("/v1/control/model/switch")) return { status: 200, check: (r) => {
+    expect(r.json.ok).toBe(true);
+    expect(r.json.data.modelId).toBe(1);
+  } };
 
   throw new Error(`未定义期望: ${ep.method} ${p} (示例: ${label})`);
 }
@@ -492,7 +516,7 @@ describe("swigger 量测配置元数据", () => {
       endpoint.method === "PUT" && endpoint.path === apiPath("/measurement-config")
     ));
     const getV1Measurements = SWIGGER_ENDPOINTS.find((endpoint) => (
-      endpoint.method === "GET" && endpoint.path === apiPath("/v1/library/measurements")
+      endpoint.method === "GET" && endpoint.path === apiPath("/v1/library")
     ));
 
     expect(getConfig?.response).toContain("groupDefaults");
@@ -504,7 +528,7 @@ describe("swigger 量测配置元数据", () => {
         borderWidth: 0
       }
     });
-    expect(getV1Measurements?.response).toContain("groupDefaults");
+    expect(getV1Measurements?.response).toContain("part");
   });
 });
 

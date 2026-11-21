@@ -1,4 +1,4 @@
-// SVG 自包含导出纯模块（Node 可直载，供后端 /api/v1/runtime/svg 端点复用）。
+// SVG 自包含导出纯模块（Node 可直载，供后端 /webgrp/v1/runtime/export?format=svg 复用）。
 // 来源：src/appExtracted/appPersistenceLibraryExport.tsx（Task 13 整段剪切）。
 // 约束：不得 import 任何 .tsx 模块（闭包检查 tsx 0）。
 // 图片资源读取经 setSvgImageAssetsReader 注入（.tsx 侧注册真实实现），Node 侧默认空表。

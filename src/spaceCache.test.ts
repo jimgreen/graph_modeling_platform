@@ -277,7 +277,6 @@ describe("本机偏好与浏览器身份不被清", () => {
 
     expect(localStorage.getItem("runtimeWsClientId")).toBe("keep-me");
     expect(localStorage.getItem("power-system-left-panel-width")).toBe("keep-me");
-    expect(localStorage.getItem("graph-modeling-platform:interaction-mode")).toBe("keep-me");
     expect(KEPT_LOCAL_STORAGE_KEYS.map(({ key }) => localStorage.getItem(key))).toEqual(
       KEPT_LOCAL_STORAGE_KEYS.map(() => "keep-me")
     );

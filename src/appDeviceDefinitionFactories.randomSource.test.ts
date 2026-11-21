@@ -148,7 +148,6 @@ describe("createChooseImage：兜底 id 真的走了注入的随机源", () => {
       activeImageFolderId: "root",
       imageTarget: { kind: "stateIconDrawing" },
       refreshImageFolders: vi.fn(),
-      requireEditMode: () => true,
       saveImageAsset,
       setImageAssetList,
       setImageAssets,

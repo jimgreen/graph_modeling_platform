@@ -292,7 +292,6 @@ describe("batch common parameter updates", () => {
       setProjectMeasurements: vi.fn(),
       patchGraphNodes,
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       undoScopeForGraphPatch: vi.fn(() => ({})),
       writeOperationLog: vi.fn()
     });
@@ -324,7 +323,6 @@ describe("batch common parameter updates", () => {
       setProjectMeasurements: vi.fn(),
       patchGraphNodes,
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       undoScopeForGraphPatch: vi.fn(() => ({})),
       writeOperationLog: vi.fn()
     });
@@ -364,7 +362,6 @@ describe("batch common parameter updates", () => {
       setProjectMeasurements: vi.fn(),
       patchGraphNodes,
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       undoScopeForGraphPatch: vi.fn(() => ({})),
       writeOperationLog: vi.fn()
     });
@@ -404,7 +401,6 @@ describe("batch common parameter updates", () => {
       setProjectMeasurements: vi.fn(),
       patchGraphNodes,
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       undoScopeForGraphPatch: vi.fn(() => ({})),
       writeOperationLog: vi.fn()
     });
@@ -470,7 +466,6 @@ describe("batch common parameter updates", () => {
       normalizeProjectMeasurements,
       patchGraphNodes: vi.fn(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       setProjectMeasurements: (updater: any) => {
         captured = updater({ version: 1, groups: [{ id: `measurement-${member.id}`, nodeId: member.id, items: [item] }] });
       },
@@ -503,7 +498,6 @@ describe("batch common parameter updates", () => {
       normalizeProjectMeasurements,
       patchGraphNodes: vi.fn(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       setProjectMeasurements: (updater: any) => {
         captured = updater({ version: 1, groups: [{ id: `measurement-${member.id}`, nodeId: member.id, items: [item] }] });
       },
@@ -567,7 +561,6 @@ describe("single device parameter updates", () => {
       patchGraphNodes,
       pushNodeOnlyUndoSnapshot: vi.fn(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       selectedNodeId: node.id,
       undoScopeForNodeFootprintPatch: vi.fn(() => ({}))
     };
@@ -593,7 +586,6 @@ describe("single device parameter updates", () => {
       patchGraphNodes,
       pushNodeOnlyUndoSnapshot: vi.fn(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       selectedNodeId: node.id,
       undoScopeForNodeFootprintPatch: vi.fn(() => ({}))
     });
@@ -616,7 +608,6 @@ describe("single device parameter updates", () => {
       patchGraphNodes,
       pushNodeOnlyUndoSnapshot: vi.fn(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       selectedNodeId: node.id,
       undoScopeForNodeFootprintPatch: vi.fn(() => ({}))
     });
@@ -638,7 +629,6 @@ describe("single device parameter updates", () => {
       patchGraphNodes,
       pushNodeOnlyUndoSnapshot: vi.fn(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       selectedNodeId: node.id,
       undoScopeForNodeFootprintPatch: vi.fn(() => ({}))
     });
@@ -670,7 +660,6 @@ describe("single device parameter updates", () => {
       patchGraphNodes,
       pushNodeOnlyUndoSnapshot: vi.fn(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       selectedNodeId: node.id,
       undoScopeForNodeFootprintPatch: vi.fn(() => ({}))
     });
@@ -703,7 +692,6 @@ describe("single device parameter updates", () => {
       patchGraphNodes,
       pushNodeOnlyUndoSnapshot: vi.fn(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       selectedNodeId: node.id,
       undoScopeForNodeFootprintPatch: vi.fn(() => ({}))
     });
@@ -740,7 +728,6 @@ describe("single device parameter updates", () => {
       patchGraphNodes,
       pushNodeOnlyUndoSnapshot: vi.fn(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       selectedNodeId: t.id,
       undoScopeForNodeFootprintPatch: vi.fn(() => ({})),
       nodes,
@@ -795,7 +782,6 @@ describe("single device parameter updates", () => {
       patchGraphNodes,
       pushNodeOnlyUndoSnapshot: vi.fn(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       selectedNodeId: t.id,
       undoScopeForNodeFootprintPatch: vi.fn(() => ({})),
       nodes,
@@ -932,7 +918,6 @@ describe("smart alignment during drawing", () => {
       dropGraphTemplate: vi.fn(),
       libraryPlacement,
       placeLibraryDeviceAtPoint,
-      requireEditMode: vi.fn(() => true),
       setLibraryPlacement: vi.fn()
     });
 
@@ -1006,7 +991,6 @@ describe("library device placement selection", () => {
       componentLibraryDisplayMode: "expanded",
       hideLibraryFlyout: vi.fn(),
       isRoutableLineDeviceKind: vi.fn(() => false),
-      requireEditMode: vi.fn(() => true),
       resetConnectPreviewState: vi.fn(),
       resetRoutableLinePreviewState: vi.fn(),
       setCanvasSelectionScope,
@@ -1053,7 +1037,6 @@ describe("library device placement selection", () => {
           hideLibraryFlyout: vi.fn(),
           isRoutableLineDeviceKind,
           modelType,
-          requireEditMode: vi.fn(() => true),
           resetConnectPreviewState: vi.fn(),
           resetRoutableLinePreviewState: vi.fn(),
           setCanvasSelectionScope: vi.fn(),
@@ -1095,7 +1078,6 @@ describe("library device placement selection", () => {
     const placeLibraryDeviceAtPoint = createPlaceLibraryDeviceAtPoint({
       modelType: "馈线",
       pushUndoSnapshot,
-      requireEditMode: vi.fn(() => true),
       setGraphArrays,
       writeOperationLog: vi.fn()
     });
@@ -1154,7 +1136,6 @@ describe("library device placement selection", () => {
       pushUndoSnapshot: vi.fn(),
       rebuildRoutableLineDeviceRouteUpdates,
       rejectAutoCanvasExpansionForContent: vi.fn(() => false),
-      requireEditMode: vi.fn(() => true),
       routeRoutableLineDevice: vi.fn((node) => node),
       setCanvasSelectionScope: vi.fn(),
       setDeviceIndexCounters: vi.fn(),
@@ -1234,7 +1215,6 @@ describe("single-use static drawing tools", () => {
       pushUndoSnapshot: vi.fn(),
       rebuildRoutableLineDeviceRouteUpdates: vi.fn(() => []),
       rejectAutoCanvasExpansionForContent: vi.fn(() => false),
-      requireEditMode: vi.fn(() => true),
       routeRoutableLineDevice: vi.fn((node) => node),
       setCanvasSelectionScope: vi.fn(),
       setDeviceIndexCounters: vi.fn(),
@@ -1279,7 +1259,6 @@ describe("single-use static drawing tools", () => {
       isStaticBoxLikeTemplate: vi.fn(() => false),
       nodes: [],
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       setCanvasSelectionScope: vi.fn(),
       setGraphArrays: vi.fn(),
       setMode,
@@ -1316,7 +1295,6 @@ describe("single-use static drawing tools", () => {
       isStaticBoxLikeTemplate: vi.fn(() => false),
       nodes: [],
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: vi.fn(() => true),
       setCanvasSelectionScope: vi.fn(),
       setGraphArrays: vi.fn(),
       setMode,
@@ -1438,7 +1416,6 @@ describe("容器归属入口的量测同步", () => {
       patchGraphNodes: vi.fn(),
       pushNodeOnlyUndoSnapshot: vi.fn(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: () => true,
       selectedNodeId: "c1",
       setProjectMeasurements: (updater: any) => { captured = updater({ version: 1, groups: [{ id: "measurement-m1", nodeId: "m1", items: [mirrorItem] }] }); },
       undoScopeForNodeFootprintPatch: () => ({})
@@ -1464,7 +1441,6 @@ describe("容器归属入口的量测同步", () => {
       patchGraphNodes: vi.fn(),
       pushNodeOnlyUndoSnapshot: vi.fn(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: () => true,
       selectedNodeId: "c1",
       setProjectMeasurements: (updater: any) => { captured = updater(measurementsWithMirror()); },
       undoScopeForNodeFootprintPatch: () => ({})
@@ -1536,7 +1512,6 @@ const runPanelGeometryWrite = (nodes: any[], targetId: string, patch: any) => {
     rebuildEdgeUpdatesAfterNodeGeometryChange: () => [],
     rebuildRoutableLineNodeUpdatesForChangedNodes: () => [],
     rejectAutoCanvasExpansionForContent: () => false,
-    requireEditMode: () => true,
     selectedNode: target,
     selectedNodeId: targetId,
     setGraphStore: (updater: any) => { committed = updater(store); },
@@ -1808,7 +1783,6 @@ describe("工具栏旋转/镜像的容器跟随", () => {
   }) => {
     const { store, units, nodeUpdates, onCommit } = args;
     return {
-      requireEditMode: () => true,
       selectedLayoutUnits: units,
       pushUndoSnapshot: vi.fn(),
       setSelectedEdgeId: vi.fn(),
@@ -1928,7 +1902,6 @@ describe("面板切容器 kind(dev_type 下拉)", () => {
       rebuildEdgeUpdatesAfterNodeGeometryChange: () => [],
       rebuildRoutableLineNodeUpdatesForChangedNodes: () => [],
       rejectAutoCanvasExpansionForContent: () => false,
-      requireEditMode: () => true,
       selectedNode: target,
       selectedNodeId: targetId,
       setGraphStore: () => {},

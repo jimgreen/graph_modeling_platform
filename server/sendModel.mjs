@@ -4,7 +4,7 @@ import { installDomShim } from "./domShim.mjs";
 
 installDomShim();
 
-import { findSchemeProjectRecordByIndex, readSchemeProjectRecord } from "./server.mjs";
+import { findSchemeProjectRecordByIndex, readSchemeProjectRecord, resolveSchemePathForSelector } from "./server.mjs";
 import { sendV1Error, sendV1JsonNoStore, sendV1PayloadTooLarge } from "./v1Response.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 import { buildEFileForSavedModel, readJsonBody } from "./eFileExport.mjs";
@@ -66,7 +66,7 @@ async function buildFileText({ kind, parts, name, templateName, paths }) {
     const { svg, error } = await renderSavedModelSvg({ parts, name, colorMode: "voltage", paths });
     return error ? { error } : { text: String(svg ?? "") };
   }
-  const { xml, error } = await buildCimForSavedModel({ parts, name, paths });
+  const { xml, error } = await buildCimForSavedModel({ parts, name, stableCreatedAt: true, paths });
   return error ? { error } : { text: String(xml ?? "") };
 }
 
@@ -137,8 +137,10 @@ async function resolveSendTarget(url, paths) {
     }
     return { parts: located.schemePath, name: located.name, modelId: index };
   }
-  const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
-  if (!requireSchemePath(parts)) {
+  const rawSchemePath = url.searchParams.get("schemePath");
+  const parts = parseSchemePathParam(rawSchemePath);
+  const schemeId = url.searchParams.get("schemeId");
+  if ((rawSchemePath !== null && !requireSchemePath(parts)) || (rawSchemePath === null && schemeId === null)) {
     return { error: { code: "bad-request", message: "缺少或非法 schemePath，或改用 modelId 指定模型。" } };
   }
   const name = (url.searchParams.get("name") ?? "").trim();
@@ -146,13 +148,25 @@ async function resolveSendTarget(url, paths) {
     return { error: { code: "bad-request", message: "缺少模型名称，或改用 modelId 指定模型。" } };
   }
   // 兼容路径顺带取一次 idx，让 model_id 表单字段对两种调用口径一致
-  const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
-  return { parts, name, modelId: Number(record?.project?.idx) || 0 };
+  let resolvedParts;
+  try {
+    resolvedParts = await resolveSchemePathForSelector({ schemePath: parts, schemeId, paths });
+  } catch (error) {
+    return {
+      error: {
+        code: error?.code ?? "internal",
+        message: error instanceof Error ? error.message : "方案定位失败。"
+      }
+    };
+  }
+  const record = await readSchemeProjectRecord({ schemePath: resolvedParts, name, paths });
+  return { parts: resolvedParts, name, modelId: Number(record?.project?.idx) || 0 };
 }
 
 // POST /webgrp/v1/schemes/model/send
 // query: modelId=<模型 idx>（推荐）
 //        或 schemePath=<encoded> + name=<模型名>（兼容旧调用）
+//        或 schemeId=<number> + name=<模型名>
 // body:  { url, files: [{ kind: "e"|"json"|"svg"|"cim", encoding: "utf-8"|"gbk" }], templateName? }
 //        templateName 可选，取值见 PREDEFINED_E_DEVICE_TEMPLATES，仅作用于 E 文件
 export async function handleV1ModelSend({ request, response, url, paths }) {

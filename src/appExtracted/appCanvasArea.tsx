@@ -209,7 +209,7 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
   const stateKeys = [
     'panning', 'multiNodeDragging', 'singleNodeDragging', 'connectSource',
     'staticDrawing', 'libraryPlacement', 'contextMarqueeSelection', 'activeDropReady',
-    'isEditMode', 'isBrowseMode', 'rewiring', 'routableLinePlacement',
+    'isEditMode', 'rewiring', 'routableLinePlacement',
     'routableLineEndpointDrag', 'transformDrag', 'nodeLabelDrag', 'nodeLabelRotateDrag',
     'manualPathDrag', 'terminalPress', 'hasCanvasSelectionModifier', 'isRepeatedEdgePointerClick'
   ];
@@ -355,7 +355,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     canvasBackgroundColor, canvasBackgroundImageUrl, canvasBackgroundImageFit,
     connectSource, terminalPress, staticDrawing, libraryPlacement, contextMarqueeSelection,
     activeDropReady, panning, multiNodeDragging, singleNodeDragging,
-    isEditMode, isBrowseMode, isReadonlyCanvasMode, mode, themeMode,
+    isEditMode, mode, themeMode,
     // 画布配色：由 App 按 themeMode 解析好的整套画布 token（网格/边框/提示线/选中框/文本/端子等）
     canvasThemeColors,
     nodeLabelDrag, nodeLabelRotateDrag, manualPathDrag, transformDrag,
@@ -856,7 +856,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             event.stopPropagation();
             return;
         }
-        const routeHit = isReadonlyCanvasMode ? null : findConnectionRouteHitAtPoint(pointer);
+        const routeHit = findConnectionRouteHitAtPoint(pointer);
         if (hasCanvasSelectionModifier(event)) {
             startModifierSelectionPress(event, routeHit ? { kind: "edge", edgeId: routeHit.edgeId } : undefined);
             return;
@@ -935,10 +935,6 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             setConnectSource(null);
             resetConnectPreviewState();
             setMode("select");
-            return;
-        }
-        if (isReadonlyCanvasMode) {
-            setContextMenu(null);
             return;
         }
         const routeHit = findConnectionRouteHitAtPoint(pointer);
@@ -1284,7 +1280,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         const scaleHandleConfigsForNode = isLineSegmentBusNode(node) || nodeKindAllowsResizeTransform(node.kind)
             ? SCALE_HANDLE_CONFIGS
             : SCALE_HANDLE_CONFIGS.filter((handle: ScaleHandleConfig) => handle.kind === "scale-both");
-        const staticButtonEnabled = isBrowseMode && isStaticButtonEnabledForNode(node);
+        const staticButtonEnabled = isStaticButtonEnabledForNode(node);
         const staticButtonState = staticButtonVisual?.nodeId === node.id ? staticButtonVisual.state : "";
         const staticButtonCornerRadius = Math.max(0, Number(node.params.cornerRadius || 8));
         const showStaticSelectionFrame = nodeIsStatic && selected && !uprightStaticSelectionOutline;
@@ -1504,7 +1500,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             return ghostMeasurementMarkup ? (<g key={`drag-origin-measurements-${nodeId}`} dangerouslySetInnerHTML={{ __html: ghostMeasurementMarkup }}/>) : null;
         })}
               </g>)}
-            {deviceMeasurementsVisible && visibleMeasurementGroups.length > 0 && (<g key="measurement-layer" className="measurement-layer" pointerEvents={isBrowseMode ? "none" : "auto"}>
+            {deviceMeasurementsVisible && visibleMeasurementGroups.length > 0 && (<g key="measurement-layer" className="measurement-layer" pointerEvents="auto">
                 {visibleMeasurementGroups.map(renderMeasurementGroup)}
               </g>)}
             {renderSingleTransformRotateOriginGhost()}

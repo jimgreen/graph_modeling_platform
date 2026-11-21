@@ -38,43 +38,6 @@ describe("graph modeling platform - functional tests", () => {
     });
   });
 
-  describe("interaction modes", () => {
-    test("toggle between browse and edit modes", async () => {
-      // 功能验证：浏览/编辑模式切换
-      const modes = ["browse", "edit"] as const;
-      type InteractionMode = typeof modes[number];
-
-      const normalizeMode = (value: unknown): InteractionMode => {
-        if (modes.includes(value as InteractionMode)) {
-          return value as InteractionMode;
-        }
-        return "edit";
-      };
-
-      expect(normalizeMode("browse")).toBe("browse");
-      expect(normalizeMode("edit")).toBe("edit");
-      expect(normalizeMode("invalid")).toBe("edit");
-      expect(normalizeMode(null)).toBe("edit");
-    });
-
-    test("browse mode restricts edit operations", () => {
-      // 功能验证：浏览模式下禁止编辑操作
-      const isEditMode = (mode: string) => mode === "edit";
-      const requireEditMode = (action: string, mode: string) => {
-        if (!isEditMode(mode)) {
-          return { allowed: false, reason: `浏览模式下不能${action}` };
-        }
-        return { allowed: true };
-      };
-
-      expect(requireEditMode("拖拽图元", "browse")).toEqual({
-        allowed: false,
-        reason: "浏览模式下不能拖拽图元"
-      });
-      expect(requireEditMode("拖拽图元", "edit")).toEqual({ allowed: true });
-    });
-  });
-
   describe("connection routing", () => {
     test("validates connection routes before commit", () => {
       // 功能验证：连接路由验证

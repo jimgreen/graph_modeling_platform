@@ -3,7 +3,7 @@
 // ② 顶层与嵌套层走的是同一个递归函数 —— 只测顶层会漏掉深层。
 import { describe, expect, test, vi } from "vitest";
 
-import { normalizeSchemesForBackend } from "./appExtracted/appPersistenceLibraryExport";
+import { normalizeSchemesForBackend, serializeSchemesForStorage } from "./appExtracted/appPersistenceLibraryExport";
 
 const project = (name: string, project: any = { nodes: [], edges: [] }) => ({ name, project }) as any;
 const scheme = (name: string, projects: any[], children?: any) => ({ id: `id-${name}`, name, projects, children }) as any;
@@ -50,5 +50,18 @@ describe("normalizeSchemesForBackend", () => {
     const result = normalizeSchemesForBackend([scheme("顶层", [project("母线-1")])]);
 
     expect(result[0].projects[0].name).toBe("母线-1");
+  });
+
+  test("方案编号在归一化和持久化序列化后保留", () => {
+    const schemes = [{
+      ...scheme("顶层", [], [scheme("子方案", [])]),
+      schemeId: 41,
+      children: [{ ...scheme("子方案", []), schemeId: 42 }]
+    }];
+
+    expect(normalizeSchemesForBackend(schemes)[0].schemeId).toBe(41);
+    const stored = JSON.parse(serializeSchemesForStorage(schemes));
+    expect(stored[0].schemeId).toBe(41);
+    expect(stored[0].children[0].schemeId).toBe(42);
   });
 });

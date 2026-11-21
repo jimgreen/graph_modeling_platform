@@ -11,7 +11,6 @@ import { normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
 import { backendExportSchemePath } from "../backendExportPath";
 import { backendErrorMessage } from "./appCoreCanvasUtilities";
-import { triggerModeToggleHint } from "./appModeToggleHint";
 // 别名导入：作用域里同名的 safeFilePart 会遮蔽模块级绑定，fallback 分支需要它
 import { safeFilePart as sharedSafeFilePart } from "./appInlineUtilityFunctions";
 import { decodeGbk } from "../encoding/gbk";
@@ -1644,13 +1643,9 @@ export function createStartManualSegmentDrag(__appScope: Record<string, any>) {
     orientation: "horizontal" | "vertical",
     routePoints: Point[]
   ) => {
-  const { activeLayerEdgeIdSet, captureCanvasPointer, clampPointToCanvas, edgePointerBendInsertRef, hasCanvasSelectionModifier, insertManualBendAtPoint, isBrowseMode, routeManualPoints, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
+  const { activeLayerEdgeIdSet, captureCanvasPointer, clampPointToCanvas, edgePointerBendInsertRef, hasCanvasSelectionModifier, insertManualBendAtPoint, routeManualPoints, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || !activeLayerEdgeIdSet.has(edgeId)) {
-      return;
-    }
-    if (isBrowseMode) {
-      selectCanvasGraphics([], [edgeId]);
       return;
     }
     if (hasCanvasSelectionModifier(event)) {
@@ -1684,13 +1679,9 @@ export function createStartManualSegmentDrag(__appScope: Record<string, any>) {
 
 export function createStartManualPointDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGCircleElement>, edgeId: string, pointIndex: number, routePoints: Point[]) => {
-  const { activeLayerEdgeIdSet, captureCanvasPointer, clampPointToCanvas, edgePointerBendInsertRef, findBendInsertRouteSegmentIndex, hasCanvasSelectionModifier, insertManualBendAtPoint, isBrowseMode, routeManualPoints, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
+  const { activeLayerEdgeIdSet, captureCanvasPointer, clampPointToCanvas, edgePointerBendInsertRef, findBendInsertRouteSegmentIndex, hasCanvasSelectionModifier, insertManualBendAtPoint, routeManualPoints, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || !activeLayerEdgeIdSet.has(edgeId)) {
-      return;
-    }
-    if (isBrowseMode) {
-      selectCanvasGraphics([], [edgeId]);
       return;
     }
     if (hasCanvasSelectionModifier(event)) {
@@ -1807,10 +1798,7 @@ export function createFindConnectionRouteHitAtPoint(__appScope: Record<string, a
 
 export function createInsertManualBendAtPoint(__appScope: Record<string, any>) {
   return (edgeId: string, segmentIndex: number, routePoints: Point[], clickPoint: Point) => {
-  const { activeLayerEdgeIdSet, canvasBounds, insertOrthogonalRouteBend, pushUndoSnapshot, requireEditMode, routeManualPoints, setEdgeManualPoints } = __appScope;
-    if (!requireEditMode("添加连接线拐点")) {
-      return;
-    }
+  const { activeLayerEdgeIdSet, canvasBounds, insertOrthogonalRouteBend, pushUndoSnapshot, routeManualPoints, setEdgeManualPoints } = __appScope;
     if (!activeLayerEdgeIdSet.has(edgeId)) {
       return;
     }
@@ -1869,12 +1857,9 @@ export function createAddRoutableLineBendFromContextMenu(__appScope: Record<stri
 
 export function createInsertManualBendFromEdgePath(__appScope: Record<string, any>) {
   return (event: MouseEvent<SVGElement>, edgeId: string, routePoints: Point[]) => {
-  const { activateInspectorFromCanvas, activeLayerEdgeIdSet, clampPointToCanvas, edgePointerBendInsertRef, insertManualBendFromPointer, requireEditMode, screenToSvgPoint, selectCanvasGraphics, staticDrawing, svgRef } = __appScope;
+  const { activateInspectorFromCanvas, activeLayerEdgeIdSet, clampPointToCanvas, edgePointerBendInsertRef, insertManualBendFromPointer, screenToSvgPoint, selectCanvasGraphics, staticDrawing, svgRef } = __appScope;
     event.preventDefault();
     event.stopPropagation();
-    if (!requireEditMode("添加连接线拐点")) {
-      return;
-    }
     if (staticDrawing) {
       return;
     }
@@ -1903,7 +1888,7 @@ export function createInsertManualBendFromEdgePath(__appScope: Record<string, an
 
 export function createHandleEdgePathPointerDown(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGPathElement>, edgeId: string, routePoints: Point[]) => {
-  const { activateInspectorFromCanvas, activeLayerEdgeIdSet, appendStaticDrawingPoint, clampPointToCanvas, edgePointerBendInsertRef, hasCanvasSelectionModifier, insertManualBendFromPointer, isBrowseMode, isRepeatedEdgePointerClick, lastEdgePointerClickRef, screenToSvgPoint, selectCanvasGraphics, startModifierSelectionPress, staticDrawing, svgRef } = __appScope;
+  const { activateInspectorFromCanvas, activeLayerEdgeIdSet, appendStaticDrawingPoint, clampPointToCanvas, edgePointerBendInsertRef, hasCanvasSelectionModifier, insertManualBendFromPointer, isRepeatedEdgePointerClick, lastEdgePointerClickRef, screenToSvgPoint, selectCanvasGraphics, startModifierSelectionPress, staticDrawing, svgRef } = __appScope;
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current) {
       return;
@@ -1914,11 +1899,6 @@ export function createHandleEdgePathPointerDown(__appScope: Record<string, any>)
       return;
     }
     if (!activeLayerEdgeIdSet.has(edgeId)) {
-      return;
-    }
-    if (isBrowseMode) {
-      activateInspectorFromCanvas();
-      selectCanvasGraphics([], [edgeId]);
       return;
     }
     if (hasCanvasSelectionModifier(event)) {
@@ -1954,10 +1934,7 @@ export function createHandleEdgePathPointerDown(__appScope: Record<string, any>)
 
 export function createDeleteManualBendPoint(__appScope: Record<string, any>) {
   return (edgeId: string, routePointIndex: number, routePoints: Point[]) => {
-  const { activeLayerEdgeIdSet, pushUndoSnapshot, requireEditMode, routeManualPoints, setEdgeManualPoints } = __appScope;
-    if (!requireEditMode("删除连接线拐点")) {
-      return;
-    }
+  const { activeLayerEdgeIdSet, pushUndoSnapshot, routeManualPoints, setEdgeManualPoints } = __appScope;
     if (!activeLayerEdgeIdSet.has(edgeId)) {
       return;
     }
@@ -1972,10 +1949,7 @@ export function createDeleteManualBendPoint(__appScope: Record<string, any>) {
 
 export function createSetRoutableLineManualPathPoints(__appScope: Record<string, any>) {
   return (nodeId: string, routePoints: Point[]) => {
-  const { activeLayerNodeIdSet, canvasBounds, isRoutableLineDeviceKind, nodeById, patchGraphNodes, requireEditMode, setRoutableLineDeviceCanvasPoints } = __appScope;
-    if (!requireEditMode("修改可变线路路径")) {
-      return;
-    }
+  const { activeLayerNodeIdSet, canvasBounds, isRoutableLineDeviceKind, nodeById, patchGraphNodes, setRoutableLineDeviceCanvasPoints } = __appScope;
     const lineNode = nodeById.get(nodeId);
     if (!lineNode || !activeLayerNodeIdSet.has(nodeId) || !isRoutableLineDeviceKind(lineNode.kind)) {
       return;
@@ -1990,10 +1964,7 @@ export function createSetRoutableLineManualPathPoints(__appScope: Record<string,
 
 export function createInsertRoutableLineBendAtPoint(__appScope: Record<string, any>) {
   return (nodeId: string, segmentIndex: number, routePoints: Point[], clickPoint: Point) => {
-  const { activeLayerNodeIdSet, canvasBounds, insertRoutableLineDeviceBend, isRoutableLineDeviceKind, nodeById, patchGraphNodes, pushUndoSnapshot, requireEditMode, setRoutableLineDeviceCanvasPoints, writeOperationLog } = __appScope;
-    if (!requireEditMode("添加可变线路拐点")) {
-      return false;
-    }
+  const { activeLayerNodeIdSet, canvasBounds, insertRoutableLineDeviceBend, isRoutableLineDeviceKind, nodeById, patchGraphNodes, pushUndoSnapshot, setRoutableLineDeviceCanvasPoints, writeOperationLog } = __appScope;
     const lineNode = nodeById.get(nodeId);
     if (!lineNode || !activeLayerNodeIdSet.has(nodeId) || !isRoutableLineDeviceKind(lineNode.kind)) {
       return false;
@@ -2034,13 +2005,9 @@ export function createStartRoutableLineSegmentDrag(__appScope: Record<string, an
     orientation: "horizontal" | "vertical",
     routePoints: Point[]
   ) => {
-  const { activeLayerNodeIdSet, captureCanvasPointer, clampPointToCanvas, hasCanvasSelectionModifier, insertRoutableLineBendAtPoint, isBrowseMode, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
+  const { activeLayerNodeIdSet, captureCanvasPointer, clampPointToCanvas, hasCanvasSelectionModifier, insertRoutableLineBendAtPoint, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
-      return;
-    }
-    if (isBrowseMode) {
-      selectCanvasGraphics([node.id], [], { scope: "direct" });
       return;
     }
     if (hasCanvasSelectionModifier(event)) {
@@ -2068,13 +2035,9 @@ export function createStartRoutableLineSegmentDrag(__appScope: Record<string, an
 
 export function createStartRoutableLinePointDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGCircleElement>, node: ModelNode, pointIndex: number, routePoints: Point[]) => {
-  const { activeLayerNodeIdSet, captureCanvasPointer, clampPointToCanvas, hasCanvasSelectionModifier, insertRoutableLineBendFromPointer, isBrowseMode, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
+  const { activeLayerNodeIdSet, captureCanvasPointer, clampPointToCanvas, hasCanvasSelectionModifier, insertRoutableLineBendFromPointer, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
-      return;
-    }
-    if (isBrowseMode) {
-      selectCanvasGraphics([node.id], [], { scope: "direct" });
       return;
     }
     if (hasCanvasSelectionModifier(event)) {
@@ -2101,10 +2064,7 @@ export function createStartRoutableLinePointDrag(__appScope: Record<string, any>
 
 export function createDeleteRoutableLineBendPoint(__appScope: Record<string, any>) {
   return (nodeId: string, routePointIndex: number, routePoints: Point[]) => {
-  const { activeLayerNodeIdSet, pushUndoSnapshot, requireEditMode, setRoutableLineManualPathPoints } = __appScope;
-    if (!requireEditMode("删除可变线路拐点")) {
-      return;
-    }
+  const { activeLayerNodeIdSet, pushUndoSnapshot, setRoutableLineManualPathPoints } = __appScope;
     if (!activeLayerNodeIdSet.has(nodeId) || routePointIndex <= 0 || routePointIndex >= routePoints.length - 1) {
       return;
     }
@@ -2116,11 +2076,8 @@ export function createDeleteRoutableLineBendPoint(__appScope: Record<string, any
 
 export function createStartConnectFromTerminal(__appScope: Record<string, any>) {
   return (node: ModelNode, terminalId: string, point?: Point) => {
-  const { activeLayerNodeIdSet, applyConnectPreviewState, getModelEdgeEndpointPoint, requireEditMode, resetRoutableLinePreviewState, setCanvasSelectionScope, setConnectSource, setMode, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
+  const { activeLayerNodeIdSet, applyConnectPreviewState, getModelEdgeEndpointPoint, resetRoutableLinePreviewState, setCanvasSelectionScope, setConnectSource, setMode, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
     if (isLineOnlyConnectionNode(node)) {
-      return;
-    }
-    if (!requireEditMode("建立连接线")) {
       return;
     }
     if (!activeLayerNodeIdSet.has(node.id)) {
@@ -2175,7 +2132,7 @@ export function createHandleTerminalPointerDown(__appScope: Record<string, any>)
     node: ModelNode,
     terminalId: string
   ) => {
-  const { activeLayerNodeIdSet, appendStaticDrawingPoint, busAnchorFromEvent, busAnchorFromPoint, canConnectTerminals, canvasBounds, captureCanvasPointer, clampPointToCanvas, commitNewConnectionEdge, connectPreviewPointRef, connectSource, connectTargetTerminalType, connectionCommitFailureMessage, connectionEndpointRuleFailureMessage, edgeById, finishConnectToTarget, finishRoutableLineToTarget, getTerminalPoint, hasCanvasSelectionModifier, isBrowseMode, isBusNode, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodeById, nodes, patchGraphEdges, prepareConnectionEdgeForCommit, preserveConnectionEdgeRouteShape, previewStoredRoutePointsForEdge, pushUndoSnapshot, resetConnectPreviewState, resolveStraightBusSlideEndpointToPoint, rewiring, routableLinePlacement, routableLineTemplateTerminalType, routedEdges, routingNodesForConnectionEdge, screenToSvgPoint, setCanvasSelectionScope, setConnectSource, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setTerminalPress, startConnectFromTerminal, startModifierSelectionPress, startRoutableLineFromTerminal, staticDrawing, svgRef, visibleNodeById, writeOperationLog } = __appScope;
+  const { activeLayerNodeIdSet, appendStaticDrawingPoint, busAnchorFromEvent, busAnchorFromPoint, canConnectTerminals, canvasBounds, captureCanvasPointer, clampPointToCanvas, commitNewConnectionEdge, connectPreviewPointRef, connectSource, connectTargetTerminalType, connectionCommitFailureMessage, connectionEndpointRuleFailureMessage, edgeById, finishConnectToTarget, finishRoutableLineToTarget, getTerminalPoint, hasCanvasSelectionModifier, isBusNode, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodeById, nodes, patchGraphEdges, prepareConnectionEdgeForCommit, preserveConnectionEdgeRouteShape, previewStoredRoutePointsForEdge, pushUndoSnapshot, resetConnectPreviewState, resolveStraightBusSlideEndpointToPoint, rewiring, routableLinePlacement, routableLineTemplateTerminalType, routedEdges, routingNodesForConnectionEdge, screenToSvgPoint, setCanvasSelectionScope, setConnectSource, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setTerminalPress, startConnectFromTerminal, startModifierSelectionPress, startRoutableLineFromTerminal, staticDrawing, svgRef, visibleNodeById, writeOperationLog } = __appScope;
     event.stopPropagation();
     if (staticDrawing && event.button === 0 && svgRef.current) {
       const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
@@ -2183,16 +2140,6 @@ export function createHandleTerminalPointerDown(__appScope: Record<string, any>)
       return;
     }
     if (!activeLayerNodeIdSet.has(node.id)) {
-      return;
-    }
-    if (isBrowseMode) {
-      setCanvasSelectionScope("direct");
-      setSelectedNodeIds([node.id]);
-      setSelectedEdgeId("");
-      setSelectedEdgeIds([]);
-      setConnectSource(null);
-      resetConnectPreviewState();
-      setRewiring(null);
       return;
     }
     if (routableLinePlacement && event.button === 0 && svgRef.current) {
@@ -2646,13 +2593,13 @@ function eFileTemplateQueryName(__appScope: Record<string, any>): string {
   return Object.prototype.hasOwnProperty.call(E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES, name) ? name : "";
 }
 
-// E 文件生成已移至后端 /v1/schemes/model/e-file（单文件导出与目录导出共用本函数）。
+// E 文件生成已移至后端 /v1/schemes/model/export?format=e-file（单文件导出与目录导出共用本函数）。
 async function fetchBackendModelEFile(__appScope: Record<string, any>, textEncoding: TextFileEncoding, failureMessage: string) {
   const { projectName } = __appScope;
   const path = backendExportSchemePath(__appScope);
   const templateName = eFileTemplateQueryName(__appScope);
   const url = apiPath(
-    `/v1/schemes/model/e-file?${schemePathQueryParam("schemePath", path)}`
+    `/v1/schemes/model/export?format=e-file&${schemePathQueryParam("schemePath", path)}`
     + `&name=${encodeURIComponent(String(projectName ?? ""))}`
     + `&encoding=${encodeURIComponent(textEncoding)}`
     + (templateName ? `&template=${encodeURIComponent(templateName)}` : "")
@@ -2670,14 +2617,14 @@ async function fetchBackendModelEFile(__appScope: Record<string, any>, textEncod
   };
 }
 
-// SVG 生成已移至后端 /v1/schemes/model/svg；colorMode=voltage 保持前端导出原有按电压着色。
+// SVG 生成已移至后端 /v1/schemes/model/export?format=svg；colorMode=voltage 保持前端导出原有按电压着色。
 // 已知差异（后端渲染器舍去）：不含背景页图层；配色取自部署的 color-config.json（与前端本地导出同源）。
 // XML 声明由后端产出，前端不再前置，保证响应体与落盘文件逐字节一致。
 async function fetchBackendModelSvgText(__appScope: Record<string, any>, textEncoding: TextFileEncoding, failureMessage: string) {
   const { projectName } = __appScope;
   const path = backendExportSchemePath(__appScope);
   const url = apiPath(
-    `/v1/schemes/model/svg?${schemePathQueryParam("schemePath", path)}`
+    `/v1/schemes/model/export?format=svg&${schemePathQueryParam("schemePath", path)}`
     + `&name=${encodeURIComponent(String(projectName ?? ""))}`
     + `&colorMode=voltage`
     + `&encoding=${encodeURIComponent(textEncoding)}`
@@ -2691,13 +2638,13 @@ async function fetchBackendModelSvgText(__appScope: Record<string, any>, textEnc
   return textEncoding === "gbk" ? decodeGbk(bytes) : new TextDecoder("utf-8").decode(bytes);
 }
 
-// JSON 生成已移至后端 /v1/schemes/model/json：与 E/SVG/CIM 同口径（先保存再请求），
+// JSON 生成已移至后端 /v1/schemes/model/export?format=json：与 E/SVG/CIM 同口径（先保存再请求），
 // 输出为存档态压缩 JSON（不再本地序列化浏览器实时态）。
 async function fetchBackendModelJsonText(__appScope: Record<string, any>, failureMessage: string) {
   const { projectName } = __appScope;
   const path = backendExportSchemePath(__appScope);
   const url = apiPath(
-    `/v1/schemes/model/json?${schemePathQueryParam("schemePath", path)}`
+    `/v1/schemes/model/export?format=json&${schemePathQueryParam("schemePath", path)}`
     + `&name=${encodeURIComponent(String(projectName ?? ""))}`
   );
   const response = await fetch(url, { method: "GET" });
@@ -2729,7 +2676,7 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
     const baseFilename = safeFilePart(projectName);
     let svgTextPromise: Promise<string> | undefined;
     const loadSvgText = () => {
-      // SVG 生成已移至后端 /v1/schemes/model/svg（见 fetchBackendModelSvgText）
+      // SVG 生成已移至后端 /v1/schemes/model/export?format=svg（见 fetchBackendModelSvgText）
       svgTextPromise ??= Promise.resolve().then(() => fetchBackendModelSvgText(__appScope, textEncoding, "SVG 导出失败。"));
       return svgTextPromise;
     };
@@ -2871,7 +2818,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
       : sharedSafeFilePart(String(projectName ?? ""));
     // 后端经响应头带回落盘用告警（生成器单源）；保存完成后展示
     let warningDetails: string[] = [];
-    // E 文件生成已移至后端 /v1/schemes/model/e-file（预定义模板只读态随请求带模板名）。
+    // E 文件生成已移至后端 /v1/schemes/model/export?format=e-file（预定义模板只读态随请求带模板名）。
     const generatedFilePromise = Promise.resolve().then(async () => {
       const generated = await fetchBackendModelEFile(__appScope, textEncoding, "E 文件导出失败。");
       warningDetails = generated.warningDetails;
@@ -3237,10 +3184,7 @@ export function createExportCurrentModelFile(__appScope: Record<string, any>) {
 
 export function createOpenModelImportFilePicker(__appScope: Record<string, any>) {
   return (targetSchemeId = "") => {
-  const { modelImportInputRef, modelImportTargetSchemeIdRef, requireEditMode } = __appScope;
-    if (!requireEditMode("导入模型")) {
-      return;
-    }
+  const { modelImportInputRef, modelImportTargetSchemeIdRef } = __appScope;
     modelImportTargetSchemeIdRef.current = targetSchemeId;
     modelImportInputRef.current?.click();
   };
@@ -3248,10 +3192,7 @@ export function createOpenModelImportFilePicker(__appScope: Record<string, any>)
 
 export function createOpenSvgModelImportFilePicker(__appScope: Record<string, any>) {
   return (targetSchemeId = "") => {
-  const { modelImportTargetSchemeIdRef, requireEditMode, svgModelImportInputRef } = __appScope;
-    if (!requireEditMode("从 SVG 生成模型")) {
-      return;
-    }
+  const { modelImportTargetSchemeIdRef, svgModelImportInputRef } = __appScope;
     modelImportTargetSchemeIdRef.current = targetSchemeId;
     if (svgModelImportInputRef.current) {
       svgModelImportInputRef.current.value = "";
@@ -3295,10 +3236,7 @@ function svgModelImportCompletionFeedback(importedName: string, result: any) {
 
 export function createOpenSchemeImportFilePicker(__appScope: Record<string, any>) {
   return (parentSchemeId = "") => {
-  const { requireEditMode, schemeImportInputRef, schemeImportParentSchemeIdRef } = __appScope;
-    if (!requireEditMode("导入方案")) {
-      return;
-    }
+  const { schemeImportInputRef, schemeImportParentSchemeIdRef } = __appScope;
     schemeImportParentSchemeIdRef.current = parentSchemeId;
     if (schemeImportInputRef.current) {
       schemeImportInputRef.current.value = "";
@@ -3373,13 +3311,8 @@ export function createApplyBackendSchemeArchiveImport(__appScope: Record<string,
 
 export function createImportSchemeFile(__appScope: Record<string, any>) {
   return async (event: ChangeEvent<HTMLInputElement>) => {
-  const { applyBackendSchemeArchiveImport, commitImportedSchemeRecord, createImportedSchemeRecord, findSavedSchemeById, hasSameName, requireEditMode, schemeImportParentSchemeIdRef, schemePathForScheme, schemes, setPendingSchemeImportConflict, uploadBackendSchemeArchive } = __appScope;
+  const { applyBackendSchemeArchiveImport, commitImportedSchemeRecord, createImportedSchemeRecord, findSavedSchemeById, hasSameName, schemeImportParentSchemeIdRef, schemePathForScheme, schemes, setPendingSchemeImportConflict, uploadBackendSchemeArchive } = __appScope;
     const input = event.currentTarget;
-    if (!requireEditMode("导入方案")) {
-      schemeImportParentSchemeIdRef.current = "";
-      input.value = "";
-      return;
-    }
     const file = input.files?.[0];
     if (!file) {
       schemeImportParentSchemeIdRef.current = "";
@@ -3450,13 +3383,8 @@ export function createCommitImportedModelRecord(__appScope: Record<string, any>)
 
 export function createImportModelFile(__appScope: Record<string, any>) {
   return async (event: ChangeEvent<HTMLInputElement>) => {
-  const { activeSchemeRecord, commitImportedModelRecord, createSavedProject, createSavedScheme, deserializeProject, findSavedSchemeById, modelImportTargetSchemeIdRef, requireEditMode, schemes, selectedSchemeRecord, setPendingModelImportConflict } = __appScope;
+  const { activeSchemeRecord, commitImportedModelRecord, createSavedProject, createSavedScheme, deserializeProject, findSavedSchemeById, modelImportTargetSchemeIdRef, schemes, selectedSchemeRecord, setPendingModelImportConflict } = __appScope;
     const input = event.currentTarget;
-    if (!requireEditMode("导入模型")) {
-      modelImportTargetSchemeIdRef.current = "";
-      input.value = "";
-      return;
-    }
     const file = input.files?.[0];
     if (!file) {
       return;
@@ -3506,7 +3434,6 @@ export function createImportSvgModelFile(__appScope: Record<string, any>) {
     libraryTemplates,
     modelImportTargetSchemeIdRef,
     parseSvgModel,
-    requireEditMode,
     schemes,
     selectedSchemeRecord,
     setPendingModelImportConflict,
@@ -3514,11 +3441,6 @@ export function createImportSvgModelFile(__appScope: Record<string, any>) {
     yieldToBrowser
   } = __appScope;
     const input = event.currentTarget;
-    if (!requireEditMode("从 SVG 生成模型")) {
-      modelImportTargetSchemeIdRef.current = "";
-      input.value = "";
-      return;
-    }
     const file = input.files?.[0];
     if (!file) {
       modelImportTargetSchemeIdRef.current = "";
@@ -3599,10 +3521,7 @@ function dotModelImportCompletionFeedback(importedName: string, result: any) {
 
 export function createOpenDotModelImportFilePicker(__appScope: Record<string, any>) {
   return (targetSchemeId = "") => {
-  const { dotModelImportInputRef, modelImportTargetSchemeIdRef, requireEditMode } = __appScope;
-    if (!requireEditMode("从 dot 生成模型")) {
-      return;
-    }
+  const { dotModelImportInputRef, modelImportTargetSchemeIdRef } = __appScope;
     modelImportTargetSchemeIdRef.current = targetSchemeId;
     if (dotModelImportInputRef.current) {
       dotModelImportInputRef.current.value = "";
@@ -3628,11 +3547,6 @@ export function createImportDotModelFile(__appScope: Record<string, any>) {
     writeOperationLog
   } = __appScope;
     const input = event.currentTarget;
-    if (!requireEditMode("从 dot 生成模型")) {
-      modelImportTargetSchemeIdRef.current = "";
-      input.value = "";
-      return;
-    }
     const file = input.files?.[0];
     if (!file) {
       modelImportTargetSchemeIdRef.current = "";
@@ -3682,13 +3596,9 @@ export function createImportDotModelFile(__appScope: Record<string, any>) {
 
 export function createResolveDuplicateSchemeImport(__appScope: Record<string, any>) {
   return (action: "merge" | "rename" | "cancel") => {
-  const { applyBackendSchemeArchiveImport, commitImportedSchemeRecord, findSavedSchemeById, mergeImportedSchemeIntoExisting, pendingSchemeImportConflict, persistSchemeTreeToBackend, promptUniqueRecordName, replaceSavedSchemeById, requireEditMode, savedChildSchemeNames, schemePathForRecord, schemePathForScheme, schemes, selectSingleScheme, setExpandedSchemeIds, setPendingSchemeImportConflict, setSchemes, uniqueRecordName, uploadBackendSchemeArchive, writeOperationLog } = __appScope;
+  const { applyBackendSchemeArchiveImport, commitImportedSchemeRecord, findSavedSchemeById, mergeImportedSchemeIntoExisting, pendingSchemeImportConflict, persistSchemeTreeToBackend, promptUniqueRecordName, replaceSavedSchemeById, savedChildSchemeNames, schemePathForRecord, schemePathForScheme, schemes, selectSingleScheme, setExpandedSchemeIds, setPendingSchemeImportConflict, setSchemes, uniqueRecordName, uploadBackendSchemeArchive, writeOperationLog } = __appScope;
     const conflict = pendingSchemeImportConflict;
     if (!conflict || action === "cancel") {
-      setPendingSchemeImportConflict(null);
-      return;
-    }
-    if (!requireEditMode("处理方案导入冲突")) {
       setPendingSchemeImportConflict(null);
       return;
     }
@@ -3763,13 +3673,9 @@ export function createResolveDuplicateSchemeImport(__appScope: Record<string, an
 
 export function createResolveDuplicateModelImport(__appScope: Record<string, any>) {
   return (action: "overwrite" | "rename" | "cancel") => {
-  const { activeSchemeRecord, commitImportedModelRecord, completeImportedModelFeedback, createSavedProject, createSavedScheme, findSavedSchemeById, pendingModelImportConflict, promptUniqueRecordName, requireEditMode, schemes, selectedSchemeRecord, setPendingModelImportConflict, uniqueRecordName } = __appScope;
+  const { activeSchemeRecord, commitImportedModelRecord, completeImportedModelFeedback, createSavedProject, createSavedScheme, findSavedSchemeById, pendingModelImportConflict, promptUniqueRecordName, schemes, selectedSchemeRecord, setPendingModelImportConflict, uniqueRecordName } = __appScope;
     const conflict = pendingModelImportConflict;
     if (!conflict || action === "cancel") {
-      setPendingModelImportConflict(null);
-      return;
-    }
-    if (!requireEditMode("处理模型导入冲突")) {
       setPendingModelImportConflict(null);
       return;
     }
@@ -3819,7 +3725,7 @@ export function createExportSchemeRecord(__appScope: Record<string, any>) {
       let savedFile: SavedExportFile | null = null;
       const saved = await downloadBackendSchemeArchive(schemePath, `${safeFilePart(scheme.name)}.zip`, (file) => {
         savedFile = file;
-      });
+      }, scheme.schemeId);
       if (!saved) {
         return;
       }
@@ -3882,11 +3788,7 @@ export function imageLibraryFileMatchesImportKind(fileName: string, importKind: 
 
 export function createChooseImage(__appScope: Record<string, any>) {
   return (event: ChangeEvent<HTMLInputElement>) => {
-  const { activeImageFolderId, imageTarget, importBackendIconLibraryFile, randomSource: injectedRandomSource, refreshImageFolders, requireEditMode, saveImageAsset, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
-    if (!requireEditMode("上传图片")) {
-      event.target.value = "";
-      return;
-    }
+  const { activeImageFolderId, imageTarget, importBackendIconLibraryFile, randomSource: injectedRandomSource, refreshImageFolders, saveImageAsset, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
     // 兜底 id 会流进 localStorage 与节点 params（见 createImageUploadFallbackAssetId 的追踪注释），
     // 所以随机源做成可注入；App.tsx 不装配该键 ⇒ 仍走 Math.random，行为不变。
     const randomSource = typeof injectedRandomSource === "function" ? injectedRandomSource : Math.random;
@@ -3957,10 +3859,7 @@ export function createChooseImage(__appScope: Record<string, any>) {
 
 export function createApplyExistingImage(__appScope: Record<string, any>) {
   return async (assetId: string) => {
-  const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, imageAssetList, imageAssets, imageTarget, libraryTemplateByKind, pushUndoSnapshot, requireEditMode, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, setStateIconDrawingDialog, startLibraryDevicePlacement, stateIconDrawingHistoryRef, svgSourceFromDataUrl, updateGraphNodeById, writeOperationLog } = __appScope;
-    if (!requireEditMode("应用图片")) {
-      return;
-    }
+  const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, imageAssetList, imageAssets, imageTarget, libraryTemplateByKind, pushUndoSnapshot, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, setStateIconDrawingDialog, startLibraryDevicePlacement, stateIconDrawingHistoryRef, svgSourceFromDataUrl, updateGraphNodeById, writeOperationLog } = __appScope;
     const asset = imageAssetList.find((item: ImageAsset) => item.id === assetId);
     const imageData = imageAssets[assetId] ?? asset?.url;
     if (!imageTarget || !imageData) {
@@ -4086,10 +3985,7 @@ export function stateIconDrawingImportedSvgSelectionFrame(element: any) {
 
 export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any>) {
   return async (iconEntryId: string) => {
-  const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, iconLibraryPicker, imageTarget, libraryTemplateByKind, pushUndoSnapshot, requireEditMode, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, setStateIconDrawingDialog, startLibraryDevicePlacement, stateIconDrawingHistoryRef, updateGraphNodeById, writeOperationLog } = __appScope;
-    if (!requireEditMode("选择分类图标")) {
-      return;
-    }
+  const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, iconLibraryPicker, imageTarget, libraryTemplateByKind, pushUndoSnapshot, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, setStateIconDrawingDialog, startLibraryDevicePlacement, stateIconDrawingHistoryRef, updateGraphNodeById, writeOperationLog } = __appScope;
     if (!imageTarget) {
       return;
     }
@@ -4202,10 +4098,7 @@ export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any
 
 export function createClearSelectedImage(__appScope: Record<string, any>) {
   return () => {
-  const { imageTarget, pushUndoSnapshot, requireEditMode, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasBackgroundImageFit, setImageTarget, setStateIconDrawingDialog, updateGraphNodeById } = __appScope;
-    if (!requireEditMode("清除图片")) {
-      return;
-    }
+  const { imageTarget, pushUndoSnapshot, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasBackgroundImageFit, setImageTarget, setStateIconDrawingDialog, updateGraphNodeById } = __appScope;
     if (!imageTarget) {
       return;
     }
@@ -4265,10 +4158,7 @@ export function createClearSelectedImage(__appScope: Record<string, any>) {
 
 export function createClearSelectedImageForNode(__appScope: Record<string, any>) {
   return (nodeId: string, target: "background" | "foreground") => {
-  const { pushUndoSnapshot, requireEditMode, updateGraphNodeById } = __appScope;
-    if (!requireEditMode("清除图片")) {
-      return;
-    }
+  const { pushUndoSnapshot, updateGraphNodeById } = __appScope;
     pushUndoSnapshot();
     updateGraphNodeById(nodeId, (node) => ({
       ...node,
@@ -4282,10 +4172,7 @@ export function createClearSelectedImageForNode(__appScope: Record<string, any>)
 
 export function createCreateImageFolder(__appScope: Record<string, any>) {
   return async () => {
-  const { createBackendImageFolder, refreshImageFolders, requireEditMode, setActiveImageFolderId } = __appScope;
-    if (!requireEditMode("新建图片文件夹")) {
-      return;
-    }
+  const { createBackendImageFolder, refreshImageFolders, setActiveImageFolderId } = __appScope;
     const inputName = window.prompt("请输入图片文件夹名称", "新建文件夹");
     if (inputName === null) {
       return;
@@ -4307,10 +4194,7 @@ export function createCreateImageFolder(__appScope: Record<string, any>) {
 
 export function createRenameImageFolder(__appScope: Record<string, any>) {
   return async () => {
-  const { activeImageFolderId, imageFolders, refreshImageFolders, renameBackendImageFolder, requireEditMode } = __appScope;
-    if (!requireEditMode("重命名图片文件夹")) {
-      return;
-    }
+  const { activeImageFolderId, imageFolders, refreshImageFolders, renameBackendImageFolder } = __appScope;
     const folder = imageFolders.find((item) => item.id === activeImageFolderId);
     if (!folder || folder.id === "root") {
       showGlobalMessage("默认文件夹不能重命名。");
@@ -4336,10 +4220,7 @@ export function createRenameImageFolder(__appScope: Record<string, any>) {
 
 export function createDeleteImageFolder(__appScope: Record<string, any>) {
   return async () => {
-  const { activeImageFolderId, deleteBackendImageFolder, imageFolders, refreshImageFolders, requireEditMode, setActiveImageFolderId } = __appScope;
-    if (!requireEditMode("删除图片文件夹")) {
-      return;
-    }
+  const { activeImageFolderId, deleteBackendImageFolder, imageFolders, refreshImageFolders, setActiveImageFolderId } = __appScope;
     const folder = imageFolders.find((item) => item.id === activeImageFolderId);
     if (!folder || folder.id === "root") {
       showGlobalMessage("默认文件夹不能删除。");
@@ -4407,6 +4288,39 @@ export const PROJECT_TREE_DRAG_TYPE_SCHEME = "application/x-project-tree-scheme"
 export const PROJECT_TREE_DRAG_TYPE_MODEL = "application/x-project-tree-model";
 /** 方案列表的**末尾落点**（拖到列表空白处）= 移到顶层末尾。 */
 export const PROJECT_TREE_ROOT_END_KEY = "__project-tree-root-end__";
+
+function projectTreeDragDebug(label: string, payload: Record<string, unknown> = {}) {
+  if (import.meta.env.DEV && typeof window !== "undefined") {
+    const diagnosticWindow = window as typeof window & {
+      __projectTreeDragLogs?: Array<{ at: number; label: string; payload: Record<string, unknown> }>;
+    };
+    const logs = diagnosticWindow.__projectTreeDragLogs ?? [];
+    logs.push({ at: Date.now(), label, payload });
+    diagnosticWindow.__projectTreeDragLogs = logs.slice(-100);
+    console.info(`[project-tree-drag] ${label}`, payload);
+  }
+}
+
+/**
+ * 方案树拖拽键的逻辑层级。
+ * 方案记录使用 `scheme:`，模型记录的运行期 id 使用 `project:`；`model:` 只保留作
+ * 旧测试/旧调用方的兼容形态。后续落点计算统一使用逻辑层级，不能直接比较原始前缀。
+ */
+export function projectTreeDragLayer(key: string): "scheme" | "model" | "" {
+  const normalizedKey = String(key ?? "");
+  const prefix = normalizedKey.split(":")[0];
+  if (prefix === "scheme") {
+    return "scheme";
+  }
+  if (prefix === "project" || prefix === "model") {
+    return "model";
+  }
+  // schemeId 统一后，方案运行时兼容键是数字字符串；模型键仍带 project:/model: 前缀。
+  if (/^\d+$/u.test(normalizedKey)) {
+    return "scheme";
+  }
+  return "";
+}
 
 /** 方案所在层级（父方案 id；顶层为空串）。 */
 export function projectTreeParentKey(schemes: readonly any[], schemeId: string): string {
@@ -4505,20 +4419,84 @@ export function projectTreeModelOwnerKey(schemes: readonly any[], modelId: strin
   return walk(schemes ?? []);
 }
 
+function projectTreeLayer(schemes: readonly any[], key: string): "scheme" | "model" | "" {
+  const legacyPrefix = key.split(":", 1)[0];
+  if (legacyPrefix === "scheme" || legacyPrefix === "model") {
+    return legacyPrefix;
+  }
+  const walk = (list: readonly any[]): "scheme" | "model" | "" => {
+    for (const scheme of list ?? []) {
+      if (String(scheme?.schemeId ?? scheme?.id ?? "") === String(key)) {
+        return "scheme";
+      }
+      if ((scheme?.projects ?? []).some((project: any) => String(project?.id ?? "") === String(key))) {
+        return "model";
+      }
+      const nested = walk(scheme?.children ?? []);
+      if (nested) {
+        return nested;
+      }
+    }
+    return "";
+  };
+  return walk(schemes ?? []);
+}
+
+/** 判断目标方案是否位于拖动方案的子树内，供 Tree 拖放循环保护使用。 */
+export function projectTreeSchemeContainsId(
+  schemes: readonly any[],
+  ancestorId: string,
+  targetId: string
+): boolean {
+  const normalizedAncestorId = String(ancestorId ?? "");
+  const normalizedTargetId = String(targetId ?? "");
+  if (!normalizedAncestorId || !normalizedTargetId) {
+    return false;
+  }
+  if (normalizedAncestorId === normalizedTargetId) {
+    return true;
+  }
+  const find = (list: readonly any[]): any | null => {
+    for (const scheme of list ?? []) {
+      if (String(scheme?.id ?? scheme?.schemeId ?? "") === normalizedAncestorId) {
+        return scheme;
+      }
+      const nested = find(scheme?.children ?? []);
+      if (nested) {
+        return nested;
+      }
+    }
+    return null;
+  };
+  const ancestor = find(schemes ?? []);
+  if (!ancestor) {
+    return false;
+  }
+  const contains = (list: readonly any[]): boolean =>
+    (list ?? []).some((scheme) =>
+      String(scheme?.id ?? scheme?.schemeId ?? "") === normalizedTargetId
+      || contains(scheme?.children ?? [])
+    );
+  return contains(ancestor.children ?? []);
+}
+
 export function createStartProjectTreeSortDrag(__appScope: Record<string, any>) {
   return (event: DragEvent<HTMLSpanElement>, dragKey: string) => {
-    const { projectTreeDragSuppressClickRef, setProjectTreeDragKey } = __appScope;
-    // 方案/模型 id 本身已带 "scheme:" / "model:" 前缀（后端生成的记录 id），
+    const { projectTreeDragKeyRef, projectTreeDragSuppressClickRef, schemes, setProjectTreeDragKey } = __appScope;
+    // 方案 id 带 "scheme:"，模型运行期 id 带 "project:"（兼容旧 "model:"），
     // 这里**不能再加前缀** —— 否则会出现 "scheme:scheme:xxx" 这样的双前缀，
     // 落点判定与顺序覆盖都对不上（拖动看起来毫无反应）。
-    const layer = dragKey.split(":")[0];
-    if (layer !== "scheme" && layer !== "model") {
+    const layer = projectTreeLayer(schemes ?? [], dragKey);
+    if (!layer) {
+      projectTreeDragDebug("dragstart:ignored-layer", { dragKey });
       return;
     }
+    clearProjectTreeDragExpandTimer(__appScope);
     // 方案行/模型行**本体**也是 draggable（既有跨方案移动通道）。当拖动从把手发起时，
     // 必须阻止本体通道接管，否则两条通道同时启动、dataTransfer 互相覆盖。
     const target = event.target as HTMLElement | null;
     if (!target?.closest?.(".project-tree-drag-handle")) {
+      projectTreeDragDebug("dragstart:ignored-target", { dragKey, targetClass: target?.className ?? "" });
       return;
     }
     if (projectTreeDragSuppressClickRef) {
@@ -4527,13 +4505,25 @@ export function createStartProjectTreeSortDrag(__appScope: Record<string, any>) 
     event.stopPropagation();
     event.dataTransfer.setData(layer === "model" ? PROJECT_TREE_DRAG_TYPE_MODEL : PROJECT_TREE_DRAG_TYPE_SCHEME, dragKey);
     event.dataTransfer.effectAllowed = "move";
+    if (projectTreeDragKeyRef) {
+      projectTreeDragKeyRef.current = dragKey;
+    }
     setProjectTreeDragKey(dragKey);
+    projectTreeDragDebug("dragstart:accepted", {
+      dragKey,
+      layer,
+      types: Array.from(event.dataTransfer.types ?? [])
+    });
   };
 }
 
 export function createEndProjectTreeSortDrag(__appScope: Record<string, any>) {
   return () => {
-    const { projectTreeDragSuppressClickRef, setProjectTreeDragKey, setProjectTreeDropKey } = __appScope;
+    const { projectTreeDragKeyRef, projectTreeDragSuppressClickRef, setProjectTreeDragKey, setProjectTreeDropKey } = __appScope;
+    clearProjectTreeDragExpandTimer(__appScope);
+    if (projectTreeDragKeyRef) {
+      projectTreeDragKeyRef.current = "";
+    }
     setProjectTreeDragKey("");
     setProjectTreeDropKey("");
     // 浏览器可能在 dragend 后补发一次 click；给它一个事件循环机会消费抑制标记，
@@ -4546,6 +4536,41 @@ export function createEndProjectTreeSortDrag(__appScope: Record<string, any>) {
   };
 }
 
+const PROJECT_TREE_DRAG_EXPAND_DELAY_MS = 1000;
+
+export function clearProjectTreeDragExpandTimer(scope: Record<string, any>) {
+  const timerRef = scope.projectTreeDragExpandTimerRef;
+  const pending = timerRef?.current;
+  if (!pending) {
+    return;
+  }
+  globalThis.clearTimeout(pending.timerId);
+  timerRef.current = null;
+}
+
+export function scheduleProjectTreeDragExpand(scope: Record<string, any>, schemeId: string) {
+  const timerRef = scope.projectTreeDragExpandTimerRef;
+  if (!timerRef) {
+    return;
+  }
+  if (timerRef.current?.schemeId === schemeId) {
+    return;
+  }
+  clearProjectTreeDragExpandTimer(scope);
+  const timerId = globalThis.setTimeout(() => {
+    const latestScope = (scope.__appScopeRef?.current ?? scope) as Record<string, any>;
+    const latestTimerRef = latestScope.projectTreeDragExpandTimerRef;
+    if (!latestTimerRef?.current || latestTimerRef.current.schemeId !== schemeId) {
+      return;
+    }
+    latestTimerRef.current = null;
+    latestScope.setExpandedSchemeIds?.((current: string[]) =>
+      current.includes(schemeId) ? current : [...current, schemeId]
+    );
+  }, PROJECT_TREE_DRAG_EXPAND_DELAY_MS);
+  timerRef.current = { schemeId, timerId };
+}
+
 /**
  * 拖动离开某个方案/模型行（或整个列表）时清掉落点键 ——
  * 否则插入线会残留在上一次的位置上。
@@ -4556,6 +4581,7 @@ export function createHandleProjectTreeDragLeave(__appScope: Record<string, any>
     const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
     const { setProjectTreeDropKey } = scope;
     if (!(event.currentTarget as Node).contains(event.relatedTarget as Node | null)) {
+      clearProjectTreeDragExpandTimer(scope);
       setProjectTreeDropKey("");
     }
   };
@@ -4564,17 +4590,31 @@ export function createHandleProjectTreeDragLeave(__appScope: Record<string, any>
 export function createHandleProjectTreeDragOver(__appScope: Record<string, any>) {
   // **__appScope 每帧重建**（App.tsx:661），工厂闭包捕获的引用会冻结在首帧 ——
   // 拖动键/顺序表必须从 __appScopeRef.current（当前帧的 scope）读，否则永远是首帧快照。
-  return (event: DragEvent<HTMLElement>, dropKey: string) => {
+  return (event: DragEvent<HTMLElement>, dropKey: string, forcedEdge?: "inside" | "before" | "after") => {
     const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
-    const { projectTreeDragKey, setProjectTreeDropKey, libraryTreeOrder, schemes } = scope;
+    const { projectTreeDragKey, setProjectTreeDropKey, schemes, expandedSchemeIds } = scope;
     if (!projectTreeDragKey) {
+      projectTreeDragDebug("dragover:ignored-no-drag-key", { dropKey });
+      clearProjectTreeDragExpandTimer(scope);
       return;
     }
-    const dragLayer = projectTreeDragKey.split(":")[0];
-    const dropLayer = dropKey.split(":")[0];
+    const dragLayer = projectTreeLayer(schemes ?? [], projectTreeDragKey);
+    const dropLayer = projectTreeLayer(schemes ?? [], dropKey);
+    projectTreeDragDebug("dragover:received", {
+      dragKey: projectTreeDragKey,
+      dropKey,
+      dragLayer,
+      dropLayer,
+      forcedEdge,
+      targetClass: (event.target as HTMLElement | null)?.className ?? "",
+      currentTargetClass: (event.currentTarget as HTMLElement | null)?.className ?? "",
+      types: Array.from(event.dataTransfer?.types ?? [])
+    });
     // 末尾落点（拖到列表空白处）= 移到顶层末尾，只有一条边（after）。
     // 必须在「层一致」检查**之前**判定 —— 末尾落点的键不是 scheme:/model: 前缀。
     if (dropKey === PROJECT_TREE_ROOT_END_KEY) {
+      projectTreeDragDebug("dragover:root-end", { dragKey: projectTreeDragKey });
+      clearProjectTreeDragExpandTimer(scope);
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
       const dropStateKey = `${dropKey}|after`;
@@ -4584,7 +4624,15 @@ export function createHandleProjectTreeDragOver(__appScope: Record<string, any>)
     // 方案↔方案、模型↔模型、模型→方案行（移动到该方案下）都允许；方案→模型行不允许。
     const isModelIntoScheme = dragLayer === "model" && dropLayer === "scheme";
     if (dragLayer !== dropLayer && !isModelIntoScheme) {
+      projectTreeDragDebug("dragover:rejected-layer-pair", { dragLayer, dropLayer, dragKey: projectTreeDragKey, dropKey });
+      clearProjectTreeDragExpandTimer(scope);
       return;
+    }
+
+    if (isModelIntoScheme && !(expandedSchemeIds ?? []).includes(dropKey)) {
+      scheduleProjectTreeDragExpand(scope, dropKey);
+    } else {
+      clearProjectTreeDragExpandTimer(scope);
     }
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
@@ -4592,8 +4640,9 @@ export function createHandleProjectTreeDragOver(__appScope: Record<string, any>)
     //   inside = 指针在目标行**上半区** → 成为目标的**子方案**（跨层级移动，落库）
     //   before/after = 指针在目标行下半区的上下四分位 → 插到目标之前/之后（同层重排，本机偏好）
     // 覆盖表里已有顺序时按覆盖表的先后算边；没有则按指针位置兜底。
-    const edge = projectTreeInsertEdge(scope, event, projectTreeDragKey, dropKey);
+    const edge = forcedEdge ?? projectTreeInsertEdge(scope, event, projectTreeDragKey, dropKey);
     const dropStateKey = `${dropKey}|${edge}`;
+    projectTreeDragDebug("dragover:accepted", { dragKey: projectTreeDragKey, dropKey, edge, dropStateKey });
     setProjectTreeDropKey((current: string) => current === dropStateKey ? current : dropStateKey);
   };
 }
@@ -4615,7 +4664,7 @@ function projectTreeInsertEdge(
   dropKey: string
 ): "inside" | "before" | "after" {
   const { schemes } = scope;
-  const dragLayer = dragKey.split(":")[0];
+  const dragLayer = projectTreeLayer(schemes ?? [], dragKey);
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
   const ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
   const sameLevel = dragLayer === "scheme"
@@ -4630,28 +4679,47 @@ function projectTreeInsertEdge(
 }
 
 export function createHandleProjectTreeDrop(__appScope: Record<string, any>) {
-  return (event: DragEvent<HTMLElement>, dropKey: string) => {
+  return (
+    event: DragEvent<HTMLElement>,
+    dropKey: string,
+    dropOptions: { dragKey?: string; edge?: "inside" | "before" | "after" } = {}
+  ) => {
     // 同上：从当前帧 scope 读状态（__appScope 每帧重建，闭包捕获会冻结）。
     const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
     const {
-      projectTreeDragKey, setProjectTreeDragKey, setProjectTreeDropKey, setLibraryTreeOrder,
+      projectTreeDragKey, projectTreeDragKeyRef, setProjectTreeDragKey, setProjectTreeDropKey, setLibraryTreeOrder,
       libraryTreeOrder, schemes, moveSchemeRecordToScheme, moveSchemeRecordToPosition, moveProjectRecordToScheme
     } = scope;
+    clearProjectTreeDragExpandTimer(scope);
+    projectTreeDragDebug("drop:received", {
+      dragKey: projectTreeDragKey,
+      dropKey,
+      stateKey: scope.projectTreeDropKey ?? "",
+      types: Array.from(event.dataTransfer?.types ?? []),
+      schemeId: typeof (event.currentTarget as { getAttribute?: unknown } | null)?.getAttribute === "function"
+        ? (event.currentTarget as { getAttribute: (name: string) => string | null }).getAttribute("aria-label")
+        : ""
+    });
     event.preventDefault();
     event.stopPropagation();
-    const dragKey = projectTreeDragKey;
+    const dragKey = dropOptions.dragKey ?? projectTreeDragKey;
     // 落点边（inside = 成为目标的子方案；before/after = 同层插入位）。
     const stateKey = scope.projectTreeDropKey ?? "";
-    const edge = stateKey.endsWith("|inside") ? "inside" : stateKey.endsWith("|after") ? "after" : "before";
+    const edge = dropOptions.edge ?? (stateKey.endsWith("|inside") ? "inside" : stateKey.endsWith("|after") ? "after" : "before");
+    if (projectTreeDragKeyRef) {
+      projectTreeDragKeyRef.current = "";
+    }
     setProjectTreeDragKey("");
     setProjectTreeDropKey("");
     if (!dragKey) {
+      projectTreeDragDebug("drop:ignored-no-drag-key", { dropKey });
       return;
     }
-    const dragLayer = dragKey.split(":")[0];
-    const dropLayer = dropKey.split(":")[0];
+    const dragLayer = projectTreeLayer(schemes ?? [], dragKey);
+    const dropLayer = projectTreeLayer(schemes ?? [], dropKey);
     // 末尾落点（拖到列表空白处）= 移到顶层末尾。
     if (dropKey === PROJECT_TREE_ROOT_END_KEY) {
+      projectTreeDragDebug("drop:root-end", { dragKey, dragLayer });
       if (dragLayer === "scheme" && typeof moveSchemeRecordToPosition === "function") {
         moveSchemeRecordToPosition(dragKey, "", "");
       } else if (dragLayer === "model" && typeof moveProjectRecordToScheme === "function") {
@@ -4666,6 +4734,7 @@ export function createHandleProjectTreeDrop(__appScope: Record<string, any>) {
     // 模型 → 方案行 = 移动到该方案下（跨层级，允许）；方案 → 模型行 = 不允许。
     const isModelIntoScheme = dragLayer === "model" && dropLayer === "scheme";
     if (dragLayer !== dropLayer && !isModelIntoScheme) {
+      projectTreeDragDebug("drop:rejected-layer-pair", { dragKey, dropKey, dragLayer, dropLayer });
       return;
     }
     const currentOrder = libraryTreeOrder ?? {
@@ -4686,6 +4755,21 @@ export function createHandleProjectTreeDrop(__appScope: Record<string, any>) {
       ? projectTreeParentKey(schemes ?? [], dropKey)
       : projectTreeModelOwnerKey(schemes ?? [], dropKey);
     const isCrossLevel = dragParentKey !== dropParentKey;
+    // Tree 的 inside 落点表示「成为目标方案的子方案」。
+    // 顶层方案的父级都为空串，不能用 isCrossLevel 判断这一种合法的层级变化。
+    if (dragLayer === "scheme" && dropLayer === "scheme" && edge === "inside") {
+      if (dragKey === dropKey
+        || projectTreeSchemeContainsId(schemes ?? [], dragKey, dropKey)
+        || dropKey.startsWith(`${dragKey}/`)) {
+        projectTreeDragDebug("drop:move-scheme-inside-skipped-cycle", { dragKey, dropKey });
+        return;
+      }
+      projectTreeDragDebug("drop:move-scheme-inside", { dragKey, dropKey, sourceParentKey: dragParentKey, targetParentKey: dropParentKey });
+      if (typeof moveSchemeRecordToScheme === "function") {
+        moveSchemeRecordToScheme(dragKey, dropKey);
+      }
+      return;
+    }
     if (isCrossLevel) {
       if (dragLayer === "scheme") {
         // inside = 成为目标行的子方案；after = 成为目标的后继兄弟（落到目标父级、排在目标之后）。
@@ -4710,9 +4794,25 @@ export function createHandleProjectTreeDrop(__appScope: Record<string, any>) {
       }
       if (typeof moveProjectRecordToScheme === "function") {
         // 模型 → 方案行：inside = 落进该方案；after = 落到目标模型所在方案。
-        const targetSchemeId = edge === "inside" ? dropKey : dropParentKey;
+        const targetSchemeId = dropLayer === "scheme"
+          ? edge === "inside"
+            ? dropKey
+            : projectTreeModelIds(schemes ?? [], dropKey).length === 0
+              ? dropKey
+              : dropParentKey
+          : dropParentKey;
+        projectTreeDragDebug("drop:move-project", {
+          projectId: dragKey,
+          targetSchemeId,
+          edge,
+          sourceSchemeId: dragParentKey,
+          dropParentKey,
+          dropKey
+        });
         if (targetSchemeId) {
           moveProjectRecordToScheme(dragKey, targetSchemeId);
+        } else {
+          projectTreeDragDebug("drop:move-project-skipped-no-target", { projectId: dragKey, dropKey, edge });
         }
       }
       return;
@@ -4759,9 +4859,8 @@ export function createHandleProjectTreeDrop(__appScope: Record<string, any>) {
 }
 
 /**
- * 从方案记录 id 反推其父方案 id。
- * id 形如 "scheme:根/甲" → 父 id 为 "scheme:根"（去掉最后一段路径）。
- * 顶层方案（无 "/"）返回空串。
+ * 旧路径键兼容：数字 schemeId 没有父级编码，无法从编号反推路径父级。
+ * 新代码应通过方案树查找 `projectTreeParentKey`。
  */
 export function projectTreeParentIdOf(schemeId: string): string {
   const index = schemeId.lastIndexOf("/");
@@ -4791,7 +4890,7 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
   // __appScope 每帧重建，本工厂闭包捕获的是首帧 scope —— 拖动态（projectTreeDropKey）与
   // 顺序覆盖（libraryTreeOrder）必须从当前帧 scope 读，否则指示线与新顺序不会反映到 DOM。
   const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
-  const { Cable, ChevronDown, ChevronRight, Factory, FileJson, FolderOpen, HousePlug, Network, activeProjectKey, div, endProjectTreeSortDrag, expandedSchemeIds, handleProjectTreeDragLeave, handleProjectTreeDragOver, handleProjectTreeDrop, isEditMode, libraryTreeOrder, p, projectModelTypeFilter, projectSearchNeedle, projectTreeDropKey, renderProjectSchemeNode, requestLoadSavedProject, selectSingleProject, selectSingleScheme, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setInspectorTab, setProjectMenu, span, startProjectTreeSortDrag, toggleProjectSelection, toggleSchemeExpanded, toggleSchemeSelection } = scope;
+  const { Cable, ChevronDown, ChevronRight, Factory, FileJson, FolderOpen, HousePlug, Network, activeProjectKey, div, endProjectTreeSortDrag, expandedSchemeIds, handleProjectTreeDragLeave, handleProjectTreeDragOver, handleProjectTreeDrop, isEditMode, libraryTreeOrder, loadingModel, p, projectModelTypeFilter, projectSearchNeedle, projectTreeDropKey, renderProjectSchemeNode, requestLoadSavedProject, selectSingleProject, selectSingleScheme, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setInspectorTab, setProjectMenu, span, startProjectTreeSortDrag, toggleProjectSelection, toggleSchemeExpanded, toggleSchemeSelection } = scope;
     const isFiltering = Boolean(projectSearchNeedle || (projectModelTypeFilter && projectModelTypeFilter.length > 0));
     const isExpanded = isFiltering ? true : expandedSchemeIds.includes(scheme.id);
     // 同层顺序覆盖：方案按父层级分桶，模型按所属方案分桶；未拖动过的项保持原相对顺序垫底。
@@ -4807,6 +4906,10 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
     );
     const countModels = (s: SavedSchemeRecord): number => s.projects.length + (s.children ?? []).reduce((sum: number, c: SavedSchemeRecord) => sum + countModels(c), 0);
     const modelCount = countModels(scheme);
+    const displaySchemeId = scheme.schemeId;
+    const schemeIdTooltip = Number.isSafeInteger(displaySchemeId) && displaySchemeId > 0
+      ? `方案 ID：${displaySchemeId}`
+      : "方案 ID：未分配";
     const hasContent = scheme.projects.length > 0 || children.length > 0;
     const schemeIndentStyle = { "--scheme-depth": depth } as CSSProperties;
     const projectIndentStyle = { "--scheme-depth": depth + 1 } as CSSProperties;
@@ -4831,6 +4934,7 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
         <div
           role="option"
           aria-label={`方案：${scheme.name}`}
+          title={schemeIdTooltip}
           aria-selected={selectedSchemeIds.includes(scheme.id) || selectedSchemeId === scheme.id}
           aria-expanded={isExpanded}
           tabIndex={0}
@@ -4875,7 +4979,14 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
             // 只有把手能发起拖动（行本体不可拖），所以这里只处理排序通道。
             // 跨层级移动也在把手通道里完成（落在目标行上半区 = 成为其子方案）。
             const sortSchemeId = event.dataTransfer.getData(PROJECT_TREE_DRAG_TYPE_SCHEME);
-            if (sortSchemeId) {
+            const sortModelId = event.dataTransfer.getData(PROJECT_TREE_DRAG_TYPE_MODEL);
+            projectTreeDragDebug("scheme-row:drop-mime", {
+              dropKey: schemeDropKey,
+              sortSchemeId,
+              sortModelId,
+              types: Array.from(event.dataTransfer.types ?? [])
+            });
+            if (sortSchemeId || sortModelId) {
               // dropKey = **目标行**的键（拖动源由 libraryTreeDragKey 读出）。
               handleProjectTreeDrop(event, schemeDropKey);
             }
@@ -4908,11 +5019,33 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
         {isExpanded && (
           <div className="scheme-projects">
             {!hasContent && !isFiltering ? (
-              <p className="project-empty" style={projectIndentStyle}>暂无模型或子方案</p>
+              <p
+                className={`project-empty${projectTreeDropKey === `${schemeDropKey}|inside` ? " library-tree-drop-inside" : ""}`}
+                style={projectIndentStyle}
+                onDragOver={(event) => {
+                  event.stopPropagation();
+                  handleProjectTreeDragOver(event, schemeDropKey, "inside");
+                  event.preventDefault();
+                }}
+                onDragLeave={handleProjectTreeDragLeave}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (!isEditMode) {
+                    return;
+                  }
+                  if (event.dataTransfer.getData(PROJECT_TREE_DRAG_TYPE_MODEL)) {
+                    handleProjectTreeDrop(event, schemeDropKey);
+                  }
+                }}
+              >
+                暂无模型或子方案
+              </p>
             ) : (
               <>
                 {orderedProjects.map((project) => {
                   const isProjectSelected = selectedProjectIds.includes(project.id) || project.id === selectedProjectId;
+                  const loadingProgress = loadingModel?.projectId === project.id ? loadingModel.progress : null;
                   const projectModelType = ["微网", "厂站", "馈线", "台区"].includes(project.project?.modelType)
                     ? project.project.modelType
                     : "其他";
@@ -4936,6 +5069,7 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
                       role="option"
                       aria-label={`模型：${project.name}`}
                       aria-selected={isProjectSelected}
+                      aria-busy={loadingProgress !== null ? "true" : undefined}
                       tabIndex={0}
                       // 行本体**不可拖** —— 只有行首把手能发起拖动（拖动排序 + 跨方案移动都走把手）。
                       draggable={false}
@@ -5017,6 +5151,14 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
                       />
                       <span className="project-tree-name">{project.name}</span>
                       <span className="project-model-type-tag" style={{ background: MODEL_TYPE_META[projectModelType]?.color ?? "#94a3b8" }}>{projectModelType}</span>
+                      {loadingProgress !== null && (
+                        <progress
+                          className="project-option-loading-progress"
+                          aria-label={`正在加载模型：${project.name}`}
+                          max={100}
+                          value={loadingProgress}
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -5031,19 +5173,13 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
 
 export function createOpenBlankProjectLibraryContextMenu(__appScope: Record<string, any>) {
   return (event: MouseEvent<HTMLElement>) => {
-  const { isEditMode, setProjectMenu, showGlobalMessage = () => undefined } = __appScope;
+  const { setProjectMenu } = __appScope;
     const target = event.target as HTMLElement | null;
-    if (target?.closest(".scheme-option, .project-option, .library-search")) {
+    if (target?.closest(".scheme-option, .project-option, .project-tree-antd .ant-tree-treenode, .library-search")) {
       return;
     }
     event.preventDefault();
     event.stopPropagation();
-    if (!isEditMode) {
-      // 浏览模式下右键方案树：给出全局提示并闪动顶栏"编辑/浏览"按钮引导切换
-      showGlobalMessage("当前为浏览模式，请点击顶栏的\"编辑\"按钮切换后再操作。");
-      triggerModeToggleHint();
-      return;
-    }
     setProjectMenu({ x: event.clientX, y: event.clientY });
   };
 }
@@ -5555,11 +5691,8 @@ export function createStopDeviceLibraryDialogEvent(__appScope: Record<string, an
 
 export function createOpenDeviceDefinitionDialog(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, createCustomDeviceDraftFromTemplate, ensureCustomComponentTreeExpanded, libraryTemplates, normalizeCategoryLibraryName, prepareMeasurementConfigDraft, requireEditMode, resolveTemplateComponentLibrary, selectedCustomComponentTemplate, selectedDefinitionTemplate, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogOpen, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setDefinitionDraftSection, setDeviceDefinitionDialogOpen, setDeviceLibraryDialogLayouts, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, createCustomDeviceDraftFromTemplate, ensureCustomComponentTreeExpanded, libraryTemplates, normalizeCategoryLibraryName, prepareMeasurementConfigDraft, resolveTemplateComponentLibrary, selectedCustomComponentTemplate, selectedDefinitionTemplate, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogOpen, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setDefinitionDraftSection, setDeviceDefinitionDialogOpen, setDeviceLibraryDialogLayouts, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
     let openedDraft: CustomDeviceDraft | null = null;
-    if (!requireEditMode("元件定义")) {
-      return;
-    }
     const template = selectedCustomComponentTemplate ?? selectedDefinitionTemplate ?? libraryTemplates[0];
     if (template) {
       const categoryLibraryName = normalizeCategoryLibraryName(template.categoryLibrary);
@@ -5655,10 +5788,7 @@ export function createToggleDefinitionComponentLibrary(__appScope: Record<string
 
 export function createUpdateDefinitionComponentLibraryCommonParamExport(__appScope: Record<string, any>) {
   return (componentLibrary: string, enName: string, patch: { exportEnabled?: boolean; exportName?: string }) => {
-  const { deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, libraryTemplates, normalizeComponentLibraryName, requireEditMode, resolveTemplateComponentLibrary, setDeviceDefinitionOverrides, writeOperationLog } = __appScope;
-    if (!requireEditMode("修改类共有参数导出")) {
-      return;
-    }
+  const { deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, libraryTemplates, normalizeComponentLibraryName, resolveTemplateComponentLibrary, setDeviceDefinitionOverrides, writeOperationLog } = __appScope;
     const sectionKey = normalizeComponentLibraryName(componentLibrary);
     if (!sectionKey) {
       return;
@@ -5755,10 +5885,7 @@ export function createAddDefinitionDraftRow(__appScope: Record<string, any>) {
 
 export function createDeleteDefinitionDraftRow(__appScope: Record<string, any>) {
   return (rowId: string) => {
-  const { definitionDeleteAllParametersRequestedRef, requireEditMode, setDefinitionDraftError, setDefinitionDraftRows } = __appScope;
-    if (!requireEditMode("修改元件定义")) {
-      return;
-    }
+  const { definitionDeleteAllParametersRequestedRef, setDefinitionDraftError, setDefinitionDraftRows } = __appScope;
     if (definitionDeleteAllParametersRequestedRef) definitionDeleteAllParametersRequestedRef.current = false;
     setDefinitionDraftRows((current) => current.filter((row) => row.id !== rowId || row.readonly));
     setDefinitionDraftError("");
@@ -5830,10 +5957,7 @@ export function createAddDefinitionStateDraftRow(__appScope: Record<string, any>
 
 export function createDeleteDefinitionStateDraftRow(__appScope: Record<string, any>) {
   return (rowId: string) => {
-  const { requireEditMode, setDefinitionDraftError, setDefinitionStateDraftRows } = __appScope;
-    if (!requireEditMode("修改状态定义")) {
-      return;
-    }
+  const { setDefinitionDraftError, setDefinitionStateDraftRows } = __appScope;
     setDefinitionStateDraftRows((current) => current.filter((row) => row.id !== rowId));
     setDefinitionDraftError("");
   };
@@ -5854,10 +5978,7 @@ export function createRequestCloseCustomDeviceDialog(__appScope: Record<string, 
 
 export function createUpdateSelectedDefinitionResizePermission(__appScope: Record<string, any>) {
   return (value: string) => {
-  const { deviceDefinitionOverrideForTemplate, requireEditMode, selectedDefinitionTemplate, setCustomDeviceTemplates, setDefinitionDraftError, setDeviceDefinitionOverrides, writeOperationLog } = __appScope;
-    if (!requireEditMode("修改元件变形权限")) {
-      return;
-    }
+  const { deviceDefinitionOverrideForTemplate, selectedDefinitionTemplate, setCustomDeviceTemplates, setDefinitionDraftError, setDeviceDefinitionOverrides, writeOperationLog } = __appScope;
     if (!selectedDefinitionTemplate) {
       return;
     }
@@ -5895,10 +6016,7 @@ export function createUpdateSelectedDefinitionResizePermission(__appScope: Recor
 
 export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_STATE_PAGE_ID, activeStateDraftRow, createStateDraftRow, definitionStateDraftRows, definitionStatePageId, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, requireEditMode, selectedDefinitionTemplate, setCustomDeviceTemplates, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, validateStateDraftRows, writeOperationLog } = __appScope;
-    if (!requireEditMode("保存状态样式")) {
-      return;
-    }
+  const { DEFAULT_STATE_PAGE_ID, activeStateDraftRow, createStateDraftRow, definitionStateDraftRows, definitionStatePageId, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, selectedDefinitionTemplate, setCustomDeviceTemplates, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!selectedDefinitionTemplate) {
       return;
     }
@@ -5957,10 +6075,7 @@ export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<st
 
 export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_STATE_PAGE_ID, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, createStateDraftRow, definitionStateDraftRows, definitionStatePageId, definitionVisualDraft, definitionVisualTerminalAnchors, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, requireEditMode, selectedDefinitionTemplate, setCustomDeviceTemplates, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform, validateStateDraftRows, writeOperationLog } = __appScope;
-    if (!requireEditMode("保存元件图标和端子")) {
-      return;
-    }
+  const { DEFAULT_STATE_PAGE_ID, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, createStateDraftRow, definitionStateDraftRows, definitionStatePageId, definitionVisualDraft, definitionVisualTerminalAnchors, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, selectedDefinitionTemplate, setCustomDeviceTemplates, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!selectedDefinitionTemplate || !definitionVisualDraft) {
       return;
     }
@@ -6084,10 +6199,7 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
 
 export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>) {
   return () => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, createDefinitionDraftRows, definitionDeleteAllParametersRequestedRef, definitionDraftRows, definitionDraftSection, definitionMeasurementDraft, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, deviceDefinitionRowId, getTemplateParameterDefinitions, isReservedDeviceDefinitionParamName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeDefinitionRowEnumFields, requireEditMode, selectedDefinitionTemplate, setDefinitionDraftError, setDefinitionDraftRows, setDefinitionMeasurementDraft = () => undefined, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform } = __appScope;
-    if (!requireEditMode("保存元件定义")) {
-      return;
-    }
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, createDefinitionDraftRows, definitionDeleteAllParametersRequestedRef, definitionDraftRows, definitionDraftSection, definitionMeasurementDraft, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, deviceDefinitionRowId, getTemplateParameterDefinitions, isReservedDeviceDefinitionParamName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeDefinitionRowEnumFields, selectedDefinitionTemplate, setDefinitionDraftError, setDefinitionDraftRows, setDefinitionMeasurementDraft = () => undefined, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform } = __appScope;
     if (!selectedDefinitionTemplate) {
       return;
     }
@@ -6251,10 +6363,7 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
 
 export function createResetDeviceDefinitionDraft(__appScope: Record<string, any>) {
   return () => {
-  const { deviceDefinitionKeyForTemplate, loadDefinitionTemplateDraft, requireEditMode, selectedDefinitionBaseTemplate, setDeviceDefinitionOverrides } = __appScope;
-    if (!requireEditMode("重置元件定义")) {
-      return;
-    }
+  const { deviceDefinitionKeyForTemplate, loadDefinitionTemplateDraft, selectedDefinitionBaseTemplate, setDeviceDefinitionOverrides } = __appScope;
     if (!selectedDefinitionBaseTemplate) {
       return;
     }
@@ -6322,11 +6431,7 @@ export function createUpdateCustomDraftTerminalCount(__appScope: Record<string, 
 
 export function createChooseCustomDeviceBackground(__appScope: Record<string, any>) {
   return (event: ChangeEvent<HTMLInputElement>) => {
-  const { activeImageFolderId, refreshImageFolders, requireEditMode, setCustomDeviceDraft, setCustomDeviceSaveMessage, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
-    if (!requireEditMode("上传元件图标")) {
-      event.target.value = "";
-      return;
-    }
+  const { activeImageFolderId, refreshImageFolders, setCustomDeviceDraft, setCustomDeviceSaveMessage, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) {
@@ -6360,11 +6465,7 @@ export function createChooseCustomDeviceBackground(__appScope: Record<string, an
 
 export function createChooseDefinitionTemplateIcon(__appScope: Record<string, any>) {
   return (event: ChangeEvent<HTMLInputElement>) => {
-  const { activeImageFolderId, refreshImageFolders, requireEditMode, setDefinitionVisualDraft, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
-    if (!requireEditMode("上传元件图标")) {
-      event.target.value = "";
-      return;
-    }
+  const { activeImageFolderId, refreshImageFolders, setDefinitionVisualDraft, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) {
@@ -6401,11 +6502,7 @@ export function createChooseDefinitionTemplateIcon(__appScope: Record<string, an
 
 export function createChooseStateVisualImage(__appScope: Record<string, any>) {
   return (event: ChangeEvent<HTMLInputElement>) => {
-  const { activeImageFolderId, refreshImageFolders, requireEditMode, setImageAssetList, setImageAssets, setStateImageUploadTarget, stateImageUploadTarget, updateCustomDeviceStateDraftRow, updateDefinitionStateDraftRow, uploadBackendImage } = __appScope;
-    if (!requireEditMode("上传状态图形")) {
-      event.target.value = "";
-      return;
-    }
+  const { activeImageFolderId, refreshImageFolders, setImageAssetList, setImageAssets, setStateImageUploadTarget, stateImageUploadTarget, updateCustomDeviceStateDraftRow, updateDefinitionStateDraftRow, uploadBackendImage } = __appScope;
     const file = event.target.files?.[0];
     const target = stateImageUploadTarget;
     event.target.value = "";
@@ -6447,11 +6544,7 @@ export function createChooseStateVisualImage(__appScope: Record<string, any>) {
 
 export function createChooseStateIconDrawingImport(__appScope: Record<string, any>) {
   return (event: ChangeEvent<HTMLInputElement>) => {
-  const { activeImageFolderId, createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, refreshImageFolders, requireEditMode, setImageAssetList, setImageAssets, setStateIconDrawingDialog, stateIconDrawingHistoryRef, stateIconDrawingImportMode, uploadBackendImage } = __appScope;
-    if (!requireEditMode("导入绘制图形")) {
-      event.target.value = "";
-      return;
-    }
+  const { activeImageFolderId, createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, refreshImageFolders, setImageAssetList, setImageAssets, setStateIconDrawingDialog, stateIconDrawingHistoryRef, stateIconDrawingImportMode, uploadBackendImage } = __appScope;
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) {
@@ -7542,10 +7635,7 @@ export function createSelectCustomComponentTemplate(__appScope: Record<string, a
 
 export function createStartCustomComponentCreate(__appScope: Record<string, any>) {
   return () => {
-  const { customComponentTreeSelection, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(), requireEditMode, setCustomLibraryCreateDialog } = __appScope;
-    if (!requireEditMode("新建元件")) {
-      return;
-    }
+  const { customComponentTreeSelection, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(), setCustomLibraryCreateDialog } = __appScope;
     if (customComponentTreeSelection?.kind !== "componentLibrary") {
       return;
     }
@@ -7670,9 +7760,6 @@ export function createPasteCustomComponentTemplate(__appScope: Record<string, an
       setCustomLibraryCreateDialog,
       showGlobalMessage = () => undefined
     } = __appScope;
-    if (!requireEditMode("粘贴元件")) {
-      return false;
-    }
     if (!copiedCustomComponentTemplate?.kind) {
       showGlobalMessage("还没有复制元件，请先右键具体元件执行“复制元件”。");
       return false;
@@ -7766,9 +7853,6 @@ export function createOpenCustomComponentSvgImport(__appScope: Record<string, an
       requireEditMode,
       showGlobalMessage = () => undefined
     } = __appScope;
-    if (!requireEditMode("导入元件 SVG")) {
-      return false;
-    }
     if (!customComponentSvgImportInputRef?.current) {
       showGlobalMessage("SVG 文件选择器尚未就绪，请稍后重试。");
       return false;
@@ -7791,10 +7875,6 @@ export function createImportCustomComponentSvg(__appScope: Record<string, any>) 
       showGlobalMessage = () => undefined,
       stateIconDrawingToPersistedImage: injectedStateIconDrawingToPersistedImage
     } = __appScope;
-    if (!requireEditMode("导入元件 SVG")) {
-      event.target.value = "";
-      return false;
-    }
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) {
@@ -7881,7 +7961,7 @@ const CUSTOM_DEVICE_KIND_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
 export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string, any>) {
   return (dialogOverride?: any) => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad = () => undefined, categoryLibraries, componentLibraryOptions, createCustomDeviceDraftFromTemplate, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, customCategoryLibraries = [], customComponentLibraries = [], customDeviceDraft, customDeviceTemplates, customLibraryCreateDialog, defaultComponentLibraryForCategoryLibrary, deviceDefinitionOverrides = {}, isValidComponentLibraryName, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeCustomCategoryLibraries, normalizeCustomComponentLibraries, persistDeviceLibraryChange = () => undefined, requireEditMode, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDialogView = () => undefined, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage = () => undefined, setCustomDeviceStatePageId = () => undefined, setCustomLibraryCreateDialog, setDeviceDefinitionOverrides = () => undefined, setEditingCustomDeviceKind = () => undefined, setExpandedCategoryLibraries, setSelectedDefinitionKind = () => undefined } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad = () => undefined, categoryLibraries, componentLibraryOptions, createCustomDeviceDraftFromTemplate, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, customCategoryLibraries = [], customComponentLibraries = [], customDeviceDraft, customDeviceTemplates, customLibraryCreateDialog, defaultComponentLibraryForCategoryLibrary, deviceDefinitionOverrides = {}, isValidComponentLibraryName, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeCustomCategoryLibraries, normalizeCustomComponentLibraries, persistDeviceLibraryChange = () => undefined, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDialogView = () => undefined, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage = () => undefined, setCustomDeviceStatePageId = () => undefined, setCustomLibraryCreateDialog, setDeviceDefinitionOverrides = () => undefined, setEditingCustomDeviceKind = () => undefined, setExpandedCategoryLibraries, setSelectedDefinitionKind = () => undefined } = __appScope;
     const dialog = dialogOverride ?? customLibraryCreateDialog;
     if (!dialog) {
       return false;
@@ -7889,9 +7969,6 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
     const actionName = dialog.kind === "categoryLibrary"
       ? "新建类别库"
       : dialog.kind === "componentLibrary" ? "新建类" : "新建元件";
-    if (!requireEditMode(actionName)) {
-      return false;
-    }
     const setDialogError = (error: string) => {
       setCustomLibraryCreateDialog((current: any) => current ? { ...current, error } : current);
       return false;
@@ -8247,10 +8324,7 @@ export function createNextCustomCategoryLibraryName(__appScope: Record<string, a
 
 export function createCreateCustomCategoryLibrary(__appScope: Record<string, any>) {
   return () => {
-  const { nextCustomCategoryLibraryName, nextCustomComponentLibraryName, requireEditMode, setCustomLibraryCreateDialog } = __appScope;
-    if (!requireEditMode("新建类别库")) {
-      return;
-    }
+  const { nextCustomCategoryLibraryName, nextCustomComponentLibraryName, setCustomLibraryCreateDialog } = __appScope;
     setCustomLibraryCreateDialog({
       kind: "categoryLibrary",
       title: "新建类别",
@@ -8265,12 +8339,9 @@ export function createCreateCustomCategoryLibrary(__appScope: Record<string, any
 
 export function createDeleteCustomCategoryLibrary(__appScope: Record<string, any>) {
   return async (targetCategoryLibraryName?: string) => {
-  const { DEVICE_LIBRARY = [], PROTECTED_CATEGORY_LIBRARIES, customComponentLibraries, customDeviceDraft, customDeviceTemplates, defaultComponentLibraryForCategoryLibrary, isBuiltInComponentLibrary, normalizeCategoryLibraryName, requireEditMode, resolveTemplateComponentLibrary, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes, setCustomCategoryLibraries, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setDefinitionDraftSection, setDeviceDefinitionOverrides, setEditingCustomDeviceKind, setExpandedCategoryLibraries, setExpandedDefinitionGroups, setSelectedDefinitionKind } = __appScope;
+  const { DEVICE_LIBRARY = [], PROTECTED_CATEGORY_LIBRARIES, customComponentLibraries, customDeviceDraft, customDeviceTemplates, defaultComponentLibraryForCategoryLibrary, isBuiltInComponentLibrary, normalizeCategoryLibraryName, resolveTemplateComponentLibrary, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes, setCustomCategoryLibraries, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setDefinitionDraftSection, setDeviceDefinitionOverrides, setEditingCustomDeviceKind, setExpandedCategoryLibraries, setExpandedDefinitionGroups, setSelectedDefinitionKind } = __appScope;
     if (targetCategoryLibraryName === undefined) {
       targetCategoryLibraryName = customDeviceDraft.categoryLibraryName;
-    }
-    if (!requireEditMode("删除类别库")) {
-      return;
     }
     const categoryLibraryName = normalizeCategoryLibraryName(targetCategoryLibraryName);
     if (!categoryLibraryName || categoryLibraryName === "静态图元" || PROTECTED_CATEGORY_LIBRARIES.has(categoryLibraryName)) {
@@ -8369,10 +8440,7 @@ export function createNextCustomComponentLibraryName(__appScope: Record<string, 
 
 export function createCreateCustomComponentLibrary(__appScope: Record<string, any>) {
   return () => {
-  const { customComponentTreeSelection, nextCustomComponentLibraryName, normalizeCategoryLibraryName, normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(), requireEditMode, setCustomLibraryCreateDialog } = __appScope;
-    if (!requireEditMode("新建类")) {
-      return;
-    }
+  const { customComponentTreeSelection, nextCustomComponentLibraryName, normalizeCategoryLibraryName, normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(), setCustomLibraryCreateDialog } = __appScope;
     if (customComponentTreeSelection?.kind !== "categoryLibrary" && customComponentTreeSelection?.kind !== "componentLibrary") {
       return;
     }
@@ -8412,12 +8480,9 @@ export function createCreateCustomComponentLibrary(__appScope: Record<string, an
 
 export function createDeleteCustomComponentLibrary(__appScope: Record<string, any>) {
   return async (targetSection?: string) => {
-  const { E_SECTION_OPTIONS, customComponentLibraries = [], customComponentTreeSelection, customDeviceDraft, defaultComponentLibraryForCategoryLibrary, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, requireEditMode, resolveTemplateComponentLibrary, setCollapsedCustomComponentTreeTypes, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setDefinitionDraftSection, setDeviceDefinitionOverrides, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
+  const { E_SECTION_OPTIONS, customComponentLibraries = [], customComponentTreeSelection, customDeviceDraft, defaultComponentLibraryForCategoryLibrary, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, resolveTemplateComponentLibrary, setCollapsedCustomComponentTreeTypes, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setDefinitionDraftSection, setDeviceDefinitionOverrides, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
     if (targetSection === undefined) {
       targetSection = customDeviceDraft.componentLibrary;
-    }
-    if (!requireEditMode("删除类")) {
-      return;
     }
     const componentLibrary = normalizeComponentLibraryName(targetSection);
     if (!componentLibrary || E_SECTION_OPTIONS.some((section) => section.toLowerCase() === componentLibrary.toLowerCase())) {
@@ -8487,10 +8552,7 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
 
 export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<string, any>) {
   return () => {
-  const { PROTECTED_CATEGORY_LIBRARIES, categoryLibraries, customComponentTreeSelection, libraryTemplateByKind, normalizeCategoryLibraryName, requireEditMode, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes, setCustomCategoryLibraries, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setExpandedCategoryLibraries, setExpandedDefinitionGroups } = __appScope;
-    if (!requireEditMode("重命名类条目")) {
-      return;
-    }
+  const { PROTECTED_CATEGORY_LIBRARIES, categoryLibraries, customComponentTreeSelection, libraryTemplateByKind, normalizeCategoryLibraryName, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes, setCustomCategoryLibraries, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setExpandedCategoryLibraries, setExpandedDefinitionGroups } = __appScope;
     if (customComponentTreeSelection.kind === "categoryLibrary") {
       const oldCategoryLibraryName = normalizeCategoryLibraryName(customComponentTreeSelection.categoryLibraryName);
       if (PROTECTED_CATEGORY_LIBRARIES.has(oldCategoryLibraryName) || oldCategoryLibraryName === "静态图元") {
@@ -8570,10 +8632,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
 
 export function createDeleteSelectedCustomDeviceTreeItem(__appScope: Record<string, any>) {
   return async () => {
-  const { customComponentTreeSelection, customDeviceTemplates, deleteCustomCategoryLibrary, deleteCustomComponentLibrary, libraryTemplateByKind, libraryTemplates, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceTemplates, setDeviceDefinitionOverrides, setEditingCustomDeviceKind } = __appScope;
-    if (!requireEditMode("删除类条目")) {
-      return;
-    }
+  const { customComponentTreeSelection, customDeviceTemplates, deleteCustomCategoryLibrary, deleteCustomComponentLibrary, libraryTemplateByKind, libraryTemplates, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceTemplates, setDeviceDefinitionOverrides, setEditingCustomDeviceKind } = __appScope;
     if (customComponentTreeSelection.kind === "categoryLibrary") {
       deleteCustomCategoryLibrary(customComponentTreeSelection.categoryLibraryName);
       return;
@@ -8636,13 +8695,10 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     editingCustomDeviceKindOverride?: string;
     skipInlineDrawingPatch?: boolean;
   } = {}) => {
-  const { TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customComponentLibraries = [], customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTemplates, customDeviceTerminalAnchors, defaultComponentLibraryForCategoryLibrary, editingCustomDeviceKind, ensureCustomComponentTreeExpanded, generateCustomDeviceImage, hasOverlappingCustomDeviceTerminalAnchors, isValidComponentLibraryName, libraryTemplates = customDeviceTemplates, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, persistDeviceLibraryChange, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef, setCustomDeviceTemplates, setEditingCustomDeviceKind, setExpandedCategoryLibraries, showGlobalMessage = () => undefined, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
+  const { TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customComponentLibraries = [], customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTemplates, customDeviceTerminalAnchors, defaultComponentLibraryForCategoryLibrary, editingCustomDeviceKind, ensureCustomComponentTreeExpanded, generateCustomDeviceImage, hasOverlappingCustomDeviceTerminalAnchors, isValidComponentLibraryName, libraryTemplates = customDeviceTemplates, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, persistDeviceLibraryChange, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef, setCustomDeviceTemplates, setEditingCustomDeviceKind, setExpandedCategoryLibraries, showGlobalMessage = () => undefined, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
     const sourceDraft = options.draftOverride ?? customDeviceDraft;
     const sourceTerminalAnchors = options.terminalAnchorsOverride ?? customDeviceTerminalAnchors;
     const sourceEditingCustomDeviceKind = options.editingCustomDeviceKindOverride ?? editingCustomDeviceKind;
-    if (!requireEditMode("保存元件")) {
-      return false;
-    }
     setCustomDeviceSaveMessage("");
     const requestedCategoryLibraryName = normalizeCategoryLibraryName(sourceDraft.categoryLibraryName);
     const requestedClassName = normalizeComponentLibraryName(
@@ -8887,10 +8943,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
 
 export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, options: { closeAfterSave?: boolean } = {}) => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, baseLibraryTemplates = [], closeCustomDeviceDialog, createCustomDeviceDraftFromTemplate, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTerminalAnchors, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isDerivedComponentBaseParamName, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef, setDeviceDefinitionOverrides, showGlobalMessage, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
-    if (!requireEditMode("保存元件定义")) {
-      return false;
-    }
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, baseLibraryTemplates = [], closeCustomDeviceDialog, createCustomDeviceDraftFromTemplate, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTerminalAnchors, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isDerivedComponentBaseParamName, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef, setDeviceDefinitionOverrides, showGlobalMessage, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
     setCustomDeviceSaveMessage("");
     const componentLibrary = normalizeComponentLibraryName(customDeviceDraft.componentLibrary);
     if (!componentLibrary) {
@@ -9327,7 +9380,6 @@ export function createSaveComponentLibraryDefinition(__appScope: Record<string, 
       showGlobalMessage = () => undefined,
       writeOperationLog = () => undefined
     } = __appScope;
-    if (!requireEditMode("保存类定义")) return false;
     if (customComponentTreeSelection?.kind !== "componentLibrary") {
       showGlobalMessage("当前没有选中可保存的类。");
       return false;

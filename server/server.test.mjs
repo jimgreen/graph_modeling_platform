@@ -1860,6 +1860,12 @@ describe("GRAPH_MODEL_DATA_DIR 数据根覆盖", () => {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const foldersFile = join(dataDir, "images", "folders.json");
     try {
+      const initialize = await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "默认空间" })
+      });
+      expect(initialize.status).toBe(200);
       // ① 落盘不是数组：Array.isArray 假支 → 按空数组处理 → 没有 root → 补一个 root
       await writeFile(foldersFile, JSON.stringify({ folders: [] }), "utf-8");
       const nonArray = await (await fetch(`${baseUrl}${apiPath("/image-folders")}`)).json();

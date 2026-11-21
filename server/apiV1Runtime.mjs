@@ -139,7 +139,7 @@ export async function handleV1RuntimeScreenshot({ url, response }, ctx) {
   }
 }
 
-// /webgrp/v1/runtime/svg —— SVG 文本
+// 统一入口 format=svg —— SVG 文本
 export async function handleV1RuntimeSvg({ url, response }, ctx) {
   try {
     const data = await ctx.fetchFromClient(readClientId(url), "runtime.svg");
@@ -155,7 +155,7 @@ export async function handleV1RuntimeSvg({ url, response }, ctx) {
   }
 }
 
-// /webgrp/v1/runtime/e-file —— E 文件文本
+// 统一入口 format=e-file —— E 文件文本
 // 可选 query: template=预定义模板名（国网E格式|主网实时库|配网实时库|台区实时库）；
 // 指定后由前端按该模板生成（纯后台计算，不影响前端当前模板状态）。
 export async function handleV1RuntimeEFile({ url, response }, ctx) {
@@ -193,7 +193,7 @@ export async function handleV1RuntimeEFile({ url, response }, ctx) {
   }
 }
 
-// /webgrp/v1/runtime/e-file (POST) —— 指定模板文本生成 E 文件
+// 统一入口 format=e-file (POST) —— 指定模板文本生成 E 文件
 // body: { templateText: "<ACLoad ...>...</ACLoad>", templateName?: "用于模板类型校验的错误提示" }
 // 同 GET?template=，模板解析与导出计算均在前端纯函数内完成，不读写前端当前模板状态。
 export async function handleV1RuntimeEFilePost({ request, response, url }, ctx) {
@@ -294,9 +294,6 @@ export function createV1RuntimeRoutes(ctx) {
     { method: "GET", pattern: apiPattern("/v1/runtime/tabs", "/?$"), handle: wrap(handleV1RuntimeTabs) },
     { method: "GET", pattern: apiPattern("/v1/runtime/tabs/", "(?<tab>model|tree|graph)/?$"), handle: wrap(handleV1RuntimeTab) },
     { method: "GET", pattern: apiPattern("/v1/runtime/screenshot", "/?$"), handle: wrap(handleV1RuntimeScreenshot) },
-    { method: "GET", pattern: apiPattern("/v1/runtime/svg", "/?$"), handle: wrap(handleV1RuntimeSvg) },
-    { method: "GET", pattern: apiPattern("/v1/runtime/e-file", "/?$"), handle: wrap(handleV1RuntimeEFile) },
-    { method: "GET", pattern: apiPattern("/v1/runtime/dom", "/?$"), handle: wrap(handleV1RuntimeDom) },
-    { method: "POST", pattern: apiPattern("/v1/runtime/e-file", "/?$"), handle: wrap(handleV1RuntimeEFilePost) }
+    { method: "GET", pattern: apiPattern("/v1/runtime/dom", "/?$"), handle: wrap(handleV1RuntimeDom) }
   ];
 }

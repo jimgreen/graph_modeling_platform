@@ -41,7 +41,7 @@ const exportModel = async (scheme, name, nodes) => {
     "utf-8"
   );
   return fetch(
-    `${baseUrl}${apiPath(`/v1/schemes/model/e-file?schemePath=${encodeSchemePath([scheme])}&name=${encodeURIComponent(name)}`)}`
+    `${baseUrl}${apiPath(`/v1/schemes/model/export?format=e-file&schemePath=${encodeSchemePath([scheme])}&name=${encodeURIComponent(name)}`)}`
   );
 };
 

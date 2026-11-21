@@ -1,7 +1,7 @@
 // server/xmlEncoding.mjs 的单元测试 —— 此前零覆盖。
 //
 // 它是「导出响应体与前端落盘文件逐字节一致」这条契约的单源实现，被
-// /v1/schemes/model/e-file、/svg、/cim-xml、/send 四处共用。字节不一致的后果
+// /v1/schemes/model/export 的 e-file/svg/cim-xml format 与 /send 共用。字节不一致的后果
 // 是第三方拿到的文件与用户本地保存的文件不同（编码声明错、BOM 多余、声明重复），
 // 而现有端到端测试比的是**内容**不是**字节**，抓不到声明层面的差异。
 import { describe, expect, test, vi } from "vitest";

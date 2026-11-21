@@ -305,7 +305,7 @@ describe("requireSchemePath：只看 `Array.isArray && length > 0`", () => {
 // ⚠ 不能用 `url.searchParams.set("schemePath", encoded)` —— 它会把 `%` 再编成 `%25`，
 //   变成二次编码，`searchParams.get` 取出来仍带 `%`，生产从这条路径取值。
 const ORIGIN = "http://127.0.0.1:5174";
-const ENTRY = "/v1/schemes/model/svg";
+const ENTRY = "/v1/schemes/model/export";
 
 const viaUrl = (parts, entry = ENTRY) => {
   const url = new URL(`${ORIGIN}${entry}?schemePath=${encodeSchemePath(parts)}`);

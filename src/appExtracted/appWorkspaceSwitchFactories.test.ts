@@ -196,7 +196,7 @@ describe("programmaticSwitchModel", () => {
       loadSavedProjectRecord: vi.fn()
     };
     const swap = createProgrammaticSwitchModel(scope);
-    await expect(swap({})).rejects.toThrow(/modelId、modelKey 或 schemePath/u);
+    await expect(swap({})).rejects.toThrow(/modelId、modelKey、schemePath \+ name 或 schemeId \+ name/u);
   });
 
   test("加载失败（读盘错误）→ internal，不假装成功", async () => {

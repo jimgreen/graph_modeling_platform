@@ -365,7 +365,7 @@ describe("★ findSavedSchemeParentById：返回**父**不是自己", () => {
     // 我第一版以为 `id: 1` 配 `schemeId: 1` 也查不到，被顶回。
     const numeric: Rec[] = [S("P", { id: "P", children: [{ id: 1, name: "one" } as never] })];
     expect(findSavedSchemeParentById(numeric as never, 1 as never)?.id, "★ 1 === 1 命中").toBe("P");
-    expect(findSavedSchemeParentById(numeric as never, "1"), "★ 1 === \"1\" 不命中").toBeUndefined();
+    expect(findSavedSchemeParentById(numeric as never, "1")?.id, "★ 数字 schemeId 的字符串形态仍可兼容读取").toBe("P");
     // 前提
     expect(1 === (1 as never)).toBe(true);
     expect(1 === ("1" as never)).toBe(false);

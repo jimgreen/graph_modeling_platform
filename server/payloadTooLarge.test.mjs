@@ -57,9 +57,9 @@ describe("请求体超限", () => {
   });
 
   test("v1 域的 2MB 上限同样回 413（确认修复不是只对内部端点生效）", async () => {
-    // /webgrp/v1/runtime/e-file 走 v1 自己的信封通路（{ok:false,error:{code}}），
+    // /webgrp/v1/runtime/export?format=e-file 走 v1 自己的信封通路（{ok:false,error:{code}}），
     // 与内部端点的 {error:"..."} 形状不同，但状态码语义必须一致。
-    const res = await fetch(`${baseUrl}/webgrp/v1/runtime/e-file`, {
+    const res = await fetch(`${baseUrl}/webgrp/v1/runtime/export?format=e-file`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ templateText: "x".repeat(3 * 1024 * 1024) })

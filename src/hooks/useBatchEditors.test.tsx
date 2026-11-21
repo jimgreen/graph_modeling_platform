@@ -28,7 +28,6 @@ function batchParamHtml(
   const firstNode = nodes[0]!;
   const nodeById = new Map(graphNodes.map((node) => [node.id, node]));
   const editors = useBatchEditors({
-    isBrowseMode: false,
     activeSelectedNodeIds: nodes.map((node) => node.id),
     nodeById,
     selectedNode: firstNode,
@@ -49,7 +48,6 @@ function batchParamHtml(
     applyBatchCommonMeasurementGroupSetting: vi.fn(),
     assignSelectedNodesToModelLayer: vi.fn(),
     updateSelectedNode: vi.fn(),
-    requireEditMode: () => true,
     libraryTemplateByKind
   });
   return renderToStaticMarkup(createElement("div", null, editors.renderBatchCommonPropertyPanel()));
@@ -426,7 +424,6 @@ describe("ratio parameter editors", () => {
       nextDraft = typeof updater === "function" ? updater(current) : updater;
     });
     const editors = useBatchEditors({
-      isBrowseMode: false,
       activeSelectedNodeIds: [node.id],
       nodeById: new Map([[node.id, node]]),
       selectedNode: node,
@@ -453,7 +450,6 @@ describe("ratio parameter editors", () => {
       applyBatchCommonMeasurementGroupSetting: vi.fn(),
       assignSelectedNodesToModelLayer: vi.fn(),
       updateSelectedNode: vi.fn(),
-      requireEditMode: () => true,
       libraryTemplateByKind: new Map(DEVICE_LIBRARY.map((template) => [template.kind, template]))
     });
 
@@ -468,7 +464,6 @@ describe("ratio parameter editors", () => {
 
 function batchMeasurementHtml(node: ModelNode, rows: BatchCommonMeasurementGroupRow[]): string {
   const editors = useBatchEditors({
-    isBrowseMode: false,
     activeSelectedNodeIds: [node.id],
     nodeById: new Map([[node.id, node]]),
     selectedNode: node,
@@ -489,7 +484,6 @@ function batchMeasurementHtml(node: ModelNode, rows: BatchCommonMeasurementGroup
     applyBatchCommonMeasurementGroupSetting: vi.fn(),
     assignSelectedNodesToModelLayer: vi.fn(),
     updateSelectedNode: vi.fn(),
-    requireEditMode: () => true,
     libraryTemplateByKind: new Map(DEVICE_LIBRARY.map((template) => [template.kind, template]))
   });
   return renderToStaticMarkup(createElement("div", null, editors.renderBatchCommonPropertyPanel()));

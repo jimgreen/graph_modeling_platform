@@ -1,4 +1,4 @@
-import { runAutoAlignPlan, type AutoAlignPlanInput, type AutoAlignPlanResult } from "./autoAlignPlan";
+import { runAutoAlignPlan, type AutoAlignPlanInput, type AutoAlignPlanResult, type AutoAlignProgress } from "./autoAlignPlan";
 
 type WorkerRequest = {
   type: "run";
@@ -6,6 +6,7 @@ type WorkerRequest = {
 };
 
 type WorkerResponse =
+  | { type: "progress"; progress: AutoAlignProgress }
   | { ok: true; result: AutoAlignPlanResult }
   | { ok: false; error: string };
 
@@ -19,7 +20,10 @@ workerScope.onmessage = (event) => {
     if (event.data?.type !== "run") {
       throw new Error("自动对齐 Worker 请求无效");
     }
-    workerScope.postMessage({ ok: true, result: runAutoAlignPlan(event.data.input) });
+    const result = runAutoAlignPlan(event.data.input, {
+      onProgress: (progress) => workerScope.postMessage({ type: "progress", progress })
+    });
+    workerScope.postMessage({ ok: true, result });
   } catch (error) {
     workerScope.postMessage({ ok: false, error: error instanceof Error ? error.message : String(error) });
   }

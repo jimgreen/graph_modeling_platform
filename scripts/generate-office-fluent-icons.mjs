@@ -4,12 +4,13 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { escapeXmlFull as escapeXml } from "../shared/xmlEscape.mjs";
+import { configuredDataDir } from "../server/config.mjs";
 
 const packageName = "@fluentui/svg-icons";
 const packageVersion = "1.1.330";
 const packageSpec = `${packageName}@${packageVersion}`;
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const outputDir = path.join(rootDir, "data", "icon-library", "office-fluent-compatible");
+const outputDir = path.join(configuredDataDir, "icon-library", "office-fluent-compatible");
 const tempDir = path.join(rootDir, "tmp", "office-fluent-icons");
 const packDir = path.join(tempDir, "pack");
 const extractDir = path.join(tempDir, "extract");

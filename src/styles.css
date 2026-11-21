@@ -567,19 +567,23 @@ button:not(.ant-btn):disabled {
 
 .project-model-type-filter {
   display: flex;
+  gap: 4px;
+  min-inline-size: 0;
   justify-content: space-between;
   margin: 0 0 8px;
 }
 
 .project-model-type-btn {
+  flex: 1 1 0;
   min-width: 0;
-  width: 35px;
+  min-inline-size: 0;
+  inline-size: auto;
   padding: 2px 2px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--model-type-color, #94a3b8);
   border-radius: 4px;
   background: #ffffff;
-  color: #64748b;
-  font-size: 14px;
+  color: var(--model-type-color, #94a3b8);
+  font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -587,14 +591,36 @@ button:not(.ant-btn):disabled {
 }
 
 .project-model-type-btn:hover {
-  border-color: #94a3b8;
-  color: #334155;
+  border-color: var(--model-type-color, #94a3b8);
+  background: #f8fafc;
 }
 
 .project-model-type-btn.active {
-  background: #2563eb;
-  border-color: #2563eb;
+  border-color: var(--model-type-color, #94a3b8);
+  background: var(--model-type-color, #94a3b8);
   color: #ffffff;
+}
+
+@container project-panel (inline-size <= 220px) {
+  .project-model-type-filter {
+    gap: 6px;
+    justify-content: space-between;
+  }
+
+  .project-tree-antd .project-model-type-tag {
+    flex: 0 0 10px;
+    inline-size: 10px;
+    min-inline-size: 10px;
+    block-size: 10px;
+    min-block-size: 10px;
+    padding: 0;
+    border-radius: 50%;
+    color: transparent;
+    font-size: 0;
+    line-height: 0;
+    overflow: visible;
+    text-overflow: clip;
+  }
 }
 
 .left-panel-tabs {
@@ -649,42 +675,90 @@ button:not(.ant-btn):disabled {
 .left-panel-footer {
   display: flex;
   flex-direction: row;
-  justify-content: space-around;
+  align-items: safe center;
+  justify-content: space-between;
   flex-shrink: 0;
-  flex-wrap: nowrap;
   gap: 12px;
   padding: 6px 10px;
   border-top: 1px solid #e2e8f0;
   background: #f8fafc;
   font-size: 11px;
   color: #64748b;
-  align-items: center;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .left-panel-footer-item {
-  display: inline-flex;
-  flex-wrap: nowrap;
+  display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
-  flex: 1 1 0;
+  width: auto;
+  flex: 0 1 auto;
   white-space: nowrap;
   font-family: '思源黑体';
 }
 
+.left-panel-footer-item:last-child {
+  margin-inline-start: auto;
+  justify-content: flex-end;
+}
+
 .left-panel-footer-label {
-  flex-shrink: 0;
-  color: #64748b;
+  flex: 0 0 58px;
+  color: #475569;
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.left-panel-footer .id-copy-cell {
-  flex: 1 1 0;
+.left-panel-footer .id-copy-cell,
+.left-panel-footer .scheme-copy-cell {
+  flex: 0 1 auto;
   min-width: 0;
   text-align: left;
   font-size: 11px;
   padding: 2px 6px;
+  min-inline-size: 24px;
+  min-block-size: 24px;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+  border: 0;
+  border-radius: 3px;
+  color: #0f172a;
+  background: transparent;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  cursor: pointer;
+}
+
+.left-panel-footer-item:last-child .id-copy-cell {
+  text-align: right;
+}
+
+.left-panel-footer .id-copy-cell:hover:not(:disabled),
+.left-panel-footer .scheme-copy-cell:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.left-panel-footer .id-copy-cell:focus-visible,
+.left-panel-footer .scheme-copy-cell:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+}
+
+.left-panel-footer .id-copy-cell:disabled,
+.left-panel-footer .scheme-copy-cell:disabled {
+  color: #64748b;
+  cursor: default;
+}
+
+@media (pointer: coarse) {
+  .left-panel-footer .id-copy-cell,
+  .left-panel-footer .scheme-copy-cell {
+    min-inline-size: 44px;
+    min-block-size: 44px;
+  }
 }
 
 .project-panel {
@@ -695,6 +769,7 @@ button:not(.ant-btn):disabled {
   padding: 10px 10px;
   border-top: 1px solid #e2e8f0;
   border-bottom: 0;
+  container: project-panel / inline-size;
 }
 
 .library-splitter {
@@ -757,6 +832,141 @@ button:not(.ant-btn):disabled {
 
 .project-list.listbox {
   max-height: none;
+}
+
+/* Ant Design Tree 方案树：保留模型库原有的紧凑行高、浅色层级和蓝灰选中态。 */
+.project-tree-antd {
+  width: 100%;
+  min-height: 0;
+  padding: 2px 0 8px;
+  color: #0f172a;
+  background: transparent;
+  font-size: 12.5px;
+}
+
+.project-tree-antd .ant-tree-list,
+.project-tree-antd .ant-tree-list-holder,
+.project-tree-antd .ant-tree-list-holder-inner {
+  width: 100%;
+}
+
+.project-tree-antd.ant-tree .ant-tree-treenode {
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  align-items: center;
+}
+
+.project-tree-antd .ant-tree-indent-unit {
+  width: 16px;
+}
+
+.project-tree-antd .ant-tree-switcher {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 32px;
+  margin: 0;
+  color: #64748b;
+}
+
+.project-tree-antd .ant-tree-switcher-leaf-line::before,
+.project-tree-antd .ant-tree-switcher-leaf-line::after {
+  border-color: #d7dee8;
+}
+
+.project-tree-antd .ant-tree-node-content-wrapper {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 8px 0 4px;
+  border-radius: 0;
+  color: inherit;
+  background: transparent;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.project-tree-antd .ant-tree-node-content-wrapper:hover,
+.project-tree-antd .ant-tree-treenode:hover > .ant-tree-node-content-wrapper {
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+.project-tree-antd .ant-tree-treenode-selected > .ant-tree-node-content-wrapper,
+.project-tree-antd .ant-tree-treenode-selected > .ant-tree-node-content-wrapper:hover {
+  color: #1f2937;
+  background: #f1f5f9;
+  box-shadow: -3px 0px 0px 0px #7287a5;
+}
+
+.project-tree-antd .ant-tree-title {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 只修正原生 holder 的布局位置，保留 Ant Design 自己的尺寸、颜色和图标。 */
+.project-tree-antd .ant-tree-draggable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.project-tree-antd .project-tree-node-title {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  gap: 8px;
+  user-select: none;
+}
+
+.project-tree-antd .project-tree-node-title-scheme {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.project-tree-antd .project-tree-node-title-model {
+  color: #334155;
+  font-weight: 700;
+}
+
+.project-tree-antd .project-tree-node-title-model.active,
+.project-tree-antd .project-tree-node-title-model.selected {
+  color: #1f2937;
+}
+
+.project-tree-antd .project-tree-node-title .project-tree-name {
+  max-width: none;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.project-tree-antd .project-tree-empty-hint {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.project-tree-antd .project-model-type-tag {
+  position: static;
+  flex: 0 0 auto;
+  margin-left: 6px;
+}
+
+.project-tree-antd .ant-tree-treenode-disabled > .ant-tree-node-content-wrapper {
+  color: inherit;
+  background: transparent;
 }
 
 .scheme-option,
@@ -859,6 +1069,26 @@ button:not(.ant-btn):disabled {
 .project-option.active .project-item-icon,
 .project-option.selected.active .project-item-icon {
   color: #334155;
+}
+
+.project-option-loading-progress {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  display: block;
+  width: 100%;
+  height: 2px;
+  margin: 0;
+  accent-color: #2563eb;
+  pointer-events: none;
+}
+
+.project-option-loading-progress::-webkit-progress-value {
+  transition: inline-size 160ms linear;
+}
+
+.project-option-loading-progress::-moz-progress-bar {
+  transition: inline-size 160ms linear;
 }
 
 .scheme-option:hover,
@@ -1086,6 +1316,27 @@ button:not(.ant-btn):disabled {
 
 .library-tree-drop-line-after::after {
   bottom: -1px;
+}
+
+/* 模型行 / 嵌套方案行已有树形连接线伪元素，特异性高于通用落点规则；
+   这里显式覆盖其尺寸与位置，确保模型拖动也能看到完整的虚线插入提示。 */
+.scheme-group.nested > .scheme-option.library-tree-drop-line-before::before,
+.scheme-projects > .project-option.library-tree-drop-line-before::before {
+  top: -1px;
+  right: 0;
+  left: 0;
+  width: auto;
+  height: 0;
+  background: transparent;
+}
+
+.scheme-group.nested > .scheme-option.library-tree-drop-line-after::after,
+.scheme-projects > .project-option.library-tree-drop-line-after::after {
+  right: 0;
+  left: 0;
+  width: auto;
+  height: 0;
+  background: transparent;
 }
 
 /* 跨层级落点（inside）：成为目标行的子方案 —— 用整行浅蓝底 + 左侧标记条提示，
@@ -1555,59 +1806,10 @@ button:not(.ant-btn):disabled {
   padding-left: 5px;
 }
 
-.mode-toggle-button {
-  width: auto;
-  min-width: 96px;
-  padding: 0 12px;
-  white-space: nowrap;
-}
-
 .topbar-primary-button.active {
   color: #1f2937;
   border-color: #94a3b8;
   background: #e8eef5;
-}
-
-.topbar-primary-button.browse-mode-toggle {
-  color: #fff;
-  border-color: #dc2626;
-  background: #ef4444;
-}
-
-/* 浏览模式右键方案树时，顶栏"编辑/浏览"按钮短暂闪动提示用户切换模式 */
-@keyframes mode-toggle-hint-pulse {
-  0%, 100% {
-    background: #ef4444;
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.85);
-  }
-  25% {
-    background: #fbbf24;
-    box-shadow: 0 0 0 6px rgba(251, 191, 36, 0);
-  }
-  50% {
-    background: #ef4444;
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.85);
-  }
-  75% {
-    background: #fbbf24;
-    box-shadow: 0 0 0 6px rgba(251, 191, 36, 0);
-  }
-}
-
-.topbar-primary-button.mode-toggle-hint {
-  animation: mode-toggle-hint-pulse 1s ease-in-out 0s 3;
-  outline: 2px solid #fbbf24;
-  outline-offset: 1px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  /* 减弱动画偏好：关闭闪烁，保留静态黄色轮廓作为可见提示 */
-  .topbar-primary-button.mode-toggle-hint {
-    animation: none;
-    background: #fbbf24;
-    outline: 2px solid #fbbf24;
-    outline-offset: 1px;
-  }
 }
 
 .topbar-dropdown {
@@ -2246,14 +2448,6 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .diagram-canvas.terminal-dragging,
 .diagram-canvas.terminal-dragging * {
   cursor: grabbing !important;
-}
-
-.app-shell.browse-mode .diagram-canvas {
-  cursor: grab;
-}
-
-.app-shell.browse-mode .diagram-canvas.panning {
-  cursor: grabbing;
 }
 
 .diagram-canvas.multi-node-dragging .canvas-content {
@@ -4109,6 +4303,51 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   background: rgba(15, 23, 42, 0.28);
 }
 
+.auto-align-progress-backdrop {
+  z-index: 14500;
+}
+
+.auto-align-progress-dialog {
+  width: min(420px, calc(100vw - 32px));
+  display: grid;
+  gap: 14px;
+}
+
+.auto-align-progress-dialog h2,
+.auto-align-progress-dialog p {
+  margin: 0;
+}
+
+.auto-align-progress-dialog p {
+  color: #475569;
+  min-height: 1.5em;
+}
+
+.auto-align-progress-bar {
+  width: 100%;
+  height: 10px;
+  accent-color: #1677ff;
+}
+
+.auto-align-progress-dialog .image-picker-actions {
+  justify-content: flex-end;
+}
+
+.auto-align-progress-dialog .image-picker-actions .danger-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-color: #b42318;
+  color: #ffffff;
+  background: #b42318;
+}
+
+.auto-align-progress-dialog .image-picker-actions .danger-action:hover,
+.auto-align-progress-dialog .image-picker-actions .danger-action:focus-visible {
+  border-color: #8f1d14;
+  background: #8f1d14;
+}
+
 .image-picker-backdrop.unsaved-change-backdrop {
   z-index: 14000;
 }
@@ -5502,6 +5741,23 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .library-package-action-group-wide {
   grid-column: 1 / -1;
+}
+
+.library-scope-toolbar {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  margin: 0 14px 8px;
+}
+
+.library-scope-toolbar > .library-scope-actions,
+.library-scope-toolbar > .library-display-mode {
+  min-width: 0;
+  margin: 0;
+}
+
+.library-scope-toolbar > .library-scope-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .library-package-action-title {
@@ -13819,11 +14075,6 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .drag-preview-measurement-group {
-  pointer-events: none;
-}
-
-.browse-mode .measurement-group {
-  cursor: default;
   pointer-events: none;
 }
 

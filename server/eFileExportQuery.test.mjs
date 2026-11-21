@@ -23,7 +23,7 @@ function urlWith(params) {
       search.set(key, value);
     }
   }
-  return new URL(`http://127.0.0.1/webgrp/v1/schemes/model/e-file?${search.toString()}`);
+  return new URL(`http://127.0.0.1/webgrp/v1/schemes/model/export?format=e-file&${search.toString()}`);
 }
 
 // 生产链路是**单次编码**：`URLSearchParams.set` 自己会编码，所以这里传原始 JSON 字符串。

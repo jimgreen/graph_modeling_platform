@@ -228,9 +228,8 @@ describe("打开失败的模型诉求：sessionStorage 重试记账", () => {
   });
 });
 
-// 用户要求（m06427）：地址栏里的 model / scheme 不要用中文，用 id。
-// 下面这组用例钉两件事：①写出去的一定不含中文 ②读回来的旧地址仍然能定位（兼容不能丢）。
-describe("地址栏不用中文：模型用 project.idx、方案用路径 slug", () => {
+// 地址栏使用模型稳定序号与数字 schemeId；旧路径 slug 只保留读取兼容。
+describe("地址栏使用数字 schemeId", () => {
   test("schemePathSlugPrefixes：ASCII 短名保留原文，中文名换成层号", () => {
     expect(schemePathSlugPrefixes(["DOT"])).toEqual(["DOT"]);
     expect(schemePathSlugPrefixes(["排查方案"])).toEqual(["s1"]);
@@ -262,25 +261,25 @@ describe("地址栏不用中文：模型用 project.idx、方案用路径 slug",
   const schemes = [
     {
       name: "排查方案",
-      id: "scheme:0",
+      schemeId: 10,
       projects: [],
       children: [
         {
           name: "DOT",
-          id: "scheme:1",
+          schemeId: 1,
           projects: [
             { id: "project:a", project: { name: "排查模型", idx: 7 } },
             { id: "project:b", project: { name: "另一个模型", idx: 9 } }
           ],
-          children: [{ name: "子方案", id: "scheme:2", projects: [{ id: "project:c", project: { name: "子模型", idx: 11 } }] }]
+          children: [{ name: "子方案", schemeId: 2, projects: [{ id: "project:c", project: { name: "子模型", idx: 11 } }] }]
         }
       ]
     }
   ];
 
-  test("schemeSlugForModelKey：逐层算到模型所在的那一层", () => {
-    expect(schemeSlugForModelKey(schemes, "project:a")).toBe("s1/DOT");
-    expect(schemeSlugForModelKey(schemes, "project:c")).toBe("s1/DOT/s3");
+  test("schemeSlugForModelKey：返回数字 schemeId", () => {
+    expect(schemeSlugForModelKey(schemes, "project:a")).toBe("1");
+    expect(schemeSlugForModelKey(schemes, "project:c")).toBe("2");
   });
 
   test("schemeSlugForModelKey：模型不在树里时返回空串（宁可不写，也不写错的）", () => {
@@ -307,17 +306,17 @@ describe("地址栏不用中文：模型用 project.idx、方案用路径 slug",
     expect(findSchemeBySlug(schemes, "")).toBe(null);
   });
 
-  test("写出去的地址栏不含中文：model 是纯数字、scheme 是 slug", () => {
+  test("写出去的地址栏使用数字 schemeId", () => {
     const hash = buildWorkspaceHash({ spaceId: "default", modelId: "7", schemeId: schemeSlugForModelKey(schemes, "project:a") });
-    expect(hash).toBe("#space=default&model=7&scheme=s1%2FDOT");
-    expect(decodeURIComponent(hash)).toBe("#space=default&model=7&scheme=s1/DOT");
+    expect(hash).toBe("#space=default&model=7&scheme=1");
+    expect(decodeURIComponent(hash)).toBe("#space=default&model=7&scheme=1");
     expect(/[\u4e00-\u9fa5]/u.test(hash)).toBe(false);
   });
 
-  test("读回新格式：model/scheme 就是 idx 与 slug，不带 legacy 标记", () => {
-    const parsed = parseWorkspaceHash("#space=default&model=7&scheme=s1%2FDOT");
+  test("读回新格式：model/scheme 就是 idx 与数字 schemeId，不带 legacy 标记", () => {
+    const parsed = parseWorkspaceHash("#space=default&model=7&scheme=1");
     expect(parsed.modelId).toBe("7");
-    expect(parsed.schemeId).toBe("s1/DOT");
+    expect(parsed.schemeId).toBe("1");
     expect(parsed.legacyModelKey).toBe(false);
     expect(parsed.legacySchemeKey).toBe(false);
     expect(parsed.hasModel).toBe(true);

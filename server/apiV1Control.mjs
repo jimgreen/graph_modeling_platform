@@ -21,6 +21,19 @@ function readClientId(url) {
   return raw.trim() || null;
 }
 
+function parseSchemeId(value) {
+  if (value === undefined || value === null) return { value: null };
+  const numeric = typeof value === "number"
+    ? value
+    : typeof value === "string" && value.trim()
+      ? Number(value.trim())
+      : NaN;
+  if (!Number.isSafeInteger(numeric) || numeric <= 0) {
+    return { error: "schemeId 必须是正安全整数。" };
+  }
+  return { value: numeric };
+}
+
 // 统一处理 sendCommandToClient reject → v1 错误响应
 function handleCommandError(response, error) {
   if (error instanceof NoOnlineClientError) {
@@ -99,14 +112,19 @@ export async function handleControlSchemeCreate({ request, url, response }, ctx)
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
 }
-  const { name, parentSchemeId } = payload ?? {};
+  const { name, parentSchemeId: rawParentSchemeId } = payload ?? {};
+  const parentSchemeId = parseSchemeId(rawParentSchemeId);
+  if (parentSchemeId.error) {
+    sendV1Error(response, "bad-request", parentSchemeId.error);
+    return;
+  }
   if (!name || typeof name !== "string" || !name.trim()) {
     sendV1Error(response, "bad-request", "name 必填。");
     return;
   }
   const params = { name };
-  if (parentSchemeId !== undefined) {
-    params.parentSchemeId = parentSchemeId;
+  if (parentSchemeId.value !== null) {
+    params.parentSchemeId = parentSchemeId.value;
   }
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.scheme.create", params));
 }
@@ -122,7 +140,12 @@ export async function handleControlModelCreate({ request, url, response }, ctx) 
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
 }
-  const { name, schemeId, modelType } = payload ?? {};
+  const { name, schemeId: rawSchemeId, modelType } = payload ?? {};
+  const parsedSchemeId = parseSchemeId(rawSchemeId);
+  if (parsedSchemeId.error) {
+    sendV1Error(response, "bad-request", parsedSchemeId.error);
+    return;
+  }
   if (!name || typeof name !== "string" || !name.trim()) {
     sendV1Error(response, "bad-request", "name 必填。");
     return;
@@ -132,8 +155,8 @@ export async function handleControlModelCreate({ request, url, response }, ctx) 
     return;
   }
   const params = { name, modelType };
-  if (schemeId !== undefined) {
-    params.schemeId = schemeId;
+  if (parsedSchemeId.value !== null) {
+    params.schemeId = parsedSchemeId.value;
   }
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.model.create", params));
 }
@@ -324,8 +347,8 @@ export async function handleControlSpaceSwitch({ request, url, response }, ctx) 
 }
 
 // /webgrp/v1/control/model/switch —— 切换当前打开的模型
-// body: { modelId? , modelKey? , schemePath? , name? } → 回执 { alreadyOpen, modelId, name, schemeId, schemePath }
-// 定位优先级：modelId（后端稳定序号 idx）> modelKey > schemePath + name。
+// body: { modelId? , modelKey? , schemePath? , schemeId? , name? } → 回执 { alreadyOpen, modelId, name, schemeId, schemePath }
+// 定位优先级：modelId（后端稳定序号 idx）> modelKey > schemePath + name / schemeId + name。
 // 无未保存修改才放行（前端侧校验，有则回 bad-request）。
 export async function handleControlModelSwitch({ request, url, response }, ctx) {
   let payload;
@@ -337,6 +360,14 @@ export async function handleControlModelSwitch({ request, url, response }, ctx) 
     return;
   }
   const params = {};
+  const parsedSchemeId = parseSchemeId(payload?.schemeId);
+  if (parsedSchemeId.error) {
+    sendV1Error(response, "bad-request", parsedSchemeId.error);
+    return;
+  }
+  if (parsedSchemeId.value !== null) {
+    params.schemeId = parsedSchemeId.value;
+  }
   const rawModelId = payload?.modelId;
   if (rawModelId !== undefined && rawModelId !== null && String(rawModelId).trim() !== "") {
     const numeric = Number(rawModelId);
@@ -351,15 +382,20 @@ export async function handleControlModelSwitch({ request, url, response }, ctx) 
   if (modelKey) {
     params.modelKey = modelKey;
   }
-  if (Array.isArray(payload?.schemePath) && payload.schemePath.length > 0) {
-    params.schemePath = payload.schemePath;
+  if (payload?.schemePath !== undefined && payload.schemePath !== null) {
+    if (!Array.isArray(payload.schemePath) || payload.schemePath.length === 0 ||
+      payload.schemePath.some((part) => typeof part !== "string" || !part.trim() || part.trim() === "." || part.trim() === "..")) {
+      sendV1Error(response, "bad-request", "schemePath 须为非空字符串数组。");
+      return;
+    }
+    params.schemePath = payload.schemePath.map((part) => part.trim());
   }
   const name = typeof payload?.name === "string" ? payload.name.trim() : "";
   if (name) {
     params.name = name;
   }
-  if (params.modelId === undefined && !params.modelKey && !(params.schemePath && params.name)) {
-    sendV1Error(response, "bad-request", "请用 modelId、modelKey 或 schemePath + name 指定要切换的模型。");
+  if (params.modelId === undefined && !params.modelKey && !(params.schemePath && params.name) && !(params.schemeId !== undefined && params.name)) {
+    sendV1Error(response, "bad-request", "请用 modelId、modelKey、schemePath + name 或 schemeId + name 指定要切换的模型。");
     return;
   }
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.model.switch", params));

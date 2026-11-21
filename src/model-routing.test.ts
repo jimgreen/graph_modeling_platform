@@ -140,6 +140,7 @@ import {
   redrawConnectionRoutesForEdges,
   redrawRoutableLineDeviceRoutes,
   realignConnectionEdgeBusEndpointPoints,
+  equalizeBusConnectionEdgeEndpointPoints,
   realignRoutableLineDeviceBusEndpointPoints,
   upsertSavedProject,
   rerouteEdgesAroundMovedNodes,
@@ -2118,6 +2119,31 @@ test("redraws connection routes by replacing stale explicit bus endpoint points"
   expect(redrawnEdge.targetPoint).not.toEqual(edge.targetPoint);
   expect(redrawnEdge.manualPoints?.length ?? 0).toBeLessThan(edge.manualPoints!.length);
   expect(route.points[route.points.length - 1]).toEqual(redrawnEdge.targetPoint);
+});
+
+test("equalizes automatic bus connection landing points by stable edge order", () => {
+  const bus = { ...createDefaultNode("ac-bus", { x: 500, y: 200 }), id: "bus-equalized", size: { width: 400, height: 16 } };
+  const first = { ...createDefaultNode("ac-load", { x: 220, y: 100 }), id: "device-a" };
+  const second = { ...createDefaultNode("ac-load", { x: 220, y: 300 }), id: "device-b" };
+  const edges: Edge[] = [
+    { id: "edge-b", sourceId: second.id, targetId: bus.id, targetTerminalId: "t1" },
+    { id: "edge-a", sourceId: first.id, targetId: bus.id, targetTerminalId: "t1" }
+  ];
+
+  const equalized = equalizeBusConnectionEdgeEndpointPoints([bus, first, second], edges);
+  const firstPoint = equalized.find((edge) => edge.id === "edge-a")?.targetPoint;
+  const secondPoint = equalized.find((edge) => edge.id === "edge-b")?.targetPoint;
+  expect(firstPoint).toBeDefined();
+  expect(secondPoint).toBeDefined();
+  expect(firstPoint!.y).toBe(bus.position.y);
+  expect(secondPoint!.y).toBe(bus.position.y);
+  expect(firstPoint!.x).toBeLessThan(secondPoint!.x);
+  expect(secondPoint!.x - firstPoint!.x).toBe(320);
+  expect(equalizeBusConnectionEdgeEndpointPoints([bus, first, second], equalized)).toEqual(equalized);
+  const shuffled = equalizeBusConnectionEdgeEndpointPoints([bus, first, second], [...edges].reverse());
+  expect(shuffled.slice().sort((left, right) => left.id.localeCompare(right.id))).toEqual(
+    equalized.slice().sort((left, right) => left.id.localeCompare(right.id))
+  );
 });
 
 

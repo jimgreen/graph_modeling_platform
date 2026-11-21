@@ -8,6 +8,9 @@ const configFile = process.env.GRAPH_MODEL_CONFIG
   ? resolve(process.env.GRAPH_MODEL_CONFIG)
   : resolve(repoRoot, "platform.config.json");
 
+export const repositoryRoot = repoRoot;
+export const platformConfigPath = configFile;
+
 function readConfig() {
   let parsed;
   try {
@@ -67,6 +70,16 @@ export const apiPrefix = trimTrailingSlash(
 export const frontendPrefix = normalizeBase(
   process.env.GRAPH_MODEL_FRONTEND_PREFIX ?? cfg.frontend?.prefix ?? "/"
 );
+
+function readEnvDataDir() {
+  return typeof process.env.GRAPH_MODEL_DATA_DIR === "string"
+    ? process.env.GRAPH_MODEL_DATA_DIR.trim()
+    : "";
+}
+const configDataDir = typeof cfg.dataDir === "string" ? cfg.dataDir.trim() : "";
+const dataDirValue = readEnvDataDir() || configDataDir || "./data";
+export const configuredDataDir =
+  resolve(repoRoot, dataDirValue);
 
 // 剥掉前端 base 前缀（非根时）：后端入口把 /app/icon-library/x 还原为 /icon-library/x；
 // apiPrefix 开头的 API 请求不以 base 开头，原样返回。

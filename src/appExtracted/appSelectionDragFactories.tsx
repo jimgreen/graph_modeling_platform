@@ -243,10 +243,7 @@ export function createCurrentProject(__appScope: Record<string, any>) {
 
 export function createAdjustSelectedDisplayLayer(__appScope: Record<string, any>) {
   return (action: DisplayLayerAction) => {
-  const { activeSelectedEdgeIds, activeSelectedNodeIds, nodes, pushUndoSnapshot, reorderItemsByDisplayLayer, requireEditMode, setCanvasSelectionScope, setContextMenu, setNodes, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog } = __appScope;
-    if (!requireEditMode("调整显示层级")) {
-      return;
-    }
+  const { activeSelectedEdgeIds, activeSelectedNodeIds, nodes, pushUndoSnapshot, reorderItemsByDisplayLayer, setCanvasSelectionScope, setContextMenu, setNodes, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog } = __appScope;
     if (activeSelectedNodeIds.length === 0) {
       writeOperationLog("当前没有被选中元件。");
       return;
@@ -344,17 +341,6 @@ export function createWriteOperationLog(__appScope: Record<string, any>) {
   const { setOperationLogText } = __appScope;
     const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     setOperationLogText(`${time} ${message}`);
-  };
-}
-
-export function createRequireEditMode(__appScope: Record<string, any>) {
-  return (action: string) => {
-  const { isEditMode, writeOperationLog } = __appScope;
-    if (isEditMode) {
-      return true;
-    }
-    writeOperationLog(`浏览模式下不能${action}，请先切换到编辑模式`);
-    return false;
   };
 }
 
@@ -692,17 +678,12 @@ export function createFinishModifierSelectionPress(__appScope: Record<string, an
 
 export function createStartNodeLabelDrag(__appScope: Record<string, any>) {
   return (event: ReactPointerEvent<SVGGElement>, node: ModelNode) => {
-  const { activateInspectorFromCanvas, activeLayerNodeIdSet, clampPointToCanvas, getNodeScaleX, getNodeScaleY, getSafeNodeScaleX, getSafeNodeScaleY, hasCanvasSelectionModifier, isBrowseMode, nodeLabelOffset, screenToSvgPoint, selectCanvasGraphics, setInspectorTab, setNodeLabelDrag, startModifierSelectionPress, svgRef } = __appScope;
+  const { activateInspectorFromCanvas, activeLayerNodeIdSet, clampPointToCanvas, getNodeScaleX, getNodeScaleY, getSafeNodeScaleX, getSafeNodeScaleY, hasCanvasSelectionModifier, nodeLabelOffset, screenToSvgPoint, selectCanvasGraphics, setInspectorTab, setNodeLabelDrag, startModifierSelectionPress, svgRef } = __appScope;
     if (!event.nativeEvent.defaultPrevented) {
       event.preventDefault();
     }
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
-      return;
-    }
-    if (isBrowseMode) {
-      selectCanvasGraphics([node.id], [], { scope: "direct" });
-      activateInspectorFromCanvas();
       return;
     }
     if (hasCanvasSelectionModifier(event)) {
@@ -727,15 +708,10 @@ export function createStartNodeLabelDrag(__appScope: Record<string, any>) {
 
 export function createStartNodeLabelRotateDrag(__appScope: Record<string, any>) {
   return (event: ReactPointerEvent<SVGCircleElement>, node: ModelNode) => {
-  const { activateInspectorFromCanvas, activeLayerNodeIdSet, hasCanvasSelectionModifier, isBrowseMode, nodeLabelCanvasCenter, normalizeNodeLabelRotation, selectCanvasGraphics, setInspectorTab, setNodeLabelRotateDrag, startModifierSelectionPress, svgRef } = __appScope;
+  const { activateInspectorFromCanvas, activeLayerNodeIdSet, hasCanvasSelectionModifier, nodeLabelCanvasCenter, normalizeNodeLabelRotation, selectCanvasGraphics, setInspectorTab, setNodeLabelRotateDrag, startModifierSelectionPress, svgRef } = __appScope;
     event.preventDefault();
     event.stopPropagation();
     if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
-      return;
-    }
-    if (isBrowseMode) {
-      selectCanvasGraphics([node.id], [], { scope: "direct" });
-      activateInspectorFromCanvas();
       return;
     }
     if (hasCanvasSelectionModifier(event)) {
@@ -802,10 +778,7 @@ export function createFinishNodeLabelRotateDrag(__appScope: Record<string, any>)
 
 export function createSetSelectedNodeLabelDisplayMode(__appScope: Record<string, any>) {
   return (mode: NodeLabelDisplayMode) => {
-  const { NODE_LABEL_DISPLAY_MODES, activeSelectedNodeIds, commitNodeFootprintUpdates, isStaticNode, nodeById, nodeLabelDisplayMode, pushUndoSnapshot, requireEditMode, writeOperationLog } = __appScope;
-    if (!requireEditMode("修改图元标识显示方式")) {
-      return;
-    }
+  const { NODE_LABEL_DISPLAY_MODES, activeSelectedNodeIds, commitNodeFootprintUpdates, isStaticNode, nodeById, nodeLabelDisplayMode, pushUndoSnapshot, writeOperationLog } = __appScope;
     if (activeSelectedNodeIds.length === 0) {
       return;
     }
@@ -862,10 +835,7 @@ export function createCopySelection(__appScope: Record<string, any>) {
 
 export function createCutSelection(__appScope: Record<string, any>) {
   return () => {
-  const { activeLayerGroups, activeSelectedEdgeIds, activeSelectedNodeIds, buildCanvasClipboard, canvasSelectionScope, deleteNodesWithConnectedEdges, edges, groups, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, requireEditMode, resetConnectPreviewState, resetRoutableLinePreviewState, resolveCanvasDeleteAction, routedEdges, setCanvasClipboard, setCanvasSelectionScope, setConnectSource, setContextMenu, setGraphArrays, setGroups, setProjectMeasurements, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, showGlobalMessage, visibleEdges, visibleNodes, writeOperationLog } = __appScope;
-    if (!requireEditMode("剪切图元")) {
-      return;
-    }
+  const { activeLayerGroups, activeSelectedEdgeIds, activeSelectedNodeIds, buildCanvasClipboard, canvasSelectionScope, deleteNodesWithConnectedEdges, edges, groups, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, resetConnectPreviewState, resetRoutableLinePreviewState, resolveCanvasDeleteAction, routedEdges, setCanvasClipboard, setCanvasSelectionScope, setConnectSource, setContextMenu, setGraphArrays, setGroups, setProjectMeasurements, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, showGlobalMessage, visibleEdges, visibleNodes, writeOperationLog } = __appScope;
     const action = resolveCanvasDeleteAction({
       selectedNodeCount: activeSelectedNodeIds.length,
       hasSelectedEdge: activeSelectedEdgeIds.length > 0
@@ -918,10 +888,7 @@ export function createCutSelection(__appScope: Record<string, any>) {
 
 export function createPasteSelection(__appScope: Record<string, any>) {
   return () => {
-  const { CANVAS_AUTO_EXPAND_PADDING, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, canvasClipboard, canvasClipboardBounds, canvasHeight, canvasWidth, clampNodePositionToBounds, clampPointToBounds, cloneCanvasClipboard, deviceIndexCounters, edges, hasCanvasOriginShift, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, markStoredRouteEdgesDirty, modelType, nodes, normalizeDeviceIndexCounters, normalizeModelGroups, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, requireEditMode, resetConnectPreviewState, setCanvasSelectionScope, setConnectSource, setContextMenu, setDeviceIndexCounters, setGraphArrays, setGroups, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
-    if (!requireEditMode("粘贴图元")) {
-      return;
-    }
+  const { CANVAS_AUTO_EXPAND_PADDING, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, canvasClipboard, canvasClipboardBounds, canvasHeight, canvasWidth, clampNodePositionToBounds, clampPointToBounds, cloneCanvasClipboard, deviceIndexCounters, edges, hasCanvasOriginShift, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, markStoredRouteEdgesDirty, modelType, nodes, normalizeDeviceIndexCounters, normalizeModelGroups, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, resetConnectPreviewState, setCanvasSelectionScope, setConnectSource, setContextMenu, setDeviceIndexCounters, setGraphArrays, setGroups, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
     if (canvasClipboard.nodes.length === 0 && canvasClipboard.edges.length === 0) {
       return;
     }
@@ -1030,10 +997,7 @@ export function createPasteSelection(__appScope: Record<string, any>) {
 
 export function createCreateGraphTemplateType(__appScope: Record<string, any>) {
   return () => {
-  const { customGraphTemplateTypes, graphTemplateTypes, normalizeGraphTemplateTypeName, persistTemplateLibraryChange, requireEditMode, setCustomGraphTemplateTypes, setExpandedGraphTemplateTypes, setTemplateDraftType, writeOperationLog } = __appScope;
-    if (!requireEditMode("新增模板类型")) {
-      return;
-    }
+  const { customGraphTemplateTypes, graphTemplateTypes, normalizeGraphTemplateTypeName, persistTemplateLibraryChange, setCustomGraphTemplateTypes, setExpandedGraphTemplateTypes, setTemplateDraftType, writeOperationLog } = __appScope;
     const rawName = window.prompt("请输入模板类型名称");
     const typeName = normalizeGraphTemplateTypeName(rawName ?? "");
     if (!typeName) {
@@ -1239,10 +1203,7 @@ export function createReplaceBuiltinDeviceIconOverride(__appScope: Record<string
 
 export function createOpenGroupDeviceDefinitionDialog(__appScope: Record<string, any>) {
   return () => {
-  const { MAX_CUSTOM_DEVICE_TERMINALS, activeLayerGroups, activeSelectedGroupIds, buildCanvasClipboard, canAddTemplateFromSelection, canvasClipboardBounds, cloneGraphTemplateClipboard, createGroupDeviceIconSvg, customDeviceDraft, defaultComponentLibraryForCategoryLibrary, edges, groupDeviceExternalTerminals, groupDeviceReplacementTemplates, groupExpandedCanvasSelection, normalizeCategoryLibraryName, requireEditMode, routedEdges, setGroupDeviceDefinitionDialog, visibleEdges, visibleNodes } = __appScope;
-    if (!requireEditMode("定义元件")) {
-      return;
-    }
+  const { MAX_CUSTOM_DEVICE_TERMINALS, activeLayerGroups, activeSelectedGroupIds, buildCanvasClipboard, canAddTemplateFromSelection, canvasClipboardBounds, cloneGraphTemplateClipboard, createGroupDeviceIconSvg, customDeviceDraft, defaultComponentLibraryForCategoryLibrary, edges, groupDeviceExternalTerminals, groupDeviceReplacementTemplates, groupExpandedCanvasSelection, normalizeCategoryLibraryName, routedEdges, setGroupDeviceDefinitionDialog, visibleEdges, visibleNodes } = __appScope;
     if (!canAddTemplateFromSelection) {
       showGlobalMessage("请先选中一个图元组合，再定义为元件。");
       return;
@@ -1389,10 +1350,7 @@ export function createConfirmReplaceDeviceIconFromGroup(__appScope: Record<strin
 
 export function createOpenAddTemplateDialog(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_GRAPH_TEMPLATE_TYPES, activeGroupById, activeLayerGroups, activeSelectedGroupIds, buildCanvasClipboard, canAddTemplateFromSelection, canvasClipboardBounds, cloneGraphTemplateClipboard, customGraphTemplates, graphTemplateTypes, groupExpandedCanvasSelection, requireEditMode, routedEdges, setTemplateDialog, setTemplateDraftName, setTemplateDraftType, templateDraftType, uniqueGraphTemplateName, visibleEdges, visibleNodes } = __appScope;
-    if (!requireEditMode("添加模板")) {
-      return;
-    }
+  const { DEFAULT_GRAPH_TEMPLATE_TYPES, activeGroupById, activeLayerGroups, activeSelectedGroupIds, buildCanvasClipboard, canAddTemplateFromSelection, canvasClipboardBounds, cloneGraphTemplateClipboard, customGraphTemplates, graphTemplateTypes, groupExpandedCanvasSelection, routedEdges, setTemplateDialog, setTemplateDraftName, setTemplateDraftType, templateDraftType, uniqueGraphTemplateName, visibleEdges, visibleNodes } = __appScope;
     if (!canAddTemplateFromSelection) {
       showGlobalMessage("请先选中一个图元组合，再添加模板。");
       return;
@@ -1498,10 +1456,7 @@ export function createDeleteGraphTemplate(__appScope: Record<string, any>) {
 
 export function createDeleteGraphTemplateType(__appScope: Record<string, any>) {
   return async (typeName: string) => {
-    const { customGraphTemplateTypes, customGraphTemplates, persistTemplateLibraryChange, requireEditMode, setCustomGraphTemplateTypes, setCustomGraphTemplates, setTemplateMenu, writeOperationLog } = __appScope;
-    if (!requireEditMode("删除模板类型")) {
-      return;
-    }
+    const { customGraphTemplateTypes, customGraphTemplates, persistTemplateLibraryChange, setCustomGraphTemplateTypes, setCustomGraphTemplates, setTemplateMenu, writeOperationLog } = __appScope;
     const deletingTemplates = customGraphTemplates.filter((template: GraphTemplate) => template.typeName === typeName);
     const nextTypes = customGraphTemplateTypes.filter((item: string) => item !== typeName);
     const nextTemplates = customGraphTemplates.filter((template: GraphTemplate) => template.typeName !== typeName);
@@ -1526,10 +1481,7 @@ export function createDeleteGraphTemplateType(__appScope: Record<string, any>) {
 
 export function createDropGraphTemplate(__appScope: Record<string, any>) {
   return (template: GraphTemplate, pointerPosition: Point) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, cloneCanvasClipboard, deviceIndexCounters, edges, hasCanvasOriginShift, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, markStoredRouteEdgesDirty, modelType, nodes, normalizeDeviceIndexCounters, normalizeModelGroups, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, requireEditMode, resetConnectPreviewState, setCanvasSelectionScope, setConnectSource, setDeviceIndexCounters, setGraphArrays, setGroups, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
-    if (!requireEditMode("放置模板")) {
-      return;
-    }
+  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, cloneCanvasClipboard, deviceIndexCounters, edges, hasCanvasOriginShift, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, markStoredRouteEdgesDirty, modelType, nodes, normalizeDeviceIndexCounters, normalizeModelGroups, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, resetConnectPreviewState, setCanvasSelectionScope, setConnectSource, setDeviceIndexCounters, setGraphArrays, setGroups, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
     const modelTypeFailureMessage = modelAssociationDevicesModelTypeFailureMessage(modelType, template.clipboard.nodes);
     if (modelTypeFailureMessage) {
       showGlobalMessage(`无法放置模板：${modelTypeFailureMessage}`);
@@ -1733,10 +1685,7 @@ export function createFinishMarqueeSelection(__appScope: Record<string, any>) {
 
 export function createDeleteSelection(__appScope: Record<string, any>) {
   return async () => {
-  const { activeSelectedEdgeIds, activeSelectedNodeIds, deleteNodesWithConnectedEdges, edgeById, edgeListForNodeIds, edges, groups, lastCanvasClickTarget, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, requireEditMode, setCanvasSelectionScope, setEdges, setGraphArrays, setGroups, setLastCanvasClickTarget, setProjectMeasurements, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, showGlobalMessage, syncGlobalLineProjectNodes, writeOperationLog } = __appScope;
-    if (!requireEditMode("删除图元")) {
-      return;
-    }
+  const { activeSelectedEdgeIds, activeSelectedNodeIds, deleteNodesWithConnectedEdges, edgeById, edgeListForNodeIds, edges, groups, lastCanvasClickTarget, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, setCanvasSelectionScope, setEdges, setGraphArrays, setGroups, setLastCanvasClickTarget, setProjectMeasurements, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, showGlobalMessage, syncGlobalLineProjectNodes, writeOperationLog } = __appScope;
     // 量测框点击 → 仅删量测，保留设备
     if (lastCanvasClickTarget === "measurement" && activeSelectedNodeIds.length > 0) {
       const targetNodeIds = new Set(activeSelectedNodeIds);
@@ -1845,10 +1794,7 @@ export function createDeleteSelectedGraphicsFromCanvas(__appScope: Record<string
 
 export function createGroupSelectedGraphics(__appScope: Record<string, any>) {
   return () => {
-  const { activeSelectedEdgeIds, activeSelectedNodeIds, canGroupSelectedGraphics, createCanvasGroupFromSelection, edges, expandSelectionByGroups, groups, nodes, normalizeModelGroups, pushUndoSnapshot, requireEditMode, setCanvasSelectionScope, setGroups, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog } = __appScope;
-    if (!requireEditMode("组合图元")) {
-      return;
-    }
+  const { activeSelectedEdgeIds, activeSelectedNodeIds, canGroupSelectedGraphics, createCanvasGroupFromSelection, edges, expandSelectionByGroups, groups, nodes, normalizeModelGroups, pushUndoSnapshot, setCanvasSelectionScope, setGroups, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog } = __appScope;
     if (!canGroupSelectedGraphics) {
       return;
     }
@@ -1876,10 +1822,7 @@ export function createGroupSelectedGraphics(__appScope: Record<string, any>) {
 
 export function createUngroupSelectedGraphics(__appScope: Record<string, any>) {
   return () => {
-  const { activeSelectedEdgeIds, activeSelectedNodeIds, canUngroupSelectedGraphics, dissolveSelectedCanvasGroups, edges, groups, nodes, normalizeModelGroups, pushUndoSnapshot, requireEditMode, setGroups, writeOperationLog } = __appScope;
-    if (!requireEditMode("解散组合")) {
-      return;
-    }
+  const { activeSelectedEdgeIds, activeSelectedNodeIds, canUngroupSelectedGraphics, dissolveSelectedCanvasGroups, edges, groups, nodes, normalizeModelGroups, pushUndoSnapshot, setGroups, writeOperationLog } = __appScope;
     if (!canUngroupSelectedGraphics) {
       return;
     }
@@ -1946,10 +1889,7 @@ function ContainerPickerForm({ draft, nodes }: { draft: ContainerDraft; nodes: a
 
 export function createAddToContainer(__appScope: Record<string, any>) {
   return () => {
-  const { activeSelectedNodeIds, requireEditMode, setAddToContainerDialog, showGlobalMessage } = __appScope;
-    if (!requireEditMode("添加到容器")) {
-      return;
-    }
+  const { activeSelectedNodeIds, setAddToContainerDialog, showGlobalMessage } = __appScope;
     // 点击瞬间只定「选中口径」;nodes/edges 一律在提交时刻现取(见 createConfirmAddToContainer)
     // —— 弹窗横跨交互窗口,持点击快照会覆盖其间的并发改动
     const clickNodes = __appScope.nodes;
@@ -2041,10 +1981,7 @@ export function createConfirmAddToContainer(__appScope: Record<string, any>) {
 
 export function createRemoveFromContainer(__appScope: Record<string, any>) {
   return () => {
-  const { activeSelectedNodeIds, normalizeProjectMeasurements, patchGraphNodes, pushUndoSnapshot, requireEditMode, setProjectMeasurements, showGlobalMessage, writeOperationLog } = __appScope;
-    if (!requireEditMode("移出容器")) {
-      return;
-    }
+  const { activeSelectedNodeIds, normalizeProjectMeasurements, patchGraphNodes, pushUndoSnapshot, setProjectMeasurements, showGlobalMessage, writeOperationLog } = __appScope;
     // 与添加路径同一口径:图在使用点现取(本路径同步执行、无弹窗窗口)
     const nodes = __appScope.nodes;
     const memberIds = containerAssignedIdsFromSelection(nodes, activeSelectedNodeIds);

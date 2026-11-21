@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import AdmZip from "adm-zip";
 import { handleV1Schemes, handleV1SchemesHierarchy, handleV1SchemeModels, handleV1SchemeExport, handleV1ModelJson, handleV1ModelSvg } from "./apiV1Schemes.mjs";
 import { apiPath } from "./config.mjs";
@@ -10,6 +10,7 @@ vi.mock("./server.mjs", () => ({
   readSchemes: vi.fn(),
   createSchemeArchiveBuffer: vi.fn(),
   readSchemeProjectRecord: vi.fn(),
+  resolveSchemePathForSelector: vi.fn(),
   // 保留桩：cimExport.mjs 顶层从 server.mjs 导入该名字，缺导出会在触发 CIM handler 时抛 vitest 报错
   readMeasurementConfig: vi.fn()
 }));
@@ -18,8 +19,15 @@ vi.mock("./svgExport.mjs", () => ({
   renderSavedModelSvg: vi.fn()
 }));
 
-import { readSchemes, createSchemeArchiveBuffer, readSchemeProjectRecord } from "./server.mjs";
+import { readSchemes, createSchemeArchiveBuffer, readSchemeProjectRecord, resolveSchemePathForSelector } from "./server.mjs";
 import { renderSavedModelSvg } from "./svgExport.mjs";
+
+beforeEach(() => {
+  resolveSchemePathForSelector.mockImplementation(async ({ schemePath, schemeId }) => {
+    if (schemePath) return schemePath;
+    return schemeId === null ? null : ["方案A"];
+  });
+});
 
 function createMockResponse() {
   const chunks = [];
@@ -54,14 +62,14 @@ function mockUrl(pathname, search = "") {
 describe("handleV1Schemes 正路径", () => {
   test("成功返方案树信封", async () => {
     readSchemes.mockResolvedValue([
-      { name: "方案A", updatedAt: "2024-01-01", projects: [{ name: "模型1", updatedAt: "2024-01-01" }], children: [] }
+      { name: "方案A", schemeId: 42, updatedAt: "2024-01-01", projects: [{ name: "模型1", updatedAt: "2024-01-01" }], children: [] }
     ]);
     const res = createMockResponse();
     await handleV1Schemes({ url: mockUrl(apiPath("/v1/schemes")), request: { headers: {} }, response: res });
     expect(res.statusCode).toBe(200);
     expect(res.jsonBody()).toEqual({
       ok: true,
-      data: { schemes: [{ name: "方案A", updatedAt: "2024-01-01", projects: [{ name: "模型1", updatedAt: "2024-01-01" }], children: [] }] }
+      data: { schemes: [{ name: "方案A", schemeId: 42, updatedAt: "2024-01-01", projects: [{ name: "模型1", updatedAt: "2024-01-01" }], children: [] }] }
     });
   });
 
@@ -84,10 +92,10 @@ describe("handleV1Schemes 正路径", () => {
 
 describe("handleV1SchemesHierarchy 正路径", () => {
   test("成功返层级树", async () => {
-    readSchemes.mockResolvedValue([{ name: "A", updatedAt: "x", children: [{ name: "B", updatedAt: "y", children: [] }] }]);
+    readSchemes.mockResolvedValue([{ name: "A", schemeId: 1, updatedAt: "x", children: [{ name: "B", schemeId: 2, updatedAt: "y", children: [] }] }]);
     const res = createMockResponse();
     await handleV1SchemesHierarchy({ url: mockUrl(apiPath("/v1/schemes/hierarchy")), request: { headers: {} }, response: res });
-    expect(res.jsonBody()).toEqual({ ok: true, data: { nodes: [{ name: "A", updatedAt: "x", children: [{ name: "B", updatedAt: "y", children: [] }] }] } });
+    expect(res.jsonBody()).toEqual({ ok: true, data: { nodes: [{ name: "A", schemeId: 1, updatedAt: "x", children: [{ name: "B", schemeId: 2, updatedAt: "y", children: [] }] }] } });
   });
 });
 
@@ -107,6 +115,25 @@ describe("handleV1SchemeModels 正路径", () => {
     await handleV1SchemeModels({ url: mockUrl(apiPath("/v1/schemes/models"), `schemePath=${sp}`), request: { headers: {} }, response: res });
     expect(res.jsonBody().data.models).toEqual([{ name: "m", updatedAt: "z" }]);
   });
+
+  test("schemeId 可替代 schemePath 查找模型摘要", async () => {
+    resolveSchemePathForSelector.mockResolvedValue(["方案A"]);
+    readSchemes.mockResolvedValue([{ name: "方案A", schemeId: 42, projects: [{ name: "m1", updatedAt: "y" }], children: [] }]);
+    const res = createMockResponse();
+    await handleV1SchemeModels({ url: mockUrl(apiPath("/v1/schemes/models"), "schemeId=42"), request: { headers: {} }, response: res });
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody().data.models).toEqual([{ name: "m1", updatedAt: "y" }]);
+    expect(resolveSchemePathForSelector).toHaveBeenCalledWith({ schemePath: [], schemeId: "42", paths: undefined });
+  });
+
+  test("schemePath 与 schemeId 冲突时返回 bad-request", async () => {
+    resolveSchemePathForSelector.mockRejectedValue(Object.assign(new Error("schemePath 与 schemeId 指向不同方案。"), { code: "bad-request" }));
+    const res = createMockResponse();
+    const sp = encodeURIComponent(JSON.stringify(["方案A"]));
+    await handleV1SchemeModels({ url: mockUrl(apiPath("/v1/schemes/models"), `schemePath=${sp}&schemeId=42`), request: { headers: {} }, response: res });
+    expect(res.statusCode).toBe(400);
+    expect(res.jsonBody().error.code).toBe("bad-request");
+  });
 });
 
 describe("handleV1SchemeExport 正路径", () => {
@@ -123,6 +150,24 @@ describe("handleV1SchemeExport 正路径", () => {
     expect(Buffer.isBuffer(res._rawBuffer)).toBe(true);
     expect(res._rawBuffer.length).toBe(buffer.length);
     expect(res.headers["content-disposition"]).toContain(encodeURIComponent("方案A.zip"));
+  });
+
+  test("schemeId 可替代 schemePath 导出方案", async () => {
+    resolveSchemePathForSelector.mockResolvedValue(["方案A"]);
+    createSchemeArchiveBuffer.mockResolvedValue({ buffer: Buffer.from("zip"), filename: "方案A.zip" });
+    const res = createMockResponse();
+    await handleV1SchemeExport({ url: mockUrl(apiPath("/v1/schemes/export"), "schemeId=42"), response: res });
+    expect(res.statusCode).toBe(200);
+    expect(createSchemeArchiveBuffer).toHaveBeenCalledWith({ paths: undefined, schemePath: ["方案A"], templateName: "" });
+  });
+
+  test("schemePath 与 schemeId 冲突时返回 bad-request", async () => {
+    resolveSchemePathForSelector.mockRejectedValue(Object.assign(new Error("schemePath 与 schemeId 指向不同方案。"), { code: "bad-request" }));
+    const res = createMockResponse();
+    const sp = encodeURIComponent(JSON.stringify(["方案A"]));
+    await handleV1SchemeExport({ url: mockUrl(apiPath("/v1/schemes/export"), `schemePath=${sp}&schemeId=42`), response: res });
+    expect(res.statusCode).toBe(400);
+    expect(res.jsonBody().error.code).toBe("bad-request");
   });
 
   // 上面那条只 toContain(encodeURIComponent(...))，把 filename* 整段删掉、或把
@@ -160,8 +205,25 @@ describe("handleV1ModelJson 正路径", () => {
     readSchemeProjectRecord.mockResolvedValue({ name: "m", project: { version: 1, name: "m", nodes: [], edges: [] } });
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1ModelJson({ url: mockUrl(apiPath("/v1/schemes/model/json"), `schemePath=${sp}&name=m`), request: { headers: {} }, response: res });
+    await handleV1ModelJson({ url: mockUrl(apiPath("/v1/schemes/model/export"), `schemePath=${sp}&name=m`), request: { headers: {} }, response: res });
     expect(res.jsonBody()).toEqual({ ok: true, data: { project: { version: 1, name: "m", nodes: [], edges: [] } } });
+  });
+
+  test("schemeId 可替代 schemePath 读取模型 JSON", async () => {
+    readSchemeProjectRecord.mockResolvedValue({ name: "m", project: { version: 1, name: "m", nodes: [], edges: [] } });
+    const res = createMockResponse();
+    await handleV1ModelJson({ url: mockUrl(apiPath("/v1/schemes/model/export"), "schemeId=42&name=m"), request: { headers: {} }, response: res });
+    expect(res.statusCode).toBe(200);
+    expect(readSchemeProjectRecord).toHaveBeenCalledWith({ schemePath: [], schemeId: "42", name: "m", paths: undefined });
+  });
+
+  test("冲突选择器的 resolver 错误映射为 bad-request", async () => {
+    readSchemeProjectRecord.mockRejectedValue(Object.assign(new Error("schemePath 与 schemeId 指向不同方案。"), { code: "bad-request" }));
+    const res = createMockResponse();
+    const sp = encodeURIComponent(JSON.stringify(["方案A"]));
+    await handleV1ModelJson({ url: mockUrl(apiPath("/v1/schemes/model/export"), `schemePath=${sp}&schemeId=42&name=m`), request: { headers: {} }, response: res });
+    expect(res.statusCode).toBe(400);
+    expect(res.jsonBody().error.code).toBe("bad-request");
   });
 });
 
@@ -170,7 +232,7 @@ describe("handleV1ModelSvg 正路径", () => {
     renderSavedModelSvg.mockResolvedValue({ svg: "<svg>...</svg>" });
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m`), response: res });
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/export"), `schemePath=${sp}&name=m`), response: res });
     expect(res.statusCode).toBe(200);
     expect(res.headers["content-type"]).toBe("image/svg+xml; charset=utf-8");
     expect(res.headers["cache-control"]).toBe("no-store");
@@ -182,7 +244,7 @@ describe("handleV1ModelSvg 正路径", () => {
     renderSavedModelSvg.mockResolvedValue({ svg: '<?xml version="1.0"?>\n<svg>...</svg>' });
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m`), response: res });
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/export"), `schemePath=${sp}&name=m`), response: res });
     expect(res.body()).toBe('<?xml version="1.0" encoding="UTF-8"?>\n<svg>...</svg>');
   });
 
@@ -190,7 +252,7 @@ describe("handleV1ModelSvg 正路径", () => {
     renderSavedModelSvg.mockResolvedValue({ svg: "<svg>中文</svg>" });
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m&encoding=gbk`), response: res });
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/export"), `schemePath=${sp}&name=m&encoding=gbk`), response: res });
     expect(res.headers["content-type"]).toBe("image/svg+xml; charset=gbk");
     expect(res.body().startsWith('<?xml version="1.0" encoding="GBK"?>\n<svg>')).toBe(true);
   });
@@ -198,7 +260,7 @@ describe("handleV1ModelSvg 正路径", () => {
   test("encoding 非法 → 400", async () => {
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m&encoding=big5`), response: res });
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/export"), `schemePath=${sp}&name=m&encoding=big5`), response: res });
     expect(res.statusCode).toBe(400);
   });
 
@@ -206,7 +268,7 @@ describe("handleV1ModelSvg 正路径", () => {
     renderSavedModelSvg.mockResolvedValue({ error: { code: "not-found", message: "模型不存在。" } });
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m`), response: res });
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/export"), `schemePath=${sp}&name=m`), response: res });
     expect(res.statusCode).toBe(404);
     expect(res.jsonBody().error.code).toBe("not-found");
   });
@@ -215,7 +277,7 @@ describe("handleV1ModelSvg 正路径", () => {
     renderSavedModelSvg.mockRejectedValue(new Error("boom"));
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m`), response: res });
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/export"), `schemePath=${sp}&name=m`), response: res });
     expect(res.statusCode).toBe(500);
     expect(res.jsonBody().error.code).toBe("internal");
   });
@@ -224,9 +286,9 @@ describe("handleV1ModelSvg 正路径", () => {
     renderSavedModelSvg.mockClear();
     renderSavedModelSvg.mockResolvedValue({ svg: "<svg/>" });
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m`), response: createMockResponse() });
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/export"), `schemePath=${sp}&name=m`), response: createMockResponse() });
     expect(renderSavedModelSvg).toHaveBeenLastCalledWith(expect.objectContaining({ colorMode: "energy" }));
-    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m&colorMode=voltage`), response: createMockResponse() });
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/export"), `schemePath=${sp}&name=m&colorMode=voltage`), response: createMockResponse() });
     expect(renderSavedModelSvg).toHaveBeenLastCalledWith(expect.objectContaining({ colorMode: "voltage" }));
   });
 
@@ -234,9 +296,27 @@ describe("handleV1ModelSvg 正路径", () => {
     renderSavedModelSvg.mockClear();
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/svg"), `schemePath=${sp}&name=m&colorMode=rainbow`), response: res });
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/export"), `schemePath=${sp}&name=m&colorMode=rainbow`), response: res });
     expect(res.statusCode).toBe(400);
     expect(res.jsonBody().error.code).toBe("bad-request");
     expect(renderSavedModelSvg).not.toHaveBeenCalled();
+  });
+
+  test("schemeId 可替代 schemePath 渲染模型 SVG", async () => {
+    resolveSchemePathForSelector.mockResolvedValue(["方案A"]);
+    renderSavedModelSvg.mockResolvedValue({ svg: "<svg/>" });
+    const res = createMockResponse();
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/export"), "schemeId=42&name=m"), response: res });
+    expect(res.statusCode).toBe(200);
+    expect(renderSavedModelSvg).toHaveBeenCalledWith({ parts: ["方案A"], name: "m", colorMode: "energy", paths: undefined });
+  });
+
+  test("冲突选择器返回 bad-request", async () => {
+    resolveSchemePathForSelector.mockRejectedValue(Object.assign(new Error("schemePath 与 schemeId 指向不同方案。"), { code: "bad-request" }));
+    const res = createMockResponse();
+    const sp = encodeURIComponent(JSON.stringify(["方案A"]));
+    await handleV1ModelSvg({ url: mockUrl(apiPath("/v1/schemes/model/export"), `schemePath=${sp}&schemeId=42&name=m`), response: res });
+    expect(res.statusCode).toBe(400);
+    expect(res.jsonBody().error.code).toBe("bad-request");
   });
 });

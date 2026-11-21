@@ -1,4 +1,4 @@
-// /webgrp/v1/schemes/model/svg 适配层测试：
+// /webgrp/v1/schemes/model/export?format=svg 适配层测试：
 // 1) 单元：直载 src/export/svg.ts（Node 原生 TS）验证 buildSvgDocument 纯函数；
 // 2) 集成：GRAPH_MODEL_DATA_DIR 指向 tmpdir 种子数据 → 起真实 server（端口 0）→ 400/404/200 全链路。
 import { describe, expect, test, beforeAll, afterAll, vi } from "vitest";
@@ -11,7 +11,7 @@ import { encodeSchemePath } from "./schemePath.mjs";
 
 installDomShim();
 
-const svgPath = apiPath("/v1/schemes/model/svg");
+const svgPath = apiPath("/v1/schemes/model/export");
 
 // —— 单元：buildSvgDocument 纯函数 ——
 describe("SVG 后端生成", () => {
@@ -321,6 +321,12 @@ beforeAll(async () => {
   const { createImageServer } = await import("./server.mjs");
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const initialized = await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "默认空间" })
+  });
+  if (!initialized.ok) throw new Error(`default space initialization failed: ${initialized.status}`);
 });
 
 afterAll(async () => {
@@ -334,32 +340,32 @@ afterAll(async () => {
 const schemePath = encodeSchemePath(["测试方案"]);
 
 async function fetchSvg(name) {
-  const response = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent(name)}`);
+  const response = await fetch(`${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent(name)}`);
   expect(response.status).toBe(200);
   return response.text();
 }
 
 describe(`${svgPath} 参数校验与错误路径`, () => {
   test("缺 schemePath → 400 bad-request", async () => {
-    const res = await fetch(`${baseUrl}${svgPath}?name=x`);
+    const res = await fetch(`${baseUrl}${svgPath}?format=svg&name=x`);
     expect(res.status).toBe(400);
     expect((await res.json()).error.code).toBe("bad-request");
   });
 
   test("缺 name → 400 bad-request", async () => {
-    const res = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}`);
+    const res = await fetch(`${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}`);
     expect(res.status).toBe(400);
     expect((await res.json()).error.code).toBe("bad-request");
   });
 
   test("模型不存在 → 404 not-found", async () => {
-    const res = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("不存在")}`);
+    const res = await fetch(`${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("不存在")}`);
     expect(res.status).toBe(404);
     expect((await res.json()).error.code).toBe("not-found");
   });
 
   test("colorMode 非法 → 400 bad-request", async () => {
-    const res = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("开关模型")}&colorMode=rainbow`);
+    const res = await fetch(`${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("开关模型")}&colorMode=rainbow`);
     expect(res.status).toBe(400);
     expect((await res.json()).error.code).toBe("bad-request");
   });
@@ -367,7 +373,7 @@ describe(`${svgPath} 参数校验与错误路径`, () => {
 
 describe(`${svgPath} 正路径`, () => {
   test("共享 buildSvgDocument 渲染：含图元符号与状态图标，no-store 不参与缓存", async () => {
-    const res = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("开关模型")}`);
+    const res = await fetch(`${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("开关模型")}`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("image/svg+xml; charset=utf-8");
     // 行为变更：旧实现 no-cache（ETag 协商缓存），新实现 no-store（与 v1 运行时态一致）
@@ -382,7 +388,7 @@ describe(`${svgPath} 正路径`, () => {
   });
 
   test("colorMode 缺省等于 energy（旧契约），voltage 可选且着色不同", async () => {
-    const url = `${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("开关模型")}`;
+    const url = `${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("开关模型")}`;
     const defaultText = await (await fetch(url)).text();
     const energyText = await (await fetch(`${url}&colorMode=energy`)).text();
     const voltageText = await (await fetch(`${url}&colorMode=voltage`)).text();
@@ -397,14 +403,14 @@ describe(`${svgPath} 正路径`, () => {
   });
 
   test("模型无 canvasBackgroundColor 时用渲染器默认底色", async () => {
-    const res = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("无底色模型")}`);
+    const res = await fetch(`${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("无底色模型")}`);
     expect(res.status).toBe(200);
     // 渲染器默认 DEFAULT_CANVAS_BACKGROUND = 浅色画布纯白（见 src/canvasTheme.ts），后端不再写第二份默认
     expect(await res.text()).toContain('fill="#ffffff"');
   });
 
   test("deviceDefinitionOverrides 生效：改写内置模板状态定义后 SVG 随之变化", async () => {
-    const url = `${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("开关模型")}`;
+    const url = `${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("开关模型")}`;
     const baseline = await (await fetch(url)).text();
     // 基线：内置 ac-breaker 模板自带开/合状态定义
     expect(baseline).toContain("ac-breaker_state_");
@@ -432,7 +438,7 @@ describe(`${svgPath} 正路径`, () => {
   });
 
   test("被引用的后端图片内联为 data URL：响应含 data:image/ 且不含后端图片 URL", async () => {
-    const res = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("图片模型")}`);
+    const res = await fetch(`${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("图片模型")}`);
     expect(res.status).toBe(200);
     const text = await res.text();
     // 画布背景与图元背景都引用同一张图 → 内联的就是种子里那张 1×1 PNG
@@ -443,7 +449,7 @@ describe(`${svgPath} 正路径`, () => {
   });
 
   test("仅 assetId（无 href）的图元也内联：由 imageAssets 映射解析出图", async () => {
-    const res = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("仅资产ID模型")}`);
+    const res = await fetch(`${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("仅资产ID模型")}`);
     expect(res.status).toBe(200);
     const text = await res.text();
     // 该图元没有可替换的 href，唯一来源是传给 buildSvgDocument 的 imageAssets（同映射）→ 删掉那行即丢图
@@ -451,7 +457,7 @@ describe(`${svgPath} 正路径`, () => {
   });
 
   test("单张图片读取失败不阻断导出：失败者保留原始 href，其余照常内联", async () => {
-    const res = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("缺图模型")}`);
+    const res = await fetch(`${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("缺图模型")}`);
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toContain("<svg");
@@ -465,7 +471,7 @@ describe(`${svgPath} 正路径`, () => {
   test("配色取自 color-config.json；文件缺失时输出与默认调色板一致", async () => {
     const settingsDir = join(dataDir, "settings");
     const configPath = join(settingsDir, "color-config.json");
-    const url = `${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("开关模型")}`;
+    const url = `${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("开关模型")}`;
     // 未提供 color-config.json 的基线（等价于接线前的默认调色板输出）
     const baselineEnergy = await (await fetch(`${url}&colorMode=energy`)).text();
     const baselineVoltage = await (await fetch(`${url}&colorMode=voltage`)).text();
@@ -528,7 +534,7 @@ describe(`${svgPath} 背景页重建`, () => {
     try {
       // 连打两次：行为不变，且同一悬空 idx 只留一条 warning（进程内去重，防第三方轮询刷日志）
       for (let round = 0; round < 2; round += 1) {
-        const response = await fetch(`${baseUrl}${svgPath}?schemePath=${schemePath}&name=${encodeURIComponent("悬空背景模型")}`);
+        const response = await fetch(`${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("悬空背景模型")}`);
         expect(response.status).toBe(200);
         expect(await response.text()).not.toContain("export-background-page-layer");
       }

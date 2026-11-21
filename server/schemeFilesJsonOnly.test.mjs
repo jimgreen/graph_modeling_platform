@@ -22,6 +22,12 @@ beforeAll(async () => {
   const { createImageServer } = await import("./server.mjs");
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const initialized = await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "默认空间" })
+  });
+  expect(initialized.status).toBe(200);
 });
 
 afterAll(async () => {

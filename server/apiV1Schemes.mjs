@@ -4,7 +4,8 @@
 import {
   readSchemes,
   createSchemeArchiveBuffer,
-  readSchemeProjectRecord
+  readSchemeProjectRecord,
+  resolveSchemePathForSelector
 } from "./server.mjs";
 import { sendV1Json, sendV1Error } from "./v1Response.mjs";
 import { accessControlOriginOnly } from "./cors.mjs";
@@ -20,10 +21,11 @@ import { encodeTextBytes, withXmlEncodingDeclaration } from "./xmlEncoding.mjs";
 // 数据根不再由本模块自建：各 handler 收 ctx.paths（由 server.mjs 分发层按空间解析），
 // 缺省时被调函数回落 defaultPaths。原此处曾自建一份数据根推导，是全仓唯一一处重复 —— 已删除。
 
-// 方案树轻量化：剥离 project 完整数据，仅留摘要（name/updatedAt/children）
+// 方案树轻量化：剥离 project 完整数据，仅留方案与模型摘要。
 function schemeTreeSummary(schemes) {
   return schemes.map((scheme) => ({
     name: scheme.name,
+    schemeId: scheme.schemeId,
     updatedAt: scheme.updatedAt,
     projects: (scheme.projects ?? []).map((p) => ({ name: p.name, updatedAt: p.updatedAt })),
     children: schemeTreeSummary(scheme.children ?? [])
@@ -34,9 +36,38 @@ function schemeTreeSummary(schemes) {
 function schemeHierarchy(schemes) {
   return schemes.map((scheme) => ({
     name: scheme.name,
+    schemeId: scheme.schemeId,
     updatedAt: scheme.updatedAt,
     children: schemeHierarchy(scheme.children ?? [])
   }));
+}
+
+function parseSchemeSelectorQuery(url) {
+  const rawSchemePath = url.searchParams.get("schemePath");
+  const parts = parseSchemePathParam(rawSchemePath);
+  const schemeId = url.searchParams.get("schemeId");
+  if ((rawSchemePath !== null && !requireSchemePath(parts)) || (rawSchemePath === null && schemeId === null)) {
+    return { error: { code: "bad-request", message: "缺少或非法 schemePath，或 schemeId。" } };
+  }
+  return { parts, schemeId };
+}
+
+async function resolveSchemeSelector(selector, paths) {
+  try {
+    const parts = await resolveSchemePathForSelector({
+      schemePath: selector.parts,
+      schemeId: selector.schemeId,
+      paths
+    });
+    return { parts };
+  } catch (error) {
+    return { error };
+  }
+}
+
+function sendSchemeError(response, error) {
+  const code = error?.code === "bad-request" || error?.code === "not-found" ? error.code : "internal";
+  sendV1Error(response, code, typeof error?.message === "string" ? error.message : "后端处理失败。");
 }
 
 // 在方案树中按 schemePath 查找方案节点
@@ -76,32 +107,40 @@ export async function handleV1SchemesHierarchy({ request, response, paths }) {
 }
 
 // /webgrp/v1/schemes/models —— 指定方案下模型列表
-// query: schemePath=<encoded>
+// query: schemePath=<encoded> 或 schemeId=<number>
 export async function handleV1SchemeModels({ url, request, response, paths }) {
   try {
-    const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
-    if (!requireSchemePath(parts)) {
-      sendV1Error(response, "bad-request", "缺少或非法 schemePath。");
+    const selector = parseSchemeSelectorQuery(url);
+    if (selector.error) {
+      sendSchemeError(response, selector.error);
+      return;
+    }
+    const resolved = await resolveSchemeSelector(selector, paths);
+    if (resolved.error) {
+      sendSchemeError(response, resolved.error);
       return;
     }
     const schemes = await readSchemes({ includeProjects: false, paths });
-    const scheme = findSchemeByPath(schemes, parts);
+    const scheme = findSchemeByPath(schemes, resolved.parts);
     if (!scheme) {
       sendV1Error(response, "not-found", "方案不存在。");
       return;
     }
-    await sendV1Json(request, response, { models: (scheme.projects ?? []).map((p) => ({ name: p.name, updatedAt: p.updatedAt })) });
+    await sendV1Json(request, response, {
+      schemeId: scheme.schemeId,
+      models: (scheme.projects ?? []).map((p) => ({ name: p.name, updatedAt: p.updatedAt }))
+    });
   } catch (error) {
     sendV1Error(response, "internal", error instanceof Error ? error.message : "后端处理失败。");
   }
 }
 
 // /webgrp/v1/schemes/export —— 方案导出 ZIP
-// query: schemePath=<encoded>, template=<预定义 E 模板名，可选>
+// query: schemePath=<encoded> 或 schemeId=<number>, template=<预定义 E 模板名，可选>
 export async function handleV1SchemeExport({ url, response, paths }) {
-  const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
-  if (!requireSchemePath(parts)) {
-    sendV1Error(response, "bad-request", "缺少或非法 schemePath。");
+  const selector = parseSchemeSelectorQuery(url);
+  if (selector.error) {
+    sendSchemeError(response, selector.error);
     return;
   }
   const templateName = (url.searchParams.get("template") ?? "").trim();
@@ -113,10 +152,15 @@ export async function handleV1SchemeExport({ url, response, paths }) {
     );
     return;
   }
+  const resolved = await resolveSchemeSelector(selector, paths);
+  if (resolved.error) {
+    sendSchemeError(response, resolved.error);
+    return;
+  }
   try {
     // 只传 paths，不传 filesRoot：Task 5 的守卫要求枚举根与渲染根同源，
     // 传空间根作 filesRoot 会被显式拒绝（且渲染链只跟随 paths）。
-    const { buffer, filename } = await createSchemeArchiveBuffer({ paths, schemePath: parts, templateName });
+    const { buffer, filename } = await createSchemeArchiveBuffer({ paths, schemePath: resolved.parts, templateName });
     response.writeHead(200, {
       "content-type": "application/zip",
       "content-length": String(buffer.length),
@@ -127,6 +171,10 @@ export async function handleV1SchemeExport({ url, response, paths }) {
     response.end(buffer);
   } catch (error) {
     const message = error instanceof Error ? error.message : "导出方案失败。";
+    if (error?.code === "bad-request" || error?.code === "not-found") {
+      sendSchemeError(response, error);
+      return;
+    }
     if (message.includes("缺少方案路径")) {
       sendV1Error(response, "bad-request", message);
       return;
@@ -140,28 +188,28 @@ export async function handleV1SchemeExport({ url, response, paths }) {
   }
 }
 
-// /webgrp/v1/schemes/model/json —— 模型 project JSON
-// query: schemePath=<encoded>, name=<模型名>
+// 统一入口 format=json —— 模型 project JSON
+// query: schemePath=<encoded> 或 schemeId=<number>, name=<模型名>
 export async function handleV1ModelJson({ url, request, response, paths }) {
   try {
-    const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
+    const selector = parseSchemeSelectorQuery(url);
     const name = (url.searchParams.get("name") ?? "").trim();
-    if (!requireSchemePath(parts)) {
-      sendV1Error(response, "bad-request", "缺少或非法 schemePath。");
+    if (selector.error) {
+      sendSchemeError(response, selector.error);
       return;
     }
     if (!name) {
       sendV1Error(response, "bad-request", "缺少模型名称。");
       return;
     }
-    const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
+    const record = await readSchemeProjectRecord({ schemePath: selector.parts, schemeId: selector.schemeId, name, paths });
     if (!record) {
       sendV1Error(response, "not-found", "模型不存在。");
       return;
     }
     await sendV1Json(request, response, { project: record.project });
   } catch (error) {
-    sendV1Error(response, "internal", error instanceof Error ? error.message : "后端处理失败。");
+    sendSchemeError(response, error);
   }
 }
 
@@ -179,12 +227,17 @@ function sendSvg(response, svg, encoding) {
   response.end(bytes);
 }
 
-// /webgrp/v1/schemes/model/svg —— 模型 SVG（复用前端 buildSvgDocument，见 svgExport.mjs）
-// query: schemePath=<encoded>, name=<模型名>, colorMode=energy（默认）|voltage（可选）, encoding=utf-8（默认）|gbk（可选）
+// 统一入口 format=svg —— 模型 SVG（复用前端 buildSvgDocument，见 svgExport.mjs）
+// query: schemePath=<encoded> 或 schemeId=<number>, name=<模型名>, colorMode=energy（默认）|voltage（可选）, encoding=utf-8（默认）|gbk（可选）
 export async function handleV1ModelSvg({ url, response, paths }) {
-  const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
-  if (!requireSchemePath(parts)) {
-    sendV1Error(response, "bad-request", "缺少或非法 schemePath。");
+  const selector = parseSchemeSelectorQuery(url);
+  if (selector.error) {
+    sendSchemeError(response, selector.error);
+    return;
+  }
+  const resolved = await resolveSchemeSelector(selector, paths);
+  if (resolved.error) {
+    sendSchemeError(response, resolved.error);
     return;
   }
   const name = (url.searchParams.get("name") ?? "").trim();
@@ -203,14 +256,14 @@ export async function handleV1ModelSvg({ url, response, paths }) {
     return;
   }
   try {
-    const { svg, error } = await renderSavedModelSvg({ parts, name, colorMode, paths });
+    const { svg, error } = await renderSavedModelSvg({ parts: resolved.parts, name, colorMode, paths });
     if (error) {
       sendV1Error(response, error.code, error.message);
       return;
     }
     sendSvg(response, svg, encoding);
   } catch (error) {
-    sendV1Error(response, "internal", error instanceof Error ? error.message : "后端处理失败。");
+    sendSchemeError(response, error);
   }
 }
 
@@ -224,10 +277,5 @@ export const v1SchemeRoutes = [
   { method: "GET", pattern: apiPattern("/v1/schemes/hierarchy", "/?$"), handle: withSpacePaths(handleV1SchemesHierarchy) },
   { method: "GET", pattern: apiPattern("/v1/schemes/models", "/?$"), handle: withSpacePaths(handleV1SchemeModels) },
   { method: "GET", pattern: apiPattern("/v1/schemes/export", "/?$"), handle: withSpacePaths(handleV1SchemeExport) },
-  { method: "GET", pattern: apiPattern("/v1/schemes/model/json", "/?$"), handle: withSpacePaths(handleV1ModelJson) },
-  { method: "GET", pattern: apiPattern("/v1/schemes/model/svg", "/?$"), handle: withSpacePaths(handleV1ModelSvg) },
-  { method: "GET", pattern: apiPattern("/v1/schemes/model/e-file", "/?$"), handle: withSpacePaths(handleV1ModelEFile) },
-  { method: "POST", pattern: apiPattern("/v1/schemes/model/e-file", "/?$"), handle: withSpacePaths(handleV1ModelEFilePost) },
-  { method: "GET", pattern: apiPattern("/v1/schemes/model/cim-xml", "/?$"), handle: withSpacePaths(handleV1ModelCimXml) },
   { method: "POST", pattern: apiPattern("/v1/schemes/model/send", "/?$"), handle: withSpacePaths(handleV1ModelSend) }
 ];

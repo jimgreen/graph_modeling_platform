@@ -137,6 +137,10 @@ pnpm purge:derived    # 归档存量派生文件（默认 dry-run，--apply 才�
 | `GRAPH_MODEL_DATA_DIR` | `./data` | 数据根目录（测试用 tmpdir 隔离） |
 | `GRAPH_MODEL_CONFIG` | `./platform.config.json` | 配置文件路径 |
 
+`platform.config.json` 的 `dataDir` 字段记录当前数据根目录，默认值为 `./data`。运行中的服务可通过
+`POST /webgrp/platform/data-dir` 迁移到一个已存在且为空的新目录；接口会复制并校验数据、归档并删除旧目录，
+再原子更新配置，失败时回滚全部操作。`GRAPH_MODEL_DATA_DIR` 仍优先于配置文件。
+
 > `data/` 整目录被 `.gitignore` 忽略，首次运行自动创建骨架；换机器请用空间 ZIP 迁移数据。
 
 ### 修改源码后的注意事项
@@ -204,16 +208,14 @@ pnpm purge:derived    # 归档存量派生文件（默认 dry-run，--apply 才�
 | GET | `/v1/schemes/hierarchy` | 层级树 |
 | GET | `/v1/schemes/models` | 某方案下的模型列表 |
 | GET | `/v1/schemes/export` | 方案 ZIP |
-| GET | `/v1/schemes/model/json` | 模型完整 JSON |
-| GET | `/v1/schemes/model/svg` | 模型 SVG（`colorMode`∈`energy｜voltage`、`encoding`） |
-| GET / POST | `/v1/schemes/model/e-file` | 模型 E 文件（POST 可带自定义模板） |
-| GET | `/v1/schemes/model/cim-xml` | 模型 CIM/XML |
+| GET | `/v1/schemes/model/export?format=json|svg|e-file|cim-xml` | 统一已保存模型导出入口；按 `format` 返回 JSON、SVG、E 文件或 CIM/XML |
+| POST | `/v1/schemes/model/export?format=e-file` | 统一已保存模型 E 文件自定义模板入口，body 含 `templateText` |
 | POST | `/v1/schemes/model/send` | 把模型转发到外部接收端 |
 
 ### v1：图元库域（只读）
 
-`GET /v1/library`、`/v1/library/categories`、`/v1/library/devices`、
-`/v1/library/measurements`、`/v1/library/device-definitions`、`/v1/library/templates`。
+`GET /v1/library?part=all|categories|devices|measurements|device-definitions|templates`。
+不传 `part` 或使用 `all` 返回聚合图元库。
 
 ### v1：运行时态域（读前端当前状态，需页面在线）
 
@@ -225,9 +227,13 @@ pnpm purge:derived    # 归档存量派生文件（默认 dry-run，--apply 才�
 | GET | `/v1/runtime/selection` | 当前选中 |
 | GET | `/v1/runtime/tabs`、`/v1/runtime/tabs/{model｜tree｜graph}` | 三面板快照 |
 | GET | `/v1/runtime/screenshot` | 画布 PNG |
-| GET | `/v1/runtime/svg` | 当前画布 SVG |
-| GET / POST | `/v1/runtime/e-file` | 当前模型 E 文件（POST 可带自定义模板） |
+| GET | `/v1/runtime/export?format=svg|e-file` | 统一运行时导出入口；读取当前画布 SVG 或当前模型 E 文件 |
+| POST | `/v1/runtime/export?format=e-file` | 运行时 E 文件自定义模板入口，body 含 `templateText` |
 | GET | `/v1/runtime/dom` | 页面 DOM 结构（元素树或 HTML） |
+
+### v1：拓扑操作
+
+`POST /v1/topology` 使用请求体 `action=check|repair`，`target=current` 操作在线页面，`target=saved` 操作已保存模型。旧的 `/v1/topology/check` 与 `/v1/topology/repair` 已删除。
 
 ### v1：控制台写操作（需页面在线）
 

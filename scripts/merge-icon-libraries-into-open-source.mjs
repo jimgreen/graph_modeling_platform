@@ -1,11 +1,34 @@
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { escapeXmlFull as escapeXml } from "../shared/xmlEscape.mjs";
 import { safeJoin } from "../shared/pathSafety.mjs";
+function configuredDataDirForScript() {
+  const envPath = typeof process.env.GRAPH_MODEL_DATA_DIR === "string"
+    ? process.env.GRAPH_MODEL_DATA_DIR.trim()
+    : "";
+  if (envPath) return path.resolve(envPath);
+  const configCandidates = [
+    path.join(process.cwd(), "platform.config.json"),
+    path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "platform.config.json"),
+    path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "platform.config.json.example")
+  ];
+  for (const configPath of configCandidates) {
+    if (!existsSync(configPath)) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+      if (typeof parsed?.dataDir === "string" && parsed.dataDir.trim()) {
+        return path.resolve(path.dirname(configPath), parsed.dataDir.trim());
+      }
+    } catch {
+      // Keep the script's historical cwd/data fallback for malformed config files.
+    }
+  }
+  return path.resolve(process.cwd());
+}
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const iconLibraryDir = path.join(rootDir, "data", "icon-library");
+const iconLibraryDir = path.join(configuredDataDirForScript(), "icon-library");
 const targetLibraryId = "open-source-svg";
 const mergedLibraryIds = ["docer-free-compatible", "office-fluent-compatible"];
 const targetRoot = `/icon-library/${targetLibraryId}`;

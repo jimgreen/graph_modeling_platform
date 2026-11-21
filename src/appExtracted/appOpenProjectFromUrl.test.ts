@@ -74,15 +74,12 @@ describe("createOpenProjectFromUrl", () => {
 
   test("都找不到时返回 false，且不打开任何东西", async () => {
     const requestLoadSavedProject = vi.fn();
-    const enterBrowseMode = vi.fn();
     const openProjectFromUrl = createOpenProjectFromUrl({
       schemes,
       activeProjectKey: "",
-      requestLoadSavedProject,
-      enterBrowseMode
+      requestLoadSavedProject
     });
     await expect(openProjectFromUrl("999", "DOT", "")).resolves.toBe(false);
     expect(requestLoadSavedProject).not.toHaveBeenCalled();
-    expect(enterBrowseMode).not.toHaveBeenCalled();
   });
 });

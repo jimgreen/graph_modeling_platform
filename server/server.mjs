@@ -12,7 +12,17 @@ import { randomId } from "../shared/randomId.mjs";
 import { isPathInside, sanitizeSegment } from "../shared/pathSafety.mjs";
 import { atomicWriteFile } from "../shared/atomicWrite.mjs";
 import { formatSvgNumber } from "../shared/formatSvgNumber.mjs";
-import { apiPrefix, apiPath, escapeRegExp, backendPort, host, stripFrontendBase } from "./config.mjs";
+import {
+  apiPrefix,
+  apiPath,
+  escapeRegExp,
+  backendPort,
+  configuredDataDir,
+  host,
+  platformConfigPath,
+  repositoryRoot,
+  stripFrontendBase
+} from "./config.mjs";
 import { accessControlHeaders, accessControlOriginOnly } from "./cors.mjs";
 import { contentDispositionAttachment } from "./contentDisposition.mjs";
 // Accept-Encoding 的 gzip 判定唯一一份在 v1Response.mjs（v1 域与内部域共用）。
@@ -33,15 +43,20 @@ import { withXmlEncodingDeclaration } from "./xmlEncoding.mjs";
 import { readSymbolExportSchemes, writeSymbolExportSchemes } from "./symbolExportSchemes.mjs";
 import { buildSpaceArchiveBuffer, readSpaceArchiveName, SPACE_ARCHIVE_META_FILENAME } from "./spaceArchive.mjs";
 import { PREDEFINED_E_DEVICE_TEMPLATES } from "./eFileTemplates.mjs";
+import { createDataRootGate } from "./dataRootGate.mjs";
+import { createDataRootMigration, DataRootMigrationError } from "./dataRootMigration.mjs";
+import { resolveDataRoot } from "./dataRoot.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 // 数据根目录：默认 repo data/，可用 GRAPH_MODEL_DATA_DIR 覆盖（测试隔离用 tmpdir）
-const dataRoot = process.env.GRAPH_MODEL_DATA_DIR ? resolve(process.env.GRAPH_MODEL_DATA_DIR) : resolve(repoRoot, "data");
+let dataRoot = process.env.GRAPH_MODEL_DATA_DIR
+  ? resolveDataRoot(repoRoot, process.env.GRAPH_MODEL_DATA_DIR)
+  : configuredDataDir;
 // 默认（default 空间）路径集合。所有路径已统一由每请求解析出的 paths 提供（options.paths ?? defaultPaths），
 // 模块级路径常量已全部删除 —— 不要再新增，否则空间隔离会被绕过。
 // 必须 export：各空间测试文件从本模块解构它来拼各自的 paths。
-export const defaultPaths = spacePathsFor(dataRoot, "default");
+export let defaultPaths = spacePathsFor(dataRoot, "default");
 const modelTypes = new Set(["微网", "厂站", "馈线", "台区", "其他"]);
 // 全局线路注册表按空间缓存：registry 闭包持有 queue + initialized 并绑死绝对路径，
 // 既不能每请求新建，也不能跨空间共用一个实例。键用 paths.root（default 空间即数据根）。
@@ -499,6 +514,173 @@ async function readLegacySchemeDirectoryMeta(schemeDir) {
   }
 }
 
+const SCHEME_NUMBER_COUNTER_FILE = "scheme-index.json";
+const LEGACY_SCHEME_NUMBER_KEY = "schemeNo";
+const LEGACY_SCHEME_COUNTER_KEY = "lastSchemeNo";
+
+function isValidSchemeNumber(value) {
+  return Number.isSafeInteger(value) && value > 0;
+}
+
+function schemeNumberCounterPath(paths, filesRoot) {
+  return join(paths.schemes ?? dirname(resolve(filesRoot)), SCHEME_NUMBER_COUNTER_FILE);
+}
+
+async function readSchemeNumberMetadata(schemeDir) {
+  const filePath = join(schemeDir, "scheme.json");
+  let raw;
+  try {
+    raw = await readFile(filePath, "utf-8");
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return { filePath, metadata: {} };
+    }
+    throw new Error(`方案元数据读取失败：${filePath}（${error?.code ?? error?.name ?? "unknown"}）`, { cause: error });
+  }
+
+  let metadata;
+  try {
+    metadata = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`方案元数据解析失败：${filePath}`, { cause: error });
+  }
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    throw new Error(`方案元数据格式错误：${filePath}`);
+  }
+  return { filePath, metadata };
+}
+
+async function readSchemeNumberCounter(counterPath) {
+  let parsed;
+  try {
+    parsed = JSON.parse(await readFile(counterPath, "utf-8"));
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return { value: 0, migrated: false };
+    }
+    if (error instanceof SyntaxError) {
+      throw new Error(`方案编号计数器解析失败：${counterPath}`, { cause: error });
+    }
+    throw new Error(`方案编号计数器读取失败：${counterPath}（${error?.code ?? error?.name ?? "unknown"}）`, { cause: error });
+  }
+
+  const lastSchemeId = Number.isSafeInteger(parsed?.lastSchemeId)
+    ? parsed.lastSchemeId
+    : parsed?.[LEGACY_SCHEME_COUNTER_KEY];
+  if (!Number.isSafeInteger(lastSchemeId) || lastSchemeId < 0) {
+    throw new Error(`方案编号计数器格式错误：${counterPath}`);
+  }
+  return {
+    value: lastSchemeId,
+    migrated: !Number.isSafeInteger(parsed?.lastSchemeId)
+  };
+}
+
+async function listSchemeDirectoryPaths(rootDir, includeRoot = false) {
+  const found = includeRoot ? [resolve(rootDir)] : [];
+  const visit = async (dir) => {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        return;
+      }
+      throw new Error(`方案目录读取失败：${dir}（${error?.code ?? error?.name ?? "unknown"}）`, { cause: error });
+    }
+
+    const directories = entries
+      .filter((entry) => entry.isDirectory())
+      .sort((first, second) => first.name < second.name ? -1 : first.name > second.name ? 1 : 0);
+    for (const entry of directories) {
+      const childDir = join(dir, entry.name);
+      found.push(resolve(childDir));
+      await visit(childDir);
+    }
+  };
+  await visit(rootDir);
+  return found;
+}
+
+async function ensureSchemeNumbersUnlocked(paths, filesRoot = paths.schemeFiles) {
+  const counterPath = schemeNumberCounterPath(paths, filesRoot);
+  const counter = await readSchemeNumberCounter(counterPath);
+  const counterValue = counter.value;
+  const directories = await listSchemeDirectoryPaths(filesRoot);
+  const records = [];
+  let lastSchemeId = counterValue;
+
+  for (const schemeDir of directories) {
+    const record = await readSchemeNumberMetadata(schemeDir);
+    const storedSchemeId = record.metadata.schemeId;
+    const legacySchemeId = record.metadata[LEGACY_SCHEME_NUMBER_KEY];
+    const schemeId = isValidSchemeNumber(storedSchemeId) ? storedSchemeId : legacySchemeId;
+    if (isValidSchemeNumber(schemeId)) {
+      lastSchemeId = Math.max(lastSchemeId, schemeId);
+    }
+    records.push({ schemeDir, ...record, schemeId });
+  }
+
+  const used = new Set();
+  const assignments = new Map();
+  const metadataWrites = [];
+  for (const record of records) {
+    let schemeId = record.schemeId;
+    const needsAllocation = !isValidSchemeNumber(schemeId) || used.has(schemeId);
+    const needsMigration = Object.hasOwn(record.metadata, LEGACY_SCHEME_NUMBER_KEY) || record.metadata.schemeId !== schemeId;
+    if (needsAllocation) {
+      if (lastSchemeId >= Number.MAX_SAFE_INTEGER) {
+        throw new Error("方案编号已达到安全整数上限，无法继续分配。");
+      }
+      schemeId = ++lastSchemeId;
+    }
+    if (needsAllocation || needsMigration) {
+      const metadata = { ...record.metadata, schemeId };
+      delete metadata[LEGACY_SCHEME_NUMBER_KEY];
+      metadataWrites.push({ filePath: record.filePath, metadata });
+    }
+    used.add(schemeId);
+    assignments.set(record.schemeDir, schemeId);
+  }
+
+  // Reserve numbers before writing per-scheme metadata. A failed metadata write may
+  // leave a gap, but cannot cause the next allocation to reuse a number.
+  if (lastSchemeId > counterValue || counter.migrated) {
+    await writeTextIfChanged(counterPath, `${JSON.stringify({ lastSchemeId }, null, 2)}\n`);
+  }
+  for (const write of metadataWrites) {
+    await writeTextIfChanged(write.filePath, `${JSON.stringify(write.metadata, null, 2)}\n`);
+  }
+  return assignments;
+}
+
+async function resetImportedSchemeNumbers(rootDir) {
+  const directories = await listSchemeDirectoryPaths(rootDir, true);
+  for (const schemeDir of directories) {
+    const { filePath, metadata } = await readSchemeNumberMetadata(schemeDir);
+    if (Object.hasOwn(metadata, "schemeId") || Object.hasOwn(metadata, LEGACY_SCHEME_NUMBER_KEY)) {
+      const withoutNumber = { ...metadata };
+      delete withoutNumber.schemeId;
+      delete withoutNumber[LEGACY_SCHEME_NUMBER_KEY];
+      await writeTextIfChanged(filePath, `${JSON.stringify(withoutNumber, null, 2)}\n`);
+    }
+  }
+}
+
+function schemeIdsOnRecords(schemes, parentDir, assignments) {
+  return (Array.isArray(schemes) ? schemes : []).map((scheme) => {
+    const schemeDir = join(parentDir, safeFilePart(scheme.name, "方案"));
+    const schemeId = assignments.get(resolve(schemeDir));
+    const normalizedScheme = { ...scheme };
+    delete normalizedScheme[LEGACY_SCHEME_NUMBER_KEY];
+    return {
+      ...normalizedScheme,
+      ...(isValidSchemeNumber(schemeId) ? { schemeId } : {}),
+      children: schemeIdsOnRecords(scheme.children, schemeDir, assignments)
+    };
+  });
+}
+
 async function readSchemeProjectFile(filePath, fileName, paths = defaultPaths) {
   // 三段分开：读盘、JSON 解析、注册表 hydrate（会写盘）。
   // 此前三段共用一个 catch，任何失败都 return null，调用方一律报「模型文件不存在」——
@@ -624,6 +806,9 @@ async function readSchemeDirectory(dirent, parentDir, options = {}) {
   const name = storedSchemeFilePartDisplayName(legacyMeta?.name || dirent.name);
   return {
     name,
+    ...(isValidSchemeNumber(legacyMeta?.schemeId ?? legacyMeta?.[LEGACY_SCHEME_NUMBER_KEY])
+      ? { schemeId: legacyMeta.schemeId ?? legacyMeta[LEGACY_SCHEME_NUMBER_KEY] }
+      : {}),
     updatedAt: legacyMeta?.updatedAt || await fileUpdatedAt(schemeDir),
     projects,
     children
@@ -659,14 +844,21 @@ async function ensureSchemeStore(options = {}) {
 }
 
 export async function readSchemes(options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  const filesRoot = options.filesRoot ?? paths.schemeFiles;
+  await withSchemeStoreWriteLock(async () => {
+    await mkdirInSpace(filesRoot);
+    await ensureSchemeNumbersUnlocked(paths, filesRoot);
+  });
   return readSchemesFromFiles(options);
 }
 
 async function writeSchemes(schemes, options = {}) {
   return withSchemeStoreWriteLock(async () => {
     await ensureSchemeStore(options);
-    await writeSchemeFiles(schemes, options);
+    const savedSchemes = await writeSchemeFiles(schemes, options);
     await removeLegacySchemeManifest(options);
+    return savedSchemes;
   });
 }
 
@@ -3400,6 +3592,7 @@ function assertZipUncompressedSizeWithinLimit(zip, label = "压缩包") {
 function badSchemePathError(detail) {
   const error = new Error(`schemePath 格式错误：${detail}`);
   error.statusCode = 400;
+  error.code = "bad-request";
   return error;
 }
 
@@ -3436,6 +3629,80 @@ function schemePathOrDefault(value) {
     throw badSchemePathError("必须是方案路径数组，如 [\"方案A\"]。");
   }
   return value.length > 0 ? value : ["默认方案"];
+}
+
+function optionalSchemePathParts(value) {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw badSchemePathError("必须是方案路径数组。");
+  }
+  return value.map((part) => safeFilePart(part, "方案")).filter(Boolean);
+}
+
+function schemeNumberSelector(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const numeric = typeof value === "number"
+    ? value
+    : typeof value === "string" && value.trim()
+      ? Number(value.trim())
+      : NaN;
+  if (!isValidSchemeNumber(numeric)) {
+    const error = new Error("schemeId 必须是正安全整数。");
+    error.statusCode = 400;
+    error.code = "bad-request";
+    throw error;
+  }
+  return numeric;
+}
+
+function schemePathForId(assignments, filesRoot, schemeId) {
+  for (const [schemeDir, storedNumber] of assignments) {
+    if (storedNumber === schemeId) {
+      return relative(filesRoot, schemeDir).split(/[\\/]/u).filter(Boolean);
+    }
+  }
+  return null;
+}
+
+function schemeIdNotFoundError(schemeId) {
+  const error = new Error(`方案 ID ${schemeId} 不存在。`);
+  error.statusCode = 404;
+  error.code = "not-found";
+  return error;
+}
+
+async function resolveSchemePathForSelectorUnlocked({ schemePath, schemeId, paths = defaultPaths, filesRoot = paths.schemeFiles } = {}) {
+  const pathParts = optionalSchemePathParts(schemePath);
+  const number = schemeNumberSelector(schemeId);
+  if (number === null) {
+    return pathParts;
+  }
+
+  await mkdirInSpace(filesRoot);
+  const assignments = await ensureSchemeNumbersUnlocked(paths, filesRoot);
+  const resolvedPath = schemePathForId(assignments, filesRoot, number);
+  if (!resolvedPath) {
+    throw schemeIdNotFoundError(number);
+  }
+  if (pathParts.length > 0 && !sameSchemePath(pathParts, resolvedPath)) {
+    const error = new Error("schemePath 与 schemeId 指向不同方案。");
+    error.statusCode = 400;
+    error.code = "bad-request";
+    throw error;
+  }
+  return resolvedPath;
+}
+
+export async function resolveSchemePathForSelector(options = {}) {
+  const paths = options.paths ?? defaultPaths;
+  if (schemeNumberSelector(options.schemeId) === null) {
+    return optionalSchemePathParts(options.schemePath);
+  }
+  return withSchemeStoreWriteLock(() => resolveSchemePathForSelectorUnlocked({ ...options, paths }));
 }
 
 function zipEntryParts(entryName) {
@@ -3589,7 +3856,12 @@ async function importSchemeArchiveBufferUnlocked(options) {
   const filesRoot = options.filesRoot ?? paths.schemeFiles;
   const trashRoot = options.trashRoot ?? paths.schemeTrash;
   await mkdirInSpace(filesRoot);
-  const parentPath = Array.isArray(options.parentPath) ? options.parentPath.map((part) => safeFilePart(part, "方案")).filter(Boolean) : [];
+  const parentPath = await resolveSchemePathForSelectorUnlocked({
+    schemePath: options.parentPath,
+    schemeId: options.parentSchemeId,
+    paths,
+    filesRoot
+  });
   const fileName = safeFilePart(options.fileName || "导入方案.zip", "导入方案.zip").replace(/\.zip$/iu, "");
   const mode = options.mode === "overwrite" ? "overwrite" : "check";
   const requestedName = safeFilePart(options.targetName || "", "");
@@ -3624,8 +3896,15 @@ async function importSchemeArchiveBufferUnlocked(options) {
   if (targetExists) {
     await archiveSchemeStoreEntry(targetDir, filesRoot, trashRoot, schemeArchiveId());
   }
+  let importedSchemeId = 0;
   try {
     await extractSchemeZipToDirectory(zip, targetDir, zipRootName);
+    await resetImportedSchemeNumbers(targetDir);
+    const assignments = await ensureSchemeNumbersUnlocked(paths, filesRoot);
+    importedSchemeId = assignments.get(resolve(targetDir));
+    if (!isValidSchemeNumber(importedSchemeId)) {
+      throw new Error(`无法为导入方案「${importName}」分配编号。`);
+    }
   } catch (error) {
     // 失败不留半成品方案：照 handleImportSpaceArchive 的同一口径（那边的理由写得更全）。
     // 此前这里直接冒泡，解包到一半失败会在方案树里留下一个看着正常、实则缺文件的方案目录，
@@ -3649,7 +3928,8 @@ async function importSchemeArchiveBufferUnlocked(options) {
   return {
     conflict: false,
     importedName: importName,
-    importedPath: [...parentPath, importName]
+    importedPath: [...parentPath, importName],
+    schemeId: importedSchemeId
   };
 }
 
@@ -3665,20 +3945,43 @@ export async function saveSchemeRecordDirectory(options) {
     const filesRoot = options.filesRoot ?? paths.schemeFiles;
     const schemePath = schemePathOrDefault(options.schemePath);
     const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
-    const previousSchemePath = options.previousSchemePath;
+    let previousSchemePath = options.previousSchemePath;
+    const sourceSchemeId = schemeNumberSelector(options.schemeId);
+    if (sourceSchemeId !== null) {
+      const numberedSourcePath = await resolveSchemePathForSelectorUnlocked({ schemeId: sourceSchemeId, paths, filesRoot });
+      if (previousSchemePath !== undefined && previousSchemePath !== null) {
+        const previousParts = optionalSchemePathParts(previousSchemePath);
+        if (!sameSchemePath(previousParts, numberedSourcePath)) {
+          const error = new Error("previousSchemePath 与 schemeId 指向不同方案。");
+          error.statusCode = 400;
+          error.code = "bad-request";
+          throw error;
+        }
+      }
+      previousSchemePath = numberedSourcePath;
+    }
+    let moved = false;
     if (Array.isArray(previousSchemePath) && previousSchemePath.length > 0 && !sameSchemePath(previousSchemePath, schemePath)) {
       const previousDir = schemeDirectoryFromPath(filesRoot, previousSchemePath);
       await mkdirInSpace(dirname(schemeDir));
       try {
         await rename(previousDir, schemeDir);
-        return;
+        moved = true;
       } catch (error) {
         if (error?.code !== "ENOENT") {
           throw error;
         }
       }
     }
-    await mkdirInSpace(schemeDir);
+    if (!moved) {
+      await mkdirInSpace(schemeDir);
+    }
+    const assignments = await ensureSchemeNumbersUnlocked(paths, filesRoot);
+    const schemeId = assignments.get(resolve(schemeDir));
+    if (!isValidSchemeNumber(schemeId)) {
+      throw new Error(`无法为方案「${schemePath.join("/")}」分配编号。`);
+    }
+    return schemeId;
   });
 }
 
@@ -3687,7 +3990,20 @@ export async function deleteSchemeRecordDirectory(options) {
     const paths = options.paths ?? defaultPaths;
     const filesRoot = options.filesRoot ?? paths.schemeFiles;
     const trashRoot = options.trashRoot ?? paths.schemeTrash;
-    const schemePath = requireSchemePathArray(options.schemePath);
+    let schemePath = optionalSchemePathParts(options.schemePath);
+    const schemeId = schemeNumberSelector(options.schemeId);
+    if (schemeId !== null) {
+      const numberedPath = await resolveSchemePathForSelectorUnlocked({ schemeId, paths, filesRoot });
+      if (schemePath.length > 0 && !sameSchemePath(schemePath, numberedPath)) {
+        const error = new Error("schemePath 与 schemeId 指向不同方案。");
+        error.statusCode = 400;
+        error.code = "bad-request";
+        throw error;
+      }
+      schemePath = numberedPath;
+    } else {
+      schemePath = requireSchemePathArray(options.schemePath);
+    }
     if (schemePath.length === 0) {
       return;
     }
@@ -3894,7 +4210,12 @@ async function allocateStableProjectIndex({ filesRoot, schemeDir, name, previous
 export async function readSchemeProjectRecord(options = {}) {
   const paths = options.paths ?? defaultPaths;
   const filesRoot = options.filesRoot ?? paths.schemeFiles;
-  const schemePath = schemePathOrDefault(options.schemePath);
+  const schemePath = schemePathOrDefault(await resolveSchemePathForSelector({
+    schemePath: options.schemePath,
+    schemeId: options.schemeId,
+    paths,
+    filesRoot
+  }));
   const name = storageProjectDisplayName(options.name || options.projectName);
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
   const projectFile = await projectJsonFileForName(schemeDir, name);
@@ -3905,14 +4226,15 @@ export async function readSchemeProjectRecord(options = {}) {
 }
 
 // 在方案写入队列内比对模型版本并保存，避免「检查后、写前」被并发保存覆盖。
-export async function updateSchemeProjectRecordIfUnchanged({ paths = defaultPaths, schemePath, name, expectedUpdatedAt, expectedContentHash, record }) {
+export async function updateSchemeProjectRecordIfUnchanged({ paths = defaultPaths, schemePath, schemeId, name, expectedUpdatedAt, expectedContentHash, record }) {
   return withSchemeStoreWriteLock(async () => {
-    const latestRecord = await readSchemeProjectRecord({ paths, schemePath, name });
+    const resolvedSchemePath = schemePathOrDefault(await resolveSchemePathForSelectorUnlocked({ paths, schemePath, schemeId }));
+    const latestRecord = await readSchemeProjectRecord({ paths, schemePath: resolvedSchemePath, name });
     if (!latestRecord || latestRecord.updatedAt !== expectedUpdatedAt ||
       latestRecord.contentHash !== expectedContentHash) {
       return { conflict: true };
     }
-    const savedRecord = await saveSchemeProjectRecordUnlocked({ paths, schemePath, record });
+    const savedRecord = await saveSchemeProjectRecordUnlocked({ paths, schemePath: resolvedSchemePath, record });
     return { conflict: false, record: savedRecord };
   });
 }
@@ -3980,7 +4302,12 @@ async function saveSchemeProjectRecordUnlocked(options) {
   const paths = options.paths ?? defaultPaths;
   const filesRoot = options.filesRoot ?? paths.schemeFiles;
   const trashRoot = options.trashRoot ?? paths.schemeTrash;
-  const schemePath = schemePathOrDefault(options.schemePath);
+  const schemePath = schemePathOrDefault(await resolveSchemePathForSelectorUnlocked({
+    schemePath: options.schemePath,
+    schemeId: options.schemeId,
+    paths,
+    filesRoot
+  }));
   const record = options.record ?? {};
   const name = storageProjectDisplayName(record.name || record.project?.name);
   const updatedAt = record.updatedAt || new Date().toISOString();
@@ -4042,7 +4369,12 @@ export async function deleteSchemeProjectRecord(options) {
     const paths = options.paths ?? defaultPaths;
     const filesRoot = options.filesRoot ?? paths.schemeFiles;
     const trashRoot = options.trashRoot ?? paths.schemeTrash;
-    const schemePath = schemePathOrDefault(options.schemePath);
+    const schemePath = schemePathOrDefault(await resolveSchemePathForSelectorUnlocked({
+      schemePath: options.schemePath,
+      schemeId: options.schemeId,
+      paths,
+      filesRoot
+    }));
     const name = storageProjectDisplayName(options.name || options.projectName);
     const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
     const archiveId = options.archiveId ?? schemeArchiveId();
@@ -4056,6 +4388,40 @@ async function writeSchemeFiles(schemes, options = {}) {
   const paths = options.paths ?? defaultPaths;
   const filesRoot = paths.schemeFiles;
   await mkdirInSpace(filesRoot);
+  const previousAssignments = await ensureSchemeNumbersUnlocked(paths, filesRoot);
+  const previousPathBySchemeId = new Map(
+    [...previousAssignments].map(([schemeDir, schemeId]) => [schemeId, resolve(schemeDir)])
+  );
+  const targetSchemes = [];
+  const collectTargetSchemes = (records, parentDir) => {
+    for (const scheme of records ?? []) {
+      const schemeDir = resolve(join(parentDir, safeFilePart(scheme.name, "方案")));
+      targetSchemes.push({ scheme, schemeDir });
+      collectTargetSchemes(scheme.children, schemeDir);
+    }
+  };
+  collectTargetSchemes(schemes, filesRoot);
+  const targetSchemeDirs = new Set(targetSchemes.map(({ schemeDir }) => schemeDir));
+  const carriedSchemeIds = new Map();
+  const claimedSchemeIds = new Set();
+
+  for (const { scheme, schemeDir } of targetSchemes) {
+    if (previousAssignments.has(schemeDir) || !isValidSchemeNumber(scheme.schemeId)) {
+      continue;
+    }
+    const previousDir = previousPathBySchemeId.get(scheme.schemeId);
+    if (!previousDir || targetSchemeDirs.has(previousDir) || claimedSchemeIds.has(scheme.schemeId)) {
+      continue;
+    }
+    const { metadata } = await readSchemeNumberMetadata(previousDir);
+    carriedSchemeIds.set(schemeDir, {
+      ...metadata,
+      ...(Object.hasOwn(metadata, "name") ? { name: scheme.name } : {}),
+      schemeId: scheme.schemeId
+    });
+    claimedSchemeIds.add(scheme.schemeId);
+  }
+
   const expectedFiles = new Set();
   const expectedDirs = new Set([filesRoot]);
   const writeTasks = [];
@@ -4064,6 +4430,12 @@ async function writeSchemeFiles(schemes, options = {}) {
     const schemeDir = join(parentDir, safeFilePart(scheme.name, "方案"));
     expectedDirs.add(schemeDir);
     await mkdirInSpace(schemeDir);
+    const metadataPath = join(schemeDir, "scheme.json");
+    expectedFiles.add(metadataPath);
+    const carriedMetadata = carriedSchemeIds.get(resolve(schemeDir));
+    if (carriedMetadata) {
+      writeTasks.push(writeTextIfChanged(metadataPath, `${JSON.stringify(carriedMetadata, null, 2)}\n`));
+    }
     for (const record of scheme.projects ?? []) {
       const baseName = safeFilePart(record.name, "模型");
       const jsonPath = join(schemeDir, `${baseName}.json`);
@@ -4079,10 +4451,13 @@ async function writeSchemeFiles(schemes, options = {}) {
     await writeSchemeTree(scheme, filesRoot);
   }
   await Promise.all(writeTasks);
-  // options 必须透传：archiveStaleSchemeFiles 内部用 options.paths 推导 trashRoot，
-  // 漏传会让本空间的废弃文件被归档进**默认空间**的回收站（跨空间写入）。
+  // The initial scan persisted the old high-water mark. Archive stale source
+  // paths before assigning numbers so a moved scheme keeps its number and copies get fresh ones.
   await archiveStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs, { paths });
+  const assignments = await ensureSchemeNumbersUnlocked(paths, filesRoot);
+  const savedSchemes = schemeIdsOnRecords(schemes, filesRoot, assignments);
   await registryFor(paths).rebuildFromStorage();
+  return savedSchemes;
 }
 
 function publicAsset(item) {
@@ -4727,7 +5102,79 @@ async function handleSyncGlobalLineProject(request, response, paths) {
   }));
 }
 
-async function handleSaveSchemes(request, response, paths) {
+async function snapshotSavedModels(paths) {
+  const schemes = await readSchemes({ includeProjects: true, paths });
+  const snapshot = new Map();
+  const visit = (records, parentPath = []) => {
+    for (const scheme of records ?? []) {
+      const schemePath = [...parentPath, String(scheme?.name ?? "")];
+      for (const record of scheme?.projects ?? []) {
+        const project = record?.project && typeof record.project === "object" ? record.project : {};
+        const name = String(record?.name ?? project.name ?? "");
+        const modelIndex = Number(project.idx);
+        const stableModelId = Number.isSafeInteger(modelIndex) && modelIndex > 0 ? modelIndex : null;
+        const key = stableModelId ? `idx:${stableModelId}` : `path:${JSON.stringify([...schemePath, name])}`;
+        const savedRecord = {
+          name,
+          updatedAt: String(record?.updatedAt ?? ""),
+          project
+        };
+        snapshot.set(key, {
+          modelId: stableModelId,
+          schemePath,
+          record: savedRecord,
+          fingerprint: JSON.stringify([schemePath, savedRecord.updatedAt, project])
+        });
+      }
+      visit(scheme?.children, schemePath);
+    }
+  };
+  visit(schemes);
+  return snapshot;
+}
+
+async function trySnapshotSavedModels(paths) {
+  try {
+    return await snapshotSavedModels(paths);
+  } catch (error) {
+    console.warn(`[model-update] 保存前快照读取失败，跳过本次批量通知：${error?.message ?? error}`);
+    return null;
+  }
+}
+
+async function publishModelChangesSince(service, spaceId, paths, before) {
+  if (!(before instanceof Map)) return;
+  try {
+    const after = await snapshotSavedModels(paths);
+    for (const [key, model] of after) {
+      const previous = before.get(key);
+      if (!previous || previous.fingerprint !== model.fingerprint) {
+        await service.publishModelChanged({ spaceId, schemePath: model.schemePath, record: model.record, paths });
+      }
+    }
+    for (const [key, model] of before) {
+      if (!after.has(key) && model.modelId) service.removeModel(spaceId, model.modelId);
+    }
+  } catch (error) {
+    console.warn(`[model-update] 批量模型变更通知失败：${error?.message ?? error}`);
+  }
+}
+
+async function publishSavedModelChange(service, event) {
+  try {
+    const persistedRecord = await readSchemeProjectRecord({
+      paths: event.paths,
+      schemePath: event.schemePath,
+      name: event.record?.name ?? event.record?.project?.name
+    });
+    if (!persistedRecord) return;
+    await service.publishModelChanged({ ...event, record: persistedRecord });
+  } catch (error) {
+    console.warn(`[model-update] 模型变更通知失败：${error?.message ?? error}`);
+  }
+}
+
+async function handleSaveSchemes(request, response, paths, spaceId, modelUpdateService) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案/模型数据过大，最大支持 64MB。");
   const schemes = Array.isArray(payload) ? payload : payload.schemes;
   if (!Array.isArray(schemes)) {
@@ -4735,8 +5182,10 @@ async function handleSaveSchemes(request, response, paths) {
     return;
   }
   const normalized = normalizeSchemesForStorage(schemes);
-  await writeSchemes(normalized, { paths });
-  sendJson(response, 200, { ok: true, schemes: normalized, savedAt: new Date().toISOString() });
+  const before = await trySnapshotSavedModels(paths);
+  const savedSchemes = await writeSchemes(normalized, { paths });
+  await publishModelChangesSince(modelUpdateService, spaceId, paths, before);
+  sendJson(response, 200, { ok: true, schemes: savedSchemes, savedAt: new Date().toISOString() });
 }
 
 async function handleReadSchemeProject(url, response, paths) {
@@ -4745,8 +5194,13 @@ async function handleReadSchemeProject(url, response, paths) {
     sendError(response, 400, "缺少模型名称。");
     return;
   }
-  const project = await readSchemeProjectRecord({
+  const schemePath = await resolveSchemePathForSelector({
     schemePath: parseSchemePathParam(url.searchParams.get("schemePath")),
+    schemeId: url.searchParams.get("schemeId"),
+    paths
+  });
+  const project = await readSchemeProjectRecord({
+    schemePath,
     name,
     paths
   });
@@ -4757,7 +5211,7 @@ async function handleReadSchemeProject(url, response, paths) {
   sendJson(response, 200, { ok: true, project });
 }
 
-async function handleSaveSchemeProject(request, response, paths) {
+async function handleSaveSchemeProject(request, response, paths, spaceId, modelUpdateService) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型数据过大，最大支持 64MB。");
   const record = payload.record ?? {
     name: payload.name || payload.project?.name,
@@ -4770,24 +5224,45 @@ async function handleSaveSchemeProject(request, response, paths) {
   }
   const savedRecord = await saveSchemeProjectRecord({
     schemePath: payload.schemePath,
+    schemeId: payload.schemeId,
     record,
     previousName: payload.previousName,
+    paths
+  });
+  const savedSchemePath = schemePathOrDefault(await resolveSchemePathForSelector({
+    schemePath: payload.schemePath,
+    schemeId: payload.schemeId,
+    paths
+  }));
+  await publishSavedModelChange(modelUpdateService, {
+    spaceId,
+    schemePath: savedSchemePath,
+    record: savedRecord,
     paths
   });
   sendJson(response, 200, { ok: true, project: savedRecord, savedAt: new Date().toISOString() });
 }
 
-async function handleDeleteSchemeProject(request, response, paths) {
+async function handleDeleteSchemeProject(request, response, paths, spaceId, modelUpdateService) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型数据过大，最大支持 64MB。");
   if (!payload.name && !payload.projectName) {
     sendError(response, 400, "缺少模型名称。");
     return;
   }
-  await deleteSchemeProjectRecord({
+  const schemePath = schemePathOrDefault(await resolveSchemePathForSelector({
     schemePath: payload.schemePath,
-    name: payload.name || payload.projectName,
+    schemeId: payload.schemeId,
+    paths
+  }));
+  const name = payload.name || payload.projectName;
+  const existing = await readSchemeProjectRecord({ paths, schemePath, name });
+  await deleteSchemeProjectRecord({
+    schemePath,
+    schemeId: payload.schemeId,
+    name,
     paths
   });
+  if (existing?.project?.idx) modelUpdateService.removeModel(spaceId, existing.project.idx);
   sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
 }
 
@@ -4797,29 +5272,35 @@ async function handleSaveSchemeRecord(request, response, paths) {
     sendError(response, 400, "缺少方案路径。");
     return;
   }
-  await saveSchemeRecordDirectory({
+  const schemeId = await saveSchemeRecordDirectory({
     schemePath: payload.schemePath,
     previousSchemePath: payload.previousSchemePath,
+    schemeId: payload.schemeId,
     paths
   });
-  sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
+  sendJson(response, 200, { ok: true, schemeId, savedAt: new Date().toISOString() });
 }
 
 async function handleDeleteSchemeRecord(request, response, paths) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案数据过大，最大支持 64MB。");
-  if (!Array.isArray(payload.schemePath) || payload.schemePath.length === 0) {
+  if ((payload.schemeId === undefined || payload.schemeId === null) && (!Array.isArray(payload.schemePath) || payload.schemePath.length === 0)) {
     sendError(response, 400, "缺少方案路径。");
     return;
   }
   await deleteSchemeRecordDirectory({
     schemePath: payload.schemePath,
+    schemeId: payload.schemeId,
     paths
   });
   sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
 }
 
 async function handleExportSchemeArchive(url, response, paths) {
-  const schemePath = parseSchemePathParam(url.searchParams.get("schemePath"));
+  const schemePath = await resolveSchemePathForSelector({
+    schemePath: parseSchemePathParam(url.searchParams.get("schemePath")),
+    schemeId: url.searchParams.get("schemeId"),
+    paths
+  });
   const templateName = (url.searchParams.get("template") ?? "").trim();
   if (templateName && !Object.hasOwn(PREDEFINED_E_DEVICE_TEMPLATES, templateName)) {
     sendError(response, 400, `未知模板：${templateName}。可用模板：${Object.keys(PREDEFINED_E_DEVICE_TEMPLATES).join("、")}`);
@@ -4850,8 +5331,9 @@ async function handleExportSchemeArchive(url, response, paths) {
   }
 }
 
-async function handleImportSchemeArchive(url, request, response, paths) {
+async function handleImportSchemeArchive(url, request, response, paths, spaceId, modelUpdateService) {
   const parentPath = parseSchemePathParam(url.searchParams.get("parentPath"));
+  const parentSchemeId = url.searchParams.get("parentSchemeId");
   const fileName = url.searchParams.get("fileName") || "导入方案.zip";
   const mode = url.searchParams.get("mode") === "overwrite" ? "overwrite" : "check";
   const targetName = url.searchParams.get("targetName") || "";
@@ -4867,22 +5349,26 @@ async function handleImportSchemeArchive(url, request, response, paths) {
     sendError(response, 400, "zip 文件格式不正确。");
     return;
   }
+  const before = await trySnapshotSavedModels(paths);
   try {
-    const result = await importSchemeArchiveBuffer({ paths, buffer, parentPath, fileName, mode, targetName });
+    const result = await importSchemeArchiveBuffer({ paths, buffer, parentPath, parentSchemeId, fileName, mode, targetName });
     if (result.conflict) {
       sendJson(response, 409, { error: "方案目录已存在。", ...result });
       return;
     }
     const schemes = normalizeSchemesForStorage(await readSchemes({ paths }));
+    await publishModelChangesSince(modelUpdateService, spaceId, paths, before);
     sendJson(response, 200, {
       ok: true,
       schemes,
       importedName: result.importedName,
       importedPath: result.importedPath,
+      schemeId: result.schemeId,
       savedAt: new Date().toISOString()
     });
   } catch (error) {
-    sendError(response, 400, error instanceof Error ? error.message : "导入方案压缩包失败。");
+    const status = Number.isInteger(error?.statusCode) ? error.statusCode : 400;
+    sendError(response, status, error instanceof Error ? error.message : "导入方案压缩包失败。");
   }
 }
 
@@ -4936,7 +5422,7 @@ function sendSpaceNameConflict(response, error) {
 // - overwrite：先按 DELETE 的次序删掉同名空间（目录归档进 trash-spaces/，可手工找回），再建；
 // - rename：以 `?name=` 给的新名建（新名仍撞车 → 同样是 409，前端可再问一次）。
 // spaceStore 是 createImageServer 的闭包局部量（本函数在闭包外），与 paths 同口径显式透传。
-async function handleImportSpaceArchive(request, response, spaceStore, url) {
+async function handleImportSpaceArchive(request, response, spaceStore, url, modelUpdateHooks = {}) {
   const mode = String(url?.searchParams?.get("mode") ?? "").trim();
   const renameName = normalizeSpaceName(url?.searchParams?.get("name") ?? "");
   if (mode && mode !== "overwrite" && mode !== "rename") {
@@ -4962,6 +5448,8 @@ async function handleImportSpaceArchive(request, response, spaceStore, url) {
   }
   let space = null;
   let spaceRoot = null;
+  let replacedSpaceId = "";
+  let previousModelSnapshot = null;
   try {
     assertZipUncompressedSizeWithinLimit(zip, "空间压缩包");
     const entries = zip.getEntries();
@@ -4985,6 +5473,8 @@ async function handleImportSpaceArchive(request, response, spaceStore, url) {
       // 名字唯一 ⇒ 至多一个同名者（大小写折叠不做，故按归一化名精确匹配）。
       const clash = (await spaceStore.list()).find((item) => normalizeSpaceName(item.name) === name);
       if (clash) {
+        replacedSpaceId = clash.id;
+        previousModelSnapshot = await modelUpdateHooks.capture?.(spaceStore.resolvePaths(clash.id));
         const clashRoot = spaceStore.resolvePaths(clash.id).root;
         retiredSpaceRoots.add(clashRoot);
         await evictRegistry(clashRoot);
@@ -5015,9 +5505,23 @@ async function handleImportSpaceArchive(request, response, spaceStore, url) {
     }
     // 覆盖模式下被顶掉的那个空间在 create 之前就已删除：回滚只能撤掉新空间，
     // 旧空间留在 trash-spaces/ 里等手工找回 —— 这是「覆盖」的固有代价，询问框里已写明。
+    if (replacedSpaceId && !spaceStore.has(replacedSpaceId)) {
+      modelUpdateHooks.closeSpace?.(replacedSpaceId);
+    }
     if (sendSpaceNameConflict(response, error)) return;
     sendError(response, 400, error instanceof Error ? error.message : "导入空间压缩包失败。");
     return;
+  }
+  if (replacedSpaceId) {
+    if (space.id === replacedSpaceId) {
+      await modelUpdateHooks.publish?.(
+        space.id,
+        spaceStore.resolvePaths(space.id),
+        previousModelSnapshot
+      );
+    } else {
+      modelUpdateHooks.closeSpace?.(replacedSpaceId);
+    }
   }
   const spaces = await spaceStore.list();
   sendJson(response, 200, { ok: true, space, spaces, savedAt: new Date().toISOString() });
@@ -5237,8 +5741,51 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
   // spaceStore 可注入：测试要复用自己建的那个实例，否则同进程两个写者各持注册表快照，
   // 后写者会用陈旧快照回滚对方的条目。动态 import 维持与 spaceStore 的循环依赖不静态化。
   const { createSpaceStore, resolveSpaceFromRequest, SPACE_COOKIE_NAME, SPACE_FALLBACK_HEADER } = await import("./spaceStore.mjs");
-  const spaceStore = injectedSpaceStore ?? createSpaceStore(dataRoot);
+  let spaceStore = injectedSpaceStore ?? createSpaceStore(dataRoot);
   await spaceStore.ensureInitialized();
+  const { createModelUpdateService } = await import("./modelUpdateService.mjs");
+  const modelUpdateService = createModelUpdateService({
+    sendMessage: () => undefined,
+    targetExists: async ({ spaceId, scope }) => {
+      if (!spaceStore.has(spaceId)) return false;
+      const paths = spaceStore.resolvePaths(spaceId);
+      if (scope.type === "space") return true;
+      if (scope.type === "scheme") {
+        let schemes = await readSchemes({ paths });
+        for (const name of scope.schemePath) {
+          const match = schemes.find((scheme) => scheme.name === name);
+          if (!match) return false;
+          schemes = match.children ?? [];
+        }
+        return true;
+      }
+      if (scope.type === "model") {
+        return Boolean(await findSchemeProjectRecordByIndex({ index: Number(scope.modelId), paths }));
+      }
+      return false;
+    },
+    buildPayload: async ({ spaceId, record, schemePath, files }) => {
+      const { buildModelUpdatePayload } = await import("./modelUpdatePayload.mjs");
+      return buildModelUpdatePayload({
+        record,
+        schemePath,
+        files,
+        paths: spaceStore.resolvePaths(spaceId)
+      });
+    }
+  });
+  let modelUpdateWebSocket = null;
+  const dataRootGate = createDataRootGate();
+  const commitDataRootRuntime = async (nextRoot) => {
+    const resolvedRoot = resolve(nextRoot);
+    const nextStore = createSpaceStore(resolvedRoot);
+    await nextStore.ensureInitialized();
+    await evictRegistry(dataRoot);
+    dataRoot = resolvedRoot;
+    defaultPaths = spacePathsFor(resolvedRoot, "default");
+    spaceStore = nextStore;
+    return nextStore;
+  };
   const exactRouteHandlers = new Map([
     ["GET /swigger", async ({ response }) => {
       const { renderSwaggerHtml } = await import("./swaggerPage.mjs");
@@ -5249,6 +5796,64 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         ...accessControlHeaders
       });
       response.end(html);
+    }],
+    [routeKey("POST", "/platform/data-dir"), async ({ request, response }) => {
+      const remoteAddress = String(request.socket?.remoteAddress ?? "").replace(/^::ffff:/u, "");
+      const isLoopback = !remoteAddress || remoteAddress === "127.0.0.1" || remoteAddress === "::1";
+      if (!isAllowedNativeExportOrigin(request) || !isLoopback) {
+        sendError(response, 403, "仅允许本机页面调用数据目录迁移接口。", "DATA_DIR_ORIGIN_FORBIDDEN");
+        return;
+      }
+      const envDataDir = String(process.env.GRAPH_MODEL_DATA_DIR ?? "").trim();
+      if (envDataDir && resolve(envDataDir) === resolve(dataRoot)) {
+        sendError(
+          response,
+          409,
+          "GRAPH_MODEL_DATA_DIR 环境变量覆盖了 platform.config.json，无法通过接口持久化迁移结果。",
+          "DATA_DIR_ENV_OVERRIDE"
+        );
+        return;
+      }
+      try {
+        const body = await readJsonBody(request, 64 * 1024, "数据目录迁移参数过大。");
+        const rawPath = typeof body?.path === "string" ? body.path.trim() : "";
+        if (!rawPath) {
+          sendError(response, 400, "path 必须是非空目录路径。", "DATA_DIR_PATH_INVALID");
+          return;
+        }
+        const targetRoot = resolve(repositoryRoot, rawPath);
+        const migration = createDataRootMigration({
+          currentRoot: dataRoot,
+          targetRoot,
+          configPath: platformConfigPath,
+          exampleConfigPath: join(repositoryRoot, "platform.config.json.example"),
+          archiveParent: dirname(dataRoot),
+          hooks: {
+            afterArchive: async () => {
+              await evictRegistry(dataRoot);
+            },
+            afterConfigWrite: async () => {
+              await commitDataRootRuntime(targetRoot);
+            }
+          }
+        });
+        const result = await migration.run();
+        sendJson(response, 200, {
+          ok: true,
+          dataRoot: result.dataRoot,
+          archivePath: result.archivePath,
+          savedAt: new Date().toISOString()
+        });
+      } catch (error) {
+        const code = error?.code ?? (error instanceof DataRootMigrationError ? "DATA_DIR_MIGRATION_FAILED" : undefined);
+        const status = [
+          "DATA_DIR_PATH_INVALID",
+          "DATA_DIR_NOT_FOUND",
+          "DATA_DIR_NOT_EMPTY",
+          "DATA_DIR_UNSUPPORTED_ENTRY"
+        ].includes(code) ? 400 : 500;
+        sendError(response, status, error instanceof Error ? error.message : "数据目录迁移失败。", code ?? "DATA_DIR_MIGRATION_FAILED");
+      }
     }],
     // 空间管理：本系统自身的管理面，返回 /webgrp/* 内部域形态，不进 /v1 信封。
     // 空间管理端点由派发层的 isSpaceAgnostic 短路（不注入 spaceCtx），current 由 handler 自算。
@@ -5352,6 +5957,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         retiredSpaceRoots.add(root);
         await evictRegistry(root);
         await spaceStore.remove(id);
+        modelUpdateWebSocket?.closeSpace(id);
         sendJson(response, 200, { ok: true });
       } catch (error) {
         // 撤下条件按「空间是否还在」判，不按「有没有抛错」：
@@ -5374,7 +5980,11 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       await handleExportSpaceArchive(response, paths, spaceName, safeFilePart(spaceName, "空间"));
     }],
     [routeKey("POST", "/spaces/import"), async ({ url, request, response }) => {
-      await handleImportSpaceArchive(request, response, spaceStore, url);
+      await handleImportSpaceArchive(request, response, spaceStore, url, {
+        capture: trySnapshotSavedModels,
+        publish: (id, paths, before) => publishModelChangesSince(modelUpdateService, id, paths, before),
+        closeSpace: (id) => modelUpdateWebSocket?.closeSpace(id)
+      });
     }],
     [routeKey("GET", "/images"), async ({ url, request, response, paths }) => {
       const manifest = await readManifest({ paths });
@@ -5427,26 +6037,34 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     [routeKey("GET", "/schemes/export"), async ({ url, response, paths }) => {
       await handleExportSchemeArchive(url, response, paths);
     }],
-    [routeKey("POST", "/schemes/import"), async ({ url, request, response, paths }) => {
-      await handleImportSchemeArchive(url, request, response, paths);
+    [routeKey("POST", "/schemes/import"), async ({ url, request, response, paths, spaceId }) => {
+      await handleImportSchemeArchive(url, request, response, paths, spaceId, modelUpdateService);
     }],
-    [routeKey("PUT", "/schemes"), async ({ request, response, paths }) => {
-      await handleSaveSchemes(request, response, paths);
+    [routeKey("PUT", "/schemes"), async ({ request, response, paths, spaceId }) => {
+      await handleSaveSchemes(request, response, paths, spaceId, modelUpdateService);
     }],
     [routeKey("GET", "/schemes/project"), async ({ url, response, paths }) => {
       await handleReadSchemeProject(url, response, paths);
     }],
-    [routeKey("PUT", "/schemes/project"), async ({ request, response, paths }) => {
-      await handleSaveSchemeProject(request, response, paths);
+    [routeKey("PUT", "/schemes/project"), async ({ request, response, paths, spaceId }) => {
+      await handleSaveSchemeProject(request, response, paths, spaceId, modelUpdateService);
     }],
-    [routeKey("DELETE", "/schemes/project"), async ({ request, response, paths }) => {
-      await handleDeleteSchemeProject(request, response, paths);
+    [routeKey("DELETE", "/schemes/project"), async ({ request, response, paths, spaceId }) => {
+      await handleDeleteSchemeProject(request, response, paths, spaceId, modelUpdateService);
     }],
-    [routeKey("PUT", "/schemes/scheme"), async ({ request, response, paths }) => {
+    [routeKey("PUT", "/schemes/scheme"), async ({ request, response, paths, spaceId }) => {
+      const before = await trySnapshotSavedModels(paths);
       await handleSaveSchemeRecord(request, response, paths);
+      if (response.statusCode < 400) {
+        await publishModelChangesSince(modelUpdateService, spaceId, paths, before);
+      }
     }],
-    [routeKey("DELETE", "/schemes/scheme"), async ({ request, response, paths }) => {
+    [routeKey("DELETE", "/schemes/scheme"), async ({ request, response, paths, spaceId }) => {
+      const before = await trySnapshotSavedModels(paths);
       await handleDeleteSchemeRecord(request, response, paths);
+      if (response.statusCode < 400) {
+        await publishModelChangesSince(modelUpdateService, spaceId, paths, before);
+      }
     }],
     [routeKey("GET", "/global-lines"), async ({ response, paths }) => {
       await handleListGlobalLines(response, paths);
@@ -5560,7 +6178,9 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
   // 运行时态 WS 桥接：客户端注册表 + /ws 升级 + fetch 拉取
   const { createRuntimeRegistry } = await import("./runtimeRegistry.mjs");
   const { attachRuntimeWebSocket } = await import("./runtimeWs.mjs");
+  const { attachModelUpdateWebSocket } = await import("./modelUpdateWebSocket.mjs");
   const { createV1RuntimeRoutes } = await import("./apiV1Runtime.mjs");
+  const { createV1RuntimeExportRoutes } = await import("./apiV1RuntimeExport.mjs");
   const { createV1ControlRoutes } = await import("./apiV1Control.mjs");
   const runtimeRegistry = createRuntimeRegistry();
   // runtimeWs 在 server 创建后挂载（attachRuntimeWebSocket 需要 server.on("upgrade")）
@@ -5569,6 +6189,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
   let v1ControlRoutes = [];
 
   const server = createServer(async (request, response) => {
+    const runRequest = async () => {
     try {
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
       // 剥前端 base 前缀：/app/icon-library/x -> /icon-library/x（默认 / 时 no-op），下游路由按根路径匹配
@@ -5587,6 +6208,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       const isSpaceAgnostic = url.pathname === apiPath("/exports/native/select-file")
         || url.pathname === apiPath("/exports/native/write-text")
         || url.pathname === apiPath("/exports/native/open-file")
+        || url.pathname === apiPath("/platform/data-dir")
         || url.pathname === apiPath("/spaces")
         || url.pathname === apiPath("/spaces/initialize")
         || url.pathname === apiPath("/v1/receive");
@@ -5628,12 +6250,15 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       // /webgrp/v1/* 第三方只读路由（动态加载避开循环依赖）
       if (url.pathname.startsWith(apiPrefix + "/v1/")) {
         const { v1SchemeRoutes } = await import("./apiV1Schemes.mjs");
+        const { v1ModelExportRoutes } = await import("./apiV1ModelExport.mjs");
         const { v1SpaceRoutes } = await import("./apiV1Spaces.mjs");
         const { v1LibraryRoutes } = await import("./apiV1Library.mjs");
         const { v1ReceiveRoutes } = await import("./apiV1Receive.mjs");
         const { createV1TopologyRoutes } = await import("./apiV1Topology.mjs");
-        const v1TopologyRoutes = createV1TopologyRoutes(runtimeWs);
-        const v1Routes = [...v1SchemeRoutes, ...v1SpaceRoutes, ...v1LibraryRoutes, ...v1ReceiveRoutes, ...v1TopologyRoutes, ...v1RuntimeRoutes, ...v1ControlRoutes];
+        const v1TopologyRoutes = createV1TopologyRoutes(runtimeWs, (event) =>
+          publishSavedModelChange(modelUpdateService, event)
+        );
+        const v1Routes = [...v1SchemeRoutes, ...v1ModelExportRoutes, ...v1SpaceRoutes, ...v1LibraryRoutes, ...v1ReceiveRoutes, ...v1TopologyRoutes, ...v1RuntimeRoutes, ...v1ControlRoutes];
         for (const route of v1Routes) {
           if (route.method !== request.method) {
             continue;
@@ -5663,11 +6288,23 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
       sendError(response, status, error instanceof Error ? error.message : "后端处理失败。");
     }
+    };
+    const rawPath = String(request.url ?? "/").split("?", 1)[0];
+    const isDataRootMigration = request.method === "POST" && rawPath === apiPath("/platform/data-dir");
+    await (isDataRootMigration
+      ? dataRootGate.withExclusive(runRequest)
+      : dataRootGate.withShared(runRequest));
   });
   // server 创建后挂载运行时态 WS 桥接（需 server.on("upgrade")）
   // 传 spaceStore：客户端上线时要按握手 Cookie 把空间归位到注册表（缺 Cookie → 首个空间）
-  runtimeWs = attachRuntimeWebSocket(server, runtimeRegistry, spaceStore);
-  v1RuntimeRoutes = createV1RuntimeRoutes(runtimeWs);
+  runtimeWs = attachRuntimeWebSocket(server, runtimeRegistry, () => spaceStore, {
+    passThroughPaths: [apiPath("/v1/subscriptions/ws")]
+  });
+  modelUpdateWebSocket = attachModelUpdateWebSocket(server, {
+    service: modelUpdateService,
+    getSpaceStore: () => spaceStore
+  });
+  v1RuntimeRoutes = [...createV1RuntimeRoutes(runtimeWs), ...createV1RuntimeExportRoutes(runtimeWs)];
   v1ControlRoutes = createV1ControlRoutes(runtimeWs);
 
   return new Promise((resolveServer) => {

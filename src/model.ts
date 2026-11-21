@@ -2344,9 +2344,11 @@ export type SavedProjectRecord = {
 export type PersistedSavedProjectRecord = Omit<SavedProjectRecord, "id">;
 
 export type SavedSchemeRecord = {
+  /** 运行时兼容键：仅保存 schemeId 的十进制文本，不再生成 UUID 或路径键。 */
   id: string;
   name: string;
   updatedAt: string;
+  schemeId?: number;
   projects: SavedProjectRecord[];
   children?: SavedSchemeRecord[];
 };

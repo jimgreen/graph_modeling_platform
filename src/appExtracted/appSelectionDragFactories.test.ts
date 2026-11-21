@@ -1,7 +1,7 @@
 // createCurrentProject 输出 backgroundProjectIdx：服务端靠它定位背景模型（前端 id 服务端无法解析）
 import { describe, expect, test, vi } from "vitest";
 import { ELECTRIC_FLOW_DEFAULTS } from "../model";
-import { createAddToContainer, createCanvasPointerKeyboardShortcutAvailability, createConfirmAddGraphTemplate, createConfirmAddToContainer, createCreateGraphTemplateType, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createFinalizeMovedNodeEdgesFast, createGroupDeviceTerminalAssociationFor, createGroupSelectedGraphics, createPasteSelection, createPersistDeviceLibraryChange, createQueuePendingBlankCanvasDeselect, createRemoveFromContainer, createRequireEditMode, createToggleFilterSelectionType } from "./appSelectionDragFactories";
+import { createAddToContainer, createCanvasPointerKeyboardShortcutAvailability, createConfirmAddGraphTemplate, createConfirmAddToContainer, createCreateGraphTemplateType, createCurrentProject, createCutSelection, createDeleteSelection, createDropGraphTemplate, createEnsureDraggingUndoSnapshot, createFinalizeMovedNodeEdgesFast, createGroupDeviceTerminalAssociationFor, createGroupSelectedGraphics, createPasteSelection, createPersistDeviceLibraryChange, createQueuePendingBlankCanvasDeselect, createRemoveFromContainer, createToggleFilterSelectionType } from "./appSelectionDragFactories";
 import { canvasClipboardBounds, cloneCanvasClipboard, createCanvasGroupFromSelection, expandSelectionByGroups } from "../selectionActions";
 import { containerKindSwitch, containerNamePick, containerNameSearch } from "../acContainer";
 import { deleteNodesWithConnectedEdges } from "../model-routing";
@@ -195,7 +195,6 @@ describe("归属入口的量测同步", () => {
       normalizeProjectMeasurements,
       patchGraphNodes: vi.fn(),
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: () => true,
       setProjectMeasurements: capture.setProjectMeasurements,
       showGlobalMessage: vi.fn(),
       writeOperationLog: vi.fn(),
@@ -221,7 +220,6 @@ describe("归属入口的量测同步", () => {
       assignPermanentDeviceIndex: vi.fn(),
       normalizeProjectMeasurements,
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: () => true,
       setDeviceIndexCounters: vi.fn(),
       setGraphArrays: vi.fn(),
       setProjectMeasurements: capture.setProjectMeasurements,
@@ -257,7 +255,6 @@ describe("归属入口的量测同步", () => {
         normalizeProjectMeasurements,
         patchGraphNodes: vi.fn(),
         pushUndoSnapshot: vi.fn(),
-        requireEditMode: () => true,
         setProjectMeasurements: vi.fn(),
         showGlobalMessage,
         writeOperationLog: vi.fn(),
@@ -297,7 +294,6 @@ describe("删除容器收尾(deleteSelection)", () => {
       normalizeProjectMeasurements: (m: any) => m,
       pushUndoSnapshot: vi.fn(),
       removeGraphicsFromGroups: (g: any) => g,
-      requireEditMode: () => true,
       setCanvasSelectionScope: vi.fn(),
       setEdges: vi.fn(),
       setGraphArrays: (n: any[], e: any[]) => { state.nodes = n; state.edges = e; },
@@ -514,7 +510,6 @@ describe("粘贴与模板落点的归属落地", () => {
         normalizeModelGroups: (groups: any) => groups,
         pushUndoSnapshot: vi.fn(),
         rejectAutoCanvasExpansionForContent: () => false,
-        requireEditMode: () => true,
         resetConnectPreviewState: vi.fn(),
         setCanvasSelectionScope: vi.fn(),
         setConnectSource: vi.fn(),
@@ -592,7 +587,6 @@ describe("添加到容器:类型 + 名称双下拉", () => {
       nodes,
       normalizeProjectMeasurements: (measurements: any) => measurements,
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: () => true,
       setDeviceIndexCounters: vi.fn(),
       setGraphArrays: (...args: any[]) => graphs.push(args),
       setProjectMeasurements: vi.fn(),
@@ -779,7 +773,6 @@ describe("随机 id 的随机源可注入", () => {
       normalizeModelGroups: (groups: any) => groups,
       pushUndoSnapshot: vi.fn(),
       rejectAutoCanvasExpansionForContent: () => false,
-      requireEditMode: () => true,
       resetConnectPreviewState: vi.fn(),
       setCanvasSelectionScope: vi.fn(),
       setConnectSource: vi.fn(),
@@ -938,7 +931,6 @@ describe("随机 id 的随机源可注入", () => {
       nodes,
       normalizeModelGroups: (groups: any) => groups,
       pushUndoSnapshot: vi.fn(),
-      requireEditMode: () => true,
       setCanvasSelectionScope: vi.fn(),
       setGroups: (next: any) => groupsSet.push(next),
       setSelectedEdgeId: vi.fn(),
@@ -1143,7 +1135,6 @@ describe("新增模板类型出口(createCreateGraphTemplateType)", () => {
     graphTemplateTypes: ["一次接线", "直流接线"],
     normalizeGraphTemplateTypeName,
     persistTemplateLibraryChange: vi.fn(),
-    requireEditMode: () => true,
     setCustomGraphTemplateTypes: vi.fn(),
     setExpandedGraphTemplateTypes: vi.fn(),
     setTemplateDraftType: vi.fn(),
@@ -1221,12 +1212,6 @@ describe("新增模板类型出口(createCreateGraphTemplateType)", () => {
     expect(scope.setTemplateDraftType).toHaveBeenCalledWith("A B/系统!");
   });
 
-  test("非编辑模式:连 prompt 都不问,直接返回 undefined", () => {
-    const scope = makeScope({ requireEditMode: () => false });
-    const prompt = withPrompt("新类型", () => { createCreateGraphTemplateType(scope)(); });
-    expect(prompt).not.toHaveBeenCalled();
-    expect(scope.setCustomGraphTemplateTypes).not.toHaveBeenCalled();
-  });
 });
 
 describe("画布指针下的快捷键可用性(createCanvasPointerKeyboardShortcutAvailability)", () => {
@@ -1584,21 +1569,6 @@ describe("空白画布待清除登记 (源 L288)", () => {
     const queue = createQueuePendingBlankCanvasDeselect({ pendingBlankCanvasDeselectRef: ref } as any);
     queue({ clientX: 120, clientY: 240 });
     expect(ref.current).toEqual({ clientX: 120, clientY: 240 });
-  });
-});
-
-// ─── 本批补覆盖:createRequireEditMode 的 isEditMode 两档 (源 L345-L349) ────────
-describe("createRequireEditMode (源 L345-L349)", () => {
-  test("编辑模式 → 返回 true 且不写操作日志", () => {
-    const writeOperationLog = vi.fn();
-    expect(createRequireEditMode({ isEditMode: true, writeOperationLog })("删除设备")).toBe(true);
-    expect(writeOperationLog).not.toHaveBeenCalled();
-  });
-
-  test("浏览模式 → 返回 false 并把 action 拼进提示(action 透传)", () => {
-    const writeOperationLog = vi.fn();
-    expect(createRequireEditMode({ isEditMode: false, writeOperationLog })("删除设备")).toBe(false);
-    expect(writeOperationLog).toHaveBeenCalledWith("浏览模式下不能删除设备，请先切换到编辑模式");
   });
 });
 

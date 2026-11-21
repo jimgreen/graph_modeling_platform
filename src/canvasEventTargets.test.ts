@@ -11,11 +11,7 @@ import {
   isCanvasGraphicContextMenuTarget,
   isCanvasKeyboardBlockingTarget,
   isCanvasWheelZoomExcludedTarget,
-  INTERACTION_MODE_STORAGE_KEY,
-  normalizeInteractionMode,
-  readStoredInteractionMode,
   shouldZoomCanvasFromWheelEvent,
-  writeStoredInteractionMode
 } from "./appExtracted/appCoreCanvasUtilities";
 
 // ── 最小 DOM 桩：只需 classList / getAttribute / closest ──────────────────────
@@ -67,7 +63,6 @@ beforeEach(() => {
   vi.stubGlobal("Element", FakeElement);
   vi.stubGlobal("Node", FakeNode);
 });
-
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -175,47 +170,5 @@ describe("修饰键语义", () => {
     expect(shouldZoomCanvasFromWheelEvent({ ctrlKey: false, metaKey: false })).toBe(true);
     expect(shouldZoomCanvasFromWheelEvent({ ctrlKey: false, metaKey: false, shiftKey: true })).toBe(false);
     expect(shouldZoomCanvasFromWheelEvent({ ctrlKey: false, metaKey: false, altKey: true })).toBe(false);
-  });
-});
-
-describe("交互模式持久化", () => {
-  test("normalizeInteractionMode：非 edit 一律 browse", () => {
-    expect(normalizeInteractionMode("edit")).toBe("edit");
-    expect(normalizeInteractionMode("browse")).toBe("browse");
-    expect(normalizeInteractionMode("EDIT")).toBe("browse");
-    expect(normalizeInteractionMode(null)).toBe("browse");
-  });
-
-  test("无 window（SSR / Node）→ 默认 browse 且写入是空操作", () => {
-    expect(readStoredInteractionMode()).toBe("browse");
-    expect(() => writeStoredInteractionMode("edit")).not.toThrow();
-  });
-
-  test("读写往返", () => {
-    const store = new Map<string, string>();
-    vi.stubGlobal("window", {
-      localStorage: {
-        getItem: (key: string) => store.get(key) ?? null,
-        setItem: (key: string, value: string) => void store.set(key, value)
-      }
-    });
-    writeStoredInteractionMode("edit");
-    expect(store.get(INTERACTION_MODE_STORAGE_KEY)).toBe("edit");
-    expect(readStoredInteractionMode()).toBe("edit");
-  });
-
-  test("★ localStorage 抛异常时吞掉（隐私模式 / 配额满），仍回落到 browse", () => {
-    vi.stubGlobal("window", {
-      localStorage: {
-        getItem: () => {
-          throw new Error("SecurityError");
-        },
-        setItem: () => {
-          throw new Error("QuotaExceeded");
-        }
-      }
-    });
-    expect(readStoredInteractionMode()).toBe("browse");
-    expect(() => writeStoredInteractionMode("edit")).not.toThrow();
   });
 });

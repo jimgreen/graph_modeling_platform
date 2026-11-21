@@ -10,6 +10,15 @@ import { describe, expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppLeftPanel } from "./appLeftPanel";
 
+const findSchemeById = (schemes: any[], id: string): any => {
+  for (const scheme of schemes) {
+    if (scheme.id === id) return scheme;
+    const child = findSchemeById(scheme.children ?? [], id);
+    if (child) return child;
+  }
+  return undefined;
+};
+
 const makeScope = (over: Record<string, unknown> = {}) => ({
   effectiveLeftPanelTab: "projects",
   handleSidePanelPointerLeave: () => {},
@@ -19,6 +28,9 @@ const makeScope = (over: Record<string, unknown> = {}) => ({
   leftPanelTab: "library",
   leftPanelVisible: true,
   projectIdx: 3,
+  activeSchemeKey: "scheme-1",
+  schemes: [{ id: "scheme-1", name: "一号方案", schemeId: 17, projects: [], children: [] }],
+  findSavedSchemeById: findSchemeById,
   renderSidePanelModeControls: () => null,
   setLeftPanelTab: () => {},
   startSidePanelResize: () => {},
@@ -27,8 +39,10 @@ const makeScope = (over: Record<string, unknown> = {}) => ({
   ...over
 });
 
-const render = (over: Record<string, unknown> = {}) =>
-  renderToStaticMarkup(<AppLeftPanel scope={makeScope(over)} inputs={[]}/>);
+const render = (over: Record<string, unknown> = {}) => {
+  const scope = makeScope(over);
+  return renderToStaticMarkup(<AppLeftPanel scope={scope} inputs={[scope.activeSchemeKey, scope.schemes]}/>);
+};
 
 describe("显隐", () => {
   test("leftPanelVisible 决定 visible / hidden 类", () => {
@@ -102,5 +116,38 @@ describe("底部模型 ID", () => {
 
   test("复制格带说明性 title", () => {
     expect(render()).toContain('title="点击复制模型 ID（model_id）"');
+  });
+});
+
+describe("底部方案 ID", () => {
+  test("方案 ID 排在模型 ID 前", () => {
+    const html = render();
+    expect(html.indexOf("方案ID：")).toBeGreaterThanOrEqual(0);
+    expect(html.indexOf("方案ID：")).toBeLessThan(html.indexOf("模型ID："));
+  });
+
+  test("根据 activeSchemeKey 从当前方案树显示编号", () => {
+    const schemes = [{
+      id: "scheme-a",
+      name: "主方案",
+      schemeId: 51,
+      projects: [],
+      children: [{ id: "scheme-b", name: "子方案", schemeId: 88, projects: [], children: [] }]
+    }];
+
+    expect(render({ activeSchemeKey: "scheme-a", schemes })).toMatch(/scheme-copy-cell[^>]*>51</u);
+    expect(render({ activeSchemeKey: "scheme-b", schemes })).toMatch(/scheme-copy-cell[^>]*>88</u);
+  });
+
+  test("当前方案缺少编号时显示破折号", () => {
+    const html = render({ schemes: [{ id: "scheme-1", name: "旧方案", projects: [], children: [] }] });
+    expect(html).toMatch(/scheme-copy-cell[^>]*>—</u);
+  });
+
+  test("方案编号复制格带说明性 title", () => {
+    const html = render();
+    expect(html).toContain('title="点击复制方案 ID（schemeId）"');
+    expect(html).toContain('class="scheme-copy-cell"');
+    expect(html).toContain('aria-label="复制方案 ID 17"');
   });
 });

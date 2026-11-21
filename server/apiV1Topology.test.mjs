@@ -56,6 +56,7 @@ function createRecord(nodes = [createLoad()]) {
 }
 
 function harness({ record = createRecord(), missing = false } = {}) {
+  const resolveSchemePathForSelector = vi.fn(async ({ schemePath }) => schemePath ?? ["方案A"]);
   const readSchemeProjectRecord = vi.fn(async (options) => {
     expect(options).toMatchObject({ schemePath: ["方案A"], name: "模型A" });
     return missing ? null : record;
@@ -76,7 +77,8 @@ function harness({ record = createRecord(), missing = false } = {}) {
     saveSchemeProjectRecord,
     updateSchemeProjectRecordIfUnchanged,
     sendCommandToClient,
-    services: { readSchemeProjectRecord, readSchemes, saveSchemeProjectRecord, updateSchemeProjectRecordIfUnchanged },
+    resolveSchemePathForSelector,
+    services: { resolveSchemePathForSelector, readSchemeProjectRecord, readSchemes, saveSchemeProjectRecord, updateSchemeProjectRecordIfUnchanged },
     ctx: { sendCommandToClient },
     paths: { root: "workspace-root", schemeFiles: "workspace-schemes" }
   };
@@ -108,6 +110,7 @@ describe("v1 topology handlers", () => {
     for (const body of [
       {},
       { target: "current", schemePath: ["方案A"], name: "模型A" },
+      { target: "current", schemeId: 42, name: "模型A" },
       { target: "current", clientId: "page-1" },
       { target: "saved", schemePath: [], name: "模型A" },
       { target: "saved", schemePath: ["方案A"], name: "模型A", clientId: "page-1" },
@@ -192,14 +195,50 @@ describe("v1 topology handlers", () => {
     expect(h.saveSchemeProjectRecord).not.toHaveBeenCalled();
   });
 
+  test("saved target accepts schemeId + name and resolves the canonical path", async () => {
+    const h = harness();
+    const handlers = createV1TopologyHandlers(h.services);
+    const response = await call(handlers.handleTopologyCheck, {
+      body: { target: "saved", schemeId: 42, name: "模型A" },
+      paths: h.paths,
+      spaceId: "space-1",
+      ctx: h.ctx
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(h.resolveSchemePathForSelector).toHaveBeenCalledWith({ paths: h.paths, schemePath: undefined, schemeId: 42 });
+    expect(h.readSchemeProjectRecord).toHaveBeenCalledWith({ paths: h.paths, schemePath: ["方案A"], name: "模型A" });
+  });
+
+  test("saved target rejects conflicting or unknown schemeId before reading the model", async () => {
+    for (const [errorCode, query] of [
+      ["bad-request", { target: "saved", schemePath: ["方案A"], schemeId: 42, name: "模型A" }],
+      ["not-found", { target: "saved", schemeId: 99, name: "模型A" }]
+    ]) {
+      const h = harness();
+      h.resolveSchemePathForSelector.mockRejectedValueOnce(Object.assign(new Error("selector error"), { code: errorCode }));
+      const handlers = createV1TopologyHandlers(h.services);
+      const response = await call(handlers.handleTopologyCheck, {
+        body: query,
+        paths: h.paths,
+        spaceId: "space-1",
+        ctx: h.ctx
+      });
+      expect(response.statusCode).toBe(errorCode === "not-found" ? 404 : 400);
+      expect(response.json().error.code).toBe(errorCode);
+      expect(h.readSchemeProjectRecord).not.toHaveBeenCalled();
+    }
+  });
+
   test("repairs and saves changed saved model once using the same workspace paths", async () => {
     const h = harness();
+    const publishModelChanged = vi.fn(async () => undefined);
     const handlers = createV1TopologyHandlers(h.services);
     const response = await call(handlers.handleTopologyRepair, {
       body: { target: "saved", schemePath: ["方案A"], name: "模型A" },
       paths: h.paths,
       spaceId: "space-1",
-      ctx: h.ctx
+      ctx: { ...h.ctx, publishModelChanged }
     });
 
     expect(response.statusCode).toBe(200);
@@ -208,6 +247,8 @@ describe("v1 topology handlers", () => {
     const saveOptions = h.saveSchemeProjectRecord.mock.calls[0][0];
     expect(saveOptions).toMatchObject({ paths: h.paths, schemePath: ["方案A"], record: { name: "模型A" } });
     expect(saveOptions.record.project.nodes[0].params.rated_capacity).toBe("5 MW");
+    expect(publishModelChanged).toHaveBeenCalledOnce();
+    expect(publishModelChanged).toHaveBeenCalledWith({ schemePath: ["方案A"], record: saveOptions.record });
   });
 
   test("route wrapper requires workspace context and binds its space to current-page WS command", async () => {
@@ -218,19 +259,19 @@ describe("v1 topology handlers", () => {
         return { status: "success", errors: [], warnings: [], corrections: [], topologyIslandCount: 1 };
       }
     });
-    const route = routes.find((item) => item.pattern.test("/webgrp/v1/topology/check"));
+    const route = routes.find((item) => item.pattern.test("/webgrp/v1/topology"));
     const response = fakeResponse();
     await route.handle({
-      request: fakeRequest({ target: "current" }),
+      request: fakeRequest({ action: "check", target: "current" }),
       response,
-      url: new URL("http://127.0.0.1/webgrp/v1/topology/check"),
+      url: new URL("http://127.0.0.1/webgrp/v1/topology"),
       paths: { root: "workspace-root" },
       spaceId: "space-1"
     });
     expect(response.statusCode).toBe(200);
     expect(calls).toEqual([[null, "topology.check", {}, "space-1"]]);
 
-    expect(() => route.handle({ request: fakeRequest({ target: "current" }), response: fakeResponse(), url: new URL("http://127.0.0.1"), paths: { root: "workspace-root" } }))
+    expect(() => route.handle({ request: fakeRequest({ action: "check", target: "current" }), response: fakeResponse(), url: new URL("http://127.0.0.1"), paths: { root: "workspace-root" } }))
       .toThrow(/spaceId/);
   });
 

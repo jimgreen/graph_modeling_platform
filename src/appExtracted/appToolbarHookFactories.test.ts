@@ -363,7 +363,6 @@ const buttonNode = (id: string, params: Record<string, any>, kind = "static-text
 }) as any;
 
 const makeClickScope = (over: Record<string, any> = {}) => ({
-  isBrowseMode: true,
   isStaticButtonEnabledForNode,
   executeStaticButtonAction: vi.fn(),
   setStaticButtonFeedback: vi.fn(),
@@ -707,7 +706,6 @@ describe("createOpenNodeDoubleClickEditor", () => {
       doubleClickDialogKindForNode: vi.fn(() => "text"),
       flattenSavedSchemes: (schemes: any) => schemes,
       flushSync: (fn: () => void) => fn(),
-      isBrowseMode: false,
       isEditMode: true,
       modelAssociationModelTypeForKind: vi.fn(() => ""),
       nodeDoubleClickCloseSuppressUntilRef: { current: 0 },

@@ -29,8 +29,10 @@ function generateRequestId() {
 // 挂载 WS 到现有 http server。registry 由 runtimeRegistry.createRuntimeRegistry() 创建。
 // spaceStore：空间注册表，用于把客户端的空间归位（见 workspaceIdForRequest）。
 // 返回 { wss, registry } 供 v1 运行时态 handler 使用。
-export function attachRuntimeWebSocket(server, registry, spaceStore = null) {
+export function attachRuntimeWebSocket(server, registry, spaceStore = null, { passThroughPaths = [] } = {}) {
   const wss = new WebSocketServer({ noServer: true });
+  const getSpaceStore = typeof spaceStore === "function" ? spaceStore : () => spaceStore;
+  const passThrough = new Set(passThroughPaths.map(String));
 
   // 客户端所属空间：只能从 WS 握手的 Cookie 取——浏览器同源 WS 会自动带上 Cookie，
   // 而自定义头在浏览器 WS 握手里不可设置。
@@ -38,19 +40,21 @@ export function attachRuntimeWebSocket(server, registry, spaceStore = null) {
   // 则回退 spaces[0]」同一语义。于是「无 Cookie 的前端」与「无空间的调用方」同属首个空间，
   // 严格按空间筛选也能互相选中；反过来别的空间的调用方则选不到它（不会跨空间打靶）。
   function workspaceIdForRequest(request) {
+    const activeStore = getSpaceStore();
     const cookie = parseSpaceCookie(request?.headers?.cookie);
-    if (!spaceStore) {
+    if (!activeStore) {
       // 未注入 store（纯逻辑单测）：只存 Cookie 原值，无归位可言
       return cookie;
     }
-    return spaceStore.has(cookie) ? cookie : spaceStore.firstId();
+    return activeStore.has(cookie) ? cookie : activeStore.firstId();
   }
 
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
     // WS 在 apiPrefix 下：/webgrp/ws
     if (url.pathname !== apiPath("/ws")) {
-      // 非 /webgrp/ws 升级，交还（实际无其他 WS，直接销毁）
+      // 交给其他显式登记的 WS 通道；未知升级仍销毁。
+      if (passThrough.has(url.pathname)) return;
       socket.destroy();
       return;
     }

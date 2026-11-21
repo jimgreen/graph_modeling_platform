@@ -1886,7 +1886,7 @@ describe("power system model", () => {
     expect(findSavedSchemeById(overwritten, source.id)?.projects.map((project) => project.name)).toEqual(["源模型"]);
   });
 
-  test("uses scheme and model names as runtime keys while stripping ids from persisted records", () => {
+  test("keeps transient runtime keys separate from persisted schemeId", () => {
     const legacyProject = {
       ...createSavedProject("模型A", { version: 1, name: "模型A", nodes: [], edges: [] }),
       id: "project-legacy"
@@ -1902,10 +1902,11 @@ describe("power system model", () => {
 
     const hydrated = hydrateSavedSchemeRuntimeIds([legacyRoot]);
 
-    expect(hydrated[0].id).not.toBe("scheme-root-legacy");
-    expect(hydrated[0].children?.[0]?.id).not.toBe("scheme-child-legacy");
+    expect(hydrated[0].schemeId).toBeUndefined();
+    expect(hydrated[0].id).toMatch(/^\d+$/u);
+    expect(hydrated[0].children?.[0]?.schemeId).toBeUndefined();
+    expect(hydrated[0].children?.[0]?.id).toMatch(/^\d+$/u);
     expect(hydrated[0].children?.[0]?.projects[0]?.id).not.toBe("project-legacy");
-    expect(hydrated[0].id).toContain(encodeURIComponent("父方案"));
     expect(hydrated[0].children?.[0]?.projects[0]?.id).toContain(encodeURIComponent("模型A"));
 
     const persisted = stripSavedSchemeRuntimeIds(hydrated);

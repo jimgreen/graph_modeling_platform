@@ -199,10 +199,10 @@ describe(apiPath("/v1/control/scheme/create"), () => {
   test("成功新建 → 200 {ok:true,data:{id,name,path}}", async () => {
     const ws = await connectCommandResponder("c1", (name, params) => {
       expect(name).toBe("control.scheme.create");
-      expect(params).toMatchObject({ name: "方案1", parentSchemeId: "p1" });
-      return { ok: true, data: { id: "s1", name: "方案1", path: ["方案1"] } };
+      expect(params).toMatchObject({ name: "方案1", parentSchemeId: 1 });
+      return { ok: true, data: { id: "s1", schemeId: 2, name: "方案1", path: ["方案1"] } };
     });
-    const { status, json } = await postV1(apiPath("/v1/control/scheme/create"), { name: "方案1", parentSchemeId: "p1" });
+    const { status, json } = await postV1(apiPath("/v1/control/scheme/create"), { name: "方案1", parentSchemeId: 1 });
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.data).toEqual({ id: "s1", name: "方案1", path: ["方案1"] });
@@ -210,7 +210,7 @@ describe(apiPath("/v1/control/scheme/create"), () => {
   });
 
   test("缺 name → 400 bad-request（不下发指令，body 只给 parentSchemeId）", async () => {
-    const { status, json } = await postV1(apiPath("/v1/control/scheme/create"), { parentSchemeId: "p1" });
+    const { status, json } = await postV1(apiPath("/v1/control/scheme/create"), { parentSchemeId: 1 });
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
@@ -240,18 +240,18 @@ describe(apiPath("/v1/control/model/create"), () => {
   test("成功新建 → 200 {ok:true,data:{id,name,schemeId}}", async () => {
     const ws = await connectCommandResponder("c1", (name, params) => {
       expect(name).toBe("control.model.create");
-      expect(params).toMatchObject({ name: "模型1", schemeId: "s1", modelType: "厂站" });
-      return { ok: true, data: { id: "m1", name: "模型1", schemeId: "s1", modelType: "厂站", idx: 1 } };
+      expect(params).toMatchObject({ name: "模型1", schemeId: 1, modelType: "厂站" });
+      return { ok: true, data: { id: "m1", name: "模型1", schemeId: 1, modelType: "厂站", idx: 1 } };
     });
-    const { status, json } = await postV1(apiPath("/v1/control/model/create"), { name: "模型1", schemeId: "s1", modelType: "厂站" });
+    const { status, json } = await postV1(apiPath("/v1/control/model/create"), { name: "模型1", schemeId: 1, modelType: "厂站" });
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
-    expect(json.data).toEqual({ id: "m1", name: "模型1", schemeId: "s1", modelType: "厂站", idx: 1 });
+    expect(json.data).toEqual({ id: "m1", name: "模型1", schemeId: 1, modelType: "厂站", idx: 1 });
     ws.close();
   });
 
   test("缺 name → 400 bad-request（不下发指令，body 只给 schemeId）", async () => {
-    const { status, json } = await postV1(apiPath("/v1/control/model/create"), { schemeId: "s1" });
+    const { status, json } = await postV1(apiPath("/v1/control/model/create"), { schemeId: 1 });
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
@@ -259,8 +259,8 @@ describe(apiPath("/v1/control/model/create"), () => {
 
   test("缺少或非法 modelType → 400 bad-request（不下发指令）", async () => {
     for (const body of [
-      { name: "模型1", schemeId: "s1" },
-      { name: "模型1", schemeId: "s1", modelType: "未知类型" }
+      { name: "模型1", schemeId: 1 },
+      { name: "模型1", schemeId: 1, modelType: "未知类型" }
     ]) {
       const { status, json } = await postV1(apiPath("/v1/control/model/create"), body);
       expect(status).toBe(400);

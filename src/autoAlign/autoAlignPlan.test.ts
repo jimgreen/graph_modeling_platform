@@ -10,6 +10,14 @@ import { describe, expect, test } from "vitest";
 import type { AutoAlignPlanInput } from "./autoAlignPlan";
 import type { Edge, ModelGroup, ModelNode } from "../model";
 import { runAutoAlignPlan } from "./autoAlignPlan";
+import { routeEdgesForStoredRendering } from "../model-routing";
+import {
+  autoAlignEdgeWithoutStoredRoute,
+  compareAutoAlignRouteQuality,
+  countAutoAlignRouteBends,
+  countAutoAlignRouteLength,
+  countAutoAlignRouteCrossings
+} from "../selectionActions";
 
 const makeNode = (id: string, x: number, y: number): ModelNode => ({
   id,
@@ -37,11 +45,27 @@ const input = () => ({
   edges: [],
   routedEdges: [],
   canvasBounds: { width: 800, height: 600 },
-  gridSpacing: 50,
   editModeRouteRenderOptions: { preserveManualRouteDisplay: true }
 });
 
 const positionsOf = (nodes: ModelNode[]) => nodes.map((node) => `${node.id}@${node.position.x},${node.position.y}`);
+
+const routeQualityFor = (value: AutoAlignPlanInput, nodes: ModelNode[]) => {
+  const routes = routeEdgesForStoredRendering(
+    [...nodes],
+    value.activeLayerEdges.map(autoAlignEdgeWithoutStoredRoute),
+    value.canvasBounds,
+    value.editModeRouteRenderOptions
+  );
+  return {
+    bends: routes.reduce((sum, route) => sum + countAutoAlignRouteBends(route.points), 0),
+    crossings: countAutoAlignRouteCrossings(routes.map((route) => route.points)),
+    length: routes.reduce((sum, route) => sum + countAutoAlignRouteLength(route.points), 0)
+  };
+};
+
+const routeScoreIsNotWorse = (candidate: ReturnType<typeof routeQualityFor>, baseline: ReturnType<typeof routeQualityFor>) =>
+  compareAutoAlignRouteQuality(candidate, baseline) <= 0;
 
 /** 类型完整的 plan 输入（`input()` 的推断类型里 edges 是 never[]，装不下边）。 */
 const alignInput = (): AutoAlignPlanInput => ({
@@ -52,7 +76,6 @@ const alignInput = (): AutoAlignPlanInput => ({
   edges: [],
   routedEdges: [],
   canvasBounds: { width: 800, height: 600 },
-  gridSpacing: 50,
   editModeRouteRenderOptions: { preserveManualRouteDisplay: true }
 });
 
@@ -114,14 +137,42 @@ describe("auto-align plan", () => {
     expect(value).toEqual(original);
   });
 
-  test("松散单元排完后落回网格（gridSpacing 的倍数）", () => {
+  test("拓扑布局使用固定 canonical step", () => {
     const value = input();
     const result = runAutoAlignPlan(value);
 
     for (const node of result.arranged) {
-      expect(node.position.x % value.gridSpacing, `x=${node.position.x}`).toBe(0);
-      expect(node.position.y % value.gridSpacing, `y=${node.position.y}`).toBe(0);
+      expect(node.position.x % 50, `x=${node.position.x}`).toBe(0);
+      expect(node.position.y % 50, `y=${node.position.y}`).toBe(0);
     }
+  });
+
+  test("emits monotonic phase progress and completes at 100%", () => {
+    const progress: Array<{ percent: number; stage: string }> = [];
+    runAutoAlignPlan(input(), { onProgress: (update) => progress.push(update) });
+    expect(progress.length).toBeGreaterThanOrEqual(3);
+    expect(progress[0].percent).toBe(5);
+    expect(progress.at(-1)).toEqual({ percent: 100, stage: "自动对齐完成" });
+    expect(progress.every((update, index) => index === 0 || progress[index - 1].percent <= update.percent)).toBe(true);
+  });
+
+  test("honors cancellation between plan stages", () => {
+    const controller = new AbortController();
+    expect(() => runAutoAlignPlan(input(), {
+      signal: controller.signal,
+      onProgress: ({ percent }) => { if (percent === 25) controller.abort(); }
+    })).toThrow(expect.objectContaining({ name: "AbortError" }));
+  });
+
+  test("reports ordered progress stages through layout and route planning", () => {
+    const progress: Array<{ percent: number; stage: string }> = [];
+    runAutoAlignPlan(input(), { onProgress: (value) => progress.push(value) });
+
+    expect(progress.map((value) => value.percent)[0]).toBe(5);
+    expect(progress.some((value) => value.stage === "正在生成拓扑布局候选")).toBe(true);
+    expect(progress.some((value) => value.stage.startsWith("正在筛选布局候选"))).toBe(true);
+    expect(progress.every((value, index) => index === 0 || progress[index - 1].percent <= value.percent)).toBe(true);
+    expect(progress.at(-1)?.stage).toBe("自动对齐完成");
   });
 
   test("返回的是副本：改 arranged 的位置不会回写到输入", () => {
@@ -129,6 +180,87 @@ describe("auto-align plan", () => {
     const result = runAutoAlignPlan(value);
     result.arranged[0].position.x = -999;
     expect(value.nodes[0].position.x).toBe(107);
+  });
+
+  test("没有网格输入时仍会整理，并且第二次执行逐字段不变", () => {
+    const firstInput = input();
+    const first = runAutoAlignPlan(firstInput);
+
+    expect(first.arranged.every((node) => node.position.x % 50 === 0 && node.position.y % 50 === 0)).toBe(true);
+
+    const secondInput = {
+      ...firstInput,
+      nodes: first.arranged,
+      activeLayerNodes: first.arranged.map((node) => ({ ...node, position: { ...node.position } }))
+    };
+    const second = runAutoAlignPlan(secondInput);
+
+    expect(positionsOf(second.arranged)).toEqual(positionsOf(first.arranged));
+    expect(second.storedRouteDrops).toEqual(first.storedRouteDrops);
+    expect(second.qualityReport.revertedByVerification).toBe(first.qualityReport.revertedByVerification);
+  });
+
+  test("无线路约束时优先选择更接近正方且双轴对齐更多的候选，并保持幂等", () => {
+    const value = input();
+    const nodes = [
+      makeNode("isolated-a", 100, 200),
+      makeNode("isolated-b", 400, 200),
+      makeNode("isolated-c", 700, 200),
+      makeNode("isolated-d", 1000, 200)
+    ];
+    value.nodes = nodes;
+    value.activeLayerNodes = nodes.map((node) => ({ ...node, position: { ...node.position } }));
+
+    const measure = (layout: ModelNode[]) => {
+      const left = Math.min(...layout.map((node) => node.position.x));
+      const right = Math.max(...layout.map((node) => node.position.x + node.size.width));
+      const top = Math.min(...layout.map((node) => node.position.y));
+      const bottom = Math.max(...layout.map((node) => node.position.y + node.size.height));
+      const pairCount = (axis: "x" | "y") => {
+        const counts = new Map<number, number>();
+        for (const node of layout) {
+          const center = axis === "x"
+            ? node.position.x + node.size.width / 2
+            : node.position.y + node.size.height / 2;
+          const key = Math.round(center * 2) / 2;
+          counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+        return [...counts.values()].reduce((sum, count) => sum + count * (count - 1) / 2, 0);
+      };
+      return {
+        aspectRatioDeviation: Math.abs(Math.log((right - left) / (bottom - top))),
+        balancedAxisPairs: Math.min(pairCount("x"), pairCount("y"))
+      };
+    };
+    const beforeScore = measure(nodes);
+    const first = runAutoAlignPlan(value);
+    const afterScore = measure(first.arranged);
+    const second = runAutoAlignPlan({
+      ...value,
+      nodes: first.arranged,
+      activeLayerNodes: first.arranged.map((node) => ({ ...node, position: { ...node.position } }))
+    });
+
+    expect(afterScore.aspectRatioDeviation).toBeLessThan(beforeScore.aspectRatioDeviation);
+    expect(afterScore.balancedAxisPairs).toBeGreaterThan(beforeScore.balancedAxisPairs);
+    expect(second).toEqual(first);
+  });
+
+  test("选择的拓扑布局不使线路评分变差", () => {
+    const value = input() as any;
+    const first = value.nodes[0];
+    const second = value.nodes[1];
+    const edge: Edge = { id: "e-cross", sourceId: first.id, targetId: second.id };
+    value.nodes = [
+      { ...first, position: { x: 100, y: 100 } },
+      { ...second, position: { x: 300, y: 300 } }
+    ];
+    value.activeLayerNodes = value.nodes.map((node: ModelNode) => ({ ...node, position: { ...node.position } }));
+    value.edges = [edge];
+    value.activeLayerEdges = [edge];
+    const result = runAutoAlignPlan(value);
+
+    expect(routeScoreIsNotWorse(routeQualityFor(value, result.arranged), routeQualityFor(value, value.nodes))).toBe(true);
   });
 });
 
@@ -308,28 +440,8 @@ describe("组的 childGroupIds 缺省（L82 右臂）", () => {
   });
 });
 
-/**
- * 目标分支：`src/autoAlign/autoAlignPlan.ts` L147
- * （`finalRun.storedRouteDropsReady ? finalRun.storedRouteDrops : autoAlignStoredRouteDrops(...)`）。
- *
- * `storedRouteDropsReady` 只在 selectionActions 的终检（`measureAuthoritative`）里被置 true，
- * 而终检前有 `if (!movedAnyUnit || deltas.size === 0) return nodes;` —— 于是：
- *   · 候选被接受、图元真的挪动 ⇒ 终检跑过 ⇒ ready 为 true ⇒ 走 L147；
- *   · 一个候选都没被接受 ⇒ 提前 return，ready 保持 false ⇒ 走 L148。
- *
- * ⚠ **两条臂无法用输出断言区分**：`storedRouteDropsReady` 不是返回值的一部分，而两条臂
- * 在本仓库的现状下算出同一份清单（实测：把两条臂对调，只有 L148 那条 fixture 转红，
- * L147 那条仍然绿 —— 说明它读到的那份重算结果与终检存下的那份一致）。
- * 所以「走了哪条臂」只能靠变异验证定案，而它给出的定案是：
- *   · L147 换成 `[]`      ⇒ 只有「图元被挪动」那条红；
- *   · L148 换成 `[]`      ⇒ 只有「候选一个都没被接受」那条红；
- *   · 两条臂对调          ⇒ 只有「候选一个都没被接受」那条红。
- * 即两条臂各自承重、各自被上面两条用例咬住。
- *
- * 怎么让「一个候选都没被接受」：把两节点摆在已对齐的网格点上，且绕行存档折线让
- * 每个候选偏移都多拐点（探针实测 `bendRejectedCount: 6`）⇒ 六连败 ⇒ deltas 为空。
- */
-describe("存档折线清理的两条臂（L147 真臂 / L148 兜底重算）", () => {
+/** 存档折线只在端口重算严格减少拐点时清理；质量回退时节点仍保持原位置。 */
+describe("存档折线清理与线路质量回退", () => {
   const withDetour = (nodes: ModelNode[]): AutoAlignPlanInput => {
     const value = alignInput();
     value.nodes = nodes;
@@ -340,31 +452,32 @@ describe("存档折线清理的两条臂（L147 真臂 / L148 兜底重算）", 
     return value;
   };
 
-  test("图元被挪动：终检跑过（走 L147），绕行的存档折线被识别为陈迹并清理", () => {
-    // 107/113、218/119 都不是 50 的倍数 ⇒ 有候选被接受 ⇒ movedAnyUnit 为 true ⇒ 终检跑过
-    const result = runAutoAlignPlan(withDetour([makeNode("n1", 107, 113), makeNode("n2", 218, 119)]));
+  test("布局候选和回退都保持线路评分不劣于输入", () => {
+    const value = withDetour([makeNode("n1", 107, 113), makeNode("n2", 218, 119)]);
+    const result = runAutoAlignPlan(value);
 
-    expect(positionsOf(result.arranged)).not.toEqual(["n1@107,113", "n2@218,119"]);
-    // 有候选被接受（一个都没被拐点判否）⇒ movedAnyUnit 为 true ⇒ 终检真的跑了
-    expect(result.qualityReport.verifiedCandidateCount).toBeGreaterThan(0);
-    expect(result.qualityReport.bendRejectedCount).toBe(0);
-    expect(result.qualityReport.revertedByVerification).toBe(false);
-    // 保留存档折线时拐点更多、按端口重算后拐点更少 ⇒ 这条边的存档折线是陈迹
-    expect(result.storedRouteDrops.map((drop) => drop.edgeId)).toEqual(["e1"]);
-    expect(result.storedRouteDrops[0].points.length).toBeGreaterThanOrEqual(2);
+    expect(routeScoreIsNotWorse(routeQualityFor(value, result.arranged), routeQualityFor(value, value.nodes))).toBe(true);
   });
 
-  test("候选一个都没被接受：终检提前 return（走 L148），同一份重算同样清出陈迹", () => {
-    // 已经落在网格点上的两节点 ⇒ 每个候选偏移都被拐点判否 ⇒ deltas 为空 ⇒ 终检提前 return ⇒ ready 保持 false
-    const result = runAutoAlignPlan(withDetour([makeNode("n1", 100, 100), makeNode("n2", 300, 100)]));
-
-    expect(positionsOf(result.arranged)).toEqual(["n1@100,100", "n2@300,100"]);
+  test("线路评分不劣的布局可接受，并且第二次执行位置与折线清单稳定", () => {
+    const value = withDetour([makeNode("n1", 100, 100), makeNode("n2", 300, 100)]);
+    const result = runAutoAlignPlan(value);
+    const dropsById = new Map(result.storedRouteDrops.map((drop) => [drop.edgeId, drop]));
+    const edgesAfterDrops = value.edges.map((edge) => {
+      const drop = dropsById.get(edge.id);
+      return drop ? { ...autoAlignEdgeWithoutStoredRoute(edge), routePoints: drop.points.map((point) => ({ ...point })) } : edge;
+    });
+    const second = runAutoAlignPlan({
+      ...value,
+      nodes: result.arranged,
+      activeLayerNodes: result.arranged.map((node) => ({ ...node, position: { ...node.position } })),
+      edges: edgesAfterDrops,
+      activeLayerEdges: edgesAfterDrops
+    });
+    expect(positionsOf(second.arranged)).toEqual(positionsOf(result.arranged));
     expect(result.layoutUnitCount).toBe(2);
-    // 「终检压根没跑」的可观察证据：候选全被拐点判否，于是 movedAnyUnit 保持 false
-    // （verifiedCandidateCount 是候选代理路由的次数，不区分是否跑过终检，所以只看它没意义）
-    expect(result.qualityReport.verifiedCandidateCount).toBeGreaterThan(0);
-    expect(result.qualityReport.bendRejectedCount).toBeGreaterThan(0);
-    expect(result.storedRouteDrops.map((drop) => drop.edgeId)).toEqual(["e1"]);
+    expect(routeScoreIsNotWorse(routeQualityFor(value, result.arranged), routeQualityFor(value, value.nodes))).toBe(true);
+    expect(second.storedRouteDrops).toEqual([]);
   });
 
   test("存档折线拐点不更多时判不出陈迹（反证：上面的非空来自拐点比较，不是「有边就清」）", () => {
@@ -390,7 +503,6 @@ describe("存档折线清理的两条臂（L147 真臂 / L148 兜底重算）", 
 
     const result = runAutoAlignPlan(value);
 
-    expect(positionsOf(result.arranged)).not.toEqual(["n1@107,113", "n2@218,119"]);
     expect(result.storedRouteDrops).toEqual([]);
   });
 });

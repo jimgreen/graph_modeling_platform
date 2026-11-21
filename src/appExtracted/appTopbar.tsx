@@ -578,7 +578,7 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
         style={{ minWidth: 140 }}
         aria-label="切换空间"
       />
-      {/* 导出是纯读动作，浏览模式下不禁用；导入会切空间 + 硬重载，故保持禁用 */}
+      {/* 空间操作 */}
       <button
         type="button"
         className="topbar-primary-button"
@@ -594,7 +594,7 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
         className="topbar-primary-button"
         title={lockedUser ? "导入的空间没有归属，qiankun 下暂不支持" : "从压缩包导入空间（重名会询问覆盖还是改名）"}
         aria-label="导入空间"
-        disabled={scope.isBrowseMode || Boolean(lockedUser)}
+        disabled={Boolean(lockedUser)}
         onClick={() => spaceArchiveInputRef.current?.click()}
       >
         <Upload size={14} />
@@ -606,7 +606,7 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
         className="topbar-primary-button"
         title="重命名当前空间"
         aria-label="重命名空间"
-        disabled={scope.isBrowseMode || !current}
+        disabled={!current}
         onClick={() => void renameCurrentSpace(scope)}
       >
         <Pencil size={14} />
@@ -616,7 +616,7 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
         className="topbar-primary-button"
         title="删除当前空间（数据移入回收目录）"
         aria-label="删除空间"
-        disabled={scope.isBrowseMode || !current || current.pinned}
+        disabled={!current || current.pinned}
         onClick={() => void deleteCurrentSpace(scope)}
       >
         <Trash2 size={14} />
@@ -667,14 +667,14 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
     eDeviceDefinitionInterfaceDialogOpen,
     eDeviceInterfaceTemplateLabel,
     exportCimFile, exportEFile, exportJsonFile, exportSvg, exportSvgFile,
-    isBrowseMode, isEditMode, layerManagementDropdownRef,
+    layerManagementDropdownRef,
     openColorPaletteDialog, openTopologyWarningPanel,
     openUserCustomizationManager, requestEncodedExport, renderLayerManager,
     runTopologyCalculation, saveCurrentProject, saveRequired,
     setDeviceLabelsVisible, setDeviceMeasurementsVisible, setEDeviceDefinitionInterfaceDialogOpen, setImageTarget,
     setSmartAlignmentEnabled, setVoltageLevelDialogOpen, smartAlignmentEnabled,
     setElectricFlowVisible, electricFlowVisible,
-    toggleColorDisplayMode, toggleInteractionMode, toggleThemeMode, themeMode, topologyErrors, topologyWarningPanelClosed
+    toggleColorDisplayMode, toggleThemeMode, themeMode, topologyErrors, topologyWarningPanelClosed
   } = scope;
 
   return (
@@ -693,7 +693,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
         </strong>
       </div>
       <div ref={layerManagementDropdownRef} className="topbar-dropdown layer-management-dropdown">
-        {T(`激活图层：${activeLayer?.name ?? "默认图层"}`, <button type="button" id="topbar-layer-management" className="topbar-dropdown-trigger layer-management-trigger" disabled={isBrowseMode} aria-label="图层管理">
+        {T(`激活图层：${activeLayer?.name ?? "默认图层"}`, <button type="button" id="topbar-layer-management" className="topbar-dropdown-trigger layer-management-trigger"  aria-label="图层管理">
           <Layers size={15}/>
           <span>{activeLayer?.name ?? "默认图层"}</span>
           <ChevronDown size={13}/>
@@ -704,16 +704,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
       </div>
       {/* 顶栏按钮分组：按动作域分组，组间以竖线分割 */}
       <div className="topbar-button-groups">
-        {/* 交互模式组 */}
         <div className="topbar-button-group">
-          {T(isEditMode ? "切换到浏览模式" : "切换到编辑模式", <button type="button" id="topbar-mode-toggle" className={`topbar-primary-button ${isEditMode ? "active" : "browse-mode-toggle"}`} onClick={toggleInteractionMode} aria-label={isEditMode ? "切换到浏览模式" : "切换到编辑模式"}>
-            {isEditMode ? <Pencil size={16}/> : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                <line x1="2" y1="2" x2="22" y2="22"/>
-              </svg>
-            )}
-          </button>)}
           {T(smartAlignmentEnabled ? "对齐标线：开" : "对齐标线：关", <button type="button" id="topbar-smart-alignment" className={`topbar-primary-button ${smartAlignmentEnabled ? "active" : ""}`} onClick={() => setSmartAlignmentEnabled((current: boolean) => !current)} aria-label={smartAlignmentEnabled ? "关闭对齐到标线" : "开启对齐到标线"}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               <rect x="2" y="5" width="12" height="6" rx="1"/>
@@ -723,7 +714,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
         </div>
         {/* 拓扑组 */}
         <div className="topbar-button-group">
-          {T("图上拓扑", <button id="topbar-topology" className="topbar-primary-button" onClick={runTopologyCalculation} disabled={isBrowseMode} aria-label="图上拓扑">
+          {T("图上拓扑", <button id="topbar-topology" className="topbar-primary-button" onClick={runTopologyCalculation}  aria-label="图上拓扑">
             <Grid2X2 size={16}/>
           </button>)}
           {T(scope.globalLineListOpen ? "隐藏全局线路列表" : "显示全局线路列表", <button id="topbar-global-lines" className={`topbar-primary-button ${scope.globalLineListOpen ? "active" : ""}`} onClick={() => scope.setGlobalLineListOpen((current: boolean) => !current)} aria-label="全局线路" aria-pressed={Boolean(scope.globalLineListOpen)}>
@@ -741,8 +732,8 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
           {T(colorDisplayMode === "voltage" ? "显示方式：电压等级（点击切换）" : "显示方式：能源类型（点击切换）", <button id="topbar-color-mode" className={`topbar-primary-button ${colorDisplayMode === "voltage" ? "active" : ""}`} onClick={() => toggleColorDisplayMode()} aria-label="颜色切换">
             <Paintbrush size={16}/>
           </button>)}
-          {T("配色设置", <button id="topbar-color-palette" className="topbar-primary-button" onClick={openColorPaletteDialog} disabled={isBrowseMode} aria-label="配色设置"><Palette size={16}/></button>)}
-          {T("电压等级设置", <button id="topbar-voltage-level" className="topbar-primary-button" onClick={() => setVoltageLevelDialogOpen(true)} disabled={isBrowseMode} aria-label="电压等级设置"><Zap size={16}/></button>)}
+          {T("配色设置", <button id="topbar-color-palette" className="topbar-primary-button" onClick={openColorPaletteDialog}  aria-label="配色设置"><Palette size={16}/></button>)}
+          {T("电压等级设置", <button id="topbar-voltage-level" className="topbar-primary-button" onClick={() => setVoltageLevelDialogOpen(true)}  aria-label="电压等级设置"><Zap size={16}/></button>)}
           {T(deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识", <button id="topbar-device-labels" className={`topbar-primary-button ${deviceLabelsVisible ? "active" : ""}`} onClick={() => setDeviceLabelsVisible((current: boolean) => !current)} aria-label={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}><Type size={16}/></button>)}
           {T(deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测", <button id="topbar-device-measurements" className={`topbar-primary-button ${deviceMeasurementsVisible ? "active" : ""}`} onClick={() => setDeviceMeasurementsVisible((current: boolean) => !current)} aria-label={deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测"} style={{ fontWeight: 700, fontSize: 16, fontFamily: "'Times New Roman', Times, serif" }}>M</button>)}
           {/* 电流流水线：沿线路流动的方向箭头。与「设备标识 / 量测」同属显示类开关，
@@ -770,12 +761,12 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
         </div>
         {/* 图片资源组 */}
         <div className="topbar-button-group">
-          {T("分类图标库", <button id="topbar-image-library" className="topbar-primary-button" onClick={() => setImageTarget({ kind: "canvasIcon" })} disabled={isBrowseMode} aria-label="分类图标库"><FolderOpen size={16}/></button>)}
+          {T("分类图标库", <button id="topbar-image-library" className="topbar-primary-button" onClick={() => setImageTarget({ kind: "canvasIcon" })}  aria-label="分类图标库"><FolderOpen size={16}/></button>)}
         </div>
       </div>
       <div className="topbar-center-actions">
-        {T("用户自定义修改管理", <button id="topbar-user-customization" className="topbar-primary-button" onClick={() => void openUserCustomizationManager()} disabled={isBrowseMode} aria-label="用户自定义修改管理"><Settings2 size={16}/></button>)}
-        {T(saveRequired ? "保存当前模型" : "当前模型没有新的修改", <button id="topbar-save" className="topbar-primary-button" onClick={() => void saveCurrentProject()} disabled={isBrowseMode || !saveRequired} aria-label="保存"><Save size={16}/></button>)}
+        {T("用户自定义修改管理", <button id="topbar-user-customization" className="topbar-primary-button" onClick={() => void openUserCustomizationManager()}  aria-label="用户自定义修改管理"><Settings2 size={16}/></button>)}
+        {T(saveRequired ? "保存当前模型" : "当前模型没有新的修改", <button id="topbar-save" className="topbar-primary-button" onClick={() => void saveCurrentProject()} disabled={!saveRequired} aria-label="保存"><Save size={16}/></button>)}
         {T("打开 E 文件接口定义", <button id="topbar-e-interface-definition" className={`topbar-primary-button ${eDeviceDefinitionInterfaceDialogOpen ? "active" : ""}`} onClick={() => setEDeviceDefinitionInterfaceDialogOpen(true)} aria-label="打开 E 文件接口定义" aria-pressed={Boolean(eDeviceDefinitionInterfaceDialogOpen)}><FileJson size={16}/></button>)}
         <div className="topbar-dropdown export-dropdown">
           {T("导出文件", <button type="button" id="topbar-export" className="topbar-primary-button" aria-label="导出文件" aria-haspopup="menu"><Download size={16}/></button>)}
@@ -853,7 +844,7 @@ export function SelectionActionCluster({ scope }: { scope: Record<string, any> }
     customComponentSvgImportInputRef, customDeviceImageInputRef, definitionTemplateIconInputRef,
     distributeSelected, groupSelectedGraphics, imageInputRef,
     importCustomComponentSvg, importModelFile, importSchemeFile,
-    isBrowseMode, mirrorSelectedNodes, modelImportInputRef,
+    mirrorSelectedNodes, modelImportInputRef,
     rotateSelectedLayoutUnits, schemeImportInputRef, selectedLayoutUnitCount,
     stateIconDrawingImportInputRef, stateVisualImageInputRef, ungroupSelectedGraphics
   } = scope;
@@ -861,10 +852,10 @@ export function SelectionActionCluster({ scope }: { scope: Record<string, any> }
   return (
     <div className="action-cluster">
       <div className="topbar-dropdown group-dropdown">
-        {T("组合操作", <button type="button" id="topbar-group" className="topbar-dropdown-trigger" disabled={isBrowseMode || (!canGroupSelectedGraphics && !canUngroupSelectedGraphics)} aria-label="组合操作"><Group size={16}/><ChevronDown size={13}/></button>)}
+        {T("组合操作", <button type="button" id="topbar-group" className="topbar-dropdown-trigger" disabled={(!canGroupSelectedGraphics && !canUngroupSelectedGraphics)} aria-label="组合操作"><Group size={16}/><ChevronDown size={13}/></button>)}
         <div className="topbar-dropdown-menu" role="menu" aria-label="组合操作">
-          <button id="topbar-group-merge" onClick={groupSelectedGraphics} disabled={isBrowseMode || !canGroupSelectedGraphics} title="组合" aria-label="组合"><Group size={16}/><span>组合</span></button>
-          <button id="topbar-group-unmerge" onClick={ungroupSelectedGraphics} disabled={isBrowseMode || !canUngroupSelectedGraphics} title="解除组合" aria-label="解除组合"><Ungroup size={16}/><span>解除组合</span></button>
+          <button id="topbar-group-merge" onClick={groupSelectedGraphics} disabled={!canGroupSelectedGraphics} title="组合" aria-label="组合"><Group size={16}/><span>组合</span></button>
+          <button id="topbar-group-unmerge" onClick={ungroupSelectedGraphics} disabled={!canUngroupSelectedGraphics} title="解除组合" aria-label="解除组合"><Ungroup size={16}/><span>解除组合</span></button>
         </div>
       </div>
       <div className="topbar-dropdown display-layer-dropdown">
@@ -877,25 +868,25 @@ export function SelectionActionCluster({ scope }: { scope: Record<string, any> }
         </div>
       </div>
       <div className="topbar-dropdown align-dropdown">
-        {T("对齐操作", <button type="button" id="topbar-align" className="topbar-dropdown-trigger" disabled={isBrowseMode} aria-label="对齐操作"><AlignCenterHorizontal size={16}/><ChevronDown size={13}/></button>)}
+        {T("对齐操作", <button type="button" id="topbar-align" className="topbar-dropdown-trigger"  aria-label="对齐操作"><AlignCenterHorizontal size={16}/><ChevronDown size={13}/></button>)}
         <div className="topbar-dropdown-menu" role="menu" aria-label="对齐操作">
-          <button id="topbar-align-left" onClick={() => alignSelected("left")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="左对齐" aria-label="左对齐"><AlignStartVertical size={16}/><span>左对齐</span></button>
-          <button id="topbar-align-right" onClick={() => alignSelected("right")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="右对齐" aria-label="右对齐"><AlignEndVertical size={16}/><span>右对齐</span></button>
-          <button id="topbar-align-horizontal" onClick={() => alignSelected("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="横向居中" aria-label="横向居中"><AlignCenterHorizontal size={16}/><span>横向居中</span></button>
-          <button id="topbar-align-vertical" onClick={() => alignSelected("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="纵向居中" aria-label="纵向居中"><AlignCenterVertical size={16}/><span>纵向居中</span></button>
-          <button id="topbar-align-top" onClick={() => alignSelected("top")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="上对齐" aria-label="上对齐"><AlignStartHorizontal size={16}/><span>上对齐</span></button>
-          <button id="topbar-align-bottom" onClick={() => alignSelected("bottom")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="下对齐" aria-label="下对齐"><AlignEndHorizontal size={16}/><span>下对齐</span></button>
-          <button id="topbar-align-distribute-horizontal" onClick={() => distributeSelected("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 3} title="横向分布" aria-label="横向分布"><AlignHorizontalDistributeCenter size={16}/><span>横向分布</span></button>
-          <button id="topbar-align-distribute-vertical" onClick={() => distributeSelected("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 3} title="纵向分布" aria-label="纵向分布"><AlignVerticalDistributeCenter size={16}/><span>纵向分布</span></button>
+          <button id="topbar-align-left" onClick={() => alignSelected("left")} disabled={selectedLayoutUnitCount < 2} title="左对齐" aria-label="左对齐"><AlignStartVertical size={16}/><span>左对齐</span></button>
+          <button id="topbar-align-right" onClick={() => alignSelected("right")} disabled={selectedLayoutUnitCount < 2} title="右对齐" aria-label="右对齐"><AlignEndVertical size={16}/><span>右对齐</span></button>
+          <button id="topbar-align-horizontal" onClick={() => alignSelected("horizontal")} disabled={selectedLayoutUnitCount < 2} title="横向居中" aria-label="横向居中"><AlignCenterHorizontal size={16}/><span>横向居中</span></button>
+          <button id="topbar-align-vertical" onClick={() => alignSelected("vertical")} disabled={selectedLayoutUnitCount < 2} title="纵向居中" aria-label="纵向居中"><AlignCenterVertical size={16}/><span>纵向居中</span></button>
+          <button id="topbar-align-top" onClick={() => alignSelected("top")} disabled={selectedLayoutUnitCount < 2} title="上对齐" aria-label="上对齐"><AlignStartHorizontal size={16}/><span>上对齐</span></button>
+          <button id="topbar-align-bottom" onClick={() => alignSelected("bottom")} disabled={selectedLayoutUnitCount < 2} title="下对齐" aria-label="下对齐"><AlignEndHorizontal size={16}/><span>下对齐</span></button>
+          <button id="topbar-align-distribute-horizontal" onClick={() => distributeSelected("horizontal")} disabled={selectedLayoutUnitCount < 3} title="横向分布" aria-label="横向分布"><AlignHorizontalDistributeCenter size={16}/><span>横向分布</span></button>
+          <button id="topbar-align-distribute-vertical" onClick={() => distributeSelected("vertical")} disabled={selectedLayoutUnitCount < 3} title="纵向分布" aria-label="纵向分布"><AlignVerticalDistributeCenter size={16}/><span>纵向分布</span></button>
         </div>
       </div>
       <div className="topbar-dropdown rotate-dropdown">
-        {T("旋转操作", <button type="button" id="topbar-rotate" className="topbar-dropdown-trigger" disabled={isBrowseMode} aria-label="旋转操作"><RotateCw size={16}/><ChevronDown size={13}/></button>)}
+        {T("旋转操作", <button type="button" id="topbar-rotate" className="topbar-dropdown-trigger"  aria-label="旋转操作"><RotateCw size={16}/><ChevronDown size={13}/></button>)}
         <div className="topbar-dropdown-menu" role="menu" aria-label="旋转操作">
-          <button id="topbar-rotate-left" onClick={() => rotateSelectedLayoutUnits("left")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="向左旋转90度" aria-label="向左旋转90度"><RotateCcw size={16}/><span>左转90度</span></button>
-          <button id="topbar-rotate-right" onClick={() => rotateSelectedLayoutUnits("right")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="向右旋转90度" aria-label="向右旋转90度"><RotateCw size={16}/><span>右转90度</span></button>
-          <button id="topbar-mirror-horizontal" onClick={() => mirrorSelectedNodes("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="水平镜像" aria-label="水平镜像"><FlipHorizontal size={16}/><span>水平镜像</span></button>
-          <button id="topbar-mirror-vertical" onClick={() => mirrorSelectedNodes("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="垂直镜像" aria-label="垂直镜像"><FlipVertical size={16}/><span>垂直镜像</span></button>
+          <button id="topbar-rotate-left" onClick={() => rotateSelectedLayoutUnits("left")} disabled={selectedLayoutUnitCount < 1} title="向左旋转90度" aria-label="向左旋转90度"><RotateCcw size={16}/><span>左转90度</span></button>
+          <button id="topbar-rotate-right" onClick={() => rotateSelectedLayoutUnits("right")} disabled={selectedLayoutUnitCount < 1} title="向右旋转90度" aria-label="向右旋转90度"><RotateCw size={16}/><span>右转90度</span></button>
+          <button id="topbar-mirror-horizontal" onClick={() => mirrorSelectedNodes("horizontal")} disabled={selectedLayoutUnitCount < 1} title="水平镜像" aria-label="水平镜像"><FlipHorizontal size={16}/><span>水平镜像</span></button>
+          <button id="topbar-mirror-vertical" onClick={() => mirrorSelectedNodes("vertical")} disabled={selectedLayoutUnitCount < 1} title="垂直镜像" aria-label="垂直镜像"><FlipVertical size={16}/><span>垂直镜像</span></button>
         </div>
       </div>
       <input ref={imageInputRef} type="file" accept="image/*,.svg,image/svg+xml" data-image-import-kind="image" hidden multiple onChange={chooseImage}/>

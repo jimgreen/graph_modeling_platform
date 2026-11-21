@@ -1,10 +1,34 @@
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const modulePath = fileURLToPath(import.meta.url);
-const repoRoot = path.resolve(path.dirname(modulePath), "..");
-const outputDir = path.join(repoRoot, "data", "schemes", "files", "IEEE标准算例");
+function configuredDataDirForScript() {
+  const envPath = typeof process.env.GRAPH_MODEL_DATA_DIR === "string"
+    ? process.env.GRAPH_MODEL_DATA_DIR.trim()
+    : "";
+  if (envPath) return path.resolve(envPath);
+  const repoRoot = path.resolve(path.dirname(modulePath), "..");
+  for (const configPath of [
+    path.join(process.cwd(), "platform.config.json"),
+    path.join(repoRoot, "platform.config.json"),
+    path.join(repoRoot, "platform.config.json.example")
+  ]) {
+    if (!existsSync(configPath)) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+      if (typeof parsed?.dataDir === "string" && parsed.dataDir.trim()) {
+        return path.resolve(path.dirname(configPath), parsed.dataDir.trim());
+      }
+    } catch {
+      // Keep the historical cwd/data fallback when config cannot be read.
+    }
+  }
+  return path.resolve(process.cwd());
+}
+
+const outputDir = path.join(configuredDataDirForScript(), "schemes", "files", "IEEE标准算例");
 const layerId = "layer-default";
 const routableLinePointsParam = "_routableLinePoints";
 const routableLineSourceNodeParam = "_routableLineSourceNodeId";

@@ -83,6 +83,7 @@ describe("model library backend loading hook", () => {
       findSavedProjectByActivePointer: vi.fn(() => null),
       flattenSavedSchemes: (schemes: Array<{ id: string }>) => schemes,
       latestActiveProjectPointerRef: { current: null },
+      manualModelSelectionRef: { current: false },
       loadSavedProjectRecord: vi.fn(),
       rememberPersistedSchemesPayload: vi.fn(),
       saveRequiredRef: { current: false },
@@ -280,7 +281,7 @@ describe("model association node double-click navigation", () => {
     ["dc-district-load", "台区"]
   ] as const;
 
-  const createBrowseScope = () => {
+  const createAssociationScope = () => {
     const requestLoadSavedProject = vi.fn();
     const writeOperationLog = vi.fn();
     const projects = associationCases.map(([kind, modelType], index) => ({
@@ -291,55 +292,13 @@ describe("model association node double-click navigation", () => {
     const schemes = [{ id: "scheme-1", name: "默认方案", projects, children: [] }];
     return {
       flattenSavedSchemes: (items: typeof schemes) => items,
-      isBrowseMode: true,
-      isEditMode: false,
+      isEditMode: true,
       modelAssociationModelTypeForKind,
       requestLoadSavedProject,
       schemes,
       writeOperationLog
     };
   };
-
-  test.each(associationCases)("browse mode double-click on %s opens its %s model_id target", (kind, modelType) => {
-    const scope = createBrowseScope();
-    const node = createDefaultNode(kind, { x: 100, y: 100 });
-    const targetIndex = associationCases.findIndex(([candidateKind]) => candidateKind === kind) + 1;
-    node.params.model_id = String(targetIndex);
-
-    createOpenNodeDoubleClickEditor(scope)(node);
-
-    expect(scope.requestLoadSavedProject).toHaveBeenCalledWith(
-      expect.objectContaining({ name: `${modelType}模型-${targetIndex}`, project: expect.objectContaining({ modelType }) }),
-      "scheme-1"
-    );
-    expect(scope.writeOperationLog).toHaveBeenCalledWith(expect.stringContaining(`${node.name} → ${modelType}模型-${targetIndex}`));
-  });
-
-  test.each(["", "0", "1.5", "invalid"])("warns and does not navigate for invalid model_id %j", (modelId) => {
-    const showGlobalMessage = vi.fn();
-    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
-    const scope = createBrowseScope();
-    const node = createDefaultNode("ac-station-source", { x: 100, y: 100 });
-    node.params.model_id = modelId;
-
-    createOpenNodeDoubleClickEditor(scope)(node);
-
-    expect(scope.requestLoadSavedProject).not.toHaveBeenCalled();
-    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringMatching(/未定义有效的关联模型/));
-  });
-
-  test("warns when model_id exists only under a different model type", () => {
-    const showGlobalMessage = vi.fn();
-    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
-    const scope = createBrowseScope();
-    const node = createDefaultNode("ac-station-load", { x: 100, y: 100 });
-    node.params.model_id = "5";
-
-    createOpenNodeDoubleClickEditor(scope)(node);
-
-    expect(scope.requestLoadSavedProject).not.toHaveBeenCalled();
-    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringMatching(/未找到厂站模型 idx=5/));
-  });
 
   test("keeps the existing editor behavior for association nodes in edit mode", () => {
     const node = createDefaultNode("dc-feeder-source", { x: 100, y: 100 });
@@ -353,7 +312,6 @@ describe("model association node double-click navigation", () => {
       cloneNodeForDoubleClickDraft: (value: typeof node) => ({ ...value, params: { ...value.params } }),
       doubleClickDialogKindForNode: () => "device",
       flushSync: (callback: () => void) => callback(),
-      isBrowseMode: false,
       isEditMode: true,
       nodeDoubleClickCloseSuppressUntilRef: { current: 0 },
       nodeDoubleClickDialog: null,
@@ -373,18 +331,8 @@ describe("model association node double-click navigation", () => {
     expect(setNodeDoubleClickDialog).toHaveBeenLastCalledWith({ kind: "device", nodeId: node.id });
   });
 
-  test("does nothing for ordinary nodes in browse mode", () => {
-    const scope = createBrowseScope();
-    const node = createDefaultNode("ac-source", { x: 100, y: 100 });
-
-    createOpenNodeDoubleClickEditor(scope)(node);
-
-    expect(scope.requestLoadSavedProject).not.toHaveBeenCalled();
-    expect(scope.writeOperationLog).not.toHaveBeenCalled();
-  });
-
   test("createJumpToAssociatedModel jumps to the bound model independent of interaction mode", () => {
-    const scope = createBrowseScope();
+    const scope = createAssociationScope();
     const node = createDefaultNode("ac-station-load", { x: 100, y: 100 });
     const targetIndex = associationCases.findIndex(([candidateKind]) => candidateKind === "ac-station-load") + 1;
     node.params.model_id = String(targetIndex);

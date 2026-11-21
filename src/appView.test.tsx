@@ -56,6 +56,13 @@ const APP_VIEW_SOURCE_FILES = [
 
 const readAppViewSources = () => readSourceFiles(...APP_VIEW_SOURCE_FILES);
 
+describe("auto-align progress overlay", () => {
+  test("keeps the canvas dialog host mounted while a plan is running", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    expect(source).toMatch(/const canvasDialogLayerActive = Boolean\(\s*__appScope\.autoAlignProgress \|\|/);
+  });
+});
+
 describe("app view topology inspector", () => {
   test("keeps parent editable as a model enum while topology indexes remain readonly", () => {
     expect(READONLY_E_PARAM_KEYS.has("parent")).toBe(false);
@@ -112,8 +119,8 @@ describe("model-association device containment wiring", () => {
     const modelTypeSelect = viewSource.match(/<InlineEditableValue\s+value=\{modelType\}[\s\S]*?\/>/)?.[0] ?? "";
 
     expect(rendererSource).toContain("modelAssociationDeviceModelTypeFailureMessage(modelType, item.kind)");
-    expect(rendererSource).toContain("draggable={isEditMode && !modelTypeFailureMessage}");
-    expect(rendererSource).toContain("disabled={isBrowseMode || Boolean(modelTypeFailureMessage)}");
+    expect(rendererSource).toContain("draggable={!modelTypeFailureMessage}");
+    expect(rendererSource).toContain("disabled={Boolean(modelTypeFailureMessage)}");
     expect(modelTypeSelect).toContain("modelAssociationDevicesModelTypeFailureMessage(nextType, nodes)");
     expect(modelTypeSelect.indexOf("modelAssociationDevicesModelTypeFailureMessage(nextType, nodes)")).toBeLessThan(
       modelTypeSelect.indexOf("pushUndoSnapshot()")
@@ -707,13 +714,10 @@ describe("app view device definition parameter rows", () => {
     expect(source).toMatch(/event\.key\.toLowerCase\(\) === "s"/);
   });
 
-  test("keeps the top toolbar compact with icon-only mode and export actions", () => {
+  test("removes the browse/edit mode toggle and keeps export actions", () => {
     const source = readSourceFiles("./appExtracted/appTopbar.tsx", ...APP_VIEW_SOURCE_FILES);
     const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
     const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
-    const modeButton = source.match(
-      /<button type="button"(?: id="[^"]*")? className=\{`topbar-primary-button[^`]*`\} onClick=\{toggleInteractionMode\}[\s\S]*?<\/button>/
-    )?.[0] ?? "";
     const exportActions = source.match(
       /<div className="topbar-center-actions">[\s\S]*?<div className="topbar-model"/
     )?.[0] ?? "";
@@ -721,13 +725,8 @@ describe("app view device definition parameter rows", () => {
       /\{ENABLE_REACT_FLOW_PREVIEW && \(<button className="topbar-primary-button react-flow-preview-button"[\s\S]*?<\/button>\)\}/
     );
 
-    expect(modeButton).toContain("toggleInteractionMode");
-    expect(modeButton).toContain("isEditMode ? <Pencil");
-    expect(modeButton).toContain("browse-mode-toggle");
-    expect(modeButton).toMatch(/<svg[^>]*>[\s\S]*<line/);
-    expect(modeButton).not.toContain("编辑模式</span>");
-    expect(modeButton).not.toContain("浏览模式</span>");
-    expect(modeButton).not.toContain("mode-toggle-button");
+    expect(source).not.toContain("topbar-mode-toggle");
+    expect(styles).not.toContain("browse-mode");
     expect(source).toContain("requestExportWithSave(() => doExport(encoding))");
     expect(source).toContain("modelTypeMismatchMessage()");
     expect(exportActions).toContain('action: exportSvg, validatesEInterface: true');
@@ -1326,6 +1325,14 @@ describe("顶栏空间选择器", () => {
     expect(topbarInputs).toContain("__appScope.currentSpaceId");
   });
 
+  test("源码把活动模型身份列进顶栏 memo 输入，保存按钮不会继续使用旧模型闭包", () => {
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const topbarInputs = viewSource.match(/<AppTopbar\s[\s\S]*?inputs=\{\[[\s\S]*?\]\}/)?.[0] ?? "";
+
+    expect(topbarInputs).toContain("activeProjectKey");
+    expect(topbarInputs).toContain("activeSchemeKey");
+  });
+
   test("源码把空间状态列进状态栏 memo 输入（否则空间 ID 那格永远停在 —）", () => {
     const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
     const statusbarInputs = viewSource.match(/<AppStatusbar\s[\s\S]*?inputs=\{\[[\s\S]*?\]\}/)?.[0] ?? "";
@@ -1847,20 +1854,14 @@ describe("空间导入导出按钮", () => {
     expect(messages).toEqual([]);
   });
 
-  // 形态断言，非行为断言：只证明两个按钮那一行源码还在 / 没被加回去，
-  // 不证明浏览模式下点击真的被挡住（本仓 node 环境不渲染 React，见上方 describe 的说明）。
-  test("导出按钮不禁用；导入按钮在浏览模式下禁用（形态断言，非行为断言）", () => {
+  test("空间导出导入不再依赖浏览模式门控", () => {
     const topbarSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
     const buttonBlock = (label: string) =>
       topbarSource.match(new RegExp(`<button[^>]*aria-label="${label}"[\\s\\S]*?</button>`))?.[0] ?? "";
 
-    // 导出是纯读动作，对齐既有导出菜单（exportSvg/exportEFile/CimFile/JsonFile 整段无 isBrowseMode 门控）；
-    // 钉的是「不能按浏览模式门控」，不是「不能有 disabled」—— 将来加别的合法禁用条件不该被这条打红
     expect(buttonBlock("导出空间")).toContain('className="topbar-primary-button"');
-    expect(buttonBlock("导出空间")).not.toContain("isBrowseMode");
-    // 导入会切空间 + 硬重载，浏览模式下必须挡住；qiankun 下另有「导入的空间没有归属」的禁用，
-    // 故这里钉「表达式里含 isBrowseMode 门控」（与导出那条同一思路：不锁整串字面量），删掉门控仍红
-    expect(buttonBlock("导入空间")).toContain("scope.isBrowseMode");
+    expect(buttonBlock("导出空间")).not.toContain("mode-toggle");
+    expect(buttonBlock("导入空间")).not.toContain("mode-toggle");
   });
 
   // 形态断言，非行为断言：新建空间失败后的提示埋在未导出的组件闭包里，

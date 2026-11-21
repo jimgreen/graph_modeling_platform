@@ -2,7 +2,6 @@
 // 依赖：react-joyride@3.2.0（v3 API，非 v2）。
 //
 // 选择器全部从源码验证过：
-//   #topbar-mode-toggle      → src/appExtracted/appTopbar.tsx:502
 //   .library-panel           → src/appExtracted/appLeftPanel.tsx:51
 //   .diagram-canvas          → src/appExtracted/appCanvasArea.tsx:519
 //   .inspector-panel         → src/appExtracted/appRightPanel.tsx:476
@@ -69,23 +68,8 @@ export function clearTourSeen(): void {
 
 // ---------- 步骤定义 ----------
 
-/**
- * 6 步引导。**只有第 1 步是「动作步骤」**（要用户真的点一下切到编辑模式），
- * 其余 5 步是纯介绍，由用户点「下一步」推进。
- *
- * `data.actionStep`：标记为动作步骤；tooltip 据此禁用「下一步」按钮并显示提示文案。
- * 导出便于测试断言。
- */
+/** 首次引导步骤定义。 */
 const TOUR_STEPS: Step[] = [
-  {
-    target: "#topbar-mode-toggle",
-    title: "切到「编辑模式」",
-    content:
-      "现在是「浏览模式」，画不了图。\n" +
-      "点一下这个按钮切到「编辑模式」。",
-    placement: "bottom",
-    data: { actionStep: true }
-  },
   {
     target: ".library-panel",
     title: "左侧：模型库 / 图元库 / 模板库",
@@ -147,31 +131,9 @@ const TOUR_STEPS: Step[] = [
 // 首次引导要的是「一进来就说清楚」，故所有步骤统一 skipBeacon。
 export const APP_TOUR_STEPS: Step[] = TOUR_STEPS.map((step) => ({ ...step, skipBeacon: true }));
 
-// ---------- 动作闸门（纯函数，便于单测） ----------
-
-/** 引导期间从 scope 读取的状态快照（与 DOM 解耦，便于单测）。 */
-export interface TourGateState {
-  isEditMode: boolean;
-}
-
-/**
- * 判断第 `stepIndex` 步的动作闸门是否满足。
- * 纯函数：不读 DOM、不依赖 React；可在单测中直接调用。
- *
- * **只有第 1 步（index 0，切到编辑模式）有闸门**：
- * - 「浏览模式下不能画图」是新手最卡的坑，亲手点一次比读一句话记得住；
- * - 图元库 / 模板库两个 tab 只在编辑模式下才渲染（见 appLeftPanel.tsx），
- *   不先切过去，后面的介绍步骤会指向界面上不存在的东西。
- * 其余步骤是纯介绍，由用户点「下一步」推进（返回 false，不自动跳）。
- */
-export function tourGateSatisfied(stepIndex: number, state: TourGateState): boolean {
-  if (stepIndex !== 0) return false;
-  return state.isEditMode;
-}
-
 // ---------- 侧边栏步骤的强制展开 / 锁定 ----------
 //
-// 问题：引导里有两步分别锚定 `.library-panel`（第 2 步）与 `.inspector-panel`（第 5 步）。
+// 问题：引导里有两步分别锚定 `.library-panel`（第 1 步）与 `.inspector-panel`（第 4 步）。
 // 用户若把侧边栏设为「永久隐藏」（或 auto 且当前收起），面板会被 `display:none` 摘出布局，
 // react-joyride 拿不到目标尺寸 → tooltip 不渲染，屏幕上只剩深色遮罩，用户被卡死
 // （点「上一步」回到该步骤时最容易复现）。
@@ -204,9 +166,9 @@ export interface TourSidePanelBodyContext {
  * 侧边栏是否处于「引导锁定」状态。
  *
  * 锁定窗口刻意比「锚定该侧边栏的那一步」更长：
- * - `tourBody`（第 1 步之后、引导未结束）覆盖「下一步」离开侧边栏步骤的那一帧 ——
+ * - `tourBody`（引导未结束）覆盖「下一步」离开侧边栏步骤的那一帧 ——
  *   否则用户刚点「下一步」，自动隐藏就会把还没定位完的 tooltip 连同面板一起收掉；
- * - 进入侧边栏步骤前（第 0 步）也一并锁定，避免第 0 步期间面板被收起造成第 1 步骤现。
+ * - 进入侧边栏步骤前也一并锁定，避免面板被收起造成目标步骤无法出现。
  */
 export function isSidePanelLockedByTour(
   side: "left" | "right",
@@ -256,10 +218,7 @@ export function startAppTour(): void {
   }
 }
 
-// ---------- 自定义 tooltip（简约大气 + 动作步骤禁用态） ----------
-// 视觉基调与原 5 步引导保持一致；新增动作步骤时：
-// - 「下一步」按钮禁用，文案改为「完成上面的操作后自动继续」；
-// - 「跳过」依然可用（不阻断用户跳过整段引导）。
+// ---------- 自定义 tooltip（简约大气） ----------
 // 样式在 src/styles.css 的 `.tour-tooltip*` 块中，便于后续调整。
 
 function TourTooltip(props: TooltipRenderProps) {
@@ -275,16 +234,6 @@ function TourTooltip(props: TooltipRenderProps) {
   } = props;
 
   const showBack = index > 0;
-  const stepData = step.data as { actionStep?: boolean } | undefined;
-  const actionStep = Boolean(stepData?.actionStep);
-
-  // 动作步骤（1-5）：主按钮禁用，提示用户完成上面的操作后自动继续。
-  // 第 6 步（isLastStep）无闸门，正常显示「完成」。
-  const actionDisabled = actionStep && !isLastStep;
-  const primaryTitle = actionDisabled
-    ? "完成上面的操作后自动继续"
-    : primaryProps.title;
-
   // 兜底夹取：react-joyride 的 shift 边距可能比真实可视区域更大（tooltip 通过
   // portalElement 渲染进 .app-shell 这个 overflow:hidden 容器），导致某些步骤的
   // tooltip 被算到屏幕外、按钮点不到。这里在气泡外面包一层，只有越界时才用 transform
@@ -329,10 +278,8 @@ function TourTooltip(props: TooltipRenderProps) {
             className="tour-tooltip__primary"
             type="button"
             {...primaryProps}
-            disabled={actionDisabled}
-            title={primaryTitle}
           >
-            {primaryTitle}
+            {primaryProps.title}
           </button>
         </div>
       </div>
@@ -390,9 +337,7 @@ function applySidePanelMode(
  *
  * 行为：
  * - 首次访问（localStorage 无 APP_TOUR_SEEN_KEY 标志）自动启动；
- * - 步骤 1-5 为动作步骤：完成真实操作（切编辑模式 / 拖入设备 / 连一条线 /
- *   选中设备 / 保存）后自动推进；主按钮始终禁用；
- * - 步骤 6 为终页展示，由用户手动点「完成」结束；
+ * - 引导步骤由用户点击“下一步”推进，终页由用户手动点“完成”结束；
  * - 启动时记录 nodes/edges 基准值，确保用户即使已有设备，也得"再"拖一个；
  * - **锚定侧边栏的步骤会把对应侧边栏强制展开并锁定**（禁止最小化 / 隐藏），
  *   引导结束后还原成进入引导前的模式；
@@ -444,9 +389,8 @@ export function AppTour({ scope }: AppTourProps) {
 
   // 把引导期间的侧边栏锁定状态挂到 scope 上，供各交互工厂读取。
   // 每帧重算：scope 原地更新，必须用最新字段（见 根 AGENTS.md「分域规则 · src」）。
-  const tourBody = run && stepIndex >= 1;
-  // 锁定目标：锚定侧边栏的步骤锁对应侧边栏；引导其余时间至少锁左侧栏
-  // （第 0 步切到编辑模式后左侧栏会多出「图元库 / 模板库」tab，第 1 步要锚定它）。
+  const tourBody = run;
+  // 锁定目标：锚定侧边栏的步骤锁对应侧边栏；引导期间至少锁左侧栏。
   const tourLockedSide: "left" | "right" = run
     ? tourSidePanelStepSide(stepIndex) ?? "left"
     : "left";
@@ -511,24 +455,11 @@ export function AppTour({ scope }: AppTourProps) {
     }
   });
 
-  // 每帧检查闸门：满足则自动前进。
-  // 不写 dep 数组：应用每帧都会重渲染（见 根 AGENTS.md「分域规则 · src」），这里只做布尔比较，成本极低。
-  // scope 通过 Object.assign 原地修改、引用不变，因此必须每帧读取其最新字段。
-  useEffect(() => {
-    if (!run) return;
-    // 只有第 1 步（切编辑模式）是动作步骤；其余为介绍步骤，由用户点「下一步」推进。
-    if (stepIndex !== 0) return;
-    if (tourGateSatisfied(stepIndex, { isEditMode: Boolean(scope?.isEditMode) })) {
-      setStepIndex((i) => i + 1);
-    }
-  });
-
   const handleEvent = useCallback((data: EventData) => {
     const { action, index, status, type } = data;
 
     if (type === EVENTS.STEP_AFTER) {
-      // 动作步骤上「下一步」被禁用，理论上不会触发 STEP_AFTER；
-      // 但「上一步」仍然可用（showBack 时），需按 -1 处理。
+      // 「上一步」仍然可用（showBack 时），需按 -1 处理。
       const delta = action === ACTIONS.PREV ? -1 : 1;
       setStepIndex(index + delta);
     } else if (

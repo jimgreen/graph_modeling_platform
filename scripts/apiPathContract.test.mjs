@@ -67,7 +67,7 @@ const used = collectFrontendApiPaths();
  * 动态段判定：`${...}` 插值、`{param}` 占位、或本身就是注册表里被省略的尾段。
  */
 function staticSegments(pathValue) {
-  // 先剥查询串：apiPath("/v1/schemes/model/svg?${schemePathQueryParam(...)}") 的
+  // 先剥查询串：apiPath("/v1/schemes/model/export?format=svg&${schemePathQueryParam(...)}") 的
   // `?...` 部分不是路径段（后端注册表里也没有），留着会永远匹配不上。
   const withoutQuery = pathValue.split("?")[0];
   return withoutQuery

@@ -1,6 +1,8 @@
 node_modules/
 dist/
 data/
+data1/
+*.archive-*.zip
 .codex-logs/
 logs/
 tmp/

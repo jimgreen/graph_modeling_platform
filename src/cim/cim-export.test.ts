@@ -185,7 +185,7 @@ describe("createCimExport", () => {
 });
 
 describe("createCimExport 走后端", () => {
-  test("从 /v1/schemes/model/cim-xml 拉取 XML 并保存", async () => {
+  test("从 /v1/schemes/model/export?format=cim-xml 拉取 XML 并保存", async () => {
     const fetchMock = vi.fn(async (_url: string) => new Response("<?xml version=\"1.0\"?><cim:FullModel/>", {
       status: 200,
       headers: { "content-type": "application/xml" }
@@ -205,7 +205,7 @@ describe("createCimExport 走后端", () => {
       }
     });
     await exportCim();
-    expect(String(fetchMock.mock.calls[0][0])).toContain("/v1/schemes/model/cim-xml");
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/v1/schemes/model/export?format=cim-xml");
     expect(saves[0].text).toContain("<cim:FullModel/>");
     vi.unstubAllGlobals();
   });

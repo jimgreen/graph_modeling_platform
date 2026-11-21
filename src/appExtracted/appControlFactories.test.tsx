@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected, createProgrammaticDeleteDevices, createProgrammaticUpdateDeviceProperty, createProgrammaticSave, createProgrammaticSaveSelectionAsTemplate } from "./appControlFactories";
+import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected, createProgrammaticDeleteDevices, createProgrammaticUpdateDeviceProperty, createProgrammaticSave, createProgrammaticSaveSelectionAsTemplate, createProgrammaticSwitchModel } from "./appControlFactories";
 import { DEVICE_LIBRARY_BY_KIND, createDefaultNode, createSavedScheme, createSavedProject } from "../model";
 import { normalizeProjectMeasurements } from "../measurements";
 
@@ -136,6 +136,7 @@ function createSchemeMockScope() {
         return [...current, record];
       },
       savedChildSchemeNames: (schemes: any[], _parentId: string) => schemes.map((s) => s.name),
+      saveBackendSchemeRecord: vi.fn(async () => ({ schemeId: 1 })),
       schemePathForScheme: (schemeId: string) => (schemeId ? ["父方案"] : []),
       schemes: [] as any[],
       selectSingleScheme: (id: string) => {
@@ -152,10 +153,10 @@ function createSchemeMockScope() {
 }
 
 describe("programmaticCreateScheme", () => {
-  test("合法创建返回 {id,name,path} 且 setSchemes 被调、selectSingleScheme 被调", () => {
+  test("合法创建返回 {id,name,path} 且 setSchemes 被调、selectSingleScheme 被调", async () => {
     const { scope, calls } = createSchemeMockScope();
     const createScheme = createProgrammaticCreateScheme(scope);
-    const result = createScheme("新方案");
+    const result = await createScheme("新方案");
     expect(result.id).toBeTruthy();
     expect(result.name).toBe("新方案");
     expect(result.path).toEqual(["新方案"]);
@@ -164,35 +165,27 @@ describe("programmaticCreateScheme", () => {
     expect(calls.insertedRecord.id).toBe(result.id);
   });
 
-  test("指定 parentSchemeId 时 path 包含父路径", () => {
+  test("指定 parentSchemeId 时 path 包含父路径", async () => {
     const { scope, calls } = createSchemeMockScope();
     const createScheme = createProgrammaticCreateScheme(scope);
-    const result = createScheme("子方案", "parent-1");
+    const result = await createScheme("子方案", "parent-1");
     expect(result.path).toEqual(["父方案", "子方案"]);
   });
 
-  test("name 空抛 bad-request", () => {
+  test("name 空抛 bad-request", async () => {
     const { scope } = createSchemeMockScope();
     const createScheme = createProgrammaticCreateScheme(scope);
-    expect(() => createScheme("", "p1")).toThrow(/name 必填/);
-    try {
-      createScheme("  ");
-    } catch (e: any) {
-      expect(e.code).toBe("bad-request");
-    }
+    await expect(createScheme("", "p1")).rejects.toThrow(/name 必填/);
+    await expect(createScheme("  ")).rejects.toMatchObject({ code: "bad-request" });
   });
 
-  test("重名抛 bad-request", () => {
+  test("重名抛 bad-request", async () => {
     const { scope } = createSchemeMockScope();
     scope.schemes = [{ id: "p1", name: "已存在方案", projects: [], children: [] }];
     scope.savedChildSchemeNames = (_schemes: any[], _parentId: string) => ["已存在方案"];
     const createScheme = createProgrammaticCreateScheme(scope);
-    expect(() => createScheme("已存在方案", "p1")).toThrow(/方案名称重复/);
-    try {
-      createScheme("已存在方案", "p1");
-    } catch (e: any) {
-      expect(e.code).toBe("bad-request");
-    }
+    await expect(createScheme("已存在方案", "p1")).rejects.toThrow(/方案名称重复/);
+    await expect(createScheme("已存在方案", "p1")).rejects.toMatchObject({ code: "bad-request" });
   });
 });
 
@@ -203,7 +196,7 @@ function createBlankProjectMockScope() {
     selected: null,
     loaded: null
   };
-  const schemes: any[] = [{ id: "s1", name: "方案A", projects: [], children: [] }];
+  const schemes: any[] = [{ id: "s1", name: "方案A", schemeId: 1, projects: [], children: [] }];
   return {
     scope: {
       DEFAULT_CANVAS_WIDTH: 1920,
@@ -246,7 +239,7 @@ describe("programmaticCreateBlankProject", () => {
     const result = await createBlankProject("新模型", undefined, "厂站");
     expect(result.id).toBeTruthy();
     expect(result.name).toBe("新模型");
-    expect(result.schemeId).toBe("s1");
+    expect(result.schemeId).toBe(1);
     expect(result.modelType).toBe("厂站");
     expect(result.idx).toBe(1);
     expect(calls.upserted).toBe(true);
@@ -257,12 +250,30 @@ describe("programmaticCreateBlankProject", () => {
   test("指定 schemeId 时定位目标方案", async () => {
     const { scope } = createBlankProjectMockScope();
     scope.schemes = [
-      { id: "s1", name: "方案A", projects: [], children: [] },
-      { id: "s2", name: "方案B", projects: [], children: [] }
+      { id: "s1", name: "方案A", schemeId: 1, projects: [], children: [] },
+      { id: "s2", name: "方案B", schemeId: 2, projects: [], children: [] }
     ];
     const createBlankProject = createProgrammaticCreateBlankProject(scope);
-    const result = await createBlankProject("模型X", "s2", "馈线");
-    expect(result.schemeId).toBe("s2");
+    const result = await createBlankProject( "模型X", 2, "馈线");
+    expect(result.schemeId).toBe(2);
+  });
+
+  test("schemeId 定位子方案并保留 runtime schemeId 语义", async () => {
+    const { scope } = createBlankProjectMockScope();
+    scope.schemes.push({ id: "s2", name: "方案B", schemeId: 42, projects: [], children: [] });
+    const createBlankProject = createProgrammaticCreateBlankProject(scope);
+    const result = await createBlankProject("模型按方案号", 42, "厂站");
+    expect(result.schemeId).toBe(42);
+  });
+
+  test("未知 schemeId 拒绝创建且不落盘", async () => {
+    const { scope, calls } = createBlankProjectMockScope();
+    const saveSpy = vi.fn(scope.saveBackendProjectRecord);
+    (scope as any).saveBackendProjectRecord = saveSpy;
+    const createBlankProject = createProgrammaticCreateBlankProject(scope);
+    await expect(createBlankProject("模型", 99, "厂站")).rejects.toMatchObject({ code: "not-found" });
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(calls.selected).toBeNull();
   });
 
   test("name 空抛 bad-request", async () => {
@@ -286,6 +297,77 @@ describe("programmaticCreateBlankProject", () => {
     const createBlankProject = createProgrammaticCreateBlankProject(scope);
     await expect(createBlankProject("模型")).rejects.toThrow(/无可用方案/);
     await expect(createBlankProject("模型")).rejects.toMatchObject({ code: "bad-request" });
+  });
+});
+
+function createSwitchModelMockScope() {
+  const calls: { loaded: { record: any; schemeId?: string } | null } = { loaded: null };
+  const schemes: any[] = [{
+    id: "s1",
+    name: "父方案",
+    schemeId: 1,
+    projects: [],
+    children: [{
+      id: "s2",
+      name: "子方案",
+      schemeId: 42,
+      projects: [{ id: "project-1", name: "模型A", project: { idx: 7 } }],
+      children: []
+    }]
+  }];
+  return {
+    calls,
+    scope: {
+      activeProjectKey: "project-other",
+      loadSavedProjectRecord: async (record: any, schemeId?: string) => {
+        calls.loaded = { record, schemeId };
+        return true;
+      },
+      manualModelSelectionRef: { current: false },
+      saveRequired: false,
+      schemes
+    }
+  };
+}
+
+describe("programmaticSwitchModel / schemeId", () => {
+  test("schemeId + name 在嵌套树中定位模型", async () => {
+    const { scope, calls } = createSwitchModelMockScope();
+    const switchModel = createProgrammaticSwitchModel(scope);
+    const result = await switchModel({ schemeId: 42, name: "模型A" });
+    expect(calls.loaded?.record.name).toBe("模型A");
+    expect(calls.loaded?.schemeId).toBe("s2");
+    expect(result.schemePath).toEqual(["父方案", "子方案"]);
+  });
+
+  test("未知编号或与 schemePath 冲突时拒绝切换", async () => {
+    for (const params of [
+      { schemeId: 99, name: "模型A" },
+      { schemeId: 42, schemePath: ["父方案"], name: "模型A" }
+    ]) {
+      const { scope, calls } = createSwitchModelMockScope();
+      const switchModel = createProgrammaticSwitchModel(scope);
+      await expect(switchModel(params)).rejects.toMatchObject({ code: params.schemeId === 99 ? "not-found" : "bad-request" });
+      expect(calls.loaded).toBeNull();
+    }
+  });
+
+  test("modelId 定位时回执同样包含数字 schemeId 与完整路径", async () => {
+    const { scope } = createSwitchModelMockScope();
+    const switchModel = createProgrammaticSwitchModel(scope);
+    const result = await switchModel({ modelId: 7 });
+    expect(result.schemeId).toBe(42);
+    expect(result.schemePath).toEqual(["父方案", "子方案"]);
+  });
+
+  test("alreadyOpen 分支也返回 schemeId 与 schemePath", async () => {
+    const { scope } = createSwitchModelMockScope();
+    scope.activeProjectKey = "project-1";
+    const switchModel = createProgrammaticSwitchModel(scope);
+    const result = await switchModel({ modelId: 7 });
+    expect(result.alreadyOpen).toBe(true);
+    expect(result.schemeId).toBe(42);
+    expect(result.schemePath).toEqual(["父方案", "子方案"]);
   });
 });
 

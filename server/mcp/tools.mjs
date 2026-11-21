@@ -26,20 +26,12 @@ import { z } from "zod";
 import {
   handleV1Schemes,
   handleV1SchemeModels,
-  handleV1ModelJson,
-  handleV1SchemeExport,
-  handleV1ModelSvg
+  handleV1SchemeExport
 } from "../apiV1Schemes.mjs";
-import { handleV1ModelEFile, handleV1ModelEFilePost } from "../eFileExport.mjs";
-import { handleV1ModelCimXml } from "../cimExport.mjs";
+import { handleV1ModelExport } from "../apiV1ModelExport.mjs";
 import { handleV1ModelSend } from "../sendModel.mjs";
 import {
-  handleV1Library,
-  handleV1LibraryCategories,
-  handleV1LibraryDevices,
-  handleV1LibraryMeasurements,
-  handleV1LibraryDeviceDefinitions,
-  handleV1LibraryTemplates
+  handleV1LibraryUnified
 } from "../apiV1Library.mjs";
 import {
   handleV1RuntimeClients,
@@ -49,15 +41,10 @@ import {
   handleV1RuntimeTabs,
   handleV1RuntimeTab,
   handleV1RuntimeScreenshot,
-  handleV1RuntimeSvg,
-  handleV1RuntimeEFile,
-  handleV1RuntimeEFilePost,
   handleV1RuntimeDom
 } from "../apiV1Runtime.mjs";
-import {
-  handleTopologyCheck,
-  handleTopologyRepair
-} from "../apiV1Topology.mjs";
+import { handleV1RuntimeExport } from "../apiV1RuntimeExport.mjs";
+import { handleV1Topology } from "../apiV1Topology.mjs";
 
 import {
   handleControlDeviceAdd,
@@ -272,6 +259,12 @@ function filenameFromContentDisposition(value) {
 const SCHEME_PATH = z
   .array(z.string().min(1))
   .describe('方案路径：自上而下的方案名数组，例如 ["方案A","子方案"]。用 gmp_list_schemes 确认层级。');
+const SCHEME_ID = z
+  .number()
+  .int()
+  .positive()
+  .max(Number.MAX_SAFE_INTEGER)
+  .describe("方案 ID（当前空间内唯一的正整数）。可从 gmp_list_schemes 获取。");
 
 const CLIENT_ID = z
   .string()
@@ -302,6 +295,7 @@ const TOKEN = z
 const TOPOLOGY_TARGET_INPUT = {
   target: z.enum(["current", "saved"]).describe("操作目标：current 为当前在线页面；saved 为已保存模型。"),
   schemePath: SCHEME_PATH.optional().describe("saved 目标必填：方案路径数组。"),
+  schemeId: SCHEME_ID.optional().describe("saved 目标可用：方案 ID。"),
   name: z.string().min(1).optional().describe("saved 目标必填：模型名。"),
   token: TOKEN.describe("current 目标可选：页面 token。多页面时必填。")
 };
@@ -333,6 +327,11 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
   // schemePath → v1 的 query 值（已解码形态：JSON 数组文本）。
   // 由桥（buildBridgeUrl）施加百分号编码，与 encodeSchemePath 同形，不会双重编码。
   const schemePathQuery = (parts) => JSON.stringify(parts);
+  const schemeSelectorQuery = ({ schemePath, schemeId }) => ({
+    schemePath: schemePath ? schemePathQuery(schemePath) : undefined,
+    schemeId
+  });
+  const hasSchemeSelector = ({ schemePath, schemeId }) => Boolean(schemePath || schemeId !== undefined);
 
   // 空间缺失是接线 bug（派发层对 /mcp 恒注入 spaceId）。此处直接拒，
   // 不静默退回默认空间 —— 那会让读工具读到别的空间的数据、写工具改到别的空间。
@@ -378,17 +377,19 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
     title: "列出方案下的模型",
     description: "列出指定方案下的所有模型（模型名与更新时间）。",
     inputSchema: {
-      schemePath: SCHEME_PATH
+      schemePath: SCHEME_PATH.optional(),
+      schemeId: SCHEME_ID.optional()
     },
     outputSchema: ENVELOPE_OUTPUT_SHAPE,
     annotations: READ_ONLY,
     handler: async (args) => {
       const spaceError = requireSpace();
       if (spaceError) return spaceError;
+      if (!hasSchemeSelector(args)) return badRequest("请提供 schemeId 或 schemePath 指定方案。");
       return runV1(handleV1SchemeModels, {
         method: "GET",
         path: "/v1/schemes/models",
-        query: { schemePath: schemePathQuery(args.schemePath) },
+        query: schemeSelectorQuery(args),
         paths,
         spaceId
       });
@@ -400,7 +401,8 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
     title: "读取模型 JSON",
     description: "读取一个已保存模型的完整 JSON（节点、连线、量测等），用于分析模型结构。",
     inputSchema: {
-      schemePath: SCHEME_PATH,
+      schemePath: SCHEME_PATH.optional(),
+      schemeId: SCHEME_ID.optional(),
       name: z.string().min(1).describe("模型名（该方案下的模型）。")
     },
     outputSchema: ENVELOPE_OUTPUT_SHAPE,
@@ -408,10 +410,11 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
     handler: async (args) => {
       const spaceError = requireSpace();
       if (spaceError) return spaceError;
-      return runV1(handleV1ModelJson, {
+      if (!hasSchemeSelector(args)) return badRequest("请提供 schemeId 或 schemePath 指定方案。");
+      return runV1(handleV1ModelExport, {
         method: "GET",
-        path: "/v1/schemes/model/json",
-        query: { schemePath: schemePathQuery(args.schemePath), name: args.name },
+        path: "/v1/schemes/model/export",
+        query: { ...schemeSelectorQuery(args), name: args.name, format: "json" },
         paths,
         spaceId
       });
@@ -434,7 +437,8 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
     description:
       "把一个已保存模型导出为指定格式。format=svg 出 SVG 文本（colorMode=energy|voltage 选配色，encoding=utf-8|gbk 选编码）；format=e-file 出 E 格式文本（templateName 用预定义模板，templateText 用自定义模板文本，两者都给时以 templateText 为准）；format=cim-xml 出 CIM/XML（modelId 指定 CIM 侧模型标识，strict=true 时缺关键参数即报错）。",
     inputSchema: {
-      schemePath: SCHEME_PATH,
+      schemePath: SCHEME_PATH.optional(),
+      schemeId: SCHEME_ID.optional(),
       name: z.string().min(1).describe("模型名（该方案下的模型）。"),
       format: z.enum(["svg", "e-file", "cim-xml"]).describe("导出格式。"),
       colorMode: z.enum(["energy", "voltage"]).optional().describe("仅 format=svg：配色模式（默认 energy）。"),
@@ -457,6 +461,7 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
     handler: async (args) => {
       const spaceError = requireSpace();
       if (spaceError) return spaceError;
+      if (!hasSchemeSelector(args)) return badRequest("请提供 schemeId 或 schemePath 指定方案。");
       const allowed = EXPORT_FORMAT_PARAMS[args.format];
       if (!allowed) {
         return badRequest("format 仅支持 svg、e-file、cim-xml。");
@@ -467,16 +472,16 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
         }
       }
       const query = {
-        schemePath: schemePathQuery(args.schemePath),
+        ...schemeSelectorQuery(args),
         name: args.name
       };
       if (args.format === "svg") {
         if (args.colorMode) query.colorMode = args.colorMode;
         if (args.encoding) query.encoding = args.encoding;
-        return runV1(handleV1ModelSvg, {
+        return runV1(handleV1ModelExport, {
           method: "GET",
-          path: "/v1/schemes/model/svg",
-          query,
+          path: "/v1/schemes/model/export",
+          query: { ...query, format: "svg" },
           paths,
           spaceId
         });
@@ -485,30 +490,30 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
         if (args.encoding) query.encoding = args.encoding;
         if (args.templateText) {
           // 自定义模板走 POST 端点（v1 的 POST 收 body.templateText）
-          return runV1(handleV1ModelEFilePost, {
+          return runV1(handleV1ModelExport, {
             method: "POST",
-            path: "/v1/schemes/model/e-file",
-            query,
+            path: "/v1/schemes/model/export",
+            query: { ...query, format: "e-file" },
             body: { templateText: args.templateText, templateName: args.templateName },
             paths,
             spaceId
           });
         }
         if (args.templateName) query.template = args.templateName;
-        return runV1(handleV1ModelEFile, {
+        return runV1(handleV1ModelExport, {
           method: "GET",
-          path: "/v1/schemes/model/e-file",
-          query,
+          path: "/v1/schemes/model/export",
+          query: { ...query, format: "e-file" },
           paths,
           spaceId
         });
       }
       if (args.modelId) query.modelId = args.modelId;
       if (args.strict) query.strict = "1";
-      return runV1(handleV1ModelCimXml, {
+      return runV1(handleV1ModelExport, {
         method: "GET",
-        path: "/v1/schemes/model/cim-xml",
-        query,
+        path: "/v1/schemes/model/export",
+        query: { ...query, format: "cim-xml" },
         paths,
         spaceId
       });
@@ -519,20 +524,22 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
     name: "gmp_export_scheme_archive",
     title: "导出方案归档",
     description:
-      "把整个方案（含其下所有模型）打包成一个 ZIP 并返回（二进制）。用于备份或把方案整体取走。",
+      "把整个方案（含其下所有模型）打包成一个 ZIP 并返回（二进制）。可用 schemeId 或 schemePath 定位。",
     inputSchema: {
-      schemePath: SCHEME_PATH
+      schemePath: SCHEME_PATH.optional(),
+      schemeId: SCHEME_ID.optional()
     },
     annotations: READ_ONLY,
     handler: async (args) => {
       const spaceError = requireSpace();
       if (spaceError) return spaceError;
+      if (!hasSchemeSelector(args)) return badRequest("请提供 schemeId 或 schemePath 指定方案。");
       return runV1(
         handleV1SchemeExport,
         {
           method: "GET",
           path: "/v1/schemes/export",
-          query: { schemePath: schemePathQuery(args.schemePath) },
+          query: schemeSelectorQuery(args),
           paths,
           spaceId
         },
@@ -567,8 +574,9 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
         .regex(/^\d+$/)
         .optional()
         .describe("模型 ID（模型稳定序号）。推荐用它指定模型。"),
-      schemePath: z.array(z.string().min(1)).optional().describe("方案路径（与 modelId 二选一）。"),
-      name: z.string().min(1).optional().describe("模型名（与 modelId 二选一）。"),
+      schemePath: SCHEME_PATH.optional().describe("方案路径（与 schemeId 一起作为方案选择器；也可改用 modelId）。"),
+      schemeId: SCHEME_ID.optional().describe("方案 ID（配合 name 定位模型）。"),
+      name: z.string().min(1).optional().describe("模型名（与 modelId 或方案选择器配合使用）。"),
       templateName: z
         .string()
         .min(1)
@@ -580,12 +588,12 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
     handler: async (args) => {
       const spaceError = requireSpace();
       if (spaceError) return spaceError;
-      if (!args.modelId && !(args.schemePath && args.name)) {
-        return badRequest("请用 modelId，或用 schemePath + name 指定要发送的模型。");
+      if (!args.modelId && !(hasSchemeSelector(args) && args.name)) {
+        return badRequest("请用 modelId，或用 schemeId/schemePath + name 指定要发送的模型。");
       }
       const query = {};
       if (args.modelId) query.modelId = args.modelId;
-      if (args.schemePath) query.schemePath = schemePathQuery(args.schemePath);
+      Object.assign(query, schemeSelectorQuery(args));
       if (args.name) query.name = args.name;
       const body = {
         url: args.url,
@@ -605,14 +613,7 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
 
   // ───────────────── 图元库域 ─────────────────
 
-  const LIBRARY_PARTS = {
-    all: { path: "/v1/library", handler: handleV1Library },
-    categories: { path: "/v1/library/categories", handler: handleV1LibraryCategories },
-    devices: { path: "/v1/library/devices", handler: handleV1LibraryDevices },
-    measurements: { path: "/v1/library/measurements", handler: handleV1LibraryMeasurements },
-    "device-definitions": { path: "/v1/library/device-definitions", handler: handleV1LibraryDeviceDefinitions },
-    templates: { path: "/v1/library/templates", handler: handleV1LibraryTemplates }
-  };
+  const LIBRARY_PARTS = ["all", "categories", "devices", "measurements", "device-definitions", "templates"];
 
   tools.push({
     name: "gmp_get_library",
@@ -631,13 +632,13 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
       const spaceError = requireSpace();
       if (spaceError) return spaceError;
       const part = args.part ?? "all";
-      const target = LIBRARY_PARTS[part];
-      if (!target) {
-        return badRequest(`part 仅支持 ${Object.keys(LIBRARY_PARTS).join("、")}。`);
+      if (!LIBRARY_PARTS.includes(part)) {
+        return badRequest(`part 仅支持 ${LIBRARY_PARTS.join("、")}。`);
       }
-      return runV1(target.handler, {
+      return runV1(handleV1LibraryUnified, {
         method: "GET",
-        path: target.path,
+        path: "/v1/library",
+        query: { part },
         paths,
         spaceId
       });
@@ -695,7 +696,7 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
     runtimeTool(
       "gmp_get_runtime_model",
       "读取当前打开的模型",
-      "读取前端当前打开的模型信息（模型名、类型、图元数量等）。需要前端页面在线且已打开模型。",
+      "读取前端当前打开的模型信息（模型名、模型 ID、统一数字方案 ID、方案路径、更新时间等）。需要前端页面在线且已打开模型。",
       "/v1/runtime/model",
       handleV1RuntimeModel
     ),
@@ -807,11 +808,11 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
       const spaceError = requireSpace();
       if (spaceError) return spaceError;
       return runV1(
-        handleV1RuntimeSvg,
+        handleV1RuntimeExport,
         {
           method: "GET",
-          path: "/v1/runtime/svg",
-          query: { clientId: args.clientId },
+          path: "/v1/runtime/export",
+          query: { clientId: args.clientId, format: "svg" },
           paths,
           spaceId
         },
@@ -841,11 +842,11 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
       if (spaceError) return spaceError;
       if (args.templateText) {
         return runV1(
-          handleV1RuntimeEFilePost,
+          handleV1RuntimeExport,
           {
             method: "POST",
-            path: "/v1/runtime/e-file",
-            query: { clientId: args.clientId },
+            path: "/v1/runtime/export",
+            query: { clientId: args.clientId, format: "e-file" },
             body: { templateText: args.templateText, templateName: args.templateName },
             paths,
             spaceId
@@ -854,11 +855,11 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
         );
       }
       return runV1(
-        handleV1RuntimeEFile,
+        handleV1RuntimeExport,
         {
           method: "GET",
-          path: "/v1/runtime/e-file",
-          query: { clientId: args.clientId, template: args.templateName },
+          path: "/v1/runtime/export",
+          query: { clientId: args.clientId, template: args.templateName, format: "e-file" },
           paths,
           spaceId
         },
@@ -877,11 +878,11 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
     handler: async (args) => {
       const spaceError = requireSpace();
       if (spaceError) return spaceError;
-      if (args.target === "current" && (args.schemePath !== undefined || args.name !== undefined)) {
+      if (args.target === "current" && (args.schemePath !== undefined || args.schemeId !== undefined || args.name !== undefined)) {
         return badRequest("target=current 不可同时指定已保存模型。");
       }
-      if (args.target === "saved" && (!args.schemePath || !args.name || args.token)) {
-        return badRequest("target=saved 须提供 schemePath 与 name，且不可指定页面 token。");
+      if (args.target === "saved" && (!hasSchemeSelector(args) || !args.name || args.token)) {
+        return badRequest("target=saved 须提供 schemeId 或 schemePath、name，且不可指定页面 token。");
       }
       let clientId;
       if (args.target === "current") {
@@ -889,13 +890,14 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
         if (resolved.error) return errorResult(resolved.error.code, resolved.error.message);
         clientId = resolved.clientId;
       }
-      return runV1(handleTopologyCheck, {
+      return runV1(handleV1Topology, {
         method: "POST",
-        path: "/v1/topology/check",
+        path: "/v1/topology",
         query: { clientId },
         body: {
+          action: "check",
           target: args.target,
-          ...(args.target === "saved" ? { schemePath: args.schemePath, name: args.name } : {})
+          ...(args.target === "saved" ? { schemePath: args.schemePath, schemeId: args.schemeId, name: args.name } : {})
         },
         paths,
         spaceId
@@ -913,11 +915,11 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
     handler: async (args) => {
       const spaceError = requireSpace();
       if (spaceError) return spaceError;
-      if (args.target === "current" && (args.schemePath !== undefined || args.name !== undefined)) {
+      if (args.target === "current" && (args.schemePath !== undefined || args.schemeId !== undefined || args.name !== undefined)) {
         return badRequest("target=current 不可同时指定已保存模型。");
       }
-      if (args.target === "saved" && (!args.schemePath || !args.name || args.token)) {
-        return badRequest("target=saved 须提供 schemePath 与 name，且不可指定页面 token。");
+      if (args.target === "saved" && (!hasSchemeSelector(args) || !args.name || args.token)) {
+        return badRequest("target=saved 须提供 schemeId 或 schemePath、name，且不可指定页面 token。");
       }
       let clientId;
       if (args.target === "current") {
@@ -925,13 +927,14 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
         if (resolved.error) return errorResult(resolved.error.code, resolved.error.message);
         clientId = resolved.clientId;
       }
-      return runV1(handleTopologyRepair, {
+      return runV1(handleV1Topology, {
         method: "POST",
-        path: "/v1/topology/repair",
+        path: "/v1/topology",
         query: { clientId },
         body: {
+          action: "repair",
           target: args.target,
-          ...(args.target === "saved" ? { schemePath: args.schemePath, name: args.name } : {})
+          ...(args.target === "saved" ? { schemePath: args.schemePath, schemeId: args.schemeId, name: args.name } : {})
         },
         paths,
         spaceId
@@ -989,7 +992,7 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
       handleControlSchemeCreate,
       {
         name: z.string().min(1).describe("方案名。"),
-        parentSchemeId: z.string().min(1).optional().describe("父方案 ID；不填则建在根下。")
+        parentSchemeId: SCHEME_ID.optional().describe("父方案 ID；不填则建在根下。")
       }
     ),
     controlTool(
@@ -1001,7 +1004,7 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
       {
         name: z.string().min(1).describe("模型名。"),
         modelType: MODEL_TYPE,
-        schemeId: z.string().min(1).optional().describe("所属方案 ID。")
+        schemeId: SCHEME_ID.optional().describe("所属方案 ID。")
       }
     ),
     controlTool(
@@ -1154,7 +1157,7 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
     controlTool(
       "gmp_switch_model",
       "切换当前打开的模型",
-      "让前端打开另一个已保存模型（等同方案树点击）。三种定位方式任选：modelId（后端分配的稳定序号 idx）、modelKey（运行期 key）、schemePath + name（方案名数组 + 模型名）。要求当前无未保存修改（否则回 bad-request，提示先调用 gmp_save_model）。已经是当前模型时回 alreadyOpen=true 且不重复加载。",
+      "让前端打开另一个已保存模型（等同方案树点击）。定位方式任选：modelId、modelKey、schemePath + name，或 schemeId + name。schemePath 与 schemeId 可同时提供，但必须指向同一方案。要求当前无未保存修改（否则回 bad-request，提示先调用 gmp_save_model）。已经是当前模型时回 alreadyOpen=true 且不重复加载。",
       "/v1/control/model/switch",
       handleControlModelSwitch,
       {
@@ -1166,7 +1169,8 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
           .describe("模型稳定序号 idx（跨方案唯一，改名/移动后不变）。首选。"),
         modelKey: z.string().min(1).optional().describe("运行期模型 key（project:…）。"),
         schemePath: SCHEME_PATH.optional().describe("方案路径数组，配合 name 使用。"),
-        name: z.string().min(1).optional().describe("模型名，配合 schemePath 使用。")
+        schemeId: SCHEME_ID.optional().describe("方案 ID，配合 name 使用。"),
+        name: z.string().min(1).optional().describe("模型名，配合 schemePath 或 schemeId 使用。")
       }
     )
   );

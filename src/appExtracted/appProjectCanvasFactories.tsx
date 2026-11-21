@@ -23,6 +23,7 @@ import { arrangeContainerInteriors, autoAlignEdgeWithoutStoredRoute, autoAlignSt
 import { runAutoAlignPlanInWorker } from "../autoAlign/autoAlignClient";
 import { modelTrace } from "../modelTrace";
 import { runTopologyOperation } from "../topology-operation";
+import { fetchBackendProjectRecord as fetchBackendProjectRecordDirect, savedProjectRecordIsSummary as savedProjectRecordIsSummaryDirect } from "./appPersistenceLibraryExport";
 
 // 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 遮住）：按真实出处补齐，均为 type-only import。
 import type { AlignMode, CanvasBounds, DeviceKind, DeviceTemplate, Edge, ElementTreeItem, ModelLayer, ModelNode, Point, SavedProjectRecord, SavedSchemeRecord, TopologyValidationError } from "../model";
@@ -34,6 +35,18 @@ import type { CanvasLayoutUnit, SelectionRect } from "../selectionActions";
 import type { GeometryBounds } from "../model-canvas-ops";
 import type { GlobalLineChoice, GlobalLineRecord } from "../global-lines";
 import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from "react";
+
+function projectMoveDebug(label: string, payload: Record<string, unknown> = {}) {
+  if (import.meta.env.DEV && typeof window !== "undefined") {
+    const diagnosticWindow = window as typeof window & {
+      __projectTreeDragLogs?: Array<{ at: number; label: string; payload: Record<string, unknown> }>;
+    };
+    const logs = diagnosticWindow.__projectTreeDragLogs ?? [];
+    logs.push({ at: Date.now(), label: `move:${label}`, payload });
+    diagnosticWindow.__projectTreeDragLogs = logs.slice(-100);
+    console.info(`[project-tree-drag] move:${label}`, payload);
+  }
+}
 
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
@@ -261,10 +274,10 @@ export function createStartRoutableLineEndpointDrag(__appScope: Record<string, a
     node: ModelNode,
     endpoint: EdgeEndpoint
   ) => {
-  const { activeLayerNodeIdSet, isBrowseMode, routableLineDeviceCanvasPoints, setCanvasSelectionScope, setContextMenu, setRoutableLineEndpointDrag, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
+  const { activeLayerNodeIdSet, routableLineDeviceCanvasPoints, setCanvasSelectionScope, setContextMenu, setRoutableLineEndpointDrag, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
     event.preventDefault();
     event.stopPropagation();
-    if (event.button !== 0 || isBrowseMode || !activeLayerNodeIdSet.has(node.id)) {
+    if (event.button !== 0 || !activeLayerNodeIdSet.has(node.id)) {
       return;
     }
     const points = routableLineDeviceCanvasPoints(node);
@@ -632,11 +645,8 @@ export function createFinishRewiring(__appScope: Record<string, any>) {
 
 export function createHandleDrop(__appScope: Record<string, any>) {
   return (event: ReactDragEvent<SVGSVGElement>) => {
-  const { customGraphTemplates, dropGraphTemplate, libraryTemplates, placeLibraryDeviceAtPoint, requireEditMode, screenToSvgPoint, svgRef } = __appScope;
+  const { customGraphTemplates, dropGraphTemplate, libraryTemplates, placeLibraryDeviceAtPoint, screenToSvgPoint, svgRef } = __appScope;
     event.preventDefault();
-    if (!requireEditMode("拖入图元")) {
-      return;
-    }
     const graphTemplateId = event.dataTransfer.getData("application/graph-template-id");
     if (graphTemplateId && svgRef.current) {
       const template = customGraphTemplates.find((item: any) => item.id === graphTemplateId);
@@ -692,7 +702,7 @@ export function createHandleRoutableLineNodePointerDown(__appScope: Record<strin
 
 export function createHandleNodePointerDown(__appScope: Record<string, any>) {
   return (event: ReactPointerEvent<SVGGElement>, node: ModelNode) => {
-  const { activateInspectorFromCanvas, activeLayerNodeIdSet, activeSelectedEdgeIds, activeSelectedNodeIds, appendStaticDrawingPoint, applyConnectPreviewState, beginStaticButtonPointerFeedback, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clampPointToCanvas, clearNodeDragMoveSchedule, connectSource, connectTargetSnapPoint, createCanvasSelectionSnapshot, dragUndoCapturedRef, edgeListForNodeIds, expandActiveGroupSelection, findConnectTargetAtPoint, finishConnectToTarget, groupExpandedCanvasSelection, handleRoutableLineNodePointerDown, handleTerminalPointerDown, hasCanvasSelectionModifier, isBrowseMode, isBusNode, isMultiNodeMoveState, isRoutableLineDeviceKind, isStaticButtonEnabledForNode, isWholeActiveLayerMove, lastCanvasPointerRef, mode, movableCanvasNodeIds, nodeById, nodes, resetConnectPreviewState, resolveConnectPreviewPoint, restoreCanvasSelectionSnapshotWithInspector, routableLinePlacement, routePointsSnapshotForMove, screenToSvgPoint, selectCanvasGraphics, selectedEdgeId, selectedEdgeIds, selectedGroupMemberNodeIdSet, selectedNodeIdSet, selectedNodeIds, setConnectSource, setContextMenu, setLastCanvasClickTarget, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, snapshotRouteBounds, startDraggingState, startModifierSelectionPress, staticDrawing, svgRef, switchInspectorTabForCanvasSelection, updateMouseStatus } = __appScope;
+  const { activateInspectorFromCanvas, activeLayerNodeIdSet, activeSelectedEdgeIds, activeSelectedNodeIds, appendStaticDrawingPoint, applyConnectPreviewState, beginStaticButtonPointerFeedback, buildMultiNodeDragOverlayPreview, buildSingleNodeDragCache, canvasSelectionScope, clampPointToCanvas, clearNodeDragMoveSchedule, connectSource, connectTargetSnapPoint, createCanvasSelectionSnapshot, dragUndoCapturedRef, edgeListForNodeIds, expandActiveGroupSelection, findConnectTargetAtPoint, finishConnectToTarget, groupExpandedCanvasSelection, handleRoutableLineNodePointerDown, handleTerminalPointerDown, hasCanvasSelectionModifier, isBusNode, isMultiNodeMoveState, isRoutableLineDeviceKind, isStaticButtonEnabledForNode, isWholeActiveLayerMove, lastCanvasPointerRef, mode, movableCanvasNodeIds, nodeById, nodes, resetConnectPreviewState, resolveConnectPreviewPoint, restoreCanvasSelectionSnapshotWithInspector, routableLinePlacement, routePointsSnapshotForMove, screenToSvgPoint, selectCanvasGraphics, selectedEdgeId, selectedEdgeIds, selectedGroupMemberNodeIdSet, selectedNodeIdSet, selectedNodeIds, setConnectSource, setContextMenu, setLastCanvasClickTarget, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, snapshotRouteBounds, startDraggingState, startModifierSelectionPress, staticDrawing, svgRef, switchInspectorTabForCanvasSelection, updateMouseStatus } = __appScope;
     event.stopPropagation();
     if (event.button !== 0) {
       return;
@@ -707,19 +717,6 @@ export function createHandleNodePointerDown(__appScope: Record<string, any>) {
       return;
     }
     activateInspectorFromCanvas();
-    if (isBrowseMode) {
-      if (isStaticButtonEnabledForNode(node)) {
-        beginStaticButtonPointerFeedback(event, node);
-        return;
-      }
-      selectCanvasGraphics([node.id], [], { scope: "direct" });
-      switchInspectorTabForCanvasSelection([node.id], [], "single");
-      setConnectSource(null);
-      resetConnectPreviewState();
-      setRewiring(null);
-      setContextMenu(null);
-      return;
-    }
     if (routableLinePlacement && isBusNode(node)) {
       event.preventDefault();
       event.stopPropagation();
@@ -1591,14 +1588,15 @@ export function createReadjustMovedBusConnectionRoutes(__appScope: Record<string
 
 export function createReadjustActiveLayerBusEndpointRoutes(__appScope: Record<string, any>) {
   return () => {
-  const { activeLayerEdges, activeLayerNodes, canvasBounds, edges, isBusNode, isRoutableLineDeviceKind, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodeById, nodes, patchGraphEdges, patchGraphNodes, pushUndoSnapshot, redrawConnectionRoutesForEdges, redrawRoutableLineDeviceRoutes, routableLineDeviceEndpointRefs, undoScopeForGraphPatch } = __appScope;
+  const { activeLayerEdges, activeLayerNodes, canvasBounds, edges, equalizeBusConnectionEdgeEndpointPoints, isBusNode, isRoutableLineDeviceKind, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodeById, nodes, patchGraphEdges, patchGraphNodes, pushUndoSnapshot, redrawConnectionRoutesForEdges, redrawRoutableLineDeviceRoutes, routableLineDeviceEndpointRefs, undoScopeForGraphPatch } = __appScope;
     const edgeIds = activeLayerEdges
       .filter((edge: Edge) => {
         const source = nodeById.get(edge.sourceId);
         const target = nodeById.get(edge.targetId);
         return source && target && (isBusNode(source) || isBusNode(target));
       })
-      .map((edge: Edge) => edge.id);
+      .map((edge: Edge) => edge.id)
+      .sort();
     const lineNodeIds = activeLayerNodes
       .filter((node: ModelNode) => {
         if (!isRoutableLineDeviceKind(node.kind)) {
@@ -1609,15 +1607,19 @@ export function createReadjustActiveLayerBusEndpointRoutes(__appScope: Record<st
         const targetNode = refs.target ? nodeById.get(refs.target.nodeId) : undefined;
         return Boolean((sourceNode && isBusNode(sourceNode)) || (targetNode && isBusNode(targetNode)));
       })
-      .map((node: ModelNode) => node.id);
+      .map((node: ModelNode) => node.id)
+      .sort();
 
     if (edgeIds.length === 0 && lineNodeIds.length === 0) {
       return 0;
     }
 
-    const nextEdges = edgeIds.length > 0
-      ? redrawConnectionRoutesForEdges(nodes, edges, edgeIds, canvasBounds)
+    const equalizedEdges = equalizeBusConnectionEdgeEndpointPoints
+      ? equalizeBusConnectionEdgeEndpointPoints(nodes, edges)
       : edges;
+    const nextEdges = edgeIds.length > 0
+      ? redrawConnectionRoutesForEdges(nodes, equalizedEdges, edgeIds, canvasBounds)
+      : equalizedEdges;
     const changedEdges: Edge[] = [];
     for (let index = 0; index < nextEdges.length; index += 1) {
       if (nextEdges[index] !== edges[index]) {
@@ -2016,10 +2018,7 @@ export function buildAutoSpreadMeasurementReflow(options: {
 
 export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) {
   return () => {
-  const { activeLayerEdges, activeLayerGroups, activeLayerNodes, autoSpreadMovableRects, autoSpreadNodeLayoutUnits, buildCanvasLayoutUnits, cachedRoutedEdgesRef, calculateNodeVisualBounds, canvasBounds, commitLayoutNodePositions, deferredRoutableLineRouteRepairCancelRef, includeMeasurementGroupBounds, isCanvasNodeMovable, latestGraphStoreRef, measurementGroupCanvasPosition, measurementGroupRenderMetrics, measurementGroupsForNode, measurementOffsetScaleForNode, nodes, projectMeasurements, pushUndoSnapshot, requireEditMode, routedEdges, scheduleIdleWork, setProjectMeasurements, writeOperationLog } = __appScope;
-    if (!requireEditMode("自动散开")) {
-      return;
-    }
+  const { activeLayerEdges, activeLayerGroups, activeLayerNodes, autoSpreadMovableRects, autoSpreadNodeLayoutUnits, buildCanvasLayoutUnits, cachedRoutedEdgesRef, calculateNodeVisualBounds, canvasBounds, commitLayoutNodePositions, deferredRoutableLineRouteRepairCancelRef, includeMeasurementGroupBounds, isCanvasNodeMovable, latestGraphStoreRef, measurementGroupCanvasPosition, measurementGroupRenderMetrics, measurementGroupsForNode, measurementOffsetScaleForNode, nodes, projectMeasurements, pushUndoSnapshot, routedEdges, scheduleIdleWork, setProjectMeasurements, writeOperationLog } = __appScope;
     const activeNodeIds = activeLayerNodes.map((node: ModelNode) => node.id);
     if (activeNodeIds.length < 2) {
       emitLayoutOperationFeedback(__appScope, "自动散开需要至少 2 个可操作图元", "error");
@@ -2241,15 +2240,15 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
 }
 
 /**
- * 自动对齐质量报告的日志后缀(拐点/交叉约束的三种结局 + 无异常)。
+ * 自动对齐质量报告的日志后缀(线路质量约束的三种结局 + 无异常)。
  * 抽出来是为了避免在调用处堆四层嵌套三元。
  */
 function autoAlignQualitySuffix(report: AutoAlignQualityReport): string {
   if (report.revertedByVerification) {
-    return "（对齐会使线路拐点/交叉增加，已放弃本次对齐）";
+    return "（未找到线路评分不变差的更规整布局，已保留原图）";
   }
   if (report.frozenUnitCount > 0) {
-    return `（为避免线路拐点/交叉增加，${report.frozenUnitCount} 个图元保持原位）`;
+    return `（为避免线路质量变差，${report.frozenUnitCount} 个图元保持原位）`;
   }
   if (report.degraded) {
     return "（线路校验超出耗时预算，剩余图元保持原位）";
@@ -2287,22 +2286,21 @@ function autoAlignOperationLog(options: {
   cleanedRouteCount: number;
   cleanedSegment: string;
   qualitySuffix: string;
-  gridSpacing: number;
 }): string {
-  const { movedCount, readjustedRouteCount, cleanedRouteCount, cleanedSegment, qualitySuffix, gridSpacing } = options;
+  const { movedCount, readjustedRouteCount, cleanedRouteCount, cleanedSegment, qualitySuffix } = options;
   if (movedCount > 0) {
-    return `自动对齐 ${movedCount} 个图元${cleanedSegment}，网格间距 ${gridSpacing}px${qualitySuffix}`;
+    return `自动对齐 ${movedCount} 个图元${cleanedSegment}${qualitySuffix}`;
   }
   if (readjustedRouteCount > 0) {
-    return `自动对齐未移动图元，已整理 ${readjustedRouteCount} 条母线连接落点${cleanedSegment}，网格间距 ${gridSpacing}px${qualitySuffix}`;
+    return `自动对齐未移动图元，已整理 ${readjustedRouteCount} 条母线连接落点${cleanedSegment}${qualitySuffix}`;
   }
   if (cleanedRouteCount > 0) {
-    return `自动对齐未移动图元${cleanedSegment}，网格间距 ${gridSpacing}px${qualitySuffix}`;
+    return `自动对齐未移动图元${cleanedSegment}${qualitySuffix}`;
   }
   if (qualitySuffix) {
-    return `自动对齐未移动图元，网格间距 ${gridSpacing}px${qualitySuffix}`;
+    return `自动对齐未移动图元${qualitySuffix}`;
   }
-  return `图元中心已位于 ${gridSpacing}px 网格交叉点`;
+  return "图元已处于拓扑稳定布局";
 }
 
 /**
@@ -2334,28 +2332,20 @@ function emitLayoutOperationFeedback(
 
 export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
   return async () => {
-    const { AUTO_ALIGN_DEFAULT_THRESHOLD_PX, AUTO_ALIGN_MAX_THRESHOLD_PX, AUTO_ALIGN_MIN_THRESHOLD_PX, activeLayerEdges, activeLayerGroups, activeLayerNodes, canvasBounds, cleanupStaleConnectionRoutes, commitLayoutNodePositions, editModeRouteRenderOptions, edges, nodes, readjustActiveLayerBusEndpointRoutes, requireEditMode, routedEdges, writeOperationLog } = __appScope;
-    if (!requireEditMode("自动对齐")) {
-      return;
-    }
+    const { activeLayerEdges, activeLayerGroups, activeLayerNodes, autoAlignAbortControllerRef, canvasBounds, cleanupStaleConnectionRoutes, commitLayoutNodePositions, editModeRouteRenderOptions, edges, nodes, readjustActiveLayerBusEndpointRoutes, routedEdges, setAutoAlignProgress } = __appScope;
     const activeNodeIds = activeLayerNodes.map((node: ModelNode) => node.id);
     if (activeNodeIds.length < 2) {
       emitLayoutOperationFeedback(__appScope, "自动对齐需要至少 2 个可操作图元", "error");
       return;
     }
-    const rawGridSpacing = window.prompt(
-      `请输入自动对齐网格间距（${AUTO_ALIGN_MIN_THRESHOLD_PX}-${AUTO_ALIGN_MAX_THRESHOLD_PX}px）`,
-      String(AUTO_ALIGN_DEFAULT_THRESHOLD_PX)
-    );
-    if (rawGridSpacing === null) {
+    if (autoAlignAbortControllerRef?.current) {
       return;
     }
-    const parsedGridSpacing = Number.parseFloat(rawGridSpacing.trim());
-    if (!Number.isFinite(parsedGridSpacing)) {
-      emitLayoutOperationFeedback(__appScope, "自动对齐网格间距无效", "error");
-      return;
+    const controller = new AbortController();
+    if (autoAlignAbortControllerRef) {
+      autoAlignAbortControllerRef.current = controller;
     }
-    const gridSpacing = clampNumber(Math.round(parsedGridSpacing), AUTO_ALIGN_MIN_THRESHOLD_PX, AUTO_ALIGN_MAX_THRESHOLD_PX);
+    setAutoAlignProgress?.({ percent: 0, stage: "正在准备自动对齐" });
     try {
       const plan = await runAutoAlignPlanInWorker({
         nodes,
@@ -2365,11 +2355,25 @@ export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
         edges: edges ?? [],
         routedEdges: routedEdges ?? [],
         canvasBounds,
-        gridSpacing,
         editModeRouteRenderOptions: editModeRouteRenderOptions ?? {}
+      }, undefined, undefined, {
+        signal: controller.signal,
+        onProgress: (progress) => setAutoAlignProgress?.(progress)
       });
       if (plan.layoutUnitCount < 2) {
         emitLayoutOperationFeedback(__appScope, "自动对齐没有发现可调整的图元", "error");
+        return;
+      }
+      if (plan.qualityReport.revertedByVerification) {
+        const cleanedRouteCount = plan.storedRouteDrops.length > 0
+          ? cleanupStaleConnectionRoutes?.(plan.storedRouteDrops) ?? 0
+          : 0;
+        const cleanedSegment = cleanedRouteCount > 0 ? `，已整理 ${cleanedRouteCount} 条线路折线` : "";
+        emitLayoutOperationFeedback(
+          __appScope,
+          autoAlignOperationLog({ movedCount: 0, readjustedRouteCount: 0, cleanedRouteCount, cleanedSegment, qualitySuffix: autoAlignQualitySuffix(plan.qualityReport) }),
+          autoAlignFeedbackType(plan.qualityReport)
+        );
         return;
       }
       const movedCount = commitLayoutNodePositions(
@@ -2390,8 +2394,7 @@ export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
           readjustedRouteCount,
           cleanedRouteCount,
           cleanedSegment,
-          qualitySuffix,
-          gridSpacing
+          qualitySuffix
         }),
         // 严重程度取自**结构化**质量报告,而非在渲染文案里做子串匹配 ——
         // 「已放弃本次对齐」「X 个图元保持原位」「超出耗时预算」都是没达到预期的结局,
@@ -2399,11 +2402,20 @@ export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
         autoAlignFeedbackType(plan.qualityReport)
       );
     } catch (error) {
-      emitLayoutOperationFeedback(
-        __appScope,
-        `自动对齐失败：${error instanceof Error ? error.message : String(error)}`,
-        "error"
-      );
+      if (error instanceof Error && error.name === "AbortError") {
+        emitLayoutOperationFeedback(__appScope, "自动对齐已终止，图形保持执行前状态", "info");
+      } else {
+        emitLayoutOperationFeedback(
+          __appScope,
+          `自动对齐失败：${error instanceof Error ? error.message : String(error)}`,
+          "error"
+        );
+      }
+    } finally {
+      if (autoAlignAbortControllerRef?.current === controller) {
+        autoAlignAbortControllerRef.current = null;
+      }
+      setAutoAlignProgress?.(null);
     }
   };
 }
@@ -2602,10 +2614,7 @@ export function createVoltageBaseSetResultForScope(__appScope: Record<string, an
 
 export function createOpenVoltageBaseSetDialog(__appScope: Record<string, any>) {
   return () => {
-  const { defaultVoltageBaseSetValue, defaultVoltageBaseTerminalKey, defaultVoltageBaseTerminalValues, recommendedVoltageBaseSetMode, requireEditMode, setActiveVoltageBaseTerminalKey, setVoltageBaseSetDialogOpen, setVoltageBaseSetMode, setVoltageBaseSetScope, setVoltageBaseSetValue, setVoltageBaseTerminalValues } = __appScope;
-    if (!requireEditMode("设置电压基值")) {
-      return;
-    }
+  const { defaultVoltageBaseSetValue, defaultVoltageBaseTerminalKey, defaultVoltageBaseTerminalValues, recommendedVoltageBaseSetMode, setActiveVoltageBaseTerminalKey, setVoltageBaseSetDialogOpen, setVoltageBaseSetMode, setVoltageBaseSetScope, setVoltageBaseSetValue, setVoltageBaseTerminalValues } = __appScope;
     const terminalValues = defaultVoltageBaseTerminalValues();
     setVoltageBaseSetScope("island");
     setVoltageBaseSetValue(defaultVoltageBaseSetValue());
@@ -2618,10 +2627,7 @@ export function createOpenVoltageBaseSetDialog(__appScope: Record<string, any>) 
 
 export function createConfirmVoltageBaseSetDialog(__appScope: Record<string, any>) {
   return () => {
-  const { VOLTAGE_BASE_SET_SCOPE_LABELS, activeVoltageBaseTerminalValues, hasVoltageBaseTerminalValues, patchGraphNodes, pushUndoSnapshot, requireEditMode, undoScopeForGraphPatch, validateTwoTerminalVoltageBaseConsistency, voltageBaseSetHasTerminalTargets, voltageBaseSetHasUniformTargets, voltageBaseSetMode, voltageBaseSetModeLabel, voltageBaseSetResultForScope, voltageBaseSetScope, voltageBaseSetValue, writeOperationLog } = __appScope;
-    if (!requireEditMode("设置电压基值")) {
-      return;
-    }
+  const { VOLTAGE_BASE_SET_SCOPE_LABELS, activeVoltageBaseTerminalValues, hasVoltageBaseTerminalValues, patchGraphNodes, pushUndoSnapshot, undoScopeForGraphPatch, validateTwoTerminalVoltageBaseConsistency, voltageBaseSetHasTerminalTargets, voltageBaseSetHasUniformTargets, voltageBaseSetMode, voltageBaseSetModeLabel, voltageBaseSetResultForScope, voltageBaseSetScope, voltageBaseSetValue, writeOperationLog } = __appScope;
     const value = voltageBaseSetValue.trim();
     const terminalMode = voltageBaseSetMode === "terminal";
     if ((voltageBaseSetMode === "terminal" || (voltageBaseSetMode === "byDevice" && voltageBaseSetHasTerminalTargets)) && !hasVoltageBaseTerminalValues(activeVoltageBaseTerminalValues())) {
@@ -2656,10 +2662,7 @@ export function createConfirmVoltageBaseSetDialog(__appScope: Record<string, any
 
 export function createOpenVoltageBaseClearDialog(__appScope: Record<string, any>) {
   return () => {
-  const { activeSelectedNodeIds, requireEditMode, setVoltageBaseClearDialogOpen, setVoltageBaseClearScope } = __appScope;
-    if (!requireEditMode("清空电压基值")) {
-      return;
-    }
+  const { activeSelectedNodeIds, setVoltageBaseClearDialogOpen, setVoltageBaseClearScope } = __appScope;
     setVoltageBaseClearScope(activeSelectedNodeIds.length > 0 ? "selected" : "all");
     setVoltageBaseClearDialogOpen(true);
   };
@@ -2667,11 +2670,7 @@ export function createOpenVoltageBaseClearDialog(__appScope: Record<string, any>
 
 export function createConfirmVoltageBaseClearDialog(__appScope: Record<string, any>) {
   return () => {
-  const { VOLTAGE_BASE_CLEAR_SCOPE_LABELS, patchGraphNodes, pushUndoSnapshot, requireEditMode, setVoltageBaseClearDialogOpen, undoScopeForGraphPatch, voltageBaseClearResultForScope, voltageBaseClearScope, writeOperationLog } = __appScope;
-    if (!requireEditMode("清空电压基值")) {
-      setVoltageBaseClearDialogOpen(false);
-      return;
-    }
+  const { VOLTAGE_BASE_CLEAR_SCOPE_LABELS, patchGraphNodes, pushUndoSnapshot, setVoltageBaseClearDialogOpen, undoScopeForGraphPatch, voltageBaseClearResultForScope, voltageBaseClearScope, writeOperationLog } = __appScope;
     const result = voltageBaseClearResultForScope(voltageBaseClearScope);
     const scopeLabel = VOLTAGE_BASE_CLEAR_SCOPE_LABELS[voltageBaseClearScope];
     if (result.changedNodeIds.length === 0) {
@@ -2775,10 +2774,7 @@ export function createConnectionRedrawTargetsForScope(__appScope: Record<string,
 
 export function createRedrawConnectionRoutes(__appScope: Record<string, any>) {
   return (scope: ConnectionRedrawScope) => {
-  const { CONNECTION_REDRAW_SCOPE_LABELS, canvasBounds, connectionRedrawTargetsForScope, edgeIds, edges, lineNodeIds, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, patchGraphEdges, patchGraphNodes, pushUndoSnapshot, redrawConnectionRoutesForEdges, redrawRoutableLineDeviceRoutes, requireEditMode, total, undoScopeForGraphPatch, writeOperationLog } = __appScope;
-    if (!requireEditMode("重绘连接线")) {
-      return;
-    }
+  const { CONNECTION_REDRAW_SCOPE_LABELS, canvasBounds, connectionRedrawTargetsForScope, edgeIds, edges, lineNodeIds, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, patchGraphEdges, patchGraphNodes, pushUndoSnapshot, redrawConnectionRoutesForEdges, redrawRoutableLineDeviceRoutes, total, undoScopeForGraphPatch, writeOperationLog } = __appScope;
     const { edgeIds: targetEdgeIds, lineNodeIds: targetLineNodeIds, total: targetCount } = connectionRedrawTargetsForScope(scope);
     const scopeLabel = CONNECTION_REDRAW_SCOPE_LABELS[scope];
     if (targetCount === 0) {
@@ -2820,10 +2816,7 @@ export function createRedrawConnectionRoutes(__appScope: Record<string, any>) {
 
 export function createOpenConnectionRedrawDialog(__appScope: Record<string, any>) {
   return () => {
-  const { connectionRedrawTargetsForScope, requireEditMode, setConnectionRedrawDialogOpen, setConnectionRedrawScope } = __appScope;
-    if (!requireEditMode("重绘连接线")) {
-      return;
-    }
+  const { connectionRedrawTargetsForScope, setConnectionRedrawDialogOpen, setConnectionRedrawScope } = __appScope;
     setConnectionRedrawScope(connectionRedrawTargetsForScope("selected").total > 0 ? "selected" : "viewport");
     setConnectionRedrawDialogOpen(true);
   };
@@ -2831,11 +2824,7 @@ export function createOpenConnectionRedrawDialog(__appScope: Record<string, any>
 
 export function createConfirmConnectionRedrawDialog(__appScope: Record<string, any>) {
   return () => {
-  const { connectionRedrawScope, redrawConnectionRoutes, requireEditMode, setConnectionRedrawDialogOpen } = __appScope;
-    if (!requireEditMode("重绘连接线")) {
-      setConnectionRedrawDialogOpen(false);
-      return;
-    }
+  const { connectionRedrawScope, redrawConnectionRoutes, setConnectionRedrawDialogOpen } = __appScope;
     redrawConnectionRoutes(connectionRedrawScope);
     setConnectionRedrawDialogOpen(false);
   };
@@ -2843,10 +2832,7 @@ export function createConfirmConnectionRedrawDialog(__appScope: Record<string, a
 
 export function createAlignSelected(__appScope: Record<string, any>) {
   return (direction: AlignMode) => {
-  const { alignNodeLayoutUnits, applySelectedNodeLayout, requireEditMode, selectedLayoutUnitCount, writeOperationLog } = __appScope;
-    if (!requireEditMode("对齐图元")) {
-      return;
-    }
+  const { alignNodeLayoutUnits, applySelectedNodeLayout, selectedLayoutUnitCount, writeOperationLog } = __appScope;
     applySelectedNodeLayout(2, (currentNodes: ModelNode[], currentLayoutUnits: CanvasLayoutUnit[]) => alignNodeLayoutUnits(currentNodes, currentLayoutUnits, direction));
     if (selectedLayoutUnitCount >= 2) {
       const labelByDirection: Record<AlignMode, string> = {
@@ -2864,10 +2850,7 @@ export function createAlignSelected(__appScope: Record<string, any>) {
 
 export function createDistributeSelected(__appScope: Record<string, any>) {
   return (direction: "horizontal" | "vertical") => {
-  const { applySelectedNodeLayout, distributeNodeLayoutUnits, requireEditMode, selectedLayoutUnitCount, writeOperationLog } = __appScope;
-    if (!requireEditMode("分布图元")) {
-      return;
-    }
+  const { applySelectedNodeLayout, distributeNodeLayoutUnits, selectedLayoutUnitCount, writeOperationLog } = __appScope;
     applySelectedNodeLayout(3, (currentNodes: ModelNode[], currentLayoutUnits: CanvasLayoutUnit[]) => distributeNodeLayoutUnits(currentNodes, currentLayoutUnits, direction));
     if (selectedLayoutUnitCount >= 3) {
       writeOperationLog(`${direction === "horizontal" ? "横向" : "纵向"}平均 ${selectedLayoutUnitCount} 个单元`);
@@ -3238,6 +3221,26 @@ export function createLoadSavedProjectRecord(__appScope: Record<string, any>) {
       | undefined;
     const loadToken = projectLoadTokenRef ? ++projectLoadTokenRef.current : 0;
     const isCurrentLoad = () => !projectLoadTokenRef || projectLoadTokenRef.current === loadToken;
+    const setLoadingModel = __appScope.setLoadingModel as
+      ((value: { projectId: string; progress: number } | null) => void)
+      | undefined;
+    let lastProgress: number | null = null;
+    const reportProgress = (progress: number) => {
+      if (!isCurrentLoad() || progress === lastProgress) {
+        return;
+      }
+      lastProgress = progress;
+      setLoadingModel?.({ projectId: project.id, progress });
+    };
+    const yieldAtProgress = async (progress: number) => {
+      reportProgress(progress);
+      if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+        await new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+        });
+      }
+      return isCurrentLoad();
+    };
     modelTrace("load-record-start", {
       projectId: project.id,
       projectName: project.name,
@@ -3268,56 +3271,94 @@ export function createLoadSavedProjectRecord(__appScope: Record<string, any>) {
     if (activeProjectPointerPayload && latestActiveProjectPointerRef) {
       latestActiveProjectPointerRef.current = activeProjectPointerPayload(sourceRecords, project.id, resolvedSchemeId);
     }
-    let projectToLoad = project;
-    if (savedProjectRecordIsSummary(project)) {
-      const ownerSchemePath = resolvedSchemeId ? schemePathForScheme(resolvedSchemeId, sourceRecords) : [];
-      const schemePath = ownerSchemePath.length > 0 ? ownerSchemePath : schemePathForProject(project.id, sourceRecords);
-      if (schemePath.length === 0) {
-        if (isCurrentLoad() && currentModelSelectionRef) {
-          currentModelSelectionRef.current.loading = false;
-        }
-        showGlobalMessage(`无法读取模型“${project.name}”：未找到所属方案路径。`);
-        writeOperationLog(`读取模型失败：${project.name}`);
+    const isSummaryRecord = savedProjectRecordIsSummary(project);
+    reportProgress(0);
+    let loadCompleted = false;
+    try {
+      if (!await yieldAtProgress(0)) {
         return false;
       }
-      try {
-        const loadedProject = await fetchBackendProjectRecord(schemePath, project.name);
-        if (!isCurrentLoad()) {
+      let projectToLoad = project;
+      if (isSummaryRecord) {
+        const ownerSchemePath = resolvedSchemeId ? schemePathForScheme(resolvedSchemeId, sourceRecords) : [];
+        const schemePath = ownerSchemePath.length > 0 ? ownerSchemePath : schemePathForProject(project.id, sourceRecords);
+        if (schemePath.length === 0) {
+          if (isCurrentLoad() && currentModelSelectionRef) {
+            currentModelSelectionRef.current.loading = false;
+          }
+          showGlobalMessage(`无法读取模型“${project.name}”：未找到所属方案路径。`);
+          writeOperationLog(`读取模型失败：${project.name}`);
           return false;
         }
-        projectToLoad = {
-          ...loadedProject,
-          id: project.id || loadedProject.id,
-          name: loadedProject.name || project.name
-        };
-        if (resolvedSchemeId) {
-          suppressNextBackendSchemeSyncRef.current = true;
-          setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, resolvedSchemeId, projectToLoad));
-        }
-      } catch (error) {
-        if (!isCurrentLoad()) {
+        reportProgress(15);
+        try {
+          const loadedProject = await fetchBackendProjectRecord(schemePath, project.name);
+          if (!isCurrentLoad()) {
+            return false;
+          }
+          if (!await yieldAtProgress(65)) {
+            return false;
+          }
+          projectToLoad = {
+            ...loadedProject,
+            id: project.id || loadedProject.id,
+            name: loadedProject.name || project.name
+          };
+          if (resolvedSchemeId) {
+            suppressNextBackendSchemeSyncRef.current = true;
+            setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, resolvedSchemeId, projectToLoad));
+          }
+          if (!await yieldAtProgress(85)) {
+            return false;
+          }
+        } catch (error) {
+          if (!isCurrentLoad()) {
+            return false;
+          }
+          if (currentModelSelectionRef) {
+            currentModelSelectionRef.current.loading = false;
+          }
+          const message = error instanceof Error ? error.message : `读取模型失败：${project.name}`;
+          showGlobalMessage(message);
+          writeOperationLog(`读取模型失败：${project.name}`);
           return false;
         }
-        if (currentModelSelectionRef) {
-          currentModelSelectionRef.current.loading = false;
+      } else {
+        if (!await yieldAtProgress(35) || !await yieldAtProgress(70)) {
+          return false;
         }
-        const message = error instanceof Error ? error.message : `读取模型失败：${project.name}`;
-        showGlobalMessage(message);
-        writeOperationLog(`读取模型失败：${project.name}`);
+      }
+      if (!isCurrentLoad()) {
+        modelTrace("load-record-stale-before-apply", { projectId: project.id, projectName: project.name, loadToken, currentToken: projectLoadTokenRef?.current });
         return false;
       }
+      modelTrace("load-record-apply", { projectId: projectToLoad.id, projectName: projectToLoad.name, schemeId: resolvedSchemeId, loadToken, nodeCount: projectToLoad.project?.nodes?.length ?? 0 });
+      loadSavedProject(projectToLoad, resolvedSchemeId);
+      loadCompleted = true;
+      return true;
+    } finally {
+      if (isCurrentLoad()) {
+        if (loadCompleted) {
+          reportProgress(100);
+          const clearCompletedProgress = () => {
+            if (isCurrentLoad()) {
+              setLoadingModel?.(null);
+            }
+          };
+          if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
+            window.setTimeout(clearCompletedProgress, 180);
+          } else {
+            clearCompletedProgress();
+          }
+        } else {
+          setLoadingModel?.(null);
+        }
+      }
     }
-    if (!isCurrentLoad()) {
-      modelTrace("load-record-stale-before-apply", { projectId: project.id, projectName: project.name, loadToken, currentToken: projectLoadTokenRef?.current });
-      return false;
-    }
-    modelTrace("load-record-apply", { projectId: projectToLoad.id, projectName: projectToLoad.name, schemeId: resolvedSchemeId, loadToken, nodeCount: projectToLoad.project?.nodes?.length ?? 0 });
-    loadSavedProject(projectToLoad, resolvedSchemeId);
-    return true;
   };
 }
 
-// 地址栏指定了模型（`#space=…&model=<idx>&scheme=<slug>`）时按它打开。
+// 地址栏指定了模型（`#space=…&model=<idx>&scheme=<schemeId>`）时按它打开。
 //
 // 与顶栏/方案树点击走**同一条** `requestLoadSavedProject`：有未保存修改会弹确认框，
 // 而不是绕过它把用户的草稿直接冲掉。找不到记录时返回 false 且不打扰用户 ——
@@ -3330,13 +3371,11 @@ export function createLoadSavedProjectRecord(__appScope: Record<string, any>) {
 // 两者都定位不到才返回 false —— 不要一失败就回退成「打开第一个模型」，那会静默打开错的东西。
 export function createOpenProjectFromUrl(__appScope: Record<string, any>) {
   return async (target: string, schemeHint?: string, legacyModelKey?: string): Promise<boolean> => {
-    const { enterBrowseMode, findSavedProjectRecordInSchemes, requestLoadSavedProject, schemes, setExpandedSchemeIds } = __appScope;
+    const { findSavedProjectRecordInSchemes, requestLoadSavedProject, schemes, setExpandedSchemeIds } = __appScope;
     const raw = String(target ?? "");
     const keyHint = String(legacyModelKey ?? "");
     if (!raw && !keyHint) {
-      // 地址栏显式要求"没有任何模型打开"
-      enterBrowseMode?.();
-      return true;
+      return false;
     }
     let found: { record: any; scheme: any } | null = null;
     if (Number.isSafeInteger(Number(raw)) && Number(raw) > 0) {
@@ -3356,12 +3395,8 @@ export function createOpenProjectFromUrl(__appScope: Record<string, any>) {
     if (found.record.id === __appScope.activeProjectKey) {
       return true;
     }
-    // 必须传方案**运行期 id**（`scheme:<编码路径>`），不是地址栏里那个 `scheme=<slug>`。
-    //
-    // `loadSavedProjectRecord` 拿它去 `schemePathForScheme` 解析出磁盘路径，传 slug 解析不出来
-    // 就退化成 `schemePathForProject(project.id)`；一旦那个函数按 id 找不到对应方案，就会
-    // 报「未找到所属方案路径」或干脆加载到错的位置。slug 只用于让地址栏可读，
-    // 定位始终以 `findSavedProjectByIndex` 返回的 `scheme` 对象为准。
+    // 地址栏只携带数字 schemeId；加载时仍使用已解析方案记录的内部树键，
+    // 这样方案路径计算继续从当前树单源派生，不把 URL 字符串当作路径。
     const targetSchemeId = String(found.scheme?.id ?? "");
     modelTrace("url-model-resolved", {
       target,
@@ -3398,7 +3433,7 @@ export function createOpenProjectFromUrl(__appScope: Record<string, any>) {
 
 export function createRequestUnsavedChangeAction(__appScope: Record<string, any>) {
   return (action: UnsavedChangeAction) => {
-  const { enterBrowseMode, loadSavedProjectRecord, saveRequired, setPendingUnsavedAction } = __appScope;
+    const { loadSavedProjectRecord, saveRequired, setPendingUnsavedAction } = __appScope;
     if (!saveRequired) {
       if (action.kind === "load-project") {
         void (async () => {
@@ -3407,8 +3442,6 @@ export function createRequestUnsavedChangeAction(__appScope: Record<string, any>
             action.onLoaded?.();
           }
         })();
-      } else if (action.kind === "enter-browse") {
-        enterBrowseMode();
       } else if (action.kind === "export") {
         action.onResolved();
       } else if (action.kind === "switch-space") {
@@ -3453,7 +3486,7 @@ export function createRequestLoadSavedProject(__appScope: Record<string, any>) {
 
 export function createResolveUnsavedChangeAction(__appScope: Record<string, any>) {
   return async (resolution: "discard" | "save" | "cancel") => {
-  const { enterBrowseMode, loadSavedProjectRecord, pendingUnsavedAction, saveCurrentProject, savedUndoStackLengthRef, setHasUnsavedChanges, setPendingUnsavedAction, showGlobalMessage: showScopedGlobalMessage, undoLastOperation, undoStack, writeOperationLog } = __appScope;
+  const { loadSavedProjectRecord, pendingUnsavedAction, saveCurrentProject, setPendingUnsavedAction, showGlobalMessage: showScopedGlobalMessage, writeOperationLog } = __appScope;
     const action = pendingUnsavedAction;
     if (action?.resolving) {
       return;
@@ -3493,16 +3526,6 @@ export function createResolveUnsavedChangeAction(__appScope: Record<string, any>
       if (loaded) {
         action.onLoaded?.();
       }
-    } else if (action.kind === "enter-browse") {
-      if (resolution === "discard") {
-        const baseline = savedUndoStackLengthRef?.current ?? 0;
-        const count = Math.max(0, undoStack.length - baseline);
-        for (let index = 0; index < count; index += 1) {
-          undoLastOperation();
-        }
-        setHasUnsavedChanges(false);
-      }
-      enterBrowseMode();
     } else if (action.kind === "switch-space") {
       // 走到这里说明保存（若选了保存）已成功；放弃则直接切
       void switchToSpace(action.spaceId);
@@ -3520,11 +3543,8 @@ export function createResolveUnsavedChangeAction(__appScope: Record<string, any>
 }
 
 export function createCreateSchemeRecord(__appScope: Record<string, any>) {
-  return (parentSchemeId = "") => {
-  const { createSavedScheme, handleBackendSchemeMutationFailure, hasSameName, insertChildSavedScheme, requireEditMode, saveBackendSchemeRecord, savedChildSchemeNames, schemePathForScheme, schemes, selectSingleScheme, setExpandedSchemeIds, setSchemes, writeOperationLog } = __appScope;
-    if (!requireEditMode("新建方案")) {
-      return;
-    }
+  return async (parentSchemeId = "") => {
+  const { createSavedScheme, findSavedSchemeById, handleBackendSchemeMutationFailure, hasSameName, insertChildSavedScheme, replaceSavedSchemeById, saveBackendSchemeRecord, savedChildSchemeNames, schemePathForScheme, schemes, selectSingleScheme, setExpandedSchemeIds, setSchemes, writeOperationLog } = __appScope;
     const inputName = window.prompt("请输入方案名称", "新建方案");
     if (inputName === null) {
       return;
@@ -3538,12 +3558,22 @@ export function createCreateSchemeRecord(__appScope: Record<string, any>) {
       showGlobalMessage("方案名称重复，无法新建方案。");
       return;
     }
-    const record = createSavedScheme(name);
     const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
-    const recordPath = [...parentPath, record.name];
+    const recordPath = [...parentPath, name];
+    let receipt: { schemeId?: number };
+    try {
+      receipt = await saveBackendSchemeRecord(recordPath);
+    } catch (error) {
+      handleBackendSchemeMutationFailure(`新建方案同步后台：${name}`, error);
+      return;
+    }
+    const schemeId = receipt?.schemeId;
+    if (typeof schemeId !== "number" || !Number.isSafeInteger(schemeId) || schemeId <= 0) {
+      handleBackendSchemeMutationFailure(`新建方案同步后台：${name}`, new Error("后台未返回有效的 schemeId。"));
+      return;
+    }
+    const record = { ...createSavedScheme(name), id: String(schemeId), schemeId };
     setSchemes((current: SavedSchemeRecord[]) => insertChildSavedScheme(current, parentSchemeId, record));
-    void saveBackendSchemeRecord(recordPath)
-      .catch((error: unknown) => handleBackendSchemeMutationFailure(`新建方案同步后台：${record.name}`, error));
     if (parentSchemeId) {
       setExpandedSchemeIds((current: string[]) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
     }
@@ -3554,10 +3584,7 @@ export function createCreateSchemeRecord(__appScope: Record<string, any>) {
 
 export function createRenameSchemeRecord(__appScope: Record<string, any>) {
   return (scheme: SavedSchemeRecord) => {
-  const { handleBackendSchemeMutationFailure, hasSameName, renameSavedScheme, requireEditMode, saveBackendSchemeRecord, savedSchemeSiblingNames, schemePathForScheme, schemes, setSchemes } = __appScope;
-    if (!requireEditMode("重命名方案")) {
-      return;
-    }
+  const { handleBackendSchemeMutationFailure, hasSameName, renameSavedScheme, saveBackendSchemeRecord, savedSchemeSiblingNames, schemePathForScheme, schemes, setSchemes } = __appScope;
     const nextName = window.prompt("请输入新的方案名称", scheme.name);
     if (!nextName) {
       return;
@@ -3581,10 +3608,7 @@ export function createRenameSchemeRecord(__appScope: Record<string, any>) {
 
 export function createDuplicateSchemeRecord(__appScope: Record<string, any>) {
   return (scheme: SavedSchemeRecord) => {
-  const { cloneSchemeRecordWithName, findSavedSchemeParentById, insertChildSavedScheme, persistSchemeTreeToBackend, promptUniqueRecordName, requireEditMode, savedSchemeSiblingNames, schemePathForScheme, schemes, setExpandedSchemeIds, setSchemes, uniqueRecordName } = __appScope;
-    if (!requireEditMode("复制方案")) {
-      return;
-    }
+  const { cloneSchemeRecordWithName, findSavedSchemeParentById, insertChildSavedScheme, persistSchemeTreeToBackend, promptUniqueRecordName, savedSchemeSiblingNames, schemePathForScheme, schemes, setExpandedSchemeIds, setSchemes, uniqueRecordName } = __appScope;
     const defaultName = uniqueRecordName(
       `${scheme.name} 副本`,
       savedSchemeSiblingNames(schemes, scheme.id),
@@ -3613,10 +3637,7 @@ export function createDuplicateSchemeRecord(__appScope: Record<string, any>) {
 
 export function createDeleteSchemeRecord(__appScope: Record<string, any>) {
   return async (scheme: SavedSchemeRecord) => {
-  const { activeSchemeKey, clearActiveProjectDisplay, clearRecordSelection, deleteBackendSchemeRecord, deleteSavedScheme, flattenSavedSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterSchemeDeletion, requireEditMode, schemePathForScheme, schemes, selectedSchemeId, setSchemes } = __appScope;
-    if (!requireEditMode("删除方案")) {
-      return;
-    }
+  const { activeSchemeKey, clearActiveProjectDisplay, clearRecordSelection, deleteBackendSchemeRecord, deleteSavedScheme, flattenSavedSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterSchemeDeletion, schemePathForScheme, schemes, selectedSchemeId, setSchemes } = __appScope;
     const deletingSchemeIds = new Set(flattenSavedSchemes([scheme]).map((item: SavedSchemeRecord) => item.id));
     const emptyDisplayMessage = flattenSavedSchemes(schemes).some((item: SavedSchemeRecord) => !deletingSchemeIds.has(item.id))
       ? "剩余方案没有可显示模型，画布已清空。"
@@ -3682,10 +3703,7 @@ export function createCopySelectedRecord(__appScope: Record<string, any>) {
 
 export function createDeleteSelectedRecords(__appScope: Record<string, any>) {
   return async () => {
-  const { activeProjectKey, activeSchemeKey, clearActiveProjectDisplay, clearRecordSelection, deleteBackendProjectRecord, deleteBackendSchemeRecord, deleteSavedProjectsFromSchemes, deleteSavedScheme, findSavedSchemeById, flattenSavedSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterProjectBatchDeletion, nextSavedProjectAfterSchemeDeletion, projects, requireEditMode, schemePathForProject, schemePathForScheme, schemes, selectedProjectIds, selectedSchemeIds, setSchemes } = __appScope;
-    if (!requireEditMode("删除记录")) {
-      return;
-    }
+  const { activeProjectKey, activeSchemeKey, clearActiveProjectDisplay, clearRecordSelection, deleteBackendProjectRecord, deleteBackendSchemeRecord, deleteSavedProjectsFromSchemes, deleteSavedScheme, findSavedSchemeById, flattenSavedSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterProjectBatchDeletion, nextSavedProjectAfterSchemeDeletion, projects, schemePathForProject, schemePathForScheme, schemes, selectedProjectIds, selectedSchemeIds, setSchemes } = __appScope;
     if (selectedProjectIds.length > 0) {
       const names = projects.filter((project: SavedProjectRecord) => selectedProjectIds.includes(project.id)).map((project: SavedProjectRecord) => project.name);
       const selected = new Set(selectedProjectIds);
@@ -3787,10 +3805,7 @@ export function createCopySchemeRecord(__appScope: Record<string, any>) {
 
 export function createPasteSchemeClipboardRecord(__appScope: Record<string, any>) {
   return (parentSchemeId = "") => {
-  const { cloneSchemeRecordForPaste, findSavedSchemeById, hasSameName, insertChildSavedScheme, persistSchemeTreeToBackend, recordClipboard, requireEditMode, schemePathForScheme, schemes, setExpandedSchemeIds, setPendingRecordPasteConflict, setSchemes, writeOperationLog } = __appScope;
-    if (!requireEditMode("粘贴方案")) {
-      return;
-    }
+  const { cloneSchemeRecordForPaste, findSavedSchemeById, hasSameName, insertChildSavedScheme, persistSchemeTreeToBackend, recordClipboard, schemePathForScheme, schemes, setExpandedSchemeIds, setPendingRecordPasteConflict, setSchemes, writeOperationLog } = __appScope;
     if (recordClipboard?.kind !== "scheme") {
       return;
     }
@@ -3820,12 +3835,9 @@ export function createPasteSchemeClipboardRecord(__appScope: Record<string, any>
 
 export function createPasteProjectClipboardRecord(__appScope: Record<string, any>) {
   return (targetSchemeId?: string) => {
-  const { activeSchemeKey, cloneProjectRecordForPaste, findSavedSchemeById, handleBackendSchemeMutationFailure, hasSameName, recordClipboard, requireEditMode, saveBackendProjectRecord, schemePathForRecord, schemes, selectedSchemeId, setPendingRecordPasteConflict, setSchemes, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+  const { activeSchemeKey, cloneProjectRecordForPaste, findSavedSchemeById, handleBackendSchemeMutationFailure, hasSameName, recordClipboard, saveBackendProjectRecord, schemePathForRecord, schemes, selectedSchemeId, setPendingRecordPasteConflict, setSchemes, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
     if (targetSchemeId === undefined) {
       targetSchemeId = selectedSchemeId || activeSchemeKey || schemes[0]?.id;
-    }
-    if (!requireEditMode("粘贴模型")) {
-      return;
     }
     if (recordClipboard?.kind !== "project") {
       return;
@@ -3858,10 +3870,7 @@ export function createPasteProjectClipboardRecord(__appScope: Record<string, any
 
 export function createPasteSelectedRecord(__appScope: Record<string, any>) {
   return () => {
-  const { pasteProjectClipboardRecord, pasteSchemeClipboardRecord, recordClipboard, requireEditMode } = __appScope;
-    if (!requireEditMode("粘贴记录")) {
-      return;
-    }
+  const { pasteProjectClipboardRecord, pasteSchemeClipboardRecord, recordClipboard } = __appScope;
     if (!recordClipboard) {
       return;
     }
@@ -3877,17 +3886,15 @@ export function createCommitProjectRecordMove(__appScope: Record<string, any>) {
   return (
     projectId: string,
     targetSchemeId: string,
-    options: { targetName?: string; overwriteProjectId?: string } = {}
+    options: { targetName?: string; overwriteProjectId?: string } = {},
+    sourceProjectOverride?: SavedProjectRecord
   ) => {
-  const { activeProjectKey, deleteBackendProjectRecord, deleteSavedProjectsFromSchemes, findSavedProjectRecordInSchemes, findSavedSchemeById, handleBackendSchemeMutationFailure, requireEditMode, saveBackendProjectRecord, schemePathForRecord, schemes, selectedProjectId, selectedProjectIds, setActiveProjectKey, setActiveSchemeKey, setExpandedSchemeIds, setProjectName, setSchemes, setSelectedProjectId, setSelectedProjectIds, setSelectedSchemeId, setSelectedSchemeIds, upsertSavedProjectInScheme } = __appScope;
-    if (!requireEditMode("移动模型")) {
-      return;
-    }
+  const { activeProjectKey, deleteBackendProjectRecord, deleteSavedProjectsFromSchemes, findSavedProjectRecordInSchemes, findSavedSchemeById, handleBackendSchemeMutationFailure, saveBackendProjectRecord, schemePathForRecord, schemes, selectedProjectId, selectedProjectIds, setActiveProjectKey, setActiveSchemeKey, setExpandedSchemeIds, setProjectName, setSchemes, setSelectedProjectId, setSelectedProjectIds, setSelectedSchemeId, setSelectedSchemeIds, upsertSavedProjectInScheme } = __appScope;
     const targetName = options.targetName?.trim();
     const nextProjectId = options.overwriteProjectId ?? projectId;
     const sourceRecord = findSavedProjectRecordInSchemes(schemes, projectId);
     const targetScheme = findSavedSchemeById(schemes, targetSchemeId);
-    const project = sourceRecord?.project;
+    const project = sourceProjectOverride ?? sourceRecord?.project;
     const sourceScheme = sourceRecord?.scheme;
     if (!sourceScheme || !targetScheme || !project || sourceScheme.id === targetSchemeId) {
       return;
@@ -3936,10 +3943,7 @@ export function createCommitProjectRecordMove(__appScope: Record<string, any>) {
 
 export function createResolveRecordPasteConflict(__appScope: Record<string, any>) {
   return (action: "overwrite" | "rename" | "cancel") => {
-  const { activeSchemeRecord, cloneProjectRecordForPaste, cloneSchemeRecordForPaste, commitProjectRecordMove, deleteBackendSchemeRecord, findSavedSchemeById, handleBackendSchemeMutationFailure, insertChildSavedScheme, moveSavedSchemeToParent, pendingRecordPasteConflict, persistSchemeTreeToBackend, promptUniqueRecordName, replaceSavedSchemeById, replaceSchemeTreeInBackend, requireEditMode, saveBackendProjectRecord, saveBackendSchemeRecord, savedChildSchemeNames, schemePathForRecord, schemePathForScheme, schemes, selectedSchemeRecord, setExpandedSchemeIds, setPendingRecordPasteConflict, setSchemes, uniqueRecordName, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
-    if (action !== "cancel" && !requireEditMode("处理粘贴冲突")) {
-      return;
-    }
+  const { activeSchemeRecord, cloneProjectRecordForPaste, cloneSchemeRecordForPaste, commitProjectRecordMove, deleteBackendSchemeRecord, findSavedSchemeById, handleBackendSchemeMutationFailure, insertChildSavedScheme, moveSavedSchemeToParent, pendingRecordPasteConflict, persistSchemeTreeToBackend, promptUniqueRecordName, replaceSavedSchemeById, replaceSchemeTreeInBackend, saveBackendProjectRecord, saveBackendSchemeRecord, savedChildSchemeNames, schemePathForRecord, schemePathForScheme, schemes, selectedSchemeRecord, setExpandedSchemeIds, setPendingRecordPasteConflict, setSchemes, uniqueRecordName, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
     const conflict = pendingRecordPasteConflict;
     if (!conflict || action === "cancel") {
       setPendingRecordPasteConflict(null);
@@ -4120,21 +4124,70 @@ export function createResolveRecordPasteConflict(__appScope: Record<string, any>
 }
 
 export function createMoveProjectRecordToScheme(__appScope: Record<string, any>) {
-  return (projectId: string, schemeId: string) => {
-  const { commitProjectRecordMove, findSavedSchemeById, findSchemeForProject, hasSameName, requireEditMode, schemes, setPendingRecordPasteConflict } = __appScope;
-    if (!requireEditMode("移动模型")) {
-      return;
-    }
+  return async (projectId: string, schemeId: string) => {
+  const {
+    commitProjectRecordMove, fetchBackendProjectRecord, findSavedSchemeById, findSchemeForProject,
+    handleBackendSchemeMutationFailure, hasSameName,
+    schemePathForRecord, schemes, setPendingRecordPasteConflict
+  } = __appScope;
     const sourceScheme = findSchemeForProject(projectId);
     const sourceProject = sourceScheme?.projects.find((project: SavedProjectRecord) => project.id === projectId);
     const targetScheme = findSavedSchemeById(schemes, schemeId);
+    const sourceIsSummary = savedProjectRecordIsSummaryDirect(sourceProject);
+    projectMoveDebug("start", {
+      projectId,
+      targetSchemeId: schemeId,
+      sourceSchemeId: sourceScheme?.id ?? "",
+      sourceIsSummary,
+      hasFetchOverride: typeof fetchBackendProjectRecord === "function"
+    });
     if (!sourceScheme || !sourceProject || !targetScheme || sourceScheme.id === targetScheme.id) {
+      projectMoveDebug("early-return:lookup", {
+        sourceFound: Boolean(sourceScheme),
+        projectFound: Boolean(sourceProject),
+        targetFound: Boolean(targetScheme),
+        sameScheme: sourceScheme?.id === targetScheme?.id,
+        projectId,
+        targetSchemeId: schemeId
+      });
       return;
+    }
+    let completeProject = sourceProject;
+    if (sourceIsSummary) {
+      try {
+        const fetchFullProject = typeof fetchBackendProjectRecord === "function"
+          ? fetchBackendProjectRecord
+          : fetchBackendProjectRecordDirect;
+        projectMoveDebug("fetch-full:start", { schemePath: schemePathForRecord(sourceScheme), name: sourceProject.name });
+        completeProject = await fetchFullProject(schemePathForRecord(sourceScheme), sourceProject.name);
+        projectMoveDebug("fetch-full:done", {
+          name: completeProject.name,
+          stillSummary: savedProjectRecordIsSummaryDirect(completeProject),
+          hasProjectPayload: Boolean(completeProject.project)
+        });
+      } catch (error) {
+        projectMoveDebug("fetch-full:error", { name: sourceProject.name, message: error instanceof Error ? error.message : String(error) });
+        handleBackendSchemeMutationFailure(`移动模型读取完整内容：${sourceProject.name}`, error);
+        return;
+      }
     }
     const duplicateProject = targetScheme.projects.find(
       (project: SavedProjectRecord) => project.id !== sourceProject.id && hasSameName(project.name, [sourceProject.name])
     );
+    projectMoveDebug("duplicate-check", {
+      projectId,
+      targetSchemeId: schemeId,
+      projectName: sourceProject.name,
+      targetProjectNames: targetScheme.projects.map((project: SavedProjectRecord) => project.name),
+      duplicateName: duplicateProject?.name ?? ""
+    });
     if (duplicateProject) {
+      projectMoveDebug("early-return:duplicate", {
+        projectId,
+        targetSchemeId: schemeId,
+        duplicateProjectId: duplicateProject.id,
+        duplicateName: duplicateProject.name
+      });
       setPendingRecordPasteConflict({
         kind: "project-drag",
         projectId,
@@ -4145,16 +4198,19 @@ export function createMoveProjectRecordToScheme(__appScope: Record<string, any>)
       });
       return;
     }
-    commitProjectRecordMove(projectId, schemeId);
+    projectMoveDebug("commit", {
+      projectId,
+      targetSchemeId: schemeId,
+      stillSummary: savedProjectRecordIsSummaryDirect(completeProject),
+      hasProjectPayload: Boolean(completeProject.project)
+    });
+    commitProjectRecordMove(projectId, schemeId, {}, completeProject);
   };
 }
 
 export function createMoveSchemeRecordToScheme(__appScope: Record<string, any>) {
   return (schemeId: string, targetSchemeId: string) => {
-  const { findSavedSchemeById, flattenSavedSchemes, handleBackendSchemeMutationFailure, hasSameName, moveSavedSchemeToParent, requireEditMode, saveBackendSchemeRecord, schemePathForRecord, schemes, selectedSchemeId, selectedSchemeIds, setExpandedSchemeIds, setPendingRecordPasteConflict, setSchemes, setSelectedProjectId, setSelectedProjectIds, setSelectedSchemeId, setSelectedSchemeIds, writeOperationLog } = __appScope;
-    if (!requireEditMode("移动方案")) {
-      return;
-    }
+  const { findSavedSchemeById, flattenSavedSchemes, handleBackendSchemeMutationFailure, hasSameName, moveSavedSchemeToParent, saveBackendSchemeRecord, schemePathForRecord, schemes, selectedSchemeId, selectedSchemeIds, setExpandedSchemeIds, setPendingRecordPasteConflict, setSchemes, setSelectedProjectId, setSelectedProjectIds, setSelectedSchemeId, setSelectedSchemeIds, writeOperationLog } = __appScope;
     const sourceScheme = findSavedSchemeById(schemes, schemeId);
     const targetScheme = findSavedSchemeById(schemes, targetSchemeId);
     if (!sourceScheme || !targetScheme || sourceScheme.id === targetScheme.id) {
@@ -4204,14 +4260,11 @@ export function createMoveSchemeRecordToPosition(__appScope: Record<string, any>
   return (schemeId: string, targetParentSchemeId: string, insertBeforeId?: string) => {
   const {
     findSavedSchemeById, flattenSavedSchemes, handleBackendSchemeMutationFailure, hasSameName,
-    moveSavedSchemeToPosition, requireEditMode, saveBackendSchemeRecord, schemePathForRecord,
+    moveSavedSchemeToPosition, saveBackendSchemeRecord, schemePathForRecord,
     schemePathForScheme, schemes, selectedSchemeId, selectedSchemeIds, setExpandedSchemeIds,
     setPendingRecordPasteConflict, setSchemes, setSelectedProjectId, setSelectedProjectIds,
     setSelectedSchemeId, setSelectedSchemeIds, writeOperationLog
   } = __appScope;
-    if (!requireEditMode("移动方案")) {
-      return;
-    }
     const sourceScheme = findSavedSchemeById(schemes, schemeId);
     if (!sourceScheme) {
       return;
@@ -4277,10 +4330,7 @@ export function createSaveActiveProjectPointer(__appScope: Record<string, any>) 
 
 export function createSetActiveLayer(__appScope: Record<string, any>) {
   return (layerId: string) => {
-  const { layers, pushUndoSnapshot, requireEditMode, setActiveLayerId, setLayers, writeOperationLog } = __appScope;
-    if (!requireEditMode("激活图层")) {
-      return;
-    }
+  const { layers, pushUndoSnapshot, setActiveLayerId, setLayers, writeOperationLog } = __appScope;
     pushUndoSnapshot(true, false, undefined, "切换图层", layers.find((layer: ModelLayer) => layer.id === layerId)?.name ?? layerId);
     setActiveLayerId(layerId);
     setLayers((current: ModelLayer[]) => current.map((layer: ModelLayer) => layer.id === layerId ? { ...layer, visible: true } : layer));
@@ -4302,10 +4352,7 @@ export function createNextDefaultModelLayerName(__appScope: Record<string, any>)
 
 export function createAddModelLayer(__appScope: Record<string, any>) {
   return () => {
-  const { createModelLayer, layers, nextDefaultModelLayerName, pushUndoSnapshot, requireEditMode, setActiveLayerId, setLayers, writeOperationLog } = __appScope;
-    if (!requireEditMode("新增图层")) {
-      return;
-    }
+  const { createModelLayer, layers, nextDefaultModelLayerName, pushUndoSnapshot, setActiveLayerId, setLayers, writeOperationLog } = __appScope;
     pushUndoSnapshot(true, false, undefined, "添加图层");
     const layer = createModelLayer(nextDefaultModelLayerName(), layers);
     setLayers((current: ModelLayer[]) => [...current, layer]);
@@ -4330,7 +4377,7 @@ export function createClearLayerNameDraft(__appScope: Record<string, any>) {
 
 export function createCommitModelLayerName(__appScope: Record<string, any>) {
   return (layerId: string, draftName: string) => {
-  const { clearLayerNameDraft, layers, pushUndoSnapshot, requireEditMode, setLayers, uniqueRecordName, writeOperationLog } = __appScope;
+  const { clearLayerNameDraft, layers, pushUndoSnapshot, setLayers, uniqueRecordName, writeOperationLog } = __appScope;
     const layer = layers.find((item: ModelLayer) => item.id === layerId);
     if (!layer) {
       clearLayerNameDraft(layerId);
@@ -4343,9 +4390,6 @@ export function createCommitModelLayerName(__appScope: Record<string, any>) {
     );
     clearLayerNameDraft(layerId);
     if (nextName === layer.name) {
-      return;
-    }
-    if (!requireEditMode("重命名图层")) {
       return;
     }
     pushUndoSnapshot(true, false, undefined, "重命名图层");
@@ -4374,10 +4418,7 @@ export function createHandleLayerNameInputKeyDown(__appScope: Record<string, any
 
 export function createToggleModelLayerVisibility(__appScope: Record<string, any>) {
   return (layerId: string) => {
-  const { activeLayerId, layers, pushUndoSnapshot, requireEditMode, setLayers } = __appScope;
-    if (!requireEditMode("修改图层显示状态")) {
-      return;
-    }
+  const { activeLayerId, layers, pushUndoSnapshot, setLayers } = __appScope;
     const layer = layers.find((item: ModelLayer) => item.id === layerId);
     if (!layer) {
       return;
@@ -4393,10 +4434,7 @@ export function createToggleModelLayerVisibility(__appScope: Record<string, any>
 
 export function createSetAllModelLayersVisibility(__appScope: Record<string, any>) {
   return (visible: boolean) => {
-  const { activeLayerId, layers, pushUndoSnapshot, requireEditMode, setLayers, writeOperationLog } = __appScope;
-    if (!requireEditMode(visible ? "显示全部图层" : "隐藏全部图层")) {
-      return;
-    }
+  const { activeLayerId, layers, pushUndoSnapshot, setLayers, writeOperationLog } = __appScope;
     const nextLayers = layers.map((item: ModelLayer) => ({
       ...item,
       visible: visible || item.id === activeLayerId
@@ -4412,10 +4450,7 @@ export function createSetAllModelLayersVisibility(__appScope: Record<string, any
 
 export function createMoveModelLayer(__appScope: Record<string, any>) {
   return (layerId: string, direction: -1 | 1) => {
-  const { layers, pushUndoSnapshot, requireEditMode, setLayers } = __appScope;
-    if (!requireEditMode("调整图层顺序")) {
-      return;
-    }
+  const { layers, pushUndoSnapshot, setLayers } = __appScope;
     const index = layers.findIndex((layer: ModelLayer) => layer.id === layerId);
     const targetIndex = index + direction;
     if (index < 0 || targetIndex < 0 || targetIndex >= layers.length) {
@@ -4433,10 +4468,7 @@ export function createMoveModelLayer(__appScope: Record<string, any>) {
 
 export function createDeleteModelLayer(__appScope: Record<string, any>) {
   return async (layerId: string) => {
-  const { DEFAULT_MODEL_LAYER_ID, activeLayerId, deleteNodesWithConnectedEdges, edges, groups, layers, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, requireEditMode, resetConnectPreviewState, setActiveLayerId, setConnectSource, setContextMenu, setGraphArrays, setGroups, setLayers, setProjectMeasurements, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog } = __appScope;
-    if (!requireEditMode("删除图层")) {
-      return;
-    }
+  const { DEFAULT_MODEL_LAYER_ID, activeLayerId, deleteNodesWithConnectedEdges, edges, groups, layers, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, resetConnectPreviewState, setActiveLayerId, setConnectSource, setContextMenu, setGraphArrays, setGroups, setLayers, setProjectMeasurements, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog } = __appScope;
     if (layers.length <= 1) {
       showGlobalMessage("至少需要保留一个图层。");
       return;
@@ -4493,7 +4525,7 @@ const DEVICE_DEFINITION_MEASUREMENT_PROFILE_ALIASES: Record<string, readonly str
 
 export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<string, any>) {
   return (target: DeviceDefinitionMeasurementPanelTarget) => {
-  const { BufferedTextInput, PARAM_LABELS, button, div, editableMeasurementTypeById, footer, isBrowseMode, measurementConfig, measurementConfigDraft, measurementConfigSaveStatus, section, select, span, table, tbody, td, th, thead, tr } = __appScope;
+  const { BufferedTextInput, PARAM_LABELS, button, div, editableMeasurementTypeById, footer, measurementConfig, measurementConfigDraft, measurementConfigSaveStatus, section, select, span, table, tbody, td, th, thead, tr } = __appScope;
     const draftConfig = measurementConfigDraft ?? measurementConfig;
     const selectedKind = target.deviceKind;
     const selectedProfileItems = Array.isArray(target.items) ? [...target.items] : [];
@@ -4604,7 +4636,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
         <div className="measurement-profile-toolbar">
           <Button
             htmlType="button"
-            disabled={isBrowseMode || draftConfig.measurementTypes.length === 0 || !selectedKind}
+            disabled={draftConfig.measurementTypes.length === 0 || !selectedKind}
             onClick={() => {
               const type = draftConfig.measurementTypes[0];
               if (!type) return;
@@ -4624,10 +4656,10 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
           >
             添加量测
           </Button>
-          <Button disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={copySelectedItems}>复制</Button>
-          <Button disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={() => moveSelectedItems(-1)}>上移</Button>
-          <Button disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={() => moveSelectedItems(1)}>下移</Button>
-          <Button disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={deleteSelectedItems}>删除</Button>
+          <Button disabled={selectedRowIndexes.length === 0} onClick={copySelectedItems}>复制</Button>
+          <Button disabled={selectedRowIndexes.length === 0} onClick={() => moveSelectedItems(-1)}>上移</Button>
+          <Button disabled={selectedRowIndexes.length === 0} onClick={() => moveSelectedItems(1)}>下移</Button>
+          <Button disabled={selectedRowIndexes.length === 0} onClick={deleteSelectedItems}>删除</Button>
           <span>{selectedRowIndexes.length > 0 ? `已选 ${selectedRowIndexes.length} 行` : "点击行选择，Ctrl/Shift 可多选"}</span>
           <span>类 {selectedKind || "未设置"} / 参考图元 {target.label}</span>
         </div>
@@ -4661,7 +4693,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                     <td>
                       <BufferedTextInput
                         value={item.name ?? item.labelOverride ?? ""}
-                        disabled={isBrowseMode}
+
                         placeholder={currentType?.name ?? "量测名称"}
                         onCommit={(nextValue: string) => updateItem(itemIndex, {
                           name: nextValue,
@@ -4672,7 +4704,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                     <td>
                       <BufferedTextInput
                         value={item.formatOverride ?? ""}
-                        disabled={isBrowseMode}
+
                         placeholder={defaultMeasurementDisplayFormat(currentType?.valueType, currentType?.defaultDecimals)}
                         onCommit={(nextValue: string) => updateItem(itemIndex, {
                           formatOverride: nextValue.trim() || undefined
@@ -4682,7 +4714,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                     <td>
                       <Select
                         value={item.measurementTypeId}
-                        disabled={isBrowseMode}
+
                         onChange={(nextTypeId) => {
                           const nextType = editableMeasurementTypeById.get(nextTypeId);
                           const previousType = editableMeasurementTypeById.get(item.measurementTypeId);
@@ -4709,7 +4741,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                     <td>
                       <Select
                         value={itemPosition}
-                        disabled={isBrowseMode}
+
                         onChange={(nextPosition) => {
                           const currentAssociatedField = String(item.associatedField ?? "").trim();
                           updateItem(itemIndex, {
@@ -4723,7 +4755,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                     <td>
                       <Select
                         value={item.associatedField ?? ""}
-                        disabled={isBrowseMode}
+
                         title={item.associatedField && !associatedFieldOptions.some((option) => option.value === item.associatedField)
                           ? "当前关联字段不在元件属性名称列表中"
                           : "关联到元件属性名称"}
@@ -4742,7 +4774,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                     <td>
                       <Select
                         value={item.defaultVisible === undefined ? "type" : item.defaultVisible ? "1" : "0"}
-                        disabled={isBrowseMode}
+
                         onChange={(value) => updateItem(itemIndex, {
                           defaultVisible: value === "type" ? undefined : value === "1"
                         })}
@@ -4753,7 +4785,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                       <InputNumber size="small"
                         step={0.01}
                         value={item.defaultValue ?? 0}
-                        disabled={isBrowseMode}
+
                         placeholder="0"
                         onChange={(nextValue) => updateItem(itemIndex, {
                           defaultValue: nextValue === null ? 0 : Number(nextValue)
@@ -4782,7 +4814,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
 
 export function createRenderMeasurementConfigDialog(__appScope: Record<string, any>) {
   return () => {
-  const { BufferedTextInput, DeferredColorInput, Download, FileInput, Save, addMeasurementType, button, closeMeasurementConfigDialog, deleteMeasurementType, deviceLibraryDialogLayouts, deviceLibraryDialogStyle, div, exportLibraryPackage, flushMeasurementConfigDialogDraftInputs, footer, h2, header, input, isBrowseMode, measurementConfig, measurementConfigDialogOpen, measurementConfigDialogRef, measurementConfigDraft, measurementConfigSaveStatus, openLibraryPackageImportFilePicker, option, p, saveMeasurementConfigDialog, section, select, span, startDeviceLibraryDialogDrag, startDeviceLibraryDialogResize, stopDeviceLibraryDialogEvent, table, tbody, td, th, thead, tr, updateMeasurementConfig, updateMeasurementType } = __appScope;
+  const { BufferedTextInput, DeferredColorInput, Download, FileInput, Save, addMeasurementType, button, closeMeasurementConfigDialog, deleteMeasurementType, deviceLibraryDialogLayouts, deviceLibraryDialogStyle, div, exportLibraryPackage, flushMeasurementConfigDialogDraftInputs, footer, h2, header, input, measurementConfig, measurementConfigDialogOpen, measurementConfigDialogRef, measurementConfigDraft, measurementConfigSaveStatus, openLibraryPackageImportFilePicker, option, p, saveMeasurementConfigDialog, section, select, span, startDeviceLibraryDialogDrag, startDeviceLibraryDialogResize, stopDeviceLibraryDialogEvent, table, tbody, td, th, thead, tr, updateMeasurementConfig, updateMeasurementType } = __appScope;
     if (!measurementConfigDialogOpen) {
       return null;
     }
@@ -4942,7 +4974,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
             <Button
               htmlType="button"
               className="primary"
-              disabled={isBrowseMode || measurementConfigSaveStatus === "saving"}
+              disabled={measurementConfigSaveStatus === "saving"}
               onPointerDown={flushMeasurementConfigDialogDraftInputs}
               onClick={() => void saveMeasurementConfigDialog()}
             >
@@ -4966,7 +4998,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
 
 export function createRenderMeasurementEditorDialog(__appScope: Record<string, any>) {
   return () => {
-  const { BufferedTextInput, DeferredColorInput, addMeasurementEditorDraftItem, button, confirmMeasurementEditorDialog, deviceLibraryDialogLayouts, deviceLibraryDialogStyle, div, h2, header, isBrowseMode, label, measurementConfig, measurementEditorColumnWidths, measurementEditorDialog, measurementEditorDialogRef, measurementEditorItemName, measurementGroupBackgroundColor, measurementTypeById, measurementTypeOptionsForMeasurementGroup, moveMeasurementEditorDraftItem, nodeById, option, p, removeMeasurementEditorDraftItem, section, select, setMeasurementEditorDialog, span, startDeviceLibraryDialogDrag, startMeasurementEditorTableColumnResize, stopDeviceLibraryDialogEvent, table, tbody, td, th, thead, tr, updateMeasurementEditorDraftItem, updateMeasurementEditorDraftItemPosition, updateMeasurementEditorGroupSettings } = __appScope;
+  const { BufferedTextInput, DeferredColorInput, addMeasurementEditorDraftItem, button, confirmMeasurementEditorDialog, deviceLibraryDialogLayouts, deviceLibraryDialogStyle, div, h2, header, label, measurementConfig, measurementEditorColumnWidths, measurementEditorDialog, measurementEditorDialogRef, measurementEditorItemName, measurementGroupBackgroundColor, measurementTypeById, measurementTypeOptionsForMeasurementGroup, moveMeasurementEditorDraftItem, nodeById, option, p, removeMeasurementEditorDraftItem, section, select, setMeasurementEditorDialog, span, startDeviceLibraryDialogDrag, startMeasurementEditorTableColumnResize, stopDeviceLibraryDialogEvent, table, tbody, td, th, thead, tr, updateMeasurementEditorDraftItem, updateMeasurementEditorDraftItemPosition, updateMeasurementEditorGroupSettings } = __appScope;
     if (!measurementEditorDialog) {
       return null;
     }
@@ -5036,7 +5068,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
               <span>量测组显示</span>
               <Select
                 value={draft.visible ? "1" : "0"}
-                disabled={isBrowseMode}
+
                 onChange={(value) => updateMeasurementEditorGroupSettings((group: any) => ({ ...group, visible: value === "1" }))}
                 options={[{ value: "1", label: "显示" }, { value: "0", label: "隐藏" }]}
               />
@@ -5045,7 +5077,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
               <span>布局</span>
               <Select
                 value={draft.layout}
-                disabled={isBrowseMode}
+
                 onChange={(value) => updateMeasurementEditorGroupSettings((group: any) => ({ ...group, layout: value as MeasurementGroup["layout"] }))}
                 options={[{ value: "vertical", label: "竖向" }, { value: "horizontal", label: "横向" }, { value: "grid", label: "两列" }]}
               />
@@ -5055,7 +5087,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
               <Select
                 aria-label="量测标签显示"
                 value={draft.labelVisible === false ? "0" : "1"}
-                disabled={isBrowseMode}
+
                 onChange={(value) => updateMeasurementEditorGroupSettings((group: any) => ({ ...group, labelVisible: value === "1" }))}
                 options={[{ value: "1", label: "显示" }, { value: "0", label: "隐藏" }]}
               />
@@ -5065,7 +5097,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
               <Select
                 aria-label="量测单位显示"
                 value={draft.unitVisible === false ? "0" : "1"}
-                disabled={isBrowseMode}
+
                 onChange={(value) => updateMeasurementEditorGroupSettings((group: any) => ({ ...group, unitVisible: value === "1" }))}
                 options={[{ value: "1", label: "显示" }, { value: "0", label: "隐藏" }]}
               />
@@ -5075,7 +5107,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
               <DeferredColorInput
                 value={draft.groupStyleOverride?.color ?? "#334155"}
                 fallback="#334155"
-                disabled={isBrowseMode}
+
                 aria-label="量测组字体颜色"
                 onCommit={(value: string) => updateMeasurementEditorGroupSettings((group: any) => ({
                   ...group,
@@ -5089,7 +5121,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                 min={6}
                 max={96}
                 value={draft.groupStyleOverride?.fontSize ?? 14}
-                disabled={isBrowseMode}
+
                 aria-label="量测组字体大小"
                 onChange={(nextValue) => updateMeasurementEditorGroupSettings((group: any) => ({
                   ...group,
@@ -5104,7 +5136,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
               <span>背景显示</span>
               <Select
                 value={draftBackgroundHidden ? "0" : "1"}
-                disabled={isBrowseMode}
+
                 onChange={(value) => updateMeasurementEditorGroupSettings((group: any) => ({
                   ...group,
                   backgroundColor: value === "1"
@@ -5119,7 +5151,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
               <DeferredColorInput
                 value={draft.backgroundColor ?? ""}
                 fallback="#ffffff"
-                disabled={isBrowseMode || draftBackgroundHidden}
+                disabled={draftBackgroundHidden}
                 onCommit={(value: string) => updateMeasurementEditorGroupSettings((group: any) => ({ ...group, backgroundColor: value }))}
               />
             </label>
@@ -5127,7 +5159,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
               <span>边框样式</span>
               <Select
                 value={draft.borderStyle ?? "none"}
-                disabled={isBrowseMode}
+
                 onChange={(borderStyle) => {
                   const bs = borderStyle as MeasurementGroup["borderStyle"];
                   updateMeasurementEditorGroupSettings((group: any) => ({
@@ -5144,7 +5176,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
               <DeferredColorInput
                 value={draft.borderColor ?? ""}
                 fallback="#64748b"
-                disabled={isBrowseMode || draftBorderHidden}
+                disabled={draftBorderHidden}
                 onCommit={(value: string) => updateMeasurementEditorGroupSettings((group: any) => ({ ...group, borderColor: value }))}
               />
             </label>
@@ -5155,7 +5187,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                 max={12}
                 step={0.5}
                 value={draft.borderWidth ?? 0}
-                disabled={isBrowseMode || draftBorderHidden}
+                disabled={draftBorderHidden}
                 onChange={(nextValue) => updateMeasurementEditorGroupSettings((group: any) => ({
                   ...group,
                   borderWidth: clampNumber(Number(nextValue), 0, 12)
@@ -5166,7 +5198,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
           <div className="measurement-editor-toolbar">
             <Button
               htmlType="button"
-              disabled={isBrowseMode || measurementConfig.measurementTypes.length === 0}
+              disabled={measurementConfig.measurementTypes.length === 0}
               onClick={() => addMeasurementEditorDraftItem(node)}
             >
               添加一行量测
@@ -5210,21 +5242,21 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                         <div className="measurement-editor-row-actions">
                           <Button
                             htmlType="button"
-                            disabled={isBrowseMode || itemIndex === 0}
+                            disabled={itemIndex === 0}
                             onClick={() => moveMeasurementEditorDraftItem(row.groupId, item.id, -1)}
                           >
                             上移
                           </Button>
                           <Button
                             htmlType="button"
-                            disabled={isBrowseMode || itemIndex === group.items.length - 1}
+                            disabled={itemIndex === group.items.length - 1}
                             onClick={() => moveMeasurementEditorDraftItem(row.groupId, item.id, 1)}
                           >
                             下移
                           </Button>
                           <Button
                             htmlType="button"
-                            disabled={isBrowseMode}
+
                             onClick={() => removeMeasurementEditorDraftItem(row.groupId, item.id)}
                           >
                             删除
@@ -5234,7 +5266,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                       <td>
                         <BufferedTextInput
                           value={measurementEditorItemName(item)}
-                          disabled={isBrowseMode}
+
                           aria-label="量测名称"
                           onCommit={(nextValue: string) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
@@ -5245,7 +5277,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                       <td>
                         <Select
                           value={group.terminalId ?? ""}
-                          disabled={isBrowseMode}
+
                           aria-label="量测位置"
                           title={measurementEditorPositionLabel(group)}
                           onChange={(value) => updateMeasurementEditorDraftItemPosition(node, row.groupId, item.id, value)}
@@ -5258,7 +5290,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                       <td>
                         <Select
                           value={item.measurementTypeId}
-                          disabled={isBrowseMode}
+
                           onChange={(nextTypeId) => {
                             updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                               ...current,
@@ -5275,7 +5307,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                       <td>
                         <Select
                           value={item.visible === false ? "0" : "1"}
-                          disabled={isBrowseMode}
+
                           onChange={(value) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             visible: value === "1"
@@ -5286,7 +5318,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                       <td>
                         <BufferedTextInput
                           value={item.sourcePoint}
-                          disabled={isBrowseMode}
+
                           onCommit={(nextValue: string) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             sourcePoint: nextValue
@@ -5296,7 +5328,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                       <td>
                         <BufferedTextInput
                           value={item.labelOverride ?? ""}
-                          disabled={isBrowseMode}
+
                           placeholder={type?.shortLabel ?? "标签"}
                           onCommit={(nextValue: string) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
@@ -5307,7 +5339,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                       <td>
                         <BufferedTextInput
                           value={item.formatOverride ?? ""}
-                          disabled={isBrowseMode}
+
                           placeholder={defaultMeasurementDisplayFormat(type?.valueType, type?.defaultDecimals)}
                           onCommit={(nextValue: string) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
@@ -5318,7 +5350,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                       <td>
                         <BufferedTextInput
                           value={item.unitOverride ?? ""}
-                          disabled={isBrowseMode}
+
                           placeholder={type?.defaultUnit ?? "单位"}
                           onCommit={(nextValue: string) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
@@ -5331,7 +5363,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                           min={0}
                           max={8}
                           value={item.decimalsOverride ?? ""}
-                          disabled={isBrowseMode}
+
                           placeholder={String(type?.defaultDecimals ?? 3)}
                           onChange={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
@@ -5343,7 +5375,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                         <InputNumber size="small"
                           step={0.01}
                           value={item.defaultValue ?? 0}
-                          disabled={isBrowseMode}
+
                           placeholder="0"
                           onChange={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
@@ -5354,7 +5386,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                       <td>
                         <DeferredColorInput
                           value={itemColor}
-                          disabled={isBrowseMode}
+
                           onCommit={(value: string) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             styleOverride: { ...(current.styleOverride ?? {}), color: value }
@@ -5366,7 +5398,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                           min={6}
                           max={96}
                           value={itemFontSize}
-                          disabled={isBrowseMode}
+
                           onChange={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current: any) => ({
                             ...current,
                             styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(nextValue) }
@@ -5386,7 +5418,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
           <div className="template-dialog-actions">
             <Button
               htmlType="button"
-              disabled={isBrowseMode || measurementEditorDialog.drafts.every((group: MeasurementGroup) => group.items.length === 0)}
+              disabled={measurementEditorDialog.drafts.every((group: MeasurementGroup) => group.items.length === 0)}
               onClick={confirmMeasurementEditorDialog}
             >
               保存
@@ -5401,7 +5433,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
 
 export function createSaveCurrentProject(__appScope: Record<string, any>) {
   return async (targetId?: string) => {
-  const { activeProjectKey, activeSchemeKey, clearRefreshRecoveryProject, createSavedProject, currentGraphDirtyBaseline, currentModelSelectionRef, currentProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, finalizeSavedGlobalLineProjectNodes, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, graphDirtyBaselineRef, projectById, projectName, rememberPersistedSchemesPayload, requireEditMode, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, savedUndoStackLengthRef, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, undoStack, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+  const { activeProjectKey, activeSchemeKey, clearRefreshRecoveryProject, createSavedProject, currentGraphDirtyBaseline, currentModelSelectionRef, currentProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, finalizeSavedGlobalLineProjectNodes, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, graphDirtyBaselineRef, projectById, projectName, rememberPersistedSchemesPayload, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, savedUndoStackLengthRef, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, undoStack, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
     const currentSelection = currentModelSelectionRef?.current;
     const currentProjectKey = currentSelection?.projectKey || activeProjectKey;
     const currentSchemeKey = currentSelection?.schemeKey || activeSchemeKey;
@@ -5422,9 +5454,6 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
     }
     if (targetId === undefined) {
       targetId = currentProjectKey;
-    }
-    if (!requireEditMode("保存模型")) {
-      return false;
     }
     const existingTargetProject = targetId ? projectById.get(targetId) : undefined;
     if ((!targetId || !existingTargetProject) && schemes.length === 0) {
@@ -5544,10 +5573,7 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
 
 export function createRenameProjectRecord(__appScope: Record<string, any>) {
   return (project: SavedProjectRecord) => {
-  const { activeProjectKey, findSchemeForProject, handleBackendSchemeMutationFailure, hasSameName, renameSavedProject, requireEditMode, saveBackendProjectRecord, schemePathForScheme, setProjectName, setSchemes, upsertSavedProjectInScheme } = __appScope;
-    if (!requireEditMode("重命名模型")) {
-      return;
-    }
+  const { activeProjectKey, findSchemeForProject, handleBackendSchemeMutationFailure, hasSameName, renameSavedProject, saveBackendProjectRecord, schemePathForScheme, setProjectName, setSchemes, upsertSavedProjectInScheme } = __appScope;
     const nextName = window.prompt("请输入新的模型名称", project.name);
     if (!nextName) {
       return;
@@ -5582,10 +5608,7 @@ export function createRenameProjectRecord(__appScope: Record<string, any>) {
 
 export function createDuplicateProjectRecord(__appScope: Record<string, any>) {
   return (project: SavedProjectRecord) => {
-  const { cloneProjectRecordWithName, findSchemeForProject, handleBackendSchemeMutationFailure, promptUniqueRecordName, requireEditMode, saveBackendProjectRecord, schemePathForScheme, setSchemes, uniqueRecordName, upsertSavedProjectInScheme } = __appScope;
-    if (!requireEditMode("复制模型")) {
-      return;
-    }
+  const { cloneProjectRecordWithName, findSchemeForProject, handleBackendSchemeMutationFailure, promptUniqueRecordName, saveBackendProjectRecord, schemePathForScheme, setSchemes, uniqueRecordName, upsertSavedProjectInScheme } = __appScope;
     const ownerScheme = findSchemeForProject(project.id);
     const existingNames = ownerScheme?.projects.map((item: SavedProjectRecord) => item.name) ?? [];
     const defaultName = uniqueRecordName(`${project.name} 副本`, existingNames, "未命名模型");
@@ -5614,10 +5637,7 @@ export function createDuplicateProjectRecord(__appScope: Record<string, any>) {
 
 export function createDuplicateSelectedProjectRecords(__appScope: Record<string, any>) {
   return () => {
-  const { cloneProjectRecord, duplicateProjectRecord, flattenSavedSchemes, handleBackendSchemeMutationFailure, projectById, requireEditMode, saveBackendProjectRecord, schemePathForRecord, schemes, selectedProjectId, selectedProjectIds, setSchemes, upsertSavedProject, upsertSavedProjectInScheme } = __appScope;
-    if (!requireEditMode("复制模型")) {
-      return;
-    }
+  const { cloneProjectRecord, duplicateProjectRecord, flattenSavedSchemes, handleBackendSchemeMutationFailure, projectById, saveBackendProjectRecord, schemePathForRecord, schemes, selectedProjectId, selectedProjectIds, setSchemes, upsertSavedProject, upsertSavedProjectInScheme } = __appScope;
     if (selectedProjectIds.length <= 1) {
       const project = projectById.get(selectedProjectIds[0] ?? selectedProjectId);
       if (project) {
@@ -5653,10 +5673,7 @@ export function createDuplicateSelectedProjectRecords(__appScope: Record<string,
 
 export function createDuplicateSelectedSchemeRecords(__appScope: Record<string, any>) {
   return () => {
-  const { cloneSchemeRecord, duplicateSchemeRecord, findSavedSchemeById, findSavedSchemeParentById, insertChildSavedScheme, persistSchemeTreeToBackend, requireEditMode, savedSchemePathForId, savedSchemeSiblingNames, schemes, selectedSchemeId, selectedSchemeIds, setSchemes } = __appScope;
-    if (!requireEditMode("复制方案")) {
-      return;
-    }
+  const { cloneSchemeRecord, duplicateSchemeRecord, findSavedSchemeById, findSavedSchemeParentById, insertChildSavedScheme, persistSchemeTreeToBackend, savedSchemePathForId, savedSchemeSiblingNames, schemes, selectedSchemeId, selectedSchemeIds, setSchemes } = __appScope;
     if (selectedSchemeIds.length <= 1) {
       const scheme = findSavedSchemeById(schemes, selectedSchemeIds[0] ?? selectedSchemeId);
       if (scheme) {
@@ -5687,10 +5704,7 @@ export function createDuplicateSelectedSchemeRecords(__appScope: Record<string, 
 
 export function createDeleteProjectRecord(__appScope: Record<string, any>) {
   return async (project: SavedProjectRecord) => {
-  const { activeProjectKey, clearActiveProjectDisplay, clearRecordSelection, deleteBackendProjectRecord, deleteSavedProjectsFromSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterProjectDeletion, requireEditMode, schemePathForProject, schemes, selectedProjectId, setSchemes } = __appScope;
-    if (!requireEditMode("删除模型")) {
-      return;
-    }
+  const { activeProjectKey, clearActiveProjectDisplay, clearRecordSelection, deleteBackendProjectRecord, deleteSavedProjectsFromSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterProjectDeletion, schemePathForProject, schemes, selectedProjectId, setSchemes } = __appScope;
     const deletingActiveProject = project.id === activeProjectKey;
     const confirmationMessage = deletingActiveProject
       ? `当前加载模型“${project.name}”将被删除。删除后会自动切换到同方案的相邻模型；若没有相邻模型，将清空画布。是否继续？`
@@ -5724,16 +5738,13 @@ export function createDeleteProjectRecord(__appScope: Record<string, any>) {
 
 export function createCreateBlankProject(__appScope: Record<string, any>) {
   return async (preferredSchemeId?: string, draft?: { name: string; modelType: string }) => {
-  const { DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, MODEL_TYPES, activeSchemeKey, createSavedProject, findSavedSchemeById, hasSameName, requestLoadSavedProject, requireEditMode, saveBackendProjectRecord, schemePathForScheme, schemes, selectSingleProject, selectedSchemeId, setCreateModelDialog, setSchemes, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+  const { DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, MODEL_TYPES, activeSchemeKey, createSavedProject, findSavedSchemeById, hasSameName, requestLoadSavedProject, saveBackendProjectRecord, schemePathForScheme, schemes, selectSingleProject, selectedSchemeId, setCreateModelDialog, setSchemes, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
     if (preferredSchemeId === undefined) {
       preferredSchemeId = selectedSchemeId || activeSchemeKey || schemes[0]?.id || "";
     }
     const targetScheme = findSavedSchemeById(schemes, preferredSchemeId) ?? schemes[0];
     const targetSchemeId = targetScheme?.id ?? preferredSchemeId;
     if (!draft) {
-      if (!requireEditMode("新建模型")) {
-        return;
-      }
       if (!targetScheme) {
         showGlobalMessage("无可用方案，请先创建方案。");
         return;
@@ -5840,14 +5851,11 @@ export function createRunTopologyCalculation(
   return () => {
     const {
       activeProjectKey, activeSchemeKey, currentUnit, edges, locateTopologyError,
-      modelType, nodes, powerUnit, pushUndoSnapshot, requireEditMode, schemes,
+      modelType, nodes, powerUnit, pushUndoSnapshot, schemes,
       setNodes, setTopology, setTopologyErrors, setTopologyStatus, setTopologyWarningPanelClosed,
       skipNextTopologyStaleRef, topologyCalculationMessage, voltageUnit, writeOperationLog,
       EMPTY_TOPOLOGY
     } = __appScope;
-    if (!requireEditMode("执行图上拓扑计算")) {
-      return;
-    }
     setTopologyWarningPanelClosed(false);
     const result = calculate({
       nodes,
@@ -6256,10 +6264,7 @@ export function createOpenElementTreeItemContextMenu(__appScope: Record<string, 
 
 export function createSetEdgeManualPoints(__appScope: Record<string, any>) {
   return (edgeId: string, manualPoints: Point[], routePoints?: Point[]) => {
-  const { edgeById, markRouteEdgesDirty, markStoredRouteEdgesDirty, patchGraphEdges, requireEditMode, sameOptionalPointList } = __appScope;
-    if (!requireEditMode("修改连接线路径")) {
-      return;
-    }
+  const { edgeById, markRouteEdgesDirty, markStoredRouteEdgesDirty, patchGraphEdges, sameOptionalPointList } = __appScope;
     const normalizedManualPoints = manualPoints.map((point) => ({ x: Math.round(point.x), y: Math.round(point.y) }));
     const normalizedRoutePoints = routePoints?.map((point) => ({ x: Math.round(point.x), y: Math.round(point.y) }));
     const edge = edgeById.get(edgeId);
@@ -6321,10 +6326,7 @@ export function createFinishManualPathDrag(__appScope: Record<string, any>) {
 
 export function createTidySelectedEdgeRoute(__appScope: Record<string, any>) {
   return () => {
-  const { canvasBounds, edges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, patchGraphEdges, pushUndoSnapshot, redrawConnectionRoutesForEdges, requireEditMode, selectedEdge, undoScopeForGraphPatch, writeOperationLog } = __appScope;
-    if (!requireEditMode("整理连接线")) {
-      return;
-    }
+  const { canvasBounds, edges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, patchGraphEdges, pushUndoSnapshot, redrawConnectionRoutesForEdges, selectedEdge, undoScopeForGraphPatch, writeOperationLog } = __appScope;
     if (!selectedEdge) {
       return;
     }
@@ -6343,10 +6345,7 @@ export function createTidySelectedEdgeRoute(__appScope: Record<string, any>) {
 
 export function createTidyRoutableLineRoute(__appScope: Record<string, any>) {
   return (nodeId?: string) => {
-  const { activeLayerNodeIdSet, canvasBounds, isRoutableLineDeviceKind, nodeById, nodes, patchGraphNodes, pushUndoSnapshot, redrawRoutableLineDeviceRoutes, requireEditMode, undoScopeForGraphPatch, writeOperationLog } = __appScope;
-    if (!requireEditMode("整理连接线")) {
-      return;
-    }
+  const { activeLayerNodeIdSet, canvasBounds, isRoutableLineDeviceKind, nodeById, nodes, patchGraphNodes, pushUndoSnapshot, redrawRoutableLineDeviceRoutes, undoScopeForGraphPatch, writeOperationLog } = __appScope;
     if (!nodeId) {
       return;
     }

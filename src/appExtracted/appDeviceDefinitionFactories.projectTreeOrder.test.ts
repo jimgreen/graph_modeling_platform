@@ -3,9 +3,12 @@ import { readFileSync } from "node:fs";
 import {
   createStartProjectTreeSortDrag,
   createEndProjectTreeSortDrag,
+  createHandleProjectTreeDragLeave,
   createHandleProjectTreeDragOver,
   createHandleProjectTreeDrop,
+  projectTreeDragLayer,
   projectTreeParentKey,
+  projectTreeSchemeContainsId,
   projectTreeSiblingIds,
   projectTreeModelIds,
   projectTreeModelOwnerKey,
@@ -13,6 +16,7 @@ import {
   PROJECT_TREE_DRAG_TYPE_MODEL,
   PROJECT_TREE_ROOT_END_KEY
 } from "./appDeviceDefinitionFactories";
+import { createMoveProjectRecordToScheme } from "./appProjectCanvasFactories";
 
 // 模型库方案树拖动排序：顺序只存本机偏好（libraryTreeOrder.projectSchemes / projectModels），
 // 不写回后端。拖动键直接用记录 id（本身已带 "scheme:" / "model:" 前缀）。
@@ -20,8 +24,11 @@ import {
 const SCHEME_A = "scheme:根/甲";
 const SCHEME_B = "scheme:根/乙";
 const CHILD = "scheme:根/甲/子一";
-const MODEL_A = "model:根/甲/模型一";
-const MODEL_B = "model:根/甲/模型二";
+// 运行期模型记录使用 `project:` 前缀；这是模型树真实拖拽会传入的键形态。
+const MODEL_A = "project:根/甲/模型一";
+const MODEL_B = "project:根/甲/模型二";
+const EMPTY_ROOT_SCHEME = "scheme:空方案";
+const TARGET_MODEL = "project:根/乙/目标模型";
 
 const schemes = [
   {
@@ -31,6 +38,21 @@ const schemes = [
     children: [
       { id: SCHEME_A, name: "甲", projects: [{ id: MODEL_A }, { id: MODEL_B }], children: [{ id: CHILD, name: "子一", projects: [] }] },
       { id: SCHEME_B, name: "乙", projects: [], children: [] }
+    ]
+  }
+];
+
+const schemesWithEmptyRoot = [
+  ...schemes,
+  { id: EMPTY_ROOT_SCHEME, name: "空方案", projects: [], children: [] }
+];
+
+const schemesWithTargetModel = [
+  {
+    ...schemes[0],
+    children: [
+      schemes[0].children[0],
+      { id: SCHEME_B, name: "乙", projects: [{ id: TARGET_MODEL, name: "目标模型" }], children: [] }
     ]
   }
 ];
@@ -54,6 +76,21 @@ const makeDragEvent = (overrides: Record<string, unknown> = {}) => ({
 }) as unknown as DragEvent;
 
 describe("方案树层级键：父级、同级清单、模型归属", () => {
+  test("数字 schemeId 仍被识别为方案拖动层级", () => {
+    expect(projectTreeDragLayer("42")).toBe("scheme");
+    expect(projectTreeDragLayer("project:根/模型")).toBe("model");
+  });
+
+  test("数字方案 ID 用树结构阻止拖进自己的子方案", () => {
+    const numericSchemes = [{
+      id: "10",
+      schemeId: 10,
+      children: [{ id: "11", schemeId: 11, children: [] }]
+    }];
+    expect(projectTreeSchemeContainsId(numericSchemes, "10", "11")).toBe(true);
+    expect(projectTreeSchemeContainsId(numericSchemes, "11", "10")).toBe(false);
+  });
+
   test("顶层方案的父键是空串，嵌套方案取直接父级 id", () => {
     expect(projectTreeParentKey(schemes as never, "scheme:根")).toBe("");
     expect(projectTreeParentKey(schemes as never, SCHEME_A)).toBe("scheme:根");
@@ -147,6 +184,15 @@ describe("方案树拖动：插入位指示与落点结算", () => {
 
     const updater = scope.setProjectTreeDropKey.mock.calls[0][0] as (current: string) => string;
     expect(updater("")).toBe(`${SCHEME_B}|before`);
+  });
+
+  test("dragover：空方案占位区域可强制使用 inside 落点", () => {
+    const scope = createScope({ projectTreeDragKey: MODEL_A });
+    const over = createHandleProjectTreeDragOver(scope as never);
+    over(makeDragEvent({ clientY: 38 }) as never, SCHEME_B, "inside");
+
+    const updater = scope.setProjectTreeDropKey.mock.calls[0][0] as (current: string) => string;
+    expect(updater("")).toBe(`${SCHEME_B}|inside`);
   });
 
   test("dragover：跨层（方案↔模型）不放行", () => {
@@ -301,6 +347,34 @@ describe("方案树跨层级拖动：落在目标行上半区 = 成为目标的�
 
     expect(moveProjectRecordToScheme).toHaveBeenCalledWith(MODEL_A, SCHEME_A);
   });
+
+  test("drop：空顶层方案下方的虚线仍把模型放进该空方案", () => {
+    const moveProjectRecordToScheme = vi.fn();
+    const scope = createScope({
+      schemes: schemesWithEmptyRoot,
+      projectTreeDragKey: MODEL_A,
+      projectTreeDropKey: `${EMPTY_ROOT_SCHEME}|after`,
+      moveProjectRecordToScheme
+    });
+    const drop = createHandleProjectTreeDrop(scope as never);
+    drop(makeDragEvent() as never, EMPTY_ROOT_SCHEME);
+
+    expect(moveProjectRecordToScheme).toHaveBeenCalledWith(MODEL_A, EMPTY_ROOT_SCHEME);
+  });
+
+  test("drop：模型落到其他方案的模型行上半区，目标仍是该模型所属方案", () => {
+    const moveProjectRecordToScheme = vi.fn();
+    const scope = createScope({
+      schemes: schemesWithTargetModel,
+      projectTreeDragKey: MODEL_A,
+      projectTreeDropKey: `${TARGET_MODEL}|inside`,
+      moveProjectRecordToScheme
+    });
+    const drop = createHandleProjectTreeDrop(scope as never);
+    drop(makeDragEvent() as never, TARGET_MODEL);
+
+    expect(moveProjectRecordToScheme).toHaveBeenCalledWith(MODEL_A, SCHEME_B);
+  });
 });
 
 describe("方案树末尾落点：拖到列表空白 = 移到顶层末尾", () => {
@@ -363,5 +437,112 @@ describe("模型库方案树：只有把手能拖（行本体不可拖）", () =
     // 行本体不再有 onDragStart（跨层级移动改由把手通道承担）。
     expect(source).not.toContain("startSchemeRecordDrag(event");
     expect(source).not.toContain("startProjectRecordDrag(event");
+  });
+
+  test("方案行的 drop 通道同时接收模型拖拽 MIME", () => {
+    const source = readFileSync(
+      new URL("./appDeviceDefinitionFactories.tsx", import.meta.url),
+      "utf8"
+    );
+    const schemeDropStart = source.indexOf("const sortSchemeId = event.dataTransfer.getData(PROJECT_TREE_DRAG_TYPE_SCHEME)");
+    const schemeDropEnd = source.indexOf("onContextMenu={(event) => {", schemeDropStart);
+    expect(schemeDropStart).toBeGreaterThanOrEqual(0);
+    expect(schemeDropEnd).toBeGreaterThan(schemeDropStart);
+    expect(source.slice(schemeDropStart, schemeDropEnd)).toContain("PROJECT_TREE_DRAG_TYPE_MODEL");
+  });
+});
+
+describe("模型拖动到方案：落点提示与自动展开", () => {
+  test("收缩方案上的模型拖动落点需要覆盖模型连接线伪元素", () => {
+    const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+    expect(css).toContain(".scheme-projects > .project-option.library-tree-drop-line-before::before");
+    expect(css).toContain(".scheme-projects > .project-option.library-tree-drop-line-after::after");
+  });
+
+  test("模型停留在收缩方案上 1 秒后自动展开", () => {
+    vi.useFakeTimers();
+    try {
+      const setExpandedSchemeIds = vi.fn();
+      const scope = createScope({
+        projectTreeDragKey: MODEL_A,
+        expandedSchemeIds: [],
+        setExpandedSchemeIds,
+        projectTreeDragExpandTimerRef: { current: null }
+      });
+      const over = createHandleProjectTreeDragOver(scope as never);
+
+      over(makeDragEvent({ clientY: 10 }) as never, SCHEME_B);
+      vi.advanceTimersByTime(999);
+      expect(setExpandedSchemeIds).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(1);
+      expect(setExpandedSchemeIds).toHaveBeenCalledTimes(1);
+      const updater = setExpandedSchemeIds.mock.calls[0][0] as (current: string[]) => string[];
+      expect(updater([])).toEqual([SCHEME_B]);
+      expect(updater([SCHEME_B])).toEqual([SCHEME_B]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("离开收缩方案后取消自动展开计时", () => {
+    vi.useFakeTimers();
+    try {
+      const setExpandedSchemeIds = vi.fn();
+      const scope = createScope({
+        projectTreeDragKey: MODEL_A,
+        expandedSchemeIds: [],
+        setExpandedSchemeIds,
+        projectTreeDragExpandTimerRef: { current: null }
+      });
+      const over = createHandleProjectTreeDragOver(scope as never);
+      over(makeDragEvent({ clientY: 10 }) as never, SCHEME_B);
+
+      const leave = createHandleProjectTreeDragLeave(scope as never);
+      leave({
+        currentTarget: { contains: () => false },
+        relatedTarget: null
+      } as never);
+      vi.advanceTimersByTime(1000);
+
+      expect(setExpandedSchemeIds).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("跨方案移动模型：摘要记录先读取完整内容", () => {
+  test("目录摘要模型移动前读取完整模型，再提交后台移动", async () => {
+    const sourceScheme = {
+      id: SCHEME_A,
+      name: "甲",
+      projects: [{ id: MODEL_A, name: "模型一", project: { __summaryOnly: true, name: "模型一" } }],
+      children: []
+    };
+    const targetScheme = { id: SCHEME_B, name: "乙", projects: [], children: [] };
+    const fullProject = {
+      id: MODEL_A,
+      name: "模型一",
+      project: { name: "模型一", nodes: [], edges: [] }
+    };
+    const fetchBackendProjectRecord = vi.fn().mockResolvedValue(fullProject);
+    const commitProjectRecordMove = vi.fn();
+    const scope = {
+      schemes: [sourceScheme, targetScheme],
+      findSchemeForProject: () => sourceScheme,
+      findSavedSchemeById: (all: any[], id: string) => all.find((scheme) => scheme.id === id),
+      hasSameName: () => false,
+      schemePathForRecord: (scheme: any) => [scheme.name],
+      fetchBackendProjectRecord,
+      commitProjectRecordMove,
+      setPendingRecordPasteConflict: vi.fn()
+    };
+    const move = createMoveProjectRecordToScheme(scope as never);
+
+    await move(MODEL_A, SCHEME_B);
+
+    expect(fetchBackendProjectRecord).toHaveBeenCalledWith(["甲"], "模型一");
+    expect(commitProjectRecordMove).toHaveBeenCalledWith(MODEL_A, SCHEME_B, {}, fullProject);
   });
 });

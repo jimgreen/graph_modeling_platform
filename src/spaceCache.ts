@@ -240,10 +240,6 @@ export const KEPT_LOCAL_STORAGE_KEYS: readonly { key: string; reason: string }[]
     reason: "画布浅色/深色主题，本机 UI 偏好"
   },
   {
-    key: "graph-modeling-platform:interaction-mode",
-    reason: "画布交互模式（选择/平移），本机操作习惯"
-  },
-  {
     key: "power-system-left-panel-mode",
     reason: "左侧面板显隐，本机 UI 偏好"
   },

@@ -71,6 +71,8 @@ $schemePath = [uri]::EscapeDataString('["默认方案","子方案"]')
 %5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D
 ```
 
+所有按方案定位的接口也接受 `schemeId`。它是当前空间内唯一的正整数，可从 `GET /webgrp/v1/schemes` 的方案树读取。重命名或移动方案时编号保持不变；复制或导入会分配新编号。只提供 `schemeId` 即可；同时提供 `schemePath` 与 `schemeId` 时，两者必须指向同一方案。
+
 ### 2.3 响应类型
 
 - JSON 查询接口：`{ok:true,data:...}` 或 `{ok:false,error:{code,message}}`
@@ -92,177 +94,57 @@ $schemePath = [uri]::EscapeDataString('["默认方案","子方案"]')
 
 ## 3. 已保存模型导出
 
-这些接口读取指定空间中已经落盘的模型，不需要前端页面在线。
+这些接口读取指定空间中已经落盘的模型，不需要前端页面在线。旧的多个格式入口已经合并为一个统一入口：
 
-### 3.1 导出模型 JSON
+~~~http
+GET /webgrp/v1/schemes/model/export?format=json|svg|e-file|cim-xml
+POST /webgrp/v1/schemes/model/export?format=e-file
+~~~
 
-#### Endpoint
+GET 请求至少提供 schemePath 或 schemeId，并提供 name。两种方案选择器同时提供时必须指向同一方案。format 必须是 json、svg、e-file 或 cim-xml；不适用的参数返回 400 bad-request。
 
-```http
-GET /webgrp/v1/schemes/model/json
-```
+### 3.1 JSON
 
-#### 参数
+~~~bash
+curl.exe -sS "http://127.0.0.1:5174/webgrp/v1/schemes/model/export?format=json&space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF"
+~~~
 
-| 参数 | 必填 | 说明 |
-|---|---:|---|
-| `schemePath` | 是 | URL 编码后的方案路径数组 |
-| `name` | 是 | 模型名称 |
-| `space` | 否 | 空间 id；也可以使用 `X-Space` 或 Cookie |
+响应为 {ok:true,data:{project}}。
 
-#### 完整示例
+### 3.2 SVG
 
-```bash
-curl.exe -sS "http://127.0.0.1:5174/webgrp/v1/schemes/model/json?space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF"
-```
+可选 colorMode=energy|voltage、encoding=utf-8|gbk，返回 image/svg+xml 原始内容并带 XML 声明：
 
-响应：
+~~~bash
+curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/model/export?format=svg&space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF&colorMode=voltage&encoding=gbk" -o 线路.svg
+~~~
 
-```json
-{
-  "ok": true,
-  "data": {
-    "project": {
-      "version": 1,
-      "name": "线路",
-      "idx": 12,
-      "modelType": "馈线",
-      "nodes": [],
-      "edges": []
-    }
-  }
-}
-```
+### 3.3 E 文件
 
-常见错误：
+GET 可选 template 和 encoding，默认编码为 GBK：
 
-- `400 bad-request`：缺少或非法 `schemePath`、缺少模型名
-- `404 not-found`：模型不存在
+~~~bash
+curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/model/export?format=e-file&space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF&template=%E9%85%8D%E7%BD%91%E5%AE%9E%E6%97%B6%E5%BA%93&encoding=utf-8" -o 线路.e
+~~~
 
-### 3.2 导出模型 SVG
+POST 固定使用 format=e-file，请求体必须包含非空 templateText：
 
-#### Endpoint
-
-```http
-GET /webgrp/v1/schemes/model/svg
-```
-
-#### 参数
-
-| 参数 | 必填 | 默认值 | 说明 |
-|---|---:|---|---|
-| `schemePath` | 是 | - | URL 编码后的方案路径数组 |
-| `name` | 是 | - | 模型名称 |
-| `colorMode` | 否 | `energy` | `energy` 或 `voltage` |
-| `encoding` | 否 | `utf-8` | `utf-8` 或 `gbk` |
-
-SVG 包含图层、量测和状态图标，并带 XML 编码声明；返回 `image/svg+xml` 原始内容。
-
-#### 完整示例：默认配色
-
-```bash
-curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/model/svg?space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF" -o 线路.svg
-```
-
-#### 完整示例：电压配色和 GBK
-
-```bash
-curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/model/svg?space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF&colorMode=voltage&encoding=gbk" -o 线路-gbk.svg
-```
-
-成功响应头示例：
-
-```http
-HTTP/1.1 200 OK
-Content-Type: image/svg+xml; charset=utf-8
-Cache-Control: no-store
-```
-
-### 3.3 导出模型 E 文件：当前库模板
-
-#### Endpoint
-
-```http
-GET /webgrp/v1/schemes/model/e-file
-```
-
-#### 参数
-
-| 参数 | 必填 | 默认值 | 说明 |
-|---|---:|---|---|
-| `schemePath` | 是 | - | URL 编码后的方案路径数组 |
-| `name` | 是 | - | 模型名称 |
-| `template` | 否 | 当前库配置 | 预定义模板名 |
-| `encoding` | 否 | `gbk` | `gbk` 或 `utf-8` |
-
-#### 完整示例：按当前库配置导出
-
-```bash
-curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/model/e-file?space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF" -o 线路.e
-```
-
-#### 完整示例：按配网实时库模板导出 UTF-8 E 文件
-
-```bash
-curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/model/e-file?space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF&template=%E9%85%8D%E7%BD%91%E5%AE%9E%E6%97%B6%E5%BA%93&encoding=utf-8" -o 线路-配网.e
-```
-
-成功响应为 `text/plain` 附件。默认 E 文件字节使用 GBK 编码。
-
-### 3.4 导出模型 E 文件：自定义模板文本
-
-#### Endpoint
-
-```http
-POST /webgrp/v1/schemes/model/e-file
-```
-
-#### 参数与请求体
-
-查询参数与 GET 版本相同，但 `template` 可选；请求体必须包含非空 `templateText`。
-
-```json
-{
-  "templateText": "<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>",
-  "templateName": "自定义模板A"
-}
-```
-
-`templateText` 用于实际生成；如果同时提供 `templateName`，`templateName` 仅用于模型类型校验和错误提示。
-
-#### 完整示例
-
-```bash
-curl.exe -X POST "http://127.0.0.1:5174/webgrp/v1/schemes/model/e-file?space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF&encoding=gbk" `
-  -H "Content-Type: application/json" `
-  --data-binary '{"templateText":"<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>","templateName":"自定义模板A"}' `
+~~~bash
+curl.exe -X POST "http://127.0.0.1:5174/webgrp/v1/schemes/model/export?format=e-file&space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF&encoding=gbk" ^
+  -H "Content-Type: application/json" ^
+  --data-binary "{\"templateText\":\"<ACLoad>\\ndev_type=ACLoad\\nname=名称\\n</ACLoad>\",\"templateName\":\"自定义模板A\"}" ^
   -o 线路-自定义.e
-```
+~~~
 
-### 3.5 导出模型 CIM/XML
+### 3.4 CIM/XML
 
-#### Endpoint
+可选 modelId 覆盖 CIM 模型 ID，strict=1 时关键参数缺失返回 400：
 
-```http
-GET /webgrp/v1/schemes/model/cim-xml
-```
+~~~bash
+curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/model/export?format=cim-xml&space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF&modelId=12&strict=1" -o 线路.xml
+~~~
 
-#### 参数
-
-| 参数 | 必填 | 说明 |
-|---|---:|---|
-| `schemePath` | 是 | URL 编码后的方案路径数组 |
-| `name` | 是 | 模型名称 |
-| `modelId` | 否 | 覆盖生成的 CIM 模型 ID；默认取 `project.idx`，再回退模型名 |
-| `strict` | 否 | 传 `1` 时，关键参数缺失返回 `400` |
-
-#### 完整示例
-
-```bash
-curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/model/cim-xml?space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF&modelId=12&strict=1" -o 线路.xml
-```
-
-成功响应：`application/xml; charset=utf-8`，并带附件文件名。
+旧的 /webgrp/v1/schemes/model/json、svg、e-file、cim-xml 路径已删除，调用方必须迁移到统一入口。
 
 ## 4. 方案 ZIP 导出
 
@@ -288,6 +170,12 @@ GET /webgrp/schemes/export
 curl.exe -L "http://127.0.0.1:5174/webgrp/schemes/export?space=default&schemePath=%5B%22%E5%9B%9B%E5%B7%9D%22%2C%22%E6%88%90%E9%83%BD%22%2C%22%E9%A6%88%E7%BA%BF%22%5D" -o 馈线方案.zip
 ```
 
+也可将 `schemePath` 替换为从方案树读取的 `schemeId`：
+
+```bash
+curl.exe -L "http://127.0.0.1:5174/webgrp/schemes/export?space=default&schemeId=12" -o 馈线方案.zip
+```
+
 #### 完整示例：按 E 模板筛选
 
 ```bash
@@ -306,15 +194,21 @@ GET /webgrp/v1/schemes/export
 curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/export?space=default&schemePath=%5B%22%E5%9B%9B%E5%B7%9D%22%2C%22%E6%88%90%E9%83%BD%22%2C%22%E9%A6%88%E7%BA%BF%22%5D&template=%E9%85%8D%E7%BD%91%E5%AE%9E%E6%97%B6%E5%BA%93" -o 馈线方案-v1.zip
 ```
 
+按方案编号导出：
+
+```bash
+curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/export?space=default&schemeId=12" -o 馈线方案-v1.zip
+```
+
 #### 参数
 
 | 参数 | 必填 | 说明 |
 |---|---:|---|
-| `schemePath` | 是 | 方案路径数组，URL 编码一次 |
+| `schemePath` / `schemeId` | 至少提供一个；可同时提供 | 路径数组（URL 编码一次）或方案编号；同时提供时必须指向同一方案 |
 | `template` | 否 | 指定后，只导出模板允许的模型类型 |
 | `space` | 否 | 空间 id；也可以使用 `X-Space` |
 
-成功响应：`application/zip`。缺少/非法 `schemePath` 返回 `400`，方案不存在返回 `404`，模型生成失败返回 `500`。
+成功响应：`application/zip`。缺少/非法方案选择器返回 `400`，方案不存在返回 `404`，模型生成失败返回 `500`。
 
 ## 5. 空间批量 E/SVG 导出
 
@@ -391,64 +285,39 @@ curl.exe -L "http://127.0.0.1:5174/webgrp/v1/spaces/export-artifacts?space=defau
 
 ## 6. 运行时当前模型导出
 
-运行时接口读取前端当前打开的模型，必须有在线前端页面和 WebSocket 客户端。`clientId` 不传时使用最近活跃客户端；多个在线页面时应显式指定。
+运行时统一入口读取前端当前打开的模型，必须有在线前端页面和 WebSocket 客户端。clientId 可选，不传时按当前空间选择最近活跃客户端。
+
+~~~http
+GET /webgrp/v1/runtime/export?format=svg|e-file
+POST /webgrp/v1/runtime/export?format=e-file
+~~~
 
 ### 6.1 当前画布 SVG
 
-#### Endpoint
+~~~bash
+curl.exe -L "http://127.0.0.1:5174/webgrp/v1/runtime/export?format=svg&clientId=page-token-123" -o 当前画布.svg
+~~~
 
-```http
-GET /webgrp/v1/runtime/svg
-```
+返回 image/svg+xml; charset=utf-8。
 
-#### 完整示例
+### 6.2 当前模型 E 文件
 
-```bash
-curl.exe -L "http://127.0.0.1:5174/webgrp/v1/runtime/svg?clientId=page-token-123" -o 当前画布.svg
-```
+GET 可选预定义模板 template：
 
-返回 `image/svg+xml; charset=utf-8` 原始 SVG 文本。
+~~~bash
+curl.exe -L "http://127.0.0.1:5174/webgrp/v1/runtime/export?format=e-file&clientId=page-token-123&template=%E9%85%8D%E7%BD%91%E5%AE%9E%E6%97%B6%E5%BA%93" -o 当前模型-配网.e
+~~~
 
-### 6.2 当前模型 E 文件：预定义模板
+POST 固定使用 format=e-file，body 为 {templateText,templateName?}：
 
-#### Endpoint
-
-```http
-GET /webgrp/v1/runtime/e-file
-```
-
-#### 完整示例
-
-```bash
-curl.exe -L "http://127.0.0.1:5174/webgrp/v1/runtime/e-file?clientId=page-token-123&template=%E9%85%8D%E7%BD%91%E5%AE%9E%E6%97%B6%E5%BA%93" -o 当前模型-配网.e
-```
-
-可选模板：`国网E格式`、`主网实时库`、`配网实时库`、`台区实时库`。
-
-### 6.3 当前模型 E 文件：自定义模板
-
-#### Endpoint
-
-```http
-POST /webgrp/v1/runtime/e-file
-```
-
-#### 完整示例
-
-```bash
-curl.exe -X POST "http://127.0.0.1:5174/webgrp/v1/runtime/e-file?clientId=page-token-123" `
-  -H "Content-Type: application/json" `
-  --data-binary '{"templateText":"<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>","templateName":"自定义模板A"}' `
+~~~bash
+curl.exe -X POST "http://127.0.0.1:5174/webgrp/v1/runtime/export?format=e-file&clientId=page-token-123" ^
+  -H "Content-Type: application/json" ^
+  --data-binary "{\"templateText\":\"<ACLoad>\\ndev_type=ACLoad\\nname=名称\\n</ACLoad>\",\"templateName\":\"自定义模板A\"}" ^
   -o 当前模型-自定义.e
-```
+~~~
 
-该接口只计算导出结果，不修改前端当前模板状态。
-
-运行时错误通常包括：
-
-- `503 no-online-client`：没有在线前端页面
-- `503 ws-timeout`：前端在超时时间内未响应
-- `404 no-active-model`：当前页面没有打开模型
+该接口只计算导出结果，不修改前端当前模板状态。错误仍保持 503 no-online-client、503 ws-timeout 和 404 no-active-model 等原语义。旧的 /webgrp/v1/runtime/svg、/webgrp/v1/runtime/e-file 路径已删除。
 
 ## 7. 已保存模型外发传输
 
@@ -474,7 +343,13 @@ modelId=<project.idx>
 schemePath=<encoded>&name=<模型名>
 ```
 
-当两者同时提供时，优先使用 `modelId`。
+也可用方案编号定位：
+
+```text
+schemeId=<方案编号>&name=<模型名>
+```
+
+`schemeId` 可替代 `schemePath`，两者同时提供时必须指向同一方案。`modelId` 与方案选择器同时提供时仍优先使用 `modelId`。
 
 ### 7.3 文件格式
 
@@ -521,7 +396,167 @@ curl.exe -X POST "http://127.0.0.1:5174/webgrp/v1/schemes/model/send?space=defau
 }
 ```
 
-## 8. 联调接收端
+## 8. 模型更新 WebSocket 订阅
+
+订阅服务使用后端现有 HTTP server 和端口，不单独监听新端口。默认连接地址：
+
+```text
+ws://<server-host>:5174/webgrp/v1/subscriptions/ws?space=<spaceId>
+```
+
+HTTPS 部署使用 `wss://`。空间可通过 URL 的 `space` 参数选择；也沿用 `X-Space`、`gmp_space` Cookie 和默认空间回退规则。显式指定不存在的空间时，WebSocket 握手返回 404。连接会绑定到解析出的空间，订阅帧不能跨空间读取。
+
+原生客户端可不发送 `Origin`。浏览器客户端可从任意有效 HTTP(S) Origin 连接此路径；现有前端运行时通道 `/webgrp/ws` 仍使用原有本机 Origin 限制。订阅接口读取已保存模型，访问边界与现有无鉴权只读 API 一致，不增加新的认证机制。
+
+### 8.1 订阅范围与文件类型
+
+每个连接可创建多条订阅。`scope.type` 支持：
+
+| 范围 | 参数 | 匹配行为 |
+|---|---|---|
+| `space` | 无 | 当前连接所属空间中的所有已保存模型 |
+| `scheme` | `schemePath`：方案名称数组 | 该方案及其所有子方案中的模型 |
+| `model` | `modelId`：正整数模型 `idx` | 稳定模型序号匹配 |
+
+创建 `scheme` 或 `model` 订阅时，目标必须已存在。每条订阅的 `files` 至少含一种格式，可多选 `json`、`xml`、`e`。只有 `encoding` 明确等于 `gbk` 时使用 GBK；省略或其他值都使用 UTF-8。
+
+### 8.2 浏览器示例
+
+```js
+const url = new URL("ws://127.0.0.1:5174/webgrp/v1/subscriptions/ws");
+url.searchParams.set("space", "default");
+
+const socket = new WebSocket(url);
+let subscriptionId = "";
+
+socket.addEventListener("open", () => {
+  socket.send(JSON.stringify({
+    type: "subscribe",
+    scope: { type: "scheme", schemePath: ["默认方案"] },
+    files: [
+      { kind: "json" },
+      { kind: "xml" },
+      { kind: "e", encoding: "gbk" }
+    ]
+  }));
+});
+
+socket.addEventListener("message", (event) => {
+  const message = JSON.parse(event.data);
+  if (message.type === "subscribed") {
+    subscriptionId = message.data.subscriptionId;
+    return;
+  }
+  if (message.type === "model.updated") {
+    for (const file of message.data.files) {
+      const bytes = Uint8Array.from(atob(file.contentBase64), (char) => char.charCodeAt(0));
+      const text = file.encoding === "gbk"
+        ? new TextDecoder("gbk").decode(bytes)
+        : new TextDecoder("utf-8").decode(bytes);
+      console.log(file.filename, text);
+    }
+    return;
+  }
+  if (message.type === "error") {
+    console.error(message.error.code, message.error.message);
+  }
+});
+
+function unsubscribe() {
+  if (subscriptionId) {
+    socket.send(JSON.stringify({ type: "unsubscribe", subscriptionId }));
+  }
+}
+```
+
+原生 Node.js 客户端可使用 `ws` 包；URL 和 JSON 消息与浏览器示例相同：
+
+```js
+import WebSocket from "ws";
+
+const socket = new WebSocket(
+  "ws://192.168.1.20:5174/webgrp/v1/subscriptions/ws?space=default"
+);
+socket.on("open", () => socket.send(JSON.stringify({
+  type: "subscribe",
+  scope: { type: "model", modelId: 12 },
+  files: [{ kind: "json" }, { kind: "e", encoding: "gbk" }]
+})));
+socket.on("message", (raw) => {
+  const message = JSON.parse(raw.toString("utf-8"));
+  if (message.type === "model.updated") {
+    for (const file of message.data.files) {
+      const bytes = Buffer.from(file.contentBase64, "base64");
+      console.log(file.filename, bytes.length);
+    }
+  }
+});
+```
+
+### 8.3 确认、更新与错误帧
+
+订阅成功后返回：
+
+```json
+{
+  "type": "subscribed",
+  "ok": true,
+  "data": {
+    "subscriptionId": "sub-uuid",
+    "scope": { "type": "model", "modelId": 12 },
+    "files": [{ "kind": "json", "encoding": "utf-8" }]
+  }
+}
+```
+
+取消时发送 `{"type":"unsubscribe","subscriptionId":"sub-uuid"}`；成功返回 `type:"unsubscribed"`。一个连接关闭后，该连接的所有订阅立即清理；服务端不排队、不重放离线消息，重连后客户端需要重新订阅。
+
+服务端每 30 秒向连接发送 WebSocket 控制帧 Ping。连续 30 分钟未收到该连接的 Pong 时，服务端会清理该连接的所有订阅并终止连接；正常关闭或 socket error 时也会清理。浏览器和 `ws` 等标准 WebSocket 客户端会自动响应控制帧，客户端无需额外发送应用层心跳消息。
+
+模型更新帧复用 `/webgrp/v1/schemes/model/send` 发往目标的 multipart 文本字段和文件部件结构，但通过 WebSocket JSON + Base64 承载文件。订阅服务不会调用 `/send` 或 `/receive`：
+
+```json
+{
+  "type": "model.updated",
+  "data": {
+    "model_id": "12",
+    "model_name": "线路",
+    "template_name": "",
+    "scheme_path": "[\"默认方案\"]",
+    "sent_at": "2026-11-21T10:00:00.000Z",
+    "files": [{
+      "kind": "json",
+      "field": "json_file",
+      "filename": "线路.json",
+      "contentType": "application/json; charset=utf-8",
+      "encoding": "utf-8",
+      "bytes": 123,
+      "contentBase64": "eyJ2ZXJzaW9uIjoxLCJuYW1lIjoi6Lev5b6EIn0="
+    }]
+  }
+}
+```
+
+JSON 文件根对象是 ProjectFile，不带 API `{ok,data}` 信封。`xml` 请求生成的文件项使用 `kind:"cim"`、`field:"cim_file"`、`.xml` 文件名；E 文件使用 `kind:"e"`、`field:"e_file"`。`contentBase64` 解码得到原始文件字节；在相同保存版本、格式与编码下，字节与 `/send` 对应文件一致。
+
+成功保存的模型会推送，包括单模型保存、方案树批量写入、方案 ZIP 导入、成功的空间覆盖导入和已保存模型的拓扑修复。空间/方案范围订阅只接收其范围内新增或变化的模型。模型删除不发送删除帧；模型级订阅会被移除，空间删除会关闭该空间的连接。未保存的画布运行时改动不会推送。
+
+当模型保存请求只提供 `schemeId` 而未提供 `schemePath` 时，后端会在保存成功后先将编号解析为当前方案的真实路径，再执行订阅匹配和推送。这样按方案路径创建的订阅不会因为保存请求省略路径而漏收更新；`schemeId` 与 `schemePath` 同时提供时仍必须指向同一方案。
+
+单个订阅的文件生成失败时只收到错误帧，不包含部分文件；其他匹配订阅继续处理。`code` 优先使用导出器返回的错误码，没有错误码时回退为 `export-failed`：
+
+```json
+{
+  "type": "error",
+  "error": {
+    "code": "export-failed",
+    "message": "模型文件生成失败。",
+    "subscriptionId": "sub-uuid"
+  }
+}
+```
+
+## 9. 联调接收端
 
 开发联调时可以把 `send` 的目标地址设为：
 
@@ -537,7 +572,7 @@ curl.exe -sS "http://127.0.0.1:5174/webgrp/v1/receive"
 
 它适合验证 multipart 字段名、文件名、编码和字节数，不建议作为生产接收服务。
 
-## 9. MCP 对应能力
+## 10. MCP 对应能力
 
 如果通过 `/webgrp/mcp` 使用 MCP，而不是直接调用 HTTP API，对应工具如下：
 
@@ -551,7 +586,7 @@ curl.exe -sS "http://127.0.0.1:5174/webgrp/v1/receive"
 
 MCP 工具会复用同一套 v1 handler。MCP 的二进制结果以 resource/blob 返回，文本导出结果以 text 内容返回；详细 MCP 参数见 [MCP.md](./MCP.md)。
 
-## 10. 错误处理速查
+## 11. 错误处理速查
 
 | 状态/错误码 | 含义 | 常见处理 |
 |---|---|---|
@@ -562,7 +597,7 @@ MCP 工具会复用同一套 v1 handler。MCP 的二进制结果以 resource/blo
 | `503 ws-timeout` | 运行时前端未及时响应 | 重试或检查页面状态 |
 | `502` | 外发目标服务器返回非 2xx | 检查外部 URL 和目标服务 |
 
-## 11. 相关实现位置
+## 12. 相关实现位置
 
 - v1 方案与模型导出：[server/apiV1Schemes.mjs](../server/apiV1Schemes.mjs)
 - E 文件生成：[server/eFileExport.mjs](../server/eFileExport.mjs)
@@ -572,4 +607,5 @@ MCP 工具会复用同一套 v1 handler。MCP 的二进制结果以 resource/blo
 - 空间 E/SVG ZIP：[server/spaceArtifactExport.mjs](../server/spaceArtifactExport.mjs)
 - 运行时导出：[server/apiV1Runtime.mjs](../server/apiV1Runtime.mjs)
 - 外发传输：[server/sendModel.mjs](../server/sendModel.mjs)
+- 模型更新推送：[server/modelUpdateService.mjs](../server/modelUpdateService.mjs)、[server/modelUpdateWebSocket.mjs](../server/modelUpdateWebSocket.mjs)、[server/modelUpdatePayload.mjs](../server/modelUpdatePayload.mjs)
 - 在线接口总览：[server/swaggerPage.mjs](../server/swaggerPage.mjs)

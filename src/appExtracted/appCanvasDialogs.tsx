@@ -58,7 +58,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }: AppCan
   const __appScope = scope;
   const {
     BufferedTextInput, CONNECTION_REDRAW_SCOPE_LABELS, DEFAULT_COLOR_PALETTE, DeferredColorInput, ENABLE_REACT_FLOW_PREVIEW, ENERGY_COLOR_ROWS, ReactFlowPreview, Suspense,
-    TERMINAL_TYPE_LIBRARY_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VoltageLevelDialog, WindowCloseButton, activeSelectedNodeIds, voltageBaseSetCandidateNodes,
+    TERMINAL_TYPE_LIBRARY_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VoltageLevelDialog, WindowCloseButton, X, activeSelectedNodeIds, autoAlignProgress, cancelAutoAlign, voltageBaseSetCandidateNodes,
     activeVoltageBaseTerminalKey, activeVoltageBaseTerminalRow, applyLayerAssignmentDialog, cancelTemplateDialog, colorPaletteDialogOpen, colorPaletteDraft, colorPaletteTab, componentLibraryOptionsByCategoryLibrary,
     confirmAddGraphTemplate, confirmConnectionRedrawDialog, confirmCreateDeviceFromGroup, confirmFilterSelectionDialog, confirmReplaceDeviceIconFromGroup, confirmVoltageBaseClearDialog, confirmVoltageBaseSetDialog, connectionRedrawDialogOpen,
     connectionRedrawScope, connectionRedrawTargetsForScope, createGraphTemplateType, currentModelVoltageColorKeys, defaultComponentLibraryForCategoryLibrary, deleteVoltageColorRow, filterSelectionDialogOpen, filterSelectionTreeLabel,
@@ -81,6 +81,7 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }: AppCan
   // 把「按类型/电压索引的双值表」摊平成 themeSemanticColor 要的 pair 列表。
   const energyThemePairs = Object.values(ENERGY_THEME_COLORS ?? {});
   const voltageThemePairs = Object.values(VOLTAGE_LEVEL_THEME_COLORS ?? {});
+  const progressPercent = Math.max(0, Math.min(100, Number(autoAlignProgress?.percent ?? 0)));
   const [activeVoltageBaseDeviceTab, setActiveVoltageBaseDeviceTab] = useState("");
   const [perDeviceScope, setPerDeviceScope] = useState<Record<string, string>>({});
   const voltageBaseDeviceInitRef = useRef(false);
@@ -101,6 +102,27 @@ export const AppCanvasDialogs = memo(function AppCanvasDialogs({ scope }: AppCan
     }
   }, [voltageBaseSetDialogOpen, voltageBaseSetCandidateNodes, voltageBaseSetTerminalRows]);
   return (<>
+      {autoAlignProgress && (<div className="image-picker-backdrop auto-align-progress-backdrop">
+        <section
+          className="connection-redraw-dialog auto-align-progress-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="auto-align-progress-title"
+          aria-describedby="auto-align-progress-stage"
+          onPointerDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => { if (event.key === "Escape") cancelAutoAlign(); }}
+        >
+          <h2 id="auto-align-progress-title">正在自动对齐</h2>
+          <p id="auto-align-progress-stage" role="status" aria-live="polite">{autoAlignProgress.stage}</p>
+          <progress className="auto-align-progress-bar" max={100} value={progressPercent}>{progressPercent}%</progress>
+          <div className="image-picker-actions">
+            <button type="button" className="danger-action" onClick={cancelAutoAlign}>
+              <X aria-hidden="true" size={16} />
+              终止自动对齐
+            </button>
+          </div>
+        </section>
+      </div>)}
 {voltageBaseSetDialogOpen && (() => {
             const showDeviceTabs = voltageBaseSetCandidateNodes.length > 1;
             const activeDeviceId = showDeviceTabs

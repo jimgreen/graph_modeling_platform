@@ -22,7 +22,6 @@ function createTerminalPointerScope(node: ModelNode) {
     activeLayerNodeIdSet: new Set([node.id]),
     staticDrawing: null,
     svgRef: { current: {} },
-    isBrowseMode: false,
     routableLinePlacement: null,
     rewiring: null,
     connectSource: null,

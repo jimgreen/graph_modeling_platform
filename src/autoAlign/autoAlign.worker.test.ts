@@ -17,7 +17,6 @@ const emptyInput = () => ({
   edges: [],
   routedEdges: [],
   canvasBounds: { width: 800, height: 600 },
-  gridSpacing: 50,
   editModeRouteRenderOptions: { preserveManualRouteDisplay: true }
 });
 
@@ -50,8 +49,8 @@ describe("worker onmessage", () => {
   test("type=run：回 ok:true 与 runAutoAlignPlan 的结果", () => {
     handler({ data: { type: "run", input: emptyInput() } });
 
-    expect(postMessage).toHaveBeenCalledTimes(1);
-    const response = postMessage.mock.calls[0][0];
+    expect(postMessage.mock.calls.some(([message]) => message?.type === "progress")).toBe(true);
+    const response = postMessage.mock.calls.map(([message]) => message).find((message) => message?.ok === true);
     expect(response.ok).toBe(true);
     expect(response.result).toMatchObject({ nodeIds: [], layoutUnitCount: 0, arranged: [], storedRouteDrops: [] });
   });
@@ -112,7 +111,7 @@ describe("worker onmessage", () => {
     handler({ data: { type: "nope" } });
     handler({ data: { type: "run", input: emptyInput() } });
 
-    expect(postMessage).toHaveBeenCalledTimes(3);
-    expect(postMessage.mock.calls.map((call) => call[0].ok)).toEqual([true, false, true]);
+    expect(postMessage.mock.calls.filter((call) => call[0].ok === true || call[0].ok === false)).toHaveLength(3);
+    expect(postMessage.mock.calls.filter((call) => call[0].ok === true || call[0].ok === false).map((call) => call[0].ok)).toEqual([true, false, true]);
   });
 });

@@ -34,7 +34,11 @@ export async function handleV1SpaceArtifactExport({ url, response, paths }) {
     });
     response.end(buffer);
   } catch (error) {
-    sendV1Error(response, "internal", error instanceof Error ? error.message : "导出空间 E/SVG 失败。");
+    sendV1Error(
+      response,
+      typeof error?.code === "string" ? error.code : "internal",
+      error instanceof Error ? error.message : "导出空间 E/SVG 失败。"
+    );
   }
 }
 

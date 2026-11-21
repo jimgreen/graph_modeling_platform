@@ -3,7 +3,7 @@
 // PUT /webgrp/schemes/project 不校验 record.project 的结构（手写 JSON、ZIP 导入、
 // 外部工具产出都可能缺字段或塞进非对象项），而 SVG / E 文件 / CIM 三条导出链各自
 // 按结构假设解引用。实测：一个 `nodes: [null]` 的模型存得进去（200），随后
-// json / e-file / svg / cim-xml 四个端点里有三个直接 500：
+// json / e-file / svg / cim-xml 四种 format 里有三个直接 500：
 //
 //   Cannot read properties of undefined (reading 'endsWith')   → baseDeviceKind
 //   Cannot read properties of undefined (reading 'width')      → visualHalfExtentsForNode
@@ -36,10 +36,10 @@ let schemePath;
 let schemeFilesRoot;
 
 const EXPORTS = [
-  ["json", (name) => apiPath(`/v1/schemes/model/json?schemePath=${schemePath}&name=${encodeURIComponent(name)}`)],
-  ["e-file", (name) => apiPath(`/v1/schemes/model/e-file?schemePath=${schemePath}&name=${encodeURIComponent(name)}`)],
-  ["svg", (name) => apiPath(`/v1/schemes/model/svg?schemePath=${schemePath}&name=${encodeURIComponent(name)}`)],
-  ["cim-xml", (name) => apiPath(`/v1/schemes/model/cim-xml?schemePath=${schemePath}&name=${encodeURIComponent(name)}`)],
+  ["json", (name) => apiPath(`/v1/schemes/model/export?format=json&schemePath=${schemePath}&name=${encodeURIComponent(name)}`)],
+  ["e-file", (name) => apiPath(`/v1/schemes/model/export?format=e-file&schemePath=${schemePath}&name=${encodeURIComponent(name)}`)],
+  ["svg", (name) => apiPath(`/v1/schemes/model/export?format=svg&schemePath=${schemePath}&name=${encodeURIComponent(name)}`)],
+  ["cim-xml", (name) => apiPath(`/v1/schemes/model/export?format=cim-xml&schemePath=${schemePath}&name=${encodeURIComponent(name)}`)],
   // 方案 ZIP：一次性渲染该方案下**每个**模型，一个畸形模型就能把整包导出打挂，
   // 影响面比单模型端点大得多，故一并钉住。
   ["方案 ZIP", () => apiPath(`/schemes/export?schemePath=${schemePath}`)]
@@ -120,6 +120,12 @@ beforeAll(async () => {
   schemePath = encodeSchemePath([SCHEME_NAME]);
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const initialized = await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "默认空间" })
+  });
+  if (!initialized.ok) throw new Error(`default space initialization failed: ${initialized.status}`);
 });
 
 afterAll(async () => {

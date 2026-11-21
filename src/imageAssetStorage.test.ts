@@ -191,7 +191,7 @@ describe("saveImageAsset：合并写入，不是覆盖", () => {
 //
 // 降级约定沿用本文件既有写法，不新造错误类型：
 //   · 读侧 readImageAssets  catch → `return {}`（静默，见上文 describe）
-//   · 写侧 writeStoredInteractionMode / writeRefreshRecoveryProject
+//   · 写侧本地存储回退路径
 //     catch → 静默吞掉、**无返回值**（同文件 211-220 / 3727-3733）
 //   ⇒ saveImageAsset 写失败时同样静默吞掉，return undefined。
 //
@@ -229,8 +229,7 @@ describe("★ saveImageAsset：写入失败降级，不抛（与读侧 catch 对
   });
 
   test("★ 返回值与降级约定一致：无返回值 `undefined`（不返 false / 不造错误类型）", () => {
-    // 写侧的既有约定（writeStoredInteractionMode / writeRefreshRecoveryProject）
-    // 就是「catch 里什么都不返回」。若改成 return false / return { ok: false }，
+    // 写侧的既有约定就是「catch 里什么都不返回」。若改成 return false / return { ok: false }，
     // 这条断言会转红，且与同文件读侧 `catch → {}` 的形态不对称。
     failWritesWith(quotaExceeded());
     expect(saveImageAsset("a", "dA")).toBeUndefined();

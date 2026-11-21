@@ -81,6 +81,15 @@ afterEach(() => {
 const notified = () => (globalThis as any).showGlobalMessage as ReturnType<typeof vi.fn>;
 
 describe("runStartupGate 成功路径", () => {
+  test("后端标记 setupRequired 时返回 true，并暂不播种/清理缓存", async () => {
+    fetchSpacesMock.mockResolvedValue({ setupRequired: true, spaces: [], current: "" });
+
+    await expect(runStartupGate()).resolves.toBe(true);
+
+    expect(seedSpacesMock).not.toHaveBeenCalled();
+    expect(reconcileMock).not.toHaveBeenCalled();
+  });
+
   test("取回空间列表后播种给 App 的首次 refreshSpaces，并按当前空间清缓存", async () => {
     await runStartupGate();
 
@@ -128,7 +137,7 @@ describe("runStartupGate current 边界：空串 / undefined / 合法 id", () =>
     const odd = payload("");
     fetchSpacesMock.mockResolvedValue(odd);
 
-    await expect(runStartupGate()).resolves.toBeUndefined();
+    await expect(runStartupGate()).resolves.toBe(false);
 
     expect(seedSpacesMock).toHaveBeenCalledWith(odd);
     expect(reconcileMock).toHaveBeenCalledTimes(1);
@@ -160,7 +169,7 @@ describe("runStartupGate current 边界：空串 / undefined / 合法 id", () =>
     const odd = payload(undefined);
     fetchSpacesMock.mockResolvedValue(odd);
 
-    await expect(runStartupGate()).resolves.toBeUndefined();
+    await expect(runStartupGate()).resolves.toBe(false);
 
     expect(seedSpacesMock).toHaveBeenCalledWith(odd);
     expect(reconcileMock).toHaveBeenCalledTimes(1);
@@ -176,7 +185,7 @@ describe("runStartupGate current 边界：空串 / undefined / 合法 id", () =>
     const odd = payload("w9");
     fetchSpacesMock.mockResolvedValue(odd);
 
-    await expect(runStartupGate()).resolves.toBeUndefined();
+    await expect(runStartupGate()).resolves.toBe(false);
 
     expect(seedSpacesMock).toHaveBeenCalledWith(odd);
     expect(reconcileMock).toHaveBeenCalledTimes(1);
@@ -189,7 +198,7 @@ describe("runStartupGate 清缓存失败", () => {
   test("reconcile 抛错时提示用户，且**不**把异常外抛", async () => {
     // 外抛的话 createRoot 之前就 reject，整个应用起不来 —— 恰恰是最需要它起来的场合
     reconcileMock.mockRejectedValue(new Error("IDB 不可用"));
-    await expect(runStartupGate()).resolves.toBeUndefined();
+    await expect(runStartupGate()).resolves.toBe(false);
     expect(notified()).toHaveBeenCalledTimes(1);
     expect(String(notified().mock.calls[0][0])).toContain("未做空间校验");
   });
@@ -203,7 +212,7 @@ describe("runStartupGate 清缓存失败", () => {
     // 代价如实记录：走到这条路径时既不报错也不提示，正是源码注释担心的那种静默失败。
     (globalThis as any).showGlobalMessage = undefined;
     reconcileMock.mockRejectedValue(new Error("IDB 不可用"));
-    await expect(runStartupGate()).resolves.toBeUndefined();
+    await expect(runStartupGate()).resolves.toBe(false);
   });
 
   test("reconcile 同步抛错（而非返回 rejected promise）同样被接住", async () => {
@@ -211,7 +220,7 @@ describe("runStartupGate 清缓存失败", () => {
     reconcileMock.mockImplementation(() => {
       throw new Error("boom");
     });
-    await expect(runStartupGate()).resolves.toBeUndefined();
+    await expect(runStartupGate()).resolves.toBe(false);
     expect(notified()).toHaveBeenCalledTimes(1);
   });
 
@@ -227,7 +236,7 @@ describe("runStartupGate 取列表失败", () => {
   test("后端未起 / 离线时不阻断启动，也不打扰用户", async () => {
     // 白屏比「这次不校验」更坏。静默是这里**正确**的策略，与上一组相反。
     fetchSpacesMock.mockRejectedValue(new Error("fetch failed"));
-    await expect(runStartupGate()).resolves.toBeUndefined();
+    await expect(runStartupGate()).resolves.toBe(false);
     expect(notified()).not.toHaveBeenCalled();
   });
 
@@ -246,7 +255,7 @@ describe("runStartupGate 取列表失败", () => {
     seedSpacesMock.mockImplementation(() => {
       throw new Error("seed 失败");
     });
-    await expect(runStartupGate()).resolves.toBeUndefined();
+    await expect(runStartupGate()).resolves.toBe(false);
     expect(notified()).not.toHaveBeenCalled();
   });
 });
@@ -272,7 +281,7 @@ describe("runStartupGate 地址栏指定空间", () => {
     locationMock.hash = "#space=w9";
     fetchSpacesMock.mockRejectedValue(new Error("fetch failed"));
 
-    await expect(runStartupGate()).resolves.toBeUndefined();
+    await expect(runStartupGate()).resolves.toBe(false);
 
     expect(writeSpaceCookieMock).toHaveBeenCalledWith("w9");
     expect(rememberCacheOwnerSpaceMock).not.toHaveBeenCalled();
@@ -302,18 +311,18 @@ describe("runStartupGate 地址栏指定空间", () => {
 //   · reconcile 失败  → 有 showGlobalMessage 提示（唯一有提示的一条）
 //   · fetchSpaces 失败 → 无提示；且 seedSpaces 没被调用
 //   · seedSpaces  失败 → 无提示；seedSpaces 被调用过、reconcile 没被调用
-//   · 三者返回值全是 undefined，一个 reject 都没有。
-// 于是「后端没起」与「播种抛错」对调用方**完全同形**：同一个 undefined、同样静默、
+//   · 三者都返回 false，一个 reject 都没有。
+// 于是「后端没起」与「播种抛错」对调用方**完全同形**：同一个 false、同样静默、
 // 同样没有日志。唯一能把它们分开的痕迹是 seedSpaces 那一侧的调用记录 —— 而那是
 // App 挂载时第一次 refreshSpaces 才会读到的内部状态，运维在启动现场看不到。
 // 这就是「空 catch 的代价」，如实记录在此，不在本文件里替它定语义。
 describe("runStartupGate 失败来源的可观测边界（现状契约）", () => {
-  test("fetchSpaces 抛错：不外抛、无提示、不播种、不清缓存，返回 undefined", async () => {
+  test("fetchSpaces 抛错：不外抛、无提示、不播种、不清缓存，返回 false", async () => {
     fetchSpacesMock.mockRejectedValue(new Error("fetch failed"));
 
     const result = await runStartupGate();
 
-    expect(result).toBeUndefined();
+    expect(result).toBe(false);
     expect(notified()).not.toHaveBeenCalled();
     expect(seedSpacesMock).not.toHaveBeenCalled();
     expect(reconcileMock).not.toHaveBeenCalled();
@@ -321,7 +330,7 @@ describe("runStartupGate 失败来源的可观测边界（现状契约）", () =
   // 承重的是「不外抛」：把外层 catch 整段删掉 → 变成 reject，`await runStartupGate()`
   // 直接把异常抛进测试，这条红。
 
-  test("seedSpaces 抛错（fetchSpaces 成功）：同样不外抛、无提示、返回 undefined", async () => {
+  test("seedSpaces 抛错（fetchSpaces 成功）：同样不外抛、无提示、返回 false", async () => {
     // 现状记录：reconcile 被一起跳过 —— 等于这次启动完全没做空间校验，却与
     // reconcile 失败时的处理不对称（那一条会提示）。不对称是既有缺口，不在这里定语义。
     seedSpacesMock.mockImplementation(() => {
@@ -330,7 +339,7 @@ describe("runStartupGate 失败来源的可观测边界（现状契约）", () =
 
     const result = await runStartupGate();
 
-    expect(result).toBeUndefined();
+    expect(result).toBe(false);
     expect(notified()).not.toHaveBeenCalled();
     expect(fetchSpacesMock).toHaveBeenCalledTimes(1);
     expect(seedSpacesMock).toHaveBeenCalledTimes(1);
@@ -353,22 +362,17 @@ describe("runStartupGate 失败来源的可观测边界（现状契约）", () =
     expect(seedSpacesMock).not.toHaveBeenCalled();
   });
 
-  test("两条都成功时返回值是 undefined：Promise 上没有任何字段可取", async () => {
-    // 返回值形状先钉死再谈别的：runStartupGate 的契约是**纯副作用**，调用方拿不到任何数据。
-    // 两个调用方（main.tsx 的 await runStartupGate()、qiankunLifecycle.tsx 的 mount 里同一句）
-    // 也都没接返回值 —— 它们要的是「闸门跑完了」这个时序，不是结果。
+  test("两条都成功时返回 false：没有待初始化的默认空间", async () => {
+    // 返回值是启动状态：false 表示空间已存在或本次无法确认，不需要显示初始化界面。
     const result = await runStartupGate();
 
-    // 用 toBeUndefined 而不是 toBeFalsy：后者把 null / 0 / 空串 / false 一并放过，
-    // 而「这里必须是 undefined、不是 null 也不是空对象」正是要钉的东西。
-    expect(result).toBeUndefined();
-    expect(typeof result).toBe("undefined");
-    expect(result).not.toBeNull();
+    // 用 toBe(false) 钉住 boolean 契约，避免把 undefined / null 等错误形状放过去。
+    expect(result).toBe(false);
+    expect(typeof result).toBe("boolean");
     expect(seedSpacesMock).toHaveBeenCalledWith(SPACES);
     expect(reconcileMock).toHaveBeenCalledWith(SPACES.current);
   });
-  // 承重的是 toBeUndefined：源码在 try 末尾加一句 `return initial;`（返回类型是 Promise<void>，
-  // 要先改签名才能编译过，但这条断言正是为了让签名被改动时立刻红）→ result 变成 SPACES，红。
+  // 承重的是 boolean 返回值：源码在 try 末尾返回非 boolean（例如整个 initial）时，这条断言会红。
 
   test("四种结局（成功 / fetch 失败 / seed 失败 / reconcile 失败）返回值与是否 reject 完全同形", async () => {
     // 这条就是本组存在的理由：把「空 catch 使失败原因不可观测」变成可执行的断言。
@@ -393,7 +397,7 @@ describe("runStartupGate 失败来源的可观测边界（现状契约）", () =
 
     // 四种都 resolve（没有一个 reject）—— createRoot 之前不会因为这一步而整个应用起不来
     expect(outcomes.map((o) => o.label)).toEqual(["成功", "fetch 失败", "seed 失败", "reconcile 失败"]);
-    expect(outcomes.map((o) => o.value)).toEqual([undefined, undefined, undefined, undefined]);
+    expect(outcomes.map((o) => o.value)).toEqual([false, false, false, false]);
     // 唯一有提示的只有 reconcile 失败那一条；fetch/seed 失败静默
     expect(notified()).toHaveBeenCalledTimes(1);
   });
