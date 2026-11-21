@@ -187,6 +187,7 @@ describe("canvas automatic grid alignment", () => {
       editModeRouteRenderOptions: {},
       nodes,
       readjustActiveLayerBusEndpointRoutes: vi.fn(() => 0),
+      requireEditMode: () => true,
       routedEdges: [],
       setAutoAlignProgress,
       writeOperationLog: vi.fn()
@@ -239,6 +240,7 @@ describe("canvas automatic grid alignment", () => {
       editModeRouteRenderOptions: {},
       nodes,
       readjustActiveLayerBusEndpointRoutes,
+      requireEditMode: () => true,
       routedEdges: [],
       writeOperationLog
     } as any)();

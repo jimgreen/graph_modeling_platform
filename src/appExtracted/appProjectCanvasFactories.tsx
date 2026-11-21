@@ -2332,7 +2332,10 @@ function emitLayoutOperationFeedback(
 
 export function createAutoAlignCanvasGraphics(__appScope: Record<string, any>) {
   return async () => {
-    const { activeLayerEdges, activeLayerGroups, activeLayerNodes, autoAlignAbortControllerRef, canvasBounds, cleanupStaleConnectionRoutes, commitLayoutNodePositions, editModeRouteRenderOptions, edges, nodes, readjustActiveLayerBusEndpointRoutes, routedEdges, setAutoAlignProgress } = __appScope;
+    const { activeLayerEdges, activeLayerGroups, activeLayerNodes, autoAlignAbortControllerRef, canvasBounds, cleanupStaleConnectionRoutes, commitLayoutNodePositions, editModeRouteRenderOptions, edges, nodes, readjustActiveLayerBusEndpointRoutes, requireEditMode, routedEdges, setAutoAlignProgress } = __appScope;
+    if (!requireEditMode("自动对齐")) {
+      return;
+    }
     const activeNodeIds = activeLayerNodes.map((node: ModelNode) => node.id);
     if (activeNodeIds.length < 2) {
       emitLayoutOperationFeedback(__appScope, "自动对齐需要至少 2 个可操作图元", "error");
