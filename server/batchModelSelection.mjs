@@ -135,6 +135,8 @@ function stableModelKey(model) {
   return `path:${model.schemePath.join("/")}/${model.name}`;
 }
 
+export const stableBatchModelKey = stableModelKey;
+
 function normalizeModel(model, schemeIdByPath) {
   const numeric = numericModelId(model.project);
   return {

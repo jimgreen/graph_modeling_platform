@@ -6251,6 +6251,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       if (url.pathname.startsWith(apiPrefix + "/v1/")) {
         const { v1SchemeRoutes } = await import("./apiV1Schemes.mjs");
         const { v1ModelExportRoutes } = await import("./apiV1ModelExport.mjs");
+        const { v1BatchModelExportRoutes } = await import("./apiV1BatchModelExport.mjs");
         const { v1SpaceRoutes } = await import("./apiV1Spaces.mjs");
         const { v1LibraryRoutes } = await import("./apiV1Library.mjs");
         const { v1ReceiveRoutes } = await import("./apiV1Receive.mjs");
@@ -6258,7 +6259,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         const v1TopologyRoutes = createV1TopologyRoutes(runtimeWs, (event) =>
           publishSavedModelChange(modelUpdateService, event)
         );
-        const v1Routes = [...v1SchemeRoutes, ...v1ModelExportRoutes, ...v1SpaceRoutes, ...v1LibraryRoutes, ...v1ReceiveRoutes, ...v1TopologyRoutes, ...v1RuntimeRoutes, ...v1ControlRoutes];
+        const v1Routes = [...v1SchemeRoutes, ...v1ModelExportRoutes, ...v1BatchModelExportRoutes, ...v1SpaceRoutes, ...v1LibraryRoutes, ...v1ReceiveRoutes, ...v1TopologyRoutes, ...v1RuntimeRoutes, ...v1ControlRoutes];
         for (const route of v1Routes) {
           if (route.method !== request.method) {
             continue;
