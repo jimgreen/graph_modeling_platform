@@ -9,7 +9,7 @@
 //   前三条是静态校验（HTML 骨架）：
 //     1. 内联 <script> 能被真实 JS 引擎解析（SyntaxError 即页面全白）；
 //     2. 页面确实是完整 HTML 文档，且带 highlight.js（文档承诺的自包含交互依赖）；
-//     3. 端点数与示例总数符合文档记载的 78 端点 / 134 示例。
+//     3. 端点数与示例总数符合文档记载的 79 端点 / 135 示例。
 //   后几条走数据流（读 ENDPOINTS 本身，见下方分隔线之后）：
 //     _idx 注入的唯一性、重复渲染的幂等、非默认 apiPrefix 下的 path 重写、
 //     以及内联 JSON 的 </script> 注入面 —— 后者是已知未修漏洞，用 test.fails 钉住。
@@ -54,13 +54,13 @@ test("页面是完整 HTML 文档且自带 highlight.js", () => {
 // 端点/示例数会随功能增长；这里钉住的是「文档与实际同步」这一事实，具体数字见
 // swaggerPage.mjs 的 ENDPOINTS。真正的漂移防护在 routeCoverage.test.mjs
 // （已注册路由 vs 已文档化端点），本条只防手滑漏改。
-test("端点数与示例总数符合文档记载（78 端点 / 134 示例）", () => {
-  expect(SWIGGER_ENDPOINTS).toHaveLength(78);
+test("端点数与示例总数符合文档记载（79 端点 / 135 示例）", () => {
+  expect(SWIGGER_ENDPOINTS).toHaveLength(79);
   const exampleTotal = SWIGGER_ENDPOINTS.reduce(
     (sum, endpoint) => sum + (endpoint.examples?.length ?? 0),
     0
   );
-  expect(exampleTotal).toBe(134);
+  expect(exampleTotal).toBe(135);
   // 每个端点都必须有示例：swigger.examples.test.mjs 靠它逐条真实调用
   for (const endpoint of SWIGGER_ENDPOINTS) {
     expect(endpoint.examples?.length ?? 0, `${endpoint.method} ${endpoint.path} 没有示例`).toBeGreaterThan(0);

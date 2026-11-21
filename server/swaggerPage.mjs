@@ -336,6 +336,11 @@ const ENDPOINTS = [
     { label: "目标不存在（400）", params: { __body__: { path: "__swigger_missing_data_dir__" } } }
   ]},
 
+  // ---- 平台管理（本机数据根迁移）----
+  { scope: "host", group: "平台管理", method: "POST", path: "/webgrp/platform/data-dir", desc: "把当前数据根迁移到已存在且为空的新目录；复制校验、旧目录归档、配置更新和运行时切换全部成功后才返回 200，失败会回滚", body: { path: "D:/graph-modeling-data" }, response: "{ok:true,dataRoot,archivePath,savedAt}", examples: [
+    { label: "目标不存在（400）", params: { __body__: { path: "__swigger_missing_data_dir__" } } }
+  ]},
+
   // ---- 空间管理（管理面，与「某一空间的数据」无关：派发层对 /spaces 短路，不注入空间上下文）----
   // 返回 /webgrp/* 内部域形态（非 /v1 信封）。示例刻意不依赖其它用例的前置状态：
   // PUT 指向尚未建出的空间（400），DELETE 指向 default（pinned，400）。

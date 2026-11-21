@@ -12,7 +12,6 @@ let server;
 let baseUrl;
 let dataDir;
 let createImageServer;
-let spaceInitialized = false;
 
 // 全局 tmpdir：所有用例共享同一 dataRoot（image-server 模块加载时求值一次）。
 // 用例间靠独立 server 实例 + 数据自身隔离（不同方案名/图片 id）。
@@ -32,17 +31,13 @@ afterAll(async () => {
 beforeEach(async () => {
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
-  if (!spaceInitialized) {
-    const initializeResponse = await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+  const initializeResponse = await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ name: "默认空间" })
-    });
-    if (!initializeResponse.ok) {
-      throw new Error(`测试默认空间初始化失败：HTTP ${initializeResponse.status}`);
-    }
-    spaceInitialized = true;
-  }
+  });
+  if (!initializeResponse.ok) {
+    throw new Error(`测试默认空间初始化失败：HTTP ${initializeResponse.status}`);
   }
 });
 
