@@ -65,10 +65,13 @@ function buildOpts(ep, params) {
 // ① 文档里的 modelId 是占位（示例值 1），换成 seed 模型的 idx，避免撞上 repo 真实数据
 // ② 目标 URL 写的是后端默认地址（swaggerPage 的 RECEIVE_URL），换成当前随机端口的 baseUrl
 function normalizeExampleParams(ep, params) {
-  if (ep.path !== apiPath("/v1/schemes/model/send")) {
-    return params;
-  }
   const next = { ...params };
+  if (ep.path === apiPath("/v1/models/export") && next.q_modelId !== undefined && next.q_modelId !== "") {
+    next.q_modelId = TEST_MODEL_ID;
+  }
+  if (ep.path !== apiPath("/v1/schemes/model/send")) {
+    return next;
+  }
   if (next.q_modelId !== undefined && next.q_modelId !== "") {
     next.q_modelId = TEST_MODEL_ID;
   }
@@ -422,11 +425,32 @@ function expectFor(ep, ex) {
   if (p === apiPath("/device-library") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
 
   // v1 方案域
-  if (p === apiPath("/v1/schemes") && ep.method === "GET") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
-  if (p === apiPath("/v1/schemes/hierarchy")) return { status: 200, check: (r) => expect(r.json.data.nodes).toBeInstanceOf(Array) };
-  if (p === apiPath("/v1/schemes/models")) return { status: 200, check: (r) => expect(r.json.data.models).toBeInstanceOf(Array) };
+  if (p === apiPath("/v1/schemes") && ep.method === "GET") {
+    const view = ex.params?.q_view ?? "summary";
+    return { status: 200, check: (r) => {
+      expect(r.json.ok).toBe(true);
+      if (view === "hierarchy") expect(r.json.data.nodes).toBeInstanceOf(Array);
+      if (view === "models") expect(r.json.data.models).toBeInstanceOf(Array);
+      if (view === "summary") expect(r.json.data.schemes).toBeInstanceOf(Array);
+    } };
+  }
   if (p === apiPath("/v1/schemes/export")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
   if (p === apiPath("/v1/spaces/export-artifacts")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
+  if (p === apiPath("/v1/models/export")) return { status: 200, check: (r) => {
+    expect(r.json.ok).toBe(true);
+    expect(r.json.data.models).toBeInstanceOf(Array);
+    for (const model of r.json.data.models) {
+      expect(model.artifacts).toBeInstanceOf(Array);
+      for (const artifact of model.artifacts) {
+        expect(typeof artifact.contentBase64).toBe("string");
+      }
+    }
+    expect(r.json.data.mergedE).toBeInstanceOf(Array);
+    if (ex.params?.q_mergeE === "true") {
+      expect(r.json.data.mergedE.length).toBeGreaterThan(0);
+      expect(r.json.data.models.every((model) => model.artifacts.every((artifact) => artifact.format !== "e"))).toBe(true);
+    }
+  } };
   if (p === apiPath("/v1/schemes/model/export")) {
     const format = ex.params?.q_format;
     if (format === "json") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };

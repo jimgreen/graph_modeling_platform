@@ -205,10 +205,11 @@ pnpm purge:derived    # 归档存量派生文件（默认 dry-run，--apply 才�
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/v1/schemes` | 方案树（含模型摘要） |
-| GET | `/v1/schemes/hierarchy` | 层级树 |
-| GET | `/v1/schemes/models` | 某方案下的模型列表 |
+| GET | `/v1/schemes?view=hierarchy` | 层级树 |
+| GET | `/v1/schemes?view=models&schemePath=...` | 某方案下的模型列表 |
 | GET | `/v1/schemes/export` | 方案 ZIP |
 | GET | `/v1/schemes/model/export?format=json|svg|e-file|cim-xml` | 统一已保存模型导出入口；按 `format` 返回 JSON、SVG、E 文件或 CIM/XML |
+| GET | `/v1/models/export` | 按空间、方案或模型范围批量返回 JSON/SVG/CIM/E；支持编码、E 模板、按 `modelType` 合并 E 和关联模型扩展，产物以 Base64 放在 v1 信封中 |
 | POST | `/v1/schemes/model/export?format=e-file` | 统一已保存模型 E 文件自定义模板入口，body 含 `templateText` |
 | POST | `/v1/schemes/model/send` | 把模型转发到外部接收端 |
 

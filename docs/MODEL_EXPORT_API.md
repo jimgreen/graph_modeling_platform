@@ -146,6 +146,49 @@ curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/model/export?format=cim-xml
 
 旧的 /webgrp/v1/schemes/model/json、svg、e-file、cim-xml 路径已删除，调用方必须迁移到统一入口。
 
+### 3.5 批量多范围模型导出
+
+批量导出接口按空间、方案或模型范围枚举已保存模型，并把多种格式作为 JSON 信封中的 Base64 产物返回：
+
+```http
+GET /webgrp/v1/models/export
+```
+
+#### 范围与选择器
+
+| 参数 | 说明 |
+|---|---|
+| `scope=space` | 默认值，导出当前空间全部模型 |
+| `scope=scheme` | 需要 `schemePath` 或 `schemeId`；默认包含子方案，可用 `includeDescendants=false` 只取当前方案 |
+| `scope=model` | 需要 `modelId`，或 `schemePath/schemeId + name`；两种定位方式不能同时使用 |
+| `formats` | `json,svg,cim,e` 的逗号集合，默认全部；重复项去重，固定输出顺序 |
+| `encoding` | `utf-8` 或 `gbk`，默认 `utf-8`；外层 JSON 信封始终 UTF-8 |
+| `template` | 只影响 E 产物的预定义模板；类型不匹配的模型保留在 `models`，但跳过 E 并写入 warning |
+| `mergeE` | `true` 时按 `modelType` 生成独立合并 E，返回顶层 `mergedE` |
+| `includeAssociatedModels` | `true` 时递归带上模型 `model_id` 和全局线路关联模型，范围限制在当前空间 |
+| `colorMode` | 只影响 SVG：`energy` 或 `voltage` |
+| `strict` | 只影响 CIM；启用后沿用单模型 CIM 的关键参数校验 |
+
+示例：
+
+```bash
+curl.exe -sS "http://127.0.0.1:5174/webgrp/v1/models/export?scope=model&modelId=12&formats=json,svg,cim,e&encoding=gbk&template=配网实时库&includeAssociatedModels=true"
+```
+
+成功响应的 `data` 包含 `selectedModelCount`、`expandedModelCount`、`modelCount`、`models`、`mergedE` 和 `warnings`。每个 `models[].artifacts[]` 以及顶层 `mergedE[]` 都包含：
+
+```json
+{
+  "format": "json|svg|cim|e",
+  "encoding": "utf-8|gbk",
+  "mimeType": "application/json|image/svg+xml|application/xml|text/plain",
+  "filename": "产物文件名",
+  "contentBase64": "..."
+}
+```
+
+`mergeE=true` 时，每种模型类型对应一个独立的合并 E 文件，带有 `modelType`、`modelIds` 和可选 `template`；逐模型 `artifacts` 不重复放 E。任一模型读取或格式生成失败都会返回错误，不返回部分结果。没有匹配模型时返回 200，模型和合并产物数组为空。
+
 ## 4. 方案 ZIP 导出
 
 方案 ZIP 会递归处理所选方案及其子方案。每个被纳入的模型通常包含：

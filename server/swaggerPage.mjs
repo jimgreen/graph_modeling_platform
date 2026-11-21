@@ -151,19 +151,14 @@ const ENDPOINTS = [
   ]},
 
   // ---- v1 方案域（第三方只读）----
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes", desc: "方案树（每个方案节点含当前空间内唯一的 schemeId；信封 {ok,data}）", query: [{ name: "includeProjects", desc: "1 时含完整 project" }], response: "{ok:true,data:{schemes:[{schemeId,...}]}}", examples: [
+  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes", desc: "统一方案读取入口；view=summary|hierarchy|models，默认 summary", query: [{ name: "view", desc: "可选：summary（默认）| hierarchy | models" }, { name: "includeProjects", desc: "仅 view=summary：1 时含完整 project" }, { name: "schemePath", desc: "仅 view=models：方案路径" }, { name: "schemeId", desc: "仅 view=models：方案编号" }], response: "按 view 返回方案摘要、层级树或模型列表", examples: [
     { label: "方案树摘要", params: {} },
-    { label: "含完整 project", params: { q_includeProjects: "1" } }
-  ]},
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/hierarchy", desc: "纯层级树（节点含 schemeId）", response: "{ok:true,data:{nodes:[{schemeId,name,children}]}}", examples: [
-    { label: "层级树", params: {} }
-  ]},
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/models", desc: "方案下模型列表；至少提供一个 schemeId 或 schemePath；同时提供时必须一致，同时提供时必须指向同一方案", query: [{ name: "schemePath", desc: "方案路径；可单独或与 schemeId 同时提供，同时提供时必须一致" }, { name: "schemeId", desc: "当前空间内唯一的方案编号；可单独或与 schemePath 同时提供，同时提供时必须一致" }], response: "{ok:true,data:{schemeId,models:[{name,updatedAt}]}}", examples: [
-    { label: "「默认方案」下模型", params: { q_schemePath: SP_DEFAULT } },
-    { label: "子方案「1-1」下模型", params: { q_schemePath: SP_SUB } },
-    { label: "按 schemeId 列「默认方案」下模型", params: { q_schemeId: DEMO_SCHEME_ID } }
-  ]},
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/export", desc: "导出方案 ZIP；可用 schemeId 或 schemePath 定位；指定 template 时只导出该模板对应类型的模型", query: [{ name: "schemePath", desc: "方案路径；可单独或与 schemeId 同时提供，同时提供时必须一致" }, { name: "schemeId", desc: "当前空间内唯一的方案编号；可单独或与 schemePath 同时提供，同时提供时必须一致" }, { name: "template", desc: "可选：国网E格式|主网实时库|配网实时库|台区实时库" }], response: "<application/zip 二进制>", examples: [
+    { label: "含完整 project", params: { q_includeProjects: "1" } },
+    { label: "层级树", params: { q_view: "hierarchy" } },
+    { label: "「默认方案」下模型", params: { q_view: "models", q_schemePath: SP_DEFAULT } },
+    { label: "子方案「1-1」下模型", params: { q_view: "models", q_schemePath: SP_SUB } },
+    { label: "按 schemeId 列「默认方案」下模型", params: { q_view: "models", q_schemeId: DEMO_SCHEME_ID } }
+  ]},  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/export", desc: "导出方案 ZIP；可用 schemeId 或 schemePath 定位；指定 template 时只导出该模板对应类型的模型", query: [{ name: "schemePath", desc: "方案路径；可单独或与 schemeId 同时提供，同时提供时必须一致" }, { name: "schemeId", desc: "当前空间内唯一的方案编号；可单独或与 schemePath 同时提供，同时提供时必须一致" }, { name: "template", desc: "可选：国网E格式|主网实时库|配网实时库|台区实时库" }], response: "<application/zip 二进制>", examples: [
     { label: "导出「默认方案」", params: { q_schemePath: SP_DEFAULT } },
     { label: "按 schemeId 导出「默认方案」", params: { q_schemeId: DEMO_SCHEME_ID } }
   ]},
@@ -188,6 +183,29 @@ const ENDPOINTS = [
     { label: "「线路」E 文件（配网实时库模板）", params: { q_format: "e-file", q_schemePath: SP_DEFAULT, q_name: "线路", q_template: "配网实时库" } },
     { label: "「线路」CIM/XML", params: { q_format: "cim-xml", q_schemePath: SP_DEFAULT, q_name: "线路" } },
     { label: "按 schemeId 读取「线路」CIM/XML", params: { q_format: "cim-xml", q_schemeId: DEMO_SCHEME_ID, q_name: "线路" } }
+  ]},
+  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/models/export", desc: "按空间、方案或模型范围批量返回 JSON/SVG/CIM/E 文件；产物以请求编码编码后 Base64 返回，支持模板筛选、按 modelType 合并 E 和关联模型扩展", query: [
+    { name: "scope", desc: "可选：space（默认）| scheme | model" },
+    { name: "schemePath", desc: "scope=scheme/model 时的方案路径 JSON 字符串" },
+    { name: "schemeId", desc: "scope=scheme/model 时的正整数方案编号" },
+    { name: "modelId", desc: "scope=model 时的正整数模型 idx" },
+    { name: "name", desc: "scope=model 且使用方案选择器时的模型名" },
+    { name: "includeDescendants", desc: "scope=scheme 是否包含子方案，默认 true" },
+    { name: "formats", desc: "逗号分隔：json,svg,cim,e；默认全部" },
+    { name: "encoding", desc: "utf-8 或 gbk，默认 utf-8；产物字节按此编码，外层 JSON 仍为 UTF-8" },
+    { name: "template", desc: "仅作用于 E：国网E格式|主网实时库|配网实时库|台区实时库" },
+    { name: "mergeE", desc: "true 时按 modelType 返回独立合并 E 产物" },
+    { name: "includeAssociatedModels", desc: "true 时递归导出 model_id 和全局线路关联模型" },
+    { name: "colorMode", desc: "仅作用于 SVG：energy|voltage" },
+    { name: "strict", desc: "仅作用于 CIM：true 时严格检查关键参数" }
+  ], response: "{ok:true,data:{selectedModelCount,expandedModelCount,modelCount,models,mergedE,warnings}}，各产物含 contentBase64", examples: [
+    { label: "空间范围 JSON", params: { q_scope: "space", q_formats: "json" } },
+    { label: "方案范围（含子方案）", params: { q_scope: "scheme", q_schemePath: SP_DEFAULT, q_formats: "json" } },
+    { label: "模型范围全部格式", params: { q_scope: "model", q_modelId: 1, q_formats: "json,svg,cim,e" } },
+    { label: "模型范围 GBK JSON", params: { q_scope: "model", q_modelId: 1, q_formats: "json", q_encoding: "gbk" } },
+    { label: "模型范围配网模板 E", params: { q_scope: "model", q_modelId: 1, q_formats: "e", q_template: "配网实时库" } },
+    { label: "空间范围按类型合并 E", params: { q_scope: "space", q_formats: "e", q_mergeE: "true" } },
+    { label: "模型范围同步关联模型", params: { q_scope: "model", q_modelId: 1, q_formats: "json", q_includeAssociatedModels: "true" } }
   ]},
   { scope: "space", group: "v1 方案域", method: "POST", path: "/webgrp/v1/schemes/model/export", desc: "统一已保存模型 E 文件自定义模板入口；固定 format=e-file，模板文本放在请求体", query: [{ name: "format", desc: "必填且只能是 e-file" }, { name: "schemePath", desc: "方案路径；可单独或与 schemeId 同时提供，同时提供时必须一致" }, { name: "schemeId", desc: "当前空间内唯一的方案编号；可单独或与 schemePath 同时提供，同时提供时必须一致" }, { name: "name", desc: "模型名" }, { name: "encoding", desc: "可选，gbk（默认）|utf-8" }], body: { templateText: "<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>" }, response: "<text/plain GBK 二进制>", examples: [
     { label: "按自定义模板文本生成", params: { q_format: "e-file", q_schemePath: SP_DEFAULT, q_name: "线路", __body__: { templateText: "<ACLoad>\ndev_type=ACLoad\nname=名称\n</ACLoad>" } } }

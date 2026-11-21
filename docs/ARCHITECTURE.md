@@ -108,6 +108,7 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 - 只读域：schemes / library / runtime
 - 信封响应：{ok:true,data} / {ok:false,error:{code,message}}
 - v1 方案域：方案树、层级树、模型列表、导出 ZIP、模型 JSON/SVG/E 文件/CIM XML（界面导出按钮均先保存再走后端）；方案 ZIP 指定 `template` 时只保留模板允许的模型类型
+- v1 批量模型导出：`GET /webgrp/v1/models/export` 按空间、方案或模型范围返回 JSON/SVG/CIM/E Base64 产物，支持 UTF-8/GBK、E 模板筛选、按 `modelType` 独立合并 E，以及当前空间内的模型关联闭包
 - v1 空间派生导出：`GET /webgrp/v1/spaces/export-artifacts` 遍历当前空间模型，按 `eMode=per-model|merged` 输出模型 E/SVG 或合并 `space.e` + 每模型 SVG；指定 `template` 时按模板类型筛选，不写回派生文件
 - v1 图元库域：统一 `/v1/library?part=...` 入口，提供分类树、设备、量测、设备定义、模板和聚合结果
 - v1 运行时态：clients/model/devices/selection/tabs/screenshot/svg/e-file

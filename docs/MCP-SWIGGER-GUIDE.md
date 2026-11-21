@@ -120,6 +120,26 @@ target=current 只修改页面内存；target=saved 有修正时直接写盘。�
 
 POST 自定义 E 模板的 JSON body 含 templateText，可选 templateName。format 不匹配或携带了该格式不接受的参数时返回 400。
 
+### 多范围批量模型导出
+
+需要一次读取多个模型时使用：
+
+```http
+GET /webgrp/v1/models/export
+```
+
+`scope` 支持 `space`、`scheme`、`model`。`scope=scheme` 默认包含子方案；`scope=model` 可用 `modelId`，或用 `schemeId/schemePath + name` 定位。`formats` 支持逗号分隔的 `json,svg,cim,e`，默认全部；`encoding` 支持 `utf-8` 和 `gbk`。
+
+所有产物都放在 `{ok:true,data}` 信封中，以 `contentBase64` 返回，调用方按 artifact 的 `encoding` 解码。E 文件可用 `template` 指定预定义模板；`mergeE=true` 按 `modelType` 在顶层 `mergedE` 返回独立合并产物，逐模型 `artifacts` 不重复放 E。`includeAssociatedModels=true` 会在当前空间内递归带上 `model_id` 和全局线路关联模型，并通过 `expandedByAssociation` 标记扩展项。
+
+示例：
+
+```bash
+curl -sS "http://127.0.0.1:5174/webgrp/v1/models/export?scope=scheme&schemePath=%5B%22默认方案%22%5D&formats=json,svg,cim,e&encoding=utf-8&mergeE=true&includeAssociatedModels=true"
+```
+
+返回数据含 `selectedModelCount`、`expandedModelCount`、`modelCount`、`models`、`mergedE` 和 `warnings`。任一模型读取或产物生成失败，整个请求返回错误，不返回部分结果。
+
 ### 运行时导出
 
 统一接口：GET /webgrp/v1/runtime/export?format=svg|e-file；自定义 E 模板使用 POST /webgrp/v1/runtime/export?format=e-file。接口要求前端页面在线，仍保留 no-online-client、ws-timeout、no-active-model 等错误。
