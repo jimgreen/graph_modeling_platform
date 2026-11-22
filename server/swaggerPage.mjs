@@ -169,20 +169,11 @@ const ENDPOINTS = [
     { label: "每模型 E + SVG", params: { q_eMode: "per-model" } },
     { label: "合并 space.e + 每模型 SVG", params: { q_eMode: "merged" } }
   ]},
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/export", desc: "统一已保存模型导出入口；format=json|svg|e-file|cim-xml；至少提供一个 schemeId 或 schemePath，并提供 name", query: [{ name: "format", desc: "必填，json|svg|e-file|cim-xml" }, { name: "schemePath", desc: "方案路径；可单独或与 schemeId 同时提供，同时提供时必须一致" }, { name: "schemeId", desc: "当前空间内唯一的方案编号；可单独或与 schemePath 同时提供，同时提供时必须一致" }, { name: "name", desc: "模型名" }, { name: "colorMode", desc: "仅 format=svg：energy（默认）|voltage" }, { name: "encoding", desc: "format=svg/e-file 时可选 utf-8|gbk" }, { name: "template", desc: "仅 format=e-file：预定义模板名" }, { name: "modelId", desc: "仅 format=cim-xml：覆盖生成的模型 ID" }, { name: "strict", desc: "仅 format=cim-xml：1 时关键参数缺失返回 400" }], response: "按 format 返回 JSON/SVG/E/CIM", examples: [
-    { label: "「图元连接」JSON", params: { q_format: "json", q_schemePath: SP_DEFAULT, q_name: "图元连接" } },
-    { label: "「线路」JSON", params: { q_format: "json", q_schemePath: SP_DEFAULT, q_name: "线路" } },
-    { label: "按 schemeId 读取「线路」JSON", params: { q_format: "json", q_schemeId: DEMO_SCHEME_ID, q_name: "线路" } },
-    { label: "「线路」SVG", params: { q_format: "svg", q_schemePath: SP_DEFAULT, q_name: "线路" } },
-    { label: "按 schemeId 读取「线路」SVG", params: { q_format: "svg", q_schemeId: DEMO_SCHEME_ID, q_name: "线路" } },
-    { label: "「图元连接」SVG", params: { q_format: "svg", q_schemePath: SP_DEFAULT, q_name: "图元连接" } },
-    { label: "「线路」SVG（电压配色）", params: { q_format: "svg", q_schemePath: SP_DEFAULT, q_name: "线路", q_colorMode: "voltage" } },
-    { label: "「线路」SVG（GBK 编码）", params: { q_format: "svg", q_schemePath: SP_DEFAULT, q_name: "线路", q_encoding: "gbk" } },
-    { label: "「线路」E 文件（当前模板）", params: { q_format: "e-file", q_schemePath: SP_DEFAULT, q_name: "线路" } },
-    { label: "按 schemeId 读取「线路」E 文件", params: { q_format: "e-file", q_schemeId: DEMO_SCHEME_ID, q_name: "线路" } },
-    { label: "「线路」E 文件（配网实时库模板）", params: { q_format: "e-file", q_schemePath: SP_DEFAULT, q_name: "线路", q_template: "配网实时库" } },
-    { label: "「线路」CIM/XML", params: { q_format: "cim-xml", q_schemePath: SP_DEFAULT, q_name: "线路" } },
-    { label: "按 schemeId 读取「线路」CIM/XML", params: { q_format: "cim-xml", q_schemeId: DEMO_SCHEME_ID, q_name: "线路" } }
+  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/export", desc: "兼容单模型原始导出；新调用推荐 /webgrp/v1/models/export", query: [{ name: "format", desc: "json|svg|e-file|cim-xml" }, { name: "schemePath", desc: "方案路径" }, { name: "schemeId", desc: "方案编号" }, { name: "name", desc: "模型名" }, { name: "encoding", desc: "SVG/E 文件编码" }], response: "按 format 返回原始 JSON/SVG/E/CIM 响应", examples: [
+    { label: "兼容读取模型 JSON", params: { q_format: "json", q_schemePath: SP_DEFAULT, q_name: "线路" } },
+    { label: "兼容读取模型 SVG", params: { q_format: "svg", q_schemePath: SP_DEFAULT, q_name: "线路" } },
+    { label: "兼容读取模型 E", params: { q_format: "e-file", q_schemePath: SP_DEFAULT, q_name: "线路" } },
+    { label: "兼容读取模型 CIM/XML", params: { q_format: "cim-xml", q_schemePath: SP_DEFAULT, q_name: "线路" } }
   ]},
   { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/models/export", desc: "按空间、方案或模型范围批量返回 JSON/SVG/CIM/E 文件；产物以请求编码编码后 Base64 返回，支持模板筛选、按 modelType 合并 E 和关联模型扩展", query: [
     { name: "scope", desc: "可选：space（默认）| scheme | model" },

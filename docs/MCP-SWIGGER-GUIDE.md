@@ -109,16 +109,9 @@ target=current 只修改页面内存；target=saved 有修正时直接写盘。�
 
 ### 导出已保存模型
 
-统一接口：GET /webgrp/v1/schemes/model/export?format=...；自定义 E 模板使用 POST /webgrp/v1/schemes/model/export?format=e-file。
+已保存模型的新统一读取接口：`GET /webgrp/v1/models/export`。它按空间、方案或模型范围返回 JSON/SVG/CIM/E 的 Base64 产物；单模型通过 `scope=model` 和 `modelId` 或 `schemePath/name` 定位。旧的 `GET /webgrp/v1/schemes/model/export?format=...` 暂保留兼容，但不再作为新调用入口。
 
-| 内容 | format | 关键参数 | 返回内容 |
-|---|---|---|---|
-| JSON | json | schemeId 或 schemePath、name | {ok:true,data:{project:...}} |
-| SVG | svg | schemeId 或 schemePath、name；可选 colorMode、encoding | SVG 文本 |
-| E 文件 | e-file | schemeId 或 schemePath、name；可选 template、encoding | E 文件文本，默认 GBK |
-| CIM/XML | cim-xml | schemeId 或 schemePath、name；可选 modelId、strict | XML 文本 |
-
-POST 自定义 E 模板的 JSON body 含 templateText，可选 templateName。format 不匹配或携带了该格式不接受的参数时返回 400。
+自定义 E 模板仍使用 `POST /webgrp/v1/schemes/model/export?format=e-file`，JSON body 含 `templateText`，可选 `templateName`。不适用的参数返回 400。
 
 ### 多范围批量模型导出
 
@@ -154,7 +147,7 @@ curl -sS "http://127.0.0.1:5174/webgrp/v1/models/export?scope=scheme&schemePath=
 
 接收系统可按需调用以下接口：
 
-- 已保存模型导出：`GET /webgrp/v1/schemes/model/export?format=json|svg|e-file|cim-xml`
+- 已保存模型导出：`GET /webgrp/v1/models/export?scope=model&modelId=...&formats=json,svg,cim,e`
 - 自定义 E 模板：`POST /webgrp/v1/schemes/model/export?format=e-file`
 
 每个接口都要提供 `schemeId` 或 `schemePath` 以及模型名 `name`。推荐先用方案列表接口读取当前空间的数字 `schemeId`；如果模型会改名或移动，路径选择器应先查询最新路径。两种选择器同时提供时必须指向同一方案。跨工作空间调用时，使用 `X-Space` 请求头或 `?space=<空间ID>` 指定空间；不指定时，服务按现有空间选择规则处理请求。

@@ -94,40 +94,18 @@ $schemePath = [uri]::EscapeDataString('["默认方案","子方案"]')
 
 ## 3. 已保存模型导出
 
-这些接口读取指定空间中已经落盘的模型，不需要前端页面在线。旧的多个格式入口已经合并为一个统一入口：
+现在推荐使用批量接口读取已保存模型；单模型通过 `scope=model` 定位：
 
-~~~http
-GET /webgrp/v1/schemes/model/export?format=json|svg|e-file|cim-xml
-POST /webgrp/v1/schemes/model/export?format=e-file
-~~~
+```http
+GET /webgrp/v1/models/export?scope=model&modelId=12&formats=json,svg,cim,e
+```
 
-GET 请求至少提供 schemePath 或 schemeId，并提供 name。两种方案选择器同时提供时必须指向同一方案。format 必须是 json、svg、e-file 或 cim-xml；不适用的参数返回 400 bad-request。
+返回 `{ok:true,data}`，每个产物以 `contentBase64` 返回，具体参数见下方“批量多范围模型导出”。
 
-### 3.1 JSON
+旧的 `GET /webgrp/v1/schemes/model/export?format=...` 保留兼容，继续返回原始 SVG/E/CIM 响应或单模型 JSON 信封；新调用不应再依赖它。
+兼容 GET 响应会带 `Deprecation: true` 和 `Link: </webgrp/v1/models/export>; rel="successor-version"`，便于调用方迁移。
 
-~~~bash
-curl.exe -sS "http://127.0.0.1:5174/webgrp/v1/schemes/model/export?format=json&space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF"
-~~~
-
-响应为 {ok:true,data:{project}}。
-
-### 3.2 SVG
-
-可选 colorMode=energy|voltage、encoding=utf-8|gbk，返回 image/svg+xml 原始内容并带 XML 声明：
-
-~~~bash
-curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/model/export?format=svg&space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF&colorMode=voltage&encoding=gbk" -o 线路.svg
-~~~
-
-### 3.3 E 文件
-
-GET 可选 template 和 encoding，默认编码为 GBK：
-
-~~~bash
-curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/model/export?format=e-file&space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF&template=%E9%85%8D%E7%BD%91%E5%AE%9E%E6%97%B6%E5%BA%93&encoding=utf-8" -o 线路.e
-~~~
-
-POST 固定使用 format=e-file，请求体必须包含非空 templateText：
+自定义 E 模板仍使用 POST，请求体必须包含非空 `templateText`：
 
 ~~~bash
 curl.exe -X POST "http://127.0.0.1:5174/webgrp/v1/schemes/model/export?format=e-file&space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF&encoding=gbk" ^
@@ -136,17 +114,7 @@ curl.exe -X POST "http://127.0.0.1:5174/webgrp/v1/schemes/model/export?format=e-
   -o 线路-自定义.e
 ~~~
 
-### 3.4 CIM/XML
-
-可选 modelId 覆盖 CIM 模型 ID，strict=1 时关键参数缺失返回 400：
-
-~~~bash
-curl.exe -L "http://127.0.0.1:5174/webgrp/v1/schemes/model/export?format=cim-xml&space=default&schemePath=%5B%22%E9%BB%98%E8%AE%A4%E6%96%B9%E6%A1%88%22%5D&name=%E7%BA%BF%E8%B7%AF&modelId=12&strict=1" -o 线路.xml
-~~~
-
-旧的 /webgrp/v1/schemes/model/json、svg、e-file、cim-xml 路径已删除，调用方必须迁移到统一入口。
-
-### 3.5 批量多范围模型导出
+### 3.1 批量多范围模型导出
 
 批量导出接口按空间、方案或模型范围枚举已保存模型，并把多种格式作为 JSON 信封中的 Base64 产物返回：
 

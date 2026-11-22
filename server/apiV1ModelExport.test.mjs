@@ -30,7 +30,28 @@ describe("unified saved-model export API", () => {
     expect(response.json().error.message).toContain("template");
   });
 
-  test("registers one GET and one POST unified route", () => {
+  test("marks the legacy GET route deprecated and points to the batch successor", async () => {
+    const response = fakeResponse();
+    response.setHeader = (name, value) => {
+      response.headers = { ...(response.headers ?? {}), [name.toLowerCase()]: value };
+    };
+    const writeHead = response.writeHead.bind(response);
+    response.writeHead = (status, headers) => {
+      const prior = response.headers ?? {};
+      writeHead(status, { ...prior, ...(headers ?? {}) });
+    };
+    await handleV1ModelExport({
+      request: { method: "GET" },
+      response,
+      url: fakeUrl("format=unknown"),
+      paths: {}
+    });
+
+    expect(response.headers.deprecation).toBe("true");
+    expect(response.headers.link).toContain("/webgrp/v1/models/export");
+  });
+
+  test("keeps GET for raw single-model responses and POST for custom E templates", () => {
     expect(v1ModelExportRoutes.map((route) => route.method)).toEqual(["GET", "POST"]);
     expect(v1ModelExportRoutes.every((route) => route.pattern.test(`${apiPath("/v1/schemes/model/export")}`))).toBe(true);
     for (const legacyPath of [

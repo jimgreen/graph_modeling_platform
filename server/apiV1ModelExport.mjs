@@ -1,6 +1,6 @@
 // 统一已保存模型导出入口。
 // format 分派到现有 JSON/SVG/E/CIM handler，避免复制各格式的生成、编码和错误语义。
-import { apiPattern } from "./config.mjs";
+import { apiPath, apiPattern } from "./config.mjs";
 import { sendV1Error } from "./v1Response.mjs";
 import { withSpacePaths } from "./spaceStore.mjs";
 import { handleV1ModelJson, handleV1ModelSvg } from "./apiV1Schemes.mjs";
@@ -41,6 +41,10 @@ function validateFormat(url, response, method) {
 
 export async function handleV1ModelExport(route, ctx) {
   const { request, response, url } = route;
+  if (request?.method === "GET" && typeof response?.setHeader === "function") {
+    response.setHeader("deprecation", "true");
+    response.setHeader("link", `<${apiPath("/v1/models/export")}>; rel="successor-version"`);
+  }
   const format = validateFormat(url, response, request?.method ?? "GET");
   if (!format) return;
   if (format === "json") return handleV1ModelJson(route);
