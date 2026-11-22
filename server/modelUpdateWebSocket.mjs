@@ -44,14 +44,15 @@ function sendJson(ws, message) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
 }
 
-function errorFrame(error, subscriptionId) {
+function errorFrame(error, subscriptionId, requestId) {
   return {
     type: "error",
     error: {
       code: error?.code ?? "internal",
       message: error instanceof Error ? error.message : "订阅请求失败。",
       ...(subscriptionId ? { subscriptionId } : {})
-    }
+    },
+    ...(typeof requestId === "string" && requestId ? { requestId } : {})
   };
 }
 
@@ -123,25 +124,42 @@ export function attachModelUpdateWebSocket(server, { service, getSpaceStore }) {
       }
 
       if (message.type === "subscribe") {
+        const requestId = typeof message.requestId === "string" && message.requestId.trim()
+          ? message.requestId.trim()
+          : undefined;
         try {
           const subscriptionId = await service.subscribe(connectionId, spaceId, message.scope, message.files);
           const subscription = service.getSubscription(connectionId, subscriptionId);
           if (!subscription) throw Object.assign(new Error("订阅创建后已失效。"), { code: "connection-closed" });
-          sendJson(ws, { type: "subscribed", ok: true, data: subscription });
+          sendJson(ws, {
+            type: "subscribed",
+            ok: true,
+            ...(requestId ? { requestId } : {}),
+            data: subscription
+          });
         } catch (error) {
-          sendJson(ws, errorFrame(error));
+          sendJson(ws, errorFrame(error, undefined, requestId));
         }
         return;
       }
 
       if (message.type === "unsubscribe") {
+        const requestId = typeof message.requestId === "string" && message.requestId.trim()
+          ? message.requestId.trim()
+          : undefined;
         const subscriptionId = String(message.subscriptionId ?? "");
         if (service.unsubscribe(connectionId, subscriptionId)) {
-          sendJson(ws, { type: "unsubscribed", ok: true, data: { subscriptionId } });
+          sendJson(ws, {
+            type: "unsubscribed",
+            ok: true,
+            ...(requestId ? { requestId } : {}),
+            data: { subscriptionId }
+          });
         } else {
           sendJson(ws, errorFrame(
             Object.assign(new Error("订阅不存在或不属于当前连接。"), { code: "not-found" }),
-            subscriptionId
+            subscriptionId,
+            requestId
           ));
         }
         return;

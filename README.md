@@ -11,7 +11,7 @@
 |----|------|------|
 | 界面 | React 单页应用（端口 5173） | 人工建模、方案管理、属性编辑、导出 |
 | REST API | `/webgrp/v1/**` 只读 + 控制台写操作信封 API | 第三方系统集成 |
-| WebSocket | `/webgrp/ws` 运行时桥接、`/webgrp/v1/subscriptions/ws` 模型更新订阅 | 实时读取页面状态、接收已保存模型更新 |
+| WebSocket | `/webgrp/ws` 运行时桥接、`/webgrp/v1/subscriptions/ws` 模型更新订阅 | 实时读取页面状态、接收已保存模型更新；Node/Python 客户端见 `clients/` |
 | MCP 服务 | `/webgrp/mcp`（Model Context Protocol） | 让 AI 客户端直接读写模型，详见 [docs/MCP.md](docs/MCP.md) |
 
 ---
@@ -375,6 +375,8 @@ graph_modeling_platform/
 | [docs/mcp-evaluation.xml](docs/mcp-evaluation.xml) | MCP 只读评测题集 |
 | [docs/ModelDefJson.md](docs/ModelDefJson.md) | 设备定义 JSON 结构 |
 | [docs/WEBGRP-INTEGRATION-GUIDE.md](docs/WEBGRP-INTEGRATION-GUIDE.md) | 第三方系统接入：页面嵌入、模型读取和 WebSocket 更新订阅 |
+| `clients/node/README.md` | Node.js 模型更新订阅客户端：自动重连与重订阅 |
+| `clients/python/README.md` | Python 模型更新订阅客户端：后台接收线程与恢复 |
 | [AGENTS.md](AGENTS.md) | 开发约定、改动分档、检索纪律、命令速查 |
 
 ## 技术栈

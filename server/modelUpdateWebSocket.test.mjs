@@ -153,6 +153,47 @@ describe("model update WebSocket protocol", () => {
     });
   });
 
+  test("echoes optional requestId on subscription, unsubscribe, and error frames", async () => {
+    await startServer();
+    const ws = await openSocket(`${subscriptionPath}?space=space-a`);
+
+    ws.send(JSON.stringify({
+      type: "subscribe",
+      requestId: "req-subscribe-1",
+      scope: { type: "space" },
+      files: [{ kind: "json" }]
+    }));
+    const subscribed = await nextMessage(ws);
+    expect(subscribed).toMatchObject({
+      type: "subscribed",
+      requestId: "req-subscribe-1",
+      ok: true
+    });
+
+    ws.send(JSON.stringify({
+      type: "unsubscribe",
+      requestId: "req-unsubscribe-1",
+      subscriptionId: subscribed.data.subscriptionId
+    }));
+    expect(await nextMessage(ws)).toMatchObject({
+      type: "unsubscribed",
+      requestId: "req-unsubscribe-1",
+      ok: true
+    });
+
+    ws.send(JSON.stringify({
+      type: "subscribe",
+      requestId: "req-error-1",
+      scope: { type: "space" },
+      files: [{ kind: "svg" }]
+    }));
+    expect(await nextMessage(ws)).toMatchObject({
+      type: "error",
+      requestId: "req-error-1",
+      error: { code: "bad-request" }
+    });
+  });
+
   test("accepts native clients and remote browser origins, rejects unknown spaces and unrelated upgrades", async () => {
     await startServer();
     const native = await openSocket(`${subscriptionPath}?space=space-a`);

@@ -658,6 +658,58 @@ sequenceDiagram
 
 ---
 
+## 3.8 Node.js 和 Python 客户端封装
+
+仓库提供 `clients/node` 和 `clients/python` 两套客户端。两者都保存期望订阅，连接断开后自动重连，并在连接恢复后重新发送订阅。服务端不重放离线消息，因此应在恢复回调中重新读取 HTTP 快照。
+
+Node.js：
+
+```bash
+pnpm add ws
+```
+
+```js
+import { ModelUpdateClient } from "./clients/node/src/index.mjs";
+
+const client = new ModelUpdateClient({
+  url: "ws://127.0.0.1:5174/webgrp/v1/subscriptions/ws",
+  space: "default",
+  onResynchronized: async () => {
+    // 重新 GET 当前模型快照
+  }
+});
+client.on("model.updated", (data) => console.log(data.model_id));
+await client.connect();
+await client.subscribe({
+  scope: { type: "model", modelId: 12 },
+  files: [{ kind: "json" }, { kind: "e", encoding: "gbk" }]
+});
+```
+
+Python：
+
+```bash
+python -m pip install -e clients/python
+```
+
+```python
+from model_update_client import ModelUpdateClient
+
+client = ModelUpdateClient(
+    "ws://127.0.0.1:5174/webgrp/v1/subscriptions/ws",
+    space="default",
+    on_resynchronized=lambda _client: print("重新读取 HTTP 快照"),
+)
+client.on("model.updated", lambda data: print(data["model_id"]))
+client.connect()
+client.subscribe(
+    {"type": "model", "modelId": 12},
+    [{"kind": "json"}, {"kind": "e", "encoding": "gbk"}],
+)
+```
+
+两端都把关闭码 `4003`（空间已删除）视为永久失败；`close()` 会停止自动重连。完整示例分别位于 `clients/node/examples/basic.mjs` 和 `clients/python/examples/basic.py`。
+
 # 4. 第三方服务部署和反向代理
 
 ## 4.1 推荐的统一入口

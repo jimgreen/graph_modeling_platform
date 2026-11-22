@@ -520,6 +520,8 @@ socket.on("message", (raw) => {
 }
 ```
 
+客户端可以在 `subscribe` / `unsubscribe` 帧中附带可选的 `requestId` 字符串；服务端会在对应的 `subscribed`、`unsubscribed` 或 `error` 帧中回显它，便于多个请求并行管理。没有 `requestId` 的旧客户端仍兼容。客户端 SDK 为兼容旧服务端，恢复订阅时也会逐条等待确认。
+
 取消时发送 `{"type":"unsubscribe","subscriptionId":"sub-uuid"}`；成功返回 `type:"unsubscribed"`。一个连接关闭后，该连接的所有订阅立即清理；服务端不排队、不重放离线消息，重连后客户端需要重新订阅。
 
 服务端每 30 秒向连接发送 WebSocket 控制帧 Ping。连续 30 分钟未收到该连接的 Pong 时，服务端会清理该连接的所有订阅并终止连接；正常关闭或 socket error 时也会清理。浏览器和 `ws` 等标准 WebSocket 客户端会自动响应控制帧，客户端无需额外发送应用层心跳消息。
