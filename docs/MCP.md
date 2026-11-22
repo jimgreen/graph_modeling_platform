@@ -1,7 +1,7 @@
 # MCP 服务（/webgrp/mcp）
 
 把本平台暴露成 **Model Context Protocol** 服务，让 AI 客户端（Claude Code、Cursor、MCP Inspector 等）
-用统一协议读方案、读图元库、取前端运行时态、改前端画布。
+用统一协议读取方案、图元库、前端运行时态，检查或修复模型拓扑，并导出模型文件。
 
 - **传输**：streamable HTTP，**无状态**模式（每个 POST 一次 JSON-RPC 往返，不建 SSE 长连接）
 - **地址**：`http://127.0.0.1:5174/webgrp/mcp`（后端默认端口 5174）
@@ -58,10 +58,10 @@ MCP **不做自己的空间解析** —— 走派发层（`server/server.mjs`）
 ### 页面选择（token）
 
 空间决定「读哪份数据」，**token 决定「操作哪一个前端页面」**。多个页面同时在线时，
-运行时态读取与写操作都必须带 `token`（就是页面地址栏里的 `?token=`）：
+运行时态读取和 `target=current` 的拓扑操作需要指定页面时，使用 `token`（就是页面地址栏里的 `?token=`）：
 
 ```jsonc
-{ "name": "gmp_get_runtime_model", "arguments": { "token": "page-3f8a1c9d2b4e" } }
+{ "name": "gmp_get_runtime_tabs", "arguments": { "token": "page-3f8a1c9d2b4e" } }
 ```
 
 只有一个页面在线时可以不填。完整规则见下文「页面 token」一节。
@@ -79,12 +79,12 @@ MCP **不做自己的空间解析** —— 走派发层（`server/server.mjs`）
 | 缺少空间上下文 | **503**（接线 bug：派发层恒注入 spaceId） |
 
 无状态模式的代价：**每个 POST 都新建一个 transport + 一个 McpServer**（SDK 在
-`sessionIdGenerator` 未设时禁止复用 transport）。实测 31 个工具的注册耗时约 5ms，
+`sessionIdGenerator` 未设时禁止复用 transport）。当前 16 个工具的注册耗时约 5ms，
 相对一次模型往返可忽略。
 
 ---
 
-## 工具清单（31 个）
+## 工具清单（16 个）
 
 ### 方案域（读已落盘数据，不需要前端在线）
 
@@ -134,24 +134,18 @@ MCP **不做自己的空间解析** —— 走派发层（`server/server.mjs`）
 | 工具 | 作用 | 参数 |
 |------|------|------|
 | `gmp_list_runtime_clients` | 列在线前端页面。**每条带 `token`**（= 该页面地址栏的 `?token=`）、所属空间、注册与最后活跃时间 | 无 |
-| `gmp_get_runtime_model` | 读当前打开的模型（模型 ID、统一数字方案 ID、方案路径、更新时间） | `token?` |
-| `gmp_get_runtime_devices` | 读当前模型的图元清单 | `token?` |
-| `gmp_get_runtime_selection` | 读当前选中的图元 | `token?` |
 | `gmp_get_runtime_tabs` | 读三面板快照（model / tree / graph） | `token?`、`tab?` |
 | `gmp_capture_runtime_screenshot` | 截取画布 PNG（返回图片块） | `token?`、`width?`、`height?` |
 | `gmp_get_runtime_svg` | 导出现前画布 SVG 文本 | `token?` |
 | `gmp_get_runtime_e_file` | 导出当前模型 E 文件文本 | `token?`、`templateName?`、`templateText?` |
 
-### 页面结构域（看/改**页面本身**的状态，**需要前端页面在线**）
+### 页面结构域（查看页面本身，**需要前端页面在线**）
 
-这三项与其它域的区别：它们不读数据文件、也不改当前模型的图元，而是看/改
-「页面长什么样、当前在哪个空间、打开的是哪个模型」。
+这项不读数据文件，也不修改模型，只查看页面的结构。
 
 | 工具 | 作用 | 参数 | 注解 |
 |------|------|------|------|
 | `gmp_get_page_dom` | 读整体 DOM 结构（默认元素树，可选整页 HTML） | `token?`、`format?`∈`outline｜html`、`maxDepth?`、`maxNodes?`、`maxTextLength?`、`maxChars?` | 读 |
-| `gmp_switch_space` | 让前端切到另一个工作空间 | `spaceId`、`token?` | 写（**异步生效**，见下） |
-| `gmp_switch_model` | 让前端打开另一个已保存模型 | `modelId` / `modelKey` / (`schemeId?` 或 `schemePath?`) + `name`、`token?`；两个方案选择器可同时传但须一致 | 写 |
 
 #### `gmp_get_page_dom` 的两种格式
 
@@ -165,48 +159,18 @@ MCP **不做自己的空间解析** —— 走派发层（`server/server.mjs`）
 `<script>` / `<style>` / `<link>` / `<meta>` 在 outline 里被跳过 —— 它们体积大、
 对「页面长什么样」零信息量。
 
-#### `gmp_switch_space` 是**异步生效**的
-
-回执 `scheduled: true` 只表示「已排期」：
-
-1. 后端经 WS 下发 `control.space.switch`；
-2. 前端先回执，再在下一个宏任务里 `clear caches → 写 Cookie → location.reload()`；
-3. 页面重载 → WS 断开 → 约 3 秒后重连。
-
-所以**重载窗口期内**其它运行时工具会回 `no-online-client`。正确用法是
-`gmp_list_runtime_clients` 等到会话重新出现再继续，而不是把那一窗口的失败当成
-「切换失败」。`alreadyCurrent: true` 表示本就在目标空间，不会重载。
-未知 `spaceId` 直接回 `bad-request` 并**列出可用空间**（不切过去撞 400 白屏）。
-
-#### `gmp_switch_model` 的定位优先级
-
-`modelId`（后端分配的稳定序号 `project.idx`，跨方案唯一、改名/移动不变）>
-`modelKey`（运行期 `project:…` key）> `schemeId` + `name` 或 `schemePath` + `name`。方案编号和路径可同时提供，但必须指向同一方案。
-
-定位失败就报错 —— **不会**回退去打开「第一个模型」。已经是当前模型时回
-`alreadyOpen: true` 且不重复加载。
-同时提供 `schemeId` 和 `schemePath` 时，两者必须指向同一方案，否则回 `bad-request`。
-
-#### 两条写操作都要求「无未保存修改」
-
-页面上有未保存修改时直接回 `bad-request`（文案提示先调 `gmp_save_model`），
-**不弹确认框** —— 程序化调用方点不了模态框，弹了只会挂到 `ws-timeout`。
-
-### 控制台写操作域（改前端画布，**需要前端页面在线**）
+### 拓扑域
 
 | 工具 | 作用 | 参数 | 注解 |
 |------|------|------|------|
-| `gmp_add_device` | 新增图元 | `kind`、`x?`、`y?`、`attrs?` | 写 |
-| `gmp_create_scheme` | 新建方案 | `name`、`parentSchemeId?` | 写 |
-| `gmp_create_model` | 新建模型 | `name`、`modelType`∈`微网｜厂站｜馈线｜台区｜其他`、`schemeId?` | 写 |
-| `gmp_select_devices` | 改选中集（`mode`∈`set｜add｜toggle`） | `ids`、`mode?` | 写 |
-| `gmp_group_selected_devices` | 组合选中图元 | 无 | 写 |
-| `gmp_delete_devices` | 删除图元（不填 `ids` 则删当前选中） | `ids?` | **破坏性**（`destructiveHint: true`） |
-| `gmp_update_device_property` | 改图元属性 | `id`、`category`∈`graphic｜model｜measurement`、`patch` | 写 |
-| `gmp_save_model` | 落盘（`scope`∈`currentModel｜schemeTree`） | `scope` | 写 |
-| `gmp_save_template_from_selection` | 把选中图元存为模板 | `name`、`componentLibrary`、`categoryLibraryName?` | 写 |
-| `gmp_import_device_definition` | 解析 E 元件定义文本，返回与当前库的匹配预览 | `text` | **只读**（前端实现只做匹配，不写配置） |
-| `gmp_export_device_definition` | 导出当前库态的 E 元件定义文本 | 无 | **只读**（v1 走 POST，但语义是纯读） |
+| `gmp_check_topology` | 检查当前页面或已保存模型 | `target`、目标定位参数、`token?` | 读取；已保存模型检查可能初始化全局线路数据 |
+| `gmp_repair_topology` | 应用自动拓扑参数修正 | 同 `gmp_check_topology` | 当前页面需要在线；已保存模型会写盘 |
+
+### 元件定义域
+
+| 工具 | 作用 | 参数 | 注解 |
+|------|------|------|------|
+| `gmp_export_device_definition` | 导出当前图元库的 E 元件定义文本 | 无 | 只读 |
 
 `gmp_send_model` 标了 `openWorldHint: true` —— 它会向**外部地址**发请求。
 
@@ -214,15 +178,15 @@ MCP **不做自己的空间解析** —— 走派发层（`server/server.mjs`）
 
 ## 三条硬约束
 
-1. **运行时态与写操作需要前端页面在线**
-   浏览器打开 `http://127.0.0.1:5173` 并保持不关。运行时态与写操作都经 WebSocket
-   桥到前端页面取实时状态或下发指令。没有在线会话时返回 `no-online-client`，
-   错误文案带「无在线客户端」+ 下一步建议。
+1. **前端运行时读取与当前页面拓扑操作需要页面在线**
+   浏览器打开 `http://127.0.0.1:5173` 并保持不关。运行时态和 `target=current`
+   的拓扑操作经 WebSocket 桥接前端页面。没有在线会话时返回 `no-online-client`。
+   已落盘模型的方案、模型、图元库和 `target=saved` 拓扑操作不依赖前端页面。
    → 调用前先 `gmp_list_runtime_clients` 确认。
 
-2. **写操作只改前端内存，不自动落盘**
-   新增/删除/改属性都只作用于前端画布的当前状态。要持久化需另调
-   `gmp_save_model`（`scope=currentModel` 只存当前模型，`schemeTree` 存整棵方案树）。
+2. **拓扑修复的目标不同，写入行为也不同**
+   `target=current` 只修改前端内存；`target=saved` 会直接修改已保存模型。
+   调用前应确认目标范围，避免把页面临时修改误认为已经落盘。
 
 3. **多页面在线时必须用 `token` 指定目标页面**
    本空间只有一个在线页面 → 不填 `token` 也能用（自动就是它）；
@@ -254,9 +218,9 @@ clientId —— 所以「地址栏里看到的 token」与「后端注册表里�
 
 ### 与 v1 REST 的区别
 
-v1 的 `/webgrp/v1/runtime/*` 与 `/control/*` 保持原口径（不填 `clientId` 时取
-本空间最近活跃），因为那是已发布的第三方契约。**MCP 侧更严**：它是人/Agent 直接
-驱动多个页面的入口，「静默挑了另一页」的代价比「多填一个 token」大得多。
+v1 的 `/webgrp/v1/runtime/*` 保持 `clientId` 口径；MCP 侧使用 `token`，并在多页面时
+要求明确指定目标页面。当前 MCP 工具集不包含通用控制台写工具；拓扑操作按 `target`
+区分当前页面和已保存模型。
 
 ### 已知限制
 
@@ -311,7 +275,7 @@ v1 的 `/webgrp/v1/runtime/*` 与 `/control/*` 保持原口径（不填 `clientI
 | `token-required` | 本空间有多个在线页面但没传 `token` | 取目标页面地址栏的 `?token=` 作为 `token` 参数重试；文案里已列出可选项 |
 | `ws-timeout` | 前端没在超时内应答 | 稍后重试；前端页面可能卡住 |
 | `no-active-model` | 前端没打开模型 | 先在界面上打开模型 |
-| `no-selection` | 当前没有选中 | 先 `gmp_select_devices` |
+| `no-selection` | 当前没有选中 | 先在 webgrp 页面中选中图元 |
 | `internal` | 后端异常 | 看后端日志 |
 
 ### 二进制工具
@@ -333,9 +297,7 @@ E 文件默认 **GBK** 编码，工具层按响应头 charset 解码（不会给
 
 - **无状态**：没有会话、没有 SSE 推送。服务端主动通知（`notifications/*`）不可用。
 - **每请求重建 server**：工具注册每次重做（约 5ms）。
-- **写操作依赖前端**：没有前端页面时运行时态与写操作全部不可用（只能读已落盘数据）。
-- **`gmp_switch_space` 的生效是异步的**：回执只表示已排期，前端随后重载页面；
-  重载窗口期（约 3 秒）内其它工具会回 `no-online-client`，需轮询会话恢复。
+- **页面相关操作依赖前端**：没有前端页面时运行时态和 `target=current` 拓扑操作不可用；已落盘数据读取与 `target=saved` 拓扑修复仍可用。
 - **`gmp_get_page_dom` 受截断限制**：`outline` 有深度/节点数上限，`html` 有字符上限；
   `truncated: true` 时结构不完整。需要完整标记时显式放大 `maxChars` / `maxNodes`。
 - **空间由请求头/query/Cookie 决定**：同一客户端连不同 `X-Space` 即读不同空间的数据。
@@ -349,7 +311,7 @@ E 文件默认 **GBK** 编码，工具层按响应头 charset 解码（不会给
 | 文件 | 职责 |
 |------|------|
 | `server/mcp/v1Bridge.mjs` | 驱动 v1 handler 的桥（假 request/response 捕获信封） |
-| `server/mcp/tools.mjs` | 31 个工具定义（参数翻译 + 信封搬运 + 错误可执行化） |
+| `server/mcp/tools.mjs` | 16 个工具定义（参数翻译 + 信封搬运 + 错误可执行化） |
 | `server/mcp/mcpServer.mjs` | 装配 `McpServer`（server info + instructions + 注册工具） |
 | `server/mcp/httpHandler.mjs` | `/webgrp/mcp` 的 POST / GET / DELETE 入口（Origin 校验 + 无状态 transport） |
 | `server/mcp/mcpBridge.test.mjs` | 桥的单测 |

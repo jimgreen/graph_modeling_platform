@@ -1,16 +1,17 @@
 # 电力能源系统图上建模平台
 
-> graph_modeling_platform —— 面向电力 / 氢能 / 热力系统的图形化拓扑建模平台
+> graph_modeling_platform —— 面向电力 / 氢能 / 热力系统的图形化拓扑建模平台,  简称  webgrp
 
 在浏览器里画一张「图」，就能得到一套可导出、可被第三方程序调用的电力系统模型：
 图元（设备）、端子、连线、量测、电压等级、全局线路，最终导出成 **E 格式**、**CIM/XML**、**SVG** 等格式。
 
-平台同时提供三层对外能力：
+平台同时提供四类对外能力：
 
 | 层 | 形态 | 用途 |
 |----|------|------|
 | 界面 | React 单页应用（端口 5173） | 人工建模、方案管理、属性编辑、导出 |
 | REST API | `/webgrp/v1/**` 只读 + 控制台写操作信封 API | 第三方系统集成 |
+| WebSocket | `/webgrp/ws` 运行时桥接、`/webgrp/v1/subscriptions/ws` 模型更新订阅 | 实时读取页面状态、接收已保存模型更新 |
 | MCP 服务 | `/webgrp/mcp`（Model Context Protocol） | 让 AI 客户端直接读写模型，详见 [docs/MCP.md](docs/MCP.md) |
 
 ---
@@ -303,20 +304,21 @@ npx @modelcontextprotocol/inspector
 # URL:        http://127.0.0.1:5174/webgrp/mcp
 ```
 
-### 工具域（29 个 `gmp_*` 工具）
+### 工具域（16 个 `gmp_*` 工具）
 
 | 域 | 工具数 | 依赖前端在线 | 代表工具 |
 |----|--------|--------------|----------|
 | 方案域 | 6 | 否 | `gmp_list_schemes`、`gmp_get_model_json`、`gmp_export_model`、`gmp_export_scheme_archive`、`gmp_send_model` |
 | 图元库域 | 1 | 否 | `gmp_get_library` |
-| 运行时态域 | 8 | **是** | `gmp_list_runtime_clients`、`gmp_get_runtime_model`、`gmp_capture_runtime_screenshot`、`gmp_get_runtime_e_file` |
-| 页面结构域 | 3 | **是** | `gmp_get_page_dom`、`gmp_switch_space`、`gmp_switch_model` |
-| 控制台写操作域 | 11 | **是** | `gmp_add_device`、`gmp_create_model`、`gmp_select_devices`、`gmp_update_device_property`、`gmp_save_model` |
+| 运行时态域 | 5 | **是** | `gmp_list_runtime_clients`、`gmp_get_runtime_tabs`、`gmp_capture_runtime_screenshot`、`gmp_get_runtime_svg`、`gmp_get_runtime_e_file` |
+| 页面结构域 | 1 | **是** | `gmp_get_page_dom` |
+| 拓扑域 | 2 | **是/否** | `gmp_check_topology`、`gmp_repair_topology` |
+| 元件定义 | 1 | 否 | `gmp_export_device_definition` |
 
 ### 三条硬约束
 
-1. **运行时态与写操作需要前端页面在线** —— 否则回 `no-online-client`。
-2. **写操作只改前端内存，不自动落盘** —— 持久化需另调 `gmp_save_model`。
+1. **运行时态与当前页面拓扑操作需要前端页面在线** —— 否则回 `no-online-client`；已保存模型读取和已保存模型拓扑检查/修复不依赖前端页面。
+2. **拓扑修复的目标不同，写入行为也不同** —— `target=current` 只改页面内存，`target=saved` 会修改已保存模型。
 3. **多个页面在线时必须用 `token` 指定目标页面** —— `token` 即页面地址栏的 `?token=`，
    也是 WS clientId；不猜、不退回「最近活跃」。
 
@@ -331,12 +333,14 @@ npx @modelcontextprotocol/inspector
     "schemePath": ["示范厂站"], "name": "10kV 馈线", "format": "e-file",
     "templateName": "国网E格式", "encoding": "gbk" } }
 
-// 在指定页面新增图元并保存
-{ "name": "gmp_add_device", "arguments": { "kind": "ACLoad", "x": 320, "y": 180, "token": "page-3f8a1c9d2b4e" } }
-{ "name": "gmp_save_model", "arguments": { "scope": "currentModel", "token": "page-3f8a1c9d2b4e" } }
+// 检查已保存模型的拓扑
+{ "name": "gmp_check_topology", "arguments": { "target": "saved", "schemeId": 3, "name": "10kV 馈线" } }
+
+// 检查当前页面（需要页面在线）
+{ "name": "gmp_check_topology", "arguments": { "target": "current", "token": "page-3f8a1c9d2b4e" } }
 ```
 
-> 📖 **完整文档：[docs/MCP.md](docs/MCP.md)** —— 29 个工具的参数表、连接与空间/token 规则、
+> 📖 **完整文档：[docs/MCP.md](docs/MCP.md)** —— 16 个工具的参数表、连接与空间/token 规则、
 > 返回形状、错误码与已知限制。评测题集见 [docs/mcp-evaluation.xml](docs/mcp-evaluation.xml)。
 
 ---
@@ -367,9 +371,10 @@ graph_modeling_platform/
 | 文档 | 内容 |
 |------|------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 功能清单、符号映射、架构风格索引 |
-| [docs/MCP.md](docs/MCP.md) | MCP 服务：连接方式、29 个工具速查、错误码、限制 |
+| [docs/MCP.md](docs/MCP.md) | MCP 服务：连接方式、16 个工具速查、错误码、限制 |
 | [docs/mcp-evaluation.xml](docs/mcp-evaluation.xml) | MCP 只读评测题集 |
 | [docs/ModelDefJson.md](docs/ModelDefJson.md) | 设备定义 JSON 结构 |
+| [docs/WEBGRP-INTEGRATION-GUIDE.md](docs/WEBGRP-INTEGRATION-GUIDE.md) | 第三方系统接入：页面嵌入、模型读取和 WebSocket 更新订阅 |
 | [AGENTS.md](AGENTS.md) | 开发约定、改动分档、检索纪律、命令速查 |
 
 ## 技术栈

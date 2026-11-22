@@ -78,7 +78,7 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 
 ### 导出与持久化
 
-- 自包含 SVG 导出（前后端共用 `src/export/svg.ts` 的 buildSvgDocument，内联样式，被引用图片内联为 data URL；已保存模型推荐走 `/api/v1/models/export`，单模型原始 SVG GET 保持兼容，运行时导出走 `/api/v1/runtime/export?format=svg`）
+- 自包含 SVG 导出（前后端共用 `src/export/svg.ts` 的 buildSvgDocument，内联样式，被引用图片内联为 data URL；已保存模型推荐走 `/webgrp/v1/models/export`，单模型原始 SVG GET 保持兼容，运行时导出走 `/webgrp/v1/runtime/export?format=svg`）
 - 画布截图：SVG → PNG base64
 - E 格式导出：电力系统 E 文件
 - CIM/XML (IEC 61970 CIM16) 导出：单文件整合，AC 设备 + 拓扑端子连接 + 量测；`src/cim/` 独立模块（IR 中间表示 → RDF/XML 序列化），顶栏导出菜单入口
@@ -103,9 +103,9 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 - 通知载荷用 JSON + Base64 表达 `/webgrp/v1/schemes/model/send` 的 multipart 文件字段；订阅状态只保存在当前连接，不做离线重放
 - 服务端每 30 秒发送 WebSocket Ping；连续 30 分钟未收到 Pong 时清理该连接的订阅并终止连接
 
-### 第三方 API（/api/v1）
+### 第三方 API（/webgrp/v1）
 
-- 只读域：schemes / library / runtime
+- 主要域：schemes / library / runtime / topology / control / receive
 - 信封响应：{ok:true,data} / {ok:false,error:{code,message}}
 - v1 方案域：方案树、层级树、模型列表、导出 ZIP、模型 JSON/SVG/E 文件/CIM XML（界面导出按钮均先保存再走后端）；方案 ZIP 指定 `template` 时只保留模板允许的模型类型
 - v1 批量模型导出：`GET /webgrp/v1/models/export` 按空间、方案或模型范围返回 JSON/SVG/CIM/E Base64 产物，支持 UTF-8/GBK、E 模板筛选、按 `modelType` 独立合并 E，以及当前空间内的模型关联闭包
@@ -129,13 +129,13 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 ### MCP 服务（/webgrp/mcp）
 
 - 把本平台暴露成 Model Context Protocol 服务（SDK 1.32.2）：**streamable HTTP 无状态**模式，每个 POST 一次 JSON-RPC 往返，不建 SSE 长连接（GET/DELETE 回 405 + `Allow: POST`）
-- **31 个 `gmp_*` 工具**，三段式：方案域（列方案/模型 JSON/导出 SVG·E 文件·CIM XML/方案 ZIP/发送到外部）、图元库域（分类/设备图元/量测/元件定义/模板）、运行时态域（clients/model/devices/selection/tabs/screenshot/svg/e-file/dom）+ 控制台写操作域（13 个工具，含切换工作空间与切换模型；破坏性的标 `destructiveHint`）
+- **16 个 `gmp_*` 工具**：方案域 6 个、图元库域 1 个、运行时态域 5 个、页面结构域 1 个、拓扑域 2 个、元件定义导出 1 个。当前工具集不包含通用控制台写工具；模型保存等写操作仍通过 `/webgrp/v1/control/*` 或前端页面能力完成。
 - **不是第二份实现**：全部工具转调 `server/apiV1*.mjs` / `eFileExport.mjs` / `cimExport.mjs` / `sendModel.mjs` 已导出的 handler —— 参数校验、错误码、空间隔离口径与 v1 同源（`server/mcp/v1Bridge.mjs` 用捕获型假 request/response 驱动 v1 handler）
 - 空间隔离与 v1 一致：`/mcp` **不进** `isSpaceAgnostic` 白名单，照常走 `X-Space` 头 > `?space=` > Cookie > 首个空间的解析链
 - **页面选择用 token**：前端把 `?token=` 写进自己的地址栏，该值同时是 WS clientId。MCP 的会话类工具**入参与出参**都叫 `token`：本空间只有一个在线页面时可不填，多个时必须填，否则回 `token-required` 并列出可选值 —— 不静默退回「最近活跃」（v1 REST 仍用 clientId，契约不变）。复制标签页会连同 token 一起复制，服务端在注册阶段仲裁：旧连接已断则沿用原 token（刷新场景），仍被占则给后缀 token 并回 `renamed`，前端写回地址栏
-- 写操作经 WS 打到前端 `__appScope` 程序化方法 → **需要前端页面在线**；且只改前端内存，**要落盘须另调 `gmp_save_model`**
+- 当前 MCP 工具集不包含通用画布写操作；拓扑修复按 `target=current|saved` 区分内存与落盘行为，其余控制写操作走 `/webgrp/v1/control/*` 或前端页面能力
 - Origin 校验复用 `isAllowedNativeExportOrigin`（挡掉浏览器里任意网页对本机端口发 POST —— 发送不受 CORS 约束）
-- 文档：`docs/MCP.md`（连接方式、31 工具速查、错误码、限制）；评测：`docs/mcp-evaluation.xml`
+- 文档：`docs/MCP.md`（连接方式、16 工具速查、错误码、限制）；评测：`docs/mcp-evaluation.xml`
 
 ### 空间隔离（多工作空间）
 
@@ -187,7 +187,7 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 | createRuntimeWsClient | 函数 | src/runtimeWsClient.ts | 前端 WS 客户端 |
 | buildSvgDocument | 函数 | src/export/svg.ts | 自包含 SVG 导出（前端经 appPersistenceLibraryExport 转出；后端适配层 Node 原生直载） |
 | createProgrammaticAddDevice | 函数 | src/appExtracted/appControlFactories.tsx | 控制台写操作工厂（9 方法） |
-| createMcpServer | 函数 | server/mcp/mcpServer.mjs | 装配 MCP server（31 个 gmp_* 工具 + instructions） |
+| createMcpServer | 函数 | server/mcp/mcpServer.mjs | 装配 MCP server（16 个 gmp_* 工具 + instructions） |
 | createMcpToolRegistry | 函数 | server/mcp/tools.mjs | MCP 工具定义（参数翻译 + v1 信封搬运） |
 | invokeV1Handler | 函数 | server/mcp/v1Bridge.mjs | 用捕获型假 request/response 驱动 v1 handler |
 | handleMcpPost | 函数 | server/mcp/httpHandler.mjs | /webgrp/mcp 的 POST 入口（Origin 校验 + 无状态 transport） |
@@ -199,7 +199,7 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 |------|------|
 | __appScope 装配 | App.tsx 每帧重建 `__appScope` 对象并 `Object.assign` 当前状态；空依赖 useEffect 需经 `__appScopeRef` 读最新引用 |
 | 双服务器架构 | 开发时同时运行 Vite (5173) + Image Server (5174)；前端 WS dev 期直连 5174 |
-| 运行时态桥接 | 第三方 `/api/v1/runtime/*` 经 WS 向前端 fetch 运行时态（model/devices/selection/screenshot/svg/e-file） |
-| WS 双向指令通道 | 第三方 `/api/v1/control/*` 写操作经 WS 下发 command 到前端 `__appScope` 程序化方法，前端回 command-response |
+| 运行时态桥接 | 第三方 `/webgrp/v1/runtime/*` 经 WS 向前端 fetch 运行时态（model/devices/selection/screenshot/svg/e-file） |
+| WS 双向指令通道 | 第三方 `/webgrp/v1/control/*` 写操作经 WS 下发 command 到前端 `__appScope` 程序化方法，前端回 command-response |
 | E 格式导出 | 支持电力系统 E 格式数据导出 |
 | /swigger 自包含 | 接口文档页内嵌元数据 + highlight.js + 可折叠 JSON 树，无外部 JS 依赖（除 CDN） |

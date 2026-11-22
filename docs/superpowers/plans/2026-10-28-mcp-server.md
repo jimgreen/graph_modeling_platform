@@ -4,6 +4,8 @@
 
 **Goal:** 给电力能源系统图上建模平台加一个 **MCP (Model Context Protocol) 服务**，让 LLM 客户端（Claude Desktop / Cursor / 自建 Agent）能通过标准 MCP 协议读到本平台的方案域、图元库域、运行时态，并下发控制台写操作。
 
+> 历史计划说明：本文早期按 26 个工具规划；当前实现为 16 个 `gmp_*` 工具。工具清单、参数和当前行为以 `docs/MCP.md` 与 `server/mcp/tools.mjs` 为准。
+
 **Architecture:** MCP 端点**挂在现有后端进程内**（`POST {apiPrefix}/mcp`，默认 `http://127.0.0.1:5174/webgrp/mcp`），传输用 **streamable HTTP 无状态模式**（`sessionIdGenerator: undefined` + `enableJsonResponse: true`），每个请求新建一个 `StreamableHTTPServerTransport` + 一个 `McpServer`。工具实现**不重发 HTTP**，而是**直接调用 `server/apiV1*.mjs` 里已经导出的 handler 函数**（`handleV1Schemes` / `handleV1RuntimeModel` / `handleControlDeviceAdd` …），用一层「捕获型 fake request/response」把它们驱动起来 —— 于是空间隔离、参数校验、错误码映射、WS 客户端选择全部沿用 v1 的**同一份实现**，MCP 侧只做「参数翻译 + 信封搬运」。
 
 **Tech Stack:** Node 24 ESM（`.mjs`）、`@modelcontextprotocol/sdk@1.32.2`、`zod@4.6.7`、Vitest 3。
@@ -12,7 +14,7 @@
 
 1. **形态**：挂到现有后端的 `/mcp`（streamable HTTP），不做独立 stdio 进程 —— 单进程，复用空间解析与 WS 客户端注入。
 2. **写操作**：暴露 control 域 11 个写端点，破坏性操作用 `annotations.destructiveHint` 标注。
-3. **工具粒度**：语义聚合 + 直映射混合，约 20–24 个工具，统一 `gmp_` 前缀。
+3. **工具粒度**：语义聚合 + 直映射混合，约 20–24 个工具，统一 `gmp_` 前缀（历史规划；当前实现为 16 个）。
 
 ## Global Constraints
 
@@ -32,10 +34,12 @@
 
 ## File Structure
 
+> 本计划中的“26 个工具”是历史拆解数字；当前实现为 16 个，下面的文件职责和任务步骤仍可作为实现记录阅读，当前清单以 `docs/MCP.md` 和 `server/mcp/tools.mjs` 为准。
+
 | 文件 | 职责 | 动作 |
 |------|------|------|
 | `server/mcp/v1Bridge.mjs` | 捕获型 fake request/response + `invokeV1Handler()` + 信封解析 + 错误码→可执行建议 | 新建 |
-| `server/mcp/tools.mjs` | 26 个 `gmp_*` 工具的定义（名称 / 描述 / Zod schema / annotations / handler） | 新建 |
+| `server/mcp/tools.mjs` | 历史规划为 26 个、当前实现为 16 个 `gmp_*` 工具的定义 | 新建 |
 | `server/mcp/mcpServer.mjs` | 按请求上下文装配 `McpServer`（注册全部工具） | 新建 |
 | `server/mcp/httpHandler.mjs` | `/mcp` 的 HTTP 入口：Origin 校验、405、无状态 streamable HTTP 传输 | 新建 |
 | `server/mcp/mcpTools.test.mjs` | 工具契约 + 行为单测（InMemoryTransport 直连，不起 HTTP） | 新建 |
@@ -78,7 +82,7 @@
 
 ---
 
-### Task 2: `server/mcp/tools.mjs` + `server/mcp/mcpServer.mjs` —— 26 个工具
+### Task 2: `server/mcp/tools.mjs` + `server/mcp/mcpServer.mjs` —— 26 个工具（历史规划）
 
 **Files:**
 - Create: `server/mcp/tools.mjs`
@@ -91,7 +95,7 @@
   - `export function createMcpToolRegistry({ spaceId, paths, runtimeWs })` → 工具定义数组
   - `export function createMcpServer({ spaceId, paths, runtimeWs })` → 已注册全部工具的 `McpServer`
 
-**工具清单（26 个，`gmp_` 前缀）**
+**工具清单（历史规划 26 个，`gmp_` 前缀）**
 
 | # | 工具 | 形态 | v1 来源 | annotations |
 |---|------|------|----------|-------------|
@@ -134,7 +138,7 @@
 - **`outputSchema`**：JSON 类工具统一用 `{ ok: boolean, data?: unknown, error?: { code: string, message: string } }`（Zod raw shape）。若实测该 schema 在 SDK 的 zod 兼容层（v4 classic → v4-mini）下校验不过，降级为 `{ ok: boolean }` —— **必须实测**，不能想当然。
 
 - [ ] **Step 1: 写失败测试** `server/mcp/mcpTools.test.mjs`：
-  - 工具清单：26 个、名字唯一、全部 `gmp_` 前缀、每个都有 description 与 annotations。
+  - 工具清单（计划稿）：26 个、名字唯一、全部 `gmp_` 前缀、每个都有 description 与 annotations；当前实现数量以 `server/mcp/tools.mjs` 为准。
   - 用 `InMemoryTransport.createLinkedPair()` + 官方 `Client` 直连：能 `tools/list`；调用 `gmp_list_schemes` 返回 `structuredContent.ok === true`。
   - 错误路径：缺必填参数 → 客户端拿到错误；无在线客户端时 `gmp_add_device` → `isError` 且文案含「无在线客户端」。
 
@@ -153,7 +157,7 @@
 - Test: `server/mcp/mcpHttp.test.mjs`
 
 - [ ] **Step 1: 写失败测试** `server/mcp/mcpHttp.test.mjs`（端到端，照抄 `server/spaceDispatch.test.mjs` 的 harness：mkdtemp + `GRAPH_MODEL_DATA_DIR` + 自建 `createSpaceStore` 并**注入** `createImageServer({port:0, host:"127.0.0.1", spaceStore:store})`）：
-  - 官方 `Client` + `StreamableHTTPClientTransport` 连 `http://127.0.0.1:<port>/webgrp/mcp` → `initialize` → `tools/list`（断言 26 个）→ `tools/call("gmp_list_schemes")` 拿到 `ok:true`。
+  - 官方 `Client` + `StreamableHTTPClientTransport` 连 `http://127.0.0.1:<port>/webgrp/mcp` → `initialize` → `tools/list`（计划稿断言 26 个）→ `tools/call("gmp_list_schemes")` 拿到 `ok:true`；当前实现断言以实际工具清单为准。
   - `GET /webgrp/mcp` → 405 且带 `Allow: POST`。
   - `POST` 缺 `Accept: text/event-stream` → 406（SDK 的硬约束）。
   - `Origin: https://evil.example` → 403（本地 Origin 策略）。
@@ -186,7 +190,7 @@
 - Modify: `docs/ARCHITECTURE.md`
 - Modify: `CLAUDE.md`
 
-- [ ] **Step 1: `docs/MCP.md`**：连接地址与传输模式、空间选择（X-Space / ?space= / Cookie）、26 个工具清单与参数速查、只读 vs 写操作、错误码含义、已知限制（需前端在线、无状态、每个请求新建 server）。
+- [ ] **Step 1: `docs/MCP.md`**：连接地址与传输模式、空间选择（X-Space / ?space= / Cookie）、工具清单与参数速查、只读 vs 写操作、错误码含义、已知限制（需前端在线、无状态、每个请求新建 server）。工具数量以当前实现为准。
 - [ ] **Step 2: `docs/ARCHITECTURE.md`**：加「MCP 服务」一节（功能清单 + 代码映射表）。
 - [ ] **Step 3: `docs/mcp-evaluation.xml`**：10 题**只读**评测（每题独立、可验证、需多次工具调用），按 mcp-builder 的 `<evaluation><qa_pair><question>/<answer>` 格式。
 - [ ] **Step 4: `CLAUDE.md`**：关键文件表加 `server/mcp/` 一行。
