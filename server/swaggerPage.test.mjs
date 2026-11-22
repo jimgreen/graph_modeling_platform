@@ -204,7 +204,7 @@ test.fails("内联 JSON 不含裸 </script>：端点字段里的该序列已被�
     const at = SWIGGER_ENDPOINTS.lastIndexOf(probe);
     if (at !== -1) SWIGGER_ENDPOINTS.splice(at, 1);
   }
-    expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(78);
+    expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(79);
 
   // ① 核心断言：注入 </script> 不应让闭合标签数超过基线。
   //    对「转义成 <\/script>」与「转义成 <」两种实现都成立，不锁死修法。
@@ -222,9 +222,9 @@ test.fails("内联 JSON 不含裸 </script>：端点字段里的该序列已被�
 // 以下三条覆盖 renderCard 的**兜底分支**：method / scope / 参数说明 / 示例 / 响应 /
 // 端点描述缺失或非法时的渲染结果。
 //
-// 为什么值得守（可证的形状事实，不是猜测）：ENDPOINTS 里 78 条记录全是「完整形状」——
+// 为什么值得守（可证的形状事实，不是猜测）：ENDPOINTS 里 79 条记录全是「完整形状」——
 // method ∈ {GET,POST,PUT,DELETE}、scope ∈ {space,session,global,host}、每个 pathParams/
-// query 条目都带 desc、examples 都是非空数组、78 条都有 response 与 desc。实测输出：
+// query 条目都带 desc、examples 都是非空数组、79 条都有 response 与 desc。实测输出：
 // noDesc=0 noResp=0 noScope=0 noExamples=0 pathParamsNoDesc=[] queryNoDesc=[]。
 // 于是下面这些兜底臂在既有断言下**一次都没被求值**，而它们恰恰是「有人往端点表里加了一条
 // 字段不全的记录」时会立刻显形的分支：漏写 desc 会把字面量 `undefined` 印到页面上，
@@ -249,7 +249,7 @@ const cardByPath = (html, path) => {
 };
 
 // 临时挂探针 → 渲染一次 → 无论成败都摘干净。
-// 必须摘干净：同文件的其它用例断言端点数恒为 78、示例恒为 134，漏一条就会把它们一起搞红。
+// 必须摘干净：同文件的其它用例断言端点数恒为 79、示例恒为 135，漏一条就会把它们一起搞红。
 const renderCardsOf = (probes) => {
   SWIGGER_ENDPOINTS.push(...probes);
   let html;
@@ -261,7 +261,7 @@ const renderCardsOf = (probes) => {
       if (at !== -1) SWIGGER_ENDPOINTS.splice(at, 1);
     }
   }
-  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(78);
+  expect(SWIGGER_ENDPOINTS.length, "探针端点未被清理").toBe(79);
   return new Map(probes.map((probe) => [probe.path, cardByPath(html, probe.path)]));
 };
 
