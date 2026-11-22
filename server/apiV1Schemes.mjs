@@ -96,7 +96,32 @@ export async function handleV1Schemes({ url, request, response, paths }) {
   }
 }
 
-// /webgrp/v1/schemes/hierarchy —— 纯层级树
+// 统一方案读取入口：view=summary（默认）|hierarchy|models。
+export async function handleV1SchemesUnified(route) {
+  const { url, response } = route;
+  const view = (url.searchParams.get("view") ?? "summary").trim() || "summary";
+  const allowed = view === "models"
+    ? new Set(["view", "schemePath", "schemeId"])
+    : view === "summary"
+      ? new Set(["view", "includeProjects"])
+      : view === "hierarchy"
+        ? new Set(["view"])
+        : null;
+  if (!allowed) {
+    sendV1Error(response, "bad-request", "view 仅支持 summary、hierarchy 或 models。");
+    return;
+  }
+  const unexpected = [...url.searchParams.keys()].find((key) => !allowed.has(key));
+  if (unexpected) {
+    sendV1Error(response, "bad-request", `view=${view} 不接受参数 ${unexpected}。`);
+    return;
+  }
+  if (view === "hierarchy") return handleV1SchemesHierarchy(route);
+  if (view === "models") return handleV1SchemeModels(route);
+  return handleV1Schemes(route);
+}
+
+// 统一入口 view=hierarchy —— 纯层级树
 export async function handleV1SchemesHierarchy({ request, response, paths }) {
   try {
     const schemes = await readSchemes({ includeProjects: false, paths });
@@ -106,7 +131,7 @@ export async function handleV1SchemesHierarchy({ request, response, paths }) {
   }
 }
 
-// /webgrp/v1/schemes/models —— 指定方案下模型列表
+// 统一入口 view=models —— 指定方案下模型列表
 // query: schemePath=<encoded> 或 schemeId=<number>
 export async function handleV1SchemeModels({ url, request, response, paths }) {
   try {
@@ -273,9 +298,7 @@ import { withSpacePaths } from "./spaceStore.mjs";
 // v1 方案域路由表：{ method, pattern, handle }
 // 全表经 withSpacePaths 包装：paths 缺失即抛接线错误，不得静默落回默认空间。
 export const v1SchemeRoutes = [
-  { method: "GET", pattern: apiPattern("/v1/schemes", "/?$"), handle: withSpacePaths(handleV1Schemes) },
-  { method: "GET", pattern: apiPattern("/v1/schemes/hierarchy", "/?$"), handle: withSpacePaths(handleV1SchemesHierarchy) },
-  { method: "GET", pattern: apiPattern("/v1/schemes/models", "/?$"), handle: withSpacePaths(handleV1SchemeModels) },
+  { method: "GET", pattern: apiPattern("/v1/schemes", "/?$"), handle: withSpacePaths(handleV1SchemesUnified) },
   { method: "GET", pattern: apiPattern("/v1/schemes/export", "/?$"), handle: withSpacePaths(handleV1SchemeExport) },
   { method: "POST", pattern: apiPattern("/v1/schemes/model/send", "/?$"), handle: withSpacePaths(handleV1ModelSend) }
 ];

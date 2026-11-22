@@ -65,7 +65,7 @@ async function fetchJson(pathname) {
 describe("v1 schemeId selectors", () => {
   test("scheme list and hierarchy expose each node's schemeId", async () => {
     const list = await fetchJson(apiPath("/v1/schemes"));
-    const hierarchy = await fetchJson(apiPath("/v1/schemes/hierarchy"));
+    const hierarchy = await fetchJson(apiPath("/v1/schemes?view=hierarchy"));
 
     expect(list.response.status).toBe(200);
     expect(list.payload.data.schemes[0].schemeId).toBe(schemeId);
@@ -74,7 +74,7 @@ describe("v1 schemeId selectors", () => {
   });
 
   test("model list and JSON accept schemeId instead of schemePath", async () => {
-    const models = await fetchJson(`${apiPath("/v1/schemes/models")}?schemeId=${schemeId}`);
+    const models = await fetchJson(`${apiPath("/v1/schemes")}?view=models&schemeId=${schemeId}`);
     const project = await fetchJson(`${apiPath("/v1/schemes/model/export")}?format=json&schemeId=${schemeId}&name=${encodeURIComponent("编号模型")}`);
 
     expect(models.response.status).toBe(200);

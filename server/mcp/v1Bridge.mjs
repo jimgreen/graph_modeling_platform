@@ -110,7 +110,7 @@ export function createBridgeRequest({ method = "GET", body, headers = {} } = {})
  *   会被再编一层，v1 侧 `JSON.parse` 拿到 `["%E6%96%B9..."]` 而失败（400）。
  *   正确写法：传 `JSON.stringify(parts)`。
  *
- * @param {string} path v1 路径（如 "/v1/schemes/models"），已带 apiPrefix 的原样使用
+ * @param {string} path v1 路径（如 "/v1/schemes?view=models"），已带 apiPrefix 的原样使用
  * @param {Record<string, string|number|boolean|Array<string|number|boolean>|null|undefined>} [query]
  */
 export function buildBridgeUrl(path, query = {}) {

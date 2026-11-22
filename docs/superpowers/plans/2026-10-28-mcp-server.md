@@ -96,7 +96,7 @@
 | # | 工具 | 形态 | v1 来源 | annotations |
 |---|------|------|----------|-------------|
 | 1 | `gmp_list_schemes` | 读 | GET /v1/schemes | readOnly |
-| 2 | `gmp_list_scheme_models` | 读 | GET /v1/schemes/models | readOnly |
+| 2 | `gmp_list_scheme_models` | 读 | GET /v1/schemes?view=models | readOnly |
 | 3 | `gmp_get_model_json` | 读 | GET /v1/schemes/model/export?format=json | readOnly |
 | 4 | `gmp_export_model` | 读 | GET /v1/schemes/model/export?format=svg|e-file|cim-xml（自定义 E 模板为 POST） | readOnly |
 | 5 | `gmp_export_scheme_archive` | 读 | GET /v1/schemes/export | readOnly |

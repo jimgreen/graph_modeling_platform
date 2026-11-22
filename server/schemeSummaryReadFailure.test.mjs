@@ -43,6 +43,12 @@ beforeAll(async () => {
   const { createImageServer } = await import("./server.mjs");
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  const initialized = await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "默认空间" })
+  });
+  if (!initialized.ok) throw new Error(`default space initialization failed: ${initialized.status}`);
 
   mkdirSync(join(dataDir, "schemes", "files", "方案甲"), { recursive: true });
   writeFileSync(
@@ -67,7 +73,7 @@ describe("摘要路径：模型文件真读不动时报错，而不是伪装成�
   });
 
   test("★ v1 层级树回 internal 500（不是缺模型的 200 空树）", async () => {
-    const response = await fetch(`${baseUrl}${apiPath("/v1/schemes/hierarchy")}`);
+    const response = await fetch(`${baseUrl}${apiPath("/v1/schemes?view=hierarchy")}`);
     expect(response.status).toBe(500);
     const json = await response.json();
     expect(json.ok).toBe(false);
@@ -75,7 +81,7 @@ describe("摘要路径：模型文件真读不动时报错，而不是伪装成�
   });
 
   test("★ v1 模型列表同样 500，不是一个只剩文件名的条目", async () => {
-    const response = await fetch(`${baseUrl}${apiPath(`/v1/schemes/models?schemePath=${schemePathParam()}`)}`);
+    const response = await fetch(`${baseUrl}${apiPath(`/v1/schemes?view=models&schemePath=${schemePathParam()}`)}`);
     expect(response.status).toBe(500);
     expect((await response.json()).ok).toBe(false);
   });

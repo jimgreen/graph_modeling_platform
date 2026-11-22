@@ -25,7 +25,7 @@ import { z } from "zod";
 
 import {
   handleV1Schemes,
-  handleV1SchemeModels,
+  handleV1SchemesUnified,
   handleV1SchemeExport
 } from "../apiV1Schemes.mjs";
 import { handleV1ModelExport } from "../apiV1ModelExport.mjs";
@@ -362,10 +362,10 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
     handler: async (args) => {
       const spaceError = requireSpace();
       if (spaceError) return spaceError;
-      return runV1(handleV1Schemes, {
+      return runV1(handleV1SchemesUnified, {
         method: "GET",
         path: "/v1/schemes",
-        query: { includeProjects: args.includeProjects ? "1" : undefined },
+        query: { view: "summary", includeProjects: args.includeProjects ? "1" : undefined },
         paths,
         spaceId
       });
@@ -386,10 +386,10 @@ export function createMcpToolRegistry({ spaceId, paths, runtimeWs } = {}) {
       const spaceError = requireSpace();
       if (spaceError) return spaceError;
       if (!hasSchemeSelector(args)) return badRequest("请提供 schemeId 或 schemePath 指定方案。");
-      return runV1(handleV1SchemeModels, {
+      return runV1(handleV1SchemesUnified, {
         method: "GET",
-        path: "/v1/schemes/models",
-        query: schemeSelectorQuery(args),
+        path: "/v1/schemes",
+        query: { view: "models", ...schemeSelectorQuery(args) },
         paths,
         spaceId
       });

@@ -78,8 +78,8 @@ test("createBridgeRequest 显式传入 accept-encoding 也会被剔除", () => {
 });
 
 test("buildBridgeUrl 自动补 apiPrefix 并正确编码 query", () => {
-  const url = buildBridgeUrl("/v1/schemes/models", { schemePath: "a%b", name: "模型 1" });
-  expect(url.pathname).toBe("/webgrp/v1/schemes/models");
+  const url = buildBridgeUrl("/v1/schemes?view=models", { schemePath: "a%b", name: "模型 1" });
+  expect(url.pathname).toBe("/webgrp/v1/schemes");
   expect(url.searchParams.get("schemePath")).toBe("a%b");
   expect(url.searchParams.get("name")).toBe("模型 1");
   // null / undefined 的 query 项直接略过，不拼成 "null" 字符串
@@ -92,7 +92,7 @@ test("buildBridgeUrl 自动补 apiPrefix 并正确编码 query", () => {
 test("invokeV1Handler 能驱动真实 v1 handler：缺 schemePath → 400 bad-request", async () => {
   const result = await invokeV1Handler(handleV1SchemeModels, {
     method: "GET",
-    path: "/v1/schemes/models",
+    path: "/v1/schemes?view=models",
     paths
   });
   expect(result.status).toBe(400);
@@ -105,7 +105,7 @@ test("invokeV1Handler 能驱动真实 v1 handler：缺 schemePath → 400 bad-re
 test("invokeV1Handler 能驱动真实 v1 handler：正常返回 → 200 + 完整信封", async () => {
   const result = await invokeV1Handler(handleV1SchemeModels, {
     method: "GET",
-    path: "/v1/schemes/models",
+    path: "/v1/schemes?view=models",
     // query 值传**已解码形态**：JSON 数组文本。桥用 URLSearchParams 写进 URL，
     // 施加的百分号编码与 encodeSchemePath 同形。传 encodeSchemePath 的产物会双重编码。
     query: { schemePath: JSON.stringify(["方案A"]) },
@@ -184,7 +184,7 @@ test("query 值传已编码形态会被双重编码 → v1 报非法 schemePath�
   // 百分号序列 → JSON.parse 仍成功但元素是 "%E6%96%B9..." → 查不到方案 → 400。
   const result = await invokeV1Handler(handleV1SchemeModels, {
     method: "GET",
-    path: "/v1/schemes/models",
+    path: "/v1/schemes?view=models",
     query: { schemePath: encodeSchemePath(["方案A"]) },
     paths
   });

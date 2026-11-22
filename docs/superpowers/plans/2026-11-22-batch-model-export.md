@@ -80,9 +80,9 @@ test("defaults to space and all formats", () => {
 
 test("deduplicates formats and parses booleans", () => {
   const result = parseBatchModelExportQuery(url(
-    "scope=scheme&schemeId=3&formats=e,svg,e&includeDescendants=0&mergeE=1&strict=true"
+    "scope=scheme&schemeId=3&formats=e,svg,cim,e&includeDescendants=0&mergeE=1&strict=true"
   ));
-  expect(result.formats).toEqual(["svg", "e"]);
+  expect(result.formats).toEqual(["svg", "cim", "e"]);
   expect(result.includeDescendants).toBe(false);
   expect(result.mergeE).toBe(true);
   expect(result.strict).toBe(true);

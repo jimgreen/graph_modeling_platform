@@ -94,7 +94,7 @@ describe("handleV1SchemesHierarchy 正路径", () => {
   test("成功返层级树", async () => {
     readSchemes.mockResolvedValue([{ name: "A", schemeId: 1, updatedAt: "x", children: [{ name: "B", schemeId: 2, updatedAt: "y", children: [] }] }]);
     const res = createMockResponse();
-    await handleV1SchemesHierarchy({ url: mockUrl(apiPath("/v1/schemes/hierarchy")), request: { headers: {} }, response: res });
+    await handleV1SchemesHierarchy({ url: mockUrl(apiPath("/v1/schemes"), "view=hierarchy"), request: { headers: {} }, response: res });
     expect(res.jsonBody()).toEqual({ ok: true, data: { nodes: [{ name: "A", schemeId: 1, updatedAt: "x", children: [{ name: "B", schemeId: 2, updatedAt: "y", children: [] }] }] } });
   });
 });
@@ -104,7 +104,7 @@ describe("handleV1SchemeModels 正路径", () => {
     readSchemes.mockResolvedValue([{ name: "方案A", updatedAt: "x", projects: [{ name: "m1", updatedAt: "y" }], children: [] }]);
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1SchemeModels({ url: mockUrl(apiPath("/v1/schemes/models"), `schemePath=${sp}`), request: { headers: {} }, response: res });
+    await handleV1SchemeModels({ url: mockUrl(apiPath("/v1/schemes"), `view=models&schemePath=${sp}`), request: { headers: {} }, response: res });
     expect(res.jsonBody()).toEqual({ ok: true, data: { models: [{ name: "m1", updatedAt: "y" }] } });
   });
 
@@ -112,7 +112,7 @@ describe("handleV1SchemeModels 正路径", () => {
     readSchemes.mockResolvedValue([{ name: "父", updatedAt: "x", projects: [], children: [{ name: "子", updatedAt: "y", projects: [{ name: "m", updatedAt: "z" }], children: [] }] }]);
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["父", "子"]));
-    await handleV1SchemeModels({ url: mockUrl(apiPath("/v1/schemes/models"), `schemePath=${sp}`), request: { headers: {} }, response: res });
+    await handleV1SchemeModels({ url: mockUrl(apiPath("/v1/schemes"), `view=models&schemePath=${sp}`), request: { headers: {} }, response: res });
     expect(res.jsonBody().data.models).toEqual([{ name: "m", updatedAt: "z" }]);
   });
 
@@ -120,7 +120,7 @@ describe("handleV1SchemeModels 正路径", () => {
     resolveSchemePathForSelector.mockResolvedValue(["方案A"]);
     readSchemes.mockResolvedValue([{ name: "方案A", schemeId: 42, projects: [{ name: "m1", updatedAt: "y" }], children: [] }]);
     const res = createMockResponse();
-    await handleV1SchemeModels({ url: mockUrl(apiPath("/v1/schemes/models"), "schemeId=42"), request: { headers: {} }, response: res });
+    await handleV1SchemeModels({ url: mockUrl(apiPath("/v1/schemes"), "view=models&schemeId=42"), request: { headers: {} }, response: res });
     expect(res.statusCode).toBe(200);
     expect(res.jsonBody().data.models).toEqual([{ name: "m1", updatedAt: "y" }]);
     expect(resolveSchemePathForSelector).toHaveBeenCalledWith({ schemePath: [], schemeId: "42", paths: undefined });
@@ -130,7 +130,7 @@ describe("handleV1SchemeModels 正路径", () => {
     resolveSchemePathForSelector.mockRejectedValue(Object.assign(new Error("schemePath 与 schemeId 指向不同方案。"), { code: "bad-request" }));
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1SchemeModels({ url: mockUrl(apiPath("/v1/schemes/models"), `schemePath=${sp}&schemeId=42`), request: { headers: {} }, response: res });
+    await handleV1SchemeModels({ url: mockUrl(apiPath("/v1/schemes"), `view=models&schemePath=${sp}&schemeId=42`), request: { headers: {} }, response: res });
     expect(res.statusCode).toBe(400);
     expect(res.jsonBody().error.code).toBe("bad-request");
   });

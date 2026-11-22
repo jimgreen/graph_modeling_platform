@@ -31,6 +31,7 @@ let readSchemes;
 let createSchemeArchiveBuffer;
 let readSchemeProjectRecord;
 let handleV1Schemes;
+let handleV1SchemesUnified;
 let handleV1SchemesHierarchy;
 let handleV1SchemeModels;
 let handleV1SchemeExport;
@@ -52,6 +53,7 @@ beforeAll(async () => {
   ({ createImageServer, readSchemes, createSchemeArchiveBuffer, readSchemeProjectRecord } = await import("./server.mjs"));
   ({
     handleV1Schemes,
+    handleV1SchemesUnified,
     handleV1SchemesHierarchy,
     handleV1SchemeModels,
     handleV1SchemeExport,
@@ -134,33 +136,54 @@ describe(apiPath("/v1/schemes") + " 方案列表", () => {
   });
 });
 
-describe(apiPath("/v1/schemes/hierarchy") + " 层级树", () => {
+describe(apiPath("/v1/schemes?view=hierarchy") + " 层级树", () => {
   test("200 返回 {ok:true,data:{nodes}}", async () => {
-    const { status, json } = await fetchV1(apiPath("/v1/schemes/hierarchy"));
+    const { status, json } = await fetchV1(apiPath("/v1/schemes?view=hierarchy"));
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(Array.isArray(json.data.nodes)).toBe(true);
   });
 });
 
-describe(apiPath("/v1/schemes/models") + " 模型列表", () => {
+describe("handleV1SchemesUnified", () => {
+  test("view=hierarchy 返回层级树", async () => {
+    const { status, json } = await fetchV1(apiPath("/v1/schemes") + "?view=hierarchy");
+    expect(status).toBe(200);
+    expect(json.data.nodes).toBeInstanceOf(Array);
+  });
+
+  test("view=models 缺少选择器时沿用模型列表校验", async () => {
+    const { status, json } = await fetchV1(apiPath("/v1/schemes?view=models"));
+    expect(status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+  });
+});
+
+describe(apiPath("/v1/schemes?view=models") + " 模型列表", () => {
   test("缺少 schemePath 返 400（模型列表：无任何查询参数，error.code=bad-request）", async () => {
-    const { status, json } = await fetchV1(apiPath("/v1/schemes/models"));
+    const { status, json } = await fetchV1(apiPath("/v1/schemes?view=models"));
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("非法 schemePath（非 JSON）返 400", async () => {
-    const { status } = await fetchV1(apiPath("/v1/schemes/models") + "?schemePath=not-json");
+    const { status } = await fetchV1(apiPath("/v1/schemes?view=models&schemePath=not-json"));
     expect(status).toBe(400);
   });
 
   test("不存在的方案返 404（模型列表：查模型清单，error.code=not-found）", async () => {
     const sp = encodeSchemePath(["不存在的方案xyz"]);
-    const { status, json } = await fetchV1(apiPath(`/v1/schemes/models?schemePath=${sp}`));
+    const { status, json } = await fetchV1(apiPath(`/v1/schemes?view=models&schemePath=${sp}`));
     expect(status).toBe(404);
     expect(json.error.code).toBe("not-found");
+  });
+});
+
+describe("deleted scheme view routes", () => {
+  test.each(["/v1/schemes/hierarchy", "/v1/schemes/models"])("旧路径 %s 返回 404", async (path) => {
+    const { status } = await fetchV1(apiPath(path));
+    expect(status).toBe(404);
   });
 });
 
