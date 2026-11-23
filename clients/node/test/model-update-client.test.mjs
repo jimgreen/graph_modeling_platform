@@ -153,4 +153,76 @@ describe("ModelUpdateClient", () => {
     expect(errors.at(-1)?.code).toBe("space-deleted");
     client.close();
   });
+
+  test("rejects subscribe when the WebSocket factory fails synchronously", async () => {
+    const client = new ModelUpdateClient({
+      url: "ws://127.0.0.1:1/webgrp/v1/subscriptions/ws",
+      reconnect: false,
+      webSocketFactory: () => {
+        throw new Error("factory failed");
+      }
+    });
+
+    await expect(Promise.race([
+      client.subscribe({ scope: { type: "space" }, files: [{ kind: "json" }] }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("subscribe timed out")), 200))
+    ])).rejects.toMatchObject({ code: "connection-failed" });
+  });
+
+  test("rejects subscribe when the socket closes before opening", async () => {
+    const listeners = new Map();
+    const socket = {
+      readyState: 0,
+      once(event, listener) {
+        listeners.set(event, listener);
+        return this;
+      },
+      on(event, listener) {
+        listeners.set(event, listener);
+        return this;
+      },
+      close() {}
+    };
+    const client = new ModelUpdateClient({
+      url: "ws://127.0.0.1:1/webgrp/v1/subscriptions/ws",
+      reconnect: false,
+      webSocketFactory: () => socket
+    });
+
+    const pending = client.subscribe({ scope: { type: "space" }, files: [{ kind: "json" }] });
+    setTimeout(() => listeners.get("close")?.(1006, "dropped before open"), 0);
+
+    await expect(pending).rejects.toMatchObject({ code: "connection-closed" });
+  });
+
+  test("rejects the first subscribe when an open socket closes before its ACK", async () => {
+    const listeners = new Map();
+    const socket = {
+      readyState: 0,
+      once(event, listener) {
+        listeners.set(event, listener);
+        return this;
+      },
+      on(event, listener) {
+        listeners.set(event, listener);
+        return this;
+      },
+      send() {},
+      close() {}
+    };
+    const client = new ModelUpdateClient({
+      url: "ws://127.0.0.1:1/webgrp/v1/subscriptions/ws",
+      reconnectMinDelayMs: 10,
+      reconnectMaxDelayMs: 10,
+      reconnectJitter: 0,
+      webSocketFactory: () => socket
+    });
+
+    const pending = client.subscribe({ scope: { type: "space" }, files: [{ kind: "json" }] });
+    socket.readyState = 1;
+    listeners.get("open")?.();
+    listeners.get("close")?.(1006, "dropped after open");
+
+    await expect(pending).rejects.toMatchObject({ code: "connection-closed" });
+  });
 });

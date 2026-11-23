@@ -141,24 +141,40 @@ export function createModelUpdateService({
   async function publishModelChanged(event) {
     const schemePath = Array.isArray(event?.schemePath) ? event.schemePath.map(String) : [];
     const normalizedEvent = { ...event, spaceId: String(event?.spaceId ?? ""), schemePath };
-    let published = 0;
-    for (const subscription of subscriptions.values()) {
-      if (!subscriptionMatches(subscription, normalizedEvent)) continue;
+    const matching = [...subscriptions.values()].filter((subscription) =>
+      subscriptionMatches(subscription, normalizedEvent)
+    );
+    const payloadPromises = new Map();
+    const payloadFor = (subscription) => {
+      const key = JSON.stringify(subscription.files);
+      let promise = payloadPromises.get(key);
+      if (!promise) {
+        try {
+          promise = Promise.resolve(buildPayload({
+            spaceId: subscription.spaceId,
+            record: event.record,
+            schemePath,
+            files: structuredClone(subscription.files),
+            paths: event.paths
+          }));
+        } catch (error) {
+          promise = Promise.reject(error);
+        }
+        payloadPromises.set(key, promise);
+      }
+      return promise;
+    };
+
+    const results = await Promise.all(matching.map(async (subscription) => {
       const isActive = () => subscriptions.get(subscription.subscriptionId) === subscription
         && connections.has(subscription.connectionId);
       try {
-        const data = await buildPayload({
-          spaceId: subscription.spaceId,
-          record: event.record,
-          schemePath,
-          files: structuredClone(subscription.files),
-          paths: event.paths
-        });
-        if (!isActive()) continue;
+        const data = await payloadFor(subscription);
+        if (!isActive()) return 0;
         await sendToConnection(subscription.connectionId, { type: "model.updated", data });
-        published += 1;
+        return 1;
       } catch (error) {
-        if (!isActive()) continue;
+        if (!isActive()) return 0;
         try {
           await sendToConnection(subscription.connectionId, {
             type: "error",
@@ -171,9 +187,10 @@ export function createModelUpdateService({
         } catch {
           // A failed socket send must not prevent delivery to other subscribers.
         }
+        return 0;
       }
-    }
-    return published;
+    }));
+    return results.reduce((total, value) => total + value, 0);
   }
 
   function removeModel(spaceId, modelId) {

@@ -345,8 +345,10 @@ export async function writeTextIfChanged(filePath, content) {
     if (current.equals(bytes)) {
       return;
     }
-  } catch {
-    // File is missing or unreadable; write a fresh copy below.
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
   }
   // 原子写（审查 A1-P0-1）：manifest/配置等 JSON 存储统一经此，崩溃不留半写文件
   await atomicWriteFile(filePath, bytes);
@@ -356,7 +358,10 @@ async function ensureJsonStoreFile(dirPath, filePath, defaultValue) {
   await mkdirInSpace(dirPath);
   try {
     await readFile(filePath, "utf-8");
-  } catch {
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
     await writeTextIfChanged(filePath, stringifyJson(defaultValue));
   }
 }
@@ -364,10 +369,9 @@ async function ensureJsonStoreFile(dirPath, filePath, defaultValue) {
 /**
  * 读 JSON 存储失败时的告警：把「IO 失败」与「文件不存在」区分开说。
  *
- * 这里的降级（失败即按空值处理）是既有契约，动它会改变 API 行为，故保留；只加上
- * 告警——此前读失败是**完全静默**的：配置读坏 → 前端拿到「没有配置」的合法响应
- * → 用户一保存就把真实配置覆盖掉，而日志里一个字都没有。ENOENT 是「还没有这个
- * 文件」的正常路径，不告警（否则每次首启都刷一串）。
+ * 语法错误仍按既有兼容语义回落并告警；其他 IO 失败必须上抛，不能把不可读文件
+ * 伪装成空配置后再被下一次保存覆盖。ENOENT 是「还没有这个文件」的正常路径，
+ * 不告警（否则每次首启都刷一串）。
  */
 function warnStoreReadFallback(error, filePath, fallback) {
   if (error?.code === "ENOENT") {
@@ -381,6 +385,9 @@ async function readJsonStoreFile(dirPath, filePath, defaultValue, normalize = (v
   try {
     return normalize(JSON.parse(await readFile(filePath, "utf-8")));
   } catch (error) {
+    if (!(error instanceof SyntaxError) && error?.code !== "ENOENT") {
+      throw error;
+    }
     warnStoreReadFallback(error, filePath, "按空值处理");
     return normalize(defaultValue);
   }
@@ -391,6 +398,9 @@ async function readOptionalJsonStoreFile(dirPath, filePath) {
   try {
     return JSON.parse(await readFile(filePath, "utf-8"));
   } catch (error) {
+    if (!(error instanceof SyntaxError) && error?.code !== "ENOENT") {
+      throw error;
+    }
     warnStoreReadFallback(error, filePath, "按「无配置」处理");
     return null;
   }
@@ -5653,7 +5663,7 @@ function isPathInsideStaticRoot(targetPath, staticRoot) {
 
 // prod 静态资源托管：dist/ 存在时，非 /api、/ws 请求走静态文件 + SPA fallback。
 // dev 模式 staticRoot 为空，跳过（Vite 自处理前端）。
-async function serveStaticAsset(request, response, url, staticRoot) {
+export async function serveStaticAsset(request, response, url, staticRoot) {
   if (!staticRoot) {
     return false;
   }
@@ -5680,8 +5690,10 @@ async function serveStaticAsset(request, response, url, staticRoot) {
       pipeFileToResponse(filePath, response);
       return true;
     }
-  } catch {
-    // 文件不存在，fall through 到 SPA fallback
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
   }
   // SPA fallback：未命中文件的非越界请求返回 index.html（越界已在上方拦截）
   const indexPath = join(staticRoot, "index.html");
@@ -5696,8 +5708,10 @@ async function serveStaticAsset(request, response, url, staticRoot) {
       pipeFileToResponse(indexPath, response);
       return true;
     }
-  } catch {
-    // index.html 不存在，交还调用方返 404
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
   }
   return false;
 }
@@ -5706,7 +5720,7 @@ async function serveStaticAsset(request, response, url, staticRoot) {
 // 前端 URL 经 frontendPath() 拼接（含 frontendPrefix），后端 stripFrontendBase 剥前缀后命中此处。
 const iconLibraryPublicDir = join(repoRoot, "public", "icon-library");
 
-async function serveIconLibraryAsset(request, response, url) {
+export async function serveIconLibraryAsset(request, response, url) {
   const prefix = "/icon-library/";
   if (!url.pathname.startsWith(prefix)) {
     return false;
@@ -5729,8 +5743,10 @@ async function serveIconLibraryAsset(request, response, url) {
       pipeFileToResponse(filePath, response);
       return true;
     }
-  } catch {
-    // 文件不存在，fall through
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
   }
   return false;
 }

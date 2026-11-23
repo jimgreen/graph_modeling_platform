@@ -250,6 +250,13 @@ class ModelUpdateClient:
                     self._send_subscribe_and_wait(handle)
                 except ModelUpdateError as error:
                     if error.retryable:
+                        with self._lock:
+                            socket = self._socket
+                        if socket is not None:
+                            try:
+                                socket.close()
+                            except Exception:
+                                pass
                         return
                     with self._lock:
                         self._desired.pop(handle.id, None)
@@ -376,11 +383,18 @@ class ModelUpdateClient:
             cause=cause,
         )
         with self._lock:
+            pending_handles = []
             for handle in self._desired.values():
                 handle.subscription_id = None
+                if not handle._ready.is_set():
+                    pending_handles.append(handle)
             for pending in self._pending.values():
                 pending.error = error
                 pending.event.set()
+            for handle in pending_handles:
+                handle._error = error
+                handle._ready.set()
+                self._desired.pop(handle.id, None)
             self._pending.clear()
             self._last_error = error
         self._set_state("closed" if permanent else "disconnected", {"code": code, "reason": reason})

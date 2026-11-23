@@ -129,7 +129,7 @@ export function createSpaceStore(dataRoot) {
           `[空间] 扫描工作区目录失败（${error?.code ?? error?.name ?? "unknown"}），本次只返回注册表内已登记的空间：${workspacesRoot}`
         );
       }
-      return { spaces: known, complete: error?.code === "ENOENT" };
+      return { spaces: known, complete: error?.code === "ENOENT", error };
     }
     const result = [...known];
     const taken = new Set(result.map((s) => s.id.toLowerCase()));
@@ -149,12 +149,10 @@ export function createSpaceStore(dataRoot) {
   }
 
   /**
-   * 注册表读失败时先备份原文件再降级重建。
+   * 注册表读失败时先备份原文件，再拒绝自动重建。
    *
-   * 读失败 → 当空表 → ensureInitialized 把残缺状态写回，这个降级本身是既有契约；
-   * 但后果是各空间的用户自定义显示名 / 归属 / 置顶状态被**永久覆盖**。备份让
-   * 「重建后仍能把显示名捞回来」成为可能 —— 坏文件以 `<spaces.json>.<时间戳>.bak`
-   * 留在同目录，人工确认后可照抄回去。
+   * 非 ENOENT 的读失败直接抛给调用方，避免空间显示名 / 归属 / 置顶状态被覆盖。
+   * 坏文件以 `<spaces.json>.<时间戳>.bak` 留在同目录，人工确认后可照抄回去。
    *
    * 备份本身也可能失败（EACCES / EBUSY 这类连读都读不到的情况），那种情况下
    * 只能返回 null，由调用方在告警里如实写明「未能备份」。
@@ -177,9 +175,6 @@ export function createSpaceStore(dataRoot) {
     try {
       parsed = JSON.parse(await readFile(spacesFile, "utf-8"));
     } catch (error) {
-      // 降级（读失败当空表）是既有契约：ensureInitialized 会把这个残缺状态写回，
-      // 于是读失败会把各空间的用户自定义显示名与归属永久覆盖掉。重建前先备份，
-      // 至少事后还能捞回来；ENOENT 是「还没有注册表」的正常首启路径，不备份不告警。
       if (error?.code === "ENOENT") {
         registryMissing = true;
       } else {
@@ -187,8 +182,9 @@ export function createSpaceStore(dataRoot) {
         console.warn(
           `[空间] 读取 ${spacesFile} 失败（${error?.code ?? error?.name ?? "unknown"}），` +
             `${backupPath ? `已备份为 ${backupPath}，` : "未能备份（文件本身读不到），"}` +
-            `已按空注册表重建：${error?.message ?? error}`
+            `已拒绝按空注册表重建：${error?.message ?? error}`
         );
+        throw error;
       }
       parsed = null;
     }
@@ -197,6 +193,9 @@ export function createSpaceStore(dataRoot) {
       .map(normalizeSpace)
       .filter((space) => isValidSpaceId(space.id) && !isReservedSpaceId(space.id));
     const workspaceScan = await scanWorkspaces(normalized);
+    if (!workspaceScan.complete) {
+      throw workspaceScan.error ?? new Error(`扫描工作区目录失败：${workspacesRoot}`);
+    }
     const discovered = workspaceScan.spaces;
     const emptyRegistry = registryMissing || (Array.isArray(parsed?.spaces) && parsed.spaces.length === 0);
     const setupRequired = discovered.length === 0 && (

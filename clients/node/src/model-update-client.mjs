@@ -123,7 +123,11 @@ export class ModelUpdateClient extends EventEmitter {
       record.readyReject = reject;
     });
     this.desiredSubscriptions.set(record.id, record);
-    if (this.state === "idle" || this.state === "closed") this.connect().catch(() => {});
+    if (this.state === "idle" || this.state === "closed") {
+      this.connect().catch((error) => {
+        this.rejectPendingSubscription(record, normalizeError(error, "connection-failed"));
+      });
+    }
     this.restoreSubscriptions();
     return ready;
   }
@@ -171,6 +175,7 @@ export class ModelUpdateClient extends EventEmitter {
     } catch (error) {
       const normalized = normalizeError(error, "connection-failed");
       this.openReject?.(normalized);
+      this.openPromise?.catch(() => {});
       this.clearOpenPromise();
       this.emitError(normalized);
       this.scheduleReconnect();
@@ -322,18 +327,20 @@ export class ModelUpdateClient extends EventEmitter {
       this.removePending(pending.requestId);
       pending.reject?.(closeError);
     }
-    for (const record of this.desiredSubscriptions.values()) record.subscriptionId = null;
+    for (const record of [...this.desiredSubscriptions.values()]) {
+      record.subscriptionId = null;
+      if (!record.readySettled) {
+        this.rejectPendingSubscription(record, closeError);
+      }
+    }
     this.setState(this.manualClosed || code === 4003 ? "closed" : "disconnected", { code, reason: textReason });
     if (wasConnecting) {
       this.openReject?.(closeError);
       this.clearOpenPromise();
     }
     if (code === 4003) {
-      for (const record of this.desiredSubscriptions.values()) {
-        if (!record.readySettled) {
-          record.readySettled = true;
-          record.readyReject?.(closeError);
-        }
+      for (const record of [...this.desiredSubscriptions.values()]) {
+        this.rejectPendingSubscription(record, closeError);
       }
       this.emitError(closeError);
       return;
@@ -423,5 +430,12 @@ export class ModelUpdateClient extends EventEmitter {
     this.openPromise = null;
     this.openResolve = null;
     this.openReject = null;
+  }
+
+  rejectPendingSubscription(record, error) {
+    if (!record || record.readySettled) return;
+    record.readySettled = true;
+    record.readyReject?.(error);
+    this.desiredSubscriptions.delete(record.id);
   }
 }

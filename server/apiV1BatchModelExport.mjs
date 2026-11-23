@@ -11,7 +11,9 @@ import {
 import { buildBatchModelArtifacts } from "./batchModelArtifacts.mjs";
 
 function sendBatchExportError(response, error) {
-  const code = error?.code === "bad-request" || error?.code === "not-found" ? error.code : "internal";
+  const code = ["bad-request", "not-found", "payload-too-large"].includes(error?.code)
+    ? error.code
+    : "internal";
   sendV1Error(response, code, error instanceof Error ? error.message : "批量模型导出失败。");
 }
 

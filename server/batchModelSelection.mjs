@@ -1,6 +1,6 @@
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 import { PREDEFINED_E_DEVICE_TEMPLATES } from "./eFileTemplates.mjs";
-import { listSpaceArtifactModels } from "./spaceArtifactExport.mjs";
+import { DEFAULT_MAX_BATCH_INPUT_BYTES, listSpaceArtifactModels } from "./spaceArtifactExport.mjs";
 import { readSchemes, resolveSchemePathForSelector } from "./server.mjs";
 import { modelAssociationModelTypeForKind } from "../src/model.ts";
 
@@ -166,8 +166,8 @@ function compareModels(left, right) {
   return (numericModelId(left.project) ?? Number.MAX_SAFE_INTEGER) - (numericModelId(right.project) ?? Number.MAX_SAFE_INTEGER);
 }
 
-export async function collectBatchModels({ paths, query }) {
-  const rawModels = await listSpaceArtifactModels(paths, "");
+export async function collectBatchModels({ paths, query, maxInputBytes = DEFAULT_MAX_BATCH_INPUT_BYTES }) {
+  const rawModels = await listSpaceArtifactModels(paths, "", { maxInputBytes });
   const schemeIdByPath = flattenSchemes(await readSchemes({ paths }));
   const allModels = rawModels.map((model) => normalizeModel(model, schemeIdByPath)).sort(compareModels);
 

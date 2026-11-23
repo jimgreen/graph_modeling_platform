@@ -1,5 +1,6 @@
 // 空间派生导出：遍历空间内全部模型，实时生成 E/SVG 并打包为 ZIP。
 // 与 spaceArchive.mjs 的原样备份语义分开；本模块不向 schemes/files 写入派生文件。
+import { stat } from "node:fs/promises";
 import AdmZip from "adm-zip";
 import iconv from "iconv-lite";
 import { listModelJsonFiles } from "./schemeArchive.mjs";
@@ -22,7 +23,13 @@ async function templateTextForName(templateName) {
   return decodeAuto(Buffer.from(base64, "base64"));
 }
 
-export async function listSpaceArtifactModels(paths, templateName = "") {
+export const DEFAULT_MAX_BATCH_INPUT_BYTES = 512 * 1024 * 1024;
+
+export async function listSpaceArtifactModels(
+  paths,
+  templateName = "",
+  { maxInputBytes = undefined } = {}
+) {
   let modelFiles;
   try {
     modelFiles = await listModelJsonFiles(paths.schemeFiles);
@@ -33,9 +40,19 @@ export async function listSpaceArtifactModels(paths, templateName = "") {
     throw error;
   }
   const models = [];
+  let inputBytes = 0;
   for (const modelFile of modelFiles.sort((left, right) =>
     normalizedRelativePath(left.relativePath).localeCompare(normalizedRelativePath(right.relativePath), "zh-CN")
   )) {
+    if (maxInputBytes !== undefined) {
+      inputBytes += (await stat(modelFile.filePath)).size;
+      if (inputBytes > maxInputBytes) {
+        throw Object.assign(
+          new Error(`批量导出输入模型超过 ${maxInputBytes} 字节上限。`),
+          { code: "payload-too-large" }
+        );
+      }
+    }
     const record = await readSchemeProjectRecord({
       schemePath: modelFile.dirParts,
       name: modelFile.modelName,

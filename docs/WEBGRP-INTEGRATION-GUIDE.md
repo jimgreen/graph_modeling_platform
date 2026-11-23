@@ -665,8 +665,11 @@ sequenceDiagram
 Node.js：
 
 ```bash
-pnpm add ws
+pnpm --dir clients/node install
 ```
+
+Node 客户端当前是仓库内私有包，不从公共包仓库安装；外部项目可把 `clients/node`
+作为本地依赖，或直接导入 `clients/node/src/index.mjs`。
 
 ```js
 import { ModelUpdateClient } from "./clients/node/src/index.mjs";

@@ -46,10 +46,11 @@ class FakeSocket:
 
 
 class FakeServer:
-    def __init__(self):
+    def __init__(self, ack_subscribe=True):
         self.sockets = set()
         self.messages = []
         self.generation = 0
+        self.ack_subscribe = ack_subscribe
         self.on_send = self._on_send
 
     def create_socket(self):
@@ -58,7 +59,7 @@ class FakeServer:
 
     def _on_send(self, socket, message):
         self.messages.append((self.generation, message))
-        if message["type"] == "subscribe":
+        if message["type"] == "subscribe" and self.ack_subscribe:
             socket.push({
                 "type": "subscribed",
                 "ok": True,
@@ -145,6 +146,51 @@ class ModelUpdateClientTests(unittest.TestCase):
         socket.push({"type": "model.updated", "data": {"model_id": "12"}})
         wait_for(lambda: updates == [{"model_id": "12"}])
         self.assertEqual(errors[-1].code, "callback-failed")
+
+    def test_subscribe_fails_when_connection_drops_before_ack(self):
+        self.client.close()
+        self.server = FakeServer(ack_subscribe=False)
+        self.client = ModelUpdateClient(
+            "ws://fake/webgrp/v1/subscriptions/ws?space=space-a",
+            socket_factory=self.server.create_socket,
+            reconnect_min_delay=0.01,
+            reconnect_max_delay=0.02,
+            reconnect_jitter=0,
+            ack_timeout=1.0,
+        )
+        result = {}
+
+        def subscribe():
+            try:
+                self.client.subscribe({"type": "space"}, [{"kind": "json"}])
+            except ModelUpdateError as error:
+                result["error"] = error
+
+        worker = threading.Thread(target=subscribe)
+        worker.start()
+        wait_for(lambda: len(self.server.messages) == 1)
+        self.server.restart()
+        worker.join(timeout=1.0)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(result["error"].code, "connection-closed")
+
+    def test_subscribe_fails_when_ack_times_out_on_an_open_connection(self):
+        self.client.close()
+        self.server = FakeServer(ack_subscribe=False)
+        self.client = ModelUpdateClient(
+            "ws://fake/webgrp/v1/subscriptions/ws?space=space-a",
+            socket_factory=self.server.create_socket,
+            reconnect=False,
+            ack_timeout=0.05,
+        )
+
+        started = time.time()
+        with self.assertRaises(ModelUpdateError) as raised:
+            self.client.subscribe({"type": "space"}, [{"kind": "json"}])
+
+        self.assertEqual(raised.exception.code, "connection-closed")
+        self.assertLess(time.time() - started, 1.0)
 
 
 if __name__ == "__main__":

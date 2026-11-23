@@ -129,13 +129,13 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 ### MCP 服务（/webgrp/mcp）
 
 - 把本平台暴露成 Model Context Protocol 服务（SDK 1.32.2）：**streamable HTTP 无状态**模式，每个 POST 一次 JSON-RPC 往返，不建 SSE 长连接（GET/DELETE 回 405 + `Allow: POST`）
-- **16 个 `gmp_*` 工具**：方案域 6 个、图元库域 1 个、运行时态域 5 个、页面结构域 1 个、拓扑域 2 个、元件定义导出 1 个。当前工具集不包含通用控制台写工具；模型保存等写操作仍通过 `/webgrp/v1/control/*` 或前端页面能力完成。
+- **31 个 `gmp_*` 工具**：方案域 6 个、图元库域 1 个、运行时态域 8 个、页面结构域 1 个、拓扑域 2 个、控制台写操作 12 个、元件定义导出 1 个。控制台写操作经 WS 下发到在线前端，模型保存等持久化仍需显式调用 `gmp_save_model`。
 - **不是第二份实现**：全部工具转调 `server/apiV1*.mjs` / `eFileExport.mjs` / `cimExport.mjs` / `sendModel.mjs` 已导出的 handler —— 参数校验、错误码、空间隔离口径与 v1 同源（`server/mcp/v1Bridge.mjs` 用捕获型假 request/response 驱动 v1 handler）
 - 空间隔离与 v1 一致：`/mcp` **不进** `isSpaceAgnostic` 白名单，照常走 `X-Space` 头 > `?space=` > Cookie > 首个空间的解析链
 - **页面选择用 token**：前端把 `?token=` 写进自己的地址栏，该值同时是 WS clientId。MCP 的会话类工具**入参与出参**都叫 `token`：本空间只有一个在线页面时可不填，多个时必须填，否则回 `token-required` 并列出可选值 —— 不静默退回「最近活跃」（v1 REST 仍用 clientId，契约不变）。复制标签页会连同 token 一起复制，服务端在注册阶段仲裁：旧连接已断则沿用原 token（刷新场景），仍被占则给后缀 token 并回 `renamed`，前端写回地址栏
-- 当前 MCP 工具集不包含通用画布写操作；拓扑修复按 `target=current|saved` 区分内存与落盘行为，其余控制写操作走 `/webgrp/v1/control/*` 或前端页面能力
+- 拓扑修复按 `target=current|saved` 区分内存与落盘行为；其余控制写操作由 MCP 工具经 `/webgrp/v1/control/*` 下发到前端
 - Origin 校验复用 `isAllowedNativeExportOrigin`（挡掉浏览器里任意网页对本机端口发 POST —— 发送不受 CORS 约束）
-- 文档：`docs/MCP.md`（连接方式、16 工具速查、错误码、限制）；评测：`docs/mcp-evaluation.xml`
+- 文档：`docs/MCP.md`（连接方式、31 工具速查、错误码、限制）；评测：`docs/mcp-evaluation.xml`
 
 ### 空间隔离（多工作空间）
 
@@ -187,7 +187,7 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 | createRuntimeWsClient | 函数 | src/runtimeWsClient.ts | 前端 WS 客户端 |
 | buildSvgDocument | 函数 | src/export/svg.ts | 自包含 SVG 导出（前端经 appPersistenceLibraryExport 转出；后端适配层 Node 原生直载） |
 | createProgrammaticAddDevice | 函数 | src/appExtracted/appControlFactories.tsx | 控制台写操作工厂（9 方法） |
-| createMcpServer | 函数 | server/mcp/mcpServer.mjs | 装配 MCP server（16 个 gmp_* 工具 + instructions） |
+| createMcpServer | 函数 | server/mcp/mcpServer.mjs | 装配 MCP server（31 个 gmp_* 工具 + instructions） |
 | createMcpToolRegistry | 函数 | server/mcp/tools.mjs | MCP 工具定义（参数翻译 + v1 信封搬运） |
 | invokeV1Handler | 函数 | server/mcp/v1Bridge.mjs | 用捕获型假 request/response 驱动 v1 handler |
 | handleMcpPost | 函数 | server/mcp/httpHandler.mjs | /webgrp/mcp 的 POST 入口（Origin 校验 + 无状态 transport） |

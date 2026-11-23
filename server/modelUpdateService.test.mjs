@@ -104,6 +104,22 @@ describe("model update subscription service", () => {
     });
   });
 
+  test("builds one payload per file selection and delivers it to every matching subscription", async () => {
+    const buildPayload = vi.fn(async ({ files }) => ({ files }));
+    const { service, sent, connect } = createHarness({ buildPayload });
+    connect("client-a", "space-a");
+    connect("client-b", "space-a");
+    connect("client-c", "space-a");
+    await service.subscribe("client-a", "space-a", { type: "space" }, [{ kind: "json" }]);
+    await service.subscribe("client-b", "space-a", { type: "space" }, [{ kind: "json" }]);
+    await service.subscribe("client-c", "space-a", { type: "space" }, [{ kind: "xml" }]);
+
+    await service.publishModelChanged(changedModel("space-a", ["方案"], 12));
+
+    expect(buildPayload).toHaveBeenCalledTimes(2);
+    expect(sent.map(({ connectionId }) => connectionId).sort()).toEqual(["client-a", "client-b", "client-c"]);
+  });
+
   test("does not send an in-flight update after unsubscribe or model removal", async () => {
     const pendingBuilds = [];
     const buildPayload = vi.fn(() => new Promise((resolve) => pendingBuilds.push(resolve)));

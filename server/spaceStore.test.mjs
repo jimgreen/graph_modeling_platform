@@ -168,11 +168,11 @@ test("注册表里的保留名空间被过滤", async () => {
   expect((await store.list()).map((s) => s.id)).toEqual(["default"]);
 });
 
-test("注册表损坏时重建", async () => {
+test("注册表损坏时拒绝重建并保留备份", async () => {
   writeFileSync(spacesFile(), "{ 不是 JSON", "utf-8");
   const store = createSpaceStore(dataRoot);
-  await store.ensureInitialized();
-  expect((await store.list()).map((s) => s.id)).toEqual(["default"]);
+  await expect(store.ensureInitialized()).rejects.toBeInstanceOf(SyntaxError);
+  expect(readdirSync(dataRoot).some((name) => name.startsWith("spaces.json.") && name.endsWith(".bak"))).toBe(true);
 });
 
 test("pinned 与最后一个空间不可删", async () => {
@@ -490,56 +490,53 @@ test("注册表里的 lastAccessAt 读回时保留并统一成字符串（数字
   ).toBe("1700000000");
 });
 
-test("workspaces/ 读不动（不是目录）时告警，并只返回注册表里已登记的空间", async () => {
+test("workspaces/ 读不动（不是目录）时拒绝初始化，避免自动补 default", async () => {
   const root = laneRoot("workspaces-not-dir");
   // workspaces 是个**文件** → readdir 抛 ENOTDIR（非 ENOENT），正是「目录读不动」
   // 那条分支。ENOENT（目录压根不存在）是首启正常路径，不该告警。
   writeFileSync(join(root, "workspaces"), "这不是目录", "utf-8");
 
   const warn = captureWarn();
-  let spaces;
+  let failure;
   try {
     const store = createSpaceStore(root);
-    await store.ensureInitialized();
-    spaces = await store.list();
+    failure = await store.ensureInitialized().then(() => null, (error) => error);
   } finally {
     warn.restore();
   }
 
-  expect(spaces.map((s) => s.id)).toEqual(["default"]);
+  expect(failure).toMatchObject({ code: "ENOTDIR" });
   const line = warn.lines.find((l) => l.includes("扫描工作区目录失败"));
   expect(line).toBeTruthy();
   // 告警必须带上错误码，否则运维看不出是权限问题还是磁盘坏了
   expect(line).toContain("ENOTDIR");
-  // 降级只丢扫描结果，不动注册表内已登记的条目
-  expect(line).toContain("本次只返回注册表内已登记的空间");
+  expect(existsSync(join(root, "spaces.json"))).toBe(false);
 });
 
-test("注册表损坏时先备份原文件再按空注册表重建，告警三段文案齐全", async () => {
+test("注册表损坏时先备份原文件再拒绝重建，告警三段文案齐全", async () => {
   const root = laneRoot("corrupt-backup");
   const raw = "{ 不是 JSON";
   writeFileSync(join(root, "spaces.json"), raw, "utf-8");
 
   const warn = captureWarn();
-  let spaces;
+  let failure;
   try {
     const store = createSpaceStore(root);
-    await store.ensureInitialized();
-    spaces = await store.list();
+    failure = await store.ensureInitialized().then(() => null, (error) => error);
   } finally {
     warn.restore();
   }
 
-  expect(spaces.map((s) => s.id)).toEqual(["default"]);
+  expect(failure).toBeInstanceOf(SyntaxError);
 
-  const line = warn.lines.find((l) => l.includes("已按空注册表重建"));
+  const line = warn.lines.find((l) => l.includes("已拒绝按空注册表重建"));
   expect(line).toBeTruthy();
   expect(line).toContain("[空间] 读取");
   // JSON.parse 的 SyntaxError 没有 code，靠 `error?.code ?? error?.name` 的第二档
   expect(line).toContain("SyntaxError");
   // 备份成功那一半：文案必须说清备份落在哪，且路径是真的（不只是文案自洽）
   expect(line).toMatch(/已备份为 .*spaces\.json\.\d+\.bak，/);
-  expect(line).toMatch(/已按空注册表重建：\S/);
+  expect(line).toMatch(/已拒绝按空注册表重建：\S/);
   const bak = readdirSync(root).find((n) => /^spaces\.json\.\d+\.bak$/.test(n));
   expect(bak).toBeTruthy();
   // 备份的是**原始坏内容** —— 人工照抄回去才有意义
@@ -557,19 +554,17 @@ test("注册表损坏且备份本身写不出时，如实告警「未能备份�
   const now = vi.spyOn(Date, "now").mockReturnValue(0);
 
   const warn = captureWarn();
-  let spaces;
+  let failure;
   try {
     const store = createSpaceStore(root);
-    await store.ensureInitialized();
-    spaces = await store.list();
+    failure = await store.ensureInitialized().then(() => null, (error) => error);
   } finally {
     warn.restore();
     now.mockRestore();
   }
 
-  // 备份写失败不能连累降级重建：读失败当空表是既有契约
-  expect(spaces.map((s) => s.id)).toEqual(["default"]);
-  const line = warn.lines.find((l) => l.includes("已按空注册表重建"));
+  expect(failure).toBeInstanceOf(SyntaxError);
+  const line = warn.lines.find((l) => l.includes("已拒绝按空注册表重建"));
   expect(line).toBeTruthy();
   // 这一条断的是 backupUnreadableSpacesFile 的 catch 分支（返回 null）经由告警
   // 文案三选一暴露出来的那半边。若 catch 改成返回一个非空值，告警就会谎称
@@ -597,32 +592,26 @@ test("读盘抛出连 name/message 都没有的值时，告警降级文案不出
   writeFileSync(join(root, "spaces.json"), "{ 坏", "utf-8");
 
   const warn = captureWarn();
-  let spaces;
+  let failure;
   try {
     // query 后缀强制一个全新模块实例，让它拿到上面替换过的 fs
     const { createSpaceStore: createThrowingStore } = await import("./spaceStore.mjs?throw-nonerror");
     const store = createThrowingStore(root);
-    await store.ensureInitialized();
-    spaces = await store.list();
+    failure = await store.ensureInitialized().then(() => null, (error) => error);
   } finally {
     warn.restore();
     vi.doUnmock("node:fs/promises");
   }
 
-  // 降级重建照旧（读失败当空表是既有契约）
-  expect(spaces.map((s) => s.id)).toEqual(["default"]);
+  expect(failure).toEqual({});
 
-  const loadLine = warn.lines.find((l) => l.includes("已按空注册表重建"));
+  const loadLine = warn.lines.find((l) => l.includes("已拒绝按空注册表重建"));
   expect(loadLine).toBeTruthy();
   expect(loadLine).toContain("失败（unknown）");
   // `error?.message ?? error`：裸对象没有 message，于是回退到值本身
-  expect(loadLine).toContain("已按空注册表重建：[object Object]");
+  expect(loadLine).toContain("已拒绝按空注册表重建：[object Object]");
   expect(loadLine).not.toContain("undefined");
 
-  const scanLine = warn.lines.find((l) => l.includes("扫描工作区目录失败"));
-  expect(scanLine).toBeTruthy();
-  expect(scanLine).toContain("（unknown）");
-  expect(scanLine).not.toContain("undefined");
 });
 
 test("存在性探测报非 ENOENT（EACCES）时删除中止，注册表条目保留", async () => {

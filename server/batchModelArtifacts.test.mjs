@@ -209,4 +209,14 @@ describe("buildBatchModelArtifacts", () => {
       paths
     })).rejects.toThrow("EACCES");
   });
+
+  test("rejects a batch whose encoded artifacts exceed the output budget", async () => {
+    await expect(buildBatchModelArtifacts({
+      models: [stationModel],
+      formats: ["json"],
+      encoding: "utf-8",
+      maxOutputBytes: 10,
+      paths
+    })).rejects.toMatchObject({ code: "payload-too-large" });
+  });
 });

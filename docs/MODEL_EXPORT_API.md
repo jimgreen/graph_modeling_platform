@@ -157,6 +157,9 @@ curl.exe -sS "http://127.0.0.1:5174/webgrp/v1/models/export?scope=model&modelId=
 
 `mergeE=true` 时，每种模型类型对应一个独立的合并 E 文件，带有 `modelType`、`modelIds` 和可选 `template`；逐模型 `artifacts` 不重复放 E。任一模型读取或格式生成失败都会返回错误，不返回部分结果。没有匹配模型时返回 200，模型和合并产物数组为空。
 
+批量接口对输入模型 JSON 设置 512 MB 总上限，并对所有产物的原始字节设置 256 MB 总上限
+（Base64 编码前累计）。超过任一上限返回 `413 payload-too-large`，不会返回部分结果。
+
 ## 4. 方案 ZIP 导出
 
 方案 ZIP 会递归处理所选方案及其子方案。每个被纳入的模型通常包含：

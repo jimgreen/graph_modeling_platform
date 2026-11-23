@@ -175,6 +175,16 @@ describe("handleV1BatchModelExport", () => {
     expect(failed.statusCode).toBe(500);
     expect(failed.json().ok).toBe(false);
   });
+
+  test("output budget failure returns 413 payload-too-large", async () => {
+    mocks.buildBatchModelArtifacts.mockRejectedValueOnce(
+      Object.assign(new Error("批量导出产物过大"), { code: "payload-too-large" })
+    );
+    const failed = response();
+    await handleV1BatchModelExport({ url: url("scope=space&formats=json"), response: failed, paths });
+    expect(failed.statusCode).toBe(413);
+    expect(failed.json().error.code).toBe("payload-too-large");
+  });
 });
 
 describe("v1BatchModelExportRoutes", () => {

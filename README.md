@@ -304,16 +304,17 @@ npx @modelcontextprotocol/inspector
 # URL:        http://127.0.0.1:5174/webgrp/mcp
 ```
 
-### 工具域（16 个 `gmp_*` 工具）
+### 工具域（31 个 `gmp_*` 工具）
 
 | 域 | 工具数 | 依赖前端在线 | 代表工具 |
 |----|--------|--------------|----------|
 | 方案域 | 6 | 否 | `gmp_list_schemes`、`gmp_get_model_json`、`gmp_export_model`、`gmp_export_scheme_archive`、`gmp_send_model` |
 | 图元库域 | 1 | 否 | `gmp_get_library` |
-| 运行时态域 | 5 | **是** | `gmp_list_runtime_clients`、`gmp_get_runtime_tabs`、`gmp_capture_runtime_screenshot`、`gmp_get_runtime_svg`、`gmp_get_runtime_e_file` |
+| 运行时态域 | 8 | **是** | `gmp_list_runtime_clients`、`gmp_get_runtime_model`、`gmp_get_runtime_devices`、`gmp_get_runtime_selection`、`gmp_get_runtime_tabs`、`gmp_capture_runtime_screenshot`、`gmp_get_runtime_svg`、`gmp_get_runtime_e_file` |
 | 页面结构域 | 1 | **是** | `gmp_get_page_dom` |
 | 拓扑域 | 2 | **是/否** | `gmp_check_topology`、`gmp_repair_topology` |
-| 元件定义 | 1 | 否 | `gmp_export_device_definition` |
+| 控制台写操作 | 12 | **是** | `gmp_add_device`、`gmp_create_scheme`、`gmp_create_model`、`gmp_save_model`、`gmp_switch_model`、`gmp_switch_space` |
+| 元件定义导出 | 1 | **是** | `gmp_export_device_definition` |
 
 ### 三条硬约束
 
@@ -340,7 +341,7 @@ npx @modelcontextprotocol/inspector
 { "name": "gmp_check_topology", "arguments": { "target": "current", "token": "page-3f8a1c9d2b4e" } }
 ```
 
-> 📖 **完整文档：[docs/MCP.md](docs/MCP.md)** —— 16 个工具的参数表、连接与空间/token 规则、
+> 📖 **完整文档：[docs/MCP.md](docs/MCP.md)** —— 31 个工具的参数表、连接与空间/token 规则、
 > 返回形状、错误码与已知限制。评测题集见 [docs/mcp-evaluation.xml](docs/mcp-evaluation.xml)。
 
 ---
@@ -371,7 +372,7 @@ graph_modeling_platform/
 | 文档 | 内容 |
 |------|------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 功能清单、符号映射、架构风格索引 |
-| [docs/MCP.md](docs/MCP.md) | MCP 服务：连接方式、16 个工具速查、错误码、限制 |
+| [docs/MCP.md](docs/MCP.md) | MCP 服务：连接方式、31 个工具速查、错误码、限制 |
 | [docs/mcp-evaluation.xml](docs/mcp-evaluation.xml) | MCP 只读评测题集 |
 | [docs/ModelDefJson.md](docs/ModelDefJson.md) | 设备定义 JSON 结构 |
 | [docs/WEBGRP-INTEGRATION-GUIDE.md](docs/WEBGRP-INTEGRATION-GUIDE.md) | 第三方系统接入：页面嵌入、模型读取和 WebSocket 更新订阅 |

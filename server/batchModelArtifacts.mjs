@@ -5,6 +5,8 @@ import { readPredefinedTemplateBase64 } from "./eFileTemplates.mjs";
 import { encodeTextBytes, withXmlEncodingDeclaration } from "./xmlEncoding.mjs";
 import { decodeAuto } from "../src/encoding/gbk.ts";
 
+export const DEFAULT_MAX_BATCH_EXPORT_OUTPUT_BYTES = 256 * 1024 * 1024;
+
 function safeFilePart(value) {
   return String(value ?? "").trim().replace(/[\\/:*?"<>|]+/gu, "_") || "未命名";
 }
@@ -25,13 +27,33 @@ function throwGeneratorError(result) {
   throw error;
 }
 
-function artifactFromText({ format, encoding, mimeType, filename, text }) {
+function artifactFromText({ format, encoding, mimeType, filename, text, outputBudget }) {
+  const bytes = encodeTextBytes(text, encoding);
+  outputBudget?.add(bytes.length);
   return {
     format,
     encoding,
     mimeType,
     filename,
-    contentBase64: encodeTextBytes(text, encoding).toString("base64")
+    contentBase64: bytes.toString("base64")
+  };
+}
+
+function createOutputBudget(maxOutputBytes) {
+  const limit = Number.isSafeInteger(maxOutputBytes) && maxOutputBytes > 0
+    ? maxOutputBytes
+    : DEFAULT_MAX_BATCH_EXPORT_OUTPUT_BYTES;
+  let total = 0;
+  return {
+    add(bytes) {
+      total += bytes;
+      if (total > limit) {
+        throw Object.assign(
+          new Error(`批量导出产物超过 ${limit} 字节上限。`),
+          { code: "payload-too-large" }
+        );
+      }
+    }
   };
 }
 
@@ -53,7 +75,7 @@ function addEWarnings(warnings, model, file) {
   }
 }
 
-async function buildEArtifacts({ models, formats, encoding, templateName, paths, globalLineRecords, mergeE, warnings }) {
+async function buildEArtifacts({ models, formats, encoding, templateName, paths, globalLineRecords, mergeE, warnings, outputBudget }) {
   if (!formats.includes("e")) {
     return { perModel: new Map(), mergedE: [] };
   }
@@ -103,7 +125,8 @@ async function buildEArtifacts({ models, formats, encoding, templateName, paths,
         encoding,
         mimeType: String(file.mime ?? "text/plain"),
         filename: String(file.filename ?? `${safeFilePart(model.name)}.e`),
-        text: String(file.text ?? "")
+        text: String(file.text ?? ""),
+        outputBudget
       }));
     }
     if (perModel.size !== eligibleModels.length) {
@@ -139,7 +162,8 @@ async function buildEArtifacts({ models, formats, encoding, templateName, paths,
         encoding,
         mimeType: String(merged.mime ?? "text/plain"),
         filename: String(merged.filename ?? `${safeFilePart(modelType)}.e`),
-        text: String(merged.text ?? "")
+        text: String(merged.text ?? ""),
+        outputBudget
       }),
       modelType,
       modelIds: group.map((model) => model.id),
@@ -159,9 +183,11 @@ export async function buildBatchModelArtifacts({
   strict = false,
   mergeE = false,
   paths,
-  globalLineRecords = []
+  globalLineRecords = [],
+  maxOutputBytes = DEFAULT_MAX_BATCH_EXPORT_OUTPUT_BYTES
 }) {
   const warnings = [];
+  const outputBudget = createOutputBudget(maxOutputBytes);
   const eResult = await buildEArtifacts({
     models,
     formats,
@@ -170,7 +196,8 @@ export async function buildBatchModelArtifacts({
     paths,
     globalLineRecords,
     mergeE,
-    warnings
+    warnings,
+    outputBudget
   });
 
   const modelArtifacts = [];
@@ -184,7 +211,8 @@ export async function buildBatchModelArtifacts({
           encoding,
           mimeType: "application/json",
           filename: `${filePart}.json`,
-          text: JSON.stringify(model.project)
+          text: JSON.stringify(model.project),
+          outputBudget
         }));
         continue;
       }
@@ -202,7 +230,8 @@ export async function buildBatchModelArtifacts({
           encoding,
           mimeType: "image/svg+xml",
           filename: `${filePart}.svg`,
-          text: withXmlEncodingDeclaration(result.svg, encoding)
+          text: withXmlEncodingDeclaration(result.svg, encoding),
+          outputBudget
         }));
         continue;
       }
@@ -222,7 +251,8 @@ export async function buildBatchModelArtifacts({
           encoding,
           mimeType: "application/xml",
           filename: String(result.filename ?? `${filePart}.xml`),
-          text: withXmlEncodingDeclaration(result.xml, encoding)
+          text: withXmlEncodingDeclaration(result.xml, encoding),
+          outputBudget
         }));
         continue;
       }

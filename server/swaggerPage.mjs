@@ -189,7 +189,7 @@ const ENDPOINTS = [
     { name: "includeAssociatedModels", desc: "true 时递归导出 model_id 和全局线路关联模型" },
     { name: "colorMode", desc: "仅作用于 SVG：energy|voltage" },
     { name: "strict", desc: "仅作用于 CIM：true 时严格检查关键参数" }
-  ], response: "{ok:true,data:{selectedModelCount,expandedModelCount,modelCount,models,mergedE,warnings}}，各产物含 contentBase64", examples: [
+  ], response: "{ok:true,data:{selectedModelCount,expandedModelCount,modelCount,models,mergedE,warnings}}，输入模型累计超过 512MB 或原始产物累计超过 256MB 返回 413 payload-too-large", examples: [
     { label: "空间范围 JSON", params: { q_scope: "space", q_formats: "json" } },
     { label: "方案范围（含子方案）", params: { q_scope: "scheme", q_schemePath: SP_DEFAULT, q_formats: "json" } },
     { label: "模型范围全部格式", params: { q_scope: "model", q_modelId: 1, q_formats: "json,svg,cim,e" } },

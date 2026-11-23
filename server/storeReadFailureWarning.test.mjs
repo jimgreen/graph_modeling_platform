@@ -1,8 +1,8 @@
-// 存储读取失败时的告警（不改变降级行为，只把静默变成可观测）。
+// 存储读取失败时的告警与失败边界。
 //
 // server 侧有一类反复出现的形状：catch 块把「IO 失败 / 文件损坏」和「内容为空」
-// 折叠成同一个返回值，而下游有一个写操作会把这个返回值当真值写回。行为本身是
-// 既有契约（改动会变 API 语义），本轮只补上告警：
+// 折叠成同一个返回值，而下游有一个写操作会把这个返回值当真值写回。非 ENOENT 的
+// IO 失败必须上抛；语法错误仍保留兼容回落，并在这里验证告警：
 //
 //   readJsonStoreFile / readOptionalJsonStoreFile   manifest、folders、各类配置
 //   readSchemeProjectFile                           模型读取（含注册表 hydrate 的写）
@@ -85,13 +85,12 @@ describe("readColorConfig：可选配置首启不存在不该告警", () => {
 });
 
 describe("spaceStore：spaces.json 读失败要留痕", () => {
-  test("★ 注册表损坏 → 仍按既有契约重建为 default，但告警点名「按空注册表重建」", async () => {
+  test("★ 注册表损坏 → 拒绝重建，但告警点名拒绝原因", async () => {
     writeFileSync(join(dataRoot, "spaces.json"), "{ 坏了", "utf-8");
     const store = createSpaceStore(dataRoot);
-    await store.ensureInitialized();
-    expect((await store.list()).map((s) => s.id)).toEqual(["default"]);
+    await expect(store.ensureInitialized()).rejects.toBeInstanceOf(SyntaxError);
     expect(warningsMatching("spaces.json")).toHaveLength(1);
-    expect(String(warn.mock.calls.at(-1)[0])).toContain("按空注册表重建");
+    expect(String(warn.mock.calls.at(-1)[0])).toContain("拒绝按空注册表重建");
   });
 
   test("首次启动没有 spaces.json → 不告警", async () => {
@@ -106,24 +105,21 @@ describe("spaceStore：重建前备份坏掉的 spaces.json", () => {
     const broken = '{ "spaces": [ { "id": "张三", "name": "张三的空间" } ';
     writeFileSync(join(dataRoot, "spaces.json"), broken, "utf-8");
     const store = createSpaceStore(dataRoot);
-    await store.ensureInitialized();
+    await expect(store.ensureInitialized()).rejects.toBeInstanceOf(SyntaxError);
 
     const backups = readdirSync(dataRoot).filter((name) => name.startsWith("spaces.json.") && name.endsWith(".bak"));
     expect(backups).toHaveLength(1);
     expect(readFileSync(join(dataRoot, backups[0]), "utf-8")).toBe(broken);
-    // 备份不等于放弃重建：注册表仍按既有契约归位到 default
-    expect((await store.list()).map((s) => s.id)).toEqual(["default"]);
     // 告警里点名备份路径，事后知道去哪捞
     expect(String(warn.mock.calls.at(-1)[0])).toContain(backups[0]);
   });
 
   test("★ 备份文件不被当作注册表本身（下次启动仍会重建，但多一份可捞的副本）", async () => {
     writeFileSync(join(dataRoot, "spaces.json"), "{ 坏了", "utf-8");
-    await createSpaceStore(dataRoot).ensureInitialized();
+    await expect(createSpaceStore(dataRoot).ensureInitialized()).rejects.toBeInstanceOf(SyntaxError);
     writeFileSync(join(dataRoot, "spaces.json"), "{ 又坏了", "utf-8");
     const store = createSpaceStore(dataRoot);
-    await store.ensureInitialized();
-    expect((await store.list()).map((s) => s.id)).toEqual(["default"]);
+    await expect(store.ensureInitialized()).rejects.toBeInstanceOf(SyntaxError);
     expect(readdirSync(dataRoot).filter((name) => name.endsWith(".bak"))).toHaveLength(2);
   });
 

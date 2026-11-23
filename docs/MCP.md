@@ -79,12 +79,12 @@ MCP **不做自己的空间解析** —— 走派发层（`server/server.mjs`）
 | 缺少空间上下文 | **503**（接线 bug：派发层恒注入 spaceId） |
 
 无状态模式的代价：**每个 POST 都新建一个 transport + 一个 McpServer**（SDK 在
-`sessionIdGenerator` 未设时禁止复用 transport）。当前 16 个工具的注册耗时约 5ms，
+`sessionIdGenerator` 未设时禁止复用 transport）。当前 31 个工具的注册耗时约 5ms，
 相对一次模型往返可忽略。
 
 ---
 
-## 工具清单（16 个）
+## 工具清单（31 个）
 
 ### 方案域（读已落盘数据，不需要前端在线）
 
@@ -134,6 +134,9 @@ MCP **不做自己的空间解析** —— 走派发层（`server/server.mjs`）
 | 工具 | 作用 | 参数 |
 |------|------|------|
 | `gmp_list_runtime_clients` | 列在线前端页面。**每条带 `token`**（= 该页面地址栏的 `?token=`）、所属空间、注册与最后活跃时间 | 无 |
+| `gmp_get_runtime_model` | 读取当前页面打开的模型定位信息 | `token?` |
+| `gmp_get_runtime_devices` | 读取当前模型的图元与连线 | `token?` |
+| `gmp_get_runtime_selection` | 读取当前页面选中状态 | `token?` |
 | `gmp_get_runtime_tabs` | 读三面板快照（model / tree / graph） | `token?`、`tab?` |
 | `gmp_capture_runtime_screenshot` | 截取画布 PNG（返回图片块） | `token?`、`width?`、`height?` |
 | `gmp_get_runtime_svg` | 导出现前画布 SVG 文本 | `token?` |
@@ -158,6 +161,26 @@ MCP **不做自己的空间解析** —— 走派发层（`server/server.mjs`）
 不完整（撞了深度/节点数/字符上限），不要当成「页面就这么多东西」。
 `<script>` / `<style>` / `<link>` / `<meta>` 在 outline 里被跳过 —— 它们体积大、
 对「页面长什么样」零信息量。
+
+### 控制台写操作（需要前端页面在线）
+
+| 工具 | 作用 |
+|------|------|
+| `gmp_add_device` | 在当前模型新增图元 |
+| `gmp_create_scheme` | 新建方案 |
+| `gmp_create_model` | 新建模型 |
+| `gmp_select_devices` | 修改当前选中集 |
+| `gmp_group_selected_devices` | 组合当前选中图元 |
+| `gmp_delete_devices` | 删除当前模型图元（破坏性） |
+| `gmp_update_device_property` | 修改图元属性 |
+| `gmp_save_model` | 将当前模型或方案树落盘 |
+| `gmp_save_template_from_selection` | 从当前选区保存模板 |
+| `gmp_import_device_definition` | 预览 E 元件定义导入结果 |
+| `gmp_switch_space` | 让前端切换工作空间并重载 |
+| `gmp_switch_model` | 让前端打开另一个已保存模型 |
+
+控制台写操作只通过在线前端页面执行；模型内存变更不会自动落盘，需另调
+`gmp_save_model`。`gmp_import_device_definition` 只做匹配预览，不写入配置。
 
 ### 拓扑域
 
@@ -311,7 +334,7 @@ E 文件默认 **GBK** 编码，工具层按响应头 charset 解码（不会给
 | 文件 | 职责 |
 |------|------|
 | `server/mcp/v1Bridge.mjs` | 驱动 v1 handler 的桥（假 request/response 捕获信封） |
-| `server/mcp/tools.mjs` | 16 个工具定义（参数翻译 + 信封搬运 + 错误可执行化） |
+| `server/mcp/tools.mjs` | 31 个工具定义（参数翻译 + 信封搬运 + 错误可执行化） |
 | `server/mcp/mcpServer.mjs` | 装配 `McpServer`（server info + instructions + 注册工具） |
 | `server/mcp/httpHandler.mjs` | `/webgrp/mcp` 的 POST / GET / DELETE 入口（Origin 校验 + 无状态 transport） |
 | `server/mcp/mcpBridge.test.mjs` | 桥的单测 |

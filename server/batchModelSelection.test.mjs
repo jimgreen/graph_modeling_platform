@@ -108,6 +108,14 @@ describe("collectBatchModels", () => {
     expect(byIdx.selectedModels[0].id).toBe(12);
     expect(byPath.selectedModels[0].name).toBe("厂站一");
   });
+
+  test("rejects input models over the batch input budget before loading them", async () => {
+    await expect(collectBatchModels({
+      paths,
+      query: { scope: "space", includeDescendants: true },
+      maxInputBytes: 1
+    })).rejects.toMatchObject({ code: "payload-too-large" });
+  });
 });
 
 describe("expandAssociatedModels", () => {

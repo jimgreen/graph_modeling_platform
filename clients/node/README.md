@@ -2,14 +2,27 @@
 
 这是 `/webgrp/v1/subscriptions/ws` 的 Node.js ESM 封装。它保存期望订阅，在网络断开或服务端重启后自动重连并重新订阅；服务端返回的新 `subscriptionId` 由客户端内部维护。
 
-## 使用
+## 安装（仓库内）
+
+该包当前保持私有，不从公共包仓库安装。先在仓库内安装它自己的 `ws` 依赖：
 
 ```bash
-pnpm add ws
+pnpm --dir clients/node install
 ```
 
+在仓库内运行示例：
+
+```bash
+node clients/node/examples/basic.mjs
+```
+
+在自己的 Node 项目中，可把 `clients/node` 作为本地依赖，或直接导入
+`clients/node/src/index.mjs`。
+
+## 使用
+
 ```js
-import { ModelUpdateClient } from "@graph-modeling-platform/model-update-client";
+import { ModelUpdateClient } from "./clients/node/src/index.mjs";
 
 const client = new ModelUpdateClient({
   url: "ws://127.0.0.1:5174/webgrp/v1/subscriptions/ws",
