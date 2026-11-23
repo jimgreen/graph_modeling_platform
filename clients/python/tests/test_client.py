@@ -5,6 +5,7 @@ import time
 import unittest
 
 from clients.python.model_update_client import ModelUpdateClient, ModelUpdateError
+from clients.python.model_update_client.client import _Pending, SubscriptionHandle
 
 
 class FakeSocketClosed(Exception):
@@ -46,11 +47,12 @@ class FakeSocket:
 
 
 class FakeServer:
-    def __init__(self, ack_subscribe=True):
+    def __init__(self, ack_subscribe=True, echo_request_id=True):
         self.sockets = set()
         self.messages = []
         self.generation = 0
         self.ack_subscribe = ack_subscribe
+        self.echo_request_id = echo_request_id
         self.on_send = self._on_send
 
     def create_socket(self):
@@ -60,16 +62,18 @@ class FakeServer:
     def _on_send(self, socket, message):
         self.messages.append((self.generation, message))
         if message["type"] == "subscribe" and self.ack_subscribe:
-            socket.push({
+            response = {
                 "type": "subscribed",
                 "ok": True,
-                "requestId": message.get("requestId"),
                 "data": {
                     "subscriptionId": f"sub-{self.generation}-{len(self.messages)}",
                     "scope": message["scope"],
                     "files": message["files"]
                 }
-            })
+            }
+            if self.echo_request_id:
+                response["requestId"] = message.get("requestId")
+            socket.push(response)
 
     def restart(self):
         for socket in list(self.sockets):
@@ -114,6 +118,39 @@ class ModelUpdateClientTests(unittest.TestCase):
         wait_for(lambda: first.subscription_id == "sub-2-3" and second.subscription_id == "sub-2-4")
         restored = [message for generation, message in self.server.messages if generation == 2]
         self.assertEqual([message["scope"]["type"] for message in restored], ["space", "model"])
+
+    def test_legacy_ack_without_request_id_is_accepted_when_unambiguous(self):
+        self.client.close()
+        self.server = FakeServer(echo_request_id=False)
+        self.client = ModelUpdateClient(
+            "ws://fake/webgrp/v1/subscriptions/ws?space=space-a",
+            socket_factory=self.server.create_socket,
+            reconnect=False,
+            ack_timeout=0.5,
+        )
+
+        self.client.connect()
+        handle = self.client.subscribe({"type": "space"}, [{"kind": "json"}])
+
+        self.assertEqual(handle.subscription_id, "sub-1-1")
+
+    def test_missing_request_id_with_multiple_pending_requests_is_protocol_error(self):
+        errors = []
+        self.client.on("error", errors.append)
+        first = SubscriptionHandle({"type": "space"}, [{"kind": "json"}])
+        second = SubscriptionHandle({"type": "space"}, [{"kind": "json"}])
+        with self.client._lock:
+            self.client._pending["request-1"] = _Pending("request-1", "subscribe", first)
+            self.client._pending["request-2"] = _Pending("request-2", "subscribe", second)
+
+        self.client._handle_message(json.dumps({
+            "type": "subscribed",
+            "ok": True,
+            "data": {"subscriptionId": "sub-ambiguous"},
+        }))
+
+        self.assertEqual(errors[-1].code, "bad-response")
+        self.assertEqual(set(self.client._pending), {"request-1", "request-2"})
 
     def test_explicit_close_does_not_reconnect(self):
         self.client.connect()
@@ -191,6 +228,35 @@ class ModelUpdateClientTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "connection-closed")
         self.assertLess(time.time() - started, 1.0)
+
+    def test_subscribe_timeout_removes_desired_handle_and_cancels_late_ack(self):
+        self.client.close()
+        self.server = FakeServer(ack_subscribe=False)
+        self.client = ModelUpdateClient(
+            "ws://fake/webgrp/v1/subscriptions/ws?space=space-a",
+            socket_factory=self.server.create_socket,
+            reconnect=False,
+            ack_timeout=1.0,
+        )
+
+        with self.assertRaises(ModelUpdateError) as raised:
+            self.client.subscribe({"type": "space"}, [{"kind": "json"}], timeout=0.05)
+        self.assertEqual(raised.exception.code, "ack-timeout")
+        self.assertEqual(self.client._desired, {})
+
+        socket = next(iter(self.server.sockets))
+        request = self.server.messages[0][1]
+        socket.push({
+            "type": "subscribed",
+            "ok": True,
+            "requestId": request["requestId"],
+            "data": {
+                "subscriptionId": "late-subscription",
+                "scope": request["scope"],
+                "files": request["files"],
+            },
+        })
+        wait_for(lambda: any(message[1]["type"] == "unsubscribe" for message in self.server.messages))
 
 
 if __name__ == "__main__":

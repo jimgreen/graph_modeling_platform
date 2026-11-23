@@ -50,6 +50,7 @@ class SubscriptionHandle:
     subscription_id: Optional[str] = None
     _ready: threading.Event = field(default_factory=threading.Event, repr=False)
     _error: Optional[ModelUpdateError] = field(default=None, repr=False)
+    _cancel_requested: bool = field(default=False, repr=False)
 
 
 @dataclass
@@ -118,15 +119,16 @@ class ModelUpdateClient:
                 self._condition.wait(remaining)
 
     def close(self) -> None:
-        self._manual_closed = True
-        self._stop_event.set()
-        socket = self._socket
+        with self._lock:
+            self._manual_closed = True
+            self._stop_event.set()
+            socket = self._socket
+            thread = self._thread
         if socket is not None:
             try:
                 socket.close()
             except Exception:
                 pass
-        thread = self._thread
         if thread and thread is not threading.current_thread():
             thread.join(timeout=2.0)
         self._set_state("closed")
@@ -144,7 +146,12 @@ class ModelUpdateClient:
         self._ensure_thread()
         self._start_restore_worker()
         if not handle._ready.wait(timeout):
-            raise ModelUpdateError("订阅确认超时。", code="ack-timeout", retryable=True)
+            error = ModelUpdateError("订阅确认超时。", code="ack-timeout", retryable=True)
+            with self._lock:
+                self._desired.pop(handle.id, None)
+                handle._cancel_requested = True
+                handle._error = error
+            raise error
         if handle._error is not None:
             raise handle._error
         return handle
@@ -248,6 +255,7 @@ class ModelUpdateClient:
             for handle in pending_handles:
                 try:
                     self._send_subscribe_and_wait(handle)
+                    self._cancel_if_removed(handle)
                 except ModelUpdateError as error:
                     if error.retryable:
                         with self._lock:
@@ -263,8 +271,9 @@ class ModelUpdateClient:
                         handle._error = error
                         handle._ready.set()
                     self._emit("error", error)
-        if self.state != "connected" or self._stop_event.is_set():
-            return
+        with self._lock:
+            if self.state != "connected" or self._stop_event.is_set():
+                return
         if self.on_resynchronized:
             try:
                 self.on_resynchronized(self)
@@ -295,6 +304,24 @@ class ModelUpdateClient:
         if pending.error is not None:
             raise pending.error
 
+    def _cancel_if_removed(self, handle: SubscriptionHandle) -> None:
+        with self._lock:
+            if self._desired.get(handle.id) is handle and not handle._cancel_requested:
+                return
+            subscription_id = handle.subscription_id
+        if not subscription_id:
+            return
+        try:
+            self._send({
+                "type": "unsubscribe",
+                "requestId": str(uuid.uuid4()),
+                "subscriptionId": subscription_id,
+            })
+        except Exception:
+            return
+        with self._lock:
+            handle.subscription_id = None
+
     def _send(self, message: dict[str, Any]) -> None:
         with self._lock:
             socket = self._socket
@@ -318,7 +345,11 @@ class ModelUpdateClient:
             self._emit("model.updated", message.get("data"))
             return
         if kind == "subscribed":
-            pending = self._find_pending(message, "subscribe")
+            try:
+                pending = self._find_pending(message, "subscribe")
+            except ModelUpdateError as error:
+                self._emit("error", error)
+                return
             if pending is None:
                 return
             subscription_id = message.get("data", {}).get("subscriptionId")
@@ -330,7 +361,11 @@ class ModelUpdateClient:
             self._emit("subscribed", {**message.get("data", {}), "handle": pending.handle, "requestId": message.get("requestId")})
             return
         if kind == "unsubscribed":
-            pending = self._find_pending(message, "unsubscribe")
+            try:
+                pending = self._find_pending(message, "unsubscribe")
+            except ModelUpdateError as error:
+                self._emit("error", error)
+                return
             if pending is None:
                 return
             with self._lock:
@@ -348,7 +383,11 @@ class ModelUpdateClient:
                 subscription_id=error_data.get("subscriptionId"),
                 retryable=code not in {"bad-request", "not-found", "forbidden"},
             )
-            pending = self._find_pending(message, "subscribe") or self._find_pending(message, "unsubscribe")
+            try:
+                pending = self._find_pending(message, None)
+            except ModelUpdateError as protocol_error:
+                self._emit("error", protocol_error)
+                return
             if pending is not None:
                 pending.error = error
                 with self._lock:
@@ -358,21 +397,28 @@ class ModelUpdateClient:
             return
         self._emit("message", message)
 
-    def _find_pending(self, message: dict[str, Any], kind: str) -> Optional[_Pending]:
+    def _find_pending(self, message: dict[str, Any], kind: Optional[str]) -> Optional[_Pending]:
         request_id = message.get("requestId")
         with self._lock:
-            if request_id:
+            if request_id is not None and str(request_id).strip():
                 pending = self._pending.get(str(request_id))
-                if pending and pending.kind == kind:
+                if pending and (kind is None or pending.kind == kind):
                     return pending
+                return None
             subscription_id = message.get("data", {}).get("subscriptionId") or message.get("error", {}).get("subscriptionId")
+            candidates = []
             for pending in self._pending.values():
-                if pending.kind != kind:
+                if kind is not None and pending.kind != kind:
                     continue
                 if subscription_id and pending.handle.subscription_id and pending.handle.subscription_id != subscription_id:
                     continue
-                return pending
-        return None
+                candidates.append(pending)
+            if len(candidates) > 1:
+                raise ModelUpdateError(
+                    "服务端回执缺少 requestId，无法安全关联待处理请求。",
+                    code="bad-response",
+                )
+            return candidates[0] if candidates else None
 
     def _handle_disconnect(self, code: Optional[int], reason: str, cause: BaseException) -> None:
         permanent = code == 4003

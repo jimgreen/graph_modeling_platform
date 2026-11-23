@@ -114,6 +114,47 @@ describe("ModelUpdateClient", () => {
     client.close();
   });
 
+  test("accepts a legacy ack without requestId when only one request is pending", async () => {
+    const server = await startSubscriptionServer({
+      onSubscribe: ({ ws, message }) => ws.send(JSON.stringify({
+        type: "subscribed",
+        ok: true,
+        data: {
+          subscriptionId: "legacy-sub-1",
+          scope: message.scope,
+          files: message.files
+        }
+      }))
+    });
+    const client = new ModelUpdateClient({
+      url: `ws://127.0.0.1:${server.port}${subscriptionPath}`,
+      reconnect: false
+    });
+
+    const handle = await client.subscribe({ scope: { type: "space" }, files: [{ kind: "json" }] });
+
+    expect(handle.subscriptionId).toBe("legacy-sub-1");
+    client.close();
+  });
+
+  test("reports a protocol error instead of guessing among multiple request-less acks", () => {
+    const client = new ModelUpdateClient({ url: "ws://127.0.0.1:1/webgrp/v1/subscriptions/ws" });
+    const errors = [];
+    client.on("error", (error) => errors.push(error));
+    const record = (id) => ({ id, subscriptionId: null, handle: { id } });
+    client.addPending("request-1", { type: "subscribe", record: record("handle-1") });
+    client.addPending("request-2", { type: "subscribe", record: record("handle-2") });
+
+    client.handleMessage(JSON.stringify({
+      type: "subscribed",
+      ok: true,
+      data: { subscriptionId: "ambiguous-subscription" }
+    }));
+
+    expect(errors.at(-1)?.code).toBe("bad-response");
+    expect(client.pending.size).toBe(2);
+  });
+
   test("does not reconnect after an explicit close", async () => {
     const server = await startSubscriptionServer({
       onSubscribe: ({ ws, message }) => ws.send(JSON.stringify({

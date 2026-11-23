@@ -266,7 +266,13 @@ export class ModelUpdateClient extends EventEmitter {
       return;
     }
     if (message.type === "subscribed") {
-      const pending = this.findPending(message, "subscribe");
+      let pending;
+      try {
+        pending = this.findPending(message, "subscribe");
+      } catch (error) {
+        this.emitError(error);
+        return;
+      }
       if (!pending) return;
       const subscriptionId = message.data?.subscriptionId;
       pending.record.subscriptionId = subscriptionId ? String(subscriptionId) : null;
@@ -280,7 +286,13 @@ export class ModelUpdateClient extends EventEmitter {
       return;
     }
     if (message.type === "unsubscribed") {
-      const pending = this.findPending(message, "unsubscribe");
+      let pending;
+      try {
+        pending = this.findPending(message, "unsubscribe");
+      } catch (error) {
+        this.emitError(error);
+        return;
+      }
       if (!pending) return;
       this.removePending(pending.requestId);
       pending.resolve?.();
@@ -288,7 +300,13 @@ export class ModelUpdateClient extends EventEmitter {
       return;
     }
     if (message.type === "error") {
-      const pending = this.findPending(message, "subscribe") ?? this.findPending(message, "unsubscribe");
+      let pending;
+      try {
+        pending = this.findPending(message, ["subscribe", "unsubscribe"]);
+      } catch (error) {
+        this.emitError(error);
+        return;
+      }
       const error = new ModelUpdateError(message.error?.message ?? "订阅请求失败。", {
         code: message.error?.code ?? "internal",
         requestId: message.requestId,
@@ -368,17 +386,24 @@ export class ModelUpdateClient extends EventEmitter {
   }
 
   findPending(message, type) {
-    if (message.requestId && this.pending.get(String(message.requestId))?.type === type) {
-      return this.pending.get(String(message.requestId));
+    const types = new Set(Array.isArray(type) ? type : [type]);
+    const requestId = message.requestId;
+    if (requestId !== undefined && requestId !== null && String(requestId).trim()) {
+      const pending = this.pending.get(String(requestId));
+      return pending && types.has(pending.type) ? pending : null;
     }
     const subscriptionId = message.data?.subscriptionId ?? message.error?.subscriptionId;
+    const candidates = [];
     for (const requestId of this.pendingOrder) {
       const pending = this.pending.get(requestId);
-      if (!pending || pending.type !== type) continue;
+      if (!pending || !types.has(pending.type)) continue;
       if (subscriptionId && pending.record?.subscriptionId && pending.record.subscriptionId !== subscriptionId) continue;
-      return pending;
+      candidates.push(pending);
     }
-    return null;
+    if (candidates.length > 1) {
+      throw new ModelUpdateError("服务端回执缺少 requestId，无法安全关联待处理请求。", { code: "bad-response" });
+    }
+    return candidates[0] ?? null;
   }
 
   removePending(requestId) {

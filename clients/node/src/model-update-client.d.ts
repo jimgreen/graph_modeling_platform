@@ -54,5 +54,4 @@ export class ModelUpdateClient extends EventEmitter {
   close(): void;
   subscribe(input: { scope: SubscriptionScope; files: SubscriptionFile[] }): Promise<SubscriptionHandle>;
   unsubscribe(handle: SubscriptionHandle): Promise<void>;
-  on(event: string, listener: (payload: any) => void): this;
 }
