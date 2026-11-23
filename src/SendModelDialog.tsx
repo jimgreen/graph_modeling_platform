@@ -147,7 +147,7 @@ function currentModelIndex(scope: Record<string, any>): number {
   return Number.isSafeInteger(saved) && saved > 0 ? saved : 0;
 }
 
-// 发送请求装配（纯函数，便于单测锁定前端契约；后端行为见 server/sendModel.test.mjs）：
+// 发送请求装配（纯函数，便于单测锁定前端契约；后端行为见 server/test/sendModel.test.mjs）：
 // 优先 modelId 指定模型；模型尚未分配 idx 时回退 schemePath + name（后端两种都收）。
 export function buildSendRequest(
   scope: Record<string, any>,

@@ -1,0 +1,573 @@
+// swigger 页面所有示例的自动化验证：遍历 SWIGGER_ENDPOINTS 的每个 example，
+// 构建请求发送，按接口语义断言 HTTP 状态 + 响应关键字段。
+// 数据隔离：GRAPH_MODEL_DATA_DIR 指向 tmpdir（写操作不污染 repo）。
+// runtime 域需前端在线：起 WS 客户端注册并响应 fetch。
+
+import { mkdtemp, rm, mkdir, writeFile, cp } from "node:fs/promises";
+import { join, resolve, sep } from "node:path";
+import { tmpdir } from "node:os";
+import { WebSocket } from "ws";
+import { describe, expect, test, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { SWIGGER_ENDPOINTS } from "../swaggerPage.mjs";
+import { apiPath } from "../config.mjs";
+
+let dataDir;
+let createImageServer;
+let server;
+let baseUrl;
+let wsUrl;
+let wsClient;
+
+// 测试环境里 seed 模型的 idx（避开 repo 真实数据已占用的 1）
+const TEST_MODEL_ID = 900001;
+const TEST_SCHEME_ID = 987654321;
+
+// 只复制真实方案数据：data/schemes/trash 是历史归档（几十个目录、上百个文件），
+// 逐个用例复制它既拖慢 hook，又让 Windows 下的递归删除容易撞 ENOTEMPTY
+const skipTrash = (source) => !source.split(sep).includes("trash");
+// Windows 上目录可能被上一轮服务收尾写入占用，删除加退避重试
+const removeDataDir = () => rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+const copySchemeFixtures = () => cp(resolve(process.cwd(), "data", "schemes"), join(dataDir, "schemes"), { recursive: true, filter: skipTrash });
+
+// 复刻 swaggerPage.buildUrl 逻辑（示例值原始未编码，这里统一 encodeURIComponent）
+function buildUrl(ep, params) {
+  let path = ep.path;
+  for (const p of ep.pathParams || []) {
+    path = path.replace("{" + p.name + "}", encodeURIComponent(params[p.name] || ""));
+  }
+  const qs = (ep.query || []).map((q) => {
+    const v = params["q_" + q.name];
+    if (v === undefined || v === "") return "";
+    return encodeURIComponent(q.name) + "=" + encodeURIComponent(v);
+  }).filter(Boolean).join("&");
+  return path + (qs ? "?" + qs : "");
+}
+
+// 构建请求选项 + body
+function buildOpts(ep, params) {
+  const opts = { method: ep.method };
+  if (ep.body && (ep.method === "POST" || ep.method === "PUT" || ep.method === "DELETE")) {
+    const bodyRaw = params.__body__;
+    if (bodyRaw !== undefined && bodyRaw !== "") {
+      const bodyText = typeof bodyRaw === "string" ? bodyRaw : JSON.stringify(bodyRaw);
+      if (bodyText.trim().startsWith("{") || bodyText.trim().startsWith("[")) {
+        opts.headers = { "content-type": "application/json" };
+        opts.body = bodyText;
+      } else {
+        opts.body = bodyText;
+      }
+    }
+  }
+  return opts;
+}
+
+// 发送端点的示例参数按测试环境改写：
+// ① 文档里的 modelId 是占位（示例值 1），换成 seed 模型的 idx，避免撞上 repo 真实数据
+// ② 目标 URL 写的是后端默认地址（swaggerPage 的 RECEIVE_URL），换成当前随机端口的 baseUrl
+function normalizeExampleParams(ep, params) {
+  const next = { ...params };
+  if (ep.path === apiPath("/v1/models/export") && next.q_modelId !== undefined && next.q_modelId !== "") {
+    next.q_modelId = TEST_MODEL_ID;
+  }
+  if (ep.path !== apiPath("/v1/schemes/model/send")) {
+    return next;
+  }
+  if (next.q_modelId !== undefined && next.q_modelId !== "") {
+    next.q_modelId = TEST_MODEL_ID;
+  }
+  if (next.__body__?.url) {
+    next.__body__ = {
+      ...next.__body__,
+      url: String(next.__body__.url).replace(/^https?:\/\/[^/]+/u, baseUrl)
+    };
+  }
+  return next;
+}
+
+async function fetchExample(ep, ex) {
+  const params = normalizeExampleParams(ep, ex.params || {});
+  const url = buildUrl(ep, params);
+  const opts = buildOpts(ep, params);
+  const res = await fetch(`${baseUrl}${url}`, opts);
+  const text = await res.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch { /* 非 JSON */ }
+  return { status: res.status, headers: res.headers, text, json, url };
+}
+
+// ---- runtime WS 客户端：注册并响应 fetch + command ----
+// 按 resource 返回最小可序列化 data，满足各 runtime 接口断言
+function runtimeResponder(resource, params) {
+  switch (resource) {
+    case "runtime.model":
+      return { ok: true, data: { modelName: "测试模型", modelId: "k1", schemePath: "默认方案", updatedAt: "2026-01-01T00:00:00Z" } };
+    case "runtime.devices":
+      return { ok: true, data: { nodes: [{ id: "n1" }], edges: [] } };
+    case "runtime.selection":
+      return { ok: true, data: { selectedNodeIds: ["n1"], selectedNode: null } };
+    case "runtime.tab":
+      return { ok: true, data: { tab: params.tab || "model", title: "t", rows: [] } };
+    case "runtime.snapshot":
+      return { ok: true, data: { model: {}, devices: { nodes: [], edges: [] }, selection: {}, tabs: {} } };
+    case "runtime.screenshot":
+      return { ok: true, data: { base64: "iVBORw0KGgo=", width: 10, height: 5, mime: "image/png" } };
+    case "runtime.svg":
+      return { ok: true, data: "<svg></svg>" };
+    case "runtime.e-file":
+      return { ok: true, data: { filename: "model.e", text: "<Section>", mime: "text/plain" } };
+    // runtime.dom：outline 回元素树，html 回标记 —— 按 params.format 分派，与真实前端同语义
+    case "runtime.dom":
+      return params.format === "html"
+        ? { ok: true, data: { format: "html", title: "t", url: "u", html: "<html></html>", nodeCount: 1, totalChars: 13, truncated: false } }
+        : { ok: true, data: { format: "outline", title: "t", url: "u", root: { tag: "html", children: [{ tag: "body" }] }, nodeCount: 2, truncated: false } };
+    default:
+      return { ok: false, error: { code: "fetch-failed", message: "unknown resource" } };
+  }
+}
+
+// command 响应：按 name 返回最小回执，满足控制域示例断言
+function commandResponder(name, params) {
+  switch (name) {
+    case "control.device.add":
+      return { ok: true, data: { id: "n-test" } };
+    case "control.scheme.create":
+      return { ok: true, data: { id: "s-test", name: params.name || "新方案", path: [params.name || "新方案"] } };
+    case "control.model.create":
+      return { ok: true, data: { id: "m-test", name: params.name || "新模型", schemeId: 1 } };
+    case "control.devices.select":
+      return { ok: true, data: { selectedIds: params.ids || [], validIds: params.ids || [], invalidIds: [] } };
+    case "control.devices.group":
+      return { ok: true, data: { groupId: "g-test", name: "组合1" } };
+    case "control.device.delete":
+      return { ok: true, data: { deletedIds: params.ids || ["n1"] } };
+    case "control.device.property.update":
+      return { ok: true, data: { id: params.id, category: params.category, patched: Object.keys(params.patch || {}) } };
+    case "control.save":
+      return { ok: true, data: { saved: true, scope: params.scope } };
+    case "control.template.saveFromSelection":
+      return { ok: true, data: { templateKind: `custom-${params.componentLibrary || "device"}-1` } };
+    case "control.e-device-definition.export":
+      return { ok: true, data: { filename: "device-definitions.e", text: "<Section>", mime: "text/plain" } };
+    case "control.e-device-definition.import":
+      return { ok: true, data: { matched: [], skipped: [], matchedCount: 0, skippedCount: 0 } };
+    case "control.space.switch":
+      return { ok: true, data: { scheduled: true, alreadyCurrent: false, spaceId: params.spaceId, spaceName: params.spaceId } };
+    case "control.model.switch":
+      return { ok: true, data: { alreadyOpen: false, modelId: 1, name: params.name || "模型1", schemeId: 1, schemePath: params.schemePath || [] } };
+    case "topology.check":
+      return { ok: true, data: { target: "current", status: "success", errors: [], warnings: [], corrections: [], topologyIslandCount: 1, modified: false, saved: false } };
+    default:
+      return { ok: false, error: { code: "unknown-command", message: `unknown command: ${name}` } };
+  }
+}
+
+function connectRuntimeClient() {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(wsUrl);
+    ws.on("open", () => {
+      ws.send(JSON.stringify({ type: "register", clientId: "swigger-test-client" }));
+    });
+    ws.on("message", (raw) => {
+      const msg = JSON.parse(String(raw));
+      if (msg.type === "registered") {
+        resolve(ws);
+        return;
+      }
+      if (msg.type === "fetch") {
+        const env = runtimeResponder(msg.resource, msg.params || {});
+        ws.send(JSON.stringify({
+          type: "fetch-response",
+          requestId: msg.requestId,
+          ok: env.ok,
+          data: env.ok ? env.data : undefined,
+          error: env.ok ? undefined : env.error
+        }));
+      }
+      if (msg.type === "command") {
+        const env = commandResponder(msg.name, msg.params || {});
+        ws.send(JSON.stringify({
+          type: "command-response",
+          requestId: msg.requestId,
+          ok: env.ok,
+          data: env.ok ? env.data : undefined,
+          error: env.ok ? undefined : env.error
+        }));
+      }
+    });
+    ws.on("error", reject);
+  });
+}
+
+beforeAll(async () => {
+  dataDir = await mkdtemp(join(tmpdir(), "swigger-examples-"));
+  process.env.GRAPH_MODEL_DATA_DIR = dataDir;
+  // 复制 repo schemes 数据到 tmpdir，使方案域示例有真实数据可读（写操作在副本上，不污染 repo）
+  try {
+    await copySchemeFixtures();
+  } catch {
+    // repo 无 schemes 数据则空（方案域示例可能 404，期望表相应处理）
+  }
+  ({ createImageServer } = await import("../server.mjs"));
+});
+
+afterAll(async () => {
+  if (dataDir) {
+    await removeDataDir();
+  }
+});
+
+beforeEach(async () => {
+  // 每用例重置 dataDir：清空后重新复制 schemes，避免写操作（PUT/DELETE 空方案树等）污染后续只读示例
+  await removeDataDir();
+  await mkdir(dataDir, { recursive: true });
+  try {
+    await copySchemeFixtures();
+  } catch {
+    // repo 无 schemes 数据则空
+  }
+  // 补种子：swagger 示例引用的「默认方案」+ 模型，确保只读示例不 404
+  const seedDir = join(dataDir, "schemes", "files", "默认方案");
+  await mkdir(seedDir, { recursive: true });
+  await writeFile(join(seedDir, "scheme.json"), JSON.stringify({ schemeId: TEST_SCHEME_ID }));
+  // 「线路」seed 带 modelType=馈线：e-file 配网实时库模板示例需通过模板类型门控（E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES）
+  const seedProject = (name, extra = {}) => writeFile(
+    join(seedDir, `${name}.json`),
+    JSON.stringify({ version: 1, name, nodes: [], edges: [], canvasWidth: 1920, canvasHeight: 1080, ...extra })
+  );
+  await seedProject("图元连接");
+  // 「线路」seed 带一个电力设备：cim-xml 端点对空模型返回 400（无可导出的电力设备），示例需 200
+  // idx 用 900001：repo 里已有 idx=1 的真实模型（主配微联合/地区1/主网/厂站1），
+  // 用 1 会让 modelId 示例定位到那个厂站模型，模板示例随类型门控变 400
+  await seedProject("线路", { idx: TEST_MODEL_ID, modelType: "馈线", nodes: [
+    { id: "bus1", kind: "ac-bus", name: "母线1", nodeNumber: "1", acTopologyNode: -1, dcTopologyNode: -1, position: { x: 0, y: 0 }, size: { width: 10, height: 10 }, rotation: 0, scale: 1, terminals: [], params: { i_vbase: "110" } }
+  ] });
+  const subDir = join(seedDir, "1-1");
+  await mkdir(subDir, { recursive: true });
+  await writeFile(
+    join(subDir, "子模型.json"),
+    JSON.stringify({ version: 1, name: "子模型", nodes: [], edges: [], canvasWidth: 1920, canvasHeight: 1080 })
+  );
+  server = await createImageServer({ port: 0, host: "127.0.0.1" });
+  const port = server.address().port;
+  baseUrl = `http://127.0.0.1:${port}`;
+  wsUrl = `ws://127.0.0.1:${port}/webgrp/ws`;
+  await fetch(`${baseUrl}${apiPath("/spaces/initialize")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "默认空间" })
+  });
+  wsClient = await connectRuntimeClient();
+});
+
+afterEach(async () => {
+  if (wsClient) {
+    wsClient.close();
+  }
+  if (server) {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+// ---- 期望表：按 path + 示例 label 断言 ----
+// 每条返回 { status, check: (r) => void }
+function expectFor(ep, ex) {
+  const p = ep.path;
+  const label = ex.label;
+
+  // runtime 域：均需前端在线，状态 200（clients 直返，其余经 WS 透传成功）
+  if (p === apiPath("/v1/runtime/clients")) return { status: 200, check: (r) => expect(r.json.data.clients).toBeInstanceOf(Array) };
+  if (p === apiPath("/v1/runtime/model")) return { status: 200, check: (r) => expect(r.json.data.modelName).toBe("测试模型") };
+  if (p === apiPath("/v1/runtime/devices")) return { status: 200, check: (r) => expect(r.json.data.nodes).toBeInstanceOf(Array) };
+  if (p === apiPath("/v1/runtime/selection")) return { status: 200, check: (r) => expect(r.json.data.selectedNodeIds).toBeInstanceOf(Array) };
+  if (p === apiPath("/v1/runtime/tabs")) return { status: 200, check: (r) => expect(r.json.data.tabs).toBeTruthy() };
+  if (p === apiPath("/v1/runtime/tabs/{tab}")) return { status: 200, check: (r) => expect(r.json.data.tab).toBeTruthy() };
+  if (p === apiPath("/v1/runtime/screenshot")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/png") };
+  if (p === apiPath("/v1/runtime/export")) {
+    const format = ex.params?.q_format;
+    if (format === "svg") return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/svg") };
+    return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("text/plain") };
+  }
+  // runtime.dom：两条示例分别打 outline 与 html 分支，断言 format 与结构字段
+  if (p === apiPath("/v1/runtime/dom")) return { status: 200, check: (r) => {
+    expect(r.json.ok).toBe(true);
+    if (r.json.data.format === "html") {
+      expect(typeof r.json.data.html).toBe("string");
+    } else {
+      expect(r.json.data.format).toBe("outline");
+      expect(r.json.data.root.tag).toBeTruthy();
+    }
+  } };
+
+  // 图片域
+  if (p === apiPath("/images") && ep.method === "GET") return { status: 200, check: (r) => expect(Array.isArray(r.json)).toBe(true) };
+  if (p === apiPath("/images") && ep.method === "POST") return { status: 201, check: (r) => { expect(r.json.id).toBeTruthy(); expect(r.json.url).toContain(apiPath("/images/")); } };
+  if (p === apiPath("/image-folders") && ep.method === "GET") return { status: 200, check: (r) => expect(Array.isArray(r.json)).toBe(true) };
+  if (p === apiPath("/image-folders") && ep.method === "POST") return { status: 201, check: (r) => expect(r.json.id).toBeTruthy() };
+  if (p === apiPath("/image-folders/{folderId}") && ep.method === "PUT") {
+    // root 不可重命名 → 400
+    return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  if (p === apiPath("/image-folders/{folderId}") && ep.method === "DELETE") {
+    // root 不可删 → 400
+    return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  if (p === apiPath("/images/{id}") && ep.method === "DELETE") {
+    // 示例 id 不存在 → 404
+    return { status: 404, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  if (p === apiPath("/images/{id}")) {
+    // 示例 id 为空 → 不存在 → 404
+    return { status: 404, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  // 两条导入：示例为「空包」→ 400（不污染同空间后续用例的数据）
+  if (p === apiPath("/icon-library/import")) return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+  if (p === apiPath("/image-library/import")) return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+
+  // 空间管理（管理面，与「某一空间的数据」无关）
+  if (p === apiPath("/spaces") && ep.method === "GET") return { status: 200, check: (r) => {
+    expect(r.json.spaces).toBeInstanceOf(Array);
+    expect(typeof r.json.current).toBe("string");
+  } };
+  if (p === apiPath("/platform/data-dir")) {
+    return { status: 409, check: (r) => expect(r.json.error.code).toBe("DATA_DIR_ENV_OVERRIDE") };
+  }
+  if (p === apiPath("/spaces") && ep.method === "POST") return { status: 200, check: (r) => {
+    expect(r.json.id).toBeTruthy();
+    expect(r.json.pinned).toBe(false);
+  } };
+  if (p === apiPath("/spaces/initialize") && ep.method === "POST") return { status: 200, check: (r) => {
+    expect(r.json.id).toBe("default");
+    expect(r.json.pinned).toBe(true);
+  } };
+  if (p === apiPath("/spaces") && ep.method === "PUT") {
+    // 示例指向本用例内尚未建出的空间 → 400（每个用例重建 dataDir，不依赖前一个用例的副作用）
+    return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  if (p === apiPath("/spaces") && ep.method === "DELETE") {
+    // 示例指向 default（pinned）→ 400，空间不被真删
+    return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  // 导出/导入**不**在派发层短路：示例不带空间标识 → 取 Cookie/回退首个空间（default），照常 200。
+  if (p === apiPath("/spaces/export")) {
+    return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
+  }
+  if (p === apiPath("/v1/spaces/export-artifacts")) {
+    return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
+  }
+  if (p === apiPath("/spaces/import")) {
+    // 示例 body 是字面量 "<binary zip>"（非 zip）→ 400，**不会**新建空间（与 /schemes/import 同款写法）
+    return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+
+  // 全局线路域：错误形状是 {error:"中文串"}（不是 v1 的 {error:{code,message}}）
+  if (p === apiPath("/global-lines") && ep.method === "GET") {
+    return { status: 200, check: (r) => expect(r.json.records).toBeInstanceOf(Array) };
+  }
+  if (p === apiPath("/global-lines/attach")) {
+    // 空 body → 400（仅交流/直流线路可入表）
+    return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  if (p === apiPath("/global-lines/detach")) {
+    // 不存在的 lineId → 404
+    return { status: 404, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  if (p === apiPath("/global-lines/record")) {
+    // PUT / DELETE 同路径，均为「不存在的 lineId → 404」
+    return { status: 404, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  if (p === apiPath("/global-lines/sync-project")) {
+    // 空模型 → 200，登记表清空并回显
+    return { status: 200, check: (r) => {
+      expect(r.json.ok).toBe(true);
+      expect(r.json.records).toBeInstanceOf(Array);
+    } };
+  }
+
+  // 图元导出域：错误形状 {error:{code,message}}
+  if (p === apiPath("/symbol-export-schemes") && ep.method === "GET") {
+    return { status: 200, check: (r) => expect(typeof r.json.exists).toBe("boolean") };
+  }
+  if (p === apiPath("/symbol-export-schemes") && ep.method === "PUT") {
+    return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  }
+  if (p === apiPath("/symbol-export")) {
+    // 空 kinds → 400 invalid-request
+    return { status: 400, check: (r) => expect(r.json.error?.code).toBe("invalid-request") };
+  }
+  if (p === apiPath("/symbol-export-standalone")) {
+    // 空 kinds → 400 invalid-request
+    return { status: 400, check: (r) => expect(r.json.error?.code).toBe("invalid-request") };
+  }
+
+  // 方案域（内部）
+  if (p === apiPath("/schemes") && ep.method === "GET") return { status: 200, check: (r) => expect(r.json.schemes).toBeInstanceOf(Array) };
+  if (p === apiPath("/schemes") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/schemes/export")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
+  if (p === apiPath("/schemes/import")) {
+    // 非 zip body → 400
+    return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
+  }
+  if (p === apiPath("/schemes/project") && ep.method === "GET") {
+    // 复制了 repo schemes 数据，模型存在 → 200
+    return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  }
+  if (p === apiPath("/schemes/project") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/schemes/project") && ep.method === "DELETE") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/schemes/scheme") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/schemes/scheme") && ep.method === "DELETE") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+
+  // 配置域
+  if (p === apiPath("/color-config") && ep.method === "GET") return { status: 200, check: (r) => expect(r.json).toBeTruthy() };
+  if (p === apiPath("/color-config") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/measurement-config") && ep.method === "GET") return { status: 200, check: (r) => expect(r.json).toBeTruthy() };
+  if (p === apiPath("/measurement-config") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/device-library") && ep.method === "GET") return { status: 200, check: (r) => expect(r.json).toBeTruthy() };
+  if (p === apiPath("/device-library") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+
+  // v1 方案域
+  if (p === apiPath("/v1/schemes") && ep.method === "GET") {
+    const view = ex.params?.q_view ?? "summary";
+    return { status: 200, check: (r) => {
+      expect(r.json.ok).toBe(true);
+      if (view === "hierarchy") expect(r.json.data.nodes).toBeInstanceOf(Array);
+      if (view === "models") expect(r.json.data.models).toBeInstanceOf(Array);
+      if (view === "summary") expect(r.json.data.schemes).toBeInstanceOf(Array);
+    } };
+  }
+  if (p === apiPath("/v1/schemes/export")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
+  if (p === apiPath("/v1/spaces/export-artifacts")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
+  if (p === apiPath("/v1/models/export")) return { status: 200, check: (r) => {
+    expect(r.json.ok).toBe(true);
+    expect(r.json.data.models).toBeInstanceOf(Array);
+    for (const model of r.json.data.models) {
+      expect(model.artifacts).toBeInstanceOf(Array);
+      for (const artifact of model.artifacts) {
+        expect(typeof artifact.contentBase64).toBe("string");
+      }
+    }
+    expect(r.json.data.mergedE).toBeInstanceOf(Array);
+    if (ex.params?.q_mergeE === "true") {
+      expect(r.json.data.mergedE.length).toBeGreaterThan(0);
+      expect(r.json.data.models.every((model) => model.artifacts.every((artifact) => artifact.format !== "e"))).toBe(true);
+    }
+  } };
+  if (p === apiPath("/v1/schemes/model/export")) {
+    const format = ex.params?.q_format;
+    if (format === "json") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+    if (format === "svg") return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/svg") };
+    if (format === "cim-xml") return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/xml") };
+    return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("text/plain") };
+  }
+  if (p === apiPath("/v1/schemes/model/send")) return { status: 200, check: (r) => {
+    expect(r.json.ok).toBe(true);
+    // 目标即本服务接收端（示例 url 指向 /v1/receive），故转发结果状态为 200
+    expect(r.json.data.status).toBe(200);
+    expect(r.json.data.files.length).toBeGreaterThan(0);
+    for (const file of r.json.data.files) {
+      expect(["e", "json", "svg", "cim"]).toContain(file.kind);
+    }
+    if (r.json.data.templateName) {
+      expect(["国网E格式", "主网实时库", "配网实时库", "台区实时库"]).toContain(r.json.data.templateName);
+    }
+  } };
+  if (p === apiPath("/v1/receive") && ep.method === "POST") return { status: 200, check: (r) => {
+    expect(r.json.data.received.fields).toBeInstanceOf(Array);
+    expect(r.json.data.received.totalBytes).toBeGreaterThan(0);
+  } };
+  if (p === apiPath("/v1/receive") && ep.method === "GET") return { status: 200, check: (r) => {
+    expect(typeof r.json.data.count).toBe("number");
+  } };
+  if (p === apiPath("/v1/receive") && ep.method === "DELETE") return { status: 200, check: (r) => {
+    expect(typeof r.json.data.cleared).toBe("number");
+  } };
+
+  // v1 拓扑操作：统一入口由 body.action 区分检查/修复。
+  if (p === apiPath("/v1/topology")) {
+    if (ex.label.includes("不存在模型")) {
+      return { status: 404, check: (r) => expect(r.json.error.code).toBe("not-found") };
+    }
+    return { status: 200, check: (r) => {
+      expect(r.json.data).toMatchObject({ target: "current", modified: false, saved: false });
+      expect(r.json.data.errors).toBeInstanceOf(Array);
+      expect(r.json.data.corrections).toBeInstanceOf(Array);
+    } };
+  }
+
+  // v1 图元库域
+  if (p === apiPath("/v1/library")) {
+    const part = ex.params?.q_part ?? "all";
+    return {
+      status: 200,
+      check: (r) => {
+        if (part === "categories") expect(r.json.data.categories).toBeInstanceOf(Array);
+        else if (part === "devices") expect(r.json.data.eSections).toBeInstanceOf(Array);
+        else if (part === "measurements") expect(r.json.data.measurementTypes).toBeInstanceOf(Array);
+        else expect(r.json.data).toBeTruthy();
+      }
+    };
+  }
+
+  // v1 控制台域（经 WS 下发前端，测试 WS 客户端模拟回执）
+  if (p === apiPath("/v1/control/device/add")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/scheme/create")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/model/create")) return { status: 200, check: (r) => {
+    expect(r.json.ok).toBe(true);
+    expect(r.json.data.id).toBeTruthy();
+  } };
+  if (p === apiPath("/v1/control/devices/select")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.selectedIds).toBeInstanceOf(Array); expect(r.json.data.validIds).toBeInstanceOf(Array); expect(r.json.data.invalidIds).toBeInstanceOf(Array); } };
+  if (p === apiPath("/v1/control/devices/group")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.groupId).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/device/delete")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.deletedIds).toBeInstanceOf(Array); } };
+  if (p === apiPath("/v1/control/device/property/update")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/save")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.saved).toBe(true); } };
+  if (p === apiPath("/v1/control/template/saveFromSelection")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.templateKind).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/e-device-definition/export")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.filename).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/e-device-definition/import")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.matched).toBeInstanceOf(Array); } };
+  if (p === apiPath("/v1/control/space/switch")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.spaceId).toBe("default"); expect(r.json.data.scheduled).toBe(true); } };
+  if (p === apiPath("/v1/control/model/switch")) return { status: 200, check: (r) => {
+    expect(r.json.ok).toBe(true);
+    expect(r.json.data.modelId).toBe(1);
+  } };
+
+  throw new Error(`未定义期望: ${ep.method} ${p} (示例: ${label})`);
+}
+
+describe("swigger 量测配置元数据", () => {
+  test("记录新增量测框默认样式", () => {
+    const getConfig = SWIGGER_ENDPOINTS.find((endpoint) => (
+      endpoint.method === "GET" && endpoint.path === apiPath("/measurement-config")
+    ));
+    const putConfig = SWIGGER_ENDPOINTS.find((endpoint) => (
+      endpoint.method === "PUT" && endpoint.path === apiPath("/measurement-config")
+    ));
+    const getV1Measurements = SWIGGER_ENDPOINTS.find((endpoint) => (
+      endpoint.method === "GET" && endpoint.path === apiPath("/v1/library")
+    ));
+
+    expect(getConfig?.response).toContain("groupDefaults");
+    expect(putConfig?.body).toMatchObject({
+      groupDefaults: {
+        backgroundColor: "transparent",
+        borderColor: "#64748b",
+        borderStyle: "none",
+        borderWidth: 0
+      }
+    });
+    expect(getV1Measurements?.response).toContain("part");
+  });
+});
+
+// 动态生成测试：每个接口的每个示例一个 test
+describe("swigger 所有示例自动化验证", () => {
+  for (const ep of SWIGGER_ENDPOINTS) {
+    describe(`${ep.method} ${ep.path}`, () => {
+      for (const ex of ep.examples || []) {
+        test(`示例「${ex.label}」`, async () => {
+          const exp = expectFor(ep, ex);
+          const r = await fetchExample(ep, ex);
+          expect(r.status).toBe(exp.status);
+          exp.check(r);
+        });
+      }
+    });
+  }
+});

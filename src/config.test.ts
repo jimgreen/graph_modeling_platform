@@ -11,8 +11,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 /** 两个前缀都由 vite define 注入的全局常量决定，测试里只能在 import 前打桩。 */
 async function loadConfig(env: { apiPrefix?: string | null; frontendBase?: string | null } = {}) {
   vi.resetModules();
-  if (env.apiPrefix !== undefined) vi.stubGlobal("__API_PREFIX__", env.apiPrefix);
-  if (env.frontendBase !== undefined) vi.stubGlobal("__FRONTEND_BASE__", env.frontendBase);
+  vi.stubGlobal("__API_PREFIX__", Object.hasOwn(env, "apiPrefix") ? env.apiPrefix : undefined);
+  vi.stubGlobal("__FRONTEND_BASE__", Object.hasOwn(env, "frontendBase") ? env.frontendBase : undefined);
   return import("./config");
 }
 

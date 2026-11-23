@@ -1,6 +1,6 @@
 import { createElement, Fragment, memo, type ReactNode } from "react";
 import type { ColorDisplayMode, ColorPalette, DeviceStateVisual, ModelNode } from "./model";
-// 扩展名不能省：DeviceGlyph 在 server/*.mjs 的 Node 原生直载链上（server/nativeLoad.test.mjs 守卫）。
+// 扩展名不能省：DeviceGlyph 在 server/*.mjs 的 Node 原生直载链上（server/test/nativeLoad.test.mjs 守卫）。
 import type { CanvasThemeMode } from "./canvasTheme.ts";
 import { themeGlyphColor } from "./canvasTheme.ts";
 import {

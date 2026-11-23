@@ -29,7 +29,7 @@
 
 **Files:**
 - Create: `server/batchModelSelection.mjs`
-- Test: `server/batchModelSelection.test.mjs`
+- Test: `server/test/batchModelSelection.test.mjs`
 
 **Interfaces:**
 - Produces `parseBatchModelExportQuery(url)` returning:
@@ -55,7 +55,7 @@
 
 - [ ] **Step 1: Write failing parser tests**
 
-Cover these concrete cases in `server/batchModelSelection.test.mjs`:
+Cover these concrete cases in `server/test/batchModelSelection.test.mjs`:
 
 Start the test file with this URL helper so every parser case exercises the same production query shape:
 
@@ -98,7 +98,7 @@ test("rejects selector combinations and format-specific parameters", () => {
 
 - [ ] **Step 2: Run the parser tests and verify the expected failures**
 
-Run: `pnpm vitest run server/batchModelSelection.test.mjs`
+Run: `pnpm vitest run server/test/batchModelSelection.test.mjs`
 
 Expected: FAIL because `batchModelSelection.mjs` and `parseBatchModelExportQuery` do not exist.
 
@@ -108,14 +108,14 @@ Implement `url(search)` test helper locally and use `URLSearchParams`. Normalize
 
 - [ ] **Step 4: Run parser tests and refactor only after green**
 
-Run: `pnpm vitest run server/batchModelSelection.test.mjs`
+Run: `pnpm vitest run server/test/batchModelSelection.test.mjs`
 
 Expected: all parser tests pass.
 
 - [ ] **Step 5: Commit the parser task**
 
 ```bash
-git add server/batchModelSelection.mjs server/batchModelSelection.test.mjs
+git add server/batchModelSelection.mjs server/test/batchModelSelection.test.mjs
 git commit -m "feat(api): parse batch model export scope"
 ```
 
@@ -123,7 +123,7 @@ git commit -m "feat(api): parse batch model export scope"
 
 **Files:**
 - Modify: `server/batchModelSelection.mjs`
-- Test: `server/batchModelSelection.test.mjs`
+- Test: `server/test/batchModelSelection.test.mjs`
 - Reuse: `server/spaceArtifactExport.mjs`, `server/schemeArchive.mjs`, `server/server.mjs`, `src/model.ts`, `src/model-routing.ts`, `server/globalLineRegistry.mjs`
 
 **Interfaces:**
@@ -211,7 +211,7 @@ The fixtures must include a station source node with `params.model_id`, a revers
 
 - [ ] **Step 2: Run selection tests to verify red**
 
-Run: `pnpm vitest run server/batchModelSelection.test.mjs`
+Run: `pnpm vitest run server/test/batchModelSelection.test.mjs`
 
 Expected: the new collection and closure tests fail while the parser tests remain green.
 
@@ -225,14 +225,14 @@ Build forward links from model association nodes and global-line records, plus r
 
 - [ ] **Step 5: Run the full selection test file**
 
-Run: `pnpm vitest run server/batchModelSelection.test.mjs`
+Run: `pnpm vitest run server/test/batchModelSelection.test.mjs`
 
 Expected: parser, scope, ordering, association, cycle, and warning tests all pass.
 
 - [ ] **Step 6: Commit the selection task**
 
 ```bash
-git add server/batchModelSelection.mjs server/batchModelSelection.test.mjs
+git add server/batchModelSelection.mjs server/test/batchModelSelection.test.mjs
 git commit -m "feat(api): collect batch model scope and associations"
 ```
 
@@ -240,7 +240,7 @@ git commit -m "feat(api): collect batch model scope and associations"
 
 **Files:**
 - Create: `server/batchModelArtifacts.mjs`
-- Test: `server/batchModelArtifacts.test.mjs`
+- Test: `server/test/batchModelArtifacts.test.mjs`
 - Modify: `server/eFileExport.mjs`, `server/cimExport.mjs`, `server/xmlEncoding.mjs`
 
 **Interfaces:**
@@ -302,7 +302,7 @@ test("a generator failure rejects the entire batch", async () => {
 
 - [ ] **Step 2: Run artifact tests to verify red**
 
-Run: `pnpm vitest run server/batchModelArtifacts.test.mjs`
+Run: `pnpm vitest run server/test/batchModelArtifacts.test.mjs`
 
 Expected: FAIL because the artifact builder does not exist.
 
@@ -316,14 +316,14 @@ Filter only E inputs with `eFileTemplateAllowsModelType`. For `mergeE=false`, ma
 
 - [ ] **Step 5: Run artifact tests and the existing export tests**
 
-Run: `pnpm vitest run server/batchModelArtifacts.test.mjs server/eFileExport.test.mjs server/svgExport.test.mjs server/cimExport.test.mjs server/exportRobustness.test.mjs`
+Run: `pnpm vitest run server/test/batchModelArtifacts.test.mjs server/test/eFileExport.test.mjs server/test/svgExport.test.mjs server/test/cimExport.test.mjs server/test/exportRobustness.test.mjs`
 
 Expected: all new and existing export tests pass.
 
 - [ ] **Step 6: Commit the artifact task**
 
 ```bash
-git add server/batchModelArtifacts.mjs server/batchModelArtifacts.test.mjs server/eFileExport.mjs server/cimExport.mjs server/xmlEncoding.mjs
+git add server/batchModelArtifacts.mjs server/test/batchModelArtifacts.test.mjs server/eFileExport.mjs server/cimExport.mjs server/xmlEncoding.mjs
 git commit -m "feat(api): build encoded batch model artifacts"
 ```
 
@@ -331,8 +331,8 @@ git commit -m "feat(api): build encoded batch model artifacts"
 
 **Files:**
 - Create: `server/apiV1BatchModelExport.mjs`
-- Test: `server/apiV1BatchModelExport.test.mjs`
-- Modify: `server/server.mjs`, `server/routeCoverage.test.mjs`
+- Test: `server/test/apiV1BatchModelExport.test.mjs`
+- Modify: `server/server.mjs`, `server/test/routeCoverage.test.mjs`
 
 **Interfaces:**
 - Route: `GET /webgrp/v1/models/export`, wrapped with `withSpacePaths`.
@@ -393,7 +393,7 @@ test("invalid combinations return 400 and missing targets return 404", async () 
 
 - [ ] **Step 2: Run the new HTTP test and verify red**
 
-Run: `pnpm vitest run server/apiV1BatchModelExport.test.mjs`
+Run: `pnpm vitest run server/test/apiV1BatchModelExport.test.mjs`
 
 Expected: FAIL because the route is not registered.
 
@@ -407,21 +407,21 @@ Map parser errors to `400`, missing scope targets to `404`, and generator/read f
 
 - [ ] **Step 5: Run HTTP and route coverage tests**
 
-Run: `pnpm vitest run server/apiV1BatchModelExport.test.mjs server/routeCoverage.test.mjs`
+Run: `pnpm vitest run server/test/apiV1BatchModelExport.test.mjs server/test/routeCoverage.test.mjs`
 
 Expected: all tests pass and the new route is documented as registered by the route coverage guard.
 
 - [ ] **Step 6: Commit the HTTP task**
 
 ```bash
-git add server/apiV1BatchModelExport.mjs server/apiV1BatchModelExport.test.mjs server/server.mjs server/routeCoverage.test.mjs
+git add server/apiV1BatchModelExport.mjs server/test/apiV1BatchModelExport.test.mjs server/server.mjs server/test/routeCoverage.test.mjs
 git commit -m "feat(api): add batch model export endpoint"
 ```
 
 ### Task 5: Swagger, documentation, and compatibility verification
 
 **Files:**
-- Modify: `server/swaggerPage.mjs`, `server/swaggerPage.test.mjs`, `server/swigger.examples.test.mjs`
+- Modify: `server/swaggerPage.mjs`, `server/test/swaggerPage.test.mjs`, `server/test/swigger.examples.test.mjs`
 - Modify: `README.md`, `docs/MODEL_EXPORT_API.md`, `docs/ARCHITECTURE.md`, `docs/MCP-SWIGGER-GUIDE.md`
 
 - [ ] **Step 1: Add Swagger metadata and examples**
@@ -442,14 +442,14 @@ Assert old endpoints continue to work, and the new endpoint does not alter `/v1/
 
 - [ ] **Step 5: Run documentation and compatibility tests**
 
-Run: `pnpm vitest run server/swaggerPage.test.mjs server/swigger.examples.test.mjs server/routeCoverage.test.mjs server/apiV1Schemes.test.mjs server/apiV1Runtime.test.mjs server/mcp/mcpTools.test.mjs`
+Run: `pnpm vitest run server/test/swaggerPage.test.mjs server/test/swigger.examples.test.mjs server/test/routeCoverage.test.mjs server/test/apiV1Schemes.test.mjs server/test/apiV1Runtime.test.mjs server/test/mcp/mcpTools.test.mjs`
 
 Expected: all tests pass.
 
 - [ ] **Step 6: Commit docs and compatibility task**
 
 ```bash
-git add server/swaggerPage.mjs server/swaggerPage.test.mjs server/swigger.examples.test.mjs README.md docs/MODEL_EXPORT_API.md docs/ARCHITECTURE.md docs/MCP-SWIGGER-GUIDE.md
+git add server/swaggerPage.mjs server/test/swaggerPage.test.mjs server/test/swigger.examples.test.mjs README.md docs/MODEL_EXPORT_API.md docs/ARCHITECTURE.md docs/MCP-SWIGGER-GUIDE.md
 git commit -m "docs(api): document batch model export"
 ```
 
@@ -473,7 +473,7 @@ Expected: all commands exit successfully.
 
 - [ ] **Step 2: Run the focused batch/export suite**
 
-Run: `pnpm vitest run server/batchModelSelection.test.mjs server/batchModelArtifacts.test.mjs server/apiV1BatchModelExport.test.mjs server/apiV1Library.http.test.mjs server/apiV1Schemes.test.mjs server/apiV1Runtime.test.mjs server/eFileExport.test.mjs server/svgExport.test.mjs server/cimExport.test.mjs server/exportRobustness.test.mjs server/routeCoverage.test.mjs server/swaggerPage.test.mjs server/swigger.examples.test.mjs`
+Run: `pnpm vitest run server/test/batchModelSelection.test.mjs server/test/batchModelArtifacts.test.mjs server/test/apiV1BatchModelExport.test.mjs server/test/apiV1Library.http.test.mjs server/test/apiV1Schemes.test.mjs server/test/apiV1Runtime.test.mjs server/test/eFileExport.test.mjs server/test/svgExport.test.mjs server/test/cimExport.test.mjs server/test/exportRobustness.test.mjs server/test/routeCoverage.test.mjs server/test/swaggerPage.test.mjs server/test/swigger.examples.test.mjs`
 
 Expected: all tests pass.
 

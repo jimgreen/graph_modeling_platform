@@ -95,7 +95,7 @@
 - 建议: 检查 `typeof raw !== "string"`（Buffer）直接忽略。
 
 ### [P3] runtimeWs.test 的 connectClient 成功后 error→reject 残留
-- 位置: server/runtimeWs.test.mjs:42
+- 位置: server/test/runtimeWs.test.mjs:42
 - 类型: 风格
 - 描述: resolve 之后 ws error 仍会调用已 settled 的 reject（no-op），无实际危害但易误读。
 - 建议: resolve 前移除 error 监听或改为收集错误数组。

@@ -90,7 +90,7 @@ describe("icon library catalog utilities", () => {
       libraryId: "docer-free-compatible",
       categoryKey: "docer-free-compatible::electric-power",
       categoryLabel: "电力设备",
-      url: "/icon-library/docer-free-compatible/electric-power/ac-source.svg"
+      url: frontendPath("/icon-library/docer-free-compatible/electric-power/ac-source.svg")
     });
     expect(icons[0].searchText).toContain("交流电源");
     expect(icons[0].searchText).toContain("source");

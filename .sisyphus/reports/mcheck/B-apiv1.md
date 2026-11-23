@@ -147,7 +147,7 @@
 ## P2 一般
 
 ### [P2] 重复代码：测试中 createMockResponse 重复 4 次
-- 位置: server/apiV1Library.test.mjs:30-49, server/apiV1Schemes.handlers.test.mjs:19-43, server/apiV1Control.test.mjs:84-103 (间接), server/v1Response.test.mjs:5-24
+- 位置: server/test/apiV1Library.test.mjs:30-49, server/test/apiV1Schemes.handlers.test.mjs:19-43, server/test/apiV1Control.test.mjs:84-103 (间接), server/test/v1Response.test.mjs:5-24
 - 类型: 重复
 - 描述: 多个测试文件重复定义 `createMockResponse` 函数，逻辑高度相似。
 - 建议: 提取到 `test-utils.mjs`：
@@ -157,7 +157,7 @@
   ```
 
 ### [P2] 重复代码：fetchV1 测试辅助函数重复 3 次
-- 位置: server/apiV1Library.http.test.mjs:22-32, server/apiV1Schemes.test.mjs:31-41, server/apiV1Runtime.test.mjs:69-79
+- 位置: server/test/apiV1Library.http.test.mjs:22-32, server/test/apiV1Schemes.test.mjs:31-41, server/test/apiV1Runtime.test.mjs:69-79
 - 类型: 重复
 - 描述: 三个集成测试文件完全相同的 `fetchV1` 函数。
 - 建议: 提取到 `test-utils.mjs` 统一维护。
@@ -232,7 +232,7 @@
   ```
 
 ### [P3] 测试覆盖：apiV1Control.test.mjs 缺少 JSON 解析失败测试
-- 位置: server/apiV1Control.test.mjs
+- 位置: server/test/apiV1Control.test.mjs
 - 类型: 效率
 - 描述: 测试文件未覆盖 `readJsonBody` 抛错路径（malformed JSON）。
 - 建议: 增加测试用例：

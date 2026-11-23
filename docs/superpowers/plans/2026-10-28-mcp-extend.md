@@ -78,10 +78,10 @@
 ## 连带必须同步的文件（仓库既有守卫要求）
 
 - `server/swaggerPage.mjs`：3 条新端点 + 各 1 个示例。
-- `server/swaggerPage.test.mjs`：端点总数 81 → 84，示例总数 106 → 109（硬编码）。
-- `server/swigger.examples.test.mjs`：`runtimeResponder` 加 `runtime.dom`；`commandResponder` 加两条指令；`expectFor` 加 3 条断言。
-- `server/apiV1RuntimeHandlers.test.mjs`：路由数 10 → 11，GET 9 → 10。
-- `server/apiV1ControlHandlers.test.mjs`：路由数 11 → 13。
+- `server/test/swaggerPage.test.mjs`：端点总数 81 → 84，示例总数 106 → 109（硬编码）。
+- `server/test/swigger.examples.test.mjs`：`runtimeResponder` 加 `runtime.dom`；`commandResponder` 加两条指令；`expectFor` 加 3 条断言。
+- `server/test/apiV1RuntimeHandlers.test.mjs`：路由数 10 → 11，GET 9 → 10。
+- `server/test/apiV1ControlHandlers.test.mjs`：路由数 11 → 13。
 - `src/appExtracted/appControlFactories.test.tsx`：新增两个工厂的用例。
 - `src/runtimeSnapshot.test.ts`：`serializeDom` / `buildDomOutline` 用例。
 - `docs/MCP.md` / `docs/ARCHITECTURE.md`。
@@ -95,10 +95,10 @@
 
 ## 验证
 
-1. 定向：`pnpm vitest run src/runtimeSnapshot.test.ts src/appExtracted/appControlFactories.test.tsx server/apiV1RuntimeHandlers.test.mjs server/apiV1ControlHandlers.test.mjs server/swigger.examples.test.mjs server/swaggerPage.test.mjs server/routeCoverage.test.mjs server/mcp/`
+1. 定向：`pnpm vitest run src/runtimeSnapshot.test.ts src/appExtracted/appControlFactories.test.tsx server/test/apiV1RuntimeHandlers.test.mjs server/test/apiV1ControlHandlers.test.mjs server/test/swigger.examples.test.mjs server/test/swaggerPage.test.mjs server/test/routeCoverage.test.mjs server/test/mcp/`
 2. 全量一次：`pnpm vitest run`（已知 2 个环境性失败与本次改动无关，见前次交付说明）。
 3. `pnpm audit:names`（改了 `server/*.mjs` 对 `src/**/*.ts` 的 import 面）。
-4. MCP 端到端：`server/mcp/mcpHttp.test.mjs` 里补一条「无在线会话时 gmp_get_page_dom 回 no-online-client」。
+4. MCP 端到端：`server/test/mcp/mcpHttp.test.mjs` 里补一条「无在线会话时 gmp_get_page_dom 回 no-online-client」。
 
 ## 第二轮补充：多页面时如何指定目标（token）
 

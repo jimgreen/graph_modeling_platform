@@ -4,7 +4,7 @@
 
 | 项目 | 值 |
 |------|-----|
-| 文件 | `server/server.test.mjs` |
+| 文件 | `server/test/server.test.mjs` |
 | 总行数 | 3445 |
 | 发现总数 | 11 |
 | P0 严重 | 1 |
@@ -17,7 +17,7 @@
 ## P0 严重
 
 ### [P0] `svgSectionBetween` 返回空串导致否定断言全部静默通过
-- 位置: server/server.test.mjs:26-33（辅助函数），影响 ~2800-3036 全部 SVG 否定断言
+- 位置: server/test/server.test.mjs:26-33（辅助函数），影响 ~2800-3036 全部 SVG 否定断言
 - 类型: bug
 - 描述: `svgSectionBetween` 在找不到起止标记时返回 `""`。所有对空串执行的 `not.toContain(...)` 均恒真通过——若 SVG 结构变更导致某图层消失，测试不会失败，产生虚假绿条。正向断言（`toContain`）会在空串上失败，但否定断言组（~20+ 条 `not.toContain`）完全无防护。
 - 建议: 在辅助函数中断言 section 非空，或提取为独立 assertion：
@@ -59,7 +59,7 @@
 - 建议: 已有 `eSectionLines` 和 `expectEFieldsAlignedWithHeader` 辅助，但多数测试没有使用。应统一提取 `parseESectionRows(eFile, section)` 返回 `[{col: val}]` 数组，各测试直接对结构化结果断言。
 
 ### [P1] `rowForSection` 辅助函数在 2 个测试中重复定义
-- 位置: server/server.test.mjs:1842-1846 与 2052-2057
+- 位置: server/test/server.test.mjs:1842-1846 与 2052-2057
 - 类型: 重复
 - 描述: 完全相同的 `rowForSection` 闭包被内联定义两次，将 E 文件 section 解析为 `{column: value}` 对象。
 - 建议: 提升为文件级辅助函数（与 `eSectionLines`、`eVisualWidth` 同级），消除重复。
@@ -77,7 +77,7 @@
 ## P2 一般
 
 ### [P2] `sequentialTokenStartColumns` 辅助函数内部嵌入 `expect` 断言
-- 位置: server/server.test.mjs:52-60
+- 位置: server/test/server.test.mjs:52-60
 - 类型: 抽象层次
 - 描述: 辅助函数内部调用 `expect(index).toBeGreaterThanOrEqual(0)` 并抛出含位置信息的错误。这使辅助函数不再是纯工具，而是在隐式执行测试断言。失败时栈跟踪指向辅助函数内部而非测试代码，诊断困难。
 - 建议: 将断言拆出——辅助函数仅返回列位置数组（token 找不到时返回 `-1`），由调用方执行 `expect`：
@@ -89,13 +89,13 @@
   ```
 
 ### [P2] `normalizeDeviceLibraryConfig` 幂等性断言 `expect(normalize(x)).toEqual(x)` 重复 3 次
-- 位置: server/server.test.mjs:118, 154, 以及间接出现在 367-437 区域
+- 位置: server/test/server.test.mjs:118, 154, 以及间接出现在 367-437 区域
 - 类型: 重复
 - 描述: `expect(normalizeDeviceLibraryConfig(normalized)).toEqual(normalized)` 在多个测试末尾重复出现，验证幂等性。应合并为一个专用测试。
 - 建议: 提取一个 `test("normalizeDeviceLibraryConfig is idempotent for varied inputs", () => {...})` 使用 `test.each` 传入多种输入配置。
 
 ### [P2] SVG use 标签否定断言循环可合并为单次结构化断言
-- 位置: server/server.test.mjs:2771-2778, 3023-3030
+- 位置: server/test/server.test.mjs:2771-2778, 3023-3030
 - 类型: 重复
 - 描述: 两处 `for (const useTag of useTags) { expect(useTag).not.toContain("xlink:href"); expect(useTag).not.toContain("data-export-node-id"); ... }` 循环，每次 5-7 条 `not.toContain`。
 - 建议: 合并为结构化断言：
@@ -109,7 +109,7 @@
   ```
 
 ### [P2] `normalizeMeasurementConfig` 测试数据量大但断言稀疏
-- 位置: server/server.test.mjs:367-472（约 105 行测试数据，仅 ~10 条断言）
+- 位置: server/test/server.test.mjs:367-472（约 105 行测试数据，仅 ~10 条断言）
 - 类型: 效率
 - 描述: "preserves tap-position and migrates legacy AC/DC branch measurement profiles" 及 "migrates hydrogen tank defaults" 测试构造了大段 `measurementTypes` 和 `deviceProfiles` 对象（50+ 行输入），但只验证了个别字段。大量输入数据未被断言覆盖，可能是历史遗留。
 - 建议: 精简输入数据至最小必要集，或补充断言覆盖所有输入字段。
@@ -119,13 +119,13 @@
 ## P3 轻微
 
 ### [P3] `normalizeDeviceLibraryConfig` 和 `normalizeMeasurementConfig` 的 idempotency 测试应参数化
-- 位置: server/server.test.mjs:74-364, 367-472
+- 位置: server/test/server.test.mjs:74-364, 367-472
 - 类型: 简化
 - 描述: `device library schema migration` describe 有 6 个测试、`measurement configuration normalization` 有 4 个测试，结构高度相似（构造输入 → normalize → toMatchObject → 幂等性检查）。可通过 `test.each` + 表驱动减少样板。
 - 建议: 对幂等性验证和基础归一化，使用 `test.each` 提供输入/期望输出对。
 
 ### [P3] 文件级辅助函数 `eSectionLines` 在 `describe` 外部但 `sequentialTokenStartColumns` 在内部
-- 位置: server/server.test.mjs:44-72
+- 位置: server/test/server.test.mjs:44-72
 - 类型: 风格
 - 描述: 所有辅助函数（`svgSectionBetween`、`eSectionLines`、`eVisualWidth` 等）定义在文件顶层 `describe` 外部，唯独 `sequentialTokenStartColumns` 和 `expectEFieldsAlignedWithHeader` 定义在第一个 `describe` 外部但紧跟其后（行 52-72），位置不一致。
 - 建议: 将所有辅助函数集中在文件顶部（imports 之后、第一个 describe 之前），保持统一的代码组织。

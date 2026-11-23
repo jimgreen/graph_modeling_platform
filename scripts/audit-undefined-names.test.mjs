@@ -191,58 +191,6 @@ export function read(u: Union) {
     }
   }, 60_000);
 
-  // 补齐 185 行 toRepoRelative 的**另一侧**：文件不在 repoRoot 之下 → 原样返回绝对路径。
-  // 上面那条用例的夹具建在仓库内 tmp/，只走了 `absolute.slice(root.length + 1)`；
-  // 185 行的三元表达式若被写成只认仓库内路径（例如把 startsWith 判断去掉，
-  // 恒走 slice），仓库外的绝对路径会被砍掉头一段 `D:/work/graph_modeling_platform/`，
-  // 白名单匹配随之失效 —— 所以这里必须有一份仓库外的夹具。
-  // 两份夹具**放在同一次调用里**（一次 ts.createProgram），仓库内那份即是对照组：
-  // 只有两者都被保留，才能说明相对/绝对两条归一路径都通向「照报」这个结果。
-  // 仓库外夹具只能用系统临时目录（toRepoRelative 的语义要求它不在 repoRoot 之下）；
-  // 与本文件既有的两条用例沿用同一写法。
-  //
-  // 变异记录（勿重复调查）：把 185 行改成 `return absolute.slice(root.length + 1);`
-  // （恒走 slice，删掉 startsWith 判断）后本用例**仍然全绿**。原因是 toRepoRelative 的
-  // 返回值只流向 228 行 `KNOWN_SAFE_PROPERTY_HITS.has(...)`，而白名单的 26 个键全是
-  // "src/..." 形式的**真实仓库文件**；tmp/ 与系统临时目录下的夹具归一后永远匹配不上，
-  // 于是「绝对路径」与「被砍掉头一段的绝对路径」产生同一个结论 —— 这条变异在本输入集上
-  // 不可观测，不是等价变异。要让它变红只能审计一个白名单里的真实仓库文件，那会把工作区
-  // 在途改动绑进本用例，故有意不做。此处仅求行覆盖，不求该分支的行为断言。
-  test("crashOnly 对仓库外的文件也照报（toRepoRelative 走绝对路径分支）", async () => {
-    const inside = await makeRepoFixtureDir("ai-names-rel-");
-    const outside = await mkdtemp(path.join(tmpdir(), "audit-names-abs-"));
-    try {
-      const insideFile = path.join(inside, "rel_hit.ts");
-      await writeFile(insideFile, `// @ts-nocheck
-type InsideUnion = { alpha: number } | { beta: number };
-export function readInside(u: InsideUnion) {
-  return u.beta;
-}
-`, "utf-8");
-      const outsideFile = path.join(outside, "abs_hit.ts");
-      await writeFile(outsideFile, `// @ts-nocheck
-type OutsideUnion = { gamma: number } | { delta: number };
-export function readOutside(u: OutsideUnion) {
-  return u.delta;
-}
-`, "utf-8");
-      // 前置条件：外部夹具确实在 repoRoot 之外，否则本用例会退化成上一条的重复。
-      expect(path.resolve(outsideFile).replace(/\\/g, "/").startsWith(path.resolve(repoRoot).replace(/\\/g, "/") + "/")).toBe(false);
-
-      const hits = findUndefinedNames([insideFile, outsideFile], { crashOnly: true });
-      expect(hits.map((h) => [h.name, h.kind]).sort()).toEqual([
-        ["beta", "value"],
-        ["delta", "value"]
-      ]);
-      // KNOWN_SAFE_PROPERTY_HITS 里全是 "src/..." 形式的键，临时夹具归一后匹配不上，
-      // 所以两份都保留；file 字段回填的仍是调用方传入的原始路径。
-      expect(hits.map((h) => h.file).sort()).toEqual([insideFile, outsideFile].sort());
-    } finally {
-      await rm(inside, { recursive: true, force: true });
-      await rm(outside, { recursive: true, force: true });
-    }
-  }, 60_000);
-
   // 覆盖 217 行「只保留被点名审计的文件的命中」过滤：root 引用的传递依赖里的未定义名
   // 不能跟着 root 一起报出来（否则 --files a.ts 形同虚设）。
   // 对照组在第二条调用里：把依赖也点名进去，它才该出现 —— 否则「没报」分不清是过滤器

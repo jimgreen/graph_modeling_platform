@@ -192,7 +192,7 @@ graph_modeling_platform/
 | 第三方 v1 API | `server/apiV1*.mjs` | 只读信封 API（schemes/library/runtime）+ 控制台写操作（control） |
 | 运行时态桥接 | `server/runtimeWs.mjs` + `src/runtimeWsClient.ts` | WS 桥接前端 |
 | 接口文档页 | `server/swaggerPage.mjs` → `/swigger` | 在线接口文档与测试 |
-| 测试文件 | `src/*.test.ts` / `server/*.test.mjs` | Vitest（与源文件同目录）；守卫见 `server/nativeLoad.test.mjs`、`src/appExtracted/appScopeContract.test.ts` |
+| 测试文件 | `src/*.test.ts` / `server/test/*.test.mjs` | Vitest（前端测试与源文件同目录，后端测试集中在 `server/test/`）；守卫见 `server/test/nativeLoad.test.mjs`、`src/appExtracted/appScopeContract.test.ts` |
 | 后端导出适配层 | `server/eFileExport.mjs` / `svgExport.mjs` / `cimExport.mjs` | 均 Node 原生直载 `src` 下 TS 模块（如 `src/export/`、`src/cim/`、`src/model-eexport.ts`），零构建产物 |
 | 功能是否存在 / 符号在哪 | `docs/ARCHITECTURE.md` | 功能清单 + 代码映射表 |
 
@@ -246,7 +246,7 @@ pnpm purge:derived --apply
 | 项目 | 约定 |
 |------|------|
 | 测试位置 | 与源文件同目录：`*.test.ts` / `*.test.tsx` / `*.test.mjs` |
-| 守卫测试 | `server/nativeLoad.test.mjs`（spawn 真实 node 直载三适配层，防 `.tsx` 或漏 `.ts` 扩展名混入）；`src/appExtracted/appScopeContract.test.ts`（`createMeasurementFieldParameterDefinition` 只能静态 import 或调用，不得从 scope 解构） |
+| 守卫测试 | `server/test/nativeLoad.test.mjs`（spawn 真实 node 直载三适配层，防 `.tsx` 或漏 `.ts` 扩展名混入）；`src/appExtracted/appScopeContract.test.ts`（`createMeasurementFieldParameterDefinition` 只能静态 import 或调用，不得从 scope 解构） |
 | 类型定义 | 集中在 `model.ts`，非分散 |
 | 配置管理 | Vite 配置在 `vite.config.ts`（含测试配置 + /api、/ws 代理） |
 | 模块系统 | ES Modules（`"type": "module"`），后端统一 `.mjs` |
@@ -308,10 +308,10 @@ pnpm purge:derived --apply
   表现为 **`Tests: no tests`** —— 而 `no tests` 看起来像「没跑到用例」，
   **绝不能当成通过**。清掉 TS 语法的批量替换还会留下 `[]` 之类的碎片引发第二轮
   parse 失败；从一开始就用纯 JS 写，比事后清理便宜得多。
-  新增 server 测试时先看一眼同目录既有 `.test.mjs` 的写法。
-- `pnpm vitest run server/` 跑后端测试（含三导出适配层：`svgExport.test.mjs` / `apiV1Schemes.e-file.test.mjs` / `cimExport.test.mjs` 与 Node 原生直载守卫 `nativeLoad.test.mjs`）
+  新增 server 测试时先看一眼 `server/test/` 下既有 `.test.mjs` 的写法。
+- `pnpm vitest run server/test/` 跑后端测试（含三导出适配层：`svgExport.test.mjs` / `apiV1Schemes.e-file.test.mjs` / `cimExport.test.mjs` 与 Node 原生直载守卫 `nativeLoad.test.mjs`）
 - 改动 swigger 后跑 `swigger.examples.test.mjs`（106 示例 / 81 端点）。**新增端点必须同步 `swaggerPage.mjs` 的 `ENDPOINTS`**，否则 `routeCoverage.test.mjs` 会红 —— 它比对「server 实际注册的路由」与「已文档化端点」，覆盖三张路由表（`server.mjs` 的 `routeKey`、`apiV1*.mjs` 的 `{method, pattern: apiPattern(...)}`、`server.mjs` 的 `dynamicRouteHandlers` 的 `dynAssetPattern(...)`）。`/webgrp/exports/native/*` 在该测试的 `INTENTIONALLY_UNDOCUMENTED` 名单里（会弹本机对话框）。
-- 改动 v1 端点跑对应 `apiV1*.test.mjs`
+- 改动 v1 端点跑对应 `server/test/apiV1*.test.mjs`
 - 新增/改动 `server/*.mjs` 对 `src/**/*.ts` 的 import 后跑 `pnpm audit:names`（穿透 `@ts-nocheck` 的未定义名审计）
 
 ### 后端补充模块（根「关键文件」表未列）
@@ -331,12 +331,12 @@ pnpm purge:derived --apply
 | `server/schemeArchive.mjs` | 方案 ZIP 构建（`buildSchemeArchiveBuffer` / `listModelJsonFiles`）：枚举方案目录下模型 `.json`，派生格式**不落盘**、打包时经注入的 `renderArtifacts` 逐模型实时生成 `.e` / `.svg`（复用 `svgExport.mjs` + `eFileExport.mjs` 同一装配）；只做「目录 → ZIP 字节」，不 import 渲染适配层，保持可单测 |
 | `server/v1Response.mjs` | v1 信封工具：sendV1Json / sendV1JsonNoStore / 错误码→HTTP 状态映射 |
 | `server/schemePath.mjs` | schemePath 编解码工具（`encodeURIComponent(JSON.stringify([...]))`） |
-| `server/image-server.test.mjs` / `routes.test.mjs` | 服务路由测试 |
-| `server/apiInternal.test.mjs` | 内部 `/api/*` 读写层 CRUD + 错误码集成测试 |
-| `server/apiV1*.test.mjs` / `*.handlers.test.mjs` | v1 各域 handler 测试 |
-| `server/runtimeRegistry.test.mjs` / `runtimeWs.test.mjs` | 运行时态注册表与 WS 桥接测试 |
-| `server/swigger.examples.test.mjs` | 遍历 `SWIGGER_ENDPOINTS` 对全部示例自动化验证 |
-| `server/v1Response.test.mjs` | 信封工具测试 |
+| `server/test/image-server.test.mjs` / `routes.test.mjs` | 服务路由测试 |
+| `server/test/apiInternal.test.mjs` | 内部 `/api/*` 读写层 CRUD + 错误码集成测试 |
+| `server/test/apiV1*.test.mjs` / `server/test/*.handlers.test.mjs` | v1 各域 handler 测试 |
+| `server/test/runtimeRegistry.test.mjs` / `runtimeWs.test.mjs` | 运行时态注册表与 WS 桥接测试 |
+| `server/test/swigger.examples.test.mjs` | 遍历 `SWIGGER_ENDPOINTS` 对全部示例自动化验证 |
+| `server/test/v1Response.test.mjs` | 信封工具测试 |
 
 **SVG 配色与 E 模板细节**（原 `server/AGENTS.md` Key Files 行）：`svgExport.mjs` 的 `buildEffectiveLibraryTemplates` 装配库模板（含 `deviceDefinitionOverrides`），配色读 `settings/color-config.json`，被引用图片经 manifest 内联为 data URL；XML 声明与 `encoding=gbk|utf-8` 由 handler（`apiV1Schemes.mjs`）输出，保证响应体与前端落盘文件逐字节一致。方案 ZIP 复用同一装配（`renderSavedModelSvg`，colorMode=voltage）。`eFileExport.mjs` 的 GET 走预定义模板、POST 走自定义模板文本，用 `src/export/e-file.ts` 的 `buildEFileExportOptionsFromLibrary` / `applyPredefinedEDeviceTemplateToLibraryState` 装配选项、`src/model-eexport.ts` 的 `buildEFileExport` 生成，默认 GBK；方案 ZIP 复用同一装配（`buildEFileForSavedModel`）。`domShim.mjs` 顶层把 `NODE_ENV` 兜底为 `production`（否则 Node 进程加载 react.development.js，SVG 渲染慢约 45%；产物字节已比对一致，`??=` 不覆盖 vitest 的 `test`）。
 

@@ -337,9 +337,9 @@ E 文件默认 **GBK** 编码，工具层按响应头 charset 解码（不会给
 | `server/mcp/tools.mjs` | 31 个工具定义（参数翻译 + 信封搬运 + 错误可执行化） |
 | `server/mcp/mcpServer.mjs` | 装配 `McpServer`（server info + instructions + 注册工具） |
 | `server/mcp/httpHandler.mjs` | `/webgrp/mcp` 的 POST / GET / DELETE 入口（Origin 校验 + 无状态 transport） |
-| `server/mcp/mcpBridge.test.mjs` | 桥的单测 |
-| `server/mcp/mcpTools.test.mjs` | 工具层单测（InMemoryTransport + 官方 Client） |
-| `server/mcp/mcpHttp.test.mjs` | 端到端（官方 Client + StreamableHTTPClientTransport） |
+| `server/test/mcp/mcpBridge.test.mjs` | 桥的单测 |
+| `server/test/mcp/mcpTools.test.mjs` | 工具层单测（InMemoryTransport + 官方 Client） |
+| `server/test/mcp/mcpHttp.test.mjs` | 端到端（官方 Client + StreamableHTTPClientTransport） |
 | `server/mcp/clientToken.mjs` | token → clientId 解析（单页面自动选 / 多页面要求指定） |
 | `src/runtimeToken.ts` | 页面 token ↔ 地址栏 `?token=`（纯函数） |
 | `src/runtimeWsClient.ts` | 用地址栏 token 作为 WS clientId，缺省时生成并写回地址栏 |
@@ -352,5 +352,5 @@ E 文件默认 **GBK** 编码，工具层按响应头 charset 解码（不会给
 | `docs/mcp-evaluation.xml` | 10 题只读评测（数据类问答，均可在无前端会话下复现） |
 
 挂载点在 `server/server.mjs` 的 `exactRouteHandlers`（`routeKey("POST"｜"GET"｜"DELETE", "/mcp")`）。
-`/mcp` 不进 swagger（它不是 REST 端点），已在 `server/routeCoverage.test.mjs` 的
+`/mcp` 不进 swagger（它不是 REST 端点），已在 `server/test/routeCoverage.test.mjs` 的
 `INTENTIONALLY_UNDOCUMENTED` 里登记。

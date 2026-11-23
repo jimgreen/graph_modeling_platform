@@ -32,7 +32,7 @@
 ## P2 一般
 
 ### [P2] swigger.examples.test 复刻页面 JS 逻辑，双源漂移
-- 位置: server/swigger.examples.test.mjs:22-51 ↔ server/swaggerPage.mjs 内嵌 buildUrl/send 逻辑
+- 位置: server/test/swigger.examples.test.mjs:22-51 ↔ server/swaggerPage.mjs 内嵌 buildUrl/send 逻辑
 - 类型: 重复
 - 描述: 测试文件的 buildUrl/buildOpts 手工复刻了 swaggerPage 内嵌 `<script>` 中的同名逻辑。页面 Try-it 行为修改时测试不会感知，两者可能悄然分叉（示例已出现差异苗头：测试版对非字符串 body 做 JSON.stringify，页面版只接受字符串）。
 - 建议: 将 buildUrl/buildOpts 提取为独立模块，页面端以字符串注入或打包引入，测试端直接 import。
@@ -56,7 +56,7 @@
 - 建议: 删除 try/catch，保留空串校验即可；或改用严格校验（长度/字符集）后再解码。
 
 ### [P2] deviceParameterChineseNames.test 触发 271KB 主模块加载
-- 位置: server/deviceParameterChineseNames.test.mjs:2（同类：viteConfigSelection 之外的多数 *.test.mjs 均 import ./server.mjs）
+- 位置: server/test/deviceParameterChineseNames.test.mjs:2（同类：viteConfigSelection 之外的多数 *.test.mjs 均 import ./server.mjs）
 - 类型: 效率
 - 描述: 仅测一个纯函数却 import 整个 server.mjs，拖慢该测试文件的冷启动（模块初始化含大量路由装配）。
 - 建议: 将 meaningfulStoredDeviceParameterChineseName 等纯函数下沉至独立 util 模块，server.mjs re-export 保持兼容。
@@ -82,7 +82,7 @@
 - 建议: 文案改为 `${apiPrefix}/ 接口文档`。
 
 ### [P3] 全项目 "swigger" 拼写（应为 swagger）
-- 位置: server/dev.mjs:9、server/swigger.examples.test.mjs、SWIGGER_ENDPOINTS、/swigger 路由等多处
+- 位置: server/dev.mjs:9、server/test/swigger.examples.test.mjs、SWIGGER_ENDPOINTS、/swigger 路由等多处
 - 类型: 风格
 - 描述: 项目内 swagger 一词系统性拼错为 swigger，新协作者易困惑；涉及导出符号名与 URL 路径，改动需兼容层。
 - 建议: 低优先级统一更名；URL 可短期保留 /swigger 并 301 到 /swagger。

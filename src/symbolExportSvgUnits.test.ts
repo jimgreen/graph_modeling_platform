@@ -273,7 +273,7 @@ describe("过滤键清单的自洽性", () => {
 //
 // ⚠ 与后端 server/symbolExportSchemes.mjs 的同名函数是**两套独立代码**：后端那份还做
 // 键名小写化、32 字符上限、条数上限与严格校验，前端这份一概不做。本组只钉前端这份的真实
-// 行为，不要把 server/symbolExportSchemes.test.mjs 的期望搬过来（反之亦然）。
+// 行为，不要把 server/test/symbolExportSchemes.test.mjs 的期望搬过来（反之亦然）。
 //
 // 这三条路径此前没有任何直接断言，且改坏了都不会有测试报警：
 //   ① 载荷非对象（null/undefined/数组/字符串/数字）必须回落成**空方案集**而不是抛错 ——

@@ -22,13 +22,13 @@
 - **空间隔离必须在 MCP 侧复用派发层的那一套**：MCP 路由**不**进 `isSpaceAgnostic` 白名单，故派发层照常 `resolveSpaceFromRequest`（X-Space 头 > ?space= > Cookie > 首个空间）并把 `paths` / `spaceId` 注入 handler。MCP 工具**不得**自己再解析一次空间。
 - **会话类工具（runtime / control）必须带 spaceId**：v1 的 `createV1RuntimeRoutes` / `createV1ControlRoutes` 明确要求 spaceId（缺失即抛「缺少 spaceId：v1 会话类 handler 必须由派发层注入空间。」）。MCP 侧照做 —— 缺 spaceId 直接拒，不静默退回「全局取活跃者」（那会跨空间打到别人的前端）。
 - **一个端点一处实现**：MCP 工具**不得**自己实现方案读取、图元库读取、E 文件导出等逻辑 —— 一律调 `server/apiV1*.mjs` / `server/eFileExport.mjs` / `server/svgExport.mjs` / `server/cimExport.mjs` / `server/sendModel.mjs` 已导出的 handler。
-- **`server/*.test.mjs` 必须是纯 JavaScript**（写 TS 语法会 RollupError，表现为「no tests」，绝不能当通过）。测试与源文件同目录。
+- **`server/test/*.test.mjs` 必须是纯 JavaScript**（写 TS 语法会 RollupError，表现为「no tests」，绝不能当通过）。测试与源文件同目录。
 - **不新增依赖**：MCP SDK 与 zod 已装进 `package.json`（`@modelcontextprotocol/sdk@1.32.2`、`zod@4.6.7`）。
 - **Origin 校验复用 `isAllowedNativeExportOrigin`**（`server/nativeExportSave.mjs`）：无 Origin 头放行，有 Origin 必须是本机。理由：MCP 暴露写操作，而浏览器里的任意网页都能对本机端口发 POST（不受 CORS 约束的**发送**）—— 不校验 Origin 等于让任意网页驱动本平台的建模操作。
 - **无状态模式每个请求新建 transport**：SDK 在 `sessionIdGenerator` 未设时，复用同一个 transport 会抛 `Stateless transport cannot be reused across requests.`。
 - **GET /mcp 与 DELETE /mcp 回 405**（带 `Allow: POST`），不建 SSE 长连接 —— 否则无状态模式下连接不关闭，客户端挂住。
 - **`outputSchema` 一旦声明就必须每次回 `structuredContent`**（SDK 会校验：缺 `structuredContent` 抛 `Tool X has an output schema but no structured content was provided`）。二进制工具（截图 / 方案 ZIP）不声明 outputSchema。
-- 新增端点后：`server/routeCoverage.test.mjs` 的守卫要过（见 Task 3 的取舍说明），`pnpm audit:names`（改了 `server/*.mjs` 对 `src/**/*.ts` 的 import 才需要，本计划不改 `src/`），最后跑一次全量测试。
+- 新增端点后：`server/test/routeCoverage.test.mjs` 的守卫要过（见 Task 3 的取舍说明），`pnpm audit:names`（改了 `server/*.mjs` 对 `src/**/*.ts` 的 import 才需要，本计划不改 `src/`），最后跑一次全量测试。
 
 ---
 
@@ -42,10 +42,10 @@
 | `server/mcp/tools.mjs` | 历史规划为 26 个、当前实现为 16 个 `gmp_*` 工具的定义 | 新建 |
 | `server/mcp/mcpServer.mjs` | 按请求上下文装配 `McpServer`（注册全部工具） | 新建 |
 | `server/mcp/httpHandler.mjs` | `/mcp` 的 HTTP 入口：Origin 校验、405、无状态 streamable HTTP 传输 | 新建 |
-| `server/mcp/mcpTools.test.mjs` | 工具契约 + 行为单测（InMemoryTransport 直连，不起 HTTP） | 新建 |
-| `server/mcp/mcpHttp.test.mjs` | 端到端：真起后端，官方 Client 走 initialize → tools/list → tools/call | 新建 |
+| `server/test/mcp/mcpTools.test.mjs` | 工具契约 + 行为单测（InMemoryTransport 直连，不起 HTTP） | 新建 |
+| `server/test/mcp/mcpHttp.test.mjs` | 端到端：真起后端，官方 Client 走 initialize → tools/list → tools/call | 新建 |
 | `server/server.mjs` | 挂 `/mcp` 三个路由（POST / GET / DELETE）+ 把 runtimeWs / 路由表注进 MCP handler | 修改 |
-| `server/routeCoverage.test.mjs` | 把 `/mcp` 三个方法加进「刻意不文档化」清单（附理由注释） | 修改 |
+| `server/test/routeCoverage.test.mjs` | 把 `/mcp` 三个方法加进「刻意不文档化」清单（附理由注释） | 修改 |
 | `docs/ARCHITECTURE.md` | 加「MCP 服务」一节（功能清单 + 代码映射） | 修改 |
 | `docs/MCP.md` | MCP 服务使用说明（连接方式、空间选择、工具清单、限制） | 新建 |
 | `docs/mcp-evaluation.xml` | 10 题只读评测（mcp-builder Phase 4 格式） | 新建 |
@@ -69,7 +69,7 @@
   - `export function parseV1Envelope(result)` → `{ ok, data }` | `{ ok, error }`（按 content-type 判定 JSON / 二进制）
   - `export function errorHint(code)` → 可执行建议文本（无对应时返回 ""）
 
-- [ ] **Step 1: 写失败测试** `server/mcp/mcpBridge.test.mjs`：用 `server/apiV1Schemes.mjs` 的 `handleV1SchemeModels` 驱动一次「缺 schemePath」与一次「正常返回」，断言捕获到的信封形状与状态码。
+- [ ] **Step 1: 写失败测试** `server/test/mcp/mcpBridge.test.mjs`：用 `server/apiV1Schemes.mjs` 的 `handleV1SchemeModels` 驱动一次「缺 schemePath」与一次「正常返回」，断言捕获到的信封形状与状态码。
 
 - [ ] **Step 2: 实现** `v1Bridge.mjs`：
   - `createCaptureResponse()` 必须实现 `writeHead(status, headers)` / `end(body)` / `headersSent` —— v1 的 `sendV1Error` 靠 `headersSent` 决定还能不能写错误响应。
@@ -78,7 +78,7 @@
   - `parseV1Envelope`：`content-type` 含 `application/json` → `JSON.parse`；否则返回 `{ ok: true, data: { binary: true, contentType, bytes } }`。
   - `errorHint` 至少覆盖 `no-online-client` / `ws-timeout` / `no-active-model` / `no-selection` / `not-found` / `bad-request` / `payload-too-large` / `internal`。
 
-- [ ] **Step 3: 跑测试** `pnpm vitest run server/mcp/mcpBridge.test.mjs` → 绿。
+- [ ] **Step 3: 跑测试** `pnpm vitest run server/test/mcp/mcpBridge.test.mjs` → 绿。
 
 ---
 
@@ -87,7 +87,7 @@
 **Files:**
 - Create: `server/mcp/tools.mjs`
 - Create: `server/mcp/mcpServer.mjs`
-- Test: `server/mcp/mcpTools.test.mjs`
+- Test: `server/test/mcp/mcpTools.test.mjs`
 
 **Interfaces:**
 - Consumes: `server/apiV1Schemes.mjs` / `server/apiV1Library.mjs` / `server/apiV1Runtime.mjs` / `server/apiV1Control.mjs` 导出的 handler
@@ -137,14 +137,14 @@
 - **二进制结果**：截图 → `content: [{type:"image", data:<base64>, mimeType:"image/png"}]` + 一句文字说明；方案 ZIP → 文字 + base64（`structuredContent` 只放 `{filename, bytes}`，不声明 outputSchema）。
 - **`outputSchema`**：JSON 类工具统一用 `{ ok: boolean, data?: unknown, error?: { code: string, message: string } }`（Zod raw shape）。若实测该 schema 在 SDK 的 zod 兼容层（v4 classic → v4-mini）下校验不过，降级为 `{ ok: boolean }` —— **必须实测**，不能想当然。
 
-- [ ] **Step 1: 写失败测试** `server/mcp/mcpTools.test.mjs`：
+- [ ] **Step 1: 写失败测试** `server/test/mcp/mcpTools.test.mjs`：
   - 工具清单（计划稿）：26 个、名字唯一、全部 `gmp_` 前缀、每个都有 description 与 annotations；当前实现数量以 `server/mcp/tools.mjs` 为准。
   - 用 `InMemoryTransport.createLinkedPair()` + 官方 `Client` 直连：能 `tools/list`；调用 `gmp_list_schemes` 返回 `structuredContent.ok === true`。
   - 错误路径：缺必填参数 → 客户端拿到错误；无在线客户端时 `gmp_add_device` → `isError` 且文案含「无在线客户端」。
 
 - [ ] **Step 2: 实现** `tools.mjs` + `mcpServer.mjs`。
 
-- [ ] **Step 3: 跑测试** `pnpm vitest run server/mcp/mcpTools.test.mjs` → 绿。
+- [ ] **Step 3: 跑测试** `pnpm vitest run server/test/mcp/mcpTools.test.mjs` → 绿。
 
 ---
 
@@ -153,10 +153,10 @@
 **Files:**
 - Create: `server/mcp/httpHandler.mjs`
 - Modify: `server/server.mjs`
-- Modify: `server/routeCoverage.test.mjs`
-- Test: `server/mcp/mcpHttp.test.mjs`
+- Modify: `server/test/routeCoverage.test.mjs`
+- Test: `server/test/mcp/mcpHttp.test.mjs`
 
-- [ ] **Step 1: 写失败测试** `server/mcp/mcpHttp.test.mjs`（端到端，照抄 `server/spaceDispatch.test.mjs` 的 harness：mkdtemp + `GRAPH_MODEL_DATA_DIR` + 自建 `createSpaceStore` 并**注入** `createImageServer({port:0, host:"127.0.0.1", spaceStore:store})`）：
+- [ ] **Step 1: 写失败测试** `server/test/mcp/mcpHttp.test.mjs`（端到端，照抄 `server/test/spaceDispatch.test.mjs` 的 harness：mkdtemp + `GRAPH_MODEL_DATA_DIR` + 自建 `createSpaceStore` 并**注入** `createImageServer({port:0, host:"127.0.0.1", spaceStore:store})`）：
   - 官方 `Client` + `StreamableHTTPClientTransport` 连 `http://127.0.0.1:<port>/webgrp/mcp` → `initialize` → `tools/list`（计划稿断言 26 个）→ `tools/call("gmp_list_schemes")` 拿到 `ok:true`；当前实现断言以实际工具清单为准。
   - `GET /webgrp/mcp` → 405 且带 `Allow: POST`。
   - `POST` 缺 `Accept: text/event-stream` → 406（SDK 的硬约束）。
@@ -176,9 +176,9 @@
   - `runtimeWs` 在 `createServer` 之后才注入（`server/server.mjs:5551`），故 MCP handler 用 `let mcpHandler = null` + 延迟赋值（MCP 模块经参数拿到 `runtimeWs`），请求到达时它已就绪。
   - **不要**把 `/mcp` 加进 `isSpaceAgnostic` 白名单 —— 它需要空间隔离。
 
-- [ ] **Step 4: 守卫**（`server/routeCoverage.test.mjs`）：把 `POST /webgrp/mcp`、`GET /webgrp/mcp`、`DELETE /webgrp/mcp` 加进 `INTENTIONALLY_UNDOCUMENTED`，并在注释里写明理由（JSON-RPC 协议端点，SDK 强制 Accept 头，跑不进 swagger 的 v1 信封示例机制；文档见 `docs/MCP.md`）。
+- [ ] **Step 4: 守卫**（`server/test/routeCoverage.test.mjs`）：把 `POST /webgrp/mcp`、`GET /webgrp/mcp`、`DELETE /webgrp/mcp` 加进 `INTENTIONALLY_UNDOCUMENTED`，并在注释里写明理由（JSON-RPC 协议端点，SDK 强制 Accept 头，跑不进 swagger 的 v1 信封示例机制；文档见 `docs/MCP.md`）。
 
-- [ ] **Step 5: 跑测试** `pnpm vitest run server/mcp/ server/routeCoverage.test.mjs` → 绿。
+- [ ] **Step 5: 跑测试** `pnpm vitest run server/test/mcp/ server/test/routeCoverage.test.mjs` → 绿。
 
 ---
 

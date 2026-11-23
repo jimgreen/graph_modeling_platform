@@ -1,5 +1,5 @@
 // 发送模型弹窗：SSR 静态标记断言（不依赖 DOM 环境，与项目其它组件测试同模式）
-// + 请求装配纯函数契约。端到端 multipart 行为见 server/sendModel.test.mjs。
+// + 请求装配纯函数契约。端到端 multipart 行为见 server/test/sendModel.test.mjs。
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
