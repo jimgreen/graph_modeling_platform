@@ -46,6 +46,11 @@ import { PREDEFINED_E_DEVICE_TEMPLATES } from "./eFileTemplates.mjs";
 import { createDataRootGate } from "./dataRootGate.mjs";
 import { createDataRootMigration, DataRootMigrationError } from "./dataRootMigration.mjs";
 import { resolveDataRoot } from "./dataRoot.mjs";
+import { createWebgrpInstanceRegistry, WebgrpInstanceError } from "./webgrpInstances.mjs";
+import {
+  readInterfaceCustomizationConfig,
+  writeInterfaceCustomizationConfig
+} from "./interfaceCustomization.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -138,6 +143,7 @@ const maxSchemeZipBodyBytes = 256 * 1024 * 1024;
 const maxColorConfigBodyBytes = 1024 * 1024;
 const maxMeasurementConfigBodyBytes = 1024 * 1024;
 const maxDeviceLibraryBodyBytes = 16 * 1024 * 1024;
+const maxInterfaceCustomizationBodyBytes = 64 * 1024;
 const maxSymbolExportSchemesBodyBytes = 1024 * 1024;
 // 导出请求体只含 kind 清单（单 kind 长度远小于 100 字节），1MB 已是数千倍冗余
 const maxSymbolExportBodyBytes = 1024 * 1024;
@@ -5751,8 +5757,19 @@ export async function serveIconLibraryAsset(request, response, url) {
   return false;
 }
 
-export async function createImageServer({ port = 5174, host = "127.0.0.1", staticRoot, spaceStore: injectedSpaceStore } = {}) {
+export async function createImageServer({
+  port = 5174,
+  host = "127.0.0.1",
+  staticRoot,
+  interfaceCustomizationPath,
+  spaceStore: injectedSpaceStore,
+  trackInstance = false,
+  instanceRegistry: injectedInstanceRegistry
+} = {}) {
   const routeKey = (method, sub) => `${method} ${apiPath(sub)}`;
+  const effectiveInterfaceCustomizationPath = interfaceCustomizationPath
+    ? resolve(interfaceCustomizationPath)
+    : resolve(repositoryRoot, "ui-customization.config.json");
   const nativeExportSaveService = createNativeExportSaveService();
   // spaceStore 可注入：测试要复用自己建的那个实例，否则同进程两个写者各持注册表快照，
   // 后写者会用陈旧快照回滚对方的条目。动态 import 维持与 spaceStore 的循环依赖不静态化。
@@ -5792,6 +5809,11 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
   });
   let modelUpdateWebSocket = null;
   const dataRootGate = createDataRootGate();
+  const instanceRegistry = injectedInstanceRegistry ?? (
+    trackInstance
+      ? createWebgrpInstanceRegistry({ dataRoot, host, port })
+      : null
+  );
   const commitDataRootRuntime = async (nextRoot) => {
     const resolvedRoot = resolve(nextRoot);
     const nextStore = createSpaceStore(resolvedRoot);
@@ -5800,6 +5822,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     dataRoot = resolvedRoot;
     defaultPaths = spacePathsFor(resolvedRoot, "default");
     spaceStore = nextStore;
+    await instanceRegistry?.updateDataRoot(resolvedRoot);
     return nextStore;
   };
   const exactRouteHandlers = new Map([
@@ -5820,17 +5843,28 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         sendError(response, 403, "仅允许本机页面调用数据目录迁移接口。", "DATA_DIR_ORIGIN_FORBIDDEN");
         return;
       }
-      const envDataDir = String(process.env.GRAPH_MODEL_DATA_DIR ?? "").trim();
-      if (envDataDir && resolve(envDataDir) === resolve(dataRoot)) {
-        sendError(
-          response,
-          409,
-          "GRAPH_MODEL_DATA_DIR 环境变量覆盖了 platform.config.json，无法通过接口持久化迁移结果。",
-          "DATA_DIR_ENV_OVERRIDE"
-        );
-        return;
-      }
+      let migrationLock = null;
       try {
+        if (instanceRegistry) {
+          migrationLock = await instanceRegistry.acquireMigrationLock();
+          const activeInstances = await instanceRegistry.listActive();
+          if (activeInstances.length > 1) {
+            throw new WebgrpInstanceError(
+              "DATA_DIR_MULTIPLE_INSTANCES",
+              "检测到同一工作目录有多个 webgrp 实例运行，已禁止修改数据目录。"
+            );
+          }
+        }
+        const envDataDir = String(process.env.GRAPH_MODEL_DATA_DIR ?? "").trim();
+        if (envDataDir && resolve(envDataDir) === resolve(dataRoot)) {
+          sendError(
+            response,
+            409,
+            "GRAPH_MODEL_DATA_DIR 环境变量覆盖了 platform.config.json，无法通过接口持久化迁移结果。",
+            "DATA_DIR_ENV_OVERRIDE"
+          );
+          return;
+        }
         const body = await readJsonBody(request, 64 * 1024, "数据目录迁移参数过大。");
         const rawPath = typeof body?.path === "string" ? body.path.trim() : "";
         if (!rawPath) {
@@ -5863,13 +5897,32 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       } catch (error) {
         const code = error?.code ?? (error instanceof DataRootMigrationError ? "DATA_DIR_MIGRATION_FAILED" : undefined);
         const status = [
+          "DATA_DIR_MIGRATION_IN_PROGRESS",
+          "DATA_DIR_MULTIPLE_INSTANCES",
           "DATA_DIR_PATH_INVALID",
           "DATA_DIR_NOT_FOUND",
           "DATA_DIR_NOT_EMPTY",
           "DATA_DIR_UNSUPPORTED_ENTRY"
-        ].includes(code) ? 400 : 500;
+        ].includes(code)
+          ? (code === "DATA_DIR_MIGRATION_IN_PROGRESS" || code === "DATA_DIR_MULTIPLE_INSTANCES" ? 409 : 400)
+          : 500;
         sendError(response, status, error instanceof Error ? error.message : "数据目录迁移失败。", code ?? "DATA_DIR_MIGRATION_FAILED");
+      } finally {
+        await migrationLock?.release();
       }
+    }],
+    [routeKey("GET", "/interface-customization"), async ({ response }) => {
+      const config = await readInterfaceCustomizationConfig({ filePath: effectiveInterfaceCustomizationPath });
+      sendJson(response, 200, config);
+    }],
+    [routeKey("PUT", "/interface-customization"), async ({ request, response }) => {
+      const payload = await readJsonBody(
+        request,
+        maxInterfaceCustomizationBodyBytes,
+        "界面定制配置数据过大，最大支持 64KB。"
+      );
+      const config = await writeInterfaceCustomizationConfig(payload, { filePath: effectiveInterfaceCustomizationPath });
+      sendJson(response, 200, { ok: true, ...config });
     }],
     // 空间管理：本系统自身的管理面，返回 /webgrp/* 内部域形态，不进 /v1 信封。
     // 空间管理端点由派发层的 isSpaceAgnostic 短路（不注入 spaceCtx），current 由 handler 自算。
@@ -6225,6 +6278,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         || url.pathname === apiPath("/exports/native/write-text")
         || url.pathname === apiPath("/exports/native/open-file")
         || url.pathname === apiPath("/platform/data-dir")
+        || url.pathname === apiPath("/interface-customization")
         || url.pathname === apiPath("/spaces")
         || url.pathname === apiPath("/spaces/initialize")
         || url.pathname === apiPath("/v1/receive");
@@ -6324,8 +6378,23 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
   v1RuntimeRoutes = [...createV1RuntimeRoutes(runtimeWs), ...createV1RuntimeExportRoutes(runtimeWs)];
   v1ControlRoutes = createV1ControlRoutes(runtimeWs);
 
-  return new Promise((resolveServer) => {
-    server.listen(port, host, () => resolveServer(server));
+  return new Promise((resolveServer, rejectServer) => {
+    const onServerError = (error) => rejectServer(error);
+    server.once("error", onServerError);
+    server.listen(port, host, async () => {
+      server.removeListener("error", onServerError);
+      try {
+        if (instanceRegistry) {
+          await instanceRegistry.register();
+          server.once("close", () => {
+            void instanceRegistry.release();
+          });
+        }
+        resolveServer(server);
+      } catch (error) {
+        server.close(() => rejectServer(error));
+      }
+    });
   });
 }
 
@@ -6341,6 +6410,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   } catch {
     // dist/ 不存在（dev 或未构建），不托管静态资源
   }
-  await createImageServer({ port, host, staticRoot: staticRootArg });
+  await createImageServer({ port, host, staticRoot: staticRootArg, trackInstance: true });
   console.log(`Image backend listening at http://${host}:${port}`);
 }

@@ -40,16 +40,24 @@ import {
   enumEditorValidationMessage,
   enumValuesSummaryText,
   fetchBackendSchemes,
-  renderEnumValuesEditor
+  renderEnumValuesEditor,
+  buildSvgTerminalMarkup
 } from "./appExtracted/appPersistenceLibraryExport";
 import type { GraphTemplate } from "./appExtracted/appCoreCanvasUtilities";
-import { applyDeviceTemplateDefinitionOverride, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, type DeviceTemplate } from "./model";
+import { applyDeviceTemplateDefinitionOverride, createDefaultNode, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, type DeviceTemplate } from "./model";
 import { deviceDefinitionOverrideForTemplate, deviceDefinitionSharedKeyForTemplate } from "./customDeviceUtils";
 import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import { svgSourceFromDataUrl } from "./stateIconDrawing";
 import { emptyUserDeviceLibrary } from "./userCustomizations";
 
 const PNG_1X1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+test("交流端点容器画布端子短线保持实线", () => {
+  const markup = buildSvgTerminalMarkup(createDefaultNode("ac-endpoint-container", { x: 0, y: 0 }));
+  expect(markup).toContain('y1="20"');
+  expect(markup).toContain('y2="0"');
+  expect(markup).not.toContain("stroke-dasharray");
+});
 
 const sampleGraphTemplate = (id: string, typeName: string, name: string): GraphTemplate => ({
   id,

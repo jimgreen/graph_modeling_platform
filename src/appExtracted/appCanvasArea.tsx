@@ -1754,7 +1754,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
               </div>)}
           </div>
         </section>
-        <div className="viewport-overlay" style={viewportOverlayStyle} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+          <div className="viewport-overlay" style={viewportOverlayStyle} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
           <div className="viewport-controls" role="group" aria-label="画布快捷工具栏">
             <SelectionActionCluster scope={scope}/>
             <span className="viewport-controls-divider" aria-hidden="true"/>

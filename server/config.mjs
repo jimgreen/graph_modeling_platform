@@ -1,34 +1,21 @@
 // 平台配置：端口与接口前缀。优先读环境变量，回退到 platform.config.json，再回退默认值。
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { parseProjectName, selectPlatformConfig } from "./projectConfig.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
-const configFile = process.env.GRAPH_MODEL_CONFIG
-  ? resolve(process.env.GRAPH_MODEL_CONFIG)
-  : resolve(repoRoot, "platform.config.json");
+const selectedConfig = selectPlatformConfig({
+  repoRoot,
+  projectName: parseProjectName(),
+  explicitConfigPath: process.env.GRAPH_MODEL_CONFIG
+});
+const configFile = selectedConfig.platformConfigPath;
 
 export const repositoryRoot = repoRoot;
 export const platformConfigPath = configFile;
-
-function readConfig() {
-  let parsed;
-  try {
-    parsed = JSON.parse(readFileSync(configFile, "utf-8"));
-  } catch {
-    // 文件不存在 / 读失败 / JSON 语法错误：与「写了个非对象的 JSON」同属降级，静默用默认配置
-    return {};
-  }
-  // 合法 JSON 但不是配置对象（字面 null / 数组 / 字符串 / 数字）时，JSON.parse **不抛错**，
-  // 于是 cfg.host 会在**模块求值期**抛 TypeError —— 任何 import 本模块的东西（server、
-  // vite.config、几十个测试）都直接起不来。归一成 {} 让后续取值拿到 undefined 再走默认值。
-  // 数组一并排除：JSON 数组解析不出 host/frontend/backend 属性，取值与 {} 完全一致，
-  // 排除它只为让「这里期望的是一个配置对象」这件事在代码里读得出来。
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-  return parsed;
-}
-
-const cfg = readConfig();
+export const projectName = selectedConfig.projectName;
+export const projectDirectory = selectedConfig.projectDirectory;
+const cfg = selectedConfig.config;
 
 const trimTrailingSlash = (value) => String(value).replace(/\/+$/g, "");
 
@@ -79,7 +66,7 @@ function readEnvDataDir() {
 const configDataDir = typeof cfg.dataDir === "string" ? cfg.dataDir.trim() : "";
 const dataDirValue = readEnvDataDir() || configDataDir || "./data";
 export const configuredDataDir =
-  resolve(repoRoot, dataDirValue);
+  resolve(selectedConfig.dataDirBase, dataDirValue);
 
 // 剥掉前端 base 前缀（非根时）：后端入口把 /app/icon-library/x 还原为 /icon-library/x；
 // apiPrefix 开头的 API 请求不以 base 开头，原样返回。

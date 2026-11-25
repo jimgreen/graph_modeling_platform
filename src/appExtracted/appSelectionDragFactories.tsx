@@ -1957,7 +1957,8 @@ export function createConfirmAddToContainer(__appScope: Record<string, any>) {
       setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, nextNodes));
       writeOperationLog(`添加 ${memberIds.length} 个图元到容器 ${container.name ?? ""}`.trim());
     };
-    const { deviceIndexCounters: latestCounters, nodeById, nodes: latestNodes } = __appScope;
+    const { deviceIndexCounters: latestCounters, nodes: latestNodes } = __appScope;
+    const nodeById = __appScope.nodeById ?? new Map(latestNodes.map((node: any) => [node.id, node]));
     const picked: any = draft.containerId
       ? latestNodes.find((node: any) => node.id === draft.containerId && isContainerNode(node))
       : undefined;

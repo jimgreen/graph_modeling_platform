@@ -16,9 +16,9 @@
 //      这里如实记录这个事实，避免下一个人以为简版分支是活的。
 import { describe, expect, test } from "vitest";
 
-import { buildContainerDeviceParameterViews, createDefaultNode, DEVICE_LIBRARY, type Terminal } from "./model";
+import { buildContainerDeviceParameterViews, createDefaultNode, DEVICE_LIBRARY_BY_KIND, type Terminal } from "./model";
 
-const templateOf = (kind: string) => DEVICE_LIBRARY.find((template) => template.kind === kind);
+const templateOf = (kind: string) => DEVICE_LIBRARY_BY_KIND.get(kind);
 
 /** 造一个容器节点：params 标记 + 指定端子。 */
 function containerNode(kind: string, terminals: Terminal[]) {

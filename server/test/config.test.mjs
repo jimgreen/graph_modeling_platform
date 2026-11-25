@@ -12,7 +12,7 @@
 // 本文件是纯 JS：.test.mjs 里出现 TS 语法会触发 RollupError，表现为
 // 「Tests: no tests」，而 no tests 看起来像通过 —— 绝不能当绿。
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -35,7 +35,8 @@ const ENV_KEYS = [
   "GRAPH_MODEL_API_PREFIX",
   "GRAPH_MODEL_FRONTEND_PREFIX",
   "GRAPH_MODEL_CONFIG",
-  "GRAPH_MODEL_DATA_DIR"
+  "GRAPH_MODEL_DATA_DIR",
+  "GRAPH_MODEL_PROJECT"
 ];
 
 /**
@@ -50,11 +51,12 @@ const loadWithEnv = (cases) => {
     const out = [];
     for (const [index, patch] of cases.entries()) {
       for (const key of keys) delete process.env[key];
+      process.argv = ["node", "config-test", ...(patch.__argv ?? [])];
       if (!Object.hasOwn(patch, "GRAPH_MODEL_CONFIG")) {
         process.env.GRAPH_MODEL_CONFIG = ${JSON.stringify(defaultAbsentConfig)};
       }
       for (const [key, value] of Object.entries(patch)) {
-        if (value !== null) process.env[key] = value;
+        if (key !== "__argv" && value !== null) process.env[key] = value;
       }
       const mod = await import(target + "?case=" + index);
       out.push({
@@ -65,6 +67,8 @@ const loadWithEnv = (cases) => {
         frontendPrefix: mod.frontendPrefix,
         configuredDataDir: mod.configuredDataDir,
         platformConfigPath: mod.platformConfigPath,
+        projectName: mod.projectName,
+        projectDirectory: mod.projectDirectory,
         apiPathSlash: mod.apiPath("/images"),
         apiPatternSource: mod.apiPattern("/images").source,
         apiPatternFlags: mod.apiPattern("/images").flags,
@@ -91,6 +95,15 @@ const configFileWith = (contents) => {
   return file;
 };
 
+const projectConfigWith = (projectName, contents) => {
+  const projectsRoot = join(repoRoot, "projects");
+  mkdirSync(projectsRoot, { recursive: true });
+  const projectDirectory = mkdtempSync(join(projectsRoot, `${projectName}-`));
+  const file = join(projectDirectory, "platform.config.json");
+  writeFileSync(file, typeof contents === "string" ? contents : JSON.stringify(contents));
+  return { projectName: projectDirectory.slice(projectsRoot.length + 1), projectDirectory, file };
+};
+
 describe("config.mjs 默认值", () => {
   // 仓库里没有 platform.config.json，所以没有环境变量时就是这五个值。
   // 它们是「不改配置时的行为基线」：动了等于所有开发者的默认端口都变。
@@ -103,6 +116,8 @@ describe("config.mjs 默认值", () => {
     expect(only.frontendPrefix).toBe("/");
     expect(only.configuredDataDir).toBe(join(repoRoot, "data"));
     expect(only.platformConfigPath).toBe(defaultAbsentConfig);
+    expect(only.projectName).toBe(null);
+    expect(only.projectDirectory).toBe(null);
   });
 
   test("platform.config.json.example 使用 ./data 作为默认地址", () => {
@@ -122,6 +137,60 @@ describe("config.mjs 默认值", () => {
     const envDir = join(repoRoot, "tmp", "from-env");
     const [only] = loadWithEnv([{ GRAPH_MODEL_CONFIG: file, GRAPH_MODEL_DATA_DIR: envDir }]);
     expect(only.configuredDataDir).toBe(envDir);
+  });
+
+  test("GRAPH_MODEL_PROJECT 选择项目配置，并按项目目录解析相对 dataDir", () => {
+    const project = projectConfigWith("gmp-project-config", {
+      host: "project-host",
+      dataDir: "./project-data",
+      backend: { port: 6201, prefix: "/project-api" }
+    });
+    try {
+      const [only] = loadWithEnv([{ GRAPH_MODEL_PROJECT: project.projectName }]);
+      expect(only.host).toBe("project-host");
+      expect(only.backendPort).toBe(6201);
+      expect(only.apiPrefix).toBe("/project-api");
+      expect(only.configuredDataDir).toBe(join(project.projectDirectory, "project-data"));
+      expect(only.platformConfigPath).toBe(project.file);
+      expect(only.projectName).toBe(project.projectName);
+      expect(only.projectDirectory).toBe(project.projectDirectory);
+    } finally {
+      rmSync(project.projectDirectory, { recursive: true, force: true });
+    }
+  });
+
+  test("--project 优先于 GRAPH_MODEL_PROJECT", () => {
+    const envProject = projectConfigWith("gmp-env-project", { host: "env-host" });
+    const cliProject = projectConfigWith("gmp-cli-project", { host: "cli-host" });
+    try {
+      const [only] = loadWithEnv([{
+        GRAPH_MODEL_PROJECT: envProject.projectName,
+        __argv: ["--project", cliProject.projectName]
+      }]);
+      expect(only.host).toBe("cli-host");
+      expect(only.projectName).toBe(cliProject.projectName);
+    } finally {
+      rmSync(envProject.projectDirectory, { recursive: true, force: true });
+      rmSync(cliProject.projectDirectory, { recursive: true, force: true });
+    }
+  });
+
+  test("指定项目配置缺失或损坏时回退到显式根配置", () => {
+    const rootConfig = configFileWith({ host: "root-host", dataDir: "./root-data" });
+    const brokenProject = projectConfigWith("gmp-broken-project", "{ broken");
+    try {
+      const [missing, broken] = loadWithEnv([
+        { GRAPH_MODEL_CONFIG: rootConfig, GRAPH_MODEL_PROJECT: "gmp-missing-project" },
+        { GRAPH_MODEL_CONFIG: rootConfig, GRAPH_MODEL_PROJECT: brokenProject.projectName }
+      ]);
+      for (const only of [missing, broken]) {
+        expect(only.host).toBe("root-host");
+        expect(only.configuredDataDir).toBe(join(repoRoot, "root-data"));
+        expect(only.platformConfigPath).toBe(rootConfig);
+      }
+    } finally {
+      rmSync(brokenProject.projectDirectory, { recursive: true, force: true });
+    }
   });
 
   test("apiPath 直接拼前缀", () => {

@@ -170,6 +170,7 @@ import {
   resolveDeviceParameterDefinitionExportSettings,
   inferESection,
   CONTAINER_KINDS,
+  LEGACY_CONTAINER_KINDS,
   getTemplateParameterDefinitions,
   templateDerivedComponentLibraryInfo,
   getOverlappingTerminalGroups,
@@ -897,7 +898,7 @@ test("exports owning class names for dev_type across every built-in E device cla
   const checkedSections: string[] = [];
   const checkedClassNames = new Set<string>();
   // 容器段集合经 inferESection 自「容器 kind 单源」推导(四个能流各一段),不硬编码段名 —— 硬编码会在新增能流时静默漏判
-  const containerSections = new Set(CONTAINER_KINDS.map((kind) => inferESection(kind, {})));
+  const containerSections = new Set([...CONTAINER_KINDS, ...LEGACY_CONTAINER_KINDS].map((kind) => inferESection(kind, {})));
   for (const [section, payload] of Object.entries(exported)) {
     if (!payload.columns.includes("dev_type")) {
       continue;
@@ -909,16 +910,16 @@ test("exports owning class names for dev_type across every built-in E device cla
       // 容器例外:容器段的 dev_type 必须是容器元件英文名 —— 段名 ACContainer 也在 knownClassNames 里,
       // 故容器段单列判据,否则「容器退化成段名」这条错法会被 has() 静默放过
       const known = containerSections.has(section)
-        ? (CONTAINER_KINDS as readonly string[]).includes(row.dev_type)
+        ? ([...CONTAINER_KINDS, ...LEGACY_CONTAINER_KINDS] as readonly string[]).includes(row.dev_type)
         : knownClassNames.has(row.dev_type);
       expect(known, `${section}: ${row.dev_type}`).toBe(true);
       expect(row.dev_type).not.toMatch(/^legacy-/u);
     }
   }
   // 精确条数：两个 kind 之间「对调映射」换成另一个合法类名时 has() 成员断言抓不到，计数能立刻失败
-  // 378 = 371(既有设备类) + 6(6 个容器 kind 各入本流「容器表」段) + 1(容器入列后其后图元网格位置右移，
+  // 379 = 371(既有设备类) + 6(6 个可见容器 kind 各入本流「容器表」段) + 2(端点容器的单端子带来一组额外拓扑记录，
   // 氢能端子重叠分组随之多出一组 —— 本用例按 i % 12 布点，条数对布点敏感，属既有耦合)
-  expect(checkedRows).toBe(378);
+  expect(checkedRows).toBe(379);
   expect(checkedSections).toEqual(expect.arrayContaining([
     "ACCompensator",
     "ACSeriCompensator",

@@ -6,6 +6,7 @@ import {
   calculateElectricalTopology,
   isBlockingTopologyValidationError,
   normalizeDeviceOperatingLimitsAfterTopology,
+  topologyValidationInput,
   validateTopology,
   validateVoltageSetpointDeviations,
   type Edge,
@@ -100,8 +101,9 @@ export function runTopologyOperation(
       (error) => error.type !== "rated-voltage-deviation"
     ));
   }
+  const topologyInput = topologyValidationInput(normalizedLimits.nodes, edges);
   const topology = errors.length === 0
-    ? buildTopology(normalizedLimits.nodes, edges)
+    ? buildTopology(topologyInput.nodes, topologyInput.edges)
     : undefined;
   const resultNodes = topology
     ? normalizedLimits.nodes

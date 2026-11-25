@@ -4,7 +4,7 @@ import { STATE_ICON_DRAWING_MIN_FONT_SIZE, appendDistinctStateIconDrawingPoint, 
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, STATE_ICON_CLOSED_SHAPE_KINDS, STATE_ICON_LINE_SHAPE_KINDS, STATE_ICON_STATIC_TEMPLATE_SECTIONS_COVERED_BY_BASIC_TOOLS, STATE_ICON_STATIC_TEMPLATE_SECTION_ORDER } from "./appDeviceDefinitionEInterface";
 import { modelAssociationDeviceModelTypeFailureMessage, switchingDeviceUsesClosedStatus } from "../model";
-import { atLeastOneNumber } from "../canvasViewport";
+import { atLeastOneNumber, CANVAS_RULER_MAJOR_UNIT, CANVAS_RULER_MINOR_UNIT, canvasRulerTicks } from "../canvasViewport";
 
 import { Select, InputNumber } from "antd";
 // 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 遮住）：按真实出处补齐，均为 type-only import。
@@ -25,6 +25,56 @@ type SmartAlignmentGuideLine = {
 
 import type { CategoryLibrary, CategoryLibraryComponentLibraryGroup, CustomDeviceDraft, DeviceDefinitionDraftRow, DeviceDefinitionVisualDraft, GraphTemplate, StateIconDrawingContextMenuState, StateIconDrawingDialogState } from "./appCoreCanvasUtilities";
 import type { DeviceDefinitionStateDraftRow, StateIconDrawingElement, StateVisualShapeKind } from "../stateIconDrawing";
+
+export const DEFINITION_VISUAL_RULER_WIDTH = 240;
+export const DEFINITION_VISUAL_RULER_HEIGHT = 160;
+export const DEFINITION_VISUAL_RULER_SIZE = 22;
+
+export function stateIconDrawingUsesVisualRulers(scope?: "definition" | "custom") {
+  return scope === "definition" || scope === "custom";
+}
+
+export function definitionVisualRulerTicks(axis: "x" | "y", width = DEFINITION_VISUAL_RULER_WIDTH, height = DEFINITION_VISUAL_RULER_HEIGHT) {
+  const extent = axis === "x" ? width : height;
+  return canvasRulerTicks(-extent / 2, extent / 2, CANVAS_RULER_MAJOR_UNIT);
+}
+
+function definitionVisualRulerLabelPosition(value: number, extent: number) {
+  return `${((value + extent / 2) / Math.max(1, extent)) * 100}%`;
+}
+
+function DefinitionVisualRulers({ width = DEFINITION_VISUAL_RULER_WIDTH, height = DEFINITION_VISUAL_RULER_HEIGHT }: { width?: number; height?: number }) {
+  const xLabels = definitionVisualRulerTicks("x", width, height);
+  const yLabels = definitionVisualRulerTicks("y", width, height);
+  const horizontalStyle = {
+    "--definition-ruler-major-step": `${(CANVAS_RULER_MAJOR_UNIT / Math.max(1, width)) * 100}%`,
+    "--definition-ruler-minor-step": `${(CANVAS_RULER_MINOR_UNIT / Math.max(1, width)) * 100}%`
+  } as React.CSSProperties;
+  const verticalStyle = {
+    "--definition-ruler-major-step": `${(CANVAS_RULER_MAJOR_UNIT / Math.max(1, height)) * 100}%`,
+    "--definition-ruler-minor-step": `${(CANVAS_RULER_MINOR_UNIT / Math.max(1, height)) * 100}%`
+  } as React.CSSProperties;
+  return (
+    <div className="definition-visual-rulers" aria-hidden="true">
+      <div className="definition-visual-ruler-corner definition-visual-ruler-corner-top-left" />
+      <div className="definition-visual-ruler-corner definition-visual-ruler-corner-top-right" />
+      <div className="definition-visual-ruler-corner definition-visual-ruler-corner-bottom-left" />
+      <div className="definition-visual-ruler-corner definition-visual-ruler-corner-bottom-right" />
+      <div className="definition-visual-ruler-bar definition-visual-ruler-top" style={horizontalStyle}>
+        {xLabels.map((value) => <span key={`x-top-${value}`} style={{ left: definitionVisualRulerLabelPosition(value, width) }}>{value}</span>)}
+      </div>
+      <div className="definition-visual-ruler-bar definition-visual-ruler-bottom" style={horizontalStyle}>
+        {xLabels.map((value) => <span key={`x-bottom-${value}`} style={{ left: definitionVisualRulerLabelPosition(value, width) }}>{value}</span>)}
+      </div>
+      <div className="definition-visual-ruler-bar definition-visual-ruler-left" style={verticalStyle}>
+        {yLabels.map((value) => <span key={`y-left-${value}`} style={{ top: definitionVisualRulerLabelPosition(value, height) }}>{value}</span>)}
+      </div>
+      <div className="definition-visual-ruler-bar definition-visual-ruler-right" style={verticalStyle}>
+        {yLabels.map((value) => <span key={`y-right-${value}`} style={{ top: definitionVisualRulerLabelPosition(value, height) }}>{value}</span>)}
+      </div>
+    </div>
+  );
+}
 
 export function stateIconDrawingContextMenuPosition(
   clientPoint: { x: number; y: number },
@@ -1881,6 +1931,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
             <div className="state-icon-drawing-main">
               {renderStateIconTabs()}
               <div className="state-icon-drawing-canvas">
+                <div className={stateIconDrawingUsesVisualRulers(handlers.drawingScope) ? "definition-visual-ruler-shell" : "state-icon-drawing-svg-shell"}>
+                  {stateIconDrawingUsesVisualRulers(handlers.drawingScope) && <DefinitionVisualRulers />}
                 <svg
                   ref={stateIconDrawingSvgRef}
                   viewBox="0 0 240 160"
@@ -2226,6 +2278,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     </g>
                   )}
                 </svg>
+                </div>
               </div>
             </div>
             <div className="state-icon-drawing-side">

@@ -6,7 +6,7 @@
 // 锚定口径(与平台一致):`node.position` 是节点**中心**,容器真实矩形 = position ± size/2。
 // (DeviceGlyph 矩形 x:-w/2、命中框、bodyVisualBoxForNode position±half 三处同源)
 // 相对 import 带 .ts 扩展名:本模块被 src/export/svg.ts(Node 直载)间接引用,裸 "./model" Node ESM 解析不了
-import { type DeviceKind, type ModelNode, CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, containerMemberNodes, createDefaultNode, getNodeScaleX, getNodeScaleY, isContainerKind, isStaticNode, isWireLikeRouteDeviceKind, liveContainerIds } from "./model.ts";
+import { type DeviceKind, type ModelNode, CONTAINER_KINDS, LEGACY_CONTAINER_KINDS, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, containerMemberNodes, createDefaultNode, getNodeScaleX, getNodeScaleY, isContainerKind, isStaticNode, isWireLikeRouteDeviceKind, liveContainerIds } from "./model.ts";
 // 成员判定已上收 model.ts(model-eexport 顶层不得引本模块):此处保留转出,既有 import "../acContainer" 调用点不迁移
 export { containerMemberNodes };
 
@@ -570,13 +570,19 @@ export function containerMembershipCommit(
 
 /** 容器 kind → 中文默认名基(派生自内置库 label,单源;不落库的 kind 兜底为 kind 本身) */
 export const CONTAINER_KIND_LABELS: Record<string, string> = Object.fromEntries(
-  CONTAINER_KINDS.map((kind) => [kind, DEVICE_LIBRARY_BY_KIND.get(kind)?.label ?? kind])
+  [...CONTAINER_KINDS, ...LEGACY_CONTAINER_KINDS].map((kind) => [kind, DEVICE_LIBRARY_BY_KIND.get(kind)?.label ?? kind])
 );
+
+function sameContainerKindFamily(left: string, right: string): boolean {
+  if (left === right) return true;
+  return (left === "ac-endpoint-container" && left !== right && LEGACY_CONTAINER_KINDS.includes(right as (typeof LEGACY_CONTAINER_KINDS)[number])) ||
+    (right === "ac-endpoint-container" && LEGACY_CONTAINER_KINDS.includes(left as (typeof LEGACY_CONTAINER_KINDS)[number]));
+}
 
 /** 新建容器默认名:「中文名 + 同类型计数 + 1」(如画布已有 2 个虚拟电厂 → 虚拟电厂3) */
 export function defaultContainerName(kind: DeviceKind, existing: ModelNode[]): string {
   const label = CONTAINER_KIND_LABELS[kind] ?? kind;
-  const count = existing.filter((n) => n.kind === kind).length;
+  const count = existing.filter((n) => sameContainerKindFamily(n.kind, kind)).length;
   return `${label}${count + 1}`;
 }
 
@@ -591,7 +597,7 @@ export function containerKindOptions(): { value: DeviceKind; label: string }[] {
  */
 export function containerNameOptions(kind: DeviceKind, nodes: ModelNode[]): { label: string; value: string }[] {
   return nodes
-    .filter((n) => n.kind === kind && isContainerNode(n))
+    .filter((n) => sameContainerKindFamily(n.kind, kind) && isContainerNode(n))
     .map((c) => ({ label: containerOptionLabel(c), value: c.id }));
 }
 
@@ -606,7 +612,7 @@ export type ContainerDraft = { kind: DeviceKind; name: string; containerId: stri
  * 显示停在旧默认名、落库却是新默认名,界面与数据分叉;不清 containerId 则会切类型后仍加入旧类型的容器。
  */
 export function containerKindSwitch(kind: DeviceKind, existing: ModelNode[]): ContainerDraft {
-  const first = existing.find((n) => n.kind === kind && isContainerNode(n));
+  const first = existing.find((n) => sameContainerKindFamily(n.kind, kind) && isContainerNode(n));
   return first
     ? { kind, name: String(first.name ?? ""), containerId: String(first.id) }
     : { kind, name: defaultContainerName(kind, existing), containerId: "" };

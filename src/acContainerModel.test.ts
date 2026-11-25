@@ -22,7 +22,7 @@ import { nodeLabelShouldRender } from "./nodeLabelUtils";
 describe("容器数据模型(四个能流)", () => {
   // 容器 kind → 所属类别库 + 界面类名 + E 段名。E 段名(容器表)与界面类名(XX容器)有意分叉,各断言锁定。
   const CONTAINER_MATRIX = [
-    { kind: "ac-vpp-box", categoryLibrary: "交流设备", label: "交流容器" },
+    { kind: "ac-endpoint-container", categoryLibrary: "交流设备", label: "交流端点容器" },
     { kind: "ac-switch-box", categoryLibrary: "交流设备", label: "交流容器" },
     { kind: "ac-distribution-box", categoryLibrary: "交流设备", label: "交流容器" },
     { kind: "dc-vpp-box", categoryLibrary: "直流设备", label: "直流容器" },
@@ -61,6 +61,28 @@ describe("容器数据模型(四个能流)", () => {
       expect(isContainerKind(kind)).toBe(true);
     }
     expect(isContainerKind("static-group-box")).toBe(false);
+  });
+
+  test("交流端点容器只有正上方唯一对外端子", () => {
+    const template = DEVICE_LIBRARY_BY_KIND.get("ac-endpoint-container");
+    expect(template).toMatchObject({
+      componentClass: "ACEndpointContainer",
+      terminalType: "ac",
+      terminalCount: 1,
+      terminalAnchors: [{ x: 0, y: -0.5 }]
+    });
+    expect(createDefaultNode("ac-endpoint-container", { x: 0, y: 0 }).terminals).toMatchObject([
+      { id: "t1", type: "ac", anchor: { x: 0, y: -0.5 } }
+    ]);
+  });
+
+  test("交流容器中的旧虚拟电厂 kind 不再作为可见交流容器选项", async () => {
+    const { groupDeviceTemplatesByCategoryLibraryAndComponentLibrary } = await import("./appExtracted/appPersistenceLibraryExport");
+    const groups = groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(DEVICE_LIBRARY);
+    const acGroups = groups["交流设备"] ?? [];
+    const endpoint = acGroups.find((group) => group.section === "ACEndpointContainer");
+    expect(endpoint?.templates.map((template) => template.kind)).toContain("ac-endpoint-container");
+    expect(acGroups.flatMap((group) => group.templates.map((template) => template.kind))).not.toContain("ac-vpp-box");
   });
 });
 

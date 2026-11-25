@@ -625,6 +625,16 @@ import { createRenderStateVisualPager, createRenderDeviceDefinitionVisualPanel, 
 import { createOpenNodeDoubleClickEditor, createHandleLodNodeDoubleClick, createClampFloatingToolbarPosition, createToolbarOverlapArea, createCanvasRectToSurfaceCssRect, createRotateControlAvoidRectFromCanvasPoints, createPlaceFloatingToolbar, createRenderMeasurementGroup, createHandleMinimapNavigate, createCenterSelectedInView, createFitViewToSelection, createClearStaticButtonFeedbackTimer, createSetStaticButtonFeedback, createClearStaticButtonFeedback, createBeginStaticButtonPointerFeedback, createResolveStaticButtonTargetProject, createExecuteStaticButtonCommand, createExecuteStaticButtonAction, createHandleStaticButtonClick, createBeginReadonlyBackgroundStaticButtonPointerFeedback, createRenderReadonlyBackgroundPage, createOpenTopologyWarningPanel, createAppHookCallback1, createAppHookCallback2, createAppHookCallback4, createAppHookCallback5, createAppHookCallback6, createAppHookCallback7, createAppHookCallback8, createAppHookCallback9, createAppHookCallback10, createAppHookCallback11, createAppHookCallback12, createAppHookCallback13, createAppHookCallback14, createAppHookCallback15, createAppHookCallback16, createAppHookCallback17, createAppHookCallback18, createAppHookCallback19, createAppHookCallback20, createAppHookCallback21, createAppHookCallback22, createAppHookCallback23, createAppHookCallback24, createAppHookCallback25, createAppHookCallback26, createAppHookCallback27, createAppHookCallback28, createAppHookCallback29, createAppHookCallback30, createAppHookCallback31, createAppHookCallback32, createAppHookCallback33, createAppHookCallback34, createAppHookCallback35, createAppHookCallback36, createAppHookCallback37, createAppHookCallback39, createAppHookCallback40, createAppHookCallback41, createAppHookCallback42, createAppHookCallback43, createAppHookCallback44, createAppHookCallback45, createAppHookCallback46, createAppHookCallback47, createAppHookCallback48, createAppHookCallback49, createAppHookCallback50, createAppHookCallback51, createAppHookCallback52, createAppHookCallback53, createAppHookCallback54, createAppHookCallback55, createAppHookCallback56, createAppHookCallback57, createAppHookCallback58, createAppHookCallback59, createAppHookCallback60, createAppHookCallback61, createAppHookCallback62, createAppHookCallback63, createAppHookCallback64, createAppHookCallback65, createAppHookCallback66, createAppHookCallback67, createAppHookCallback68, createAppHookCallback69, createAppHookCallback70, createAppHookCallback71, createAppHookCallback72, createAppHookCallback73, createAppHookCallback74, createAppHookCallback75, createAppHookCallback76, createAppHookCallback77, createAppHookCallback78, createAppHookCallback79, createAppHookCallback80, createAppHookCallback81, createAppHookCallback82, createAppHookCallback83, createAppHookCallback84, createAppHookCallback85, createAppHookCallback86, createAppHookCallback87, createAppHookCallback88, createAppHookCallback89, createAppHookCallback90, createAppHookCallback91, createAppHookCallback92, createAppHookCallback93, createAppHookCallback94, createAppHookCallback95, createAppHookCallback96, createAppHookCallback97, createAppHookCallback98, createAppHookCallback99, createAppHookCallback100, createAppHookCallback101, createAppHookCallback102, createAppHookCallback103, createAppHookCallback104, createAppHookCallback105, createAppHookCallback106, createAppHookCallback107, createAppHookCallback108, createAppHookCallback109, createAppHookCallback110, createAppHookCallback111, createAppHookCallback112, createAppHookCallback113, createAppHookCallback114, createAppHookCallback115, createAppHookCallback116, createAppHookCallback117, createAppHookCallback118, createAppHookCallback119, createAppHookCallback120, createAppHookCallback121, createAppHookCallback122, createAppHookCallback123, createAppHookCallback124, createAppHookCallback125, createAppHookCallback126, createAppHookCallback127, createAppHookCallback128, createAppHookCallback129, createAppHookCallback130, createAppHookCallback131, createAppHookCallback132, createAppHookCallback133, createAppHookCallback134, createAppHookCallback135, createAppHookCallback136, createAppHookCallback137, createAppHookCallback138, createAppHookCallback139, createAppHookCallback140, createAppHookCallback141, createAppHookCallback142 } from "./appExtracted/appToolbarHookFactories";
 import { mergeBuiltinSharedIconAssets } from "./sharedIconLibrary";
 import { VoltageLevelDialog } from "./VoltageLevelDialog";
+import { InterfaceCustomizationDialog } from "./InterfaceCustomizationDialog";
+import {
+  defaultInterfaceCustomizationConfig,
+  normalizeInterfaceCustomizationConfig,
+  type InterfaceCustomizationConfig
+} from "./interfaceCustomization";
+import {
+  fetchBackendInterfaceCustomization,
+  saveBackendInterfaceCustomization
+} from "./interfaceCustomizationClient";
 import type { SymbolExportScheme } from "./symbolExportSvg";
 import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected, createProgrammaticDeleteDevices, createProgrammaticUpdateDeviceProperty, createProgrammaticSave, createProgrammaticSaveSelectionAsTemplate } from "./appExtracted/appControlFactories";
 import {
@@ -759,6 +769,10 @@ const [userCustomizationBusy, setUserCustomizationBusy] = useState(false);
 const [userCustomizationStatus, setUserCustomizationStatus] = useState("");
 const [userCustomizationSnapshotView, setUserCustomizationSnapshotView] = useState<UserCustomizationSnapshot | null>(null);
 const [pendingUserCustomizationImport, setPendingUserCustomizationImport] = useState<PendingUserCustomizationImport | null>(null);
+const [interfaceCustomization, setInterfaceCustomization] = useState<InterfaceCustomizationConfig>(() => defaultInterfaceCustomizationConfig());
+const [interfaceCustomizationDialogOpen, setInterfaceCustomizationDialogOpen] = useState(false);
+const [interfaceCustomizationBusy, setInterfaceCustomizationBusy] = useState(false);
+const [interfaceCustomizationStatus, setInterfaceCustomizationStatus] = useState("");
 Object.assign(__appScope, {
   libraryPackageDialogOpen,
   libraryPackageDialogMode,
@@ -777,8 +791,47 @@ Object.assign(__appScope, {
   userCustomizationSnapshotView,
   setUserCustomizationSnapshotView,
   pendingUserCustomizationImport,
-  setPendingUserCustomizationImport
+  setPendingUserCustomizationImport,
+  interfaceCustomization,
+  setInterfaceCustomization,
+  interfaceCustomizationDialogOpen,
+  setInterfaceCustomizationDialogOpen,
+  interfaceCustomizationBusy,
+  setInterfaceCustomizationBusy,
+  interfaceCustomizationStatus,
+  setInterfaceCustomizationStatus
 });
+
+useEffect(() => {
+  let cancelled = false;
+  void fetchBackendInterfaceCustomization()
+    .then((payload) => {
+      if (cancelled) return;
+      setInterfaceCustomization(normalizeInterfaceCustomizationConfig(payload));
+      setInterfaceCustomizationStatus("");
+    })
+    .catch((error) => {
+      if (cancelled) return;
+      setInterfaceCustomizationStatus(`读取界面定制配置失败，当前使用默认设置：${error instanceof Error ? error.message : String(error)}`);
+    });
+  return () => {
+    cancelled = true;
+  };
+}, []);
+
+const saveInterfaceCustomization = useCallback(async () => {
+  setInterfaceCustomizationBusy(true);
+  setInterfaceCustomizationStatus("");
+  try {
+    await saveBackendInterfaceCustomization(interfaceCustomization);
+    setInterfaceCustomizationStatus("界面定制配置已保存。");
+  } catch (error) {
+    setInterfaceCustomizationStatus(`保存界面定制配置失败：${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    setInterfaceCustomizationBusy(false);
+  }
+}, [interfaceCustomization]);
+Object.assign(__appScope, { saveInterfaceCustomization });
 const layerManagementDropdownRef = useRef<HTMLDivElement | null>(null); Object.assign(__appScope, { layerManagementDropdownRef });
 const canvasFrameRef = useRef<HTMLDivElement | null>(null); Object.assign(__appScope, { canvasFrameRef });
 const canvasResizeHotzonesRef = useRef<HTMLDivElement | null>(null); Object.assign(__appScope, { canvasResizeHotzonesRef });
@@ -1186,6 +1239,8 @@ const [selectedDeviceInfoView, setSelectedDeviceInfoView] = useState<"model" | "
 Object.assign(__appScope, { selectedDeviceInfoView, setSelectedDeviceInfoView });
 const [leftPanelTab, setLeftPanelTab] = useState<"projects" | "library" | "templates">("projects");
 Object.assign(__appScope, { leftPanelTab, setLeftPanelTab });
+const [compactPanelTab, setCompactPanelTab] = useState<"left" | "right">("left");
+Object.assign(__appScope, { compactPanelTab, setCompactPanelTab });
 const [projectSearchQuery, setProjectSearchQuery] = useState("");
 Object.assign(__appScope, { projectSearchQuery, setProjectSearchQuery });
 const [librarySearchQuery, setLibrarySearchQuery] = useState("");
@@ -1986,5 +2041,18 @@ useEffect(() => {
 }, []);
 
 const __appView = renderAppView(__appScope);
-return __appView;
+return (
+  <>
+    {__appView}
+    <InterfaceCustomizationDialog
+      open={interfaceCustomizationDialogOpen}
+      config={interfaceCustomization}
+      busy={interfaceCustomizationBusy}
+      status={interfaceCustomizationStatus}
+      onChange={(next) => setInterfaceCustomization(normalizeInterfaceCustomizationConfig(next))}
+      onSave={() => void saveInterfaceCustomization()}
+      onClose={() => setInterfaceCustomizationDialogOpen(false)}
+    />
+  </>
+);
 }

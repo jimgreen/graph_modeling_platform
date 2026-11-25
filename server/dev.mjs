@@ -1,6 +1,13 @@
 import { spawn } from "node:child_process";
 import { createImageServer } from "./server.mjs";
-import { backendPort, frontendPort, host as configHost } from "./config.mjs";
+import { backendPort, frontendPort, host as configHost, projectName } from "./config.mjs";
+
+export function buildViteEnv(baseEnv, selectedProjectName) {
+  const env = { ...baseEnv };
+  if (selectedProjectName) env.GRAPH_MODEL_PROJECT = selectedProjectName;
+  else delete env.GRAPH_MODEL_PROJECT;
+  return env;
+}
 
 // 解析 --host <value>，CLI > env/config
 export function parseHost(argv = process.argv.slice(2)) {
@@ -20,7 +27,7 @@ export function parseHost(argv = process.argv.slice(2)) {
 const host = parseHost();
 const imagePort = backendPort;
 
-await createImageServer({ host, port: imagePort });
+await createImageServer({ host, port: imagePort, trackInstance: true });
 // 启动横幅：监听地址与接口文档地址，开发者启动时要看 —— 保留在 stdout。
 // 「Swigger」拼写与对齐空格是既有文案，改动会破坏外部对启动输出的依赖，勿动。
 console.log(`Image backend listening at http://${host}:${imagePort}`);
@@ -31,11 +38,11 @@ const viteConfigArgs = ["--host", host, "--config", "vite.config.ts"];
 const viteArgs = process.platform === "win32" ? ["/c", "npx", "vite", ...viteConfigArgs] : ["vite", ...viteConfigArgs];
 const vite = spawn(viteCommand, viteArgs, {
   stdio: "inherit",
-  env: {
+  env: buildViteEnv({
     ...process.env,
     IMAGE_SERVER_PORT: String(imagePort),
     VITE_PORT: String(frontendPort)
-  }
+  }, projectName)
 });
 
 const shutdown = () => {

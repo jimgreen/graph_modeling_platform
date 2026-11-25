@@ -30,6 +30,7 @@ import {
   getTemplateStateDefinitions,
   getTerminalDisplayColor,
   isRoutableLineDeviceKind,
+  isEndpointContainerKind,
   isStaticButtonCapableNode,
   isStaticNode,
   normalizeColorPalette,
@@ -214,7 +215,7 @@ export function buildSvgDeviceConnectorMarkup(
   }
   const nodeScaleX = getNodeScaleX(node);
   const nodeScaleY = getNodeScaleY(node);
-  const dashArray = svgStrokeDashArray(node.params.strokeStyle);
+  const dashArray = isEndpointContainerKind(node.kind) ? "" : svgStrokeDashArray(node.params.strokeStyle);
   const dashAttribute = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
   const connectors = node.terminals
     .map((terminal) => {

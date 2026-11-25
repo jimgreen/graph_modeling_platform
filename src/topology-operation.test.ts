@@ -111,4 +111,22 @@ describe("runTopologyOperation", () => {
     });
     expect(result.topology).toBeUndefined();
   });
+
+  test("端点容器内部成员不进入拓扑结果", async () => {
+    const { runTopologyOperation } = await import("./topology-operation");
+    const container = createDefaultNode("ac-endpoint-container", { x: 100, y: 100 });
+    container.terminals[0].vbase = "10 kV";
+    const member = createDefaultNode("ac-load", { x: 120, y: 120 });
+    member.containerId = container.id;
+    const result = runTopologyOperation({
+      modelType: "厂站",
+      powerUnit: "MW",
+      voltageUnit: "kV",
+      currentUnit: "A",
+      nodes: [container, member],
+      edges: []
+    }, { mode: "check" });
+    expect(result.errors.some((error) => error.nodeId === member.id)).toBe(false);
+    expect(result.topology?.nodes[member.id]).toBeUndefined();
+  });
 });

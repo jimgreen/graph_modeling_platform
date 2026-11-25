@@ -57,6 +57,10 @@ export function resolveTemplateComponentLibrary(template: DeviceTemplate) {
     ? undefined
     : BUILT_IN_DEVICE_TEMPLATE_BY_KIND.get(template.kind);
   if (builtInTemplate) {
+    const builtInClassName = normalizeComponentLibraryName(builtInTemplate.componentClass ?? "");
+    if (builtInClassName) {
+      return builtInClassName;
+    }
     const builtInDerivedInfo = modelTemplateDerivedComponentLibraryInfo(builtInTemplate);
     if (builtInDerivedInfo) {
       return builtInDerivedInfo.componentLibrary;

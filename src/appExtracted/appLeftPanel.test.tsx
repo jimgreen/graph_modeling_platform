@@ -26,6 +26,8 @@ const makeScope = (over: Record<string, unknown> = {}) => ({
   leftPanelContent: null,
   leftPanelRef: null,
   leftPanelTab: "library",
+  compactPanelTab: "left",
+  setCompactPanelTab: () => {},
   leftPanelVisible: true,
   projectIdx: 3,
   activeSchemeKey: "scheme-1",
@@ -41,7 +43,7 @@ const makeScope = (over: Record<string, unknown> = {}) => ({
 
 const render = (over: Record<string, unknown> = {}) => {
   const scope = makeScope(over);
-  return renderToStaticMarkup(<AppLeftPanel scope={scope} inputs={[scope.activeSchemeKey, scope.schemes]}/>);
+  return renderToStaticMarkup(<AppLeftPanel scope={scope} inputs={[scope.activeSchemeKey, scope.schemes]} embeddedRightPanel={over.embeddedRightPanel as any}/>);
 };
 
 describe("显隐", () => {
@@ -95,6 +97,17 @@ describe("编辑模式专属 tab", () => {
     const html = render({ isEditMode: true });
     expect(html).toContain("图元库");
     expect(html).toContain("模板库");
+  });
+
+  test("支持窄屏把嵌入属性面板放在左侧资源库按钮下方", () => {
+    const html = render({
+      isEditMode: true,
+      embeddedRightPanel: <div className="embedded-test-panel">属性面板</div>
+    });
+
+    expect(html).not.toContain("left-panel-inspector-tab");
+    expect(html.indexOf("left-panel-tabs")).toBeLessThan(html.indexOf("embedded-test-panel"));
+    expect(html).toContain("embedded-test-panel");
   });
 });
 

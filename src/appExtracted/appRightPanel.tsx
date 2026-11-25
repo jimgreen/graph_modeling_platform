@@ -152,19 +152,20 @@ export function ContainerKindSelectValue({
 type AppRightPanelProps = {
   scope: Record<string, any>;
   inputs: readonly unknown[];
+  embedded?: boolean;
 };
 
-export function AppRightPanel({ scope, inputs }: AppRightPanelProps) {
+export function AppRightPanel({ scope, inputs, embedded = false }: AppRightPanelProps) {
   return (
     <MemoizedViewSection
-      section="right-panel"
+      section={embedded ? "embedded-right-panel" : "right-panel"}
       inputs={inputs}
-      render={() => <AppRightPanelContent scope={scope} />}
+      render={() => <AppRightPanelContent scope={scope} embedded={embedded} />}
     />
   );
 }
 
-function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
+function AppRightPanelContent({ scope, embedded = false }: { scope: Record<string, any>; embedded?: boolean }) {
   const __appScope = scope;
   const {
     ALLOW_RESIZE_TRANSFORM_PARAM,
@@ -226,6 +227,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     getNodeScaleX,
     getNodeScaleY,
     handleSidePanelPointerLeave,
+    hasActiveModel,
     hasBatchCommonPropertyRows,
     inspectorGraphId,
     inspectorSelectedEdge,
@@ -278,6 +280,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     setCanvasBackgroundColor,
     setCanvasBackgroundImage,
     setCanvasBackgroundImageAssetId,
+    setCompactPanelTab,
     setContainerParamViewId,
     setCurrentUnit,
     setFeeder,
@@ -312,6 +315,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
     setVoltageBaseTerminalValuesForScope,
     patchGraphNodes
   } = scope;
+  const modelActionsDisabled = !Boolean(hasActiveModel ?? scope.activeProjectKey);
 
   // Compare inspector values with the persisted model record. The live graph
   // changes on every edit, so the dirty-render baseline is intentionally not
@@ -549,26 +553,34 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
   };
 
   return (
-<aside ref={rightPanelRef} className={`inspector-panel floating-side-panel ${rightPanelVisible ? "visible" : "hidden"}`} onPointerDown={stopSidePanelEventPropagation} onPointerMoveCapture={stopSidePanelEventPropagation} onPointerMove={stopSidePanelEventPropagation} onPointerEnter={() => updateAutoPanelVisibility("right", "panel-enter")} onPointerLeave={(event) => handleSidePanelPointerLeave("right", event)} onMouseMoveCapture={stopSidePanelEventPropagation} onMouseMove={stopSidePanelEventPropagation} onClick={stopSidePanelEventPropagation} onDoubleClick={stopSidePanelEventPropagation} onContextMenu={stopSidePanelEventPropagation} onKeyDown={stopSidePanelEventPropagation} onKeyUp={stopSidePanelEventPropagation}>
-        <div className="side-panel-resize-handle left-edge" role="separator" aria-orientation="vertical" aria-label="调整右侧栏宽度" title="拖拽调整右侧栏宽度" onPointerDown={(event) => startSidePanelResize(event, "right")}/>
-        <div className="inspector-title">
+      <div data-ui-module="module.rightPanel" className="ui-customization-module-shell">
+      <aside ref={embedded ? undefined : rightPanelRef} className={embedded ? `embedded-inspector-panel embedded-inspector-${scope.compactPanelTab ?? "left"}` : `inspector-panel floating-side-panel ${rightPanelVisible ? "visible" : "hidden"}`} onPointerDown={stopSidePanelEventPropagation} onPointerMoveCapture={stopSidePanelEventPropagation} onPointerMove={stopSidePanelEventPropagation} onPointerEnter={() => updateAutoPanelVisibility("right", "panel-enter")} onPointerLeave={(event) => handleSidePanelPointerLeave("right", event)} onMouseMoveCapture={stopSidePanelEventPropagation} onMouseMove={stopSidePanelEventPropagation} onClick={stopSidePanelEventPropagation} onDoubleClick={stopSidePanelEventPropagation} onContextMenu={stopSidePanelEventPropagation} onKeyDown={stopSidePanelEventPropagation} onKeyUp={stopSidePanelEventPropagation}>
+        {!embedded && (
+          <div className="side-panel-resize-handle left-edge" role="separator" aria-orientation="vertical" aria-label="调整右侧栏宽度" title="拖拽调整右侧栏宽度" onPointerDown={(event) => startSidePanelResize(event, "right")}/>
+        )}
+        {!embedded && <div className="inspector-title" data-ui-content="module.rightPanel.modeControls">
           <div className="inspector-title-actions">
             {renderSidePanelModeControls("right")}
           </div>
-        </div>
-        {inspectorSelectedNode || currentModelRecord ? (<div className={`form-stack ${inspectorTab === "tree" ? "graph-form-stack" : ""}`}>
+        </div>}
+        {embedded && <div className="embedded-inspector-tabs">
+          <button data-ui-content="module.rightPanel.baseTab" className={inspectorTab === "model" ? "active" : ""} onClick={() => { setInspectorTab("model"); setCompactPanelTab?.("right"); }} disabled={modelActionsDisabled}>基础</button>
+          <button data-ui-content="module.rightPanel.elementTreeTab" className={inspectorTab === "tree" ? "active" : ""} onClick={() => { setInspectorTab("tree"); setCompactPanelTab?.("right"); }} disabled={modelActionsDisabled}>图元树</button>
+          <button data-ui-content="module.rightPanel.graphTab" className={inspectorTab === "graph" || inspectorTab === "device" ? "active" : ""} onClick={() => { setInspectorTab("graph"); setCompactPanelTab?.("right"); }} disabled={modelActionsDisabled}>图元</button>
+        </div>}
+        {modelActionsDisabled ? (<div className="inspector-empty-state">请先打开模型</div>) : inspectorSelectedNode || currentModelRecord ? (<div className={`form-stack ${inspectorTab === "tree" ? "graph-form-stack" : ""}`}>
             <div className="inspector-tabs">
-              <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
+              <button data-ui-content="module.rightPanel.baseTab" className={inspectorTab === "model" ? "active" : ""} onClick={() => { setInspectorTab("model"); if (embedded) setCompactPanelTab?.("right"); }} disabled={!currentModelRecord}>
                 基础
               </button>
-              <button className={inspectorTab === "tree" ? "active" : ""} onClick={() => setInspectorTab("tree")}>
+              <button data-ui-content="module.rightPanel.elementTreeTab" className={inspectorTab === "tree" ? "active" : ""} onClick={() => { setInspectorTab("tree"); if (embedded) setCompactPanelTab?.("right"); }}>
                 图元树
               </button>
-              <button className={inspectorTab === "graph" || inspectorTab === "device" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
+              <button data-ui-content="module.rightPanel.graphTab" className={inspectorTab === "graph" || inspectorTab === "device" ? "active" : ""} onClick={() => { setInspectorTab("graph"); if (embedded) setCompactPanelTab?.("right"); }}>
                 图元
               </button>
             </div>
-            {currentModelRecord ? <div hidden={inspectorTab !== "model"}><table className="param-table">
+            {currentModelRecord ? <div data-ui-content="module.rightPanel.baseContent" hidden={inspectorTab !== "model"}><div data-ui-content="module.rightPanel.baseModelInfo"><table className="param-table">
                 <tbody>
                   <tr>
                     {batchEditors.renderChineseParamHeader("name", "模型名称")}
@@ -582,19 +594,19 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                     {batchEditors.renderChineseParamHeader("updatedAt", "模型更新时间")}
                     <td><span className="inline-property-value read-only">{new Date(currentModelRecord.updatedAt).toLocaleString()}</span></td>
                   </tr>
-                  <tr>
+                  <tr data-ui-content="module.rightPanel.baseCanvasSettings">
                     {batchEditors.renderChineseParamHeader("canvasWidth")}
                     <td>
                       <InlineEditableValue type="number" min={MIN_CANVAS_WIDTH} max={MAX_CANVAS_WIDTH} step="10" value={canvasSizeDraft.width} displayValue={formatAtMostThreeDecimals(String(canvasSizeDraft.width))}  onCommit={(nextValue) => commitCanvasSizeDraft({ ...canvasSizeDraft, width: nextValue })}/>
                     </td>
                   </tr>
-                  <tr>
+                  <tr data-ui-content="module.rightPanel.baseCanvasSettings">
                     {batchEditors.renderChineseParamHeader("canvasHeight")}
                     <td>
                       <InlineEditableValue type="number" min={MIN_CANVAS_HEIGHT} max={MAX_CANVAS_HEIGHT} step="10" value={canvasSizeDraft.height} displayValue={formatAtMostThreeDecimals(String(canvasSizeDraft.height))}  onCommit={(nextValue) => commitCanvasSizeDraft({ ...canvasSizeDraft, height: nextValue })}/>
                     </td>
                   </tr>
-                  <tr>
+                  <tr data-ui-content="module.rightPanel.baseCanvasSettings">
                     {batchEditors.renderChineseParamHeader("allowAutoExpandCanvas")}
                     <td>
                       <InlineEditableValue
@@ -609,7 +621,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       />
                     </td>
                   </tr>
-                  <tr>
+                  <tr data-ui-content="module.rightPanel.baseCanvasSettings">
                     {batchEditors.renderChineseParamHeader("canvasBackgroundColor")}
                     <td>
                       {/* 画布底色不再开放任意取色：验收口径是「浅色纯白、深色纯黑」，
@@ -635,7 +647,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       />
                     </td>
                   </tr>
-                  <tr>
+                  <tr data-ui-content="module.rightPanel.baseBackgroundSettings">
                     {batchEditors.renderChineseParamHeader("canvasBackgroundImage")}
                     <td>
                       <div className="image-field-actions">
@@ -652,7 +664,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       </div>
                     </td>
                   </tr>
-                  <tr>
+                  <tr data-ui-content="module.rightPanel.baseBackgroundSettings">
                     {batchEditors.renderChineseParamHeader("canvasBackgroundImageFit")}
                     <td>
                       <InlineEditableValue
@@ -667,7 +679,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       />
                     </td>
                   </tr>
-                  <tr>
+                  <tr data-ui-content="module.rightPanel.baseBackgroundSettings">
                     {batchEditors.renderChineseParamHeader("backgroundProjectId")}
                     <td>
                       <div className="background-page-field">
@@ -701,7 +713,7 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                       </div>
                     </td>
                   </tr>
-                  <tr>
+                  <tr data-ui-content="module.rightPanel.baseBackgroundSettings">
                     {batchEditors.renderChineseParamHeader("backgroundLayerIds")}
                     <td>
                       {backgroundProjectRecord ? (<div className="background-layer-checklist">
@@ -848,38 +860,38 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                     </td>
                   </tr>)}
                 </tbody>
-              </table></div> : null}{inspectorTab === "tree" ? (renderElementTreePanel()) : inspectorTab === "graph" ? ((() => {
+              </table></div></div> : null}{inspectorTab === "tree" ? (<div data-ui-content="module.rightPanel.elementTreeTab">{renderElementTreePanel()}</div>) : inspectorTab === "graph" ? ((() => {
             const multiNodeGraphSelection = activeSelectedNodeIds.length > 1;
             const selectedNodeAllowsIndependentScale = inspectorSelectedNode
                 ? nodeKindAllowsResizeTransform(inspectorSelectedNode.kind)
                 : true;
-            return (<div className="graph-info-panel">
+            return (<div className="graph-info-panel" data-ui-content="module.rightPanel.graphTab">
                 <div className="graph-info-toolbar" role="tablist" aria-label="图元属性分类">
-                  <button type="button" className={multiNodeGraphSelection ? "" : "active"} onClick={() => setInspectorTab("graph")} role="tab" aria-selected={!multiNodeGraphSelection} disabled={multiNodeGraphSelection || !inspectorSelectedNode}>
+                  <button type="button" data-ui-content="module.rightPanel.graphGraphics" className={multiNodeGraphSelection ? "" : "active"} onClick={() => setInspectorTab("graph")} role="tab" aria-selected={!multiNodeGraphSelection} disabled={multiNodeGraphSelection || !inspectorSelectedNode}>
                     图形
                   </button>
-                  <button type="button" className="" onClick={() => {
+                  <button type="button" data-ui-content="module.rightPanel.graphModel" className="" onClick={() => {
                     setInspectorTab("device");
                     setSelectedDeviceInfoView("model");
                 }} role="tab" aria-selected={false} disabled={multiNodeGraphSelection || !inspectorSelectedNode || __appScope.isStaticGraphicNode(inspectorSelectedNode)}>
                     模型
                   </button>
-                  <button type="button" className="" onClick={() => {
+                  <button type="button" data-ui-content="module.rightPanel.graphMeasurement" className="" onClick={() => {
                     setInspectorTab("device");
                     setSelectedDeviceInfoView("measurement");
                 }} role="tab" aria-selected={false} disabled={multiNodeGraphSelection || !inspectorSelectedNode || __appScope.isStaticGraphicNode(inspectorSelectedNode)}>
                     量测
                   </button>
-                  {multiNodeGraphSelection && (<button type="button" className="active" role="tab" aria-selected={true}>
+                  {multiNodeGraphSelection && (<button type="button" data-ui-content="module.rightPanel.graphBatch" className="active" role="tab" aria-selected={true}>
                       共同属性
                     </button>)}
                 </div>
-                {multiNodeGraphSelection ? (<div className="batch-common-scroll-area">
+                {multiNodeGraphSelection ? (<div className="batch-common-scroll-area" data-ui-content="module.rightPanel.graphBatch">
                     {hasBatchCommonPropertyRows ? batchEditors.renderBatchCommonPropertyPanel() : (<div className="empty-state compact">
                         <FileJson size={24}/>
                         <p>当前选中的图元没有可批量修改的共同属性。</p>
                       </div>)}
-                  </div>) : inspectorSelectedNode ? (<div className="graph-param-table-wrap">
+                  </div>) : inspectorSelectedNode ? (<div className="graph-param-table-wrap" data-ui-content="module.rightPanel.graphGraphics">
                   <table className="param-table">
                   <tbody>
                     <tr>
@@ -1240,19 +1252,19 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
                     <p>当前没有被选中图元。</p>
                   </div>)}
               </div>);
-        })()) : inspectorTabShowsDevicePanel(inspectorTab, Boolean(inspectorSelectedNode)) ? (<div className="device-param-stack">
+        })()) : inspectorTabShowsDevicePanel(inspectorTab, Boolean(inspectorSelectedNode)) ? (<div className="device-param-stack" data-ui-content="module.rightPanel.deviceModel">
                 {!__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<div className="device-info-tabs" role="tablist" aria-label="图元属性分类">
-                    <button type="button" className="" onClick={() => setInspectorTab("graph")} role="tab" aria-selected={false}>
+                    <button type="button" data-ui-content="module.rightPanel.graphGraphics" className="" onClick={() => setInspectorTab("graph")} role="tab" aria-selected={false}>
                       图形
                     </button>
-                    <button type="button" className={selectedDeviceInfoView === "model" ? "active" : ""} onClick={() => setSelectedDeviceInfoView("model")} role="tab" aria-selected={selectedDeviceInfoView === "model"}>
+                    <button type="button" data-ui-content="module.rightPanel.graphModel" className={selectedDeviceInfoView === "model" ? "active" : ""} onClick={() => setSelectedDeviceInfoView("model")} role="tab" aria-selected={selectedDeviceInfoView === "model"}>
                       模型
                     </button>
-                    <button type="button" className={selectedDeviceInfoView === "measurement" ? "active" : ""} onClick={() => setSelectedDeviceInfoView("measurement")} role="tab" aria-selected={selectedDeviceInfoView === "measurement"}>
+                    <button type="button" data-ui-content="module.rightPanel.graphMeasurement" className={selectedDeviceInfoView === "measurement" ? "active" : ""} onClick={() => setSelectedDeviceInfoView("measurement")} role="tab" aria-selected={selectedDeviceInfoView === "measurement"}>
                       量测
                     </button>
                   </div>)}
-                {selectedDeviceInfoView === "measurement" && !__appScope.isStaticGraphicNode(inspectorSelectedNode) ? (renderSelectedNodeMeasurementTable(inspectorSelectedNode)) : (<>
+                {selectedDeviceInfoView === "measurement" && !__appScope.isStaticGraphicNode(inspectorSelectedNode) ? (<div data-ui-content="module.rightPanel.deviceMeasurement">{renderSelectedNodeMeasurementTable(inspectorSelectedNode)}</div>) : (<>
                     {selectedContainerParameterViews.length > 0 && (<div className="container-param-tabs" role="tablist" aria-label="容器设备参数切换">
                         {selectedContainerParameterViews.map((view: ContainerDeviceParameterView) => (<button key={view.id} type="button" className={selectedContainerParameterView?.id === view.id ? "active" : ""} onClick={() => setContainerParamViewId(view.id)}>
                             {view.label}
@@ -1400,5 +1412,6 @@ function AppRightPanelContent({ scope }: { scope: Record<string, any> }) {
             <p>从左侧拖入元件，或使用联络线模式点击两个元件建立拓扑关系。</p>
           </div>)}
       </aside>
+      </div>
   );
 }

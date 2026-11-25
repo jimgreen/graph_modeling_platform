@@ -616,18 +616,18 @@ describe("添加到容器:类型 + 名称双下拉", () => {
   };
 
   const createdContainer = (graphs: any[]) =>
-    graphs[0][0].find((node: any) => node.kind.startsWith("ac-") && node.kind.endsWith("-box"));
+    graphs[0][0].find((node: any) => node.kind === "ac-endpoint-container" || (node.kind.startsWith("ac-") && node.kind.endsWith("-box")));
 
-  test("无该类型容器:默认新建虚拟电厂(弹窗初值 kind=ac-vpp-box / 虚拟电厂1)", () => {
+  test("无该类型容器:默认新建虚拟电厂(弹窗初值为交流端点容器 / 虚拟电厂1)", () => {
     const { graphs, scope } = mkNewContainerScope();
     const dialog = openAddDialog(scope);
 
     // 弹窗表单收 draft(受控组件:内部 state 管显示,初值取自同一 draft)
-    expect(dialog.draft()).toEqual({ kind: "ac-vpp-box", name: "虚拟电厂1", containerId: "" });
+    expect(dialog.draft()).toEqual({ kind: "ac-endpoint-container", name: "虚拟电厂1", containerId: "" });
 
     dialog.submit();
     const created = createdContainer(graphs);
-    expect(created.kind).toBe("ac-vpp-box");
+    expect(created.kind).toBe("ac-endpoint-container");
     expect(created.name).toBe("虚拟电厂1");
     // 提交即关弹窗(状态清空):对话框组件由 __appScope.addToContainerDialog 驱动
     expect(dialog.state()).toBe(null);
@@ -680,7 +680,7 @@ describe("添加到容器:类型 + 名称双下拉", () => {
     Object.assign(dialog.draft(), containerNamePick("v1", "ac-vpp-box", scope.nodes));
     dialog.submit();
 
-    const boxes = graphs[0][0].filter((node: any) => node.kind === "ac-vpp-box");
+    const boxes = graphs[0][0].filter((node: any) => node.kind === "ac-vpp-box" || node.kind === "ac-endpoint-container");
     expect(boxes).toHaveLength(1); // 未新建容器
     expect(graphs[0][0].find((node: any) => node.id === "m1").containerId).toBe("v1");
   });
@@ -696,9 +696,9 @@ describe("添加到容器:类型 + 名称双下拉", () => {
     dialog.submit();
 
     const created = graphs[0][0].find((node: any) => node.name === "我的虚拟电厂");
-    expect(created.kind).toBe("ac-vpp-box");
+    expect(created.kind).toBe("ac-endpoint-container");
     // 新建的容器收编成员,原容器 v1 保留
-    expect(graphs[0][0].filter((node: any) => node.kind === "ac-vpp-box")).toHaveLength(2);
+    expect(graphs[0][0].filter((node: any) => node.kind === "ac-vpp-box" || node.kind === "ac-endpoint-container")).toHaveLength(2);
     expect(graphs[0][0].find((node: any) => node.id === "m1").containerId).toBe(created.id);
   });
 

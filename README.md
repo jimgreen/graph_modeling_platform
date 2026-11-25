@@ -137,10 +137,21 @@ pnpm purge:derived    # 归档存量派生文件（默认 dry-run，--apply 才�
 | `GRAPH_MODEL_FRONTEND_PREFIX` | `/` | 前端部署子路径（如 `/app/`） |
 | `GRAPH_MODEL_DATA_DIR` | `./data` | 数据根目录（测试用 tmpdir 隔离） |
 | `GRAPH_MODEL_CONFIG` | `./platform.config.json` | 配置文件路径 |
+| `GRAPH_MODEL_PROJECT` | 未指定 | 项目配置目录名称（可被 `--project` 覆盖） |
 
 `platform.config.json` 的 `dataDir` 字段记录当前数据根目录，默认值为 `./data`。运行中的服务可通过
 `POST /webgrp/platform/data-dir` 迁移到一个已存在且为空的新目录；接口会复制并校验数据、归档并删除旧目录，
 再原子更新配置，失败时回滚全部操作。`GRAPH_MODEL_DATA_DIR` 仍优先于配置文件。
+
+需要为不同项目使用独立配置时，在 `projects/<项目名称>/platform.config.json` 中保存配置，并用下面任一种方式启动：
+
+```bash
+pnpm dev -- --project demo
+pnpm server -- --project demo
+GRAPH_MODEL_PROJECT=demo pnpm server
+```
+
+`--project` 优先于 `GRAPH_MODEL_PROJECT`。未指定项目时只读取根目录配置，不读取 `projects/`；指定项目但配置文件不存在或不是有效 JSON 对象时回退到根目录配置。项目配置中的相对 `dataDir` 相对项目目录解析，根配置中的相对路径相对仓库根目录解析。项目目录说明见 [`projects/README.md`](projects/README.md)。
 
 > `data/` 整目录被 `.gitignore` 忽略，首次运行自动创建骨架；换机器请用空间 ZIP 迁移数据。
 
@@ -376,6 +387,7 @@ graph_modeling_platform/
 | [docs/mcp-evaluation.xml](docs/mcp-evaluation.xml) | MCP 只读评测题集 |
 | [docs/ModelDefJson.md](docs/ModelDefJson.md) | 设备定义 JSON 结构 |
 | [docs/WEBGRP-INTEGRATION-GUIDE.md](docs/WEBGRP-INTEGRATION-GUIDE.md) | 第三方系统接入：页面嵌入、模型读取和 WebSocket 更新订阅 |
+| [examples/webgrp-integration-demo/README.md](examples/webgrp-integration-demo/README.md) | 可运行的 Vue + Vite / FastAPI 接入工作台：嵌入、HTTP 代理、发送接收和 WebSocket 桥接 |
 | `clients/node/README.md` | Node.js 模型更新订阅客户端：自动重连与重订阅 |
 | `clients/python/README.md` | Python 模型更新订阅客户端：后台接收线程与恢复 |
 | [AGENTS.md](AGENTS.md) | 开发约定、改动分档、检索纪律、命令速查 |

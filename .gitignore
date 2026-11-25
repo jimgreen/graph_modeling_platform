@@ -2,7 +2,9 @@ node_modules/
 dist/
 data/
 data1/
-*.archive-*.zip
+instances/
+*.zip
+*.pyc
 .codex-logs/
 logs/
 tmp/

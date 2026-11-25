@@ -99,6 +99,8 @@ import { cloneEdgeEditablePoints, calculateNodeVisualBounds,
   isBusNode,
   isStaticButtonCapableNode,
   isStaticNode,
+  isEndpointContainerKind,
+  isLegacyContainerKind,
   switchingDeviceUsesClosedStatus,
   type DeviceKind,
   type DeviceParameterDefinition,
@@ -1045,7 +1047,7 @@ export async function importBackendImageLibraryPayload(payload: IconLibraryPersi
 }
 
 export function groupDeviceTemplatesByCategoryLibrary(templates: DeviceTemplate[]): Record<string, DeviceTemplate[]> {
-  return templates.reduce<Record<string, DeviceTemplate[]>>((groups, item) => {
+  return templates.filter((item) => !isLegacyContainerKind(item.kind)).reduce<Record<string, DeviceTemplate[]>>((groups, item) => {
     const group = normalizeCategoryLibraryName(item.categoryLibrary);
     groups[group] = groups[group] ? [...groups[group], { ...item, categoryLibrary: group }] : [{ ...item, categoryLibrary: group }];
     return groups;
@@ -1076,6 +1078,9 @@ export function groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(
     return { group, section, typeMap };
   };
   for (const template of templates) {
+    if (isLegacyContainerKind(template.kind)) {
+      continue;
+    }
     const entry = ensureSection(
       template.categoryLibrary,
       resolveTemplateComponentLibrary(template)
@@ -3513,7 +3518,7 @@ export function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorD
   const nodeScaleY = getNodeScaleY(node);
   const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
   const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
-  const dashArray = svgStrokeDashArray(node.params.strokeStyle);
+  const dashArray = isEndpointContainerKind(node.kind) ? "" : svgStrokeDashArray(node.params.strokeStyle);
   const dashAttribute = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
   return node.terminals
     .map((terminal) => {

@@ -115,6 +115,12 @@ const ENDPOINTS = [
   { scope: "space", group: "配置", method: "PUT", path: "/webgrp/device-library", desc: "保存图元库配置", body: { customComponentLibraries: [], customCategoryLibraries: [] }, response: "{ok:true,...deviceLibrary}", examples: [
     { label: "清空自定义图元", params: { __body__: { customComponentLibraries: [], customCategoryLibraries: [], customDeviceTemplates: [], customGraphTemplates: [], customGraphTemplateTypes: [], deviceDefinitionOverrides: {} } } }
   ]},
+  { scope: "global", group: "平台配置", method: "GET", path: "/webgrp/interface-customization", desc: "读取全局界面定制配置（根目录 ui-customization.config.json）", response: "{exists,schemaVersion,buttons,modules}", examples: [
+    { label: "当前界面定制配置", params: {} }
+  ]},
+  { scope: "global", group: "平台配置", method: "PUT", path: "/webgrp/interface-customization", desc: "保存全局界面定制配置", body: { schemaVersion: 1, buttons: {}, modules: {} }, response: "{ok:true,schemaVersion,buttons,modules,savedAt}", examples: [
+    { label: "恢复全显示", params: { __body__: { schemaVersion: 1, buttons: {}, modules: {} } } }
+  ]},
   // ---- 全局线路域 ----
   // 错误形状与其余端点不同：这里是 {error: "中文串"}，不是 v1 的 {error:{code,message}}。
   { scope: "space", group: "全局线路", method: "GET", path: "/webgrp/global-lines", desc: "全局线路登记表（跨模型共享的线路身份与落点）", response: "{ok:true,records:[...]}", examples: [

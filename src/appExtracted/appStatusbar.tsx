@@ -60,7 +60,7 @@ function AppStatusbarContent({ scope }: { scope: Record<string, any> }) {
   };
 
   return (
-    <footer className="bottom-statusbar" aria-label="运行状态">
+    <footer className="bottom-statusbar" aria-label="运行状态" data-ui-module="module.statusbar">
       <div className="statusbar-resize-handle" role="separator" aria-orientation="horizontal" aria-label="调整提示信息栏高度" title="拖拽调整提示信息栏高度" onPointerDown={startStatusbarResize}/>
       <span className="status-pill">
         坐标 <span ref={mousePositionTextRef}>X:- Y:-</span>

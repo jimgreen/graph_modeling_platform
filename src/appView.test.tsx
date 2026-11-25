@@ -157,6 +157,38 @@ describe("发送模型入口", () => {
   });
 });
 
+describe("无活动模型时禁用模型操作", () => {
+  test("共享活动模型状态同时门控导出资格、顶栏操作和最近图元", () => {
+    const stateSource = readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8");
+    const topbarSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
+
+    expect(stateSource).toContain("const hasActiveModel = Boolean(activeProjectKey)");
+    expect(stateSource).toContain("const canExportCurrentModel = hasActiveModel && !saveRequired");
+    expect(topbarSource).toContain("const modelActionsDisabled = !Boolean(hasActiveModel ?? scope.activeProjectKey)");
+    expect(topbarSource).toContain('id="topbar-export" className="topbar-primary-button" disabled={modelActionsDisabled}');
+    expect(topbarSource).toContain('id="topbar-send-model" className="topbar-primary-button" disabled={modelActionsDisabled}');
+    expect(topbarSource).toContain('id="topbar-compact-topology" disabled={modelActionsDisabled}');
+    expect(topbarSource).toMatch(/className="recent-glyph-item"\s+disabled=\{modelActionsDisabled\}/);
+  });
+
+  test("模型操作下拉菜单在无模型时不因悬停重新打开", () => {
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(styles).toMatch(/\.topbar-dropdown\.model-actions-disabled:hover \.topbar-dropdown-menu/);
+    expect(styles).toMatch(/\.topbar-dropdown\.model-actions-disabled:focus-within \.topbar-dropdown-menu/);
+  });
+
+  test("右侧属性面板在无模型时不渲染模型编辑表", () => {
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const panelSource = readFileSync(new URL("./appExtracted/appRightPanel.tsx", import.meta.url), "utf8");
+
+    expect(viewSource).toContain("__appScope.hasActiveModel");
+    expect(panelSource).toContain("const modelActionsDisabled = !Boolean(hasActiveModel ?? scope.activeProjectKey)");
+    expect(panelSource).toContain("{modelActionsDisabled ? (<div className=\"inspector-empty-state\">请先打开模型</div>)");
+    expect(panelSource).toContain("disabled={modelActionsDisabled}>图元树</button>");
+  });
+});
+
 describe("全网拓扑入口", () => {
   test("在顶栏把仅图标的全局线路按钮放到全网拓扑按钮左侧并挂载独立弹窗", () => {
     const topbarSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
@@ -1331,6 +1363,35 @@ describe("顶栏空间选择器", () => {
 
     expect(topbarInputs).toContain("activeProjectKey");
     expect(topbarInputs).toContain("activeSchemeKey");
+  });
+
+  test("窄宽度时把空间操作和工具组收进下拉菜单，并隐藏品牌文字", () => {
+    const topbarSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(topbarSource).toContain('className="topbar-dropdown topbar-space-actions-compact"');
+    expect(topbarSource).toContain('aria-label="空间操作" aria-haspopup="menu"');
+    expect(topbarSource).toMatch(/className=\{`topbar-dropdown topbar-button-groups-compact/);
+    expect(topbarSource).toContain('aria-label="工具" aria-haspopup="menu"');
+    expect(styles).toContain("container: topbar / inline-size;");
+    expect(styles).toMatch(/\.topbar-space-actions-compact > \.topbar-dropdown-trigger,\s*\.topbar-button-groups-compact > \.topbar-dropdown-trigger\s*\{[\s\S]*?width: 48px;[\s\S]*?min-width: 48px;/);
+    expect(styles).toMatch(/@container topbar \(max-width: 1820px\)[\s\S]*?\.topbar-brand h1\s*\{\s*display: none;/);
+    expect(styles).toMatch(/@container topbar \(max-width: 1640px\)[\s\S]*?\.topbar-space-actions\s*\{\s*display: none;[\s\S]*?\.topbar-space-actions-compact\s*\{\s*display: block;/);
+    expect(styles).toMatch(/@container topbar \(max-width: 1560px\)[\s\S]*?\.topbar-button-groups\s*\{\s*display: none;[\s\S]*?\.topbar-button-groups-compact\s*\{\s*display: block;/);
+  });
+
+  test("小于1280px时把右侧属性面板嵌入左侧属性tab", () => {
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const leftPanelSource = readFileSync(new URL("./appExtracted/appLeftPanel.tsx", import.meta.url), "utf8");
+    const rightPanelSource = readFileSync(new URL("./appExtracted/appRightPanel.tsx", import.meta.url), "utf8");
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(viewSource).toContain('embeddedRightPanel={<AppRightPanel scope={__appScope} inputs={rightPanelInputs} embedded />}');
+    expect(leftPanelSource).not.toContain("left-panel-inspector-tab");
+    expect(rightPanelSource).toContain("embedded-inspector-tabs");
+    expect(leftPanelSource).toContain("left-panel-compact-${compactPanelTab}");
+    expect(rightPanelSource).toContain('section={embedded ? "embedded-right-panel" : "right-panel"}');
+    expect(styles).toMatch(/@media \(max-width: 1279\.99px\)[\s\S]*?\.left-panel-embedded-content\s*\{\s*display: flex;[\s\S]*?\.app-shell \.inspector-panel\.floating-side-panel,[\s\S]*?\.app-shell \.side-panel-edge-trigger\.right\s*\{\s*display: none;/);
   });
 
   test("源码把空间状态列进状态栏 memo 输入（否则空间 ID 那格永远停在 —）", () => {

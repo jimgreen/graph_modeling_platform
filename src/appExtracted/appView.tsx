@@ -23,6 +23,7 @@ import type { MeasurementGroup } from "../measurements";
 import { decodeAuto } from "../encoding/gbk";
 import { openExportedFile, type SavedExportFile } from "../fileIO";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
+import { interfaceCustomizationCss, isInterfaceCustomizationVisible } from "../interfaceCustomization";
 import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES as TEMPLATE_ALLOWED_MODEL_TYPES, eDeviceTemplateNetworkTypeMismatchMessage, eDeviceTemplateSingleTypeMismatchMessage } from "../eDeviceTemplateTypePolicy";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
 import { isSkipBeforeUnload } from "../spaceSwitch";
@@ -2472,7 +2473,62 @@ export function renderAppView(__appScope: Record<string, any>) {
     voltageTab
   });
 
+  const rightPanelInputs = [
+    rightPanelVisible,
+    rightPanelMode,
+    inspectorSelectedNode,
+    inspectorSelectedEdge,
+    __appScope.hasActiveModel,
+    currentModelRecord,
+    inspectorTab,
+    selectedSchemeRecord,
+    canvasSizeDraft,
+    allowAutoExpandCanvas,
+    canvasBackgroundColor,
+    canvasBackgroundImage,
+    __appScope.canvasThemeColors,
+    __appScope.canvasBackgroundImageFit,
+    backgroundProjectId,
+    backgroundProjectRecord,
+    backgroundProjectOptions,
+    backgroundLayerIds,
+    backgroundLayerOptions,
+    powerUnit,
+    voltageUnit,
+    currentUnit,
+    powerBaseValue,
+    subcontrolarea,
+    modelType,
+    substation,
+    feeder,
+    taiqu,
+    projectName,
+    nodes,
+    __appScope.elementTree,
+    __appScope.filteredElementTree,
+    __appScope.collapsedElementTreeGroups,
+    __appScope.collapsedElementTreeDeviceGroups,
+    __appScope.elementTreeItemLimits,
+    selectedNodeIdSet,
+    activeSelectedEdgeSet,
+    selectedDeviceInfoView,
+    selectedContainerParameterViews,
+    selectedContainerParameterView,
+    libraryTemplates,
+    customComponentLibraries,
+    deviceDefinitionOverrides,
+    topology,
+    inspectorTopologyEntry,
+    inspectorGraphId,
+    nodeById,
+    singleSelectedDeviceForInspector,
+    colorPalette,
+    __appScope.selectedMeasurementGroups,
+    __appScope.tourBlockedSidePanelMode
+  ];
+
   return (<>
+    <style data-ui-customization>{interfaceCustomizationCss(__appScope.interfaceCustomization)}</style>
     {globalMessage && <div className={`global-message global-message-${globalMessage.type}`} onClick={() => setGlobalMessage(null)} role="alert" title="点击关闭" style={{ cursor: "pointer" }}><span className="global-message-icon">{globalMessage.type === "success" ? "✓" : globalMessage.type === "error" ? "✕" : "ℹ"}</span>{globalMessage.text}<span style={{ marginLeft: 10, fontWeight: 700, opacity: 0.7 }} aria-hidden="true">×</span></div>}
     {exportCompletionDialog && (<div className="image-picker-backdrop export-completion-backdrop" onPointerDown={() => setExportCompletionDialog(null)}>
       <section
@@ -2510,9 +2566,9 @@ export function renderAppView(__appScope: Record<string, any>) {
       </section>
     </div>)}
     <div className={`app-shell left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`} style={appShellStyle}>
-      {renderSidePanelEdgeTrigger("left")}
-      {renderSidePanelEdgeTrigger("right")}
-      <AppLeftPanel
+      {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.leftPanel") && renderSidePanelEdgeTrigger("left")}
+      {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.rightPanel") && renderSidePanelEdgeTrigger("right")}
+      {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.leftPanel") && <AppLeftPanel
         scope={__appScope}
         inputs={[
           leftPanelVisible,
@@ -2528,9 +2584,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           // 引导锁定会切换模式按钮的禁用态；MemorizedViewSection 只在 inputs 变化时重渲染，
           // 漏了它会导致引导期间按钮「看着可点、点了没反应」。
           // 必须走 __appScope 前缀：该名字未在本函数顶层解构，裸标识符会抛 ReferenceError。
-          __appScope.tourBlockedSidePanelMode
+          __appScope.tourBlockedSidePanelMode,
+          __appScope.compactPanelTab,
+          __appScope.interfaceCustomization,
+          ...rightPanelInputs
         ]}
-      />
+          embeddedRightPanel={<AppRightPanel scope={__appScope} inputs={rightPanelInputs} embedded />}
+      />}
 
       <main className="workspace" onPointerEnter={hideAutoPanelsFromWorkspace}>
         <AppTopbar
@@ -2539,6 +2599,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             activeModelPathName,
             // 保存动作闭包依赖当前模型身份；即使模型显示路径未变，也必须重建顶栏。
             activeProjectKey,
+            __appScope.hasActiveModel,
             activeSchemeKey,
             activeLayer,
             layers,
@@ -2567,19 +2628,20 @@ export function renderAppView(__appScope: Record<string, any>) {
             // 电流流水线开关 + 外观设置：弹窗确定后对象引用变化必须让顶栏重渲染
             __appScope.electricFlowVisible,
             __appScope.electricFlowSettings,
+            __appScope.interfaceCustomization,
             // 主题切换按钮的图标与 aria 随主题变；不进 inputs 则顶栏被 memo 跳过、图标不交替。
             __appScope.themeMode,
             eDeviceInterfaceTemplateLabel
           ]}
         />
-        <MemoizedViewSection
+        {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.recentGlyphs") && <MemoizedViewSection
           section="recent-glyphs"
-          inputs={[__appScope.recentGlyphKinds]}
+          inputs={[__appScope.recentGlyphKinds, __appScope.hasActiveModel]}
           render={() => <RecentGlyphsToolbar scope={__appScope} />}
-        />
+        />}
 
-        <MemoizedCanvasArea scope={__appScope} />
-        <MemoizedViewSection
+        {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.canvas") && <MemoizedCanvasArea scope={__appScope} />}
+        {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.topologyWarning") && <MemoizedViewSection
           section="topology-warning"
           inputs={[
             topologyWarningPanelVisible,
@@ -2588,7 +2650,8 @@ export function renderAppView(__appScope: Record<string, any>) {
             visibleTopologyErrors,
             normalizedTopologyWarningPage,
             topologyWarningPageCount,
-            hiddenTopologyErrorCount
+            hiddenTopologyErrorCount,
+            __appScope.interfaceCustomization
           ]}
           render={() => topologyWarningPanelVisible ? (<section ref={topologyWarningPanelRef} className="topology-warning-floating-panel" style={topologyWarningPanelStyle} aria-label="拓扑警告信息" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
             <header className="topology-warning-floating-title" onPointerDown={startTopologyWarningPanelDrag}>
@@ -2614,8 +2677,8 @@ export function renderAppView(__appScope: Record<string, any>) {
             />
             <div className="topology-warning-floating-resize" role="separator" aria-orientation="horizontal" title="拖拽调整拓扑警告信息窗口大小" onPointerDown={startTopologyWarningPanelResize}/>
           </section>) : null}
-        />
-        <AppStatusbar
+        />}
+        {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.statusbar") && <AppStatusbar
           scope={__appScope}
           inputs={[
             currentZoomPercent,
@@ -2635,69 +2698,16 @@ export function renderAppView(__appScope: Record<string, any>) {
             // 状态栏的空间 ID 与顶栏选择器同源：不进 inputs，列表/current 加载完成后
             // MemoizedViewSection 会跳过重渲染，这一格永远停在空值。
             __appScope.currentSpaceId,
-            __appScope.spaces
+            __appScope.spaces,
+            __appScope.interfaceCustomization
           ]}
-        />
+        />}
       </main>
 
-      <AppRightPanel
+      {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.rightPanel") && <AppRightPanel
         scope={__appScope}
-        inputs={[
-          rightPanelVisible,
-          rightPanelMode,
-          inspectorSelectedNode,
-          inspectorSelectedEdge,
-          currentModelRecord,
-          inspectorTab,
-          selectedSchemeRecord,
-          canvasSizeDraft,
-          allowAutoExpandCanvas,
-          canvasBackgroundColor,
-          canvasBackgroundImage,
-          // 【基础】→【背景色】显示的是当前主题的画布底色，不加入比较键则切主题后面板停在旧值。
-          __appScope.canvasThemeColors,
-          __appScope.canvasBackgroundImageFit,
-          backgroundProjectId,
-          backgroundProjectRecord,
-          backgroundProjectOptions,
-          backgroundLayerIds,
-          backgroundLayerOptions,
-          powerUnit,
-          voltageUnit,
-          currentUnit,
-          powerBaseValue,
-          subcontrolarea,
-          modelType,
-          substation,
-          feeder,
-          taiqu,
-          projectName,
-          nodes,
-          __appScope.elementTree,
-          __appScope.filteredElementTree,
-          __appScope.collapsedElementTreeGroups,
-          __appScope.collapsedElementTreeDeviceGroups,
-          __appScope.elementTreeItemLimits,
-          selectedNodeIdSet,
-          activeSelectedEdgeSet,
-          selectedDeviceInfoView,
-          selectedContainerParameterViews,
-          selectedContainerParameterView,
-          libraryTemplates,
-          customComponentLibraries,
-          deviceDefinitionOverrides,
-          topology,
-          inspectorTopologyEntry,
-          inspectorGraphId,
-          nodeById,
-          singleSelectedDeviceForInspector,
-          colorPalette,
-          __appScope.selectedMeasurementGroups,
-          // 同 AppLeftPanel：引导锁定会切换模式按钮禁用态，必须参与 memo 比较。
-          // 同样必须走 __appScope 前缀（未解构）。
-          __appScope.tourBlockedSidePanelMode
-        ]}
-      />
+        inputs={rightPanelInputs}
+      />}
       {contextMenuLayerActive && (<Suspense fallback={null}>
         <LazyAppContextMenus
           scope={__appScope}

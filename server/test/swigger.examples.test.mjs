@@ -69,6 +69,9 @@ function normalizeExampleParams(ep, params) {
   if (ep.path === apiPath("/v1/models/export") && next.q_modelId !== undefined && next.q_modelId !== "") {
     next.q_modelId = TEST_MODEL_ID;
   }
+  if (ep.path === apiPath("/interface-customization") && ep.method === "PUT") {
+    next.__body__ = { schemaVersion: 1, buttons: {}, modules: {} };
+  }
   if (ep.path !== apiPath("/v1/schemes/model/send")) {
     return next;
   }
@@ -247,7 +250,11 @@ beforeEach(async () => {
     join(subDir, "子模型.json"),
     JSON.stringify({ version: 1, name: "子模型", nodes: [], edges: [], canvasWidth: 1920, canvasHeight: 1080 })
   );
-  server = await createImageServer({ port: 0, host: "127.0.0.1" });
+  server = await createImageServer({
+    port: 0,
+    host: "127.0.0.1",
+    interfaceCustomizationPath: join(dataDir, "ui-customization.config.json")
+  });
   const port = server.address().port;
   baseUrl = `http://127.0.0.1:${port}`;
   wsUrl = `ws://127.0.0.1:${port}/webgrp/ws`;
@@ -423,6 +430,8 @@ function expectFor(ep, ex) {
   if (p === apiPath("/measurement-config") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
   if (p === apiPath("/device-library") && ep.method === "GET") return { status: 200, check: (r) => expect(r.json).toBeTruthy() };
   if (p === apiPath("/device-library") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/interface-customization") && ep.method === "GET") return { status: 200, check: (r) => expect(r.json.modules).toBeTruthy() };
+  if (p === apiPath("/interface-customization") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
 
   // v1 方案域
   if (p === apiPath("/v1/schemes") && ep.method === "GET") {

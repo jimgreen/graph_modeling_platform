@@ -3,6 +3,7 @@ import * as shared from "./device-definition-shared";
 import * as legacy from "../customDeviceUtils";
 import {
   DEVICE_LIBRARY,
+  DEVICE_LIBRARY_BY_KIND,
   baseDeviceKind,
   templateDerivedComponentLibraryInfo,
   resolveEffectiveTemplateParameterDefinitions
@@ -543,7 +544,7 @@ describe("deviceDefinitionSharedKeyForTemplate", () => {
 describe("deviceDefinitionOverrideForTemplate：class: 元件类覆盖", () => {
   // ac-vpp-box 所在分组 shared:ACContainer 有 3 个成员，且每个成员都不带 -vertical 后缀，
   // 所以「peer 专属的 kind」是货真价实的第 5 类候选键（下面 L350 那条要靠它）。
-  const base = DEVICE_LIBRARY.find((template) => template.kind === "ac-vpp-box")!;
+  const base = DEVICE_LIBRARY_BY_KIND.get("ac-vpp-box")!;
   const peerKind = "ac-switch-box";
   const className = shared.componentClassForConcreteTemplate(base as any);
   const grouped = shared.groupPeerKindsBySharedKey(DEVICE_LIBRARY);
@@ -669,7 +670,7 @@ describe("deviceDefinitionOverrideForTemplate：class: 元件类覆盖", () => {
 
 describe("normalizeSharedDeviceDefinitionOverrides：peer 裁剪", () => {
   const group = ["ac-vpp-box", "ac-switch-box", "ac-distribution-box"]
-    .map((kind) => DEVICE_LIBRARY.find((template) => template.kind === kind)!);
+    .map((kind) => DEVICE_LIBRARY_BY_KIND.get(kind)!);
 
   test("只剩视觉参数的 peer 整条保留 —— 键层面空空如也但 params 里有图标", () => {
     // hasVisualContent 的左侧只看顶层键，右侧才看 params。覆盖里除 kind/updatedAt/params 外什么都没有，

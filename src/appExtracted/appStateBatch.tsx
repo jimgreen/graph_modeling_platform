@@ -1439,8 +1439,9 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
       selectedContainerParameterViews.find((view) => view.id === containerParamViewId) ?? selectedContainerParameterViews[0]; Object.assign(__appScope, { selectedContainerParameterView });
   const selectedProjectRecord = projectById.get(selectedProjectId); Object.assign(__appScope, { selectedProjectRecord });
   const activeProjectRecord = projectById.get(activeProjectKey); Object.assign(__appScope, { activeProjectRecord });
+  const hasActiveModel = Boolean(activeProjectKey); Object.assign(__appScope, { hasActiveModel });
   const saveRequired = hasUnsavedChanges; Object.assign(__appScope, { saveRequired });
-  const canExportCurrentModel = !saveRequired; Object.assign(__appScope, { canExportCurrentModel });
+  const canExportCurrentModel = hasActiveModel && !saveRequired; Object.assign(__appScope, { canExportCurrentModel });
   const activeModelName = projectName || activeProjectRecord?.name || (activeProjectKey ? "未命名模型" : "未选择模型"); Object.assign(__appScope, { activeModelName });
   const activeSchemeRecord =
       findSavedSchemeById(schemes, activeSchemeKey) ??

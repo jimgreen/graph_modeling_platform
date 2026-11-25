@@ -17,7 +17,7 @@ describe("容器「设备类型」行下拉", () => {
     const html = renderValue({ kind: "ac-switch-box" });
     expect(html).toContain("开关箱");
     expect(html).toContain(
-      'data-inline-option-values="ac-vpp-box|ac-switch-box|ac-distribution-box|dc-vpp-box|hydrogen-vpp-box|heat-vpp-box"'
+      'data-inline-option-values="ac-endpoint-container|ac-switch-box|ac-distribution-box|dc-vpp-box|hydrogen-vpp-box|heat-vpp-box"'
     );
   });
 

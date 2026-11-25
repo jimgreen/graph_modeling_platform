@@ -74,6 +74,8 @@ import {
   getDeviceGlyphVariant,
   getDeviceStrokeWidth,
   isContainerParams,
+  isEndpointContainerKind,
+  isLegacyContainerKind,
   isImplicitTerminalVbaseForType,
   isLineOnlyConnectionNode,
   modelAssociationModelTypeForKind,
@@ -1929,22 +1931,27 @@ export function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, 
 }
 
 export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: DeviceTemplate | undefined): ModelNode {
-  const normalizedParamNames = normalizeLegacyGasQuantityDeviceParams(node.params);
-  const branchParams = normalizeBranchMeasurementParams(node.kind, normalizedParamNames);
+  const normalizedKind = isLegacyContainerKind(node.kind) ? "ac-endpoint-container" : node.kind;
+  const normalizedInput = normalizedKind === node.kind ? node : { ...node, kind: normalizedKind as DeviceKind };
+  const effectiveTemplate = normalizedKind === node.kind
+    ? template
+    : DEVICE_LIBRARY_BY_KIND.get(normalizedKind) ?? template;
+  const normalizedParamNames = normalizeLegacyGasQuantityDeviceParams(normalizedInput.params);
+  const branchParams = normalizeBranchMeasurementParams(normalizedInput.kind, normalizedParamNames);
   const semanticParams = normalizeSemanticParameterValues(branchParams);
-  const semanticNode = semanticParams === node.params ? node : { ...node, params: semanticParams };
+  const semanticNode = semanticParams === normalizedInput.params ? normalizedInput : { ...normalizedInput, params: semanticParams };
   let normalizedNode = normalizeEndpointConverterNodeControlParams(
     normalizeDcacConverterNodeControlParams(normalizeRoutableLineDeviceStrokeWidthParam(semanticNode))
   );
-  normalizedNode = normalizeElectricGenerationRatedParams(normalizedNode, template);
-  if (template) {
-    normalizedNode = migrateElectricGenerationContainerParams(normalizedNode, template);
+  normalizedNode = normalizeElectricGenerationRatedParams(normalizedNode, effectiveTemplate);
+  if (effectiveTemplate) {
+    normalizedNode = migrateElectricGenerationContainerParams(normalizedNode, effectiveTemplate);
   }
-  normalizedNode = normalizeHydrogenCouplingBodyParams(normalizedNode, template);
+  normalizedNode = normalizeHydrogenCouplingBodyParams(normalizedNode, effectiveTemplate);
   normalizedNode = normalizeHydrogenStorageParams(normalizedNode);
-  normalizedNode = normalizeKnownLegacyNodeEnumValues(normalizedNode, template);
-  if (template && !template.isContainer && (isThreeWindingTransformer(normalizedNode) || isTwoWindingTransformerTemplateKind(normalizedNode.kind))) {
-    const effectiveTemplateDefinitions = resolveEffectiveTemplateParameterDefinitions(template);
+  normalizedNode = normalizeKnownLegacyNodeEnumValues(normalizedNode, effectiveTemplate);
+  if (effectiveTemplate && !effectiveTemplate.isContainer && (isThreeWindingTransformer(normalizedNode) || isTwoWindingTransformerTemplateKind(normalizedNode.kind))) {
+    const effectiveTemplateDefinitions = resolveEffectiveTemplateParameterDefinitions(effectiveTemplate);
     const parameterDefinitions = isThreeWindingTransformer(normalizedNode)
       ? mergeCanonicalParameterDefinitions(
           threeWindingTransformerParameterDefinitions,
@@ -1970,13 +1977,13 @@ export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: De
       : normalizeTwoWindingTransformerParams(reconciledNode.params);
     normalizedNode = params === reconciledNode.params ? reconciledNode : { ...reconciledNode, params };
   }
-  if (!template || normalizedNode.terminals.length === 0) {
+  if (!effectiveTemplate || (normalizedNode.terminals.length === 0 && !isEndpointContainerKind(effectiveTemplate.kind))) {
     return normalizedNode;
   }
   let changed = false;
-  const expectedTypes = templateTerminalTypes(template);
-  const shouldNormalizeTerminalAnchors = expectedTypes.length > 1;
-  const expectedTerminals = createTemplateTerminals(template);
+  const expectedTypes = templateTerminalTypes(effectiveTemplate);
+  const shouldNormalizeTerminalAnchors = expectedTypes.length > 1 || isEndpointContainerKind(effectiveTemplate.kind);
+  const expectedTerminals = createTemplateTerminals(effectiveTemplate);
   if (expectedTerminals.length !== normalizedNode.terminals.length) {
     changed = true;
   }
@@ -2056,6 +2063,7 @@ export function terminalStubSegment(
 
 const TERMINAL_STUB_INTERNAL_LINK_LENGTH = 72;
 const TERMINAL_OUTWARD_OFFSET = 4;
+const ENDPOINT_CONTAINER_TERMINAL_OUTWARD_OFFSET = 20;
 const CLOSE_BORDER_TERMINAL_OUTWARD_OFFSET = 12;
 const CONVERTER_TERMINAL_OUTWARD_OFFSET = 12;
 export const CONVERTER_GLYPH_BORDER_INSET = 8;
@@ -2097,6 +2105,9 @@ function terminalOutwardOffsetLength(terminal: Pick<Terminal, "anchor">, nodeKin
     return 0;
   }
   const terminalNodeKind = nodeKind ? (baseDeviceKind(nodeKind) as DeviceKind) : undefined;
+  if (terminalNodeKind === "ac-endpoint-container") {
+    return ENDPOINT_CONTAINER_TERMINAL_OUTWARD_OFFSET;
+  }
   if (terminalNodeKind && CONVERTER_TERMINAL_KINDS.has(terminalNodeKind)) {
     return CONVERTER_TERMINAL_OUTWARD_OFFSET;
   }
@@ -4978,6 +4989,10 @@ function collectElectricalIslandVoltageGroups(nodes: ModelNode[], connectivity: 
 }
 
 export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): ModelNode[] {
+  const originalNodes = nodes;
+  const filteredInput = topologyValidationInput(nodes, edges);
+  nodes = filteredInput.nodes;
+  edges = filteredInput.edges;
   const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
   nodes = synchronized.nodes;
   edges = synchronized.edges;
@@ -5199,7 +5214,7 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
       terminals
     };
   });
-  return numberedNodes.map((node) => {
+  const calculatedNodes = numberedNodes.map((node) => {
     if (!isThreeWindingTransformer(node)) {
       return node;
     }
@@ -5223,6 +5238,8 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
       }
     };
   });
+  const calculatedById = new Map(calculatedNodes.map((node) => [node.id, node]));
+  return originalNodes.map((node) => calculatedById.get(node.id) ?? node);
 }
 
 function normalizeVoltage(value?: string): string {
@@ -5246,7 +5263,34 @@ export function getTerminalVoltageLevel(node: ModelNode, terminalId?: string): s
   return normalizeVoltage(terminal ? terminalVoltageDisplay(node, terminal) : getNodeVoltageLevel(node));
 }
 
+/**
+ * 端点容器内部成员不属于模型拓扑：容器自身保留顶部端子，成员及其边引用从校验输入剔除。
+ * E 文件导出和画布仍使用完整节点集，因此只在校验入口应用这一层过滤。
+ */
+export function topologyExcludedNodeIds(nodes: ModelNode[]): Set<string> {
+  const endpointContainerIds = new Set(
+    nodes.filter((node) => isEndpointContainerKind(node.kind)).map((node) => node.id)
+  );
+  return new Set(
+    nodes
+      .filter((node) => Boolean(node.containerId) && endpointContainerIds.has(node.containerId!))
+      .map((node) => node.id)
+  );
+}
+
+export function topologyValidationInput(nodes: ModelNode[], edges: Edge[]): { nodes: ModelNode[]; edges: Edge[] } {
+  const excludedNodeIds = topologyExcludedNodeIds(nodes);
+  if (excludedNodeIds.size === 0) {
+    return { nodes, edges };
+  }
+  return {
+    nodes: nodes.filter((node) => !excludedNodeIds.has(node.id)),
+    edges: edges.filter((edge) => !excludedNodeIds.has(edge.sourceId) && !excludedNodeIds.has(edge.targetId))
+  };
+}
+
 export function validateVoltageSetpointDeviations(nodes: ModelNode[], edges: Edge[]): TopologyValidationError[] {
+  ({ nodes, edges } = topologyValidationInput(nodes, edges));
   const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
   nodes = synchronized.nodes;
   edges = synchronized.edges;
@@ -6424,12 +6468,16 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
 ): { nodes: ModelNode[]; warnings: TopologyValidationError[]; corrections: DeviceOperatingLimitCorrection[] } {
   const warnings: TopologyValidationError[] = [];
   const corrections: DeviceOperatingLimitCorrection[] = [];
+  const excludedNodeIds = topologyExcludedNodeIds(nodes);
   const sourceNodeById = new Map((options.sourceNodes ?? []).map((node) => [node.id, node]));
   // 两段式额定容量处理的作用域：仅在拓扑检查入口传入，非检查入口保持原行为。
   const capacityFix: RatedCapacityFixTracker | undefined = options.capacityFixScopeKey
     ? { scopeKey: options.capacityFixScopeKey, decisions: new Map() }
     : undefined;
   const normalizedNodes = nodes.map((node) => {
+    if (excludedNodeIds.has(node.id)) {
+      return node;
+    }
     if (isStaticNode(node)) {
       return node;
     }
@@ -6700,6 +6748,7 @@ export function validateTopology(
   edges: Edge[],
   options: ValidateTopologyOptions = {}
 ): TopologyValidationError[] {
+  ({ nodes, edges } = topologyValidationInput(nodes, edges));
   const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
   nodes = synchronized.nodes;
   edges = synchronized.edges;

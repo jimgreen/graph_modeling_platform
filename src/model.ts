@@ -174,6 +174,7 @@ export type DeviceKind =
   | "acdc-converter"
   | "dcac-converter"
   | "acac-converter"
+  | "ac-endpoint-container"
   | "ac-vpp-box"
   | "ac-switch-box"
   | "ac-distribution-box"
@@ -954,7 +955,7 @@ function explicitStaticComponentLibraryForKind(kind: string): string {
 // 原名 AC_CONTAINER_KINDS 已随「多能流共用」改名 —— 判据一律走 isContainerKind,勿再按名字分叉逻辑。
 // 声明位置须早于 BASE_DEVICE_LIBRARY 归一化调用(normalizeDefaultDeviceSize 会读它,晚声明会踩 TDZ)
 export const CONTAINER_KINDS = [
-  "ac-vpp-box",
+  "ac-endpoint-container",
   "ac-switch-box",
   "ac-distribution-box",
   "dc-vpp-box",
@@ -962,9 +963,20 @@ export const CONTAINER_KINDS = [
   "heat-vpp-box",
 ] as const satisfies readonly DeviceKind[];
 
-/** kind 是否为容器图元(任一能流;按清单判定,新增 kind 只需改 CONTAINER_KINDS) */
+/** 旧版“虚拟电厂”容器 kind：只用于加载/导出兼容，不再出现在可见图元库。 */
+export const LEGACY_CONTAINER_KINDS = ["ac-vpp-box"] as const satisfies readonly DeviceKind[];
+
+export function isLegacyContainerKind(kind: string): boolean {
+  return (LEGACY_CONTAINER_KINDS as readonly string[]).includes(kind);
+}
+
+export function isEndpointContainerKind(kind: string): boolean {
+  return baseDeviceKind(kind) === "ac-endpoint-container";
+}
+
+/** kind 是否为容器图元(含兼容旧 kind;新增可见 kind 只需改 CONTAINER_KINDS) */
 export function isContainerKind(kind: string): boolean {
-  return (CONTAINER_KINDS as readonly string[]).includes(kind);
+  return (CONTAINER_KINDS as readonly string[]).includes(kind) || isLegacyContainerKind(kind);
 }
 
 /**
@@ -3502,6 +3514,7 @@ export const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   ACNode: "交流节点",
   DCNode: "直流节点",
   ACContainer: "容器表",
+  ACEndpointContainer: "交流端点容器",
   ACBranch: "交流支路",
   DCBranch: "直流支路",
   ACLoad: "交流负荷",
@@ -4056,14 +4069,28 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     kind: "ac-vpp-box",
     label: "虚拟电厂",
     categoryLibrary: "交流设备",
+    componentClass: "ACContainer",
     ...containerBoxTemplateGeometry(),
     terminalType: "ac",
     terminalCount: 0
   },
   {
+    // 交流端点容器:复用交流容器框选交互,顶部单端子用于对外连接
+    kind: "ac-endpoint-container",
+    label: "虚拟电厂",
+    categoryLibrary: "交流设备",
+    componentClass: "ACEndpointContainer",
+    ...containerBoxTemplateGeometry(),
+    terminalType: "ac",
+    terminalCount: 1,
+    terminalLabels: ["交流设备端"],
+    terminalAnchors: [{ x: 0, y: -0.5 }]
+  },
+  {
     kind: "ac-switch-box",
     label: "开关箱",
     categoryLibrary: "交流设备",
+    componentClass: "ACContainer",
     ...containerBoxTemplateGeometry(),
     terminalType: "ac",
     terminalCount: 0
@@ -4072,6 +4099,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     kind: "ac-distribution-box",
     label: "配变箱",
     categoryLibrary: "交流设备",
+    componentClass: "ACContainer",
     ...containerBoxTemplateGeometry(),
     terminalType: "ac",
     terminalCount: 0
@@ -5243,6 +5271,13 @@ function modelAssociationDerivedTerminalAnchors(
   return modelType === "馈线" ? [{ x: -0.5, y: 0 }] : [{ x: 0, y: -0.5 }];
 }
 
+const MODEL_ASSOCIATION_GLYPH_DESIGN_SIZE: Record<ModelAssociationDerivedClassSpec["modelType"], { width: number; height: number }> = {
+  // 与 DeviceGlyph 中三类 model-hierarchy-icon 的实际路径包围盒保持同一比例。
+  "厂站": { width: 96, height: 75 },
+  "馈线": { width: 105, height: 78 },
+  "台区": { width: 96, height: 87 }
+};
+
 function createModelAssociationDerivedDeviceTemplate(
   baseTemplate: DeviceTemplate,
   spec: ModelAssociationDerivedClassSpec
@@ -5253,7 +5288,7 @@ function createModelAssociationDerivedDeviceTemplate(
     label: spec.label,
     englishName: spec.derivedComponentLibrary,
     componentClass: spec.derivedComponentLibrary,
-    size: { width: 132, height: 52 },
+    size: { ...MODEL_ASSOCIATION_GLYPH_DESIGN_SIZE[spec.modelType] },
     params: {
       ...baseTemplate.params,
       ...modelAssociationVisualParams(spec.label),
@@ -6470,14 +6505,17 @@ const NORMALIZED_BASE_DEVICE_LIBRARY = materializeDeviceMeasurementDefinitionFie
   .map(attachBuiltInDeviceMeasurementDefinitions)
   .map(withRdfIdParameter));
 
+const LEGACY_DEVICE_TEMPLATE_ALIASES = NORMALIZED_BASE_DEVICE_LIBRARY.filter((template) => isLegacyContainerKind(template.kind));
+const VISIBLE_BASE_DEVICE_LIBRARY = NORMALIZED_BASE_DEVICE_LIBRARY.filter((template) => !isLegacyContainerKind(template.kind));
+
 export const DEVICE_LIBRARY: DeviceTemplate[] = [
-  ...NORMALIZED_BASE_DEVICE_LIBRARY,
-  ...NORMALIZED_BASE_DEVICE_LIBRARY.filter(shouldCreateVerticalDeviceTemplate).map(createVerticalDeviceTemplate)
+  ...VISIBLE_BASE_DEVICE_LIBRARY,
+  ...VISIBLE_BASE_DEVICE_LIBRARY.filter(shouldCreateVerticalDeviceTemplate).map(createVerticalDeviceTemplate)
 ];
 
 /** kind → 模板的 O(1) 查找索引。DEVICE_LIBRARY 为静态内置库，构建后不再变更，故可在模块级缓存。 */
 export const DEVICE_LIBRARY_BY_KIND: ReadonlyMap<string, DeviceTemplate> = new Map<string, DeviceTemplate>(
-  DEVICE_LIBRARY.map((template) => [template.kind, template])
+  [...DEVICE_LIBRARY, ...LEGACY_DEVICE_TEMPLATE_ALIASES].map((template) => [template.kind, template])
 );
 
 let nodeNumberSeed = 1;

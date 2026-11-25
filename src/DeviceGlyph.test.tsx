@@ -97,7 +97,7 @@ describe("DeviceGlyph static nodes", () => {
 });
 
 describe("DeviceGlyph model-association derived devices", () => {
-  it("enlarges station feeder and district source/load pictograms", () => {
+  it("scales station, feeder, and district pictograms to their node frame without stretching", () => {
     const hierarchyIconScale = (kind: string) => {
       const node = createDefaultNode(kind, { x: 0, y: 0 });
       const markup = renderToStaticMarkup(<svg><DeviceGlyph node={node} mode="geometry" /></svg>);
@@ -106,17 +106,17 @@ describe("DeviceGlyph model-association derived devices", () => {
     };
 
     const cases = [
-      ["ac-station-source", 2],
-      ["dc-station-load", 2],
-      ["ac-feeder-source", 2],
-      ["dc-feeder-load", 2],
-      ["ac-district-source", 1.84],
-      ["dc-district-load", 1.84]
+      ["ac-station-source", 3.7632],
+      ["dc-station-load", 3.7632],
+      ["ac-feeder-source", 3.4246],
+      ["dc-feeder-load", 3.4246],
+      ["ac-district-source", 3.7655],
+      ["dc-district-load", 3.7655]
     ] as const;
 
-    for (const [associationKind, visibleScaleMultiplier] of cases) {
+    for (const [associationKind, expectedScale] of cases) {
       const associationScale = hierarchyIconScale(associationKind);
-      expect(associationScale).toBeCloseTo(52 / 48 * visibleScaleMultiplier, 4);
+      expect(associationScale).toBeCloseTo(expectedScale, 4);
     }
   });
 

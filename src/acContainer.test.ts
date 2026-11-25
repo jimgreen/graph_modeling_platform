@@ -695,7 +695,7 @@ describe("新建容器纯函数", () => {
 
   test("containerKindOptions:6 类型选项,label 与图元库同源(弹窗类型下拉单源)", () => {
     expect(containerKindOptions()).toEqual([
-      { value: "ac-vpp-box", label: "虚拟电厂" },
+      { value: "ac-endpoint-container", label: "虚拟电厂" },
       { value: "ac-switch-box", label: "开关箱" },
       { value: "ac-distribution-box", label: "配变箱" },
       { value: "dc-vpp-box", label: "虚拟电厂" },
@@ -892,6 +892,7 @@ describe("容器 idx 分配", () => {
     // 分池理由:各能流容器落各自 E 段,idx 在段内独立编号 —— 共用一池会让直流容器吃掉交流容器的 idx 段
     const expectedPoolByKind: Record<string, string> = {
       "ac-vpp-box": AC_CONTAINER_POOL_KEY,
+      "ac-endpoint-container": AC_CONTAINER_POOL_KEY,
       "ac-switch-box": AC_CONTAINER_POOL_KEY,
       "ac-distribution-box": AC_CONTAINER_POOL_KEY,
       "dc-vpp-box": "dc_container",

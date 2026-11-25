@@ -61,6 +61,12 @@ const modelAssociationVisualParams = {
   verticalAlign: "middle"
 } as const;
 
+const expectedModelAssociationGlyphSizes = {
+  "厂站": { width: 96, height: 75 },
+  "馈线": { width: 105, height: 78 },
+  "台区": { width: 96, height: 87 }
+} as const;
+
 describe("model association derived power-source and load classes", () => {
   test("rejects station/district cross-level devices and feeder-level devices in feeder models", () => {
     const forbiddenCases = [
@@ -133,7 +139,7 @@ describe("model association derived power-source and load classes", () => {
         derivedComponentLibrary: expected.derivedClass,
         derivedComponentLibraryLabel: expected.label
       });
-      expect(template?.size).toEqual(normalizeDefaultDeviceSize(expected.kind, { width: 132, height: 52 }));
+      expect(template?.size).toEqual(normalizeDefaultDeviceSize(expected.kind, expectedModelAssociationGlyphSizes[expected.modelType]));
       // 端子锚点按模型层级统一，而不是按基类模板继承：同一层级的电源与负荷引线方向必须一致。
       // 基类 `ac-load`/`dc-load` 是上边 {0,-0.5}，而 `ac-source`/`dc-source` 缺省（右边 {0.5,0}），
       // 直接继承会让厂站/台区出现「电源引线朝右、负荷引线朝上」的视觉不一致。

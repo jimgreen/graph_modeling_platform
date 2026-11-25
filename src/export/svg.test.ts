@@ -27,6 +27,14 @@ describe("src/export/svg", () => {
     expect(legacy.buildSvgDocument).toBe(buildSvgDocument);
   });
 
+  test("交流端点容器的 5px 顶部短线保持实线，不继承容器虚线样式", () => {
+    const node = createDefaultNode("ac-endpoint-container", { x: 0, y: 0 });
+    const markup = buildSvgDeviceConnectorMarkup(node);
+    expect(markup).toContain('y1="20"');
+    expect(markup).toContain('y2="0"');
+    expect(markup).not.toContain("stroke-dasharray");
+  });
+
   test("可注入 imageAssets（不读 localStorage）", () => {
     const svg = buildSvgDocument(SVG_BASELINE_NODES as any, SVG_BASELINE_EDGES as any, {
       ...SVG_BASELINE_FIXTURE,

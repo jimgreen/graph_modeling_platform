@@ -72,6 +72,30 @@ pnpm dev       # 开发时同时启动页面和数据服务
 | `IMAGE_SERVER_HOST` | 数据服务监听地址 |
 | `IMAGE_SERVER_PORT` | 数据服务端口 |
 | `GRAPH_MODEL_DATA_DIR` | 临时覆盖数据目录，优先级高于配置文件 |
+| `GRAPH_MODEL_PROJECT` | 项目配置目录名称；命令行 `--project` 优先 |
+
+---
+
+## 按项目启动
+
+项目配置放在仓库根目录的 `projects/<项目名称>/platform.config.json`。项目配置可以使用自己的端口、接口前缀和 `dataDir`；相对 `dataDir` 相对该项目目录解析。
+
+```bash
+# POSIX
+pnpm dev -- --project demo
+pnpm server -- --project demo
+GRAPH_MODEL_PROJECT=demo pnpm server
+```
+
+```powershell
+# PowerShell
+pnpm dev -- --project demo
+pnpm server -- --project demo
+$env:GRAPH_MODEL_PROJECT = "demo"
+pnpm server
+```
+
+命令行 `--project` 优先于 `GRAPH_MODEL_PROJECT`。未指定项目时只读取根目录 `platform.config.json`，不会扫描 `projects/`。指定项目但配置缺失、读取失败、JSON 损坏或内容不是对象时回退根配置；`GRAPH_MODEL_DATA_DIR` 仍然覆盖最终配置中的 `dataDir`。目录结构和示例见 [`projects/README.md`](../projects/README.md)。
 
 ---
 

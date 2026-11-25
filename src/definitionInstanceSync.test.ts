@@ -5,6 +5,7 @@ import {
   CUSTOM_PARAM_DEFINITIONS_KEY,
   createDefaultNode,
   DEVICE_LIBRARY,
+  DEVICE_LIBRARY_BY_KIND,
   resolveEffectiveTemplateParameterDefinitionGroups,
   resolveEffectiveTemplateParameterDefinitions,
   type DeviceParameterDefinition,
@@ -373,7 +374,7 @@ describe("definition instance node reconciliation", () => {
   });
 
   test("交流容器实例的尺寸是用户几何,定义同步不得打回模板默认值", () => {
-    const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === "ac-vpp-box")!;
+    const template = DEVICE_LIBRARY_BY_KIND.get("ac-vpp-box")!;
     const resized = {
       ...createDefaultNode("ac-vpp-box", { x: 300, y: 200 }),
       size: { width: 400, height: 300 }

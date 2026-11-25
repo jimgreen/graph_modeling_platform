@@ -1819,6 +1819,7 @@ export const COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   // 容器:类名显示「XX容器」(树里与图元库同组:交流设备 → 交流容器,直流设备 → 直流容器,余同)。
   // E 侧的中文段名仍是「容器表」(ELEMENT_TREE_COMPONENT_LIBRARY_LABELS + 反查表),本表只管界面显示
   ACContainer: "交流容器",
+  ACEndpointContainer: "交流端点容器",
   DCContainer: "直流容器",
   HydroContainer: "氢能容器",
   HeatContainer: "热能容器"

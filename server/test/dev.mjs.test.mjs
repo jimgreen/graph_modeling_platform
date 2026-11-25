@@ -10,7 +10,7 @@ vi.mock("node:child_process", () => ({
   }))
 }));
 
-const [{ parseHost }, { host: configHost }] = await Promise.all([
+const [{ buildViteEnv, parseHost }, { host: configHost }] = await Promise.all([
   import("../dev.mjs"),
   import("../config.mjs")
 ]);
@@ -68,4 +68,17 @@ describe("parseHost", () => {
   //   · ["--verbose","--debug","--host"] → 仍是「末尾无值回退 configHost」，与上方同一条。
   //   · ["--port=3000","--host=1.2.3.4","--debug"] → 等号形式 + 非首位，是上方
   //     「等号形式」「非首位」两条的合取，无新增判别点。
+});
+
+describe("buildViteEnv", () => {
+  test("为 Vite 子进程传递项目名并保留其他环境变量", () => {
+    const baseEnv = { KEEP_ME: "yes", GRAPH_MODEL_PROJECT: "old" };
+    const env = buildViteEnv(baseEnv, "alpha");
+    expect(env).toEqual({ KEEP_ME: "yes", GRAPH_MODEL_PROJECT: "alpha" });
+    expect(baseEnv).toEqual({ KEEP_ME: "yes", GRAPH_MODEL_PROJECT: "old" });
+  });
+
+  test("没有项目时清除继承的项目变量，不影响其他变量", () => {
+    expect(buildViteEnv({ KEEP_ME: "yes", GRAPH_MODEL_PROJECT: "old" }, null)).toEqual({ KEEP_ME: "yes" });
+  });
 });

@@ -1,20 +1,23 @@
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 
+import type { ReactNode } from "react";
+
 type AppLeftPanelProps = {
   scope: Record<string, any>;
   inputs: readonly unknown[];
+  embeddedRightPanel?: ReactNode;
 };
 
-export function AppLeftPanel({ scope, inputs }: AppLeftPanelProps) {
+export function AppLeftPanel({ scope, inputs, embeddedRightPanel }: AppLeftPanelProps) {
   return (
     <MemoizedViewSection
       section="left-panel"
       inputs={inputs}
-      render={() => <AppLeftPanelContent scope={scope} />}
+      render={() => <AppLeftPanelContent scope={scope} embeddedRightPanel={embeddedRightPanel} />}
     />
   );
 }
-function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
+function AppLeftPanelContent({ scope, embeddedRightPanel }: { scope: Record<string, any>; embeddedRightPanel?: ReactNode }) {
   const {
     effectiveLeftPanelTab,
     activeSchemeKey,
@@ -24,6 +27,7 @@ function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
     leftPanelRef,
     leftPanelTab,
     leftPanelVisible,
+    compactPanelTab,
     schemes,
     findSavedSchemeById,
     projectIdx,
@@ -63,27 +67,39 @@ function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
   };
 
   return (
-    <aside ref={leftPanelRef} className={`library-panel floating-side-panel ${leftPanelVisible ? "visible" : "hidden"}`} onPointerDown={stopSidePanelEventPropagation} onPointerMoveCapture={stopSidePanelEventPropagation} onPointerMove={stopSidePanelEventPropagation} onPointerEnter={() => updateAutoPanelVisibility("left", "panel-enter")} onPointerLeave={(event) => handleSidePanelPointerLeave("left", event)} onMouseMoveCapture={stopSidePanelEventPropagation} onMouseMove={stopSidePanelEventPropagation} onClick={stopSidePanelEventPropagation} onDoubleClick={stopSidePanelEventPropagation} onContextMenu={stopSidePanelEventPropagation} onKeyDown={stopSidePanelEventPropagation} onKeyUp={stopSidePanelEventPropagation}>
+    <div data-ui-module="module.leftPanel" className="ui-customization-module-shell">
+    <aside ref={leftPanelRef} className={`library-panel floating-side-panel ${leftPanelVisible ? "visible" : "hidden"} left-panel-compact-${compactPanelTab}`} onPointerDown={stopSidePanelEventPropagation} onPointerMoveCapture={stopSidePanelEventPropagation} onPointerMove={stopSidePanelEventPropagation} onPointerEnter={() => updateAutoPanelVisibility("left", "panel-enter")} onPointerLeave={(event) => handleSidePanelPointerLeave("left", event)} onMouseMoveCapture={stopSidePanelEventPropagation} onMouseMove={stopSidePanelEventPropagation} onClick={stopSidePanelEventPropagation} onDoubleClick={stopSidePanelEventPropagation} onContextMenu={stopSidePanelEventPropagation} onKeyDown={stopSidePanelEventPropagation} onKeyUp={stopSidePanelEventPropagation}>
       <div className="side-panel-resize-handle right-edge" role="separator" aria-orientation="vertical" aria-label="调整左侧栏宽度" title="拖拽调整左侧栏宽度" onPointerDown={(event) => startSidePanelResize(event, "left")}/>
-      {renderSidePanelModeControls("left")}
+      <div data-ui-content="module.leftPanel.modeControls">{renderSidePanelModeControls("left")}</div>
       <div className="left-panel-tabs" role="tablist" aria-label="左侧资源库">
-        <button className={effectiveLeftPanelTab === "projects" ? "active" : ""} onMouseEnter={() => setLeftPanelTab("projects")} onClick={() => setLeftPanelTab("projects")} role="tab" aria-selected={effectiveLeftPanelTab === "projects"}>
+        <button data-ui-content="module.leftPanel.modelLibrary" className={effectiveLeftPanelTab === "projects" ? "active" : ""} onMouseEnter={() => setLeftPanelTab("projects")} onClick={() => { setLeftPanelTab("projects"); scope.setCompactPanelTab?.("left"); }} role="tab" aria-selected={effectiveLeftPanelTab === "projects"}>
           模型库
         </button>
         {isEditMode && (<>
-          <button className={leftPanelTab === "library" ? "active" : ""} onMouseEnter={() => setLeftPanelTab("library")} onClick={() => setLeftPanelTab("library")} role="tab" aria-selected={leftPanelTab === "library"}>
+          <button data-ui-content="module.leftPanel.deviceLibrary" className={leftPanelTab === "library" ? "active" : ""} onMouseEnter={() => setLeftPanelTab("library")} onClick={() => { setLeftPanelTab("library"); scope.setCompactPanelTab?.("left"); }} role="tab" aria-selected={leftPanelTab === "library"}>
             图元库
           </button>
-          <button className={leftPanelTab === "templates" ? "active" : ""} onMouseEnter={() => setLeftPanelTab("templates")} onClick={() => setLeftPanelTab("templates")} role="tab" aria-selected={leftPanelTab === "templates"}>
+          <button data-ui-content="module.leftPanel.templateLibrary" className={leftPanelTab === "templates" ? "active" : ""} onMouseEnter={() => setLeftPanelTab("templates")} onClick={() => { setLeftPanelTab("templates"); scope.setCompactPanelTab?.("left"); }} role="tab" aria-selected={leftPanelTab === "templates"}>
             模板库
           </button>
         </>)}
       </div>
+      <div className="left-panel-embedded-content" data-ui-content="module.leftPanel.embeddedInspector">
+        {embeddedRightPanel}
+      </div>
       <div className="left-panel-content">
-        {leftPanelContent}
+        <div data-ui-content={
+          effectiveLeftPanelTab === "projects"
+            ? "module.leftPanel.modelLibrary"
+            : effectiveLeftPanelTab === "library"
+              ? "module.leftPanel.deviceLibrary"
+              : "module.leftPanel.templateLibrary"
+        }>
+          {leftPanelContent}
+        </div>
       </div>
       <div className="left-panel-footer">
-        <span className="left-panel-footer-item">
+        <span className="left-panel-footer-item" data-ui-content="module.leftPanel.schemeId">
           <span className="left-panel-footer-label">方案ID：</span>
           <button
             type="button"
@@ -96,7 +112,7 @@ function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
             {currentSchemeId ?? "—"}
           </button>
         </span>
-        <span className="left-panel-footer-item">
+        <span className="left-panel-footer-item" data-ui-content="module.leftPanel.modelId">
           <span className="left-panel-footer-label">模型ID：</span>
           <button
             type="button"
@@ -111,5 +127,6 @@ function AppLeftPanelContent({ scope }: { scope: Record<string, any> }) {
         </span>
       </div>
     </aside>
+    </div>
   );
 }

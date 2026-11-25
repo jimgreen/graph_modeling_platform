@@ -23,6 +23,7 @@
 //   （:548 / :634 / model-routing.ts:2321），那是独立于本任务的改动，未在本次范围内。
 import { describe, expect, test } from "vitest";
 import { atLeastOneNumber } from "../canvasViewport";
+import { definitionVisualRulerTicks, stateIconDrawingUsesVisualRulers } from "./appDeviceDefinitionRenderers";
 
 describe("尺寸守卫：非有限时回退 1 的约定", () => {
   // 本文件唯一保留的断言锁的是「回退值取 1」这条约定本身（与 :553 的新守卫同源），
@@ -36,5 +37,18 @@ describe("尺寸守卫：非有限时回退 1 的约定", () => {
     // 合法数值必须逐字不变（新守卫的前提）。
     expect(atLeastOneNumber(120, 1)).toBe(120);
     expect(Math.max(1, 120)).toBe(120);
+  });
+});
+
+describe("元件定义预览标尺", () => {
+  test("自定义元件和元件定义绘图区都启用标尺", () => {
+    expect(stateIconDrawingUsesVisualRulers("definition")).toBe(true);
+    expect(stateIconDrawingUsesVisualRulers("custom")).toBe(true);
+    expect(stateIconDrawingUsesVisualRulers(undefined)).toBe(false);
+  });
+
+  test("横向和纵向刻度以预览中心为 0", () => {
+    expect(definitionVisualRulerTicks("x")).toEqual([-100, -75, -50, -25, 0, 25, 50, 75, 100]);
+    expect(definitionVisualRulerTicks("y")).toEqual([-75, -50, -25, 0, 25, 50, 75]);
   });
 });

@@ -4256,4 +4256,55 @@ describe("模型关联项目索引：编表口径", () => {
     ];
     expect(modelAssociationProjectIndexesForSchemes(schemes as never)["厂站"]).toEqual(["3"]);
   });
+
+  test("交流端点容器自身参与拓扑，但其内部设备不产生拓扑错误", () => {
+    const container = createDefaultNode("ac-endpoint-container", { x: 100, y: 100 });
+    container.terminals[0].vbase = "10";
+    const member = createDefaultNode("ac-load", { x: 120, y: 120 });
+    member.containerId = container.id;
+    const errors = validateTopology([container, member], [], { includeVoltageSetpointDeviations: false });
+    expect(errors.some((error) => error.nodeId === member.id)).toBe(false);
+    expect(errors.some((error) => error.nodeId === container.id)).toBe(true);
+  });
+
+  test("交流端点容器顶部端子可以连接普通交流设备", () => {
+    const container = createDefaultNode("ac-endpoint-container", { x: 100, y: 100 });
+    const source = createDefaultNode("ac-source", { x: 240, y: 100 });
+    container.terminals[0].vbase = "10";
+    source.terminals[0].vbase = "10";
+    const errors = validateTopology([
+      container,
+      source
+    ], [{ id: "edge-1", sourceId: container.id, targetId: source.id, sourceTerminalId: "t1", targetTerminalId: "t1" }], {
+      includeVoltageSetpointDeviations: false
+    });
+    expect(errors.some((error) => error.type === "floating-terminal")).toBe(false);
+  });
+
+  test("交流端点容器锚点与虚线框之间保留 20px 顶部实线引线", () => {
+    const node = createDefaultNode("ac-endpoint-container", { x: 0, y: 0 });
+    const terminal = node.terminals[0];
+    const stub = terminalStubSegment(terminal, 1, 1, 24, node.kind, node.size);
+    expect(stub.from).toEqual({ x: 0, y: 20 });
+    expect(stub.to).toEqual({ x: 0, y: 0 });
+    expect(Math.abs(stub.from.y - stub.to.y)).toBe(20);
+    expect(terminalRenderLocalPoint(terminal, node.size, 1, 1, node.kind)).toEqual({ x: 0, y: -76 });
+  });
+
+  test("电气拓扑计算不改写交流端点容器内部成员的拓扑编号", () => {
+    const container = createDefaultNode("ac-endpoint-container", { x: 100, y: 100 });
+    const member = createDefaultNode("ac-load", { x: 120, y: 120 });
+    member.containerId = container.id;
+    const originalTerminals = structuredClone(member.terminals);
+    const calculated = calculateElectricalTopology([container, member], []);
+    expect(calculated.find((node) => node.id === member.id)?.terminals).toEqual(originalTerminals);
+  });
+
+  test("普通交流容器内部设备仍参与拓扑校验", () => {
+    const container = createDefaultNode("ac-switch-box", { x: 100, y: 100 });
+    const member = createDefaultNode("ac-load", { x: 120, y: 120 });
+    member.containerId = container.id;
+    const errors = validateTopology([container, member], [], { includeVoltageSetpointDeviations: false });
+    expect(errors.some((error) => error.nodeId === member.id)).toBe(true);
+  });
 });

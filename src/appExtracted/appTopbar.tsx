@@ -20,8 +20,9 @@ import {
 import { currentQiankunUser, filterSpacesForCurrentUser } from "../qiankunUserSpace";
 import { startAppTour } from "../appTour";
 import { saveLazyBlobFile, type SavedExportFile } from "../fileIO";
-import { Download, Moon, Pencil, Send, Sun, Trash2, Upload } from "lucide-react";
+import { ChevronDown, Download, Menu, Moon, Pencil, Send, Sun, Trash2, Upload } from "lucide-react";
 import { SendModelDialog } from "../SendModelDialog";
+import { isInterfaceCustomizationVisible } from "../interfaceCustomization";
 
 type AppTopbarProps = {
   scope: Record<string, any>;
@@ -263,8 +264,11 @@ function RuntimeWsIndicator({ scope }: { scope: Record<string, any> }) {
     }
   };
 
+  if (!isInterfaceCustomizationVisible(scope.interfaceCustomization, "topbar.runtimeWs")) return null;
+
   return (
     <span
+      id="topbar-runtime-ws"
       style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: 10, padding: "0 8px", fontSize: 12, color: "#6b7280", cursor: clientId ? "pointer" : "default", userSelect: "none", position: "relative" }}
       title={
         clientId
@@ -541,6 +545,7 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
   const current = currentSpaceOf(scope);
   // 后端回退或列表未加载时 current 可能不在选项里，此时交给 placeholder，避免 Select 显示裸 id
   const value = options.some((option) => option.value === currentSpaceId) ? currentSpaceId : undefined;
+  const visible = (id: string) => isInterfaceCustomizationVisible(scope.interfaceCustomization, id);
 
   const changeSpace = (next: string) => {
     if (next === NEW_SPACE_OPTION_VALUE) {
@@ -567,8 +572,10 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
     }
   };
 
+  if (!visible("topbar.spaceSwitcher")) return null;
+
   return (
-    <span className="topbar-space-switcher" style={{ display: "inline-flex", alignItems: "center", marginLeft: 10 }}>
+    <span id="topbar-space-switcher" className="topbar-space-switcher" style={{ display: "inline-flex", alignItems: "center", marginLeft: 10 }}>
       <Select
         size="small"
         value={value}
@@ -578,49 +585,63 @@ function SpaceSwitcher({ scope }: { scope: Record<string, any> }) {
         style={{ minWidth: 140 }}
         aria-label="切换空间"
       />
-      {/* 空间操作 */}
-      <button
-        type="button"
-        className="topbar-primary-button"
-        title="把当前空间导出为压缩包"
-        aria-label="导出空间"
-        onClick={() => void exportCurrentSpace(scope)}
-      >
-        <Download size={14} />
-      </button>
-      {/* 导入是**新建**空间：后端导入不带 owner，qiankun 下导入完用户看不见它，故直接禁用 */}
-      <button
-        type="button"
-        className="topbar-primary-button"
-        title={lockedUser ? "导入的空间没有归属，qiankun 下暂不支持" : "从压缩包导入空间（重名会询问覆盖还是改名）"}
-        aria-label="导入空间"
-        disabled={Boolean(lockedUser)}
-        onClick={() => spaceArchiveInputRef.current?.click()}
-      >
-        <Upload size={14} />
-      </button>
-      {/* 改名 / 删除都作用在**当前空间**（要动别的空间，先用左边的下拉框切过去）：pinned 的 default 不给删，
-          列表未加载时 current 为空，两个按钮也一并禁用 */}
-      <button
-        type="button"
-        className="topbar-primary-button"
-        title="重命名当前空间"
-        aria-label="重命名空间"
-        disabled={!current}
-        onClick={() => void renameCurrentSpace(scope)}
-      >
-        <Pencil size={14} />
-      </button>
-      <button
-        type="button"
-        className="topbar-primary-button"
-        title="删除当前空间（数据移入回收目录）"
-        aria-label="删除空间"
-        disabled={!current || current.pinned}
-        onClick={() => void deleteCurrentSpace(scope)}
-      >
-        <Trash2 size={14} />
-      </button>
+      <div className="topbar-space-actions">
+        {/* 空间操作 */}
+        {visible("topbar.spaceExport") && <button
+          type="button"
+          className="topbar-primary-button"
+          title="把当前空间导出为压缩包"
+          aria-label="导出空间"
+          onClick={() => void exportCurrentSpace(scope)}
+        >
+          <Download size={14} />
+        </button>}
+        {/* 导入是**新建**空间：后端导入不带 owner，qiankun 下导入完用户看不见它，故直接禁用 */}
+        {visible("topbar.spaceImport") && <button
+          type="button"
+          className="topbar-primary-button"
+          title={lockedUser ? "导入的空间没有归属，qiankun 下暂不支持" : "从压缩包导入空间（重名会询问覆盖还是改名）"}
+          aria-label="导入空间"
+          disabled={Boolean(lockedUser)}
+          onClick={() => spaceArchiveInputRef.current?.click()}
+        >
+          <Upload size={14} />
+        </button>}
+        {/* 改名 / 删除都作用在**当前空间**（要动别的空间，先用左边的下拉框切过去）：pinned 的 default 不给删，
+            列表未加载时 current 为空，两个按钮也一并禁用 */}
+        {visible("topbar.spaceRename") && <button
+          type="button"
+          className="topbar-primary-button"
+          title="重命名当前空间"
+          aria-label="重命名空间"
+          disabled={!current}
+          onClick={() => void renameCurrentSpace(scope)}
+        >
+          <Pencil size={14} />
+        </button>}
+        {visible("topbar.spaceDelete") && <button
+          type="button"
+          className="topbar-primary-button"
+          title="删除当前空间（数据移入回收目录）"
+          aria-label="删除空间"
+          disabled={!current || current.pinned}
+          onClick={() => void deleteCurrentSpace(scope)}
+        >
+          <Trash2 size={14} />
+        </button>}
+      </div>
+      <div className="topbar-dropdown topbar-space-actions-compact">
+        {T("空间操作", <button type="button" className="topbar-primary-button topbar-dropdown-trigger" aria-label="空间操作" aria-haspopup="menu">
+          <Menu size={16} />
+          <ChevronDown size={13} />
+        </button>)}
+        <div className="topbar-dropdown-menu" role="menu" aria-label="空间操作">
+          {visible("topbar.spaceExport") && <button type="button" role="menuitem" onClick={() => void exportCurrentSpace(scope)} title="导出空间" aria-label="导出空间"><Download size={16}/><span>导出空间</span></button>}
+          {visible("topbar.spaceImport") && <button type="button" role="menuitem" onClick={() => spaceArchiveInputRef.current?.click()} disabled={Boolean(lockedUser)} title={lockedUser ? "导入的空间没有归属，qiankun 下暂不支持" : "导入空间"} aria-label="导入空间"><Upload size={16}/><span>导入空间</span></button>}
+          {visible("topbar.spaceRename") && <button type="button" role="menuitem" onClick={() => void renameCurrentSpace(scope)} disabled={!current} title="重命名空间" aria-label="重命名空间"><Pencil size={16}/><span>重命名空间</span></button>}
+          {visible("topbar.spaceDelete") && <button type="button" role="menuitem" onClick={() => void deleteCurrentSpace(scope)} disabled={!current || current.pinned} title="删除空间" aria-label="删除空间"><Trash2 size={16}/><span>删除空间</span></button>}
+        </div>
+      </div>
       <input
         ref={spaceArchiveInputRef}
         type="file"
@@ -671,29 +692,32 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
     openColorPaletteDialog, openTopologyWarningPanel,
     openUserCustomizationManager, requestEncodedExport, renderLayerManager,
     runTopologyCalculation, saveCurrentProject, saveRequired,
+    hasActiveModel,
     setDeviceLabelsVisible, setDeviceMeasurementsVisible, setEDeviceDefinitionInterfaceDialogOpen, setImageTarget,
     setSmartAlignmentEnabled, setVoltageLevelDialogOpen, smartAlignmentEnabled,
-    setElectricFlowVisible, electricFlowVisible,
+    setElectricFlowVisible, electricFlowVisible, setInterfaceCustomizationDialogOpen,
     toggleColorDisplayMode, toggleThemeMode, themeMode, topologyErrors, topologyWarningPanelClosed
   } = scope;
+  const modelActionsDisabled = !Boolean(hasActiveModel ?? scope.activeProjectKey);
+  const visible = (id: string) => isInterfaceCustomizationVisible(scope.interfaceCustomization, id);
 
   return (
     <>
     <header className="topbar">
-      <div className="brand topbar-brand">
+      {visible("topbar.brand") && <div id="topbar-brand" className="brand topbar-brand">
         <div className="brand-mark">GRP</div>
         <div>
           <h1>电力能源系统图上建模平台</h1>
         </div>
-      </div>
-      <div className="topbar-model" title={`当前模型：${activeModelPathName}`}>
+      </div>}
+      {visible("topbar.activeModel") && <div className="topbar-model" id="topbar-active-model" title={`当前模型：${activeModelPathName}`}>
         <strong style={saveRequired ? { color: "#dc2626" } : undefined}>
           {activeModelPathName}
           {saveRequired && <sup style={{ fontSize: "0.7em", marginLeft: 2 }}>*</sup>}
         </strong>
-      </div>
-      <div ref={layerManagementDropdownRef} className="topbar-dropdown layer-management-dropdown">
-        {T(`激活图层：${activeLayer?.name ?? "默认图层"}`, <button type="button" id="topbar-layer-management" className="topbar-dropdown-trigger layer-management-trigger"  aria-label="图层管理">
+      </div>}
+      {visible("topbar.layerManagement") && <div ref={layerManagementDropdownRef} className={`topbar-dropdown layer-management-dropdown${modelActionsDisabled ? " model-actions-disabled" : ""}`}>
+        {T(`激活图层：${activeLayer?.name ?? "默认图层"}`, <button type="button" id="topbar-layer-management" className="topbar-dropdown-trigger layer-management-trigger" disabled={modelActionsDisabled} aria-label="图层管理">
           <Layers size={15}/>
           <span>{activeLayer?.name ?? "默认图层"}</span>
           <ChevronDown size={13}/>
@@ -701,11 +725,11 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
         <div className="topbar-dropdown-menu layer-management-dropdown-menu" role="menu" aria-label="图层管理">
           {renderLayerManager()}
         </div>
-      </div>
+      </div>}
       {/* 顶栏按钮分组：按动作域分组，组间以竖线分割 */}
       <div className="topbar-button-groups">
         <div className="topbar-button-group">
-          {T(smartAlignmentEnabled ? "对齐标线：开" : "对齐标线：关", <button type="button" id="topbar-smart-alignment" className={`topbar-primary-button ${smartAlignmentEnabled ? "active" : ""}`} onClick={() => setSmartAlignmentEnabled((current: boolean) => !current)} aria-label={smartAlignmentEnabled ? "关闭对齐到标线" : "开启对齐到标线"}>
+          {visible("topbar.smartAlignment") && T(smartAlignmentEnabled ? "对齐标线：开" : "对齐标线：关", <button type="button" id="topbar-smart-alignment" className={`topbar-primary-button ${smartAlignmentEnabled ? "active" : ""}`} disabled={modelActionsDisabled} onClick={() => setSmartAlignmentEnabled((current: boolean) => !current)} aria-label={smartAlignmentEnabled ? "关闭对齐到标线" : "开启对齐到标线"}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               <rect x="2" y="5" width="12" height="6" rx="1"/>
               <line x1="8" y1="0" x2="8" y2="16" strokeDasharray="2 2"/>
@@ -714,62 +738,83 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
         </div>
         {/* 拓扑组 */}
         <div className="topbar-button-group">
-          {T("图上拓扑", <button id="topbar-topology" className="topbar-primary-button" onClick={runTopologyCalculation}  aria-label="图上拓扑">
+          {visible("topbar.topology") && T("图上拓扑", <button id="topbar-topology" className="topbar-primary-button" disabled={modelActionsDisabled} onClick={runTopologyCalculation}  aria-label="图上拓扑">
             <Grid2X2 size={16}/>
           </button>)}
-          {T(scope.globalLineListOpen ? "隐藏全局线路列表" : "显示全局线路列表", <button id="topbar-global-lines" className={`topbar-primary-button ${scope.globalLineListOpen ? "active" : ""}`} onClick={() => scope.setGlobalLineListOpen((current: boolean) => !current)} aria-label="全局线路" aria-pressed={Boolean(scope.globalLineListOpen)}>
+          {visible("topbar.globalLines") && T(scope.globalLineListOpen ? "隐藏全局线路列表" : "显示全局线路列表", <button id="topbar-global-lines" className={`topbar-primary-button ${scope.globalLineListOpen ? "active" : ""}`} disabled={modelActionsDisabled} onClick={() => scope.setGlobalLineListOpen((current: boolean) => !current)} aria-label="全局线路" aria-pressed={Boolean(scope.globalLineListOpen)}>
             <Cable size={16}/>
           </button>)}
-          {T(scope.allNetworkTopologyDialogOpen ? "隐藏全网拓扑窗口" : "显示全网拓扑窗口", <button id="topbar-all-network-topology" className={`topbar-primary-button ${scope.allNetworkTopologyDialogOpen ? "active" : ""}`} onClick={() => scope.setAllNetworkTopologyDialogOpen((current: boolean) => !current)} aria-label="全网拓扑" aria-pressed={Boolean(scope.allNetworkTopologyDialogOpen)}>
+          {visible("topbar.allNetworkTopology") && T(scope.allNetworkTopologyDialogOpen ? "隐藏全网拓扑窗口" : "显示全网拓扑窗口", <button id="topbar-all-network-topology" className={`topbar-primary-button ${scope.allNetworkTopologyDialogOpen ? "active" : ""}`} disabled={modelActionsDisabled} onClick={() => scope.setAllNetworkTopologyDialogOpen((current: boolean) => !current)} aria-label="全网拓扑" aria-pressed={Boolean(scope.allNetworkTopologyDialogOpen)}>
             <Network size={16}/>
           </button>)}
-          {T(topologyErrors.length > 0 ? "显示告警窗口" : "当前没有拓扑告警", <button id="topbar-topology-warning" className={`topbar-primary-button ${topologyErrors.length > 0 && !topologyWarningPanelClosed ? "active" : ""}`} onClick={openTopologyWarningPanel} disabled={topologyErrors.length === 0} aria-label="告警窗口">
+          {visible("topbar.topologyWarning") && T(topologyErrors.length > 0 ? "显示告警窗口" : "当前没有拓扑告警", <button id="topbar-topology-warning" className={`topbar-primary-button ${topologyErrors.length > 0 && !topologyWarningPanelClosed ? "active" : ""}`} onClick={openTopologyWarningPanel} disabled={modelActionsDisabled || topologyErrors.length === 0} aria-label="告警窗口">
             <Bell size={16}/>
           </button>)}
         </div>
         {/* 显示与配色组 */}
         <div className="topbar-button-group">
-          {T(colorDisplayMode === "voltage" ? "显示方式：电压等级（点击切换）" : "显示方式：能源类型（点击切换）", <button id="topbar-color-mode" className={`topbar-primary-button ${colorDisplayMode === "voltage" ? "active" : ""}`} onClick={() => toggleColorDisplayMode()} aria-label="颜色切换">
+          {visible("topbar.colorMode") && T(colorDisplayMode === "voltage" ? "显示方式：电压等级（点击切换）" : "显示方式：能源类型（点击切换）", <button id="topbar-color-mode" className={`topbar-primary-button ${colorDisplayMode === "voltage" ? "active" : ""}`} disabled={modelActionsDisabled} onClick={() => toggleColorDisplayMode()} aria-label="颜色切换">
             <Paintbrush size={16}/>
           </button>)}
-          {T("配色设置", <button id="topbar-color-palette" className="topbar-primary-button" onClick={openColorPaletteDialog}  aria-label="配色设置"><Palette size={16}/></button>)}
-          {T("电压等级设置", <button id="topbar-voltage-level" className="topbar-primary-button" onClick={() => setVoltageLevelDialogOpen(true)}  aria-label="电压等级设置"><Zap size={16}/></button>)}
-          {T(deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识", <button id="topbar-device-labels" className={`topbar-primary-button ${deviceLabelsVisible ? "active" : ""}`} onClick={() => setDeviceLabelsVisible((current: boolean) => !current)} aria-label={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}><Type size={16}/></button>)}
-          {T(deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测", <button id="topbar-device-measurements" className={`topbar-primary-button ${deviceMeasurementsVisible ? "active" : ""}`} onClick={() => setDeviceMeasurementsVisible((current: boolean) => !current)} aria-label={deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测"} style={{ fontWeight: 700, fontSize: 16, fontFamily: "'Times New Roman', Times, serif" }}>M</button>)}
+          {visible("topbar.colorPalette") && T("配色设置", <button id="topbar-color-palette" className="topbar-primary-button" disabled={modelActionsDisabled} onClick={openColorPaletteDialog}  aria-label="配色设置"><Palette size={16}/></button>)}
+          {visible("topbar.voltageLevel") && T("电压等级设置", <button id="topbar-voltage-level" className="topbar-primary-button" disabled={modelActionsDisabled} onClick={() => setVoltageLevelDialogOpen(true)}  aria-label="电压等级设置"><Zap size={16}/></button>)}
+          {visible("topbar.deviceLabels") && T(deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识", <button id="topbar-device-labels" className={`topbar-primary-button ${deviceLabelsVisible ? "active" : ""}`} disabled={modelActionsDisabled} onClick={() => setDeviceLabelsVisible((current: boolean) => !current)} aria-label={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}><Type size={16}/></button>)}
+          {visible("topbar.deviceMeasurements") && T(deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测", <button id="topbar-device-measurements" className={`topbar-primary-button ${deviceMeasurementsVisible ? "active" : ""}`} disabled={modelActionsDisabled} onClick={() => setDeviceMeasurementsVisible((current: boolean) => !current)} aria-label={deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测"} style={{ fontWeight: 700, fontSize: 16, fontFamily: "'Times New Roman', Times, serif" }}>M</button>)}
           {/* 电流流水线：沿线路流动的方向箭头。与「设备标识 / 量测」同属显示类开关，
               文案口径沿用「对齐标线：开/关」那一组，让用户一眼看出它是可切换的显示态。
               悬浮展开下拉菜单（与导出文件按钮同一套 .topbar-dropdown 样式），
               菜单项「设置」打开流水线设置弹窗。 */}
-          <div className="topbar-dropdown electric-flow-dropdown">
-            {T(electricFlowVisible ? "电流流水线：开（点击切换关闭）" : "电流流水线：关（点击切换开启）", <button type="button" id="topbar-electric-flow" className={`topbar-primary-button ${electricFlowVisible ? "active" : ""}`} onClick={() => setElectricFlowVisible((current: boolean) => !current)} aria-label={electricFlowVisible ? "关闭电流流水线" : "开启电流流水线"} aria-haspopup="menu" aria-pressed={Boolean(electricFlowVisible)}>
+          {visible("topbar.electricFlow") && <div className="topbar-dropdown electric-flow-dropdown">
+            {T(electricFlowVisible ? "电流流水线：开（点击切换关闭）" : "电流流水线：关（点击切换开启）", <button type="button" id="topbar-electric-flow" className={`topbar-primary-button ${electricFlowVisible ? "active" : ""}`} disabled={modelActionsDisabled} onClick={() => setElectricFlowVisible((current: boolean) => !current)} aria-label={electricFlowVisible ? "关闭电流流水线" : "开启电流流水线"} aria-haspopup="menu" aria-pressed={Boolean(electricFlowVisible)}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M1.5 8h13"/>
                 <path d="M10.5 4.5 14 8l-3.5 3.5"/>
               </svg>
             </button>)}
             <div className="topbar-dropdown-menu" role="menu" aria-label="电流流水线选项">
-              <button type="button" id="topbar-electric-flow-settings" role="menuitem" onClick={() => { setElectricFlowSettingsDialogOpen(true); }} title="设置" aria-label="电流流水线设置" aria-haspopup="dialog">
+              {visible("topbar.electricFlowSettings") && <button type="button" id="topbar-electric-flow-settings" role="menuitem" onClick={() => { setElectricFlowSettingsDialogOpen(true); }} disabled={modelActionsDisabled} title="设置" aria-label="电流流水线设置" aria-haspopup="dialog">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M1.5 8h7"/>
                   <path d="M5 4.5 8.5 8 5 11.5"/>
                   <circle cx="12.5" cy="8" r="1.6"/>
                 </svg>
                 <span>设置</span>
-              </button>
+              </button>}
             </div>
-          </div>
+          </div>}
         </div>
         {/* 图片资源组 */}
         <div className="topbar-button-group">
-          {T("分类图标库", <button id="topbar-image-library" className="topbar-primary-button" onClick={() => setImageTarget({ kind: "canvasIcon" })}  aria-label="分类图标库"><FolderOpen size={16}/></button>)}
+          {visible("topbar.imageLibrary") && T("分类图标库", <button id="topbar-image-library" className="topbar-primary-button" disabled={modelActionsDisabled} onClick={() => setImageTarget({ kind: "canvasIcon" })}  aria-label="分类图标库"><FolderOpen size={16}/></button>)}
+        </div>
+      </div>
+      <div className={`topbar-dropdown topbar-button-groups-compact${modelActionsDisabled ? " model-actions-disabled" : ""}`}>
+        {T("工具", <button type="button" className="topbar-primary-button topbar-dropdown-trigger" disabled={modelActionsDisabled} aria-label="工具" aria-haspopup="menu">
+          <Menu size={16} />
+          <ChevronDown size={13} />
+        </button>)}
+        <div className="topbar-dropdown-menu" role="menu" aria-label="工具">
+          <button type="button" role="menuitem" id="topbar-compact-smart-alignment" className={smartAlignmentEnabled ? "active" : ""} disabled={modelActionsDisabled} onClick={() => setSmartAlignmentEnabled((current: boolean) => !current)} aria-label={smartAlignmentEnabled ? "关闭对齐到标线" : "开启对齐到标线"}><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="2" y="5" width="12" height="6" rx="1"/><line x1="8" y1="0" x2="8" y2="16" strokeDasharray="2 2"/></svg><span>{smartAlignmentEnabled ? "对齐标线：开" : "对齐标线：关"}</span></button>
+          <button type="button" role="menuitem" id="topbar-compact-topology" disabled={modelActionsDisabled} onClick={runTopologyCalculation} aria-label="图上拓扑"><Grid2X2 size={16}/><span>图上拓扑</span></button>
+          <button type="button" role="menuitem" id="topbar-compact-global-lines" className={scope.globalLineListOpen ? "active" : ""} disabled={modelActionsDisabled} onClick={() => scope.setGlobalLineListOpen((current: boolean) => !current)} aria-label="全局线路" aria-pressed={Boolean(scope.globalLineListOpen)}><Cable size={16}/><span>全局线路</span></button>
+          <button type="button" role="menuitem" id="topbar-compact-all-network-topology" className={scope.allNetworkTopologyDialogOpen ? "active" : ""} disabled={modelActionsDisabled} onClick={() => scope.setAllNetworkTopologyDialogOpen((current: boolean) => !current)} aria-label="全网拓扑" aria-pressed={Boolean(scope.allNetworkTopologyDialogOpen)}><Network size={16}/><span>全网拓扑</span></button>
+          <button type="button" role="menuitem" id="topbar-compact-topology-warning" className={topologyErrors.length > 0 && !topologyWarningPanelClosed ? "active" : ""} onClick={openTopologyWarningPanel} disabled={modelActionsDisabled || topologyErrors.length === 0} aria-label="告警窗口"><Bell size={16}/><span>拓扑告警</span></button>
+          <button type="button" role="menuitem" id="topbar-compact-color-mode" className={colorDisplayMode === "voltage" ? "active" : ""} disabled={modelActionsDisabled} onClick={() => toggleColorDisplayMode()} aria-label="颜色切换"><Paintbrush size={16}/><span>{colorDisplayMode === "voltage" ? "电压等级" : "能源类型"}</span></button>
+          <button type="button" role="menuitem" id="topbar-compact-color-palette" disabled={modelActionsDisabled} onClick={openColorPaletteDialog} aria-label="配色设置"><Palette size={16}/><span>配色设置</span></button>
+          <button type="button" role="menuitem" id="topbar-compact-voltage-level" disabled={modelActionsDisabled} onClick={() => setVoltageLevelDialogOpen(true)} aria-label="电压等级设置"><Zap size={16}/><span>电压等级设置</span></button>
+          <button type="button" role="menuitem" id="topbar-compact-device-labels" className={deviceLabelsVisible ? "active" : ""} disabled={modelActionsDisabled} onClick={() => setDeviceLabelsVisible((current: boolean) => !current)} aria-label={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}><Type size={16}/><span>{deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}</span></button>
+          <button type="button" role="menuitem" id="topbar-compact-device-measurements" className={deviceMeasurementsVisible ? "active" : ""} disabled={modelActionsDisabled} onClick={() => setDeviceMeasurementsVisible((current: boolean) => !current)} aria-label={deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测"}><span className="topbar-compact-letter-icon">M</span><span>{deviceMeasurementsVisible ? "隐藏设备量测" : "显示设备量测"}</span></button>
+          <button type="button" role="menuitem" id="topbar-compact-electric-flow" className={electricFlowVisible ? "active" : ""} disabled={modelActionsDisabled} onClick={() => setElectricFlowVisible((current: boolean) => !current)} aria-label={electricFlowVisible ? "关闭电流流水线" : "开启电流流水线"}><span className="topbar-compact-flow-icon">&gt;</span><span>{electricFlowVisible ? "关闭电流流水线" : "开启电流流水线"}</span></button>
+          <button type="button" role="menuitem" id="topbar-compact-electric-flow-settings" disabled={modelActionsDisabled} onClick={() => setElectricFlowSettingsDialogOpen(true)} aria-label="电流流水线设置" aria-haspopup="dialog"><Settings2 size={16}/><span>电流流水线设置</span></button>
+          <button type="button" role="menuitem" id="topbar-compact-image-library" disabled={modelActionsDisabled} onClick={() => setImageTarget({ kind: "canvasIcon" })} aria-label="分类图标库"><FolderOpen size={16}/><span>分类图标库</span></button>
         </div>
       </div>
       <div className="topbar-center-actions">
-        {T("用户自定义修改管理", <button id="topbar-user-customization" className="topbar-primary-button" onClick={() => void openUserCustomizationManager()}  aria-label="用户自定义修改管理"><Settings2 size={16}/></button>)}
-        {T(saveRequired ? "保存当前模型" : "当前模型没有新的修改", <button id="topbar-save" className="topbar-primary-button" onClick={() => void saveCurrentProject()} disabled={!saveRequired} aria-label="保存"><Save size={16}/></button>)}
-        {T("打开 E 文件接口定义", <button id="topbar-e-interface-definition" className={`topbar-primary-button ${eDeviceDefinitionInterfaceDialogOpen ? "active" : ""}`} onClick={() => setEDeviceDefinitionInterfaceDialogOpen(true)} aria-label="打开 E 文件接口定义" aria-pressed={Boolean(eDeviceDefinitionInterfaceDialogOpen)}><FileJson size={16}/></button>)}
-        <div className="topbar-dropdown export-dropdown">
-          {T("导出文件", <button type="button" id="topbar-export" className="topbar-primary-button" aria-label="导出文件" aria-haspopup="menu"><Download size={16}/></button>)}
+        {visible("topbar.userCustomization") && T("用户自定义修改管理", <button id="topbar-user-customization" className="topbar-primary-button" onClick={() => void openUserCustomizationManager()}  aria-label="用户自定义修改管理"><Settings2 size={16}/></button>)}
+        {visible("topbar.save") && T(hasActiveModel ? (saveRequired ? "保存当前模型" : "当前模型没有新的修改") : "没有打开模型", <button id="topbar-save" className="topbar-primary-button" onClick={() => void saveCurrentProject()} disabled={modelActionsDisabled || !saveRequired} aria-label="保存"><Save size={16}/></button>)}
+        {visible("topbar.eInterface") && T("打开 E 文件接口定义", <button id="topbar-e-interface-definition" className={`topbar-primary-button ${eDeviceDefinitionInterfaceDialogOpen ? "active" : ""}`} disabled={modelActionsDisabled} onClick={() => setEDeviceDefinitionInterfaceDialogOpen(true)} aria-label="打开 E 文件接口定义" aria-pressed={Boolean(eDeviceDefinitionInterfaceDialogOpen)}><FileJson size={16}/></button>)}
+        {visible("topbar.export") && <div className={`topbar-dropdown export-dropdown${modelActionsDisabled ? " model-actions-disabled" : ""}`}>
+          {T("导出文件", <button type="button" id="topbar-export" className="topbar-primary-button" disabled={modelActionsDisabled} aria-label="导出文件" aria-haspopup="menu"><Download size={16}/></button>)}
           <div className="topbar-dropdown-menu" role="menu" aria-label="导出选项">
             {[
               { key: "bundle", label: "导出 E、JSON 和 SVG", icon: <Download size={16}/>, action: exportSvg, validatesEInterface: true },
@@ -779,23 +824,23 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
               { key: "cim", label: "导出 CIM/XML", icon: <FileJson size={16}/>, action: exportCimFile, validatesEInterface: false }
             ].map((item) => (
               <div className="export-menu-item" key={item.key}>
-                <button type="button" id={`topbar-export-${item.key}`} className="export-menu-trigger" title={item.label} aria-label={item.label} aria-haspopup="menu">{item.icon}<span>{item.label}</span><ChevronRight className="export-submenu-chevron" size={14}/></button>
+                <button type="button" id={`topbar-export-${item.key}`} className="export-menu-trigger" disabled={modelActionsDisabled} title={item.label} aria-label={item.label} aria-haspopup="menu">{item.icon}<span>{item.label}</span><ChevronRight className="export-submenu-chevron" size={14}/></button>
                 <div className="export-encoding-submenu" role="menu" aria-label={`${item.label}字符编码`}>
-                  <button type="button" id={`topbar-export-${item.key}-utf8`} role="menuitem" onClick={() => requestEncodedExport(item.action, "utf-8", item.validatesEInterface)} aria-label={`${item.label}，UTF-8 编码`}>UTF-8</button>
-                  <button type="button" id={`topbar-export-${item.key}-gbk`} role="menuitem" onClick={() => requestEncodedExport(item.action, "gbk", item.validatesEInterface)} aria-label={`${item.label}，GBK 编码`}>GBK</button>
+                  <button type="button" id={`topbar-export-${item.key}-utf8`} role="menuitem" disabled={modelActionsDisabled} onClick={() => requestEncodedExport(item.action, "utf-8", item.validatesEInterface)} aria-label={`${item.label}，UTF-8 编码`}>UTF-8</button>
+                  <button type="button" id={`topbar-export-${item.key}-gbk`} role="menuitem" disabled={modelActionsDisabled} onClick={() => requestEncodedExport(item.action, "gbk", item.validatesEInterface)} aria-label={`${item.label}，GBK 编码`}>GBK</button>
                 </div>
               </div>
             ))}
           </div>
-        </div>
-        {T("发送", <button type="button" id="topbar-send-model" className="topbar-primary-button" onClick={() => setSendModelDialogOpen(true)} aria-label="发送"><Send size={16}/></button>)}
-        <div className="topbar-model" title={`当前模板：${eDeviceInterfaceTemplateLabel}`}>
+        </div>}
+        {visible("topbar.sendModel") && T("发送", <button type="button" id="topbar-send-model" className="topbar-primary-button" disabled={modelActionsDisabled} onClick={() => setSendModelDialogOpen(true)} aria-label="发送"><Send size={16}/></button>)}
+        {visible("topbar.template") && <div className="topbar-model" id="topbar-template" title={`当前模板：${eDeviceInterfaceTemplateLabel}`}>
           <strong>{eDeviceInterfaceTemplateLabel}</strong>
-        </div>
+        </div>}
       </div>
       <SpaceSwitcher scope={scope}/>
       {/* 新手引导入口：点一下重放引导（跳过/完成后也能找回来） */}
-      {T("新手引导", <button type="button" id="topbar-tour" className="topbar-primary-button" onClick={() => startAppTour()} aria-label="新手引导">
+      {visible("topbar.tour") && T("新手引导", <button type="button" id="topbar-tour" className="topbar-primary-button" onClick={() => startAppTour()} aria-label="新手引导">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="9"/>
           <path d="M9.6 9.2a2.6 2.6 0 1 1 3.6 2.4c-.8.4-1.2 1-1.2 1.8v.3"/>
@@ -803,7 +848,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
         </svg>
       </button>)}
       {/* 画布主题切换：紧贴新手引导右侧，图标在太阳/月亮之间交替 */}
-      <button
+      {visible("topbar.theme") && <button
         type="button"
         id="topbar-theme-toggle"
         className={`topbar-primary-button topbar-theme-toggle${themeMode === "dark" ? " active" : ""}`}
@@ -814,7 +859,17 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
         data-theme-mode={themeMode === "dark" ? "dark" : "light"}
       >
         {themeMode === "dark" ? <Moon size={16}/> : <Sun size={16}/>}
-      </button>
+      </button>}
+      {visible("topbar.interfaceCustomization") && <button
+        type="button"
+        id="topbar-interface-customization"
+        className="topbar-primary-button"
+        onClick={() => setInterfaceCustomizationDialogOpen(true)}
+        aria-label="界面定制设置"
+        title="界面定制设置"
+      >
+        <Settings2 size={16}/>
+      </button>}
       <RuntimeWsIndicator scope={scope}/>
     </header>
       {sendModelDialogOpen && (
@@ -846,47 +901,50 @@ export function SelectionActionCluster({ scope }: { scope: Record<string, any> }
     importCustomComponentSvg, importModelFile, importSchemeFile,
     mirrorSelectedNodes, modelImportInputRef,
     rotateSelectedLayoutUnits, schemeImportInputRef, selectedLayoutUnitCount,
-    stateIconDrawingImportInputRef, stateVisualImageInputRef, ungroupSelectedGraphics
+    stateIconDrawingImportInputRef, stateVisualImageInputRef, ungroupSelectedGraphics,
+    hasActiveModel
   } = scope;
+  const modelActionsDisabled = !Boolean(hasActiveModel ?? scope.activeProjectKey);
+  const visible = (id: string) => isInterfaceCustomizationVisible(scope.interfaceCustomization, id);
 
   return (
     <div className="action-cluster">
       <div className="topbar-dropdown group-dropdown">
-        {T("组合操作", <button type="button" id="topbar-group" className="topbar-dropdown-trigger" disabled={(!canGroupSelectedGraphics && !canUngroupSelectedGraphics)} aria-label="组合操作"><Group size={16}/><ChevronDown size={13}/></button>)}
+        {T("组合操作", <button type="button" id="topbar-group" className="topbar-dropdown-trigger" disabled={modelActionsDisabled || (!canGroupSelectedGraphics && !canUngroupSelectedGraphics)} aria-label="组合操作"><Group size={16}/><ChevronDown size={13}/></button>)}
         <div className="topbar-dropdown-menu" role="menu" aria-label="组合操作">
-          <button id="topbar-group-merge" onClick={groupSelectedGraphics} disabled={!canGroupSelectedGraphics} title="组合" aria-label="组合"><Group size={16}/><span>组合</span></button>
-          <button id="topbar-group-unmerge" onClick={ungroupSelectedGraphics} disabled={!canUngroupSelectedGraphics} title="解除组合" aria-label="解除组合"><Ungroup size={16}/><span>解除组合</span></button>
+          <button id="topbar-group-merge" onClick={groupSelectedGraphics} disabled={modelActionsDisabled || !canGroupSelectedGraphics} title="组合" aria-label="组合"><Group size={16}/><span>组合</span></button>
+          <button id="topbar-group-unmerge" onClick={ungroupSelectedGraphics} disabled={modelActionsDisabled || !canUngroupSelectedGraphics} title="解除组合" aria-label="解除组合"><Ungroup size={16}/><span>解除组合</span></button>
         </div>
       </div>
       <div className="topbar-dropdown display-layer-dropdown">
-        {T("显示层级", <button type="button" id="topbar-display-layer" className="topbar-dropdown-trigger" disabled={!canAdjustSelectedDisplayLayer} aria-label="显示层级"><Layers2 size={16}/><ChevronDown size={13}/></button>)}
+        {T("显示层级", <button type="button" id="topbar-display-layer" className="topbar-dropdown-trigger" disabled={modelActionsDisabled || !canAdjustSelectedDisplayLayer} aria-label="显示层级"><Layers2 size={16}/><ChevronDown size={13}/></button>)}
         <div className="topbar-dropdown-menu" role="menu" aria-label="显示层级">
-          <button id="topbar-display-layer-raise" onClick={() => adjustSelectedDisplayLayer("raise")} disabled={!canAdjustSelectedDisplayLayer} title="提升显示层级" aria-label="提升显示层级"><ArrowUp size={16}/><span>提升显示层级</span></button>
-          <button id="topbar-display-layer-lower" onClick={() => adjustSelectedDisplayLayer("lower")} disabled={!canAdjustSelectedDisplayLayer} title="降低显示层级" aria-label="降低显示层级"><ArrowDown size={16}/><span>降低显示层级</span></button>
-          <button id="topbar-display-layer-front" onClick={() => adjustSelectedDisplayLayer("front")} disabled={!canAdjustSelectedDisplayLayer} title="顶层显示" aria-label="顶层显示"><ChevronsUp size={16}/><span>顶层显示</span></button>
-          <button id="topbar-display-layer-back" onClick={() => adjustSelectedDisplayLayer("back")} disabled={!canAdjustSelectedDisplayLayer} title="底层显示" aria-label="底层显示"><ChevronsDown size={16}/><span>底层显示</span></button>
+          <button id="topbar-display-layer-raise" onClick={() => adjustSelectedDisplayLayer("raise")} disabled={modelActionsDisabled || !canAdjustSelectedDisplayLayer} title="提升显示层级" aria-label="提升显示层级"><ArrowUp size={16}/><span>提升显示层级</span></button>
+          <button id="topbar-display-layer-lower" onClick={() => adjustSelectedDisplayLayer("lower")} disabled={modelActionsDisabled || !canAdjustSelectedDisplayLayer} title="降低显示层级" aria-label="降低显示层级"><ArrowDown size={16}/><span>降低显示层级</span></button>
+          <button id="topbar-display-layer-front" onClick={() => adjustSelectedDisplayLayer("front")} disabled={modelActionsDisabled || !canAdjustSelectedDisplayLayer} title="顶层显示" aria-label="顶层显示"><ChevronsUp size={16}/><span>顶层显示</span></button>
+          <button id="topbar-display-layer-back" onClick={() => adjustSelectedDisplayLayer("back")} disabled={modelActionsDisabled || !canAdjustSelectedDisplayLayer} title="底层显示" aria-label="底层显示"><ChevronsDown size={16}/><span>底层显示</span></button>
         </div>
       </div>
       <div className="topbar-dropdown align-dropdown">
-        {T("对齐操作", <button type="button" id="topbar-align" className="topbar-dropdown-trigger"  aria-label="对齐操作"><AlignCenterHorizontal size={16}/><ChevronDown size={13}/></button>)}
+        {T("对齐操作", <button type="button" id="topbar-align" className="topbar-dropdown-trigger" disabled={modelActionsDisabled || selectedLayoutUnitCount < 2} aria-label="对齐操作"><AlignCenterHorizontal size={16}/><ChevronDown size={13}/></button>)}
         <div className="topbar-dropdown-menu" role="menu" aria-label="对齐操作">
-          <button id="topbar-align-left" onClick={() => alignSelected("left")} disabled={selectedLayoutUnitCount < 2} title="左对齐" aria-label="左对齐"><AlignStartVertical size={16}/><span>左对齐</span></button>
-          <button id="topbar-align-right" onClick={() => alignSelected("right")} disabled={selectedLayoutUnitCount < 2} title="右对齐" aria-label="右对齐"><AlignEndVertical size={16}/><span>右对齐</span></button>
-          <button id="topbar-align-horizontal" onClick={() => alignSelected("horizontal")} disabled={selectedLayoutUnitCount < 2} title="横向居中" aria-label="横向居中"><AlignCenterHorizontal size={16}/><span>横向居中</span></button>
-          <button id="topbar-align-vertical" onClick={() => alignSelected("vertical")} disabled={selectedLayoutUnitCount < 2} title="纵向居中" aria-label="纵向居中"><AlignCenterVertical size={16}/><span>纵向居中</span></button>
-          <button id="topbar-align-top" onClick={() => alignSelected("top")} disabled={selectedLayoutUnitCount < 2} title="上对齐" aria-label="上对齐"><AlignStartHorizontal size={16}/><span>上对齐</span></button>
-          <button id="topbar-align-bottom" onClick={() => alignSelected("bottom")} disabled={selectedLayoutUnitCount < 2} title="下对齐" aria-label="下对齐"><AlignEndHorizontal size={16}/><span>下对齐</span></button>
-          <button id="topbar-align-distribute-horizontal" onClick={() => distributeSelected("horizontal")} disabled={selectedLayoutUnitCount < 3} title="横向分布" aria-label="横向分布"><AlignHorizontalDistributeCenter size={16}/><span>横向分布</span></button>
-          <button id="topbar-align-distribute-vertical" onClick={() => distributeSelected("vertical")} disabled={selectedLayoutUnitCount < 3} title="纵向分布" aria-label="纵向分布"><AlignVerticalDistributeCenter size={16}/><span>纵向分布</span></button>
+          <button id="topbar-align-left" onClick={() => alignSelected("left")} disabled={modelActionsDisabled || selectedLayoutUnitCount < 2} title="左对齐" aria-label="左对齐"><AlignStartVertical size={16}/><span>左对齐</span></button>
+          <button id="topbar-align-right" onClick={() => alignSelected("right")} disabled={modelActionsDisabled || selectedLayoutUnitCount < 2} title="右对齐" aria-label="右对齐"><AlignEndVertical size={16}/><span>右对齐</span></button>
+          <button id="topbar-align-horizontal" onClick={() => alignSelected("horizontal")} disabled={modelActionsDisabled || selectedLayoutUnitCount < 2} title="横向居中" aria-label="横向居中"><AlignCenterHorizontal size={16}/><span>横向居中</span></button>
+          <button id="topbar-align-vertical" onClick={() => alignSelected("vertical")} disabled={modelActionsDisabled || selectedLayoutUnitCount < 2} title="纵向居中" aria-label="纵向居中"><AlignCenterVertical size={16}/><span>纵向居中</span></button>
+          <button id="topbar-align-top" onClick={() => alignSelected("top")} disabled={modelActionsDisabled || selectedLayoutUnitCount < 2} title="上对齐" aria-label="上对齐"><AlignStartHorizontal size={16}/><span>上对齐</span></button>
+          <button id="topbar-align-bottom" onClick={() => alignSelected("bottom")} disabled={modelActionsDisabled || selectedLayoutUnitCount < 2} title="下对齐" aria-label="下对齐"><AlignEndHorizontal size={16}/><span>下对齐</span></button>
+          <button id="topbar-align-distribute-horizontal" onClick={() => distributeSelected("horizontal")} disabled={modelActionsDisabled || selectedLayoutUnitCount < 3} title="横向分布" aria-label="横向分布"><AlignHorizontalDistributeCenter size={16}/><span>横向分布</span></button>
+          <button id="topbar-align-distribute-vertical" onClick={() => distributeSelected("vertical")} disabled={modelActionsDisabled || selectedLayoutUnitCount < 3} title="纵向分布" aria-label="纵向分布"><AlignVerticalDistributeCenter size={16}/><span>纵向分布</span></button>
         </div>
       </div>
       <div className="topbar-dropdown rotate-dropdown">
-        {T("旋转操作", <button type="button" id="topbar-rotate" className="topbar-dropdown-trigger"  aria-label="旋转操作"><RotateCw size={16}/><ChevronDown size={13}/></button>)}
+        {T("旋转操作", <button type="button" id="topbar-rotate" className="topbar-dropdown-trigger" disabled={modelActionsDisabled || selectedLayoutUnitCount < 1} aria-label="旋转操作"><RotateCw size={16}/><ChevronDown size={13}/></button>)}
         <div className="topbar-dropdown-menu" role="menu" aria-label="旋转操作">
-          <button id="topbar-rotate-left" onClick={() => rotateSelectedLayoutUnits("left")} disabled={selectedLayoutUnitCount < 1} title="向左旋转90度" aria-label="向左旋转90度"><RotateCcw size={16}/><span>左转90度</span></button>
-          <button id="topbar-rotate-right" onClick={() => rotateSelectedLayoutUnits("right")} disabled={selectedLayoutUnitCount < 1} title="向右旋转90度" aria-label="向右旋转90度"><RotateCw size={16}/><span>右转90度</span></button>
-          <button id="topbar-mirror-horizontal" onClick={() => mirrorSelectedNodes("horizontal")} disabled={selectedLayoutUnitCount < 1} title="水平镜像" aria-label="水平镜像"><FlipHorizontal size={16}/><span>水平镜像</span></button>
-          <button id="topbar-mirror-vertical" onClick={() => mirrorSelectedNodes("vertical")} disabled={selectedLayoutUnitCount < 1} title="垂直镜像" aria-label="垂直镜像"><FlipVertical size={16}/><span>垂直镜像</span></button>
+          <button id="topbar-rotate-left" onClick={() => rotateSelectedLayoutUnits("left")} disabled={modelActionsDisabled || selectedLayoutUnitCount < 1} title="向左旋转90度" aria-label="向左旋转90度"><RotateCcw size={16}/><span>左转90度</span></button>
+          <button id="topbar-rotate-right" onClick={() => rotateSelectedLayoutUnits("right")} disabled={modelActionsDisabled || selectedLayoutUnitCount < 1} title="向右旋转90度" aria-label="向右旋转90度"><RotateCw size={16}/><span>右转90度</span></button>
+          <button id="topbar-mirror-horizontal" onClick={() => mirrorSelectedNodes("horizontal")} disabled={modelActionsDisabled || selectedLayoutUnitCount < 1} title="水平镜像" aria-label="水平镜像"><FlipHorizontal size={16}/><span>水平镜像</span></button>
+          <button id="topbar-mirror-vertical" onClick={() => mirrorSelectedNodes("vertical")} disabled={modelActionsDisabled || selectedLayoutUnitCount < 1} title="垂直镜像" aria-label="垂直镜像"><FlipVertical size={16}/><span>垂直镜像</span></button>
         </div>
       </div>
       <input ref={imageInputRef} type="file" accept="image/*,.svg,image/svg+xml" data-image-import-kind="image" hidden multiple onChange={chooseImage}/>
@@ -909,6 +967,7 @@ export function SelectionActionCluster({ scope }: { scope: Record<string, any> }
 export const RecentGlyphsToolbar = memo(function RecentGlyphsToolbar({ scope }: RecentGlyphsToolbarProps) {
   const recentGlyphKinds: string[] = scope.recentGlyphKinds ?? [];
   const libraryTemplates: readonly any[] = scope.libraryTemplates ?? [];
+  const modelActionsDisabled = !Boolean(scope.hasActiveModel ?? scope.activeProjectKey);
   const [offsetX, setOffsetX] = useState(0);
   const dragRef = useRef<{ startX: number; startOffsetX: number } | null>(null);
   const offsetXRef = useRef(offsetX);
@@ -974,6 +1033,7 @@ export const RecentGlyphsToolbar = memo(function RecentGlyphsToolbar({ scope }: 
               key={kind}
               type="button"
               className="recent-glyph-item"
+              disabled={modelActionsDisabled}
               title={template.label}
               aria-label={template.label}
               onClick={() => scope.startLibraryDevicePlacement?.(template)}

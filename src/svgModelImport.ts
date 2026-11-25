@@ -2,6 +2,8 @@ import {
   DEFAULT_MODEL_LAYER_ID,
   DEFAULT_MODEL_LAYER_NAME,
   DEVICE_LIBRARY,
+  DEVICE_LIBRARY_BY_KIND,
+  isLegacyContainerKind,
   createNodeFromTemplate,
   getSafeNodeScaleX,
   getSafeNodeScaleY,
@@ -633,7 +635,12 @@ async function parsePlatformSvg(
   }
   const { width: canvasWidth, height: canvasHeight } = svgViewport(root, warnings);
   const templates = options.templates ?? DEVICE_LIBRARY;
-  const templateByKind = new Map(templates.map((template) => [template.kind, template]));
+  const compatibilityTemplates = Array.from(DEVICE_LIBRARY_BY_KIND.values()).filter((template) => isLegacyContainerKind(template.kind));
+  const templatesWithCompatibility = [
+    ...templates,
+    ...compatibilityTemplates.filter((template) => !templates.some((candidate) => candidate.kind === template.kind))
+  ];
+  const templateByKind = new Map(templatesWithCompatibility.map((template) => [template.kind, template]));
   const staticImageTemplate = templateByKind.get("static-image")
     ?? DEVICE_LIBRARY.find((template) => template.kind === "static-image");
   const staticTextTemplate = templateByKind.get("static-text")
@@ -662,7 +669,7 @@ async function parsePlatformSvg(
     const element = semanticUses[index];
     const declaredKind = firstAttributeValue(element, "dev-kind", "data-export-device-kind");
     const href = elementHref(element);
-    const kind = declaredKind || inferredKindFromHref(href, templates);
+    const kind = declaredKind || inferredKindFromHref(href, templatesWithCompatibility);
     const template = templateByKind.get(kind);
     const symbol = symbolForUse(root, element);
     const fallbackWidth = template?.size.width ?? 120;

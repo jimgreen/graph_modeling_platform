@@ -77,6 +77,12 @@ type ModelHierarchyGlyphFamily = "station" | "feeder" | "district";
 type ModelHierarchyGlyphRole = "source" | "load";
 type ModelHierarchyGlyphEnergy = "ac" | "dc";
 
+const MODEL_HIERARCHY_GLYPH_DESIGN_BOUNDS: Record<ModelHierarchyGlyphFamily, { width: number; height: number }> = {
+  station: { width: 32, height: 25 },
+  feeder: { width: 35, height: 26 },
+  district: { width: 32, height: 29 }
+};
+
 function modelHierarchyGlyphFamilyForModelType(modelType: string): ModelHierarchyGlyphFamily | "" {
   if (modelType === "厂站") return "station";
   if (modelType === "馈线") return "feeder";
@@ -273,9 +279,14 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       const associationAccent = themeGlyphColor(node.params.accentColor, themeMode, "stroke") || associationStroke;
       const associationLineWidth = clampNumber(Number(node.params.lineWidth || 2), 1, 3.5);
       const iconAvailableHeight = Math.max(30, h - 6);
-      const iconSize = clampNumber(Math.min(w * 0.54, iconAvailableHeight), miniature ? 28 : 34, miniature ? 40 : 52);
-      const visibleScaleMultiplier = modelHierarchyGlyphFamily === "district" ? 1.84 : 2;
-      const iconScale = iconSize / 48 * visibleScaleMultiplier;
+      const designBounds = MODEL_HIERARCHY_GLYPH_DESIGN_BOUNDS[modelHierarchyGlyphFamily];
+      const iconScale = miniature
+        ? clampNumber(Math.min(w * 0.54, iconAvailableHeight), 28, 40) / 48 * (modelHierarchyGlyphFamily === "district" ? 1.84 : 2)
+        : Math.min(
+            (w * 0.84) / designBounds.width,
+            (iconAvailableHeight * 0.84) / designBounds.height
+          );
+      const hierarchyGlyphStrokeWidth = associationLineWidth / Math.max(0.001, iconScale);
       if (mode === "text") {
         return null;
       }
@@ -291,7 +302,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         `model-association-glyph-${modelHierarchyGlyphFamily}`
       ].join(" ");
       return (
-        createElement("g", { className: hierarchyClassName, "data-model-hierarchy-family": modelHierarchyGlyphFamily, "data-model-hierarchy-role": hierarchyRole, "data-model-hierarchy-energy": hierarchyEnergy }, createElement("g", { transform: `translate(0 0) scale(${formatSvgNumber(iconScale)})` }, createElement("g", { className: `model-hierarchy-icon model-hierarchy-icon-${modelHierarchyGlyphFamily}`, fill: "none", stroke: associationStroke, strokeWidth: Math.max(1.8, associationLineWidth) / visibleScaleMultiplier, strokeLinecap: "round", strokeLinejoin: "round" }, modelHierarchyGlyphFamily === "station" && (
+        createElement("g", { className: hierarchyClassName, "data-model-hierarchy-family": modelHierarchyGlyphFamily, "data-model-hierarchy-role": hierarchyRole, "data-model-hierarchy-energy": hierarchyEnergy }, createElement("g", { transform: `translate(0 0) scale(${formatSvgNumber(iconScale)})` }, createElement("g", { className: `model-hierarchy-icon model-hierarchy-icon-${modelHierarchyGlyphFamily}`, fill: "none", stroke: associationStroke, strokeWidth: hierarchyGlyphStrokeWidth, strokeLinecap: "round", strokeLinejoin: "round" }, modelHierarchyGlyphFamily === "station" && (
                 createElement(Fragment, null, createElement("path", { d: "M -15 -4 L 0 -14 L 15 -4" }), createElement("path", { d: "M -12 -4 V 11 H 12 V -4" }), createElement("path", { d: "M -7 11 V 2 H -2 V 11 M 3 11 V 2 H 8 V 11" }), createElement("path", { d: "M -16 11 H 16" }))
               ), modelHierarchyGlyphFamily === "feeder" && (
                 createElement(Fragment, null, createElement("path", { d: "M -16 0 H -7 M -7 0 L 4 -11 H 15 M -7 0 H 15 M -7 0 L 4 11 H 15" }), createElement("circle", { cx: "-16", cy: "0", r: "1.8", fill: associationAccent, stroke: "none" }), createElement("circle", { cx: "15", cy: "-11", r: "1.8", fill: associationAccent, stroke: "none" }), createElement("circle", { cx: "15", cy: "0", r: "1.8", fill: associationAccent, stroke: "none" }), createElement("circle", { cx: "15", cy: "11", r: "1.8", fill: associationAccent, stroke: "none" }))

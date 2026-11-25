@@ -90,4 +90,62 @@ describe("正常路径不被改变", () => {
     expect(result.name).toBe("电力能源系统模型");
     expect(result.project.name).toBe("电力能源系统模型");
   });
+
+  test("旧虚拟电厂进入运行态时归一为交流端点容器并保留成员关系与几何", () => {
+    const legacyNode = {
+      id: "legacy-container",
+      kind: "ac-vpp-box",
+      name: "虚拟电厂1",
+      containerId: undefined,
+      position: { x: 120, y: 80 },
+      size: { width: 260, height: 180 },
+      rotation: 0,
+      scale: 1,
+      terminals: [],
+      params: { is_gateway: "0" }
+    };
+    const member = {
+      id: "member-1",
+      kind: "ac-load",
+      name: "负荷1",
+      containerId: "legacy-container",
+      position: { x: 120, y: 80 },
+      size: { width: 86, height: 58 },
+      rotation: 0,
+      scale: 1,
+      terminals: [],
+      params: {}
+    };
+    const result = normalizeSavedProjectIndexes(
+      projectRecord({ project: { version: 1, name: "模型一", nodes: [legacyNode, member], edges: [] } }) as never
+    );
+    expect(result.project.nodes[0]).toMatchObject({
+      id: "legacy-container",
+      kind: "ac-endpoint-container",
+      name: "虚拟电厂1",
+      position: { x: 120, y: 80 },
+      size: { width: 260, height: 180 },
+      params: { is_gateway: "0" }
+    });
+    expect(result.project.nodes[0].terminals).toMatchObject([{ anchor: { x: 0, y: -0.5 }, type: "ac" }]);
+    expect(result.project.nodes[1]).toMatchObject({ id: "member-1", containerId: "legacy-container" });
+  });
+
+  test("新 kind 重复归一保持幂等", () => {
+    const node = {
+      id: "endpoint-container",
+      kind: "ac-endpoint-container",
+      name: "虚拟电厂1",
+      position: { x: 120, y: 80 },
+      size: { width: 260, height: 180 },
+      rotation: 0,
+      scale: 1,
+      terminals: [{ id: "t1", label: "交流设备端", type: "ac", anchor: { x: 0, y: -0.5 }, nodeNumber: "1" }],
+      params: {}
+    };
+    const input = projectRecord({ project: { version: 1, name: "模型一", nodes: [node], edges: [] } }) as never;
+    const once = normalizeSavedProjectIndexes(input);
+    const twice = normalizeSavedProjectIndexes(once);
+    expect(twice.project.nodes[0]).toEqual(once.project.nodes[0]);
+  });
 });

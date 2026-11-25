@@ -85,7 +85,7 @@ describe("三个常量：数值固定，且 PADDING 与 CLEARANCE 语义不同�
 describe("isContainerNode：6 个 kind 的精确清单匹配", () => {
   test("清单里的 6 个全部命中", () => {
     expect(CONTAINER_KINDS).toEqual([
-      "ac-vpp-box",
+      "ac-endpoint-container",
       "ac-switch-box",
       "ac-distribution-box",
       "dc-vpp-box",
