@@ -619,3 +619,69 @@ describe("startMemoryWatch 的 critical 档与 reloading 守卫", () => {
     expect("window" in globalThis).toBe(false);
   });
 });
+
+describe("createMemoryWatchCallback 最新帧 __appScopeRef 读取（防陈旧闭包丢数据）", () => {
+  it("跨帧重建 __appScope 后触发 critical，调用的是最新帧的 persistRefreshRecoveryNow", async () => {
+    const GB = 1024 * 1024 * 1024;
+    const target = performance as unknown as { memory?: { usedJSHeapSize: number } };
+    const hadMemory = "memory" in target;
+    const origMemory = (target as { memory?: unknown }).memory;
+    const origSetInterval = globalThis.setInterval;
+    const origClearInterval = globalThis.clearInterval;
+    const hadWindow = "window" in globalThis;
+    const origWindow = (globalThis as { window?: unknown }).window;
+
+    const tickHolder: { fn: (() => void) | null } = { fn: null };
+    (globalThis as any).setInterval = (fn: () => void) => {
+      tickHolder.fn = fn;
+      return 1;
+    };
+    (globalThis as any).clearInterval = () => {};
+    (globalThis as any).window = {
+      setTimeout: () => 0,
+      location: { reload: () => {} }
+    };
+    Object.defineProperty(target, "memory", {
+      value: { usedJSHeapSize: 1.9 * GB },
+      configurable: true,
+      writable: true
+    });
+
+    const staleCalls: string[] = [];
+    const latestCalls: string[] = [];
+    const scopeRef: { current: Record<string, any> } = { current: {} };
+    // 模拟挂载第 1 帧：persistRefreshRecoveryNow 尚未注入（或为旧闭包）
+    const firstFrameScope: Record<string, any> = {
+      __appScopeRef: scopeRef,
+      persistRefreshRecoveryNow: () => staleCalls.push("frame-1")
+    };
+    scopeRef.current = firstFrameScope;
+
+    try {
+      const { createMemoryWatchCallback } = await import("./memoryWatch");
+      const cleanup = createMemoryWatchCallback(firstFrameScope)();
+      // 模拟后续帧 App 重建 __appScope 并更新 __appScopeRef.current
+      scopeRef.current = {
+        __appScopeRef: scopeRef,
+        persistRefreshRecoveryNow: () => latestCalls.push("frame-latest")
+      };
+      tickHolder.fn?.();
+      cleanup();
+      expect(staleCalls).toEqual([]);
+      expect(latestCalls).toEqual(["frame-latest"]);
+    } finally {
+      (globalThis as any).setInterval = origSetInterval;
+      (globalThis as any).clearInterval = origClearInterval;
+      if (hadWindow) {
+        (globalThis as any).window = origWindow;
+      } else {
+        delete (globalThis as any).window;
+      }
+      if (hadMemory) {
+        Object.defineProperty(target, "memory", { value: origMemory, configurable: true, writable: true });
+      } else {
+        delete target.memory;
+      }
+    }
+  });
+});

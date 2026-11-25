@@ -10,7 +10,7 @@ export const webgrpInstancesRoot = join(repositoryRoot, "instances");
 const INSTANCE_FILE_PATTERN = /^webgrp-[0-9]+-[0-9a-f-]+\.json$/iu;
 const MIGRATION_LOCK_FILENAME = "data-dir.lock";
 const REGISTRY_LOCK_FILENAME = "instances.lock";
-const HEARTBEAT_INTERVAL_MS = 3000;
+const HEARTBEAT_INTERVAL_MS = 30_000;
 const REGISTRY_LOCK_RETRY_MS = 20;
 const REGISTRY_LOCK_MAX_RETRIES = 100;
 
@@ -52,7 +52,8 @@ export function createWebgrpInstanceRegistry({
   workdir = repositoryRoot,
   dataRoot = "",
   host = "",
-  port = 0
+  port = 0,
+  heartbeatIntervalMs = HEARTBEAT_INTERVAL_MS
 } = {}) {
   const instancesRoot = resolve(root);
   const resolvedWorkdir = resolve(workdir);
@@ -190,7 +191,7 @@ export function createWebgrpInstanceRegistry({
     released = false;
     heartbeatTimer = setInterval(() => {
       void heartbeat().catch(() => {});
-    }, HEARTBEAT_INTERVAL_MS);
+    }, heartbeatIntervalMs);
     heartbeatTimer.unref?.();
     exitHandler = () => {
       if (recordPath) rmSync(recordPath, { force: true });

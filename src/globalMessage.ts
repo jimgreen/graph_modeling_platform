@@ -94,7 +94,7 @@ function openGlobalDialog(
       inputEl.type = "text";
       inputEl.className = "global-prompt-input";
       inputEl.value = defaultValue;
-      inputEl.style.cssText = "width: 100%; padding: 6px 8px; margin: 8px 0; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 14px;";
+      inputEl.style.cssText = "width: 100%; padding: 6px 8px; margin: 8px 0; border: 1px solid var(--border-color, #cbd5e1); border-radius: 4px; font-size: 14px; background: var(--surface-bg, transparent); color: inherit; box-sizing: border-box;";
     }
     const btnRow = document.createElement("div");
     btnRow.className = "global-confirm-buttons";

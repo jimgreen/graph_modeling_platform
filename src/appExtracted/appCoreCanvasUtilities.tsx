@@ -1029,6 +1029,8 @@ export type UndoSnapshot = {
   measurements: ProjectMeasurementConfig;
   label?: string;
   target?: string;
+  /** 单调递增的变更版本号：用于精准比对保存基线，不受撤销栈 50 步截断或内存裁剪影响 */
+  revision?: number;
 };
 
 export type UndoGraphPatchScope = {

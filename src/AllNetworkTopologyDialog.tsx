@@ -25,6 +25,7 @@ import {
 import { buildMultiModelEFileExport } from "./model";
 import { buildEFileExportOptionsFromLibrary } from "./appExtracted/appDeviceDefinitionFactories";
 import { apiPath } from "./config";
+import { confirmAction } from "./globalDialogs";
 import { saveLazyTextFile, type SavedExportFile } from "./fileIO";
 import { WindowCloseButton } from "./WindowCloseButton";
 
@@ -1014,7 +1015,7 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
       scope.showGlobalMessage?.("只能删除首末端均为空的全局线路。", "warning");
       return;
     }
-    if (!window.confirm(`确认删除两端均为空的全局线路“${record.name}”吗？此操作将立即写入全局线路表。`)) {
+    if (!(await confirmAction(`确认删除两端均为空的全局线路“${record.name}”吗？此操作将立即写入全局线路表。`))) {
       return;
     }
     setDeletingGlobalLineRecordId(record.id);

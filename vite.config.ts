@@ -24,6 +24,23 @@ const frontendManualChunks = (id: string) => {
     if (hasModulePath(moduleId, "/node_modules/lucide-react/")) {
       return "vendor-icons";
     }
+    if (
+      hasModulePath(moduleId, "/node_modules/antd/") ||
+      hasModulePath(moduleId, "/node_modules/@ant-design/") ||
+      hasModulePath(moduleId, "/node_modules/rc-") ||
+      hasModulePath(moduleId, "/node_modules/@rc-component/")
+    ) {
+      return "vendor-antd";
+    }
+    if (hasModulePath(moduleId, "/node_modules/@xyflow/")) {
+      return "vendor-xyflow";
+    }
+    if (hasModulePath(moduleId, "/node_modules/highlight.js/")) {
+      return "vendor-highlight";
+    }
+    if (hasModulePath(moduleId, "/node_modules/react-joyride/")) {
+      return "vendor-tour";
+    }
     return "vendor";
   }
   if (isSourceModule(moduleId, "/src/model.ts")) {

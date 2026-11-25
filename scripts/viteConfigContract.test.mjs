@@ -74,14 +74,13 @@ describe("vite.config.ts 的 manualChunks 分块行为", () => {
     }
   });
 
-  test("lucide-react 归入 vendor-icons 块，其余 node_modules 归入 vendor 块", () => {
+  test("lucide-react 与重型第三方库各自归入独立 vendor 分块，其余归入通用 vendor 块", () => {
     expect(manualChunks(posix("node_modules/lucide-react/dist/cjs/lucide-react.js"))).toBe("vendor-icons");
-    // 现状记录（不是笔误）：@ant-design/icons 虽已在 dependencies 里，但**没有**进
-    // vendor-icons，而是落到通用 vendor 块。此处显式钉住当前真实行为，
-    // 让日后有人要把它挪进 vendor-icons 时必须显式改这条断言，而不是无声漂移。
-    expect(manualChunks(posix("node_modules/@ant-design/icons/es/icons/PlusOutlined.js"))).toBe("vendor");
-    // 图形库同理：@xyflow/react 走通用 vendor 块，graph-core 只装仓库内的图状态源码。
-    expect(manualChunks(posix("node_modules/@xyflow/react/dist/esm/index.js"))).toBe("vendor");
+    expect(manualChunks(posix("node_modules/antd/es/modal/index.js"))).toBe("vendor-antd");
+    expect(manualChunks(posix("node_modules/@ant-design/icons/es/icons/PlusOutlined.js"))).toBe("vendor-antd");
+    expect(manualChunks(posix("node_modules/@xyflow/react/dist/esm/index.js"))).toBe("vendor-xyflow");
+    expect(manualChunks(posix("node_modules/highlight.js/lib/core.js"))).toBe("vendor-highlight");
+    expect(manualChunks(posix("node_modules/react-joyride/dist/index.mjs"))).toBe("vendor-tour");
     expect(manualChunks(posix("node_modules/typescript/lib/typescript.js"))).toBe("vendor");
   });
 
@@ -113,7 +112,10 @@ describe("vite.config.ts 的 manualChunks 分块行为", () => {
       ["node_modules/react-dom/client.js", "vendor-react"],
       ["node_modules/scheduler/index.js", "vendor-react"],
       ["node_modules/lucide-react/dist/cjs/lucide-react.js", "vendor-icons"],
-      ["node_modules/@xyflow/react/dist/esm/index.js", "vendor"],
+      ["node_modules/@ant-design/icons/es/icons/PlusOutlined.js", "vendor-antd"],
+      ["node_modules/@xyflow/react/dist/esm/index.js", "vendor-xyflow"],
+      ["node_modules/highlight.js/lib/core.js", "vendor-highlight"],
+      ["node_modules/react-joyride/dist/index.mjs", "vendor-tour"],
       ["node_modules/zod/index.js", "vendor"]
     ];
     for (const [rel, expected] of cases) {

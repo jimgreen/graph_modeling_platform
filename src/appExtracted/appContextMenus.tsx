@@ -14,7 +14,7 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }: AppConte
   const {
     AlignCenterHorizontal, ArrowDown, ArrowUp, ArrowUpRight, BoxSelect, ChevronRight, ChevronsDown, ChevronsUp, CircleDot,
     Copy, Download, FileInput, FolderOpen, Grid2X2, Group, Layers, Layers2,
-    Minus, Pencil, Plus, Route, Save, ScanSearch, Scissors, Trash2, Type,
+    Minus, Pencil, Plus, Redo2, Route, Save, ScanSearch, Scissors, Trash2, Type,
     Undo2, Ungroup, Zap, ZapOff, activeLayerNodes, activeSelectedNodeIds, addDefaultMeasurementsToNode, addManualBendFromContextMenu, addToContainer,
     addRoutableLineBendFromContextMenu, adjustSelectedDisplayLayer, autoAlignCanvasGraphics, autoSpreadCanvasGraphics, canAddTemplateFromSelection, canGroupSelectedGraphics, canUngroupSelectedGraphics, canvasClipboard,
     contextMeasurementGroup, contextMeasurementNode, contextMenu, contextMenuClassName, contextMenuForEdge, contextMenuForNode, contextMenuForRoutableLine, contextMenuForSelection,
@@ -24,6 +24,7 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }: AppConte
     deleteSelection, exportProjectRecordFile, exportSchemeRecord, findSavedSchemeById, groupSelectedGraphics, isEditMode, keepTemplateContextMenuFlyoutOpen, nodes,
     openAddTemplateDialog, openConnectionRedrawDialog, openFilterSelectionDialog, openGroupDeviceDefinitionDialog, openLayerAssignmentDialog, openMeasurementEditorForNode, openModelImportFilePicker, openSchemeImportFilePicker,
     openVoltageBaseClearDialog, openVoltageBaseSetDialog, pasteProjectClipboardRecord, pasteSchemeClipboardRecord, pasteSelection, projectById, projectMenu, recordClipboard,
+    redoLastOperation, redoStack,
     removeMeasurementsFromNode, removeFromContainer, renameProjectRecord, renameSchemeRecord, runContextMenuAction, saveCurrentProject, saveRequired, scheduleGraphTemplateFlyoutClose, schemes,
     selectedEdge, setSelectedNodeLabelDisplayMode, startContextMarqueeSelection, templateMenu, tidyRoutableLineRoute, tidySelectedEdgeRoute, undoLastOperation, undoStack,
     ungroupSelectedGraphics
@@ -65,6 +66,10 @@ export const AppContextMenus = memo(function AppContextMenus({ scope }: AppConte
               {isEditMode && undoStack.length > 0 && (<button onClick={() => runContextMenuAction(undoLastOperation)}>
                   <Undo2 size={14}/>
                   撤销
+                </button>)}
+              {isEditMode && (redoStack?.length ?? 0) > 0 && typeof redoLastOperation === "function" && (<button onClick={() => runContextMenuAction(redoLastOperation)}>
+                  <Redo2 size={14}/>
+                  重做
                 </button>)}
               {contextMenuForSelection && contextSelectionCount > 0 && (<button onClick={() => runContextMenuAction(copySelection)}>
                   <Copy size={14}/>

@@ -3925,12 +3925,16 @@ export function createApplyUndoGraphSnapshot(__appScope: Record<string, any>) {
 
 export function createPushUndoSnapshot(__appScope: Record<string, any>) {
   return (markDirty = true, deepModelSnapshot = false, graphPatchScope?: UndoGraphPatchScope, label?: string, target?: string) => {
-  const { cloneProjectState, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, setHasUnsavedChanges, setUndoStack } = __appScope;
+  const { cloneProjectState, currentMutationRevisionRef, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, redoStackRef, setHasUnsavedChanges, setRedoStack, setUndoStack, undoStackRef } = __appScope;
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
     deferredRoutableLineRouteRepairCancelRef.current?.();
     deferredRoutableLineRouteRepairCancelRef.current = null;
     const snapshot = cloneProjectState(deepModelSnapshot, graphPatchScope);
+    if (currentMutationRevisionRef) {
+      snapshot.revision = currentMutationRevisionRef.current;
+      currentMutationRevisionRef.current += 1;
+    }
     snapshot.label = label;
     if (target) {
       snapshot.target = target;
@@ -3941,7 +3945,17 @@ export function createPushUndoSnapshot(__appScope: Record<string, any>) {
         snapshot.target = `${idx} ${selected.name ?? ""}`.trim();
       }
     }
-    setUndoStack((current) => [...current.slice(-49), snapshot]);
+    setUndoStack((current: UndoSnapshot[]) => {
+      const next = [...current.slice(-49), snapshot];
+      if (undoStackRef) {
+        undoStackRef.current = next;
+      }
+      return next;
+    });
+    if (redoStackRef) {
+      redoStackRef.current = [];
+    }
+    setRedoStack?.([]);
     if (markDirty) {
       setHasUnsavedChanges(true);
     }

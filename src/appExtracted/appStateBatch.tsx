@@ -1171,7 +1171,8 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   const addVoltageColorRow = createAddVoltageColorRow(__appScope); Object.assign(__appScope, { addVoltageColorRow });
   const projects = useMemo(() => flattenSavedProjects(schemes), [schemes]); Object.assign(__appScope, { projects });
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]); Object.assign(__appScope, { projectById });
-  const projectSearchNeedle = normalizeLibrarySearchText(projectSearchQuery); Object.assign(__appScope, { projectSearchNeedle });
+  const deferredProjectSearchQuery = useDeferredValue(projectSearchQuery);
+  const projectSearchNeedle = normalizeLibrarySearchText(deferredProjectSearchQuery); Object.assign(__appScope, { projectSearchNeedle });
   const filteredProjectSchemes = useMemo<SavedSchemeRecord[]>(createAppHookCallback14(__appScope), [projectSearchNeedle, projectModelTypeFilter, schemes]); Object.assign(__appScope, { filteredProjectSchemes });
   const baseLibraryTemplates = useMemo<DeviceTemplate[]>(() => buildBaseLibraryTemplates(customDeviceTemplates), [customDeviceTemplates]); Object.assign(__appScope, { baseLibraryTemplates });
   const libraryTemplates = useMemo<DeviceTemplate[]>(
@@ -1247,19 +1248,22 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   const baseLibraryTemplateByKind = useMemo(() => new Map(baseLibraryTemplates.map((template) => [template.kind, template])), [baseLibraryTemplates]); Object.assign(__appScope, { baseLibraryTemplateByKind });
   const groupedCategoryLibrary = useMemo(() => groupDeviceTemplatesByCategoryLibrary(libraryTemplates), [libraryTemplates]); Object.assign(__appScope, { groupedCategoryLibrary });
   const groupedCategoryLibraryByComponentLibrary = useMemo(() => groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(libraryTemplates, customComponentLibraries), [customComponentLibraries, libraryTemplates]); Object.assign(__appScope, { groupedCategoryLibraryByComponentLibrary });
-  const librarySearchNeedle = normalizeLibrarySearchText(librarySearchQuery); Object.assign(__appScope, { librarySearchNeedle });
+  const deferredLibrarySearchQuery = useDeferredValue(librarySearchQuery);
+  const librarySearchNeedle = normalizeLibrarySearchText(deferredLibrarySearchQuery); Object.assign(__appScope, { librarySearchNeedle });
   const filteredCategoryLibraryByComponentLibrary = useMemo(
       () => filterCategoryLibraryComponentLibraryGroups(groupedCategoryLibraryByComponentLibrary, librarySearchNeedle, customComponentLibraries),
       [customComponentLibraries, groupedCategoryLibraryByComponentLibrary, librarySearchNeedle]
     );
   Object.assign(__appScope, { filteredCategoryLibraryByComponentLibrary });
-  const customComponentTreeSearchNeedle = normalizeLibrarySearchText(customComponentTreeSearchQuery); Object.assign(__appScope, { customComponentTreeSearchNeedle });
+  const deferredCustomComponentTreeSearchQuery = useDeferredValue(customComponentTreeSearchQuery);
+  const customComponentTreeSearchNeedle = normalizeLibrarySearchText(deferredCustomComponentTreeSearchQuery); Object.assign(__appScope, { customComponentTreeSearchNeedle });
   const filteredCustomComponentTreeByComponentLibrary = useMemo(
       () => filterCategoryLibraryComponentLibraryGroups(groupedCategoryLibraryByComponentLibrary, customComponentTreeSearchNeedle, customComponentLibraries),
       [customComponentLibraries, customComponentTreeSearchNeedle, groupedCategoryLibraryByComponentLibrary]
     );
   Object.assign(__appScope, { filteredCustomComponentTreeByComponentLibrary });
-  const deviceDefinitionSearchNeedle = normalizeLibrarySearchText(deviceDefinitionSearchQuery); Object.assign(__appScope, { deviceDefinitionSearchNeedle });
+  const deferredDeviceDefinitionSearchQuery = useDeferredValue(deviceDefinitionSearchQuery);
+  const deviceDefinitionSearchNeedle = normalizeLibrarySearchText(deferredDeviceDefinitionSearchQuery); Object.assign(__appScope, { deviceDefinitionSearchNeedle });
   const filteredDeviceDefinitionByComponentLibrary = useMemo(
       () => filterCategoryLibraryComponentLibraryGroups(groupedCategoryLibraryByComponentLibrary, deviceDefinitionSearchNeedle, customComponentLibraries),
       [customComponentLibraries, deviceDefinitionSearchNeedle, groupedCategoryLibraryByComponentLibrary]
@@ -1280,10 +1284,11 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
       [customGraphTemplates, graphTemplateTypes]
     );
   Object.assign(__appScope, { groupedGraphTemplates });
-  const templateLibrarySearchNeedle = normalizeLibrarySearchText(templateLibrarySearchQuery); Object.assign(__appScope, { templateLibrarySearchNeedle });
+  const deferredTemplateLibrarySearchQuery = useDeferredValue(templateLibrarySearchQuery);
+  const templateLibrarySearchNeedle = normalizeLibrarySearchText(deferredTemplateLibrarySearchQuery); Object.assign(__appScope, { templateLibrarySearchNeedle });
   const filteredGroupedGraphTemplates = useMemo(
-      () => filterGraphTemplatesByType(groupedGraphTemplates, templateLibrarySearchQuery),
-      [groupedGraphTemplates, templateLibrarySearchQuery]
+      () => filterGraphTemplatesByType(groupedGraphTemplates, deferredTemplateLibrarySearchQuery),
+      [groupedGraphTemplates, deferredTemplateLibrarySearchQuery]
     );
   Object.assign(__appScope, { filteredGroupedGraphTemplates });
   const displayedGraphTemplateTypes = useMemo(

@@ -580,6 +580,13 @@ import { modelTrace } from "./modelTrace";
 import { createRuntimeSnapshotHandler } from "./runtimeSnapshot";
 import { createRuntimeScreenshotHandler } from "./runtimeScreenshot";
 import {
+  bumpRuntimeWsBlinkSeq,
+  getRuntimeWsIndicatorSnapshot,
+  resetRuntimeWsIndicatorStore,
+  updateRuntimeWsClientId,
+  updateRuntimeWsStatus
+} from "./runtimeWsIndicatorStore";
+import {
   buildUserCustomizationInventory,
   collectReferencedUserAssetIds,
   type UserCustomizationDomain,
@@ -624,8 +631,9 @@ import { createOpenEdgeContextMenu, createCaptureCanvasPointer, createStartManua
 import { createRenderStateVisualPager, createRenderDeviceDefinitionVisualPanel, createRenderGraphTemplatePreview, createRenderLibraryTemplateButton, createRenderLibraryFlyout, createLodNodeFromEvent, createLodTerminalIdFromEvent, createHandleLodNodePointerDown, createHandleLodNodeContextMenu } from "./appExtracted/appDeviceDefinitionRenderers";
 import { createOpenNodeDoubleClickEditor, createHandleLodNodeDoubleClick, createClampFloatingToolbarPosition, createToolbarOverlapArea, createCanvasRectToSurfaceCssRect, createRotateControlAvoidRectFromCanvasPoints, createPlaceFloatingToolbar, createRenderMeasurementGroup, createHandleMinimapNavigate, createCenterSelectedInView, createFitViewToSelection, createClearStaticButtonFeedbackTimer, createSetStaticButtonFeedback, createClearStaticButtonFeedback, createBeginStaticButtonPointerFeedback, createResolveStaticButtonTargetProject, createExecuteStaticButtonCommand, createExecuteStaticButtonAction, createHandleStaticButtonClick, createBeginReadonlyBackgroundStaticButtonPointerFeedback, createRenderReadonlyBackgroundPage, createOpenTopologyWarningPanel, createAppHookCallback1, createAppHookCallback2, createAppHookCallback4, createAppHookCallback5, createAppHookCallback6, createAppHookCallback7, createAppHookCallback8, createAppHookCallback9, createAppHookCallback10, createAppHookCallback11, createAppHookCallback12, createAppHookCallback13, createAppHookCallback14, createAppHookCallback15, createAppHookCallback16, createAppHookCallback17, createAppHookCallback18, createAppHookCallback19, createAppHookCallback20, createAppHookCallback21, createAppHookCallback22, createAppHookCallback23, createAppHookCallback24, createAppHookCallback25, createAppHookCallback26, createAppHookCallback27, createAppHookCallback28, createAppHookCallback29, createAppHookCallback30, createAppHookCallback31, createAppHookCallback32, createAppHookCallback33, createAppHookCallback34, createAppHookCallback35, createAppHookCallback36, createAppHookCallback37, createAppHookCallback39, createAppHookCallback40, createAppHookCallback41, createAppHookCallback42, createAppHookCallback43, createAppHookCallback44, createAppHookCallback45, createAppHookCallback46, createAppHookCallback47, createAppHookCallback48, createAppHookCallback49, createAppHookCallback50, createAppHookCallback51, createAppHookCallback52, createAppHookCallback53, createAppHookCallback54, createAppHookCallback55, createAppHookCallback56, createAppHookCallback57, createAppHookCallback58, createAppHookCallback59, createAppHookCallback60, createAppHookCallback61, createAppHookCallback62, createAppHookCallback63, createAppHookCallback64, createAppHookCallback65, createAppHookCallback66, createAppHookCallback67, createAppHookCallback68, createAppHookCallback69, createAppHookCallback70, createAppHookCallback71, createAppHookCallback72, createAppHookCallback73, createAppHookCallback74, createAppHookCallback75, createAppHookCallback76, createAppHookCallback77, createAppHookCallback78, createAppHookCallback79, createAppHookCallback80, createAppHookCallback81, createAppHookCallback82, createAppHookCallback83, createAppHookCallback84, createAppHookCallback85, createAppHookCallback86, createAppHookCallback87, createAppHookCallback88, createAppHookCallback89, createAppHookCallback90, createAppHookCallback91, createAppHookCallback92, createAppHookCallback93, createAppHookCallback94, createAppHookCallback95, createAppHookCallback96, createAppHookCallback97, createAppHookCallback98, createAppHookCallback99, createAppHookCallback100, createAppHookCallback101, createAppHookCallback102, createAppHookCallback103, createAppHookCallback104, createAppHookCallback105, createAppHookCallback106, createAppHookCallback107, createAppHookCallback108, createAppHookCallback109, createAppHookCallback110, createAppHookCallback111, createAppHookCallback112, createAppHookCallback113, createAppHookCallback114, createAppHookCallback115, createAppHookCallback116, createAppHookCallback117, createAppHookCallback118, createAppHookCallback119, createAppHookCallback120, createAppHookCallback121, createAppHookCallback122, createAppHookCallback123, createAppHookCallback124, createAppHookCallback125, createAppHookCallback126, createAppHookCallback127, createAppHookCallback128, createAppHookCallback129, createAppHookCallback130, createAppHookCallback131, createAppHookCallback132, createAppHookCallback133, createAppHookCallback134, createAppHookCallback135, createAppHookCallback136, createAppHookCallback137, createAppHookCallback138, createAppHookCallback139, createAppHookCallback140, createAppHookCallback141, createAppHookCallback142 } from "./appExtracted/appToolbarHookFactories";
 import { mergeBuiltinSharedIconAssets } from "./sharedIconLibrary";
-import { VoltageLevelDialog } from "./VoltageLevelDialog";
-import { InterfaceCustomizationDialog } from "./InterfaceCustomizationDialog";
+const LazyInterfaceCustomizationDialog = lazy(() =>
+  import("./InterfaceCustomizationDialog").then((module) => ({ default: module.InterfaceCustomizationDialog }))
+);
 import {
   defaultInterfaceCustomizationConfig,
   normalizeInterfaceCustomizationConfig,
@@ -770,6 +778,7 @@ const [userCustomizationStatus, setUserCustomizationStatus] = useState("");
 const [userCustomizationSnapshotView, setUserCustomizationSnapshotView] = useState<UserCustomizationSnapshot | null>(null);
 const [pendingUserCustomizationImport, setPendingUserCustomizationImport] = useState<PendingUserCustomizationImport | null>(null);
 const [interfaceCustomization, setInterfaceCustomization] = useState<InterfaceCustomizationConfig>(() => defaultInterfaceCustomizationConfig());
+const interfaceCustomizationSavedSnapshotRef = useRef<InterfaceCustomizationConfig>(interfaceCustomization);
 const [interfaceCustomizationDialogOpen, setInterfaceCustomizationDialogOpen] = useState(false);
 const [interfaceCustomizationBusy, setInterfaceCustomizationBusy] = useState(false);
 const [interfaceCustomizationStatus, setInterfaceCustomizationStatus] = useState("");
@@ -807,7 +816,9 @@ useEffect(() => {
   void fetchBackendInterfaceCustomization()
     .then((payload) => {
       if (cancelled) return;
-      setInterfaceCustomization(normalizeInterfaceCustomizationConfig(payload));
+      const normalized = normalizeInterfaceCustomizationConfig(payload);
+      interfaceCustomizationSavedSnapshotRef.current = normalized;
+      setInterfaceCustomization(normalized);
       setInterfaceCustomizationStatus("");
     })
     .catch((error) => {
@@ -823,7 +834,9 @@ const saveInterfaceCustomization = useCallback(async () => {
   setInterfaceCustomizationBusy(true);
   setInterfaceCustomizationStatus("");
   try {
-    await saveBackendInterfaceCustomization(interfaceCustomization);
+    const normalized = normalizeInterfaceCustomizationConfig(interfaceCustomization);
+    await saveBackendInterfaceCustomization(normalized);
+    interfaceCustomizationSavedSnapshotRef.current = normalized;
     setInterfaceCustomizationStatus("界面定制配置已保存。");
   } catch (error) {
     setInterfaceCustomizationStatus(`保存界面定制配置失败：${error instanceof Error ? error.message : String(error)}`);
@@ -964,6 +977,8 @@ const graphDirtyBaselineRef = useRef<GraphDirtyBaseline | null>(null); Object.as
 const suppressNextGraphDirtyRef = useRef(0); Object.assign(__appScope, { suppressNextGraphDirtyRef });
 const saveRequiredRef = useRef(false); Object.assign(__appScope, { saveRequiredRef });
 const savedUndoStackLengthRef = useRef(0); Object.assign(__appScope, { savedUndoStackLengthRef });
+const currentMutationRevisionRef = useRef(0); Object.assign(__appScope, { currentMutationRevisionRef });
+const savedMutationRevisionRef = useRef(0); Object.assign(__appScope, { savedMutationRevisionRef });
 const refreshRecoveryProjectRef = useRef<RefreshRecoveryProjectState | null>(null); Object.assign(__appScope, { refreshRecoveryProjectRef });
 const latestNodesRef = useRef<ModelNode[]>([]); Object.assign(__appScope, { latestNodesRef });
 const latestEdgesRef = useRef<Edge[]>([]); Object.assign(__appScope, { latestEdgesRef });
@@ -1661,7 +1676,12 @@ Object.assign(__appScope, { projectPanelHeight, setProjectPanelHeight });
 const [projectPanelResize, setProjectPanelResize] = useState<{ startY: number; startHeight: number } | null>(null);
 Object.assign(__appScope, { projectPanelResize, setProjectPanelResize });
 const [undoStack, setUndoStack] = useState<UndoSnapshot[]>([]);
-Object.assign(__appScope, { undoStack, setUndoStack });
+const undoStackRef = useRef<UndoSnapshot[]>(undoStack);
+undoStackRef.current = undoStack;
+const [redoStack, setRedoStack] = useState<UndoSnapshot[]>([]);
+const redoStackRef = useRef<UndoSnapshot[]>(redoStack);
+redoStackRef.current = redoStack;
+Object.assign(__appScope, { undoStack, setUndoStack, undoStackRef, redoStack, setRedoStack, redoStackRef });
 const [recordClipboard, setRecordClipboard] = useState<ClipboardRecord | null>(null);
 Object.assign(__appScope, { recordClipboard, setRecordClipboard });
 const [imageTarget, setImageTarget] = useState<ImageTarget | null>(null);
@@ -1796,19 +1816,26 @@ function savedProjectIndexByKey(schemes: any, modelKey: string): number {
   return walk(Array.isArray(schemes) ? schemes : []);
 }
 
-// 地址栏里「这一刻要求打开哪个模型」必须在**模块加载时就定格**，不能在 effect 体里现读。
+// 地址栏里「这一刻要求打开哪个模型」必须在组件首次渲染时即定格并保存在 ref 中，
+// 不能作为渲染体局部变量（每帧重渲染都会被重置）也不能在 effect 体里现读。
 //
 // 原因：同一个组件里「应用 → 地址栏」那条 effect 也是挂载即跑一次，它会在打开模型完成之前
 // 先把当前（还没切过去的）模型写成 hash。等到这条 effect 再 readWorkspaceUrl()，读到的
 // 已经不是用户贴进来的那条地址了（实测：贴 model=13 进来，effect 里读到的是 model=9）。
-// 模块求值发生在任何 effect 之前，读到的才是用户真正打开的地址。
-const initialUrlModelIntent = readInitialWorkspaceUrlIntent();
+// 同时采用组件级 useRef 而非模块级全局变量，保证 qiankun 微前端卸载重挂载时自动重置。
+const initialUrlModelIntentRef = useRef<ParsedWorkspaceUrl | null>(null);
+if (initialUrlModelIntentRef.current === null) {
+  initialUrlModelIntentRef.current = readInitialWorkspaceUrlIntent();
+}
+const initialUrlModelIntent = initialUrlModelIntentRef.current;
 
 // 地址栏要的模型如果第一次尝试时方案树还没回来（`schemes` 还是空数组），不能就此作罢 ——
-// 方案树是异步 fetch 的，挂载那一刻几乎必然为空。这里记下"还欠一次打开"，等后面某次渲染
-// 看到方案树非空了再补；补成功或补到重试上限就清掉，不会无限重试。
-let urlModelAwaitingSchemes = initialUrlModelIntent.hasModel && Boolean(initialUrlModelIntent.modelId || initialUrlModelIntent.modelKey);
-let urlModelOpenStarted = false;
+// 方案树是异步 fetch 的，挂载那一刻几乎必然为空。这里用 ref 记下"还欠一次打开"，等后面某次渲染
+// 看到方案树非空了再补；补成功或补到重试上限就清掉，不会因后续重渲染被重置而重复打开。
+const urlModelAwaitingSchemesRef = useRef<boolean>(
+  initialUrlModelIntent.hasModel && Boolean(initialUrlModelIntent.modelId || initialUrlModelIntent.modelKey)
+);
+const urlModelOpenStartedRef = useRef<boolean>(false);
 // 按地址栏的要求打开一次模型。启动时调一次；方案树晚到时由下面的重试 effect 补一次。
 //
 // 返回 ``true`` 表示这次调用已经有了结论（打开了 / 明确不存在 / 判定该由切空间重载处理），
@@ -1823,16 +1850,16 @@ async function openUrlModelOnce(url: ParsedWorkspaceUrl): Promise<UrlOpenOutcome
       activeProjectKey: latestScope.activeProjectKey,
       activeSchemeKey: latestScope.activeSchemeKey
     });
-    urlModelAwaitingSchemes = false;
+    urlModelAwaitingSchemesRef.current = false;
     return "done";
   }
-  if (urlModelOpenStarted) {
+  if (urlModelOpenStartedRef.current) {
     modelTrace("url-model-skip-duplicate", { target: url.modelId || url.modelKey });
     return "done";
   }
   // 地址栏没写 model：什么都不做，保持「打开就是上次的草稿」这个既有行为
   if (!url.hasModel) {
-    urlModelAwaitingSchemes = false;
+    urlModelAwaitingSchemesRef.current = false;
     return "done";
   }
   // 切空间会 location.reload()，这一次不打开模型：重载后的新页面自己会读 hash 打开。
@@ -1841,7 +1868,7 @@ async function openUrlModelOnce(url: ParsedWorkspaceUrl): Promise<UrlOpenOutcome
   // 之前把地址栏的空间写进 Cookie），**不能**拿 `__appScope.currentSpaceId` 比：它在
   // `fetchSpaces()` 回来前是空串，会把「同一个空间」误判成「要切空间」，从而永远跳过打开模型。
   if (url.hasSpace && url.spaceId && url.spaceId !== readSpaceCookie()) {
-    urlModelAwaitingSchemes = false;
+    urlModelAwaitingSchemesRef.current = false;
     return "done";
   }
   const latest = __appScopeRef.current as any;
@@ -1854,15 +1881,15 @@ async function openUrlModelOnce(url: ParsedWorkspaceUrl): Promise<UrlOpenOutcome
   // 空数组是真值，`!latest?.schemes` 永远为假 —— 拿它当「树到了吗」用，等于对着空树找模型，
   // 必然找不到、必然返回 false，地址栏要的模型就永远打不开。
   if (!Array.isArray(latest?.schemes) || latest.schemes.length === 0) {
-    // 这里**不能**清 `urlModelAwaitingSchemes`：清了就等于宣布「这次没有下文」，
+    // 这里**不能**清 `urlModelAwaitingSchemesRef`：清了就等于宣布「这次没有下文」，
     // 重试 effect 再跑时看到标志是 false 会直接返回，方案树到了也不会补开。
     writePendingUrlModel(target.modelId, url.schemeId, 0, target.modelKey, url.schemeKey);
     return "awaiting-schemes";
   }
-  urlModelOpenStarted = true;
+  urlModelOpenStartedRef.current = true;
   modelTrace("url-model-open-start", { target: target.modelId || target.modelKey, scheme: url.schemeId || url.schemeKey });
   // 走到这里说明已经有结论了（无论打开成功与否），后面不必再补。
-  urlModelAwaitingSchemes = false;
+  urlModelAwaitingSchemesRef.current = false;
   // 登记重试计数：模型真的不存在时只重试一次，不会每次刷新都弹一次提示
   const pending = readPendingUrlModel();
   const pendingMatches =
@@ -1896,14 +1923,14 @@ useEffect(() => {
 }, []);
 // 地址栏欠的那次打开，补在这里：方案树一非空就补一次。
 //
-// 依赖里放 `schemes`：它从 `[]` 变成真数据时会触发重跑。补完把 `urlModelAwaitingSchemes`
+// 依赖里放 `schemes`：它从 `[]` 变成真数据时会触发重跑。补完把 `urlModelAwaitingSchemesRef`
 // 清掉，后面再渲染也不会重复打开（重试次数仍由 `power-system-url-model` 记账兜底）。
 //
 // 依赖必须用 `schemes` 这个 state 本身：`__appScope` 是每帧新建再 Object.assign 的普通对象，
 // 写 `[__appScope.schemes]` 取到的是**当前这一帧**的值，之后帧帧重建但依赖数组算出来的
 // 还是第一次那个数组引用 —— effect 只在挂载时跑一次，方案树到了也不会重跑。
 useEffect(() => {
-  if (!urlModelAwaitingSchemes) {
+  if (!urlModelAwaitingSchemesRef.current) {
     return;
   }
   if (!Array.isArray(schemes) || schemes.length === 0) {
@@ -1919,8 +1946,8 @@ useEffect(() => {
 // `project:%E6%8E%92…`（中文名的百分号编码），贴给别人既不可读也不稳定，只作进程内定位用。
 const lastSyncedUrlRef = useRef<string | null>(null);
 useEffect(() => {
-  const activeKey = String(__appScope.activeProjectKey ?? "");
-  const hash = `${__appScope.currentSpaceId ?? ""}|${activeKey}|${__appScope.activeSchemeKey ?? ""}`;
+  const activeKey = String(activeProjectKey ?? "");
+  const hash = `${currentSpaceId ?? ""}|${activeKey}|${activeSchemeKey ?? ""}`;
   if (lastSyncedUrlRef.current === hash) {
     return;
   }
@@ -1931,18 +1958,18 @@ useEffect(() => {
   // 会先把 `#space=default&model=13&scheme=DOT` 改写成 `#space=`，紧接着同步 effect 又用
   // 「当前还没有模型」把它改成 `#space=default` —— 地址栏里的 model 被自己的投影抹掉，
   // 再去读已经晚了（实测：第 1 帧 hash 正确，第 2 帧已被清空）。
-  if (!__appScope.currentSpaceId) {
+  if (!currentSpaceId) {
     return;
   }
   // 方案树里找不到这个模型（例如模型还没保存）时不写 model/scheme：写一个错的值比不写更糟，
   // 下次刷新会打开别的东西。
-  const index = savedProjectIndexByKey(__appScope.schemes, activeKey);
+  const index = savedProjectIndexByKey(schemes, activeKey);
   syncWorkspaceUrl({
-    spaceId: String(__appScope.currentSpaceId ?? ""),
+    spaceId: String(currentSpaceId ?? ""),
     modelId: index > 0 ? String(index) : "",
-    schemeId: index > 0 ? schemeIdForModelKey(__appScope.schemes, activeKey) : ""
+    schemeId: index > 0 ? schemeIdForModelKey(schemes, activeKey) : ""
   });
-});
+}, [currentSpaceId, activeProjectKey, activeSchemeKey, schemes]);
 
 // 浏览器前进/后退：hash 变了就按新地址收敛（换空间走完整切换编排，换模型走加载）。
 useEffect(() => {
@@ -1977,11 +2004,14 @@ useEffect(() => {
 
 // 运行时态 WS 客户端：连入 server /ws，注册 clientId，响应 server 的 fetch 拉取。
 // 第三方 /webgrp/v1/runtime/* 经此桥接获取前端运行时态（snapshot/tab/selection/model/devices/e-file/svg/screenshot）。
-// __appScope 每帧重建，用 __appScopeRef 读最新引用，避免闭包冻结在首次渲染。
-const [runtimeWsStatus, setRuntimeWsStatus] = useState<"connecting" | "open" | "closed">("connecting");
-const [runtimeWsBlinkSeq, setRuntimeWsBlinkSeq] = useState(0);
-const [runtimeWsClientId, setRuntimeWsClientId] = useState("");
-Object.assign(__appScope, { runtimeWsStatus, runtimeWsBlinkSeq, runtimeWsClientId });
+// 指示灯状态交由 runtimeWsIndicatorStore（useSyncExternalStore）局部订阅，
+// 避免每次 WS 心跳/通信触发整个 App 根组件重渲染与巨型工厂重建；同时在 __appScope
+// 挂只读 getter 以兼容任何外部读取方。
+Object.defineProperties(__appScope, {
+  runtimeWsStatus: { enumerable: true, configurable: true, get: () => getRuntimeWsIndicatorSnapshot().status },
+  runtimeWsBlinkSeq: { enumerable: true, configurable: true, get: () => getRuntimeWsIndicatorSnapshot().blinkSeq },
+  runtimeWsClientId: { enumerable: true, configurable: true, get: () => getRuntimeWsIndicatorSnapshot().clientId }
+});
 useEffect(() => {
   const snapshotHandler = (resource: any, params?: any) => createRuntimeSnapshotHandler(__appScopeRef.current)(resource, params);
   const screenshotHandler = (params: any) => createRuntimeScreenshotHandler(__appScopeRef.current)(params);
@@ -2023,20 +2053,20 @@ useEffect(() => {
     }
     return snapshotHandler(resource as any, params);
   }, {
-    onStatusChange: (s) => setRuntimeWsStatus(s),
-    onActivity: () => setRuntimeWsBlinkSeq((n) => n + 1),
+    onStatusChange: (s) => updateRuntimeWsStatus(s),
+    onActivity: () => bumpRuntimeWsBlinkSeq(),
     commandHandler,
     // 服务端在注册阶段可能换掉 token（「复制标签页」会连同 ?token= 一起复制，
     // 它给后到的那个页面一个新后缀 token 并写回地址栏）→ 指示灯上显示的值要跟着变。
-    onClientIdChange: (id) => setRuntimeWsClientId(id)
+    onClientIdChange: (id) => updateRuntimeWsClientId(id)
   });
   // 审查 T16-P0-3 备注：空依赖为有意设计——WS 客户端生命周期与组件挂载绑定，
-  // dispatch/commandHandler 捕获的 __appScope 为模块级稳定引用，不存在过期闭包。
-  // 若未来 scope 改为 React state，此处需同步重构依赖。
-  setRuntimeWsClientId(client.clientId);
+  // dispatch/commandHandler 捕获的 __appScopeRef 为组件级稳定引用，不存在过期闭包。
+  updateRuntimeWsClientId(client.clientId);
   client.connect();
   return () => {
     client.close();
+    resetRuntimeWsIndicatorStore();
   };
 }, []);
 
@@ -2044,15 +2074,23 @@ const __appView = renderAppView(__appScope);
 return (
   <>
     {__appView}
-    <InterfaceCustomizationDialog
-      open={interfaceCustomizationDialogOpen}
-      config={interfaceCustomization}
-      busy={interfaceCustomizationBusy}
-      status={interfaceCustomizationStatus}
-      onChange={(next) => setInterfaceCustomization(normalizeInterfaceCustomizationConfig(next))}
-      onSave={() => void saveInterfaceCustomization()}
-      onClose={() => setInterfaceCustomizationDialogOpen(false)}
-    />
+    {interfaceCustomizationDialogOpen && (
+      <Suspense fallback={null}>
+        <LazyInterfaceCustomizationDialog
+          open={interfaceCustomizationDialogOpen}
+          config={interfaceCustomization}
+          busy={interfaceCustomizationBusy}
+          status={interfaceCustomizationStatus}
+          onChange={(next) => setInterfaceCustomization(normalizeInterfaceCustomizationConfig(next))}
+          onSave={() => void saveInterfaceCustomization()}
+          onClose={() => {
+            setInterfaceCustomization(interfaceCustomizationSavedSnapshotRef.current);
+            setInterfaceCustomizationStatus("");
+            setInterfaceCustomizationDialogOpen(false);
+          }}
+        />
+      </Suspense>
+    )}
   </>
 );
 }

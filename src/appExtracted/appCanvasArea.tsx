@@ -207,9 +207,9 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
 
   // 比较画布状态标志（这些是经常变化的）
   const stateKeys = [
-    'panning', 'multiNodeDragging', 'singleNodeDragging', 'connectSource',
+    'panning', 'multiNodeDragging', 'singleNodeDragging', 'dragging', 'connectSource',
     'staticDrawing', 'libraryPlacement', 'contextMarqueeSelection', 'activeDropReady',
-    'isEditMode', 'rewiring', 'routableLinePlacement',
+    'isEditMode', 'mode', 'activeLayerId', 'staticButtonVisual', 'rewiring', 'routableLinePlacement',
     'routableLineEndpointDrag', 'transformDrag', 'nodeLabelDrag', 'nodeLabelRotateDrag',
     'manualPathDrag', 'terminalPress', 'hasCanvasSelectionModifier', 'isRepeatedEdgePointerClick'
   ];
@@ -242,6 +242,10 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
     'visibleNodes', 'visibleEdges', 'selectedNodeIdSet', 'selectedEdgeIds',
     'visibleMeasurementGroups',
     'marquee', 'connectPreviewDom', 'routableLinePreview', 'resizeSizeHint',
+    'routableLineEndpointDragPreviewRoute', 'rewiringPreviewRoute', 'manualPathPreviewRoute',
+    'dragPreviewEdgeRoutes', 'dragGhostEdgeRoutes',
+    'useSimplifiedCanvasNodes', 'useSimplifiedCanvasRoutes', 'useSimplifiedSelectedCanvasNodes',
+    'lodCanvasNodeChunks', 'lodCanvasRouteChunks', 'lodSelectedNodeMarkup',
     'draggingDelta', 'smartAlignmentGuides', 'connectSource', 'libraryPlacement',
     'canvasBackgroundColor', 'canvasBackgroundImageUrl', 'canvasBackgroundImageFit', 'backgroundPageRender',
     'colorDisplayMode', 'colorPalette', 'deviceLabelsVisible', 'deviceMeasurementsVisible',
@@ -264,6 +268,7 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
   const overlayKeys = [
     'nodeFloatingToolbar', 'edgeFloatingToolbar',
     'canvasResizePreviewRect', 'minimapVisible',
+    'minimapViewportLeft', 'minimapViewportRight', 'minimapViewportTop', 'minimapViewportBottom',
     // 底部工具栏左侧的「选中操作」组：可用性/选中数变化必须让画布重渲染，否则按钮 disabled 状态停在旧值
     'canGroupSelectedGraphics', 'canUngroupSelectedGraphics', 'canAdjustSelectedDisplayLayer',
     'selectedLayoutUnitCount',

@@ -9,6 +9,7 @@ import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, 
 import { atLeastOneNumber, clampNumber } from "../canvasViewport";
 import { normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
+import { promptText } from "../globalDialogs";
 import { backendExportSchemePath } from "../backendExportPath";
 import { backendErrorMessage } from "./appCoreCanvasUtilities";
 // 别名导入：作用域里同名的 safeFilePart 会遮蔽模块级绑定，fallback 分支需要它
@@ -4173,7 +4174,7 @@ export function createClearSelectedImageForNode(__appScope: Record<string, any>)
 export function createCreateImageFolder(__appScope: Record<string, any>) {
   return async () => {
   const { createBackendImageFolder, refreshImageFolders, setActiveImageFolderId } = __appScope;
-    const inputName = window.prompt("请输入图片文件夹名称", "新建文件夹");
+    const inputName = await promptText("请输入图片文件夹名称", "新建文件夹");
     if (inputName === null) {
       return;
     }
@@ -4200,7 +4201,7 @@ export function createRenameImageFolder(__appScope: Record<string, any>) {
       showGlobalMessage("默认文件夹不能重命名。");
       return;
     }
-    const inputName = window.prompt("请输入新的图片文件夹名称", folder.name);
+    const inputName = await promptText("请输入新的图片文件夹名称", folder.name);
     if (inputName === null) {
       return;
     }
@@ -8551,7 +8552,7 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
 }
 
 export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<string, any>) {
-  return () => {
+  return async () => {
   const { PROTECTED_CATEGORY_LIBRARIES, categoryLibraries, customComponentTreeSelection, libraryTemplateByKind, normalizeCategoryLibraryName, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes, setCustomCategoryLibraries, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setExpandedCategoryLibraries, setExpandedDefinitionGroups } = __appScope;
     if (customComponentTreeSelection.kind === "categoryLibrary") {
       const oldCategoryLibraryName = normalizeCategoryLibraryName(customComponentTreeSelection.categoryLibraryName);
@@ -8559,7 +8560,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
         showGlobalMessage("系统内置类别库不能重命名。");
         return;
       }
-      const rawName = window.prompt("请输入新的类别库名称", oldCategoryLibraryName);
+      const rawName = await promptText("请输入新的类别库名称", oldCategoryLibraryName);
       if (rawName === null) {
         return;
       }
@@ -8612,7 +8613,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
       showGlobalMessage("系统内置元件不能在这里重命名。");
       return;
     }
-    const rawName = window.prompt("请输入新的元件名称", template.label);
+    const rawName = await promptText("请输入新的元件名称", template.label);
     if (rawName === null) {
       return;
     }

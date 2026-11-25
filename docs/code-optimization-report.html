@@ -1,0 +1,2592 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="precision-dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title data-i18n="page.title">代码结构诊断与优化建议报告 · Graph Modeling Platform</title>
+  <style>
+    /* ========================================================================
+       Design Tokens — 严格遵循 style-presets.md 单一主题变量体系
+       ======================================================================== */
+    :root,
+    [data-theme="precision-dark"] {
+      color-scheme: dark;
+      --bg-canvas: #0B0F19;
+      --bg-surface: #111827;
+      --bg-subtle: #1E293B;
+      --bg-hover: rgba(148, 163, 184, 0.10);
+      --bg-selected: rgba(56, 189, 248, 0.14);
+      --table-stripe: #162032;
+      --table-hover: #1E293B;
+      --text-primary: #F8FAFC;
+      --text-secondary: #94A3B8;
+      --text-tertiary: #64748B;
+      --accent: #38BDF8;
+      --accent-hover: #0EA5E9;
+      --accent-soft: rgba(56, 189, 248, 0.15);
+      --ok: #34D399;
+      --ok-soft: rgba(52, 211, 153, 0.14);
+      --warn: #FBBF24;
+      --warn-soft: rgba(251, 191, 36, 0.15);
+      --danger: #FB7185;
+      --danger-soft: rgba(251, 113, 133, 0.15);
+      --purple: #A78BFA;
+      --purple-soft: rgba(167, 139, 250, 0.15);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --border: 1px solid var(--border-color);
+      --grid-line: rgba(255, 255, 255, 0.06);
+      --radius-card: 10px;
+      --radius-btn: 6px;
+      --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.28);
+      --code-bg: #0F172A;
+      --select-option-bg: #111827;
+      --font-sans: "Inter", "Segoe UI", "Roboto", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Arial", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, SFMono-Regular, monospace;
+      accent-color: var(--accent);
+    }
+
+    [data-theme="minimalist-light"] {
+      color-scheme: light;
+      --bg-canvas: #F8FAFC;
+      --bg-surface: #FFFFFF;
+      --bg-subtle: #F1F5F9;
+      --bg-hover: rgba(15, 23, 42, 0.04);
+      --bg-selected: rgba(37, 99, 235, 0.09);
+      --table-stripe: #F8FAFC;
+      --table-hover: #EFF6FF;
+      --text-primary: #0F172A;
+      --text-secondary: #64748B;
+      --text-tertiary: #94A3B8;
+      --accent: #2563EB;
+      --accent-hover: #1D4ED8;
+      --accent-soft: rgba(37, 99, 235, 0.10);
+      --ok: #0D9488;
+      --ok-soft: rgba(13, 148, 136, 0.12);
+      --warn: #D97706;
+      --warn-soft: rgba(217, 119, 6, 0.13);
+      --danger: #DC2626;
+      --danger-soft: rgba(220, 38, 38, 0.10);
+      --purple: #7C3AED;
+      --purple-soft: rgba(124, 58, 237, 0.11);
+      --border-color: #E2E8F0;
+      --border-strong: #CBD5E1;
+      --border: 1px solid var(--border-color);
+      --grid-line: #E2E8F0;
+      --radius-card: 12px;
+      --radius-btn: 8px;
+      --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.02);
+      --code-bg: #F1F5F9;
+      --select-option-bg: #FFFFFF;
+      accent-color: var(--accent);
+    }
+
+    /* 主题化滚动条与原生控件 */
+    * {
+      box-sizing: border-box;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-strong) transparent;
+    }
+
+    ::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-strong);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-tertiary);
+    }
+
+    select option {
+      background-color: var(--select-option-bg);
+      color: var(--text-primary);
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg-canvas);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .app-shell {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ========================================================================
+       1. 顶部上下文栏 (40px 单行紧凑)
+       ======================================================================== */
+    .topbar {
+      height: 40px;
+      flex: 0 0 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 0 12px;
+      background: var(--bg-surface);
+      border-bottom: var(--border);
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 22px;
+      height: 22px;
+      border-radius: 5px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
+
+    .page-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin: 0;
+    }
+
+    .commit-chip {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--bg-subtle);
+      color: var(--text-secondary);
+      border: var(--border);
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
+    }
+
+    .ctrl-btn,
+    .ctrl-select {
+      height: 26px;
+      padding: 0 8px;
+      border-radius: var(--radius-btn);
+      border: var(--border);
+      background: var(--bg-subtle);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+      white-space: nowrap;
+    }
+
+    .ctrl-btn:hover,
+    .ctrl-select:hover {
+      border-color: var(--accent);
+      background: var(--bg-hover);
+    }
+
+    .ctrl-btn:focus-visible,
+    .ctrl-select:focus-visible,
+    .search-input:focus-visible {
+      outline: 1.5px solid var(--accent);
+      outline-offset: 1px;
+    }
+
+    .ctrl-btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #0B0F19;
+      font-weight: 600;
+    }
+    [data-theme="minimalist-light"] .ctrl-btn.primary {
+      color: #FFFFFF;
+    }
+    .ctrl-btn.primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    /* ========================================================================
+       2. 单行紧凑指标条 (34px，细竖线分隔)
+       ======================================================================== */
+    .metric-strip {
+      min-height: 34px;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      overflow-x: auto;
+      background: var(--bg-surface);
+      border-bottom: var(--border);
+      padding: 4px 12px;
+      gap: 0;
+    }
+
+    .metric-item {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      padding: 0 12px;
+      border-right: var(--border);
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+
+    .metric-item:first-child {
+      padding-left: 0;
+    }
+    .metric-item:last-child {
+      border-right: none;
+      padding-right: 0;
+    }
+
+    .metric-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .metric-val {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-primary);
+    }
+
+    .metric-unit {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+    }
+
+    .metric-val.danger { color: var(--danger); }
+    .metric-val.warn { color: var(--warn); }
+    .metric-val.ok { color: var(--ok); }
+    .metric-val.accent { color: var(--accent); }
+
+    /* ========================================================================
+       3. 单行整合工具栏（子标签 + 筛选 + 搜索同行）
+       ======================================================================== */
+    .toolbar {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 6px 12px;
+      background: var(--bg-canvas);
+      border-bottom: var(--border);
+    }
+
+    .tab-group {
+      display: inline-flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .tab-btn {
+      height: 26px;
+      padding: 0 9px;
+      border-radius: var(--radius-btn);
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      transition: all 150ms ease;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .tab-btn.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: rgba(56, 189, 248, 0.30);
+    }
+
+    [data-theme="minimalist-light"] .tab-btn.active {
+      border-color: rgba(37, 99, 235, 0.25);
+    }
+
+    .tab-count {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      opacity: 0.85;
+    }
+
+    .filter-group {
+      display: inline-flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .search-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 8px;
+      color: var(--text-tertiary);
+      pointer-events: none;
+    }
+
+    .search-input {
+      height: 26px;
+      width: 210px;
+      padding: 0 8px 0 26px;
+      border-radius: var(--radius-btn);
+      border: var(--border);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      font-size: 12px;
+      font-family: var(--font-sans);
+    }
+
+    .search-input::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    /* ========================================================================
+       4. 主工作区（表格 + 右侧详情 / 结构可视化视图）
+       ======================================================================== */
+    .workspace {
+      flex: 1 1 auto;
+      min-height: 0;
+      padding: 8px 12px 10px;
+      display: flex;
+      gap: 8px;
+      overflow: hidden;
+    }
+
+    .panel {
+      background: var(--bg-surface);
+      border: var(--border);
+      border-radius: var(--radius-card);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* 列表 + 详情分栏 */
+    .split-left {
+      flex: 1 1 60%;
+      min-width: 0;
+    }
+
+    .split-right {
+      flex: 0 0 430px;
+      max-width: 46%;
+      min-width: 320px;
+    }
+
+    .table-scroll {
+      flex: 1 1 auto;
+      overflow: auto;
+      min-height: 0;
+    }
+
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    table.data-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--bg-subtle);
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-weight: 600;
+      text-align: left;
+      padding: 7px 8px;
+      border-bottom: var(--border);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      user-select: none;
+    }
+
+    table.data-table thead th.num,
+    table.data-table tbody td.num {
+      text-align: right;
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    table.data-table tbody tr {
+      height: 36px;
+      border-bottom: var(--border);
+      cursor: pointer;
+      transition: background 120ms ease;
+    }
+
+    table.data-table tbody tr:nth-child(even) {
+      background: var(--table-stripe);
+    }
+
+    table.data-table tbody tr:hover {
+      background: var(--table-hover);
+    }
+
+    table.data-table tbody tr.is-selected {
+      background: var(--bg-selected);
+    }
+
+    table.data-table tbody tr.is-selected td:first-child {
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    table.data-table tbody td {
+      padding: 4px 8px;
+      vertical-align: middle;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* 表格单元格内嵌子控件规范：无缝内嵌，无独立外框 */
+    table.data-table tbody td.cell-control {
+      padding: 0;
+      overflow: visible;
+    }
+
+    .inline-select {
+      width: 100%;
+      height: 35px;
+      padding: 0 6px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 12px;
+      cursor: pointer;
+      outline: none;
+      transition: background 120ms ease, box-shadow 120ms ease;
+    }
+
+    .inline-select:hover {
+      background: var(--bg-hover);
+    }
+
+    .inline-select:focus {
+      box-shadow: inset 0 0 0 1.5px var(--accent);
+      background: var(--bg-surface);
+    }
+
+    .inline-select.status-done { color: var(--ok); font-weight: 600; }
+    .inline-select.status-doing { color: var(--accent); font-weight: 600; }
+    .inline-select.status-todo { color: var(--text-secondary); }
+
+    /* 语义胶囊标签 */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 1px 7px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      line-height: 1.45;
+      white-space: nowrap;
+    }
+
+    .badge-p0 { background: var(--danger-soft); color: var(--danger); }
+    .badge-p1 { background: var(--warn-soft); color: var(--warn); }
+    .badge-p2 { background: var(--accent-soft); color: var(--accent); }
+
+    .badge-bug { background: var(--danger-soft); color: var(--danger); font-family: var(--font-sans); }
+    .badge-perf { background: var(--accent-soft); color: var(--accent); font-family: var(--font-sans); }
+    .badge-smooth { background: var(--purple-soft); color: var(--purple); font-family: var(--font-sans); }
+    .badge-ux { background: var(--ok-soft); color: var(--ok); font-family: var(--font-sans); }
+
+    .cell-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .cell-id {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-tertiary);
+      flex: 0 0 auto;
+    }
+
+    .cell-title {
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cell-file {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    /* ========================================================================
+       右侧详情面板
+       ======================================================================== */
+    .detail-head {
+      padding: 10px 12px;
+      border-bottom: var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: var(--bg-surface);
+    }
+
+    .detail-head-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .detail-badges {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .detail-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.4;
+      color: var(--text-primary);
+    }
+
+    .detail-body {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      padding: 10px 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .detail-section {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .detail-sec-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .detail-text {
+      margin: 0;
+      font-size: 12.5px;
+      line-height: 1.6;
+      color: var(--text-primary);
+    }
+
+    .detail-list {
+      margin: 0;
+      padding-left: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12.5px;
+      line-height: 1.55;
+    }
+
+    .loc-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .loc-chip {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 3px 7px;
+      border-radius: 5px;
+      background: var(--code-bg);
+      border: var(--border);
+      color: var(--accent);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: border-color 140ms ease, background 140ms ease;
+    }
+
+    .loc-chip:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .kpi-mini-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .kpi-mini {
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: var(--bg-subtle);
+      border: var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .kpi-mini-k {
+      font-size: 10.5px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .kpi-mini-v {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ========================================================================
+       结构热力图视图（纯 SVG 可视化）
+       ======================================================================== */
+    .viz-grid {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      grid-template-rows: 1fr auto;
+      gap: 8px;
+      min-height: 0;
+      overflow-y: auto;
+    }
+
+    .viz-card {
+      background: var(--bg-surface);
+      border: var(--border);
+      border-radius: var(--radius-card);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+    }
+
+    .viz-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .viz-title {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .legend-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      flex-wrap: wrap;
+    }
+
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      display: inline-block;
+      margin-right: 4px;
+    }
+
+    .svg-wrap {
+      flex: 1 1 auto;
+      min-height: 280px;
+      position: relative;
+    }
+
+    /* 矩阵表 */
+    .matrix-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .matrix-table th,
+    .matrix-table td {
+      padding: 8px 10px;
+      border-bottom: var(--border);
+      font-size: 12px;
+    }
+
+    .matrix-table th {
+      color: var(--text-secondary);
+      font-weight: 600;
+      text-align: left;
+      background: var(--bg-subtle);
+    }
+
+    .matrix-table th.num,
+    .matrix-table td.num {
+      text-align: right;
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .matrix-cell-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      min-width: 44px;
+      padding: 3px 8px;
+      border-radius: 5px;
+      border: 1px solid transparent;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease;
+    }
+
+    .matrix-cell-btn:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .matrix-zero {
+      color: var(--text-tertiary);
+      background: transparent;
+      cursor: default;
+    }
+
+    .antipattern-grid {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+      gap: 8px;
+    }
+
+    .anti-tile {
+      background: var(--bg-surface);
+      border: var(--border);
+      border-radius: var(--radius-card);
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .anti-k {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .anti-v {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      flex: 0 0 auto;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 50;
+      padding: 7px 12px;
+      border-radius: var(--radius-btn);
+      background: var(--bg-surface);
+      border: 1px solid var(--accent);
+      box-shadow: var(--shadow-card);
+      color: var(--text-primary);
+      font-size: 12px;
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .empty-state {
+      padding: 36px 16px;
+      text-align: center;
+      color: var(--text-tertiary);
+      font-size: 12px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* 响应式折叠 */
+    @media (max-width: 1024px) {
+      .app-shell {
+        height: auto;
+        min-height: 100vh;
+        overflow: auto;
+      }
+      .workspace {
+        flex-direction: column;
+        overflow: visible;
+      }
+      .split-right {
+        flex: 1 1 auto;
+        max-width: 100%;
+        min-width: 0;
+      }
+      .viz-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media print {
+      .app-shell { height: auto; overflow: visible; }
+      .topbar-right, .toolbar { display: none !important; }
+      .workspace { flex-direction: column; overflow: visible; }
+      .split-right { max-width: 100%; }
+      body { background: #FFFFFF; color: #0F172A; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- 1. 顶栏 -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+          </svg>
+        </span>
+        <h1 class="page-title" data-i18n="header.title">代码结构诊断与优化建议报告</h1>
+        <span class="commit-chip" title="HEAD Commit">main @ ff36eede</span>
+      </div>
+      <div class="topbar-right">
+        <select id="langSelect" class="ctrl-select" aria-label="Language">
+          <option value="zh-CN">中文</option>
+          <option value="en-US">English</option>
+          <option value="ru-RU">Русский</option>
+        </select>
+        <button id="themeBtn" class="ctrl-btn" type="button">
+          <svg id="themeIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
+          </svg>
+          <span id="themeLabel" data-i18n="action.themeLight">明亮</span>
+        </button>
+        <button id="exportMdBtn" class="ctrl-btn" type="button">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span data-i18n="action.exportMd">导出清单</span>
+        </button>
+        <button id="printBtn" class="ctrl-btn primary" type="button">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+          </svg>
+          <span data-i18n="action.print">打印 / PDF</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 2. 单行紧凑指标条 -->
+    <section class="metric-strip" aria-label="Metrics">
+      <div class="metric-item">
+        <span class="metric-label" data-i18n="metric.totalLines">代码总量</span>
+        <span class="metric-val">177,482</span>
+        <span class="metric-unit" data-i18n="unit.loc">LOC / 196</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">@ts-nocheck</span>
+        <span class="metric-val danger">49,092</span>
+        <span class="metric-unit">30.7%</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">App useState</span>
+        <span class="metric-val warn">279</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">__appScope</span>
+        <span class="metric-val warn">5,338</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">ErrorBoundary</span>
+        <span class="metric-val danger">0</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label" data-i18n="metric.redo">重做 (Redo)</span>
+        <span class="metric-val danger">0</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label" data-i18n="metric.nativeDialogs">原生弹窗</span>
+        <span class="metric-val warn">13+</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label" data-i18n="metric.fonts">字体体积</span>
+        <span class="metric-val warn">9.41</span>
+        <span class="metric-unit">MB</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label" data-i18n="metric.progress">跟进进度</span>
+        <span id="progressMetricVal" class="metric-val ok">0 / 17</span>
+      </div>
+    </section>
+
+    <!-- 3. 单行整合工具栏 -->
+    <nav class="toolbar">
+      <div class="tab-group" id="viewTabs" role="tablist">
+        <button class="tab-btn active" data-tab="all" role="tab">
+          <span data-i18n="tab.all">全部建议</span><span class="tab-count" id="cnt-all">17</span>
+        </button>
+        <button class="tab-btn" data-tab="bug" role="tab">
+          <span data-i18n="tab.bug">消除 BUG</span><span class="tab-count" id="cnt-bug">5</span>
+        </button>
+        <button class="tab-btn" data-tab="perf" role="tab">
+          <span data-i18n="tab.perf">运行效率</span><span class="tab-count" id="cnt-perf">4</span>
+        </button>
+        <button class="tab-btn" data-tab="smooth" role="tab">
+          <span data-i18n="tab.smooth">操作流畅</span><span class="tab-count" id="cnt-smooth">4</span>
+        </button>
+        <button class="tab-btn" data-tab="ux" role="tab">
+          <span data-i18n="tab.ux">交互便捷</span><span class="tab-count" id="cnt-ux">4</span>
+        </button>
+        <button class="tab-btn" data-tab="viz" role="tab">
+          <span data-i18n="tab.viz">结构热力图</span>
+        </button>
+      </div>
+
+      <div class="filter-group" id="listFilters">
+        <select id="priorityFilter" class="ctrl-select" aria-label="Priority">
+          <option value="all" data-i18n="filter.allPriority">全部优先级</option>
+          <option value="P0">P0</option>
+          <option value="P1">P1</option>
+          <option value="P2">P2</option>
+        </select>
+        <select id="statusFilter" class="ctrl-select" aria-label="Status">
+          <option value="all" data-i18n="filter.allStatus">全部状态</option>
+          <option value="todo" data-i18n="status.todo">待处理</option>
+          <option value="doing" data-i18n="status.doing">进行中</option>
+          <option value="done" data-i18n="status.done">已完成</option>
+        </select>
+        <div class="search-wrap">
+          <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+          </svg>
+          <input id="searchInput" class="search-input" type="search" data-i18n-placeholder="filter.searchPlaceholder" placeholder="搜索文件名、符号、关键词..." />
+        </div>
+      </div>
+    </nav>
+
+    <!-- 4. 主工作区：表格 + 详情 -->
+    <main class="workspace" id="tableWorkspace">
+      <section class="panel split-left">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 58px;" data-i18n="col.priority">优先级</th>
+                <th style="width: 92px;" data-i18n="col.category">维度</th>
+                <th style="width: auto;" data-i18n="col.title">问题与优化项</th>
+                <th style="width: 195px;" data-i18n="col.location">关键文件</th>
+                <th style="width: 78px;" class="num" data-i18n="col.scope">影响规模</th>
+                <th style="width: 92px;" data-i18n="col.status">状态</th>
+              </tr>
+            </thead>
+            <tbody id="issueTableBody"></tbody>
+          </table>
+          <div id="emptyState" class="empty-state hidden" data-i18n="state.empty">—</div>
+        </div>
+      </section>
+
+      <aside class="panel split-right" id="detailPane">
+        <div class="detail-head">
+          <div class="detail-head-row">
+            <div class="detail-badges" id="detailBadges"></div>
+            <span class="commit-chip" id="detailId">—</span>
+          </div>
+          <h2 class="detail-title" id="detailTitle">—</h2>
+        </div>
+        <div class="detail-body" id="detailBody"></div>
+      </aside>
+    </main>
+
+    <!-- 5. 主工作区：结构热力图视图 -->
+    <section class="workspace hidden" id="vizWorkspace">
+      <div class="viz-grid">
+        <div class="viz-card">
+          <div class="viz-card-head">
+            <h2 class="viz-title" data-i18n="viz.topFilesTitle">Top 12 巨型源码文件体量分布 (LOC)</h2>
+            <div class="legend-row">
+              <span><i class="legend-dot" style="background: var(--danger)"></i>@ts-nocheck</span>
+              <span><i class="legend-dot" style="background: var(--accent)"></i>TS / TSX</span>
+              <span><i class="legend-dot" style="background: var(--warn)"></i>CSS</span>
+              <span><i class="legend-dot" style="background: var(--ok)"></i>Server (.mjs)</span>
+            </div>
+          </div>
+          <div class="svg-wrap" id="barChartWrap"></div>
+        </div>
+
+        <div class="viz-card">
+          <div class="viz-card-head">
+            <h2 class="viz-title" data-i18n="viz.matrixTitle">维度 × 优先级分布矩阵</h2>
+          </div>
+          <div style="overflow:auto;">
+            <table class="matrix-table">
+              <thead>
+                <tr>
+                  <th data-i18n="col.category">维度</th>
+                  <th class="num">P0</th>
+                  <th class="num">P1</th>
+                  <th class="num">P2</th>
+                  <th class="num" data-i18n="viz.total">合计</th>
+                </tr>
+              </thead>
+              <tbody id="matrixBody"></tbody>
+            </table>
+          </div>
+          <div style="margin-top:auto; padding-top:8px; border-top:var(--border);">
+            <div class="detail-sec-label" data-i18n="viz.coreSummaryLabel">核心架构诊断</div>
+            <p class="detail-text" style="margin-top:4px; color:var(--text-secondary);" data-i18n="viz.coreSummary">
+              前端 159,807 行代码中，App.tsx 持有 279 个 useState 并每帧重建 __appScope（5,338 处引用），叠加 12 个共 49,092 行 @ts-nocheck 文件，是重渲染、高 GC 内存上涨与手写 memo 漏键的共同根因。
+            </p>
+          </div>
+        </div>
+
+        <div class="antipattern-grid" id="antiPatternTiles"></div>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    /* ========================================================================
+       1. 多语言字典 (zh-CN / en-US / ru-RU)
+       ======================================================================== */
+    const I18N_DICT = {
+      "zh-CN": {
+        "page.title": "代码结构诊断与优化建议报告 · Graph Modeling Platform",
+        "header.title": "代码结构诊断与优化建议报告",
+        "action.themeLight": "明亮",
+        "action.themeDark": "暗黑",
+        "action.exportMd": "导出清单",
+        "action.print": "打印 / PDF",
+        "metric.totalLines": "代码总量",
+        "unit.loc": "行 / 196 文件",
+        "metric.redo": "重做 (Redo)",
+        "metric.nativeDialogs": "原生弹窗",
+        "metric.fonts": "字体体积",
+        "metric.progress": "跟进进度",
+        "tab.all": "全部建议",
+        "tab.bug": "消除 BUG",
+        "tab.perf": "运行效率",
+        "tab.smooth": "操作流畅",
+        "tab.ux": "交互便捷",
+        "tab.viz": "结构热力图",
+        "filter.allPriority": "全部优先级",
+        "filter.allStatus": "全部状态",
+        "filter.searchPlaceholder": "搜索文件、符号、关键词...",
+        "status.todo": "待处理",
+        "status.doing": "进行中",
+        "status.done": "已完成",
+        "col.priority": "优先级",
+        "col.category": "维度",
+        "col.title": "问题与优化项",
+        "col.location": "关键文件",
+        "col.scope": "改动规模",
+        "col.status": "状态",
+        "scope.S": "小 (1-2 文件)",
+        "scope.M": "中 (3-8 文件)",
+        "scope.L": "大 (分阶段)",
+        "cat.bug": "消除 BUG",
+        "cat.perf": "运行效率",
+        "cat.smooth": "操作流畅",
+        "cat.ux": "交互便捷",
+        "detail.locations": "代码实证定位（点击复制）",
+        "detail.problem": "实测问题与根因",
+        "detail.solution": "落地改造方案",
+        "detail.impact": "预期收益",
+        "detail.metric.priority": "优先级",
+        "detail.metric.scope": "预估范围",
+        "detail.metric.risk": "用户影响",
+        "risk.critical": "数据丢失 / 崩溃",
+        "risk.high": "高频卡顿 / 错态",
+        "risk.medium": "体验割裂 / 维护债",
+        "viz.topFilesTitle": "Top 12 巨型源码文件体量分布 (LOC)",
+        "viz.matrixTitle": "维度 × 优先级分布矩阵（点击筛选）",
+        "viz.total": "合计",
+        "viz.coreSummaryLabel": "核心架构诊断",
+        "viz.coreSummary": "前端 159,807 行中，App.tsx 持有 279 个 useState 且每帧重建 __appScope（5,338 处引用），叠加 12 个共 49,092 行 @ts-nocheck 文件，是整树重渲染、高 GC 内存逼近 2GB 与手写 memo 漏键的共同根因。",
+        "anti.any": "TypeScript any 数量",
+        "anti.emptyCatch": "空 catch {}（前+后）",
+        "anti.flushSync": "同步强制渲染 flushSync",
+        "anti.debounce": "Debounce / Throttle 计数",
+        "anti.admZip": "后端同步 AdmZip 调用",
+        "anti.useEffect": "前端 useEffect 总数",
+        "state.empty": "无匹配项",
+        "toast.copied": "已复制路径：{path}",
+        "toast.exported": "已导出 Markdown 行动清单"
+      },
+      "en-US": {
+        "page.title": "Code Architecture & Optimization Report · Graph Modeling Platform",
+        "header.title": "Code Architecture & Optimization Report",
+        "action.themeLight": "Light",
+        "action.themeDark": "Dark",
+        "action.exportMd": "Export MD",
+        "action.print": "Print / PDF",
+        "metric.totalLines": "Total LOC",
+        "unit.loc": "LOC / 196 files",
+        "metric.redo": "Redo Stack",
+        "metric.nativeDialogs": "Native Dialogs",
+        "metric.fonts": "Font Assets",
+        "metric.progress": "Progress",
+        "tab.all": "All Items",
+        "tab.bug": "Bug Prevention",
+        "tab.perf": "Performance",
+        "tab.smooth": "Smoothness",
+        "tab.ux": "Usability & UX",
+        "tab.viz": "Structure Heatmap",
+        "filter.allPriority": "All Priorities",
+        "filter.allStatus": "All Statuses",
+        "filter.searchPlaceholder": "Search file, symbol, keyword...",
+        "status.todo": "Todo",
+        "status.doing": "In Progress",
+        "status.done": "Done",
+        "col.priority": "Priority",
+        "col.category": "Category",
+        "col.title": "Finding & Optimization",
+        "col.location": "Primary File",
+        "col.scope": "Scope",
+        "col.status": "Status",
+        "scope.S": "Small (1-2f)",
+        "scope.M": "Medium (3-8f)",
+        "scope.L": "Large (Phased)",
+        "cat.bug": "Bug Fix",
+        "cat.perf": "Efficiency",
+        "cat.smooth": "Smoothness",
+        "cat.ux": "Usability",
+        "detail.locations": "Verified Code Locations (Click to Copy)",
+        "detail.problem": "Evidence & Root Cause",
+        "detail.solution": "Actionable Refactoring Plan",
+        "detail.impact": "Expected Outcome",
+        "detail.metric.priority": "Priority",
+        "detail.metric.scope": "Est. Scope",
+        "detail.metric.risk": "User Impact",
+        "risk.critical": "Data Loss / Crash",
+        "risk.high": "Jank / Stale UI",
+        "risk.medium": "UX Friction / Debt",
+        "viz.topFilesTitle": "Top 12 Largest Production Files (LOC)",
+        "viz.matrixTitle": "Category × Priority Matrix (Click to Filter)",
+        "viz.total": "Total",
+        "viz.coreSummaryLabel": "Architectural Root Cause",
+        "viz.coreSummary": "Across 159,807 frontend LOC, App.tsx holds 279 useState hooks and rebuilds __appScope every render (5,338 refs) alongside 12 @ts-nocheck files (49,092 LOC), jointly driving full-tree re-renders, 2GB heap pressure, and stale memo closures.",
+        "anti.any": "TypeScript `any` Usages",
+        "anti.emptyCatch": "Empty catch {} Blocks",
+        "anti.flushSync": "Synchronous flushSync Calls",
+        "anti.debounce": "Debounce / Throttle Calls",
+        "anti.admZip": "Sync Server AdmZip Calls",
+        "anti.useEffect": "Frontend useEffect Count",
+        "state.empty": "No matching items",
+        "toast.copied": "Copied: {path}",
+        "toast.exported": "Markdown checklist exported"
+      },
+      "ru-RU": {
+        "page.title": "Анализ архитектуры и оптимизация · Graph Modeling Platform",
+        "header.title": "Анализ архитектуры и оптимизация",
+        "action.themeLight": "Светлая",
+        "action.themeDark": "Тёмная",
+        "action.exportMd": "Экспорт MD",
+        "action.print": "Печать / PDF",
+        "metric.totalLines": "Всего строк",
+        "unit.loc": "LOC / 196 ф.",
+        "metric.redo": "Повтор (Redo)",
+        "metric.nativeDialogs": "Натив. окна",
+        "metric.fonts": "Шрифты",
+        "metric.progress": "Прогресс",
+        "tab.all": "Все пункты",
+        "tab.bug": "Ошибки",
+        "tab.perf": "Производ.",
+        "tab.smooth": "Плавность",
+        "tab.ux": "Удобство",
+        "tab.viz": "Карта кода",
+        "filter.allPriority": "Все приоритеты",
+        "filter.allStatus": "Все статусы",
+        "filter.searchPlaceholder": "Поиск по файлу, символу...",
+        "status.todo": "К работе",
+        "status.doing": "В работе",
+        "status.done": "Готово",
+        "col.priority": "Приор.",
+        "col.category": "Раздел",
+        "col.title": "Проблема и рекомендация",
+        "col.location": "Ключевой файл",
+        "col.scope": "Масштаб",
+        "col.status": "Статус",
+        "scope.S": "Мал. (1-2 ф.)",
+        "scope.M": "Сред. (3-8 ф.)",
+        "scope.L": "Крупн. (этапы)",
+        "cat.bug": "Ошибки",
+        "cat.perf": "Эффектив.",
+        "cat.smooth": "Плавность",
+        "cat.ux": "Удобство",
+        "detail.locations": "Расположение в коде (клик для копирования)",
+        "detail.problem": "Причина и факты",
+        "detail.solution": "План исправления",
+        "detail.impact": "Ожидаемый эффект",
+        "detail.metric.priority": "Приоритет",
+        "detail.metric.scope": "Охват",
+        "detail.metric.risk": "Влияние",
+        "risk.critical": "Потеря данных / сбой",
+        "risk.high": "Лаги / устаревший UI",
+        "risk.medium": "Неудобство / техдолг",
+        "viz.topFilesTitle": "Топ-12 крупнейших файлов проекта (LOC)",
+        "viz.matrixTitle": "Матрица: Раздел × Приоритет (клик — фильтр)",
+        "viz.total": "Итого",
+        "viz.coreSummaryLabel": "Корневая проблема архитектуры",
+        "viz.coreSummary": "Из 159 807 строк фронтенда App.tsx держит 279 useState и пересоздаёт __appScope каждый кадр (5 338 ссылок) при 12 файлах @ts-nocheck (49 092 строк). Это вызывает лишние рендеры, рост кучи до 2 ГБ и устаревшие замыкания.",
+        "anti.any": "Использований `any`",
+        "anti.emptyCatch": "Пустых блоков catch {}",
+        "anti.flushSync": "Синхронных flushSync",
+        "anti.debounce": "Debounce / Throttle",
+        "anti.admZip": "Синхр. AdmZip на сервере",
+        "anti.useEffect": "Всего useEffect (фронт)",
+        "state.empty": "Нет совпадений",
+        "toast.copied": "Скопировано: {path}",
+        "toast.exported": "Список экспортирован в Markdown"
+      }
+    };
+
+    /* ========================================================================
+       2. 17 项实证优化建议数据（含三语完整文本）
+       ======================================================================== */
+    const ISSUES = [
+      {
+        id: "BUG-01",
+        priority: "P0",
+        category: "bug",
+        scope: "S",
+        risk: "critical",
+        primaryFile: "src/memoryWatch.ts:113-127",
+        locations: [
+          "src/memoryWatch.ts:113-127",
+          "src/appExtracted/appRenderBatch.tsx:790-792",
+          "src/appExtracted/appToolbarHookFactories.tsx (empty-dep hooks)"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "修复内存守望 critical 自动刷新陈旧闭包（防数据丢失）",
+            problem: "appRenderBatch.tsx:791 的空依赖 useEffect(createMemoryWatchCallback(__appScope), []) 仅捕获首帧 __appScope 对象，且挂在 persistRefreshRecoveryNow 赋值（L792）之前。堆达 1.85GB 触发自动刷新时，写入的是挂载首帧空/旧状态，再绕过 beforeunload 强刷，导致用户长时间未保存编辑永久丢失。",
+            solutions: [
+              "createMemoryWatchCallback 改从 __appScope.__appScopeRef.current 实时读取 setUndoStack 与 persistRefreshRecoveryNow。",
+              "同步审计 appRenderBatch.tsx 其余 9 个空依赖 useEffect(createAppHookCallback*(__appScope), [])，统一经 __appScopeRef.current 访问最新状态。",
+              "补充单元测试模拟多帧状态变化后触发 critical 回调，断言落盘为最新模型快照。"
+            ],
+            impact: "彻底消除高内存自动刷新时的静默丢数据风险，恢复兜底机制真实可靠性。"
+          },
+          "en-US": {
+            title: "Fix stale __appScope closure in memoryWatch critical reload",
+            problem: "useEffect(createMemoryWatchCallback(__appScope), []) at appRenderBatch.tsx:791 captures the first-render __appScope before persistRefreshRecoveryNow is assigned on L792. At 1.85GB heap, critical reload persists an initial/empty snapshot and bypasses beforeunload, silently losing hours of unsaved edits.",
+            solutions: [
+              "Read setUndoStack and persistRefreshRecoveryNow dynamically via __appScope.__appScopeRef.current inside callbacks.",
+              "Audit the remaining 9 empty-dep hooks in appRenderBatch.tsx to ensure latest-ref reads.",
+              "Add a unit test verifying multi-render updates persist the latest graph snapshot on critical memory trigger."
+            ],
+            impact: "Eliminates silent unsaved-work loss during automatic 1.85GB memory recovery reloads."
+          },
+          "ru-RU": {
+            title: "Устаревшее замыкание __appScope в memoryWatch (потеря данных)",
+            problem: "Хук useEffect(createMemoryWatchCallback(__appScope), []) в appRenderBatch.tsx:791 захватывает объект первого рендера ещё до записи persistRefreshRecoveryNow (L792). При достижении 1.85 ГБ сохраняется пустой/старый снимок, после чего страница принудительно перезагружается в обход beforeunload.",
+            solutions: [
+              "Читать setUndoStack и persistRefreshRecoveryNow через __appScope.__appScopeRef.current в момент вызова.",
+              "Проверить остальные 9 хуков с пустыми зависимостями в appRenderBatch.tsx на чтение актуального ref.",
+              "Добавить модульный тест, проверяющий сохранение последнего состояния графа при критическом уровне памяти."
+            ],
+            impact: "Исключает скрытую потерю несохранённых правок при автоперезагрузке по лимиту памяти."
+          }
+        }
+      },
+      {
+        id: "BUG-02",
+        priority: "P0",
+        category: "bug",
+        scope: "S",
+        risk: "critical",
+        primaryFile: "src/main.tsx / AppStartupRoot.tsx",
+        locations: [
+          "src/main.tsx:12-27",
+          "src/appExtracted/appCanvasArea.tsx:324",
+          "src/appExtracted/appView.tsx"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "全仓补齐分级 React ErrorBoundary 防单图元白屏崩溃",
+            problem: "全仓 17.7 万行代码且含 4.9 万行 @ts-nocheck，但 ErrorBoundary / componentDidCatch 数量为 0。任意畸形图元数据、异常 SVG 或属性渲染抛错都会直接击穿整棵 React 树导致白屏，未保存工程瞬间丢失。",
+            solutions: [
+              "在应用根节点、MemoizedCanvasArea、左右面板及懒加载弹窗四处加装分级 ErrorBoundary。",
+              "画布错误回退页提供「导出当前内存 JSON 抢救」与「局部重载画布」按钮。",
+              "在错误边界内上报结构化错误上下文（当前模型 idx、选中设备 ID、组件栈）。"
+            ],
+            impact: "将局部脏数据崩溃收敛在子区域内，保障未保存建模数据可抢救。"
+          },
+          "en-US": {
+            title: "Add tiered React ErrorBoundaries to prevent full-page white screen",
+            problem: "Zero ErrorBoundary components exist across 177k LOC (with 49k LOC under @ts-nocheck). Any malformed node or SVG attribute throwing during render crashes the entire workspace and discards unsaved changes.",
+            solutions: [
+              "Wrap root app, MemoizedCanvasArea, side panels, and lazy dialogs with isolated ErrorBoundaries.",
+              "Provide an emergency 'Download In-Memory Project JSON' button and local retry action on canvas fallback UI.",
+              "Log structured context (model idx, selected node IDs, component stack) on catch."
+            ],
+            impact: "Contains rendering exceptions locally and protects unsaved engineering models."
+          },
+          "ru-RU": {
+            title: "Добавить уровневые React ErrorBoundary против белого экрана",
+            problem: "На 177 тыс. строк кода (49 тыс. с @ts-nocheck) нет ни одного ErrorBoundary. Ошибка рендера одного повреждённого элемента или SVG обрушивает всё приложение и уничтожает несохранённую работу.",
+            solutions: [
+              "Установить ErrorBoundary на корневом уровне, вокруг MemoizedCanvasArea, боковых панелей и диалогов.",
+              "Добавить на экран восстановления кнопку «Скачать текущий JSON из памяти» и локальный перезапуск.",
+              "Логировать контекст сбоя (idx модели, выбранные узлы, стек компонентов)."
+            ],
+            impact: "Изолирует сбои отдельных элементов и позволяет спасти несохранённую модель."
+          }
+        }
+      },
+      {
+        id: "BUG-03",
+        priority: "P1",
+        category: "bug",
+        scope: "M",
+        risk: "high",
+        primaryFile: "src/appExtracted/appCanvasArea.tsx:199-280",
+        locations: [
+          "src/appExtracted/appCanvasArea.tsx:199-280",
+          "src/appExtracted/appView.tsx:2561,2636",
+          "src/appExtracted/appViewRenderBoundary.tsx:21-34"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "收口 MemoizedCanvasArea 手写白名单漏键与过期事件闭包",
+            problem: "MemoizedCanvasArea 从 __appScope 解构 364 个键，而 areCanvasPropsEqual 仅比较 64 个键，漏掉 mode、activeLayerId、staticButtonVisual、rewiringPreviewRoute 等状态；跳过重渲染时 DOM 仍绑定旧帧新建的闭包回调。",
+            solutions: [
+              "将画布事件处理统一封装为稳定 Ref 分发器（只传稳定函数引用，执行时读 __appScopeRef.current）。",
+              "补齐 areCanvasPropsEqual 遗漏状态键，并新增单测校验“解构键集合 vs 比较器白名单”防回归。",
+              "中长期拆离 __appScope 透传，改由细粒度 Store 订阅替代手写浅比较。"
+            ],
+            impact: "消除切模式/切图层/改线预览时画布停在旧状态或点击触发陈旧闭包的疑难 BUG。"
+          },
+          "en-US": {
+            title: "Fix missing keys & stale closures in areCanvasPropsEqual",
+            problem: "MemoizedCanvasArea destructures 364 keys from __appScope while areCanvasPropsEqual checks only 64, omitting mode, activeLayerId, staticButtonVisual, and preview routes; skipped renders also keep stale event handler closures attached to SVG DOM.",
+            solutions: [
+              "Route canvas DOM event handlers through a stable ref-backed dispatcher reading __appScopeRef.current.",
+              "Add missing state keys to areCanvasPropsEqual and enforce a unit test auditing destructured vs compared keys.",
+              "Progressively replace whole-scope passing with selector-based external store subscriptions."
+            ],
+            impact: "Prevents stale canvas visuals and ghost-state clicks after mode/layer/route switches."
+          },
+          "ru-RU": {
+            title: "Закрыть пропуски в areCanvasPropsEqual и устаревшие обработчики",
+            problem: "MemoizedCanvasArea читает 364 поля из __appScope, но areCanvasPropsEqual сравнивает лишь 64, пропуская mode, activeLayerId, staticButtonVisual и маршруты предпросмотра; при пропуске рендера DOM хранит старые замыкания событий.",
+            solutions: [
+              "Перевести обработчики событий холста на стабильный диспетчер поверх __appScopeRef.current.",
+              "Дополнить список сравнения в areCanvasPropsEqual и защитить его тестом соответствия ключей.",
+              "Поэтапно заменить передачу всего __appScope на точечные подписки внешнего хранилища."
+            ],
+            impact: "Устраняет зависание отображения при смене режимов/слоёв и срабатывание старых замыканий."
+          }
+        }
+      },
+      {
+        id: "BUG-04",
+        priority: "P1",
+        category: "bug",
+        scope: "S",
+        risk: "medium",
+        primaryFile: "src/App.tsx:1750-1756",
+        locations: [
+          "src/App.tsx:1750-1756",
+          "src/qiankunLifecycle.ts"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "消除 App.tsx 模块级可变状态对 qiankun 重挂载的污染",
+            problem: "initialUrlModelIntent、urlModelAwaitingSchemes 与 urlModelOpenStarted 声明在模块顶层。在 qiankun 微前端卸载再挂载（unmount -> mount）或 React StrictMode 双挂载时不会重置，导致二次进入地址栏 ?model= 失效。",
+            solutions: [
+              "将这三个状态收敛为 App 组件内的 useRef，在组件卸载 cleanup 中复位。",
+              "在 qiankun mount 入口重新解析当前地址栏意图，而非依赖模块首次求值。"
+            ],
+            impact: "保证微前端反复切换子应用时，URL 深链打开指定模型行为 100% 一致。"
+          },
+          "en-US": {
+            title: "Move module-level URL intent flags into component lifecycle",
+            problem: "initialUrlModelIntent, urlModelAwaitingSchemes, and urlModelOpenStarted live at module scope. Under qiankun unmount/remount or React StrictMode, stale module flags stop URL ?model= auto-opening on subsequent mounts.",
+            solutions: [
+              "Move mutable URL-open flags into component useRef state reset on unmount.",
+              "Read initial URL intent on mount instead of once at module evaluation time."
+            ],
+            impact: "Guarantees deterministic deep-link model loading across micro-frontend remounts."
+          },
+          "ru-RU": {
+            title: "Убрать модульные флаги URL из App.tsx (поломка qiankun)",
+            problem: "Переменные initialUrlModelIntent, urlModelAwaitingSchemes и urlModelOpenStarted объявлены на уровне модуля и не сбрасываются при повторном монтировании микрофронтенда qiankun или в StrictMode.",
+            solutions: [
+              "Перенести состояние открытия модели по URL в useRef компонента со сбросом при размонтировании.",
+              "Считывать параметры URL при каждом mount, а не один раз при загрузке модуля."
+            ],
+            impact: "Обеспечивает стабильное открытие моделей по прямой ссылке при переключении микроприложений."
+          }
+        }
+      },
+      {
+        id: "BUG-05",
+        priority: "P2",
+        category: "bug",
+        scope: "L",
+        risk: "medium",
+        primaryFile: "src/measurements.ts (+11 @ts-nocheck)",
+        locations: [
+          "src/appExtracted/appCanvasViewportCalculations.ts (60 LOC)",
+          "src/measurements.ts (1,779 LOC)",
+          "src/App.tsx (1,991 LOC)",
+          "src/appExtracted/appDeviceDefinitionFactories.tsx (9,648 LOC)"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "分批摘除 12 个核心文件（4.9 万行）的 @ts-nocheck 与 56 处空 catch",
+            problem: "前端 30.7% 代码处于 @ts-nocheck 盲区，另有 454 处 any 和 56 处空 catch {}。重构字段名时编译器无法报警，且空 catch 会静默吞掉 localStorage 配额溢出或配置解析失败。",
+            solutions: [
+              "按体积从小到大逐文件摘除 @ts-nocheck：先 appCanvasViewportCalculations.ts -> appCanvasViewportBatch.tsx -> measurements.ts。",
+              "禁止新增 @ts-nocheck（加 CI/测试守卫锁定当前文件白名单只减不增）。",
+              "为持久化与序列化路径上的空 catch 补充 console.warn 与存储满全局提示。"
+            ],
+            impact: "将隐蔽运行时 ReferenceError / TypeError 提前拦截在编译阶段，减少线上偶发静默失效。"
+          },
+          "en-US": {
+            title: "Phase out @ts-nocheck (49k LOC, 12 files) and 56 empty catch blocks",
+            problem: "30.7% of frontend code bypasses TypeScript checking alongside 454 `any` usages and 56 empty catch blocks, hiding QuotaExceededError and serialization failures silently.",
+            solutions: [
+              "Remove @ts-nocheck incrementally starting from smallest files (appCanvasViewportCalculations.ts, measurements.ts).",
+              "Add a guard test ratcheting the @ts-nocheck allowlist so count only decreases.",
+              "Surface structured warnings/toasts in storage and serialization catch handlers."
+            ],
+            impact: "Catches schema/property mismatches at compile time and eliminates silent storage failures."
+          },
+          "ru-RU": {
+            title: "Поэтапно убрать @ts-nocheck (12 файлов, 49k LOC) и 56 пустых catch",
+            problem: "30,7% кода фронтенда отключено от проверки TypeScript, плюс 454 `any` и 56 пустых catch {}, которые молча скрывают переполнение localStorage и ошибки парсинга.",
+            solutions: [
+              "Снимать @ts-nocheck по очереди от малых файлов к крупным (appCanvasViewportCalculations.ts, measurements.ts).",
+              "Добавить тест-ограничитель, запрещающий появление новых @ts-nocheck.",
+              "Заменить пустые catch в путях сохранения на логирование и уведомление пользователя."
+            ],
+            impact: "Переносит выявление ошибок типизации на этап сборки и убирает скрытые сбои сохранения."
+          }
+        }
+      },
+      {
+        id: "PERF-01",
+        priority: "P0",
+        category: "perf",
+        scope: "S",
+        risk: "high",
+        primaryFile: "src/App.tsx:1866,1926-1977",
+        locations: [
+          "src/App.tsx:1926-1977 (runtimeWsBlinkSeq)",
+          "src/App.tsx:1866-1890 (no-deps useEffect)",
+          "src/appExtracted/appRenderBatch.tsx:796 (createAppHookCallback95)"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "拆离顶层 WS 闪灯状态并修复两处无依赖 useEffect",
+            problem: "runtimeWsBlinkSeq 放在顶层 App 的 useState 中，每次 WS 心跳/通信都触发整个 App 重渲染（重跑 10+ 巨型工厂创建数百个闭包）；同时 App.tsx:1866 与 appRenderBatch.tsx:796 两个无依赖数组 useEffect 每帧空跑。",
+            solutions: [
+              "将 RT-WS 指示灯抽离为独立子组件，使用轻量订阅器（EventTarget/回调集）局部刷新闪灯动画，与 App 完全解耦。",
+              "App.tsx:1866 补齐依赖 [currentSpaceId, activeProjectKey, activeSchemeKey, schemes]。",
+              "appRenderBatch.tsx:796 补齐依赖 [connectSource]，非连线态不再每帧执行 setConnectPreviewDom。"
+            ],
+            impact: "消除空闲期与 MCP/API 调用期间的无意义整树重渲染，显著降低主线程 CPU 与 GC 抖动。"
+          },
+          "en-US": {
+            title: "Isolate WS blink state & fix two unbounded useEffect hooks",
+            problem: "runtimeWsBlinkSeq sits in root App state, re-rendering the entire App and all factory builders on every WS activity ping. Two no-deps useEffect hooks (App.tsx:1866, appRenderBatch.tsx:796) also run on every render.",
+            solutions: [
+              "Move RT-WS indicator into a self-contained subscriber component decoupled from root App state.",
+              "Add explicit dependency array [currentSpaceId, activeProjectKey, activeSchemeKey, schemes] to App.tsx:1866.",
+              "Bind appRenderBatch.tsx:796 to [connectSource] so non-connecting renders skip DOM preview resets."
+            ],
+            impact: "Cuts idle/WS-triggered root re-renders to zero and reduces GC churn."
+          },
+          "ru-RU": {
+            title: "Вынести состояние индикатора WS и исправить 2 useEffect без зависимостей",
+            problem: "runtimeWsBlinkSeq хранится в корневом App, из-за чего каждый пакет WS перерисовывает всё дерево и пересоздаёт фабрики. Два useEffect без массива зависимостей (App.tsx:1866, appRenderBatch.tsx:796) выполняются на каждом рендере.",
+            solutions: [
+              "Вынести индикатор RT-WS в отдельный компонент с локальной подпиской без обновления корневого App.",
+              "Указать точные зависимости [currentSpaceId, activeProjectKey, activeSchemeKey, schemes] в App.tsx:1866.",
+              "Добавить [connectSource] в appRenderBatch.tsx:796."
+            ],
+            impact: "Устраняет паразитные полные перерисовки при WS-активности и снижает нагрузку на GC."
+          }
+        }
+      },
+      {
+        id: "PERF-02",
+        priority: "P1",
+        category: "perf",
+        scope: "M",
+        risk: "high",
+        primaryFile: "src/assets/fonts/ + vite.config.ts",
+        locations: [
+          "src/assets/fonts/source-han-sans-cn-400.woff2 (4.67 MB)",
+          "src/assets/fonts/source-han-sans-cn-500.woff2 (4.74 MB)",
+          "src/styles.css (17,279 LOC / 346 KB)",
+          "vite.config.ts:14-42"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "字体子集化分片、CSS 拆分与首屏 vendor chunk 瘦身",
+            problem: "两份思源黑体字体合计 9.41 MB，styles.css 单文件 346 KB，且 vite.config.ts 将 antd、@xyflow/react、highlight.js、react-joyride 全揉进单一 vendor chunk，首次加载与缓存失效代价极高。",
+            solutions: [
+              "用 cn-font-split 对思源黑体按 unicode-range 分片（或裁剪常用 GB2312 + 电力符号子集），首屏字体流量降 85%+。",
+              "将 AllNetworkTopologyDialog、UserCustomizationManagerDialog、VoltageLevelDialog、AppTour 改为 React.lazy 懒加载。",
+              "在 vite.config.ts 细化 manualChunks，将 antd、xyflow、highlight.js 拆为独立可缓存 chunk，并按弹窗拆出 styles.css。"
+            ],
+            impact: "首屏传输体积减少 60%–80%，弱网/首次打开加载速度大幅提升，发版缓存命中率显著提高。"
+          },
+          "en-US": {
+            title: "Subset 9.4MB fonts, split 346KB CSS & isolate heavy vendor chunks",
+            problem: "Two Source Han Sans WOFF2 files total 9.41 MB, styles.css is 346 KB monolithic, and vite.config.ts merges antd, @xyflow/react, highlight.js, and react-joyride into one vendor chunk.",
+            solutions: [
+              "Apply unicode-range font splitting (e.g. cn-font-split) or CJK subsetting to cut initial font transfer by >85%.",
+              "Lazy-load AllNetworkTopologyDialog, UserCustomizationManagerDialog, VoltageLevelDialog, and AppTour.",
+              "Split antd, @xyflow/react, and highlight.js into dedicated manualChunks and extract dialog CSS."
+            ],
+            impact: "Cuts cold-start payload by 60–80% and improves browser cache reuse across releases."
+          },
+          "ru-RU": {
+            title: "Оптимизация шрифтов (9.4 МБ), CSS (346 КБ) и разбиение vendor-чанка",
+            problem: "Два файла шрифтов весят 9,41 МБ, styles.css — 346 КБ одним файлом, а vite.config.ts объединяет antd, @xyflow/react, highlight.js и react-joyride в единый vendor-чанк.",
+            solutions: [
+              "Разбить шрифты по unicode-range (cn-font-split) или выделить подмножество символов — минус >85% трафика.",
+              "Перевести тяжёлые диалоги (AllNetworkTopologyDialog, UserCustomizationManagerDialog, AppTour) на React.lazy.",
+              "Выделить antd, xyflow и highlight.js в отдельные manualChunks и вынести стили диалогов."
+            ],
+            impact: "Уменьшает объём первой загрузки на 60–80% и ускоряет повторные визиты за счёт кеша."
+          }
+        }
+      },
+      {
+        id: "PERF-03",
+        priority: "P2",
+        category: "perf",
+        scope: "L",
+        risk: "high",
+        primaryFile: "src/App.tsx (279 useState) + undoStack",
+        locations: [
+          "src/App.tsx:930-1668",
+          "src/appExtracted/appRenderBatch.tsx:811-845",
+          "src/appExtracted/appGraphMeasurementFactories.tsx:3926"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "下沉顶层状态域 + 撤销历史改增量 Patch，根治 2GB 堆内存增长",
+            problem: "App.tsx 持有 279 个 useState 且每帧重建 __appScope 与数百个工厂闭包，叠加 undoStack（50 条全量快照）高分配速率，正是 memoryWatch 注释记录“5 分钟 430 轮编辑堆逼近 2GB”的根因。",
+            solutions: [
+              "第一阶段：将仅属弹窗的临时 state（电压/过滤/创建/自定义表单等）下沉至各懒加载弹窗内部。",
+              "第二阶段：将纯工具函数移出每帧 create*(scope) 工厂改为模块级静态导出，减少每帧闭包分配。",
+              "第三阶段：撤销栈从全量 UndoSnapshot 改为操作级增量 Patch（Command Pattern），内存占用降低 10x+。"
+            ],
+            impact: "大幅降低 V8 内存分配速率与 GC 停顿，长时建模不再逼近 1.2GB/1.85GB 内存红线。"
+          },
+          "en-US": {
+            title: "Decentralize 279 root states & switch Undo to incremental patches",
+            problem: "279 root useState hooks rebuilding __appScope + hundreds of factory closures every frame, combined with 50 full-project UndoSnapshots, drives the observed ~2GB heap climb during 5-minute editing sessions.",
+            solutions: [
+              "Phase 1: Move dialog-local state (voltage/filter/creation drafts) down into lazy dialog components.",
+              "Phase 2: Hoist stateless helpers out of per-render create*(scope) factories to module scope.",
+              "Phase 3: Replace full UndoSnapshot copies with incremental graph diff commands (10x+ smaller)."
+            ],
+            impact: "Dramatically lowers heap allocation rate and prevents long-session memory threshold reloads."
+          },
+          "ru-RU": {
+            title: "Децентрализация 279 useState и переход Undo на инкрементальные патчи",
+            problem: "279 хуков useState в корне App с пересозданием __appScope и сотен замыканий на каждом кадре плюс 50 полных снимков UndoSnapshot разгоняют кучу V8 к 2 ГБ за 5 минут работы.",
+            solutions: [
+              "Этап 1: Перенести локальные состояния модальных окон внутрь ленивых компонентов диалогов.",
+              "Этап 2: Вынести чистые функции из фабрик create*(scope) на уровень модуля.",
+              "Этап 3: Перевести стек отмены с полных копий на инкрементальные патчи (Command Pattern)."
+            ],
+            impact: "Снижает скорость аллокаций и нагрузку на GC, исключая достижение порога 1.85 ГБ."
+          }
+        }
+      },
+      {
+        id: "PERF-04",
+        priority: "P2",
+        category: "perf",
+        scope: "L",
+        risk: "high",
+        primaryFile: "server/server.mjs (6,347 LOC)",
+        locations: [
+          "server/server.mjs (6,347 LOC, 4 AdmZip)",
+          "server/spaceArchive.mjs",
+          "server/spaceArtifactExport.mjs",
+          "server/schemeArchive.mjs"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "后端同步 AdmZip 导出移入 Worker / 流式压缩 + 拆分单体 server.mjs",
+            problem: "后端 18 处 AdmZip 调用（toBuffer/解压）为纯同步 CPU 阻塞操作，大空间导出或 ZIP 导入期间会冻结 Node 单线程事件循环，连带导致 WS 心跳超时与并发 HTTP 阻塞；server.mjs 单文件 6,347 行职责高度耦合。",
+            solutions: [
+              "将空间/方案 ZIP 打包解压与批量 E/SVG/CIM 派生任务下沉到 worker_threads 或换用流式压缩（archiver / yauzl）。",
+              "按业务域（images / schemes / spaces / config / static）将 server.mjs 拆分为独立子路由器，保持原路径与空间隔离不变量不变。"
+            ],
+            impact: "消除大空间导出时的全服务卡顿与 WS 断连，同时显著降低服务端峰值内存占用。"
+          },
+          "en-US": {
+            title: "Offload sync AdmZip to Worker/streams & modularize server.mjs",
+            problem: "18 synchronous AdmZip calls block Node's single-threaded event loop during large workspace exports/imports, stalling WS heartbeats and concurrent APIs; server.mjs spans 6,347 LOC.",
+            solutions: [
+              "Move ZIP compression/extraction and batch artifact generation into worker_threads or streaming libs (archiver/yauzl).",
+              "Split server.mjs into domain routers (images, schemes, spaces, config, static) while preserving path & retirement guards."
+            ],
+            impact: "Keeps WS heartbeats and concurrent APIs responsive under heavy export load."
+          },
+          "ru-RU": {
+            title: "Вынести синхронный AdmZip в Worker/потоки и разделить server.mjs",
+            problem: "18 синхронных вызовов AdmZip блокируют event loop Node.js при экспорте крупных пространств, обрывая WS-heartbeat и параллельные запросы; server.mjs вырос до 6 347 строк.",
+            solutions: [
+              "Перенести сборку/распаковку ZIP и массовый экспорт артефактов в worker_threads или потоковые библиотеки (archiver/yauzl).",
+              "Разбить server.mjs на доменные роутеры с сохранением изоляции пространств."
+            ],
+            impact: "Убирает подвисания сервера и обрывы WebSocket при тяжёлом экспорте."
+          }
+        }
+      },
+      {
+        id: "SMOOTH-01",
+        priority: "P1",
+        category: "smooth",
+        scope: "S",
+        risk: "high",
+        primaryFile: "src/appExtracted/appToolbarHookFactories.tsx:3451",
+        locations: [
+          "src/appExtracted/appToolbarHookFactories.tsx:3451,3475",
+          "src/appExtracted/appCanvasInteractionFactories.tsx:2455,2465"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "清除画布边框拖拽热路径上的 flushSync 同步重排",
+            problem: "拖拽调整画布边界时在 pointermove 中直接调用 flushSync(() => setCanvasResizeDraft(clampedBounds))，每像素移动强制同步提交 React 渲染与浏览器 Layout，大图元画布拖拽帧率骤降。",
+            solutions: [
+              "拖拽期间改用 requestAnimationFrame 节流并直接更新预览虚线框 SVG/CSS transform。",
+              "仅在 pointerup 结束拖拽时一次提交最终画布尺寸状态与画布原点偏移。"
+            ],
+            impact: "大画布边界缩放从卡顿掉帧恢复至稳定 60fps 丝滑跟手。"
+          },
+          "en-US": {
+            title: "Remove synchronous flushSync from canvas-resize drag hot path",
+            problem: "Calling flushSync(() => setCanvasResizeDraft(...)) inside pointermove forces synchronous React reconciliation and browser layout on every pointer event, causing severe jank on large diagrams.",
+            solutions: [
+              "Update the resize preview overlay imperatively via requestAnimationFrame during pointermove.",
+              "Commit final canvas bounds to React state once on pointerup."
+            ],
+            impact: "Restores smooth 60fps canvas boundary resizing on complex stations."
+          },
+          "ru-RU": {
+            title: "Убрать синхронный flushSync из горячего пути растягивания холста",
+            problem: "Вызов flushSync(() => setCanvasResizeDraft(...)) внутри pointermove на каждый пиксель принудительно запускает синхронный рендер React и пересчёт layout, вызывая падение FPS.",
+            solutions: [
+              "Обновлять рамку предпросмотра напрямую в DOM через requestAnimationFrame во время перетаскивания.",
+              "Фиксировать итоговый размер холста в состоянии React один раз в pointerup."
+            ],
+            impact: "Возвращает плавные 60 FPS при изменении границ больших схем."
+          }
+        }
+      },
+      {
+        id: "SMOOTH-02",
+        priority: "P1",
+        category: "smooth",
+        scope: "M",
+        risk: "high",
+        primaryFile: "src/appExtracted/appCanvasArea.tsx (1,809 LOC)",
+        locations: [
+          "src/appExtracted/appCanvasArea.tsx:324-1809"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "画布 SVG 拆三层渲染边界（静态底图 / 主体图元 / 瞬态交互层）",
+            problem: "背景页、网格、主体数千 SVG 图元与高频瞬态交互（框选 marquee、智能对齐线、拖拽幽灵、连线预览、缩放把手）混在同一 1,809 行组件中，任意瞬态像素变化都触发全画布 JSX diff。",
+            solutions: [
+              "拆分 CanvasStaticLayer（背景/网格/标尺/只读背景页）、CanvasGraphLayer（节点/边/量测/电流箭头）、CanvasOverlayLayer（选框/对齐线/拖拽与连线预览/悬浮工具条）。",
+              "框选、拖拽预览与连线过程中只重绘轻量的 CanvasOverlayLayer，主体图元层 0 次 diff。"
+            ],
+            impact: "数千节点大模型下的框选、对齐吸附与拉线交互延迟显著降低。"
+          },
+          "en-US": {
+            title: "Split 1,809-LOC canvas into Static / Graph / Transient Overlay layers",
+            problem: "Grid, background pages, thousands of SVG nodes/edges, and 60fps transient overlays (marquee, alignment guides, connect/drag previews) share one component; every cursor-driven overlay update diffs the full canvas JSX.",
+            solutions: [
+              "Extract CanvasStaticLayer, CanvasGraphLayer, and CanvasOverlayLayer as independent memoized layers.",
+              "Keep marquee, snapping guides, and drag/connect previews confined to CanvasOverlayLayer with zero GraphLayer diffs."
+            ],
+            impact: "Keeps marquee selection, snapping, and wire drawing fluid on multi-thousand-node grids."
+          },
+          "ru-RU": {
+            title: "Разделить холст (1 809 строк) на 3 слоя: фон / граф / оверлей",
+            problem: "Сетка, тысячи узлов SVG и быстрые интерактивные элементы (рамка выделения, направляющие, превью линий) живут в одном компоненте — каждый сдвиг курсора пересчитывает весь JSX холста.",
+            solutions: [
+              "Разделить на CanvasStaticLayer, CanvasGraphLayer и CanvasOverlayLayer с независимой мемоизацией.",
+              "Изолировать выделение, привязку и превью в лёгком верхнем слое без diff основного графа."
+            ],
+            impact: "Резко снижает задержки выделения рамкой и прокладки связей на крупных моделях."
+          }
+        }
+      },
+      {
+        id: "SMOOTH-03",
+        priority: "P1",
+        category: "smooth",
+        scope: "M",
+        risk: "high",
+        primaryFile: "src/appExtracted/appRightPanel.tsx (1,405 LOC)",
+        locations: [
+          "src/appExtracted/appLeftPanel.tsx",
+          "src/appExtracted/appRightPanel.tsx (1,405 LOC, no memo)",
+          "src/appExtracted/appRenderPanels.tsx"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "左侧三棵树与右侧大表接入搜索防抖 + 虚拟滚动",
+            problem: "全仓 debounce/throttle 计数为 0，且 appRightPanel.tsx（1,405 行）未做 memo、树与参数/测点表缺少虚拟滚动。面对上千设备与方案时，搜索输入每击键同步重建整棵 DOM 树，输入明显掉帧。",
+            solutions: [
+              "为 projectSearchQuery、librarySearchQuery 与右侧设备/测点检索增加 150ms 防抖或 useDeferredValue。",
+              "为方案树、图元库树、设备树与量测参数表启用 Ant Design 原生 virtual 滚动与固定高度。",
+              "为 AppLeftPanel / AppRightPanel 补齐细粒度 memo 隔离，避免画布缩放/拖拽引发侧栏重渲染。"
+            ],
+            impact: "大模型检索打字零卡顿，长列表滚轮浏览内存与渲染开销稳定在 O(视口行数)。"
+          },
+          "en-US": {
+            title: "Add search debounce & virtualization to side trees and tables",
+            problem: "Zero debounce/throttle calls exist across the codebase, appRightPanel.tsx (1,405 LOC) is un-memoized, and large trees/parameter tables render all DOM rows eagerly—causing typing lag during search.",
+            solutions: [
+              "Debounce project/library/device search inputs (150ms) or defer filtering via useDeferredValue.",
+              "Enable Ant Design native `virtual` scrolling on scheme/library/device trees and measurement tables.",
+              "Memoize AppLeftPanel and AppRightPanel against canvas viewport/drag updates."
+            ],
+            impact: "Eliminates search typing lag and caps list DOM cost to visible viewport rows."
+          },
+          "ru-RU": {
+            title: "Добавить debounce поиска и виртуализацию для деревьев и таблиц",
+            problem: "В проекте нет ни одного debounce/throttle, appRightPanel.tsx (1 405 строк) без memo, а большие деревья и таблицы параметров рендерятся целиком, вызывая тормоза при вводе поиска.",
+            solutions: [
+              "Добавить задержку 150 мс (debounce) или useDeferredValue для фильтров поиска.",
+              "Включить встроенную виртуализацию Ant Design (`virtual`) для деревьев схем, библиотек и таблиц.",
+              "Изолировать AppLeftPanel / AppRightPanel через memo от событий зума и перетаскивания холста."
+            ],
+            impact: "Плавный ввод при поиске и постоянная стоимость рендера O(видимые строки)."
+          }
+        }
+      },
+      {
+        id: "SMOOTH-04",
+        priority: "P2",
+        category: "smooth",
+        scope: "L",
+        risk: "high",
+        primaryFile: "src/model-routing.ts (13,308 LOC)",
+        locations: [
+          "src/model-routing.ts (13,308 LOC / 496 KB)",
+          "src/appExtracted/appSelectionDragFactories.tsx (14 route calls)",
+          "src/autoAlign/autoAlignClient.ts (Worker reference)"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "批量连线避障重算下沉 Web Worker（复用 autoAlign Worker 架构）",
+            problem: "autoAlign 已成功迁入 Web Worker，但多选拖拽松手与连线批量重绘（14 处 rebuild/redraw 调用）仍同步执行 496 KB 的 model-routing.ts 避障算法，复杂厂站拖动多设备松手时主线程易冻结数百毫秒。",
+            solutions: [
+              "当受影响连线超过阈值（如 > 20 条）时，复用现有 Worker + AbortController 模式异步计算路由。",
+              "计算期间先显示轻量正交直线过渡，结果返回后平滑替换，若用户继续操作则自动取消过期任务。"
+            ],
+            impact: "消除大型拓扑图批量拖拽松手后的主线程冻结感，操作连续不打断。"
+          },
+          "en-US": {
+            title: "Offload bulk orthogonal routing to Web Worker (like autoAlign)",
+            problem: "While autoAlign already runs in a Web Worker, multi-node drag drop and bulk edge redraws (14 call sites) execute model-routing.ts (496 KB) synchronously on the UI thread, freezing complex substations for hundreds of ms.",
+            solutions: [
+              "Dispatch routing jobs exceeding a threshold (e.g. >20 edges) to a reusable Worker with AbortController.",
+              "Show immediate lightweight preview paths and swap in routed geometry asynchronously, cancelling superseded jobs."
+            ],
+            impact: "Removes main-thread UI freeze after moving large node groups."
+          },
+          "ru-RU": {
+            title: "Вынести массовую перепрокладку маршрутов в Web Worker",
+            problem: "autoAlign уже работает в Web Worker, но пересчёт связей после перетаскивания группы узлов (14 точек вызова) синхронно крутит model-routing.ts (496 КБ) в главном потоке, замораживая интерфейс.",
+            solutions: [
+              "При числе затронутых связей > 20 передавать расчёт в Web Worker с AbortController по аналогии с autoAlignClient.",
+              "Показыват временную упрощённую трассу и плавно подменять результат, отменяя устаревшие задачи."
+            ],
+            impact: "Убирает фризы интерфейса после перемещения крупных групп оборудования."
+          }
+        }
+      },
+      {
+        id: "UX-01",
+        priority: "P1",
+        category: "ux",
+        scope: "M",
+        risk: "high",
+        primaryFile: "src/App.tsx:1608 (undoStack only)",
+        locations: [
+          "src/App.tsx:1608",
+          "src/appExtracted/appGraphMeasurementFactories.tsx:3926",
+          "src/appExtracted/appTopbar.tsx"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "补齐「重做（Redo）」能力与快捷键（Ctrl+Y / Ctrl+Shift+Z）",
+            problem: "全仓仅实现 undoStack 而完全没有 redoStack。用户在复杂拓扑建模中多按一次 Ctrl+Z 撤销后无法找回刚撤掉的连线或参数改动，极易破坏建模心流。",
+            solutions: [
+              "新增 redoStack（执行撤销时将当前态压入 redoStack，产生新编辑时清空 redoStack）。",
+              "顶栏撤销按钮旁增加重做按钮及步数提示，快捷键绑定 Ctrl+Y 与 Ctrl+Shift+Z（macOS Cmd+Shift+Z）。",
+              "同步接入 memoryWatch 软/硬裁剪策略，防止 redoStack 额外推高内存。"
+            ],
+            impact: "补齐图形建模平台最核心的双向历史回退体验，彻底消除误撤销焦虑。"
+          },
+          "en-US": {
+            title: "Implement Redo stack & shortcuts (Ctrl+Y / Ctrl+Shift+Z)",
+            problem: "Only undoStack exists across the entire codebase with zero redoStack support. Pressing Ctrl+Z one step too far permanently loses the undone topology/parameter edit.",
+            solutions: [
+              "Add redoStack: push pre-undo state on Undo, clear redoStack on any new mutation.",
+              "Add a Redo toolbar button beside Undo and bind Ctrl+Y / Ctrl+Shift+Z (Cmd+Shift+Z on macOS).",
+              "Include redoStack in memoryWatch trim callbacks."
+            ],
+            impact: "Completes essential bidirectional editing history expected in every CAD/diagramming tool."
+          },
+          "ru-RU": {
+            title: "Реализовать повтор действий Redo (Ctrl+Y / Ctrl+Shift+Z)",
+            problem: "Реализован только undoStack без redoStack. Лишнее нажатие Ctrl+Z безвозвратно теряет отменённую правку топологии или параметров.",
+            solutions: [
+              "Добавить redoStack: сохранять состояние при Undo и очищать при новом изменении модели.",
+              "Добавить кнопку «Повторить» рядом с «Отменить» и горячие клавиши Ctrl+Y / Ctrl+Shift+Z.",
+              "Подключить очистку redoStack к стратегии memoryWatch."
+            ],
+            impact: "Закрывает базовую потребность графического редактора в двунаправленной истории правок."
+          }
+        }
+      },
+      {
+        id: "UX-02",
+        priority: "P1",
+        category: "ux",
+        scope: "M",
+        risk: "medium",
+        primaryFile: "src/appExtracted/appProjectCanvasFactories.tsx (+12 hits)",
+        locations: [
+          "src/appExtracted/appProjectCanvasFactories.tsx:2882,3551,3591,5580",
+          "src/appExtracted/appDeviceDefinitionFactories.tsx:4176,4203,8562,8615",
+          "src/appExtracted/appView.tsx:690,1508",
+          "src/AllNetworkTopologyDialog.tsx:1017"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "全量替换残留 13 处原生 window.prompt / window.confirm 为受控弹窗",
+            problem: "新建/重命名方案、重命名模型、重命名元件/文件夹、删除参数定义、删除全局线路等高频操作仍使用浏览器原生 prompt/confirm，阻塞事件循环、破坏暗黑主题与 qiankun 宿主一致性，且无法做重名校验。",
+            solutions: [
+              "复用项目已有的 antd 受控对话框工具（如 appTopbar.tsx 中的 dialogs.prompt）统一封装 prompt/confirm。",
+              "输入类弹窗支持自动选中默认文本、回车提交、实时重名校验提示；删除类弹窗用红字危险按钮且默认聚焦取消。"
+            ],
+            impact: "大幅提升视觉一致性、暗黑/微前端适配度与高危删除操作的安全感。"
+          },
+          "en-US": {
+            title: "Replace 13 native window.prompt / window.confirm calls with Modal",
+            problem: "Frequent actions (create/rename scheme, rename model/folder/device, delete parameter definitions/global lines) still invoke blocking native browser prompt/confirm, clashing with dark mode and qiankun hosts without inline validation.",
+            solutions: [
+              "Reuse the existing antd controlled dialog helpers (as in appTopbar.tsx) across all 13 call sites.",
+              "Add auto-select text, Enter-to-submit, inline duplicate-name checks, and danger-styled delete confirmations defaulting focus to Cancel."
+            ],
+            impact: "Delivers cohesive dark/light UX, non-blocking flows, and safer destructive confirmations."
+          },
+          "ru-RU": {
+            title: "Заменить 13 нативных window.prompt / window.confirm на Modal",
+            problem: "Частые действия (создание/переименование схем, моделей, папок, удаление параметров и глобальных линий) используют нативные блокирующие окна браузера, выбивающиеся из тёмной темы и qiankun.",
+            solutions: [
+              "Перевести все 13 вызовов на управляемые диалоги antd (по образцу dialogs.prompt в appTopbar.tsx).",
+              "Добавить автовыделение текста, проверку дубликатов имени и безопасный фокус на «Отмена» при удалении."
+            ],
+            impact: "Обеспечивает единый стиль интерфейса, неблокирующую работу и защиту от случайного удаления."
+          }
+        }
+      },
+      {
+        id: "UX-03",
+        priority: "P1",
+        category: "ux",
+        scope: "S",
+        risk: "medium",
+        primaryFile: "src/appExtracted/appView.tsx:679-686",
+        locations: [
+          "src/appExtracted/appView.tsx:679-686",
+          "src/App.tsx:913"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "用单调递增 mutationRevision 替代撤销栈长度判断“未保存状态”",
+            problem: "appView.tsx:683 通过 undoStack.length <= savedUndoStackLengthRef.current 判断未保存状态。一旦编辑超过 50 步触发 slice(-49) 截断，或内存守望裁剪撤销栈，长度基准就会失真，可能误判为已保存或永远显示未保存。",
+            solutions: [
+              "引入单调递增的 mutationRevision（每次图/属性变更 +1）与 savedRevision（保存成功时同步为当前 revision）。",
+              "dirty 状态严格等于 currentRevision !== savedRevision（撤销/重做同步恢复对应快照的 revision）。",
+              "状态栏简洁展示未保存红点与上次保存时间。"
+            ],
+            impact: "彻底消除长时编辑后脏状态误判，避免退出漏提示或无改动误拦截。"
+          },
+          "en-US": {
+            title: "Track dirty state via monotonic mutationRevision instead of stack length",
+            problem: "appView.tsx:683 infers dirty state from undoStack.length <= savedUndoStackLengthRef.current. Once edits exceed 50 steps (truncated via slice(-49)) or memoryWatch trims history, the baseline breaks.",
+            solutions: [
+              "Store a monotonic mutationRevision per snapshot and record savedRevision on save.",
+              "Compute dirty state strictly as currentRevision !== savedRevision across edits, Undo, and Redo.",
+              "Display a subtle unsaved dot and last-saved timestamp in the status bar."
+            ],
+            impact: "Makes unsaved-change detection 100% accurate even after 50+ edits or memory trims."
+          },
+          "ru-RU": {
+            title: "Отслеживать несохранённые правки по mutationRevision, а не по длине стека",
+            problem: "appView.tsx:683 сравнивает undoStack.length с savedUndoStackLengthRef. После 50 правок (обрезка slice(-49)) или очистки memoryWatch индикатор несохранённых изменений начинает врать.",
+            solutions: [
+              "Ввести монотонный счётчик mutationRevision в каждом снимке и фиксировать savedRevision при сохранении.",
+              "Вычислять флаг изменений строго как currentRevision !== savedRevision при правках, Undo и Redo.",
+              "Показывать компактный индикатор и время последнего сохранения в строке состояния."
+            ],
+            impact: "Исключает ложные предупреждения и риск закрыть изменённую модель без сохранения."
+          }
+        }
+      },
+      {
+        id: "UX-04",
+        priority: "P2",
+        category: "ux",
+        scope: "M",
+        risk: "medium",
+        primaryFile: "src/keyboardShortcuts.ts",
+        locations: [
+          "src/keyboardShortcuts.ts",
+          "src/appExtracted/appTopbar.tsx"
+        ],
+        i18n: {
+          "zh-CN": {
+            title: "新增 Ctrl+K 快速命令/图元检索面板与快捷键速查浮层",
+            problem: "平台包含 7,862 图标、多级方案树、元件库与模板库，用户在画布与左侧三棵树之间高频切换寻址路径长；且快捷键分散在多处逻辑中缺少统一可视化提示。",
+            solutions: [
+              "实现轻量 Ctrl+K 命令面板：一站式模糊搜索并放置图元、跳转模型、按设备名/idx 聚焦画布节点。",
+              "在顶栏增加「?」快捷键速查浮层，并在常用按钮 Tooltip 统一标注快捷键组合。"
+            ],
+            impact: "高频建模操作鼠标移动距离减半，大幅提升熟练工程师绘图效率与新手上手速度。"
+          },
+          "en-US": {
+            title: "Add Ctrl+K command/glyph palette & keyboard shortcut cheatsheet",
+            problem: "Navigating across 7,862 icons, nested scheme trees, and device libraries requires repetitive sidebar switching, and available shortcuts lack a discoverable reference.",
+            solutions: [
+              "Add a lightweight Ctrl+K palette for fuzzy-placing glyphs, switching models, and jumping to nodes by name/idx.",
+              "Add a `?` shortcut cheatsheet popover and show keycaps consistently in toolbar tooltips."
+            ],
+            impact: "Speeds up power-user modeling workflows and lowers onboarding friction."
+          },
+          "ru-RU": {
+            title: "Добавить палитру команд Ctrl+K и шпаргалку горячих клавиш",
+            problem: "Поиск среди 7 862 иконок, вложенных деревьев схем и библиотек требует лишних переключений панелей, а горячие клавиши не сведены в единую подсказку.",
+            solutions: [
+              "Сделать палитру Ctrl+K для быстрого поиска и вставки элементов, перехода к моделям и узлам по idx.",
+              "Добавить окно горячих клавиш по `?` и отображать сочетания в подсказках кнопок."
+            ],
+            impact: "Ускоряет ежедневную работу опытных инженеров и упрощает освоение платформы."
+          }
+        }
+      }
+    ];
+
+    /* Top 12 巨型源码文件数据（来自真实代码库统计） */
+    const TOP_FILES = [
+      { name: "src/styles.css", lines: 17279, type: "css" },
+      { name: "src/model-routing.ts", lines: 13308, type: "ts" },
+      { name: "src/model.ts", lines: 10280, type: "ts" },
+      { name: "appDeviceDefinitionFactories.tsx", lines: 9648, type: "nocheck" },
+      { name: "appProjectCanvasFactories.tsx", lines: 6368, type: "nocheck" },
+      { name: "server/server.mjs", lines: 6347, type: "server" },
+      { name: "appGraphMeasurementFactories.tsx", lines: 5643, type: "nocheck" },
+      { name: "appSelectionDragFactories.tsx", lines: 5183, type: "nocheck" },
+      { name: "appCanvasInteractionFactories.tsx", lines: 4936, type: "nocheck" },
+      { name: "appToolbarHookFactories.tsx", lines: 4720, type: "nocheck" },
+      { name: "src/model-eexport.ts", lines: 4690, type: "ts" },
+      { name: "appPersistenceLibraryExport.tsx", lines: 4602, type: "ts" }
+    ];
+
+    const ANTIPATTERN_METRICS = [
+      { key: "anti.any", val: "454", tone: "warn" },
+      { key: "anti.emptyCatch", val: "56", tone: "danger" },
+      { key: "anti.flushSync", val: "13", tone: "warn" },
+      { key: "anti.debounce", val: "0", tone: "danger" },
+      { key: "anti.admZip", val: "18", tone: "warn" },
+      { key: "anti.useEffect", val: "153", tone: "accent" }
+    ];
+
+    /* ========================================================================
+       3. 应用状态与持久化
+       ======================================================================== */
+    const STORAGE_KEYS = {
+      lang: "gmp-opt-report-lang",
+      theme: "gmp-opt-report-theme",
+      statuses: "gmp-opt-report-statuses"
+    };
+
+    let currentLang = localStorage.getItem(STORAGE_KEYS.lang) || "zh-CN";
+    if (!I18N_DICT[currentLang]) currentLang = "zh-CN";
+
+    let currentTheme = localStorage.getItem(STORAGE_KEYS.theme) || "precision-dark";
+    if (!["precision-dark", "minimalist-light"].includes(currentTheme)) currentTheme = "precision-dark";
+
+    let statusMap = {};
+    try {
+      statusMap = JSON.parse(localStorage.getItem(STORAGE_KEYS.statuses) || "{}") || {};
+    } catch {
+      statusMap = {};
+    }
+
+    let activeTab = "all";
+    let priorityFilter = "all";
+    let statusFilter = "all";
+    let searchQuery = "";
+    let selectedIssueId = ISSUES[0].id;
+
+    function t(key, params = {}) {
+      const dict = I18N_DICT[currentLang] || I18N_DICT["zh-CN"];
+      let text = dict[key] ?? I18N_DICT["zh-CN"][key] ?? key;
+      for (const [k, v] of Object.entries(params)) {
+        text = text.replace(`{${k}}`, String(v));
+      }
+      return text;
+    }
+
+    function issueStatus(id) {
+      return statusMap[id] || "todo";
+    }
+
+    function setIssueStatus(id, st) {
+      statusMap[id] = st;
+      try {
+        localStorage.setItem(STORAGE_KEYS.statuses, JSON.stringify(statusMap));
+      } catch {
+        // 忽略隐私模式下 localStorage 限制
+      }
+      updateProgressMetric();
+    }
+
+    let toastTimer = null;
+    function showToast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove("show"), 2000);
+    }
+
+    /* ========================================================================
+       4. 主题与语言应用
+       ======================================================================== */
+    function applyTheme(theme) {
+      currentTheme = theme;
+      document.documentElement.setAttribute("data-theme", theme);
+      try {
+        localStorage.setItem(STORAGE_KEYS.theme, theme);
+      } catch {}
+      const labelEl = document.getElementById("themeLabel");
+      const iconEl = document.getElementById("themeIcon");
+      if (theme === "precision-dark") {
+        labelEl.setAttribute("data-i18n", "action.themeLight");
+        labelEl.textContent = t("action.themeLight");
+        iconEl.innerHTML = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>';
+      } else {
+        labelEl.setAttribute("data-i18n", "action.themeDark");
+        labelEl.textContent = t("action.themeDark");
+        iconEl.innerHTML = '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>';
+      }
+      if (activeTab === "viz") {
+        renderBarChart();
+      }
+    }
+
+    function applyI18n() {
+      document.documentElement.lang = currentLang;
+      document.title = t("page.title");
+      document.getElementById("langSelect").value = currentLang;
+
+      document.querySelectorAll("[data-i18n]").forEach((el) => {
+        el.textContent = t(el.getAttribute("data-i18n"));
+      });
+      document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+        el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder")));
+      });
+
+      renderAll();
+    }
+
+    /* ========================================================================
+       5. 筛选与核心渲染
+       ======================================================================== */
+    function getFilteredIssues() {
+      const q = searchQuery.trim().toLowerCase();
+      return ISSUES.filter((item) => {
+        if (activeTab !== "all" && activeTab !== "viz" && item.category !== activeTab) return false;
+        if (priorityFilter !== "all" && item.priority !== priorityFilter) return false;
+        if (statusFilter !== "all" && issueStatus(item.id) !== statusFilter) return false;
+        if (q) {
+          const loc = item.i18n[currentLang] || item.i18n["zh-CN"];
+          const hay = [
+            item.id,
+            item.primaryFile,
+            ...item.locations,
+            loc.title,
+            loc.problem,
+            ...loc.solutions
+          ].join(" ").toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+    }
+
+    function updateProgressMetric() {
+      const done = ISSUES.filter((it) => issueStatus(it.id) === "done").length;
+      document.getElementById("progressMetricVal").textContent = `${done} / ${ISSUES.length}`;
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function renderTable() {
+      const rows = getFilteredIssues();
+      const tbody = document.getElementById("issueTableBody");
+      const empty = document.getElementById("emptyState");
+
+      if (rows.length === 0) {
+        tbody.innerHTML = "";
+        empty.classList.remove("hidden");
+        renderDetail(null);
+        return;
+      }
+      empty.classList.add("hidden");
+
+      if (!rows.some((r) => r.id === selectedIssueId)) {
+        selectedIssueId = rows[0].id;
+      }
+
+      tbody.innerHTML = rows.map((item) => {
+        const text = item.i18n[currentLang] || item.i18n["zh-CN"];
+        const st = issueStatus(item.id);
+        const selected = item.id === selectedIssueId ? "is-selected" : "";
+        return `
+          <tr class="${selected}" data-id="${item.id}">
+            <td><span class="badge badge-${item.priority.toLowerCase()}">${item.priority}</span></td>
+            <td><span class="badge badge-${item.category}">${escapeHtml(t("cat." + item.category))}</span></td>
+            <td title="${escapeHtml(text.title)}">
+              <div class="cell-title-wrap">
+                <span class="cell-id">${item.id}</span>
+                <span class="cell-title">${escapeHtml(text.title)}</span>
+              </div>
+            </td>
+            <td class="cell-file" title="${escapeHtml(item.primaryFile)}">${escapeHtml(item.primaryFile)}</td>
+            <td class="num">${escapeHtml(t("scope." + item.scope))}</td>
+            <td class="cell-control">
+              <select class="inline-select status-${st}" data-status-id="${item.id}" aria-label="Status">
+                <option value="todo" ${st === "todo" ? "selected" : ""}>${escapeHtml(t("status.todo"))}</option>
+                <option value="doing" ${st === "doing" ? "selected" : ""}>${escapeHtml(t("status.doing"))}</option>
+                <option value="done" ${st === "done" ? "selected" : ""}>${escapeHtml(t("status.done"))}</option>
+              </select>
+            </td>
+          </tr>
+        `;
+      }).join("");
+
+      const currentItem = rows.find((r) => r.id === selectedIssueId) || rows[0];
+      renderDetail(currentItem);
+    }
+
+    function renderDetail(item) {
+      const badgesEl = document.getElementById("detailBadges");
+      const idEl = document.getElementById("detailId");
+      const titleEl = document.getElementById("detailTitle");
+      const bodyEl = document.getElementById("detailBody");
+
+      if (!item) {
+        badgesEl.innerHTML = "";
+        idEl.textContent = "—";
+        titleEl.textContent = t("state.empty");
+        bodyEl.innerHTML = "";
+        return;
+      }
+
+      const text = item.i18n[currentLang] || item.i18n["zh-CN"];
+      badgesEl.innerHTML = `
+        <span class="badge badge-${item.priority.toLowerCase()}">${item.priority}</span>
+        <span class="badge badge-${item.category}">${escapeHtml(t("cat." + item.category))}</span>
+      `;
+      idEl.textContent = item.id;
+      titleEl.textContent = text.title;
+
+      bodyEl.innerHTML = `
+        <div class="kpi-mini-grid">
+          <div class="kpi-mini">
+            <span class="kpi-mini-k">${escapeHtml(t("detail.metric.priority"))}</span>
+            <span class="kpi-mini-v">${item.priority}</span>
+          </div>
+          <div class="kpi-mini">
+            <span class="kpi-mini-k">${escapeHtml(t("detail.metric.scope"))}</span>
+            <span class="kpi-mini-v">${escapeHtml(t("scope." + item.scope))}</span>
+          </div>
+          <div class="kpi-mini">
+            <span class="kpi-mini-k">${escapeHtml(t("detail.metric.risk"))}</span>
+            <span class="kpi-mini-v" title="${escapeHtml(t("risk." + item.risk))}">${escapeHtml(t("risk." + item.risk))}</span>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-sec-label">${escapeHtml(t("detail.locations"))}</div>
+          <div class="loc-chips">
+            ${item.locations.map((loc) => `
+              <button type="button" class="loc-chip" data-copy="${escapeHtml(loc)}" title="${escapeHtml(loc)}">
+                <span>${escapeHtml(loc)}</span>
+              </button>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-sec-label">${escapeHtml(t("detail.problem"))}</div>
+          <p class="detail-text">${escapeHtml(text.problem)}</p>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-sec-label">${escapeHtml(t("detail.solution"))}</div>
+          <ol class="detail-list">
+            ${text.solutions.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}
+          </ol>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-sec-label">${escapeHtml(t("detail.impact"))}</div>
+          <p class="detail-text" style="color: var(--ok); font-weight: 500;">${escapeHtml(text.impact)}</p>
+        </div>
+      `;
+    }
+
+    /* ========================================================================
+       6. 结构热力图（纯 SVG 条形图 + 交互矩阵）
+       ======================================================================== */
+    function renderBarChart() {
+      const wrap = document.getElementById("barChartWrap");
+      const styles = getComputedStyle(document.documentElement);
+      const colText = styles.getPropertyValue("--text-primary").trim();
+      const colSub = styles.getPropertyValue("--text-secondary").trim();
+      const colGrid = styles.getPropertyValue("--grid-line").trim();
+      const colors = {
+        nocheck: styles.getPropertyValue("--danger").trim(),
+        ts: styles.getPropertyValue("--accent").trim(),
+        css: styles.getPropertyValue("--warn").trim(),
+        server: styles.getPropertyValue("--ok").trim()
+      };
+
+      const maxLines = 18000;
+      const leftPad = 215;
+      const rightPad = 56;
+      const topPad = 10;
+      const rowH = 26;
+      const barH = 14;
+      const width = 680;
+      const height = topPad + TOP_FILES.length * rowH + 22;
+      const plotW = width - leftPad - rightPad;
+      const ticks = [0, 4000, 8000, 12000, 16000];
+
+      const gridLines = ticks.map((tk) => {
+        const x = leftPad + (tk / maxLines) * plotW;
+        return `
+          <line x1="${x}" y1="${topPad}" x2="${x}" y2="${height - 20}" stroke="${colGrid}" stroke-dasharray="3 3" />
+          <text x="${x}" y="${height - 5}" fill="${colSub}" font-size="10.5" font-family="var(--font-mono)" text-anchor="middle">${tk === 0 ? "0" : (tk / 1000) + "k"}</text>
+        `;
+      }).join("");
+
+      const bars = TOP_FILES.map((f, idx) => {
+        const y = topPad + idx * rowH;
+        const w = Math.max(4, (f.lines / maxLines) * plotW);
+        const fill = colors[f.type] || colors.ts;
+        return `
+          <g>
+            <text x="${leftPad - 8}" y="${y + 13}" fill="${colText}" font-size="11.5" font-family="var(--font-mono)" text-anchor="end">${escapeHtml(f.name)}</text>
+            <rect x="${leftPad}" y="${y + 2}" width="${w.toFixed(1)}" height="${barH}" rx="3" fill="${fill}" opacity="0.88">
+              <title>${escapeHtml(f.name)}: ${f.lines.toLocaleString()} LOC</title>
+            </rect>
+            <text x="${(leftPad + w + 6).toFixed(1)}" y="${y + 13}" fill="${colSub}" font-size="11" font-family="var(--font-mono)">${f.lines.toLocaleString()}</text>
+          </g>
+        `;
+      }).join("");
+
+      wrap.innerHTML = `
+        <svg viewBox="0 0 ${width} ${height}" width="100%" height="100%" preserveAspectRatio="xMidYMin meet" role="img">
+          ${gridLines}
+          ${bars}
+        </svg>
+      `;
+    }
+
+    function renderMatrixAndTiles() {
+      const cats = ["bug", "perf", "smooth", "ux"];
+      const pris = ["P0", "P1", "P2"];
+      const tbody = document.getElementById("matrixBody");
+
+      tbody.innerHTML = cats.map((cat) => {
+        const cells = pris.map((pri) => {
+          const count = ISSUES.filter((it) => it.category === cat && it.priority === pri).length;
+          if (count === 0) {
+            return `<td class="num"><span class="matrix-cell-btn matrix-zero">0</span></td>`;
+          }
+          const cls = pri === "P0" ? "badge-p0" : pri === "P1" ? "badge-p1" : "badge-p2";
+          return `
+            <td class="num">
+              <button type="button" class="matrix-cell-btn ${cls}" data-jump-cat="${cat}" data-jump-pri="${pri}">${count}</button>
+            </td>
+          `;
+        }).join("");
+        const total = ISSUES.filter((it) => it.category === cat).length;
+        return `
+          <tr>
+            <td><span class="badge badge-${cat}">${escapeHtml(t("cat." + cat))}</span></td>
+            ${cells}
+            <td class="num" style="font-weight:700;">${total}</td>
+          </tr>
+        `;
+      }).join("");
+
+      const tiles = document.getElementById("antiPatternTiles");
+      tiles.innerHTML = ANTIPATTERN_METRICS.map((m) => `
+        <div class="anti-tile">
+          <span class="anti-k" title="${escapeHtml(t(m.key))}">${escapeHtml(t(m.key))}</span>
+          <span class="anti-v" style="color: var(--${m.tone})">${m.val}</span>
+        </div>
+      `).join("");
+    }
+
+    function renderAll() {
+      updateProgressMetric();
+      const isViz = activeTab === "viz";
+      document.getElementById("tableWorkspace").classList.toggle("hidden", isViz);
+      document.getElementById("listFilters").classList.toggle("hidden", isViz);
+      document.getElementById("vizWorkspace").classList.toggle("hidden", !isViz);
+
+      if (isViz) {
+        renderBarChart();
+        renderMatrixAndTiles();
+      } else {
+        renderTable();
+      }
+    }
+
+    /* ========================================================================
+       7. 导出 Markdown 行动清单
+       ======================================================================== */
+    function exportMarkdown() {
+      const lines = [
+        `# ${t("header.title")} (main @ ff36eede)`,
+        "",
+        `| ID | ${t("col.priority")} | ${t("col.category")} | ${t("col.status")} | ${t("col.title")} | ${t("col.location")} |`,
+        "| :--- | :--- | :--- | :--- | :--- | :--- |"
+      ];
+      for (const item of ISSUES) {
+        const txt = item.i18n[currentLang] || item.i18n["zh-CN"];
+        const st = t("status." + issueStatus(item.id));
+        lines.push(`| ${item.id} | ${item.priority} | ${t("cat." + item.category)} | ${st} | ${txt.title} | \`${item.primaryFile}\` |`);
+      }
+      const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `optimization-checklist-${currentLang}.md`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast(t("toast.exported"));
+    }
+
+    /* ========================================================================
+       8. 事件绑定
+       ======================================================================== */
+    document.getElementById("langSelect").addEventListener("change", (e) => {
+      currentLang = e.target.value;
+      try { localStorage.setItem(STORAGE_KEYS.lang, currentLang); } catch {}
+      applyI18n();
+    });
+
+    document.getElementById("themeBtn").addEventListener("click", () => {
+      applyTheme(currentTheme === "precision-dark" ? "minimalist-light" : "precision-dark");
+    });
+
+    document.getElementById("exportMdBtn").addEventListener("click", exportMarkdown);
+    document.getElementById("printBtn").addEventListener("click", () => window.print());
+
+    document.getElementById("viewTabs").addEventListener("click", (e) => {
+      const btn = e.target.closest(".tab-btn");
+      if (!btn) return;
+      activeTab = btn.getAttribute("data-tab");
+      document.querySelectorAll("#viewTabs .tab-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      renderAll();
+    });
+
+    document.getElementById("priorityFilter").addEventListener("change", (e) => {
+      priorityFilter = e.target.value;
+      renderTable();
+    });
+
+    document.getElementById("statusFilter").addEventListener("change", (e) => {
+      statusFilter = e.target.value;
+      renderTable();
+    });
+
+    document.getElementById("searchInput").addEventListener("input", (e) => {
+      searchQuery = e.target.value;
+      renderTable();
+    });
+
+    document.getElementById("issueTableBody").addEventListener("click", (e) => {
+      if (e.target.closest("select")) return;
+      const tr = e.target.closest("tr[data-id]");
+      if (!tr) return;
+      selectedIssueId = tr.getAttribute("data-id");
+      renderTable();
+    });
+
+    document.getElementById("issueTableBody").addEventListener("change", (e) => {
+      const sel = e.target.closest("select[data-status-id]");
+      if (!sel) return;
+      const id = sel.getAttribute("data-status-id");
+      const val = sel.value;
+      setIssueStatus(id, val);
+      sel.className = `inline-select status-${val}`;
+      if (statusFilter !== "all") {
+        renderTable();
+      }
+    });
+
+    document.getElementById("detailBody").addEventListener("click", (e) => {
+      const chip = e.target.closest("[data-copy]");
+      if (!chip) return;
+      const val = chip.getAttribute("data-copy");
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(val).catch(() => {});
+      }
+      showToast(t("toast.copied", { path: val }));
+    });
+
+    document.getElementById("matrixBody").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-jump-cat]");
+      if (!btn) return;
+      const cat = btn.getAttribute("data-jump-cat");
+      const pri = btn.getAttribute("data-jump-pri");
+      activeTab = cat;
+      priorityFilter = pri;
+      document.getElementById("priorityFilter").value = pri;
+      document.querySelectorAll("#viewTabs .tab-btn").forEach((b) => {
+        b.classList.toggle("active", b.getAttribute("data-tab") === cat);
+      });
+      renderAll();
+    });
+
+    // 初始化
+    applyTheme(currentTheme);
+    applyI18n();
+  </script>
+</body>
+</html>

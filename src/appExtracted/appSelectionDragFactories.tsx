@@ -90,61 +90,156 @@ export function createRequestCanvasFrameCenter(__appScope: Record<string, any>) 
   };
 }
 
+function applyHistorySnapshot(__appScope: Record<string, any>, snapshot: UndoSnapshot, operationLog: string) {
+  const { applyUndoGraphSnapshot, currentMutationRevisionRef, resetConnectPreviewState, savedMutationRevisionRef, setActiveLayerId, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasBackgroundImageFit, setCanvasHeight, setCanvasSelectionScope, setCanvasWidth, setConnectSource, setContextMenu, setCurrentUnit, setDeviceIndexCounters, setFeeder, setGroups, setHasUnsavedChanges, setLayers, setModelType, setOperationLogText, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectMenu, setProjectName, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSubcontrolarea, setSubstation, setTaiqu, setTopology, setTopologyErrors, setTopologyStatus, setVoltageUnit, skipNextTopologyStaleRef } = __appScope;
+  setProjectName(snapshot.projectName);
+  setLayers(snapshot.layers.map((layer: ModelLayer) => ({ ...layer })));
+  setActiveLayerId(snapshot.activeLayerId);
+  setCanvasWidth(snapshot.canvasWidth);
+  setCanvasHeight(snapshot.canvasHeight);
+  setAllowAutoExpandCanvas(snapshot.allowAutoExpandCanvas);
+  setCanvasBackgroundColor(snapshot.canvasBackgroundColor);
+  setCanvasBackgroundImage(snapshot.canvasBackgroundImage);
+  setCanvasBackgroundImageAssetId(snapshot.canvasBackgroundImageAssetId);
+  setCanvasBackgroundImageFit?.(snapshot.canvasBackgroundImageFit ?? "cover");
+  setBackgroundProjectId(snapshot.backgroundProjectId);
+  setBackgroundLayerIds(snapshot.backgroundLayerIds);
+  setPowerUnit(snapshot.powerUnit);
+  setVoltageUnit(snapshot.voltageUnit);
+  setCurrentUnit(snapshot.currentUnit);
+  setPowerBaseValue(snapshot.powerBaseValue);
+  setModelType(snapshot.modelType ?? "");
+  setSubcontrolarea(snapshot.subcontrolarea ?? "");
+  setSubstation(snapshot.substation ?? "");
+  setFeeder(snapshot.feeder ?? "");
+  setTaiqu(snapshot.taiqu ?? "");
+  setDeviceIndexCounters(snapshot.deviceIndexCounters);
+  skipNextTopologyStaleRef.current = true;
+  applyUndoGraphSnapshot(snapshot);
+  setGroups(snapshot.groups);
+  setProjectMeasurements(snapshot.measurements);
+  setTopologyErrors(snapshot.topologyErrors);
+  setTopology(snapshot.topology);
+  setTopologyStatus(snapshot.topologyStatus);
+  setCanvasSelectionScope("group");
+  setSelectedNodeIds([]);
+  setSelectedEdgeId("");
+  setSelectedEdgeIds([]);
+  setConnectSource(null);
+  resetConnectPreviewState();
+  setRewiring(null);
+  setContextMenu(null);
+  setProjectMenu(null);
+  if (currentMutationRevisionRef && typeof snapshot.revision === "number") {
+    currentMutationRevisionRef.current = snapshot.revision;
+    if (savedMutationRevisionRef) {
+      setHasUnsavedChanges(currentMutationRevisionRef.current !== savedMutationRevisionRef.current);
+    } else {
+      setHasUnsavedChanges(true);
+    }
+  } else {
+    setHasUnsavedChanges(true);
+  }
+  setOperationLogText(operationLog);
+}
+
 export function createUndoLastOperation(__appScope: Record<string, any>) {
   return () => {
-  const { applyUndoGraphSnapshot, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, pendingBusTerminalSyncNodeIdsRef, pendingStoredRouteEdgeIdsRef, resetConnectPreviewState, setActiveLayerId, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasBackgroundImageFit, setCanvasHeight, setCanvasSelectionScope, setCanvasWidth, setConnectSource, setContextMenu, setCurrentUnit, setDeviceIndexCounters, setFeeder, setGroups, setHasUnsavedChanges, setLayers, setModelType, setOperationLogText, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectMenu, setProjectName, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSubcontrolarea, setSubstation, setTaiqu, setTopology, setTopologyErrors, setTopologyStatus, setUndoStack, setVoltageUnit, skipNextTopologyStaleRef } = __appScope;
+    const { cloneProjectState, currentMutationRevisionRef, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, pendingBusTerminalSyncNodeIdsRef, pendingStoredRouteEdgeIdsRef, redoStackRef, setRedoStack, setUndoStack, undoStackRef } = __appScope;
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
     deferredRoutableLineRouteRepairCancelRef.current?.();
     deferredRoutableLineRouteRepairCancelRef.current = null;
     pendingStoredRouteEdgeIdsRef.current = new Set();
     pendingBusTerminalSyncNodeIdsRef.current = new Set();
+
+    // 若具备 undoStackRef（生产路径），直接在事件处理内同步出栈并压入 redoStack，
+    // 既支持「全部撤回」同帧连续调用，也避免在 React setState updater 内触发副作用。
+    if (undoStackRef && Array.isArray(undoStackRef.current)) {
+      const current = undoStackRef.current as UndoSnapshot[];
+      const snapshot = current.at(-1);
+      if (!snapshot) {
+        return;
+      }
+      if (typeof cloneProjectState === "function" && setRedoStack) {
+        const redoEntry: UndoSnapshot = cloneProjectState(false);
+        redoEntry.label = snapshot.label;
+        redoEntry.target = snapshot.target;
+        if (currentMutationRevisionRef) {
+          redoEntry.revision = currentMutationRevisionRef.current;
+        }
+        const prevRedo = Array.isArray(redoStackRef?.current) ? (redoStackRef.current as UndoSnapshot[]) : [];
+        const nextRedo = [...prevRedo.slice(-49), redoEntry];
+        if (redoStackRef) {
+          redoStackRef.current = nextRedo;
+        }
+        setRedoStack(nextRedo);
+      }
+      const nextUndo = current.slice(0, -1);
+      undoStackRef.current = nextUndo;
+      setUndoStack(nextUndo);
+      applyHistorySnapshot(__appScope, snapshot, "撤销上一步操作");
+      return;
+    }
+
     setUndoStack((current: UndoSnapshot[]) => {
       const snapshot = current.at(-1);
       if (!snapshot) {
         return current;
       }
-      setProjectName(snapshot.projectName);
-      setLayers(snapshot.layers.map((layer: ModelLayer) => ({ ...layer })));
-      setActiveLayerId(snapshot.activeLayerId);
-      setCanvasWidth(snapshot.canvasWidth);
-      setCanvasHeight(snapshot.canvasHeight);
-      setAllowAutoExpandCanvas(snapshot.allowAutoExpandCanvas);
-      setCanvasBackgroundColor(snapshot.canvasBackgroundColor);
-      setCanvasBackgroundImage(snapshot.canvasBackgroundImage);
-      setCanvasBackgroundImageAssetId(snapshot.canvasBackgroundImageAssetId);
-      setCanvasBackgroundImageFit?.(snapshot.canvasBackgroundImageFit ?? "cover");
-      setBackgroundProjectId(snapshot.backgroundProjectId);
-      setBackgroundLayerIds(snapshot.backgroundLayerIds);
-      setPowerUnit(snapshot.powerUnit);
-      setVoltageUnit(snapshot.voltageUnit);
-      setCurrentUnit(snapshot.currentUnit);
-      setPowerBaseValue(snapshot.powerBaseValue);
-      setModelType(snapshot.modelType ?? "");
-      setSubcontrolarea(snapshot.subcontrolarea ?? "");
-      setSubstation(snapshot.substation ?? "");
-      setFeeder(snapshot.feeder ?? "");
-      setTaiqu(snapshot.taiqu ?? "");
-      setDeviceIndexCounters(snapshot.deviceIndexCounters);
-      skipNextTopologyStaleRef.current = true;
-      applyUndoGraphSnapshot(snapshot);
-      setGroups(snapshot.groups);
-      setProjectMeasurements(snapshot.measurements);
-      setTopologyErrors(snapshot.topologyErrors);
-      setTopology(snapshot.topology);
-      setTopologyStatus(snapshot.topologyStatus);
-      setCanvasSelectionScope("group");
-      setSelectedNodeIds([]);
-      setSelectedEdgeId("");
-      setSelectedEdgeIds([]);
-      setConnectSource(null);
-      resetConnectPreviewState();
-      setRewiring(null);
-      setContextMenu(null);
-      setProjectMenu(null);
-      setHasUnsavedChanges(true);
-      setOperationLogText("撤销上一步操作");
+      applyHistorySnapshot(__appScope, snapshot, "撤销上一步操作");
       return current.slice(0, -1);
+    });
+  };
+}
+
+export function createRedoLastOperation(__appScope: Record<string, any>) {
+  return () => {
+    const { cloneProjectState, currentMutationRevisionRef, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, pendingBusTerminalSyncNodeIdsRef, pendingStoredRouteEdgeIdsRef, redoStackRef, setRedoStack, setUndoStack, undoStackRef } = __appScope;
+    if (!setRedoStack) {
+      return;
+    }
+    deferredMoveOptimizationCancelRef.current?.();
+    deferredMoveOptimizationCancelRef.current = null;
+    deferredRoutableLineRouteRepairCancelRef.current?.();
+    deferredRoutableLineRouteRepairCancelRef.current = null;
+    pendingStoredRouteEdgeIdsRef.current = new Set();
+    pendingBusTerminalSyncNodeIdsRef.current = new Set();
+
+    if (redoStackRef && Array.isArray(redoStackRef.current)) {
+      const currentRedo = redoStackRef.current as UndoSnapshot[];
+      const snapshot = currentRedo.at(-1);
+      if (!snapshot) {
+        return;
+      }
+      if (typeof cloneProjectState === "function" && setUndoStack) {
+        const undoEntry: UndoSnapshot = cloneProjectState(false);
+        undoEntry.label = snapshot.label;
+        undoEntry.target = snapshot.target;
+        if (currentMutationRevisionRef) {
+          undoEntry.revision = currentMutationRevisionRef.current;
+        }
+        const prevUndo = Array.isArray(undoStackRef?.current) ? (undoStackRef.current as UndoSnapshot[]) : [];
+        const nextUndo = [...prevUndo.slice(-49), undoEntry];
+        if (undoStackRef) {
+          undoStackRef.current = nextUndo;
+        }
+        setUndoStack(nextUndo);
+      }
+      const nextRedo = currentRedo.slice(0, -1);
+      redoStackRef.current = nextRedo;
+      setRedoStack(nextRedo);
+      applyHistorySnapshot(__appScope, snapshot, "重做上一步操作");
+      return;
+    }
+
+    setRedoStack((currentRedo: UndoSnapshot[]) => {
+      const snapshot = currentRedo.at(-1);
+      if (!snapshot) {
+        return currentRedo;
+      }
+      applyHistorySnapshot(__appScope, snapshot, "重做上一步操作");
+      return currentRedo.slice(0, -1);
     });
   };
 }
@@ -997,23 +1092,32 @@ export function createPasteSelection(__appScope: Record<string, any>) {
 
 export function createCreateGraphTemplateType(__appScope: Record<string, any>) {
   return () => {
-  const { customGraphTemplateTypes, graphTemplateTypes, normalizeGraphTemplateTypeName, persistTemplateLibraryChange, setCustomGraphTemplateTypes, setExpandedGraphTemplateTypes, setTemplateDraftType, writeOperationLog } = __appScope;
-    const rawName = window.prompt("请输入模板类型名称");
-    const typeName = normalizeGraphTemplateTypeName(rawName ?? "");
-    if (!typeName) {
+    const { customGraphTemplateTypes, graphTemplateTypes, normalizeGraphTemplateTypeName, persistTemplateLibraryChange, setCustomGraphTemplateTypes, setExpandedGraphTemplateTypes, setTemplateDraftType, writeOperationLog } = __appScope;
+    const applyTemplateTypeName = (rawName: string | null) => {
+      const typeName = normalizeGraphTemplateTypeName(rawName ?? "");
+      if (!typeName) {
+        return;
+      }
+      const duplicate = graphTemplateTypes.some((item: string) => item.toLowerCase() === typeName.toLowerCase());
+      if (duplicate) {
+        showGlobalMessage("模板类型名称重复，请换一个名称。");
+        return;
+      }
+      const nextTypes = [...customGraphTemplateTypes, typeName];
+      setCustomGraphTemplateTypes(nextTypes);
+      setExpandedGraphTemplateTypes((current: string[]) => current.includes(typeName) ? current : [...current, typeName]);
+      setTemplateDraftType(typeName);
+      persistTemplateLibraryChange({ customGraphTemplateTypes: nextTypes });
+      writeOperationLog(`新增模板类型：${typeName}`);
+    };
+    const globalPrompt = (
+      globalThis as { showGlobalPrompt?: (text: string, value?: string) => Promise<string | null> }
+    ).showGlobalPrompt;
+    if (typeof globalPrompt === "function") {
+      void globalPrompt("请输入模板类型名称", "").then(applyTemplateTypeName);
       return;
     }
-    const duplicate = graphTemplateTypes.some((item: string) => item.toLowerCase() === typeName.toLowerCase());
-    if (duplicate) {
-      showGlobalMessage("模板类型名称重复，请换一个名称。");
-      return;
-    }
-    const nextTypes = [...customGraphTemplateTypes, typeName];
-    setCustomGraphTemplateTypes(nextTypes);
-    setExpandedGraphTemplateTypes((current: string[]) => current.includes(typeName) ? current : [...current, typeName]);
-    setTemplateDraftType(typeName);
-    persistTemplateLibraryChange({ customGraphTemplateTypes: nextTypes });
-    writeOperationLog(`新增模板类型：${typeName}`);
+    applyTemplateTypeName(window.prompt("请输入模板类型名称"));
   };
 }
 

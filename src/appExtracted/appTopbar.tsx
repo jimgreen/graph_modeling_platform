@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, memo, useCallback, useMemo, useRef, useState } from "react";
 import { Input, InputNumber, Modal, Select, Tooltip } from "antd";
 import { ELECTRIC_FLOW_ARROW_STYLES, ELECTRIC_FLOW_DEFAULTS, type ElectricFlowSettings } from "../model";
 import { normalizeElectricFlowSettings } from "../export/electric-flow-markup";
@@ -20,9 +20,13 @@ import {
 import { currentQiankunUser, filterSpacesForCurrentUser } from "../qiankunUserSpace";
 import { startAppTour } from "../appTour";
 import { saveLazyBlobFile, type SavedExportFile } from "../fileIO";
-import { ChevronDown, Download, Menu, Moon, Pencil, Send, Sun, Trash2, Upload } from "lucide-react";
-import { SendModelDialog } from "../SendModelDialog";
+import { ChevronDown, Download, Menu, Moon, Pencil, Redo2, Send, Sun, Trash2, Undo2, Upload } from "lucide-react";
 import { isInterfaceCustomizationVisible } from "../interfaceCustomization";
+import { useRuntimeWsIndicatorSnapshot } from "../runtimeWsIndicatorStore";
+
+const SendModelDialog = lazy(() =>
+  import("../SendModelDialog").then((module) => ({ default: module.SendModelDialog }))
+);
 
 type AppTopbarProps = {
   scope: Record<string, any>;
@@ -232,9 +236,15 @@ export function AppTopbar({ scope, inputs }: AppTopbarProps) {
 }
 
 function RuntimeWsIndicator({ scope }: { scope: Record<string, any> }) {
-  const status = scope.runtimeWsStatus ?? "connecting";
-  const blinkSeq = scope.runtimeWsBlinkSeq ?? 0;
-  const clientId = scope.runtimeWsClientId ?? "";
+  const wsSnapshot = useRuntimeWsIndicatorSnapshot();
+  // 生产环境通过 useSyncExternalStore 局部订阅指示灯变化，避免触发 App 根组件与整个顶栏重渲染；
+  // 若单测显式在 mock scope 上以普通数据属性传入，则优先使用测试注入值以保持兼容。
+  const hasExplicitStatus = Boolean(scope && Object.getOwnPropertyDescriptor(scope, "runtimeWsStatus")?.value !== undefined);
+  const hasExplicitBlink = Boolean(scope && Object.getOwnPropertyDescriptor(scope, "runtimeWsBlinkSeq")?.value !== undefined);
+  const hasExplicitClientId = Boolean(scope && Object.getOwnPropertyDescriptor(scope, "runtimeWsClientId")?.value !== undefined);
+  const status = hasExplicitStatus ? scope.runtimeWsStatus : wsSnapshot.status;
+  const blinkSeq = hasExplicitBlink ? scope.runtimeWsBlinkSeq : wsSnapshot.blinkSeq;
+  const clientId = hasExplicitClientId ? scope.runtimeWsClientId : wsSnapshot.clientId;
   const [copied, setCopied] = useState(false);
   const color = status === "open" ? "#22c55e" : status === "connecting" ? "#f59e0b" : "#9ca3af";
   const label = status === "open" ? "运行时态 WS 已连接" : status === "connecting" ? "运行时态 WS 连接中" : "运行时态 WS 已断开";
@@ -696,10 +706,13 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
     setDeviceLabelsVisible, setDeviceMeasurementsVisible, setEDeviceDefinitionInterfaceDialogOpen, setImageTarget,
     setSmartAlignmentEnabled, setVoltageLevelDialogOpen, smartAlignmentEnabled,
     setElectricFlowVisible, electricFlowVisible, setInterfaceCustomizationDialogOpen,
-    toggleColorDisplayMode, toggleThemeMode, themeMode, topologyErrors, topologyWarningPanelClosed
+    toggleColorDisplayMode, toggleThemeMode, themeMode, topologyErrors, topologyWarningPanelClosed,
+    undoLastOperation, undoStack, redoLastOperation, redoStack
   } = scope;
   const modelActionsDisabled = !Boolean(hasActiveModel ?? scope.activeProjectKey);
   const visible = (id: string) => isInterfaceCustomizationVisible(scope.interfaceCustomization, id);
+  const canUndo = !modelActionsDisabled && Array.isArray(undoStack) && undoStack.length > 0 && typeof undoLastOperation === "function";
+  const canRedo = !modelActionsDisabled && Array.isArray(redoStack) && redoStack.length > 0 && typeof redoLastOperation === "function";
 
   return (
     <>
@@ -728,6 +741,14 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
       </div>}
       {/* 顶栏按钮分组：按动作域分组，组间以竖线分割 */}
       <div className="topbar-button-groups">
+        <div className="topbar-button-group">
+          {visible("topbar.undo") && T(canUndo ? "撤销 (Ctrl+Z)" : "无可撤销操作", <button type="button" id="topbar-undo" className="topbar-primary-button" onClick={() => undoLastOperation?.()} disabled={!canUndo} aria-label="撤销">
+            <Undo2 size={16}/>
+          </button>)}
+          {visible("topbar.redo") && T(canRedo ? "重做 (Ctrl+Y / Ctrl+Shift+Z)" : "无可重做操作", <button type="button" id="topbar-redo" className="topbar-primary-button" onClick={() => redoLastOperation?.()} disabled={!canRedo} aria-label="重做">
+            <Redo2 size={16}/>
+          </button>)}
+        </div>
         <div className="topbar-button-group">
           {visible("topbar.smartAlignment") && T(smartAlignmentEnabled ? "对齐标线：开" : "对齐标线：关", <button type="button" id="topbar-smart-alignment" className={`topbar-primary-button ${smartAlignmentEnabled ? "active" : ""}`} disabled={modelActionsDisabled} onClick={() => setSmartAlignmentEnabled((current: boolean) => !current)} aria-label={smartAlignmentEnabled ? "关闭对齐到标线" : "开启对齐到标线"}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -873,7 +894,9 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
       <RuntimeWsIndicator scope={scope}/>
     </header>
       {sendModelDialogOpen && (
-        <SendModelDialog open={sendModelDialogOpen} onClose={() => setSendModelDialogOpen(false)} scope={scope}/>
+        <Suspense fallback={null}>
+          <SendModelDialog open={sendModelDialogOpen} onClose={() => setSendModelDialogOpen(false)} scope={scope}/>
+        </Suspense>
       )}
       <ElectricFlowSettingsDialog open={electricFlowSettingsDialogOpen} onClose={() => setElectricFlowSettingsDialogOpen(false)} scope={scope}/>
     </>

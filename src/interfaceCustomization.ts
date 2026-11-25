@@ -29,6 +29,8 @@ const buttonDefinitions: InterfaceCustomizationDefinition[] = [
   { id: "topbar.spaceRename", kind: "button", label: "重命名空间", group: "空间", defaultVisible: true },
   { id: "topbar.spaceDelete", kind: "button", label: "删除空间", group: "空间", defaultVisible: true },
   { id: "topbar.layerManagement", kind: "button", label: "图层管理", group: "拓扑与图层", defaultVisible: true },
+  { id: "topbar.undo", kind: "button", label: "撤销", group: "拓扑与图层", defaultVisible: true },
+  { id: "topbar.redo", kind: "button", label: "重做", group: "拓扑与图层", defaultVisible: true },
   { id: "topbar.smartAlignment", kind: "button", label: "对齐标线", group: "拓扑与图层", defaultVisible: true },
   { id: "topbar.topology", kind: "button", label: "图上拓扑", group: "拓扑与图层", defaultVisible: true },
   { id: "topbar.globalLines", kind: "button", label: "全局线路", group: "拓扑与图层", defaultVisible: true },
@@ -90,12 +92,39 @@ export const INTERFACE_CUSTOMIZATION_DEFINITIONS = Object.freeze([
   ...moduleDefinitions
 ]);
 
+const BUTTON_DEFINITIONS = Object.freeze([...buttonDefinitions]);
+const MODULE_DEFINITIONS = Object.freeze([...moduleDefinitions]);
+
+/** $O(1)$ 定义索引：避免每次渲染调用 isInterfaceCustomizationVisible 时线性遍历 60+ 项 */
+const DEFINITION_BY_ID = new Map<string, InterfaceCustomizationDefinition>(
+  INTERFACE_CUSTOMIZATION_DEFINITIONS.map((definition) => [definition.id, definition])
+);
+
+/** 受保护项：避免用户在弹窗内一键“全部隐藏”时把自己锁死在空白界面外 */
+export const PROTECTED_INTERFACE_CUSTOMIZATION_IDS: ReadonlySet<string> = new Set([
+  "topbar.interfaceCustomization"
+]);
+
+export function isProtectedInterfaceCustomizationId(id: string): boolean {
+  return PROTECTED_INTERFACE_CUSTOMIZATION_IDS.has(id);
+}
+
+/** 构造「全部隐藏」配置：保留受保护入口可见，防止无法再次打开设置恢复界面。 */
+export function buildHideAllInterfaceCustomizationConfig(): InterfaceCustomizationConfig {
+  return {
+    schemaVersion: INTERFACE_CUSTOMIZATION_SCHEMA_VERSION,
+    buttons: Object.fromEntries(
+      BUTTON_DEFINITIONS.map((item) => [item.id, isProtectedInterfaceCustomizationId(item.id)])
+    ),
+    modules: Object.fromEntries(
+      MODULE_DEFINITIONS.map((item) => [item.id, isProtectedInterfaceCustomizationId(item.id)])
+    )
+  };
+}
+
 function visibilityMap(kind: InterfaceCustomizationItemKind): Record<string, boolean> {
-  return Object.fromEntries(
-    INTERFACE_CUSTOMIZATION_DEFINITIONS
-      .filter((definition) => definition.kind === kind)
-      .map((definition) => [definition.id, definition.defaultVisible])
-  );
+  const list = kind === "button" ? BUTTON_DEFINITIONS : MODULE_DEFINITIONS;
+  return Object.fromEntries(list.map((definition) => [definition.id, definition.defaultVisible]));
 }
 
 export function defaultInterfaceCustomizationConfig(): InterfaceCustomizationConfig {
@@ -115,8 +144,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function normalizedVisibilityMap(value: unknown, kind: InterfaceCustomizationItemKind): Record<string, boolean> {
   const source = isRecord(value) ? value : {};
   const defaults = visibilityMap(kind);
-  for (const definition of INTERFACE_CUSTOMIZATION_DEFINITIONS) {
-    if (definition.kind !== kind || !Object.hasOwn(source, definition.id)) continue;
+  const list = kind === "button" ? BUTTON_DEFINITIONS : MODULE_DEFINITIONS;
+  for (const definition of list) {
+    if (!Object.hasOwn(source, definition.id)) continue;
     const visible = source[definition.id];
     if (typeof visible === "boolean") {
       defaults[definition.id] = visible;
@@ -139,16 +169,16 @@ export function isInterfaceCustomizationVisible(
   config: InterfaceCustomizationConfig | null | undefined,
   id: string
 ): boolean {
-  const definition = INTERFACE_CUSTOMIZATION_DEFINITIONS.find((candidate) => candidate.id === id);
+  const definition = DEFINITION_BY_ID.get(id);
   if (!definition) return true;
   const source = definition.kind === "button" ? config?.buttons : config?.modules;
   return typeof source?.[id] === "boolean" ? source[id] : definition.defaultVisible;
 }
 
 export function interfaceCustomizationDefinitions(kind?: InterfaceCustomizationItemKind) {
-  return kind
-    ? INTERFACE_CUSTOMIZATION_DEFINITIONS.filter((definition) => definition.kind === kind)
-    : INTERFACE_CUSTOMIZATION_DEFINITIONS;
+  if (kind === "button") return BUTTON_DEFINITIONS;
+  if (kind === "module") return MODULE_DEFINITIONS;
+  return INTERFACE_CUSTOMIZATION_DEFINITIONS;
 }
 
 const DOM_SELECTORS: Record<string, string> = {
@@ -190,6 +220,8 @@ const DOM_SELECTORS: Record<string, string> = {
   "topbar.spaceRename": ".topbar-space-actions > button:nth-child(3), .topbar-space-actions-compact [aria-label=\"重命名空间\"]",
   "topbar.spaceDelete": ".topbar-space-actions > button:nth-child(4), .topbar-space-actions-compact [aria-label=\"删除空间\"]",
   "topbar.layerManagement": "#topbar-layer-management",
+  "topbar.undo": "#topbar-undo",
+  "topbar.redo": "#topbar-redo",
   "topbar.smartAlignment": "#topbar-smart-alignment, #topbar-compact-smart-alignment",
   "topbar.topology": "#topbar-topology, #topbar-compact-topology",
   "topbar.globalLines": "#topbar-global-lines, #topbar-compact-global-lines",

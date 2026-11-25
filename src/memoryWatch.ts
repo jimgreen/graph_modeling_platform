@@ -109,17 +109,38 @@ export function startMemoryWatch(options: MemoryWatchOptions = {}): MemoryWatchH
   };
 }
 
-/** React effect 适配：从 __appScope 解构依赖并启动守望（与 createAppHookCallback* 同形态）。 */
+/** React effect 适配：从 __appScopeRef 动态读取最新帧依赖并启动守望（避免空依赖捕获挂载首帧旧闭包）。 */
 export function createMemoryWatchCallback(__appScope: Record<string, any>) {
+  const resolveLatestScope = () =>
+    (__appScope?.__appScopeRef?.current as Record<string, any> | undefined) ?? __appScope;
+
   return () => {
     const handle = startMemoryWatch({
       onTrimUndoHistory: (keepCount) => {
-        const setUndoStack = __appScope?.setUndoStack;
-        if (typeof setUndoStack !== "function") return;
-        setUndoStack((current: unknown[]) => (Array.isArray(current) ? current.slice(-keepCount) : current));
+        const scope = resolveLatestScope();
+        const setUndoStack = scope?.setUndoStack;
+        if (typeof setUndoStack === "function") {
+          setUndoStack((current: unknown[]) => {
+            const next = Array.isArray(current) ? (keepCount > 0 ? current.slice(-keepCount) : []) : current;
+            if (scope?.undoStackRef && Array.isArray(next)) {
+              scope.undoStackRef.current = next;
+            }
+            return next;
+          });
+        }
+        const setRedoStack = scope?.setRedoStack;
+        if (typeof setRedoStack === "function") {
+          setRedoStack((current: unknown[]) => {
+            const next = Array.isArray(current) ? (keepCount > 0 ? current.slice(-keepCount) : []) : current;
+            if (scope?.redoStackRef && Array.isArray(next)) {
+              scope.redoStackRef.current = next;
+            }
+            return next;
+          });
+        }
       },
       persistRecovery: () => {
-        __appScope?.persistRefreshRecoveryNow?.();
+        resolveLatestScope()?.persistRefreshRecoveryNow?.();
       }
     });
     return () => handle.stop();

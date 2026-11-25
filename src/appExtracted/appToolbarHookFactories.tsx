@@ -3443,14 +3443,29 @@ export function createAppHookCallback101(__appScope: Record<string, any>) {
       canvasResizeDraftRef.current = null;
       setCanvasResizeDraft(null);
     };
+    let resizeDraftFrameId: number | null = null;
+    const cancelResizeDraftFrame = () => {
+      if (resizeDraftFrameId !== null) {
+        window.cancelAnimationFrame(resizeDraftFrameId);
+        resizeDraftFrameId = null;
+      }
+    };
     const handlePointerMove = (event: globalThis.PointerEvent) => {
       event.preventDefault();
       const nextBounds = canvasResizeBoundsFromPointerDrag(canvasResizeDrag, event, canvasResizeDrag.minBounds);
       const clampedBounds = clampCanvasBounds(nextBounds);
       canvasResizeDraftRef.current = clampedBounds;
-      flushSync(() => setCanvasResizeDraft(clampedBounds));
+      if (resizeDraftFrameId === null) {
+        resizeDraftFrameId = window.requestAnimationFrame(() => {
+          resizeDraftFrameId = null;
+          if (canvasResizeDraftRef.current) {
+            setCanvasResizeDraft(canvasResizeDraftRef.current);
+          }
+        });
+      }
     };
     const handlePointerUp = (event: globalThis.PointerEvent) => {
+      cancelResizeDraftFrame();
       const draftBounds = canvasResizeDraftRef.current;
       let resizeCommitAnchor: CanvasResizeCommitAnchor | null = null;
       if (draftBounds) {
@@ -3510,6 +3525,7 @@ export function createAppHookCallback101(__appScope: Record<string, any>) {
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerUp);
     return () => {
+      cancelResizeDraftFrame();
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
@@ -3868,8 +3884,21 @@ export function createAppHookCallback110(__appScope: Record<string, any>) {
       const isRecordShortcutTarget = shortcutScope === "records";
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
-        undoLastOperation();
+        const latestScope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
+        if (event.shiftKey) {
+          latestScope.redoLastOperation?.();
+        } else {
+          (latestScope.undoLastOperation ?? undoLastOperation)();
+        }
         return;
+      }
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "y") {
+        if (!(target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) {
+          event.preventDefault();
+          const latestScope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
+          latestScope.redoLastOperation?.();
+          return;
+        }
       }
       if (event.key === "Escape" && hoveredCategoryLibraryComponentLibrary) {
         event.preventDefault();

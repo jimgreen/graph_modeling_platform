@@ -1,57 +1,25 @@
 import { readFile } from "node:fs/promises";
 import { atomicWriteFile } from "../shared/atomicWrite.mjs";
+import {
+  DEFAULT_INTERFACE_CUSTOMIZATION_CONFIG,
+  INTERFACE_CUSTOMIZATION_SCHEMA_VERSION,
+  normalizeInterfaceCustomizationConfig as normalizeConfigFromSrc
+} from "../src/interfaceCustomization.ts";
 
-export const INTERFACE_CUSTOMIZATION_SCHEMA_VERSION = 1;
-
-const BUTTON_IDS = [
-  "topbar.brand", "topbar.activeModel", "topbar.template", "topbar.spaceSwitcher",
-  "topbar.interfaceCustomization", "topbar.runtimeWs",
-  "topbar.spaceExport", "topbar.spaceImport", "topbar.spaceRename", "topbar.spaceDelete",
-  "topbar.layerManagement", "topbar.smartAlignment", "topbar.topology", "topbar.globalLines",
-  "topbar.allNetworkTopology", "topbar.topologyWarning", "topbar.colorMode", "topbar.colorPalette",
-  "topbar.voltageLevel", "topbar.deviceLabels", "topbar.deviceMeasurements", "topbar.electricFlow",
-  "topbar.electricFlowSettings", "topbar.imageLibrary", "topbar.userCustomization", "topbar.save",
-  "topbar.eInterface", "topbar.export", "topbar.sendModel", "topbar.tour", "topbar.theme",
-  "selection.group", "selection.displayLayer", "selection.align", "selection.rotate"
-];
-
-const MODULE_IDS = [
-  "module.leftPanel", "module.leftPanel.modeControls", "module.leftPanel.modelLibrary",
-  "module.leftPanel.deviceLibrary", "module.leftPanel.templateLibrary", "module.leftPanel.embeddedInspector",
-  "module.leftPanel.schemeId", "module.leftPanel.modelId", "module.rightPanel",
-  "module.rightPanel.modeControls", "module.rightPanel.baseTab", "module.rightPanel.elementTreeTab",
-  "module.rightPanel.graphTab", "module.rightPanel.graphGraphics", "module.rightPanel.graphModel",
-  "module.rightPanel.graphMeasurement", "module.rightPanel.graphBatch", "module.rightPanel.baseModelInfo",
-  "module.rightPanel.baseCanvasSettings", "module.rightPanel.baseBackgroundSettings",
-  "module.rightPanel.deviceModel", "module.rightPanel.deviceMeasurement", "module.recentGlyphs",
-  "module.canvas", "module.selectionActions", "module.statusbar", "module.topologyWarning"
-];
+export { INTERFACE_CUSTOMIZATION_SCHEMA_VERSION };
 
 export const INTERFACE_CUSTOMIZATION_DEFAULTS = Object.freeze({
   schemaVersion: INTERFACE_CUSTOMIZATION_SCHEMA_VERSION,
-  buttons: Object.freeze(Object.fromEntries(BUTTON_IDS.map((id) => [id, true]))),
-  modules: Object.freeze(Object.fromEntries(MODULE_IDS.map((id) => [id, true])))
+  buttons: Object.freeze({ ...DEFAULT_INTERFACE_CUSTOMIZATION_CONFIG.buttons }),
+  modules: Object.freeze({ ...DEFAULT_INTERFACE_CUSTOMIZATION_CONFIG.modules })
 });
 
-function isRecord(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function normalizeVisibilityMap(value, ids) {
-  const source = isRecord(value) ? value : {};
-  const normalized = Object.fromEntries(ids.map((id) => [id, true]));
-  for (const id of ids) {
-    if (typeof source[id] === "boolean") normalized[id] = source[id];
-  }
-  return normalized;
-}
-
 export function normalizeInterfaceCustomizationConfig(value) {
-  const source = isRecord(value) ? value : {};
+  const normalized = normalizeConfigFromSrc(value);
   return {
-    schemaVersion: INTERFACE_CUSTOMIZATION_SCHEMA_VERSION,
-    buttons: normalizeVisibilityMap(source.buttons, BUTTON_IDS),
-    modules: normalizeVisibilityMap(source.modules, MODULE_IDS)
+    schemaVersion: normalized.schemaVersion,
+    buttons: normalized.buttons,
+    modules: normalized.modules
   };
 }
 

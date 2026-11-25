@@ -6,6 +6,7 @@ import { DEFAULT_MEASUREMENT_CONFIG, defaultMeasurementDisplayFormat } from "../
 import { WindowCloseButton } from "../WindowCloseButton";
 import { setSkipSaveCheck } from "./appDeviceDefinitionFactories";
 import { switchToSpace } from "../spaceSwitch";
+import { promptText } from "../globalDialogs";
 import { findSavedProjectByIndex } from "../workspaceUrl";
 import { rebuildContainerExemptConnectionRoutes, rebuildContainerExemptRoutableLineDeviceRoutes, reconcileTransformerSideVoltageParamsWithTerminals, routeEdgesForStoredRendering } from "../model-routing";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
@@ -2993,7 +2994,13 @@ export function createClearActiveProjectDisplay(__appScope: Record<string, any>)
     deferredRoutableLineRouteRepairCancelRef.current?.();
     deferredRoutableLineRouteRepairCancelRef.current = null;
     suppressNextGraphDirtyRef.current += 1;
+    if (__appScope.undoStackRef) __appScope.undoStackRef.current = [];
+    if (__appScope.redoStackRef) __appScope.redoStackRef.current = [];
+    if (__appScope.currentMutationRevisionRef) __appScope.currentMutationRevisionRef.current = 0;
+    if (__appScope.savedMutationRevisionRef) __appScope.savedMutationRevisionRef.current = 0;
+    if (__appScope.savedUndoStackLengthRef) __appScope.savedUndoStackLengthRef.current = 0;
     setUndoStack([]);
+    __appScope.setRedoStack?.([]);
     setProjectName("");
     setCanvasWidth(emptyCanvasBounds.width);
     setCanvasHeight(emptyCanvasBounds.height);
@@ -3143,7 +3150,13 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     deferredRoutableLineRouteRepairCancelRef.current?.();
     deferredRoutableLineRouteRepairCancelRef.current = null;
     suppressNextGraphDirtyRef.current += 1;
+    if (__appScope.undoStackRef) __appScope.undoStackRef.current = [];
+    if (__appScope.redoStackRef) __appScope.redoStackRef.current = [];
+    if (__appScope.currentMutationRevisionRef) __appScope.currentMutationRevisionRef.current = 0;
+    if (__appScope.savedMutationRevisionRef) __appScope.savedMutationRevisionRef.current = 0;
+    if (__appScope.savedUndoStackLengthRef) __appScope.savedUndoStackLengthRef.current = 0;
     setUndoStack([]);
+    __appScope.setRedoStack?.([]);
     setProjectName(project.name);
     setProjectIdx(nextProjectIdx);
     setCanvasWidth(nextCanvasBounds.width);
@@ -3548,7 +3561,7 @@ export function createResolveUnsavedChangeAction(__appScope: Record<string, any>
 export function createCreateSchemeRecord(__appScope: Record<string, any>) {
   return async (parentSchemeId = "") => {
   const { createSavedScheme, findSavedSchemeById, handleBackendSchemeMutationFailure, hasSameName, insertChildSavedScheme, replaceSavedSchemeById, saveBackendSchemeRecord, savedChildSchemeNames, schemePathForScheme, schemes, selectSingleScheme, setExpandedSchemeIds, setSchemes, writeOperationLog } = __appScope;
-    const inputName = window.prompt("请输入方案名称", "新建方案");
+    const inputName = await promptText("请输入方案名称", "新建方案");
     if (inputName === null) {
       return;
     }
@@ -3586,9 +3599,9 @@ export function createCreateSchemeRecord(__appScope: Record<string, any>) {
 }
 
 export function createRenameSchemeRecord(__appScope: Record<string, any>) {
-  return (scheme: SavedSchemeRecord) => {
+  return async (scheme: SavedSchemeRecord) => {
   const { handleBackendSchemeMutationFailure, hasSameName, renameSavedScheme, saveBackendSchemeRecord, savedSchemeSiblingNames, schemePathForScheme, schemes, setSchemes } = __appScope;
-    const nextName = window.prompt("请输入新的方案名称", scheme.name);
+    const nextName = await promptText("请输入新的方案名称", scheme.name);
     if (!nextName) {
       return;
     }
@@ -5517,6 +5530,9 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
       }
       graphDirtyBaselineRef.current = { ...currentGraphDirtyBaseline(), nodes: savedGraphNodes };
       savedUndoStackLengthRef.current = undoStack.length;
+      if (__appScope.savedMutationRevisionRef && __appScope.currentMutationRevisionRef) {
+        __appScope.savedMutationRevisionRef.current = __appScope.currentMutationRevisionRef.current;
+      }
       setHasUnsavedChanges(false);
       saveActiveProjectPointer(targetId, currentSchemeKey || ownerScheme.id || selectedSchemeId, nextSchemes);
       clearRefreshRecoveryProject();
@@ -5565,6 +5581,9 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
     setActiveSchemeKey(resolvedSchemeId);
     graphDirtyBaselineRef.current = { ...currentGraphDirtyBaseline(), nodes: savedGraphNodes };
     savedUndoStackLengthRef.current = undoStack.length;
+    if (__appScope.savedMutationRevisionRef && __appScope.currentMutationRevisionRef) {
+      __appScope.savedMutationRevisionRef.current = __appScope.currentMutationRevisionRef.current;
+    }
     setHasUnsavedChanges(false);
     saveActiveProjectPointer(savedRecord.id, resolvedSchemeId, nextSchemes);
     clearRefreshRecoveryProject();
@@ -5575,9 +5594,9 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
 }
 
 export function createRenameProjectRecord(__appScope: Record<string, any>) {
-  return (project: SavedProjectRecord) => {
+  return async (project: SavedProjectRecord) => {
   const { activeProjectKey, findSchemeForProject, handleBackendSchemeMutationFailure, hasSameName, renameSavedProject, saveBackendProjectRecord, schemePathForScheme, setProjectName, setSchemes, upsertSavedProjectInScheme } = __appScope;
-    const nextName = window.prompt("请输入新的模型名称", project.name);
+    const nextName = await promptText("请输入新的模型名称", project.name);
     if (!nextName) {
       return;
     }

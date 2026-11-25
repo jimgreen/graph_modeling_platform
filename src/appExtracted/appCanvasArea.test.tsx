@@ -893,6 +893,21 @@ describe("areCanvasPropsEqual", () => {
     }
   });
 
+  it("补齐的交互模式、活动图层、改线/拖拽预览、LOD 与小地图视口键均触发重渲染", () => {
+    const cases = [
+      { key: "mode", prev: "select", next: "connect" },
+      { key: "activeLayerId", prev: "layer-1", next: "layer-2" },
+      { key: "staticButtonVisual", prev: null, next: { nodeId: "btn-1", state: "active" } },
+      { key: "rewiringPreviewRoute", prev: null, next: { edgeId: "e1", path: "M0 0 L10 10" } },
+      { key: "manualPathPreviewRoute", prev: null, next: { edgeId: "e1", path: "M0 0 L20 0" } },
+      { key: "lodCanvasNodeChunks", prev: [], next: [{ key: "c0", markup: "<g/>" }] },
+      { key: "minimapViewportLeft", prev: 10, next: 40 }
+    ];
+    for (const { key, prev, next } of cases) {
+      expect(areCanvasPropsEqual({ scope: { [key]: prev } }, { scope: { [key]: next } }), key).toBe(false);
+    }
+  });
+
   it("未被列入比较的键变化不触发重渲染", () => {
     expect(areCanvasPropsEqual({ scope: { isHoverHint: true } }, { scope: { isHoverHint: false } })).toBe(true);
   });

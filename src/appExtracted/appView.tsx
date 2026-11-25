@@ -7,6 +7,8 @@ import { AppStatusbar } from "./appStatusbar";
 import { AppTopbar, RecentGlyphsToolbar } from "./appTopbar";
 import { AppResourceDialogs } from "./appResourceDialogs";
 import { MemoizedViewSection } from "./appViewRenderBoundary";
+import { ErrorBoundary } from "../components/ErrorBoundary";
+import { confirmAction } from "../globalDialogs";
 import { IMAGE_FIT_MODE_OPTIONS, normalizeImageFitMode } from "../imageFit";
 import {
   ICON_LIBRARY_PAGE_SIZE,
@@ -22,21 +24,22 @@ import type { CustomComponentLibraryDefinition, CustomDeviceDraft, CustomParamDr
 import type { MeasurementGroup } from "../measurements";
 import { decodeAuto } from "../encoding/gbk";
 import { openExportedFile, type SavedExportFile } from "../fileIO";
-import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 import { interfaceCustomizationCss, isInterfaceCustomizationVisible } from "../interfaceCustomization";
 import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES as TEMPLATE_ALLOWED_MODEL_TYPES, eDeviceTemplateNetworkTypeMismatchMessage, eDeviceTemplateSingleTypeMismatchMessage } from "../eDeviceTemplateTypePolicy";
-import { VoltageLevelDialog } from "../VoltageLevelDialog";
 import { isSkipBeforeUnload } from "../spaceSwitch";
 import { AppTour } from "../appTour";
-// E 文件编辑器是「点开才用」的大弹窗，按需加载：与本文件已有的
-// LazyAppContextMenus / LazyAppProjectDialogs 等同一套写法。scope 上的键名保持
-// `EFileEditor` 不变，消费方（appDeviceDefinitionDialogs）无感知。
+// 点开才用的重型大弹窗统一按需懒加载，从首屏主包剥离；scope 上键名保持不变，消费方无感知。
 const LazyEFileEditor = lazy(() => import("../EFileEditor")
   .then((module) => ({ default: module.EFileEditor })));
+const LazyAllNetworkTopologyDialog = lazy(() => import("../AllNetworkTopologyDialog")
+  .then((module) => ({ default: module.AllNetworkTopologyDialog })));
+const LazyUserCustomizationManagerDialog = lazy(() => import("../UserCustomizationManagerDialog")
+  .then((module) => ({ default: module.UserCustomizationManagerDialog })));
+const LazyVoltageLevelDialog = lazy(() => import("../VoltageLevelDialog")
+  .then((module) => ({ default: module.VoltageLevelDialog })));
 import { buildUserCustomizationInventory, restoreUserCustomizationItems, type UserCustomizationDomain } from "../userCustomizations";
 import { moveSelectedTableRows, nextTableRowSelection, uniqueCopiedFieldName } from "../definitionTableSelection";
 import { WindowCloseButton } from "../WindowCloseButton";
-import { AllNetworkTopologyDialog } from "../AllNetworkTopologyDialog";
 import {
   resolveComponentLibraryClassFamilyMetadata,
   resolveComponentLibraryClassMetadata
@@ -677,18 +680,25 @@ export function renderAppView(__appScope: Record<string, any>) {
     ? globalLinePlacementCandidates?.find((record: { id: string }) => record.id === globalLinePlacementDialog.selectedGlobalLineId)
     : undefined;
   const { exportCompletionDialog, setExportCompletionDialog } = __appScope;
-  const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, savedUndoStackLengthRef, setHasUnsavedChanges } = __appScope;
+  const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, savedUndoStackLengthRef, currentMutationRevisionRef, savedMutationRevisionRef, setHasUnsavedChanges } = __appScope;
   useEffect(() => {
-    // 撤销至保存基线时自动清除"未保存"标记，无需依赖对话框打开
+    // 撤销或重做至保存基线时自动清除"未保存"标记，无需依赖对话框打开；
+    // 优先使用单调递增的 mutationRevision 比对，避免 50 步截断或内存裁剪导致栈长度失准。
+    if (currentMutationRevisionRef && savedMutationRevisionRef) {
+      if (currentMutationRevisionRef.current === savedMutationRevisionRef.current && saveRequired) {
+        setHasUnsavedChanges(false);
+      }
+      return;
+    }
     const baseline = savedUndoStackLengthRef?.current ?? 0;
     if (undoStack.length <= baseline && saveRequired) {
       setHasUnsavedChanges(false);
     }
-  }, [undoStack, saveRequired, savedUndoStackLengthRef, setHasUnsavedChanges]);
-  const deleteAllDefinitionParameters = () => {
+  }, [undoStack, __appScope.redoStack, saveRequired, savedUndoStackLengthRef, currentMutationRevisionRef, savedMutationRevisionRef, setHasUnsavedChanges]);
+  const deleteAllDefinitionParameters = async () => {
     const template = __appScope.selectedDefinitionTemplate;
     if (!template || template.custom || __appScope.definitionDraftRows.length === 0) return;
-    if (!window.confirm(`确认删除“${template.label}”的全部参数定义？`)) return;
+    if (!(await confirmAction(`确认删除“${template.label}”的全部参数定义？`))) return;
     __appScope.definitionDeleteAllParametersRequestedRef.current = true;
     __appScope.setDefinitionDraftRows([]);
     __appScope.setDefinitionDraftError("已标记删除全部参数，点击保存后生效。");
@@ -1504,9 +1514,9 @@ export function renderAppView(__appScope: Record<string, any>) {
     }
     __appScope.setDefinitionDraftError("");
   };
-  const deleteAllDefinitionParameterRows = () => {
+  const deleteAllDefinitionParameterRows = async () => {
     if (!selectedDefinitionTemplate || selectedDefinitionTemplate.custom || definitionDraftRows.length === 0) return;
-    if (!window.confirm(`确认删除“${selectedDefinitionTemplate.label}”的全部参数定义？`)) return;
+    if (!(await confirmAction(`确认删除“${selectedDefinitionTemplate.label}”的全部参数定义？`))) return;
     __appScope.definitionDeleteAllParametersRequestedRef.current = true;
     __appScope.setDefinitionDraftRows([]);
     __appScope.setSelectedDefinitionParameterRowIds([]);
@@ -2407,13 +2417,13 @@ export function renderAppView(__appScope: Record<string, any>) {
   ] as const;
   const resourceDialogLayerInputs = overlayInputsFor(resourceDialogLayerActive);
   Object.assign(__appScope, {
-    AlignCenterHorizontal, AllNetworkTopologyDialog, ArrowDown, ArrowUp, BoxSelect, BufferedTextInput, CONNECTION_REDRAW_SCOPE_LABELS, CONTAINER_TERMINAL_ASSOCIATION_OPTIONS,
+    AlignCenterHorizontal, AllNetworkTopologyDialog: LazyAllNetworkTopologyDialog, ArrowDown, ArrowUp, BoxSelect, BufferedTextInput, CONNECTION_REDRAW_SCOPE_LABELS, CONTAINER_TERMINAL_ASSOCIATION_OPTIONS,
     ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, CircleDot, Copy, CustomComponentManagerTree, DEFAULT_COLOR_PALETTE,
     DeferredColorInput, Download, EFileEditor: LazyEFileEditor, ENABLE_REACT_FLOW_PREVIEW, ENERGY_COLOR_ROWS, Eye, FileInput, FolderOpen,
     Fragment, Grid2X2, Group, ICON_LIBRARY_PAGE_SIZE, Layers, Layers2, MAX_CUSTOM_DEVICE_TERMINALS, PARAM_VALUE_TYPE_OPTIONS,
     Pencil, Plus, ReactFlowPreview, RotateCcw, Route, Save, ScanSearch, Scissors,
     Search, Suspense, TERMINAL_TYPE_LIBRARY_LABELS, TERMINAL_TYPE_OPTIONS, Trash2, Type, Undo2, Ungroup,
-    UserCustomizationManagerDialog, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VoltageLevelDialog, WindowCloseButton, X,
+    UserCustomizationManagerDialog: LazyUserCustomizationManagerDialog, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VoltageLevelDialog: LazyVoltageLevelDialog, WindowCloseButton, X,
     Zap, ZapOff, activeImageFolderId, activeLayerNodes, activeSelectedNodeIds, activeVoltageBaseTerminalKey, activeVoltageBaseTerminalRow, addCustomDeviceStateDraftRow,
     addCustomParameterRow, addDefaultMeasurementsToNode, addDefinitionDraftRow, addManualBendFromContextMenu, addRoutableLineBendFromContextMenu, adjustSelectedDisplayLayer, applyExistingImage, applyIconLibraryCatalogIcon,
     applyLayerAssignmentDialog, autoAlignCanvasGraphics, autoSpreadCanvasGraphics, canAddTemplateFromSelection, canGroupSelectedGraphics, canUngroupSelectedGraphics, cancelGlobalLinePlacement, cancelGlobalLineTransition,
@@ -2587,7 +2597,9 @@ export function renderAppView(__appScope: Record<string, any>) {
           __appScope.tourBlockedSidePanelMode,
           __appScope.compactPanelTab,
           __appScope.interfaceCustomization,
-          ...rightPanelInputs
+          // 仅在窄屏切换到嵌入式属性页时才订阅右侧面板 inputs，
+          // 避免宽屏下每次选中节点或编辑右侧属性连带重渲染整棵左侧资源树。
+          ...(__appScope.compactPanelTab === "right" ? rightPanelInputs : [])
         ]}
           embeddedRightPanel={<AppRightPanel scope={__appScope} inputs={rightPanelInputs} embedded />}
       />}
@@ -2614,17 +2626,17 @@ export function renderAppView(__appScope: Record<string, any>) {
             deviceLabelsVisible,
             deviceMeasurementsVisible,
             saveRequired,
+            undoStack.length,
+            (__appScope.redoStack?.length ?? 0),
             canGroupSelectedGraphics,
             canUngroupSelectedGraphics,
             canAdjustSelectedDisplayLayer,
             selectedLayoutUnitCount,
-            // 空间选择器与 RT-WS 指示灯同属「当前上下文」控件：这两个值不加进 inputs，
-            // 空间列表加载完成后 MemoizedViewSection 会跳过重渲染，选择器永远停在空列表。
+            // 空间选择器属「当前上下文」控件：不加进 inputs，空间列表加载完成后
+            // MemoizedViewSection 会跳过重渲染，选择器永远停在空列表。
+            // RT-WS 指示灯已改为独立订阅 runtimeWsIndicatorStore，不再依赖顶栏整体重渲染。
             __appScope.currentSpaceId,
             __appScope.spaces,
-            __appScope.runtimeWsStatus,
-            __appScope.runtimeWsBlinkSeq,
-            __appScope.runtimeWsClientId,
             // 电流流水线开关 + 外观设置：弹窗确定后对象引用变化必须让顶栏重渲染
             __appScope.electricFlowVisible,
             __appScope.electricFlowSettings,
@@ -2640,7 +2652,20 @@ export function renderAppView(__appScope: Record<string, any>) {
           render={() => <RecentGlyphsToolbar scope={__appScope} />}
         />}
 
-        {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.canvas") && <MemoizedCanvasArea scope={__appScope} />}
+        {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.canvas") && (
+          <ErrorBoundary
+            areaName="建模画布"
+            resetKey={String(__appScope.activeProjectKey ?? "")}
+            recoveryFileName={`${String(__appScope.projectName || "model")}-recovery.json`}
+            getRecoverySnapshotJson={() => {
+              const latestScope = (__appScope.__appScopeRef?.current as Record<string, any> | undefined) ?? __appScope;
+              const project = typeof latestScope.currentProject === "function" ? latestScope.currentProject() : null;
+              return project ? JSON.stringify(project, null, 2) : null;
+            }}
+          >
+            <MemoizedCanvasArea scope={__appScope} />
+          </ErrorBoundary>
+        )}
         {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.topologyWarning") && <MemoizedViewSection
           section="topology-warning"
           inputs={[

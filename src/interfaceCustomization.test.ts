@@ -52,5 +52,27 @@ describe("界面定制配置", () => {
       "module.rightPanel.graphGraphics",
       "module.rightPanel.deviceMeasurement"
     ]));
+    expect(buttonIds).toEqual(expect.arrayContaining(["topbar.undo", "topbar.redo"]));
+  });
+
+  test("全部隐藏配置必须保留界面定制入口受保护可见，防止自锁死", async () => {
+    const {
+      buildHideAllInterfaceCustomizationConfig,
+      isProtectedInterfaceCustomizationId
+    } = await import("./interfaceCustomization");
+    const hiddenAll = buildHideAllInterfaceCustomizationConfig();
+    expect(isProtectedInterfaceCustomizationId("topbar.interfaceCustomization")).toBe(true);
+    expect(hiddenAll.buttons["topbar.interfaceCustomization"]).toBe(true);
+    expect(hiddenAll.buttons["topbar.save"]).toBe(false);
+    expect(hiddenAll.buttons["topbar.undo"]).toBe(false);
+    expect(hiddenAll.modules["module.canvas"]).toBe(false);
+  });
+
+  test("前后端界面定制配置键集合保持单源一致", async () => {
+    const { DEFAULT_INTERFACE_CUSTOMIZATION_CONFIG: frontDefaults } = await import("./interfaceCustomization");
+    // @ts-expect-error 后端 ESM .mjs 模块不提供 .d.ts 声明文件
+    const { INTERFACE_CUSTOMIZATION_DEFAULTS: serverDefaults } = await import("../server/interfaceCustomization.mjs");
+    expect(Object.keys(serverDefaults.buttons).sort()).toEqual(Object.keys(frontDefaults.buttons).sort());
+    expect(Object.keys(serverDefaults.modules).sort()).toEqual(Object.keys(frontDefaults.modules).sort());
   });
 });

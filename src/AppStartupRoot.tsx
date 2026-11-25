@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Form, Input, Modal } from "antd";
 import { App } from "./App";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { runStartupGate } from "./appStartup";
 import { currentQiankunUser } from "./qiankunUserSpace";
 import { initializeDefaultSpace, writeSpaceCookie } from "./spaceClient";
@@ -41,7 +42,13 @@ export function AppStartupRoot({ needsInitialSpace }: { needsInitialSpace: boole
     }
   };
 
-  if (!setupRequired) return <App />;
+  if (!setupRequired) {
+    return (
+      <ErrorBoundary areaName="建模平台">
+        <App />
+      </ErrorBoundary>
+    );
+  }
 
   return (
     <Modal
