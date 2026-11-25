@@ -22,6 +22,7 @@ import { graphStorePatchNodes } from "../graphStore";
 import { applyDragContainerMembership, clampContainerCenterToMembers, containerDragGroup, containerGatewayUnbindNotice, containerMemberNodes, containerResizeMinSize, finalizeContainerAfterNodeDeletion, foldContainerScaleIntoSize, hasContainer, isContainerNode, normalizeInboundContainerNode, withNodeUpdates } from "../acContainer";
 import { arrangeContainerInteriors, autoAlignEdgeWithoutStoredRoute, autoAlignStoredRouteDrops, createAutoAlignQualityReport, mergeContainerLayoutUnits, type AutoAlignQualityReport } from "../selectionActions";
 import { runAutoAlignPlanInWorker } from "../autoAlign/autoAlignClient";
+import { runBatchRedrawRoutesInWorker, shouldOffloadBatchRerouteToWorker } from "../routing/routeWorkerClient";
 import { modelTrace } from "../modelTrace";
 import { runTopologyOperation } from "../topology-operation";
 import { fetchBackendProjectRecord as fetchBackendProjectRecordDirect, savedProjectRecordIsSummary as savedProjectRecordIsSummaryDirect } from "./appPersistenceLibraryExport";
@@ -2776,13 +2777,76 @@ export function createConnectionRedrawTargetsForScope(__appScope: Record<string,
   };
 }
 
+let activeBatchRedrawAbortController: AbortController | null = null;
+
 export function createRedrawConnectionRoutes(__appScope: Record<string, any>) {
   return (scope: ConnectionRedrawScope) => {
-  const { CONNECTION_REDRAW_SCOPE_LABELS, canvasBounds, connectionRedrawTargetsForScope, edgeIds, edges, lineNodeIds, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, patchGraphEdges, patchGraphNodes, pushUndoSnapshot, redrawConnectionRoutesForEdges, redrawRoutableLineDeviceRoutes, total, undoScopeForGraphPatch, writeOperationLog } = __appScope;
+  const { CONNECTION_REDRAW_SCOPE_LABELS, activeProjectKey, canvasBounds, connectionRedrawTargetsForScope, edges, latestEdgesRef, latestNodesRef, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, patchGraphEdges, patchGraphNodes, pushUndoSnapshot, redrawConnectionRoutesForEdges, redrawRoutableLineDeviceRoutes, undoScopeForGraphPatch, writeOperationLog } = __appScope;
     const { edgeIds: targetEdgeIds, lineNodeIds: targetLineNodeIds, total: targetCount } = connectionRedrawTargetsForScope(scope);
     const scopeLabel = CONNECTION_REDRAW_SCOPE_LABELS[scope];
     if (targetCount === 0) {
       writeOperationLog(`${scopeLabel}为空，未执行连接线重绘`);
+      return;
+    }
+
+    const commitRedrawResult = (changedEdges: Edge[], changedLineNodes: ModelNode[]) => {
+      const latestScope = (__appScope.__appScopeRef?.current as Record<string, any> | undefined) ?? __appScope;
+      if (changedEdges.length === 0 && changedLineNodes.length === 0) {
+        (latestScope.writeOperationLog ?? writeOperationLog)(`${scopeLabel}重绘未产生变化`);
+        return;
+      }
+
+      const changedEdgeIds = changedEdges.map((edge) => edge.id);
+      const changedNodeIds = changedLineNodes.map((node: ModelNode) => node.id);
+      (latestScope.pushUndoSnapshot ?? pushUndoSnapshot)(true, false, (latestScope.undoScopeForGraphPatch ?? undoScopeForGraphPatch)(changedNodeIds, changedEdgeIds));
+      if (changedEdgeIds.length > 0) {
+        (latestScope.markRouteEdgesDirty ?? markRouteEdgesDirty)(changedEdgeIds);
+        (latestScope.markStoredRouteEdgesDirty ?? markStoredRouteEdgesDirty)(changedEdgeIds);
+        (latestScope.patchGraphEdges ?? patchGraphEdges)(changedEdges);
+      }
+      if (changedLineNodes.length > 0) {
+        (latestScope.patchGraphNodes ?? patchGraphNodes)(changedLineNodes);
+      }
+      (latestScope.writeOperationLog ?? writeOperationLog)(`重绘${scopeLabel}：${changedEdges.length}/${targetEdgeIds.length} 条连接线，${changedLineNodes.length}/${targetLineNodeIds.length} 条可变线路`);
+    };
+
+    if (shouldOffloadBatchRerouteToWorker(targetCount)) {
+      activeBatchRedrawAbortController?.abort();
+      const controller = new AbortController();
+      activeBatchRedrawAbortController = controller;
+      const startProjectKey = activeProjectKey;
+      const startNodes = nodes;
+      const startEdges = edges;
+      writeOperationLog(`正在后台重绘${scopeLabel}（${targetCount} 条）...`);
+      void runBatchRedrawRoutesInWorker(
+        { nodes, edges, targetEdgeIds, targetLineNodeIds, bounds: canvasBounds },
+        { signal: controller.signal }
+      )
+        .then(({ changedEdges, changedLineNodes }) => {
+          if (controller.signal.aborted) {
+            return;
+          }
+          if (activeBatchRedrawAbortController === controller) {
+            activeBatchRedrawAbortController = null;
+          }
+          const latestScope = (__appScope.__appScopeRef?.current as Record<string, any> | undefined) ?? __appScope;
+          if (
+            latestScope.activeProjectKey !== startProjectKey ||
+            (latestNodesRef && latestNodesRef.current !== startNodes) ||
+            (latestEdgesRef && latestEdgesRef.current !== startEdges)
+          ) {
+            return;
+          }
+          commitRedrawResult(changedEdges, changedLineNodes);
+        })
+        .catch((error: any) => {
+          if (error?.name === "AbortError" || controller.signal.aborted) {
+            return;
+          }
+          if (activeBatchRedrawAbortController === controller) {
+            activeBatchRedrawAbortController = null;
+          }
+        });
       return;
     }
 
@@ -2798,23 +2862,7 @@ export function createRedrawConnectionRoutes(__appScope: Record<string, any>) {
     const changedLineNodes = targetLineNodeIds.length > 0
       ? redrawRoutableLineDeviceRoutes(nodes, targetLineNodeIds, canvasBounds)
       : [];
-    if (changedEdges.length === 0 && changedLineNodes.length === 0) {
-      writeOperationLog(`${scopeLabel}重绘未产生变化`);
-      return;
-    }
-
-    const changedEdgeIds = changedEdges.map((edge) => edge.id);
-    const changedNodeIds = changedLineNodes.map((node: ModelNode) => node.id);
-    pushUndoSnapshot(true, false, undoScopeForGraphPatch(changedNodeIds, changedEdgeIds));
-    if (changedEdgeIds.length > 0) {
-      markRouteEdgesDirty(changedEdgeIds);
-      markStoredRouteEdgesDirty(changedEdgeIds);
-      patchGraphEdges(changedEdges);
-    }
-    if (changedLineNodes.length > 0) {
-      patchGraphNodes(changedLineNodes);
-    }
-    writeOperationLog(`重绘${scopeLabel}：${changedEdges.length}/${targetEdgeIds.length} 条连接线，${changedLineNodes.length}/${targetLineNodeIds.length} 条可变线路`);
+    commitRedrawResult(changedEdges, changedLineNodes);
   };
 }
 

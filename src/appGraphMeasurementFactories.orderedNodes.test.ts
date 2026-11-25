@@ -8,7 +8,7 @@ import {
   createOrderedNodesForIds
 } from "./appExtracted/appGraphMeasurementFactories";
 
-const node = (id: string) => ({ id, name: id });
+const node = (id: string): any => ({ id, name: id });
 
 /**
  * 造 scope。store 里 nodes 是全量、nodeIndexById 给出下标；
@@ -37,7 +37,7 @@ describe("createOrderedNodeFromList", () => {
 
   test("patch 列表里能找到时走 patch 缓存，且只建一次 Map", () => {
     const { orderedNodeFromList, cache } = createScope(full);
-    const patch = [{ id: "patched", name: "patched" }];
+    const patch: any[] = [{ id: "patched", name: "patched" }];
 
     // 下标 0 指向 full[0]，id 不匹配 → 落到 patch 缓存分支
     expect(orderedNodeFromList(patch, "patched")).toBe(patch[0]);
@@ -49,14 +49,14 @@ describe("createOrderedNodeFromList", () => {
 
   test("patch 里没有时退到 nodeById（patch 比全量短）", () => {
     const { orderedNodeFromList } = createScope(full);
-    const patch = [{ id: "patched", name: "patched" }];
+    const patch: any[] = [{ id: "patched", name: "patched" }];
 
     expect(orderedNodeFromList(patch, "n3")).toBe(full[2]);
   });
 
   test("既不在 patch 下标位也不在 nodeById 时返回 undefined", () => {
     const { orderedNodeFromList } = createScope(full);
-    const patch = [{ id: "patched", name: "patched" }];
+    const patch: any[] = [{ id: "patched", name: "patched" }];
 
     expect(orderedNodeFromList(patch, "查无此节点")).toBeUndefined();
   });

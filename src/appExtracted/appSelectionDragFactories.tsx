@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Modal, Select } from "antd";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
+import { runBatchRerouteInWorker, shouldOffloadBatchRerouteToWorker } from "../routing/routeWorkerClient";
 import { CONTAINER_KINDS, modelAssociationDevicesModelTypeFailureMessage } from "../model";
 import {
   applyAddToContainer,
@@ -3194,7 +3195,7 @@ export function createScheduleMovedEdgeOptimization(__appScope: Record<string, a
     moveCandidateEdges: Edge[] = [],
     expectedPatch?: { nodeUpdates: ModelNode[]; edgeUpserts: Edge[]; edgeDeleteIds: string[] }
   ) => {
-  const { MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES, deferredMoveOptimizationCancelRef, graphStorePatchEdges, graphStorePatchStillCurrent, latestEdgesRef, latestGraphStoreRef, latestNodesRef, localRouteOptimizationCandidateEdges, localRouteOptimizationEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, optimizeMovedNodeEdgeRoutes, routePointsForMovedNodeBlockers, routePointsNearOriginalMovedNodes, scheduleIdleWork, setGraphStore, shouldRunDeferredMoveOptimization } = __appScope;
+  const { MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES, canvasBounds, deferredMoveOptimizationCancelRef, editModeRouteRebuildOptions, graphStorePatchEdges, graphStorePatchStillCurrent, latestEdgesRef, latestGraphStoreRef, latestNodesRef, localRouteOptimizationCandidateEdges, localRouteOptimizationEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, optimizeMovedNodeEdgeRoutes, rebuildSingleAffectedConnectionRoute, routePointSnapshotToRoutes, routePointsForMovedNodeBlockers, routePointsNearOriginalMovedNodes, routingNodesForConnectionEdges, scheduleIdleWork, setGraphStore, shouldRunDeferredMoveOptimization } = __appScope;
     deferredMoveOptimizationCancelRef.current?.();
     if (movedNodeIds.length > MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES) {
       deferredMoveOptimizationCancelRef.current = null;
@@ -3264,6 +3265,98 @@ export function createScheduleMovedEdgeOptimization(__appScope: Record<string, a
       if (!shouldRunDeferredMoveOptimization(latestOptimizationEdges, movedNodeIds, selectedEdgeIds, blockedEdgeIds)) {
         return;
       }
+      const commitOptimizedEdges = (
+        optimizedEdges: Edge[],
+        routePointsMap: DraggingState["originalRoutePoints"]
+      ) => {
+        if (optimizedEdges === latestOptimizationEdges) {
+          return;
+        }
+        const dirtyOptimizedEdgeIds = new Set<string>([...blockedEdgeIds, ...forcedRerouteEdgeIds]);
+        for (const edgeId of Object.keys(routePointsMap)) {
+          dirtyOptimizedEdgeIds.add(edgeId);
+        }
+        const previousOptimizedEdgeById = new Map<string, Edge>(
+          latestOptimizationEdges.map((edge: Edge) => [edge.id, edge] as [string, Edge])
+        );
+        const optimizedEdgeById = new Map<string, Edge>(
+          optimizedEdges.map((edge: Edge) => [edge.id, edge] as [string, Edge])
+        );
+        const optimizedEdgeUpdates: Edge[] = [];
+        for (const edgeId of dirtyOptimizedEdgeIds) {
+          const optimizedEdge = optimizedEdgeById.get(edgeId);
+          if (optimizedEdge && previousOptimizedEdgeById.get(edgeId) !== optimizedEdge) {
+            optimizedEdgeUpdates.push(optimizedEdge);
+          }
+        }
+        if (optimizedEdgeUpdates.length === 0) {
+          return;
+        }
+        markRouteEdgesDirty(dirtyOptimizedEdgeIds);
+        markStoredRouteEdgesDirty(dirtyOptimizedEdgeIds);
+        setGraphStore((current: GraphStore) => graphStorePatchEdges(current, optimizedEdgeUpdates));
+      };
+
+      const hasPrecomputedBlockers = Object.keys(routePointsForOptimization).length > 0;
+      const shouldUseWorker =
+        shouldOffloadBatchRerouteToWorker(latestOptimizationEdges.length) &&
+        (hasPrecomputedBlockers || forcedRerouteEdgeIds.size > 0);
+
+      if (shouldUseWorker) {
+        const rebuiltAdjustedEdges =
+          hasPrecomputedBlockers && forcedRerouteEdgeIds.size === 0
+            ? latestOptimizationEdges
+            : rebuildSingleAffectedConnectionRoute(
+                expectedNodes,
+                latestOptimizationEdges,
+                movedNodeIds,
+                selectedEdgeIds,
+                latestOptimizationEdges
+              );
+        const workerController = new AbortController();
+        deferredMoveOptimizationCancelRef.current = () => {
+          workerController.abort();
+        };
+        void runBatchRerouteInWorker(
+          {
+            nodes: routingNodesForConnectionEdges(latestOptimizationEdges, expectedNodes, movedNodeIds),
+            edges: rebuiltAdjustedEdges,
+            movedNodeIds,
+            previousRoutes: routePointSnapshotToRoutes(routePointsForOptimization),
+            bounds: canvasBounds,
+            forceEdgeIds: Array.from(forcedRerouteEdgeIds),
+            searchEdges: latestOptimizationEdges,
+            options: editModeRouteRebuildOptions
+          },
+          { signal: workerController.signal }
+        )
+          .then((workerEdges) => {
+            if (workerController.signal.aborted) {
+              return;
+            }
+            deferredMoveOptimizationCancelRef.current = null;
+            const currentStore = latestGraphStoreRef.current;
+            if (!currentStore) {
+              return;
+            }
+            if (expectedPatch) {
+              if (!graphStorePatchStillCurrent(currentStore, expectedPatch.nodeUpdates, expectedPatch.edgeUpserts, expectedPatch.edgeDeleteIds)) {
+                return;
+              }
+            } else if (latestNodesRef.current !== nextNodes || latestEdgesRef.current !== fastEdges) {
+              return;
+            }
+            commitOptimizedEdges(workerEdges, routePointsForOptimization);
+          })
+          .catch((error: any) => {
+            if (error?.name === "AbortError" || workerController.signal.aborted) {
+              return;
+            }
+            deferredMoveOptimizationCancelRef.current = null;
+          });
+        return;
+      }
+
       const optimized = optimizeMovedNodeEdgeRoutes(
         expectedNodes,
         latestOptimizationEdges,
@@ -3274,28 +3367,7 @@ export function createScheduleMovedEdgeOptimization(__appScope: Record<string, a
         forcedRerouteEdgeIds,
         latestOptimizationEdges
       );
-      if (optimized.edges === latestOptimizationEdges) {
-        return;
-      }
-      const dirtyOptimizedEdgeIds = new Set<string>([...blockedEdgeIds, ...forcedRerouteEdgeIds]);
-      for (const edgeId of Object.keys(optimized.routePoints)) {
-        dirtyOptimizedEdgeIds.add(edgeId);
-      }
-      const previousOptimizedEdgeById = new Map<string, Edge>(latestOptimizationEdges.map((edge: Edge) => [edge.id, edge] as [string, Edge]));
-      const optimizedEdgeById = new Map<string, Edge>(optimized.edges.map((edge: Edge) => [edge.id, edge] as [string, Edge]));
-      const optimizedEdgeUpdates: Edge[] = [];
-      for (const edgeId of dirtyOptimizedEdgeIds) {
-        const optimizedEdge = optimizedEdgeById.get(edgeId);
-        if (optimizedEdge && previousOptimizedEdgeById.get(edgeId) !== optimizedEdge) {
-          optimizedEdgeUpdates.push(optimizedEdge);
-        }
-      }
-      if (optimizedEdgeUpdates.length === 0) {
-        return;
-      }
-      markRouteEdgesDirty(dirtyOptimizedEdgeIds);
-      markStoredRouteEdgesDirty(dirtyOptimizedEdgeIds);
-      setGraphStore((current: GraphStore) => graphStorePatchEdges(current, optimizedEdgeUpdates));
+      commitOptimizedEdges(optimized.edges, optimized.routePoints);
     }, 180, 1500);
   };
 }
@@ -3312,7 +3384,7 @@ export function createScheduleDeferredMovedConnectionRepair(__appScope: Record<s
     selectedEdgeIds = new Set<string>(),
     options: SingleNodeDeferredRepairOptions = {}
   ) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES, MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES, busTerminalSyncNodeIdsForGraphPatch, canvasBounds, canvasBoundsForAutoExpandedGraphContent, deferredMoveOptimizationCancelRef, edgePatchFromCandidateEdges, finalizeMovedNodeEdgesFast, graphStoreApplyPatch, graphStorePatchStillCurrent, latestGraphStoreRef, markBusTerminalSyncDirty, markGraphDirtyForInteractiveCommit, markRouteEdgesDirty, markStoredRouteEdgesDirty, optimizeMovedNodeEdgeRoutes, routePointsForMovedEdgesBlockedByStationaryNodes, routePointsForMovedNodeBlockers, routePointsNearOriginalMovedNodes, scheduleIdleWork, setGraphStore } = __appScope;
+  const { CANVAS_AUTO_EXPAND_PADDING, MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES, MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES, busTerminalSyncNodeIdsForGraphPatch, canvasBounds, canvasBoundsForAutoExpandedGraphContent, deferredMoveOptimizationCancelRef, edgePatchFromCandidateEdges, editModeRouteRebuildOptions, finalizeMovedNodeEdgesFast, graphStoreApplyPatch, graphStorePatchStillCurrent, latestGraphStoreRef, markBusTerminalSyncDirty, markGraphDirtyForInteractiveCommit, markRouteEdgesDirty, markStoredRouteEdgesDirty, optimizeMovedNodeEdgeRoutes, rebuildSingleAffectedConnectionRoute, routePointSnapshotToRoutes, routePointsForMovedEdgesBlockedByStationaryNodes, routePointsForMovedNodeBlockers, routePointsNearOriginalMovedNodes, routingNodesForConnectionEdges, scheduleIdleWork, setGraphStore } = __appScope;
     if (effectiveCanvasBounds === undefined) {
       effectiveCanvasBounds = canvasBounds;
     }
@@ -3390,9 +3462,93 @@ export function createScheduleDeferredMovedConnectionRepair(__appScope: Record<s
           )
         : blockerRoutePoints;
       const repairEdgeIds = new Set(Object.keys(repairRoutePoints));
-      let optimizedEdges = workingCandidateEdges;
+      const commitDeferredRepair = (optimizedEdges: Edge[]) => {
+        const deferredEdgePatch = edgePatchFromCandidateEdges(latestCandidateEdges, optimizedEdges);
+        if (deferredEdgePatch.edgeUpserts.length === 0 && deferredEdgePatch.edgeDeleteIds.length === 0) {
+          return;
+        }
+        for (const edge of deferredEdgePatch.edgeUpserts) {
+          dirtyDeferredEdgeIds.add(edge.id);
+        }
+        for (const edgeId of deferredEdgePatch.edgeDeleteIds) {
+          dirtyDeferredEdgeIds.add(edgeId);
+        }
+        markRouteEdgesDirty(dirtyDeferredEdgeIds);
+        markStoredRouteEdgesDirty(dirtyDeferredEdgeIds);
+        markBusTerminalSyncDirty(
+          busTerminalSyncNodeIdsForGraphPatch(
+            movedNodeIds,
+            latestCandidateEdges,
+            deferredEdgePatch.edgeUpserts,
+            deferredEdgePatch.edgeDeleteIds
+          )
+        );
+        markGraphDirtyForInteractiveCommit();
+        setGraphStore((current: GraphStore) =>
+          graphStoreApplyPatch(current, {
+            edgeUpserts: deferredEdgePatch.edgeUpserts,
+            edgeDeleteIds: deferredEdgePatch.edgeDeleteIds
+          })
+        );
+      };
+
       if (repairEdgeIds.size > 0) {
         const repairCandidateEdges = workingCandidateEdges.filter((edge) => repairEdgeIds.has(edge.id));
+        for (const edgeId of repairEdgeIds) {
+          dirtyDeferredEdgeIds.add(edgeId);
+        }
+        if (shouldOffloadBatchRerouteToWorker(repairCandidateEdges.length)) {
+          const rebuiltAdjustedEdges = rebuildSingleAffectedConnectionRoute(
+            latestNodes,
+            workingCandidateEdges,
+            movedNodeIds,
+            selectedEdgeIds,
+            repairCandidateEdges
+          );
+          const workerController = new AbortController();
+          deferredMoveOptimizationCancelRef.current = () => {
+            workerController.abort();
+          };
+          void runBatchRerouteInWorker(
+            {
+              nodes: routingNodesForConnectionEdges(repairCandidateEdges, latestNodes, movedNodeIds),
+              edges: rebuiltAdjustedEdges,
+              movedNodeIds,
+              previousRoutes: routePointSnapshotToRoutes(repairRoutePoints),
+              bounds: repairCanvasBounds,
+              forceEdgeIds: Array.from(repairEdgeIds),
+              searchEdges: repairCandidateEdges,
+              options: editModeRouteRebuildOptions
+            },
+            { signal: workerController.signal }
+          )
+            .then((workerEdges) => {
+              if (workerController.signal.aborted) {
+                return;
+              }
+              deferredMoveOptimizationCancelRef.current = null;
+              const currentStore = latestGraphStoreRef.current;
+              if (
+                !currentStore ||
+                !graphStorePatchStillCurrent(
+                  currentStore,
+                  expectedPatch.nodeUpdates,
+                  expectedPatch.edgeUpserts,
+                  expectedPatch.edgeDeleteIds
+                )
+              ) {
+                return;
+              }
+              commitDeferredRepair(workerEdges);
+            })
+            .catch((error: any) => {
+              if (error?.name === "AbortError" || workerController.signal.aborted) {
+                return;
+              }
+              deferredMoveOptimizationCancelRef.current = null;
+            });
+          return;
+        }
         const optimized = optimizeMovedNodeEdgeRoutes(
           latestNodes,
           workingCandidateEdges,
@@ -3403,38 +3559,10 @@ export function createScheduleDeferredMovedConnectionRepair(__appScope: Record<s
           repairEdgeIds,
           repairCandidateEdges
         );
-        optimizedEdges = optimized.edges;
-        for (const edgeId of repairEdgeIds) {
-          dirtyDeferredEdgeIds.add(edgeId);
-        }
-      }
-      const deferredEdgePatch = edgePatchFromCandidateEdges(latestCandidateEdges, optimizedEdges);
-      if (deferredEdgePatch.edgeUpserts.length === 0 && deferredEdgePatch.edgeDeleteIds.length === 0) {
+        commitDeferredRepair(optimized.edges);
         return;
       }
-      for (const edge of deferredEdgePatch.edgeUpserts) {
-        dirtyDeferredEdgeIds.add(edge.id);
-      }
-      for (const edgeId of deferredEdgePatch.edgeDeleteIds) {
-        dirtyDeferredEdgeIds.add(edgeId);
-      }
-      markRouteEdgesDirty(dirtyDeferredEdgeIds);
-      markStoredRouteEdgesDirty(dirtyDeferredEdgeIds);
-      markBusTerminalSyncDirty(
-        busTerminalSyncNodeIdsForGraphPatch(
-          movedNodeIds,
-          latestCandidateEdges,
-          deferredEdgePatch.edgeUpserts,
-          deferredEdgePatch.edgeDeleteIds
-        )
-      );
-      markGraphDirtyForInteractiveCommit();
-      setGraphStore((current: GraphStore) =>
-        graphStoreApplyPatch(current, {
-          edgeUpserts: deferredEdgePatch.edgeUpserts,
-          edgeDeleteIds: deferredEdgePatch.edgeDeleteIds
-        })
-      );
+      commitDeferredRepair(workingCandidateEdges);
     }, 60, 1500);
   };
 }

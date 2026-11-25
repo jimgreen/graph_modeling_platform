@@ -11,7 +11,7 @@ import {
 describe("createSetSchemes", () => {
   test("值与函数式更新都原样透传给 setSchemesState", () => {
     const setSchemesState = vi.fn();
-    const list = [{ id: "s1" }];
+    const list: any[] = [{ id: "s1" }];
 
     createSetSchemes({ setSchemesState })(list);
     createSetSchemes({ setSchemesState })((current: any) => [...current, { id: "s2" }]);
@@ -38,7 +38,7 @@ describe("createUpdateSmartAlignmentGuides", () => {
 
   test("签名变化时才写 state 并同步 ref", () => {
     const h = scope([{ x: 1, y: 1 }]);
-    const next = [{ x: 2, y: 2 }];
+    const next: any[] = [{ x: 2, y: 2 }];
 
     createUpdateSmartAlignmentGuides(h.scope)(next);
 
@@ -50,7 +50,7 @@ describe("createUpdateSmartAlignmentGuides", () => {
     const current = [{ x: 1, y: 1 }];
     const h = scope(current);
 
-    createUpdateSmartAlignmentGuides(h.scope)([{ x: 1, y: 1 }]);
+    createUpdateSmartAlignmentGuides(h.scope)([{ x: 1, y: 1 } as any]);
 
     expect(h.setSmartAlignmentGuides).not.toHaveBeenCalled();
     expect(h.scope.smartAlignmentGuidesRef.current).toBe(current);
@@ -61,7 +61,7 @@ describe("createSetCanvasPanning", () => {
   test("panningRef 与 setPanning 同步写入同一个对象", () => {
     const setPanning = vi.fn();
     const panningRef: { current: any } = { current: null };
-    const next = { x: 10, y: 20 };
+    const next: any = { x: 10, y: 20 };
 
     createSetCanvasPanning({ panningRef, setPanning })(next);
 

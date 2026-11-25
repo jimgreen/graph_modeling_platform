@@ -149,7 +149,7 @@ describe("createLeftTopCanvasOriginShiftForContent", () => {
 
   test("padding 透传给几何边界计算，且边自己的路由被并入", () => {
     const scope = createScope({ left: 0, top: 0, right: 0, bottom: 0 });
-    const edges = [{ id: "e1" }];
+    const edges: any[] = [{ id: "e1" }];
 
     createLeftTopCanvasOriginShiftForContent(scope)([], edges, [], 12);
 

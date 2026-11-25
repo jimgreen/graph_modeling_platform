@@ -7,8 +7,8 @@ import { describe, expect, test, vi } from "vitest";
 
 import { createBuildSingleNodeDragCache } from "./appExtracted/appGraphMeasurementFactories";
 
-const node = (id: string) => ({ id, name: id, position: { x: 0, y: 0 }, terminals: [] });
-const edge = (id: string, sourceId: string, targetId: string) => ({ id, sourceId, targetId, sourcePoint: null, targetPoint: null });
+const node = (id: string): any => ({ id, name: id, position: { x: 0, y: 0 }, terminals: [] });
+const edge = (id: string, sourceId: string, targetId: string): any => ({ id, sourceId, targetId, sourcePoint: null, targetPoint: null });
 
 function createScope(options: { previewLimit?: number; snapLimit?: number; busIds?: string[]; visibleIds?: string[] } = {}) {
   const nodes = [node("moved"), node("a"), node("b"), node("far")];

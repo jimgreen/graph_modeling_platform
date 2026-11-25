@@ -12,7 +12,7 @@ describe("createSetContextMarqueeSelection", () => {
   test("ref 与 state 同时写入", () => {
     const setContextMarqueeSelectionState = vi.fn();
     const contextMarqueeSelectionRef: { current: any } = { current: null };
-    const next = { active: true, rect: { x: 0, y: 0, width: 10, height: 10 } };
+    const next: any = { active: true, rect: { x: 0, y: 0, width: 10, height: 10 } };
 
     createSetContextMarqueeSelection({ contextMarqueeSelectionRef, setContextMarqueeSelectionState })(next);
 

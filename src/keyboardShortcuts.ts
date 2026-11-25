@@ -26,6 +26,32 @@ export function isGlobalSaveShortcut(input: KeyboardShortcutKeyInput): boolean {
   return Boolean(input.ctrlKey || input.metaKey) && input.key.toLowerCase() === "s";
 }
 
+/** 判断是否为全局快捷命令面板触发键（Ctrl+K / Cmd+K） */
+export function isCommandPaletteShortcut(
+  input: KeyboardShortcutKeyInput & { altKey?: boolean }
+): boolean {
+  if (typeof input.key !== "string" || input.altKey) {
+    return false;
+  }
+  return Boolean(input.ctrlKey || input.metaKey) && input.key.toLowerCase() === "k";
+}
+
+/** 判断是否为快捷键速查表触发键（非输入态的 `?` 或 `Ctrl+/`） */
+export function isShortcutHelpShortcut(
+  input: KeyboardShortcutKeyInput & { altKey?: boolean; isTextInputTarget?: boolean }
+): boolean {
+  if (typeof input.key !== "string" || input.altKey) {
+    return false;
+  }
+  if (Boolean(input.ctrlKey || input.metaKey) && input.key === "/") {
+    return true;
+  }
+  if (input.isTextInputTarget || input.ctrlKey || input.metaKey) {
+    return false;
+  }
+  return input.key === "?" || input.key === "？";
+}
+
 export function resolveKeyboardShortcutScope(input: KeyboardShortcutScopeInput): KeyboardShortcutScope {
   if (input.isCanvasTarget || input.isCanvasPointerUnblocked) {
     return "canvas";

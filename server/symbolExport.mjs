@@ -11,7 +11,7 @@
 
 import { installDomShim } from "./domShim.mjs";
 
-import AdmZip from "adm-zip";
+import { createZipBufferAsync } from "./asyncZip.mjs";
 
 installDomShim();
 
@@ -170,16 +170,19 @@ export async function renderStandaloneSymbolExportZip({ kinds, paths } = {}) {
     };
   }
 
-  const zip = new AdmZip();
-  for (const file of result.files) {
-    zip.addFile(file.fileName, Buffer.from(file.svg, "utf-8"));
-  }
+  const zipEntries = result.files.map((file) => ({
+    name: file.fileName,
+    data: Buffer.from(file.svg, "utf-8")
+  }));
   // schema.json：E 表名 ↔ svg 文件 ↔ 设备类型 ↔ 中文名称 的映射（E 文件自动成图按表名取图）。
   // fileCount 只统计 svg 文件 —— schema 是随包元数据，不是图元文件。
-  zip.addFile(STANDALONE_SCHEMA_FILE_NAME, Buffer.from(JSON.stringify(result.schema, null, 2), "utf-8"));
+  zipEntries.push({
+    name: STANDALONE_SCHEMA_FILE_NAME,
+    data: Buffer.from(JSON.stringify(result.schema, null, 2), "utf-8")
+  });
   return {
     kind: "zip",
-    buffer: zip.toBuffer(),
+    buffer: await createZipBufferAsync(zipEntries),
     fileCount: result.files.length,
     exportedKinds: result.exportedKinds,
     skippedKinds: result.skippedKinds,

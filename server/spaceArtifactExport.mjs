@@ -1,7 +1,7 @@
 // 空间派生导出：遍历空间内全部模型，实时生成 E/SVG 并打包为 ZIP。
 // 与 spaceArchive.mjs 的原样备份语义分开；本模块不向 schemes/files 写入派生文件。
 import { stat } from "node:fs/promises";
-import AdmZip from "adm-zip";
+import { createZipBufferAsync } from "./asyncZip.mjs";
 import iconv from "iconv-lite";
 import { listModelJsonFiles } from "./schemeArchive.mjs";
 import { readGlobalLineRecords, readSchemeProjectRecord } from "./server.mjs";
@@ -80,10 +80,9 @@ export async function buildSpaceArtifactArchive({ paths, eMode = "per-model", te
   // 可能不在本次导出的 project 快照里。
   const globalLineRecords = await readGlobalLineRecords({ paths });
   const models = await listSpaceArtifactModels(paths, templateName);
-  const zip = new AdmZip();
   if (models.length === 0) {
     return {
-      buffer: zip.toBuffer(),
+      buffer: await createZipBufferAsync([]),
       filename: "space-artifacts.zip",
       modelCount: 0,
       eMode
@@ -142,11 +141,11 @@ export async function buildSpaceArtifactArchive({ paths, eMode = "per-model", te
     }
   }
 
-  for (const entry of entries.sort((left, right) => left.path.localeCompare(right.path, "zh-CN"))) {
-    zip.addFile(entry.path, entry.bytes);
-  }
+  const sortedEntries = entries
+    .sort((left, right) => left.path.localeCompare(right.path, "zh-CN"))
+    .map((entry) => ({ name: entry.path, data: entry.bytes }));
   return {
-    buffer: zip.toBuffer(),
+    buffer: await createZipBufferAsync(sortedEntries),
     filename: "space-artifacts.zip",
     modelCount: models.length,
     eMode

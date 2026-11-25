@@ -99,7 +99,7 @@ describe("createNextNodesForMovedGraphCommit", () => {
   test("有移动且只更新了部分节点时直接用更新列表（快路径）", () => {
     const scope = createScope();
 
-    expect(createNextNodesForMovedGraphCommit(scope)(store, [{}], ["n1"])).toEqual([{}]);
+    expect(createNextNodesForMovedGraphCommit(scope)(store, [{} as any], ["n1"])).toEqual([{}]);
     expect(scope.overlayGraphStoreNodes).not.toHaveBeenCalled();
   });
 
@@ -114,7 +114,7 @@ describe("createNextNodesForMovedGraphCommit", () => {
   test("更新数等于全量节点数时也走全量覆盖（快路径无收益）", () => {
     const scope = createScope();
 
-    createNextNodesForMovedGraphCommit(scope)(store, [{}, {}, {}], ["n1"]);
+    createNextNodesForMovedGraphCommit(scope)(store, [{} as any, {} as any, {} as any], ["n1"]);
 
     expect(scope.overlayGraphStoreNodes).toHaveBeenCalled();
   });
@@ -126,21 +126,21 @@ describe("createEdgePatchFromCandidateEdges", () => {
   });
 
   test("同序时只 upsert 被替换的边，删除列表为空", () => {
-    const a = { id: "e1" };
-    const b = { id: "e2" };
-    const b2 = { ...b };
+    const a: any = { id: "e1" };
+    const b: any = { id: "e2" };
+    const b2: any = { ...b };
 
     expect(patch([a, b], [a, b2])).toEqual({ edgeUpserts: [b2], edgeDeleteIds: [] });
   });
 
   test("异序时删除消失的边", () => {
-    const result = patch([{ id: "e1" }, { id: "e2" }], [{ id: "e1" }]);
+    const result = patch([{ id: "e1" } as any, { id: "e2" } as any], [{ id: "e1" } as any]);
 
     expect(result.edgeDeleteIds).toEqual(["e2"]);
   });
 
   test("异序时 upsert 新增与被替换的边", () => {
-    const a = { id: "e1" };
+    const a: any = { id: "e1" };
     const result = patch([], [a]);
 
     expect(result.edgeUpserts).toEqual([a]);
@@ -152,9 +152,9 @@ describe("createEdgePatchFromCandidateEdges", () => {
 });
 
 describe("createGraphStorePatchStillCurrent", () => {
-  const a = { id: "e1" };
-  const b = { id: "e2" };
-  const n1 = { id: "n1" };
+  const a: any = { id: "e1" };
+  const b: any = { id: "e2" };
+  const n1: any = { id: "n1" };
 
   const stillCurrent = createGraphStorePatchStillCurrent({});
   const store = { nodeMap: new Map([["n1", n1]]), edgeMap: new Map([["e1", a]]) } as any;
@@ -186,7 +186,7 @@ describe("createGraphStorePatchStillCurrent", () => {
 
 describe("createShouldRunSynchronousMoveBlockerRepair", () => {
   const should = createShouldRunSynchronousMoveBlockerRepair({ MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES: 10 });
-  const edges = Array.from({ length: 20 }, (_, i) => ({ id: `e${i}` }));
+  const edges: any[] = Array.from({ length: 20 }, (_, i) => ({ id: `e${i}` }));
 
   test("没移动任何节点时不修复", () => {
     expect(should([], edges, edges)).toBe(false);

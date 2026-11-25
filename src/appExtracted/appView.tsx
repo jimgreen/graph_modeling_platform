@@ -8,6 +8,7 @@ import { AppTopbar, RecentGlyphsToolbar } from "./appTopbar";
 import { AppResourceDialogs } from "./appResourceDialogs";
 import { MemoizedViewSection } from "./appViewRenderBoundary";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { CommandPaletteHost } from "../components/CommandPaletteHost";
 import { confirmAction } from "../globalDialogs";
 import { IMAGE_FIT_MODE_OPTIONS, normalizeImageFitMode } from "../imageFit";
 import {
@@ -2767,5 +2768,6 @@ export function renderAppView(__appScope: Record<string, any>) {
         inputs={resourceDialogLayerInputs}
       />
       <AppTour scope={__appScope} />
+      <CommandPaletteHost scope={__appScope} />
     </div></>);
 }

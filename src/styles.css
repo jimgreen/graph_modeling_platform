@@ -17725,3 +17725,272 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   color: rgba(255, 255, 255, 0.85);
   outline: none;
 }
+
+
+/* ==========================================================================
+ * Phase 3C: 全局快捷命令面板（Ctrl+K）与快捷键速查（?）
+ * ========================================================================== */
+.command-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2600;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: min(11vh, 88px);
+}
+
+.command-palette-dialog {
+  width: min(640px, calc(100vw - 24px));
+  max-height: min(74vh, 560px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border, rgba(148, 163, 184, 0.28));
+  background: var(--panel-bg, #ffffff);
+  color: var(--text-primary, #0f172a);
+  box-shadow: 0 20px 50px rgba(2, 6, 23, 0.32);
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.command-palette-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--panel-border, rgba(148, 163, 184, 0.2));
+  background: var(--panel-subtle-bg, rgba(148, 163, 184, 0.08));
+}
+
+.command-palette-mode-switch {
+  display: flex;
+  gap: 6px;
+}
+
+.command-palette-mode-switch button,
+.command-palette-close {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary, #475569);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.command-palette-mode-switch button.active {
+  background: var(--accent-soft, rgba(37, 99, 235, 0.14));
+  color: var(--accent-color, #2563eb);
+  border-color: var(--accent-border, rgba(37, 99, 235, 0.35));
+  font-weight: 600;
+}
+
+.command-palette-dialog kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--panel-border, rgba(148, 163, 184, 0.38));
+  background: var(--panel-subtle-bg, rgba(148, 163, 184, 0.12));
+  color: inherit;
+}
+
+.command-palette-search-bar {
+  padding: 8px 10px 6px;
+}
+
+.command-palette-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border, rgba(148, 163, 184, 0.35));
+  background: var(--input-bg, transparent);
+  color: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.command-palette-input:focus {
+  border-color: var(--accent-color, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
+}
+
+.command-palette-categories {
+  display: flex;
+  gap: 4px;
+  padding: 0 10px 6px;
+  border-bottom: 1px solid var(--panel-border, rgba(148, 163, 184, 0.18));
+}
+
+.command-palette-categories button {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary, #64748b);
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.command-palette-categories button.active {
+  background: var(--accent-soft, rgba(37, 99, 235, 0.14));
+  color: var(--accent-color, #2563eb);
+  font-weight: 600;
+}
+
+.command-palette-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 6px 6px;
+}
+
+.command-palette-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--text-muted, #94a3b8);
+}
+
+.command-palette-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.command-palette-item.active {
+  background: var(--accent-soft, rgba(37, 99, 235, 0.14));
+}
+
+.command-palette-item.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.command-palette-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.command-palette-badge.badge-command {
+  background: rgba(37, 99, 235, 0.14);
+  color: #3b82f6;
+}
+
+.command-palette-badge.badge-node {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.command-palette-badge.badge-model {
+  background: rgba(245, 158, 11, 0.16);
+  color: #d97706;
+}
+
+.command-palette-badge.badge-template {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+}
+
+.command-palette-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.command-palette-item-title {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.command-palette-item-sub {
+  font-size: 11.5px;
+  color: var(--text-muted, #64748b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.command-palette-shortcut {
+  flex: 0 0 auto;
+}
+
+.command-palette-shortcuts-grid {
+  padding: 10px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.command-palette-shortcut-group {
+  border: 1px solid var(--panel-border, rgba(148, 163, 184, 0.2));
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.command-palette-shortcut-group h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary, #64748b);
+}
+
+.command-palette-shortcut-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.command-palette-shortcut-group li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.command-palette-shortcut-group .shortcut-keys {
+  display: inline-flex;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+[data-theme="dark"] .command-palette-dialog,
+.dark-theme .command-palette-dialog {
+  background: #141a24;
+  color: #e2e8f0;
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+[data-theme="dark"] .command-palette-input,
+.dark-theme .command-palette-input {
+  background: #0d121a;
+  color: #f1f5f9;
+  border-color: rgba(148, 163, 184, 0.28);
+}

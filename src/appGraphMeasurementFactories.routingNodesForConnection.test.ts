@@ -8,8 +8,8 @@ import {
   createRoutingNodesForConnectionEdges
 } from "./appExtracted/appGraphMeasurementFactories";
 
-const node = (id: string, x = 0, y = 0) => ({ id, name: id, position: { x, y }, terminals: [] });
-const edge = (id: string, sourceId: string, targetId: string) => ({ id, sourceId, targetId, sourcePoint: null, targetPoint: null });
+const node = (id: string, x = 0, y = 0): any => ({ id, name: id, position: { x, y }, terminals: [] });
+const edge = (id: string, sourceId: string, targetId: string): any => ({ id, sourceId, targetId, sourcePoint: null, targetPoint: null });
 
 /** queryNodeSpatialIndex 固定返回 candidates，模拟「扩框内命中的节点」。 */
 function createScope(options: { visibleNodes?: any[]; spatialHits?: any[] } = {}) {

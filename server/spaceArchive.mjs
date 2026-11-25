@@ -3,7 +3,7 @@
 // 本模块只做「空间目录 → ZIP 字节」，不 import 渲染适配层，保持可单测。
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import AdmZip from "adm-zip";
+import { createZipBufferAsync } from "./asyncZip.mjs";
 
 export const SPACE_ARCHIVE_FORMAT_VERSION = 1;
 export const SPACE_ARCHIVE_META_FILENAME = "space.json";
@@ -73,20 +73,24 @@ export async function buildSpaceArchiveBuffer({
   exportedAt = new Date().toISOString()
 }) {
   const files = await listSpaceFiles(paths);
-  const zip = new AdmZip();
   const meta = {
     formatVersion: SPACE_ARCHIVE_FORMAT_VERSION,
     name: spaceName,
     exportedAt
   };
-  zip.addFile(
-    `${archiveRootName}/${SPACE_ARCHIVE_META_FILENAME}`,
-    Buffer.from(JSON.stringify(meta, null, 2), "utf-8")
-  );
+  const zipEntries = [
+    {
+      name: `${archiveRootName}/${SPACE_ARCHIVE_META_FILENAME}`,
+      data: Buffer.from(JSON.stringify(meta, null, 2), "utf-8")
+    }
+  ];
   for (const file of files) {
-    zip.addFile(`${archiveRootName}/${file.relativePath}`, await readFile(file.filePath));
+    zipEntries.push({
+      name: `${archiveRootName}/${file.relativePath}`,
+      data: await readFile(file.filePath)
+    });
   }
-  return { buffer: zip.toBuffer(), filename: `${archiveRootName}.zip`, spaceName };
+  return { buffer: await createZipBufferAsync(zipEntries), filename: `${archiveRootName}.zip`, spaceName };
 }
 
 /**

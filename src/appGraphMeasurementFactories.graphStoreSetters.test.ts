@@ -54,7 +54,7 @@ describe("createSetEdges", () => {
     const harness = createScope({ nodes: [], edges: [] });
     const edges: Edge[] = [{ id: "e1", source: "a", target: "b" }];
 
-    createSetEdges(harness.scope)(edges);
+    createSetEdges(harness.scope)(edges as any);
 
     expect(harness.calls).toEqual([{ fn: "graphStoreSetEdges", args: [edges] }]);
     expect(harness.store.edges).toBe(edges);
@@ -83,7 +83,7 @@ describe("createPatchGraphEdges", () => {
       { id: "e2", source: "b", target: "c" }
     ];
 
-    createPatchGraphEdges(harness.scope)(updates.values());
+    createPatchGraphEdges(harness.scope)(updates.values() as any);
 
     expect(harness.calls).toEqual([{ fn: "graphStorePatchEdges", args: [updates] }]);
   });
@@ -113,7 +113,7 @@ describe("createUpdateGraphNodeById", () => {
     const before = harness.store;
     const updater = vi.fn((n: ModelNode) => n);
 
-    createUpdateGraphNodeById(harness.scope)("不存在", updater);
+    createUpdateGraphNodeById(harness.scope)("不存在", updater as any);
 
     expect(updater).not.toHaveBeenCalled();
     expect(harness.calls).toEqual([]);

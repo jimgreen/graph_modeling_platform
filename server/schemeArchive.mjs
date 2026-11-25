@@ -3,7 +3,7 @@
 // 本模块只做「目录 → ZIP 字节」，不 import 任何渲染适配层，保持可单测。
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
-import AdmZip from "adm-zip";
+import { createZipBufferAsync } from "./asyncZip.mjs";
 import { isModelJsonFile } from "./schemeFiles.mjs";
 
 /**
@@ -52,7 +52,7 @@ export async function buildSchemeArchiveBuffer({ schemeDir, schemeName, renderAr
     throw new Error("方案目录不存在。");
   }
   const models = await listModelJsonFiles(schemeDir);
-  const zip = new AdmZip();
+  const zipEntries = [];
   for (const model of models) {
     if (typeof shouldIncludeModel === "function" && !(await shouldIncludeModel(model))) {
       continue;
@@ -62,12 +62,14 @@ export async function buildSchemeArchiveBuffer({ schemeDir, schemeName, renderAr
       modelName: model.modelName
     });
     const base = `${schemeName}/${model.relativePath.replace(/\.json$/iu, "")}`;
-    zip.addFile(`${base}.json`, await readFile(model.filePath));
-    zip.addFile(`${base}.e`, eFileBytes);
-    zip.addFile(`${base}.svg`, Buffer.from(svg, "utf-8"));
+    zipEntries.push(
+      { name: `${base}.json`, data: await readFile(model.filePath) },
+      { name: `${base}.e`, data: eFileBytes },
+      { name: `${base}.svg`, data: Buffer.from(svg, "utf-8") }
+    );
   }
   return {
-    buffer: zip.toBuffer(),
+    buffer: await createZipBufferAsync(zipEntries),
     filename: `${schemeName}.zip`,
     schemeName
   };

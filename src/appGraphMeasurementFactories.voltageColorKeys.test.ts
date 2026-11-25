@@ -8,7 +8,7 @@ import {
   createNearestVoltageColor
 } from "./appExtracted/appGraphMeasurementFactories";
 
-const node = (id: string, terminals: any[]) => ({ id, terminals });
+const node = (id: string, terminals: any[]): any => ({ id, terminals });
 
 describe("createCollectCurrentModelVoltageColorKeys", () => {
   test("按 node/terminalIndex 收集非空键并去重", () => {

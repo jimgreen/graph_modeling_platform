@@ -73,7 +73,7 @@ describe("createBuildConnectPreviewPath", () => {
 
   test("目标节点是母线时目标点取外部给的点", () => {
     const scope = createConnectScope();
-    const bus = { id: "bus1", kind: "ac-bus" };
+    const bus: any = { id: "bus1", kind: "ac-bus" };
 
     build(scope)({ nodeId: "n1", terminalId: "t1", point: pt(2, 2) }, pt(9, 9), null, { node: bus, terminalId: "t1", point: pt(50, 50) });
 
@@ -82,7 +82,7 @@ describe("createBuildConnectPreviewPath", () => {
 
   test("目标节点不是母线时目标点原样透传（缺省即 undefined，交给路由器按端子解析）", () => {
     const scope = createConnectScope();
-    const dev = { id: "n2", kind: "ac-load" };
+    const dev: any = { id: "n2", kind: "ac-load" };
 
     build(scope)({ nodeId: "n1", terminalId: "t1", point: pt(2, 2) }, pt(9, 9), null, { node: dev, terminalId: "t1" });
 
@@ -119,7 +119,7 @@ describe("createBuildRoutableLinePreviewPath", () => {
     };
   }
 
-  const placement = (over: Record<string, any> = {}) => ({ source: { node: { id: "n1" }, terminalId: "t1", point: pt(2, 2) }, ...over });
+  const placement = (over: Record<string, any> = {}): any => ({ source: { node: { id: "n1" }, terminalId: "t1", point: pt(2, 2) }, ...over });
 
   test("无放置状态或无鼠标点时返回空串", () => {
     const build = createBuildRoutableLinePreviewPath(createScope());
@@ -150,7 +150,7 @@ describe("createBuildRoutableLinePreviewPath", () => {
   test("有目标节点时目标点按端子解析", () => {
     const scope = createScope();
 
-    createBuildRoutableLinePreviewPath(scope)(placement(), pt(9, 9), null, { node: { id: "n2" }, terminalId: "t1", point: pt(50, 50) });
+    createBuildRoutableLinePreviewPath(scope)(placement(), pt(9, 9), null, { node: { id: "n2" } as any, terminalId: "t1", point: pt(50, 50) });
 
     expect(callArgs(scope.routeEdgesForStoredRendering, 0)[1][0].targetPoint).toEqual(pt(50, 50));
   });

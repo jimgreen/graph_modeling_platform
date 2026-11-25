@@ -9,6 +9,8 @@ import { resolveEffectiveTemplateParameterDefinitions, withNodesParentModelId } 
 import { buildEffectiveLibraryTemplates } from "../export/device-definition-shared";
 import { containerFirstComparator, isContainerNode } from "../acContainer";
 import { computeMeasurementColumnPositions } from "./appGraphMeasurementFactories";
+import { isCommandPaletteShortcut, isShortcutHelpShortcut } from "../keyboardShortcuts";
+import { toggleCommandPalette } from "../commandPaletteStore";
 // LOD 分块里的一条路由元素：route 存几何，edge 存身份，另带渲染态标记。
 type LodRouteChunkItem = {
   route: DragGhostRoute;
@@ -3873,6 +3875,17 @@ export function createAppHookCallback110(__appScope: Record<string, any>) {
         return;
       }
       const target = event.target as HTMLElement | null;
+      const isTextInputTarget = Boolean(target && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable));
+      if (isCommandPaletteShortcut(event)) {
+        event.preventDefault();
+        toggleCommandPalette("search");
+        return;
+      }
+      if (isShortcutHelpShortcut({ key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, isTextInputTarget })) {
+        event.preventDefault();
+        toggleCommandPalette("shortcuts");
+        return;
+      }
       const canvasPointerShortcutAvailability = canvasPointerKeyboardShortcutAvailability();
       const shortcutScope = resolveKeyboardShortcutScope({
         isCanvasTarget: Boolean(target?.closest(".diagram-canvas")) && canvasPointerShortcutAvailability !== "blocked",

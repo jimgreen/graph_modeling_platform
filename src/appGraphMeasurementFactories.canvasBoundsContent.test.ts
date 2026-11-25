@@ -33,7 +33,7 @@ describe("createCanvasBoundsForGraphContent", () => {
   });
 
   test("未显式传内容时用 scope 里的全量图并套默认 padding", () => {
-    const nodes = [{ id: "n" }];
+    const nodes: any[] = [{ id: "n" }];
     const scope = createScope({ width: 10, height: 10 });
     scope.nodes = nodes;
 
@@ -43,11 +43,11 @@ describe("createCanvasBoundsForGraphContent", () => {
   });
 
   test("显式传入的内容与 padding 覆盖默认", () => {
-    const nodes = [{ id: "n" }];
+    const nodes: any[] = [{ id: "n" }];
     const routes = [{ points: [] }];
     const scope = createScope({ width: 10, height: 10 });
 
-    createCanvasBoundsForGraphContent(scope)({ width: 1, height: 1 }, nodes, [], routes, 5);
+    createCanvasBoundsForGraphContent(scope)({ width: 1, height: 1 }, nodes, [], routes as any, 5);
 
     expect(scope.calculateModelContentSize).toHaveBeenCalledWith(nodes, [], routes, 5);
   });
@@ -135,7 +135,7 @@ describe("createApplyCanvasBounds", () => {
 });
 
 describe("createRejectAutoCanvasExpansionForContent", () => {
-  const nodes = [{ id: "n" }];
+  const nodes: any[] = [{ id: "n" }];
 
   function createScope(allow: boolean, fits: boolean) {
     const writeOperationLog = vi.fn();

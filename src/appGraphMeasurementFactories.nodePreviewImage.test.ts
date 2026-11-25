@@ -8,7 +8,7 @@ import {
   createRenderNodePreviewImageContent
 } from "./appExtracted/appGraphMeasurementFactories";
 
-const node = (over: Record<string, any> = {}) => ({
+const node = (over: Record<string, any> = {}): any => ({
   id: "n1",
   kind: "ac-load",
   size: { width: 40, height: 30 },

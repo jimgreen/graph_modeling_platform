@@ -1,4 +1,9 @@
-// @ts-nocheck
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  SetStateAction
+} from "react";
 import { Select, Tooltip, InputNumber, Button, message } from "antd";
 
 // 告警消息下移到画布区域顶部，避免与顶部工具栏重叠
@@ -8,10 +13,26 @@ message.config({ top: 50 });
 // 首屏字节数也降下来。
 import EyeTwoTone from "@ant-design/icons/es/icons/EyeTwoTone";
 import EyeInvisibleTwoTone from "@ant-design/icons/es/icons/EyeInvisibleTwoTone";
-import { clampNumber } from "../canvasViewport";
+import {
+  clampNumber,
+  type CanvasResizeEdge,
+  type CanvasResizePreviewRect,
+  type CanvasViewBox
+} from "../canvasViewport";
 import { reconcileNodeWithDefinition } from "../definitionInstanceSync";
 import { degreesToRadians } from "../formatUtils";
-import type { MeasurementProfilePositionDefinition } from "../measurements";
+import type {
+  DeviceMeasurementProfileItem,
+  MeasurementFontWeight,
+  MeasurementGroup,
+  MeasurementItemBinding,
+  MeasurementProfilePositionDefinition,
+  MeasurementTypeDefinition,
+  PlatformMeasurementConfig,
+  ProjectMeasurementConfig
+} from "../measurements";
+import type { GraphStore } from "../graphStore";
+import type { RouteStore } from "../routeStore";
 import { isSkipBeforeUnload } from "../spaceSwitch";
 import {
   DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
@@ -37,15 +58,56 @@ import {
   measurementPadTextToVisualWidth,
   measurementFormatValueText
 } from "../measurements";
-import { withNodesParentModelId } from "../model";
-import { bestSmartAlignmentAxisSnap } from "./appCoreCanvasUtilities";
+import {
+  withNodesParentModelId,
+  type CanvasBounds,
+  type ColorDisplayMode,
+  type ColorPalette,
+  type DeviceParameterDefinition,
+  type DeviceStateVisual,
+  type DeviceTemplate,
+  type Edge,
+  type ElementTreeChildItem,
+  type ElementTreeItem,
+  type ModelNode,
+  type Point,
+  type RoutedEdge,
+  type SavedSchemeRecord,
+  type TerminalType
+} from "../model";
+import {
+  bestSmartAlignmentAxisSnap,
+  type BulkMoveCommitStats,
+  type BulkMoveDirtyResult,
+  type CanvasBoundsScrollAnchor,
+  type CanvasPanningState,
+  type CanvasResizeCommitAnchor,
+  type CanvasResizeState,
+  type CategoryLibrary,
+  type ConnectTarget,
+  type ContextMarqueeSelectionState,
+  type ContextMenuState,
+  type DragGhostRoute,
+  type DraggingState,
+  type MultiNodeDragOverlayPreview,
+  type RenderViewportBounds,
+  type RoutableLinePlacementState,
+  type SingleNodeDragCache,
+  type SingleNodeDragPreviewEndpoint,
+  type SmartAlignmentAxisCandidate,
+  type SmartAlignmentGuide,
+  type UndoGraphPatchScope,
+  type UndoGraphSnapshotPatchPlan,
+  type UndoSnapshot,
+  type WheelZoomAnchor
+} from "./appCoreCanvasUtilities";
 import { InlineEditableValue } from "../components/InputComponents";
 import { modelTrace } from "../modelTrace";
 
 export function createSetNodes(__appScope: Record<string, any>) {
   return (value: SetStateAction<ModelNode[]>) => {
   const { graphStoreSetNodes, setGraphStore } = __appScope;
-    setGraphStore((current) => {
+    setGraphStore((current: any) => {
       const nextNodes = typeof value === "function" ? value(current.nodes) : value;
       return graphStoreSetNodes(current, withNodesParentModelId(nextNodes, __appScope.projectIdx));
     });
@@ -55,7 +117,7 @@ export function createSetNodes(__appScope: Record<string, any>) {
 export function createSetEdges(__appScope: Record<string, any>) {
   return (value: SetStateAction<Edge[]>) => {
   const { graphStoreSetEdges, setGraphStore } = __appScope;
-    setGraphStore((current) => {
+    setGraphStore((current: any) => {
       const nextEdges = typeof value === "function" ? value(current.edges) : value;
       return graphStoreSetEdges(current, nextEdges);
     });
@@ -67,7 +129,7 @@ export function createSetGraphArrays(__appScope: Record<string, any>) {
   const { graphStoreSetGraph, setGraphStore } = __appScope;
     const resolvedParentModelId = parentModelId === undefined ? __appScope.projectIdx : parentModelId;
     const normalizedNodes = withNodesParentModelId(nextNodes, resolvedParentModelId);
-    setGraphStore((current) => graphStoreSetGraph(current, normalizedNodes, nextEdges));
+    setGraphStore((current: any) => graphStoreSetGraph(current, normalizedNodes, nextEdges));
   };
 }
 
@@ -75,21 +137,21 @@ export function createPatchGraphNodes(__appScope: Record<string, any>) {
   return (nodeUpdates: Iterable<ModelNode>) => {
   const { graphStorePatchNodes, setGraphStore } = __appScope;
     const normalizedUpdates = withNodesParentModelId(Array.from(nodeUpdates), __appScope.projectIdx);
-    setGraphStore((current) => graphStorePatchNodes(current, normalizedUpdates));
+    setGraphStore((current: any) => graphStorePatchNodes(current, normalizedUpdates));
   };
 }
 
 export function createPatchGraphEdges(__appScope: Record<string, any>) {
   return (edgeUpdates: Iterable<Edge>) => {
   const { graphStorePatchEdges, setGraphStore } = __appScope;
-    setGraphStore((current) => graphStorePatchEdges(current, edgeUpdates));
+    setGraphStore((current: any) => graphStorePatchEdges(current, edgeUpdates));
   };
 }
 
 export function createUpdateGraphNodeById(__appScope: Record<string, any>) {
   return (nodeId: string, updater: (node: ModelNode) => ModelNode) => {
   const { graphStorePatchNodes, setGraphStore } = __appScope;
-    setGraphStore((current) => {
+    setGraphStore((current: any) => {
       const node = current.nodeMap.get(nodeId);
       if (!node) {
         return current;
@@ -455,7 +517,7 @@ let measurementMetricsCacheConfig: unknown = null;
 let measurementMetricsCacheTheme: unknown = null;
 
 export function createMeasurementGroupRenderMetrics(__appScope: Record<string, any>) {
-  return (node: ModelNode, group: MeasurementGroup) => {
+  return (node: ModelNode, group: MeasurementGroup): any => {
   const { formatMeasurementDisplayValue, measurementConfig, resolveMeasurementItemDisplay, themeMode, themedMeasurementTextColor } = __appScope;
     const runtimeMeasurementConfig = __appScope.runtimeMeasurementConfig ?? measurementConfig;
     if (measurementMetricsCacheConfig !== runtimeMeasurementConfig || measurementMetricsCacheTheme !== themeMode) {
@@ -570,7 +632,7 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
     const borderDashArray = measurementGroupBorderDashArray(group);
     const borderDashAttribute = borderDashArray ? ` stroke-dasharray="${escapeXml(borderDashArray)}"` : "";
     const charWidth = (fontSize: number) => fontSize * MEASUREMENT_CHAR_WIDTH_RATIO;
-    const rowsMarkup = metrics.rows.map((row, index) => {
+    const rowsMarkup = metrics.rows.map((row: any, index: any) => {
       const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
       const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
       const { labelEndX } = computeMeasurementColumnPositions(metrics, col);
@@ -812,10 +874,10 @@ export function createRenderMultiNodeDragOverlay(__appScope: Record<string, any>
         className="multi-node-drag-overlay"
         transform={`translate(${Math.round(multiNodeDragOverlayDeltaRef.current.x)} ${Math.round(multiNodeDragOverlayDeltaRef.current.y)})`}
       >
-        {overlay.edgeRoutes.map((route) => (
+        {overlay.edgeRoutes.map((route: any) => (
           <path key={`multi-drag-preview-edge-${route.edgeId}`} d={route.path} className="connection-line drag-preview" style={connectionLineStyle(route.edgeId)} />
         ))}
-        {dragging.nodeIds.map((nodeId) => {
+        {dragging.nodeIds.map((nodeId: any) => {
           const node = nodeById.get(nodeId);
           const originalPosition = dragging.originalPositions[nodeId] ?? node?.position;
           if (!node || !originalPosition || !visibleNodeIdSet.has(node.id)) {
@@ -906,7 +968,7 @@ export function createRenderMultiNodeDragOverlay(__appScope: Record<string, any>
               )}
               {!nodeIsBus && !isStaticNode(node) && !isRoutableLineDeviceKind(node.kind) && (
                 <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
-                  {node.terminals.map((terminal) => {
+                  {node.terminals.map((terminal: any) => {
                     const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
                     const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
                     const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette, themeMode);
@@ -985,7 +1047,7 @@ export function createRenderGroupTransformPhotoPreview(__appScope: Record<string
     const bounds = transformDrag.bounds;
     const geometry = transformDrag.previewPoint ? groupTransformGeometry(transformDrag, transformDrag.previewPoint) : null;
     const transformedNodeUpdates = geometry
-      ? transformDrag.nodeIds.flatMap((nodeId) => {
+      ? transformDrag.nodeIds.flatMap((nodeId: any) => {
           const snapshot = transformDrag.originalNodes[nodeId];
           const node = nodeById.get(nodeId);
           if (!node || !snapshot) {
@@ -1011,14 +1073,14 @@ export function createRenderGroupTransformPhotoPreview(__appScope: Record<string
     for (const node of transformedNodeUpdates) {
       transformedNodeById.set(node.id, node);
     }
-    const previewNodes = nodes.map((node) => transformedNodeById.get(node.id) ?? node);
+    const previewNodes = nodes.map((node: any) => transformedNodeById.get(node.id) ?? node);
     const routableLineTransformPreviewRoutes = Array.from(groupTransformPreviewRoutableLineNodeIdSet).flatMap((lineId) => {
       const lineNode = nodeById.get(lineId);
       if (!lineNode || !visibleNodeIdSet.has(lineNode.id) || !isRoutableLineDeviceKind(lineNode.kind)) {
         return [];
       }
       const syncedLine = syncRoutableLineDeviceEndpointsToRefs(lineNode, previewNodes, transformedNodeById, nodes);
-      const routingNodes = previewNodes.map((node) => (node.id === syncedLine.id ? syncedLine : node));
+      const routingNodes = previewNodes.map((node: any) => (node.id === syncedLine.id ? syncedLine : node));
       const routedLine = routeRoutableLineDevice(syncedLine, routingNodes, canvasBounds);
       const points = routableLineDeviceCanvasPoints(routedLine);
       const start = points[0];
@@ -1035,7 +1097,7 @@ export function createRenderGroupTransformPhotoPreview(__appScope: Record<string
     return (
       <g className="group-transform-photo-preview">
         <g className="group-transform-origin-ghost">
-          {transformDrag.originalEdgeRoutes.map((route) => (
+          {transformDrag.originalEdgeRoutes.map((route: any) => (
             <path
               key={`group-transform-origin-edge-${route.edgeId}`}
               d={pointsToPreviewPath(route.points)}
@@ -1051,7 +1113,7 @@ export function createRenderGroupTransformPhotoPreview(__appScope: Record<string
             height={Math.max(1, bounds.bottom - bounds.top)}
           />
         </g>
-        {groupTransformPreviewEdgeRoutes.map((route) => (
+        {groupTransformPreviewEdgeRoutes.map((route: any) => (
           <path key={`group-transform-photo-edge-${route.edgeId}`} d={route.path} className="connection-line group-transform-preview" style={connectionLineStyle(route.edgeId)} />
         ))}
         {routableLineTransformPreviewRoutes.map((route) => (
@@ -1063,7 +1125,7 @@ export function createRenderGroupTransformPhotoPreview(__appScope: Record<string
           />
         ))}
         <g className="group-transform-photo-content" transform={groupTransformPreviewTransform}>
-          {transformDrag.nodeIds.map((nodeId) => {
+          {transformDrag.nodeIds.map((nodeId: any) => {
             const originalNode = nodeById.get(nodeId);
             if (!originalNode || !visibleNodeIdSet.has(originalNode.id)) {
               return null;
@@ -1152,7 +1214,7 @@ export function createRenderGroupTransformPhotoPreview(__appScope: Record<string
                 )}
                 {!nodeIsBus && !isStaticNode(node) && !isRoutableLineDeviceKind(node.kind) && (
                   <g className="node-terminal-layer" transform={nodeGeometryTransform(node)}>
-                    {node.terminals.map((terminal) => {
+                    {node.terminals.map((terminal: any) => {
                       const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
                       const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
                       const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette, themeMode);
@@ -1296,7 +1358,7 @@ export function createCollectCurrentModelVoltageColorKeys(__appScope: Record<str
       sourceNodes = nodes;
     }
     const keys = new Set<string>();
-    for (const node of sourceNodes) {
+    for (const node of sourceNodes ?? []) {
       node.terminals.forEach((terminal, terminalIndex) => {
         const key = voltageColorKeyForTerminal(node, terminal, terminalIndex);
         if (key) {
@@ -1457,7 +1519,7 @@ export function createFillMissingVoltageColorRows(__appScope: Record<string, any
     if (sourceKeys === undefined) {
       sourceKeys = collectCurrentModelVoltageColorKeys();
     }
-    const missingKeys = Array.from(sourceKeys).filter((key) => !palette.voltage[key]);
+    const missingKeys = Array.from(sourceKeys ?? []).filter((key: string) => !palette.voltage[key]);
     if (missingKeys.length === 0) {
       return { palette, missingKeys };
     }
@@ -1475,7 +1537,7 @@ export function createFillMissingVoltageColorRows(__appScope: Record<string, any
 export function createToggleColorDisplayMode(__appScope: Record<string, any>) {
   return (nextMode?: ColorDisplayMode) => {
   const { setColorDisplayMode } = __appScope;
-    setColorDisplayMode((current) => nextMode ?? (current === "energy" ? "voltage" : "energy"));
+    setColorDisplayMode((current: any) => nextMode ?? (current === "energy" ? "voltage" : "energy"));
   };
 }
 
@@ -1508,7 +1570,7 @@ export function createSaveColorPalette(__appScope: Record<string, any>) {
 export function createResetEnergyColors(__appScope: Record<string, any>) {
   return () => {
   const { DEFAULT_COLOR_PALETTE, setColorPaletteDraft } = __appScope;
-    setColorPaletteDraft((current) => ({
+    setColorPaletteDraft((current: any) => ({
       ...current,
       energy: { ...DEFAULT_COLOR_PALETTE.energy }
     }));
@@ -1518,7 +1580,7 @@ export function createResetEnergyColors(__appScope: Record<string, any>) {
 export function createResetVoltageColors(__appScope: Record<string, any>) {
   return () => {
   const { DEFAULT_COLOR_PALETTE, setColorPaletteDraft } = __appScope;
-    setColorPaletteDraft((current) => ({
+    setColorPaletteDraft((current: any) => ({
       ...current,
       voltage: { ...DEFAULT_COLOR_PALETTE.voltage }
     }));
@@ -1528,7 +1590,7 @@ export function createResetVoltageColors(__appScope: Record<string, any>) {
 export function createUpdateEnergyColor(__appScope: Record<string, any>) {
   return (type: TerminalType, color: string) => {
   const { setColorPaletteDraft } = __appScope;
-    setColorPaletteDraft((current) => ({
+    setColorPaletteDraft((current: any) => ({
       ...current,
       energy: {
         ...current.energy,
@@ -1549,7 +1611,7 @@ export function createSetVoltageColorRows(__appScope: Record<string, any>) {
       result[`${row.type}:${voltage}`] = row.color;
       return result;
     }, {});
-    setColorPaletteDraft((current) => ({
+    setColorPaletteDraft((current: any) => ({
       ...current,
       voltage: {
         ...fallbackNumericEntries,
@@ -1562,7 +1624,7 @@ export function createSetVoltageColorRows(__appScope: Record<string, any>) {
 export function createUpdateVoltageColorRow(__appScope: Record<string, any>) {
   return (rowKey: string, patch: Partial<{ type: "ac" | "dc"; voltage: string; color: string }>) => {
   const { setVoltageColorRows, voltageColorRows } = __appScope;
-    const rows = voltageColorRows.map((row) => row.key === rowKey ? { ...row, ...patch } : row);
+    const rows = voltageColorRows.map((row: any) => row.key === rowKey ? { ...row, ...patch } : row);
     setVoltageColorRows(rows);
   };
 }
@@ -1570,14 +1632,14 @@ export function createUpdateVoltageColorRow(__appScope: Record<string, any>) {
 export function createDeleteVoltageColorRow(__appScope: Record<string, any>) {
   return (rowKey: string) => {
   const { setVoltageColorRows, voltageColorRows } = __appScope;
-    setVoltageColorRows(voltageColorRows.filter((row) => row.key !== rowKey));
+    setVoltageColorRows(voltageColorRows.filter((row: any) => row.key !== rowKey));
   };
 }
 
 export function createAddVoltageColorRow(__appScope: Record<string, any>) {
   return () => {
   const { DEFAULT_COLOR_PALETTE, setVoltageColorRows, voltageColorRows } = __appScope;
-    const existingKeys = new Set(voltageColorRows.map((row) => row.key));
+    const existingKeys = new Set(voltageColorRows.map((row: any) => row.key));
     const baseVoltages = ["10", "35", "110", "220", "500", "750", "800"];
     const voltage = baseVoltages.find((item) => !existingKeys.has(`ac:${item}`)) ?? `${voltageColorRows.length + 1}`;
     setVoltageColorRows([...voltageColorRows, { type: "ac", voltage, color: DEFAULT_COLOR_PALETTE.voltage[`ac:${voltage}`] ?? "#2563eb" }]);
@@ -1639,9 +1701,9 @@ export function createScheduleLibraryFlyoutClose(__appScope: Record<string, any>
   const { clearLibraryFlyoutCloseTimer, libraryComponentListRefKey, libraryFlyoutCloseTimerRef, setHoveredCategoryLibrary, setHoveredCategoryLibraryComponentLibrary, setLibraryFlyoutPositions } = __appScope;
     clearLibraryFlyoutCloseTimer();
     libraryFlyoutCloseTimerRef.current = window.setTimeout(() => {
-      setHoveredCategoryLibrary((current) => current === group ? "" : current);
-      setHoveredCategoryLibraryComponentLibrary((current) => componentLibraryKey ? current === componentLibraryKey ? "" : current : "");
-      setLibraryFlyoutPositions((current) => {
+      setHoveredCategoryLibrary((current: any) => current === group ? "" : current);
+      setHoveredCategoryLibraryComponentLibrary((current: any) => componentLibraryKey ? current === componentLibraryKey ? "" : current : "");
+      setLibraryFlyoutPositions((current: any) => {
         if (!componentLibraryKey) {
           return Object.keys(current).length > 0 ? {} : current;
         }
@@ -1685,7 +1747,7 @@ export function createFitLibraryFlyoutsToVisibleArea(__appScope: Record<string, 
     const maxRight = viewportRight - margin;
     const gap = 8;
     const nextPositions: Record<string, { top: number; left: number }> = {};
-    libraryComponentListRefs.current.forEach((element, key) => {
+    libraryComponentListRefs.current.forEach((element: any, key: any) => {
       if (!key.startsWith("flyout:")) {
         return;
       }
@@ -1738,13 +1800,13 @@ export function createToggleCategoryLibrary(__appScope: Record<string, any>) {
   return (group: CategoryLibrary) => {
   const { componentLibraryDisplayMode, setCollapsedExpandedModeCategoryLibraries, setExpandedCategoryLibraries } = __appScope;
     if (componentLibraryDisplayMode === "expanded") {
-      setCollapsedExpandedModeCategoryLibraries((current) =>
-        current.includes(group) ? current.filter((item) => item !== group) : [...current, group]
+      setCollapsedExpandedModeCategoryLibraries((current: any) =>
+        current.includes(group) ? current.filter((item: any) => item !== group) : [...current, group]
       );
       return;
     }
-    setExpandedCategoryLibraries((current) =>
-      current.includes(group) ? current.filter((item) => item !== group) : [...current, group]
+    setExpandedCategoryLibraries((current: any) =>
+      current.includes(group) ? current.filter((item: any) => item !== group) : [...current, group]
     );
   };
 }
@@ -1754,13 +1816,13 @@ export function createToggleCategoryLibraryComponentLibrary(__appScope: Record<s
   const { categoryLibraryComponentLibraryKey, componentLibraryDisplayMode, setCollapsedExpandedModeComponentLibraries, setExpandedCategoryLibraryComponentLibraries } = __appScope;
     const key = categoryLibraryComponentLibraryKey(categoryLibraryName, sectionName);
     if (componentLibraryDisplayMode === "expanded") {
-      setCollapsedExpandedModeComponentLibraries((current) =>
-        current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+      setCollapsedExpandedModeComponentLibraries((current: any) =>
+        current.includes(key) ? current.filter((item: any) => item !== key) : [...current, key]
       );
       return;
     }
-    setExpandedCategoryLibraryComponentLibraries((current) =>
-      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+    setExpandedCategoryLibraryComponentLibraries((current: any) =>
+      current.includes(key) ? current.filter((item: any) => item !== key) : [...current, key]
     );
   };
 }
@@ -1775,7 +1837,7 @@ export function createResolveConfiguredBackgroundLayerIds(__appScope: Record<str
     if (!backgroundProject) {
       return configuredLayerIds ?? [];
     }
-    const validLayerIds = new Set((normalizeProjectLayers(backgroundProject.project).layers ?? []).map((layer) => layer.id));
+    const validLayerIds = new Set((normalizeProjectLayers(backgroundProject.project).layers ?? []).map((layer: any) => layer.id));
     if (!configuredLayerIds) {
       return defaultBackgroundLayerIdsForProject(backgroundProject.project);
     }
@@ -1787,8 +1849,8 @@ export function createToggleBackgroundLayer(__appScope: Record<string, any>) {
   return (layerId: string) => {
   const { pushUndoSnapshot, setBackgroundLayerIds } = __appScope;
     pushUndoSnapshot();
-    setBackgroundLayerIds((current) => current.includes(layerId)
-      ? current.filter((item) => item !== layerId)
+    setBackgroundLayerIds((current: any) => current.includes(layerId)
+      ? current.filter((item: any) => item !== layerId)
       : [...current, layerId]
     );
   };
@@ -1804,17 +1866,17 @@ export function createElementTreeItemChildren(__appScope: Record<string, any>) {
     if (!node) {
       return item.children ?? [];
     }
-    return buildContainerDeviceParameterViews(node, libraryTemplateByKind.get(node.kind))
-      .filter((view) => view.kind === "associated")
-      .map<ElementTreeChildItem>((view) => ({
+    return (buildContainerDeviceParameterViews(node, libraryTemplateByKind.get(node.kind)) as any[])
+      .filter((view: any) => view.kind === "associated")
+      .map((view: any): ElementTreeChildItem => ({
         id: `${node.id}:${view.id}`,
         label: view.label,
         componentLibrary: view.componentLibrary ?? "",
-        idx: view.rows.find((row) => row.key === "idx")?.value ?? "",
-        name: view.rows.find((row) => row.key === "name")?.value ?? "",
+        idx: view.rows.find((row: any) => row.key === "idx")?.value ?? "",
+        name: view.rows.find((row: any) => row.key === "name")?.value ?? "",
         nameKey: view.relationKeys?.[0] ? containerRelationNameKey(view.relationKeys[0]) : "",
         relationKeys: view.relationKeys ?? [],
-        terminalLabels: view.terminalLabels ?? view.rows.find((row) => row.key === "terminals")?.value ?? ""
+        terminalLabels: view.terminalLabels ?? view.rows.find((row: any) => row.key === "terminals")?.value ?? ""
       }));
   };
 }
@@ -1822,7 +1884,7 @@ export function createElementTreeItemChildren(__appScope: Record<string, any>) {
 export function createUpdateElementTreeDraft(__appScope: Record<string, any>) {
   return (key: string, value: string) => {
   const { setElementTreeEditDrafts } = __appScope;
-    setElementTreeEditDrafts((current) =>
+    setElementTreeEditDrafts((current: any) =>
       current[key] === value ? current : { ...current, [key]: value }
     );
   };
@@ -1831,7 +1893,7 @@ export function createUpdateElementTreeDraft(__appScope: Record<string, any>) {
 export function createClearElementTreeDraft(__appScope: Record<string, any>) {
   return (key: string) => {
   const { setElementTreeEditDrafts } = __appScope;
-    setElementTreeEditDrafts((current) => {
+    setElementTreeEditDrafts((current: any) => {
       if (!Object.prototype.hasOwnProperty.call(current, key)) {
         return current;
       }
@@ -2028,8 +2090,8 @@ export function createSynchronizePendingBusTerminalsWithGraphStore(__appScope: R
       scopedNodes,
       scopedEdges,
       synchronized,
-      nodeUpdates: synchronized.nodes.filter((node, index) => node !== scopedNodes[index]),
-      edgeUpserts: synchronized.edges.filter((edge, index) => edge !== scopedEdges[index])
+      nodeUpdates: synchronized.nodes.filter((node: any, index: any) => node !== scopedNodes[index]),
+      edgeUpserts: synchronized.edges.filter((edge: any, index: any) => edge !== scopedEdges[index])
     };
   };
 }
@@ -2106,7 +2168,7 @@ export function createMarkCanvasBoundsScrollSyncPending(__appScope: Record<strin
   const { canvasBoundsScrollSyncPendingRef, canvasFrameRef, pendingCanvasBoundsScrollAnchorRef, releaseCanvasBoundsScrollSyncPending } = __appScope;
     const frame = canvasFrameRef.current;
     if (!pendingCanvasBoundsScrollAnchorRef.current) {
-      const hotzones = frame?.querySelector<HTMLElement>(".canvas-resize-hotzones");
+      const hotzones = frame?.querySelector(".canvas-resize-hotzones") as HTMLElement | null;
       const visualRect = hotzones
         ? (() => {
             const rect = hotzones.getBoundingClientRect();
@@ -2175,7 +2237,7 @@ export function createApplyCanvasBounds(__appScope: Record<string, any>) {
     setCanvasWidth(nextBounds.width);
     setCanvasHeight(nextBounds.height);
     setCanvasSizeDraft({ width: String(nextBounds.width), height: String(nextBounds.height) });
-    setViewBox((current) => {
+    setViewBox((current: any) => {
       return viewBoxAfterCanvasBoundsChange(current, nextBounds, originShift, currentBoundsForApply);
     });
     return true;
@@ -2266,7 +2328,7 @@ export function createShiftCachedRoutesForCanvasOrigin(__appScope: Record<string
     if (!hasCanvasOriginShift(originShift) || cachedRoutedEdgesRef.current.length === 0) {
       return;
     }
-    const shiftedRoutes = cachedRoutedEdgesRef.current.map((route) => translateRouteBy(route, originShift));
+    const shiftedRoutes = cachedRoutedEdgesRef.current.map((route: any) => translateRouteBy(route, originShift));
     cachedRoutedEdgesRef.current = shiftedRoutes;
     cachedRouteStoreRef.current = routeStoreSetRoutes(cachedRouteStoreRef.current, shiftedRoutes);
   };
@@ -2482,10 +2544,10 @@ export function createSyncCanvasFrameScrollToViewBox(__appScope: Record<string, 
           canvasBounds: canvasBoundsRef.current
         })
       : { left: nextLeft, top: nextTop };
-    const useHorizontalBoundsAnchor = Boolean(boundsScrollAnchor && targetViewBox.width >= canvasBoundsRef.current.width - 1);
-    const useVerticalBoundsAnchor = Boolean(boundsScrollAnchor && targetViewBox.height >= canvasBoundsRef.current.height - 1);
+    const useHorizontalBoundsAnchor = Boolean(boundsScrollAnchor && targetViewBox && targetViewBox.width >= canvasBoundsRef.current.width - 1);
+    const useVerticalBoundsAnchor = Boolean(boundsScrollAnchor && targetViewBox && targetViewBox.height >= canvasBoundsRef.current.height - 1);
     const hotzones = boundsScrollAnchor?.visualRect
-      ? frame.querySelector<HTMLElement>(".canvas-resize-hotzones")
+      ? (frame.querySelector(".canvas-resize-hotzones") as HTMLElement | null)
       : null;
     const hotzoneRect = hotzones?.getBoundingClientRect();
     const visualTarget = boundsScrollAnchor?.visualRect && hotzoneRect
@@ -2517,7 +2579,7 @@ export function createSyncCanvasFrameScrollToViewBox(__appScope: Record<string, 
     }
     if (visualTarget && ((visualTarget.affectsX && !syncVisualScrollX) || (visualTarget.affectsY && !syncVisualScrollY))) {
       skipNextCanvasScrollSyncRef.current = true;
-      setCanvasNoScrollOffset((current) => {
+      setCanvasNoScrollOffset((current: any) => {
         const next = clampCanvasNoScrollOffsetPoint({
           x: visualTarget.affectsX && !syncVisualScrollX ? current.x - visualTarget.deltaX : current.x,
           y: visualTarget.affectsY && !syncVisualScrollY ? current.y - visualTarget.deltaY : current.y
@@ -2532,7 +2594,7 @@ export function createSyncCanvasFrameScrollToCanvasResizeCommitAnchor(__appScope
   return (anchor: CanvasResizeCommitAnchor) => {
   const { canvasBoundsRef, canvasFrameRef, canvasHorizontalScrollbarsActiveRef, canvasResizeScrollTargetForCommitAnchor, canvasVerticalScrollbarsActiveRef, canvasViewBoxFromFrameScrollPosition, clampCanvasNoScrollOffsetPoint, normalizeViewBoxToCanvas, sameCanvasViewBox, setCanvasFrameScrollPosition, setCanvasNoScrollOffset, setViewBox, skipNextCanvasScrollSyncRef, viewBoxRef } = __appScope;
     const frame = canvasFrameRef.current;
-    const hotzones = frame?.querySelector<HTMLElement>(".canvas-resize-hotzones");
+    const hotzones = frame?.querySelector(".canvas-resize-hotzones") as HTMLElement | null;
     if (!frame || !hotzones) {
       return;
     }
@@ -2577,7 +2639,7 @@ export function createSyncCanvasFrameScrollToCanvasResizeCommitAnchor(__appScope
         verticalScrollbarsActive: canvasVerticalScrollbarsActiveRef.current || maxScrollTop > 1
       });
       skipNextCanvasScrollSyncRef.current = true;
-      setViewBox((current) => {
+      setViewBox((current: any) => {
         const nextViewBox = normalizeViewBoxToCanvas({
           ...current,
           x: syncScrollX ? scrolledViewBox.x : current.x,
@@ -2587,7 +2649,7 @@ export function createSyncCanvasFrameScrollToCanvasResizeCommitAnchor(__appScope
       });
     }
     if ((target.affectsX && !syncScrollX) || (target.affectsY && !syncScrollY)) {
-      setCanvasNoScrollOffset((current) => {
+      setCanvasNoScrollOffset((current: any) => {
         const next = clampCanvasNoScrollOffsetPoint({
           x: target.affectsX && !syncScrollX ? current.x - target.deltaX : current.x,
           y: target.affectsY && !syncScrollY ? current.y - target.deltaY : current.y
@@ -2651,7 +2713,7 @@ export function createSyncCanvasFrameScrollToWheelAnchor(__appScope: Record<stri
       targetScrollLeft,
       targetScrollTop
     );
-    setViewBox((current) => {
+    setViewBox((current: any) => {
       const updated = normalizeViewBoxToCanvas({
         ...current,
         x: canvasHorizontalScrollbarsActiveRef.current ? nextViewBox.x : current.x,
@@ -2670,7 +2732,7 @@ export function createSyncCanvasFrameScrollToWheelAnchor(__appScope: Record<stri
     });
     if (!canvasHorizontalScrollbarsActiveRef.current || !canvasVerticalScrollbarsActiveRef.current) {
       skipNextCanvasScrollSyncRef.current = true;
-      setCanvasNoScrollOffset((current) => {
+      setCanvasNoScrollOffset((current: any) => {
         if (
           Math.round(current.x) === Math.round(nextCanvasNoScrollOffset.x) &&
           Math.round(current.y) === Math.round(nextCanvasNoScrollOffset.y)
@@ -2725,12 +2787,12 @@ export function createScheduleCanvasVisibleViewBoxUpdate(__appScope: Record<stri
       const fullViewBox = canvasFullViewBoxRef.current;
       const canvasFullyVisible = !canvasScrollbarsActiveRef.current && renderedCanvasFullyFitsFrame(frameRect, svgRect);
       const next = canvasFullyVisible ? fullViewBox : visibleCanvasViewBoxFromRects(frameRect, svgRect, fullViewBox);
-      setCanvasVisibleViewBox((current) => (sameCanvasViewBox(current, next) ? current : next));
+      setCanvasVisibleViewBox((current: any) => (sameCanvasViewBox(current, next) ? current : next));
       if (canvasFullyVisible || !frameScrollWasUserDriven) {
         return;
       }
       const scrolledViewBox = currentViewBoxFromCanvasFrameScroll();
-      setViewBox((current) => {
+      setViewBox((current: any) => {
         const nextViewBox = normalizeViewBoxToCanvas({ ...current, x: scrolledViewBox.x, y: scrolledViewBox.y }, canvasBoundsRef.current);
         if (
           Math.round(nextViewBox.x) === Math.round(current.x) &&
@@ -2769,7 +2831,7 @@ export function createUpdateCanvasFrameViewportSize(__appScope: Record<string, a
       return;
     }
     const nextSize = { width: frame.clientWidth, height: frame.clientHeight };
-    setCanvasFrameViewportSize((current) =>
+    setCanvasFrameViewportSize((current: any) =>
       current.width === nextSize.width && current.height === nextSize.height ? current : nextSize
     );
   };
@@ -2912,7 +2974,7 @@ export function createBuildNodePreviewImageMarkup(__appScope: Record<string, any
 
 export function createBuildConnectPreviewPath(__appScope: Record<string, any>) {
   return (
-    source: typeof connectSource,
+    source: { nodeId: string; terminalId: string; point?: Point; manualPoints?: Point[] } | null,
     point: Point | null,
     targetPoint: Point | null = null,
     target: ConnectTarget | null = null
@@ -3401,14 +3463,14 @@ export function createPatchSingleTerminalAnchorFromPoint(__appScope: Record<stri
   ) => {
   const { canvasBounds, currentStoredRoutePointsForEdge, edgeWithFrozenBusEndpointPoints, graphStoreApplyPatch, isBusNode, markGraphDirtyForInteractiveCommit, markRouteEdgesDirty, markStoredRouteEdgesDirty, overlayGraphStoreNodes, preserveConnectionEdgeRouteShape, resolveStraightBusSlideEndpoint, sameOptionalPoint, setGraphStore, snapSingleTerminalAnchorToNearestSide } = __appScope;
     markGraphDirtyForInteractiveCommit();
-    setGraphStore((current) => {
+    setGraphStore((current: any) => {
       const currentNode = current.nodeMap.get(nodeId);
       if (!currentNode || isBusNode(currentNode) || currentNode.terminals.length !== 1) {
         return current;
       }
       const anchor = snapSingleTerminalAnchorToNearestSide(currentNode, point);
       let changed = false;
-      const nextTerminals = currentNode.terminals.map((terminal) => {
+      const nextTerminals = currentNode.terminals.map((terminal: any) => {
         if (terminal.id !== terminalId || sameOptionalPoint(terminal.anchor, anchor)) {
           return terminal;
         }
@@ -3420,14 +3482,14 @@ export function createPatchSingleTerminalAnchorFromPoint(__appScope: Record<stri
       }
       const nextNode = { ...currentNode, terminals: nextTerminals };
       const nextNodes = overlayGraphStoreNodes(current, [nextNode]);
-      const dirtyEdges = (current.edgesByNodeId.get(nodeId) ?? []).filter((edge) =>
+      const dirtyEdges = (current.edgesByNodeId.get(nodeId) ?? []).filter((edge: any) =>
         (edge.sourceId === nodeId && edge.sourceTerminalId === terminalId) ||
         (edge.targetId === nodeId && edge.targetTerminalId === terminalId)
       );
-      const dirtyEdgeIds = dirtyEdges.map((edge) => edge.id);
+      const dirtyEdgeIds = dirtyEdges.map((edge: any) => edge.id);
       markRouteEdgesDirty(dirtyEdgeIds);
       markStoredRouteEdgesDirty(dirtyEdgeIds);
-      const nextEdges = dirtyEdges.map((edge) => {
+      const nextEdges = dirtyEdges.map((edge: any) => {
         const sourceAffected = edge.sourceId === nodeId && edge.sourceTerminalId === terminalId;
         const storedPoints = currentStoredRoutePointsForEdge(edge);
         const frozenEdge = edgeWithFrozenBusEndpointPoints(edge, storedPoints);
@@ -3474,11 +3536,12 @@ export function createRebuildEdgeUpdatesAfterNodeGeometryChange(__appScope: Reco
     if (changedIds.length === 0) {
       return [];
     }
-    const localEdges = currentEdges === edges
+    const safeCurrentEdges = currentEdges ?? [];
+    const localEdges = safeCurrentEdges === edges
       ? edgeListForNodeIds(changedIds)
-      : currentEdges.filter((edge) => changedIds.includes(edge.sourceId) || changedIds.includes(edge.targetId));
+      : safeCurrentEdges.filter((edge: Edge) => changedIds.includes(edge.sourceId) || changedIds.includes(edge.targetId));
     const rerouteEdges = preservedEdgeIds.size > 0
-      ? localEdges.filter((edge) => !preservedEdgeIds.has(edge.id))
+      ? localEdges.filter((edge: any) => !preservedEdgeIds.has(edge.id))
       : localEdges;
     if (rerouteEdges.length === 0) {
       return [];
@@ -3491,8 +3554,8 @@ export function createRebuildEdgeUpdatesAfterNodeGeometryChange(__appScope: Reco
     if (dirtyEdgeIds.size === 0) {
       return [];
     }
-    const previousLocalEdgeById = new Map(rerouteEdges.map((edge) => [edge.id, edge]));
-    return nextLocalEdges.filter((edge) => previousLocalEdgeById.get(edge.id) !== edge);
+    const previousLocalEdgeById = new Map(rerouteEdges.map((edge: any) => [edge.id, edge]));
+    return nextLocalEdges.filter((edge: any) => previousLocalEdgeById.get(edge.id) !== edge);
   };
 }
 
@@ -3511,9 +3574,9 @@ export function createRebuildEdgesAfterNodeGeometryChange(__appScope: Record<str
     if (edgeUpdates.length === 0) {
       return currentEdges;
     }
-    const edgeUpdateById = new Map(edgeUpdates.map((edge) => [edge.id, edge]));
+    const edgeUpdateById = new Map(edgeUpdates.map((edge: any) => [edge.id, edge]));
     let changed = false;
-    const nextEdges = currentEdges.map((edge) => {
+    const nextEdges = (currentEdges ?? []).map((edge: Edge) => {
       const update = edgeUpdateById.get(edge.id);
       if (!update) {
         return edge;
@@ -3636,14 +3699,14 @@ export function createRefreshSchemesFromBackendDirectory(__appScope: Record<stri
   return (reason: string) => {
   const { activeSchemeKey, clearActiveProjectDisplay, fetchBackendSchemes, flattenSavedSchemes, rememberPersistedSchemesPayload, saveRequiredRef, serializeSchemesForStorage, setExpandedSchemeIds, setSchemesState, suppressNextBackendSchemeSyncRef, writeOperationLog } = __appScope;
     void fetchBackendSchemes()
-      .then((backendSchemes) => {
+      .then((backendSchemes: any) => {
         const backendPayload = serializeSchemesForStorage(backendSchemes);
         rememberPersistedSchemesPayload(backendPayload);
         suppressNextBackendSchemeSyncRef.current = true;
         setSchemesState(backendSchemes);
-        setExpandedSchemeIds((current) => {
-          const backendSchemeIds = new Set(flattenSavedSchemes(backendSchemes).map((scheme) => scheme.id));
-          const retained = current.filter((schemeId) => backendSchemeIds.has(schemeId));
+        setExpandedSchemeIds((current: any) => {
+          const backendSchemeIds = new Set(flattenSavedSchemes(backendSchemes).map((scheme: any) => scheme.id));
+          const retained = current.filter((schemeId: any) => backendSchemeIds.has(schemeId));
           if (retained.length > 0) {
             return retained;
           }
@@ -3707,7 +3770,7 @@ export function createPersistSchemeTreeToBackend(__appScope: Record<string, any>
   const { handleBackendSchemeMutationFailure, saveSchemeTreeToBackend, writeOperationLog } = __appScope;
     void saveSchemeTreeToBackend(scheme, parentPath, previousSchemePath)
       .then(() => writeOperationLog(`${reason}：已按单方案/单模型同步到后台`))
-      .catch((error) => handleBackendSchemeMutationFailure(`${reason}后台同步`, error));
+      .catch((error: any) => handleBackendSchemeMutationFailure(`${reason}后台同步`, error));
   };
 }
 
@@ -3717,7 +3780,7 @@ export function createReplaceSchemeTreeInBackend(__appScope: Record<string, any>
     void deleteBackendSchemeRecord(previousSchemePath)
       .then(() => saveSchemeTreeToBackend(scheme, parentPath))
       .then(() => writeOperationLog(`${reason}：已按单方案/单模型同步到后台`))
-      .catch((error) => handleBackendSchemeMutationFailure(`${reason}后台同步`, error));
+      .catch((error: any) => handleBackendSchemeMutationFailure(`${reason}后台同步`, error));
   };
 }
 
@@ -3803,8 +3866,8 @@ export function createToggleSchemeSelection(__appScope: Record<string, any>) {
   const { setSelectedProjectId, setSelectedProjectIds, setSelectedSchemeId, setSelectedSchemeIds } = __appScope;
     setSelectedProjectId("");
     setSelectedProjectIds([]);
-    setSelectedSchemeIds((current) => {
-      const next = current.includes(schemeId) ? current.filter((id) => id !== schemeId) : [...current, schemeId];
+    setSelectedSchemeIds((current: any) => {
+      const next = current.includes(schemeId) ? current.filter((id: any) => id !== schemeId) : [...current, schemeId];
       setSelectedSchemeId(next[0] ?? "");
       return next;
     });
@@ -3815,8 +3878,8 @@ export function createToggleProjectSelection(__appScope: Record<string, any>) {
   return (schemeId: string, projectId: string) => {
   const { setSelectedProjectId, setSelectedProjectIds, setSelectedSchemeId, setSelectedSchemeIds } = __appScope;
     setSelectedSchemeIds([]);
-    setSelectedProjectIds((current) => {
-      const next = current.includes(projectId) ? current.filter((id) => id !== projectId) : [...current, projectId];
+    setSelectedProjectIds((current: any) => {
+      const next = current.includes(projectId) ? current.filter((id: any) => id !== projectId) : [...current, projectId];
       setSelectedProjectId(next[0] ?? "");
       setSelectedSchemeId(next.length > 0 ? schemeId : "");
       return next;
@@ -3911,10 +3974,10 @@ export function createApplyUndoGraphSnapshot(__appScope: Record<string, any>) {
     markRouteEdgesDirty(plan.dirtyEdgeIds);
     markStoredRouteEdgesDirty(plan.dirtyEdgeIds);
     if (plan.mode === "full") {
-      setGraphStore((current) => graphStoreSetGraph(current, snapshot.nodes, snapshot.edges));
+      setGraphStore((current: any) => graphStoreSetGraph(current, snapshot.nodes, snapshot.edges));
       return;
     }
-    setGraphStore((current) => {
+    setGraphStore((current: any) => {
       const currentPlan = undoGraphSnapshotPatchPlan(current, snapshot);
       return currentPlan.mode === "patch"
         ? graphStorePatchGraphFromArrays(current, snapshot.nodes, snapshot.edges, currentPlan.nodeIds, currentPlan.edgeIds)
@@ -4008,7 +4071,7 @@ export function createSyncExistingNodesWithTemplateDefinitions(__appScope: Recor
     pushUndoSnapshot(true, false, undoScopeForGraphPatch(nodeUpdates.map((node) => node.id), []));
     if (typeof reconcileProjectMeasurementsWithConfig === "function" && projectMeasurements && measurementConfig) {
       const updatesById = new Map(nodeUpdates.map((node) => [node.id, node]));
-      const nextNodes = nodes.map((node) => updatesById.get(node.id) ?? node);
+      const nextNodes = nodes.map((node: any) => updatesById.get(node.id) ?? node);
       const reconciledMeasurements = reconcileProjectMeasurementsWithConfig(
         projectMeasurements,
         nextNodes,
@@ -4070,7 +4133,7 @@ export function createFlushMeasurementConfigDialogDraftInputs(__appScope: Record
     if (typeof document === "undefined") {
       return;
     }
-    const activeElement = document.activeElement;
+    const activeElement = document.activeElement as HTMLElement | null;
     const dialog = measurementConfigDialogRef?.current;
     if (!dialog || !activeElement || !dialog.contains(activeElement) || typeof activeElement.blur !== "function") {
       return;
@@ -4171,7 +4234,7 @@ export const measurementProfileItemsComplianceMessage = (
   const label = options.targetLabel ? `${options.targetLabel}量测` : "量测";
   items.forEach((item, index) => {
     const rowLabel = `${label}第 ${index + 1} 行`;
-    const sourcePoint = String(item.sourcePoint ?? "").trim();
+    const sourcePoint = String((item as any).sourcePoint ?? "").trim();
     if (sourcePoint) {
       const previousSourcePointIndex = seenSourcePoints.get(sourcePoint);
       if (previousSourcePointIndex !== undefined) {
@@ -4284,9 +4347,9 @@ export function createSaveMeasurementConfigDialog(__appScope: Record<string, any
 export function createUpdateMeasurementType(__appScope: Record<string, any>) {
   return (typeId: string, patch: Partial<MeasurementTypeDefinition>) => {
   const { updateMeasurementConfig } = __appScope;
-    updateMeasurementConfig((current) => ({
+    updateMeasurementConfig((current: any) => ({
       ...current,
-      measurementTypes: current.measurementTypes.map((item) => item.id === typeId ? { ...item, ...patch } : item)
+      measurementTypes: current.measurementTypes.map((item: any) => item.id === typeId ? { ...item, ...patch } : item)
     }));
   };
 }
@@ -4300,12 +4363,12 @@ export function createAddMeasurementType(__appScope: Record<string, any>) {
       return;
     }
     const currentMeasurementConfig = measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig;
-    const existingNames = new Set(currentMeasurementConfig.measurementTypes.map((type) => String(type.name ?? "").trim()).filter(Boolean));
+    const existingNames = new Set(currentMeasurementConfig.measurementTypes.map((type: any) => String(type.name ?? "").trim()).filter(Boolean));
     if (existingNames.has(normalizedName)) {
       showGlobalMessage(`量测类型名称不能重复：${normalizedName}`);
       return;
     }
-    const existingIds = new Set(currentMeasurementConfig.measurementTypes.map((type) => String(type.id ?? "").trim()).filter(Boolean));
+    const existingIds = new Set(currentMeasurementConfig.measurementTypes.map((type: any) => String(type.id ?? "").trim()).filter(Boolean));
     const idBase = `customMeasurement${Date.now().toString(36)}`;
     let id = idBase;
     let suffix = 1;
@@ -4313,7 +4376,7 @@ export function createAddMeasurementType(__appScope: Record<string, any>) {
       id = `${idBase}_${suffix}`;
       suffix += 1;
     }
-    updateMeasurementConfig((current) => ({
+    updateMeasurementConfig((current: any) => ({
       ...current,
       measurementTypes: [
         ...current.measurementTypes,
@@ -4343,11 +4406,11 @@ export function createDeleteMeasurementType(__appScope: Record<string, any>) {
     if (!await showGlobalConfirm("删除该量测类型后，设备类型默认绑定里也会同步移除，是否继续？")) {
       return;
     }
-    updateMeasurementConfig((current) => ({
-      measurementTypes: current.measurementTypes.filter((item) => item.id !== typeId),
-      deviceProfiles: current.deviceProfiles.map((profile) => ({
+    updateMeasurementConfig((current: any) => ({
+      measurementTypes: current.measurementTypes.filter((item: any) => item.id !== typeId),
+      deviceProfiles: current.deviceProfiles.map((profile: any) => ({
         ...profile,
-        items: profile.items.filter((item) => item.measurementTypeId !== typeId)
+        items: profile.items.filter((item: any) => item.measurementTypeId !== typeId)
       }))
     }));
   };
@@ -4356,12 +4419,12 @@ export function createDeleteMeasurementType(__appScope: Record<string, any>) {
 export function createSetMeasurementProfileItems(__appScope: Record<string, any>) {
   return (deviceKind: string, items: DeviceMeasurementProfileItem[]) => {
   const { updateMeasurementConfig } = __appScope;
-    updateMeasurementConfig((current) => {
-      const exists = current.deviceProfiles.some((profile) => profile.deviceKind === deviceKind);
+    updateMeasurementConfig((current: any) => {
+      const exists = current.deviceProfiles.some((profile: any) => profile.deviceKind === deviceKind);
       return {
         ...current,
         deviceProfiles: exists
-          ? current.deviceProfiles.map((profile) => profile.deviceKind === deviceKind ? { ...profile, items } : profile)
+          ? current.deviceProfiles.map((profile: any) => profile.deviceKind === deviceKind ? { ...profile, items } : profile)
           : [...current.deviceProfiles, { deviceKind, items }]
       };
     });
@@ -4405,7 +4468,7 @@ export function createUpdateMeasurementProfileItem(__appScope: Record<string, an
     if (index < 0 || index >= currentItems.length) {
       return;
     }
-    setMeasurementProfileItems(deviceKind, currentItems.map((item, itemIndex) => (
+    setMeasurementProfileItems(deviceKind, currentItems.map((item: any, itemIndex: any) => (
       itemIndex === index ? { ...item, ...patch } : item
     )));
   };
@@ -4415,7 +4478,7 @@ export function createDeleteMeasurementProfileItem(__appScope: Record<string, an
   return (deviceKind: string, index: number) => {
   const { editableMeasurementProfileByKind, setMeasurementProfileItems } = __appScope;
     const currentItems = editableMeasurementProfileByKind.get(deviceKind)?.items ?? [];
-    setMeasurementProfileItems(deviceKind, currentItems.filter((_, itemIndex) => itemIndex !== index));
+    setMeasurementProfileItems(deviceKind, currentItems.filter((_: any, itemIndex: any) => itemIndex !== index));
   };
 }
 
@@ -4437,7 +4500,7 @@ export function createUpdateProjectMeasurementsWithUndo(__appScope: Record<strin
   return (updater: (current: ProjectMeasurementConfig) => ProjectMeasurementConfig, logText?: string) => {
   const { nodes, normalizeProjectMeasurements, pushUndoSnapshot, setProjectMeasurements, writeOperationLog } = __appScope;
     pushUndoSnapshot();
-    setProjectMeasurements((current) => normalizeProjectMeasurements(updater(current), nodes));
+    setProjectMeasurements((current: any) => normalizeProjectMeasurements(updater(current), nodes));
     if (logText) {
       writeOperationLog(logText);
     }
@@ -4457,7 +4520,7 @@ export function createAddDefaultMeasurementsToNode(__appScope: Record<string, an
       return;
     }
     updateProjectMeasurementsWithUndo(
-      (current) => upsertMeasurementGroups(current, groups),
+      (current: any) => upsertMeasurementGroups(current, groups),
       `添加动态量测：${node.name}`
     );
   };
@@ -4467,7 +4530,7 @@ export function createRemoveMeasurementsFromNode(__appScope: Record<string, any>
   return (node: ModelNode) => {
   const { removeMeasurementGroupForNode, updateProjectMeasurementsWithUndo } = __appScope;
     updateProjectMeasurementsWithUndo(
-      (current) => removeMeasurementGroupForNode(current, node.id),
+      (current: any) => removeMeasurementGroupForNode(current, node.id),
       `删除动态量测：${node.name}`
     );
   };
@@ -4513,9 +4576,9 @@ export function createMeasurementTypeOptionsForMeasurementGroup(__appScope: Reco
   return (node: ModelNode, group?: Pick<MeasurementGroup, "terminalId">): MeasurementTypeDefinition[] => {
   const { measurementConfig, measurementProfileItemsForMeasurementGroup } = __appScope;
     const profileItems = measurementProfileItemsForMeasurementGroup(node, group?.terminalId);
-    const allowedTypeIds = new Set(profileItems.map((item) => item.measurementTypeId));
+    const allowedTypeIds = new Set(profileItems.map((item: any) => item.measurementTypeId));
     return allowedTypeIds.size > 0
-      ? measurementConfig.measurementTypes.filter((type) => allowedTypeIds.has(type.id))
+      ? measurementConfig.measurementTypes.filter((type: any) => allowedTypeIds.has(type.id))
       : measurementConfig.measurementTypes;
   };
 }
@@ -4538,8 +4601,8 @@ export function createCreateMeasurementItemForNode(__appScope: Record<string, an
     const profileItems = measurementProfileItemsForMeasurementGroup(node, terminalId);
     const usedTypeIds = new Set(existingItems.map((item) => item.measurementTypeId));
     const profileItem = measurementTypeId
-      ? profileItems.find((item) => item.measurementTypeId === measurementTypeId)
-      : profileItems.find((item) => !usedTypeIds.has(item.measurementTypeId)) ?? profileItems[0];
+      ? profileItems.find((item: any) => item.measurementTypeId === measurementTypeId)
+      : profileItems.find((item: any) => !usedTypeIds.has(item.measurementTypeId)) ?? profileItems[0];
     const type = (measurementTypeId ? measurementTypeById.get(measurementTypeId) : undefined) ??
       (profileItem ? measurementTypeById.get(profileItem.measurementTypeId) : undefined) ??
       measurementConfig.measurementTypes[0];
@@ -4571,9 +4634,9 @@ export function createUpdateMeasurementGroupById(__appScope: Record<string, any>
   return (groupId: string, updater: (group: MeasurementGroup) => MeasurementGroup, logText?: string) => {
   const { updateProjectMeasurementsWithUndo } = __appScope;
     updateProjectMeasurementsWithUndo(
-      (current) => ({
+      (current: any) => ({
         version: 1,
-        groups: current.groups.map((group) => group.id === groupId ? updater(group) : group)
+        groups: current.groups.map((group: any) => group.id === groupId ? updater(group) : group)
       }),
       logText
     );
@@ -4597,9 +4660,9 @@ export function createUpdateSelectedMeasurementGroups(__appScope: Record<string,
       return;
     }
     updateProjectMeasurementsWithUndo(
-      (current) => ({
+      (current: any) => ({
         version: 1,
-        groups: current.groups.map((group) => selectedMeasurementGroupIdSet.has(group.id) ? updater(group) : group)
+        groups: current.groups.map((group: any) => selectedMeasurementGroupIdSet.has(group.id) ? updater(group) : group)
       }),
       logText
     );
@@ -4618,7 +4681,7 @@ export function createAddMeasurementItemToGroup(__appScope: Record<string, any>)
       return;
     }
     updateProjectMeasurementsWithUndo(
-      (current) => upsertMeasurementGroup(current, { ...group, items: [...group.items, item] }),
+      (current: any) => upsertMeasurementGroup(current, { ...group, items: [...group.items, item] }),
       `添加量测项：${node.name}`
     );
   };
@@ -4668,20 +4731,20 @@ export function createUpdateMeasurementItem(__appScope: Record<string, any>) {
   const { updateMeasurementGroupById, projectMeasurements } = __appScope;
     // projectMeasurements 结构为 { version, groups }，取 groups 数组供查重
     const measurementGroups = Array.isArray(projectMeasurements) ? projectMeasurements : (projectMeasurements?.groups ?? []);
-    const targetGroup = measurementGroups.find((group) => group.id === groupId);
-    const targetItem = targetGroup?.items.find((item) => item.id === itemId);
+    const targetGroup = measurementGroups.find((group: any) => group.id === groupId);
+    const targetItem = targetGroup?.items.find((item: any) => item.id === itemId);
     const nextItem = targetItem ? updater(targetItem) : undefined;
     // 测点作为运行时绑定唯一 key：改 sourcePoint 时跨全部量测组查重，重复则还原为默认测点并提示
     if (targetItem && nextItem && String(nextItem.sourcePoint ?? "").trim() && nextItem.sourcePoint !== targetItem.sourcePoint) {
-      const duplicate = measurementGroups.some((group) =>
-        group.items.some((item) => item.id !== itemId && String(item.sourcePoint ?? "").trim() === String(nextItem.sourcePoint ?? "").trim())
+      const duplicate = measurementGroups.some((group: any) =>
+        group.items.some((item: any) => item.id !== itemId && String(item.sourcePoint ?? "").trim() === String(nextItem.sourcePoint ?? "").trim())
       );
       if (duplicate && targetGroup) {
         // 还原为创建时的默认测点（按量测 profile 反查 associatedField/role），antd message.error 提示，5 秒自动消失
         const defaultSourcePoint = measurementDefaultSourcePointForGroupItem(__appScope, targetGroup, nextItem);
         // 还原值自身已被其他项占用时不自动改写，保留原测点并提示，避免制造新重复
-        const defaultDuplicate = measurementGroups.some((group) =>
-          group.items.some((item) => item.id !== itemId && String(item.sourcePoint ?? "").trim() === String(defaultSourcePoint ?? "").trim())
+        const defaultDuplicate = measurementGroups.some((group: any) =>
+          group.items.some((item: any) => item.id !== itemId && String(item.sourcePoint ?? "").trim() === String(defaultSourcePoint ?? "").trim())
         );
         if (defaultDuplicate) {
           message.error({
@@ -4690,9 +4753,9 @@ export function createUpdateMeasurementItem(__appScope: Record<string, any>) {
           });
           return;
         }
-        updateMeasurementGroupById(groupId, (group) => ({
+        updateMeasurementGroupById(groupId, (group: any) => ({
           ...group,
-          items: group.items.map((item) => item.id === itemId ? { ...item, sourcePoint: defaultSourcePoint } : item)
+          items: group.items.map((item: any) => item.id === itemId ? { ...item, sourcePoint: defaultSourcePoint } : item)
         }), "还原量测测点为默认值");
         message.error({
           content: `测点 ${nextItem.sourcePoint} 已被其他量测使用，已还原为默认测点 ${defaultSourcePoint}。`,
@@ -4701,9 +4764,9 @@ export function createUpdateMeasurementItem(__appScope: Record<string, any>) {
         return;
       }
     }
-    updateMeasurementGroupById(groupId, (group) => ({
+    updateMeasurementGroupById(groupId, (group: any) => ({
       ...group,
-      items: group.items.map((item) => item.id === itemId ? updater(item) : item)
+      items: group.items.map((item: any) => item.id === itemId ? updater(item) : item)
     }), logText);
   };
 }
@@ -4711,9 +4774,9 @@ export function createUpdateMeasurementItem(__appScope: Record<string, any>) {
 export function createRemoveMeasurementItem(__appScope: Record<string, any>) {
   return (groupId: string, itemId: string) => {
   const { updateMeasurementGroupById } = __appScope;
-    updateMeasurementGroupById(groupId, (group) => ({
+    updateMeasurementGroupById(groupId, (group: any) => ({
       ...group,
-      items: group.items.filter((item) => item.id !== itemId)
+      items: group.items.filter((item: any) => item.id !== itemId)
     }), "删除量测项");
   };
 }
@@ -4733,10 +4796,10 @@ export function createCreateMeasurementEditorGroupForPosition(__appScope: Record
 export function createUpdateMeasurementEditorGroupSettings(__appScope: Record<string, any>) {
   return (updater: (group: MeasurementGroup) => MeasurementGroup) => {
   const { setMeasurementEditorDialog } = __appScope;
-    setMeasurementEditorDialog((current) => current
+    setMeasurementEditorDialog((current: any) => current
       ? {
           ...current,
-          drafts: current.drafts.map((group) => updater(group))
+          drafts: current.drafts.map((group: any) => updater(group))
         }
       : current
     );
@@ -4750,11 +4813,11 @@ export function createUpdateMeasurementEditorDraftItem(__appScope: Record<string
     updater: (item: MeasurementItemBinding) => MeasurementItemBinding
   ) => {
   const { setMeasurementEditorDialog } = __appScope;
-    setMeasurementEditorDialog((current) => current
+    setMeasurementEditorDialog((current: any) => current
       ? {
           ...current,
-          drafts: current.drafts.map((group) => group.id === groupId
-            ? { ...group, items: group.items.map((item) => item.id === itemId ? updater(item) : item) }
+          drafts: current.drafts.map((group: any) => group.id === groupId
+            ? { ...group, items: group.items.map((item: any) => item.id === itemId ? updater(item) : item) }
             : group
           )
         }
@@ -4770,7 +4833,7 @@ export function createAddMeasurementEditorDraftItem(__appScope: Record<string, a
       return;
     }
     const terminalId = undefined;
-    const draft = measurementEditorDialog.drafts.find((group) => group.terminalId === terminalId);
+    const draft = measurementEditorDialog.drafts.find((group: any) => group.terminalId === terminalId);
     const existingItems = draft?.items ?? [];
     const item = createMeasurementItemForNode(
       node,
@@ -4782,11 +4845,11 @@ export function createAddMeasurementEditorDraftItem(__appScope: Record<string, a
       showGlobalMessage("请先配置至少一个量测类型。");
       return;
     }
-    setMeasurementEditorDialog((current) => {
+    setMeasurementEditorDialog((current: any) => {
       if (!current) {
         return current;
       }
-      const targetGroup = current.drafts.find((group) => group.terminalId === terminalId);
+      const targetGroup = current.drafts.find((group: any) => group.terminalId === terminalId);
       const template = current.drafts[0];
       if (!targetGroup) {
         return {
@@ -4799,7 +4862,7 @@ export function createAddMeasurementEditorDraftItem(__appScope: Record<string, a
       }
       return {
         ...current,
-        drafts: current.drafts.map((group) => group.id === targetGroup.id
+        drafts: current.drafts.map((group: any) => group.id === targetGroup.id
           ? { ...group, items: [...group.items, item] }
           : group
         )
@@ -4811,11 +4874,11 @@ export function createAddMeasurementEditorDraftItem(__appScope: Record<string, a
 export function createRemoveMeasurementEditorDraftItem(__appScope: Record<string, any>) {
   return (groupId: string, itemId: string) => {
   const { setMeasurementEditorDialog } = __appScope;
-    setMeasurementEditorDialog((current) => current
+    setMeasurementEditorDialog((current: any) => current
       ? {
           ...current,
-          drafts: current.drafts.map((group) => group.id === groupId
-            ? { ...group, items: group.items.filter((item) => item.id !== itemId) }
+          drafts: current.drafts.map((group: any) => group.id === groupId
+            ? { ...group, items: group.items.filter((item: any) => item.id !== itemId) }
             : group
           )
         }
@@ -4827,14 +4890,14 @@ export function createRemoveMeasurementEditorDraftItem(__appScope: Record<string
 export function createMoveMeasurementEditorDraftItem(__appScope: Record<string, any>) {
   return (groupId: string, itemId: string, direction: -1 | 1) => {
   const { setMeasurementEditorDialog } = __appScope;
-    setMeasurementEditorDialog((current) => current
+    setMeasurementEditorDialog((current: any) => current
       ? {
           ...current,
-          drafts: current.drafts.map((group) => {
+          drafts: current.drafts.map((group: any) => {
             if (group.id !== groupId) {
               return group;
             }
-            const index = group.items.findIndex((item) => item.id === itemId);
+            const index = group.items.findIndex((item: any) => item.id === itemId);
             const nextIndex = index + direction;
             if (index < 0 || nextIndex < 0 || nextIndex >= group.items.length) {
               return group;
@@ -4858,12 +4921,12 @@ export function createUpdateMeasurementEditorDraftItemPosition(__appScope: Recor
   ) => {
   const { createMeasurementEditorGroupForPosition, measurementSourcePointForNodeItem, setMeasurementEditorDialog } = __appScope;
     const terminalId = terminalIdValue || undefined;
-    setMeasurementEditorDialog((current) => {
+    setMeasurementEditorDialog((current: any) => {
       if (!current) {
         return current;
       }
-      const sourceGroup = current.drafts.find((group) => group.id === sourceGroupId);
-      const item = sourceGroup?.items.find((candidate) => candidate.id === itemId);
+      const sourceGroup = current.drafts.find((group: any) => group.id === sourceGroupId);
+      const item = sourceGroup?.items.find((candidate: any) => candidate.id === itemId);
       if (!sourceGroup || !item || sourceGroup.terminalId === terminalId) {
         return current;
       }
@@ -4872,16 +4935,16 @@ export function createUpdateMeasurementEditorDraftItemPosition(__appScope: Recor
         sourcePoint: measurementSourcePointForNodeItem(node, item, terminalId)
       };
       const template = current.drafts[0] ?? sourceGroup;
-      const existingTargetGroup = current.drafts.find((group) => group.terminalId === terminalId);
+      const existingTargetGroup = current.drafts.find((group: any) => group.terminalId === terminalId);
       const targetGroup = existingTargetGroup ?? createMeasurementEditorGroupForPosition(node, terminalId, template);
       const targetGroupId = targetGroup.id;
-      const draftsWithoutItem = current.drafts.map((group) => group.id === sourceGroupId
-        ? { ...group, items: group.items.filter((candidate) => candidate.id !== itemId) }
+      const draftsWithoutItem = current.drafts.map((group: any) => group.id === sourceGroupId
+        ? { ...group, items: group.items.filter((candidate: any) => candidate.id !== itemId) }
         : group
       );
-      const targetExists = draftsWithoutItem.some((group) => group.id === targetGroupId);
+      const targetExists = draftsWithoutItem.some((group: any) => group.id === targetGroupId);
       const drafts = targetExists
-        ? draftsWithoutItem.map((group) => group.id === targetGroupId
+        ? draftsWithoutItem.map((group: any) => group.id === targetGroupId
           ? { ...group, items: [...group.items, movedItem] }
           : group
         )
@@ -4935,9 +4998,9 @@ export function createConfirmMeasurementEditorDialog(__appScope: Record<string, 
     }
     // 测点查重（与右侧面板编辑/保存校验同一策略）：drafts 内部互查 + 与其他节点的现有量测组互查。
     // 本节点现有组将被 drafts 整体替换，不参与查重。
-    const draftGroups = measurementEditorDialog.drafts.filter((group) => group.items.length > 0);
+    const draftGroups = measurementEditorDialog.drafts.filter((group: any) => group.items.length > 0);
     const otherNodeGroups = (Array.isArray(projectMeasurements) ? projectMeasurements : (projectMeasurements?.groups ?? []))
-      .filter((group) => group.nodeId !== node.id);
+      .filter((group: any) => group.nodeId !== node.id);
     const seenSourcePoints = new Map<string, string>();
     const duplicateSourcePoints = new Set<string>();
     const collectSourcePoint = (ownerLabel: string, item: { sourcePoint?: string }) => {
@@ -4952,30 +5015,30 @@ export function createConfirmMeasurementEditorDialog(__appScope: Record<string, 
         seenSourcePoints.set(sourcePoint, ownerLabel);
       }
     };
-    draftGroups.forEach((group, groupIndex) => {
-      group.items.forEach((item, itemIndex) => collectSourcePoint(`本设备第 ${groupIndex + 1} 组第 ${itemIndex + 1} 项`, item));
+    draftGroups.forEach((group: any, groupIndex: any) => {
+      group.items.forEach((item: any, itemIndex: any) => collectSourcePoint(`本设备第 ${groupIndex + 1} 组第 ${itemIndex + 1} 项`, item));
     });
-    otherNodeGroups.forEach((group) => {
-      group.items.forEach((item) => collectSourcePoint(`设备 ${group.nodeId}`, item));
+    otherNodeGroups.forEach((group: any) => {
+      group.items.forEach((item: any) => collectSourcePoint(`设备 ${group.nodeId}`, item));
     });
     if (duplicateSourcePoints.size > 0) {
       showGlobalMessage(`量测测点不能重复：${Array.from(duplicateSourcePoints).join("、")}`);
       return;
     }
     const drafts = draftGroups
-      .map((group) => cloneMeasurementGroupForDraft({
+      .map((group: any) => cloneMeasurementGroupForDraft({
         ...group,
         nodeId: node.id,
-        items: group.items.map((item) => ({
+        items: group.items.map((item: any) => ({
           ...item,
           name: measurementEditorItemName(item)
         }))
       }));
     updateProjectMeasurementsWithUndo(
-      (current) => ({
+      (current: any) => ({
         version: 1,
         groups: [
-          ...current.groups.filter((group) => group.nodeId !== node.id),
+          ...current.groups.filter((group: any) => group.nodeId !== node.id),
           ...drafts
         ]
       }),
@@ -4995,7 +5058,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
       Array.isArray(persistedMeasurementConfig.groups)
     );
     const persistedGroupById = new Map(
-      (hasPersistedMeasurementBaseline ? persistedMeasurementConfig.groups : []).map((group) => [group.id, group])
+      (hasPersistedMeasurementBaseline ? persistedMeasurementConfig.groups : []).map((group: any) => [group.id, group])
     );
     const valuesEqual = (left: unknown, right: unknown) => {
       const leftText = String(left ?? "").trim();
@@ -5019,16 +5082,16 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
         case "layout": return group.layout ?? "vertical";
         case "fontSize": return group.groupStyleOverride?.fontSize ?? 14;
         case "fontColor": return group.groupStyleOverride?.color ?? "#334155";
-        default: return group[key];
+        default: return (group as Record<string, any>)[key];
       }
     };
     const isMeasurementGroupModified = (group: MeasurementGroup, key: string) => {
       if (!hasPersistedMeasurementBaseline) return false;
-      const savedGroup = persistedGroupById.get(group.id);
+      const savedGroup = persistedGroupById.get(group.id) as MeasurementGroup | undefined;
       return !savedGroup || !valuesEqual(effectiveGroupValue(group, key), effectiveGroupValue(savedGroup, key));
     };
     const isCommonMeasurementGroupModified = (key: string) =>
-      selectedMeasurementGroups.some((group) => isMeasurementGroupModified(group, key));
+      selectedMeasurementGroups.some((group: any) => isMeasurementGroupModified(group, key));
     const effectiveItemValue = (group: MeasurementGroup, item: MeasurementItemBinding, key: string) => {
       const type = measurementTypeById.get(item.measurementTypeId);
       const defaultSourcePoint = group.terminalId
@@ -5044,14 +5107,14 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
         case "fontSize": return item.styleOverride?.fontSize ?? group.groupStyleOverride?.fontSize ?? type?.defaultFontSize ?? 14;
         case "fontWeight": return item.styleOverride?.fontWeight ?? group.groupStyleOverride?.fontWeight ?? type?.defaultFontWeight ?? "500";
         case "color": return item.styleOverride?.color ?? group.groupStyleOverride?.color ?? type?.defaultColor ?? "#334155";
-        default: return item[key];
+        default: return (item as Record<string, any>)[key];
       }
     };
     const isMeasurementItemModified = (group: MeasurementGroup, item: MeasurementItemBinding, key: string) => {
       if (!hasPersistedMeasurementBaseline) return false;
-      const savedGroup = persistedGroupById.get(group.id);
-      const savedItem = savedGroup?.items?.find((candidate) => candidate.id === item.id);
-      return !savedItem || !valuesEqual(effectiveItemValue(group, item, key), effectiveItemValue(savedGroup, savedItem, key));
+      const savedGroup = persistedGroupById.get(group.id) as MeasurementGroup | undefined;
+      const savedItem = savedGroup?.items?.find((candidate: MeasurementItemBinding) => candidate.id === item.id);
+      return !savedGroup || !savedItem || !valuesEqual(effectiveItemValue(group, item, key), effectiveItemValue(savedGroup, savedItem, key));
     };
     const selectedMeasurementGroupCommonDraft = selectedMeasurementGroups[0];
     const renderCommonMeasurementGroupRows = () => {
@@ -5073,7 +5136,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                   { value: "horizontal", label: "横向" },
                   { value: "grid", label: "两列" }
                 ]}
-                onCommit={(value) => updateSelectedMeasurementGroups((current) => ({ ...current, layout: value as MeasurementGroup["layout"] }))}
+                onCommit={(value) => updateSelectedMeasurementGroups((current: any) => ({ ...current, layout: value as MeasurementGroup["layout"] }))}
               />
               <Button
                 type="text"
@@ -5082,7 +5145,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 data-modified={isCommonMeasurementGroupModified("visible") ? "true" : undefined}
                 data-selected={selectedMeasurementGroupCommonDraft.visible === false}
 
-                onClick={() => updateSelectedMeasurementGroups((current) => ({ ...current, visible: !current.visible }))}
+                onClick={() => updateSelectedMeasurementGroups((current: any) => ({ ...current, visible: !current.visible }))}
                 title={selectedMeasurementGroupCommonDraft.visible ? "隐藏量测" : "显示量测"}
               >
                 {selectedMeasurementGroupCommonDraft.visible
@@ -5103,7 +5166,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                   { value: "1", label: "单位" },
                   { value: "0", label: "无单位" }
                 ]}
-                onCommit={(value) => updateSelectedMeasurementGroups((current) => ({ ...current, unitVisible: value === "1" }))}
+                onCommit={(value) => updateSelectedMeasurementGroups((current: any) => ({ ...current, unitVisible: value === "1" }))}
               />
               <Button
                 type="text"
@@ -5112,7 +5175,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 data-modified={isCommonMeasurementGroupModified("labelVisible") ? "true" : undefined}
                 data-selected={selectedMeasurementGroupCommonDraft.labelVisible === false}
 
-                onClick={() => updateSelectedMeasurementGroups((current) => ({ ...current, labelVisible: current.labelVisible === false ? true : false }))}
+                onClick={() => updateSelectedMeasurementGroups((current: any) => ({ ...current, labelVisible: current.labelVisible === false ? true : false }))}
                 title={selectedMeasurementGroupCommonDraft.labelVisible === false ? "显示标签" : "隐藏标签"}
               >
                 {selectedMeasurementGroupCommonDraft.labelVisible === false
@@ -5134,7 +5197,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 max={24}
                 step={1}
                 aria-label="量测组字体大小"
-                onCommit={(value) => updateSelectedMeasurementGroups((current) => ({
+                onCommit={(value) => updateSelectedMeasurementGroups((current: any) => ({
                   ...current,
                   groupStyleOverride: {
                     ...(current.groupStyleOverride ?? {}),
@@ -5148,7 +5211,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 modified={isCommonMeasurementGroupModified("fontColor")}
 
                 aria-label="量测组字体颜色"
-                onCommit={(value) => updateSelectedMeasurementGroups((current) => ({
+                onCommit={(value: any) => updateSelectedMeasurementGroups((current: any) => ({
                   ...current,
                   groupStyleOverride: { ...(current.groupStyleOverride ?? {}), color: value }
                 }), "修改量测组字体颜色")}
@@ -5164,7 +5227,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 modified={isCommonMeasurementGroupModified("backgroundColor")}
 
                 options={[{ value: "1", label: "显示" }, { value: "0", label: "透明" }]}
-                onCommit={(value) => updateSelectedMeasurementGroups((current) => ({
+                onCommit={(value) => updateSelectedMeasurementGroups((current: any) => ({
                   ...current,
                   backgroundColor: value === "1"
                     ? current.backgroundColor === "transparent" ? "#ffffff" : current.backgroundColor ?? "#ffffff"
@@ -5177,7 +5240,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 modified={isCommonMeasurementGroupModified("backgroundColor")}
 
                 aria-label="量测组背景颜色"
-                onCommit={(value) => updateSelectedMeasurementGroups((current) => ({ ...current, backgroundColor: value }), "修改量测组背景颜色")}
+                onCommit={(value: any) => updateSelectedMeasurementGroups((current: any) => ({ ...current, backgroundColor: value }), "修改量测组背景颜色")}
               />
             </td>
           </tr>
@@ -5198,7 +5261,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                   ]}
                   onCommit={(value) => {
                     const borderStyle = value as MeasurementGroup["borderStyle"];
-                    updateSelectedMeasurementGroups((current) => ({
+                    updateSelectedMeasurementGroups((current: any) => ({
                       ...current,
                       borderStyle,
                       borderWidth: borderStyle === "none" ? 0 : Math.max(1, current.borderWidth ?? 0)
@@ -5214,7 +5277,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                   modified={isCommonMeasurementGroupModified("borderWidth")}
                   disabled={(selectedMeasurementGroupCommonDraft.borderStyle ?? "none") === "none"}
                   aria-label="量测组边框宽度"
-                  onCommit={(nextValue) => updateSelectedMeasurementGroups((current) => ({
+                  onCommit={(nextValue) => updateSelectedMeasurementGroups((current: any) => ({
                     ...current,
                     borderWidth: clampNumber(Number(nextValue), 0, 12)
                   }), "修改量测组边框宽度")}
@@ -5226,7 +5289,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 modified={isCommonMeasurementGroupModified("borderColor")}
                 disabled={(selectedMeasurementGroupCommonDraft.borderStyle ?? "none") === "none"}
                 aria-label="量测组边框颜色"
-                onCommit={(value) => updateSelectedMeasurementGroups((current) => ({ ...current, borderColor: value }), "修改量测组边框颜色")}
+                onCommit={(value: any) => updateSelectedMeasurementGroups((current: any) => ({ ...current, borderColor: value }), "修改量测组边框颜色")}
               />
             </td>
           </tr>
@@ -5275,16 +5338,16 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                     <div className="measurement-item-toolbar" style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "nowrap" }}>
                       <InlineEditableValue
                         value={item.measurementTypeId}
-                        displayValue={measurementTypeOptions.find((candidate) => candidate.id === item.measurementTypeId)?.name ?? item.measurementTypeId}
+                        displayValue={measurementTypeOptions.find((candidate: any) => candidate.id === item.measurementTypeId)?.name ?? item.measurementTypeId}
                         modified={isMeasurementItemModified(group, item, "measurementTypeId")}
 
                         options={[
-                          ...(!measurementTypeOptions.some((candidate) => candidate.id === item.measurementTypeId) ? [{ value: item.measurementTypeId, label: item.measurementTypeId }] : []),
-                          ...measurementTypeOptions.map((candidate) => ({ value: candidate.id, label: candidate.name }))
+                          ...(!measurementTypeOptions.some((candidate: any) => candidate.id === item.measurementTypeId) ? [{ value: item.measurementTypeId, label: item.measurementTypeId }] : []),
+                          ...measurementTypeOptions.map((candidate: any) => ({ value: candidate.id, label: candidate.name }))
                         ]}
                         onCommit={(value) => {
                           const nextTypeId = value;
-                          updateMeasurementItem(group.id, item.id, (current) => ({
+                          updateMeasurementItem(group.id, item.id, (current: any) => ({
                             ...current,
                             measurementTypeId: nextTypeId,
                             sourcePoint: current.sourcePoint || (group.terminalId ? `${node.id}.${group.terminalId}.${nextTypeId}` : `${node.id}.${nextTypeId}`)
@@ -5299,7 +5362,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                         data-modified={isMeasurementItemModified(group, item, "visible") ? "true" : undefined}
                         data-selected={item.visible === false}
 
-                        onClick={() => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, visible: current.visible === false ? true : false }))}
+                        onClick={() => updateMeasurementItem(group.id, item.id, (current: any) => ({ ...current, visible: current.visible === false ? true : false }))}
                         title={item.visible === false ? "显示量测" : "隐藏量测"}
                       >
                         {item.visible === false
@@ -5328,14 +5391,14 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                         modified={isMeasurementItemModified(group, item, "sourcePoint")}
 
                         onCommit={(nextValue) => {
-                          if (nextValue !== sourcePointValue) updateMeasurementItem(group.id, item.id, (current) => ({ ...current, sourcePoint: nextValue }));
+                          if (nextValue !== sourcePointValue) updateMeasurementItem(group.id, item.id, (current: any) => ({ ...current, sourcePoint: nextValue }));
                         }}
                       />
                       <Button
                         size="small"
 
                         title="恢复为默认测点（与创建量测时一致）"
-                        onClick={() => updateMeasurementItem(group.id, item.id, (current) => ({
+                        onClick={() => updateMeasurementItem(group.id, item.id, (current: any) => ({
                           ...current,
                           sourcePoint: measurementDefaultSourcePointForGroupItem(__appScope, group, current)
                         }))}
@@ -5358,7 +5421,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
 
                               aria-label="量测标签"
                               onCommit={(nextValue) => {
-                                if (nextValue !== labelValue) updateMeasurementItem(group.id, item.id, (current) => ({ ...current, labelOverride: nextValue }));
+                                if (nextValue !== labelValue) updateMeasurementItem(group.id, item.id, (current: any) => ({ ...current, labelOverride: nextValue }));
                               }}
                             />
                           </Tooltip>
@@ -5371,7 +5434,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
 
                               aria-label="量测显示格式"
                               onCommit={(nextValue) => {
-                                if (nextValue.trim() !== formatValue.trim()) updateMeasurementItem(group.id, item.id, (current) => ({ ...current, formatOverride: nextValue.trim() || undefined }));
+                                if (nextValue.trim() !== formatValue.trim()) updateMeasurementItem(group.id, item.id, (current: any) => ({ ...current, formatOverride: nextValue.trim() || undefined }));
                               }}
                             />
                           </Tooltip>
@@ -5384,7 +5447,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
 
                               aria-label="量测单位"
                               onCommit={(nextValue) => {
-                                if (nextValue !== unitValue) updateMeasurementItem(group.id, item.id, (current) => ({ ...current, unitOverride: nextValue }));
+                                if (nextValue !== unitValue) updateMeasurementItem(group.id, item.id, (current: any) => ({ ...current, unitOverride: nextValue }));
                               }}
                             />
                           </Tooltip>
@@ -5399,8 +5462,8 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                               modified={isMeasurementItemModified(group, item, "fontSize")}
 
                               aria-label="量测字号"
-                              options={Array.from({ length: 17 }, (_, i) => i + 8).map((size) => ({ value: size, label: String(size) }))}
-                              onCommit={(value) => updateMeasurementItem(group.id, item.id, (current) => ({
+                              options={Array.from({ length: 17 }, (_, i) => i + 8).map((size) => ({ value: String(size), label: String(size) }))}
+                              onCommit={(value) => updateMeasurementItem(group.id, item.id, (current: any) => ({
                                 ...current,
                                 styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(value) }
                               }))}
@@ -5416,7 +5479,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
 
                               aria-label="量测字重"
                               options={[{ value: "400", label: "细" }, { value: "500", label: "中" }, { value: "700", label: "粗" }]}
-                              onCommit={(value) => updateMeasurementItem(group.id, item.id, (current) => ({
+                              onCommit={(value) => updateMeasurementItem(group.id, item.id, (current: any) => ({
                                 ...current,
                                 styleOverride: { ...(current.styleOverride ?? {}), fontWeight: value as MeasurementFontWeight }
                               }))}
@@ -5430,7 +5493,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                               modified={isMeasurementItemModified(group, item, "color")}
 
                               aria-label="量测颜色"
-                              onCommit={(value) => updateMeasurementItem(group.id, item.id, (current) => ({
+                              onCommit={(value: any) => updateMeasurementItem(group.id, item.id, (current: any) => ({
                                 ...current,
                                 styleOverride: { ...(current.styleOverride ?? {}), color: value }
                               }))}
@@ -5482,7 +5545,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
 }
 
 export function createBeginMeasurementDrag(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGGElement>, group: MeasurementGroup) => {
+  return (event: ReactPointerEvent<SVGGElement>, group: MeasurementGroup) => {
   const { measurementGroupAnchorPoint, measurementGroupCanvasPosition, measurementGroupRenderMetrics, nodeById, nodeHasUprightBoundsContent, nodeSmartAlignmentBounds, projectMeasurements, screenToSvgPoint, selectCanvasGraphics, setInspectorTab, setLastCanvasClickTarget, setMeasurementDrag, setSelectedDeviceInfoView, smartAlignmentEnabled, svgRef, visibleNodeById } = __appScope;
     if (event.button !== 0 || !svgRef.current) {
       return;
@@ -5565,7 +5628,7 @@ export function createBeginMeasurementDrag(__appScope: Record<string, any>) {
 }
 
 export function createUpdateMeasurementDrag(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGSVGElement>) => {
+  return (event: ReactPointerEvent<SVGSVGElement>) => {
   const { SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE, canvasScrollScaleRef, measurementDragRef, pushUndoSnapshot, screenToSvgPoint, setMeasurementDrag, smartAlignmentEnabled, svgRef, updateSmartAlignmentGuides } = __appScope;
     const measurementDrag = measurementDragRef?.current;
     if (!measurementDrag || measurementDrag.pointerId !== event.pointerId || !svgRef.current) {
@@ -5643,9 +5706,9 @@ export function createFinishMeasurementDrag(__appScope: Record<string, any>) {
     if (measurementDrag.historyCaptured) {
       const finalOffset = measurementDrag.pendingOffset;
       if (finalOffset) {
-        setProjectMeasurements((current) => ({
+        setProjectMeasurements((current: any) => ({
           version: 1,
-          groups: current.groups.map((group) => group.id === measurementDrag.groupId ? { ...group, offset: finalOffset, anchor: "custom" } : group)
+          groups: current.groups.map((group: any) => group.id === measurementDrag.groupId ? { ...group, offset: finalOffset, anchor: "custom" } : group)
         }));
       }
       setHasUnsavedChanges(true);

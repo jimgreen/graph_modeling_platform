@@ -21,6 +21,13 @@ import { canvasThemeColorsFor } from "../canvasTheme";
 import {
   adjustGeneratedStateIconTerminalStub,
   areCanvasPropsEqual,
+  areFloatingToolbarPropsEqual,
+  areGraphContentPropsEqual,
+  areMinimapPropsEqual,
+  areStaticBackgroundPropsEqual,
+  areTransientOverlayPropsEqual,
+  areTransientUnderlayPropsEqual,
+  readLatestScope,
   shouldRenderBaseCanvasEdge,
   singleTerminalPointerPreviewGeometry,
   staticDrawingContextMenuFinalPoint
@@ -955,5 +962,275 @@ describe("未打开模型时的画布空状态", () => {
   it("空状态与有图的切换会触发重渲染（activeProjectKey 在比较键里）", () => {
     // 少了这个键，关闭模型后画布会停在旧图上：React.memo 认为 props 没变
     expect(areCanvasPropsEqual({ scope: { activeProjectKey: "project:a" } }, { scope: { activeProjectKey: "" } })).toBe(false);
+  });
+
+  it("界面定制变化时外层画布比较器触发重渲染（同步底部选中操作组）", () => {
+    expect(
+      areCanvasPropsEqual(
+        { scope: { interfaceCustomization: { hidden: [] } } },
+        { scope: { interfaceCustomization: { hidden: ["topbar.group"] } } }
+      )
+    ).toBe(false);
+  });
+});
+
+describe("Phase 3B 画布 SVG 分层渲染解耦", () => {
+  it("readLatestScope 优先读取 __appScopeRef.current 防陈旧闭包，否则回退当前 scope", () => {
+    const staleScope = { tag: "stale", __appScopeRef: { current: { tag: "latest" } } };
+    expect(readLatestScope(staleScope)).toEqual({ tag: "latest" });
+
+    const directScope = { tag: "direct" };
+    expect(readLatestScope(directScope)).toBe(directScope);
+  });
+
+  it("主体图元层对高频瞬态状态与覆盖层状态完全短路（跳过重渲染）", () => {
+    const base = baseScope(HORIZONTAL_ANCHOR, "translate(140, 80)");
+    const prevProps = {
+      scope: base,
+      selectedEdgeTopmostVisible: false,
+      electricFlowLayerMarkup: "",
+      electricFlowLineLayerMarkup: ""
+    };
+    const isolatedUpdates: Array<[string, any]> = [
+      ["marquee", { start: { x: 0, y: 0 }, current: { x: 120, y: 80 } }],
+      ["smartAlignmentGuides", [{ id: "v-100", orientation: "vertical", position: 100, start: 0, end: 200 }]],
+      ["libraryPlacement", { kind: "breaker", point: { x: 50, y: 60 } }],
+      ["staticDrawing", { kind: "line", points: [{ x: 0, y: 0 }] }],
+      ["connectPreviewDom", { path: "M0 0 L100 100", targetPoint: { x: 100, y: 100 } }],
+      ["routableLinePreview", { path: "M0 0 L80 40" }],
+      ["manualPathPreviewRoute", { edgeId: "e1", path: "M0 0 L40 40", points: [] }],
+      ["dragPreviewEdgeRoutes", [{ edgeId: "e1", path: "M0 0 L20 20" }]],
+      ["dragGhostEdgeRoutes", [{ edgeId: "e1", path: "M0 0 L10 10" }]],
+      ["rewiringPreviewRoute", { edgeId: "e1", path: "M0 0 L60 60" }],
+      ["minimapVisible", true],
+      ["minimapViewportLeft", 24],
+      ["minimapViewportTop", 18],
+      ["minimapViewportRight", 180],
+      ["minimapViewportBottom", 110],
+      ["leftPanelWidth", 340],
+      ["rightPanelWidth", 380],
+      ["nodeFloatingToolbar", { x: 100, y: 120 }],
+      ["edgeFloatingToolbar", { x: 200, y: 220 }],
+      ["canvasResizePreviewRect", { left: 0, top: 0, width: 1200, height: 800 }],
+      ["resizeSizeHint", { x: 10, y: 20, text: "100 x 80" }],
+      ["panning", true]
+    ];
+
+    for (const [key, value] of isolatedUpdates) {
+      expect(
+        areGraphContentPropsEqual(prevProps, {
+          ...prevProps,
+          scope: { ...base, [key]: value }
+        }),
+        `变更 ${key} 不应重渲主体图元层`
+      ).toBe(true);
+    }
+  });
+
+  it("改线/连线/自适应线路端点移动鼠标仅更新坐标时，主体图元层跳过重渲染；切换目标 ID 时精准刷新", () => {
+    const base = baseScope(HORIZONTAL_ANCHOR, "translate(140, 80)");
+    const makeProps = (override: Record<string, any>) => ({
+      scope: { ...base, ...override },
+      selectedEdgeTopmostVisible: false,
+      electricFlowLayerMarkup: "",
+      electricFlowLineLayerMarkup: ""
+    });
+
+    // rewiring 仅 previewPoint 变化 → 跳过
+    expect(
+      areGraphContentPropsEqual(
+        makeProps({ rewiring: { edgeId: "e1", endpoint: "target", previewPoint: { x: 10, y: 10 } } }),
+        makeProps({ rewiring: { edgeId: "e1", endpoint: "target", previewPoint: { x: 80, y: 90 } } })
+      )
+    ).toBe(true);
+    // rewiring 目标边变化 → 刷新
+    expect(
+      areGraphContentPropsEqual(
+        makeProps({ rewiring: null }),
+        makeProps({ rewiring: { edgeId: "e1", endpoint: "target", previewPoint: { x: 10, y: 10 } } })
+      )
+    ).toBe(false);
+
+    // routableLineEndpointDrag 仅 previewPoint 变化 → 跳过；nodeId 变化 → 刷新
+    expect(
+      areGraphContentPropsEqual(
+        makeProps({ routableLineEndpointDrag: { nodeId: "line-1", endpoint: "target", previewPoint: { x: 0, y: 0 } } }),
+        makeProps({ routableLineEndpointDrag: { nodeId: "line-1", endpoint: "target", previewPoint: { x: 50, y: 60 } } })
+      )
+    ).toBe(true);
+    expect(
+      areGraphContentPropsEqual(
+        makeProps({ routableLineEndpointDrag: null }),
+        makeProps({ routableLineEndpointDrag: { nodeId: "line-1", endpoint: "target", previewPoint: { x: 0, y: 0 } } })
+      )
+    ).toBe(false);
+
+    // connectSource 仅 manualPoints 增加 → 跳过；nodeId/terminalId 变化 → 刷新
+    expect(
+      areGraphContentPropsEqual(
+        makeProps({ connectSource: { nodeId: "n1", terminalId: "t1", manualPoints: [] } }),
+        makeProps({ connectSource: { nodeId: "n1", terminalId: "t1", manualPoints: [{ x: 20, y: 30 }] } })
+      )
+    ).toBe(true);
+    expect(
+      areGraphContentPropsEqual(
+        makeProps({ connectSource: { nodeId: "n1", terminalId: "t1" } }),
+        makeProps({ connectSource: { nodeId: "n1", terminalId: "t2" } })
+      )
+    ).toBe(false);
+  });
+
+  it("主体图元层在模型、选中、主题与流水线标记变化时精准刷新", () => {
+    const base = baseScope(HORIZONTAL_ANCHOR, "translate(140, 80)");
+    const prevProps = {
+      scope: base,
+      selectedEdgeTopmostVisible: false,
+      electricFlowLayerMarkup: "",
+      electricFlowLineLayerMarkup: ""
+    };
+    expect(
+      areGraphContentPropsEqual(prevProps, {
+        ...prevProps,
+        scope: { ...base, detailedViewportNodes: [...base.detailedViewportNodes] }
+      })
+    ).toBe(false);
+    expect(
+      areGraphContentPropsEqual(prevProps, {
+        ...prevProps,
+        scope: { ...base, selectedNodeIdSet: new Set(["node-1"]) }
+      })
+    ).toBe(false);
+    expect(
+      areGraphContentPropsEqual(prevProps, {
+        ...prevProps,
+        electricFlowLayerMarkup: '<g class="electric-flow-layer"/>'
+      })
+    ).toBe(false);
+    expect(
+      areGraphContentPropsEqual(prevProps, {
+        ...prevProps,
+        selectedEdgeTopmostVisible: true
+      })
+    ).toBe(false);
+  });
+
+  it("静态底图层、瞬态底层、顶层覆盖层、悬浮工具条与小地图各自精确隔离", () => {
+    const base = baseScope(HORIZONTAL_ANCHOR, "translate(140, 80)");
+
+    // 静态底图：框选/选区变化跳过，主题/边界/流水线样式变化刷新
+    expect(
+      areStaticBackgroundPropsEqual(
+        { scope: base, electricFlowStyleMarkup: "" },
+        { scope: { ...base, marquee: { start: { x: 0, y: 0 }, current: { x: 50, y: 50 } } }, electricFlowStyleMarkup: "" }
+      )
+    ).toBe(true);
+    expect(
+      areStaticBackgroundPropsEqual(
+        { scope: base, electricFlowStyleMarkup: "" },
+        { scope: { ...base, themeMode: "dark" }, electricFlowStyleMarkup: "" }
+      )
+    ).toBe(false);
+    expect(
+      areStaticBackgroundPropsEqual(
+        { scope: base, electricFlowStyleMarkup: "" },
+        { scope: base, electricFlowStyleMarkup: "<style/>" }
+      )
+    ).toBe(false);
+
+    // 瞬态底层：小地图/浮动工具条变化跳过，marquee/对齐线变化刷新
+    expect(
+      areTransientUnderlayPropsEqual(
+        { scope: base },
+        { scope: { ...base, minimapViewportLeft: 99, nodeFloatingToolbar: { x: 1, y: 2 } } }
+      )
+    ).toBe(true);
+    expect(
+      areTransientUnderlayPropsEqual(
+        { scope: base },
+        { scope: { ...base, marquee: { start: { x: 0, y: 0 }, current: { x: 10, y: 10 } } } }
+      )
+    ).toBe(false);
+
+    // 顶层覆盖层：marquee/小地图变化跳过，connectPreviewDom/selectedEdgeTopmostVisible 变化刷新
+    expect(
+      areTransientOverlayPropsEqual(
+        { scope: base, selectedEdgeTopmostVisible: false },
+        { scope: { ...base, marquee: { start: { x: 0, y: 0 }, current: { x: 10, y: 10 } }, minimapViewportLeft: 50 }, selectedEdgeTopmostVisible: false }
+      )
+    ).toBe(true);
+    expect(
+      areTransientOverlayPropsEqual(
+        { scope: base, selectedEdgeTopmostVisible: false },
+        { scope: { ...base, connectPreviewDom: { path: "M0 0 L10 10", targetPoint: null } }, selectedEdgeTopmostVisible: false }
+      )
+    ).toBe(false);
+
+    // 悬浮工具条：小地图/对齐线变化跳过，nodeFloatingToolbar 变化刷新
+    expect(
+      areFloatingToolbarPropsEqual(
+        { scope: base },
+        { scope: { ...base, minimapViewportTop: 30, smartAlignmentGuides: [] } }
+      )
+    ).toBe(true);
+    expect(
+      areFloatingToolbarPropsEqual(
+        { scope: base },
+        { scope: { ...base, isEditMode: true, nodeFloatingToolbar: { x: 10, y: 20 } } }
+      )
+    ).toBe(false);
+
+    // 小地图：框选/浮动工具条变化跳过，视口坐标变化刷新
+    expect(
+      areMinimapPropsEqual(
+        { scope: base },
+        { scope: { ...base, marquee: { start: { x: 0, y: 0 }, current: { x: 30, y: 30 } } } }
+      )
+    ).toBe(true);
+    expect(
+      areMinimapPropsEqual(
+        { scope: base },
+        { scope: { ...base, minimapViewportLeft: 42 } }
+      )
+    ).toBe(false);
+  });
+
+  it("完整画布 SSR 输出严格维持原有 SVG 与 HUD 层级文档顺序", () => {
+    const scope = {
+      ...baseScope(HORIZONTAL_ANCHOR, "translate(140, 80)"),
+      marquee: { start: { x: 10, y: 10 }, current: { x: 60, y: 60 } },
+      minimapVisible: true,
+      minimapNodes: [],
+      minimapRoutes: [],
+      minimapOffsetX: 0,
+      minimapOffsetY: 0,
+      minimapContentWidth: 100,
+      minimapContentHeight: 60,
+      minimapScale: 0.1,
+      minimapViewportLeft: 5,
+      minimapViewportTop: 5,
+      minimapViewportRight: 40,
+      minimapViewportBottom: 30,
+      CANVAS_MINIMAP_WIDTH: 160,
+      CANVAS_MINIMAP_HEIGHT: 100
+    };
+    const html = renderToStaticMarkup(<MemoizedCanvasArea scope={scope} />);
+
+    const idxDefs = html.indexOf("<defs>");
+    const idxBoundary = html.indexOf("canvas-boundary");
+    const idxContent = html.indexOf('class="canvas-content"');
+    const idxMarquee = html.indexOf("marquee-box");
+    const idxNode = html.indexOf("diagram-node");
+    const idxOverlay = html.indexOf("imperative-multi-node-drag-overlay");
+    const idxControls = html.indexOf("viewport-controls");
+    const idxMinimap = html.indexOf("canvas-minimap");
+
+    expect(idxDefs).toBeGreaterThan(-1);
+    expect(idxBoundary).toBeGreaterThan(idxDefs);
+    expect(idxContent).toBeGreaterThan(idxBoundary);
+    expect(idxMarquee).toBeGreaterThan(idxContent);
+    expect(idxNode).toBeGreaterThan(idxMarquee);
+    expect(idxOverlay).toBeGreaterThan(idxNode);
+    expect(idxControls).toBeGreaterThan(idxOverlay);
+    expect(idxMinimap).toBeGreaterThan(idxControls);
   });
 });

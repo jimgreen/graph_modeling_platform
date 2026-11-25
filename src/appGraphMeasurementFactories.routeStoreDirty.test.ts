@@ -115,7 +115,7 @@ describe("createMarkStoredRouteEdgesDirty", () => {
 describe("createPatchStoredRouteStoreForEdgeIds", () => {
   const route = (edgeId: string, points: any[] = [{ x: 0, y: 0 }]) => ({ edgeId, points });
 
-  function createStore(routes: any[]) {
+  function createStore(routes: any[]): any {
     return {
       routes,
       routeMap: new Map(routes.map((r) => [r.edgeId, r])),
@@ -154,7 +154,7 @@ describe("createPatchStoredRouteStoreForEdgeIds", () => {
     const scope = createScope();
     const store = createStore([route("e1", [{ x: 0, y: 0 }])]);
 
-    const next = createPatchStoredRouteStoreForEdgeIds(scope)(store, new Set(["e1"]), { width: 100, height: 100 }, []);
+    const next: any = createPatchStoredRouteStoreForEdgeIds(scope)(store, new Set(["e1"]), { width: 100, height: 100 }, []);
 
     expect(scope.routeStorePatchRoutes).toHaveBeenCalled();
     expect(next.routes).toEqual([route("e1", [{ x: 5, y: 5 }])]);
@@ -164,7 +164,7 @@ describe("createPatchStoredRouteStoreForEdgeIds", () => {
     const scope = createScope({ visibleEdgeIdSet: new Set<string>() });
     const store = createStore([route("e1")]);
 
-    const next = createPatchStoredRouteStoreForEdgeIds(scope)(store, new Set(["e1"]), { width: 1, height: 1 }, []);
+    const next: any = createPatchStoredRouteStoreForEdgeIds(scope)(store, new Set(["e1"]), { width: 1, height: 1 }, []);
 
     expect(next.deleted).toEqual(["e1"]);
   });
@@ -173,7 +173,7 @@ describe("createPatchStoredRouteStoreForEdgeIds", () => {
     const scope = createScope({ edgeById: new Map() });
     const store = createStore([route("e1")]);
 
-    const next = createPatchStoredRouteStoreForEdgeIds(scope)(store, new Set(["e1"]), { width: 1, height: 1 }, []);
+    const next: any = createPatchStoredRouteStoreForEdgeIds(scope)(store, new Set(["e1"]), { width: 1, height: 1 }, []);
 
     expect(next.deleted).toEqual(["e1"]);
   });
@@ -182,12 +182,12 @@ describe("createPatchStoredRouteStoreForEdgeIds", () => {
     const scope = createScope({ routeEdgesForStoredRendering: vi.fn(() => []) });
     const store = createStore([route("e1")]);
 
-    expect(createPatchStoredRouteStoreForEdgeIds(scope)(store, new Set(["e1"]), { width: 1, height: 1 }, []).deleted).toEqual(["e1"]);
+    expect((createPatchStoredRouteStoreForEdgeIds(scope)(store, new Set(["e1"]), { width: 1, height: 1 }, []) as any).deleted).toEqual(["e1"]);
   });
 
   test("重算路由走的是该边自己的布线节点集合", () => {
     const scope = createScope();
-    const nodes = [{ id: "n1" }];
+    const nodes: any[] = [{ id: "n1" }];
 
     createPatchStoredRouteStoreForEdgeIds(scope)(createStore([route("e1")]), new Set(["e1"]), { width: 1, height: 1 }, nodes);
 
@@ -206,7 +206,7 @@ describe("createPatchStoredRouteStoreForEdgeIds", () => {
       refreshCrossingArcPaths: vi.fn((routes: any[]) => routes)
     });
 
-    const next = createPatchStoredRouteStoreForEdgeIds(scope)(store, new Set(["e1", "e2"]), { width: 1, height: 1 }, []);
+    const next: any = createPatchStoredRouteStoreForEdgeIds(scope)(store, new Set(["e1", "e2"]), { width: 1, height: 1 }, []);
 
     // store 里 e2 在前，传入顺序是 e1 先 —— 输出必须按 store 下标
     expect(next.routes.map((r: any) => r.edgeId)).toEqual(["e2", "e1"]);
